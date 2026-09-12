@@ -37,6 +37,10 @@ struct h2_gizclaw_device {
   bool playing, dirty;
   gizclaw_rpc_v1_AudioPlayerStatus status;
   gizclaw_rpc_v1_ClientDeviceAudioPlayerPlaylistGetResponse *playlist;
+  /* Device-side item lengths beside the playlist (0 = unknown; the wire
+   * item has none), and where the selected item starts. */
+  uint64_t durations[H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS];
+  uint64_t start_ms;
   /* Large generated messages are heap-owned, not task stack allocations. */
   gizclaw_rpc_v1_ClientDeviceAudioPlayerPlaylistSetRequest *incoming;
   uint8_t *response;
@@ -207,7 +211,8 @@ static void response_complete(void *user, int result);
  * task must not race a product task for it. Everything that can fail is
  * checked before the queue is touched, so a rejection preserves both the
  * previous playlist and playback. */
-static int playlist_apply_locked(h2_gizclaw_device_t *d, bool append) {
+static int playlist_apply_locked(h2_gizclaw_device_t *d, bool append,
+                                 const uint64_t *durations) {
   for (size_t i = 0; i < d->incoming->items_count; ++i)
     if (!https_url(d->incoming->items[i].url))
       return H2_PAL_ERR_INVALID_ARG;
@@ -226,6 +231,8 @@ static int playlist_apply_locked(h2_gizclaw_device_t *d, bool append) {
   }
   memcpy(d->playlist->items + offset, d->incoming->items,
          d->incoming->items_count * sizeof(d->incoming->items[0]));
+  for (size_t i = 0; i < d->incoming->items_count; ++i)
+    d->durations[offset + i] = durations ? durations[i] : 0;
   d->playlist->items_count = (pb_size_t)(offset + d->incoming->items_count);
   ++d->playlist->playlist_revision;
   d->status.playlist_revision = d->playlist->playlist_revision;
@@ -285,7 +292,7 @@ static int player_rpc(h2_gizclaw_device_t *d, int method,
         (append && d->incoming->items_count == 0))
       rc = H2_PAL_ERR_INVALID_ARG;
     else
-      rc = playlist_apply_locked(d, append);
+      rc = playlist_apply_locked(d, append, NULL);
     unlock(d);
     if (rc != H2_PAL_OK)
       return rc;
@@ -312,6 +319,7 @@ static int player_rpc(h2_gizclaw_device_t *d, int method,
     out->complete_user = d;
     d->status.has_current_index = true;
     d->status.current_index = index;
+    d->start_ms = 0;
     d->status.position_ms = 0;
     d->status.has_duration_ms = false;
     d->status.has_error_code = d->status.has_error_message = false;
@@ -789,13 +797,30 @@ static uint32_t io_timeout(h2_gizclaw_device_t *d) {
              ? (uint32_t)d->config.connect_timeout_ms
              : 15000u;
 }
+/* Aim the ranged request this far before the start so the landing page is
+ * earlier and the decoder skips to the exact start instead of overshooting it
+ * by the error of a byte-rate estimate. On a real 7.5 min VBR speech file with
+ * 1 s pages the estimate drifted up to ~2 s; 5 s landed early for every start
+ * at a cost of a few seconds of skipped bytes. */
+#define AUDIO_SEEK_BACKOFF_MS 5000u
 struct audio_download {
   h2_gizclaw_device_t *device;
   char url[1025];
   h2_pal_task_t *task;
   uint8_t *data;
   size_t capacity, head, count, prebuffer;
-  uint64_t length;
+  uint64_t length, consumed;
+  /* Requested byte range; a plain GET when !ranged. last is inclusive,
+   * UINT64_MAX for an open-ended range. A non-zero expected_total refuses
+   * a body that is not the 206 slice asked for of a file with exactly that
+   * length (the one the probe measured, so a file replaced in between is not
+   * spliced onto its old headers); with 0 a missing Content-Range means the
+   * server ignored Range and sent the whole file. */
+  bool ranged;
+  uint64_t first, last, expected_total;
+  /* Content-Range as delivered; range_total stays 0 unless it was valid. */
+  bool range_seen, body_checked;
+  uint64_t range_first, range_last, range_total;
   atomic_bool cancel;
   bool done, ready, music;
   int result;
@@ -803,6 +828,77 @@ struct audio_download {
 static int audio_cancel(void *user) {
   audio_download_t *download = user;
   return atomic_load(&download->cancel) || interrupted(download->device);
+}
+static bool parse_u64(const char **p, const char *end, uint64_t *out) {
+  const char *start = *p;
+  uint64_t value = 0;
+  for (; *p < end && **p >= '0' && **p <= '9'; ++*p) {
+    const unsigned digit = (unsigned)(**p - '0');
+    if (value > (UINT64_MAX - digit) / 10u)
+      return false;
+    value = value * 10u + digit;
+  }
+  *out = value;
+  return *p != start;
+}
+/* RFC 9110 "bytes first-last/complete-length"; an unknown length ("*") or an
+ * unsatisfied range cannot place a partial body in the file. */
+static bool parse_content_range(h2_pal_http_str_t value, uint64_t *first,
+                                uint64_t *last, uint64_t *total) {
+  const char *p = value.data, *end = value.data + value.len;
+  if (value.len < 6 || memcmp(p, "bytes ", 6) != 0)
+    return false;
+  p += 6;
+  if (!parse_u64(&p, end, first) || p == end || *p++ != '-' ||
+      !parse_u64(&p, end, last) || p == end || *p++ != '/' ||
+      !parse_u64(&p, end, total) || p != end)
+    return false;
+  return *first <= *last && *last < *total;
+}
+static bool header_is(h2_pal_http_str_t name, const char *expected) {
+  const size_t len = strlen(expected);
+  if (name.len != len)
+    return false;
+  for (size_t i = 0; i < len; ++i) {
+    char c = name.data[i];
+    if (c >= 'A' && c <= 'Z')
+      c = (char)(c - 'A' + 'a');
+    if (c != expected[i])
+      return false;
+  }
+  return true;
+}
+static int audio_header(void *user, const h2_pal_http_request_t *request,
+                        h2_pal_http_str_t name, h2_pal_http_str_t value) {
+  (void)request;
+  audio_download_t *download = user;
+  if (!header_is(name, "content-range"))
+    return H2_PAL_OK;
+  uint64_t first = 0, last = 0, total = 0;
+  const bool valid = parse_content_range(value, &first, &last, &total);
+  lock(download->device);
+  download->range_seen = true;
+  download->range_first = first;
+  download->range_last = last;
+  download->range_total = valid ? total : 0;
+  unlock(download->device);
+  return H2_PAL_OK;
+}
+/* Headers precede the body on every backend, so the first body byte is where
+ * a ranged response is placed in the file or refused. */
+static bool range_acceptable(const audio_download_t *download) {
+  if (!download->ranged)
+    return true;
+  if (!download->range_total)
+    return !download->range_seen && !download->expected_total;
+  if (download->expected_total &&
+      download->range_total != download->expected_total)
+    return false;
+  const uint64_t last = download->last < download->range_total - 1
+                            ? download->last
+                            : download->range_total - 1;
+  return download->range_first == download->first &&
+         download->range_last == last;
 }
 static int audio_read(void *user, const h2_pal_http_request_t *request,
                       const uint8_t *chunk, size_t length, size_t total,
@@ -812,6 +908,14 @@ static int audio_read(void *user, const h2_pal_http_request_t *request,
   (void)remaining;
   audio_download_t *download = user;
   h2_gizclaw_device_t *d = download->device;
+  if (!download->body_checked) {
+    lock(d);
+    const bool acceptable = range_acceptable(download);
+    unlock(d);
+    if (!acceptable)
+      return H2_PAL_ERR_FORMAT;
+    download->body_checked = true;
+  }
   size_t offset = 0;
   while (offset < length) {
     if (audio_cancel(download))
@@ -837,9 +941,22 @@ static void audio_download_worker(void *user) {
   audio_download_t *download = user;
   h2_gizclaw_device_t *d = download->device;
   uint8_t chunk[2048];
+  char range[48];
+  if (download->last == UINT64_MAX)
+    (void)snprintf(range, sizeof(range), "bytes=%llu-",
+                   (unsigned long long)download->first);
+  else
+    (void)snprintf(range, sizeof(range), "bytes=%llu-%llu",
+                   (unsigned long long)download->first,
+                   (unsigned long long)download->last);
+  const h2_pal_http_header_t header = {{"Range", 5}, {range, strlen(range)}};
   h2_pal_http_request_t request = {
       .method = H2_PAL_HTTP_GET,
       .url = {download->url, strlen(download->url)},
+      .headers = download->ranged ? &header : NULL,
+      .header_count = download->ranged ? 1u : 0u,
+      .response_header_cb = download->ranged ? audio_header : NULL,
+      .response_header_user = download,
       /* Backpressure can span the whole song. The reader enforces a bounded
        * no-progress timeout and cancels this request on stop or starvation. */
       .timeout_ms = INT_MAX,
@@ -854,16 +971,30 @@ static void audio_download_worker(void *user) {
   };
   h2_pal_http_response_t response = {0};
   int rc = h2_pal_http_request(d->config.http, &request, &response);
+  lock(d);
+  const uint64_t partial = download->range_total
+                               ? download->range_last - download->range_first + 1
+                               : 0;
+  const bool require_partial = download->expected_total != 0;
+  unlock(d);
+  /* A partial body is held to its own length: status 206 and exactly the
+   * bytes Content-Range promised, so a short slice is never taken as an
+   * early end of the track. */
   if (rc == H2_PAL_OK &&
-      (response.status_code < 200 || response.status_code >= 300 ||
-       download->length == 0 ||
-       (response.content_length >= 0 &&
-        (uint64_t)response.content_length != download->length)))
+      (partial
+           ? response.status_code != 206 || download->length != partial ||
+                 (response.content_length >= 0 &&
+                  (uint64_t)response.content_length != partial)
+           : require_partial || response.status_code < 200 ||
+                 response.status_code >= 300 || download->length == 0 ||
+                 (response.content_length >= 0 &&
+                  (uint64_t)response.content_length != download->length)))
     rc = H2_PAL_ERR_FORMAT;
-  char message[128];
-  (void)snprintf(
-      message, sizeof(message), "audio-download status=%d bytes=%llu rc=%d",
-      response.status_code, (unsigned long long)download->length, rc);
+  char message[160];
+  (void)snprintf(message, sizeof(message),
+                 "audio-download status=%d range=%s bytes=%llu rc=%d",
+                 response.status_code, download->ranged ? range : "-",
+                 (unsigned long long)download->length, rc);
   (void)h2_pal_log_write(d->config.log,
                          rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_WARN,
                          "gizclaw", message);
@@ -873,10 +1004,12 @@ static void audio_download_worker(void *user) {
   download->done = true;
   unlock(d);
 }
-static h2_pal_result_t audio_stream_read(void *user, uint8_t *out, size_t capacity,
-                             size_t *out_len) {
-  audio_download_t *download = user;
-  h2_gizclaw_device_t *d = download->device;
+/* The decoder's reader. It follows d->download, so a seek can replace the
+ * probe with a ranged request under the same decoder. */
+static h2_pal_result_t audio_stream_read(void *user, uint8_t *out,
+                                         size_t capacity, size_t *out_len) {
+  h2_gizclaw_device_t *d = user;
+  audio_download_t *download = d->download;
   *out_len = 0;
   uint64_t progress_at = 0;
   (void)h2_pal_time_get_monotonic_ms(d->config.time, &progress_at);
@@ -902,6 +1035,7 @@ static h2_pal_result_t audio_stream_read(void *user, uint8_t *out, size_t capaci
       memcpy(out, download->data + download->head, count);
       download->head = (download->head + count) % download->capacity;
       download->count -= count;
+      download->consumed += count;
       unlock(d);
       *out_len = count;
       return H2_PAL_OK;
@@ -946,6 +1080,88 @@ static int finish_audio_download(h2_gizclaw_device_t *d) {
   d->download = NULL;
   return H2_PAL_OK;
 }
+/* Replaces d->download (joining the previous one) with a new request. */
+static int start_audio_download(h2_gizclaw_device_t *d, const char *url,
+                                bool music, bool ranged, uint64_t first,
+                                uint64_t last, uint64_t expected_total) {
+  int rc = finish_audio_download(d);
+  if (rc != H2_PAL_OK)
+    return rc;
+  audio_download_t *download =
+      h2_pal_mem_alloc(d->config.allocator, sizeof(*download));
+  if (!download)
+    return H2_PAL_ERR_NO_MEMORY;
+  *download = (audio_download_t){.device = d,
+                                 .music = music,
+                                 .ranged = ranged,
+                                 .expected_total = expected_total,
+                                 .first = first,
+                                 .last = last,
+                                 .capacity = d->config.audio_buffer_bytes
+                                                 ? d->config.audio_buffer_bytes
+                                                 : 65536u};
+  strcpy(download->url, url);
+  download->prebuffer =
+      d->config.audio_prebuffer_bytes
+          ? d->config.audio_prebuffer_bytes
+          : (download->capacity < 16384u ? download->capacity : 16384u);
+  atomic_init(&download->cancel, false);
+  d->download = download;
+  download->data = h2_pal_mem_alloc(d->config.allocator, download->capacity);
+  if (!download->data) {
+    (void)finish_audio_download(d);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  const h2_pal_task_options_t options = {
+      .name = H2_GIZCLAW_AUDIO_DOWNLOAD_TASK_NAME_VALUE,
+      .min_stack_size = 32768};
+  return h2_pal_task_start(d->service->config.task, &options,
+                           audio_download_worker, download, &download->task);
+}
+/* Where playback of one item starts, in order of preference. */
+typedef enum audio_source {
+  AUDIO_SOURCE_PLAIN,    /* From byte 0, no seek. */
+  AUDIO_SOURCE_PROBE,    /* Range 0- until the headers parse. */
+  AUDIO_SOURCE_WHOLE,    /* Range ignored: skip through the whole body. */
+  AUDIO_SOURCE_RANGE,    /* Range offset-: resync on the next page. */
+  AUDIO_SOURCE_FALLBACK, /* Plain GET, skip through the whole body. */
+} audio_source_t;
+/* Called once the probe's headers parse. Byte offsets scale with time
+ * between the end of the headers and the end of the file; the estimate only
+ * picks where to look, the decoder then reports exactly where it is. */
+static int seek_range(h2_gizclaw_device_t *d, h2_gizclaw_ogg_opus_t *decoder,
+                      const char *url, bool music, uint64_t start_ms,
+                      uint64_t duration_ms, audio_source_t *source) {
+  lock(d);
+  const uint64_t total = d->download->range_total;
+  const uint64_t header = d->download->consumed;
+  unlock(d);
+  if (!total) {
+    *source = AUDIO_SOURCE_WHOLE;
+    return h2_gizclaw_ogg_opus_seek(decoder, start_ms, false);
+  }
+  *source = AUDIO_SOURCE_RANGE;
+  if (header >= total)
+    return H2_PAL_ERR_FORMAT;
+  const uint64_t aim =
+      start_ms > AUDIO_SEEK_BACKOFF_MS ? start_ms - AUDIO_SEEK_BACKOFF_MS : 0;
+  const uint64_t offset =
+      header + (uint64_t)((double)(total - header) * (double)aim /
+                          (double)duration_ms);
+  if (offset >= total)
+    return H2_PAL_ERR_FORMAT;
+  int rc = start_audio_download(d, url, music, true, offset, UINT64_MAX,
+                                total);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_ogg_opus_seek(decoder, start_ms, true);
+  return rc;
+}
+static int start_decoder(h2_gizclaw_device_t *d, h2_gizclaw_ogg_opus_t **out) {
+  h2_gizclaw_ogg_opus_destroy(*out);
+  *out = NULL;
+  return h2_gizclaw_ogg_opus_create_reader(d->config.allocator,
+                                           audio_stream_read, d, out);
+}
 static int write_player_pcm(h2_gizclaw_device_t *d, h2_pal_audio_track_t *track,
                             const h2_audio_frame_t *frame) {
   uint64_t started = 0;
@@ -968,39 +1184,25 @@ static int write_player_pcm(h2_gizclaw_device_t *d, h2_pal_audio_track_t *track,
     (void)h2_pal_time_sleep_ms(d->config.time, 5);
   }
 }
+/* start_ms > 0 with a known duration_ms seeks: a probe for the headers, a
+ * ranged request from about the start, and the decoder resyncing on the next
+ * valid page. Anything that goes wrong before the first sample is known
+ * restarts once from byte 0 and skips to the start instead. With an unknown
+ * duration the item plays from 0. */
 static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
-                    bool music) {
-  audio_download_t *download =
-      h2_pal_mem_alloc(d->config.allocator, sizeof(*download));
-  if (!download)
-    return H2_PAL_ERR_NO_MEMORY;
-  *download = (audio_download_t){.device = d,
-                                 .music = music,
-                                 .capacity = d->config.audio_buffer_bytes
-                                                 ? d->config.audio_buffer_bytes
-                                                 : 65536u};
-  strcpy(download->url, url);
-  download->prebuffer =
-      d->config.audio_prebuffer_bytes
-          ? d->config.audio_prebuffer_bytes
-          : (download->capacity < 16384u ? download->capacity : 16384u);
-  atomic_init(&download->cancel, false);
-  d->download = download;
-  download->data = h2_pal_mem_alloc(d->config.allocator, download->capacity);
-  if (!download->data) {
-    (void)finish_audio_download(d);
-    return H2_PAL_ERR_NO_MEMORY;
-  }
-  const h2_pal_task_options_t options = {
-      .name = H2_GIZCLAW_AUDIO_DOWNLOAD_TASK_NAME_VALUE,
-      .min_stack_size = 32768};
-  int rc = h2_pal_task_start(d->service->config.task, &options,
-                             audio_download_worker, download, &download->task);
+                    bool music, uint64_t start_ms, uint64_t duration_ms) {
+  audio_source_t source = start_ms && duration_ms ? AUDIO_SOURCE_PROBE
+                                                  : AUDIO_SOURCE_PLAIN;
+  int rc = source == AUDIO_SOURCE_PROBE
+               /* The probe asks for the whole file (bytes=0-) and is
+                * cancelled once both headers parse, so headers of any size
+                * (large embedded cover art) fit in it. */
+               ? start_audio_download(d, url, music, true, 0, UINT64_MAX, 0)
+               : start_audio_download(d, url, music, false, 0, 0, 0);
   h2_gizclaw_ogg_opus_t *decoder = NULL;
   h2_pal_audio_track_t *track = NULL;
   if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_ogg_opus_create_reader(
-        d->config.allocator, audio_stream_read, download, &decoder);
+    rc = start_decoder(d, &decoder);
   h2_audio_track_config_t audio = {
       .name = "gizclaw-player",
       .format = {.sample_rate_hz = 16000,
@@ -1046,11 +1248,47 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
   /* 16 kHz mono PCM16 is 32 bytes per millisecond. */
   const uint64_t limit_bytes = (uint64_t)limit_ms * 32u;
   uint64_t submitted_bytes = 0, reported_ms = 0;
+  /* PCM bytes a start-from-zero playback would have produced before the
+   * first sample of this one; known once `located`. */
+  uint64_t origin_bytes = 0;
+  bool located = source == AUDIO_SOURCE_PLAIN, seek_pending = !located;
   size_t buffered = 0;
   bool finished = false;
   while (rc == H2_PAL_OK && !interrupted(d) && !finished) {
     size_t length = 0;
     rc = h2_gizclaw_ogg_opus_next(decoder, pcm, sizeof(pcm), &length);
+    if (rc == H2_PAL_OK && seek_pending &&
+        h2_gizclaw_ogg_opus_headers_done(decoder)) {
+      seek_pending = false;
+      rc = source == AUDIO_SOURCE_PROBE
+               ? seek_range(d, decoder, url, music, start_ms, duration_ms,
+                            &source)
+               : h2_gizclaw_ogg_opus_seek(decoder, start_ms, false);
+    }
+    if (rc != H2_PAL_OK && rc != H2_PAL_EXIT && !located &&
+        source != AUDIO_SOURCE_PLAIN && source != AUDIO_SOURCE_FALLBACK &&
+        !interrupted(d)) {
+      trace(d, "player-seek-fallback", (int)source, rc);
+      source = AUDIO_SOURCE_FALLBACK;
+      seek_pending = true;
+      rc = start_audio_download(d, url, music, false, 0, 0, 0);
+      if (rc == H2_PAL_OK)
+        rc = start_decoder(d, &decoder);
+      continue;
+    }
+    uint64_t origin = 0;
+    if (!located && !seek_pending &&
+        h2_gizclaw_ogg_opus_origin(decoder, &origin)) {
+      /* Exact from here on: the granule-derived start, not the estimate. */
+      located = true;
+      origin_bytes = origin * 2u;
+      lock(d);
+      if (music && !interrupted(d)) {
+        d->status.position_ms = origin_bytes / 32u;
+        changed(d);
+      }
+      unlock(d);
+    }
     if (rc == H2_PAL_EXIT) {
       rc = H2_PAL_OK;
       finished = true;
@@ -1100,9 +1338,11 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
        * frame inserts silence in PAL mixers. During playback, conservatively
        * subtract the requested queue capacity plus one in-flight frame. */
       uint64_t pending_bytes = frame_bytes * (audio.buffer_frames + 1u);
-      uint64_t position_ms = submitted_bytes > pending_bytes
-                                 ? (submitted_bytes - pending_bytes) / 32u
-                                 : 0u;
+      uint64_t position_ms =
+          (origin_bytes + (submitted_bytes > pending_bytes
+                               ? submitted_bytes - pending_bytes
+                               : 0u)) /
+          32u;
       lock(d);
       if (music && !interrupted(d)) {
         strcpy(d->status.state, "playing");
@@ -1124,7 +1364,7 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
       if (rc == H2_PAL_OK && music) {
         lock(d);
         if (!interrupted(d))
-          d->status.position_ms = submitted_bytes / 32u;
+          d->status.position_ms = (origin_bytes + submitted_bytes) / 32u;
         unlock(d);
       }
     }
@@ -1286,12 +1526,16 @@ static void device_worker(void *user) {
     }
 
     char url[1025] = {0};
+    uint64_t start_ms = 0, duration_ms = 0;
     lock(d);
     bool playing = d->playing;
     bool dirty = d->dirty && d->pending == 0;
     int pending = d->pending_ready ? d->pending : 0;
-    if (playing)
+    if (playing) {
       strcpy(url, d->playlist->items[d->status.current_index].url);
+      start_ms = d->start_ms;
+      duration_ms = d->durations[d->status.current_index];
+    }
     d->worker_generation = atomic_load(&d->generation);
     unlock(d);
     if (dirty && d->config.audio != NULL)
@@ -1305,7 +1549,7 @@ static void device_worker(void *user) {
         int result = d->config.vtable->resolve_sound_url(
             d->config.user, d->sound, sound_url, sizeof(sound_url));
         if (result == H2_PAL_OK && sound_url[1024] == 0 && https_url(sound_url))
-          (void)play_url(d, sound_url, d->sound_ms, false);
+          (void)play_url(d, sound_url, d->sound_ms, false, 0, 0);
       } else if (pending == H2_GIZCLAW_RPC_CLIENT_WIFI_CONNECT) {
         int rc = h2_pal_wifi_sta_connect_and_save(d->config.wifi, &d->wifi_config,
                                          io_timeout(d));
@@ -1337,9 +1581,11 @@ static void device_worker(void *user) {
       memset(&d->wifi_config, 0, sizeof(d->wifi_config));
       unlock(d);
     } else if (playing) {
-      int rc = play_url(d, url, 0, true);
+      int rc = play_url(d, url, 0, true, start_ms, duration_ms);
       lock(d);
       if (!interrupted(d)) {
+        /* Only the selected item starts late; advance and repeat start at 0. */
+        d->start_ms = 0;
         if (rc == H2_PAL_OK) {
           d->status.has_duration_ms = true;
           d->status.duration_ms = d->status.position_ms;
@@ -1518,6 +1764,8 @@ h2_pal_result_t h2_gizclaw_player_play(h2_gizclaw_service_t *service,
     memset(d->playlist->items, 0, sizeof(d->playlist->items));
     strcpy(d->playlist->items[0].url, copy);
     d->playlist->items_count = 1;
+    memset(d->durations, 0, sizeof(d->durations));
+    d->start_ms = 0;
     ++d->playlist->playlist_revision;
     d->status.playlist_revision = d->playlist->playlist_revision;
     d->status.playlist_length = 1;
@@ -1555,9 +1803,10 @@ h2_pal_result_t h2_gizclaw_player_stop(h2_gizclaw_service_t *service) {
 /* Same selection the client.device.audioplayer.play RPC performs: validate
  * the index against the live playlist under the lock, then hand the worker
  * the new current track. Rejection happens before anything is mutated, so a
- * bad index cannot disturb the track already playing. */
-h2_pal_result_t h2_gizclaw_player_play_index(h2_gizclaw_service_t *service,
-                                             uint32_t index) {
+ * bad index or start cannot disturb the track already playing. */
+h2_pal_result_t h2_gizclaw_player_play_index_at(h2_gizclaw_service_t *service,
+                                                uint32_t index,
+                                                uint64_t start_ms) {
   if (!service)
     return H2_PAL_ERR_INVALID_ARG;
   h2_gizclaw_device_t *d = service->device;
@@ -1565,7 +1814,8 @@ h2_pal_result_t h2_gizclaw_player_play_index(h2_gizclaw_service_t *service,
     return H2_PAL_ERR_UNSUPPORTED;
   lock(d);
   int rc = H2_PAL_OK;
-  if (index >= d->playlist->items_count)
+  if (index >= d->playlist->items_count ||
+      (d->durations[index] && start_ms >= d->durations[index]))
     rc = H2_PAL_ERR_INVALID_ARG;
   else if (!d->task || atomic_load(&d->stopping))
     rc = H2_PAL_ERR_CLOSED;
@@ -1575,7 +1825,10 @@ h2_pal_result_t h2_gizclaw_player_play_index(h2_gizclaw_service_t *service,
     cancel_play_locked(d);
     d->status.has_current_index = true;
     d->status.current_index = index;
-    d->status.position_ms = 0;
+    /* Without a length the item plays from 0, so that is what it reports;
+     * with one the requested start stands until the decoder lands. */
+    d->start_ms = start_ms;
+    d->status.position_ms = d->durations[index] ? start_ms : 0;
     d->status.has_duration_ms = false;
     d->status.has_error_code = d->status.has_error_message = false;
     strcpy(d->status.state, "buffering");
@@ -1584,6 +1837,10 @@ h2_pal_result_t h2_gizclaw_player_play_index(h2_gizclaw_service_t *service,
   }
   unlock(d);
   return rc;
+}
+h2_pal_result_t h2_gizclaw_player_play_index(h2_gizclaw_service_t *service,
+                                             uint32_t index) {
+  return h2_gizclaw_player_play_index_at(service, index, 0);
 }
 /* The device-side twin of client.device.audioplayer.playlist.set: the caller's
  * spans are copied into the same staging buffer the RPC decodes into, under
@@ -1600,6 +1857,9 @@ h2_pal_result_t h2_gizclaw_player_playlist_set(
   h2_gizclaw_device_t *d = service->device;
   if (!d || !d->playlist || !d->incoming)
     return H2_PAL_ERR_UNSUPPORTED;
+  uint64_t durations[H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS];
+  for (uint32_t i = 0; i < count; ++i)
+    durations[i] = items[i].duration_ms;
   lock(d);
   int rc = H2_PAL_OK;
   if (!d->task || atomic_load(&d->stopping))
@@ -1620,7 +1880,7 @@ h2_pal_result_t h2_gizclaw_player_playlist_set(
     }
     if (rc == H2_PAL_OK) {
       d->incoming->items_count = (pb_size_t)count;
-      rc = playlist_apply_locked(d, false);
+      rc = playlist_apply_locked(d, false, durations);
     }
   }
   unlock(d);

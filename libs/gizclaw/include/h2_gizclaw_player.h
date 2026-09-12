@@ -51,6 +51,10 @@ typedef struct h2_gizclaw_player_playlist_entry {
   h2_gizclaw_str_t url;
   h2_gizclaw_str_t title;
   h2_gizclaw_str_t source_ref;
+  /* The track length the product already knows, 0 when unknown. Only used
+   * to aim a timed start (play_index_at); never reported as the status
+   * duration. */
+  uint64_t duration_ms;
 } h2_gizclaw_player_playlist_entry_t;
 /** Replace the playlist with one HTTPS Ogg/Opus URL and begin asynchronously.
  * Copies the URL before returning. OK means accepted, not playback completed.
@@ -59,9 +63,25 @@ h2_pal_result_t h2_gizclaw_player_play(h2_gizclaw_service_t *service,
                                        h2_gizclaw_str_t url);
 /** Start the already-queued item the user picked, the same way the remote
  * client.device.audioplayer.play RPC selects one. An index at or past the
- * playlist length is INVALID_ARG and leaves playback untouched. */
+ * playlist length is INVALID_ARG and leaves playback untouched. Same as
+ * play_index_at(service, index, 0). */
 h2_pal_result_t h2_gizclaw_player_play_index(h2_gizclaw_service_t *service,
                                              uint32_t index);
+/** Start queued item `index` start_ms into the track; 0 is play_index.
+ * Needs the item's duration_ms from playlist_set: without it the item plays
+ * from 0 and reports 0. With it the player fetches the headers with a
+ * Range request, then a Range from about the start, lands on the next valid
+ * Ogg page and continues to the exact start; a server that ignores Range, or
+ * any failure before the first sample, falls back to one plain download that
+ * skips to the start without decoding. status.position_ms shows start_ms
+ * while buffering and then the position derived from the stream's granule
+ * positions; a start beyond the real end completes the item there. Repeat
+ * and end-of-track advance start the next item at 0. INVALID_ARG for a bad
+ * index or start_ms at or past a known duration_ms, before anything is
+ * touched; otherwise the same results as play_index. */
+h2_pal_result_t h2_gizclaw_player_play_index_at(h2_gizclaw_service_t *service,
+                                                uint32_t index,
+                                                uint64_t start_ms);
 /** Replace the playlist with a caller-owned array, the same way the remote
  * client.device.audioplayer.playlist.set RPC does: everything is validated
  * before the queue is touched, so a rejection preserves both the previous
