@@ -1,0 +1,97 @@
+load("//libs/lua/web:lua_web_app.bzl", "h2_lua_web_app")
+
+package(default_visibility = ["//visibility:public"])
+
+_SEQUENCE = "".join([
+    "(async () => {\n",
+    "  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));\n",
+    "  const ok = document.querySelector('[data-h2-button=ok]');\n",
+    "  const log = (text) => console.log('H2_WEB_APP_INPUT ' + text);\n",
+    "  const pointer = (type, id) =>\n",
+    "    ok.dispatchEvent(new PointerEvent(type, {pointerId: id, bubbles: true}));\n",
+    "  const key = (type) => dispatchEvent(new KeyboardEvent(type, {key: 'Enter'}));\n",
+    "  pointer('pointerdown', 7);\n",
+    "  await sleep(200);\n",
+    "  key('keydown');\n",
+    "  await sleep(200);\n",
+    "  pointer('pointerup', 7);\n",
+    "  await sleep(300);\n",
+    "  log('after-pointer-up held=' + ok.dataset.pressed);\n",
+    "  key('keyup');\n",
+    "  await sleep(300);\n",
+    "  pointer('pointerdown', 8);\n",
+    "  await sleep(300);\n",
+    "  dispatchEvent(new Event('blur'));\n",
+    "  await sleep(300);\n",
+    "  log('after-blur held=' + ok.dataset.pressed);\n",
+    "  pointer('pointerdown', 10);\n",
+    "  await sleep(300);\n",
+    "  Object.defineProperty(document, 'hidden', {value: true, configurable: true});\n",
+    "  document.dispatchEvent(new Event('visibilitychange'));\n",
+    "  delete document.hidden;\n",
+    "  await sleep(300);\n",
+    "  log('after-hide held=' + ok.dataset.pressed);\n",
+    "  pointer('pointerdown', 9);\n",
+    "  await sleep(300);\n",
+    "  log('sequence=done held=' + ok.dataset.pressed);\n",
+    "})()\n",
+])
+
+# Page Button input contract, observed through the script's Down/Up counts:
+# 1. pointer down, Enter down, pointer up: still held, one Down, no Up;
+#    Enter up then gives the only Up;
+# 2. pointer down, window blur: blur releases it (Up 2);
+# 3. pointer down, page hidden: visibilitychange releases it (Up 3);
+# 4. pointer down, then Escape ends the App: teardown releases the element.
+# Runtime publishes a Down sample every poll while held, so the script counts
+# presses from the first sample only.
+# A duplicate or missing edge fails through the fails patterns.
+h2_lua_web_app(
+    name = "lua-script-input",
+    buttons = {
+        "ok": "Enter",
+        "back": "Escape",
+    },
+    evals = [
+        [
+            "H2_WEB_APP name=lua-script-input stage=ready",
+            _SEQUENCE,
+        ],
+        [
+            "H2_WEB_APP name=lua-script-input result=PASS",
+            "console.log('H2_WEB_APP_INPUT teardown held=' + " +
+            "document.querySelector('[data-h2-button=ok]').dataset.pressed)",
+        ],
+    ],
+    exit_button = "back",
+    fails = [
+        "H2_WEB_LUA_APP_INPUT ok=down 5",
+        "H2_WEB_LUA_APP_INPUT ok=up 4",
+        "H2_WEB_APP_INPUT after-pointer-up held=false",
+        "H2_WEB_APP_INPUT after-blur held=true",
+        "H2_WEB_APP_INPUT after-hide held=true",
+        "H2_WEB_APP_INPUT teardown held=true",
+    ],
+    panel = "panel.html",
+    passes = [
+        "H2_WEB_APP name=lua-script-input stage=ready",
+        "H2_WEB_APP_INPUT after-pointer-up held=true",
+        "H2_WEB_LUA_APP_INPUT ok=down 1",
+        "H2_WEB_LUA_APP_INPUT ok=up 1",
+        "H2_WEB_APP_INPUT after-blur held=false",
+        "H2_WEB_LUA_APP_INPUT ok=down 2",
+        "H2_WEB_LUA_APP_INPUT ok=up 2",
+        "H2_WEB_LUA_APP_INPUT ok=down 3",
+        "H2_WEB_APP_INPUT after-hide held=false",
+        "H2_WEB_LUA_APP_INPUT ok=up 3",
+        "H2_WEB_LUA_APP_INPUT ok=down 4",
+        "H2_WEB_APP_INPUT sequence=done held=true",
+        "H2_WEB_APP name=lua-script-input result=PASS rc=0 fs=0 destroy=0",
+        "H2_WEB_APP_INPUT teardown held=false",
+    ],
+    presses = [[
+        "H2_WEB_APP_INPUT sequence=done",
+        "Escape",
+    ]],
+    script = "input.lua",
+)

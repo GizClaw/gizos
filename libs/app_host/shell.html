@@ -95,7 +95,7 @@
         for (const element of entry.elements) {
           element.addEventListener('pointerdown', (event) => {
             event.preventDefault();
-            element.setPointerCapture?.(event.pointerId);
+            try { element.setPointerCapture?.(event.pointerId); } catch (_) {}
             h2SetSource(entry, `pointer:${event.pointerId}`, true);
           }, {signal});
           for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'])

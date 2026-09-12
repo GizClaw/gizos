@@ -10,6 +10,7 @@ projects/example/
 ├── targets/pkg_tar/lua-flappybird/ # 同一 Lua Flappy Bird App 的 Canvas archive（自带 shell）
 ├── targets/pkg_tar/mp4-player/    # WebCodecs MP4 播放 archive（自带 shell）
 ├── targets/pkg_tar/lua-script/    # h2_lua_web_app() smoke：Button args、OK 回调、默认 exit Button
+├── targets/pkg_tar/lua-script-input/ # panel 输入合同：多源合并、blur/隐藏/结束释放
 ├── targets/pkg_tar/lua-script-stop/ # 同一脚本：run_ms 触发与 Stop 相同的停止请求
 ├── targets/pkg_tar/lua-script-extension/ # 加 extension：capability 与 exit_requested
 └── targets/pkg_tar/<app>/         # tap-reset、display、log、qrcode、touch、lvgl-smoke、
@@ -201,7 +202,7 @@ release 规则，例如只接受长按。`run_ms` 非零时在该时长后发出
 `@gizos//libs/app_host:web_app.bzl` 与
 `@gizos//libs/lua/web:lua_web_app.bzl`。
 
-`tools/bazel/web_archive.bzl` 的 `web_archive_browser_test()` 在 pinned Chromium（或 `H2_WEB_TEST_BROWSER`）中打开 archive：以用户手势点击 `#start`，收集 Console、异常与页面文本；全部 `passes` 正则出现即通过，`fails` 正则、`Aborted(`、`RuntimeError: `、未捕获异常或超时即失败。可选 `presses`（DOM 按键）、`taps`（Canvas 像素点击）、`clicks`（按 CSS selector 点击页面元素）、`canvas_min`（最少非黑像素）、`offline`（断网/恢复）与 `webrtc_server`（Pion fixture）。
+`tools/bazel/web_archive.bzl` 的 `web_archive_browser_test()` 在 pinned Chromium（或 `H2_WEB_TEST_BROWSER`）中打开 archive：以用户手势点击 `#start`，收集 Console、异常与页面文本；全部 `passes` 正则出现即通过，`fails` 正则、`Aborted(`、`RuntimeError: `、未捕获异常或超时即失败。可选 `presses`（DOM 按键）、`taps`（Canvas 像素点击）、`clicks`（按 CSS selector 点击页面元素）、`evals`（在页面执行一段 JS，例如驱动输入边沿）、`canvas_min`（最少非黑像素）、`offline`（断网/恢复）与 `webrtc_server`（Pion fixture）。
 
 | Target | 浏览器测试验证 |
 |---|---|
@@ -216,6 +217,7 @@ release 规则，例如只接受长按。`run_ms` 非零时在该时长后发出
 | `tap-reset` | LVGL App 在 Web task 中渲染、Canvas 点击、停止后 LVGL/Runtime 干净退出 |
 | `lua-flappybird` | Canvas 点击、Escape → Back 取消并退出 |
 | `lua-script` | `h2_lua_web_app()` + panel：脚本校验 Button args 后 ready；点击 panel 的 `data-h2-button=ok` 元素触发脚本 OK 回调；一次 Escape（exit Button）release 取消 job 并 PASS |
+| `lua-script-input` | Button 输入合同：pointer 与 Enter 重叠按住时松开 pointer 仍按住（只有一次 Down/Up）；blur、页面隐藏和 App 结束都释放按住的 Button；脚本只统计每次按压的首个 Down sample |
 | `lua-script-stop` | 不按键，`run_ms` 发出 Stop 请求（`stage=stop-requested`），取消 job 后 PASS |
 | `lua-script-extension` | extension 注册的 capability 可用；`exit_requested` 拒绝第一次 Escape、job 继续运行，第二次 Escape 取消并 PASS |
 | `mp4-player`（manual） | WebCodecs H.264/AAC 播放完成；`:large_browser_test` 播放 1024×600 大文件；需 `H2_WEB_TEST_BROWSER` 指向 Google Chrome |

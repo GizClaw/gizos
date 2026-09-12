@@ -209,6 +209,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--click", nargs=2, action="append", default=[],
                         metavar=("REGEX", "SELECTOR"),
                         help="mouse-click the page element SELECTOR once REGEX appears")
+    parser.add_argument("--eval", nargs=2, action="append", default=[],
+                        metavar=("REGEX", "JAVASCRIPT"),
+                        help="evaluate JAVASCRIPT in the page once REGEX appears")
     parser.add_argument("--http-proxy-origin", action="append", default=[])
     parser.add_argument("--canvas-min", type=int, default=0,
                         help="require this many non-black #canvas pixels")
@@ -276,6 +279,7 @@ def main() -> int:
                 presses = [(re.compile(p), key) for p, key in args.press]
                 taps = [(re.compile(p), int(x), int(y)) for p, x, y in args.tap]
                 clicks = [(re.compile(p), selector) for p, selector in args.click]
+                evals = [(re.compile(p), expression) for p, expression in args.eval]
                 offline_state = False
                 started = args.no_start
                 page_lines: set[str] = set()
@@ -345,6 +349,13 @@ def main() -> int:
                                         "clickCount": 1}, session=session)
                                     time.sleep(0.08)
                                 print(f"[harness] clicked {click[1]}", flush=True)
+                        for step in list(evals):
+                            if step[0].search(line):
+                                evals.remove(step)
+                                cdp.send("Runtime.evaluate", {
+                                    "expression": step[1],
+                                    "userGesture": True}, session=session)
+                                print("[harness] evaluated script", flush=True)
                         for tap in list(taps):
                             if tap[0].search(line):
                                 taps.remove(tap)

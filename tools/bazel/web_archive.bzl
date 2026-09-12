@@ -57,6 +57,7 @@ def web_archive_browser_test(
         presses = [],
         taps = [],
         clicks = [],
+        evals = [],
         size = "medium",
         tags = None,
         visibility = None):
@@ -78,6 +79,8 @@ def web_archive_browser_test(
       taps: [regex, x, y] triples; #canvas pixel x,y is tapped once regex appears.
       clicks: [regex, css_selector] pairs; the first matching page element is
         pressed and released with the mouse once regex appears.
+      evals: [regex, javascript] pairs; the expression is evaluated in the page
+        (with a user gesture) once regex appears, e.g. to drive input edges.
       size: Bazel test size.
       tags: Optional Bazel tags.
       visibility: Optional target visibility.
@@ -99,6 +102,8 @@ def web_archive_browser_test(
         args += ["--tap", _shell_quote(pattern), str(x), str(y)]
     for pattern, selector in clicks:
         args += ["--click", _shell_quote(pattern), _shell_quote(selector)]
+    for pattern, expression in evals:
+        args += ["--eval", _shell_quote(pattern), _shell_quote(expression)]
     if offline:
         args += ["--offline", _shell_quote(offline[0]), _shell_quote(offline[1])]
     data = [archive, _SERVER]

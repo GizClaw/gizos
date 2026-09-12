@@ -60,6 +60,7 @@ def h2_web_app(
         presses = [],
         taps = [],
         clicks = [],
+        evals = [],
         panel = None,
         linkopts = []):
     """Declares `<name>` (web tar), `serve` and `browser_test` targets.
@@ -81,6 +82,7 @@ def h2_web_app(
       taps: [regex, x, y] canvas taps the browser test performs.
       clicks: [regex, css_selector] page-element clicks the browser test
         performs (pointer press and release at the element centre).
+      evals: [regex, javascript] page scripts the browser test evaluates.
       panel: Optional HTML file (markup plus <style>) injected into the shell
         below the canvas. Elements marked data-h2-button="<name>" drive the
         Button with that name in h2_web_app_host_config_t; layout is free.
@@ -158,4 +160,5 @@ def h2_web_app(
         presses = presses,
         taps = taps,
         clicks = clicks,
+        evals = evals,
     )
