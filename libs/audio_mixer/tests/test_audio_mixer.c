@@ -201,11 +201,18 @@ static int test_queue_close(void *user, h2_pal_queue_t *opaque) {
     return H2_PAL_QUEUE_OK;
 }
 
-/* Returns 0xa5-filled blocks, like an uninitialized heap, and fails the
- * allocation numbered fail_at (1-based). */
+/* Returns 0xa5-filled blocks, like an uninitialized heap, fails the
+ * allocation numbered fail_at (1-based), and records every block it hands
+ * out so the test can check that each one is freed exactly once. */
+#define POISON_MAX_BLOCKS 8u
+
 typedef struct poison_allocator {
     unsigned calls;
     unsigned fail_at;
+    size_t block_count;
+    void *blocks[POISON_MAX_BLOCKS];
+    unsigned frees[POISON_MAX_BLOCKS];
+    unsigned unknown_frees;
 } poison_allocator_t;
 
 static void *poison_alloc(void *user, size_t len) {
@@ -213,9 +220,11 @@ static void *poison_alloc(void *user, size_t len) {
     if (++allocator->calls == allocator->fail_at) {
         return NULL;
     }
+    assert(allocator->block_count < POISON_MAX_BLOCKS);
     void *ptr = malloc(len);
     if (ptr != NULL) {
         memset(ptr, 0xa5, len);
+        allocator->blocks[allocator->block_count++] = ptr;
     }
     return ptr;
 }
@@ -226,8 +235,20 @@ static void *poison_realloc(void *user, void *ptr, size_t len) {
 }
 
 static void poison_free(void *user, void *ptr) {
-    (void)user;
-    free(ptr);
+    poison_allocator_t *allocator = (poison_allocator_t *)user;
+    if (ptr == NULL) {
+        return;
+    }
+    for (size_t index = 0u; index < allocator->block_count; ++index) {
+        if (allocator->blocks[index] == ptr) {
+            allocator->frees[index] += 1u;
+            if (allocator->frees[index] == 1u) {
+                free(ptr);
+            }
+            return;
+        }
+    }
+    allocator->unknown_frees += 1u;
 }
 
 int main(void) {
@@ -274,7 +295,8 @@ int main(void) {
         .sync_api = &sync_api,
     };
     /* A failed allocation after the track table must clean up without
-     * reading uninitialized track state. Calls: impl, tracks, accum. */
+     * reading uninitialized track state. Allocation 1 is the implementation,
+     * 2 the track table, 3 (failing) the accumulator. */
     static const h2_pal_mem_vtable_t poison_vtable = {
         .alloc = poison_alloc,
         .realloc = poison_realloc,
@@ -288,6 +310,15 @@ int main(void) {
     h2_audio_mixer_t failed = {0};
     assert(h2_audio_mixer_init(&failed, &failing_config) == H2_AUDIO_ERR_NO_MEMORY);
     assert(failed.impl == NULL);
+    /* Every block handed out before and after the failed third allocation
+     * (implementation, track table and the later buffers) must be released
+     * exactly once. */
+    assert(poison.calls >= 3u);
+    assert(poison.block_count >= 2u);
+    for (size_t index = 0u; index < poison.block_count; ++index) {
+        assert(poison.frees[index] == 1u);
+    }
+    assert(poison.unknown_frees == 0u);
 
     h2_audio_mixer_t mixer = {0};
     env.mixer = &mixer;
