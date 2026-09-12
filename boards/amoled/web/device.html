@@ -1,27 +1,37 @@
-<!-- amoled "device" skin: a schematic of the board drawn from its BSP, not a
-     photo. SH8601 368×448 AMOLED (portrait), FT3168 touch; BOOT (GPIO0) and PWR (AXP2101 key).
-     Replace the drawing with a product image when one is available. -->
+<!-- amoled "device" skin: Waveshare ESP32-S3-Touch-AMOLED-1.8 in its black
+     case, drawn in CSS at true proportions from the Waveshare size drawing
+     (https://docs.waveshare.com/ESP32-S3-Touch-AMOLED-1.8): case 37.60 x
+     45.20 mm, AMOLED active area 28.70 x 34.94 mm (368 x 448 px, 12.82 px per
+     mm). On the right edge, top to bottom: BOOT, USB-C, PWR. -->
 <style>
-  body { display: grid; min-height: 100vh; margin: 0; place-items: center; background: #0b0f17; color: #e5e7eb; font-family: system-ui, sans-serif; }
-  .board { display: grid; gap: 12px; justify-items: center; padding: 18px 18px 14px; border-radius: 18px; background: #1f2a1f; border: 2px solid #3f4f3f; box-shadow: 0 8px 30px #0008; }
-  .board .name { margin: 0; font-size: 12px; letter-spacing: 0.06em; color: #b7c4b7; }
-  .board [data-h2-slot="display"] { padding: 8px; border-radius: 10px; background: #050505; }
-  .board #canvas { display: block; width: min(368px, 86vw, calc(70vh * 368 / 448)); height: auto; background: #000; }
-  .board .keys { display: flex; gap: 10px; }
-  .board [data-h2-button] { min-width: 64px; padding: 8px 12px; border: 1px solid #6b7280; border-radius: 999px; background: #111827; color: #e5e7eb; font: 600 12px system-ui, sans-serif; }
-  .board [data-h2-button][data-pressed="true"] { background: #2563eb; border-color: #93c5fd; }
-  .board [data-h2-slot="controls"] { display: flex; gap: 8px; }
-  .board [data-h2-slot="controls"] button { padding: 6px 16px; border: 0; border-radius: 6px; background: #38bdf8; color: #082f49; font: 700 12px system-ui, sans-serif; }
-  .board [data-h2-slot="controls"] button:disabled { opacity: 0.6; }
-  .board #status { margin: 0; color: #94a3b8; font-size: 12px; }
+  body { display: grid; min-height: 100vh; margin: 0; place-items: center; background: radial-gradient(circle at 50% 35%, #232833, #0b0d12 70%); color: #e5e7eb; font-family: system-ui, sans-serif; }
+  .amoled { --mm: min(12.82px, calc(76vh / 45.2), calc(78vw / 44)); display: grid; gap: calc(3 * var(--mm)); justify-items: center; }
+  .amoled-case { position: relative; width: calc(37.6 * var(--mm)); height: calc(45.2 * var(--mm)); border-radius: calc(8.5 * var(--mm)); background: linear-gradient(145deg, #3a3d44 0%, #1d1f24 38%, #121317 100%); box-shadow: 0 calc(1.6 * var(--mm)) calc(4 * var(--mm)) #000c, inset 0 0 0 calc(0.35 * var(--mm)) #4a4e57, inset 0 calc(0.8 * var(--mm)) calc(1.2 * var(--mm)) #ffffff14; }
+  .amoled-glass { position: absolute; inset: calc(3.2 * var(--mm)) calc(3.2 * var(--mm)); border-radius: calc(6 * var(--mm)); background: #050506; box-shadow: inset 0 0 0 calc(0.25 * var(--mm)) #2b2e35; display: grid; place-items: center; overflow: hidden; }
+  .amoled-glass::after { content: ""; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(150deg, #ffffff1f 0%, #ffffff05 30%, #0000 55%); pointer-events: none; }
+  .amoled [data-h2-slot="display"] { display: grid; place-items: center; }
+  .amoled #canvas { display: block; width: calc(28.7 * var(--mm)); height: calc(34.94 * var(--mm)); border-radius: calc(3.4 * var(--mm)); background: #000; }
+  .amoled-side { position: absolute; right: calc(-0.9 * var(--mm)); width: calc(1.5 * var(--mm)); border-radius: calc(0.75 * var(--mm)); background: linear-gradient(90deg, #26282e, #43464e); box-shadow: 0 0 0 calc(0.12 * var(--mm)) #0008; }
+  .amoled-side[data-h2-button] { height: calc(4.6 * var(--mm)); border: 0; padding: 0; cursor: pointer; }
+  .amoled-side[data-h2-button]::after { content: attr(data-label); position: absolute; left: calc(2.6 * var(--mm)); top: 50%; transform: translateY(-50%); color: #9aa3b2; font: 600 calc(1.9 * var(--mm)) system-ui, sans-serif; letter-spacing: 0.04em; white-space: nowrap; }
+  .amoled-side[data-h2-button][data-pressed="true"] { right: calc(-0.55 * var(--mm)); background: linear-gradient(90deg, #1d4ed8, #60a5fa); }
+  .amoled-boot { top: calc(12.2 * var(--mm)); }
+  .amoled-usb { top: calc(19.6 * var(--mm)); height: calc(6.2 * var(--mm)); right: calc(-0.6 * var(--mm)); width: calc(1.1 * var(--mm)); background: #0c0d10; box-shadow: inset 0 0 0 calc(0.25 * var(--mm)) #3a3d44; }
+  .amoled-pwr { top: calc(28.4 * var(--mm)); }
+  .amoled [data-h2-slot="controls"] { display: flex; gap: 8px; }
+  .amoled [data-h2-slot="controls"] button { padding: 6px 16px; border: 0; border-radius: 6px; background: #38bdf8; color: #082f49; font: 700 12px system-ui, sans-serif; cursor: pointer; }
+  .amoled [data-h2-slot="controls"] button:disabled { cursor: default; opacity: 0.6; }
+  .amoled #status { margin: 0; color: #94a3b8; font-size: 12px; }
+  .amoled-hint { margin: 0; color: #6b7280; font-size: 11px; }
 </style>
-<main class="board">
-  <p class="name">Waveshare ESP32-S3-Touch-AMOLED-1.8</p>
-  <div data-h2-slot="display"></div>
-  <div class="keys">
-    <button type="button" data-h2-button="boot">BOOT</button>
-    <button type="button" data-h2-button="power">PWR</button>
+<main class="amoled">
+  <div class="amoled-case">
+    <div class="amoled-glass"><div data-h2-slot="display"></div></div>
+    <button type="button" class="amoled-side amoled-boot" data-h2-button="boot" data-label="BOOT" aria-label="BOOT"></button>
+    <span class="amoled-side amoled-usb" aria-hidden="true"></span>
+    <button type="button" class="amoled-side amoled-pwr" data-h2-button="power" data-label="PWR" aria-label="PWR"></button>
   </div>
   <div data-h2-slot="controls"></div>
+  <p class="amoled-hint">BOOT = Esc · PWR = P · touch the screen</p>
   <div data-h2-slot="status"></div>
 </main>

@@ -4,6 +4,7 @@ package(default_visibility = ["//visibility:public"])
 
 # Web board: the browser counterpart of this board for h2_web_app() pages.
 # SH8601 368×448 AMOLED (portrait), FT3168 touch; BOOT (GPIO0) and PWR (AXP2101 key).
+# The device skin draws the Waveshare case at true proportions.
 h2_web_board(
     name = "web",
     buttons = {
