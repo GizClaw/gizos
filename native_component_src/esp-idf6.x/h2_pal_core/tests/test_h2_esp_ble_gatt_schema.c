@@ -50,8 +50,10 @@ int main(void) {
     assert(indices[1] == 0u);
     assert(indices[2] == 0u);
 
-    h2_esp_ble_gatt_schema_bind_indices(
-        indices, 0u, H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE);
+    for (size_t service = 0u; service < H2_ESP_BLE_MAX_GATT_SERVICES; ++service) {
+        h2_esp_ble_gatt_schema_bind_indices(
+            indices, service, H2_ESP_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE);
+    }
     for (size_t slot = 0u; slot < H2_ESP_BLE_MAX_GATT_CHARACTERISTICS; ++slot) {
         assert(indices[slot] == (uint8_t)slot);
     }
@@ -67,5 +69,9 @@ int main(void) {
     assert(h2_esp_ble_gatt_schema_slot(0u, 2u) == 2u);
     assert(h2_esp_ble_gatt_schema_slot(1u, 0u) == 3u);
     assert(h2_esp_ble_gatt_schema_slot(1u, 2u) == 5u);
+    assert(H2_ESP_BLE_MAX_GATT_SERVICES == 4u);
+    assert(h2_esp_ble_gatt_schema_slot(3u, 0u) == 9u);
+    assert(h2_esp_ble_gatt_schema_slot(3u, 2u) == 11u);
+    assert(indices[11] == 11u);
     return 0;
 }

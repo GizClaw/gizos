@@ -191,7 +191,7 @@ API，NimBLE 在该选项关闭时不提供它，`host()` 会以 `LINK_ERROR "bl
 每次 `host()` 都用同一组 UUID 和同样三个 characteristic 调用
 `h2_bleikcp_server_open()`，session 结束时 `h2_bleikcp_server_close()` 调用
 `h2_pal_ble_unregister_gatt_services()`。对只增不减的 GATT table（ESP NimBLE 最多
-2 个 service、每个 3 个 characteristic，unregister 只解绑回调），再次注册已存在的
+4 个 service、每个 3 个 characteristic，unregister 只解绑回调），再次注册已存在的
 service UUID 且 characteristic 布局相同时，backend 复用保留的 service slot，重新绑定
 回调并写回 handle，因此连续多次 host 始终只占一个 slot；这正是 service UUID 必须固定
 的原因。bleikcp server 通过 `extra_characteristics` 把 Datagram 放进同一个 service。`tag` 不进入 GATT：host 广播 session UUID

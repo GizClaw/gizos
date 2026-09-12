@@ -11,7 +11,7 @@
  * command, a scan and a provisioning characteristic in one service. Every
  * table is sized off these, so a slot only costs static storage.
  */
-#define H2_BK_BLE_MAX_GATT_SERVICES 4u
+#define H2_BK_BLE_MAX_GATT_SERVICES 6u
 #define H2_BK_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE 3u
 #define H2_BK_BLE_MAX_GATT_CHARACTERISTICS \
     (H2_BK_BLE_MAX_GATT_SERVICES * H2_BK_BLE_MAX_GATT_CHARACTERISTICS_PER_SERVICE)
