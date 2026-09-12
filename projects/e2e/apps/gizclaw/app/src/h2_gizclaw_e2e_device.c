@@ -247,9 +247,9 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
   h2_gizclaw_str_t track = h2_gizclaw_e2e_str(fixture->config->device_audio_url);
   h2_gizclaw_str_t album_ref = h2_gizclaw_e2e_str("gizos-e2e-album");
   const h2_gizclaw_player_playlist_entry_t album[] = {
-      {track, h2_gizclaw_e2e_str("gizos-e2e-track-1"), album_ref},
-      {track, h2_gizclaw_e2e_str("gizos-e2e-track-2"), album_ref},
-      {track, h2_gizclaw_e2e_str("gizos-e2e-track-3"), album_ref},
+      {track, h2_gizclaw_e2e_str("gizos-e2e-track-1"), album_ref, 0u},
+      {track, h2_gizclaw_e2e_str("gizos-e2e-track-2"), album_ref, 0u},
+      {track, h2_gizclaw_e2e_str("gizos-e2e-track-3"), album_ref, 0u},
   };
   CHECK(h2_gizclaw_player_playlist_set(service, album, 3u));
   h2_gizclaw_e2e_evidence("h2_gizclaw_player_playlist_set", "local-playlist",
