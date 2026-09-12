@@ -1,5 +1,6 @@
 #include "h2_lua_link_e2e.h"
 #include "h2_lua_link_fake_ble.h"
+#include "h2/pal/h2_pal_unsupported.h"
 
 #include <assert.h>
 #include <pthread.h>
@@ -62,7 +63,43 @@ static void run_pair(int hold) {
   }
 }
 
+/* Invalid inputs fail before anything is created; a Runtime without a usable
+ * BLE Host fails at link enable and still tears the Lua Host down. */
+static void test_rejected_runs(void) {
+  fake_air_t air;
+  fake_air_init(&air);
+  h2_runtime_t *runtime =
+      fake_create_runtime(&air.devices[0].ble, &air.devices[0].events);
+  const h2_lua_link_e2e_config_t good = {
+      .role = "host",
+      .adv_type = H2_PAL_BLE_ADV_TYPE_LEGACY,
+      .scan_type = H2_PAL_BLE_SCAN_TYPE_LEGACY,
+  };
+  h2_lua_link_e2e_config_t bad = good;
+  fake_set_baseline(&air.devices[0]);
+  assert(h2_lua_link_e2e_run(NULL, &good) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_link_e2e_run(runtime, NULL) == H2_PAL_ERR_INVALID_ARG);
+  bad.role = NULL;
+  assert(h2_lua_link_e2e_run(runtime, &bad) == H2_PAL_ERR_INVALID_ARG);
+  bad.role = "spectator";
+  assert(h2_lua_link_e2e_run(runtime, &bad) == H2_PAL_ERR_INVALID_ARG);
+  bad = good;
+  bad.adv_type = (h2_pal_ble_adv_type_t)7;
+  assert(h2_lua_link_e2e_run(runtime, &bad) == H2_PAL_ERR_INVALID_ARG);
+  bad = good;
+  bad.scan_type = (h2_pal_ble_scan_type_t)7;
+  assert(h2_lua_link_e2e_run(runtime, &bad) == H2_PAL_ERR_INVALID_ARG);
+  assert(fake_is_released(&air.devices[0]));
+  h2_runtime_deinit(runtime);
+
+  runtime = fake_create_runtime(h2_pal_unsupported_ble_host_api(),
+                                h2_pal_unsupported_system_event_api());
+  assert(h2_lua_link_e2e_run(runtime, &good) == H2_PAL_ERR_UNSUPPORTED);
+  h2_runtime_deinit(runtime);
+}
+
 int main(void) {
+  test_rejected_runs();
   run_pair(0);
   run_pair(1);
   puts("lua link e2e tests passed");

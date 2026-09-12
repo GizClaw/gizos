@@ -4,7 +4,6 @@
 #include "h2_lua_job.h"
 #include "h2_lua_link.h"
 
-#include <stdio.h>
 #include <string.h>
 
 /* Both boards run this script; `args.role` picks the side. Every result is a
@@ -108,42 +107,110 @@ static const char s_script[] =
     /* 5. The joiner leaves; the host must see peer_closed promptly. */
     "if host then local t=now();send('leave');"
     "wait(function() return s.disc end,10000);"
-    "print('LINK stage=peer_exit reason='..s.disc..' ms='..(now()-t)..' state='..link.state()) "
+    "print('LINK stage=peer_exit reason='..s.disc..' ms='..(now()-t)..' state='..link.state());"
+    "assert(s.disc:sub(1,12)=='peer_closed:','peer exit reported as '..s.disc) "
     "else assert(recv(20000)=='leave');link.close() end;"
     "return 'link-ok'";
 
+/* Appends text to a bounded line without stdio, which the firmware archive
+ * ABI check keeps out of portable App archives. */
+static void line_append(char *line, size_t capacity, size_t *len,
+                        const char *text) {
+  while (text != NULL && *text != '\0' && *len + 1u < capacity) {
+    line[(*len)++] = *text++;
+  }
+  line[*len] = '\0';
+}
+
+static void line_append_int(char *line, size_t capacity, size_t *len,
+                            long value) {
+  char digits[24];
+  size_t count = 0u;
+  unsigned long magnitude =
+      value < 0 ? 0ul - (unsigned long)value : (unsigned long)value;
+  do {
+    digits[count++] = (char)('0' + (int)(magnitude % 10ul));
+    magnitude /= 10ul;
+  } while (magnitude != 0ul && count < sizeof(digits) - 1u);
+  if (value < 0) {
+    digits[count++] = '-';
+  }
+  while (count != 0u && *len + 1u < capacity) {
+    line[(*len)++] = digits[--count];
+  }
+  line[*len] = '\0';
+}
+
+/* The one result marker every run ends with, success or failure. */
+static void log_result(h2_runtime_t *runtime, const char *role,
+                       h2_pal_result_t rc, const h2_lua_job_status_t *status) {
+  char line[H2_PAL_LOG_MESSAGE_MAX];
+  size_t len = 0u;
+  line[0] = '\0';
+  line_append(line, sizeof(line), &len, "H2_LUA_LINK_E2E result=");
+  line_append(line, sizeof(line), &len, rc == H2_PAL_OK ? "PASS" : "FAIL");
+  line_append(line, sizeof(line), &len, " role=");
+  line_append(line, sizeof(line), &len, role == NULL ? "-" : role);
+  line_append(line, sizeof(line), &len, " rc=");
+  line_append_int(line, sizeof(line), &len, (long)rc);
+  line_append(line, sizeof(line), &len, " state=");
+  line_append_int(line, sizeof(line), &len, (long)status->state);
+  line_append(line, sizeof(line), &len, " message=");
+  line_append(line, sizeof(line), &len, status->message);
+  (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "lua-link-e2e", line);
+}
+
+static int role_is_valid(const char *role) {
+  return role != NULL && (strcmp(role, "host") == 0 || strcmp(role, "join") == 0);
+}
+
 h2_pal_result_t h2_lua_link_e2e_run(h2_runtime_t *runtime,
                                     const h2_lua_link_e2e_config_t *config) {
-  const h2_lua_host_config_t host_config = {
-      .runtime = runtime,
-      .worker_count = 1u,
-      .max_jobs = 1u,
-      .execution_timeout_ms = 300000u,
-      .vm_memory_limit_bytes = 512u * 1024u,
-      .output_limit_bytes = 8192u,
-  };
-  const h2_lua_link_config_t link_config = {
-      .adv_type = config->adv_type,
-      .scan_type = config->scan_type,
-  };
-  const h2_lua_arg_t args[] = {
-      {"role", config->role},
-      {"mode", config->hold ? "hold" : "suite"},
-  };
   h2_lua_host_t *host = NULL;
   h2_lua_job_id_t job = H2_LUA_JOB_ID_NONE;
   h2_lua_job_status_t status = {0};
-  h2_pal_result_t rc = h2_lua_host_create(&host_config, &host);
-  if (rc == H2_PAL_OK) {
-    rc = h2_lua_link_enable(host, &link_config);
+  h2_pal_result_t rc;
+  if (runtime == NULL || runtime->log == NULL || runtime->time == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
   }
-  if (rc == H2_PAL_OK) {
-    rc = h2_lua_host_start(host);
+  if (config == NULL || !role_is_valid(config->role) ||
+      (config->adv_type != H2_PAL_BLE_ADV_TYPE_LEGACY &&
+       config->adv_type != H2_PAL_BLE_ADV_TYPE_EXTENDED) ||
+      (config->scan_type != H2_PAL_BLE_SCAN_TYPE_LEGACY &&
+       config->scan_type != H2_PAL_BLE_SCAN_TYPE_EXTENDED)) {
+    log_result(runtime, config == NULL ? NULL : config->role,
+               H2_PAL_ERR_INVALID_ARG, &status);
+    return H2_PAL_ERR_INVALID_ARG;
   }
-  if (rc == H2_PAL_OK) {
-    rc = h2_lua_job_submit_text(host, "@lua_link_e2e.lua",
-                                (const uint8_t *)s_script,
-                                sizeof(s_script) - 1u, args, 2u, &job);
+  {
+    const h2_lua_host_config_t host_config = {
+        .runtime = runtime,
+        .worker_count = 1u,
+        .max_jobs = 1u,
+        .execution_timeout_ms = 300000u,
+        .vm_memory_limit_bytes = 512u * 1024u,
+        .output_limit_bytes = 8192u,
+    };
+    const h2_lua_link_config_t link_config = {
+        .adv_type = config->adv_type,
+        .scan_type = config->scan_type,
+    };
+    const h2_lua_arg_t args[] = {
+        {"role", config->role},
+        {"mode", config->hold ? "hold" : "suite"},
+    };
+    rc = h2_lua_host_create(&host_config, &host);
+    if (rc == H2_PAL_OK) {
+      rc = h2_lua_link_enable(host, &link_config);
+    }
+    if (rc == H2_PAL_OK) {
+      rc = h2_lua_host_start(host);
+    }
+    if (rc == H2_PAL_OK) {
+      rc = h2_lua_job_submit_text(host, "@lua_link_e2e.lua",
+                                  (const uint8_t *)s_script,
+                                  sizeof(s_script) - 1u, args, 2u, &job);
+    }
   }
   while (rc == H2_PAL_OK) {
     rc = h2_lua_job_get_status(host, job, &status);
@@ -154,19 +221,13 @@ h2_pal_result_t h2_lua_link_e2e_run(h2_runtime_t *runtime,
     }
     (void)h2_pal_time_sleep_ms(runtime->time, 100u);
   }
-  if (rc == H2_PAL_OK && status.state != H2_LUA_JOB_SUCCEEDED) {
+  if (rc == H2_PAL_OK && status.state == H2_LUA_JOB_TIMED_OUT) {
+    rc = H2_PAL_ERR_TIMEOUT;
+  } else if (rc == H2_PAL_OK && status.state != H2_LUA_JOB_SUCCEEDED) {
     rc = H2_PAL_ERR_INVALID_STATE;
   }
-  {
-    char line[H2_PAL_LOG_MESSAGE_MAX];
-    (void)snprintf(line, sizeof(line),
-                   "H2_LUA_LINK_E2E result=%s role=%s rc=%d state=%d "
-                   "message=%s",
-                   rc == H2_PAL_OK ? "PASS" : "FAIL", config->role, (int)rc,
-                   (int)status.state, status.message);
-    (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "lua-link-e2e",
-                           line);
-  }
+  log_result(runtime, config->role, rc, &status);
+  /* Host destroy stops, joins and releases a job that is still live. */
   if (job != H2_LUA_JOB_ID_NONE) {
     (void)h2_lua_job_release(host, job);
   }
