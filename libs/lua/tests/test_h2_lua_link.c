@@ -36,11 +36,42 @@ struct h2_pal_system_event_subscription {
 
 typedef struct fake_air fake_air_t;
 
+/* Pause the session after it publishes its terminal event, before task_done.
+ * The fake server's unregister callback arms the next PAL mutex unlock on
+ * that same thread: server cleanup has no further PAL mutex unlocks. */
+typedef struct fake_terminal_gate {
+  pthread_mutex_t mutex;
+  pthread_cond_t cond;
+  atomic_int reached;
+  int released;
+} fake_terminal_gate_t;
+
+static _Thread_local fake_terminal_gate_t *s_terminal_gate;
+
+static h2_pal_result_t fake_sync_unlock(void *user, h2_pal_mutex_t *mutex) {
+  const h2_pal_sync_api_t *sync = h2_desktop_platform_sync_api();
+  h2_pal_result_t rc = sync->vtable->unlock_mutex(user, mutex);
+  fake_terminal_gate_t *gate = s_terminal_gate;
+  if (gate != NULL) {
+    s_terminal_gate = NULL;
+    pthread_mutex_lock(&gate->mutex);
+    atomic_store(&gate->reached, 1);
+    while (!gate->released) {
+      pthread_cond_wait(&gate->cond, &gate->mutex);
+    }
+    pthread_mutex_unlock(&gate->mutex);
+  }
+  return rc;
+}
+
 typedef struct fake_device {
   fake_air_t *air;
   int index;
   h2_pal_ble_host_api_t ble;
   h2_pal_system_event_api_t events;
+  h2_pal_sync_api_t sync;
+  h2_pal_sync_vtable_t sync_vtable;
+  fake_terminal_gate_t *terminal_gate;
   pthread_mutex_t bus_mutex;
   struct h2_pal_system_event_subscription subscriptions[FAKE_SUBSCRIPTION_MAX];
   /* Guarded by air->mutex. */
@@ -299,6 +330,7 @@ static h2_pal_result_t fake_unregister(void *user) {
   pthread_mutex_lock(&device->air->mutex);
   device->service = NULL;
   pthread_mutex_unlock(&device->air->mutex);
+  s_terminal_gate = device->terminal_gate;
   return H2_PAL_OK;
 }
 
@@ -555,6 +587,10 @@ static void fake_air_init(fake_air_t *air) {
     fake_device_t *device = &air->devices[i];
     device->air = air;
     device->index = i;
+    device->sync = *h2_desktop_platform_sync_api();
+    device->sync_vtable = *device->sync.vtable;
+    device->sync_vtable.unlock_mutex = fake_sync_unlock;
+    device->sync.vtable = &device->sync_vtable;
     /* Another service (e.g. a management service) already holds one slot
      * and keeps advertising from the same address. */
     memset(device->retained_uuid[0], 0xa5, 16u);
@@ -615,6 +651,7 @@ static void fake_set_baseline(fake_device_t *device) {
 
 static h2_runtime_t *create_runtime(const h2_pal_ble_host_api_t *ble,
                                     const h2_pal_system_event_api_t *events) {
+  fake_device_t *device = ble->user;
   h2_runtime_config_t config = {
       .board = "test",
       .target = "desktop",
@@ -626,7 +663,9 @@ static h2_runtime_t *create_runtime(const h2_pal_ble_host_api_t *ble,
       .timer = h2_pal_unsupported_timer_api(),
       .task = h2_desktop_platform_task_api(),
       .queue = h2_desktop_platform_queue_api(),
-      .sync = h2_desktop_platform_sync_api(),
+      .sync = ble->vtable == &s_fake_ble_vtable
+                  ? &device->sync
+                  : h2_desktop_platform_sync_api(),
       .fs = h2_pal_unsupported_fs_api(),
       .disk = h2_pal_unsupported_disk_api(),
       .pref = h2_pal_unsupported_pref_api(),
@@ -890,44 +929,46 @@ static const char s_reused_slot[] =
 /* Reliable messages, unreliable datagrams and the byte stream over one link. */
 static const char s_host_transports[] =
     LUA_PRELUDE
-    "local ok,err=link.send_unreliable('x');assert(ok==nil and err=='link: not connected');"
-    "ok,err=link.write('x');assert(ok==nil and err=='link: not connected');"
-    "assert(link.host({tag=args.tag}));"
-    "wait(function() return s.role end);"
-    "assert(s.max_datagram==244,s.max_datagram);"
-    "assert(link.read(16,0)=='');"
-    "assert(not pcall(link.send_unreliable,string.rep('d',245)));"
-    "assert(not pcall(link.send_unreliable,''));"
-    "assert(not pcall(link.read,0));"
-    "for i=1,3 do assert(link.send_unreliable('u'..i)) end;"
-    "local t={};for i=0,250 do t[#t+1]=string.char(i) end;"
-    "local data=table.concat(t):rep(80):sub(1,20000);t=nil;"
-    "local first=assert(link.write(data));local off=first+1;"
-    "while off<=#data do local n=assert(link.write(data:sub(off,off+2047)));"
-    "off=off+n;if n==0 then rt.sleep(1) end end;"
-    "assert(first<#data,'stream never back-pressured');"
-    "assert(link.send('stream-sent'));"
-    "wait(function() return #s.msgs==1 and #s.dgrams==1 end);"
-    "assert(s.msgs[1]=='got:20000',s.msgs[1]);assert(s.dgrams[1]=='j1');"
-    "wait(function() return s.disc end);assert(s.disc=='peer_closed',s.disc);"
-    "local r,rerr=link.read(16,0);assert(r==nil and rerr=='link: closed',rerr);"
+    "local ok,err=link.send_unreliable('x');assert(ok==nil and err=='link: not connected');\n"
+    "ok,err=link.write('x');assert(ok==nil and err=='link: not connected');\n"
+    "assert(link.host({tag=args.tag}));\n"
+    "wait(function() return s.role end);\n"
+    "assert(s.max_datagram==244,s.max_datagram);\n"
+    "assert(link.read(16,0)=='');\n"
+    "assert(not pcall(link.send_unreliable,string.rep('d',245)));\n"
+    "assert(not pcall(link.send_unreliable,''));\n"
+    "assert(not pcall(link.read,0));\n"
+    "for i=1,3 do assert(link.send_unreliable('u'..i)) end;\n"
+    "local t={};for i=0,250 do t[#t+1]=string.char(i) end;\n"
+    "local data=table.concat(t):rep(80):sub(1,20000);t=nil;\n"
+    "local first=assert(link.write(data));local off=first+1;\n"
+    "while off<=#data do local n=assert(link.write(data:sub(off,off+2047)));\n"
+    "off=off+n;if n==0 then rt.sleep(1) end end;\n"
+    "assert(first<#data,'stream never back-pressured');\n"
+    "assert(link.send('stream-sent'));\n"
+    "wait(function() return #s.msgs==1 and #s.dgrams==1 end);\n"
+    "assert(s.msgs[1]=='got:20000',s.msgs[1]);assert(s.dgrams[1]=='j1');\n"
+    "wait(function() return s.disc end);assert(s.disc=='peer_closed',s.disc);\n"
+    "assert(link.read(16,0)=='tail');\n"
+    "local r,rerr=link.read(16,0);assert(r==nil and rerr=='link: closed',rerr);\n"
     "return 'transports-ok'";
 
 static const char s_join_transports[] =
     LUA_PRELUDE
-    "assert(link.join({tag=args.tag,timeout_ms=5000}));"
-    "wait(function() return s.role end);"
-    "local total=0;"
-    "while total<20000 do local chunk,rerr=link.read(4096,2000);"
-    "assert(chunk,tostring(rerr)..' after '..total..' state '..link.state());"
-    "for i=1,#chunk do assert(chunk:byte(i)==(total+i-1)%251,'stream byte '..total+i) end;"
-    "total=total+#chunk end;"
-    "wait(function() return #s.msgs==1 and #s.dgrams==3 end);"
-    "assert(s.msgs[1]=='stream-sent');"
-    "for i=1,3 do assert(s.dgrams[i]=='u'..i,s.dgrams[i]) end;"
-    "local u,uerr=link.send_unreliable('j1');assert(u,'unreliable '..tostring(uerr));"
-    "assert(link.send('got:'..total));"
-    "rt.sleep(100);"
+    "assert(link.join({tag=args.tag,timeout_ms=5000}));\n"
+    "wait(function() return s.role end);\n"
+    "local total=0;\n"
+    "while total<20000 do local chunk,rerr=link.read(4096,2000);\n"
+    "assert(chunk,tostring(rerr)..' after '..total..' state '..link.state());\n"
+    "for i=1,#chunk do assert(chunk:byte(i)==(total+i-1)%251,'stream byte '..total+i) end;\n"
+    "total=total+#chunk end;\n"
+    "wait(function() return #s.msgs==1 and #s.dgrams==3 end);\n"
+    "assert(s.msgs[1]=='stream-sent');\n"
+    "for i=1,3 do assert(s.dgrams[i]=='u'..i,s.dgrams[i]) end;\n"
+    "local u,uerr=link.send_unreliable('j1');assert(u,'unreliable '..tostring(uerr));\n"
+    "assert(link.write('tail')==4);\n"
+    "assert(link.send('got:'..total));\n"
+    "rt.sleep(100);\n"
     "return 'transports-ok'";
 
 static const char s_wait_lost[] =
@@ -1050,18 +1091,41 @@ static void test_round_trip_and_peer_close(void) {
   pair_close(&pair);
 }
 
-static void test_three_transports(void) {
+static void test_three_transports(int hold_terminal) {
   pair_t pair;
+  fake_terminal_gate_t gate = {
+      .mutex = PTHREAD_MUTEX_INITIALIZER,
+      .cond = PTHREAD_COND_INITIALIZER,
+  };
   pair_open(&pair);
+  pair.air.devices[0].terminal_gate = hold_terminal ? &gate : NULL;
   h2_lua_job_id_t host =
       submit(pair.host[0], "@transports.lua", s_host_transports, "duel");
   h2_lua_job_id_t join =
       submit(pair.host[1], "@transports.lua", s_join_transports, "duel");
+  if (hold_terminal) {
+    wait_until(mark_reached, &gate.reached);
+  }
+  const h2_lua_job_status_t host_status = wait_job(pair.host[0], host);
+  const h2_lua_job_status_t join_status = wait_job(pair.host[1], join);
+  if (host_status.state != H2_LUA_JOB_SUCCEEDED ||
+      join_status.state != H2_LUA_JOB_SUCCEEDED) {
+    fprintf(stderr, "transports host=%d %s; join=%d %s\n",
+            (int)host_status.state, host_status.message,
+            (int)join_status.state, join_status.message);
+  }
+  /* Release even on job failure, before release/destroy can join the task. */
+  pthread_mutex_lock(&gate.mutex);
+  gate.released = 1;
+  pthread_cond_broadcast(&gate.cond);
+  pthread_mutex_unlock(&gate.mutex);
   expect_success(pair.host[0], host, "transports-ok");
   expect_success(pair.host[1], join, "transports-ok");
   wait_until(device_released, &pair.air.devices[0]);
   wait_until(device_released, &pair.air.devices[1]);
   pair_close(&pair);
+  pthread_cond_destroy(&gate.cond);
+  pthread_mutex_destroy(&gate.mutex);
 }
 
 static void test_flow_control_keeps_order(void) {
@@ -1337,7 +1401,9 @@ int main(void) {
   fprintf(stderr, "== test_round_trip_and_peer_close\n");
   test_round_trip_and_peer_close();
   fprintf(stderr, "== test_three_transports\n");
-  test_three_transports();
+  test_three_transports(0);
+  fprintf(stderr, "== test_three_transports_before_task_exit\n");
+  test_three_transports(1);
   fprintf(stderr, "== test_flow_control_keeps_order\n");
   test_flow_control_keeps_order();
   fprintf(stderr, "== test_release_during_traffic\n");
