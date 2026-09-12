@@ -1,0 +1,12 @@
+<style>
+  .lua-script-pad { display: grid; grid-template-columns: repeat(3, 72px); gap: 8px; }
+  .lua-script-pad button { padding: 10px 0; border: 1px solid #475569; border-radius: 10px; background: #111c30; color: #e5e7eb; font: inherit; }
+  .lua-script-pad button[data-pressed="true"] { background: #1d4ed8; }
+  .lua-script-pad .back { grid-column: 1 / 4; }
+</style>
+<div class="lua-script-pad">
+  <button type="button" data-h2-button="left">◀</button>
+  <button type="button" data-h2-button="ok">OK</button>
+  <button type="button" disabled></button>
+  <button type="button" class="back" data-h2-button="back">Back</button>
+</div>

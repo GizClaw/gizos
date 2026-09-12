@@ -38,8 +38,11 @@ static h2_pal_periph_info_t h2_web_app_host_button_info(size_t index) {
       .payload = &s_button_payload,
       .payload_size = sizeof(s_button_payload),
   };
+  const h2_web_app_host_button_t *button = &s_host->config->buttons[index];
   (void)snprintf(info.name, sizeof(info.name), "%s",
-                 s_host->config->buttons[index].key);
+                 button->name != NULL  ? button->name
+                 : button->key != NULL ? button->key
+                                       : "button");
   return info;
 }
 
@@ -122,7 +125,7 @@ static const h2_pal_periph_api_t s_periph = {
     .vtable = &s_periph_vtable,
 };
 
-/* Called by the key listener with the button index and 1 down / 0 up. */
+/* Called by the shell with the button index and 1 down / 0 up. */
 EMSCRIPTEN_KEEPALIVE int h2_web_app_host_button(int index, int pressed) {
   if (s_host == NULL || s_host->runtime == NULL || index < 0 ||
       (size_t)index >= s_host->config->button_count)
@@ -133,31 +136,16 @@ EMSCRIPTEN_KEEPALIVE int h2_web_app_host_button(int index, int pressed) {
       pressed ? H2_RUNTIME_BUTTON_EDGE_DOWN : H2_RUNTIME_BUTTON_EDGE_UP);
 }
 
-EM_JS(void, h2_web_app_host_bind_key, (int index, const char *key), {
-  const name = UTF8ToString(key);
-  const bindings = Module['h2WebAppHostKeys'] ||= [];
-  let pressed = false;
-  const edge = (event, down) => {
-    if (event.key !== name || event.repeat || pressed === down) return;
-    pressed = down;
-    event.preventDefault();
-    const rc = Module['_h2_web_app_host_button'](index, down ? 1 : 0);
-    if (rc !== 0)
-      console.warn(`H2_WEB_APP key=${name} ${down ? 'down' : 'up'} rc=${rc}`);
-  };
-  const down = (event) => edge(event, true);
-  const up = (event) => edge(event, false);
-  globalThis.addEventListener('keydown', down);
-  globalThis.addEventListener('keyup', up);
-  bindings.push(() => {
-    globalThis.removeEventListener('keydown', down);
-    globalThis.removeEventListener('keyup', up);
-  });
+/* The shell's JavaScript owns keyboard and panel input for each Button. */
+EM_JS(void, h2_web_app_host_bind_button, (int index, const char *key,
+                                          const char *name), {
+  const bind = globalThis.h2WebAppHostBindButton;
+  if (bind)
+    bind(index, key ? UTF8ToString(key) : "", name ? UTF8ToString(name) : "");
 });
 
-EM_JS(void, h2_web_app_host_unbind_keys, (), {
-  for (const unbind of Module['h2WebAppHostKeys'] || []) unbind();
-  Module['h2WebAppHostKeys'] = [];
+EM_JS(void, h2_web_app_host_unbind_buttons, (), {
+  globalThis.h2WebAppHostUnbindButtons?.();
 });
 
 EM_JS(void, h2_web_app_host_status, (const char *text), {
@@ -286,7 +274,8 @@ static void h2_web_app_host_task(void *user) {
     result = h2_runtime_input_start(host->runtime, NULL);
     for (size_t index = 0u; result == H2_PAL_OK && index < config->button_count;
          ++index)
-      h2_web_app_host_bind_key((int)index, config->buttons[index].key);
+      h2_web_app_host_bind_button((int)index, config->buttons[index].key,
+                                  config->buttons[index].name);
   }
   if (result == H2_PAL_OK) {
     if (config->run_ms != 0u)
@@ -313,7 +302,7 @@ static void h2_web_app_host_task(void *user) {
          (result == H2_PAL_EXIT || result == H2_PAL_ERR_CLOSED)))
       result = s_stop_requested ? H2_PAL_OK : H2_PAL_EXIT;
   }
-  h2_web_app_host_unbind_keys();
+  h2_web_app_host_unbind_buttons();
   if (host->runtime != NULL)
     h2_runtime_deinit(host->runtime);
   host->runtime = NULL;

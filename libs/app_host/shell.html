@@ -13,6 +13,7 @@
       button { padding: 10px 24px; border: 0; border-radius: 8px; background: #38bdf8; color: #082f49; font: inherit; font-weight: 700; cursor: pointer; }
       button:disabled { cursor: default; opacity: 0.65; }
       #status { margin: 0; color: #94a3b8; font-size: 13px; }
+      [data-h2-button] { touch-action: none; user-select: none; }
     </style>
   </head>
   <body>
@@ -22,6 +23,7 @@
         <button id="start" type="button">Start</button>
         <button id="stop" type="button" disabled>Stop</button>
       </div>
+      <!-- H2_WEB_APP_PANEL -->
       <p id="status">Ready</p>
     </main>
     <template id="program">{{{ SCRIPT }}}</template>
@@ -54,6 +56,68 @@
       stop.addEventListener('click', () => {
         stop.disabled = true;
         Module._h2_web_app_host_request_stop?.();
+      });
+
+      // Button input. app_host passes each Button's index, keyboard key and
+      // name; the key and every [data-h2-button="<name>"] element hold it.
+      // Sources merge into one pressed state, so only real Down/Up changes
+      // reach the Runtime. Blur, hide and teardown release everything.
+      const h2Buttons = [];
+      function h2SetSource(entry, source, pressed) {
+        const was = entry.sources.size > 0;
+        if (pressed) entry.sources.add(source);
+        else entry.sources.delete(source);
+        const is = entry.sources.size > 0;
+        for (const element of entry.elements) element.dataset.pressed = String(is);
+        if (was === is) return;
+        const rc = Module._h2_web_app_host_button?.(entry.index, is ? 1 : 0);
+        if (rc) console.warn(`H2_WEB_APP button=${entry.name || entry.key} ${is ? 'down' : 'up'} rc=${rc}`);
+      }
+      function h2ReleaseAll() {
+        for (const entry of h2Buttons)
+          for (const source of [...entry.sources]) h2SetSource(entry, source, false);
+      }
+      function h2OnKey(event, down) {
+        if (event.repeat) return;
+        for (const entry of h2Buttons) {
+          if (!entry.key || event.key !== entry.key) continue;
+          event.preventDefault();
+          h2SetSource(entry, 'key', down);
+        }
+      }
+      const h2KeyDown = (event) => h2OnKey(event, true);
+      const h2KeyUp = (event) => h2OnKey(event, false);
+      globalThis.h2WebAppHostBindButton = (index, key, name) => {
+        const selector = name ? `[data-h2-button="${CSS.escape(name)}"]` : null;
+        const entry = {index, key, name, sources: new Set(), abort: new AbortController(),
+                       elements: selector ? [...document.querySelectorAll(selector)] : []};
+        const signal = entry.abort.signal;
+        for (const element of entry.elements) {
+          element.addEventListener('pointerdown', (event) => {
+            event.preventDefault();
+            element.setPointerCapture?.(event.pointerId);
+            h2SetSource(entry, `pointer:${event.pointerId}`, true);
+          }, {signal});
+          for (const type of ['pointerup', 'pointercancel', 'lostpointercapture'])
+            element.addEventListener(type, (event) =>
+              h2SetSource(entry, `pointer:${event.pointerId}`, false), {signal});
+        }
+        if (h2Buttons.length === 0) {
+          globalThis.addEventListener('keydown', h2KeyDown);
+          globalThis.addEventListener('keyup', h2KeyUp);
+        }
+        h2Buttons.push(entry);
+      };
+      globalThis.h2WebAppHostUnbindButtons = () => {
+        h2ReleaseAll();
+        for (const entry of h2Buttons) entry.abort.abort();
+        globalThis.removeEventListener('keydown', h2KeyDown);
+        globalThis.removeEventListener('keyup', h2KeyUp);
+        h2Buttons.length = 0;
+      };
+      globalThis.addEventListener('blur', h2ReleaseAll);
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) h2ReleaseAll();
       });
     </script>
   </body>

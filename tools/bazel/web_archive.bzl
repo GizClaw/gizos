@@ -56,6 +56,7 @@ def web_archive_browser_test(
         canvas_min = 0,
         presses = [],
         taps = [],
+        clicks = [],
         size = "medium",
         tags = None,
         visibility = None):
@@ -75,6 +76,8 @@ def web_archive_browser_test(
       canvas_min: Require this many non-black #canvas pixels at the end.
       presses: [regex, key] pairs; the key is pressed once regex appears.
       taps: [regex, x, y] triples; #canvas pixel x,y is tapped once regex appears.
+      clicks: [regex, css_selector] pairs; the first matching page element is
+        pressed and released with the mouse once regex appears.
       size: Bazel test size.
       tags: Optional Bazel tags.
       visibility: Optional target visibility.
@@ -94,6 +97,8 @@ def web_archive_browser_test(
         args += ["--press", _shell_quote(pattern), _shell_quote(key)]
     for pattern, x, y in taps:
         args += ["--tap", _shell_quote(pattern), str(x), str(y)]
+    for pattern, selector in clicks:
+        args += ["--click", _shell_quote(pattern), _shell_quote(selector)]
     if offline:
         args += ["--offline", _shell_quote(offline[0]), _shell_quote(offline[1])]
     data = [archive, _SERVER]

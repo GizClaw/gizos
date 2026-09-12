@@ -177,13 +177,13 @@ config.webrtc = h2_web_platform_webrtc_api(platform);
 
 ### Example 与 E2E 的 Web target
 
-`//libs/app_host` 是通用 Web launcher：创建 platform、可选持久 Filesystem 与 LVGL platform，组装完整 Web Runtime（其余能力为 canonical unsupported），在 task 中初始化 Runtime、运行 App、deinit Runtime（Runtime 的 input task 只能从 task 中 join），再关闭 Filesystem 并销毁 platform。可选 `buttons` 把 DOM `KeyboardEvent.key` 的 keydown/keyup 写成 `h2_runtime_button_push_edge()` edge，click/long-press 仍由 Runtime 判定。`run_ms` 让无终止条件的 App 在测试中停止：先让 `should_stop` 为真，2 秒宽限后取消 App task，使其下一次 PAL 等待返回 `EXIT`。控制台与 `#status` 输出 `H2_WEB_APP name=<app> stage=running|ready|stop-requested|cancel` 与 `H2_WEB_APP name=<app> result=PASS rc=0 fs=0 destroy=0`；PASS 要求 App 返回 OK 且 Filesystem 关闭、platform 销毁都成功。新 target 只需 `main.c` 与 `h2_web_app()`，宏生成 `.web.tar`、`:serve` 与 `:browser_test`。
+`//libs/app_host` 是通用 Web launcher：创建 platform、可选持久 Filesystem 与 LVGL platform，组装完整 Web Runtime（其余能力为 canonical unsupported），在 task 中初始化 Runtime、运行 App、deinit Runtime（Runtime 的 input task 只能从 task 中 join），再关闭 Filesystem 并销毁 platform。可选 `buttons` 描述 Runtime Button：`{component_id, key, name}`。输入全部由 shell 的 JavaScript 处理：`key`（DOM `KeyboardEvent.key`）和页面 panel 中所有 `data-h2-button="<name>"` 元素（鼠标、触摸）共同按住同一个 Button，合并成一个按下状态后才写 `h2_runtime_button_push_edge()` edge；页面失焦、隐藏或 App 结束时全部释放，click/long-press 仍由 Runtime 判定。按钮布局用 `h2_web_app(panel = "panel.html")` 描述：这段 HTML（可带 `<style>`）在构建时注入 shell 的 Canvas 下方，外观和位置完全由 CSS 决定，按下时元素带 `data-pressed="true"`；不给 panel 时只有键盘输入。`run_ms` 让无终止条件的 App 在测试中停止：先让 `should_stop` 为真，2 秒宽限后取消 App task，使其下一次 PAL 等待返回 `EXIT`。控制台与 `#status` 输出 `H2_WEB_APP name=<app> stage=running|ready|stop-requested|cancel` 与 `H2_WEB_APP name=<app> result=PASS rc=0 fs=0 destroy=0`；PASS 要求 App 返回 OK 且 Filesystem 关闭、platform 销毁都成功。新 target 只需 `main.c` 与 `h2_web_app()`，宏生成 `.web.tar`、`:serve` 与 `:browser_test`。
 
 只运行一个 Lua 脚本的 App 不需要 `main.c`：`//libs/lua/web:lua_web_app.bzl` 的
 `h2_lua_web_app(name, script, buttons, exit_button, extension)` 用
 `h2_lua_resource()` 嵌入脚本，并把通用入口 `src/h2_web_lua_app.c` 交给
 `h2_web_app()`。`buttons` 是有序的 Button 名到 DOM `KeyboardEvent.key` 的映射
-（最多 8 个），按顺序得到 Runtime component id 1..N，脚本从 `args.<name>` 读取；
+（最多 8 个，key 可为空），按顺序得到 Runtime component id 1..N，脚本从 `args.<name>` 读取，panel 中 `data-h2-button="<name>"` 的元素驱动同一个 Button；
 Button event 转发给 Lua job。`exit_button` 的事件不进入脚本，默认在 release
 Action 上取消 job，页面 Stop 同样取消 job 并以 OK 结束。job 第一次进入
 WAITING 时输出 `stage=ready`；脚本失败时打印 `H2_WEB_LUA_APP job state=...`
@@ -201,7 +201,7 @@ release 规则，例如只接受长按。`run_ms` 非零时在该时长后发出
 `@gizos//libs/app_host:web_app.bzl` 与
 `@gizos//libs/lua/web:lua_web_app.bzl`。
 
-`tools/bazel/web_archive.bzl` 的 `web_archive_browser_test()` 在 pinned Chromium（或 `H2_WEB_TEST_BROWSER`）中打开 archive：以用户手势点击 `#start`，收集 Console、异常与页面文本；全部 `passes` 正则出现即通过，`fails` 正则、`Aborted(`、`RuntimeError: `、未捕获异常或超时即失败。可选 `presses`（DOM 按键）、`taps`（Canvas 像素点击）、`canvas_min`（最少非黑像素）、`offline`（断网/恢复）与 `webrtc_server`（Pion fixture）。
+`tools/bazel/web_archive.bzl` 的 `web_archive_browser_test()` 在 pinned Chromium（或 `H2_WEB_TEST_BROWSER`）中打开 archive：以用户手势点击 `#start`，收集 Console、异常与页面文本；全部 `passes` 正则出现即通过，`fails` 正则、`Aborted(`、`RuntimeError: `、未捕获异常或超时即失败。可选 `presses`（DOM 按键）、`taps`（Canvas 像素点击）、`clicks`（按 CSS selector 点击页面元素）、`canvas_min`（最少非黑像素）、`offline`（断网/恢复）与 `webrtc_server`（Pion fixture）。
 
 | Target | 浏览器测试验证 |
 |---|---|
@@ -215,7 +215,7 @@ release 规则，例如只接受长按。`run_ms` 非零时在该时长后发出
 | `audio-system` | `--preload-file` 只读根上的 Opus 资源播放、fake 麦克风非静音 PCM 回环、worker join |
 | `tap-reset` | LVGL App 在 Web task 中渲染、Canvas 点击、停止后 LVGL/Runtime 干净退出 |
 | `lua-flappybird` | Canvas 点击、Escape → Back 取消并退出 |
-| `lua-script` | `h2_lua_web_app()`：脚本校验 Button args 后 ready；Enter 触发脚本 OK 回调；一次 Escape（exit Button）release 取消 job 并 PASS |
+| `lua-script` | `h2_lua_web_app()` + panel：脚本校验 Button args 后 ready；点击 panel 的 `data-h2-button=ok` 元素触发脚本 OK 回调；一次 Escape（exit Button）release 取消 job 并 PASS |
 | `lua-script-stop` | 不按键，`run_ms` 发出 Stop 请求（`stage=stop-requested`），取消 job 后 PASS |
 | `lua-script-extension` | extension 注册的 capability 可用；`exit_requested` 拒绝第一次 Escape、job 继续运行，第二次 Escape 取消并 PASS |
 | `mp4-player`（manual） | WebCodecs H.264/AAC 播放完成；`:large_browser_test` 播放 1024×600 大文件；需 `H2_WEB_TEST_BROWSER` 指向 Google Chrome |

@@ -1,4 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_python//python:defs.bzl", "py_binary")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
 
@@ -6,6 +7,20 @@ package(default_visibility = ["//visibility:public"])
 
 # Shared Start/Stop shell for Web App targets built with h2_web_app().
 exports_files(["shell.html"])
+
+# Build tool: writes a shell with an h2_web_app(panel = ...) fragment injected.
+py_binary(
+    name = "inject_panel",
+    srcs = ["inject_panel.py"],
+    legacy_create_init = 0,
+    main = "inject_panel.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
 
 # App launcher layer, Web only for now: builds the Runtime from the Web PAL
 # provider, runs the caller's App entry and tears everything down. It does not

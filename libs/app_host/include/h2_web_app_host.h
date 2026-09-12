@@ -31,10 +31,18 @@ typedef h2_pal_result_t (*h2_web_app_host_entry_fn)(h2_web_app_host_t *host,
                                                     h2_runtime_t *runtime,
                                                     void *user);
 
-/** One Runtime Button driven by a DOM key (KeyboardEvent.key, e.g. "Escape"). */
+/**
+ * One Runtime Button driven from the page. The shell's JavaScript owns the
+ * input: it binds `key` (KeyboardEvent.key, e.g. "Escape"; NULL for none) and
+ * every element marked `data-h2-button="<name>"` in the page panel (pointer
+ * and touch; NULL name for none), merges them into one pressed state and
+ * pushes Down/Up edges. Layout is plain HTML/CSS supplied through
+ * h2_web_app(panel = ...).
+ */
 typedef struct h2_web_app_host_button {
   h2_runtime_component_id_t component_id;
   const char *key;
+  const char *name;
 } h2_web_app_host_button_t;
 
 #define H2_WEB_APP_HOST_MAX_BUTTONS 8u
@@ -58,9 +66,10 @@ typedef struct h2_web_app_host_config {
   int lvgl;
   /**
    * Optional push-edge Buttons. The host exposes them as single-button
-   * peripherals with a component mapper, starts Runtime input, and turns
-   * keydown/keyup of each key into h2_runtime_button_push_edge() edges;
-   * click and long-press remain Runtime decisions.
+   * peripherals with a component mapper, starts Runtime input and hands the
+   * table to the page, whose keyboard and panel elements push
+   * h2_runtime_button_push_edge() edges; click and long-press remain Runtime
+   * decisions.
    */
   const h2_web_app_host_button_t *buttons;
   size_t button_count;

@@ -15,6 +15,35 @@ _HOSTS = select({
     "//conditions:default": ["@platforms//:incompatible"],
 })
 
+def _panel_shell_impl(ctx):
+    args = ctx.actions.args()
+    args.add("--shell", ctx.file.shell)
+    args.add("--panel", ctx.file.panel)
+    args.add("--out", ctx.outputs.out)
+    ctx.actions.run(
+        executable = ctx.executable._tool,
+        arguments = [args],
+        inputs = [ctx.file.shell, ctx.file.panel],
+        outputs = [ctx.outputs.out],
+        mnemonic = "H2WebAppPanel",
+        progress_message = "Injecting Web App panel %{label}",
+    )
+    return [DefaultInfo(files = depset([ctx.outputs.out]))]
+
+_panel_shell = rule(
+    implementation = _panel_shell_impl,
+    attrs = {
+        "out": attr.output(mandatory = True),
+        "panel": attr.label(allow_single_file = [".html"], mandatory = True),
+        "shell": attr.label(allow_single_file = [".html"], mandatory = True),
+        "_tool": attr.label(
+            default = Label("//libs/app_host:inject_panel"),
+            executable = True,
+            cfg = "exec",
+        ),
+    },
+)
+
 def h2_web_app(
         name,
         srcs,
@@ -30,6 +59,8 @@ def h2_web_app(
         canvas_min = 0,
         presses = [],
         taps = [],
+        clicks = [],
+        panel = None,
         linkopts = []):
     """Declares `<name>` (web tar), `serve` and `browser_test` targets.
 
@@ -48,15 +79,29 @@ def h2_web_app(
       canvas_min: Non-black canvas pixels the App must leave on screen.
       presses: [regex, key] pairs the browser test presses as keys.
       taps: [regex, x, y] canvas taps the browser test performs.
+      clicks: [regex, css_selector] page-element clicks the browser test
+        performs (pointer press and release at the element centre).
+      panel: Optional HTML file (markup plus <style>) injected into the shell
+        below the canvas. Elements marked data-h2-button="<name>" drive the
+        Button with that name in h2_web_app_host_config_t; layout is free.
       linkopts: Extra Emscripten link options.
     """
+    shell = _SHELL
+    if panel:
+        _panel_shell(
+            name = name + "_shell",
+            out = name + "_shell.html",
+            panel = panel,
+            shell = _SHELL,
+        )
+        shell = ":" + name + "_shell.html"
     preload_opts = []
     for label, path in preload.items():
         preload_opts += ["--preload-file", "$(location %s)@%s" % (label, path)]
     cc_binary(
         name = "_wasm/index",
         srcs = srcs,
-        additional_linker_inputs = [_SHELL] + preload.keys(),
+        additional_linker_inputs = [shell] + preload.keys(),
         conlyopts = H2_C11_OPTS,
         copts = H2_WARNING_COPTS,
         features = ["-output_format_js"],
@@ -68,7 +113,7 @@ def h2_web_app(
             "-sSTACK_SIZE=1048576",
             "-sNO_EXIT_RUNTIME=1",
             "--shell-file",
-            "$(location %s)" % _SHELL,
+            "$(location %s)" % shell,
             "--oformat=html",
         ] + preload_opts + linkopts,
         target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
@@ -112,4 +157,5 @@ def h2_web_app(
         canvas_min = canvas_min,
         presses = presses,
         taps = taps,
+        clicks = clicks,
     )

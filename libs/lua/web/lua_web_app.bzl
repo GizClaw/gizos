@@ -47,7 +47,8 @@ def h2_lua_web_app(
       name: Archive target name; also the `H2_WEB_APP name=` marker.
       script: Label of the `.lua` source.
       buttons: Ordered dict of Button name ([a-z0-9_]) to the DOM
-        `KeyboardEvent.key` that drives it, at most 8.
+        `KeyboardEvent.key` that drives it ("" for none), at most 8. Panel
+        elements marked data-h2-button="<name>" drive the same Button.
       exit_button: Optional Button name that cancels the job.
       extension: Optional cc_library defining `h2_web_lua_app_extension`
         (//libs/lua/web:lua_app_extension) to register
