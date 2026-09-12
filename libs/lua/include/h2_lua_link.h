@@ -11,8 +11,13 @@
 extern "C" {
 #endif
 
-/** Largest message accepted by link.send() and delivered as LINK_MESSAGE. */
+/** Largest reliable message accepted by link.send(). */
 #define H2_LUA_LINK_MESSAGE_MAX 256u
+/** Upper bound for link.send_unreliable(); the connection's ATT MTU - 3 may
+ * be lower and is reported as max_datagram in LINK_CONNECTED. */
+#define H2_LUA_LINK_UNRELIABLE_MAX 244u
+/** Stream bytes buffered for link.read() before the peer is back-pressured. */
+#define H2_LUA_LINK_STREAM_BUFFER_SIZE 4096u
 /** Longest session tag accepted by link.host() and link.join(). */
 #define H2_LUA_LINK_TAG_MAX 32u
 

@@ -319,7 +319,8 @@ static h2_pal_result_t fake_register(
     if (atomic_exchange(&runtime->fail_next_register, 0) != 0) {
         return H2_PAL_ERR_NO_MEMORY;
     }
-    if (count != 1u || services == NULL || services[0].characteristic_count != 2u) {
+    if (count != 1u || services == NULL || services[0].characteristic_count < 2u ||
+        services[0].characteristic_count > 2u + H2_BLEIKCP_SERVER_EXTRA_CHARACTERISTIC_MAX) {
         return H2_PAL_ERR_UNSUPPORTED;
     }
     runtime->service = services;
@@ -661,6 +662,73 @@ static void test_task_name_ownership(const h2_bleikcp_api_t *api) {
     CHECK(resolved.value.server_task_options.min_stack_size == 8u * 1024u);
 }
 
+static atomic_int s_extra_writes;
+
+static h2_pal_result_t extra_write(
+    void *user,
+    const h2_pal_ble_gatt_access_t *access,
+    const uint8_t *data,
+    size_t len) {
+    (void)user;
+    CHECK(access != NULL && access->attr_handle == 6u);
+    CHECK(len == 3u && memcmp(data, "abc", 3u) == 0);
+    atomic_fetch_add(&s_extra_writes, 1);
+    return H2_PAL_OK;
+}
+
+static int idle_handler(void *user, h2_bleikcp_t *stream, uint16_t conn_handle) {
+    (void)user;
+    (void)stream;
+    (void)conn_handle;
+    return H2_PAL_OK;
+}
+
+/* Caller characteristics join the server's own service after TX and RX. */
+static void test_extra_characteristics(
+    fake_runtime_t *runtime,
+    const h2_bleikcp_api_t *api) {
+    static const uint8_t extra_uuid[] = { 0xe3u, 0xfeu };
+    uint16_t extra_value_handle = H2_PAL_BLE_INVALID_ATTR_HANDLE;
+    uint16_t extra_cccd_handle = H2_PAL_BLE_INVALID_ATTR_HANDLE;
+    const h2_pal_ble_gatt_characteristic_t extra = {
+        .uuid = { extra_uuid, sizeof(extra_uuid) },
+        .properties = H2_PAL_BLE_GATT_PROPERTY_WRITE_NO_RSP |
+                      H2_PAL_BLE_GATT_PROPERTY_NOTIFY,
+        .permissions = H2_PAL_BLE_GATT_PERMISSION_WRITE,
+        .write = extra_write,
+        .out_value_handle = &extra_value_handle,
+        .out_cccd_handle = &extra_cccd_handle,
+    };
+    h2_bleikcp_server_t *server = NULL;
+    h2_bleikcp_config_t config = {
+        .extra_characteristics = &extra,
+        .extra_characteristic_count =
+            H2_BLEIKCP_SERVER_EXTRA_CHARACTERISTIC_MAX + 1u,
+    };
+    CHECK(h2_bleikcp_server_open(api, &config, idle_handler, NULL, &server) ==
+          H2_PAL_ERR_INVALID_ARG);
+    config.extra_characteristics = NULL;
+    config.extra_characteristic_count = 1u;
+    CHECK(h2_bleikcp_server_open(api, &config, idle_handler, NULL, &server) ==
+          H2_PAL_ERR_INVALID_ARG);
+    CHECK(server == NULL);
+
+    config.extra_characteristics = &extra;
+    CHECK(h2_bleikcp_server_open(api, &config, idle_handler, NULL, &server) ==
+          H2_PAL_OK);
+    CHECK(runtime->service != NULL);
+    CHECK(runtime->service->characteristic_count == 3u);
+    CHECK(runtime->service->characteristics[2].write == extra_write);
+    CHECK(extra_value_handle == 6u && extra_cccd_handle == 7u);
+    CHECK(h2_pal_ble_gatt_write(
+              api->ble, 5u, extra_value_handle, (const uint8_t *)"abc", 3u,
+              false, 1000u) == H2_PAL_OK);
+    CHECK(atomic_load(&s_extra_writes) == 1);
+    CHECK(h2_bleikcp_server_close(server) == H2_PAL_OK);
+    CHECK(runtime->service == NULL);
+    runtime->unregister_count = 0;
+}
+
 static void stream_event(
     void *user,
     h2_bleikcp_t *stream,
@@ -781,6 +849,7 @@ int main(void) {
     test_task_name_ownership(&api);
     test_flush_result_precedence(&api);
     test_nonprogress_does_not_wake_data_waiters(&runtime, &api);
+    test_extra_characteristics(&runtime, &api);
     handler_state_t handler_state = { .api = &api };
     event_state_t event_state = {0};
     h2_bleikcp_config_t config = {

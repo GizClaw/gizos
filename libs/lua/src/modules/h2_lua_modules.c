@@ -3038,16 +3038,20 @@ static int lua_link_on(lua_State *state) {
 }
 
 /* Builtin `link` surface. Without an installed provider every operation fails
- * cleanly; h2_lua_link_enable() replaces host/join/send/close/state. */
+ * cleanly; h2_lua_link_enable() replaces host, join, send, send_unreliable,
+ * write, read, close and state. */
 static int open_link(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  lua_createtable(state, 0, 8);
+  lua_createtable(state, 0, 11);
   set_function(state, "available", lua_link_available, job);
   set_function(state, "on", lua_link_on, job);
   set_function(state, "off", lua_runtime_off, job);
   set_function(state, "host", lua_link_unavailable, job);
   set_function(state, "join", lua_link_unavailable, job);
   set_function(state, "send", lua_link_unavailable, job);
+  set_function(state, "send_unreliable", lua_link_unavailable, job);
+  set_function(state, "write", lua_link_unavailable, job);
+  set_function(state, "read", lua_link_unavailable, job);
   set_function(state, "close", lua_link_close_unavailable, job);
   set_function(state, "state", lua_link_state_unavailable, job);
   if (job->host->link_hooks != NULL) {

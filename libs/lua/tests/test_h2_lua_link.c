@@ -229,11 +229,12 @@ static h2_pal_result_t fake_register(void *user,
                                      const h2_pal_ble_gatt_service_t *services,
                                      size_t count) {
   fake_device_t *device = user;
-  assert(count == 1u && services[0].characteristic_count == 2u);
+  /* KCP TX, KCP RX and the datagram characteristic in one service. */
+  assert(count == 1u && services[0].characteristic_count == 3u);
   if (services[0].out_service_handle != NULL) {
     *services[0].out_service_handle = 1u;
   }
-  for (size_t i = 0u; i < 2u; ++i) {
+  for (size_t i = 0u; i < services[0].characteristic_count; ++i) {
     const h2_pal_ble_gatt_characteristic_t *ch =
         &services[0].characteristics[i];
     if (ch->out_value_handle != NULL) {
@@ -368,7 +369,7 @@ fake_discover(void *user, uint16_t conn_handle,
         .kind = request->kind,
         .uuid = service->uuid,
         .start_handle = 1u,
-        .end_handle = 5u,
+        .end_handle = 7u,
     };
     *out_count = 1u;
     return H2_PAL_OK;
@@ -391,10 +392,11 @@ fake_discover(void *user, uint16_t conn_handle,
     }
     return H2_PAL_ERR_NOT_FOUND;
   }
+  /* Each characteristic's CCCD directly follows its value handle. */
   entries[0] = (h2_pal_ble_gatt_discovery_entry_t){
       .kind = request->kind,
       .uuid = {cccd_uuid, sizeof(cccd_uuid)},
-      .value_handle = 3u,
+      .value_handle = request->start_handle,
   };
   *out_count = 1u;
   return H2_PAL_OK;
@@ -682,6 +684,8 @@ static h2_lua_job_status_t wait_job(h2_lua_host_t *host, h2_lua_job_id_t job) {
     }
     (void)h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
   }
+  fprintf(stderr, "job %u stuck: state=%d message=%s\n", (unsigned)job,
+          (int)status.state, status.message);
   assert(!"Lua job did not finish");
   return status;
 }
@@ -721,8 +725,11 @@ static int device_released(void *user) {
 #define LUA_PRELUDE                                                           \
   "local link=require('link');local rt=require('runtime');"                   \
   "local ev=rt.event;local s={msgs={}};"                                      \
-  "link.on(ev.LINK_CONNECTED,function(e) s.role=e.role end);"                 \
-  "link.on(ev.LINK_MESSAGE,function(e) s.msgs[#s.msgs+1]=e.data end);"        \
+  "s.dgrams={};"                                                               \
+  "link.on(ev.LINK_CONNECTED,function(e) s.role=e.role;"                      \
+  "s.max_datagram=e.max_datagram end);"                                        \
+  "link.on(ev.LINK_MESSAGE,function(e) local q=e.reliable and s.msgs "        \
+  "or s.dgrams;q[#q+1]=e.data end);"                                          \
   "link.on(ev.LINK_DISCONNECTED,function(e) s.disc=e.reason end);"            \
   "link.on(ev.LINK_ERROR,function(e) s.err=e.reason end);"                    \
   "local function wait(f) for _=1,4000 do if f() then return end "            \
@@ -803,6 +810,49 @@ static const char s_reused_slot[] =
     "assert(link.state()=='idle');"
     "return 'reuse-ok'";
 
+/* Reliable messages, unreliable datagrams and the byte stream over one link. */
+static const char s_host_transports[] =
+    LUA_PRELUDE
+    "local ok,err=link.send_unreliable('x');assert(ok==nil and err=='link: not connected');"
+    "ok,err=link.write('x');assert(ok==nil and err=='link: not connected');"
+    "assert(link.host({tag=args.tag}));"
+    "wait(function() return s.role end);"
+    "assert(s.max_datagram==244,s.max_datagram);"
+    "assert(link.read(16,0)=='');"
+    "assert(not pcall(link.send_unreliable,string.rep('d',245)));"
+    "assert(not pcall(link.send_unreliable,''));"
+    "assert(not pcall(link.read,0));"
+    "for i=1,3 do assert(link.send_unreliable('u'..i)) end;"
+    "local t={};for i=0,250 do t[#t+1]=string.char(i) end;"
+    "local data=table.concat(t):rep(80):sub(1,20000);t=nil;"
+    "local first=assert(link.write(data));local off=first+1;"
+    "while off<=#data do local n=assert(link.write(data:sub(off,off+2047)));"
+    "off=off+n;if n==0 then rt.sleep(1) end end;"
+    "assert(first<#data,'stream never back-pressured');"
+    "assert(link.send('stream-sent'));"
+    "wait(function() return #s.msgs==1 and #s.dgrams==1 end);"
+    "assert(s.msgs[1]=='got:20000',s.msgs[1]);assert(s.dgrams[1]=='j1');"
+    "wait(function() return s.disc end);assert(s.disc=='peer_closed',s.disc);"
+    "local r,rerr=link.read(16,0);assert(r==nil and rerr=='link: closed',rerr);"
+    "return 'transports-ok'";
+
+static const char s_join_transports[] =
+    LUA_PRELUDE
+    "assert(link.join({tag=args.tag,timeout_ms=5000}));"
+    "wait(function() return s.role end);"
+    "local total=0;"
+    "while total<20000 do local chunk,rerr=link.read(4096,2000);"
+    "assert(chunk,tostring(rerr)..' after '..total..' state '..link.state());"
+    "for i=1,#chunk do assert(chunk:byte(i)==(total+i-1)%251,'stream byte '..total+i) end;"
+    "total=total+#chunk end;"
+    "wait(function() return #s.msgs==1 and #s.dgrams==3 end);"
+    "assert(s.msgs[1]=='stream-sent');"
+    "for i=1,3 do assert(s.dgrams[i]=='u'..i,s.dgrams[i]) end;"
+    "local u,uerr=link.send_unreliable('j1');assert(u,'unreliable '..tostring(uerr));"
+    "assert(link.send('got:'..total));"
+    "rt.sleep(100);"
+    "return 'transports-ok'";
+
 static const char s_wait_lost[] =
     LUA_PRELUDE
     "if args.tag=='lost-host' then assert(link.host({tag='lost'})) "
@@ -849,6 +899,9 @@ static const char s_unavailable[] =
     "local ok,err=link.host({tag='x'});assert(ok==nil and err=='link: unavailable');"
     "ok,err=link.join({tag='x'});assert(ok==nil and err=='link: unavailable');"
     "ok,err=link.send('x');assert(ok==nil and err=='link: unavailable');"
+    "ok,err=link.send_unreliable('x');assert(ok==nil and err=='link: unavailable');"
+    "ok,err=link.write('x');assert(ok==nil and err=='link: unavailable');"
+    "ok,err=link.read(16,0);assert(ok==nil and err=='link: unavailable');"
     "assert(link.close()==true);assert(link.state()=='unavailable');"
     "local h=link.on(rt.event.LINK_MESSAGE,function() end);"
     "assert(link.off(h)==true);"
@@ -903,6 +956,20 @@ static void test_round_trip_and_peer_close(void) {
                                 "tetris-duel");
   expect_success(pair.host[1], join, "join-ok");
   expect_success(pair.host[0], host, "host-ok");
+  wait_until(device_released, &pair.air.devices[0]);
+  wait_until(device_released, &pair.air.devices[1]);
+  pair_close(&pair);
+}
+
+static void test_three_transports(void) {
+  pair_t pair;
+  pair_open(&pair);
+  h2_lua_job_id_t host =
+      submit(pair.host[0], "@transports.lua", s_host_transports, "duel");
+  h2_lua_job_id_t join =
+      submit(pair.host[1], "@transports.lua", s_join_transports, "duel");
+  expect_success(pair.host[0], host, "transports-ok");
+  expect_success(pair.host[1], join, "transports-ok");
   wait_until(device_released, &pair.air.devices[0]);
   wait_until(device_released, &pair.air.devices[1]);
   pair_close(&pair);
@@ -1082,13 +1149,23 @@ static void test_capability_off(void) {
 }
 
 int main(void) {
+  fprintf(stderr, "== test_capability_off\n");
   test_capability_off();
+  fprintf(stderr, "== test_round_trip_and_peer_close\n");
   test_round_trip_and_peer_close();
+  fprintf(stderr, "== test_three_transports\n");
+  test_three_transports();
+  fprintf(stderr, "== test_flow_control_keeps_order\n");
   test_flow_control_keeps_order();
+  fprintf(stderr, "== test_release_during_traffic\n");
   test_release_during_traffic();
+  fprintf(stderr, "== test_link_loss\n");
   test_link_loss();
+  fprintf(stderr, "== test_job_exit_releases_link\n");
   test_job_exit_releases_link();
+  fprintf(stderr, "== test_host_destroy_releases_link\n");
   test_host_destroy_releases_link();
+  fprintf(stderr, "== test_tag_mismatch_and_timeouts\n");
   test_tag_mismatch_and_timeouts();
   puts("lua link tests passed");
   return 0;

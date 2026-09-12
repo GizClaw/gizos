@@ -21,6 +21,8 @@ extern "C" {
 #define H2_BLEIKCP_DEFAULT_INPUT_FRAME_CAPACITY 8u
 #define H2_BLEIKCP_DEFAULT_BUFFER_SIZE 2048u
 #define H2_BLEIKCP_MIN_ATT_MTU 53u
+/** Most caller-owned characteristics a server adds to its own service. */
+#define H2_BLEIKCP_SERVER_EXTRA_CHARACTERISTIC_MAX 2u
 
 typedef struct h2_bleikcp h2_bleikcp_t;
 typedef struct h2_bleikcp_server h2_bleikcp_server_t;
@@ -97,6 +99,14 @@ typedef struct h2_bleikcp_config {
     h2_pal_task_options_t server_task_options;
     h2_bleikcp_event_fn on_event;
     void *user;
+    /**
+     * Server only: caller-owned characteristics registered in the same
+     * service after TX and RX, in order. The array, UUIDs, callbacks and
+     * handle storage stay borrowed until h2_bleikcp_server_close() returns.
+     * At most H2_BLEIKCP_SERVER_EXTRA_CHARACTERISTIC_MAX; clients ignore it.
+     */
+    const h2_pal_ble_gatt_characteristic_t *extra_characteristics;
+    size_t extra_characteristic_count;
 } h2_bleikcp_config_t;
 
 #ifdef __cplusplus
