@@ -1,4 +1,5 @@
 #include "jieli_loader_platform.h"
+#include "jieli_warm_boot.h"
 
 #include "asm/includes.h"
 #include "h2_jieli_ac791n_devkit_partitions.h"
@@ -44,6 +45,8 @@ typedef struct h2_jieli_loader_platform {
   int update_active;
   volatile int update_result;
   int update_committed;
+  /* Partition entered by a Loader warm hand-off on the next reboot. */
+  uint32_t warm_partition_id;
   uint16_t reboot_timer_id;
 } h2_jieli_loader_platform_t;
 
@@ -85,11 +88,16 @@ static void reconcile_trial_state(
   char *attempt = NULL;
   int attempt_result = name_space->get_string(
       name_space, allocator, H2_JIELI_TRIAL_ATTEMPT_KEY, &attempt);
+  /* A warm hand-off to an installed App records the same attempt without a
+   * Stage. Either way, only App confirmation removes it. */
+  const int attempt_names_partition_2 =
+      attempt_result == H2_PAL_OK && attempt != NULL &&
+      status.partition_2.valid &&
+      status.partition_2.role == H2_LOADER_IMAGE_ROLE_APP &&
+      strcmp(attempt, status.partition_2.image_checksum) == 0;
   state.app_trial_rolled_back =
       state.running_partition_id == H2_JIELI_PARTITION_LOADER &&
-      stage_is_partition_2 && attempt_result == H2_PAL_OK &&
-      attempt != NULL &&
-      strcmp(attempt, status.partition_2.image_checksum) == 0;
+      attempt_names_partition_2;
   if (attempt != NULL) h2_pal_mem_free(allocator, attempt);
   if (state.app_trial_rolled_back) {
     h2_jieli_loader_diag_write(
@@ -106,7 +114,7 @@ static void reconcile_trial_state(
         (unsigned)reset_reason);
     h2_jieli_loader_diag_write(line);
   }
-  if (!stage_is_partition_2) {
+  if (!stage_is_partition_2 && !attempt_names_partition_2) {
     static const char *const keys[] = {
         H2_JIELI_TRIAL_ATTEMPT_KEY,
         H2_JIELI_TRIAL_CHECKSUM_KEY,
@@ -626,6 +634,19 @@ static int power_get_next(
   return H2_PAL_OK;
 }
 
+/* An installed App is bootable without BootInfo: the ROM keeps selecting the
+ * Loader bank and the Loader hands off to the App bank at its next boot. */
+static int partition_2_app_bootable(void) {
+  h2_loader_status_t status;
+  if (state.app_trial_rolled_back ||
+      h2_loader_read_pref_status(state.pref, state.allocator, &status) !=
+          H2_PAL_OK) {
+    return 0;
+  }
+  return status.partition_2.valid &&
+         status.partition_2.role == H2_LOADER_IMAGE_ROLE_APP;
+}
+
 static int power_set_next(void *user, uint32_t partition_id) {
   char line[128];
   (void)user;
@@ -653,6 +674,17 @@ static int power_set_next(void *user, uint32_t partition_id) {
       state.committed_partition_id = 0u;
       state.committed_size = 0u;
     }
+    state.next_partition_id = partition_id;
+    state.warm_partition_id = 0u;
+    return H2_PAL_OK;
+  }
+  if (!state.update_active && !state.update_committed &&
+      partition_id == H2_JIELI_PARTITION_APP &&
+      state.running_partition_id == H2_JIELI_PARTITION_LOADER) {
+    if (!partition_2_app_bootable()) return H2_PAL_ERR_INVALID_STATE;
+    int attempt_rc = set_trial_attempt(1);
+    if (attempt_rc != H2_PAL_OK) return attempt_rc;
+    state.warm_partition_id = partition_id;
     state.next_partition_id = partition_id;
     return H2_PAL_OK;
   }
@@ -720,13 +752,22 @@ static int power_reboot(void *user, uint32_t reason) {
   (void)reason;
   if (state.next_partition_id != 0u &&
       state.next_partition_id != state.running_partition_id &&
-      !state.update_committed) {
-    /* JieLi exposes no non-destructive selector for an already-programmed
-     * inactive bank. Cross-bank boot is therefore valid only immediately
-     * after this PAL committed a new bank. Never erase the running Loader. */
+      !state.update_committed &&
+      state.warm_partition_id != state.next_partition_id) {
     return H2_PAL_ERR_INVALID_STATE;
   }
   if (state.reboot_timer_id != 0u) return H2_PAL_OK;
+  if (state.warm_partition_id == H2_JIELI_PARTITION_APP) {
+    h2_jieli_warm_boot_request(H2_JIELI_BANK_2_SFC_BASE);
+  } else if (
+      !state.update_committed &&
+      state.running_partition_id == H2_JIELI_PARTITION_LOADER &&
+      state.next_partition_id == H2_JIELI_PARTITION_LOADER) {
+    /* SPIKE: sample the flash window under candidate BASE_ADR values and
+     * forget earlier warm-boot rollback evidence so `reboot app` can retry. */
+    h2_jieli_warm_boot_probe_request();
+    (void)set_trial_attempt(0);
+  }
   char line[128];
   (void)snprintf(
       line, sizeof(line),
@@ -791,6 +832,12 @@ int h2_jieli_loader_platform_init(
       (unsigned)boot_info.codeLength, (unsigned)boot_info.version,
       (unsigned)state.running_partition_id);
   h2_jieli_loader_diag_write(line);
+  (void)snprintf(
+      line, sizeof(line), "H2_JIELI_WARM_BOOT count=%u last_base=0x%x\r\n",
+      (unsigned)h2_jieli_warm_boot_count(),
+      (unsigned)h2_jieli_warm_boot_last_base());
+  h2_jieli_loader_diag_write(line);
+  h2_jieli_warm_boot_report(h2_jieli_loader_diag_write);
   reconcile_trial_state(pref, allocator);
   return H2_PAL_OK;
 }
