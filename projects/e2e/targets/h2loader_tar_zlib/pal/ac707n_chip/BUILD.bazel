@@ -1,0 +1,48 @@
+load("//boards/ac707n_chip/ac707n/layouts/compile_only:defs.bzl", "ac707n_compile_only_firmware")
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+AC707N_COMPATIBILITY = select({
+    "//tools/bazel/platforms:ci_graph": [],
+    "//tools/bazel/platforms:is_ac707n": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+firmware_lib_component(
+    name = "h2loader_lib",
+    component_name = "h2loader_lib",
+    target_compatible_with = AC707N_COMPATIBILITY,
+    deps = ["//projects/h2loader/libs/h2loader"],
+)
+
+firmware_native_component(
+    name = "managed_launcher",
+    srcs = [],
+    component_name = "h2loader_pal_launcher",
+    target_compatible_with = AC707N_COMPATIBILITY,
+    deps = [
+        ":h2loader_lib",
+        "//projects/e2e/native_component_src/jieli/br35/pal:pal_launcher",
+    ],
+)
+
+ac707n_compile_only_firmware(
+    name = "firmware",
+    board = "ac707n_chip",
+    graph = [":managed_launcher"],
+    image = "pal",
+)
+
+h2loader_tar_zlib(
+    name = "package",
+    board = "ac707n_chip",
+    firmware = ":firmware",
+    image = "pal",
+    role = "app",
+    tags = ["no-release"],
+    target = "ac707n",
+    target_compatible_with = AC707N_COMPATIBILITY,
+)

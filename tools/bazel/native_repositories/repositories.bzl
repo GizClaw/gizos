@@ -595,6 +595,20 @@ def _extension_impl(_module_ctx):
         ],
     )
     _local_sdk_repository(
+        name = "h2_jieli_ac707n_sdk",
+        # firmware-devenv exports the SDK root (jieli_ac707n_sdk/SDK) inside
+        # the mirror checkout.
+        allow_subdirectory = True,
+        commit_file = "//tools/bazel:native_versions/jieli_ac707n_sdk_commit.txt",
+        environment_variable = "JIELI_AC707N_SDK_PATH",
+        kind = "jieli-ac707n-sdk",
+        required_files = [
+            "cpu/br35/sdk_ld.c",
+            "cpu/br35/tools/download.c",
+            "cpu/br35/maskrom_stubs.ld",
+        ],
+    )
+    _local_sdk_repository(
         name = "h2_jieli_ac791n_sdk",
         allow_subdirectory = True,
         commit_file = "//tools/bazel:native_versions/jieli_ac791n_sdk_commit.txt",

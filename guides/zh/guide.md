@@ -115,6 +115,15 @@ projects/<group>/apps/<app>/app/          # project group 中的 app
 
 `targets/<artifact-rule>/<app>[/<variant>]` 表示某个 App 的最终产物入口。Firmware variant 可以同时知道具体 App 与 board，提供 `sdkconfig` 等构建配置；host/mobile variant 则拥有对应 lifecycle、package metadata 和 Runtime assembly。入口负责取得 BSP Runtime config、提供 periph-component mapping 并初始化 Runtime；入口代码必须保持薄，不承载可复用业务逻辑。
 
+`native_firmware` 是厂商原生、非 H2Loader 管理的 standalone firmware artifact root：
+入口位于 `projects/<owner>/targets/native_firmware/<app>/<board>/`，终态
+`:firmware` 直接暴露厂商可烧录或升级的镜像以及 ELF、symbol 和 manifest。
+它只用于同一个 portable App 需要独立于 H2Loader package 构建、烧录或升级的情况。
+`h2loader_tar_zlib` 则表示由 H2Loader Host 校验和传输的 format-1 package；即使两者
+消费同一份 native launcher graph，它们仍是不同 artifact contract。可复用 launcher、
+PAL 和 SDK glue 必须留在 `projects/<owner>/native_component_src/` 或顶层
+`native_component_src/`，两个 artifact entry 只选择 graph 和 package metadata。
+
 最终 artifact entry 负责完整的 App 启动和退出生命周期：
 
 1. 完成 SDK 和平台要求的最小启动流程。
