@@ -96,6 +96,7 @@ HTTP、Time、Crypto、allocator 复用已有字段，Task、Queue、Sync 复用
   把 payload 转给产品 `rpc_provider`，未配置 provider 时回复 `UNIMPLEMENTED`。
   服务端只把成功回复计为已送达，因此产品 provider 应在接受提醒后立即成功回复，
   响铃、UI 等动作投递到产品自己的执行上下文，不在 provider 内阻塞。
+- 本地 `playlist_set` 条目可带 `duration_ms`（0 为未知），只用于 `h2_gizclaw_player_play_index_at` 定位，不作为状态里的时长上报；RPC 推送与 `player_play` 的条目时长为 0。时长已知且起点非零时，下载 task 先发 `Range: bytes=0-131071` 解析文件头，解码器读完两个头包后取消该请求，再按头之后的字节率从起点前 2 秒发 `Range: bytes=<offset>-`。响应头里的 `Content-Range` 在第一个 body 字节处核对：探测请求允许缺失（表示服务器忽略 Range，直接在该 200 响应上跳到起点），续传请求必须精确命名所请求的起始字节和文件末尾；结束时 partial 响应必须是 206，字节数等于 `Content-Range` 与 `Content-Length` 声明的长度。解码器从任意字节开始扫描 `OggS`，只接受 CRC 正确、同一 serial、非 BOS 的完整 page；被拒候选里已读的字节原地重扫，超过两个最大 page 仍无可用 page 返回 FORMAT。第一个非 EOS、带 granule 且有 packet 在其上开始的 page 作为锚点，其起点为 granule 减去该 page 上完整 packet 的时长（由 TOC 得出，不解码）；之后预滚 80 ms。结束于起点前 80 ms 之外的 packet 只校验不解码，第一个解码的 packet 前重置 Opus 状态，起点之前的样本丢弃。首个样本的位置与从头播放的计数口径相同，因此 `position_ms` 是 granule 推出的精确值；首个样本前的任何失败（非停止）改用一次普通 GET 顺序跳到起点，文件在起点前结束则该条目在结尾处正常结束。
 - 播放列表支持最多 32 项、读取/替换/追加、从指定索引播放、停止和 off/one/all
   循环模式。失败的列表校验保留旧列表和播放；停止或替换取消在途下载/播放。
   播放中进度按已写入 PCM 扣除队列容量及一个在途帧保守估算，结束时 drain 后

@@ -3123,6 +3123,290 @@ static void test_device_playback_speaker_hooks(void) {
   }
 }
 
+/* Timed start. A fake HTTP server that answers Range the way a static file
+ * server does (or deliberately does not), over a ~10 s low-bitrate stream so
+ * a byte-rate estimate can land anywhere in it. */
+enum {
+  SEEK_SERVER_RANGE,    /* 206 with Content-Range for every Range. */
+  SEEK_SERVER_IGNORE,   /* 200 whole body, no Content-Range. */
+  SEEK_SERVER_MISPLACE, /* Probe honoured; the seek names the wrong bytes. */
+  SEEK_SERVER_NOT_206,  /* Probe honoured; the seek answers 200 whole body. */
+};
+typedef struct seek_test_state {
+  fixture_t fixture;
+  size_t header_len;
+  uint64_t plain16; /* 16 kHz samples a start-from-zero playback emits. */
+  unsigned server;
+  atomic_uint calls, writes;
+  char ranges[8][48];
+} seek_test_state_t;
+static int seek_audio_info(void *user, h2_audio_info_t *out) {
+  (void)user;
+  *out = (h2_audio_info_t){.available = 1, .playback_supported = 1,
+      .playback_format = {.sample_rate_hz = 16000,
+        .frame_samples_per_channel = 160, .channels = 1,
+        .sample_format = H2_AUDIO_SAMPLE_S16LE}};
+  return H2_PAL_OK;
+}
+static int seek_speaker(void *user) { (void)user; return H2_PAL_OK; }
+static int seek_pcm_write(h2_pal_audio_track_t *track,
+                          const h2_audio_frame_t *frame, uint32_t timeout_ms) {
+  (void)timeout_ms;
+  assert(frame->bytes == 320u);
+  atomic_fetch_add(&((seek_test_state_t *)track->user)->writes, 1u);
+  return H2_PAL_OK;
+}
+static int seek_pcm_drain(h2_pal_audio_track_t *track, uint32_t timeout_ms) {
+  (void)track; (void)timeout_ms;
+  return H2_PAL_OK;
+}
+static int seek_pcm_close(h2_pal_audio_track_t *track) {
+  (void)track;
+  return H2_PAL_OK;
+}
+static h2_pal_audio_track_t s_seek_track;
+static int seek_track_create(void *user, const h2_audio_track_config_t *config,
+                             h2_pal_audio_track_t **out) {
+  (void)config;
+  s_seek_track = (h2_pal_audio_track_t){.user = user, .write = seek_pcm_write,
+    .drain = seek_pcm_drain, .close = seek_pcm_close};
+  *out = &s_seek_track;
+  return H2_PAL_OK;
+}
+/* Deliver [first, first + len) in small chunks so cancellation and ring
+ * backpressure are exercised; a cancelled request stops mid-body. */
+static int seek_body(const h2_pal_http_request_t *request, const uint8_t *data,
+                     size_t len) {
+  for (size_t offset = 0; offset < len;) {
+    size_t chunk = len - offset < 700u ? len - offset : 700u;
+    int rc = request->read_cb(request->user, request, data + offset, chunk,
+                              offset + chunk, len - offset - chunk);
+    if (rc != H2_PAL_OK)
+      return rc;
+    offset += chunk;
+  }
+  return H2_PAL_OK;
+}
+static int seek_http(void *user, const h2_pal_http_request_t *request,
+                     h2_pal_http_response_t *response) {
+  seek_test_state_t *state = user;
+  const unsigned call = atomic_fetch_add(&state->calls, 1u);
+  assert(call < 8u);
+  const size_t total = state->fixture.len;
+  unsigned long long first = 0, last = total - 1;
+  bool ranged = false;
+  for (size_t i = 0; i < request->header_count; ++i) {
+    const h2_pal_http_header_t *h = &request->headers[i];
+    if (h->name.len == 5 && !memcmp(h->name.data, "Range", 5)) {
+      assert(h->value.len < sizeof(state->ranges[call]));
+      memcpy(state->ranges[call], h->value.data, h->value.len);
+      state->ranges[call][h->value.len] = 0;
+      ranged = true;
+      char *end = NULL;
+      assert(!strncmp(state->ranges[call], "bytes=", 6));
+      first = strtoull(state->ranges[call] + 6, &end, 10);
+      assert(*end == '-');
+      if (end[1])
+        last = strtoull(end + 1, NULL, 10);
+      if (last > total - 1)
+        last = total - 1;
+    }
+  }
+  const bool partial = ranged && state->server != SEEK_SERVER_IGNORE &&
+                       !(state->server == SEEK_SERVER_NOT_206 && call > 0);
+  if (!partial) {
+    response->status_code = 200;
+    response->content_length = (int64_t)total;
+    return seek_body(request, state->fixture.bytes, total);
+  }
+  assert(first <= last);
+  char value[64];
+  const unsigned long long named =
+      state->server == SEEK_SERVER_MISPLACE && call > 0 ? first + 1 : first;
+  (void)snprintf(value, sizeof(value), "bytes %llu-%llu/%zu", named, last, total);
+  int rc = h2_pal_http_deliver_response_header(request, "Content-Range", 13,
+                                               value, strlen(value));
+  if (rc != H2_PAL_OK)
+    return rc;
+  response->status_code = 206;
+  response->content_length = (int64_t)(last - first + 1);
+  return seek_body(request, state->fixture.bytes + first, last - first + 1);
+}
+/* 500 × 20 ms at 16 kbit/s, ten packets per page, pre-skip 312. */
+static void seek_fixture_build(seek_test_state_t *state) {
+  fixture_t *f = &state->fixture;
+  int rc;
+  OpusEncoder *encoder =
+      opus_encoder_create(16000, 1, OPUS_APPLICATION_AUDIO, &rc);
+  assert(encoder && rc == OPUS_OK);
+  assert(opus_encoder_ctl(encoder, OPUS_SET_BITRATE(16000)) == OPUS_OK);
+  assert(opus_encoder_ctl(encoder, OPUS_SET_VBR(0)) == OPUS_OK);
+  opus_int16 samples[320];
+  for (unsigned i = 0; i < 320; ++i)
+    samples[i] = (opus_int16)((int)(i % 32) * 1000 - 16000);
+  int len = opus_encode(encoder, samples, 320, f->packet, sizeof(f->packet));
+  assert(len > 0 && len < 255);
+  f->packet_len = (size_t)len;
+  opus_encoder_destroy(encoder);
+  headers(f, 55, 1, 312, 0);
+  state->header_len = paginate(f, 55, 500, (size_t)len * 10u, 0);
+  /* 480000 samples less the pre-skip, on the 16 kHz grid. */
+  state->plain16 = 480000u / 3u - (312u + 2u) / 3u;
+}
+static h2_gizclaw_service_t *seek_service(test_env_t *env,
+                                          const h2_pal_audio_api_t *audio,
+                                          const h2_pal_http_api_t *http) {
+  h2_gizclaw_service_t *service = create_profile_service(env);
+  service->client_config.audio = audio;
+  service->client_config.http = http;
+  service->client_config.audio_buffer_bytes = 4096;
+  assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
+  h2_gizclaw_test_set_telemetry_send(device_telemetry, NULL);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  return service;
+}
+/* Play item 0 from start_ms and wait for it to end. Returns the frames
+ * written; the status must end with the item's real length. */
+static unsigned seek_play(h2_gizclaw_service_t *service,
+                          seek_test_state_t *state, uint64_t duration_ms,
+                          uint64_t start_ms, uint64_t buffering_position) {
+  h2_gizclaw_player_playlist_entry_t entry = {
+      .url = device_span("https://example.test/episode.ogg"),
+      .duration_ms = duration_ms};
+  assert(h2_gizclaw_player_playlist_set(service, &entry, 1) == H2_PAL_OK);
+  atomic_store(&state->calls, 0u);
+  atomic_store(&state->writes, 0u);
+  memset(state->ranges, 0, sizeof(state->ranges));
+  assert(h2_gizclaw_player_play_index_at(service, 0, start_ms) == H2_PAL_OK);
+  h2_gizclaw_player_status_t status;
+  assert(h2_gizclaw_player_get_status(service, &status) == H2_PAL_OK);
+  assert(!strcmp(status.state, "buffering"));
+  assert(status.position_ms == buffering_position);
+  speaker_wait_player(service, "ended");
+  assert(h2_gizclaw_player_get_status(service, &status) == H2_PAL_OK);
+  assert(status.has_duration_ms && status.duration_ms == state->plain16 / 16u);
+  assert(status.position_ms == status.duration_ms);
+  return atomic_load(&state->writes);
+}
+/* Frames a playback starting at output sample origin16 writes. */
+static unsigned seek_frames(const seek_test_state_t *state, uint64_t origin16) {
+  return (unsigned)((state->plain16 - origin16 + 159u) / 160u);
+}
+static uint64_t seek_offset(const seek_test_state_t *state, uint64_t start_ms,
+                            uint64_t duration_ms) {
+  const uint64_t aim = start_ms > 2000u ? start_ms - 2000u : 0u;
+  return state->header_len +
+         (uint64_t)((double)(state->fixture.len - state->header_len) *
+                    (double)aim / (double)duration_ms);
+}
+
+static void test_device_player_timed_start(void) {
+  static seek_test_state_t state;
+  memset(&state, 0, sizeof(state));
+  seek_fixture_build(&state);
+  const h2_pal_audio_vtable_t audio_vtable = {.get_info = seek_audio_info,
+    .start_speaker = seek_speaker, .create_track = seek_track_create};
+  const h2_pal_audio_api_t audio = {.user = &state, .vtable = &audio_vtable};
+  const h2_pal_http_vtable_t http_vtable = {.request = seek_http};
+  const h2_pal_http_api_t http = {.user = &state, .vtable = &http_vtable};
+  test_env_t env;
+  h2_gizclaw_service_t *service = seek_service(&env, &audio, &http);
+  char expected[48];
+
+  /* 206: a probe, then one ranged request from 2 s before the start by byte
+   * rate. The landing page is earlier, so the decoder skips to exactly
+   * 7 s; every later sample is written and the end is the real length. */
+  assert(seek_play(service, &state, 10000, 7000, 7000) ==
+         seek_frames(&state, 7000u * 16u));
+  assert(atomic_load(&state.calls) == 2u);
+  assert(!strcmp(state.ranges[0], "bytes=0-131071"));
+  (void)snprintf(expected, sizeof(expected), "bytes=%llu-",
+                 (unsigned long long)seek_offset(&state, 7000, 10000));
+  assert(!strcmp(state.ranges[1], expected));
+  /* The same 206 path with the estimate after the start (a claimed length
+   * barely above the start aims 5 s into 7.001 s, i.e. past 7 s of this
+   * file): it lands on the next whole page after the byte and reports that
+   * page's granule start plus the 80 ms pre-roll, not the requested 7 s.
+   * Pages hold ten 20 ms packets, so page k starts at granule 9600 × k. */
+  const uint64_t page_bytes = 27u + 10u + 10u * state.fixture.packet_len;
+  const uint64_t late = seek_offset(&state, 7000, 7001) - state.header_len;
+  const uint64_t page = (late + page_bytes - 1u) / page_bytes;
+  assert(page * 200u > 7000u);
+  assert(seek_play(service, &state, 7001, 7000, 7000) ==
+         seek_frames(&state, 9600u * page / 3u - 104u + 1280u));
+  assert(atomic_load(&state.calls) == 2u);
+
+  /* start_ms 0 is play_index: one plain GET, no Range. */
+  assert(seek_play(service, &state, 10000, 0, 0) == seek_frames(&state, 0));
+  assert(atomic_load(&state.calls) == 1u && !state.ranges[0][0]);
+  /* Unknown length: plays from 0 and says so. */
+  assert(seek_play(service, &state, 0, 7000, 0) == seek_frames(&state, 0));
+  assert(atomic_load(&state.calls) == 1u && !state.ranges[0][0]);
+
+  /* Server ignores Range: the 200 body is read once and skipped through. */
+  state.server = SEEK_SERVER_IGNORE;
+  assert(seek_play(service, &state, 10000, 7000, 7000) ==
+         seek_frames(&state, 7000u * 16u));
+  assert(atomic_load(&state.calls) == 1u);
+  assert(!strcmp(state.ranges[0], "bytes=0-131071"));
+
+  /* A seek response for other bytes, or a 200 to the ranged seek, is
+   * refused at its first byte; one plain GET then skips to the start. */
+  const unsigned bad[] = {SEEK_SERVER_MISPLACE, SEEK_SERVER_NOT_206};
+  for (size_t i = 0; i < 2u; ++i) {
+    state.server = bad[i];
+    assert(seek_play(service, &state, 10000, 7000, 7000) ==
+           seek_frames(&state, 7000u * 16u));
+    assert(atomic_load(&state.calls) == 3u);
+    assert(!strcmp(state.ranges[0], "bytes=0-131071"));
+    assert(state.ranges[1][0] && !state.ranges[2][0]);
+  }
+
+  /* Offset past the end: a claimed length far beyond the file aims inside
+   * its last (EOS) page, which cannot anchor a timeline. The fallback skips
+   * through the file, finds the start is past its end and ends the item
+   * there with the real length and nothing written. */
+  state.server = SEEK_SERVER_RANGE;
+  assert(seek_play(service, &state, 10000000, 9999999, 9999999) == 0u);
+  assert(atomic_load(&state.calls) == 3u);
+  assert(!state.ranges[2][0]);
+
+  /* Rejections touch nothing: start at or past a known length, bad index. */
+  h2_gizclaw_player_status_t before, after;
+  assert(h2_gizclaw_player_get_status(service, &before) == H2_PAL_OK);
+  assert(h2_gizclaw_player_play_index_at(service, 0, 10000000) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_play_index_at(service, 1, 0) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_play_index_at(NULL, 0, 0) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_get_status(service, &after) == H2_PAL_OK);
+  assert(!memcmp(&before, &after, sizeof(before)));
+
+  /* A remotely pushed item carries no length: timed starts play from 0. */
+  gizclaw_rpc_v1_ClientDeviceAudioPlayerPlaylistSetRequest *push =
+      calloc(1, sizeof(*push));
+  assert(push);
+  push->items_count = 1;
+  strcpy(push->items[0].url, "https://example.test/pushed.ogg");
+  h2_gizclaw_rpc_provider_response_t response;
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_SET,
+      gizclaw_rpc_v1_ClientDeviceAudioPlayerPlaylistSetRequest_fields, push,
+      &response) == 0);
+  free(push);
+  atomic_store(&state.calls, 0u);
+  atomic_store(&state.writes, 0u);
+  memset(state.ranges, 0, sizeof(state.ranges));
+  assert(h2_gizclaw_player_play_index_at(service, 0, 7000) == H2_PAL_OK);
+  assert(h2_gizclaw_player_get_status(service, &after) == H2_PAL_OK);
+  assert(after.position_ms == 0);
+  speaker_wait_player(service, "ended");
+  assert(atomic_load(&state.writes) == seek_frames(&state, 0));
+  assert(atomic_load(&state.calls) == 1u && !state.ranges[0][0]);
+
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_gizclaw_test_set_telemetry_send(NULL, NULL);
+}
+
 /* client.device.find (126) and client.social.ping (127) have no library
  * handler: the device layer forwards them, bytes untouched, to the product
  * rpc_provider, and answers UNIMPLEMENTED when no provider is configured. */
@@ -10890,6 +11174,7 @@ int main(int argc, char **argv) {
   test_req_unary_context_lifetime();
   test_device_provider_pal_and_player();
   test_device_playback_speaker_hooks();
+  test_device_player_timed_start();
   test_device_forwards_find_and_social_ping();
   test_device_identifiers_imeis();
   test_device_ota_telemetry_copy();

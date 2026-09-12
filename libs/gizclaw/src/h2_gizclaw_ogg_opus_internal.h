@@ -4,6 +4,7 @@
 #include "h2/pal/core/h2_pal_errors.h"
 #include "h2/pal/os/h2_pal_mem.h"
 
+#include <stdbool.h>
 #include <stdint.h>
 
 typedef struct h2_gizclaw_ogg_opus h2_gizclaw_ogg_opus_t;
@@ -34,6 +35,31 @@ h2_gizclaw_ogg_opus_create_reader(const h2_pal_mem_api_t *allocator,
 h2_pal_result_t h2_gizclaw_ogg_opus_next(h2_gizclaw_ogg_opus_t *decoder,
                                          uint8_t *pcm, size_t capacity,
                                          size_t *out_len);
+/* True once OpusHead and OpusTags are parsed and no audio page has been
+ * read: the only moment seek() is accepted. A reader has then consumed
+ * exactly the header pages, nothing more. */
+bool h2_gizclaw_ogg_opus_headers_done(const h2_gizclaw_ogg_opus_t *decoder);
+/* Start output at target_ms (16 kHz output timeline, pre-skip removed).
+ * Packets ending more than 80 ms before the target are parsed and validated
+ * but not decoded; the Opus state is reset before the first decoded packet
+ * and samples before the target are discarded.
+ * With resync the reader has been switched to a stream that begins at an
+ * arbitrary byte of the same file: the decoder scans for the next "OggS",
+ * accepts only a complete non-BOS page of this stream with a valid CRC,
+ * anchors its timeline on the first such page that is not EOS and has a
+ * packet starting on it (granule minus the durations of the packets
+ * completed there), and pre-rolls 80 ms from that point. No page before the
+ * end, or more than two maximum pages of unusable bytes, is FORMAT.
+ * INVALID_STATE unless headers_done(); resync needs a reader decoder. */
+h2_pal_result_t h2_gizclaw_ogg_opus_seek(h2_gizclaw_ogg_opus_t *decoder,
+                                         uint64_t target_ms, bool resync);
+/* Output-timeline index (16 kHz samples) of the first sample next() emits,
+ * counted exactly as a playback from the start would count it. Always 0 and
+ * true without a seek; false while a seek has not produced its first sample.
+ * A stream that ends (or reaches a chained stream) before the target
+ * reports that boundary. */
+bool h2_gizclaw_ogg_opus_origin(const h2_gizclaw_ogg_opus_t *decoder,
+                                uint64_t *samples);
 void h2_gizclaw_ogg_opus_destroy(h2_gizclaw_ogg_opus_t *decoder);
 
 #endif
