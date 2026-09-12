@@ -79,7 +79,25 @@ Stack/BIM、layout 和最终 ELF 仍由 native Make 拥有。
 
 ## JieLi external rule
 
-`jieli_firmware` 用一个 rule 覆盖杰理各系列：`target = br23`（AC695N）与 `target = wl82`（AC791N）。Firmware entry 只为仓库自己的 portable App 建立，位于 `projects/<project>/targets/jieli_firmware/<image>/<board>/`。`--config=ac695n` / `--config=ac791n` 仅用 `--repo_env` 把 `JIELI_AC695N_SDK_PATH` / `JIELI_AC791N_SDK_PATH` 交给对应 `@h2_jieli_<family>_sdk`，并把 `JIELI_TOOLCHAIN_ROOT`、`JIELI_POSTBUILD_ROOT` 交给共用的 `@h2_jieli_toolchain` 与 `@h2_jieli_postbuild`；这两个 repository 不下载（上游短链不可 pin），而是用 `toolchain_identity.py` 按 `tools/bazel/native_versions/jieli_toolchain_archives.txt` 校验 firmware-devenv 解包出的 expanded tree。SDK repository 验证 `native_versions/jieli_<family>_sdk_commit.txt` exact commit 与 tracked cleanliness。
+`jieli_firmware` external rule 覆盖 `target = br23`（AC695N）、`target = br35`
+（AC707N）与 `target = wl82`（AC791N）。它是构建 provider，不等同于 artifact
+root。现有 `targets/jieli_firmware/reference-smoke/<board>/` 保留为仅验证完整
+native link 的历史 smoke artifact；需要表达 portable App standalone 固件的新增入口
+使用 `projects/<owner>/targets/native_firmware/<app>/<board>/`，终态 `:firmware`
+直接返回 vendor ELF、symbol、NOR/FW/UFW 和 manifest。需要 H2Loader format-1
+package 时，在同一 owner 的 `targets/h2loader_tar_zlib/<app>/<board>/` 增加
+`:package`，并复用相同的 project-local native launcher graph；package 不能反向成为
+standalone artifact 的 owner。
+
+`--config=ac695n` / `--config=ac707n` / `--config=ac791n` 只用 `--repo_env`
+把 `JIELI_AC695N_SDK_PATH` / `JIELI_AC707N_SDK_PATH` /
+`JIELI_AC791N_SDK_PATH` 交给对应 `@h2_jieli_<family>_sdk`，并把
+`JIELI_TOOLCHAIN_ROOT`、`JIELI_POSTBUILD_ROOT` 交给共用的
+`@h2_jieli_toolchain` 与 `@h2_jieli_postbuild`；这些 repository 不下载
+（上游短链不可 pin），而是用 `toolchain_identity.py` 按
+`tools/bazel/native_versions/jieli_toolchain_archives.txt` 校验 firmware-devenv
+解包出的 expanded tree。SDK repository 验证
+`native_versions/jieli_<family>_sdk_commit.txt` exact commit 与 tracked cleanliness。
 
 Runner 把 pinned SDK 子树复制到 invocation-local 目录，用 Bazel 验证过的 `pi32v2/bin` 覆盖 `TOOL_DIR`，并从 `boards/<board>/<chip>/layouts/<profile>/project.mk` 驱动仓库自有 native project。Project 明确拥有 SDK source inventory、flags、linker inputs 与 generated outputs；`tools/bazel/jieli/h2_project_rules.mk` 只追加 Bazel native sources 与 archives，不能 include SDK application Makefile。随后仓库自有 `tools/bazel/jieli/local_post_<target>.sh` 用 Linux `isd_download`/`fw_add`/`ufw_maker` 本地出包。Portable archive 由 `@h2_jieli_pi32v2_cc_toolchain` 编译为非 LTO ELF 对象，SDK source object 为 LTO bitcode。每个 target 固定返回 `firmware/firmware.elf`、`symbols.txt`、`jl_isd.bin`、`jl_isd.fw`、`update.ufw` 与 `manifest.json`。
 
