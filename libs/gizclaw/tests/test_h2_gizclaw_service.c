@@ -3019,6 +3019,14 @@ static void speaker_play_sound(h2_gizclaw_service_t *service,
   assert(response.on_complete != NULL);
   response.on_complete(response.complete_user, H2_PAL_OK);
   wait_for_count(&state->closes, expected_releases);
+  /* The worker still holds the action reservation after the close and the
+   * release (decoder teardown and download join follow), and any action
+   * issued before it clears is refused BUSY. Wait for the action itself. */
+  for (unsigned i = 0; h2_gizclaw_device_action_pending_internal(service);
+       ++i) {
+    assert(i < 5000u && "sound action did not finish");
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  }
 }
 
 static void test_device_playback_speaker_hooks(void) {
@@ -9222,7 +9230,10 @@ static void test_conversation_public_audio_tasks(void) {
 
 typedef struct speed_wire_test {
   unsigned mode, starts, writes, finishes, next, destroys, cancels;
-  size_t upload, download, accepted, input_produced, output_consumed;
+  size_t upload, download, accepted, input_produced, delivered;
+  /* Written by the App dispatch, awaited by the fake RPC on the net owner. */
+  atomic_size_t output_consumed;
+  bool await_output;
   uint64_t upload_started, download_started;
   uint32_t previous_timeout;
   h2_gizclaw_rpc_stream_fn receive;
@@ -9260,7 +9271,7 @@ static h2_pal_result_t speed_test_output(void *user, const uint8_t *data,
   assert(wire != NULL && out_written != NULL);
   if (length != 0u)
     assert(data != NULL);
-  wire->output_consumed += length;
+  atomic_fetch_add(&wire->output_consumed, length);
   *out_written = length;
   return H2_PAL_OK;
 }
@@ -9331,9 +9342,19 @@ static int speed_wire_result(h2_gizclaw_rpc_request_t *request,
    * or accepted EOS while the SDK request remains pending. */
   if (wire->mode >= 22u &&
       wire->next >= (wire->mode == 22u ? 1u : wire->mode == 25u ? 3u : 2u)) {
-    /* Let the real direction worker consume the enqueued frames before
-     * advancing this fake deadline / delivering the terminal error. */
-    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 5u);
+    /* Let the real direction worker and App dispatch hand every delivered
+     * byte to output_write before advancing this fake deadline / delivering
+     * the terminal error: teardown drops frames still queued. Without an
+     * output sink (sync helper) nothing below asserts consumption. */
+    if (wire->await_output) {
+      for (unsigned i = 0u; atomic_load(&wire->output_consumed) < wire->delivered;
+           ++i) {
+        assert(i < 5000u && "delivered DATA never reached output_write");
+        h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
+      }
+    } else {
+      h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 5u);
+    }
     atomic_fetch_add(&s_env->clock_ms, 100u);
     return wire->mode == 26u ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_WOULD_BLOCK;
   }
@@ -9375,6 +9396,7 @@ static int speed_wire_result(h2_gizclaw_rpc_request_t *request,
       const int prefix_rc = wire->receive(wire->receive_user, &event);
       if (prefix_rc != H2_PAL_OK)
         return prefix_rc;
+      wire->delivered += event.data.len;
       if (wire->mode == 20u)
         bytes[7] ^= 1u;
       event.data = (h2_gizclaw_rpc_bytes_t){bytes + 7u, wire->download - 7u};
@@ -9391,6 +9413,9 @@ static int speed_wire_result(h2_gizclaw_rpc_request_t *request,
   }
   ++wire->next;
   const int rc = wire->receive(wire->receive_user, &event);
+  if (rc == H2_PAL_OK && event.kind == H2_GIZCLAW_RPC_STREAM_DATA &&
+      event.data.data != NULL)
+    wire->delivered += event.data.len;
   return rc == H2_PAL_OK ? H2_PAL_ERR_WOULD_BLOCK : rc;
 }
 
@@ -9480,6 +9505,7 @@ static void test_speedtest_managed_requests(void) {
         .download = upload_only ? 0u : 257u,
         .previous_timeout = 1234u,
     };
+    wire.await_output = wire.download != 0u && mode != 1u;
     gizclaw_rpc_v1_SpeedTestResponse metadata =
         gizclaw_rpc_v1_SpeedTestResponse_init_zero;
     metadata.up_content_length = mode == 14u ? -1 : (int64_t)wire.upload;
@@ -9504,7 +9530,7 @@ static void test_speedtest_managed_requests(void) {
     assert(h2_gizclaw_req_do(
                request, &wire,
                wire.upload != 0u && mode != 0u ? speed_test_input : NULL,
-               wire.download != 0u && mode != 1u ? speed_test_output : NULL,
+               wire.await_output ? speed_test_output : NULL,
                NULL) == H2_PAL_OK);
     const int expected =
         mode >= 22u ? (mode == 26u ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_TIMEOUT)
@@ -9528,10 +9554,11 @@ static void test_speedtest_managed_requests(void) {
           (mode == 23u || mode == 26u || mode == 27u ? 128u : wire.download);
       /* These assertions couple failure diagnostics to actual ingress and
        * parser state, not merely to the existence of a log format string. */
-      if (wire.output_consumed != received)
+      const size_t consumed = atomic_load(&wire.output_consumed);
+      if (consumed != received)
         fprintf(stderr, "mode=%u consumed=%zu expected=%zu %s\n", mode,
-                wire.output_consumed, received, capture.message);
-      assert(wire.output_consumed == received);
+                consumed, received, capture.message);
+      assert(consumed == received);
       char field[64];
       (void)snprintf(field, sizeof(field), "rx_data=%zu ", received);
       assert(strstr(capture.message, field) != NULL);
@@ -9589,7 +9616,9 @@ static void test_speedtest_managed_requests(void) {
     {
       wire.starts = wire.writes = wire.finishes = wire.next = wire.accepted =
           0u;
-      wire.input_produced = wire.output_consumed = 0u;
+      wire.input_produced = wire.delivered = 0u;
+      atomic_store(&wire.output_consumed, 0u);
+      wire.await_output = false; /* The sync helper has no output sink. */
       wire.destroys = wire.cancels = 0u;
       wire.previous_timeout = 1234u;
       capture.calls = 0u;

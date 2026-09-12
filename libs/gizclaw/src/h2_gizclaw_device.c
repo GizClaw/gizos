@@ -1401,6 +1401,16 @@ h2_pal_result_t h2_gizclaw_device_set_product_internal(
   return H2_PAL_OK;
 }
 
+bool h2_gizclaw_device_action_pending_internal(h2_gizclaw_service_t *service) {
+  h2_gizclaw_device_t *d = service != NULL ? service->device : NULL;
+  if (d == NULL)
+    return false;
+  lock(d);
+  const bool pending = d->pending != 0;
+  unlock(d);
+  return pending;
+}
+
 h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service) {
   const h2_gizclaw_config_t *config = &service->client_config;
   if (!config->audio && !config->wifi && !config->wifi_settings &&
