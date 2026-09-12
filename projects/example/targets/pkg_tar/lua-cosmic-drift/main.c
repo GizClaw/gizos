@@ -3,7 +3,7 @@
 
 // Escape is the Back Button; its action cancels the Lua job and ends the App.
 static const h2_web_app_host_button_t k_buttons[] = {
-    {H2_LUA_COSMIC_DRIFT_COMPONENT_BACK, "Escape"}};
+    {H2_LUA_COSMIC_DRIFT_COMPONENT_BACK, "Escape", NULL}};
 
 static h2_pal_result_t run_cosmic_drift(h2_web_app_host_t *host,
                                         h2_runtime_t *runtime, void *user) {

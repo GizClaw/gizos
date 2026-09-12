@@ -169,6 +169,7 @@ H2_GIZCLAW_API(h2_gizclaw_rpc_api_key_revoke)
 
 H2_GIZCLAW_API(h2_gizclaw_player_play)
 H2_GIZCLAW_API(h2_gizclaw_player_play_index)
+H2_GIZCLAW_API(h2_gizclaw_player_play_index_at)
 H2_GIZCLAW_API(h2_gizclaw_player_playlist_set)
 H2_GIZCLAW_API(h2_gizclaw_player_repeat_set)
 H2_GIZCLAW_API(h2_gizclaw_player_stop)

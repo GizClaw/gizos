@@ -166,13 +166,14 @@ h2_pal_result_t h2_lua_lock_job(h2_lua_host_t *host, h2_lua_job_id_t id,
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
     return H2_PAL_ERR_NOT_FOUND;
   }
-  result = h2_pal_mutex_lock(host->config.runtime->sync, job->mutex);
+  result = h2_pal_mutex_lock(host->config.runtime->sync, h2_lua_job_mutex(job));
   (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
   if (result != H2_PAL_OK) {
     return result;
   }
   if (job->id != id) {
-    (void)h2_pal_mutex_unlock(host->config.runtime->sync, job->mutex);
+    (void)h2_pal_mutex_unlock(host->config.runtime->sync,
+                              h2_lua_job_mutex(job));
     return H2_PAL_ERR_NOT_FOUND;
   }
   *out_job = job;
@@ -181,7 +182,8 @@ h2_pal_result_t h2_lua_lock_job(h2_lua_host_t *host, h2_lua_job_id_t id,
 
 void h2_lua_unlock_job(h2_lua_job_t *job) {
   if (job != NULL && job->host != NULL) {
-    (void)h2_pal_mutex_unlock(job->host->config.runtime->sync, job->mutex);
+    (void)h2_pal_mutex_unlock(job->host->config.runtime->sync,
+                              h2_lua_job_mutex(job));
   }
 }
 
@@ -345,21 +347,20 @@ h2_lua_job_submit_text(h2_lua_host_t *host, const char *chunk_name,
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
     return H2_PAL_ERR_FULL;
   }
-  if (h2_pal_mutex_lock(host->config.runtime->sync, job->mutex) != H2_PAL_OK) {
+  size_t job_index = (size_t)(job - host->jobs);
+  h2_pal_mutex_t *job_mutex = host->job_mutexes[job_index];
+  if (h2_pal_mutex_lock(host->config.runtime->sync, job_mutex) != H2_PAL_OK) {
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
     return H2_PAL_ERR_BUSY;
   }
-  h2_pal_mutex_t *job_mutex = job->mutex;
-  size_t job_index = (size_t)(job - host->jobs);
   memset(job, 0, sizeof(*job));
-  job->mutex = job_mutex;
   job->host = host;
   if (chunk_name[0] == '@') {
     const char *slash = strrchr(chunk_name + 1, '/');
     if (slash != NULL) {
       size_t root_length = (size_t)(slash - (chunk_name + 1));
       if (root_length >= sizeof(job->require_root)) {
-        (void)h2_pal_mutex_unlock(host->config.runtime->sync, job->mutex);
+        (void)h2_pal_mutex_unlock(host->config.runtime->sync, job_mutex);
         (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
         return H2_PAL_ERR_NO_SPACE;
       }
@@ -398,8 +399,7 @@ h2_lua_job_submit_text(h2_lua_host_t *host, const char *chunk_name,
     h2_pal_mem_free(host->config.runtime->mem, job->tasks);
     h2_pal_mem_free(host->config.runtime->mem, job->audio_tracks);
     memset(job, 0, sizeof(*job));
-    job->mutex = job_mutex;
-    (void)h2_pal_mutex_unlock(host->config.runtime->sync, job->mutex);
+    (void)h2_pal_mutex_unlock(host->config.runtime->sync, job_mutex);
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -427,8 +427,7 @@ h2_lua_job_submit_text(h2_lua_host_t *host, const char *chunk_name,
     h2_pal_mem_free(host->config.runtime->mem, job->tasks);
     h2_pal_mem_free(host->config.runtime->mem, job->audio_tracks);
     memset(job, 0, sizeof(*job));
-    job->mutex = job_mutex;
-    (void)h2_pal_mutex_unlock(host->config.runtime->sync, job->mutex);
+    (void)h2_pal_mutex_unlock(host->config.runtime->sync, job_mutex);
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -442,8 +441,7 @@ h2_lua_job_submit_text(h2_lua_host_t *host, const char *chunk_name,
     h2_pal_mem_free(host->config.runtime->mem, job->tasks);
     h2_pal_mem_free(host->config.runtime->mem, job->audio_tracks);
     memset(job, 0, sizeof(*job));
-    job->mutex = job_mutex;
-    (void)h2_pal_mutex_unlock(host->config.runtime->sync, job->mutex);
+    (void)h2_pal_mutex_unlock(host->config.runtime->sync, job_mutex);
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
     return H2_PAL_ERR_INVALID_STATE;
   }
@@ -457,8 +455,7 @@ h2_lua_job_submit_text(h2_lua_host_t *host, const char *chunk_name,
       h2_pal_mem_free(host->config.runtime->mem, job->tasks);
       h2_pal_mem_free(host->config.runtime->mem, job->audio_tracks);
       memset(job, 0, sizeof(*job));
-      job->mutex = job_mutex;
-      (void)h2_pal_mutex_unlock(host->config.runtime->sync, job->mutex);
+      (void)h2_pal_mutex_unlock(host->config.runtime->sync, job_mutex);
       (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
       return H2_PAL_ERR_INVALID_ARG;
     }
@@ -489,7 +486,7 @@ h2_lua_job_submit_text(h2_lua_host_t *host, const char *chunk_name,
               (int)host->config.instruction_quantum);
   job->id = new_job_id;
   *out_job_id = new_job_id;
-  (void)h2_pal_mutex_unlock(host->config.runtime->sync, job->mutex);
+  (void)h2_pal_mutex_unlock(host->config.runtime->sync, job_mutex);
   (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
   h2_lua_host_wake_job(job);
   return H2_PAL_OK;
@@ -771,6 +768,9 @@ h2_pal_result_t h2_lua_step_job(h2_lua_job_t *job) {
     return H2_PAL_OK;
   }
   h2_lua_deliver_events(job);
+  if (job->host->link_hooks != NULL) {
+    job->host->link_hooks->deliver(job->host->link_user, job);
+  }
   if (!is_terminal(job->state)) {
     update_waiters(job, now);
     h2_lua_task_t *task = next_ready_task(job);
@@ -845,6 +845,7 @@ h2_pal_result_t h2_lua_job_get_status(const h2_lua_host_t *host,
 h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host,
                                    h2_lua_job_id_t job_id) {
   h2_lua_job_t *job = NULL;
+  h2_pal_mutex_t *job_mutex;
   const h2_pal_mem_api_t *mem;
   uint32_t job_generation;
   h2_pal_result_t result;
@@ -860,7 +861,8 @@ h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host,
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
     return H2_PAL_ERR_NOT_FOUND;
   }
-  result = h2_pal_mutex_lock(host->config.runtime->sync, job->mutex);
+  job_mutex = h2_lua_job_mutex(job);
+  result = h2_pal_mutex_lock(host->config.runtime->sync, job_mutex);
   if (result != H2_PAL_OK) {
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
     return result;
@@ -872,6 +874,8 @@ h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host,
   }
   mem = host->config.runtime->mem;
   job_generation = job->generation;
+  /* Stop link posts and wakes for this slot before it is cleared. */
+  h2_lua_link_job_ended(host, job_id, job_generation);
   for (size_t i = 0u; i < host->config.max_coroutines_per_vm; ++i) {
     h2_lua_task_timer_destroy(&job->tasks[i]);
   }
@@ -888,9 +892,7 @@ h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host,
   h2_pal_mem_free(mem, job->events);
   h2_pal_mem_free(mem, job->audio_tracks);
   h2_lua_vm_close(job->vm);
-  h2_pal_mutex_t *job_mutex = job->mutex;
   memset(job, 0, sizeof(*job));
-  job->mutex = job_mutex;
   (void)h2_pal_mutex_unlock(host->config.runtime->sync, job_mutex);
   (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
   h2_lua_release_job_capabilities(host, job_id, job_generation);

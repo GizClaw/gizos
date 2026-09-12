@@ -2,7 +2,7 @@
 #include "h2_web_app_host.h"
 
 // The action Button is component 1 on every touch-smoke target.
-static const h2_web_app_host_button_t k_buttons[] = {{1u, "Enter"}};
+static const h2_web_app_host_button_t k_buttons[] = {{1u, "Enter", NULL}};
 
 static h2_pal_result_t run_touch(h2_web_app_host_t *host,
                                  h2_runtime_t *runtime, void *user) {

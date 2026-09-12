@@ -1,0 +1,29 @@
+load("//libs/lua/web:lua_web_app.bzl", "h2_lua_web_app")
+
+package(default_visibility = ["//visibility:public"])
+
+# //boards/bk7258_v3_202405/web in the browser: the page gets the board's display size,
+# its "device" skin places the canvas, and clicking a skin Button reaches
+# the script before the page Stop button ends it.
+h2_lua_web_app(
+    name = "web-board-bk7258",
+    board = "//boards/bk7258_v3_202405/web",
+    canvas_min = 1000,
+    clicks = [
+        [
+            "H2_WEB_APP name=web-board-bk7258 stage=ready",
+            "[data-h2-button=prev]",
+        ],
+        [
+            "H2_WEB_BOARD_CHECK button=prev",
+            "#stop",
+        ],
+    ],
+    passes = [
+        "H2_WEB_BOARD_CHECK size=800x480",
+        "H2_WEB_APP name=web-board-bk7258 stage=ready",
+        "H2_WEB_BOARD_CHECK button=prev",
+        "H2_WEB_APP name=web-board-bk7258 result=PASS rc=0 fs=0 destroy=0",
+    ],
+    script = "//projects/example/targets/pkg_tar/lua-script:board_check.lua",
+)

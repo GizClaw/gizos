@@ -56,6 +56,8 @@ def web_archive_browser_test(
         canvas_min = 0,
         presses = [],
         taps = [],
+        clicks = [],
+        evals = [],
         size = "medium",
         tags = None,
         visibility = None):
@@ -75,6 +77,10 @@ def web_archive_browser_test(
       canvas_min: Require this many non-black #canvas pixels at the end.
       presses: [regex, key] pairs; the key is pressed once regex appears.
       taps: [regex, x, y] triples; #canvas pixel x,y is tapped once regex appears.
+      clicks: [regex, css_selector] pairs; the first matching page element is
+        pressed and released with the mouse once regex appears.
+      evals: [regex, javascript] pairs; the expression is evaluated in the page
+        (with a user gesture) once regex appears, e.g. to drive input edges.
       size: Bazel test size.
       tags: Optional Bazel tags.
       visibility: Optional target visibility.
@@ -94,6 +100,10 @@ def web_archive_browser_test(
         args += ["--press", _shell_quote(pattern), _shell_quote(key)]
     for pattern, x, y in taps:
         args += ["--tap", _shell_quote(pattern), str(x), str(y)]
+    for pattern, selector in clicks:
+        args += ["--click", _shell_quote(pattern), _shell_quote(selector)]
+    for pattern, expression in evals:
+        args += ["--eval", _shell_quote(pattern), _shell_quote(expression)]
     if offline:
         args += ["--offline", _shell_quote(offline[0]), _shell_quote(offline[1])]
     data = [archive, _SERVER]
@@ -106,8 +116,9 @@ def web_archive_browser_test(
         srcs = [_BROWSER_TEST, _SERVER],
         args = args,
         data = data + select({
-            _HOST_LINUX: ["@h2_playwright_chromium_linux_x86_64//:runtime"],
-            _HOST_MACOS: ["@h2_playwright_chromium_macos_arm64//:runtime"],
+            # Label() resolves the browser repos from GizOS for downstream callers.
+            _HOST_LINUX: [Label("@h2_playwright_chromium_linux_x86_64//:runtime")],
+            _HOST_MACOS: [Label("@h2_playwright_chromium_macos_arm64//:runtime")],
             "//conditions:default": [],
         }),
         legacy_create_init = 0,

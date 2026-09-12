@@ -1,0 +1,18 @@
+load("//libs/app_host:web_board.bzl", "h2_web_board")
+
+package(default_visibility = ["//visibility:public"])
+
+# Web board: the browser counterpart of this board for h2_web_app() pages.
+# H050IWV 800×480 RGB panel (landscape); the three ADC keys (previous/next/menu) as single Buttons.
+h2_web_board(
+    name = "web",
+    buttons = {
+        "prev": "ArrowLeft",
+        "next": "ArrowRight",
+        "menu": "Enter",
+    },
+    default_skin = "device",
+    display_height = 480,
+    display_width = 800,
+    skins = {"device": "device.html"},
+)
