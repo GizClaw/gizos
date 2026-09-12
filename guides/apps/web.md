@@ -30,7 +30,7 @@ libs/pal/providers/web/app_host/    # 通用 Web launcher、HTML shell 与 h2_we
 libs/lua/web/                       # 单个 Lua 脚本页面的 h2_lua_web_app() 宏与通用入口
 ```
 
-`projects/<owner>/libs/web/<app>` 只能保存 Web-specific wrapper、required capability 和 portable App contract conversion；`targets/pkg_tar/<app>` 负责 lifecycle、Runtime assembly、HTML shell、package metadata 和最终可交付 archive。Canvas display、pointer handler、Memory、Time 和 Queue backend 属于 `libs/pal/providers/web/pal_core`，不能复制进 project entry。与 Desktop 的 `libs/pal/providers/desktop/app_support` 相同，完整 Browser Runtime composition 由 `libs/pal/providers/web/app_host` 拥有，任何 project（包括下游仓库）的 `pkg_tar` entry 都可以复用它。
+`projects/<owner>/libs/web/<app>` 只能保存 Web-specific wrapper、required capability 和 portable App contract conversion；`targets/pkg_tar/<app>` 负责 lifecycle、Runtime assembly、HTML shell、package metadata 和最终可交付 archive。Canvas display、pointer handler、Memory、Time 和 Queue backend 属于 `libs/pal/providers/web/pal_core`，不能复制进 project entry。与 Desktop 的 `libs/pal/providers/desktop/app_support` 相同，可复用的完整 Browser Runtime composition 由 `libs/pal/providers/web/app_host` 拥有（见[目录结构](/zh/developing/repo_layout)中的 composition 例外）；它不选择 App，任何 project（包括下游仓库）的 `pkg_tar` entry 都可以用它组装自己的 App。
 
 ## Build Boundary
 

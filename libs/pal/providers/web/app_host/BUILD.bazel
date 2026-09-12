@@ -7,8 +7,10 @@ package(default_visibility = ["//visibility:public"])
 # Shared Start/Stop shell for Web App targets built with h2_web_app().
 exports_files(["shell.html"])
 
-# Browser Runtime composition for one portable App: platform, optional
-# Filesystem and LVGL, every Web provider, push-edge Buttons and markers.
+# Browser Runtime composition owner, the Web counterpart of
+# desktop/app_support (see repo_layout.md): platform, optional Filesystem and
+# LVGL, every Web provider, push-edge Buttons and markers. The pkg_tar entry
+# still selects the App and owns main, its config and the archive.
 cc_library(
     name = "app_host",
     srcs = ["src/h2_web_app_host.c"],

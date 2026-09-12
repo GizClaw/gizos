@@ -204,6 +204,8 @@ Linux userspace 通用 PAL backend 归 `libs/pal/providers/linux/`；Darwin host
 
 iOS、Android 和 Browser/WebAssembly 的仓库级 PAL backend 分别归 `libs/pal/providers/ios/`、`libs/pal/providers/android/` 和 `libs/pal/providers/web/`。它们提供 reusable platform capability，不选择 App、不组装完整 Runtime，也不能依赖具体 project 的 App、adapter 或 artifact entry 类型。
 
+与 Desktop 的 `app_support` 相同，Browser 有一个明确的 composition 例外：`libs/pal/providers/web/app_host:app_host` 是 Browser Runtime composition owner。它创建 Web platform，把 `web/pal_core` 与可选 LVGL platform 的 PAL API object 注入 Runtime（其余能力为 canonical unsupported），提供默认 Start/Stop shell、push-edge Button 与 `H2_WEB_APP` marker，并由 `web_app.bzl` 的 `h2_web_app()` 生成 archive、`:serve` 与 `:browser_test`。它不选择 App：`targets/pkg_tar/<app>` entry 仍拥有 `main`、App entry 与配置、Button/key 映射、preload 和最终 archive，也可以不经 `app_host` 自行组装。`app_host` 不能依赖任何 project 的 App、adapter 或 entry；除它以外，`libs/pal/providers/web/` 下的 target 仍不组装完整 Runtime。
+
 ## `boards`
 
 `boards/<board>/<chip-or-target>/` 保存物理 board BSP：
@@ -262,7 +264,7 @@ libs/pal/providers/web/app_host/
 libs/lua/web/
 ```
 
-Project-local Web component 保存 presentation、required capability 和 portable App contract conversion；`pkg_tar/<app>` 保存 Emscripten lifecycle、Runtime assembly、HTML shell 和最终 serve-ready Web archive。内部编译步骤使用 `wasm_cc_binary`，最终 rule 使用 `pkg_tar`，归档根目录直接提供 `index.html` 及其 JS/WASM 依赖。Web wrapper 不能依赖 Mobile contract。跨 project 的 Canvas、pointer、Memory、Time 与 Queue backend 属于 `libs/pal/providers/web/pal_core`；可复用的 Browser Runtime composition、Start/Stop shell 与 `h2_web_app()` 属于 `libs/pal/providers/web/app_host`；只运行一个 Lua 脚本的页面由 `libs/lua/web` 的 `h2_lua_web_app()` 生成。
+Project-local Web component 保存 presentation、required capability 和 portable App contract conversion；`pkg_tar/<app>` 保存 Emscripten lifecycle、Runtime assembly、HTML shell 和最终 serve-ready Web archive。内部编译步骤使用 `wasm_cc_binary`，最终 rule 使用 `pkg_tar`，归档根目录直接提供 `index.html` 及其 JS/WASM 依赖。Web wrapper 不能依赖 Mobile contract。跨 project 的 Canvas、pointer、Memory、Time 与 Queue backend 属于 `libs/pal/providers/web/pal_core`；可复用的 Browser Runtime composition、Start/Stop shell 与 `h2_web_app()` 属于上文的 `libs/pal/providers/web/app_host` 例外；只运行一个 Lua 脚本的页面由 `libs/lua/web` 的 `h2_lua_web_app()` 生成。`libs/lua/web` 是 Lua library 的 Browser artifact helper，与 `libs/lvgl:platform_web` 同类：它只在 `libs/lua` 之上增加 wasm-only 的通用 entry 与宏，依赖 `app_host`，不依赖具体 project。
 
 App 或 library 的 Bazel target 只在 source、defines、toolchain compatibility 或 dependency graph 存在实际差异时拆成 `_embed`、`_desktop`、`_mobile`、`_web` variant；没有差异时保留无后缀 target。Variant 按运行环境命名，不能按具体 App 复制公共 library。
 
