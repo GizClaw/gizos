@@ -17,6 +17,7 @@
 #include <components/bluetooth/bk_ble.h>
 #include <private/dm_ble_gap_task.h>
 #include <private/dm_bluetooth_task.h>
+#include <os/mem.h>
 #include <os/os.h>
 #include <string.h>
 
@@ -113,7 +114,7 @@ static uint16_t s_h2_bk_ble_cccd_handle[H2_BK_BLE_MAX_GATT_CHARACTERISTICS];
 static uint16_t *s_h2_bk_ble_out_service_handle[H2_BK_BLE_MAX_GATT_SERVICES];
 static uint16_t *s_h2_bk_ble_out_value_handle[H2_BK_BLE_MAX_GATT_CHARACTERISTICS];
 static uint16_t *s_h2_bk_ble_out_cccd_handle[H2_BK_BLE_MAX_GATT_CHARACTERISTICS];
-static uint8_t s_h2_bk_ble_value[H2_BK_BLE_MAX_GATT_CHARACTERISTICS][H2_BK_BLE_MAX_VALUE_LEN];
+static uint8_t *s_h2_bk_ble_value[H2_BK_BLE_MAX_GATT_CHARACTERISTICS];
 static uint8_t s_h2_bk_ble_read_scratch[H2_BK_BLE_MAX_VALUE_LEN];
 static uint16_t s_h2_bk_ble_value_len[H2_BK_BLE_MAX_GATT_CHARACTERISTICS];
 static uint16_t s_h2_bk_ble_value_max_len[H2_BK_BLE_MAX_GATT_CHARACTERISTICS];
@@ -438,8 +439,10 @@ static void h2_bk_ble_rollback_service_slot(size_t service_index) {
         s_h2_bk_ble_cccd_handle[index] = H2_PAL_BLE_INVALID_ATTR_HANDLE;
         s_h2_bk_ble_out_value_handle[index] = NULL;
         s_h2_bk_ble_out_cccd_handle[index] = NULL;
-        memset(s_h2_bk_ble_value[index], 0,
-            sizeof(s_h2_bk_ble_value[index]));
+        if (s_h2_bk_ble_value[index] != NULL) {
+            psram_free(s_h2_bk_ble_value[index]);
+            s_h2_bk_ble_value[index] = NULL;
+        }
         memset(s_h2_bk_ble_cccd_value[index], 0,
             sizeof(s_h2_bk_ble_cccd_value[index]));
         s_h2_bk_ble_value_len[index] = 0u;
@@ -465,7 +468,8 @@ static int h2_bk_ble_value_index(uint16_t handle) {
              i < s_h2_bk_ble_service_characteristic_count[service_index];
              ++i) {
             size_t index = first + i;
-            if (s_h2_bk_ble_value_handle[index] == handle) return (int)index;
+            if (s_h2_bk_ble_value[index] != NULL &&
+                s_h2_bk_ble_value_handle[index] == handle) return (int)index;
         }
     }
     return -1;
@@ -487,8 +491,9 @@ static int h2_bk_ble_cccd_index(uint16_t handle) {
 }
 
 static int h2_bk_ble_legacy_value_index(uint16_t att_index) {
-    return h2_bk_ble_legacy_characteristic_from_value(
+    int index = h2_bk_ble_legacy_characteristic_from_value(
         att_index, s_h2_bk_ble_service_characteristic_count[0]);
+    return index >= 0 && s_h2_bk_ble_value[index] != NULL ? index : -1;
 }
 
 static int h2_bk_ble_legacy_cccd_index(uint16_t att_index) {
@@ -3408,8 +3413,9 @@ static h2_pal_result_t h2_bk_ble_register_gatt_services(
     size_t first = h2_bk_ble_service_characteristic_first(service_index);
     for (size_t i = 0u; i < services[0].characteristic_count; ++i) {
         if (!add_service &&
-            !h2_bk_ble_uuid_equal(
-                &s_h2_bk_ble_char_uuid[first + i], &char_uuids[i])) {
+            (s_h2_bk_ble_value[first + i] == NULL ||
+             !h2_bk_ble_uuid_equal(
+                &s_h2_bk_ble_char_uuid[first + i], &char_uuids[i]))) {
             (void)rtos_unlock_mutex(&s_h2_bk_ble_gatt_mutex);
             return H2_PAL_ERR_INVALID_STATE;
         }
@@ -3419,6 +3425,15 @@ static h2_pal_result_t h2_bk_ble_register_gatt_services(
         s_h2_bk_ble_service_characteristic_count[service_index] =
             services[0].characteristic_count;
         ++s_h2_bk_ble_service_count;
+        for (size_t i = 0u; i < services[0].characteristic_count; ++i) {
+            size_t index = first + i;
+            s_h2_bk_ble_value[index] = psram_malloc(H2_BK_BLE_MAX_VALUE_LEN);
+            if (s_h2_bk_ble_value[index] == NULL) {
+                h2_bk_ble_rollback_service_slot(service_index);
+                (void)rtos_unlock_mutex(&s_h2_bk_ble_gatt_mutex);
+                return H2_PAL_ERR_NO_MEMORY;
+            }
+        }
     }
     for (size_t i = 0u; i < services[0].characteristic_count; ++i) {
         size_t index = first + i;
@@ -3434,7 +3449,7 @@ static h2_pal_result_t h2_bk_ble_register_gatt_services(
                 ? (uint16_t)ch->initial_value_len
                 : s_h2_bk_ble_value_max_len[index];
         memset(s_h2_bk_ble_value[index], 0,
-            sizeof(s_h2_bk_ble_value[index]));
+            H2_BK_BLE_MAX_VALUE_LEN);
         if (s_h2_bk_ble_value_len[index] > 0u && ch->initial_value != NULL) {
             memcpy(s_h2_bk_ble_value[index], ch->initial_value,
                 s_h2_bk_ble_value_len[index]);
@@ -3483,6 +3498,50 @@ static h2_pal_result_t h2_bk_ble_register_gatt_services(
     }
     (void)rtos_unlock_mutex(&s_h2_bk_ble_gatt_mutex);
     return H2_PAL_OK;
+}
+
+static h2_pal_result_t h2_bk_ble_unregister_gatt_service(
+    void *user, const h2_pal_ble_uuid_t *service_uuid) {
+    (void)user;
+    if (service_uuid == NULL) return H2_PAL_ERR_INVALID_ARG;
+    bk_bt_uuid_t uuid;
+    if (!h2_bk_ble_uuid_from_pal(service_uuid, &uuid)) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    if (s_h2_bk_ble_gatt_mutex != NULL) {
+        if (rtos_lock_mutex(&s_h2_bk_ble_gatt_mutex) != kNoErr) return H2_PAL_ERR_IO;
+    }
+    h2_pal_result_t result = H2_PAL_ERR_NOT_FOUND;
+    for (size_t i = 0u; i < s_h2_bk_ble_service_count; ++i) {
+        if (!(h2_bk_ble_uuid_equal(&s_h2_bk_ble_service_uuid[i], &uuid))) continue;
+        size_t service_index = i;
+        size_t first = h2_bk_ble_service_characteristic_first(service_index);
+        for (size_t j = 0u;
+             j < s_h2_bk_ble_service_characteristic_count[service_index]; ++j) {
+            size_t index = first + j;
+            s_h2_bk_ble_read[index] = NULL;
+            s_h2_bk_ble_write[index] = NULL;
+            s_h2_bk_ble_gatt_user[index] = NULL;
+            s_h2_bk_ble_out_value_handle[index] = NULL;
+            s_h2_bk_ble_out_cccd_handle[index] = NULL;
+        }
+        s_h2_bk_ble_out_service_handle[service_index] = NULL;
+        /* Keep the schema slot and other services' bindings intact. */
+        bool attached = false;
+        for (size_t j = 0u; j < H2_BK_BLE_MAX_GATT_CHARACTERISTICS; ++j) {
+            if (s_h2_bk_ble_read[j] != NULL || s_h2_bk_ble_write[j] != NULL) {
+                attached = true;
+                break;
+            }
+        }
+        s_h2_bk_ble_gatt_attached = attached;
+        result = H2_PAL_OK;
+        break;
+    }
+    if (s_h2_bk_ble_gatt_mutex != NULL) {
+        (void)rtos_unlock_mutex(&s_h2_bk_ble_gatt_mutex);
+    }
+    return result;
 }
 
 static h2_pal_result_t h2_bk_ble_unregister_gatt_services(
@@ -4288,6 +4347,7 @@ static const h2_pal_ble_vtable_t s_h2_bk_ble_vtable = {
     .start_scan = (h2_pal_result_t (*)(void *, const h2_pal_ble_scan_params_t *, h2_pal_ble_scan_result_fn, void *))h2_bk_ble_start_scan,
     .stop_scan = (h2_pal_result_t (*)(void *))h2_bk_ble_stop_scan,
     .register_gatt_services = (h2_pal_result_t (*)(void *, const h2_pal_ble_gatt_service_t *, size_t))h2_bk_ble_register_gatt_services,
+    .unregister_gatt_service = h2_bk_ble_unregister_gatt_service,
     .unregister_gatt_services = (h2_pal_result_t (*)(void *))h2_bk_ble_unregister_gatt_services,
     .notify = (h2_pal_result_t (*)(void *, uint16_t, uint16_t, const uint8_t *, size_t))h2_bk_ble_notify,
     .indicate = (h2_pal_result_t (*)(void *, uint16_t, uint16_t, const uint8_t *, size_t, uint32_t))h2_bk_ble_indicate,

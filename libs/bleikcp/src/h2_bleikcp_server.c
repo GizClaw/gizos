@@ -392,7 +392,11 @@ int h2_bleikcp_server_close(h2_bleikcp_server_t *server) {
         (void)h2_pal_mutex_unlock(server->api.sync, server->mutex);
         (void)h2_bleikcp_stream_destroy(stream);
     }
-    int rc = h2_pal_ble_unregister_gatt_services(server->api.ble);
+    int rc = h2_pal_ble_unregister_gatt_service(
+        server->api.ble, &server->service.uuid);
+    if (rc == H2_PAL_ERR_UNSUPPORTED) {
+        rc = h2_pal_ble_unregister_gatt_services(server->api.ble);
+    }
     if (rc != H2_PAL_OK) return rc;
     for (size_t i = 0u; i < H2_BLEIKCP_SERVER_SUBSCRIPTION_COUNT; ++i) {
         h2_pal_system_event_unsubscribe(

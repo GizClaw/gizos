@@ -190,16 +190,16 @@ API，NimBLE 在该选项关闭时不提供它，`host()` 会以 `LINK_ERROR "bl
 
 每次 `host()` 都用同一组 UUID 和同样三个 characteristic 调用
 `h2_bleikcp_server_open()`，session 结束时 `h2_bleikcp_server_close()` 调用
-`h2_pal_ble_unregister_gatt_services()`。对只增不减的 GATT table（ESP NimBLE 最多
-2 个 service、每个 3 个 characteristic，unregister 只解绑回调），再次注册已存在的
+`h2_pal_ble_unregister_gatt_service()`，只解绑 link service。对只增不减的 GATT table（ESP NimBLE 最多
+4 个 service、每个 3 个 characteristic，unregister 只解绑回调），再次注册已存在的
 service UUID 且 characteristic 布局相同时，backend 复用保留的 service slot，重新绑定
 回调并写回 handle，因此连续多次 host 始终只占一个 slot；这正是 service UUID 必须固定
 的原因。bleikcp server 通过 `extra_characteristics` 把 Datagram 放进同一个 service。`tag` 不进入 GATT：host 广播 session UUID
 `0221d1f2-9dce-4921-bac4-eeb9XXXXXXXX`，末 4 字节为 tag 的 FNV-1a hash，join 按它
 过滤扫描结果；连接后双方在 KCP 上交换 `HELLO`（版本 + 完整 tag），不符报
-`"mismatch"`。bleikcp server close 仍按 PAL 合同调用
-`h2_pal_ble_unregister_gatt_services()`，与同进程其他 GATT service（例如管理服务）
-的共存由 launcher 负责。
+`"mismatch"`。ESP/BK7258 上 bleikcp server close 只解绑 link service，
+launcher 常驻管理 service 的回调保持有效。只有 provider 返回 `H2_PAL_ERR_UNSUPPORTED`
+时才回退到全局 `h2_pal_ble_unregister_gatt_services()`；这类 provider 的共存仍由 launcher 负责。
 
 **Lua API。**
 

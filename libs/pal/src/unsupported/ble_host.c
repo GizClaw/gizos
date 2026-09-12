@@ -101,6 +101,13 @@ static h2_pal_result_t unsupported_ble_host_register_gatt_services(void *p0, con
     return H2_PAL_ERR_UNSUPPORTED;
 }
 
+static h2_pal_result_t unsupported_ble_host_unregister_gatt_service(
+    void *user, const h2_pal_ble_uuid_t *service_uuid) {
+    (void)user;
+    (void)service_uuid;
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static h2_pal_result_t unsupported_ble_host_unregister_gatt_services(void *p0) {
     (void)p0;
     return H2_PAL_ERR_UNSUPPORTED;
@@ -233,6 +240,7 @@ static const h2_pal_ble_vtable_t unsupported_ble_host_vtable = {
     .start_scan = unsupported_ble_host_start_scan,
     .stop_scan = unsupported_ble_host_stop_scan,
     .register_gatt_services = unsupported_ble_host_register_gatt_services,
+    .unregister_gatt_service = unsupported_ble_host_unregister_gatt_service,
     .unregister_gatt_services = unsupported_ble_host_unregister_gatt_services,
     .notify = unsupported_ble_host_notify,
     .indicate = unsupported_ble_host_indicate,
