@@ -1,0 +1,16 @@
+load("//libs/app_host:web_board.bzl", "h2_web_board")
+
+package(default_visibility = ["//visibility:public"])
+
+# Web board: the browser counterpart of this board for h2_web_app() pages.
+# ST7789 320×240 (landscape); BOOT (GPIO0).
+h2_web_board(
+    name = "web",
+    buttons = {
+        "boot": "Escape",
+    },
+    default_skin = "device",
+    display_height = 240,
+    display_width = 320,
+    skins = {"device": "device.html"},
+)

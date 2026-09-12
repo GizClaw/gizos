@@ -13,6 +13,7 @@ projects/example/
 ├── targets/pkg_tar/lua-script/    # h2_lua_web_app() smoke：Button args、OK 回调、默认 exit Button
 ├── targets/pkg_tar/lua-script-input/ # Button 输入合同（demo_board plain 外观）：多源合并、blur/隐藏/结束释放
 ├── targets/pkg_tar/lua-script-stop/ # 同一脚本：run_ms 触发与 Stop 相同的停止请求
+├── targets/pkg_tar/web-board-<board>/ # 每块 board 的 web board 检查页：屏幕尺寸、外观插槽、按键、Stop
 ├── targets/pkg_tar/lua-script-extension/ # 加 extension：capability 与 exit_requested
 └── targets/pkg_tar/<app>/         # tap-reset、display、log、qrcode、touch、lvgl-smoke、
                                    # starboy、lua-cosmic-drift、audio-system：
@@ -28,6 +29,8 @@ projects/h2loader/
 └── targets/npm_package/h2loader/  # @gizclaw/h2loader Browser SDK npm package
 
 libs/pal/providers/web/pal_core/    # Canvas/Emscripten reusable PAL backend
+boards/<board>/web/                 # 有屏幕的 board 的 web board 与外观：amoled、bk7258_v3_202405、
+                                    # kickpi_k4b、szp、waveshare_esp32p4_wifi6_touch_lcd_4_3
 libs/app_host/                      # App 启动层（当前仅 Web）：launcher、HTML shell 与 h2_web_app() 宏
 libs/lua/web/                       # 单个 Lua 脚本页面的 h2_lua_web_app() 宏与通用入口
 ```
@@ -191,7 +194,7 @@ config.webrtc = h2_web_platform_webrtc_api(platform);
 
 外观要做得和实物一样：`app_host` 把页面组件创建进外观的插槽——`data-h2-slot="display"` 放 Canvas（`#canvas`），`data-h2-slot="controls"` 放 Start/Stop（`#start`、`#stop`），`data-h2-slot="status"` 放状态行（`#status`），缺少的插槽放进 `<body>` 末尾的普通容器；外观中 `data-h2-button="<name>"` 的元素和该 Button 的键盘键共同驱动同一个 Button，按下时带 `data-pressed="true"`。`app_host` 自己不带 UI，shell 只有页面骨架和输入脚本。
 
-组装可运行 target 时选 board 和其中一套外观：`h2_web_app(board = "...", skin = "...")`，`skin` 省略时用该板的 `default_skin`，板上没有 `default_skin`（包括没有外观）时用朴素的 `default_layout.html`；显式给出的 `skin` 必须是板上的外观，否则 analysis 阶段失败并列出该板的外观。`h2_web_app()` 据此生成 `h2_web_board`（`h2_web_board_t`，屏幕尺寸与 Button 表）编进页面，`h2_web_app_host_config_t` 的 Button 按名字引用板上的 Button（`key` 为 NULL 时用板上的键），`display_width/height` 为 0 时用板上的尺寸。不指定 board 时用 `//libs/app_host:default_board`（240×240、无 Button、朴素布局 `default_layout.html`），所以现有 example 页面不变。产品 board 与外观放在该 board 自己的目录旁（例如下游仓库的 `boards/<board>/web/`），同一块板上的所有 App 复用。
+组装可运行 target 时选 board 和其中一套外观：`h2_web_app(board = "...", skin = "...")`，`skin` 省略时用该板的 `default_skin`，板上没有 `default_skin`（包括没有外观）时用朴素的 `default_layout.html`；显式给出的 `skin` 必须是板上的外观，否则 analysis 阶段失败并列出该板的外观。`h2_web_app()` 据此生成 `h2_web_board`（`h2_web_board_t`，屏幕尺寸与 Button 表）编进页面，`h2_web_app_host_config_t` 的 Button 按名字引用板上的 Button（`key` 为 NULL 时用板上的键），`display_width/height` 为 0 时用板上的尺寸。不指定 board 时用 `//libs/app_host:default_board`（240×240、无 Button、朴素布局 `default_layout.html`），所以现有 example 页面不变。board 与外观放在该 board 自己的目录旁 `boards/<board>/web/`（下游产品 board 同理），同一块板上的所有 App 复用。GizOS 为有屏幕的五块 board 提供了 web board：`amoled`（368×448，`boot`、`power`）、`bk7258_v3_202405`（800×480，`prev`、`next`、`menu`，对应实体板的三个 ADC 键）、`kickpi_k4b`（1024×600，`action_button`）、`szp`（320×240，`boot`）、`waveshare_esp32p4_wifi6_touch_lcd_4_3`（480×800，`boot`），尺寸与 Button 名取自各自 BSP。它们的 `device` 外观是按 BSP 参数画的示意图（屏幕尺寸与方向准确），仓库里还没有实物照片，有了之后替换成照片或渲染图。无屏幕的 `devkit`、`esp32p4_func_ev_board_v1_4`、`waveshare_esp32s3_a7670e_4g` 暂不提供。
 
 只运行一个 Lua 脚本的 App 不需要 `main.c`：`//libs/lua/web:lua_web_app.bzl` 的
 `h2_lua_web_app(name, script, board, skin, exit_button, extension)` 用
@@ -228,6 +231,7 @@ release 规则，例如只接受长按。`run_ms` 非零时在该时长后发出
 | `lua-flappybird` | Canvas 点击、Escape → Back 取消并退出 |
 | `lua-script` | `h2_lua_web_app()` + `demo_board` 默认 `device` 外观：canvas 与状态行进入外观的 slot；脚本校验 Button args 后 ready；点击外观的 `data-h2-button=ok` 元素触发脚本 OK 回调；点击页面 Stop（`#stop`）取消 job 并 PASS |
 | `lua-script-input` | `demo_board` 的 `plain` 外观，Button 输入合同：pointer 与 Enter 重叠按住时松开 pointer 仍按住（只有一次 Down/Up）；blur、页面隐藏和 App 结束都释放按住的 Button；脚本只统计每次按压的首个 Down sample |
+| `web-board-<board>` | 每块 web board：页面拿到板上的屏幕尺寸（`H2_WEB_BOARD_CHECK size=WxH`），`device` 外观放置 canvas，点击外观上的第一个 Button 到达脚本，点击 Stop 后 PASS |
 | `lua-script-stop` | 不按键，`run_ms` 发出 Stop 请求（`stage=stop-requested`），取消 job 后 PASS |
 | `lua-script-extension` | extension 注册的 capability 可用；`exit_requested` 拒绝第一次 Escape、job 继续运行，第二次 Escape 取消并 PASS |
 | `mp4-player`（manual） | WebCodecs H.264/AAC 播放完成；`:large_browser_test` 播放 1024×600 大文件；需 `H2_WEB_TEST_BROWSER` 指向 Google Chrome |

@@ -2,7 +2,10 @@ load("//libs/lua/web:lua_web_app.bzl", "h2_lua_web_app")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["smoke.lua"])
+exports_files([
+    "board_check.lua",
+    "smoke.lua",
+])
 
 # Runs on demo_board's default "device" skin (the input page uses its
 # "plain" skin): app_host creates the canvas and status line in the skin's
