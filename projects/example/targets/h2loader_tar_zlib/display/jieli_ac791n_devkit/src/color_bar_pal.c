@@ -80,7 +80,6 @@ extern size_t malloc_max_footprint(void);
 extern uint8_t HEAP_BEGIN;
 extern uint8_t HEAP_END;
 
-static int prepare_destructive_app_return(void *user);
 static void usb_write_status(const char *format, ...);
 
 static int app_power_get_running(
@@ -125,14 +124,15 @@ static int app_power_set_next(void *user, uint32_t partition_id) {
 
 static int app_power_reboot(void *user, uint32_t reason) {
   (void)user;
+  int rc = h2_jieli_app_loader_prepare_reboot(
+      &loader_client.config, next_boot_partition);
+  if (rc != H2_PAL_OK) return rc;
   usb_write_status(
       "JIELI_APP_REBOOT source=power_api reason=%u next=%u\r\n",
       (unsigned)reason, (unsigned)next_boot_partition);
   os_time_dly(10u);
-  if (next_boot_partition == H2_JIELI_PARTITION_LOADER &&
-      flash_update_clr_boot_info(CLEAR_APP_RUNNING_BANK) != 0) {
-    return H2_PAL_ERR_IO;
-  }
+  /* ROM keeps selecting Loader; App has no published native BootInfo.
+   * Clearing a native bank also erases its first code sector. */
   system_reset();
   return H2_PAL_OK;
 }
@@ -201,48 +201,8 @@ static int enter_trial_boot(void) {
   }
   if (result != H2_PAL_OK || !repeated_trial) return result;
 
-  if (flash_update_clr_boot_info(CLEAR_APP_RUNNING_BANK) != 0) {
-    return H2_PAL_ERR_IO;
-  }
   system_reset();
   return H2_PAL_ERR_INVALID_STATE;
-}
-
-static int prepare_destructive_app_return(void *user) {
-  const h2_pal_pref_api_t *pref = user;
-  h2_pal_pref_namespace_t *name_space = NULL;
-  h2_pal_fs_api_t fs;
-  static const char *const installed_keys[] = {
-      "installed_version", "installed_checksum", "installed_size",
-  };
-  int result = h2_jieli_ac791n_devkit_sd_fs_init(&fs);
-  if (result == H2_PAL_OK) {
-    result = h2_pal_fs_remove(&fs, H2_JIELI_APP_IMAGE_SHADOW_PATH);
-    if (result == H2_PAL_ERR_NOT_FOUND) result = H2_PAL_OK;
-  }
-  if (result != H2_PAL_OK) return result;
-  result = h2_pal_pref_open(
-      pref, H2_LOADER_PREF_NAMESPACE, H2_PAL_PREF_OPEN_READ_WRITE,
-      &name_space);
-  if (result != H2_PAL_OK) return result;
-  if (name_space == NULL || name_space->remove == NULL ||
-      name_space->set_bool == NULL || name_space->commit == NULL) {
-    result = H2_PAL_ERR_UNSUPPORTED;
-  }
-  for (size_t index = 0u;
-       result == H2_PAL_OK && index < sizeof(installed_keys) / sizeof(installed_keys[0]);
-       ++index) {
-    result = name_space->remove(name_space, installed_keys[index]);
-    if (result == H2_PAL_ERR_NOT_FOUND) result = H2_PAL_OK;
-  }
-  if (result == H2_PAL_OK) {
-    result = name_space->set_bool(name_space, "app_confirmed", 0);
-  }
-  if (result == H2_PAL_OK) result = name_space->commit(name_space);
-  int close_result = name_space != NULL && name_space->close != NULL
-                         ? name_space->close(name_space)
-                         : H2_PAL_OK;
-  return result == H2_PAL_OK ? close_result : result;
 }
 
 static int app_return_to_loader(void) {
@@ -628,18 +588,14 @@ static void color_bar_runtime(void *user) {
 static void fail_app_startup(const char *step, int result) {
   usb_write_status("JIELI_APP_INIT_FAILED step=%s result=%d action=rollback\r\n",
                    step, result);
-  /* This path precedes client initialization. Do not call through its empty
-   * config. Invalidate the trial bank; the common Loader detects rollback. */
-  int rollback_result = flash_update_clr_boot_info(CLEAR_APP_RUNNING_BANK);
-  usb_write_status("JIELI_APP_INIT_ROLLBACK result=%d\r\n", rollback_result);
-  if (rollback_result == 0) {
-    os_time_dly(10u);
-    system_reset();
-  }
-  /* If the ROM-bank operation/reset fails, keep reporting the failure. */
+  /* This path precedes client initialization. Retain the trial evidence and
+   * reset to Loader, which classifies the unconfirmed attempt as rollback. */
+  os_time_dly(10u);
+  system_reset();
+  /* If reset returns unexpectedly, keep reporting the original failure. */
   for (;;) {
-    usb_write_status("JIELI_APP_INIT_FAILED step=%s result=%d rollback=%d\r\n",
-                     step, result, rollback_result);
+    usb_write_status("JIELI_APP_INIT_FAILED step=%s result=%d reset=returned\r\n",
+                     step, result);
     os_time_dly(100u);
   }
 }
@@ -657,7 +613,6 @@ void app_main(void) {
   int trial_result = enter_trial_boot();
   usb_write_status("JIELI_APP_INIT step=trial-return result=%d\r\n", trial_result);
   if (trial_result != H2_PAL_OK) {
-    (void)flash_update_clr_boot_info(CLEAR_APP_RUNNING_BANK);
     system_reset();
     return;
   }
@@ -665,9 +620,6 @@ void app_main(void) {
       h2_jieli_wl82_platform_firmware_info_api(), &firmware_info);
   usb_write_status("JIELI_APP_INIT step=firmware-info result=%d\r\n", firmware_info_result);
   if (firmware_info_result != H2_PAL_OK) {
-    const h2_pal_pref_api_t *pref = h2_jieli_ac791n_devkit_pref_api();
-    (void)prepare_destructive_app_return((void *)pref);
-    (void)flash_update_clr_boot_info(CLEAR_APP_RUNNING_BANK);
     system_reset();
     return;
   }

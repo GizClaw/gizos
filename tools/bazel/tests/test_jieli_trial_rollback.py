@@ -18,6 +18,7 @@ STUB = r'''
 #define H2_JIELI_PARTITION_LOADER 1
 #define H2_JIELI_PARTITION_APP 2
 #define H2_LOADER_IMAGE_ROLE_APP 2
+#define H2_LOADER_IMAGE_ROLE_H2LOADER 1
 #define H2_LOADER_PREF_NAMESPACE "h2loader"
 #define H2_JIELI_TRIAL_ATTEMPT_KEY "jieli_trial_attempt"
 #define H2_JIELI_TRIAL_CHECKSUM_KEY "jieli_trial_checksum"
@@ -100,15 +101,29 @@ int main(void) {
  assert(!state.app_trial_rolled_back && freed==1);
  reset(); strcpy(status_value.stage.image_checksum,"new-image");
  reconcile_trial_state(NULL,NULL);
+ /* A new download does not erase evidence of the installed App's failure. */
+ assert(state.app_trial_rolled_back && removed==0 && commits==0);
+ reset(); stored_attempt="older-image";
+ strcpy(status_value.stage.image_checksum,"new-image");
+ reconcile_trial_state(NULL,NULL);
  assert(!state.app_trial_rolled_back && removed==3 && commits==1);
  reset(); state.running_partition_id=2; reconcile_trial_state(NULL,NULL);
  assert(!state.app_trial_rolled_back);
  reset(); status_value.stage.valid=0; reconcile_trial_state(NULL,NULL);
+ /* Installed-App warm trials have no Stage, but still require confirmation. */
+ assert(state.app_trial_rolled_back && removed==0);
+ reset(); status_value.stage.valid=0; stored_attempt=NULL;
+ reconcile_trial_state(NULL,NULL);
  assert(!state.app_trial_rolled_back && removed==3);
- /* The attempt names the committed App image and is skipped for a Loader. */
+ /* Both App and Loader candidates require an attempted/confirmed lifecycle. */
  reset(); assert(set_trial_attempt(1)==0);
  assert(strcmp(written_attempt,"checksum-A")==0 && commits==1);
  reset(); status_value.partition_2.role=1;
+ assert(set_trial_attempt(1)==0 && strcmp(written_attempt,"checksum-A")==0 && commits==1);
+ reconcile_trial_state(NULL,NULL); assert(state.app_trial_rolled_back);
+ reset(); status_value.partition_2.role=1;state.running_partition_id=2;
+ reconcile_trial_state(NULL,NULL); assert(!state.app_trial_rolled_back);
+ reset(); status_value.partition_2.role=0;
  assert(set_trial_attempt(1)==0 && written_attempt[0]==0 && commits==0);
  reset(); assert(set_trial_attempt(0)==0 && removed==1 && commits==1);
  return 0;
@@ -117,6 +132,28 @@ int main(void) {
 
 
 class TrialRollbackTest(unittest.TestCase):
+    def test_copy_back_to_p1_does_not_recreate_p2_attempt(self):
+        source = SOURCE.read_text()
+        self.assertIn("set_trial_attempt(partition_id == H2_JIELI_PARTITION_APP)", source)
+        self.assertNotIn("int rc = set_trial_attempt(1);", source)
+
+    def test_reboot_does_not_clear_trial_evidence(self):
+        source = SOURCE.read_text()
+        reboot = source[source.index("static int power_reboot("):
+                        source.index("int h2_jieli_loader_platform_init(")]
+        self.assertNotIn("set_trial_attempt(0)", reboot)
+        self.assertNotIn("probe_request", reboot)
+
+    def test_warm_app_return_preserves_image_and_installation(self):
+        source = (ROOT / "projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit/src/color_bar_pal.c").read_text()
+        self.assertNotIn("flash_update_clr_boot_info", source)
+        self.assertNotIn("prepare_destructive_app_return", source)
+        reboot = source[source.index("static int app_power_reboot("):
+                        source.index("static const h2_pal_power_api_t *app_power_api(")]
+        self.assertIn("system_reset();", reboot)
+        self.assertNotIn("h2_pal_fs_remove", reboot)
+        self.assertIn("h2_jieli_app_loader_prepare_reboot", reboot)
+
     def test_actual_pal_trial_reconciliation_and_partition_flags(self):
         source = SOURCE.read_text()
         reconcile = source[source.index("static void reconcile_trial_state("):

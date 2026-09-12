@@ -130,12 +130,10 @@ firmware_native_component(
     name = "loader_launcher",
     srcs = [
         "src/jieli_loader_platform.c",
-        "src/jieli_warm_boot.c",
         "src/loader_launcher.c",
     ],
     hdrs = [
         "src/jieli_loader_platform.h",
-        "src/jieli_warm_boot.h",
     ],
     include_roots = [
         "projects/h2loader/apps/loader/app/include",
@@ -146,6 +144,7 @@ firmware_native_component(
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
+        "//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:warm_boot",
         ":loader_common",
         ":reliable_transport",
         "//boards/ac791n_chip/ac791n",
@@ -192,5 +191,39 @@ h2loader_tar_zlib(
     firmware = ":firmware",
     image = "loader",
     role = "h2loader",
+    target = "wl82",
+)
+
+# Deliberately failing Loader-role candidate for pre-confirm recovery tests.
+# It uses the same layout, launcher, and task policy as the production image.
+firmware_native_component(
+    name = "loader_trial_crash",
+    srcs = ["src/loader_trial_crash.c"],
+    component_name = "jieli_ac791n_devkit_loader_trial_crash",
+    deps = ["//boards/ac791n_chip/ac791n"],
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+)
+
+h2loader_jieli_firmware(
+    name = "loader_trial_crash_firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":loader_launcher",
+        ":loader_trial_crash",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "loader-trial-crash",
+    target = "wl82",
+    task_policy = ":loader_task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "loader_trial_crash_package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":loader_trial_crash_firmware",
+    image = "loader-trial-crash",
+    role = "h2loader",
+    tags = ["no-release"],
     target = "wl82",
 )

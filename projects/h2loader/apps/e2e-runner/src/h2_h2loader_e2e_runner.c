@@ -462,6 +462,8 @@ connect_transport(h2_e2e_transport_context_t *context,
                                            H2_E2E_DEFAULT_WAIT_TIMEOUT_MS),
           .command_timeout_ms = timeout_or(config->command_timeout_ms,
                                            H2_E2E_DEFAULT_COMMAND_TIMEOUT_MS),
+          .on_log = config->on_log,
+          .log_user = config->log_user,
       };
       rc = h2_h2loader_host_ble_connect(&connect, &context->ble_connection,
                                         out_status);

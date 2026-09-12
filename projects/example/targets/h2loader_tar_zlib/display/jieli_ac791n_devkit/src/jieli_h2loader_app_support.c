@@ -4,6 +4,7 @@
 
 #include "h2_jieli_ac791n_devkit.h"
 #include "h2_jieli_ac791n_devkit_partitions.h"
+#include "h2_jieli_warm_request.h"
 #include "h2_jieli_wl82_platform_core.h"
 #include "h2_loader_boot.h"
 #include "h2_loader_sha256.h"
@@ -22,6 +23,28 @@ typedef struct h2_jieli_app_digest {
 
 static h2_jieli_app_digest_t digest;
 static h2_pal_mutex_t *operation_mutex;
+
+int h2_jieli_app_loader_prepare_reboot(
+    const h2_loader_app_client_config_t *config, uint32_t partition_id) {
+  if (partition_id == H2_JIELI_PARTITION_LOADER) return H2_PAL_OK;
+  if (partition_id != H2_JIELI_PARTITION_APP || config == NULL ||
+      config->pref == NULL || config->active_identity.image_sha256[0] == '\0') {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  h2_pal_pref_namespace_t *ns = NULL;
+  int rc = h2_pal_pref_open(config->pref, H2_LOADER_PREF_NAMESPACE,
+                            H2_PAL_PREF_OPEN_READ_WRITE, &ns);
+  if (rc != H2_PAL_OK) return rc;
+  rc = ns->set_string(ns, H2_JIELI_TRIAL_ATTEMPT_KEY,
+                      config->active_identity.image_sha256);
+  if (rc == H2_PAL_OK) rc = ns->commit(ns);
+  int close_rc = ns->close(ns);
+  if (rc != H2_PAL_OK) return rc;
+  if (close_rc != H2_PAL_OK) return close_rc;
+  /* Restarting App is not permission to consume an unrelated Stage. */
+  h2_jieli_warm_boot_request(H2_JIELI_BANK_2_SFC_BASE);
+  return H2_PAL_OK;
+}
 
 static int digest_start(void *user) {
   h2_jieli_app_digest_t *self = user;

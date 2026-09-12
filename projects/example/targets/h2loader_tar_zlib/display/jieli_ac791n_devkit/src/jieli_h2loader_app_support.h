@@ -13,6 +13,10 @@ int h2_jieli_app_loader_config_init(
 int h2_jieli_app_loader_confirm(
     const h2_loader_app_client_config_t *config);
 
+/* Prepare a non-destructive reset to Loader or the currently installed App. */
+int h2_jieli_app_loader_prepare_reboot(
+    const h2_loader_app_client_config_t *config, uint32_t partition_id);
+
 int h2_jieli_app_loader_ble_start(
     const h2_loader_app_client_config_t *config);
 

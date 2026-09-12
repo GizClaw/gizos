@@ -1,5 +1,7 @@
 #include "jieli_loader_platform.h"
 #include "jieli_warm_boot.h"
+#include "jieli_native_image.h"
+#include "jieli_pending_boot.h"
 
 #include "asm/includes.h"
 #include "h2_jieli_ac791n_devkit_partitions.h"
@@ -16,6 +18,8 @@ extern int snprintf(char *buffer, size_t size, const char *format, ...);
 #define H2_JIELI_UPDATE_WAIT_TICKS 500u
 
 extern uint32_t get_target_udate_addr(void);
+extern uint32_t decode_data_by_user_key(
+    uint16_t key, uint8_t *data, uint16_t size, uint32_t address, uint8_t block);
 extern void h2_jieli_loader_diag_write(const char *text);
 
 typedef struct h2_jieli_loader_platform {
@@ -36,12 +40,14 @@ typedef struct h2_jieli_loader_platform {
   uint8_t update_buffer[H2_JIELI_UPDATE_BLOCK_SIZE];
   size_t update_buffered;
   uint64_t update_native_written;
+  h2_jieli_native_image_t native_image;
   uint64_t expected;
   uint64_t written;
   uint64_t committed_size;
   uint32_t committed_partition_id;
   int partition_2_shadow_reusable;
   int app_trial_rolled_back;
+  int loader_candidate_confirmed;
   int update_active;
   volatile int update_result;
   int update_committed;
@@ -76,7 +82,8 @@ static void reconcile_trial_state(
   }
   const int stage_is_partition_2 =
       status.stage.valid && status.partition_2.valid &&
-      status.partition_2.role == H2_LOADER_IMAGE_ROLE_APP &&
+      (status.partition_2.role == H2_LOADER_IMAGE_ROLE_APP ||
+       status.partition_2.role == H2_LOADER_IMAGE_ROLE_H2LOADER) &&
       h2_loader_metadata_image_equal(&status.stage, &status.partition_2);
   /* The attempt key is written before this Loader commits the App bank and
    * removed only by App confirmation. Seeing the canonical Loader again while
@@ -93,7 +100,8 @@ static void reconcile_trial_state(
   const int attempt_names_partition_2 =
       attempt_result == H2_PAL_OK && attempt != NULL &&
       status.partition_2.valid &&
-      status.partition_2.role == H2_LOADER_IMAGE_ROLE_APP &&
+      (status.partition_2.role == H2_LOADER_IMAGE_ROLE_APP ||
+       status.partition_2.role == H2_LOADER_IMAGE_ROLE_H2LOADER) &&
       strcmp(attempt, status.partition_2.image_checksum) == 0;
   state.app_trial_rolled_back =
       state.running_partition_id == H2_JIELI_PARTITION_LOADER &&
@@ -134,15 +142,16 @@ static void reconcile_trial_state(
   if (name_space->close != NULL) (void)name_space->close(name_space);
 }
 
-/* Record the boot attempt before BootInfo can select the new App bank. A
- * Loader self-update also commits Partition 2, but never as an App trial. */
+/* Both App and Loader warm candidates require confirmation before the next
+ * canonical boot can consider their trial successful. */
 static int set_trial_attempt(int present) {
   h2_loader_status_t status;
   int result = h2_loader_read_pref_status(
       state.pref, state.allocator, &status);
   if (result != H2_PAL_OK) return result;
   if (present && (!status.partition_2.valid ||
-                  status.partition_2.role != H2_LOADER_IMAGE_ROLE_APP)) {
+                  (status.partition_2.role != H2_LOADER_IMAGE_ROLE_APP &&
+                   status.partition_2.role != H2_LOADER_IMAGE_ROLE_H2LOADER))) {
     return H2_PAL_OK;
   }
   h2_pal_pref_namespace_t *name_space = NULL;
@@ -180,6 +189,90 @@ static int image_path(
   return length > 0 && (size_t)length < out_path_size
              ? H2_PAL_OK
              : H2_PAL_ERR_NO_SPACE;
+}
+
+#define PENDING_BOOT_KEY "jieli_pending_boot"
+
+static int pending_header_valid(const h2_jieli_pending_boot_t *record) {
+  uint8_t plain[H2_JIELI_UPGRADE_HEADER_SIZE];
+  memcpy(plain, record->header, sizeof(plain));
+  (void)decode_data_by_user_key(0xffffu, plain, sizeof(plain), 0u, 32u);
+  return h2_jieli_pending_boot_header_valid(record, plain);
+}
+
+static int pending_boot_save(const h2_loader_metadata_t *candidate) {
+  h2_jieli_pending_boot_t record;
+  memset(&record, 0, sizeof(record));
+  record.magic = H2_JIELI_PENDING_BOOT_MAGIC;
+  record.code_length = state.native_image.code_length;
+  record.code_crc = state.native_image.code_crc;
+  memcpy(record.image_checksum, candidate->image_checksum,
+         sizeof(record.image_checksum));
+  if (h2_jieli_upgrade_header_copy(record.header) != 0 ||
+      !h2_jieli_pending_boot_matches(&record, sizeof(record), candidate->image_checksum) ||
+      !pending_header_valid(&record)) return H2_PAL_ERR_FORMAT;
+  h2_pal_pref_namespace_t *ns = NULL;
+  int rc = h2_pal_pref_open(state.pref, H2_LOADER_PREF_NAMESPACE,
+                            H2_PAL_PREF_OPEN_READ_WRITE, &ns);
+  if (rc != H2_PAL_OK) return rc;
+  if (ns->set_blob == NULL || ns->commit == NULL) rc = H2_PAL_ERR_UNSUPPORTED;
+  else {
+    uint8_t encoded[H2_JIELI_PENDING_BOOT_WIRE_SIZE];
+    h2_jieli_pending_boot_encode(&record, encoded);
+    rc = ns->set_blob(ns, PENDING_BOOT_KEY, encoded, sizeof(encoded));
+    if (rc == H2_PAL_OK) rc = ns->commit(ns);
+  }
+  if (ns->close != NULL) {
+    int closed = ns->close(ns);
+    if (rc == H2_PAL_OK) rc = closed;
+  }
+  return rc;
+}
+
+static int pending_boot_load(h2_jieli_pending_boot_t *record) {
+  h2_loader_status_t status;
+  int rc = h2_loader_read_pref_status(state.pref, state.allocator, &status);
+  if (rc != H2_PAL_OK) return rc;
+  if (!status.partition_2.valid ||
+      status.partition_2.role != H2_LOADER_IMAGE_ROLE_H2LOADER)
+    return H2_PAL_ERR_INVALID_STATE;
+  h2_pal_pref_namespace_t *ns = NULL;
+  rc = h2_pal_pref_open(state.pref, H2_LOADER_PREF_NAMESPACE,
+                        H2_PAL_PREF_OPEN_READ_ONLY, &ns);
+  if (rc != H2_PAL_OK) return rc;
+  void *blob = NULL;
+  size_t size = 0u;
+  rc = ns->get_blob == NULL ? H2_PAL_ERR_UNSUPPORTED :
+      ns->get_blob(ns, state.allocator, PENDING_BOOT_KEY, &blob, &size);
+  if (rc == H2_PAL_OK) {
+    if (!h2_jieli_pending_boot_decode(record, blob, size)) rc = H2_PAL_ERR_FORMAT;
+    else {
+      if (!h2_jieli_pending_boot_matches(record, sizeof(*record), status.partition_2.image_checksum) ||
+          !pending_header_valid(record)) rc = H2_PAL_ERR_FORMAT;
+    }
+  }
+  if (blob != NULL) h2_pal_mem_free(state.allocator, blob);
+  if (ns->close != NULL) {
+    int closed = ns->close(ns);
+    if (rc == H2_PAL_OK) rc = closed;
+  }
+  return rc;
+}
+
+static int publish_confirmed_loader(void) {
+  if (!state.loader_candidate_confirmed) return H2_PAL_ERR_INVALID_STATE;
+  struct BootInfo native;
+  memset(&native, 0, sizeof(native));
+  /* A native P2 entry supports upgrading from older Loader releases. */
+  if (get_current_boot_info(&native) == 0 &&
+      native.baseAddress == H2_JIELI_BANK_2_SFC_BASE && native.codeLength != 0u)
+    return set_trial_attempt(0);
+  h2_jieli_pending_boot_t record;
+  int rc = pending_boot_load(&record);
+  if (rc != H2_PAL_OK) return rc;
+  if (h2_jieli_upgrade_header_publish(record.header) != 0) return H2_PAL_ERR_IO;
+  h2_jieli_loader_diag_write("H2_JIELI_LOADER_HEADER published=1 confirmed=1\r\n");
+  return set_trial_attempt(0);
 }
 
 static void writer_abort_internal(void) {
@@ -424,6 +517,18 @@ static int update_write_block(
 static int update_flush_buffer(void) {
   size_t buffered = state.update_buffered;
   if (state.update_native_written == 0u) {
+    if (h2_jieli_native_image_parse(state.update_buffer, buffered,
+                                    (uint32_t)state.expected,
+                                    &state.native_image) != 0) {
+      return H2_PAL_ERR_INVALID_ARG;
+    }
+    char line[128];
+    (void)snprintf(line, sizeof(line),
+        "H2_JIELI_NATIVE_IMAGE offset=%u bytes=%u crc=%04x\r\n",
+        (unsigned)state.native_image.code_offset,
+        (unsigned)state.native_image.code_length,
+        (unsigned)state.native_image.code_crc);
+    h2_jieli_loader_diag_write(line);
     uint32_t target = get_target_udate_addr();
     uint32_t aligned =
         (target + H2_JIELI_UPDATE_BLOCK_SIZE - 1u) &
@@ -665,6 +770,12 @@ static int power_set_next(void *user, uint32_t partition_id) {
     return H2_PAL_ERR_NOT_FOUND;
   }
   if (partition_id == state.running_partition_id) {
+    /* Shared copy_partition_2_to_1 calls this gate before invalidating P1.
+     * Only a confirmed candidate may become ROM-bootable at that point. */
+    if (partition_id == H2_JIELI_PARTITION_APP) {
+      int publish_rc = publish_confirmed_loader();
+      if (publish_rc != H2_PAL_OK) return publish_rc;
+    }
     if (state.update_committed) {
       int rc = flash_update_clr_boot_info(CLEAR_APP_UPDATE_BANK) == 0
                    ? H2_PAL_OK
@@ -692,12 +803,44 @@ static int power_set_next(void *user, uint32_t partition_id) {
       state.committed_partition_id != partition_id) {
     return H2_PAL_ERR_INVALID_STATE;
   }
-  int rc = set_trial_attempt(1);
+  /* P2 is a candidate trial; copying its confirmed Loader back into P1 is
+   * convergence, not another P2 attempt. Do not recreate cleared evidence. */
+  int rc = set_trial_attempt(partition_id == H2_JIELI_PARTITION_APP);
   if (rc != H2_PAL_OK) {
     h2_jieli_loader_diag_write("H2_JIELI_TRIAL_ATTEMPT_ERROR\r\n");
     return rc;
   }
+  /* Keep ROM selection on the canonical Loader for App trials. Publishing
+   * the App BootInfo would require a destructive SDK erase to return here.
+   * The image writer has already verified the complete candidate. */
+  h2_loader_status_t candidate_status;
+  rc = h2_loader_read_pref_status(state.pref, state.allocator,
+                                 &candidate_status);
+  if (rc != H2_PAL_OK) return rc;
+  if (state.running_partition_id == H2_JIELI_PARTITION_LOADER &&
+      partition_id == H2_JIELI_PARTITION_APP &&
+      candidate_status.partition_2.valid &&
+      candidate_status.partition_2.role == H2_LOADER_IMAGE_ROLE_APP) {
+    if (dual_bank_passive_update_exit(NULL) != 0u) return H2_PAL_ERR_IO;
+    state.update_active = 0;
+    state.update_committed = 1;
+    state.app_trial_rolled_back = 0;
+    state.next_partition_id = partition_id;
+    state.warm_partition_id = partition_id;
+    h2_jieli_loader_diag_write(
+        "H2_JIELI_APP_COMMIT mode=warm boot_info=unpublished\r\n");
+    return H2_PAL_OK;
+  }
   state.update_result = H2_PAL_ERR_TIMEOUT;
+  const int defer_loader_header =
+      state.running_partition_id == H2_JIELI_PARTITION_LOADER &&
+      partition_id == H2_JIELI_PARTITION_APP &&
+      candidate_status.partition_2.valid &&
+      candidate_status.partition_2.role == H2_LOADER_IMAGE_ROLE_H2LOADER;
+  if (defer_loader_header && h2_jieli_upgrade_header_arm() != 0) {
+    h2_jieli_loader_diag_write("H2_JIELI_LOADER_HEADER arm=failed\r\n");
+    return H2_PAL_ERR_IO;
+  }
   __atomic_store_n(&state.burn_waiting, 1, __ATOMIC_RELEASE);
   h2_jieli_loader_diag_write("H2_JIELI_UPDATE_BURN_ENTER\r\n");
   uint32_t burn_rc = dual_bank_update_burn_boot_info(update_burn_complete);
@@ -734,6 +877,16 @@ static int power_set_next(void *user, uint32_t partition_id) {
     (void)set_trial_attempt(0);
     return rc;
   }
+  if (defer_loader_header) {
+    rc = pending_boot_save(&candidate_status.partition_2);
+    if (rc != H2_PAL_OK) {
+      h2_jieli_loader_diag_write("H2_JIELI_LOADER_HEADER persist=failed\r\n");
+      return rc;
+    }
+    state.warm_partition_id = partition_id;
+    h2_jieli_loader_diag_write(
+        "H2_JIELI_LOADER_COMMIT mode=warm boot_info=unpublished\r\n");
+  }
   state.update_committed = 1;
   state.app_trial_rolled_back = 0;
   state.next_partition_id = partition_id;
@@ -741,9 +894,13 @@ static int power_set_next(void *user, uint32_t partition_id) {
 }
 
 static void power_reboot_timer(void *user) {
-  (void)user;
   h2_jieli_loader_diag_write("H2_JIELI_REBOOT_CALLBACK task=sys_timer\r\n");
   h2_jieli_loader_diag_write("H2_JIELI_REBOOT_EXECUTE reset=core\r\n");
+  /* Publish only when reset will actually execute. A failed timer allocation
+   * must not leave a request for an unrelated later reset to consume. */
+  if ((uintptr_t)user == H2_JIELI_BANK_2_SFC_BASE) {
+    h2_jieli_warm_boot_request(H2_JIELI_BANK_2_SFC_BASE);
+  }
   system_reset();
 }
 
@@ -757,17 +914,6 @@ static int power_reboot(void *user, uint32_t reason) {
     return H2_PAL_ERR_INVALID_STATE;
   }
   if (state.reboot_timer_id != 0u) return H2_PAL_OK;
-  if (state.warm_partition_id == H2_JIELI_PARTITION_APP) {
-    h2_jieli_warm_boot_request(H2_JIELI_BANK_2_SFC_BASE);
-  } else if (
-      !state.update_committed &&
-      state.running_partition_id == H2_JIELI_PARTITION_LOADER &&
-      state.next_partition_id == H2_JIELI_PARTITION_LOADER) {
-    /* SPIKE: sample the flash window under candidate BASE_ADR values and
-     * forget earlier warm-boot rollback evidence so `reboot app` can retry. */
-    h2_jieli_warm_boot_probe_request();
-    (void)set_trial_attempt(0);
-  }
   char line[128];
   (void)snprintf(
       line, sizeof(line),
@@ -780,7 +926,10 @@ static int power_reboot(void *user, uint32_t reason) {
    * after committing the bank, rather than resetting inline in the Loader
    * task while the native updater and command response are being retired. */
   state.reboot_timer_id = sys_timeout_add_to_task(
-      "sys_timer", NULL, power_reboot_timer, 2000u);
+      "sys_timer", (void *)(uintptr_t)(
+          state.warm_partition_id == H2_JIELI_PARTITION_APP
+              ? H2_JIELI_BANK_2_SFC_BASE : 0u),
+      power_reboot_timer, 2000u);
   (void)snprintf(
       line, sizeof(line), "H2_JIELI_REBOOT_SCHEDULED timer=%u delay_ms=2000\r\n",
       (unsigned)state.reboot_timer_id);
@@ -810,18 +959,21 @@ int h2_jieli_loader_platform_init(
       loader_status.partition_2.role == H2_LOADER_IMAGE_ROLE_H2LOADER) {
     state.partition_2_shadow_reusable = 1;
   }
-  /* The v2 common Loader models both native banks directly as Partition 1
-   * and Partition 2.  JieLi's current BootInfo base address is the durable
-   * source of truth for which physical bank is executing; no separate
-   * self-upgrade phase record is needed. */
+  /* Native metadata can be deliberately absent during a warm candidate trial.
+   * Identify execution from the hardware mapping, checking it against either
+   * native BootInfo or the consumed one-shot hand-off. An I/O failure must
+   * never silently turn a running P2 candidate into the canonical P1 role. */
   struct BootInfo boot_info;
   memset(&boot_info, 0, sizeof(boot_info));
   int boot_info_rc = get_current_boot_info(&boot_info);
-  state.running_partition_id =
-      boot_info_rc == 0 &&
-              boot_info.baseAddress >= H2_JIELI_IMAGE_MAX_SIZE / 2u
-          ? H2_JIELI_PARTITION_APP
-          : H2_JIELI_PARTITION_LOADER;
+  const uint32_t mapped_base = h2_jieli_warm_boot_running_base(
+      boot_info_rc, boot_info.baseAddress);
+  if (mapped_base == 0u) {
+    h2_jieli_loader_diag_write("H2_JIELI_BOOT_IDENTITY_INVALID\r\n");
+    return H2_PAL_ERR_IO;
+  }
+  state.running_partition_id = mapped_base == H2_JIELI_BANK_2_SFC_BASE
+      ? H2_JIELI_PARTITION_APP : H2_JIELI_PARTITION_LOADER;
   state.next_partition_id = state.running_partition_id;
   char line[192];
   (void)snprintf(
@@ -878,5 +1030,18 @@ const h2_loader_image_writer_api_t *h2_jieli_loader_image_writer(void) {
 
 int h2_jieli_loader_confirm_active_image(void *user) {
   (void)user;
+  if (state.running_partition_id == H2_JIELI_PARTITION_APP) {
+    struct BootInfo native;
+    memset(&native, 0, sizeof(native));
+    if (get_current_boot_info(&native) != 0 ||
+        native.baseAddress != H2_JIELI_BANK_2_SFC_BASE || native.codeLength == 0u) {
+      h2_jieli_pending_boot_t record;
+      int rc = pending_boot_load(&record);
+      if (rc != H2_PAL_OK) return rc;
+    }
+    state.loader_candidate_confirmed = 1;
+    h2_jieli_loader_diag_write(
+        "H2_JIELI_LOADER_TRIAL confirmed=1 publish_gate=before-copy-p1\r\n");
+  }
   return H2_PAL_OK;
 }

@@ -87,8 +87,6 @@ extern uint8_t HEAP_END;
 extern const h2_pal_audio_api_t *h2_pal_unsupported_audio_api(void);
 extern const h2_pal_audio_decoder_api_t *h2_linux_fdk_aac_decoder_api(void);
 
-static int prepare_app_return(void *user);
-
 static void emit(const char *format, ...) {
   /* Each call owns its formatting buffer and the board console serializes the
    * complete line.  Early boot diagnostics must not depend on the App command
@@ -158,24 +156,18 @@ static int power_set_next(void *user, uint32_t partition_id) {
       partition_id != H2_JIELI_PARTITION_APP) {
     return H2_PAL_ERR_NOT_FOUND;
   }
-  if (partition_id == H2_JIELI_PARTITION_LOADER) {
-    int result = prepare_app_return(
-        (void *)h2_jieli_ac791n_devkit_pref_api());
-    if (result != H2_PAL_OK) return result;
-  }
   next_boot_partition = partition_id;
   return H2_PAL_OK;
 }
 
 static int power_reboot(void *user, uint32_t reason) {
   (void)user;
+  int rc = h2_jieli_app_loader_prepare_reboot(
+      &loader_client.config, next_boot_partition);
+  if (rc != H2_PAL_OK) return rc;
   emit("JIELI_APP_REBOOT source=power_api reason=%u next=%u\r\n",
        (unsigned)reason, (unsigned)next_boot_partition);
   os_time_dly(10u);
-  if (next_boot_partition == H2_JIELI_PARTITION_LOADER &&
-      flash_update_clr_boot_info(CLEAR_APP_RUNNING_BANK) != 0) {
-    return H2_PAL_ERR_IO;
-  }
   system_reset();
   return H2_PAL_OK;
 }
@@ -189,44 +181,6 @@ static const h2_pal_power_api_t *power_api(void) {
   };
   static const h2_pal_power_api_t api = {.vtable = &vtable};
   return &api;
-}
-
-static int prepare_app_return(void *user) {
-  const h2_pal_pref_api_t *pref = user;
-  h2_pal_pref_namespace_t *name_space = NULL;
-  h2_pal_fs_api_t fs;
-  static const char *const installed_keys[] = {
-      "installed_version", "installed_checksum", "installed_size",
-  };
-  int result = h2_jieli_ac791n_devkit_sd_fs_init(&fs);
-  if (result == H2_PAL_OK) {
-    result = h2_pal_fs_remove(&fs, H2_JIELI_APP_IMAGE_SHADOW_PATH);
-    if (result == H2_PAL_ERR_NOT_FOUND) result = H2_PAL_OK;
-  }
-  if (result != H2_PAL_OK) return result;
-  result = h2_pal_pref_open(
-      pref, H2_LOADER_PREF_NAMESPACE, H2_PAL_PREF_OPEN_READ_WRITE,
-      &name_space);
-  if (result != H2_PAL_OK) return result;
-  if (name_space == NULL || name_space->remove == NULL ||
-      name_space->set_bool == NULL || name_space->commit == NULL) {
-    result = H2_PAL_ERR_UNSUPPORTED;
-  }
-  for (size_t index = 0u;
-       result == H2_PAL_OK &&
-       index < sizeof(installed_keys) / sizeof(installed_keys[0]);
-       ++index) {
-    result = name_space->remove(name_space, installed_keys[index]);
-    if (result == H2_PAL_ERR_NOT_FOUND) result = H2_PAL_OK;
-  }
-  if (result == H2_PAL_OK) {
-    result = name_space->set_bool(name_space, "app_confirmed", 0);
-  }
-  if (result == H2_PAL_OK) result = name_space->commit(name_space);
-  int close_result = name_space != NULL && name_space->close != NULL
-                         ? name_space->close(name_space)
-                         : H2_PAL_OK;
-  return result == H2_PAL_OK ? close_result : result;
 }
 
 static int enter_trial_boot(int *out_trial) {
@@ -284,13 +238,7 @@ static int enter_trial_boot(int *out_trial) {
   }
   if (result != H2_PAL_OK || !repeated_trial) return result;
 
-  /* The Loader owns recovery of INSTALLED_PENDING_CONFIRM.  Do not mount SD
-   * or mutate the package lifecycle here: this is the last-resort path after
-   * a watchdog reset, so it must contain no operation that can block before
-   * the running App bank is invalidated. */
-  if (flash_update_clr_boot_info(CLEAR_APP_RUNNING_BANK) != 0) {
-    return H2_PAL_ERR_IO;
-  }
+  /* ROM selects the canonical Loader; retain the failed image and evidence. */
   system_reset();
   return H2_PAL_ERR_INVALID_STATE;
 }
@@ -299,7 +247,6 @@ static void early_trial_timeout(void *user) {
   (void)user;
   trial_recovery_timer = 0u;
   /* Keep timeout recovery independent of SD, Pref and the App transport. */
-  (void)flash_update_clr_boot_info(CLEAR_APP_RUNNING_BANK);
   system_reset();
 }
 
@@ -334,10 +281,7 @@ int h2_jieli_ac791n_devkit_early_app_boot(void) {
    * Loader without touching Pref, SD, USB or the diagnostic partition.  This
    * also covers a stall inside those facilities on the preceding boot. */
   if ((boot_reset_reason & SYS_RST_WDT) != 0u) {
-    int clear_result =
-        flash_update_clr_boot_info(CLEAR_APP_RUNNING_BANK);
-    emit("H2_JIELI_MP4_EARLY step=wdt-rollback clear=%d\r\n",
-         clear_result);
+    emit("H2_JIELI_MP4_EARLY step=wdt-rollback action=reset\r\n");
     system_reset();
     return H2_PAL_ERR_INVALID_STATE;
   }
@@ -347,10 +291,7 @@ int h2_jieli_ac791n_devkit_early_app_boot(void) {
   emit("H2_JIELI_MP4_EARLY step=trial-timer timer=%u\r\n",
        (unsigned)trial_recovery_timer);
   if (trial_recovery_timer == 0u) {
-    int clear_result =
-        flash_update_clr_boot_info(CLEAR_APP_RUNNING_BANK);
-    emit("H2_JIELI_MP4_EARLY step=timer-rollback clear=%d\r\n",
-         clear_result);
+    emit("H2_JIELI_MP4_EARLY step=timer-rollback action=reset\r\n");
     system_reset();
     return H2_PAL_ERR_TASK;
   }
@@ -580,8 +521,6 @@ void app_main(void) {
       h2_jieli_wl82_platform_firmware_info_api(), &firmware_info);
   boot_marker(3u, result);
   if (result != H2_PAL_OK) {
-    (void)prepare_app_return((void *)h2_jieli_ac791n_devkit_pref_api());
-    (void)flash_update_clr_boot_info(CLEAR_APP_RUNNING_BANK);
     system_reset();
     return;
   }
@@ -609,10 +548,7 @@ void app_main(void) {
   emit("H2_JIELI_MP4_TRIAL step=enter result=%d trial=%d\r\n",
        result, is_trial);
   if (result != H2_PAL_OK) {
-    int clear_result =
-        flash_update_clr_boot_info(CLEAR_APP_RUNNING_BANK);
-    emit("H2_JIELI_MP4_TRIAL step=rollback clear=%d\r\n",
-         clear_result);
+    emit("H2_JIELI_MP4_TRIAL step=rollback action=reset\r\n");
     system_reset();
     return;
   }
