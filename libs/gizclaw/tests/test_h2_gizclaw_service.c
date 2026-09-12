@@ -3131,6 +3131,7 @@ enum {
   SEEK_SERVER_IGNORE,   /* 200 whole body, no Content-Range. */
   SEEK_SERVER_MISPLACE, /* Probe honoured; the seek names the wrong bytes. */
   SEEK_SERVER_NOT_206,  /* Probe honoured; the seek answers 200 whole body. */
+  SEEK_SERVER_RETOTAL,  /* Probe honoured; the seek names another length. */
 };
 typedef struct seek_test_state {
   fixture_t fixture;
@@ -3223,7 +3224,11 @@ static int seek_http(void *user, const h2_pal_http_request_t *request,
   char value[64];
   const unsigned long long named =
       state->server == SEEK_SERVER_MISPLACE && call > 0 ? first + 1 : first;
-  (void)snprintf(value, sizeof(value), "bytes %llu-%llu/%zu", named, last, total);
+  const size_t length =
+      state->server == SEEK_SERVER_RETOTAL && call > 0 ? total + 1u : total;
+  (void)snprintf(value, sizeof(value), "bytes %llu-%llu/%zu", named,
+                 state->server == SEEK_SERVER_RETOTAL && call > 0 ? last + 1u : last,
+                 length);
   int rc = h2_pal_http_deliver_response_header(request, "Content-Range", 13,
                                                value, strlen(value));
   if (rc != H2_PAL_OK)
@@ -3350,10 +3355,12 @@ static void test_device_player_timed_start(void) {
   assert(atomic_load(&state.calls) == 1u);
   assert(!strcmp(state.ranges[0], "bytes=0-131071"));
 
-  /* A seek response for other bytes, or a 200 to the ranged seek, is
-   * refused at its first byte; one plain GET then skips to the start. */
-  const unsigned bad[] = {SEEK_SERVER_MISPLACE, SEEK_SERVER_NOT_206};
-  for (size_t i = 0; i < 2u; ++i) {
+  /* A seek response for other bytes, a 200 to the ranged seek, or a slice
+   * of a file whose length differs from the probe's (replaced in between)
+   * is refused at its first byte; one plain GET then skips to the start. */
+  const unsigned bad[] = {SEEK_SERVER_MISPLACE, SEEK_SERVER_NOT_206,
+                          SEEK_SERVER_RETOTAL};
+  for (size_t i = 0; i < 3u; ++i) {
     state.server = bad[i];
     assert(seek_play(service, &state, 10000, 7000, 7000) ==
            seek_frames(&state, 7000u * 16u));

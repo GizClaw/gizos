@@ -813,11 +813,13 @@ struct audio_download {
   size_t capacity, head, count, prebuffer;
   uint64_t length, consumed;
   /* Requested byte range; a plain GET when !ranged. last is inclusive,
-   * UINT64_MAX for an open-ended range. require_partial refuses a body that
-   * is not the 206 slice asked for; without it a missing Content-Range means
-   * the server ignored Range and sent the whole file. */
-  bool ranged, require_partial;
-  uint64_t first, last;
+   * UINT64_MAX for an open-ended range. A non-zero expected_total refuses
+   * a body that is not the 206 slice asked for of a file with exactly that
+   * length (the one the probe measured, so a file replaced in between is not
+   * spliced onto its old headers); with 0 a missing Content-Range means the
+   * server ignored Range and sent the whole file. */
+  bool ranged;
+  uint64_t first, last, expected_total;
   /* Content-Range as delivered; range_total stays 0 unless it was valid. */
   bool range_seen, body_checked;
   uint64_t range_first, range_last, range_total;
@@ -890,7 +892,10 @@ static bool range_acceptable(const audio_download_t *download) {
   if (!download->ranged)
     return true;
   if (!download->range_total)
-    return !download->range_seen && !download->require_partial;
+    return !download->range_seen && !download->expected_total;
+  if (download->expected_total &&
+      download->range_total != download->expected_total)
+    return false;
   const uint64_t last = download->last < download->range_total - 1
                             ? download->last
                             : download->range_total - 1;
@@ -972,7 +977,7 @@ static void audio_download_worker(void *user) {
   const uint64_t partial = download->range_total
                                ? download->range_last - download->range_first + 1
                                : 0;
-  const bool require_partial = download->require_partial;
+  const bool require_partial = download->expected_total != 0;
   unlock(d);
   /* A partial body is held to its own length: status 206 and exactly the
    * bytes Content-Range promised, so a short slice is never taken as an
@@ -1080,7 +1085,7 @@ static int finish_audio_download(h2_gizclaw_device_t *d) {
 /* Replaces d->download (joining the previous one) with a new request. */
 static int start_audio_download(h2_gizclaw_device_t *d, const char *url,
                                 bool music, bool ranged, uint64_t first,
-                                uint64_t last, bool require_partial) {
+                                uint64_t last, uint64_t expected_total) {
   int rc = finish_audio_download(d);
   if (rc != H2_PAL_OK)
     return rc;
@@ -1091,7 +1096,7 @@ static int start_audio_download(h2_gizclaw_device_t *d, const char *url,
   *download = (audio_download_t){.device = d,
                                  .music = music,
                                  .ranged = ranged,
-                                 .require_partial = require_partial,
+                                 .expected_total = expected_total,
                                  .first = first,
                                  .last = last,
                                  .capacity = d->config.audio_buffer_bytes
@@ -1147,7 +1152,8 @@ static int seek_range(h2_gizclaw_device_t *d, h2_gizclaw_ogg_opus_t *decoder,
                           (double)duration_ms);
   if (offset >= total)
     return H2_PAL_ERR_FORMAT;
-  int rc = start_audio_download(d, url, music, true, offset, UINT64_MAX, true);
+  int rc = start_audio_download(d, url, music, true, offset, UINT64_MAX,
+                                total);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_ogg_opus_seek(decoder, start_ms, true);
   return rc;
@@ -1191,8 +1197,8 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
                                                   : AUDIO_SOURCE_PLAIN;
   int rc = source == AUDIO_SOURCE_PROBE
                ? start_audio_download(d, url, music, true, 0,
-                                      AUDIO_SEEK_PROBE_BYTES - 1u, false)
-               : start_audio_download(d, url, music, false, 0, 0, false);
+                                      AUDIO_SEEK_PROBE_BYTES - 1u, 0)
+               : start_audio_download(d, url, music, false, 0, 0, 0);
   h2_gizclaw_ogg_opus_t *decoder = NULL;
   h2_pal_audio_track_t *track = NULL;
   if (rc == H2_PAL_OK)
@@ -1265,7 +1271,7 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
       trace(d, "player-seek-fallback", (int)source, rc);
       source = AUDIO_SOURCE_FALLBACK;
       seek_pending = true;
-      rc = start_audio_download(d, url, music, false, 0, 0, false);
+      rc = start_audio_download(d, url, music, false, 0, 0, 0);
       if (rc == H2_PAL_OK)
         rc = start_decoder(d, &decoder);
       continue;
