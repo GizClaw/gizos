@@ -24,6 +24,34 @@ typedef struct h2_lua_resource {
   size_t source_size;
 } h2_lua_resource_t;
 
+/** Longest storage root, app id and storage file name, in bytes. */
+#define H2_LUA_STORAGE_ROOT_MAX 96u
+#define H2_LUA_STORAGE_APP_ID_MAX 32u
+#define H2_LUA_STORAGE_NAME_MAX 32u
+/** Upper bound for h2_lua_storage_config_t.app_max_files. */
+#define H2_LUA_STORAGE_MAX_FILES 64u
+
+/**
+ * Backing for the per-app `storage` Lua module.
+ *
+ * A job submitted with an app id reads and writes only files directly under
+ * `<root>/<app_id>/`. A NULL fs leaves storage unconfigured: `storage` still
+ * loads, and its calls return `nil, "storage: unavailable"`.
+ */
+typedef struct h2_lua_storage_config {
+  /** Borrowed filesystem; it must outlive the Host. Needs mkdir, open, read,
+   * write, close, stat, remove and a replacing rename. */
+  const h2_pal_fs_api_t *fs;
+  /** Directory in the fs namespace, for example "/data/lua". Created on the
+   * first write when missing. Copied at create; no trailing '/'. */
+  const char *root;
+  /** Bytes of file content one app may keep. Zero selects 64 KiB. */
+  size_t app_quota_bytes;
+  /** Files one app may keep, at most H2_LUA_STORAGE_MAX_FILES. Zero selects
+   * 16. */
+  size_t app_max_files;
+} h2_lua_storage_config_t;
+
 typedef struct h2_lua_host_config {
   h2_runtime_t *runtime;
   size_t worker_count;
@@ -51,6 +79,8 @@ typedef struct h2_lua_host_config {
    * and destruction finish. Lua deinit only frees its framebuffer in this mode.
    * Zero preserves the default job-owned open/close lifecycle. */
   int borrow_display;
+  /** Per-app persistent storage; zero-initialized leaves it unconfigured. */
+  h2_lua_storage_config_t storage;
 } h2_lua_host_config_t;
 
 /** Creates a stopped Host that borrows, but never consumes or destroys,

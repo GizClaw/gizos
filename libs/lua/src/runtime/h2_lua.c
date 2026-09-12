@@ -13,8 +13,8 @@ static int is_terminal(h2_lua_job_state_t state) {
 
 static int module_name_is_reserved(const char *name) {
   static const char *const reserved[] = {
-      "runtime",   "delay", "system", "display",
-      "lcd_touch", "audio", "json",   "capability",
+      "runtime", "delay", "system",     "display", "lcd_touch",
+      "audio",   "json",  "capability", "storage",
   };
   for (size_t i = 0u; i < sizeof(reserved) / sizeof(reserved[0]); ++i) {
     if (strcmp(name, reserved[i]) == 0) {
@@ -302,6 +302,13 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
       (normalized.resource_count != 0u && normalized.resources == NULL)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  {
+    h2_pal_result_t storage_result =
+        h2_lua_storage_normalize(&normalized.storage);
+    if (storage_result != H2_PAL_OK) {
+      return storage_result;
+    }
+  }
   for (i = 0u; i < normalized.resource_count; ++i) {
     const h2_lua_resource_t *resource = &normalized.resources[i];
     size_t other;
@@ -442,6 +449,13 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
     h2_pal_mem_free(normalized.runtime->mem, host);
     return H2_PAL_ERR_UNSUPPORTED;
   }
+  {
+    h2_pal_result_t storage_result = h2_lua_storage_host_init(host);
+    if (storage_result != H2_PAL_OK) {
+      h2_lua_host_destroy(host);
+      return storage_result;
+    }
+  }
   *out_host = host;
   return H2_PAL_OK;
 }
@@ -570,6 +584,7 @@ void h2_lua_host_destroy(h2_lua_host_t *host) {
   for (i = 0u; i < host->config.max_jobs; ++i) {
     release_job(&host->jobs[i]);
   }
+  h2_lua_storage_host_deinit(host);
   if (host->capability_mutex != NULL) {
     (void)h2_pal_mutex_destroy(host->config.runtime->sync,
                                host->capability_mutex);

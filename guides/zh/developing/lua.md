@@ -39,20 +39,14 @@ provider 可以让不同 VM 在多个 worker 上并行。
 
 ## Host 和 job
 
-`h2_lua_host_config_t` 的容量均有界：`worker_count`、`worker_stack_size`、
-`max_jobs`、`max_coroutines_per_vm`、`ready_queue_capacity`、`waiter_capacity`、
-`event_delivery_capacity`、`callback_capacity_per_job`、
-`audio_track_capacity_per_job`、`pending_capability_capacity`、`instruction_quantum`、
-`resume_time_budget_ms`、`source_limit_bytes`、`output_limit_bytes` 和
-`vm_memory_limit_bytes`。零使用声明的默认值；ready/waiter 容量不得小于 VM 的
-coroutine 上限。
+`h2_lua_host_config_t` 的容量均有界：`worker_count`、`worker_stack_size`、`max_jobs`、`max_coroutines_per_vm`、`ready_queue_capacity`、`waiter_capacity`、`event_delivery_capacity`、`callback_capacity_per_job`、`audio_track_capacity_per_job`、`pending_capability_capacity`、`instruction_quantum`、`resume_time_budget_ms`、`source_limit_bytes`、`output_limit_bytes` 和 `vm_memory_limit_bytes`。零使用声明的默认值；ready/waiter 容量不得小于 VM 的 coroutine 上限。`storage` 配置每个 App 的持久化存储，见 [App 存储](#app-存储)；全零表示未配置。
 
 Host 的正常生命周期是：
 
 1. `h2_lua_host_create()` 借用 Runtime 并分配固定容量；
 2. 在 start 前注册 native module 和 capability；
 3. `h2_lua_host_start()` 冻结 registry 并创建 worker；
-4. 通过 text、compiled resource 或 Runtime Filesystem 提交 job；
+4. 通过 text、compiled resource 或 Runtime Filesystem 提交 job，同时给出决定 `storage` 作用域的 app id（可为 `NULL`）；
 5. App 消费 Runtime Event queue，并通过 `h2_lua_dispatch_runtime_event()` 定向
    投递给一个 live `job_id`；
 6. `stop()` 拒绝新 job、取消等待，`join()` 等待 worker 退出，最后 `destroy()`。
@@ -82,6 +76,7 @@ Button `ACTION` 的共享 Runtime payload 只有 `pressed_at_ms` 和 `released_a
 | `display` | `clear`、`fill_rect`、`draw_line`、`fill_circle`、`draw_circle`、AA circle、圆角矩形、三角形、framebuffer fade、frame、text、`present` 和 `deinit` | 直接使用 Runtime singleton Display API；dirty region 始终裁剪到 framebuffer |
 | `lcd_touch` | `read`、`poll`、`sync` 及 upstream touch result fields | 直接使用 Runtime singleton Touch API，不接收 SDK handle |
 | Button proxy | `get_key_level` | Runtime normalized Button snapshot，不创建 GPIO button |
+| `storage` | `get_root_dir`、`join_path`、`exists`、`stat`、`read_file`、`write_file`、`listdir`、`remove`、`rename`、`get_free_space` | Host 配置的 PAL Filesystem；每个 app id 一个扁平目录，受配额和文件数限制，写入原子替换 |
 | `audio` | `new_output`（每条 Track 的 `write/info/close`）、`new_input`（`read/level/info/close`） | 直接使用 Runtime singleton Audio System；Track frame 大小取自设备 playback format，Input frame 大小取自设备 mic format；PAL 混合多条 Track，不接收 codec handle |
 
 `runtime.components.getByName()`、`board_manager`、SDK handle 和动态 C module
@@ -165,13 +160,26 @@ PAL mixer 支撑的 Audio System 只接受 frame 大小与设备一致的 Track�
 
 ## ESP-Claw profile
 
-兼容库存固定到 ESP-Claw commit
-`fb7b248114bb1b12ba0fe8e03d4b59bdbec292c1` 的 36 个 module ID。`json` 和
-`capability` 为 `full`；`delay`、`system`、`display`、`lcd_touch` 和 `audio` 为
-`profile`；`button` 为 `component-adapted`，表示物理 constructor 被 Runtime
-component acquisition 取代、获取后的必需操作保持兼容；其余 module 为
-`unavailable`，`require()` 必须确定性失败。`runtime` 是本 Feature 唯一新增的
-GizOS Lua module。
+兼容库存固定到 ESP-Claw commit `fb7b248114bb1b12ba0fe8e03d4b59bdbec292c1` 的 36 个 module ID。`json` 和 `capability` 为 `full`；`delay`、`system`、`display`、`lcd_touch`、`audio` 和 `storage` 为 `profile`；`button` 为 `component-adapted`，表示物理 constructor 被 Runtime component acquisition 取代、获取后的必需操作保持兼容；其余 module 为 `unavailable`，`require()` 必须确定性失败。`runtime` 是本 Feature 唯一新增的 GizOS Lua module。
+
+## App 存储
+
+`storage` 让 Lua App 在重启后保留少量数据，例如最高分和设置。Board 或宿主通过 `h2_lua_host_config_t.storage` 提供一个借用的 PAL Filesystem、其命名空间中的 root 目录（例如 ESP LittleFS `data` 分区上的 `/data/lua`）、每个 App 的内容字节配额和文件数上限；字段、默认值和上限以 `h2_lua.h` 中 `h2_lua_storage_config_t` 的 Doxygen 为准。fs 必须提供 `mkdir`、`open`、`read`、`write`、`close`、`stat`、`remove` 和覆盖目标的 `rename`，否则 `h2_lua_host_create()` 返回 `UNSUPPORTED`；root 或上限非法时返回 `INVALID_ARG`。Root 不需要预先存在，首次写入时逐级创建。一个 storage root 同一时间只能由一个 Host 使用，Host 用一个 mutex 串行化所有 job 的存储操作。
+
+每个 `h2_lua_job_submit_*()` 都接收 app id。App id 和文件名都是 `1..32` 字节的 `a-z`、`0-9`、`_`、`-`、`.`，且不能以 `.` 开头，因此绝对路径、`/`、`..`、反斜线、大写字母和隐藏文件都会被拒绝，大小写不敏感的文件系统也不会让两个名字指向同一个文件。非法 app id 使提交返回 `INVALID_ARG`。相同 app id 的 job 共享 `<root>/<app_id>/` 下的文件，不同 app id 互相不可见。
+
+`storage` 始终可以 `require`。Host 未配置 fs 或 job 没有 app id 时，除 `join_path` 外的调用都返回 `nil, "storage: unavailable"`，`exists` 返回 `false`，App 可以继续运行。
+
+模块保持 ESP-Claw `storage` 的函数名和成功返回值，差异如下：
+
+- 目录是扁平的。`get_root_dir()` 返回 `""`，因此 `join_path(get_root_dir(), name)` 得到裸文件名；`join_path` 与 ESP-Claw 一样只拼接字符串。没有 `mkdir`；`listdir()` 只接受省略或 `""`，其他合法名字返回 `not found`。
+- `stat(name)` 只返回 `type`（固定 `"file"`）和 `size`，`listdir()` 的 entry 另有 `name`，都没有 `mtime` 和 `mode`。
+- `get_free_space()` 返回本 App 配额的 `{ total, free, used }`，不是分区容量。
+- 失败不抛 Lua error，而是返回 `nil, message`，message 为 `storage: ` 加上 `invalid name`、`not found`、`quota exceeded`、`too many files`、`no space`（文件系统已满）、`busy` 或 `io error`。参数类型错误仍按 Lua 惯例抛错。
+
+`write_file(name, data)` 先检查文件数和配额（替换已有文件只计算新大小），再把内容写入 App 目录中的临时文件，经 `sync`、`close` 后用 `rename` 覆盖目标。任一步失败时目标保持旧内容或不存在，临时文件被删除。
+
+PAL Filesystem 无法列目录，因此每个 App 目录有一个同样原子替换的 `.index` 名字列表：新名字先进入 index 再创建文件，删除时先删文件再更新 index。中断的操作最多留下没有文件的 index 项，下次读取 index 时被清理；未被 index 记录的文件不会出现在 `listdir()` 中，也不计入配额。存储操作在 owning worker 上同步执行，单次数据量受配额约束，`read_file` 的缓冲区计入 VM 内存上限。
 
 ## Source loading and failure
 

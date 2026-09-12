@@ -74,7 +74,7 @@ h2_lua_flappybird_run(h2_runtime_t *runtime,
   result = h2_lua_host_start(host);
   if (result == H2_PAL_OK) {
     result =
-        h2_lua_job_submit_resource(host, "@flappybird/main.lua", args,
+        h2_lua_job_submit_resource(host, NULL, "@flappybird/main.lua", args,
                                    sizeof(args) / sizeof(args[0]), &job_id);
   }
   while (result == H2_PAL_OK) {

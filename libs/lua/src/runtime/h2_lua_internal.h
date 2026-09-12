@@ -159,6 +159,8 @@ typedef struct h2_lua_job {
   uint32_t audio_mic_generation;
   int audio_mic_acquired;
   char require_root[H2_LUA_PATH_MAX];
+  /* Empty when the job was submitted without a storage identity. */
+  char app_id[H2_LUA_STORAGE_APP_ID_MAX + 1u];
 } h2_lua_job_t;
 
 typedef struct h2_lua_worker {
@@ -188,6 +190,11 @@ struct h2_lua_host {
   h2_pal_mutex_t *audio_mutex;
   size_t audio_speaker_users;
   size_t audio_mic_users;
+  /* Copy of config.storage.root; the storage mutex serializes every storage
+   * operation of every job, and guards the shared index scratch. */
+  char storage_root[H2_LUA_STORAGE_ROOT_MAX + 1u];
+  h2_pal_mutex_t *storage_mutex;
+  struct h2_lua_storage_scratch *storage_scratch;
 };
 
 void *h2_lua_runtime_realloc(void *user, void *ptr, size_t old_size,
@@ -200,6 +207,11 @@ uint64_t h2_lua_now_ms(const h2_lua_host_t *host);
 void h2_lua_job_finish(h2_lua_job_t *job, h2_lua_job_state_t state,
                        const char *message);
 h2_pal_result_t h2_lua_register_builtin_modules(h2_lua_job_t *job);
+int h2_lua_open_storage(lua_State *state);
+int h2_lua_storage_name_is_valid(const char *name, size_t max_length);
+h2_pal_result_t h2_lua_storage_normalize(h2_lua_storage_config_t *config);
+h2_pal_result_t h2_lua_storage_host_init(h2_lua_host_t *host);
+void h2_lua_storage_host_deinit(h2_lua_host_t *host);
 void h2_lua_job_close_audio_tracks(h2_lua_job_t *job);
 void h2_lua_audio_track_slot_flush_carry(h2_lua_audio_track_slot_t *slot);
 void h2_lua_audio_track_slot_release_carry(h2_lua_audio_track_slot_t *slot,
