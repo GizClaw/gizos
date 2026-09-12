@@ -65,7 +65,13 @@ typedef struct h2_gizclaw_friend_group_page {
   char *next_cursor;
 } h2_gizclaw_friend_group_page_t;
 
-/** Owned Friend relationship and its optional projected profile information. */
+/** Owned Friend relationship and its optional projected profile information.
+ * server.friend.list and server.friend.info.get both project the Friend's
+ * self-chosen profile: name and emoji are NULL when unset and "" when set
+ * empty. Presence (has_online, online, last_seen_at) comes only from
+ * server.friend.list; online is whether the Friend's device is connected to
+ * the answering Server, and last_seen_at is NULL when that Server has never
+ * observed it. */
 typedef struct h2_gizclaw_friend {
   /** Relationship ID copied verbatim from the wire FriendObject.name. */
   char *id;
@@ -76,6 +82,11 @@ typedef struct h2_gizclaw_friend {
   /** Optional projected profile display name. */
   char *name;
   char *emoji;
+  /** False when the Server reported no presence for this Friend. */
+  bool has_online;
+  bool online;
+  /** Last observed device activity, UTC RFC 3339 text. */
+  char *last_seen_at;
 } h2_gizclaw_friend_t;
 
 typedef struct h2_gizclaw_friend_page {
@@ -121,6 +132,38 @@ h2_pal_result_t h2_gizclaw_rpc_friend_group_member_list(
     h2_gizclaw_str_t cursor, size_t limit, uint32_t timeout_ms,
     h2_gizclaw_resp_storage_t *storage,
     h2_gizclaw_friend_group_member_page_t *out_result);
+
+/** server.friend_group.members.add (59) adds the Peer with public key text
+ * peer_public_key (as in h2_gizclaw_friend_t.peer_public_key) to the caller's
+ * FriendGroup group_name. member_name is the FriendGroup name the added Peer
+ * sees in its own list; it follows the group_name rules. role is ADMIN or
+ * MEMBER; the key is 1..64 printable ASCII bytes. Create copies every input
+ * and performs no network I/O.
+ *
+ * The Server decides who may add and how many: ADMIN needs the caller to be
+ * the owner, MEMBER an owner or admin, and a FriendGroup holds at most 10
+ * members including the owner. It does not require a Friend relationship.
+ * Re-adding a current member under the same member_name changes that
+ * member's role; the owner cannot be re-added. A group the caller does not
+ * belong to fails with H2_PAL_ERR_NOT_FOUND. A full group, a target already in
+ * its maximum number of groups, a missing permission, a conflicting
+ * member_name and every other Server rejection fail with
+ * H2_GIZCLAW_ERR_REMOTE, as for the other Social wrappers. Parse decodes the
+ * returned member like member_put and member_delete. */
+h2_pal_result_t h2_gizclaw_req_create_friend_group_member_add(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, h2_gizclaw_str_t peer_public_key,
+    h2_gizclaw_str_t member_name, h2_gizclaw_friend_group_role_t role,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+h2_pal_result_t h2_gizclaw_resp_parse_friend_group_member_add(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_member_t *out_result);
+h2_pal_result_t h2_gizclaw_rpc_friend_group_member_add(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t group_name,
+    h2_gizclaw_str_t peer_public_key, h2_gizclaw_str_t member_name,
+    h2_gizclaw_friend_group_role_t role, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_member_t *out_result);
 
 h2_pal_result_t h2_gizclaw_req_create_friend_group_member_put(
     h2_gizclaw_service_t *service, uint64_t identity,

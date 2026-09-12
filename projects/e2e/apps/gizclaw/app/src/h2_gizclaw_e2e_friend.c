@@ -223,7 +223,8 @@ static bool valid_relationship(const h2_gizclaw_resp_storage_t *storage,
          text_valid(storage, value->created_at, false) &&
          text_valid(storage, value->updated_at, false) &&
          text_valid(storage, value->name, false) &&
-         text_valid(storage, value->emoji, false);
+         text_valid(storage, value->emoji, false) &&
+         text_valid(storage, value->last_seen_at, false);
 }
 
 static int verify_list(h2_gizclaw_e2e_fixture_t *fixture,

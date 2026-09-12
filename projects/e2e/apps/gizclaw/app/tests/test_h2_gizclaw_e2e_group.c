@@ -20,7 +20,8 @@ enum method {
   JOIN,
   MEMBER_LIST,
   MEMBER_PUT,
-  MEMBER_DELETE
+  MEMBER_DELETE,
+  MEMBER_ADD
 };
 struct h2_gizclaw_req {
   enum method method;
@@ -99,9 +100,15 @@ static int execute(enum method m, const char *arg) {
     state.remote.role = H2_GIZCLAW_FRIEND_GROUP_ROLE_ADMIN;
     break;
   case MEMBER_DELETE:
-    assert(state.remote.member &&
-           state.remote.role == H2_GIZCLAW_FRIEND_GROUP_ROLE_ADMIN);
+    assert(state.remote.member);
     state.remote.member = false;
+    break;
+  case MEMBER_ADD:
+    assert(state.fixture.friend_group_member_joined && !state.remote.member &&
+           !state.fixture.friend_group_member_id[0] &&
+           !strcmp(arg, "member-public-key"));
+    state.remote.member = true;
+    state.remote.role = H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER;
     break;
   case DELETE:
     assert(state.remote.exists && !state.remote.member && !state.remote.token);
@@ -220,14 +227,17 @@ static void response(enum method m, const char *arg,
     break;
   }
   case MEMBER_PUT:
-  case MEMBER_DELETE: {
+  case MEMBER_DELETE:
+  case MEMBER_ADD: {
     h2_gizclaw_friend_group_member_t *v = out;
     *v = member(s, true);
     corrupt(s, &v->id, fault);
     if (fault == 6u)
       v->peer_public_key = NULL;
     if (fault == 7u)
-      v->role = H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER;
+      v->role = v->role == H2_GIZCLAW_FRIEND_GROUP_ROLE_ADMIN
+                    ? H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER
+                    : H2_GIZCLAW_FRIEND_GROUP_ROLE_ADMIN;
     if (fault == 8u)
       v->friend_group_name = save(s, "wrong-group");
     if (fault == 9u)
@@ -543,6 +553,34 @@ h2_pal_result_t h2_gizclaw_rpc_friend_group_member_delete(
   assert(member_id.len == strlen("membership-id") &&
          !memcmp(member_id.data, "membership-id", member_id.len));
   return direct(MEMBER_DELETE, s, name, EMPTY, ms, arena, out);
+}
+static void check_add(h2_gizclaw_str_t peer, h2_gizclaw_str_t member_name,
+                      h2_gizclaw_friend_group_role_t role) {
+  assert(role == H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER &&
+         member_name.len == strlen(state.fixture.friend_group_name) &&
+         !memcmp(member_name.data, state.fixture.friend_group_name,
+                 member_name.len) &&
+         peer.len == strlen(state.fixture.actors[2].public_key));
+}
+h2_pal_result_t h2_gizclaw_req_create_friend_group_member_add(
+    h2_gizclaw_service_t *s, uint64_t id, h2_gizclaw_str_t name,
+    h2_gizclaw_str_t peer, h2_gizclaw_str_t member_name,
+    h2_gizclaw_friend_group_role_t role, uint32_t ms, h2_gizclaw_req_t **out) {
+  check_add(peer, member_name, role);
+  return create(MEMBER_ADD, s, id, name, peer, ms, out);
+}
+h2_pal_result_t h2_gizclaw_resp_parse_friend_group_member_add(
+    const h2_gizclaw_req_t *r, h2_gizclaw_resp_storage_t *s,
+    h2_gizclaw_friend_group_member_t *out) {
+  return parse(r, MEMBER_ADD, s, out);
+}
+h2_pal_result_t h2_gizclaw_rpc_friend_group_member_add(
+    h2_gizclaw_service_t *s, h2_gizclaw_str_t name, h2_gizclaw_str_t peer,
+    h2_gizclaw_str_t member_name, h2_gizclaw_friend_group_role_t role,
+    uint32_t ms, h2_gizclaw_resp_storage_t *arena,
+    h2_gizclaw_friend_group_member_t *out) {
+  check_add(peer, member_name, role);
+  return direct(MEMBER_ADD, s, name, peer, ms, arena, out);
 }
 
 static void scenario(unsigned fail, unsigned budget, unsigned fault_at,

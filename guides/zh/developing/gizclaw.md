@@ -14,7 +14,7 @@ GizClaw library 负责 SDK 集成和 client protocol，不创建具体 HTTP、We
 
 Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Workflow projection 中复制 driver enum，也不要求调用方根据 driver 构造 Workspace 参数。Workspace 更新统一使用 `h2_gizclaw_*workspace_set_parameters`，对应 SDK 0.15.5 的 `server.workspace.parameters.set`（110）；旧的 `workspace_set_input` 入口已删除。
 
-依赖的 GizClaw C SDK 当前固定为 0.18.0。自 0.17.0 起，`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
+依赖的 GizClaw C SDK 当前固定为 0.18.5。自 0.17.0 起，`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
 
 `h2_gizclaw_workspace_parameters_patch_t` 通过独立 `has_*` 标记选择 input（PTT/Realtime）、conversation initiative（peer/agent）和 agent initiative policy（once_when_empty/on_reload）。`workspace_set_parameters` 至少指定一个字段；显式的无效枚举值、空 patch、非法名称在发送前返回 INVALID_ARG。create 编码并持有 patch 数据，调用方随后可释放或修改原对象；同步入口沿用同一 request/parse 流程。
 
@@ -24,10 +24,16 @@ Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Work
 
 0.18.0 相对 0.17.0 只有增量：新增 RPC 123–127、对应 protobuf message，`WorkspaceHistoryListRequest` 增加可选 `start_time_ms` / `end_time_ms`（GizOS 暂不暴露，仍用生成的 `_init_zero` 初始化），以及 GizOS 不使用的 control API（device find、device runtime-profile）。GizOS 侧无需适配已有调用。
 
+0.18.5 相对 0.18.0 只有增量，RPC registry 与 core 源码不变：`FriendObject` 增加仅由 `server.friend.list` 填写的 `online`、`last_seen_at`、`display_name`、`emoji`；`DoubaoRealtimeWorkflowSpec` 增加可选 `tts`（GizOS 不解析）；control API 新增的方法 GizOS 不使用。`h2_gizclaw_friend_t` 因此在好友列表中直接带出 `name` / `emoji`（未设置为 NULL，显式设为空时为 `""`，与 `friend_info_get` 相同）以及 `has_online` / `online` / `last_seen_at`；`friend_info_get` 仍只投影资料，不带在线状态（`has_online` 为 false）。
+
 设备间社交提醒使用三组 typed wrapper，沿用 Social 的 create/parse/sync 生命周期：
 
 - `h2_gizclaw_*friend_ping`（`server.friend.ping`，123）按 Friend relationship ID（`h2_gizclaw_friend_t.id`）提醒好友设备；`h2_gizclaw_*friend_group_ping`（`server.friend_group.ping`，124）按 FriendGroup name 召集组内其他成员设备。名称校验与 `friend_info_get` / `friend_group_get` 相同，create 复制名称、不发网络请求。结果写入调用方持有的 `h2_gizclaw_social_ping_t`，不需要 response storage：`DELIVERED` 带 `delivered_count`（好友 ping 恰好 1，召集至少 1）；`NOT_ONLINE` 表示目标都不在线，服务端既没有发送也没有开启限流窗口；`RATE_LIMITED` 只在此时带 `retry_after_seconds`（≥1）。未知 result 或违反上述组合的回复按 `H2_PAL_ERR_FORMAT` 失败，不猜测含义；限流是正常结果，不是 RPC 错误。
 - `h2_gizclaw_*public_profile_get`（`server.profile.get`，125）按公钥批量查询 1–16 个 Peer 的公开资料，仅含自选 `display_name` 与 `emoji`，Peer 不存在或未设置时对应字段为 NULL。每个 key 须为 1–64 字节可打印 ASCII，规范编码由服务端判定；重复 key 原样发送、服务端只回一次。解析要求 item 恰好是按请求顺序去重后的 key，写入调用方 response storage 并在失败时回滚。该接口与查询自身资料的 `h2_gizclaw_*profile_get`（`server.info.get`）是两个 contract。
+
+FriendGroup 成员管理按 Social 的 create/parse/sync 生命周期覆盖 `server.friend_group.members.*` 全部四个方法：`h2_gizclaw_*friend_group_member_list`（58）、`h2_gizclaw_*friend_group_member_add`（59）、`h2_gizclaw_*friend_group_member_put`（60）和 `h2_gizclaw_*friend_group_member_delete`（61）。`member_add` 由组内 owner 或 admin 按公钥（如 `h2_gizclaw_friend_t.peer_public_key`，1–64 字节可打印 ASCII）直接把一个 Peer 加入调用方的 FriendGroup，无需邀请码；`member_name` 是被加入者在自己列表里看到的组名，校验与 FriendGroup name 相同；角色只能是 ADMIN 或 MEMBER。create 复制全部输入、不发网络请求；parse 与 `member_put` / `member_delete` 相同：把返回的成员解码进调用方 response storage，不与请求交叉比对；回复缺少 value、成员 ID 或组名、角色未知、文本含 NUL 或非法 UTF-8 时按 `H2_PAL_ERR_FORMAT` 失败并回滚。
+
+谁能加、能加多少由 Server 判定：ADMIN 只能由 owner 添加，MEMBER 可由 owner 或 admin 添加；一个 FriendGroup 连同 owner 最多 10 人，一个 Peer 最多加入 10 个 FriendGroup；Server 不要求双方已是 Friend。重复添加同一成员且 `member_name` 不变时按改角色处理，owner 不能被重复添加。错误码沿用所有 Social wrapper 的统一映射：调用方不在该组（组对其不可见）返回 `H2_PAL_ERR_NOT_FOUND`；组已满（`RESOURCE_EXHAUSTED` / `FRIEND_GROUP_FULL`）、对方组数已满（`FRIEND_GROUP_LIMIT_REACHED`）、权限不足、`member_name` 冲突和并发修改都返回 `H2_GIZCLAW_ERR_REMOTE`，库不按单个 RPC 细分这些远端原因。
 
 Server 向设备推送的 `client.device.find`（126）与 `client.social.ping`（127）由产品实现，见下文 RPC provider。
 
@@ -51,7 +57,7 @@ Peer Event 的物理 service channel 由 SDK connection 持有，唯一 access h
 
 Conversation 上行先发送 BOS，再等待当前 input stream 的 `AUDIO_INPUT_READY`；发送成功不代表服务端已完成授权。确认前不采集或编码 PCM、不发送 Opus，但事件队列和下行处理继续推进，避免业务事件占住队列后阻塞 READY。READY 前只有显式关联当前 input stream 的事件能够绑定回复 route，允许服务端提前拒绝当前输入；取消的旧输入或独立旧 reply 的迟到事件不得污染新会话。READY 后允许服务端生成的独立 response ID。等待沿用有界超时，取消仍清理已发送的 BOS；错误 stream、已取消或已提交输入的确认不能重新放行。READY 不参与下行 response-local route 绑定。
 
-当前 `MODULE.bazel` 固定的 C SDK 0.18.0 已包含此协议：`generated/events/peer_event.pb.h` 定义 event type 9、payload tag 18 和 `AudioInputReady.stream_id[129]`。
+当前 `MODULE.bazel` 固定的 C SDK 0.18.5 已包含此协议：`generated/events/peer_event.pb.h` 定义 event type 9、payload tag 18 和 `AudioInputReady.stream_id[129]`。
 
 PAL WebRTC 的 `CLOSED` 和 `ERROR` callback 只提供 callback 期间有效的 borrowed DataChannel handle，backend 可以在 callback 返回后释放它。GizClaw C SDK 必须在 callback 返回前清空 matching service、active RPC、Direct Packet 和 inbound alias；Peer Event 继续保留 SDK-owned service state 供普通 client cleanup 使用，但不再保留 DataChannel alias。后续 request completion、cancellation、client close 或 deinit 只能释放 SDK state，不能再次把已消费的 handle 传给 PAL `channel_close`。显式 close 先于终态 callback 时仍只向 PAL 发起一次 close。
 
