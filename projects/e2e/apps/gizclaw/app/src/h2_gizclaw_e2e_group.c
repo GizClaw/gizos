@@ -17,7 +17,8 @@ enum method {
   JOIN,
   MEMBER_LIST,
   MEMBER_PUT,
-  MEMBER_DELETE
+  MEMBER_DELETE,
+  MEMBER_ADD
 };
 static const char *const methods[] = {"friend_group_create",
                                       "friend_group_get",
@@ -30,7 +31,8 @@ static const char *const methods[] = {"friend_group_create",
                                       "friend_group_join",
                                       "friend_group_member_list",
                                       "friend_group_member_put",
-                                      "friend_group_member_delete"};
+                                      "friend_group_member_delete",
+                                      "friend_group_member_add"};
 union response {
   h2_gizclaw_friend_group_t group;
   h2_gizclaw_friend_group_page_t groups;
@@ -67,7 +69,7 @@ static void obligation(h2_gizclaw_e2e_fixture_t *f, enum method m) {
     f->friend_group_created = true;
   if (m == TOKEN_CREATE)
     f->friend_group_invite_created = true;
-  if (m == JOIN)
+  if (m == JOIN || m == MEMBER_ADD)
     f->friend_group_member_joined = true;
 }
 static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
@@ -83,6 +85,8 @@ static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
   h2_gizclaw_str_t name = h2_gizclaw_e2e_str(f->friend_group_name);
   h2_gizclaw_str_t value = h2_gizclaw_e2e_str(arg);
   h2_gizclaw_str_t member = h2_gizclaw_e2e_str(f->friend_group_member_id);
+  h2_gizclaw_str_t peer =
+      h2_gizclaw_e2e_str(f->actors[H2_GIZCLAW_E2E_GROUP_MEMBER].public_key);
   h2_gizclaw_str_t description = h2_gizclaw_e2e_str("H2 E2E group description");
   h2_gizclaw_req_t *request = NULL;
   int rc = H2_PAL_ERR_INVALID_STATE;
@@ -138,6 +142,11 @@ static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
       rc = h2_gizclaw_rpc_friend_group_member_delete(service, name, member,
                                                      TIMEOUT, s, &r->member);
       break;
+    case MEMBER_ADD:
+      rc = h2_gizclaw_rpc_friend_group_member_add(
+          service, name, peer, name, H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER,
+          TIMEOUT, s, &r->member);
+      break;
     }
     return record(false, m, "group-rpc", rc);
   }
@@ -191,6 +200,11 @@ static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
   case MEMBER_DELETE:
     rc = h2_gizclaw_req_create_friend_group_member_delete(
         service, identity, name, member, TIMEOUT, &request);
+    break;
+  case MEMBER_ADD:
+    rc = h2_gizclaw_req_create_friend_group_member_add(
+        service, identity, name, peer, name,
+        H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER, TIMEOUT, &request);
     break;
   }
   char symbol[112];
@@ -247,6 +261,10 @@ static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
     case MEMBER_DELETE:
       rc = h2_gizclaw_resp_parse_friend_group_member_delete(request, s,
                                                             &r->member);
+      break;
+    case MEMBER_ADD:
+      rc =
+          h2_gizclaw_resp_parse_friend_group_member_add(request, s, &r->member);
       break;
     }
     record(true, m, "group-req", rc);
@@ -444,21 +462,38 @@ static int cycle(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
   if (proof(req, TOKEN_CLEAR, rc) != H2_PAL_OK)
     return rc;
   f->friend_group_invite_created = false;
-  for (unsigned remove = 0u; remove < 2u; ++remove) {
-    enum method m = remove ? MEMBER_DELETE : MEMBER_PUT;
+  /* Promote and remove the joined member, then have the owner add the same
+   * Peer back directly and remove it again: the group is deleted empty. */
+  static const enum method steps[] = {MEMBER_PUT, MEMBER_DELETE, MEMBER_ADD,
+                                      MEMBER_DELETE};
+  h2_gizclaw_friend_group_role_t role = H2_GIZCLAW_FRIEND_GROUP_ROLE_ADMIN;
+  for (size_t step = 0u; step < sizeof(steps) / sizeof(steps[0]); ++step) {
+    enum method m = steps[step];
+    if (m == MEMBER_ADD) {
+      /* The removed membership ID is stale; the add reply names the new one. */
+      role = H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER;
+      f->friend_group_member_id[0] = '\0';
+    }
     rc = call(f, s, req, m, id, "", &r);
+    if (rc == H2_PAL_OK && m == MEMBER_ADD) {
+      if (!text(s, r.member.id, true) ||
+          strlen(r.member.id) >= sizeof(f->friend_group_member_id))
+        rc = H2_PAL_ERR_FORMAT;
+      else
+        memcpy(f->friend_group_member_id, r.member.id,
+               strlen(r.member.id) + 1u);
+    }
     if (rc == H2_PAL_OK &&
         (!valid_member(f, s, &r.member) ||
          strcmp(r.member.id, f->friend_group_member_id) ||
          strcmp(r.member.peer_public_key,
                 f->actors[H2_GIZCLAW_E2E_GROUP_MEMBER].public_key) ||
-         r.member.role != H2_GIZCLAW_FRIEND_GROUP_ROLE_ADMIN))
+         r.member.role != role))
       rc = H2_PAL_ERR_FORMAT;
     if (rc == H2_PAL_OK) {
-      if (remove)
+      if (m == MEMBER_DELETE)
         f->friend_group_member_joined = false;
-      rc = pages(f, s, req, true, id, "", !remove,
-                 H2_GIZCLAW_FRIEND_GROUP_ROLE_ADMIN);
+      rc = pages(f, s, req, true, id, "", m != MEMBER_DELETE, role);
     }
     if (proof(req, m, rc) != H2_PAL_OK)
       return rc;

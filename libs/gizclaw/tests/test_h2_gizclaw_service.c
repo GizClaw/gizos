@@ -6628,6 +6628,140 @@ static void test_group_member_request_paths(void) {
            H2_GIZCLAW_ERR_REMOTE);
   }
   {
+    char group[] = "x", key[] = "pk", name[] = "m";
+    h2_gizclaw_str_t group_arg = {group, 1u}, key_arg = {key, 2u},
+                     name_arg = {name, 1u};
+    static const uint8_t input[] = {0x0a, 1,   'x', 0x12, 2, 'p', 'k',
+                                    0x18, 2,   0x22, 1,   'm'};
+    static const uint8_t response[] = {0x0a, 13,  0x12, 1,   'm',  0x1a, 2,
+                                       'p',  'k', 0x22, 2,   'p',  'k',  0x28,
+                                       3};
+    mock = (test_contact_rpc_t){
+        .expected_method = H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MEMBERS_ADD,
+        .expected_request = input,
+        .expected_request_len = sizeof(input),
+        .response = response,
+        .response_len = sizeof(response)};
+    h2_gizclaw_friend_group_member_t value;
+    assert(h2_gizclaw_req_create_friend_group_member_add(
+               service, 1u, group_arg, key_arg, name_arg,
+               H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER, 1234u,
+               &request) == H2_PAL_OK);
+    assert(mock.calls == 0);
+    assert(h2_gizclaw_resp_parse_friend_group_member_add(
+               request, &storage, &value) == H2_PAL_ERR_INVALID_STATE);
+    group[0] = key[0] = name[0] = 'y';
+    assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+    assert(h2_gizclaw_req_wait(request, 2000u) == H2_PAL_OK &&
+           mock.request_matches);
+    assert(h2_gizclaw_resp_parse_friend_group_member_add(request, &storage,
+                                                         &value) == H2_PAL_OK);
+    assert(strcmp(value.id, "pk") == 0 &&
+           strcmp(value.peer_public_key, "pk") == 0 &&
+           strcmp(value.friend_group_name, "m") == 0);
+    assert(value.role == H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER);
+    h2_gizclaw_resp_storage_t tiny = {.data = arena_buffer, .capacity = 1u};
+    assert(h2_gizclaw_resp_parse_friend_group_member_add(
+               request, &tiny, &value) == H2_PAL_ERR_NO_SPACE &&
+           tiny.used == 0u);
+    h2_gizclaw_req_release(request);
+    group[0] = 'x';
+    key[0] = 'p';
+    name[0] = 'm';
+    assert(h2_gizclaw_rpc_friend_group_member_add(
+               service, group_arg, key_arg, name_arg,
+               H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER, 1234u, &storage,
+               &value) == H2_PAL_OK);
+    const size_t checkpoint = storage.used;
+
+    /* The reply must describe the requested Peer in the requested role. */
+    static const uint8_t other_peer[] = {0x0a, 13,  0x12, 1,   'm',
+                                         0x1a, 2,   'p',  'k', 0x22,
+                                         2,    'p', 'x',  0x28, 3};
+    static const uint8_t other_role[] = {0x0a, 13,  0x12, 1,   'm',
+                                         0x1a, 2,   'p',  'k', 0x22,
+                                         2,    'p', 'k',  0x28, 2};
+    static const uint8_t no_peer[] = {0x0a, 9, 0x12, 1, 'm', 0x1a,
+                                      2,    'p', 'k', 0x28, 3};
+    static const uint8_t no_value[] = {0};
+    static const uint8_t bad[] = {0x0a};
+    const struct {
+      const uint8_t *data;
+      size_t len;
+    } rejected[] = {{other_peer, sizeof(other_peer)},
+                    {other_role, sizeof(other_role)},
+                    {no_peer, sizeof(no_peer)},
+                    {no_value, 0u},
+                    {bad, sizeof(bad)}};
+    for (size_t i = 0u; i < sizeof(rejected) / sizeof(rejected[0]); ++i) {
+      mock.response = rejected[i].data;
+      mock.response_len = rejected[i].len;
+      assert(h2_gizclaw_rpc_friend_group_member_add(
+                 service, group_arg, key_arg, name_arg,
+                 H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER, 1234u, &storage,
+                 &value) == H2_PAL_ERR_FORMAT);
+      assert(value.id == NULL && storage.used == checkpoint);
+    }
+
+    /* Group not visible to the caller is NOT_FOUND; full group, peer group
+     * limit and permission failures stay generic remote errors. */
+    mock.response = response;
+    mock.response_len = sizeof(response);
+    mock.has_error = true;
+    const struct {
+      int code;
+      h2_pal_result_t result;
+    } errors[] = {
+        {H2_GIZCLAW_RPC_ERROR_NOT_FOUND, H2_PAL_ERR_NOT_FOUND},
+        {H2_GIZCLAW_RPC_ERROR_RESOURCE_EXHAUSTED, H2_GIZCLAW_ERR_REMOTE},
+        {H2_GIZCLAW_RPC_ERROR_PERMISSION_DENIED, H2_GIZCLAW_ERR_REMOTE},
+        {H2_GIZCLAW_RPC_ERROR_INTERNAL, H2_GIZCLAW_ERR_REMOTE},
+        {H2_GIZCLAW_RPC_ERROR_ABORTED, H2_GIZCLAW_ERR_REMOTE},
+    };
+    for (size_t i = 0u; i < sizeof(errors) / sizeof(errors[0]); ++i) {
+      mock.error_code = errors[i].code;
+      assert(h2_gizclaw_rpc_friend_group_member_add(
+                 service, group_arg, key_arg, name_arg,
+                 H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER, 1234u, &storage,
+                 &value) == errors[i].result);
+      assert(value.id == NULL && storage.used == checkpoint);
+    }
+    mock.error_code = H2_GIZCLAW_RPC_ERROR_RESOURCE_EXHAUSTED;
+    assert(h2_gizclaw_req_create_friend_group_member_add(
+               service, 2u, group_arg, key_arg, name_arg,
+               H2_GIZCLAW_FRIEND_GROUP_ROLE_MEMBER, 1234u,
+               &request) == H2_PAL_OK);
+    assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+    assert(h2_gizclaw_req_wait(request, 2000u) == H2_GIZCLAW_ERR_REMOTE);
+    assert(h2_gizclaw_resp_parse_friend_group_member_add(
+               request, &storage, &value) == H2_GIZCLAW_ERR_REMOTE);
+    assert(value.id == NULL && storage.used == checkpoint);
+    h2_gizclaw_req_release(request);
+  }
+  {
+    h2_gizclaw_str_t group_arg = {"x", 1u}, key_arg = {"pk", 2u},
+                     name_arg = {"m", 1u};
+    static const uint8_t input[] = {0x0a, 1,   'x', 0x12, 2, 'p', 'k',
+                                    0x18, 1,   0x22, 1,   'm'};
+    static const uint8_t response[] = {0x0a, 13,  0x12, 1,   'm',  0x1a, 2,
+                                       'p',  'k', 0x22, 2,   'p',  'k',  0x28,
+                                       2};
+    mock = (test_contact_rpc_t){
+        .expected_method = H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MEMBERS_ADD,
+        .expected_request = input,
+        .expected_request_len = sizeof(input),
+        .response = response,
+        .response_len = sizeof(response)};
+    h2_gizclaw_friend_group_member_t value;
+    storage.used = 0u;
+    assert(h2_gizclaw_rpc_friend_group_member_add(
+               service, group_arg, key_arg, name_arg,
+               H2_GIZCLAW_FRIEND_GROUP_ROLE_ADMIN, 1234u, &storage,
+               &value) == H2_PAL_OK);
+    assert(mock.request_matches &&
+           value.role == H2_GIZCLAW_FRIEND_GROUP_ROLE_ADMIN);
+  }
+  {
     char text[] = "x";
     h2_gizclaw_str_t text_arg = {text, 1u};
     static const uint8_t input[] = {0x0a, 1, 'x', 0x12, 1, 'x', 0x18, 2};

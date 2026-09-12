@@ -122,6 +122,39 @@ h2_pal_result_t h2_gizclaw_rpc_friend_group_member_list(
     h2_gizclaw_resp_storage_t *storage,
     h2_gizclaw_friend_group_member_page_t *out_result);
 
+/** server.friend_group.members.add (59) adds the Peer with public key text
+ * peer_public_key (as in h2_gizclaw_friend_t.peer_public_key) to the caller's
+ * FriendGroup group_name. member_name is the FriendGroup name the added Peer
+ * sees in its own list; it follows the group_name rules. role is ADMIN or
+ * MEMBER; the key is 1..64 printable ASCII bytes. Create copies every input
+ * and performs no network I/O.
+ *
+ * The Server decides who may add and how many: ADMIN needs the caller to be
+ * the owner, MEMBER an owner or admin, and a FriendGroup holds at most 10
+ * members including the owner. It does not require a Friend relationship.
+ * Re-adding a current member under the same member_name changes that
+ * member's role; the owner cannot be re-added. A group the caller does not
+ * belong to fails with H2_PAL_ERR_NOT_FOUND. A full group, a target already in
+ * its maximum number of groups, a missing permission, a conflicting
+ * member_name and every other Server rejection fail with
+ * H2_GIZCLAW_ERR_REMOTE, as for the other Social wrappers. Parse fails with
+ * H2_PAL_ERR_FORMAT unless the returned member carries the requested
+ * peer_public_key and role. */
+h2_pal_result_t h2_gizclaw_req_create_friend_group_member_add(
+    h2_gizclaw_service_t *service, uint64_t identity,
+    h2_gizclaw_str_t group_name, h2_gizclaw_str_t peer_public_key,
+    h2_gizclaw_str_t member_name, h2_gizclaw_friend_group_role_t role,
+    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+h2_pal_result_t h2_gizclaw_resp_parse_friend_group_member_add(
+    const h2_gizclaw_req_t *request, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_member_t *out_result);
+h2_pal_result_t h2_gizclaw_rpc_friend_group_member_add(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t group_name,
+    h2_gizclaw_str_t peer_public_key, h2_gizclaw_str_t member_name,
+    h2_gizclaw_friend_group_role_t role, uint32_t timeout_ms,
+    h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_friend_group_member_t *out_result);
+
 h2_pal_result_t h2_gizclaw_req_create_friend_group_member_put(
     h2_gizclaw_service_t *service, uint64_t identity,
     h2_gizclaw_str_t group_name, h2_gizclaw_str_t member_id,

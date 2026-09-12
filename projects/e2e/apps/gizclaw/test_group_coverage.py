@@ -29,20 +29,20 @@ class GroupCoverageTest(unittest.TestCase):
         return {row["symbol"] for row in result["functions"]
                 if row["status"] == "covered"}
 
-    def test_thirty_six_functions(self):
+    def test_thirty_nine_functions(self):
         expected = {rule.symbol for rule in api_coverage.requirements()
                     if rule.case == "rpc/group"}
-        self.assertEqual(len(expected), 36)
+        self.assertEqual(len(expected), 39)
         self.assertEqual(self.audit(), expected)
         self.assertEqual(self.audit(pages=1), expected)
 
     def test_failures_discard_partial_coverage(self):
-        for stage in range(1, 85):
+        for stage in range(1, 105):
             with self.subTest(stage=stage):
                 self.assertEqual(self.audit(fail=stage), set())
-        for budget in range(1, 37):
+        for budget in range(1, 45):
             self.assertEqual(self.audit(budget=budget), set())
-        for mutation in range(1, 18):
+        for mutation in range(1, 22):
             self.assertEqual(self.audit(mutation=mutation), set())
         for pages in range(2, 6):
             self.assertEqual(self.audit(pages=pages), set())
