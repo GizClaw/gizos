@@ -64,6 +64,13 @@ Library 创建的 stream、server、queue 和 buffer 使用调用方提供的 PA
 
 Handler 获得 borrowed stream，可以阻塞调用 stream I/O，但不能保存、主动 close 或在 handler 返回后继续使用。Handler 返回后当前 session 结束，server 清理 connection-scoped state，并继续等待下一次 connection。
 
+调用方可以通过 `h2_bleikcp_config_t::extra_characteristics` 和
+`extra_characteristic_count`（最多 `H2_BLEIKCP_SERVER_EXTRA_CHARACTERISTIC_MAX`，
+即 2 个）把自己的 characteristic 登记进同一个 service，排在 TX、RX 之后。它们的
+声明、UUID、回调和 handle 存储由调用方持有，借用到 `h2_bleikcp_server_close()` 返回；
+读写回调、subscription 和 notify 由调用方自己处理，client 忽略这两个字段。ESP
+NimBLE backend 每个 service 最多 3 个 characteristic，因此 ESP 上只能再加 1 个。
+
 `h2_bleikcp_server_close()` 必须停止接受新 session、唤醒阻塞 I/O、等待 worker 和 handler 退出、解除 GATT callback 与 system-event subscription，再释放内部状态。
 
 ## Client
