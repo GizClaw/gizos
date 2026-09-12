@@ -236,7 +236,23 @@ iOS、Android 和 Browser/WebAssembly 的仓库级 PAL backend 分别归 `libs/p
 projects/<project>/targets/<artifact-rule>/<app>[/<variant>]/
 ```
 
-当前稳定 rule roots 包括 `cc_binary`、`macos_application`、`ios_application`、`android_binary`、`h2loader_tar_zlib`、`bk3633_firmware` 和 `jieli_firmware`。`jieli_firmware` entry 消费 firmwares-devenv 通过 `JIELI_*` locator 提供的杰理 SDK checkout 与解包工具链，SDK 不进入本仓 submodule。目录名描述最终交付物的 rule 类型，App 名描述业务入口；只有同一 App 的原生构建必须按 board 隔离、或多个 package 必须保留相同本地 target 名时，才增加 `<variant>`。H2Loader package root 内部可以用 `esp_idf_firmware` 或 `bk7258_firmware` 生成平台原生固件，但平台 rule 不是该目录的最终交付物。
+当前稳定 rule roots 包括 `cc_binary`、`macos_application`、`ios_application`、
+`android_binary`、`h2loader_tar_zlib`、`native_firmware`、`bk3633_firmware` 和
+`jieli_firmware`。`native_firmware` 保存 portable App 的 standalone vendor firmware
+entry，终态 `:firmware` 直接交付 vendor image、ELF、symbol 和 manifest；它只拥有
+App/board graph selection 与固件 metadata。`jieli_firmware` root 保留现有杰理
+reference-smoke entry，底层同名 external build rule 也可由 `native_firmware` 或
+`h2loader_tar_zlib` entry 调用。二者消费通过 `JIELI_*` locator 提供的杰理 SDK
+checkout 与解包工具链，SDK 不进入本仓 submodule。若同一 App 同时提供 standalone
+固件和 H2Loader package，两者必须复用 project-owned native launcher graph；
+`h2loader_tar_zlib` 另外拥有 format-1 package metadata，而 `native_firmware` 不表示
+设备已支持 H2Loader 安装或启动。
+
+目录名描述最终交付物的 rule 类型，App 名描述业务入口；只有同一 App 的原生构建
+必须按 board 隔离、或多个 package 必须保留相同本地 target 名时，才增加
+`<variant>`。H2Loader package root 内部可以用 `esp_idf_firmware`、
+`bk7258_firmware` 或 `jieli_firmware` 生成平台原生固件，但平台 rule 不是该目录的
+最终交付物。
 
 `targets/cc_binary/<app>` 保存普通 host 或 Linux executable 的薄 main、Runtime assembly、layout 和显式 runtime data。Desktop 可复用支持仍归 `libs/pal/providers/desktop/`，project 私有、由 Bazel 编译的 Desktop glue 归 `projects/<project>/libs/desktop*/`。
 
