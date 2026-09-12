@@ -2,7 +2,7 @@
 
 load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
 load(":web_board.bzl", "H2WebBoardInfo")
-load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:web_archive.bzl", "web_archive_browser_test", "web_archive_serve")
@@ -149,9 +149,19 @@ def h2_web_app(
     preload_opts = []
     for label, path in preload.items():
         preload_opts += ["--preload-file", "$(location %s)@%s" % (label, path)]
+    # The generated board definition is host code: caller copts stay off it.
+    cc_library(
+        name = name + "_board",
+        srcs = [":" + name + "_board.c"],
+        alwayslink = True,
+        conlyopts = H2_C11_OPTS,
+        copts = H2_WARNING_COPTS,
+        target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+        deps = [Label("//libs/app_host")],
+    )
     cc_binary(
         name = "_wasm/index",
-        srcs = srcs + [":" + name + "_board.c"],
+        srcs = srcs,
         additional_linker_inputs = [shell] + preload.keys(),
         conlyopts = H2_C11_OPTS,
         copts = H2_WARNING_COPTS + copts,
@@ -168,7 +178,7 @@ def h2_web_app(
             "--oformat=html",
         ] + preload_opts + linkopts,
         target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
-        deps = deps + [Label("//libs/app_host")],
+        deps = deps + [":" + name + "_board", Label("//libs/app_host")],
     )
     outputs = ["index.html", "index.js", "index.wasm"]
     if preload:

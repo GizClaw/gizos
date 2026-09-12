@@ -3,15 +3,15 @@ load("//libs/app_host:web_app.bzl", "h2_web_app")
 package(default_visibility = ["//visibility:public"])
 
 # Board hardware hooks. The browser test presses Enter: the App must see that
-# prepare and configure_runtime ran and get the edge through the target's own
-# Button peripheral.
+# prepare and configure_runtime ran and get both the Down and the Up edge
+# through the button hook onto the target's own Button peripheral.
 h2_web_app(
     name = "web-hardware",
     srcs = ["main.c"],
     app_name = "web-hardware",
     passes = [
         "H2_WEB_HARDWARE prepared=1 configured=1 board=web-hardware",
-        "H2_WEB_HARDWARE edges=[12] edge_rc=0",
+        "H2_WEB_HARDWARE edges=2 accepted=2",
         "H2_WEB_APP name=web-hardware result=PASS rc=0 fs=0 destroy=0",
     ],
     presses = [[

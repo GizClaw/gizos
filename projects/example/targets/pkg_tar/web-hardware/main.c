@@ -1,8 +1,8 @@
 /* Board hardware hooks on app_host: prepare runs before
  * the Filesystem, configure_runtime installs its own Button peripheral and
  * component mapper (component 42 on peripheral 501), and the button hook
- * delivers the page's edges there. The App ends after the first Button edge
- * the Runtime accepted. */
+ * delivers the page's edges there. The App ends after one key press: both
+ * its Down and Up edge must reach the hook and be accepted by the Runtime. */
 #include "h2_web_app_host.h"
 
 #include <stdio.h>
@@ -15,7 +15,7 @@ typedef struct web_hardware {
   int prepared;
   int configured;
   volatile int edges;
-  volatile h2_pal_result_t edge_result;
+  volatile int accepted;
 } web_hardware_t;
 
 static const h2_pal_periph_single_button_payload_t k_button_payload = {
@@ -123,7 +123,7 @@ static h2_pal_result_t button(void *user, h2_runtime_t *runtime,
   const h2_pal_result_t result = h2_runtime_button_push_edge(
       runtime, WEB_HARDWARE_PERIPH,
       pressed ? H2_RUNTIME_BUTTON_EDGE_DOWN : H2_RUNTIME_BUTTON_EDGE_UP);
-  hardware->edge_result = result;
+  hardware->accepted += result == H2_PAL_OK;
   ++hardware->edges;
   return result;
 }
@@ -134,16 +134,19 @@ static h2_pal_result_t run(h2_web_app_host_t *host, h2_runtime_t *runtime,
   printf("H2_WEB_HARDWARE prepared=%d configured=%d board=%s\n",
          hardware->prepared, hardware->configured, runtime->board);
   h2_pal_result_t result = h2_web_app_host_ready(host);
-  while (result == H2_PAL_OK && hardware->edges == 0 &&
+  /* One key press is one Down and one Up edge. */
+  while (result == H2_PAL_OK && hardware->edges < 2 &&
          !h2_web_app_host_should_stop(host))
     result = h2_pal_time_sleep_ms(runtime->time, 10u);
-  printf("H2_WEB_HARDWARE edges=%d edge_rc=%d\n", hardware->edges,
-         hardware->edge_result);
-  return result == H2_PAL_OK ? hardware->edge_result : result;
+  printf("H2_WEB_HARDWARE edges=%d accepted=%d\n", hardware->edges,
+         hardware->accepted);
+  if (result == H2_PAL_OK && hardware->accepted != hardware->edges)
+    result = H2_PAL_ERR_UNAVAILABLE;
+  return result;
 }
 
 int main(void) {
-  static web_hardware_t hardware = {.edge_result = H2_PAL_ERR_TASK};
+  static web_hardware_t hardware;
   static const h2_web_app_host_hardware_t hooks = {
       .user = &hardware,
       .prepare = prepare,
