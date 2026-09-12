@@ -96,6 +96,9 @@ static h2_pal_result_t timer_stop(void *user, h2_pal_timer_t *timer)
     if (timer == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    if (timer->owned && timer->owner_task != h2_jieli_sdk_task_current()) {
+        return H2_PAL_ERR_INVALID_STATE;
+    }
     if (timer->running) {
         h2_jieli_sdk_timer_del(timer->id, (timer->config.flags & H2_PAL_TIMER_FLAG_REPEAT) != 0u);
         timer->running = 0u;
@@ -177,6 +180,9 @@ static h2_pal_result_t timer_set_period_ms(void *user, h2_pal_timer_t *timer, ui
 {
     if (timer == NULL || period_ms == 0u) {
         return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (timer->owned && timer->owner_task != h2_jieli_sdk_task_current()) {
+        return H2_PAL_ERR_INVALID_STATE;
     }
     timer->config.period_ms = period_ms;
     if (timer->running) {

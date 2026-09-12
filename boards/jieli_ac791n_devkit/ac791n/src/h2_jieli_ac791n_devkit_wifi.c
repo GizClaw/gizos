@@ -337,7 +337,8 @@ static int ap_start(
   wifi_state.ap.security = config->security;
   wifi_state.ap.hidden = config->hidden;
   wifi_state.ap.ssid_len = config->ssid_len;
-  memcpy(wifi_state.ap.ssid, config->ssid, config->ssid_len + 1u);
+  memcpy(wifi_state.ap.ssid, config->ssid, config->ssid_len);
+  wifi_state.ap.ssid[config->ssid_len] = '\0';
   if (wifi_enter_ap_mode(ssid, password) != 0) return H2_PAL_ERR_IO;
   uint32_t elapsed = 0u;
   while (wifi_state.ap.state != H2_PAL_WIFI_AP_STATE_STARTED) {

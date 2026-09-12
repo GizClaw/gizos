@@ -9,6 +9,74 @@ SOURCE = ROOT / "boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_pr
 
 
 class PreferenceCommitTest(unittest.TestCase):
+    def test_readonly_open_never_creates_namespace(self):
+        source = SOURCE.read_text()
+        function = source[source.index("static int pref_open("):
+                          source.index("void h2_jieli_ac791n_devkit_pref_set_diagnostic(")]
+        stub = r'''
+#include <assert.h>
+#include <stdlib.h>
+#include <string.h>
+enum { H2_PAL_OK=0, H2_PAL_ERR_INVALID_ARG=-1, H2_PAL_ERR_NO_MEMORY=-2,
+       H2_PAL_ERR_NOT_FOUND=-3, H2_PAL_ERR_IO=-4,
+       H2_PAL_PREF_OPEN_READ_ONLY=0, H2_PAL_PREF_OPEN_READ_WRITE=1,
+       H2_PREF_NAMESPACE_MAX=64, LFS_ERR_OK=0, LFS_ERR_EXIST=-17,
+       LFS_TYPE_DIR=2 };
+typedef int h2_pal_pref_open_mode_t;
+typedef struct { void *user; } h2_pal_pref_namespace_t;
+typedef struct { h2_pal_pref_namespace_t pal; char path[130]; int mode; }
+  jieli_pref_namespace_t;
+struct lfs_info { int type; };
+static int pref_lfs, stat_rc, stat_type=2, mkdir_rc, stats, mkdirs, unlocks;
+static void pref_trace_key(const char *a,const char *b,int c) {(void)a;(void)b;(void)c;}
+static void pref_trace(const char *a) {(void)a;}
+static int valid_name(const char *s,int max) {return s && *s && strlen(s)<(size_t)max;}
+static int pref_lock(void) {return 0;}
+static int pref_prepare_locked(void) {return 0;}
+static void pref_unlock(void) {++unlocks;}
+static void hex_encode(const char *s,size_t n,char *out) {memcpy(out,s,n);out[n]=0;}
+static int lfs_stat(int *fs,const char *path,struct lfs_info *info) {
+  (void)fs;assert(strcmp(path,"/test")==0);++stats;info->type=stat_type;return stat_rc;
+}
+static int lfs_mkdir(int *fs,const char *path) {
+  (void)fs;assert(strcmp(path,"/test")==0);++mkdirs;return mkdir_rc;
+}
+static int map_lfs_error(int rc) {return rc;}
+static void initialize_namespace(jieli_pref_namespace_t *ns) {ns->pal.user=ns;}
+'''
+        main = r'''
+int main(void) {
+  h2_pal_pref_namespace_t *ns=(void *)1;
+  stat_rc=H2_PAL_ERR_NOT_FOUND;
+  assert(pref_open(0,"test",0,&ns)==H2_PAL_ERR_NOT_FOUND);
+  assert(!ns && stats==1 && mkdirs==0 && unlocks==1);
+  stat_rc=0;
+  assert(pref_open(0,"test",0,&ns)==0);
+  assert(ns && stats==2 && mkdirs==0);
+  free(ns->user);
+  stat_type=1;
+  assert(pref_open(0,"test",0,&ns)==H2_PAL_ERR_NOT_FOUND && !ns);
+  stat_rc=H2_PAL_ERR_IO;
+  assert(pref_open(0,"test",0,&ns)==H2_PAL_ERR_IO && !ns);
+  assert(mkdirs==0);
+  assert(pref_open(0,"test",1,&ns)==0 && mkdirs==1);
+  free(ns->user);
+  mkdir_rc=LFS_ERR_EXIST;
+  assert(pref_open(0,"test",1,&ns)==0 && mkdirs==2);
+  free(ns->user);
+  mkdir_rc=H2_PAL_ERR_IO;
+  assert(pref_open(0,"test",1,&ns)==H2_PAL_ERR_IO && !ns);
+  return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "test.c"
+            path.write_text(stub + function + main)
+            binary = Path(directory) / "test"
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Werror", str(path),
+                            "-o", str(binary)], check=True, timeout=60)
+            subprocess.run([str(binary)], check=True, timeout=10)
+
     def test_concurrent_first_use_and_failed_create_retry(self):
         source = SOURCE.read_text()
         functions = source[source.index("static int pref_lock(void)"):

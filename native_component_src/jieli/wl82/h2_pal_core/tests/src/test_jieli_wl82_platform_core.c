@@ -620,16 +620,19 @@ static void test_timer_start_from_other_task_is_rejected(void)
     s_raced_fires = 0;
     h2_jieli_fake_set_current_task(&s_task_owner);
     CHECK(h2_pal_timer_create(api, &config, &timer) == H2_PAL_OK);
-    /* Another task stops the timer — a fire may still be queued to the
-     * original owner — and tries to take it over. Ownership must not move,
+    /* Another task attempts to stop the timer or take it over. Ownership must not move,
      * otherwise that task could order the reclaim behind its own callbacks. */
     h2_jieli_fake_set_current_task(&s_task_other);
     /* Even while the timer is still running a foreign start() is rejected
      * rather than answered with the already-running OK. */
     CHECK(h2_pal_timer_start(api, timer) == H2_PAL_ERR_INVALID_STATE);
-    CHECK(h2_pal_timer_stop(api, timer) == H2_PAL_OK);
+    CHECK(h2_pal_timer_stop(api, timer) == H2_PAL_ERR_INVALID_STATE);
     CHECK(h2_pal_timer_start(api, timer) == H2_PAL_ERR_INVALID_STATE);
     CHECK(h2_pal_timer_reset(api, timer) == H2_PAL_ERR_INVALID_STATE);
+    CHECK(h2_pal_timer_set_period_ms(api, timer, 100u) == H2_PAL_ERR_INVALID_STATE);
+    int running = 0;
+    CHECK(h2_pal_timer_is_running(api, timer, &running) == H2_PAL_OK);
+    CHECK(running == 1);
     CHECK(h2_pal_timer_destroy(api, timer) == H2_PAL_ERR_INVALID_STATE);
     CHECK(h2_jieli_fake_live_allocations() == 1);
     /* The owner can re-arm and release it. */

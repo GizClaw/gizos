@@ -711,9 +711,18 @@ static int pref_open(
     pref_trace("H2_JIELI_PREF_ENTER step=namespace_mkdir\r\n");
     instance->path[0] = '/';
     hex_encode(name_space, strlen(name_space), instance->path + 1u);
-    int mkdir_result = lfs_mkdir(&pref_lfs, instance->path);
-    if (mkdir_result != LFS_ERR_OK && mkdir_result != LFS_ERR_EXIST) {
-      result = map_lfs_error(mkdir_result);
+    if (mode == H2_PAL_PREF_OPEN_READ_ONLY) {
+      struct lfs_info info;
+      int stat_result = lfs_stat(&pref_lfs, instance->path, &info);
+      result = map_lfs_error(stat_result);
+      if (result == H2_PAL_OK && info.type != LFS_TYPE_DIR) {
+        result = H2_PAL_ERR_NOT_FOUND;
+      }
+    } else {
+      int mkdir_result = lfs_mkdir(&pref_lfs, instance->path);
+      if (mkdir_result != LFS_ERR_OK && mkdir_result != LFS_ERR_EXIST) {
+        result = map_lfs_error(mkdir_result);
+      }
     }
   }
   pref_unlock();

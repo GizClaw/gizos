@@ -68,7 +68,7 @@ static void audio_stage(const char *message) {
 
 static uint32_t timeout_ticks(uint32_t timeout_ms) {
   if (timeout_ms == 0u) return 0u;
-  uint32_t ticks = (timeout_ms + 9u) / 10u;
+  uint32_t ticks = timeout_ms / 10u + (timeout_ms % 10u != 0u);
   return ticks == 0u ? 1u : ticks;
 }
 

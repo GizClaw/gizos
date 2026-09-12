@@ -8,6 +8,42 @@ ROOT = Path(__file__).resolve().parents[3]
 
 
 class WifiScanTest(unittest.TestCase):
+    def test_ap_status_ssid_is_terminated_at_declared_length(self):
+        source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/"
+                  "h2_jieli_ac791n_devkit_wifi.c").read_text()
+        begin = source.index("  memcpy(wifi_state.ap.ssid,")
+        copy = source[begin:source.index("  if (wifi_enter_ap_mode", begin)]
+        program = r'''
+#include <assert.h>
+#include <string.h>
+static struct { struct { char ssid[33]; } ap; } wifi_state;
+typedef struct { char ssid[33]; unsigned ssid_len; } config_t;
+static void copy_status(const config_t *config) {
+'''+copy+r'''
+}
+int main(void) {
+  config_t config;
+  for (unsigned length=1;length<=32;++length) {
+    memset(&config, 'X', sizeof(config));
+    config.ssid_len=length;
+    memset(wifi_state.ap.ssid, 'Y', sizeof(wifi_state.ap.ssid));
+    copy_status(&config);
+    assert(memcmp(wifi_state.ap.ssid,config.ssid,length)==0);
+    assert(wifi_state.ap.ssid[length]==0);
+    assert(strlen(wifi_state.ap.ssid)==length);
+    if (length<32) assert(wifi_state.ap.ssid[length+1]=='Y');
+  }
+  return 0;
+}
+'''
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "test.c"
+            path.write_text(program)
+            binary = Path(directory) / "test"
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Werror", str(path),
+                            "-o", str(binary)], check=True, timeout=60)
+            subprocess.run([str(binary)], check=True, timeout=10)
+
     def test_start_binds_events_for_existing_interface(self):
         source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/"
                   "h2_jieli_ac791n_devkit_wifi.c").read_text()

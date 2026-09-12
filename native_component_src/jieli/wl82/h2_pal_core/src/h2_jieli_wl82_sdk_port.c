@@ -133,7 +133,8 @@ static int ms_to_ticks(uint32_t ms)
     if (ms == 0u) {
         return 0;
     }
-    ticks = (ms + H2_JIELI_WL82_TICK_MS - 1u) / H2_JIELI_WL82_TICK_MS;
+    ticks = ms / H2_JIELI_WL82_TICK_MS +
+            (ms % H2_JIELI_WL82_TICK_MS != 0u);
     if (ticks == 0u) {
         ticks = 1u;
     }
