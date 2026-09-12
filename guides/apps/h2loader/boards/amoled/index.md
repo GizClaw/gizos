@@ -18,5 +18,6 @@
 - [Lua Cosmic Drift](./cosmic_drift)
 - [Lua BloomSpeaker](./bloomspeaker)
 - [Lua Runtime E2E](./lua_runtime_e2e)
+- [Lua Link E2E](./lua_link_e2e)
 - [iperf](./iperf)
 - [WebRTC Performance](./webrtc_performance)
