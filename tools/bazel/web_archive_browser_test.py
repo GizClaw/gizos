@@ -54,6 +54,13 @@ CANVAS_POINT = """(() => {
           rect.top + (%d + 0.5) * rect.height / canvas.height];
 })()"""
 
+ELEMENT_CENTER = """(() => {
+  const element = document.querySelector(%s);
+  if (!element) return null;
+  const rect = element.getBoundingClientRect();
+  return [rect.left + rect.width / 2, rect.top + rect.height / 2];
+})()"""
+
 DEFAULT_FAIL = [
     r"Aborted\(",
     r"RuntimeError: ",
@@ -199,6 +206,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--tap", nargs=3, action="append", default=[],
                         metavar=("REGEX", "X", "Y"),
                         help="tap #canvas pixel X,Y once REGEX appears")
+    parser.add_argument("--click", nargs=2, action="append", default=[],
+                        metavar=("REGEX", "SELECTOR"),
+                        help="mouse-click the page element SELECTOR once REGEX appears")
+    parser.add_argument("--eval", nargs=2, action="append", default=[],
+                        metavar=("REGEX", "JAVASCRIPT"),
+                        help="evaluate JAVASCRIPT in the page once REGEX appears")
     parser.add_argument("--http-proxy-origin", action="append", default=[])
     parser.add_argument("--canvas-min", type=int, default=0,
                         help="require this many non-black #canvas pixels")
@@ -265,6 +278,8 @@ def main() -> int:
                 offline_steps = [re.compile(p) for p in args.offline or []]
                 presses = [(re.compile(p), key) for p, key in args.press]
                 taps = [(re.compile(p), int(x), int(y)) for p, x, y in args.tap]
+                clicks = [(re.compile(p), selector) for p, selector in args.click]
+                evals = [(re.compile(p), expression) for p, expression in args.eval]
                 offline_state = False
                 started = args.no_start
                 page_lines: set[str] = set()
@@ -316,6 +331,31 @@ def main() -> int:
                                         "type": kind, "key": press[1],
                                         "code": press[1]}, session=session)
                                 print(f"[harness] pressed {press[1]}", flush=True)
+                        for click in list(clicks):
+                            if click[0].search(line):
+                                clicks.remove(click)
+                                center = cdp.send("Runtime.evaluate", {
+                                    "expression": ELEMENT_CENTER % json.dumps(click[1]),
+                                    "returnByValue": True}, session=session)
+                                point = center.get("result", {}).get("value")
+                                if not point:
+                                    print(f"[harness] no element {click[1]}", flush=True)
+                                    outcome = "fail"
+                                    break
+                                for kind in ("mousePressed", "mouseReleased"):
+                                    cdp.send("Input.dispatchMouseEvent", {
+                                        "type": kind, "x": point[0], "y": point[1],
+                                        "button": "left", "buttons": 1,
+                                        "clickCount": 1}, session=session)
+                                    time.sleep(0.08)
+                                print(f"[harness] clicked {click[1]}", flush=True)
+                        for step in list(evals):
+                            if step[0].search(line):
+                                evals.remove(step)
+                                cdp.send("Runtime.evaluate", {
+                                    "expression": step[1],
+                                    "userGesture": True}, session=session)
+                                print("[harness] evaluated script", flush=True)
                         for tap in list(taps):
                             if tap[0].search(line):
                                 taps.remove(tap)

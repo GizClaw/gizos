@@ -6,6 +6,7 @@
 
 #include <emscripten.h>
 #include <stdio.h>
+#include <string.h>
 
 struct h2_web_app_host {
   const h2_web_app_host_config_t *config;
@@ -31,6 +32,21 @@ static const h2_pal_periph_single_button_payload_t s_button_payload = {
 };
 
 // Peripheral ids are button index + 1.
+/* The config key overrides; otherwise the web board's key for that name. */
+static const char *
+h2_web_app_host_button_key(const h2_web_app_host_button_t *button) {
+  if (button->key != NULL)
+    return button->key;
+  for (size_t index = 0u; button->name != NULL &&
+                          index < h2_web_board.button_count;
+       ++index) {
+    const h2_web_board_button_t *board = &h2_web_board.buttons[index];
+    if (strcmp(board->name, button->name) == 0)
+      return board->key[0] != '\0' ? board->key : NULL;
+  }
+  return NULL;
+}
+
 static h2_pal_periph_info_t h2_web_app_host_button_info(size_t index) {
   h2_pal_periph_info_t info = {
       .id = (h2_pal_periph_id_t)(index + 1u),
@@ -38,8 +54,14 @@ static h2_pal_periph_info_t h2_web_app_host_button_info(size_t index) {
       .payload = &s_button_payload,
       .payload_size = sizeof(s_button_payload),
   };
+  /* Peripheral name: the board Button name, else its resolved key; a NULL
+   * config key never reaches the format. */
+  const h2_web_app_host_button_t *button = &s_host->config->buttons[index];
+  const char *key = h2_web_app_host_button_key(button);
   (void)snprintf(info.name, sizeof(info.name), "%s",
-                 s_host->config->buttons[index].key);
+                 button->name != NULL ? button->name
+                 : key != NULL        ? key
+                                      : "button");
   return info;
 }
 
@@ -122,7 +144,7 @@ static const h2_pal_periph_api_t s_periph = {
     .vtable = &s_periph_vtable,
 };
 
-/* Called by the key listener with the button index and 1 down / 0 up. */
+/* Called by the shell with the button index and 1 down / 0 up. */
 EMSCRIPTEN_KEEPALIVE int h2_web_app_host_button(int index, int pressed) {
   if (s_host == NULL || s_host->runtime == NULL || index < 0 ||
       (size_t)index >= s_host->config->button_count)
@@ -133,31 +155,16 @@ EMSCRIPTEN_KEEPALIVE int h2_web_app_host_button(int index, int pressed) {
       pressed ? H2_RUNTIME_BUTTON_EDGE_DOWN : H2_RUNTIME_BUTTON_EDGE_UP);
 }
 
-EM_JS(void, h2_web_app_host_bind_key, (int index, const char *key), {
-  const name = UTF8ToString(key);
-  const bindings = Module['h2WebAppHostKeys'] ||= [];
-  let pressed = false;
-  const edge = (event, down) => {
-    if (event.key !== name || event.repeat || pressed === down) return;
-    pressed = down;
-    event.preventDefault();
-    const rc = Module['_h2_web_app_host_button'](index, down ? 1 : 0);
-    if (rc !== 0)
-      console.warn(`H2_WEB_APP key=${name} ${down ? 'down' : 'up'} rc=${rc}`);
-  };
-  const down = (event) => edge(event, true);
-  const up = (event) => edge(event, false);
-  globalThis.addEventListener('keydown', down);
-  globalThis.addEventListener('keyup', up);
-  bindings.push(() => {
-    globalThis.removeEventListener('keydown', down);
-    globalThis.removeEventListener('keyup', up);
-  });
+/* The shell's JavaScript owns keyboard and layout input for each Button. */
+EM_JS(void, h2_web_app_host_bind_button, (int index, const char *key,
+                                          const char *name), {
+  const bind = globalThis.h2WebAppHostBindButton;
+  if (bind)
+    bind(index, key ? UTF8ToString(key) : "", name ? UTF8ToString(name) : "");
 });
 
-EM_JS(void, h2_web_app_host_unbind_keys, (), {
-  for (const unbind of Module['h2WebAppHostKeys'] || []) unbind();
-  Module['h2WebAppHostKeys'] = [];
+EM_JS(void, h2_web_app_host_unbind_buttons, (), {
+  globalThis.h2WebAppHostUnbindButtons?.();
 });
 
 EM_JS(void, h2_web_app_host_status, (const char *text), {
@@ -286,7 +293,9 @@ static void h2_web_app_host_task(void *user) {
     result = h2_runtime_input_start(host->runtime, NULL);
     for (size_t index = 0u; result == H2_PAL_OK && index < config->button_count;
          ++index)
-      h2_web_app_host_bind_key((int)index, config->buttons[index].key);
+      h2_web_app_host_bind_button(
+          (int)index, h2_web_app_host_button_key(&config->buttons[index]),
+          config->buttons[index].name);
   }
   if (result == H2_PAL_OK) {
     if (config->run_ms != 0u)
@@ -313,7 +322,7 @@ static void h2_web_app_host_task(void *user) {
          (result == H2_PAL_EXIT || result == H2_PAL_ERR_CLOSED)))
       result = s_stop_requested ? H2_PAL_OK : H2_PAL_EXIT;
   }
-  h2_web_app_host_unbind_keys();
+  h2_web_app_host_unbind_buttons();
   if (host->runtime != NULL)
     h2_runtime_deinit(host->runtime);
   host->runtime = NULL;
@@ -334,11 +343,16 @@ int h2_web_app_host_run(const h2_web_app_host_config_t *config,
       .result = H2_PAL_ERR_TASK,
   };
   s_host = &host;
+  const int32_t width = config->display_width != 0 ? config->display_width
+                                                   : h2_web_board.display_width;
+  const int32_t height = config->display_height != 0
+                             ? config->display_height
+                             : h2_web_board.display_height;
   const h2_web_platform_config_t platform_config = {
-      .display_width = config->display_width,
-      .display_height = config->display_height,
+      .display_width = width,
+      .display_height = height,
   };
-  h2_web_app_host_size_canvas(config->display_width, config->display_height);
+  h2_web_app_host_size_canvas(width, height);
   host.platform = h2_web_platform_create(&platform_config);
   h2_pal_result_t result =
       host.platform != NULL ? H2_PAL_OK : H2_PAL_ERR_NO_MEMORY;

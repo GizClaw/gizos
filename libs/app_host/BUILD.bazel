@@ -1,0 +1,70 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_python//python:defs.bzl", "py_binary")
+load(":web_board.bzl", "h2_web_board")
+load(":web_board_test.bzl", "web_board_argument_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+# UI-free page skeleton for h2_web_app(), and the plain layout used when the
+# board has no skin. Device-like skins come from web boards.
+exports_files([
+    "default_layout.html",
+    "shell.html",
+])
+
+# Board of pages that name none: 240x240 display, no Buttons, plain layout.
+# Real boards (with device-like skins) live with their board or product.
+h2_web_board(
+    name = "default_board",
+    display_height = 240,
+    display_width = 240,
+)
+
+# Build tool: writes the shell with the selected board skin injected.
+py_binary(
+    name = "inject_layout",
+    srcs = ["inject_layout.py"],
+    legacy_create_init = 0,
+    main = "inject_layout.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+# App launcher layer, Web only for now: builds the Runtime from the Web PAL
+# provider, runs the caller's App entry and tears everything down. It does not
+# select the App; the pkg_tar entry owns main, its config and the archive.
+cc_library(
+    name = "app_host",
+    srcs = ["src/h2_web_app_host.c"],
+    hdrs = ["include/h2_web_app_host.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [
+        "//libs/lvgl:platform_web",
+        "//libs/pal",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/web/pal_core",
+        "//libs/runtime",
+    ],
+)
+
+# h2_web_board() rejects bad display sizes, too many Buttons, bad Button or
+# skin names and an unknown default_skin at loading time.
+web_board_argument_test(
+    name = "web_board_argument_test",
+    # Embedded platforms have no test execution toolchain.
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

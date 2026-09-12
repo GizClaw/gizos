@@ -1,0 +1,22 @@
+load("//libs/app_host:web_board.bzl", "h2_web_board")
+
+package(default_visibility = ["//visibility:public"])
+
+# Example web board for the lua-script* pages: a 240x240 display and three
+# Buttons, with two skins to show that one board can look several ways.
+# Product boards keep their own board and skins next to their BSP.
+h2_web_board(
+    name = "demo_board",
+    buttons = {
+        "left": "ArrowLeft",
+        "ok": "Enter",
+        "back": "Escape",
+    },
+    default_skin = "device",
+    display_height = 240,
+    display_width = 240,
+    skins = {
+        "device": "device.html",
+        "plain": "plain.html",
+    },
+)
