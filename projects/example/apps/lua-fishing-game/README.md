@@ -1,4 +1,4 @@
-# Fishing Game — AMOLED desktop preview
+# Fishing Game — AMOLED / H106
 
 Native SDL/PAL + the existing Lua runtime, at **368 × 448**. All scene, equipment,
 wood, thumbnails, logos and pixel font are drawn in Lua using rectangles, lines
@@ -8,6 +8,103 @@ The PNGs under `design/` are approved visual references only, not build inputs.
 ```sh
 bazel run //projects/example/targets/cc_binary/lua-fishing-game:example-lua-fishing-game
 ```
+
+## H106 layout preview
+
+```sh
+bazel run //projects/example/targets/cc_binary/lua-fishing-game:example-lua-fishing-game-h106 -- --scene=rods
+```
+
+The H106 desktop target presents **240 × 240** pixels. Equipment uses a **2 × 2**
+grid, enlarged shared thumbnails, and matching scrolling/hit testing. The sea,
+three equipment labels, bottom details, and standalone BAGS module keep their
+AMOLED composition. H106 BAGS also uses a 2 × 2 grid (AMOLED stays 3 × 3).
+H106 rasterizes vectors directly into **240 × 240**, with no intermediate 448 × 448 image or framebuffer filtering. Shared authored coordinates still use 448 units; the desktop adapter only maps pointer input back to those coordinates. The boat and rod retain their shape and right-bottom anchor.
+
+The information panel keeps its existing height and uses exactly two rows: a 9px brand wordmark beside the full 11px model name, then an 11px compact description. The two longest model names use 9px compact glyphs to fit the 212px content width. All 48 catalog items are checked for row width and glyph coverage. Glyph cells are integer physical-pixel rectangles cached as drawing commands, not imported textures or filtered text.
+
+H106's time uses 13px text and temperature uses 11px text. Wind retains the shared AMOLED wave glyph and level mapping. Settlement keeps the original wood, fish, shadows and separator, with a 13px fish name and 14px key values; long numeric values fit their columns. It adds neither information backgrounds nor a Record/back label. These typography changes do not change AMOLED rendering, the four-card bag, input behavior or physics.
+
+Fish-bag typography uses a 12px name and 11px length, weight and value, replacing the previous 14px/7px contrast. Settlement units are also 11px, closer to its 14px numbers. All 30 species are checked against their bag-name and numeric-column widths, including maximum reference weights and values; the four-card grid, dividers, coin icon and existing backgrounds remain unchanged.
+The normal desktop preview retains mouse drag/click interactions. H106 firmware uses the button controls below. Desktop timings are not hardware performance evidence.
+`--profile=amoled` still selects the existing physics budget, not a display layout.
+
+The target supports the same `--check`, `--capture`, `--scroll`, and scene options
+as AMOLED. Native viewport identity and input mapping are covered by
+`bazel test //projects/example/targets/cc_binary/lua-fishing-game:h106_preview_test`.
+
+H106 live fishing uses an inset rod/reel anchor (the boat remains corner-anchored),
+a larger reel, and continuous coverage-based rod strokes. This avoids the old
+hard-quad/center-line seams; it does not change world-space fishing physics.
+Missing equipment is explicitly labeled on the sea screen.
+
+The H106 desktop target defaults to an **8 MiB Lua limit**; firmware and the bounded button-test runner use **4 MiB**. H106 retains native-resolution inventory page caches across navigation and draws the current scroll rail instead of precompiling every possible scroll position. Entering inventory releases unused sea and settlement surfaces, including the native background reference. `--vm-kib=4096` reproduces the firmware Lua budget on desktop, but is not a substitute for device heap validation. AMOLED keeps 4 MiB.
+
+For a bounded end-to-end desktop input test:
+
+```sh
+python3 projects/example/apps/lua-fishing-game/tools/verify_desktop_input.py \
+  --binary bazel-bin/projects/example/targets/cc_binary/lua-fishing-game/example-lua-fishing-game-h106 \
+  --out /tmp/h106-input-new-run
+```
+
+This injects SDL mouse events at **physical 240 × 240 coordinates**, passes them
+through the normal SDL queue, H106 inverse touch mapping and Lua polling loop,
+and requires 13 checkpoints plus two actual casts/splashes. It captures real
+submitted frames and writes a report. It reproduced a 4 MiB out-of-memory failure
+when opening REELS after changing rod and returning to the sea. Unlike `--check`
+or `device-bench`, it does not directly invoke game gesture handlers. It does not
+test macOS mouse delivery or firmware input. Use a new output directory each run.
+
+## Shared interactions
+
+### H106 button controls
+
+Volume Up cycles **Sea → RODS → REELS → LURES → BAGS → Sea**; Volume Down reverses the cycle. Left/Right selects the previous/next item and keeps its complete card visible. Selection follows the existing compatibility rules; choosing a different rod can leave a reel or lure unequipped.
+
+Button selection now animates the focus frame and automatic row scrolling over
+240 ms, retargeting from the current position for repeated keys. Rod thumbnail
+caches no longer depend on the selected rod; reel/lure variants use their actual
+compatibility mask. H106 prepares a visible neighborhood instead of eagerly
+rasterizing the complete catalog. Tab timing begins after its first presentation,
+so cold preparation does not consume the animation's duration.
+
+H106 text retains its final-screen pixel alignment. Lua defines monochrome glyph
+cells; `display.draw_commands(handle, top, bottom, x, y, sx, sy, color)` replays
+them in the native rasterizer. Optional transform/recolor arguments preserve the
+old untransformed fast path, and glyph positions match the prior per-cell Lua
+implementation. No bitmap artwork or font file was introduced.
+
+The button verifier records `H106_UI_ANIMATION` first-response latency, submitted
+intermediate frames, scrolling frames and frame gaps. It visits five items and
+returns to the first item in each equipment category. `H106_PHASE_PERF` counts
+changed submissions during each active phase; static menu and post-reveal
+settlement loops are excluded. Reports distinguish functional pass from the
+30 FPS threshold; desktop numbers are not hardware acceptance.
+
+`H106_TAB_ANIMATION` separately records all six directional RODS/REELS/LURES/BAGS
+routes and both LURES↔BAGS directions after a real catch. First-frame latency is
+reported separately from the subsequent animation FPS. Nonterminal check failures
+are retained as failures while allowing later stages to be measured.
+The complete v22 hardware run passed all 15 functional checkpoints but **failed
+30 FPS acceptance**: horizontal animations 7.9–8.6 FPS (first frame 101–925 ms),
+fight 6.9 FPS, settlement 15.3 FPS. See [the hardware report](validation/H106_FIRMWARE.md)
+for all phases, memory fixes, and the unresolved earlier charged-cast inconsistency.
+
+On the sea, hold Record to charge for up to 1.4 seconds, then release to cast. Charge is measured from Runtime event timestamps, not render timing. Shorter holds cast shorter distances. Record taps retrieve the lure, hook a bite, reel during a fight, complete landing, and leave settlement after its reveal animation. During a fight, holding Left/Right changes the rod angle without adding a reel click. Changing pages cancels an unfinished charge.
+
+For lure/ISO casts, charge scales the free line's release velocity coherently,
+while retaining the normal rod-stroke timing. Fly casts retain their false casts
+and model a final hand haul across the whole fly line, not the fly alone. Neither
+mode accelerates the animation: doing so changed the rod's release phase and
+could make stronger casts shorter. Five charge levels are checked for all 11 rods.
+H106 rasterizes at native resolution and submits changed regions; continuous rod coverage uses single-precision screen-space math without changing world physics.
+
+All geometry and bitmap-font definitions remain in Lua. The native rasterizer draws these definitions directly into 240 × 240 pixels without a framebuffer area filter; cached procedural frames are not imported textures. Firmware supplies display storage from PSRAM with internal DMA staging buffers.
+
+`--button-check --profile=amoled` on the H106 desktop binary runs the same opt-in diagnostic as the H106 test firmware. It injects typed button events through Runtime's exclusive test-input session and waits for actual Lua callbacks. It covers page navigation, automatic scrolling, two charged casts, tap retrieval, rod steering, landing, settlement exit and the recorded catch in BAGS. The fish encounter is an explicit deterministic fixture; hook/fight/landing are real simulated gameplay, not direct state completion. The test ends with `H106_AUTO DONE PASS physical_input_restored` and closes the test-input session. Production firmware does not register the test module. This does not verify physical ADC thresholds or switch debounce.
+
+### Touch controls (AMOLED and normal desktop previews)
 
 - Starts on the sea. Consecutive **left** swipes follow
   **Sea → RODS → REELS → LURES → BAGS**; right swipes reverse that route.
@@ -171,6 +268,12 @@ Fish study: 30 Lua-drawn species in `--scene=fish-atlas`, `fish-atlas-2`, `fish-
 
 Click to cast and twitch-retrieve. A committed bite can be hooked with one click. During a fight, click left/right to apply side pressure, or the middle to reel a short stroke. The loaded line is straight; forces still control rod flex, drag payout, slack, hook damage and line failure. Fish arriving near the boat are lifted directly into a full-screen sunny, oblique wooden deck scene, without a net. The actual fish drops, flops twice, settles, and displays its length, weight and coin value. After the 1.8-second sequence, a fresh tap returns to the sea; the following tap casts again. Each catch is recorded exactly once.
 
+After splashdown, the handle lowers over 1.1 seconds toward a rod-length-specific
+pose whose unladen tip is 0.30 m above the water. Elastic motion and line tension
+still affect the actual tip, and the rope follows that physical point. The launch
+and flight are unchanged. Fully retrieving the rig raises it again for the
+hanging leader and next cast; hooking retains the existing fighting posture.
+
 Surface-only lures have explicit behavior: SUPER SPOOK JR. alternates lateral acceleration during successive strokes (walk-the-dog); POP-X emits one small splash per stroke. Floating minnows are not treated as surface pencils. Surface feeders rise from below, strike with a surface splash, and pull the rig down; hooking starts a short dive before normal species behavior resumes.
 
 `--scene=fight-demo` drives the same live pipeline automatically for inspection, but can lose fish. `--scene=deck-demo --time-ms=725 --capture=/tmp/new.ppm` captures the actual deck renderer at a chosen animation time, with a clearly designated example record. `fight-revision-1..12` are review poses; these do not replace live validation.
@@ -178,6 +281,49 @@ Surface-only lures have explicit behavior: SUPER SPOOK JR. alternates lateral ac
 `--profile=amoled` selects a 60 FPS scheduling ceiling, 120 Hz fixed physics, at most 72 line nodes and six local solver passes (two for a hooked fish). This ceiling is not measured performance. Desktop defaults to 60 FPS / 240 Hz / 150 nodes / twelve passes. Both profiles use the same geometry and state machine. Use `--check` with either profile for deterministic regression, including native/Lua cast and underwater comparisons. A desktop run of the AMOLED profile is not an ESP32-S3 performance measurement. The firmware target is `//projects/example/targets/h2loader_tar_zlib/lua-fishing-game/amoled:package`; install it through H2Loader's application upgrade, preserving recovery. See `design/PERFORMANCE_30FPS_WORKLOG.md` for ongoing real-device measurements: the target is not yet achieved for every live scene.
 
 For rendering comparisons, `--no-cache` disables inventory snapshots, sparse weather backgrounds, batched depth paths and the bounded rod raster fast path. It does not disable native physics. `--scroll=N` selects a nonnegative integer inventory offset (clamped to the page's actual range). `tools/verify_cache.py` compares cached/uncached RGB565 captures; only bounded one-pixel thumbnail raster-edge differences are allowed. `perf-demo` is a temporary firmware benchmark with continuous vertical scrolling followed by a cast, not the normal interactive startup scene.
+
+### Fixed inventory chrome and automated hardware measurements
+
+Horizontal inventory transitions keep the wood, information frame and the three
+equipment labels fixed. Only foreground content and the selected-tab pill move.
+BAGS remains a separate sibling module. Two foreground snapshots, a bounded
+24-fish thumbnail neighborhood, compact native transparent runs and retained
+deck geometry avoid rebuilding unchanged artwork. The deck's shadow, thickness
+and lit fish share an identical pose projection; physics timesteps and node
+counts are unchanged.
+
+Equipment information uses compact display aliases at a fixed integer 2x glyph
+size, preserving the full manufacturer data in the catalog. For example,
+`DESTROYER P5 THE X-BITES` displays as `P5 X-BITES`; reel capacity keeps line
+type, strength and length while shortening separators and `BACKING` to `BK`.
+All 48 current items must fit both columns without shrinking or truncation.
+
+`device-bench` is a temporary automated test scene. It runs reference/optimized
+horizontal gear/BAGS transitions and vertical scrolling, then an actual cast,
+hook, fight, lift, unique catch record and settlement. Its deterministic 1.2 kg
+bite and 30-specimen browsing fixture are test inputs, not measurements of random
+encounter probability or physical touch latency. It drives the game's gesture
+handlers, not the capacitive controller. The final repeated settlement phases
+reuse the same catch without adding records. Normal firmware starts in `idle`.
+
+```sh
+python3 projects/example/apps/lua-fishing-game/tools/run_auto_perf.py \
+  --binary bazel-bin/projects/h2loader/targets/cc_binary/cli/h2loader \
+  --mode upgrade --port /dev/tty.usbmodem1101 --out /tmp/new-hardware-perf
+```
+
+This command installs an **already staged** H2Loader APP package and monitors
+the test. Use `--mode monitor` to attach without an upgrade, or `--mode desktop`
+with a desktop executable for host-only regression. Do not equate host timings
+with ESP32 performance. Reports distinguish phase-loop FPS, changed-frame FPS,
+p95 intervals, maximum latency (including first-frame work), CPU drawing and
+submission time. Idle loops on a static result page are not animation FPS.
+
+`tools/verify_fixed_tabs.py` checks fixed chrome across 20 native transition
+captures. `tools/verify_fish_cache.py` compares 13 settlement poses and six bag
+scroll positions against the uncached renderer. Settlement must be pixel exact;
+AMOLED pre-rasterized bag hairlines permit only bounded one-pixel clipping-edge
+differences. H106 redraws boundary fish to preserve details during downsampling.
 
 ### Game weather and time
 

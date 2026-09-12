@@ -1613,6 +1613,42 @@ int main(void) {
         mesh_equivalence_script,sizeof(mesh_equivalence_script)-1u);
     assert(strcmp(retained_status.message,"ok")==0);
 
+    static const uint8_t retained_geometry_script[] =
+        "local d=require('display');local parts={{kind=0,p={{-1,-1},{2,0,1},{0,2}},c='red'},"
+        "{kind=1,p={{0,0},{1,1}},c='white'}};local g=d.compile_geometry(parts);local shared=d.compile_geometry(parts);"
+        "d.clear('black');d.present({retained=true});"
+        "for _,project in ipairs({false,true}) do for _,angle in ipairs({0,.7,-.4}) do "
+        "local function point(p) local a,b=p[1],p[2]+(p[3] or 0)*.4;b=b+.3*(a/30)^2;"
+        "local u=2+(a*math.cos(angle)-b*math.sin(angle));local v=2+(a*math.sin(angle)+b*math.cos(angle));"
+        "if project then local x=u*.866+v*.5;local depth=-u*.5+v*.866;local k=1/(1+depth/1300);return {x*k,259-depth*.67*k-.5*k-254} end;return {u,v} end;"
+        "d.clear('black');for _,p in ipairs(parts) do local q={};for _,v in ipairs(p.p) do q[#q+1]=point(v) end;"
+        "if p.kind==0 then d.fill_polygon(q,'blue') else local a,b=q[1],q[2];"
+        "d.draw_line(math.floor(a[1]+.5),math.floor(a[2]+.5),math.floor(b[1]+.5),math.floor(b[2]+.5),'blue') end end;"
+        "d.present();d.clear('black');d.draw_geometry(g,2,2,1,angle,.3,.4,project and {.5,0,-254,0} or nil,'blue',0,0,8);"
+        "assert(d.present()==0,'retained geometry mismatch');d.clear('black');"
+        "d.draw_geometry(shared,2,2,1,angle,.3,.4,project and {.5,0,-254,0} or nil,'blue',0,0,8,g);"
+        "assert(d.present()==0,'shared pose mismatch') end end;"
+        "assert(not pcall(d.compile_geometry,{}));assert(not pcall(d.compile_geometry,{{kind=1,p={{0,0},{1,1},{2,2}},c='red'}}));"
+        "assert(not pcall(d.draw_geometry,g,0,0,0,0,0,0,nil,nil,0,0,8));"
+        "d.deinit();return 'ok'";
+    retained_status=run_display_script(host,"@retained-geometry.lua",retained_geometry_script,sizeof(retained_geometry_script)-1u);
+    assert(strcmp(retained_status.message,"ok")==0);
+
+    static const uint8_t region_horizontal_clip_script[] =
+        "local d=require('display');d.clear('black');d.fill_rect(0,0,8,8,'red');local r=d.capture_region(0,0,8,8)\n"
+        "d.clear('black');d.fill_rect(2,1,3,5,'red');d.present({retained=true})\n"
+        "d.clear('black');d.draw_region(r,-1,0,1,6,nil,2,5);assert(d.present()==0,'horizontal opaque clip')\n"
+        "d.clear('blue');d.fill_rect(1,1,5,5,'red');r=d.capture_region(0,0,8,8,'blue')\n"
+        "d.clear('black');d.fill_rect(3,2,2,3,'red');d.present()\n"
+        "d.clear('black');d.draw_region(r,0,0,2,5,'blue',3,5);assert(d.present()==0,'horizontal masked clip')\n"
+        "d.draw_region(r,0,0,0,8,'blue',4,4);assert(d.present()==0,'empty horizontal clip')\n"
+        "assert(not pcall(d.draw_region,r,0,0,0,8,nil,-1,8))\n"
+        "assert(not pcall(d.draw_region,r,0,0,0,8,nil,0,9))\n"
+        "assert(not pcall(d.draw_region,r,0,0,0,8,nil,6,5))\n"
+        "d.deinit();return 'ok'\n";
+    retained_status=run_display_script(host,"@region-horizontal-clip.lua",region_horizontal_clip_script,sizeof(region_horizontal_clip_script)-1u);
+    assert(strcmp(retained_status.message,"ok")==0);
+
     static const uint8_t command_equivalence_script[] =
         "local d=require('display')\n"
         "d.clear('black');d.present({retained=true})\n"
@@ -1622,6 +1658,13 @@ int main(void) {
         "d.clear('black');d.draw_commands(h);assert(d.present()==0,'command replay mismatch')\n"
         "d.clear('black');d.fill_rect(0,2,4,2,'red');d.draw_line(5,2,3,4,'blue');d.present()\n"
         "d.clear('black');d.draw_commands(h,2,5);assert(d.present()==0,'command clip mismatch')\n"
+        "local glyph={{0,0,0,1,1,'red'},{0,2,1,1,2,'red'}};local g=d.compile_commands(glyph)\n"
+        "for phase=0,27 do local ox=phase/15-1;local oy=phase/28;local sx=28/15;local sy=1.5\n"
+        " d.clear('black');for _,c in ipairs(glyph) do local x=math.floor(ox+c[2]*sx+.5);local y=math.floor(oy+c[3]*sy+.5);local r=math.floor(ox+(c[2]+c[4])*sx+.5);local b=math.floor(oy+(c[3]+c[5])*sy+.5);local t=math.max(1,y);b=math.min(6,b);if b>t then d.fill_rect(x,t,r-x,b-t,'green') end end;d.present()\n"
+        " d.clear('black');d.draw_commands(g,1,6,ox,oy,sx,sy,'green');assert(d.present()==0,'transformed glyph phase mismatch') end\n"
+        "assert(not pcall(d.draw_commands,g,0,8,0,0,0))\n"
+        "assert(not pcall(d.draw_commands,g,0,8,0,0,1/0))\n"
+        "assert(not pcall(d.draw_commands,g,0,8,1000001,0))\n"
         "assert(not pcall(d.compile_commands,{{0,0,0,-1,1,'red'}}))\n"
         "assert(not pcall(d.compile_commands,{{2,0,0,1,1,'red'}}))\n"
         "assert(not pcall(d.stroke_path,{{0,0},{2,2}},{-1},'red'))\n"
@@ -1629,6 +1672,20 @@ int main(void) {
         ;
     retained_status=run_display_script(host,"@command-equivalence.lua",
         command_equivalence_script,sizeof(command_equivalence_script)-1u);
+    assert(strcmp(retained_status.message,"ok")==0);
+
+    static const uint8_t native_raster_script[] =
+        "local d=require('display');local p={{2,2},{12,2},{12,12},{2,12}}\n"
+        "d.clear('black');d.fill_polygon(p,'red',0,0,8,.5);d.present({retained=true})\n"
+        "d.clear('black');d.fill_polygon({{1,1},{6,1},{6,6},{1,6}},'red');assert(d.present()==0,'vector transform before raster')\n"
+        "d.clear('black');d.stroke_path({{2,4},{12,4}},{4},'white',0,0,8,false,false,true,.5);d.present()\n"
+        "d.clear('black');d.stroke_path({{1,2},{6,2}},{2},'white',0,0,8,false,false,true);assert(d.present()==0,'native width and coordinate scaling')\n"
+        "d.clear('black');d.stroke_path({{2,4},{4,4},{8,4},{12,4}},{4,4,4},'white',0,0,8,false,false,true,.5,.12);assert(d.present()==0,'collinear LOD preserves coverage')\n"
+        "local g=d.compile_geometry({{kind=0,p=p,c='red'}});d.clear('black');d.draw_geometry(g,0,0,1,0,0,0,nil,nil,0,0,8,nil,.5);d.present()\n"
+        "d.clear('black');d.fill_polygon({{1,1},{6,1},{6,6},{1,6}},'red');assert(d.present()==0,'retained geometry native raster')\n"
+        "assert(not pcall(d.fill_polygon,p,'red',0,0,8,0));assert(not pcall(d.stroke_path,{{0,0},{2,2}},{2},'red',0,0,8,false,false,true,17))\n"
+        "d.deinit();return 'ok'\n";
+    retained_status=run_display_script(host,"@native-raster.lua",native_raster_script,sizeof(native_raster_script)-1u);
     assert(strcmp(retained_status.message,"ok")==0);
 
     static const uint8_t projection_script[] =
@@ -1676,6 +1733,15 @@ int main(void) {
         "for j=1,2 do d.clear('black');d.stroke_path(p,w,c,0,0,8,false,true);assert(d.present()==0,'normal cache stale') end end\n"
         "normals_check();w[1]=3;normals_check();p[2][1]=2;normals_check();c[2]='white';normals_check()\n"
         "p[4]={2,3};w[3]=2;c[3]='green';normals_check();p[2]={1,1};normals_check()\n"
+        "local function smooth(p,w,top) d.stroke_path(p,w,'white',0,top or 0,8,false,false,true) end\n"
+        "d.clear('black');smooth({{1.5,2.5},{10.5,2.5}},{2});d.present()\n"
+        "d.clear('black');smooth({{1.5,2.5},{4.5,2.5},{7.5,2.5},{10.5,2.5}},{2,2,2});assert(d.present()==0,'smooth joins must not add teeth')\n"
+        "d.clear('black');smooth({{-10,3.5},{40,3.5}},{2},3);d.present()\n"
+        "d.clear('black');smooth({{40,3.5},{-10,3.5}},{2},3);assert(d.present()==0,'smooth reverse and clipping')\n"
+        "d.clear('black');d.present();smooth({{100,100},{101,101}},{3});assert(d.present()==0,'smooth offscreen')\n"
+        "smooth({{4,4},{4,4}},{2});assert(d.present()>0,'smooth degenerate dot')\n"
+        "d.clear('black');smooth({{-20,-20},{40,40}},{4});d.present()\n"
+        "for i=1,30 do smooth({{4,4},{4,4}},{2});collectgarbage('step',8);d.clear('black');smooth({{-20,-20},{40,40}},{4});assert(d.present()==0,'smooth scratch resize/reuse changed pixels') end\n"
         "d.deinit();return 'ok'\n";
     retained_status=run_display_script(host,"@stroke-cache.lua",stroke_cache_script,sizeof(stroke_cache_script)-1u);
     assert(strcmp(retained_status.message,"ok")==0);
@@ -1694,6 +1760,9 @@ int main(void) {
         "local weak=setmetatable({g},{__mode='v'});g=nil;collectgarbage('collect');assert(weak[1],'active background must be pinned')\n"
         "d.draw_line(32,16,32,16,'white');d.present();d.restore_background(weak[1]);d.present()\n"
         "d.clear('green');assert(d.present()==0,'background switch and edge tiles')\n"
+        "d.release_background();d.release_background();collectgarbage('collect');assert(not weak[1],'scene release must unpin background')\n"
+        "d.fill_rect(0,0,33,17,'red');d.present();d.clear('green');d.present();assert(d.present()==0,'drawing after release remains valid')\n"
+        "g=d.capture_region(0,0,33,17);d.restore_background(g);weak[1]=g;g=nil;collectgarbage('collect');assert(weak[1],'rebind after release')\n"
         "d.deinit();collectgarbage('collect');assert(not weak[1],'close must release background');return 'ok'\n";
     s_test_display_width=33;s_test_display_height=17;
     retained_status=run_display_script(host,"@sparse-background.lua",background_script,sizeof(background_script)-1u);

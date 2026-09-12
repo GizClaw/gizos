@@ -6,9 +6,53 @@
 #include "h2_lua_module.h"
 #include "h2_lua_fishing_math.h"
 #include "h2_lua_event.h"
+#include "h2_runtime_test.h"
+#include "lua.h"
+#include "lauxlib.h"
 #include "h2_lua_job.h"
 
 #include <stdio.h>
+
+typedef struct {
+  h2_runtime_t *runtime;
+  h2_runtime_test_control_t *control;
+  uint64_t pressed[5];
+} fishing_input_test_t;
+
+static int test_button(lua_State *s) {
+  fishing_input_test_t *test = lua_touserdata(s, lua_upvalueindex(1));
+  int id = (int)luaL_checkinteger(s, 1);
+  int down = lua_toboolean(s, 2);
+  if (id < 9 || id > 13) return luaL_error(s, "invalid test button");
+  h2_pal_result_t rc = H2_PAL_OK;
+  if (!test->control) rc = h2_runtime_test_control_open(test->runtime, &test->control);
+  uint64_t now = 0;
+  if (rc == H2_PAL_OK) rc = h2_pal_time_get_monotonic_ms(test->runtime->time, &now);
+  if (rc == H2_PAL_OK && down) {
+    test->pressed[id-9] = now;
+    rc = h2_runtime_test_button_down(test->control, (h2_runtime_component_id_t)id, now);
+  } else if (rc == H2_PAL_OK) {
+    rc = h2_runtime_test_button_up(test->control, (h2_runtime_component_id_t)id, test->pressed[id-9], now);
+    test->pressed[id-9] = 0;
+  }
+  if (rc != H2_PAL_OK) return luaL_error(s, "Runtime test button failed: %d", rc);
+  return 0;
+}
+
+static int test_finish(lua_State *s) {
+  fishing_input_test_t *test = lua_touserdata(s, lua_upvalueindex(1));
+  if (test->control) h2_runtime_test_control_close(test->control);
+  test->control = NULL;
+  return 0;
+}
+
+static int input_test_open(void *opaque, void *user) {
+  lua_State *s = opaque;
+  lua_newtable(s);
+  lua_pushlightuserdata(s, user);lua_pushcclosure(s, test_button, 1);lua_setfield(s, -2, "button");
+  lua_pushlightuserdata(s, user);lua_pushcclosure(s, test_finish, 1);lua_setfield(s, -2, "finish");
+  return 1;
+}
 
 static int terminal(h2_lua_job_state_t state) {
   return state == H2_LUA_JOB_SUCCEEDED || state == H2_LUA_JOB_FAILED ||
@@ -29,6 +73,7 @@ h2_pal_result_t
 h2_lua_fishing_game_run(h2_runtime_t *runtime,
                       const h2_lua_fishing_game_config_t *config) {
   h2_lua_host_t *host = NULL;
+  fishing_input_test_t input_test = {.runtime = runtime};
   h2_lua_job_id_t job_id = H2_LUA_JOB_ID_NONE;
   h2_lua_job_status_t status;
   h2_pal_result_t result;
@@ -67,6 +112,9 @@ h2_lua_fishing_game_run(h2_runtime_t *runtime,
       {.name = "check", .value = config->check ? config->check : "0"},
       {.name = "no_cache", .value = config->no_cache ? config->no_cache : "0"},
       {.name = "scroll", .value = config->scroll ? config->scroll : ""},
+      {.name = "layout", .value = config->layout ? config->layout : "amoled"},
+      {.name = "controls", .value = config->controls ? config->controls : "touch"},
+      {.name = "input_test", .value = config->input_test ? "1" : "0"},
   };
 
   result = h2_lua_host_create(
@@ -74,9 +122,9 @@ h2_lua_fishing_game_run(h2_runtime_t *runtime,
           .runtime = runtime,
           .worker_count = 1u,
           .max_jobs = 1u,
-          .event_delivery_capacity = 8u,
-          .callback_capacity_per_job = 8u,
-          .vm_memory_limit_bytes = 4u * 1024u * 1024u,
+          .event_delivery_capacity = 32u,
+          .callback_capacity_per_job = 16u,
+          .vm_memory_limit_bytes = config->vm_memory_limit_bytes ? config->vm_memory_limit_bytes : 4u * 1024u * 1024u,
           .source_limit_bytes = 256u * 1024u,
           .output_limit_bytes = 1024u,
           .instruction_quantum = 50000u,
@@ -89,6 +137,8 @@ h2_lua_fishing_game_run(h2_runtime_t *runtime,
     return result;
   }
   result = h2_lua_register_module(host, "fishing_math", h2_lua_fishing_math_open, runtime);
+  if (result == H2_PAL_OK && config->input_test)
+    result = h2_lua_register_module(host, "fishing_test", input_test_open, &input_test);
   if (result == H2_PAL_OK) result = h2_lua_host_start(host);
   if (result == H2_PAL_OK) {
     result =
@@ -164,5 +214,6 @@ h2_lua_fishing_game_run(h2_runtime_t *runtime,
     }
   }
   h2_lua_host_destroy(host);
+  if (input_test.control) h2_runtime_test_control_close(input_test.control);
   return result;
 }

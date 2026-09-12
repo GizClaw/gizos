@@ -191,6 +191,18 @@ static int rod_pose(lua_State *s) {
     for(int i=0;i<3;++i){lua_rawgeti(s,-1,i+1);f[i]=number(s,-1);lua_pop(s,1);}}
   lua_pop(s,1);
   double points[65][3],ca=cos(angle),sa=sin(angle),cy=cos(yaw),sy=sin(yaw);
+  double rotation[3][3];
+  if(fighting) {
+    /* The unbent fight rotation is shared by all 64 segments. Compose yaw
+     * once, rather than repeating Rodrigues/yaw products for every segment. */
+    const double axis[3]={.75,.5,.4330127};
+    for(int j=0;j<3;++j) {
+      double v[3]={0,0,0};v[j]=1;
+      double cross[3]={axis[1]*v[2]-axis[2]*v[1],axis[2]*v[0]-axis[0]*v[2],axis[0]*v[1]-axis[1]*v[0]};
+      double r[3];for(int k=0;k<3;++k)r[k]=v[k]*ca+cross[k]*sa+axis[k]*axis[j]*(1-ca);
+      rotation[0][j]=r[0]*cy+r[2]*sy;rotation[1][j]=r[1];rotation[2][j]=-r[0]*sy+r[2]*cy;
+    }
+  }
   double x=g->root[0],y=g->root[1],z=g->root[2],dot=.75*x+.5*y+.4330127*z;
   points[0][0]=g->pivot[0]+x*ca+(.5*z-.4330127*y)*sa+.75*dot*(1-ca);
   points[0][1]=g->pivot[1]+y*ca+(.4330127*x-.75*z)*sa+.5*dot*(1-ca);
@@ -218,14 +230,24 @@ static int rod_pose(lua_State *s) {
     double shape=g->segment[i][3],a=angle-(fighting?0:q)*shape;
     double c=(fighting || shape==0)?ca:cos(a),ss=(fighting || shape==0)?sa:sin(a);
     x=g->segment[i][0];y=g->segment[i][1];z=g->segment[i][2];dot=g->segment[i][4];
-    double dx=x*c+(.5*z-.4330127*y)*ss+.75*dot*(1-c);
-    double dy=y*c+(.4330127*x-.75*z)*ss+.5*dot*(1-c);
-    double dz=z*c+(.75*y-.5*x)*ss+.4330127*dot*(1-c);
-    if(yaw!=0){double xx=dx*cy+dz*sy;dz=-dx*sy+dz*cy;dx=xx;}
+    double dx,dy,dz;
+    if(fighting) {
+      dx=rotation[0][0]*x+rotation[0][1]*y+rotation[0][2]*z;
+      dy=rotation[1][0]*x+rotation[1][1]*y+rotation[1][2]*z;
+      dz=rotation[2][0]*x+rotation[2][1]*y+rotation[2][2]*z;
+    } else {
+      dx=x*c+(.5*z-.4330127*y)*ss+.75*dot*(1-c);
+      dy=y*c+(.4330127*x-.75*z)*ss+.5*dot*(1-c);
+      dz=z*c+(.75*y-.5*x)*ss+.4330127*dot*(1-c);
+      if(yaw!=0){double xx=dx*cy+dz*sy;dz=-dx*sy+dz*cy;dx=xx;}
+    }
     if(fighting) {
       double len=norm3(dx,dy,dz),axial=(f[0]*dx+f[1]*dy+f[2]*dz)/fmax(1e-8,len),gain=fabs(q)*shape*1.5;
-      double nx=dx+len*gain*(f[0]-axial*dx/len),ny=dy+len*gain*(f[1]-axial*dy/len),nz=dz+len*gain*(f[2]-axial*dz/len);
-      double norm=norm3(nx,ny,nz);dx=nx*len/norm;dy=ny*len/norm;dz=nz*len/norm;
+      /* Factor common double expressions instead of six software divisions
+       * per segment. No change to segment count, force law or integration. */
+      double along=1-gain*axial,pull=len*gain;
+      double nx=dx*along+pull*f[0],ny=dy*along+pull*f[1],nz=dz*along+pull*f[2];
+      double factor=len/norm3(nx,ny,nz);dx=nx*factor;dy=ny*factor;dz=nz*factor;
     }
     last[0]+=dx;last[1]+=dy;last[2]+=dz;
     if(!tip_only) for(int j=0;j<3;++j) points[i][j]=last[j];

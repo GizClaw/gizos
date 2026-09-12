@@ -1,0 +1,12 @@
+{
+  "display": {"title": "Fishing Game | H106 240x240", "width": 240, "height": 240},
+  "filesystem": {"mounts": []},
+  "peripherals": [
+    {"periph_id": 1, "kind": {"button": {"key": "escape"}}},
+    {"periph_id": 2, "kind": {"button": {"key": "up"}}},
+    {"periph_id": 3, "kind": {"button": {"key": "down"}}},
+    {"periph_id": 4, "kind": {"button": {"key": "space"}}},
+    {"periph_id": 5, "kind": {"button": {"key": "left"}}},
+    {"periph_id": 6, "kind": {"button": {"key": "right"}}}
+  ]
+}

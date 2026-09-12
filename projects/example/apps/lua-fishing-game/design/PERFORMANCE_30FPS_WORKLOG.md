@@ -2,9 +2,9 @@
 
 Target: sustained real-device animation and equipment scrolling above 30 FPS.
 Keep 40 MHz QSPI, retained updates, original artwork and physics regression
-tolerances. Do not count static menu FPS as completion. No performance changes
-in this work log have been committed yet. Navigation/Bags changes also remain
-uncommitted and must be preserved.
+tolerances. Do not count static menu FPS as completion. Historical v19-v39 work
+is included in commit 4ca5fe45. The current fixed-chrome, H106 desktop and v41+
+optimizations remain uncommitted. Preserve unrelated worktree changes.
 
 ## v19 experiment
 
@@ -255,6 +255,152 @@ uncommitted and must be preserved.
   first-entry prewarm and horizontal transition latency, visual QA, cleanup of
   unused experimental stroke replay API/instrumentation before final review.
   All performance/navigation changes are uncommitted; baseline remains a2c83e77.
+
+## v41-v43: fixed chrome and fully automated real-device coverage
+
+- Worktree baseline: `lua-fishing-game`, commit `4ca5fe45`. These tests ran on
+  AMOLED UID `94a990281a12`, `/dev/tty.usbmodem1101`, via H2Loader managed APP
+  installation. QSPI remains 40 MHz, TE wait disabled, 64-row DMA. No recovery
+  flashing, physics timestep, node-count or iteration-count reductions.
+- Horizontal wood, information frame and RODS/REELS/LURES positions stay fixed;
+  foreground cards/details move and the selected pill slides. BAGS is separate.
+  Retain two masked foreground pages; precompile transparency runs and headers.
+- `device-bench` uses real game gesture handlers, not the physical touch sensor.
+  It tests three horizontal route pairs and four vertical lists with reference
+  and optimized renderers, a cast, waiting, deterministic 1.2 kg take, actual
+  hook/reel/lift/record, settlement and the resulting real bag, then repeats the
+  same settlement without recording extra fish. All 23 phases and one actual
+  catch passed on each of v41, v42 and v43. The 30-species bag is a stress fixture.
+- Reference means the legacy horizontal/deck renderer in the same test build,
+  not an untouched v39 binary. Vertical equipment already uses the preexisting
+  cached renderer in both modes. v42 onward fixes short-range rod scroll input
+  and includes phase-boundary and first-frame work in elapsed/max statistics;
+  do not compare v41 rod-scroll or lifting averages directly to newer metrics.
+- v41 hardware: horizontal 2.56-3.55 -> 18.04-18.73 FPS; bag vertical 8.76 FPS;
+  repeated settlement 4.32 -> 8.79 FPS. Native deck command batching alone was
+  insufficient. `/tmp/fishing-auto-v41-hardware/report.json` and `serial.log`.
+- v42 adds retained native fish geometry (double transforms), cached visible
+  bag fish and native transparent runs. Bag vertical 8.69 -> 18.14 FPS;
+  repeated settlement 4.30 -> 18.30 FPS; actual first settlement 17.47 FPS.
+  `/tmp/fishing-auto-v42-hardware/report.json` and `serial.log`.
+- v43 caches fixed header chrome and rail commands and submits wide transitions
+  as a single region. Phase-average horizontal FPS: rods/reels 23.38, reels/lures
+  23.63, lures/bags 23.53 (steady logs ~25). Changed-frame rates 21.34-21.59;
+  p95 49 ms. Cold transition maxima remain 386-545 ms: not hidden as steady FPS.
+- v43 vertical phase FPS: rods 38.08, reels 35.35, lures 35.93, bags 18.25.
+  Changed-frame FPS respectively 28.89, 31.31, 31.82, 14.44. A short rod scroll
+  can produce identical pixel positions between input events; idle iterations
+  are not new submitted frames.
+- Factor common double expressions in the fighting rod normalization, removing
+  redundant divisions. 297 bend/yaw/pull poses, all 65 nodes, agree with original
+  Lua equations within 1e-9 m. Existing cast/node tolerance stays 1e-6.
+  Fight phase improved modestly: 8.32 -> 9.08 FPS, simulation 57.89 -> 49.33 ms.
+- v43 cast/wait/lift: 11.74 / 13.06 / 22.94 FPS. Actual settlement 17.51 FPS;
+  repeated reference/optimized 4.32 / 18.18 FPS. Static result loops ~61 FPS
+  but only one changed frame: this is NOT a 61 FPS animation result.
+- v43 app SHA `abc55f82807f4c704ada8072ced28735913f72a3dd3c01bce7e8f1824d969931`,
+  package `477e16fd09b0c0c1ce30b34f5ff7f2748fc33314c929df3136bb98bead315745`.
+  Raw results `/tmp/fishing-auto-v43-hardware/report.json` and `serial.log`.
+
+## v44 full hardware verification
+
+- Merge neighboring damaged background tiles into contiguous RAM copies; avoid
+  thousands of 32-byte PSRAM copies on wide tab motion. SPI remains at 40 MHz.
+- Keep at most 24 bag fish thumbnails across scroll direction reversals. Draw
+  the rail's constant tails from existing commands, computing only its highlight.
+- Cache exact transformed fish vertices and reuse them across shadow, underside
+  and lit surface only when all shape coordinates and pose inputs match. Reuse
+  the existing deck background allocation for wet marks; no extra full frame.
+- Desktop tests: native Lua runtime and H106 adapter pass; 20 full game captures
+  and physics/navigation/gesture tests pass. Fixed chrome checks cover all four
+  transition directions on AMOLED and H106. Thirteen settlement key times are
+  pixel-identical to the uncached renderer; AMOLED bag scroll has 46 one-pixel
+  clipping-edge differences at offset 37 and zero at other tested offsets.
+  H106 explicitly redraws boundary fish and all six bag captures are identical.
+- Captures: `/tmp/fishing-v44-scenes`, `/tmp/fishing-fish-cache-v44-final`,
+  `/tmp/fishing-fish-cache-h106-v44`, `/tmp/fishing-fixed-tabs-h106-v44`.
+  These are actual native desktop framebuffers, not photographs of the device.
+- v44 benchmark package `5eabc10b0c52193ecf59ac1d468e0df003c059271a3538f6843f9cdfe8c78075`,
+  app `3c3f0b2b1e25f85f92fd675c455a0ed453ad457327093254c1e03057db340326`.
+- All 23 hardware phases passed, one actual hook/reel/lift/catch recorded. Durable
+  metrics: `../validation/performance-v44.json`; raw serial and report under
+  `/tmp/fishing-auto-v44-hardware/`. Cold costs and unchanged frames are included.
+
+| Phase | Phase FPS | Changed FPS | p95 / maximum ms |
+| --- | ---: | ---: | ---: |
+| RODS / REELS horizontal | 23.58 | 21.52 | 49 / 548 |
+| REELS / LURES horizontal | 23.83 | 21.77 | 49 / 445 |
+| LURES / BAGS horizontal | 23.86 | 21.79 | 49 / 387 |
+| RODS vertical | 38.06 | 28.91 | 30 / 63 |
+| REELS vertical | 35.42 | 31.37 | 31 / 64 |
+| LURES vertical | 36.28 | 31.91 | 30 / 65 |
+| BAGS vertical | 25.23 | 21.22 | 45 / 233 |
+| Cast | 11.54 | 11.54 | 104 / 438 |
+| Waiting | 13.10 | 13.10 | 105 / 119 |
+| Fight | 9.13 | 9.13 | 151 / 205 |
+| Lift (8-frame, short phase) | 17.47 | 17.47 | 99 / 99 |
+| Actual first settlement | 23.12 | 23.12 | 54 / 134 |
+| Repeated settlement | 23.85 | 23.85 | 49 / 113 |
+
+- Repeated reference settlement is 4.33 FPS; reference bag scroll 8.68 FPS.
+  Actual static result and actual catch bag each submit one changed frame, not
+  the ~60 FPS shown by their idle loops. Lifting is too short for a stable
+  throughput claim and fluctuated 17-23 FPS across runs.
+- Full 110-frame settlement sequence matches the uncached renderer byte-for-byte,
+  including wet-mark cache activation: `/tmp/fishing-final-deck-sequence`.
+  Final H106 fish captures: `/tmp/fishing-final-h106-fish`; equipment comparisons
+  `/tmp/fishing-final-amoled-gear-cache`, `/tmp/fishing-final-h106-gear-cache`.
+- >=30 FPS across all live phases remains unachieved. First-entry preparation,
+  sea/line simulation and heavy fish/rod raster work remain separate bottlenecks.
+
+## v45 installed interactive checkpoint
+
+- Same game/rendering/physics sources as the tested v44; firmware startup restored
+  to `idle` (not `device-bench`). Managed APP installation succeeded on UID
+  `94a990281a12` at `/dev/tty.usbmodem1101`. Status confirms `fishing-perf-v45`,
+  partition 2 running/next, stage cleared and last_result=0.
+- App SHA `a9f5cea0b0688ff94f21bc0a8e6f25b6ec3670ae1c7247bca62ed572ebc22f6f`;
+  package `9305ad458acbe431bc3513d3b0401dc0df54d5dbece00f3354b4be5c27d7479f`.
+  Recovery remains `5ad3716ee7272661a4fe97eee7d3dc3adaf997f61060a0a3be6e466552b49afb`.
+- Startup numeric self-test and application confirmation passed. Ready/uncast
+  animation ~22 FPS; internal free heap 46,815 bytes, largest 31,744, minimum
+  29,799. Boot/performance log `/tmp/fishing-perf-v45-serial.log`. The monitor
+  was stopped, leaving the device in normal interactive gameplay.
+- No commit/push in this round. Hardware visual/touch-sensor verification is
+  distinct from the automated game-input and desktop pixel tests above.
+
+## v47: low fishing posture and readable equipment information
+
+- Keep launch/flight behavior, then lower over 1.1 seconds after splashdown.
+  Calibrate a 0.30 m unladen tip height for each of the 11 rod lengths, caching
+  the handle angle. The simulated rope remains anchored to the actual elastic
+  tip. Fully retrieved rigs lift again over 0.9 seconds so the hanging leader
+  and float rig retain clearance; hooked-fish poses keep their existing behavior.
+- Add regressions for all 11 calibrated lengths, the settled low-tip height,
+  and coincidence of rope root and actual rod tip. Full shared checks pass on
+  both desktop layouts: Lua/native trajectories, 30/120 Hz casts, float rig,
+  retrieval, hook/fight/catch, navigation and input. Default launch still lands
+  at 13.39 m. Logs `/tmp/fishing-v47-check.log` and
+  `/tmp/fishing-v47-h106-check.log`.
+- UI-only aliases preserve full manufacturer catalog data. MEGABASS 7'2H shows
+  `P5 X-BITES` instead of `DESTROYER P5 THE X-BITES`. Other long series names
+  and reel capacities are shortened while keeping identifying variants, line
+  strength and length. All 48 items fit the original columns at integer 2x
+  glyph size, with no shrinking/truncation in current catalog tests.
+- Inspected actual native captures: `/tmp/fishing-tip-before.png` versus
+  `/tmp/fishing-tip-after-v2.png`; `/tmp/fishing-info-megabass-v2.png` and
+  `/tmp/fishing-info-megabass-h106.png`.
+- v46 was built with low-tip behavior only but not installed. v47 combines both
+  requests, normal `idle` startup. Package SHA
+  `83e14d2e39514ebda7beecdaf8b808c7e893b5f6ee912bcd830f6f23033d97cf`, app SHA
+  `45c07520d9bab63c50c214a50160a1ee12c7de6fa01a5129120cd64644442aef`.
+- Installed and status-verified on `/dev/tty.usbmodem1101`, UID `94a990281a12`:
+  active `fishing-ui-v47`, running/next partition 2, stage cleared, last_result=0.
+  Recovery SHA is unchanged. Normal startup and ready animation confirmed in
+  `/tmp/fishing-ui-v47-serial.log`; monitor stopped afterward. New in-game pose
+  and text were visually checked in native desktop captures, not device photos.
+- These changes are not a new hardware FPS claim; v44 performance measurements
+  above remain historical results for that build.
 
 ## Build environment
 

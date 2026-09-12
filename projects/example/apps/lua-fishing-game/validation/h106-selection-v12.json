@@ -1,0 +1,438 @@
+{
+  "date": "2026-09-12",
+  "scope": "H106 button equipment selection animation and latency",
+  "desktop": {
+    "passed": true,
+    "lua_budget": 4096,
+    "checkpoints": [
+      "rods_selection_auto_scroll",
+      "page_1",
+      "page_2",
+      "page_3",
+      "page_4",
+      "bidirectional_page_cycle",
+      "cast_1_distance_6.29",
+      "record_tap_retrieve",
+      "cast_2_distance_14.01",
+      "charge_changes_actual_distance",
+      "record_hook",
+      "left_right_rod_angle",
+      "fight_lift_settlement",
+      "record_settlement_exit",
+      "bag_actual_catch"
+    ],
+    "animations": [
+      {
+        "page": 1,
+        "from": 1,
+        "to": 2,
+        "first_ms": 19,
+        "frames": 16,
+        "intermediate": 14,
+        "scroll_frames": 0,
+        "max_gap_ms": 17,
+        "fps": 60.2
+      },
+      {
+        "page": 1,
+        "from": 2,
+        "to": 3,
+        "first_ms": 20,
+        "frames": 16,
+        "intermediate": 14,
+        "scroll_frames": 0,
+        "max_gap_ms": 18,
+        "fps": 59.5
+      },
+      {
+        "page": 1,
+        "from": 3,
+        "to": 4,
+        "first_ms": 27,
+        "frames": 17,
+        "intermediate": 15,
+        "scroll_frames": 0,
+        "max_gap_ms": 17,
+        "fps": 61.3
+      },
+      {
+        "page": 1,
+        "from": 4,
+        "to": 5,
+        "first_ms": 28,
+        "frames": 17,
+        "intermediate": 15,
+        "scroll_frames": 15,
+        "max_gap_ms": 17,
+        "fps": 63.7
+      },
+      {
+        "page": 1,
+        "from": 5,
+        "to": 4,
+        "first_ms": 19,
+        "frames": 16,
+        "intermediate": 14,
+        "scroll_frames": 0,
+        "max_gap_ms": 28,
+        "fps": 59.1
+      },
+      {
+        "page": 1,
+        "from": 4,
+        "to": 3,
+        "first_ms": 20,
+        "frames": 16,
+        "intermediate": 14,
+        "scroll_frames": 0,
+        "max_gap_ms": 17,
+        "fps": 61.5
+      },
+      {
+        "page": 1,
+        "from": 3,
+        "to": 2,
+        "first_ms": 20,
+        "frames": 17,
+        "intermediate": 15,
+        "scroll_frames": 15,
+        "max_gap_ms": 17,
+        "fps": 62.3
+      },
+      {
+        "page": 1,
+        "from": 2,
+        "to": 1,
+        "first_ms": 19,
+        "frames": 16,
+        "intermediate": 14,
+        "scroll_frames": 0,
+        "max_gap_ms": 17,
+        "fps": 60.7
+      },
+      {
+        "page": 2,
+        "from": 1,
+        "to": 2,
+        "first_ms": 30,
+        "frames": 17,
+        "intermediate": 15,
+        "scroll_frames": 0,
+        "max_gap_ms": 17,
+        "fps": 63
+      },
+      {
+        "page": 2,
+        "from": 2,
+        "to": 3,
+        "first_ms": 24,
+        "frames": 14,
+        "intermediate": 12,
+        "scroll_frames": 0,
+        "max_gap_ms": 42,
+        "fps": 52.2
+      },
+      {
+        "page": 2,
+        "from": 3,
+        "to": 4,
+        "first_ms": 20,
+        "frames": 16,
+        "intermediate": 14,
+        "scroll_frames": 0,
+        "max_gap_ms": 18,
+        "fps": 61
+      },
+      {
+        "page": 2,
+        "from": 4,
+        "to": 5,
+        "first_ms": 20,
+        "frames": 16,
+        "intermediate": 14,
+        "scroll_frames": 14,
+        "max_gap_ms": 17,
+        "fps": 60.5
+      },
+      {
+        "page": 2,
+        "from": 5,
+        "to": 4,
+        "first_ms": 19,
+        "frames": 16,
+        "intermediate": 14,
+        "scroll_frames": 0,
+        "max_gap_ms": 17,
+        "fps": 60.5
+      },
+      {
+        "page": 2,
+        "from": 4,
+        "to": 3,
+        "first_ms": 20,
+        "frames": 16,
+        "intermediate": 14,
+        "scroll_frames": 0,
+        "max_gap_ms": 17,
+        "fps": 60.7
+      },
+      {
+        "page": 2,
+        "from": 3,
+        "to": 2,
+        "first_ms": 27,
+        "frames": 17,
+        "intermediate": 15,
+        "scroll_frames": 15,
+        "max_gap_ms": 17,
+        "fps": 63
+      },
+      {
+        "page": 2,
+        "from": 2,
+        "to": 1,
+        "first_ms": 27,
+        "frames": 17,
+        "intermediate": 15,
+        "scroll_frames": 0,
+        "max_gap_ms": 17,
+        "fps": 62
+      },
+      {
+        "page": 3,
+        "from": 1,
+        "to": 2,
+        "first_ms": 29,
+        "frames": 17,
+        "intermediate": 15,
+        "scroll_frames": 0,
+        "max_gap_ms": 20,
+        "fps": 63.5
+      },
+      {
+        "page": 3,
+        "from": 2,
+        "to": 3,
+        "first_ms": 20,
+        "frames": 16,
+        "intermediate": 14,
+        "scroll_frames": 0,
+        "max_gap_ms": 17,
+        "fps": 60.5
+      },
+      {
+        "page": 3,
+        "from": 3,
+        "to": 4,
+        "first_ms": 20,
+        "frames": 17,
+        "intermediate": 15,
+        "scroll_frames": 0,
+        "max_gap_ms": 17,
+        "fps": 62
+      },
+      {
+        "page": 3,
+        "from": 4,
+        "to": 5,
+        "first_ms": 19,
+        "frames": 17,
+        "intermediate": 15,
+        "scroll_frames": 15,
+        "max_gap_ms": 17,
+        "fps": 62
+      },
+      {
+        "page": 3,
+        "from": 5,
+        "to": 4,
+        "first_ms": 20,
+        "frames": 16,
+        "intermediate": 14,
+        "scroll_frames": 0,
+        "max_gap_ms": 17,
+        "fps": 61.2
+      },
+      {
+        "page": 3,
+        "from": 4,
+        "to": 3,
+        "first_ms": 19,
+        "frames": 16,
+        "intermediate": 14,
+        "scroll_frames": 0,
+        "max_gap_ms": 17,
+        "fps": 61
+      },
+      {
+        "page": 3,
+        "from": 3,
+        "to": 2,
+        "first_ms": 20,
+        "frames": 16,
+        "intermediate": 14,
+        "scroll_frames": 14,
+        "max_gap_ms": 17,
+        "fps": 60.2
+      },
+      {
+        "page": 3,
+        "from": 2,
+        "to": 1,
+        "first_ms": 20,
+        "frames": 16,
+        "intermediate": 14,
+        "scroll_frames": 0,
+        "max_gap_ms": 17,
+        "fps": 61.5
+      }
+    ],
+    "phases": [
+      {
+        "phase": "select_1",
+        "submitted": 97,
+        "elapsed_ms": 1533,
+        "fps": 63.3,
+        "p95_ms": 17
+      },
+      {
+        "phase": "lifting",
+        "submitted": 28,
+        "elapsed_ms": 443,
+        "fps": 63.2,
+        "p95_ms": 19
+      },
+      {
+        "phase": "scroll_3",
+        "submitted": 33,
+        "elapsed_ms": 513,
+        "fps": 64.3,
+        "p95_ms": 17
+      },
+      {
+        "phase": "aiming",
+        "submitted": 96,
+        "elapsed_ms": 1568,
+        "fps": 61.2,
+        "p95_ms": 17
+      },
+      {
+        "phase": "settlement",
+        "submitted": 111,
+        "elapsed_ms": 1799,
+        "fps": 61.7,
+        "p95_ms": 20
+      },
+      {
+        "phase": "select_2",
+        "submitted": 96,
+        "elapsed_ms": 1543,
+        "fps": 62.2,
+        "p95_ms": 17
+      },
+      {
+        "phase": "flight",
+        "submitted": 93,
+        "elapsed_ms": 1497,
+        "fps": 62.1,
+        "p95_ms": 19
+      },
+      {
+        "phase": "waiting",
+        "submitted": 161,
+        "elapsed_ms": 2654,
+        "fps": 60.7,
+        "p95_ms": 17
+      },
+      {
+        "phase": "retrieved",
+        "submitted": 62,
+        "elapsed_ms": 979,
+        "fps": 63.3,
+        "p95_ms": 21
+      },
+      {
+        "phase": "fight",
+        "submitted": 1501,
+        "elapsed_ms": 24573,
+        "fps": 61.1,
+        "p95_ms": 20
+      },
+      {
+        "phase": "tabs",
+        "submitted": 39,
+        "elapsed_ms": 636,
+        "fps": 61.3,
+        "p95_ms": 17
+      },
+      {
+        "phase": "scroll_1",
+        "submitted": 34,
+        "elapsed_ms": 524,
+        "fps": 64.9,
+        "p95_ms": 17
+      },
+      {
+        "phase": "scroll_2",
+        "submitted": 33,
+        "elapsed_ms": 516,
+        "fps": 64,
+        "p95_ms": 17
+      },
+      {
+        "phase": "casting",
+        "submitted": 106,
+        "elapsed_ms": 1732,
+        "fps": 61.2,
+        "p95_ms": 17
+      },
+      {
+        "phase": "select_3",
+        "submitted": 98,
+        "elapsed_ms": 1523,
+        "fps": 64.3,
+        "p95_ms": 17
+      },
+      {
+        "phase": "ready",
+        "submitted": 211,
+        "elapsed_ms": 3715,
+        "fps": 56.8,
+        "p95_ms": 19
+      }
+    ],
+    "selection_30fps_met": true,
+    "all_active_phases_30fps_met": true
+  },
+  "other_checks": {
+    "native_glyph_transform": "PASS: subpixel phases, clip, recolor, invalid parameters",
+    "viewport": "PASS",
+    "cache": "18 H106 cached/live pairs: zero differing pixels",
+    "fixed_tabs": "4 routes × 5 offsets: wood/frame fixed, no transparent key leaks",
+    "physics_and_interactions": "AMOLED and H106 --check PASS, including 11 rods × 5 charge levels"
+  },
+  "device": {
+    "port": "/dev/tty.usbserial-110",
+    "uid": "1cdbd44dde7e",
+    "current_role": "loader",
+    "current_version": "0.2.0",
+    "current_loader_sha256": "a771e70660fa04b1bfa170956d2110dc5cc0e071e19f13fda02671cd1d5d379d",
+    "candidate": "0.1.0-fishing-h106.12-test",
+    "staged": true,
+    "package_sha256": "947eece2b93961ea59b897485ce3d174a6e9f5414481d83f8cbea7760a8c1383",
+    "image_sha256": "1830fc4b1b04f69a2258413ced6fed245e8c7b5fe1c66aaa216859f48fb2535c",
+    "installed": false,
+    "test_passed": null,
+    "fps_accepted": null,
+    "upgrade_error": "H2_PAL_ERR_INVALID_STATE (-7)",
+    "command_availability": "0x00073d3c; all three disruptive reboot commands disabled",
+    "blocker": "H106 MFG lifecycle only permits App/Loader/upgrade handoff from final Waiting cursor. If logically off, physical Power hold for 3 seconds is required; no reset/flash bypass.",
+    "next": "Enter MFG Waiting, confirm command mask and staged SHA, then run the existing upgrade-mode verifier without re-upload.",
+    "installed_app_preserved": "0.1.0-fishing-h106.9-test"
+  },
+  "logs": {
+    "desktop": "/tmp/fishing-h106-v12b-host/run.log",
+    "device_upload": "/tmp/fishing-h106-send-v12.log",
+    "upgrade": "/tmp/fishing-h106-v12-device/run.log"
+  }
+}

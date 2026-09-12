@@ -6,8 +6,62 @@ do local ok,error,division=Physics.verify_kernel();assert(ok,'native compensated
  print(string.format('FISHING_NUMBER_CHECK PASS error=%.3g division=%.3g',error,division)) end
 local delay = require('delay')
 local system = require('system')
-local touch = require('lcd_touch')
 local A = args or {}
+local touch = A.controls~='buttons' and require('lcd_touch') or nil
+local h106=A.layout=='h106'
+-- Layout/world projection retain authored units, but H106 rasterizes vectors
+-- directly into 240x240. There is no 448x448 framebuffer or image resampling.
+if h106 then
+ local raw,s=D,240/448
+ local function px(v) return math.floor(v*s+.5) end
+ local function clip(v,default) return math.max(0,math.min(240,px(v or default))) end
+ D=setmetatable({}, {__index=raw})
+ function D.fill_rect(x,y,w,h,c)
+  local left,top=px(x),px(y)
+  local right,bottom=px(x+w),px(y+h)
+  if right>left and bottom>top then raw.fill_rect(left,top,right-left,bottom-top,c) end
+ end
+ function D.draw_line(x,y,xx,yy,c)
+  raw.draw_line(math.min(239,px(x)),math.min(239,px(y)),math.min(239,px(xx)),math.min(239,px(yy)),c)
+ end
+ function D.fill_polygon(p,c,offset,top,bottom) raw.fill_polygon(p,c,(offset or 0)*s,clip(top,0),clip(bottom,448),s) end
+ function D.fill_ellipse(x,y,rx,ry,c,offset,top,bottom)
+  raw.fill_ellipse(x*s,y*s,rx*s,ry*s,c,(offset or 0)*s,clip(top,0),clip(bottom,448))
+ end
+ function D.stroke_path(p,w,c,offset,top,bottom,cache,fast,smooth)
+  return raw.stroke_path(p,w,c,(offset or 0)*s,clip(top,0),clip(bottom,448),cache,fast,smooth,s,.12)
+ end
+ function D.draw_mesh(mesh,x,y,size,angle,offset,top,bottom)
+  raw.draw_mesh(mesh,x*s,y*s,size*s,angle,(offset or 0)*s,clip(top,0),clip(bottom,448))
+ end
+ function D.draw_geometry(g,x,y,size,angle,flex,sway,projection,tint,offset,top,bottom,peer)
+  raw.draw_geometry(g,x,y,size,angle,flex,sway,projection,tint,(offset or 0)*s,clip(top,0),clip(bottom,448),peer,s)
+ end
+ function D.draw_commands(c,top,bottom,x,y,sx,sy,color)
+  raw.draw_commands(c,clip(top,0),clip(bottom,448),(x or 0)*s,(y or 0)*s,(sx or 1)*s,(sy or sx or 1)*s,color)
+ end
+ function D.capture_region(x,y,w,h,key,reuse)
+  local left,top=px(x),px(y)
+  return raw.capture_region(left,top,px(x+w)-left,px(y+h)-top,key,reuse)
+ end
+ function D.draw_region(r,x,y,top,bottom,key,left,right)
+  raw.draw_region(r,px(x),px(y),clip(top,0),clip(bottom,448),key,clip(left,0),clip(right,448))
+ end
+ local cameras=setmetatable({}, {__mode='k'})
+ local function camera(c)
+  local t=cameras[c] or {};cameras[c]=t
+  t[1],t[2],t[3],t[4],t[5]=c[1]*s,c[2]*s,c[3]*s,c[4],c[5]
+  return t
+ end
+ function D.projected_line(a,b,color,c) raw.projected_line(a,b,color,camera(c)) end
+ function D.depth_path(p,c,air,water) raw.depth_path(p,camera(c),air,water) end
+ print('H106_NATIVE_RASTER framebuffer=240x240 resampling=none')
+end
+A.canvas_width=h106 and 448 or 368
+A.canvas_extra=A.canvas_width-368
+A.scene_offset=A.canvas_extra-(h106 and 44 or 0)
+A.inventory_bottom=h106 and 322 or 350
+A.info_top=h106 and 332 or 360
 -- Most per-frame geometry is short-lived; catalogs and native snapshots live
 -- across frames. Minor collections avoid waiting for the VM's hard limit.
 collectgarbage('generational',20,100)
@@ -46,7 +100,7 @@ local capture_commands
 local frame_draw_calls=0
 local function rect(x,y,w,h,c)
  x,y,w,h=floor(x+draw_x+.5),floor(y+.5),floor(w+.5),floor(h+.5)
- local right,bottom=math.min(368,x+w),math.min(clip_bottom,y+h)
+ local right,bottom=math.min(A.canvas_width,x+w),math.min(clip_bottom,y+h)
  x,y=math.max(0,x),math.max(clip_top,y)
  if right>x and bottom>y then
   if capture_commands then capture_commands[#capture_commands+1]={0,x,y,right-x,bottom-y,c}
@@ -57,8 +111,8 @@ local function line(x,y,xx,yy,c)
  x,xx=x+draw_x,xx+draw_x
  -- Native API requires in-bounds coordinates. Clip without per-pixel Lua calls.
  local dx,dy=xx-x,yy-y;local lo,hi=0,1
- if dx==0 then if x<0 or x>367 then return end
- else local a,b=-x/dx,(367-x)/dx;if a>b then a,b=b,a end;lo,hi=math.max(lo,a),math.min(hi,b) end
+ if dx==0 then if x<0 or x>A.canvas_width-1 then return end
+ else local a,b=-x/dx,(A.canvas_width-1-x)/dx;if a>b then a,b=b,a end;lo,hi=math.max(lo,a),math.min(hi,b) end
  if dy==0 then if y<clip_top or y>clip_bottom-1 then return end
  else local a,b=(clip_top-y)/dy,(clip_bottom-1-y)/dy;if a>b then a,b=b,a end;lo,hi=math.max(lo,a),math.min(hi,b) end
  if lo>hi then return end
@@ -119,20 +173,102 @@ local lowercase={
  u='0000111111130d',v='00001111110a04',w='0000111115150a',x='0000110a040a11',y='00001111110f01',z='00001f0204081f',
 }
 for k,v in pairs(lowercase) do glyphs[k]=v end
+function A.font_scale(scale)
+ return h106 and math.max(1,floor(scale/(448/240)+.15))*(448/240) or scale
+end
+A.glyph_commands={}
+-- H106 text is rasterized on an integer physical-pixel grid. These compact
+-- sizes fill the gap between 7px and 14px without filtering a rendered image.
+A.pixel_glyphs={}
+function A.pixel_width(value,width) return #value*(width+1)-1 end
+function A.pixel_text(x,y,value,color,width,height)
+ local unit=448/240
+ for i=1,#value do
+  local ch=value:sub(i,i);local rows=glyphs[ch]
+  if rows then
+   local key=width..':'..height..':'..ch
+   local entry=A.pixel_glyphs[key]
+   if not entry then
+    local cells={}
+    for row=0,6 do local bits=tonumber(rows:sub(row*2+1,row*2+2),16)
+     for col=0,4 do if floor(bits/2^(4-col))%2==1 then
+      local l,r=floor(col*width/5+.5),floor((col+1)*width/5+.5)
+      local t,b=floor(row*height/7+.5),floor((row+1)*height/7+.5)
+      cells[#cells+1]={0,l,t,r-l,b-t,'black'}
+     end end
+    end
+    entry={cells=cells,commands=D.compile_commands(cells)};A.pixel_glyphs[key]=entry
+   end
+   local left=x+(i-1)*(width+1)
+   if capture_commands then
+    -- Preserve physical cell edges through command capture: rounding in the
+    -- authored 448-unit grid first would shift some cached glyphs by a pixel.
+    for _,c in ipairs(entry.cells) do
+     local l,t=floor((left+c[2])*unit+draw_x+.5),floor((y+c[3])*unit+.5)
+     local r=math.min(A.canvas_width,floor((left+c[2]+c[4])*unit+draw_x+.5))
+     local b=math.min(clip_bottom,floor((y+c[3]+c[5])*unit+.5))
+     l,t=math.max(0,l),math.max(clip_top,t)
+     if r>l and b>t then capture_commands[#capture_commands+1]={0,l,t,r-l,b-t,color} end
+    end
+   else
+    D.draw_commands(entry.commands,clip_top,clip_bottom,left*unit+draw_x,y*unit,unit,unit,color)
+    frame_draw_calls=frame_draw_calls+1
+   end
+  end
+ end
+end
+function A.pixel_center(x,y,span,value,color,width,height)
+ -- Long fish names and extreme catch values retain units and fit their slot.
+ width=math.min(width,floor((span+1)/#value)-1)
+ assert(width>=5,'H106 label exceeds readable slot: '..value)
+ A.pixel_text(floor(x+(span-A.pixel_width(value,width))/2+.5),y,value,color,width,height)
+end
 local function text(x,y,s,c,scale,bold,scale_y)
  scale=scale or 1
  scale_y=scale_y or scale
+ if h106 then
+  -- Fit the glyph grid to physical pixels before rasterization. Tiny bold
+  -- expansion and fractional glyph spacing otherwise close the counters
+  -- when the square authored canvas is reduced to the H106 display.
+  local unit=448/240
+  scale=A.font_scale(scale)
+  scale_y=A.font_scale(scale_y)
+  x=floor((x+draw_x)/unit+.5)*unit-draw_x
+  y=floor(y/unit+.5)*unit
+  bold=false
+ end
  for ch in s:gmatch('.') do
   local rows=glyphs[ch]
   if rows then
+   if h106 and not capture_commands and D.draw_commands then
+    local commands=A.glyph_commands[ch]
+    if not commands then
+     local cells={}
+     for row=0,6 do local bits=tonumber(rows:sub(row*2+1,row*2+2),16)
+      for col=0,4 do if floor(bits/2^col)%2==1 then cells[#cells+1]={0,4-col,row,1,1,'black'} end end
+     end
+     commands=D.compile_commands(cells);A.glyph_commands[ch]=commands
+    end
+    D.draw_commands(commands,clip_top,clip_bottom,x+draw_x,y,scale,scale_y,c)
+   else
    for row=0,6 do local bits=tonumber(rows:sub(row*2+1,row*2+2),16)
-    for col=0,4 do if floor(bits/2^(4-col))%2==1 then rect(x+col*scale,y+row*scale_y,scale+(bold and .8 or 0),scale_y,c) end end
+    for col=0,4 do if floor(bits/2^(4-col))%2==1 then
+     if h106 then
+      local left,top=floor(x+draw_x+col*scale+.5),floor(y+row*scale_y+.5)
+      local right,bottom=floor(x+draw_x+(col+1)*scale+.5),floor(y+(row+1)*scale_y+.5)
+      rect(left-draw_x,top,right-left,bottom-top,c)
+     else rect(x+col*scale,y+row*scale_y,scale+(bold and .8 or 0),scale_y,c) end
+    end end
+   end
    end
   end
   x=x+6*scale
  end
 end
-local function centered(x,y,w,s,c,scale) text(x+(w-(#s*6-1)*scale)/2,y,s,c,scale,true) end
+local function centered(x,y,w,s,c,scale)
+ local size=A.font_scale(scale)
+ text(x+(w-(#s*6-1)*size)/2,y,s,c,scale,true)
+end
 local brands={'SHIMANO','DAIWA','ABU GARCIA','MEGABASS','GAMAKATSU','SAGE','ORVIS','RAPALA','KEITECH','JACKALL','HEDDON','CUSTOM'}
 -- Manufacturer labels are immutable. sim_power/action and rig weights are game tuning.
 local rods={
@@ -347,6 +483,8 @@ local function reconcile()
 end
 reconcile()
 local scene=A.scene or 'idle'
+A.desktop_input=scene=='desktop-input-check'
+if A.desktop_input then scene='rods' end
 if scene=='iso' then rod_index=4;rod=rods[4];reel_index=4;lure_index=7
 elseif scene=='fly-back' or scene=='fly-send' then rod_index=6;rod=rods[6];reel_index=6;lure_index=8 end
 -- Horizontal route: sea -> equipment (rods/reels/lures) -> independent bags.
@@ -360,10 +498,17 @@ local menu=scene=='rods' or scene=='reels' or scene=='lures' or scene=='bags' or
 local page=(scene=='bags' or scene=='fish-bag' or bag_preview) and 4 or (scene=='reels' and 2 or (scene=='lures' and 3 or 1))
 local focus={rod_index,reel_index or 1,lure_index or 1,1}
 local function catalog(t) return t==1 and rods or (t==2 and reels or (t==3 and lures or (bag_preview and fish_types or catches))) end
-local function max_scroll(t) return math.max(0,math.ceil(#catalog(t)/3)*96-8-284) end
+local grid_amoled={columns=3,rows=3,pitch=96,step=112,cell=88,art=1,x=32}
+local grid_h106={columns=2,rows=2,pitch=128,step=184,cell=120,art=1.32,x=72}
+-- H106 equipment and the standalone bag both show four complete cards.
+local function grid(t) return h106 and grid_h106 or grid_amoled end
+local function max_scroll(t)
+ local g=grid(t)
+ return math.max(0,math.ceil(#catalog(t)/g.columns)*g.pitch-8-(A.inventory_bottom-66))
+end
 local scrolls={}
-for i=1,4 do scrolls[i]=clamp(floor((focus[i]-1)/3)*96,0,max_scroll(i)) end
-if tonumber(A.scroll) then scrolls[page]=clamp(floor(tonumber(A.scroll)),0,max_scroll(page)) end
+for i=1,4 do local g=grid(i);scrolls[i]=clamp(floor((focus[i]-1)/g.columns)*g.pitch,0,max_scroll(i)) end
+if tonumber(A.scroll) and scene~='tab-preview' then scrolls[page]=clamp(floor(tonumber(A.scroll)),0,max_scroll(page)) end
 local press,slide=nil,nil
 local function switch_page(target,offset)
  target=clamp(target,1,#inventory_pages)
@@ -378,6 +523,7 @@ local start=system.millis()
 local cast_start=nil
 local cycle={'overhead','pendulum','iso','fly-back','fly-send','fight'}
 local function wordmark(value,x,y,color,sx,style)
+ if h106 then text(x,y,value,color,2);return end
  for i=1,#value do
   local rows=glyphs[value:sub(i,i)]
   if rows then
@@ -392,6 +538,9 @@ local function wordmark(value,x,y,color,sx,style)
  end
 end
 local function logo(brand,x,y)
+ -- Keep the readable brand name on the small screen; layered outlines and
+ -- italic one-pixel flourishes are intended for the larger AMOLED canvas.
+ if h106 then text(x,y,brands[brand] or 'CUSTOM',C.cyan,2);return end
  if brand==1 then text(x,y,'SHIMANO',C.cyan,2.5,true)
  elseif brand==2 then
   poly({{x,y},{x+19,y},{x+27,y+9},{x+16,y+19},{x+1,y+19},{x+14,y+8},{x,y+8}},C.white)
@@ -891,6 +1040,12 @@ end
 -- Side-on underwater fish, entirely polygon/line geometry. Coordinates are
 -- local to each fish; shared construction retains distinct species silhouettes.
 local function fish_icon(f,x,y,scale,phase,angle,tint,flex,projection)
+ local retained=(type(projection)=='table' or (h106 and projection==nil)) and D.compile_geometry and not A.ui_reference and A.no_cache~='1'
+ if retained and f._geometry then
+  D.draw_geometry(f._geometry,x,y,scale,angle or 0,flex or 0,sin(phase or 0)*1.4,projection,tint,draw_x,clip_top,clip_bottom,projection and projection[5])
+  return
+ end
+ local commands=retained and {} or nil
  local body,back,belly,fin=rgb(f.body),rgb(f.back),rgb(f.belly),rgb(f.fin)
  local shade=mix(back,C.ink,.45)
  local ca,sa=cos(angle or 0),sin(angle or 0)
@@ -900,9 +1055,16 @@ local function fish_icon(f,x,y,scale,phase,angle,tint,flex,projection)
   if projection then return projection(px,py) end
   return px,py
  end
- local function p(q,c) local v={};for _,a in ipairs(q) do local px,py=point(a[1],a[2]);v[#v+1]={px,py} end;poly(v,tint or c) end
- local function l(a,b,c,d,k) local ax,ay=point(a,b);local bx,by=point(c,d);line(ax,ay,bx,by,tint or k) end
+ local function p(q,c)
+  if commands then commands[#commands+1]={kind=0,p=q,c=c};return end
+  local v={};for _,a in ipairs(q) do local px,py=point(a[1],a[2]);v[#v+1]={px,py} end;poly(v,tint or c)
+ end
+ local function l(a,b,c,d,k)
+  if commands then commands[#commands+1]={kind=1,p={{a,b},{c,d}},c=k};return end
+  local ax,ay=point(a,b);local bx,by=point(c,d);line(ax,ay,bx,by,tint or k)
+ end
  local function dot(a,b,size,c)
+  if commands then p({{a,b},{a+size,b},{a+size,b+size},{a,b+size}},c);return end
   if projection then
    local q={};for _,v in ipairs({{a,b},{a+size,b},{a+size,b+size},{a,b+size}}) do
     local px,py=point(v[1],v[2]);q[#q+1]={px,py}
@@ -916,11 +1078,14 @@ local function fish_icon(f,x,y,scale,phase,angle,tint,flex,projection)
  local nose=shape=='long' and -29 or -23
  local tail=shape=='puffer' and 14 or 22
  local fork=shape~='rock' and shape~='grouper' and shape~='bass' and shape~='puffer' and shape~='giant'
- local sway=sin(phase or 0)*1.4
+ local sway=commands and 0 or sin(phase or 0)*1.4
  if shape=='ribbon' then
   l(17,0,27,3,body);l(27,3,34,0,body);l(34,0,39,-3,belly)
  elseif fork then p({{tail-2,0},{tail+12,-h-2+sway},{tail+7,-1+sway},{tail+12,h+2+sway},{tail-2,2}},fin)
  else p({{tail-3,-2},{tail+8,-h*.75+sway},{tail+10,-h*.35+sway},{tail+10,h*.55+sway},{tail+6,h*.8+sway},{tail-3,3}},fin) end
+ if commands and shape~='ribbon' then
+  for i=2,#commands[1].p-1 do commands[1].p[i][3]=1 end
+ end
  if shape~='puffer' then
   local top={ {-16,-h*.55} }
   if shape=='mahi' then top={{-21,-5},{-20,-14},{-12,-15},{1,-12},{17,-6},{22,-2}}
@@ -977,20 +1142,71 @@ local function fish_icon(f,x,y,scale,phase,angle,tint,flex,projection)
  l(nose,1,nose+6,2,shade)
  if shape=='long' then l(-28,3,-20,3,back);dot(-25,2,1,C.cream) end
  if shape=='tuna' or shape=='torpedo' then for i=0,3 do p({{15+i*2,-2},{16+i*2,-4},{17+i*2,-2}},fin) end end
+ if commands then
+  f._geometry=D.compile_geometry(commands)
+  D.draw_geometry(f._geometry,x,y,scale,angle or 0,flex or 0,sin(phase or 0)*1.4,projection,tint,draw_x,clip_top,clip_bottom,projection and projection[5])
+ end
 end
 local InventoryCache={sprites={},sprite_pages={},rail_pages={},key=rgb(0xff00ff),rail_color=mix(rgb(0x886849),C.cream,.28)}
+-- Compact UI names only; retain full manufacturer names/specs in the catalog.
+InventoryCache.short_names={
+ ['MORETHAN BRANZINO EX AGS']='BRANZINO EX AGS',
+ ['MASTER MODEL II KUCHIBUTO']='MASTER MODEL II',
+ ['DESTROYER P5 THE X-BITES']='P5 X-BITES',
+ ['CALCUTTA CONQUEST']='CALCUTTA CQ',
+ ['SILENT ASSASSIN FB']='ASSASSIN FB',
+ ['SILENT ASSASSIN JB']='ASSASSIN JB',
+ ['FAT SWING IMPACT']='FAT SWING',
+ ['VISION ONETEN SW']='ONETEN SW',
+ ['ORIGINAL FLOATING']='ORIG. FLOATING',
+}
+function InventoryCache.info(which,item)
+ local name=InventoryCache.short_names[item.name] or item.name
+ if which==1 then return name,item.label..item.power,item.action end
+ local model=item.model:gsub(' /.*',''):gsub(' RIGHT',''):gsub(' LEFT',''):gsub('^REVO5 ','')
+ if which==2 then
+  local capacity=item.capacity:gsub(' / ','/')
+  if capacity:find('BACKING',1,true) then capacity=capacity:gsub(' %+ BACKING ','+')..' BK' end
+  return name,model,capacity
+ end
+ local weight='N/A'
+ if item.kind=='lure' and not item.weight_estimated then
+  weight=string.format('%.1f',item.weight):gsub('%.0$','')..'G'
+ end
+ return name,model,weight
+end
+function InventoryCache.h106_info(which,item)
+ local model=item.model:gsub(' /.*',''):gsub(' RIGHT',''):gsub(' LEFT',''):gsub('^REVO5 ','')
+ local description
+ if which==1 then
+  description=item.label..' '..item.power..' / '..item.action..(item.mass~='N/A' and (' / '..item.mass) or '')
+ elseif which==2 then
+  local capacity=item.capacity:gsub(' / ','/'):gsub(' %+ BACKING ','+'):gsub('NYLON ',''):gsub('MONO ','')
+  description=model..' / '..capacity
+ else
+  local weight=item.weight_estimated and 'WT N/A' or (item.kind=='lure' and (string.format('%.1f',item.weight):gsub('%.0$','')..'G') or item.spec)
+  description=model..' / '..(item.length~='N/A' and (item.length..' / ') or '')..weight
+ end
+ local width,height=6,11
+ if A.pixel_width(brands[item.brand],5)+8+A.pixel_width(item.name,width)>212 then width,height=5,9 end
+ local detail_width=A.pixel_width(description,6)<=212 and 6 or 5
+ return description,width,height,detail_width
+end
 function InventoryCache.rail(page,scroll,overlay)
  local limit=max_scroll(page)
  if limit<=0 then return end
  local position=35*clamp(scroll/limit,0,1)
  local current=floor(position+.5)
+ if h106 and not overlay and InventoryCache.rail_base and not capture_commands then
+  D.draw_commands(InventoryCache.rail_base);overlay=true
+ end
  for i=0,35 do
   local distance=math.abs(i-position)
   if not overlay or distance<6 then
   local width=3+floor(12*math.exp(-distance*distance/3)+.5)
   local color=mix(rgb(0x886849),C.cream,.28+.23*math.exp(-distance*distance/5))
   if i==current then width=16;color=rgb(0x30261d) end
-  rect(348,66+i*8,width,i==current and 3 or 2,color)
+   rect(A.canvas_width-20,66+i*(h106 and (A.inventory_bottom-70)/35 or 8),width,i==current and 3 or 2,color)
   end
  end
 end
@@ -998,6 +1214,7 @@ function InventoryCache.art(page,i,x,y,enabled)
  local item=catalog(page)[i]
  if page==1 then
   rod_thumbnail(item,x,y)
+  if h106 then return end -- Labels are drawn after the thumbnail is scaled.
   local length=rod_length(item)
   rect(x+4,y+3,13,15,C.ink)
   text(x+6,y+5,rod_mark(item),C.cream,1.5,true)
@@ -1005,193 +1222,431 @@ function InventoryCache.art(page,i,x,y,enabled)
  elseif page==2 then inventory_reel(item.kind,x+44,y+46,not enabled,i==2 and C.red or (i==3 and C.gold or (i==4 and C.cyan or C.gray)))
  else lure_icon(item.icon,x+47,y+41,(item.icon==1 or item.icon==4) and 1.65 or 2.1,not enabled,0,item) end
 end
+function InventoryCache.paint(page,i,x,y,enabled)
+ local scale=grid(page).art
+ if scale==1 then InventoryCache.art(page,i,x,y,enabled);return end
+ -- Replay scaled pixel-geometry commands, not a second copy of the artwork.
+ -- Capture in a safe source area before applying the destination clip/offset.
+ local saved,offset,top,bottom=capture_commands,draw_x,clip_top,clip_bottom
+ capture_commands={};draw_x=0;clip_top,clip_bottom=0,448
+ InventoryCache.art(page,i,32,96,enabled)
+ local commands=capture_commands
+ capture_commands,draw_x,clip_top,clip_bottom=saved,offset,top,bottom
+ for _,cmd in ipairs(commands) do
+  local xx=x+(cmd[2]-32)*scale;local yy=y+(cmd[3]-96)*scale
+  if cmd[1]==0 then
+   -- Round shared edges identically so adjacent scaled pixel rows have no gaps.
+   local l,t=floor(xx+.5),floor(yy+.5)
+   rect(l,t,floor(xx+cmd[4]*scale+.5)-l,floor(yy+cmd[5]*scale+.5)-t,cmd[6])
+  else
+   -- Rasterize before clipping, matching a cached sprite at the list edges.
+   -- Clipping the endpoints first changes the line's discrete pixel phase.
+   local ax,ay=floor(xx+.5),floor(yy+.5)
+   local bx,by=floor(x+(cmd[4]-32)*scale+.5),floor(y+(cmd[5]-96)*scale+.5)
+   local dx,dy=math.abs(bx-ax),-math.abs(by-ay)
+   local sx,sy=ax<bx and 1 or -1,ay<by and 1 or -1
+   local err=dx+dy
+   while true do
+    rect(ax,ay,1,1,cmd[6])
+    if ax==bx and ay==by then break end
+    local twice=2*err
+    if twice>=dy then err=err+dy;ax=ax+sx end
+    if twice<=dx then err=err+dx;ay=ay+sy end
+   end
+  end
+ end
+end
+function InventoryCache.rod_label(item,x,y,scale)
+  local length=rod_length(item)
+  local label_scale=A.font_scale(2)
+  rect(x+4*scale,y+3*scale,7*label_scale,9*label_scale,C.ink)
+  text(x+6*scale,y+5*scale,rod_mark(item),C.cream,2)
+  text(x+84*scale-(#length*6-1)*label_scale,y+5*scale,length,C.cream,2)
+end
+function InventoryCache.sprite_key(which)
+ if which==1 then return 'rods' end -- Rod artwork does not depend on selection.
+ local mask={tostring(which)}
+ for _,item in ipairs(catalog(which)) do mask[#mask+1]=compatible(rod,item,which==2) and '1' or '0' end
+ return table.concat(mask)
+end
 function InventoryCache.prepare(page)
- if not D.capture_region or A.no_cache=='1' or page==4 then return end
- local key=page..':'..rod_index
- if InventoryCache.page_key==key then return end
+ if not D.capture_region or A.no_cache=='1' then return end
+ if page==4 then
+  if A.ui_reference then return end
+  local list=catalog(4);local g=grid(4)
+  local first=floor(scrolls[4]/g.pitch)*g.columns+1
+  local sprites=InventoryCache.bag_sprites or {};InventoryCache.bag_sprites=sprites
+  local needed={}
+  for i=first,math.min(#list,first+g.columns*(g.rows+1)-1) do needed[list[i]]=true end
+  local count=0;for _ in pairs(sprites) do count=count+1 end
+  draw_x=0;clip_top,clip_bottom=0,448
+  for item in pairs(needed) do
+   if not sprites[item] then
+    -- Retain a small scrolling neighborhood across direction reversals.
+    -- Evict only when full, not whenever a row temporarily leaves the screen.
+    if count>=24 then
+     for old in pairs(sprites) do if not needed[old] then sprites[old]=nil;count=count-1;break end end
+    end
+    InventoryCache.visible_key=nil -- Off-screen preparation uses the framebuffer.
+    local factor=g.cell/88
+    local width,height=math.ceil(128*factor),math.ceil(112*factor)
+    D.fill_rect(0,0,width,height,InventoryCache.key)
+    fish_icon(item,floor(48*factor+.5),floor(48*factor+.5),1.5*factor,0,pi/5)
+    sprites[item]=D.capture_region(0,0,width,height,InventoryCache.key)
+    count=count+1
+   end
+  end
+  return
+ end
+ local key=InventoryCache.sprite_key(page)
+ if not h106 and InventoryCache.page_key==key then return end
  -- Keep at most one outfit variant per page. Packed transparent margins make
  -- retaining all three pages affordable, avoiding repeated prewarm on swipes.
  InventoryCache.page_key=key
  local cached=InventoryCache.sprite_pages[page]
  InventoryCache.sprites=cached and cached.key==key and cached.sprites or {}
  InventoryCache.rails=InventoryCache.rail_pages[page] or {}
- collectgarbage('collect')
+ if not h106 then collectgarbage('collect') end
  draw_x=0;clip_top,clip_bottom=0,448
  -- Compact native command lists, not one framebuffer per scroll position.
  if not InventoryCache.rail_base then
   capture_commands={}
-  for i=0,35 do rect(348,66+i*8,3,2,InventoryCache.rail_color) end
+  for i=0,35 do rect(A.canvas_width-20,66+i*(h106 and (A.inventory_bottom-70)/35 or 8),3,2,InventoryCache.rail_color) end
   InventoryCache.rail_base=D.compile_commands(capture_commands);capture_commands=nil
  end
- if not InventoryCache.rail_pages[page] then
+ -- H106 computes the current rail during smooth button scrolling. Caching
+ -- a command list for every intermediate pixel wastes hundreds of KiB.
+ if not h106 and not InventoryCache.rail_pages[page] then
   for scroll=0,max_scroll(page) do
    capture_commands={};InventoryCache.rail(page,scroll,true)
    InventoryCache.rails[scroll]=D.compile_commands(capture_commands);capture_commands=nil
   end
   InventoryCache.rail_pages[page]=InventoryCache.rails
  end
- if cached and cached.key==key then return end
- for i,item in ipairs(catalog(page)) do
-  D.fill_rect(16,80,128,112,InventoryCache.key)
-  InventoryCache.art(page,i,32,96,page==1 or compatible(rod,item,page==2))
-  InventoryCache.sprites[i]=D.capture_region(16,80,128,112,InventoryCache.key)
+ if not h106 and cached and cached.key==key then return end
+ local sprite_w=grid(page).art==1 and 128 or 160
+ local sprite_h=grid(page).art==1 and 112 or 160
+ local list=catalog(page);local g=grid(page)
+ local first=h106 and floor(scrolls[page]/g.pitch)*g.columns+1 or 1
+ local last=h106 and math.min(#list,first+g.columns*(g.rows+1)-1) or #list
+ -- Only prepare the visible neighborhood. Existing item images survive focus
+ -- changes; approaching a new row does not rebuild the whole catalog.
+ for i=first,last do
+ if not InventoryCache.sprites[i] then
+  local item=list[i]
+  D.fill_rect(16,80,sprite_w,sprite_h,InventoryCache.key)
+  InventoryCache.paint(page,i,32,96,page==1 or compatible(rod,item,page==2))
+  InventoryCache.sprites[i]=D.capture_region(16,80,sprite_w,sprite_h,InventoryCache.key)
+  InventoryCache.visible_key=nil
+ end
  end
  InventoryCache.sprite_pages[page]={key=key,sprites=InventoryCache.sprites}
 end
 local function draw_inventory_page(which,offset)
  local stamp=system.millis()
  local page=which or page
- if (offset or 0)==0 then InventoryCache.prepare(page) end
+ local g=grid(page)
+ local foreground=InventoryCache.foreground
+ -- Native H106 surfaces are 240x240; retain the bounded transition cache
+ -- across static pages instead of rebuilding it on every button press.
+ if not foreground and (offset or 0)==0 then InventoryCache.prepare(page) end
  draw_x=offset or 0
- local cacheable=D.capture_region and A.no_cache~='1' and draw_x==0
+ local cacheable=not foreground and D.capture_region and A.no_cache~='1' and draw_x==0
  local visible_key=table.concat({page,focus[page],rod_index,reel_index or 0,lure_index or 0,#catches},':')
  local scroll_only=cacheable and InventoryCache.visible_key==visible_key
  InventoryCache.visible_key=cacheable and visible_key or nil
  local base_key=page
+ if not foreground then
  if cacheable and InventoryCache.base_key==base_key then
   if not scroll_only or page==4 then
-   D.draw_region(InventoryCache.base,0,0,scroll_only and 62 or 0,scroll_only and 350 or 448)
+   D.draw_region(InventoryCache.base,0,0,scroll_only and 62 or 0,scroll_only and A.inventory_bottom or 448)
   end
  else
- for y=0,447,31 do rect(0,y,368,math.min(31,448-y),wood(y)) end
+ for y=0,447,31 do rect(0,y,A.canvas_width,math.min(31,448-y),wood(y)) end
  for y=0,447,31 do
-  rect(0,y+27,368,3,rgb(0x6a4325))
-  for n=0,4 do local x=(n*83+floor(y/31)*47)%368
+  rect(0,y+27,A.canvas_width,3,rgb(0x6a4325))
+  for n=0,4 do local x=(n*83+floor(y/31)*47)%A.canvas_width
    rect(x,y+5+(n%3)*5,28+n*3,3,rgb(0x7b512e))
    rect(x+12,y+18,17,2,rgb(0x734b2b))
   end
  end
- border(0,0,368,448,rgb(0x50371f),2)
+ border(0,0,A.canvas_width,448,rgb(0x50371f),2)
  local dark=rgb(0x2a2319)
  if inventory_pages[page].module=='bags' then
   -- Bags is a sibling module, not an equipment tab.
-  panel(16,16,336,36,rgb(0xe6d1a2),.81)
-  centered(16,27,336,inventory_pages[page].label,C.darkwood,2)
+  panel(16,16,A.canvas_width-32,36,rgb(0xe6d1a2),.81)
+  centered(16,27,A.canvas_width-32,inventory_pages[page].label,C.darkwood,2)
  else
   for i=1,3 do
-   local x=16+(i-1)*114
-   panel(x,16,108,36,i==page and rgb(0xe6d1a2) or dark,i==page and .81 or .80)
-   centered(x,27,108,inventory_pages[i].label,i==page and C.darkwood or C.cream,2)
+   local step=114+A.canvas_extra/3;local x=16+(i-1)*step
+   panel(x,16,step-6,36,i==page and rgb(0xe6d1a2) or dark,i==page and .81 or .80)
+   centered(x,27,step-6,inventory_pages[i].label,i==page and C.darkwood or C.cream,2)
   end
  end
  if cacheable then
-  InventoryCache.base=D.capture_region(0,0,368,448);InventoryCache.base_key=base_key
+  InventoryCache.base=D.capture_region(0,0,A.canvas_width,448,nil,InventoryCache.base);InventoryCache.base_key=base_key
+ end
  end
  end
  if cacheable and page~=4 then
   if not InventoryCache.list_base then
-   for column=0,2 do panel(32+column*112,62,88,288,rgb(0x2a2319),.70) end
-   InventoryCache.list_base=D.capture_region(0,62,368,288)
+   for column=0,g.columns-1 do panel(g.x+column*g.step,62,g.cell,A.inventory_bottom-62,rgb(0x2a2319),.70) end
+   InventoryCache.list_base=D.capture_region(0,62,A.canvas_width,A.inventory_bottom-62)
   else D.draw_region(InventoryCache.list_base,0,62) end
   -- Copy the combined wood/panel background once. Only row gaps need the
   -- original wood restored; the pattern is anchored to screen y, not scroll y.
-  local first_y=66-(scrolls[page]%96)
+  local first_y=66-(scrolls[page]%g.pitch)
   if first_y>62 then D.draw_region(InventoryCache.base,0,0,62,first_y) end
-  for row=0,3 do
-   local top=math.max(62,first_y+row*96+88)
-   local bottom=math.min(350,first_y+(row+1)*96)
+  for row=0,g.rows do
+   local top=math.max(62,first_y+row*g.pitch+g.cell)
+   local bottom=math.min(A.inventory_bottom,first_y+(row+1)*g.pitch)
    if top<bottom then D.draw_region(InventoryCache.base,0,0,top,bottom) end
   end
  end
  local list=catalog(page)
  local base_done=system.millis()
  local dark=rgb(0x2a2319)
- clip_top,clip_bottom=62,350
- local first_row=floor(scrolls[page]/96)
- for slot=1,12 do
-  local i=first_row*3+slot
-  local x=32+(i-1)%3*112;local y=66+floor((i-1)/3)*96-scrolls[page]
-  if i<=math.max(9,math.ceil(#list/3)*3) then
-  if not cacheable or page==4 then panel(x,y,88,88,dark,.70) end
-  rect(x,y,88,1,rgb(0x664627));rect(x,y+87,88,1,rgb(0x5c3d23))
+ clip_top,clip_bottom=62,A.inventory_bottom
+ local first_row=floor(scrolls[page]/g.pitch)
+ for slot=1,g.columns*(g.rows+1) do
+  local i=first_row*g.columns+slot
+  local x=g.x+(i-1)%g.columns*g.step;local y=66+floor((i-1)/g.columns)*g.pitch-scrolls[page]
+  if i<=math.max(g.columns*g.rows,math.ceil(#list/g.columns)*g.columns) then
+  if not cacheable or page==4 then panel(x,y,g.cell,g.cell,dark,.70) end
+  rect(x,y,g.cell,1,rgb(0x664627));rect(x,y+g.cell-1,g.cell,1,rgb(0x5c3d23))
   local item=list[i]
   if item then
    local enabled=page==4 or page==1 or compatible(rod,item,page==2)
    if page==4 then
-    panel(x+2,y+2,84,84,rgb(0x174052),.72)
-    fish_icon(item,x+38,y+39,1.5,0,pi/5)
-   elseif cacheable and InventoryCache.sprites[i] then
+    local factor=g.cell/88
+    panel(x+2,y+2,g.cell-4,g.cell-4,rgb(0x174052),.72)
+    local sprite=cacheable and not A.ui_reference and InventoryCache.bag_sprites and InventoryCache.bag_sprites[item]
+    -- Preserve endpoint-clipped hairlines at H106's sampling boundary: a
+    -- one-source-pixel edge difference can otherwise erase a sampled detail.
+    if h106 and (y-9*factor<clip_top or y+103*factor>clip_bottom) then sprite=nil end
+    -- Use exactly the same integer translation and anchor for cached/live
+    -- rendering; a fractional enlarged anchor shifts the fish during scroll.
+    local sx,sy=floor(x-10*factor+.5),floor(y-9*factor+.5)
+    if sprite then D.draw_region(sprite,sx,sy,clip_top,clip_bottom,InventoryCache.key)
+    else fish_icon(item,sx+floor(48*factor+.5),sy+floor(48*factor+.5),1.5*factor,0,pi/5) end
+   elseif (cacheable or foreground) and A.no_cache~='1' and InventoryCache.sprites[i] then
     D.draw_region(InventoryCache.sprites[i],x-16,y-16,clip_top,clip_bottom,InventoryCache.key)
-   else InventoryCache.art(page,i,x,y,enabled) end
-   if i==focus[page] then border(x-2,y-2,92,92,C.cream,3) end
+   else InventoryCache.paint(page,i,x,y,enabled) end
+   if h106 and page==1 then InventoryCache.rod_label(item,x,y,g.art) end
+   if i==focus[page] and not (A.controls=='buttons' and A.keys and A.keys.motion and A.keys.motion.page==page) then border(x-2,y-2,g.cell+4,g.cell+4,C.cream,3) end
    local equipped=page==1 and rod_index or (page==2 and reel_index or lure_index)
-   if page~=4 and i==equipped then local ey=page==1 and y+76 or y+5;rect(x+5,ey,7,7,C.green);rect(x+6,ey+1,3,3,C.white) end
+   if page~=4 and i==equipped then local ey=page==1 and y+g.cell-12 or y+5;rect(x+5,ey,7,7,C.green);rect(x+6,ey+1,3,3,C.white) end
   end
  end
+ end
+ if A.controls=='buttons' and A.keys and A.keys.motion and A.keys.motion.page==page then
+  local m=A.keys.motion
+  border(m.x-2,m.y-2,g.cell+4,g.cell+4,C.cream,3)
  end
  clip_top,clip_bottom=0,448
  -- Tick rail: neighbouring marks broaden around the scroll position.
  local items_done=system.millis()
  -- Fits the existing right gutter without overlaying equipment cells.
  local rail=cacheable and page~=4 and InventoryCache.rails[scrolls[page]]
- if rail then D.draw_commands(InventoryCache.rail_base);D.draw_commands(rail) else InventoryCache.rail(page,scrolls[page]) end
+ if not foreground then
+  if rail then D.draw_commands(InventoryCache.rail_base);D.draw_commands(rail)
+  elseif cacheable and not A.ui_reference and page==4 and InventoryCache.rail_base and max_scroll(4)>0 then
+   D.draw_commands(InventoryCache.rail_base);InventoryCache.rail(page,scrolls[page],true)
+  else InventoryCache.rail(page,scrolls[page]) end
+ end
  InventoryCache.timing=string.format('base=%d items=%d rail=%d',base_done-stamp,items_done-base_done,system.millis()-items_done)
  if scroll_only then draw_x=0;return end
  local detail_key=visible_key
  if cacheable and page~=4 and InventoryCache.detail_key==detail_key then
-  D.draw_region(InventoryCache.detail,0,360);draw_x=0;return
+  D.draw_region(InventoryCache.detail,0,A.info_top);draw_x=0;return
  end
- panel(14,360,340,85,dark,.70)
+ if not foreground then panel(14,A.info_top,A.canvas_width-28,445-A.info_top,dark,.70) end
  if page==4 then
   local item=list[focus[4]]
   if item then
-   local name_scale=math.min(2.5,316/(#item.name*6-1))
-   text(26,373,item.name,C.cream,name_scale)
-   rect(26,398,316,1,rgb(0x785b38))
-   centered(24,413,96,item.cm..' CM',C.cyan,2.25)
-   centered(128,413,106,item.kg..' KG',C.cream,2.25)
-   rect(122,408,1,27,rgb(0x785b38));rect(238,408,1,27,rgb(0x785b38))
+   if h106 then A.pixel_text(14,190,item.name,C.cream,6,12)
+   else
+    local name_scale=math.min(2.5,(A.canvas_width-52)/(#item.name*6-1))
+    text(26,373,item.name,C.cream,name_scale)
+   end
+   rect(26,398,A.canvas_width-52,1,rgb(0x785b38))
+   if h106 then
+    A.pixel_center(13,221,65,item.cm..' CM',C.cyan,6,11)
+    A.pixel_center(82,221,71,string.format('%.2f KG',item.kg),C.cream,6,11)
+   else
+    centered(24,413,96+A.canvas_extra/3,item.cm..' CM',C.cyan,2.25)
+    centered(128+A.canvas_extra/3,413,106+A.canvas_extra/3,item.kg..' KG',C.cream,2.25)
+   end
+   rect(122+A.canvas_extra/3,408,1,27,rgb(0x785b38));rect(238+A.canvas_extra*2/3,408,1,27,rgb(0x785b38))
    -- Pixel coin identifies total catch value; length and weight keep units.
-   rect(249,413,10,16,rgb(0x97702e));rect(246,416,16,10,C.gold)
-   rect(249,415,9,11,rgb(0xe9bd58));rect(251,417,2,7,C.cream)
+   rect(249+A.canvas_extra*2/3,413,10,16,rgb(0x97702e));rect(246+A.canvas_extra*2/3,416,16,10,C.gold)
+   rect(249+A.canvas_extra*2/3,415,9,11,rgb(0xe9bd58));rect(251+A.canvas_extra*2/3,417,2,7,C.cream)
    local price=tostring(fish_value(item))
    local price_scale=math.min(2.5,74/(#price*6-1))
-   text(342-(#price*6-1)*price_scale,413,price,C.gold,price_scale)
+   if h106 then A.pixel_center(178,221,48,price,C.gold,6,11)
+   else text(A.canvas_width-26-(#price*6-1)*A.font_scale(price_scale),413,price,C.gold,price_scale) end
   else
-   centered(0,190,368,'NO CATCH YET',C.cream,2)
-   centered(14,391,340,'FISH BAG / 0 CATCHES',C.cream,1.5)
+   centered(0,190,A.canvas_width,'NO CATCH YET',C.cream,2)
+   centered(14,391,A.canvas_width-28,'FISH BAG / 0 CATCHES',C.cream,1.5)
   end
   draw_x=0;return
  end
  local item=list[focus[page]];if not item then draw_x=0;return end
- -- Four fields only; the wider right column accommodates series names.
+ -- Four fields with compact display labels, never fractional shrunken glyphs.
  local function cell(column,y,value,color)
-  local width=column==1 and 124 or 188
+  local width=(column==1 and 124 or 188)+A.canvas_extra/2
   local scale=2
-  for _,candidate in ipairs({2,1.75,1.5,1.25,1}) do
-   scale=candidate
-   if (#value*6-1)*scale<=width then break end
-  end
   if (#value*6-1)*scale>width then
-   value=value:sub(1,floor((width+1)/6)-3)..'...'
+   value=value:sub(1,floor((width/scale+1)/6)-3)..'...'
   end
-  text(column==1 and 25 or 157,y,value,color or C.cream,scale)
+  text(column==1 and 25 or 157+A.canvas_extra/2,y,value,color or C.cream,scale)
  end
- logo(item.brand,25,376)
- cell(2,378,item.name,C.white)
- if page==1 then
-  cell(1,416,item.label..item.power)
-  cell(2,416,item.action)
- elseif page==2 then
-  local model=item.model:gsub(' /.*',''):gsub(' RIGHT',''):gsub(' LEFT','')
-  cell(1,416,model)
-  cell(2,416,item.capacity)
+ local name,left,right=InventoryCache.info(page,item)
+ if h106 then
+  local description,width,height,detail_width=InventoryCache.h106_info(page,item)
+  A.pixel_text(14,192,brands[item.brand],C.cyan,5,9)
+  A.pixel_text(14+A.pixel_width(brands[item.brand],5)+8,178+floor(18.5-height/2+.5),item.name,C.white,width,height)
+  A.pixel_text(14,215,description,C.cream,detail_width,11)
  else
-  local model=item.model:gsub(' /.*','')
-  local weight='N/A'
-  if item.kind=='lure' and not item.weight_estimated then
-   weight=string.format('%.1f',item.weight):gsub('%.0$','')..'G'
-  end
-  cell(1,416,model)
-  cell(2,416,weight)
+ logo(item.brand,25,376)
+ cell(2,378,name,C.white)
+ cell(1,416,left)
+ cell(2,416,right)
  end
  if cacheable then
-  InventoryCache.detail=D.capture_region(0,360,368,88);InventoryCache.detail_key=detail_key
+  InventoryCache.detail=D.capture_region(0,A.info_top,A.canvas_width,448-A.info_top);InventoryCache.detail_key=detail_key
  end
  draw_x=0
 
 end
 -- Reference landmarks measured after fitting the approved board to 368x448.
+function InventoryCache.snapshot_key(which)
+ return table.concat({which,focus[which],scrolls[which],rod_index,reel_index or 0,lure_index or 0,#catalog(4)},':')
+end
+function InventoryCache.leave_menu()
+ if not h106 then return end
+ if D.release_background then D.release_background() end
+ -- Full square page captures should not stay resident beside live rope and
+ -- fish geometry. Keep bounded item sprites, discard compositing surfaces.
+ InventoryCache.base=nil;InventoryCache.base_key=nil
+ InventoryCache.list_base=nil
+ InventoryCache.detail=nil;InventoryCache.detail_key=nil;InventoryCache.visible_key=nil
+ collectgarbage('collect')
+end
+function InventoryCache.remember(which)
+ local key=InventoryCache.snapshot_key(which)
+ local snapshots=InventoryCache.snapshots or {};InventoryCache.snapshots=snapshots
+ for i,entry in ipairs(snapshots) do
+  if entry.key==key then table.remove(snapshots,i);snapshots[#snapshots+1]=entry;return entry.pixels end
+ end
+ -- Four small H106 pages fit within the VM budget. AMOLED retains two.
+ if #snapshots==(h106 and 4 or 2) then table.remove(snapshots,1);collectgarbage('collect') end
+ InventoryCache.prepare(which)
+ D.clear(InventoryCache.key)
+ InventoryCache.foreground=true
+ draw_inventory_page(which,0)
+ InventoryCache.foreground=nil
+ local pixels=D.capture_region(0,0,A.canvas_width,448,InventoryCache.key)
+ snapshots[#snapshots+1]={key=key,pixels=pixels}
+ return pixels
+end
+function InventoryCache.snapshot(which)
+ local key=InventoryCache.snapshot_key(which)
+ for _,entry in ipairs(InventoryCache.snapshots or {}) do if entry.key==key then return entry.pixels end end
+ InventoryCache.visible_key=nil
+ local pixels=InventoryCache.remember(which)
+ InventoryCache.visible_key=nil -- The backing framebuffer may belong to another page.
+ return pixels
+end
+function InventoryCache.draw_chrome()
+ if InventoryCache.chrome then D.restore_background(InventoryCache.chrome);return end
+ draw_x=0;clip_top,clip_bottom=0,448
+ for y=0,447,31 do
+  rect(0,y,A.canvas_width,math.min(31,448-y),wood(y))
+  rect(0,y+27,A.canvas_width,3,rgb(0x6a4325))
+  for n=0,4 do local x=(n*83+floor(y/31)*47)%A.canvas_width
+   rect(x,y+5+(n%3)*5,28+n*3,3,rgb(0x7b512e));rect(x+12,y+18,17,2,rgb(0x734b2b))
+  end
+ end
+ border(0,0,A.canvas_width,448,rgb(0x50371f),2)
+ panel(14,A.info_top,A.canvas_width-28,445-A.info_top,rgb(0x2a2319),.70)
+ InventoryCache.chrome=D.capture_region(0,0,A.canvas_width,448)
+ D.restore_background(InventoryCache.chrome)
+end
+function InventoryCache.draw_header(from,to,progress)
+ local selected=progress<.5 and from or to
+ if selected==4 then
+  if InventoryCache.header_bags then D.draw_region(InventoryCache.header_bags,0,16)
+  else
+   panel(16,16,A.canvas_width-32,36,rgb(0xe6d1a2),.81)
+   centered(16,27,A.canvas_width-32,'BAGS',C.darkwood,2)
+   InventoryCache.header_bags=D.capture_region(0,16,A.canvas_width,36)
+  end
+ else
+  local step=114+A.canvas_extra/3
+  if not InventoryCache.header_base then
+   for i=1,3 do panel(16+(i-1)*step,16,step-6,36,rgb(0x2a2319),.80) end
+   InventoryCache.header_base=D.capture_region(0,16,A.canvas_width,36)
+   panel(16,16,step-6,36,rgb(0xe6d1a2),.81)
+   InventoryCache.header_pill=D.capture_region(16,16,floor(step-6+.5),36)
+  end
+  D.draw_region(InventoryCache.header_base,0,16)
+  local position=from<=3 and to<=3 and from+(to-from)*progress or selected
+  local left=floor(16+(position-1)*step+.5);local right=math.min(A.canvas_width,floor(left+step-6+.5))
+  D.draw_region(InventoryCache.header_pill,left,16)
+  if InventoryCache.header_light then
+   D.draw_region(InventoryCache.header_light,0,16,16,52,InventoryCache.key)
+   D.draw_region(InventoryCache.header_dark,0,16,16,52,InventoryCache.key,left,right)
+  else
+   -- The first call prepares labels off-screen in the framebuffer, then redraws
+   -- the tiny header. Subsequent frames only blit glyphs under the moving pill.
+   local backing=D.capture_region(0,16,A.canvas_width,36)
+   for _,style in ipairs({'light','dark'}) do
+    D.fill_rect(0,16,A.canvas_width,36,InventoryCache.key)
+    for i=1,3 do centered(16+(i-1)*step,27,step-6,inventory_pages[i].label,style=='light' and C.cream or C.darkwood,2) end
+    InventoryCache['header_'..style]=D.capture_region(0,16,A.canvas_width,36,InventoryCache.key)
+   end
+   D.draw_region(backing,0,16)
+   InventoryCache.draw_header(from,to,progress)
+  end
+ end
+ local rail_key=selected..':'..scrolls[selected]
+ if InventoryCache.header_rail_key~=rail_key then
+  capture_commands={};InventoryCache.rail(selected,scrolls[selected])
+  InventoryCache.header_rail=D.compile_commands(capture_commands);capture_commands=nil
+  InventoryCache.header_rail_key=rail_key
+ end
+ D.draw_commands(InventoryCache.header_rail)
+end
+function InventoryCache.transition(from,to,x)
+ local stamp=system.millis()
+ local direction=to>from and -1 or 1
+ if h106 and not InventoryCache.snapshots then
+  InventoryCache.base=nil;InventoryCache.base_key=nil;InventoryCache.list_base=nil
+  InventoryCache.detail=nil;InventoryCache.detail_key=nil;InventoryCache.visible_key=nil
+  collectgarbage('collect')
+ end
+ if A.ui_reference or not D.capture_region then
+  D.clear(C.wood);draw_inventory_page(from,x)
+  if to~=from then draw_inventory_page(to,x-direction*A.canvas_width) end
+  return
+ end
+ local first=InventoryCache.snapshot(from)
+ local second=to~=from and InventoryCache.snapshot(to) or nil
+ local ready=system.millis()
+ x=floor(x+.5)
+ InventoryCache.draw_chrome()
+ D.draw_region(first,x,0,62,A.inventory_bottom,InventoryCache.key)
+ D.draw_region(first,x,0,A.info_top,445,InventoryCache.key,14,A.canvas_width-14)
+ if second then
+  D.draw_region(second,x-direction*A.canvas_width,0,62,A.inventory_bottom,InventoryCache.key)
+  D.draw_region(second,x-direction*A.canvas_width,0,A.info_top,445,InventoryCache.key,14,A.canvas_width-14)
+ end
+ InventoryCache.draw_header(from,to,math.min(1,math.abs(x)/A.canvas_width))
+ InventoryCache.visible_key=nil;draw_x=0
+ InventoryCache.timing=string.format('slide_prepare=%d slide_blit=%d',ready-stamp,system.millis()-ready)
+end
+
 local wave_positions={
  {179,224,22},{105,237,26},{329,246,22},{22,256,26},{216,264,23},
  {122,332,29},{29,376,29},{205,384,28},
@@ -1301,9 +1756,9 @@ function Weather.draw(t)
  local w=Weather.cache
  C.sky,C.sea1,C.sea2,C.foam=w.sky,w.sea,w.deep,w.foam
  if not cacheable or not Weather.background or not same_weather_background(Weather.background_weather,w) then
- for i=0,7 do rect(0,i*26,368,math.min(26,203-i*26),mix(w.sky,w.horizon,i/7)) end
+ for i=0,7 do rect(0,i*26,A.canvas_width,math.min(26,203-i*26),mix(w.sky,w.horizon,i/7)) end
  if w.night then
-  for i=1,13 do local x=(i*73)%368;local y=61+(i*31)%112;rect(x,y,1,1,mix(w.sky,C.white,.55)) end
+  for i=1,13 do local x=(i*73)%A.canvas_width;local y=61+(i*31)%112;rect(x,y,1,1,mix(w.sky,C.white,.55)) end
  end
  if w.sun_visible then
   local old=clip_bottom;clip_bottom=203
@@ -1311,8 +1766,8 @@ function Weather.draw(t)
   ellipse(w.sun_x,w.sun_y,19,19,color)
   clip_bottom=old
  end
- rect(0,203,368,95,w.sea);rect(0,298,368,150,w.deep)
- if cacheable then Weather.background=D.capture_region(0,0,368,448,nil,Weather.background);Weather.background_weather=w end
+ rect(0,203,A.canvas_width,95,w.sea);rect(0,298,A.canvas_width,150,w.deep)
+ if cacheable then Weather.background=D.capture_region(0,0,A.canvas_width,448,nil,Weather.background);Weather.background_weather=w end
  end
  if cacheable then D.restore_background(Weather.background) end
  if w.sun_visible and w.sun_x<390 then
@@ -1324,12 +1779,12 @@ function Weather.draw(t)
  local cloud_color=mix(w.horizon,w.night and rgb(0x3b4b61) or rgb(0xf5f6e9),.65-w.cloud*.3)
  local count=3+math.floor(w.cloud*4)
  for i=1,count do
-  local x=((i*103-34+t*w.wind*.8)%438)-45;local y=67+(i*29)%88
+  local x=((i*103-34+t*w.wind*.8)%(438+A.canvas_extra))-45;local y=67+(i*29)%88
   rect(x,y,44+i%3*7,10,cloud_color);rect(x+12,y-9,24,9,cloud_color)
  end
  local wave_size=Weather.wave_sizes[Weather.wind_level(w.wind)+1]
  for i,wave in ipairs(wave_positions) do
-  local x=wave[1]+floor(sin(t*(.3+w.wind*.1)+i)*(1.5+w.wind*.65))
+  local x=wave[1]*A.canvas_width/368+floor(sin(t*(.3+w.wind*.1)+i)*(1.5+w.wind*.65))
   local y=wave[2]+floor(sin(t*.5+i)*wave_size*1.5)
   local width=math.max(4,floor(wave[3]*wave_size))
   local height=math.max(1,floor(2*wave_size))
@@ -1338,7 +1793,7 @@ function Weather.draw(t)
  end
  if w.wind>=4 then
   for i=1,10 do
-   local x=(i*67+t*w.wind*2)%368;local y=248+i%5*32
+   local x=(i*67+t*w.wind*2)%A.canvas_width;local y=248+i%5*32
    rect(x,y,8,1,mix(w.foam,w.sea,.3))
   end
  end
@@ -1379,6 +1834,7 @@ function Weather.draw(t)
  end
 end
 function Weather.hud()
+ draw_x=0
  local w=Weather.cache;if not w then return end
  local key=w.minutes..':'..w.temperature..':'..Weather.wind_level(w.wind)..':'..tostring(w.night)
  local cacheable=D.compile_commands and not capture_commands
@@ -1391,16 +1847,18 @@ function Weather.hud()
   text(x+1,y+1,value,rgb(0x234455),scale);text(x,y,value,fg,scale)
  end
  local hour=math.floor(w.minutes/60)
- label(16,26,string.format('%d:%02d %s',(hour+11)%12+1,w.minutes%60,hour<12 and 'AM' or 'PM'),2)
+ local time=string.format('%d:%02d %s',(hour+11)%12+1,w.minutes%60,hour<12 and 'AM' or 'PM')
+ if h106 then A.pixel_text(10,11,time,fg,7,13) else label(16,26,time,2) end
  -- Four wind levels: calm, one, two or three wave strokes.
  local level=Weather.wind_level(w.wind)
  for row=0,level-1 do
   for i=0,11 do
-   local x=253+i*2;local y=34+(row-(level-1)/2)*5+floor(sin(i*.65)*1.5)
+   local x=253+A.canvas_extra+i*2;local y=34+(row-(level-1)/2)*5+floor(sin(i*.65)*1.5)
    rect(x+1,y+1,3,2,rgb(0x234455));rect(x,y,3,2,fg)
   end
  end
- label(296,26,tostring(w.temperature)..' C',2)
+ if h106 then A.pixel_text(195,13,tostring(w.temperature)..' C',fg,6,11)
+ else label(296+A.canvas_extra,26,tostring(w.temperature)..' C',2) end
  if cacheable then
   Weather.hud_commands=D.compile_commands(capture_commands);capture_commands=nil;Weather.hud_key=key
   D.draw_commands(Weather.hud_commands);frame_draw_calls=frame_draw_calls+1
@@ -1408,8 +1866,11 @@ function Weather.hud()
 end
 local boat_commands
 local function sea(t)
+ draw_x=0
  Weather.draw(t)
- if boat_commands then D.draw_commands(boat_commands);frame_draw_calls=frame_draw_calls+1;return end
+ -- Keep the authored rod/boat shape, anchored to the right of the square.
+ draw_x=A.canvas_extra
+ if boat_commands then D.draw_commands(boat_commands);frame_draw_calls=frame_draw_calls+1;draw_x=A.scene_offset;return end
  local cacheable=D.compile_commands and not capture_commands
  if cacheable then capture_commands={} end
  -- Broad bow and stepped ivory gunwale traced from the reference.
@@ -1427,6 +1888,7 @@ local function sea(t)
   boat_commands=D.compile_commands(capture_commands);capture_commands=nil
   D.draw_commands(boat_commands);frame_draw_calls=frame_draw_calls+1
  end
+ draw_x=A.scene_offset
 end
 -- Bending is a distributed curvature along the blank, not a scaled sprite.
 -- Power controls compliance; Action moves the curvature onset toward the tip.
@@ -1540,8 +2002,8 @@ local function draw_rod(r,reel,mode,t,ghost,physical_points)
    r.stroke_style={outer,inner,colors}
   end
   local fast=A.profile=='amoled' and A.no_cache~='1'
-  D.stroke_path(pts,r.stroke_style[1],C.ink,draw_x,clip_top,clip_bottom,false,fast)
-  D.stroke_path(pts,r.stroke_style[2],r.stroke_style[3],draw_x,clip_top,clip_bottom,false,fast)
+  D.stroke_path(pts,r.stroke_style[1],C.ink,draw_x,clip_top,clip_bottom,false,fast,h106)
+  D.stroke_path(pts,r.stroke_style[2],r.stroke_style[3],draw_x,clip_top,clip_bottom,false,fast,h106)
   frame_draw_calls=frame_draw_calls+2
  else
  for i=2,#pts do
@@ -1569,7 +2031,7 @@ local function draw_rod(r,reel,mode,t,ghost,physical_points)
  local side_angle=angle+pi
  if reel then
   local selected=reels[reel_index]
-  if selected then reel_icon(selected,mount[1],mount[2],3.0,side_angle) end
+  if selected then reel_icon(selected,mount[1],mount[2],h106 and 4.2 or 3.0,side_angle) end
  end
  for _,i in ipairs({20,34,48,59}) do
   local p=pts[i];local q=(reel=='bait' or reel=='round') and 2 or -2
@@ -1742,6 +2204,20 @@ local function world_rod(state,tip_only)
  end
  if tip_only then return {lastx,lasty,lastz} end
  return points,screen
+end
+function RodPhysics.low_angle(r)
+ -- Calibrate the unladen tip in world metres, not screen pixels. Different
+ -- rod lengths need different handle angles to rest just above the water.
+ if r.low_water_angle then return r.low_water_angle end
+ local state=physics_for(r)
+ local low,high=-3.8,-2.62
+ for i=1,14 do
+  state.angle=(low+high)/2
+  local tip=world_rod(state,true)
+  if tip[2]>.30 then high=state.angle else low=state.angle end
+ end
+ r.low_water_angle=(low+high)/2
+ return r.low_water_angle
 end
 local function water_profile(lure)
  local surface=lure.surface or lure.kind=='iso'
@@ -1984,9 +2460,9 @@ local function cast_motion(time,kind)
  elseif time<.66 then return -1.56,false
  else return smooth(-1.56,-2.62,(time-.66)/.33),time>=.88 end
 end
-local function start_cast()
+local function start_cast(charge)
  if not reel_index or not lure_index then menu=true;page=not reel_index and 2 or 3;return end
- reset_sim();sim.state='casting';sim.cast_clock=0;sim.accumulator=0;sim.phase='backswing'
+ reset_sim();sim.state='casting';sim.cast_clock=0;sim.accumulator=0;sim.phase='backswing';sim.cast_charge=charge
  local wp=world_rod(sim.physics)
  sim.line=new_line(wp[65],equipped_lure(),rod.kind=='fly');sim.line.reel_kind=reels[reel_index].kind
  print('FISHING_CAST_START '..rod.model..' / '..reels[reel_index].model..' / '..equipped_lure().model)
@@ -2055,6 +2531,7 @@ local function step_retrieve(h)
  local rope=sim.line
  if rope.paid<=rope.minimum+1e-7 then
   r.queue=0;r.full=false;r.active=false;sim.state='retrieved'
+  sim.retrieve_end_angle=sim.physics.angle;sim.retrieve_end_at=sim.elapsed
   print(string.format('FISHING_RETRIEVED %.3fm / %d nodes',rope.paid,#rope.p))
   return 0
  end
@@ -2259,7 +2736,7 @@ local function complete_catch()
  local record={};for k,v in pairs(f.species) do record[k]=v end
  record.kg=f.kg;record.cm=f.cm;record.catch_id=#catches+1;record.caught_ms=system.millis();record.location='COASTAL REEF'
  catches[#catches+1]=record;focus[4]=#catches
- scrolls[4]=clamp(floor((#catches-1)/3)*96,0,max_scroll(4))
+ scrolls[4]=clamp(floor((#catches-1)/grid(4).columns)*grid(4).pitch,0,max_scroll(4))
  sim.state='landed';sim.landing_clock=0;sim.landed_record=record
  sim.fish=nil;sim.line=nil;sim.physics.fight_dir=nil;sim.physics.yaw=0
  print(string.format('FISHING_CAUGHT %s %.2fkg %d coins / bag %d',record.name,record.kg,fish_value(record),#catches))
@@ -2460,8 +2937,16 @@ local function tick_sim(dt)
    sim.cast_clock=sim.cast_clock+h*(sim.strength or 1)
    target,releasing=cast_motion(sim.cast_clock,rod.kind)
    sim.phase=rod.kind=='fly' and 'false-cast' or (sim.cast_clock<.66 and 'backswing' or 'forward')
-  elseif sim.state=='flight' or sim.state=='waiting' or sim.state=='retrieved' then
+  elseif sim.state=='flight' then
    target=smooth(sim.release_angle or -2.55,-2.62,sim.elapsed/.75)
+  elseif sim.state=='waiting' then
+   -- Finish the cast unchanged, then lower smoothly after splashdown. The
+   -- actual rod tip also anchors the rope solver: do not merely hide wind line.
+   target=smooth(sim.splash_angle or -2.62,RodPhysics.low_angle(rod),sim.elapsed/1.1)
+  elseif sim.state=='retrieved' then
+   -- Once the rig is fully back, lift it clear again for the hanging leader
+   -- and next cast; low-tip presentation applies while the lure is fishing.
+   target=smooth(sim.retrieve_end_angle or -2.62,-2.62,(sim.elapsed-(sim.retrieve_end_at or 0))/.9)
   end
   local bite_load=step_encounter(h,lure)
   if sim.fish then
@@ -2481,11 +2966,30 @@ local function tick_sim(dt)
    if releasing and sim.state=='casting' then
     sim.state='flight';sim.phase='flight';sim.elapsed=0;sim.release_angle=sim.physics.angle
     sim.launch=copy3(sim.line.p[#sim.line.p]);sim.release_tip=copy3(tip)
+    -- Button charge sets launch energy, not animation speed. Speeding up the
+    -- stroke changes the rod's release phase and can make a stronger cast shorter.
+    -- Scale the entire free line velocity coherently, retaining its release pose.
+    if sim.cast_charge and sim.line.fly then
+     -- Record models the final hand haul on the whole fly line, not an impulse
+     -- on the almost weightless fly. Keep the false-cast pose and let payout,
+     -- drag and rope constraints determine the landing point.
+     local speed=12+12*sim.cast_charge
+     for i=2,#sim.line.p do
+      local p,prev=sim.line.p[i],sim.line.prev[i]
+      prev[1]=p[1]+speed*.1*h;prev[2]=p[2]-4*h;prev[3]=p[3]-speed*h
+     end
+    elseif sim.cast_charge then
+     local velocity=.3+.7*sim.cast_charge
+     for i=2,#sim.line.p do
+      local p,prev=sim.line.p[i],sim.line.prev[i]
+      for axis=1,3 do prev[axis]=p[axis]-(p[axis]-prev[axis])*velocity end
+     end
+    end
     local p,prev=sim.line.p[#sim.line.p],sim.line.prev[#sim.line.prev]
     sim.release_speed=length3(p[1]-prev[1],p[2]-prev[2],p[3]-prev[3])/h
     print(string.format('FISHING_RELEASE %.2fm/s velocity=(%.2f,%.2f,%.2f) / %.3f bend / %d nodes',sim.release_speed,(p[1]-prev[1])/h,(p[2]-prev[2])/h,(p[3]-prev[3])/h,sim.physics.q,#sim.line.p))
    elseif sim.state=='flight' and sim.line.landed then
-    sim.state='waiting';sim.phase='splash';sim.elapsed=0
+    sim.state='waiting';sim.phase='splash';sim.elapsed=0;sim.splash_angle=sim.physics.angle
     local p=sim.line.impact
     sim.range=length3(p[1]-.915,0,p[3]-1.3)
     print(string.format('FISHING_LANDED %.2fm / %.2fm line / %d nodes',sim.range,sim.line.paid,#sim.line.p))
@@ -2493,7 +2997,7 @@ local function tick_sim(dt)
   end
  end
 end
-local line_camera={184,203,260,1.6,.25}
+local line_camera={184+A.scene_offset,203,260,1.6,.25}
 local function world_line(a,b,color)
  if D.projected_line then D.projected_line(a,b,color,line_camera);frame_draw_calls=frame_draw_calls+1;return end
  if a[3]<CastWorld.near and b[3]<CastWorld.near then return end
@@ -2559,6 +3063,8 @@ local function draw_water_fish(f,p,previous)
  end
 end
 local deck_commands,deck_was_visible,deck_result_visible
+-- Stored on an existing module table to stay below Lua's main-block local limit.
+InventoryCache.deck={}
 local function deck_pose(t)
  local p={u=7,v=-5,angle=.10,flex=.3,height=0,splash=0}
  if t<.35 then
@@ -2579,6 +3085,9 @@ local function deck_pose(t)
 end
 local function draw_deck_result(fish,time)
  if deck_was_visible and deck_result_visible and time>=1.8 then return end
+ draw_x=0
+ local cache=InventoryCache.deck
+ local stamp=system.millis()
  local pose=deck_pose(time)
  -- Shared oblique perspective for deck, fish, wet marks and cast shadow.
  -- Upper-left sunlight; distant boards narrow toward their vanishing points.
@@ -2586,7 +3095,7 @@ local function draw_deck_result(fish,time)
   local x=u*.866+v*.5
   local depth=-u*.5+v*.866
   local perspective=1/(1+depth/1300)
-  return 174+x*perspective,259-depth*.67*perspective-(z or 0)*perspective
+  return 174+A.canvas_extra/2+x*perspective,259-depth*.67*perspective-(z or 0)*perspective
  end
  local function patch(points,color)
   local q={};for _,p in ipairs(points) do local x,y=deck(p[1],p[2]);q[#q+1]={x,y} end;poly(q,color)
@@ -2594,7 +3103,7 @@ local function draw_deck_result(fish,time)
  local function seam(u,v,x,y,color)
   local ax,ay=deck(u,v);local bx,by=deck(x,y)
   local dx,dy=bx-ax,by-ay;local lo,hi=0,1
-  for _,edge in ipairs({{-dx,ax},{dx,367-ax},{-dy,ay},{dy,447-ay}}) do
+  for _,edge in ipairs({{-dx,ax},{dx,A.canvas_width-1-ax},{-dy,ay},{dy,447-ay}}) do
    local p,q=edge[1],edge[2]
    if p==0 then if q<0 then return end
    elseif p<0 then lo=math.max(lo,q/p)
@@ -2605,7 +3114,7 @@ local function draw_deck_result(fish,time)
  end
  if not deck_commands then
   capture_commands={}
- rect(0,0,368,448,rgb(0xd6ae72))
+ rect(0,0,A.canvas_width,448,rgb(0xd6ae72))
  for row=-12,12 do
   local v=row*54
   local t=(row%4)*3
@@ -2626,6 +3135,17 @@ local function draw_deck_result(fish,time)
  end
  local full=not deck_was_visible or (time>=1.8 and not deck_result_visible)
  local top,bottom=full and 0 or 110,full and 448 or 350
+ local restored_wet=false
+ if A.no_cache~='1' and not A.ui_reference and D.compile_commands then
+  if not cache.commands then cache.commands=D.compile_commands(deck_commands) end
+  if full then D.draw_commands(cache.commands)
+  elseif cache.background and (not cache.wet or time>=.35) then
+   D.draw_region(cache.background,0,110);restored_wet=cache.wet
+  else
+   D.draw_commands(cache.commands,110,350)
+   if not cache.background then cache.background=D.capture_region(0,110,A.canvas_width,240) end
+  end
+ else
  for _,c in ipairs(deck_commands) do
   if c[1]==0 then
    local y=math.max(top,c[3]);local finish=math.min(bottom,c[3]+c[5])
@@ -2639,9 +3159,11 @@ local function draw_deck_result(fish,time)
    elseif y>=top and y<bottom then line(x,y,xx,yy,c[6]) end
   end
  end
+ end
+ local background_done=system.millis()
  deck_was_visible=true;deck_result_visible=time>=1.8
  local p=pose
- if time>=.35 then
+ if time>=.35 and not restored_wet then
   local wet={}
   for i=0,23 do local a=i*pi/12;wet[#wet+1]={12+cos(a)*(110+i%3*5),-4+sin(a)*40} end
   patch(wet,rgb(0xad9b76))
@@ -2649,10 +3171,14 @@ local function draw_deck_result(fish,time)
    local a=i*2.399;local u=10+cos(a)*(100+i%4*14);local v=sin(a)*57
    seam(u,v,u+3+i%3,v,rgb(0xd7ebde))
   end
+  if not A.ui_reference and A.no_cache~='1' and cache.background and not cache.wet then
+   D.capture_region(0,110,A.canvas_width,240,nil,cache.background);cache.wet=true
+  end
  end
  -- Shadow displacement grows with height, away from the upper-left sun.
  local function shadow(u,v) local x,y=deck(u,v);return x+10+p.height*.45,y+12+p.height*.30 end
- fish_icon(fish,p.u,p.v,5.25,time*6,p.angle,rgb(0x927647),p.flex,shadow)
+ local native=D.draw_geometry and not A.ui_reference and A.no_cache~='1'
+ fish_icon(fish,p.u,p.v,5.25,time*6,p.angle,rgb(0x927647),p.flex,native and {0,10+p.height*.45,12+p.height*.30,174+A.canvas_extra/2} or shadow)
  if p.splash>0 then
   for i=1,22 do
    local a=i*2.399;local spread=100+(i%5)*13
@@ -2664,27 +3190,44 @@ local function draw_deck_result(fish,time)
  -- A small darker near-side thickness and sunlit flank establish volume.
  local function underside(u,v) return deck(u,v,p.height+1) end
  local function topside(u,v) return deck(u,v,p.height+7) end
- fish_icon(fish,p.u,p.v,5.25,time*6,p.angle,rgb(0x476a69),p.flex,underside)
- local lit={};for k,v in pairs(fish) do lit[k]=v end
+ fish_icon(fish,p.u,p.v,5.25,time*6,p.angle,rgb(0x476a69),p.flex,native and {p.height+1,0,0,174+A.canvas_extra/2} or underside)
+ local lit=cache.fish==fish and cache.lit or nil
+ if not lit then
+ lit={};for k,v in pairs(fish) do if k~='_geometry' then lit[k]=v end end
  local function sun(hex)
   local c=mix(rgb(hex),rgb(0xfff4d6),.24)
   return c.r*65536+c.g*256+c.b
  end
  lit.body=sun(fish.body);lit.back=sun(fish.back);lit.belly=sun(fish.belly);lit.fin=sun(fish.fin)
- fish_icon(lit,p.u,p.v,5.25,time*6,p.angle,nil,p.flex,topside)
+ cache.fish,cache.lit=fish,lit
+ end
+ fish_icon(lit,p.u,p.v,5.25,time*6,p.angle,nil,p.flex,native and {p.height+7,0,0,174+A.canvas_extra/2,fish._geometry} or topside)
  for i=1,5 do
   local x,y=topside(p.u+(-13+i*5)*5.25,p.v-9)
   line(x,y,x+4,y,rgb(0xf4fae3))
  end
  if time>=1.8 then
-  centered(0,34,368,fish.name,rgb(0x483e2e),math.min(2,344/(#fish.name*6)))
-  centered(0,78,368,'CATCH LANDED',rgb(0x716046),1)
-  rect(25,350,318,1,rgb(0x9d7b50))
+  if h106 then
+   A.pixel_center(7,16,226,fish.name,rgb(0x483e2e),7,13)
+   A.pixel_center(7,39,226,'CATCH LANDED',rgb(0x716046),5,9)
+   rect(25,350,A.canvas_width-50,1,rgb(0x9d7b50))
+   for i,value in ipairs({tostring(fish.cm),string.format('%.2f',fish.kg),tostring(fish_value(fish))}) do
+    A.pixel_center(10+(i-1)*74,200,72,value,rgb(0x483e2e),10,14)
+    A.pixel_center(10+(i-1)*74,221,72,({'CM','KG','COINS'})[i],rgb(0x716046),6,11)
+   end
+  else
+  centered(0,34,A.canvas_width,fish.name,rgb(0x483e2e),math.min(2,(A.canvas_width-24)/(#fish.name*6)))
+  centered(0,78,A.canvas_width,'CATCH LANDED',rgb(0x716046),1)
+  rect(25,350,A.canvas_width-50,1,rgb(0x9d7b50))
+  draw_x=A.canvas_extra/2
   centered(20,374,104,tostring(fish.cm)..' CM',rgb(0x483e2e),2)
   centered(127,374,114,string.format('%.2f KG',fish.kg),rgb(0x483e2e),2)
   centered(247,374,104,tostring(fish_value(fish)),rgb(0x483e2e),2)
   centered(247,405,104,'COINS',rgb(0x716046),1)
+  end
  end
+ draw_x=0
+ cache.timing=string.format('background=%d fish=%d',background_done-stamp,system.millis()-background_done)
 end
 function FloatRig.draw(rope,lure,t)
  local p=FloatRig.position(rope,lure)
@@ -2978,22 +3521,23 @@ end
 local function on_click(x,y,dx,dy,held)
  if menu then
   if math.abs(dx)>60 and math.abs(dx)>math.abs(dy)*1.3 then
-   if dx>0 and page==1 then menu=false;scene='idle';slide=nil
+   if dx>0 and page==1 then menu=false;scene='idle';slide=nil;InventoryCache.leave_menu()
    else switch_page(page+(dx<0 and 1 or -1),dx) end
    return
   end
   if math.abs(dy)>12 and math.abs(dy)>math.abs(dx)*1.3 then
-   if y-dy>=62 and y-dy<350 then scrolls[page]=clamp(scrolls[page]-dy,0,max_scroll(page)) end
+   if y-dy>=62 and y-dy<A.inventory_bottom then scrolls[page]=clamp(scrolls[page]-dy,0,max_scroll(page)) end
    return
   end
   if math.abs(dx)>12 or math.abs(dy)>12 then return end
   if y>=16 and y<52 then return end -- Tab headers identify pages; only horizontal drags switch.
-  if y>=62 and y<350 and x>=32 and x<344 then
+  if y>=62 and y<A.inventory_bottom and x>=grid(page).x and x<A.canvas_width-24 then
+   local g=grid(page)
    local local_y=y-66+scrolls[page]
    if local_y<0 then return end
-   local col=floor((x-32)/112);local row=floor(local_y/96)
-   if (x-32)%112>=88 or local_y%96>=88 then return end
-   local i=row*3+col+1;local list=catalog(page)
+   local col=floor((x-g.x)/g.step);local row=floor(local_y/g.pitch)
+   if col>=g.columns or (x-g.x)%g.step>=g.cell or local_y%g.pitch>=g.cell then return end
+   local i=row*g.columns+col+1;local list=catalog(page)
    if not list[i] then return end
    focus[page]=i
    if page==1 then rod_index=i;rod=rods[i];reconcile()
@@ -3043,7 +3587,7 @@ local function update_drag(x,y,now)
    press.last_motion=now;press.previous_y=y;press.previous_time=now
   end
  end
- if press.menu and press.axis=='y' and press.y>=62 and press.y<350 then
+ if press.menu and press.axis=='y' and press.y>=62 and press.y<A.inventory_bottom then
   scrolls[press.page]=clamp(press.scroll-dy,0,max_scroll(press.page))
  end
 end
@@ -3055,10 +3599,10 @@ local function end_drag(x,y,now)
  if not p.menu and (sim.state=='landed' or sim.state=='lifting') and p.axis then return end
  if p.menu and p.axis=='y' then return end
  if p.menu and p.axis=='x' then
-  if p.dx>60 and page==1 then menu=false;scene='idle';slide=nil;return end
+  if p.dx>60 and page==1 then menu=false;scene='idle';slide=nil;InventoryCache.leave_menu();return end
   local target=page
   if math.abs(p.dx)>60 then target=clamp(page+(p.dx<0 and 1 or -1),1,#inventory_pages) end
-  switch_page(target,clamp(p.dx,-368,368));return
+  switch_page(target,clamp(p.dx,-A.canvas_width,A.canvas_width));return
  end
  on_click(x,y,p.dx,p.dy,now-p.t)
 end
@@ -3151,15 +3695,29 @@ local function run_checks()
  for _,x in ipairs({70,184,298}) do on_click(x,32,0,0,80);assert(page==1 and not slide,'page labels must not switch on tap') end
  begin_drag(270,32,0);update_drag(110,35,80);end_drag(110,35,160)
  assert(page==2 and slide and slide.from==1,'header drag must switch tabs');slide=nil;page=1
- on_click(70,194,0,0,100);assert(rod.kind=='iso' and reel_index==nil and lure_index==nil)
- page=2;on_click(70,90,0,0,100);assert(reel_index==nil)
- on_click(270,90,0,0,100);assert(reel_index==3)
- page=3;on_click(70,300,0,0,100);assert(lure_index==7)
- page=1;on_click(290,194,0,0,100);assert(rod.kind=='fly' and reel_index==nil and lure_index==nil)
- page=2;on_click(175,194,0,0,100);assert(reel_index==nil)
- on_click(290,194,0,0,100);assert(reel_index==6)
+ local function click_item(i)
+  local g=grid(page);local row=floor((i-1)/g.columns)
+  scrolls[page]=clamp(row*g.pitch-37,0,max_scroll(page))
+  on_click(g.x+44+((i-1)%g.columns)*g.step,106+row*g.pitch-scrolls[page],0,0,100)
+ end
+ assert(grid(1).columns*grid(1).rows==(h106 and 4 or 9))
+ assert(grid(4).columns*grid(4).rows==(h106 and 4 or 9),'platform-specific bag grid')
+ if h106 then
+  assert(66+grid(4).pitch+grid(4).cell<=A.inventory_bottom,'four complete cards must fit above info')
+  assert(A.info_top==332 and A.inventory_bottom<A.info_top)
+  local selected=focus[1]
+  on_click(100,A.info_top+10,0,0,80)
+  assert(focus[1]==selected,'info panel must not select an equipment card')
+ end
+ click_item(4);assert(rod.kind=='iso' and reel_index==nil and lure_index==nil)
+ page=2;click_item(1);assert(reel_index==nil)
+ click_item(3);assert(reel_index==3)
+ page=3;click_item(7);assert(lure_index==7)
+ page=1;click_item(6);assert(rod.kind=='fly' and reel_index==nil and lure_index==nil)
+ page=2;click_item(5);assert(reel_index==nil)
+ click_item(6);assert(reel_index==6)
  -- Continuous scrolling follows the finger, clamps at both ends, never equips on release.
- page=1;local old_focus=focus[1];begin_drag(100,250,0);update_drag(100,113)
+ page=1;scrolls[1]=0;local old_focus=focus[1];begin_drag(100,250,0);update_drag(100,113)
  assert(scrolls[1]==math.min(137,max_scroll(1)));end_drag(100,113,200);assert(focus[1]==old_focus)
  begin_drag(100,250,0);end_drag(100,-1000,200);assert(scrolls[1]==max_scroll(1))
  begin_drag(100,100,0);end_drag(100,1500,200);assert(scrolls[1]==0)
@@ -3167,22 +3725,19 @@ local function run_checks()
  assert(page==1 and slide and slide.to==1);slide=nil
  begin_drag(250,200,0);update_drag(100,204);end_drag(100,204,100)
  assert(page==2 and slide and slide.from==1 and slide.to==2);slide=nil
- local previous=scrolls[2];on_click(358,200,0,0,100);assert(scrolls[2]==previous)
+ local previous=scrolls[2];on_click(A.canvas_width-10,200,0,0,100);assert(scrolls[2]==previous)
  -- Every item is reachable, including a partially scrolled row and the final row.
  for tt,list in ipairs({rods,reels,lures}) do
   page=tt
   for i=1,#list do
-   scrolls[tt]=clamp(floor((i-1)/3)*96-37,0,max_scroll(tt))
-   local y=66+floor((i-1)/3)*96-scrolls[tt]+40
-   on_click(76+((i-1)%3)*112,y,0,0,100)
+   click_item(i)
    assert(focus[tt]==i)
   end
  end
  local previous_preview=bag_preview;bag_preview=true;page=4
  local outfit={rod_index,reel_index,lure_index}
  for i=1,#fish_types do
-  scrolls[4]=clamp(floor((i-1)/3)*96-37,0,max_scroll(4))
-  on_click(76+((i-1)%3)*112,106+floor((i-1)/3)*96-scrolls[4],0,0,80)
+  click_item(i)
   assert(focus[4]==i)
  end
  assert(rod_index==outfit[1] and reel_index==outfit[2] and lure_index==outfit[3])
@@ -3210,6 +3765,32 @@ local function run_checks()
  print('FISHING_BAG_CHECK PASS 30 specimens, standalone bags module, read-only browsing, empty real bag')
  assert(#rods==11 and #reels==19 and #lures==18)
  for _,list in ipairs({rods,reels,lures}) do for _,v in ipairs(list) do assert(brands[v.brand] and v.name and v.model) end end
+ for which=1,3 do for _,item in ipairs(catalog(which)) do
+  local name,left,right=InventoryCache.info(which,item)
+  assert((#name*6-1)*2<=188 and (#left*6-1)*2<=124 and (#right*6-1)*2<=188,
+   'equipment info must fit at 2x without truncation: '..item.name)
+  if h106 then
+   local description,width,height,detail_width=InventoryCache.h106_info(which,item)
+   assert(A.pixel_width(brands[item.brand],5)+8+A.pixel_width(item.name,width)<=212,'H106 brand/model row must fit: '..item.name)
+   assert(A.pixel_width(description,detail_width)<=212,'H106 description row must fit: '..item.name)
+   assert(height>=9 and detail_width>=5,'do not fall back to unreadable text')
+   for ch in (brands[item.brand]..item.name..description):gmatch('.') do assert(ch==' ' or glyphs[ch],'missing H106 glyph: '..ch) end
+  end
+ end end
+ assert(InventoryCache.info(1,rods[8])=='P5 X-BITES','7\'2H must retain its recognizable variant')
+ print('FISHING_INFO_TEXT_CHECK PASS 48 items fit at 2x, no shrinking or truncation')
+ if h106 then
+  for _,fish in ipairs(fish_types) do
+   assert(A.pixel_width(fish.name,7)<=226,'H106 settlement fish name must fit')
+   assert(A.pixel_width(string.format('%.2f',fish.reference_max_kg),10)<=72,'H106 settlement weight must fit')
+   assert(A.pixel_width(fish.name,6)<=212,'H106 bag fish name must fit')
+   assert(A.pixel_width(fish.cm..' CM',6)<=65,'H106 bag length must fit')
+   assert(A.pixel_width(string.format('%.2f KG',fish.reference_max_kg),6)<=71,'H106 bag weight must fit')
+   assert(A.pixel_width(tostring(math.floor(fish.reference_max_kg*fish.coins_per_kg+.5)),6)<=48,'H106 bag value must fit')
+  end
+  print('FISHING_H106_CATCH_TEXT_CHECK PASS 30 fish, bag name 12px / details 11px, settlement units 11px')
+  print('FISHING_H106_INFO_CHECK PASS 48 two-line labels, 9-11px type, 30 settlement names, four-card bags')
+ end
  rod_index,reel_index,lure_index,rod,menu,scene,page,focus,cast_start,scrolls,detail_page=table.unpack(saved,1,11)
  press=nil;slide=nil
  local old={rod_index,reel_index,lure_index,rod,menu,scene,page}
@@ -3223,6 +3804,22 @@ local function run_checks()
    end end
   end
   print('FISHING_ROD_MOMENTS_CHECK PASS 165 extreme bend/yaw/rail poses, <1e-9 m')
+  local native=Physics.rod_pose
+  for _,r in ipairs(rods) do
+   local state=RodPhysics.new(r.feet*.3048,r.sim_power or r.power,r.sim_action or r.action)
+   for _,q in ipairs({-.7,.7,2.5}) do for _,yaw in ipairs({-.9,0,.9}) do
+    state.q=q;state.yaw=yaw;state.angle=-2.6;state.rail_blend=.4
+    for _,direction in ipairs({{1,0,0},{.2,-.7,.6},{-.5,.4,-.3}}) do
+     state.fight_dir=direction
+     Physics.rod_pose=nil;local reference=world_rod(state);Physics.rod_pose=native
+     local actual=world_rod(state)
+     for i=1,65 do for axis=1,3 do
+      assert(math.abs(actual[i][axis]-reference[i][axis])<1e-9,'native fight rod mismatch')
+     end end
+    end
+   end end
+  end
+  print('FISHING_FIGHT_ROD_CHECK PASS 297 bend/yaw/pull poses, all 65 nodes <1e-9 m')
  end
  rod_index=1;rod=rods[1];reel_index=1;lure_index=1;menu=false;scene='idle';reset_sim()
  local function run_cast(hz,settle)
@@ -3289,7 +3886,9 @@ local function run_checks()
  assert(sim.line.impact[2]==0 and sim.line.paid>=.65)
  local _,screen=world_rod(sim.physics)
  for i=1,120 do tick_sim(1/120) end
- local _,lowered=world_rod(sim.physics);assert(lowered[65][2]>175,'waiting rod too high')
+ local lowered=world_rod(sim.physics)
+ assert(lowered[65][2]>.02 and lowered[65][2]<.55,'waiting tip must stay just above water')
+ for axis=1,3 do assert(math.abs(lowered[65][axis]-sim.line.p[1][axis])<1e-9,'wind line must follow the actual lowered tip') end
  on_click(100,250,0,0,80);assert(sim.state=='waiting' and sim.retrieve.queue==1)
  start_cast()
  local r30=run_cast(30)
@@ -3307,10 +3906,16 @@ local function run_checks()
   for i,item in ipairs(reels) do if compatible(rod,item,true) then reel_index=i;break end end
   for i,item in ipairs(lures) do if compatible(rod,item,false) then lure_index=i;break end end
   assert(reel_index and lure_index)
+  do
+   local state=physics_for(r);state.angle=RodPhysics.low_angle(r)
+   local tip=world_rod(state,true)
+   assert(math.abs(tip[2]-.30)<.001,'low tip height must account for rod length: '..r.model)
+  end
   start_cast();local distance=run_cast(60)
   assert(sim.line.impact[3]>1.3,'cast went behind boat: '..r.model)
   print(string.format('FISHING_RIG_CHECK %s range=%.2f depth=%.2f',r.model,distance,sim.line.impact[3]))
  end
+ print('FISHING_LOW_TIP_CHECK PASS 11 lengths at 0.30m, settled rope anchored to low tip')
  local function free_sink(item,seconds)
   local profile=water_profile(item);local y,v=-.1,0
   for i=1,seconds*240 do local x; x,v=wet_velocity(profile,0,v,0,1/240);y=y+v/240 end
@@ -3543,14 +4148,318 @@ local function run_checks()
 end
 if A.check=='1' then run_checks() end
 
+-- One event path for physical ADC buttons and Runtime-injected test events.
+-- Keep this state on A: the Lua chunk is close to the 200-local limit.
+A.keys={held={},charge_ms=1400}
+function A.keys.select(direction,now)
+ local list=catalog(page)
+ if #list==0 then return end
+ local i=clamp(focus[page]+direction,1,#list)
+ if i==focus[page] then return end
+ local k=A.keys;local g=grid(page)
+ local from=focus[page];local old=k.motion
+ local x=old and old.x or g.x+(from-1)%g.columns*g.step
+ local y=old and old.y or 66+floor((from-1)/g.columns)*g.pitch-scrolls[page]
+ local original_scroll=scrolls[page]
+ focus[page]=i
+ if page==1 then rod_index=i;rod=rods[i];reconcile()
+ elseif page~=4 and compatible(rod,list[i],page==2) then
+  if page==2 then reel_index=i else lure_index=i end
+ end
+ local top=floor((i-1)/g.columns)*g.pitch
+ local visible=A.inventory_bottom-66
+ local target=clamp(scrolls[page],math.max(0,top+g.cell-visible),math.min(top,max_scroll(page)))
+ if A.check=='1' then scrolls[page]=target;return end
+ k.motion={page=page,from=from,to=i,x=x,y=y,from_x=x,from_y=y,
+  from_scroll=original_scroll,to_scroll=target,to_x=g.x+(i-1)%g.columns*g.step,to_y=66+top-target,
+  requested=now or system.millis(),progress=0,frames=0,intermediate=0,scroll_frames=0,max_gap=0}
+end
+function A.keys.event(id,down,now)
+ local k=A.keys
+ now=now or system.millis()
+ if down then
+  if k.held[id] then return end
+  k.held[id]=now
+  if id==9 or id==10 then
+   if k.motion then scrolls[k.motion.page]=k.motion.to_scroll;k.motion=nil end
+   k.charge=nil
+   if sim.state=='aiming' then sim.state='ready' end
+   local target=((menu and page or 0)+(id==9 and 1 or -1))%5
+   if target==0 then menu=false;scene='idle';slide=nil;InventoryCache.leave_menu()
+   elseif menu then switch_page(target)
+   else menu=true;page=target;slide=nil end
+  elseif id==12 or id==13 then
+   if menu then k.select(id==12 and -1 or 1,now) end
+  elseif id==11 and not menu then
+   if sim.state=='ready' or sim.state=='retrieved' then
+    if not reel_index or not lure_index then menu=true;page=not reel_index and 2 or 3
+    else k.charge=now;sim.state='aiming';sim.aim_angle=-1.56 end
+   else on_click(184,224,0,0,0) end
+  end
+ else
+  if not k.held[id] then return end
+  k.held[id]=nil
+  if id==11 and k.charge then
+   local charge=clamp((now-k.charge)/k.charge_ms,0,1);k.charge=nil
+   if not menu then
+    start_cast(charge)
+    if sim.line.fly then print(string.format('H106_CAST charge=%.3f fly_haul=%.2fm/s',charge,12+12*charge))
+    else print(string.format('H106_CAST charge=%.3f velocity_scale=%.3f',charge,.3+.7*charge)) end
+   end
+  end
+ end
+ print(string.format('H106_KEY id=%d down=%d page=%d focus=%d scroll=%.1f state=%s',id,down and 1 or 0,menu and page or 0,focus[page],scrolls[page],sim.state))
+end
+function A.keys.tick(dt)
+ local k=A.keys
+ if k.motion then
+  local m=k.motion
+  m.progress=m.start and clamp((system.millis()-m.start)/240,0,1) or 0
+  local eased=m.progress*m.progress*(3-2*m.progress)
+  m.x=m.from_x+(m.to_x-m.from_x)*eased;m.y=m.from_y+(m.to_y-m.from_y)*eased
+  scrolls[m.page]=floor(m.from_scroll+(m.to_scroll-m.from_scroll)*eased+.5)
+ end
+ if not menu and sim.fish then
+  local direction=(k.held[13] and 1 or 0)-(k.held[12] and 1 or 0)
+  if direction~=0 then sim.fish.side=clamp(sim.fish.side+direction*dt*1.8,-.48,.48) end
+ end
+end
+function A.keys.presented(now,pixels)
+ local k=A.keys;local m=k.motion
+ if not m then return end
+ m.start=m.start or now
+ m.first=m.first or now-m.requested
+ if m.last then m.max_gap=math.max(m.max_gap,now-m.last) end
+ m.last=now;m.frames=m.frames+1
+ if pixels>0 and m.progress>0 and m.progress<1 then
+  m.intermediate=m.intermediate+1
+  if m.from_scroll~=m.to_scroll then m.scroll_frames=m.scroll_frames+1 end
+ end
+ if m.progress>=1 then
+  scrolls[m.page]=m.to_scroll;k.motion=nil;k.last_motion=m
+  print(string.format('H106_UI_ANIMATION page=%d from=%d to=%d first_ms=%d frames=%d intermediate=%d scroll_frames=%d max_gap_ms=%d fps=%.1f',
+   m.page,m.from,m.to,m.first,m.frames,m.intermediate,m.scroll_frames,m.max_gap,(m.frames-1)*1000/math.max(1,now-m.start)))
+ end
+end
+function A.keys.sample(started,ended,pixels)
+ if A.input_test~='1' then return end
+ local k=A.keys;local m=k.motion
+ local phase=menu and (m and ((m.from_scroll~=m.to_scroll and 'scroll_' or 'select_')..page) or (slide and ('tabs_'..slide.from..'_'..slide.to) or 'menu_idle')) or sim.state
+ if menu and slide then
+  local s=slide;s.intervals=s.intervals or {};s.frames=(s.frames or 0)+(pixels>0 and 1 or 0)
+  if s.last_frame then s.intervals[#s.intervals+1]=ended-s.last_frame end
+  s.last_frame=ended;s.first_frame=s.first_frame or ended
+  if k.bag_check then phase=phase..'_caught' end
+  if s.done then
+   table.sort(s.intervals)
+   print(string.format('H106_TAB_ANIMATION from=%d to=%d caught=%d frames=%d first_ms=%d elapsed_ms=%d fps=%.1f p95_ms=%d max_gap_ms=%d',
+    s.from,s.to,k.bag_check and 1 or 0,s.frames,s.first_frame-s.start,ended-s.start,
+    (s.frames-1)*1000/math.max(1,ended-s.first_frame),s.intervals[math.max(1,math.ceil(#s.intervals*.95))] or 0,s.intervals[#s.intervals] or 0))
+  end
+ end
+ if phase=='landed' then phase=sim.landing_clock<1.8 and 'settlement' or 'settlement_idle' end
+ local elapsed=ended-(k.last_phase==phase and k.last_sample or started)
+ k.last_phase=phase;k.last_sample=ended
+ if phase=='menu_idle' or phase=='settlement_idle' then return end
+ k.samples=k.samples or {};local s=k.samples[phase]
+ if not s then s={ms=0,frames=0,intervals={}};k.samples[phase]=s end
+ s.ms=s.ms+elapsed
+ if pixels>0 then s.frames=s.frames+1 end
+ s.intervals[#s.intervals+1]=elapsed
+end
+function A.keys.automation()
+ local test=require('fishing_test')
+ local quality_failures=0
+ local function quality_check(ok,message)
+  if not ok then
+   quality_failures=quality_failures+1
+   print('H106_AUTO CHECK_FAIL '..message)
+  end
+ end
+ local function wait_for(predicate,label,timeout)
+  local limit=system.millis()+(timeout or 10000)
+  repeat
+   if predicate() then return end
+   assert(system.millis()<limit,'H106_AUTO timeout: '..label..' state='..sim.state)
+   coroutine.yield()
+  until false
+ end
+ local function pause(ms)
+  local until_ms=system.millis()+ms
+  wait_for(function() return system.millis()>=until_ms end,'pause',ms+5000)
+ end
+ local function button(id,hold)
+  test.button(id,true)
+  wait_for(function() return A.keys.held[id]~=nil end,'button down')
+  pause(hold or 80)
+  test.button(id,false)
+  wait_for(function() return A.keys.held[id]==nil end,'button up')
+  if id==9 or id==10 then wait_for(function() return not slide end,'tab animation') end
+  if id==12 or id==13 then
+   wait_for(function() return not A.keys.motion end,'selection animation')
+   if menu then
+    local m=A.keys.last_motion
+    quality_check(m and m.intermediate>=3,'selection must submit intermediate animation frames')
+    if m then
+     quality_check(m.first<=200 and m.max_gap<=120,'selection animation stalled')
+     if m.from_scroll~=m.to_scroll then quality_check(m.scroll_frames>=3,'scroll must animate') end
+    end
+   end
+  end
+  pause(240)
+ end
+ local function passed(label) print('H106_AUTO PASS '..label) end
+ pause(3000) -- Let App confirmation/serial reconnection finish before evidence.
+ print('H106_AUTO START Runtime_queue -> Lua_callbacks fixture=deterministic_fish')
+ fish_enabled=false;random_seed=142857
+ for target=1,4 do
+  button(9);assert(menu and page==target,'volume page sequence')
+  if target==1 then
+   for i=1,4 do button(13) end
+   assert(focus[1]==5 and scrolls[1]>0,'scroll follows fifth rod')
+   for i=1,4 do button(12) end
+   assert(focus[1]==1 and scrolls[1]==0,'scroll returns to top')
+   passed('rods_selection_auto_scroll')
+  elseif target==2 then
+   for i=1,4 do button(13) end
+   assert(focus[2]==5 and scrolls[2]>0,'reel selection scroll')
+   for i=1,4 do button(12) end
+   assert(reel_index==1,'reel equipped')
+  elseif target==3 then
+   for i=1,4 do button(13) end
+   assert(focus[3]==5 and scrolls[3]>0,'lure selection scroll')
+   for i=1,4 do button(12) end
+   assert(lure_index==1,'lure equipped')
+  end
+  passed('page_'..target)
+ end
+ button(9);assert(not menu,'wrap to sea');button(10);assert(menu and page==4)
+ for target=3,1,-1 do button(10);assert(menu and page==target,'reverse page sequence') end
+ button(10);assert(not menu);passed('bidirectional_page_cycle')
+ local distance={}
+ for i,hold in ipairs({140,1400}) do
+  assert(sim.state=='ready' or sim.state=='retrieved','ready before charge')
+  button(11,hold)
+  wait_for(function() return sim.state=='waiting' end,'cast splash',45000)
+  distance[i]=sim.line.impact[3]
+  passed('cast_'..i..'_distance_'..string.format('%.2f',distance[i]))
+  if i==1 then
+   local limit=system.millis()+120000
+   while sim.state~='retrieved' do
+    assert(system.millis()<limit,'retrieve timeout');button(11)
+   end
+   passed('record_tap_retrieve')
+  end
+ end
+ quality_check(distance[2]>distance[1]+1,'full charge must cast farther')
+ if distance[2]>distance[1]+1 then passed('charge_changes_actual_distance') end
+ -- Only the encounter is seeded; hook, fight, lift, record and exit use real input.
+ sim.encounter={species=fish_types[7],index=7,kg=1.2,cm=48,phase='take',clock=.45,
+  position=copy3(sim.line.p[#sim.line.p]),previous=copy3(sim.line.p[#sim.line.p]),visibility=1}
+ local before=#catches
+ button(11);assert(sim.fish,'record hooks fixture fish');passed('record_hook')
+ local side=sim.fish.side
+ button(12,500);assert(sim.fish and sim.fish.side<side,'left rod angle')
+ side=sim.fish.side
+ button(13,500);assert(sim.fish and sim.fish.side>side,'right rod angle')
+ passed('left_right_rod_angle')
+ local limit=system.millis()+240000
+ while sim.state~='landed' do
+  assert(system.millis()<limit and sim.fish,'fight lost or timed out')
+  if sim.fish.action~='run' then button(11) end
+  pause(400)
+ end
+ assert(#catches==before+1,'catch recorded exactly once');passed('fight_lift_settlement')
+ pause(2400);button(11);assert(sim.state=='retrieved','record exits settlement')
+ passed('record_settlement_exit')
+ button(10);assert(menu and page==4 and #catches==before+1,'bag contains actual catch')
+ passed('bag_actual_catch');A.keys.bag_check=true
+ button(10);assert(menu and page==3,'caught bag to lures')
+ button(9);assert(menu and page==4,'lures to caught bag')
+ A.keys.bag_check=nil;button(9)
+ fish_enabled=true;test.finish();A.keys.held={}
+ for phase,s in pairs(A.keys.samples or {}) do
+  table.sort(s.intervals)
+  print(string.format('H106_PHASE_PERF phase=%s submitted=%d elapsed_ms=%d fps=%.1f p95_ms=%d',phase,s.frames,s.ms,
+   s.frames*1000/math.max(1,s.ms),s.intervals[math.max(1,math.ceil(#s.intervals*.95))] or 0))
+ end
+ print('H106_AUTO DONE '..(quality_failures==0 and 'PASS' or 'FAIL')..' physical_input_restored quality_failures='..quality_failures)
+end
+function A.keys.check()
+ local saved={rod_index,reel_index,lure_index,rod,menu,page,scene}
+ local old_focus,old_scroll={},{}
+ for i=1,4 do old_focus[i]=focus[i];old_scroll[i]=scrolls[i] end
+ local now=10000
+ local function tap(id)
+  A.keys.event(id,true,now);A.keys.event(id,false,now+100);now=now+200
+ end
+ menu=false;page=1
+ for target=1,4 do tap(9);assert(menu and page==target,'volume page order') end
+ tap(9);assert(not menu,'volume wraps to sea')
+ tap(10);assert(menu and page==4,'reverse wraps to bag')
+ tap(9);tap(9);focus[1]=1;scrolls[1]=0
+ local visible=grid(1).columns*grid(1).rows
+ for i=1,visible do tap(13) end
+ assert(focus[1]==visible+1 and scrolls[1]>0,'selected equipment scrolls into view')
+ for i=1,visible+4 do tap(12) end
+ assert(focus[1]==1 and scrolls[1]==0,'selection clamps at first item')
+ menu=false
+ local distances={}
+ for ri,r in ipairs(rods) do
+ rod_index=ri;rod=r;reel_index=nil;lure_index=nil
+ for i,item in ipairs(reels) do if compatible(rod,item,true) then reel_index=i;break end end
+ for i,item in ipairs(lures) do if compatible(rod,item,false) then lure_index=i;break end end
+ for i,hold in ipairs({0,350,700,1050,1400}) do
+  reset_sim();A.keys.event(11,true,now)
+  assert(sim.state=='aiming','record down only charges')
+  A.keys.event(11,true,now+30) -- duplicated down must not restart charge
+  A.keys.event(11,false,now+hold)
+  assert(sim.state=='casting' and math.abs(sim.cast_charge-hold/1400)<.001)
+  local hz=ri%2==0 and 30 or 120
+  for j=1,hz*15 do tick_sim(1/hz);if sim.state=='waiting' then break end end
+  assert(sim.state=='waiting','charged cast must hit water')
+  distances[i]=sim.line.impact[3]
+  if i>1 then assert(distances[i]>distances[i-1],'charge distance must increase throughout range: '..r.model) end
+  now=now+20000
+ end
+ assert(distances[#distances]>distances[1]+1,'more charge must cast farther')
+ print(string.format('H106_CHARGE_RIG_CHECK %s short=%.2f long=%.2f',r.model,distances[1],distances[#distances]))
+ end
+ reset_sim();A.keys.event(11,true,now);tap(9);A.keys.event(11,false,now+1500)
+ assert(menu and sim.state~='casting','page switch cancels held cast')
+ rod_index,reel_index,lure_index,rod,menu,page,scene=table.unpack(saved)
+ for i=1,4 do focus[i]=old_focus[i];scrolls[i]=old_scroll[i] end
+ A.keys.held={};A.keys.charge=nil;slide=nil;reset_sim()
+ print('H106_BUTTON_CHECK PASS page_cycle selection_scroll charge_release cancellation 11_rods_5_charge_levels')
+end
+if A.check=='1' then A.keys.check() end
+if A.controls=='buttons' then
+ local runtime=require('runtime')
+ for _,id in ipairs({9,10,11,12,13}) do
+  runtime.components.on(id,runtime.event.BUTTON_DOWN,function(e) A.keys.event(id,true,e.timestamp_ms) end)
+  runtime.components.on(id,runtime.event.BUTTON_UP,function(e) A.keys.event(id,false,e.timestamp_ms) end)
+ end
+end
+
 
 init_fishing_audio()
+if h106 then collectgarbage('collect') end
 D.begin_frame({clear=true,color=C.sky})
 -- Build the procedural deck command list before accepting input, not on the first catch.
 draw_deck_result(fish_types[7],0);deck_was_visible=false;deck_result_visible=false
+if h106 and A.no_cache~='1' then
+ local started=system.millis()
+ for which=1,3 do InventoryCache.prepare(which) end
+ InventoryCache.snapshots=nil
+ for which=1,4 do InventoryCache.remember(which) end
+ InventoryCache.draw_chrome();D.release_background()
+ print(string.format('H106_PREWARM ms=%d native_pages=4',system.millis()-started))
+end
 D.clear(C.sky)
-touch.sync()
-print('FISHING_READY 368x448 Lua-only geometry; swipe left: sea -> rods -> reels -> lures -> bags; swipe right reverses')
+if h106 then collectgarbage('collect') end
+if touch then touch.sync() end
+print('FISHING_READY '..(h106 and '240x240 native raster' or '368x448')..' Lua-only geometry; swipe left: sea -> rods -> reels -> lures -> bags; swipe right reverses')
+A.desktop_start=system.millis()
 reset_sim()
 if scene=='deck-demo' or scene=='deck-record' then
  sim.state='landed';sim.landing_clock=fixed and math.min(1.8,fixed/1000) or 0
@@ -3595,8 +4504,187 @@ local frame_samples={}
 local previous_frame=system.millis()
 local recording_frame=0
 local recording=scene=='cast-record' or scene=='deck-record'
+A.device_bench=scene=='device-bench'
+InventoryCache.bench={phase=0,round=0,stats={},started=system.millis()}
+function InventoryCache.bench_report()
+ local b=InventoryCache.bench
+ for _,s in ipairs(b.stats) do
+  table.sort(s.intervals)
+  local elapsed=math.max(1,s.last-s.start)
+  print(string.format('FISHING_AUTO_RESULT name=%s mode=%s frames=%d changed=%d elapsed_ms=%d fps=%.2f changed_fps=%.2f p95_ms=%d max_ms=%d sim_ms=%.2f draw_ms=%.2f present_ms=%.2f peak_kb=%.0f',
+   s.name,s.mode,s.frames,s.changed,elapsed,s.frames*1000/elapsed,s.changed*1000/elapsed,
+   s.intervals[math.max(1,math.ceil(#s.intervals*.95))] or 0,s.maximum,
+   s.sim/math.max(1,s.frames),s.draw/math.max(1,s.frames),s.present/math.max(1,s.frames),s.memory))
+ end
+end
+function InventoryCache.bench_label(name,now)
+ local b=InventoryCache.bench
+ if b.current and b.current.name==name and b.current.mode==(A.ui_reference and 'reference' or 'optimized') then return end
+ if b.current then b.current.last=now end
+ local s={name=name,mode=A.ui_reference and 'reference' or 'optimized',start=now,last=now,frames=0,changed=0,maximum=0,sim=0,draw=0,present=0,memory=0,intervals={}}
+ b.stats[#b.stats+1]=s;b.current=s
+ print('FISHING_AUTO_PHASE '..name..' mode='..s.mode)
+end
+function InventoryCache.bench_step(now)
+ local b=InventoryCache.bench
+ if b.done then return end
+ if b.phase==0 then
+  -- Deterministic rendering workload, not a claim about random encounter odds.
+  Weather.seed=719;random_seed=142857
+  b.phase=1;b.phase_start=now;b.before=#catches
+  print('FISHING_AUTO_START schema=1 fixture=1.2kg_spotted_sea_bass input=game_gesture_handlers')
+ end
+ local age=(now-b.phase_start)/1000
+ if b.phase<=14 then
+  local item=floor((b.phase-1)/2)+1
+  A.ui_reference=b.phase%2==1
+  if b.entered~=b.phase then
+   b.entered=b.phase;press=nil;slide=nil;menu=true;bag_preview=true
+   page=item<=3 and item or item-3;scrolls[page]=0;b.gesture=nil
+   -- Release just the two transition snapshots for honest cold-entry timing.
+   InventoryCache.snapshots=nil;InventoryCache.visible_key=nil;menu_signature=nil
+   InventoryCache.bench_label((item<=3 and 'horizontal_' or 'vertical_')..({'rods_reels','reels_lures','lures_bags','rods','reels','lures','bags'})[item],now)
+  end
+  if age>=8 and not press and not slide then
+   b.phase=b.phase+1;b.phase_start=now;return
+  end
+  if item<=3 then
+   if not press and not slide then
+    b.direction=page==item and -1 or 1
+    b.gesture=now;b.origin=b.direction<0 and A.canvas_width-45 or 45
+    begin_drag(b.origin,32,now)
+   elseif press then
+    local u=math.min(1,(now-b.gesture)/650)
+    local x=floor(b.origin+b.direction*(A.canvas_width-90)*u+.5)
+    update_drag(x,32,now)
+    if u>=1 then end_drag(x,32,now) end
+   end
+  else
+   if not press then
+    b.gesture=now;b.vertical_direction=scrolls[page]<max_scroll(page)/2 and -1 or 1
+    b.origin=b.vertical_direction<0 and math.min(325,A.inventory_bottom-12) or 85
+    begin_drag(140,b.origin,now)
+   else
+    local u=math.min(1,(now-b.gesture)/650)
+    local y=floor(b.origin+b.vertical_direction*math.min(225,max_scroll(page))*u+.5)
+    update_drag(140,y,now)
+    if u>=1 then end_drag(140,y,now) end
+   end
+  end
+ elseif b.phase==15 then
+  A.ui_reference=false
+  if b.entered~=15 then
+   b.entered=15;press=nil;slide=nil;menu=false;bag_preview=false;scene='idle'
+   rod_index=1;rod=rods[1];reel_index=1;lure_index=1;reset_sim()
+   random_seed=142857;fish_enabled=false
+   on_click(180,260,0,0,80)
+   InventoryCache.bench_label('cast',now)
+  end
+  if sim.state=='waiting' then
+   InventoryCache.bench_label('waiting',now)
+   b.wait_start=b.wait_start or now
+   if now-b.wait_start>=4000 then
+    local species=fish_types[7]
+    sim.encounter={species=species,index=7,kg=1.2,cm=48,phase='take',clock=.45}
+    on_click(180,260,0,0,80)
+    assert(sim.state=='fight','automatic test hook failed')
+    b.phase=16;b.phase_start=now;b.last_click=now
+   end
+  elseif age>30 then error('automatic cast timed out: '..sim.state) end
+ elseif b.phase==16 then
+  InventoryCache.bench_label(sim.state=='landed' and (sim.landing_clock<1.8 and 'settlement_animation' or 'settlement_static') or sim.state,now)
+  if sim.state=='landed' then
+   assert(#catches==b.before+1,'automatic catch must be recorded exactly once')
+   if sim.landing_clock>=1.8 then
+    b.result_start=b.result_start or now
+    if now-b.result_start>=3000 then
+     b.phase=17;b.phase_start=now;menu=true;page=4;scrolls[4]=0
+     print('FISHING_AUTO_CATCH PASS actual_hook_reel_lift_record count='..#catches)
+    end
+   end
+  elseif not sim.fish then error('automatic fight lost: '..sim.state)
+  elseif now-b.last_click>=600 and sim.fish.action~='run' then
+   on_click(184,240,0,0,80);b.last_click=now
+  end
+  if age>240 then error('automatic fight timed out: '..sim.state) end
+ elseif b.phase==17 then
+  InventoryCache.bench_label('actual_catch_bag',now)
+  if age>=3 then b.phase=18;b.phase_start=now;menu=false;scene='deck-demo';b.deck_cycle=nil end
+ elseif b.phase<=19 then
+  -- Repeat the same landed-fish animation for enough samples; no extra catches.
+  A.ui_reference=b.phase==18
+  InventoryCache.bench_label('settlement_repeat_'..(A.ui_reference and 'reference' or 'optimized'),now)
+  local cycle=floor(age/1.8)
+  if b.deck_cycle~=cycle then b.deck_cycle=cycle;deck_was_visible=false;deck_result_visible=false end
+  sim.landing_clock=age%1.8
+  if age>=10 then b.phase=b.phase+1;b.phase_start=now;b.deck_cycle=nil end
+ else
+  if b.current then b.current.last=now end
+  InventoryCache.bench_report()
+  print('FISHING_AUTO_DONE PASS phases='..#b.stats..' catches='..(#catches-b.before))
+  b.done=true;A.ui_reference=false;A.device_bench=false
+  menu=false;scene='idle';bag_preview=false;fish_enabled=true;reset_sim();press=nil;slide=nil
+ end
+end
+function InventoryCache.bench_sample(now,sim_ms,draw_ms,present_ms,pixels)
+ local s=InventoryCache.bench.current
+ if not s then return end
+ local elapsed=system.millis()
+ s.maximum=math.max(s.maximum,elapsed-now)
+ if s.frames>0 then
+  local interval=now-s.previous;s.intervals[#s.intervals+1]=interval;s.maximum=math.max(s.maximum,interval)
+ end
+ s.previous=now;s.last=elapsed;s.frames=s.frames+1
+ s.changed=s.changed+(pixels>0 and 1 or 0)
+ s.sim=s.sim+sim_ms;s.draw=s.draw+draw_ms;s.present=s.present+present_ms
+ s.memory=math.max(s.memory,collectgarbage('count'))
+end
+function InventoryCache.desktop_probe(now)
+ if not A.desktop_steps then
+  A.desktop_steps={
+   {1700,'initial_rods',function() return menu and page==1 end},
+   {2800,'return_sea',function() return not menu and scene=='idle' end},
+   {3450,'click_cast',function() return not menu and sim.state=='casting' end},
+   {7700,'splash_wait',function() return sim.state=='waiting' end},
+   {8800,'open_rods',function() return menu and page==1 end},
+   {9600,'change_rod',function() return rod_index==2 and reel_index==nil end},
+   {10800,'return_without_reel',function() return not menu end},
+   {11600,'missing_reel_routes',function() return menu and page==2 end},
+   {12600,'equip_reel',function() return reel_index==3 end},
+   {13800,'back_rods',function() return menu and page==1 end},
+   {14800,'back_sea',function() return not menu end},
+   {15450,'recast',function() return sim.state=='casting' end},
+   {20500,'second_splash',function() return sim.state=='waiting' end},
+  };A.desktop_next=1
+ end
+ local step=A.desktop_steps[A.desktop_next]
+ if step and now-A.desktop_start>=step[1] then
+  assert(step[3](),string.format('DESKTOP_INPUT FAIL %s menu=%s page=%d state=%s rod=%d reel=%s',step[2],tostring(menu),page,sim.state,rod_index,tostring(reel_index)))
+  print('DESKTOP_INPUT PASS '..step[2]);A.desktop_next=A.desktop_next+1
+  if A.desktop_next>#A.desktop_steps then print('DESKTOP_INPUT DONE PASS SDL -> H106 touch -> Lua gesture -> actual casts') end
+ end
+end
 while true do
  local now=system.millis()
+ if A.input_test=='1' then
+  A.keys.runner=A.keys.runner or coroutine.create(A.keys.automation)
+  if coroutine.status(A.keys.runner)~='dead' then
+   local ok,err=coroutine.resume(A.keys.runner)
+   if not ok then require('fishing_test').finish();error(err) end
+  end
+ end
+ if A.device_bench then InventoryCache.bench_step(now) end
+ if h106 and menu and not A.menu_memory_active then
+  -- Sea and settlement surfaces are not used by an inventory compositor.
+  -- Retaining them after a catch denied the next full-page snapshot a
+  -- contiguous PSRAM block even after Lua's emergency collection.
+  if D.release_background then D.release_background() end
+  Weather.background=nil;Weather.background_weather=nil
+  InventoryCache.deck.background=nil;InventoryCache.deck.wet=nil
+  InventoryCache.deck.fish=nil;InventoryCache.deck.lit=nil
+  collectgarbage('collect')
+ end
+ A.menu_memory_active=menu
  if menu then deck_was_visible=false;deck_result_visible=false else menu_signature=nil;InventoryCache.visible_key=nil end
  frame_draw_calls=0
  stroke_fast_count=0
@@ -3614,7 +4702,7 @@ while true do
   end
   if stage<6 then scrolls[page]=floor(max_scroll(page)*(1-cos(t*pi/.9))*.5) end
  end
- if not fixed and not recording then
+ if touch and not fixed and not recording and not A.device_bench then
   local ok,info=pcall(touch.poll)
   if ok then
    if sim.touch_error then print('FISHING_TOUCH recovered');sim.touch_error=nil end
@@ -3633,9 +4721,12 @@ while true do
   recording_frame=recording_frame+1
  elseif not fixed then
   local dt=clamp((now-previous_frame)/1000,0,.1)
-  if scene=='retrieve-demo' then retrieve_demo_step(dt) elseif scene=='fight-demo' then fight_demo_step(dt) else tick_sim(dt) end
+  if A.controls=='buttons' then A.keys.tick(dt) end
+  if A.device_bench and InventoryCache.bench.phase>=18 then -- pose-only settlement repetition
+  elseif scene=='retrieve-demo' then retrieve_demo_step(dt) elseif scene=='fight-demo' then fight_demo_step(dt) else tick_sim(dt) end
  end
  update_fishing_audio(now)
+ if A.desktop_input then InventoryCache.desktop_probe(now) end
  previous_frame=now
  local draw_begin=system.millis()
  if scene:match('^fight%-revision%-%d+$') then
@@ -3681,26 +4772,30 @@ while true do
   centered(0,346,368,'5.6:1  220G  DRAG 4.5KG',C.cream,1.5)
   centered(0,371,368,'NYLON 12LB / 100M',C.cream,1.5)
   centered(0,414,368,'LUA PIXEL GEOMETRY / 3X',C.cyan,1.5)
+ elseif scene=='tab-preview' then
+  local from,to=tonumber(A.rod),tonumber(A.reel)
+  assert(from>=1 and from<=4 and to>=1 and to<=4)
+  bag_preview=true
+  InventoryCache.transition(from,to,(to>from and -1 or 1)*(tonumber(A.scroll) or A.canvas_width/2))
  elseif menu then
   local signature=table.concat({page,focus[page],scrolls[page],rod_index,reel_index or 0,lure_index or 0,#catches},':')
-  if slide or (press and press.axis=='x') or signature~=menu_signature then
-  if slide or (press and press.axis=='x') then D.clear(C.wood) end
+  if slide or (A.controls=='buttons' and A.keys.motion) or (press and press.axis=='x') or signature~=menu_signature then
   if slide then
-   local progress=clamp((now-slide.start)/180,0,1)
+   local progress=slide.presented and clamp((now-slide.presented)/180,0,1) or 0
    local eased=1-(1-progress)^3
    local direction=slide.to>slide.from and -1 or 1
-   local destination=slide.to==slide.from and 0 or direction*368
+   local destination=slide.to==slide.from and 0 or direction*A.canvas_width
    local x=slide.x+(destination-slide.x)*eased
-   draw_inventory_page(slide.from,x)
-   if slide.to~=slide.from then draw_inventory_page(slide.to,x-direction*368) end
-   if progress>=1 then slide=nil end
+   InventoryCache.transition(slide.from,slide.to,x)
+   if progress>=1 then slide.done=true end
   elseif press and press.menu and press.axis=='x' then
-   local x=clamp(press.dx,-368,368)
+   local x=clamp(press.dx,-A.canvas_width,A.canvas_width)
    local target=page+(x<0 and 1 or -1)
    if target<1 or target>#inventory_pages then x=x*.25 end
-   draw_inventory_page(page,x)
-   if target>=1 and target<=#inventory_pages then draw_inventory_page(target,x+(x<0 and 368 or -368)) end
-  else draw_inventory_page(page,0) end
+   InventoryCache.transition(page,clamp(target,1,#inventory_pages),x)
+  else
+   draw_inventory_page(page,0)
+  end
   menu_signature=slide and nil or signature
   end
  elseif scene=='weather-demo' then sea(t);draw_rod(rod,reels[reel_index] and reels[reel_index].kind,'idle',t,false)
@@ -3716,9 +4811,24 @@ while true do
   scene_draw(mode,t,r,reel)
  end
  if not menu and sim.state~='landed' and (scene=='idle' or scene=='perf-demo' or scene=='weather-demo' or scene=='fight-demo' or scene=='cast-demo' or scene=='retrieve-demo') then Weather.hud() end
+ if h106 and not menu and (not reel_index or not lure_index) then
+  local previous=draw_x;draw_x=0
+  centered(0,282,A.canvas_width,not reel_index and 'REEL NOT EQUIPPED' or 'LURE NOT EQUIPPED',C.cream,4)
+  centered(0,318,A.canvas_width,'TAP TO CHOOSE',C.white,2)
+  draw_x=previous
+ end
  local present_begin=system.millis()
- local pixels,regions=D.present({retained=true,bounds=menu,merge_gap=menu and 0 or 2})
+ -- Wide tab motion changes most columns: one bounded transfer is cheaper on
+ -- the AMOLED than 20-30 tiny tile transactions. The wood itself stays fixed.
+ local pixels,regions=D.present({retained=true,bounds=menu and (not A.ui_reference or (not slide and not (press and press.axis=='x'))),merge_gap=menu and 0 or 2})
  local present_end=system.millis()
+ if A.controls=='buttons' then A.keys.sample(now,present_end,pixels) end
+ if slide then
+  if not slide.presented then slide.presented=present_end end
+  if slide.done then slide=nil end
+ end
+ if A.controls=='buttons' then A.keys.presented(present_end,pixels) end
+ if A.device_bench then InventoryCache.bench_sample(now,draw_begin-now,present_begin-draw_begin,present_end-present_begin,pixels) end
  collectgarbage('step',8)
  frames=frames+1
  if now-perf_start>=2000 then
@@ -3727,6 +4837,7 @@ while true do
   print(string.format('FISHING_PERF %.1f FPS / %s / p95 %dms / draw %d / Lua %.0fKB / tx %dpx %d regions / sim %d draw %d present %dms',frames*1000/(now-perf_start),menu and 'menu' or sim.state,p95,frame_draw_calls,collectgarbage('count'),pixels,regions,draw_begin-now,present_begin-draw_begin,present_end-present_begin))
   if sim.draw_profile then print('FISHING_DRAW '..sim.draw_profile) end
   if menu and InventoryCache.timing then print('FISHING_INVENTORY '..InventoryCache.timing) end
+  if sim.state=='landed' and InventoryCache.deck.timing then print('FISHING_DECK '..InventoryCache.deck.timing) end
   if A.profile=='amoled' then
    local parts={};for name,value in pairs(kernel_times) do parts[#parts+1]=name..'='..value end
    print('FISHING_KERNEL '..table.concat(parts,' '))

@@ -1557,6 +1557,8 @@ static int display_fill_polygon(lua_State *state) {
   double offset = lua_isnoneornil(state, 3) ? 0 : check_geometry_number(state, 3);
   int top = (int)luaL_optinteger(state, 4, 0);
   int bottom = (int)luaL_optinteger(state, 5, job->display_info.height);
+  double raster_scale=lua_isnoneornil(state,6)?1:check_geometry_number(state,6);
+  if(raster_scale<=0 || raster_scale>16)return luaL_error(state,"invalid raster scale");
   if (!job->display_open || n < 3 || n > 128 || top < 0 || bottom > job->display_info.height || top > bottom)
     return luaL_error(state, "invalid fill_polygon");
   for (size_t i = 0; i < n; ++i) {
@@ -1565,6 +1567,7 @@ static int display_fill_polygon(lua_State *state) {
     lua_rawgeti(state, -1, 1); px[i] = check_geometry_number(state, -1); lua_pop(state, 1);
     lua_rawgeti(state, -1, 2); py[i] = check_geometry_number(state, -1); lua_pop(state, 2);
   }
+  if(raster_scale!=1)for(size_t i=0;i<n;++i){px[i]*=raster_scale;py[i]*=raster_scale;}
   display_raster_polygon(job, px, py, n, color, offset, top, bottom);
   return 0;
 }
@@ -1774,6 +1777,10 @@ static int display_stroke_path(lua_State *state) {
   h2_lua_job_t *job=lua_touserdata(state,lua_upvalueindex(1));
   int use_fast=lua_toboolean(state,8),fast_count=0;
   double x[256],y[256],width[256];uint16_t color[256];
+  double raster_scale=lua_isnoneornil(state,10)?1:check_geometry_number(state,10);
+  if(raster_scale<=0 || raster_scale>16)return luaL_error(state,"invalid raster scale");
+  double simplify=lua_isnoneornil(state,11)?0:check_geometry_number(state,11);
+  if(simplify<0 || simplify>.25)return luaL_error(state,"invalid stroke tolerance");
   luaL_checktype(state,1,LUA_TTABLE);luaL_checktype(state,2,LUA_TTABLE);
   size_t n=lua_rawlen(state,1);
   double offset=lua_isnoneornil(state,4)?0:check_geometry_number(state,4);
@@ -1792,6 +1799,110 @@ static int display_stroke_path(lua_State *state) {
       if(width[i]<0 || width[i]>1000) return luaL_error(state,"invalid path width");
       if(colors){lua_rawgeti(state,3,(lua_Integer)i+1);color[i]=check_color(state,-1);lua_pop(state,1);}else color[i]=single;
     }
+  }
+  if(raster_scale!=1)for(size_t i=0;i<n;++i){x[i]*=raster_scale;y[i]*=raster_scale;if(i+1<n)width[i]*=raster_scale;}
+  /* Optional screen-space LOD, before coverage rasterization. Keep every style
+   * boundary and reject reversals; every omitted vertex stays within the
+   * caller's subpixel chord-error bound. World rod/rope nodes are untouched. */
+  if(simplify>0 && lua_toboolean(state,9)) {
+    size_t write=0;
+    for(size_t first=0;first+1<n;) {
+      size_t end=first+1;
+      for(size_t candidate=end+1;candidate<n;++candidate) {
+        if(width[candidate-1]!=width[first] || color[candidate-1]!=color[first])break;
+        double dx=x[candidate]-x[first],dy=y[candidate]-y[first],length2=dx*dx+dy*dy;
+        if(length2<1e-12)break;
+        int valid=1;
+        for(size_t j=first+1;j<candidate;++j) {
+          double px=x[j]-x[first],py=y[j]-y[first],dot=px*dx+py*dy,cross=px*dy-py*dx;
+          if(dot<0 || dot>length2 || cross*cross>simplify*simplify*length2){valid=0;break;}
+        }
+        if(!valid)break;
+        end=candidate;
+      }
+      width[write]=width[first];color[write]=color[first];
+      x[write+1]=x[end];y[write+1]=y[end];++write;first=end;
+    }
+    n=write+1;
+  }
+  /* Opt-in continuous round-joined coverage for small viewports.
+   * Composite the union once: independent hard scanline quads plus a center
+   * Bresenham line leave a repeated tooth at every rod segment boundary. */
+  if(lua_toboolean(state,9)) {
+    double minx=job->display_info.width,maxx=0,miny=bottom,maxy=top;
+    for(size_t i=0;i+1<n;++i) {
+      double radius=width[i]*.5+1;
+      minx=fmin(minx,fmin(x[i],x[i+1])+offset-radius);
+      maxx=fmax(maxx,fmax(x[i],x[i+1])+offset+radius);
+      miny=fmin(miny,fmin(y[i],y[i+1])-radius);
+      maxy=fmax(maxy,fmax(y[i],y[i+1])+radius);
+    }
+    int left=(int)fmax(0,fmin(job->display_info.width,floor(minx)));
+    int right=(int)fmax(0,fmin(job->display_info.width,ceil(maxx)));
+    int first=(int)fmax(top,fmin(bottom,floor(miny)));
+    int end=(int)fmax(top,fmin(bottom,ceil(maxy)));
+    if(right<=left || end<=first){lua_pushboolean(state,0);lua_pushinteger(state,0);return 2;}
+    size_t stride=(size_t)(right-left),count=stride*(size_t)(end-first);
+    /* Keep scratch in the VM budget, as with the light-atlas compositor.
+     * Per-stroke system malloc could fail before Lua had a reason to collect
+     * dead geometry. Reuse storage and let Lua reclaim garbage when growing. */
+    static const char smooth_scratch_key=0;
+    size_t scratch_size=count*(sizeof(uint16_t)+sizeof(uint8_t));
+    lua_rawgetp(state,LUA_REGISTRYINDEX,&smooth_scratch_key);
+    if(!lua_isuserdata(state,-1) || lua_rawlen(state,-1)<scratch_size) {
+      lua_pop(state,1);
+      lua_pushnil(state);lua_rawsetp(state,LUA_REGISTRYINDEX,&smooth_scratch_key);
+      lua_newuserdatauv(state,scratch_size,0);
+      lua_pushvalue(state,-1);lua_rawsetp(state,LUA_REGISTRYINDEX,&smooth_scratch_key);
+    }
+    uint16_t *ink=lua_touserdata(state,-1);
+    uint8_t *coverage=(uint8_t *)(ink+count);
+    memset(coverage,0,count);
+    for(size_t i=0;i+1<n;++i) {
+      if(width[i]<=0)continue;
+      double ax=x[i]+offset,ay=y[i],bx=x[i+1]+offset,by=y[i+1];
+      double dx=bx-ax,dy=by-ay,length2=dx*dx+dy*dy,radius=width[i]*.5;
+      int l=(int)fmax(left,fmin(right,floor(fmin(ax,bx)-radius-1)));
+      int r=(int)fmax(left,fmin(right,ceil(fmax(ax,bx)+radius+1)));
+      int t=(int)fmax(first,fmin(end,floor(fmin(ay,by)-radius-1)));
+      int b=(int)fmax(first,fmin(end,ceil(fmax(ay,by)+radius+1)));
+      /* Screen-local coverage tolerates float subpixels; unlike world physics
+       * it does not need compensated doubles. S3 has a single-precision FPU.
+       * Clip/extreme-coordinate behavior retains the double fallback. */
+      int local_float=fmax(fmax(fabs(ax),fabs(ay)),fmax(fabs(bx),fabs(by)))<=4096;
+      float fax=(float)ax,fay=(float)ay,fdx=(float)dx,fdy=(float)dy;
+      float length2f=fdx*fdx+fdy*fdy;
+      float inverse=length2f>1e-12f?h2_lua_fpu_div(1,length2f):0;
+      float edge=(float)radius+.5f,inner=(float)radius-.5f;
+      for(int yy=t;yy<b;++yy)for(int xx=l;xx<r;++xx) {
+        unsigned alpha;
+        if(local_float) {
+          float px=(float)xx+.5f-fax,py=(float)yy+.5f-fay;
+          float u=(px*fdx+py*fdy)*inverse;
+          if(u<0)u=0;else if(u>1)u=1;
+          float ex=px-u*fdx,ey=py-u*fdy,squared=ex*ex+ey*ey;
+          if(squared>=edge*edge)continue;
+          if(inner>=0 && squared<=inner*inner)alpha=255;
+          else {
+            float a=(edge-sqrtf(squared))*255+.5f;
+            alpha=a<=0?0:(a>=255?255:(unsigned)a);
+          }
+        } else {
+          double u=length2>1e-12?((xx+.5-ax)*dx+(yy+.5-ay)*dy)/length2:0;
+          u=fmax(0,fmin(1,u));
+          double ex=xx+.5-ax-u*dx,ey=yy+.5-ay-u*dy;
+          alpha=(unsigned)(fmax(0,fmin(1,radius+.5-sqrt(ex*ex+ey*ey)))*255+.5);
+        }
+        size_t at=(size_t)(yy-first)*stride+(size_t)(xx-left);
+        if(alpha>coverage[at]){coverage[at]=(uint8_t)alpha;ink[at]=color[i];}
+      }
+    }
+    for(int yy=first;yy<end;++yy)for(int xx=left;xx<right;++xx) {
+      size_t at=(size_t)(yy-first)*stride+(size_t)(xx-left);
+      if(coverage[at])blend_pixel(job,xx,yy,ink[at],coverage[at]);
+    }
+    mark_dirty_rect(job,left,first,right-left,end-first);
+    lua_pushboolean(state,0);lua_pushinteger(state,0);return 2;
   }
   /* Optional exact-geometry cache owned by the width/style table. A changed
    * coordinate, width, color or clip always invalidates it; no quantization. */
@@ -1878,8 +1989,112 @@ static int display_stroke_path(lua_State *state) {
 }
 
 typedef struct h2_lua_pixel_command { int kind,x,y,a,b; uint16_t color; } h2_lua_pixel_command_t;
+/* Retained procedural geometry: polygons and hairlines, with optional local
+ * flex, tail sway, and deck projection. All transforms retain Lua double math. */
+typedef struct h2_lua_geometry_part { uint32_t first; uint16_t count,color; int kind; } h2_lua_geometry_part_t;
+typedef struct h2_lua_geometry {
+  size_t count,vertices;
+  double x,y,scale,angle,flex,sway;
+  int valid,projected;
+} h2_lua_geometry_t;
+#define H2_LUA_GEOMETRY_META "h2.display.geometry"
+static int display_compile_geometry(lua_State *s) {
+  luaL_checktype(s,1,LUA_TTABLE);size_t count=lua_rawlen(s,1),total=0;
+  if(!count || count>1024)return luaL_error(s,"invalid geometry count");
+  for(size_t i=0;i<count;++i) {
+    lua_rawgeti(s,1,i+1);luaL_checktype(s,-1,LUA_TTABLE);
+    lua_getfield(s,-1,"p");luaL_checktype(s,-1,LUA_TTABLE);size_t n=lua_rawlen(s,-1);
+    if(n<2 || n>128 || total+n>65536)return luaL_error(s,"invalid geometry vertices");
+    total+=n;lua_pop(s,2);
+  }
+  h2_lua_geometry_t *g=lua_newuserdatauv(s,sizeof(*g)+count*sizeof(h2_lua_geometry_part_t)+total*6*sizeof(double),0);
+  g->count=count;g->vertices=total;g->valid=0;
+  h2_lua_geometry_part_t *parts=(h2_lua_geometry_part_t *)(g+1);double *v=(double *)(parts+count);size_t at=0;
+  for(size_t i=0;i<count;++i) {
+    lua_rawgeti(s,1,i+1);
+    lua_getfield(s,-1,"kind");int kind=(int)luaL_checkinteger(s,-1);lua_pop(s,1);
+    lua_getfield(s,-1,"c");uint16_t color=check_color(s,-1);lua_pop(s,1);
+    lua_getfield(s,-1,"p");size_t n=lua_rawlen(s,-1);
+    if((kind!=0 && kind!=1) || (kind==1 && n!=2) || (kind==0 && n<3))return luaL_error(s,"invalid geometry primitive");
+    parts[i]=(h2_lua_geometry_part_t){(uint32_t)at,(uint16_t)n,color,kind};
+    for(size_t j=0;j<n;++j) {
+      lua_rawgeti(s,-1,j+1);luaL_checktype(s,-1,LUA_TTABLE);
+      for(int k=0;k<3;++k) {
+        lua_rawgeti(s,-1,k+1);v[at*3+k]=(k==2 && lua_isnil(s,-1))?0:check_geometry_number(s,-1);lua_pop(s,1);
+      }
+      ++at;lua_pop(s,1);
+    }
+    lua_pop(s,2);
+  }
+  luaL_newmetatable(s,H2_LUA_GEOMETRY_META);lua_setmetatable(s,-2);return 1;
+}
+static int display_draw_geometry(lua_State *s) {
+  h2_lua_job_t *job=lua_touserdata(s,lua_upvalueindex(1));
+  h2_lua_geometry_t *g=luaL_checkudata(s,1,H2_LUA_GEOMETRY_META);
+  double x=check_geometry_number(s,2),y=check_geometry_number(s,3),scale=check_geometry_number(s,4);
+  double angle=check_geometry_number(s,5),flex=check_geometry_number(s,6),sway=check_geometry_number(s,7);
+  int projected=!lua_isnoneornil(s,8),tinted=!lua_isnoneornil(s,9);
+  uint16_t tint=tinted?check_color(s,9):0;
+  double offset=check_geometry_number(s,10),z=0,ox=0,oy=0,cx=174;
+  int top=(int)luaL_checkinteger(s,11),bottom=(int)luaL_checkinteger(s,12);
+  double raster_scale=lua_isnoneornil(s,14)?1:check_geometry_number(s,14);
+  if(raster_scale<=0 || raster_scale>16)return luaL_error(s,"invalid raster scale");
+  if(!job->display_open || scale<=0 || scale>100 || top<0 || bottom>job->display_info.height || top>bottom)
+    return luaL_error(s,"invalid draw_geometry");
+  if(projected) {
+    luaL_checktype(s,8,LUA_TTABLE);double *values[]={&z,&ox,&oy,&cx};
+    for(int i=0;i<4;++i){lua_rawgeti(s,8,i+1);*values[i]=check_geometry_number(s,-1);lua_pop(s,1);}
+  }
+  double ca=cos(angle),sa=sin(angle),px[128],py[128];
+  const h2_lua_geometry_part_t *parts=(const h2_lua_geometry_part_t *)(g+1);
+  const double *v=(const double *)(parts+g->count);
+  h2_lua_geometry_t *pose=g;
+  if(!lua_isnoneornil(s,13)) {
+    h2_lua_geometry_t *other=luaL_checkudata(s,13,H2_LUA_GEOMETRY_META);
+    const double *ov=(const double *)((const h2_lua_geometry_part_t *)(other+1)+other->count);
+    if(other->valid && other->vertices==g->vertices && other->projected==projected &&
+       other->x==x && other->y==y && other->scale==scale && other->angle==angle && other->flex==flex && other->sway==sway &&
+       memcmp(v,ov,g->vertices*3*sizeof(double))==0)pose=other;
+  }
+  double *positions=(double *)((h2_lua_geometry_part_t *)(pose+1)+pose->count)+pose->vertices*3;
+  if(!pose->valid || pose->projected!=projected || pose->x!=x || pose->y!=y || pose->scale!=scale || pose->angle!=angle || pose->flex!=flex || pose->sway!=sway) {
+    pose->valid=0;
+    for(size_t j=0;j<g->vertices;++j) {
+      const double *q=v+j*3;double a=q[0],b=q[1]+q[2]*sway;
+      b=b+flex*pow(a/30,2);
+      double u=x+(a*ca-b*sa)*scale,w=y+(a*sa+b*ca)*scale;
+      double xx=u,yy=w,perspective=1;
+      if(projected) {
+        double depth=-u*.5+w*.866;perspective=1/(1+depth/1300);
+        xx=(u*.866+w*.5)*perspective;yy=259-depth*.67*perspective;
+      }
+      if(!isfinite(xx) || !isfinite(yy) || !isfinite(perspective) || fabs(xx)>1000000 || fabs(yy)>1000000 || fabs(perspective)>1000)
+        return luaL_error(s,"geometry coordinate out of range");
+      positions[j*3]=xx;positions[j*3+1]=yy;positions[j*3+2]=perspective;
+    }
+    pose->x=x;pose->y=y;pose->scale=scale;pose->angle=angle;pose->flex=flex;pose->sway=sway;pose->projected=projected;pose->valid=1;
+  }
+  for(size_t i=0;i<g->count;++i) {
+    const h2_lua_geometry_part_t *p=parts+i;
+    for(size_t j=0;j<p->count;++j) {
+      const double *q=positions+(p->first+j)*3;
+      if(projected) {
+        px[j]=cx+q[0]+ox;py[j]=q[1]-z*q[2]+oy;
+      } else {px[j]=q[0];py[j]=q[1];}
+      if(!isfinite(px[j]) || !isfinite(py[j]) || fabs(px[j])>1000000 || fabs(py[j])>1000000)
+        return luaL_error(s,"geometry coordinate out of range");
+    }
+    uint16_t color=tinted?tint:p->color;
+    if(raster_scale!=1)for(size_t j=0;j<p->count;++j){px[j]*=raster_scale;py[j]*=raster_scale;}
+    if(p->kind==0)display_raster_polygon(job,px,py,p->count,color,offset,top,bottom);
+    else display_clipped_line(job,px[0],py[0],px[1],py[1],color,offset,top,bottom);
+  }
+  return 0;
+}
 /* VM-owned RGB565 snapshots of procedural art, not external image assets. */
 typedef struct h2_lua_region_row { int left,right; size_t offset; } h2_lua_region_row_t;
+typedef struct h2_lua_region_run { uint16_t row,left,right; } h2_lua_region_run_t;
+typedef struct h2_lua_region_runs { size_t count; h2_lua_region_run_t runs[]; } h2_lua_region_runs_t;
 typedef struct h2_lua_pixel_region { int width,height,masked; uint16_t key; size_t pixel_count; h2_lua_region_row_t rows[]; } h2_lua_pixel_region_t;
 #define H2_LUA_REGION_META "h2.display.pixel_region"
 static int display_capture_region(lua_State *s) {
@@ -1905,7 +2120,7 @@ static int display_capture_region(lua_State *s) {
     if(masked || r->masked || r->width!=w || r->height!=h || r->pixel_count!=count || lua_rawlen(s,6)<bytes)
       return luaL_error(s,"capture reuse requires a matching opaque region");
     lua_pushvalue(s,6);
-  } else r=lua_newuserdatauv(s,bytes,0);
+  } else r=lua_newuserdatauv(s,bytes,1);
   r->width=w;r->height=h;r->masked=masked;r->key=key;r->pixel_count=count;
   uint16_t *pixels=(uint16_t *)(r->rows+h);size_t offset=0;
   if(tiles)memset(pixels+count,0,tiles);
@@ -1917,23 +2132,72 @@ static int display_capture_region(lua_State *s) {
     r->rows[row]=(h2_lua_region_row_t){left,right,offset};
     memcpy(pixels+offset,p+left,(size_t)(right-left)*2);offset+=(size_t)(right-left);
   }
-  luaL_newmetatable(s,H2_LUA_REGION_META);lua_setmetatable(s,-2);return 1;
+  luaL_newmetatable(s,H2_LUA_REGION_META);lua_setmetatable(s,-2);
+  /* Compile transparency once. Replaying cached art uses contiguous memcpy
+   * runs instead of a PSRAM read/branch/write for every pixel each frame. */
+  if(masked) {
+    size_t runs=0;
+    for(int row=0;row<h;++row) {
+      const h2_lua_region_row_t *span=r->rows+row;
+      const uint16_t *p=pixels+span->offset;int active=0;
+      for(int col=0;col<span->right-span->left;++col) {
+        if(p[col]!=key && !active)++runs;
+        active=p[col]!=key;
+      }
+    }
+    h2_lua_region_runs_t *list=lua_newuserdatauv(s,sizeof(*list)+runs*sizeof(h2_lua_region_run_t),0);
+    list->count=runs;size_t at=0;
+    for(int row=0;row<h;++row) {
+      const h2_lua_region_row_t *span=r->rows+row;
+      const uint16_t *p=pixels+span->offset;int col=0,n=span->right-span->left;
+      while(col<n) {
+        while(col<n && p[col]==key)++col;
+        int first=col;
+        while(col<n && p[col]!=key)++col;
+        if(first<col)list->runs[at++]=(h2_lua_region_run_t){(uint16_t)row,(uint16_t)(span->left+first),(uint16_t)(span->left+col)};
+      }
+    }
+    lua_setiuservalue(s,-2,1);
+  }
+  return 1;
 }
 static int display_draw_region(lua_State *s) {
   h2_lua_job_t *job=lua_touserdata(s,lua_upvalueindex(1));
   h2_lua_pixel_region_t *r=luaL_checkudata(s,1,H2_LUA_REGION_META);
   int x=check_pixel_number(s,2),y=check_pixel_number(s,3);
   lua_Integer top_arg=luaL_optinteger(s,4,0),bottom_arg=luaL_optinteger(s,5,job->display_info.height);
+  lua_Integer left_arg=luaL_optinteger(s,7,0),right_arg=luaL_optinteger(s,8,job->display_info.width);
   if(!job->display_open || x<-100000 || x>100000 || y<-100000 || y>100000 ||
-     top_arg<0 || bottom_arg>job->display_info.height || top_arg>bottom_arg)
+     top_arg<0 || bottom_arg>job->display_info.height || top_arg>bottom_arg ||
+     left_arg<0 || right_arg>job->display_info.width || left_arg>right_arg)
     return luaL_error(s,"invalid region clip");
   int top=(int)top_arg,bottom=(int)bottom_arg,masked=!lua_isnoneornil(s,6);
   uint16_t key=masked?check_color(s,6):0;
-  int left=x<0?0:x,right=x+r->width;
-  if(right>job->display_info.width)right=job->display_info.width;
+  int left=x<left_arg?(int)left_arg:x,right=x+r->width;
+  if(right>right_arg)right=(int)right_arg;
   int first=y>top?y:top,last=y+r->height<bottom?y+r->height:bottom;
   if(left>=right || first>=last)return 0;
   const uint16_t *pixels=(const uint16_t *)(r->rows+r->height);
+  if(masked && r->masked && key==r->key) {
+    lua_getiuservalue(s,1,1);
+    const h2_lua_region_runs_t *list=lua_touserdata(s,-1);
+    if(list) {
+      for(size_t i=0;i<list->count;++i) {
+        const h2_lua_region_run_t *run=list->runs+i;int row=y+run->row;
+        if(row<first)continue;
+        if(row>=last)break;
+        int l=x+run->left,rr=x+run->right;
+        if(l<left)l=left;
+        if(rr>right)rr=right;
+        if(l>=rr)continue;
+        const h2_lua_region_row_t *span=r->rows+run->row;
+        memcpy(job->framebuffer+(size_t)row*job->display_info.width+l,
+          pixels+span->offset+l-x-span->left,(size_t)(rr-l)*2);
+      }
+      mark_dirty_rect(job,left,first,right-left,last-first);return 0;
+    }
+    lua_pop(s,1);
+  }
   for(int row=first;row<last;++row) {
     int l=left,rr=right;
     const h2_lua_region_row_t *span=r->rows+(row-y);
@@ -1952,6 +2216,15 @@ static int display_draw_region(lua_State *s) {
   }
   mark_dirty_rect(job,left,first,right-left,last-first);return 0;
 }
+static int display_release_background(lua_State *s) {
+  h2_lua_job_t *job=lua_touserdata(s,lua_upvalueindex(1));
+  /* Lua scene references alone cannot release the native retained background.
+   * Detach its dirty mask before collection can reclaim the pixel userdata. */
+  job->background_dirty_tiles=NULL;
+  if(job->active_background)luaL_unref(s,LUA_REGISTRYINDEX,job->background_ref);
+  job->active_background=NULL;
+  return 0;
+}
 static int display_restore_background(lua_State *s) {
   h2_lua_job_t *job=lua_touserdata(s,lua_upvalueindex(1));
   h2_lua_pixel_region_t *r=luaL_checkudata(s,1,H2_LUA_REGION_META);
@@ -1961,9 +2234,16 @@ static int display_restore_background(lua_State *s) {
   const uint16_t *pixels=(const uint16_t *)(r->rows+height);
   uint8_t *mask=(uint8_t *)(pixels+r->pixel_count);
   if(job->active_background==r && job->presented_valid) {
-    for(int ty=0;ty<rows;++ty)for(int tx=0;tx<columns;++tx)if(mask[ty*columns+tx]) {
-      int x=tx*16,y=ty*16,w=width-x<16?width-x:16,h=height-y<16?height-y:16;
-      for(int row=y;row<y+h;++row)memcpy(job->framebuffer+(size_t)row*width+x,pixels+(size_t)row*width+x,(size_t)w*2);
+    for(int ty=0;ty<rows;++ty)for(int tx=0;tx<columns;) {
+      if(!mask[ty*columns+tx]){++tx;continue;}
+      int first=tx;
+      while(tx<columns && mask[ty*columns+tx])++tx;
+      int x=first*16,y=ty*16,end=tx*16<width?tx*16:width;
+      int w=end-x,h=height-y<16?height-y:16;
+      /* Coalesce adjacent damaged tiles in RAM too. Large tab transitions
+       * otherwise issue thousands of tiny copies into PSRAM per frame. */
+      if(x==0 && w==width)memcpy(job->framebuffer+(size_t)y*width,pixels+(size_t)y*width,(size_t)w*h*2);
+      else for(int row=y;row<y+h;++row)memcpy(job->framebuffer+(size_t)row*width+x,pixels+(size_t)row*width+x,(size_t)w*2);
       mark_dirty_rect(job,x,y,w,h);
     }
   } else {
@@ -2002,15 +2282,34 @@ static int display_draw_commands(lua_State *state) {
   h2_lua_job_t *job=lua_touserdata(state,lua_upvalueindex(1));
   h2_lua_pixel_commands_t *list=luaL_checkudata(state,1,H2_LUA_COMMANDS_META);
   int top=(int)luaL_optinteger(state,2,0),bottom=(int)luaL_optinteger(state,3,job->display_info.height);
+  double ox=lua_isnoneornil(state,4)?0:check_geometry_number(state,4);
+  double oy=lua_isnoneornil(state,5)?0:check_geometry_number(state,5);
+  double sx=lua_isnoneornil(state,6)?1:check_geometry_number(state,6);
+  double sy=lua_isnoneornil(state,7)?sx:check_geometry_number(state,7);
+  int recolor=!lua_isnoneornil(state,8);uint16_t ink=recolor?check_color(state,8):0;
+  int transformed=ox!=0 || oy!=0 || sx!=1 || sy!=1 || recolor;
+  if(fabs(ox)>1000000 || fabs(oy)>1000000 || sx<=0 || sy<=0 || sx>1000 || sy>1000)
+    return luaL_error(state,"invalid command transform");
   if(!job->display_open || top<0 || bottom>job->display_info.height || top>bottom) return luaL_error(state,"invalid command clip");
   const h2_lua_pixel_command_t *commands=(h2_lua_pixel_command_t *)(list+1);
   for(size_t i=0;i<list->count;++i) {
     const h2_lua_pixel_command_t *c=commands+i;
+    if(!transformed) {
+      if(c->kind==0) {
+        int first=c->y>top?c->y:top,last=c->y+c->b<bottom?c->y+c->b:bottom;
+        for(int row=first;row<last;++row)fill_span(job,row,c->x,c->x+c->a-1,c->color);
+        mark_dirty_rect(job,c->x,first,c->a,last-first);
+      } else display_clipped_line(job,c->x,c->y,c->a,c->b,c->color,0,top,bottom);
+      continue;
+    }
+    int x=(int)floor(ox+c->x*sx+.5),y=(int)floor(oy+c->y*sy+.5);
+    uint16_t color=recolor?ink:c->color;
     if(c->kind==0) {
-      int first=c->y>top?c->y:top,last=c->y+c->b<bottom?c->y+c->b:bottom;
-      for(int y=first;y<last;++y) fill_span(job,y,c->x,c->x+c->a-1,c->color);
-      mark_dirty_rect(job,c->x,first,c->a,last-first);
-    } else display_clipped_line(job,c->x,c->y,c->a,c->b,c->color,0,top,bottom);
+      int right=(int)floor(ox+(c->x+c->a)*sx+.5),end=(int)floor(oy+(c->y+c->b)*sy+.5);
+      int first=y>top?y:top,last=end<bottom?end:bottom;
+      for(int row=first;row<last;++row) fill_span(job,row,x,right-1,color);
+      mark_dirty_rect(job,x,first,right-x,last-first);
+    } else display_clipped_line(job,x,y,(int)floor(ox+c->a*sx+.5),(int)floor(oy+c->b*sy+.5),color,0,top,bottom);
   }
   return 0;
 }
@@ -3161,9 +3460,12 @@ static int push_display_proxy(lua_State *state, h2_lua_job_t *job) {
   set_function(state, "draw_commands", display_draw_commands, job);
   set_function(state, "capture_region", display_capture_region, job);
   set_function(state, "draw_region", display_draw_region, job);
+  set_function(state, "compile_geometry", display_compile_geometry, job);
+  set_function(state, "draw_geometry", display_draw_geometry, job);
   set_function(state, "stroke_path", display_stroke_path, job);
   set_function(state, "projected_line", display_projected_line, job);
   set_function(state, "restore_background", display_restore_background, job);
+  set_function(state, "release_background", display_release_background, job);
   set_function(state, "depth_path", display_depth_path, job);
   set_function(state, "draw_mesh", display_draw_mesh, job);
   set_function(state, "fill_ellipse", display_fill_ellipse, job);

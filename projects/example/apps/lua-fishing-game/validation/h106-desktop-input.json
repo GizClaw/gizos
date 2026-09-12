@@ -1,0 +1,18 @@
+{
+  "date": "2026-09-12",
+  "complete": true,
+  "source": "SDL event queue -> H106 PAL inverse mapping -> Lua touch polling",
+  "not_tested": ["macOS physical mouse delivery", "H106 firmware"],
+  "baseline_failure": "4 MiB Lua limit: out of memory after changing rod, returning to sea and opening REELS",
+  "desktop_vm_limit_bytes": 8388608,
+  "firmware_default_vm_limit_bytes": 4194304,
+  "steps": [
+    "initial_rods", "return_sea", "click_cast", "splash_wait", "open_rods",
+    "change_rod", "return_without_reel", "missing_reel_routes", "equip_reel",
+    "back_rods", "back_sea", "recast", "second_splash"
+  ],
+  "casts": ["168M / HG RIGHT / 99F / XM-199V", "S80ML / C3000 / NZ / 99F / XM-199V"],
+  "landed_m": [14.2, 12.4],
+  "script": "tools/verify_desktop_input.py",
+  "local_artifacts": "/tmp/fishing-h106-input-final"
+}

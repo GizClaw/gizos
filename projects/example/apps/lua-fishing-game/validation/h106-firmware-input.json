@@ -1,0 +1,122 @@
+{
+  "date": "2026-09-12",
+  "board": "tiga_esp_v4_2",
+  "port": "/dev/tty.usbserial-110",
+  "visual_assets": {
+    "definitions": "Lua geometry, colors and bitmap-font definitions",
+    "imported_textures": false,
+    "native_support": "Rasterization, procedural caches and 448-square to 240-square area filtering"
+  },
+  "real_device_test": {
+    "version": "0.1.0-fishing-h106.9-test",
+    "image_sha256": "9b6c310a6c8b461a6c255439e67a6c26f90deba3032e4f382d8ca52d5bb8dc73",
+    "passed": true,
+    "elapsed_seconds_including_upgrade": 143.35,
+    "input_path": "Runtime typed button events -> Lua callbacks",
+    "fixture": "1.2 kg spotted sea bass encounter; real hook/fight/landing",
+    "physical_switches_verified": false,
+    "checkpoints": [
+      "rods_selection_auto_scroll",
+      "page_1",
+      "page_2",
+      "page_3",
+      "page_4",
+      "bidirectional_page_cycle",
+      "cast_1_distance_6.72",
+      "record_tap_retrieve",
+      "cast_2_distance_14.01",
+      "charge_changes_actual_distance",
+      "record_hook",
+      "left_right_rod_angle",
+      "fight_lift_settlement",
+      "record_settlement_exit",
+      "bag_actual_catch"
+    ],
+    "cast_depth_metres": {
+      "1": 6.72,
+      "2": 14.01
+    },
+    "fps_samples_by_state": {
+      "ready": {
+        "count": 2,
+        "min": 9.1,
+        "max": 23,
+        "mean": 16.1
+      },
+      "menu": {
+        "count": 10,
+        "min": 1.8,
+        "max": 36.7,
+        "mean": 16.9
+      },
+      "flight": {
+        "count": 1,
+        "min": 10.1,
+        "max": 10.1,
+        "mean": 10.1
+      },
+      "waiting": {
+        "count": 1,
+        "min": 9.4,
+        "max": 9.4,
+        "mean": 9.4
+      },
+      "aiming": {
+        "count": 1,
+        "min": 12.6,
+        "max": 12.6,
+        "mean": 12.6
+      },
+      "casting": {
+        "count": 1,
+        "min": 12.5,
+        "max": 12.5,
+        "mean": 12.5
+      },
+      "fight": {
+        "count": 18,
+        "min": 6.6,
+        "max": 8.6,
+        "mean": 7
+      },
+      "landed": {
+        "count": 2,
+        "min": 8.4,
+        "max": 16,
+        "mean": 12.2
+      }
+    },
+    "fps_note": "Two-second samples may straddle phases and include cold-cache builds. These are not pure animation benchmarks, and do not establish 30 FPS.",
+    "raw_log": "/tmp/fishing-h106-device-buttons-v9/run.log"
+  },
+  "desktop_final": {
+    "version_source": "0.1.0-fishing-h106.10 source",
+    "button_test_passed": true,
+    "lua_budget_bytes": 4194304,
+    "checkpoints": 15,
+    "elapsed_seconds": 48.5,
+    "charged_cast_regression": "11 rods × 5 charge levels, alternating 30/120 Hz simulation caller",
+    "note": "The final fly-specific whole-line haul change is covered by desktop physics; the real-device 15-checkpoint test uses the default casting rod.",
+    "native_tests": [
+      "//libs/lua:lua_test",
+      "//projects/example/targets/cc_binary/lua-fishing-game:h106_preview_test"
+    ],
+    "cache_equivalence": "18 H106 cached/live pairs, zero differing pixels",
+    "raw_log": "/tmp/fishing-h106-host-buttons-v10/run.log"
+  },
+  "boundaries": {
+    "loader_preserved_sha256": "a771e70660fa04b1bfa170956d2110dc5cc0e071e19f13fda02671cd1d5d379d",
+    "flashing": "H2Loader managed App upgrade only; no raw flash, erase or partition writes",
+    "bsp_source": "Private Firmwares archive cf8bfa061 in /tmp/fishing-h106-firmware.OZNwAF; the user's private checkout was not changed"
+  },
+  "normal_firmware": {
+    "version": "0.1.0-fishing-h106.10",
+    "built": true,
+    "installed_verified": false,
+    "diagnostic_flag": false,
+    "package_sha256": "81138a2528d30fc0cafd796656dbe1e7fa609d039f5b6ecb553f201e60dde936",
+    "image_sha256": "aa77d6be16b9569b2ddda0c0f6f5b8d7de6bb65a27ac2543277f41c182d67793",
+    "status": "Upload stalled at 327680/1355547 bytes; cancelled before upgrade. Management became unresponsive. Last verified image is v9-test.",
+    "upload_log": "/tmp/fishing-h106-send-v10.log"
+  }
+}

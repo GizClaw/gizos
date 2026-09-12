@@ -1,0 +1,643 @@
+diff --git a/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/BUILD.bazel b/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/BUILD.bazel
+new file mode 100644
+--- /dev/null
++++ b/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/BUILD.bazel
+@@ -0,0 +1,101 @@
++load("@gizos//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
++load("@gizos//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
++load("@gizos//tools/bazel:firmware_components.bzl", "firmware_lib_component")
++load("@gizos//tools/bazel:native_component.bzl", "firmware_native_component")
++load("@gizos//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
++
++package(default_visibility = ["//visibility:public"])
++
++esp_target_task_policy(
++    task_name_deps = [
++        "@gizos//libs/bleikcp:task_names",
++        "@gizos//libs/lua:task_names",
++        "@gizos//libs/pal/providers/h2peer:task_names",
++        "@gizos//projects/h2loader/libs/h2loader:task_names",
++        "@gizos//projects/h2loader/apps/loader/app:task_names",
++    ],
++)
++
++firmware_lib_component(
++    name = "firmware_lib",
++    deps = [
++        "@gizos//libs/audio_mixer",
++        "@gizos//libs/bleikcp",
++        "@gizos//libs/bundle",
++        "@gizos//libs/command",
++        "@gizos//libs/iostreamikcp",
++        "@gizos//libs/pal:unsupported",
++        "@gizos//libs/pal/providers/corehttp",
++        "@gizos//libs/pal/providers/h2peer",
++        "@gizos//libs/pal/providers/h2sctp",
++        "@gizos//libs/pal/providers/libco",
++        "@gizos//libs/pixa",
++        "@gizos//libs/runtime",
++        "@gizos//libs/utils",
++        "@gizos//libs/drivers/nfc/fm175xx",
++        "@gizos//libs/pal/providers/modem/quectel:quectel_modem",
++        "@gizos//projects/example/apps/lua-fishing-game/app:h106_viewport",
++        "@gizos//projects/example/apps/lua-fishing-game/app:lua_fishing_game",
++    ],
++)
++
++firmware_native_component(
++    name = "lua_fishing_game_launcher",
++    srcs = [
++        "main/main.cpp",
++    ],
++    hdrs = [],
++    component_directory = "projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/main",
++    component_name = "main",
++    data = [
++        "main/CMakeLists.txt",
++        "main/idf_component.yml",
++    ],
++    tags = ["manual"],
++    deps = [
++        ":firmware_lib",
++        "//boards/tiga_esp_v4_2/esp32s3",
++        "@gizos//libs/pal",
++        "@gizos//native_component_src/esp-idf6.x/h2_es8311_audio_system",
++        "@gizos//native_component_src/esp-idf6.x/h2_adc_oneshot",
++        "@gizos//native_component_src/esp-idf6.x/h2_nfc_fm175xx",
++        "@gizos//native_component_src/esp-idf6.x/h2_pal_core",
++        "@gizos//native_component_src/esp-idf6.x/opus_port",
++        "@gizos//native_component_src/esp-idf6.x/zlib",
++        "@gizos//projects/h2loader/libs/h2loader",
++        "@gizos//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_ble",
++        "@gizos//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime",
++    ],
++)
++
++h2loader_esp_idf_firmware(
++    name = "firmware",
++    srcs = [
++        "CMakeLists.txt",
++        "main/CMakeLists.txt",
++        "main/idf_component.yml",
++        "main/main.cpp",
++    ],
++    board = "tiga_esp_v4_2",
++    graph = [":lua_fishing_game_launcher"],
++    project = "CMakeLists.txt",
++    project_name = "h2_lua_fishing_game",
++    target = "esp32s3",
++    task_policy = ":task_policy",
++    layout_files = {
++        "partition": "//boards/tiga_esp_v4_2/esp32s3/layouts/h2loader:partition.csv",
++        "project_support_files": ["//boards/tiga_esp_v4_2/esp32s3/layouts/h2loader:sdkconfig.h2loader.defaults"],
++        "support_files": [],
++    },
++    cmake_variables = ["FISHING_H106_INPUT_TEST"],
++)
++
++h2loader_tar_zlib(
++    name = "package",
++    board = "tiga_esp_v4_2",
++    firmware = ":firmware",
++    image = "lua-fishing-game",
++    role = "app",
++    tags = ["h2-ci-esp-entry"],
++    target = "esp32s3",
++)
+diff --git a/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/CMakeLists.txt b/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/CMakeLists.txt
+new file mode 100644
+--- /dev/null
++++ b/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/CMakeLists.txt
+@@ -0,0 +1,32 @@
++cmake_minimum_required(VERSION 3.16)
++
++if(NOT DEFINED H2_REPO_ROOT)
++  get_filename_component(H2_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../../../.." ABSOLUTE)
++else()
++  get_filename_component(H2_REPO_ROOT "${H2_REPO_ROOT}" ABSOLUTE)
++endif()
++
++set(H2_ESP_TARGET "esp32s3")
++set(H2_ESP_BOARD_DIR "${H2_REPO_ROOT}/boards/tiga_esp_v4_2/${H2_ESP_TARGET}" CACHE PATH "H2 ESP board component directory" FORCE)
++set(H2_ESP_COMPONENT_DIR "$ENV{H2_GIZOS_ROOT}/native_component_src/esp-idf6.x")
++set(H2_H2LOADER_COMPONENT_DIR "$ENV{H2_GIZOS_ROOT}/projects/h2loader/native_component_src/esp-idf6.x")
++
++if(NOT DEFINED IDF_TARGET)
++  set(IDF_TARGET "${H2_ESP_TARGET}" CACHE STRING "ESP-IDF target")
++endif()
++set(SDKCONFIG "${CMAKE_BINARY_DIR}/sdkconfig" CACHE FILEPATH "ESP-IDF sdkconfig" FORCE)
++set(
++  SDKCONFIG_DEFAULTS
++  "${H2_ESP_BOARD_DIR}/sdkconfig.defaults;${CMAKE_CURRENT_LIST_DIR}/sdkconfig.h2loader.defaults"
++  CACHE STRING "ESP-IDF sdkconfig defaults" FORCE)
++
++set(H2_ESP_BOARD_ALIAS_DIR "${CMAKE_BINARY_DIR}/h2_esp_board")
++file(REMOVE_RECURSE "${H2_ESP_BOARD_ALIAS_DIR}")
++file(CREATE_LINK "${H2_ESP_BOARD_DIR}" "${H2_ESP_BOARD_ALIAS_DIR}" SYMBOLIC)
++
++include("$ENV{H2_BAZEL_COMPONENT_MANIFEST}")
++set(EXTRA_COMPONENT_DIRS ${H2_BAZEL_COMPONENT_DIRS})
++set(COMPONENTS ${H2_BAZEL_COMPONENT_NAMES})
++
++include($ENV{IDF_PATH}/tools/cmake/project.cmake)
++project(h2_lua_fishing_game)
+diff --git a/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/main/main.cpp b/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/main/main.cpp
+new file mode 100644
+--- /dev/null
++++ b/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/main/main.cpp
+@@ -0,0 +1,94 @@
++#include "h2_esp_board.h"
++#include "h2_esp_board_config.h"
++#include "h2_esp_target_task_policy.h"
++#include "h2_esp_platform_core.h"
++#include "h2_esp_h2loader_ble.h"
++#include "h2_esp_h2loader_runtime.h"
++#include "h2_lua_fishing_game.h"
++#include "h2_fishing_h106_viewport.h"
++#include "esp_heap_caps.h"
++#include "esp_rom_sys.h"
++#include "freertos/FreeRTOS.h"
++#include "freertos/task.h"
++#include <cstdio>
++#include <new>
++#include <cstring>
++
++static const h2_pal_log_api_t *board_log;
++static int game_log(void *,h2_pal_log_level_t level,const char *scope,const char *message) {
++ if(!message)return H2_PAL_ERR_INVALID_ARG;
++ if(scope && (!std::strcmp(scope,"lua") || !std::strcmp(scope,"lua-fishing-game"))) {
++  std::printf("FISHING_LOG %s %s\n",scope,message);return H2_PAL_OK;
++ }
++ return h2_pal_log_write(board_log,level,scope,message);
++}
++static const h2_pal_log_vtable_t log_vtable={game_log};
++static const h2_pal_log_api_t log_api={nullptr,&log_vtable};
++static void allocation_failed(size_t bytes,uint32_t caps,const char *function) {
++ esp_rom_printf("FISHING_ALLOC_FAIL bytes=%u caps=%u function=%s\n",unsigned(bytes),unsigned(caps),function);
++}
++
++static const h2_runtime_component_mapping_entry_t mappings[] = {
++ {H2_LUA_FISHING_GAME_COMPONENT_VOL_UP,H2_TIGA_ESP_BUTTON_VOL_INC_ID},
++ {H2_LUA_FISHING_GAME_COMPONENT_VOL_DOWN,H2_TIGA_ESP_BUTTON_VOL_DEC_ID},
++ {H2_LUA_FISHING_GAME_COMPONENT_RECORD,H2_TIGA_ESP_BUTTON_RECORD_ID},
++ {H2_LUA_FISHING_GAME_COMPONENT_LEFT,H2_TIGA_ESP_BUTTON_LEFT_ID},
++ {H2_LUA_FISHING_GAME_COMPONENT_RIGHT,H2_TIGA_ESP_BUTTON_RIGHT_ID},
++};
++static h2_pal_result_t list(void *,h2_runtime_component_t filter,h2_runtime_component_mapping_cb_t cb,void *u) {
++ if(!cb)return H2_PAL_ERR_INVALID_ARG;
++ if(filter!=H2_RUNTIME_COMPONENT_NONE && filter!=H2_RUNTIME_COMPONENT_BUTTON)return H2_PAL_OK;
++ for(const auto &m:mappings){auto rc=cb(u,&m);if(rc!=H2_PAL_OK)return rc;}
++ return H2_PAL_OK;
++}
++static h2_pal_result_t get(void *,h2_runtime_component_id_t id,h2_pal_periph_id_t *out) {
++ if(!out)return H2_PAL_ERR_INVALID_ARG;
++ for(const auto &m:mappings)if(m.component_id==id){*out=m.periph_id;return H2_PAL_OK;}
++ return H2_PAL_ERR_NOT_FOUND;
++}
++static const h2_runtime_component_mapper_vtable_t mapper_vtable={list,get};
++static const h2_runtime_component_mapper_t mapper={nullptr,&mapper_vtable};
++static int never_stop(void *) {return 0;}
++static h2_pal_result_t ready(void *u) {
++ auto *runtime=static_cast<h2_runtime_t *>(u);
++ int rc=h2_esp_platform_confirm_running_app();
++ if(rc==H2_PAL_OK)rc=h2_esp_h2loader_app_confirm(runtime);
++ std::printf("FISHING_H106_READY rc=%d physical=240x240 canvas=240x240 resampling=none controls=buttons psram_free=%u internal_free=%u\n",rc,
++   unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)),unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)));
++ return static_cast<h2_pal_result_t>(rc);
++}
++static void image_entry(void *) {
++ h2_runtime_config_t config={};
++ h2_runtime_t *runtime=nullptr;
++ int rc=h2_esp_target_task_policy_install();
++ if(rc==H2_PAL_OK)rc=h2_esp_board_runtime_config(&config);
++ if(rc==H2_PAL_OK){board_log=config.log;config.log=&log_api;}
++ if(rc==H2_PAL_OK)rc=h2_esp_h2loader_app_commands_prepare_serial(&config,"lua-fishing-game",1u,3u);
++ if(rc==H2_PAL_OK){
++  config.component_mapper=&mapper;
++  rc=h2_runtime_init(&config,&runtime);
++ }
++ if(rc==H2_PAL_OK)rc=h2_esp_h2loader_app_commands_start(runtime,"lua-fishing-game",1u,3u);
++ if(rc==H2_PAL_OK){
++  h2_runtime_input_poll_config_t input={};input.button_poll_interval_ms=10;
++  rc=h2_runtime_input_start(runtime,&input);
++ }
++ if(rc==H2_PAL_OK){
++  h2_lua_fishing_game_config_t game={};
++  game.profile="amoled";game.layout="h106";game.controls="buttons";game.scene="idle";
++  game.vm_memory_limit_bytes=4u*1024u*1024u;
++  game.should_stop=never_stop;game.on_ready=ready;game.on_ready_user=runtime;
++#if FISHING_H106_INPUT_TEST
++  game.input_test=1;
++#endif
++  rc=h2_lua_fishing_game_run(runtime,&game);
++ }
++ std::printf("FISHING_H106_EXIT rc=%d recovery=app_command\n",rc);
++ // Keep the command service and its borrowed Runtime/providers alive for recovery.
++ for(;;)vTaskDelay(pdMS_TO_TICKS(1000));
++}
++extern "C" void app_main(void) {
++ heap_caps_register_failed_alloc_callback(allocation_failed);
++ auto rc=h2_esp_board_start_entry_task("h106/lua-fishing-game",image_entry,nullptr);
++ if(rc!=H2_PAL_OK)std::printf("FISHING_H106_BOOT_FAIL rc=%d\n",rc);
++}
+diff --git a/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/main/CMakeLists.txt b/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/main/CMakeLists.txt
+new file mode 100644
+--- /dev/null
++++ b/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/main/CMakeLists.txt
+@@ -0,0 +1,33 @@
++if(NOT DEFINED H2_REPO_ROOT)
++  get_filename_component(H2_REPO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../../../../../../.." ABSOLUTE)
++else()
++  get_filename_component(H2_REPO_ROOT "${H2_REPO_ROOT}" ABSOLUTE)
++endif()
++
++include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
++h2_bazel_native_component_sources(H2_MAIN_SOURCES main)
++
++idf_component_register(
++  SRCS ${H2_MAIN_SOURCES}
++  INCLUDE_DIRS
++    "$ENV{H2_GIZOS_ROOT}/projects/example/apps/lua-fishing-game/app/include"
++    "$ENV{H2_GIZOS_ROOT}/projects/h2loader/libs/h2loader/include"
++    "$ENV{H2_GIZOS_ROOT}/libs/pal/include"
++    "$ENV{H2_GIZOS_ROOT}/libs/runtime/include"
++  REQUIRES
++    h2_esp_target_task_policy
++    app_update
++    espcoredump
++    esp_driver_uart
++    esp_driver_usb_serial_jtag
++    h2_esp_board
++    h2_firmware_lib
++    h2_h2loader_ble
++    h2_h2loader_runtime
++    h2_pal_core)
++
++target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu++17 -O3 -Wall -Wextra -Werror)
++
++if(FISHING_H106_INPUT_TEST)
++ target_compile_definitions(${COMPONENT_LIB} PRIVATE FISHING_H106_INPUT_TEST=1)
++endif()
+diff --git a/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/main/idf_component.yml b/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/main/idf_component.yml
+new file mode 100644
+--- /dev/null
++++ b/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/main/idf_component.yml
+@@ -0,0 +1,2 @@
++dependencies: {}
++
+diff --git a/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/task_policy/h2_esp_target_task_policy.c b/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/task_policy/h2_esp_target_task_policy.c
+new file mode 100644
+--- /dev/null
++++ b/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/task_policy/h2_esp_target_task_policy.c
+@@ -0,0 +1,137 @@
++#include "h2_esp_target_task_policy.h"
++
++#include "h2_bleikcp_task_names.h"
++#include "h2_lua_task_names.h"
++
++#include "h2_peer_task_names.h"
++
++#include "h2loader_app_task_names.h"
++#include "h2_loader_task_names.h"
++
++#include "h2_esp_platform_core.h"
++#include "h2_trie.h"
++
++#include <stdio.h>
++
++#define POLICY(priority_value)                                                 \
++  {                                                                            \
++      .priority = (priority_value),                                            \
++      .core = H2_ESP_TASK_CORE_0,                                              \
++      .min_stack_size = 4096u,                                                 \
++      .stack_region = H2_ESP_TASK_STACK_PSRAM,                                 \
++  }
++
++static const h2_esp_task_policy_t s_priority_8_policy = POLICY(8u);
++static const h2_esp_task_policy_t s_priority_7_policy = POLICY(7u);
++static const h2_esp_task_policy_t s_priority_6_policy = POLICY(6u);
++static const h2_esp_task_policy_t s_priority_5_policy = POLICY(5u);
++/* Keep this target's Lua worker away from management/BLE on core 0.
++ * Retain PSRAM for its large stack so DMA/audio have internal RAM headroom. */
++static const h2_esp_task_policy_t s_fishing_policy = {
++    .priority = 4u,
++    .core = H2_ESP_TASK_CORE_1,
++    .min_stack_size = 65536u,
++    .stack_region = H2_ESP_TASK_STACK_PSRAM,
++};
++
++static h2_pal_result_t
++handle_policy(const void *user, const h2_trie_match_t *match, void *response) {
++  (void)match;
++  if (user == NULL || response == NULL) {
++    return H2_PAL_ERR_INVALID_ARG;
++  }
++  *(h2_esp_task_policy_t *)response = *(const h2_esp_task_policy_t *)user;
++  return H2_PAL_OK;
++}
++
++static const h2_trie_route_t s_routes[] = {
++    {H2_LUA_WORKER_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy,
++     &s_fishing_policy},
++    {H2LOADER_APP_COMMAND_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy,
++     &s_priority_8_policy},
++    {H2_LOADER_RETURN_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy,
++     &s_priority_8_policy},
++    {H2_LOADER_BLE_LINK_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy,
++     &s_priority_6_policy},
++    {H2_BLEIKCP_WORKER_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy, &s_priority_7_policy},
++    {H2_BLEIKCP_SERVER_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy,
++     &s_priority_5_policy},
++    {H2_PEER_NETWORK_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy, &s_priority_7_policy},
++    {H2_PEER_UDP_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy, &s_priority_7_policy},
++};
++
++enum {
++  ROUTE_NODE_CAPACITY = 1u + H2_TRIE_LITERAL_NODE_COUNT(H2LOADER_APP_COMMAND_TASK_NAME_VALUE) +
++                        H2_TRIE_LITERAL_NODE_COUNT(H2_LUA_WORKER_TASK_NAME_VALUE) +
++                        H2_TRIE_LITERAL_NODE_COUNT(H2_LOADER_RETURN_TASK_NAME_VALUE) +
++                        H2_TRIE_LITERAL_NODE_COUNT(H2_LOADER_BLE_LINK_TASK_NAME_VALUE) +
++                        H2_TRIE_LITERAL_NODE_COUNT(H2_BLEIKCP_WORKER_TASK_NAME_VALUE) +
++                        H2_TRIE_LITERAL_NODE_COUNT(H2_BLEIKCP_SERVER_TASK_NAME_VALUE) +
++                        H2_TRIE_LITERAL_NODE_COUNT(H2_PEER_NETWORK_TASK_NAME_VALUE) +
++                        H2_TRIE_LITERAL_NODE_COUNT(H2_PEER_UDP_TASK_NAME_VALUE),
++};
++
++static h2_trie_node_t s_route_nodes[ROUTE_NODE_CAPACITY];
++static h2_trie_t s_router;
++
++static h2_pal_result_t resolve_policy(void *user, const char *name,
++                                      h2_esp_task_policy_t *out_policy) {
++  (void)user;
++  /* Reject invalid inputs before route or fallback dispatch. */
++  if (name == NULL || name[0] == '\0' || out_policy == NULL) {
++    return H2_PAL_ERR_NOT_FOUND;
++  }
++  return h2_trie_handle(&s_router, name, out_policy);
++}
++
++static h2_pal_result_t handle_default_policy(const void *user,
++                                             const h2_trie_match_t *match,
++                                             void *response) {
++  (void)user;
++  (void)match;
++  if (response == NULL) {
++    return H2_PAL_ERR_INVALID_ARG;
++  }
++  *(h2_esp_task_policy_t *)response = (h2_esp_task_policy_t){
++      .priority = 4u,
++      .core = H2_ESP_TASK_CORE_ANY,
++      .min_stack_size = 4096u,
++      .stack_region = H2_ESP_TASK_STACK_PSRAM,
++  };
++  return H2_PAL_OK;
++}
++
++h2_pal_result_t h2_esp_target_task_policy_install(void) {
++  h2_pal_result_t rc =
++      h2_trie_build(&s_router, s_route_nodes, ROUTE_NODE_CAPACITY, s_routes,
++                    sizeof(s_routes) / sizeof(s_routes[0]));
++  if (rc != H2_PAL_OK) {
++    printf("H2_PAL_TASK_POLICY_FAIL unit=esp "
++           "target=projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/"
++           "tiga_esp_v4_2 "
++           "stage=routes reason=%d\n",
++           rc);
++    return rc;
++  }
++  rc = h2_trie_set_fallback(&s_router, handle_default_policy, NULL);
++  if (rc != H2_PAL_OK) {
++    return rc;
++  }
++  static const h2_esp_task_policy_config_t config = {
++      .resolver = resolve_policy,
++      .resolver_user = NULL,
++  };
++  rc = h2_esp_platform_task_configure(&config);
++  if (rc == H2_PAL_OK) {
++    printf("H2_PAL_TASK_POLICY_READY unit=esp "
++           "target=projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/"
++           "tiga_esp_v4_2\n");
++  } else {
++    printf("H2_PAL_TASK_POLICY_FAIL unit=esp "
++           "target=projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/"
++           "tiga_esp_v4_2 "
++           "stage=configure reason=%d\n",
++           rc);
++  }
++  return rc;
++}
+diff --git a/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/task_policy/h2_esp_target_task_policy.h b/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/task_policy/h2_esp_target_task_policy.h
+new file mode 100644
+--- /dev/null
++++ b/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/task_policy/h2_esp_target_task_policy.h
+@@ -0,0 +1,17 @@
++#ifndef H2_ESP_TARGET_TASK_POLICY_H
++#define H2_ESP_TARGET_TASK_POLICY_H
++
++#include "h2/pal/core/h2_pal_errors.h"
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++h2_pal_result_t h2_esp_target_task_policy_install(void);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif
++
+diff --git a/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/task_policy/CMakeLists.txt b/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/task_policy/CMakeLists.txt
+new file mode 100644
+--- /dev/null
++++ b/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/task_policy/CMakeLists.txt
+@@ -0,0 +1,8 @@
++include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
++h2_bazel_native_component_sources(H2_TARGET_TASK_POLICY_SOURCES h2_esp_target_task_policy)
++
++idf_component_register(
++    SRCS ${H2_TARGET_TASK_POLICY_SOURCES}
++    INCLUDE_DIRS "."
++    REQUIRES h2_firmware_lib h2_pal_core)
++
+diff --git a/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/task_policy/tests/test_h2_esp_target_task_policy.c b/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/task_policy/tests/test_h2_esp_target_task_policy.c
+new file mode 100644
+--- /dev/null
++++ b/projects/h106/targets/h2loader_tar_zlib/lua-fishing-game/tiga_esp_v4_2/task_policy/tests/test_h2_esp_target_task_policy.c
+@@ -0,0 +1,69 @@
++#include "h2_esp_target_task_policy.h"
++
++#include "h2_bleikcp_task_names.h"
++#include "h2_lua_task_names.h"
++#include "h2_peer_task_names.h"
++#include "h2loader_app_task_names.h"
++#include "h2_loader_task_names.h"
++
++#include "h2_esp_platform_core.h"
++
++#include <assert.h>
++#include <stddef.h>
++
++static h2_esp_task_policy_config_t s_config;
++static h2_pal_result_t s_configure_result = H2_PAL_OK;
++
++h2_pal_result_t
++h2_esp_platform_task_configure(const h2_esp_task_policy_config_t *config) {
++  s_config = *config;
++  return s_configure_result;
++}
++
++static h2_pal_result_t get_policy(const char *name,
++                                  h2_esp_task_policy_t *out_policy) {
++  return s_config.resolver(s_config.resolver_user, name, out_policy);
++}
++
++static void assert_policy(const char *name, unsigned priority) {
++  h2_esp_task_policy_t policy = {0};
++  assert(get_policy(name, &policy) == H2_PAL_OK);
++  assert(policy.priority == priority);
++  assert(policy.core == H2_ESP_TASK_CORE_0);
++  assert(policy.min_stack_size == 4096u);
++  assert(policy.stack_region == H2_ESP_TASK_STACK_PSRAM);
++}
++
++static void assert_default_policy(const char *name) {
++  h2_esp_task_policy_t policy = {0};
++  assert(get_policy(name, &policy) == H2_PAL_OK);
++  assert(policy.priority == 4u);
++  assert(policy.core == H2_ESP_TASK_CORE_ANY);
++  assert(policy.min_stack_size == 4096u);
++  assert(policy.stack_region == H2_ESP_TASK_STACK_PSRAM);
++}
++
++int main(void) {
++  h2_esp_task_policy_t policy = {0};
++  assert(h2_esp_target_task_policy_install() == H2_PAL_OK);
++  assert(get_policy(H2_LUA_WORKER_TASK_NAME_VALUE, &policy) == H2_PAL_OK);
++  assert(policy.priority == 4u && policy.core == H2_ESP_TASK_CORE_1);
++  assert(policy.min_stack_size == 65536u && policy.stack_region == H2_ESP_TASK_STACK_PSRAM);
++  assert_default_policy("$lua/worker-extra");
++  assert_default_policy("dynamic-default");
++  assert_policy(H2LOADER_APP_COMMAND_TASK_NAME_VALUE, 8u);
++  assert_policy(H2_LOADER_RETURN_TASK_NAME_VALUE, 8u);
++  assert_policy(H2_LOADER_BLE_LINK_TASK_NAME_VALUE, 6u);
++  assert_policy(H2_BLEIKCP_WORKER_TASK_NAME_VALUE, 7u);
++  assert_policy(H2_BLEIKCP_SERVER_TASK_NAME_VALUE, 5u);
++  assert_policy(H2_PEER_NETWORK_TASK_NAME_VALUE, 7u);
++  assert_policy(H2_PEER_UDP_TASK_NAME_VALUE, 7u);
++  assert_default_policy("unknown");
++  assert(get_policy("", &policy) == H2_PAL_ERR_NOT_FOUND);
++  assert(get_policy(NULL, &policy) == H2_PAL_ERR_NOT_FOUND);
++  assert(get_policy("unknown", NULL) == H2_PAL_ERR_NOT_FOUND);
++  s_configure_result = H2_PAL_ERR_INVALID_STATE;
++  assert(h2_esp_target_task_policy_install() == H2_PAL_ERR_INVALID_STATE);
++  return 0;
++}
++
+diff --git a/boards/tiga_esp_v4_2/esp32s3/src/h2_esp_board_modem_quectel.c b/boards/tiga_esp_v4_2/esp32s3/src/h2_esp_board_modem_quectel.c
+--- a/boards/tiga_esp_v4_2/esp32s3/src/h2_esp_board_modem_quectel.c
++++ b/boards/tiga_esp_v4_2/esp32s3/src/h2_esp_board_modem_quectel.c
+@@ -1349,7 +1349,6 @@
+                         H2_PAL_MODEM_CAPABILITY_CALL,
+         .command_timeout_ms = 5000u,
+         .io_timeout_ms = 250u,
+-        .cell_locate_token = H2_TIGA_ESP_MODEM_CELL_LOCATE_TOKEN,
+     };
+     h2_pal_result_t rc = h2_quectel_modem_init(&s_modem, &config);
+     if (rc != H2_PAL_OK) {
+diff --git a/boards/tiga_esp_v4_2/esp32s3/src/h2_esp_board_display_st7789.c b/boards/tiga_esp_v4_2/esp32s3/src/h2_esp_board_display_st7789.c
+--- a/boards/tiga_esp_v4_2/esp32s3/src/h2_esp_board_display_st7789.c
++++ b/boards/tiga_esp_v4_2/esp32s3/src/h2_esp_board_display_st7789.c
+@@ -28,7 +28,10 @@
+ #define LCD_CMD_BITS 8
+ #define LCD_PARAM_BITS 8
+ #define LCD_BITS_PER_PIXEL 16
+-#define LCD_DMA_BUFFER_LINES 16
++/* Native game frames no longer need large intermediate PSRAM canvases. A
++ * bounded 30 KiB internal tile amortizes address/command overhead, while
++ * keeping the existing synchronous ownership and 40 MHz signal timing. */
++#define LCD_DMA_BUFFER_LINES 64
+ #define LCD_DMA_BUFFER_PIXELS (LCD_WIDTH * LCD_DMA_BUFFER_LINES)
+ #define LCD_DMA_BUFFER_BYTES (LCD_DMA_BUFFER_PIXELS * 2u)
+ #define LCD_COMMAND_PARAM_BYTES 8u
+@@ -478,6 +481,26 @@
+     src += (size_t)(clipped->x - src_rect->x) * src_pixel_size;
+     for (int row = 0; row < clipped->height; ++row) {
+         const uint8_t *src_row = src + (size_t)row * stride_bytes;
++        if (format == H2_DISPLAY_PIXEL_RGB565) {
++            /* Pairwise byte swap, with memcpy preserving unaligned input and
++             * strict aliasing. Hoist format conversion out of the pixel loop. */
++            int col = 0;
++            for (; col + 1 < clipped->width; col += 2) {
++                uint32_t pair;
++                memcpy(&pair, src_row + (size_t)col * 2u, sizeof(pair));
++                pair = ((pair & UINT32_C(0x00ff00ff)) << 8) |
++                       ((pair >> 8) & UINT32_C(0x00ff00ff));
++                memcpy(out, &pair, sizeof(pair));
++                out += sizeof(pair);
++            }
++            if (col < clipped->width) {
++                uint16_t value;
++                memcpy(&value, src_row + (size_t)col * 2u, sizeof(value));
++                *out++ = (uint8_t)(value >> 8);
++                *out++ = (uint8_t)value;
++            }
++            continue;
++        }
+         for (int col = 0; col < clipped->width; ++col) {
+             const uint8_t *pixel = src_row + (size_t)col * src_pixel_size;
+             uint16_t value;
+diff --git a/boards/tiga_esp_v4_2/esp32s3/tests/test_h2_esp_board_display_st7789.c b/boards/tiga_esp_v4_2/esp32s3/tests/test_h2_esp_board_display_st7789.c
+--- a/boards/tiga_esp_v4_2/esp32s3/tests/test_h2_esp_board_display_st7789.c
++++ b/boards/tiga_esp_v4_2/esp32s3/tests/test_h2_esp_board_display_st7789.c
+@@ -42,7 +42,7 @@
+ }
+ static int s_fake_panel_io;
+ static uint8_t s_colmod;
+-static uint8_t s_pixels[7680];
++static uint8_t s_pixels[30720];
+ static size_t s_pixel_bytes;
+ 
+ esp_err_t esp_lcd_new_panel_io_spi(
+@@ -107,9 +107,9 @@
+     s_backlight_enabled_before_color = false;
+ 
+     assert(vtable->open(display->user) == H2_DISPLAY_OK);
+-    assert(s_color_tx_count == 15u);
++    assert(s_color_tx_count == 4u);
+     assert(s_colmod == 0x05u);
+-    assert(s_pixel_bytes == 7680u);
++    assert(s_pixel_bytes == 23040u); /* Final 48 rows of the 240-row clear. */
+     assert(!s_backlight_enabled_before_color);
+ }
+ 
+@@ -166,6 +166,20 @@
+     assert(memcmp(s_pixels, expected, sizeof(expected)) == 0);
+ }
+ 
++static void test_rgb565_unaligned_odd_width_stride(void) {
++    h2_pal_display_t *display = h2_esp_board_display();
++    const h2_pal_display_vtable_t *vtable = display_vtable(display);
++    uint8_t bytes[16] = {0};
++    const uint16_t row[] = {0xf800,0x07e0,0x001f};
++    memcpy(bytes + 1, row, sizeof(row));
++    memcpy(bytes + 8, row, sizeof(row));
++    const h2_display_rect_t rect = {.x=0,.y=0,.width=3,.height=2};
++    const uint8_t expected[] = {0xf8,0,7,0xe0,0,0x1f,0xf8,0,7,0xe0,0,0x1f};
++    assert(vtable->draw_bitmap(display->user,&rect,bytes+1,7,H2_DISPLAY_PIXEL_RGB565)==H2_DISPLAY_OK);
++    assert(s_pixel_bytes==sizeof(expected));
++    assert(memcmp(s_pixels,expected,sizeof(expected))==0);
++}
++
+ int main(void) {
+     test_draw_bitmap_rejects_a_null_rect_before_opening();
+     test_open_clears_panel_before_enabling_backlight();
+@@ -173,5 +187,6 @@
+     test_draw_bitmap_rejects_null_pixels_when_open();
+     test_rgb565_wire_bytes_and_clipping();
+     test_other_pal_formats_encode_rgb565();
++    test_rgb565_unaligned_odd_width_stride();
+     return 0;
+ }

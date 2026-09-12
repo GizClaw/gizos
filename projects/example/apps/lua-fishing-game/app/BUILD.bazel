@@ -2,6 +2,12 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//libs/lua:lua_resource.bzl", "h2_lua_resource")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS", "h2_gnu_only_copts")
 package(default_visibility = ["//visibility:public"])
+cc_library(
+    name = "h106_viewport",
+    hdrs = ["include/h2_fishing_h106_viewport.h"],
+    includes = ["include"],
+    deps = ["//libs/pal"],
+)
 h2_lua_resource(
     name = "fishing_game_script",
     src = "//projects/example/apps/lua-fishing-game:data/main.lua",

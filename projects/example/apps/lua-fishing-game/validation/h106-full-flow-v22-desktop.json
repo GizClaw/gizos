@@ -1,0 +1,586 @@
+{
+  "passed": true,
+  "mode": "desktop",
+  "port": null,
+  "completed": true,
+  "quality_failures": [],
+  "desktop_vm_kib": 4096,
+  "input_path": "Runtime typed button events -> Lua callbacks",
+  "fixture": "1.2 kg spotted sea bass encounter; real hook/fight/landing",
+  "physical_switches_verified": false,
+  "elapsed_seconds": 65.52,
+  "checkpoints": [
+    "rods_selection_auto_scroll",
+    "page_1",
+    "page_2",
+    "page_3",
+    "page_4",
+    "bidirectional_page_cycle",
+    "cast_1_distance_6.25",
+    "record_tap_retrieve",
+    "cast_2_distance_14.01",
+    "charge_changes_actual_distance",
+    "record_hook",
+    "left_right_rod_angle",
+    "fight_lift_settlement",
+    "record_settlement_exit",
+    "bag_actual_catch"
+  ],
+  "cast_depth_metres": {
+    "1": 6.25,
+    "2": 14.01
+  },
+  "performance_samples": [
+    "62.0 FPS / ready / p95 17ms / draw 72 / Lua 2960KB / tx 768px 2 regions / sim 0 draw 3 present 0ms",
+    "61.1 FPS / menu / p95 17ms / draw 54 / Lua 3127KB / tx 116480px 1 regions / sim 0 draw 0 present 5ms",
+    "61.4 FPS / menu / p95 17ms / draw 0 / Lua 2628KB / tx 0px 0 regions / sim 0 draw 0 present 0ms",
+    "60.4 FPS / menu / p95 17ms / draw 0 / Lua 2311KB / tx 0px 0 regions / sim 0 draw 0 present 0ms",
+    "61.5 FPS / menu / p95 17ms / draw 48 / Lua 2681KB / tx 116480px 1 regions / sim 1 draw 0 present 5ms",
+    "61.5 FPS / menu / p95 17ms / draw 50 / Lua 2802KB / tx 116480px 1 regions / sim 0 draw 0 present 5ms",
+    "60.9 FPS / menu / p95 17ms / draw 55 / Lua 2917KB / tx 200704px 1 regions / sim 1 draw 1 present 11ms",
+    "61.8 FPS / menu / p95 17ms / draw 0 / Lua 3002KB / tx 0px 0 regions / sim 0 draw 0 present 0ms",
+    "61.7 FPS / ready / p95 17ms / draw 72 / Lua 2048KB / tx 7424px 8 regions / sim 0 draw 1 present 1ms",
+    "61.3 FPS / ready / p95 17ms / draw 72 / Lua 2198KB / tx 5632px 7 regions / sim 0 draw 2 present 1ms",
+    "61.7 FPS / waiting / p95 17ms / draw 79 / Lua 2470KB / tx 14592px 12 regions / sim 1 draw 2 present 1ms",
+    "61.8 FPS / waiting / p95 17ms / draw 40 / Lua 2550KB / tx 6912px 9 regions / sim 0 draw 2 present 1ms",
+    "61.8 FPS / aiming / p95 17ms / draw 39 / Lua 2742KB / tx 11776px 5 regions / sim 1 draw 1 present 2ms",
+    "61.8 FPS / fight / p95 17ms / draw 76 / Lua 2714KB / tx 9216px 10 regions / sim 0 draw 2 present 1ms",
+    "61.5 FPS / fight / p95 17ms / draw 76 / Lua 2127KB / tx 14592px 15 regions / sim 1 draw 2 present 2ms",
+    "61.5 FPS / fight / p95 17ms / draw 76 / Lua 2177KB / tx 13312px 13 regions / sim 0 draw 2 present 1ms",
+    "61.7 FPS / fight / p95 17ms / draw 76 / Lua 2183KB / tx 14336px 15 regions / sim 1 draw 2 present 1ms",
+    "61.5 FPS / fight / p95 17ms / draw 76 / Lua 2234KB / tx 14592px 17 regions / sim 1 draw 1 present 2ms",
+    "61.3 FPS / fight / p95 17ms / draw 76 / Lua 2289KB / tx 14336px 12 regions / sim 0 draw 3 present 2ms",
+    "61.8 FPS / fight / p95 17ms / draw 76 / Lua 2295KB / tx 16896px 16 regions / sim 0 draw 2 present 2ms",
+    "61.6 FPS / fight / p95 17ms / draw 76 / Lua 2358KB / tx 12800px 12 regions / sim 0 draw 2 present 1ms",
+    "61.8 FPS / fight / p95 17ms / draw 76 / Lua 2362KB / tx 15872px 17 regions / sim 1 draw 1 present 2ms",
+    "61.6 FPS / fight / p95 17ms / draw 76 / Lua 2450KB / tx 15872px 15 regions / sim 0 draw 2 present 2ms",
+    "61.5 FPS / fight / p95 17ms / draw 77 / Lua 2524KB / tx 18432px 14 regions / sim 0 draw 2 present 2ms",
+    "61.3 FPS / fight / p95 17ms / draw 77 / Lua 2683KB / tx 19200px 15 regions / sim 1 draw 1 present 2ms",
+    "61.8 FPS / fight / p95 17ms / draw 77 / Lua 2409KB / tx 15104px 8 regions / sim 1 draw 1 present 2ms",
+    "61.8 FPS / landed / p95 17ms / draw 34 / Lua 2897KB / tx 29440px 7 regions / sim 0 draw 1 present 3ms",
+    "61.3 FPS / retrieved / p95 17ms / draw 82 / Lua 2632KB / tx 5120px 5 regions / sim 0 draw 3 present 1ms"
+  ],
+  "selection_animations": [
+    {
+      "page": 1.0,
+      "from": 1.0,
+      "to": 2.0,
+      "first_ms": 28.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 17.0,
+      "fps": 63.5
+    },
+    {
+      "page": 1.0,
+      "from": 2.0,
+      "to": 3.0,
+      "first_ms": 31.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 22.0,
+      "fps": 65.0
+    },
+    {
+      "page": 1.0,
+      "from": 3.0,
+      "to": 4.0,
+      "first_ms": 30.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 18.0,
+      "fps": 64.0
+    },
+    {
+      "page": 1.0,
+      "from": 4.0,
+      "to": 5.0,
+      "first_ms": 28.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 15.0,
+      "max_gap_ms": 17.0,
+      "fps": 63.7
+    },
+    {
+      "page": 1.0,
+      "from": 5.0,
+      "to": 4.0,
+      "first_ms": 33.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 19.0,
+      "fps": 63.2
+    },
+    {
+      "page": 1.0,
+      "from": 4.0,
+      "to": 3.0,
+      "first_ms": 30.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 17.0,
+      "fps": 63.5
+    },
+    {
+      "page": 1.0,
+      "from": 3.0,
+      "to": 2.0,
+      "first_ms": 26.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 15.0,
+      "max_gap_ms": 18.0,
+      "fps": 63.0
+    },
+    {
+      "page": 1.0,
+      "from": 2.0,
+      "to": 1.0,
+      "first_ms": 25.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 21.0,
+      "fps": 63.2
+    },
+    {
+      "page": 2.0,
+      "from": 1.0,
+      "to": 2.0,
+      "first_ms": 33.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 18.0,
+      "fps": 63.5
+    },
+    {
+      "page": 2.0,
+      "from": 2.0,
+      "to": 3.0,
+      "first_ms": 27.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 19.0,
+      "fps": 63.2
+    },
+    {
+      "page": 2.0,
+      "from": 3.0,
+      "to": 4.0,
+      "first_ms": 28.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 18.0,
+      "fps": 63.5
+    },
+    {
+      "page": 2.0,
+      "from": 4.0,
+      "to": 5.0,
+      "first_ms": 29.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 15.0,
+      "max_gap_ms": 17.0,
+      "fps": 64.0
+    },
+    {
+      "page": 2.0,
+      "from": 5.0,
+      "to": 4.0,
+      "first_ms": 30.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 17.0,
+      "fps": 63.5
+    },
+    {
+      "page": 2.0,
+      "from": 4.0,
+      "to": 3.0,
+      "first_ms": 29.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 17.0,
+      "fps": 63.2
+    },
+    {
+      "page": 2.0,
+      "from": 3.0,
+      "to": 2.0,
+      "first_ms": 30.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 15.0,
+      "max_gap_ms": 18.0,
+      "fps": 64.0
+    },
+    {
+      "page": 2.0,
+      "from": 2.0,
+      "to": 1.0,
+      "first_ms": 32.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 17.0,
+      "fps": 64.3
+    },
+    {
+      "page": 3.0,
+      "from": 1.0,
+      "to": 2.0,
+      "first_ms": 28.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 19.0,
+      "fps": 63.2
+    },
+    {
+      "page": 3.0,
+      "from": 2.0,
+      "to": 3.0,
+      "first_ms": 29.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 17.0,
+      "fps": 63.0
+    },
+    {
+      "page": 3.0,
+      "from": 3.0,
+      "to": 4.0,
+      "first_ms": 29.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 17.0,
+      "fps": 63.7
+    },
+    {
+      "page": 3.0,
+      "from": 4.0,
+      "to": 5.0,
+      "first_ms": 30.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 15.0,
+      "max_gap_ms": 17.0,
+      "fps": 63.2
+    },
+    {
+      "page": 3.0,
+      "from": 5.0,
+      "to": 4.0,
+      "first_ms": 29.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 17.0,
+      "fps": 63.7
+    },
+    {
+      "page": 3.0,
+      "from": 4.0,
+      "to": 3.0,
+      "first_ms": 30.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 17.0,
+      "fps": 64.3
+    },
+    {
+      "page": 3.0,
+      "from": 3.0,
+      "to": 2.0,
+      "first_ms": 31.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 15.0,
+      "max_gap_ms": 17.0,
+      "fps": 64.5
+    },
+    {
+      "page": 3.0,
+      "from": 2.0,
+      "to": 1.0,
+      "first_ms": 31.0,
+      "frames": 17.0,
+      "intermediate": 15.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 18.0,
+      "fps": 64.0
+    }
+  ],
+  "tab_animations": [
+    {
+      "from": 1.0,
+      "to": 2.0,
+      "caught": 0.0,
+      "frames": 13.0,
+      "first_ms": 74.0,
+      "elapsed_ms": 261.0,
+      "fps": 64.2,
+      "p95_ms": 18.0,
+      "max_gap_ms": 18.0
+    },
+    {
+      "from": 2.0,
+      "to": 3.0,
+      "caught": 0.0,
+      "frames": 13.0,
+      "first_ms": 51.0,
+      "elapsed_ms": 237.0,
+      "fps": 64.5,
+      "p95_ms": 17.0,
+      "max_gap_ms": 17.0
+    },
+    {
+      "from": 3.0,
+      "to": 4.0,
+      "caught": 0.0,
+      "frames": 14.0,
+      "first_ms": 33.0,
+      "elapsed_ms": 233.0,
+      "fps": 65.0,
+      "p95_ms": 17.0,
+      "max_gap_ms": 17.0
+    },
+    {
+      "from": 4.0,
+      "to": 3.0,
+      "caught": 0.0,
+      "frames": 14.0,
+      "first_ms": 33.0,
+      "elapsed_ms": 234.0,
+      "fps": 64.7,
+      "p95_ms": 17.0,
+      "max_gap_ms": 17.0
+    },
+    {
+      "from": 3.0,
+      "to": 2.0,
+      "caught": 0.0,
+      "frames": 14.0,
+      "first_ms": 29.0,
+      "elapsed_ms": 230.0,
+      "fps": 64.7,
+      "p95_ms": 17.0,
+      "max_gap_ms": 17.0
+    },
+    {
+      "from": 2.0,
+      "to": 1.0,
+      "caught": 0.0,
+      "frames": 13.0,
+      "first_ms": 29.0,
+      "elapsed_ms": 214.0,
+      "fps": 64.9,
+      "p95_ms": 17.0,
+      "max_gap_ms": 17.0
+    },
+    {
+      "from": 4.0,
+      "to": 3.0,
+      "caught": 1.0,
+      "frames": 14.0,
+      "first_ms": 33.0,
+      "elapsed_ms": 233.0,
+      "fps": 65.0,
+      "p95_ms": 17.0,
+      "max_gap_ms": 17.0
+    },
+    {
+      "from": 3.0,
+      "to": 4.0,
+      "caught": 1.0,
+      "frames": 13.0,
+      "first_ms": 26.0,
+      "elapsed_ms": 211.0,
+      "fps": 64.9,
+      "p95_ms": 17.0,
+      "max_gap_ms": 17.0
+    }
+  ],
+  "missing_phases": [],
+  "selection_30fps_met": true,
+  "active_phase_performance": [
+    {
+      "phase": "tabs_3_2",
+      "submitted": 14.0,
+      "elapsed_ms": 216.0,
+      "fps": 64.8,
+      "p95_ms": 17.0
+    },
+    {
+      "phase": "scroll_1",
+      "submitted": 34.0,
+      "elapsed_ms": 528.0,
+      "fps": 64.4,
+      "p95_ms": 18.0
+    },
+    {
+      "phase": "settlement",
+      "submitted": 111.0,
+      "elapsed_ms": 1791.0,
+      "fps": 62.0,
+      "p95_ms": 18.0
+    },
+    {
+      "phase": "tabs_4_3_caught",
+      "submitted": 14.0,
+      "elapsed_ms": 218.0,
+      "fps": 64.2,
+      "p95_ms": 18.0
+    },
+    {
+      "phase": "lifting",
+      "submitted": 28.0,
+      "elapsed_ms": 437.0,
+      "fps": 64.1,
+      "p95_ms": 17.0
+    },
+    {
+      "phase": "fight",
+      "submitted": 1510.0,
+      "elapsed_ms": 24509.0,
+      "fps": 61.6,
+      "p95_ms": 18.0
+    },
+    {
+      "phase": "tabs_2_3",
+      "submitted": 13.0,
+      "elapsed_ms": 222.0,
+      "fps": 58.6,
+      "p95_ms": 36.0
+    },
+    {
+      "phase": "select_3",
+      "submitted": 102.0,
+      "elapsed_ms": 1588.0,
+      "fps": 64.2,
+      "p95_ms": 17.0
+    },
+    {
+      "phase": "ready",
+      "submitted": 218.0,
+      "elapsed_ms": 3705.0,
+      "fps": 58.8,
+      "p95_ms": 18.0
+    },
+    {
+      "phase": "tabs_3_4_caught",
+      "submitted": 13.0,
+      "elapsed_ms": 197.0,
+      "fps": 66.0,
+      "p95_ms": 17.0
+    },
+    {
+      "phase": "tabs_4_3",
+      "submitted": 14.0,
+      "elapsed_ms": 219.0,
+      "fps": 63.9,
+      "p95_ms": 18.0
+    },
+    {
+      "phase": "aiming",
+      "submitted": 98.0,
+      "elapsed_ms": 1560.0,
+      "fps": 62.8,
+      "p95_ms": 18.0
+    },
+    {
+      "phase": "flight",
+      "submitted": 94.0,
+      "elapsed_ms": 1492.0,
+      "fps": 63.0,
+      "p95_ms": 17.0
+    },
+    {
+      "phase": "tabs_3_4",
+      "submitted": 14.0,
+      "elapsed_ms": 218.0,
+      "fps": 64.2,
+      "p95_ms": 18.0
+    },
+    {
+      "phase": "waiting",
+      "submitted": 165.0,
+      "elapsed_ms": 2644.0,
+      "fps": 62.4,
+      "p95_ms": 18.0
+    },
+    {
+      "phase": "retrieved",
+      "submitted": 58.0,
+      "elapsed_ms": 904.0,
+      "fps": 64.2,
+      "p95_ms": 18.0
+    },
+    {
+      "phase": "select_2",
+      "submitted": 102.0,
+      "elapsed_ms": 1594.0,
+      "fps": 64.0,
+      "p95_ms": 18.0
+    },
+    {
+      "phase": "scroll_2",
+      "submitted": 34.0,
+      "elapsed_ms": 527.0,
+      "fps": 64.5,
+      "p95_ms": 17.0
+    },
+    {
+      "phase": "scroll_3",
+      "submitted": 34.0,
+      "elapsed_ms": 529.0,
+      "fps": 64.3,
+      "p95_ms": 17.0
+    },
+    {
+      "phase": "tabs_1_2",
+      "submitted": 13.0,
+      "elapsed_ms": 247.0,
+      "fps": 52.6,
+      "p95_ms": 60.0
+    },
+    {
+      "phase": "casting",
+      "submitted": 108.0,
+      "elapsed_ms": 1730.0,
+      "fps": 62.4,
+      "p95_ms": 17.0
+    },
+    {
+      "phase": "tabs_2_1",
+      "submitted": 13.0,
+      "elapsed_ms": 200.0,
+      "fps": 65.0,
+      "p95_ms": 17.0
+    },
+    {
+      "phase": "select_1",
+      "submitted": 102.0,
+      "elapsed_ms": 1582.0,
+      "fps": 64.5,
+      "p95_ms": 18.0
+    }
+  ],
+  "all_active_phases_30fps_met": true,
+  "failure": null
+}

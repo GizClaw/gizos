@@ -15,6 +15,8 @@ from PIL import Image
 p = argparse.ArgumentParser()
 p.add_argument('--binary', type=Path, required=True)
 p.add_argument('--out', type=Path, required=True)
+p.add_argument('--layout', choices=('amoled', 'h106'), default='amoled')
+p.add_argument('--info-only', action='store_true', help='check only the information panel; does not certify thumbnail equivalence')
 a = p.parse_args()
 a.out.mkdir(parents=True, exist_ok=True)
 for scene in ('rods', 'reels', 'lures'):
@@ -32,14 +34,17 @@ for scene in ('rods', 'reels', 'lures'):
             assert result.returncode == 0, result.stdout + result.stderr
             frames.append(Image.open(target).convert('RGB'))
         first, second = frames
-        assert first.size == second.size == (368, 448)
+        width, height = (240, 240) if a.layout == 'h106' else (368, 448)
+        assert first.size == second.size == (width, height)
         left, right = first.load(), second.load()
-        differences = [(x, y) for y in range(448) for x in range(368)
+        top = (178 if a.layout == 'h106' else 360) if a.info_only else 0
+        differences = [(x, y) for y in range(top, height) for x in range(width)
                        if left[x, y] != right[x, y]]
-        assert len(differences) <= 128, (scene, scroll, 'excess pixel changes', len(differences))
+        tolerance = 0 if a.layout == 'h106' else 128
+        assert len(differences) <= tolerance, (scene, scroll, 'excess pixel changes', len(differences))
         for x, y in differences:
-            neighborhood = [(xx, yy) for yy in range(max(0, y-1), min(448, y+2))
-                            for xx in range(max(0, x-1), min(368, x+2))]
+            neighborhood = [(xx, yy) for yy in range(max(0, y-1), min(height, y+2))
+                            for xx in range(max(0, x-1), min(width, x+2))]
             assert any(left[x, y] == right[xy] for xy in neighborhood), (scene, scroll, x, y)
             assert any(right[x, y] == left[xy] for xy in neighborhood), (scene, scroll, x, y)
-        print(f'PASS {scene} scroll={scroll}: {len(differences)} edge pixels differ')
+        print(f'PASS {scene} scroll={scroll} scope={"info" if a.info_only else "full"}: {len(differences)} edge pixels differ')

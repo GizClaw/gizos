@@ -1,0 +1,600 @@
+{
+  "passed": false,
+  "mode": "upgrade",
+  "port": "/dev/cu.usbserial-110",
+  "completed": true,
+  "quality_failures": [
+    "selection animation stalled"
+  ],
+  "desktop_vm_kib": null,
+  "input_path": "Runtime typed button events -> Lua callbacks",
+  "fixture": "1.2 kg spotted sea bass encounter; real hook/fight/landing",
+  "physical_switches_verified": false,
+  "elapsed_seconds": 150.48,
+  "checkpoints": [
+    "rods_selection_auto_scroll",
+    "page_1",
+    "page_2",
+    "page_3",
+    "page_4",
+    "bidirectional_page_cycle",
+    "cast_1_distance_6.73",
+    "record_tap_retrieve",
+    "cast_2_distance_14.01",
+    "charge_changes_actual_distance",
+    "record_hook",
+    "left_right_rod_angle",
+    "fight_lift_settlement",
+    "record_settlement_exit",
+    "bag_actual_catch"
+  ],
+  "cast_depth_metres": {
+    "1": 6.73,
+    "2": 14.01
+  },
+  "performance_samples": [
+    "8.9 FPS / ready / p95 525ms / draw 72 / Lua 1726KB / tx 3840px 6 regions / sim 11 draw 45 present 9ms",
+    "16.9 FPS / menu / p95 118ms / draw 54 / Lua 2296KB / tx 116480px 1 regions / sim 0 draw 21 present 44ms",
+    "28.9 FPS / menu / p95 79ms / draw 0 / Lua 2785KB / tx 0px 0 regions / sim 0 draw 0 present 0ms",
+    "26.9 FPS / menu / p95 123ms / draw 56 / Lua 2288KB / tx 116480px 1 regions / sim 0 draw 21 present 47ms",
+    "22.4 FPS / menu / p95 104ms / draw 0 / Lua 2117KB / tx 193536px 1 regions / sim 0 draw 15 present 101ms",
+    "26.9 FPS / menu / p95 131ms / draw 0 / Lua 2680KB / tx 0px 0 regions / sim 0 draw 0 present 0ms",
+    "28.8 FPS / menu / p95 120ms / draw 50 / Lua 2605KB / tx 116480px 1 regions / sim 0 draw 18 present 49ms",
+    "31.2 FPS / menu / p95 88ms / draw 50 / Lua 2752KB / tx 116480px 1 regions / sim 0 draw 17 present 49ms",
+    "21.7 FPS / menu / p95 134ms / draw 50 / Lua 2525KB / tx 116480px 1 regions / sim 0 draw 16 present 51ms",
+    "31.6 FPS / menu / p95 79ms / draw 50 / Lua 2796KB / tx 116480px 1 regions / sim 1 draw 16 present 71ms",
+    "30.3 FPS / menu / p95 101ms / draw 50 / Lua 2603KB / tx 116480px 1 regions / sim 0 draw 17 present 44ms",
+    "26.0 FPS / menu / p95 118ms / draw 0 / Lua 2530KB / tx 0px 0 regions / sim 0 draw 0 present 0ms",
+    "18.9 FPS / menu / p95 237ms / draw 0 / Lua 2172KB / tx 0px 0 regions / sim 0 draw 0 present 0ms",
+    "27.1 FPS / ready / p95 164ms / draw 72 / Lua 1885KB / tx 13568px 12 regions / sim 17 draw 40 present 19ms",
+    "10.3 FPS / flight / p95 160ms / draw 72 / Lua 2179KB / tx 15104px 12 regions / sim 22 draw 50 present 21ms",
+    "9.2 FPS / waiting / p95 151ms / draw 96 / Lua 1956KB / tx 13312px 9 regions / sim 26 draw 47 present 15ms",
+    "12.8 FPS / retrieved / p95 102ms / draw 70 / Lua 2184KB / tx 9984px 10 regions / sim 13 draw 48 present 14ms",
+    "11.8 FPS / casting / p95 123ms / draw 70 / Lua 1996KB / tx 35072px 15 regions / sim 17 draw 51 present 40ms",
+    "8.6 FPS / fight / p95 170ms / draw 76 / Lua 2056KB / tx 15104px 12 regions / sim 48 draw 55 present 20ms",
+    "7.0 FPS / fight / p95 189ms / draw 76 / Lua 2192KB / tx 21248px 17 regions / sim 48 draw 57 present 27ms",
+    "6.9 FPS / fight / p95 225ms / draw 76 / Lua 2242KB / tx 18176px 17 regions / sim 51 draw 54 present 25ms",
+    "7.2 FPS / fight / p95 226ms / draw 76 / Lua 2251KB / tx 22528px 19 regions / sim 49 draw 55 present 29ms",
+    "6.9 FPS / fight / p95 197ms / draw 76 / Lua 2294KB / tx 16640px 18 regions / sim 51 draw 55 present 24ms",
+    "7.1 FPS / fight / p95 178ms / draw 76 / Lua 2313KB / tx 19968px 17 regions / sim 51 draw 55 present 25ms",
+    "6.8 FPS / fight / p95 199ms / draw 86 / Lua 2405KB / tx 22528px 21 regions / sim 50 draw 116 present 33ms",
+    "6.9 FPS / fight / p95 213ms / draw 76 / Lua 2398KB / tx 25856px 19 regions / sim 49 draw 58 present 32ms",
+    "6.7 FPS / fight / p95 260ms / draw 76 / Lua 2181KB / tx 19456px 18 regions / sim 49 draw 56 present 25ms",
+    "6.9 FPS / fight / p95 237ms / draw 76 / Lua 2219KB / tx 19712px 15 regions / sim 51 draw 56 present 24ms",
+    "7.0 FPS / fight / p95 214ms / draw 76 / Lua 2236KB / tx 20480px 19 regions / sim 51 draw 56 present 27ms",
+    "6.8 FPS / fight / p95 195ms / draw 76 / Lua 2282KB / tx 20736px 20 regions / sim 54 draw 57 present 25ms",
+    "7.0 FPS / fight / p95 178ms / draw 76 / Lua 2278KB / tx 17920px 20 regions / sim 49 draw 56 present 25ms",
+    "6.8 FPS / fight / p95 197ms / draw 76 / Lua 2320KB / tx 17152px 17 regions / sim 50 draw 55 present 24ms",
+    "6.8 FPS / fight / p95 226ms / draw 77 / Lua 2400KB / tx 27648px 20 regions / sim 52 draw 55 present 34ms",
+    "6.8 FPS / fight / p95 204ms / draw 77 / Lua 2300KB / tx 19200px 16 regions / sim 51 draw 54 present 26ms",
+    "6.8 FPS / fight / p95 194ms / draw 77 / Lua 2471KB / tx 21760px 13 regions / sim 49 draw 54 present 27ms",
+    "6.8 FPS / fight / p95 241ms / draw 77 / Lua 2247KB / tx 25856px 18 regions / sim 79 draw 56 present 32ms",
+    "6.6 FPS / lifting / p95 212ms / draw 86 / Lua 2354KB / tx 22784px 16 regions / sim 31 draw 117 present 37ms",
+    "14.1 FPS / landed / p95 165ms / draw 34 / Lua 2563KB / tx 34816px 13 regions / sim 0 draw 27 present 36ms",
+    "24.4 FPS / menu / p95 129ms / draw 0 / Lua 1913KB / tx 0px 0 regions / sim 0 draw 0 present 0ms",
+    "27.7 FPS / retrieved / p95 136ms / draw 126 / Lua 1947KB / tx 25600px 24 regions / sim 24 draw 40 present 33ms"
+  ],
+  "selection_animations": [
+    {
+      "page": 1.0,
+      "from": 1.0,
+      "to": 2.0,
+      "first_ms": 133.0,
+      "frames": 6.0,
+      "intermediate": 4.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 85.0,
+      "fps": 13.7
+    },
+    {
+      "page": 1.0,
+      "from": 2.0,
+      "to": 3.0,
+      "first_ms": 142.0,
+      "frames": 6.0,
+      "intermediate": 4.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 76.0,
+      "fps": 13.9
+    },
+    {
+      "page": 1.0,
+      "from": 3.0,
+      "to": 4.0,
+      "first_ms": 143.0,
+      "frames": 6.0,
+      "intermediate": 4.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 73.0,
+      "fps": 14.0
+    },
+    {
+      "page": 1.0,
+      "from": 4.0,
+      "to": 5.0,
+      "first_ms": 138.0,
+      "frames": 5.0,
+      "intermediate": 3.0,
+      "scroll_frames": 3.0,
+      "max_gap_ms": 103.0,
+      "fps": 10.8
+    },
+    {
+      "page": 1.0,
+      "from": 5.0,
+      "to": 4.0,
+      "first_ms": 144.0,
+      "frames": 5.0,
+      "intermediate": 3.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 119.0,
+      "fps": 11.7
+    },
+    {
+      "page": 1.0,
+      "from": 4.0,
+      "to": 3.0,
+      "first_ms": 138.0,
+      "frames": 6.0,
+      "intermediate": 4.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 75.0,
+      "fps": 14.0
+    },
+    {
+      "page": 1.0,
+      "from": 3.0,
+      "to": 2.0,
+      "first_ms": 137.0,
+      "frames": 5.0,
+      "intermediate": 3.0,
+      "scroll_frames": 3.0,
+      "max_gap_ms": 105.0,
+      "fps": 11.1
+    },
+    {
+      "page": 1.0,
+      "from": 2.0,
+      "to": 1.0,
+      "first_ms": 131.0,
+      "frames": 6.0,
+      "intermediate": 4.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 73.0,
+      "fps": 14.1
+    },
+    {
+      "page": 2.0,
+      "from": 1.0,
+      "to": 2.0,
+      "first_ms": 207.0,
+      "frames": 6.0,
+      "intermediate": 4.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 70.0,
+      "fps": 14.9
+    },
+    {
+      "page": 2.0,
+      "from": 2.0,
+      "to": 3.0,
+      "first_ms": 136.0,
+      "frames": 6.0,
+      "intermediate": 4.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 72.0,
+      "fps": 14.7
+    },
+    {
+      "page": 2.0,
+      "from": 3.0,
+      "to": 4.0,
+      "first_ms": 139.0,
+      "frames": 6.0,
+      "intermediate": 4.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 69.0,
+      "fps": 14.8
+    },
+    {
+      "page": 2.0,
+      "from": 4.0,
+      "to": 5.0,
+      "first_ms": 135.0,
+      "frames": 6.0,
+      "intermediate": 4.0,
+      "scroll_frames": 4.0,
+      "max_gap_ms": 89.0,
+      "fps": 13.0
+    },
+    {
+      "page": 2.0,
+      "from": 5.0,
+      "to": 4.0,
+      "first_ms": 145.0,
+      "frames": 6.0,
+      "intermediate": 4.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 72.0,
+      "fps": 14.7
+    },
+    {
+      "page": 2.0,
+      "from": 4.0,
+      "to": 3.0,
+      "first_ms": 128.0,
+      "frames": 6.0,
+      "intermediate": 4.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 71.0,
+      "fps": 14.8
+    },
+    {
+      "page": 2.0,
+      "from": 3.0,
+      "to": 2.0,
+      "first_ms": 149.0,
+      "frames": 6.0,
+      "intermediate": 4.0,
+      "scroll_frames": 4.0,
+      "max_gap_ms": 89.0,
+      "fps": 13.0
+    },
+    {
+      "page": 2.0,
+      "from": 2.0,
+      "to": 1.0,
+      "first_ms": 138.0,
+      "frames": 6.0,
+      "intermediate": 4.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 80.0,
+      "fps": 14.5
+    },
+    {
+      "page": 3.0,
+      "from": 1.0,
+      "to": 2.0,
+      "first_ms": 196.0,
+      "frames": 6.0,
+      "intermediate": 4.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 76.0,
+      "fps": 14.5
+    },
+    {
+      "page": 3.0,
+      "from": 2.0,
+      "to": 3.0,
+      "first_ms": 132.0,
+      "frames": 6.0,
+      "intermediate": 4.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 73.0,
+      "fps": 14.8
+    },
+    {
+      "page": 3.0,
+      "from": 3.0,
+      "to": 4.0,
+      "first_ms": 143.0,
+      "frames": 6.0,
+      "intermediate": 4.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 71.0,
+      "fps": 14.8
+    },
+    {
+      "page": 3.0,
+      "from": 4.0,
+      "to": 5.0,
+      "first_ms": 133.0,
+      "frames": 5.0,
+      "intermediate": 3.0,
+      "scroll_frames": 3.0,
+      "max_gap_ms": 98.0,
+      "fps": 11.7
+    },
+    {
+      "page": 3.0,
+      "from": 5.0,
+      "to": 4.0,
+      "first_ms": 133.0,
+      "frames": 6.0,
+      "intermediate": 4.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 73.0,
+      "fps": 14.2
+    },
+    {
+      "page": 3.0,
+      "from": 4.0,
+      "to": 3.0,
+      "first_ms": 131.0,
+      "frames": 6.0,
+      "intermediate": 4.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 71.0,
+      "fps": 14.7
+    },
+    {
+      "page": 3.0,
+      "from": 3.0,
+      "to": 2.0,
+      "first_ms": 143.0,
+      "frames": 5.0,
+      "intermediate": 3.0,
+      "scroll_frames": 3.0,
+      "max_gap_ms": 101.0,
+      "fps": 11.7
+    },
+    {
+      "page": 3.0,
+      "from": 2.0,
+      "to": 1.0,
+      "first_ms": 133.0,
+      "frames": 6.0,
+      "intermediate": 4.0,
+      "scroll_frames": 0.0,
+      "max_gap_ms": 70.0,
+      "fps": 15.1
+    }
+  ],
+  "tab_animations": [
+    {
+      "from": 1.0,
+      "to": 2.0,
+      "caught": 0.0,
+      "frames": 4.0,
+      "first_ms": 925.0,
+      "elapsed_ms": 1307.0,
+      "fps": 7.9,
+      "p95_ms": 146.0,
+      "max_gap_ms": 146.0
+    },
+    {
+      "from": 2.0,
+      "to": 3.0,
+      "caught": 0.0,
+      "frames": 4.0,
+      "first_ms": 491.0,
+      "elapsed_ms": 861.0,
+      "fps": 8.1,
+      "p95_ms": 135.0,
+      "max_gap_ms": 135.0
+    },
+    {
+      "from": 3.0,
+      "to": 4.0,
+      "caught": 0.0,
+      "frames": 4.0,
+      "first_ms": 256.0,
+      "elapsed_ms": 604.0,
+      "fps": 8.6,
+      "p95_ms": 129.0,
+      "max_gap_ms": 129.0
+    },
+    {
+      "from": 4.0,
+      "to": 3.0,
+      "caught": 0.0,
+      "frames": 4.0,
+      "first_ms": 250.0,
+      "elapsed_ms": 605.0,
+      "fps": 8.5,
+      "p95_ms": 136.0,
+      "max_gap_ms": 136.0
+    },
+    {
+      "from": 3.0,
+      "to": 2.0,
+      "caught": 0.0,
+      "frames": 4.0,
+      "first_ms": 177.0,
+      "elapsed_ms": 548.0,
+      "fps": 8.1,
+      "p95_ms": 135.0,
+      "max_gap_ms": 135.0
+    },
+    {
+      "from": 2.0,
+      "to": 1.0,
+      "caught": 0.0,
+      "frames": 4.0,
+      "first_ms": 179.0,
+      "elapsed_ms": 557.0,
+      "fps": 7.9,
+      "p95_ms": 137.0,
+      "max_gap_ms": 137.0
+    },
+    {
+      "from": 4.0,
+      "to": 3.0,
+      "caught": 1.0,
+      "frames": 4.0,
+      "first_ms": 258.0,
+      "elapsed_ms": 618.0,
+      "fps": 8.3,
+      "p95_ms": 138.0,
+      "max_gap_ms": 138.0
+    },
+    {
+      "from": 3.0,
+      "to": 4.0,
+      "caught": 1.0,
+      "frames": 4.0,
+      "first_ms": 101.0,
+      "elapsed_ms": 453.0,
+      "fps": 8.5,
+      "p95_ms": 130.0,
+      "max_gap_ms": 130.0
+    }
+  ],
+  "missing_phases": [],
+  "selection_30fps_met": false,
+  "active_phase_performance": [
+    {
+      "phase": "tabs_3_2",
+      "submitted": 4.0,
+      "elapsed_ms": 533.0,
+      "fps": 7.5,
+      "p95_ms": 162.0
+    },
+    {
+      "phase": "scroll_1",
+      "submitted": 10.0,
+      "elapsed_ms": 973.0,
+      "fps": 10.3,
+      "p95_ms": 122.0
+    },
+    {
+      "phase": "settlement",
+      "submitted": 29.0,
+      "elapsed_ms": 1897.0,
+      "fps": 15.3,
+      "p95_ms": 124.0
+    },
+    {
+      "phase": "tabs_4_3_caught",
+      "submitted": 4.0,
+      "elapsed_ms": 605.0,
+      "fps": 6.6,
+      "p95_ms": 245.0
+    },
+    {
+      "phase": "lifting",
+      "submitted": 8.0,
+      "elapsed_ms": 598.0,
+      "fps": 13.4,
+      "p95_ms": 185.0
+    },
+    {
+      "phase": "fight",
+      "submitted": 258.0,
+      "elapsed_ms": 37537.0,
+      "fps": 6.9,
+      "p95_ms": 201.0
+    },
+    {
+      "phase": "tabs_2_3",
+      "submitted": 4.0,
+      "elapsed_ms": 848.0,
+      "fps": 4.7,
+      "p95_ms": 478.0
+    },
+    {
+      "phase": "select_3",
+      "submitted": 36.0,
+      "elapsed_ms": 2815.0,
+      "fps": 12.8,
+      "p95_ms": 127.0
+    },
+    {
+      "phase": "ready",
+      "submitted": 45.0,
+      "elapsed_ms": 4355.0,
+      "fps": 10.3,
+      "p95_ms": 233.0
+    },
+    {
+      "phase": "tabs_3_4_caught",
+      "submitted": 4.0,
+      "elapsed_ms": 438.0,
+      "fps": 9.1,
+      "p95_ms": 130.0
+    },
+    {
+      "phase": "tabs_4_3",
+      "submitted": 4.0,
+      "elapsed_ms": 590.0,
+      "fps": 6.8,
+      "p95_ms": 235.0
+    },
+    {
+      "phase": "aiming",
+      "submitted": 21.0,
+      "elapsed_ms": 1648.0,
+      "fps": 12.7,
+      "p95_ms": 124.0
+    },
+    {
+      "phase": "flight",
+      "submitted": 15.0,
+      "elapsed_ms": 1613.0,
+      "fps": 9.3,
+      "p95_ms": 146.0
+    },
+    {
+      "phase": "tabs_3_4",
+      "submitted": 4.0,
+      "elapsed_ms": 591.0,
+      "fps": 6.8,
+      "p95_ms": 243.0
+    },
+    {
+      "phase": "waiting",
+      "submitted": 39.0,
+      "elapsed_ms": 3653.0,
+      "fps": 10.7,
+      "p95_ms": 143.0
+    },
+    {
+      "phase": "retrieved",
+      "submitted": 19.0,
+      "elapsed_ms": 1885.0,
+      "fps": 10.1,
+      "p95_ms": 255.0
+    },
+    {
+      "phase": "select_2",
+      "submitted": 36.0,
+      "elapsed_ms": 2836.0,
+      "fps": 12.7,
+      "p95_ms": 129.0
+    },
+    {
+      "phase": "scroll_2",
+      "submitted": 12.0,
+      "elapsed_ms": 1022.0,
+      "fps": 11.7,
+      "p95_ms": 133.0
+    },
+    {
+      "phase": "scroll_3",
+      "submitted": 10.0,
+      "elapsed_ms": 926.0,
+      "fps": 10.8,
+      "p95_ms": 127.0
+    },
+    {
+      "phase": "tabs_1_2",
+      "submitted": 4.0,
+      "elapsed_ms": 1295.0,
+      "fps": 3.1,
+      "p95_ms": 913.0
+    },
+    {
+      "phase": "casting",
+      "submitted": 19.0,
+      "elapsed_ms": 2139.0,
+      "fps": 8.9,
+      "p95_ms": 171.0
+    },
+    {
+      "phase": "tabs_2_1",
+      "submitted": 4.0,
+      "elapsed_ms": 542.0,
+      "fps": 7.4,
+      "p95_ms": 164.0
+    },
+    {
+      "phase": "select_1",
+      "submitted": 35.0,
+      "elapsed_ms": 2868.0,
+      "fps": 12.2,
+      "p95_ms": 127.0
+    }
+  ],
+  "all_active_phases_30fps_met": false,
+  "failure": "Device reported nonterminal check failures"
+}

@@ -1,8 +1,55 @@
-load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel/desktop_layout:desktop_layout.bzl", "h2_desktop_layout_config")
 
 package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "h106_preview",
+    hdrs = ["h106_preview.h"],
+    deps = ["//projects/example/apps/lua-fishing-game/app:h106_viewport"],
+)
+
+cc_test(
+    name = "h106_preview_test",
+    srcs = ["h106_preview_test.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    deps = [":h106_preview"],
+)
+
+h2_desktop_layout_config(
+    name = "layout_h106_generated",
+    src = "layout-h106.json",
+    app_name = "example/lua-fishing-game-h106",
+)
+
+cc_library(
+    name = "layout_h106_config",
+    hdrs = [":layout_h106_generated"],
+    strip_include_prefix = "layout_h106_generated",
+    deps = ["//libs/pal/providers/desktop/app_support", "//libs/pal/providers/desktop/pal_core"],
+)
+
+cc_binary(
+    name = "example-lua-fishing-game-h106",
+    srcs = ["main.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    data = ["layout-h106.json"],
+    tags = ["h2-ci-native-package"],
+    deps = [
+        ":h106_preview",
+        ":layout_h106_config",
+        "@h2_vendor_sdl3//:sdl3",
+        "//libs/pal",
+        "//libs/pal/providers/desktop/app_support",
+        "//libs/pal/providers/desktop/app_support:bundle_rpath",
+        "//libs/pal/providers/desktop/pal_core",
+        "//libs/runtime",
+        "//projects/example/apps/lua-fishing-game/app:lua_fishing_game",
+    ],
+)
 
 h2_desktop_layout_config(
     name = "layout_generated",
@@ -28,7 +75,9 @@ cc_binary(
     data = ["layout.json"],
     tags = ["h2-ci-native-package"],
     deps = [
+        ":h106_preview",
         ":layout_config",
+        "@h2_vendor_sdl3//:sdl3",
         "//libs/pal",
         "//libs/pal/providers/desktop/app_support",
         "//libs/pal/providers/desktop/app_support:bundle_rpath",
