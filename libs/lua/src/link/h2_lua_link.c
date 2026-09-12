@@ -346,7 +346,7 @@ static void link_post_outcome(h2_lua_link_t *link,
 static void link_datagram_input(h2_lua_link_t *link, uint16_t conn_handle,
                                 uint16_t attr_handle, const uint8_t *data,
                                 size_t len) {
-  h2_lua_link_event_t *event;
+  h2_lua_link_event_t *event = NULL;
   link_lock(link);
   if (link->closing || conn_handle != link->conn_handle ||
       attr_handle != link->datagram_handle ||
@@ -807,9 +807,9 @@ static int link_discover_one(h2_lua_link_t *link, uint16_t conn_handle,
 /* Finds the peer's datagram characteristic and enables its notifications. */
 static int link_join_datagram(h2_lua_link_t *link, uint16_t conn_handle,
                               h2_pal_system_event_subscription_t **out_sub) {
-  h2_pal_ble_gatt_discovery_entry_t service;
-  h2_pal_ble_gatt_discovery_entry_t datagram;
-  h2_pal_ble_gatt_discovery_entry_t cccd;
+  h2_pal_ble_gatt_discovery_entry_t service = {0};
+  h2_pal_ble_gatt_discovery_entry_t datagram = {0};
+  h2_pal_ble_gatt_discovery_entry_t cccd = {0};
   int rc = link_discover_one(link, conn_handle,
                              H2_PAL_BLE_GATT_DISCOVERY_SERVICE,
                              s_service_uuid, sizeof(s_service_uuid), 1u,
@@ -871,7 +871,7 @@ static void link_run_join(h2_lua_link_t *link) {
       .type = link->config.scan_type,
       .phy_mask = H2_PAL_BLE_SCAN_PHY_1M,
   };
-  h2_pal_ble_addr_t addr;
+  h2_pal_ble_addr_t addr = {0};
   uint16_t conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
   uint16_t mtu = 0u;
   h2_bleikcp_t *stream = NULL;
@@ -1334,7 +1334,7 @@ static int lua_link_state(lua_State *state) {
   h2_lua_link_state_t value = H2_LUA_LINK_IDLE;
   link_lock(link);
   if (link_session_owned_by(link, job->id, job->generation) &&
-      !link->closing && !link->task_done) {
+      !link->closing && !link->task_done && !link->ended) {
     value = link->state;
   }
   link_unlock(link);

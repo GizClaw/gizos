@@ -256,7 +256,7 @@ Datagram 可能先于对端 `HELLO` 到达，握手完成前最多暂存 4 条�
 window、32 帧输入队列和 4096-byte TX/RX buffer，关闭 congestion window。KCP 上的帧
 为 `[type u8][len u16 big-endian][payload]`：`HELLO`（双方先发，5000 ms 内校验）、
 `BYE`（close、job 结束或 Host stop 时发送并最多 flush 400 ms，对端立即报告
-`"peer_closed"`）、`MESSAGE`（一条可靠消息）和 `STREAM`（最多 512 字节流数据）。
+`"peer_closed"`；BYE 是有界的尽力而为，预算内未送达时对端报告 `"lost"`）、`MESSAGE`（一条可靠消息）和 `STREAM`（最多 512 字节流数据）。
 超长或未知帧按协议错误结束为 `"lost"`。
 
 **线程与回收。** 每个 session 一个 `$lua/link` task 负责建立连接；join 的读循环在该

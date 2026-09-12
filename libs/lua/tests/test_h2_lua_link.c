@@ -777,7 +777,8 @@ static void wait_released(fake_device_t *device) {
   "s.max_datagram=e.max_datagram end);"                                        \
   "link.on(ev.LINK_MESSAGE,function(e) local q=e.reliable and s.msgs "        \
   "or s.dgrams;q[#q+1]=e.data end);"                                          \
-  "link.on(ev.LINK_DISCONNECTED,function(e) s.disc=e.reason end);"            \
+  "link.on(ev.LINK_DISCONNECTED,function(e) s.disc=e.reason;"                 \
+  "s.disc_result=e.result end);"                                               \
   "link.on(ev.LINK_ERROR,function(e) s.err=e.reason end);"                    \
   "local function wait(f) for _=1,4000 do if f() then return end "            \
   "rt.sleep(5) end error('wait timed out') end;"                              \
@@ -850,7 +851,9 @@ static const char s_join_flood[] =
     "wait(function() return s.role end);"
     "local i=0;"
     "while not s.disc do i=i+1;link.send('m'..i);rt.yield() end;"
-    "assert(s.disc=='peer_closed',s.disc);"
+    /* BYE is bounded best-effort: a saturated peer may see the disconnect
+     * first. This case checks release and slot reuse, not the reason. */
+    "assert(s.disc=='peer_closed' or s.disc=='lost',s.disc);"
     "return 'flood-ok'";
 
 static const char s_reused_slot[] =
