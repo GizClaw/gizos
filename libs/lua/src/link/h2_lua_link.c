@@ -37,6 +37,7 @@ _Static_assert(2u * H2_LUA_LINK_BYE_FLUSH_MS < H2_LUA_LINK_HANDLER_EXIT_MS,
 #define H2_LUA_LINK_ADV_INTERVAL_MAX_MS 150u
 #define H2_LUA_LINK_ADV_SID 3u
 #define H2_LUA_LINK_SCAN_INTERVAL_MS 50u
+#define H2_LUA_LINK_SCAN_WINDOW_MS 1500u
 #define H2_LUA_LINK_KCP_DATAGRAM_MAX 244u
 #define H2_LUA_LINK_KCP_WINDOW 16u
 #define H2_LUA_LINK_KCP_INPUT_FRAMES 32u
@@ -878,22 +879,34 @@ static void link_run_join(h2_lua_link_t *link) {
   h2_pal_system_event_subscription_t *datagram_sub = NULL;
   h2_lua_link_outcome_t outcome = H2_LUA_LINK_OUTCOME_LOCAL;
   int result = H2_PAL_OK;
-  int found;
-  int rc = h2_pal_ble_start_scan(ble, &scan, link_scan_result, link);
-  if (rc != H2_PAL_OK) {
-    link_post_outcome(link, H2_LUA_LINK_OUTCOME_SETUP_FAILED, rc);
-    return;
+  int found = 0;
+  int rc;
+  /* Controllers filter duplicate reports per address for the whole scan. A
+   * host that already advertises something else (e.g. a management service)
+   * from the same address before it starts hosting would stay hidden, so
+   * the scan restarts every window to reset that filter. */
+  for (;;) {
+    const uint64_t window_end_ms = link_now_ms(link) + H2_LUA_LINK_SCAN_WINDOW_MS;
+    rc = h2_pal_ble_start_scan(ble, &scan, link_scan_result, link);
+    if (rc != H2_PAL_OK) {
+      link_post_outcome(link, H2_LUA_LINK_OUTCOME_SETUP_FAILED, rc);
+      return;
+    }
+    link_lock(link);
+    while (!link->scan_found && !link->closing &&
+           link_now_ms(link) < deadline_ms &&
+           link_now_ms(link) < window_end_ms) {
+      link_wait(link, H2_LUA_LINK_SLICE_MS);
+    }
+    found = link->scan_found;
+    addr = link->scan_addr;
+    const int stop = found || link->closing || link_now_ms(link) >= deadline_ms;
+    link_unlock(link);
+    (void)h2_pal_ble_stop_scan(ble);
+    if (stop) {
+      break;
+    }
   }
-  link_lock(link);
-  while (!link->scan_found && !link->closing &&
-         link_now_ms(link) < deadline_ms) {
-    link_wait(link, H2_LUA_LINK_SLICE_MS);
-  }
-  found = link->scan_found;
-  addr = link->scan_addr;
-  link_unlock(link);
-  rc = h2_pal_ble_stop_scan(ble);
-  (void)rc;
   if (link_is_closing(link)) {
     return;
   }

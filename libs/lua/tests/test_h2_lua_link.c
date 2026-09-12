@@ -49,6 +49,12 @@ typedef struct fake_device {
   uint8_t adv_uuid[16];
   size_t adv_uuid_len;
   int scanning;
+  /* Controller duplicate filter: one report per peer address per scan. */
+  int scan_seen_peer;
+  int scan_starts;
+  /* Always advertises another service from the same address, like the
+   * H2Loader management advertisement in App images. */
+  int foreign_adv;
   h2_pal_ble_scan_result_fn scan_cb;
   void *scan_user;
   const h2_pal_ble_gatt_service_t *service;
@@ -129,11 +135,21 @@ static void fake_post(fake_device_t *device, h2_pal_system_event_type_t type,
   }
 }
 
-/* Called with air->mutex held so a report never races stop_scan. */
+/* Called with air->mutex held so a report never races stop_scan. The first
+ * advertisement seen from the peer address in a scan is the only one
+ * reported until the scan restarts. */
 static void fake_report_locked(fake_device_t *scanner,
                                fake_device_t *advertiser) {
-  const h2_pal_ble_uuid_t uuid = {advertiser->adv_uuid,
-                                  advertiser->adv_uuid_len};
+  static const uint8_t foreign_uuid[16] = {0x5au, 0x5au};
+  const h2_pal_ble_uuid_t uuid =
+      advertiser->adv_running
+          ? (h2_pal_ble_uuid_t){advertiser->adv_uuid, advertiser->adv_uuid_len}
+          : (h2_pal_ble_uuid_t){foreign_uuid, sizeof(foreign_uuid)};
+  if (!scanner->scanning || scanner->scan_seen_peer ||
+      (!advertiser->adv_running && !advertiser->foreign_adv)) {
+    return;
+  }
+  scanner->scan_seen_peer = 1;
   h2_pal_ble_scan_result_t result = {
       .rssi = -40,
       .connectable = true,
@@ -144,8 +160,7 @@ static void fake_report_locked(fake_device_t *scanner,
   };
   result.addr.value[0] = (uint8_t)advertiser->index;
   result.addr.type = H2_PAL_BLE_ADDR_TYPE_RANDOM;
-  if (scanner->scanning && advertiser->adv_running &&
-      scanner->scan_cb(scanner->scan_user, &result)) {
+  if (scanner->scan_cb(scanner->scan_user, &result)) {
     scanner->scanning = 0;
   }
 }
@@ -216,6 +231,8 @@ static h2_pal_result_t fake_start_scan(void *user,
   (void)params;
   pthread_mutex_lock(&device->air->mutex);
   device->scanning = 1;
+  device->scan_seen_peer = 0;
+  device->scan_starts++;
   device->scan_cb = on_result;
   device->scan_user = scan_user;
   fake_report_locked(device, fake_other(device));
@@ -538,9 +555,11 @@ static void fake_air_init(fake_air_t *air) {
     fake_device_t *device = &air->devices[i];
     device->air = air;
     device->index = i;
-    /* Another service (e.g. a management service) already holds one slot. */
+    /* Another service (e.g. a management service) already holds one slot
+     * and keeps advertising from the same address. */
     memset(device->retained_uuid[0], 0xa5, 16u);
     device->retained_count = 1u;
+    device->foreign_adv = 1;
     pthread_mutex_init(&device->bus_mutex, NULL);
     device->ble = (h2_pal_ble_host_api_t){
         .user = device,
@@ -1144,6 +1163,36 @@ static void test_rehost_from_disconnect_callback(void) {
   pair_close(&pair);
 }
 
+static int device_scanning(void *user) {
+  return fake_snapshot(user).scanning;
+}
+
+/* The joiner starts scanning first and sees the host's other advertisement,
+ * which the duplicate filter then pins for that scan; restarting the scan
+ * must still find the link once the host starts hosting. */
+static void test_join_before_host_advertises(void) {
+  pair_t pair;
+  pair_open(&pair);
+  h2_lua_job_id_t join =
+      submit(pair.host[1], "@idle.lua", s_connect_then_idle, "join");
+  wait_until(device_scanning, &pair.air.devices[1]);
+  (void)h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 200u);
+  h2_lua_job_id_t host =
+      submit(pair.host[0], "@peer.lua", s_wait_peer_closed, "host");
+  wait_until(mark_reached, &s_marks[0]);
+  wait_until(mark_reached, &s_marks[1]);
+  pthread_mutex_lock(&pair.air.mutex);
+  assert(pair.air.devices[1].scan_starts >= 2);
+  pthread_mutex_unlock(&pair.air.mutex);
+  assert(h2_lua_job_cancel(pair.host[1], join) == H2_PAL_OK);
+  (void)wait_job(pair.host[1], join);
+  assert(h2_lua_job_release(pair.host[1], join) == H2_PAL_OK);
+  expect_success(pair.host[0], host, "peer-closed-ok");
+  wait_released(&pair.air.devices[0]);
+  wait_released(&pair.air.devices[1]);
+  pair_close(&pair);
+}
+
 static void test_link_loss(void) {
   pair_t pair;
   pair_open(&pair);
@@ -1297,6 +1346,8 @@ int main(void) {
   test_sequential_sessions_reuse_service();
   fprintf(stderr, "== test_rehost_from_disconnect_callback\n");
   test_rehost_from_disconnect_callback();
+  fprintf(stderr, "== test_join_before_host_advertises\n");
+  test_join_before_host_advertises();
   fprintf(stderr, "== test_link_loss\n");
   test_link_loss();
   fprintf(stderr, "== test_job_exit_releases_link\n");

@@ -175,7 +175,11 @@ PAL mixer 支撑的 Audio System 只接受 frame 大小与设备一致的 Track�
 **启用。** `//libs/lua:lua_link` 是独立 target，不使用 link 的 image 不链接 BLE
 iKCP。Launcher 在 `h2_lua_host_start()` 前调用
 `h2_lua_link_enable(host, &(h2_lua_link_config_t){adv_type, scan_type})`，按板级
-BLE stack 选择 legacy 或 extended advertising/scan。Runtime 没有 `ble_host`、
+BLE stack 选择 legacy 或 extended advertising/scan。Extended 广播对 legacy scanner
+不可见，所以需要互通的设备必须选同一种 advertising 类型；link 广播只有 21 字节，
+legacy 可以放下。ESP DevKit 的 H2Loader layout 关闭了 `CONFIG_BT_NIMBLE_EXT_ADV`，
+该配置下 extended scan 和 advertising set API 都返回 `UNSUPPORTED`，因此只能 join，
+不能 host（`host()` 以 `LINK_ERROR "ble"` 结束）。Runtime 没有 `ble_host`、
 没有 `system_event`、或接入的是 canonical unsupported object 时返回
 `H2_PAL_ERR_UNSUPPORTED`，link 保持不可用；start 之后或重复调用返回
 `H2_PAL_ERR_INVALID_STATE`。Launcher 负责启动 BLE Host，并保证它存活到
@@ -251,8 +255,13 @@ Datagram 可能先于对端 `HELLO` 到达，握手完成前最多暂存 4 条�
 之后投递。没有注册回调的事件被丢弃，App 应在 `host`/`join` 前注册。
 `LINK_ERROR` 或 `LINK_DISCONNECTED` 之后 session 结束。
 
-**连接与协议。** Join 以 30 ms interval、2000 ms supervision timeout 连接，因此掉电
-或离开范围在约 2 s 内报告 `"lost"`。bleikcp 使用 244-byte datagram、16-segment
+**连接与协议。** Join 扫描时每 1.5 s 重启一次 scan：controller 的 duplicate filter
+在一次 scan 内对同一地址只上报一次，host 在开始 `host()` 之前已经用同一地址广播其他
+内容（例如 H2Loader 管理服务）时，不重启就永远看不到 link 广播。Join 以 30 ms
+interval、2000 ms supervision timeout 连接；掉电或离开范围在一个 supervision timeout
+内报告 `"lost"`。Host 可以重新协商连接参数：运行 H2Loader BLE 命令服务的 App image
+会把每个 peripheral 连接改为 15 ms interval、4000 ms supervision timeout，此时
+`"lost"` 约 4 s 后到达。bleikcp 使用 244-byte datagram、16-segment
 window、32 帧输入队列和 4096-byte TX/RX buffer，关闭 congestion window。KCP 上的帧
 为 `[type u8][len u16 big-endian][payload]`：`HELLO`（双方先发，5000 ms 内校验）、
 `BYE`（close、job 结束或 Host stop 时发送并最多 flush 400 ms，对端立即报告
