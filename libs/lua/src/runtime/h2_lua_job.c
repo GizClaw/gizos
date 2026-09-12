@@ -310,10 +310,10 @@ static h2_lua_job_t *find_empty_job(h2_lua_host_t *host) {
 }
 
 h2_pal_result_t
-h2_lua_job_submit_text(h2_lua_host_t *host, const char *chunk_name,
-                       const uint8_t *source, size_t source_size,
-                       const h2_lua_arg_t *args, size_t arg_count,
-                       h2_lua_job_id_t *out_job_id) {
+h2_lua_job_submit_text(h2_lua_host_t *host, const char *app_id,
+                       const char *chunk_name, const uint8_t *source,
+                       size_t source_size, const h2_lua_arg_t *args,
+                       size_t arg_count, h2_lua_job_id_t *out_job_id) {
   h2_lua_job_t *job;
   h2_lua_vm_config_t vm_config;
   lua_State *root;
@@ -322,7 +322,9 @@ h2_lua_job_submit_text(h2_lua_host_t *host, const char *chunk_name,
   int load_status;
   if (host == NULL || chunk_name == NULL || source == NULL ||
       out_job_id == NULL || arg_count > INT_MAX ||
-      (arg_count != 0u && args == NULL)) {
+      (arg_count != 0u && args == NULL) ||
+      (app_id != NULL &&
+       !h2_lua_storage_name_is_valid(app_id, H2_LUA_STORAGE_APP_ID_MAX))) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_job_id = H2_LUA_JOB_ID_NONE;
@@ -355,6 +357,9 @@ h2_lua_job_submit_text(h2_lua_host_t *host, const char *chunk_name,
   }
   memset(job, 0, sizeof(*job));
   job->host = host;
+  if (app_id != NULL) {
+    memcpy(job->app_id, app_id, strlen(app_id) + 1u);
+  }
   if (chunk_name[0] == '@') {
     const char *slash = strrchr(chunk_name + 1, '/');
     if (slash != NULL) {
@@ -517,11 +522,10 @@ static int relative_path_is_valid(const char *path) {
   return 1;
 }
 
-h2_pal_result_t h2_lua_job_submit_resource(h2_lua_host_t *host,
-                                           const char *resource_name,
-                                           const h2_lua_arg_t *args,
-                                           size_t arg_count,
-                                           h2_lua_job_id_t *out_job_id) {
+h2_pal_result_t
+h2_lua_job_submit_resource(h2_lua_host_t *host, const char *app_id,
+                           const char *resource_name, const h2_lua_arg_t *args,
+                           size_t arg_count, h2_lua_job_id_t *out_job_id) {
   size_t i;
   if (host == NULL || resource_name == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -532,15 +536,15 @@ h2_pal_result_t h2_lua_job_submit_resource(h2_lua_host_t *host,
       if (resource->source == NULL) {
         return H2_PAL_ERR_INVALID_STATE;
       }
-      return h2_lua_job_submit_text(host, resource->name, resource->source,
-                                    resource->source_size, args, arg_count,
-                                    out_job_id);
+      return h2_lua_job_submit_text(host, app_id, resource->name,
+                                    resource->source, resource->source_size,
+                                    args, arg_count, out_job_id);
     }
   }
   return H2_PAL_ERR_NOT_FOUND;
 }
 
-h2_pal_result_t h2_lua_job_submit_file(h2_lua_host_t *host,
+h2_pal_result_t h2_lua_job_submit_file(h2_lua_host_t *host, const char *app_id,
                                        const char *relative_path,
                                        const h2_lua_arg_t *args,
                                        size_t arg_count,
@@ -598,8 +602,8 @@ h2_pal_result_t h2_lua_job_submit_file(h2_lua_host_t *host,
   if (result == H2_PAL_OK) {
     source[offset] = '\0';
     (void)snprintf(chunk_name, sizeof(chunk_name), "@%s", relative_path);
-    result = h2_lua_job_submit_text(host, chunk_name, source, offset, args,
-                                    arg_count, out_job_id);
+    result = h2_lua_job_submit_text(host, app_id, chunk_name, source, offset,
+                                    args, arg_count, out_job_id);
   }
   h2_pal_mem_free(host->config.runtime->mem, source);
   return result;

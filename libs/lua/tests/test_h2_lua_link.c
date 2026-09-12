@@ -61,9 +61,8 @@ static h2_lua_job_id_t submit(h2_lua_host_t *host, const char *name,
                               const char *script, const char *tag) {
   const h2_lua_arg_t args[] = {{"tag", tag}};
   h2_lua_job_id_t job = H2_LUA_JOB_ID_NONE;
-  assert(h2_lua_job_submit_text(host, name, (const uint8_t *)script,
-                                strlen(script), args, 1u,
-                                &job) == H2_PAL_OK);
+  assert(h2_lua_job_submit_text(host, NULL, name, (const uint8_t *)script,
+                                strlen(script), args, 1u, &job) == H2_PAL_OK);
   return job;
 }
 

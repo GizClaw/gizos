@@ -34,22 +34,28 @@ typedef struct h2_lua_job_status {
   char message[H2_LUA_JOB_MESSAGE_MAX];
 } h2_lua_job_status_t;
 
+/**
+ * Every submit takes the app id that scopes the job's `storage` module to
+ * `<storage root>/<app_id>/`. An app id is 1..H2_LUA_STORAGE_APP_ID_MAX bytes
+ * of `a-z`, `0-9`, `_`, `-` and `.`, not starting with `.`. Jobs sharing an
+ * app id share its files. NULL submits a job without storage identity, whose
+ * `storage` calls report unavailable.
+ */
 h2_pal_result_t
-h2_lua_job_submit_text(h2_lua_host_t *host, const char *chunk_name,
-                       const uint8_t *source, size_t source_size,
-                       const h2_lua_arg_t *args, size_t arg_count,
-                       h2_lua_job_id_t *out_job_id);
+h2_lua_job_submit_text(h2_lua_host_t *host, const char *app_id,
+                       const char *chunk_name, const uint8_t *source,
+                       size_t source_size, const h2_lua_arg_t *args,
+                       size_t arg_count, h2_lua_job_id_t *out_job_id);
 
 /** Submits one immutable compiled text resource from Host configuration. */
-h2_pal_result_t h2_lua_job_submit_resource(h2_lua_host_t *host,
-                                           const char *resource_name,
-                                           const h2_lua_arg_t *args,
-                                           size_t arg_count,
-                                           h2_lua_job_id_t *out_job_id);
+h2_pal_result_t
+h2_lua_job_submit_resource(h2_lua_host_t *host, const char *app_id,
+                           const char *resource_name, const h2_lua_arg_t *args,
+                           size_t arg_count, h2_lua_job_id_t *out_job_id);
 
 /** Loads and submits a confined relative text path through Runtime Filesystem.
  */
-h2_pal_result_t h2_lua_job_submit_file(h2_lua_host_t *host,
+h2_pal_result_t h2_lua_job_submit_file(h2_lua_host_t *host, const char *app_id,
                                        const char *relative_path,
                                        const h2_lua_arg_t *args,
                                        size_t arg_count,

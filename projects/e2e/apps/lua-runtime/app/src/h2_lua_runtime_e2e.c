@@ -198,8 +198,9 @@ static h2_pal_result_t run_script(h2_runtime_t *runtime, const char *script,
   h2_lua_job_status_t status = {0};
   h2_pal_result_t result = create_host(runtime, 1u, 1u, 2u, 1000u, &host);
   if (result == H2_PAL_OK) {
-    result = h2_lua_job_submit_text(host, "@e2e.lua", (const uint8_t *)script,
-                                    strlen(script), NULL, 0u, &id);
+    result =
+        h2_lua_job_submit_text(host, NULL, "@e2e.lua", (const uint8_t *)script,
+                               strlen(script), NULL, 0u, &id);
   }
   if (result == H2_PAL_OK) {
     result =
@@ -275,7 +276,8 @@ static h2_pal_result_t case_vm_source(h2_runtime_t *runtime,
   if (result == H2_PAL_OK)
     result = h2_lua_host_start(host);
   if (result == H2_PAL_OK)
-    result = h2_lua_job_submit_resource(host, "@fixture.lua", NULL, 0u, &id);
+    result =
+        h2_lua_job_submit_resource(host, NULL, "@fixture.lua", NULL, 0u, &id);
   if (result == H2_PAL_OK)
     result =
         wait_for_state(runtime, host, id, H2_LUA_JOB_SUCCEEDED, 1, &status);
@@ -400,8 +402,9 @@ static h2_pal_result_t case_event(h2_runtime_t *runtime, uint64_t *evidence) {
   h2_pal_result_t error = H2_PAL_ERR_INVALID_ARG;
   h2_pal_result_t result = create_host(runtime, 1u, 1u, 2u, 1000u, &host);
   if (result == H2_PAL_OK) {
-    result = h2_lua_job_submit_text(host, "@event.lua", (const uint8_t *)script,
-                                    strlen(script), NULL, 0u, &id);
+    result = h2_lua_job_submit_text(host, NULL, "@event.lua",
+                                    (const uint8_t *)script, strlen(script),
+                                    NULL, 0u, &id);
   }
   if (result == H2_PAL_OK) {
     result = wait_for_state(runtime, host, id, H2_LUA_JOB_WAITING, 0, &status);
@@ -450,9 +453,9 @@ static h2_pal_result_t case_cancel_timeout(h2_runtime_t *runtime,
   h2_lua_job_status_t status = {0};
   h2_pal_result_t result = create_host(runtime, 1u, 1u, 1u, 2u, &host);
   if (result == H2_PAL_OK) {
-    result =
-        h2_lua_job_submit_text(host, "@timeout.lua", (const uint8_t *)script,
-                               strlen(script), NULL, 0u, &id);
+    result = h2_lua_job_submit_text(host, NULL, "@timeout.lua",
+                                    (const uint8_t *)script, strlen(script),
+                                    NULL, 0u, &id);
   }
   if (result == H2_PAL_OK) {
     (void)h2_pal_time_sleep_ms(runtime->time, 1u);
@@ -482,8 +485,9 @@ static h2_pal_result_t case_multi_vm(h2_runtime_t *runtime, size_t worker_count,
       create_host(runtime, worker_count, 4u, 1u, 1000u, &host);
   for (i = 0u; result == H2_PAL_OK && i < 4u; ++i) {
     h2_lua_arg_t arg = {"id", values[i]};
-    result = h2_lua_job_submit_text(host, "@multi.lua", (const uint8_t *)script,
-                                    strlen(script), &arg, 1u, &ids[i]);
+    result = h2_lua_job_submit_text(host, NULL, "@multi.lua",
+                                    (const uint8_t *)script, strlen(script),
+                                    &arg, 1u, &ids[i]);
   }
   if (result == H2_PAL_OK)
     result = h2_lua_host_step(host);
@@ -523,8 +527,9 @@ static h2_pal_result_t case_shutdown(h2_runtime_t *runtime,
   h2_lua_job_status_t status = {0};
   h2_pal_result_t result = create_host(runtime, 1u, 1u, 1u, 5000u, &host);
   if (result == H2_PAL_OK) {
-    result = h2_lua_job_submit_text(host, "@wait.lua", (const uint8_t *)script,
-                                    strlen(script), NULL, 0u, &id);
+    result =
+        h2_lua_job_submit_text(host, NULL, "@wait.lua", (const uint8_t *)script,
+                               strlen(script), NULL, 0u, &id);
   }
   if (result == H2_PAL_OK)
     result = h2_lua_host_step(host);

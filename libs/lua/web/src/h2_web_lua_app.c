@@ -92,7 +92,8 @@ static h2_pal_result_t run_script(h2_web_app_host_t *app_host,
   if (rc == H2_PAL_OK)
     rc = h2_lua_host_start(host);
   if (rc == H2_PAL_OK)
-    rc = h2_lua_job_submit_resource(host, "app.lua", args, button_count, &job);
+    rc = h2_lua_job_submit_resource(host, NULL, "app.lua", args, button_count,
+                                    &job);
   while (rc == H2_PAL_OK) {
     if (!cancelling && h2_web_app_host_should_stop(app_host)) {
       rc = h2_lua_job_cancel(host, job);
