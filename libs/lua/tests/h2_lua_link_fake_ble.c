@@ -7,6 +7,24 @@
 #include <stdlib.h>
 #include <string.h>
 
+static _Thread_local fake_terminal_gate_t *s_terminal_gate;
+
+static h2_pal_result_t fake_sync_unlock(void *user, h2_pal_mutex_t *mutex) {
+  const h2_pal_sync_api_t *sync = h2_desktop_platform_sync_api();
+  h2_pal_result_t rc = sync->vtable->unlock_mutex(user, mutex);
+  fake_terminal_gate_t *gate = s_terminal_gate;
+  if (gate != NULL) {
+    s_terminal_gate = NULL;
+    pthread_mutex_lock(&gate->mutex);
+    atomic_store(&gate->reached, 1);
+    while (!gate->released) {
+      pthread_cond_wait(&gate->cond, &gate->mutex);
+    }
+    pthread_mutex_unlock(&gate->mutex);
+  }
+  return rc;
+}
+
 /*
  * Two fake BLE Hosts joined by one "air". Device 0 and device 1 each have
  * their own system-event bus; connect, MTU exchange, GATT writes,
@@ -236,6 +254,7 @@ static h2_pal_result_t fake_unregister(void *user) {
   pthread_mutex_lock(&device->air->mutex);
   device->service = NULL;
   pthread_mutex_unlock(&device->air->mutex);
+  s_terminal_gate = device->terminal_gate;
   return H2_PAL_OK;
 }
 
@@ -492,6 +511,10 @@ void fake_air_init(fake_air_t *air) {
     fake_device_t *device = &air->devices[i];
     device->air = air;
     device->index = i;
+    device->sync = *h2_desktop_platform_sync_api();
+    device->sync_vtable = *device->sync.vtable;
+    device->sync_vtable.unlock_mutex = fake_sync_unlock;
+    device->sync.vtable = &device->sync_vtable;
     /* Another service (e.g. a management service) already holds one slot
      * and keeps advertising from the same address. */
     memset(device->retained_uuid[0], 0xa5, 16u);
@@ -544,6 +567,7 @@ void fake_set_baseline(fake_device_t *device) {
 
 h2_runtime_t *fake_create_runtime(const h2_pal_ble_host_api_t *ble,
                                     const h2_pal_system_event_api_t *events) {
+  fake_device_t *device = ble->user;
   h2_runtime_config_t config = {
       .board = "test",
       .target = "desktop",
@@ -555,7 +579,9 @@ h2_runtime_t *fake_create_runtime(const h2_pal_ble_host_api_t *ble,
       .timer = h2_pal_unsupported_timer_api(),
       .task = h2_desktop_platform_task_api(),
       .queue = h2_desktop_platform_queue_api(),
-      .sync = h2_desktop_platform_sync_api(),
+      .sync = ble->vtable == &s_fake_ble_vtable
+                  ? &device->sync
+                  : h2_desktop_platform_sync_api(),
       .fs = h2_pal_unsupported_fs_api(),
       .disk = h2_pal_unsupported_disk_api(),
       .pref = h2_pal_unsupported_pref_api(),

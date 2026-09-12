@@ -1279,7 +1279,9 @@ static int link_read_step(lua_State *state) {
       (link->stream_rx_head + len) % H2_LUA_LINK_STREAM_BUFFER_SIZE;
   link->stream_rx_len -= len;
   connected = link_connected_for(link, job);
-  ended = link->closing || link->task_done;
+  /* A terminal event can reach Lua before the session task publishes
+   * task_done. Its drained stream is already closed at that point. */
+  ended = link->closing || link->ended || link->task_done;
   if (len != 0u) {
     link_broadcast(link);
   }

@@ -15,6 +15,7 @@
 #include "h2_runtime.h"
 
 #include <pthread.h>
+#include <stdatomic.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -38,11 +39,26 @@ struct h2_pal_system_event_subscription {
 
 typedef struct fake_air fake_air_t;
 
+/* Pauses a session after it publishes its terminal event, before task_done.
+ * The fake server's unregister callback arms the next PAL mutex unlock on
+ * that same thread: server cleanup has no further PAL mutex unlocks. */
+typedef struct fake_terminal_gate {
+  pthread_mutex_t mutex;
+  pthread_cond_t cond;
+  atomic_int reached;
+  int released;
+} fake_terminal_gate_t;
+
 typedef struct fake_device {
   fake_air_t *air;
   int index;
   h2_pal_ble_host_api_t ble;
   h2_pal_system_event_api_t events;
+  /* Desktop sync with an unlock hook for terminal_gate; Runtimes built on
+   * this device's BLE Host use it. */
+  h2_pal_sync_api_t sync;
+  h2_pal_sync_vtable_t sync_vtable;
+  fake_terminal_gate_t *terminal_gate;
   pthread_mutex_t bus_mutex;
   struct h2_pal_system_event_subscription subscriptions[FAKE_SUBSCRIPTION_MAX];
   /* Guarded by air->mutex. */
