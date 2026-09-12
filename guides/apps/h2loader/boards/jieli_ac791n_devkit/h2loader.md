@@ -42,7 +42,7 @@ Loader self-update 现在复用 SDK updater，但通过本 layout 的 NOR adapte
 
 正常自更新实测的候选包 SHA 为 `3af1c30a724182da5b49ae3e77075651cc438b40be2f5fb816a2a1530d243da2`：依次观察到 `LOADER_COMMIT mode=warm boot_info=unpublished`、P2 的 native BootInfo 不存在但逻辑分区为 2、`LOADER_TRIAL confirmed=1`、`LOADER_HEADER published=1`、回写事件 2、原生 P1 启动及完成事件 4。最终状态为 P1/next P1、Stage 空、`last_result=0`，运行镜像 SHA 为 `3a3ae59391c4f4e17b7edde708be1725cc82dca4afc0411e5fcd8051ca22b0f8`。这些证据仅证明正常路径，不证明提交中断恢复。
 
-v2 已完成一次[空闲状态实际断电后的 App 恢复](./evidence/2026-09-13/installed-app-powercycle.md)，由用户执行断电上电，连续 UART 记录 Loader 自动启动原 App、确认及心跳。提交写入过程中断电仍未验收，最终源码版本也需复测，本页保持 WIP。
+v2 已完成一次[空闲状态实际断电后的 App 恢复](./evidence/2026-09-13/installed-app-powercycle.md)。最终 v5 也完成了[独立断电复测](./evidence/2026-09-13/installed-app-v5-powercycle.md)：用户断电上电，UART 断开后重新连接，捕获 App 确认与心跳；独立状态查询确认原 App SHA、v5 Loader SHA、Stage 空和 last_result=0。v5 串口重新枚举期间未捕获最早的 Loader 日志，不能宣称记录了全部早期启动过程。提交写入过程中断电仍未验收，本页保持 WIP。
 
 候选启动记录采用固定 112-byte little-endian 编码，不直接持久化 C 结构体填充。字段偏移为 magic 0、代码长度 4、代码 CRC 8、保留字段 10、65-byte SHA 字符串 12、32-byte 启动头 77，尾部 109–111 必须为零。解码同时要求精确长度，后续仍验证候选身份和启动头 CRC。v5 已完成[不同镜像 self-update](./evidence/2026-09-13/loader-v5-self-update.md)、[确认前故障恢复](./evidence/2026-09-13/loader-v5-preconfirm-recovery.md)及下表 UART/BLE 完整回归；不能把这些结果扩展为提交中断或全部 PAL 的验收。
 
