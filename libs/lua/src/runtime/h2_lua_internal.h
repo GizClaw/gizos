@@ -115,7 +115,6 @@ typedef struct h2_lua_job {
   h2_lua_job_id_t id;
   uint32_t generation;
   size_t worker_index;
-  h2_pal_mutex_t *mutex;
   h2_lua_job_state_t state;
   h2_lua_vm_t *vm;
   h2_lua_task_t *tasks;
@@ -188,7 +187,17 @@ struct h2_lua_host {
   h2_pal_mutex_t *audio_mutex;
   size_t audio_speaker_users;
   size_t audio_mic_users;
+  /* Slot i is locked through job_mutexes[i]. Kept outside h2_lua_job_t so
+   * clearing a slot never writes the lock that workers take without holding
+   * any other lock; written only by host create/destroy. */
+  h2_pal_mutex_t *job_mutexes[];
 };
+
+/* The job must be live (job->host set); code that walks empty slots indexes
+ * host->job_mutexes directly. */
+static inline h2_pal_mutex_t *h2_lua_job_mutex(const h2_lua_job_t *job) {
+  return job->host->job_mutexes[job - job->host->jobs];
+}
 
 void *h2_lua_runtime_realloc(void *user, void *ptr, size_t old_size,
                              size_t new_size);
