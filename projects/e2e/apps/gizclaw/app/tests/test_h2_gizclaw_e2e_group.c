@@ -302,13 +302,15 @@ static void response(enum method m, const char *arg,
         p->items[1].has_online = true;
       p->count = count;
       p->has_next = next;
+      /* Fault 6 keeps a structurally valid page so that only the member
+       * last_seen_at storage-ownership check can reject it. */
       if (fault == 6u)
         p->items[0].last_seen_at = "external";
-      else if (fault == 4u && target)
+      if (fault == 4u && target)
         p->items[1].friend_group_name = save(s, "wrong-group");
       else if (fault <= 5u && target)
         corrupt(s, &p->items[1].id, fault);
-      else if (fault)
+      else if (fault && fault != 6u)
         p->count = 33u;
       if (next)
         next_cursor =
