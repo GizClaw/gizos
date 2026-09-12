@@ -79,6 +79,7 @@ cc_test(
     name = "display_config_host_test",
     srcs = [
         "include/h2_esp_board.h",
+        "include/h2_esp_display_dma_pipeline.h",
         "src/h2_esp_board_display_config.c",
         "tests/test_h2_esp_board_display_config.c",
     ],

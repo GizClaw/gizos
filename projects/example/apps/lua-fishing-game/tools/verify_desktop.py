@@ -19,6 +19,8 @@ cases = [(scene, scene, []) for scene in scenes] + [
     ('cq-menu', 'reels', ['--reel=10']),
     ('cq-mounted', 'idle', ['--reel=10']),
     ('fly-gear', 'reels', ['--rod=6', '--reel=6']),
+    ('bags-empty', 'bags', []),
+    ('bags-preview', 'fish-bag-preview', []),
     ('deck-drop', 'deck-demo', ['--time-ms=50']),
     ('deck-hop-one', 'deck-demo', ['--time-ms=725']),
     ('deck-hop-two', 'deck-demo', ['--time-ms=1325']),
@@ -36,11 +38,13 @@ for scene, mode, extra in cases:
         assert 'FISHING_WEATHER_CHECK PASS' in result.stdout + result.stderr, scene
         assert 'FISHING_CHECK PASS' in result.stdout + result.stderr, scene
         assert 'FISHING_INPUT_CHECK PASS' in result.stdout + result.stderr, scene
+        assert 'FISHING_NAVIGATION_CHECK PASS' in result.stdout + result.stderr, scene
+        assert 'FISHING_BAG_CHECK PASS' in result.stdout + result.stderr, scene
         assert 'FISHING_RAIL_CHECK PASS' in result.stdout + result.stderr, scene
         assert 'FISHING_SURFACE_CHECK PASS' in result.stdout + result.stderr, scene
     im = Image.open(ppm).convert('RGB')
     assert im.size == (368, 448), (scene, im.size)
-    if mode not in ['rods', 'reels', 'lures', 'cq', 'deck-demo']:
+    if mode not in ['rods', 'reels', 'lures', 'bags', 'fish-bag-preview', 'cq', 'deck-demo']:
         # Anchor must physically meet the screen corner, not float above it.
         assert max(im.getpixel((367, 447))) < 110, (scene, 'rod butt missing')
         r, g, b = im.getpixel((1, 180))
@@ -62,5 +66,7 @@ def sheet(names, columns, path):
 
 sheet(['overhead', 'pendulum', 'iso', 'fly-back', 'fly-send', 'fight'], 3, 'native-storyboard.png')
 sheet(['rods', 'reels', 'lures'], 3, 'native-inventory.png')
+sheet(['idle', 'rods', 'reels', 'lures', 'bags-preview'], 5, 'native-navigation.png')
+sheet(['bags-empty', 'bags-preview'], 2, 'native-bags.png')
 sheet(['deck-drop', 'deck-hop-one', 'deck-hop-two', 'deck-result'], 4, 'native-deck.png')
 print(f'PASS: {len(cases)} native frames; shared model/gesture/fight checks run once; dimensions, rod anchors and sky verified.')

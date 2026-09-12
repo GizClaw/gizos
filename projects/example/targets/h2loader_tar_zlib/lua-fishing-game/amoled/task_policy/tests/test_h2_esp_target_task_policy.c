@@ -1,6 +1,7 @@
 #include "h2_esp_target_task_policy.h"
 
 #include "h2_bleikcp_task_names.h"
+#include "h2_lua_task_names.h"
 #include "h2_peer_task_names.h"
 #include "h2loader_app_task_names.h"
 #include "h2_loader_task_names.h"
@@ -45,6 +46,10 @@ static void assert_default_policy(const char *name) {
 int main(void) {
   h2_esp_task_policy_t policy = {0};
   assert(h2_esp_target_task_policy_install() == H2_PAL_OK);
+  assert(get_policy(H2_LUA_WORKER_TASK_NAME_VALUE, &policy) == H2_PAL_OK);
+  assert(policy.priority == 4u && policy.core == H2_ESP_TASK_CORE_1);
+  assert(policy.min_stack_size == 65536u && policy.stack_region == H2_ESP_TASK_STACK_PSRAM);
+  assert_default_policy("$lua/worker-extra");
   assert_default_policy("dynamic-default");
   assert_policy(H2LOADER_APP_COMMAND_TASK_NAME_VALUE, 8u);
   assert_policy(H2_LOADER_RETURN_TASK_NAME_VALUE, 8u);

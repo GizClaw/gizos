@@ -1,6 +1,7 @@
 #include "h2_esp_board_private.h"
 #include "h2_esp_board_internal.h"
 #include "h2_esp_board.h"
+#include "h2_esp_display_dma_pipeline.h"
 
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
@@ -487,6 +488,34 @@ static int amoled_get_info(void *user, h2_display_info_t *info) {
     return H2_DISPLAY_OK;
 }
 
+typedef struct amoled_transfer {
+    h2_esp_amoled_display_state_t *state;
+    const h2_display_rect_t *source;
+    h2_display_rect_t clipped;
+    const void *pixels;
+    size_t stride, pixel_size, slot_pixels;
+    h2_display_pixel_format_t format;
+} amoled_transfer_t;
+
+static void amoled_prepare_slot(void *user, unsigned slot, int row, int rows) {
+    amoled_transfer_t *t = user;
+    h2_display_rect_t chunk = t->clipped;
+    chunk.y += row; chunk.height = rows;
+    convert_chunk_to_rgb565(t->source, &chunk, t->pixels, t->stride, t->format,
+        t->pixel_size, t->state->dma_buffer + slot * t->slot_pixels);
+}
+
+static int amoled_submit_slot(void *user, unsigned slot, int row, int rows) {
+    amoled_transfer_t *t = user;
+    return esp_result(esp_lcd_panel_draw_bitmap(t->state->panel,
+        t->clipped.x, t->clipped.y + row, t->clipped.x + t->clipped.width,
+        t->clipped.y + row + rows, t->state->dma_buffer + slot * t->slot_pixels));
+}
+
+static int amoled_drain_slot(void *user) {
+    return drain_panel_io(((amoled_transfer_t *)user)->state);
+}
+
 static int amoled_draw_bitmap(
     void *user,
     const h2_display_rect_t *rect,
@@ -510,45 +539,16 @@ static int amoled_draw_bitmap(
         return rc;
     }
 
-    const size_t max_chunk_pixels = state->dma_buffer_pixels;
-    if (state->dma_buffer == NULL || max_chunk_pixels == 0u || (size_t)clipped.width > max_chunk_pixels) {
+    h2_display_dma_pipeline_t plan = h2_display_dma_plan(state->dma_buffer_pixels, clipped.width, LCD_DRAW_ROWS);
+    if (state->dma_buffer == NULL || plan.slots == 0u) {
         return H2_DISPLAY_ERR_NO_MEMORY;
-    }
-    int max_chunk_rows = (int)(max_chunk_pixels / (size_t)clipped.width);
-    if (max_chunk_rows <= 0 || max_chunk_rows > LCD_DRAW_ROWS) {
-        max_chunk_rows = LCD_DRAW_ROWS;
     }
 
     wait_for_frame_te(state);
 
-    int y = clipped.y;
-    const int y_end = clipped.y + clipped.height;
-    while (y < y_end) {
-        h2_display_rect_t chunk = clipped;
-        chunk.y = y;
-        chunk.height = y_end - y;
-        if (chunk.height > max_chunk_rows) {
-            chunk.height = max_chunk_rows;
-        }
-
-        convert_chunk_to_rgb565(rect, &chunk, pixels, stride_bytes, format, src_pixel_size, state->dma_buffer);
-        esp_err_t err = esp_lcd_panel_draw_bitmap(
-            state->panel,
-            chunk.x,
-            chunk.y,
-            chunk.x + chunk.width,
-            chunk.y + chunk.height,
-            state->dma_buffer);
-        if (err != ESP_OK) {
-            return esp_result(err);
-        }
-        rc = drain_panel_io(state);
-        if (rc != H2_DISPLAY_OK) {
-            return rc;
-        }
-        y += chunk.height;
-    }
-    return H2_DISPLAY_OK;
+    amoled_transfer_t transfer = {state, rect, clipped, pixels, stride_bytes, src_pixel_size, plan.slot_pixels, format};
+    return h2_display_dma_run(&plan, clipped.height, &transfer,
+        amoled_prepare_slot, amoled_submit_slot, amoled_drain_slot);
 }
 
 static int amoled_present(void *user) {

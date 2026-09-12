@@ -1,6 +1,7 @@
 #include "h2_esp_target_task_policy.h"
 
 #include "h2_bleikcp_task_names.h"
+#include "h2_lua_task_names.h"
 
 #include "h2_peer_task_names.h"
 
@@ -24,6 +25,14 @@ static const h2_esp_task_policy_t s_priority_8_policy = POLICY(8u);
 static const h2_esp_task_policy_t s_priority_7_policy = POLICY(7u);
 static const h2_esp_task_policy_t s_priority_6_policy = POLICY(6u);
 static const h2_esp_task_policy_t s_priority_5_policy = POLICY(5u);
+/* Keep this target's Lua worker away from management/BLE on core 0.
+ * Retain PSRAM for its large stack so DMA/audio have internal RAM headroom. */
+static const h2_esp_task_policy_t s_fishing_policy = {
+    .priority = 4u,
+    .core = H2_ESP_TASK_CORE_1,
+    .min_stack_size = 65536u,
+    .stack_region = H2_ESP_TASK_STACK_PSRAM,
+};
 
 static h2_pal_result_t
 handle_policy(const void *user, const h2_trie_match_t *match, void *response) {
@@ -36,6 +45,8 @@ handle_policy(const void *user, const h2_trie_match_t *match, void *response) {
 }
 
 static const h2_trie_route_t s_routes[] = {
+    {H2_LUA_WORKER_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy,
+     &s_fishing_policy},
     {H2LOADER_APP_COMMAND_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy,
      &s_priority_8_policy},
     {H2_LOADER_RETURN_TASK_NAME_VALUE, H2_TRIE_ROUTE_EXACT, handle_policy,
@@ -51,6 +62,7 @@ static const h2_trie_route_t s_routes[] = {
 
 enum {
   ROUTE_NODE_CAPACITY = 1u + H2_TRIE_LITERAL_NODE_COUNT(H2LOADER_APP_COMMAND_TASK_NAME_VALUE) +
+                        H2_TRIE_LITERAL_NODE_COUNT(H2_LUA_WORKER_TASK_NAME_VALUE) +
                         H2_TRIE_LITERAL_NODE_COUNT(H2_LOADER_RETURN_TASK_NAME_VALUE) +
                         H2_TRIE_LITERAL_NODE_COUNT(H2_LOADER_BLE_LINK_TASK_NAME_VALUE) +
                         H2_TRIE_LITERAL_NODE_COUNT(H2_BLEIKCP_WORKER_TASK_NAME_VALUE) +

@@ -7,6 +7,7 @@
 #include "h2_lua_fishing_game.h"
 
 #include "esp_system.h"
+#include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -24,6 +25,10 @@ static h2_pal_result_t confirm_ready(void *user) {
     result = h2_esp_h2loader_app_confirm(runtime);
   }
   if (result == H2_PAL_OK) {
+    printf("FISHING_HEAP internal_free=%u internal_largest=%u internal_min=%u\n",
+           (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+           (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+           (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
     printf(
         "H2_LUA_FISHING_GAME_READY display=368x448 touch=ft3168 button=boot\n");
   }

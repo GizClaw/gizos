@@ -30,6 +30,8 @@ typedef struct h2_lua_fishing_game_config {
   const char *action;
   const char *brand;
   const char *check;
+  const char *no_cache;
+  const char *scroll;
   h2_runtime_component_id_t back_component_id;
   h2_lua_fishing_game_should_stop_fn should_stop;
   void *should_stop_user;

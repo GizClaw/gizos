@@ -65,6 +65,8 @@ h2_lua_fishing_game_run(h2_runtime_t *runtime,
       {.name = "action", .value = config->action ? config->action : "F"},
       {.name = "brand", .value = config->brand ? config->brand : "1"},
       {.name = "check", .value = config->check ? config->check : "0"},
+      {.name = "no_cache", .value = config->no_cache ? config->no_cache : "0"},
+      {.name = "scroll", .value = config->scroll ? config->scroll : ""},
   };
 
   result = h2_lua_host_create(
@@ -86,7 +88,7 @@ h2_lua_fishing_game_run(h2_runtime_t *runtime,
   if (result != H2_PAL_OK) {
     return result;
   }
-  result = h2_lua_register_module(host, "fishing_math", h2_lua_fishing_math_open, NULL);
+  result = h2_lua_register_module(host, "fishing_math", h2_lua_fishing_math_open, runtime);
   if (result == H2_PAL_OK) result = h2_lua_host_start(host);
   if (result == H2_PAL_OK) {
     result =

@@ -150,10 +150,13 @@ int should_stop(void *user) {
 } // namespace
 
 int main(int argc, char **argv) {
+  const char *no_cache="0", *scroll="";
   const char *weather="auto", *hour="9", *profile="desktop", *scene="idle", *time_ms="", *capture=nullptr, *record=nullptr, *record_frames="360";
   const char *rod="1", *reel="1", *lure="1", *detail="0", *fish_kg="2", *power="ML", *action="F", *brand="1", *check="0";
   for (int i=1;i<argc;i++) {
-    if (!std::strncmp(argv[i],"--profile=",10)) profile=argv[i]+10;
+    if (!std::strcmp(argv[i],"--no-cache")) no_cache="1";
+    else if (!std::strncmp(argv[i],"--scroll=",9)) scroll=argv[i]+9;
+    else if (!std::strncmp(argv[i],"--profile=",10)) profile=argv[i]+10;
     else if (!std::strncmp(argv[i],"--weather=",10)) weather=argv[i]+10;
     else if (!std::strncmp(argv[i],"--hour=",7)) hour=argv[i]+7;
     else if (!std::strncmp(argv[i],"--scene=",8)) scene=argv[i]+8;
@@ -168,7 +171,7 @@ int main(int argc, char **argv) {
     else if (!std::strncmp(argv[i],"--fish-kg=",10)) fish_kg=argv[i]+10;
     else if (!std::strcmp(argv[i],"--check")) check="1";
     else {
-      std::fprintf(stderr,"Usage: %s [--scene=demo|physics-demo|idle|overhead|pendulum|iso|fly-back|fly-send|fight|fight-study-1..10|fight-revision-1..12|deck-demo|deck-record|rods|reels|lures|cq|reel-view|lure-view|fish-atlas|fish-atlas-2|fish-atlas-3|fish-bag|fish-bag-preview|retrieve-demo|fight-demo|weather-demo|cast-demo|cast-record] [--profile=desktop|amoled] [--weather=auto|sunny|cloudy|rain] [--hour=0..23] [--time-ms=N] [--capture=new.ppm] [--record-prefix=new/path/frame- --record-frames=360] [--rod=1..11] [--reel=1..19] [--lure=1..18] [--detail=0..1] [--fish-kg=0..50] [--check]\n",argv[0]);
+      std::fprintf(stderr,"Usage: %s [--scene=demo|physics-demo|perf-demo|idle|overhead|pendulum|iso|fly-back|fly-send|fight|fight-study-1..10|fight-revision-1..12|deck-demo|deck-record|rods|reels|lures|cq|reel-view|lure-view|fish-atlas|fish-atlas-2|fish-atlas-3|bags|fish-bag|fish-bag-preview|retrieve-demo|fight-demo|weather-demo|cast-demo|cast-record] [--profile=desktop|amoled] [--weather=auto|sunny|cloudy|rain] [--hour=0..23] [--time-ms=N] [--capture=new.ppm] [--record-prefix=new/path/frame- --record-frames=360] [--rod=1..11] [--reel=1..19] [--lure=1..18] [--detail=0..1] [--fish-kg=0..50] [--check]\n",argv[0]);
       return 2;
     }
   }
@@ -180,12 +183,13 @@ int main(int argc, char **argv) {
   double fish_mass=std::strtod(fish_kg,&fish_end);
   bool fish_ok=fish_end!=fish_kg && *fish_end=='\0' && std::isfinite(fish_mass) && fish_mass>=0 && fish_mass<=50;
   bool scene_ok=false,power_ok=false,action_ok=false;
-  for (auto v:{"demo","physics-demo","idle","overhead","pendulum","iso","fly-back","fly-send","fight","rods","reels","lures","cq","reel-view","lure-view","fight-study-1","fight-study-2","fight-study-3","fight-study-4","fight-study-5","fight-study-6","fight-study-7","fight-study-8","fight-study-9","fight-study-10","fight-revision-1","fight-revision-2","fight-revision-3","fight-revision-4","fight-revision-5","fight-revision-6","fight-revision-7","fight-revision-8","fight-revision-9","fight-revision-10","fight-revision-11","fight-revision-12","fish-atlas","fish-atlas-2","fish-atlas-3","fish-bag","fish-bag-preview","retrieve-demo","fight-demo","weather-demo","deck-demo","deck-record","cast-demo","cast-record"}) if (!std::strcmp(v,scene)) scene_ok=true;
+  for (auto v:{"demo","physics-demo","perf-demo","idle","overhead","pendulum","iso","fly-back","fly-send","fight","rods","reels","lures","cq","reel-view","lure-view","fight-study-1","fight-study-2","fight-study-3","fight-study-4","fight-study-5","fight-study-6","fight-study-7","fight-study-8","fight-study-9","fight-study-10","fight-revision-1","fight-revision-2","fight-revision-3","fight-revision-4","fight-revision-5","fight-revision-6","fight-revision-7","fight-revision-8","fight-revision-9","fight-revision-10","fight-revision-11","fight-revision-12","fish-atlas","fish-atlas-2","fish-atlas-3","bags","fish-bag","fish-bag-preview","retrieve-demo","fight-demo","weather-demo","deck-demo","deck-record","cast-demo","cast-record"}) if (!std::strcmp(v,scene)) scene_ok=true;
   for (auto v:{"UL","L","ML","M","MH","H","XH","XXH","XXXH"}) if (!std::strcmp(v,power)) power_ok=true;
   for (auto v:{"R","RF","F","XF"}) if (!std::strcmp(v,action)) action_ok=true;
   if ((record && (capture || !*record || (std::strcmp(scene,"cast-record") && std::strcmp(scene,"deck-record")) || *time_ms)) ||
       !valid_number(record_frames,2,1800) || ((!std::strcmp(scene,"cast-record") || !std::strcmp(scene,"deck-record")) && !record) ||
       (std::strcmp(profile,"desktop") && std::strcmp(profile,"amoled")) || !valid_number(hour,0,23) || (std::strcmp(weather,"auto") && std::strcmp(weather,"sunny") && std::strcmp(weather,"cloudy") && std::strcmp(weather,"rain")) || !fish_ok || !scene_ok || !power_ok || !action_ok || !valid_number(rod,1,11) || !valid_number(reel,1,19) || !valid_number(lure,1,18) || !valid_number(detail,0,1) || !valid_number(brand,1,3) ||
+      (*scroll && !valid_number(scroll,0,1000000)) ||
       (*time_ms && !valid_number(time_ms,0,3600000)) || (capture && (!*capture || !*time_ms))) {
     std::fprintf(stderr,"Invalid option; capture requires --time-ms; recording requires cast-record/deck-record and an unused prefix.\n"); return 2;
   }
@@ -211,6 +215,7 @@ int main(int argc, char **argv) {
   if (result==H2_PAL_OK) {
     const h2_lua_fishing_game_config_t config={
       .profile=profile,.weather=weather,.hour=hour,.scene=scene,.time_ms=time_ms,.rod=rod,.reel=reel,.lure=lure,.detail=detail,.fish_kg=fish_kg,.power=power,.action=action,.brand=brand,.check=check,
+      .no_cache=no_cache,.scroll=scroll,
       .back_component_id=kBackComponentId,.should_stop=should_stop,.should_stop_user=&context,
       .on_ready=nullptr,.on_ready_user=nullptr,
     };

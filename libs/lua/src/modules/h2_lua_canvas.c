@@ -77,6 +77,9 @@ static int end_composite(lua_State *s) {
   canvas->active = 0;
   job->dirty_valid = 1; job->dirty_min_x = 0; job->dirty_min_y = 0;
   job->dirty_max_x = canvas->width-1; job->dirty_max_y = canvas->height-1;
+  size_t tiles=(size_t)((canvas->width+15)/16)*((canvas->height+15)/16);
+  if(job->dirty_tiles)memset(job->dirty_tiles,1,tiles);
+  if(job->background_dirty_tiles)memset(job->background_dirty_tiles,1,tiles);
   return 0;
 }
 

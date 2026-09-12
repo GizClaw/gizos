@@ -9,10 +9,14 @@ The PNGs under `design/` are approved visual references only, not build inputs.
 bazel run //projects/example/targets/cc_binary/lua-fishing-game:example-lua-fishing-game
 ```
 
-- Starts on the sea. Drag **left** to open gear. Inside gear, drag horizontally
-  to switch RODS / REELS / LURES; drag right from RODS to return to the sea.
-  Tab content follows the finger and settles with a 180 ms slide.
-- Click RODS / REELS / LURES, then a thumbnail to equip it.
+- Starts on the sea. Consecutive **left** swipes follow
+  **Sea → RODS → REELS → LURES → BAGS**; right swipes reverse that route.
+  BAGS is a standalone fish-bag module alongside equipment, with its own header,
+  not a fourth equipment tab. The route does not wrap at either end.
+  Inventory content follows the finger and settles with a 180 ms slide.
+- The equipment header contains only RODS / REELS / LURES. Swipe horizontally
+  to change pages (including across the header), then click a thumbnail to equip
+  it. Header taps do not change pages. Browsing BAGS never changes equipment.
 - Rod cells show C (casting), S (spinning, including ISO), or F (fly) at the
   upper left. All upper-right lengths use feet/inches rounded to the nearest
   inch, including metric rods; original catalog length remains in the details.
@@ -63,7 +67,10 @@ bazel run //projects/example/targets/cc_binary/lua-fishing-game:example-lua-fish
 
 `--scene=demo` cycles six storyboard poses. Individual previews:
 `idle`, `overhead`, `pendulum`, `iso`, `fly-back`, `fly-send`, `fight`, `rods`,
-`reels`, `lures`, `cq`. `--rod=1..11`, `--reel=1..19`, `--lure=1..18` select catalog items.
+`reels`, `lures`, `bags`, `fish-bag-preview`, `cq`. `bags` shows actual catches
+(initially empty); `fish-bag-preview` shows the specimen catalog for visual checks.
+`fish-bag` remains an alias for `bags`.
+`--rod=1..11`, `--reel=1..19`, `--lure=1..18` select catalog items.
 `--detail=0..1` is retained for capture CLI compatibility; the four-field
 summary is fixed. Inventory
 captures scroll to the selected rod, reel or lure; incompatible
@@ -80,7 +87,8 @@ bazel run //projects/example/targets/cc_binary/lua-fishing-game:example-lua-fish
 Captures tap the **actual RGB565 pixels submitted to SDL**, not a second renderer.
 Capture paths must not already exist. `--check` executes compatibility, bending,
 2,376 rod-pose checks and gesture/equipment-transition assertions inside the same
-Lua VM before rendering. For fourteen native captures and contact sheets:
+Lua VM before rendering, including the five-page swipe route, endpoint behavior,
+and independent read-only Bags browsing. For twenty native captures and contact sheets:
 
 ```sh
 python3 projects/example/apps/lua-fishing-game/tools/verify_desktop.py \
@@ -167,13 +175,15 @@ Surface-only lures have explicit behavior: SUPER SPOOK JR. alternates lateral ac
 
 `--scene=fight-demo` drives the same live pipeline automatically for inspection, but can lose fish. `--scene=deck-demo --time-ms=725 --capture=/tmp/new.ppm` captures the actual deck renderer at a chosen animation time, with a clearly designated example record. `fight-revision-1..12` are review poses; these do not replace live validation.
 
-`--profile=amoled` selects a 40 FPS target, 120 Hz fixed physics, at most 72 line nodes and six local solver passes (two for a hooked fish). Desktop defaults to 60 FPS / 240 Hz / 150 nodes / twelve passes. Both profiles use the same Lua geometry and state machine. Use `--check` with either profile for deterministic regression. A desktop run of the AMOLED profile is not an ESP32-S3 performance measurement. The current repository has no fishing-specific AMOLED firmware target; this profile prepares the portable app for that integration. See `design/RENDER_ANIMATION_REVIEW.md` for measured results, budgets and hardware limits.
+`--profile=amoled` selects a 60 FPS scheduling ceiling, 120 Hz fixed physics, at most 72 line nodes and six local solver passes (two for a hooked fish). This ceiling is not measured performance. Desktop defaults to 60 FPS / 240 Hz / 150 nodes / twelve passes. Both profiles use the same geometry and state machine. Use `--check` with either profile for deterministic regression, including native/Lua cast and underwater comparisons. A desktop run of the AMOLED profile is not an ESP32-S3 performance measurement. The firmware target is `//projects/example/targets/h2loader_tar_zlib/lua-fishing-game/amoled:package`; install it through H2Loader's application upgrade, preserving recovery. See `design/PERFORMANCE_30FPS_WORKLOG.md` for ongoing real-device measurements: the target is not yet achieved for every live scene.
+
+For rendering comparisons, `--no-cache` disables inventory snapshots, sparse weather backgrounds, batched depth paths and the bounded rod raster fast path. It does not disable native physics. `--scroll=N` selects a nonnegative integer inventory offset (clamped to the page's actual range). `tools/verify_cache.py` compares cached/uncached RGB565 captures; only bounded one-pixel thumbnail raster-edge differences are allowed. `perf-demo` is a temporary firmware benchmark with continuous vertical scrolling followed by a cast, not the normal interactive startup scene.
 
 ### Game weather and time
 
 The fishing HUD shows 12-hour time with AM/PM at top left, and a pixel wave wind icon with Celsius temperature at top right. Wind uses four visual levels: no strokes for calm, then one, two or three wave strokes; sea motion also follows wind strength. Weather is fictional game state, not a live forecast: a full day takes 30 real minutes, starting at 09:00. Auto weather transitions between sunny, cloudy and rainy conditions, blending cloud cover over 25 seconds.
 
-Morning sunlight stays outside the view; the afternoon sun enters from the right and descends behind the horizon around 18:00. Sky, sea, clouds and reflections use time/weather palettes, with stars at night. Rendering remains Lua geometry with eight sky bands and bounded wave/rain counts; no textures or extra full-screen buffers.
+Morning sunlight stays outside the view; the afternoon sun enters from the right and descends behind the horizon around 18:00. Sky, sea, clouds and reflections use time/weather palettes, with stars at night. Artwork remains procedural, with eight sky bands and bounded wave/rain counts. Runtime RGB565 snapshots cache unchanged backgrounds and inventory art; no external texture assets are used.
 
 Preview with `--scene=weather-demo --hour=18 --weather=sunny`; `--hour=0..23` and `--weather=auto|sunny|cloudy|rain` also work in the playable scene.
 
@@ -183,6 +193,8 @@ Rain uses unequal falling speeds, irregular lanes and depth-dependent length/con
 
 ### AMOLED optimization checkpoint
 
-[Optimization handoff](design/OPTIMIZATION_HANDOFF.md) records the installed
-firmware, actual frame timings, completed checks and remaining stripe/performance
-work. Sustained 30+ FPS hardware animation has not yet been achieved.
+[Performance work log](design/PERFORMANCE_30FPS_WORKLOG.md) records current
+firmware experiments, real-device timings and remaining acceptance work.
+[Original handoff](design/OPTIMIZATION_HANDOFF.md) is historical: its 80 MHz
+stripe investigation predates the user-confirmed 40 MHz fix. Sustained 30+ FPS
+hardware animation has not yet been achieved in every live scene.

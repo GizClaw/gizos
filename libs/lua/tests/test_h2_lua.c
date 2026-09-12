@@ -3,10 +3,12 @@
 #include "h2_lua_capability.h"
 #include "h2_lua_esp_claw.h"
 #include "h2_lua_event.h"
+#include "h2_lua_fpu_math.h"
 #include "h2_lua_job.h"
 #include "h2_pal.h"
 
 #include <assert.h>
+#include <float.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -862,6 +864,19 @@ static void test_borrowed_display(void) {
 }
 
 int main(void) {
+    uint32_t random_bits=719;
+    for(int i=0;i<100000;++i) {
+        random_bits=random_bits*UINT32_C(1664525)+UINT32_C(1013904223);
+        uint32_t a=(random_bits&UINT32_C(0x807fffff))|((uint32_t)(100+i%51)<<23);
+        random_bits=random_bits*UINT32_C(1664525)+UINT32_C(1013904223);
+        uint32_t b=(random_bits&UINT32_C(0x807fffff))|((uint32_t)(100+(i*17)%51)<<23);
+        float numerator,denominator;memcpy(&numerator,&a,4);memcpy(&denominator,&b,4);
+        float reference=numerator/denominator,actual=h2_lua_fpu_div(numerator,denominator);
+        assert(fabs((double)actual-reference)<=FLT_EPSILON*fabs((double)reference));
+    }
+    assert(isinf(h2_lua_fpu_div(1,0)) && isnan(h2_lua_fpu_div(0,0)));
+    assert(isinf(h2_lua_fpu_div(1e20f,1e-20f)));
+    assert(h2_lua_fpu_div(1e-30f,1e30f)==1e-30f/1e30f);
   test_borrowed_display();
   static const char *const esp_claw_ids[] = {
       "adc",
@@ -1531,6 +1546,15 @@ int main(void) {
         "p,n=d.present();assert(p==272 and n==1,'vertical tiles must merge');"
         "d.draw_line(16,0,16,0,'black');d.draw_line(16,16,16,16,'black');"
         "p,n=d.present();assert(p==272 and n==1);"
+        "d.draw_line(0,0,0,0,'red');d.draw_line(32,0,32,0,'red');"
+        "p,n=d.present({retained=true,merge_gap=1});assert(p==528 and n==1,'bridge one clean tile');"
+        "d.clear('black');d.present({retained=true,bounds=true});"
+        "d.draw_line(1,2,1,2,'white');d.draw_line(31,14,31,14,'red');"
+        "p,n=d.present({retained=true,bounds=true});assert(p==403 and n==1,'exact dirty bounds');"
+        "d.clear('black');d.draw_line(1,2,1,2,'white');d.draw_line(31,14,31,14,'red');"
+        "assert(d.present()==0,'bounds mode must keep retained baseline coherent');"
+        "d.clear('black');d.draw_line(32,16,32,16,'white');d.present();"
+        "assert(not pcall(d.present,{merge_gap=-1}));assert(not pcall(d.present,{merge_gap=9}));"
         "d.deinit();return 'ok'";
     s_test_display_width = 33; s_test_display_height = 17;
     retained_status = run_display_script(host, "@retained-edges.lua",
@@ -1605,6 +1629,96 @@ int main(void) {
         ;
     retained_status=run_display_script(host,"@command-equivalence.lua",
         command_equivalence_script,sizeof(command_equivalence_script)-1u);
+    assert(strcmp(retained_status.message,"ok")==0);
+
+    static const uint8_t projection_script[] =
+        "local d=require('display');local camera={0,0,1,0,1}\n"
+        "d.clear('black');d.draw_line(1,1,6,6,'red');d.present({retained=true})\n"
+        "d.clear('black');d.projected_line({1,-1,1},{6,-6,1},'red',camera);assert(d.present()==0,'projected segment')\n"
+        "d.clear('black');d.draw_line(3,3,3,3,'white');d.present()\n"
+        "d.clear('black');d.projected_line({0,0,0},{6,-6,2},'white',camera);assert(d.present()==0,'near-plane intersection')\n"
+        "d.projected_line({0,0,0},{6,-6,.5},'red',camera);assert(d.present()==0,'behind near plane')\n"
+        "d.clear('black');d.draw_line(0,2,7,2,'red');d.present()\n"
+        "d.clear('black');d.projected_line({-10,-2,1},{10,-2,1},'red',camera);assert(d.present()==0,'screen clipping')\n"
+        "local red={r=255,g=0,b=0};local blue={r=0,g=0,b=255};local green={r=0,g=255,b=0}\n"
+        "local air={red,red,0,1,0,0,1};local water={blue,green,0,-.25,0,0,1,true}\n"
+        "d.clear('black');d.draw_line(1,2,3,4,'red');d.draw_line(3,4,5,6,{r=0,g=127,b=127});d.present()\n"
+        "d.clear('black');d.depth_path({{1,2,1},{5,-2,1}},{0,4,1,0,1},air,water);assert(d.present()==0,'water crossing and gradient')\n"
+        "d.clear('black');d.draw_line(1,1,3,3,'red');d.draw_line(3,3,5,1,'red');d.present()\n"
+        "d.clear('black');d.depth_path({{1,3,1},{3,1,1},{5,3,1}},{0,4,1,0,1},air,water);assert(d.present()==0,'reverse air polyline')\n"
+        "assert(not pcall(d.depth_path,{{0,0,1}},camera,air,water))\n"
+        "air[4]=0;assert(not pcall(d.depth_path,{{0,0,1},{1,1,1}},camera,air,water))\n"
+        "assert(not pcall(d.projected_line,{0,0,0},{1,1,1},'red',{0,0,1,0,0}))\n"
+        "d.deinit();return 'ok'\n";
+    retained_status=run_display_script(host,"@projected-line.lua",projection_script,sizeof(projection_script)-1u);
+    assert(strcmp(retained_status.message,"ok")==0);
+
+    static const uint8_t stroke_cache_script[] =
+        "local d=require('display');local p={{1,1},{6,5},{2,6}};local w={3,2};local c={'red','blue'}\n"
+        "local function draw(cache,offset,top) return d.stroke_path(p,w,c,offset or 0,top or 0,8,cache) end\n"
+        "d.clear('black');assert(not draw(true));d.present({retained=true})\n"
+        "d.clear('black');assert(draw(true));assert(d.present()==0,'exact stroke replay')\n"
+        "local function compare(offset,top)\n"
+        "d.clear('black');assert(not draw(true,offset,top));d.present()\n"
+        "d.clear('black');draw(false,offset,top);assert(d.present()==0,'cache build versus direct')\n"
+        "d.clear('black');assert(draw(true,offset,top));assert(d.present()==0,'cache hit versus direct') end\n"
+        "p[2][1]=5.999;compare();w[1]=4;compare();c[2]='white';compare();compare(1);compare(1,3)\n"
+        "p[2]={1,1};assert(not draw(true));assert(not draw(true),'degenerate square uses direct fallback')\n"
+        "local fast_count=0;for i=1,1000 do\n"
+        "local a=i*.173;local p={{4+7*math.cos(a),4+7*math.sin(a)},{4+7*math.cos(a+2),4+7*math.sin(a+2)}}\n"
+        "local w={.1+(i%13)*.7};local offset=(i%5-2)*.37;local top=i%3\n"
+        "d.clear('black');d.stroke_path(p,w,'red',offset,top,8,false,false);d.present()\n"
+        "d.clear('black');local _,count=d.stroke_path(p,w,'red',offset,top,8,false,true);fast_count=fast_count+count;assert(d.present()==0,'bounded float stroke mismatch '..i) end\n"
+        "assert(fast_count>100,'exercise bounded fast path, not just fallback')\n"
+        "p={{1,1},{1,6},{6,6}};w={2,4};c={'red','blue'}\n"
+        "local function normals_check()\n"
+        "d.clear('black');d.stroke_path(p,w,c,0,0,8,false,false);d.present()\n"
+        "for j=1,2 do d.clear('black');d.stroke_path(p,w,c,0,0,8,false,true);assert(d.present()==0,'normal cache stale') end end\n"
+        "normals_check();w[1]=3;normals_check();p[2][1]=2;normals_check();c[2]='white';normals_check()\n"
+        "p[4]={2,3};w[3]=2;c[3]='green';normals_check();p[2]={1,1};normals_check()\n"
+        "d.deinit();return 'ok'\n";
+    retained_status=run_display_script(host,"@stroke-cache.lua",stroke_cache_script,sizeof(stroke_cache_script)-1u);
+    assert(strcmp(retained_status.message,"ok")==0);
+
+    static const uint8_t background_script[] =
+        "local d=require('display');d.clear('blue');local b=d.capture_region(0,0,33,17)\n"
+        "d.restore_background(b);d.fill_rect(1,1,2,2,'red');d.draw_line(32,16,32,16,'white');d.present({retained=true})\n"
+        "d.restore_background(b);d.draw_line(16,8,16,8,'red');d.present()\n"
+        "d.clear('blue');d.draw_line(16,8,16,8,'red');assert(d.present()==0,'sparse background must erase previous geometry')\n"
+        "d.restore_background(b);d.present();d.clear('blue');assert(d.present()==0,'background after full clear')\n"
+        "d.clear('green');local g=d.capture_region(0,0,33,17);d.restore_background(g);d.present()\n"
+        "d.clear('red');assert(d.capture_region(0,0,33,17,nil,g)==g,'reuse existing allocation');d.restore_background(g);d.present()\n"
+        "d.draw_line(32,16,32,16,'white');d.present();d.restore_background(g);d.present();d.clear('red');assert(d.present()==0,'reused background erases edge')\n"
+        "assert(not pcall(d.capture_region,0,0,2,2,nil,g));assert(not pcall(d.capture_region,0,0,33,17,'red',g))\n"
+        "d.clear('green');d.capture_region(0,0,33,17,nil,g);d.restore_background(g);d.present()\n"
+        "local weak=setmetatable({g},{__mode='v'});g=nil;collectgarbage('collect');assert(weak[1],'active background must be pinned')\n"
+        "d.draw_line(32,16,32,16,'white');d.present();d.restore_background(weak[1]);d.present()\n"
+        "d.clear('green');assert(d.present()==0,'background switch and edge tiles')\n"
+        "d.deinit();collectgarbage('collect');assert(not weak[1],'close must release background');return 'ok'\n";
+    s_test_display_width=33;s_test_display_height=17;
+    retained_status=run_display_script(host,"@sparse-background.lua",background_script,sizeof(background_script)-1u);
+    assert(strcmp(retained_status.message,"ok")==0);
+    for(int i=0;i<33*17;++i)assert(s_test_display_fixture.pixels[i]==0x0400u);
+    s_test_display_width=8;s_test_display_height=8;
+
+    static const uint8_t region_equivalence_script[] =
+        "local d=require('display');d.clear('black');d.fill_rect(1,1,2,2,'red')\n"
+        "local r=d.capture_region(0,0,4,4,'black')\n"
+        "d.clear('blue');d.fill_rect(3,3,2,2,'red');d.present({retained=true})\n"
+        "d.clear('blue');d.draw_region(r,2,2,0,8,'black');assert(d.present()==0,'masked region mismatch')\n"
+        "d.clear('blue');d.fill_rect(0,1,2,1,'red');d.present()\n"
+        "d.clear('blue');d.draw_region(r,-1,0,1,2,'black');assert(d.present()==0,'region clipping mismatch')\n"
+        "d.clear('blue');d.fill_rect(2,2,4,4,'black');d.fill_rect(3,3,2,2,'red');d.present()\n"
+        "d.clear('blue');d.draw_region(r,2,2);assert(d.present()==0,'opaque region mismatch')\n"
+        "local odd=d.capture_region(1,1,3,3,'blue');d.draw_region(odd,1,1,0,8,'blue');assert(d.present()==0,'odd region alignment')\n"
+        "d.draw_region(r,100,100);assert(d.present()==0,'offscreen region must be a no-op')\n"
+        "d.clear('blue');d.fill_rect(2,2,4,4,'black');d.fill_rect(3,3,2,2,'blue');d.present()\n"
+        "d.clear('blue');d.draw_region(r,2,2,0,8,'red');assert(d.present()==0,'different mask must reconstruct stored margins')\n"
+        "assert(not pcall(d.capture_region,-1,0,4,4));assert(not pcall(d.capture_region,0,0,9,8))\n"
+        "assert(not pcall(d.draw_region,r,0,0,5,4));assert(not pcall(d.draw_region,{},0,0))\n"
+        "d.deinit();assert(not pcall(d.draw_region,r,0,0));return 'ok'\n";
+    retained_status=run_display_script(host,"@region-equivalence.lua",
+        region_equivalence_script,sizeof(region_equivalence_script)-1u);
     assert(strcmp(retained_status.message,"ok")==0);
 
     static const uint8_t full_light_script[] =
