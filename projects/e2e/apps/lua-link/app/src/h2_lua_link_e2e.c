@@ -207,7 +207,7 @@ h2_pal_result_t h2_lua_link_e2e_run(h2_runtime_t *runtime,
       rc = h2_lua_host_start(host);
     }
     if (rc == H2_PAL_OK) {
-      rc = h2_lua_job_submit_text(host, "@lua_link_e2e.lua",
+      rc = h2_lua_job_submit_text(host, NULL, "@lua_link_e2e.lua",
                                   (const uint8_t *)s_script,
                                   sizeof(s_script) - 1u, args, 2u, &job);
     }
