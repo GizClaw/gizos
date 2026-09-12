@@ -20,6 +20,10 @@ extern u32 boot_info_get_sfc_base_addr(void);
 __attribute__((weak)) void h2_jieli_upgrade_erase_observer(u32 addr) {
   (void)addr;
 }
+__attribute__((weak)) void h2_jieli_upgrade_publish_observer(
+    const u8 header[H2_JIELI_UPGRADE_HEADER_SIZE]) {
+  (void)header;
+}
 
 #define HEADER_ADDR (H2_JIELI_BANK_2_SFC_BASE - H2_JIELI_UPGRADE_HEADER_SIZE)
 enum { GATE_OFF, GATE_ARMED, GATE_WRITING, GATE_CAPTURED, GATE_FAILED };
@@ -62,6 +66,7 @@ int h2_jieli_upgrade_header_publish(const u8 header[H2_JIELI_UPGRADE_HEADER_SIZE
           (int)sizeof(physical)) return -1;
   if (memcmp(physical, header, sizeof(physical)) == 0) return 0;
   if (!erased(physical)) return -1;
+  h2_jieli_upgrade_publish_observer(header);
   /* SDK callers ignore these return values; physical readback, not an
    * undocumented protection-helper convention, determines commit success. */
   (void)norflash_protect_suspend();
