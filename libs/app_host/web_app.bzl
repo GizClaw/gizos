@@ -131,7 +131,9 @@ def h2_web_app(
         //libs/app_host:default_board (240x240, no Buttons, plain layout).
         Buttons in h2_web_app_host_config_t name a board Button; the board
         key drives it unless the config gives its own key.
-      skin: Name of one of the board's skins; defaults to its default_skin.
+      skin: Name of one of the board's skins (an unknown name fails
+        analysis). Omitted: the board's default_skin, or the plain
+        default_layout.html when the board has none.
       linkopts: Extra Emscripten link options.
     """
     _web_board_page(

@@ -191,7 +191,7 @@ config.webrtc = h2_web_platform_webrtc_api(platform);
 
 外观要做得和实物一样：`app_host` 把页面组件创建进外观的插槽——`data-h2-slot="display"` 放 Canvas（`#canvas`），`data-h2-slot="controls"` 放 Start/Stop（`#start`、`#stop`），`data-h2-slot="status"` 放状态行（`#status`），缺少的插槽放进 `<body>` 末尾的普通容器；外观中 `data-h2-button="<name>"` 的元素和该 Button 的键盘键共同驱动同一个 Button，按下时带 `data-pressed="true"`。`app_host` 自己不带 UI，shell 只有页面骨架和输入脚本。
 
-组装可运行 target 时选 board 和其中一套外观：`h2_web_app(board = "...", skin = "...")`，`skin` 省略时用该板的 `default_skin`，选了板上不存在的外观在 analysis 阶段失败。`h2_web_app()` 据此生成 `h2_web_board`（`h2_web_board_t`，屏幕尺寸与 Button 表）编进页面，`h2_web_app_host_config_t` 的 Button 按名字引用板上的 Button（`key` 为 NULL 时用板上的键），`display_width/height` 为 0 时用板上的尺寸。不指定 board 时用 `//libs/app_host:default_board`（240×240、无 Button、朴素布局 `default_layout.html`），所以现有 example 页面不变。产品 board 与外观放在该 board 自己的目录旁（例如下游仓库的 `boards/<board>/web/`），同一块板上的所有 App 复用。
+组装可运行 target 时选 board 和其中一套外观：`h2_web_app(board = "...", skin = "...")`，`skin` 省略时用该板的 `default_skin`，板上没有 `default_skin`（包括没有外观）时用朴素的 `default_layout.html`；显式给出的 `skin` 必须是板上的外观，否则 analysis 阶段失败并列出该板的外观。`h2_web_app()` 据此生成 `h2_web_board`（`h2_web_board_t`，屏幕尺寸与 Button 表）编进页面，`h2_web_app_host_config_t` 的 Button 按名字引用板上的 Button（`key` 为 NULL 时用板上的键），`display_width/height` 为 0 时用板上的尺寸。不指定 board 时用 `//libs/app_host:default_board`（240×240、无 Button、朴素布局 `default_layout.html`），所以现有 example 页面不变。产品 board 与外观放在该 board 自己的目录旁（例如下游仓库的 `boards/<board>/web/`），同一块板上的所有 App 复用。
 
 只运行一个 Lua 脚本的 App 不需要 `main.c`：`//libs/lua/web:lua_web_app.bzl` 的
 `h2_lua_web_app(name, script, board, skin, exit_button, extension)` 用

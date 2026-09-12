@@ -54,11 +54,14 @@ static h2_pal_periph_info_t h2_web_app_host_button_info(size_t index) {
       .payload = &s_button_payload,
       .payload_size = sizeof(s_button_payload),
   };
+  /* Peripheral name: the board Button name, else its resolved key; a NULL
+   * config key never reaches the format. */
   const h2_web_app_host_button_t *button = &s_host->config->buttons[index];
+  const char *key = h2_web_app_host_button_key(button);
   (void)snprintf(info.name, sizeof(info.name), "%s",
-                 button->name != NULL  ? button->name
-                 : button->key != NULL ? button->key
-                                       : "button");
+                 button->name != NULL ? button->name
+                 : key != NULL        ? key
+                                      : "button");
   return info;
 }
 
