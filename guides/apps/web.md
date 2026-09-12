@@ -13,7 +13,7 @@ projects/example/
 ├── targets/pkg_tar/lua-script/    # h2_lua_web_app() smoke：Button args、OK 回调、默认 exit Button
 ├── targets/pkg_tar/lua-script-input/ # Button 输入合同（demo_board plain 外观）：多源合并、blur/隐藏/结束释放
 ├── targets/pkg_tar/lua-script-stop/ # 同一脚本：run_ms 触发与 Stop 相同的停止请求
-├── targets/pkg_tar/web-board-<board>/ # 每块 board 的 web board 检查页：屏幕尺寸、外观插槽、按键、Stop
+├── targets/pkg_tar/web-board-{amoled,bk7258,k4b,szp,p4-lcd43}/ # 每块 board 的检查页；包名保持短，避免 Windows 路径超长
 ├── targets/pkg_tar/lua-script-extension/ # 加 extension：capability 与 exit_requested
 └── targets/pkg_tar/<app>/         # tap-reset、display、log、qrcode、touch、lvgl-smoke、
                                    # starboy、lua-cosmic-drift、audio-system：
@@ -231,7 +231,7 @@ release 规则，例如只接受长按。`run_ms` 非零时在该时长后发出
 | `lua-flappybird` | Canvas 点击、Escape → Back 取消并退出 |
 | `lua-script` | `h2_lua_web_app()` + `demo_board` 默认 `device` 外观：canvas 与状态行进入外观的 slot；脚本校验 Button args 后 ready；点击外观的 `data-h2-button=ok` 元素触发脚本 OK 回调；点击页面 Stop（`#stop`）取消 job 并 PASS |
 | `lua-script-input` | `demo_board` 的 `plain` 外观，Button 输入合同：pointer 与 Enter 重叠按住时松开 pointer 仍按住（只有一次 Down/Up）；blur、页面隐藏和 App 结束都释放按住的 Button；脚本只统计每次按压的首个 Down sample |
-| `web-board-<board>` | 每块 web board：页面拿到板上的屏幕尺寸（`H2_WEB_BOARD_CHECK size=WxH`），`device` 外观放置 canvas，点击外观上的第一个 Button 到达脚本，点击 Stop 后 PASS |
+| `web-board-{amoled,bk7258,k4b,szp,p4-lcd43}` | 每块 web board：页面拿到板上的屏幕尺寸（`H2_WEB_BOARD_CHECK size=WxH`），`device` 外观放置 canvas，点击外观上的第一个 Button 到达脚本，点击 Stop 后 PASS |
 | `lua-script-stop` | 不按键，`run_ms` 发出 Stop 请求（`stage=stop-requested`），取消 job 后 PASS |
 | `lua-script-extension` | extension 注册的 capability 可用；`exit_requested` 拒绝第一次 Escape、job 继续运行，第二次 Escape 取消并 PASS |
 | `mp4-player`（manual） | WebCodecs H.264/AAC 播放完成；`:large_browser_test` 播放 1024×600 大文件；需 `H2_WEB_TEST_BROWSER` 指向 Google Chrome |
