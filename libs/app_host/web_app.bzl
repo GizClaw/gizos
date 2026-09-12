@@ -105,6 +105,7 @@ def h2_web_app(
         evals = [],
         board = None,
         skin = None,
+        copts = [],
         linkopts = []):
     """Declares `<name>` (web tar), `serve` and `browser_test` targets.
 
@@ -134,6 +135,7 @@ def h2_web_app(
       skin: Name of one of the board's skins (an unknown name fails
         analysis). Omitted: the board's default_skin, or the plain
         default_layout.html when the board has none.
+      copts: Extra C compile options for srcs.
       linkopts: Extra Emscripten link options.
     """
     _web_board_page(
@@ -152,7 +154,7 @@ def h2_web_app(
         srcs = srcs + [":" + name + "_board.c"],
         additional_linker_inputs = [shell] + preload.keys(),
         conlyopts = H2_C11_OPTS,
-        copts = H2_WARNING_COPTS,
+        copts = H2_WARNING_COPTS + copts,
         features = ["-output_format_js"],
         linkopts = [
             "-sALLOW_MEMORY_GROWTH=1",

@@ -67,6 +67,34 @@ typedef struct h2_web_app_host_button {
   const char *name;
 } h2_web_app_host_button_t;
 
+/**
+ * Target-supplied board hardware for Apps that need more than a display and
+ * Buttons (simulated power, battery, vibration, their own component ids).
+ * Every hook is optional.
+ */
+typedef struct h2_web_app_host_hardware {
+  void *user;
+  /**
+   * Runs before the Filesystem opens, e.g. to unpack preloaded assets into a
+   * directory the Filesystem later mounts read-only.
+   */
+  h2_pal_result_t (*prepare)(void *user, h2_web_platform_t *platform);
+  /**
+   * Adjusts the Runtime configuration after the host filled its Web
+   * providers, e.g. to install power, periph, input and pwm_switch APIs and a
+   * component mapper. With a mapper installed the host does not add its own
+   * Button peripherals; `button` must then deliver the edges.
+   */
+  h2_pal_result_t (*configure_runtime)(void *user, h2_runtime_config_t *config);
+  /**
+   * Delivers one Button edge for the mapped component (1 down, 0 up); NULL
+   * pushes it on the host's own Button peripheral.
+   */
+  h2_pal_result_t (*button)(void *user, h2_runtime_t *runtime,
+                            h2_runtime_component_id_t component_id,
+                            int pressed);
+} h2_web_app_host_hardware_t;
+
 typedef struct h2_web_app_host_config {
   /** Short App name used in the markers. */
   const char *name;
@@ -96,6 +124,8 @@ typedef struct h2_web_app_host_config {
   size_t button_count;
   /** App task stack bytes; zero selects 64 KiB. */
   size_t stack_size;
+  /** Optional board hardware hooks; NULL keeps the host defaults. */
+  const h2_web_app_host_hardware_t *hardware;
 } h2_web_app_host_config_t;
 
 /** Run the App to completion; returns 0 for PASS and 1 otherwise. */
