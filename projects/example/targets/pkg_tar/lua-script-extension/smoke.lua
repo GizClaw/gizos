@@ -1,10 +1,13 @@
--- Smoke script for h2_lua_web_app(): checks its Button args, then animates
--- until the exit Button ends the job.
+-- Smoke script for h2_lua_web_app(): checks its Button args and the extension
+-- capability, then animates until the exit Button ends the job.
 local runtime = require("runtime")
 local display = require("display")
+local capability = require("capability")
 
 assert(tonumber(args.left) == 1 and tonumber(args.ok) == 2)
 assert(tonumber(args.back) == 3)
+local ok, output = capability.call("smoke.echo", "ping")
+assert(ok and output == "ping", "extension capability unavailable")
 
 local x, step = 0, 4
 runtime.components.on(tonumber(args.ok), runtime.event.BUTTON_UP, function()
