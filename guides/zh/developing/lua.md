@@ -177,9 +177,8 @@ iKCP。Launcher 在 `h2_lua_host_start()` 前调用
 `h2_lua_link_enable(host, &(h2_lua_link_config_t){adv_type, scan_type})`，按板级
 BLE stack 选择 legacy 或 extended advertising/scan。Extended 广播对 legacy scanner
 不可见，所以需要互通的设备必须选同一种 advertising 类型；link 广播只有 21 字节，
-legacy 可以放下。ESP DevKit 的 H2Loader layout 关闭了 `CONFIG_BT_NIMBLE_EXT_ADV`，
-该配置下 extended scan 和 advertising set API 都返回 `UNSUPPORTED`，因此只能 join，
-不能 host（`host()` 以 `LINK_ERROR "ble"` 结束）。Runtime 没有 `ble_host`、
+legacy 可以放下。ESP 板级 BLE 需要开启 `CONFIG_BT_NIMBLE_EXT_ADV`：host 使用 advertising set
+API，NimBLE 在该选项关闭时不提供它，`host()` 会以 `LINK_ERROR "ble"` 结束。Runtime 没有 `ble_host`、
 没有 `system_event`、或接入的是 canonical unsupported object 时返回
 `H2_PAL_ERR_UNSUPPORTED`，link 保持不可用；start 之后或重复调用返回
 `H2_PAL_ERR_INVALID_STATE`。Launcher 负责启动 BLE Host，并保证它存活到

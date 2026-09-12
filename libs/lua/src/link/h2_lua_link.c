@@ -1,11 +1,13 @@
 #include "../runtime/h2_lua_internal.h"
 #include "h2_bleikcp.h"
 #include "h2_lua_link.h"
-#include "h2_lua_link_task_names.h"
 #include "h2/pal/h2_pal_unsupported.h"
 
 #include <stddef.h>
 #include <string.h>
+
+/* Declared for firmware task policies by //libs/lua:link_tasks. */
+static const char s_session_task_name[] = "$lua/link";
 
 #define H2_LUA_LINK_EVENT_CAPACITY 16u
 /* Datagrams can overtake the peer's HELLO, which travels over KCP; this many
@@ -1089,7 +1091,7 @@ static int link_start(lua_State *state, h2_lua_link_role_t role) {
   link_reset_buffers_locked(link);
   rc = h2_pal_task_start(link->runtime->task,
                          &(h2_pal_task_options_t){
-                             .name = h2_lua_link_session_task_name,
+                             .name = s_session_task_name,
                              .min_stack_size = H2_LUA_LINK_TASK_STACK_SIZE,
                          },
                          link_session_entry, link, &link->task);
@@ -1565,14 +1567,14 @@ h2_pal_result_t h2_lua_link_enable(h2_lua_host_t *host,
   link->config = *config;
   rc = h2_pal_mutex_create(runtime->sync,
                            &(h2_pal_mutex_config_t){
-                               .name = h2_lua_link_session_task_name,
+                               .name = s_session_task_name,
                                .allocator = runtime->mem,
                            },
                            &link->mutex);
   if (rc == H2_PAL_OK) {
     rc = h2_pal_cond_create(runtime->sync,
                             &(h2_pal_cond_config_t){
-                                .name = h2_lua_link_session_task_name,
+                                .name = s_session_task_name,
                                 .allocator = runtime->mem,
                             },
                             &link->cond);
