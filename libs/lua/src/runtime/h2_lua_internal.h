@@ -175,8 +175,9 @@ typedef struct h2_lua_job {
 /*
  * Hooks installed by //libs/lua:lua_link before Host start. open_module adds
  * the provider's operations to the `link` table on top of the stack. deliver
- * runs on the owning worker with the job mutex held. job_ended only requests
- * teardown and never blocks; destroy joins and frees the provider after every
+ * runs on the owning worker with the job mutex held. job_ended runs with the
+ * job mutex held before the slot is released, only requests teardown and never
+ * blocks; destroy joins and frees the provider after every
  * worker has been joined.
  */
 typedef struct h2_lua_link_hooks {

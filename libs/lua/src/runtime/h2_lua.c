@@ -50,12 +50,13 @@ static void worker_entry(void *context) {
         if (is_terminal(job->state)) {
           terminal_job_id = job->id;
           terminal_job_generation = job->generation;
+          /* Under the job mutex, so no release can reuse the slot first. */
+          h2_lua_link_job_ended(host, terminal_job_id, terminal_job_generation);
         }
       }
       (void)h2_pal_mutex_unlock(host->config.runtime->sync, job->mutex);
       h2_lua_cancel_job_capabilities(host, terminal_job_id,
                                      terminal_job_generation);
-      h2_lua_link_job_ended(host, terminal_job_id, terminal_job_generation);
     }
     if (!progressed && atomic_load(&host->stopping) == 0) {
       (void)h2_pal_queue_recv(host->config.runtime->queue, worker->wake_queue,
@@ -134,6 +135,8 @@ static void release_job(h2_lua_job_t *job) {
   job->mutex = mutex;
 }
 
+/* Called with the job mutex held (job mutex -> link mutex), before the slot
+ * can be released or reused. */
 void h2_lua_link_job_ended(h2_lua_host_t *host, h2_lua_job_id_t job_id,
                            uint32_t job_generation) {
   if (host != NULL && host->link_hooks != NULL &&
@@ -522,10 +525,10 @@ h2_pal_result_t h2_lua_host_stop(h2_lua_host_t *host) {
         h2_lua_task_timer_destroy(&host->jobs[i].tasks[task_index]);
       }
       h2_lua_job_finish(&host->jobs[i], H2_LUA_JOB_STOPPED, "host stopped");
+      h2_lua_link_job_ended(host, job_id, job_generation);
     }
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs[i].mutex);
     h2_lua_cancel_job_capabilities(host, job_id, job_generation);
-    h2_lua_link_job_ended(host, job_id, job_generation);
   }
   for (i = 0u; i < host->config.worker_count; ++i) {
     if (host->workers[i].wake_queue != NULL) {

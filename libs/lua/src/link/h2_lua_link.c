@@ -211,7 +211,6 @@ static int link_session_owned_by(const h2_lua_link_t *link,
 static int link_post(h2_lua_link_t *link, uint32_t kind, const char *reason,
                      int result, const uint8_t *data, size_t len) {
   h2_lua_link_event_t *event;
-  h2_lua_job_t *job;
   link_lock(link);
   while (!link->closing && link->event_count == H2_LUA_LINK_EVENT_CAPACITY) {
     link_wait(link, H2_LUA_LINK_SLICE_MS);
@@ -234,9 +233,10 @@ static int link_post(h2_lua_link_t *link, uint32_t kind, const char *reason,
     memcpy(event->data, data, len);
   }
   link->event_count++;
-  job = link->job;
+  /* Wake under the link mutex: job_ended() sets closing under it, with the
+   * job mutex held, before the job slot is released or reused. */
+  h2_lua_host_wake_job(link->job);
   link_unlock(link);
-  h2_lua_host_wake_job(job);
   return H2_PAL_OK;
 }
 

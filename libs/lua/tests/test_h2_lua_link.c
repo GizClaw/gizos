@@ -781,6 +781,28 @@ static const char s_join_burst[] =
     "'out of order at '..i) end;"
     "return 'burst-ok'";
 
+static const char s_host_exit_on_first_message[] =
+    LUA_PRELUDE
+    "assert(link.host({tag=args.tag}));"
+    "wait(function() return #s.msgs>0 end);"
+    "return 'exit-ok'";
+
+static const char s_join_flood[] =
+    LUA_PRELUDE
+    "assert(link.join({tag=args.tag,timeout_ms=5000}));"
+    "wait(function() return s.role end);"
+    "local i=0;"
+    "while not s.disc do i=i+1;link.send('m'..i);rt.yield() end;"
+    "assert(s.disc=='peer_closed',s.disc);"
+    "return 'flood-ok'";
+
+static const char s_reused_slot[] =
+    LUA_PRELUDE
+    "rt.sleep(30);"
+    "assert(#s.msgs==0 and not s.role and not s.disc);"
+    "assert(link.state()=='idle');"
+    "return 'reuse-ok'";
+
 static const char s_wait_lost[] =
     LUA_PRELUDE
     "if args.tag=='lost-host' then assert(link.host({tag='lost'})) "
@@ -898,6 +920,27 @@ static void test_flow_control_keeps_order(void) {
   wait_until(device_released, &pair.air.devices[0]);
   wait_until(device_released, &pair.air.devices[1]);
   pair_close(&pair);
+}
+
+/* The host job ends and is released while the peer floods messages, and a
+ * new job takes the same slot at once: no event or wake may reach it. */
+static void test_release_during_traffic(void) {
+  for (int round = 0; round < 10; ++round) {
+    pair_t pair;
+    pair_open(&pair);
+    h2_lua_job_id_t host = submit(pair.host[0], "@exit.lua",
+                                  s_host_exit_on_first_message, "flood");
+    h2_lua_job_id_t join =
+        submit(pair.host[1], "@flood.lua", s_join_flood, "flood");
+    expect_success(pair.host[0], host, "exit-ok");
+    h2_lua_job_id_t reused =
+        submit(pair.host[0], "@reuse.lua", s_reused_slot, "flood");
+    expect_success(pair.host[0], reused, "reuse-ok");
+    expect_success(pair.host[1], join, "flood-ok");
+    wait_until(device_released, &pair.air.devices[0]);
+    wait_until(device_released, &pair.air.devices[1]);
+    pair_close(&pair);
+  }
 }
 
 static void test_link_loss(void) {
@@ -1042,6 +1085,7 @@ int main(void) {
   test_capability_off();
   test_round_trip_and_peer_close();
   test_flow_control_keeps_order();
+  test_release_during_traffic();
   test_link_loss();
   test_job_exit_releases_link();
   test_host_destroy_releases_link();
