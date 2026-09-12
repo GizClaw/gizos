@@ -227,3 +227,35 @@ h2loader_tar_zlib(
     tags = ["no-release"],
     target = "wl82",
 )
+
+firmware_native_component(
+    name = "loader_copy_powercut",
+    srcs = ["src/loader_copy_powercut.c"],
+    component_name = "jieli_ac791n_devkit_loader_copy_powercut",
+    deps = ["//boards/jieli_ac791n_devkit/ac791n"],
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+)
+
+h2loader_jieli_firmware(
+    name = "loader_copy_powercut_firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":loader_launcher",
+        ":loader_copy_powercut",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "loader-copy-powercut",
+    target = "wl82",
+    task_policy = ":loader_task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "loader_copy_powercut_package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":loader_copy_powercut_firmware",
+    image = "loader-copy-powercut",
+    role = "h2loader",
+    tags = ["no-release"],
+    target = "wl82",
+)

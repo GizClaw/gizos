@@ -100,6 +100,12 @@ Loader 只有 UART 与 BLE capability，不提供 Wi-Fi 与 HTTP；runner 一旦
 
 首次 BLE 失败发生在 `install-crash-app`，后续 `coredump-status` / `coredump-dump` 因 runner 未取得预期长度而以 0 比较，产生连带失败。首次失败根因尚未确定；后两轮通过不代表该间歇性问题已经修复。runner 新增接线仅转发已有 Host BLE 连接失败诊断，不放宽身份、回滚或 coredump 验收条件。
 
+### 2026-09-13：P1 擦除后的真实断电恢复
+
+[定点断电验收](./evidence/2026-09-13/loader-copy-powercut.md)已通过：候选 P2 确认并发布启动头后，在 P1 启动头擦除完成处暂停，用户实际断电上电。设备继续从 P2 回写 P1，最终两个镜像校验一致、Stage 清空、last_result=0。诊断包使用正式 layout 和 task policy，但含测试停点，不能作为正式发行固件。
+
+这补充了前述尚未完成的写入中断验收中的一个确定边界；不覆盖任意部分编程、残缺启动头或全部 Preference 掉电模式，整体掉电安全验收仍未完成。
+
 ### 2026-09-12：原生更新流程基线
 
 2026-09-12 在 AC791N DevKit 上以 `1bac88f4` 源码构建的三个包完成 UART + BLE 合并回归，46/46 PASS（约 12.4 分钟），BLE 过程中没有 supervision timeout：

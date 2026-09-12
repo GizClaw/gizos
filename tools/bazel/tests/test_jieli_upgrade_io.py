@@ -31,6 +31,7 @@ static u32 command, address, length;
 static void *buffer;
 static u32 base=0x4020;
 static int emulate_flash, physical_writes;
+static unsigned programmed_bytes=32;
 static u8 flash_header[32];
 u32 boot_info_get_sfc_base_addr(void) { return base; }
 int norflash_read(struct device *dev,void *buf,u32 len,u32 addr) {
@@ -39,7 +40,7 @@ int norflash_read(struct device *dev,void *buf,u32 len,u32 addr) {
 int norflash_write(struct device *dev,void *buf,u32 len,u32 addr) {
   if (emulate_flash) {
     assert(addr==HEADER_ADDR && len==32);physical_writes++;
-    if(result==32) memcpy(flash_header,buf,32);
+    if(result==32) memcpy(flash_header,buf,programmed_bytes);
   }
   return norflash_read(dev,buf,len,addr);
 }
@@ -109,6 +110,26 @@ int main(void) {
   assert(h2_jieli_upgrade_header_publish(data)==-1 && physical_writes==1);
   result=32;memset(data,0xff,32);
   assert(h2_jieli_upgrade_header_publish(data)==-1 && physical_writes==1);
+  /* Fault injection: a driver reports success but only a prefix reached NOR.
+   * Readback must reject every partial header. A simulated restart clears
+   * volatile gating, not flash; a retry must not claim recovery or erase it.
+   * This checks adapter behavior, not ROM selection after physical power loss.
+   */
+  memset(data,0x5a,32);
+  for (unsigned prefix=1;prefix<32;prefix++) {
+    memset(flash_header,0xff,32);programmed_bytes=prefix;
+    int before=physical_writes;
+    assert(h2_jieli_upgrade_header_publish(data)==-1);
+    assert(physical_writes==before+1);
+    assert(memcmp(flash_header,data,prefix)==0);
+    for(unsigned i=prefix;i<32;i++) assert(flash_header[i]==0xff);
+    header_gate=GATE_OFF;programmed_bytes=32;
+    assert(h2_jieli_upgrade_header_publish(data)==-1);
+    assert(physical_writes==before+1);
+    base=H2_JIELI_BANK_1_SFC_BASE;
+    assert(h2_jieli_upgrade_header_arm()==-1);
+    base=H2_JIELI_BANK_2_SFC_BASE;
+  }
 }
 '''
         with tempfile.TemporaryDirectory() as directory:

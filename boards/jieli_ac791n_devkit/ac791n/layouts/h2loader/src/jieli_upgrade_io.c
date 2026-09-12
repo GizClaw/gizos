@@ -16,6 +16,10 @@
  * Default behavior is SDK passthrough; explicit arming defers the P2 header.
  */
 extern u32 boot_info_get_sfc_base_addr(void);
+/* Optional, diagnostic-only observer; production packages do not define it. */
+__attribute__((weak)) void h2_jieli_upgrade_erase_observer(u32 addr) {
+  (void)addr;
+}
 
 #define HEADER_ADDR (H2_JIELI_BANK_2_SFC_BASE - H2_JIELI_UPGRADE_HEADER_SIZE)
 enum { GATE_OFF, GATE_ARMED, GATE_WRITING, GATE_CAPTURED, GATE_FAILED };
@@ -124,6 +128,7 @@ u8 dev_upgrade_erase(u32 command, u32 addr) {
   }
   /* Match the pinned updater adapter's accepted-command result convention. */
   (void)norflash_ioctl(NULL, ioctl, addr);
+  h2_jieli_upgrade_erase_observer(addr);
   return 1u;
 }
 
