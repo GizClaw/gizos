@@ -295,6 +295,62 @@ static int test_client_event_backpressure(const h2_gizclaw_config_t *config) {
   return 0;
 }
 
+/* With a Conversation active, a downstream EOS whose fields lack a NUL is
+ * classified without an unbounded compare against our input and is handed
+ * on as a downstream boundary for its owner to reject. */
+static int
+test_downstream_boundary_unterminated(const h2_gizclaw_config_t *config) {
+  int fails = 0;
+  h2_gizclaw_client_t *client = NULL;
+  if (h2_gizclaw_client_init(config, &client) != H2_PAL_OK || client == NULL)
+    return expect(0, "unterminated boundary test initializes a client");
+  test_event_stream_t event = {
+      .stream = (gzc_event_stream_t *)(uintptr_t)0x3cu,
+  };
+  h2_gizclaw_test_set_event_ops(test_event_send, NULL, test_event_close,
+                                &event);
+  (void)h2_gizclaw_test_replace_event_stream(client, event.stream);
+  h2_gizclaw_conversation_t *conversation = NULL;
+  fails += expect(test_open_ready(client, (h2_gizclaw_str_t){"demo-eos", 8u},
+                                  13u, 1000, &conversation) == H2_PAL_OK &&
+                      conversation != NULL,
+                  "unterminated boundary test opens an active conversation");
+  gzc_peer_event_t eos = gizclaw_events_v1_PeerEvent_init_zero;
+  eos.type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS;
+  eos.which_payload = gizclaw_events_v1_PeerEvent_eos_tag;
+  eos.payload.eos.kind = gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO;
+  snprintf(eos.payload.eos.stream_id, sizeof(eos.payload.eos.stream_id), "%s",
+           last_input_stream);
+  h2_gizclaw_downlink_boundary_t boundary;
+  fails += expect(!h2_gizclaw_conversation_downstream_audio_boundary_internal(
+                      conversation, &eos, &boundary),
+                  "an EOS naming our input is not downstream");
+  /* Our input's ID, then no NUL anywhere in the ID field. */
+  const size_t id_len = strlen(eos.payload.eos.stream_id);
+  memset(eos.payload.eos.stream_id + id_len, 'x',
+         sizeof(eos.payload.eos.stream_id) - id_len);
+  fails += expect(
+      h2_gizclaw_conversation_downstream_audio_boundary_internal(
+          conversation, &eos, &boundary) &&
+          !boundary.begin &&
+          boundary.stream_id_size == sizeof(eos.payload.eos.stream_id) &&
+          memchr(boundary.stream_id, '\0', boundary.stream_id_size) == NULL,
+      "an unterminated EOS stream ID is handed on without matching our input");
+  snprintf(eos.payload.eos.stream_id, sizeof(eos.payload.eos.stream_id), "%s",
+           last_input_stream);
+  memset(eos.payload.eos.label, 'l', sizeof(eos.payload.eos.label));
+  fails += expect(
+      h2_gizclaw_conversation_downstream_audio_boundary_internal(
+          conversation, &eos, &boundary) &&
+          memchr(boundary.label, '\0', boundary.label_size) == NULL,
+      "an unterminated EOS label is handed on without matching our input");
+  h2_gizclaw_conversation_wire_destroy_internal(conversation);
+  (void)h2_gizclaw_client_close(client);
+  h2_gizclaw_client_deinit(client);
+  h2_gizclaw_test_set_event_ops(NULL, NULL, NULL, NULL);
+  return fails;
+}
+
 static int test_closed_poll_mapping(const h2_gizclaw_config_t *config) {
   int fails = 0;
   h2_gizclaw_client_t *client = NULL;
@@ -1606,6 +1662,7 @@ int main(void) {
   fails += test_telemetry_adapter(client);
   fails += test_conversation_event_lease(client);
   fails += test_closed_poll_mapping(&config);
+  fails += test_downstream_boundary_unterminated(&config);
   fails += test_client_event_backpressure(&config);
   fails += test_event_failures_poison_client(client, &config);
   test_audio_bos_backpressure(&config);

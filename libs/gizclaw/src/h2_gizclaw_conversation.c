@@ -986,10 +986,16 @@ bool h2_gizclaw_conversation_downstream_audio_boundary_internal(
   } else {
     return false;
   }
+  /* event_names_our_input compares unbounded strings. A field without a NUL
+   * cannot name our input, whose ID and label always fit, so it skips that
+   * check and reaches the owner, which rejects it. */
+  const bool terminated =
+      memchr(boundary.stream_id, '\0', boundary.stream_id_size) != NULL &&
+      memchr(boundary.label, '\0', boundary.label_size) != NULL;
   if (kind != (int)gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO ||
       strncmp(boundary.label, H2_GIZCLAW_CONVERSATION_INPUT_LABEL,
               boundary.label_size) == 0 ||
-      (active != NULL && event_names_our_input(active, event)))
+      (terminated && active != NULL && event_names_our_input(active, event)))
     return false;
   *out_boundary = boundary;
   return true;
