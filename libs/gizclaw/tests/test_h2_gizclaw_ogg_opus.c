@@ -6,7 +6,6 @@
 #undef NDEBUG
 #endif
 #include <assert.h>
-#include <math.h>
 #include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -573,7 +572,8 @@ static seek_result_t sweep_one(const sweep_file_t *file, bool resync,
   assert(mem.live == 0);
   return result;
 }
-/* SNR of `got` against the plain decode at `origin + shift` over n samples. */
+/* Signal-to-noise power ratio (not dB, so no libm) of `got` against the
+ * plain decode at `origin + shift` over n samples. */
 static double sweep_snr(const sweep_file_t *file, const int16_t *got, size_t n,
                         uint64_t origin, int shift) {
   double signal = 0, noise = 0;
@@ -583,8 +583,8 @@ static double sweep_snr(const sweep_file_t *file, const int16_t *got, size_t n,
     noise += (a - b) * (a - b);
   }
   if (noise == 0)
-    return 200.0;
-  return signal == 0 ? -200.0 : 10.0 * log10(signal / noise);
+    return 1e20;
+  return signal / noise;
 }
 static int seek_sweep(const char *path) {
   sweep_file_t file = {0};
@@ -625,7 +625,7 @@ static int seek_sweep(const char *path) {
   int16_t *out = malloc(file.plain_samples * 2u + 4096u);
   assert(out);
   unsigned landed = 0, format = 0, bad = 0;
-  double worst = 1000.0;
+  double worst = 1e30;
   /* 97 resync offsets across the audio, then 41 sequential targets. */
   for (unsigned k = 0; k < 97u + 41u; ++k) {
     const bool resync = k < 97u;
@@ -667,7 +667,7 @@ static int seek_sweep(const char *path) {
     }
   }
   printf("resync landed=%u format_at_tail=%u sequential=41 bad=%u "
-         "worst_snr=%.1f dB\n", landed, format, bad, worst);
+         "worst_snr_ratio=%.1f\n", landed, format, bad, worst);
   printf("%s\n", bad ? "SWEEP FAIL" : "SWEEP PASS");
   free(out);
   free(file.plain);
