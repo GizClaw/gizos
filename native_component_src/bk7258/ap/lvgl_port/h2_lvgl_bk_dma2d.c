@@ -77,6 +77,13 @@ int h2_bk_dma2d_rgb565(void *dst, const void *src, int32_t width,
     bk_dma2d_int_enable(DMA2D_CFG_ERROR | DMA2D_TRANS_ERROR | DMA2D_TRANS_COMPLETE, 1);
   }
   transfer_error = 0;
+  const int trace_copy = src && !(verified_operations & 2u);
+  const uint16_t first_source = src ? *(const uint16_t *)src : 0;
+  if (trace_copy) {
+    printf("H2_DMA2D copy_begin width=%ld height=%ld src_stride=%lu dst_stride=%lu first=%04x\n",
+           (long)width, (long)height, (unsigned long)src_stride,
+           (unsigned long)dst_stride, (unsigned)first_source);
+  }
   const size_t dst_bytes = (size_t)(height - 1) * dst_stride + width * 2u;
   sync_cache(dst, (long)dst_bytes);
   if (src != NULL) {
@@ -122,6 +129,12 @@ int h2_bk_dma2d_rgb565(void *dst, const void *src, int32_t width,
     return 0;
   }
   sync_cache(dst, (long)dst_bytes);
+  if (trace_copy) {
+    printf("H2_DMA2D copy_end busy=%u status=%lu source_before=%04x source_after=%04x actual=%04x\n",
+           (unsigned)bk_dma2d_is_transfer_busy(),
+           (unsigned long)bk_dma2d_int_status_get(), (unsigned)first_source,
+           (unsigned)*(const uint16_t *)src, (unsigned)*(const uint16_t *)dst);
+  }
   const unsigned operation_bit = src ? 2u : 1u;
   if ((verified_operations & operation_bit) == 0) {
     for (int32_t y = 0; y < height; ++y) {
