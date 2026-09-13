@@ -31,3 +31,16 @@ as successful evidence. The maintained PAL Color Bar package remains.
 
 This completes coredump entry separation and retirement of the redundant
 direct Color Bar path, not the broader example/diagnostic ownership audit.
+
+## Speaker diagnostic
+
+Speaker smoke now lives under the E2E `speaker-smoke` target with its own
+launcher and task policy. Its previous Display labels remain aliases.
+Playback and heartbeat run in the explicitly budgeted `speaker_smoke` task;
+app_main returns after task creation so SDK app_core dispatch is not blocked
+by the diagnostic's permanent loop. This remains a manual diagnostic, not
+an automatically asserted audio or AEC acceptance test.
+
+The new firmware dependency graph has no Display/Loader target dependency.
+Native compilation validates the new entry, but no speaker firmware was
+installed during this ownership pass, so no fresh audio result is claimed.

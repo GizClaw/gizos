@@ -20,7 +20,8 @@ static void stage(const char *name, int result) {
   printf("H2_JIELI_SPEAKER stage=%s rc=%d\r\n", name, result);
 }
 
-void app_main(void) {
+static void speaker_smoke_task(void *user) {
+  (void)user;
   /* A stalled audio-server call must remain observable over USB instead of
    * turning into an uninformative watchdog-reset loop. */
   wdt_close();
@@ -65,4 +66,11 @@ idle:
            result);
     os_time_dly(100u);
   }
+}
+
+/* Return to the SDK app_core event loop while the diagnostic task runs. */
+void app_main(void) {
+  int result = os_task_create(
+      speaker_smoke_task, NULL, 10, 4096, 128, "speaker_smoke");
+  stage("task-create", result);
 }

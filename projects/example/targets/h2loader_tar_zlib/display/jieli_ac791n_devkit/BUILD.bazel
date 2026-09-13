@@ -82,21 +82,10 @@ jieli_target_task_policy(
     ],
 )
 
-jieli_target_task_policy(
+alias(
     name = "speaker_smoke_task_policy",
-    default_policy = "10 4096 128",
-    graph = [":speaker_smoke"],
-    policies = [],
-    sdk_policies = [
-        "app_core 15 8192 1024",
-        "sys_event 29 512 0",
-        "systimer 14 256 0",
-        "sys_timer 9 512 128",
-        "dw_update 21 512 32",
-        "audio_server 16 1024 256",
-        "audio_decoder 30 1024 64",
-        "audio_mix 28 512 0",
-    ],
+    actual = "//projects/e2e/targets/h2loader_tar_zlib/speaker-smoke/jieli_ac791n_devkit:speaker_smoke_task_policy",
+    tags = ["manual", "no-release"],
 )
 
 jieli_target_task_policy(
@@ -285,16 +274,10 @@ firmware_native_component(
     ],
 )
 
-firmware_native_component(
+alias(
     name = "speaker_smoke",
-    srcs = ["src/speaker_smoke.c"],
-    component_name = "jieli_ac791n_devkit_speaker_smoke",
-    tags = ["manual"],
-    target_compatible_with = AC791N_COMPATIBILITY,
-    deps = [
-        "//boards/jieli_ac791n_devkit/ac791n",
-        "//libs/pal:pal_header_files",
-    ],
+    actual = "//projects/e2e/targets/h2loader_tar_zlib/speaker-smoke/jieli_ac791n_devkit:speaker_smoke",
+    tags = ["manual", "no-release"],
 )
 
 
@@ -418,16 +401,10 @@ h2loader_jieli_firmware(
     task_policy = ":mp4_player_small_task_policy",
 )
 
-h2loader_jieli_firmware(
+alias(
     name = "speaker_smoke_firmware",
-    board = "jieli_ac791n_devkit",
-    graph = [
-        ":speaker_smoke",
-        "//boards/jieli_ac791n_devkit/ac791n",
-    ],
-    image = "speaker-smoke",
-    target = "wl82",
-    task_policy = ":speaker_smoke_task_policy",
+    actual = "//projects/e2e/targets/h2loader_tar_zlib/speaker-smoke/jieli_ac791n_devkit:speaker_smoke_firmware",
+    tags = ["manual", "no-release"],
 )
 
 h2loader_jieli_firmware(
