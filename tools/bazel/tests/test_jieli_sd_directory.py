@@ -73,7 +73,7 @@ int main(void) {
                            check=True, timeout=30)
             subprocess.run([str(binary)], check=True, timeout=30)
 
-    def test_directory_components_and_create_failures(self):
+    def test_single_level_directory_and_create_failures(self):
         source = SOURCE.read_text()
         begin = source.index("static int directory_status(")
         end = source.index("static int fs_mkdir(", begin)
@@ -142,17 +142,32 @@ static void reset(void) {
         main = r'''
 int main(void) {
     reset();
+    assert(ensure_directory(H2_JIELI_SD_ROOT "data/long-parent/child") == H2_PAL_ERR_NOT_FOUND);
+    assert(creates == 0 && traces == 0 && count == 0);
+    add(H2_JIELI_SD_ROOT "data", F_ATTR_DIR);
+    assert(ensure_directory(H2_JIELI_SD_ROOT "data/long-parent/child") == H2_PAL_ERR_NOT_FOUND);
+    assert(creates == 0 && traces == 0 && count == 1);
+    add(H2_JIELI_SD_ROOT "data/long-parent", F_ATTR_DIR);
     assert(ensure_directory(H2_JIELI_SD_ROOT "data/long-parent/child") == 0);
-    assert(creates == 3 && traces == 3 && closes == 6);
-    assert(strcmp(created_paths[0], H2_JIELI_SD_ROOT "data") == 0);
-    assert(strcmp(created_paths[1], H2_JIELI_SD_ROOT "data/long-parent") == 0);
-    assert(strcmp(created_paths[2], H2_JIELI_SD_ROOT "data/long-parent/child") == 0);
+    assert(creates == 1 && traces == 1 && closes == 3);
+    assert(strcmp(created_paths[0], H2_JIELI_SD_ROOT "data/long-parent/child") == 0);
     assert(ensure_directory(H2_JIELI_SD_ROOT "data/long-parent/child") == 0);
-    assert(creates == 3 && traces == 3);
+    assert(creates == 1 && traces == 1);
 
-    reset(); fail_create = 2;
+    reset();
+    add(H2_JIELI_SD_ROOT "data", F_ATTR_DIR);
+    add(H2_JIELI_SD_ROOT "data/long-parent", F_ATTR_DIR);
+    fail_create = 1;
     assert(ensure_directory(H2_JIELI_SD_ROOT "data/long-parent/child") == H2_PAL_ERR_IO);
-    assert(creates == 2 && count == 1);
+    assert(creates == 1 && count == 2);
+    reset();
+    /* Board initialization creates these directly under the mounted root. */
+    assert(ensure_directory(H2_JIELI_SD_ROOT "dl") == 0);
+    assert(ensure_directory(H2_JIELI_SD_ROOT "data") == 0);
+    assert(creates == 2 && count == 2);
+    assert(ensure_directory(H2_JIELI_SD_ROOT "dl") == 0);
+    assert(ensure_directory(H2_JIELI_SD_ROOT "data") == 0);
+    assert(creates == 2);
     reset(); add(H2_JIELI_SD_ROOT "data", 0);
     assert(ensure_directory(H2_JIELI_SD_ROOT "data/child") == H2_PAL_ERR_INVALID_STATE);
     assert(creates == 0);

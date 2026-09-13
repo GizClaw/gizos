@@ -261,14 +261,18 @@ static int ensure_directory(const char *path) {
       length <= root_len || length >= H2_JIELI_SD_PATH_MAX) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  for (size_t i = root_len; i <= length; ++i) {
-    if (path[i] != '/' && path[i] != '\0') continue;
-    memcpy(component, path, i);
-    component[i] = '\0';
-    int result = create_directory_component(component);
+  memcpy(component, path, length + 1u);
+  char *leaf = strrchr(component, '/');
+  /* PAL mkdir is single-level. SDK fopen can create intermediate directories,
+   * so reject a missing or non-directory parent before invoking it. The SD
+   * volume root itself is established by mount, not a normal directory entry. */
+  if ((size_t)(leaf - component) != root_len - 1u) {
+    *leaf = '\0';
+    int result = directory_status(component);
     if (result != H2_PAL_OK) return result;
+    *leaf = '/';
   }
-  return H2_PAL_OK;
+  return create_directory_component(component);
 }
 
 static int fs_mkdir(void *user, const char *path) {

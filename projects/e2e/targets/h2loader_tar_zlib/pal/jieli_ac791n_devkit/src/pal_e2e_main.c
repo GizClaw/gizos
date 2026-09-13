@@ -166,6 +166,20 @@ static void run_suites(void *user) {
             parents[i], rc, st.is_dir);
     }
   }
+  if (result == H2_PAL_OK && base_fs != NULL) {
+    h2_pal_fs_stat_t st = {0};
+    const char *parent = "/data/h2-mkdir-missing-parent";
+    int before = base_fs->vtable->stat(base_fs->user, parent, &st);
+    if (before == H2_PAL_ERR_NOT_FOUND) {
+      int made = base_fs->vtable->mkdir(
+          base_fs->user, "/data/h2-mkdir-missing-parent/child");
+      int after = base_fs->vtable->stat(base_fs->user, parent, &st);
+      trace("H2_PAL_FS missing_parent before=%d mkdir=%d after=%d\r\n",
+            before, made, after);
+    } else {
+      trace("H2_PAL_FS missing_parent skipped stat=%d\r\n", before);
+    }
+  }
   if (result == H2_PAL_OK) result = h2_runtime_init(&config, &runtime);
   trace("H2_PAL_E2E phase=runtime result=%d\r\n", result);
   if (result == H2_PAL_OK) {
