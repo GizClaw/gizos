@@ -356,8 +356,8 @@ static int tcp_connect(
   if (connect(socket_fd, (struct sockaddr *)&native, sizeof(native)) == 0 ||
       errno == EISCONN) {
     nonblocking = 0u;
-    (void)ioctlsocket(socket_fd, FIONBIO, &nonblocking);
-    return H2_PAL_OK;
+    return ioctlsocket(socket_fd, FIONBIO, &nonblocking) == 0
+               ? H2_PAL_OK : map_socket_error();
   }
   if (errno != EINPROGRESS && errno != EALREADY && errno != EAGAIN &&
       errno != EWOULDBLOCK) {
@@ -390,8 +390,8 @@ static int tcp_connect(
     return map_socket_error();
   }
   nonblocking = 0u;
-  (void)ioctlsocket(socket_fd, FIONBIO, &nonblocking);
-  return H2_PAL_OK;
+  return ioctlsocket(socket_fd, FIONBIO, &nonblocking) == 0
+             ? H2_PAL_OK : map_socket_error();
 }
 
 static int tcp_send_timeout(

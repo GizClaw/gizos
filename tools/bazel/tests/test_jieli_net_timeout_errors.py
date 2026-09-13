@@ -14,7 +14,7 @@ class NetTimeoutErrorsTest(unittest.TestCase):
             return source[source.index(begin):source.index(end, source.index(begin))]
         functions = section('static h2_pal_result_t map_socket_error(', 'static int resolve_addr(')
         functions += section('static int udp_recvfrom(', 'static int udp_join_multicast(')
-        functions += section('static int tcp_send_timeout(', 'static h2_pal_result_t tls_wrap(')
+        functions += section('static int tcp_connect(', 'static h2_pal_result_t tls_wrap(')
         stub = r'''
 #include <assert.h>
 #include <errno.h>
@@ -36,6 +36,26 @@ static int fake_recvfrom(int fd,void *p,size_t n,int f,struct sockaddr *a,sockle
 }
 static int fake_recv(int fd,void *p,size_t n,int f) {return fake_recvfrom(fd,p,n,f,NULL,NULL);}
 static int fake_send(int fd,const void *p,size_t n,int f) {return fake_recv(fd,(void *)p,n,f);}
+static int mode_calls, connect_pending, fail_restore;
+static int fake_ioctl(int fd,unsigned long cmd,unsigned long *mode) {
+ (void)fd;(void)cmd; ++mode_calls;
+ if (*mode==0 && fail_restore) {errno=EIO; return -1;} return 0;
+}
+static int fake_connect(int fd,const struct sockaddr *a,socklen_t len) {
+ (void)fd;(void)a;(void)len;
+ if (connect_pending) {errno=EINPROGRESS; return -1;} return 0;
+}
+static int fake_select(int n,fd_set *r,fd_set *w,fd_set *e,struct timeval *t) {
+ (void)n;(void)r;(void)w;(void)e;(void)t; return 1;
+}
+static int fake_getsockopt(int fd,int l,int o,void *v,socklen_t *n) {
+ (void)fd;(void)l;(void)o;(void)n; *(int *)v=0; return 0;
+}
+#define FIONBIO 1
+#define ioctlsocket fake_ioctl
+#define connect fake_connect
+#define select fake_select
+#define getsockopt fake_getsockopt
 #define setsockopt fake_setsockopt
 #define recvfrom fake_recvfrom
 #define recv fake_recv
@@ -62,6 +82,13 @@ int main(void) {
   assert(flags_seen==(wait ? 0:MSG_DONTWAIT));
  }
  assert(tcp_send(NULL,1,&data,1)==1 && flags_seen==MSG_DONTWAIT);
+ addr.family=H2_PAL_NET_FAMILY_IPV4;
+ for (connect_pending=0;connect_pending<=1;++connect_pending) {
+  mode_calls=0; fail_restore=1;
+  assert(tcp_connect(NULL,1,&addr,100)==H2_PAL_ERR_IO && mode_calls==2);
+  mode_calls=0; fail_restore=0;
+  assert(tcp_connect(NULL,1,&addr,100)==H2_PAL_OK && mode_calls==2);
+ }
 }
 '''
         with tempfile.TemporaryDirectory() as directory:
