@@ -258,7 +258,7 @@ int main(void) {
         types = source[source.index("enum {"):source.index("struct h2_pal_pref_cursor")]
         paths = source[source.index("static size_t bounded_length("):
                        source.index("static jieli_pref_namespace_t *to_namespace(")]
-        write = source[source.index("static int write_record("):
+        write = source[source.index("__attribute__((weak)) void h2_jieli_pref_rename_observer("):
                        source.index("static int pref_close(")]
         stub = r'''
 #include <assert.h>

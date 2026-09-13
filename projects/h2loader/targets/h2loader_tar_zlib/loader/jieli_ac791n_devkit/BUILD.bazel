@@ -303,6 +303,41 @@ firmware_native_component(
     target_compatible_with = AC791N_COMPATIBILITY,
 )
 
+firmware_native_component(
+    name = "loader_pref_powercut",
+    srcs = ["src/loader_pref_powercut.c"],
+    component_name = "jieli_ac791n_devkit_loader_pref_powercut",
+    deps = [
+        "//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:warm_boot",
+        "//libs/pal:pal_header_files",
+    ],
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+)
+
+h2loader_jieli_firmware(
+    name = "loader_pref_powercut_firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":loader_launcher",
+        ":loader_pref_powercut",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "loader-pref-powercut",
+    target = "wl82",
+    task_policy = ":loader_task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "loader_pref_powercut_package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":loader_pref_powercut_firmware",
+    image = "loader-pref-powercut",
+    role = "h2loader",
+    tags = ["no-release"],
+    target = "wl82",
+)
+
 h2loader_jieli_firmware(
     name = "loader_partial_p1_header_firmware",
     board = "jieli_ac791n_devkit",

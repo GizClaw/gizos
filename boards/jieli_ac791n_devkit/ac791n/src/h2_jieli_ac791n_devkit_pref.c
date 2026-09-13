@@ -76,13 +76,31 @@ static int pref_flash_read(
       : LFS_ERR_IO;
 }
 
+/* Diagnostic images may pause inside a real program operation. Production
+ * uses this no-op. Called after range validation, before flash mutation. */
+__attribute__((weak)) void h2_jieli_pref_program_observer(
+    uint32_t address, const void *buffer, uint32_t size) {
+  (void)address;
+  (void)buffer;
+  (void)size;
+}
+
 static int pref_flash_program(
     const struct lfs_config *config, lfs_block_t block, lfs_off_t offset,
     const void *buffer, lfs_size_t size) {
+  /* Validate before multiplication: wrapped addresses must never reach either
+   * the diagnostic observer or the physical flash driver. */
+  if (config->block_size == 0u ||
+      block >= H2_JIELI_PREF_SIZE / config->block_size ||
+      offset > config->block_size || size > config->block_size - offset) {
+    return LFS_ERR_IO;
+  }
   uint32_t address = (uint32_t)block * config->block_size + offset;
   if (address > H2_JIELI_PREF_SIZE || size > H2_JIELI_PREF_SIZE - address) {
     return LFS_ERR_IO;
   }
+  h2_jieli_pref_program_observer(
+      H2_JIELI_PREF_ADDRESS + address, buffer, size);
   (void)norflash_ioctl(NULL, IOCTL_SET_WRITE_PROTECT, 0u);
   return norflash_write(
              NULL, (void *)buffer, size, H2_JIELI_PREF_ADDRESS + address) ==
@@ -308,6 +326,11 @@ static int read_record(
   return H2_PAL_OK;
 }
 
+/* Diagnostic-only boundary notification; production performs no action. */
+__attribute__((weak)) void h2_jieli_pref_rename_observer(int entering) {
+  (void)entering;
+}
+
 static int write_record(
     jieli_pref_namespace_t *name_space, const char *key,
     h2_pal_pref_entry_type_t type, const void *value, size_t value_size) {
@@ -361,7 +384,9 @@ static int write_record(
   if (result == H2_PAL_OK) {
     /* littlefs replaces an existing destination in the rename transaction.
      * Removing it first loses the old record if rename fails or power is lost. */
+    h2_jieli_pref_rename_observer(1);
     result = map_lfs_error(lfs_rename(&pref_lfs, temporary, path));
+    h2_jieli_pref_rename_observer(0);
   } else {
     (void)lfs_remove(&pref_lfs, temporary);
   }

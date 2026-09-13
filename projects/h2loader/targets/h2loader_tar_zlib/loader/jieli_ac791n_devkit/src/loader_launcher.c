@@ -700,12 +700,19 @@ static int prepare_loader(void *user, h2_loader_t *loader) {
   return crash_recovery_active ? H2_PAL_ERR_INVALID_STATE : H2_PAL_OK;
 }
 
+__attribute__((weak)) void h2_jieli_loader_pref_probe(
+    const h2_pal_pref_api_t *pref, const h2_pal_mem_api_t *mem) {
+  (void)pref;
+  (void)mem;
+}
+
 static int serve_loader(
     void *user, h2_loader_t *loader, h2_loader_command_t *command,
     h2_loader_startup_action_t action) {
   h2_runtime_t *runtime = user;
   (void)loader;
   (void)action;
+  h2_jieli_loader_pref_probe(runtime->pref, runtime->mem);
   memset(&transport, 0, sizeof(transport));
   transport.allocator = runtime->mem;
   transport.write_timeout_ms = H2_WRITE_TIMEOUT_MS;
