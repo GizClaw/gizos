@@ -426,13 +426,77 @@ static int ap_get_clients(
   return H2_PAL_OK;
 }
 
+/* Serialize task-side radio mutations, including reentrant scan callbacks.
+ * A timed-out scan still owns SDK storage until its completion callback. */
+static unsigned wifi_operation_busy;
+
+static int wifi_operation_begin(void) {
+  if (__atomic_exchange_n(&wifi_operation_busy, 1u, __ATOMIC_ACQUIRE)) {
+    return H2_PAL_ERR_BUSY;
+  }
+  if (__atomic_load_n(&scan_phase, __ATOMIC_ACQUIRE) != SCAN_IDLE) {
+    __atomic_store_n(&wifi_operation_busy, 0u, __ATOMIC_RELEASE);
+    return H2_PAL_ERR_BUSY;
+  }
+  return H2_PAL_OK;
+}
+
+static int guarded_sta_scan(void *user, const h2_pal_wifi_scan_request_t *request,
+    h2_pal_wifi_scan_result_fn on_result, void *callback_user, uint32_t timeout_ms) {
+  int result = wifi_operation_begin();
+  if (result != H2_PAL_OK) return result;
+  result = sta_scan(user, request, on_result, callback_user, timeout_ms);
+  __atomic_store_n(&wifi_operation_busy, 0u, __ATOMIC_RELEASE);
+  return result;
+}
+
+static int guarded_sta_connect(void *user, const h2_pal_wifi_sta_config_t *config, uint32_t timeout_ms) {
+  int result = wifi_operation_begin();
+  if (result != H2_PAL_OK) return result;
+  result = sta_connect(user, config, timeout_ms);
+  __atomic_store_n(&wifi_operation_busy, 0u, __ATOMIC_RELEASE);
+  return result;
+}
+
+static int guarded_sta_disconnect(void *user) {
+  int result = wifi_operation_begin();
+  if (result != H2_PAL_OK) return result;
+  result = sta_disconnect(user);
+  __atomic_store_n(&wifi_operation_busy, 0u, __ATOMIC_RELEASE);
+  return result;
+}
+
+static int guarded_ap_start(void *user, const h2_pal_wifi_ap_config_t *config, uint32_t timeout_ms) {
+  int result = wifi_operation_begin();
+  if (result != H2_PAL_OK) return result;
+  result = ap_start(user, config, timeout_ms);
+  __atomic_store_n(&wifi_operation_busy, 0u, __ATOMIC_RELEASE);
+  return result;
+}
+
+static int guarded_ap_stop(void *user, uint32_t timeout_ms) {
+  int result = wifi_operation_begin();
+  if (result != H2_PAL_OK) return result;
+  result = ap_stop(user, timeout_ms);
+  __atomic_store_n(&wifi_operation_busy, 0u, __ATOMIC_RELEASE);
+  return result;
+}
+
+static int guarded_wifi_get_mac(void *user, uint8_t out_mac[6]) {
+  int result = wifi_operation_begin();
+  if (result != H2_PAL_OK) return result;
+  result = wifi_get_mac_address(user, out_mac);
+  __atomic_store_n(&wifi_operation_busy, 0u, __ATOMIC_RELEASE);
+  return result;
+}
+
 const h2_pal_wifi_sta_api_t *h2_jieli_ac791n_devkit_wifi_sta_api(void) {
   static const h2_pal_wifi_sta_vtable_t vtable = {
       .get_status = sta_get_status,
-      .scan = sta_scan,
-      .connect = sta_connect,
-      .disconnect = sta_disconnect,
-      .get_mac = wifi_get_mac_address,
+      .scan = guarded_sta_scan,
+      .connect = guarded_sta_connect,
+      .disconnect = guarded_sta_disconnect,
+      .get_mac = guarded_wifi_get_mac,
   };
   static const h2_pal_wifi_sta_api_t api = {.user = NULL, .vtable = &vtable};
   return &api;
@@ -440,11 +504,11 @@ const h2_pal_wifi_sta_api_t *h2_jieli_ac791n_devkit_wifi_sta_api(void) {
 
 const h2_pal_wifi_ap_api_t *h2_jieli_ac791n_devkit_wifi_ap_api(void) {
   static const h2_pal_wifi_ap_vtable_t vtable = {
-      .start = ap_start,
-      .stop = ap_stop,
+      .start = guarded_ap_start,
+      .stop = guarded_ap_stop,
       .get_status = ap_get_status,
       .get_clients = ap_get_clients,
-      .get_mac = wifi_get_mac_address,
+      .get_mac = guarded_wifi_get_mac,
   };
   static const h2_pal_wifi_ap_api_t api = {.user = NULL, .vtable = &vtable};
   return &api;
