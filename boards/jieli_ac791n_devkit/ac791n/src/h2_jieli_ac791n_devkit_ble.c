@@ -7,6 +7,7 @@
 #include "btcontroller_config.h"
 #include "btstack/avctp_user.h"
 #include "btstack/btstack_task.h"
+#include "btstack/btstack_error.h"
 #include "btstack/le/att.h"
 #include "btstack/le/ble_api.h"
 #include "btstack/le/le_common_define.h"
@@ -152,7 +153,12 @@ struct h2_pal_ble_adv_set {
 typedef struct h2_jieli_ble_state {
   int starting;
   int started;
+  int stopping;
+  int stop_worker;
+  int native_created;
+  int start_failed;
   uint16_t conn_handle;
+  uint16_t retiring_connection;
   uint16_t mtu;
   h2_pal_ble_gatt_characteristic_t characteristics[2];
   int gatt_registered;
@@ -161,6 +167,67 @@ typedef struct h2_jieli_ble_state {
 } h2_jieli_ble_state_t;
 
 static h2_jieli_ble_state_t h2_ble;
+/* GATT lifetime helpers. */
+/* The gate protects binding publication and stack-owned callback references,
+ * never an SDK call or a borrowed user callback. It outlives host restarts. */
+static volatile uint32_t h2_gatt_gate;
+typedef struct h2_gatt_call {
+  struct h2_gatt_call *next;
+  const void *task;
+} h2_gatt_call_t;
+static h2_gatt_call_t *h2_gatt_calls;
+static unsigned h2_gatt_unregistering;
+
+static void h2_gatt_lock(void) {
+  for (;;) {
+    uint32_t expected = 0u;
+    if (h2_jieli_atomic_cas_u32(&h2_gatt_gate, &expected, 1u)) return;
+    os_time_dly(1);
+  }
+}
+
+static void h2_gatt_unlock(void) {
+  h2_jieli_atomic_store_u32(&h2_gatt_gate, 0u);
+}
+
+static void h2_gatt_release(h2_gatt_call_t *call) {
+  h2_gatt_lock();
+  h2_gatt_call_t **link = &h2_gatt_calls;
+  while (*link != call) link = &(*link)->next;
+  *link = call->next;
+  h2_gatt_unlock();
+}
+/* End GATT lifetime helpers. */
+
+/* Host lifetime helpers. */
+typedef struct h2_ble_call {
+  struct h2_ble_call *next;
+  const void *task;
+} h2_ble_call_t;
+static h2_ble_call_t *h2_ble_calls;
+
+static int h2_ble_call_begin(h2_ble_call_t *call) {
+  call->task = h2_jieli_sdk_task_current();
+  h2_gatt_lock();
+  if (h2_ble.stopping) {
+    h2_gatt_unlock();
+    return H2_PAL_ERR_BUSY;
+  }
+  call->next = h2_ble_calls;
+  h2_ble_calls = call;
+  h2_gatt_unlock();
+  return H2_PAL_OK;
+}
+
+static void h2_ble_call_end(h2_ble_call_t *call) {
+  h2_gatt_lock();
+  h2_ble_call_t **link = &h2_ble_calls;
+  while (*link != call) link = &(*link)->next;
+  *link = call->next;
+  h2_gatt_unlock();
+}
+/* End host lifetime helpers. */
+
 static uint8_t h2_att_buffer[H2_JIELI_ATT_BUFFER_SIZE] __attribute__((aligned(4)));
 
 typedef struct h2_jieli_att_trace {
@@ -206,6 +273,7 @@ static void h2_att_trace_dump(void) {
   }
 }
 
+static int h2_unregister_gatt(void *user);
 static int h2_adv_set_stop(void *user, h2_pal_ble_adv_set_t *set);
 static int h2_adv_apply(struct h2_pal_ble_adv_set *set);
 
@@ -565,8 +633,17 @@ static int h2_ble_start(void *user) {
   h2_ble_log("H2_JIELI_BLE_FEATURES high=%08x low=%08x\r\n",
          (unsigned)(config_btctler_le_features >> 32u),
          (unsigned)config_btctler_le_features);
-  if (h2_ble.started || h2_ble.starting) return H2_PAL_OK;
+  h2_gatt_lock();
+  if (h2_ble.start_failed) {
+    h2_gatt_unlock();
+    return H2_PAL_ERR_IO;
+  }
+  if (h2_ble.started || h2_ble.starting) {
+    h2_gatt_unlock();
+    return H2_PAL_OK;
+  }
   h2_ble.starting = 1;
+  h2_gatt_unlock();
   h2_ble_log("H2_JIELI_BLE_ENTER step=controller_prepare\r\n");
   /* JieLi's BLE-only reference applications disable Classic-BT sniff before
    * configuring the controller address and starting btstack.  Keep that SDK
@@ -591,7 +668,9 @@ static int h2_ble_start(void *user) {
   h2_ble_log("H2_JIELI_BLE_ENTER step=controller_mac\r\n");
   const int mac_result = le_controller_set_mac(ble_addr);
   if (mac_result != 0) {
+    h2_gatt_lock();
     h2_ble.starting = 0;
+    h2_gatt_unlock();
     h2_ble_log("H2_JIELI_BLE_ERROR step=controller_mac vendor=%d\r\n", mac_result);
     return H2_PAL_ERR_IO;
   }
@@ -599,24 +678,111 @@ static int h2_ble_start(void *user) {
   h2_ble_log("H2_JIELI_BLE_ENTER step=btstack_init\r\n");
   const int btstack_result = btstack_init();
   if (btstack_result == 0) {
+    h2_gatt_lock();
+    h2_ble.native_created = 1;
+    h2_gatt_unlock();
     h2_ble_log("H2_JIELI_BLE_OK step=btstack_init vendor=%d\r\n",
            btstack_result);
     return H2_PAL_OK;
   }
   h2_ble_log("H2_JIELI_BLE_ERROR step=btstack_init vendor=%d\r\n",
          btstack_result);
+  h2_gatt_lock();
   h2_ble.starting = 0;
+  /* The pinned SDK marks its native task as created before task_create().
+   * On failure the controller may remain alive, but btstack_exit() would
+   * wait on a task that does not exist. No supported rollback clears that
+   * SDK ownership flag: retain the failed host until reset. */
+  h2_ble.start_failed = 1;
+  h2_ble.stopping = 1;
+  h2_gatt_unlock();
   return H2_PAL_ERR_IO;
 }
 
 static int h2_ble_stop(void *user) {
-  (void)user;
-  if (!h2_ble.started && !h2_ble.starting) return H2_PAL_OK;
-  if (h2_ble.adv.used) (void)h2_adv_set_stop(user, &h2_ble.adv);
-  if (h2_ble.conn_handle != 0u) (void)ble_op_disconnect(h2_ble.conn_handle);
-  (void)ble_user_cmd_prepare(BLE_CMD_STACK_EXIT, 0);
+  const void *task = h2_jieli_sdk_task_current();
+  const char *name = os_current_task();
+  h2_gatt_lock();
+  /* Full SDK shutdown waits for the native btstack task. INIT is delivered
+   * by app_core; neither task may wait for work it must itself dispatch. */
+  if (h2_ble.stop_worker ||
+      (name != NULL && (strcmp(name, "btstack") == 0 ||
+       (h2_ble.starting && strcmp(name, "app_core") == 0)))) {
+    h2_gatt_unlock();
+    return H2_PAL_ERR_BUSY;
+  }
+  for (h2_ble_call_t *call = h2_ble_calls; call != NULL; call = call->next) {
+    if (call->task == task) {
+      h2_gatt_unlock();
+      return H2_PAL_ERR_BUSY;
+    }
+  }
+  int had_host = h2_ble.started || h2_ble.starting || h2_ble.stopping;
+  h2_ble.stopping = 1;
+  h2_ble.stop_worker = 1;
+  while (h2_ble_calls != NULL || h2_ble.starting) {
+    h2_gatt_unlock();
+    os_time_dly(1);
+    h2_gatt_lock();
+  }
+  if (h2_ble.start_failed) {
+    h2_ble.stop_worker = 0;
+    h2_gatt_unlock();
+    return H2_PAL_ERR_IO;
+  }
+  /* A start admitted before stop may have reached the SDK only while we
+   * waited. Its task still needs shutdown even if INIT was suppressed. */
+  had_host = had_host || h2_ble.native_created;
+  const int adv_used = h2_ble.adv.used;
+  const uint16_t connection = h2_ble.conn_handle;
+  h2_gatt_unlock();
+
+  int rc = H2_PAL_OK;
+  if (adv_used) rc = h2_adv_set_stop(user, &h2_ble.adv);
+  if (rc == H2_PAL_OK && connection != 0u) {
+    rc = h2_ble_cmd_result(ble_op_disconnect(connection));
+    if (rc == H2_PAL_OK) {
+      /* Admission is closed and callbacks are retired. Remember an accepted
+       * disconnect so a later shutdown attempt cannot submit it twice. */
+      h2_gatt_lock();
+      h2_ble.conn_handle = 0u;
+      h2_ble.retiring_connection = connection;
+      h2_gatt_unlock();
+    }
+  }
+  if (rc == H2_PAL_OK && had_host) {
+    /* Unlike BLE_CMD_STACK_EXIT, this also barriers and joins the native
+     * task and releases controller/host memory. SDK return 1 means no task. */
+    const int result = btstack_exit();
+    if (result != 0 && result != 1) rc = H2_PAL_ERR_IO;
+  }
+  if (rc == H2_PAL_OK) {
+    h2_gatt_lock();
+    const uint16_t retired = h2_ble.retiring_connection;
+    h2_ble.retiring_connection = 0u;
+    h2_gatt_unlock();
+    if (retired != 0u) {
+      /* SDK callbacks are closed during shutdown. Preserve the disconnect
+       * notification that wakes stream owners, after native teardown proves
+       * the link is gone, and before publishing HOST_STOPPED. */
+      const h2_pal_ble_disconnected_info_t info = {
+          .conn_handle = retired,
+          .reason = ERROR_CODE_CONNECTION_TERMINATED_BY_LOCAL_HOST,
+      };
+      h2_ble_post(H2_PAL_SYSTEM_EVENT_TYPE_BLE_DISCONNECTED, &info, sizeof(info));
+    }
+    rc = h2_unregister_gatt(user);
+  }
+  h2_gatt_lock();
+  if (rc != H2_PAL_OK) {
+    h2_ble.stop_worker = 0;
+    h2_gatt_unlock();
+    return rc;
+  }
   memset(&h2_ble, 0, sizeof(h2_ble));
-  h2_ble_post(H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STOPPED, NULL, 0u);
+  h2_gatt_unlock();
+  if (had_host)
+    h2_ble_post(H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STOPPED, NULL, 0u);
   return H2_PAL_OK;
 }
 
@@ -664,7 +830,7 @@ static int h2_adv_set_stop(void *user, h2_pal_ble_adv_set_t *set) {
   set->start_requested = 0;
   if (set->started) {
     if (set->params.type == H2_PAL_BLE_ADV_TYPE_EXTENDED) {
-      const struct h2_ext_adv_enable disable = {
+      static const struct h2_ext_adv_enable disable = {
           .enable = 0u, .number_of_sets = 1u, .handle = 0u};
       rc = h2_ble_cmd_result(
           ble_op_set_ext_adv_enable(&disable, sizeof(disable)));
@@ -685,37 +851,7 @@ static int h2_adv_set_destroy(void *user, h2_pal_ble_adv_set_t *set) {
   return rc;
 }
 
-/* GATT lifetime helpers. */
-/* The gate protects binding publication and stack-owned callback references,
- * never an SDK call or a borrowed user callback. It outlives host restarts. */
-static volatile uint32_t h2_gatt_gate;
-typedef struct h2_gatt_call {
-  struct h2_gatt_call *next;
-  const void *task;
-} h2_gatt_call_t;
-static h2_gatt_call_t *h2_gatt_calls;
-static unsigned h2_gatt_unregistering;
 
-static void h2_gatt_lock(void) {
-  for (;;) {
-    uint32_t expected = 0u;
-    if (h2_jieli_atomic_cas_u32(&h2_gatt_gate, &expected, 1u)) return;
-    os_time_dly(1);
-  }
-}
-
-static void h2_gatt_unlock(void) {
-  h2_jieli_atomic_store_u32(&h2_gatt_gate, 0u);
-}
-
-static void h2_gatt_release(h2_gatt_call_t *call) {
-  h2_gatt_lock();
-  h2_gatt_call_t **link = &h2_gatt_calls;
-  while (*link != call) link = &(*link)->next;
-  *link = call->next;
-  h2_gatt_unlock();
-}
-/* End GATT lifetime helpers. */
 
 static int h2_register_gatt(
     void *user, const h2_pal_ble_gatt_service_t *services, size_t count) {
@@ -1082,6 +1218,34 @@ static void h2_packet_handler(
   }
 }
 
+static uint16_t h2_att_read_retained(
+    hci_con_handle_t connection, uint16_t handle, uint16_t offset,
+    uint8_t *buffer, uint16_t size) {
+  h2_ble_call_t call;
+  if (h2_ble_call_begin(&call) != H2_PAL_OK) return 0u;
+  const uint16_t result = h2_att_read(connection, handle, offset, buffer, size);
+  h2_ble_call_end(&call);
+  return result;
+}
+
+static int h2_att_write_retained(
+    hci_con_handle_t connection, uint16_t handle, uint16_t transaction,
+    uint16_t offset, uint8_t *buffer, uint16_t size) {
+  h2_ble_call_t call;
+  if (h2_ble_call_begin(&call) != H2_PAL_OK) return 0x0e;
+  const int result = h2_att_write(connection, handle, transaction, offset, buffer, size);
+  h2_ble_call_end(&call);
+  return result;
+}
+
+static void h2_packet_handler_retained(
+    uint8_t type, uint16_t channel, uint8_t *packet, uint16_t size) {
+  h2_ble_call_t call;
+  if (h2_ble_call_begin(&call) != H2_PAL_OK) return;
+  h2_packet_handler(type, channel, packet, size);
+  h2_ble_call_end(&call);
+}
+
 void ble_profile_init(void) {
   h2_ble_log("H2_JIELI_BLE_PROFILE_ENTER step=device_db\r\n");
   le_device_db_init();
@@ -1097,21 +1261,35 @@ void ble_profile_init(void) {
   sm_set_request_security(TCFG_BLE_SECURITY_EN);
   h2_ble_log("H2_JIELI_BLE_SECURITY request=%u bonding=%u\r\n",
          (unsigned)TCFG_BLE_SECURITY_EN, (unsigned)!!TCFG_BLE_SECURITY_EN);
-  sm_event_callback_set(h2_packet_handler);
+  sm_event_callback_set(h2_packet_handler_retained);
   h2_ble_log("H2_JIELI_BLE_PROFILE_OK step=security_manager\r\n");
   h2_ble_log("H2_JIELI_BLE_PROFILE_ENTER step=att_server\r\n");
-  att_server_init(h2_profile_data, h2_att_read, h2_att_write);
+  att_server_init(h2_profile_data, h2_att_read_retained, h2_att_write_retained);
   h2_ble_log("H2_JIELI_BLE_PROFILE_OK step=att_server\r\n");
   h2_ble_log("H2_JIELI_BLE_PROFILE_ENTER step=handlers\r\n");
-  att_server_register_packet_handler(h2_packet_handler);
-  hci_event_callback_set(h2_packet_handler);
-  le_l2cap_register_packet_handler(h2_packet_handler);
+  att_server_register_packet_handler(h2_packet_handler_retained);
+  hci_event_callback_set(h2_packet_handler_retained);
+  le_l2cap_register_packet_handler(h2_packet_handler_retained);
   h2_ble_log("H2_JIELI_BLE_PROFILE_OK step=handlers\r\n");
   ble_vendor_set_default_att_mtu(H2_JIELI_ATT_MTU);
   h2_ble_log("H2_JIELI_BLE_PROFILE_OK step=mtu\r\n");
 }
 
 void bt_ble_init(void) {
+  h2_ble_call_t call = {.task = h2_jieli_sdk_task_current()};
+  h2_gatt_lock();
+  if (!h2_ble.starting) {
+    h2_gatt_unlock();
+    return;
+  }
+  if (h2_ble.stopping) {
+    h2_ble.starting = 0;
+    h2_gatt_unlock();
+    return;
+  }
+  call.next = h2_ble_calls;
+  h2_ble_calls = &call;
+  h2_gatt_unlock();
   extern u8 get_ble_gatt_role(void);
   const u8 previous_role = get_ble_gatt_role();
   if (previous_role == 1u) {
@@ -1120,8 +1298,15 @@ void bt_ble_init(void) {
   h2_ble_log("H2_JIELI_BLE_EVENT event=BT_STATUS_INIT_OK\r\n");
   h2_ble_log("H2_JIELI_BLE_ROLE previous=%u active=%u\r\n",
          (unsigned)previous_role, (unsigned)get_ble_gatt_role());
+  h2_gatt_lock();
   h2_ble.starting = 0;
+  if (h2_ble.stopping) {
+    h2_gatt_unlock();
+    h2_ble_call_end(&call);
+    return;
+  }
   h2_ble.started = 1;
+  h2_gatt_unlock();
   h2_ble_post(H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STARTED, NULL, 0u);
   if (h2_ble.adv.used && h2_ble.adv.start_requested &&
       !h2_ble.adv.started) {
@@ -1132,6 +1317,7 @@ void bt_ble_init(void) {
     h2_ble_post(H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED,
                 &event, sizeof(event));
   }
+  h2_ble_call_end(&call);
 }
 
 int h2_jieli_ac791n_devkit_ble_bt_event_handler(struct sys_event *event) {
@@ -1143,26 +1329,171 @@ int h2_jieli_ac791n_devkit_ble_bt_event_handler(struct sys_event *event) {
   return 0;
 }
 
+/* Public operations retain the host through SDK calls and subscriber posts. */
+static int h2_ble_start_retained(void *user) {
+  h2_ble_call_t call;
+  int rc = h2_ble_call_begin(&call);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_ble_start(user);
+  h2_ble_call_end(&call);
+  return rc;
+}
+
+static int h2_legacy_set_adv_data_retained(void *user, const h2_pal_ble_adv_data_t *data) {
+  h2_ble_call_t call;
+  int rc = h2_ble_call_begin(&call);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_legacy_set_adv_data(user, data);
+  h2_ble_call_end(&call);
+  return rc;
+}
+
+static int h2_legacy_start_advertising_retained(void *user, const h2_pal_ble_adv_params_t *params) {
+  h2_ble_call_t call;
+  int rc = h2_ble_call_begin(&call);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_legacy_start_advertising(user, params);
+  h2_ble_call_end(&call);
+  return rc;
+}
+
+static int h2_legacy_stop_advertising_retained(void *user) {
+  h2_ble_call_t call;
+  int rc = h2_ble_call_begin(&call);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_legacy_stop_advertising(user);
+  h2_ble_call_end(&call);
+  return rc;
+}
+
+static int h2_adv_set_create_retained(void *user, const h2_pal_ble_adv_params_t *params, h2_pal_ble_adv_set_t **out_set) {
+  h2_ble_call_t call;
+  int rc = h2_ble_call_begin(&call);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_adv_set_create(user, params, out_set);
+  h2_ble_call_end(&call);
+  return rc;
+}
+
+static int h2_adv_set_data_retained(void *user, h2_pal_ble_adv_set_t *set, const h2_pal_ble_adv_data_t *data) {
+  h2_ble_call_t call;
+  int rc = h2_ble_call_begin(&call);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_adv_set_data(user, set, data);
+  h2_ble_call_end(&call);
+  return rc;
+}
+
+static int h2_adv_set_start_retained(void *user, h2_pal_ble_adv_set_t *set) {
+  h2_ble_call_t call;
+  int rc = h2_ble_call_begin(&call);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_adv_set_start(user, set);
+  h2_ble_call_end(&call);
+  return rc;
+}
+
+static int h2_adv_set_stop_retained(void *user, h2_pal_ble_adv_set_t *set) {
+  h2_ble_call_t call;
+  int rc = h2_ble_call_begin(&call);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_adv_set_stop(user, set);
+  h2_ble_call_end(&call);
+  return rc;
+}
+
+static int h2_adv_set_destroy_retained(void *user, h2_pal_ble_adv_set_t *set) {
+  h2_ble_call_t call;
+  int rc = h2_ble_call_begin(&call);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_adv_set_destroy(user, set);
+  h2_ble_call_end(&call);
+  return rc;
+}
+
+static int h2_register_gatt_retained(void *user, const h2_pal_ble_gatt_service_t *services, size_t count) {
+  h2_ble_call_t call;
+  int rc = h2_ble_call_begin(&call);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_register_gatt(user, services, count);
+  h2_ble_call_end(&call);
+  return rc;
+}
+
+static int h2_unregister_gatt_retained(void *user) {
+  h2_ble_call_t call;
+  int rc = h2_ble_call_begin(&call);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_unregister_gatt(user);
+  h2_ble_call_end(&call);
+  return rc;
+}
+
+static int h2_notify_retained(void *user, uint16_t connection, uint16_t attribute, const uint8_t *data, size_t length) {
+  h2_ble_call_t call;
+  int rc = h2_ble_call_begin(&call);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_notify(user, connection, attribute, data, length);
+  h2_ble_call_end(&call);
+  return rc;
+}
+
+static int h2_disconnect_retained(void *user, uint16_t connection) {
+  h2_ble_call_t call;
+  int rc = h2_ble_call_begin(&call);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_disconnect(user, connection);
+  h2_ble_call_end(&call);
+  return rc;
+}
+
+static int h2_update_connection_retained(void *user, uint16_t connection, const h2_pal_ble_connection_params_t *params) {
+  h2_ble_call_t call;
+  int rc = h2_ble_call_begin(&call);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_update_connection(user, connection, params);
+  h2_ble_call_end(&call);
+  return rc;
+}
+
+static int h2_exchange_mtu_retained(void *user, uint16_t connection, uint16_t *mtu, uint32_t timeout) {
+  h2_ble_call_t call;
+  int rc = h2_ble_call_begin(&call);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_exchange_mtu(user, connection, mtu, timeout);
+  h2_ble_call_end(&call);
+  return rc;
+}
+
+static int h2_set_phy_retained(void *user, uint16_t connection, h2_pal_ble_phy_t tx, h2_pal_ble_phy_t rx, uint32_t timeout) {
+  h2_ble_call_t call;
+  int rc = h2_ble_call_begin(&call);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_set_phy(user, connection, tx, rx, timeout);
+  h2_ble_call_end(&call);
+  return rc;
+}
+
 const h2_pal_ble_host_api_t *h2_jieli_ac791n_devkit_ble_host_api(const h2_pal_log_api_t *log) {
   if (!h2_ble_log_bind(log)) return NULL;
   static const h2_pal_ble_vtable_t vtable = {
-      .start = h2_ble_start,
+      .start = h2_ble_start_retained,
       .stop = h2_ble_stop,
-      .set_adv_data = h2_legacy_set_adv_data,
-      .start_advertising = h2_legacy_start_advertising,
-      .stop_advertising = h2_legacy_stop_advertising,
-      .adv_set_create = h2_adv_set_create,
-      .adv_set_set_data = h2_adv_set_data,
-      .adv_set_start = h2_adv_set_start,
-      .adv_set_stop = h2_adv_set_stop,
-      .adv_set_destroy = h2_adv_set_destroy,
-      .register_gatt_services = h2_register_gatt,
-      .unregister_gatt_services = h2_unregister_gatt,
-      .notify = h2_notify,
-      .disconnect = h2_disconnect,
-      .update_connection = h2_update_connection,
-      .exchange_mtu = h2_exchange_mtu,
-      .set_preferred_phy = h2_set_phy,
+      .set_adv_data = h2_legacy_set_adv_data_retained,
+      .start_advertising = h2_legacy_start_advertising_retained,
+      .stop_advertising = h2_legacy_stop_advertising_retained,
+      .adv_set_create = h2_adv_set_create_retained,
+      .adv_set_set_data = h2_adv_set_data_retained,
+      .adv_set_start = h2_adv_set_start_retained,
+      .adv_set_stop = h2_adv_set_stop_retained,
+      .adv_set_destroy = h2_adv_set_destroy_retained,
+      .register_gatt_services = h2_register_gatt_retained,
+      .unregister_gatt_services = h2_unregister_gatt_retained,
+      .notify = h2_notify_retained,
+      .disconnect = h2_disconnect_retained,
+      .update_connection = h2_update_connection_retained,
+      .exchange_mtu = h2_exchange_mtu_retained,
+      .set_preferred_phy = h2_set_phy_retained,
   };
   static const h2_pal_ble_host_api_t api = {
       .user = NULL,

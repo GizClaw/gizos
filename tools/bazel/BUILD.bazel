@@ -473,6 +473,22 @@ py_test(
 )
 
 py_test(
+    name = "jieli_ble_connection_test",
+    srcs = ["tests/test_jieli_ble_connection.py"],
+    data = [
+        "//boards/jieli_ac791n_devkit/ac791n:src/h2_jieli_ac791n_devkit_ble.c",
+        "//libs/pal:pal_header_files",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_ble_connection.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
     name = "jieli_ble_adv_bounds_test",
     srcs = ["tests/test_jieli_ble_adv_bounds.py"],
     data = [
@@ -481,6 +497,25 @@ py_test(
     ],
     legacy_create_init = 0,
     main = "tests/test_jieli_ble_adv_bounds.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "jieli_ble_host_lifecycle_test",
+    srcs = ["tests/test_jieli_ble_host_lifecycle.py"],
+    data = [
+        "tests/fixtures/jieli_ble_host_lifecycle.c",
+        "tests/fixtures/jieli_ble_disable_storage.c",
+        "//native_component_src/jieli/wl82/h2_pal_core:include/h2_jieli_wl82_atomic.h",
+        "//boards/jieli_ac791n_devkit/ac791n:src/h2_jieli_ac791n_devkit_ble.c",
+        "//libs/pal:pal_header_files",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_ble_host_lifecycle.py",
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],

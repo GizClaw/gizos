@@ -22,7 +22,7 @@ class BleConnectionTest(unittest.TestCase):
 #include <string.h>
 enum { H2_PAL_OK=0, H2_PAL_ERR_IO=-1 };
 const uint64_t config_btctler_le_features=0;
-static struct { int started, starting; } h2_ble;
+static struct { int started, starting, native_created, start_failed, stopping; } h2_ble;
 static int mac_result, stack_result, stack_calls, mac_calls;
 void lmp_set_sniff_disable(void) {}
 static const uint8_t *h2_ble_base_mac(void) {
@@ -33,6 +33,8 @@ int le_controller_set_mac(void *addr) {
  assert(memcmp(addr,h2_ble_base_mac(),6)==0); ++mac_calls; return mac_result;
 }
 static int btstack_init(void) { ++stack_calls; return stack_result; }
+static void h2_gatt_lock(void) {}
+static void h2_gatt_unlock(void) {}
 '''
         main = r'''
 int main(void) {
@@ -45,6 +47,8 @@ int main(void) {
  assert(mac_calls==4);
  mac_result=0; stack_result=-1;
  assert(h2_ble_start(NULL)==H2_PAL_ERR_IO && !h2_ble.starting);
+ assert(h2_ble_start(NULL)==H2_PAL_ERR_IO && stack_calls==1 && mac_calls==5);
+ memset(&h2_ble,0,sizeof(h2_ble));
  stack_result=0;
  assert(h2_ble_start(NULL)==0 && h2_ble.starting && stack_calls==2);
  assert(h2_ble_start(NULL)==0 && stack_calls==2 && mac_calls==6);
@@ -199,7 +203,7 @@ int main(void) {
             test = Path(directory) / "test.c"
             test.write_text(stub + branch + main)
             binary = Path(directory) / "test"
-            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra",
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
                             str(test), "-o", str(binary)], check=True, timeout=60)
             result = subprocess.run([str(binary)], timeout=10,
                                     capture_output=True, text=True)

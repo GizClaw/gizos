@@ -1,6 +1,6 @@
 # BLE lifetime follow-up — 2026-09-14
 
-This is incremental O2 evidence. Final-source Loader/App BLE lifecycle acceptance remains pending; the earlier policy-fix lifecycle runs do not validate this change.
+This is incremental O2 evidence. GATT unregister is committed in `2137527f`. Final-source Loader/App BLE lifecycle acceptance remains pending; the earlier policy-fix lifecycle runs do not validate this change.
 
 ## GATT unregister
 
@@ -14,7 +14,7 @@ Logs: `/tmp/jieli-ble-gatt-before.log`, `/tmp/jieli-ble-gatt-gcc-before.log`, `/
 
 The native AC791N Loader and PAL packages build successfully (37.455 seconds, `/tmp/jieli-ble-gatt-native.log`).
 
-Host-stop quiescence, pending INIT events, advertising command storage and connection/MTU synchronization remain open. Hardware does not yet establish concurrent unregister behavior.
+The host-stop changes below add a separate quiescence boundary. Advertising command storage and connection/MTU synchronization remain open. Hardware does not yet establish concurrent unregister behavior.
 
 ## Pinned SDK facts for the remaining stop work
 
@@ -27,3 +27,27 @@ SDK revision `eb04f1966cf2b7cbb72cbb54db906bcb293b5a4a`, `cpu/wl82/liba/btstack.
 - The SDK's registered BLE-thread hook runs after command consumption. A queue-empty query from an application task is insufficient: the SDK might have dequeued a pointer without consuming it. A retirement fence must execute on the consuming thread and distinguish transactions submitted concurrently.
 
 IR is retained in the Linux VM at `/tmp/jieli-pal-review-sdk/ble/`; these are SDK audit findings, not evidence that the remaining defects are fixed.
+
+## Host stop and pending initialization
+
+Public PAL operations and SDK ATT/packet callbacks now retain the host through their SDK calls and synchronous subscriber dispatch. Stop closes admission and waits for those calls without holding the gate. A pending INIT event retires startup without publishing STARTED when stop is pending. Unsolicited INIT after stop is ignored. A start admitted immediately before stop is still accounted for if it creates the native task while stop waits.
+
+Shutdown checks advertising-disable and disconnect submission results, then uses `btstack_exit()` before releasing GATT bindings and host state. An accepted disconnect is remembered across a failed shutdown so retry does not submit it twice. Failures retain ownership and keep admission closed; they do not publish STOPPED. Since late SDK callbacks are rejected during shutdown, successful native teardown publishes one local-host DISCONNECTED event for the retired link before HOST_STOPPED; this preserves the notification BLEIKCP uses to wake stream owners, including after a failed-stop retry. Extended advertising disable uses immutable static storage because the SDK queues its pointer. The other advertising descriptors still require the separate command-storage repair.
+
+Stop returns BUSY from a retained callback or the native `btstack` task, which cannot wait for itself. It also returns BUSY on `app_core` while INIT remains pending: that task must dispatch INIT before it can synchronously stop the host. These failures leave ownership intact.
+
+The pinned `btstack_init` sets its private task-created flag before calling `task_create`. If creation fails, `btstack_exit` can wait forever on the missing task. Repeating initialization re-enters controller task creation; the audited `btctrler_task_init` neither checks for an existing controller task nor propagates its task-create result. There is no verified public rollback that clears this private flag and safely releases partially initialized controller state. The provider therefore quarantines this failure: start returns IO, later operations remain unavailable, and stop returns IO without entering that unsafe SDK cleanup. Reset is required. Recovery from this SDK partial-initialization failure remains an SDK-contract limitation; no successful cleanup or hardware fault-injection result is claimed.
+
+`//tools/bazel:jieli_ble_host_lifecycle_test` extracts the real start/stop/INIT functions and retained notify/ATT wrappers. Thirteen lifecycle cases fail against `2137527f` under Clang and GCC: advertising/disconnect/full-exit errors, live notify and ATT borrows, self-stop, pending/late INIT, INIT-dispatcher self-wait, a start admitted before stop, partial SDK initialization failure, stop arriving during INIT role setup, and exactly-once disconnect notification. The INIT-publication case also fails against the intermediate shutdown implementation at the STARTED-publication assertion (`/tmp/jieli-ble-host-init-publication-before.log` and `/tmp/jieli-ble-host-init-publication-gcc-before.log`). After repair all pass, including TSan. SDK fakes re-enter the gate to check that it is not held across their calls or subscriber posts. The existing MAC-failure/ATT-connection/notify-bounds fixture also passes strict Clang and GCC; its SDK task-create failure case now expects quarantine rather than unsafe retry.
+
+Logs: `/tmp/jieli-ble-host-before.log`, `/tmp/jieli-ble-host-gcc-before.log`, `/tmp/jieli-ble-host-after.log`, `/tmp/jieli-ble-host-gcc-after.log`, `/tmp/jieli-ble-host-tsan.log`, `/tmp/jieli-ble-connection-after.log`. After the final INIT-publication and disconnect-notification refinements, native Loader, PAL and display packages build successfully in 63.655 seconds (`/tmp/jieli-ble-host-native-complete.log`). Final-source hardware acceptance remains pending.
+
+## Incremental App hardware check
+
+This probe used the intermediate host-stop implementation before the final INIT-publication and disconnect-notification refinements; the structured result records its BLE source hash. It is not final-source acceptance. The native display App build completed in 32.411 seconds. After installation through UART Loader into P2, App BLE status passed three consecutive times through Terminal.app, each reporting App image `9b44b3e39c1261a38750c10df56da98cfe0db0dcd25cb485c64565ee9b5af3be`. Package SHA-256: `fc6204e74d988e9e8e516348e14de6e128942c3d52e4b3b61da1006b8646daab`.
+
+UART return-to-Loader and subsequent status passed. P1 remains valid and unchanged at `6b47889e361e9ae591c1e3e1a429f2d24477ab3b414847d06c3134db312627b0`; staging is empty. See [structured results](./pal-ble-host-hardware.json). The background UART capture exited without data, so this evidence relies on the three successful BLE CLI status records and the final UART status. It is not a direct test of host stop/restart, concurrent unregister, or SDK failure injection. Full final-source UART/BLE lifecycle and PAL E2E remain required.
+
+Raw files are under `tmp/jieli/pal-review-next/diagnostic-runs/ble-host-app-status/`: `send.log`, `app.status`, `ble-status-1.log`, `ble-status-2.log`, `ble-status-3.log`, and `returned.status`.
+
+The extended-disable descriptor fixture consumes the actual queued pointer after `h2_adv_set_stop` returns. Both Clang and GCC AddressSanitizer report `stack-use-after-return` before repair, and pass with the immutable static descriptor. Together with the 13 lifecycle cases, the baseline run has 14 failing cases. The intermediate implementation also fails the disconnected-event and retry assertions before that refinement (`/tmp/jieli-ble-host-disconnect-event-before.log`, `/tmp/jieli-ble-host-disconnect-event-gcc-before.log`).
