@@ -406,8 +406,8 @@ static int ap_get_clients(
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_count = 0u;
-  for (int station = 1; station <= H2_PAL_WIFI_AP_MAX_CLIENTS &&
-                        *out_count < max_clients; ++station) {
+  size_t total_clients = 0u;
+  for (int station = 1; station <= H2_PAL_WIFI_AP_MAX_CLIENTS; ++station) {
     char *rssi = NULL;
     uint8_t *evm = NULL;
     uint8_t *mac = NULL;
@@ -415,6 +415,8 @@ static int ap_get_clients(
         mac == NULL) {
       continue;
     }
+    ++total_clients;
+    if (*out_count >= max_clients) continue;
     h2_pal_wifi_ap_client_t *client = &out_clients[*out_count];
     memset(client, 0, sizeof(*client));
     memcpy(client->mac, mac, sizeof(client->mac));
@@ -422,7 +424,7 @@ static int ap_get_clients(
     client->station_id = station;
     ++*out_count;
   }
-  wifi_state.ap.client_count = *out_count;
+  wifi_state.ap.client_count = total_clients;
   return H2_PAL_OK;
 }
 
