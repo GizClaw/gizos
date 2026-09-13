@@ -72,6 +72,8 @@ typedef struct h2_pal_e2e_concurrency_worker {
 } h2_pal_e2e_concurrency_worker_t;
 
 struct h2_pal_e2e_cleanup {
+  h2_pal_timer_t *timer;
+  int timer_calls;
   h2_pal_e2e_task_state_t task_worker;
   h2_pal_e2e_condition_state_t condition_worker;
   h2_pal_e2e_queue_state_t queue_worker;
@@ -295,25 +297,30 @@ static h2_pal_result_t h2_pal_e2e_core_time(h2_runtime_t *runtime) {
 
 static h2_pal_result_t h2_pal_e2e_core_timer(
     h2_runtime_t *runtime, h2_pal_e2e_result_t *e2e_result) {
-  int calls = 0;
-  h2_pal_timer_t *timer = NULL;
+  h2_pal_e2e_cleanup_t *run = h2_pal_mem_alloc(runtime->mem, sizeof(*run));
+  if (run == NULL) return H2_PAL_ERR_NO_MEMORY;
+  memset(run, 0, sizeof(*run));
   const h2_pal_timer_config_t config = {
       .name = "pal-e2e",
       .period_ms = 1u,
       .flags = H2_PAL_TIMER_FLAG_AUTO_START,
       .cb = h2_pal_e2e_timer_callback,
-      .cb_user = &calls,
+      .cb_user = &run->timer_calls,
   };
-  h2_pal_result_t result = h2_pal_timer_create(runtime->timer, &config, &timer);
+  h2_pal_result_t result = h2_pal_timer_create(runtime->timer, &config, &run->timer);
   if (result == H2_PAL_OK) {
     result = h2_pal_time_sleep_ms(runtime->time, 2u);
   }
-  h2_pal_result_t cleanup = timer == NULL
-      ? H2_PAL_OK : h2_pal_timer_destroy(runtime->timer, timer);
+  h2_pal_result_t cleanup = run->timer == NULL
+      ? H2_PAL_OK : h2_pal_timer_destroy(runtime->timer, run->timer);
   h2_pal_e2e_record_cleanup(e2e_result, cleanup);
-  if (result == H2_PAL_OK && cleanup != H2_PAL_OK) {
-    result = cleanup;
+  if (cleanup != H2_PAL_OK) {
+    e2e_result->retained_cleanup = run;
+    return result == H2_PAL_OK ? cleanup : result;
   }
+  const int calls = run->timer_calls;
+  h2_pal_mem_free(runtime->mem, run);
+  if (result != H2_PAL_OK) return result;
   return result == H2_PAL_OK && calls == 1 ? H2_PAL_OK
                                            : H2_PAL_ERR_INVALID_STATE;
 }
@@ -712,6 +719,7 @@ static void h2_pal_e2e_run_core(h2_runtime_t *runtime,
                     h2_pal_e2e_core_time(runtime));
   H2_PAL_E2E_CORE_CASE(H2_PAL_E2E_CASE_TIMER,
                     h2_pal_e2e_core_timer(runtime, result));
+  if (result->retained_cleanup != NULL) return;
   H2_PAL_E2E_CORE_CASE(H2_PAL_E2E_CASE_TASK,
                     h2_pal_e2e_core_task(runtime, result));
   if (result->retained_cleanup != NULL) return;
@@ -1302,6 +1310,7 @@ static void h2_pal_e2e_run_browser(h2_runtime_t *runtime,
                     h2_pal_e2e_core_time(runtime));
   h2_pal_e2e_record(result, H2_PAL_E2E_CASE_TIMER,
                     h2_pal_e2e_core_timer(runtime, result));
+  if (result->retained_cleanup != NULL) return;
   h2_pal_e2e_record(result, H2_PAL_E2E_CASE_TASK,
                     h2_pal_e2e_core_task(runtime, result));
   if (result->retained_cleanup != NULL) return;
@@ -1630,6 +1639,14 @@ h2_pal_result_t h2_pal_e2e_cleanup(h2_runtime_t *runtime,
   if (run == NULL) return H2_PAL_OK;
 
   h2_pal_result_t cleanup = H2_PAL_OK;
+  if (run->timer != NULL) {
+    cleanup = h2_pal_timer_destroy(runtime->timer, run->timer);
+    if (cleanup != H2_PAL_OK) {
+      h2_pal_e2e_record_cleanup(result, cleanup);
+      return cleanup;
+    }
+    run->timer = NULL;
+  }
   for (size_t index = 0u; index < run->started; ++index) {
     if (run->tasks[index] == NULL) continue;
     const h2_pal_result_t join =

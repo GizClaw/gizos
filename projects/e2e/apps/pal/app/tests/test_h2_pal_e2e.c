@@ -656,7 +656,50 @@ static void test_filesystem_stat_contract(void) {
   }
 }
 
+typedef struct timer_lifetime_fixture {
+  h2_pal_timer_config_t config;
+  int allow_destroy;
+} timer_lifetime_fixture_t;
+static h2_pal_result_t timer_test_create(void *user,
+    const h2_pal_timer_config_t *config, h2_pal_timer_t **out) {
+  timer_lifetime_fixture_t *f = user;
+  f->config = *config;
+  *out = (h2_pal_timer_t *)f;
+  return H2_PAL_OK;
+}
+static h2_pal_result_t timer_test_destroy(void *user, h2_pal_timer_t *timer) {
+  timer_lifetime_fixture_t *f = user;
+  assert(timer == (h2_pal_timer_t *)f);
+  return f->allow_destroy ? H2_PAL_OK : H2_PAL_ERR_BUSY;
+}
+static void test_timer_failed_destroy_retains_callback(void) {
+  queue_lifetime_fixture_t memory = {0};
+  timer_lifetime_fixture_t f = {0};
+  const h2_pal_mem_vtable_t mem_v = {.alloc=lifetime_alloc, .free=lifetime_free};
+  const h2_pal_mem_api_t mem = {.user=&memory, .vtable=&mem_v};
+  const h2_pal_time_vtable_t time_v = {
+      .get_monotonic_ms=lifetime_now, .sleep_ms=lifetime_sleep};
+  const h2_pal_time_api_t time = {.user=&memory, .vtable=&time_v};
+  const h2_pal_timer_vtable_t timer_v = {
+      .create=timer_test_create, .destroy=timer_test_destroy};
+  const h2_pal_timer_api_t timer = {.user=&f, .vtable=&timer_v};
+  h2_runtime_t runtime = {.mem=&mem, .time=&time, .timer=&timer};
+  const h2_pal_e2e_config_t config = {.suite_mask=H2_PAL_E2E_SUITE_CORE};
+  h2_pal_e2e_result_t result;
+  assert(h2_pal_e2e_run(&runtime, &config, &result) == H2_PAL_ERR_BUSY);
+  assert(result.case_count == 2 && result.retained_cleanup != NULL);
+  assert(memory.allocations == 1);
+  f.config.cb(f.config.cb_user, (h2_pal_timer_t *)&f);
+  assert(h2_pal_e2e_cleanup(&runtime, &result) == H2_PAL_ERR_BUSY);
+  assert(memory.allocations == 1);
+  f.allow_destroy = 1;
+  assert(h2_pal_e2e_cleanup(&runtime, &result) == H2_PAL_OK);
+  assert(memory.allocations == 0 && result.retained_cleanup == NULL);
+  assert(h2_pal_e2e_cleanup(&runtime, &result) == H2_PAL_OK);
+}
+
 int main(void) {
+  test_timer_failed_destroy_retains_callback();
   test_filesystem_stat_contract();
   test_join_failure_retains_context(0);
   test_join_failure_retains_context(1);
