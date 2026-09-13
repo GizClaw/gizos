@@ -9,8 +9,18 @@
  * Call only on the owning VM worker, inside a protected Lua invocation.
  * No Runtime/Display device is required. No native pointer escapes to Lua.
  *
- * Buffers hold binary64 values, fixed at creation, plus equally sized private
- * transactional scratch. All storage uses Lua userdata and the VM allocator,
+ * Buffers hold binary64 (default "f64") or binary32 ("f32") values, fixed at
+ * creation, plus equally sized private transactional scratch. Payload including
+ * scratch costs 16 bytes per f64 element or 8 per f32 element, plus fixed
+ * metadata/userdata overhead. All buffer operands in one call must have the same
+ * kind, including coefficients, indices, masks, camera and mesh topology;
+ * mismatches raise "mixed numeric buffer kinds (f32/f64)" even for empty calls.
+ * All-f32 operations compute in float; scalar arguments are validated before
+ * conversion to float once per call (load converts each imported element).
+ * Parameter intervals use the selected precision. Values round on storage;
+ * underflow may become zero. get/dot return ordinary Lua numbers; scalar-only
+ * clamp/lerp/smoothstep/spring and standard math retain double semantics.
+ * All storage uses Lua userdata and the VM allocator,
  * counts against vm_memory_limit_bytes, and is reclaimed by GC/VM destruction.
  * Values and results must be finite with absolute value <= 1e6. Sizes/indices
  * must be integers. Every misuse raises a Lua error; failed operations preserve
@@ -20,7 +30,8 @@
  * never yield, call Lua, access hardware, or retain external pointers.
  *
  * Lua API (arguments required unless marked optional, indices one-based):
- * - vmath.buffer(count) -> b: zeroed fixed buffer, count in 0..65536.
+ * - vmath.buffer(count[,kind]) -> b: zeroed fixed buffer, count in 0..65536;
+ *   kind is "f64" (default, including nil) or "f32".
  * - #b -> count; b:get(index) -> number; b:set(index,value) -> nothing.
  * - b:fill(value) -> nothing: fill entire buffer.
  * - b:load(flat_table) -> nothing: raw dense prefix copy, suffix unchanged.
@@ -118,7 +129,8 @@
  * displace3/rotate3/project_points also n <= 21845; prefix3 n <= 21844).
  * Output buffers may alias inputs unless explicitly forbidden above; multiple
  * output buffers must always differ. No buffer views or resizes are provided.
- * Binary64 preserves small displacements; bulk calls amortize Lua overhead.
+ * Binary64 preserves smaller displacements; binary32 reduces storage and uses
+ * single-precision arithmetic. Bulk calls amortize Lua overhead.
  * This API makes no target frame-rate or cross-platform bit identity promise.
  */
 #define H2_LUA_NUMERIC_COUNT_LIMIT 65536u

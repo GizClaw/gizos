@@ -55,6 +55,9 @@ cc_library(
         "src/modules/h2_lua_geometry.c",
         "src/modules/h2_lua_modules.c",
         "src/modules/h2_lua_numeric_internal.h",
+        "src/modules/h2_lua_numeric_typed.h",
+        "src/modules/h2_lua_vmath_kernels.h",
+        "src/modules/h2_lua_geometry_kernels.h",
         "src/modules/h2_lua_storage.c",
         "src/modules/h2_lua_vmath.c",
         "src/runtime/h2_lua.c",
@@ -239,7 +242,10 @@ cc_test(
     srcs = ["tests/test_h2_lua_numeric.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    data = ["tests/numeric.lua"],
+    data = [
+        "tests/numeric.lua",
+        "tests/numeric_f32.lua",
+    ],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
