@@ -65,6 +65,11 @@ static void pref_trace_key(const char *event, const char *key, int result) {
 static int pref_flash_read(
     const struct lfs_config *config, lfs_block_t block, lfs_off_t offset,
     void *buffer, lfs_size_t size) {
+  if (config->block_size == 0u ||
+      block >= H2_JIELI_PREF_SIZE / config->block_size ||
+      offset > config->block_size || size > config->block_size - offset) {
+    return LFS_ERR_IO;
+  }
   uint32_t address = (uint32_t)block * config->block_size + offset;
   if (address > H2_JIELI_PREF_SIZE || size > H2_JIELI_PREF_SIZE - address) {
     return LFS_ERR_IO;
@@ -111,6 +116,10 @@ static int pref_flash_program(
 
 static int pref_flash_erase(
     const struct lfs_config *config, lfs_block_t block) {
+  if (config->block_size == 0u ||
+      block >= H2_JIELI_PREF_SIZE / config->block_size) {
+    return LFS_ERR_IO;
+  }
   uint32_t address = (uint32_t)block * config->block_size;
   if (address > H2_JIELI_PREF_SIZE ||
       config->block_size > H2_JIELI_PREF_SIZE - address) {

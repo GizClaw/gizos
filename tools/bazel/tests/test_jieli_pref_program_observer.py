@@ -11,8 +11,8 @@ SOURCE = ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_pr
 class ObserverTest(unittest.TestCase):
     def test_program_observer(self):
         source = SOURCE.read_text()
-        adapter = source[source.index('__attribute__((weak)) void h2_jieli_pref_program_observer('):
-                         source.index('static int pref_flash_erase(')]
+        adapter = source[source.index('static int pref_flash_read('):
+                         source.index('static int pref_flash_sync(')]
         stub = r'''
 #include <assert.h>
 #include <stdint.h>
@@ -26,9 +26,19 @@ struct lfs_config { uint32_t block_size; };
 #define LFS_ERR_IO -5
 #define LFS_ERR_OK 0
 #define IOCTL_SET_WRITE_PROTECT 1
-int writes, observed, fail;
+#define IOCTL_ERASE_SECTOR 2
+int writes, observed, fail, reads, erases;
 static int norflash_ioctl(void *p, int cmd, unsigned arg) {
-  (void)p; (void)cmd; (void)arg; return 0;
+  (void)p;
+  if (cmd == IOCTL_ERASE_SECTOR) {
+    assert(arg == 0x11000u); ++erases;
+    return fail ? -1 : 0;
+  }
+  return 0;
+}
+static int norflash_read(void *p, void *buf, unsigned n, unsigned addr) {
+  (void)p; assert(buf && n==256 && addr==0x11000);
+  ++reads; return fail ? 0 : (int)n;
 }
 static int norflash_write(void *p, void *buf, unsigned n, unsigned addr) {
   (void)p; assert(buf && n==256 && addr==0x11000);
@@ -53,9 +63,22 @@ int main(void) {
   assert(pref_flash_program(&cfg,0,4090,data,256)==LFS_ERR_IO);
   struct lfs_config invalid={0};
   assert(pref_flash_program(&invalid,0,0,data,256)==LFS_ERR_IO);
+  assert(pref_flash_read(&cfg,2,0,data,256)==LFS_ERR_IO);
+  assert(pref_flash_read(&cfg,0x100001u,0,data,256)==LFS_ERR_IO);
+  assert(pref_flash_read(&cfg,0,4090,data,256)==LFS_ERR_IO);
+  assert(pref_flash_read(&invalid,0,0,data,256)==LFS_ERR_IO);
+  assert(pref_flash_erase(&cfg,2)==LFS_ERR_IO);
+  assert(pref_flash_erase(&cfg,0x100001u)==LFS_ERR_IO);
+  assert(pref_flash_erase(&invalid,0)==LFS_ERR_IO);
+  assert(!reads && !erases);
+  assert(pref_flash_read(&cfg,1,0,data,256)==0);
+  assert(pref_flash_erase(&cfg,1)==0);
   assert(!writes && !observed);
   assert(pref_flash_program(&cfg,1,0,data,256)==0);
   fail=1;
+  assert(pref_flash_read(&cfg,1,0,data,256)==LFS_ERR_IO);
+  assert(pref_flash_erase(&cfg,1)==LFS_ERR_IO);
+  assert(reads==2 && erases==2);
   assert(pref_flash_program(&cfg,1,0,data,256)==LFS_ERR_IO);
   assert(writes==2);
   assert(observed==EXPECTED);
