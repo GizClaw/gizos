@@ -107,6 +107,7 @@ typedef struct h2_esp_es8311_es7210_audio_system {
     h2_esp_es8311_es7210_sr_state_t sr;
     int pa_initialized;
     int opened;
+    int codec_shutdown_pending;
     int sr_initialized;
     volatile int mic_started;
     int mic_task_started;
@@ -140,14 +141,29 @@ int h2_esp_es8311_es7210_audio_system_init(
     const h2_esp_es8311_es7210_audio_system_config_t *config);
 
 /**
- * Stop all workers and release every resource owned by an initialized system.
+ * Stop all workers, power down both codecs, and release owned resources.
  *
  * The caller owns `system` storage and must ensure that no consumer uses the
  * returned Audio PAL after this call. The operation is idempotent. If a worker
  * cannot stop within its bounded deadline, the function returns an Audio error
  * and preserves the remaining resources so the caller can retry safely.
+ * PA or codec shutdown errors also preserve resources for retry. See
+ * h2_esp_es8311_es7210_audio_system_power_down() for the shutdown contract.
  */
 int h2_esp_es8311_es7210_audio_system_deinit(
+    h2_esp_es8311_es7210_audio_system_t *system);
+
+/**
+ * Stop/join audio workers, disable PA, power down ES8311 and ES7210, and deinit.
+ * Call before destroying the board I2C/PA providers or entering deep sleep.
+ * Identical to deinit: success invalidates Audio PAL/tracks; call init again,
+ * then prepare/start to restore hardware. Serialize against all Audio PAL and
+ * lifecycle calls. Zero-initialized or already deinitialized storage returns
+ * H2_AUDIO_OK without I/O; NULL returns H2_AUDIO_ERR_INVALID_ARG.
+ * Worker/PA/I2C errors preserve remaining resources for retry. Do not re-init
+ * or enter deep sleep until shutdown succeeds. No physical supply switching.
+ */
+int h2_esp_es8311_es7210_audio_system_power_down(
     h2_esp_es8311_es7210_audio_system_t *system);
 
 h2_pal_audio_t *h2_esp_es8311_es7210_audio_system_audio(h2_esp_es8311_es7210_audio_system_t *system);

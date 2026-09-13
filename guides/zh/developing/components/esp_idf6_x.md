@@ -184,6 +184,69 @@ ESP-IDF Component 不拥有：
 `connect_and_save` 在 provider admission 内调用 `libs/wifi_sta`，共享原始 STA、Settings 与 Time；最终 firmware entry 的 `firmware_lib_component` 显式链接 `//libs/wifi_sta`。保存失败保留原始错误，普通 connect 的 timeout 不选择保存策略。
 
 
+## 双 Codec 低功耗关断
+
+`h2_esp_es8311_es7210_audio_system_power_down(system)` 提供板级 deep sleep 前的
+公共关断入口，与 `deinit` 具有相同的终结生命周期语义：停止并 join microphone /
+speaker worker，关闭 PA，在 I2S 时钟和 I2C 仍可用时写两颗 codec 的关断序列，
+然后释放 I2S、codec handle、拥有的 I2C bus、Mixer、queue 与 AEC。
+调用方须先停止 Runtime / Audio PAL / track consumer，并串行调用生命周期 API；
+成功后旧 PAL / track 不再可用。板级 I2C 与 PA provider 必须保持到此调用成功后再销毁。
+
+采用同一关断路径也是 `deinit` 的默认行为。双 codec 原有的最后一个 session
+stop 会执行 idle teardown，故该路径也必须在移除 I2C handle 前关断 codec；
+否则先 stop 再 power_down 就无法触达仍上电的器件。普通 idle stop 保留 system
+配置与 AEC，下次 start 自动重新打开硬件；公共 power_down / deinit 成功则清空
+system，需要重新 `init(system, &config)`，随后 start 才恢复硬件（init 本身为 lazy）。
+这项能力不改变单 ES8311 audio system。
+
+零初始化但未 init、init 后从未 start、以及已 deinit 的对象均安全返回
+`H2_AUDIO_OK`；NULL 返回 `H2_AUDIO_ERR_INVALID_ARG`。未 init 指零初始化的
+有效存储，不包括未初始化的栈内存。worker join 或 PA 关闭失败时不写关断序列；
+I2C 写失败后仍尝试剩余写入和另一颗 codec，返回第一个错误，保留 I2C / I2S
+资源供重试，并拒绝重新 start。只有成功后才能重新 init 或进入 deep sleep。
+worker 的原有 join deadline 不变；两颗 codec 共 24 笔写入，每笔 I2C timeout
+为 100 ms，关断 I/O 额外耗时，不包含在 speaker 的 200 ms worker stop deadline 中。
+
+关断顺序依据 2026-09-14 核对的 Espressif `esp-adf release/v2.x` 中
+`esp_codec_dev` 的 [ES8311 `es8311_suspend`](https://github.com/espressif/esp-adf/blob/release/v2.x/components/esp_codec_dev/device/es8311/es8311.c#L265-L286)
+及 [ES7210 `es7210_stop`](https://github.com/espressif/esp-adf/blob/release/v2.x/components/esp_codec_dev/device/es7210/es7210.c#L294-L306)。
+下列均为十六进制 `寄存器=值`，逐项按顺序写入，不合并重复的 reset / clock 写入：
+
+| Codec | 有序写入 |
+| --- | --- |
+| ES8311，先执行 | `32=00 → 17=00 → 0E=FF → 12=02 → 14=00 → 0D=FA → 15=00 → 02=10 → 00=00 → 00=1F → 01=30 → 01=00 → 45=00 → 0D=FC → 02=00` |
+| ES7210，后执行 | `47=FF → 48=FF → 49=FF → 4A=FF → 4B=FF → 4C=FF → 40=C0 → 01=7F → 06=07` |
+
+[ES8311 datasheet revision 10.0](https://files.waveshare.com/wiki/common/ES8311.DS.pdf)
+第 14、18–21、25 页解释寄存器：`32/17` 降 DAC/ADC 数字增益，`0E`
+关闭 PGA / ADC modulator，`12` 关闭 DAC，`0D` 关闭模拟电路、bias 与
+ADC/DAC reference generator；最终 `0D=FC` 的 `VMIDSEL=0` 关闭 VMID。
+`00/01/02` 完成数字 reset 和时钟关断。序列采用官方驱动原值，
+不根据 `PDN_VREF` 字段名称猜测反相位或改写保留位。
+ES7210 的官方 stop 顺序先关闭四路 microphone 和两组 ADC power，
+再关闭 analog、clock 与总 power。两颗器件的 I2C handle 均由该 component
+独占使用，不支持另一 codec owner 同时操作同一地址。
+
+恢复时保留现有采样率、输入选择和音量初始化，并按官方 ES8311 `es8311_start`
+补写 `17=BF、0E=02、0D=01、15=40`，显式恢复模拟电源；ES7210 原有 init
+已恢复 `40=43、06=00、47..4A=08`、输入电源与时钟。
+该能力进入官方驱动推荐的软件 power-down 状态，不切断物理电源；最低整板电流、
+唤醒后播放/采集及 pop noise 仍需板级实测。
+
+Host 回归：
+
+```sh
+bazel test //native_component_src/esp-idf6.x/h2_es8311_es7210_audio_system:power_down_test \
+  //native_component_src/esp-idf6.x/h2_es8311_es7210_audio_system:config_test \
+  //native_component_src/esp-idf6.x/h2_es8311_es7210_audio_system:sr_test
+```
+
+`power_down_test` 编译真实 public header、init 与完整 platform implementation，
+以 SDK / I2C 替身断言有序写入、幂等、未启动、重新 init/open、idle stop、
+worker 超时、PA 失败和每一笔 I2C 写失败后的资源保留及重试。
+替身不模拟 reset 自动恢复寄存器，以检验显式恢复路径；不证明真实芯片电流。
+
 ## ES8311 板级音量映射
 
 `h2_es8311_audio_system` 与 `h2_es8311_es7210_audio_system` 的配置都提供
