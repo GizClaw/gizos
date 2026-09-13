@@ -309,6 +309,14 @@ unsupported、invalid payload、missing component/capability 和 late completion
 返回明确错误，不静默成功。取消后的 capability 在 job release 前保留 CLOSED 语义，
 release 时归还 bounded request 槽位。
 
+## Job 返回值
+
+`h2_lua_job_get_result(host, id, buffer, capacity, &size, &has_result)` 只在 `SUCCEEDED` 时读取主 chunk 的第一个返回值，忽略后续返回值。转换遵循 `h2_lua_vm_execute_text()`：string 原样保留（包括内嵌 NUL），number 使用 Lua 数字字符串，`nil` 为 `"nil"`，boolean 为 `"true"`/`"false"`；table 使用 `__tostring`，未定义时为 Lua 默认 `table: ...` 表示，其地址部分不稳定，不能用作 序列化协议。无 return 时 `has_result=0, size=0`；空字符串则 `has_result=1, size=0`。 转换异常使 job 失败；转换不支持 yield。
+
+结果保留在主 task 的 Lua 栈上，计入 `vm_memory_limit_bytes` 和 status 的 `memory_used`，有效期到 `h2_lua_job_release()`。超过 Host 的 `output_limit_bytes`（不含终止 NUL）使 job 进入 `FAILED`，message 为 `H2_LUA_VM_OUTPUT_TOO_LARGE`；等于上限允许成功，不静默截断。
+
+调用方拥有 buffer，`size` 返回不含终止 NUL 的完整字节数。`size` 与 `has_result` 输出指针必填。`buffer=NULL, capacity=0` 查询长度并返回 `OK`； 读取有结果的 job 需要 `capacity > size`，否则返回 `H2_PAL_ERR_NO_SPACE`， 仍报告长度和存在标志，buffer 不变。成功复制后补终止 NUL。 非 `SUCCEEDED` 状态（含 failed/cancelled/timed-out/stopped）返回 `H2_PAL_ERR_INVALID_STATE`，未知或已 release 的 id 返回 `H2_PAL_ERR_NOT_FOUND`； 无效参数或 `H2_LUA_JOB_ID_NONE` 返回 `H2_PAL_ERR_INVALID_ARG`。 这些错误将有效的输出长度和存在标志清零。
+
 ## Validation
 
 ```sh
@@ -336,3 +344,57 @@ query 和 `rg` 都应为空。E2E 的九个固定 case 见 [E2E 测试 App](/app
 MP4 播放器配置也支持同名选项。启动动画可以借用同一个 Display，阻塞播放
 返回后交还 UI；失败和协作取消同样只清理播放器自己的资源。
 借用选项不会自动暂停 LVGL，也不提供多个写屏者之间的调度。
+
+## 嵌入分层与源码包
+
+`//libs/lua:lua_runtime` 是 portable 下层：包含 Lua Core、Host、modules、`//libs/runtime` 和 PAL headers/inline wrappers，以及 Bazel 固定版本的 Lua 5.5、yyjson。下层的平台访问只依赖 PAL interfaces，不能依赖具体 provider、board、SDK 或 `bleikcp`。`//libs/lua:lua_core` 继续只依赖 upstream Lua。`//libs/lua:lua` 保留现有入口；平台组装由现有 firmware、Desktop、Web launcher 或外部 embedder 完成。可选 `//libs/lua:lua_link` 在上层接入 `bleikcp`，不进入 portable 源码包；未启用时仍遵守既有 `link: unavailable` 合同。
+
+**PAL vtables 就是 embedding hooks。** Embedder 构造既有 `h2_pal_*_api_t` 的 `user + vtable`，填入 Runtime config；不需要另一套 callback ABI。Runtime 初始化要求完整 API surface，不支持的能力使用 canonical unsupported API object。源码包因此同时带上 `//libs/pal:unsupported` 的 portable 实现，供 embedder 填充默认值；这不会为 `lua_runtime` 增加 provider 依赖。Display、Button、Touch、Audio 可以来自宿主 UI，Memory、Task、Queue、Sync、Time、Timer、Filesystem 可以来自已有 provider 或宿主自己的 C 实现。
+
+### 线程与生命周期
+
+Vtable 函数可能从 Runtime input task、Lua worker 或 PAL 自己的线程调用，不保证在 UI/main thread。API 的 `user`、vtable 及其底层资源必须覆盖 Runtime 和 Host 的整个使用期；先停止输入与外部 completion producer，再对 Host 执行 stop/join/destroy，最后 deinit Runtime 并释放 provider。不要从 PAL 回调直接重入同一个 Lua VM。
+
+对于只允许异步通知的 UI bridge，C vtable 应复制像素、rect、音频或其他仅在当前调用期间有效的 buffer 到宿主拥有的有界队列，然后按 PAL 合同及时返回。容量不足时返回对应的错误或 backpressure，不能保留借用指针、等待 UI 回调，或虚报实际未接收的数据。需要同步结果的 Memory、Sync、Queue 等服务必须在 native 层实现；单纯的异步 UI callback 不能满足这些 vtable。原有 PAL 的返回值、timeout、partial-write 和生命周期语义保持不变。
+
+Capability 在 `h2_lua_host_start()` 前注册，start 后 registry 冻结。异步 call callback 复制 input/options 和 request ID 后返回 `H2_PAL_ERR_WOULD_BLOCK`；宿主完成工作时调用 `h2_lua_capability_complete()`，由 owning worker 恢复 Lua。Lua 收到既有的 `ok, output, error` 三元组。宿主必须处理 cancel callback，及时释放其排队工作，并在销毁 Host 前停止所有 completion producer；晚到或重复 completion 会被拒绝。`h2_lua_capability_name_at()` 按注册顺序枚举名字，越界返回 `NULL`；名字借用到 Host 销毁，注册/start/destruction 与枚举之间由调用方串行化。
+
+### 构建与 manifest
+
+在 macOS 或 Linux host 构建源码包：
+
+```sh
+bazel build //libs/lua:runtime_sources
+python3 libs/lua/tests/test_source_package.py bazel-bin/libs/lua/gizos-lua-runtime-src.tar.gz
+bazel test //libs/lua:all
+bazel query 'deps(//libs/lua:lua_runtime) union deps(//libs/lua:lua_core)'
+bazel query 'filter("//libs/pal/providers/|//libs/bleikcp|//boards/|//native_component_src/", deps(//libs/lua:lua_runtime))'
+```
+
+`gizos-lua-runtime-src.tar.gz` 根目录包含 `manifest.json` 和 GizOS `LICENSE`，其余 C/H 文件保持 package-relative 路径；external repository 文件放在 `external/<repository>/` 下。文件清单、include dirs、defines 和各 translation unit 的编译参数由 Bazel aspect 从已配置的依赖图生成，不手工复制维护。包使用与 GizOS native build 相同的 Lua source selection 和受限标准库；固件专用 stdio/newlib shim 仍由原 embedded build 配置选择，不把 ESP libc 兼容代码加入 native host。它不包含预编译库、Bazel toolchain、PAL provider 或 board code。
+
+Manifest schema version 1：
+
+| 字段 | 合同 |
+| --- | --- |
+| `schema_version` | 整数 `1`；consumer 拒绝未知版本 |
+| `gizos_commit` | 源码 revision；开发包为 `@GIZOS_COMMIT@`，发布方必须替换为实际打包源码的 commit |
+| `runtime_profile_id` | 固定为 `runtime.lua.gizos` |
+| `sources` | 所有需编译一次的 `.c`，相对解包根目录 |
+| `include_dirs` | 相对解包根目录的 include search paths |
+| `defines` | 公共 compiler definitions，不含 `-D` 前缀 |
+| `cflags` | 公共 C compiler arguments，JSON array 中每项为独立参数 |
+| `compilation_units` | 分组的 `sources`、附加 `cflags`、附加 `defines`；各 source 恰好属于一个分组 |
+| `per_os` | OS 名到附加 `link_flags` 的映射；`linux`、`darwin`、`android`、`ios` 的数学库为 `-lm` |
+
+Consumer 对每个 source 应用公共参数及所属分组参数，按自身目标工具链追加 architecture、sysroot、PIC、visibility 和 deployment target，再链接所有 object 与该 OS 的 extras。参数必须逐项传给 compiler，不通过 shell 拼接解析。当前包表达 GCC/Clang C11 编译合同；Windows/MSVC 和 WebAssembly 工具链需单独适配，不由该 manifest 声明支持。Profile ID 标识 Lua surface，不替代 commit pin；不同 revision 的源码、header 和 binding 不应混用。
+
+独立测试只依赖 Python 3.11.8+（支持 tar extraction filter）、`cc`/Clang 和 pthread。它在临时目录解包，根据 manifest 编译全部 C sources，链接测试自己填写的 OS、240×240 Display、Touch、`ok`/`back` Button vtables。测试验证 async echo、显示 dirty rect 与全部像素、Runtime push edge 到 Lua callback、pending job cancellation、start 后拒绝注册和 capability 名称枚举。Python runner 不调用 Bazel，也不从 checkout 查找 runtime source；`CC` 可指定兼容 compiler。Bazel test 只是把源码包和 harness 作为测试输入交给同一个 runner。
+
+Embedder 执行 App method 时，让主 chunk `return app[method](...)`，等待 job 成功后查询长度、分配宿主 buffer、调用 `h2_lua_job_get_result()` 复制结果，最后 release。Flutter/cgo 都通过同一公开 accessor 读取，不需要私有 native module 转存返回值；复杂值应由 App 显式编码为 JSON 等稳定格式。
+
+### Flutter 与 cgo
+
+Flutter package 将解包后的源码和 manifest 随包分发，由 native assets build hook 读取 manifest，用 Flutter 选择的每个目标 C toolchain 编译各 translation unit 并链接 native asset；不能依赖 GizOS 的 Bazel archive 或预编译 library。通过 `dart:ffi` 调用现有 Host/Runtime API，native bridge 拥有 PAL objects 和所需的同步 OS 服务；UI 操作通过复制后的消息交给 Dart，再由 Dart 渲染。FFI binding 必须匹配随包 header 的 struct layout 与 callback signatures。
+
+Go/cgo consumer 同样在自己的构建步骤中读取 manifest，用目标 C compiler 编译包内 sources 与自有 PAL bridge，再把 object/archive 接入 cgo linker。cgo 不会递归编译这些子目录中的 C 文件，也不能忽略不同 source group 的 flags。Go 层通过 C bridge 发起 job、推送输入与完成 capability；PAL `user` 可由 C 分配的 context 或受管理的 opaque handle 表示，不能把生命周期不受控的 Go 指针留给 worker。宿主的 pthread、UI framework 等依赖由上层 bridge 自己声明，不属于 portable runtime manifest。

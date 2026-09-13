@@ -27,6 +27,16 @@ h2_pal_result_t h2_lua_register_capability(h2_lua_host_t *host,
                                            void *user);
 
 /**
+ * @brief Borrow a registered capability name by zero-based registration index.
+ * @param host Live host; NULL returns NULL.
+ * @param index Registration index; out of range returns NULL (end of registry).
+ * @return Name borrowed until host destruction, or NULL. Does not block.
+ * Serialize with registration/start/destruction. After start the registry is
+ * immutable and may be read from any thread while the host remains alive.
+ */
+const char *h2_lua_capability_name_at(const h2_lua_host_t *host, size_t index);
+
+/**
  * Completes a call whose begin callback returned H2_PAL_ERR_WOULD_BLOCK.
  *
  * The tuple observed by Lua is exactly `ok, output, error`. A late or duplicate

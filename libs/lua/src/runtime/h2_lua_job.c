@@ -677,6 +677,11 @@ static int has_ready_task(const h2_lua_job_t *job) {
   return 0;
 }
 
+static int stringify_result(lua_State *state) {
+  luaL_tolstring(state, 1, NULL);
+  return 1;
+}
+
 static void resume_task(h2_lua_job_t *job, h2_lua_task_t *task) {
   int result_count = 0;
   int status;
@@ -720,6 +725,30 @@ static void resume_task(h2_lua_job_t *job, h2_lua_task_t *task) {
     return;
   }
   if (status == LUA_OK) {
+    if (task == &job->tasks[0] && result_count > 0) {
+      /* Discard later returns; protect allocation and __tostring errors. */
+      lua_settop(task->thread, 1);
+      lua_pushcfunction(task->thread, stringify_result);
+      lua_insert(task->thread, 1);
+      status = lua_pcall(task->thread, 1, 1, 0);
+      if (status != LUA_OK) {
+        task->state = H2_LUA_TASK_FAILED;
+        h2_lua_job_finish(job, H2_LUA_JOB_FAILED,
+                         lua_tostring(task->thread, -1));
+        return;
+      }
+      size_t size = 0u;
+      const char *value = lua_tolstring(task->thread, -1, &size);
+      if (size > job->host->config.output_limit_bytes) {
+        task->state = H2_LUA_TASK_FAILED;
+        h2_lua_job_finish(job, H2_LUA_JOB_FAILED,
+                         "H2_LUA_VM_OUTPUT_TOO_LARGE");
+        lua_settop(task->thread, 0);
+        return;
+      }
+      job->result = value;
+      job->result_size = size;
+    }
     message = result_count > 0 ? lua_tostring(task->thread, -1) : NULL;
     task->state = H2_LUA_TASK_DONE;
     (void)snprintf(task->message, sizeof(task->message), "%s",
@@ -844,6 +873,45 @@ h2_pal_result_t h2_lua_job_get_status(const h2_lua_host_t *host,
                  job->message);
   h2_lua_unlock_job(job);
   return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_lua_job_get_result(const h2_lua_host_t *host,
+                                      h2_lua_job_id_t job_id, char *buffer,
+                                      size_t capacity, size_t *out_size,
+                                      int *out_has_result) {
+  h2_lua_job_t *job;
+  if (out_size != NULL) {
+    *out_size = 0u;
+  }
+  if (out_has_result != NULL) {
+    *out_has_result = 0;
+  }
+  if (host == NULL || out_size == NULL || out_has_result == NULL ||
+      (buffer == NULL && capacity != 0u)) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  h2_pal_result_t result = h2_lua_lock_job((h2_lua_host_t *)host, job_id, &job);
+  if (result != H2_PAL_OK) {
+    return result;
+  }
+  if (job->state != H2_LUA_JOB_SUCCEEDED) {
+    result = H2_PAL_ERR_INVALID_STATE;
+  } else {
+    *out_size = job->result_size;
+    *out_has_result = job->result != NULL;
+    if (buffer != NULL) {
+      if (job->result != NULL && capacity <= job->result_size) {
+        result = H2_PAL_ERR_NO_SPACE;
+      } else if (capacity != 0u) {
+        if (job->result_size != 0u) {
+          memcpy(buffer, job->result, job->result_size);
+        }
+        buffer[job->result_size] = '\0';
+      }
+    }
+  }
+  h2_lua_unlock_job(job);
+  return result;
 }
 
 h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host,

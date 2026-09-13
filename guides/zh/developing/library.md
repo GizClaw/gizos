@@ -47,6 +47,8 @@ Library 不能直接依赖：
 
 明确命名的 library compiled variant（例如 `//libs/lvgl:lvgl_desktop`）可以直接依赖 `third_party` overlay 暴露的稳定 upstream target，以取得对应工具链产出的 header 和 link input。该 target 必须是无需 first-party source、config 或 platform adapter 的纯 upstream contract；平台选择留在 overlay 内部，consumer 不依赖带 `_macos`、`_linux` 等后缀的 label。Library 即使是 platform variant 也不能反向依赖 `components/`，更不能取得 PAL backend、launcher policy 或 board 类型。
 
+`//libs/lua:lua_runtime` 的下层只通过 PAL interfaces 访问平台；具体 provider 与可选 `lua_link` 由上层组装。非 Bazel consumer 使用从同一依赖图导出的 C 源码包，仍填写既有 PAL vtables，见 [Lua 嵌入分层与源码包](./lua.md#嵌入分层与源码包)。
+
 ## Third-party 兼容层
 
 部分 third-party library 会要求调用方实现固定名称和固定签名的 global function，例如 LVGL OSAL 的 thread、mutex、同步和 delay 接口。这类函数无法携带 PAL 的 `user` 参数，可以由对应 library 提供兼容层，并在初始化时绑定所需的 PAL API object：

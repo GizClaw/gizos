@@ -1,8 +1,9 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load("@rules_python//python:defs.bzl", "py_binary")
+load("@rules_python//python:defs.bzl", "py_binary", "py_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel:tasks.bzl", "h2_tasks")
+load(":source_package.bzl", "lua_source_package")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -43,6 +44,8 @@ cc_library(
     deps = ["//tools/bazel:vendor_third_party_lua"],
 )
 
+# Portable lower layer: platform access depends only on PAL interfaces.
+# Providers and optional transports belong to the caller's assembly.
 cc_library(
     name = "lua_runtime",
     srcs = [
@@ -72,8 +75,8 @@ cc_library(
         "include",
     ],
     deps = [
-        ":tasks",
         ":lua_core",
+        ":tasks",
         "//libs/runtime",
         "//tools/bazel:vendor_third_party_lua",
         "//tools/bazel:vendor_third_party_yyjson",
@@ -221,4 +224,41 @@ cc_test(
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
     ],
+)
+
+py_binary(
+    name = "pack_sources",
+    srcs = ["pack_sources.py"],
+    legacy_create_init = 0,
+    main = "pack_sources.py",
+)
+
+lua_source_package(
+    name = "runtime_sources",
+    runtime = ":lua_runtime",
+    target_compatible_with = select({
+        "@platforms//os:linux": [],
+        "@platforms//os:macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "source_package_test",
+    srcs = ["tests/test_source_package.py"],
+    args = [
+        "$(location :runtime_sources)",
+        "$(location tests/test_embedder.c)",
+    ],
+    data = [
+        "tests/test_embedder.c",
+        ":runtime_sources",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_source_package.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )
