@@ -1919,7 +1919,7 @@ typedef struct h2_lua_display_mesh {
   double span_offset;
 } h2_lua_display_mesh_t;
 
-static const char s_display_mesh_meta;
+static const char s_display_mesh_meta = 0;
 
 _Static_assert(_Alignof(h2_lua_display_mesh_t) >=
                    _Alignof(h2_lua_display_vertex_t), "mesh vertex alignment");
@@ -2316,7 +2316,7 @@ typedef struct display_smooth_scratch {
   uint16_t pixels[];
 } display_smooth_scratch_t;
 
-static const char s_stroke_cache_key, s_stroke_normals_key;
+static const char s_stroke_cache_key = 0, s_stroke_normals_key = 0;
 #define H2_LUA_STROKE_META "h2.display.stroke"
 #define H2_LUA_NORMALS_META "h2.display.normals"
 
