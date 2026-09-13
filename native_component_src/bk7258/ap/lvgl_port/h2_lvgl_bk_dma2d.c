@@ -22,6 +22,18 @@ static volatile int transfer_error;
 static int disabled;
 static unsigned completed;
 static unsigned verified_operations;
+static int last_was_fill;
+static unsigned copy_completed;
+
+static void prepare_copy(void) {
+  /* BK7258 completes R2M but retains internal state that makes a following
+   * M2M/PFC read zero. The SDK soft reset resets logic while retaining the
+   * register configuration. Only reset a quiescent fill-to-copy transition. */
+  if (last_was_fill) {
+    bk_dma2d_soft_reset();
+    last_was_fill = 0;
+  }
+}
 
 static void transfer_done(void *arg) {
   (void)arg;
@@ -50,18 +62,20 @@ static int probe_copy_memory(void) {
         uint16_t *input = regions[from] + 16;
         uint16_t *output = regions[to] + 272;
         for (unsigned i = 0; i < 128; ++i) {
-          input[i] = (uint16_t)(0x1234u + i * 71u);
-          output[i] = (uint16_t)~input[i];
+          input[(i / 16) * 19 + i % 16] = (uint16_t)(0x1234u + i * 71u);
         }
+        for (unsigned i = 0; i < 184; ++i) output[i] = 0xa55a;
         dma2d_fill_t fill = {0};
         fill.frameaddr = output;
-        fill.frame_xsize = fill.width = 16;
+        fill.frame_xsize = 23;
+        fill.width = 16;
         fill.frame_ysize = fill.height = 8;
         fill.color_format = DMA2D_OUTPUT_RGB565;
         fill.pixel_byte = TWO_BYTES;
         fill.color = 0x5aa5;
-        sync_cache(output, 256);
+        sync_cache(output, 368);
         transfer_error = 0;
+        last_was_fill = 1;
         dma2d_fill(&fill);
         bk_dma2d_start_transfer();
         if (rtos_get_semaphore(&completion, 100) != BK_OK ||
@@ -70,11 +84,12 @@ static int probe_copy_memory(void) {
           printf("H2_DMA2D probe fill_stopped\n");
           return 0;
         }
-        sync_cache(output, 256);
+        sync_cache(output, 368);
         printf("H2_DMA2D probe prefill first=%04x expected=5aa5\n", output[0]);
-        for (unsigned i = 0; i < 128; ++i) output[i] = (uint16_t)~input[i];
-        sync_cache(input, 256);
-        sync_cache(output, 256);
+        for (unsigned i = 0; i < 128; ++i)
+          output[(i / 16) * 23 + i % 16] = (uint16_t)~input[(i / 16) * 19 + i % 16];
+        sync_cache(input, 304);
+        sync_cache(output, 368);
         transfer_error = 0;
         dma2d_memcpy_pfc_t copy = {0};
         copy.input_addr = input;
@@ -85,10 +100,12 @@ static int probe_copy_memory(void) {
         copy.output_color_mode = DMA2D_OUTPUT_RGB565;
         copy.src_pixel_byte = TWO_BYTES;
         copy.dst_pixel_byte = TWO_BYTES;
-        copy.src_frame_width = copy.dst_frame_width = 16;
+        copy.src_frame_width = 19;
+        copy.dst_frame_width = 23;
         copy.src_frame_height = copy.dst_frame_height = 8;
         copy.dma2d_width = 16;
         copy.dma2d_height = 8;
+        prepare_copy();
         bk_dma2d_memcpy_or_pixel_convert(&copy);
         bk_dma2d_start_transfer();
         int rc = rtos_get_semaphore(&completion, 100);
@@ -98,12 +115,22 @@ static int probe_copy_memory(void) {
           /* Retain these small buffers if bus quiescence is unproven. */
           return 0;
         }
-        sync_cache(output, 256);
+        sync_cache(output, 368);
         unsigned matched = 0;
-        while (matched < 128 && output[matched] == input[matched]) ++matched;
-        printf("H2_DMA2D probe mode=%u from=%u to=%u src=%p dst=%p matched=%u first=%04x expected=%04x\n",
+        while (matched < 128 && output[(matched / 16) * 23 + matched % 16] ==
+               input[(matched / 16) * 19 + matched % 16]) ++matched;
+        unsigned guards = 0;
+        for (unsigned y = 0; y < 8; ++y)
+          for (unsigned x = 16; x < 23; ++x)
+            if (output[y * 23 + x] == 0xa55a) ++guards;
+        printf("H2_DMA2D probe mode=%u from=%u to=%u src=%p dst=%p matched=%u first=%04x expected=%04x guards=%u/56 stride=19/23\n",
                mode, from, to, (void *)input, (void *)output, matched,
-               (unsigned)output[0], (unsigned)input[0]);
+               (unsigned)output[0], (unsigned)input[0], guards);
+        if (matched != 128 || guards != 56) {
+          os_free(regions[0]);
+          os_free(regions[1]);
+          return 0;
+        }
       }
     }
   }
@@ -170,8 +197,6 @@ int h2_bk_dma2d_rgb565(void *dst, const void *src, int32_t width,
   }
   const size_t dst_bytes = (size_t)(height - 1) * dst_stride + width * 2u;
   const unsigned operation_bit = src ? 2u : 1u;
-  int reset_retry = 0;
-configure_transfer:
   /* A zero-filled target cannot prove that a black fill wrote anything.
    * Seed only the first checked operation with the opposite pixel values.
    * A failed check returns to LVGL's software path, which redraws the area. */
@@ -205,6 +230,7 @@ configure_transfer:
     copy.dst_frame_height = height;
     copy.dma2d_width = width;
     copy.dma2d_height = height;
+    prepare_copy();
     bk_dma2d_memcpy_or_pixel_convert(&copy);
     if (trace_copy) {
       /* BK7258 register offsets from the SDK DMA2D register map. */
@@ -227,10 +253,12 @@ configure_transfer:
     fill.color_format = DMA2D_OUTPUT_RGB565;
     fill.pixel_byte = TWO_BYTES;
     fill.color = color;
+    last_was_fill = 1;
     dma2d_fill(&fill);
   }
   bk_dma2d_start_transfer();
-  if (rtos_get_semaphore(&completion, 100) != BK_OK || transfer_error) {
+  if (rtos_get_semaphore(&completion, 100) != BK_OK || transfer_error ||
+      bk_dma2d_is_transfer_busy()) {
     bk_dma2d_stop_transfer();
     bk_dma2d_int_enable(DMA2D_CFG_ERROR | DMA2D_TRANS_ERROR | DMA2D_TRANS_COMPLETE, 0);
     bk_dma2d_driver_deinit();
@@ -246,15 +274,8 @@ configure_transfer:
            (unsigned long)bk_dma2d_int_status_get(), (unsigned)first_source,
            (unsigned)*(const uint16_t *)src, (unsigned)*(const uint16_t *)dst);
   }
-  if (trace_copy && !reset_retry && *(const uint16_t *)dst != first_source) {
-    printf("H2_DMA2D diagnostic reset_retry before=%04x expected=%04x\n",
-           (unsigned)*(const uint16_t *)dst, (unsigned)first_source);
-    bk_dma2d_soft_reset();
-    bk_dma2d_int_enable(DMA2D_CFG_ERROR | DMA2D_TRANS_ERROR | DMA2D_TRANS_COMPLETE, 1);
-    reset_retry = 1;
-    goto configure_transfer;
-  }
-  if ((verified_operations & operation_bit) == 0) {
+  if ((verified_operations & operation_bit) == 0 ||
+      (src && (copy_completed + 1) % 30 == 0)) {
     for (int32_t y = 0; y < height; ++y) {
       const uint16_t *actual = (const uint16_t *)((const uint8_t *)dst + y * dst_stride);
       const uint16_t *expected = src ?
@@ -272,6 +293,9 @@ configure_transfer:
     verified_operations |= operation_bit;
     printf("H2_DMA2D verified operation=%s pixels=%lu\r\n",
               src ? "copy" : "fill", (unsigned long)width * height);
+  }
+  if (src && ++copy_completed % 30 == 0) {
+    printf("H2_DMA2D copy_progress copies=%u disabled=%d\n", copy_completed, disabled);
   }
   if (++completed == 1 || completed % 1000 == 0) {
     printf("H2_DMA2D completed=%u operation=%s\r\n", completed, src ? "copy" : "fill");
