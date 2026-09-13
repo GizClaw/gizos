@@ -295,6 +295,38 @@ h2loader_tar_zlib(
 )
 
 firmware_native_component(
+    name = "loader_partial_p1_header",
+    srcs = ["src/loader_partial_p1_header.c"],
+    component_name = "jieli_ac791n_devkit_loader_partial_p1_header",
+    deps = ["//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:warm_boot"],
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+)
+
+h2loader_jieli_firmware(
+    name = "loader_partial_p1_header_firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":loader_launcher",
+        ":loader_partial_p1_header",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "loader-partial-p1-header",
+    target = "wl82",
+    task_policy = ":loader_task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "loader_partial_p1_header_package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":loader_partial_p1_header_firmware",
+    image = "loader-partial-p1-header",
+    role = "h2loader",
+    tags = ["no-release"],
+    target = "wl82",
+)
+
+firmware_native_component(
     name = "loader_partial_header",
     srcs = ["src/loader_partial_header.c"],
     component_name = "jieli_ac791n_devkit_loader_partial_header",

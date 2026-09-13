@@ -18,7 +18,13 @@
 extern u32 boot_info_get_sfc_base_addr(void);
 /* Optional, diagnostic-only observer; production packages do not define it. */
 __attribute__((weak)) void h2_jieli_upgrade_erase_observer(u32 addr) {
+    (void)addr;
+}
+__attribute__((weak)) void h2_jieli_upgrade_write_observer(
+    const u8 *data, u32 addr, u32 len) {
+  (void)data;
   (void)addr;
+  (void)len;
 }
 __attribute__((weak)) void h2_jieli_upgrade_publish_observer(
     const u8 header[H2_JIELI_UPGRADE_HEADER_SIZE]) {
@@ -120,6 +126,7 @@ u32 dev_upgrade_write(u8 *buf, u32 addr, u32 len) {
     __atomic_store_n(&header_gate, GATE_FAILED, __ATOMIC_RELEASE);
     return 0u;
   }
+  h2_jieli_upgrade_write_observer(buf, addr, len);
   return norflash_write(NULL, buf, len, addr) == (int)len ? len : 0u;
 }
 

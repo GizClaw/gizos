@@ -561,6 +561,10 @@ static int update_flush_buffer(void) {
   return H2_PAL_OK;
 }
 
+/* Diagnostic fixtures may hold a verified physical flash boundary for a
+ * manual power cut. Production always keeps the normal bounded wait. */
+__attribute__((weak)) int h2_jieli_loader_powercut_paused(void) { return 0; }
+
 static int update_burn_complete(int error) {
   char line[96];
   /* After a timed-out wait the result belongs to nobody; only the post of
@@ -854,6 +858,7 @@ static int power_set_next(void *user, uint32_t partition_id) {
   } else if (
       (pend_rc = os_sem_pend(
            &state.update_sem, H2_JIELI_UPDATE_WAIT_TICKS)) != OS_NO_ERR) {
+    while (h2_jieli_loader_powercut_paused()) os_time_dly(100u);
     rc = H2_PAL_ERR_TIMEOUT;
   }
   __atomic_store_n(&state.burn_waiting, 0, __ATOMIC_RELEASE);
