@@ -345,7 +345,7 @@ static int h2_adv_append(
   return H2_PAL_OK;
 }
 
-static int h2_encode_adv(
+static int h2_encode_adv_candidate(
     const h2_pal_ble_adv_data_t *data, uint8_t *out, size_t capacity,
     uint8_t *out_len) {
   size_t used = 0u;
@@ -391,6 +391,20 @@ static int h2_encode_adv(
     if (rc != H2_PAL_OK) return rc;
   }
   *out_len = (uint8_t)used;
+  return H2_PAL_OK;
+}
+
+/* Failed updates must preserve both the previous payload and its length. */
+static int h2_encode_adv(
+    const h2_pal_ble_adv_data_t *data, uint8_t *out, size_t capacity,
+    uint8_t *out_len) {
+  uint8_t candidate[H2_JIELI_ADV_DATA_MAX];
+  uint8_t candidate_len = 0u;
+  if (capacity > sizeof(candidate)) capacity = sizeof(candidate);
+  int rc = h2_encode_adv_candidate(data, candidate, capacity, &candidate_len);
+  if (rc != H2_PAL_OK) return rc;
+  memcpy(out, candidate, candidate_len);
+  *out_len = candidate_len;
   return H2_PAL_OK;
 }
 

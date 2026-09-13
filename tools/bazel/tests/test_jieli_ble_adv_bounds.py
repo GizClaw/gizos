@@ -28,6 +28,14 @@ static void *checked_copy(void *dst,const void *src,size_t len) {
 int main(void) {
  uint8_t bytes[251]={0}, output[251], used;
  h2_pal_ble_adv_data_t data={0};
+ memset(output, 0xa5, sizeof(output));
+ uint8_t previous[251];
+ memcpy(previous, output, sizeof(previous));
+ used=99;
+ data.local_name="a name that cannot fit";
+ assert(h2_encode_adv(&data,output,8,&used)==H2_PAL_ERR_NO_SPACE);
+ assert(used==99 && memcmp(previous,output,sizeof(output))==0);
+ data.local_name=NULL;
  const size_t lengths[]={SIZE_MAX,SIZE_MAX-1u,SIZE_MAX-15u,250u,251u};
  data.service_data=(h2_pal_ble_bytes_t){bytes,3};
  assert(h2_encode_adv(&data,output,sizeof(output),&used)==H2_PAL_OK);
