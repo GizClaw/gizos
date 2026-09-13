@@ -801,6 +801,10 @@ static h2_pal_result_t h2_pal_e2e_host_filesystem(
       result = H2_PAL_ERR_INVALID_STATE;
     }
   }
+  if (result == H2_PAL_OK &&
+      h2_pal_fs_mkdir(runtime->fs, "/data/pal-host-e2e/value") == H2_PAL_OK) {
+    result = H2_PAL_ERR_INVALID_STATE;
+  }
   if (result == H2_PAL_OK) {
     result = (h2_pal_result_t)h2_pal_fs_open(
         runtime->fs, "/data/pal-host-e2e/value", H2_PAL_FS_OPEN_READ,

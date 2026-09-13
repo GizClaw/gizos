@@ -582,12 +582,16 @@ typedef struct fs_fixture {
   int bad_type;
   int bad_size;
   int bad_directory;
+  int accepts_file_as_directory;
   int stat_calls;
   int removes;
 } fs_fixture_t;
 
 static int fs_test_mkdir(void *user, const char *path) {
-  (void)user; (void)path;
+  if (strcmp(path, "/data/pal-host-e2e/value") == 0) {
+    return ((fs_fixture_t *)user)->accepts_file_as_directory
+        ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
+  }
   return H2_PAL_OK;
 }
 static int fs_test_open(void *user, const char *path,
@@ -639,11 +643,12 @@ static void test_filesystem_stat_contract(void) {
   const h2_pal_fs_vtable_t v = {.mkdir=fs_test_mkdir, .open=fs_test_open,
       .write=fs_test_write, .read=fs_test_read, .close=fs_test_close,
       .stat=fs_test_stat, .remove=fs_test_remove};
-  for (int scenario = 0; scenario < 4; ++scenario) {
+  for (int scenario = 0; scenario < 5; ++scenario) {
     fs_fixture_t f = {0};
     f.bad_type = scenario == 1;
     f.bad_size = scenario == 2;
     f.bad_directory = scenario == 3;
+    f.accepts_file_as_directory = scenario == 4;
     const h2_pal_fs_api_t fs = {.user=&f, .vtable=&v};
     h2_runtime_t runtime = {.fs=&fs};
     const h2_pal_e2e_config_t config = {.suite_mask=H2_PAL_E2E_SUITE_FILESYSTEM};

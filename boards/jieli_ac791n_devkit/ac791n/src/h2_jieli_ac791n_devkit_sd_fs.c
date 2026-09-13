@@ -205,6 +205,17 @@ static int translate_path(
   return H2_PAL_OK;
 }
 
+static int directory_status(const char *path) {
+  FILE *file = fopen_by_utf8(path, "r");
+  if (file == NULL) return H2_PAL_ERR_NOT_FOUND;
+  int attributes = 0;
+  int result = fget_attr(file, &attributes);
+  fclose(file);
+  if (result != 0) return H2_PAL_ERR_IO;
+  return (attributes & F_ATTR_DIR) != 0
+      ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
+}
+
 static int ensure_directory(const char *path) {
   char folder[H2_JIELI_SD_PATH_MAX];
   size_t root_len = strlen(H2_JIELI_SD_ROOT);
@@ -212,14 +223,14 @@ static int ensure_directory(const char *path) {
       strlen(path + root_len) + 1u > sizeof(folder)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  if (fdir_exist(path) == 1) return H2_PAL_OK;
+  int existing = directory_status(path);
+  if (existing != H2_PAL_ERR_NOT_FOUND) return existing;
   strcpy(folder, path + root_len - 1u);
-  if (fmk_dir(H2_JIELI_SD_ROOT, folder, 0) == 0 || fdir_exist(path) == 1) {
-    return H2_PAL_OK;
-  }
+  (void)fmk_dir(H2_JIELI_SD_ROOT, folder, 0);
   /* flen_dir() cannot reliably distinguish an empty directory from failure.
    * Only an actual existing directory makes a failed create idempotent. */
-  return H2_PAL_ERR_IO;
+  int created = directory_status(path);
+  return created == H2_PAL_ERR_NOT_FOUND ? H2_PAL_ERR_IO : created;
 }
 
 static int fs_mkdir(void *user, const char *path) {

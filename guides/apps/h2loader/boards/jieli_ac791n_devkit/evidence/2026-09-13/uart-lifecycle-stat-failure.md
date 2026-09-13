@@ -32,7 +32,10 @@ In the built candidate ELF, SDK `fdir_exist` at `0x20157fe` calls `fopen` at
 `0x20158a4`, passing the mode string at `0x209d6dd` (`"r"`), and returns 1
 when that open succeeds. It does not inspect FAT directory attributes.
 The PAL added in `a4ab5f6b` incorrectly used that result to classify files
-as directories. The proposed fix reads `fget_attr` and `F_ATTR_DIR` instead.
+as directories. The fix reads `fget_attr` and `F_ATTR_DIR` instead.
+The same SDK helper was also used by `ensure_directory`; that path now
+checks attributes both before creation and afterwards, rejecting a regular
+file instead of treating it as an already-existing directory.
 
 The shared filesystem E2E case now checks a newly written regular file's
 stat type and exact byte size. The previous JieLi launcher only selected Core
@@ -41,7 +44,7 @@ The launcher now also selects the standalone `H2_PAL_E2E_SUITE_FILESYSTEM`,
 reusing that public case without requiring host network fixtures.
 Unit tests execute this suite with correct attributes, a file falsely marked
 as a directory, an incorrect file size, and a directory falsely marked as a
-file; the latter three must fail while still
+file, and mkdir falsely succeeding on a regular file; the latter four must fail while still
 cleaning up the fixture files. Both PAL test targets passed locally.
 Host unit-test success does not prove SDK behavior on the board.
 The corrected Loader still requires hardware installation and lifecycle
