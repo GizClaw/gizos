@@ -41,8 +41,9 @@ jobs:
       - name: Check out
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          # The default pull_request ref is the merge commit, so a diff against
+          # the base SHA contains only this PR's changes.
           fetch-depth: 1
-          ref: ${{ github.event.pull_request.head.sha }}
 
       - name: Fetch PR base
         env:
