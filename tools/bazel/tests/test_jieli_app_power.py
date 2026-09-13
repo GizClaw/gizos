@@ -5,7 +5,7 @@ import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
-TARGET = ROOT / "projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit/src"
+TARGET = ROOT / "projects/example/native_component_src/jieli/wl82/devkit_app/src"
 MP4_TARGET = ROOT / "projects/example/targets/h2loader_tar_zlib/mp4-player/jieli_ac791n_devkit/src"
 APP_SUPPORT = ROOT / "projects/h2loader/native_component_src/jieli/wl82/h2loader_app/src"
 STUB = r'''

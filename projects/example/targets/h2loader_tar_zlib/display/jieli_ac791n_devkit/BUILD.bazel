@@ -259,25 +259,15 @@ alias(
 
 
 
-h2_tasks(
+alias(
     name = "color_bar_tasks",
-    tasks = ["h2color/runtime"],
+    actual = "//projects/example/native_component_src/jieli/wl82/devkit_app:tasks",
 )
 
-firmware_native_component(
+alias(
     name = "color_bar_launcher",
-    srcs = ["src/color_bar_pal.c"],
-    component_name = "jieli_ac791n_devkit_color_bar_launcher",
+    actual = "//projects/example/native_component_src/jieli/wl82/devkit_app:launcher",
     tags = ["manual"],
-    target_compatible_with = AC791N_COMPATIBILITY,
-    deps = [
-        ":color_bar_tasks",
-        "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:app_ble",
-        "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:app_transport",
-        "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:h2loader_app_client",
-        "//boards/ac791n_chip/ac791n",
-        "//boards/jieli_ac791n_devkit/ac791n",
-    ],
 )
 
 

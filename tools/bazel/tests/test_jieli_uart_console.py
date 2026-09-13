@@ -288,8 +288,8 @@ int main(void) {
             subprocess.run([str(binary)], check=True, timeout=60)
 
     def test_color_bars_follow_pal_dimensions(self):
-        app = (ROOT / "projects/example/targets/h2loader_tar_zlib/display/"
-               "jieli_ac791n_devkit/src/color_bar_pal.c").read_text()
+        app = (ROOT / "projects/example/native_component_src/jieli/wl82/"
+               "devkit_app/src/color_bar_pal.c").read_text()
         function = app[app.index("static int draw_color_bars("):
                        app.index("static int probe_sd_filesystem(")]
         stub = r'''
@@ -335,8 +335,8 @@ int main(void) {
             subprocess.run([str(binary)], check=True, timeout=60)
 
     def test_app_boot_logs_before_command_transport(self):
-        app = (ROOT / "projects/example/targets/h2loader_tar_zlib/display/"
-               "jieli_ac791n_devkit/src/color_bar_pal.c").read_text()
+        app = (ROOT / "projects/example/native_component_src/jieli/wl82/"
+               "devkit_app/src/color_bar_pal.c").read_text()
         start = app.index("static void usb_write_status(const char *format, ...) {")
         end = app.index("static void report_previous_exception(void)", start)
         stub = r'''
