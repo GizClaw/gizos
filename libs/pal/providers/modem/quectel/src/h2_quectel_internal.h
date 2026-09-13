@@ -3,6 +3,27 @@
 
 #include "h2_quectel_modem.h"
 
+#if defined(_MSC_VER) && !defined(__clang__)
+#include <intrin.h>
+#endif
+
+/* Match modem/common atomics without exposing C-only atomic types to C++. */
+static inline void h2_quectel_cpin_absent_store(h2_quectel_modem_t *modem, uint32_t seen) {
+#if defined(_MSC_VER) && !defined(__clang__)
+    (void)_InterlockedExchange((volatile long *)&modem->cpin_absent_seen, (long)seen);
+#else
+    __atomic_store_n(&modem->cpin_absent_seen, seen, __ATOMIC_RELAXED);
+#endif
+}
+
+static inline uint32_t h2_quectel_cpin_absent_load(const h2_quectel_modem_t *modem) {
+#if defined(_MSC_VER) && !defined(__clang__)
+    return (uint32_t)_InterlockedCompareExchange((volatile long *)&modem->cpin_absent_seen, 0, 0);
+#else
+    return __atomic_load_n(&modem->cpin_absent_seen, __ATOMIC_RELAXED);
+#endif
+}
+
 typedef struct h2_quectel_response {
     char lines[H2_QUECTEL_RESPONSE_MAX][H2_QUECTEL_LINE_MAX];
     size_t count;
@@ -58,6 +79,7 @@ void h2_quectel_post_system_event(
 h2_pal_result_t h2_quectel_state_lock(h2_quectel_modem_t *modem);
 void h2_quectel_state_unlock(h2_quectel_modem_t *modem);
 h2_pal_result_t h2_quectel_power_reconcile(h2_quectel_modem_t *modem, h2_pal_result_t result);
+int h2_quectel_is_sim_absent_line(const char *line);
 int h2_quectel_is_urc(const char *line, const char *command);
 h2_pal_result_t h2_quectel_operation_begin(h2_quectel_modem_t *modem);
 h2_pal_result_t h2_quectel_operation_end(h2_quectel_modem_t *modem, h2_pal_result_t result);

@@ -112,7 +112,7 @@ void h2_quectel_handle_urc_locked(h2_quectel_modem_t *modem, const char *line) {
         h2_quectel_sim_update(modem, state);
         return;
     }
-    if (strcmp(line, "+CME ERROR: 10") == 0 || strcmp(line, "+CME ERROR: SIM not inserted") == 0) {
+    if (h2_quectel_is_sim_absent_line(line)) {
         h2_quectel_sim_update(modem, H2_PAL_MODEM_SIM_STATE_ABSENT);
         return;
     }

@@ -145,7 +145,7 @@ static int response_text_has_connect(const char *text) {
     return 0;
 }
 
-h2_pal_result_t h2_quectel_at_exchange_locked(
+static h2_pal_result_t at_exchange_impl(
     h2_quectel_modem_t *modem,
     const char *cmd,
     h2_quectel_response_t *response,
@@ -239,6 +239,30 @@ h2_pal_result_t h2_quectel_at_exchange_locked(
         response_add_line(response, line);
     }
     return H2_PAL_ERR_TIMEOUT;
+}
+
+/* All CPIN callers share the RX outcome while the operation lock serializes
+ * exchanges. The RX tap never takes the state lock or depends on the worker. */
+h2_pal_result_t h2_quectel_at_exchange_locked(
+    h2_quectel_modem_t *modem,
+    const char *cmd,
+    h2_quectel_response_t *response,
+    int allow_connect) {
+    if (modem == NULL || cmd == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    const int cpin = strcmp(cmd, "AT+CPIN?") == 0;
+    const uint32_t reset_generation = modem->reset_generation;
+    const uint32_t sim_generation = modem->sim_generation;
+    if (cpin) {
+        h2_quectel_cpin_absent_store(modem, 0u);
+    }
+    h2_pal_result_t rc = at_exchange_impl(modem, cmd, response, allow_connect);
+    if (cpin && rc != H2_PAL_OK && h2_quectel_cpin_absent_load(modem) != 0u &&
+        reset_generation == modem->reset_generation && sim_generation == modem->sim_generation) {
+        h2_quectel_sim_update(modem, H2_PAL_MODEM_SIM_STATE_ABSENT);
+    }
+    return rc;
 }
 
 h2_pal_result_t h2_quectel_at_exchange_timeout(

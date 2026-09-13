@@ -134,6 +134,8 @@ struct h2_quectel_modem {
     uint8_t model_checked;
     uint8_t sim_restart_required;
     uint32_t sim_generation;
+    /* RX-written CPIN outcome; access atomically as in modem/common counters. */
+    uint32_t cpin_absent_seen;
     uint8_t sim_seen;
     h2_pal_modem_sim_state_t sim_state;
     uint8_t prepared;
@@ -190,6 +192,8 @@ h2_pal_result_t h2_quectel_post_urc_line(h2_quectel_modem_t *modem, const char *
  * Identical ambiguous query/URC formats (CPIN/CSQ/CGATT/CLCC/QSIMSTAT) during
  * their matching command are treated as solicited; transport must route any
  * independently identified notification via post_urc_line instead.
+ * Exact SIM-absent CME answers during AT+CPIN? atomically mark that exchange;
+ * they are not queued. The exchange applies ABSENT before returning failure.
  */
 h2_pal_result_t h2_quectel_rx_feed(
     h2_quectel_modem_t *modem,
