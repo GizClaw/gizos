@@ -934,6 +934,8 @@ static int test_mesh_open(void *lua_state, void *user) {
 static void test_display_meshes(void) {
   h2_runtime_t *runtime = create_runtime();
   h2_lua_host_t *host = create_unstarted_host(runtime);
+  assert(h2_lua_register_module(host, "vmath", test_mesh_open, NULL) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_register_module(host, "geometry", test_mesh_open, NULL) == H2_PAL_ERR_INVALID_ARG);
   assert(h2_lua_register_module(host, "mesh_test", test_mesh_open, NULL) == H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   static const struct { const char *draw; const char *pixels; } cases[] = {
@@ -1662,6 +1664,8 @@ int main(void) {
   static const uint8_t embedded_nul_source[] = {'r', 'e', 't', 'u',  'r',
                                                 'n', ' ', '1', '\0', '2'};
   static const uint8_t system_profile_script[] =
+      "local v=require('vmath');local g=require('geometry');"
+      "assert(#v.buffer(3)==3 and type(g.affine3)=='function');"
       "local s=require('system');local d=require('delay');d.delay_us(10);"
       "local delay_ok=pcall(d.delay_us,1000001);local i=s.info();local "
       "ok,e=pcall("

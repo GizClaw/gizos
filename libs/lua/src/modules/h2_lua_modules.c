@@ -1,4 +1,5 @@
 #include "h2_lua_display.h"
+#include "h2_lua_numeric.h"
 #include "h2_f32_math.h"
 #include "../runtime/h2_lua_internal.h"
 
@@ -4703,6 +4704,8 @@ h2_pal_result_t h2_lua_register_builtin_modules(h2_lua_job_t *job) {
   add_preload(state, "runtime", open_runtime, job);
   add_preload(state, "delay", open_delay, job);
   add_preload(state, "system", open_system, job);
+  add_preload(state, "vmath", h2_lua_open_vmath, job);
+  add_preload(state, "geometry", h2_lua_open_geometry, job);
   add_preload(state, "display", open_display, job);
   add_preload(state, "lcd_touch", open_lcd_touch, job);
   add_preload(state, "audio", open_audio, job);
