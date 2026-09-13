@@ -1,6 +1,7 @@
 #include "asm/cpu.h"
 
 #include <stdint.h>
+#include <stdio.h>
 
 extern void h2_jieli_wl82_assert_reset_hook(void *caller);
 
@@ -17,4 +18,10 @@ void h2_jieli_wl82_boot_probe(uint32_t stage) {
     for (;;) {
     }
   }
+}
+
+/* Stage 105 must reset before app_main. Reaching this entry is a failed
+ * injection, not successful recovery; return so SDK event dispatch survives. */
+void app_main(void) {
+    printf("H2_JIELI_COREDUMP_SMOKE result=FAIL reason=probe-not-fired\r\n");
 }

@@ -64,12 +64,10 @@ jieli_target_task_policy(
     ],
 )
 
-firmware_native_component(
+alias(
     name = "coredump_smoke",
-    srcs = ["src/coredump_smoke.c"],
-    component_name = "jieli_ac791n_devkit_coredump_smoke",
-    tags = ["manual"],
-    target_compatible_with = AC791N_COMPATIBILITY,
+    actual = "//projects/e2e/targets/h2loader_tar_zlib/coredump/jieli_ac791n_devkit:launcher",
+    tags = ["manual", "no-release"],
 )
 
 jieli_target_task_policy(
@@ -425,34 +423,17 @@ h2loader_jieli_firmware(
     task_policy = ":direct_color_bar_task_policy",
 )
 
-h2loader_jieli_firmware(
+alias(
     name = "coredump_smoke_firmware",
-    board = "jieli_ac791n_devkit",
-    graph = [
-        ":coredump_smoke",
-        ":direct_color_bar_launcher",
-        "//boards/jieli_ac791n_devkit/ac791n",
-    ],
-    image = "coredump-smoke",
-    target = "wl82",
-    task_policy = ":direct_color_bar_task_policy",
+    actual = "//projects/e2e/targets/h2loader_tar_zlib/coredump/jieli_ac791n_devkit:smoke_firmware",
+    tags = ["manual", "no-release"],
 )
 
-# Keep the crash-persistence probe independent from display initialization and
-# small enough that transport failures cannot be confused with the behavior
-# under test.  The USB smoke launcher supplies app_main; coredump_smoke only
-# overrides the board boot probe to record a deterministic crash and reboot.
-h2loader_jieli_firmware(
+# Compatibility labels: the E2E owner supplies the diagnostic entry and policy.
+alias(
     name = "coredump_minimal_firmware",
-    board = "jieli_ac791n_devkit",
-    graph = [
-        ":coredump_smoke",
-        "//boards/jieli_ac791n_devkit/ac791n",
-        "//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:usb_log_smoke_launcher",
-    ],
-    image = "coredump-minimal",
-    target = "wl82",
-    task_policy = "//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:usb_log_smoke_task_policy",
+    actual = "//projects/e2e/targets/h2loader_tar_zlib/coredump/jieli_ac791n_devkit:minimal_firmware",
+    tags = ["manual", "no-release"],
 )
 
 h2loader_jieli_firmware(
@@ -540,24 +521,16 @@ h2loader_tar_zlib(
     target = "wl82",
 )
 
-h2loader_tar_zlib(
+alias(
     name = "coredump_smoke_package",
-    tags = ["no-release"],
-    board = "jieli_ac791n_devkit",
-    firmware = ":coredump_smoke_firmware",
-    image = "coredump-smoke",
-    role = "app",
-    target = "wl82",
+    actual = "//projects/e2e/targets/h2loader_tar_zlib/coredump/jieli_ac791n_devkit:smoke_package",
+    tags = ["manual", "no-release"],
 )
 
-h2loader_tar_zlib(
+alias(
     name = "coredump_minimal_package",
-    tags = ["no-release"],
-    board = "jieli_ac791n_devkit",
-    firmware = ":coredump_minimal_firmware",
-    image = "coredump-minimal",
-    role = "app",
-    target = "wl82",
+    actual = "//projects/e2e/targets/h2loader_tar_zlib/coredump/jieli_ac791n_devkit:minimal_package",
+    tags = ["manual", "no-release"],
 )
 
 h2loader_tar_zlib(
