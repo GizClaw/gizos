@@ -1,6 +1,7 @@
 """Export the configured portable C closure, without compiling Bazel archives."""
 
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
+load("@rules_pkg//pkg:providers.bzl", "PackageFilesInfo")
 
 _CSourcesInfo = provider(
     doc = "Portable sources and compile contract collected from the configured C graph.",
@@ -63,8 +64,8 @@ def _package_impl(ctx):
     for f in files:
         if "/providers/" in f.short_path or f.short_path.startswith("boards/") or "/bleikcp/" in f.short_path:
             fail("Platform assembly leaked into portable Lua: %s" % f.short_path)
-    spec = ctx.actions.declare_file(ctx.label.name + ".json")
-    ctx.actions.write(spec, json.encode({
+    manifest = ctx.actions.declare_file(ctx.label.name + "/manifest.json")
+    ctx.actions.write(manifest, json.encode_indent({
         "schema_version": 1,
         "gizos_commit": "@GIZOS_COMMIT@",
         "runtime_profile_id": "runtime.lua.gizos",
@@ -74,17 +75,14 @@ def _package_impl(ctx):
         "cflags": [],
         "compilation_units": [json.decode(u) for u in closure.units.to_list()],
         "per_os": {os: {"link_flags": ["-lm"]} for os in ["linux", "darwin", "android", "ios"]},
-        "files": dict({_path(f.short_path): f.path for f in files}, LICENSE = ctx.file.license.path),
-    }))
-    archive = ctx.actions.declare_file("gizos-lua-runtime-src.tar.gz")
-    ctx.actions.run(
-        executable = ctx.executable._pack,
-        arguments = [spec.path, archive.path],
-        inputs = depset([spec, ctx.file.license], transitive = [closure.files]),
-        outputs = [archive],
-        mnemonic = "LuaSourcePackage",
-    )
-    return [DefaultInfo(files = depset([archive]))]
+    }, indent = "  ") + "\n")
+    dest_src_map = {_path(f.short_path): f for f in files}
+    dest_src_map["LICENSE"] = ctx.file.license
+    dest_src_map["manifest.json"] = manifest
+    return [
+        DefaultInfo(files = depset([manifest, ctx.file.license], transitive = [closure.files])),
+        PackageFilesInfo(dest_src_map = dest_src_map, attributes = {"mode": "0644"}),
+    ]
 
 lua_source_package = rule(
     implementation = _package_impl,
@@ -92,6 +90,5 @@ lua_source_package = rule(
         "license": attr.label(default = "//:LICENSE", allow_single_file = True),
         "defaults": attr.label(default = "//libs/pal:unsupported", aspects = [_sources]),
         "runtime": attr.label(mandatory = True, aspects = [_sources]),
-        "_pack": attr.label(default = ":pack_sources", executable = True, cfg = "exec"),
     },
 )
