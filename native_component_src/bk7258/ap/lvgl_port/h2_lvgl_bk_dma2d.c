@@ -24,6 +24,7 @@ static unsigned completed;
 static unsigned verified_operations;
 static int last_was_fill;
 static unsigned copy_completed;
+static uint32_t progress_ms;
 
 static void prepare_copy(void) {
   /* BK7258 completes R2M but retains internal state that makes a following
@@ -295,8 +296,12 @@ int h2_bk_dma2d_rgb565(void *dst, const void *src, int32_t width,
     printf("H2_DMA2D verified operation=%s pixels=%lu\r\n",
               src ? "copy" : "fill", (unsigned long)width * height);
   }
-  if (src && ++copy_completed % 30 == 0) {
-    printf("H2_DMA2D copy_progress copies=%u disabled=%d\n", copy_completed, disabled);
+  if (src) ++copy_completed;
+  const uint32_t now_ms = rtos_get_time();
+  if (now_ms - progress_ms >= 5000u) {
+    progress_ms = now_ms;
+    printf("H2_DMA2D copy_progress ms=%lu copies=%u operations=%u disabled=%d\n",
+           (unsigned long)now_ms, copy_completed, completed + 1u, disabled);
   }
   if (++completed == 1 || completed % 1000 == 0) {
     printf("H2_DMA2D completed=%u operation=%s\r\n", completed, src ? "copy" : "fill");
