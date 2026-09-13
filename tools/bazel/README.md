@@ -132,7 +132,7 @@ flash, erase, monitor, reset, serial, network, or installation operations.
 
 Source `.env/devenv` before requesting a BK7258 build. The canonical provider
 exports only `BK7258_PATH`. A repository
-rule validates SDK commit `aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca` and a
+rule validates SDK commit `d7187c8fc75c56930b0106ec55ff770c2d5a4a93` and a
 clean tracked checkout. Another repository rule downloads Arm GNU
 10.3-2021.10, verifies the committed archive and expanded-tree SHA-256 values,
 and exposes compiler version `10.3.1` through a locator. The action receives
