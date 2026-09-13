@@ -18,6 +18,9 @@ typedef uint32_t h2_lua_job_id_t;
 
 #define H2_LUA_JOB_ID_NONE 0u
 
+/** Maximum shared exact/prefix registry capacity; bounds trie memory. */
+#define H2_LUA_CAPABILITY_CAPACITY_MAX 256u
+
 typedef struct h2_lua_resource {
   const char *name;
   const uint8_t *source;
@@ -81,6 +84,9 @@ typedef struct h2_lua_host_config {
   int borrow_display;
   /** Per-app persistent storage; zero-initialized leaves it unconfigured. */
   h2_lua_storage_config_t storage;
+  /** Exact and prefix registrations combined. Zero selects 16; values above
+   * H2_LUA_CAPABILITY_CAPACITY_MAX are invalid. Allocated at host creation. */
+  size_t capability_capacity;
 } h2_lua_host_config_t;
 
 /** Creates a stopped Host that borrows, but never consumes or destroys,

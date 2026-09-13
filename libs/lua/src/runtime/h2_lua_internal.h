@@ -6,6 +6,7 @@
 #include "h2_lua_event.h"
 #include "h2_lua_job.h"
 #include "h2_lua_module.h"
+#include "h2_trie.h"
 
 #include "lauxlib.h"
 
@@ -85,6 +86,7 @@ typedef struct h2_lua_module_entry {
 typedef struct h2_lua_capability_entry {
   char name[H2_LUA_NAME_MAX];
   h2_lua_capability_call_fn call;
+  h2_lua_capability_prefix_call_fn prefix_call;
   h2_lua_capability_cancel_fn cancel;
   void *user;
 } h2_lua_capability_entry_t;
@@ -105,7 +107,7 @@ typedef struct h2_lua_capability_request {
   h2_pal_result_t result;
   char output[H2_LUA_CAPABILITY_OUTPUT_MAX];
   char error[H2_LUA_MESSAGE_MAX];
-  h2_lua_capability_entry_t *capability;
+  const h2_lua_capability_entry_t *capability;
 } h2_lua_capability_request_t;
 
 typedef struct h2_lua_audio_track_slot {
@@ -210,7 +212,10 @@ struct h2_lua_host {
   h2_pal_mutex_t *jobs_mutex;
   h2_lua_module_entry_t modules[16];
   size_t module_count;
-  h2_lua_capability_entry_t capabilities[16];
+  h2_lua_capability_entry_t *capabilities;
+  h2_trie_route_t *capability_routes;
+  h2_trie_node_t *capability_nodes;
+  h2_trie_t capability_trie;
   size_t capability_count;
   h2_lua_capability_request_t *capability_requests;
   h2_lua_capability_request_id_t next_capability_request_id;

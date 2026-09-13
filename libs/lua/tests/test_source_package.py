@@ -26,6 +26,8 @@ def main():
         assert manifest["schema_version"] == 1
         assert manifest["runtime_profile_id"] == "runtime.lua.gizos"
         assert (root / "LICENSE").is_file()
+        assert "libs/trie/src/h2_trie.c" in manifest["sources"]
+        assert (root / "libs/trie/include/h2_trie.h").is_file()
         assert len(manifest["sources"]) == len(set(manifest["sources"]))
         assert all("/providers/" not in p and "/bleikcp/" not in p for p in manifest["sources"])
         compiler = shlex.split(os.environ.get("CC", "cc"))

@@ -1077,7 +1077,7 @@ static int lua_capability_call(lua_State *state) {
   size_t options_size = 0u;
   char output[H2_LUA_CAPABILITY_OUTPUT_MAX];
   const char *error = NULL;
-  size_t i;
+  const h2_lua_capability_entry_t *entry = NULL;
   if (lua_isnoneornil(state, 2)) {
     input = "{}";
   } else if (lua_type(state, 2) == LUA_TSTRING) {
@@ -1096,72 +1096,71 @@ static int lua_capability_call(lua_State *state) {
   }
   (void)input_size;
   (void)options_size;
-  for (i = 0u; i < job->host->capability_count; ++i) {
-    h2_lua_capability_entry_t *entry = &job->host->capabilities[i];
-    if (strcmp(entry->name, name) == 0) {
-      h2_lua_capability_request_t *request;
-      h2_pal_result_t result;
-      int locked = 0;
-      if (job->host->capability_mutex != NULL) {
-        if (h2_pal_mutex_lock(job->host->config.runtime->sync,
-                              job->host->capability_mutex) != H2_PAL_OK) {
-          return push_capability_tuple(state, H2_PAL_ERR_BUSY, NULL,
-                                       "capability registry busy");
-        }
-        locked = 1;
+  if (h2_trie_handle(&job->host->capability_trie, name, &entry) == H2_PAL_OK) {
+    h2_lua_capability_request_t *request;
+    h2_pal_result_t result;
+    int locked = 0;
+    if (job->host->capability_mutex != NULL) {
+      if (h2_pal_mutex_lock(job->host->config.runtime->sync,
+                            job->host->capability_mutex) != H2_PAL_OK) {
+        return push_capability_tuple(state, H2_PAL_ERR_BUSY, NULL,
+                                     "capability registry busy");
       }
-      request = allocate_capability_request(job->host);
-      if (request == NULL || task == NULL) {
-        if (locked) {
-          (void)h2_pal_mutex_unlock(job->host->config.runtime->sync,
-                                    job->host->capability_mutex);
-        }
-        return push_capability_tuple(state, H2_PAL_ERR_FULL, NULL,
-                                     "capability request limit reached");
-      }
-      memset(request, 0, sizeof(*request));
-      request->id = job->host->next_capability_request_id++;
-      if (job->host->next_capability_request_id == 0u) {
-        job->host->next_capability_request_id = 1u;
-      }
-      request->state = H2_LUA_CAPABILITY_REQUEST_PENDING;
-      request->job_id = job->id;
-      request->job_generation = job->generation;
-      request->task_id = task->id;
-      request->capability = entry;
+      locked = 1;
+    }
+    request = allocate_capability_request(job->host);
+    if (request == NULL || task == NULL) {
       if (locked) {
         (void)h2_pal_mutex_unlock(job->host->config.runtime->sync,
                                   job->host->capability_mutex);
       }
-      output[0] = '\0';
-      result = entry->call(entry->user, request->id, input, options, output,
-                           sizeof(output), &error);
-      if (result != H2_PAL_ERR_WOULD_BLOCK) {
-        if (locked) {
-          (void)h2_pal_mutex_lock(job->host->config.runtime->sync,
-                                  job->host->capability_mutex);
-        }
-        memset(request, 0, sizeof(*request));
-        if (locked) {
-          (void)h2_pal_mutex_unlock(job->host->config.runtime->sync,
-                                    job->host->capability_mutex);
-        }
-        return push_capability_tuple(state, result, output, error);
-      }
-      if (job->host->capability_mutex == NULL) {
-        if (entry->cancel != NULL) {
-          entry->cancel(entry->user, request->id);
-        }
-        memset(request, 0, sizeof(*request));
-        return push_capability_tuple(
-            state, H2_PAL_ERR_UNSUPPORTED, NULL,
-            "pending capability requires Runtime Sync");
-      }
-      task->capability_request_id = request->id;
-      task->state = H2_LUA_TASK_CAPABILITY;
-      return lua_yieldk(state, 0, (lua_KContext)request->id,
-                        lua_capability_continue);
+      return push_capability_tuple(state, H2_PAL_ERR_FULL, NULL,
+                                   "capability request limit reached");
     }
+    memset(request, 0, sizeof(*request));
+    request->id = job->host->next_capability_request_id++;
+    if (job->host->next_capability_request_id == 0u) {
+      job->host->next_capability_request_id = 1u;
+    }
+    request->state = H2_LUA_CAPABILITY_REQUEST_PENDING;
+    request->job_id = job->id;
+    request->job_generation = job->generation;
+    request->task_id = task->id;
+    request->capability = entry;
+    if (locked) {
+      (void)h2_pal_mutex_unlock(job->host->config.runtime->sync,
+                                job->host->capability_mutex);
+    }
+    output[0] = '\0';
+    result = entry->prefix_call != NULL
+                 ? entry->prefix_call(entry->user, request->id, name, input,
+                                      options, output, sizeof(output), &error)
+                 : entry->call(entry->user, request->id, input, options, output,
+                               sizeof(output), &error);
+    if (result != H2_PAL_ERR_WOULD_BLOCK) {
+      if (locked) {
+        (void)h2_pal_mutex_lock(job->host->config.runtime->sync,
+                                job->host->capability_mutex);
+      }
+      memset(request, 0, sizeof(*request));
+      if (locked) {
+        (void)h2_pal_mutex_unlock(job->host->config.runtime->sync,
+                                  job->host->capability_mutex);
+      }
+      return push_capability_tuple(state, result, output, error);
+    }
+    if (job->host->capability_mutex == NULL) {
+      if (entry->cancel != NULL) {
+        entry->cancel(entry->user, request->id);
+      }
+      memset(request, 0, sizeof(*request));
+      return push_capability_tuple(state, H2_PAL_ERR_UNSUPPORTED, NULL,
+                                   "pending capability requires Runtime Sync");
+    }
+    task->capability_request_id = request->id;
+    task->state = H2_LUA_TASK_CAPABILITY;
+    return lua_yieldk(state, 0, (lua_KContext)request->id,
+                      lua_capability_continue);
   }
   lua_pushboolean(state, 0);
   lua_pushnil(state);
