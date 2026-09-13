@@ -1991,11 +1991,12 @@ h2_pal_result_t h2_gizclaw_conversation_create(
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_gizclaw_conversation_send_text(
-    h2_gizclaw_conversation_t *conversation, h2_gizclaw_str_t text) {
+h2_pal_result_t h2_gizclaw_conversation_send_text_internal(
+    h2_gizclaw_conversation_t *conversation, h2_gizclaw_str_t text,
+    h2_gizclaw_audio_log_t *log) {
   if (conversation == NULL || !conversation->service_mode || text.data == NULL ||
       text.len == 0u || text.len > H2_GIZCLAW_CONVERSATION_TEXT_MAX_BYTES ||
-      !valid_utf8_span(text.data, text.len))
+      !valid_utf8_span(text.data, text.len) || log == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   h2_gizclaw_service_t *service = conversation->service;
   h2_pal_result_t rc = h2_pal_mutex_lock(service->config.sync, service->audio_mutex);
@@ -2014,7 +2015,6 @@ h2_pal_result_t h2_gizclaw_conversation_send_text(
       rc = H2_PAL_ERR_BUSY;
     (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
   }
-  h2_gizclaw_audio_log_t logs = {0};
   if (rc == H2_PAL_OK) {
     const uint64_t generation = conversation->next_generation++;
     const int timeout_ms = service->client_config.connect_timeout_ms > 0
@@ -2026,12 +2026,13 @@ h2_pal_result_t h2_gizclaw_conversation_send_text(
         generation, timeout_ms,
         conversation->callback != NULL ? service_conversation_event : NULL,
         service_conversation_complete, conversation,
-        &conversation->service_request, &logs, text);
+        &conversation->service_request, log, text);
     if (rc == H2_PAL_OK)
       conversation->input_ended = true;
   }
+  record_audio_control(service, conversation, "service_send_text", rc,
+                       H2_PAL_LOG_INFO, log);
   (void)h2_pal_mutex_unlock(service->config.sync, service->audio_mutex);
-  h2_gizclaw_service_flush_audio_log_internal(service, &logs);
   return rc;
 }
 

@@ -90,12 +90,13 @@ Conversation completion 表示本轮输入已发送，不等待服务端回复�
 
 ### 完整文字输入
 
-`h2_gizclaw_conversation_send_text()` 在已配置的空闲路由上复制并异步提交
+`h2_gizclaw_session_send_text()` 在 Session 当前 Workspace 的空闲路由上复制并异步提交
 1–4096 字节 UTF-8 文本，无需启动麦克风。发送纯控制 BOS 后，以同一 stream ID 和
 输入 label 发送 TEXT_DONE；TEXT_DONE 自带输入结束，不额外发送 EOS。
-录音中或上一输入尚未 completion 时返回 BUSY。完成和错误由原有 poll/completion
-分发；完成只表示输入已发送，之后到达的下行音频照常播放。详细错误、buffer ownership
-与 Workspace 前置条件见 [Conversation 文字输入](/zh/developing/gizclaw#conversation-文字输入)。
+录音中或上一输入尚未 completion 时返回 BUSY，不打断录音；受理后 Session 进入
+WAITING。完成和错误由原有 poll/completion 分发；完成只表示输入已发送，之后到达的
+下行音频照常播放。详细错误、Session 状态与取消规则见
+[Conversation 文字输入](/zh/developing/gizclaw#conversation-文字输入)。
 
 ### Speech RPC 音频流
 

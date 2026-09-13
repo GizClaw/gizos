@@ -9682,6 +9682,13 @@ static void conversation_read_owned(h2_gizclaw_track_t *track, uint8_t *out,
   assert(rc == H2_PAL_OK);
 }
 
+/* The Session owns the public text entry point; exercise the route directly. */
+static h2_pal_result_t conversation_send_text(
+    h2_gizclaw_conversation_t *conversation, h2_gizclaw_str_t text) {
+  h2_gizclaw_audio_log_t logs = {0};
+  return h2_gizclaw_conversation_send_text_internal(conversation, text, &logs);
+}
+
 static void test_conversation_public_audio_tasks(void) {
   for (unsigned mode = 0; mode < 29; ++mode) {
     test_env_t env;
@@ -9752,7 +9759,7 @@ static void test_conversation_public_audio_tasks(void) {
                conversation_test_complete, &test, &conversation) == H2_PAL_OK);
     assert(h2_gizclaw_service_audio_start(service) == H2_PAL_OK);
     assert(h2_gizclaw_service_audio_start(service) == H2_PAL_ERR_INVALID_STATE);
-    assert(h2_gizclaw_conversation_send_text(
+    assert(conversation_send_text(
                conversation, (h2_gizclaw_str_t){"开始", 6u}) == H2_PAL_ERR_BUSY);
     assert(atomic_load(&log_capture.control_error));
     if (mode == 10) {
@@ -10192,14 +10199,14 @@ static void test_conversation_send_text(void) {
                service, (h2_gizclaw_str_t){"test", 4u}, NULL,
                conversation_text_complete, &text_test, &conversation) == H2_PAL_OK);
     const h2_gizclaw_str_t hello = {"开始", 6u};
-    assert(h2_gizclaw_conversation_send_text(NULL, hello) == H2_PAL_ERR_INVALID_ARG);
-    assert(h2_gizclaw_conversation_send_text(conversation, hello) ==
+    assert(conversation_send_text(NULL, hello) == H2_PAL_ERR_INVALID_ARG);
+    assert(conversation_send_text(conversation, hello) ==
            H2_PAL_ERR_INVALID_STATE);
     const h2_gizclaw_str_t invalid[] = {
         {NULL, 1u}, {"", 0u}, {"x", H2_GIZCLAW_CONVERSATION_TEXT_MAX_BYTES + 1u},
         {"a\0b", 3u}, {"\xc0\xaf", 2u}, {"\xed\xa0\x80", 3u}, {"\xf0\x9f", 2u}};
     for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i)
-      assert(h2_gizclaw_conversation_send_text(conversation, invalid[i]) ==
+      assert(conversation_send_text(conversation, invalid[i]) ==
              H2_PAL_ERR_INVALID_ARG);
     assert(text_test.completions == 0u);
     assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
@@ -10209,10 +10216,10 @@ static void test_conversation_send_text(void) {
     if (mode != 1)
       memcpy(input, hello.data, len);
     memcpy(text_test.expected, input, len);
-    assert(h2_gizclaw_conversation_send_text(
+    assert(conversation_send_text(
                conversation, (h2_gizclaw_str_t){input, len}) == H2_PAL_OK);
     memset(input, 'z', sizeof(input)); /* Admission owns a copy. */
-    assert(h2_gizclaw_conversation_send_text(conversation, hello) == H2_PAL_ERR_BUSY);
+    assert(conversation_send_text(conversation, hello) == H2_PAL_ERR_BUSY);
     assert(h2_gizclaw_service_audio_start(service) == H2_PAL_ERR_INVALID_STATE);
     assert(atomic_load(&service->media_request) == NULL);
     assert(!atomic_load(&base->bos) && text_test.completions == 0u);
@@ -10240,7 +10247,7 @@ static void test_conversation_send_text(void) {
       }
     }
     assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
-    assert(h2_gizclaw_conversation_send_text(conversation, hello) == H2_PAL_ERR_CLOSED);
+    assert(conversation_send_text(conversation, hello) == H2_PAL_ERR_CLOSED);
     h2_gizclaw_conversation_release(conversation);
     assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
     h2_gizclaw_test_set_event_ops(NULL, NULL, NULL, NULL);

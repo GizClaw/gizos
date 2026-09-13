@@ -81,32 +81,6 @@ h2_pal_result_t h2_gizclaw_conversation_create(
     h2_gizclaw_conversation_completion_fn completion, void *user,
     h2_gizclaw_conversation_t **out_conversation);
 
-/** Submit one complete UTF-8 user input on the configured conversation route.
- * The caller must first activate the desired Workspace on the Service.
- * Copies text before returning; no terminator is required in the supplied span.
- * Like service_audio_end, OK means asynchronous admission, not server acceptance
- * or an Agent reply. The existing completion hook runs exactly once from
- * service_poll() when input is sent, fails, or is canceled. Admission errors do
- * not call completion. Server audio uses the existing connection downlink;
- * text observations retain the existing active-input callback lifetime.
- *
- * INVALID_ARG: NULL handle/data, empty text, more than
- * H2_GIZCLAW_CONVERSATION_TEXT_MAX_BYTES bytes,
- * embedded NUL, or invalid UTF-8. INVALID_STATE: Service not started.
- * CLOSED: Service stopping/stopped. BUSY: an input awaits completion, recording
- * is active, or Speech/audio playback owns the route. Recording is never
- * interrupted. NO_MEMORY and WOULD_BLOCK report allocation/admission failure.
- * A started Service may still be connecting, as with service_audio_start;
- * connection/send failures are reported asynchronously through completion.
- *
- * Control calls serialize with audio start/end/cancel. Keep the handle alive
- * until completion; serialize release with callers, as for other route APIs.
- * No network I/O or application callback runs inline. No PCM Track is required
- * for text input. Audio start is unavailable until this input completes.
- */
-h2_pal_result_t h2_gizclaw_conversation_send_text(
-    h2_gizclaw_conversation_t *conversation, h2_gizclaw_str_t text);
-
 /** Cancel the active generation (hang up a Realtime call), without closing
  * the Service or Peer, and stop buffered downstream audio. Completion is
  * still delivered by poll. */

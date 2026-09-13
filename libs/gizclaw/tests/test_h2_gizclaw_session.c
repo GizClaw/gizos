@@ -268,8 +268,22 @@ h2_pal_result_t h2_gizclaw_service_audio_end(h2_gizclaw_service_t *service) {
   ++audio_ends;
   return audio_end_result;
 }
+static unsigned releases, text_sends;
+static h2_pal_result_t text_result;
+static char text_seen[16];
 void h2_gizclaw_conversation_release(h2_gizclaw_conversation_t *conversation) {
   assert(conversation == (h2_gizclaw_conversation_t *)&conversations);
+  ++releases;
+}
+h2_pal_result_t h2_gizclaw_conversation_send_text_internal(
+    h2_gizclaw_conversation_t *conversation, h2_gizclaw_str_t text,
+    h2_gizclaw_audio_log_t *log) {
+  assert(conversation == (h2_gizclaw_conversation_t *)&conversations);
+  assert(log != NULL && text.len < sizeof(text_seen));
+  memcpy(text_seen, text.data, text.len);
+  text_seen[text.len] = '\0';
+  ++text_sends;
+  return text_result;
 }
 static void completed(void *user, h2_gizclaw_conversation_t *conversation,
                       const h2_gizclaw_operation_result_t *result) {
@@ -282,6 +296,9 @@ static void setup(size_t collections) {
   static const char *const names[] = {"alpha", "beta"};
   lists = gets = creates = reloads = conversations = terminal_count = 0u;
   audio_starts = audio_ends = 0u;
+  releases = text_sends = 0u;
+  text_result = H2_PAL_OK;
+  text_seen[0] = '\0';
   flushes = 0u;
   downlink_writes = 0u;
   audio_input_empty = false;
@@ -661,7 +678,155 @@ static void test_workspace_delete(void) {
   teardown();
 }
 
+/* Text input is a Session operation: it owns the route like a released
+ * push-to-talk input until its completion. */
+static void test_send_text(void) {
+  const h2_pal_task_api_t *tasks = h2_desktop_platform_task_api();
+  const h2_gizclaw_workspace_parameters_patch_t ptt = {
+      .has_input = true, .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK};
+  const h2_gizclaw_workspace_parameters_patch_t realtime = {
+      .has_input = true, .input = H2_GIZCLAW_WORKSPACE_INPUT_REALTIME};
+  const h2_gizclaw_operation_result_t sent = {
+      .terminal_kind = H2_GIZCLAW_OPERATION_FINISHED, .result = H2_PAL_OK};
+  const h2_gizclaw_operation_result_t canceled = {
+      .terminal_kind = H2_GIZCLAW_OPERATION_CANCELED, .result = H2_PAL_OK};
+  const h2_gizclaw_operation_result_t failed = {
+      .terminal_kind = H2_GIZCLAW_OPERATION_FINISHED, .result = H2_PAL_ERR_IO};
+  const h2_gizclaw_str_t hello = {"hello", 5u};
+  h2_gizclaw_session_selection_t sel = selection;
+  sel.parameters = &ptt;
+  h2_gizclaw_conversation_t *conversation = NULL;
+
+  /* Arguments, then Session state, are checked before the route. */
+  assert(h2_gizclaw_session_send_text(NULL, hello) == H2_PAL_ERR_INVALID_ARG);
+  setup(1u);
+  const h2_gizclaw_str_t invalid[] = {
+      {NULL, 1u}, {"", 0u},
+      {"x", H2_GIZCLAW_CONVERSATION_TEXT_MAX_BYTES + 1u}};
+  for (size_t i = 0u; i < sizeof(invalid) / sizeof(invalid[0]); ++i)
+    assert(h2_gizclaw_session_send_text(session, invalid[i]) ==
+           H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_session_send_text(session, hello) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(h2_gizclaw_session_send_text(session, hello) ==
+         H2_PAL_ERR_INVALID_STATE); /* No conversation route yet. */
+  assert(text_sends == 0u);
+  assert(h2_gizclaw_session_conversation_create(
+             session, &sel, 1000u, NULL, completed, NULL, &conversation) ==
+         H2_PAL_OK);
+
+  /* Accepted text waits for sound; the route stays owned until completion. */
+  assert(h2_gizclaw_session_send_text(session, hello) == H2_PAL_OK);
+  assert(text_sends == 1u && strcmp(text_seen, "hello") == 0);
+  h2_gizclaw_session_state_t state = snapshot();
+  assert(state.conversation == H2_GIZCLAW_SESSION_CONVERSATION_WAITING);
+  assert(!state.conversation_input_open && !state.can_start);
+  assert(h2_gizclaw_session_send_text(session, hello) == H2_PAL_ERR_BUSY);
+  assert(text_sends == 1u);
+  h2_gizclaw_session_conversation_release(session, conversation);
+  assert(releases == 0u);
+  assert(h2_gizclaw_session_destroy(&session) == H2_PAL_ERR_BUSY);
+  terminal(terminal_user, conversation, &sent);
+  assert(terminal_count == 1u && releases == 1u);
+  assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_WAITING);
+  ++downlink_writes;
+  assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
+  assert(snapshot().can_start && snapshot().last_error == H2_PAL_OK);
+  teardown();
+
+  /* Open audio input is never interrupted by text. */
+  setup(1u);
+  assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+  assert(h2_gizclaw_session_conversation_create(
+             session, &sel, 1000u, NULL, NULL, NULL, &conversation) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_session_audio_start(session) == H2_PAL_OK);
+  assert(h2_gizclaw_session_send_text(session, hello) == H2_PAL_ERR_BUSY);
+  assert(text_sends == 0u && snapshot().conversation_input_open);
+  assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_RECORDING);
+  assert(h2_gizclaw_session_audio_end(session) == H2_PAL_OK);
+  terminal(terminal_user, conversation, &sent);
+
+  /* Route admission failures: busy/backpressure keep state, others record. */
+  text_result = H2_PAL_ERR_WOULD_BLOCK;
+  uint64_t revision = snapshot().revision;
+  assert(h2_gizclaw_session_send_text(session, hello) ==
+         H2_PAL_ERR_WOULD_BLOCK);
+  assert(snapshot().revision == revision);
+  text_result = H2_PAL_ERR_NO_MEMORY;
+  assert(h2_gizclaw_session_send_text(session, hello) == H2_PAL_ERR_NO_MEMORY);
+  state = snapshot();
+  assert(state.last_error == H2_PAL_ERR_NO_MEMORY &&
+         state.error_stage == H2_GIZCLAW_SESSION_BLOCK_CONVERSATION);
+  text_result = H2_PAL_OK;
+
+  /* An asynchronous send failure ends WAITING and reports the error. */
+  assert(h2_gizclaw_session_send_text(session, hello) == H2_PAL_OK);
+  assert(snapshot().last_error == H2_PAL_OK);
+  terminal(terminal_user, conversation, &failed);
+  state = snapshot();
+  assert(state.conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
+  assert(state.last_error == H2_PAL_ERR_IO &&
+         state.error_stage == H2_GIZCLAW_SESSION_BLOCK_CONVERSATION);
+
+  /* Pressing to talk replaces pending text on the same route. */
+  assert(h2_gizclaw_session_send_text(session, hello) == H2_PAL_OK);
+  const unsigned starts_before = audio_starts;
+  h2_pal_task_t *task = NULL;
+  h2_pal_result_t result = H2_PAL_ERR_IO;
+  atomic_store(&cancel_entered, false);
+  assert(h2_pal_task_start(tasks, NULL, start_thread, &result, &task) ==
+         H2_PAL_OK);
+  wait_flag(&cancel_entered);
+  assert(atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_RESTART);
+  terminal(terminal_user, conversation, &canceled);
+  assert(h2_pal_task_join(tasks, task) == H2_PAL_OK);
+  assert(result == H2_PAL_OK && audio_starts == starts_before + 1u);
+  assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_RECORDING);
+  assert(h2_gizclaw_session_audio_end(session) == H2_PAL_OK);
+  terminal(terminal_user, conversation, &sent);
+
+  /* A Workspace switch cancels pending text before the reload RPC. */
+  assert(h2_gizclaw_session_send_text(session, hello) == H2_PAL_OK);
+  const unsigned ends_before = audio_ends;
+  switch_context_t context = {.selection = sel};
+  context.selection.workspace_name = "switched-chat";
+  context.selection.parameters = &realtime;
+  atomic_store(&cancel_entered, false);
+  assert(h2_pal_task_start(tasks, NULL, switch_thread, &context, &task) ==
+         H2_PAL_OK);
+  wait_flag(&cancel_entered);
+  assert(atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_WORKSPACE);
+  assert(audio_ends == ends_before); /* No audio input was open. */
+  assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
+  terminal(terminal_user, conversation, &canceled);
+  assert(h2_pal_task_join(tasks, task) == H2_PAL_OK);
+  assert(context.result == H2_PAL_OK);
+  assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
+
+  /* Realtime Workspaces accept text while idle; its completion never starts
+   * a call. */
+  assert(snapshot().parameters.input == H2_GIZCLAW_WORKSPACE_INPUT_REALTIME);
+  const unsigned starts_realtime = audio_starts;
+  assert(h2_gizclaw_session_send_text(session, hello) == H2_PAL_OK);
+  assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_WAITING);
+  terminal(terminal_user, conversation, &sent);
+  assert(audio_starts == starts_realtime && !snapshot().conversation_input_open);
+  now += H2_GIZCLAW_SESSION_WAIT_MS;
+  assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
+
+  /* A closed Session admits nothing. */
+  assert(h2_gizclaw_session_close(session) == H2_PAL_OK);
+  assert(h2_gizclaw_session_send_text(session, hello) ==
+         H2_PAL_ERR_INVALID_STATE);
+  h2_gizclaw_session_conversation_release(session, conversation);
+  teardown();
+}
+
 int main(void) {
+  test_send_text();
   test_control_boundaries();
   test_workspace_delete();
   test_waiting_selection(false);

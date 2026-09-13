@@ -42,6 +42,14 @@ typedef enum h2_gizclaw_cancel_source {
 h2_pal_result_t h2_gizclaw_conversation_cancel_internal(
     h2_gizclaw_conversation_t *conversation, h2_gizclaw_audio_log_t *log,
     int source);
+/* Admit one complete UTF-8 text input (1..TEXT_MAX_BYTES, no NUL) on an idle
+ * route; the text is copied. The Service worker sends a control BOS and a
+ * TEXT_DONE that ends the input; completion follows through service_poll.
+ * BUSY while any input, Speech or playback owns the route. Only the Session
+ * calls this, with its own lock held; it records, never flushes, logs. */
+h2_pal_result_t h2_gizclaw_conversation_send_text_internal(
+    h2_gizclaw_conversation_t *conversation, h2_gizclaw_str_t text,
+    h2_gizclaw_audio_log_t *log);
 
 /* Session and its Service outlive all admitted RPC calls. */
 h2_pal_result_t
