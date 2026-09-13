@@ -87,7 +87,13 @@ int main(void) {
 #define H2_PAL_ERR_INVALID_ARG -1
 #define H2_PAL_ERR_IO -2
 #define H2_PAL_ERR_NOT_FOUND -8
-static int exists, create_rc, concurrent_create, creates;
+static int exists, create_rc, concurrent_create, creates, traces;
+static int traced_native, traced_lookup;
+static void trace_mkdir(const char *path, int native_result, int lookup_result) {
+    assert(strcmp(path, H2_JIELI_SD_ROOT "dl") == 0);
+    ++traces; traced_native = native_result; traced_lookup = lookup_result;
+}
+static void (*h2_jieli_sd_fs_trace_mkdir)(const char *, int, int) = trace_mkdir;
 static int directory_status(const char *path) {
     assert(strcmp(path, H2_JIELI_SD_ROOT "dl") == 0);
     return exists ? H2_PAL_OK : H2_PAL_ERR_NOT_FOUND;
@@ -104,10 +110,14 @@ static int fmk_dir(const char *root, char *folder, unsigned mode) {
 int main(void) {
     exists = 1; create_rc = -1;
     assert(ensure_directory(H2_JIELI_SD_ROOT "dl") == 0 && creates == 0);
+    assert(traces == 0);
     exists = 0; create_rc = 0;
     assert(ensure_directory(H2_JIELI_SD_ROOT "dl") == 0 && creates == 1);
+    assert(traces == 1 && traced_native == 0 && traced_lookup == 0);
     exists = 0; create_rc = -1;
     assert(ensure_directory(H2_JIELI_SD_ROOT "dl") == H2_PAL_ERR_IO);
+    assert(creates == 2 && traces == 2);
+    assert(traced_native == -1 && traced_lookup == H2_PAL_ERR_NOT_FOUND);
     concurrent_create = 1;
     assert(ensure_directory(H2_JIELI_SD_ROOT "dl") == 0);
     assert(ensure_directory("outside/dl") == H2_PAL_ERR_INVALID_ARG);

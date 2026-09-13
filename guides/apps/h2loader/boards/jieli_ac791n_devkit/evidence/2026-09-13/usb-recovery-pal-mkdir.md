@@ -106,3 +106,10 @@ Filesystem case 13 still returned -4. The last captured App progress was Core
 suite entry; the host monitor subsequently exited with command code -7.
 This does not prove a board crash or a completed Core suite. No new claim of
 self-update, BLE E2E, or overall PAL acceptance is made by this checkpoint.
+
+The hardcoded short-directory/rename probe was then removed from the board
+PAL: it never succeeded on hardware and special-cased the E2E fixture path.
+`ensure_directory()` again issues a single full-path `fmk_dir` and reports
+it through the optional weak `h2_jieli_sd_fs_trace_mkdir` observer without
+changing the return value. Filesystem case 13 remains a known failure until
+the nested-directory `FR_NO_PATH` cause is understood.
