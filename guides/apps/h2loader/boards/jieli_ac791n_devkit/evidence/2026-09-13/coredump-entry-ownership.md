@@ -21,6 +21,13 @@ Validation:
 - Native AC791N builds through both old package aliases succeeded.
 - No diagnostic package was installed in this verification pass.
 
-This completes only the coredump entry separation. The legacy
-`direct_firmware` and its direct peripheral implementation still exist;
-the broader example/diagnostic ownership audit remains incomplete.
+After separating the diagnostics, the obsolete `direct_firmware`, its task
+policy, and its 591-line direct peripheral implementation were removed.
+Repository text search found no external consumer of these labels; the
+package-scoped reverse-dependency query returned only `direct_firmware`
+itself. A repository-wide query was unavailable because the local Android
+SDK repository lacked `core-for-system-modules-jar`, so it is not claimed
+as successful evidence. The maintained PAL Color Bar package remains.
+
+This completes coredump entry separation and retirement of the redundant
+direct Color Bar path, not the broader example/diagnostic ownership audit.

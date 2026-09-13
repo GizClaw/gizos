@@ -44,25 +44,6 @@ jieli_target_task_policy(
     ],
 )
 
-jieli_target_task_policy(
-    name = "direct_color_bar_task_policy",
-    default_policy = "10 4096 128",
-    graph = [":direct_color_bar_launcher"],
-    policies = [
-        "$h2loader/return 10 4096 128",
-        "$h2loader/uartcmd 10 4096 128",
-        "$h2loader/blelink 10 1536 64",
-    ],
-    sdk_policies = [
-        "app_core 15 8192 1024",
-        "sys_event 29 512 0",
-        "systimer 14 256 0",
-        "sys_timer 9 512 128",
-        "dw_update 21 512 32",
-        "#C0btctrler 19 768 384",
-        "#C0btstack 18 1536 384",
-    ],
-)
 
 alias(
     name = "coredump_smoke",
@@ -385,19 +366,6 @@ firmware_native_component(
     target_compatible_with = AC791N_COMPATIBILITY,
 )
 
-firmware_native_component(
-    name = "direct_color_bar_launcher",
-    srcs = ["src/color_bar.c"],
-    component_name = "jieli_ac791n_devkit_direct_color_bar_launcher",
-    tags = ["manual"],
-    target_compatible_with = AC791N_COMPATIBILITY,
-    deps = [
-        "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:app_support",
-        "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:h2loader_app_client",
-        "//boards/ac791n_chip/ac791n",
-        "//boards/jieli_ac791n_devkit/ac791n",
-    ],
-)
 
 h2loader_jieli_firmware(
     name = "firmware",
@@ -411,17 +379,6 @@ h2loader_jieli_firmware(
     task_policy = ":color_bar_task_policy",
 )
 
-h2loader_jieli_firmware(
-    name = "direct_firmware",
-    board = "jieli_ac791n_devkit",
-    graph = [
-        ":direct_color_bar_launcher",
-        "//boards/jieli_ac791n_devkit/ac791n",
-    ],
-    image = "direct-color-bar",
-    target = "wl82",
-    task_policy = ":direct_color_bar_task_policy",
-)
 
 alias(
     name = "coredump_smoke_firmware",
