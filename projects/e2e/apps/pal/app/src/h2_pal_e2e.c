@@ -821,6 +821,26 @@ static h2_pal_result_t h2_pal_e2e_host_filesystem(
        memcmp(buffer, payload, sizeof(payload)) != 0)) {
     result = H2_PAL_ERR_INVALID_STATE;
   }
+  if (result == H2_PAL_OK) {
+    transferred = sizeof(buffer);
+    result = (h2_pal_result_t)h2_pal_fs_read(
+        runtime->fs, file, buffer, sizeof(buffer), &transferred);
+    if (result == H2_PAL_OK && transferred != 0u) {
+      result = H2_PAL_ERR_INVALID_STATE;
+    }
+  }
+  if (result == H2_PAL_OK) {
+    result = (h2_pal_result_t)h2_pal_fs_seek(runtime->fs, file, 3u);
+  }
+  if (result == H2_PAL_OK) {
+    transferred = 0u;
+    result = (h2_pal_result_t)h2_pal_fs_read(
+        runtime->fs, file, buffer, 4u, &transferred);
+    if (result == H2_PAL_OK &&
+        (transferred != 4u || memcmp(buffer, payload + 3u, 4u) != 0)) {
+      result = H2_PAL_ERR_INVALID_STATE;
+    }
+  }
   if (file != NULL) {
     h2_pal_result_t cleanup = (h2_pal_result_t)h2_pal_fs_close(
         runtime->fs, file);

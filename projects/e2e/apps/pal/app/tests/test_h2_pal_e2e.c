@@ -579,6 +579,9 @@ typedef struct fs_fixture {
   struct h2_pal_fs_file file;
   char bytes[64];
   size_t length;
+  size_t position;
+  int ignored_seek;
+  int repeats_at_eof;
   int bad_type;
   int bad_size;
   int bad_directory;
@@ -598,6 +601,7 @@ static int fs_test_open(void *user, const char *path,
                         h2_pal_fs_open_mode_t mode, h2_pal_fs_file_t **out) {
   fs_fixture_t *f = user;
   (void)path; (void)mode;
+  f->position = 0u;
   *out = &f->file;
   return H2_PAL_OK;
 }
@@ -613,9 +617,19 @@ static int fs_test_write(void *user, h2_pal_fs_file_t *file,
 static int fs_test_read(void *user, h2_pal_fs_file_t *file,
                         void *data, size_t len, size_t *read_count) {
   fs_fixture_t *f = user;
-  assert(file == &f->file && len == f->length);
-  memcpy(data, f->bytes, len);
-  *read_count = len;
+  assert(file == &f->file && f->position <= f->length);
+  if (f->repeats_at_eof && f->position == f->length) f->position = 0u;
+  size_t count = f->length - f->position;
+  if (count > len) count = len;
+  memcpy(data, f->bytes + f->position, count);
+  f->position += count;
+  *read_count = count;
+  return H2_PAL_OK;
+}
+static int fs_test_seek(void *user, h2_pal_fs_file_t *file, uint64_t position) {
+  fs_fixture_t *f = user;
+  assert(file == &f->file && position <= f->length);
+  if (!f->ignored_seek) f->position = (size_t)position;
   return H2_PAL_OK;
 }
 static int fs_test_close(void *user, h2_pal_fs_file_t *file) {
@@ -642,13 +656,15 @@ static int fs_test_remove(void *user, const char *path) {
 static void test_filesystem_stat_contract(void) {
   const h2_pal_fs_vtable_t v = {.mkdir=fs_test_mkdir, .open=fs_test_open,
       .write=fs_test_write, .read=fs_test_read, .close=fs_test_close,
-      .stat=fs_test_stat, .remove=fs_test_remove};
-  for (int scenario = 0; scenario < 5; ++scenario) {
+      .stat=fs_test_stat, .remove=fs_test_remove, .seek=fs_test_seek};
+  for (int scenario = 0; scenario < 7; ++scenario) {
     fs_fixture_t f = {0};
     f.bad_type = scenario == 1;
     f.bad_size = scenario == 2;
     f.bad_directory = scenario == 3;
     f.accepts_file_as_directory = scenario == 4;
+    f.ignored_seek = scenario == 5;
+    f.repeats_at_eof = scenario == 6;
     const h2_pal_fs_api_t fs = {.user=&f, .vtable=&v};
     h2_runtime_t runtime = {.fs=&fs};
     const h2_pal_e2e_config_t config = {.suite_mask=H2_PAL_E2E_SUITE_FILESYSTEM};
