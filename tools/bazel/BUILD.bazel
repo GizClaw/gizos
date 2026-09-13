@@ -681,7 +681,14 @@ py_test(
 py_test(
     name = "jieli_ble_session_test",
     srcs = ["tests/test_jieli_ble_session.py"],
-    data = ["//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:src/jieli_app_ble.c"],
+    data = [
+        "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:src/jieli_app_ble.c",
+        "//native_component_src/jieli/wl82/h2_pal_core:src/h2_jieli_wl82_sdk_port.c",
+        "//projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit:BUILD.bazel",
+        "//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:BUILD.bazel",
+        "//projects/example/targets/h2loader_tar_zlib/touch/jieli_ac791n_devkit:BUILD.bazel",
+        "//projects/example/targets/h2loader_tar_zlib/button/jieli_ac791n_devkit:BUILD.bazel",
+    ],
     legacy_create_init = 0,
     main = "tests/test_jieli_ble_session.py",
 )

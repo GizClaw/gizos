@@ -27,7 +27,8 @@ jieli_target_task_policy(
         "$lvgl/g2ddraw 10 4096 128",
         "$lvgl/pxpdraw 10 4096 128",
         "$lvgl/nemagfx 10 4096 128",
-        "$bleikcp/server 10 1536 128",
+        # The App command loop runs synchronously on the session task.
+        "$bleikcp/server 10 12288 128",
         "$bleikcp/kcp 10 1536 128",
         "$h2loader/blelink 10 1536 64",
         "$h2loader/return 10 4096 128",

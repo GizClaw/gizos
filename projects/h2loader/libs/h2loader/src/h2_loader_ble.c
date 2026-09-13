@@ -789,8 +789,6 @@ int h2_loader_ble_service_open(
     stream_config.no_congestion_control = 0;
     stream_config.output_retry_count = 40u;
     stream_config.output_retry_delay_ms = 2u;
-    /* Session handlers execute synchronous Loader/App command processing. */
-    stream_config.server_task_options.min_stack_size = 49152u;
     stream_config.on_event = h2_loader_ble_stream_event;
     stream_config.user = &service->config;
     rc = h2_bleikcp_server_open(

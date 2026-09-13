@@ -19,7 +19,8 @@ jieli_target_task_policy(
         "h2color/runtime 10 2048 128",
         "h2loader/appcmd 10 12288 128",
         "h2loader/blecmd 10 12288 128",
-        "$bleikcp/server 10 1536 128",
+        # The App command loop runs synchronously on the session task.
+        "$bleikcp/server 10 12288 128",
         "$bleikcp/kcp 10 1536 128",
         "$h2loader/blelink 10 1536 64",
         "$h2loader/return 10 4096 128",
