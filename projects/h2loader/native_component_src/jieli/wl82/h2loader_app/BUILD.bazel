@@ -80,6 +80,9 @@ firmware_native_component(
 firmware_native_component(
     name = "app_support",
     srcs = ["src/jieli_h2loader_app_support.c"],
+    # firmware_native_component exports each hdrs file's parent directory as
+    # an include root, including for transitive consumers. No explicit
+    # include_roots or dependency on this component's src/ is needed.
     hdrs = ["include/jieli_h2loader_app_support.h"],
     component_name = "jieli_ac791n_devkit_app_support",
     tags = ["manual"],
@@ -101,7 +104,7 @@ firmware_native_component(
     srcs = [
         "src/jieli_app_iostreamikcp.c",
     ],
-    hdrs = ["include/jieli_app_iostreamikcp.h"],
+    hdrs = ["include/jieli_app_iostreamikcp.h"],  # Exports include/ as above.
     component_name = "jieli_ac791n_devkit_app_transport",
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,

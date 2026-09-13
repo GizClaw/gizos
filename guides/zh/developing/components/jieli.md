@@ -122,6 +122,8 @@ App 的 H2Loader command、UART/USB transport 和 BLE service composition 由
 `projects/h2loader/native_component_src/jieli/wl82/h2loader_app` 拥有，公开头文件
 位于该组件的 `include/`。Display launcher 和 PAL BLE smoke 直接依赖这些组件，
 不通过示例 artifact entry 共享 transport 源码；具体 task policy 仍由各 target 拥有。
+`firmware_native_component` 从每个 `hdrs` 文件自动收集其父目录作为 include root，
+并随组件依赖传播，因此消费者不应额外引用 provider 的 `src/` 目录。
 此归属不改变共用 Loader 协议、board layout、日志出口或镜像启动行为。
 
 ## AC791N validation commands
