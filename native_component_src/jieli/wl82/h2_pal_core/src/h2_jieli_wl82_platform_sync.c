@@ -1,8 +1,10 @@
 #include "h2_jieli_wl82_platform_core.h"
 #include "h2_jieli_wl82_sdk_port.h"
 #include "h2_jieli_wl82_atomic.h"
+#include "h2_jieli_wl82_allocator.h"
 
 struct h2_pal_mutex {
+    const h2_pal_mem_api_t *allocator;
     h2_jieli_sdk_mutex_t *native;
     /* Recursion checks run before taking native; publish ownership atomically. */
     const void *owner;
@@ -11,6 +13,7 @@ struct h2_pal_mutex {
 };
 
 struct h2_pal_semaphore {
+    const h2_pal_mem_api_t *allocator;
     h2_jieli_sdk_sem_t *native;
 };
 
@@ -21,6 +24,7 @@ typedef struct h2_jieli_cond_waiter {
 } h2_jieli_cond_waiter_t;
 
 struct h2_pal_cond {
+    const h2_pal_mem_api_t *allocator;
     volatile uint32_t locked;
     h2_jieli_cond_waiter_t *head;
     h2_jieli_cond_waiter_t *tail;
@@ -63,13 +67,14 @@ static h2_pal_result_t sync_create_mutex(
         return H2_PAL_ERR_INVALID_ARG;
     }
     *out_mutex = NULL;
-    mutex = (h2_pal_mutex_t *)h2_jieli_sdk_malloc(sizeof(*mutex));
+    mutex = (h2_pal_mutex_t *)h2_jieli_core_alloc(config->allocator, sizeof(*mutex));
     if (mutex == NULL) {
         return H2_PAL_ERR_NO_MEMORY;
     }
+    mutex->allocator = config->allocator;
     mutex->native = h2_jieli_sdk_mutex_create();
     if (mutex->native == NULL) {
-        h2_jieli_sdk_free(mutex);
+        h2_jieli_core_free(mutex->allocator, mutex);
         return H2_PAL_ERR_NO_MEMORY;
     }
     h2_jieli_atomic_store_ptr(&mutex->owner, NULL);
@@ -87,7 +92,7 @@ static h2_pal_result_t sync_destroy_mutex(void *user, h2_pal_mutex_t *mutex)
         return H2_PAL_ERR_INVALID_ARG;
     }
     h2_jieli_sdk_mutex_destroy(mutex->native);
-    h2_jieli_sdk_free(mutex);
+    h2_jieli_core_free(mutex->allocator, mutex);
     return H2_PAL_OK;
 }
 
@@ -167,13 +172,14 @@ static h2_pal_result_t sync_create_semaphore(
         return H2_PAL_ERR_INVALID_ARG;
     }
     *out_semaphore = NULL;
-    semaphore = (h2_pal_semaphore_t *)h2_jieli_sdk_malloc(sizeof(*semaphore));
+    semaphore = (h2_pal_semaphore_t *)h2_jieli_core_alloc(config->allocator, sizeof(*semaphore));
     if (semaphore == NULL) {
         return H2_PAL_ERR_NO_MEMORY;
     }
+    semaphore->allocator = config->allocator;
     semaphore->native = h2_jieli_sdk_sem_create_bounded(config->initial_count, config->max_count);
     if (semaphore->native == NULL) {
-        h2_jieli_sdk_free(semaphore);
+        h2_jieli_core_free(semaphore->allocator, semaphore);
         return H2_PAL_ERR_NO_MEMORY;
     }
     *out_semaphore = semaphore;
@@ -187,7 +193,7 @@ static h2_pal_result_t sync_destroy_semaphore(void *user, h2_pal_semaphore_t *se
         return H2_PAL_ERR_INVALID_ARG;
     }
     h2_jieli_sdk_sem_destroy(semaphore->native);
-    h2_jieli_sdk_free(semaphore);
+    h2_jieli_core_free(semaphore->allocator, semaphore);
     return H2_PAL_OK;
 }
 
@@ -223,8 +229,9 @@ static h2_pal_result_t sync_create_cond(
     (void)user;
     if (config == NULL || out_cond == NULL) return H2_PAL_ERR_INVALID_ARG;
     *out_cond = NULL;
-    h2_pal_cond_t *cond = h2_jieli_sdk_malloc(sizeof(*cond));
+    h2_pal_cond_t *cond = h2_jieli_core_alloc(config->allocator, sizeof(*cond));
     if (cond == NULL) return H2_PAL_ERR_NO_MEMORY;
+    cond->allocator = config->allocator;
     cond->locked = 0u;
     cond->head = NULL;
     cond->tail = NULL;
@@ -242,7 +249,7 @@ static h2_pal_result_t sync_destroy_cond(void *user, h2_pal_cond_t *cond)
         return H2_PAL_ERR_INVALID_STATE;
     }
     cond_unlock(cond);
-    h2_jieli_sdk_free(cond);
+    h2_jieli_core_free(cond->allocator, cond);
     return H2_PAL_OK;
 }
 

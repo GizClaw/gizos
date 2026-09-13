@@ -711,3 +711,14 @@ py_test(
     legacy_create_init = 0,
     main = "tests/test_jieli_dynamic_task.py",
 )
+
+py_test(
+    name = "jieli_allocator_test",
+    srcs = ["tests/test_jieli_allocator.py"],
+    data = [
+        "//libs/pal:pal_header_files",
+        "//native_component_src/jieli/wl82/h2_pal_core:allocator_fixture_sources",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_allocator.py",
+)
