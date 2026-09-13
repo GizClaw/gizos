@@ -212,16 +212,14 @@ static int ensure_directory(const char *path) {
       strlen(path + root_len) + 1u > sizeof(folder)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  if (flen_dir(path) >= 0) return H2_PAL_OK;
+  if (fdir_exist(path) == 1) return H2_PAL_OK;
   strcpy(folder, path + root_len - 1u);
-  if (fmk_dir(H2_JIELI_SD_ROOT, folder, 0) == 0 || flen_dir(path) >= 0) {
+  if (fmk_dir(H2_JIELI_SD_ROOT, folder, 0) == 0 || fdir_exist(path) == 1) {
     return H2_PAL_OK;
   }
-  /* JLFAT reports an empty existing directory as a negative flen_dir() and
-   * fmk_dir() then reports "already exists".  Directory creation is only a
-   * preparatory, idempotent operation; the following file open is the
-   * authoritative writable check. */
-  return H2_PAL_OK;
+  /* flen_dir() cannot reliably distinguish an empty directory from failure.
+   * Only an actual existing directory makes a failed create idempotent. */
+  return H2_PAL_ERR_IO;
 }
 
 static int fs_mkdir(void *user, const char *path) {
