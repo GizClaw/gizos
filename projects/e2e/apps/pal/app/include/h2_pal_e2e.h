@@ -35,6 +35,7 @@ typedef enum h2_pal_e2e_case_id {
   H2_PAL_E2E_CASE_QUEUE,
   H2_PAL_E2E_CASE_MUTEX,
   H2_PAL_E2E_CASE_SEMAPHORE,
+  /** Reserved: retired test incorrectly required every filesystem to be unsupported. */
   H2_PAL_E2E_CASE_UNSUPPORTED = 8,
   H2_PAL_E2E_CASE_MQTT,
   H2_PAL_E2E_CASE_CONDITION,

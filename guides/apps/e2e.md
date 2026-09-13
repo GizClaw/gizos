@@ -56,7 +56,9 @@ Public MQTT broker 是 PAL 中唯一个 manual Bazel test，通过独立入口�
 make bazel-test-mqtt_public_broker_smoke
 ```
 
-Browser launcher 位于 `projects/e2e/targets/pkg_tar/pal`，只选择不需要外部服务的 `core` suite。它在一个 Web task 中运行 portable registry，逐条输出 bounded ledger；unsupported case 通过 normal wrapper 验证 canonical provider，不把缺失能力算作平台成功实现。
+Browser launcher 位于 `projects/e2e/targets/pkg_tar/pal`，只选择不需要外部服务的 `core` suite。它在一个 Web task 中运行 portable registry，逐条输出 bounded ledger。Core 不再假设 Filesystem 必须返回 UNSUPPORTED；缺失能力不能算作平台成功实现。
+
+JieLi AC791N 的 `projects/e2e/targets/h2loader_tar_zlib/pal/jieli_ac791n_devkit` 复用公共 Core 与独立 Wi-Fi suite，通过共享 H2Loader layout 和 UART1 运行。Wi-Fi 当前覆盖断开后的 STA/Netif 状态一致性，不代表扫描、连接、AP 和 Runtime Event 已验收；测试 App 保持未确认，以便异常复位返回 Loader。
 
 ## H2Loader Serial
 

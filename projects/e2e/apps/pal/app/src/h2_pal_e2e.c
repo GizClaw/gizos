@@ -652,13 +652,6 @@ static h2_pal_result_t h2_pal_e2e_core_concurrency(
   return result;
 }
 
-static h2_pal_result_t h2_pal_e2e_core_unsupported(h2_runtime_t *runtime) {
-  return (h2_pal_result_t)h2_pal_fs_mkdir(runtime->fs, "/unsupported") ==
-                 H2_PAL_ERR_UNSUPPORTED
-             ? H2_PAL_OK
-             : H2_PAL_ERR_INVALID_STATE;
-}
-
 static void h2_pal_e2e_run_core(h2_runtime_t *runtime,
                                 h2_pal_e2e_result_t *result) {
   h2_pal_e2e_record(result, H2_PAL_E2E_CASE_TIME,
@@ -677,8 +670,6 @@ static void h2_pal_e2e_run_core(h2_runtime_t *runtime,
                     h2_pal_e2e_core_condition(runtime, result));
   h2_pal_e2e_record(result, H2_PAL_E2E_CASE_CONCURRENCY,
                     h2_pal_e2e_core_concurrency(runtime, result));
-  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_UNSUPPORTED,
-                    h2_pal_e2e_core_unsupported(runtime));
 }
 
 static h2_pal_result_t h2_pal_e2e_host_memory(h2_runtime_t *runtime) {

@@ -50,9 +50,24 @@ static h2_pal_result_t status_for_wifi(h2_pal_netif_status_t *out_status) {
   out_status->ref = wifi_ref();
   out_status->kind = out_status->ref.kind;
   out_status->mtu = 1500u;
-  if (wifi_get_mac(out_status->mac) == 0) out_status->mac_valid = 1u;
   if (!wifi_is_on()) return H2_PAL_OK;
-  out_status->flags = H2_PAL_NETIF_FLAG_UP | H2_PAL_NETIF_FLAG_LINK_UP;
+  /* The SDK waits for radio initialization inside wifi_get_mac(). A status
+   * query for an offline interface must not enter that blocking path. */
+  if (wifi_get_mac(out_status->mac) == 0) out_status->mac_valid = 1u;
+  out_status->flags = H2_PAL_NETIF_FLAG_UP;
+  if (out_status->kind == H2_PAL_NETIF_KIND_WIFI_STA) {
+    const enum wifi_sta_connect_state state = wifi_get_sta_connect_state();
+    if (state != WIFI_STA_CONNECT_SUCC &&
+        state != WIFI_STA_NETWORK_STACK_DHCP_SUCC &&
+        state != WIFI_STA_NETWORK_STACK_DHCP_TIMEOUT) {
+      return H2_PAL_OK;
+    }
+    out_status->flags |= H2_PAL_NETIF_FLAG_LINK_UP;
+    /* lan_setting survives disconnects; it is not proof of a current lease. */
+    if (state != WIFI_STA_NETWORK_STACK_DHCP_SUCC) return H2_PAL_OK;
+  } else {
+    out_status->flags |= H2_PAL_NETIF_FLAG_LINK_UP;
+  }
   struct lan_setting *lan = net_get_lan_info(WIFI_NETIF);
   if (lan != NULL) {
     const uint8_t ip[4] = {

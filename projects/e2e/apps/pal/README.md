@@ -2,8 +2,10 @@
 
 This headless portable App runs provider-neutral PAL integration cases through
 an initialized Runtime. The `core` suite validates Time, Timer, Task, Queue,
-Mutex, Semaphore, Condition wait/signal, blocking wake plus timeout wait-u32,
-and a canonical unsupported wrapper. Its provider-neutral concurrency case
+Mutex, Semaphore, Condition wait/signal, and blocking wake plus timeout wait-u32.
+It does not assume a real filesystem rejects `mkdir`; that old unsupported
+case was removed rather than treating a supported filesystem as a failure.
+Its provider-neutral concurrency case
 runs three producers and three consumers through a bounded queue, starts them
 through a condition-variable barrier, contends on one mutex, and proves that
 all 96 uniquely identified messages are produced and consumed exactly once
@@ -28,3 +30,15 @@ Backend- and adapter-local PAL tests remain owned by their target component;
 this App owns only reusable Runtime-level integration flows. Desktop can select
 core and MQTT independently; Browser selects only core and runs it in one
 platform-owned cooperative task.
+
+The standalone `wifi` suite disconnects STA, queries STA and Netif, and rejects
+stale connection/IP/default-route flags. It requires a non-Wi-Fi control link,
+leaves STA disconnected, and never changes saved credentials. This currently
+does **not** cover scan, connect, AP clients, reconnect, or Runtime Wi-Fi events.
+
+The AC791N launcher is
+`//projects/e2e/targets/h2loader_tar_zlib/pal/jieli_ac791n_devkit:package`.
+It uses the shared H2Loader board layout and Bazel task policy, runs Core then
+Wi-Fi, and prints per-case `H2_PAL_E2E` results plus a repeating summary over
+UART1. It deliberately leaves the diagnostic App unconfirmed so reset recovers
+to Loader; this is not an App confirmation or full Loader lifecycle test.
