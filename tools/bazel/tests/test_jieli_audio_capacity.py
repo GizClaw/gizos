@@ -17,7 +17,6 @@ class AudioCapacityTest(unittest.TestCase):
 #include <stdint.h>
 #include "h2/pal/hal/h2_pal_audio.h"
 enum { H2_AUDIO_SAMPLE_RATE=16000, H2_AUDIO_FRAME_BYTES=640, H2_AUDIO_TRACK_QUEUE_FRAMES=4 };
-static struct { int speaker_started; } audio_state={1};
 '''
         main = r'''
 int main(void) {
