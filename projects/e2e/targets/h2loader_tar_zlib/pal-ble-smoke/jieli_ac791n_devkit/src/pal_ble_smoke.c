@@ -16,7 +16,6 @@
 
 #include "system/task.h"
 #include "system/timer.h"
-#include "update/dual_bank_updata_api.h"
 
 static const uint8_t service_uuid_bytes[16] = {
     0x1d, 0x72, 0xa1, 0x6b, 0x3a, 0xaf, 0x0b, 0xaa,
@@ -78,7 +77,9 @@ static int reboot(void *user, uint32_t reason) {
   printf("H2_JIELI_PAL_BLE_REBOOT reason=%u next=%u\r\n", reason, next_partition);
   os_time_dly(10u);
   if (next_partition != H2_JIELI_PARTITION_LOADER) return H2_PAL_ERR_UNSUPPORTED;
-  if (flash_update_clr_boot_info(CLEAR_APP_RUNNING_BANK) != 0) return H2_PAL_ERR_IO;
+  int result = h2_jieli_app_loader_prepare_reboot(
+      &loader_client.config, next_partition);
+  if (result != H2_PAL_OK) return result;
   system_reset();
   return H2_PAL_OK;
 }
@@ -115,7 +116,7 @@ static void heartbeat_task(void *user) {
 
 static void return_to_loader(void *user) {
   (void)user;
-  (void)flash_update_clr_boot_info(CLEAR_APP_RUNNING_BANK);
+  /* Unconfirmed diagnostics return through Loader's trial reconciliation. */
   system_reset();
 }
 
@@ -123,7 +124,6 @@ int h2_jieli_ac791n_devkit_early_app_boot(void) {
   uint16_t timer =
       sys_timeout_add_to_task("sys_timer", NULL, return_to_loader, 300000u);
   if (timer == 0u) {
-    (void)flash_update_clr_boot_info(CLEAR_APP_RUNNING_BANK);
     system_reset();
     return -1;
   }
