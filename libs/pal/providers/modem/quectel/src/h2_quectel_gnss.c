@@ -269,13 +269,15 @@ static h2_pal_result_t parse_qlbs_line(
         return H2_PAL_ERR_FORMAT;
     }
 
+    /* QuecLocator reports longitude before latitude:
+     * "+QLBS: 0,<longitude>,<latitude>[,<accuracy|time>]" (EC25 on device). */
     int32_t latitude_e7 = 0;
     int32_t longitude_e7 = 0;
-    cursor = parse_degrees_e7(end + 1, QUECTEL_CELL_LOCATE_LAT_LIMIT_E7, &latitude_e7);
+    cursor = parse_degrees_e7(end + 1, QUECTEL_CELL_LOCATE_LON_LIMIT_E7, &longitude_e7);
     if (cursor == NULL || *cursor != ',') {
         return H2_PAL_ERR_FORMAT;
     }
-    cursor = parse_degrees_e7(cursor + 1, QUECTEL_CELL_LOCATE_LON_LIMIT_E7, &longitude_e7);
+    cursor = parse_degrees_e7(cursor + 1, QUECTEL_CELL_LOCATE_LAT_LIMIT_E7, &latitude_e7);
     if (cursor == NULL || (*cursor != ',' && *cursor != '\0')) {
         return H2_PAL_ERR_FORMAT;
     }
