@@ -2236,15 +2236,25 @@ static int display_draw_mesh(lua_State *state) {
   if (!mesh->positions_valid || mesh->grid != grid ||
       memcmp(mesh->matrix, matrix, sizeof(matrix)) != 0) {
     const h2_lua_display_vertex_t *vertices = mesh_vertices(mesh);
-    /* Validate the complete transform before changing cache or pixels. */
-    for (size_t i = 0; i < mesh->vertex_count; ++i) {
-      h2_lua_display_vertex_t p = mesh_transform(vertices[i], matrix, (int)grid);
-      if (!isfinite(p.x) || !isfinite(p.y) || fabs(p.x) > 16000000 ||
-          fabs(p.y) > 16000000)
-        return luaL_error(state, "transformed mesh coordinate out of range");
+    if (grid == 0 && matrix[0] == 1 && matrix[1] == 0 && matrix[2] == 0 &&
+        matrix[3] == 1 && matrix[4] == 0 && matrix[5] == 0) {
+      /* Creation/update already checked every input as finite and within
+       * +/-1000000, inside the derived-coordinate bound. Exact identity needs
+       * neither software-double arithmetic nor another validation pass.
+       * Signed zeros are raster-equivalent; all other transforms stay below. */
+      if (mesh->vertex_count != 0u)
+        memcpy(positions, vertices, mesh->vertex_count * sizeof(*positions));
+    } else {
+      /* Validate the complete transform before changing cache or pixels. */
+      for (size_t i = 0; i < mesh->vertex_count; ++i) {
+        h2_lua_display_vertex_t p = mesh_transform(vertices[i], matrix, (int)grid);
+        if (!isfinite(p.x) || !isfinite(p.y) || fabs(p.x) > 16000000 ||
+            fabs(p.y) > 16000000)
+          return luaL_error(state, "transformed mesh coordinate out of range");
+      }
+      for (size_t i = 0; i < mesh->vertex_count; ++i)
+        positions[i] = mesh_transform(vertices[i], matrix, (int)grid);
     }
-    for (size_t i = 0; i < mesh->vertex_count; ++i)
-      positions[i] = mesh_transform(vertices[i], matrix, (int)grid);
     memcpy(mesh->matrix, matrix, sizeof(matrix));
     mesh->grid = (int)grid;
     mesh->positions_valid = 1;

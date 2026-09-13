@@ -1503,6 +1503,63 @@ static void test_display_strokes(void) {
   h2_runtime_deinit(runtime);
 }
 
+static void test_display_mesh_identity(void) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_lua_host_t *host = create_unstarted_host_with_scheduler(runtime,1000,0,5000,8192);
+  assert(h2_lua_register_module(host,"mesh_test",test_mesh_open,NULL) == H2_PAL_OK);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  /* Reference positions evaluate the original binary64 expression in Lua.
+   * Compare the complete framebuffer, not a few selected sample pixels. */
+  static const uint8_t pixels[] =
+      "local d=require('display');local m=d.compile_mesh({},{},6,2);"
+      "local ref=d.compile_mesh({},{},6,2);local p={{0,1,4,'red'},{1,5,2,'blue'}};"
+      "local matrices={{1.,0.,0.,1.,0.,0.},{1.,-0.,-0.,1.,-0.,-0.},"
+      "{1.+2^-52,0.,0.,1.,0.,0.},{1.-2^-53,0.,0.,1.,0.,0.},"
+      "{1.,0.,2^-52,1.,0.,0.},{1.,2^-52,0.,1.,0.,0.},"
+      "{1.,0.,0.,1.,2^-52,0.},{1.,0.,0.,1.,0.,2^-52},"
+      "{-1.,0.,0.,1.,6.,0.},{1.,0.,0.,1.,0.,0.}};"
+      "for frame=1,32 do local f=(frame%4)*.25;"
+      "local v={{-.5+f,1.5},{6.5-f,-.5},{7.5,5.5-f},{1.5,7.5},"
+      "{-1.+f,7.-f},{8.-f,0.+f}};"
+      "if frame%8==0 then v[1]={-0.,-0.};v[5]={-0.,2^-1074};"
+      "v[6]={7.,-2^-1074};end;d.update_mesh(m,v,p);"
+      "for k,a in ipairs(matrices) do local grid=k==9 and 2 or 0;local rv={};"
+      "for i,vv in ipairs(v) do local x=(a[1]*vv[1]+a[3]*vv[2])+a[5];"
+      "local y=(a[2]*vv[1]+a[4]*vv[2])+a[6];"
+      "if grid~=0 then x=math.floor(x/grid+.5)*grid;y=math.floor(y/grid+.5)*grid end;"
+      "rv[i]={x,y};end;d.update_mesh(ref,rv,p);"
+      "local opts={offset_x=f-.5,left=frame%2,right=8-frame%3,"
+      "top=frame%3,bottom=8-frame%2,color=frame%2==0 and 'white' or nil};"
+      "d.clear('black');d.draw_mesh(ref,opts);d.present({retained=true});"
+      "opts.matrix=a;opts.grid=grid;"
+      "for pass=1,3 do opts.cache=pass>1;d.clear('black');d.draw_mesh(m,opts);"
+      "assert(d.present()==0,'identity pixels '..frame..'/'..k..'/'..pass);end;"
+      "end;collectgarbage('collect');end";
+  (void)run_display_script(host,"@mesh-identity-pixels.lua",pixels,sizeof(pixels)-1);
+  static const uint8_t recovery[] =
+      "local d=require('display');local n=require('mesh_test');local m=n.new();"
+      "local v={{1,1},{4,1},{4,4},{1,4},{1000000,-1000000},{-0.,0.}};"
+      "local p={{0,1,4,'red'}};d.update_mesh(m,v,p);"
+      "for _,opts in ipairs({{cache=true},{cache=true,matrix={-1,0,0,1,6,0}}}) do "
+      "d.clear('black');d.draw_mesh(m,opts);d.present({retained=true});"
+      /* A late, unused vertex fails after earlier vertices were transformed. */
+      "assert(not pcall(d.draw_mesh,m,{cache=true,matrix={32,0,0,1,0,0}}));"
+      "assert(d.present()==0);d.clear('black');d.draw_mesh(m,opts);"
+      "assert(d.present()==0);n.update(m,0);d.clear('black');d.draw_mesh(m,opts);"
+      "assert(d.present()==0);end;"
+      "local ref=d.compile_mesh({{1,6},{6,6}},{{1,1,2,'blue'}});"
+      "d.clear('black');d.draw_mesh(ref);d.present();n.update(m,1);"
+      "for i=1,3 do d.clear('black');d.draw_mesh(m,{matrix={1,0,0,1,0,0},"
+      "grid=0,cache=true});assert(d.present()==0);end;"
+      "n.update(m,2);d.clear('black');d.present();d.draw_mesh(m,{cache=true});"
+      "assert(d.present()==0);d.draw_mesh(d.compile_mesh({},{}));"
+      "assert(d.present()==0);collectgarbage('collect');d.deinit();"
+      "assert(not pcall(d.draw_mesh,m,{matrix={1,0,0,1,0,0},cache=true}))";
+  (void)run_display_script(host,"@mesh-identity-recovery.lua",recovery,sizeof(recovery)-1);
+  h2_lua_host_destroy(host);
+  h2_runtime_deinit(runtime);
+}
+
 static void test_display_mesh_cache(void) {
   h2_runtime_t *runtime = create_runtime();
   h2_lua_host_t *host = create_unstarted_host_with_scheduler(runtime,1000,0,5000,8192);
@@ -1553,6 +1610,7 @@ static void test_display_mesh_cache(void) {
 }
 
 int main(void) {
+  test_display_mesh_identity();
   test_display_mesh_cache();
   test_display_strokes();
   test_display_regions();
