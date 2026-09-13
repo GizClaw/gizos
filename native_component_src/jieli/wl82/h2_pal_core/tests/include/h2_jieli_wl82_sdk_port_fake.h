@@ -56,6 +56,7 @@ void h2_jieli_fake_fail_next_timer_call(void);
 /** Records the last task creation request. */
 int h2_jieli_fake_task_create_calls(void);
 const char *h2_jieli_fake_last_task_name(void);
+const char *h2_jieli_fake_last_task_policy_name(void);
 size_t h2_jieli_fake_last_task_stack_bytes(void);
 /** Runs the last created task entry synchronously (for trampoline tests). */
 void h2_jieli_fake_run_last_task_once(void);

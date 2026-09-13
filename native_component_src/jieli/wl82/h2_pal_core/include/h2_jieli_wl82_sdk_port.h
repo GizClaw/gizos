@@ -71,10 +71,12 @@ int h2_jieli_sdk_sem_give(h2_jieli_sdk_sem_t *sem);
 /**
  * Creates an SDK task running `entry(ctx)`.
  *
- * Task names must be unique per the SDK; `stack_bytes` is rounded up to the SDK
- * stack unit. Returns 0 on success, negative on error.
+ * policy_name selects the generated target policy (NULL selects its default).
+ * native_name must be unique for each live task. The stack is the greater of
+ * the policy budget and stack_bytes rounded to SDK words. Returns 0 on success,
+ * negative on error.
  */
-int h2_jieli_sdk_task_create(void (*entry)(void *ctx), void *ctx, const char *name, size_t stack_bytes);
+int h2_jieli_sdk_task_create(void (*entry)(void *ctx), void *ctx, const char *policy_name, const char *native_name, size_t stack_bytes);
 /** Deletes a task that has finished and parked, by its unique SDK name. */
 int h2_jieli_sdk_task_delete(const char *name);
 /**

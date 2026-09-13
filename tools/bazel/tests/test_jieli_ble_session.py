@@ -22,31 +22,27 @@ class SessionTest(unittest.TestCase):
 #include <string.h>
 typedef uint32_t u32;
 #define OS_NO_ERR 0
-struct task_info { const char *name; unsigned prio; u32 stack_size; unsigned qsize; };
-const struct task_info h2_jieli_default_task_policy = {"default", 10, 4096, 128};
+struct task_info { const char *name; unsigned prio; u32 stack_size; unsigned qsize; void *tcb_stk_q; };
+const struct task_info h2_jieli_default_task_policy = {"default", 10, 4096, 128, NULL};
+const struct task_info task_info_table[] = {
+ {"$bleikcp/server", 10, POLICY_WORDS, 128, NULL},
+ {NULL, 0, 0, 0, NULL},
+};
 static size_t actual_stack;
-static int task_create(void (*entry)(void *), void *ctx, const char *name) {
- (void)entry;
- (void)ctx;
- assert(strcmp(name, "$bleikcp/server") == 0);
- actual_stack = POLICY_WORDS * 4u;
- return 0;
-}
 static int os_task_create(void (*entry)(void *), void *ctx, unsigned p, u32 s, int q, const char *n) {
  (void)entry;
  (void)ctx;
- (void)p;
- (void)s;
- (void)q;
- (void)n;
- assert(0);
- return -1;
+ assert(p == 10 && q == 128);
+ assert(strcmp(n, "$bleikcp/server/session") == 0);
+ actual_stack = s * 4u;
+ return 0;
 }
 static void entry(void *ctx) { (void)ctx; }
 '''
             main = r'''
 int main(void) {
- assert(h2_jieli_sdk_task_create(entry, NULL, "$bleikcp/server", 49152u) == 0);
+ assert(h2_jieli_sdk_task_create(entry, NULL, "$bleikcp/server", "$bleikcp/server/session", 49152u) == 0);
+ assert(POLICY_WORDS * 4u >= 49152u);
  assert(actual_stack >= 49152u);
  return 0;
 }

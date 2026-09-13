@@ -13,9 +13,7 @@ struct h2_pal_task {
     h2_jieli_sdk_sem_t *done;
     /* Owned by the joining caller; retain completion across delete retries. */
     int completion_observed;
-    /* JieLi task names used by shared transports can exceed 15 characters
-     * (for example, "h2loader/blelink"). Preserve the full registered name
-     * for both create and delete. */
+    /* Unique native identity retained until the joining caller deletes it. */
     char name[32];
 };
 
@@ -70,23 +68,24 @@ static int task_start(
         h2_jieli_sdk_free(task);
         return H2_PAL_ERR_NO_MEMORY;
     }
-    if (name != NULL) {
-        memcpy(task->name, name, strlen(name) + 1u);
-    } else {
-        /* Live task objects have distinct addresses. Keep all address bits,
-         * including on 64-bit host tests, and reserve this namespace above. */
-        static const char hex[] = "0123456789abcdef";
-        uintptr_t identity = (uintptr_t)task;
-        _Static_assert(8u + 2u * sizeof(identity) < sizeof(task->name),
-                       "anonymous task name must fit without truncation");
-        memcpy(task->name, "$h2anon/", 8u);
-        for (size_t i = 0; i < 2u * sizeof(identity); ++i) {
-            task->name[8u + i] = hex[(identity >>
-                (4u * (2u * sizeof(identity) - i - 1u))) & 15u];
-        }
-        task->name[8u + 2u * sizeof(identity)] = '\0';
+    /* PAL names select scheduling policy; they are labels, not unique task
+     * identities. Several live workers may use the same policy. The SDK
+     * deletes by name, so retain a distinct native name for every live object. */
+    const char *label = name != NULL ? name : "$h2anon";
+    static const char hex[] = "0123456789abcdef";
+    const uintptr_t identity = (uintptr_t)task;
+    const size_t digits = 2u * sizeof(identity);
+    const size_t prefix_limit = sizeof(task->name) - digits - 2u;
+    size_t prefix = strlen(label);
+    if (prefix > prefix_limit) prefix = prefix_limit;
+    memcpy(task->name, label, prefix);
+    task->name[prefix++] = '/';
+    for (size_t i = 0; i < digits; ++i) {
+        task->name[prefix + i] = hex[(identity >>
+            (4u * (digits - i - 1u))) & 15u];
     }
-    if (h2_jieli_sdk_task_create(task_trampoline, task, task->name, stack_bytes) != 0) {
+    task->name[prefix + digits] = '\0';
+    if (h2_jieli_sdk_task_create(task_trampoline, task, name, task->name, stack_bytes) != 0) {
         h2_jieli_sdk_sem_destroy(task->done);
         h2_jieli_sdk_free(task);
         return H2_PAL_ERR_TASK;

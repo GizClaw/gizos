@@ -352,7 +352,8 @@ static void test_task_start_and_join(void)
     CHECK(h2_pal_task_start(api, &options, task_entry, &flag, &task) == H2_PAL_OK);
     CHECK(task != NULL);
     CHECK(h2_jieli_fake_task_create_calls() == 1);
-    CHECK(strcmp(h2_jieli_fake_last_task_name(), "pal_e2e") == 0);
+    CHECK(strcmp(h2_jieli_fake_last_task_policy_name(), "pal_e2e") == 0);
+    CHECK(strncmp(h2_jieli_fake_last_task_name(), "pal_e2e/", 8) == 0);
     CHECK(h2_jieli_fake_last_task_stack_bytes() == 8192u);
     /* The deterministic fake reports an unsatisfied wait instead of blocking.
      * A premature join must retain both resources and still allow completion. */

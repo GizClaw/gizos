@@ -18,30 +18,43 @@ class DynamicTaskTest(unittest.TestCase):
 #include <string.h>
 typedef uint32_t u32;
 #define OS_NO_ERR 0
-struct task_info { const char *name; unsigned prio; u32 stack_size; unsigned qsize; };
-const struct task_info h2_jieli_default_task_policy = {"default", 13, 2048, 77};
+struct task_info { const char *name; unsigned prio; u32 stack_size; unsigned qsize; void *tcb_stk_q; };
+const struct task_info h2_jieli_default_task_policy = {"default", 13, 2048, 77, NULL};
+const struct task_info task_info_table[] = {
+ {"registered", 17, 1024, 55, NULL},
+ {"static", 17, 1024, 55, (void *)1},
+ {NULL, 0, 0, 0, NULL},
+};
 static int registered_calls, dynamic_calls, fail_create;
 static u32 words;
-static int task_create(void (*entry)(void *), void *ctx, const char *name) {
-  (void)entry; (void)ctx; assert(!strcmp(name,"registered")); registered_calls++; return 0;
-}
-static int os_task_create(void (*entry)(void *),void *ctx,unsigned priority,u32 stack,int queue,const char *name) {
-  assert(entry && ctx && priority==13 && queue==77 && !strncmp(name,"$h2anon/",8));
-  words=stack; dynamic_calls++; return fail_create;
+static int os_task_create(void (*entry)(void *), void *ctx, unsigned priority, u32 stack, int queue, const char *name) {
+ assert(entry && ctx);
+ if (strncmp(name, "registered/", 11) == 0) {
+  assert(priority == 17 && queue == 55);
+  ++registered_calls;
+ } else {
+  assert(priority == 13 && queue == 77 && !strncmp(name, "$h2anon/", 8));
+  ++dynamic_calls;
+ }
+ words = stack;
+ return fail_create;
 }
 static void entry(void *ctx) { (void)ctx; }
 '''
         main = r'''
 int main(void) {
  int ctx=0;
- assert(h2_jieli_sdk_task_create(entry,&ctx,"registered",4096)==0);
- assert(registered_calls==1 && dynamic_calls==0);
- assert(h2_jieli_sdk_task_create(entry,&ctx,"$h2anon/1",4096)==0 && words==2048);
- assert(h2_jieli_sdk_task_create(entry,&ctx,"$h2anon/2",8193)==0 && words==2049);
- assert(h2_jieli_sdk_task_create(entry,&ctx,"$h2anon/3",SIZE_MAX)==-1);
+ assert(h2_jieli_sdk_task_create(entry,&ctx,"registered","registered/1",4096)==0);
+ assert(registered_calls==1 && dynamic_calls==0 && words==1024);
+ assert(h2_jieli_sdk_task_create(entry,&ctx,"registered","registered/2",8193)==0 && words==2049);
+ assert(h2_jieli_sdk_task_create(entry,&ctx,"missing","missing/1",4096)==-1);
+ assert(h2_jieli_sdk_task_create(entry,&ctx,"static","static/1",4096)==-1);
+ assert(h2_jieli_sdk_task_create(entry,&ctx,NULL,"$h2anon/1",4096)==0 && words==2048);
+ assert(h2_jieli_sdk_task_create(entry,&ctx,NULL,"$h2anon/2",8193)==0 && words==2049);
+ assert(h2_jieli_sdk_task_create(entry,&ctx,NULL,"$h2anon/3",SIZE_MAX)==-1);
  assert(dynamic_calls==2);
  fail_create=1;
- assert(h2_jieli_sdk_task_create(entry,&ctx,"$h2anon/4",4096)==-1);
+ assert(h2_jieli_sdk_task_create(entry,&ctx,NULL,"$h2anon/4",4096)==-1);
 }
 '''
         with tempfile.TemporaryDirectory() as directory:
@@ -51,3 +64,6 @@ int main(void) {
                             str(root / "test.c"), "-o", str(root / "test")],
                            check=True, timeout=60)
             subprocess.run([str(root / "test")], check=True, timeout=10)
+
+if __name__ == "__main__":
+    unittest.main()

@@ -271,28 +271,33 @@ int h2_jieli_sdk_sem_give(h2_jieli_sdk_sem_t *sem)
 extern const struct task_info h2_jieli_default_task_policy
     __attribute__((weak));
 
-int h2_jieli_sdk_task_create(void (*entry)(void *ctx), void *ctx, const char *name, size_t stack_bytes)
+extern const struct task_info task_info_table[];
+
+int h2_jieli_sdk_task_create(void (*entry)(void *ctx), void *ctx,
+                             const char *policy_name, const char *native_name,
+                             size_t stack_bytes)
 {
-    if (entry == NULL || name == NULL) {
+    if (entry == NULL || native_name == NULL || native_name[0] == '\0' ||
+        stack_bytes > UINT32_MAX - 3u) {
         return -1;
     }
-    if (strncmp(name, "$h2anon/", 8u) == 0) {
-        const struct task_info *policy = &h2_jieli_default_task_policy;
-        if (policy == NULL || policy->stack_size == 0u ||
-            stack_bytes > UINT32_MAX - 3u) {
-            return -1;
+    const struct task_info *policy = &h2_jieli_default_task_policy;
+    if (policy_name != NULL) {
+        policy = task_info_table;
+        while (policy->name != NULL && strcmp(policy->name, policy_name) != 0) {
+            ++policy;
         }
-        u32 stack_words = (u32)((stack_bytes + 3u) / 4u);
-        if (stack_words < policy->stack_size) stack_words = policy->stack_size;
-        return os_task_create(entry, ctx, policy->prio, stack_words,
-                              policy->qsize, name) == OS_NO_ERR ? 0 : -1;
+        if (policy->name == NULL) return -1;
     }
-    /* JieLi requires every task to be registered in the target's
-     * task_info_table.  Using os_task_create() here bypassed that policy and
-     * forced every portable task to priority 2, so BT controller/stack tasks
-     * starved both Loader command transports once BLE was enabled. */
-    (void)stack_bytes;
-    return task_create(entry, ctx, name) == OS_NO_ERR ? 0 : -1;
+    if (policy == NULL || policy->stack_size == 0u || policy->tcb_stk_q != NULL) {
+        /* A static native allocation cannot be shared by concurrent instances.
+         * Generated PAL task policies use dynamic storage (tcb_stk_q = NULL). */
+        return -1;
+    }
+    u32 stack_words = (u32)((stack_bytes + 3u) / 4u);
+    if (stack_words < policy->stack_size) stack_words = policy->stack_size;
+    return os_task_create(entry, ctx, policy->prio, stack_words,
+                          policy->qsize, native_name) == OS_NO_ERR ? 0 : -1;
 }
 
 int h2_jieli_sdk_task_delete(const char *name)

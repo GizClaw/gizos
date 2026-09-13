@@ -34,6 +34,7 @@ static fake_timer_t s_timers[H2_JIELI_FAKE_TIMER_CAPACITY];
 static uint16_t s_next_timer_id = 1u;
 static int s_task_create_calls;
 static char s_last_task_name[32];
+static char s_last_task_policy[32];
 static size_t s_last_task_stack_bytes;
 static void (*s_last_task_entry)(void *ctx);
 static void *s_last_task_ctx;
@@ -307,9 +308,11 @@ int h2_jieli_sdk_sem_give(h2_jieli_sdk_sem_t *sem)
     return 0;
 }
 
-int h2_jieli_sdk_task_create(void (*entry)(void *ctx), void *ctx, const char *name, size_t stack_bytes)
+int h2_jieli_sdk_task_create(void (*entry)(void *ctx), void *ctx, const char *policy_name, const char *name, size_t stack_bytes)
 {
     s_task_create_calls++;
+    strncpy(s_last_task_policy, policy_name != NULL ? policy_name : "", sizeof(s_last_task_policy) - 1u);
+    s_last_task_policy[sizeof(s_last_task_policy) - 1u] = '\0';
     if (s_fail_task_create || entry == NULL || name == NULL) {
         return -1;
     }
@@ -471,3 +474,5 @@ size_t h2_jieli_fake_timer_count(void)
     }
     return count;
 }
+
+const char *h2_jieli_fake_last_task_policy_name(void) { return s_last_task_policy; }
