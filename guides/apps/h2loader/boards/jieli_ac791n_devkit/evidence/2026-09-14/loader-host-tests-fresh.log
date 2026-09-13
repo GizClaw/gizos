@@ -1,0 +1,38 @@
+INFO: Invocation ID: 5c603f99-ec99-4a31-b955-f30b466736c5
+INFO: Reading 'startup' options from /Users/idy/GizClaw/gizos/.claude/worktrees/qrcode-library-selection-fab623/.bazelrc: --windows_enable_symlinks
+INFO: Reading 'startup' options from /Users/idy/.bazelrc: --output_user_root=/Volumes/H002-R02T-APFS/Caches/bazel/output-user-root, --max_idle_secs=900
+INFO: Options provided by the client:
+  Inherited 'common' options: --isatty=0 --terminal_columns=80
+INFO: Reading rc options for 'test' from /Users/idy/GizClaw/gizos/.claude/worktrees/qrcode-library-selection-fab623/.bazelrc:
+  Inherited 'common' options: --enable_bzlmod --noenable_workspace --enable_platform_specific_config --announce_rc --repository_cache=~/.cache/bazel/repository
+INFO: Reading rc options for 'test' from /Users/idy/.bazelrc:
+  Inherited 'common' options: --repository_cache=/Volumes/H002-R02T-APFS/Caches/bazel/repository-cache
+INFO: Reading rc options for 'test' from /Users/idy/GizClaw/gizos/.claude/worktrees/qrcode-library-selection-fab623/.bazelrc:
+  Inherited 'build' options: --strip=never --experimental_remote_scrubbing_config=tools/bazel/remote_scrubbing_config.textproto
+INFO: Reading rc options for 'test' from /Users/idy/.bazelrc:
+  Inherited 'build' options: --disk_cache=/Volumes/H002-R02T-APFS/Caches/bazel/disk-cache --experimental_disk_cache_gc_max_size=500G --experimental_disk_cache_gc_max_age=30d
+INFO: Reading rc options for 'test' from /Users/idy/GizClaw/gizos/.claude/worktrees/qrcode-library-selection-fab623/.bazelrc:
+  'test' options: --build_tests_only --test_output=errors --remote_download_outputs=minimal
+INFO: Found applicable config definition build:macos_arm64 in file /Users/idy/GizClaw/gizos/.claude/worktrees/qrcode-library-selection-fab623/.bazelrc: --platforms=//tools/bazel/platforms:macos_arm64 --extra_toolchains=//tools/bazel/platforms:macos_arm64_test_toolchain --action_env=MACOSX_DEPLOYMENT_TARGET=13.0 --macos_minimum_os=13.0
+INFO: Found applicable config definition build:macos in file /Users/idy/GizClaw/gizos/.claude/worktrees/qrcode-library-selection-fab623/.bazelrc: --define=h2_host_os=macos
+Computing main repo mapping:
+Loading:
+Loading: 0 packages loaded
+Analyzing: 4 targets (1 packages loaded, 0 targets configured)
+Analyzing: 4 targets (1 packages loaded, 0 targets configured)
+
+INFO: Analyzed 4 targets (1 packages loaded, 23 targets configured).
+[125 / 129] Testing //tools/bazel:jieli_sd_directory_test; 1s darwin-sandbox ... (4 actions running)
+[127 / 129] 3 / 4 tests; Testing //tools/bazel:jieli_sd_directory_test; 2s darwin-sandbox ... (2 actions running)
+[128 / 129] 3 / 4 tests; Testing //tools/bazel:jieli_sd_directory_test; 3s disk-cache, darwin-sandbox
+INFO: Found 4 test targets...
+INFO: Elapsed time: 3.866s, Critical Path: 3.40s
+INFO: 17 processes: 21 action cache hit, 4 internal, 17 darwin-sandbox.
+INFO: Build completed successfully, 17 total actions
+//projects/e2e/apps/pal/app:pal_e2e_test                                 PASSED in 1.0s
+//projects/e2e/apps/pal/app:pref_e2e_test                                PASSED in 1.5s
+//projects/h2loader/apps/e2e-runner:h2loader_e2e_runner_test             PASSED in 0.6s
+//tools/bazel:jieli_sd_directory_test                                    PASSED in 3.2s
+
+Executed 4 out of 4 tests: 4 tests pass.
+There were tests whose specified size is too big. Use the --test_verbose_timeout_warnings command line option to see which ones these are.

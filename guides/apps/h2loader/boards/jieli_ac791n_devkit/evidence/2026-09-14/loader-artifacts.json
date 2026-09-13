@@ -1,0 +1,26 @@
+{
+  "source": "2a814d324455a9f2995c3b4348e82bb300bb77b7",
+  "artifacts": [
+    {
+      "package": "jieli_ac791n_devkit-color-bar-wl82.update.tar.zlib",
+      "package_bytes": 856298,
+      "package_sha256": "354ad51fe0520caf0dd2508a1cdfe137f18191f3ddee6db6f5b6879a4ab1c2d9",
+      "image_bytes": 868201,
+      "image_sha256": "e42c0e08bd8fc00362ea9d75d0656010b29cbc92d3604c68e2b5e2e3b5941aef"
+    },
+    {
+      "package": "jieli_ac791n_devkit-crash-before-confirm-wl82.update.tar.zlib",
+      "package_bytes": 887289,
+      "package_sha256": "a6fb82b90e15d34c1889b7c8802c7f08957081f1efc71f7f29bdb10c5d83483b",
+      "image_bytes": 899305,
+      "image_sha256": "a75bdeca184ecc78ebdf5126dfc75df3170976dbe4a4fcfddfa7da363c3ac93e"
+    },
+    {
+      "package": "jieli_ac791n_devkit-loader-wl82.update.tar.zlib",
+      "package_bytes": 918365,
+      "package_sha256": "9b84d5fdf10b69c56bace2f3bbb4b9b4594526d0f62789f1d1fd5e1bfd0612ca",
+      "image_bytes": 929917,
+      "image_sha256": "42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd"
+    }
+  ]
+}

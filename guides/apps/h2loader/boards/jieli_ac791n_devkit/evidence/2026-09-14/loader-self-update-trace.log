@@ -1,0 +1,18 @@
+H2_JIELI_BOOT_INFO result=0 base=0x4020 bytes=929981 version=0 logical=1
+H2_JIELI_TRIAL_ROLLBACK app_bootable=0 action=command-mode
+H2_JIELI_STARTUP_EVENT event=1 code=0
+H2_JIELI_UPDATE_WRITE_DONE expected=929917 native=929917 result=0
+H2_JIELI_IMAGE_READ_SHADOW partition=2 offset=0 bytes=65536
+H2_JIELI_IMAGE_READ_SHADOW partition=2 offset=917504 bytes=12413
+H2_JIELI_STARTUP_EVENT event=3 code=0
+H2_JIELI_BOOT_INFO result=-1 base=0x0 bytes=0 version=0 logical=2
+H2_JIELI_LOADER_TRIAL confirmed=1 publish_gate=before-copy-p1
+H2_JIELI_LOADER_HEADER published=1 confirmed=1
+H2_JIELI_STARTUP_EVENT event=2 code=0
+H2_JIELI_IMAGE_READ_SHADOW partition=2 offset=0 bytes=65536
+H2_JIELI_IMAGE_READ_SHADOW partition=2 offset=917504 bytes=12413
+H2_JIELI_UPDATE_WRITE_DONE expected=929917 native=929917 result=0
+H2_JIELI_IMAGE_READ_SHADOW partition=1 offset=0 bytes=65536
+H2_JIELI_IMAGE_READ_SHADOW partition=1 offset=917504 bytes=12413
+H2_JIELI_BOOT_INFO result=0 base=0x4020 bytes=929853 version=2 logical=1
+H2_JIELI_STARTUP_EVENT event=4 code=0

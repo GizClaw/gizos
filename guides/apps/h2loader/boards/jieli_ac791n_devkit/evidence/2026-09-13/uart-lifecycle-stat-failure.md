@@ -49,3 +49,14 @@ cleaning up the fixture files. Both PAL test targets passed locally.
 Host unit-test success does not prove SDK behavior on the board.
 The corrected Loader still requires hardware installation and lifecycle
 retesting; preserve the running candidate until recovery is prepared.
+
+## 2026-09-14 — current-source hardware retest completed
+
+After the separately documented USB recovery, source `2a814d32` completed a
+distinct-image Loader self-update on UID `d879349abc9f`: the formerly failing
+P2 shadow read succeeded, candidate confirmation/header publication preceded
+P1 copy-back, and independent status confirmed matching P1/P2 image checksums,
+empty Stage and last_result=0. The subsequent full UART suite passed 25/25.
+See [package identities, statuses, traces and per-case results](../2026-09-14/loader-uart-lifecycle.md).
+No additional production fix was required. Two long reconnect waits remain
+unexplained; this retest does not add BLE or power-interruption acceptance.

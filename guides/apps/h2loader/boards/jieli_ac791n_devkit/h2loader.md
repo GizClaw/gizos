@@ -81,6 +81,15 @@ Loader 只有 UART 与 BLE capability，不提供 Wi-Fi 与 HTTP；runner 一旦
 
 ## 验收记录
 
+### 2026-09-14：当前源码 Loader 自更新与 UART 回归
+
+源码 `2a814d32`（含 FAT 属性 stat、SDK 单次路径编码和单层 mkdir 修正）
+在 UID `d879349abc9f` 上完成不同镜像 Loader 自更新：P2 确认并发布启动头后，
+读取 SD shadow、回写 P1 并收敛；独立 status 确认 P1/P2 SHA 一致、Stage 空、
+last_result=0。随后在该 Loader 上执行完整 UART suite，25/25 PASS，560.440 秒。
+两项重连等待明显偏长且原因未定；本轮未覆盖 BLE 或断电。
+[完整证据与最终板端状态](./evidence/2026-09-14/loader-uart-lifecycle.md)。
+
 ### 2026-09-13：恢复固件后的独立 UART / BLE 回归
 
 在 `3870bf72` 基础上含本文描述的未提交热启动改动，USB DL 使用本次构建输入执行官方 `-format all` 后，设备 UID 为 `3ce9e275d7aa`。报告中的 package SHA-256 是产物身份；不能把未提交构建归为 `3870bf72` 原始产物。

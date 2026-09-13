@@ -1,0 +1,76 @@
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=help
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=help result=PASS rc=0 elapsed_ms=464 bytes=0 total=0
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=status
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=status result=PASS rc=0 elapsed_ms=269 bytes=0 total=0
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=stats
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=stats result=PASS rc=0 elapsed_ms=533 bytes=0 total=0
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=legacy-commands-absent
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=legacy-commands-absent result=PASS rc=0 elapsed_ms=466 bytes=0 total=0
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=send
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=send result=PASS rc=0 elapsed_ms=29941 bytes=856298 total=856298
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=stage-abort-after-send
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=stage-abort-after-send result=PASS rc=0 elapsed_ms=582 bytes=0 total=0
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=monitor
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=monitor result=PASS rc=0 elapsed_ms=3268 bytes=0 total=0
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=reboot-loader-monitor
+H2_JIELI_BOOT_INFO result=0 base=0x4020 bytes=929853 version=2 logical=1
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=reboot-loader-monitor result=PASS rc=0 elapsed_ms=128914 bytes=0 total=0
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=reboot-upgrade-monitor
+H2_JIELI_BOOT_INFO result=0 base=0x4020 bytes=929853 version=2 logical=1
+H2_JIELI_IMAGE_READ_SHADOW partition=2 offset=0 bytes=65536
+H2_JIELI_STARTUP_EVENT event=1 code=0
+H2_JIELI_UPDATE_WRITE_DONE expected=868201 native=868201 result=0
+H2_JIELI_IMAGE_READ_SHADOW partition=2 offset=0 bytes=65536
+H2_JIELI_IMAGE_READ_SHADOW partition=2 offset=851968 bytes=16233
+H2_JIELI_STARTUP_EVENT event=3 code=0
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=reboot-upgrade-monitor result=PASS rc=0 elapsed_ms=55864 bytes=856298 total=856298
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=reboot-app-monitor
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=reboot-app-monitor result=PASS rc=0 elapsed_ms=5252 bytes=0 total=0
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=app-help
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=app-help result=PASS rc=0 elapsed_ms=463 bytes=0 total=0
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=app-status
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=app-status result=PASS rc=0 elapsed_ms=277 bytes=0 total=0
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=app-stats
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=app-stats result=PASS rc=0 elapsed_ms=523 bytes=0 total=0
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=app-memory
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=app-memory result=PASS rc=0 elapsed_ms=477 bytes=0 total=0
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=app-legacy-commands-absent
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=app-legacy-commands-absent result=PASS rc=0 elapsed_ms=470 bytes=0 total=0
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=app-send
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=app-send result=PASS rc=0 elapsed_ms=31072 bytes=856298 total=856298
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=app-stage-abort-after-send
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=app-stage-abort-after-send result=PASS rc=0 elapsed_ms=599 bytes=0 total=0
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=reboot-app-preserves-stage
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=reboot-app-preserves-stage result=PASS rc=0 elapsed_ms=34575 bytes=918365 total=918365
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=reboot-loader-preserves-stage
+H2_JIELI_BOOT_INFO result=0 base=0x4020 bytes=929853 version=2 logical=1
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=reboot-loader-preserves-stage result=PASS rc=0 elapsed_ms=31658 bytes=856298 total=856298
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=install-loader
+H2_JIELI_BOOT_INFO result=0 base=0x4020 bytes=929853 version=2 logical=1
+H2_JIELI_STARTUP_EVENT event=1 code=0
+H2_JIELI_UPDATE_WRITE_DONE expected=929917 native=929917 result=0
+H2_JIELI_IMAGE_READ_SHADOW partition=2 offset=0 bytes=65536
+H2_JIELI_IMAGE_READ_SHADOW partition=2 offset=917504 bytes=12413
+H2_JIELI_STARTUP_EVENT event=4 code=0
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=install-loader result=PASS rc=0 elapsed_ms=52131 bytes=918365 total=918365
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=install-crash-app
+H2_JIELI_BOOT_INFO result=0 base=0x4020 bytes=929853 version=2 logical=1
+H2_JIELI_IMAGE_READ_SHADOW partition=2 offset=0 bytes=65536
+H2_JIELI_STARTUP_EVENT event=1 code=0
+H2_JIELI_UPDATE_WRITE_DONE expected=899305 native=899305 result=0
+H2_JIELI_IMAGE_READ_SHADOW partition=2 offset=0 bytes=65536
+H2_JIELI_IMAGE_READ_SHADOW partition=2 offset=851968 bytes=47337
+H2_JIELI_STARTUP_EVENT event=3 code=0
+H2_CRASH_BEFORE_CONFIRM_READY action=crash
+H2_JIELI_BOOT_INFO result=0 base=0x4020 bytes=929853 version=2 logical=1
+H2_JIELI_TRIAL_ROLLBACK app_bootable=0 action=command-mode
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=install-crash-app result=PASS rc=0 elapsed_ms=178807 bytes=2096 total=2096
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=coredump-status
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=coredump-status result=PASS rc=0 elapsed_ms=499 bytes=2096 total=2096
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=coredump-dump
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=coredump-dump result=PASS rc=0 elapsed_ms=700 bytes=2096 total=2096
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=coredump-erase
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=coredump-erase result=PASS rc=0 elapsed_ms=2028 bytes=0 total=0
+H2_LOADER_E2E_CASE state=start transport=uart iteration=1 name=coredump-status-after-erase
+H2_LOADER_E2E_CASE state=complete transport=uart iteration=1 name=coredump-status-after-erase result=PASS rc=0 elapsed_ms=588 bytes=0 total=0
+H2_LOADER_E2E result=PASS rc=0 cases=25 passed=25 failed=0 elapsed_ms=560440 report=tmp/jieli/2026-09-14-loader/uart-lifecycle.json
