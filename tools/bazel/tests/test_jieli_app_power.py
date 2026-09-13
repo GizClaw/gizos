@@ -6,6 +6,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 TARGET = ROOT / "projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit/src"
+MP4_TARGET = ROOT / "projects/example/targets/h2loader_tar_zlib/mp4-player/jieli_ac791n_devkit/src"
 APP_SUPPORT = ROOT / "projects/h2loader/native_component_src/jieli/wl82/h2loader_app/src"
 STUB = r'''
 #include <assert.h>
@@ -102,10 +103,10 @@ int main(void) {
             subprocess.run([str(binary)], check=True, timeout=10)
 
     def test_both_app_targets_expose_next_partition(self):
-        for name, prefix in (("color_bar_pal.c", "app_power"),
-                             ("mp4_player_small_pal.c", "power")):
+        for directory, name, prefix in ((TARGET, "color_bar_pal.c", "app_power"),
+                                        (MP4_TARGET, "mp4_player_small_pal.c", "power")):
             with self.subTest(target=name):
-                source = (TARGET / name).read_text()
+                source = (directory / name).read_text()
                 start = source.index(f"static int {prefix}_get_next(")
                 end = source.index(f"static int {prefix}_set_next(", start)
                 main = r'''
