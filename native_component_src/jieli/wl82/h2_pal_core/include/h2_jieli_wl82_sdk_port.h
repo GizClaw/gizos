@@ -91,6 +91,11 @@ const void *h2_jieli_sdk_task_current(void);
 
 /* ---- Timers -------------------------------------------------------------- */
 
+/** Execute synchronously on the SDK timer service task, inline when already
+ * there. The operation and context remain borrowed until this call returns.
+ * Reject interrupt/pre-scheduler calls. Timer callbacks must not block. */
+int h2_jieli_sdk_timer_call(int (*operation)(void *ctx), void *ctx);
+
 /**
  * Registers an SDK timer calling `callback(ctx)` after `period_ms`
  * milliseconds: periodic (sys_timer_add) when `repeat` is non-zero, otherwise
@@ -102,7 +107,9 @@ const void *h2_jieli_sdk_task_current(void);
  * task's other timer callbacks. Deleting a timer does not recall a fire that
  * is already queued to the task, so callers that need to release `ctx` must
  * defer the release behind a later timer on the same task. Callers therefore
- * have to register and cancel a timer from one and the same task.
+ * have to register and cancel a timer from one and the same task. The PAL
+ * facade uses timer_call() to make that task the SDK timer service rather
+ * than imposing an SDK event loop on each application task.
  */
 uint16_t h2_jieli_sdk_timer_add(void *ctx, void (*callback)(void *ctx), uint32_t period_ms, int repeat);
 /** Cancels a timer registered with the same `repeat` flavour. */

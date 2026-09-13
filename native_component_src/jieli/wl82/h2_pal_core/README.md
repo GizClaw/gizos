@@ -39,3 +39,19 @@ bazel build --config=ac791n \
 ```
 
 Export and link checks establish symbol availability only; they do not substitute for on-device synchronization and boot-lifecycle acceptance.
+
+## Timer dispatch
+
+The SDK's `sys_timer_add` / `sys_timeout_add` dispatch to the registering task,
+not an arbitrary PAL worker. Timer PAL therefore synchronously marshals every
+lifecycle operation to the SDK `sys_timer` service using
+`sys_timeout_add_to_task`; callbacks and delayed reclamation run on that same
+service. Calls from a timer callback execute inline to avoid self-deadlock.
+Interrupt and pre-scheduler calls are rejected. Application code must keep
+timer callbacks short and non-blocking, as required by the public PAL contract.
+
+The request borrows caller pointers until service completion; it must not time
+out and leave a queued request referring to expired stack memory. Failure to
+enqueue leaves the timer untouched and retryable. Host behavior tests cover
+cross-caller operations, callback destruction, stale fires and enqueue failure;
+the AC791N public PAL E2E launcher is required to establish real SDK dispatch.

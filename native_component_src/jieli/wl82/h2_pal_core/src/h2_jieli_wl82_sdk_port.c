@@ -12,6 +12,7 @@
 
 #include "system/includes.h"
 #include "system/timer.h"
+#include "asm/cpu.h"
 
 #include <string.h>
 
@@ -315,6 +316,40 @@ const void *h2_jieli_sdk_task_current(void)
 }
 
 /* ---- Timers -------------------------------------------------------------- */
+
+struct timer_call {
+    int (*operation)(void *ctx);
+    void *ctx;
+    OS_SEM done;
+    int result;
+};
+
+static void timer_call_run(void *ctx)
+{
+    struct timer_call *call = ctx;
+    call->result = call->operation(call->ctx);
+    os_sem_post(&call->done);
+}
+
+int h2_jieli_sdk_timer_call(int (*operation)(void *ctx), void *ctx)
+{
+    if (operation == NULL) return H2_PAL_ERR_INVALID_ARG;
+    if (cpu_in_irq() || xTaskGetCurrentTaskHandle() == NULL)
+        return H2_PAL_ERR_INVALID_STATE;
+    const char *name = os_current_task();
+    if (name != NULL && strcmp(name, "sys_timer") == 0) return operation(ctx);
+    struct timer_call call = {.operation = operation, .ctx = ctx};
+    if (os_sem_create(&call.done, 0) != OS_NO_ERR) return H2_PAL_ERR_NO_MEMORY;
+    if (sys_timeout_add_to_task("sys_timer", &call, timer_call_run, 1u) == 0u) {
+        os_sem_del(&call.done, OS_DEL_ALWAYS);
+        return H2_PAL_ERR_UNAVAILABLE;
+    }
+    /* No early timeout: the queued operation borrows caller-owned pointers.
+     * All valid service callbacks are non-blocking, including this operation. */
+    while (os_sem_pend(&call.done, 0) != OS_NO_ERR) os_time_dly(1u);
+    os_sem_del(&call.done, OS_DEL_ALWAYS);
+    return call.result;
+}
 
 uint16_t h2_jieli_sdk_timer_add(void *ctx, void (*callback)(void *ctx), uint32_t period_ms, int repeat)
 {

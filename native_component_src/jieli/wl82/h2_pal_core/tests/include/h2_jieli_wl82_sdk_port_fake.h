@@ -50,6 +50,8 @@ void h2_jieli_fake_set_sem_give_hook(void (*hook)(void));
 
 /** Handle reported by h2_jieli_sdk_task_current(); defaults to a fixed one. */
 void h2_jieli_fake_set_current_task(const void *handle);
+/** Fail the next service dispatch before the operation executes. */
+void h2_jieli_fake_fail_next_timer_call(void);
 
 /** Records the last task creation request. */
 int h2_jieli_fake_task_create_calls(void);

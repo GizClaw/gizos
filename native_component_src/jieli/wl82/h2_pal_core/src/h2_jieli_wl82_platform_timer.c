@@ -241,14 +241,86 @@ static h2_pal_result_t timer_is_running(void *user, h2_pal_timer_t *timer, int *
     return H2_PAL_OK;
 }
 
+/* Serialize lifecycle changes with callbacks on the SDK service task. PAL
+ * callers may sleep or block without having to dispatch SDK task messages. */
+typedef enum timer_operation {
+    TIMER_CREATE, TIMER_DESTROY, TIMER_START, TIMER_STOP, TIMER_RESET,
+    TIMER_SET_PERIOD, TIMER_IS_RUNNING,
+} timer_operation_t;
+
+typedef struct timer_request {
+    timer_operation_t operation;
+    h2_pal_timer_t *timer;
+    const h2_pal_timer_config_t *config;
+    h2_pal_timer_t **out_timer;
+    uint32_t period_ms;
+    int *out_running;
+} timer_request_t;
+
+static int timer_execute(void *ctx)
+{
+    timer_request_t *request = ctx;
+    switch (request->operation) {
+    case TIMER_CREATE: return timer_create(NULL, request->config, request->out_timer);
+    case TIMER_DESTROY: return timer_destroy(NULL, request->timer);
+    case TIMER_START: return timer_start(NULL, request->timer);
+    case TIMER_STOP: return timer_stop(NULL, request->timer);
+    case TIMER_RESET: return timer_reset(NULL, request->timer);
+    case TIMER_SET_PERIOD: return timer_set_period_ms(NULL, request->timer, request->period_ms);
+    case TIMER_IS_RUNNING: return timer_is_running(NULL, request->timer, request->out_running);
+    }
+    return H2_PAL_ERR_INVALID_ARG;
+}
+
+static h2_pal_result_t dispatched_create(void *user,
+    const h2_pal_timer_config_t *config, h2_pal_timer_t **out_timer)
+{
+    (void)user;
+    if (out_timer != NULL) *out_timer = NULL;
+    timer_request_t request = {.operation = TIMER_CREATE, .config = config,
+                               .out_timer = out_timer};
+    return h2_jieli_sdk_timer_call(timer_execute, &request);
+}
+
+#define DISPATCH_TIMER_OPERATION(name, op) \
+static h2_pal_result_t dispatched_##name(void *user, h2_pal_timer_t *timer) \
+{ \
+    (void)user; \
+    timer_request_t request = {.operation = op, .timer = timer}; \
+    return h2_jieli_sdk_timer_call(timer_execute, &request); \
+}
+DISPATCH_TIMER_OPERATION(destroy, TIMER_DESTROY)
+DISPATCH_TIMER_OPERATION(start, TIMER_START)
+DISPATCH_TIMER_OPERATION(stop, TIMER_STOP)
+DISPATCH_TIMER_OPERATION(reset, TIMER_RESET)
+#undef DISPATCH_TIMER_OPERATION
+
+static h2_pal_result_t dispatched_set_period(void *user,
+    h2_pal_timer_t *timer, uint32_t period_ms)
+{
+    (void)user;
+    timer_request_t request = {.operation = TIMER_SET_PERIOD, .timer = timer,
+                               .period_ms = period_ms};
+    return h2_jieli_sdk_timer_call(timer_execute, &request);
+}
+
+static h2_pal_result_t dispatched_is_running(void *user,
+    h2_pal_timer_t *timer, int *out_running)
+{
+    (void)user;
+    timer_request_t request = {.operation = TIMER_IS_RUNNING, .timer = timer,
+                               .out_running = out_running};
+    return h2_jieli_sdk_timer_call(timer_execute, &request);
+}
+
 static const h2_pal_timer_vtable_t s_timer_vtable = {
-    .create = timer_create,
-    .destroy = timer_destroy,
-    .start = timer_start,
-    .stop = timer_stop,
-    .reset = timer_reset,
-    .set_period_ms = timer_set_period_ms,
-    .is_running = timer_is_running,
+    .create = dispatched_create,
+    .destroy = dispatched_destroy,
+    .start = dispatched_start,
+    .stop = dispatched_stop,
+    .reset = dispatched_reset,
+    .set_period_ms = dispatched_set_period,
+    .is_running = dispatched_is_running,
 };
 
 static const h2_pal_timer_api_t s_timer_api = {

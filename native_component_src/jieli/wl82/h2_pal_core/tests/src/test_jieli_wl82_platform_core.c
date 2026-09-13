@@ -649,7 +649,7 @@ static void test_timer_reset_racing_dispatched_one_shot(int fire_new)
 static int s_task_owner;
 static int s_task_other;
 
-static void test_timer_destroy_from_other_task_is_rejected(void)
+static void test_timer_destroy_from_other_task_is_dispatched(void)
 {
     const h2_pal_timer_api_t *api = h2_jieli_wl82_platform_timer_api();
     const h2_pal_timer_config_t config = {
@@ -664,23 +664,17 @@ static void test_timer_destroy_from_other_task_is_rejected(void)
     s_raced_fires = 0;
     h2_jieli_fake_set_current_task(&s_task_owner);
     CHECK(h2_pal_timer_create(api, &config, &timer) == H2_PAL_OK);
-    /* A fire is already queued to the owner task at this point; a destroy
-     * from another task cannot order its reclaim behind it. */
+    /* Both callers marshal to the service task, which orders reclamation. */
     h2_jieli_fake_set_current_task(&s_task_other);
-    CHECK(h2_pal_timer_destroy(api, timer) == H2_PAL_ERR_INVALID_STATE);
+    CHECK(h2_pal_timer_destroy(api, timer) == H2_PAL_OK);
     CHECK(h2_jieli_fake_live_allocations() == 2);
     h2_jieli_fake_advance_ms(10u);
     h2_jieli_fake_run_timers();
-    /* The timer survived the rejected destroy and still fires normally. */
-    CHECK(s_raced_fires == 1);
-    h2_jieli_fake_set_current_task(&s_task_owner);
-    CHECK(h2_pal_timer_destroy(api, timer) == H2_PAL_OK);
-    h2_jieli_fake_advance_ms(1u);
-    h2_jieli_fake_run_timers();
+    CHECK(s_raced_fires == 0);
     CHECK(h2_jieli_fake_live_allocations() == 0);
 }
 
-static void test_timer_start_from_other_task_is_rejected(void)
+static void test_timer_start_from_other_task_is_dispatched(void)
 {
     const h2_pal_timer_api_t *api = h2_jieli_wl82_platform_timer_api();
     const h2_pal_timer_config_t config = {
@@ -695,27 +689,47 @@ static void test_timer_start_from_other_task_is_rejected(void)
     s_raced_fires = 0;
     h2_jieli_fake_set_current_task(&s_task_owner);
     CHECK(h2_pal_timer_create(api, &config, &timer) == H2_PAL_OK);
-    /* Another task attempts to stop the timer or take it over. Ownership must not move,
-     * otherwise that task could order the reclaim behind its own callbacks. */
+    /* Application task identity changes; SDK timer ownership does not. */
     h2_jieli_fake_set_current_task(&s_task_other);
-    /* Even while the timer is still running a foreign start() is rejected
-     * rather than answered with the already-running OK. */
-    CHECK(h2_pal_timer_start(api, timer) == H2_PAL_ERR_INVALID_STATE);
-    CHECK(h2_pal_timer_stop(api, timer) == H2_PAL_ERR_INVALID_STATE);
-    CHECK(h2_pal_timer_start(api, timer) == H2_PAL_ERR_INVALID_STATE);
-    CHECK(h2_pal_timer_reset(api, timer) == H2_PAL_ERR_INVALID_STATE);
-    CHECK(h2_pal_timer_set_period_ms(api, timer, 100u) == H2_PAL_ERR_INVALID_STATE);
+    CHECK(h2_pal_timer_start(api, timer) == H2_PAL_OK);
+    CHECK(h2_pal_timer_stop(api, timer) == H2_PAL_OK);
+    CHECK(h2_pal_timer_start(api, timer) == H2_PAL_OK);
+    CHECK(h2_pal_timer_reset(api, timer) == H2_PAL_OK);
+    CHECK(h2_pal_timer_set_period_ms(api, timer, 100u) == H2_PAL_OK);
     int running = 0;
     CHECK(h2_pal_timer_is_running(api, timer, &running) == H2_PAL_OK);
     CHECK(running == 1);
-    CHECK(h2_pal_timer_destroy(api, timer) == H2_PAL_ERR_INVALID_STATE);
-    CHECK(h2_jieli_fake_live_allocations() == 2);
-    /* The owner can re-arm and release it. */
+    /* The original caller can still inspect and release the timer. */
     h2_jieli_fake_set_current_task(&s_task_owner);
     CHECK(h2_pal_timer_start(api, timer) == H2_PAL_OK);
-    h2_jieli_fake_advance_ms(10u);
+    h2_jieli_fake_advance_ms(100u);
     h2_jieli_fake_run_timers();
     CHECK(s_raced_fires == 1);
+    CHECK(h2_pal_timer_destroy(api, timer) == H2_PAL_OK);
+    h2_jieli_fake_advance_ms(1u);
+    h2_jieli_fake_run_timers();
+    CHECK(h2_jieli_fake_live_allocations() == 0);
+}
+
+static void test_timer_service_dispatch_failure_is_retryable(void)
+{
+    const h2_pal_timer_api_t *api = h2_jieli_wl82_platform_timer_api();
+    const h2_pal_timer_config_t config = {
+        .name = "dispatch", .period_ms = 10u, .cb = timer_raced_callback,
+        .flags = H2_PAL_TIMER_FLAG_AUTO_START,
+    };
+    h2_pal_timer_t *timer = (h2_pal_timer_t *)(uintptr_t)1u;
+    h2_jieli_fake_reset();
+    h2_jieli_fake_fail_next_timer_call();
+    CHECK(h2_pal_timer_create(api, &config, &timer) == H2_PAL_ERR_UNAVAILABLE);
+    CHECK(timer == NULL);
+    CHECK(h2_jieli_fake_live_allocations() == 0);
+    CHECK(h2_pal_timer_create(api, &config, &timer) == H2_PAL_OK);
+    h2_jieli_fake_fail_next_timer_call();
+    CHECK(h2_pal_timer_destroy(api, timer) == H2_PAL_ERR_UNAVAILABLE);
+    int running = 0;
+    CHECK(h2_pal_timer_is_running(api, timer, &running) == H2_PAL_OK);
+    CHECK(running == 1);
     CHECK(h2_pal_timer_destroy(api, timer) == H2_PAL_OK);
     h2_jieli_fake_advance_ms(1u);
     h2_jieli_fake_run_timers();
@@ -862,9 +876,10 @@ int main(void)
     test_timer_destroy_racing_dispatched_callback();
     test_timer_reset_racing_dispatched_one_shot(0);
     test_timer_reset_racing_dispatched_one_shot(1);
-    test_timer_destroy_from_other_task_is_rejected();
-    test_timer_start_from_other_task_is_rejected();
+    test_timer_destroy_from_other_task_is_dispatched();
+    test_timer_start_from_other_task_is_dispatched();
     test_timer_arm_allocation_failure_is_retryable();
+    test_timer_service_dispatch_failure_is_retryable();
     test_timer_registration_failure_is_retryable();
     test_timer_destroy_without_timeout_slot_keeps_timer();
     test_firmware_info_reports_build_version();

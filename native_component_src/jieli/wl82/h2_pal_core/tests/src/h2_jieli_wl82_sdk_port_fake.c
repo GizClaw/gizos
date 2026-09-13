@@ -46,10 +46,13 @@ static int s_fail_task_delete;
 
 static void (*s_timer_dispatch_hook)(void);
 static int s_default_task;
+static int s_timer_service_task;
+static int s_fail_next_timer_call;
 static const void *s_current_task = &s_default_task;
 
 void h2_jieli_fake_reset(void)
 {
+    s_fail_next_timer_call = 0;
     s_timer_dispatch_hook = NULL;
     s_current_task = &s_default_task;
     memset(s_log, 0, sizeof(s_log));
@@ -383,6 +386,25 @@ uint16_t h2_jieli_sdk_timer_add(void *ctx, void (*callback)(void *ctx), uint32_t
     return 0u;
 }
 
+int h2_jieli_sdk_timer_call(int (*operation)(void *ctx), void *ctx)
+{
+    if (operation == NULL) return H2_PAL_ERR_INVALID_ARG;
+    if (s_fail_next_timer_call) {
+        s_fail_next_timer_call = 0;
+        return H2_PAL_ERR_UNAVAILABLE;
+    }
+    const void *previous = s_current_task;
+    s_current_task = &s_timer_service_task;
+    int result = operation(ctx);
+    s_current_task = previous;
+    return result;
+}
+
+void h2_jieli_fake_fail_next_timer_call(void)
+{
+    s_fail_next_timer_call = 1;
+}
+
 void h2_jieli_sdk_timer_del(uint16_t id, int repeat)
 {
     size_t i;
@@ -431,7 +453,10 @@ void h2_jieli_fake_run_timers(void)
             s_timer_dispatch_hook = NULL;
             hook();
         }
+        const void *previous = s_current_task;
+        s_current_task = &s_timer_service_task;
         callback(ctx);
+        s_current_task = previous;
     }
 }
 
