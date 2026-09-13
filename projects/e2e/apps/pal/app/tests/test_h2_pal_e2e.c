@@ -337,7 +337,7 @@ static int wifi_status(void *user, h2_pal_wifi_sta_status_t *status) {
   assert(fixture->disconnect_calls != 0);
   memset(status, 0, sizeof(*status));
   status->state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
-  status->ip_valid = fixture->stale_ip;
+  status->ip_valid = (uint8_t)(fixture->stale_ip != 0);
   return H2_PAL_OK;
 }
 

@@ -1,4 +1,4 @@
-# PAL Core / Wi-Fi real-device regression — incomplete
+# PAL Core / offline Wi-Fi real-device regression — nine cases passed
 
 Device: `3ce9e275d7aa`, UART `/dev/cu.usbserial-20131240`, 460800 baud.
 The existing Loader image remained `e06de21c3b21eca04f4ea65d8062ea6a994fa601a885b5ea10395cbc434b90f6`.
@@ -27,7 +27,10 @@ the shared board H2Loader layout. No board-local copy of the test cases exists.
    installed with a matching digest, but the new runner did not yield a captured
    ledger. A fresh UART status request timed out and an eight-second raw UART
    read produced zero bytes. This revision is **not hardware-accepted**; a
-   physical reset and crash-record retrieval are pending.
+   physical reset and crash-record retrieval were required. After the user
+   restarted the board, Loader status recovered. The retained record still
+   had sequence `83fc6dcf` and the second run's `app_core` assertion, so it
+   does not establish the third run's stop location.
 
 ## Source-confirmed coverage / implementation gaps
 
@@ -52,7 +55,7 @@ Host validation was freshly executed, not satisfied only from cached results:
 passed. Native AC791N package compilation passed. Those results do not replace
 the failed/incomplete hardware evidence above.
 
-## Prepared Timer fix (not installed)
+## Timer fix and fourth hardware run
 
 `9d970f63` marshals Timer PAL operations to the SDK `sys_timer` service. Timer
 callbacks, mutations and delayed reclamation share that service; callers no
@@ -61,10 +64,24 @@ inline, and failed enqueue leaves the timer retryable. This addresses the
 source-confirmed dispatch mismatch; it does not identify the third run's
 actual stop location without a fresh device record.
 
-The prepared package SHA-256 is
+The fourth package SHA-256 is
 `0f4c979c5064d255cc773dd2a9e1b2969988680b7af0e2793cee6b45b395adcf`.
-Native build and PAL core behavior tests passed. A subsequent fresh UART
-status request still timed out, and the ten-minute raw reset capture completed
-with zero bytes. No physical reset was observed and this package has not been
-installed. A user Reset and Loader status/crash-record recovery remain required
-before resuming hardware acceptance.
+Native build and PAL core behavior tests passed. Following the user's restart,
+UART Loader installed this package with a matching digest. The installed image
+SHA-256 was `9afbf57b24d626b3acc6a44a63e325d4673dd163fe48874c62795ab81d811acc`.
+
+The App repeatedly reported `H2_PAL_E2E result=0 passed=9 failed=0`, including
+at uptime 45.490 seconds, beyond the second run's 40.350-second assertion.
+The decoded capture includes successful case IDs 2–6, 10, 11 and 27; the Time
+case's individual line was not captured, so its success is supported by the
+suite aggregate rather than an individual captured line. A subsequent UART
+`status` succeeded and identified this image as the running App in partition 2.
+UART `reboot loader` then succeeded without physical intervention; a fresh
+`status` reported partition 1, `active_role=loader`, `boot_intent=loader`, and
+the unchanged Loader checksum listed above.
+
+Local captures: `tmp/jieli/pal-e2e-send-v4.log`,
+`tmp/jieli/pal-e2e-device-v4.log`, and
+`tmp/jieli/pal-e2e-v4-return-loader.log`. This establishes the eight Core cases
+and one offline Wi-Fi consistency case in this run, not full PAL coverage,
+long-duration stability, BLE acceptance, or final Loader self-update acceptance.
