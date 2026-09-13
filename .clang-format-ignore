@@ -1,0 +1,10 @@
+# Vendored upstream sources and local patches kept aligned with their projects.
+third_party/**
+
+# Generator-owned API fixtures and generated game assets must remain byte-for-byte reproducible.
+tools/openapi_codegen/testdata/golden/**
+tools/openapi_codegen/testdata/golden_no_body/**
+projects/pixa_games/libs/tuxemon/src/generated/**
+
+# Embedded binary audio fixture; formatting the byte array adds noisy churn.
+libs/pal/providers/linux/fdk_aac_decoder/tests/h2_fdk_aac_test_fixture.h

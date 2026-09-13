@@ -75,6 +75,8 @@ To verify that public targets also work when GizOS is consumed as a dependency:
 make bazel-test-downstream-consumer
 ```
 
+Run `make format` before committing C/C++ changes; it formats the lines you changed since `origin/main` with the pinned clang-format 22.1.5. `make format-check` runs the same check as CI without modifying files. Paths in `.clang-format-ignore` are skipped.
+
 ## Use GizOS from Bzlmod
 
 Add GizOS as a module override in the consuming repository and depend on public targets through `@gizos//...`:
