@@ -366,6 +366,19 @@ py_test(
     }),
 )
 
+py_test(
+    name = "jieli_sdk_memory_test",
+    srcs = ["tests/test_jieli_sdk_memory.py"],
+    data = ["//native_component_src/jieli/wl82/h2_pal_core:src/h2_jieli_wl82_sdk_port.c"],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_sdk_memory.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
 cc_library(
     name = "vendor_third_party_ikcp",
     tags = ["manual"],
