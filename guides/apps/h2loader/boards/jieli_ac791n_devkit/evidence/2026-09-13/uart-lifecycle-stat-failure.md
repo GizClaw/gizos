@@ -39,8 +39,9 @@ stat type and exact byte size. The previous JieLi launcher only selected Core
 and Wi-Fi, so its nine passing cases did not cover this regression.
 The launcher now also selects the standalone `H2_PAL_E2E_SUITE_FILESYSTEM`,
 reusing that public case without requiring host network fixtures.
-Unit tests execute this suite with correct attributes, a false directory
-classification, and an incorrect size; the latter two must fail while still
+Unit tests execute this suite with correct attributes, a file falsely marked
+as a directory, an incorrect file size, and a directory falsely marked as a
+file; the latter three must fail while still
 cleaning up the fixture files. Both PAL test targets passed locally.
 Host unit-test success does not prove SDK behavior on the board.
 The corrected Loader still requires hardware installation and lifecycle

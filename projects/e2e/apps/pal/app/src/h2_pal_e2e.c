@@ -756,6 +756,14 @@ static h2_pal_result_t h2_pal_e2e_host_filesystem(
   static const char payload[] = "h2-pal-host-e2e";
   h2_pal_result_t result = (h2_pal_result_t)h2_pal_fs_mkdir(
       runtime->fs, "/data/pal-host-e2e");
+  if (result == H2_PAL_OK) {
+    h2_pal_fs_stat_t directory_stat = {0};
+    result = (h2_pal_result_t)h2_pal_fs_stat(
+        runtime->fs, "/data/pal-host-e2e", &directory_stat);
+    if (result == H2_PAL_OK && !directory_stat.is_dir) {
+      result = H2_PAL_ERR_INVALID_STATE;
+    }
+  }
   h2_pal_fs_file_t *file = NULL;
   if (result == H2_PAL_OK) {
     result = (h2_pal_result_t)h2_pal_fs_open(

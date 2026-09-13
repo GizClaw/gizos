@@ -581,6 +581,7 @@ typedef struct fs_fixture {
   size_t length;
   int bad_type;
   int bad_size;
+  int bad_directory;
   int stat_calls;
   int removes;
 } fs_fixture_t;
@@ -621,6 +622,10 @@ static int fs_test_stat(void *user, const char *path, h2_pal_fs_stat_t *out) {
   fs_fixture_t *f = user;
   if (strcmp(path, "/data/../escape") == 0) return H2_PAL_ERR_INVALID_ARG;
   ++f->stat_calls;
+  if (strcmp(path, "/data/pal-host-e2e") == 0) {
+    *out = (h2_pal_fs_stat_t){.is_dir=f->bad_directory ? 0 : 1};
+    return H2_PAL_OK;
+  }
   *out = (h2_pal_fs_stat_t){.size=f->length + (f->bad_size ? 1u : 0u),
                            .is_dir=f->bad_type ? 1 : 0};
   return H2_PAL_OK;
@@ -634,10 +639,11 @@ static void test_filesystem_stat_contract(void) {
   const h2_pal_fs_vtable_t v = {.mkdir=fs_test_mkdir, .open=fs_test_open,
       .write=fs_test_write, .read=fs_test_read, .close=fs_test_close,
       .stat=fs_test_stat, .remove=fs_test_remove};
-  for (int scenario = 0; scenario < 3; ++scenario) {
+  for (int scenario = 0; scenario < 4; ++scenario) {
     fs_fixture_t f = {0};
     f.bad_type = scenario == 1;
     f.bad_size = scenario == 2;
+    f.bad_directory = scenario == 3;
     const h2_pal_fs_api_t fs = {.user=&f, .vtable=&v};
     h2_runtime_t runtime = {.fs=&fs};
     const h2_pal_e2e_config_t config = {.suite_mask=H2_PAL_E2E_SUITE_FILESYSTEM};
@@ -646,7 +652,7 @@ static void test_filesystem_stat_contract(void) {
            (scenario == 0 ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE));
     assert(result.case_count == 1 && result.complete);
     assert(result.cases[0].case_id == H2_PAL_E2E_CASE_HOST_FILESYSTEM);
-    assert(f.stat_calls == 1 && f.removes == 2);
+    assert(f.stat_calls == (scenario == 3 ? 1 : 2) && f.removes == 2);
   }
 }
 
