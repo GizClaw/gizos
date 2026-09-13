@@ -62,6 +62,7 @@ static int task_start(
         return H2_PAL_ERR_NO_MEMORY;
     }
     memset(task, 0, sizeof(*task));
+    task->completion_observed = 0;
     task->entry = entry;
     task->ctx = ctx;
     task->done = h2_jieli_sdk_sem_create(0u);
