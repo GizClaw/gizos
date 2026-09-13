@@ -81,6 +81,7 @@ static int task_start(
             task->name[8u + i] = hex[(identity >>
                 (4u * (2u * sizeof(identity) - i - 1u))) & 15u];
         }
+        task->name[8u + 2u * sizeof(identity)] = '\0';
     }
     if (h2_jieli_sdk_task_create(task_trampoline, task, task->name, stack_bytes) != 0) {
         h2_jieli_sdk_sem_destroy(task->done);

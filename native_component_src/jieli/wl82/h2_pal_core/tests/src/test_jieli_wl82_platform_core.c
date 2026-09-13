@@ -369,6 +369,9 @@ static void test_task_start_and_join(void)
     CHECK(h2_pal_task_start(api, NULL, task_entry, &flag, &first) == H2_PAL_OK);
     strcpy(first_name, h2_jieli_fake_last_task_name());
     CHECK(strncmp(first_name, "$h2anon/", 8u) == 0);
+    CHECK(strlen(first_name) == 8u + 2u * sizeof(uintptr_t));
+    CHECK(strspn(first_name + 8u, "0123456789abcdef") ==
+          2u * sizeof(uintptr_t));
     h2_jieli_fake_run_last_task_once();
     const h2_pal_task_options_t unnamed = {.name = ""};
     CHECK(h2_pal_task_start(api, &unnamed, task_entry, &flag, &task) == H2_PAL_OK);
