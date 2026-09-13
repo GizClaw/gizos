@@ -68,6 +68,7 @@ typedef enum h2_runtime_event_kind {
      */
     H2_RUNTIME_EVENT_CUSTOM,
     H2_RUNTIME_SYSTEM_EVENT_TIME_ADJUSTED,
+    H2_RUNTIME_COMPONENT_EVENT_BUTTON_CANCEL,
 } h2_runtime_event_kind_t;
 
 typedef struct h2_runtime_event {

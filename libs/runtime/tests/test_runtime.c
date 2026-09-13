@@ -2363,6 +2363,205 @@ static void test_push_button_uses_mapping_and_retained_pressed_state(void) {
     h2_runtime_deinit(runtime);
 }
 
+static void test_push_button_cancel_is_ordered(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    const h2_pal_periph_single_button_payload_t push_payload = {
+        .delivery = H2_PAL_BUTTON_DELIVERY_PUSH_EDGE,
+    };
+    add_periph(&env, 77u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON,
+               &push_payload, sizeof(push_payload));
+    add_periph(&env, 78u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON,
+               &push_payload, sizeof(push_payload));
+    h2_runtime_config_t config = test_runtime_config(&env);
+    config.event_queue_capacity = 32u;
+    h2_runtime_t *runtime = NULL;
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+    h2_runtime_event_t event = event_with_payload(payload);
+
+    /* Both edges precede the poll. CANCEL must not overtake DOWN. */
+    env.time_state.now_ms = 10u;
+    assert(h2_runtime_button_push_edge(runtime, 77u,
+               H2_RUNTIME_BUTTON_EDGE_DOWN) == H2_PAL_OK);
+    env.time_state.now_ms = 20u;
+    assert(h2_runtime_button_push_edge(runtime, 77u,
+               H2_RUNTIME_BUTTON_EDGE_CANCEL) == H2_PAL_OK);
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    h2_runtime_sequence_t sequence = event.sequence;
+    (void)poll_button_action(runtime, &event);
+    assert(event.sequence > sequence);
+    sequence = event.sequence;
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_CANCEL);
+    assert(event.component_id == 1u && event.sequence > sequence);
+    h2_runtime_button_cancel_event_t cancelled;
+    memcpy(&cancelled, event.payload, sizeof(cancelled));
+    assert(cancelled.pressed_at_ms == 10u);
+    assert(cancelled.cancelled_at_ms == 20u && event.timestamp_ms == 20u);
+    h2_runtime_button_state_t state;
+    assert(h2_runtime_component_state_button(runtime, 1u, &state) == H2_PAL_OK);
+    assert(!state.pressed && state.pressed_at_ms == 0u);
+    assert(state.updated_at_ms == 20u && state.result == H2_PAL_OK);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
+
+    /* A lost-capture duplicate and a late physical UP are both neutral. */
+    assert(h2_runtime_button_push_edge(runtime, 77u,
+               H2_RUNTIME_BUTTON_EDGE_CANCEL) == H2_PAL_OK);
+    assert(h2_runtime_button_push_edge(runtime, 77u,
+               H2_RUNTIME_BUTTON_EDGE_UP) == H2_PAL_OK);
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
+
+    /* Another Button stays held while the first one is cancelled. */
+    env.time_state.now_ms = 30u;
+    assert(h2_runtime_button_push_edge(runtime, 77u,
+               H2_RUNTIME_BUTTON_EDGE_DOWN) == H2_PAL_OK);
+    assert(h2_runtime_button_push_edge(runtime, 78u,
+               H2_RUNTIME_BUTTON_EDGE_DOWN) == H2_PAL_OK);
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    for (size_t i = 0u; i < 4u; ++i) {
+        assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    }
+    env.time_state.now_ms = 30u + H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    for (size_t i = 0u; i < 4u; ++i) {
+        assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    }
+    env.time_state.now_ms++;
+    assert(h2_runtime_button_push_edge(runtime, 77u,
+               H2_RUNTIME_BUTTON_EDGE_CANCEL) == H2_PAL_OK);
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_CANCEL);
+    memcpy(&cancelled, event.payload, sizeof(cancelled));
+    assert(cancelled.pressed_at_ms == 30u);
+    assert(h2_runtime_component_state_button(runtime, 2u, &state) == H2_PAL_OK);
+    assert(state.pressed && state.pressed_at_ms == 30u);
+    /* poll_once forces a held sample for the other Button on every call. */
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.component_id == 2u);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    (void)poll_button_action(runtime, &event);
+    assert(h2_runtime_button_push_edge(runtime, 78u,
+               H2_RUNTIME_BUTTON_EDGE_UP) == H2_PAL_OK);
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.component_id == 2u);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
+    (void)poll_button_action(runtime, &event);
+
+    /* A fresh press/release still completes; a later CANCEL cannot undo it. */
+    assert(h2_runtime_button_push_edge(runtime, 77u,
+               H2_RUNTIME_BUTTON_EDGE_DOWN) == H2_PAL_OK);
+    env.time_state.now_ms++;
+    assert(h2_runtime_button_push_edge(runtime, 77u,
+               H2_RUNTIME_BUTTON_EDGE_UP) == H2_PAL_OK);
+    assert(h2_runtime_button_push_edge(runtime, 77u,
+               H2_RUNTIME_BUTTON_EDGE_CANCEL) == H2_PAL_OK);
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    (void)poll_button_action(runtime, &event);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
+    (void)poll_button_action(runtime, &event);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
+    h2_runtime_deinit(runtime);
+    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+}
+
+static void test_push_button_cancel_backpressure_and_restart(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    const h2_pal_periph_single_button_payload_t push_payload = {
+        .delivery = H2_PAL_BUTTON_DELIVERY_PUSH_EDGE,
+    };
+    add_periph(&env, 77u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON,
+               &push_payload, sizeof(push_payload));
+    h2_runtime_t *runtime = test_runtime_create(&env);
+    assert(h2_runtime_button_push_edge(runtime, 999u,
+               H2_RUNTIME_BUTTON_EDGE_CANCEL) == H2_PAL_ERR_NOT_FOUND);
+    assert(h2_runtime_button_push_edge(runtime, 77u,
+               (h2_runtime_button_edge_t)99) == H2_PAL_ERR_INVALID_ARG);
+    /* Fill with neutral no-ops: rejected pushes must not alter state. */
+    for (size_t i = 0u; i < H2_RUNTIME_BUTTON_PUSH_EDGE_QUEUE_CAPACITY; ++i) {
+        assert(h2_runtime_button_push_edge(runtime, 77u,
+                   H2_RUNTIME_BUTTON_EDGE_CANCEL) == H2_PAL_OK);
+    }
+    assert(h2_runtime_button_push_edge(runtime, 77u,
+               H2_RUNTIME_BUTTON_EDGE_CANCEL) == H2_PAL_ERR_FULL);
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    assert(h2_runtime_button_push_edge(runtime, 77u,
+               H2_RUNTIME_BUTTON_EDGE_CANCEL) == H2_PAL_OK);
+    env.time_state.now_ms = 10u;
+    assert(h2_runtime_button_push_edge(runtime, 77u,
+               H2_RUNTIME_BUTTON_EDGE_DOWN) == H2_PAL_OK);
+    env.time_state.now_ms = 20u;
+    assert(h2_runtime_button_push_edge(runtime, 77u,
+               H2_RUNTIME_BUTTON_EDGE_CANCEL) == H2_PAL_OK);
+    assert(h2_runtime_input_stop(runtime) == H2_PAL_OK);
+    assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
+    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+    h2_runtime_event_t event = event_with_payload(payload);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    (void)poll_button_action(runtime, &event);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_CANCEL);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
+    h2_runtime_deinit(runtime);
+    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+}
+
+static void test_test_control_button_cancel_payload(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    add_periph(&env, 77u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+    h2_runtime_t *runtime = test_runtime_create(&env);
+    h2_runtime_test_control_t *control = NULL;
+    assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
+    h2_runtime_button_cancel_event_t cancelled = {10u, 20u};
+    assert(h2_runtime_test_emit_event(control,
+               H2_RUNTIME_COMPONENT_EVENT_BUTTON_CANCEL,
+               H2_RUNTIME_COMPONENT_BUTTON, 1u, 20u,
+               &cancelled, sizeof(cancelled) - 1u) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_runtime_test_emit_event(control,
+               H2_RUNTIME_COMPONENT_EVENT_BUTTON_CANCEL,
+               H2_RUNTIME_COMPONENT_NFC_READER, 1u, 20u,
+               &cancelled, sizeof(cancelled)) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_runtime_test_emit_event(control,
+               H2_RUNTIME_COMPONENT_EVENT_BUTTON_CANCEL,
+               H2_RUNTIME_COMPONENT_BUTTON, 99u, 20u,
+               &cancelled, sizeof(cancelled)) == H2_PAL_ERR_NOT_FOUND);
+    assert(h2_runtime_test_emit_event(control,
+               H2_RUNTIME_COMPONENT_EVENT_BUTTON_CANCEL,
+               H2_RUNTIME_COMPONENT_BUTTON, 1u, 21u,
+               &cancelled, sizeof(cancelled)) == H2_PAL_ERR_FORMAT);
+    cancelled.pressed_at_ms = 21u;
+    assert(h2_runtime_test_emit_event(control,
+               H2_RUNTIME_COMPONENT_EVENT_BUTTON_CANCEL,
+               H2_RUNTIME_COMPONENT_BUTTON, 1u, 20u,
+               &cancelled, sizeof(cancelled)) == H2_PAL_ERR_FORMAT);
+    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+    h2_runtime_event_t event = event_with_payload(payload);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
+    cancelled.pressed_at_ms = 10u;
+    assert(h2_runtime_test_emit_event(control,
+               H2_RUNTIME_COMPONENT_EVENT_BUTTON_CANCEL,
+               H2_RUNTIME_COMPONENT_BUTTON, 1u, 20u,
+               &cancelled, sizeof(cancelled)) == H2_PAL_OK);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_CANCEL);
+    assert(event.timestamp_ms == 20u && event.component_id == 1u);
+    assert(memcmp(event.payload, &cancelled, sizeof(cancelled)) == 0);
+    h2_runtime_test_control_close(control);
+    h2_runtime_deinit(runtime);
+    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+}
+
 static void test_test_control_discards_stale_push_edges(void) {
     test_runtime_env_t env;
     test_env_init(&env);
@@ -2380,6 +2579,8 @@ static void test_test_control_discards_stale_push_edges(void) {
                runtime, 77u, H2_RUNTIME_BUTTON_EDGE_DOWN) == H2_PAL_OK);
 
     /* Test control replaces the production source table. */
+    assert(h2_runtime_button_push_edge(
+               runtime, 77u, H2_RUNTIME_BUTTON_EDGE_CANCEL) == H2_PAL_OK);
     h2_runtime_test_control_t *control = NULL;
     assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
     uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
@@ -2406,6 +2607,9 @@ static void test_button_push_rejects_non_push_and_invalid_payload(void) {
     h2_runtime_t *poll_runtime = test_runtime_create(&poll_env);
     assert(h2_runtime_button_push_edge(
                poll_runtime, 10u, H2_RUNTIME_BUTTON_EDGE_DOWN) ==
+           H2_PAL_ERR_NOT_FOUND);
+    assert(h2_runtime_button_push_edge(
+               poll_runtime, 10u, H2_RUNTIME_BUTTON_EDGE_CANCEL) ==
            H2_PAL_ERR_NOT_FOUND);
     h2_runtime_deinit(poll_runtime);
 
@@ -4052,6 +4256,9 @@ int main(void) {
     test_button_rapid_clicks_emit_separate_events();
     test_button_held_polls_publish_samples_and_release_action();
     test_push_button_uses_mapping_and_retained_pressed_state();
+    test_push_button_cancel_is_ordered();
+    test_push_button_cancel_backpressure_and_restart();
+    test_test_control_button_cancel_payload();
     test_test_control_discards_stale_push_edges();
     test_button_push_rejects_non_push_and_invalid_payload();
     test_nfc_discovery_and_state();

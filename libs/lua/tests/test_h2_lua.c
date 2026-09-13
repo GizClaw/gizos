@@ -815,7 +815,78 @@ static void test_borrowed_display(void) {
   h2_runtime_deinit(runtime);
 }
 
+static void test_button_cancel_delivery(void) {
+  static const uint8_t script[] =
+      "local r=require('runtime');local n=0;local done=false;"
+      "assert(not pcall(r.components.on,8,r.event.BUTTON_CANCEL,function() end));"
+      "local id=r.components.on(7,r.event.BUTTON_CANCEL,function() n=n+100 end);"
+      "assert(r.components.off(id));"
+      "r.components.on(7,r.event.BUTTON_UP,function() error('false release') end);"
+      "r.components.on(7,r.event.BUTTON_ACTION,function() error('false action') end);"
+      "r.components.on(7,r.event.BUTTON_CANCEL,function(e) "
+      "assert(e.component_id==7 and e.sequence==42 and e.timestamp_ms==20);"
+      "assert(e.pressed_at_ms==10 and e.cancelled_at_ms==20);"
+      "assert(e.released_at_ms==nil and e.gesture_kind==nil and e.duration_ms==nil);"
+      "n=n+1;done=true end);"
+      "while not done do r.sleep(1) end;return tostring(n)";
+  h2_runtime_t *runtime = create_runtime();
+  h2_lua_host_t *host = create_host(runtime);
+  h2_lua_job_id_t job_id;
+  assert(h2_lua_job_submit_text(host, NULL, "@button-cancel.lua", script,
+             sizeof(script) - 1u, NULL, 0u, &job_id) == H2_PAL_OK);
+  size_t step;
+  for (step = 0u; step < 100u; ++step) {
+    if (status(host, job_id).state == H2_LUA_JOB_WAITING) break;
+    assert(h2_lua_host_step(host) == H2_PAL_OK);
+    assert(h2_pal_time_sleep_ms(runtime->time, 1u) == H2_PAL_OK);
+  }
+  assert(step < 100u);
+  h2_runtime_button_cancel_event_t cancelled = {10u, 20u};
+  h2_runtime_event_t event = {
+      .kind = H2_RUNTIME_COMPONENT_EVENT_BUTTON_CANCEL,
+      .component = H2_RUNTIME_COMPONENT_BUTTON,
+      .component_id = 7u,
+      .sequence = 42u,
+      .timestamp_ms = 20u,
+      .payload = &cancelled,
+      .payload_capacity = sizeof(cancelled),
+      .payload_size = sizeof(cancelled),
+  };
+  event.payload_size--;
+  assert(h2_lua_dispatch_runtime_event(host, job_id, &event) ==
+         H2_PAL_ERR_INVALID_ARG);
+  event.payload_size++;
+  event.component = H2_RUNTIME_COMPONENT_IMU;
+  assert(h2_lua_dispatch_runtime_event(host, job_id, &event) ==
+         H2_PAL_ERR_INVALID_ARG);
+  event.component = H2_RUNTIME_COMPONENT_BUTTON;
+  event.component_id = 8u;
+  assert(h2_lua_dispatch_runtime_event(host, job_id, &event) ==
+         H2_PAL_ERR_INVALID_ARG);
+  event.component_id = 7u;
+  event.timestamp_ms = 21u;
+  assert(h2_lua_dispatch_runtime_event(host, job_id, &event) ==
+         H2_PAL_ERR_INVALID_ARG);
+  event.timestamp_ms = 20u;
+  cancelled.pressed_at_ms = 21u;
+  assert(h2_lua_dispatch_runtime_event(host, job_id, &event) ==
+         H2_PAL_ERR_INVALID_ARG);
+  cancelled.pressed_at_ms = 10u;
+  assert(h2_lua_dispatch_runtime_event(host, job_id, &event) == H2_PAL_OK);
+  /* Dispatch owns a copy, not this caller's payload. */
+  cancelled.pressed_at_ms = 99u;
+  run_until_terminal(host, job_id, 100u);
+  assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
+  assert(strcmp(status(host, job_id).message, "1") == 0);
+  cancelled.pressed_at_ms = 10u;
+  assert(h2_lua_dispatch_runtime_event(host, job_id, &event) == H2_PAL_ERR_CLOSED);
+  assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+  h2_lua_host_destroy(host);
+  h2_runtime_deinit(runtime);
+}
+
 int main(void) {
+  test_button_cancel_delivery();
   test_borrowed_display();
   static const char *const esp_claw_ids[] = {
       "adc",

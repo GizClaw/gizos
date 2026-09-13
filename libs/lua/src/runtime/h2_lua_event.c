@@ -19,6 +19,9 @@ _Static_assert(sizeof(h2_runtime_button_down_event_t) <=
 _Static_assert(sizeof(h2_runtime_button_up_event_t) <=
                    H2_RUNTIME_EVENT_PAYLOAD_MAX,
                "button up event exceeds Lua delivery storage");
+_Static_assert(sizeof(h2_runtime_button_cancel_event_t) <=
+                   H2_RUNTIME_EVENT_PAYLOAD_MAX,
+               "button cancel event exceeds Lua delivery storage");
 _Static_assert(sizeof(h2_runtime_button_action_event_t) <=
                    H2_RUNTIME_EVENT_PAYLOAD_MAX,
                "button click event exceeds Lua delivery storage");
@@ -48,6 +51,10 @@ static int payload_size_is_valid(const h2_runtime_event_t *event) {
     break;
   case H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP:
     expected = sizeof(h2_runtime_button_up_event_t);
+    expected_component = H2_RUNTIME_COMPONENT_BUTTON;
+    break;
+  case H2_RUNTIME_COMPONENT_EVENT_BUTTON_CANCEL:
+    expected = sizeof(h2_runtime_button_cancel_event_t);
     expected_component = H2_RUNTIME_COMPONENT_BUTTON;
     break;
   case H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION:
@@ -83,6 +90,13 @@ static int payload_size_is_valid(const h2_runtime_event_t *event) {
   if (event->kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION &&
       !button_action_is_valid(event)) {
     return 0;
+  }
+  if (event->kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_CANCEL) {
+    const h2_runtime_button_cancel_event_t *value = event->payload;
+    if (value->cancelled_at_ms != event->timestamp_ms ||
+        value->cancelled_at_ms < value->pressed_at_ms) {
+      return 0;
+    }
   }
   return 1;
 }
@@ -190,6 +204,12 @@ static void push_event(lua_State *state, const h2_runtime_event_t *event) {
     const h2_runtime_button_up_event_t *value = event->payload;
     push_u64(state, "pressed_at_ms", value->pressed_at_ms);
     push_u64(state, "released_at_ms", value->released_at_ms);
+    break;
+  }
+  case H2_RUNTIME_COMPONENT_EVENT_BUTTON_CANCEL: {
+    const h2_runtime_button_cancel_event_t *value = event->payload;
+    push_u64(state, "pressed_at_ms", value->pressed_at_ms);
+    push_u64(state, "cancelled_at_ms", value->cancelled_at_ms);
     break;
   }
   case H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION: {

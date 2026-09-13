@@ -4,6 +4,10 @@
 #include <string.h>
 
 _Static_assert(
+    sizeof(h2_runtime_button_cancel_event_t) <=
+        sizeof(h2_runtime_input_event_payload_t),
+    "button cancel payload must fit pending input event");
+_Static_assert(
     sizeof(h2_runtime_button_down_event_t) <=
         sizeof(h2_runtime_input_event_payload_t),
     "button down payload must fit pending input event");
@@ -585,6 +589,31 @@ static h2_pal_result_t poll_single_button(
         now_ms);
 }
 
+static h2_pal_result_t cancel_button_pressed(
+    h2_runtime_t *runtime,
+    h2_runtime_input_source_t *source,
+    h2_runtime_timestamp_ms_t now_ms) {
+    h2_runtime_button_recognizer_t *button = &source->button;
+    if (!button->initialized || !button->is_pressed) {
+        return H2_PAL_OK;
+    }
+    const h2_runtime_button_cancel_event_t event = {
+        .pressed_at_ms = button->pressed_at_ms,
+        .cancelled_at_ms = now_ms,
+    };
+    button->is_pressed = 0;
+    button->pressed_at_ms = 0u;
+    source->button_state.pressed = false;
+    source->button_state.pressed_at_ms = 0u;
+    source->button_state.updated_at_ms = now_ms;
+    source->button_state.result = H2_PAL_OK;
+    source->timestamp_ms = now_ms;
+    h2_runtime_state_mark_dirty(runtime);
+    return append_input_event(
+        runtime, source, H2_RUNTIME_COMPONENT_EVENT_BUTTON_CANCEL,
+        now_ms, &event, sizeof(event));
+}
+
 static h2_pal_result_t consume_push_button_edges(h2_runtime_t *runtime) {
     h2_runtime_button_push_edge_t edge;
     for (;;) {
@@ -611,11 +640,15 @@ static h2_pal_result_t consume_push_button_edges(h2_runtime_t *runtime) {
              */
             continue;
         }
-        rc = update_button_pressed(
-            runtime,
-            source,
-            edge.edge == H2_RUNTIME_BUTTON_EDGE_DOWN,
-            edge.timestamp_ms);
+        if (edge.edge == H2_RUNTIME_BUTTON_EDGE_CANCEL) {
+            rc = cancel_button_pressed(runtime, source, edge.timestamp_ms);
+        } else {
+            rc = update_button_pressed(
+                runtime,
+                source,
+                edge.edge == H2_RUNTIME_BUTTON_EDGE_DOWN,
+                edge.timestamp_ms);
+        }
         if (rc != H2_PAL_OK) {
             return rc;
         }
@@ -1481,7 +1514,8 @@ h2_pal_result_t h2_runtime_button_push_edge(
     h2_runtime_button_edge_t edge) {
     if (!h2_runtime_ready(runtime) || periph_id == 0u ||
         (edge != H2_RUNTIME_BUTTON_EDGE_DOWN &&
-         edge != H2_RUNTIME_BUTTON_EDGE_UP)) {
+         edge != H2_RUNTIME_BUTTON_EDGE_UP &&
+         edge != H2_RUNTIME_BUTTON_EDGE_CANCEL)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     /* Push edges hand off through a queue consumed under the writer mutex

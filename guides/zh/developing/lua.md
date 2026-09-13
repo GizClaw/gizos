@@ -95,6 +95,12 @@ Speaker。一个 job 结束不能中断另一个仍在写 Track 的 job。`audio
 user 释放后才停止 Runtime microphone；一个 job 结束不能中断另一个仍在读取的
 job。
 
+### Button 按压取消
+
+`runtime.event.BUTTON_CANCEL` 表示一次按压被中断，而不是正常松开。Button component 可通过 `runtime.components.on(id, runtime.event.BUTTON_CANCEL, callback)` 订阅；回调包含标准 event envelope、原始 `pressed_at_ms` 和 `cancelled_at_ms`，其中取消时间等于 `timestamp_ms`。它没有 `released_at_ms`、`gesture_kind` 或 `duration_ms`，也不产生额外的 `BUTTON_UP` 或已释放的 `BUTTON_ACTION`。维护蓄力、录音或拖动临时状态的脚本应订阅取消事件并丢弃该状态，不能把取消当作完成动作。
+
+取消事件沿用 job-owned delivery queue、callback registration/removal 和 job teardown。分发前校验 Button component、精确 payload size 及 `pressed_at_ms <= cancelled_at_ms == timestamp_ms`；payload 在调用期间复制，队列满时仍返回明确错误，不保证丢失边界后还能恢复手势。生产者是否能报告中断取决于其 adapter；新增 Lua 事件本身不会使浏览器或物理输入自动支持取消。
+
 ### Display AA 与 framebuffer fade
 
 `display.fill_circle_aa(cx, cy, radius, color)` 使用有界 supersample coverage 混合 RGB565 framebuffer，`radius` 限制为 `0..64`。`display.fade_to_black(amount)` 对完整 framebuffer 衰减，`display.fade_rect_to_black(x, y, width, height, amount)` 只衰减完全位于 framebuffer 内的正尺寸矩形；`amount` 均为 `0..255`。三者只标记实际 clipping 后的 dirty region，不隐式 `present`。小于一个 RGB565 channel step 的 fade 使用固定、有界的 spatial phase，避免高 FPS 下暗色 trail 永远不消失。

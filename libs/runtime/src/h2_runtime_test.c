@@ -170,6 +170,12 @@ static h2_pal_result_t event_schema(
             sizeof(h2_runtime_button_up_event_t),
         };
         return H2_PAL_OK;
+    case H2_RUNTIME_COMPONENT_EVENT_BUTTON_CANCEL:
+        *out_schema = (h2_runtime_test_event_schema_t){
+            H2_RUNTIME_COMPONENT_BUTTON,
+            sizeof(h2_runtime_button_cancel_event_t),
+        };
+        return H2_PAL_OK;
     case H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION:
         *out_schema = (h2_runtime_test_event_schema_t){
             H2_RUNTIME_COMPONENT_BUTTON,
@@ -277,6 +283,11 @@ static h2_pal_result_t validate_event(
         if (event->released_at_ms < event->pressed_at_ms) {
             return H2_PAL_ERR_FORMAT;
         }
+    } else if (kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_CANCEL) {
+        const h2_runtime_button_cancel_event_t *event = payload;
+        if (event->cancelled_at_ms < event->pressed_at_ms) {
+            return H2_PAL_ERR_FORMAT;
+        }
     } else if (kind == H2_RUNTIME_COMPONENT_EVENT_NFC_STATE) {
         const h2_runtime_nfc_state_t *state = payload;
         if (state->status < H2_RUNTIME_NFC_STATE_NONE ||
@@ -332,6 +343,20 @@ h2_pal_result_t h2_runtime_test_emit_event(
         kind, component, component_id, payload, payload_size);
     if (rc != H2_PAL_OK) {
         return rc;
+    }
+    if (kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_CANCEL) {
+        const h2_runtime_button_cancel_event_t *event = payload;
+        h2_runtime_component_info_t info;
+        if (event->cancelled_at_ms != timestamp_ms) {
+            return H2_PAL_ERR_FORMAT;
+        }
+        rc = h2_runtime_component_get(runtime, component_id, &info);
+        if (rc != H2_PAL_OK) {
+            return rc;
+        }
+        if (info.kind != H2_RUNTIME_COMPONENT_BUTTON) {
+            return H2_PAL_ERR_INVALID_ARG;
+        }
     }
     const h2_runtime_sequence_t sequence = h2_runtime_next_sequence(runtime);
     if (sequence == 0u) {

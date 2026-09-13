@@ -32,6 +32,14 @@ typedef struct h2_runtime_button_up_event {
     h2_runtime_timestamp_ms_t released_at_ms;
 } h2_runtime_button_up_event_t;
 
+/** Interrupted press; this is not a normal release or a completed action. */
+typedef struct h2_runtime_button_cancel_event {
+    /** Runtime monotonic timestamp of the matching button-down edge. */
+    h2_runtime_timestamp_ms_t pressed_at_ms;
+    /** Runtime monotonic timestamp when cancellation was accepted. */
+    h2_runtime_timestamp_ms_t cancelled_at_ms;
+} h2_runtime_button_cancel_event_t;
+
 /** Two-timestamp Button action emitted throughout one physical press. */
 typedef struct h2_runtime_button_action_event {
     h2_runtime_timestamp_ms_t pressed_at_ms;
@@ -60,6 +68,7 @@ typedef struct h2_runtime_button_state {
 typedef enum h2_runtime_button_edge {
     H2_RUNTIME_BUTTON_EDGE_DOWN = 1,
     H2_RUNTIME_BUTTON_EDGE_UP,
+    H2_RUNTIME_BUTTON_EDGE_CANCEL,
 } h2_runtime_button_edge_t;
 
 /**
@@ -71,6 +80,16 @@ typedef enum h2_runtime_button_edge {
  * sources. Runtime serializes this operation with its input task and Runtime
  * Test Control. The adapter must call it from task/event-dispatch context, not
  * directly from an ISR, and must stop its producer before Runtime deinit.
+ *
+ * CANCEL terminates a held press with BUTTON_CANCEL, never BUTTON_UP or a
+ * released BUTTON_ACTION. A neutral CANCEL or subsequent stale UP is a no-op.
+ * A fresh DOWN starts a new press. Cancellation is consumed in queue order,
+ * so it does not undo an earlier accepted UP. The neutral snapshot is
+ * published before the cancellation event becomes visible.
+ *
+ * Success means queued, not delivered. Queue-full rejection consumes nothing;
+ * the producer must retry the same edge in order before accepting a new press,
+ * or stop its producer/session. Cancellation does not bypass backpressure.
  */
 h2_pal_result_t h2_runtime_button_push_edge(
     h2_runtime_t *runtime,
