@@ -20,7 +20,7 @@ class WifiConnectTest(unittest.TestCase):
 #include "h2/pal/hal/h2_pal_wifi.h"
 static struct { h2_pal_wifi_ap_status_t ap; } wifi_state;
 static uint32_t now;
-static int sleeps, starts, stopped, configured, stop_rc, config_rc;
+static int sleeps, starts, stopped, configured, stop_rc, config_rc, enter_rc;
 static unsigned applied_channel, applied_max, applied_hidden;
 static int wifi_stop(void) { ++stopped; return stop_rc; }
 static int h2_jieli_wifi_configure_ap(unsigned ch, unsigned max, unsigned hidden) {
@@ -32,7 +32,7 @@ static int ensure_wifi_on(void) { assert(configured > starts); ++starts; return 
 static uint32_t timer_get_ms(void) { return now; }
 static int wifi_get_channel(void) { return 1; }
 static int wifi_enter_ap_mode(char *ssid, char *password) {
-    (void)ssid; (void)password; return 0;
+    (void)ssid; (void)password; return enter_rc;
 }
 static void os_time_dly(unsigned ticks) {
     assert(ticks == 1); ++sleeps; now += 40;
@@ -75,6 +75,9 @@ int main(void) {
     assert(ap_start(NULL, &config, 50) == H2_PAL_ERR_TIMEOUT);
     assert(applied_channel == 1 && applied_max == 2 && applied_hidden == 0);
     assert(sleeps == 2 && now == 60);
+    enter_rc = -1; sleeps = 0;
+    assert(ap_start(NULL, &config, 50) == H2_PAL_ERR_IO);
+    assert(wifi_state.ap.state == H2_PAL_WIFI_AP_STATE_UNKNOWN && sleeps == 0);
     return 0;
 }
 '''
@@ -100,8 +103,10 @@ static struct { h2_pal_wifi_sta_status_t sta; } wifi_state;
 static uint32_t now;
 static int sleeps, enter_rc, requests;
 #define H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING 1
+#define H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED 2
+static int last_event;
 static int ensure_wifi_on(void) { return 0; }
-static void post_sta_event(int type) { (void)type; }
+static void post_sta_event(int type) { last_event = type; }
 static void update_sta_snapshot(void) {}
 static uint32_t timer_get_ms(void) { return now; }
 static int wifi_enter_sta_mode(const char *ssid, const char *password) {
@@ -125,6 +130,9 @@ int main(void) {
     assert(sleeps == 2 && now == 60);
     enter_rc = -1; sleeps = 0;
     assert(sta_connect(NULL, &config, 0) == H2_PAL_ERR_IO && sleeps == 0);
+    assert(wifi_state.sta.state == H2_PAL_WIFI_STA_STATE_FAILED);
+    assert(last_event == H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED);
+    assert(wifi_state.sta.ip_valid == 0 && wifi_state.sta.disconnect_reason == -1);
     return 0;
 }
 '''

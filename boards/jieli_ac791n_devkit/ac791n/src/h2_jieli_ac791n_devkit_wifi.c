@@ -283,7 +283,14 @@ static int sta_connect(
   memcpy(wifi_state.sta.ssid, config->ssid, config->ssid_len);
   wifi_state.sta.ssid[config->ssid_len] = '\0';
   post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING);
-  if (wifi_enter_sta_mode(ssid, password) != 0) return H2_PAL_ERR_IO;
+  result = wifi_enter_sta_mode(ssid, password);
+  if (result != 0) {
+    wifi_state.sta.state = H2_PAL_WIFI_STA_STATE_FAILED;
+    wifi_state.sta.ip_valid = 0u;
+    wifi_state.sta.disconnect_reason = result;
+    post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED);
+    return H2_PAL_ERR_IO;
+  }
   if (timeout_ms == 0u) return H2_PAL_OK;
   const uint32_t started = timer_get_ms();
   while (wifi_state.sta.state != H2_PAL_WIFI_STA_STATE_GOT_IP) {
@@ -362,7 +369,11 @@ static int ap_start(
   wifi_state.ap.ssid_len = config->ssid_len;
   memcpy(wifi_state.ap.ssid, config->ssid, config->ssid_len);
   wifi_state.ap.ssid[config->ssid_len] = '\0';
-  if (wifi_enter_ap_mode(ssid, password) != 0) return H2_PAL_ERR_IO;
+  if (wifi_enter_ap_mode(ssid, password) != 0) {
+    /* A mode-switch failure does not prove the SDK stopped its previous AP. */
+    wifi_state.ap.state = H2_PAL_WIFI_AP_STATE_UNKNOWN;
+    return H2_PAL_ERR_IO;
+  }
   const uint32_t started = timer_get_ms();
   while (wifi_state.ap.state != H2_PAL_WIFI_AP_STATE_STARTED) {
     if ((uint32_t)(timer_get_ms() - started) >= timeout_ms) {
