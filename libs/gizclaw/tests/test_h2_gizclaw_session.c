@@ -714,7 +714,7 @@ static void test_send_text(void) {
          H2_PAL_ERR_INVALID_STATE); /* No conversation route yet. */
   assert(text_sends == 0u);
   assert(h2_gizclaw_session_conversation_create(
-             session, &sel, 1000u, NULL, completed, NULL, &conversation) ==
+             session, &sel, 1000u, NULL, NULL, NULL, &conversation) ==
          H2_PAL_OK);
 
   /* Accepted text waits for sound; the route stays owned until completion. */
@@ -729,8 +729,10 @@ static void test_send_text(void) {
   assert(releases == 0u);
   assert(h2_gizclaw_session_destroy(&session) == H2_PAL_ERR_BUSY);
   terminal(terminal_user, conversation, &sent);
-  assert(terminal_count == 1u && releases == 1u);
+  assert(releases == 0u); /* Completion frees nothing by itself. */
   assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_WAITING);
+  h2_gizclaw_session_conversation_release(session, conversation);
+  assert(releases == 1u);
   ++downlink_writes;
   assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
   assert(snapshot().can_start && snapshot().last_error == H2_PAL_OK);
