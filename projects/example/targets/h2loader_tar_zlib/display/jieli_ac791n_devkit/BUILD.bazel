@@ -62,39 +62,9 @@ alias(
     tags = ["manual", "no-release"],
 )
 
-jieli_target_task_policy(
+alias(
     name = "audio_system_task_policy",
-    default_policy = "10 4096 128",
-    graph = [":audio_system_target", ":color_bar_launcher"],
-    policies = [
-        "audio-system/music 10 24576 128",
-        "#C0audio-system/mic 10 8192 128",
-        "h2color/runtime 10 2048 128",
-        "h2loader/appcmd 10 12288 128",
-        "h2loader/blecmd 10 12288 128",
-        "$bleikcp/server 10 1536 128",
-        "$bleikcp/kcp 10 1536 128",
-        "$h2loader/blelink 10 1536 64",
-        "$h2loader/return 10 4096 128",
-        "$h2loader/uartcmd 10 4096 128",
-        "$runtime/input 10 4096 128",
-        "$runtime/nfc 10 4096 128",
-    ],
-    sdk_policies = [
-        "app_core 15 8192 1024",
-        "sys_event 29 512 0",
-        "systimer 14 256 0",
-        "sys_timer 9 512 128",
-        "dw_update 21 512 32",
-        "h2app_rx 12 4096 128",
-        "#C0audio_server 16 2048 256",
-        "#C0audio_decoder 30 2048 64",
-        "#C0audio_encoder 12 2048 64",
-        "#C0aec_encoder 13 1024 0",
-        "#C0audio_mix 28 2048 64",
-        "#C0btctrler 19 768 384",
-        "#C0btstack 18 1536 384",
-    ],
+    actual = "//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:audio_system_task_policy",
 )
 
 jieli_target_task_policy(
@@ -173,12 +143,9 @@ h2_tasks(
     tasks = ["button-smoke"],
 )
 
-firmware_lib_component(
+alias(
     name = "audio_system_libs",
-    component_name = "jieli_ac791n_devkit_audio_system_libs",
-    deps = [
-        "//libs/runtime",
-    ],
+    actual = "//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:audio_system_libs",
 )
 
 firmware_lib_component(
@@ -190,28 +157,9 @@ firmware_lib_component(
     ],
 )
 
-firmware_native_component(
+alias(
     name = "audio_system_target",
-    srcs = ["src/audio_system_target.c"],
-    hdrs = [
-        "//projects/example/apps/audio-system/app:include/h2_smoke_audio_system.h",
-        "//projects/example/apps/audio-system/app:include/h2_smoke_audio_system_task_names.h",
-    ],
-    include_roots = ["projects/example/apps/audio-system/app/include"],
-    native_srcs = [
-        "//projects/example/apps/audio-system/app:src/app.c",
-        "//projects/example/apps/audio-system/app:src/task_names.c",
-    ],
-    component_name = "jieli_ac791n_devkit_audio_system_target",
-    tags = ["manual"],
-    target_compatible_with = AC791N_COMPATIBILITY,
-    deps = [
-        "//projects/example/apps/audio-system/app:tasks",
-        ":audio_system_libs",
-        "//boards/jieli_ac791n_devkit/ac791n",
-        "//libs/pal:pal_header_files",
-        "//native_component_src/jieli/wl82/opus_port",
-    ],
+    actual = "//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:audio_system_target",
 )
 
 firmware_native_component(
@@ -335,17 +283,9 @@ alias(
     tags = ["manual", "no-release"],
 )
 
-h2loader_jieli_firmware(
+alias(
     name = "audio_system_firmware",
-    board = "jieli_ac791n_devkit",
-    graph = [
-        ":audio_system_target",
-        ":color_bar_launcher",
-        "//boards/jieli_ac791n_devkit/ac791n",
-    ],
-    image = "audio-system",
-    target = "wl82",
-    task_policy = ":audio_system_task_policy",
+    actual = "//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:audio_system_firmware",
 )
 
 h2loader_jieli_firmware(
@@ -405,15 +345,9 @@ alias(
     actual = "//projects/example/targets/h2loader_tar_zlib/mp4-player/jieli_ac791n_devkit:mp4_player_large_package",
 )
 
-h2loader_tar_zlib(
+alias(
     name = "audio_system_package",
-    board = "jieli_ac791n_devkit",
-    firmware = ":audio_system_firmware",
-    image = "audio-system",
-    package_data = ["//projects/example/apps/audio-system:data/audio/music_loop.ogg"],
-    package_data_root = "projects/example/apps/audio-system/data",
-    role = "app",
-    target = "wl82",
+    actual = "//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:audio_system_package",
 )
 
 h2loader_tar_zlib(
