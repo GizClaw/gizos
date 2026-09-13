@@ -82,6 +82,10 @@ static void counter_add_saturated(atomic_uint_least32_t *counter,
 static void fixture_lock(h2_app_test_audio_t *audio) {
   while (atomic_flag_test_and_set_explicit(&audio->fixture_lock,
                                            memory_order_acquire)) {
+    /* The mic reader runs at a higher priority than the fixture selector.
+     * A pure spin on the holder's core never lets the holder release the
+     * lock and starves that core's idle task until the watchdog aborts. */
+    (void)h2_pal_time_sleep_ms(audio->time, 1u);
   }
 }
 
