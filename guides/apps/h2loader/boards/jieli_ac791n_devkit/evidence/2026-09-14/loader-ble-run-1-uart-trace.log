@@ -1,0 +1,123 @@
+18: [00:29:59.786][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+58: [00:30:00.402][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+72: [00:30:01.048][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=19
+132: [00:30:02.304][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+172: [00:30:02.922][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+185: [00:30:03.343][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=19
+239: [00:30:04.713][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+267: [00:30:05.090][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+300: [00:30:10.063][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=19
+365: [00:30:12.252][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+405: [00:30:12.882][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+418: [00:30:13.513][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=19
+476: [00:30:14.554][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+504: [00:30:14.930][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+695: [00:30:46.858][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=22
+763: [00:30:50.551][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+803: [00:30:51.162][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+817: [00:30:51.873][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=19
+877: [00:30:53.144][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+918: [00:30:53.762][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+1102: [00:31:22.618][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=22
+1158: H2_JIELI_REBOOT_EXECUTE reset=core
+1165: H2_JIELI_BOOT_INFO result=0 base=0x4020 bytes=929853 version=2 logical=1
+1167: H2_JIELI_TRIAL_ROLLBACK app_bootable=0 action=command-mode
+1179: H2_JIELI_STARTUP_EVENT event=1 code=0
+1628: H2_JIELI_UPDATE_WRITE_DONE expected=868201 native=868201 result=0
+1637: H2_JIELI_STARTUP_EVENT event=3 code=0
+1650: H2_JIELI_REBOOT_EXECUTE reset=core
+1692: JIELI_APP_CONFIRM result=OK code=0 display=0 transport=0
+2040: [00:00:03.833][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+2084: [00:00:04.467][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+2095: [00:00:04.814][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=22
+2147: [00:00:06.184][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+2186: [00:00:06.807][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+2199: [00:00:07.348][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=19
+2257: [00:00:08.961][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+2296: [00:00:09.597][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+2308: [00:00:09.973][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=19
+2360: [00:00:11.850][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+2400: [00:00:12.477][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+2411: [00:00:13.033][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=22
+2469: [00:00:14.207][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+2508: [00:00:14.817][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+2520: [00:00:15.388][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=19
+2577: [00:00:16.345][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+2617: [00:00:16.977][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+2629: [00:00:17.518][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=19
+2686: [00:00:19.096][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+2725: [00:00:19.707][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+5152: [00:00:46.723][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=19
+5214: [00:00:48.911][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+5253: [00:00:49.527][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+5265: [00:00:50.138][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=19
+5324: [00:00:51.191][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+5363: [00:00:51.817][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+8287: [00:01:23.068][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=22
+8348: [00:01:24.648][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+8388: [00:01:25.257][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+8401: [00:01:25.768][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=19
+8443: JIELI_APP_CONFIRM result=OK code=0 display=0 transport=0
+8793: [00:00:03.249][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+8837: [00:00:03.874][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+8849: [00:00:04.470][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=19
+8907: [00:00:05.434][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+8946: [00:00:06.044][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+11281: [00:00:34.660][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=22
+11342: [00:00:35.613][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+11381: [00:00:36.234][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+11394: H2_JIELI_BOOT_INFO result=0 base=0x4020 bytes=929853 version=2 logical=1
+11397: H2_JIELI_WARM_LOG 0:36.745][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=19
+11704: [00:00:03.004][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+11749: [00:00:03.614][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+11761: [00:00:04.150][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=19
+11821: [00:00:05.413][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+11861: [00:00:06.024][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+12050: [00:00:37.215][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=22
+12115: [00:00:38.998][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+12132: H2_JIELI_REBOOT_EXECUTE reset=core
+12139: H2_JIELI_BOOT_INFO result=0 base=0x4020 bytes=929853 version=2 logical=1
+12151: H2_JIELI_STARTUP_EVENT event=1 code=0
+12637: H2_JIELI_UPDATE_WRITE_DONE expected=929917 native=929917 result=0
+12645: H2_JIELI_STARTUP_EVENT event=4 code=0
+12771: [00:00:12.818][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+12817: [00:00:13.451][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+12829: [00:00:13.872][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=19
+12884: [00:00:16.073][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+12924: [00:00:16.691][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+13058: [00:00:34.382][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=19
+13127: [00:00:39.214][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+13160: [00:00:39.834][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+13353: [00:01:09.332][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=19
+13415: [00:01:10.077][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+13456: [00:01:10.726][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+13472: [00:01:11.252][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=19
+13528: [00:01:12.508][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+13568: [00:01:13.141][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+13571: H2_JIELI_REBOOT_EXECUTE reset=core
+13578: H2_JIELI_BOOT_INFO result=0 base=0x4020 bytes=929853 version=2 logical=1
+13592: H2_JIELI_STARTUP_EVENT event=1 code=0
+14062: H2_JIELI_UPDATE_WRITE_DONE expected=899305 native=899305 result=0
+14071: H2_JIELI_STARTUP_EVENT event=3 code=0
+14084: H2_JIELI_REBOOT_EXECUTE reset=core
+14108: H2_CRASH_BEFORE_CONFIRM_READY action=crash
+14115: H2_JIELI_BOOT_INFO result=0 base=0x4020 bytes=929853 version=2 logical=1
+14118: H2_JIELI_TRIAL_ROLLBACK app_bootable=0 action=command-mode
+14338: [00:00:00.703][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+14382: [00:00:01.338][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+14394: [00:00:01.774][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=19
+14445: [00:00:03.052][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+14485: [00:00:03.678][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+14497: [00:00:04.279][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=19
+14559: [00:00:05.863][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+14593: [00:00:06.505][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+14614: [00:00:07.249][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=19
+14674: [00:00:08.098][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+14715: [00:00:08.718][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+14725: [00:00:09.468][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=22
+14790: [00:00:10.942][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+14822: [00:00:11.560][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+14844: [00:00:12.613][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=22
+14909: [00:00:15.641][D][jieli/ble] H2_JIELI_BLE_CONNECT subevent=1 status=0 interval=24 latency=0 timeout=72
+14949: [00:00:16.258][Info]: [LL_S]Slave Recv - LL_PHY_UPDATE_IND
+14962: [00:00:16.844][D][jieli/ble] H2_JIELI_BLE_DISCONNECT handle=80 reason=19

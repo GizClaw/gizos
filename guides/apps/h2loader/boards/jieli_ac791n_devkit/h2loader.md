@@ -90,6 +90,16 @@ last_result=0。随后在该 Loader 上执行完整 UART suite，25/25 PASS，56
 两项重连等待明显偏长且原因未定；本轮未覆盖 BLE 或断电。
 [完整证据与最终板端状态](./evidence/2026-09-14/loader-uart-lifecycle.md)。
 
+### 2026-09-14：当前源码 Loader BLE 连续两轮回归
+
+同一 UID `d879349abc9f`、当前源码 Loader，经重新发现的 BLE endpoint
+`5:818f070641f0` 完成两轮完整 BLE-only lifecycle：22/22 PASS（385.850 秒）
+和 22/22 PASS（357.072 秒）。UART 并行记录 34 / 33 次连接，每条连接的
+supervision timeout 与 LL reject 均为 0；仍有 SDK `conn nack` 等非致命诊断。
+独立 UART status 确认 P1 SHA 不变、last_result=0，P2/Stage 保留预期 crash App。
+未修改代码，不声称已根治历史间歇性问题或覆盖新断电测试。
+[两轮逐项结果、连接统计与最终状态](./evidence/2026-09-14/loader-ble-lifecycle.md)。
+
 ### 2026-09-13：恢复固件后的独立 UART / BLE 回归
 
 在 `3870bf72` 基础上含本文描述的未提交热启动改动，USB DL 使用本次构建输入执行官方 `-format all` 后，设备 UID 为 `3ce9e275d7aa`。报告中的 package SHA-256 是产物身份；不能把未提交构建归为 `3870bf72` 原始产物。
