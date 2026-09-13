@@ -506,7 +506,7 @@ Preference writer 的修改在 commit 前只对该 writer 可见，reader 读取
 - Fixture PCM 和底层 PAL 都是借用；fixture 可在 mic 停止或输出已暂停时更换；mic 运行时必须保持相同格式。先停止 App
   workers、关闭 mic/speaker/track、销毁 Runtime，再销毁 decorator 和底层 provider。
 
-Audio decorator 默认输出 fixture。后台麦克风泵持续读取的产品应在启动 Runtime 前暂停 fixture，再由公开 observation callback 发布实际 capture 状态；暂停期间继续采样真实麦克风健康，但 read 立即返回 WOULD_BLOCK 和零字节，不消耗 PCM。恢复保留样本位置与 EOF，从首次启用的 read 重新建立 pacing epoch，不补发暂停期间的帧；重复发布同一状态不重置时钟。暂停／恢复即使发生在两次 read 之间或 pacing sleep 内也会被检测。控制状态跨 mic stop/start 与 fixture 更换保留，mic start 仍回绕样本。调用方保持输出暂停后，可在后台 mic 持续运行时更换同格式 fixture；替换与在途帧复制互斥，成功后旧 PCM 可释放，进度与 EOF 清零，真实采集健康保留。替换需与 mic start/stop 串行，不在 observation callback 中执行。该控制只发布原子状态，不调用 PAL 或获取 fixture lock；已越过最终状态检查的在途 read 仍可能输出一帧，因此它不是停止上传的 completion barrier。产品采集状态、素材选择和业务断言由 consumer 拥有。
+Audio decorator 要求 Time PAL 提供会让出当前任务的 `sleep_ms`，缺少时 create 返回 `INVALID_ARG`；它既用于 fixture 节拍，也用于 fixture lock 忙时的退避，避免高优先级 mic 读取在同核自旋饿死持锁方。Audio decorator 默认输出 fixture。后台麦克风泵持续读取的产品应在启动 Runtime 前暂停 fixture，再由公开 observation callback 发布实际 capture 状态；暂停期间继续采样真实麦克风健康，但 read 立即返回 WOULD_BLOCK 和零字节，不消耗 PCM。恢复保留样本位置与 EOF，从首次启用的 read 重新建立 pacing epoch，不补发暂停期间的帧；重复发布同一状态不重置时钟。暂停／恢复即使发生在两次 read 之间或 pacing sleep 内也会被检测。控制状态跨 mic stop/start 与 fixture 更换保留，mic start 仍回绕样本。调用方保持输出暂停后，可在后台 mic 持续运行时更换同格式 fixture；替换与在途帧复制互斥，成功后旧 PCM 可释放，进度与 EOF 清零，真实采集健康保留。替换需与 mic start/stop 串行，不在 observation callback 中执行。该控制只发布原子状态，不调用 PAL 或获取 fixture lock；已越过最终状态检查的在途 read 仍可能输出一帧，因此它不是停止上传的 completion barrier。产品采集状态、素材选择和业务断言由 consumer 拥有。
 
 测试方通过 `h2_app_test_audio_copy_evidence()` 读取独立的 PAL 证据；App/UI 的 paired snapshot 仍由 App adapter 提供。Evidence 支持并发读取，但多字段不是原子快照，一致性断言应放在测试的 completion barrier 后。公共头文件定义具体并发与容量边界。
 
