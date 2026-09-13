@@ -16,6 +16,8 @@
 
 Public header 只暴露稳定类型和函数，不暴露 board header、SDK object、内部 task、private state 或 target-specific implementation。
 
+Lua 的程序绘图机制由 `libs/lua` 的 Display module 拥有。私有 native producer 可以使用其公共 `h2_lua_display.h` 批量更新 VM 所有的顶点／primitive 数据，再由 Lua Display 绘制；不能把 runtime 私有头、job 或 framebuffer 当作应用扩展 API。场景几何、变形、投影和配色策略留在应用自己的 portable library，公共层只处理明确输入的通用光栅、缓存和生命周期。
+
 每个 library 都必须提供自己的 `BUILD.bazel`。其中的主要 `cc_library` target 名与目录名一致；测试目录统一使用 `tests/`，不再使用单数形式的 `test/`。Library 是否进入某个平台 graph 只由 toolchain 和 compatibility 决定，不声明自定义 CI tag。
 
 PAL 是其中的 contract-only 特例：只需要类型和 provider vtable 的 library 依赖
@@ -145,7 +147,7 @@ App 必须在调用 third-party API 之前完成对应 integration 初始化，�
 - [`tinyh264`](./tinyh264.md)：TinyH264 的 portable Video Decoder PAL provider。
 - [`runtime`](./runtime.md)：提供给 app 使用的跨平台 Runtime。
 - [`semver`](./semver.md)：无堆分配的 SemVer 校验和排序，非法版本统一低于合法版本。
-- [`utils`](./utils.md)：APN 等小型 portable helper。
+- [`utils`](./utils.md)：APN 和单份 binary32 reciprocal/FMA 除法等小型 portable helper；数值编译假设与异常语义由生产公共头定义，不在 Lua 或应用中复制实现。
 - [`wolfssl`](./wolfssl.md)：同一 upstream 下的裁剪 Crypto PAL variant 与
   完整 Crypto/DTLS provider；不公开 WolfSSL private type。
 

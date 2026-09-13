@@ -245,6 +245,7 @@ release 规则，例如只接受长按。`run_ms` 非零时在该时长后发出
 | `web-hardware` | `hardware` hook：`prepare` 与 `configure_runtime` 在 App 前运行、Runtime `board` 为 hook 设置的名字；Enter 的 Down 与 Up 两个 edge 都经 `button` hook 推到目标自己的 periph（component 42 → periph 501）且 Runtime 都接受，之后 PASS |
 | `lua-script-stop` | 不按键，`run_ms` 发出 Stop 请求（`stage=stop-requested`），取消 job 后 PASS |
 | `lua-script-extension` | extension 注册的 capability 可用；`exit_requested` 拒绝第一次 Escape、job 继续运行，第二次 Escape 取消并 PASS |
+| `lua-script-vector` | 共享 Lua 入口绘制多边形、椭圆、硬边/平滑笔画和保留命令；唯一 native extension 经公开 Display API 创建／更新几何并重放缓存；真实 Canvas 检查边界、裁剪、变换、颜色与错误更新后旧数据，验证背景恢复、透明快照、retained 提交量、GC 后绘制和页面 Stop 回收 |
 | `mp4-player`（manual） | WebCodecs H.264/AAC 播放完成；`:large_browser_test` 播放 1024×600 大文件；需 `H2_WEB_TEST_BROWSER` 指向 Google Chrome |
 
 未提供 Web target 的 App：`gizclaw-ping-speed` 依赖必需的 Wi-Fi API；BLE、Wi-Fi CSI、modem、crash-before-confirm、partial-update 依赖浏览器不存在的硬件或板上能力；`lua-bloomspeaker` 依赖 BLE 配对；iperf 需要 raw socket。GizClaw 真实服务端注册与 H106 业务流程需要真实 token，不在自动测试范围内。

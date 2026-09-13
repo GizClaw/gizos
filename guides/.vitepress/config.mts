@@ -326,6 +326,7 @@ const referenceItems = [
       { text: "H2SCTP", link: "/references/h2sctp" },
       { text: "IO Stream iKCP", link: "/references/iostreamikcp" },
       { text: "libSRTP", link: "/references/libsrtp" },
+      { text: "Lua Display", link: "/references/lua" },
       { text: "LVGL", link: "/references/lvgl" },
       { text: "MP4 Decoder", link: "/references/mp4_decoder" },
       { text: "iperf", link: "/references/iperf" },

@@ -951,14 +951,11 @@ h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host,
   for (size_t i = 0u; i < host->config.max_coroutines_per_vm; ++i) {
     h2_lua_task_timer_destroy(&job->tasks[i]);
   }
-  if (job->display_open && !host->config.borrow_display) {
-    (void)h2_pal_display_close(host->config.runtime->display);
-  }
+  h2_lua_job_close_display(job);
   if (job->touch_open) {
     (void)h2_pal_touch_close(host->config.runtime->touch);
   }
   h2_lua_job_close_audio_tracks(job);
-  h2_pal_mem_free(mem, job->framebuffer);
   h2_pal_mem_free(mem, job->tasks);
   h2_pal_mem_free(mem, job->callbacks);
   h2_pal_mem_free(mem, job->events);

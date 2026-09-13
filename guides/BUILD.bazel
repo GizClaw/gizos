@@ -53,6 +53,7 @@ api_reference(
         "//libs/gizclaw",
         "//libs/iostreamikcp",
         "//libs/iperf",
+        "//libs/lua",
         "//libs/lvgl",
         "//libs/mp4_decoder",
         "//libs/ntp",
