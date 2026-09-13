@@ -42,6 +42,7 @@ static int s_fail_next_mutex_lock;
 static int s_invalid_mutex_unlocks;
 static int s_task_running;
 static int s_task_delete_calls;
+static int s_fail_task_delete;
 
 static void (*s_timer_dispatch_hook)(void);
 static int s_default_task;
@@ -70,6 +71,7 @@ void h2_jieli_fake_reset(void)
     s_invalid_mutex_unlocks = 0;
     s_task_running = 0;
     s_task_delete_calls = 0;
+    s_fail_task_delete = 0;
 }
 
 const char *h2_jieli_fake_log_output(void)
@@ -313,9 +315,14 @@ int h2_jieli_sdk_task_create(void (*entry)(void *ctx), void *ctx, const char *na
     return 0;
 }
 
+void h2_jieli_fake_fail_task_delete(int fail)
+{
+    s_fail_task_delete = fail;
+}
+
 int h2_jieli_sdk_task_delete(const char *name)
 {
-    if (name == NULL || name[0] == '\0' || s_task_running) {
+    if (s_fail_task_delete || name == NULL || name[0] == '\0' || s_task_running) {
         return -1;
     }
     s_task_delete_calls++;

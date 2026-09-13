@@ -59,6 +59,8 @@ size_t h2_jieli_fake_last_task_stack_bytes(void);
 void h2_jieli_fake_run_last_task_once(void);
 /** When non-zero, task creation fails. */
 void h2_jieli_fake_fail_task_create(int fail);
+/** When non-zero, task deletion fails without releasing the task. */
+void h2_jieli_fake_fail_task_delete(int fail);
 /** Fail the next mutex lock without changing mutex ownership. */
 void h2_jieli_fake_fail_next_mutex_lock(void);
 /** Attempts to unlock a mutex not held in the deterministic fake. */

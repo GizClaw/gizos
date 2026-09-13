@@ -11,6 +11,8 @@ struct h2_pal_task {
     h2_pal_task_entry_t entry;
     void *ctx;
     h2_jieli_sdk_sem_t *done;
+    /* Owned by the joining caller; retain completion across delete retries. */
+    int completion_observed;
     /* JieLi task names used by shared transports can exceed 15 characters
      * (for example, "h2loader/blelink"). Preserve the full registered name
      * for both create and delete. */
@@ -98,8 +100,11 @@ static int task_join(void *user, h2_pal_task_t *task)
     if (task == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    if (h2_jieli_sdk_sem_take(task->done, H2_JIELI_SDK_WAIT_FOREVER) != 0) {
-        return H2_PAL_ERR_TASK;
+    if (!task->completion_observed) {
+        if (h2_jieli_sdk_sem_take(task->done, H2_JIELI_SDK_WAIT_FOREVER) != 0) {
+            return H2_PAL_ERR_TASK;
+        }
+        task->completion_observed = 1;
     }
     if (h2_jieli_sdk_task_delete(task->name) != 0) {
         return H2_PAL_ERR_TASK;

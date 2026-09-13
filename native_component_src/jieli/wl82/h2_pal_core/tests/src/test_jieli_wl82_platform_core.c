@@ -356,6 +356,11 @@ static void test_task_start_and_join(void)
     CHECK(h2_jieli_fake_last_task_stack_bytes() == 8192u);
     h2_jieli_fake_run_last_task_once();
     CHECK(flag == 42);
+    h2_jieli_fake_fail_task_delete(1);
+    CHECK(h2_pal_task_join(api, task) == H2_PAL_ERR_TASK);
+    CHECK(h2_jieli_fake_live_allocations() == 2);
+    CHECK(h2_pal_task_join(api, task) == H2_PAL_ERR_TASK);
+    h2_jieli_fake_fail_task_delete(0);
     CHECK(h2_pal_task_join(api, task) == H2_PAL_OK);
     CHECK(h2_jieli_fake_live_allocations() == 0);
     const h2_pal_task_options_t long_name = {
