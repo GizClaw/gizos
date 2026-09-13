@@ -128,7 +128,33 @@ static void await_count(atomic_int *counter, int value) {
     }
     assert(!"worker did not reach barrier");
 }
+/* Real contention exposes owner publication outside the native mutex. */
+static void *recursive_worker(void *arg) {
+    h2_pal_mutex_t *mutex = arg;
+    const h2_pal_sync_api_t *api = h2_jieli_wl82_platform_sync_api();
+    for (unsigned i = 0; i < 10000u; ++i) {
+        assert(h2_pal_mutex_lock(api, mutex) == H2_PAL_OK);
+        assert(h2_pal_mutex_try_lock(api, mutex) == H2_PAL_OK);
+        assert(h2_pal_mutex_unlock(api, mutex) == H2_PAL_OK);
+        assert(h2_pal_mutex_unlock(api, mutex) == H2_PAL_OK);
+    }
+    return NULL;
+}
+static void test_recursive_contention(void) {
+    const h2_pal_sync_api_t *api = h2_jieli_wl82_platform_sync_api();
+    const h2_pal_mutex_config_t config = {.flags = H2_PAL_MUTEX_FLAG_RECURSIVE};
+    h2_pal_mutex_t *mutex = NULL;
+    assert(h2_pal_mutex_create(api, &config, &mutex) == H2_PAL_OK);
+    pthread_t workers[4];
+    for (unsigned i = 0; i < 4u; ++i)
+        assert(pthread_create(&workers[i], NULL, recursive_worker, mutex) == 0);
+    for (unsigned i = 0; i < 4u; ++i)
+        assert(pthread_join(workers[i], NULL) == 0);
+    assert(h2_pal_mutex_destroy(api, mutex) == H2_PAL_OK);
+    assert(atomic_load(&allocations) == 0);
+}
 int main(void) {
+    test_recursive_contention();
     const h2_pal_sync_api_t *api = h2_jieli_wl82_platform_sync_api();
     const h2_pal_cond_config_t config = {.name = "threaded-cond"};
     for (unsigned iteration = 0; iteration < 20u; ++iteration) {

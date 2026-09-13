@@ -440,6 +440,70 @@ py_test(
     }),
 )
 
+py_test(
+    name = "jieli_touch_lifecycle_test",
+    srcs = ["tests/test_jieli_touch_lifecycle.py"],
+    data = [
+        "//boards/jieli_ac791n_devkit/ac791n:src/h2_jieli_ac791n_devkit_input.c",
+        "//libs/pal:pal_header_files",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_touch_lifecycle.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "jieli_net_timeout_errors_test",
+    srcs = ["tests/test_jieli_net_timeout_errors.py"],
+    data = [
+        "//boards/jieli_ac791n_devkit/ac791n:src/h2_jieli_ac791n_devkit_net.c",
+        "//libs/pal:pal_header_files",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_net_timeout_errors.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "jieli_ble_adv_bounds_test",
+    srcs = ["tests/test_jieli_ble_adv_bounds.py"],
+    data = [
+        "//boards/jieli_ac791n_devkit/ac791n:src/h2_jieli_ac791n_devkit_ble.c",
+        "//libs/pal:pal_header_files",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_ble_adv_bounds.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "jieli_audio_capacity_test",
+    srcs = ["tests/test_jieli_audio_capacity.py"],
+    data = [
+        "//boards/jieli_ac791n_devkit/ac791n:src/h2_jieli_ac791n_devkit_audio.c",
+        "//libs/pal:pal_header_files",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_audio_capacity.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
 cc_library(
     name = "vendor_third_party_ikcp",
     tags = ["manual"],

@@ -4,6 +4,7 @@
 
 struct h2_pal_mutex {
     h2_jieli_sdk_mutex_t *native;
+    /* Recursion checks run before taking native; publish ownership atomically. */
     const void *owner;
     uint32_t depth;
     int recursive;
@@ -71,7 +72,7 @@ static h2_pal_result_t sync_create_mutex(
         h2_jieli_sdk_free(mutex);
         return H2_PAL_ERR_NO_MEMORY;
     }
-    mutex->owner = NULL;
+    h2_jieli_atomic_store_ptr(&mutex->owner, NULL);
     mutex->depth = 0u;
     mutex->recursive =
         (config->flags & H2_PAL_MUTEX_FLAG_RECURSIVE) != 0u;
@@ -97,15 +98,16 @@ static h2_pal_result_t sync_lock_mutex(void *user, h2_pal_mutex_t *mutex)
         return H2_PAL_ERR_INVALID_ARG;
     }
     const void *current = h2_jieli_sdk_task_current();
-    if (mutex->recursive != 0 && current != NULL && mutex->owner == current) {
+    if (mutex->recursive != 0 && current != NULL &&
+        h2_jieli_atomic_load_ptr(&mutex->owner) == current) {
         mutex->depth++;
         return H2_PAL_OK;
     }
     h2_pal_result_t result = map_wait(
         h2_jieli_sdk_mutex_lock(mutex->native, H2_JIELI_SDK_WAIT_FOREVER));
     if (result == H2_PAL_OK && mutex->recursive != 0) {
-        mutex->owner = current;
         mutex->depth = 1u;
+        h2_jieli_atomic_store_ptr(&mutex->owner, current);
     }
     return result;
 }
@@ -118,15 +120,16 @@ static h2_pal_result_t sync_try_lock_mutex(void *user, h2_pal_mutex_t *mutex)
         return H2_PAL_ERR_INVALID_ARG;
     }
     const void *current = h2_jieli_sdk_task_current();
-    if (mutex->recursive != 0 && current != NULL && mutex->owner == current) {
+    if (mutex->recursive != 0 && current != NULL &&
+        h2_jieli_atomic_load_ptr(&mutex->owner) == current) {
         mutex->depth++;
         return H2_PAL_OK;
     }
     rc = h2_jieli_sdk_mutex_lock(mutex->native, 0u);
     if (rc == 0) {
         if (mutex->recursive != 0) {
-            mutex->owner = current;
             mutex->depth = 1u;
+            h2_jieli_atomic_store_ptr(&mutex->owner, current);
         }
         return H2_PAL_OK;
     }
@@ -141,13 +144,13 @@ static h2_pal_result_t sync_unlock_mutex(void *user, h2_pal_mutex_t *mutex)
     }
     if (mutex->recursive != 0) {
         const void *current = h2_jieli_sdk_task_current();
-        if (mutex->depth == 0u || mutex->owner != current) {
+        if (h2_jieli_atomic_load_ptr(&mutex->owner) != current || mutex->depth == 0u) {
             return H2_PAL_ERR_INVALID_STATE;
         }
         if (--mutex->depth != 0u) {
             return H2_PAL_OK;
         }
-        mutex->owner = NULL;
+        h2_jieli_atomic_store_ptr(&mutex->owner, NULL);
     }
     return h2_jieli_sdk_mutex_unlock(mutex->native) == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
