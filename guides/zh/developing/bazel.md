@@ -292,3 +292,71 @@ Review 必须覆盖所有修改到的 platform config、native runner、workflow
 ## Lua portable 源码包
 
 `bazel build //libs/lua:runtime_sources` 导出下层 Runtime 的 C/H 源码和机器可读 manifest，供 Flutter native assets、cgo 与 native embedder 使用自己的目标工具链编译。源码 inventory 和编译参数来自 Bazel aspect，不依赖 archive 路径或另一份手写 source list；`//libs/lua:source_package_test` 解包后只用 manifest、普通 C compiler 和自建 PAL harness 验证，runner 不调用 Bazel。分层、schema 与消费流程见 [Lua 嵌入分层与源码包](./lua.md#嵌入分层与源码包)。
+
+## 手动时间戳 Release
+
+在 GitHub Actions 的 Release workflow 选择 branch，执行 **Run workflow**（或 `gh workflow run release.yml --ref <branch>`）。唯一 trigger 是 `workflow_dispatch`，没有 version input，也不由人工创建或推送 tag。Catalog job 的第一步只读取一次 UTC 时钟，全部 slices 使用同一个 job output。选择的 commit 由 GitHub 的 dispatched `github.sha` 固定，checkout、metadata 与最终自动 tag 都绑定这个完整 SHA。
+
+`RELEASE_VERSION` / `release_id` 格式为 `YYYYMMDD.S.0`，其中 `S = hour * 3600 + minute * 60 + second`，范围 `0..86399`，十进制且不补零。例如 `20260913.45296.0` 对应 `2026-09-13T12:34:56Z`。这保留到秒的 UTC 时间，符合 release script 的一至三个数字分段校验，同时是无前导零的三段 SemVer，最多 16 个 ASCII 字节，低于 H2Loader/native firmware 的 31-byte version 限制。不能使用带 `T/Z` 的日期或补零的 `HHMMSS` SemVer 数字段。显式 `FirmwareVersionInfo` 仍决定产品 firmware version；兼容 target 才把该 batch version 嵌入 native firmware/package。无需保留 dispatch version input：全部 artifact 都可使用这个格式，npm 版本继续由自己的 committed package.json 决定。
+
+DAG 保留现有 `catalog → esp/bk7258 → firmware-bundle → release-bundle`。Catalog job 另外运行 host-only `lua-runtime` slice，无需 board 或 SDK；其 Actions artifact 名为 `lua-runtime-bundle`，不会被 firmware-bundle 的 `release-*` 下载匹配到。最终 assembly 下载两种 bundle，校验文件清单、版本、SHA-256 和 size，生成 `gizos-release.json`，并重算覆盖所有最终文件（含 Lua tar、`.sha256`、metadata）的 `SHA256SUMS`。
+
+Publish 在所有 build/validation 成功后自动创建 `release-<release_id>` tag，指向 dispatched SHA，标题为 `GizOS <release_id>`，先以 draft 上传全部 asset，重新下载并逐字节核对清单与内容，全部一致后才转为正式（非 draft）Release；核对失败时 Release 保持 draft，workflow 失败，不会对外发布不完整的 Release。Tag 冲突直接失败，不移动 tag 或覆盖已有 Release；同秒重复 dispatch 或重复执行 publish 遇到冲突时，应重新 dispatch 生成新 batch。
+
+### Metadata schema
+
+`gizos-release.json` 使用 UTF-8、排序 key、两空格缩进和末尾 LF，由 `scripts/bazel/bazel-release.py` 确定性生成。相同 timestamp、commit、package identities 和 artifact bytes 产生相同 JSON，不在 assembly 时重新读时钟。
+
+| 字段 | 含义 |
+| --- | --- |
+| `schema_version` | 当前为 `1` |
+| `release_id` | `YYYYMMDD.S.0` batch identity |
+| `release_timestamp` | 从 identity 还原的 UTC `YYYY-MM-DDTHH:MM:SSZ` |
+| `commit` | dispatched commit 的完整 40 位 SHA |
+| `packages.h2loader_npm` | `name`、`version`，从该 commit 的 `projects/h2loader/targets/npm_package/h2loader/package.json` 读取；npm 实际发布仍由 `h2loader-npm-publish.yml` 负责，此字段不声称 npm registry 发布成功 |
+| `packages.lua_runtime` | `file`（含完整 `content_id`）、`content_id`、压缩 tar 的 `sha256` 和字节 `size` |
+| `packages.firmware_bundle` | `file` 为 `firmware-index.json`，以及索引的 `sha256`、`size`、`format`、batch `version`、`firmware_count`；各 firmware 的 identity/version/assets 由这个校验过的索引承载 |
+
+例如以下结构（hash/size 仅为示例占位值）：
+
+```json
+{
+  "schema_version": 1,
+  "release_id": "20260913.45296.0",
+  "release_timestamp": "2026-09-13T12:34:56Z",
+  "commit": "529c376b6d600b6ab1e7d31832dbe844bc06a339",
+  "packages": {
+    "h2loader_npm": {"name": "@gizclaw/h2loader", "version": "0.2.2"},
+    "lua_runtime": {
+      "file": "gizos-lua-runtime-src-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.tar.gz",
+      "content_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "size": 525920
+    },
+    "firmware_bundle": {
+      "file": "firmware-index.json",
+      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "size": 4096,
+      "format": 1,
+      "version": "20260913.45296.0",
+      "firmware_count": 1
+    }
+  }
+}
+```
+
+Host slice 中间文件 `lua-runtime.json` 只有前两种 package identity，最终 assembly 用实际 firmware index 补齐 `firmware_bundle`，只发布完整 `gizos-release.json`。Lua tar 内不含发布 metadata；Lua content id 的精确定义与 GizClaw `{url, sha256, size}` pin 合同见 [Lua 内容标识](./lua.md#内容标识与发布下载)。
+
+### 本地验证
+
+```sh
+bazel test //libs/lua:all //tools/bazel:release_test //tools/bazel:release_bundle_test
+make bazel-release RELEASE_SLICE=lua-runtime RELEASE_VERSION=20260913.45296.0 RELEASE_STAGING_DIR=build/release/lua-runtime
+mkdir -p build/release-verification
+bazel build //libs/lua:runtime_sources
+cp bazel-bin/libs/lua/runtime_sources.content_id build/release-verification/first.content_id
+bazel --output_base="$PWD/build/release-verification/output-base" build --disk_cache= --remote_cache= //libs/lua:runtime_sources
+cmp build/release-verification/first.content_id bazel-bin/libs/lua/runtime_sources.content_id
+```
+
+双 build 使用第二个全新 output base 并禁用 action cache，以验证真实执行的内容标识一致；无需在 Bazel test 内递归启动 Bazel。首次实现的 macOS arm64 验证，两次得到 `36edf5c7f3c84c276217aa0a54157d670d6a98fae01c50a83028aadb23a02b4a`。这是当时 package inputs 的标识，源码变化后应自然变化。本地 dirty worktree 的 metadata commit 仍为 HEAD，只能作为 assembly 验证，不能代表该 commit 已包含未提交改动。实际 firmware build 和 GitHub tag/upload 必须由完整 Release run 验证。

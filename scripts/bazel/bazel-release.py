@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import os
@@ -23,13 +24,14 @@ from common.bazel import cache_options  # noqa: E402
 VERSION_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+){0,2}$")
 SLICES = (
     "catalog",
+    "lua-runtime",
     "esp32s3",
     "esp32p4",
     "bk7258",
     "firmware-bundle",
     "release-bundle",
 )
-PRODUCERS = frozenset({"catalog"})
+PRODUCERS = frozenset({"catalog", "lua-runtime"})
 CATALOG_CONFIGS = ("esp32s3", "esp32p4", "bk7258")
 FIRMWARE_SLICES = {
     "esp32s3": ("esp", "esp32s3"),
@@ -87,6 +89,60 @@ def validate_version(version: str) -> None:
         raise ReleaseError(
             "RELEASE_VERSION must contain one to three numeric components"
         )
+
+
+def release_timestamp(version: str) -> str:
+    """Decode YYYYMMDD.seconds_since_midnight.0 (UTC), without a new clock read."""
+    if not re.fullmatch(r"[1-9][0-9]{7}\.(0|[1-9][0-9]{0,4})\.0", version):
+        raise ReleaseError("timestamp release version must be YYYYMMDD.<UTC seconds>.0")
+    date, seconds, _ = version.split(".")
+    if int(seconds) >= 86400:
+        raise ReleaseError("UTC seconds must be less than 86400")
+    try:
+        instant = datetime.strptime(date, "%Y%m%d").replace(tzinfo=timezone.utc)
+    except ValueError as error:
+        raise ReleaseError("invalid release date") from error
+    return (instant + timedelta(seconds=int(seconds))).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def file_identity(path: Path) -> dict[str, object]:
+    return {"file": path.name, "sha256": sha256(path), "size": path.stat().st_size}
+
+
+def build_lua_runtime(root: Path, bazel: str, version: str, output: Path) -> None:
+    timestamp = release_timestamp(version)
+    labels = ["//libs/lua:runtime_sources", "//libs/lua:runtime_sources_content_id"]
+    command(root, [bazel, "build", *cache_options(), *labels])
+    result = command(root, [bazel, "cquery", "--output=files", "set(%s)" % " ".join(labels)])
+    paths = [root / line for line in result.stdout.splitlines() if line]
+    archives = [path for path in paths if path.name.endswith(".tar.gz")]
+    ids = [path for path in paths if path.name.endswith(".content_id")]
+    if len(archives) != 1 or len(ids) != 1:
+        raise ReleaseError("Lua package target returned invalid outputs")
+    content_id = ids[0].read_text(encoding="ascii").strip()
+    if not re.fullmatch(r"[0-9a-f]{64}", content_id):
+        raise ReleaseError("invalid Lua content id")
+    asset = output / f"gizos-lua-runtime-src-{content_id}.tar.gz"
+    shutil.copyfile(archives[0], asset)
+    (output / (asset.name + ".sha256")).write_text(
+        f"{sha256(asset)}  {asset.name}\n", encoding="ascii",
+    )
+    commit = command(root, ["git", "rev-parse", "HEAD"]).stdout.strip()
+    package_path = "projects/h2loader/targets/npm_package/h2loader/package.json"
+    package = json.loads(command(root, ["git", "show", f"{commit}:{package_path}"]).stdout)
+    metadata = {
+        "schema_version": 1,
+        "release_id": version,
+        "release_timestamp": timestamp,
+        "commit": commit,
+        "packages": {
+            "h2loader_npm": {"name": package["name"], "version": package["version"]},
+            "lua_runtime": {**file_identity(asset), "content_id": content_id},
+        },
+    }
+    (output / "lua-runtime.json").write_text(
+        json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8",
+    )
 
 
 def resolve_output(root: Path, slice_name: str, value: Path | None) -> Path:
@@ -433,7 +489,42 @@ def assemble_final(
             ):
                 raise ReleaseError(f"invalid firmware release asset: {name}")
             asset_names.add(name)
+    metadata_path = by_name.get("lua-runtime.json")
+    if metadata_path is None:
+        raise ReleaseError("final release input is missing lua-runtime.json")
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    if (
+        not isinstance(metadata, dict)
+        or metadata.get("schema_version") != 1
+        or metadata.get("release_id") != version
+        or metadata.get("release_timestamp") != release_timestamp(version)
+        or not isinstance(metadata.get("commit"), str)
+        or not re.fullmatch(r"[0-9a-f]{40}", metadata["commit"])
+    ):
+        raise ReleaseError("Lua release identity is invalid")
+    packages = metadata.get("packages", {})
+    if not isinstance(packages, dict):
+        raise ReleaseError("invalid package identities")
+    npm = packages.get("h2loader_npm", {})
+    if not isinstance(npm, dict) or npm.get("name") != "@gizclaw/h2loader" or not validate_firmware_version(npm.get("version")):
+        raise ReleaseError("invalid h2loader npm identity")
+    lua = packages.get("lua_runtime", {})
+    if not isinstance(lua, dict):
+        raise ReleaseError("invalid Lua runtime identity")
+    content_id = lua.get("content_id", "")
+    if not isinstance(content_id, str) or not re.fullmatch(r"[0-9a-f]{64}", content_id):
+        raise ReleaseError("invalid Lua content id")
+    lua_name = f"gizos-lua-runtime-src-{content_id}.tar.gz"
+    if lua.get("file") != lua_name or lua_name not in by_name:
+        raise ReleaseError("missing Lua runtime asset")
+    if lua != {**file_identity(by_name[lua_name]), "content_id": content_id}:
+        raise ReleaseError("Lua runtime asset integrity mismatch")
+    checksum_name = lua_name + ".sha256"
+    if checksum_name not in by_name:
+        raise ReleaseError("missing Lua runtime checksum")
+    validate_checksums(by_name[checksum_name], by_name, {lua_name})
     expected = {
+        "lua-runtime.json", lua_name, checksum_name,
         "firmware-index.json",
         "SHA256SUMS",
         *asset_names,
@@ -449,8 +540,17 @@ def assemble_final(
         {"firmware-index.json", *asset_names},
     )
     copy_unique(
-        [path for path in files if path.name != "SHA256SUMS"],
+        [path for path in files if path.name not in {"SHA256SUMS", "lua-runtime.json"}],
         output,
+    )
+    packages["firmware_bundle"] = {
+        **file_identity(output / "firmware-index.json"),
+        "format": index["format"],
+        "version": index["version"],
+        "firmware_count": index["firmware_count"],
+    }
+    (output / "gizos-release.json").write_text(
+        json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8",
     )
     assets = sorted(path for path in output.iterdir() if path.is_file())
     (output / "SHA256SUMS").write_text(
@@ -476,6 +576,8 @@ def run_slice(
     prepare_output(output)
     if slice_name == "catalog":
         build_catalog(root, bazel, version, output)
+    elif slice_name == "lua-runtime":
+        build_lua_runtime(root, bazel, version, output)
     elif slice_name in FIRMWARE_SLICES:
         build_firmware(root, bazel, slice_name, version, files, output)
     elif slice_name == "firmware-bundle":

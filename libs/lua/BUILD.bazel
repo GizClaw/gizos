@@ -227,6 +227,24 @@ cc_test(
     ],
 )
 
+py_binary(
+    name = "source_content_id",
+    srcs = ["source_content_id.py"],
+    legacy_create_init = 0,
+    main = "source_content_id.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+filegroup(
+    name = "runtime_sources_content_id",
+    srcs = [":runtime_source_files"],
+    output_group = "content_id",
+)
+
 lua_source_package(
     name = "runtime_source_files",
     runtime = ":lua_runtime",
@@ -256,10 +274,12 @@ py_test(
     args = [
         "$(location :runtime_sources)",
         "$(location tests/test_embedder.c)",
+        "$(location :runtime_sources_content_id)",
     ],
     data = [
         "tests/test_embedder.c",
         ":runtime_sources",
+        ":runtime_sources_content_id",
     ],
     legacy_create_init = 0,
     main = "tests/test_source_package.py",
