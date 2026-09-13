@@ -691,6 +691,11 @@ py_test(
     ],
     legacy_create_init = 0,
     main = "tests/test_jieli_ble_session.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )
 
 py_test(
@@ -702,6 +707,11 @@ py_test(
     ],
     legacy_create_init = 0,
     main = "tests/test_jieli_sd_mount.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )
 
 py_test(
@@ -710,4 +720,9 @@ py_test(
     data = ["//native_component_src/jieli/wl82/h2_pal_core:src/h2_jieli_wl82_sdk_port.c"],
     legacy_create_init = 0,
     main = "tests/test_jieli_dynamic_task.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )
