@@ -20,12 +20,16 @@ class WifiOperationsTest(unittest.TestCase):
 enum { SCAN_IDLE, SCAN_PENDING, SCAN_READY, SCAN_ABANDONED, SCAN_CLEANING };
 static unsigned scan_phase;
 static int calls;
-static unsigned pause_scan, entered_scan, release_scan;
+static unsigned pause_scan, entered_scan, release_scan, abandon_scan;
 static int guarded_ap_stop(void *user, uint32_t timeout_ms);
 static int sta_scan(void *u, const h2_pal_wifi_scan_request_t *r,
     h2_pal_wifi_scan_result_fn f, void *c, uint32_t t) {
     ++calls;
     assert(guarded_ap_stop(NULL, 0) == H2_PAL_ERR_BUSY);
+    if (abandon_scan) {
+        __atomic_store_n(&scan_phase, SCAN_ABANDONED, __ATOMIC_RELEASE);
+        return H2_PAL_ERR_TIMEOUT;
+    }
     if (pause_scan) {
         __atomic_store_n(&entered_scan, 1u, __ATOMIC_RELEASE);
         while (!__atomic_load_n(&release_scan, __ATOMIC_ACQUIRE)) sched_yield();
@@ -70,6 +74,17 @@ int main(void) {
     assert(calls == 7 && wifi_operation_busy == 0);
     assert(guarded_sta_disconnect(NULL) == H2_PAL_ERR_IO);
     assert(calls == 8 && wifi_operation_busy == 0);
+    abandon_scan = 1;
+    assert(guarded_sta_scan(NULL, NULL, NULL, NULL, 0) == H2_PAL_ERR_TIMEOUT);
+    assert(wifi_operation_busy == 0 && scan_phase == SCAN_ABANDONED);
+    assert(guarded_sta_connect(NULL, NULL, 0) == H2_PAL_ERR_BUSY);
+    assert(guarded_ap_start(NULL, NULL, 0) == H2_PAL_ERR_BUSY);
+    assert(guarded_sta_disconnect(NULL) == H2_PAL_ERR_BUSY);
+    assert(calls == 9);
+    /* The SDK completion callback publishes IDLE only after clearing results. */
+    __atomic_store_n(&scan_phase, SCAN_IDLE, __ATOMIC_RELEASE);
+    assert(guarded_sta_connect(NULL, NULL, 0) == H2_PAL_ERR_IO);
+    assert(calls == 10 && wifi_operation_busy == 0);
     return 0;
 }
 '''
