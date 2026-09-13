@@ -53,6 +53,26 @@ static int probe_copy_memory(void) {
           input[i] = (uint16_t)(0x1234u + i * 71u);
           output[i] = (uint16_t)~input[i];
         }
+        dma2d_fill_t fill = {0};
+        fill.frameaddr = output;
+        fill.frame_xsize = fill.width = 16;
+        fill.frame_ysize = fill.height = 8;
+        fill.color_format = DMA2D_OUTPUT_RGB565;
+        fill.pixel_byte = TWO_BYTES;
+        fill.color = 0x5aa5;
+        sync_cache(output, 256);
+        transfer_error = 0;
+        dma2d_fill(&fill);
+        bk_dma2d_start_transfer();
+        if (rtos_get_semaphore(&completion, 100) != BK_OK ||
+            transfer_error || bk_dma2d_is_transfer_busy()) {
+          bk_dma2d_stop_transfer();
+          printf("H2_DMA2D probe fill_stopped\n");
+          return 0;
+        }
+        sync_cache(output, 256);
+        printf("H2_DMA2D probe prefill first=%04x expected=5aa5\n", output[0]);
+        for (unsigned i = 0; i < 128; ++i) output[i] = (uint16_t)~input[i];
         sync_cache(input, 256);
         sync_cache(output, 256);
         transfer_error = 0;
@@ -150,6 +170,8 @@ int h2_bk_dma2d_rgb565(void *dst, const void *src, int32_t width,
   }
   const size_t dst_bytes = (size_t)(height - 1) * dst_stride + width * 2u;
   const unsigned operation_bit = src ? 2u : 1u;
+  int reset_retry = 0;
+configure_transfer:
   /* A zero-filled target cannot prove that a black fill wrote anything.
    * Seed only the first checked operation with the opposite pixel values.
    * A failed check returns to LVGL's software path, which redraws the area. */
@@ -223,6 +245,14 @@ int h2_bk_dma2d_rgb565(void *dst, const void *src, int32_t width,
            (unsigned)bk_dma2d_is_transfer_busy(),
            (unsigned long)bk_dma2d_int_status_get(), (unsigned)first_source,
            (unsigned)*(const uint16_t *)src, (unsigned)*(const uint16_t *)dst);
+  }
+  if (trace_copy && !reset_retry && *(const uint16_t *)dst != first_source) {
+    printf("H2_DMA2D diagnostic reset_retry before=%04x expected=%04x\n",
+           (unsigned)*(const uint16_t *)dst, (unsigned)first_source);
+    bk_dma2d_soft_reset();
+    bk_dma2d_int_enable(DMA2D_CFG_ERROR | DMA2D_TRANS_ERROR | DMA2D_TRANS_COMPLETE, 1);
+    reset_retry = 1;
+    goto configure_transfer;
   }
   if ((verified_operations & operation_bit) == 0) {
     for (int32_t y = 0; y < height; ++y) {
