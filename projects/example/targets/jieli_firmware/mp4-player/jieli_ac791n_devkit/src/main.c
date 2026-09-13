@@ -183,12 +183,10 @@ void app_main(void) {
   trace("usb-debug", result);
   if (result != 0) return;
 
-  result = os_task_create(
-      heartbeat, NULL, 10, 2048, 0, "h2mp4/heartbeat");
+  result = task_create(heartbeat, NULL, "h2mp4/heartbeat");
   trace("heartbeat-task", result);
   if (result != OS_NO_ERR) return;
 
-  result = os_task_create(
-      decode_first_frame, NULL, 10, 8192, 0, "h2mp4/decode");
+  result = task_create(decode_first_frame, NULL, "h2mp4/decode");
   trace("decode-task", result);
 }

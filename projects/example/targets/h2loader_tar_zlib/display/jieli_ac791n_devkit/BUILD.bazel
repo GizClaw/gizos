@@ -1,6 +1,8 @@
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_jieli_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel:jieli_task_policy.bzl", "jieli_target_task_policy")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 
 package(default_visibility = ["//visibility:public"])
@@ -20,20 +22,54 @@ firmware_lib_component(
     ],
 )
 
-firmware_native_component(
+jieli_target_task_policy(
     name = "color_bar_task_policy",
-    srcs = ["src/color_bar_task_policy.c"],
-    component_name = "jieli_ac791n_devkit_color_bar_task_policy",
-    tags = ["manual"],
-    target_compatible_with = AC791N_COMPATIBILITY,
+    default_policy = "10 4096 128",
+    graph = [":color_bar_launcher"],
+    policies = [
+        "h2color/runtime 10 2048 128",
+        "h2loader/appcmd 10 12288 128",
+        "h2loader/blecmd 10 12288 128",
+        "$bleikcp/server 10 1536 128",
+        "$bleikcp/kcp 10 1536 128",
+        "$h2loader/blelink 10 1536 64",
+        "$h2loader/return 10 4096 128",
+        "$h2loader/uartcmd 10 4096 128",
+    ],
+    sdk_policies = [
+        "app_core 15 8192 1024",
+        "sys_event 29 512 0",
+        "systimer 14 256 0",
+        "sys_timer 9 512 128",
+        "dw_update 21 512 32",
+        "h2app_rx 12 4096 128",
+        "audio_server 16 1024 256",
+        "audio_decoder 30 1024 64",
+        "audio_encoder 12 384 64",
+        "audio_mix 28 512 0",
+        "#C0btctrler 19 768 384",
+        "#C0btstack 18 1536 384",
+    ],
 )
 
-firmware_native_component(
+jieli_target_task_policy(
     name = "direct_color_bar_task_policy",
-    srcs = ["src/direct_color_bar_task_policy.c"],
-    component_name = "jieli_ac791n_devkit_direct_color_bar_task_policy",
-    tags = ["manual"],
-    target_compatible_with = AC791N_COMPATIBILITY,
+    default_policy = "10 4096 128",
+    graph = [":direct_color_bar_launcher"],
+    policies = [
+        "$h2loader/return 10 4096 128",
+        "$h2loader/uartcmd 10 4096 128",
+        "$h2loader/blelink 10 1536 64",
+    ],
+    sdk_policies = [
+        "app_core 15 8192 1024",
+        "sys_event 29 512 0",
+        "systimer 14 256 0",
+        "sys_timer 9 512 128",
+        "dw_update 21 512 32",
+        "#C0btctrler 19 768 384",
+        "#C0btstack 18 1536 384",
+    ],
 )
 
 firmware_native_component(
@@ -44,44 +80,163 @@ firmware_native_component(
     target_compatible_with = AC791N_COMPATIBILITY,
 )
 
-firmware_native_component(
+jieli_target_task_policy(
     name = "mp4_player_small_task_policy",
-    srcs = ["src/mp4_player_small_task_policy.c"],
-    component_name = "jieli_ac791n_devkit_mp4_player_small_task_policy",
-    tags = ["manual"],
-    target_compatible_with = AC791N_COMPATIBILITY,
+    default_policy = "10 4096 128",
+    graph = [":mp4_player_small_launcher"],
+    policies = [
+        "h2loader/appcmd 10 12288 128",
+        "$h2loader/return 10 4096 128",
+        "$h2loader/uartcmd 10 4096 128",
+        "$h2loader/blelink 10 1536 64",
+        "#C0h2mp4/runtime 10 32768 128",
+        "#C0$mp4-player/audio 10 2048 128",
+        "$mp4-player/decoder 10 8192 128",
+        "$runtime/input 10 4096 128",
+        "$runtime/nfc 10 4096 128",
+    ],
+    sdk_policies = [
+        "app_core 15 8192 1024",
+        "sys_event 29 512 0",
+        "systimer 14 256 0",
+        "sys_timer 9 512 128",
+        "dw_update 21 512 32",
+        "h2app_rx 12 4096 128",
+        "#C0audio_server 16 1024 256",
+        "#C0audio_decoder 30 1024 64",
+        "audio_encoder 12 384 64",
+        "audio_mix 28 512 0",
+        "#C0btctrler 19 768 384",
+        "#C0btstack 18 1536 384",
+    ],
 )
 
-firmware_native_component(
+jieli_target_task_policy(
     name = "speaker_smoke_task_policy",
-    srcs = ["src/speaker_smoke_task_policy.c"],
-    component_name = "jieli_ac791n_devkit_speaker_smoke_task_policy",
-    tags = ["manual"],
-    target_compatible_with = AC791N_COMPATIBILITY,
+    default_policy = "10 4096 128",
+    graph = [":speaker_smoke"],
+    policies = [],
+    sdk_policies = [
+        "app_core 15 8192 1024",
+        "sys_event 29 512 0",
+        "systimer 14 256 0",
+        "sys_timer 9 512 128",
+        "dw_update 21 512 32",
+        "audio_server 16 1024 256",
+        "audio_decoder 30 1024 64",
+        "audio_mix 28 512 0",
+    ],
 )
 
-firmware_native_component(
+jieli_target_task_policy(
     name = "audio_system_task_policy",
-    srcs = ["src/audio_system_task_policy.c"],
-    component_name = "jieli_ac791n_devkit_audio_system_task_policy",
-    tags = ["manual"],
-    target_compatible_with = AC791N_COMPATIBILITY,
+    default_policy = "10 4096 128",
+    graph = [":audio_system_target", ":color_bar_launcher"],
+    policies = [
+        "audio-system/music 10 24576 128",
+        "#C0audio-system/mic 10 8192 128",
+        "h2color/runtime 10 2048 128",
+        "h2loader/appcmd 10 12288 128",
+        "h2loader/blecmd 10 12288 128",
+        "$bleikcp/server 10 1536 128",
+        "$bleikcp/kcp 10 1536 128",
+        "$h2loader/blelink 10 1536 64",
+        "$h2loader/return 10 4096 128",
+        "$h2loader/uartcmd 10 4096 128",
+        "$runtime/input 10 4096 128",
+        "$runtime/nfc 10 4096 128",
+    ],
+    sdk_policies = [
+        "app_core 15 8192 1024",
+        "sys_event 29 512 0",
+        "systimer 14 256 0",
+        "sys_timer 9 512 128",
+        "dw_update 21 512 32",
+        "h2app_rx 12 4096 128",
+        "#C0audio_server 16 2048 256",
+        "#C0audio_decoder 30 2048 64",
+        "#C0audio_encoder 12 2048 64",
+        "#C0aec_encoder 13 1024 0",
+        "#C0audio_mix 28 2048 64",
+        "#C0btctrler 19 768 384",
+        "#C0btstack 18 1536 384",
+    ],
 )
 
-firmware_native_component(
+jieli_target_task_policy(
     name = "touch_task_policy",
-    srcs = ["src/touch_task_policy.c"],
-    component_name = "jieli_ac791n_devkit_touch_task_policy",
-    tags = ["manual"],
-    target_compatible_with = AC791N_COMPATIBILITY,
+    default_policy = "10 4096 128",
+    graph = [":touch_target", ":color_bar_launcher"],
+    policies = [
+        "touch-smoke 10 16384 128",
+        "h2color/runtime 10 2048 128",
+        "h2loader/appcmd 10 12288 128",
+        "$runtime/input 10 4096 128",
+        "$runtime/nfc 10 4096 128",
+        "$lvgl/swdraw 10 8192 128",
+        "$lvgl/g2ddraw 10 4096 128",
+        "$lvgl/pxpdraw 10 4096 128",
+        "$lvgl/nemagfx 10 4096 128",
+        "$bleikcp/server 10 1536 128",
+        "$bleikcp/kcp 10 1536 128",
+        "$h2loader/blelink 10 1536 64",
+        "$h2loader/return 10 4096 128",
+        "$h2loader/uartcmd 10 4096 128",
+        "h2loader/blecmd 10 12288 128",
+    ],
+    sdk_policies = [
+        "app_core 15 8192 1024",
+        "sys_event 29 512 0",
+        "systimer 14 256 0",
+        "sys_timer 9 512 128",
+        "dw_update 21 512 32",
+        "h2app_rx 12 4096 128",
+        "#C0btctrler 19 768 384",
+        "#C0btstack 18 1536 384",
+    ],
 )
 
-firmware_native_component(
+h2_tasks(
+    name = "touch_tasks",
+    tasks = ["touch-smoke"],
+)
+
+jieli_target_task_policy(
     name = "button_task_policy",
-    srcs = ["src/button_task_policy.c"],
-    component_name = "jieli_ac791n_devkit_button_task_policy",
-    tags = ["manual"],
-    target_compatible_with = AC791N_COMPATIBILITY,
+    default_policy = "10 4096 128",
+    graph = [":button_target", ":color_bar_launcher"],
+    policies = [
+        "button-smoke 10 16384 128",
+        "h2color/runtime 10 2048 128",
+        "h2loader/appcmd 10 12288 128",
+        "$runtime/input 10 4096 128",
+        "$runtime/nfc 10 4096 128",
+        "$lvgl/swdraw 10 8192 128",
+        "$lvgl/g2ddraw 10 4096 128",
+        "$lvgl/pxpdraw 10 4096 128",
+        "$lvgl/nemagfx 10 4096 128",
+        "$bleikcp/server 10 1536 128",
+        "$bleikcp/kcp 10 1536 128",
+        "$h2loader/blelink 10 1536 64",
+        "$h2loader/return 10 4096 128",
+        "$h2loader/uartcmd 10 4096 128",
+        "h2loader/blecmd 10 12288 128",
+    ],
+    sdk_policies = [
+        "app_core 15 8192 1024",
+        "sys_event 29 512 0",
+        "systimer 14 256 0",
+        "sys_timer 9 512 128",
+        "dw_update 21 512 32",
+        "h2app_rx 12 4096 128",
+        "#C0btctrler 19 768 384",
+        "#C0btstack 18 1536 384",
+    ],
+)
+
+h2_tasks(
+    name = "button_tasks",
+    tasks = ["button-smoke"],
 )
 
 firmware_lib_component(
@@ -117,6 +272,7 @@ firmware_native_component(
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
+        "//projects/example/apps/audio-system/app:tasks",
         ":audio_system_libs",
         "//boards/jieli_ac791n_devkit/ac791n",
         "//libs/pal:pal_header_files",
@@ -135,6 +291,7 @@ firmware_native_component(
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
         ":touch_libs",
+        ":touch_tasks",
         "//boards/jieli_ac791n_devkit/ac791n",
         "//libs/pal:pal_header_files",
     ],
@@ -150,6 +307,7 @@ firmware_native_component(
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
+        ":button_tasks",
         ":touch_libs",
         "//boards/jieli_ac791n_devkit/ac791n",
         "//libs/pal:pal_header_files",
@@ -219,6 +377,7 @@ firmware_native_component(
     ],
     component_name = "jieli_ac791n_devkit_h2loader_app_client",
     deps = [
+        "//projects/h2loader/libs/h2loader:tasks",
         ":bundle_native",
         "//libs/command",
         "//libs/pal:pal_header_files",
@@ -239,6 +398,11 @@ firmware_native_component(
     ],
 )
 
+h2_tasks(
+    name = "app_transport_tasks",
+    tasks = ["h2loader/appcmd"],
+)
+
 firmware_native_component(
     name = "app_transport",
     srcs = [
@@ -249,11 +413,17 @@ firmware_native_component(
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
+        ":app_transport_tasks",
         ":app_support",
         ":reliable_transport",
         "//boards/ac791n_chip/ac791n",
         "//boards/jieli_ac791n_devkit/ac791n",
     ],
+)
+
+h2_tasks(
+    name = "color_bar_tasks",
+    tasks = ["h2color/runtime"],
 )
 
 firmware_native_component(
@@ -263,6 +433,7 @@ firmware_native_component(
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
+        ":color_bar_tasks",
         ":app_ble",
         ":app_transport",
         ":h2loader_app_client",
@@ -287,6 +458,7 @@ firmware_native_component(
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
+        "//projects/h2loader/apps/loader/app:ble_tasks",
         ":app_support",
         ":app_ble_transport",
     ],
@@ -304,6 +476,11 @@ firmware_lib_component(
     ],
 )
 
+h2_tasks(
+    name = "mp4_player_launcher_tasks",
+    tasks = ["h2mp4/runtime"],
+)
+
 firmware_native_component(
     name = "mp4_player_small_launcher",
     srcs = ["src/mp4_player_small_pal.c"],
@@ -311,6 +488,7 @@ firmware_native_component(
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
+        ":mp4_player_launcher_tasks",
         ":app_transport",
         ":h2loader_app_client",
         ":mp4_player_libs",

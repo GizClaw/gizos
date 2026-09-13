@@ -11,7 +11,7 @@ AUDIO_SOURCE = (
 )
 LOADER_TASK_POLICY = (
     ROOT
-    / "projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit/src/loader_task_policy.c"
+    / "projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit/BUILD.bazel"
 )
 
 
@@ -90,7 +90,7 @@ class JieliAudioPalTest(unittest.TestCase):
     def test_loader_policy_supports_audio_enabled_shared_layout(self):
         policy = LOADER_TASK_POLICY.read_text()
         for task in ("audio_server", "audio_decoder", "audio_encoder", "audio_mix"):
-            self.assertIn(f'{{"{task}"', policy)
+            self.assertIn(f'"{task} ', policy)
 
 
 if __name__ == "__main__":

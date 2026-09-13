@@ -35,7 +35,7 @@ static int task_start(
 {
     h2_pal_task_t *task;
     size_t stack_bytes = H2_JIELI_WL82_TASK_DEFAULT_STACK_BYTES;
-    const char *name = "h2_task";
+    const char *name = NULL;
     (void)user;
     if (entry == NULL || out_task == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
@@ -49,6 +49,12 @@ static int task_start(
             name = options->name;
         }
     }
+    /* Truncation changes the SDK policy lookup key and can collide with a
+     * different task. Reject it before allocating any SDK resources. */
+    if (name != NULL && (strlen(name) >= sizeof(task->name) ||
+                         strncmp(name, "$h2anon/", 8u) == 0)) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
     task = (h2_pal_task_t *)h2_jieli_sdk_malloc(sizeof(*task));
     if (task == NULL) {
         return H2_PAL_ERR_NO_MEMORY;
@@ -61,7 +67,21 @@ static int task_start(
         h2_jieli_sdk_free(task);
         return H2_PAL_ERR_NO_MEMORY;
     }
-    strncpy(task->name, name, sizeof(task->name) - 1u);
+    if (name != NULL) {
+        memcpy(task->name, name, strlen(name) + 1u);
+    } else {
+        /* Live task objects have distinct addresses. Keep all address bits,
+         * including on 64-bit host tests, and reserve this namespace above. */
+        static const char hex[] = "0123456789abcdef";
+        uintptr_t identity = (uintptr_t)task;
+        _Static_assert(8u + 2u * sizeof(identity) < sizeof(task->name),
+                       "anonymous task name must fit without truncation");
+        memcpy(task->name, "$h2anon/", 8u);
+        for (size_t i = 0; i < 2u * sizeof(identity); ++i) {
+            task->name[8u + i] = hex[(identity >>
+                (4u * (2u * sizeof(identity) - i - 1u))) & 15u];
+        }
+    }
     if (h2_jieli_sdk_task_create(task_trampoline, task, task->name, stack_bytes) != 0) {
         h2_jieli_sdk_sem_destroy(task->done);
         h2_jieli_sdk_free(task);

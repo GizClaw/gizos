@@ -8,6 +8,17 @@ import re
 ROOT = Path(__file__).resolve().parents[3]
 SOURCE = ROOT / "boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_console.c"
 
+def policy_rows(build, name):
+    source = build.read_text()
+    block = re.search(r'jieli_target_task_policy\(\s*name = "' + re.escape(name) + r'",(.*?)\n\)', source, re.S)
+    assert block, (build, name)
+    return {task: tuple(map(int, (prio, stack, queue)))
+            for task, prio, stack, queue in re.findall(
+                r'"([^"\s]+)\s+(\d+)\s+(\d+)\s+(\d+)"', block.group(1))}
+
+DISPLAY_BUILD = ROOT / "projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit/BUILD.bazel"
+LOADER_BUILD = ROOT / "projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit/BUILD.bazel"
+
 STUB = r"""
 #include <stdint.h>
 #include <stddef.h>
@@ -372,28 +383,16 @@ int main(void) {
             subprocess.run([str(binary)], check=True, timeout=60)
 
     def test_ble_sdk_policy_matches_existing_board_apps(self):
-        target = ROOT / "projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit/src"
-        policies = [target / (name + "_task_policy.c")
+        policies = [policy_rows(DISPLAY_BUILD, name + "_task_policy")
                     for name in ("color_bar", "touch", "button", "audio_system")]
-        policies += [
-            ROOT / "projects/h2loader/targets/h2loader_tar_zlib/loader/"
-                   "jieli_ac791n_devkit/src/loader_task_policy.c",
-            ROOT / "projects/e2e/targets/h2loader_tar_zlib/pal-ble-smoke/"
-                   "jieli_ac791n_devkit/src/pal_ble_smoke_task_policy.c",
-        ]
-        for task in ("#C0btctrler", "#C0btstack", "btctrler", "btstack"):
-            pattern = r'\{"' + re.escape(task) + r'",\s*(\d+),\s*(\d+),\s*(\d+)\}'
-            expected = re.search(pattern, policies[0].read_text()).groups()
-            for path in policies[1:]:
-                with self.subTest(task=task, policy=str(path)):
-                    self.assertEqual(re.search(pattern, path.read_text()).groups(), expected)
+        policies.append(policy_rows(LOADER_BUILD, "loader_task_policy"))
+        policies.append(policy_rows(ROOT / "projects/e2e/targets/h2loader_tar_zlib/pal-ble-smoke/jieli_ac791n_devkit/BUILD.bazel", "pal_smoke_task_policy"))
+        for task, expected in (("#C0btctrler", (19, 768, 384)), ("#C0btstack", (18, 1536, 384))):
+            for policy in policies:
+                self.assertEqual(policy[task], expected)
 
     def test_mp4_task_policy_registers_shared_app_task_names(self):
-        policy = (
-            ROOT
-            / "projects/example/targets/h2loader_tar_zlib/display/"
-              "jieli_ac791n_devkit/src/mp4_player_small_task_policy.c"
-        ).read_text()
+        policy = policy_rows(DISPLAY_BUILD, "mp4_player_small_task_policy")
         names = (
             ROOT
             / "projects/example/apps/mp4-player/app/include/"
@@ -404,16 +403,14 @@ int main(void) {
             "H2_SMOKE_MP4_PLAYER_DECODER_TASK_NAME_VALUE",
         ):
             name = re.search(rf'#define {macro} "([^"]+)"', names).group(1)
-            self.assertIn(f'{{"{name}",', policy)
-        self.assertNotIn('{"mp4-decoder",', policy)
+            self.assertTrue(name in policy or "#C0" + name in policy)
+        self.assertNotIn("mp4-decoder", policy)
 
     def test_app_command_stack_matches_loader_policy(self):
         target = ROOT / "projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit/src"
-        loader = ROOT / "projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit/src/loader_task_policy.c"
-        pattern = r'\{(?:"h2loader/appcmd"|H2LOADER_APP_COMMAND_TASK_NAME_VALUE),\s*\d+,\s*(\d+),'
-        loader_words = int(re.search(pattern, loader.read_text()).group(1))
-        for name in ("color_bar_task_policy.c", "mp4_player_small_task_policy.c"):
-            app_words = int(re.search(pattern, (target / name).read_text()).group(1))
+        loader_words = policy_rows(LOADER_BUILD, "loader_task_policy")["h2loader/appcmd"][1]
+        for name in ("color_bar_task_policy", "mp4_player_small_task_policy"):
+            app_words = policy_rows(DISPLAY_BUILD, name)["h2loader/appcmd"][1]
             self.assertEqual(app_words, loader_words)
         transport = (target / "jieli_app_iostreamikcp.c").read_text()
         kib = int(re.search(r'H2_APP_COMMAND_STACK_SIZE = (\d+) \* 1024', transport).group(1))
@@ -431,12 +428,10 @@ int main(void) {
         self.assertIn('.task_name = H2LOADER_BLE_COMMAND_TASK_NAME_VALUE,',
                       (target / "jieli_app_ble.c").read_text())
         for name in ("color_bar", "touch", "button", "audio_system"):
-            policy = (target / (name + "_task_policy.c")).read_text()
-            for task in ("H2LOADER_BLE_COMMAND_TASK_NAME_VALUE",
-                         "H2_BLEIKCP_SERVER_TASK_NAME_VALUE",
-                         "H2_BLEIKCP_WORKER_TASK_NAME_VALUE",
-                         "H2_LOADER_BLE_LINK_TASK_NAME_VALUE"):
-                self.assertIn("{" + task + ",", policy)
+            policy = policy_rows(DISPLAY_BUILD, name + "_task_policy")
+            for task in ("h2loader/blecmd", "$bleikcp/server",
+                         "$bleikcp/kcp", "$h2loader/blelink"):
+                self.assertIn(task, policy)
 
     def test_app_boot_logs_before_command_transport(self):
         app = (ROOT / "projects/example/targets/h2loader_tar_zlib/display/"

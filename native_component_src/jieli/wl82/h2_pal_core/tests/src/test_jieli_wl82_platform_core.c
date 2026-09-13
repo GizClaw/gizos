@@ -358,6 +358,28 @@ static void test_task_start_and_join(void)
     CHECK(flag == 42);
     CHECK(h2_pal_task_join(api, task) == H2_PAL_OK);
     CHECK(h2_jieli_fake_live_allocations() == 0);
+    const h2_pal_task_options_t long_name = {
+        .name = "01234567890123456789012345678901extra",
+    };
+    CHECK(h2_pal_task_start(api, &long_name, task_entry, &flag, &task) ==
+          H2_PAL_ERR_INVALID_ARG);
+    CHECK(task == NULL && h2_jieli_fake_live_allocations() == 0);
+    h2_pal_task_t *first = NULL;
+    char first_name[32];
+    CHECK(h2_pal_task_start(api, NULL, task_entry, &flag, &first) == H2_PAL_OK);
+    strcpy(first_name, h2_jieli_fake_last_task_name());
+    CHECK(strncmp(first_name, "$h2anon/", 8u) == 0);
+    h2_jieli_fake_run_last_task_once();
+    const h2_pal_task_options_t unnamed = {.name = ""};
+    CHECK(h2_pal_task_start(api, &unnamed, task_entry, &flag, &task) == H2_PAL_OK);
+    CHECK(strcmp(first_name, h2_jieli_fake_last_task_name()) != 0);
+    h2_jieli_fake_run_last_task_once();
+    CHECK(h2_pal_task_join(api, first) == H2_PAL_OK);
+    CHECK(h2_pal_task_join(api, task) == H2_PAL_OK);
+    const h2_pal_task_options_t reserved = {.name = "$h2anon/user"};
+    CHECK(h2_pal_task_start(api, &reserved, task_entry, &flag, &task) ==
+          H2_PAL_ERR_INVALID_ARG);
+    CHECK(h2_jieli_fake_live_allocations() == 0);
     h2_jieli_fake_fail_task_create(1);
     CHECK(h2_pal_task_start(api, NULL, task_entry, &flag, &task) == H2_PAL_ERR_TASK);
 }

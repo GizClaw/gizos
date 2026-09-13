@@ -2,6 +2,7 @@ load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_jieli_fi
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel:jieli_task_policy.bzl", "jieli_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -32,20 +33,50 @@ firmware_lib_component(
     ],
 )
 
-firmware_native_component(
+jieli_target_task_policy(
     name = "loader_task_policy",
-    srcs = ["src/loader_task_policy.c"],
-    component_name = "h2loader_ac791n_devkit_task_policy",
-    tags = ["manual"],
-    target_compatible_with = AC791N_COMPATIBILITY,
+    default_policy = "10 4096 128",
+    graph = [":loader_launcher"],
+    policies = [
+        "h2loader/appcmd 10 12288 128",
+        "h2loader/blecmd 10 12288 128",
+        "$bleikcp/server 10 1536 128",
+        "$bleikcp/kcp 10 1536 128",
+        "$h2loader/blelink 10 1536 64",
+        "$h2loader/return 10 4096 128",
+        "$h2loader/uartcmd 10 4096 128",
+        "$runtime/input 10 4096 128",
+        "$runtime/nfc 10 4096 128",
+    ],
+    sdk_policies = [
+        "app_core 15 8192 1024",
+        "sys_event 29 512 0",
+        "systimer 14 256 0",
+        "sys_timer 9 512 128",
+        "dw_update 21 512 32",
+        "#C0btctrler 19 768 384",
+        "#C0btstack 18 1536 384",
+        "h2loader 10 4096 128",
+        "h2loader_rx 12 1024 128",
+        "audio_server 16 1024 256",
+        "audio_decoder 30 1024 64",
+        "audio_encoder 12 384 64",
+        "audio_mix 28 512 0",
+    ],
 )
 
-firmware_native_component(
+jieli_target_task_policy(
     name = "usb_log_smoke_task_policy",
-    srcs = ["src/usb_log_smoke_task_policy.c"],
-    component_name = "jieli_ac791n_devkit_usb_log_smoke_task_policy",
-    tags = ["manual"],
-    target_compatible_with = AC791N_COMPATIBILITY,
+    default_policy = "10 4096 128",
+    graph = [":usb_log_smoke_launcher"],
+    policies = [],
+    sdk_policies = [
+        "app_core 15 8192 1024",
+        "sys_event 29 512 0",
+        "systimer 14 256 0",
+        "sys_timer 9 512 128",
+        "usb_log_smoke 10 256 32",
+    ],
 )
 
 firmware_native_component(
@@ -123,6 +154,9 @@ firmware_native_component(
         ":bundle_native",
         ":loader_support",
         "//libs/pal:pal_header_files",
+        "//projects/h2loader/apps/loader/app:tasks",
+        "//projects/h2loader/apps/loader/app:ble_tasks",
+        "//projects/h2loader/libs/h2loader:tasks",
     ],
 )
 

@@ -76,6 +76,20 @@ AC695N、AC707N 与 AC791N 的 `compile_only` layout 直接拥有 `project.mk`�
 
 `boards/jieli_ac791n_devkit/ac791n/` 描述物理开发板，区别于 `ac791n_chip` 的 compile-only 验证配置。`layouts/h2loader/` 集中拥有 SDK config、NOR geometry、启动配置与 SDK patches；`h2loader_jieli_firmware` 注入这些输入，各 firmware entry 选择自己的 launcher graph 和 task policy，不能单独覆盖 project makefile 或 SDK patches。
 
+AC791N 开发板的 target 使用 `//tools/bazel:jieli_task_policy.bzl` 中的
+`jieli_target_task_policy`，不再手写 `task_info_table` C 文件。每行格式为
+`任务名 优先级 栈word数 队列word数`（栈的 word 为 4 字节），`policies`
+覆盖 launcher graph 中声明的 PAL 任务，`sdk_policies` 注册直接通过 SDK
+创建的任务。通过 `native_srcs` 引入公共应用时，也必须依赖该应用的
+`:tasks` 声明，不能绕过共享图审计。SDK 的 `#C0` / `#C1` 核绑定前缀保留在
+生成表中，审计使用去掉前缀的逻辑任务名；本板配置对应双核 AC791N。
+
+`default_policy` 的格式为 `优先级 栈word数 队列word数`，用于没有名字的
+动态 PAL 任务。每个存活的匿名任务获得独立的 `$h2anon/` 名字，实际栈取
+target 默认值与调用者 `min_stack_size` 向上取整到 word 后的较大者。
+保留前缀不能由调用者指定；静态声明的任务仍必须有显式策略，不能使用
+匿名任务的默认值逃过审计。
+
 `native_component_src/jieli/wl82/h2_pal_core` 提供 SDK port 与 PAL core 实现，host test 使用 fake SDK。Board 组合 Display、Touch、ADC Button、Wi-Fi、BLE、Audio、SD filesystem 和 Preference；硬件 pin 与 SDK 配置由 board header 和 layout 文件拥有。UART1 的 TX 为 PB3、RX 为 PA6，Loader command 与日志复用该链路，使用 460800 波特率。BLE 使用 SDK host/controller，默认不主动发起配对或保存 bond。
 
 FDK AAC 编译由 `libs/fdk_aac` 拥有，PAL decoder 依赖该 first-party library；`@h2_fdk_aac` 仅暴露 upstream source group 和 header-only target，不引用 GizOS platform labels。pi32v2 的无 stdio 编译选项在 first-party library 内选择，Linux 保留原始 stdio 行为。
