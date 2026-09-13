@@ -73,13 +73,14 @@ static void sockaddr_to_addr(
   memcpy(out->ip, &address->sin_addr.s_addr, 4u);
 }
 
-static void set_timeout(int socket_fd, int option, uint32_t timeout_ms) {
+static h2_pal_result_t set_timeout(int socket_fd, int option, uint32_t timeout_ms) {
   struct timeval timeout = {
       .tv_sec = (long)(timeout_ms / 1000u),
       .tv_usec = (long)((timeout_ms % 1000u) * 1000u),
   };
-  (void)setsockopt(
-      socket_fd, SOL_SOCKET, option, &timeout, (socklen_t)sizeof(timeout));
+  return setsockopt(
+      socket_fd, SOL_SOCKET, option, &timeout, (socklen_t)sizeof(timeout)) == 0
+      ? H2_PAL_OK : map_socket_error();
 }
 
 static int resolve_addr(
@@ -286,7 +287,8 @@ static int udp_recvfrom(
   if (out_addr == NULL || data == NULL || length == 0u || length > INT_MAX) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  set_timeout(socket_fd, SO_RCVTIMEO, timeout_ms);
+  int result = set_timeout(socket_fd, SO_RCVTIMEO, timeout_ms);
+  if (result != H2_PAL_OK) return result;
   struct sockaddr_in native;
   socklen_t native_length = sizeof(native);
   int received = recvfrom(
@@ -399,7 +401,8 @@ static int tcp_send_timeout(
   if ((data == NULL && length != 0u) || length > INT_MAX) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  set_timeout(socket_fd, SO_SNDTIMEO, timeout_ms);
+  int result = set_timeout(socket_fd, SO_SNDTIMEO, timeout_ms);
+  if (result != H2_PAL_OK) return result;
   int sent = send(
       socket_fd, data, length, timeout_ms == 0u ? MSG_DONTWAIT : 0);
   return sent < 0 ? map_timed_socket_error(timeout_ms) : sent;
@@ -418,7 +421,8 @@ static int tcp_recv(
   if (data == NULL || length == 0u || length > INT_MAX) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  set_timeout(socket_fd, SO_RCVTIMEO, timeout_ms);
+  int result = set_timeout(socket_fd, SO_RCVTIMEO, timeout_ms);
+  if (result != H2_PAL_OK) return result;
   int received = recv(
       socket_fd, data, length, timeout_ms == 0u ? MSG_DONTWAIT : 0);
   if (received == 0) return H2_PAL_ERR_CLOSED;
