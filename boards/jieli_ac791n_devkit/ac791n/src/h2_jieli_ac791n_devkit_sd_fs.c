@@ -28,6 +28,9 @@ extern void h2_jieli_sd_fs_trace_read(
 extern void h2_jieli_sd_fs_trace_write(
     const char *stage, size_t offset, size_t length, int result)
     __attribute__((weak));
+extern void h2_jieli_sd_fs_trace_mkdir(
+    const char *path, int native_result, int lookup_result)
+    __attribute__((weak));
 
 struct h2_pal_fs_file {
   FILE *native;
@@ -226,10 +229,30 @@ static int ensure_directory(const char *path) {
   int existing = directory_status(path);
   if (existing != H2_PAL_ERR_NOT_FOUND) return existing;
   strcpy(folder, path + root_len - 1u);
-  (void)fmk_dir(H2_JIELI_SD_ROOT, folder, 0);
+  int native_result = fmk_dir(H2_JIELI_SD_ROOT, folder, 0);
+  /* Diagnostic-only fixed fixture; never reuse an existing temporary entry. */
+  if (native_result != 0 &&
+      strcmp(path, H2_JIELI_SD_ROOT "data/pal-host-e2e") == 0) {
+    char temporary[] = "/data/h2md0001";
+    int temporary_result = fmk_dir(H2_JIELI_SD_ROOT, temporary, 0);
+    if (h2_jieli_sd_fs_trace_mkdir != NULL)
+      h2_jieli_sd_fs_trace_mkdir(temporary, temporary_result, 0);
+    if (temporary_result == 0) {
+      FILE *directory = fopen_by_utf8(H2_JIELI_SD_ROOT "data/h2md0001", "r");
+      if (directory != NULL) {
+        int renamed = frename(directory, "pal-host-e2e");
+        if (h2_jieli_sd_fs_trace_mkdir != NULL)
+          h2_jieli_sd_fs_trace_mkdir("rename", renamed, 0);
+        if (renamed == 0) fclose(directory);
+        else if (fdelete(directory) != 0) fclose(directory);
+      }
+    }
+  }
   /* flen_dir() cannot reliably distinguish an empty directory from failure.
    * Only an actual existing directory makes a failed create idempotent. */
   int created = directory_status(path);
+  if (h2_jieli_sd_fs_trace_mkdir != NULL)
+    h2_jieli_sd_fs_trace_mkdir(path, native_result, created);
   return created == H2_PAL_ERR_NOT_FOUND ? H2_PAL_ERR_IO : created;
 }
 
