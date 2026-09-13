@@ -17,6 +17,8 @@
 
 #include "h2_jieli_ac791n_devkit.h"
 #include "h2_jieli_wl82_platform_core.h"
+#include "h2_jieli_wl82_atomic.h"
+#include "h2_jieli_wl82_sdk_port.h"
 
 #include <string.h>
 #include <stdarg.h>
@@ -683,15 +685,53 @@ static int h2_adv_set_destroy(void *user, h2_pal_ble_adv_set_t *set) {
   return rc;
 }
 
+/* GATT lifetime helpers. */
+/* The gate protects binding publication and stack-owned callback references,
+ * never an SDK call or a borrowed user callback. It outlives host restarts. */
+static volatile uint32_t h2_gatt_gate;
+typedef struct h2_gatt_call {
+  struct h2_gatt_call *next;
+  const void *task;
+} h2_gatt_call_t;
+static h2_gatt_call_t *h2_gatt_calls;
+static unsigned h2_gatt_unregistering;
+
+static void h2_gatt_lock(void) {
+  for (;;) {
+    uint32_t expected = 0u;
+    if (h2_jieli_atomic_cas_u32(&h2_gatt_gate, &expected, 1u)) return;
+    os_time_dly(1);
+  }
+}
+
+static void h2_gatt_unlock(void) {
+  h2_jieli_atomic_store_u32(&h2_gatt_gate, 0u);
+}
+
+static void h2_gatt_release(h2_gatt_call_t *call) {
+  h2_gatt_lock();
+  h2_gatt_call_t **link = &h2_gatt_calls;
+  while (*link != call) link = &(*link)->next;
+  *link = call->next;
+  h2_gatt_unlock();
+}
+/* End GATT lifetime helpers. */
+
 static int h2_register_gatt(
     void *user, const h2_pal_ble_gatt_service_t *services, size_t count) {
   (void)user;
   if (count != 1u || services == NULL || !services[0].primary ||
       services[0].characteristic_count != 2u ||
+      services[0].characteristics == NULL ||
       !h2_uuid_equal(&services[0].uuid, h2_service_uuid) ||
       !h2_uuid_equal(&services[0].characteristics[0].uuid, h2_tx_uuid) ||
       !h2_uuid_equal(&services[0].characteristics[1].uuid, h2_rx_uuid))
     return H2_PAL_ERR_UNSUPPORTED;
+  h2_gatt_lock();
+  if (h2_gatt_calls != NULL || h2_gatt_unregistering != 0u) {
+    h2_gatt_unlock();
+    return H2_PAL_ERR_BUSY;
+  }
   h2_ble.characteristics[0] = services[0].characteristics[0];
   h2_ble.characteristics[1] = services[0].characteristics[1];
   if (services[0].out_service_handle != NULL)
@@ -703,13 +743,33 @@ static int h2_register_gatt(
   if (services[0].characteristics[1].out_value_handle != NULL)
     *services[0].characteristics[1].out_value_handle = H2_JIELI_GATT_RX_VALUE_HANDLE;
   h2_ble.gatt_registered = 1;
+  h2_gatt_unlock();
   return H2_PAL_OK;
 }
 
 static int h2_unregister_gatt(void *user) {
   (void)user;
+  const void *task = h2_jieli_sdk_task_current();
+  h2_gatt_lock();
+  for (h2_gatt_call_t *call = h2_gatt_calls; call != NULL; call = call->next) {
+    if (call->task == task) {
+      /* Successful unregister releases the caller's borrowed context. This
+       * callback still owns it: report busy instead of waiting on ourselves
+       * or claiming that its lifetime has already ended. */
+      h2_gatt_unlock();
+      return H2_PAL_ERR_BUSY;
+    }
+  }
+  ++h2_gatt_unregistering;
   h2_ble.gatt_registered = 0;
   memset(h2_ble.characteristics, 0, sizeof(h2_ble.characteristics));
+  while (h2_gatt_calls != NULL) {
+    h2_gatt_unlock();
+    os_time_dly(1);
+    h2_gatt_lock();
+  }
+  --h2_gatt_unregistering;
+  h2_gatt_unlock();
   return H2_PAL_OK;
 }
 
@@ -827,17 +887,26 @@ static int h2_att_write(
                 &state, sizeof(state));
     return 0;
   }
-  if (handle == H2_JIELI_GATT_RX_VALUE_HANDLE && h2_ble.gatt_registered) {
-    const h2_pal_ble_gatt_characteristic_t *rx = &h2_ble.characteristics[1];
-    if (rx->write == NULL) return 0;
+  if (handle == H2_JIELI_GATT_RX_VALUE_HANDLE) {
+    h2_gatt_call_t call = {.task = h2_jieli_sdk_task_current()};
+    h2_gatt_lock();
+    if (!h2_ble.gatt_registered || h2_ble.characteristics[1].write == NULL) {
+      h2_gatt_unlock();
+      return 0;
+    }
+    const h2_pal_ble_gatt_characteristic_t rx = h2_ble.characteristics[1];
+    call.next = h2_gatt_calls;
+    h2_gatt_calls = &call;
+    h2_gatt_unlock();
     const h2_pal_ble_gatt_access_t access = {
         .conn_handle = connection_handle,
         .attr_handle = handle,
         .offset = offset,
     };
+    const int rc = rx.write(rx.user, &access, buffer, buffer_size);
+    h2_gatt_release(&call);
     /* ATT Error Response: Unlikely Error. */
-    return rx->write(rx->user, &access, buffer, buffer_size) == H2_PAL_OK
-               ? 0 : 0x0e;
+    return rc == H2_PAL_OK ? 0 : 0x0e;
   }
   return 0;
 }
