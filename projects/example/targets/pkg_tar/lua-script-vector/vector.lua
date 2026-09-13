@@ -22,6 +22,8 @@ display.draw_mesh(mesh,{cache=true})
 -- Empty clipping still prepares a different transform; identity must replace it.
 display.draw_mesh(mesh,{matrix={-1,0,0,1,200,0},left=0,right=0,cache=true})
 display.draw_mesh(mesh,{matrix={1,0,0,1,0,0},grid=0,cache=true})
+-- A coordinate-cache hit without span replay must still read owned vertices.
+display.draw_mesh(mesh)
 native.move(mesh,10,40)
 assert(not pcall(native.move,mesh,math.huge,0))
 collectgarbage('collect')

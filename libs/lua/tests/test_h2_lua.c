@@ -1517,13 +1517,14 @@ static void test_display_mesh_identity(void) {
       "{1.+2^-52,0.,0.,1.,0.,0.},{1.-2^-53,0.,0.,1.,0.,0.},"
       "{1.,0.,2^-52,1.,0.,0.},{1.,2^-52,0.,1.,0.,0.},"
       "{1.,0.,0.,1.,2^-52,0.},{1.,0.,0.,1.,0.,2^-52},"
-      "{-1.,0.,0.,1.,6.,0.},{1.,0.,0.,1.,0.,0.}};"
-      "for frame=1,32 do local f=(frame%4)*.25;"
+      "{-1.,0.,0.,1.,6.,0.},{1.,0.,0.,1.,0.,0.},"
+      "{1.,0.,0.,1.,0.,0.},{1.,0.,0.,1.,0.,0.}};"
+      "for frame=1,16 do local f=(frame%4)*.25;"
       "local v={{-.5+f,1.5},{6.5-f,-.5},{7.5,5.5-f},{1.5,7.5},"
       "{-1.+f,7.-f},{8.-f,0.+f}};"
       "if frame%8==0 then v[1]={-0.,-0.};v[5]={-0.,2^-1074};"
       "v[6]={7.,-2^-1074};end;d.update_mesh(m,v,p);"
-      "for k,a in ipairs(matrices) do local grid=k==9 and 2 or 0;local rv={};"
+      "for k,a in ipairs(matrices) do local grid=(k==9 or k==11) and 2 or 0;local rv={};"
       "for i,vv in ipairs(v) do local x=(a[1]*vv[1]+a[3]*vv[2])+a[5];"
       "local y=(a[2]*vv[1]+a[4]*vv[2])+a[6];"
       "if grid~=0 then x=math.floor(x/grid+.5)*grid;y=math.floor(y/grid+.5)*grid end;"
@@ -1532,7 +1533,9 @@ static void test_display_mesh_identity(void) {
       "top=frame%3,bottom=8-frame%2,color=frame%2==0 and 'white' or nil};"
       "d.clear('black');d.draw_mesh(ref,opts);d.present({retained=true});"
       "opts.matrix=a;opts.grid=grid;"
-      "for pass=1,3 do opts.cache=pass>1;d.clear('black');d.draw_mesh(m,opts);"
+      /* Rebuild, capture, replay, uncached coordinate hit, then replay again. */
+      "for pass=1,5 do opts.cache=pass~=1 and pass~=4;"
+      "d.clear('black');d.draw_mesh(m,opts);"
       "assert(d.present()==0,'identity pixels '..frame..'/'..k..'/'..pass);end;"
       "end;collectgarbage('collect');end";
   (void)run_display_script(host,"@mesh-identity-pixels.lua",pixels,sizeof(pixels)-1);

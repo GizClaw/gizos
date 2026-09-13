@@ -2233,18 +2233,13 @@ static int display_draw_mesh(lua_State *state) {
       top > bottom || bottom > job->display_info.height)
     return luaL_error(state, "invalid mesh options or closed display");
   h2_lua_display_vertex_t *positions = mesh_positions(mesh);
+  const h2_lua_display_vertex_t *vertices = mesh_vertices(mesh);
+  int identity = grid == 0 && matrix[0] == 1 && matrix[1] == 0 &&
+                 matrix[2] == 0 && matrix[3] == 1 && matrix[4] == 0 &&
+                 matrix[5] == 0;
   if (!mesh->positions_valid || mesh->grid != grid ||
       memcmp(mesh->matrix, matrix, sizeof(matrix)) != 0) {
-    const h2_lua_display_vertex_t *vertices = mesh_vertices(mesh);
-    if (grid == 0 && matrix[0] == 1 && matrix[1] == 0 && matrix[2] == 0 &&
-        matrix[3] == 1 && matrix[4] == 0 && matrix[5] == 0) {
-      /* Creation/update already checked every input as finite and within
-       * +/-1000000, inside the derived-coordinate bound. Exact identity needs
-       * neither software-double arithmetic nor another validation pass.
-       * Signed zeros are raster-equivalent; all other transforms stay below. */
-      if (mesh->vertex_count != 0u)
-        memcpy(positions, vertices, mesh->vertex_count * sizeof(*positions));
-    } else {
+    if (!identity) {
       /* Validate the complete transform before changing cache or pixels. */
       for (size_t i = 0; i < mesh->vertex_count; ++i) {
         h2_lua_display_vertex_t p = mesh_transform(vertices[i], matrix, (int)grid);
@@ -2283,10 +2278,14 @@ static int display_draw_mesh(lua_State *state) {
     mesh->span_recolor = recolor;
     mesh->span_color = ink;
   }
+  /* Exact identity reads the mesh's own validated, bounded vertices, without
+   * copying to positions. Select on cache hits too: positions may still hold
+   * an older general transform. Signed zeros are raster-equivalent. */
+  const h2_lua_display_vertex_t *draw_positions = identity ? vertices : positions;
   const h2_lua_display_primitive_t *primitives = mesh_primitives(mesh);
   for (size_t i = 0; i < mesh->primitive_count; ++i) {
     const h2_lua_display_primitive_t *p = &primitives[i];
-    const h2_lua_display_vertex_t *v = positions + p->first;
+    const h2_lua_display_vertex_t *v = draw_positions + p->first;
     uint16_t color = recolor ? ink : p->color;
     if (p->kind == H2_LUA_DISPLAY_LINE) {
       display_clipped_line_rect_capture(job, v[0].x + offset, v[0].y,

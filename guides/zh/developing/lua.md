@@ -152,7 +152,7 @@ smooth 显式启用圆端点连续覆盖，每像素只混合最大 alpha 一次
 
 所有派生顶点在光栅化前验证为有限且在 ±16000000 内。多边形沿用上述 even-odd 扫描和交点取整规则；线先连续裁剪再按 `floor(endpoint+0.5)` 取整并执行 Bresenham。绘制不隐式 present，关闭 Display 后拒绝绘制。派生顶点缓存以内容更新、matrix 和 grid 为失效条件；裁剪、颜色、offset 每次绘制应用，不能因坐标缓存命中而跳过。可选 span 缓存还比较裁剪、viewport、offset 和 recolor，命中时按原顺序重放并标记 dirty/background damage；容量溢出仍完整绘制，但不发布部分缓存。成功的 native/Lua 更新同时使两类缓存失效。数据和缓存计入 VM；引用释放后由 GC 或 VM teardown 回收。
 
-精确单位矩阵且 `grid=0` 时，创建／更新阶段已验证的顶点直接复制到既有派生坐标缓存，不逐点重复计算单位变换，也不增加缓存容量或分配。此快路径不使用近似比较；非单位矩阵或非零 grid 仍在修改坐标缓存和像素前完整验证变换结果，错误、像素和缓存失效合同不变。
+精确单位矩阵且 `grid=0` 时，绘制直接读取 mesh 自有、已在创建／更新阶段验证的顶点，不再复制到派生坐标缓存或逐点重复计算单位变换，也不借用调用方缓冲区。既有派生坐标存储仍为一般变换保留，不增加容量或分配。此快路径不使用近似比较；非单位矩阵或非零 grid 仍在修改坐标缓存和像素前完整验证变换结果，错误、像素和缓存失效合同不变。
 
 私有 native 计算模块通过生产公共头 `h2_lua_display.h` 创建／更新同一种 userdata，再交给 `display.draw_mesh`。C API 的完整参数、错误和 ownership 合同见从该头 Doxygen 生成的 [Lua Display API Reference](/references/lua)；native indices 从 0 开始，不同于 Lua 表。native 更新不分配、不增长 Lua stack，调用方预留两个空栈槽；创建通过受保护的 Lua 调用处理 OOM，失败恢复栈。它们不打开 Display、不绘制、不暴露内部存储地址，模块不得获取 job/framebuffer 或 include runtime 私有头。鱼身变形、场景投影、分色、网格选择等策略由应用先计算。
 
