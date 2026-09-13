@@ -83,7 +83,10 @@ int h2_bk_dma2d_rgb565(void *dst, const void *src, int32_t width,
     dma2d_memcpy_pfc_t copy = {0};
     copy.input_addr = (void *)src;
     copy.output_addr = dst;
-    copy.mode = DMA2D_M2M;
+    /* BK's raw M2M mode forces 32-bit output in dma2d_hal_init(). Use
+     * PFC even for identical formats so RGB565 width and stride stay 16-bit. */
+    copy.mode = DMA2D_M2M_PFC;
+    copy.input_alpha = 0xff;
     copy.input_color_mode = DMA2D_INPUT_RGB565;
     copy.output_color_mode = DMA2D_OUTPUT_RGB565;
     copy.src_pixel_byte = TWO_BYTES;
@@ -127,8 +130,9 @@ int h2_bk_dma2d_rgb565(void *dst, const void *src, int32_t width,
       for (int32_t x = 0; x < width; ++x) {
         if (actual[x] != (src ? expected[x] : color)) {
           disabled = 1;
-          printf("H2_DMA2D verify_failed operation=%s x=%ld y=%ld\r\n",
-                    src ? "copy" : "fill", (long)x, (long)y);
+          printf("H2_DMA2D verify_failed operation=%s x=%ld y=%ld actual=%04x expected=%04x src=%p dst=%p\r\n",
+                    src ? "copy" : "fill", (long)x, (long)y,
+                    (unsigned)actual[x], (unsigned)(src ? expected[x] : color), src, dst);
           return 0;
         }
       }
