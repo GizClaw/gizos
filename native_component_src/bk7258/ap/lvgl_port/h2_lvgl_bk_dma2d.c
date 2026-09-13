@@ -28,7 +28,8 @@ static unsigned copy_completed;
 static void prepare_copy(void) {
   /* BK7258 completes R2M but retains internal state that makes a following
    * M2M/PFC read zero. The SDK soft reset resets logic while retaining the
-   * register configuration. Only reset a quiescent fill-to-copy transition. */
+   * register configuration. Configure the new copy mode BEFORE resetting:
+   * resetting with R2M still configured does not repair the transition. */
   if (last_was_fill) {
     bk_dma2d_soft_reset();
     last_was_fill = 0;
@@ -105,8 +106,8 @@ static int probe_copy_memory(void) {
         copy.src_frame_height = copy.dst_frame_height = 8;
         copy.dma2d_width = 16;
         copy.dma2d_height = 8;
-        prepare_copy();
         bk_dma2d_memcpy_or_pixel_convert(&copy);
+        prepare_copy();
         bk_dma2d_start_transfer();
         int rc = rtos_get_semaphore(&completion, 100);
         if (rc != BK_OK || transfer_error || bk_dma2d_is_transfer_busy()) {
@@ -230,8 +231,8 @@ int h2_bk_dma2d_rgb565(void *dst, const void *src, int32_t width,
     copy.dst_frame_height = height;
     copy.dma2d_width = width;
     copy.dma2d_height = height;
-    prepare_copy();
     bk_dma2d_memcpy_or_pixel_convert(&copy);
+    prepare_copy();
     if (trace_copy) {
       /* BK7258 register offsets from the SDK DMA2D register map. */
       printf("H2_DMA2D registers control=%08lx src=%08lx dst=%08lx input=%08lx output=%08lx size=%08lx seeded=%04x\n",
