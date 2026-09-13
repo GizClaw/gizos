@@ -282,14 +282,16 @@ static int sta_connect(
   wifi_state.sta.ssid[config->ssid_len] = '\0';
   post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING);
   if (wifi_enter_sta_mode(ssid, password) != 0) return H2_PAL_ERR_IO;
-  uint32_t elapsed = 0u;
+  if (timeout_ms == 0u) return H2_PAL_OK;
+  const uint32_t started = timer_get_ms();
   while (wifi_state.sta.state != H2_PAL_WIFI_STA_STATE_GOT_IP) {
     if (wifi_state.sta.state == H2_PAL_WIFI_STA_STATE_FAILED) {
       return H2_PAL_ERR_IO;
     }
-    if (elapsed >= timeout_ms) return H2_PAL_ERR_TIMEOUT;
+    if ((uint32_t)(timer_get_ms() - started) >= timeout_ms) {
+      return H2_PAL_ERR_TIMEOUT;
+    }
     os_time_dly(1u);
-    elapsed += 10u;
   }
   update_sta_snapshot();
   return H2_PAL_OK;
