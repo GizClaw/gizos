@@ -25,7 +25,12 @@ typedef struct fake_time {
   h2_app_test_audio_t *pause_on_sleep;
   bool resume_on_sleep;
   const h2_app_test_audio_fixture_t *replace_on_sleep;
+  h2_pal_result_t sleep_result;
+  unsigned int sleep_calls;
 } fake_time_t;
+
+bool h2_app_test_audio_test_hold_fixture_lock(h2_app_test_audio_t *audio);
+void h2_app_test_audio_test_release_fixture_lock(h2_app_test_audio_t *audio);
 
 static void *test_alloc(void *user, size_t size) {
   (void)user;
@@ -48,6 +53,9 @@ static h2_pal_result_t fake_get_monotonic_ms(void *user, uint64_t *out_ms) {
 
 static h2_pal_result_t fake_sleep_ms(void *user, uint32_t ms) {
   fake_time_t *time = user;
+  ++time->sleep_calls;
+  if (time->sleep_result != H2_PAL_OK)
+    return time->sleep_result;
   time->now_ms += ms;
   if (time->pause_on_sleep != NULL) {
     h2_app_test_audio_set_capture_active(time->pause_on_sleep, false);
@@ -314,7 +322,60 @@ static void test_capture_gate(void) {
   assert(h2_app_test_audio_destroy(audio) == H2_PAL_OK);
 }
 
+/* A waiter on a held fixture lock backs off through sleep_ms; a failed sleep
+ * is returned and leaves fixture and mic state untouched. */
+static void test_contended_backoff_failure(void) {
+  const h2_pal_mem_api_t mem = {.vtable = &s_mem_vtable};
+  fake_time_t time = {.now_ms = 1000u};
+  time.api = (h2_pal_time_api_t){.user = &time, .vtable = &s_time_vtable};
+  fake_audio_t fake = {
+      .mic_format = {16000u, 4u, 1u, H2_AUDIO_SAMPLE_S16LE},
+  };
+  fake.api = (h2_pal_audio_api_t){.user = &fake, .vtable = &s_audio_vtable};
+  const uint8_t first[] = {9u, 10u, 11u, 12u};
+  const uint8_t second[] = {1u, 2u, 3u, 4u};
+  h2_app_test_audio_fixture_t input = {first, sizeof(first), fake.mic_format};
+  const h2_app_test_audio_fixture_t replacement = {second, sizeof(second),
+                                                   fake.mic_format};
+  h2_app_test_audio_t *audio = NULL;
+  assert(h2_app_test_audio_create(&mem, &time.api, &fake.api, &input,
+                                  &audio) == H2_PAL_OK);
+  const h2_pal_audio_api_t *api = h2_app_test_audio_api(audio);
+  h2_audio_info_t info;
+
+  assert(h2_app_test_audio_test_hold_fixture_lock(audio));
+  time.sleep_result = H2_PAL_ERR_IO;
+  assert(h2_pal_audio_get_info(api, &info) == H2_PAL_ERR_IO);
+  assert(h2_app_test_audio_set_fixture(audio, &replacement) == H2_PAL_ERR_IO);
+  assert(h2_pal_audio_start_mic(api) == H2_PAL_ERR_IO);
+  assert(time.sleep_calls == 3u);
+  assert(fake.start_mic == 0u);
+  h2_app_test_audio_test_release_fixture_lock(audio);
+  time.sleep_result = H2_PAL_OK;
+
+  /* The failed start left mic inactive and the failed replacement kept the
+   * original fixture. */
+  assert(h2_pal_audio_start_mic(api) == H2_PAL_OK);
+  uint8_t output[8] = {0};
+  h2_audio_frame_t frame = h2_audio_frame_for_buffer(
+      output, sizeof(output), fake.mic_format);
+  assert(h2_pal_audio_mic_read(api, &frame, 100u) == H2_PAL_OK);
+  assert(memcmp(output, first, sizeof(first)) == 0);
+
+  assert(h2_app_test_audio_test_hold_fixture_lock(audio));
+  time.sleep_result = H2_PAL_ERR_IO;
+  frame = h2_audio_frame_for_buffer(output, sizeof(output), fake.mic_format);
+  assert(h2_pal_audio_mic_read(api, &frame, 100u) == H2_PAL_ERR_IO);
+  assert(frame.bytes == 0u);
+  h2_app_test_audio_test_release_fixture_lock(audio);
+  time.sleep_result = H2_PAL_OK;
+
+  assert(h2_pal_audio_stop_mic(api) == H2_PAL_OK);
+  assert(h2_app_test_audio_destroy(audio) == H2_PAL_OK);
+}
+
 int main(void) {
+  test_contended_backoff_failure();
   test_capture_gate();
   const h2_pal_mem_api_t mem = {.vtable = &s_mem_vtable};
   fake_time_t fake_time = {.now_ms = 1000u};
@@ -330,6 +391,14 @@ int main(void) {
   h2_app_test_audio_t *audio = NULL;
   assert(h2_app_test_audio_create(&mem, NULL, &fake.api, &input, &audio) ==
          H2_PAL_ERR_INVALID_ARG);
+  assert(audio == NULL);
+  const h2_pal_time_vtable_t no_sleep_vtable = {
+      .get_monotonic_ms = fake_time.api.vtable->get_monotonic_ms,
+  };
+  const h2_pal_time_api_t no_sleep = {.user = fake_time.api.user,
+                                      .vtable = &no_sleep_vtable};
+  assert(h2_app_test_audio_create(&mem, &no_sleep, &fake.api, &input,
+                                  &audio) == H2_PAL_ERR_INVALID_ARG);
   assert(audio == NULL);
   input.size = 3u;
   assert(h2_app_test_audio_create(&mem, &fake_time.api, &fake.api, &input,

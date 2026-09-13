@@ -79,20 +79,47 @@ static void counter_add_saturated(atomic_uint_least32_t *counter,
   }
 }
 
-static void fixture_lock(h2_app_test_audio_t *audio) {
+static h2_pal_result_t fixture_lock(h2_app_test_audio_t *audio) {
   while (atomic_flag_test_and_set_explicit(&audio->fixture_lock,
                                            memory_order_acquire)) {
+    /* The mic reader runs at a higher priority than the fixture selector.
+     * A pure spin on the holder's core never lets the holder release the
+     * lock and starves that core's idle task until the watchdog aborts, so
+     * back off through the yielding sleep create() requires and report a
+     * failed sleep instead of spinning. */
+    const h2_pal_result_t rc = h2_pal_time_sleep_ms(audio->time, 1u);
+    if (rc != H2_PAL_OK)
+      return rc;
   }
+  return H2_PAL_OK;
 }
 
 static void fixture_unlock(h2_app_test_audio_t *audio) {
   atomic_flag_clear_explicit(&audio->fixture_lock, memory_order_release);
 }
 
+#ifdef H2_APP_TEST_AUDIO_TESTING
+/* Test-only seam: hold the fixture lock so a waiter deterministically hits
+ * the back-off path. Compiled only into the testonly library variant. */
+bool h2_app_test_audio_test_hold_fixture_lock(h2_app_test_audio_t *audio);
+void h2_app_test_audio_test_release_fixture_lock(h2_app_test_audio_t *audio);
+
+bool h2_app_test_audio_test_hold_fixture_lock(h2_app_test_audio_t *audio) {
+  return !atomic_flag_test_and_set_explicit(&audio->fixture_lock,
+                                            memory_order_acquire);
+}
+
+void h2_app_test_audio_test_release_fixture_lock(h2_app_test_audio_t *audio) {
+  fixture_unlock(audio);
+}
+#endif
+
 static int decorated_get_info(void *user, h2_audio_info_t *info) {
   h2_app_test_audio_t *audio = user;
   int rc = h2_pal_audio_get_info(audio->delegate, info);
-  fixture_lock(audio);
+  const h2_pal_result_t lock_rc = fixture_lock(audio);
+  if (lock_rc != H2_PAL_OK)
+    return lock_rc;
   if (rc == H2_PAL_OK && audio->fixture.pcm == NULL) info->mic_supported = 0u;
   fixture_unlock(audio);
   return rc;
@@ -100,7 +127,9 @@ static int decorated_get_info(void *user, h2_audio_info_t *info) {
 
 static int decorated_start_mic(void *user) {
   h2_app_test_audio_t *audio = user;
-  fixture_lock(audio);
+  const h2_pal_result_t lock_rc = fixture_lock(audio);
+  if (lock_rc != H2_PAL_OK)
+    return lock_rc;
   if (audio->fixture.pcm == NULL) {
     fixture_unlock(audio);
     return H2_PAL_ERR_UNSUPPORTED;
@@ -263,7 +292,10 @@ static int decorated_mic_read(void *user, h2_audio_frame_t *out_frame,
   if (time_rc != H2_PAL_OK) {
     return time_rc;
   }
-  fixture_lock(audio);
+  h2_pal_result_t lock_rc = fixture_lock(audio);
+  if (lock_rc != H2_PAL_OK) {
+    return lock_rc;
+  }
   if (!prepare_fixture_clock(audio, now_ms)) {
     fixture_unlock(audio);
     return H2_PAL_ERR_WOULD_BLOCK;
@@ -295,7 +327,10 @@ static int decorated_mic_read(void *user, h2_audio_frame_t *out_frame,
     if (refresh_rc != H2_PAL_OK) {
       return refresh_rc;
     }
-    fixture_lock(audio);
+    lock_rc = fixture_lock(audio);
+    if (lock_rc != H2_PAL_OK) {
+      return lock_rc;
+    }
     if (!prepare_fixture_clock(audio, now_ms)) {
       fixture_unlock(audio);
       return H2_PAL_ERR_WOULD_BLOCK;
@@ -529,7 +564,8 @@ h2_app_test_audio_create(const h2_pal_mem_api_t *mem,
   *out_audio = NULL;
   if (mem == NULL || mem->vtable == NULL || mem->vtable->alloc == NULL ||
       mem->vtable->free == NULL || time == NULL || time->vtable == NULL ||
-      time->vtable->get_monotonic_ms == NULL || delegate == NULL ||
+      time->vtable->get_monotonic_ms == NULL ||
+      time->vtable->sleep_ms == NULL || delegate == NULL ||
       delegate->vtable == NULL || (fixture != NULL && !valid_fixture(fixture))) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -601,7 +637,10 @@ h2_app_test_audio_set_fixture(h2_app_test_audio_t *audio,
   if (audio == NULL || !valid_fixture(fixture)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  fixture_lock(audio);
+  const h2_pal_result_t lock_rc = fixture_lock(audio);
+  if (lock_rc != H2_PAL_OK) {
+    return lock_rc;
+  }
   const bool mic_active =
       atomic_load_explicit(&audio->mic_active, memory_order_acquire);
   if (mic_active &&
