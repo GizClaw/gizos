@@ -332,6 +332,7 @@ int h2_bk_h2loader_init_app_client(
         .operation_mutex = s_ble.operation_mutex,
         .wifi_operation_sync = runtime->sync,
         .wifi_operation_mutex = s_ble.operation_mutex,
+        .log = runtime->log,
         .board = runtime->board,
         .target = runtime->target,
         .chip = runtime->chip,

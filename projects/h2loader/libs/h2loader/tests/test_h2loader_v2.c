@@ -1,4 +1,5 @@
 #include "h2_loader_boot.h"
+#include "h2_loader_ble.h"
 #include "h2_loader_app_client.h"
 #include "h2_loader_status.h"
 #include "h2_loader_app_client.h"
@@ -1818,7 +1819,83 @@ static void test_app_client_validates_target_archive_entry(void) {
   assert(inspection.manifest.image_size == 8u);
 }
 
+typedef struct ble_log_fixture {
+  unsigned allocations;
+  unsigned writes;
+  int write_result;
+} ble_log_fixture_t;
+
+static void *ble_log_alloc(void *user, size_t size) {
+  ble_log_fixture_t *fixture = user;
+  void *ptr = malloc(size);
+  if (ptr != NULL) ++fixture->allocations;
+  return ptr;
+}
+
+static void ble_log_free(void *user, void *ptr) {
+  ble_log_fixture_t *fixture = user;
+  assert(fixture->allocations != 0u);
+  --fixture->allocations;
+  free(ptr);
+}
+
+static int ble_log_write(void *user, h2_pal_log_level_t level,
+                         const char *scope, const char *message) {
+  ble_log_fixture_t *fixture = user;
+  assert(level == H2_PAL_LOG_ERROR);
+  assert(strcmp(scope, "h2loader/ble") == 0);
+  assert(strstr(message, "H2_LOADER_BLE_ERROR stage=server_open code=") == message);
+  assert(strlen(message) < H2_PAL_LOG_MESSAGE_MAX);
+  ++fixture->writes;
+  return fixture->write_result;
+}
+
+static int ble_log_session(void *user, h2_bleikcp_t *stream, uint16_t handle) {
+  (void)user;
+  (void)stream;
+  (void)handle;
+  assert(0 && "unsupported backend must not start a session");
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
+static void test_ble_diagnostics_preserve_failure_and_cleanup(void) {
+  ble_log_fixture_t fixture = {0};
+  const h2_pal_mem_vtable_t mem_vtable = {
+      .alloc = ble_log_alloc, .free = ble_log_free};
+  const h2_pal_mem_api_t mem = {.user = &fixture, .vtable = &mem_vtable};
+  const h2_pal_ble_host_api_t ble = {0};
+  const h2_pal_task_api_t task = {0};
+  const h2_pal_time_api_t time = {0};
+  const h2_pal_sync_api_t sync = {0};
+  const h2_pal_system_event_api_t events = {0};
+  const h2_pal_log_vtable_t log_vtable = {.write = ble_log_write};
+  h2_pal_log_api_t log = {.user = &fixture, .vtable = &log_vtable};
+  h2_loader_ble_service_config_t config = {
+      .api = {.ble = &ble, .task = &task, .time = &time, .sync = &sync,
+              .system_event = &events, .allocator = &mem},
+      .board = "test", .advertising_mode = H2_LOADER_BLE_ADVERTISING_LEGACY,
+      .handler = ble_log_session};
+  h2_loader_ble_service_t *service = NULL;
+  int expected = h2_loader_ble_service_open(&config, &service);
+  assert(expected != H2_PAL_OK && service == NULL);
+  assert(fixture.allocations == 0u && fixture.writes == 0u);
+  config.log = &log;
+  assert(h2_loader_ble_service_open(&config, &service) == expected);
+  assert(service == NULL && fixture.allocations == 0u && fixture.writes == 1u);
+  fixture.write_result = H2_PAL_ERR_IO;
+  assert(h2_loader_ble_service_open(&config, &service) == expected);
+  assert(service == NULL && fixture.allocations == 0u && fixture.writes == 2u);
+  log.vtable = NULL;
+  assert(h2_loader_ble_service_open(&config, &service) == expected);
+  assert(service == NULL && fixture.allocations == 0u && fixture.writes == 2u);
+  const h2_pal_log_vtable_t unavailable_log = {0};
+  log.vtable = &unavailable_log;
+  assert(h2_loader_ble_service_open(&config, &service) == expected);
+  assert(service == NULL && fixture.allocations == 0u && fixture.writes == 2u);
+}
+
 int main(void) {
+  test_ble_diagnostics_preserve_failure_and_cleanup();
   test_app_client_package_entry_matches_loader();
   test_app_client_validates_target_archive_entry();
   test_empty_pref_preserves_default_boot_intent();

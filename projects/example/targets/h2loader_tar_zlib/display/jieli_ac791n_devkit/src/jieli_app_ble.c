@@ -49,6 +49,7 @@ int h2_jieli_app_loader_ble_start(
           .system_event = h2_jieli_wl82_platform_system_event_api(),
           .allocator = h2_jieli_wl82_platform_mem_api(),
       },
+      .log = h2_jieli_wl82_platform_log_api(),
       .board = config->board,
       .capabilities = config->hardware_capabilities,
       .advertising_mode = H2_LOADER_BLE_ADVERTISING_LEGACY,

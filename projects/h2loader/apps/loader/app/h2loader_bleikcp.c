@@ -87,6 +87,7 @@ static int open_command_service(
             .system_event = runtime->system_event,
             .allocator = runtime->mem,
         },
+        .log = runtime->log,
         .board = board,
         .capabilities = capabilities,
         .advertising_mode = H2_LOADER_BLE_ADVERTISING_LEGACY,
