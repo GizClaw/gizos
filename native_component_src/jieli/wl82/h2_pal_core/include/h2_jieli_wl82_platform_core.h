@@ -62,7 +62,15 @@ const h2_pal_queue_api_t *h2_jieli_wl82_platform_queue_api(void);
 /** Task start on os_task_create with PAL completion and join semantics. */
 const h2_pal_task_api_t *h2_jieli_wl82_platform_task_api(void);
 
-/** One-shot and periodic timers on the SDK sys timer service. */
+/** One-shot and periodic timers on the SDK sys timer service.
+ * Mutations stay on the task that first starts the timer; callers serialize
+ * state queries with mutations. Not ISR-safe. Stop invalidates queued fires;
+ * reset uses a fresh registration context. Old contexts and destroyed timers
+ * are reclaimed later on the owner task. Reclaim slot exhaustion returns
+ * UNAVAILABLE without releasing caller ownership; allocation/registration
+ * failure returns NO_MEMORY. A resource failure while rearming leaves the
+ * timer stopped and retryable. A successful destroy consumes the handle
+ * immediately. */
 const h2_pal_timer_api_t *h2_jieli_wl82_platform_timer_api(void);
 
 /** Reports the firmware version baked in at build time (H2_JIELI_FIRMWARE_VERSION). */

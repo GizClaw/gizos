@@ -4,8 +4,16 @@
 
 #include <string.h>
 
+typedef struct timer_arm {
+    h2_pal_timer_t *timer;
+    uint8_t active;
+} timer_arm_t;
+
 struct h2_pal_timer {
     h2_pal_timer_config_t config;
+    /* Each SDK registration gets its own context. A queued callback from a
+     * stopped registration must not consume a later registration's ID. */
+    timer_arm_t *arm;
     uint16_t id;
     uint8_t running;
     /* Lifecycle flags shared between the owner task and the SDK dispatch.
@@ -34,7 +42,15 @@ struct h2_pal_timer {
 
 static void timer_release(h2_pal_timer_t *timer)
 {
+    if (timer->arm != NULL) {
+        h2_jieli_sdk_free(timer->arm);
+    }
     h2_jieli_sdk_free(timer);
+}
+
+static void timer_arm_reclaim(void *ctx)
+{
+    h2_jieli_sdk_free(ctx);
 }
 
 static void timer_reclaim(void *ctx)
@@ -44,7 +60,11 @@ static void timer_reclaim(void *ctx)
 
 static void timer_fire(void *ctx)
 {
-    h2_pal_timer_t *timer = (h2_pal_timer_t *)ctx;
+    timer_arm_t *arm = (timer_arm_t *)ctx;
+    if (!arm->active) {
+        return;
+    }
+    h2_pal_timer_t *timer = arm->timer;
     if (h2_jieli_atomic_load_u32(&timer->destroyed)) {
         /* Dispatched before destroy() ran; the reclaim timeout frees us. */
         return;
@@ -53,6 +73,7 @@ static void timer_fire(void *ctx)
         /* One-shot SDK timeouts release themselves after firing. */
         timer->running = 0u;
         timer->id = 0u;
+        arm->active = 0u;
     }
     /* The callback may destroy the timer; after this the storage belongs to
      * the reclaim timeout, so nothing here may touch `timer` again. */
@@ -76,14 +97,32 @@ static h2_pal_result_t timer_start(void *user, h2_pal_timer_t *timer)
     if (timer->running) {
         return H2_PAL_OK;
     }
+    if (timer->arm != NULL) {
+        /* stop() invalidates the old arm but cannot recall its queued fire.
+         * Reclaim on the same owner task after that dispatch. Slot exhaustion
+         * leaves the stopped arm attached and retryable, never freed early. */
+        if (h2_jieli_sdk_timer_add(timer->arm, timer_arm_reclaim,
+                                  TIMER_RECLAIM_DELAY_MS, 0) == 0u) {
+            return H2_PAL_ERR_UNAVAILABLE;
+        }
+        timer->arm = NULL;
+    }
+    timer_arm_t *arm = h2_jieli_sdk_malloc(sizeof(*arm));
+    if (arm == NULL) {
+        return H2_PAL_ERR_NO_MEMORY;
+    }
+    arm->timer = timer;
+    arm->active = 1u;
     timer->id = h2_jieli_sdk_timer_add(
-        timer,
+        arm,
         timer_fire,
         timer->config.period_ms,
         (timer->config.flags & H2_PAL_TIMER_FLAG_REPEAT) != 0u);
     if (timer->id == 0u) {
+        h2_jieli_sdk_free(arm);
         return H2_PAL_ERR_NO_MEMORY;
     }
+    timer->arm = arm;
     timer->owner_task = h2_jieli_sdk_task_current();
     timer->owned = 1u;
     timer->running = 1u;
@@ -100,6 +139,7 @@ static h2_pal_result_t timer_stop(void *user, h2_pal_timer_t *timer)
         return H2_PAL_ERR_INVALID_STATE;
     }
     if (timer->running) {
+        timer->arm->active = 0u;
         h2_jieli_sdk_timer_del(timer->id, (timer->config.flags & H2_PAL_TIMER_FLAG_REPEAT) != 0u);
         timer->running = 0u;
         timer->id = 0u;

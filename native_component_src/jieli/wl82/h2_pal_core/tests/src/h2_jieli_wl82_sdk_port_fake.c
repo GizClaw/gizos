@@ -29,6 +29,7 @@ static uint32_t s_now_ms;
 static uint64_t s_clock_us;
 static uint32_t s_sleep_total_ms;
 static int s_live_allocations;
+static int s_fail_next_malloc;
 static fake_timer_t s_timers[H2_JIELI_FAKE_TIMER_CAPACITY];
 static uint16_t s_next_timer_id = 1u;
 static int s_task_create_calls;
@@ -56,6 +57,7 @@ void h2_jieli_fake_reset(void)
     s_clock_us = 0u;
     s_sleep_total_ms = 0u;
     s_live_allocations = 0;
+    s_fail_next_malloc = 0;
     memset(s_timers, 0, sizeof(s_timers));
     s_next_timer_id = 1u;
     s_task_create_calls = 0;
@@ -110,8 +112,17 @@ int h2_jieli_fake_live_allocations(void)
     return s_live_allocations;
 }
 
+void h2_jieli_fake_fail_next_malloc(void)
+{
+    s_fail_next_malloc = 1;
+}
+
 void *h2_jieli_sdk_malloc(size_t size)
 {
+    if (s_fail_next_malloc) {
+        s_fail_next_malloc = 0;
+        return NULL;
+    }
     void *memory = malloc(size);
     if (memory != NULL) {
         s_live_allocations++;

@@ -542,7 +542,7 @@ static void test_timer_destroy_from_callback_defers_release(void)
     /* The periodic timer is gone; only the reclaim timeout remains and the
      * storage stays valid until it runs. */
     CHECK(h2_jieli_fake_timer_count() == 1u);
-    CHECK(h2_jieli_fake_live_allocations() == 1);
+    CHECK(h2_jieli_fake_live_allocations() == 2);
     h2_jieli_fake_advance_ms(1u);
     h2_jieli_fake_run_timers();
     CHECK(h2_jieli_fake_timer_count() == 0u);
@@ -586,10 +586,51 @@ static void test_timer_destroy_racing_dispatched_callback(void)
      * did not invoke the user callback; the reclaim timeout is pending. */
     CHECK(s_raced_fires == 0);
     CHECK(h2_jieli_fake_timer_count() == 1u);
-    CHECK(h2_jieli_fake_live_allocations() == 1);
+    CHECK(h2_jieli_fake_live_allocations() == 2);
     h2_jieli_fake_advance_ms(1u);
     h2_jieli_fake_run_timers();
     CHECK(s_raced_fires == 0);
+    CHECK(h2_jieli_fake_timer_count() == 0u);
+    CHECK(h2_jieli_fake_live_allocations() == 0);
+}
+
+static void reset_dispatched_timer(void)
+{
+    CHECK(h2_pal_timer_reset(s_destroy_api, s_destroy_timer) == H2_PAL_OK);
+}
+
+static void test_timer_reset_racing_dispatched_one_shot(int fire_new)
+{
+    const h2_pal_timer_api_t *api = h2_jieli_wl82_platform_timer_api();
+    const h2_pal_timer_config_t config = {
+        .name = "reset-race",
+        .period_ms = 10u,
+        .flags = H2_PAL_TIMER_FLAG_AUTO_START,
+        .cb = timer_raced_callback,
+    };
+    h2_jieli_fake_reset();
+    s_destroy_api = api;
+    s_raced_fires = 0;
+    CHECK(h2_pal_timer_create(api, &config, &s_destroy_timer) == H2_PAL_OK);
+    h2_jieli_fake_advance_ms(10u);
+    h2_jieli_fake_set_timer_dispatch_hook(reset_dispatched_timer);
+    h2_jieli_fake_run_timers();
+    /* The old dispatch cannot consume the newly armed one-shot. Otherwise
+     * destroy misses its SDK ID and frees its callback context too early. */
+    int running = 0;
+    CHECK(h2_pal_timer_is_running(api, s_destroy_timer, &running) == H2_PAL_OK);
+    CHECK(running == 1);
+    CHECK(s_raced_fires == 0);
+    if (fire_new) {
+        h2_jieli_fake_advance_ms(10u);
+        h2_jieli_fake_run_timers();
+        CHECK(s_raced_fires == 1);
+        CHECK(h2_pal_timer_is_running(api, s_destroy_timer, &running) == H2_PAL_OK);
+        CHECK(running == 0);
+    }
+    CHECK(h2_pal_timer_destroy(api, s_destroy_timer) == H2_PAL_OK);
+    h2_jieli_fake_advance_ms(1u);
+    h2_jieli_fake_run_timers();
     CHECK(h2_jieli_fake_timer_count() == 0u);
     CHECK(h2_jieli_fake_live_allocations() == 0);
 }
@@ -618,7 +659,7 @@ static void test_timer_destroy_from_other_task_is_rejected(void)
      * from another task cannot order its reclaim behind it. */
     h2_jieli_fake_set_current_task(&s_task_other);
     CHECK(h2_pal_timer_destroy(api, timer) == H2_PAL_ERR_INVALID_STATE);
-    CHECK(h2_jieli_fake_live_allocations() == 1);
+    CHECK(h2_jieli_fake_live_allocations() == 2);
     h2_jieli_fake_advance_ms(10u);
     h2_jieli_fake_run_timers();
     /* The timer survived the rejected destroy and still fires normally. */
@@ -659,7 +700,7 @@ static void test_timer_start_from_other_task_is_rejected(void)
     CHECK(h2_pal_timer_is_running(api, timer, &running) == H2_PAL_OK);
     CHECK(running == 1);
     CHECK(h2_pal_timer_destroy(api, timer) == H2_PAL_ERR_INVALID_STATE);
-    CHECK(h2_jieli_fake_live_allocations() == 1);
+    CHECK(h2_jieli_fake_live_allocations() == 2);
     /* The owner can re-arm and release it. */
     h2_jieli_fake_set_current_task(&s_task_owner);
     CHECK(h2_pal_timer_start(api, timer) == H2_PAL_OK);
@@ -669,6 +710,75 @@ static void test_timer_start_from_other_task_is_rejected(void)
     CHECK(h2_pal_timer_destroy(api, timer) == H2_PAL_OK);
     h2_jieli_fake_advance_ms(1u);
     h2_jieli_fake_run_timers();
+    CHECK(h2_jieli_fake_live_allocations() == 0);
+}
+
+static void test_timer_arm_allocation_failure_is_retryable(void)
+{
+    const h2_pal_timer_api_t *api = h2_jieli_wl82_platform_timer_api();
+    const h2_pal_timer_config_t config = {
+        .name = "alloc", .period_ms = 10u, .cb = timer_raced_callback,
+    };
+    h2_pal_timer_t *timer = NULL;
+    h2_jieli_fake_reset();
+    CHECK(h2_pal_timer_create(api, &config, &timer) == H2_PAL_OK);
+    h2_jieli_fake_fail_next_malloc();
+    CHECK(h2_pal_timer_start(api, timer) == H2_PAL_ERR_NO_MEMORY);
+    CHECK(h2_jieli_fake_live_allocations() == 1);
+    CHECK(h2_jieli_fake_timer_count() == 0u);
+    CHECK(h2_pal_timer_start(api, timer) == H2_PAL_OK);
+    h2_jieli_fake_fail_next_malloc();
+    CHECK(h2_pal_timer_reset(api, timer) == H2_PAL_ERR_NO_MEMORY);
+    int running = 1;
+    CHECK(h2_pal_timer_is_running(api, timer, &running) == H2_PAL_OK);
+    CHECK(running == 0);
+    h2_jieli_fake_advance_ms(1u);
+    h2_jieli_fake_run_timers();
+    CHECK(h2_jieli_fake_live_allocations() == 1);
+    CHECK(h2_pal_timer_start(api, timer) == H2_PAL_OK);
+    CHECK(h2_pal_timer_destroy(api, timer) == H2_PAL_OK);
+    h2_jieli_fake_advance_ms(1u);
+    h2_jieli_fake_run_timers();
+    CHECK(h2_jieli_fake_timer_count() == 0u);
+    CHECK(h2_jieli_fake_live_allocations() == 0);
+}
+
+static void test_timer_registration_failure_is_retryable(void)
+{
+    const h2_pal_timer_api_t *api = h2_jieli_wl82_platform_timer_api();
+    const h2_pal_timer_config_t config = {
+        .name = "slots", .period_ms = 10u, .cb = timer_raced_callback,
+        .flags = H2_PAL_TIMER_FLAG_REPEAT,
+    };
+    h2_pal_timer_t *timers[H2_JIELI_FAKE_TIMER_CAPACITY];
+    h2_pal_timer_t *extra = NULL;
+    h2_jieli_fake_reset();
+    for (size_t i = 0u; i < H2_JIELI_FAKE_TIMER_CAPACITY; ++i) {
+        CHECK(h2_pal_timer_create(api, &config, &timers[i]) == H2_PAL_OK);
+        CHECK(h2_pal_timer_start(api, timers[i]) == H2_PAL_OK);
+    }
+    CHECK(h2_pal_timer_create(api, &config, &extra) == H2_PAL_OK);
+    CHECK(h2_pal_timer_start(api, extra) == H2_PAL_ERR_NO_MEMORY);
+    CHECK(h2_jieli_fake_live_allocations() ==
+          2 * (int)H2_JIELI_FAKE_TIMER_CAPACITY + 1);
+    CHECK(h2_pal_timer_destroy(api, extra) == H2_PAL_OK);
+    /* Reset frees one slot, then spends it on the old arm's reclaim.
+     * Registration of the new arm fails without leaking either context. */
+    CHECK(h2_pal_timer_reset(api, timers[0]) == H2_PAL_ERR_NO_MEMORY);
+    int running = 1;
+    CHECK(h2_pal_timer_is_running(api, timers[0], &running) == H2_PAL_OK);
+    CHECK(running == 0);
+    h2_jieli_fake_advance_ms(1u);
+    h2_jieli_fake_run_timers();
+    CHECK(h2_jieli_fake_live_allocations() ==
+          2 * (int)H2_JIELI_FAKE_TIMER_CAPACITY - 1);
+    CHECK(h2_pal_timer_start(api, timers[0]) == H2_PAL_OK);
+    for (size_t i = 0u; i < H2_JIELI_FAKE_TIMER_CAPACITY; ++i) {
+        CHECK(h2_pal_timer_destroy(api, timers[i]) == H2_PAL_OK);
+        h2_jieli_fake_advance_ms(1u);
+        h2_jieli_fake_run_timers();
+    }
+    CHECK(h2_jieli_fake_timer_count() == 0u);
     CHECK(h2_jieli_fake_live_allocations() == 0);
 }
 
@@ -697,16 +807,17 @@ static void test_timer_destroy_without_timeout_slot_keeps_timer(void)
         CHECK(h2_pal_timer_create(api, &config, &others[i]) == H2_PAL_OK);
     }
     CHECK(h2_jieli_fake_timer_count() == H2_JIELI_FAKE_TIMER_CAPACITY);
+    CHECK(h2_pal_timer_start(api, victim) == H2_PAL_ERR_UNAVAILABLE);
     /* No slot left for the reclaim: the timer must stay alive and owned by
      * the caller instead of being freed under a possibly queued callback. */
     CHECK(h2_pal_timer_destroy(api, victim) == H2_PAL_ERR_UNAVAILABLE);
-    CHECK(h2_jieli_fake_live_allocations() == (int)H2_JIELI_FAKE_TIMER_CAPACITY + 1);
+    CHECK(h2_jieli_fake_live_allocations() == 2 * ((int)H2_JIELI_FAKE_TIMER_CAPACITY + 1));
     /* Freeing one slot lets the retry from the owner task succeed. */
     CHECK(h2_pal_timer_stop(api, others[0]) == H2_PAL_OK);
     CHECK(h2_pal_timer_destroy(api, victim) == H2_PAL_OK);
     h2_jieli_fake_advance_ms(1u);
     h2_jieli_fake_run_timers();
-    CHECK(h2_jieli_fake_live_allocations() == (int)H2_JIELI_FAKE_TIMER_CAPACITY);
+    CHECK(h2_jieli_fake_live_allocations() == 2 * (int)H2_JIELI_FAKE_TIMER_CAPACITY);
     for (i = 0u; i < H2_JIELI_FAKE_TIMER_CAPACITY; ++i) {
         CHECK(h2_pal_timer_destroy(api, others[i]) == H2_PAL_OK);
         h2_jieli_fake_advance_ms(1u);
@@ -740,8 +851,12 @@ int main(void)
     test_timer_one_shot_and_periodic();
     test_timer_destroy_from_callback_defers_release();
     test_timer_destroy_racing_dispatched_callback();
+    test_timer_reset_racing_dispatched_one_shot(0);
+    test_timer_reset_racing_dispatched_one_shot(1);
     test_timer_destroy_from_other_task_is_rejected();
     test_timer_start_from_other_task_is_rejected();
+    test_timer_arm_allocation_failure_is_retryable();
+    test_timer_registration_failure_is_retryable();
     test_timer_destroy_without_timeout_slot_keeps_timer();
     test_firmware_info_reports_build_version();
     if (failures) {

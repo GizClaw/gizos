@@ -33,6 +33,8 @@ uint32_t h2_jieli_fake_sleep_total_ms(void);
 
 /** Outstanding allocations (alloc minus free) for leak checks. */
 int h2_jieli_fake_live_allocations(void);
+/** Fail one SDK malloc call without affecting existing allocations. */
+void h2_jieli_fake_fail_next_malloc(void);
 
 /** Fires every registered timer whose deadline has passed at the fake clock. */
 void h2_jieli_fake_run_timers(void);

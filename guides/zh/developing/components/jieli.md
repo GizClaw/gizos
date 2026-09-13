@@ -94,6 +94,8 @@ target 默认值与调用者 `min_stack_size` 向上取整到 word 后的较大�
 
 FDK AAC 编译由 `libs/fdk_aac` 拥有，PAL decoder 依赖该 first-party library；`@h2_fdk_aac` 仅暴露 upstream source group 和 header-only target，不引用 GizOS platform labels。pi32v2 的无 stdio 编译选项在 first-party library 内选择，Linux 保留原始 stdio 行为。
 
+wl82 Timer 的修改操作归第一次成功启动它的任务所有，不能跨任务迁移，也不能从 ISR 调用。每次 SDK 注册使用独立回调上下文；stop 使旧上下文失效，reset 后迟到的旧回调不会清掉新定时器的运行状态或 ID。旧上下文和已销毁定时器在同一 owner task 延迟回收。回收槽耗尽返回 UNAVAILABLE 并保留调用者所有权，分配或注册失败返回 NO_MEMORY；重新启动时的资源失败使定时器保持停止，可重试。调用者须将状态查询与修改串行化，成功 destroy 后不能再使用句柄。Host 回归覆盖已派发回调与 reset 交错、内存不足、注册及回收槽耗尽后的重试与资源释放；不替代实机生命周期验收。
+
 wl82 condition 为每个 wait 创建独立的 SDK semaphore，signal/broadcast 只通知当时已经注册且尚未收到通知的等待者；超时退出会注销自己的节点，不把 token 留给后来的等待者。等待者队列用短时间持有的原子 gate 保护，竞争时让出任务；节点在 SDK wait 返回之前始终保持注册，因此 destroy 会拒绝仍有等待者的 condition。与 PAL contract 一致，wait 只接受非递归 mutex，返回前重新取得调用者 mutex。
 
 wl82 的 pi32v2 clang 没有可内联的字长原子读改写指令，C11/GCC 原子操作都会降级为 `__sync_*` libcall。工具链 compiler-rt 的实现用裸 `lockset/lockclr` 包住读改写；SDK 自己的 SMP spinlock 已改用 `testset`（`asm/cpu.h` 把旧的 `lockset` 写法放在 `#if 0` 下，它需要每核嵌套计数）。在双核上 compiler-rt 版本会丢更新：PAL system event 的生命周期字从 ACTIVE（`0x80000000`）变成 `0x7fffffff`，此后所有订阅失败，BLE Loader command service 约三分之一的启动无法打开。`h2_jieli_wl82_sdk_port.c` 为 1/2/4/8 字节的 `__sync_*` libcall 提供强定义（asm label 绑定 libcall 符号，`used` 保留到 LTO 之后），每个操作由 SDK `spin_lock` 保护；链接时它们优先于 compiler-rt 归档成员，因此 PAL、board、portable library 与 SDK 代码共用同一实现。单核 AC695N 不受影响。
