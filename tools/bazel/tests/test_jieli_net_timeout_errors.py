@@ -32,7 +32,8 @@ static int fake_setsockopt(int fd,int level,int opt,const void *v,socklen_t n) {
 }
 static int fake_recvfrom(int fd,void *p,size_t n,int f,struct sockaddr *a,socklen_t *l) {
  (void)fd;(void)p;(void)n;(void)l; ++io_calls; flags_seen=f;
- if(a) memset(a,0,sizeof(struct sockaddr_in)); return 1;
+ if(a) memset(a,0,sizeof(struct sockaddr_in));
+ return 1;
 }
 static int fake_recv(int fd,void *p,size_t n,int f) {return fake_recvfrom(fd,p,n,f,NULL,NULL);}
 static int fake_send(int fd,const void *p,size_t n,int f) {return fake_recv(fd,(void *)p,n,f);}
