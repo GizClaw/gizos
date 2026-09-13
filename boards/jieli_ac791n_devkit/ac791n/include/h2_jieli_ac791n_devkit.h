@@ -42,7 +42,10 @@ int h2_jieli_ac791n_devkit_console_write(
 /* Raw on-chip NOR partitions owned by the physical board layout. */
 const h2_pal_disk_api_t *h2_jieli_ac791n_devkit_disk_api(void);
 
-/* FAT filesystem on the board SD slot, mapped to /dl and /data. */
+/* FAT filesystem on the board SD slot, mapped to /dl and /data.
+ * The composition root serializes init/deinit and stops all API consumers and
+ * closes every file before deinit. An existing external mount is borrowed;
+ * only a mount created here is unmounted, including failed-init cleanup. */
 h2_pal_result_t h2_jieli_ac791n_devkit_sd_fs_init(h2_pal_fs_api_t *out_api);
 h2_pal_result_t h2_jieli_ac791n_devkit_sd_fs_deinit(void);
 const char *h2_jieli_ac791n_devkit_sd_fs_last_stage(void);

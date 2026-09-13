@@ -685,3 +685,14 @@ py_test(
     legacy_create_init = 0,
     main = "tests/test_jieli_ble_session.py",
 )
+
+py_test(
+    name = "jieli_sd_mount_test",
+    srcs = ["tests/test_jieli_sd_mount.py"],
+    data = [
+        "//boards/jieli_ac791n_devkit/ac791n:src/h2_jieli_ac791n_devkit_sd_fs.c",
+        "//libs/pal:pal_header_files",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_sd_mount.py",
+)

@@ -39,6 +39,7 @@ struct h2_pal_fs_file {
 };
 
 static int sd_mounted;
+static int sd_mount_owned;
 static const char *sd_last_stage = "idle";
 static uint32_t sd_capacity;
 static uint32_t sd_block_size;
@@ -216,8 +217,8 @@ static int directory_status(const char *path) {
   if (file == NULL) return H2_PAL_ERR_NOT_FOUND;
   int attributes = 0;
   int result = fget_attr(file, &attributes);
-  fclose(file);
-  if (result != 0) return H2_PAL_ERR_IO;
+  int close_result = fclose(file);
+  if (result != 0 || close_result != 0) return H2_PAL_ERR_IO;
   return (attributes & F_ATTR_DIR) != 0
       ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
 }
@@ -416,8 +417,8 @@ static int fs_stat(void *user, const char *path, h2_pal_fs_stat_t *out_stat) {
   int attributes = 0;
   int attr_result = fget_attr(file, &attributes);
   uint32_t file_size = flen(file);
-  fclose(file);
-  if (attr_result != 0) return H2_PAL_ERR_IO;
+  int close_result = fclose(file);
+  if (attr_result != 0 || close_result != 0) return H2_PAL_ERR_IO;
   if ((attributes & F_ATTR_DIR) != 0) {
     long long size = flen_dir(mapped);
     /* Empty JLFAT directories can have a negative aggregate length even
@@ -520,9 +521,7 @@ h2_pal_result_t h2_jieli_ac791n_devkit_sd_fs_init(h2_pal_fs_api_t *out_api) {
     int ready_result = wait_sd_online();
     if (ready_result != H2_PAL_OK) return ready_result;
     sd_last_stage = "mount";
-    if (fmount_exist(H2_JIELI_SD_MOUNT)) {
-      sd_mounted = 1;
-    } else {
+    if (!fmount_exist(H2_JIELI_SD_MOUNT)) {
       void *heap_probe = malloc(32768u);
       sd_heap_probe_32k = heap_probe != NULL;
       free(heap_probe);
@@ -539,29 +538,38 @@ h2_pal_result_t h2_jieli_ac791n_devkit_sd_fs_init(h2_pal_fs_api_t *out_api) {
         capture_sd_diagnostic();
         return H2_PAL_ERR_IO;
       }
-      sd_mounted = 1;
+      sd_mount_owned = 1;
     }
     sd_last_stage = "mkdir_dl";
     if (ensure_directory(H2_JIELI_SD_ROOT "dl") != H2_PAL_OK) {
-      (void)unmount(H2_JIELI_SD_MOUNT);
-      sd_mounted = 0;
+      if (sd_mount_owned && unmount(H2_JIELI_SD_MOUNT) == 0) {
+        sd_mount_owned = 0;
+      }
       return H2_PAL_ERR_IO;
     }
     sd_last_stage = "mkdir_data";
     if (ensure_directory(H2_JIELI_SD_ROOT "data") != H2_PAL_OK) {
-      (void)unmount(H2_JIELI_SD_MOUNT);
-      sd_mounted = 0;
+      if (sd_mount_owned && unmount(H2_JIELI_SD_MOUNT) == 0) {
+        sd_mount_owned = 0;
+      }
       return H2_PAL_ERR_IO;
     }
   }
+  sd_mounted = 1;
   sd_last_stage = "ready";
   *out_api = (h2_pal_fs_api_t){.user = NULL, .vtable = &vtable};
   return H2_PAL_OK;
 }
 
 h2_pal_result_t h2_jieli_ac791n_devkit_sd_fs_deinit(void) {
-  if (!sd_mounted) return H2_PAL_OK;
+  if (!sd_mount_owned) {
+    sd_mounted = 0;
+    return H2_PAL_OK;
+  }
   int result = unmount(H2_JIELI_SD_MOUNT);
-  if (result == 0) sd_mounted = 0;
+  if (result == 0) {
+    sd_mounted = 0;
+    sd_mount_owned = 0;
+  }
   return map_error(result);
 }

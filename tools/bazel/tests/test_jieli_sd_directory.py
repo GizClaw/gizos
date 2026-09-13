@@ -27,13 +27,12 @@ class SdDirectoryTest(unittest.TestCase):
 typedef struct { uint64_t size; int is_dir; } h2_pal_fs_stat_t;
 typedef struct { int unused; } FILE;
 static FILE native;
-static int directory, present, opens, closes;
+static int directory, present, opens, closes, fail_close;
 static long long directory_size;
 static int translate_path(const char *path, char *mapped) {
     if (!path || path[0] != '/') return H2_PAL_ERR_INVALID_ARG;
     strcpy(mapped, path); return 0;
 }
-static int fdir_exist(const char *path) { (void)path; return directory; }
 static long long flen_dir(const char *path) { (void)path; return directory_size; }
 static FILE *fopen(const char *path, const char *mode) {
     (void)path; assert(strcmp(mode, "r") == 0); ++opens;
@@ -43,7 +42,7 @@ static int fget_attr(FILE *file, int *attr) {
     assert(file == &native); *attr = directory ? F_ATTR_DIR : 0; return 0;
 }
 static uint32_t flen(FILE *file) { assert(file == &native); return 123; }
-static int fclose(FILE *file) { assert(file == &native); ++closes; return 0; }
+static int fclose(FILE *file) { assert(file == &native); ++closes; return fail_close ? -1 : 0; }
 '''
         main = r'''
 int main(void) {
@@ -56,9 +55,14 @@ int main(void) {
     directory = 0; present = 1;
     assert(fs_stat(NULL, "/data/file", &st) == 0 && !st.is_dir && st.size == 123);
     assert(opens == 4 && closes == 4);
+    fail_close = 1;
+    h2_pal_fs_stat_t before = st;
+    assert(fs_stat(NULL, "/data/file", &st) == H2_PAL_ERR_IO);
+    assert(st.size == before.size && st.is_dir == before.is_dir);
+    fail_close = 0;
     present = 0;
     assert(fs_stat(NULL, "/data/missing", &st) == H2_PAL_ERR_NOT_FOUND);
-    assert(closes == 4);
+    assert(closes == 5);
     assert(fs_stat(NULL, NULL, &st) == H2_PAL_ERR_INVALID_ARG);
     assert(fs_stat(NULL, "/data", NULL) == H2_PAL_ERR_INVALID_ARG);
     return 0;
@@ -69,7 +73,7 @@ int main(void) {
             unit = root / "stat.c"
             unit.write_text(fixture + source[begin:end] + main)
             binary = root / "stat-test"
-            subprocess.run(["cc", "-std=c11", str(unit), "-o", str(binary)],
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", str(unit), "-o", str(binary)],
                            check=True, timeout=30)
             subprocess.run([str(binary)], check=True, timeout=30)
 
@@ -176,6 +180,10 @@ int main(void) {
     assert(ensure_directory(H2_JIELI_SD_ROOT "data/file") == H2_PAL_ERR_INVALID_STATE);
     assert(creates == 0);
 
+    reset();
+    add(H2_JIELI_SD_ROOT "data", F_ATTR_DIR);
+    fail_close = 1;
+    assert(directory_status(H2_JIELI_SD_ROOT "data") == H2_PAL_ERR_IO);
     reset(); wrong_type = 1;
     assert(ensure_directory(H2_JIELI_SD_ROOT "data") == H2_PAL_ERR_INVALID_STATE);
     reset(); disappear = 1;
@@ -209,7 +217,7 @@ int main(void) {
             unit = root / "directory.c"
             unit.write_text(fixture + source[begin:end] + main)
             binary = root / "directory-test"
-            subprocess.run(["cc", "-std=c11", str(unit), "-o", str(binary)],
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", str(unit), "-o", str(binary)],
                            check=True, timeout=30)
             subprocess.run([str(binary)], check=True, timeout=30)
 
