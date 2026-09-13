@@ -574,7 +574,84 @@ static void test_join_failure_retains_context(int task_only) {
   assert(f.allocations == 0);
 }
 
+struct h2_pal_fs_file { int placeholder; };
+typedef struct fs_fixture {
+  struct h2_pal_fs_file file;
+  char bytes[64];
+  size_t length;
+  int bad_type;
+  int bad_size;
+  int stat_calls;
+  int removes;
+} fs_fixture_t;
+
+static int fs_test_mkdir(void *user, const char *path) {
+  (void)user; (void)path;
+  return H2_PAL_OK;
+}
+static int fs_test_open(void *user, const char *path,
+                        h2_pal_fs_open_mode_t mode, h2_pal_fs_file_t **out) {
+  fs_fixture_t *f = user;
+  (void)path; (void)mode;
+  *out = &f->file;
+  return H2_PAL_OK;
+}
+static int fs_test_write(void *user, h2_pal_fs_file_t *file,
+                         const void *data, size_t len, size_t *written) {
+  fs_fixture_t *f = user;
+  assert(file == &f->file && len <= sizeof(f->bytes));
+  memcpy(f->bytes, data, len);
+  f->length = len;
+  *written = len;
+  return H2_PAL_OK;
+}
+static int fs_test_read(void *user, h2_pal_fs_file_t *file,
+                        void *data, size_t len, size_t *read_count) {
+  fs_fixture_t *f = user;
+  assert(file == &f->file && len == f->length);
+  memcpy(data, f->bytes, len);
+  *read_count = len;
+  return H2_PAL_OK;
+}
+static int fs_test_close(void *user, h2_pal_fs_file_t *file) {
+  assert(file == &((fs_fixture_t *)user)->file);
+  return H2_PAL_OK;
+}
+static int fs_test_stat(void *user, const char *path, h2_pal_fs_stat_t *out) {
+  fs_fixture_t *f = user;
+  if (strcmp(path, "/data/../escape") == 0) return H2_PAL_ERR_INVALID_ARG;
+  ++f->stat_calls;
+  *out = (h2_pal_fs_stat_t){.size=f->length + (f->bad_size ? 1u : 0u),
+                           .is_dir=f->bad_type ? 1 : 0};
+  return H2_PAL_OK;
+}
+static int fs_test_remove(void *user, const char *path) {
+  (void)path;
+  ++((fs_fixture_t *)user)->removes;
+  return H2_PAL_OK;
+}
+static void test_filesystem_stat_contract(void) {
+  const h2_pal_fs_vtable_t v = {.mkdir=fs_test_mkdir, .open=fs_test_open,
+      .write=fs_test_write, .read=fs_test_read, .close=fs_test_close,
+      .stat=fs_test_stat, .remove=fs_test_remove};
+  for (int scenario = 0; scenario < 3; ++scenario) {
+    fs_fixture_t f = {0};
+    f.bad_type = scenario == 1;
+    f.bad_size = scenario == 2;
+    const h2_pal_fs_api_t fs = {.user=&f, .vtable=&v};
+    h2_runtime_t runtime = {.fs=&fs};
+    const h2_pal_e2e_config_t config = {.suite_mask=H2_PAL_E2E_SUITE_FILESYSTEM};
+    h2_pal_e2e_result_t result;
+    assert(h2_pal_e2e_run(&runtime, &config, &result) ==
+           (scenario == 0 ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE));
+    assert(result.case_count == 1 && result.complete);
+    assert(result.cases[0].case_id == H2_PAL_E2E_CASE_HOST_FILESYSTEM);
+    assert(f.stat_calls == 1 && f.removes == 2);
+  }
+}
+
 int main(void) {
+  test_filesystem_stat_contract();
   test_join_failure_retains_context(0);
   test_join_failure_retains_context(1);
   test_join_failure_retains_context(2);

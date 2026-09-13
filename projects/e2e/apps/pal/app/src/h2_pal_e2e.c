@@ -777,6 +777,15 @@ static h2_pal_result_t h2_pal_e2e_host_filesystem(
     file = NULL;
   }
   if (result == H2_PAL_OK) {
+    h2_pal_fs_stat_t file_stat = {0};
+    result = (h2_pal_result_t)h2_pal_fs_stat(
+        runtime->fs, "/data/pal-host-e2e/value", &file_stat);
+    if (result == H2_PAL_OK &&
+        (file_stat.is_dir || file_stat.size != sizeof(payload))) {
+      result = H2_PAL_ERR_INVALID_STATE;
+    }
+  }
+  if (result == H2_PAL_OK) {
     result = (h2_pal_result_t)h2_pal_fs_open(
         runtime->fs, "/data/pal-host-e2e/value", H2_PAL_FS_OPEN_READ,
         &file);
@@ -1558,7 +1567,8 @@ h2_pal_result_t h2_pal_e2e_run(h2_runtime_t *runtime,
                               H2_PAL_E2E_SUITE_PREF |
                               H2_PAL_E2E_SUITE_HOST |
                               H2_PAL_E2E_SUITE_BROWSER |
-                              H2_PAL_E2E_SUITE_WIFI)) != 0u ||
+                              H2_PAL_E2E_SUITE_WIFI |
+                              H2_PAL_E2E_SUITE_FILESYSTEM)) != 0u ||
       ((config->suite_mask & H2_PAL_E2E_SUITE_PREF) != 0u &&
        config->suite_mask != H2_PAL_E2E_SUITE_PREF) ||
       ((config->suite_mask & H2_PAL_E2E_SUITE_WIFI) != 0u &&
@@ -1577,6 +1587,11 @@ h2_pal_result_t h2_pal_e2e_run(h2_runtime_t *runtime,
   if (out_result->retained_cleanup == NULL &&
       (config->suite_mask & H2_PAL_E2E_SUITE_HOST) != 0u) {
     h2_pal_e2e_run_host(runtime, config, out_result);
+  }
+  if (out_result->retained_cleanup == NULL &&
+      (config->suite_mask & H2_PAL_E2E_SUITE_FILESYSTEM) != 0u) {
+    h2_pal_e2e_record(out_result, H2_PAL_E2E_CASE_HOST_FILESYSTEM,
+                      h2_pal_e2e_host_filesystem(runtime));
   }
   if (out_result->retained_cleanup == NULL &&
       (config->suite_mask & H2_PAL_E2E_SUITE_BROWSER) != 0u) {

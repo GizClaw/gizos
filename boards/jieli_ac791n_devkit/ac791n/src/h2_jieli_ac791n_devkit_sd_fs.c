@@ -356,18 +356,23 @@ static int fs_stat(void *user, const char *path, h2_pal_fs_stat_t *out_stat) {
   if (out_stat == NULL) return H2_PAL_ERR_INVALID_ARG;
   int result = translate_path(path, mapped);
   if (result != H2_PAL_OK) return result;
-  if (fdir_exist(mapped) == 1) {
+  /* SDK fdir_exist() tests fopen(path, "r"), which also succeeds for regular
+   * files. Inspect the opened entry's FAT attributes instead. */
+  FILE *file = fopen_by_utf8(mapped, "r");
+  if (file == NULL) return H2_PAL_ERR_NOT_FOUND;
+  int attributes = 0;
+  int attr_result = fget_attr(file, &attributes);
+  uint32_t file_size = flen(file);
+  fclose(file);
+  if (attr_result != 0) return H2_PAL_ERR_IO;
+  if ((attributes & F_ATTR_DIR) != 0) {
     long long size = flen_dir(mapped);
     /* Empty JLFAT directories can have a negative aggregate length even
      * though their directory entry exists. Do not report them missing. */
     *out_stat = (h2_pal_fs_stat_t){.size = size < 0 ? 0u : (uint64_t)size, .is_dir = 1};
     return H2_PAL_OK;
   }
-  FILE *file = fopen_by_utf8(mapped, "r");
-  if (file == NULL) return H2_PAL_ERR_NOT_FOUND;
-  uint32_t size = flen(file);
-  fclose(file);
-  *out_stat = (h2_pal_fs_stat_t){.size = size, .is_dir = 0};
+  *out_stat = (h2_pal_fs_stat_t){.size = file_size, .is_dir = 0};
   return H2_PAL_OK;
 }
 

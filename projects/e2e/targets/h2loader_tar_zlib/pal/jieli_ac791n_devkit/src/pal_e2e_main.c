@@ -88,9 +88,10 @@ static int start_commands(void) {
 static void run_suites(void *user) {
   (void)user;
   int result = H2_PAL_OK;
-  static h2_pal_e2e_result_t reports[2];
+  static h2_pal_e2e_result_t reports[3];
   static const uint32_t suites[] = {
-      H2_PAL_E2E_SUITE_CORE, H2_PAL_E2E_SUITE_WIFI,
+      H2_PAL_E2E_SUITE_CORE, H2_PAL_E2E_SUITE_FILESYSTEM,
+      H2_PAL_E2E_SUITE_WIFI,
   };
   size_t passed = 0u;
   size_t failed = 0u;

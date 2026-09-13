@@ -366,6 +366,7 @@ static int image_read(
       rc = h2_pal_fs_stat(state.fs, path, &stat_value);
     }
     if (rc == H2_PAL_OK && stat_value.is_dir) {
+      step = "stat-directory";
       rc = H2_PAL_ERR_NOT_FOUND;
     }
     if (rc == H2_PAL_OK) {

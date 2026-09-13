@@ -26,6 +26,8 @@ typedef enum h2_pal_e2e_suite {
   H2_PAL_E2E_SUITE_BROWSER = 1u << 4,
   /** Disruptive, standalone suite: disconnects STA; use a non-Wi-Fi control link. */
   H2_PAL_E2E_SUITE_WIFI = 1u << 5,
+  /** Writable /data filesystem; no network fixtures required. */
+  H2_PAL_E2E_SUITE_FILESYSTEM = 1u << 6,
 } h2_pal_e2e_suite_t;
 
 typedef enum h2_pal_e2e_case_id {
