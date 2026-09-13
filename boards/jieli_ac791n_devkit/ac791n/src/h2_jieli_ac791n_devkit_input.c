@@ -310,9 +310,13 @@ static h2_pal_result_t touch_open(void *user) {
     state->iic = NULL;
     return H2_PAL_ERR_UNAVAILABLE;
   }
-  (void)touch_write_register(0x00, 0x00);
-  (void)touch_write_register(0x80, 22);
-  (void)touch_write_register(0x88, 13);
+  if (touch_write_register(0x00, 0x00) != 0 ||
+      touch_write_register(0x80, 22) != 0 ||
+      touch_write_register(0x88, 13) != 0) {
+    dev_close(state->iic);
+    state->iic = NULL;
+    return H2_PAL_ERR_IO;
+  }
   state->open = 1;
   return H2_PAL_OK;
 }
