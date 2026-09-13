@@ -1182,7 +1182,10 @@ cc_library(
 
 cc_library(
     name = "bk7258_config",
-    hdrs = ["config/bk7258/lv_conf.h"],
+    hdrs = [
+        "config/bk7258/h2_lvgl_bk_dma2d.h",
+        "config/bk7258/lv_conf.h",
+    ],
     defines = ['LV_CONF_PATH=\\"config/bk7258/lv_conf.h\\"'],
     includes = ["config/bk7258"],
 )
