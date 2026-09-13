@@ -284,7 +284,13 @@ int h2_jieli_sdk_task_create(void (*entry)(void *ctx), void *ctx,
     const struct task_info *policy = &h2_jieli_default_task_policy;
     if (policy_name != NULL) {
         policy = task_info_table;
-        while (policy->name != NULL && strcmp(policy->name, policy_name) != 0) {
+        while (policy->name != NULL) {
+            if (strcmp(policy->name, policy_name) == 0) break;
+            /* SDK get_task_priority also accepts the canonical name of a
+             * #C0/#C1 entry. The prefix is scheduling metadata, not identity. */
+            if (strncmp(policy->name, "#C", 2u) == 0 &&
+                (policy->name[2] == '0' || policy->name[2] == '1') &&
+                strcmp(policy->name + 3u, policy_name) == 0) break;
             ++policy;
         }
         if (policy->name == NULL) return -1;
@@ -296,8 +302,19 @@ int h2_jieli_sdk_task_create(void (*entry)(void *ctx), void *ctx,
     }
     u32 stack_words = (u32)((stack_bytes + 3u) / 4u);
     if (stack_words < policy->stack_size) stack_words = policy->stack_size;
+    /* xTaskCreate consumes this prefix to set affinity, then stores only the
+     * suffix in its 64-byte TCB name. Join therefore keeps native_name. */
+    char affinity_name[64];
+    const char *create_name = native_name;
+    if (policy->name != NULL && strncmp(policy->name, "#C", 2u) == 0) {
+        if ((policy->name[2] != '0' && policy->name[2] != '1') ||
+            strlen(native_name) > sizeof(affinity_name) - 4u) return -1;
+        memcpy(affinity_name, policy->name, 3u);
+        strcpy(affinity_name + 3u, native_name);
+        create_name = affinity_name;
+    }
     return os_task_create(entry, ctx, policy->prio, stack_words,
-                          policy->qsize, native_name) == OS_NO_ERR ? 0 : -1;
+                          policy->qsize, create_name) == OS_NO_ERR ? 0 : -1;
 }
 
 int h2_jieli_sdk_task_delete(const char *name)

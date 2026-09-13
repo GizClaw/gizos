@@ -20,6 +20,7 @@ static struct native_task {
     int deleted;
 } native_tasks[2];
 static unsigned created;
+static const char *expected_policy;
 static atomic_int release_second, wrong_delete, allocations;
 static pthread_mutex_t gate = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t changed = PTHREAD_COND_INITIALIZER;
@@ -68,7 +69,8 @@ static void *native_entry(void *user) {
 }
 int h2_jieli_sdk_task_create(void (*entry)(void *), void *ctx,
                            const char *policy_name, const char *name, size_t stack_bytes) {
-    assert(strcmp(policy_name, "pal/e2e/producer") == 0);
+    assert(strcmp(policy_name, expected_policy) == 0);
+    assert(strncmp(name, "#C", 2) != 0);
     (void)stack_bytes;
     assert(created < 2);
     struct native_task *task = &native_tasks[created++];
@@ -104,18 +106,26 @@ static void second_entry(void *user) {
 }
 int main(void) {
     const h2_pal_task_api_t *api = h2_jieli_wl82_platform_task_api();
-    const h2_pal_task_options_t options = {.name = "pal/e2e/producer"};
-    h2_pal_task_t *first = NULL;
-    h2_pal_task_t *second = NULL;
-    assert(h2_pal_task_start(api, &options, first_entry, NULL, &first) == 0);
-    assert(h2_pal_task_start(api, &options, second_entry, NULL, &second) == 0);
-    assert(h2_pal_task_join(api, first) == H2_PAL_OK);
-    assert(!atomic_load(&wrong_delete));
-    assert(pthread_mutex_lock(&gate) == 0);
-    atomic_store(&release_second, 1);
-    assert(pthread_cond_broadcast(&changed) == 0);
-    assert(pthread_mutex_unlock(&gate) == 0);
-    assert(h2_pal_task_join(api, second) == H2_PAL_OK);
-    assert(atomic_load(&allocations) == 0);
+    const char *labels[] = {"pal/e2e/producer", "#C0pal/e2e/producer"};
+    for (unsigned i = 0; i < sizeof(labels) / sizeof(labels[0]); ++i) {
+        expected_policy = labels[i];
+        created = 0;
+        memset(native_tasks, 0, sizeof(native_tasks));
+        atomic_store(&release_second, 0);
+        atomic_store(&wrong_delete, 0);
+        const h2_pal_task_options_t options = {.name = labels[i]};
+        h2_pal_task_t *first = NULL;
+        h2_pal_task_t *second = NULL;
+        assert(h2_pal_task_start(api, &options, first_entry, NULL, &first) == 0);
+        assert(h2_pal_task_start(api, &options, second_entry, NULL, &second) == 0);
+        assert(h2_pal_task_join(api, first) == H2_PAL_OK);
+        assert(!atomic_load(&wrong_delete));
+        assert(pthread_mutex_lock(&gate) == 0);
+        atomic_store(&release_second, 1);
+        assert(pthread_cond_broadcast(&changed) == 0);
+        assert(pthread_mutex_unlock(&gate) == 0);
+        assert(h2_pal_task_join(api, second) == H2_PAL_OK);
+        assert(atomic_load(&allocations) == 0);
+    }
     return 0;
 }
