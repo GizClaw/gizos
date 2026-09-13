@@ -24,6 +24,8 @@ typedef enum h2_pal_e2e_suite {
    * reporting UNSUPPORTED instead of pretending to work.
    */
   H2_PAL_E2E_SUITE_BROWSER = 1u << 4,
+  /** Disruptive, standalone suite: disconnects STA; use a non-Wi-Fi control link. */
+  H2_PAL_E2E_SUITE_WIFI = 1u << 5,
 } h2_pal_e2e_suite_t;
 
 typedef enum h2_pal_e2e_case_id {
@@ -52,6 +54,7 @@ typedef enum h2_pal_e2e_case_id {
   H2_PAL_E2E_CASE_HOST_SYSTEM_EVENT,
   H2_PAL_E2E_CASE_BROWSER_HTTP,
   H2_PAL_E2E_CASE_BROWSER_NET_UNSUPPORTED,
+  H2_PAL_E2E_CASE_WIFI_DISCONNECT_STATUS,
 } h2_pal_e2e_case_id_t;
 
 typedef struct h2_pal_e2e_case_result {
@@ -144,7 +147,12 @@ typedef struct h2_pal_e2e_result {
  * Runs the blocking portable PAL E2E registry and closes all App-owned handles.
  *
  * Core and MQTT may be selected together. Preference must be selected alone
- * because it returns cross-boot actions. MQTT requires MQTT and monotonic
+ * because it returns cross-boot actions. Wi-Fi must also be selected alone:
+ * it disconnects STA and requires
+ * Wi-Fi STA and Netif providers; the launcher must use a non-Wi-Fi control
+ * link. It leaves STA disconnected and does not restore a previous connection.
+ *
+ * MQTT requires MQTT and monotonic
  * Time; Preference requires Memory and Preference. The output is initialized
  * on every call and records the terminal phase/stage even when validation or
  * an operation fails.

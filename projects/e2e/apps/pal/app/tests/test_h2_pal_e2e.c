@@ -318,7 +318,82 @@ static void test_host_suite_records_every_failure(void) {
   assert(result.case_count == result.selected);
 }
 
+typedef struct wifi_fixture {
+  int disconnect_calls;
+  int disconnect_result;
+  int stale_ip;
+  int omit_interface;
+  uint32_t flags;
+} wifi_fixture_t;
+
+static int wifi_disconnect(void *user) {
+  wifi_fixture_t *fixture = user;
+  ++fixture->disconnect_calls;
+  return fixture->disconnect_result;
+}
+
+static int wifi_status(void *user, h2_pal_wifi_sta_status_t *status) {
+  wifi_fixture_t *fixture = user;
+  assert(fixture->disconnect_calls != 0);
+  memset(status, 0, sizeof(*status));
+  status->state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
+  status->ip_valid = fixture->stale_ip;
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t wifi_netif_list(
+    void *user, const h2_pal_netif_filter_t *filter,
+    h2_pal_netif_list_fn callback, void *callback_user) {
+  (void)filter;
+  wifi_fixture_t *fixture = user;
+  h2_pal_netif_status_t status = {0};
+  if (fixture->omit_interface) return H2_PAL_OK;
+  status.kind = H2_PAL_NETIF_KIND_WIFI_STA;
+  status.ref.kind = status.kind;
+  status.flags = fixture->flags;
+  return callback(callback_user, &status.ref, &status);
+}
+
+static void test_wifi_disconnected_state_contract(void) {
+  wifi_fixture_t fixture = {0};
+  const h2_pal_wifi_sta_vtable_t sta_vtable = {
+      .disconnect = wifi_disconnect, .get_status = wifi_status};
+  const h2_pal_wifi_sta_api_t sta = { .user = &fixture, .vtable = &sta_vtable };
+  const h2_pal_netif_vtable_t netif_vtable = {.list = wifi_netif_list};
+  const h2_pal_netif_api_t netif = {.user = &fixture, .vtable = &netif_vtable};
+  h2_runtime_t runtime = {0};
+  runtime.wifi_sta = &sta;
+  runtime.netif = &netif;
+  h2_pal_e2e_config_t config = {.suite_mask = H2_PAL_E2E_SUITE_WIFI};
+  h2_pal_e2e_result_t result;
+  assert(h2_pal_e2e_run(&runtime, &config, &result) == H2_PAL_OK);
+  assert(result.selected == 1 && result.passed == 1);
+  const uint32_t bad_flags[] = {H2_PAL_NETIF_FLAG_LINK_UP,
+      H2_PAL_NETIF_FLAG_HAS_IPV4, H2_PAL_NETIF_FLAG_DEFAULT_ROUTE};
+  for (size_t i = 0; i < sizeof(bad_flags) / sizeof(bad_flags[0]); ++i) {
+    fixture.flags = bad_flags[i];
+    assert(h2_pal_e2e_run(&runtime, &config, &result) != H2_PAL_OK);
+    assert(result.failed == 1);
+  }
+  fixture.flags = 0;
+  fixture.stale_ip = 1;
+  assert(h2_pal_e2e_run(&runtime, &config, &result) != H2_PAL_OK);
+  fixture.stale_ip = 0;
+  fixture.omit_interface = 1;
+  assert(h2_pal_e2e_run(&runtime, &config, &result) != H2_PAL_OK);
+  assert(result.cases[0].result == H2_PAL_ERR_NOT_FOUND);
+  fixture.omit_interface = 0;
+  fixture.disconnect_result = H2_PAL_ERR_IO;
+  assert(h2_pal_e2e_run(&runtime, &config, &result) != H2_PAL_OK);
+  assert(result.cases[0].result == H2_PAL_ERR_IO);
+  const int calls = fixture.disconnect_calls;
+  config.suite_mask |= H2_PAL_E2E_SUITE_MQTT;
+  assert(h2_pal_e2e_run(&runtime, &config, &result) == H2_PAL_ERR_INVALID_ARG);
+  assert(fixture.disconnect_calls == calls);
+}
+
 int main(void) {
+  test_wifi_disconnected_state_contract();
   test_success();
   test_publish_failure_still_closes();
   test_subscribe_rejection_still_closes();

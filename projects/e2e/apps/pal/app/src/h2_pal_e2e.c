@@ -1094,6 +1094,39 @@ static h2_pal_result_t h2_pal_e2e_host_netif(h2_runtime_t *runtime) {
              : count != 0u ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
 }
 
+static int h2_pal_e2e_disconnected_netif(
+    void *user, const h2_pal_netif_ref_t *ref,
+    const h2_pal_netif_status_t *status) {
+  size_t *count = user;
+  if (ref == NULL || status == NULL) return H2_PAL_ERR_INVALID_STATE;
+  if (status->kind == H2_PAL_NETIF_KIND_WIFI_STA) ++*count;
+  if (status->kind == H2_PAL_NETIF_KIND_WIFI_STA &&
+      (status->flags & (H2_PAL_NETIF_FLAG_LINK_UP |
+                        H2_PAL_NETIF_FLAG_HAS_IPV4 |
+                        H2_PAL_NETIF_FLAG_DEFAULT_ROUTE)) != 0u) {
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t h2_pal_e2e_wifi_disconnect_status(h2_runtime_t *runtime) {
+  h2_pal_result_t result = h2_pal_wifi_sta_disconnect(runtime->wifi_sta);
+  if (result != H2_PAL_OK) return result;
+  h2_pal_wifi_sta_status_t status = {0};
+  result = h2_pal_wifi_sta_get_status(runtime->wifi_sta, &status);
+  if (result != H2_PAL_OK) return result;
+  if (status.ip_valid ||
+      (status.state != H2_PAL_WIFI_STA_STATE_IDLE &&
+       status.state != H2_PAL_WIFI_STA_STATE_DISCONNECTED)) {
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  size_t count = 0u;
+  result = h2_pal_netif_list(runtime->netif, NULL,
+                             h2_pal_e2e_disconnected_netif, &count);
+  if (result != H2_PAL_OK) return result;
+  return count != 0u ? H2_PAL_OK : H2_PAL_ERR_NOT_FOUND;
+}
+
 static int h2_pal_e2e_host_event_handler(
     void *user, const h2_pal_system_event_t *event) {
   int *calls = user;
@@ -1468,9 +1501,12 @@ h2_pal_result_t h2_pal_e2e_run(h2_runtime_t *runtime,
                               H2_PAL_E2E_SUITE_MQTT |
                               H2_PAL_E2E_SUITE_PREF |
                               H2_PAL_E2E_SUITE_HOST |
-                              H2_PAL_E2E_SUITE_BROWSER)) != 0u ||
+                              H2_PAL_E2E_SUITE_BROWSER |
+                              H2_PAL_E2E_SUITE_WIFI)) != 0u ||
       ((config->suite_mask & H2_PAL_E2E_SUITE_PREF) != 0u &&
-       config->suite_mask != H2_PAL_E2E_SUITE_PREF)) {
+       config->suite_mask != H2_PAL_E2E_SUITE_PREF) ||
+      ((config->suite_mask & H2_PAL_E2E_SUITE_WIFI) != 0u &&
+       config->suite_mask != H2_PAL_E2E_SUITE_WIFI)) {
     out_result->result = H2_PAL_ERR_INVALID_ARG;
     out_result->failed = 1u;
     out_result->complete = 1;
@@ -1487,6 +1523,10 @@ h2_pal_result_t h2_pal_e2e_run(h2_runtime_t *runtime,
   }
   if ((config->suite_mask & H2_PAL_E2E_SUITE_BROWSER) != 0u) {
     h2_pal_e2e_run_browser(runtime, config, out_result);
+  }
+  if ((config->suite_mask & H2_PAL_E2E_SUITE_WIFI) != 0u) {
+    h2_pal_e2e_record(out_result, H2_PAL_E2E_CASE_WIFI_DISCONNECT_STATUS,
+                      h2_pal_e2e_wifi_disconnect_status(runtime));
   }
   if ((config->suite_mask & H2_PAL_E2E_SUITE_MQTT) != 0u) {
     const h2_pal_result_t mqtt_result =
