@@ -274,8 +274,7 @@ void h2_quectel_sim_update(h2_quectel_modem_t *modem, h2_pal_modem_sim_state_t s
 }
 
 void h2_quectel_handle_urc_line(h2_quectel_modem_t *modem, const char *line) {
-    if ((!h2_quectel_is_urc(line, NULL) && !h2_quectel_is_sim_absent_line(line)) ||
-        h2_quectel_state_lock(modem) != H2_PAL_OK) {
+    if (!h2_quectel_is_urc(line, NULL) || h2_quectel_state_lock(modem) != H2_PAL_OK) {
         return;
     }
     h2_quectel_handle_urc_locked(modem, line);

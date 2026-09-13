@@ -52,8 +52,8 @@ int h2_quectel_is_urc(const char *line, const char *command) {
         return !command_is(command, "AT+CLCC");
     }
     /* Echoes, unprefixed identity, terminal results and unsupported reports
-     * are not URCs. SIM-absent answers to AT+CPIN? are forwarded by the RX tap
-     * (see receive_line). No global content deduplication is used. */
+     * never occupy the notification queue. CME SIM errors are handled by the
+     * solicited response path. No global content deduplication is used. */
     return 0;
 }
 
@@ -64,8 +64,10 @@ typedef struct rx_context {
 
 static h2_pal_result_t receive_line(void *user, const char *line) {
     rx_context_t *context = user;
-    return (h2_quectel_is_urc(line, context->command) ||
-        (command_is(context->command, "AT+CPIN?") && h2_quectel_is_sim_absent_line(line)))
+    if (command_is(context->command, "AT+CPIN?") && h2_quectel_is_sim_absent_line(line)) {
+        h2_quectel_cpin_absent_store(context->modem, 1u);
+    }
+    return h2_quectel_is_urc(line, context->command)
         ? h2_quectel_post_urc_line(context->modem, line) : H2_PAL_OK;
 }
 

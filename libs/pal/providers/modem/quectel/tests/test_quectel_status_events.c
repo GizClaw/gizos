@@ -47,11 +47,30 @@ static h2_pal_result_t command(void *user, const char *cmd, char *response,
     return H2_PAL_OK;
 }
 
+typedef struct cpin_transport {
+    h2_quectel_modem_t *modem;
+    h2_modem_rx_t receiver;
+    const char *line;
+    const char *rx_command;
+    unsigned calls;
+    int ready;
+} cpin_transport_t;
+
 static h2_pal_result_t failing_cpin_command(void *user, const char *cmd, char *response,
     size_t response_size, uint32_t timeout_ms) {
+    cpin_transport_t *transport = user;
     if (strcmp(cmd, "AT+CPIN?") == 0) {
-        unsigned *calls = user;
-        (*calls)++;
+        transport->calls++;
+        if (transport->ready) {
+            return command(NULL, cmd, response, response_size, timeout_ms);
+        }
+        /* Physical RX sees the terminal line before command() drops its text.
+         * No worker is installed: the same poll must consume the RX outcome. */
+        if (transport->line != NULL) {
+            assert(h2_quectel_rx_feed(transport->modem, &transport->receiver,
+                transport->receiver.next_offset, (const uint8_t *)transport->line,
+                strlen(transport->line), transport->rx_command) == H2_PAL_OK);
+        }
         assert(response_size > 0u);
         response[0] = '\0';
         return H2_PAL_ERR_UNAVAILABLE;
@@ -61,49 +80,57 @@ static h2_pal_result_t failing_cpin_command(void *user, const char *cmd, char *r
 
 static void test_sim_absent_rx(const h2_pal_system_event_api_t *events) {
     static const char *const absent_lines[] = {
-        "+CME ERROR: 10", "+CME ERROR: SIM not inserted",
+        "+CME ERROR: 10\r\n", "+CME ERROR: SIM not inserted\r\n",
     };
     for (size_t i = 0u; i < sizeof(absent_lines) / sizeof(absent_lines[0]); i++) {
-        unsigned cpin_calls = 0u;
+        h2_quectel_modem_t modem;
+        cpin_transport_t transport = {
+            .modem = &modem, .line = absent_lines[i], .rx_command = "AT+CPIN?",
+        };
         const h2_quectel_modem_config_t config = {
-            .command = failing_cpin_command, .transport_user = &cpin_calls,
+            .command = failing_cpin_command, .transport_user = &transport,
             .system_events = events,
         };
-        h2_quectel_modem_t modem;
         assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_OK);
         h2_pal_modem_status_t status;
+        const unsigned before = sim_absent_events;
+        assert(h2_pal_modem_get_status(&modem.platform, &status) == H2_PAL_OK);
+        assert(status.sim == H2_PAL_MODEM_SIM_STATE_ABSENT);
+        assert(transport.calls == 1u);
+        assert(sim_absent_events == before + 1u);
+        assert(h2_pal_modem_get_status(&modem.platform, &status) == H2_PAL_OK);
+        assert(status.sim == H2_PAL_MODEM_SIM_STATE_ABSENT);
+        assert(sim_absent_events == before + 1u);
+
+        transport.ready = 1;
+        assert(h2_pal_modem_get_status(&modem.platform, &status) == H2_PAL_OK);
+        assert(status.sim == H2_PAL_MODEM_SIM_STATE_READY);
+        /* A later empty failure must not reuse the earlier absence marker. */
+        transport.ready = 0;
+        transport.line = NULL;
         assert(h2_pal_modem_get_status(&modem.platform, &status) == H2_PAL_OK);
         assert(status.sim == H2_PAL_MODEM_SIM_STATE_UNKNOWN);
-
-        char raw[64];
-        const size_t length = strlen(absent_lines[i]);
-        assert(length + 3u <= sizeof(raw));
-        memcpy(raw, absent_lines[i], length);
-        memcpy(raw + length, "\r\n", 3u);
-        h2_modem_rx_t receiver = {0};
-        /* Without a worker, INVALID_STATE proves the RX tap attempted to post
-         * and the post filter accepted the SIM-absent answer. */
-        assert(h2_quectel_rx_feed(&modem, &receiver, 0u, (const uint8_t *)raw,
-            length + 2u, "AT+CPIN?") == H2_PAL_ERR_INVALID_STATE);
-        assert(h2_quectel_post_urc_line(&modem, absent_lines[i]) == H2_PAL_ERR_INVALID_STATE);
-        assert(h2_quectel_rx_feed(&modem, &receiver, receiver.next_offset,
-            (const uint8_t *)raw, length + 2u, "AT+CSQ") == H2_PAL_OK);
-        assert(h2_quectel_rx_feed(&modem, &receiver, receiver.next_offset,
-            (const uint8_t *)raw, length + 2u, NULL) == H2_PAL_OK);
-        assert(h2_quectel_rx_feed(&modem, &receiver, receiver.next_offset,
-            (const uint8_t *)raw, length + 2u, "AT+CPIN?extra") == H2_PAL_OK);
-        static const char other_error[] = "+CME ERROR: 100\r\n";
-        assert(h2_quectel_rx_feed(&modem, &receiver, receiver.next_offset,
-            (const uint8_t *)other_error, sizeof(other_error) - 1u, "AT+CPIN?") == H2_PAL_OK);
-
-        const unsigned before = sim_absent_events;
-        h2_quectel_handle_urc_line(&modem, absent_lines[i]);
         assert(sim_absent_events == before + 1u);
-        for (unsigned poll = 0u; poll < 2u; poll++) {
+
+        static const char *const other_commands[] = {"AT+CSQ", NULL, "AT+CPIN?extra"};
+        for (size_t j = 0u; j < sizeof(other_commands) / sizeof(other_commands[0]); j++) {
+            transport.ready = 1;
             assert(h2_pal_modem_get_status(&modem.platform, &status) == H2_PAL_OK);
-            assert(status.sim == H2_PAL_MODEM_SIM_STATE_ABSENT);
+            assert(status.sim == H2_PAL_MODEM_SIM_STATE_READY);
+            assert(h2_quectel_rx_feed(&modem, &transport.receiver, transport.receiver.next_offset,
+                (const uint8_t *)absent_lines[i], strlen(absent_lines[i]), other_commands[j]) == H2_PAL_OK);
+            assert(modem.sim_state == H2_PAL_MODEM_SIM_STATE_READY);
+            transport.ready = 0;
+            transport.line = absent_lines[i];
+            transport.rx_command = other_commands[j];
+            assert(h2_pal_modem_get_status(&modem.platform, &status) == H2_PAL_OK);
+            assert(status.sim == H2_PAL_MODEM_SIM_STATE_UNKNOWN);
+            assert(sim_absent_events == before + 1u);
         }
-        assert(cpin_calls == 3u);
+        transport.line = "+CME ERROR: 100\r\n";
+        transport.rx_command = "AT+CPIN?";
+        assert(h2_pal_modem_get_status(&modem.platform, &status) == H2_PAL_OK);
+        assert(status.sim == H2_PAL_MODEM_SIM_STATE_UNKNOWN);
         assert(sim_absent_events == before + 1u);
         assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
     }
