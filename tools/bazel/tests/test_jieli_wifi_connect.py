@@ -9,6 +9,50 @@ SOURCE = ROOT / "boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wi
 
 
 class WifiConnectTest(unittest.TestCase):
+    def test_ap_elapsed_time_budget(self):
+        source = SOURCE.read_text()
+        begin = source.index("static int ap_start(")
+        end = source.index("static int ap_stop(", begin)
+        fixture = r'''
+#include <assert.h>
+#include <stdint.h>
+#include <string.h>
+#include "h2/pal/hal/h2_pal_wifi.h"
+static struct { h2_pal_wifi_ap_status_t ap; } wifi_state;
+static uint32_t now;
+static int sleeps;
+static int ensure_wifi_on(void) { return 0; }
+static uint32_t timer_get_ms(void) { return now; }
+static int wifi_get_channel(void) { return 1; }
+static int wifi_enter_ap_mode(char *ssid, char *password) {
+    (void)ssid; (void)password; return 0;
+}
+static void os_time_dly(unsigned ticks) {
+    assert(ticks == 1); ++sleeps; now += 40;
+}
+'''
+        main = r'''
+int main(void) {
+    h2_pal_wifi_ap_config_t config = {0};
+    memcpy(config.ssid, "test", 4); config.ssid_len = 4;
+    config.security = H2_PAL_WIFI_SECURITY_OPEN;
+    assert(ap_start(NULL, &config, 50) == H2_PAL_ERR_TIMEOUT);
+    assert(sleeps == 2 && now == 80);
+    sleeps = 0; now = UINT32_MAX - 19;
+    assert(ap_start(NULL, &config, 50) == H2_PAL_ERR_TIMEOUT);
+    assert(sleeps == 2 && now == 60);
+    return 0;
+}
+'''
+        with tempfile.TemporaryDirectory(prefix="h2-wifi-ap-") as directory:
+            root = Path(directory)
+            unit = root / "ap.c"
+            unit.write_text(fixture + source[begin:end] + main)
+            binary = root / "ap-test"
+            subprocess.run(["cc", "-std=c11", "-I", str(ROOT / "libs/pal/include"),
+                            str(unit), "-o", str(binary)], check=True, timeout=30)
+            subprocess.run([str(binary)], check=True, timeout=30)
+
     def test_async_and_elapsed_time_budget(self):
         source = SOURCE.read_text()
         begin = source.index("static int sta_connect(")

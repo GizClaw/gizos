@@ -342,11 +342,12 @@ static int ap_start(
   memcpy(wifi_state.ap.ssid, config->ssid, config->ssid_len);
   wifi_state.ap.ssid[config->ssid_len] = '\0';
   if (wifi_enter_ap_mode(ssid, password) != 0) return H2_PAL_ERR_IO;
-  uint32_t elapsed = 0u;
+  const uint32_t started = timer_get_ms();
   while (wifi_state.ap.state != H2_PAL_WIFI_AP_STATE_STARTED) {
-    if (elapsed >= timeout_ms) return H2_PAL_ERR_TIMEOUT;
+    if ((uint32_t)(timer_get_ms() - started) >= timeout_ms) {
+      return H2_PAL_ERR_TIMEOUT;
+    }
     os_time_dly(1u);
-    elapsed += 10u;
   }
   wifi_state.ap.channel = (uint8_t)wifi_get_channel();
   return H2_PAL_OK;
