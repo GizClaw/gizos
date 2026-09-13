@@ -15,7 +15,10 @@
 #include <time.h>
 
 /* This test owns its OS services: no GizOS platform provider is linked. */
+static atomic_int fail_next_alloc;
 static void *mem_alloc(void *user, size_t size) {
+  if (atomic_exchange(&fail_next_alloc, 0))
+    return NULL;
   (void)user;
   return malloc(size);
 }
@@ -433,6 +436,42 @@ static h2_pal_result_t capability_call(void *user,
   atomic_store(&pending->id, id); /* Release publishes the copied payload. */
   return H2_PAL_ERR_WOULD_BLOCK;
 }
+static h2_pal_result_t pending_prefix(void *user,
+                                      h2_lua_capability_request_id_t id,
+                                      const char *name, const char *input,
+                                      const char *options, char *output,
+                                      size_t capacity, const char **error) {
+  assert(strcmp(name, "test.echo") == 0 || strcmp(name, "test.slow") == 0);
+  return capability_call(user, id, input, options, output, capacity, error);
+}
+
+static h2_pal_result_t immediate_call(void *user,
+                                      h2_lua_capability_request_id_t id,
+                                      const char *input, const char *options,
+                                      char *output, size_t capacity,
+                                      const char **error) {
+  (void)id;
+  (void)input;
+  (void)options;
+  (void)error;
+  snprintf(output, capacity, "%s", (const char *)user);
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t immediate_prefix(void *user,
+                                        h2_lua_capability_request_id_t id,
+                                        const char *name, const char *input,
+                                        const char *options, char *output,
+                                        size_t capacity, const char **error) {
+  (void)user;
+  (void)id;
+  (void)input;
+  (void)options;
+  (void)error;
+  snprintf(output, capacity, "%s:%s", (const char *)user, name);
+  return H2_PAL_OK;
+}
+
 static void capability_cancel(void *user, h2_lua_capability_request_id_t id) {
   pending_call_t *pending = user;
   assert(atomic_load(&pending->id) == id);
@@ -531,8 +570,103 @@ static void test_job_results(h2_lua_host_t *host) {
   }
 }
 
+static void test_registry(h2_runtime_t *runtime) {
+  h2_lua_host_config_t cfg = {.runtime = runtime};
+  h2_lua_host_t *host = NULL;
+  const size_t capacities[] = {0u, 1u, 200u, H2_LUA_CAPABILITY_CAPACITY_MAX};
+  for (size_t c = 0u; c < sizeof(capacities) / sizeof(capacities[0]); ++c) {
+    cfg.capability_capacity = capacities[c];
+    size_t count = capacities[c] == 0u ? 16u : capacities[c];
+    assert(h2_lua_host_create(&cfg, &host) == H2_PAL_OK);
+    for (size_t i = 0u; i < count; ++i) {
+      char name[48];
+      snprintf(name, sizeof(name), "host.%zu", i);
+      assert(h2_lua_register_capability(host, name, immediate_call, NULL,
+                                        "last") == H2_PAL_OK);
+    }
+    assert(h2_lua_register_capability(host, "overflow", immediate_call, NULL,
+                                      "last") == H2_PAL_ERR_FULL);
+    assert(h2_lua_register_capability_prefix(host, "overflow.",
+                                             immediate_prefix, NULL,
+                                             NULL) == H2_PAL_ERR_FULL);
+    assert(h2_lua_host_start(host) == H2_PAL_OK);
+    char script[192];
+    snprintf(script, sizeof(script),
+             "local ok,out,err=require('capability').call('host.%zu');"
+             "assert(ok and out=='last' and err==nil)",
+             count - 1u);
+    h2_lua_job_id_t job = submit(host, script);
+    wait_state(host, job, H2_LUA_JOB_SUCCEEDED);
+    h2_lua_host_destroy(host);
+  }
+  cfg.capability_capacity = H2_LUA_CAPABILITY_CAPACITY_MAX + 1u;
+  assert(h2_lua_host_create(&cfg, &host) == H2_PAL_ERR_INVALID_ARG);
+  assert(host == NULL);
+  cfg.capability_capacity = 5u;
+  assert(h2_lua_host_create(&cfg, &host) == H2_PAL_OK);
+  assert(h2_lua_register_capability_prefix(host, "ns.deep.", immediate_prefix,
+                                           NULL, "deep") == H2_PAL_OK);
+  assert(h2_lua_register_capability_prefix(host, "ns.", immediate_prefix, NULL,
+                                           "root") == H2_PAL_OK);
+  assert(h2_lua_register_capability(host, "ns.deep.exact", immediate_call, NULL,
+                                    "exact") == H2_PAL_OK);
+  assert(h2_lua_register_capability(host, "ns.", immediate_call, NULL,
+                                    "same-text") == H2_PAL_OK);
+  assert(h2_lua_register_capability_prefix(host, "ns.", immediate_prefix, NULL,
+                                           NULL) == H2_PAL_ERR_INVALID_STATE);
+  assert(h2_lua_register_capability(host, "ns.", immediate_call, NULL, NULL) ==
+         H2_PAL_ERR_INVALID_STATE);
+  char long_name[49];
+  memset(long_name, 'x', sizeof(long_name));
+  long_name[48] = 0;
+  assert(h2_lua_register_capability_prefix(host, long_name, immediate_prefix,
+                                           NULL,
+                                           NULL) == H2_PAL_ERR_INVALID_ARG);
+  long_name[47] = 0;
+  assert(h2_lua_register_capability_prefix(host, long_name, immediate_prefix,
+                                           NULL, "limit") == H2_PAL_OK);
+  assert(h2_lua_register_capability_prefix(host, "", immediate_prefix, NULL,
+                                           NULL) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_register_capability_prefix(host, NULL, immediate_prefix, NULL,
+                                           NULL) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_register_capability_prefix(host, "null.", NULL, NULL, NULL) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_register_capability_prefix(NULL, "ns.", immediate_prefix, NULL,
+                                           NULL) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_register_capability(host, "full", immediate_call, NULL, NULL) ==
+         H2_PAL_ERR_FULL);
+  atomic_store(&fail_next_alloc, 1);
+  assert(h2_lua_host_start(host) == H2_PAL_ERR_NO_MEMORY);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  assert(h2_lua_register_capability_prefix(host, "late.", immediate_prefix,
+                                           NULL,
+                                           NULL) == H2_PAL_ERR_INVALID_STATE);
+  h2_lua_job_id_t job = submit(
+      host,
+      "local c=require('capability');"
+      "local function check(n,v) local ok,out,err=c.call(n);"
+      "assert(ok and out==v and err==nil) end;"
+      "check('ns.deep.exact','exact');"
+      "check('ns.deep.other','deep:ns.deep.other');"
+      "check('ns.other','root:ns.other');"
+      "check('ns.deep.','root:ns.deep.');"
+      "check('ns.','same-text');"
+      "local ok,out,err=c.call('missing');"
+      "assert(ok==false and out==nil and err=='unknown capability: missing');"
+      "local n=string.rep('x',47);ok,out,err=c.call(n);"
+      "assert(ok==false and out==nil and err=='unknown capability: '..n);"
+      "check(n..'y','limit:'..n..'y')");
+  wait_state(host, job, H2_LUA_JOB_SUCCEEDED);
+  h2_lua_host_destroy(host);
+  assert(h2_lua_host_create(&cfg, &host) == H2_PAL_OK);
+  atomic_store(&fail_next_alloc, 1);
+  assert(h2_lua_host_start(host) == H2_PAL_ERR_NO_MEMORY);
+  h2_lua_host_destroy(host);
+}
+
 int main(void) {
   h2_runtime_t *runtime = create_runtime();
+  test_registry(runtime);
   h2_lua_host_t *host = NULL;
   pending_call_t echo = {0}, slow = {0};
   h2_lua_host_config_t cfg = {.runtime = runtime,
@@ -542,15 +676,12 @@ int main(void) {
                               .execution_timeout_ms = 10000,
                               .vm_memory_limit_bytes = 512u * 1024u};
   assert(h2_lua_host_create(&cfg, &host) == H2_PAL_OK);
-  assert(h2_lua_capability_name_at(NULL, 0) == NULL);
-  assert(h2_lua_capability_name_at(host, 0) == NULL);
-  assert(h2_lua_register_capability(host, "test.echo", capability_call,
-                                    capability_cancel, &echo) == H2_PAL_OK);
-  assert(h2_lua_register_capability(host, "test.slow", capability_call,
-                                    capability_cancel, &slow) == H2_PAL_OK);
-  assert(strcmp(h2_lua_capability_name_at(host, 0), "test.echo") == 0);
-  assert(strcmp(h2_lua_capability_name_at(host, 1), "test.slow") == 0);
-  assert(h2_lua_capability_name_at(host, 2) == NULL);
+  assert(h2_lua_register_capability_prefix(host, "test.e", pending_prefix,
+                                           capability_cancel,
+                                           &echo) == H2_PAL_OK);
+  assert(h2_lua_register_capability_prefix(host, "test.s", pending_prefix,
+                                           capability_cancel,
+                                           &slow) == H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   test_job_results(host);
   const char *failures[] = {"return string.rep('x',257)", "error('failed')",
@@ -580,7 +711,6 @@ int main(void) {
   assert(h2_lua_job_release(host, boundary) == H2_PAL_OK);
   assert(h2_lua_register_capability(host, "late", capability_call, NULL,
                                     &echo) == H2_PAL_ERR_INVALID_STATE);
-  assert(strcmp(h2_lua_capability_name_at(host, 1), "test.slow") == 0);
 
   h2_lua_job_id_t job = submit(
       host, "local ok,out,err=require('capability').call('test.echo','hello');"
@@ -590,6 +720,22 @@ int main(void) {
   assert(strcmp(echo.input, "hello") == 0);
   assert(h2_lua_capability_complete(host, request, H2_PAL_OK, echo.input,
                                     NULL) == H2_PAL_OK);
+  wait_state(host, job, H2_LUA_JOB_SUCCEEDED);
+  assert(h2_lua_capability_complete(host, request, H2_PAL_OK, "duplicate",
+                                    NULL) != H2_PAL_OK);
+  assert(h2_lua_job_release(host, job) == H2_PAL_OK);
+
+  uint64_t previous_request = request;
+  atomic_store(&echo.id, 0);
+  job = submit(
+      host, "local ok,out,err=require('capability').call('test.echo','error');"
+            "assert(ok==false and out==nil and err=='host error')");
+  request = wait_request(&echo);
+  wait_state(host, job, H2_LUA_JOB_WAITING);
+  assert(h2_lua_capability_complete(host, previous_request, H2_PAL_OK, "stale",
+                                    NULL) != H2_PAL_OK);
+  assert(h2_lua_capability_complete(host, request, H2_PAL_ERR_INVALID_ARG,
+                                    "details", "host error") == H2_PAL_OK);
   wait_state(host, job, H2_LUA_JOB_SUCCEEDED);
   assert(h2_lua_job_release(host, job) == H2_PAL_OK);
 

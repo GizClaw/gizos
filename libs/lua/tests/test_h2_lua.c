@@ -687,6 +687,15 @@ static h2_pal_result_t completed_before_return_capability(
   return H2_PAL_ERR_WOULD_BLOCK;
 }
 
+static h2_pal_result_t completed_before_return_prefix(
+    void *user, h2_lua_capability_request_id_t request_id, const char *name,
+    const char *input, const char *options, char *output,
+    size_t output_capacity, const char **out_error) {
+  assert(strcmp(name, "early") == 0);
+  return completed_before_return_capability(user, request_id, input, options,
+                                            output, output_capacity, out_error);
+}
+
 static void cancel_capability(void *user,
                               h2_lua_capability_request_id_t request_id) {
   capability_fixture_t *fixture = user;
@@ -1758,9 +1767,9 @@ int main(void) {
   capability_fixture_t capability = {.host = host};
   assert(h2_lua_register_capability(host, "immediate", immediate_capability,
                                     NULL, NULL) == H2_PAL_OK);
-  assert(h2_lua_register_capability(host, "early",
-                                    completed_before_return_capability, NULL,
-                                    &capability) == H2_PAL_OK);
+  assert(h2_lua_register_capability_prefix(host, "ear",
+                                           completed_before_return_prefix, NULL,
+                                           &capability) == H2_PAL_OK);
   assert(h2_lua_register_capability(host, "pending", pending_capability,
                                     cancel_capability,
                                     &capability) == H2_PAL_OK);
