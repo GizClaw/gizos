@@ -364,7 +364,7 @@ static int h2_encode_adv(
     const size_t uuid_len = data->service_data_uuid.len;
     if ((uuid_len != 2u && uuid_len != 16u) ||
         data->service_data_uuid.data == NULL ||
-        uuid_len + data->service_data.len > sizeof(service) ||
+        data->service_data.len > sizeof(service) - uuid_len ||
         (data->service_data.len != 0u && data->service_data.data == NULL))
       return H2_PAL_ERR_INVALID_ARG;
     memcpy(service, data->service_data_uuid.data, uuid_len);
