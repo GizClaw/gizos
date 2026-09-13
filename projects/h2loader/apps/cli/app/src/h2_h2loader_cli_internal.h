@@ -5,6 +5,7 @@
 #include "h2_h2loader_host_package.h"
 
 #define H2_H2LOADER_CLI_MAX_DATA_ENTRIES 128u
+#define H2_H2LOADER_CLI_TRANSPORT_LOG_LINE_SIZE 1024u
 
 typedef struct h2_h2loader_cli_context h2_h2loader_cli_context_t;
 
@@ -73,6 +74,9 @@ struct h2_h2loader_cli_context {
     h2_runtime_t *runtime;
     const h2_h2loader_cli_config_t *config;
     int ble_disabled;
+    uint8_t transport_log_line[H2_H2LOADER_CLI_TRANSPORT_LOG_LINE_SIZE];
+    size_t transport_log_line_len;
+    uint8_t transport_log_line_discard;
 };
 
 const h2_pal_ble_host_api_t *h2_h2loader_cli_acquire_ble(
@@ -108,6 +112,11 @@ h2_pal_result_t h2_h2loader_cli_output_json_string(
     h2_h2loader_cli_context_t *context,
     h2_h2loader_cli_stream_t stream,
     const char *value);
+
+h2_pal_result_t h2_h2loader_cli_transport_log(
+    void *user,
+    const uint8_t *data,
+    size_t len);
 
 void h2_h2loader_cli_send_progress(
     void *user,

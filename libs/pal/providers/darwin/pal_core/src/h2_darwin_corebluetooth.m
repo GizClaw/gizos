@@ -5,6 +5,24 @@
 #include "h2_darwin_corebluetooth_internal.h"
 
 #include <string.h>
+#include <stdio.h>
+#include <stdatomic.h>
+
+static _Atomic(const h2_pal_log_api_t *) s_diagnostic_log;
+
+static void connection_diagnostic(
+    const char *event, CBPeripheral *peripheral, NSError *error) {
+    char message[H2_PAL_LOG_MESSAGE_MAX];
+    (void)snprintf(message, sizeof(message),
+                   "event=%s id=%s domain=%s code=%ld description=%s",
+                   event, peripheral.identifier.UUIDString.UTF8String ?: "unknown",
+                   error != nil ? error.domain.UTF8String : "none",
+                   error != nil ? (long)error.code : 0L,
+                   error != nil ? error.localizedDescription.UTF8String : "none");
+    (void)h2_pal_log_write(
+        atomic_load_explicit(&s_diagnostic_log, memory_order_acquire),
+        H2_PAL_LOG_ERROR, "ble/corebluetooth", message);
+}
 
 #define H2_COREBLUETOOTH_CONN_HANDLE 1u
 #define H2_COREBLUETOOTH_WAIT_MS 10000u
@@ -681,6 +699,18 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
     h2_pal_result_t result = [self waitForOperation:timeoutMs];
     if (result == H2_PAL_OK) {
         *outHandle = H2_COREBLUETOOTH_CONN_HANDLE;
+    } else {
+        /* CoreBluetooth keeps a timed-out connect request pending until it is
+         * explicitly cancelled.  Leaving it pending makes later scans lose
+         * the peripheral and causes subsequent connect attempts to reuse
+         * stale state. */
+        dispatch_sync(self.queue, ^{
+            [self.centralManager cancelPeripheralConnection:peripheral];
+            if (self.connectedPeripheral == peripheral) {
+                self.connectedPeripheral = nil;
+                [self clearClientMappings];
+            }
+        });
     }
     return result;
 }
@@ -1131,8 +1161,7 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
  didFailToConnectPeripheral:(CBPeripheral *)peripheral
                   error:(NSError *)error {
     (void)central;
-    (void)peripheral;
-    (void)error;
+    connection_diagnostic("connect-failed", peripheral, error);
     self.connectedPeripheral = nil;
     [self clearClientMappings];
     [self completeOperation:H2CoreBluetoothOperationConnect result:H2_PAL_ERR_IO];
@@ -1142,6 +1171,9 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
  didDisconnectPeripheral:(CBPeripheral *)peripheral
                    error:(NSError *)error {
     (void)central;
+    if (error != nil) {
+        connection_diagnostic("disconnected", peripheral, error);
+    }
     h2_pal_ble_disconnected_info_t info;
     memset(&info, 0, sizeof(info));
     info.conn_handle = H2_COREBLUETOOTH_CONN_HANDLE;
@@ -1714,17 +1746,22 @@ static h2_pal_ble_t s_h2_darwin_corebluetooth_api = {
 };
 
 h2_pal_ble_t *h2_darwin_corebluetooth_ble(
-    const h2_pal_mem_api_t *allocator) {
+    const h2_pal_mem_api_t *allocator, const h2_pal_log_api_t *log) {
     if (allocator == NULL || allocator->vtable == NULL ||
         allocator->vtable->alloc == NULL ||
         allocator->vtable->realloc == NULL ||
-        allocator->vtable->free == NULL) {
+        allocator->vtable->free == NULL || log == NULL ||
+        log->vtable == NULL || log->vtable->write == NULL) {
         return NULL;
     }
-    if (s_h2_darwin_corebluetooth_api.allocator != NULL &&
-        s_h2_darwin_corebluetooth_api.allocator != allocator) {
-        return NULL;
+    @synchronized ([H2CoreBluetoothBackend class]) {
+        if (s_h2_darwin_corebluetooth_api.allocator != NULL) {
+            return s_h2_darwin_corebluetooth_api.allocator == allocator &&
+                   atomic_load_explicit(&s_diagnostic_log, memory_order_acquire) == log
+                ? &s_h2_darwin_corebluetooth_api : NULL;
+        }
+        s_h2_darwin_corebluetooth_api.allocator = allocator;
+        atomic_store_explicit(&s_diagnostic_log, log, memory_order_release);
     }
-    s_h2_darwin_corebluetooth_api.allocator = allocator;
     return &s_h2_darwin_corebluetooth_api;
 }

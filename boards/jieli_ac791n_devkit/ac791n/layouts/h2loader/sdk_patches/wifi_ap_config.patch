@@ -1,0 +1,40 @@
+diff --git a/apps/common/net/wifi_conf.c b/apps/common/net/wifi_conf.c
+--- a/apps/common/net/wifi_conf.c
++++ b/apps/common/net/wifi_conf.c
+@@ -639,3 +639,26 @@
++/* Called with Wi-Fi stopped, before the next AP initialization. */
++int h2_jieli_wifi_configure_ap(unsigned channel, unsigned max_clients, unsigned hidden)
++{
++    if (channel < 1 || channel > 14 || max_clients < 1 || max_clients > 5 || hidden > 1 || wifi_is_on()) {
++        return -1;
++    }
++    char *ch = strstr(WL_AP_DAT, "\nChannel=");
++    char *max = strstr(WL_AP_DAT, "\nMaxStaNum=");
++    char *hide = strstr(WL_AP_DAT, "\nHideSSID=");
++    if (!ch || !max || !hide) return -1;
++    ch += strlen("\nChannel=");
++    max += strlen("\nMaxStaNum=");
++    hide += strlen("\nHideSSID=");
++    /* These fields have fixed storage in the pinned SDK template. */
++    if (ch[3] != '\n' || max[1] != '\n' || hide[1] != '\n') return -1;
++    ch[0] = channel >= 10 ? '1' : '0' + channel;
++    ch[1] = channel >= 10 ? '0' + channel % 10 : '\n';
++    ch[2] = '#';
++    max[0] = '0' + max_clients;
++    hide[0] = '0' + hidden;
++    return 0;
++}
++
+ const char *GET_WL_AP_DAT(void)
+ {
+     return WL_AP_DAT;
+diff --git a/include_lib/net/wifi/wifi_connect.h b/include_lib/net/wifi/wifi_connect.h
+--- a/include_lib/net/wifi/wifi_connect.h
++++ b/include_lib/net/wifi/wifi_connect.h
+@@ -335,3 +335,6 @@
+ extern int wifi_enter_ap_mode(char *ap_ssid, char *ap_pwd);
+ 
++/* Board PAL configuration bridge; Wi-Fi must be stopped. */
++extern int h2_jieli_wifi_configure_ap(unsigned channel, unsigned max_clients, unsigned hidden);
++
+ /**

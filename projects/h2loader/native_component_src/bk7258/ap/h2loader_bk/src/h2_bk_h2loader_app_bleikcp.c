@@ -400,6 +400,7 @@ static int h2_bk_h2loader_start_app_ble_with_mode(
     }
     s_ble.client_config = client.config;
     const h2_loader_ble_service_config_t service = {
+        .log = runtime->log,
         .api = {
             .ble = runtime->ble_host,
             .task = runtime->task,

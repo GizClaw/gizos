@@ -1,0 +1,76 @@
+diff --git a/apps/common/audio_music/pcm_play_api.c b/apps/common/audio_music/pcm_play_api.c
+--- a/apps/common/audio_music/pcm_play_api.c
++++ b/apps/common/audio_music/pcm_play_api.c
+@@ -148,7 +148,8 @@
+ }
+ #endif
+ 
+-void *audio_pcm_play_open(int sample_rate, u32 frame_size, u32 drop_points, u8 channel, u8 volume, u8 block)
++static void *audio_pcm_play_open_internal(int sample_rate, u32 frame_size, u32 drop_points,
++                                          u8 channel, u8 volume, u8 block, u8 sync)
+ {
+     union audio_req req = {0};
+     int err;
+@@ -202,8 +203,10 @@
+     /* req.dec.attr            = AUDIO_ATTR_LR_ADD; */          //左右声道数据合在一起
+ #if defined CONFIG_AUDIO_MIX_ENABLE
+     req.dec.attr            = AUDIO_ATTR_REAL_TIME;
+-    req.dec.dec_sync        = pcm_sync;
+-    req.dec.sync_priv       = hdl;
++    if (sync) {
++        req.dec.dec_sync    = pcm_sync;
++        req.dec.sync_priv   = hdl;
++    }
+ 
+     hdl->drop_points  = drop_points * channel;
+     hdl->begin_size   = cache_buf_size * 6 / 10;
+@@ -240,6 +243,33 @@
+     return NULL;
+ }
+ 
++void *audio_pcm_play_open(int sample_rate, u32 frame_size, u32 drop_points,
++                          u8 channel, u8 volume, u8 block)
++{
++    return audio_pcm_play_open_internal(sample_rate, frame_size, drop_points,
++                                        channel, volume, block, 1);
++}
++
++void *audio_pcm_play_open_no_sync(int sample_rate, u32 frame_size,
++                                  u32 drop_points, u8 channel, u8 volume,
++                                  u8 block)
++{
++    return audio_pcm_play_open_internal(sample_rate, frame_size, drop_points,
++                                        channel, volume, block, 0);
++}
++
++int audio_pcm_play_set_block(void *priv, u8 block)
++{
++    struct audio_pcm_play_t *hdl = (struct audio_pcm_play_t *)priv;
++
++    if (hdl == NULL || hdl->dec_server == NULL) {
++        return -1;
++    }
++
++    hdl->block = !!block;
++    return 0;
++}
++
+ int audio_pcm_play_start(void *priv)
+ {
+     struct audio_pcm_play_t *hdl = (struct audio_pcm_play_t *)priv;
+diff --git a/apps/common/audio_music/pcm_play_api.h b/apps/common/audio_music/pcm_play_api.h
+--- a/apps/common/audio_music/pcm_play_api.h
++++ b/apps/common/audio_music/pcm_play_api.h
+@@ -2,8 +2,12 @@
+ 
+ void *audio_pcm_play_open(int sample_rate, u32 frame_size, u32 drop_points, u8 channel, u8 volume, u8 block);
+ 
++void *audio_pcm_play_open_no_sync(int sample_rate, u32 frame_size, u32 drop_points, u8 channel, u8 volume, u8 block);
++
+ int audio_pcm_play_start(void *priv);
+ 
++int audio_pcm_play_set_block(void *priv, u8 block);
++
+ int audio_pcm_play_pause(void *priv, int clear_cache);
+ 
+ int audio_pcm_play_set_volume(void *priv, u8 volume);

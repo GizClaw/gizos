@@ -149,6 +149,8 @@ Repository CLI 提供 H2Loader management BLE provider，并与 serial 复用同
 
 串口和 BLE 可以同时等待输入，但共享 operation mutex 串行执行命令。Command line、stage bytes 和 response 始终绑定发起它的 transport；断开的 operation 失败，不转移到另一 transport，也不自动 replay。
 
+BLE command service 的诊断由 composition root 显式借用 Log PAL，与 command response 分离，不直接写 `stdout` 或 `stderr`。日志接口和其 `user` 必须覆盖 service 生命周期，支持并发 task 调用，且不得从日志回调重入 service。诊断为 optional：缺少可用接口时不输出，写入失败不覆盖通信操作的原始返回值。每条记录遵守 PAL message 容量；会话统计拆成带 connection handle 的多条记录，保留所有计数与 high-water 信息，底层日志 provider 决定实际 UART、USB 或其它输出位置。
+
 ## Image 生命周期
 
 H2Loader 的完成条件不是“传输成功”或“reboot accepted”。App 更新必须经过 package 校验、Partition 2 写入和新 App 启动；新 App 以自身固件 identity 提交 Partition 2 metadata，并清理匹配的 Stage。Loader self-update 必须经过 Partition 1 → Partition 2 → Partition 1 回写；最终验收重新连接设备，确认预期 role/version/board/target、active image checksum/size、running/next partition、`boot_intent`、Stage 与 Partition 1/2 metadata。App 终态要求运行 Partition 2 且 Stage invalid；Loader 终态要求运行 Partition 1、`boot_intent=AUTO`、Partition 1/2 valid 且 image checksum 相同、Stage invalid，随后再做 power-cycle 复查。

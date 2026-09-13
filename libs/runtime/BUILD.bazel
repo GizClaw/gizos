@@ -4,6 +4,13 @@ load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
+# Source-only vendor firmware components use Runtime declarations without
+# asking Bazel to compile Runtime for the vendor ISA.
+filegroup(
+    name = "runtime_header_files",
+    srcs = glob(["include/*.h"]),
+)
+
 # The Runtime sources, headers and dependencies are shared by every variant of
 # the library below, so a build with a feature compiled out cannot drift away
 # from the shipping one.

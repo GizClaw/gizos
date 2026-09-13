@@ -1,15 +1,11 @@
 #include "h2_tinyh264.h"
+#include "h2_tinyh264_allocator_scope.h"
 
 #include "h264bsd_decoder.h"
 
 #include <limits.h>
 #include <stdint.h>
 #include <string.h>
-
-const h2_pal_mem_api_t *h2_tinyh264_allocator_scope_enter(
-    const h2_pal_mem_api_t *allocator);
-void h2_tinyh264_allocator_scope_leave(
-    const h2_pal_mem_api_t *previous);
 
 typedef struct tinyh264_session {
     h2_pal_mem_api_t allocator;
@@ -116,11 +112,11 @@ static int has_parameter_sets(const storage_t *decoder) {
 
 static void destroy_decoder(tinyh264_session_t *session) {
     if (session->decoder != NULL) {
-        const h2_pal_mem_api_t *previous =
-            h2_tinyh264_allocator_scope_enter(&session->allocator);
+        h2_tinyh264_allocator_scope_t previous;
+        h2_tinyh264_allocator_scope_enter(&previous, &session->allocator);
         h264bsdShutdown(session->decoder);
         h264bsdFree(session->decoder);
-        h2_tinyh264_allocator_scope_leave(previous);
+        h2_tinyh264_allocator_scope_leave(&previous);
         session->decoder = NULL;
     }
 }
@@ -209,8 +205,8 @@ static h2_pal_result_t tiny_configure(
         return H2_PAL_ERR_NO_MEMORY;
     }
     memcpy(session->input, config->codec_config, config->codec_config_size);
-    const h2_pal_mem_api_t *previous =
-        h2_tinyh264_allocator_scope_enter(&session->allocator);
+    h2_tinyh264_allocator_scope_t previous;
+    h2_tinyh264_allocator_scope_enter(&previous, &session->allocator);
     storage_t *decoder = h264bsdAlloc();
     const int init_ok = decoder != NULL && h264bsdInit(decoder, 0u) == 0u;
     uint8_t *ignored_picture = NULL;
@@ -226,15 +222,15 @@ static h2_pal_result_t tiny_configure(
             &ignored_width,
             &ignored_height);
     }
-    h2_tinyh264_allocator_scope_leave(previous);
+    h2_tinyh264_allocator_scope_leave(&previous);
     if (!init_ok || decode_result == H264BSD_MEMALLOC_ERROR ||
         !has_parameter_sets(decoder)) {
         if (decoder != NULL) {
-            const h2_pal_mem_api_t *cleanup_previous =
-                h2_tinyh264_allocator_scope_enter(&session->allocator);
+            h2_tinyh264_allocator_scope_t cleanup_previous;
+            h2_tinyh264_allocator_scope_enter(&cleanup_previous, &session->allocator);
             h264bsdShutdown(decoder);
             h264bsdFree(decoder);
-            h2_tinyh264_allocator_scope_leave(cleanup_previous);
+            h2_tinyh264_allocator_scope_leave(&cleanup_previous);
         }
         h2_pal_mem_free(&session->allocator, output);
         if (!init_ok || decode_result == H264BSD_MEMALLOC_ERROR) {
@@ -278,8 +274,8 @@ static h2_pal_result_t tiny_submit(
     uint8_t *picture = NULL;
     u32 width = 0u;
     u32 height = 0u;
-    const h2_pal_mem_api_t *previous =
-        h2_tinyh264_allocator_scope_enter(&session->allocator);
+    h2_tinyh264_allocator_scope_t previous;
+    h2_tinyh264_allocator_scope_enter(&previous, &session->allocator);
     const u32 result = h264bsdDecode(
         session->decoder,
         session->input,
@@ -287,7 +283,7 @@ static h2_pal_result_t tiny_submit(
         &picture,
         &width,
         &height);
-    h2_tinyh264_allocator_scope_leave(previous);
+    h2_tinyh264_allocator_scope_leave(&previous);
     if (result == H264BSD_ERROR || result == H264BSD_PARAM_SET_ERROR) {
         return H2_PAL_ERR_FORMAT;
     }

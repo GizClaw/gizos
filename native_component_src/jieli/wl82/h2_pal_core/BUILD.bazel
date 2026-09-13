@@ -1,0 +1,139 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+# PAL core providers for the JieLi AC791N (wl82) SDK. The providers only
+# depend on h2_jieli_wl82_sdk_port.h; the SDK binding
+# (src/h2_jieli_wl82_sdk_port.c) is compiled by the native SDK build, while
+# host tests link the deterministic fake below.
+PROVIDER_SRCS = [
+    "src/h2_jieli_wl82_platform_firmware_info.c",
+    "src/h2_jieli_wl82_platform_log.c",
+    "src/h2_jieli_wl82_platform_mem.c",
+    "src/h2_jieli_wl82_platform_queue.c",
+    "src/h2_jieli_wl82_platform_sync.c",
+    "src/h2_jieli_wl82_platform_system_event.c",
+    "src/h2_jieli_wl82_platform_task.c",
+    "src/h2_jieli_wl82_platform_time.c",
+    "src/h2_jieli_wl82_platform_timer.c",
+]
+
+firmware_native_component(
+    name = "h2_pal_core",
+    srcs = PROVIDER_SRCS + ["src/h2_jieli_wl82_sdk_port.c"],
+    hdrs = glob(["include/*.h"]),
+    component_name = "h2_pal_core",
+    include_roots = [
+        "libs/pal/include",
+        "native_component_src/jieli/wl82/h2_pal_core/include",
+    ],
+    tags = ["manual"],
+    deps = ["//libs/pal:pal_header_files"],
+)
+
+cc_library(
+    name = "h2_pal_core_host",
+    testonly = True,
+    srcs = PROVIDER_SRCS + [
+        "tests/include/h2_jieli_wl82_sdk_port_fake.h",
+        "tests/src/h2_jieli_wl82_sdk_port_fake.c",
+    ],
+    hdrs = glob(["include/*.h"]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "tests/include",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//visibility:private"],
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "test_jieli_wl82_cond_threads",
+    srcs = [
+        "src/h2_jieli_wl82_platform_sync.c",
+        "tests/src/test_jieli_wl82_cond_threads.c",
+        "include/h2_jieli_wl82_atomic.h",
+        "include/h2_jieli_wl82_platform_core.h",
+        "include/h2_jieli_wl82_sdk_port.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    linkopts = ["-pthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "test_jieli_wl82_queue_threads",
+    srcs = [
+        "src/h2_jieli_wl82_platform_queue.c",
+        "src/h2_jieli_wl82_platform_sync.c",
+        "tests/src/test_jieli_wl82_queue_threads.c",
+        "include/h2_jieli_wl82_atomic.h",
+        "include/h2_jieli_wl82_platform_core.h",
+        "include/h2_jieli_wl82_sdk_port.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    linkopts = ["-pthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "test_jieli_wl82_event_threads",
+    srcs = [
+        "src/h2_jieli_wl82_platform_system_event.c",
+        "tests/src/test_jieli_wl82_event_threads.c",
+        "include/h2_jieli_wl82_atomic.h",
+        "include/h2_jieli_wl82_platform_core.h",
+        "include/h2_jieli_wl82_sdk_port.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    linkopts = ["-pthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "test_jieli_wl82_platform_core",
+    srcs = ["tests/src/test_jieli_wl82_platform_core.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":h2_pal_core_host",
+        "//libs/pal",
+    ],
+)

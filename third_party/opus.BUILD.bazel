@@ -29,6 +29,11 @@ filegroup(
     ),
 )
 
+filegroup(
+    name = "firmware_headers",
+    srcs = glob(["src/**/*.h"]),
+)
+
 cc_library(
     name = "headers",
     hdrs = glob(["src/include/*.h"]),

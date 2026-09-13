@@ -153,6 +153,7 @@ class JieliRunnerFixture:
             native_component_source=[],
             native_include_root=[],
             prebuilt_component=[],
+            sdk_patch=[],
         )
         values.update(overrides)
         return mock.Mock(**values)

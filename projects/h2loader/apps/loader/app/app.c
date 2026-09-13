@@ -1,6 +1,7 @@
 #include "h2loader_app.h"
 #include "h2loader_app_task_names.h"
 
+#include <stdio.h>
 #include <string.h>
 
 typedef struct h2loader_serve_context {
@@ -42,6 +43,7 @@ static void start_additional_command_service(
     if (command_service == NULL) {
         return;
     }
+    printf("H2_LOADER_COMMAND_SERVICE stage=open-enter\n");
     int rc = command_service->open(
         command_service->user,
         runtime,
@@ -49,6 +51,7 @@ static void start_additional_command_service(
         board,
         capabilities,
         out_service);
+    printf("H2_LOADER_COMMAND_SERVICE stage=open-return code=%d\n", rc);
     if (rc != H2_PAL_OK) {
         /* Keep the independent serial command task available for recovery
          * after an additional command service fails to start. */
@@ -192,13 +195,6 @@ int h2loader_app_run_with_command_service(
                 runtime, operation_mutex, wifi_operation_mutex);
             return H2_PAL_OK;
         }
-        start_additional_command_service(
-            runtime,
-            command_service,
-            &command,
-            loader_config.board,
-            loader_config.hardware_capabilities,
-            &additional_command_service);
         serve_context = (h2loader_serve_context_t){
             .config = config,
             .loader = &loader,
@@ -219,6 +215,13 @@ int h2loader_app_run_with_command_service(
                 runtime, operation_mutex, wifi_operation_mutex);
             return rc;
         }
+        start_additional_command_service(
+            runtime,
+            command_service,
+            &command,
+            loader_config.board,
+            loader_config.hardware_capabilities,
+            &additional_command_service);
         for (;;) {
             int before_startup_rc = config->before_startup(
                 config->before_startup_user, &loader, runtime->sync,
@@ -265,16 +268,6 @@ int h2loader_app_run_with_command_service(
         (void)h2_loader_set_last_result(&loader, prepare_rc);
         loader.status.last_result = prepare_rc;
     }
-    if (config->before_startup == NULL &&
-        action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE) {
-        start_additional_command_service(
-            runtime,
-            command_service,
-            &command,
-            loader_config.board,
-            loader_config.hardware_capabilities,
-            &additional_command_service);
-    }
     if (serve_handle == NULL) {
         const h2_pal_task_options_t options = {
             .name = h2loader_app_command_task_name,
@@ -299,6 +292,15 @@ int h2loader_app_run_with_command_service(
             destroy_operation_mutexes(
                 runtime, operation_mutex, wifi_operation_mutex);
             return rc;
+        }
+        if (action == H2_LOADER_STARTUP_ACTION_COMMAND_MODE) {
+            start_additional_command_service(
+                runtime,
+                command_service,
+                &command,
+                loader_config.board,
+                loader_config.hardware_capabilities,
+                &additional_command_service);
         }
     }
     if (serve_handle != NULL &&

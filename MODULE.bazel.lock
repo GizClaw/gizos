@@ -829,7 +829,7 @@
     },
     "//tools/bazel/toolchains/local_embedded_cc:repositories.bzl%local_embedded_cc_toolchains": {
       "general": {
-        "bzlTransitiveDigest": "KlXG8daeLl/hFGd/saw404bWMm5P/RR9zuXBQMnSkhE=",
+        "bzlTransitiveDigest": "azuI7YbMyogrDCUASU0HWLw1tm7bzY434t82xVVvf5o=",
         "usagesDigest": "B/O908nh4na4DNodhC/G5N8iv+2coljLauBD/qYw1+8=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
@@ -1006,6 +1006,8 @@
                 "-mcpu=r3",
                 "-integrated-as",
                 "-Oz",
+                "-mllvm",
+                "-pi32v2-large-program=true",
                 "-fno-common",
                 "-fallow-pointer-null",
                 "-fprefer-gnu-section",
@@ -1050,8 +1052,8 @@
     },
     "//tools/bazel/vendor:repositories.bzl%vendor_repositories": {
       "general": {
-        "bzlTransitiveDigest": "CMDGYbE8LdlkxN5qej400MQLc4V0+UDGXL/CCEKf3kM=",
-        "usagesDigest": "21kwiMuqFOMOiEvBhYCmEEuAzgRFN/bq3bpbz3pudPY=",
+        "bzlTransitiveDigest": "GN36J8ZXGtronxAfN2q+0sqa5qSORQLPGXJJoOa1qYw=",
+        "usagesDigest": "cRnJkfSENSBF6/YqnZLX6VJIAMgDvBis72pFXkTzIPo=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "h2_fdk_aac": {
@@ -1062,7 +1064,10 @@
                 "@@//third_party/fdk_aac_patch:libFDK/include/common_fix.h": "libFDK/include/common_fix.h",
                 "@@//third_party/fdk_aac_patch:libFDK/include/fixmul.h": "libFDK/include/fixmul.h",
                 "@@//third_party/fdk_aac_patch:libFDK/include/fixpoint_math.h": "libFDK/include/fixpoint_math.h"
-              }
+              },
+              "patches": [
+                "@@//third_party/fdk_aac_patch:fdk_aac_embedded_no_stdio.patch"
+              ]
             }
           },
           "h2_k4b_cedarx_sdk": {
@@ -1451,7 +1456,8 @@
               "nested_archive_urls": {},
               "overlay_files": {},
               "patches": [
-                "@@//tools/bazel/vendor:patches/tinyh264_msvc_inline.patch"
+                "@@//tools/bazel/vendor:patches/tinyh264_msvc_inline.patch",
+                "@@//tools/bazel/vendor:patches/tinyh264_standard_string_header.patch"
               ],
               "sha256": "c0499a09b10194aba6380a5d70b235a9eb51098195475593e2f9ff3a9f315171",
               "strip_prefix": "tinyh264-524a702b6d98f8b9271238fdda9a064a1e6861e7",

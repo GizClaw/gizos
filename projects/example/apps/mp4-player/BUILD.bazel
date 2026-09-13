@@ -28,6 +28,11 @@ filegroup(
 )
 
 filegroup(
+    name = "jieli_ac791n_showcase_media",
+    srcs = ["data/profiles/jieli_ac791n/media/showcase.mp4"],
+)
+
+filegroup(
     name = "small_media",
     srcs = ["data/small/media/startup.mp4"],
 )

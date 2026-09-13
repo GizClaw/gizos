@@ -4,6 +4,7 @@
 #include "h2_bleikcp.h"
 #include "h2_command.h"
 #include "h2_loader_boot.h"
+#include "h2/pal/os/h2_pal_log.h"
 
 #include <stdbool.h>
 
@@ -42,6 +43,12 @@ typedef struct h2_loader_ble_service_config {
     h2_loader_ble_advertising_mode_t advertising_mode;
     h2_bleikcp_server_handler_fn handler;
     void *handler_user;
+    /** Optional diagnostics sink, borrowed until service close completes.
+     * The API, vtable and user must remain valid and accept concurrent task
+     * calls without reentering this service. Messages are borrowed for write
+     * only. Missing sinks discard diagnostics; write failures never replace
+     * the operation result. No standard-stream fallback is used. */
+    const h2_pal_log_api_t *log;
 } h2_loader_ble_service_config_t;
 
 int h2_loader_ble_service_open(

@@ -1,0 +1,30 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# Platform compile policy belongs to the first-party owner, not the vendor
+# repository. The latter exposes only upstream source and header groups.
+cc_library(
+    name = "fdk_aac",
+    srcs = ["@h2_fdk_aac//:sources"],
+    copts = [
+        "-fno-exceptions",
+        "-fno-rtti",
+        # Upstream fixed-point arithmetic shifts signed negative samples.
+        # Preserve the vendor arithmetic mode without disabling other checks.
+        "-fno-sanitize=shift-base",
+        "-w",
+    ],
+    local_defines = select({
+        "//tools/bazel/platforms:is_pi32v2": ["H2_FDK_EMBEDDED_NO_STDIO=1"],
+        "//conditions:default": [],
+    }),
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_linux_x86_64": [],
+        "//tools/bazel/platforms:is_linux_arm64": [],
+        "//tools/bazel/platforms:is_linux_armv7_gnueabihf": [],
+        "//tools/bazel/platforms:is_pi32v2": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["@h2_fdk_aac//:headers"],
+)

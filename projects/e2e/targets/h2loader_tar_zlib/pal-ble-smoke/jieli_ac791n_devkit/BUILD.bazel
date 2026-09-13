@@ -1,0 +1,74 @@
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_jieli_firmware")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel:jieli_task_policy.bzl", "jieli_target_task_policy")
+
+package(default_visibility = ["//visibility:public"])
+
+AC791N_COMPATIBILITY = select({
+    "//tools/bazel/platforms:ci_graph": [],
+    "//tools/bazel/platforms:is_ac791n": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+firmware_native_component(
+    name = "pal_smoke",
+    srcs = ["src/pal_ble_smoke.c"],
+    component_name = "jieli_ac791n_devkit_pal_ble_smoke",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = [
+        "//boards/jieli_ac791n_devkit/ac791n",
+        "//libs/pal:pal_header_files",
+        "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:app_transport",
+    ],
+)
+
+jieli_target_task_policy(
+    name = "pal_smoke_task_policy",
+    default_policy = "10 4096 128",
+    graph = [":pal_smoke"],
+    policies = [
+        "h2loader/appcmd 10 12288 128",
+        "$h2loader/return 10 4096 128",
+        "$h2loader/blelink 10 1536 64",
+        "$h2loader/uartcmd 10 4096 128",
+    ],
+    sdk_policies = [
+        "app_core 15 4096 256",
+        "sys_event 29 512 0",
+        "systimer 14 256 0",
+        "sys_timer 9 512 64",
+        "dw_update 21 512 32",
+        "h2pal/heartbeat 10 512 0",
+        "h2app_rx 12 4096 128",
+        "#C0btctrler 19 768 384",
+        "#C0btstack 18 1536 384",
+        "audio_server 16 1024 256",
+        "audio_decoder 30 1024 64",
+        "audio_encoder 12 384 64",
+        "audio_mix 28 512 0",
+    ],
+)
+
+h2loader_jieli_firmware(
+    name = "firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":pal_smoke",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "pal-ble-smoke",
+    target = "wl82",
+    task_policy = ":pal_smoke_task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":firmware",
+    image = "pal-ble-smoke",
+    role = "app",
+    tags = ["no-release"],
+    target = "wl82",
+)

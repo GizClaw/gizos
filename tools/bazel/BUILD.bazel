@@ -353,6 +353,77 @@ py_test(
     deps = [":native_runtime"],
 )
 
+py_test(
+    name = "jieli_post_wl82_test",
+    srcs = ["tests/test_jieli_post_wl82.py"],
+    data = ["jieli/local_post_wl82.sh"],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_post_wl82.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "jieli_sdk_memory_test",
+    srcs = ["tests/test_jieli_sdk_memory.py"],
+    data = ["//native_component_src/jieli/wl82/h2_pal_core:src/h2_jieli_wl82_sdk_port.c"],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_sdk_memory.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "jieli_sd_directory_test",
+    srcs = ["tests/test_jieli_sd_directory.py"],
+    data = ["//boards/jieli_ac791n_devkit/ac791n:src/h2_jieli_ac791n_devkit_sd_fs.c"],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_sd_directory.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "jieli_wifi_connect_test",
+    srcs = ["tests/test_jieli_wifi_connect.py"],
+    data = [
+        "//boards/jieli_ac791n_devkit/ac791n:src/h2_jieli_ac791n_devkit_wifi.c",
+        "//libs/pal:pal_header_files",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_wifi_connect.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "jieli_wifi_operations_test",
+    srcs = ["tests/test_jieli_wifi_operations.py"],
+    data = [
+        "//boards/jieli_ac791n_devkit/ac791n:src/h2_jieli_ac791n_devkit_wifi.c",
+        "//libs/pal:pal_header_files",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_wifi_operations.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
 cc_library(
     name = "vendor_third_party_ikcp",
     tags = ["manual"],

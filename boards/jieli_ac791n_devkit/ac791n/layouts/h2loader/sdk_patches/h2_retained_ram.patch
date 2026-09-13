@@ -1,0 +1,84 @@
+diff --git a/cpu/wl82/sdk_ld_sfc.c b/cpu/wl82/sdk_ld_sfc.c
+index d2de91d..d37e195 100644
+--- a/cpu/wl82/sdk_ld_sfc.c
++++ b/cpu/wl82/sdk_ld_sfc.c
+@@ -18,7 +18,9 @@ TLB_SIZE =0;
+ #endif
+ 
+ SDRAM_SIZE = __SDRAM_SIZE__;
+-RAM0_SIZE = 0x1c7fe00 - 0x1c00000 - TLB_SIZE - BOOT_INFO_SIZE - 128;
++RAM0_TOTAL_SIZE = 0x1c7fe00 - 0x1c00000 - TLB_SIZE - BOOT_INFO_SIZE - 128;
++H2_RETAINED_SIZE = 0x2000;
++RAM0_SIZE = RAM0_TOTAL_SIZE - H2_RETAINED_SIZE;
+ UPDATA_BEG = 0x1c7fe00 - 128;
+ 
+ #if !defined CONFIG_DYNAMIC_SDRAM_ONOFF_ENABLE
+@@ -36,7 +38,8 @@ MEMORY
+     rom(rx)             : ORIGIN =  0x2000120, LENGTH = __FLASH_SIZE__
+     sdram(rwx)          : ORIGIN =  0x4000120, LENGTH = SDRAM_SIZE
+     ram0(rwx)           : ORIGIN =  0x1c00000 + TLB_SIZE, LENGTH = RAM0_SIZE
+-    boot_info(rwx)      : ORIGIN =  0x1c00000 + TLB_SIZE + RAM0_SIZE, LENGTH = BOOT_INFO_SIZE
++    h2_retained(rw)     : ORIGIN =  0x1c00000 + TLB_SIZE + RAM0_SIZE, LENGTH = H2_RETAINED_SIZE
++    boot_info(rwx)      : ORIGIN =  0x1c00000 + TLB_SIZE + RAM0_TOTAL_SIZE, LENGTH = BOOT_INFO_SIZE
+     cache_ram(rw)       : ORIGIN =  0x1f20000+((8-FREE_IACHE_WAY)*4K), LENGTH = CACHE_RAM_SIZE
+ }
+ 
+@@ -243,6 +246,17 @@ SECTIONS
+     _MALLOC_SIZE = _HEAP_END - _HEAP_BEGIN;
+     PROVIDE(MALLOC_SIZE = _HEAP_END - _HEAP_BEGIN);
+ 
++    /* H2Loader crash breadcrumbs use one board-wide address in every image.
++     * The SDK's .non_volatile_ram input section is copied as .ram0_data and a
++     * NOLOAD section placed after BSS would still move when the image changes. */
++    . = ORIGIN(h2_retained);
++    .h2_retained ALIGN(4) (NOLOAD):
++    {
++        KEEP(*(.h2_retained))
++        . = ALIGN(4);
++    } > h2_retained
++    ASSERT(SIZEOF(.h2_retained) <= H2_RETAINED_SIZE, "H2 retained RAM overflow")
++
+     PROVIDE(RAM_HEAP_BEGIN = 0);
+     PROVIDE(RAM_HEAP_END = 0);
+     PROVIDE(RAM_MALLOC_SIZE = 0);
+diff --git a/cpu/wl82/sdk_ld_sdram.c b/cpu/wl82/sdk_ld_sdram.c
+index 013d23a..20ce826 100644
+--- a/cpu/wl82/sdk_ld_sdram.c
++++ b/cpu/wl82/sdk_ld_sdram.c
+@@ -14,7 +14,9 @@ TLB_SIZE =0;
+ #endif
+ 
+ SDRAM_SIZE = __SDRAM_SIZE__;
+-RAM0_SIZE = 0x1c7fe00 - 0x1c00000 - TLB_SIZE - BOOT_INFO_SIZE - 128;
++RAM0_TOTAL_SIZE = 0x1c7fe00 - 0x1c00000 - TLB_SIZE - BOOT_INFO_SIZE - 128;
++H2_RETAINED_SIZE = 0x2000;
++RAM0_SIZE = RAM0_TOTAL_SIZE - H2_RETAINED_SIZE;
+ UPDATA_BEG = 0x1c7fe00 - 128;
+ 
+ FREE_DACHE_WAY = 0; //max is 7
+@@ -28,7 +30,8 @@ MEMORY
+     rom(rx)             : ORIGIN =  0x2000120, LENGTH = __FLASH_SIZE__
+     sdram(rwx)          : ORIGIN =  0x4000120, LENGTH = SDRAM_SIZE
+     ram0(rwx)           : ORIGIN =  0x1c00000 + TLB_SIZE, LENGTH = RAM0_SIZE
+-    boot_info(rwx)      : ORIGIN =  0x1c00000 + TLB_SIZE + RAM0_SIZE, LENGTH = BOOT_INFO_SIZE
++    h2_retained(rw)     : ORIGIN =  0x1c00000 + TLB_SIZE + RAM0_SIZE, LENGTH = H2_RETAINED_SIZE
++    boot_info(rwx)      : ORIGIN =  0x1c00000 + TLB_SIZE + RAM0_TOTAL_SIZE, LENGTH = BOOT_INFO_SIZE
+     cache_ram(rw)       : ORIGIN =  0x1f20000+((8-FREE_IACHE_WAY)*4K), LENGTH = CACHE_RAM_SIZE
+ }
+ SECTIONS
+@@ -296,6 +299,15 @@ SECTIONS
+     _RAM_MALLOC_SIZE = _RAM_HEAP_END - _RAM_HEAP_BEGIN;
+     PROVIDE(RAM_MALLOC_SIZE = _RAM_HEAP_END - _RAM_HEAP_BEGIN);
+ 
++    /* Fixed across Loader and App; never copied, zeroed, or allocated. */
++    . = ORIGIN(h2_retained);
++    .h2_retained ALIGN(4) (NOLOAD):
++    {
++        KEEP(*(.h2_retained))
++        . = ALIGN(4);
++    } > h2_retained
++    ASSERT(SIZEOF(.h2_retained) <= H2_RETAINED_SIZE, "H2 retained RAM overflow")
++
+ 
+     . =ORIGIN(boot_info);
+     .boot_info ALIGN(4):

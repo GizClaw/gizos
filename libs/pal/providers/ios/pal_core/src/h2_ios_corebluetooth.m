@@ -733,6 +733,18 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
     h2_pal_result_t result = [self waitForOperation:timeoutMs];
     if (result == H2_PAL_OK) {
         *outHandle = H2_COREBLUETOOTH_CONN_HANDLE;
+    } else {
+        /* CoreBluetooth keeps a timed-out connect request pending until it is
+         * explicitly cancelled.  Leaving it pending makes later scans lose
+         * the peripheral and causes subsequent connect attempts to reuse
+         * stale state. */
+        dispatch_sync(self.queue, ^{
+            [self.centralManager cancelPeripheralConnection:peripheral];
+            if (self.connectedPeripheral == peripheral) {
+                self.connectedPeripheral = nil;
+                [self clearClientMappings];
+            }
+        });
     }
     return result;
 }

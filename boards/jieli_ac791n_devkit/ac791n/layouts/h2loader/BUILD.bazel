@@ -1,0 +1,69 @@
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+
+package(default_visibility = ["//visibility:public"])
+
+# The physical bank mapping and retained ABI belong to this layout. Only the
+# canonical Loader links the consumer; Apps publish requests but must not
+# consume them again when entered through the warm hand-off.
+firmware_native_component(
+    name = "warm_boot",
+    srcs = [
+        "src/jieli_upgrade_io.c",
+        "src/jieli_warm_boot.c",
+    ],
+    hdrs = [
+        "include/jieli_native_image.h",
+        "include/jieli_pending_boot.h",
+        "include/jieli_upgrade_io.h",
+        "include/jieli_warm_boot.h",
+    ],
+    include_roots = ["boards/jieli_ac791n_devkit/ac791n/layouts/h2loader/include"],
+    component_name = "jieli_ac791n_devkit_h2loader_warm_boot",
+    deps = ["//boards/jieli_ac791n_devkit/ac791n"],
+    tags = ["manual"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:ci_graph": [],
+        "//tools/bazel/platforms:is_ac791n": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+exports_files([
+    "defs.bzl",
+    "include/app_config.h",
+    "isd_reserved_expand.ini",
+    "project.mk",
+    "sdk_abi.ld",
+    "sdk_patches/early_app_boot.patch",
+    "sdk_patches/uart1_console.patch",
+    "sdk_patches/crash_recovery.patch",
+    "sdk_patches/h2_retained_ram.patch",
+    "sdk_patches/preserve_exception_log.patch",
+    "sdk_patches/pcm_play_runtime_block.patch",
+    "sdk_patches/ble_data_length.patch",
+    "sdk_patches/wifi_ap_credentials.patch",
+    "sdk_patches/wifi_ap_config.patch",
+    "sdk_patches/warm_boot.patch",
+    "src/coredump.c",
+    "src/platform.c",
+])
+
+firmware_native_component(
+    name = "layout",
+    srcs = [
+        "src/coredump.c",
+        "src/platform.c",
+    ],
+    hdrs = [
+        "include/app_config.h",
+        "isd_reserved_expand.ini",
+    ],
+    component_name = "jieli_ac791n_devkit_h2loader_layout",
+    data = ["sdk_abi.ld"],
+    tags = ["manual"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:ci_graph": [],
+        "//tools/bazel/platforms:is_ac791n": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
