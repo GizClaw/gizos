@@ -95,7 +95,7 @@ static void init_config(h2_quectel_modem_config_t *config, transport_state_t *st
 static void test_locate_sends_token_once(void) {
     transport_state_t state;
     memset(&state, 0, sizeof(state));
-    state.qlbs_response = "+QLBS: 0,31.847649,117.200134,120\r\nOK\r\n";
+    state.qlbs_response = "+QLBS: 0,117.200134,31.847649,120\r\nOK\r\n";
     state.qlbs_result = H2_PAL_OK;
 
     h2_quectel_modem_config_t config;
@@ -279,12 +279,15 @@ static void test_service_and_format_errors(void) {
         H2_PAL_ERR_INVALID_STATE);
     check_failure("+CME ERROR: 3\r\n", H2_PAL_ERR_IO, H2_PAL_ERR_INVALID_STATE);
     /* Malformed responses. */
-    check_failure("+QLBS: 0,31.847649\r\nOK\r\n", H2_PAL_OK, H2_PAL_ERR_FORMAT);
+    check_failure("+QLBS: 0,117.200134\r\nOK\r\n", H2_PAL_OK, H2_PAL_ERR_FORMAT);
     check_failure("+QLBS: 0,north,east\r\nOK\r\n", H2_PAL_OK, H2_PAL_ERR_FORMAT);
-    check_failure("+QLBS: 0,nan,117.200134\r\nOK\r\n", H2_PAL_OK, H2_PAL_ERR_FORMAT);
-    check_failure("+QLBS: 0,31.847649,inf\r\nOK\r\n", H2_PAL_OK, H2_PAL_ERR_FORMAT);
+    check_failure("+QLBS: 0,nan,31.847649\r\nOK\r\n", H2_PAL_OK, H2_PAL_ERR_FORMAT);
+    check_failure("+QLBS: 0,117.200134,inf\r\nOK\r\n", H2_PAL_OK, H2_PAL_ERR_FORMAT);
     check_failure("+QLBS: 0,131.847649,117.200134\r\nOK\r\n", H2_PAL_OK, H2_PAL_ERR_FORMAT);
-    check_failure("+QLBS: ,31.847649,117.200134\r\nOK\r\n", H2_PAL_OK, H2_PAL_ERR_FORMAT);
+    /* Latitude-first output (the old assumption) is rejected, not misread. */
+    check_failure("+QLBS: 0,31.847649,117.200134\r\nOK\r\n", H2_PAL_OK, H2_PAL_ERR_FORMAT);
+    check_failure("+QLBS: 0,200.000000,31.847649\r\nOK\r\n", H2_PAL_OK, H2_PAL_ERR_FORMAT);
+    check_failure("+QLBS: ,117.200134,31.847649\r\nOK\r\n", H2_PAL_OK, H2_PAL_ERR_FORMAT);
     check_failure("OK\r\n", H2_PAL_OK, H2_PAL_ERR_FORMAT);
 }
 
@@ -293,7 +296,7 @@ static void test_optional_field_and_negative_degrees(void) {
     memset(&state, 0, sizeof(state));
     /* Modules without an accuracy field report a quoted server timestamp
      * instead; it must not be read as accuracy. */
-    state.qlbs_response = "+QLBS: 0,-31.847649,-117.200134,\"21/09/26\r\nOK\r\n";
+    state.qlbs_response = "+QLBS: 0,-117.200134,-31.847649,\"21/09/26\r\nOK\r\n";
     state.qlbs_result = H2_PAL_OK;
 
     h2_quectel_modem_config_t config;
@@ -322,7 +325,7 @@ static void test_token_never_leaks_back(void) {
      * caller can read. */
     state.qlbscfg_response = "+QLBSCFG: \"token\",\"" FAKE_TOKEN "\"\r\nOK\r\n";
     state.qlbscfg_result = H2_PAL_OK;
-    state.qlbs_response = "+QLBS: 0,31.847649,117.200134\r\nOK\r\n";
+    state.qlbs_response = "+QLBS: 0,117.200134,31.847649\r\nOK\r\n";
     state.qlbs_result = H2_PAL_OK;
 
     h2_quectel_modem_config_t config;

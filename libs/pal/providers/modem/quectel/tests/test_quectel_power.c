@@ -134,7 +134,7 @@ static h2_pal_result_t command(void *user, const char *cmd, char *response, size
         text = "+CSQ: 20,0\r\nOK\r\n";
     }
     if (strcmp(cmd, "AT+QLBS") == 0) {
-        text = "+QLBS: 0,31.0,117.0,120\r\nOK\r\n";
+        text = "+QLBS: 0,117.0,31.0,120\r\nOK\r\n";
     }
     if (strcmp(cmd, "ATD*99***1#") == 0 && f->remove_during_dial) {
         text = "+QSIMSTAT: 1,0\r\nCONNECT\r\n";
