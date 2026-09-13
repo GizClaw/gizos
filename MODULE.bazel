@@ -48,10 +48,10 @@ http_archive = use_repo_rule(
 
 http_archive(
     name = "h2_gizclaw_c_sdk",
-    integrity = "sha256-1flE+aJBeYNJb/rQedkIgBy6ZN1R3nls6AuzaoqiAhg=",
-    strip_prefix = "gizclaw-c-sdk-0.18.5",
+    integrity = "sha256-yzYO4soaVD28YP4XK16jgcYdrC/MAxNprl4cFCKOL9Q=",
+    strip_prefix = "gizclaw-c-sdk-0.18.7",
     urls = [
-        "https://github.com/GizClaw/gizclaw/releases/download/v0.18.5/gizclaw-c-sdk-0.18.5.tar.gz",
+        "https://github.com/GizClaw/gizclaw/releases/download/v0.18.7/gizclaw-c-sdk-0.18.7.tar.gz",
     ],
 )
 

@@ -217,6 +217,14 @@ release 规则，例如只接受长按。`run_ms` 非零时在该时长后发出
 `@gizos//libs/app_host:web_app.bzl` 与
 `@gizos//libs/lua/web:lua_web_app.bzl`。
 
+#### Lua 脚本配置与预算
+
+`h2_lua_web_app()` 的 `vm_memory_limit_bytes` 默认 524288（512 KiB），允许 65536..16777216；`source_limit_bytes` 默认 131072（128 KiB），允许 1..1048576。两者必须是整数，不能传入 bool 或字符串。默认调用的预算不变，较大的程序由自己的 artifact entry 显式选择预算；可接受的配置不保证任意程序都能在该预算内运行。超限源码仍按 Host resource 校验失败，VM 分配耗尽仍报告 job failure，不自动扩容。
+
+可选 `script_args` 是最多 16 项的 string-to-string 字典。名字为 1..32 个 ASCII `[a-z0-9_]` 字符，值为最多 256 个可打印 ASCII 字符，允许空值、引号和反斜线；控制字符和非 ASCII 内容会被拒绝。宏按名字排序并转义为固定 C 字符串，参数在提交时复制为 Lua `args` 字符串，不执行 Lua 表达式。任何名字与所选 board 的 Button（包括 `exit_button`）冲突都会在 analysis 阶段失败，不能覆盖 board 的输入 ID。参数属于 App 配置，不改变 board/skin 或共享入口的 lifecycle。
+
+`//libs/lua/web:lua_web_app_argument_test` 验证预算、参数类型/长度/字符及 board 名冲突的校验函数。`//projects/example/targets/pkg_tar/lua-script-config:browser_test` 使用真实共享入口加载构建时生成的超过 128 KiB 的 Lua 文本，在显式 4 MiB VM 内保留 768 KiB 字符串，验证自定义参数和 Button ID，最后经页面 Stop 回收。该脚本是通用配置示例，不包含私有游戏；浏览器结果不代表设备内存余量或帧率。
+
 `tools/bazel/web_archive.bzl` 的 `web_archive_browser_test()` 在 pinned Chromium（或 `H2_WEB_TEST_BROWSER`）中打开 archive：以用户手势点击 `#start`，收集 Console、异常与页面文本；全部 `passes` 正则出现即通过，`fails` 正则、`Aborted(`、`RuntimeError: `、未捕获异常或超时即失败。可选 `presses`（DOM 按键）、`taps`（Canvas 像素点击）、`clicks`（按 CSS selector 点击页面元素）、`evals`（在页面执行一段 JS，例如驱动输入边沿）、`canvas_min`（最少非黑像素）、`offline`（断网/恢复）与 `webrtc_server`（Pion fixture）。
 
 | Target | 浏览器测试验证 |

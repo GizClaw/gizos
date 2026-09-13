@@ -17,8 +17,8 @@ cc_library(
     ],
 )
 
-# h2_lua_web_app() rejects an out-of-range run_ms at loading time; an exit
-# Button missing from the board fails analysis of the page.
+# Loading validates bounded budgets and app arguments; board input name
+# collisions and an unknown exit Button fail analysis of the page.
 lua_web_app_argument_test(
     name = "lua_web_app_argument_test",
     # Embedded platforms have no test execution toolchain.

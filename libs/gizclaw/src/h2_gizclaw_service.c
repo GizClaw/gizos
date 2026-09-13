@@ -1263,8 +1263,10 @@ static h2_pal_result_t submit_operation(
   if (rc != H2_PAL_OK)
     return rc;
   if (!service->started || service->stopping || service->stopped) {
+    rc = service->stopping || service->stopped ? H2_PAL_ERR_CLOSED
+                                            : H2_PAL_ERR_INVALID_STATE;
     unlock_service(service);
-    return service->started ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_INVALID_STATE;
+    return rc;
   }
   if (service->active_count >= service->config.operation_capacity) {
     unlock_service(service);
@@ -1390,13 +1392,18 @@ h2_pal_result_t h2_gizclaw_service_stop(h2_gizclaw_service_t *service) {
   (void)h2_pal_cond_broadcast(service->config.sync, service->progress_cond);
   unlock_service(service);
   h2_gizclaw_debug_stop_internal(service);
-  (void)h2_pal_queue_close(service->config.queue, service->request_queue);
+  /* Admission is closed by stopping under the mutex. Keep the queue open
+   * until the network owner has settled every accepted request: closing
+   * discards queued items on ESP (xQueueReset) and rejects recv on others,
+   * which would leave their synchronous waiters blocked forever. The network
+   * owner only uses nonblocking receives, so it needs no close to wake it. */
   if (service->net_task != NULL) {
     rc = h2_pal_task_join(service->config.task, service->net_task);
     if (rc != H2_PAL_OK)
       return rc;
     service->net_task = NULL;
   }
+  (void)h2_pal_queue_close(service->config.queue, service->request_queue);
   if (service->time_task != NULL) {
     rc = h2_pal_task_join(service->config.task, service->time_task);
     if (rc != H2_PAL_OK)

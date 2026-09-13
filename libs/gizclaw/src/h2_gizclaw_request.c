@@ -799,6 +799,16 @@ static h2_pal_result_t managed_do(h2_gizclaw_req_t *base, void *user,
   h2_pal_result_t rc = h2_pal_mutex_lock(sync, request->mutex);
   if (rc != H2_PAL_OK)
     return rc;
+  rc = h2_pal_mutex_lock(sync, request->service->mutex);
+  if (rc == H2_PAL_OK) {
+    if (request->service->stopping || request->service->stopped)
+      rc = H2_PAL_ERR_CLOSED;
+    (void)h2_pal_mutex_unlock(sync, request->service->mutex);
+  }
+  if (rc != H2_PAL_OK) {
+    (void)h2_pal_mutex_unlock(sync, request->mutex);
+    return rc;
+  }
   if (request->started ||
       atomic_load_explicit(&request->terminal, memory_order_acquire)) {
     (void)h2_pal_mutex_unlock(sync, request->mutex);
