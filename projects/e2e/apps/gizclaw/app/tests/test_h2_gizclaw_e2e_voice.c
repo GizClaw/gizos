@@ -126,11 +126,13 @@ enum {
   HANGUP_IGNORED,
   HANGUP_BAD_RESULT,
   HANGUP_BAD_KIND,
-  HANGUP_CLOSES_PEER
+  HANGUP_CLOSES_PEER,
+  TEXT_ERROR,
+  TEXT_SILENT_REPLY
 };
 static unsigned s_mode;
 static unsigned s_begins, s_replies, s_cancels, s_reconnects, s_play_creates;
-static unsigned s_hangups, s_post_hangup_pings;
+static unsigned s_hangups, s_post_hangup_pings, s_texts;
 static uint64_t s_last_capture, s_ended_at;
 static bool s_board_frames;
 static bool s_realtime, s_reconnected;
@@ -280,6 +282,24 @@ h2_pal_result_t h2_gizclaw_service_audio_control_internal(
     *out_empty = s_conversation != NULL && s_conversation->input_bytes == 0u;
   return rc;
 }
+/* The Session's text input: a complete input that is already ended, so the
+ * poll below completes it and the reply follows as downstream audio. */
+h2_pal_result_t h2_gizclaw_conversation_send_text_internal(
+    h2_gizclaw_conversation_t *value, h2_gizclaw_str_t text,
+    h2_gizclaw_audio_log_t *log) {
+  (void)log;
+  assert(s_session && value == s_conversation && !value->active && !s_realtime);
+  assert(text.data != NULL && text.len > 0u &&
+         memchr(text.data, '\0', text.len) == NULL);
+  if (s_mode == TEXT_ERROR)
+    return H2_PAL_ERR_IO;
+  value->active = value->ended = true;
+  value->cancelled = false;
+  value->input_bytes = value->replies = 0u;
+  ++value->generation;
+  ++s_texts;
+  return H2_PAL_OK;
+}
 h2_pal_result_t
 h2_gizclaw_conversation_cancel(h2_gizclaw_conversation_t *value) {
   assert(value == s_conversation);
@@ -346,7 +366,7 @@ static void emit_reply_audio(void) {
   if (s_mode == EMPTY_REPLY)
     return;
   uint8_t pcm[64] = {0};
-  if (s_mode != SILENT_REPLY)
+  if (s_mode != SILENT_REPLY && !(s_mode == TEXT_SILENT_REPLY && s_texts != 0u))
     pcm[0] = 1u;
   assert(fake_pcm_track_service_write(s_track, pcm, sizeof(pcm)) == H2_PAL_OK);
   ++s_downlink_writes;
@@ -758,7 +778,7 @@ static unsigned run_case(unsigned mode, int expected, unsigned fail_alloc) {
   test_time.monotonic_ms = 0u;
   s_realtime = s_reconnected = false;
   s_sets = 0u;
-  s_hangups = s_post_hangup_pings = 0u;
+  s_hangups = s_post_hangup_pings = s_texts = 0u;
   s_detached_track = NULL;
   s_begins = s_replies = s_cancels = s_reconnects = s_play_creates = test_mem.calls =
       0u;
@@ -805,8 +825,11 @@ static unsigned run_case(unsigned mode, int expected, unsigned fail_alloc) {
   assert(fixture->workspace_created && fixture->friend_group_created);
   const unsigned allocations = test_mem.calls;
   if (mode == NORMAL && fail_alloc == 0u) {
+    /* The Session scenario adds one text input answered by one reply. */
     assert(s_begins == (s_group ? 1u : 3u) &&
-           s_replies == (s_group ? 0u : 3u) && s_cancels == (s_group ? 0u : 2u));
+           s_replies == (s_group ? 0u : s_session ? 4u : 3u) &&
+           s_cancels == (s_group ? 0u : 2u));
+    assert(s_texts == (s_session ? 1u : 0u));
     assert(s_hangups == (s_group ? 0u : 1u) &&
            s_post_hangup_pings == (s_group ? 0u : 1u));
     assert(s_play_creates == (s_group ? 0u : 3u) &&
@@ -939,6 +962,9 @@ int main(int argc, char **argv) {
   s_board_frames = false;
   s_session = true;
   run_case(NORMAL, H2_PAL_OK, 0u);
+  /* Text input faults: a refused admission and a silent answer. */
+  run_case(TEXT_ERROR, H2_PAL_ERR_IO, 0u);
+  run_case(TEXT_SILENT_REPLY, H2_PAL_ERR_TIMEOUT, 0u);
   s_session = false;
   run_empty_ptt_session();
   unsigned allocations = run_case(NORMAL, H2_PAL_OK, 0u);

@@ -9682,6 +9682,13 @@ static void conversation_read_owned(h2_gizclaw_track_t *track, uint8_t *out,
   assert(rc == H2_PAL_OK);
 }
 
+/* The Session owns the public text entry point; exercise the route directly. */
+static h2_pal_result_t conversation_send_text(
+    h2_gizclaw_conversation_t *conversation, h2_gizclaw_str_t text) {
+  h2_gizclaw_audio_log_t logs = {0};
+  return h2_gizclaw_conversation_send_text_internal(conversation, text, &logs);
+}
+
 static void test_conversation_public_audio_tasks(void) {
   for (unsigned mode = 0; mode < 29; ++mode) {
     test_env_t env;
@@ -9752,6 +9759,8 @@ static void test_conversation_public_audio_tasks(void) {
                conversation_test_complete, &test, &conversation) == H2_PAL_OK);
     assert(h2_gizclaw_service_audio_start(service) == H2_PAL_OK);
     assert(h2_gizclaw_service_audio_start(service) == H2_PAL_ERR_INVALID_STATE);
+    assert(conversation_send_text(
+               conversation, (h2_gizclaw_str_t){"开始", 6u}) == H2_PAL_ERR_BUSY);
     assert(atomic_load(&log_capture.control_error));
     if (mode == 10) {
       for (unsigned i = 0; i < 8; ++i)
@@ -10045,6 +10054,203 @@ static void test_conversation_public_audio_tasks(void) {
       assert(atomic_load(&log_capture.canceled_completion));
     h2_gizclaw_test_set_event_ops(NULL, NULL, NULL, NULL);
     h2_gizclaw_test_set_packet_read(NULL, NULL);
+  }
+}
+
+/* A fake Peer verifies the wire events and answers a text input with audio. */
+typedef struct conversation_text_test {
+  conversation_test_t base;
+  char expected[H2_GIZCLAW_CONVERSATION_TEXT_MAX_BYTES + 1u];
+  unsigned attempts, completions;
+} conversation_text_test_t;
+
+static int conversation_text_read(void *user, gzc_event_stream_t *stream,
+                                  int timeout, gzc_peer_event_t *event) {
+  (void)user;
+  (void)stream;
+  (void)timeout;
+  (void)event;
+  return GZC_ERR_WOULD_BLOCK;
+}
+
+static int conversation_text_send(void *user, gzc_event_stream_t *stream,
+                                  const gzc_peer_event_t *event) {
+  conversation_text_test_t *test = user;
+  assert(!pthread_equal(pthread_self(), test->base.app_thread));
+  assert(event->version == GZC_PEER_EVENT_VERSION);
+  if (event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS) {
+    assert(event->which_payload == gizclaw_events_v1_PeerEvent_bos_tag);
+    assert(strcmp(event->payload.bos.label, "demo-home") == 0);
+    assert(event->payload.bos.timestamp_unix_ms == 0);
+  }
+  if (event->type != gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_TEXT_DONE)
+    return conversation_test_send(&test->base, stream, event);
+  assert(event->which_payload == gizclaw_events_v1_PeerEvent_text_done_tag);
+  assert(atomic_load(&test->base.bos));
+  assert(!atomic_load(&test->base.eos));
+  assert(event->payload.text_done.sequence == 1u);
+  assert(event->payload.text_done.timestamp_unix_ms == 0);
+  assert(test->base.stream[0] != '\0');
+  assert(strcmp(event->payload.text_done.stream_id, test->base.stream) == 0);
+  assert(strcmp(event->payload.text_done.label, "demo-home") == 0);
+  assert(strcmp(event->payload.text_done.text, test->expected) == 0);
+  size_t encoded_size = 0u;
+  assert(pb_get_encoded_size(&encoded_size,
+                            gizclaw_events_v1_PeerEvent_fields, event));
+  uint8_t *encoded = malloc(encoded_size);
+  gzc_peer_event_t *decoded = calloc(1u, sizeof(*decoded));
+  assert(encoded != NULL && decoded != NULL);
+  pb_ostream_t output = pb_ostream_from_buffer(encoded, encoded_size);
+  assert(pb_encode(&output, gizclaw_events_v1_PeerEvent_fields, event));
+  pb_istream_t input = pb_istream_from_buffer(encoded, output.bytes_written);
+  assert(pb_decode(&input, gizclaw_events_v1_PeerEvent_fields, decoded));
+  assert(decoded->type == event->type);
+  assert(strcmp(decoded->payload.text_done.text, test->expected) == 0);
+  assert(strcmp(decoded->payload.text_done.stream_id, test->base.stream) == 0);
+  assert(strcmp(decoded->payload.text_done.label, "demo-home") == 0);
+  assert(decoded->payload.text_done.sequence == 1u);
+  free(decoded);
+  free(encoded);
+  ++test->attempts;
+  if (test->base.mode == 2 && test->attempts <= 3u)
+    return test->attempts % 2u ? GZC_ERR_WOULD_BLOCK : GZC_ERR_TIMEOUT;
+  if (test->base.mode == 3)
+    return GZC_ERR_INVALID_ARGUMENT;
+  if (test->base.mode == 4)
+    return GZC_ERR_WOULD_BLOCK;
+  atomic_store(&test->base.eos, true);
+  return GZC_OK;
+}
+
+static h2_pal_result_t conversation_text_poll(h2_gizclaw_client_t *client,
+                                             int timeout_ms) {
+  (void)client;
+  (void)timeout_ms;
+  conversation_test_t *test = s_conversation;
+  /* Only reply after completion has been dispatched, proving the downlink
+   * outlives the text operation. */
+  if (atomic_load(&test->done) && test->result == H2_PAL_OK &&
+      !atomic_load(&test->reply_sent) && test->mode != 6) {
+    const h2_pal_result_t rc = h2_gizclaw_service_media_write_opus(
+        test->service, test->server_packet, test->server_packet_len);
+    if (rc == H2_PAL_OK)
+      atomic_store(&test->reply_sent, true);
+    else
+      assert(rc == H2_PAL_ERR_WOULD_BLOCK);
+  }
+  return H2_PAL_ERR_WOULD_BLOCK;
+}
+
+static void conversation_text_complete(
+    void *user, h2_gizclaw_conversation_t *conversation,
+    const h2_gizclaw_operation_result_t *result) {
+  conversation_text_test_t *test = user;
+  ++test->completions;
+  assert(test->completions == 1u);
+  conversation_test_complete(&test->base, conversation, result);
+}
+
+static void test_conversation_send_text(void) {
+  for (unsigned mode = 0; mode < 7u; ++mode) {
+    test_env_t env;
+    h2_gizclaw_service_t *service = create_service(&env, 8);
+    conversation_text_test_t text_test = {
+        .base = {.service = service, .env = &env,
+                 .app_thread = pthread_self(), .mode = mode}};
+    conversation_test_t *base = &text_test.base;
+    s_conversation = base;
+    static const h2_gizclaw_service_client_ops_t ops = {
+        .connect = conversation_test_connect, .poll = conversation_text_poll};
+    h2_gizclaw_service_test_set_client_ops(&ops);
+    h2_gizclaw_test_set_event_ops(conversation_text_send, conversation_text_read,
+                                conversation_test_close_event, &text_test);
+    static const h2_pal_http_api_t http = {0};
+    static const h2_pal_crypto_api_t crypto = {0};
+    static const h2_pal_webrtc_api_t webrtc = {0};
+    service->client_config.http = &http;
+    service->client_config.crypto = &crypto;
+    service->client_config.webrtc = &webrtc;
+    service->client_config.time = h2_desktop_platform_time_api();
+    service->client_config.connect_timeout_ms = mode == 5 ? 20 : 1000;
+    service->client_config.server_endpoint =
+        (h2_gizclaw_str_t){"127.0.0.1:1", 11};
+    service->client_config.private_key = (h2_gizclaw_str_t){"test-key", 8};
+    service->config.client_config = &service->client_config;
+    service->config.on_event = NULL;
+    service->config.prepare = NULL;
+    service->config.cleanup = NULL;
+    service->config.terminal = NULL;
+    const h2_pal_task_vtable_t task_vt = {.start = conversation_test_start_task,
+                                          .join = conversation_test_join_task};
+    const h2_pal_task_api_t task_api = {.user = base, .vtable = &task_vt};
+    service->config.task = &task_api;
+    service->client_config.connect_timeout_ms = mode == 4 ? 20 : 1000;
+    const h2_gizclaw_track_vtable_t track_vt = {
+        .write = conversation_test_track_write};
+    h2_gizclaw_track_t track = {.user = base, .vtable = &track_vt};
+    if (mode != 6)
+      assert(h2_gizclaw_service_set_track(service, &track) == H2_PAL_OK);
+    fixture_t fixture = {0};
+    make_packet(&fixture, 1u);
+    memcpy(base->server_packet, fixture.packet, fixture.packet_len);
+    base->server_packet_len = fixture.packet_len;
+    h2_gizclaw_conversation_t *conversation = NULL;
+    assert(h2_gizclaw_conversation_create(
+               service, (h2_gizclaw_str_t){"test", 4u}, NULL,
+               conversation_text_complete, &text_test, &conversation) == H2_PAL_OK);
+    const h2_gizclaw_str_t hello = {"开始", 6u};
+    assert(conversation_send_text(NULL, hello) == H2_PAL_ERR_INVALID_ARG);
+    assert(conversation_send_text(conversation, hello) ==
+           H2_PAL_ERR_INVALID_STATE);
+    const h2_gizclaw_str_t invalid[] = {
+        {NULL, 1u}, {"", 0u}, {"x", H2_GIZCLAW_CONVERSATION_TEXT_MAX_BYTES + 1u},
+        {"a\0b", 3u}, {"\xc0\xaf", 2u}, {"\xed\xa0\x80", 3u}, {"\xf0\x9f", 2u}};
+    for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i)
+      assert(conversation_send_text(conversation, invalid[i]) ==
+             H2_PAL_ERR_INVALID_ARG);
+    assert(text_test.completions == 0u);
+    assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+    char input[H2_GIZCLAW_CONVERSATION_TEXT_MAX_BYTES];
+    size_t len = mode == 1 ? sizeof(input) : hello.len;
+    memset(input, 'x', sizeof(input));
+    if (mode != 1)
+      memcpy(input, hello.data, len);
+    memcpy(text_test.expected, input, len);
+    assert(conversation_send_text(
+               conversation, (h2_gizclaw_str_t){input, len}) == H2_PAL_OK);
+    memset(input, 'z', sizeof(input)); /* Admission owns a copy. */
+    assert(conversation_send_text(conversation, hello) == H2_PAL_ERR_BUSY);
+    assert(h2_gizclaw_service_audio_start(service) == H2_PAL_ERR_INVALID_STATE);
+    assert(atomic_load(&service->media_request) == NULL);
+    assert(!atomic_load(&base->bos) && text_test.completions == 0u);
+    if (mode == 5)
+      assert(h2_gizclaw_conversation_cancel(conversation) == H2_PAL_OK);
+    atomic_store(&base->connect_gate, true);
+    for (unsigned i = 0; i < 2000 && !atomic_load(&base->done); ++i) {
+      assert(h2_gizclaw_service_poll(service, 8u, NULL) == H2_PAL_OK);
+      h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
+    }
+    assert(atomic_load(&base->done));
+    const h2_pal_result_t expected = mode == 3 ? H2_PAL_ERR_INVALID_ARG
+        : mode == 4 ? H2_PAL_ERR_TIMEOUT : mode == 5 ? H2_PAL_ERR_CLOSED : H2_PAL_OK;
+    assert(base->result == expected && text_test.completions == 1u);
+    if (expected == H2_PAL_OK) {
+      assert(base->bos_attempts == 1u && atomic_load(&base->eos));
+      assert(text_test.attempts == (mode == 2 ? 4u : 1u));
+      assert(base->sent_sequence == 1u); /* No extra EOS or audio BOS. */
+      if (mode != 6) {
+        conversation_wait_written(base, 640u);
+        bool nonzero = false;
+        for (size_t i = 0; i < 640u; ++i)
+          nonzero |= base->output[i] != 0u;
+        assert(nonzero);
+      }
+    }
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(conversation_send_text(conversation, hello) == H2_PAL_ERR_CLOSED);
+    h2_gizclaw_conversation_release(conversation);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+    h2_gizclaw_test_set_event_ops(NULL, NULL, NULL, NULL);
   }
 }
 
@@ -11713,6 +11919,7 @@ int main(int argc, char **argv) {
   test_rejected_stream_submission_releases_lane();
   test_service_event_queue_backpressure();
   test_conversation_public_audio_tasks();
+  test_conversation_send_text();
   test_audio_play_request();
   test_speech_options_and_created_lifetime();
   test_service_uplink_start_failure_cleans_network_task();

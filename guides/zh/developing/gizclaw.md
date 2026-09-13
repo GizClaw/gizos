@@ -257,3 +257,45 @@ snapshot 使用调用方 response storage。所有业务资源清理完成后才
 产品 provider 可以在成功响应中设置 `on_complete` 与 `complete_user`。GizOS 将其关联到当前入站 RPC 通道，在 SDK 接受响应写入并正常关闭该通道后，从 poll owner 调用一次。普通 poll 返回成功不表示该通道已经完成；非终态的 WOULD_BLOCK、TIMEOUT 或其他 poll error 也不能取消尚未关闭的通道。成功必须同时具备该通道响应 EOS 已被 PAL 接受、SDK 本地关闭的证据；adapter 按通道跟踪已接受的帧，支持跨 send 分片与背压重试。同一次 poll 中其他通道超时或失败，不会撤销已成功关闭的响应。未发完 EOS 的通道即使本地关闭也只能报告失败。发送阻塞时继续保留动作，编码错误、发送失败、远端取消和客户端停止则以非 OK 结果撤销。关闭或销毁客户端时，在对应 owner 上释放未完成动作；注册失败可能在 provider 内同步返回失败通知。每个 client 最多保留四个完成回调；满容量、缺少当前入站通道或错误响应附带回调时，新回调同步收到 INVALID_STATE，响应不提交，已有槽位不受影响。
 
 这是本地发送生命周期，不是对端收到或处理回复的确认，不新增网络消息，也不更改 GizClaw 0.15.3 SDK。回调只能向产品 owner 发布待执行动作，不能阻塞或重入 client API。产品参数必须复制到自身状态，生命周期覆盖完成或取消；不能保留借用请求、栈上的响应或已释放的 user。H106 的重启和临时切网消费此路径，OTA 是否支持仍由产品决定。
+
+## Conversation 文字输入
+
+Session 选好目标 Workspace 并创建 Conversation 路由后，调用
+`h2_gizclaw_session_send_text(session, text)` 可把一整段文字作为用户输入交给 Agent，
+例如主动请求继续内容。文字输入与 audio_start/audio_end 一样是 Session 操作：使用
+Session 的应用只能通过它发送文字，Session 据此维护会话状态。该 API 不切换 Workspace；
+Peer Event 路由到连接上当前激活的 Workspace。文本按 UTF-8 字节计长，接受 1–4096 字节，
+不要求调用方补 NUL，拒绝嵌入 NUL 和非法 UTF-8；成功 admission 前复制文本，返回后可
+立即复用原缓冲区。
+
+发送沿用音频输入的纯控制 `BOS(kind=UNSPECIFIED, mime_type="")`，随后只发一条
+`TEXT_DONE`。两条事件使用同一连接内新分配的 `demo-<sequence>` stream ID，label 沿用
+现有输入的 `demo-home`，事件 sequence 分别为 0、1，timestamp_unix_ms 均为 0。
+这些标识仅关联输入，不选择 Workspace，也不决定角色。服务端
+`pkgs/gizclaw/peer_stream_event.go` 的 `peerStreamEventToChunk` 把 `TEXT_DONE` 转为
+`RoleUser` 文本并设置 `EndOfStream=true`；因此不再发额外 EOS，也不发音频 BOS、
+不等 AUDIO_INPUT_READY、不生成 Opus。协议依据为 `api/proto/events/peer_event.proto`
+及服务端 Events Reference 的 Logical stream lifecycle。
+
+空/超长/非法文本返回 `INVALID_ARG`。Session 已关闭或正在准备、Workspace 未 READY、
+尚无 Conversation 路由或 Service 未 start 时返回 `INVALID_STATE`；Service 停止中返回
+`CLOSED`。录音/通话输入打开，或上一输入（音频或文字）尚未 completion 时返回 `BUSY`，
+不打断当前输入。队列满返回 `WOULD_BLOCK`；分配失败返回 `NO_MEMORY`。Service 已 start
+但仍连接中时，与音频 start 一样允许排队，连接或发送失败通过 completion 报告。
+
+受理后 Session 的 conversation 状态进入 `WAITING`（PTT 与 Realtime Workspace 相同），
+`conversation_input_open` 保持 false；下行音频到达、`H2_GIZCLAW_SESSION_WAIT_MS` 内
+没有声音或输入失败时回到 `IDLE`，失败写入 `last_error` 与 `error_stage`。completion
+之前 Session 仍占用路由：`h2_gizclaw_session_conversation_release()` 不释放；
+`h2_gizclaw_session_audio_start()`、切换 Workspace 或删除当前 Workspace 会先取消
+待发文字并等待取消分发，与取消上一段音频输入相同。Realtime Workspace 中文字
+completion 不会自动开始通话。
+
+调用方不执行网络 I/O。Service 网络任务按序发送并在背压时重试，deadline 沿用
+connect_timeout_ms（未设置时 30 秒）。每个已接受的输入通过原有 `service_poll()`
+completion 恰好报告一次发送成功、失败或取消；同步 admission 错误不产生 completion。
+成功仅表示输入已发出，不保证服务端接受或 Agent 已回复。
+
+文字输入不需要可读 PCM Track。服务端音频仍通过连接级下行通道播放，即使文字输入
+已经 completion；服务器文字事件仍遵循原有“输入活跃期间观察”的 callback 合同，
+completion 后不延长文字订阅。应用无需新增下行音频处理流程。
