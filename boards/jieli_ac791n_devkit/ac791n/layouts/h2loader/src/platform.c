@@ -16,9 +16,6 @@
 
 #include <string.h>
 
-extern const struct device_operations
-    h2_jieli_ac791n_devkit_sd_volume_ops;
-
 const struct wifi_calibration_param wifi_calibration_param = {
     /* Match JieLi's demo_DevKitBoard WL82 RF network.  The UVC/camera
      * board_dev_kit uses a different crystal load and PA matching network. */
@@ -187,7 +184,6 @@ REGISTER_DEVICES(device_table) = {
     /* Keep the SD device graph identical to H2Loader.  The partition wrapper
      * is used by the shared board filesystem implementation when the card has
      * a conventional MBR partition table. */
-    {"h2sdv", &h2_jieli_ac791n_devkit_sd_volume_ops, NULL},
     {"audio", &audio_dev_ops, (void *)&audio_data},
     {"rtc", &rtc_dev_ops, NULL},
 };

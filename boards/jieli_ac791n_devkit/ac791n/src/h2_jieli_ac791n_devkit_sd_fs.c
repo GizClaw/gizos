@@ -13,7 +13,6 @@
 
 #define H2_JIELI_SD_MOUNT "storage/sd0"
 #define H2_JIELI_SD_ROOT "storage/sd0/C/"
-#define H2_JIELI_SD_VOLUME_DEVICE "h2sdv"
 #ifdef CONFIG_JLFAT_ENABLE
 #define H2_JIELI_SD_FS_TYPE "jlfat"
 #else
@@ -51,24 +50,6 @@ static int sd_fat1_read;
 static int sd_fat2_read;
 static uint8_t sd_fat1[512];
 static uint8_t sd_fat2[512];
-static uint32_t sd_volume_open_count;
-static int sd_volume_open_result;
-static uint32_t sd_volume_read_count;
-static uint32_t sd_volume_last_read_offset;
-static uint32_t sd_volume_last_read_length;
-static int sd_volume_last_read_result;
-static uint32_t sd_volume_ioctl_count;
-static uint32_t sd_volume_last_ioctl;
-static int sd_volume_last_ioctl_result;
-
-typedef struct h2_jieli_sd_volume_device {
-  struct device device;
-  void *backing;
-  uint32_t offset;
-  uint32_t sectors;
-} h2_jieli_sd_volume_device_t;
-
-static h2_jieli_sd_volume_device_t sd_volume_device;
 
 extern int snprintf(char *buffer, size_t size, const char *format, ...);
 
@@ -80,125 +61,6 @@ static uint32_t read_le32(const uint8_t *data) {
 static uint16_t read_le16(const uint8_t *data) {
   return (uint16_t)data[0] | ((uint16_t)data[1] << 8u);
 }
-
-static bool volume_online(const struct dev_node *node) {
-  (void)node;
-  return dev_online("sd0");
-}
-
-static int volume_init(const struct dev_node *node, void *arg) {
-  (void)node;
-  (void)arg;
-  return 0;
-}
-
-static int volume_open(
-    const char *name, struct device **out_device, void *arg) {
-  (void)name;
-  (void)arg;
-  ++sd_volume_open_count;
-  sd_volume_open_result = -1;
-  if (out_device == NULL || sd_volume_device.backing != NULL) return -1;
-  void *backing = dev_open("sd0", NULL);
-  if (backing == NULL) return -1;
-  uint8_t mbr[512];
-  if (dev_bulk_read(backing, mbr, 0u, 1u) != 1 ||
-      mbr[510] != 0x55u || mbr[511] != 0xaau) {
-    dev_close(backing);
-    return -1;
-  }
-  uint32_t offset = read_le32(&mbr[454]);
-  uint32_t sectors = read_le32(&mbr[458]);
-  if (offset == 0u || sectors == 0u) {
-    dev_close(backing);
-    return -1;
-  }
-  sd_volume_device.backing = backing;
-  sd_volume_device.offset = offset;
-  sd_volume_device.sectors = sectors;
-  *out_device = &sd_volume_device.device;
-  sd_volume_open_result = 0;
-  return 0;
-}
-
-static int volume_read(
-    struct device *device, void *buffer, uint32_t length, uint32_t offset) {
-  h2_jieli_sd_volume_device_t *volume =
-      (h2_jieli_sd_volume_device_t *)device;
-  ++sd_volume_read_count;
-  sd_volume_last_read_offset = offset;
-  sd_volume_last_read_length = length;
-  sd_volume_last_read_result = 0;
-  if (volume == NULL || volume->backing == NULL ||
-      offset > volume->sectors || length > volume->sectors - offset) {
-    return 0;
-  }
-  sd_volume_last_read_result =
-      dev_bulk_read(volume->backing, buffer, volume->offset + offset, length);
-  return sd_volume_last_read_result;
-}
-
-static int volume_write(
-    struct device *device, void *buffer, uint32_t length, uint32_t offset) {
-  h2_jieli_sd_volume_device_t *volume =
-      (h2_jieli_sd_volume_device_t *)device;
-  if (volume == NULL || volume->backing == NULL ||
-      offset > volume->sectors || length > volume->sectors - offset) {
-    return 0;
-  }
-  return dev_bulk_write(
-      volume->backing, buffer, volume->offset + offset, length);
-}
-
-static int volume_ioctl(struct device *device, uint32_t command, uint32_t arg) {
-  h2_jieli_sd_volume_device_t *volume =
-      (h2_jieli_sd_volume_device_t *)device;
-  ++sd_volume_ioctl_count;
-  sd_volume_last_ioctl = command;
-  sd_volume_last_ioctl_result = -1;
-  if (volume == NULL || volume->backing == NULL) return -1;
-  switch (command) {
-    case IOCTL_GET_CAPACITY:
-    case IOCTL_GET_BLOCK_NUMBER:
-      *(uint32_t *)arg = volume->sectors;
-      sd_volume_last_ioctl_result = 0;
-      return 0;
-    case IOCTL_GET_BLOCK_SIZE:
-    case IOCTL_GET_SECTOR_SIZE:
-      *(uint32_t *)arg = 512u;
-      sd_volume_last_ioctl_result = 0;
-      return 0;
-    case IOCTL_GET_STATUS:
-      *(uint32_t *)arg = 1u;
-      sd_volume_last_ioctl_result = 0;
-      return 0;
-    default:
-      sd_volume_last_ioctl_result =
-          dev_ioctl(volume->backing, (int)command, arg);
-      return sd_volume_last_ioctl_result;
-  }
-}
-
-static int volume_close(struct device *device) {
-  h2_jieli_sd_volume_device_t *volume =
-      (h2_jieli_sd_volume_device_t *)device;
-  if (volume == NULL || volume->backing == NULL) return 0;
-  int result = dev_close(volume->backing);
-  volume->backing = NULL;
-  volume->offset = 0u;
-  volume->sectors = 0u;
-  return result;
-}
-
-const struct device_operations h2_jieli_ac791n_devkit_sd_volume_ops = {
-    .online = volume_online,
-    .init = volume_init,
-    .open = volume_open,
-    .read = volume_read,
-    .write = volume_write,
-    .ioctl = volume_ioctl,
-    .close = volume_close,
-};
 
 static void capture_sd_diagnostic(void) {
   void *device = dev_open("sd0", NULL);
@@ -260,8 +122,7 @@ int h2_jieli_ac791n_devkit_sd_fs_diagnostic(
       "bps=%u spc=%u reserved=%u fats=%u root=%u fatsecs=%u media=%02x "
       "hidden=%u total=%u clusters=%u heap16=%d heap32=%d subdev=%d "
       "fatread=%d/%d fathead=%02x%02x%02x%02x/%02x%02x%02x%02x "
-      "fateq=%d fat54=%.5s vopen=%u/%d vread=%u@%u+%u/%d "
-      "vioctl=%u:%u/%d",
+      "fateq=%d fat54=%.5s",
       (unsigned)sd_capacity, (unsigned)sd_block_size, sd_sector0_read,
       sd_sector0[510], sd_sector0[511], sd_sector0[450], sd_sector0[446],
       (unsigned)read_le32(&sd_sector0[454]),
@@ -277,12 +138,7 @@ int h2_jieli_ac791n_devkit_sd_fs_diagnostic(
       sd_fat1[0], sd_fat1[1], sd_fat1[2], sd_fat1[3],
       sd_fat2[0], sd_fat2[1], sd_fat2[2], sd_fat2[3],
       memcmp(sd_fat1, sd_fat2, sizeof(sd_fat1)) == 0,
-      &sd_volume[54], (unsigned)sd_volume_open_count,
-      sd_volume_open_result, (unsigned)sd_volume_read_count,
-      (unsigned)sd_volume_last_read_offset,
-      (unsigned)sd_volume_last_read_length, sd_volume_last_read_result,
-      (unsigned)sd_volume_ioctl_count, (unsigned)sd_volume_last_ioctl,
-      sd_volume_last_ioctl_result) >= 0
+      &sd_volume[54]) >= 0
              ? H2_PAL_OK
              : H2_PAL_ERR_IO;
 }
@@ -617,13 +473,12 @@ h2_pal_result_t h2_jieli_ac791n_devkit_sd_fs_init(h2_pal_fs_api_t *out_api) {
       sd_heap_probe_16k = heap_probe != NULL;
       free(heap_probe);
       sd_last_stage = "mount";
+      /* The SDK FAT mount runs mbr_scan and check_fs on each partition's
+       * boot sector. Pass the whole sd0 disk, not an offset block wrapper. */
       struct imount *mounted = mount(
           "sd0", H2_JIELI_SD_MOUNT,
           H2_JIELI_SD_FS_TYPE, H2_JIELI_SD_CACHE_COUNT, NULL);
       if (mounted == NULL) {
-        if (sd_volume_device.backing != NULL) {
-          (void)volume_close(&sd_volume_device.device);
-        }
         capture_sd_diagnostic();
         return H2_PAL_ERR_IO;
       }
