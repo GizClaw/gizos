@@ -349,6 +349,10 @@ static int tcp_connect(
   struct sockaddr_in native;
   int result = addr_to_sockaddr(address, &native);
   if (result != H2_PAL_OK) return result;
+  /* Preserve the caller's mode on terminal failures, including retries of
+   * an earlier nonblocking connect. TIMEOUT/WOULD_BLOCK remain pending. */
+  int original_flags = fcntl(socket_fd, F_GETFL, 0);
+  if (original_flags < 0) return map_socket_error();
   unsigned long nonblocking = 1u;
   if (ioctlsocket(socket_fd, FIONBIO, &nonblocking) != 0) {
     return map_socket_error();
@@ -361,7 +365,8 @@ static int tcp_connect(
   }
   if (errno != EINPROGRESS && errno != EALREADY && errno != EAGAIN &&
       errno != EWOULDBLOCK) {
-    return map_socket_error();
+    result = map_socket_error();
+    goto terminal_error;
   }
   fd_set writable;
   fd_set failed;
@@ -378,20 +383,30 @@ static int tcp_connect(
   if (selected == 0) {
     return timeout_ms == 0u ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_ERR_TIMEOUT;
   }
-  if (selected < 0) return map_socket_error();
+  if (selected < 0) {
+    result = map_socket_error();
+    goto terminal_error;
+  }
   int socket_error = 0;
   socklen_t error_length = sizeof(socket_error);
   if (getsockopt(
           socket_fd, SOL_SOCKET, SO_ERROR, &socket_error, &error_length) != 0) {
-    return map_socket_error();
+    result = map_socket_error();
+    goto terminal_error;
   }
   if (socket_error != 0) {
     errno = socket_error;
-    return map_socket_error();
+    result = map_socket_error();
+    goto terminal_error;
   }
   nonblocking = 0u;
   return ioctlsocket(socket_fd, FIONBIO, &nonblocking) == 0
              ? H2_PAL_OK : map_socket_error();
+
+terminal_error:
+  nonblocking = (original_flags & O_NONBLOCK) != 0;
+  return ioctlsocket(socket_fd, FIONBIO, &nonblocking) == 0
+             ? result : map_socket_error();
 }
 
 static int tcp_send_timeout(

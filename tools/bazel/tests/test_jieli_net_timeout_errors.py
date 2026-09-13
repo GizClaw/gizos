@@ -18,6 +18,7 @@ class NetTimeoutErrorsTest(unittest.TestCase):
         stub = r'''
 #include <assert.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <limits.h>
 #include <string.h>
 #include <sys/time.h>
@@ -38,19 +39,35 @@ static int fake_recvfrom(int fd,void *p,size_t n,int f,struct sockaddr *a,sockle
 static int fake_recv(int fd,void *p,size_t n,int f) {return fake_recvfrom(fd,p,n,f,NULL,NULL);}
 static int fake_send(int fd,const void *p,size_t n,int f) {return fake_recv(fd,(void *)p,n,f);}
 static int mode_calls, connect_pending, fail_restore;
+static int initial_mode, current_mode, terminal_stage;
+int fake_fcntl(int fd, int cmd, int value) {
+ (void)fd;
+ (void)value;
+ assert(cmd==F_GETFL);
+ return initial_mode ? O_NONBLOCK : 0;
+}
+#define fcntl fake_fcntl
 static int fake_ioctl(int fd,unsigned long cmd,unsigned long *mode) {
  (void)fd;(void)cmd; ++mode_calls;
+ current_mode=(*mode!=0);
  if (*mode==0 && fail_restore) {errno=EIO; return -1;} return 0;
 }
 static int fake_connect(int fd,const struct sockaddr *a,socklen_t len) {
  (void)fd;(void)a;(void)len;
+ if (terminal_stage==1) {errno=ECONNREFUSED; return -1;}
  if (connect_pending) {errno=EINPROGRESS; return -1;} return 0;
 }
 static int fake_select(int n,fd_set *r,fd_set *w,fd_set *e,struct timeval *t) {
- (void)n;(void)r;(void)w;(void)e;(void)t; return 1;
+ (void)n;(void)r;(void)w;(void)e;(void)t;
+ if (terminal_stage==2) {errno=EIO; return -1;}
+ if (terminal_stage==5) return 0;
+ return 1;
 }
 static int fake_getsockopt(int fd,int l,int o,void *v,socklen_t *n) {
- (void)fd;(void)l;(void)o;(void)n; *(int *)v=0; return 0;
+ (void)fd;(void)l;(void)o;(void)n;
+ if (terminal_stage==3) {errno=EIO; return -1;}
+ *(int *)v=terminal_stage==4 ? ECONNREFUSED : 0;
+ return 0;
 }
 #define FIONBIO 1
 #define ioctlsocket fake_ioctl
@@ -90,6 +107,19 @@ int main(void) {
   mode_calls=0; fail_restore=0;
   assert(tcp_connect(NULL,1,&addr,100)==H2_PAL_OK && mode_calls==2);
  }
+ connect_pending=1;
+ for (initial_mode=0;initial_mode<=1;++initial_mode) {
+  for (terminal_stage=1;terminal_stage<=4;++terminal_stage) {
+   mode_calls=0;
+   assert(tcp_connect(NULL,1,&addr,100)!=H2_PAL_OK);
+   assert(mode_calls==2 && current_mode==initial_mode);
+  }
+ }
+ terminal_stage=5;
+ assert(tcp_connect(NULL,1,&addr,0)==H2_PAL_ERR_WOULD_BLOCK);
+ assert(current_mode==1);
+ assert(tcp_connect(NULL,1,&addr,100)==H2_PAL_ERR_TIMEOUT);
+ assert(current_mode==1);
 }
 '''
         with tempfile.TemporaryDirectory() as directory:
