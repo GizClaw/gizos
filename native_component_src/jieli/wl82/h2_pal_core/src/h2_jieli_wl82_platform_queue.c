@@ -1,5 +1,6 @@
 #include "h2_jieli_wl82_platform_core.h"
 #include "h2_jieli_wl82_sdk_port.h"
+#include "h2_jieli_wl82_allocator.h"
 
 #include <string.h>
 
@@ -7,6 +8,7 @@
  * waiters to recheck those predicates; no slot is reserved outside the lock.
  * In particular reset cannot invalidate a receiver's semaphore reservation. */
 struct h2_pal_queue {
+    const h2_pal_mem_api_t *allocator;
     const h2_pal_sync_api_t *sync;
     h2_pal_mutex_t *lock;
     h2_pal_cond_t *readable;
@@ -24,8 +26,8 @@ static void queue_release(h2_pal_queue_t *queue)
     if (queue->readable != NULL) (void)h2_pal_cond_destroy(queue->sync, queue->readable);
     if (queue->writable != NULL) (void)h2_pal_cond_destroy(queue->sync, queue->writable);
     if (queue->lock != NULL) (void)h2_pal_mutex_destroy(queue->sync, queue->lock);
-    if (queue->storage != NULL) h2_jieli_sdk_free(queue->storage);
-    h2_jieli_sdk_free(queue);
+    if (queue->storage != NULL) h2_jieli_core_free(queue->allocator, queue->storage);
+    h2_jieli_core_free(queue->allocator, queue);
 }
 
 static int queue_create(void *user, const h2_pal_queue_config_t *config, h2_pal_queue_t **out_queue)
@@ -36,15 +38,16 @@ static int queue_create(void *user, const h2_pal_queue_config_t *config, h2_pal_
     }
     *out_queue = NULL;
     if (config->item_size > SIZE_MAX / config->item_count) return H2_PAL_ERR_INVALID_ARG;
-    h2_pal_queue_t *queue = h2_jieli_sdk_malloc(sizeof(*queue));
+    h2_pal_queue_t *queue = h2_jieli_core_alloc(config->allocator, sizeof(*queue));
     if (queue == NULL) return H2_PAL_ERR_NO_MEMORY;
     memset(queue, 0, sizeof(*queue));
+    queue->allocator = config->allocator;
     queue->sync = h2_jieli_wl82_platform_sync_api();
     queue->item_size = config->item_size;
     queue->capacity = config->item_count;
-    queue->storage = h2_jieli_sdk_malloc(config->item_size * config->item_count);
-    const h2_pal_mutex_config_t mutex = {.name = config->name};
-    const h2_pal_cond_config_t cond = {.name = config->name};
+    queue->storage = h2_jieli_core_alloc(config->allocator, config->item_size * config->item_count);
+    const h2_pal_mutex_config_t mutex = {.name = config->name, .allocator = config->allocator};
+    const h2_pal_cond_config_t cond = {.name = config->name, .allocator = config->allocator};
     int rc = H2_PAL_ERR_NO_MEMORY;
     if (queue->storage != NULL) {
         rc = h2_pal_mutex_create(queue->sync, &mutex, &queue->lock);

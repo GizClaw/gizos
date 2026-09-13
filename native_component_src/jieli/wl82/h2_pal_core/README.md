@@ -55,3 +55,25 @@ out and leave a queued request referring to expired stack memory. Failure to
 enqueue leaves the timer untouched and retryable. Host behavior tests cover
 cross-caller operations, callback destruction, stale fires and enqueue failure;
 the AC791N public PAL E2E launcher is required to establish real SDK dispatch.
+
+## Caller allocator ownership
+
+Mutex, semaphore, condition and queue configs honor `config->allocator`.
+The creating allocator stays with each PAL object until destruction or failed
+creation cleanup. Queue backing storage and its internal PAL mutex/conditions
+use the same allocator. A NULL allocator retains the SDK default allocation
+path. SDK-native mutex/semaphore storage remains paired with the SDK's own
+create/destroy functions, as with ESP's native semaphore handles. Task options
+and timer configs have no caller-allocator field; no new API field is added.
+
+The pinned `os_api.c.o` and `queue.c.o` IR establish the SDK failure boundary:
+mutex/semaphore deletion calls `vQueueDelete` and returns zero. With valid
+quiescent objects there is no recoverable returned delete failure to retain.
+`xQueueGiveMutexRecursive` returns failure only when the current native task
+is not the owner; `os_mutex_post` also rejects IRQ/critical-section calls.
+For a valid task-context PAL owner, the native mutex was acquired once and PAL
+recursion is handled above it, so final native unlock has a matching owner.
+No retry or ownership mode is introduced for corruption or invalid-context
+calls. Condition relock remains mandatory; the internal helper reports IO and
+records lack of ownership if an SDK failure prevents it, avoiding a second
+invalid unlock. This is not a promise to recover invalid native objects.

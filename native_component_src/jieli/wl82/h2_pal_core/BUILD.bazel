@@ -63,6 +63,7 @@ cc_test(
         "src/h2_jieli_wl82_platform_sync.c",
         "tests/src/test_jieli_wl82_cond_threads.c",
         "include/h2_jieli_wl82_atomic.h",
+        "include/h2_jieli_wl82_allocator.h",
         "include/h2_jieli_wl82_platform_core.h",
         "include/h2_jieli_wl82_sdk_port.h",
     ],
@@ -85,6 +86,7 @@ cc_test(
         "src/h2_jieli_wl82_platform_sync.c",
         "tests/src/test_jieli_wl82_queue_threads.c",
         "include/h2_jieli_wl82_atomic.h",
+        "include/h2_jieli_wl82_allocator.h",
         "include/h2_jieli_wl82_platform_core.h",
         "include/h2_jieli_wl82_sdk_port.h",
     ],
@@ -106,6 +108,7 @@ cc_test(
         "src/h2_jieli_wl82_platform_system_event.c",
         "tests/src/test_jieli_wl82_event_threads.c",
         "include/h2_jieli_wl82_atomic.h",
+        "include/h2_jieli_wl82_allocator.h",
         "include/h2_jieli_wl82_platform_core.h",
         "include/h2_jieli_wl82_sdk_port.h",
     ],
@@ -144,6 +147,7 @@ cc_test(
         "src/h2_jieli_wl82_platform_task.c",
         "tests/src/test_jieli_wl82_task_identity.c",
         "include/h2_jieli_wl82_atomic.h",
+        "include/h2_jieli_wl82_allocator.h",
         "include/h2_jieli_wl82_platform_core.h",
         "include/h2_jieli_wl82_sdk_port.h",
     ],
@@ -157,4 +161,15 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = ["//libs/pal"],
+)
+
+filegroup(
+    name = "allocator_fixture_sources",
+    srcs = glob(["include/*.h"]) + [
+        "src/h2_jieli_wl82_platform_sync.c",
+        "src/h2_jieli_wl82_platform_queue.c",
+        "tests/include/h2_jieli_wl82_sdk_port_fake.h",
+        "tests/src/h2_jieli_wl82_sdk_port_fake.c",
+    ],
+    testonly = True,
 )
