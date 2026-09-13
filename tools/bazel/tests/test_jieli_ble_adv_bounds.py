@@ -29,6 +29,13 @@ int main(void) {
  uint8_t bytes[251]={0}, output[251], used;
  h2_pal_ble_adv_data_t data={0};
  const size_t lengths[]={SIZE_MAX,SIZE_MAX-1u,SIZE_MAX-15u,250u,251u};
+ data.service_data=(h2_pal_ble_bytes_t){bytes,3};
+ assert(h2_encode_adv(&data,output,sizeof(output),&used)==H2_PAL_OK);
+ assert(used==8 && output[3]==4 && output[4]==0x16);
+ data.service_data.len=1;
+ assert(h2_encode_adv(&data,output,sizeof(output),&used)==H2_PAL_ERR_INVALID_ARG);
+ data.service_data.len=3; data.service_data.data=NULL;
+ assert(h2_encode_adv(&data,output,sizeof(output),&used)==H2_PAL_ERR_INVALID_ARG);
  for (unsigned uuid=2;uuid<=16;uuid+=14) {
   data.service_data_uuid=(h2_pal_ble_uuid_t){bytes,uuid};
   for(unsigned i=0;i<sizeof(lengths)/sizeof(lengths[0]);++i) {

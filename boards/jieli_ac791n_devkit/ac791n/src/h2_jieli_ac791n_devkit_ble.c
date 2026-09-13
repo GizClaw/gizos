@@ -362,13 +362,16 @@ static int h2_encode_adv(
   if (data->service_data.len != 0u || data->service_data_uuid.len != 0u) {
     uint8_t service[H2_JIELI_ADV_DATA_MAX];
     const size_t uuid_len = data->service_data_uuid.len;
-    if ((uuid_len != 2u && uuid_len != 16u) ||
-        data->service_data_uuid.data == NULL ||
+    if ((uuid_len != 0u && uuid_len != 2u && uuid_len != 16u) ||
+        (uuid_len != 0u && data->service_data_uuid.data == NULL) ||
+        (uuid_len == 0u && data->service_data.len < 2u) ||
         data->service_data.len > sizeof(service) - uuid_len ||
         (data->service_data.len != 0u && data->service_data.data == NULL))
       return H2_PAL_ERR_INVALID_ARG;
-    memcpy(service, data->service_data_uuid.data, uuid_len);
-    memcpy(service + uuid_len, data->service_data.data, data->service_data.len);
+    if (uuid_len != 0u)
+      memcpy(service, data->service_data_uuid.data, uuid_len);
+    if (data->service_data.len != 0u)
+      memcpy(service + uuid_len, data->service_data.data, data->service_data.len);
     rc = h2_adv_append(
         out, capacity, &used, uuid_len == 16u ? 0x21u : 0x16u,
         service, uuid_len + data->service_data.len);
