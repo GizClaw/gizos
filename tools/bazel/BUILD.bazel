@@ -736,4 +736,9 @@ py_test(
     ],
     legacy_create_init = 0,
     main = "tests/test_jieli_allocator.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )
