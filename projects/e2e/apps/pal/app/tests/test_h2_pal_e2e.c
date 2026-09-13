@@ -1,6 +1,7 @@
 #include "h2_pal_e2e.h"
 
 #include <assert.h>
+#include <stdlib.h>
 #include <string.h>
 
 struct h2_pal_mqtt_client {
@@ -392,7 +393,165 @@ static void test_wifi_disconnected_state_contract(void) {
   assert(fixture.disconnect_calls == calls);
 }
 
+typedef struct queue_lifetime_fixture {
+  int task_only;
+  h2_pal_task_entry_t entry;
+  void *context;
+  uint64_t now;
+  int closed, joined, destroyed, allocations, allow_join;
+} queue_lifetime_fixture_t;
+
+static void *lifetime_alloc(void *user, size_t bytes) {
+  queue_lifetime_fixture_t *f = user;
+  ++f->allocations;
+  return malloc(bytes);
+}
+static void lifetime_free(void *user, void *ptr) {
+  queue_lifetime_fixture_t *f = user;
+  assert(f->entry == NULL || f->joined);
+  --f->allocations;
+  free(ptr);
+}
+static h2_pal_result_t lifetime_now(void *user, uint64_t *now) {
+  queue_lifetime_fixture_t *f = user;
+  f->now += 1000u;
+  *now = f->now;
+  return H2_PAL_OK;
+}
+static h2_pal_result_t lifetime_sleep(void *user, uint32_t ms) {
+  (void)user; (void)ms;
+  return H2_PAL_OK;
+}
+static int lifetime_create(void *user, const h2_pal_queue_config_t *config,
+                           h2_pal_queue_t **out) {
+  (void)config;
+  if (((queue_lifetime_fixture_t *)user)->task_only != 0)
+    return H2_PAL_ERR_UNSUPPORTED;
+  *out = (h2_pal_queue_t *)user;
+  return H2_PAL_OK;
+}
+static int lifetime_send(void *user, h2_pal_queue_t *queue,
+                         const void *item, uint32_t timeout) {
+  (void)user; (void)queue; (void)item; (void)timeout;
+  return H2_PAL_ERR_IO;
+}
+static int lifetime_recv(void *user, h2_pal_queue_t *queue,
+                         void *item, uint32_t timeout) {
+  queue_lifetime_fixture_t *f = user;
+  (void)queue; (void)item; (void)timeout;
+  assert(f->closed && !f->destroyed && f->allocations == 1);
+  return H2_PAL_ERR_INVALID_STATE;
+}
+static int lifetime_close(void *user, h2_pal_queue_t *queue) {
+  queue_lifetime_fixture_t *f = user;
+  (void)queue;
+  f->closed = 1;
+  return H2_PAL_OK;
+}
+static void lifetime_destroy(void *user, h2_pal_queue_t *queue) {
+  queue_lifetime_fixture_t *f = user;
+  (void)queue;
+  assert(f->joined);
+  ++f->destroyed;
+}
+static int lifetime_start(void *user, const h2_pal_task_options_t *options,
+                          h2_pal_task_entry_t entry, void *context,
+                          h2_pal_task_t **out) {
+  queue_lifetime_fixture_t *f = user;
+  const char *name = f->task_only == 2 ? "pal/e2e/condition" :
+      (f->task_only == 1 ? "pal/e2e/core" : "pal/e2e/queue");
+  if (strcmp(options->name, name) != 0)
+    return H2_PAL_ERR_UNSUPPORTED;
+  f->entry = entry;
+  f->context = context;
+  *out = (h2_pal_task_t *)f;
+  return H2_PAL_OK;
+}
+static int lifetime_join(void *user, h2_pal_task_t *task) {
+  queue_lifetime_fixture_t *f = user;
+  (void)task;
+  assert((f->task_only || f->closed) && !f->destroyed);
+  if (!f->allow_join) return H2_PAL_ERR_BUSY;
+  f->entry(f->context);
+  f->joined = 1;
+  return H2_PAL_OK;
+}
+static h2_pal_result_t lifetime_mutex_create(void *user,
+    const h2_pal_mutex_config_t *config, h2_pal_mutex_t **out) {
+  if (strcmp(config->name, "pal-e2e-cond-mutex") != 0)
+    return H2_PAL_ERR_UNSUPPORTED;
+  *out = (h2_pal_mutex_t *)user;
+  return H2_PAL_OK;
+}
+static h2_pal_result_t lifetime_mutex_use(void *user, h2_pal_mutex_t *mutex) {
+  (void)mutex;
+  assert(!((queue_lifetime_fixture_t *)user)->destroyed);
+  return H2_PAL_OK;
+}
+static h2_pal_result_t lifetime_mutex_destroy(void *user, h2_pal_mutex_t *mutex) {
+  (void)mutex;
+  queue_lifetime_fixture_t *f = user;
+  assert(f->joined);
+  ++f->destroyed;
+  return H2_PAL_OK;
+}
+static h2_pal_result_t lifetime_cond_create(void *user,
+    const h2_pal_cond_config_t *config, h2_pal_cond_t **out) {
+  (void)config;
+  *out = (h2_pal_cond_t *)user;
+  return H2_PAL_OK;
+}
+static h2_pal_result_t lifetime_cond_signal(void *user, h2_pal_cond_t *cond) {
+  (void)user; (void)cond;
+  return H2_PAL_OK;
+}
+static h2_pal_result_t lifetime_cond_destroy(void *user, h2_pal_cond_t *cond) {
+  (void)cond;
+  queue_lifetime_fixture_t *f = user;
+  assert(f->joined);
+  ++f->destroyed;
+  return H2_PAL_OK;
+}
+static void test_join_failure_retains_context(int task_only) {
+  queue_lifetime_fixture_t f = {.task_only=task_only};
+  const h2_pal_mem_vtable_t mem_v = {.alloc=lifetime_alloc, .free=lifetime_free};
+  const h2_pal_time_vtable_t time_v = {
+      .get_monotonic_ms=lifetime_now, .sleep_ms=lifetime_sleep};
+  const h2_pal_queue_vtable_t queue_v = {
+      .create=lifetime_create, .send=lifetime_send, .recv=lifetime_recv,
+      .close=lifetime_close, .destroy=lifetime_destroy};
+  const h2_pal_task_vtable_t task_v = {.start=lifetime_start, .join=lifetime_join};
+  const h2_pal_mem_api_t mem = {.user=&f, .vtable=&mem_v};
+  const h2_pal_time_api_t time = {.user=&f, .vtable=&time_v};
+  const h2_pal_queue_api_t queue = {.user=&f, .vtable=&queue_v};
+  const h2_pal_task_api_t task = {.user=&f, .vtable=&task_v};
+  const h2_pal_sync_vtable_t sync_v = {
+      .create_mutex=lifetime_mutex_create, .destroy_mutex=lifetime_mutex_destroy,
+      .lock_mutex=lifetime_mutex_use, .unlock_mutex=lifetime_mutex_use,
+      .create_cond=lifetime_cond_create, .destroy_cond=lifetime_cond_destroy,
+      .signal_cond=lifetime_cond_signal};
+  const h2_pal_sync_api_t sync = {.user=&f, .vtable=&sync_v};
+  h2_runtime_t runtime = {.mem=&mem, .time=&time, .queue=&queue, .task=&task,
+      .sync=task_only == 2 ? &sync : NULL};
+  const h2_pal_e2e_config_t config = {.suite_mask=H2_PAL_E2E_SUITE_CORE};
+  h2_pal_e2e_result_t result;
+  assert(h2_pal_e2e_run(&runtime, &config, &result) != H2_PAL_OK);
+  assert(result.retained_cleanup != NULL);
+  assert((task_only || f.closed) && !f.destroyed && f.allocations == 1);
+  assert(h2_pal_e2e_cleanup(&runtime, &result) == H2_PAL_ERR_BUSY);
+  assert(f.allocations == 1 && !f.destroyed);
+  f.allow_join = 1;
+  assert(h2_pal_e2e_cleanup(&runtime, &result) == H2_PAL_OK);
+  assert(result.retained_cleanup == NULL && f.allocations == 0);
+  assert(f.destroyed == (task_only == 2 ? 2 : (task_only ? 0 : 1)) && f.joined);
+  assert(h2_pal_e2e_cleanup(&runtime, &result) == H2_PAL_OK);
+  assert(f.allocations == 0);
+}
+
 int main(void) {
+  test_join_failure_retains_context(0);
+  test_join_failure_retains_context(1);
+  test_join_failure_retains_context(2);
   test_wifi_disconnected_state_contract();
   test_success();
   test_publish_failure_still_closes();
