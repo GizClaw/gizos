@@ -92,7 +92,7 @@ static h2_pal_result_t ready(void *user) {
 
 static h2_pal_result_t fail_ready(void *user) {
   ((fixture_t *)user)->ready++;
-  return H2_PAL_ERR_INVALID_STATE;
+  return H2_PAL_ERR_IO;
 }
 
 int main(void) {
@@ -142,7 +142,7 @@ int main(void) {
                           .should_stop = never_stop,
                           .on_ready = fail_ready,
                           .on_ready_user = &fixture,
-                      }) == H2_PAL_ERR_INVALID_STATE);
+                      }) == H2_PAL_ERR_IO);
   assert(fixture.ready == 1u);
   assert(fixture.display_open == 1u && fixture.display_close == 1u);
   assert(fixture.touch_open == 1u && fixture.touch_close == 1u);
