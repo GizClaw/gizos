@@ -49,7 +49,7 @@ static h2_pal_result_t run_script(h2_web_app_host_t *app_host,
       .source_size = H2_WEB_LUA_APP_SOURCE_SIZE,
   };
   char ids[H2_WEB_APP_HOST_MAX_BUTTONS][12];
-  h2_lua_arg_t args[H2_WEB_APP_HOST_MAX_BUTTONS];
+  h2_lua_arg_t args[H2_WEB_APP_HOST_MAX_BUTTONS + H2_WEB_LUA_APP_ARG_COUNT];
   const size_t button_count = h2_web_board.button_count;
   const h2_runtime_component_id_t exit_id = exit_component();
   uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
@@ -67,6 +67,8 @@ static h2_pal_result_t run_script(h2_web_app_host_t *app_host,
     args[i] = (h2_lua_arg_t){.name = h2_web_board.buttons[i].name,
                              .value = ids[i]};
   }
+  for (size_t i = 0u; i < H2_WEB_LUA_APP_ARG_COUNT; ++i)
+    args[button_count + i] = h2_web_lua_script_args[i];
   h2_pal_result_t rc = h2_lua_host_create(
       &(h2_lua_host_config_t){
           .runtime = runtime,
@@ -74,8 +76,8 @@ static h2_pal_result_t run_script(h2_web_app_host_t *app_host,
           .max_jobs = 1u,
           .event_delivery_capacity = 32u,
           .callback_capacity_per_job = 16u,
-          .vm_memory_limit_bytes = 512u * 1024u,
-          .source_limit_bytes = 128u * 1024u,
+          .vm_memory_limit_bytes = H2_WEB_LUA_APP_VM_BYTES,
+          .source_limit_bytes = H2_WEB_LUA_APP_SOURCE_LIMIT_BYTES,
           .output_limit_bytes = 1024u,
           .instruction_quantum = 10000u,
           .execution_timeout_ms = UINT32_MAX,
@@ -92,7 +94,8 @@ static h2_pal_result_t run_script(h2_web_app_host_t *app_host,
   if (rc == H2_PAL_OK)
     rc = h2_lua_host_start(host);
   if (rc == H2_PAL_OK)
-    rc = h2_lua_job_submit_resource(host, NULL, "app.lua", args, button_count,
+    rc = h2_lua_job_submit_resource(host, NULL, "app.lua", args,
+                                    button_count + H2_WEB_LUA_APP_ARG_COUNT,
                                     &job);
   while (rc == H2_PAL_OK) {
     if (!cancelling && h2_web_app_host_should_stop(app_host)) {
