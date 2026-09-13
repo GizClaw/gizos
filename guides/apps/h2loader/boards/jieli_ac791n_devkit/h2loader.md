@@ -104,7 +104,16 @@ Loader 只有 UART 与 BLE capability，不提供 Wi-Fi 与 HTTP；runner 一旦
 
 [定点断电验收](./evidence/2026-09-13/loader-copy-powercut.md)已通过：候选 P2 确认并发布启动头后，在 P1 启动头擦除完成处暂停，用户实际断电上电。设备继续从 P2 回写 P1，最终两个镜像校验一致、Stage 清空、last_result=0。诊断包使用正式 layout 和 task policy，但含测试停点，不能作为正式发行固件。
 
-这补充了前述尚未完成的写入中断验收中的一个确定边界；不覆盖任意部分编程、残缺启动头或全部 Preference 掉电模式，整体掉电安全验收仍未完成。
+随后补齐了以下具体部分写入边界；不能将定点测试扩大为任意损坏模式的保证：
+
+| 中断现场 | 实际断电后的结果 | 证据 |
+| --- | --- | --- |
+| P2 原生启动头仅写入前 16/32 字节，CRC 无效；P1 完整 | ROM 回到 P1 Loader；无需 DL，UART 可重写 P2、校验镜像并清空 Stage | [P2 部分头](./evidence/2026-09-13/loader-partial-p2-header.md) |
+| P1 原生启动头仅写入前 16/32 字节；已确认 P2 完整 | P2 恢复回写 P1，最终 P1 启动，Stage 清空 | [P1 部分头](./evidence/2026-09-13/partial-p1-header-powercut.md) |
+| Preference 替换期间 Flash 页仅写入前 128/256 字节 | 旧或新值完整，独立 sentinel 保留，重试写入与完整回读成功，P1 Loader 可通信 | [Preference](./evidence/2026-09-13/preference-powercut-plan.md) |
+| `lfs_rename` 内部 Flash 页仅写入前 23/256 字节（变化范围 0–45） | 同上；真实 POWER ON 后验证，不混用升级期间旧固件的恢复日志 | [rename 事务](./evidence/2026-09-13/preference-powercut-plan.md#rename-boundary-physical-recovery-pass-for-the-injected-program) |
+
+P2 部分头测试的同身份重装仅证明损坏分区可重写、校验和清理 Stage，不代替前述不同身份 self-update 回归。原始 P2 日志同时包含就绪标记与 POWER ON；各证据文件记录具体镜像和恢复范围。未遍历所有 NOR 位损坏组合，不声称穷尽掉电安全验证。
 
 ### 2026-09-12：原生更新流程基线
 

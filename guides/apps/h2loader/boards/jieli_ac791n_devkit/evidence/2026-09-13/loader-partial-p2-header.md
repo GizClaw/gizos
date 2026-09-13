@@ -25,7 +25,8 @@
 ## 真实断电及恢复结果
 
 1. 诊断候选输出 `H2_JIELI_PARTIAL_HEADER_READY bank=2 prefix=16 p1_crc=valid`。
-2. 用户按提示断电、重新上电后，捕获到 Loader 启动及 UART 心跳。监控最终
+2. 用户按提示断电、重新上电后，原始 `partial-header-v1-monitor.log`
+   第 2577 行记录 `reset reason: POWER ON`，随后捕获到 Loader 启动及 UART 心跳。监控最终
    返回 `code=-7`，因此没有把监控退出当成设备状态证据。
 3. 独立 `status` 返回成功：`running_partition=1`、正式 v5 镜像身份、
    `stage_valid=1`；没有启动部分头的 P2 候选。
