@@ -395,6 +395,8 @@ static void test_wifi_disconnected_state_contract(void) {
 
 typedef struct queue_lifetime_fixture {
   int task_only;
+  int log_calls;
+  int log_in_case;
   h2_pal_task_entry_t entry;
   void *context;
   uint64_t now;
@@ -512,6 +514,21 @@ static h2_pal_result_t lifetime_cond_destroy(void *user, h2_pal_cond_t *cond) {
   ++f->destroyed;
   return H2_PAL_OK;
 }
+static int lifetime_log(void *user, h2_pal_log_level_t level,
+    const char *scope, const char *message) {
+  queue_lifetime_fixture_t *f = user;
+  assert(level == H2_PAL_LOG_INFO && strcmp(scope, "pal-e2e") == 0);
+  if (strstr(message, "phase=begin") != NULL) {
+    assert(!f->log_in_case);
+    f->log_in_case = 1;
+  } else {
+    assert(strstr(message, "phase=end") != NULL && f->log_in_case);
+    f->log_in_case = 0;
+  }
+  ++f->log_calls;
+  /* Diagnostics failure must not abort the worker test or its cleanup. */
+  return H2_PAL_ERR_IO;
+}
 static void test_join_failure_retains_context(int task_only) {
   queue_lifetime_fixture_t f = {.task_only=task_only};
   const h2_pal_mem_vtable_t mem_v = {.alloc=lifetime_alloc, .free=lifetime_free};
@@ -531,12 +548,21 @@ static void test_join_failure_retains_context(int task_only) {
       .create_cond=lifetime_cond_create, .destroy_cond=lifetime_cond_destroy,
       .signal_cond=lifetime_cond_signal};
   const h2_pal_sync_api_t sync = {.user=&f, .vtable=&sync_v};
+  const h2_pal_log_vtable_t log_v = {.write=lifetime_log};
+  const h2_pal_log_api_t log = {.user=&f, .vtable=&log_v};
   h2_runtime_t runtime = {.mem=&mem, .time=&time, .queue=&queue, .task=&task,
-      .sync=task_only == 2 ? &sync : NULL};
-  const h2_pal_e2e_config_t config = {.suite_mask=H2_PAL_E2E_SUITE_CORE};
+      .sync=task_only == 2 ? &sync : NULL, .log=&log};
+  fake_state_t mqtt_state = {0};
+  const h2_runtime_t mqtt_runtime = make_runtime(&mqtt_state);
+  runtime.mqtt = mqtt_runtime.mqtt;
+  uint8_t network_buffer[256];
+  h2_pal_e2e_config_t config = make_config(network_buffer, sizeof(network_buffer));
+  config.suite_mask |= H2_PAL_E2E_SUITE_CORE;
   h2_pal_e2e_result_t result;
   assert(h2_pal_e2e_run(&runtime, &config, &result) != H2_PAL_OK);
   assert(result.retained_cleanup != NULL);
+  assert(mqtt_state.open_calls == 0);
+  assert(f.log_calls == (int)(2u * result.case_count) && !f.log_in_case);
   assert((task_only || f.closed) && !f.destroyed && f.allocations == 1);
   assert(h2_pal_e2e_cleanup(&runtime, &result) == H2_PAL_ERR_BUSY);
   assert(f.allocations == 1 && !f.destroyed);

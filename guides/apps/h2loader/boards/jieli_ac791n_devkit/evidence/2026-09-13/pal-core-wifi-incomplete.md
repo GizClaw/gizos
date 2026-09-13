@@ -85,3 +85,35 @@ Local captures: `tmp/jieli/pal-e2e-send-v4.log`,
 `tmp/jieli/pal-e2e-v4-return-loader.log`. This establishes the eight Core cases
 and one offline Wi-Fi consistency case in this run, not full PAL coverage,
 long-duration stability, BLE acceptance, or final Loader self-update acceptance.
+
+## Worker-lifetime revision: fifth run, results not captured
+
+`a326932c` retains Task/Queue/Condition worker resources after failed joins.
+Its native AC791N build passed (38.616 seconds). Package
+`21c71675f9d0407cc9452990bbd138fde1d473a992277b876f351e4f09142165`
+was installed through UART; App status identified image
+`139cfd1ad8ece10db86e39bafed8384a3c3d06e220ae5b8e8dc9ad22efa3269b`
+in partition 2. Neither the upgrade monitor nor a fresh monitor session
+captured a PAL result ledger. Therefore the fourth run's 9/9 result must not
+be attributed to this revision. The test worker's progress is unverified;
+this is not evidence of a whole-device hang because UART status and software
+`reboot loader` both succeeded. Final status confirmed the unchanged Loader
+in partition 1. No physical reset, USB erase, or Loader update was needed.
+
+Captures: `tmp/jieli/pal-e2e-send-v5.log`,
+`tmp/jieli/pal-e2e-device-v5.log`, `tmp/jieli/pal-e2e-monitor-v5.log`, and
+`tmp/jieli/pal-e2e-v5-return-loader.log`.
+
+## Sixth run: diagnostic build passed
+
+The fifth revision plus optional PAL Log Core case begin/end records built
+successfully (40.367 seconds). Package
+`9414a52f9233c27477ca9a0164bc25e9c39340c63d8792802b75bbfdea4c9ffe`
+installed through UART and repeatedly reported `result=0 passed=9 failed=0`.
+App status and software return to the original Loader succeeded. The early
+begin/end lines were not captured during reconnect; this run does not explain
+the fifth run's missing ledger. No PAL behavior was changed between those
+two builds. Captures are `tmp/jieli/pal-e2e-device-v6.log`,
+`tmp/jieli/pal-e2e-status-v6.log`, and `tmp/jieli/pal-e2e-loader-status-v6.log`.
+The subsequent MQTT retained-cleanup guard is host-tested, not included in
+this device package.

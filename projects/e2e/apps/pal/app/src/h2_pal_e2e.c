@@ -689,28 +689,47 @@ static h2_pal_result_t h2_pal_e2e_core_concurrency(
   return result;
 }
 
+static void h2_pal_e2e_trace_case(h2_runtime_t *runtime,
+    h2_pal_e2e_case_id_t case_id, const char *phase, h2_pal_result_t result) {
+  char line[96];
+  snprintf(line, sizeof(line), "case=%u phase=%s result=%d",
+      (unsigned)case_id, phase, (int)result);
+  (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-e2e", line);
+}
+
+/* The expression is evaluated only after the begin record is emitted. Logging
+ * is optional and must never replace the case's actual result. */
+#define H2_PAL_E2E_CORE_CASE(id, expression) do { \
+  h2_pal_e2e_trace_case(runtime, (id), "begin", H2_PAL_OK); \
+  const h2_pal_result_t case_result = (expression); \
+  h2_pal_e2e_trace_case(runtime, (id), "end", case_result); \
+  h2_pal_e2e_record(result, (id), case_result); \
+} while (0)
+
 static void h2_pal_e2e_run_core(h2_runtime_t *runtime,
                                 h2_pal_e2e_result_t *result) {
-  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_TIME,
+  H2_PAL_E2E_CORE_CASE(H2_PAL_E2E_CASE_TIME,
                     h2_pal_e2e_core_time(runtime));
-  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_TIMER,
+  H2_PAL_E2E_CORE_CASE(H2_PAL_E2E_CASE_TIMER,
                     h2_pal_e2e_core_timer(runtime, result));
-  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_TASK,
+  H2_PAL_E2E_CORE_CASE(H2_PAL_E2E_CASE_TASK,
                     h2_pal_e2e_core_task(runtime, result));
   if (result->retained_cleanup != NULL) return;
-  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_QUEUE,
+  H2_PAL_E2E_CORE_CASE(H2_PAL_E2E_CASE_QUEUE,
                     h2_pal_e2e_core_queue(runtime, result));
   if (result->retained_cleanup != NULL) return;
-  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_MUTEX,
+  H2_PAL_E2E_CORE_CASE(H2_PAL_E2E_CASE_MUTEX,
                     h2_pal_e2e_core_mutex(runtime, result));
-  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_SEMAPHORE,
+  H2_PAL_E2E_CORE_CASE(H2_PAL_E2E_CASE_SEMAPHORE,
                     h2_pal_e2e_core_semaphore(runtime, result));
-  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_CONDITION,
+  H2_PAL_E2E_CORE_CASE(H2_PAL_E2E_CASE_CONDITION,
                     h2_pal_e2e_core_condition(runtime, result));
   if (result->retained_cleanup != NULL) return;
-  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_CONCURRENCY,
+  H2_PAL_E2E_CORE_CASE(H2_PAL_E2E_CASE_CONCURRENCY,
                     h2_pal_e2e_core_concurrency(runtime, result));
 }
+
+#undef H2_PAL_E2E_CORE_CASE
 
 static h2_pal_result_t h2_pal_e2e_host_memory(h2_runtime_t *runtime) {
   uint8_t *memory = h2_pal_mem_alloc(runtime->mem, 17u);
@@ -1567,7 +1586,8 @@ h2_pal_result_t h2_pal_e2e_run(h2_runtime_t *runtime,
     h2_pal_e2e_record(out_result, H2_PAL_E2E_CASE_WIFI_DISCONNECT_STATUS,
                       h2_pal_e2e_wifi_disconnect_status(runtime));
   }
-  if ((config->suite_mask & H2_PAL_E2E_SUITE_MQTT) != 0u) {
+  if (out_result->retained_cleanup == NULL &&
+      (config->suite_mask & H2_PAL_E2E_SUITE_MQTT) != 0u) {
     const h2_pal_result_t mqtt_result =
         h2_pal_e2e_run_mqtt(runtime, config, out_result);
     h2_pal_e2e_record(out_result, H2_PAL_E2E_CASE_MQTT, mqtt_result);
