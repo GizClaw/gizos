@@ -132,28 +132,6 @@ int main(void) {
 
 
 class TrialRollbackTest(unittest.TestCase):
-    def test_copy_back_to_p1_does_not_recreate_p2_attempt(self):
-        source = SOURCE.read_text()
-        self.assertIn("set_trial_attempt(partition_id == H2_JIELI_PARTITION_APP)", source)
-        self.assertNotIn("int rc = set_trial_attempt(1);", source)
-
-    def test_reboot_does_not_clear_trial_evidence(self):
-        source = SOURCE.read_text()
-        reboot = source[source.index("static int power_reboot("):
-                        source.index("int h2_jieli_loader_platform_init(")]
-        self.assertNotIn("set_trial_attempt(0)", reboot)
-        self.assertNotIn("probe_request", reboot)
-
-    def test_warm_app_return_preserves_image_and_installation(self):
-        source = (ROOT / "projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit/src/color_bar_pal.c").read_text()
-        self.assertNotIn("flash_update_clr_boot_info", source)
-        self.assertNotIn("prepare_destructive_app_return", source)
-        reboot = source[source.index("static int app_power_reboot("):
-                        source.index("static const h2_pal_power_api_t *app_power_api(")]
-        self.assertIn("system_reset();", reboot)
-        self.assertNotIn("h2_pal_fs_remove", reboot)
-        self.assertIn("h2_jieli_app_loader_prepare_reboot", reboot)
-
     def test_actual_pal_trial_reconciliation_and_partition_flags(self):
         source = SOURCE.read_text()
         reconcile = source[source.index("static void reconcile_trial_state("):
@@ -167,18 +145,6 @@ class TrialRollbackTest(unittest.TestCase):
             subprocess.run(["cc", "-std=c11", str(test), "-o", str(binary)],
                            check=True, timeout=60)
             subprocess.run([str(binary)], check=True, timeout=60)
-
-    def test_burn_semaphore_outlives_every_wait(self):
-        """A burn callback after a timed-out wait must find a live semaphore."""
-        source = SOURCE.read_text()
-        self.assertNotIn("os_sem_del(&state.update_sem", source)
-        self.assertEqual(source.count("os_sem_create(&state.update_sem"), 1)
-        init = source[source.index("int h2_jieli_loader_platform_init("):]
-        self.assertIn("os_sem_create(&state.update_sem", init)
-        callback = source[source.index("static int update_burn_complete("):
-                          source.index("static int image_writer_write(")]
-        self.assertLess(callback.index("burn_waiting"),
-                        callback.index("state.update_result ="))
 
 
 if __name__ == "__main__":

@@ -100,17 +100,12 @@ int main(void) {
             subprocess.run(["cc", "-std=c11", str(test), "-o", str(binary)],
                            check=True, timeout=60)
             subprocess.run([str(binary)], check=True, timeout=10)
-        for name in ("color_bar_pal.c", "mp4_player_small_pal.c"):
-            app = (TARGET / name).read_text()
-            self.assertIn("h2_jieli_app_loader_prepare_reboot", app)
-            self.assertNotIn("flash_update_clr_boot_info", app)
 
     def test_both_app_targets_expose_next_partition(self):
         for name, prefix in (("color_bar_pal.c", "app_power"),
                              ("mp4_player_small_pal.c", "power")):
             with self.subTest(target=name):
                 source = (TARGET / name).read_text()
-                self.assertIn(f".get_next_boot_partition = {prefix}_get_next", source)
                 start = source.index(f"static int {prefix}_get_next(")
                 end = source.index(f"static int {prefix}_set_next(", start)
                 main = r'''

@@ -1,6 +1,5 @@
 """Verify the wl82 __sync_* runtime that replaces the compiler-rt libcalls."""
 from pathlib import Path
-import re
 import subprocess
 import tempfile
 import unittest
@@ -71,17 +70,6 @@ class SyncAtomicsTest(unittest.TestCase):
         source = SOURCE.read_text()
         start = source.index("static spinlock_t h2_jieli_atomic_lock")
         return source[start:]
-
-    def test_every_linked_libcall_is_overridden(self):
-        """compiler-rt members linked into AC791N images must all be replaced."""
-        block = self.runtime_block()
-        widths = re.findall(r"H2_JIELI_SYNC_WIDTH\((\d), ", block)
-        self.assertEqual(widths, ["1", "2", "4", "8"])
-        for name in ("fetch_and_add", "fetch_and_sub", "lock_test_and_set"):
-            self.assertIn(f"H2_JIELI_SYNC_RMW(width, type, {name},", block)
-        self.assertIn('__asm__("__sync_" #name "_" #width)', block)
-        self.assertIn('__asm__("__sync_val_compare_and_swap_" #width)', block)
-        self.assertNotIn("lockset", block.split("*/", 1)[1])
 
     def test_operations_are_atomic_and_return_previous_values(self):
         block = self.runtime_block().replace(

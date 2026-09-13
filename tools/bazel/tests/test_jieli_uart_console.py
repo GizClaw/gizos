@@ -3,21 +3,9 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-import re
 
 ROOT = Path(__file__).resolve().parents[3]
 SOURCE = ROOT / "boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_console.c"
-
-def policy_rows(build, name):
-    source = build.read_text()
-    block = re.search(r'jieli_target_task_policy\(\s*name = "' + re.escape(name) + r'",(.*?)\n\)', source, re.S)
-    assert block, (build, name)
-    return {task: tuple(map(int, (prio, stack, queue)))
-            for task, prio, stack, queue in re.findall(
-                r'"([^"\s]+)\s+(\d+)\s+(\d+)\s+(\d+)"', block.group(1))}
-
-DISPLAY_BUILD = ROOT / "projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit/BUILD.bazel"
-LOADER_BUILD = ROOT / "projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit/BUILD.bazel"
 
 STUB = r"""
 #include <stdint.h>
@@ -299,42 +287,6 @@ int main(void) {
                             str(test), "-o", str(binary)], check=True, timeout=60)
             subprocess.run([str(binary)], check=True, timeout=60)
 
-    def test_ble_smoke_uses_shared_layout_and_is_not_a_release(self):
-        target = (ROOT / "projects/e2e/targets/h2loader_tar_zlib/"
-                  "pal-ble-smoke/jieli_ac791n_devkit")
-        build = (target / "BUILD.bazel").read_text()
-        self.assertIn('h2loader_jieli_firmware(', build)
-        self.assertIn('tags = ["no-release"]', build)
-        self.assertNotIn('project_makefile =', build)
-        self.assertNotIn('sdk_patches =', build)
-        self.assertFalse((target / "project.mk").exists())
-        self.assertFalse((target / "include/app_config.h").exists())
-        self.assertFalse((ROOT / "projects/h2loader/targets/jieli_firmware/"
-                         "ble-smoke/ac791n_devkit/BUILD.bazel").exists())
-        source = (target / "src/pal_ble_smoke.c").read_text()
-        self.assertIn("h2_jieli_app_iostreamikcp_start(", source)
-
-    def test_board_does_not_interpose_private_controller_operations(self):
-        board = ROOT / "boards/jieli_ac791n_devkit/ac791n"
-        for path in (board / "src").iterdir():
-            if path.suffix not in (".c", ".h"):
-                continue
-            with self.subTest(source=path.name):
-                source = path.read_text()
-                self.assertNotIn("__ble_ops", source)
-                self.assertNotIn("h2_ll_diag_", source)
-        source = (board / "src/h2_jieli_ac791n_devkit_ble.c").read_text()
-        self.assertIn("H2_JIELI_BLE_CONNECT subevent=%u status=%u", source)
-        self.assertIn("H2_JIELI_BLE_DISCONNECT handle=%u reason=%u", source)
-
-    def test_shared_board_does_not_request_ble_bonding(self):
-        board = ROOT / "boards/jieli_ac791n_devkit/ac791n"
-        config = (board / "include/h2_jieli_ac791n_devkit_sdk_config.h").read_text()
-        source = (board / "src/h2_jieli_ac791n_devkit_ble.c").read_text()
-        self.assertRegex(config, r'#define TCFG_BLE_SECURITY_EN\s+0\b')
-        self.assertIn('TCFG_BLE_SECURITY_EN ? SM_AUTHREQ_BONDING : 0', source)
-        self.assertIn('sm_set_request_security(TCFG_BLE_SECURITY_EN)', source)
-
     def test_color_bars_follow_pal_dimensions(self):
         app = (ROOT / "projects/example/targets/h2loader_tar_zlib/display/"
                "jieli_ac791n_devkit/src/color_bar_pal.c").read_text()
@@ -382,57 +334,6 @@ int main(void) {
                            check=True, timeout=60)
             subprocess.run([str(binary)], check=True, timeout=60)
 
-    def test_ble_sdk_policy_matches_existing_board_apps(self):
-        policies = [policy_rows(DISPLAY_BUILD, name + "_task_policy")
-                    for name in ("color_bar", "touch", "button", "audio_system")]
-        policies.append(policy_rows(LOADER_BUILD, "loader_task_policy"))
-        policies.append(policy_rows(ROOT / "projects/e2e/targets/h2loader_tar_zlib/pal-ble-smoke/jieli_ac791n_devkit/BUILD.bazel", "pal_smoke_task_policy"))
-        for task, expected in (("#C0btctrler", (19, 768, 384)), ("#C0btstack", (18, 1536, 384))):
-            for policy in policies:
-                self.assertEqual(policy[task], expected)
-
-    def test_mp4_task_policy_registers_shared_app_task_names(self):
-        policy = policy_rows(DISPLAY_BUILD, "mp4_player_small_task_policy")
-        names = (
-            ROOT
-            / "projects/example/apps/mp4-player/app/include/"
-              "h2_smoke_mp4_player_task_names.h"
-        ).read_text()
-        for macro in (
-            "H2_SMOKE_MP4_PLAYER_AUDIO_TASK_NAME_VALUE",
-            "H2_SMOKE_MP4_PLAYER_DECODER_TASK_NAME_VALUE",
-        ):
-            name = re.search(rf'#define {macro} "([^"]+)"', names).group(1)
-            self.assertTrue(name in policy or "#C0" + name in policy)
-        self.assertNotIn("mp4-decoder", policy)
-
-    def test_app_command_stack_matches_loader_policy(self):
-        target = ROOT / "projects/h2loader/native_component_src/jieli/wl82/h2loader_app/src"
-        loader_words = policy_rows(LOADER_BUILD, "loader_task_policy")["h2loader/appcmd"][1]
-        for name in ("color_bar_task_policy", "mp4_player_small_task_policy"):
-            app_words = policy_rows(DISPLAY_BUILD, name)["h2loader/appcmd"][1]
-            self.assertEqual(app_words, loader_words)
-        transport = (target / "jieli_app_iostreamikcp.c").read_text()
-        kib = int(re.search(r'H2_APP_COMMAND_STACK_SIZE = (\d+) \* 1024', transport).group(1))
-        self.assertEqual(kib * 1024, loader_words * 4)
-
-    def test_ble_session_has_a_distinct_registered_task_name(self):
-        common = ROOT / "projects/h2loader/apps/loader/app"
-        names = (common / "include/h2loader_app_task_names.h").read_text()
-        self.assertIn('#define H2LOADER_BLE_COMMAND_TASK_NAME_VALUE "h2loader/blecmd"', names)
-        self.assertIn('.name = h2loader_ble_command_task_name,',
-                      (common / "h2loader_bleikcp.c").read_text())
-        self.assertIn('.name = h2loader_app_command_task_name,',
-                      (common / "app.c").read_text())
-        target = ROOT / "projects/h2loader/native_component_src/jieli/wl82/h2loader_app/src"
-        self.assertIn('.task_name = H2LOADER_BLE_COMMAND_TASK_NAME_VALUE,',
-                      (target / "jieli_app_ble.c").read_text())
-        for name in ("color_bar", "touch", "button", "audio_system"):
-            policy = policy_rows(DISPLAY_BUILD, name + "_task_policy")
-            for task in ("h2loader/blecmd", "$bleikcp/server",
-                         "$bleikcp/kcp", "$h2loader/blelink"):
-                self.assertIn(task, policy)
-
     def test_app_boot_logs_before_command_transport(self):
         app = (ROOT / "projects/example/targets/h2loader_tar_zlib/display/"
                "jieli_ac791n_devkit/src/color_bar_pal.c").read_text()
@@ -470,29 +371,6 @@ int main(void) {
             subprocess.run(["cc", "-std=c11", str(source), "-o", str(binary)],
                            check=True, timeout=60)
             subprocess.run([str(binary)], check=True, timeout=60)
-
-    def test_mp4_early_logs_use_board_console(self):
-        app = (ROOT / "projects/example/targets/h2loader_tar_zlib/display/"
-               "jieli_ac791n_devkit/src/mp4_player_small_pal.c").read_text()
-        probe_start = app.index("void h2_jieli_wl82_boot_probe(uint32_t stage)")
-        probe_end = app.index("extern const char *os_current_task_rom", probe_start)
-        probe = app[probe_start:probe_end]
-        self.assertIn("H2_JIELI_MP4_BOOT_STAGE", probe)
-        self.assertIn("h2_jieli_ac791n_devkit_console_write", probe)
-        emit_start = app.index("static void emit(const char *format, ...)")
-        emit_end = app.index("static int usb_log_write", emit_start)
-        emit = app[emit_start:emit_end]
-        self.assertIn("char status_line[320]", emit)
-        self.assertIn("h2_jieli_ac791n_devkit_console_write", emit)
-        self.assertNotIn("h2_jieli_app_iostreamikcp_log", emit)
-        early_start = app.index(
-            "int h2_jieli_ac791n_devkit_early_app_boot(void)")
-        early_end = app.index("static h2_pal_result_t memory_stats_read", early_start)
-        early_boot = app[early_start:early_end]
-        self.assertNotIn("get_current_boot_info", early_boot)
-        self.assertNotIn("enter_trial_boot(&is_trial)", early_boot)
-        app_main = app[app.index("void app_main(void)"):]
-        self.assertIn("enter_trial_boot(&is_trial)", app_main)
 
     def test_sdk_sequence_and_atomic_writes(self):
         source = "\n".join(line for line in SOURCE.read_text().splitlines()

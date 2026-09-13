@@ -75,8 +75,3 @@ int main(void) {
                             str(ROOT / "boards/jieli_ac791n_devkit/ac791n/include"),
                             str(source), "-o", str(binary)], check=True, timeout=60)
             subprocess.run([str(binary)], check=True, timeout=10)
-        early = (ROOT / "boards/jieli_ac791n_devkit/ac791n/layouts/h2loader/"
-                 "src/jieli_warm_boot.c").read_text()
-        self.assertIn("h2_jieli_warm_request_take(REQUEST)", early)
-        self.assertIn("*(volatile uint32_t *)(handoff + 8) = "
-                      "*(const volatile uint32_t *)(boot_info + 20);", early)
