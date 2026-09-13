@@ -1,3 +1,4 @@
+#include "h2_es8311_power.h"
 #include "h2_esp_es8311_es7210_audio_system.h"
 #include "h2_esp_es8311_es7210_gain.h"
 #include "h2/pal/hal/h2_pal_audio_task_names.h"
@@ -330,7 +331,10 @@ static esp_err_t es7210_select_inputs(h2_esp_es8311_es7210_audio_system_t *state
             state->config.es7210_ref_input_index)) {
         ESP_RETURN_ON_ERROR(update_reg(state->es7210, ES7210_REG_MIC1_GAIN + state->config.es7210_ref_input_index, 0x0f, 0x00), TAG, "es7210 ref gain");
     }
-    const uint8_t selected_count = (uint8_t)__builtin_popcount((unsigned)state->config.es7210_input_mask);
+    uint8_t selected_count = 0;
+    for (uint8_t mask = state->config.es7210_input_mask; mask != 0u; mask >>= 1u) {
+        selected_count = (uint8_t)(selected_count + (mask & 1u));
+    }
     ESP_RETURN_ON_ERROR(write_reg(state->es7210, ES7210_REG_SDP_INTERFACE2, selected_count >= 3u ? 0x02 : 0x00), TAG, "es7210 tdm");
     return ESP_OK;
 }
@@ -466,31 +470,23 @@ static int wait_task_exit(TaskHandle_t *task) {
     return task == NULL || *task == NULL;
 }
 
+static int suspend_write_reg(void *user, uint8_t reg, uint8_t value) {
+    return map_esp_err(write_reg(user, reg, value));
+}
+
 /* Espressif esp_codec_dev es8311_suspend / es7210_stop, release/v2.x.
  * Keep the complete ordered sequences, including repeated clock/reset writes.
  * See guides/zh/developing/components/esp_idf6_x.md for sources and lifecycle.
  */
 static int power_down_codecs(h2_esp_es8311_es7210_audio_system_t *state) {
-    static const uint8_t es8311_off[][2] = {
-        {0x32, 0x00}, {0x17, 0x00}, {0x0e, 0xff}, {0x12, 0x02},
-        {0x14, 0x00}, {0x0d, 0xfa}, {0x15, 0x00}, {0x02, 0x10},
-        {0x00, 0x00}, {0x00, 0x1f}, {0x01, 0x30}, {0x01, 0x00},
-        {0x45, 0x00}, {0x0d, 0xfc}, {0x02, 0x00},
-    };
     static const uint8_t es7210_off[][2] = {
         {0x47, 0xff}, {0x48, 0xff}, {0x49, 0xff}, {0x4a, 0xff},
         {0x4b, 0xff}, {0x4c, 0xff}, {0x40, 0xc0}, {0x01, 0x7f},
         {0x06, 0x07},
     };
     int first_rc = H2_AUDIO_OK;
-    state->codec_shutdown_pending = state->es8311 != NULL || state->es7210 != NULL;
     if (state->es8311 != NULL) {
-        for (size_t i = 0; i < sizeof(es8311_off) / sizeof(es8311_off[0]); ++i) {
-            int rc = map_esp_err(write_reg(state->es8311, es8311_off[i][0], es8311_off[i][1]));
-            if (first_rc == H2_AUDIO_OK) {
-                first_rc = rc;
-            }
-        }
+        first_rc = h2_es8311_suspend(state->es8311, suspend_write_reg);
     }
     if (state->es7210 != NULL) {
         for (size_t i = 0; i < sizeof(es7210_off) / sizeof(es7210_off[0]); ++i) {
@@ -520,7 +516,7 @@ static void deinit_codecs(h2_esp_es8311_es7210_audio_system_t *state) {
 }
 
 static int deinit_i2s_if_idle(h2_esp_es8311_es7210_audio_system_t *state) {
-    if (state->mic_started || state->mic_task != NULL) {
+    if (state->codec_shutdown_pending == 1 || state->mic_started || state->mic_task != NULL) {
         return H2_AUDIO_OK;
     }
     if (state->write_mutex != NULL) {
@@ -536,11 +532,8 @@ static int deinit_i2s_if_idle(h2_esp_es8311_es7210_audio_system_t *state) {
             return H2_AUDIO_OK;
         }
     }
-    int rc = state->pa_initialized ? set_pa(state, 0) : H2_AUDIO_OK;
-    if (rc != H2_AUDIO_OK) {
-        return rc;
-    }
-    rc = power_down_codecs(state);
+    int rc = state->pa_initialized && state->codec_shutdown_pending != 2
+        ? set_pa(state, 0) : H2_AUDIO_OK;
     if (rc != H2_AUDIO_OK) {
         return rc;
     }
@@ -558,9 +551,12 @@ static int deinit_i2s_if_idle(h2_esp_es8311_es7210_audio_system_t *state) {
         vSemaphoreDelete(state->write_mutex);
         state->write_mutex = NULL;
     }
-    deinit_codecs(state);
+    /* Keep I2C access until final deinit so explicit power-down also works
+     * after the last session has stopped. No suspend writes on ordinary stop. */
+    if (state->es8311 == NULL || state->es7210 == NULL) {
+        deinit_codecs(state);
+    }
     state->opened = 0;
-    state->codec_shutdown_pending = 0;
     return H2_AUDIO_OK;
 }
 
@@ -1036,6 +1032,18 @@ int h2_esp_es8311_es7210_audio_system_deinit(
         return H2_AUDIO_ERR_WOULD_BLOCK;
     }
 
+    if (system->codec_shutdown_pending == 1) {
+        rc = system->pa_initialized ? set_pa(system, 0) : H2_AUDIO_OK;
+        if (rc != H2_AUDIO_OK) {
+            return rc;
+        }
+        rc = power_down_codecs(system);
+        if (rc != H2_AUDIO_OK) {
+            return rc;
+        }
+        system->codec_shutdown_pending = 2;
+    }
+
     if (system->mic_queue != NULL) {
         h2_pal_queue_destroy(system->config.queue_api, system->mic_queue);
         system->mic_queue = NULL;
@@ -1049,6 +1057,7 @@ int h2_esp_es8311_es7210_audio_system_deinit(
     if (rc != H2_AUDIO_OK) {
         return rc;
     }
+    deinit_codecs(system);
     if (system->tx_chan != NULL || system->rx_chan != NULL ||
         system->write_mutex != NULL || system->es8311 != NULL ||
         system->es7210 != NULL) {
@@ -1063,6 +1072,12 @@ int h2_esp_es8311_es7210_audio_system_deinit(
 
 int h2_esp_es8311_es7210_audio_system_power_down(
     h2_esp_es8311_es7210_audio_system_t *system) {
+    if (system == NULL) {
+        return H2_AUDIO_ERR_INVALID_ARG;
+    }
+    if (system->config.queue_api != NULL) {
+        system->codec_shutdown_pending = 1;
+    }
     return h2_esp_es8311_es7210_audio_system_deinit(system);
 }
 

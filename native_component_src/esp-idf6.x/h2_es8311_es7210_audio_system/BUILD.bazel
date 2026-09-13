@@ -84,7 +84,7 @@ cc_library(
 
 cc_test(
     name = "power_down_test",
-    srcs = glob(["tests/sdk/**/*.h"]) + [
+    srcs = [
         "include/h2_esp_es8311_es7210_audio_system.h",
         "src/h2_esp_es8311_es7210_audio_system.c",
         "src/h2_esp_es8311_es7210_gain.c",
@@ -93,12 +93,20 @@ cc_test(
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    includes = ["tests/sdk", "include"],
+    includes = ["include"],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [
         ":platform_test_source",
+        ":test_sdk",
         "//libs/audio_mixer",
         "//libs/drivers/audio/es8311",
         "//libs/pal",
     ],
+)
+
+cc_library(
+    name = "test_sdk",
+    testonly = True,
+    hdrs = glob(["tests/sdk/**/*.h"]),
+    includes = ["tests/sdk"],
 )

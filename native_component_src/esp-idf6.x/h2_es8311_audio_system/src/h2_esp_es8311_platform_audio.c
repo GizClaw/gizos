@@ -1,4 +1,5 @@
 #include "h2_audio_mixer.h"
+#include "h2_es8311_power.h"
 #include "h2_esp_es8311_audio_system.h"
 #include "h2_esp_es8311_gain.h"
 #include "h2/pal/hal/h2_pal_audio_task_names.h"
@@ -743,6 +744,9 @@ static int es8311_audio_get_info(void *user, h2_audio_info_t *info) {
 
 static int es8311_audio_open(void *user) {
     h2_esp_es8311_audio_system_t *state = (h2_esp_es8311_audio_system_t *)user;
+    if (state->codec_shutdown_pending) {
+        return H2_AUDIO_ERR_INVALID_STATE;
+    }
     if (state->opened) {
         return H2_AUDIO_OK;
     }
@@ -970,6 +974,10 @@ static int es8311_audio_stop_speaker(void *user) {
     return first_rc;
 }
 
+static int suspend_write_reg(void *user, uint8_t reg, uint8_t value) {
+    return map_esp_err(es8311_write_reg(user, reg, value));
+}
+
 int h2_esp_es8311_audio_system_deinit(
     h2_esp_es8311_audio_system_t *system) {
     if (system == NULL) {
@@ -996,6 +1004,19 @@ int h2_esp_es8311_audio_system_deinit(
     }
     if (system->playback_task != NULL) {
         return H2_AUDIO_ERR_WOULD_BLOCK;
+    }
+
+    if (system->codec_shutdown_pending) {
+        rc = system->pa_initialized ? es8311_audio_set_pa(system, 0) : H2_AUDIO_OK;
+        if (rc != H2_AUDIO_OK) {
+            return rc;
+        }
+        if (system->codec != NULL) {
+            rc = h2_es8311_suspend(system, suspend_write_reg);
+            if (rc != H2_AUDIO_OK) {
+                return rc;
+            }
+        }
     }
 
     if (system->mic_queue != NULL) {
@@ -1035,6 +1056,17 @@ int h2_esp_es8311_audio_system_deinit(
     }
     memset(system, 0, sizeof(*system));
     return H2_AUDIO_OK;
+}
+
+int h2_esp_es8311_audio_system_power_down(
+    h2_esp_es8311_audio_system_t *system) {
+    if (system == NULL) {
+        return H2_AUDIO_ERR_INVALID_ARG;
+    }
+    if (system->config.queue_api != NULL) {
+        system->codec_shutdown_pending = 1;
+    }
+    return h2_esp_es8311_audio_system_deinit(system);
 }
 
 static int es8311_audio_create_track(

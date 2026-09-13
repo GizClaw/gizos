@@ -40,6 +40,7 @@ typedef struct { uint64_t pin_bit_mask; int mode, pull_up_en, pull_down_en, intr
 #define GPIO_PULLUP_DISABLE 0
 #define GPIO_PULLDOWN_DISABLE 0
 #define GPIO_INTR_DISABLE 0
+int gpio_output_disable(gpio_num_t);
 int gpio_config(const gpio_config_t *);
 int gpio_set_level(gpio_num_t, unsigned);
 typedef void *i2c_master_bus_handle_t;
@@ -56,11 +57,15 @@ int i2c_del_master_bus(i2c_master_bus_handle_t);
 int i2c_master_transmit(i2c_master_dev_handle_t, const uint8_t *, size_t, int);
 int i2c_master_transmit_receive(i2c_master_dev_handle_t, const uint8_t *, size_t, uint8_t *, size_t, int);
 typedef void *i2s_chan_handle_t;
-typedef struct { bool auto_clear; } i2s_chan_config_t;
-typedef struct { struct { unsigned mclk_multiple; } clk_cfg; int slot_cfg; struct { int mclk, bclk, ws, dout, din; struct { int unused; } invert_flags; } gpio_cfg; } i2s_std_config_t;
-#define I2S_CHANNEL_DEFAULT_CONFIG(port, role) ((i2s_chan_config_t){0})
+typedef struct { bool auto_clear; unsigned dma_desc_num, dma_frame_num; } i2s_chan_config_t;
+typedef struct { struct { unsigned mclk_multiple; } clk_cfg; int slot_cfg; struct { int mclk, bclk, ws, dout, din; struct { bool mclk_inv, bclk_inv, ws_inv; } invert_flags; } gpio_cfg; } i2s_std_config_t;
+#define I2S_ROLE_MASTER 0
+#define I2S_DATA_BIT_WIDTH_16BIT 16
+#define I2S_DATA_BIT_WIDTH_32BIT 32
+#define I2S_SLOT_MODE_STEREO 2
+#define I2S_CHANNEL_DEFAULT_CONFIG(port, role) ((i2s_chan_config_t){.auto_clear = ((port) >= 0 && (role) == I2S_ROLE_MASTER)})
 #define I2S_STD_CLK_DEFAULT_CONFIG(rate) {0}
-#define I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(bits, mode) 0
+#define I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(bits, mode) ((bits) + (mode))
 int i2s_new_channel(const i2s_chan_config_t *, i2s_chan_handle_t *, i2s_chan_handle_t *);
 int i2s_channel_init_std_mode(i2s_chan_handle_t, const i2s_std_config_t *);
 int i2s_channel_enable(i2s_chan_handle_t);
