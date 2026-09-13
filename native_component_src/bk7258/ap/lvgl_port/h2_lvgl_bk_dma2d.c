@@ -2,8 +2,10 @@
 #include <stdio.h>
 #include <stddef.h>
 #include <os/os.h>
+#include <os/mem.h>
 #include <driver/dma2d.h>
 #include <armstar.h>
+#include <soc/soc.h>
 #include "h2_lvgl_bk_dma2d.h"
 #include "h2_lvgl_bk_power.h"
 
@@ -30,6 +32,64 @@ static void transfer_failed(void *arg) {
   (void)arg;
   transfer_error = 1;
   rtos_set_semaphore(&completion);
+}
+
+/* Temporary bring-up probe: compare DMA-visible SRAM and PSRAM using
+ * nonzero patterns, independently of LVGL and the video producer. */
+static int probe_copy_memory(void) {
+  uint16_t *regions[2] = {os_malloc(1024), psram_malloc(1024)};
+  if (!regions[0] || !regions[1]) {
+    os_free(regions[0]);
+    os_free(regions[1]);
+    printf("H2_DMA2D probe allocation_failed\n");
+    return 0;
+  }
+  for (unsigned mode = 0; mode < 2; ++mode) {
+    for (unsigned from = 0; from < 2; ++from) {
+      for (unsigned to = 0; to < 2; ++to) {
+        uint16_t *input = regions[from] + 16;
+        uint16_t *output = regions[to] + 272;
+        for (unsigned i = 0; i < 128; ++i) {
+          input[i] = (uint16_t)(0x1234u + i * 71u);
+          output[i] = (uint16_t)~input[i];
+        }
+        sync_cache(input, 256);
+        sync_cache(output, 256);
+        transfer_error = 0;
+        dma2d_memcpy_pfc_t copy = {0};
+        copy.input_addr = input;
+        copy.output_addr = output;
+        copy.mode = mode ? DMA2D_M2M_PFC : DMA2D_M2M;
+        copy.input_alpha = 0xff;
+        copy.input_color_mode = DMA2D_INPUT_RGB565;
+        copy.output_color_mode = DMA2D_OUTPUT_RGB565;
+        copy.src_pixel_byte = TWO_BYTES;
+        copy.dst_pixel_byte = TWO_BYTES;
+        copy.src_frame_width = copy.dst_frame_width = 16;
+        copy.src_frame_height = copy.dst_frame_height = 8;
+        copy.dma2d_width = 16;
+        copy.dma2d_height = 8;
+        bk_dma2d_memcpy_or_pixel_convert(&copy);
+        bk_dma2d_start_transfer();
+        int rc = rtos_get_semaphore(&completion, 100);
+        if (rc != BK_OK || transfer_error || bk_dma2d_is_transfer_busy()) {
+          bk_dma2d_stop_transfer();
+          printf("H2_DMA2D probe stopped rc=%d error=%d\n", rc, transfer_error);
+          /* Retain these small buffers if bus quiescence is unproven. */
+          return 0;
+        }
+        sync_cache(output, 256);
+        unsigned matched = 0;
+        while (matched < 128 && output[matched] == input[matched]) ++matched;
+        printf("H2_DMA2D probe mode=%u from=%u to=%u src=%p dst=%p matched=%u first=%04x expected=%04x\n",
+               mode, from, to, (void *)input, (void *)output, matched,
+               (unsigned)output[0], (unsigned)input[0]);
+      }
+    }
+  }
+  os_free(regions[0]);
+  os_free(regions[1]);
+  return 1;
 }
 
 int h2_bk_dma2d_rgb565(void *dst, const void *src, int32_t width,
@@ -75,6 +135,10 @@ int h2_bk_dma2d_rgb565(void *dst, const void *src, int32_t width,
     bk_dma2d_register_int_callback_isr(DMA2D_TRANS_ERROR_ISR, transfer_failed, NULL);
     bk_dma2d_register_int_callback_isr(DMA2D_TRANS_COMPLETE_ISR, transfer_done, NULL);
     bk_dma2d_int_enable(DMA2D_CFG_ERROR | DMA2D_TRANS_ERROR | DMA2D_TRANS_COMPLETE, 1);
+    if (!probe_copy_memory()) {
+      disabled = 1;
+      return 0;
+    }
   }
   transfer_error = 0;
   const int trace_copy = src && !(verified_operations & 2u);
@@ -85,15 +149,29 @@ int h2_bk_dma2d_rgb565(void *dst, const void *src, int32_t width,
            (unsigned long)dst_stride, (unsigned)first_source);
   }
   const size_t dst_bytes = (size_t)(height - 1) * dst_stride + width * 2u;
+  const unsigned operation_bit = src ? 2u : 1u;
+  /* A zero-filled target cannot prove that a black fill wrote anything.
+   * Seed only the first checked operation with the opposite pixel values.
+   * A failed check returns to LVGL's software path, which redraws the area. */
+  if ((verified_operations & operation_bit) == 0) {
+    for (int32_t y = 0; y < height; ++y) {
+      uint16_t *target = (uint16_t *)((uint8_t *)dst + y * dst_stride);
+      const uint16_t *input = src ?
+          (const uint16_t *)((const uint8_t *)src + y * src_stride) : NULL;
+      for (int32_t x = 0; x < width; ++x) {
+        target[x] = (uint16_t)~(src ? input[x] : color);
+      }
+    }
+  }
   sync_cache(dst, (long)dst_bytes);
   if (src != NULL) {
     sync_cache((void *)src, (long)((size_t)(height - 1) * src_stride + width * 2u));
     dma2d_memcpy_pfc_t copy = {0};
     copy.input_addr = (void *)src;
     copy.output_addr = dst;
-    /* BK's raw M2M mode forces 32-bit output in dma2d_hal_init(). Use
-     * PFC even for identical formats so RGB565 width and stride stay 16-bit. */
-    copy.mode = DMA2D_M2M_PFC;
+    /* Match the SDK LVGL RGB565 copy path. The first transfer is checked
+     * against the source before this path is allowed to remain enabled. */
+    copy.mode = DMA2D_M2M;
     copy.input_alpha = 0xff;
     copy.input_color_mode = DMA2D_INPUT_RGB565;
     copy.output_color_mode = DMA2D_OUTPUT_RGB565;
@@ -106,6 +184,17 @@ int h2_bk_dma2d_rgb565(void *dst, const void *src, int32_t width,
     copy.dma2d_width = width;
     copy.dma2d_height = height;
     bk_dma2d_memcpy_or_pixel_convert(&copy);
+    if (trace_copy) {
+      /* BK7258 register offsets from the SDK DMA2D register map. */
+      printf("H2_DMA2D registers control=%08lx src=%08lx dst=%08lx input=%08lx output=%08lx size=%08lx seeded=%04x\n",
+             (unsigned long)REG_READ(SOC_DMA2D_REG_BASE + 0x04u * 4u),
+             (unsigned long)REG_READ(SOC_DMA2D_REG_BASE + 0x07u * 4u),
+             (unsigned long)REG_READ(SOC_DMA2D_REG_BASE + 0x13u * 4u),
+             (unsigned long)REG_READ(SOC_DMA2D_REG_BASE + 0x0bu * 4u),
+             (unsigned long)REG_READ(SOC_DMA2D_REG_BASE + 0x11u * 4u),
+             (unsigned long)REG_READ(SOC_DMA2D_REG_BASE + 0x15u * 4u),
+             (unsigned)*(const uint16_t *)dst);
+    }
   } else {
     dma2d_fill_t fill = {0};
     fill.frameaddr = dst;
@@ -135,7 +224,6 @@ int h2_bk_dma2d_rgb565(void *dst, const void *src, int32_t width,
            (unsigned long)bk_dma2d_int_status_get(), (unsigned)first_source,
            (unsigned)*(const uint16_t *)src, (unsigned)*(const uint16_t *)dst);
   }
-  const unsigned operation_bit = src ? 2u : 1u;
   if ((verified_operations & operation_bit) == 0) {
     for (int32_t y = 0; y < height; ++y) {
       const uint16_t *actual = (const uint16_t *)((const uint8_t *)dst + y * dst_stride);
