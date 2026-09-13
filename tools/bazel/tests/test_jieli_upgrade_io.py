@@ -118,8 +118,16 @@ int main(void) {
   memset(data,0x5a,32);
   for (unsigned prefix=1;prefix<32;prefix++) {
     memset(flash_header,0xff,32);programmed_bytes=prefix;
+    base=H2_JIELI_BANK_1_SFC_BASE;header_gate=GATE_OFF;
+    assert(h2_jieli_upgrade_header_arm()==0);
+    assert(dev_upgrade_write(data,HEADER_ADDR,32)==32);
+    base=H2_JIELI_BANK_2_SFC_BASE;
     int before=physical_writes;
     assert(h2_jieli_upgrade_header_publish(data)==-1);
+    assert(header_gate==GATE_FAILED);
+    assert(dev_upgrade_write(data,HEADER_ADDR,32)==0);
+    assert(dev_upgrade_origin_read(copy,HEADER_ADDR,32)==0);
+    assert(h2_jieli_upgrade_header_copy(copy)==-1);
     assert(physical_writes==before+1);
     assert(memcmp(flash_header,data,prefix)==0);
     for(unsigned i=prefix;i<32;i++) assert(flash_header[i]==0xff);

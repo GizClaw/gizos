@@ -298,8 +298,10 @@ static void release_presentation_buffer(
     player_pipeline_t *pipeline,
     size_t index) {
     player_presentation_buffer_t *buffer = &pipeline->buffers[index];
-    if (h2_pal_mutex_lock(
-            pipeline->runtime->sync, pipeline->buffer_mutex) != H2_PAL_OK) {
+    const h2_pal_result_t lock_result = h2_pal_mutex_lock(
+        pipeline->runtime->sync, pipeline->buffer_mutex);
+    if (lock_result != H2_PAL_OK) {
+        pipeline_fail(pipeline, "buffer-release-lock", lock_result);
         return;
     }
     const int remaining = --buffer->consumers;

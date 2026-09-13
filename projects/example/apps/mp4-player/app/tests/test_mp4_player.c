@@ -13,6 +13,9 @@
 typedef struct test_state test_state_t;
 
 static uint16_t s_audio_block_samples = 256u;
+static int s_inject_release_lock_failure;
+static _Thread_local int s_fail_next_lock;
+static int s_release_lock_error_logged;
 
 struct h2_pal_mutex {
     pthread_mutex_t native;
@@ -37,6 +40,10 @@ static h2_pal_result_t destroy_mutex(void *user, h2_pal_mutex_t *mutex) {
 
 static h2_pal_result_t lock_mutex(void *user, h2_pal_mutex_t *mutex) {
     (void)user;
+    if (s_fail_next_lock) {
+        s_fail_next_lock = 0;
+        return H2_PAL_ERR_IO;
+    }
     assert(pthread_mutex_lock(&mutex->native) == 0);
     return H2_PAL_OK;
 }
@@ -740,6 +747,7 @@ static int display_draw(
 
 static int display_present(void *user) {
     ++((test_state_t *)user)->present_calls;
+    if (s_inject_release_lock_failure) s_fail_next_lock = 1;
     return H2_PAL_OK;
 }
 
@@ -864,6 +872,9 @@ static int log_write(
     test_state_t *state = user;
     /* Each marker has one producer. Do not write the other producers'
      * counters even with += 0: that is still a racing read-modify-write. */
+    if (strstr(message, "buffer-release-lock") != NULL) {
+        s_release_lock_error_logged = 1;
+    }
     if (strcmp(message, "H2_MP4_PLAYER_AUDIO_READY") == 0) {
         ++state->audio_ready_logs;
     } else if (strcmp(message, "H2_MP4_PLAYER_READY") == 0) {
@@ -1163,6 +1174,13 @@ int main(int argc, char **argv) {
     assert(h2_smoke_mp4_player_run(&runtime, &borrowed_config) == H2_PAL_OK);
     assert(state.display_open_calls == opens_before_borrow);
     assert(state.display_close_calls == closes_before_borrow);
+    assert(state.allocations == 0u);
+    /* The presentation thread's next mutex operation releases its buffer.
+     * An injected failure must stop and clean up instead of stranding it. */
+    s_inject_release_lock_failure = 1;
+    assert(h2_smoke_mp4_player_run(&runtime, &video_only_config) == H2_PAL_ERR_IO);
+    s_inject_release_lock_failure = 0;
+    assert(s_release_lock_error_logged);
     assert(state.allocations == 0u);
     return 0;
 }

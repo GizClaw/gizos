@@ -22,6 +22,8 @@ class SdDirectoryTest(unittest.TestCase):
 #define H2_PAL_OK 0
 #define H2_PAL_ERR_INVALID_ARG -1
 #define H2_PAL_ERR_NOT_FOUND -2
+#define H2_PAL_ERR_IO -4
+#define F_ATTR_DIR 16
 typedef struct { uint64_t size; int is_dir; } h2_pal_fs_stat_t;
 typedef struct { int unused; } FILE;
 static FILE native;
@@ -35,7 +37,10 @@ static int fdir_exist(const char *path) { (void)path; return directory; }
 static long long flen_dir(const char *path) { (void)path; return directory_size; }
 static FILE *fopen_by_utf8(const char *path, const char *mode) {
     (void)path; assert(strcmp(mode, "r") == 0); ++opens;
-    return present ? &native : NULL;
+    return (present || directory) ? &native : NULL;
+}
+static int fget_attr(FILE *file, int *attr) {
+    assert(file == &native); *attr = directory ? F_ATTR_DIR : 0; return 0;
 }
 static uint32_t flen(FILE *file) { assert(file == &native); return 123; }
 static int fclose(FILE *file) { assert(file == &native); ++closes; return 0; }
@@ -45,15 +50,15 @@ int main(void) {
     h2_pal_fs_stat_t st;
     directory = 1; directory_size = -1;
     assert(fs_stat(NULL, "/dl", &st) == 0 && st.is_dir && st.size == 0);
-    assert(fs_stat(NULL, "/data/sub", &st) == 0 && st.is_dir && opens == 0);
+    assert(fs_stat(NULL, "/data/sub", &st) == 0 && st.is_dir && opens == 2);
     directory_size = 456;
     assert(fs_stat(NULL, "/data/sub", &st) == 0 && st.size == 456);
     directory = 0; present = 1;
     assert(fs_stat(NULL, "/data/file", &st) == 0 && !st.is_dir && st.size == 123);
-    assert(opens == 1 && closes == 1);
+    assert(opens == 4 && closes == 4);
     present = 0;
     assert(fs_stat(NULL, "/data/missing", &st) == H2_PAL_ERR_NOT_FOUND);
-    assert(closes == 1);
+    assert(closes == 4);
     assert(fs_stat(NULL, NULL, &st) == H2_PAL_ERR_INVALID_ARG);
     assert(fs_stat(NULL, "/data", NULL) == H2_PAL_ERR_INVALID_ARG);
     return 0;
@@ -81,16 +86,17 @@ int main(void) {
 #define H2_PAL_OK 0
 #define H2_PAL_ERR_INVALID_ARG -1
 #define H2_PAL_ERR_IO -2
+#define H2_PAL_ERR_NOT_FOUND -8
 static int exists, create_rc, concurrent_create, creates;
-static int fdir_exist(const char *path) {
+static int directory_status(const char *path) {
     assert(strcmp(path, H2_JIELI_SD_ROOT "dl") == 0);
-    return exists;
+    return exists ? H2_PAL_OK : H2_PAL_ERR_NOT_FOUND;
 }
 static int fmk_dir(const char *root, char *folder, unsigned mode) {
     assert(strcmp(root, H2_JIELI_SD_ROOT) == 0);
     assert(strcmp(folder, "/dl") == 0 && mode == 0);
     ++creates;
-    if (concurrent_create) exists = 1;
+    if (create_rc == 0 || concurrent_create) exists = 1;
     return create_rc;
 }
 '''
@@ -100,7 +106,7 @@ int main(void) {
     assert(ensure_directory(H2_JIELI_SD_ROOT "dl") == 0 && creates == 0);
     exists = 0; create_rc = 0;
     assert(ensure_directory(H2_JIELI_SD_ROOT "dl") == 0 && creates == 1);
-    create_rc = -1;
+    exists = 0; create_rc = -1;
     assert(ensure_directory(H2_JIELI_SD_ROOT "dl") == H2_PAL_ERR_IO);
     concurrent_create = 1;
     assert(ensure_directory(H2_JIELI_SD_ROOT "dl") == 0);

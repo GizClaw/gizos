@@ -69,9 +69,9 @@ int h2_jieli_upgrade_header_publish(const u8 header[H2_JIELI_UPGRADE_HEADER_SIZE
   if (header == NULL || erased(header) ||
       boot_info_get_sfc_base_addr() != H2_JIELI_BANK_2_SFC_BASE ||
       norflash_origin_read(physical, HEADER_ADDR, sizeof(physical)) !=
-          (int)sizeof(physical)) return -1;
+          (int)sizeof(physical)) goto failed;
   if (memcmp(physical, header, sizeof(physical)) == 0) return 0;
-  if (!erased(physical)) return -1;
+  if (!erased(physical)) goto failed;
   h2_jieli_upgrade_publish_observer(header);
   /* SDK callers ignore these return values; physical readback, not an
    * undocumented protection-helper convention, determines commit success. */
@@ -80,8 +80,13 @@ int h2_jieli_upgrade_header_publish(const u8 header[H2_JIELI_UPGRADE_HEADER_SIZE
   (void)norflash_protect_resume();
   if (written != (int)sizeof(physical) ||
       norflash_origin_read(physical, HEADER_ADDR, sizeof(physical)) !=
-          (int)sizeof(physical)) return -1;
-  return memcmp(physical, header, sizeof(physical)) == 0 ? 0 : -1;
+          (int)sizeof(physical)) goto failed;
+  if (memcmp(physical, header, sizeof(physical)) == 0) return 0;
+failed:
+  /* A delayed SDK retry must not acknowledge a captured header after its
+   * physical publication failed. Only a new boot may reset this latch. */
+  __atomic_store_n(&header_gate, GATE_FAILED, __ATOMIC_RELEASE);
+  return -1;
 }
 
 void switch_upgrade_dev(u8 dev_type) {
