@@ -113,3 +113,174 @@ PAL: it never succeeded on hardware and special-cased the E2E fixture path.
 it through the optional weak `h2_jieli_sd_fs_trace_mkdir` observer without
 changing the return value. Filesystem case 13 remains a known failure until
 the nested-directory `FR_NO_PATH` cause is understood.
+
+
+## 2026-09-14 — long-directory parser and duplicate encoding
+
+Starting revision: `0730f9089533515f8f799a925dc0e91bbb5b0eef`.
+The port was re-listed and no stale reader held `/dev/cu.usbserial-20131240`.
+UART 460800 status identified `d879349abc9f`. Every package below was an App
+installed into P2 using UART `send` and `reboot upgrade --monitor`. P1 was not
+written or erased; its checksum remained
+`7130cfe2386c86a7dcf82ccd15854f14b64fb525be14a984cfdaa5dd19d64dfa`.
+No USB downloader, physical recovery, BLE, or Loader self-update was used.
+
+### Parent-directory hypothesis rejected on the board
+
+Package SHA-256:
+`4ce210ad86ca721899eaa7493567f53c1f3cf2ac75304f2fc85d7292d12cc056`.
+With the original board PAL, the diagnostic target reported:
+
+```text
+H2_PAL_FS parent path=/dl stat=0 is_dir=1
+H2_PAL_FS parent path=/dl mkdir=0
+H2_PAL_FS parent path=/data stat=0 is_dir=1
+H2_PAL_FS parent path=/data mkdir=0
+H2_PAL_FS mkdir path=storage/sd0/C/data/pal-host-e2e native=132 lookup=-8
+H2_PAL_E2E suite=64 case=13 result=-4
+```
+
+Thus `/data` existed and was a directory. Creating it again did not fix the
+long child name. This run captured only Core suite entry afterwards; it has
+no complete Core or Wi-Fi result. UART status and return to Loader succeeded.
+
+A controlled short/long-name comparison used package
+`b9f17d9325497401977c43c7f91a6748e341310cd0a7771003c43d06b5731fbb`:
+
+```text
+H2_PAL_FS probe path=/dl/h2md0001 native=0 stat=0 is_dir=1
+H2_PAL_FS probe path=/data/h2md0001 native=0 stat=0 is_dir=1
+H2_PAL_FS probe path=/DATA/H2MD0002 native=0 stat=0 is_dir=1
+H2_PAL_FS probe path=/data/h2md0001/child native=0 stat=0 is_dir=1
+H2_PAL_FS probe path=/data/long-directory-name native=132 stat=-8 is_dir=0
+H2_PAL_E2E suite=64 case=13 result=-4
+H2_PAL_E2E result=-4 passed=9 failed=1
+```
+
+This fresh run proves short nested creation and component-by-component descent
+work on this card. It supersedes neither the capture nor the unexplained
+native-132 short-name observation from the earlier checkpoint. In this run,
+Core cases 1, 2, 3, 4, 5, 6, 10, 11 and offline Wi-Fi case 27 each reported 0.
+
+### SDK cause and directory creation route
+
+The pinned SDK is `eb04f1966cf2b7cbb72cbb54db906bcb293b5a4a`.
+Inspection of `fs.a` LLVM IR confirms:
+
+- `fmk_dir` passes the folder to ioctl 15 and then `f_mkdir(..., fp=NULL)`.
+  `create_name` stops at eight basename characters. If the resulting lookup
+  fails with unconsumed characters, `follow_path` returns 132 (`FR_NO_PATH`).
+  This explains the misleading error for the long *leaf*, despite a valid
+  parent.
+- SDK `fopen` already calls `long_file_name_encode` for JLFAT unless the first
+  volume-relative component starts with the encoded-name marker. Calling
+  `fopen_by_utf8` first therefore encodes a long child twice when the first
+  component is short `/data` or `/dl`; embedded UTF-16 NULs truncate the second
+  pass. Changing mkdir alone would leave open/stat/remove using the wrong name.
+- The `fopen` long-name parser treats a trailing slash as a directory component.
+  The SDK header documents automatic file/directory creation through `fopen`.
+
+Package `c7614511bd2fb026852fd2391bbdb8a621362e0cd920759e21530cc7adab340c`
+called raw SDK `fopen("storage/sd0/C/data/h2-raw-directory/", "w+")` for
+openprobe index 0. The returned handle had `F_ATTR_DIR` (16), while the old
+PAL lookup still failed:
+
+```text
+H2_PAL_FS openprobe index=0 opened=1 attr_rc=0 attr=16
+H2_PAL_FS openprobe index=0 close_or_delete=0
+H2_PAL_FS openprobe path=/data/h2-raw-directory stat=-8 is_dir=0
+H2_PAL_E2E suite=64 case=13 result=-4
+```
+
+The alternative child-file and short-directory/rename experiments in that
+package were diagnostic only and are absent from the final target and PAL.
+This run did not capture a complete Core/Wi-Fi ledger. One status attempt
+returned host code -2 while its monitor was still alive; after the monitor
+exited, an exclusive status succeeded, followed by UART return to Loader.
+This is not evidence that the board stopped responding to UART.
+
+### General PAL correction and component proof
+
+All mapped opens now use SDK `fopen` so paths are encoded once. Directory
+creation walks each component in order, checks existing FAT attributes, and
+opens missing components with a trailing slash. It checks both the created
+handle and the requested entry, closes handles, and propagates errors. Existing
+directories succeed; regular files return INVALID_STATE; an uncreated entry
+returns IO. No fixture names, temporary child files, or rename workaround are
+in the board PAL. The existing weak observer now records the create-handle
+attribute/close result in `native`, rather than a `fmk_dir` return code.
+
+Package `92e243649a7a0c5d35d1778b797585df3f8fb4658157a93624d9a00e6e46ba6f`
+proved creation from a missing parent and idempotence:
+
+```text
+H2_PAL_FS mkdir path=storage/sd0/C/data/h2-dir-regression native=0 lookup=0
+H2_PAL_FS mkdir path=storage/sd0/C/data/h2-dir-regression/long-parent native=0 lookup=0
+H2_PAL_FS mkdir path=storage/sd0/C/data/h2-dir-regression/long-parent/child native=0 lookup=0
+H2_PAL_FS nested before=-8 mkdir=0 stat=0 is_dir=1 again=0
+H2_PAL_FS cleanup path=/data/h2-dir-regression/long-parent/child result=0
+H2_PAL_FS cleanup path=/data/h2-dir-regression/long-parent result=0
+```
+
+No completion line arrived for removing the outer diagnostic directory, so
+this package did not reach the public suites. UART status and return to Loader
+succeeded. The cause of the missing cleanup progress remains unverified; the
+extra creation/cleanup probe was removed from the final target. Its component
+success must not be described as a complete Filesystem case result. The final
+target adds only read-only `/dl` and `/data` attribute logs before public suites.
+Exploratory directory entries may remain on the card; no broad cleanup was run.
+
+### Public Filesystem run and validation
+
+Final package SHA-256:
+`69e6ee24388225491f4e0d2b7486b9072393792d69dbe1aaa482cc43c39a3132`.
+UART send reported 881050 bytes and this exact digest.
+
+Host command:
+`bazel test --config=macos_arm64 //tools/bazel:jieli_sd_directory_test`
+passed, freshly executing the target (1.7 seconds). The C fixtures cover
+ordered missing-parent creation, existing directories/files, component failure
+short-circuiting, attribute and close errors, missing post-create entries,
+concurrent creation, and the directory-buffer boundary.
+
+Native package build passed in OrbStack `embed-zig-noble-amd64`, using
+`--output_user_root=/home/idy/.cache/bazel-ac791n/root`, `--config=ac791n`, and
+`--symlink_prefix=bazel-amd64-` after sourcing the specified devenv and unsetting
+the four ESP-IDF variables. Final build elapsed time: 35.862 seconds.
+
+Local captures and packages are under `tmp/jieli/2026-09-14-*`; the phase names
+are `parent`, `components`, `lfn`, `fixed` (component probe), and `public`.
+
+The final public run captured every case and the aggregate:
+
+```text
+H2_PAL_FS mkdir path=storage/sd0/C/data/pal-host-e2e native=0 lookup=0
+H2_PAL_FS op=mkdir result=-7
+H2_PAL_E2E suite=64 case=13 result=0
+H2_PAL_E2E suite=1 case=1 result=0
+H2_PAL_E2E suite=1 case=2 result=0
+H2_PAL_E2E suite=1 case=3 result=0
+H2_PAL_E2E suite=1 case=4 result=0
+H2_PAL_E2E suite=1 case=5 result=0
+H2_PAL_E2E suite=1 case=6 result=0
+H2_PAL_E2E suite=1 case=10 result=0
+H2_PAL_E2E suite=1 case=11 result=0
+H2_PAL_E2E suite=32 case=27 result=0
+H2_PAL_E2E result=0 passed=10 failed=0
+```
+
+The mkdir -7 line is the public case's intentional attempt to mkdir the
+regular `value` file. The case also passed directory/file stat, exact file
+size, write/read contents, EOF, seek, file and directory removal, and path
+traversal rejection. The trace includes both successful remove returns.
+The monitor subsequently exited with host code -7 after printing the passing
+ledger; an exclusive UART status then succeeded. This monitor termination
+and the earlier incomplete runs are not explained by the passing suite.
+
+Readback status identified the final package in P2 with image SHA-256
+`6be8c307f7c1a2ec03d3cecf58ea53907f4acc7b102bb40d5ed6cbe4a8f37d2e`
+and size 892829 bytes. UART `reboot loader` succeeded. Final status confirmed
+P1 active, valid, and carrying the unchanged checksum above, with
+`last_result=0`; P2 and Stage retain the final App package. The App remains
+unconfirmed and UART is released. This establishes these ten public cases
+in this run, not self-update, BLE, full PAL, or long-duration acceptance.

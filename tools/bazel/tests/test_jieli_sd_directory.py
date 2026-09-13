@@ -35,7 +35,7 @@ static int translate_path(const char *path, char *mapped) {
 }
 static int fdir_exist(const char *path) { (void)path; return directory; }
 static long long flen_dir(const char *path) { (void)path; return directory_size; }
-static FILE *fopen_by_utf8(const char *path, const char *mode) {
+static FILE *fopen(const char *path, const char *mode) {
     (void)path; assert(strcmp(mode, "r") == 0); ++opens;
     return (present || directory) ? &native : NULL;
 }
@@ -73,9 +73,9 @@ int main(void) {
                            check=True, timeout=30)
             subprocess.run([str(binary)], check=True, timeout=30)
 
-    def test_existing_empty_directory_and_create_failures(self):
+    def test_directory_components_and_create_failures(self):
         source = SOURCE.read_text()
-        begin = source.index("static int ensure_directory(")
+        begin = source.index("static int directory_status(")
         end = source.index("static int fs_mkdir(", begin)
         fixture = r'''
 #include <assert.h>
@@ -85,42 +85,107 @@ int main(void) {
 #define H2_JIELI_SD_ROOT "storage/sd0/C/"
 #define H2_PAL_OK 0
 #define H2_PAL_ERR_INVALID_ARG -1
-#define H2_PAL_ERR_IO -2
+#define H2_PAL_ERR_IO -4
+#define H2_PAL_ERR_INVALID_STATE -7
 #define H2_PAL_ERR_NOT_FOUND -8
-static int exists, create_rc, concurrent_create, creates, traces;
-static int traced_native, traced_lookup;
-static void trace_mkdir(const char *path, int native_result, int lookup_result) {
-    assert(strcmp(path, H2_JIELI_SD_ROOT "dl") == 0);
-    ++traces; traced_native = native_result; traced_lookup = lookup_result;
+#define F_ATTR_DIR 16
+typedef struct { char path[194]; int attributes; } FILE;
+static FILE entries[16];
+static int count, creates, closes, traces;
+static int fail_create, fail_attr, fail_close, wrong_type, disappear, concurrent;
+static char created_paths[16][194];
+static FILE *add(const char *path, int attributes) {
+    assert(count < 16);
+    FILE *file = &entries[count++];
+    strcpy(file->path, path); file->attributes = attributes;
+    return file;
+}
+static FILE *find(const char *path) {
+    for (int i = 0; i < count; ++i)
+        if (strcmp(entries[i].path, path) == 0) return &entries[i];
+    return NULL;
+}
+static FILE *fopen(const char *path, const char *mode) {
+    if (strcmp(mode, "r") == 0) return find(path);
+    assert(strcmp(mode, "w+") == 0);
+    size_t length = strlen(path);
+    assert(length > 0 && path[length - 1] == '/');
+    char entry[194]; strcpy(entry, path); entry[length - 1] = 0;
+    char parent[194]; strcpy(parent, entry);
+    char *slash = strrchr(parent, '/'); assert(slash); *slash = 0;
+    if (strcmp(parent, "storage/sd0/C") != 0) {
+        FILE *dir = find(parent);
+        assert(dir && (dir->attributes & F_ATTR_DIR));
+    }
+    assert(creates < 16);
+    strcpy(created_paths[creates++], entry);
+    if (fail_create == creates) return NULL;
+    FILE *file = add(entry, wrong_type ? 0 : F_ATTR_DIR);
+    if (disappear) file->path[0] = 0;
+    return concurrent ? NULL : file;
+}
+static int fget_attr(FILE *file, int *attributes) {
+    if (fail_attr) return -1;
+    *attributes = file->attributes; return 0;
+}
+static int fclose(FILE *file) { (void)file; ++closes; return fail_close ? -1 : 0; }
+static void trace_mkdir(const char *path, int native, int lookup) {
+    assert(strncmp(path, H2_JIELI_SD_ROOT, strlen(H2_JIELI_SD_ROOT)) == 0);
+    (void)native; (void)lookup; ++traces;
 }
 static void (*h2_jieli_sd_fs_trace_mkdir)(const char *, int, int) = trace_mkdir;
-static int directory_status(const char *path) {
-    assert(strcmp(path, H2_JIELI_SD_ROOT "dl") == 0);
-    return exists ? H2_PAL_OK : H2_PAL_ERR_NOT_FOUND;
-}
-static int fmk_dir(const char *root, char *folder, unsigned mode) {
-    assert(strcmp(root, H2_JIELI_SD_ROOT) == 0);
-    assert(strcmp(folder, "/dl") == 0 && mode == 0);
-    ++creates;
-    if (create_rc == 0 || concurrent_create) exists = 1;
-    return create_rc;
+static void reset(void) {
+    count = creates = closes = traces = 0;
+    fail_create = fail_attr = fail_close = wrong_type = disappear = concurrent = 0;
 }
 '''
         main = r'''
 int main(void) {
-    exists = 1; create_rc = -1;
-    assert(ensure_directory(H2_JIELI_SD_ROOT "dl") == 0 && creates == 0);
-    assert(traces == 0);
-    exists = 0; create_rc = 0;
-    assert(ensure_directory(H2_JIELI_SD_ROOT "dl") == 0 && creates == 1);
-    assert(traces == 1 && traced_native == 0 && traced_lookup == 0);
-    exists = 0; create_rc = -1;
-    assert(ensure_directory(H2_JIELI_SD_ROOT "dl") == H2_PAL_ERR_IO);
-    assert(creates == 2 && traces == 2);
-    assert(traced_native == -1 && traced_lookup == H2_PAL_ERR_NOT_FOUND);
-    concurrent_create = 1;
-    assert(ensure_directory(H2_JIELI_SD_ROOT "dl") == 0);
-    assert(ensure_directory("outside/dl") == H2_PAL_ERR_INVALID_ARG);
+    reset();
+    assert(ensure_directory(H2_JIELI_SD_ROOT "data/long-parent/child") == 0);
+    assert(creates == 3 && traces == 3 && closes == 6);
+    assert(strcmp(created_paths[0], H2_JIELI_SD_ROOT "data") == 0);
+    assert(strcmp(created_paths[1], H2_JIELI_SD_ROOT "data/long-parent") == 0);
+    assert(strcmp(created_paths[2], H2_JIELI_SD_ROOT "data/long-parent/child") == 0);
+    assert(ensure_directory(H2_JIELI_SD_ROOT "data/long-parent/child") == 0);
+    assert(creates == 3 && traces == 3);
+
+    reset(); fail_create = 2;
+    assert(ensure_directory(H2_JIELI_SD_ROOT "data/long-parent/child") == H2_PAL_ERR_IO);
+    assert(creates == 2 && count == 1);
+    reset(); add(H2_JIELI_SD_ROOT "data", 0);
+    assert(ensure_directory(H2_JIELI_SD_ROOT "data/child") == H2_PAL_ERR_INVALID_STATE);
+    assert(creates == 0);
+    reset(); add(H2_JIELI_SD_ROOT "data", F_ATTR_DIR);
+    add(H2_JIELI_SD_ROOT "data/file", 0);
+    assert(ensure_directory(H2_JIELI_SD_ROOT "data/file") == H2_PAL_ERR_INVALID_STATE);
+    assert(creates == 0);
+
+    reset(); wrong_type = 1;
+    assert(ensure_directory(H2_JIELI_SD_ROOT "data") == H2_PAL_ERR_INVALID_STATE);
+    reset(); disappear = 1;
+    assert(ensure_directory(H2_JIELI_SD_ROOT "data") == H2_PAL_ERR_IO);
+    reset(); fail_attr = 1;
+    assert(ensure_directory(H2_JIELI_SD_ROOT "data") == H2_PAL_ERR_IO);
+    assert(closes == 2);
+    reset(); add(H2_JIELI_SD_ROOT "data", F_ATTR_DIR); fail_attr = 1;
+    assert(ensure_directory(H2_JIELI_SD_ROOT "data/child") == H2_PAL_ERR_IO);
+    assert(creates == 0 && closes == 1);
+    reset(); fail_close = 1;
+    assert(ensure_directory(H2_JIELI_SD_ROOT "data") == H2_PAL_ERR_IO);
+    reset(); concurrent = 1;
+    assert(ensure_directory(H2_JIELI_SD_ROOT "data") == 0);
+    reset();
+    assert(ensure_directory("outside/data") == H2_PAL_ERR_INVALID_ARG);
+    assert(ensure_directory(H2_JIELI_SD_ROOT) == H2_PAL_ERR_INVALID_ARG);
+    char longest[H2_JIELI_SD_PATH_MAX + 1];
+    memset(longest, 'a', sizeof(longest));
+    memcpy(longest, H2_JIELI_SD_ROOT, strlen(H2_JIELI_SD_ROOT));
+    longest[H2_JIELI_SD_PATH_MAX - 1] = 0;
+    assert(ensure_directory(longest) == 0);
+    longest[H2_JIELI_SD_PATH_MAX - 1] = 'a';
+    longest[H2_JIELI_SD_PATH_MAX] = 0;
+    assert(ensure_directory(longest) == H2_PAL_ERR_INVALID_ARG);
     return 0;
 }
 '''

@@ -208,8 +208,11 @@ static int translate_path(
   return H2_PAL_OK;
 }
 
+/* SDK fopen already encodes UTF-8 components for JLFAT. fopen_by_utf8 would
+ * encode them again when /data or /dl is the first (short) component, losing
+ * the remainder at an embedded UTF-16 NUL. Use fopen for every mapped path. */
 static int directory_status(const char *path) {
-  FILE *file = fopen_by_utf8(path, "r");
+  FILE *file = fopen(path, "r");
   if (file == NULL) return H2_PAL_ERR_NOT_FOUND;
   int attributes = 0;
   int result = fget_attr(file, &attributes);
@@ -219,23 +222,53 @@ static int directory_status(const char *path) {
       ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
 }
 
-static int ensure_directory(const char *path) {
-  char folder[H2_JIELI_SD_PATH_MAX];
-  size_t root_len = strlen(H2_JIELI_SD_ROOT);
-  if (strncmp(path, H2_JIELI_SD_ROOT, root_len) != 0 ||
-      strlen(path + root_len) + 1u > sizeof(folder)) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
+static int create_directory_component(char *path) {
   int existing = directory_status(path);
   if (existing != H2_PAL_ERR_NOT_FOUND) return existing;
-  strcpy(folder, path + root_len - 1u);
-  int native_result = fmk_dir(H2_JIELI_SD_ROOT, folder, 0);
-  /* flen_dir() cannot reliably distinguish an empty directory from failure.
-   * Only an actual existing directory makes a failed create idempotent. */
+  size_t length = strlen(path);
+  /* JLFAT fmk_dir uses the short-name parser, which stops after eight base
+   * characters and reports FR_NO_PATH for a long component. SDK fopen's LFN
+   * parser creates a directory when the component ends in a slash. */
+  path[length] = '/';
+  path[length + 1u] = '\0';
+  FILE *directory = fopen(path, "w+");
+  path[length] = '\0';
+  int native_result = directory == NULL ? H2_PAL_ERR_IO : H2_PAL_OK;
+  if (directory != NULL) {
+    int attributes = 0;
+    if (fget_attr(directory, &attributes) != 0) {
+      native_result = H2_PAL_ERR_IO;
+    } else if ((attributes & F_ATTR_DIR) == 0) {
+      native_result = H2_PAL_ERR_INVALID_STATE;
+    }
+    if (fclose(directory) != 0) native_result = H2_PAL_ERR_IO;
+  }
+  /* Verify the requested entry, including after a concurrent creator wins.
+   * Neither a native handle nor an existing regular file proves mkdir. */
   int created = directory_status(path);
   if (h2_jieli_sd_fs_trace_mkdir != NULL)
     h2_jieli_sd_fs_trace_mkdir(path, native_result, created);
+  if (directory != NULL && native_result != H2_PAL_OK) return native_result;
   return created == H2_PAL_ERR_NOT_FOUND ? H2_PAL_ERR_IO : created;
+}
+
+static int ensure_directory(const char *path) {
+  /* Leave room for the native directory separator and its terminator. */
+  char component[H2_JIELI_SD_PATH_MAX + 1u];
+  size_t root_len = strlen(H2_JIELI_SD_ROOT);
+  size_t length = strlen(path);
+  if (strncmp(path, H2_JIELI_SD_ROOT, root_len) != 0 ||
+      length <= root_len || length >= H2_JIELI_SD_PATH_MAX) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  for (size_t i = root_len; i <= length; ++i) {
+    if (path[i] != '/' && path[i] != '\0') continue;
+    memcpy(component, path, i);
+    component[i] = '\0';
+    int result = create_directory_component(component);
+    if (result != H2_PAL_OK) return result;
+  }
+  return H2_PAL_OK;
 }
 
 static int fs_mkdir(void *user, const char *path) {
@@ -260,7 +293,7 @@ static int fs_open(
                                                                         : NULL;
   if (native_mode == NULL) return H2_PAL_ERR_INVALID_ARG;
   sd_last_stage = "fopen-enter";
-  FILE *native = fopen_by_utf8(mapped, native_mode);
+  FILE *native = fopen(mapped, native_mode);
   sd_last_stage = "fopen-return";
   if (native == NULL) {
     return mode == H2_PAL_FS_OPEN_READ ? H2_PAL_ERR_NOT_FOUND
@@ -374,7 +407,7 @@ static int fs_stat(void *user, const char *path, h2_pal_fs_stat_t *out_stat) {
   if (result != H2_PAL_OK) return result;
   /* SDK fdir_exist() tests fopen(path, "r"), which also succeeds for regular
    * files. Inspect the opened entry's FAT attributes instead. */
-  FILE *file = fopen_by_utf8(mapped, "r");
+  FILE *file = fopen(mapped, "r");
   if (file == NULL) return H2_PAL_ERR_NOT_FOUND;
   int attributes = 0;
   int attr_result = fget_attr(file, &attributes);
@@ -407,7 +440,7 @@ static int fs_remove(void *user, const char *path) {
   char mapped[H2_JIELI_SD_PATH_MAX];
   int result = translate_path(path, mapped);
   if (result != H2_PAL_OK) return result;
-  FILE *file = fopen_by_utf8(mapped, "r");
+  FILE *file = fopen(mapped, "r");
   if (file == NULL) return H2_PAL_ERR_NOT_FOUND;
   /* Jieli's fdelete() removes the entry represented by the already-open
    * handle and closes that handle atomically.  Closing it first and then
@@ -436,14 +469,14 @@ static int fs_rename(
       memcmp(old_mapped, new_mapped, (size_t)(old_name - old_mapped)) != 0) {
     return H2_PAL_ERR_UNSUPPORTED;
   }
-  FILE *file = fopen_by_utf8(old_mapped, "r");
+  FILE *file = fopen(old_mapped, "r");
   if (file == NULL) return H2_PAL_ERR_NOT_FOUND;
   result = frename(file, new_name + 1);
   (void)fclose(file);
   if (result != 0 || f_free_cache(H2_JIELI_SD_ROOT) != 0) {
     return H2_PAL_ERR_IO;
   }
-  file = fopen_by_utf8(new_mapped, "r");
+  file = fopen(new_mapped, "r");
   if (file == NULL) return H2_PAL_ERR_IO;
   (void)fclose(file);
   return H2_PAL_OK;

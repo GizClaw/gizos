@@ -157,6 +157,15 @@ static void run_suites(void *user) {
     traced_fs.vtable = &traced_vtable;
     config.fs = &traced_fs;
   }
+  if (result == H2_PAL_OK && base_fs != NULL) {
+    const char *parents[] = {"/dl", "/data"};
+    for (size_t i = 0; i < sizeof(parents) / sizeof(parents[0]); ++i) {
+      h2_pal_fs_stat_t st = {0};
+      int rc = base_fs->vtable->stat(base_fs->user, parents[i], &st);
+      trace("H2_PAL_FS parent path=%s stat=%d is_dir=%d\r\n",
+            parents[i], rc, st.is_dir);
+    }
+  }
   if (result == H2_PAL_OK) result = h2_runtime_init(&config, &runtime);
   trace("H2_PAL_E2E phase=runtime result=%d\r\n", result);
   if (result == H2_PAL_OK) {
