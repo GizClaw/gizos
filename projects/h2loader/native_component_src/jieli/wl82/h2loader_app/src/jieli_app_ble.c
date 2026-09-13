@@ -3,7 +3,6 @@
 #include "h2_jieli_ac791n_devkit.h"
 #include "h2_jieli_wl82_platform_core.h"
 #include "h2_loader_ble.h"
-#include "h2loader_app_task_names.h"
 
 /* Shared command state (disk, digest and operation mutex) is borrowed from
  * the UART configuration. Each BLE connection owns only its console client. */
@@ -18,17 +17,12 @@ static int handle_session(void *user, h2_bleikcp_t *stream,
   if (rc != H2_PAL_OK) return rc;
   const h2_loader_app_client_return_console_config_t console = {
       .client = &client,
-      .task = h2_jieli_wl82_platform_task_api(),
       .read_user = stream,
       .read_byte = h2_loader_ble_app_read_byte,
       .write_user = stream,
       .write = h2_loader_ble_app_write,
-      .task_name = H2LOADER_BLE_COMMAND_TASK_NAME_VALUE,
-      .stack_size = 49152u,
   };
-  rc = h2_loader_app_client_start_return_console(&console);
-  if (rc != H2_PAL_OK) return rc;
-  return h2_loader_app_client_join_return_console(&client);
+  return h2_loader_app_client_run_return_console(&console);
 }
 
 int h2_jieli_app_loader_ble_start(

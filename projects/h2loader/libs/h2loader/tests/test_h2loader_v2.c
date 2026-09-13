@@ -1776,6 +1776,22 @@ static int no_stdio_read(void *user, uint32_t timeout_ms) {
 }
 #endif
 
+static int synchronous_console_reads;
+static int synchronous_console_read(void *user, uint32_t timeout_ms) {
+  (void)user;
+  assert(timeout_ms <= 50u);
+  ++synchronous_console_reads;
+  return synchronous_console_reads == 1
+      ? H2_LOADER_APP_CLIENT_SESSION_RESET
+      : H2_LOADER_APP_CLIENT_SESSION_CLOSED;
+}
+
+static int synchronous_console_write(void *user, const char *data, size_t len) {
+  (void)user;
+  assert(data != NULL && len != 0u);
+  return H2_PAL_OK;
+}
+
 static void test_app_client_validates_target_archive_entry(void) {
   test_fixture_t fixture;
   h2_loader_app_client_t client;
@@ -1817,6 +1833,20 @@ static void test_app_client_validates_target_archive_entry(void) {
                                       &inspection) == H2_PAL_OK);
   assert(strcmp(inspection.image_path, config.app_entry_path) == 0);
   assert(inspection.manifest.image_size == 8u);
+  const h2_loader_app_client_return_console_config_t synchronous = {
+      .client = &client,
+      .read_byte = synchronous_console_read,
+      .write = synchronous_console_write,
+  };
+  assert(h2_loader_app_client_run_return_console(NULL) == H2_PAL_ERR_INVALID_ARG);
+  for (unsigned session = 0; session < 2u; ++session) {
+    synchronous_console_reads = 0;
+    assert(h2_loader_app_client_run_return_console(&synchronous) == H2_PAL_OK);
+    assert(synchronous_console_reads == 2);
+    assert(client.return_console_task == NULL);
+    assert(client.return_console_private == NULL);
+  }
+
 }
 
 typedef struct ble_log_fixture {

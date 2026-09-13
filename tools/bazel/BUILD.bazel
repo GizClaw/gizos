@@ -677,3 +677,11 @@ py_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )
+
+py_test(
+    name = "jieli_ble_session_test",
+    srcs = ["tests/test_jieli_ble_session.py"],
+    data = ["//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:src/jieli_app_ble.c"],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_ble_session.py",
+)

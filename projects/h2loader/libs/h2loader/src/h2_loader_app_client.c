@@ -201,17 +201,18 @@ int h2_loader_app_client_coredump(
         ? h2_loader_command_execute(&command, argc, argv) : rc;
 }
 
-static void return_console_task(void *ctx) {
+static int run_return_console(void *ctx) {
     h2_loader_app_client_return_console_t *console = ctx;
     h2_loader_command_config_t config;
     if (console == NULL || console->client == NULL || console->read_byte == NULL) {
-        return;
+        return H2_PAL_ERR_INVALID_ARG;
     }
     config = command_config(console->client, (h2_command_io_api_t){
         .user = console,
         .vtable = &s_console_io_vtable,
     });
-    if (h2_loader_command_init(&console->command, &config) != H2_PAL_OK) return;
+    int init_rc = h2_loader_command_init(&console->command, &config);
+    if (init_rc != H2_PAL_OK) return init_rc;
     static const char ready[] = "H2_LOADER_APP_COMMAND_READY status=ready\n";
     (void)console->write(console->write_user, ready, sizeof(ready) - 1u);
     while (!atomic_load_explicit(&console->stop_requested, memory_order_acquire)) {
@@ -223,6 +224,37 @@ static void return_console_task(void *ctx) {
             (void)h2_loader_command_init(&console->command, &config);
         }
     }
+    return H2_PAL_OK;
+}
+
+static void return_console_task(void *ctx) {
+    (void)run_return_console(ctx);
+}
+
+int h2_loader_app_client_run_return_console(
+    const h2_loader_app_client_return_console_config_t *config) {
+    if (config == NULL || config->client == NULL ||
+        config->read_byte == NULL) return H2_PAL_ERR_INVALID_ARG;
+#if defined(H2_LOADER_REQUIRE_OUTPUT_CALLBACK) && H2_LOADER_REQUIRE_OUTPUT_CALLBACK
+    if (config->write == NULL) return H2_PAL_ERR_INVALID_ARG;
+#endif
+    if (config->client->return_console_task != NULL ||
+        config->client->return_console_private != NULL) {
+        return H2_PAL_ERR_INVALID_STATE;
+    }
+    h2_loader_app_client_return_console_t *console = h2_pal_mem_alloc(
+        config->client->config.allocator, sizeof(*console));
+    if (console == NULL) return H2_PAL_ERR_NO_MEMORY;
+    memset(console, 0, sizeof(*console));
+    console->client = config->client;
+    console->read_user = config->read_user;
+    console->read_byte = config->read_byte;
+    console->write_user = config->write_user;
+    console->write = config->write != NULL ? config->write : stdout_write;
+    atomic_init(&console->stop_requested, false);
+    int rc = run_return_console(console);
+    h2_pal_mem_free(config->client->config.allocator, console);
+    return rc;
 }
 
 int h2_loader_app_client_start_return_console(
