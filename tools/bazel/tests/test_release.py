@@ -28,7 +28,7 @@ class ReleaseTest(unittest.TestCase):
         index.write_text(
             json.dumps({
                 "format": 1,
-                "version": "1.2.3",
+                "version": "20260913.45296.0",
                 "firmware_count": 1,
                 "firmware": [{
                     "platform": "esp",
@@ -44,7 +44,38 @@ class ReleaseTest(unittest.TestCase):
             f"{release.sha256(index)}  {index.name}\n",
             encoding="ascii",
         )
-        return [asset, index, checksums]
+        lua = root / ("gizos-lua-runtime-src-" + "a" * 64 + ".tar.gz")
+        lua.write_bytes(b"lua source fixture")
+        lua_checksum = root / (lua.name + ".sha256")
+        lua_checksum.write_text(f"{release.sha256(lua)}  {lua.name}\n")
+        metadata = root / "lua-runtime.json"
+        metadata.write_text(json.dumps({
+            "schema_version": 1,
+            "release_id": "20260913.45296.0",
+            "release_timestamp": "2026-09-13T12:34:56Z",
+            "commit": "b" * 40,
+            "packages": {
+                "h2loader_npm": {"name": "@gizclaw/h2loader", "version": "0.2.1"},
+                "lua_runtime": {**release.file_identity(lua), "content_id": "a" * 64},
+            },
+        }))
+        return [asset, index, checksums, lua, lua_checksum, metadata]
+
+    def test_timestamp_version_round_trip_and_validation(self):
+        self.assertEqual(release.release_timestamp("20260913.45296.0"), "2026-09-13T12:34:56Z")
+        self.assertEqual(release.release_timestamp("20260913.0.0"), "2026-09-13T00:00:00Z")
+        self.assertEqual(release.release_timestamp("20260913.86399.0"), "2026-09-13T23:59:59Z")
+        for value in ("20260230.0.0", "20260913.86400.0", "20260913.01.0", "1.2.3"):
+            with self.subTest(value=value), self.assertRaises(release.ReleaseError):
+                release.release_timestamp(value)
+
+    def test_final_bundle_rejects_lua_tampering(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            files = self.final_inputs(root)
+            next(p for p in files if p.name.endswith(".tar.gz")).write_bytes(b"tampered")
+            with self.assertRaisesRegex(release.ReleaseError, "Lua runtime asset integrity"):
+                release.assemble_final(files, root / "output", "20260913.45296.0")
 
     def test_retired_desktop_slice_is_not_registered(self):
         self.assertNotIn("desktop-" + "macos-arm64", release.SLICES)
@@ -280,12 +311,18 @@ class ReleaseTest(unittest.TestCase):
             release.assemble_final(
                 list(release.input_files(input_dir)),
                 output,
-                "1.2.3",
+                "20260913.45296.0",
             )
             checksums = (output / "SHA256SUMS").read_text(encoding="ascii")
             self.assertIn("firmware-index.json", checksums)
             self.assertIn("board.update.tar.zlib", checksums)
             self.assertNotIn("SHA256SUMS\n", checksums)
+            self.assertIn("gizos-release.json", checksums)
+            metadata = json.loads((output / "gizos-release.json").read_text())
+            self.assertEqual(metadata["packages"]["firmware_bundle"]["version"], "20260913.45296.0")
+            self.assertEqual(metadata["packages"]["firmware_bundle"]["sha256"], release.sha256(output / "firmware-index.json"))
+            self.assertEqual(metadata["packages"]["h2loader_npm"]["version"], "0.2.1")
+            self.assertFalse((output / "lua-runtime.json").exists())
 
     def test_final_bundle_rejects_unexpected_input(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -300,7 +337,7 @@ class ReleaseTest(unittest.TestCase):
                 release.assemble_final(
                     [*files, unexpected],
                     root / "output",
-                    "1.2.3",
+                    "20260913.45296.0",
                 )
 
     def test_final_bundle_rejects_checksum_mismatch(self):
@@ -312,7 +349,7 @@ class ReleaseTest(unittest.TestCase):
                 release.ReleaseError,
                 "checksum mismatch: board.update.tar.zlib",
             ):
-                release.assemble_final(files, root / "output", "1.2.3")
+                release.assemble_final(files, root / "output", "20260913.45296.0")
 
     def test_final_bundle_rejects_bk3633_and_unexpected_inputs(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -321,11 +358,11 @@ class ReleaseTest(unittest.TestCase):
             index.write_text(
                 json.dumps({
                     "format": 1,
-                    "version": "1.2.3",
+                    "version": "20260913.45296.0",
                     "firmware_count": 1,
                     "firmware": [{
                         "platform": "bk3633",
-                        "version": "1.2.3",
+                        "version": "20260913.45296.0",
                         "assets": [],
                     }],
                 }),
@@ -343,7 +380,7 @@ class ReleaseTest(unittest.TestCase):
                 release.assemble_final(
                     [index, checksums],
                     root / "output",
-                    "1.2.3",
+                    "20260913.45296.0",
                 )
 
     def test_catalog_slice_rejects_input(self):

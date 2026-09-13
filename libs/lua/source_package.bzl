@@ -9,8 +9,16 @@ _CSourcesInfo = provider(
 )
 
 def _path(path):
-    # File.short_path uses ../<canonical repository>/ for external files.
-    return "external/" + path[3:] if path.startswith("../") else path
+    # Match the apparent vendor identity, never publish canonical repo names.
+    if path.startswith("../") or path.startswith("external/"):
+        relative = path[3:] if path.startswith("../") else path[len("external/"):]
+        parts = relative.split("/")
+        repository = parts[0].split("+")[-1]
+        vendors = {"h2_vendor_lua": "lua", "h2_vendor_yyjson": "yyjson"}
+        if repository not in vendors:
+            fail("Unknown portable source repository: %s" % repository)
+        return "/".join(["third_party", vendors[repository]] + parts[1:])
+    return path
 
 def _sources_impl(target, ctx):
     package = ctx.label.package
@@ -40,7 +48,7 @@ def _sources_impl(target, ctx):
         # Includes are derived from the owning rule, avoiding execroot paths.
         root = ctx.label.workspace_root
         for inc in getattr(ctx.rule.attr, "includes", []):
-            includes.append("/".join([p for p in [root, ctx.label.package, inc] if p]))
+            includes.append(_path("/".join([p for p in [root, ctx.label.package, inc] if p])))
     units = []
     if sources:
         units.append(json.encode({
@@ -67,26 +75,37 @@ def _package_impl(ctx):
     manifest = ctx.actions.declare_file(ctx.label.name + "/manifest.json")
     ctx.actions.write(manifest, json.encode_indent({
         "schema_version": 1,
-        "gizos_commit": "@GIZOS_COMMIT@",
         "runtime_profile_id": "runtime.lua.gizos",
         "sources": sorted([_path(f.short_path) for f in files if f.extension == "c"]),
         "include_dirs": sorted(closure.includes.to_list()),
         "defines": sorted(closure.defines.to_list()),
         "cflags": [],
-        "compilation_units": [json.decode(u) for u in closure.units.to_list()],
+        "compilation_units": [json.decode(u) for u in sorted(closure.units.to_list())],
         "per_os": {os: {"link_flags": ["-lm"]} for os in ["linux", "darwin", "android", "ios"]},
     }, indent = "  ") + "\n")
     dest_src_map = {_path(f.short_path): f for f in files}
     dest_src_map["LICENSE"] = ctx.file.license
     dest_src_map["manifest.json"] = manifest
+    content_id = ctx.actions.declare_file("runtime_sources.content_id")
+    listing = ctx.actions.declare_file(ctx.label.name + ".inputs.json")
+    ctx.actions.write(listing, json.encode({path: f.path for path, f in dest_src_map.items()}))
+    ctx.actions.run(
+        executable = ctx.executable._content_id_tool,
+        arguments = [listing.path, content_id.path],
+        inputs = depset([listing] + dest_src_map.values()),
+        outputs = [content_id],
+        mnemonic = "LuaSourceContentId",
+    )
     return [
-        DefaultInfo(files = depset([manifest, ctx.file.license], transitive = [closure.files])),
+        DefaultInfo(files = depset([manifest, ctx.file.license, content_id], transitive = [closure.files])),
+        OutputGroupInfo(content_id = depset([content_id])),
         PackageFilesInfo(dest_src_map = dest_src_map, attributes = {"mode": "0644"}),
     ]
 
 lua_source_package = rule(
     implementation = _package_impl,
     attrs = {
+        "_content_id_tool": attr.label(default = ":source_content_id", executable = True, cfg = "exec"),
         "license": attr.label(default = "//:LICENSE", allow_single_file = True),
         "defaults": attr.label(default = "//libs/pal:unsupported", aspects = [_sources]),
         "runtime": attr.label(mandatory = True, aspects = [_sources]),

@@ -1,14 +1,7 @@
 name: Release
 
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
-    inputs:
-      version:
-        description: Version embedded in release artifacts
-        required: true
-        type: string
 
 permissions:
   contents: read
@@ -34,6 +27,20 @@ jobs:
     outputs:
       version: ${{ steps.version.outputs.value }}
     steps:
+      - name: Resolve version
+        id: version
+        shell: bash
+        run: |
+          python3 - <<'PYTHON'
+          from datetime import datetime, timezone
+          import os
+          now = datetime.now(timezone.utc)
+          seconds = now.hour * 3600 + now.minute * 60 + now.second
+          version = f"{now:%Y%m%d}.{seconds}.0"
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"value={version}\n")
+          PYTHON
+
       - name: Check out GizOS
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -120,15 +127,6 @@ jobs:
           service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
           create_credentials_file: true
 
-      - name: Resolve version
-        id: version
-        env:
-          DISPATCH_VERSION: ${{ inputs.version }}
-        run: |
-          if [ "$GITHUB_EVENT_NAME" = push ]; then version=${GITHUB_REF_NAME#v}; else version=$DISPATCH_VERSION; fi
-          [[ "$version" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]
-          printf 'value=%s\n' "$version" >> "$GITHUB_OUTPUT"
-
       - name: Install Bazel
         run: |
           curl --fail --location --silent --show-error "https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
@@ -139,6 +137,17 @@ jobs:
         run: |
           . firmware-devenv/export.sh
           make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE=catalog RELEASE_VERSION="${{ steps.version.outputs.value }}" RELEASE_STAGING_DIR=build/release/catalog
+
+      - name: Build Lua runtime slice
+        run: make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE=lua-runtime RELEASE_VERSION="${{ steps.version.outputs.value }}" RELEASE_STAGING_DIR=build/release/lua-runtime
+
+      - name: Upload Lua runtime slice
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: lua-runtime-bundle
+          path: build/release/lua-runtime/
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Save ESP-IDF tool cache seed
         if: steps.esp-idf-cache.outputs.cache-hit != 'true'
@@ -520,6 +529,12 @@ jobs:
           printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
           chmod +x "$RUNNER_TEMP/bazel"
 
+      - name: Download Lua runtime input
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: lua-runtime-bundle
+          path: build/release/input
+
       - name: Assemble final slice
         run: make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE=release-bundle RELEASE_VERSION="${{ needs.catalog.outputs.version }}" RELEASE_INPUT_DIR=build/release/input RELEASE_STAGING_DIR=build/release/final
 
@@ -532,36 +547,34 @@ jobs:
           retention-days: 14
 
       - name: Publish GitHub Release
-        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ needs.catalog.outputs.version }}
         shell: bash
         run: |
           set -euo pipefail
           release_dir=build/release/final
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release edit "$GITHUB_REF_NAME" --draft
-          else
-            gh release create "$GITHUB_REF_NAME" \
-              --verify-tag \
-              --generate-notes \
-              --draft \
-              --title "GizOS ${{ needs.catalog.outputs.version }}"
-          fi
+          tag="release-$RELEASE_VERSION"
+          python3 - <<'PYTHON'
+          import json, os
+          from pathlib import Path
+          metadata = json.loads(Path("build/release/final/gizos-release.json").read_text())
+          assert metadata["commit"] == os.environ["GITHUB_SHA"]
+          assert metadata["release_id"] == os.environ["RELEASE_VERSION"]
+          PYTHON
+          # Create the tag only now; collisions fail without mutating an existing release.
+          gh api "repos/$GITHUB_REPOSITORY/git/refs" \
+            -f ref="refs/tags/$tag" -f sha="$GITHUB_SHA"
+          # Upload as a draft, verify every asset, then publish.
+          gh release create "$tag" "$release_dir"/* \
+            --verify-tag --generate-notes --draft --title "GizOS $RELEASE_VERSION"
 
           find "$release_dir" -maxdepth 1 -type f -exec basename {} \; | LC_ALL=C sort > "$RUNNER_TEMP/expected-release-assets"
-          while IFS= read -r asset; do
-            if ! grep --fixed-strings --line-regexp --quiet "$asset" "$RUNNER_TEMP/expected-release-assets"; then
-              gh release delete-asset "$GITHUB_REF_NAME" "$asset" --yes
-            fi
-          done < <(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name')
-          gh release upload "$GITHUB_REF_NAME" "$release_dir"/* --clobber
-          gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' | LC_ALL=C sort > "$RUNNER_TEMP/actual-release-assets"
+          gh release view "$tag" --json assets --jq '.assets[].name' | LC_ALL=C sort > "$RUNNER_TEMP/actual-release-assets"
           cmp "$RUNNER_TEMP/expected-release-assets" "$RUNNER_TEMP/actual-release-assets"
-
           verify_dir=$(mktemp -d "$RUNNER_TEMP/release-verify.XXXXXX")
-          gh release download "$GITHUB_REF_NAME" --dir "$verify_dir"
+          gh release download "$tag" --dir "$verify_dir"
           while IFS= read -r asset; do
             cmp "$release_dir/$asset" "$verify_dir/$asset"
           done < "$RUNNER_TEMP/expected-release-assets"
-          gh release edit "$GITHUB_REF_NAME" --draft=false
+          gh release edit "$tag" --draft=false

@@ -89,7 +89,7 @@ App image 是由 H2Loader 安装和启动的目标固件。Launcher 初始化 BS
 
 ## Firmware Release
 
-推送 `v<version>` tag 时，`.github/workflows/release.yml` 执行 closed DAG：`catalog → ESP32-S3/ESP32-P4 与 BK7258 slices → firmware-bundle → release-bundle → publish`。这里的 tag version 是 immutable release batch identity，不是每个 firmware 的产品版本。每一步只接收上一步声明并校验过的 artifact，最后一个 assembly job 验证完整 firmware index、逐项版本、asset SHA-256 与无额外输入。通过 `workflow_dispatch` 手动运行时，调用方提供 batch version 并选择目标 branch；workflow 执行相同 DAG，但只上传完整 `release-bundle-<version>` Actions artifact，不创建 GitHub Release。新增、删除或移动 launcher 后，Bazel provider catalog、CI matrix 与 release coverage 同源，不能由脚本维护另一份 expected entry 列表。
+`.github/workflows/release.yml` 只接受 `workflow_dispatch`；在 Actions 选择 branch 后手动运行，不输入版本、不推送 tag。Run 开始时生成一次 UTC 时间戳 batch identity，执行 `catalog → ESP32-S3/ESP32-P4 与 BK7258 slices → firmware-bundle → release-bundle → publish`，catalog job 还执行无 board 的 `lua-runtime` slice。最后 assembly 校验 firmware index、逐项版本、asset SHA-256 与 Lua 包，生成 `gizos-release.json`，然后 workflow 自动创建指向 dispatched commit 的 tag，以 draft 上传并逐字节核对全部 asset 后发布为正式 GitHub Release。Batch identity 不覆盖显式声明的 firmware 产品版本。格式、metadata schema 和下载 pin 见 [手动时间戳 Release](/zh/developing/bazel#手动时间戳-release)。新增、删除或移动 launcher 后，Bazel provider catalog、CI matrix 与 release coverage 同源，不能由脚本维护另一份 expected entry 列表。
 
 每个 firmware 在同一个 GitHub Release 中提供：
 

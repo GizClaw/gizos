@@ -371,14 +371,13 @@ bazel query 'deps(//libs/lua:lua_runtime) union deps(//libs/lua:lua_core)'
 bazel query 'filter("//libs/pal/providers/|//libs/bleikcp|//boards/|//native_component_src/", deps(//libs/lua:lua_runtime))'
 ```
 
-`gizos-lua-runtime-src.tar.gz` 根目录包含 `manifest.json` 和 GizOS `LICENSE`，其余 C/H 文件保持 package-relative 路径；external repository 文件放在 `external/<repository>/` 下。文件清单、include dirs、defines 和各 translation unit 的编译参数由 Bazel aspect 从已配置的依赖图生成，不手工复制维护。包使用与 GizOS native build 相同的 Lua source selection 和受限标准库；固件专用 stdio/newlib shim 仍由原 embedded build 配置选择，不把 ESP libc 兼容代码加入 native host。它不包含预编译库、Bazel toolchain、PAL provider 或 board code。
+`gizos-lua-runtime-src.tar.gz` 根目录包含 `manifest.json` 和 GizOS `LICENSE`，其余 C/H 文件保持 package-relative 路径；Lua 与 yyjson 的 external repository 文件分别放在稳定的 `third_party/lua/`、`third_party/yyjson/` 下，所有 manifest 路径同步重写。文件清单、include dirs、defines 和各 translation unit 的编译参数由 Bazel aspect 从已配置的依赖图生成，不手工复制维护。包使用与 GizOS native build 相同的 Lua source selection 和受限标准库；固件专用 stdio/newlib shim 仍由原 embedded build 配置选择，不把 ESP libc 兼容代码加入 native host。它不包含预编译库、Bazel toolchain、PAL provider 或 board code。
 
 Manifest schema version 1：
 
 | 字段 | 合同 |
 | --- | --- |
 | `schema_version` | 整数 `1`；consumer 拒绝未知版本 |
-| `gizos_commit` | 源码 revision；开发包为 `@GIZOS_COMMIT@`，发布方必须替换为实际打包源码的 commit |
 | `runtime_profile_id` | 固定为 `runtime.lua.gizos` |
 | `sources` | 所有需编译一次的 `.c`，相对解包根目录 |
 | `include_dirs` | 相对解包根目录的 include search paths |
@@ -387,11 +386,29 @@ Manifest schema version 1：
 | `compilation_units` | 分组的 `sources`、附加 `cflags`、附加 `defines`；各 source 恰好属于一个分组 |
 | `per_os` | OS 名到附加 `link_flags` 的映射；`linux`、`darwin`、`android`、`ios` 的数学库为 `-lm` |
 
-Consumer 对每个 source 应用公共参数及所属分组参数，按自身目标工具链追加 architecture、sysroot、PIC、visibility 和 deployment target，再链接所有 object 与该 OS 的 extras。参数必须逐项传给 compiler，不通过 shell 拼接解析。当前包表达 GCC/Clang C11 编译合同；Windows/MSVC 和 WebAssembly 工具链需单独适配，不由该 manifest 声明支持。Profile ID 标识 Lua surface，不替代 commit pin；不同 revision 的源码、header 和 binding 不应混用。
+Consumer 对每个 source 应用公共参数及所属分组参数，按自身目标工具链追加 architecture、sysroot、PIC、visibility 和 deployment target，再链接所有 object 与该 OS 的 extras。参数必须逐项传给 compiler，不通过 shell 拼接解析。当前包表达 GCC/Clang C11 编译合同；Windows/MSVC 和 WebAssembly 工具链需单独适配，不由该 manifest 声明支持。Profile ID 标识 Lua surface，不替代 content id pin；不同内容的源码、header 和 binding 不应混用。Manifest 不包含 commit、发布版本或 timestamp；`schema_version` 只标识 manifest 格式。
 
 独立测试只依赖 Python 3.11.8+（支持 tar extraction filter）、`cc`/Clang 和 pthread。它在临时目录解包，根据 manifest 编译全部 C sources，链接测试自己填写的 OS、240×240 Display、Touch、`ok`/`back` Button vtables。测试验证 async echo、显示 dirty rect 与全部像素、Runtime push edge 到 Lua callback、pending job cancellation、start 后拒绝注册和 capability 名称枚举。Python runner 不调用 Bazel，也不从 checkout 查找 runtime source；`CC` 可指定兼容 compiler。Bazel test 只是把源码包和 harness 作为测试输入交给同一个 runner。
 
 Embedder 执行 App method 时，让主 chunk `return app[method](...)`，等待 job 成功后查询长度、分配宿主 buffer、调用 `h2_lua_job_get_result()` 复制结果，最后 release。Flutter/cgo 都通过同一公开 accessor 读取，不需要私有 native module 转存返回值；复杂值应由 App 显式编码为 JSON 等稳定格式。
+
+### 内容标识与发布下载
+
+Bazel action 为源码包生成 `bazel-bin/libs/lua/runtime_sources.content_id`，内容为完整小写十六进制 SHA-256 加一个 LF。可单独构建 `//libs/lua:runtime_sources_content_id`；构建 `//libs/lua:runtime_sources` 也会生成它。
+
+算法精确定义：枚举包内全部普通文件（包含 `LICENSE` 和 `manifest.json`，不包含目录 entry、tar header、content id sidecar）；路径为相对 archive root 的 POSIX 路径，无 `./` 前缀。按路径的 UTF-8 字节字典序排序，每个文件拼接 `UTF8(path) + 0x00 + ASCII(lowercase_hex(SHA256(file_bytes))) + 0x0a`，再对全部拼接字节计算 SHA-256。路径来自受控 C source graph，不能包含换行、NUL 或绝对路径。哈希输入只包含路径和文件 bytes，故不依赖 mtime、机器、绝对路径、Bazel canonical repository name、commit、timestamp 或 gzip/zlib/rules_pkg 版本；任一文件内容、路径或清单变化都会改变 id。Manifest 自身也是内容，编译参数变化同样改变 id。
+
+本地 archive 名保持 `gizos-lua-runtime-src.tar.gz`，发布 slice 将它复制为 `gizos-lua-runtime-src-<content_id>.tar.gz`，不改写包内任何 bytes，并生成 `.sha256`。这里的 `.sha256` 是压缩 tar 的下载校验值，与未压缩内容的 `content_id` 含义不同；换压缩器可以保持 content id 不变但改变下载 SHA-256/size。
+
+GizClaw 从 [手动 Release 的 metadata](./bazel.md#手动时间戳-release) 读取 `packages.lua_runtime`，固定 `{url, sha256, size}` 和 `content_id`。URL 使用 `https://github.com/GizClaw/gizos/releases/download/release-<release_id>/<file>`，不使用 latest。先检查下载长度和压缩文件 SHA-256，再安全解包并重算 content id；binding 必须匹配包内 headers。Release metadata 的 commit 只用于追溯，不能注入 Lua manifest。
+
+独立测试可显式传入 sidecar，重算内容标识后继续编译：
+
+```sh
+python3 libs/lua/tests/test_source_package.py bazel-bin/libs/lua/gizos-lua-runtime-src.tar.gz libs/lua/tests/test_embedder.c bazel-bin/libs/lua/runtime_sources.content_id
+```
+
+Bazel test 不递归启动 Bazel。跨两次 build 的手工验证命令和结果见 [Bazel 发布验证](./bazel.md#手动时间戳-release)。
 
 ### Flutter 与 cgo
 
