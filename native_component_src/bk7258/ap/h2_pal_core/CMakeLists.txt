@@ -209,6 +209,8 @@ armino_component_get_property(
 # mbedtls_x509_crt. Consumers must allocate the same layout as the library.
 target_compile_definitions(${H2_BK_PSA_MBEDTLS_LIB} PUBLIC
   MBEDTLS_PSA_CRYPTO_C
+  # Production certificate chains (including ISRG Root X2) use SHA-384.
+  MBEDTLS_SHA384_C
   MBEDTLS_ECP_DP_CURVE25519_ENABLED
   MBEDTLS_CHACHA20_C
   MBEDTLS_POLY1305_C

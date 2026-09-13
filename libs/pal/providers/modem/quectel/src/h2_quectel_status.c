@@ -200,6 +200,9 @@ static h2_pal_result_t h2_quectel_modem_get_identity_impl(
         h2_quectel_copy_token(out_identity->imsi, sizeof(out_identity->imsi), response.lines[0]);
     }
     if (reset_generation != modem->reset_generation || sim_generation != modem->sim_generation) {
+        printf("H2_QUECTEL_INVALID_STATE operation=identity reset=%lu->%lu sim=%lu->%lu\n",
+               (unsigned long)reset_generation, (unsigned long)modem->reset_generation,
+               (unsigned long)sim_generation, (unsigned long)modem->sim_generation);
         memset(out_identity, 0, sizeof(*out_identity));
         return H2_PAL_ERR_INVALID_STATE;
     }

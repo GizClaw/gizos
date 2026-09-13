@@ -171,6 +171,9 @@ h2_pal_result_t h2_quectel_at_exchange_locked(
             modem->config.command_timeout_ms);
         (void)h2_quectel_state_lock(modem);
         if (generation != modem->reset_generation || sim_generation != modem->sim_generation) {
+            printf("H2_QUECTEL_INVALID_STATE operation=at reset=%lu sim=%lu\n",
+                   (unsigned long)modem->reset_generation,
+                   (unsigned long)modem->sim_generation);
             return H2_PAL_ERR_INVALID_STATE;
         }
         if (allow_connect != 0 && response_text_has_connect(command_response)) {
@@ -206,6 +209,9 @@ h2_pal_result_t h2_quectel_at_exchange_locked(
             return rc;
         }
         if (reset_generation != modem->reset_generation || sim_generation != modem->sim_generation) {
+            printf("H2_QUECTEL_INVALID_STATE operation=at reset=%lu sim=%lu\n",
+                   (unsigned long)modem->reset_generation,
+                   (unsigned long)modem->sim_generation);
             return H2_PAL_ERR_INVALID_STATE;
         }
         if (line[0] == '\0' || strcmp(line, cmd) == 0) {

@@ -3,12 +3,13 @@ set(H2_LVGL_ROOT "${REPO_ROOT}/libs/lvgl")
 set(H2_LVGL_CONFIG_ROOT "${REPO_ROOT}/third_party/lvgl_patch/config/bk7258")
 
 armino_component_register(
+    SRCS "h2_lvgl_bk_dma2d.c"
     INCLUDE_DIRS
         "${H2_LVGL_CONFIG_ROOT}"
         "${H2_LVGL_ROOT}/include"
         "${REPO_ROOT}/libs/pal/include"
     REQUIRES h2_firmware_lib
-    PRIV_REQUIRES h2_pal_core bk_common bk_rtos)
+    PRIV_REQUIRES h2_pal_core bk_common bk_rtos driver)
 
 target_compile_definitions(${COMPONENT_LIB} INTERFACE
     LV_CONF_INCLUDE_SIMPLE

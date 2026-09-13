@@ -2,8 +2,8 @@ load("@aspect_rules_js//js:defs.bzl", "js_test")
 load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
 load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS", "H2_WARNING_COPTS_NO_ERROR", "h2_gnu_only_copts")
-load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
 load("//tools/bazel:tasks.bzl", "h2_tasks")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -16,10 +16,15 @@ _LVGL_COPTS = H2_WARNING_COPTS_NO_ERROR + h2_gnu_only_copts([
 cc_library(
     name = "config",
     hdrs = [
+        "include/h2_lvgl_bk_dma2d.h",
         "include/h2_lvgl_osal.h",
         "include/lv_conf.h",
     ],
     includes = ["include"],
+    deps = select({
+        "//tools/bazel/platforms:is_bk7258": ["@h2_vendor_lvgl//:bk7258_config"],
+        "//conditions:default": [],
+    }),
 )
 
 h2_tasks(
@@ -170,6 +175,7 @@ cc_library(
         "src/h2_lvgl_touch.c",
     ],
     hdrs = [
+        "include/h2_lvgl_bk_dma2d.h",
         "include/h2_lvgl_button.h",
         "include/h2_lvgl_fs.h",
         "include/h2_lvgl_osal.h",
@@ -211,6 +217,7 @@ cc_library(
         "src/h2_lvgl_touch.c",
     ],
     hdrs = [
+        "include/h2_lvgl_bk_dma2d.h",
         "include/h2_lvgl_button.h",
         "include/h2_lvgl_fs.h",
         "include/h2_lvgl_osal.h",
@@ -231,9 +238,6 @@ cc_library(
 
 cc_library(
     name = "firmware",
-    # firmware_sources is a filegroup in srcs, so this define compiles the
-    # upstream decoder/codec here as well as configuring downstream consumers.
-    defines = ["LV_USE_LODEPNG=1"],
     srcs = [
         "src/h2_lvgl_fs.c",
         "src/h2_lvgl_fs_internal.h",
@@ -241,12 +245,16 @@ cc_library(
         "@h2_vendor_lvgl//:firmware_sources",
     ],
     hdrs = [
+        "include/h2_lvgl_bk_dma2d.h",
         "include/h2_lvgl_fs.h",
         "include/h2_lvgl_osal.h",
         "include/h2_lvgl_platform.h",
     ],
     conlyopts = H2_C11_OPTS,
     copts = _LVGL_COPTS + ["-D_GNU_SOURCE"],
+    # firmware_sources is a filegroup in srcs, so this define compiles the
+    # upstream decoder/codec here as well as configuring downstream consumers.
+    defines = ["LV_USE_LODEPNG=1"],
     includes = ["include"],
     target_compatible_with = select({
         "//tools/bazel/platforms:is_bk7258": [],
