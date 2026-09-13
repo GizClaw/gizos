@@ -118,6 +118,19 @@ cc_library(
     deps = ["//libs/pal"],
 )
 
+cc_library(
+    name = "testing_audio_testing",
+    testonly = True,
+    srcs = ["src/pal/h2_app_test_audio.c"],
+    hdrs = ["include/h2_app_test_audio.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["include"],
+    local_defines = ["H2_APP_TEST_AUDIO_TESTING"],
+    deps = ["//libs/pal"],
+)
+
 cc_test(
     name = "testing_audio_test",
     srcs = ["tests/test_app_test_audio.c"],
@@ -130,7 +143,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":testing_audio"],
+    deps = [":testing_audio_testing"],
 )
 
 cc_library(

@@ -98,6 +98,22 @@ static void fixture_unlock(h2_app_test_audio_t *audio) {
   atomic_flag_clear_explicit(&audio->fixture_lock, memory_order_release);
 }
 
+#ifdef H2_APP_TEST_AUDIO_TESTING
+/* Test-only seam: hold the fixture lock so a waiter deterministically hits
+ * the back-off path. Compiled only into the testonly library variant. */
+bool h2_app_test_audio_test_hold_fixture_lock(h2_app_test_audio_t *audio);
+void h2_app_test_audio_test_release_fixture_lock(h2_app_test_audio_t *audio);
+
+bool h2_app_test_audio_test_hold_fixture_lock(h2_app_test_audio_t *audio) {
+  return !atomic_flag_test_and_set_explicit(&audio->fixture_lock,
+                                            memory_order_acquire);
+}
+
+void h2_app_test_audio_test_release_fixture_lock(h2_app_test_audio_t *audio) {
+  fixture_unlock(audio);
+}
+#endif
+
 static int decorated_get_info(void *user, h2_audio_info_t *info) {
   h2_app_test_audio_t *audio = user;
   int rc = h2_pal_audio_get_info(audio->delegate, info);
