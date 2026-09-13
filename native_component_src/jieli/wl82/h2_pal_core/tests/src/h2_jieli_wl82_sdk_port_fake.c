@@ -127,6 +127,8 @@ void *h2_jieli_sdk_malloc(size_t size)
     }
     void *memory = malloc(size);
     if (memory != NULL) {
+        /* Expose providers that accidentally depend on zero-filled malloc. */
+        memset(memory, 0xa5, size);
         s_live_allocations++;
     }
     return memory;
