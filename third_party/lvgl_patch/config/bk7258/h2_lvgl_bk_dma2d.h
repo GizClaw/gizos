@@ -10,9 +10,6 @@ extern "C" {
 
 /* Called synchronously from the single LVGL software draw unit. Returning zero
  * leaves unsupported or failed operations to LVGL's original CPU renderer. */
-/* Call only after LVGL draw tasks have stopped; releases the video domain. */
-int h2_bk_dma2d_suspend(void);
-
 int h2_bk_dma2d_rgb565(void *dst, const void *src, int32_t width,
                      int32_t height, uint32_t dst_stride,
                      uint32_t src_stride, uint16_t color);

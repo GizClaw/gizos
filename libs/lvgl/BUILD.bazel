@@ -16,7 +16,6 @@ _LVGL_COPTS = H2_WARNING_COPTS_NO_ERROR + h2_gnu_only_copts([
 cc_library(
     name = "config",
     hdrs = [
-        "include/h2_lvgl_bk_dma2d.h",
         "include/h2_lvgl_osal.h",
         "include/lv_conf.h",
     ],
@@ -175,7 +174,6 @@ cc_library(
         "src/h2_lvgl_touch.c",
     ],
     hdrs = [
-        "include/h2_lvgl_bk_dma2d.h",
         "include/h2_lvgl_button.h",
         "include/h2_lvgl_fs.h",
         "include/h2_lvgl_osal.h",
@@ -217,7 +215,6 @@ cc_library(
         "src/h2_lvgl_touch.c",
     ],
     hdrs = [
-        "include/h2_lvgl_bk_dma2d.h",
         "include/h2_lvgl_button.h",
         "include/h2_lvgl_fs.h",
         "include/h2_lvgl_osal.h",
@@ -245,7 +242,6 @@ cc_library(
         "@h2_vendor_lvgl//:firmware_sources",
     ],
     hdrs = [
-        "include/h2_lvgl_bk_dma2d.h",
         "include/h2_lvgl_fs.h",
         "include/h2_lvgl_osal.h",
         "include/h2_lvgl_platform.h",

@@ -5,6 +5,7 @@
 #include <driver/dma2d.h>
 #include <armstar.h>
 #include "h2_lvgl_bk_dma2d.h"
+#include "h2_lvgl_bk_power.h"
 
 static void sync_cache(void *address, long bytes) {
   if (SCB->CLIDR & SCB_CLIDR_DC_Msk) {
