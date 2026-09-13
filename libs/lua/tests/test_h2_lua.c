@@ -815,6 +815,55 @@ static void test_borrowed_display(void) {
   h2_runtime_deinit(runtime);
 }
 
+static void test_job_results(h2_lua_host_t *host) {
+  size_t invalid_size = 99;
+  int invalid_present = 1;
+  assert(h2_lua_job_get_result(host, H2_LUA_JOB_ID_NONE, NULL, 0,
+      &invalid_size, &invalid_present) == H2_PAL_ERR_INVALID_ARG);
+  assert(invalid_size == 0 && invalid_present == 0);
+  assert(h2_lua_job_get_result(host, UINT32_MAX, NULL, 0,
+      &invalid_size, &invalid_present) == H2_PAL_ERR_NOT_FOUND);
+  assert(h2_lua_job_get_result(NULL, 1, NULL, 0,
+      &invalid_size, &invalid_present) == H2_PAL_ERR_INVALID_ARG);
+  const char *scripts[] = {"return 'first', 'last'", "return 42", "return nil",
+      "return", "return ''", "return {}", "return true",
+      "return setmetatable({}, {__tostring=function() return 'custom' end})",
+      "return 'a'..string.char(0)..'b'"};
+  const char *expected[] = {"first", "42", "nil", "", "", "table: ", "true",
+                            "custom", "a\0b"};
+  for (size_t i = 0; i < sizeof(scripts) / sizeof(scripts[0]); ++i) {
+    h2_lua_job_id_t id;
+    assert(h2_lua_job_submit_text(host, NULL, "@result.lua",
+        (const uint8_t *)scripts[i], strlen(scripts[i]), NULL, 0, &id) == H2_PAL_OK);
+    run_until_terminal(host, id, 1000u);
+    assert(status(host, id).state == H2_LUA_JOB_SUCCEEDED);
+    char buffer[128] = "untouched";
+    size_t size = 999;
+    int present = -1;
+    assert(h2_lua_job_get_result(host, id, NULL, 0, &size, &present) == H2_PAL_OK);
+    assert(present == (i != 3));
+    if (present) {
+      assert(h2_lua_job_get_result(host, id, buffer, size, &size, &present) ==
+             H2_PAL_ERR_NO_SPACE);
+      assert(strcmp(buffer, "untouched") == 0);
+    }
+    assert(h2_lua_job_get_result(host, id, buffer, sizeof(buffer), &size,
+                               &present) == H2_PAL_OK);
+    if (i == 5) {
+      assert(size > 7 && strncmp(buffer, expected[i], 7) == 0);
+    } else {
+      size_t expected_size = i == 8 ? 3 : strlen(expected[i]);
+      assert(size == expected_size);
+      assert(memcmp(buffer, expected[i], size) == 0 && buffer[size] == 0);
+    }
+    assert(status(host, id).memory_used > size);
+    assert(h2_lua_job_release(host, id) == H2_PAL_OK);
+    assert(h2_lua_job_get_result(host, id, buffer, sizeof(buffer), &size,
+                               &present) == H2_PAL_ERR_NOT_FOUND);
+    assert(size == 0 && present == 0);
+  }
+}
+
 int main(void) {
   test_borrowed_display();
   static const char *const esp_claw_ids[] = {
@@ -972,6 +1021,7 @@ int main(void) {
          H2_PAL_OK);
   h2_lua_host_destroy(invalid_size_host);
   h2_lua_host_t *host = create_host(runtime);
+  test_job_results(host);
   h2_lua_job_id_t job_id = H2_LUA_JOB_ID_NONE;
   static const h2_lua_arg_t file_args[] = {{"value", "ok"}};
   h2_runtime_button_action_event_t click = {

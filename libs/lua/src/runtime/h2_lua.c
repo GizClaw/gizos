@@ -684,6 +684,12 @@ h2_pal_result_t h2_lua_register_capability(h2_lua_host_t *host,
   return H2_PAL_OK;
 }
 
+const char *h2_lua_capability_name_at(const h2_lua_host_t *host, size_t index) {
+  return host != NULL && index < host->capability_count
+             ? host->capabilities[index].name
+             : NULL;
+}
+
 h2_lua_capability_request_t *
 h2_lua_find_capability_request(h2_lua_host_t *host,
                                h2_lua_capability_request_id_t request_id) {
