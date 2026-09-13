@@ -59,7 +59,8 @@ typedef struct h2_app_test_audio_fixture {
  * timeout into bounded scratch, clears it, and supplies fixture PCM paced by
  * monotonic time. Real capture errors are evidence, not fixture-read failures.
  * `time` must provide get_monotonic_ms and a sleep_ms that yields the calling
- * task: it paces fixture frames and backs off while fixture state is busy.
+ * task: it paces fixture frames and backs off while fixture state is busy; a
+ * failed back-off sleep is returned by the operation that was waiting.
  * Fixture emission is enabled by default. At EOF, frames continue as silence.
  * A NULL fixture creates a playback-only observer: mic is advertised unsupported
  * and start_mic returns UNSUPPORTED until a valid fixture is installed.
