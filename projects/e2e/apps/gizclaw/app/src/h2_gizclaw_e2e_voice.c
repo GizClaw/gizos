@@ -655,6 +655,68 @@ static int conversation_rounds(voice_state_t *state, bool realtime) {
   return rc;
 }
 
+/* A complete text input on the Session route, with no microphone: the
+ * Session waits, the input completes once as FINISHED, and the Agent's reply
+ * is heard from the Track before the Session returns to IDLE. */
+static int text_round(voice_state_t *state) {
+  static const char text[] = "Please reply with one short sentence.";
+  h2_gizclaw_session_t *session = voice_session(state);
+  reset_capture(state, false);
+  capture_enable(state, false);
+  uint64_t started = 0u;
+  int rc = clock_now(state, &started);
+  if (rc == H2_PAL_OK) {
+    ++state->generation;
+    atomic_store(&state->active, true);
+    rc = evidence("h2_gizclaw_session_send_text", "voice",
+                  h2_gizclaw_session_send_text(session, h2_gizclaw_e2e_str(text)));
+    if (rc != H2_PAL_OK)
+      atomic_store(&state->active, false);
+  }
+  h2_gizclaw_session_state_t snapshot;
+  if (rc == H2_PAL_OK) {
+    rc = h2_gizclaw_session_snapshot(session, &snapshot);
+    if (rc == H2_PAL_OK &&
+        (snapshot.conversation_input_open || snapshot.can_start ||
+         snapshot.conversation != H2_GIZCLAW_SESSION_CONVERSATION_WAITING))
+      rc = H2_PAL_ERR_INVALID_STATE;
+  }
+  while (rc == H2_PAL_OK &&
+         (atomic_load(&state->active) || atomic_load(&state->rounds) == 0u)) {
+    rc = within(state, started, VOICE_TIMEOUT_MS);
+    if (rc == H2_PAL_OK)
+      rc = step(state);
+  }
+  if (rc == H2_PAL_OK)
+    rc = drain_completed_output(state);
+  const size_t written = atomic_load(&state->written);
+  uint8_t leftover[2];
+  if (rc == H2_PAL_OK &&
+      (atomic_load(&state->completions) != 1u ||
+       atomic_load(&state->terminal_kind) != H2_GIZCLAW_OPERATION_FINISHED ||
+       atomic_load(&state->rounds) != 1u || atomic_load(&state->captured) != 0u ||
+       written == 0u || !atomic_load(&state->non_silent) ||
+       h2_gizclaw_pcm_track_read(state->track, leftover, sizeof(leftover)) !=
+           H2_PAL_ERR_WOULD_BLOCK))
+    rc = H2_PAL_ERR_INVALID_STATE;
+  if (rc == H2_PAL_OK) {
+    const int terminal = atomic_load(&state->terminal_result);
+    rc = terminal == H2_PAL_OK ? H2_PAL_OK : terminal;
+  }
+  if (rc == H2_PAL_OK) {
+    rc = h2_gizclaw_session_snapshot(session, &snapshot);
+    if (rc == H2_PAL_OK &&
+        (snapshot.conversation_input_open || snapshot.can_start ||
+         snapshot.conversation != H2_GIZCLAW_SESSION_CONVERSATION_IDLE))
+      rc = H2_PAL_ERR_INVALID_STATE;
+  }
+  evidence("h2_gizclaw_session_send_text", "session_send_text-assert", rc);
+  printf("H2_GIZCLAW_E2E stage=voice mode=text result=%s rc=%d "
+         "playback_bytes=%zu\n",
+         rc == H2_PAL_OK ? "PASS" : "FAIL", rc, written);
+  return rc;
+}
+
 static int cancel_conversation(voice_state_t *state) {
   reset_capture(state, false);
   int rc = begin(state);
@@ -1238,6 +1300,8 @@ static int run_voice(h2_gizclaw_e2e_fixture_t *fixture, bool group_talk) {
            rc == H2_PAL_OK ? "PASS" : "FAIL", rc, captured);
     return rc;
   }
+  if (rc == H2_PAL_OK && voice_session(state) != NULL)
+    rc = text_round(state);
   char history_id[H2_GIZCLAW_WORKSPACE_HISTORY_ID_MAX_BYTES + 1u] = {0};
   if (rc == H2_PAL_OK)
     rc = new_history(state, history_id);

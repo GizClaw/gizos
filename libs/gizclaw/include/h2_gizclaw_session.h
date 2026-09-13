@@ -30,9 +30,10 @@ typedef enum h2_gizclaw_session_blocker {
 } h2_gizclaw_session_blocker_t;
 
 /** Local input state only. Downstream audio has no phase: it plays whenever
- * the server sends it. WAITING follows the release of push-to-talk input and
- * ends, back to IDLE, as soon as downstream audio arrives or after
- * H2_GIZCLAW_SESSION_WAIT_MS without any. */
+ * the server sends it. WAITING follows the release of push-to-talk input or an
+ * accepted text input (in either input mode) and ends, back to IDLE, as soon
+ * as downstream audio arrives, after H2_GIZCLAW_SESSION_WAIT_MS without any,
+ * or when the input fails. */
 typedef enum h2_gizclaw_session_conversation_phase {
   H2_GIZCLAW_SESSION_CONVERSATION_IDLE = 0,
   H2_GIZCLAW_SESSION_CONVERSATION_RECORDING,
@@ -163,6 +164,24 @@ h2_pal_result_t h2_gizclaw_session_conversation_create(
  */
 h2_pal_result_t h2_gizclaw_session_audio_start(h2_gizclaw_session_t *session);
 h2_pal_result_t h2_gizclaw_session_audio_end(h2_gizclaw_session_t *session);
+/** Submit one complete UTF-8 user input (1..H2_GIZCLAW_CONVERSATION_TEXT_MAX_BYTES
+ * bytes, no terminator required) on the Session-owned conversation route of
+ * the current Workspace, without starting the microphone. The span is copied
+ * before returning; no network I/O or application callback runs inline.
+ * Accepted text publishes WAITING with conversation_input_open false. Like
+ * audio_end, OK means admission only: the conversation completion runs once
+ * from service_poll when the text is sent, fails or is canceled, and the Agent
+ * reply plays through the existing downlink.
+ * INVALID_ARG: NULL session/data, empty, oversized, embedded NUL or invalid
+ * UTF-8 text. INVALID_STATE: Session closed or preparing, Workspace not READY,
+ * no conversation route, or Service not started. CLOSED: Service stopping.
+ * BUSY: audio input is open, or a previous input has not completed (never
+ * interrupted). NO_MEMORY / WOULD_BLOCK: admission failed. While the text is
+ * pending, conversation_release leaves the route in place; audio_start, a
+ * Workspace switch or delete cancel it first, as for a previous audio input.
+ */
+h2_pal_result_t h2_gizclaw_session_send_text(h2_gizclaw_session_t *session,
+                                             h2_gizclaw_str_t text);
 /** Discard an in-flight preparation result without closing the connection.
  * The currently executing RPC remains bounded by its deadline; subsequent
  * steps are skipped. Does not cancel an already-created conversation. */
