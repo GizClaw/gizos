@@ -9,6 +9,65 @@ SOURCE = ROOT / "boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_sd
 
 
 class SdDirectoryTest(unittest.TestCase):
+    def test_stat_directory_file_and_missing_path(self):
+        source = SOURCE.read_text()
+        begin = source.index("static int fs_stat(")
+        end = source.index("static int fs_clear(", begin)
+        fixture = r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+#define H2_JIELI_SD_PATH_MAX 192u
+#define H2_PAL_OK 0
+#define H2_PAL_ERR_INVALID_ARG -1
+#define H2_PAL_ERR_NOT_FOUND -2
+typedef struct { uint64_t size; int is_dir; } h2_pal_fs_stat_t;
+typedef struct { int unused; } FILE;
+static FILE native;
+static int directory, present, opens, closes;
+static long long directory_size;
+static int translate_path(const char *path, char *mapped) {
+    if (!path || path[0] != '/') return H2_PAL_ERR_INVALID_ARG;
+    strcpy(mapped, path); return 0;
+}
+static int fdir_exist(const char *path) { (void)path; return directory; }
+static long long flen_dir(const char *path) { (void)path; return directory_size; }
+static FILE *fopen_by_utf8(const char *path, const char *mode) {
+    (void)path; assert(strcmp(mode, "r") == 0); ++opens;
+    return present ? &native : NULL;
+}
+static uint32_t flen(FILE *file) { assert(file == &native); return 123; }
+static int fclose(FILE *file) { assert(file == &native); ++closes; return 0; }
+'''
+        main = r'''
+int main(void) {
+    h2_pal_fs_stat_t st;
+    directory = 1; directory_size = -1;
+    assert(fs_stat(NULL, "/dl", &st) == 0 && st.is_dir && st.size == 0);
+    assert(fs_stat(NULL, "/data/sub", &st) == 0 && st.is_dir && opens == 0);
+    directory_size = 456;
+    assert(fs_stat(NULL, "/data/sub", &st) == 0 && st.size == 456);
+    directory = 0; present = 1;
+    assert(fs_stat(NULL, "/data/file", &st) == 0 && !st.is_dir && st.size == 123);
+    assert(opens == 1 && closes == 1);
+    present = 0;
+    assert(fs_stat(NULL, "/data/missing", &st) == H2_PAL_ERR_NOT_FOUND);
+    assert(closes == 1);
+    assert(fs_stat(NULL, NULL, &st) == H2_PAL_ERR_INVALID_ARG);
+    assert(fs_stat(NULL, "/data", NULL) == H2_PAL_ERR_INVALID_ARG);
+    return 0;
+}
+'''
+        with tempfile.TemporaryDirectory(prefix="h2-sd-stat-") as directory:
+            root = Path(directory)
+            unit = root / "stat.c"
+            unit.write_text(fixture + source[begin:end] + main)
+            binary = root / "stat-test"
+            subprocess.run(["cc", "-std=c11", str(unit), "-o", str(binary)],
+                           check=True, timeout=30)
+            subprocess.run([str(binary)], check=True, timeout=30)
+
     def test_existing_empty_directory_and_create_failures(self):
         source = SOURCE.read_text()
         begin = source.index("static int ensure_directory(")

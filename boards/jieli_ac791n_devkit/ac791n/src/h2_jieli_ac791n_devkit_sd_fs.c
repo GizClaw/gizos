@@ -356,10 +356,11 @@ static int fs_stat(void *user, const char *path, h2_pal_fs_stat_t *out_stat) {
   if (out_stat == NULL) return H2_PAL_ERR_INVALID_ARG;
   int result = translate_path(path, mapped);
   if (result != H2_PAL_OK) return result;
-  if (strcmp(path, "/dl") == 0 || strcmp(path, "/data") == 0) {
+  if (fdir_exist(mapped) == 1) {
     long long size = flen_dir(mapped);
-    if (size < 0) return H2_PAL_ERR_NOT_FOUND;
-    *out_stat = (h2_pal_fs_stat_t){.size = (uint64_t)size, .is_dir = 1};
+    /* Empty JLFAT directories can have a negative aggregate length even
+     * though their directory entry exists. Do not report them missing. */
+    *out_stat = (h2_pal_fs_stat_t){.size = size < 0 ? 0u : (uint64_t)size, .is_dir = 1};
     return H2_PAL_OK;
   }
   FILE *file = fopen_by_utf8(mapped, "r");
