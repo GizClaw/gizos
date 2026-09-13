@@ -10,6 +10,16 @@
 #if defined(_MSC_VER)
 #include <intrin.h>
 
+static inline const void *h2_jieli_atomic_load_ptr(const void *volatile *address)
+{
+    return _InterlockedCompareExchangePointer((void *volatile *)address, 0, 0);
+}
+
+static inline void h2_jieli_atomic_store_ptr(const void *volatile *address, const void *value)
+{
+    (void)_InterlockedExchangePointer((void *volatile *)address, (void *)value);
+}
+
 static inline uint32_t h2_jieli_atomic_load_u32(volatile uint32_t *address)
 {
     return (uint32_t)_InterlockedCompareExchange((volatile long *)address, 0L, 0L);
@@ -39,6 +49,16 @@ static inline int h2_jieli_atomic_cas_u32(
     return 0;
 }
 #else
+
+static inline const void *h2_jieli_atomic_load_ptr(const void *volatile *address)
+{
+    return __atomic_load_n(address, __ATOMIC_ACQUIRE);
+}
+
+static inline void h2_jieli_atomic_store_ptr(const void *volatile *address, const void *value)
+{
+    __atomic_store_n(address, value, __ATOMIC_RELEASE);
+}
 
 static inline uint32_t h2_jieli_atomic_load_u32(volatile uint32_t *address)
 {
