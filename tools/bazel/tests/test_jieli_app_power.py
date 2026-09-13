@@ -6,6 +6,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 TARGET = ROOT / "projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit/src"
+APP_SUPPORT = ROOT / "projects/h2loader/native_component_src/jieli/wl82/h2loader_app/src"
 STUB = r'''
 #include <assert.h>
 #include <stdint.h>
@@ -26,7 +27,7 @@ static uint32_t next_boot_partition=2;
 
 class AppPowerTest(unittest.TestCase):
     def test_shared_reboot_commits_attempt_before_request(self):
-        source = (TARGET / "jieli_h2loader_app_support.c").read_text()
+        source = (APP_SUPPORT / "jieli_h2loader_app_support.c").read_text()
         begin = source.index("int h2_jieli_app_loader_prepare_reboot(")
         end = source.index("static int digest_start(", begin)
         fixture = r'''
