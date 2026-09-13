@@ -128,6 +128,8 @@ typedef struct h2_lua_job {
   size_t worker_index;
   h2_lua_job_state_t state;
   h2_lua_vm_t *vm;
+  const char *result; /* Rooted on the main task stack; VM-accounted. */
+  size_t result_size;
   h2_lua_task_t *tasks;
   size_t task_count;
   size_t next_task_index;
