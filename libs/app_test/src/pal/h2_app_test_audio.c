@@ -84,7 +84,9 @@ static void fixture_lock(h2_app_test_audio_t *audio) {
                                            memory_order_acquire)) {
     /* The mic reader runs at a higher priority than the fixture selector.
      * A pure spin on the holder's core never lets the holder release the
-     * lock and starves that core's idle task until the watchdog aborts. */
+     * lock and starves that core's idle task until the watchdog aborts.
+     * create() requires sleep_ms; a failed sleep still retries because the
+     * critical sections are bounded copies and cannot be abandoned. */
     (void)h2_pal_time_sleep_ms(audio->time, 1u);
   }
 }
@@ -533,7 +535,8 @@ h2_app_test_audio_create(const h2_pal_mem_api_t *mem,
   *out_audio = NULL;
   if (mem == NULL || mem->vtable == NULL || mem->vtable->alloc == NULL ||
       mem->vtable->free == NULL || time == NULL || time->vtable == NULL ||
-      time->vtable->get_monotonic_ms == NULL || delegate == NULL ||
+      time->vtable->get_monotonic_ms == NULL ||
+      time->vtable->sleep_ms == NULL || delegate == NULL ||
       delegate->vtable == NULL || (fixture != NULL && !valid_fixture(fixture))) {
     return H2_PAL_ERR_INVALID_ARG;
   }

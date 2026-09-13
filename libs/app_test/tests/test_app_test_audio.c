@@ -331,6 +331,14 @@ int main(void) {
   assert(h2_app_test_audio_create(&mem, NULL, &fake.api, &input, &audio) ==
          H2_PAL_ERR_INVALID_ARG);
   assert(audio == NULL);
+  const h2_pal_time_vtable_t no_sleep_vtable = {
+      .get_monotonic_ms = fake_time.api.vtable->get_monotonic_ms,
+  };
+  const h2_pal_time_api_t no_sleep = {.user = fake_time.api.user,
+                                      .vtable = &no_sleep_vtable};
+  assert(h2_app_test_audio_create(&mem, &no_sleep, &fake.api, &input,
+                                  &audio) == H2_PAL_ERR_INVALID_ARG);
+  assert(audio == NULL);
   input.size = 3u;
   assert(h2_app_test_audio_create(&mem, &fake_time.api, &fake.api, &input,
                                   &audio) == H2_PAL_ERR_INVALID_ARG);
