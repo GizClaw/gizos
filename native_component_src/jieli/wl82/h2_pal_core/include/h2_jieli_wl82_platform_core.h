@@ -63,10 +63,11 @@ const h2_pal_queue_api_t *h2_jieli_wl82_platform_queue_api(void);
 const h2_pal_task_api_t *h2_jieli_wl82_platform_task_api(void);
 
 /** One-shot and periodic timers on the SDK sys timer service.
- * Mutations stay on the task that first starts the timer; callers serialize
- * state queries with mutations. Not ISR-safe. Stop invalidates queued fires;
+ * Lifecycle operations synchronously dispatch to the SDK sys_timer task;
+ * calls from its callbacks execute inline. Not ISR/pre-scheduler safe.
+ * Callbacks must stay short and nonblocking. Stop invalidates queued fires;
  * reset uses a fresh registration context. Old contexts and destroyed timers
- * are reclaimed later on the owner task. Reclaim slot exhaustion returns
+ * are reclaimed later on the sys_timer task. Reclaim slot exhaustion returns
  * UNAVAILABLE without releasing caller ownership; allocation/registration
  * failure returns NO_MEMORY. A resource failure while rearming leaves the
  * timer stopped and retryable. A successful destroy consumes the handle

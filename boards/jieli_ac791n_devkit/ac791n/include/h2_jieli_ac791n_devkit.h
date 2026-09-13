@@ -82,7 +82,8 @@ const h2_pal_button_api_t *h2_jieli_ac791n_devkit_button_api(void);
 const h2_pal_audio_api_t *h2_jieli_ac791n_devkit_audio_api(void);
 
 /* BLE 5 peripheral Host with the H2Loader GATT schema, Extended Advertising,
- * DLE, MTU exchange and 2M/Coded PHY requests. */
+ * DLE and MTU exchange. PAL PHY requests return UNSUPPORTED; the central
+ * owns connection PHY selection. */
 /* Borrows a valid firmware-lifetime Log capability. Repeated calls must use
  * the same object; invalid or replacement sinks return NULL. SDK diagnostic
  * records use DEBUG level; enablement/delivery belongs to the supplied sink. */
