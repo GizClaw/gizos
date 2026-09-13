@@ -752,7 +752,10 @@ static h2_lua_job_status_t run_display_script_size(h2_lua_host_t *host,
   s_test_display_fixture.height = height;
   assert(h2_lua_job_submit_text(host, NULL, name, script, script_size, NULL, 0u,
                                 &job_id) == H2_PAL_OK);
-  run_until_terminal(host, job_id, 64u);
+  /* Pixel oracles run on an independent worker with up to a five-second job
+   * deadline. Allow that deadline to report failure instead of imposing a
+   * 64 ms scheduler-speed requirement on loaded CI hosts. */
+  run_until_terminal(host, job_id, 6000u);
   job_status = status(host, job_id);
   if (job_status.state != H2_LUA_JOB_SUCCEEDED)
     fprintf(stderr, "%s: %s\n", name, job_status.message);

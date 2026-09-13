@@ -1,18 +1,8 @@
 # Lua numeric and geometry API
 
-The Host preloads `vmath` and `geometry` on desktop, embedded and browser targets.
-Standard Lua `math` is unchanged. Neither module needs an app extension or a
-Display device. The production contract is `libs/lua/include/h2_lua_numeric.h`.
+The Host preloads `vmath` and `geometry` on desktop, embedded and browser targets. Standard Lua `math` is unchanged. Neither module needs an app extension or a Display device. The production contract is `libs/lua/include/h2_lua_numeric.h`.
 
-Allocate buffers and meshes during setup. Buffers store binary64 values and an
-equal-sized private scratch area (approximately 16 bytes per scalar plus userdata
-overhead), all charged to the VM memory budget. Successful hot calls allocate
-nothing; error construction may allocate. Indices are one-based integers. Every
-numeric input/result must be finite and within ±1e6. Invalid types, bounds,
-parameters, topology or numeric overflow raise Lua errors without changing any
-published output. Prefix operations leave unused suffixes unchanged. Multiple
-outputs must differ; input/output aliasing is otherwise supported except for the
-physics restrictions below. No resizing, views or retained C pointers exist.
+Allocate buffers and meshes during setup. Buffers store binary64 values and an equal-sized private scratch area (approximately 16 bytes per scalar plus userdata overhead), all charged to the VM memory budget. Successful hot calls allocate nothing; error construction may allocate. Indices are one-based integers. Every numeric input/result must be finite and within ±1e6. Invalid types, bounds, parameters, topology or numeric overflow raise Lua errors without changing any published output. Prefix operations leave unused suffixes unchanged. Multiple outputs must differ; input/output aliasing is otherwise supported except for the physics restrictions below. No resizing, views or retained C pointers exist.
 
 | API | Result and semantics |
 | --- | --- |
@@ -57,59 +47,19 @@ physics restrictions below. No resizing, views or retained C pointers exist.
 | `geometry.mesh(vertex_capacity,primitive_capacity)` | Returns writer,public_display_mesh, initially empty; limits 32768 vertices/4096 primitives. |
 | `geometry.update_mesh(writer,xy,topology,nv,np)` | Returns same mesh; topology rows `{kind,first,count,rgb565}`, 0 polygon (3..128 vertices), 1 line (2); RGB565 integer 0..65535. No drawing/presenting. |
 
-Physics uses 1e-6 ≤ dt ≤ .1 and n ≤ 256. Inverse masses must be nonnegative; zero
-pins nodes. Verlet takes already mass-scaled accelerations, uses positive mass as
-a mobility flag, and leaves both states of pinned nodes unchanged. Its writable
-p/prev must differ from each other and from accel/inv_mass. Drag is nonnegative.
-Damping requires retain/blend in [0,1], leaves pinned prev unchanged, and uses each
-endpoint's own displacement as its neighbor mean; prev must differ from p/mass.
+Physics uses 1e-6 ≤ dt ≤ .1 and n ≤ 256. Inverse masses must be nonnegative; zero pins nodes. Verlet takes already mass-scaled accelerations, uses positive mass as a mobility flag, and leaves both states of pinned nodes unchanged. Its writable p/prev must differ from each other and from accel/inv_mass. Drag is nonnegative. Damping requires retain/blend in [0,1], leaves pinned prev unchanged, and uses each endpoint's own displacement as its neighbor mean; prev must differ from p/mass.
 
-Relaxation accepts n ≥ 1, m ≤ 512, iterations 1..32. Edge rows are
-`{node_a,node_b,rest_length,compliance}` with distinct valid indices and
-nonnegative rest/compliance. Lambda resets to zero each call; sweeps alternate
-forward/backward. `tension_only=true` clamps lambda ≤ 0, false is bilateral.
-Coincident endpoints (distance < 1e-12) and fully pinned edges are skipped.
-`lambda/dt²` represents constraint force. Writable p/lambda must differ from each
-other and all input buffers. There is no implicit collision or material policy.
+Relaxation accepts n ≥ 1, m ≤ 512, iterations 1..32. Edge rows are `{node_a,node_b,rest_length,compliance}` with distinct valid indices and nonnegative rest/compliance. Lambda resets to zero each call; sweeps alternate forward/backward. `tension_only=true` clamps lambda ≤ 0, false is bilateral. Coincident endpoints (distance < 1e-12) and fully pinned edges are skipped. `lambda/dt²` represents constraint force. Writable p/lambda must differ from each other and all input buffers. There is no implicit collision or material policy.
 
-`relax_sweep` shares relax's edge layout, n/m/dt limits and writable-buffer
-alias restrictions, but weights are **two values per edge**, not per node.
-It copies the existing lambda prefix and processes edges in forward or reverse
-order exactly once. With d the current distance, alpha=compliance/dt²:
-`next=old+(-(d-rest)-alpha*old)/(wa+wb+alpha)`; optionally clamp next to ≤0,
-then apply `a-=wa*(next-old)*(b-a)/d`, `b+=wb*(next-old)*(b-a)/d`.
-Zero distance, distance < epsilon, and wa+wb=0 are skipped. Epsilon is
-nonnegative, default 1e-12. Initialize lambda once before the caller's sweep loop.
-External constraints can run between sweeps without losing accumulated lambda.
+`relax_sweep` shares relax's edge layout, n/m/dt limits and writable-buffer alias restrictions, but weights are **two values per edge**, not per node. It copies the existing lambda prefix and processes edges in forward or reverse order exactly once. With d the current distance, alpha=compliance/dt²: `next=old+(-(d-rest)-alpha*old)/(wa+wb+alpha)`; optionally clamp next to ≤0, then apply `a-=wa*(next-old)*(b-a)/d`, `b+=wb*(next-old)*(b-a)/d`. Zero distance, distance < epsilon, and wa+wb=0 are skipped. Epsilon is nonnegative, default 1e-12. Initialize lambda once before the caller's sweep loop. External constraints can run between sweeps without losing accumulated lambda.
 
-`damp_edges` uses the same four-scalar edge rows and two-scalar weights;
-compliance is validated but unused. It accepts n in 1..256, m ≤512,
-blend in [0,1], threshold/epsilon ≥0; prev must differ from every input.
-For delta=b-a, d=length(delta), and current displacements u=p-prev,
-if d≥rest*threshold, d>epsilon, wa+wb>0 and dot(ub-ua,delta)>0, set
-`impulse=dot(ub-ua,delta)*blend/(wa+wb)/d²`, then
-`prev_a-=wa*impulse*delta`, `prev_b+=wb*impulse*delta`.
-Later edges observe earlier prev changes. Neither p nor lambda changes.
+`damp_edges` uses the same four-scalar edge rows and two-scalar weights; compliance is validated but unused. It accepts n in 1..256, m ≤512, blend in [0,1], threshold/epsilon ≥0; prev must differ from every input. For delta=b-a, d=length(delta), and current displacements u=p-prev, if d≥rest*threshold, d>epsilon, wa+wb>0 and dot(ub-ua,delta)>0, set `impulse=dot(ub-ua,delta)*blend/(wa+wb)/d²`, then `prev_a-=wa*impulse*delta`, `prev_b+=wb*impulse*delta`. Later edges observe earlier prev changes. Neither p nor lambda changes.
 
-`map`, `select_le` and `take` use buffer-capacity bounds (at most 65536
-scalars), permit all aliases, preserve unused suffixes and allocate no scratch
-beyond the destination's existing private storage. `take` requires width≥1,
-integer indices in 1..floor(#src/width), n≤#indices and n*width≤#dst.
-For vector conditionals, apply select_le separately to gathered scalar channels;
-for min(a,b), select using test=a-b, threshold=0, yes=a, no=b.
+`map`, `select_le` and `take` use buffer-capacity bounds (at most 65536 scalars), permit all aliases, preserve unused suffixes and allocate no scratch beyond the destination's existing private storage. `take` requires width≥1, integer indices in 1..floor(#src/width), n≤#indices and n*width≤#dst. For vector conditionals, apply select_le separately to gathered scalar channels; for min(a,b), select using test=a-b, threshold=0, yes=a, no=b.
 
-Camera layout is `{fx,fy,cx,cy,near}` with near ≥ .001, +Z forward and projection
-`(cx+fx*x/z,cy+fy*y/z)`. Use affine3 for camera positioning and negative fy for
-screen Y inversion. On-plane points are visible. Segments wholly behind near are
-discarded. Projection preserves source order/direction. Split side is −1/+1 for
-negative/positive, 0 only for wholly coplanar segments; touching endpoints do not
-create extra pieces. Tags and IDs let Lua choose shading independently.
+Camera layout is `{fx,fy,cx,cy,near}` with near ≥ .001, +Z forward and projection `(cx+fx*x/z,cy+fy*y/z)`. Use affine3 for camera positioning and negative fy for screen Y inversion. On-plane points are visible. Segments wholly behind near are discarded. Projection preserves source order/direction. Split side is −1/+1 for negative/positive, 0 only for wholly coplanar segments; touching endpoints do not create extra pieces. Tags and IDs let Lua choose shading independently.
 
-All transforms and point projection accept n ≤ 21845; prefix3 n ≤ 21844;
-polyline expansion accepts 1..4097 points; segment projection n ≤ 4096; splitting
-n ≤ 2048. Buffers must fit every requested scalar prefix. Segment projection
-requires worst-case space for n output rows/IDs; splitting requires 2*n output
-rows/tags even if no segment crosses. Mesh active counts must fit its capacities.
+All transforms and point projection accept n ≤ 21845; prefix3 n ≤ 21844; polyline expansion accepts 1..4097 points; segment projection n ≤ 4096; splitting n ≤ 2048. Buffers must fit every requested scalar prefix. Segment projection requires worst-case space for n output rows/IDs; splitting requires 2*n output rows/tags even if no segment crosses. Mesh active counts must fit its capacities.
 
 ```lua
 local v, g = require('vmath'), require('geometry')
@@ -125,7 +75,4 @@ g.update_mesh(writer,xy,topology,2,1)
 -- Submit mesh using the existing Display batch API.
 ```
 
-Binary64 retains small displacements; bulk calls avoid per-element Lua/C calls.
-There is no guarantee of cross-platform bit identity or an ESP32-S3 frame rate;
-measure real target workloads. Game formulas, camera constants, material choices,
-colors and time-step policy belong to Lua consumers.
+Binary64 retains small displacements; bulk calls avoid per-element Lua/C calls. There is no guarantee of cross-platform bit identity or an ESP32-S3 frame rate; measure real target workloads. Game formulas, camera constants, material choices, colors and time-step policy belong to Lua consumers.
