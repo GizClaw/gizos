@@ -1,0 +1,91 @@
+load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_jieli_firmware")
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel:jieli_task_policy.bzl", "jieli_target_task_policy")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+
+package(default_visibility = ["//visibility:public"])
+
+AC791N_COMPATIBILITY = select({
+    "//tools/bazel/platforms:ci_graph": [],
+    "//tools/bazel/platforms:is_ac791n": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+
+jieli_target_task_policy(
+    name = "button_task_policy",
+    default_policy = "10 4096 128",
+    graph = [":button_target", "//projects/example/native_component_src/jieli/wl82/devkit_app:launcher"],
+    policies = [
+        "button-smoke 10 16384 128",
+        "h2color/runtime 10 2048 128",
+        "h2loader/appcmd 10 12288 128",
+        "$runtime/input 10 4096 128",
+        "$runtime/nfc 10 4096 128",
+        "$lvgl/swdraw 10 8192 128",
+        "$lvgl/g2ddraw 10 4096 128",
+        "$lvgl/pxpdraw 10 4096 128",
+        "$lvgl/nemagfx 10 4096 128",
+        "$bleikcp/server 10 1536 128",
+        "$bleikcp/kcp 10 1536 128",
+        "$h2loader/blelink 10 1536 64",
+        "$h2loader/return 10 4096 128",
+        "$h2loader/uartcmd 10 4096 128",
+        "h2loader/blecmd 10 12288 128",
+    ],
+    sdk_policies = [
+        "app_core 15 8192 1024",
+        "sys_event 29 512 0",
+        "systimer 14 256 0",
+        "sys_timer 9 512 128",
+        "dw_update 21 512 32",
+        "h2app_rx 12 4096 128",
+        "#C0btctrler 19 768 384",
+        "#C0btstack 18 1536 384",
+    ],
+)
+
+h2_tasks(
+    name = "button_tasks",
+    tasks = ["button-smoke"],
+)
+
+firmware_native_component(
+    name = "button_target",
+    srcs = ["src/button_target.c"],
+    hdrs = ["//projects/example/apps/button/app:include/h2_button_smoke.h"],
+    include_roots = ["projects/example/apps/button/app/include"],
+    native_srcs = ["//projects/example/apps/button/app:src/h2_button_smoke.c"],
+    component_name = "jieli_ac791n_devkit_button_target",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = [
+        ":button_tasks",
+        "//projects/example/native_component_src/jieli/wl82/devkit_app:ui_libs",
+        "//boards/jieli_ac791n_devkit/ac791n",
+        "//libs/pal:pal_header_files",
+    ],
+)
+
+h2loader_jieli_firmware(
+    name = "button_firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":button_target",
+        "//projects/example/native_component_src/jieli/wl82/devkit_app:launcher",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "button",
+    target = "wl82",
+    task_policy = ":button_task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "button_package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":button_firmware",
+    image = "button",
+    role = "app",
+    target = "wl82",
+)

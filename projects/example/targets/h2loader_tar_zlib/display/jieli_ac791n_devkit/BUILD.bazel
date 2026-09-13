@@ -1,9 +1,6 @@
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_jieli_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
-load("//tools/bazel:native_component.bzl", "firmware_native_component")
 load("//tools/bazel:jieli_task_policy.bzl", "jieli_target_task_policy")
-load("//tools/bazel:tasks.bzl", "h2_tasks")
-load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -67,80 +64,24 @@ alias(
     actual = "//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:audio_system_task_policy",
 )
 
-jieli_target_task_policy(
+alias(
     name = "touch_task_policy",
-    default_policy = "10 4096 128",
-    graph = [":touch_target", ":color_bar_launcher"],
-    policies = [
-        "touch-smoke 10 16384 128",
-        "h2color/runtime 10 2048 128",
-        "h2loader/appcmd 10 12288 128",
-        "$runtime/input 10 4096 128",
-        "$runtime/nfc 10 4096 128",
-        "$lvgl/swdraw 10 8192 128",
-        "$lvgl/g2ddraw 10 4096 128",
-        "$lvgl/pxpdraw 10 4096 128",
-        "$lvgl/nemagfx 10 4096 128",
-        "$bleikcp/server 10 1536 128",
-        "$bleikcp/kcp 10 1536 128",
-        "$h2loader/blelink 10 1536 64",
-        "$h2loader/return 10 4096 128",
-        "$h2loader/uartcmd 10 4096 128",
-        "h2loader/blecmd 10 12288 128",
-    ],
-    sdk_policies = [
-        "app_core 15 8192 1024",
-        "sys_event 29 512 0",
-        "systimer 14 256 0",
-        "sys_timer 9 512 128",
-        "dw_update 21 512 32",
-        "h2app_rx 12 4096 128",
-        "#C0btctrler 19 768 384",
-        "#C0btstack 18 1536 384",
-    ],
+    actual = "//projects/example/targets/h2loader_tar_zlib/touch/jieli_ac791n_devkit:touch_task_policy",
 )
 
-h2_tasks(
+alias(
     name = "touch_tasks",
-    tasks = ["touch-smoke"],
+    actual = "//projects/example/targets/h2loader_tar_zlib/touch/jieli_ac791n_devkit:touch_tasks",
 )
 
-jieli_target_task_policy(
+alias(
     name = "button_task_policy",
-    default_policy = "10 4096 128",
-    graph = [":button_target", ":color_bar_launcher"],
-    policies = [
-        "button-smoke 10 16384 128",
-        "h2color/runtime 10 2048 128",
-        "h2loader/appcmd 10 12288 128",
-        "$runtime/input 10 4096 128",
-        "$runtime/nfc 10 4096 128",
-        "$lvgl/swdraw 10 8192 128",
-        "$lvgl/g2ddraw 10 4096 128",
-        "$lvgl/pxpdraw 10 4096 128",
-        "$lvgl/nemagfx 10 4096 128",
-        "$bleikcp/server 10 1536 128",
-        "$bleikcp/kcp 10 1536 128",
-        "$h2loader/blelink 10 1536 64",
-        "$h2loader/return 10 4096 128",
-        "$h2loader/uartcmd 10 4096 128",
-        "h2loader/blecmd 10 12288 128",
-    ],
-    sdk_policies = [
-        "app_core 15 8192 1024",
-        "sys_event 29 512 0",
-        "systimer 14 256 0",
-        "sys_timer 9 512 128",
-        "dw_update 21 512 32",
-        "h2app_rx 12 4096 128",
-        "#C0btctrler 19 768 384",
-        "#C0btstack 18 1536 384",
-    ],
+    actual = "//projects/example/targets/h2loader_tar_zlib/button/jieli_ac791n_devkit:button_task_policy",
 )
 
-h2_tasks(
+alias(
     name = "button_tasks",
-    tasks = ["button-smoke"],
+    actual = "//projects/example/targets/h2loader_tar_zlib/button/jieli_ac791n_devkit:button_tasks",
 )
 
 alias(
@@ -148,13 +89,9 @@ alias(
     actual = "//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:audio_system_libs",
 )
 
-firmware_lib_component(
+alias(
     name = "touch_libs",
-    component_name = "jieli_ac791n_devkit_touch_libs",
-    deps = [
-        "//libs/lvgl",
-        "//libs/runtime",
-    ],
+    actual = "//projects/example/native_component_src/jieli/wl82/devkit_app:ui_libs",
 )
 
 alias(
@@ -162,38 +99,14 @@ alias(
     actual = "//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:audio_system_target",
 )
 
-firmware_native_component(
+alias(
     name = "touch_target",
-    srcs = ["src/touch_target.c"],
-    hdrs = ["//projects/example/apps/touch/app:include/h2_touch_smoke.h"],
-    include_roots = ["projects/example/apps/touch/app/include"],
-    native_srcs = ["//projects/example/apps/touch/app:src/h2_touch_smoke.c"],
-    component_name = "jieli_ac791n_devkit_touch_target",
-    tags = ["manual"],
-    target_compatible_with = AC791N_COMPATIBILITY,
-    deps = [
-        ":touch_libs",
-        ":touch_tasks",
-        "//boards/jieli_ac791n_devkit/ac791n",
-        "//libs/pal:pal_header_files",
-    ],
+    actual = "//projects/example/targets/h2loader_tar_zlib/touch/jieli_ac791n_devkit:touch_target",
 )
 
-firmware_native_component(
+alias(
     name = "button_target",
-    srcs = ["src/button_target.c"],
-    hdrs = ["//projects/example/apps/button/app:include/h2_button_smoke.h"],
-    include_roots = ["projects/example/apps/button/app/include"],
-    native_srcs = ["//projects/example/apps/button/app:src/h2_button_smoke.c"],
-    component_name = "jieli_ac791n_devkit_button_target",
-    tags = ["manual"],
-    target_compatible_with = AC791N_COMPATIBILITY,
-    deps = [
-        ":button_tasks",
-        ":touch_libs",
-        "//boards/jieli_ac791n_devkit/ac791n",
-        "//libs/pal:pal_header_files",
-    ],
+    actual = "//projects/example/targets/h2loader_tar_zlib/button/jieli_ac791n_devkit:button_target",
 )
 
 alias(
@@ -288,30 +201,14 @@ alias(
     actual = "//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:audio_system_firmware",
 )
 
-h2loader_jieli_firmware(
+alias(
     name = "touch_firmware",
-    board = "jieli_ac791n_devkit",
-    graph = [
-        ":touch_target",
-        ":color_bar_launcher",
-        "//boards/jieli_ac791n_devkit/ac791n",
-    ],
-    image = "touch",
-    target = "wl82",
-    task_policy = ":touch_task_policy",
+    actual = "//projects/example/targets/h2loader_tar_zlib/touch/jieli_ac791n_devkit:touch_firmware",
 )
 
-h2loader_jieli_firmware(
+alias(
     name = "button_firmware",
-    board = "jieli_ac791n_devkit",
-    graph = [
-        ":button_target",
-        ":color_bar_launcher",
-        "//boards/jieli_ac791n_devkit/ac791n",
-    ],
-    image = "button",
-    target = "wl82",
-    task_policy = ":button_task_policy",
+    actual = "//projects/example/targets/h2loader_tar_zlib/button/jieli_ac791n_devkit:button_firmware",
 )
 
 h2loader_tar_zlib(
@@ -350,20 +247,12 @@ alias(
     actual = "//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:audio_system_package",
 )
 
-h2loader_tar_zlib(
+alias(
     name = "touch_package",
-    board = "jieli_ac791n_devkit",
-    firmware = ":touch_firmware",
-    image = "touch",
-    role = "app",
-    target = "wl82",
+    actual = "//projects/example/targets/h2loader_tar_zlib/touch/jieli_ac791n_devkit:touch_package",
 )
 
-h2loader_tar_zlib(
+alias(
     name = "button_package",
-    board = "jieli_ac791n_devkit",
-    firmware = ":button_firmware",
-    image = "button",
-    role = "app",
-    target = "wl82",
+    actual = "//projects/example/targets/h2loader_tar_zlib/button/jieli_ac791n_devkit:button_package",
 )

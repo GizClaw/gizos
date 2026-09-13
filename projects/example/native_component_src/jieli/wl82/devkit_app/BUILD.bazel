@@ -1,7 +1,17 @@
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
+
+firmware_lib_component(
+    name = "ui_libs",
+    component_name = "jieli_ac791n_devkit_touch_libs",
+    deps = [
+        "//libs/lvgl",
+        "//libs/runtime",
+    ],
+)
 
 h2_tasks(
     name = "tasks",
