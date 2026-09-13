@@ -32,8 +32,8 @@ the shared board H2Loader layout. No board-local copy of the test cases exists.
 ## Source-confirmed coverage / implementation gaps
 
 - SDK `include_lib/system/timer.h` documents that `sys_timer_add` and
-  `sys_timeout_add` dispatch to the registering task. The Timer PAL currently
-  uses those calls and requires ownership by that task. Portable PAL tasks do
+  `sys_timeout_add` dispatch to the registering task. The Timer PAL used by
+  the three runs above uses those calls and requires ownership by that task. Portable PAL tasks do
   not run the SDK event loop; this needs a proper dispatch/lifecycle adaptation,
   not an application-side message loop or a weakened test. This is not yet
   proven to be the specific failing case or the third run's stop location.
@@ -51,3 +51,20 @@ Host validation was freshly executed, not satisfied only from cached results:
 `pal_e2e_test`, `mqtt_loopback_test` under `projects/e2e/targets/cc_binary/pal`
 passed. Native AC791N package compilation passed. Those results do not replace
 the failed/incomplete hardware evidence above.
+
+## Prepared Timer fix (not installed)
+
+`9d970f63` marshals Timer PAL operations to the SDK `sys_timer` service. Timer
+callbacks, mutations and delayed reclamation share that service; callers no
+longer need their own SDK message loop. Callback-originated operations execute
+inline, and failed enqueue leaves the timer retryable. This addresses the
+source-confirmed dispatch mismatch; it does not identify the third run's
+actual stop location without a fresh device record.
+
+The prepared package SHA-256 is
+`0f4c979c5064d255cc773dd2a9e1b2969988680b7af0e2793cee6b45b395adcf`.
+Native build and PAL core behavior tests passed. A subsequent fresh UART
+status request still timed out, and the ten-minute raw reset capture completed
+with zero bytes. No physical reset was observed and this package has not been
+installed. A user Reset and Loader status/crash-record recovery remain required
+before resuming hardware acceptance.
