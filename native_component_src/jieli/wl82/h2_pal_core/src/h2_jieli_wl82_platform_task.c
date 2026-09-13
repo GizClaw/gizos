@@ -72,6 +72,10 @@ static int task_start(
      * identities. Several live workers may use the same policy. The SDK
      * deletes by name, so retain a distinct native name for every live object. */
     const char *label = name != NULL ? name : "$h2anon";
+    /* The SDK strips affinity metadata before storing its native task name.
+     * Retain that same canonical identity for name-based deletion. */
+    if (strncmp(label, "#C", 2u) == 0 &&
+        (label[2] == '0' || label[2] == '1')) label += 3u;
     static const char hex[] = "0123456789abcdef";
     const uintptr_t identity = (uintptr_t)task;
     const size_t digits = 2u * sizeof(identity);
