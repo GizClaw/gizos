@@ -64,7 +64,7 @@ sequenceDiagram
 | 本轮完成 | 输入结束已发出即完成，不等待服务端 | `h2_gizclaw_service_poll()` 分发的 completion callback |
 | Cancel / 挂断 | 停止 mic、关闭输入、丢弃未播放输出 | `h2_gizclaw_conversation_cancel()`，之后 `h2_gizclaw_conversation_release()` |
 
-Conversation 完成同时满足服务端 response terminal 和本地 playback drained。
+Conversation completion 表示本轮输入已发送，不等待服务端回复或本地播放排空。
 
 ## Audio 格式与背压
 
@@ -87,6 +87,15 @@ Conversation 完成同时满足服务端 response terminal 和本地 playback dr
 ### Conversation 输入边界
 
 开始输入先发送新 StreamID 的纯控制 BOS（kind 未指定，mime_type 为空），因此上游可以立即打断旧回复。第一块 PCM 到达后才发送同一 StreamID 的音频 BOS，并等待 AUDIO_INPUT_READY 后发送 Opus；结束时先发送已打开音频通道的 EOS，再发送纯控制 EOS。没有 PCM 的输入只发送纯控制 BOS/EOS，不等待音频 READY，也不生成静音包或空文本。
+
+### 完整文字输入
+
+`h2_gizclaw_conversation_send_text()` 在已配置的空闲路由上复制并异步提交
+1–4096 字节 UTF-8 文本，无需启动麦克风。发送纯控制 BOS 后，以同一 stream ID 和
+输入 label 发送 TEXT_DONE；TEXT_DONE 自带输入结束，不额外发送 EOS。
+录音中或上一输入尚未 completion 时返回 BUSY。完成和错误由原有 poll/completion
+分发；完成只表示输入已发送，之后到达的下行音频照常播放。详细错误、buffer ownership
+与 Workspace 前置条件见 [Conversation 文字输入](/zh/developing/gizclaw#conversation-文字输入)。
 
 ### Speech RPC 音频流
 
