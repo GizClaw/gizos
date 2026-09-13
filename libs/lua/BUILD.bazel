@@ -59,6 +59,7 @@ cc_library(
     hdrs = [
         "include/h2_lua.h",
         "include/h2_lua_capability.h",
+        "include/h2_lua_display.h",
         "include/h2_lua_esp_claw.h",
         "include/h2_lua_event.h",
         "include/h2_lua_job.h",
@@ -75,6 +76,7 @@ cc_library(
         ":tasks",
         ":lua_core",
         "//libs/runtime",
+        "//libs/utils",
         "//tools/bazel:vendor_third_party_lua",
         "//tools/bazel:vendor_third_party_yyjson",
     ] + select({
@@ -160,6 +162,7 @@ cc_test(
         ":lua_runtime",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
+        "//tools/bazel:vendor_third_party_lua",
     ],
 )
 

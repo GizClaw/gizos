@@ -151,6 +151,16 @@ typedef struct h2_lua_job {
   int dirty_min_y;
   int dirty_max_x;
   int dirty_max_y;
+  /* Cache storage is VM-owned; zero registry references mean detached state. */
+  void *display_background;
+  int display_background_ref;
+  int display_background_valid;
+  void *display_presented;
+  int display_presented_ref;
+  int display_presented_valid;
+  void *display_smooth;
+  int display_smooth_ref;
+  int display_shutting_down;
   uint8_t display_fade_phase;
   int touch_open;
   int touch_initialized;
@@ -172,6 +182,9 @@ typedef struct h2_lua_job {
   /* Empty when the job was submitted without a storage identity. */
   char app_id[H2_LUA_STORAGE_APP_ID_MAX + 1u];
 } h2_lua_job_t;
+
+/* Detach Display storage before VM finalizers run; forbid reopening on teardown. */
+void h2_lua_job_close_display(h2_lua_job_t *job);
 
 /*
  * Hooks installed by //libs/lua:lua_link before Host start. open_module adds

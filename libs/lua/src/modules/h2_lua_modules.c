@@ -1,3 +1,5 @@
+#include "h2_lua_display.h"
+#include "h2_f32_math.h"
 #include "../runtime/h2_lua_internal.h"
 
 #include <limits.h>
@@ -1228,9 +1230,73 @@ static int check_pixel_number(lua_State *state, int argument) {
   return (int)value;
 }
 
+#define H2_LUA_DISPLAY_REGION_META "h2.display.region"
+
+typedef struct display_region_row {
+  size_t offset;
+  size_t first_run;
+  int left, right, run_count;
+} display_region_row_t;
+
+typedef struct display_region_run {
+  uint16_t left, right;
+} display_region_run_t;
+
+typedef struct display_region {
+  int width, height, masked;
+  uint16_t key;
+  size_t pixel_count, run_count;
+  /* Rows, compiled runs, pixels, then background damage bytes. */
+  display_region_row_t rows[];
+} display_region_t;
+
+typedef struct display_presented {
+  size_t pixel_count;
+  /* Full last-successful frame followed by one comparison byte per tile. */
+  uint16_t pixels[];
+} display_presented_t;
+
+static size_t display_tile_count(int width, int height) {
+  return (size_t)((width + 15) / 16) * (size_t)((height + 15) / 16);
+}
+
+static display_region_run_t *display_region_runs(display_region_t *region) {
+  return (display_region_run_t *)(region->rows + region->height);
+}
+
+static uint16_t *display_region_pixels(display_region_t *region) {
+  return (uint16_t *)(display_region_runs(region) + region->run_count);
+}
+
+static uint8_t *display_region_damage(display_region_t *region) {
+  return (uint8_t *)(display_region_pixels(region) + region->pixel_count);
+}
+
+static void display_damage_rect(h2_lua_job_t *job, int left, int top,
+                                int right, int bottom) {
+  display_region_t *region = job->display_background;
+  if (region == NULL)
+    return;
+  int columns = (region->width + 15) / 16;
+  uint8_t *damage = display_region_damage(region);
+  for (int y = top / 16; y <= bottom / 16; ++y)
+    memset(damage + (size_t)y * columns + left / 16, 1,
+           (size_t)(right / 16 - left / 16 + 1));
+}
+
+static void display_dirty_full(h2_lua_job_t *job) {
+  job->dirty_valid = 1;
+  job->dirty_min_x = job->dirty_min_y = 0;
+  job->dirty_max_x = job->display_info.width - 1;
+  job->dirty_max_y = job->display_info.height - 1;
+  display_damage_rect(job, 0, 0, job->dirty_max_x, job->dirty_max_y);
+}
+
 static h2_pal_result_t display_open(h2_lua_job_t *job) {
   size_t pixel_count;
   h2_pal_result_t result;
+  if (job->display_shutting_down)
+    return H2_PAL_ERR_INVALID_STATE;
   if (job->display_open)
     return H2_PAL_OK;
   if (!job->host->config.borrow_display) {
@@ -1282,6 +1348,7 @@ static void set_pixel(h2_lua_job_t *job, int x, int y, uint16_t color) {
       y < job->display_info.height) {
     job->framebuffer[(size_t)y * (size_t)job->display_info.width + (size_t)x] =
         color;
+    display_damage_rect(job, x, y, x, y);
     if (job->dirty_valid && job->dirty_min_x == 0 && job->dirty_min_y == 0 &&
         job->dirty_max_x == job->display_info.width - 1 &&
         job->dirty_max_y == job->display_info.height - 1) {
@@ -1324,6 +1391,7 @@ static void mark_dirty_rect(h2_lua_job_t *job, int x, int y, int width,
   if (min_x > max_x || min_y > max_y) {
     return;
   }
+  display_damage_rect(job, min_x, min_y, max_x, max_y);
   if (!job->dirty_valid) {
     job->dirty_valid = 1;
     job->dirty_min_x = min_x;
@@ -1454,11 +1522,7 @@ static void display_clear_pixels(h2_lua_job_t *job, uint16_t color) {
     *pixels++ = color;
     --count;
   }
-  job->dirty_valid = 1;
-  job->dirty_min_x = 0;
-  job->dirty_min_y = 0;
-  job->dirty_max_x = job->display_info.width - 1;
-  job->dirty_max_y = job->display_info.height - 1;
+  display_dirty_full(job);
 }
 
 static int display_clear(lua_State *state) {
@@ -1469,6 +1533,1146 @@ static int display_clear(lua_State *state) {
   }
   display_clear_pixels(job, color);
   return 0;
+}
+
+static double check_geometry_number(lua_State *state, int index) {
+  double value = luaL_checknumber(state, index);
+  if (!isfinite(value) || fabs(value) > 100000.0)
+    luaL_argerror(state, index, "geometry value is out of range");
+  return value;
+}
+
+static double optional_geometry_number(lua_State *state, int index,
+                                         double fallback) {
+  return lua_isnoneornil(state, index) ? fallback
+                                      : check_geometry_number(state, index);
+}
+
+static void display_check_clip(lua_State *state, h2_lua_job_t *job,
+                                 int top_index, int bottom_index,
+                                 int *top, int *bottom) {
+  lua_Integer first = luaL_optinteger(state, top_index, 0);
+  lua_Integer end = luaL_optinteger(state, bottom_index, job->display_info.height);
+  /* Validate in Lua's integer width before narrowing on 32-bit targets. */
+  if (!job->display_open || first < 0 || first > end ||
+      end > job->display_info.height)
+    luaL_error(state, "invalid display clip or closed display");
+  *top = (int)first;
+  *bottom = (int)end;
+}
+
+typedef struct display_cached_span {
+  int32_t left, right, y, end_y; /* Negative end_y: span; otherwise a line. */
+  uint16_t color;
+} display_cached_span_t;
+
+typedef struct display_span_cache {
+  size_t count, capacity;
+  int valid;
+  display_cached_span_t spans[];
+} display_span_cache_t;
+
+static void display_cache_record(display_span_cache_t *cache, int left,
+                                  int right, int y, int end_y, uint16_t color) {
+  if (cache == NULL || !cache->valid) return;
+  if (cache->count == cache->capacity) cache->valid = 0;
+  else cache->spans[cache->count++] =
+      (display_cached_span_t){left, right, y, end_y, color};
+}
+
+static void display_raster_polygon_rect_capture(h2_lua_job_t *job, const double *x,
+                                     const double *y, size_t count,
+                                     uint16_t color, double offset,
+                                     int top, int bottom, int clip_left,
+                                     int clip_right, display_span_cache_t *cache) {
+  double intersections[128];
+  float edge_x[128], edge_y[128], slope[128], error[128];
+  int edge_first[128], edge_end[128];
+  for (size_t i = 0; i < count; ++i) {
+    size_t j = (i + 1) % count;
+    edge_first[i] = (int)ceil(fmin(y[i], y[j]));
+    edge_end[i] = (int)ceil(fmax(y[i], y[j]));
+    edge_x[i] = (float)x[i];
+    edge_y[i] = (float)y[i];
+    float dx = (float)x[j] - edge_x[i], dy = (float)y[j] - edge_y[i];
+    slope[i] = fabsf(dy) < 1e-5f ? 0 : dx / dy;
+    error[i] = fabsf(dy) < 1e-5f ? 1 :
+        32 * FLT_EPSILON * (fabsf(edge_x[i]) + fabsf(dx) *
+        (1 + (fabsf(edge_y[i]) + job->display_info.height) / fabsf(dy))) + 1e-7f;
+  }
+  double low = y[0], high = y[0];
+  for (size_t i = 1u; i < count; ++i) {
+    low = fmin(low, y[i]);
+    high = fmax(high, y[i]);
+  }
+  int first = (int)fmax(top, ceil(low));
+  int last = (int)fmin(bottom - 1, floor(high));
+  for (int row = first; row <= last; ++row) {
+    size_t used = 0u;
+    for (size_t i = 0u; i < count; ++i) {
+      size_t next = (i + 1u) % count;
+      if (row >= edge_first[i] && row < edge_end[i]) {
+        double cross;
+        if (x[i] == x[next]) cross = x[i];
+        else {
+          float fast = edge_x[i] + ((float)row - edge_y[i]) * slope[i];
+          float fraction = fast - floorf(fast);
+          if (error[i] < .25f && fraction > error[i] && fraction < 1 - error[i])
+            cross = fast;
+          else cross = x[i] + (row - y[i]) * (x[next] - x[i]) / (y[next] - y[i]);
+        }
+        size_t at = used++;
+        while (at > 0u && intersections[at - 1u] > cross) {
+          intersections[at] = intersections[at - 1u];
+          --at;
+        }
+        intersections[at] = cross;
+      }
+    }
+    /* Even-odd, half-open edges; inclusive horizontal integer spans. */
+    for (size_t i = 0u; i + 1u < used; i += 2u) {
+      int left = (int)floor(ceil(intersections[i]) + offset + 0.5);
+      int width = (int)(floor(intersections[i + 1u]) -
+                        ceil(intersections[i]) + 1);
+      if (width > 0) {
+        int right = left + width - 1;
+        if (left < clip_left) left = clip_left;
+        if (right >= clip_right) right = clip_right - 1;
+        if (left <= right) {
+          fill_span(job, row, left, right, color);
+          mark_dirty_rect(job, left, row, right - left + 1, 1);
+          display_cache_record(cache, left, right, row, -1, color);
+        }
+      }
+    }
+  }
+}
+
+static void display_raster_polygon_rect(h2_lua_job_t *job, const double *x,
+                                        const double *y, size_t count,
+                                        uint16_t color, double offset,
+                                        int top, int bottom, int left, int right) {
+  display_raster_polygon_rect_capture(job, x, y, count, color, offset,
+                                       top, bottom, left, right, NULL);
+}
+
+static void display_raster_polygon(h2_lua_job_t *job, const double *x,
+                                  const double *y, size_t count, uint16_t color,
+                                  double offset, int top, int bottom) {
+  display_raster_polygon_rect(job, x, y, count, color, offset, top, bottom,
+                             0, job->display_info.width);
+}
+
+static int display_fill_polygon(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  double x[128], y[128];
+  luaL_checktype(state, 1, LUA_TTABLE);
+  size_t count = lua_rawlen(state, 1);
+  uint16_t color = check_color(state, 2);
+  double offset = optional_geometry_number(state, 3, 0);
+  double scale = optional_geometry_number(state, 6, 1);
+  int top, bottom;
+  display_check_clip(state, job, 4, 5, &top, &bottom);
+  if (count < 3u || count > 128u || scale <= 0 || scale > 16)
+    return luaL_error(state, "invalid polygon count or scale");
+  for (size_t i = 0u; i < count; ++i) {
+    lua_rawgeti(state, 1, (lua_Integer)i + 1);
+    luaL_checktype(state, -1, LUA_TTABLE);
+    lua_rawgeti(state, -1, 1);
+    x[i] = check_geometry_number(state, -1) * scale;
+    lua_pop(state, 1);
+    lua_rawgeti(state, -1, 2);
+    y[i] = check_geometry_number(state, -1) * scale;
+    lua_pop(state, 2);
+  }
+  display_raster_polygon(job, x, y, count, color, offset, top, bottom);
+  return 0;
+}
+
+static int display_fill_ellipse(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  double x = check_geometry_number(state, 1);
+  double y = check_geometry_number(state, 2);
+  double rx = check_geometry_number(state, 3);
+  double ry = check_geometry_number(state, 4);
+  uint16_t color = check_color(state, 5);
+  double offset = optional_geometry_number(state, 6, 0);
+  int top, bottom;
+  display_check_clip(state, job, 7, 8, &top, &bottom);
+  if (rx < 0 || ry <= 0 || ry > 2048)
+    return luaL_error(state, "invalid ellipse radii");
+  for (double local_y = -ry; local_y <= ry; local_y += 1) {
+    int row = (int)floor(y + local_y + 0.5);
+    if (row < top || row >= bottom)
+      continue;
+    double extent = rx * sqrt(fmax(0, 1 - local_y * local_y / (ry * ry)));
+    int left = (int)floor(x - extent + offset + 0.5);
+    int width = (int)floor(2 * extent + 1.5);
+    fill_span(job, row, left, left + width - 1, color);
+    mark_dirty_rect(job, left, row, width, 1);
+  }
+  return 0;
+}
+
+/* Clip before Bresenham so even very distant command endpoints do bounded
+ * work. This helper does not modify the existing draw_line API's bounds. */
+static void display_clipped_line_rect_capture(h2_lua_job_t *job, double x, double y,
+                                   double end_x, double end_y, uint16_t color,
+                                   int top, int bottom, int left, int right,
+                                   display_span_cache_t *cache) {
+  if (top == bottom || left == right)
+    return;
+  double dx = end_x - x, dy = end_y - y, low = 0, high = 1;
+  /* Entirely visible segments need no software double divisions. Keep the
+   * endpoint rounding below identical to the clipping path. */
+  if (x < left || end_x < left || x > right - 1 ||
+      end_x > right - 1 || y < top || end_y < top ||
+      y > bottom - 1 || end_y > bottom - 1) {
+    if (dx == 0) {
+      if (x < left || x > right - 1)
+        return;
+    } else {
+      double a = (left - x) / dx, b = (right - 1 - x) / dx;
+      low = fmax(low, fmin(a, b));
+      high = fmin(high, fmax(a, b));
+    }
+    if (dy == 0) {
+      if (y < top || y > bottom - 1)
+        return;
+    } else {
+      double a = (top - y) / dy, b = (bottom - 1 - y) / dy;
+      low = fmax(low, fmin(a, b));
+      high = fmin(high, fmax(a, b));
+    }
+  }
+  if (low > high)
+    return;
+  int x0 = (int)floor(x + dx * low + 0.5);
+  int y0 = (int)floor(y + dy * low + 0.5);
+  int x1 = (int)floor(x + dx * high + 0.5);
+  int y1 = (int)floor(y + dy * high + 0.5);
+  display_cache_record(cache, x0, x1, y0, y1, color);
+  int width = abs(x1 - x0), height = abs(y1 - y0);
+  int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  int64_t error = (int64_t)width - height;
+  mark_dirty_rect(job, x0 < x1 ? x0 : x1, y0 < y1 ? y0 : y1,
+                  width + 1, height + 1);
+  for (;;) {
+    write_pixel(job, x0, y0, color);
+    if (x0 == x1 && y0 == y1)
+      break;
+    int64_t twice = error * 2;
+    if (twice >= -height) { error -= height; x0 += sx; }
+    if (twice <= width) { error += width; y0 += sy; }
+  }
+}
+
+static void display_clipped_line_rect(h2_lua_job_t *job, double x, double y,
+                                       double end_x, double end_y, uint16_t color,
+                                       int top, int bottom, int left, int right) {
+  display_clipped_line_rect_capture(job, x, y, end_x, end_y, color,
+                                     top, bottom, left, right, NULL);
+}
+
+static void display_cache_replay(h2_lua_job_t *job, display_span_cache_t *cache) {
+  for (size_t i = 0; i < cache->count; ++i) {
+    const display_cached_span_t *span = &cache->spans[i];
+    if (span->end_y < 0) {
+      fill_span(job, span->y, span->left, span->right, span->color);
+      mark_dirty_rect(job, span->left, span->y, span->right - span->left + 1, 1);
+    } else {
+      display_clipped_line_rect(job, span->left, span->y, span->right, span->end_y,
+          span->color, 0, job->display_info.height, 0, job->display_info.width);
+    }
+  }
+}
+
+static void display_clipped_line(h2_lua_job_t *job, double x, double y,
+                                 double end_x, double end_y, uint16_t color,
+                                 int top, int bottom) {
+  display_clipped_line_rect(job, x, y, end_x, end_y, color, top, bottom,
+                           0, job->display_info.width);
+}
+
+typedef struct h2_lua_pixel_command {
+  int kind, x, y, a, b;
+  uint16_t color;
+} h2_lua_pixel_command_t;
+
+typedef struct h2_lua_pixel_commands {
+  size_t count;
+  h2_lua_pixel_command_t commands[];
+} h2_lua_pixel_commands_t;
+
+#define H2_LUA_COMMANDS_META "h2.display.pixel_commands"
+
+static int display_compile_commands(lua_State *state) {
+  luaL_checktype(state, 1, LUA_TTABLE);
+  size_t count = lua_rawlen(state, 1);
+  if (count > 16384u ||
+      count > (SIZE_MAX - sizeof(h2_lua_pixel_commands_t)) /
+                  sizeof(h2_lua_pixel_command_t))
+    return luaL_error(state, "too many pixel commands");
+  h2_lua_pixel_commands_t *list = lua_newuserdatauv(
+      state, sizeof(*list) + count * sizeof(*list->commands), 0);
+  list->count = count;
+  for (size_t i = 0u; i < count; ++i) {
+    lua_rawgeti(state, 1, (lua_Integer)i + 1);
+    luaL_checktype(state, -1, LUA_TTABLE);
+    lua_rawgeti(state, -1, 1);
+    lua_Integer kind = luaL_checkinteger(state, -1);
+    lua_pop(state, 1);
+    if (kind != 0 && kind != 1)
+      return luaL_error(state, "invalid pixel command kind");
+    int values[4];
+    for (int j = 0; j < 4; ++j) {
+      lua_rawgeti(state, -1, j + 2);
+      double value = check_geometry_number(state, -1);
+      if (kind == 0 && j >= 2 && value < 0)
+        return luaL_error(state, "negative command rectangle size");
+      values[j] = (int)value;
+      lua_pop(state, 1);
+    }
+    lua_rawgeti(state, -1, 6);
+    uint16_t color = check_color(state, -1);
+    lua_pop(state, 2);
+    list->commands[i] = (h2_lua_pixel_command_t){
+        (int)kind, values[0], values[1], values[2], values[3], color};
+  }
+  luaL_newmetatable(state, H2_LUA_COMMANDS_META);
+  lua_setmetatable(state, -2);
+  return 1;
+}
+
+static int display_draw_commands(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  const h2_lua_pixel_commands_t *list =
+      luaL_checkudata(state, 1, H2_LUA_COMMANDS_META);
+  int top, bottom;
+  double ox = optional_geometry_number(state, 4, 0);
+  double oy = optional_geometry_number(state, 5, 0);
+  double sx = optional_geometry_number(state, 6, 1);
+  double sy = optional_geometry_number(state, 7, sx);
+  int recolor = !lua_isnoneornil(state, 8);
+  uint16_t ink = recolor ? check_color(state, 8) : 0;
+  /* RGB table getters may call Lua, including Display deinit. Validate the
+   * acquisition after decoding every argument that can invoke user code. */
+  display_check_clip(state, job, 2, 3, &top, &bottom);
+  if (sx <= 0 || sy <= 0 || sx > 1000 || sy > 1000)
+    return luaL_error(state, "invalid command scale");
+  if (top == bottom)
+    return 0;
+  int transformed = ox != 0 || oy != 0 || sx != 1 || sy != 1;
+  /* Compile bounds and scale limits keep every transformed endpoint below
+   * 201 million, including rectangle end coordinates, before int narrowing. */
+  for (size_t i = 0u; i < list->count; ++i) {
+    const h2_lua_pixel_command_t *command = &list->commands[i];
+    uint16_t color = recolor ? ink : command->color;
+    /* Pixel-aligned retained art does not need repeated double transforms. */
+    if (!transformed) {
+      if (command->kind == 0) {
+        int first = command->y > top ? command->y : top;
+        int end = command->y + command->b;
+        int last = end < bottom ? end : bottom;
+        if (command->a == 0 || last <= first)
+          continue;
+        for (int row = first; row < last; ++row)
+          fill_span(job, row, command->x, command->x + command->a - 1, color);
+        mark_dirty_rect(job, command->x, first, command->a, last - first);
+      } else {
+        display_clipped_line(job, command->x, command->y, command->a,
+                             command->b, color, top, bottom);
+      }
+      continue;
+    }
+    int x = (int)floor(ox + command->x * sx + 0.5);
+    int y = (int)floor(oy + command->y * sy + 0.5);
+    if (command->kind == 0) {
+      int right = (int)floor(ox + (command->x + command->a) * sx + 0.5);
+      int end = (int)floor(oy + (command->y + command->b) * sy + 0.5);
+      int first = y > top ? y : top, last = end < bottom ? end : bottom;
+      if (right <= x || last <= first)
+        continue;
+      for (int row = first; row < last; ++row)
+        fill_span(job, row, x, right - 1, color);
+      mark_dirty_rect(job, x, first, right - x, last - first);
+    } else {
+      double end_x = floor(ox + command->a * sx + 0.5);
+      double end_y = floor(oy + command->b * sy + 0.5);
+      display_clipped_line(job, x, y, end_x, end_y, color, top, bottom);
+    }
+  }
+  return 0;
+}
+
+/* One representation for Lua tables and allocation-free native updates. */
+typedef struct h2_lua_display_mesh {
+  size_t vertex_capacity, primitive_capacity;
+  size_t vertex_count, primitive_count;
+  double matrix[6];
+  int grid;
+  int positions_valid;
+  int spans_valid;
+  int span_left, span_right, span_top, span_bottom, span_width, span_height;
+  int span_recolor;
+  uint16_t span_color;
+  double span_offset;
+} h2_lua_display_mesh_t;
+
+static const char s_display_mesh_meta;
+
+_Static_assert(_Alignof(h2_lua_display_mesh_t) >=
+                   _Alignof(h2_lua_display_vertex_t), "mesh vertex alignment");
+_Static_assert(_Alignof(h2_lua_display_vertex_t) >=
+                   _Alignof(h2_lua_display_primitive_t), "mesh primitive alignment");
+
+static h2_lua_display_vertex_t *mesh_vertices(h2_lua_display_mesh_t *mesh) {
+  return (h2_lua_display_vertex_t *)(mesh + 1);
+}
+
+static h2_lua_display_vertex_t *mesh_positions(h2_lua_display_mesh_t *mesh) {
+  return mesh_vertices(mesh) + mesh->vertex_capacity;
+}
+
+static h2_lua_display_primitive_t *mesh_primitives(h2_lua_display_mesh_t *mesh) {
+  return (h2_lua_display_primitive_t *)(mesh_positions(mesh) + mesh->vertex_capacity);
+}
+
+static int mesh_data_valid(const h2_lua_display_mesh_data_t *data,
+                          size_t vertex_capacity, size_t primitive_capacity) {
+  if (data == NULL || data->vertex_count > vertex_capacity ||
+      data->primitive_count > primitive_capacity ||
+      (data->vertex_count != 0u && data->vertices == NULL) ||
+      (data->primitive_count != 0u && data->primitives == NULL))
+    return 0;
+  for (size_t i = 0u; i < data->vertex_count; ++i) {
+    if (!isfinite(data->vertices[i].x) || !isfinite(data->vertices[i].y) ||
+        fabs(data->vertices[i].x) > 1000000 || fabs(data->vertices[i].y) > 1000000)
+      return 0;
+  }
+  for (size_t i = 0u; i < data->primitive_count; ++i) {
+    const h2_lua_display_primitive_t *p = &data->primitives[i];
+    if (p->first > data->vertex_count || p->count > data->vertex_count - p->first)
+      return 0;
+    if (p->kind == H2_LUA_DISPLAY_POLYGON) {
+      if (p->count < 3u || p->count > 128u)
+        return 0;
+    } else if (p->kind != H2_LUA_DISPLAY_LINE || p->count != 2u) {
+      return 0;
+    }
+  }
+  return 1;
+}
+
+static void mesh_replace(h2_lua_display_mesh_t *mesh,
+                         const h2_lua_display_mesh_data_t *data) {
+  if (data->vertex_count != 0u)
+    memcpy(mesh_vertices(mesh), data->vertices,
+           data->vertex_count * sizeof(*data->vertices));
+  if (data->primitive_count != 0u)
+    memcpy(mesh_primitives(mesh), data->primitives,
+           data->primitive_count * sizeof(*data->primitives));
+  mesh->vertex_count = data->vertex_count;
+  mesh->primitive_count = data->primitive_count;
+  mesh->positions_valid = 0;
+  mesh->spans_valid = 0;
+}
+
+/* Two spare slots, no allocator or metamethod calls, even for wrong types. */
+static h2_lua_display_mesh_t *mesh_test(lua_State *state, int index) {
+  int top = lua_gettop(state);
+  if (index == 0 || index > top || index < -top ||
+      lua_type(state, index) != LUA_TUSERDATA)
+    return NULL;
+  index = lua_absindex(state, index);
+  if (!lua_getmetatable(state, index))
+    return NULL;
+  lua_rawgetp(state, LUA_REGISTRYINDEX, &s_display_mesh_meta);
+  int matches = lua_rawequal(state, -1, -2);
+  lua_pop(state, 2);
+  return matches ? lua_touserdata(state, index) : NULL;
+}
+
+static h2_lua_display_mesh_t *mesh_allocate(lua_State *state, size_t vertices,
+                                           size_t primitives) {
+  if (vertices > H2_LUA_DISPLAY_VERTEX_LIMIT ||
+      primitives > H2_LUA_DISPLAY_PRIMITIVE_LIMIT ||
+      vertices > (SIZE_MAX - sizeof(h2_lua_display_mesh_t)) /
+                     (2u * sizeof(h2_lua_display_vertex_t)))
+    luaL_error(state, "invalid mesh capacity");
+  size_t size = sizeof(h2_lua_display_mesh_t) +
+                vertices * 2u * sizeof(h2_lua_display_vertex_t);
+  if (primitives > (SIZE_MAX - size) / sizeof(h2_lua_display_primitive_t))
+    luaL_error(state, "mesh capacity overflow");
+  size += primitives * sizeof(h2_lua_display_primitive_t);
+  h2_lua_display_mesh_t *mesh = lua_newuserdatauv(state, size, 1);
+  memset(mesh, 0, sizeof(*mesh));
+  mesh->vertex_capacity = vertices;
+  mesh->primitive_capacity = primitives;
+  lua_rawgetp(state, LUA_REGISTRYINDEX, &s_display_mesh_meta);
+  if (lua_isnil(state, -1)) {
+    lua_pop(state, 1);
+    lua_newtable(state);
+    lua_pushliteral(state, "display mesh");
+    lua_setfield(state, -2, "__metatable");
+    lua_pushvalue(state, -1);
+    lua_rawsetp(state, LUA_REGISTRYINDEX, &s_display_mesh_meta);
+  }
+  lua_setmetatable(state, -2);
+  return mesh;
+}
+
+static int mesh_push_protected(lua_State *state) {
+  const h2_lua_display_mesh_config_t *config = lua_touserdata(state, 1);
+  h2_lua_display_mesh_t *mesh = mesh_allocate(
+      state, config->vertex_capacity, config->primitive_capacity);
+  mesh_replace(mesh, &config->initial);
+  return 1;
+}
+
+h2_pal_result_t h2_lua_display_mesh_push(
+    void *lua_state, const h2_lua_display_mesh_config_t *config) {
+  lua_State *state = lua_state;
+  if (state == NULL || config == NULL ||
+      config->vertex_capacity > H2_LUA_DISPLAY_VERTEX_LIMIT ||
+      config->primitive_capacity > H2_LUA_DISPLAY_PRIMITIVE_LIMIT ||
+      !mesh_data_valid(&config->initial, config->vertex_capacity,
+                       config->primitive_capacity))
+    return H2_PAL_ERR_INVALID_ARG;
+  int top = lua_gettop(state);
+  if (!lua_checkstack(state, 3))
+    return H2_PAL_ERR_NO_MEMORY;
+  lua_pushcfunction(state, mesh_push_protected);
+  lua_pushlightuserdata(state, (void *)config);
+  int result = lua_pcall(state, 1, 1, 0);
+  if (result == LUA_OK)
+    return H2_PAL_OK;
+  lua_settop(state, top);
+  return result == LUA_ERRMEM ? H2_PAL_ERR_NO_MEMORY : H2_PAL_ERR_INVALID_STATE;
+}
+
+h2_pal_result_t h2_lua_display_mesh_update(
+    void *lua_state, int stack_index, const h2_lua_display_mesh_data_t *data) {
+  lua_State *state = lua_state;
+  if (state == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_lua_display_mesh_t *mesh = mesh_test(state, stack_index);
+  if (mesh == NULL || !mesh_data_valid(data, mesh->vertex_capacity,
+                                      mesh->primitive_capacity))
+    return H2_PAL_ERR_INVALID_ARG;
+  mesh_replace(mesh, data);
+  return H2_PAL_OK;
+}
+
+static h2_lua_display_mesh_t *mesh_check(lua_State *state, int index) {
+  h2_lua_display_mesh_t *mesh = mesh_test(state, index);
+  if (mesh == NULL)
+    luaL_argerror(state, index, "expected display mesh");
+  return mesh;
+}
+
+static size_t mesh_table_count(lua_State *state, int index, size_t limit) {
+  luaL_checktype(state, index, LUA_TTABLE);
+  size_t count = lua_rawlen(state, index);
+  if (count > limit)
+    luaL_argerror(state, index, "mesh count exceeds capacity");
+  return count;
+}
+
+static double mesh_number(lua_State *state, int index) {
+  double value = luaL_checknumber(state, index);
+  if (!isfinite(value) || fabs(value) > 1000000)
+    luaL_argerror(state, index, "mesh coordinate out of range");
+  return value;
+}
+
+static void mesh_decode(lua_State *state, h2_lua_display_mesh_t *mesh,
+                         int vertices, int primitives, size_t nv, size_t np) {
+  h2_lua_display_vertex_t *v = mesh_vertices(mesh);
+  h2_lua_display_primitive_t *p = mesh_primitives(mesh);
+  for (size_t i = 0; i < nv; ++i) {
+    lua_rawgeti(state, vertices, (lua_Integer)i + 1);
+    luaL_checktype(state, -1, LUA_TTABLE);
+    lua_rawgeti(state, -1, 1);
+    v[i].x = mesh_number(state, -1);
+    lua_pop(state, 1);
+    lua_rawgeti(state, -1, 2);
+    v[i].y = mesh_number(state, -1);
+    lua_pop(state, 2);
+  }
+  for (size_t i = 0; i < np; ++i) {
+    lua_rawgeti(state, primitives, (lua_Integer)i + 1);
+    luaL_checktype(state, -1, LUA_TTABLE);
+    lua_Integer fields[3];
+    for (int j = 0; j < 3; ++j) {
+      lua_rawgeti(state, -1, j + 1);
+      fields[j] = luaL_checkinteger(state, -1);
+      lua_pop(state, 1);
+    }
+    if ((fields[0] != 0 && fields[0] != 1) || fields[1] < 1 ||
+        (lua_Unsigned)fields[1] > nv || fields[2] < 2 || fields[2] > 128)
+      luaL_error(state, "invalid mesh primitive");
+    lua_rawgeti(state, -1, 4);
+    uint16_t color = check_color(state, -1);
+    lua_pop(state, 2);
+    p[i] = (h2_lua_display_primitive_t){
+        (h2_lua_display_primitive_kind_t)fields[0], (size_t)fields[1] - 1u,
+        (size_t)fields[2], color};
+  }
+  h2_lua_display_mesh_data_t data = {v, nv, p, np};
+  if (!mesh_data_valid(&data, mesh->vertex_capacity, mesh->primitive_capacity))
+    luaL_error(state, "invalid mesh vertex range");
+  mesh->vertex_count = nv;
+  mesh->primitive_count = np;
+}
+
+static int display_compile_mesh(lua_State *state) {
+  size_t nv = mesh_table_count(state, 1, H2_LUA_DISPLAY_VERTEX_LIMIT);
+  size_t np = mesh_table_count(state, 2, H2_LUA_DISPLAY_PRIMITIVE_LIMIT);
+  lua_Integer vc = luaL_optinteger(state, 3, (lua_Integer)nv);
+  lua_Integer pc = luaL_optinteger(state, 4, (lua_Integer)np);
+  if (vc < (lua_Integer)nv || vc > H2_LUA_DISPLAY_VERTEX_LIMIT ||
+      pc < (lua_Integer)np || pc > H2_LUA_DISPLAY_PRIMITIVE_LIMIT)
+    return luaL_error(state, "invalid mesh capacity");
+  h2_lua_display_mesh_t *mesh = mesh_allocate(state, (size_t)vc, (size_t)pc);
+  mesh_decode(state, mesh, 1, 2, nv, np);
+  return 1;
+}
+
+static int display_update_mesh(lua_State *state) {
+  h2_lua_display_mesh_t *mesh = mesh_check(state, 1);
+  size_t nv = mesh_table_count(state, 2, mesh->vertex_capacity);
+  size_t np = mesh_table_count(state, 3, mesh->primitive_capacity);
+  h2_lua_display_mesh_t *staged = mesh_allocate(state, nv, np);
+  mesh_decode(state, staged, 2, 3, nv, np);
+  h2_lua_display_mesh_data_t data = {
+      mesh_vertices(staged), nv, mesh_primitives(staged), np};
+  mesh_replace(mesh, &data);
+  return 0;
+}
+
+/* Raw keys avoid invoking option-table policy during a draw. RGB colors
+ * retain their existing getter semantics and are decoded before any writes. */
+static void mesh_option(lua_State *state, const char *key) {
+  if (lua_isnoneornil(state, 2)) {
+    lua_pushnil(state);
+  } else {
+    lua_pushstring(state, key);
+    lua_rawget(state, 2);
+  }
+}
+
+static lua_Integer mesh_integer_option(lua_State *state, const char *key,
+                                       lua_Integer fallback) {
+  mesh_option(state, key);
+  lua_Integer value = luaL_optinteger(state, -1, fallback);
+  lua_pop(state, 1);
+  return value;
+}
+
+static h2_lua_display_vertex_t mesh_transform(
+    h2_lua_display_vertex_t v, const double matrix[6], int grid) {
+  h2_lua_display_vertex_t p = {
+      (matrix[0] * v.x + matrix[2] * v.y) + matrix[4],
+      (matrix[1] * v.x + matrix[3] * v.y) + matrix[5]};
+  if (grid != 0) {
+    p.x = floor(p.x / grid + 0.5) * grid;
+    p.y = floor(p.y / grid + 0.5) * grid;
+  }
+  return p;
+}
+
+static int display_draw_mesh(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  h2_lua_display_mesh_t *mesh = mesh_check(state, 1);
+  if (!lua_isnoneornil(state, 2)) luaL_checktype(state, 2, LUA_TTABLE);
+  double matrix[6] = {1, 0, 0, 1, 0, 0};
+  mesh_option(state, "matrix");
+  if (!lua_isnil(state, -1)) {
+    luaL_checktype(state, -1, LUA_TTABLE);
+    for (int i = 0; i < 6; ++i) {
+      lua_rawgeti(state, -1, i + 1);
+      matrix[i] = mesh_number(state, -1);
+      lua_pop(state, 1);
+    }
+  }
+  lua_pop(state, 1);
+  lua_Integer grid = mesh_integer_option(state, "grid", 0);
+  lua_Integer left = mesh_integer_option(state, "left", 0);
+  lua_Integer right = mesh_integer_option(state, "right", job->display_info.width);
+  lua_Integer top = mesh_integer_option(state, "top", 0);
+  lua_Integer bottom = mesh_integer_option(state, "bottom", job->display_info.height);
+  mesh_option(state, "offset_x");
+  double offset = optional_geometry_number(state, -1, 0);
+  lua_pop(state, 1);
+  mesh_option(state, "color");
+  int recolor = !lua_isnil(state, -1);
+  uint16_t ink = recolor ? check_color(state, -1) : 0;
+  lua_pop(state, 1);
+  mesh_option(state, "cache");
+  if (!lua_isnil(state, -1)) luaL_checktype(state, -1, LUA_TBOOLEAN);
+  int retain_spans = lua_toboolean(state, -1);
+  lua_pop(state, 1);
+  display_span_cache_t *cache = NULL;
+  if (retain_spans) {
+    lua_getiuservalue(state, 1, 1);
+    if (lua_isnil(state, -1)) {
+      lua_pop(state, 1);
+      cache = lua_newuserdatauv(state, sizeof(*cache) +
+          8192u * sizeof(display_cached_span_t), 0);
+      cache->capacity = 8192;
+      cache->count = 0;
+      cache->valid = 0;
+      lua_pushvalue(state, -1);
+      lua_setiuservalue(state, 1, 1);
+      mesh->spans_valid = 0;
+    } else cache = lua_touserdata(state, -1);
+  }
+  if (!job->display_open || grid < 0 || grid > 16 || left < 0 ||
+      left > right || right > job->display_info.width || top < 0 ||
+      top > bottom || bottom > job->display_info.height)
+    return luaL_error(state, "invalid mesh options or closed display");
+  h2_lua_display_vertex_t *positions = mesh_positions(mesh);
+  if (!mesh->positions_valid || mesh->grid != grid ||
+      memcmp(mesh->matrix, matrix, sizeof(matrix)) != 0) {
+    const h2_lua_display_vertex_t *vertices = mesh_vertices(mesh);
+    /* Validate the complete transform before changing cache or pixels. */
+    for (size_t i = 0; i < mesh->vertex_count; ++i) {
+      h2_lua_display_vertex_t p = mesh_transform(vertices[i], matrix, (int)grid);
+      if (!isfinite(p.x) || !isfinite(p.y) || fabs(p.x) > 16000000 ||
+          fabs(p.y) > 16000000)
+        return luaL_error(state, "transformed mesh coordinate out of range");
+    }
+    for (size_t i = 0; i < mesh->vertex_count; ++i)
+      positions[i] = mesh_transform(vertices[i], matrix, (int)grid);
+    memcpy(mesh->matrix, matrix, sizeof(matrix));
+    mesh->grid = (int)grid;
+    mesh->positions_valid = 1;
+    mesh->spans_valid = 0;
+  }
+  if (top == bottom || left == right) return 0;
+  if (cache != NULL) {
+    if (mesh->spans_valid && cache->valid && mesh->span_left == left &&
+        mesh->span_right == right && mesh->span_top == top &&
+        mesh->span_bottom == bottom && mesh->span_width == job->display_info.width &&
+        mesh->span_height == job->display_info.height && mesh->span_offset == offset &&
+        mesh->span_recolor == recolor && (!recolor || mesh->span_color == ink)) {
+      display_cache_replay(job, cache);
+      return 0;
+    }
+    mesh->spans_valid = 0;
+    cache->valid = 1;
+    cache->count = 0;
+    mesh->span_left = (int)left;
+    mesh->span_right = (int)right;
+    mesh->span_top = (int)top;
+    mesh->span_bottom = (int)bottom;
+    mesh->span_width = job->display_info.width;
+    mesh->span_height = job->display_info.height;
+    mesh->span_offset = offset;
+    mesh->span_recolor = recolor;
+    mesh->span_color = ink;
+  }
+  const h2_lua_display_primitive_t *primitives = mesh_primitives(mesh);
+  for (size_t i = 0; i < mesh->primitive_count; ++i) {
+    const h2_lua_display_primitive_t *p = &primitives[i];
+    const h2_lua_display_vertex_t *v = positions + p->first;
+    uint16_t color = recolor ? ink : p->color;
+    if (p->kind == H2_LUA_DISPLAY_LINE) {
+      display_clipped_line_rect_capture(job, v[0].x + offset, v[0].y,
+                               v[1].x + offset, v[1].y, color,
+                               (int)top, (int)bottom, (int)left, (int)right, cache);
+    } else {
+      double x[128], y[128];
+      for (size_t j = 0; j < p->count; ++j) { x[j] = v[j].x; y[j] = v[j].y; }
+      display_raster_polygon_rect_capture(job, x, y, p->count, color, offset,
+                                 (int)top, (int)bottom, (int)left, (int)right, cache);
+    }
+  }
+  if (cache != NULL) mesh->spans_valid = cache->valid;
+  return 0;
+}
+
+typedef struct display_stroke_data {
+  size_t count;
+  double x[256], y[256], width[256];
+  uint16_t color[256];
+} display_stroke_data_t;
+
+typedef struct display_stroke_cache {
+  display_stroke_data_t data;
+  double offset;
+  int top, bottom, width, height, fast;
+  /* Aligned display_span_cache_t follows this header. */
+} display_stroke_cache_t;
+
+typedef struct display_stroke_normals {
+  size_t count;
+  double data[]; /* x, y, lengths, unit-normal-x, unit-normal-y */
+} display_stroke_normals_t;
+
+typedef struct display_smooth_scratch {
+  size_t bytes;
+  uint16_t pixels[];
+} display_smooth_scratch_t;
+
+static const char s_stroke_cache_key, s_stroke_normals_key;
+#define H2_LUA_STROKE_META "h2.display.stroke"
+#define H2_LUA_NORMALS_META "h2.display.normals"
+
+static int display_optional_boolean(lua_State *state, int index) {
+  if (!lua_isnoneornil(state, index)) luaL_checktype(state, index, LUA_TBOOLEAN);
+  return lua_toboolean(state, index);
+}
+
+/* Conservative legacy guard: retain spans in the validation pass; otherwise
+ * use double geometry. It never snaps the input path to a pixel grid. */
+static int display_stroke_fast_quad(h2_lua_job_t *job, double ax, double ay,
+                                     double bx, double by, double width,
+                                     int top, int bottom, uint16_t color,
+                                     double offset, display_span_cache_t *cache) {
+  enum { k_rows = 512 };
+  if (bottom - top > k_rows) return 0;
+  float left[k_rows], right[k_rows];
+  double extent = fmax(fmax(fabs(ax), fabs(ay)), fmax(fabs(bx), fabs(by)));
+  if (extent > 4096 || width > 64 || width <= 0) return 0;
+  float dx = (float)(bx - ax), dy = (float)(by - ay);
+  float length = sqrtf(dx * dx + dy * dy);
+  if (length < .02f) return 0;
+  float scale = h2_f32_div((float)width * .5f, length);
+  float nx = -dy * scale, ny = dx * scale;
+  float x[] = {(float)ax + nx, (float)bx + nx, (float)bx - nx, (float)ax - nx};
+  float y[] = {(float)ay + ny, (float)by + ny, (float)by - ny, (float)ay - ny};
+  float bound = 64 * FLT_EPSILON * ((float)extent + (float)width + 1);
+  for (int i = 0; i < 4; ++i) {
+    float fraction = y[i] - floorf(y[i]);
+    if (fraction <= bound || fraction >= 1 - bound) return 0;
+  }
+  int first = (int)ceilf(fminf(fminf(y[0], y[1]), fminf(y[2], y[3])));
+  int end = (int)ceilf(fmaxf(fmaxf(y[0], y[1]), fmaxf(y[2], y[3])));
+  if (first < top) first = top;
+  if (end > bottom) end = bottom;
+  if (first >= end) return 1;
+  for (int row = first; row < end; ++row) {
+    left[row - top] = FLT_MAX;
+    right[row - top] = -FLT_MAX;
+  }
+  for (int i = 0; i < 4; ++i) {
+    int j = (i + 1) % 4;
+    int begin = (int)ceilf(fminf(y[i], y[j]));
+    int stop = (int)ceilf(fmaxf(y[i], y[j]));
+    if (begin < top) begin = top;
+    if (stop > bottom) stop = bottom;
+    if (begin >= stop) continue;
+    float ex = x[j] - x[i], ey = y[j] - y[i];
+    float denominator = fabsf(ey) - 2 * bound;
+    if (denominator <= 0) return 0;
+    float slope = h2_f32_div(ex, ey);
+    float error = 4 * bound * (1 + h2_f32_div(fabsf(ex), denominator)) +
+                  16 * FLT_EPSILON * (fabsf(x[i]) + fabsf(ex) + 1);
+    if (error >= .25f) return 0;
+    for (int row = begin; row < stop; ++row) {
+      float hit = x[i] + ((float)row - y[i]) * slope;
+      float fraction = hit - floorf(hit);
+      if (fraction <= error || fraction >= 1 - error) return 0;
+      if (hit < left[row - top]) left[row - top] = hit;
+      if (hit > right[row - top]) right[row - top] = hit;
+    }
+  }
+  for (int row = first; row < end; ++row) {
+    if (left[row - top] == FLT_MAX) continue;
+    int edge = (int)ceilf(left[row - top]);
+    int a = (int)floor((double)edge + offset + .5);
+    int b = a + (int)floorf(right[row - top]) - edge;
+    if (a < 0) a = 0;
+    if (b >= job->display_info.width) b = job->display_info.width - 1;
+    if (a > b) continue;
+    fill_span(job, row, a, b, color);
+    mark_dirty_rect(job, a, row, b - a + 1, 1);
+    display_cache_record(cache, a, b, row, -1, color);
+  }
+  return 1;
+}
+
+static void display_stroke_simplify(display_stroke_data_t *path, double tolerance) {
+  size_t write = 0;
+  for (size_t first = 0; first + 1 < path->count;) {
+    size_t end = first + 1;
+    for (size_t candidate = end + 1; candidate < path->count; ++candidate) {
+      if (path->width[candidate - 1] != path->width[first] ||
+          path->color[candidate - 1] != path->color[first]) break;
+      double dx = path->x[candidate] - path->x[first];
+      double dy = path->y[candidate] - path->y[first];
+      double length2 = dx * dx + dy * dy;
+      if (length2 < 1e-12) break;
+      int valid = 1;
+      for (size_t j = first + 1; j < candidate; ++j) {
+        double px = path->x[j] - path->x[first], py = path->y[j] - path->y[first];
+        double dot = px * dx + py * dy, cross = px * dy - py * dx;
+        if (dot < 0 || dot > length2 || cross * cross > tolerance * tolerance * length2) {
+          valid = 0;
+          break;
+        }
+      }
+      if (!valid) break;
+      end = candidate;
+    }
+    path->width[write] = path->width[first];
+    path->color[write] = path->color[first];
+    path->x[write + 1] = path->x[end];
+    path->y[write + 1] = path->y[end];
+    ++write;
+    first = end;
+  }
+  path->count = write + 1;
+}
+
+static void display_stroke_smooth(lua_State *state, h2_lua_job_t *job,
+                                   const display_stroke_data_t *path,
+                                   double offset, int top, int bottom) {
+  double min_x = job->display_info.width, max_x = 0, min_y = bottom, max_y = top;
+  for (size_t i = 0; i + 1 < path->count; ++i) {
+    double radius = path->width[i] * .5 + 1;
+    min_x = fmin(min_x, fmin(path->x[i], path->x[i+1]) + offset - radius);
+    max_x = fmax(max_x, fmax(path->x[i], path->x[i+1]) + offset + radius);
+    min_y = fmin(min_y, fmin(path->y[i], path->y[i+1]) - radius);
+    max_y = fmax(max_y, fmax(path->y[i], path->y[i+1]) + radius);
+  }
+  int width = job->display_info.width, height = job->display_info.height;
+  int left = (int)fmax(0, fmin(width, floor(min_x)));
+  int right = (int)fmax(0, fmin(width, ceil(max_x)));
+  int first = (int)fmax(top, fmin(bottom, floor(min_y)));
+  int end = (int)fmax(top, fmin(bottom, ceil(max_y)));
+  if (right <= left || end <= first) return;
+  size_t stride = (size_t)(right - left);
+  if ((size_t)(end - first) > SIZE_MAX / stride)
+    luaL_error(state, "smooth stroke size overflow");
+  size_t count = stride * (size_t)(end - first);
+  if (count > (SIZE_MAX - sizeof(display_smooth_scratch_t)) / 3u)
+    luaL_error(state, "smooth stroke size overflow");
+  size_t bytes = count * 3u;
+  display_smooth_scratch_t *scratch = job->display_smooth;
+  if (scratch == NULL || scratch->bytes < bytes) {
+    scratch = lua_newuserdatauv(state, sizeof(*scratch) + bytes, 0);
+    scratch->bytes = bytes;
+    int ref = luaL_ref(state, LUA_REGISTRYINDEX);
+    if (!job->display_open || job->display_info.width != width ||
+        job->display_info.height != height) {
+      luaL_unref(state, LUA_REGISTRYINDEX, ref);
+      luaL_error(state, "display changed during smooth stroke allocation");
+    }
+    int old = job->display_smooth_ref;
+    job->display_smooth = scratch;
+    job->display_smooth_ref = ref;
+    if (old > 0) luaL_unref(state, LUA_REGISTRYINDEX, old);
+  }
+  uint16_t *ink = scratch->pixels;
+  uint8_t *coverage = (uint8_t *)(ink + count);
+  memset(coverage, 0, count);
+  for (size_t i = 0; i + 1 < path->count; ++i) {
+    if (path->width[i] <= 0) continue;
+    double ax = path->x[i] + offset, ay = path->y[i];
+    double bx = path->x[i+1] + offset, by = path->y[i+1];
+    double dx = bx - ax, dy = by - ay, length2 = dx*dx + dy*dy;
+    double radius = path->width[i] * .5;
+    int l = (int)fmax(left, fmin(right, floor(fmin(ax,bx) - radius - 1)));
+    int r = (int)fmax(left, fmin(right, ceil(fmax(ax,bx) + radius + 1)));
+    int t = (int)fmax(first, fmin(end, floor(fmin(ay,by) - radius - 1)));
+    int b = (int)fmax(first, fmin(end, ceil(fmax(ay,by) + radius + 1)));
+    int local_float = fmax(fmax(fabs(ax),fabs(ay)),fmax(fabs(bx),fabs(by))) <= 4096;
+    float fax = (float)ax, fay = (float)ay, fdx = (float)dx, fdy = (float)dy;
+    float length2f = fdx*fdx + fdy*fdy;
+    float inverse = length2f > 1e-12f ? h2_f32_div(1, length2f) : 0;
+    float edge = (float)radius + .5f, inner = (float)radius - .5f;
+    for (int yy = t; yy < b; ++yy) for (int xx = l; xx < r; ++xx) {
+      unsigned alpha;
+      if (local_float) {
+        float px = (float)xx + .5f - fax, py = (float)yy + .5f - fay;
+        float u = (px*fdx + py*fdy)*inverse;
+        if (u < 0) u = 0; else if (u > 1) u = 1;
+        float ex = px - u*fdx, ey = py - u*fdy, squared = ex*ex + ey*ey;
+        if (squared >= edge*edge) continue;
+        if (inner >= 0 && squared <= inner*inner) alpha = 255;
+        else {
+          float a = (edge - sqrtf(squared))*255 + .5f;
+          alpha = a <= 0 ? 0 : (a >= 255 ? 255 : (unsigned)a);
+        }
+      } else {
+        double u = length2 > 1e-12 ? ((xx+.5-ax)*dx + (yy+.5-ay)*dy)/length2 : 0;
+        u = fmax(0, fmin(1, u));
+        double ex = xx+.5-ax-u*dx, ey = yy+.5-ay-u*dy;
+        alpha = (unsigned)(fmax(0, fmin(1, radius+.5-sqrt(ex*ex+ey*ey)))*255+.5);
+      }
+      size_t at = (size_t)(yy-first)*stride + (size_t)(xx-left);
+      if (alpha > coverage[at]) { coverage[at] = (uint8_t)alpha; ink[at] = path->color[i]; }
+    }
+  }
+  for (int y = first; y < end; ++y) for (int x = left; x < right; ++x) {
+    size_t at = (size_t)(y-first)*stride + (size_t)(x-left);
+    if (coverage[at]) blend_pixel(job, x, y, ink[at], coverage[at]);
+  }
+  mark_dirty_rect(job, left, first, right-left, end-first);
+}
+
+static int display_stroke_path(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  display_stroke_data_t path;
+  luaL_checktype(state, 1, LUA_TTABLE);
+  luaL_checktype(state, 2, LUA_TTABLE);
+  path.count = lua_rawlen(state, 1);
+  if (path.count < 2 || path.count > 256 || lua_rawlen(state, 2) != path.count-1)
+    return luaL_error(state, "invalid stroke point/width count");
+  double offset = optional_geometry_number(state, 4, 0);
+  double scale = optional_geometry_number(state, 10, 1);
+  double tolerance = optional_geometry_number(state, 11, 0);
+  int retain = display_optional_boolean(state, 7);
+  int fast = display_optional_boolean(state, 8);
+  int smooth = display_optional_boolean(state, 9);
+  if (scale <= 0 || scale > 16 || tolerance < 0 || tolerance > .25)
+    return luaL_error(state, "invalid stroke scale/tolerance");
+  int colors = lua_istable(state, 3) && lua_rawlen(state, 3) > 0;
+  uint16_t single = colors ? 0 : check_color(state, 3);
+  if (colors && lua_rawlen(state, 3) != path.count-1)
+    return luaL_error(state, "invalid stroke color count");
+  for (size_t i = 0; i < path.count; ++i) {
+    lua_rawgeti(state, 1, (lua_Integer)i+1);
+    luaL_checktype(state, -1, LUA_TTABLE);
+    lua_rawgeti(state, -1, 1); path.x[i] = check_geometry_number(state, -1); lua_pop(state, 1);
+    lua_rawgeti(state, -1, 2); path.y[i] = check_geometry_number(state, -1); lua_pop(state, 2);
+    if (i + 1 < path.count) {
+      lua_rawgeti(state, 2, (lua_Integer)i+1);
+      path.width[i] = check_geometry_number(state, -1);
+      lua_pop(state, 1);
+      if (path.width[i] < 0 || path.width[i] > 1000)
+        return luaL_error(state, "invalid stroke width");
+      if (colors) {
+        lua_rawgeti(state, 3, (lua_Integer)i+1);
+        path.color[i] = check_color(state, -1);
+        lua_pop(state, 1);
+      } else path.color[i] = single;
+      path.width[i] *= scale;
+    }
+    path.x[i] *= scale;
+    path.y[i] *= scale;
+  }
+  int top, bottom;
+  display_check_clip(state, job, 5, 6, &top, &bottom);
+  if (smooth) {
+    if (tolerance > 0) display_stroke_simplify(&path, tolerance);
+    display_stroke_smooth(state, job, &path, offset, top, bottom);
+    lua_pushboolean(state, 0); lua_pushinteger(state, 0);
+    return 2;
+  }
+  display_stroke_cache_t *retained = NULL;
+  display_span_cache_t *cache = NULL;
+  if (retain) {
+    lua_rawgetp(state, 2, &s_stroke_cache_key);
+    retained = luaL_testudata(state, -1, H2_LUA_STROKE_META);
+    if (retained == NULL) {
+      lua_pop(state, 1);
+      retained = lua_newuserdatauv(state, sizeof(*retained) + sizeof(*cache) +
+          2048u*sizeof(display_cached_span_t), 0);
+      memset(retained, 0, sizeof(*retained) + sizeof(*cache));
+      if (luaL_newmetatable(state, H2_LUA_STROKE_META)) {
+        lua_pushliteral(state, "display stroke cache");
+        lua_setfield(state, -2, "__metatable");
+      }
+      lua_setmetatable(state, -2);
+      lua_pushvalue(state, -1); lua_rawsetp(state, 2, &s_stroke_cache_key);
+    }
+    cache = (display_span_cache_t *)(retained + 1);
+  }
+  display_stroke_normals_t *normals = NULL;
+  if (fast) {
+    lua_rawgetp(state, 1, &s_stroke_normals_key);
+    normals = luaL_testudata(state, -1, H2_LUA_NORMALS_META);
+    if (normals == NULL || normals->count != path.count) {
+      lua_pop(state, 1);
+      normals = lua_newuserdatauv(state, sizeof(*normals) + 5*path.count*sizeof(double), 0);
+      normals->count = 0;
+      if (luaL_newmetatable(state, H2_LUA_NORMALS_META)) {
+        lua_pushliteral(state, "display stroke normals");
+        lua_setfield(state, -2, "__metatable");
+      }
+      lua_setmetatable(state, -2);
+      lua_pushvalue(state, -1); lua_rawsetp(state, 1, &s_stroke_normals_key);
+    }
+  }
+  /* All allocation/getters finished; recheck acquisition before cache or draw. */
+  display_check_clip(state, job, 5, 6, &top, &bottom);
+  if (cache != NULL) {
+    const display_stroke_data_t *old = &retained->data;
+    if (cache->valid && old->count == path.count && retained->offset == offset &&
+        retained->top == top && retained->bottom == bottom && retained->fast == fast &&
+        retained->width == job->display_info.width && retained->height == job->display_info.height &&
+        !memcmp(old->x, path.x, path.count*sizeof(double)) &&
+        !memcmp(old->y, path.y, path.count*sizeof(double)) &&
+        !memcmp(old->width, path.width, (path.count-1)*sizeof(double)) &&
+        !memcmp(old->color, path.color, (path.count-1)*sizeof(uint16_t))) {
+      display_cache_replay(job, cache);
+      lua_pushboolean(state, 1); lua_pushinteger(state, 0);
+      return 2;
+    }
+    retained->data.count = path.count;
+    memcpy(retained->data.x, path.x, path.count*sizeof(double));
+    memcpy(retained->data.y, path.y, path.count*sizeof(double));
+    memcpy(retained->data.width, path.width, (path.count-1)*sizeof(double));
+    memcpy(retained->data.color, path.color, (path.count-1)*sizeof(uint16_t));
+    retained->offset = offset; retained->top = top; retained->bottom = bottom;
+    retained->width = job->display_info.width; retained->height = job->display_info.height;
+    retained->fast = fast;
+    cache->capacity = 2048; cache->count = 0; cache->valid = 1;
+  }
+  double *lengths = NULL, *normal_x = NULL, *normal_y = NULL;
+  if (normals != NULL) {
+    lengths = normals->data + 2*path.count;
+    normal_x = normals->data + 3*path.count;
+    normal_y = normals->data + 4*path.count;
+    if (normals->count != path.count || memcmp(normals->data,path.x,path.count*sizeof(double)) ||
+        memcmp(normals->data+path.count,path.y,path.count*sizeof(double))) {
+      normals->count = path.count;
+      memcpy(normals->data,path.x,path.count*sizeof(double));
+      memcpy(normals->data+path.count,path.y,path.count*sizeof(double));
+      for (size_t i = 0; i + 1 < path.count; ++i) lengths[i] = -1;
+    }
+  }
+  int fast_count = 0;
+  for (size_t i = 0; i + 1 < path.count; ++i) {
+    double ax = path.x[i], ay = path.y[i], bx = path.x[i+1], by = path.y[i+1];
+    double w = path.width[i];
+    if (fast && display_stroke_fast_quad(job,ax,ay,bx,by,w,top,bottom,path.color[i],offset,cache)) {
+      ++fast_count;
+    } else {
+      double dx = bx-ax, dy = by-ay, length, ux = 0, uy = 0;
+      if (lengths != NULL && lengths[i] >= 0) {
+        length = lengths[i]; ux = normal_x[i]; uy = normal_y[i];
+      } else {
+        length = sqrt(dx*dx + dy*dy);
+        if (length >= .01) { ux = -dy/length; uy = dx/length; }
+        if (lengths != NULL) { lengths[i] = length; normal_x[i] = ux; normal_y[i] = uy; }
+      }
+      if (length < .01) {
+        int left = (int)floor(ax-w/2+offset+.5), row = (int)floor(ay-w/2+.5);
+        int side = (int)floor(w+.5);
+        int a = left < 0 ? 0 : left;
+        int b = left+side < job->display_info.width ? left+side : job->display_info.width;
+        int first = row < top ? top : row, end = row+side < bottom ? row+side : bottom;
+        for (int y = first; y < end && a < b; ++y) {
+          fill_span(job,y,a,b-1,path.color[i]); mark_dirty_rect(job,a,y,b-a,1);
+          display_cache_record(cache,a,b-1,y,-1,path.color[i]);
+        }
+        continue;
+      }
+      double nx = ux*w/2, ny = uy*w/2;
+      double x[] = {ax+nx,bx+nx,bx-nx,ax-nx}, y[] = {ay+ny,by+ny,by-ny,ay-ny};
+      display_raster_polygon_rect_capture(job,x,y,4,path.color[i],offset,top,bottom,
+                                           0,job->display_info.width,cache);
+    }
+    display_clipped_line_rect_capture(job,ax+offset,ay,bx+offset,by,path.color[i],
+                                       top,bottom,0,job->display_info.width,cache);
+  }
+  lua_pushboolean(state, 0); lua_pushinteger(state, fast_count);
+  return 2;
 }
 
 static int display_fill_rect(lua_State *state) {
@@ -2043,59 +3247,450 @@ static int display_draw_text_aligned(lua_State *state) {
                       color, scale);
 }
 
-static int display_begin_frame(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  if (!job->display_open || job->frame_open) {
-    return luaL_error(state, "invalid begin_frame");
+static int display_integer(lua_State *state, int index, int fallback,
+                            int minimum, int maximum) {
+  lua_Integer value = luaL_optinteger(state, index, fallback);
+  if (value < minimum || value > maximum)
+    luaL_argerror(state, index, "display integer out of range");
+  return (int)value;
+}
+
+static display_region_t *display_new_region(lua_State *state, int width,
+                                            int height, size_t pixels,
+                                            size_t runs, int masked,
+                                            uint16_t key) {
+  size_t bytes = sizeof(display_region_t) +
+                 (size_t)height * sizeof(display_region_row_t);
+  size_t tiles = display_tile_count(width, height);
+  if (runs > (SIZE_MAX - bytes) / sizeof(display_region_run_t))
+    luaL_error(state, "region size overflow");
+  bytes += runs * sizeof(display_region_run_t);
+  if (pixels > (SIZE_MAX - bytes) / sizeof(uint16_t))
+    luaL_error(state, "region size overflow");
+  bytes += pixels * sizeof(uint16_t);
+  if (tiles > SIZE_MAX - bytes)
+    luaL_error(state, "region size overflow");
+  /* Create metatable first: no allocation follows returning the userdata. */
+  if (luaL_newmetatable(state, H2_LUA_DISPLAY_REGION_META)) {
+    lua_pushliteral(state, "display region");
+    lua_setfield(state, -2, "__metatable");
   }
-  job->frame_open = 1;
-  if (!lua_isnoneornil(state, 1)) {
-    int clear;
-    luaL_checktype(state, 1, LUA_TTABLE);
-    lua_getfield(state, 1, "clear");
-    clear = lua_toboolean(state, -1);
-    lua_pop(state, 1);
-    if (clear) {
-      uint16_t color = 0u;
-      lua_getfield(state, 1, "color");
-      if (!lua_isnil(state, -1))
-        color = check_color(state, -1);
-      lua_pop(state, 1);
-      display_clear_pixels(job, color);
+  display_region_t *region = lua_newuserdatauv(state, bytes + tiles, 0);
+  region->width = width;
+  region->height = height;
+  region->masked = masked;
+  region->key = key;
+  region->pixel_count = pixels;
+  region->run_count = runs;
+  lua_pushvalue(state, -2);
+  lua_setmetatable(state, -2);
+  lua_remove(state, -2);
+  memset(display_region_damage(region), 1, tiles);
+  return region;
+}
+
+static void display_check_capture(lua_State *state, h2_lua_job_t *job,
+                                   int x, int y, int width, int height) {
+  if (!job->display_open || width > job->display_info.width ||
+      height > job->display_info.height ||
+      x > job->display_info.width - width ||
+      y > job->display_info.height - height)
+    luaL_error(state, "invalid capture region or closed display");
+}
+
+static int display_capture_region(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  int x = display_integer(state, 1, -1, 0, 100000);
+  int y = display_integer(state, 2, -1, 0, 100000);
+  int width = display_integer(state, 3, 0, 1, 4096);
+  int height = display_integer(state, 4, 0, 1, 4096);
+  int masked = !lua_isnoneornil(state, 5);
+  uint16_t key = masked ? check_color(state, 5) : 0;
+  display_region_t *reuse = lua_isnoneornil(state, 6) ? NULL :
+      luaL_checkudata(state, 6, H2_LUA_DISPLAY_REGION_META);
+  if (reuse != NULL && (masked || reuse->masked || reuse->width != width ||
+                        reuse->height != height))
+    return luaL_error(state, "region reuse requires matching opaque storage");
+  display_check_capture(state, job, x, y, width, height);
+  size_t count = (size_t)width * height;
+  display_region_t *region = reuse;
+  uint16_t *captured;
+  if (masked) {
+    captured = lua_newuserdatauv(state, count * sizeof(uint16_t), 0);
+  } else {
+    if (region == NULL)
+      region = display_new_region(state, width, height, count, 0, 0, 0);
+    else
+      lua_pushvalue(state, 6);
+    captured = display_region_pixels(region);
+  }
+  /* Allocation may run arbitrary finalizers, including deinit/reacquire. */
+  display_check_capture(state, job, x, y, width, height);
+  for (int row = 0; row < height; ++row)
+    memcpy(captured + (size_t)row * width,
+           job->framebuffer + (size_t)(row + y) * job->display_info.width + x,
+           (size_t)width * sizeof(uint16_t));
+  if (masked) {
+    size_t packed = 0, runs = 0;
+    for (int row = 0; row < height; ++row) {
+      const uint16_t *line = captured + (size_t)row * width;
+      int left = 0, right = width;
+      while (left < right && line[left] == key) ++left;
+      while (right > left && line[right - 1] == key) --right;
+      packed += (size_t)(right - left);
+      for (int col = left; col < right; ++col)
+        if (line[col] != key && (col == left || line[col - 1] == key)) ++runs;
+    }
+    region = display_new_region(state, width, height, packed, runs, 1, key);
+    size_t offset = 0, run_index = 0;
+    for (int row = 0; row < height; ++row) {
+      const uint16_t *line = captured + (size_t)row * width;
+      int left = 0, right = width;
+      while (left < right && line[left] == key) ++left;
+      while (right > left && line[right - 1] == key) --right;
+      display_region_row_t *r = &region->rows[row];
+      *r = (display_region_row_t){offset, run_index, left, right, 0};
+      memcpy(display_region_pixels(region) + offset, line + left,
+             (size_t)(right - left) * sizeof(uint16_t));
+      offset += (size_t)(right - left);
+      for (int col = left; col < right;) {
+        if (line[col] == key) { ++col; continue; }
+        int first = col++;
+        while (col < right && line[col] != key) ++col;
+        display_region_runs(region)[run_index++] =
+            (display_region_run_t){(uint16_t)first, (uint16_t)col};
+        ++r->run_count;
+      }
+    }
+  } else {
+    for (int row = 0; row < height; ++row)
+      region->rows[row] = (display_region_row_t){(size_t)row * width, 0,
+                                                0, width, 0};
+    if (job->display_background == region)
+      job->display_background_valid = 0;
+  }
+  return 1;
+}
+
+static void display_copy_region_span(h2_lua_job_t *job, int x, int y,
+                                      const uint16_t *pixels, int count) {
+  if (count <= 0) return;
+  memcpy(job->framebuffer + (size_t)y * job->display_info.width + x, pixels,
+         (size_t)count * sizeof(uint16_t));
+  mark_dirty_rect(job, x, y, count, 1);
+}
+
+static int display_draw_region(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  display_region_t *region = luaL_checkudata(state, 1, H2_LUA_DISPLAY_REGION_META);
+  int x = display_integer(state, 2, 0, -100000, 100000);
+  int y = display_integer(state, 3, 0, -100000, 100000);
+  int top = display_integer(state, 4, 0, 0, job->display_info.height);
+  int bottom = display_integer(state, 5, job->display_info.height, top,
+                               job->display_info.height);
+  int keyed = !lua_isnoneornil(state, 6);
+  uint16_t key = keyed ? check_color(state, 6) : 0;
+  int left = display_integer(state, 7, 0, 0, job->display_info.width);
+  int right = display_integer(state, 8, job->display_info.width, left,
+                              job->display_info.width);
+  if (!job->display_open || bottom > job->display_info.height)
+    return luaL_error(state, "display is not open or clip changed");
+  int first_x = left > x ? left - x : 0;
+  int last_x = right - x < region->width ? right - x : region->width;
+  int first_y = top > y ? top - y : 0;
+  int last_y = bottom - y < region->height ? bottom - y : region->height;
+  if (first_x >= last_x) return 0;
+  uint16_t *pixels = display_region_pixels(region);
+  for (int row = first_y; row < last_y; ++row) {
+    display_region_row_t *r = &region->rows[row];
+    if (!region->masked && !keyed) {
+      display_copy_region_span(job, x + first_x, y + row,
+          pixels + r->offset + first_x, last_x - first_x);
+    } else if (region->masked && keyed && key == region->key) {
+      for (int i = 0; i < r->run_count; ++i) {
+        display_region_run_t run = display_region_runs(region)[r->first_run + i];
+        int a = run.left > first_x ? run.left : first_x;
+        int b = run.right < last_x ? run.right : last_x;
+        if (a < b)
+          display_copy_region_span(job, x + a, y + row,
+              pixels + r->offset + a - r->left, b - a);
+      }
+    } else {
+      for (int col = first_x; col < last_x; ++col) {
+        uint16_t color = col < r->left || col >= r->right ? region->key :
+            pixels[r->offset + (size_t)(col - r->left)];
+        if (!keyed || color != key) set_pixel(job, x + col, y + row, color);
+      }
     }
   }
   return 0;
 }
 
+static void display_release_background(lua_State *state, h2_lua_job_t *job) {
+  int ref = job->display_background_ref;
+  job->display_background = NULL;
+  job->display_background_ref = 0;
+  job->display_background_valid = 0;
+  if (ref > 0) luaL_unref(state, LUA_REGISTRYINDEX, ref);
+}
+
+static int display_release_background_lua(lua_State *state) {
+  display_release_background(state, lua_touserdata(state, lua_upvalueindex(1)));
+  return 0;
+}
+
+static int display_restore_background(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  display_region_t *region = luaL_checkudata(state, 1, H2_LUA_DISPLAY_REGION_META);
+  if (!job->display_open || region->masked ||
+      region->width != job->display_info.width ||
+      region->height != job->display_info.height)
+    return luaL_error(state, "background must be an opaque full-screen region");
+  if (job->display_background != region) {
+    lua_pushvalue(state, 1);
+    int ref = luaL_ref(state, LUA_REGISTRYINDEX);
+    if (!job->display_open || region->width != job->display_info.width ||
+        region->height != job->display_info.height) {
+      luaL_unref(state, LUA_REGISTRYINDEX, ref);
+      return luaL_error(state, "display changed while binding background");
+    }
+    display_release_background(state, job);
+    job->display_background = region;
+    job->display_background_ref = ref;
+  }
+  uint16_t *pixels = display_region_pixels(region);
+  uint8_t *damage = display_region_damage(region);
+  if (!job->display_background_valid) {
+    memcpy(job->framebuffer, pixels, region->pixel_count * sizeof(uint16_t));
+    display_dirty_full(job);
+  } else {
+    int columns = (region->width + 15) / 16;
+    int rows = (region->height + 15) / 16;
+    for (int ty = 0; ty < rows; ++ty) {
+      for (int tx = 0; tx < columns;) {
+        if (!damage[(size_t)ty * columns + tx]) { ++tx; continue; }
+        int first = tx++;
+        while (tx < columns && damage[(size_t)ty * columns + tx]) ++tx;
+        int right = tx * 16 < region->width ? tx * 16 : region->width;
+        int bottom = (ty + 1) * 16 < region->height ? (ty + 1) * 16 : region->height;
+        for (int y = ty * 16; y < bottom; ++y)
+          display_copy_region_span(job, first * 16, y,
+              pixels + (size_t)y * region->width + first * 16, right - first * 16);
+      }
+    }
+  }
+  memset(damage, 0, display_tile_count(region->width, region->height));
+  job->display_background_valid = 1;
+  return 0;
+}
+
+static int display_begin_frame(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  int clear = 0;
+  uint16_t color = 0u;
+  if (!lua_isnoneornil(state, 1)) {
+    luaL_checktype(state, 1, LUA_TTABLE);
+    lua_getfield(state, 1, "clear");
+    clear = lua_toboolean(state, -1);
+    lua_pop(state, 1);
+    if (clear) {
+      lua_getfield(state, 1, "color");
+      if (!lua_isnil(state, -1))
+        color = check_color(state, -1);
+      lua_pop(state, 1);
+    }
+  }
+  if (!job->display_open || job->frame_open)
+    return luaL_error(state, "invalid begin_frame");
+  job->frame_open = 1;
+  if (clear) display_clear_pixels(job, color);
+  return 0;
+}
+
+static void display_option(lua_State *state, const char *key) {
+  if (lua_isnoneornil(state, 1)) lua_pushnil(state);
+  else { lua_pushstring(state, key); lua_rawget(state, 1); }
+}
+
+static int display_boolean_option(lua_State *state, const char *key,
+                                   int fallback) {
+  display_option(state, key);
+  int value = fallback;
+  if (!lua_isnil(state, -1)) {
+    luaL_checktype(state, -1, LUA_TBOOLEAN);
+    value = lua_toboolean(state, -1);
+  }
+  lua_pop(state, 1);
+  return value;
+}
+
+static void display_release_presented(lua_State *state, h2_lua_job_t *job) {
+  int ref = job->display_presented_ref;
+  job->display_presented = NULL;
+  job->display_presented_ref = 0;
+  job->display_presented_valid = 0;
+  if (ref > 0) luaL_unref(state, LUA_REGISTRYINDEX, ref);
+}
+
+static void display_enable_retained(lua_State *state, h2_lua_job_t *job) {
+  int width = job->display_info.width, height = job->display_info.height;
+  if (width > 4096 || height > 4096)
+    luaL_error(state, "retained display dimensions exceed 4096");
+  size_t count = (size_t)width * height;
+  size_t tiles = display_tile_count(width, height);
+  size_t bytes = sizeof(display_presented_t) + tiles;
+  if (count > (SIZE_MAX - bytes) / sizeof(uint16_t))
+    luaL_error(state, "retained display size overflow");
+  display_presented_t *frame = lua_newuserdatauv(state,
+      bytes + count * sizeof(uint16_t), 0);
+  frame->pixel_count = count;
+  int ref = luaL_ref(state, LUA_REGISTRYINDEX);
+  if (!job->display_open || width != job->display_info.width ||
+      height != job->display_info.height) {
+    luaL_unref(state, LUA_REGISTRYINDEX, ref);
+    luaL_error(state, "display changed while enabling retained mode");
+  }
+  /* GC may have installed another baseline; detach it before publishing ours. */
+  display_release_presented(state, job);
+  job->display_presented = frame;
+  job->display_presented_ref = ref;
+}
+
+static h2_pal_result_t display_submit_rect(h2_lua_job_t *job, int x, int y,
+                                           int width, int height,
+                                           size_t *pixels, size_t *rects) {
+  h2_display_rect_t rect = {x, y, width, height};
+  if (job->display_presented != NULL) job->display_presented_valid = 0;
+  h2_pal_result_t result = (h2_pal_result_t)h2_pal_display_draw_bitmap(
+      job->host->config.runtime->display, &rect,
+      job->framebuffer + (size_t)y * job->display_info.width + x,
+      (size_t)job->display_info.width * sizeof(uint16_t), H2_DISPLAY_PIXEL_RGB565);
+  if (result == H2_PAL_OK) {
+    *pixels += (size_t)width * height;
+    ++*rects;
+    display_presented_t *frame = job->display_presented;
+    if (frame != NULL) {
+      /* Tentative until present succeeds. Failure forces a complete retry. */
+      for (int row = y; row < y + height; ++row) {
+        size_t at = (size_t)row * job->display_info.width + x;
+        memcpy(frame->pixels + at, job->framebuffer + at,
+               (size_t)width * sizeof(uint16_t));
+      }
+    }
+  }
+  return result;
+}
+
+static int display_tile_changed(h2_lua_job_t *job, display_presented_t *frame,
+                                 int tx, int ty) {
+  int width = job->display_info.width, height = job->display_info.height;
+  int x = tx * 16, y = ty * 16;
+  int right = x + 16 < width ? x + 16 : width;
+  int bottom = y + 16 < height ? y + 16 : height;
+  for (; y < bottom; ++y) {
+    size_t at = (size_t)y * width + x;
+    if (memcmp(job->framebuffer + at, frame->pixels + at,
+               (size_t)(right - x) * sizeof(uint16_t)) != 0) return 1;
+  }
+  return 0;
+}
+
+static h2_pal_result_t display_submit_retained(h2_lua_job_t *job, int bounds,
+                                               int gap, size_t *pixels,
+                                               size_t *rects) {
+  display_presented_t *frame = job->display_presented;
+  int width = job->display_info.width, height = job->display_info.height;
+  int columns = (width + 15) / 16, rows = (height + 15) / 16;
+  uint8_t *changed = (uint8_t *)(frame->pixels + frame->pixel_count);
+  memset(changed, 0, (size_t)columns * rows);
+  int left = columns, top = rows, right = 0, bottom = 0;
+  /* Finish every comparison before touching the backend or baseline. */
+  if (job->dirty_valid) {
+    for (int ty = job->dirty_min_y / 16; ty <= job->dirty_max_y / 16; ++ty) {
+      for (int tx = job->dirty_min_x / 16; tx <= job->dirty_max_x / 16; ++tx) {
+        if (!display_tile_changed(job, frame, tx, ty)) continue;
+        changed[(size_t)ty * columns + tx] = 1;
+        if (tx < left) left = tx;
+        if (ty < top) top = ty;
+        if (tx + 1 > right) right = tx + 1;
+        if (ty + 1 > bottom) bottom = ty + 1;
+      }
+    }
+  }
+  if (right == 0) return H2_PAL_OK;
+  if (bounds) {
+    int r = right * 16 < width ? right * 16 : width;
+    int b = bottom * 16 < height ? bottom * 16 : height;
+    return display_submit_rect(job, left * 16, top * 16,
+                               r - left * 16, b - top * 16, pixels, rects);
+  }
+  for (int ty = top; ty < bottom; ++ty) {
+    for (int tx = left; tx < right; ++tx) {
+      if (!changed[(size_t)ty * columns + tx]) continue;
+      int end_x = tx + 1;
+      for (int x = end_x; x < right && x - end_x <= gap; ++x)
+        if (changed[(size_t)ty * columns + x]) end_x = x + 1;
+      int end_y = ty + 1;
+      for (int y = end_y; y < bottom && y - end_y <= gap; ++y) {
+        int any = 0;
+        for (int x = tx; x < end_x; ++x) any |= changed[(size_t)y * columns + x];
+        if (any) end_y = y + 1;
+      }
+      for (int y = ty; y < end_y; ++y)
+        memset(changed + (size_t)y * columns + tx, 0, (size_t)(end_x - tx));
+      int r = end_x * 16 < width ? end_x * 16 : width;
+      int b = end_y * 16 < height ? end_y * 16 : height;
+      h2_pal_result_t result = display_submit_rect(job, tx * 16, ty * 16,
+          r - tx * 16, b - ty * 16, pixels, rects);
+      if (result != H2_PAL_OK) return result;
+    }
+  }
+  return H2_PAL_OK;
+}
+
 static int display_present(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  h2_display_rect_t rect;
-  h2_pal_result_t result;
-  if (!job->display_open) {
-    return luaL_error(state, "display is not open");
+  if (!lua_isnoneornil(state, 1)) luaL_checktype(state, 1, LUA_TTABLE);
+  int retained = display_boolean_option(state, "retained", job->display_presented != NULL);
+  int bounds = display_boolean_option(state, "bounds", 0);
+  display_option(state, "merge_gap");
+  int gap = display_integer(state, -1, 0, 0, 8);
+  lua_pop(state, 1);
+  if (!job->display_open) return luaL_error(state, "display is not open");
+  if (retained && job->display_presented == NULL) display_enable_retained(state, job);
+  else if (!retained && job->display_presented != NULL) {
+    display_release_presented(state, job);
+    display_dirty_full(job);
   }
-  result = H2_PAL_OK;
-  if (job->dirty_valid) {
-    rect = (h2_display_rect_t){job->dirty_min_x, job->dirty_min_y,
-                               job->dirty_max_x - job->dirty_min_x + 1,
-                               job->dirty_max_y - job->dirty_min_y + 1};
-    result = (h2_pal_result_t)h2_pal_display_draw_bitmap(
-        job->host->config.runtime->display, &rect,
-        job->framebuffer +
-            (size_t)job->dirty_min_y * (size_t)job->display_info.width +
-            (size_t)job->dirty_min_x,
-        (size_t)job->display_info.width * sizeof(*job->framebuffer),
-        H2_DISPLAY_PIXEL_RGB565);
-  }
+  size_t pixels = 0, rects = 0;
+  h2_pal_result_t result = H2_PAL_OK;
+  if (retained && !job->display_presented_valid)
+    result = display_submit_rect(job, 0, 0, job->display_info.width,
+                                 job->display_info.height, &pixels, &rects);
+  else if (retained)
+    result = display_submit_retained(job, bounds, gap, &pixels, &rects);
+  else if (job->dirty_valid)
+    result = display_submit_rect(job, job->dirty_min_x, job->dirty_min_y,
+        job->dirty_max_x - job->dirty_min_x + 1,
+        job->dirty_max_y - job->dirty_min_y + 1, &pixels, &rects);
   if (result == H2_PAL_OK) {
     result = (h2_pal_result_t)h2_pal_display_present(
         job->host->config.runtime->display);
   }
   if (result != H2_PAL_OK) {
+    job->display_presented_valid = 0;
+    job->display_background_valid = 0;
+    display_dirty_full(job);
     return luaL_error(state, "display present failed: %d", result);
   }
+  if (retained) {
+    /* Only the whole successful present commits the tentative baseline. */
+    job->display_presented_valid = 1;
+  }
   job->dirty_valid = 0;
-  return 0;
+  lua_pushinteger(state, (lua_Integer)pixels);
+  lua_pushinteger(state, (lua_Integer)rects);
+  return 2;
 }
 
 static int display_end_frame(lua_State *state) {
@@ -2107,17 +3702,31 @@ static int display_end_frame(lua_State *state) {
   return display_present(state);
 }
 
-static int display_close(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  if (job->display_open) {
-    if (!job->host->config.borrow_display)
-      (void)h2_pal_display_close(job->host->config.runtime->display);
-    h2_pal_mem_free(job->host->config.runtime->mem, job->framebuffer);
-    job->framebuffer = NULL;
-    job->display_open = 0;
-    job->frame_open = 0;
-    job->dirty_valid = 0;
+static void display_release(lua_State *state, h2_lua_job_t *job) {
+  uint16_t *pixels = job->framebuffer;
+  int was_open = job->display_open;
+  job->framebuffer = NULL;
+  job->display_open = job->frame_open = job->dirty_valid = 0;
+  if (state != NULL) {
+    display_release_background(state, job);
+    display_release_presented(state, job);
+    int smooth_ref = job->display_smooth_ref;
+    job->display_smooth = NULL;
+    job->display_smooth_ref = 0;
+    if (smooth_ref > 0) luaL_unref(state, LUA_REGISTRYINDEX, smooth_ref);
   }
+  if (was_open && !job->host->config.borrow_display)
+    (void)h2_pal_display_close(job->host->config.runtime->display);
+  h2_pal_mem_free(job->host->config.runtime->mem, pixels);
+}
+
+void h2_lua_job_close_display(h2_lua_job_t *job) {
+  job->display_shutting_down = 1;
+  display_release(job->vm != NULL ? job->vm->state : NULL, job);
+}
+
+static int display_close(lua_State *state) {
+  display_release(state, lua_touserdata(state, lua_upvalueindex(1)));
   return 0;
 }
 
@@ -2129,7 +3738,19 @@ static int push_display_proxy(lua_State *state, h2_lua_job_t *job) {
     lua_pushfstring(state, "display open failed: %d", result);
     return 2;
   }
-  lua_createtable(state, 0, 19);
+  lua_createtable(state, 0, 31);
+  set_function(state, "stroke_path", display_stroke_path, job);
+  set_function(state, "capture_region", display_capture_region, job);
+  set_function(state, "draw_region", display_draw_region, job);
+  set_function(state, "restore_background", display_restore_background, job);
+  set_function(state, "release_background", display_release_background_lua, job);
+  set_function(state, "compile_mesh", display_compile_mesh, job);
+  set_function(state, "update_mesh", display_update_mesh, job);
+  set_function(state, "draw_mesh", display_draw_mesh, job);
+  set_function(state, "fill_polygon", display_fill_polygon, job);
+  set_function(state, "fill_ellipse", display_fill_ellipse, job);
+  set_function(state, "compile_commands", display_compile_commands, job);
+  set_function(state, "draw_commands", display_draw_commands, job);
   set_function(state, "clear", display_clear, job);
   set_function(state, "fill_rect", display_fill_rect, job);
   set_function(state, "draw_line", display_draw_line, job);

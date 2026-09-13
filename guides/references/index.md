@@ -17,6 +17,7 @@
 - [GizClaw](./gizclaw.md)
 - [H2SCTP](./h2sctp.md)
 - [IO Stream iKCP](./iostreamikcp.md)
+- [Lua Display](./lua.md)
 - [LVGL](./lvgl.md)
 - [iperf](./iperf.md)
 - [NTP](./ntp.md)

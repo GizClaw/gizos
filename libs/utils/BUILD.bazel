@@ -6,11 +6,32 @@ package(default_visibility = ["//visibility:public"])
 cc_library(
     name = "utils",
     srcs = ["src/h2_apn.c"],
-    hdrs = ["include/h2_apn.h"],
+    hdrs = [
+        "include/h2_apn.h",
+        "include/h2_f32_math.h",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
     includes = ["include"],
+)
+
+cc_test(
+    name = "f32_math_test",
+    srcs = ["tests/test_f32_math.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    linkopts = select({
+        "@platforms//os:linux": ["-lm"],
+        "//conditions:default": [],
+    }),
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":utils"],
 )
 
 cc_test(

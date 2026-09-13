@@ -18,6 +18,7 @@ INPUT                  = libs/app_test/include \
                          libs/pal/providers/h2sctp/include \
                          projects/h2loader/libs/h2loader/include \
                          libs/iostreamikcp/include \
+                         libs/lua/include/h2_lua_display.h \
                          libs/lvgl/include \
                          libs/mp4_decoder/include \
                          libs/ntp/include \
