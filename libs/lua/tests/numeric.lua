@@ -107,6 +107,215 @@ topology:set(1,1);topology:set(3,3);bad(function() g.update_mesh(writer,xy,topol
 topology:set(3,2);assert(g.update_mesh(writer,xy,topology,4,2)==mesh)
 assert(g.update_mesh(writer,xy,topology,0,0)==mesh)
 
+-- Ordered XPBD reference: unequal adjacent edge weights, retained multipliers,
+-- alternating order, and an interleaved external plane constraint.
+do
+  local values={0,0,0, 1.8,-.2,.3, 3.6,.4,-.1, 5.1,-.3,.2}
+  local pp=b(values); local ee=b({1,2,1,.0001, 2,3,.7,.0003, 3,4,1.2,.0002})
+  local ww=b({0,5, 2,7, 3,1});local ll=b({-.01,-.02,0});local ref={-.01,-.02,0}
+  for pass=1,8 do
+    local reverse=pass%2==0
+    for k=1,3 do
+      local i=reverse and 4-k or k
+      local ia=(ee:get(4*i-3)-1)*3;local ib=(ee:get(4*i-2)-1)*3
+      local dx,dy,dz=values[ib+1]-values[ia+1],values[ib+2]-values[ia+2],values[ib+3]-values[ia+3]
+      local d=math.sqrt(dx*dx+dy*dy+dz*dz);local alpha=ee:get(4*i)/(.01*.01)
+      local wa,wb=ww:get(2*i-1),ww:get(2*i);local old=ref[i]
+      local next=math.min(0,old+(-(d-ee:get(4*i-1))-alpha*old)/(wa+wb+alpha))
+      ref[i]=next
+      for j,delta in ipairs({dx,dy,dz}) do
+        values[ia+j]=values[ia+j]-wa*(next-old)/d*delta
+        values[ib+j]=values[ib+j]+wb*(next-old)/d*delta
+      end
+    end
+    v.relax_sweep(pp,ee,ww,ll,.01,4,3,reverse,true,1e-8)
+    for i=1,12 do near(pp:get(i),values[i]) end
+    for i=1,3 do near(ll:get(i),ref[i]) end
+    -- Caller inserts a constraint without clearing edge lambda.
+    pp:set(5,math.max(0,pp:get(5)));values[5]=math.max(0,values[5])
+  end
+  -- Ordered axial damping: next edge must see the previous edge's prev update.
+  local previous={0,0,0, .4,-.2,.3, 1.6,.4,-.1, 4.1,-.3,.2}
+  local pr=b(previous)
+  for i=1,3 do
+    local ia=(ee:get(4*i-3)-1)*3;local ib=(ee:get(4*i-2)-1)*3
+    local delta={};local squared,axial=0,0
+    for j=1,3 do delta[j]=values[ib+j]-values[ia+j];squared=squared+delta[j]^2
+      axial=axial+(values[ib+j]-previous[ib+j]-values[ia+j]+previous[ia+j])*delta[j] end
+    local d=math.sqrt(squared);local wa,wb=ww:get(2*i-1),ww:get(2*i)
+    if d>=ee:get(4*i-1)*.998 and d>1e-8 and axial>0 then
+      local impulse=axial*.6/(wa+wb)/squared
+      for j=1,3 do previous[ia+j]=previous[ia+j]-wa*impulse*delta[j];previous[ib+j]=previous[ib+j]+wb*impulse*delta[j] end
+    end
+  end
+  v.damp_edges(pp,pr,ee,ww,.6,.998,1e-8,4,3)
+  for i=1,12 do near(pr:get(i),previous[i]) end
+  -- Late invalid edge preserves both outputs despite earlier scratch updates.
+  local savedp,savedl,savedprev=pp:get(4),ll:get(1),pr:get(4)
+  ee:set(10,5)
+  bad(function() v.relax_sweep(pp,ee,ww,ll,.01,4,3,false,true) end)
+  bad(function() v.damp_edges(pp,pr,ee,ww,.6,.998,1e-8,4,3) end)
+  assert(pp:get(4)==savedp and ll:get(1)==savedl and pr:get(4)==savedprev)
+  ee:set(10,4)
+  bad(function() v.relax_sweep(pp,ee,ww,pp,.01,4,3,false,true) end)
+  bad(function() v.relax_sweep(pp,ee,ww,ll,.01,257,3,false,true) end)
+  bad(function() v.relax_sweep(pp,ee,ww,ll,.01,4,513,false,true) end)
+  bad(function() v.relax_sweep(pp,ee,ww,ll,.01,4,3,0,true) end)
+  bad(function() v.damp_edges(pp,pp,ee,ww,.6,.998,1e-8,4,3) end)
+  bad(function() v.damp_edges(pp,pr,ee,ww,1.1,.998,1e-8,4,3) end)
+  ww:set(6,-1);bad(function() v.relax_sweep(pp,ee,ww,ll,.01,4,3,false,true) end)
+end
+do
+  local pp=b({0,0,0,2,0,0});local ee=b({1,2,1,0});local ww=b({0,1});local ll=b({0})
+  v.relax_sweep(pp,ee,ww,ll,.01,2,1,false,false);near(pp:get(4),1);near(ll:get(1),-1)
+  pp:set(4,.5);v.relax_sweep(pp,ee,ww,ll,.01,2,1,false,false);near(pp:get(4),1)
+  pp:set(4,0);v.relax_sweep(pp,ee,ww,ll,.01,2,1,false,true);near(pp:get(4),0)
+  pp:set(4,2);ww:fill(0);v.relax_sweep(pp,ee,ww,ll,.01,2,1,false,true);near(pp:get(4),2)
+  ww:set(2,1);local pr=b({0,0,0,3,0,0})
+  v.damp_edges(pp,pr,ee,ww,1,1,0,2,1);near(pr:get(4),3) -- approaching
+  pr:set(4,1);v.damp_edges(pp,pr,ee,ww,1,3,0,2,1);near(pr:get(4),1) -- slack
+  v.damp_edges(pp,pr,ee,ww,1,1,2,2,1);near(pr:get(4),1) -- epsilon equality
+  v.damp_edges(pp,pr,ee,ww,1,2,0,2,1);near(pr:get(4),2) -- threshold equality
+end
+do
+  local x=b({-1.5,0,1.5});local d=b({9,9,9});local ids=b({3,1,2})
+  v.map(d,x,'floor',3);near(d:get(1),-2);near(d:get(3),1)
+  v.map(d,x,'abs',3);near(d:get(1),1.5)
+  v.map(d,x,'sin',3);near(d:get(1),math.sin(-1.5))
+  v.map(d,x,'cos',3);near(d:get(3),math.cos(1.5))
+  v.map(d,d,'sqrt',3);near(d:get(3),math.sqrt(math.cos(1.5)))
+  local saved=d:get(1);bad(function() v.map(d,x,'sqrt',3) end);assert(d:get(1)==saved)
+  bad(function() v.map(d,x,'unknown',3) end)
+  v.select_le(d,x,0,x,ids,3);near(d:get(1),-1.5);near(d:get(2),0);near(d:get(3),2)
+  v.take(x,x,ids,1,3);near(x:get(1),1.5);near(x:get(2),-1.5)
+  local rows=b({1,2,3,4,5,6});v.take(rows,rows,b({3,1}),2,2)
+  near(rows:get(1),5);near(rows:get(4),2);near(rows:get(5),5)
+  ids:set(3,4);saved=d:get(1);bad(function() v.take(d,x,ids,1,3) end);assert(d:get(1)==saved)
+  bad(function() v.take(d,x,ids,0,3) end)
+  bad(function() v.select_le(d,x,0,x,ids,4) end)
+end
+
+-- Overflow and empty-prefix calls preserve all published outputs.
+do
+  local pp,ee,ww,ll=b({0,0,0,1,0,0})
+  ee=b({1,2,1e6,0});ww=b({0,1e-6});ll=b({7})
+  bad(function() v.relax_sweep(pp,ee,ww,ll,.01,2,1,false,false) end)
+  assert(pp:get(4)==1 and ll:get(1)==7)
+  v.relax_sweep(pp,ee,ww,ll,.01,2,0,false,false)
+  assert(pp:get(4)==1 and ll:get(1)==7)
+  pp:load({-1e6,0,0,1e6,0,0});local pr=b({1e6,0,0,-1e6,0,0})
+  ww:set(2,1)
+  bad(function() v.damp_edges(pp,pr,ee,ww,1,0,0,2,1) end)
+  assert(pr:get(1)==1e6 and pr:get(4)==-1e6)
+  local empty=v.buffer(0)
+  v.map(empty,empty,'floor',0);v.select_le(empty,empty,0,empty,empty,0)
+  v.take(empty,empty,empty,1,0)
+end
+
+-- Consumer formula fixtures: hot arithmetic remains bulk, references are scalar.
+do
+  local n=8
+  local x,y,z,ux,uy,uz={}, {}, {}, {}, {}, {}
+  for i=1,n do x[i]=i*.1;y[i]=(i-4)*.02;z[i]=2+i*.1
+    ux[i]=i*.002;uy[i]=-i*.003;uz[i]=i*.001 end
+  local X,Y,Z,U,V,W=b(x),b(y),b(z),b(ux),b(uy),b(uz)
+  local travel=v.buffer(n);local packed=v.buffer(3*n)
+  v.scatter(packed,U,1,3,n);v.scatter(packed,V,2,3,n);v.scatter(packed,W,3,3,n)
+  v.length3(travel,packed,n)
+  local one=v.buffer(n);one:fill(1)
+  local factor,tmp=v.buffer(n),v.buffer(n)
+  local result={v.buffer(n),v.buffer(n),v.buffer(n)}
+  local h=.01
+  -- Both interior drag regimes, selected by the original y channel.
+  for axis,old in ipairs({X,Y,Z}) do
+    local displacement=({U,V,W})[axis]
+    v.combine(tmp,travel,travel,.3,0,1+5*h,n);v.divide(factor,one,tmp,n)
+    local wet=v.buffer(n);v.multiply(wet,displacement,factor,n)
+    v.combine(wet,old,wet,1,1,axis==2 and .15*h*h or 0,n)
+    if axis==2 then v.clamp_bulk(wet,wet,-1e6,0,n) end
+    v.combine(tmp,travel,travel,.016,0,1,n);v.divide(factor,one,tmp,n)
+    local air=v.buffer(n);v.multiply(air,displacement,factor,n)
+    if axis~=2 then
+      v.combine(tmp,air,air,1/(1+10*h),0,0,n);v.select_le(air,Y,.005,tmp,air,n)
+    end
+    v.combine(air,old,air,1,1,axis==2 and -9.81*h*h or 0,n)
+    v.select_le(result[axis],Y,0,wet,air,n)
+    for i=1,n do
+      local tr=math.sqrt(ux[i]^2+uy[i]^2+uz[i]^2)
+      local u=({ux,uy,uz})[axis][i];local expected
+      if y[i]<=0 then
+        expected=({x,y,z})[axis][i]+u/(1+5*h+.3*tr)+(axis==2 and .15*h*h or 0)
+        if axis==2 then expected=math.min(0,expected) end
+      else
+        u=u/(1+.016*tr);if axis~=2 and y[i]<=.005 then u=u/(1+10*h) end
+        expected=({x,y,z})[axis][i]+u+(axis==2 and -9.81*h*h or 0)
+      end
+      near(result[axis]:get(i),expected)
+    end
+  end
+  -- Per-segment transverse force followed by length preservation.
+  local len,axial,gain=v.buffer(n),v.buffer(n),v.buffer(n)
+  v.length3(len,packed,n)
+  v.combine(axial,U,V,.2,-.3,0,n);v.combine(axial,axial,W,1,.4,0,n)
+  v.clamp_bulk(tmp,len,1e-8,1e6,n);v.divide(axial,axial,tmp,n)
+  gain:fill(.7);v.multiply(axial,axial,gain,n);v.combine(axial,axial,axial,-1,0,1,n)
+  v.multiply(gain,gain,len,n)
+  local bent=v.buffer(3*n)
+  for axis,component in ipairs({U,V,W}) do
+    v.multiply(tmp,component,axial,n);v.combine(tmp,tmp,gain,1,({.2,-.3,.4})[axis],0,n)
+    v.scatter(bent,tmp,axis,3,n)
+  end
+  v.length3(tmp,bent,n);v.divide(factor,len,tmp,n)
+  for axis=1,3 do v.gather(tmp,bent,axis,3,n);v.multiply(tmp,tmp,factor,n);v.scatter(bent,tmp,axis,3,n) end
+  for i=1,n do
+    local ll=math.sqrt(ux[i]^2+uy[i]^2+uz[i]^2)
+    local dot=(.2*ux[i]-.3*uy[i]+.4*uz[i])/ll
+    local nx=ux[i]*(1-.7*dot)+.2*ll*.7
+    local ny=uy[i]*(1-.7*dot)-.3*ll*.7
+    local nz=uz[i]*(1-.7*dot)+.4*ll*.7
+    local norm=math.sqrt(nx*nx+ny*ny+nz*nz)
+    for axis,value in ipairs({nx,ny,nz}) do near(bent:get(3*i-3+axis),value*ll/norm) end
+  end
+  -- Authored deformation -> planar transform -> perspective -> grid -> scale.
+  local flex,sway,scale,angle=.7,.2,1.3,.4
+  v.combine(tmp,X,X,1/30,0,0,n);v.multiply(tmp,tmp,tmp,n)
+  v.combine(tmp,Y,tmp,1,flex,0,n);v.combine(tmp,tmp,Z,1,sway,0,n)
+  local xy=v.buffer(2*n);v.scatter(xy,X,1,2,n);v.scatter(xy,tmp,2,2,n)
+  local ca,sa=math.cos(angle),math.sin(angle)
+  g.affine2(xy,xy,b({scale*ca,-scale*sa,10,scale*sa,scale*ca,20}),n)
+  local uu,ww,depth,perspective=v.buffer(n),v.buffer(n),v.buffer(n),v.buffer(n)
+  v.gather(uu,xy,1,2,n);v.gather(ww,xy,2,2,n)
+  v.combine(depth,uu,ww,-.5,.866,0,n);v.combine(tmp,depth,depth,1/1300,0,1,n)
+  v.divide(perspective,one,tmp,n)
+  v.combine(tmp,uu,ww,.866,.5,0,n);v.multiply(tmp,tmp,perspective,n)
+  v.combine(tmp,tmp,tmp,1,0,174+2,n);v.scatter(xy,tmp,1,2,n)
+  v.multiply(tmp,depth,perspective,n);v.combine(tmp,tmp,perspective,-.67,-3,259+4,n)
+  v.scatter(xy,tmp,2,2,n)
+  for i=1,n do
+    local bb=y[i]+z[i]*sway+flex*(x[i]/30)^2
+    local u=10+(x[i]*ca-bb*sa)*scale;local w=20+(x[i]*sa+bb*ca)*scale
+    local dd=-u*.5+w*.866;local pp=1/(1+dd/1300)
+    near(xy:get(2*i-1),174+(u*.866+w*.5)*pp+2)
+    near(xy:get(2*i),259-dd*.67*pp-3*pp+4)
+  end
+  local unrounded=v.buffer(2*n);unrounded:copy(xy,1,1,2*n)
+  v.combine(xy,xy,xy,.5,0,.5,2*n);v.map(xy,xy,'floor',2*n)
+  v.combine(xy,xy,xy,2,0,0,2*n);v.combine(xy,xy,xy,.8,0,0,2*n)
+  for i=1,2*n do near(xy:get(i),math.floor(unrounded:get(i)/2+.5)*2*.8) end
+  -- Reverse source rows without reversing endpoints; preserve IDs through clipping.
+  local points,rows=b({0,-1,0,1,0,2,2,1,3}),v.buffer(12)
+  g.segments(rows,points,3);v.take(rows,rows,b({2,1}),6,2)
+  near(rows:get(1),1);near(rows:get(4),2)
+  local pieces,tags=v.buffer(24),v.buffer(8)
+  assert(g.split_segments(pieces,tags,rows,2,0,2)==2)
+  -- Negative-to-zero is tagged negative; consumer must use both-endpoints<0.
+  assert(tags:get(3)==-1 and rows:get(8)<0 and rows:get(11)==0)
+  local screen,ids=v.buffer(8),v.buffer(2)
+  g.affine3(pieces,pieces,b({1,0,0,0,0,-1,0,1.6,0,0,1,0}),4)
+  assert(g.project_segments(screen,ids,pieces,b({260,260,184,203,.25}),2)==2)
+  near(screen:get(1),184+260/2);near(screen:get(2),203+260*1.6/2)
+end
+
 -- The C harness turns on allocator counting after compiling/initializing this
 -- closure. Exercise every successful hot API repeatedly, including mesh writes.
 local qa,qb,qc=b({1,2,3,4,5,6,7,8,9,10,11,12}),v.buffer(12),b({1})
@@ -116,6 +325,7 @@ local qs,qt,qo=b({0,0,1,1,1,1}),v.buffer(4),v.buffer(12)
 local qp,qprev,qacc,qw=b({0,0,0,1,0,0}),b({0,0,0,1,0,0}),v.buffer(6),b({0,1})
 local qe,ql=b({1,2,1,0}),v.buffer(1)
 local qwgt=b({0,0,0,0})
+local qids,qedgeweights=b({2,1}),b({0,1})
 return function()
   for _=1,100 do
     qa:set(1,1);qa:get(1);qb:fill(0);qb:copy(qa,1,1,12)
@@ -127,6 +337,10 @@ return function()
     g.affine2(qb,qa,qm,2);g.affine3(qb,qa,qm,2);g.displace3(qb,qa,qwgt,1,2,3,2);g.rotate3(qb,qa,qwgt,0,0,1,1,2)
     g.prefix3(qb,qa,0,0,0,2);g.project_points(qb,qmask,qa,qcam,2);g.segments(qo,qp,2)
     g.project_segments(qb,qmask,qs,qcam,1);g.split_segments(qo,qt,qs,1,.5,1)
+    v.relax_sweep(qp,qe,qedgeweights,ql,.01,2,1,true,true)
+    v.damp_edges(qp,qprev,qe,qedgeweights,.5,.998,1e-8,2,1)
+    v.map(qb,qa,"abs",12);v.map(qb,qa,"sqrt",12);v.map(qb,qa,"sin",12);v.map(qb,qa,"cos",12)
+    v.map(qb,qa,"floor",12);v.select_le(qb,qa,2,qa,qb,12);v.take(qb,qa,qids,3,2)
     g.update_mesh(writer,xy,topology,4,2)
   end
 end

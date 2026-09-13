@@ -340,6 +340,166 @@ static int relax(lua_State *s) {
   h2_numeric_commit(s, lambda, m);
   return 0;
 }
+/* One sweep retains caller multipliers, allowing constraints between passes. */
+static int relax_sweep(lua_State *s) {
+  h2_numeric_buffer_t *p = h2_numeric_check(s, 1), *e = h2_numeric_check(s, 2),
+                      *w = h2_numeric_check(s, 3), *l = h2_numeric_check(s, 4);
+  double dt = h2_numeric_number(s, 5);
+  size_t n = h2_numeric_size(s, 6, 256), m = h2_numeric_size(s, 7, 512);
+  luaL_checktype(s, 8, LUA_TBOOLEAN);
+  luaL_checktype(s, 9, LUA_TBOOLEAN);
+  int reverse = lua_toboolean(s, 8), tension = lua_toboolean(s, 9);
+  /* Optional geometric cutoff, independent of compliance/material policy. */
+  double epsilon = lua_isnone(s, 10) ? 1e-12 : h2_numeric_number(s, 10);
+  if (!n || dt < 1e-6 || dt > .1 || epsilon < 0 || p == e || p == w || p == l ||
+      l == e || l == w)
+    return luaL_error(s, "invalid sweep parameters or aliases");
+  h2_numeric_capacity(s, p, 3 * n);
+  h2_numeric_capacity(s, e, 4 * m);
+  h2_numeric_capacity(s, w, 2 * m);
+  h2_numeric_capacity(s, l, m);
+  double *q = p->data + p->count, *lambda = l->data + l->count;
+  memcpy(q, p->data, 3 * n * sizeof(double));
+  memcpy(lambda, l->data, m * sizeof(double));
+  for (size_t k = 0; k < m; ++k) {
+    size_t i = reverse ? m - 1 - k : k;
+    const double *edge = e->data + 4 * i;
+    if (edge[0] < 1 || edge[0] > n || floor(edge[0]) != edge[0] ||
+        edge[1] < 1 || edge[1] > n || floor(edge[1]) != edge[1] ||
+        edge[0] == edge[1] || edge[2] < 0 || edge[3] < 0 ||
+        w->data[2 * i] < 0 || w->data[2 * i + 1] < 0)
+      return luaL_error(s, "invalid weighted edge");
+    double *a = q + 3 * ((size_t)edge[0] - 1),
+           *b = q + 3 * ((size_t)edge[1] - 1);
+    double delta[3] = {b[0] - a[0], b[1] - a[1], b[2] - a[2]};
+    double d =
+        sqrt(delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2]);
+    double wa = w->data[2 * i], wb = w->data[2 * i + 1];
+    if (d == 0 || d < epsilon || wa + wb == 0)
+      continue;
+    double alpha = edge[3] / (dt * dt), old = lambda[i];
+    double next = old + (-(d - edge[2]) - alpha * old) / (wa + wb + alpha);
+    if (tension)
+      next = fmin(0, next);
+    lambda[i] = checked(s, next);
+    for (size_t j = 0; j < 3; ++j) {
+      double correction = (next - old) / d * delta[j];
+      a[j] = checked(s, a[j] - wa * correction);
+      b[j] = checked(s, b[j] + wb * correction);
+    }
+  }
+  h2_numeric_commit(s, p, 3 * n);
+  h2_numeric_commit(s, l, m);
+  return 0;
+}
+static int damp_edges(lua_State *s) {
+  h2_numeric_buffer_t *p = h2_numeric_check(s, 1),
+                      *prev = h2_numeric_check(s, 2),
+                      *e = h2_numeric_check(s, 3), *w = h2_numeric_check(s, 4);
+  double blend = h2_numeric_number(s, 5), threshold = h2_numeric_number(s, 6),
+         epsilon = h2_numeric_number(s, 7);
+  size_t n = h2_numeric_size(s, 8, 256), m = h2_numeric_size(s, 9, 512);
+  if (!n || prev == p || prev == e || prev == w || blend < 0 || blend > 1 ||
+      threshold < 0 || epsilon < 0)
+    return luaL_error(s, "invalid edge damping parameters or aliases");
+  h2_numeric_capacity(s, p, 3 * n);
+  h2_numeric_capacity(s, prev, 3 * n);
+  h2_numeric_capacity(s, e, 4 * m);
+  h2_numeric_capacity(s, w, 2 * m);
+  double *q = prev->data + prev->count;
+  memcpy(q, prev->data, 3 * n * sizeof(double));
+  for (size_t i = 0; i < m; ++i) {
+    const double *edge = e->data + 4 * i;
+    if (edge[0] < 1 || edge[0] > n || floor(edge[0]) != edge[0] ||
+        edge[1] < 1 || edge[1] > n || floor(edge[1]) != edge[1] ||
+        edge[0] == edge[1] || edge[2] < 0 || edge[3] < 0 ||
+        w->data[2 * i] < 0 || w->data[2 * i + 1] < 0)
+      return luaL_error(s, "invalid weighted edge");
+    size_t ia = 3 * ((size_t)edge[0] - 1), ib = 3 * ((size_t)edge[1] - 1);
+    double delta[3], squared = 0, axial = 0;
+    for (size_t j = 0; j < 3; ++j) {
+      delta[j] = p->data[ib + j] - p->data[ia + j];
+      squared += delta[j] * delta[j];
+      axial += (p->data[ib + j] - q[ib + j] - p->data[ia + j] + q[ia + j]) *
+               delta[j];
+    }
+    double d = sqrt(squared), wa = w->data[2 * i], wb = w->data[2 * i + 1];
+    if (d <= epsilon || d < edge[2] * threshold || axial <= 0 || wa + wb == 0)
+      continue;
+    double impulse = axial * blend / (wa + wb) / squared;
+    for (size_t j = 0; j < 3; ++j) {
+      q[ia + j] = checked(s, q[ia + j] - wa * impulse * delta[j]);
+      q[ib + j] = checked(s, q[ib + j] + wb * impulse * delta[j]);
+    }
+  }
+  h2_numeric_commit(s, prev, 3 * n);
+  return 0;
+}
+static int map(lua_State *s) {
+  static const char *const names[] = {"abs", "sqrt",  "sin",
+                                      "cos", "floor", NULL};
+  h2_numeric_buffer_t *d = h2_numeric_check(s, 1), *a = h2_numeric_check(s, 2);
+  int op = luaL_checkoption(s, 3, NULL, names);
+  size_t n = h2_numeric_size(s, 4, d->count);
+  h2_numeric_capacity(s, a, n);
+  for (size_t i = 0; i < n; ++i) {
+    double x = a->data[i], v = 0;
+    switch (op) {
+    case 0:
+      v = fabs(x);
+      break;
+    case 1:
+      v = sqrt(x);
+      break;
+    case 2:
+      v = sin(x);
+      break;
+    case 3:
+      v = cos(x);
+      break;
+    case 4:
+      v = floor(x);
+      break;
+    }
+    d->data[d->count + i] = v;
+  }
+  h2_numeric_commit(s, d, n);
+  return 0;
+}
+static int select_le(lua_State *s) {
+  h2_numeric_buffer_t *d = h2_numeric_check(s, 1),
+                      *test = h2_numeric_check(s, 2),
+                      *yes = h2_numeric_check(s, 4),
+                      *no = h2_numeric_check(s, 5);
+  double threshold = h2_numeric_number(s, 3);
+  size_t n = h2_numeric_size(s, 6, d->count);
+  h2_numeric_capacity(s, test, n);
+  h2_numeric_capacity(s, yes, n);
+  h2_numeric_capacity(s, no, n);
+  for (size_t i = 0; i < n; ++i)
+    d->data[d->count + i] =
+        test->data[i] <= threshold ? yes->data[i] : no->data[i];
+  h2_numeric_commit(s, d, n);
+  return 0;
+}
+static int take(lua_State *s) {
+  h2_numeric_buffer_t *d = h2_numeric_check(s, 1),
+                      *src = h2_numeric_check(s, 2),
+                      *ids = h2_numeric_check(s, 3);
+  size_t width = h2_numeric_size(s, 4, H2_LUA_NUMERIC_COUNT_LIMIT),
+         n = h2_numeric_size(s, 5, ids->count);
+  if (!width || n > d->count / width)
+    return luaL_error(s, "invalid row extent");
+  for (size_t i = 0; i < n; ++i) {
+    double id = ids->data[i];
+    if (id < 1 || id > src->count / width || floor(id) != id)
+      return luaL_error(s, "invalid row index");
+    memcpy(d->data + d->count + i * width, src->data + ((size_t)id - 1) * width,
+           width * sizeof(double));
+  }
+  h2_numeric_commit(s, d, n * width);
+  return 0;
+}
 static int damp(lua_State *s) {
   h2_numeric_buffer_t *p = h2_numeric_check(s, 1),
                       *prev = h2_numeric_check(s, 2),
@@ -395,6 +555,11 @@ int h2_lua_open_vmath(lua_State *s) {
                                        {"verlet", verlet},
                                        {"relax", relax},
                                        {"damp", damp},
+                                       {"relax_sweep", relax_sweep},
+                                       {"damp_edges", damp_edges},
+                                       {"map", map},
+                                       {"select_le", select_le},
+                                       {"take", take},
                                        {NULL, NULL}};
   luaL_newlib(s, functions);
   lua_pushinteger(s, 0);

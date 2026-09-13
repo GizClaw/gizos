@@ -39,6 +39,11 @@ physics restrictions below. No resizing, views or retained C pointers exist.
 | `vmath.dot(a,b,count)` | Scalar dot product of prefixes. |
 | `vmath.verlet(p,prev,accel,inv_mass,dt,drag,n)` | Packed xyz; `p+=(p-prev)/(1+drag*dt)+accel*dt²`, prev=old p; no result. |
 | `vmath.relax(p,inv_mass,edges,lambda,dt,iterations,n,m,tension_only)` | XPBD distance relaxation, writes p and lambda; no result. |
+| `vmath.relax_sweep(p,edges,weights,lambda,dt,n,m,reverse,tension_only[,epsilon])` | One ordered XPBD sweep retaining lambda; per-edge `{wa,wb}`; optional distance cutoff defaults to 1e-12. |
+| `vmath.damp_edges(p,prev,edges,weights,blend,threshold,epsilon,n,m)` | Forward ordered removal of separating axial displacement on taut edges; writes prev. |
+| `vmath.map(dst,src,operation,count)` | Componentwise `"abs"`, `"sqrt"`, `"sin"`, `"cos"`, or `"floor"`; no result. Negative sqrt fails atomically. |
+| `vmath.select_le(dst,test,threshold,yes,no,count)` | Select yes[i] when test[i] ≤ threshold, otherwise no[i]; no result. |
+| `vmath.take(dst,src,indices,width,n)` | Gather n rows of width scalars using one-based row indices; permits duplicates and permutations; no result. |
 | `vmath.damp(p,prev,inv_mass,retain,blend,n)` | Replaces displacement with `retain*lerp(displacement,neighbor_mean,blend)`, writes prev; no result. |
 | `geometry.affine2(dst,src,matrix,n)` | Packed xy, row-major 2×3 affine matrix; no result. |
 | `geometry.affine3(dst,src,matrix,n)` | Packed xyz, row-major 3×4 affine matrix; no result. |
@@ -66,6 +71,32 @@ forward/backward. `tension_only=true` clamps lambda ≤ 0, false is bilateral.
 Coincident endpoints (distance < 1e-12) and fully pinned edges are skipped.
 `lambda/dt²` represents constraint force. Writable p/lambda must differ from each
 other and all input buffers. There is no implicit collision or material policy.
+
+`relax_sweep` shares relax's edge layout, n/m/dt limits and writable-buffer
+alias restrictions, but weights are **two values per edge**, not per node.
+It copies the existing lambda prefix and processes edges in forward or reverse
+order exactly once. With d the current distance, alpha=compliance/dt²:
+`next=old+(-(d-rest)-alpha*old)/(wa+wb+alpha)`; optionally clamp next to ≤0,
+then apply `a-=wa*(next-old)*(b-a)/d`, `b+=wb*(next-old)*(b-a)/d`.
+Zero distance, distance < epsilon, and wa+wb=0 are skipped. Epsilon is
+nonnegative, default 1e-12. Initialize lambda once before the caller's sweep loop.
+External constraints can run between sweeps without losing accumulated lambda.
+
+`damp_edges` uses the same four-scalar edge rows and two-scalar weights;
+compliance is validated but unused. It accepts n in 1..256, m ≤512,
+blend in [0,1], threshold/epsilon ≥0; prev must differ from every input.
+For delta=b-a, d=length(delta), and current displacements u=p-prev,
+if d≥rest*threshold, d>epsilon, wa+wb>0 and dot(ub-ua,delta)>0, set
+`impulse=dot(ub-ua,delta)*blend/(wa+wb)/d²`, then
+`prev_a-=wa*impulse*delta`, `prev_b+=wb*impulse*delta`.
+Later edges observe earlier prev changes. Neither p nor lambda changes.
+
+`map`, `select_le` and `take` use buffer-capacity bounds (at most 65536
+scalars), permit all aliases, preserve unused suffixes and allocate no scratch
+beyond the destination's existing private storage. `take` requires width≥1,
+integer indices in 1..floor(#src/width), n≤#indices and n*width≤#dst.
+For vector conditionals, apply select_le separately to gathered scalar channels;
+for min(a,b), select using test=a-b, threshold=0, yes=a, no=b.
 
 Camera layout is `{fx,fy,cx,cy,near}` with near ≥ .001, +Z forward and projection
 `(cx+fx*x/z,cy+fy*y/z)`. Use affine3 for camera positioning and negative fy for

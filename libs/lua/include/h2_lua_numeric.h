@@ -19,7 +19,7 @@
  * setup outside frame loops. Error construction can allocate. Numeric kernels
  * never yield, call Lua, access hardware, or retain external pointers.
  *
- * Lua API (all arguments required, all indices one-based):
+ * Lua API (arguments required unless marked optional, indices one-based):
  * - vmath.buffer(count) -> b: zeroed fixed buffer, count in 0..65536.
  * - #b -> count; b:get(index) -> number; b:set(index,value) -> nothing.
  * - b:fill(value) -> nothing: fill entire buffer.
@@ -59,6 +59,26 @@
  *   coincident endpoints (<1e-12 distance) and fully pinned edges. With true,
  *   lambda <= 0 (tension only); false is bilateral. Writable p/lambda must
  *   be distinct from each other and every input. Read lambda/dt^2 as force.
+ * - vmath.relax_sweep(p,edges,weights,lambda,dt,n,m,reverse,tension_only[,epsilon])
+ *   -> nothing: one ordered XPBD sweep, retaining/updating lambda. Edge rows
+ *   as relax; weights are per-edge {wa,wb}, nonnegative. n in 1..256,
+ *   m <= 512, dt in [1e-6,.1]. reverse/tension_only are required booleans.
+ *   epsilon defaults to 1e-12, must be nonnegative; skip distance < epsilon
+ *   or zero distance or fully pinned edges. Writable p/lambda must differ
+ *   from each other and edges/weights. No automatic lambda reset.
+ * - vmath.damp_edges(p,prev,edges,weights,blend,threshold,epsilon,n,m)
+ *   -> nothing: forward ordered per-edge prev update; same edge/weight layout,
+ *   n in 1..256, m <= 512. For d >= rest*threshold and d > epsilon,
+ *   remove blend of positive relative axial displacement, split by wa/(wa+wb)
+ *   and wb/(wa+wb). Skip pinned edges; compliance validated but unused.
+ *   blend in [0,1], threshold/epsilon >= 0; prev differs from all inputs.
+ * - vmath.map(dst,src,operation,count) -> nothing: componentwise abs, sqrt,
+ *   sin, cos or floor (string operation). Negative sqrt input raises error.
+ * - vmath.select_le(dst,test,threshold,yes,no,count) -> nothing:
+ *   dst[i] = test[i] <= threshold ? yes[i] : no[i], equality included.
+ * - vmath.take(dst,src,indices,width,n) -> nothing: copy n indexed rows of
+ *   width scalars, one-based row indices; width >= 1, all extents must fit.
+ *   Duplicates, permutations and input/output aliasing supported.
  * - vmath.damp(p,prev,inv_mass,retain,blend,n) -> nothing: replace displacement
  *   with retain * lerp(displacement,neighbor_mean,blend), changing prev only.
  *   Endpoint mean is its own displacement; pinned prev unchanged; n <= 256;
