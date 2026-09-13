@@ -328,7 +328,7 @@ static void dispatch_urc(void *user, const char *line) {
 
 h2_pal_result_t h2_quectel_post_urc_line(h2_quectel_modem_t *modem, const char *line) {
     if (modem == NULL || line == NULL) { return H2_PAL_ERR_INVALID_ARG; }
-    return h2_quectel_is_urc(line, NULL)
+    return (h2_quectel_is_urc(line, NULL) || h2_quectel_is_sim_absent_line(line))
         ? h2_modem_urc_post(&modem->urc_worker, line) : H2_PAL_OK;
 }
 

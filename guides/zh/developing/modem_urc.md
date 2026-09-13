@@ -6,7 +6,7 @@
 
 `h2_modem_rx_feed` 持有有界尾片段，只在 CR/LF 后交付完整行。物理流绝对 offset 区分新字节与累计前缀，不比较字符串进行去重。重复的 RING 是独立 occurrence；重放的相同 offset 不是。超长行或 NUL 污染行丢弃至下一个分隔符，不把截断尾巴当作新行。返回首个错误但继续消费当前输入，不能通过重放整个 batch 重试 FULL。
 
-`h2_quectel_rx_feed` 在入队前分类。普通 OK、echo、IMEI/IMSI 等不进入 URC worker。注册查询的 `<n>,<stat>` 与通知的 `<stat>[,"lac",...]` 按语法区分，即使查询期间也保留真实通知。CPIN、CGATT、CSQ、CLCC、QSIMSTAT 在对应查询期间存在同格式歧义，必须提供命令上下文；确定为独立通知的行可由 transport 直接调用 `h2_quectel_post_urc_line`。不支持凭内容推断两次同文本是同一 occurrence。
+`h2_quectel_rx_feed` 在入队前分类。普通 OK、echo、IMEI/IMSI 等不进入 URC worker。注册查询的 `<n>,<stat>` 与通知的 `<stat>[,"lac",...]` 按语法区分，即使查询期间也保留真实通知。CPIN、CGATT、CSQ、CLCC、QSIMSTAT 在对应查询期间存在同格式歧义，必须提供命令上下文；确定为独立通知的行可由 transport 直接调用 `h2_quectel_post_urc_line`。不支持凭内容推断两次同文本是同一 occurrence。对于 `AT+CPIN?`，RX tap 还会转发精确匹配的 `+CME ERROR: 10` 和 `+CME ERROR: SIM not inserted`，避免 command transport 丢弃错误文本后漏报 SIM 缺失；这不改变同步 AT 响应的 URC 分类与帧边界。
 
 receiver 为每个 AT 通道单独配置，生产者串行调用，不能输入 PPP 数据通道。命令上下文必须覆盖完整行，不得在尾片段中途切换。停止并 join 所有生产者之后才能重置 receiver 或销毁 modem。
 
