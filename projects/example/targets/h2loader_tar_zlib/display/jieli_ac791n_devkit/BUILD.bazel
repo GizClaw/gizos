@@ -542,6 +542,7 @@ h2loader_tar_zlib(
 
 h2loader_tar_zlib(
     name = "coredump_smoke_package",
+    tags = ["no-release"],
     board = "jieli_ac791n_devkit",
     firmware = ":coredump_smoke_firmware",
     image = "coredump-smoke",
@@ -551,6 +552,7 @@ h2loader_tar_zlib(
 
 h2loader_tar_zlib(
     name = "coredump_minimal_package",
+    tags = ["no-release"],
     board = "jieli_ac791n_devkit",
     firmware = ":coredump_minimal_firmware",
     image = "coredump-minimal",
