@@ -26,7 +26,7 @@ experiment attributing every outcome to one of those commits.
 The distinct-image update now passes the formerly failing source read after
 candidate reboot and confirmation, copies the complete image, verifies P1,
 and converges. Ordered selected lines are retained in
-[the trace](./loader-self-update-trace.log); full local capture is
+the trace (`loader-self-update-trace.log`); full local capture is
 `tmp/jieli/2026-09-14-loader/install.log`.
 
 ```text
@@ -57,17 +57,17 @@ Loader package (918365 bytes):
 Loader image (929917 bytes):
 `42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd`.
 
-[Initial status](./loader-initial.status) confirmed old P1 image
+Initial status (`loader-initial.status`) confirmed old P1 image
 `7130cfe2386c86a7dcf82ccd15854f14b64fb525be14a984cfdaa5dd19d64dfa`;
 P2 and Stage held PAL App package
 `f2d528a110827e8161154d4c7df925103f1b6a76931454b3a5afc4aae631997d`,
 image `fec8c47945b29ac9f294d177d507d19705195c34ba8f76c63a9d60d5ff95cfb7`.
 Both partitions were valid; P1 running/next, last_result=0.
 
-After send, [immediately-before-install status](./loader-before-install.status)
+After send, immediately-before-install status (`loader-before-install.status`)
 recorded unchanged P1/P2, Stage equal to the new Loader package/image above,
 and last_result=0. Send acknowledged all 918365 bytes and the exact package
-SHA. [After-install status](./loader-after-install.status) independently
+SHA. After-install status (`loader-after-install.status`) independently
 confirmed both partitions valid and carrying the new Loader package/image,
 P1 running/next, Stage empty, boot_intent=auto, last_result=0.
 
@@ -92,7 +92,7 @@ bazel test --config=macos_arm64 --nocache_test_results \
   //projects/h2loader/apps/e2e-runner:h2loader_e2e_runner_test
 ```
 
-[Host test output](./loader-host-tests-fresh.log), with trailing whitespace
+Host test output (`loader-host-tests-fresh.log`), with trailing whitespace
 trimmed in the committed copy. No behavior or test was
 changed; existing attribute fault-injection and directory regression coverage
 was rerun. An earlier invocation returned a cached directory-test PASS.
@@ -122,7 +122,7 @@ bazel-bin/projects/h2loader/targets/cc_binary/e2e-runner/e2e-runner \
 
 **25/25 PASS**, rc=0, 560.440 seconds, one run, no runner/test changes.
 [Raw JSON report](./loader-uart-lifecycle.json) and
-[selected ordered trace](./loader-uart-lifecycle-trace.log).
+selected ordered trace (`loader-uart-lifecycle-trace.log`).
 Full unfiltered local log remains `tmp/jieli/2026-09-14-loader/uart-lifecycle.log`;
 selected traces omit routine traffic and retain lifecycle/error markers.
 
@@ -184,7 +184,7 @@ reported `H2_JIELI_TRIAL_ROLLBACK app_bootable=0 action=command-mode`.
 The runner verified 2096 coredump bytes, exported them, erased the dump and
 confirmed the blank state.
 
-[Independent final UART status](./loader-final.status) confirms UID
+Independent final UART status (`loader-final.status`) confirms UID
 `d879349abc9f`, P1 valid/running/next with new Loader image
 `42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd`,
 boot_intent=auto, last_result=0. P2 and Stage retain crash App package
