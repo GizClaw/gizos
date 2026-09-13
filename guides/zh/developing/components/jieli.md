@@ -118,6 +118,12 @@ SDK 的 `dual_bank_updata_api.h` 公开新镜像校验及 BootInfo 写入、清�
 
 声明的 `sdk_patches` 只应用于 invocation-local SDK 副本，原始 SDK checkout 不被修改。Firmware、ELF、symbols、manifest 由 Bazel action 发布；手工硬件诊断的日志不属于发布产物。
 
+App 的 H2Loader command、UART/USB transport 和 BLE service composition 由
+`projects/h2loader/native_component_src/jieli/wl82/h2loader_app` 拥有，公开头文件
+位于该组件的 `include/`。Display launcher 和 PAL BLE smoke 直接依赖这些组件，
+不通过示例 artifact entry 共享 transport 源码；具体 task policy 仍由各 target 拥有。
+此归属不改变共用 Loader 协议、board layout、日志出口或镜像启动行为。
+
 ## AC791N validation commands
 
 PAL BLE 诊断包位于 `//projects/e2e/targets/h2loader_tar_zlib/pal-ble-smoke/jieli_ac791n_devkit:package`，通过相同的 `h2loader_jieli_firmware` wrapper 使用正式 board layout，保留 UART App command 通道与分步日志，并带 `no-release` tag。不再维护独立的 vendor demo config、Makefile 或 BLE 实验 patch；该诊断只用于定位 PAL 调用阶段，不替代 H2Loader BLE 生命周期验收。

@@ -13,14 +13,6 @@ AC791N_COMPATIBILITY = select({
     "//conditions:default": ["@platforms//:incompatible"],
 })
 
-firmware_lib_component(
-    name = "reliable_transport",
-    component_name = "jieli_ac791n_devkit_display_reliable_transport",
-    deps = [
-        "//libs/command",
-        "//libs/iostreamikcp",
-    ],
-)
 
 jieli_target_task_policy(
     name = "color_bar_task_policy",
@@ -326,100 +318,10 @@ firmware_native_component(
     ],
 )
 
-firmware_native_component(
-    name = "bundle_native",
-    hdrs = [
-        "//libs/bundle:include/h2_bundle.h",
-        "//libs/bundle:include/h2_bundle_archive.h",
-        "//libs/bundle:include/h2_bundle_installer.h",
-        "//libs/bundle:include/h2_bundle_manifest.h",
-        "//libs/bundle:include/h2_bundle_path.h",
-        "//libs/bundle:include/h2_bundle_tar.h",
-        "//libs/bundle:include/h2_bundle_types.h",
-    ],
-    include_roots = ["libs/bundle/include"],
-    native_srcs = [
-        "//libs/bundle:src/h2_bundle_archive.c",
-        "//libs/bundle:src/h2_bundle_installer.c",
-        "//libs/bundle:src/h2_bundle_manifest.c",
-        "//libs/bundle:src/h2_bundle_path.c",
-        "//libs/bundle:src/h2_bundle_tar.c",
-        "//libs/bundle:src/h2_bundle_types.c",
-    ],
-    component_name = "jieli_ac791n_devkit_bundle",
-    deps = [
-        "//libs/pal:pal_header_files",
-        "//native_component_src/jieli/wl82/h2_pixa",
-        "//native_component_src/jieli/wl82/zlib",
-    ],
-)
 
-firmware_native_component(
-    name = "h2loader_app_client",
-    hdrs = [
-        "//projects/h2loader/libs/h2loader:h2loader_headers",
-    ],
-    include_roots = [
-        "projects/h2loader/libs/h2loader/include",
-    ],
-    native_srcs = [
-        "//projects/h2loader/libs/h2loader:src/h2_loader_app_client.c",
-        "//projects/h2loader/libs/h2loader:src/h2_loader_boot.c",
-        "//projects/h2loader/libs/h2loader:src/h2_loader_command.c",
-        "//projects/h2loader/libs/h2loader:src/h2_loader_mfg.c",
-        "//projects/h2loader/libs/h2loader:src/h2_loader_metadata.c",
-        "//projects/h2loader/libs/h2loader:src/h2_loader_package.c",
-        "//projects/h2loader/libs/h2loader:src/h2_loader_sha256.c",
-        "//projects/h2loader/libs/h2loader:src/h2_loader_stage.c",
-        "//projects/h2loader/libs/h2loader:src/h2_loader_stage_writer.c",
-        "//projects/h2loader/libs/h2loader:src/h2_loader_status.c",
-        "//projects/h2loader/libs/h2loader:src/h2_loader_task_names.c",
-    ],
-    component_name = "jieli_ac791n_devkit_h2loader_app_client",
-    deps = [
-        "//projects/h2loader/libs/h2loader:tasks",
-        ":bundle_native",
-        "//libs/command",
-        "//libs/pal:pal_header_files",
-    ],
-)
 
-firmware_native_component(
-    name = "app_support",
-    srcs = ["src/jieli_h2loader_app_support.c"],
-    hdrs = ["src/jieli_h2loader_app_support.h"],
-    component_name = "jieli_ac791n_devkit_app_support",
-    tags = ["manual"],
-    target_compatible_with = AC791N_COMPATIBILITY,
-    deps = [
-        ":h2loader_app_client",
-        "//boards/ac791n_chip/ac791n",
-        "//boards/jieli_ac791n_devkit/ac791n",
-    ],
-)
 
-h2_tasks(
-    name = "app_transport_tasks",
-    tasks = ["h2loader/appcmd"],
-)
 
-firmware_native_component(
-    name = "app_transport",
-    srcs = [
-        "src/jieli_app_iostreamikcp.c",
-    ],
-    hdrs = ["src/jieli_app_iostreamikcp.h"],
-    component_name = "jieli_ac791n_devkit_app_transport",
-    tags = ["manual"],
-    target_compatible_with = AC791N_COMPATIBILITY,
-    deps = [
-        ":app_transport_tasks",
-        ":app_support",
-        ":reliable_transport",
-        "//boards/ac791n_chip/ac791n",
-        "//boards/jieli_ac791n_devkit/ac791n",
-    ],
-)
 
 h2_tasks(
     name = "color_bar_tasks",
@@ -434,35 +336,15 @@ firmware_native_component(
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
         ":color_bar_tasks",
-        ":app_ble",
-        ":app_transport",
-        ":h2loader_app_client",
+        "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:app_ble",
+        "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:app_transport",
+        "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:h2loader_app_client",
         "//boards/ac791n_chip/ac791n",
         "//boards/jieli_ac791n_devkit/ac791n",
     ],
 )
 
-firmware_lib_component(
-    name = "app_ble_transport",
-    component_name = "jieli_ac791n_devkit_app_ble_transport",
-    deps = ["//libs/bleikcp"],
-)
 
-firmware_native_component(
-    name = "app_ble",
-    srcs = ["src/jieli_app_ble.c"],
-    hdrs = ["//projects/h2loader/apps/loader/app:include/h2loader_app_task_names.h"],
-    include_roots = ["projects/h2loader/apps/loader/app/include"],
-    native_srcs = ["//projects/h2loader/libs/h2loader:src/h2_loader_ble.c"],
-    component_name = "jieli_ac791n_devkit_app_ble",
-    tags = ["manual"],
-    target_compatible_with = AC791N_COMPATIBILITY,
-    deps = [
-        "//projects/h2loader/apps/loader/app:ble_tasks",
-        ":app_support",
-        ":app_ble_transport",
-    ],
-)
 
 firmware_lib_component(
     name = "mp4_player_libs",
@@ -489,8 +371,8 @@ firmware_native_component(
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
         ":mp4_player_launcher_tasks",
-        ":app_transport",
-        ":h2loader_app_client",
+        "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:app_transport",
+        "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:h2loader_app_client",
         ":mp4_player_libs",
         "//boards/ac791n_chip/ac791n",
         "//boards/jieli_ac791n_devkit/ac791n",
@@ -512,8 +394,8 @@ firmware_native_component(
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
-        ":app_support",
-        ":h2loader_app_client",
+        "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:app_support",
+        "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:h2loader_app_client",
         "//boards/ac791n_chip/ac791n",
         "//boards/jieli_ac791n_devkit/ac791n",
     ],

@@ -6,7 +6,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 TARGETS = (
-    ("projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit/src/jieli_app_iostreamikcp.c", "static uint32_t now_ms", False),
+    ("projects/h2loader/native_component_src/jieli/wl82/h2loader_app/src/jieli_app_iostreamikcp.c", "static uint32_t now_ms", False),
     ("projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit/src/loader_launcher.c", "static void usb_diag_write", True),
 )
 

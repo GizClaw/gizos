@@ -108,8 +108,8 @@ int main(void) {
 
 class UartConsoleTest(unittest.TestCase):
     def test_app_console_start_retry_keeps_live_transport(self):
-        source = (ROOT / "projects/example/targets/h2loader_tar_zlib/display/"
-                  "jieli_ac791n_devkit/src/jieli_app_iostreamikcp.c").read_text()
+        source = (ROOT / "projects/h2loader/native_component_src/jieli/wl82/"
+                  "h2loader_app/src/jieli_app_iostreamikcp.c").read_text()
         begin = source.index("static int console_sync_init(")
         stub = r'''
 #include <assert.h>
@@ -241,8 +241,8 @@ int main(void) {
                     subprocess.run([str(binary)], check=True, timeout=60)
 
     def test_app_console_sync_create_failure_unwinds(self):
-        source = (ROOT / "projects/example/targets/h2loader_tar_zlib/display/"
-                  "jieli_ac791n_devkit/src/jieli_app_iostreamikcp.c").read_text()
+        source = (ROOT / "projects/h2loader/native_component_src/jieli/wl82/"
+                  "h2loader_app/src/jieli_app_iostreamikcp.c").read_text()
         begin = source.index("static int console_sync_init(")
         end = source.index("int h2_jieli_app_iostreamikcp_start(", begin)
         stub = r'''
@@ -407,7 +407,7 @@ int main(void) {
         self.assertNotIn("mp4-decoder", policy)
 
     def test_app_command_stack_matches_loader_policy(self):
-        target = ROOT / "projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit/src"
+        target = ROOT / "projects/h2loader/native_component_src/jieli/wl82/h2loader_app/src"
         loader_words = policy_rows(LOADER_BUILD, "loader_task_policy")["h2loader/appcmd"][1]
         for name in ("color_bar_task_policy", "mp4_player_small_task_policy"):
             app_words = policy_rows(DISPLAY_BUILD, name)["h2loader/appcmd"][1]
@@ -424,7 +424,7 @@ int main(void) {
                       (common / "h2loader_bleikcp.c").read_text())
         self.assertIn('.name = h2loader_app_command_task_name,',
                       (common / "app.c").read_text())
-        target = ROOT / "projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit/src"
+        target = ROOT / "projects/h2loader/native_component_src/jieli/wl82/h2loader_app/src"
         self.assertIn('.task_name = H2LOADER_BLE_COMMAND_TASK_NAME_VALUE,',
                       (target / "jieli_app_ble.c").read_text())
         for name in ("color_bar", "touch", "button", "audio_system"):
