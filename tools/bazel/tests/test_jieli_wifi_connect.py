@@ -20,8 +20,8 @@ class WifiConnectTest(unittest.TestCase):
 #include "h2/pal/hal/h2_pal_wifi.h"
 static struct { h2_pal_wifi_ap_status_t ap; } wifi_state;
 static uint32_t now;
-static int sleeps;
-static int ensure_wifi_on(void) { return 0; }
+static int sleeps, starts;
+static int ensure_wifi_on(void) { ++starts; return 0; }
 static uint32_t timer_get_ms(void) { return now; }
 static int wifi_get_channel(void) { return 1; }
 static int wifi_enter_ap_mode(char *ssid, char *password) {
@@ -36,6 +36,18 @@ int main(void) {
     h2_pal_wifi_ap_config_t config = {0};
     memcpy(config.ssid, "test", 4); config.ssid_len = 4;
     config.security = H2_PAL_WIFI_SECURITY_OPEN;
+    config.max_clients = 6;
+    assert(ap_start(NULL, &config, 50) == H2_PAL_ERR_UNSUPPORTED);
+    assert(starts == 0);
+    config.max_clients = 0;
+    memcpy(config.password, "password", 8); config.password_len = 8;
+    config.security = H2_PAL_WIFI_SECURITY_WPA3;
+    assert(ap_start(NULL, &config, 50) == H2_PAL_ERR_UNSUPPORTED);
+    assert(starts == 0);
+    config.security = H2_PAL_WIFI_SECURITY_OPEN;
+    assert(ap_start(NULL, &config, 50) == H2_PAL_ERR_INVALID_ARG);
+    assert(starts == 0);
+    config.password_len = 0;
     assert(ap_start(NULL, &config, 50) == H2_PAL_ERR_TIMEOUT);
     assert(sleeps == 2 && now == 80);
     sleeps = 0; now = UINT32_MAX - 19;

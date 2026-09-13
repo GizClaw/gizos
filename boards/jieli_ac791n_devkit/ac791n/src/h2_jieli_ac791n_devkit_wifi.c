@@ -326,6 +326,17 @@ static int ap_start(
   (void)user;
   int result = h2_pal_wifi_ap_config_validate(config);
   if (result != H2_PAL_OK) return result;
+  /* wifi_conf.c bounds MaxStaNum at 5; its wl_set_passphrase selects
+   * OPEN/NONE or WPA2PSK/AES, not an arbitrary requested authentication mode. */
+  if (config->max_clients > 5u ||
+      (config->security != H2_PAL_WIFI_SECURITY_OPEN &&
+       config->security != H2_PAL_WIFI_SECURITY_WPA2)) {
+    return H2_PAL_ERR_UNSUPPORTED;
+  }
+  if (config->security == H2_PAL_WIFI_SECURITY_OPEN &&
+      config->password_len != 0u) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
   result = ensure_wifi_on();
   if (result != H2_PAL_OK) return result;
   char ssid[H2_PAL_WIFI_SSID_MAX + 1];
