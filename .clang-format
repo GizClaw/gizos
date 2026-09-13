@@ -1,23 +1,6 @@
-# Tuned to match the existing code with the fewest changes (clang-format 22.1.5).
+# Google C++ style, pinned to clang-format 22.1.5.
 # Include order is significant in some sources, so includes are never sorted.
 ---
-BasedOnStyle: LLVM
-IndentWidth: 2
-ColumnLimit: 120
+BasedOnStyle: Google
 SortIncludes: Never
-AlignAfterOpenBracket: AlwaysBreak
-AlignEscapedNewlines: DontAlign
-AlignTrailingComments:
-  Kind: Leave
-AllowAllArgumentsOnNextLine: true
-AllowShortBlocksOnASingleLine: Always
-AllowShortCaseLabelsOnASingleLine: true
-AllowShortIfStatementsOnASingleLine: AllIfsAndElse
-AllowShortLoopsOnASingleLine: true
-BinPackParameters: OnePerLine
-IndentCaseLabels: true
-PenaltyBreakAssignment: 20
-PenaltyBreakBeforeFirstCallParameter: 100
-PenaltyReturnTypeOnItsOwnLine: 200
-ReflowComments: Never
 ...
