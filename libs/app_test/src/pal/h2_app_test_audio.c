@@ -1,4 +1,7 @@
 #include "h2_app_test_audio.h"
+#ifdef H2_APP_TEST_AUDIO_TESTING
+#include "h2_app_test_audio_testing.h"
+#endif
 
 #include "h2/pal/os/h2_pal_mem.h"
 
@@ -101,8 +104,6 @@ static void fixture_unlock(h2_app_test_audio_t *audio) {
 #ifdef H2_APP_TEST_AUDIO_TESTING
 /* Test-only seam: hold the fixture lock so a waiter deterministically hits
  * the back-off path. Compiled only into the testonly library variant. */
-bool h2_app_test_audio_test_hold_fixture_lock(h2_app_test_audio_t *audio);
-void h2_app_test_audio_test_release_fixture_lock(h2_app_test_audio_t *audio);
 
 bool h2_app_test_audio_test_hold_fixture_lock(h2_app_test_audio_t *audio) {
   return !atomic_flag_test_and_set_explicit(&audio->fixture_lock,

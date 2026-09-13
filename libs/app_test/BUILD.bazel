@@ -122,11 +122,17 @@ cc_library(
     name = "testing_audio_testing",
     testonly = True,
     srcs = ["src/pal/h2_app_test_audio.c"],
-    hdrs = ["include/h2_app_test_audio.h"],
+    hdrs = [
+        "include/h2_app_test_audio.h",
+        "src/pal/h2_app_test_audio_testing.h",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
-    includes = ["include"],
+    includes = [
+        "include",
+        "src/pal",
+    ],
     local_defines = ["H2_APP_TEST_AUDIO_TESTING"],
     deps = ["//libs/pal"],
 )

@@ -1,4 +1,5 @@
 #include "h2_app_test_audio.h"
+#include "h2_app_test_audio_testing.h"
 
 #include <assert.h>
 #include <stdlib.h>
@@ -29,8 +30,6 @@ typedef struct fake_time {
   unsigned int sleep_calls;
 } fake_time_t;
 
-bool h2_app_test_audio_test_hold_fixture_lock(h2_app_test_audio_t *audio);
-void h2_app_test_audio_test_release_fixture_lock(h2_app_test_audio_t *audio);
 
 static void *test_alloc(void *user, size_t size) {
   (void)user;
