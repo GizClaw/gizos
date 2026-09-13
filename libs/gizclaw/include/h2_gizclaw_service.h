@@ -187,6 +187,8 @@ h2_pal_result_t h2_gizclaw_service_audio_end(h2_gizclaw_service_t *service);
  * consumes the response without dispatching its data to the App.
  * `user` must remain valid until the completion hook returns, or until
  * req_wait returns when no completion hook is supplied.
+ * After service stop, do returns H2_PAL_ERR_CLOSED. Request execution timeouts
+ * start when the network task starts the request; they do not bound queue time.
  * A failed do does not consume the caller's request reference.
  */
 h2_pal_result_t h2_gizclaw_req_do(h2_gizclaw_req_t *request,
@@ -231,6 +233,8 @@ h2_pal_result_t h2_gizclaw_service_poll(h2_gizclaw_service_t *service,
  *
  * This lifecycle-task API is idempotent, including from a service_poll hook.
  * Do not call it from a worker-side prepare/cleanup hook.
+ * Accepted queued and running requests settle with H2_PAL_ERR_CLOSED unless
+ * already completed (including by timeout), waking waiters before stop returns.
  * Accepted callbacks remain pending for caller-thread dispatch.
  * If a task join fails, its handle is retained; retry stop before deinit.
  * Tasks already joined successfully are not joined again.

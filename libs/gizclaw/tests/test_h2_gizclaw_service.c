@@ -74,6 +74,8 @@ typedef struct test_env {
   atomic_uint progress_exit_count;
   atomic_bool run_gate;
   atomic_bool connect_gate;
+  bool reject_closed_receives;
+  _Atomic(h2_pal_queue_t *) closed_queue;
   atomic_bool event_dispatch_gate;
   atomic_bool event_emitted;
   atomic_bool original_cancel;
@@ -165,6 +167,9 @@ static int test_queue_send_latest(void *user, h2_pal_queue_t *queue,
 static int test_queue_recv(void *user, h2_pal_queue_t *queue, void *out_item,
                            uint32_t timeout_ms) {
   (void)user;
+  if (s_env->reject_closed_receives &&
+      atomic_load_explicit(&s_env->closed_queue, memory_order_acquire) == queue)
+    return H2_PAL_ERR_CLOSED;
   return h2_pal_queue_recv(h2_desktop_platform_queue_api(), queue, out_item,
                            timeout_ms);
 }
@@ -176,6 +181,7 @@ static int test_queue_reset(void *user, h2_pal_queue_t *queue) {
 
 static int test_queue_close(void *user, h2_pal_queue_t *queue) {
   (void)user;
+  atomic_store_explicit(&s_env->closed_queue, queue, memory_order_release);
   return h2_pal_queue_close(h2_desktop_platform_queue_api(), queue);
 }
 
@@ -209,8 +215,11 @@ static h2_pal_result_t fake_client_init(const h2_gizclaw_config_t *config,
 static h2_pal_result_t fake_client_connect(h2_gizclaw_client_t *client) {
   assert(client == (h2_gizclaw_client_t *)s_env);
   atomic_fetch_add_explicit(&s_env->connect_count, 1u, memory_order_relaxed);
-  while (!atomic_load_explicit(&s_env->connect_gate, memory_order_acquire))
+  while (!atomic_load_explicit(&s_env->connect_gate, memory_order_acquire)) {
+    if (s_env->installed_client_cancel(s_env->installed_client_cancel_user))
+      return H2_PAL_ERR_CLOSED;
     sched_yield();
+  }
   return s_env->connect_result;
 }
 
@@ -692,6 +701,7 @@ static h2_gizclaw_service_t *create_service(test_env_t *env, size_t capacity) {
   env->release_in_completion = true;
   env->app_thread = pthread_self();
   atomic_init(&env->connect_gate, true);
+  atomic_init(&env->closed_queue, NULL);
   atomic_init(&env->event_dispatch_gate, true);
   atomic_init(&env->run_gate, false);
   s_env = env;
@@ -896,6 +906,71 @@ static void test_connect_failure_is_terminal(void) {
   assert(env.terminal_kinds[0] == H2_GIZCLAW_OPERATION_SERVICE_CLOSED);
   assert(atomic_load_explicit(&env.terminal_count, memory_order_acquire) == 1u);
   assert(env.terminal_result == H2_PAL_ERR_IO);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
+typedef struct queued_stop_waiter {
+  h2_gizclaw_req_t *request;
+  h2_pal_semaphore_t *accepted;
+  h2_pal_semaphore_t *done;
+  h2_pal_result_t result;
+} queued_stop_waiter_t;
+
+static void *wait_queued_stop(void *user) {
+  queued_stop_waiter_t *waiter = user;
+  const h2_pal_sync_api_t *sync = h2_desktop_platform_sync_api();
+  assert(h2_gizclaw_req_do(waiter->request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+  assert(h2_pal_semaphore_give(sync, waiter->accepted) == H2_PAL_OK);
+  /* A missing completion must fail, never hang the test runner. */
+  waiter->result = h2_gizclaw_req_wait(waiter->request, 5000u);
+  assert(h2_pal_semaphore_give(sync, waiter->done) == H2_PAL_OK);
+  return NULL;
+}
+
+static void test_stop_during_connect_settles_queued_request(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_service(&env, 2u);
+  /* Model PAL providers that refuse even buffered receives after close. */
+  env.reject_closed_receives = true;
+  atomic_store(&env.connect_gate, false);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  wait_for_count(&env.connect_count, 1u);
+  queued_stop_waiter_t waiter = {0};
+  h2_gizclaw_req_t *late = NULL;
+  assert(h2_gizclaw_req_create_ping(service, 1u, 45000u, &waiter.request) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_req_create_ping(service, 2u, 45000u, &late) == H2_PAL_OK);
+  const h2_pal_sync_api_t *sync = h2_desktop_platform_sync_api();
+  const h2_pal_semaphore_config_t config = {.max_count = 1u};
+  assert(h2_pal_semaphore_create(sync, &config, &waiter.accepted) == H2_PAL_OK);
+  assert(h2_pal_semaphore_create(sync, &config, &waiter.done) == H2_PAL_OK);
+  pthread_t thread;
+  assert(pthread_create(&thread, NULL, wait_queued_stop, &waiter) == 0);
+  assert(h2_pal_semaphore_take(sync, waiter.accepted, 5000u) == H2_PAL_OK);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_pal_semaphore_take(sync, waiter.done, 6000u) == H2_PAL_OK);
+  assert(pthread_join(thread, NULL) == 0);
+  assert(waiter.result == H2_PAL_ERR_CLOSED);
+  assert(h2_gizclaw_req_wait(waiter.request, 0u) == H2_PAL_ERR_CLOSED);
+  assert(h2_gizclaw_req_do(waiter.request, NULL, NULL, NULL, NULL) ==
+         H2_PAL_ERR_CLOSED);
+  assert(h2_gizclaw_req_do(late, NULL, NULL, NULL, NULL) == H2_PAL_ERR_CLOSED);
+  assert(atomic_load(&env.rpc_start_count) == 0u);
+  h2_gizclaw_req_release(late);
+  h2_gizclaw_req_release(waiter.request);
+  assert(h2_pal_semaphore_destroy(sync, waiter.accepted) == H2_PAL_OK);
+  assert(h2_pal_semaphore_destroy(sync, waiter.done) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
+static void test_req_do_after_stop_before_start(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_service(&env, 1u);
+  h2_gizclaw_req_t *request = NULL;
+  assert(h2_gizclaw_req_create_ping(service, 1u, 45000u, &request) == H2_PAL_OK);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_ERR_CLOSED);
+  h2_gizclaw_req_release(request);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 
@@ -11759,6 +11834,8 @@ int main(int argc, char **argv) {
   test_queued_cancel_and_stop_drain();
   test_stop_cancels_running_without_inline_callback();
   test_connect_failure_is_terminal();
+  test_stop_during_connect_settles_queued_request();
+  test_req_do_after_stop_before_start();
   test_event_dispatch_failure_is_terminal();
   test_operation_error_and_transport_closed();
   test_running_cancel_is_idempotent_and_late_safe();
