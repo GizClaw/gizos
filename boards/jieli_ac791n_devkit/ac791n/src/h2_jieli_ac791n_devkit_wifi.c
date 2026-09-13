@@ -128,6 +128,8 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
       post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED);
       break;
     case WIFI_EVENT_AP_START:
+      /* Hidden SSIDs require AP receive filtering to be disabled (SDK FAQ). */
+      wifi_rxfilter_cfg(1);
       wifi_state.ap.state = H2_PAL_WIFI_AP_STATE_STARTED;
       post_ap_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_STARTED);
       break;
@@ -337,6 +339,14 @@ static int ap_start(
       config->password_len != 0u) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  if (config->channel > 14u) return H2_PAL_ERR_INVALID_ARG;
+  const uint8_t channel = config->channel != 0u ? config->channel : 1u;
+  const uint8_t max_clients = config->max_clients != 0u ? config->max_clients : 2u;
+  result = wifi_stop();
+  if (result != H2_PAL_OK) return result;
+  if (h2_jieli_wifi_configure_ap(channel, max_clients, config->hidden != 0u) != 0) {
+    return H2_PAL_ERR_IO;
+  }
   result = ensure_wifi_on();
   if (result != H2_PAL_OK) return result;
   char ssid[H2_PAL_WIFI_SSID_MAX + 1];
@@ -346,9 +356,9 @@ static int ap_start(
   memcpy(password, config->password, config->password_len);
   password[config->password_len] = '\0';
   wifi_state.ap.state = H2_PAL_WIFI_AP_STATE_STARTING;
-  wifi_state.ap.max_clients = config->max_clients;
+  wifi_state.ap.max_clients = max_clients;
   wifi_state.ap.security = config->security;
-  wifi_state.ap.hidden = config->hidden;
+  wifi_state.ap.hidden = config->hidden != 0u;
   wifi_state.ap.ssid_len = config->ssid_len;
   memcpy(wifi_state.ap.ssid, config->ssid, config->ssid_len);
   wifi_state.ap.ssid[config->ssid_len] = '\0';

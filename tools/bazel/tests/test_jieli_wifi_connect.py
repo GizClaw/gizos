@@ -20,8 +20,15 @@ class WifiConnectTest(unittest.TestCase):
 #include "h2/pal/hal/h2_pal_wifi.h"
 static struct { h2_pal_wifi_ap_status_t ap; } wifi_state;
 static uint32_t now;
-static int sleeps, starts;
-static int ensure_wifi_on(void) { ++starts; return 0; }
+static int sleeps, starts, stopped, configured, stop_rc, config_rc;
+static unsigned applied_channel, applied_max, applied_hidden;
+static int wifi_stop(void) { ++stopped; return stop_rc; }
+static int h2_jieli_wifi_configure_ap(unsigned ch, unsigned max, unsigned hidden) {
+    assert(stopped > configured); ++configured;
+    applied_channel = ch; applied_max = max; applied_hidden = hidden;
+    return config_rc;
+}
+static int ensure_wifi_on(void) { assert(configured > starts); ++starts; return 0; }
 static uint32_t timer_get_ms(void) { return now; }
 static int wifi_get_channel(void) { return 1; }
 static int wifi_enter_ap_mode(char *ssid, char *password) {
@@ -48,10 +55,25 @@ int main(void) {
     assert(ap_start(NULL, &config, 50) == H2_PAL_ERR_INVALID_ARG);
     assert(starts == 0);
     config.password_len = 0;
+    config.channel = 15;
+    assert(ap_start(NULL, &config, 50) == H2_PAL_ERR_INVALID_ARG);
+    assert(stopped == 0);
+    config.channel = 6; config.max_clients = 4; config.hidden = 1;
+    stop_rc = H2_PAL_ERR_IO;
+    assert(ap_start(NULL, &config, 50) == H2_PAL_ERR_IO);
+    assert(configured == 0 && starts == 0);
+    stop_rc = 0; config_rc = -1;
+    assert(ap_start(NULL, &config, 50) == H2_PAL_ERR_IO);
+    assert(starts == 0);
+    config_rc = 0;
     assert(ap_start(NULL, &config, 50) == H2_PAL_ERR_TIMEOUT);
+    assert(applied_channel == 6 && applied_max == 4 && applied_hidden == 1);
+    assert(wifi_state.ap.max_clients == 4 && wifi_state.ap.hidden == 1);
     assert(sleeps == 2 && now == 80);
     sleeps = 0; now = UINT32_MAX - 19;
+    config.channel = 0; config.max_clients = 0; config.hidden = 0;
     assert(ap_start(NULL, &config, 50) == H2_PAL_ERR_TIMEOUT);
+    assert(applied_channel == 1 && applied_max == 2 && applied_hidden == 0);
     assert(sleeps == 2 && now == 60);
     return 0;
 }
