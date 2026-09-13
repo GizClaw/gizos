@@ -407,12 +407,16 @@ static int ap_get_clients(
   }
   *out_count = 0u;
   size_t total_clients = 0u;
-  for (int station = 1; station <= H2_PAL_WIFI_AP_MAX_CLIENTS; ++station) {
+  /* Match the SDK's wifi_app_timer_func: WCID slots are 0..7 and
+   * a zero RSSI marks an unused slot, not a connected client. */
+  for (int station = 0; station < 8; ++station) {
     char *rssi = NULL;
     uint8_t *evm = NULL;
     uint8_t *mac = NULL;
-    if (wifi_get_sta_entry_rssi((char)station, &rssi, &evm, &mac) != 0 ||
-        mac == NULL) {
+    if (wifi_get_sta_entry_rssi((char)station, &rssi, &evm, &mac) != 0) {
+      break;
+    }
+    if (mac == NULL || rssi == NULL || *rssi == 0) {
       continue;
     }
     ++total_clients;
@@ -420,7 +424,7 @@ static int ap_get_clients(
     h2_pal_wifi_ap_client_t *client = &out_clients[*out_count];
     memset(client, 0, sizeof(*client));
     memcpy(client->mac, mac, sizeof(client->mac));
-    client->rssi = rssi == NULL ? 0 : *rssi;
+    client->rssi = *rssi;
     client->station_id = station;
     ++*out_count;
   }

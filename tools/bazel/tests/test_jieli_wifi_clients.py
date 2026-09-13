@@ -19,9 +19,10 @@ class WifiClientsTest(unittest.TestCase):
 static struct { h2_pal_wifi_ap_status_t ap; } wifi_state;
 static int present = 1;
 static int wifi_get_sta_entry_rssi(char id, char **rssi, uint8_t **evm, uint8_t **mac) {
-    static char signal = -42;
+    static char signal;
     static uint8_t address[6] = {2, 3, 4, 5, 6, 7};
-    if (!present || (id != 1 && id != 3)) return -1;
+    assert(id >= 0 && id < 8);
+    signal = present && (id == 0 || id == 7) ? -42 : 0;
     *rssi = &signal;
     *mac = address;
     return 0;
@@ -34,12 +35,12 @@ int main(void) {
     memset(clients, 0xa5, sizeof(clients));
     assert(ap_get_clients(NULL, clients, 1, &count) == H2_PAL_OK);
     assert(count == 1 && wifi_state.ap.client_count == 2);
-    assert(clients[0].station_id == 1 && clients[0].rssi == -42);
+    assert(clients[0].station_id == 0 && clients[0].rssi == -42);
     assert(clients[1].mac[0] == 0xa5);
     assert(ap_get_clients(NULL, NULL, 0, &count) == H2_PAL_OK);
     assert(count == 0 && wifi_state.ap.client_count == 2);
     assert(ap_get_clients(NULL, clients, 3, &count) == H2_PAL_OK);
-    assert(count == 2 && clients[1].station_id == 3);
+    assert(count == 2 && clients[1].station_id == 7);
     present = 0;
     assert(ap_get_clients(NULL, clients, 3, &count) == H2_PAL_OK);
     assert(count == 0 && wifi_state.ap.client_count == 0);
