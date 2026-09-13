@@ -411,6 +411,11 @@ static int audio_create_track(
       config->volume_factor_milli > 1000u) {
     return H2_AUDIO_ERR_UNSUPPORTED;
   }
+  /* The SDK allocates pcm_frame_size * 4 in a 32-bit byte count. Validate
+   * before multiplying or narrowing so a large request cannot wrap small. */
+  if (config->buffer_frames > UINT32_MAX / H2_AUDIO_FRAME_BYTES) {
+    return H2_AUDIO_ERR_INVALID_ARG;
+  }
   jieli_audio_track_t *track = NULL;
   for (size_t index = 0u; index < H2_AUDIO_MAX_TRACKS; ++index) {
     if (!audio_state.tracks[index].active) {
