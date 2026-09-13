@@ -754,7 +754,13 @@ static int pref_open(
       }
     } else {
       int mkdir_result = lfs_mkdir(&pref_lfs, instance->path);
-      if (mkdir_result != LFS_ERR_OK && mkdir_result != LFS_ERR_EXIST) {
+      if (mkdir_result == LFS_ERR_EXIST) {
+        struct lfs_info info;
+        result = map_lfs_error(lfs_stat(&pref_lfs, instance->path, &info));
+        if (result == H2_PAL_OK && info.type != LFS_TYPE_DIR) {
+          result = H2_PAL_ERR_INVALID_STATE;
+        }
+      } else if (mkdir_result != LFS_ERR_OK) {
         result = map_lfs_error(mkdir_result);
       }
     }

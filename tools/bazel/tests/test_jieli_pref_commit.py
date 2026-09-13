@@ -18,7 +18,7 @@ class PreferenceCommitTest(unittest.TestCase):
 #include <stdlib.h>
 #include <string.h>
 enum { H2_PAL_OK=0, H2_PAL_ERR_INVALID_ARG=-1, H2_PAL_ERR_NO_MEMORY=-2,
-       H2_PAL_ERR_NOT_FOUND=-3, H2_PAL_ERR_IO=-4,
+       H2_PAL_ERR_NOT_FOUND=-3, H2_PAL_ERR_IO=-4, H2_PAL_ERR_INVALID_STATE=-5,
        H2_PAL_PREF_OPEN_READ_ONLY=0, H2_PAL_PREF_OPEN_READ_WRITE=1,
        H2_PREF_NAMESPACE_MAX=64, LFS_ERR_OK=0, LFS_ERR_EXIST=-17,
        LFS_TYPE_DIR=2 };
@@ -62,8 +62,13 @@ int main(void) {
   assert(pref_open(0,"test",1,&ns)==0 && mkdirs==1);
   free(ns->user);
   mkdir_rc=LFS_ERR_EXIST;
+  stat_rc=0; stat_type=LFS_TYPE_DIR;
   assert(pref_open(0,"test",1,&ns)==0 && mkdirs==2);
   free(ns->user);
+  stat_type=1;
+  assert(pref_open(0,"test",1,&ns)==H2_PAL_ERR_INVALID_STATE && !ns);
+  stat_type=LFS_TYPE_DIR; stat_rc=H2_PAL_ERR_IO;
+  assert(pref_open(0,"test",1,&ns)==H2_PAL_ERR_IO && !ns);
   mkdir_rc=H2_PAL_ERR_IO;
   assert(pref_open(0,"test",1,&ns)==H2_PAL_ERR_IO && !ns);
   return 0;
