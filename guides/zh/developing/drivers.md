@@ -87,3 +87,5 @@ BSP 选择最大增益和曲线，ESP-IDF audio system 负责硬件应用与错�
 固件入口通过 `firmware_lib_component` 链接该 library。
 配置、兼容性、静音语义与接入示例见
 [ES8311 板级音量映射](./components/esp_idf6_x#es8311-板级音量映射)。
+
+语音呼叫支持可选 DSCI 状态通知，prepare 每轮 best-effort 启用，不支持时保留传统 URC 回退；来电 ID、结束事件去重及迟到通知规则见 [Modem URC 接收与并发合同](./modem_urc.md#语音呼叫状态通知)。

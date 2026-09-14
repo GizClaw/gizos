@@ -65,6 +65,15 @@ static h2_pal_result_t h2_quectel_modem_prepare_impl(h2_quectel_modem_t *modem) 
     if (rc != H2_PAL_OK) {
         return rc;
     }
+    if (modem->dsci_unsupported == 0u) {
+        h2_quectel_response_t response;
+        /* Not saved by the module. Retry transient transport failures on the
+         * next prepare, but never retry an explicit unsupported response. */
+        (void)h2_quectel_at_exchange(modem, "AT^DSCI=1", &response, 0);
+        if (h2_quectel_response_find(&response, "ERROR") != NULL) {
+            modem->dsci_unsupported = 1u;
+        }
+    }
     (void)h2_quectel_at_exchange(modem, "AT+CREG=1", NULL, 0);
     (void)h2_quectel_at_exchange(modem, "AT+CGREG=1", NULL, 0);
     (void)h2_quectel_at_exchange(modem, "AT+CEREG=1", NULL, 0);

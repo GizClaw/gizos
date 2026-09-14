@@ -164,6 +164,13 @@ struct h2_quectel_modem {
     uint8_t opened;
     uint8_t cell_locate_token_sent;
     uint32_t capabilities;
+    /* Optional DSCI configuration is volatile; ERROR is latched per instance. */
+    uint8_t dsci_unsupported;
+    uint8_t dsci_voice_seen;
+    uint8_t call_status_seen;
+    uint32_t call_generation;
+    int32_t dsci_call_id;
+    h2_pal_modem_call_status_t observed_call;
     int32_t incoming_call_id;
     int32_t next_incoming_call_id;
     h2_pal_modem_data_status_t data_status;
@@ -188,6 +195,9 @@ h2_pal_result_t h2_quectel_modem_prepare(h2_quectel_modem_t *modem);
  * Takes only the short state lock, never the AT operation lock. Callbacks
  * (system event, sleep gate, invalidate_data) must not reenter modem APIs or
  * wait for a command/RX/URC task. Stop/join callers before deinit.
+ * Voice ^DSCI shares incoming IDs with RING/CLIP and deduplicates CLCC/call
+ * results. After a voice DSCI, unnumbered terminal results are ignored until
+ * module reset; identified DSCI CALL_END owns remote termination.
  * Without sync_api all calls require external serialization.
  */
 void h2_quectel_handle_urc_line(h2_quectel_modem_t *modem, const char *line);

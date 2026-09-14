@@ -54,19 +54,6 @@ int32_t h2_quectel_incoming_call_end(h2_quectel_modem_t *modem) {
     return call_id;
 }
 
-static void post_call_event(
-    h2_quectel_modem_t *modem,
-    h2_pal_system_event_type_t type,
-    const h2_pal_modem_call_status_t *status) {
-    if (status == NULL) {
-        return;
-    }
-    h2_pal_modem_call_event_t event;
-    memset(&event, 0, sizeof(event));
-    event.call = *status;
-    h2_quectel_post_system_event(modem, type, &event, sizeof(event));
-}
-
 static int dial_number_valid(
     const char *number,
     size_t number_capacity,
@@ -123,15 +110,16 @@ static h2_pal_result_t h2_quectel_modem_call_dial_impl(
     if (n <= 0 || (size_t)n >= sizeof(cmd)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    const uint32_t generation = modem->call_generation;
     h2_pal_result_t rc = h2_quectel_at_exchange(modem, cmd, NULL, 0);
-    if (rc == H2_PAL_OK) {
+    if (rc == H2_PAL_OK && generation == modem->call_generation) {
         h2_pal_modem_call_status_t status;
         memset(&status, 0, sizeof(status));
         status.call_id = -1;
         status.direction = H2_PAL_MODEM_CALL_DIRECTION_OUTGOING;
         status.state = H2_PAL_MODEM_CALL_STATE_DIALING;
         memcpy(status.number, request->number, number_len + 1u);
-        post_call_event(modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_STATE_CHANGED, &status);
+        h2_quectel_post_call_status(modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_STATE_CHANGED, &status);
     }
     return rc;
 }
@@ -139,8 +127,9 @@ static h2_pal_result_t h2_quectel_modem_call_dial_impl(
 static h2_pal_result_t h2_quectel_modem_call_answer_impl(h2_pal_modem_t *platform, uint32_t timeout_ms) {
     (void)timeout_ms;
     h2_quectel_modem_t *modem = h2_quectel_from_platform(platform);
+    const uint32_t generation = modem != NULL ? modem->call_generation : 0u;
     h2_pal_result_t rc = modem != NULL ? h2_quectel_at_exchange(modem, "ATA", NULL, 0) : H2_PAL_ERR_INVALID_ARG;
-    if (rc == H2_PAL_OK) {
+    if (rc == H2_PAL_OK && generation == modem->call_generation) {
         h2_pal_modem_call_status_t status;
         memset(&status, 0, sizeof(status));
         const int32_t incoming_call_id =
@@ -150,7 +139,7 @@ static h2_pal_result_t h2_quectel_modem_call_answer_impl(h2_pal_modem_t *platfor
             ? H2_PAL_MODEM_CALL_DIRECTION_INCOMING
             : H2_PAL_MODEM_CALL_DIRECTION_OUTGOING;
         status.state = H2_PAL_MODEM_CALL_STATE_ACTIVE;
-        post_call_event(modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_STATE_CHANGED, &status);
+        h2_quectel_post_call_status(modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_STATE_CHANGED, &status);
     }
     return rc;
 }
@@ -158,8 +147,9 @@ static h2_pal_result_t h2_quectel_modem_call_answer_impl(h2_pal_modem_t *platfor
 static h2_pal_result_t h2_quectel_modem_call_hangup_impl(h2_pal_modem_t *platform, uint32_t timeout_ms) {
     (void)timeout_ms;
     h2_quectel_modem_t *modem = h2_quectel_from_platform(platform);
+    const uint32_t generation = modem != NULL ? modem->call_generation : 0u;
     h2_pal_result_t rc = modem != NULL ? h2_quectel_at_exchange(modem, "ATH", NULL, 0) : H2_PAL_ERR_INVALID_ARG;
-    if (rc == H2_PAL_OK) {
+    if (rc == H2_PAL_OK && generation == modem->call_generation) {
         h2_pal_modem_call_status_t status;
         memset(&status, 0, sizeof(status));
         const int32_t incoming_call_id =
@@ -169,7 +159,7 @@ static h2_pal_result_t h2_quectel_modem_call_hangup_impl(h2_pal_modem_t *platfor
             ? H2_PAL_MODEM_CALL_DIRECTION_INCOMING
             : H2_PAL_MODEM_CALL_DIRECTION_OUTGOING;
         status.state = H2_PAL_MODEM_CALL_STATE_ENDED;
-        post_call_event(modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_ENDED, &status);
+        h2_quectel_post_call_status(modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_ENDED, &status);
         if (incoming_call_id != 0) {
             (void)h2_quectel_incoming_call_end(modem);
         }
@@ -188,10 +178,15 @@ static h2_pal_result_t h2_quectel_modem_get_call_status_impl(
     out_status->call_id = -1;
     out_status->state = H2_PAL_MODEM_CALL_STATE_IDLE;
 
+    const uint32_t generation = modem->call_generation;
     h2_quectel_response_t response;
     h2_pal_result_t rc = h2_quectel_at_exchange(modem, "AT+CLCC", &response, 0);
     if (rc != H2_PAL_OK) {
         return rc;
+    }
+    if (generation != modem->call_generation) {
+        *out_status = modem->observed_call;
+        return H2_PAL_OK;
     }
     const char *line = h2_quectel_response_find(&response, "+CLCC:");
     if (line == NULL) {
@@ -204,9 +199,9 @@ static h2_pal_result_t h2_quectel_modem_get_call_status_impl(
         out_status->call_id = h2_quectel_incoming_call_begin(modem);
     }
     if (out_status->state == H2_PAL_MODEM_CALL_STATE_INCOMING) {
-        post_call_event(modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_INCOMING, out_status);
+        h2_quectel_post_call_status(modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_INCOMING, out_status);
     } else {
-        post_call_event(modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_STATE_CHANGED, out_status);
+        h2_quectel_post_call_status(modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_STATE_CHANGED, out_status);
     }
     return H2_PAL_OK;
 }
@@ -277,7 +272,10 @@ h2_pal_result_t h2_quectel_modem_call_hangup(h2_pal_modem_t *platform, uint32_t 
         }
     }
     rc = h2_quectel_modem_call_hangup_impl(platform, timeout_ms);
-    if (rc == H2_PAL_OK) { modem_state->call_hold = 0u; }
+    if (rc == H2_PAL_OK && (!modem_state->call_status_seen ||
+        modem_state->observed_call.state == H2_PAL_MODEM_CALL_STATE_ENDED)) {
+        modem_state->call_hold = 0u;
+    }
     return h2_quectel_operation_end(modem_state, rc);
 }
 

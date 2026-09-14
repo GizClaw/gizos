@@ -62,3 +62,13 @@ SIM、注册、packet 沿用系统事件和语义去重；LOCKED 停止轮询，
 因此恢复不自动执行 CFUN；仅保留 QSIMDET 配置改变时既有的一次 restart_module 流程。
 若 30 次 CPIN 后仍未就绪，应采集 SIM_DET 电平、QSIMDET/QSIMSTAT 读回、
 CPIN 应答及完整通知顺序，再依据该固件的移远说明决定是否需要 SIM 重新初始化。
+
+## 语音呼叫状态通知
+
+Quectel provider 在每轮实际 prepare 中，与 CLIP 等通知配置一起 best-effort 下发 `AT^DSCI=1`。该设置不保存，模组重启后需要重发；明确 `ERROR` 表示固件不支持，在当前 provider instance 内记住且不重试，不影响 prepare 成功。超时等 transport 故障不锁存为不支持，下轮 prepare 仍尝试。重复调用已完成的 prepare 不重复配置。
+
+`^DSCI: <id>,<dir>,<stat>,<type>,<number>,<num_type>` 始终按 URC 分类，包括 AT 命令等待期间。只处理 type=0 的语音通知，type=1 的 PS 通知不改变呼叫状态或活动保持。状态 1/2/3/4/5/6/7 分别映射 HELD/DIALING/ACTIVE/INCOMING/WAITING/ENDED/ALERTING。MT INCOMING 与 RING/CLIP 共享 provider 的来电 ID；CLIP 可补充号码，CONNECT 发布状态变化，CALL_END 立即发布 MODEM_CALL_ENDED 并释放来电 ID 和活动保持。
+
+观察到有效语音 DSCI 后，以有呼叫 ID 的 DSCI 作为远端结束依据，直到模组 reset；无 ID 的 NO CARRIER/BUSY/NO ANSWER 仍可作为 AT 结果，但不再发布呼叫结束，以免迟到通知误结束下一通。未观察到语音 DSCI 时保留原有终止 URC 回退。DSCI、CLCC 和本地接听/挂断结果共享事件状态去重；未启用 DSCI 路径的重复响铃通知保持原合同。AT 等待期间发生的新呼叫状态优先于旧的命令结果。当前 PAL 仍是单呼叫快照，不增加多通并发呼叫管理；同一模组 ID 的复用依赖有序 URC。
+
+Host 测试覆盖支持/不支持/超时的 prepare、来电主叫挂断立即结束、迟到 NO CARRIER、连续来电、接听/挂断、CLCC 去重和 PS 忽略。实际固件是否上报 DSCI、通知时延及串口接收完整性仍需台架验收。

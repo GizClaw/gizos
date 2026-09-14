@@ -59,6 +59,7 @@ int h2_quectel_parse_int_after(const char *text, const char *prefix, int *out_va
 void h2_quectel_copy_token(char *dst, size_t dst_len, const char *src);
 h2_pal_modem_registration_state_t h2_quectel_parse_registration_stat(int stat);
 int h2_quectel_parse_clcc_line(const char *line, h2_pal_modem_call_status_t *out_status);
+void h2_quectel_post_call_status(h2_quectel_modem_t *modem, h2_pal_system_event_type_t type, const h2_pal_modem_call_status_t *status);
 int32_t h2_quectel_incoming_call_begin(h2_quectel_modem_t *modem);
 int32_t h2_quectel_incoming_call_current(const h2_quectel_modem_t *modem);
 int32_t h2_quectel_incoming_call_end(h2_quectel_modem_t *modem);

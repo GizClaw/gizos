@@ -104,7 +104,7 @@ static void response_add_text(h2_quectel_modem_t *modem, h2_quectel_response_t *
         }
 
         trim_line(line);
-        if (line[0] == '\0' || strcmp(line, "OK") == 0 || strcmp(line, "ERROR") == 0 || (cmd != NULL && strcmp(line, cmd) == 0)) {
+        if (line[0] == '\0' || strcmp(line, "OK") == 0 || (cmd != NULL && strcmp(line, cmd) == 0)) {
             continue;
         }
         if (h2_quectel_is_urc(line, cmd)) {
@@ -298,7 +298,8 @@ h2_pal_result_t h2_quectel_at_exchange_timeout(
     /* A terminal CME response (for example GNSS has no fix) is not an
      * uncertain transport failure. Session holds still survive failed stops. */
     int terminal_error = response != NULL &&
-        (h2_quectel_response_find(response, "+CME ERROR:") != NULL ||
+        (h2_quectel_response_find(response, "ERROR") != NULL ||
+         h2_quectel_response_find(response, "+CME ERROR:") != NULL ||
          h2_quectel_response_find(response, "+CMS ERROR:") != NULL);
     if (rc != H2_PAL_OK && !terminal_error &&
         (modem->capabilities & H2_PAL_MODEM_CAPABILITY_LOW_POWER) != 0u) {

@@ -8,6 +8,9 @@ static unsigned packet_events;
 static unsigned signal_events;
 static unsigned call_events;
 static unsigned sim_absent_events;
+static unsigned ended_events;
+static unsigned changed_events;
+static h2_pal_modem_call_status_t last_call;
 
 static int post(void *user, const h2_pal_system_event_t *event, uint32_t timeout_ms) {
     (void)user;
@@ -16,7 +19,14 @@ static int post(void *user, const h2_pal_system_event_t *event, uint32_t timeout
         case H2_PAL_SYSTEM_EVENT_TYPE_MODEM_REGISTRATION_CHANGED: registration_events++; break;
         case H2_PAL_SYSTEM_EVENT_TYPE_MODEM_PACKET_CHANGED: packet_events++; break;
         case H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIGNAL_CHANGED: signal_events++; break;
-        case H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_INCOMING: call_events++; break;
+        case H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_INCOMING:
+        case H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_ENDED:
+        case H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_STATE_CHANGED:
+            last_call = ((const h2_pal_modem_call_event_t *)event->payload)->call;
+            if (event->type == H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_INCOMING) { call_events++; }
+            if (event->type == H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_ENDED) { ended_events++; }
+            if (event->type == H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_STATE_CHANGED) { changed_events++; }
+            break;
         case H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIM_CHANGED: {
             assert(event->payload_size == sizeof(h2_pal_modem_status_t));
             const h2_pal_modem_status_t *status = event->payload;
@@ -224,6 +234,117 @@ static void test_insertion_recovery(const h2_pal_system_event_api_t *events) {
     assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
 }
 
+typedef struct call_transport {
+    h2_quectel_modem_t *modem;
+    const char *during_command;
+} call_transport_t;
+
+static h2_pal_result_t call_command(void *user, const char *cmd, char *response,
+    size_t size, uint32_t timeout_ms) {
+    call_transport_t *transport = user;
+    if (transport->during_command != NULL) {
+        h2_quectel_handle_urc_line(transport->modem, transport->during_command);
+    }
+    if (strcmp(cmd, "AT+CLCC") == 0) {
+        const char *text = "+CLCC: 1,1,0,0,0,\"123\",129\r\nOK\r\n";
+        assert(size > strlen(text));
+        strcpy(response, text);
+        return H2_PAL_OK;
+    }
+    return command(NULL, cmd, response, size, timeout_ms);
+}
+
+static void test_dsci_during_command(const h2_pal_system_event_api_t *events) {
+    const char *end = "^DSCI: 1,1,6,0,123,129";
+    for (unsigned mode = 0u; mode < 3u; mode++) {
+        h2_quectel_modem_t modem;
+        call_transport_t transport = {.modem = &modem, .during_command = end};
+        const h2_quectel_modem_config_t config = {
+            .command = call_command, .transport_user = &transport, .system_events = events,
+        };
+        assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_OK);
+        h2_quectel_handle_urc_line(&modem, "^DSCI: 1,1,4,0,123,129");
+        const int32_t id = last_call.call_id;
+        unsigned ended = ended_events;
+        if (mode == 0u) {
+            assert(h2_pal_modem_call_answer(&modem.platform, 1000u) == H2_PAL_OK);
+        } else if (mode == 1u) {
+            assert(h2_pal_modem_call_hangup(&modem.platform, 1000u) == H2_PAL_OK);
+        } else {
+            h2_pal_modem_call_status_t status;
+            assert(h2_pal_modem_get_call_status(&modem.platform, &status) == H2_PAL_OK);
+            assert(status.state == H2_PAL_MODEM_CALL_STATE_ENDED && status.call_id == id);
+        }
+        assert(ended_events == ended + 1u && last_call.state == H2_PAL_MODEM_CALL_STATE_ENDED);
+        assert(last_call.call_id == id && !modem.call_hold);
+        assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
+    }
+}
+
+/* Both solicited and idle RX must classify DSCI independently of commands. */
+int h2_quectel_is_urc(const char *line, const char *command);
+
+static void test_dsci(const h2_pal_system_event_api_t *events) {
+    h2_quectel_modem_t modem;
+    const h2_quectel_modem_config_t config = {.command = command, .system_events = events};
+    assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_OK);
+    unsigned incoming = call_events, ended = ended_events, changed = changed_events;
+    assert(h2_quectel_is_urc("^DSCI: 1,1,4,0,123,129", "AT^DSCI=1"));
+    assert(h2_quectel_is_urc("^DSCI: 1,1,4,0,123,129", "AT+CLCC"));
+    assert(h2_quectel_is_urc("^DSCI: 1,1,4,0,123,129", NULL));
+    h2_quectel_handle_urc_line(&modem, "^DSCI: 1,1,4,1,123,129");
+    h2_quectel_handle_urc_line(&modem, "^DSCI: 1,1,6,1,123,129");
+    h2_quectel_handle_urc_line(&modem, "^DSCI: 1,1,4,0");
+    assert(call_events == incoming && ended_events == ended && !modem.call_hold);
+    h2_quectel_handle_urc_line(&modem, "RING");
+    int32_t first = last_call.call_id;
+    h2_quectel_handle_urc_line(&modem, "+CLIP: \"123\",129");
+    h2_quectel_handle_urc_line(&modem, "^DSCI: 1,1,4,0,123,129");
+    assert(last_call.call_id == first && call_events == incoming + 2u);
+    h2_quectel_handle_urc_line(&modem, "+CLCC: 1,1,4,0,0,\"123\",129");
+    assert(call_events == incoming + 2u);
+    h2_quectel_handle_urc_line(&modem, "^DSCI: 1,1,6,0,123,129");
+    assert(ended_events == ++ended && last_call.call_id == first && !modem.call_hold);
+    h2_quectel_handle_urc_line(&modem, "NO CARRIER");
+    h2_quectel_handle_urc_line(&modem, "^DSCI: 1,1,6,0,123,129");
+    assert(ended_events == ended);
+    h2_quectel_handle_urc_line(&modem, "RING");
+    int32_t ringing_id = last_call.call_id;
+    h2_quectel_handle_urc_line(&modem, "NO CARRIER");
+    assert(ended_events == ended && modem.incoming_call_id == ringing_id && modem.call_hold);
+    h2_quectel_handle_urc_line(&modem, "^DSCI: 2,1,4,0,\"456\",129");
+    int32_t second = last_call.call_id;
+    assert(second == ringing_id && second != first && strcmp(last_call.number, "456") == 0);
+    h2_quectel_handle_urc_line(&modem, "NO CARRIER");
+    h2_quectel_handle_urc_line(&modem, "^DSCI: 1,1,6,0,123,129");
+    assert(ended_events == ended && modem.incoming_call_id == second && modem.call_hold);
+    assert(h2_pal_modem_call_answer(&modem.platform, 1000u) == H2_PAL_OK);
+    assert(last_call.state == H2_PAL_MODEM_CALL_STATE_ACTIVE);
+    h2_quectel_handle_urc_line(&modem, "^DSCI: 2,1,3,0,456,129");
+    h2_quectel_handle_urc_line(&modem, "+CLCC: 2,1,0,0,0,\"456\",129");
+    assert(changed_events == changed + 1u);
+    assert(h2_pal_modem_call_hangup(&modem.platform, 1000u) == H2_PAL_OK);
+    assert(ended_events == ++ended && last_call.call_id == second);
+    h2_quectel_handle_urc_line(&modem, "^DSCI: 2,1,6,0,456,129");
+    h2_quectel_handle_urc_line(&modem, "NO CARRIER");
+    assert(ended_events == ended);
+    h2_quectel_handle_urc_line(&modem, "^DSCI: 3,0,2,0,789,129");
+    assert(last_call.state == H2_PAL_MODEM_CALL_STATE_DIALING);
+    h2_quectel_handle_urc_line(&modem, "^DSCI: 3,0,7,0,789,129");
+    assert(last_call.state == H2_PAL_MODEM_CALL_STATE_ALERTING);
+    h2_quectel_handle_urc_line(&modem, "^DSCI: 3,0,3,0,789,129");
+    assert(last_call.state == H2_PAL_MODEM_CALL_STATE_ACTIVE);
+    h2_quectel_handle_urc_line(&modem, "^DSCI: 3,0,6,0,789,129");
+    assert(ended_events == ++ended && last_call.call_id == 3);
+    h2_quectel_handle_urc_line(&modem, "RDY");
+    h2_quectel_handle_urc_line(&modem, "RING");
+    h2_quectel_handle_urc_line(&modem, "NO CARRIER");
+    assert(ended_events == ++ended);
+    h2_quectel_handle_urc_line(&modem, "NO CARRIER");
+    assert(ended_events == ended);
+    assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
+}
+
 int main(void) {
     const h2_pal_system_event_vtable_t vtable = {.post = post};
     const h2_pal_system_event_api_t events = {.vtable = &vtable};
@@ -258,6 +379,8 @@ int main(void) {
     h2_quectel_handle_urc_line(&modem, "RING");
     assert(call_events == 2u);
     assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
+    test_dsci(&events);
+    test_dsci_during_command(&events);
     test_sim_absent_rx(&events);
     test_insertion_recovery(&events);
     return 0;

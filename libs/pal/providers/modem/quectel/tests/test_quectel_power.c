@@ -15,6 +15,8 @@ typedef struct fixture {
     h2_quectel_modem_t modem;
     unsigned commands;
     unsigned restarts;
+    unsigned dsci_commands;
+    int dsci_error;
     unsigned prepare_count;
     unsigned prepare_steps;
     unsigned model_queries;
@@ -130,6 +132,14 @@ static h2_pal_result_t command(void *user, const char *cmd, char *response, size
     (void)timeout_ms;
     assert(!f->asleep_allowed);
     f->commands++;
+    if (strcmp(cmd, "AT^DSCI=1") == 0) {
+        f->dsci_commands++;
+        if (f->dsci_error) {
+            assert(size > sizeof("ERROR\r\n"));
+            strcpy(response, "ERROR\r\n");
+            return H2_PAL_ERR_IO;
+        }
+    }
     const char *prepare_commands[] = {
         "AT", "ATE0", "AT+CMEE=2", "AT+CLIP=1", "AT+CREG=1", "AT+CGREG=1",
         "AT+CEREG=1", "AT+QCFG=\"urc/ri/ring\",\"pulse\",2000,1",
@@ -558,7 +568,26 @@ static void test_concurrent_close(void) {
     finish(&f);
 }
 
+static void test_dsci_prepare(void) {
+    for (int mode = 0; mode < 3; mode++) {
+        fixture_t f;
+        h2_pal_system_event_api_t events;
+        init_fixture(&f, &events, 0);
+        f.dsci_error = mode == 1;
+        if (mode == 2) { f.fail_command = "AT^DSCI=1"; }
+        assert(h2_pal_modem_open(&f.modem.platform, 0u) == H2_PAL_OK);
+        assert(f.dsci_commands == 1u);
+        assert(f.modem.dsci_unsupported == (mode == 1));
+        if (mode == 1) { assert(!f.modem.power_fault); }
+        h2_quectel_handle_urc_line(&f.modem, "RDY");
+        assert(h2_quectel_modem_prepare(&f.modem) == H2_PAL_OK);
+        assert(f.dsci_commands == (mode == 1 ? 1u : 2u));
+        finish(&f);
+    }
+}
+
 int main(void) {
+    test_dsci_prepare();
     test_hotplug_matching_and_notifications();
     test_hotplug_restart_callback();
     test_hotplug_rejected_models_and_format();
