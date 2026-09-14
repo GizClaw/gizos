@@ -35,13 +35,17 @@ typedef struct h2_gizclaw_time_sync_status {
 } h2_gizclaw_time_sync_status_t;
 
 /** Copy calibration status into required caller storage; thread safe.
- * Every connection makes one GET /server-info before signaling connects, since
- * a valid clock can still be stale. An uncalibrated clock blocks the connect
- * on this cancellable attempt, retrying every 30 monotonic seconds. A valid
- * clock connects after one failed attempt with its existing value, and a
- * separate task retries 30 monotonic seconds later without terminating the
- * service. UNSUPPORTED (no HTTP API, or an unsettable clock) is final for the
- * service. Each new service connection calibrates again. Use Time PAL
+ * With an HTTP API and server endpoint configured, every connection makes one
+ * GET /server-info before signaling connects, since a valid clock can still
+ * be stale. An uncalibrated clock blocks the connect on this cancellable
+ * attempt, retrying every 30 monotonic seconds. A valid clock connects after
+ * one failed attempt with its existing value, and a separate task retries 30
+ * monotonic seconds later without terminating the service. Without an HTTP
+ * API no request is made: the result is UNSUPPORTED, a valid clock connects
+ * and an uncalibrated one ends the connection with
+ * H2_PAL_TIME_ERR_UNCALIBRATED. UNSUPPORTED (no HTTP API, or an unsettable
+ * clock) is final for the service. Each new service connection calibrates
+ * again. Use Time PAL
  * get_wall_ms for UTC validity, independently of this attempt status.
  * Returns INVALID_ARG for NULL inputs, or mutex errors.
  */
