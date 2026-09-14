@@ -16,7 +16,7 @@
 
 Public header 只暴露稳定类型和函数，不暴露 board header、SDK object、内部 task、private state 或 target-specific implementation。
 
-Lua 的程序绘图机制由 `libs/lua` 的 Display module 拥有。私有 native producer 可以使用其公共 `h2_lua_display.h` 批量更新 VM 所有的顶点／primitive 数据，再由 Lua Display 绘制；不能把 runtime 私有头、job 或 framebuffer 当作应用扩展 API。场景几何、变形、投影和配色策略留在应用自己的 portable library，公共层只处理明确输入的通用光栅、缓存和生命周期。
+RGB565 矩形批量重放、调色板插值与最小 span 填充由 `libs/raster2d` 拥有，普通 C/C++ App 可直接使用。Lua 的程序绘图适配、其他图元算法、VM 生命周期、缓存与损伤管理仍由 `libs/lua` 的 Display module 拥有。内部 span header 通过仅对 Lua adapter 可见的 Bazel target 共享，不作为应用 API 或公共 include 路径。私有 native producer 可以使用其公共 `h2_lua_display.h` 批量更新 VM 所有的顶点／primitive 数据，再由 Lua Display 绘制；不能把 runtime 私有头、job 或 framebuffer 当作应用扩展 API。场景几何、变形、投影和配色策略留在应用自己的 portable library，公共层只处理明确输入的通用光栅、缓存和生命周期。
 
 每个 library 都必须提供自己的 `BUILD.bazel`。其中的主要 `cc_library` target 名与目录名一致；测试目录统一使用 `tests/`，不再使用单数形式的 `test/`。Library 是否进入某个平台 graph 只由 toolchain 和 compatibility 决定，不声明自定义 CI tag。
 
@@ -143,6 +143,7 @@ App 必须在调用 third-party API 之前完成对应 integration 初始化，�
 - [`ntp`](./ntp.md)：跨平台 NTP client。
 - [`pal`](./platform_abstract_layer.md)：Platform Abstraction Layer contract。
 - [`pixa`](./pixa.md)：PIXA image、pack、decode、reader 和 blit。
+- [`raster2d`](./raster2d.md)：无 VM、无分配的 RGB565 矩形重放和 palette 插值。
 - [`qrcode`](./qrcode.md)：QR Code Model 2 编码与 RGB565 band 栅格化，全部缓冲区由调用方提供。
 - [`tinyh264`](./tinyh264.md)：TinyH264 的 portable Video Decoder PAL provider。
 - [`runtime`](./runtime.md)：提供给 app 使用的跨平台 Runtime。

@@ -1,0 +1,29 @@
+load("//libs/app_host:web_app.bzl", "h2_web_app")
+
+package(default_visibility = ["//visibility:public"])
+
+h2_web_app(
+    name = "raster2d",
+    srcs = ["main.c"],
+    app_name = "raster2d",
+    canvas_min = 1000,
+    deps = ["//projects/example/apps/raster2d/app:raster2d"],
+    evals = [[
+        "H2_WEB_APP name=raster2d result=PASS",
+        """(() => {
+          const canvas = document.getElementById('canvas');
+          const data = canvas.getContext('2d').getImageData(0,0,240,240).data;
+          const backgrounds = [[255,0,0],[131,0,131],[0,0,255]];
+          const foregrounds = [[255,255,255],[131,255,131],[0,255,0]];
+          for (let y=0; y<240; ++y) for (let x=0; x<240; ++x) {
+            const colors = x>=20 && x<220 && y>=80 && y<160 ? foregrounds : backgrounds;
+            const color = colors[Math.floor(x/80)];
+            const at=(y*240+x)*4;
+            for(let c=0;c<3;++c) if(data[at+c]!==color[c])
+              throw new Error('raster2d mismatch '+x+','+y+' channel '+c);
+          }
+          console.log('RASTER2D pixels=PASS');
+        })()""",
+    ]],
+    passes = ["RASTER2D pixels=PASS", "H2_WEB_APP name=raster2d result=PASS rc=0"],
+)

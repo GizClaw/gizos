@@ -24,6 +24,7 @@
 - [PAL](./pal.md)
 - [PIXA](./pixa.md)
 - [QR Code](./qrcode.md)
+- [Raster2D](./raster2d.md)
 - [Runtime](./runtime.md)
 - [SemVer](./semver.md)
 - [Utils](./utils.md)

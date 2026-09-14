@@ -74,6 +74,7 @@ api_reference(
         "//libs/pal/providers/wolfssl",
         "//libs/pixa",
         "//libs/qrcode",
+        "//libs/raster2d",
         "//libs/runtime",
         "//libs/semver",
         "//libs/utils",

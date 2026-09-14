@@ -25,6 +25,7 @@ INPUT                  = libs/app_test/include \
                          libs/pal/include \
                          libs/pixa/include \
                          libs/pal/providers/portaudio/include \
+                         libs/raster2d/include \
                          libs/runtime/include \
                          libs/semver/include \
                          libs/pal/providers/sdl3/include \
