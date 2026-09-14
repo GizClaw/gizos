@@ -410,6 +410,25 @@ py_test(
 )
 
 py_test(
+    name = "jieli_input_lifecycle_test",
+    srcs = ["tests/test_jieli_input_lifecycle.py"],
+    data = [
+        "tests/fixtures/jieli_input_lifecycle.c",
+        "//boards/jieli_ac791n_devkit/ac791n:src/h2_jieli_ac791n_devkit_input.c",
+        "//boards/jieli_ac791n_devkit/ac791n:include/h2_jieli_ac791n_devkit.h",
+        "//native_component_src/jieli/wl82/h2_pal_core:include/h2_jieli_wl82_atomic.h",
+        "//libs/pal:pal_header_files",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_input_lifecycle.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
     name = "jieli_usb_deadlines_test",
     srcs = ["tests/test_jieli_usb_deadlines.py"],
     data = [

@@ -7,6 +7,7 @@
 #include "os/os_api.h"
 
 #include "h2_jieli_ac791n_devkit.h"
+#include "h2_jieli_wl82_atomic.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -41,6 +42,8 @@ typedef struct h2_display_state {
    * reusing it, and submit one transfer per frame like JieLi's LCD driver. */
   uint8_t frame[H2_LCD_WIDTH * H2_LCD_HEIGHT * 2u];
   int open;
+  int pending;
+  uint32_t dma_done;
 } h2_display_state_t;
 
 typedef struct h2_touch_state {
@@ -53,25 +56,69 @@ typedef struct h2_touch_state {
 
 static h2_display_state_t display_state;
 static h2_touch_state_t touch_state;
-static int adkey_initialized;
+static uint32_t adkey_initialized;
+static uint32_t display_operation;
+static uint32_t touch_operation;
 
-/* JieLi's LCD setup registers an EMI completion callback before enabling
- * non-blocking writes. The PAL waits through the driver's send semaphore, so
- * this callback does not need a second higher-level notification. */
-static void display_emi_send_complete(void) {}
+/* Nonwaiting operation reservations serialize each singleton device. SDK
+ * calls run without a held PAL mutex/spinlock; callback reentry returns BUSY. */
+#define INPUT_OPERATION(name, type, operation, parameters, arguments) \
+  static type name parameters { \
+    uint32_t expected = 0u; \
+    if (!h2_jieli_atomic_cas_u32(&operation, &expected, 1u)) \
+      return H2_PAL_ERR_BUSY; \
+    type result = name##_impl arguments; \
+    h2_jieli_atomic_store_u32(&operation, 0u); \
+    return result; \
+  }
 
-static void delay_ms(uint32_t ms) { os_time_dly((ms + 9u) / 10u); }
+/* SDK EMI posts its semaphore before calling this callback. Flush itself
+ * returns zero even after a native timeout, so completion is independently
+ * required before changing RS, reusing storage, or consuming the handle. */
+static void display_emi_send_complete(void *device) {
+  (void)device;
+  h2_jieli_atomic_store_u32(&display_state.dma_done, 1u);
+}
+
+static void delay_ms(uint32_t ms) { os_time_dly(ms / 10u + (ms % 10u != 0u)); }
+
+static int display_flush(h2_display_state_t *state) {
+  if (!state->pending) return H2_DISPLAY_OK;
+  uint32_t started = timer_get_ms();
+  if (dev_ioctl(state->device, IOCTL_EMI_WRITE_NON_BLOCK_FLUSH, 0) != 0)
+    return H2_DISPLAY_ERR_IO;
+  while (!h2_jieli_atomic_load_u32(&state->dma_done)) {
+    if ((uint32_t)(timer_get_ms() - started) >= 2000u)
+      return H2_DISPLAY_ERR_IO;
+    os_time_dly(1u);
+  }
+  state->pending = 0;
+  return H2_DISPLAY_OK;
+}
+
+static int display_write(h2_display_state_t *state, void *bytes, uint32_t size) {
+  if (display_flush(state) != H2_DISPLAY_OK) return H2_DISPLAY_ERR_IO;
+  h2_jieli_atomic_store_u32(&state->dma_done, 0u);
+  state->pending = 1;
+  int count = dev_write(state->device, bytes, size);
+  /* Pinned EMI rejects alignment before starting DMA; positive unexpected
+   * progress still owns storage until its completion callback. */
+  if (count <= 0) state->pending = 0;
+  return count == (int)size ? H2_DISPLAY_OK : H2_DISPLAY_ERR_IO;
+}
 
 static int lcd_write(uint8_t value) {
-  return dev_write(display_state.device, &value, 1u) == 1 ? 0 : -1;
+  return display_write(&display_state, &value, 1u) == H2_DISPLAY_OK ? 0 : -1;
 }
 
 static int lcd_command(uint8_t command) {
+  if (display_flush(&display_state) != H2_DISPLAY_OK) return -1;
   gpio_direction_output(H2_LCD_RS_PIN, 0);
   return lcd_write(command);
 }
 
 static int lcd_data(uint8_t value) {
+  if (display_flush(&display_state) != H2_DISPLAY_OK) return -1;
   gpio_direction_output(H2_LCD_RS_PIN, 1);
   return lcd_write(value);
 }
@@ -120,9 +167,10 @@ static int init_ili9488(void) {
   return run_init_sequence(sequence, sizeof(sequence) / sizeof(sequence[0]));
 }
 
-static int display_open(void *user) {
+static int display_open_impl(void *user) {
   h2_display_state_t *state = user;
   if (state->open) return H2_DISPLAY_OK;
+  if (state->device != NULL) return H2_DISPLAY_ERR_INVALID_STATE;
   gpio_set_direction(H2_LCD_CHECK_D6_PIN, 1);
   gpio_set_direction(H2_LCD_CHECK_D7_PIN, 1);
   int use_ili9488 = gpio_read(H2_LCD_CHECK_D6_PIN) &&
@@ -134,7 +182,7 @@ static int display_open(void *user) {
    * the EMI busy wait once DAC interrupts are active, which freezes A/V on
    * the second frame. */
   if (dev_ioctl(
-          state->device, EMI_SET_ISR_CB, display_emi_send_complete) != 0) {
+          state->device, EMI_SET_ISR_CB, (uintptr_t)display_emi_send_complete) != 0) {
     dev_close(state->device);
     state->device = NULL;
     return H2_DISPLAY_ERR_IO;
@@ -158,6 +206,7 @@ static int display_open(void *user) {
   gpio_direction_output(H2_LCD_RESET_PIN, 1);
   delay_ms(100u);
   if ((use_ili9488 ? init_ili9488() : init_ili9481()) != 0) {
+    if (display_flush(state) != H2_DISPLAY_OK) return H2_DISPLAY_ERR_IO;
     dev_close(state->device);
     state->device = NULL;
     return H2_DISPLAY_ERR_IO;
@@ -167,7 +216,7 @@ static int display_open(void *user) {
   return H2_DISPLAY_OK;
 }
 
-static int display_get_info(void *user, h2_display_info_t *info) {
+static int display_get_info_impl(void *user, h2_display_info_t *info) {
   h2_display_state_t *state = user;
   if (!state->open) return H2_DISPLAY_ERR_INVALID_STATE;
   *info = (h2_display_info_t){
@@ -193,7 +242,7 @@ static int set_window(const h2_display_rect_t *rect) {
   return lcd_command(0x2c);
 }
 
-static int display_draw_bitmap(
+static int display_draw_bitmap_impl(
     void *user, const h2_display_rect_t *rect, const void *pixels,
     size_t stride_bytes, h2_display_pixel_format_t format) {
   h2_display_state_t *state = user;
@@ -208,8 +257,7 @@ static int display_draw_bitmap(
   }
   /* Official JieLi LCD fills wait for the preceding non-blocking packet at
    * the beginning of the next fill, then submit the entire new image once. */
-  if (dev_ioctl(
-          state->device, IOCTL_EMI_WRITE_NON_BLOCK_FLUSH, 0) != 0) {
+  if (display_flush(state) != H2_DISPLAY_OK) {
     return H2_DISPLAY_ERR_IO;
   }
   if (set_window(rect) != 0) return H2_DISPLAY_ERR_IO;
@@ -226,17 +274,15 @@ static int display_draw_bitmap(
     row += stride_bytes;
   }
   size_t bytes = (size_t)rect->width * (size_t)rect->height * 2u;
-  return dev_write(state->device, state->frame, (uint32_t)bytes) == (int)bytes
-             ? H2_DISPLAY_OK
-             : H2_DISPLAY_ERR_IO;
+  return display_write(state, state->frame, (uint32_t)bytes);
 }
 
-static int display_present(void *user) {
+static int display_present_impl(void *user) {
   return ((h2_display_state_t *)user)->open ? H2_DISPLAY_OK
                                             : H2_DISPLAY_ERR_INVALID_STATE;
 }
 
-static int display_set_brightness(void *user, uint32_t percent) {
+static int display_set_brightness_impl(void *user, uint32_t percent) {
   if (!((h2_display_state_t *)user)->open || percent > 100u) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
@@ -244,16 +290,30 @@ static int display_set_brightness(void *user, uint32_t percent) {
   return H2_DISPLAY_OK;
 }
 
-static int display_close(void *user) {
+static int display_close_impl(void *user) {
   h2_display_state_t *state = user;
-  if (!state->open) return H2_DISPLAY_OK;
+  if (state->device == NULL) return H2_DISPLAY_OK;
+  if (display_flush(state) != H2_DISPLAY_OK) return H2_DISPLAY_ERR_IO;
   gpio_direction_output(H2_LCD_BACKLIGHT_PIN, 1);
-  (void)dev_ioctl(state->device, IOCTL_EMI_WRITE_NON_BLOCK_FLUSH, 0);
-  dev_close(state->device);
+  int result = dev_close(state->device);
+  /* dev_close consumes the SDK reference before returning driver errors. */
   state->device = NULL;
   state->open = 0;
-  return H2_DISPLAY_OK;
+  return result == 0 ? H2_DISPLAY_OK : H2_DISPLAY_ERR_IO;
 }
+
+INPUT_OPERATION(display_open, int, display_operation,
+    (void *user), (user))
+INPUT_OPERATION(display_get_info, int, display_operation,
+    (void *user, h2_display_info_t *info), (user, info))
+INPUT_OPERATION(display_draw_bitmap, int, display_operation,
+    (void *user, const h2_display_rect_t *rect, const void *pixels, size_t stride_bytes, h2_display_pixel_format_t format), (user, rect, pixels, stride_bytes, format))
+INPUT_OPERATION(display_present, int, display_operation,
+    (void *user), (user))
+INPUT_OPERATION(display_set_brightness, int, display_operation,
+    (void *user, uint32_t percent), (user, percent))
+INPUT_OPERATION(display_close, int, display_operation,
+    (void *user), (user))
 
 const h2_pal_display_api_t *h2_jieli_ac791n_devkit_display_api(void) {
   static const h2_pal_display_vtable_t vtable = {
@@ -270,31 +330,33 @@ const h2_pal_display_api_t *h2_jieli_ac791n_devkit_display_api(void) {
 }
 
 static int touch_write_register(uint8_t reg, uint8_t value) {
-  int result = 0;
-  dev_ioctl(touch_state.iic, IIC_IOCTL_START, 0);
-  if (dev_ioctl(touch_state.iic, IIC_IOCTL_TX_WITH_START_BIT, H2_FT6236_WRITE) ||
+  int result = dev_ioctl(touch_state.iic, IIC_IOCTL_START, 0) == 0 ? 0 : -1;
+  if (result == 0 && (dev_ioctl(touch_state.iic, IIC_IOCTL_TX_WITH_START_BIT, H2_FT6236_WRITE) ||
       dev_ioctl(touch_state.iic, IIC_IOCTL_TX, reg) ||
-      dev_ioctl(touch_state.iic, IIC_IOCTL_TX_WITH_STOP_BIT, value)) {
+      dev_ioctl(touch_state.iic, IIC_IOCTL_TX_WITH_STOP_BIT, value))) {
     result = -1;
   }
-  dev_ioctl(touch_state.iic, IIC_IOCTL_STOP, 0);
+  /* START owns the native transaction mutex even if the driver reports an
+   * error; STOP must always run to release it, and its error is observable. */
+  if (dev_ioctl(touch_state.iic, IIC_IOCTL_STOP, 0) != 0) result = -1;
   return result;
 }
 
 static int touch_read_register(uint8_t reg, uint8_t *value) {
-  int result = 0;
-  dev_ioctl(touch_state.iic, IIC_IOCTL_START, 0);
-  if (dev_ioctl(touch_state.iic, IIC_IOCTL_TX_WITH_START_BIT, H2_FT6236_WRITE) ||
+  int result = dev_ioctl(touch_state.iic, IIC_IOCTL_START, 0) == 0 ? 0 : -1;
+  if (result == 0 && (dev_ioctl(touch_state.iic, IIC_IOCTL_TX_WITH_START_BIT, H2_FT6236_WRITE) ||
       dev_ioctl(touch_state.iic, IIC_IOCTL_TX, reg) ||
       dev_ioctl(touch_state.iic, IIC_IOCTL_TX_WITH_START_BIT, H2_FT6236_READ) ||
-      dev_ioctl(touch_state.iic, IIC_IOCTL_RX_WITH_STOP_BIT, (uint32_t)value)) {
+      dev_ioctl(touch_state.iic, IIC_IOCTL_RX_WITH_STOP_BIT, (uintptr_t)value))) {
     result = -1;
   }
-  dev_ioctl(touch_state.iic, IIC_IOCTL_STOP, 0);
+  /* START owns the native transaction mutex even if the driver reports an
+   * error; STOP must always run to release it, and its error is observable. */
+  if (dev_ioctl(touch_state.iic, IIC_IOCTL_STOP, 0) != 0) result = -1;
   return result;
 }
 
-static h2_pal_result_t touch_open(void *user) {
+static h2_pal_result_t touch_open_impl(void *user) {
   h2_touch_state_t *state = user;
   uint8_t chip_id = 0u;
   if (state->open) return H2_PAL_OK;
@@ -321,7 +383,7 @@ static h2_pal_result_t touch_open(void *user) {
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t touch_get_info(
+static h2_pal_result_t touch_get_info_impl(
     void *user, h2_pal_touch_info_t *out_info) {
   if (!((h2_touch_state_t *)user)->open) return H2_PAL_ERR_INVALID_STATE;
   *out_info = (h2_pal_touch_info_t){
@@ -329,7 +391,7 @@ static h2_pal_result_t touch_get_info(
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t touch_poll_event(
+static h2_pal_result_t touch_poll_event_impl(
     void *user, h2_pal_touch_event_t *out_event) {
   h2_touch_state_t *state = user;
   uint8_t fingers = 0u;
@@ -372,12 +434,21 @@ static h2_pal_result_t touch_poll_event(
   return H2_PAL_OK;
 }
 
-static h2_pal_result_t touch_close(void *user) {
+static h2_pal_result_t touch_close_impl(void *user) {
   h2_touch_state_t *state = user;
-  if (state->iic != NULL) dev_close(state->iic);
+  int result = state->iic == NULL ? 0 : dev_close(state->iic);
   *state = (h2_touch_state_t){0};
-  return H2_PAL_OK;
+  return result == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
+
+INPUT_OPERATION(touch_open, h2_pal_result_t, touch_operation,
+    (void *user), (user))
+INPUT_OPERATION(touch_get_info, h2_pal_result_t, touch_operation,
+    (void *user, h2_pal_touch_info_t *info), (user, info))
+INPUT_OPERATION(touch_poll_event, h2_pal_result_t, touch_operation,
+    (void *user, h2_pal_touch_event_t *event), (user, event))
+INPUT_OPERATION(touch_close, h2_pal_result_t, touch_operation,
+    (void *user), (user))
 
 const h2_pal_touch_api_t *h2_jieli_ac791n_devkit_touch_api(void) {
   static const h2_pal_touch_vtable_t vtable = {
@@ -415,14 +486,22 @@ static int decode_adkey(uint16_t value) {
   return -1;
 }
 
-static void init_adkeys(void) {
-  if (adkey_initialized) return;
-  gpio_set_die(H2_ADKEY_PIN, 0);
-  gpio_set_direction(H2_ADKEY_PIN, 1);
-  gpio_set_pull_up(H2_ADKEY_PIN, 0);
-  gpio_set_pull_down(H2_ADKEY_PIN, 0);
-  (void)adc_add_sample_ch(AD_CH_PB01);
-  adkey_initialized = 1;
+static h2_pal_result_t init_adkeys(void) {
+  uint32_t phase = h2_jieli_atomic_load_u32(&adkey_initialized);
+  if (phase == 2u) return H2_PAL_OK;
+  uint32_t expected = 0u;
+  if (!h2_jieli_atomic_cas_u32(&adkey_initialized, &expected, 1u))
+    return expected == 2u ? H2_PAL_OK : H2_PAL_ERR_BUSY;
+  int result = H2_PAL_ERR_IO;
+  if (gpio_set_die(H2_ADKEY_PIN, 0) == 0 &&
+      gpio_set_direction(H2_ADKEY_PIN, 1) == 0 &&
+      gpio_set_pull_up(H2_ADKEY_PIN, 0) == 0 &&
+      gpio_set_pull_down(H2_ADKEY_PIN, 0) == 0 &&
+      adc_add_sample_ch(AD_CH_PB01) < ADC_MAX_CH) {
+    result = H2_PAL_OK;
+  }
+  h2_jieli_atomic_store_u32(&adkey_initialized, result == H2_PAL_OK ? 2u : 0u);
+  return result;
 }
 
 static h2_pal_result_t read_single_button(
@@ -433,7 +512,8 @@ static h2_pal_result_t read_single_button(
       id > H2_JIELI_AC791N_ADKEY_CANCEL_ID) {
     return H2_PAL_ERR_NOT_FOUND;
   }
-  init_adkeys();
+  int result = init_adkeys();
+  if (result != H2_PAL_OK) return result;
   int active = decode_adkey((uint16_t)adc_get_value(AD_CH_PB01));
   *out_reading = (h2_pal_single_button_reading_t){
       .id = id,
@@ -449,7 +529,8 @@ static h2_pal_result_t read_radio_button_group(
     h2_pal_radio_button_group_reading_t *out_reading) {
   (void)user;
   if (id != H2_JIELI_AC791N_ADKEY_GROUP_ID) return H2_PAL_ERR_NOT_FOUND;
-  init_adkeys();
+  int result = init_adkeys();
+  if (result != H2_PAL_OK) return result;
   int active = decode_adkey((uint16_t)adc_get_value(AD_CH_PB01));
   *out_reading = (h2_pal_radio_button_group_reading_t){
       .id = id,
