@@ -43,6 +43,8 @@ ROTATE 每次改变角色朝向 45 度，覆盖侧面、正面、另一侧、背
 空间几何包含顶面和底面；App 根据投影面的朝向和当前相机深度处理可见性与绘制顺序，深度相同按稳定 face ID 排序。它是针对示例部件的正交展示，不承诺任意相交网格的正确遮挡。DEBUG 使用同一相机变换显示骨点、骨线、可见部件 AABB 和该部件最后一个绘制面的序号；二维路径显示 skeleton2d draw item 顺序。CHECK 使用独立的闭式关节坐标 oracle 验证人形/小狗、六个动作时刻、八个朝向和两个俯角的 192 组组合。测试 JS 仅操作控件和读取原始 Canvas，验证顶面与正背面躯干像素。
 
 
+Lua 示例源码由 `projects/example/apps/lua_skeleton2d/app/src/skeleton2d.lua` 拥有，通过 `app/BUILD.bazel` 导出给现有 Lua Host launcher。`targets/pkg_tar/lua_skeleton2d` 只负责 Web 产物与验证接线；其他 launcher 可以消费同一个导出脚本，不需要增加 C App 包装层。
+
 ## 性能测量
 
 C benchmark 对 16/32/64/128 bones 分别预热 300 次、采样 3000 次、重复三轮，测双采样、混合、世界矩阵和排序。Web BENCH 对 16/24/192/1、32/48/384/2、64/96/768/4 的 bones/parts/vertices/actors 测量；前三项是每个 actor 的资源数量，整场景总 bones 为 16/64/256、总 vertices 为 192/768/3072，每部件两个 primitive。所有阶段耗时均覆盖整场景。所有阶段采样使用 `system.micros()`：计算包括应用 part-state 写入，几何包括 bounds/mesh 复制，raster 包括对应活动区域的背景恢复，present 为当前 PAL 接收语义。输出独立 p95、端到端 p50/p95/p99/max、超 33.33 ms 帧数和平均提交像素/矩形。

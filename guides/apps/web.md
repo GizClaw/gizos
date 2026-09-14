@@ -267,6 +267,6 @@ bazel test --config=macos_arm64 --strategy=TestRunner=local --test_env=HOME \
 
 ## Skeleton2D 验证入口
 
-`bazel run //projects/example/targets/pkg_tar/lua_skeleton2d:serve` 使用 demo_board 的 plain 外观，以真实 Lua/C WASM 绘制机械臂、人形行走、链条和小狗小跑。Portable 脚本属于 `projects/example/apps/lua_skeleton2d/data`；Web target 只引用并组装，不持有另一套动画算法。点击 Start 后，Canvas 内支持播放暂停、前后逐帧、seek、场景切换、混合、速度、层级、grid 与 DEBUG（关节/AABB/顺序）。ROTATE 和 CAMERA 分别控制角色朝向及 0/45 度俯角，空间资源由 App 定义，计算复用既有 geometry；CHECK 验证关节坐标。BENCH 在 Console 分开输出三档二维规模和最终角色空间预览的计算、几何、光栅、提交与视角切换耗时及 VM 快照；测试页不代表设备性能。
+`bazel run //projects/example/targets/pkg_tar/lua_skeleton2d:serve` 使用 demo_board 的 plain 外观，以真实 Lua/C WASM 绘制机械臂、人形行走、链条和小狗小跑。Portable 脚本属于 `projects/example/apps/lua_skeleton2d/app/src`；Web target 只引用并组装，不持有另一套动画算法。点击 Start 后，Canvas 内支持播放暂停、前后逐帧、seek、场景切换、混合、速度、层级、grid 与 DEBUG（关节/AABB/顺序）。ROTATE 和 CAMERA 分别控制角色朝向及 0/45 度俯角，空间资源由 App 定义，计算复用既有 geometry；CHECK 验证关节坐标。BENCH 在 Console 分开输出三档二维规模和最终角色空间预览的计算、几何、光栅、提交与视角切换耗时及 VM 快照；测试页不代表设备性能。
 
 `:browser_test` 检查固定初始姿态的 Canvas 像素并通过输入切换全部场景、停止与回收。`:facing_browser_test` 验证全部朝向和俯角的顶面/躯干像素，`:landmark_browser_test` 验证 192 组真实关节输出。底层 C/Lua 数学、错误原子性和无分配合同另有 host 单测，完整流程见 [Skeleton2D](/zh/developing/skeleton2d)。

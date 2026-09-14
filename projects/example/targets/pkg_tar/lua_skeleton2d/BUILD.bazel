@@ -5,7 +5,7 @@ h2_lua_web_app(
     name = "lua_skeleton2d",
     board = "//projects/example/libs/web/demo_board",
     skin = "plain",
-    script = "//projects/example/apps/lua_skeleton2d:data/skeleton2d.lua",
+    script = "//projects/example/apps/lua_skeleton2d/app:src/skeleton2d.lua",
     vm_memory_limit_bytes = 2097152,
     passes = ["SKELETON pixels=PASS", "SKELETON mirror=PASS", "SKELETON order=PASS", "SKELETON INPUT scene=2", "SKELETON INPUT scene=3", "SKELETON INPUT scene=4", "H2_WEB_APP name=lua_skeleton2d result=PASS"],
     fails = ["SKELETON pixels=FAIL"],
