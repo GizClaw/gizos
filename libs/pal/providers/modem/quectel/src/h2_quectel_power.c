@@ -104,7 +104,9 @@ h2_pal_result_t h2_quectel_power_prepare(h2_quectel_modem_t *modem) {
             return rc;
         }
         if (response.count == 0u || (strcmp(response.lines[0], "EC25") != 0 &&
-                                     strncmp(response.lines[0], "EC25-", 5u) != 0)) {
+                                     strncmp(response.lines[0], "EC25-", 5u) != 0 &&
+                                     strcmp(response.lines[0], "EC800M") != 0 &&
+                                     strncmp(response.lines[0], "EC800M-", 7u) != 0)) {
             modem->capabilities &= ~(uint32_t)H2_PAL_MODEM_CAPABILITY_LOW_POWER;
             return H2_PAL_ERR_UNSUPPORTED;
         }
@@ -126,6 +128,10 @@ h2_pal_result_t h2_quectel_power_prepare(h2_quectel_modem_t *modem) {
             return H2_PAL_ERR_FORMAT;
         }
         if (enabled != 1 || level != modem->config.sim_insert_level) {
+            if (modem->sim_restart_attempted != 0u) {
+                modem->sim_restart_required = 1u;
+                return H2_PAL_ERR_INVALID_STATE;
+            }
             char cmd[32];
             (void)snprintf(cmd, sizeof(cmd), "AT+QSIMDET=1,%u", modem->config.sim_insert_level);
             rc = h2_quectel_at_exchange(modem, cmd, NULL, 0);

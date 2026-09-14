@@ -267,7 +267,25 @@ h2_pal_result_t h2_quectel_modem_prepare(h2_quectel_modem_t *modem) {
     if (rc != H2_PAL_OK) {
         return rc;
     }
+    modem->preparing = 1u;
     rc = h2_quectel_modem_prepare_impl(modem);
+    if (rc == H2_PAL_ERR_INVALID_STATE && modem->sim_restart_required != 0u &&
+        modem->sim_restart_attempted == 0u && modem->config.restart_module != NULL) {
+        modem->sim_restart_attempted = 1u;
+        /* Invalidate old sessions even if the transport does not deliver RDY.
+         * Keep the operation lock, but allow the RX worker to process startup. */
+        h2_quectel_handle_urc_locked(modem, "RDY");
+        modem->model_checked = 0u;
+        modem->sleep_allowed = 0u;
+        h2_quectel_state_unlock(modem);
+        rc = modem->config.restart_module(modem->config.transport_user);
+        (void)h2_quectel_state_lock(modem);
+        if (rc == H2_PAL_OK) {
+            modem->sim_restart_required = 0u;
+            rc = h2_quectel_modem_prepare_impl(modem);
+        }
+    }
+    modem->preparing = 0u;
     return h2_quectel_operation_end(modem_state, rc);
 }
 

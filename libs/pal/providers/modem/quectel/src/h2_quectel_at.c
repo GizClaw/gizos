@@ -161,6 +161,8 @@ static h2_pal_result_t at_exchange_impl(
         char command_response[H2_QUECTEL_LINE_MAX * H2_QUECTEL_RESPONSE_MAX];
         memset(command_response, 0, sizeof(command_response));
         const uint32_t generation = modem->reset_generation;
+        /* Initial configuration is SIM-independent; insertion/absence URCs
+         * still update state but cannot invalidate these command responses. */
         const uint32_t sim_generation = modem->sim_generation;
         h2_quectel_state_unlock(modem);
         h2_pal_result_t rc = modem->config.command(
@@ -170,7 +172,8 @@ static h2_pal_result_t at_exchange_impl(
             sizeof(command_response),
             modem->config.command_timeout_ms);
         (void)h2_quectel_state_lock(modem);
-        if (generation != modem->reset_generation || sim_generation != modem->sim_generation) {
+        if (generation != modem->reset_generation ||
+            (modem->preparing == 0u && sim_generation != modem->sim_generation)) {
             return H2_PAL_ERR_INVALID_STATE;
         }
         if (allow_connect != 0 && response_text_has_connect(command_response)) {
@@ -205,7 +208,8 @@ static h2_pal_result_t at_exchange_impl(
         if (rc != H2_PAL_OK) {
             return rc;
         }
-        if (reset_generation != modem->reset_generation || sim_generation != modem->sim_generation) {
+        if (reset_generation != modem->reset_generation ||
+            (modem->preparing == 0u && sim_generation != modem->sim_generation)) {
             return H2_PAL_ERR_INVALID_STATE;
         }
         if (line[0] == '\0' || strcmp(line, cmd) == 0) {

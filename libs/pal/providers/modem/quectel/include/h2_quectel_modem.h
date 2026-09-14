@@ -66,6 +66,16 @@ typedef h2_pal_result_t (*h2_quectel_modem_sleep_gate_fn)(void *user, int allow_
  */
 typedef void (*h2_quectel_modem_invalidate_data_fn)(void *user);
 
+/** @brief Restart the module and restore an AT-ready command transport.
+ * Receives transport_user. Called in task context with operation_lock held and
+ * the state mutex released. The integrator owns reset/power sequencing, bounded
+ * readiness waits and draining startup RX/URCs before returning H2_PAL_OK.
+ * Must not reenter command/lifecycle APIs or wait for tasks needing
+ * operation_lock. RX/URC delivery remains allowed while the state lock is free.
+ * Failure propagates to the caller; at most one attempt per provider instance.
+ */
+typedef h2_pal_result_t (*h2_quectel_modem_restart_module_fn)(void *user);
+
 typedef struct h2_quectel_modem_config {
     void *transport_user;
     h2_quectel_modem_init_fn init;
@@ -98,13 +108,18 @@ typedef struct h2_quectel_modem_config {
     h2_quectel_modem_profile_t profile;
     /** Required with sync_api and independent command channel for low power. */
     h2_quectel_modem_sleep_gate_fn sleep_gate;
-    /** Optional hot-plug request. Requires EC25 profile, sync_api, command and
-     * invalidate_data. SIM_DET must be wired at sim_insert_level (0 or 1).
-     * Changed QSIMDET requires an external module restart and new instance;
-     * open returns INVALID_STATE until that lifecycle is completed. */
+    /** Optional hot-plug request. Requires EC25 UART profile (EC25/EC800M
+     * families), sync_api, command and invalidate_data; sleep_gate is optional.
+     * SIM_DET must be wired at sim_insert_level (0 or 1). Changed QSIMDET uses
+     * restart_module once, then replays prepare and verifies the target value.
+     * Failed readback returns INVALID_STATE without another write/restart.
+     * Without the callback, INVALID_STATE remains latched until an external
+     * module restart and new provider instance. */
     uint8_t sim_hotplug;
     uint8_t sim_insert_level;
     h2_quectel_modem_invalidate_data_fn invalidate_data;
+    /** Optional module restart after changed QSIMDET; NULL preserves the latch. */
+    h2_quectel_modem_restart_module_fn restart_module;
 } h2_quectel_modem_config_t;
 
 struct h2_quectel_modem {
@@ -133,6 +148,8 @@ struct h2_quectel_modem {
     uint8_t data_hold;
     uint8_t model_checked;
     uint8_t sim_restart_required;
+    uint8_t sim_restart_attempted;
+    uint8_t preparing;
     uint32_t sim_generation;
     /* RX-written CPIN outcome; access atomically as in modem/common counters. */
     uint32_t cpin_absent_seen;
