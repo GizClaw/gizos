@@ -127,20 +127,18 @@ diff --git a/cpu/wl82/setup.c b/cpu/wl82/setup.c
 index 3ca4fd1..eab5267 100644
 --- a/cpu/wl82/setup.c
 +++ b/cpu/wl82/setup.c
-@@ -4,8 +4,11 @@
+@@ -4,8 +4,9 @@
  
  void setup_arch()
  {
 -    /*wdt_close();*/
-+#if defined(CONFIG_H2_WATCHDOG_ENABLE) && CONFIG_H2_WATCHDOG_ENABLE
      wdt_init(0xc);
-+#else
-+    wdt_close();
-+#endif
++    /* A stopped core must reset, not enter the SDK watchdog ISR spin loop. */
++    wdt_reset_enable();
  
      clk_early_init();
  
-@@ -25,6 +28,11 @@ void setup_arch()
+@@ -25,6 +26,11 @@ void setup_arch()
  #endif
  
 -    system_reset_reason_get();

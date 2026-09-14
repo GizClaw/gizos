@@ -52,6 +52,7 @@ firmware_native_component(
     name = "layout",
     srcs = [
         "src/coredump.c",
+        "src/watchdog.c",
         "src/platform.c",
     ],
     hdrs = [

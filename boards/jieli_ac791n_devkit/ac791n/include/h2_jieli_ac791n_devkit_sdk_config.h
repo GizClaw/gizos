@@ -28,9 +28,7 @@
 #define CONFIG_RF_TRIM_CODE_AT_RAM
 #define CONFIG_DEBUG_ENABLE
 #define CONFIG_DOUBLE_BANK_ENABLE 1
-/* Use the SDK's 4-second hardware watchdog.  A stalled App must reset back to
- * Loader crash recovery instead of leaving USB and the display wedged. */
-#define CONFIG_H2_WATCHDOG_ENABLE 1
+/* The h2loader layout always arms its four-second, direct-reset watchdog. */
 
 #define TCFG_USER_BLE_ENABLE 1
 #define TCFG_USER_BT_CLASSIC_ENABLE 0

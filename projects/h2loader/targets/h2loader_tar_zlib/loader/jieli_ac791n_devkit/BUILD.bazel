@@ -397,7 +397,7 @@ firmware_native_component(
     name = "watchdog_trial",
     srcs = ["src/watchdog_trial.c"],
     component_name = "jieli_ac791n_devkit_watchdog_trial",
-    deps = ["//boards/ac791n_chip/ac791n"],
+    deps = ["//boards/jieli_ac791n_devkit/ac791n"],
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
 )
@@ -429,7 +429,7 @@ firmware_native_component(
     name = "app_watchdog_trial",
     srcs = ["src/app_watchdog_trial.c"],
     component_name = "jieli_ac791n_devkit_app_watchdog_trial",
-    deps = ["//boards/ac791n_chip/ac791n"],
+    deps = ["//boards/jieli_ac791n_devkit/ac791n"],
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
 )
