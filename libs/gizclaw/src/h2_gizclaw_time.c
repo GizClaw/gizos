@@ -127,8 +127,10 @@ static void time_worker(void *user) {
   h2_gizclaw_service_t *service = user;
   for (;;) {
     h2_pal_result_t rc = time_attempt(service);
+    /* CLOSED ends calibration only when the Service is canceling; a transport
+     * that dropped the connection is an ordinary failed attempt. */
     if (rc == H2_PAL_OK || rc == H2_PAL_ERR_UNSUPPORTED ||
-        rc == H2_PAL_ERR_CLOSED)
+        (rc == H2_PAL_ERR_CLOSED && time_canceled(service)))
       return;
     uint64_t now = 0u;
     if (h2_pal_time_get_monotonic_ms(service->client_config.time, &now) != H2_PAL_OK)
