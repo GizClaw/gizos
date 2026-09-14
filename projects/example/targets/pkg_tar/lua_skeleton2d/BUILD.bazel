@@ -124,7 +124,8 @@ web_archive_browser_test(
         })()""" % (
             100 if scene == 2 else 122,
             ("[248,252,248]" if yaw == 90 else "[184,128,56]") if scene == 2 else ("[216,160,72]" if yaw == 90 else "[120,76,24]"),
-            80 if scene == 2 else 101,
+            # The dog tail occludes the lower head in the back view.
+            80 if scene == 2 else 94,
             ("[248,164,128]" if scene == 2 else "[216,160,72]") if yaw == 90 else "[120,76,24]",
         )] for i, scene, yaw, pitch, x, y in _FACING if scene in [2, 4] and pitch == 0 and yaw in [90, 270]
     ],
