@@ -729,11 +729,16 @@ h2_pal_result_t h2_h2loader_cli_verify_reboot_status(
     if (after->running_partition != expected_partition ||
         after->next_partition != expected_partition ||
         after->active_role != expected_role ||
-        after->boot_intent != expected_intent || after->last != H2_PAL_OK) {
+        after->boot_intent != expected_intent ||
+        (kind == H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE &&
+         after->last != H2_PAL_OK)) {
         return H2_PAL_ERR_INVALID_STATE;
     }
     if (kind == H2_H2LOADER_HOST_COMMAND_REBOOT_APP ||
         kind == H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER) {
+        /* last_result describes installation/rollback, not this reboot.
+         * set_next_and_reboot preserves it; an old failure must not force
+         * 120 reconnects after the requested role is already responsive. */
         return metadata_equal(&before->stage, &after->stage)
             ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
     }
