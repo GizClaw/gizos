@@ -385,3 +385,71 @@ h2_pal_result_t h2_quectel_modem_get_signal(
     rc = h2_quectel_modem_get_signal_impl(platform, out_signal);
     return h2_quectel_operation_end(modem_state, rc);
 }
+
+/* Deferred maintenance: one bounded exchange per idle turn. Never wait for
+ * operation_lock here: its owner may need this worker to consume RX URCs. */
+void h2_quectel_sim_recover(void *user) {
+    h2_quectel_modem_t *modem = user;
+    if (h2_quectel_state_lock(modem) != H2_PAL_OK) { return; }
+    const int pending = modem->sim_poll_remaining != 0u || modem->sim_refresh_pending != 0u;
+    h2_quectel_state_unlock(modem);
+    if (!pending) { return; }
+    if (modem->operation_lock != NULL &&
+        h2_pal_mutex_try_lock(modem->config.sync_api, modem->operation_lock) != H2_PAL_OK) { return; }
+    h2_pal_result_t rc = h2_quectel_operation_begin(modem);
+    if (modem->operation_lock != NULL) {
+        (void)h2_pal_mutex_unlock(modem->config.sync_api, modem->operation_lock);
+    }
+    if (rc != H2_PAL_OK) { return; }
+    if (modem->sim_presence == 2u ||
+        (modem->sim_poll_remaining == 0u && modem->sim_refresh_pending == 0u)) {
+        (void)h2_quectel_operation_end(modem, H2_PAL_OK);
+        return;
+    }
+    h2_quectel_response_t response;
+    if (modem->sim_state != H2_PAL_MODEM_SIM_STATE_READY) {
+        if (modem->sim_poll_remaining != 0u) {
+            modem->sim_poll_remaining--;
+            (void)h2_quectel_at_exchange_timeout(modem, "AT+CPIN?", &response, 0, 1000u);
+        }
+    } else if (modem->sim_refresh_pending == 1u) {
+        modem->sim_refresh_pending = 2u;
+        (void)h2_quectel_at_exchange_timeout(modem, "AT+CIMI", &response, 0, 1000u);
+    } else {
+        const uint32_t generation = modem->sim_generation;
+        h2_pal_modem_status_t status = {0};
+        status.capabilities = modem->capabilities;
+        status.sim = H2_PAL_MODEM_SIM_STATE_READY;
+        status.rat = H2_PAL_MODEM_RAT_LTE;
+        const int packet = modem->sim_refresh_pending == 3u;
+        const uint32_t observed_generation = packet ? modem->packet_generation : modem->registration_generation;
+        rc = h2_quectel_at_exchange_timeout(modem, packet ? "AT+CGATT?" : "AT+CEREG?", &response, 0, 1000u);
+        if (generation == modem->sim_generation && modem->sim_state == H2_PAL_MODEM_SIM_STATE_READY) {
+            if (packet) {
+                status.packet = rc == H2_PAL_OK
+                    ? parse_packet(h2_quectel_response_find(&response, "+CGATT:")) : H2_PAL_MODEM_PACKET_UNKNOWN;
+                if (observed_generation == modem->packet_generation) {
+                    h2_quectel_post_system_event(modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_PACKET_CHANGED,
+                        &status, sizeof(status));
+                }
+                modem->sim_refresh_pending = 0u;
+                if (modem->sim_poll_remaining != 0u) { modem->sim_poll_remaining--; }
+                if ((modem->observed_status.registration == H2_PAL_MODEM_REGISTRATION_HOME ||
+                     modem->observed_status.registration == H2_PAL_MODEM_REGISTRATION_ROAMING) &&
+                    modem->observed_status.packet == H2_PAL_MODEM_PACKET_ATTACHED) {
+                    modem->sim_poll_remaining = 0u;
+                }
+            } else {
+                status.registration = rc == H2_PAL_OK
+                    ? parse_registration_line(h2_quectel_response_find(&response, "+CEREG:"))
+                    : H2_PAL_MODEM_REGISTRATION_UNKNOWN;
+                if (observed_generation == modem->registration_generation) {
+                    h2_quectel_post_system_event(modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_REGISTRATION_CHANGED,
+                        &status, sizeof(status));
+                }
+                modem->sim_refresh_pending = 3u;
+            }
+        }
+    }
+    (void)h2_quectel_operation_end(modem, H2_PAL_OK);
+}

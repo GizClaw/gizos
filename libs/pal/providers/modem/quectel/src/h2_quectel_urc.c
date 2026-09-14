@@ -88,11 +88,20 @@ void h2_quectel_handle_urc_locked(h2_quectel_modem_t *modem, const char *line) {
             enabled < 0 || enabled > 1 || inserted < 0 || inserted > 2) {
             return;
         }
+        if (inserted == 0) {
+            modem->sim_presence = 2u;
+            modem->sim_poll_remaining = 0u;
+            modem->sim_refresh_pending = 0u;
+        } else if (inserted == 1 && modem->sim_presence != 1u) {
+            modem->sim_presence = 1u;
+            modem->sim_poll_remaining = 30u;
+        }
         /* Inserted does not mean PIN-ready; repeated insertion indications
          * must not downgrade an already READY/LOCKED card. */
         if (inserted == 1 && modem->sim_seen != 0u &&
             (modem->sim_state == H2_PAL_MODEM_SIM_STATE_READY ||
              modem->sim_state == H2_PAL_MODEM_SIM_STATE_LOCKED)) {
+            if (modem->sim_state == H2_PAL_MODEM_SIM_STATE_LOCKED) { modem->sim_poll_remaining = 0u; }
             return;
         }
         h2_quectel_sim_update(modem, inserted == 0 ? H2_PAL_MODEM_SIM_STATE_ABSENT : H2_PAL_MODEM_SIM_STATE_UNKNOWN);
@@ -109,6 +118,8 @@ void h2_quectel_handle_urc_locked(h2_quectel_modem_t *modem, const char *line) {
         } else if (modem->sim_state == H2_PAL_MODEM_SIM_STATE_ABSENT) {
             state = H2_PAL_MODEM_SIM_STATE_ABSENT;
         }
+        /* A delayed readiness URC must not resurrect a physically removed SIM. */
+        if (modem->sim_presence == 2u) { return; }
         h2_quectel_sim_update(modem, state);
         return;
     }
@@ -234,6 +245,9 @@ void h2_quectel_handle_urc_locked(h2_quectel_modem_t *modem, const char *line) {
         modem->cell_locate_token_sent = 0u;
         modem->gnss_hold = 0u;
         modem->call_hold = 0u;
+        modem->sim_presence = 0u;
+        modem->sim_poll_remaining = 0u;
+        modem->sim_refresh_pending = 0u;
         modem->sim_seen = 0u;
         h2_quectel_sim_update(modem, H2_PAL_MODEM_SIM_STATE_UNKNOWN);
         h2_quectel_post_system_event(
@@ -247,6 +261,15 @@ void h2_quectel_handle_urc_locked(h2_quectel_modem_t *modem, const char *line) {
 void h2_quectel_sim_update(h2_quectel_modem_t *modem, h2_pal_modem_sim_state_t state) {
     if (modem->sim_seen != 0u && modem->sim_state == state) {
         return;
+    }
+    if (state == H2_PAL_MODEM_SIM_STATE_READY) {
+        modem->sim_refresh_pending = 1u;
+    } else {
+        modem->sim_refresh_pending = 0u;
+    }
+    if (state == H2_PAL_MODEM_SIM_STATE_LOCKED) {
+        modem->sim_poll_remaining = 0u;
+        modem->sim_refresh_pending = 0u;
     }
     modem->sim_seen = 1u;
     modem->sim_state = state;

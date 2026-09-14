@@ -244,6 +244,9 @@ static h2_pal_result_t h2_quectel_modem_close_impl(h2_pal_modem_t *platform, uin
     modem->call_hold = 0u;
     modem->data_hold = 0u;
     modem->model_checked = 0u;
+    modem->sim_presence = 0u;
+    modem->sim_poll_remaining = 0u;
+    modem->sim_refresh_pending = 0u;
     modem->sim_seen = 0u;
     modem->registration_seen = 0u;
     modem->packet_seen = 0u;
@@ -341,7 +344,8 @@ h2_pal_result_t h2_quectel_modem_init(
         return H2_PAL_ERR_INVALID_ARG;
     }
     if ((config->urc_task_api != NULL || config->urc_queue_api != NULL) &&
-        (config->urc_task_api == NULL || config->urc_queue_api == NULL || config->sync_api == NULL)) {
+        (config->urc_task_api == NULL || config->urc_queue_api == NULL || config->sync_api == NULL ||
+         config->sync_api->vtable == NULL || config->sync_api->vtable->try_lock_mutex == NULL)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     memset(modem, 0, sizeof(*modem));
@@ -405,8 +409,8 @@ h2_pal_result_t h2_quectel_modem_init(
         : &s_quectel_modem_vtable;
     modem->data_status.state = H2_PAL_MODEM_DATA_CLOSED;
     if (config->urc_task_api != NULL) {
-        h2_pal_result_t rc = h2_modem_urc_start(&modem->urc_worker,
-            config->urc_task_api, config->urc_queue_api, config->allocator, dispatch_urc, modem);
+        h2_pal_result_t rc = h2_modem_urc_start_idle(&modem->urc_worker,
+            config->urc_task_api, config->urc_queue_api, config->allocator, dispatch_urc, modem, h2_quectel_sim_recover, 1000u);
         if (rc != H2_PAL_OK) {
             (void)h2_pal_mutex_destroy(config->sync_api, modem->operation_lock);
             modem->operation_lock = NULL;

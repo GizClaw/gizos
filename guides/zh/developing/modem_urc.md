@@ -24,7 +24,7 @@ consumer 必须在只交付新字节的边界调用 `h2_quectel_rx_feed`，物�
 
 ## 锁和生命周期
 
-锁顺序为 operation lock → state lock。operation lock 保持完整公共操作和 AT 事务串行；嵌套操作只保留一次 state lock acquisition。阻塞 command/read/write 期间释放 state lock，保留 operation lock。URC worker 只取 state lock，所以不等待 identity 或注册查询的 AT timeout。纯缓存 getter 同样只取 state lock。
+锁顺序为 operation lock → state lock。operation lock 保持完整公共操作和 AT 事务串行；嵌套操作只保留一次 state lock acquisition。阻塞 command/read/write 期间释放 state lock，保留 operation lock。URC 行处理只取 state lock，所以不等待 identity 或注册查询的 AT timeout。Quectel 的后台识卡使用同一 worker 的 idle maintenance；它先 try operation lock，忙则让出，绝不阻塞等待其他 AT 操作。启用 Quectel worker 的 sync provider 必须实现 try_lock_mutex。纯缓存 getter 同样只取 state lock。
 
 URC 的系统事件、SIM invalidation 和 sleep gate 回调不得重入 modem API，不能等待 AT/RX/URC 任务。state lock 的短临界区不意味着任意 consumer 回调都自动无阻塞，板级实现必须遵守合同。close 的 transport teardown 在 state lock 外执行，deinit 在生产者停止后于所有 provider lock 外 join worker。join 失败保留实例供重试。SIM/reset generation 用于拒绝跨失效边界的 command response。
 
@@ -37,3 +37,28 @@ URC 的系统事件、SIM invalidation 和 sleep gate 回调不得重入 modem A
 ## 验证边界
 
 公共回归包括分片/累计重放、重复真实通知、普通应答风暴、长事务期间消费者进度、状态边沿和生命周期失败重试。固件构建及真实按键、注册、SIM、PPP 验收由 consumer 在配对接线后完成；host 测试不能代替设备结论。
+
+## 插卡后的就绪恢复
+
+`h2_quectel_is_urc` 接受 `+QSIMSTAT` 和非对应查询期间的 `+CPIN:`；
+`h2_quectel_handle_urc_locked` 将 READY、SIM PIN/SIM PUK 分别映射为 READY、LOCKED。
+对应 `AT+CPIN?` 的响应由 AT parser 同步处理，不依赖入队。`+QIND`、
+`Call Ready` 目前不进入队列，也不被当作 SIM 就绪依据。
+
+新插入边沿先发布 UNKNOWN，只安排后台工作，回调不执行 AT。
+worker 在队列空闲 1000 ms 后执行一次维护，每轮最多一个 1000 ms 超时的 AT 交换，
+每条通知之间仍先处理队列；持续通知或 operation lock 忙会推迟维护，30 次是尝试上限，
+不是 30 秒墙钟承诺。先最多尝试 30 次 `AT+CPIN?`，取得 READY 后依次执行
+`AT+CIMI`、`AT+CEREG?`、`AT+CGATT?`，用剩余预算重查注册/附着直至恢复。
+IMSI 仍由既有 get_identity 现场读取，不引入身份缓存或记录 IMSI 日志。
+SIM、注册、packet 沿用系统事件和语义去重；LOCKED 停止轮询，后续 READY URC 可启动刷新。
+拔卡、reset、close 取消待办；重复插入通知不重置预算，真正拔出后再插入得到新预算。
+明确拔卡后的迟到 CPIN URC不能恢复旧卡。没有 worker 的同步使用者继续通过 get_status 查询。
+
+移远[官方热插拔 FAQ](https://www.quectel.com/faqs/10-1-how-to-enable-hot-swap-function-of-sim-card/)
+列出 `+CPIN: NOT READY`、`+QSIMSTAT: 1,0/1,1` 及 Call Ready，
+但不是 H106 Zero EC800M 特定固件的实测序列。本次只有台架现象描述，没有原始 UART1
+捕获，不能证明该固件会发 READY 或某个 QIND，也不能证明其必须执行 CFUN。
+因此恢复不自动执行 CFUN；仅保留 QSIMDET 配置改变时既有的一次 restart_module 流程。
+若 30 次 CPIN 后仍未就绪，应采集 SIM_DET 电平、QSIMDET/QSIMSTAT 读回、
+CPIN 应答及完整通知顺序，再依据该固件的移远说明决定是否需要 SIM 重新初始化。

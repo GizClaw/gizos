@@ -31,7 +31,12 @@ static void urc_task(void *user) {
     for (;;) {
         urc_line_t line;
         h2_pal_result_t rc = (h2_pal_result_t)h2_pal_queue_recv(
-            worker->queue_api, worker->queue, &line, H2_PAL_QUEUE_WAIT_FOREVER);
+            worker->queue_api, worker->queue, &line,
+            worker->idle != NULL ? worker->idle_timeout_ms : H2_PAL_QUEUE_WAIT_FOREVER);
+        if (rc == H2_PAL_ERR_TIMEOUT && worker->idle != NULL) {
+            worker->idle(worker->user);
+            continue;
+        }
         if (rc != H2_PAL_OK) {
             worker->result = rc == H2_PAL_ERR_CLOSED ? H2_PAL_OK : rc;
             return;
@@ -48,7 +53,16 @@ h2_pal_result_t h2_modem_urc_start(
     const h2_pal_mem_api_t *allocator,
     h2_modem_urc_handler_t handler,
     void *user) {
-    if (worker == NULL || handler == NULL || task_api == NULL ||
+    return h2_modem_urc_start_idle(worker, task_api, queue_api, allocator, handler, user, NULL, 0u);
+}
+
+h2_pal_result_t h2_modem_urc_start_idle(
+    h2_modem_urc_worker_t *worker, const h2_pal_task_api_t *task_api,
+    const h2_pal_queue_api_t *queue_api, const h2_pal_mem_api_t *allocator,
+    h2_modem_urc_handler_t handler, void *user, void (*idle)(void *user),
+    uint32_t idle_timeout_ms) {
+    if ((idle != NULL && (idle_timeout_ms == 0u || idle_timeout_ms == H2_PAL_QUEUE_WAIT_FOREVER)) ||
+        worker == NULL || handler == NULL || task_api == NULL ||
         task_api->vtable == NULL || task_api->vtable->start == NULL ||
         task_api->vtable->join == NULL || queue_api == NULL ||
         queue_api->vtable == NULL || queue_api->vtable->create == NULL ||
@@ -61,6 +75,7 @@ h2_pal_result_t h2_modem_urc_start(
     }
     *worker = (h2_modem_urc_worker_t){
         .task_api = task_api, .queue_api = queue_api, .handler = handler, .user = user,
+        .idle = idle, .idle_timeout_ms = idle_timeout_ms,
     };
     h2_pal_queue_config_t queue_config = {
         .name = H2_MODEM_URC_TASK_NAME,

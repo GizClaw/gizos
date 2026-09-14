@@ -86,7 +86,8 @@ typedef struct h2_quectel_modem_config {
     h2_quectel_modem_command_fn command;
     const h2_pal_sync_api_t *sync_api;
     /* Supply both APIs for asynchronous RX. The worker lives from init to
-     * deinit; sync_api protects state independently of serialized AT operations.
+     * deinit; sync_api must implement try_lock_mutex for deferred SIM recovery
+     * and protects state independently of serialized AT operations.
      * With this worker, command() returns solicited text; any URCs included
      * in that text are ignored because physical RX already delivered them. */
     const h2_pal_task_api_t *urc_task_api;
@@ -153,6 +154,10 @@ struct h2_quectel_modem {
     uint32_t sim_generation;
     /* RX-written CPIN outcome; access atomically as in modem/common counters. */
     uint32_t cpin_absent_seen;
+    /* Deferred insertion recovery; protected by the provider state lock. */
+    uint8_t sim_poll_remaining;
+    uint8_t sim_refresh_pending;
+    uint8_t sim_presence; /* 0 unknown, 1 inserted, 2 removed */
     uint8_t sim_seen;
     h2_pal_modem_sim_state_t sim_state;
     uint8_t prepared;
