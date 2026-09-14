@@ -415,11 +415,11 @@ static int poll_physical(
       rc != H2_PAL_ERR_WOULD_BLOCK) {
     return rc;
   }
-  if (count != 0u) {
-    int input_rc = h2_iostreamikcp_filter_input(
-        &self->filter, buffer, count, on_frame, self);
-    if (input_rc != H2_PAL_OK) return input_rc;
-  }
+  /* A callback can exhaust its deadline with complete frames still buffered.
+   * Resume those frames even when the physical link supplies no new bytes. */
+  int input_rc = h2_iostreamikcp_filter_input(
+      &self->filter, buffer, count, on_frame, self);
+  if (input_rc != H2_PAL_OK) return input_rc;
   if (self->stream != NULL) {
     int update_rc = h2_iostreamikcp_update(self->stream, timer_get_ms());
     if (update_rc != H2_PAL_OK) return update_rc;
