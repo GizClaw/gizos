@@ -36,8 +36,9 @@ web_archive_browser_test(
     fails = ["SKELETON BENCH SKIP"],
     taps = [["SKELETON FRAME initial", 216, 230]],
     clicks = [["SKELETON BENCH COMPLETE", "#stop"]],
-    timeout_s = 900,
-    size = "large",
+    # Keep all 144000 samples; unoptimized CI needs longer than desktop -O2.
+    timeout_s = 2400,
+    size = "enormous",
 )
 
 web_archive_browser_test(

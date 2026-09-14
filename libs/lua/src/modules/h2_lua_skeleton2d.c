@@ -4,10 +4,11 @@
 #include "h2_skeleton2d.h"
 #include <limits.h>
 #include <stddef.h>
+#include <stdalign.h>
 #define DEF "h2.skeleton2d.definition"
 #define ACTOR "h2.skeleton2d.actor"
 #define WRITER "h2.skeleton2d.writer"
-typedef union handle {
+typedef struct handle {
   struct {
     void *ptr;
     size_t bytes;
@@ -16,6 +17,11 @@ typedef union handle {
     h2_skeleton2d_part_state_t *parts;
     size_t nb, np;
   } v;
+} handle_t;
+
+/* Lua userdata only guarantees Lua value alignment, which can be less than
+ * the core arena alignment (for example, 8 vs 16 bytes on Linux x86_64). */
+typedef union storage_alignment {
 #if defined(_MSC_VER) && !defined(__clang__)
   /* Match the core's caller-storage alignment on MSVC. */
   long double align;
@@ -24,7 +30,13 @@ typedef union handle {
 #else
   max_align_t align;
 #endif
-} handle_t;
+} storage_alignment_t;
+static void *arena(handle_t *h) {
+  unsigned char *p = (unsigned char *)(h + 1);
+  size_t alignment = alignof(storage_alignment_t);
+  size_t remainder = (uintptr_t)p % alignment;
+  return p + (remainder ? alignment - remainder : 0);
+}
 typedef struct resource {
   size_t nv, np;
   h2_lua_display_vertex_t *vertices;
@@ -203,11 +215,12 @@ static int compile(lua_State *s) {
   h2_skeleton2d_config_t cfg = {bones, nb, parts, np, clips, nc};
   size_t bytes;
   check(s, h2_skeleton2d_definition_size(&cfg, &bytes), "compile");
-  handle_t *h = lua_newuserdatauv(s, sizeof(*h) + bytes, 0);
+  size_t total = sizeof(handle_t) + alignof(storage_alignment_t) - 1 + bytes;
+  handle_t *h = lua_newuserdatauv(s, total, 0);
   memset(h, 0, sizeof(*h));
-  h->v.bytes = sizeof(*h) + bytes;
+  h->v.bytes = total;
   h2_skeleton2d_definition_t *d;
-  check(s, h2_skeleton2d_definition_init(h + 1, bytes, &cfg, &d), "compile");
+  check(s, h2_skeleton2d_definition_init(arena(h), bytes, &cfg, &d), "compile");
   h->v.ptr = d;
   luaL_setmetatable(s, DEF);
   return 1;
@@ -218,19 +231,20 @@ static int instance_new(lua_State *s) {
   check(s, h2_skeleton2d_instance_size(d->v.ptr, &bytes), "instance");
   size_t nb = h2_skeleton2d_bone_count(d->v.ptr),
          np = h2_skeleton2d_part_count(d->v.ptr);
-  size_t total = sizeof(handle_t) + bytes + nb * sizeof(h2_skeleton2d_local_t) +
+  size_t total = sizeof(handle_t) + alignof(storage_alignment_t) - 1 +
+                 bytes + nb * sizeof(h2_skeleton2d_local_t) +
                  np * sizeof(h2_skeleton2d_part_state_t);
   handle_t *a = lua_newuserdatauv(s, total, 1);
   memset(a, 0, sizeof(*a));
   h2_skeleton2d_t *actor;
-  check(s, h2_skeleton2d_instance_init(a + 1, bytes, d->v.ptr, &actor),
+  check(s, h2_skeleton2d_instance_init(arena(a), bytes, d->v.ptr, &actor),
         "instance");
   a->v.ptr = actor;
   a->v.definition = d->v.ptr;
   a->v.bytes = total;
   a->v.nb = nb;
   a->v.np = np;
-  a->v.locals = (void *)((unsigned char *)(a + 1) + bytes);
+  a->v.locals = (void *)((unsigned char *)arena(a) + bytes);
   a->v.parts = (void *)(a->v.locals + nb);
   lua_pushvalue(s, 1);
   lua_setiuservalue(s, -2, 1);
