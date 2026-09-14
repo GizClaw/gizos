@@ -14,7 +14,7 @@ enum { H2_JIELI_ADV_DATA_MAX = 251, ADV_SET_2M_PHY = 2, ADV_SET_CODED_PHY = 3,
 static struct {
     int started, starting, stopping;
     uint16_t conn_handle;
-    unsigned conn_pending, conn_submitting;
+    unsigned conn_pending, conn_submitting, conn_hook_skipped;
     uint32_t conn_generation;
     struct h2_pal_ble_adv_set adv;
 } h2_ble;
@@ -26,6 +26,7 @@ static void h2_restart_legacy_advertising(void);
 static void (*sdk_hook)(void);
 static int (*controller_fence)(int);
 static int controller_generation;
+static int early_hook, registrations, stop_hook;
 static int fence_error, registration_error, stop_error, sdk_starts, posted;
 static atomic_int hold_submit, submit_entered, release_submit;
 enum { Q_CALLBACK = 0x300000 };
@@ -33,7 +34,14 @@ int ble_op_regist_thread_call(void (*hook)(void)) {
     check_unlocked();
     if (registration_error)
         return registration_error;
+    ++registrations;
     sdk_hook = hook;
+    if (early_hook && registrations == 1) {
+        sdk_hook = NULL;
+        hook();
+        assert(h2_adv_commands.phase == 1u);
+        assert(controller_fence == NULL);
+    }
     return 0;
 }
 int ble_cmd_handler_is_idle(void) { check_unlocked(); return 1; }
@@ -71,7 +79,16 @@ static int ble_op_set_adv_data(uint8_t size, const uint8_t *data) {
     return 0;
 }
 static int ble_op_set_rsp_data(uint8_t size, const uint8_t *data) { (void)size; (void)data; return 0; }
-static int ble_op_adv_enable(int enabled) { check_unlocked(); return enabled ? 0 : stop_error; }
+static int ble_op_adv_enable(int enabled) {
+    check_unlocked();
+    if (!enabled && stop_hook) {
+        void (*hook)(void) = sdk_hook;
+        sdk_hook = NULL;
+        assert(hook != NULL);
+        hook();
+    }
+    return enabled ? 0 : stop_error;
+}
 static int ble_op_set_ext_adv_param(const void *data, uint16_t size) {
     check_unlocked();
     assert(size == sizeof(*ext_params));
@@ -151,6 +168,45 @@ int main(int argc, char **argv) {
         .interval_min_ms = 100, .interval_max_ms = 100,
         .primary_phy = H2_PAL_BLE_PHY_1M, .secondary_phy = H2_PAL_BLE_PHY_1M,
     };
+    if (strcmp(argv[1], "early_hook") == 0 ||
+        strcmp(argv[1], "early_restart") == 0 ||
+        strcmp(argv[1], "stop_hook") == 0) {
+        const int restart = strcmp(argv[1], "early_restart") == 0;
+        stop_hook = strcmp(argv[1], "stop_hook") == 0;
+        early_hook = !stop_hook;
+        if (!restart && !stop_hook)
+            params.type = H2_PAL_BLE_ADV_TYPE_EXTENDED;
+        h2_pal_ble_adv_set_t *set = NULL;
+        assert(h2_adv_set_create(NULL, &params, &set) == 0);
+        assert(h2_adv_set_data(NULL, set, &data) == 0);
+        assert(h2_adv_set_start(NULL, set) == 0);
+        if (stop_hook)
+            assert(h2_adv_set_stop(NULL, set) == 0);
+        assert(registrations == 2 && sdk_hook != NULL);
+        assert(h2_adv_commands.phase == 1u && controller_fence == NULL);
+        if (restart) {
+            set->started = 0;
+            h2_restart_legacy_advertising();
+            assert(h2_adv_commands.restart && sdk_starts == 1);
+        }
+        void (*hook)(void) = sdk_hook;
+        sdk_hook = NULL;
+        hook();
+        assert(controller_fence != NULL && h2_adv_commands.phase == 2u);
+        assert(h2_adv_set_start(NULL, set) == H2_PAL_ERR_WOULD_BLOCK);
+        assert(controller_fence(controller_generation) == 0);
+        assert(h2_adv_commands.phase == 0u);
+        if (restart) {
+            assert(sdk_hook != NULL);
+            hook = sdk_hook;
+            sdk_hook = NULL;
+            hook();
+            assert(sdk_starts == 2);
+        } else {
+            assert(h2_adv_set_start(NULL, set) == 0);
+        }
+        return 0;
+    }
     if (strcmp(argv[1], "extended") == 0 || strcmp(argv[1], "submitting") == 0 ||
         strcmp(argv[1], "state_race") == 0 || strcmp(argv[1], "registration_error") == 0 ||
         strcmp(argv[1], "fence_error") == 0 || strcmp(argv[1], "pending_init") == 0) {

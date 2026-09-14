@@ -167,6 +167,7 @@ typedef struct h2_jieli_ble_state {
   struct conn_update_param_t conn_params;
   unsigned conn_pending;
   unsigned conn_submitting;
+  unsigned conn_hook_skipped;
   uint32_t conn_generation;
 } h2_jieli_ble_state_t;
 
@@ -338,6 +339,7 @@ static struct {
   uint32_t generation;
   unsigned phase; /* 0 reusable, 1 btstack, 2 controller, 3 failed fence */
   unsigned submitting;
+  unsigned hook_skipped;
   unsigned restart;
 } h2_adv_commands;
 
@@ -587,13 +589,22 @@ static int h2_adv_controller_consumed(int generation) {
   if (h2_adv_commands.phase == 2u &&
       h2_adv_commands.generation == (uint32_t)generation)
     h2_adv_commands.phase = 0u;
+  const int restart = h2_adv_commands.phase == 0u &&
+      h2_adv_commands.restart && !h2_ble.stopping;
   h2_gatt_unlock();
+  /* The btstack hook is one-shot; return the deferred restart to that task. */
+  if (restart) {
+    const int result = ble_op_regist_thread_call(h2_connection_command_consumed);
+    if (result != 0)
+      h2_ble_log("H2_JIELI_BLE_ADV_REARM_ERROR code=%d\r\n", result);
+  }
   stack_run_loop_resume();
   return 0;
 }
 
 static void h2_adv_command_consumed(void) {
   h2_gatt_lock();
+  if (h2_adv_commands.submitting) h2_adv_commands.hook_skipped = 1u;
   const uint32_t generation = h2_adv_commands.generation;
   const int eligible = h2_adv_commands.phase == 1u &&
                        !h2_adv_commands.submitting;
@@ -603,6 +614,7 @@ static void h2_adv_command_consumed(void) {
     const int retire = h2_adv_commands.generation == generation &&
                        h2_adv_commands.phase == 1u &&
                        !h2_adv_commands.submitting;
+    if (h2_adv_commands.submitting) h2_adv_commands.hook_skipped = 1u;
     if (retire) h2_adv_commands.phase = 2u;
     h2_gatt_unlock();
     if (retire) {
@@ -656,6 +668,7 @@ static int h2_adv_apply_with_params(struct h2_pal_ble_adv_set *set,
   h2_adv_commands.snapshot = *set;
   h2_adv_commands.phase = 1u;
   h2_adv_commands.submitting = 1u;
+  h2_adv_commands.hook_skipped = 0u;
   h2_adv_commands.restart = 0u;
   h2_adv_commands.generation = h2_adv_commands.generation == INT32_MAX
       ? 1u : h2_adv_commands.generation + 1u;
@@ -665,11 +678,20 @@ static int h2_adv_apply_with_params(struct h2_pal_ble_adv_set *set,
   if (registered) rc = h2_adv_submit(&h2_adv_commands.snapshot);
   h2_gatt_lock();
   h2_adv_commands.submitting = 0u;
+  const int rearm = h2_adv_commands.hook_skipped;
+  h2_adv_commands.hook_skipped = 0u;
   if (!registered) h2_adv_commands.phase = 0u;
   if (rc == H2_PAL_OK)
     set->started = set->params.type != H2_PAL_BLE_ADV_TYPE_LEGACY ||
                    h2_ble.conn_handle == 0u;
   h2_gatt_unlock();
+  /* An application-thread idle query cannot prove consumption. Requeue the
+   * one-shot hook after publication instead of retiring borrowed storage here. */
+  if (registered && rearm) {
+    const int result = ble_op_regist_thread_call(h2_connection_command_consumed);
+    if (result != 0)
+      h2_ble_log("H2_JIELI_BLE_ADV_REARM_ERROR code=%d\r\n", result);
+  }
   if (registered) stack_run_loop_resume();
   if (rc == H2_PAL_OK && submitted != NULL) *submitted = 1;
   return rc;
@@ -972,6 +994,7 @@ static int h2_adv_stop_request(h2_pal_ble_adv_set_t *set, int destroy) {
     return H2_PAL_ERR_WOULD_BLOCK;
   }
   h2_adv_commands.submitting = 1u;
+  h2_adv_commands.hook_skipped = 0u;
   const int started = set->started;
   const int extended = set->params.type == H2_PAL_BLE_ADV_TYPE_EXTENDED;
   h2_gatt_unlock();
@@ -988,6 +1011,8 @@ static int h2_adv_stop_request(h2_pal_ble_adv_set_t *set, int destroy) {
   }
   h2_gatt_lock();
   h2_adv_commands.submitting = 0u;
+  const int rearm = h2_adv_commands.hook_skipped;
+  h2_adv_commands.hook_skipped = 0u;
   if (rc == H2_PAL_OK) {
     set->start_requested = 0;
     set->started = 0;
@@ -995,6 +1020,11 @@ static int h2_adv_stop_request(h2_pal_ble_adv_set_t *set, int destroy) {
     if (destroy) memset(set, 0, sizeof(*set));
   }
   h2_gatt_unlock();
+  if (rearm) {
+    const int result = ble_op_regist_thread_call(h2_connection_command_consumed);
+    if (result != 0)
+      h2_ble_log("H2_JIELI_BLE_ADV_REARM_ERROR code=%d\r\n", result);
+  }
   /* A pending start's pointer fence may have observed stop's submission. */
   h2_gatt_lock();
   const int wake = h2_adv_commands.phase == 1u;
@@ -1114,6 +1144,7 @@ static void h2_connection_command_consumed(void) {
   if (h2_ble_call_begin(&call) != H2_PAL_OK) return;
   h2_adv_command_consumed();
   h2_gatt_lock();
+  if (h2_ble.conn_submitting) h2_ble.conn_hook_skipped = 1u;
   const uint32_t generation = h2_ble.conn_generation;
   const int eligible = h2_ble.conn_pending && !h2_ble.conn_submitting;
   h2_gatt_unlock();
@@ -1149,6 +1180,7 @@ static int h2_update_connection(
   }
   h2_ble.conn_pending = 1u;
   h2_ble.conn_submitting = 1u;
+  h2_ble.conn_hook_skipped = 0u;
   ++h2_ble.conn_generation;
   h2_ble.conn_params = (struct conn_update_param_t){
       .interval_min = (uint16_t)(params->interval_min_ms * 4u / 5u),
@@ -1165,9 +1197,17 @@ static int h2_update_connection(
     result = ble_op_conn_param_request(conn_handle, &h2_ble.conn_params);
   h2_gatt_lock();
   h2_ble.conn_submitting = 0u;
+  const int rearm = h2_ble.conn_hook_skipped;
+  h2_ble.conn_hook_skipped = 0u;
   if (result != 0) h2_ble.conn_pending = 0u;
   h2_gatt_unlock();
-  /* The consumer may have visited the hook while submission was in flight. */
+  /* Only the consuming SDK thread can retire the request buffer. */
+  if (result == 0 && rearm) {
+    const int rearm_result =
+        ble_op_regist_thread_call(h2_connection_command_consumed);
+    if (rearm_result != 0)
+      h2_ble_log("H2_JIELI_BLE_CONN_REARM_ERROR code=%d\r\n", rearm_result);
+  }
   if (result == 0) stack_run_loop_resume();
   h2_ble_log(
       "H2_JIELI_BLE_CONN_PARAMS request=%u-%u latency=%u timeout=%u "

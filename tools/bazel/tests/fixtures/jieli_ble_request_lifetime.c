@@ -9,7 +9,7 @@ struct conn_update_param_t { uint16_t interval_min, interval_max, latency, timeo
 static struct {
     uint16_t conn_handle;
     struct conn_update_param_t conn_params;
-    unsigned conn_pending, conn_submitting;
+    unsigned conn_pending, conn_submitting, conn_hook_skipped;
     uint32_t conn_generation;
 } h2_ble;
 static pthread_mutex_t gate = PTHREAD_MUTEX_INITIALIZER;
@@ -21,12 +21,19 @@ static int h2_ble_cmd_result(int value) { return value; }
 static void (*sdk_hook)(void);
 static const struct conn_update_param_t *borrowed;
 static atomic_int blocked, entered, release_call;
+static int early_hook, registrations;
 static int registration_error, request_error, idle = 1, requests;
 int ble_op_regist_thread_call(void (*hook)(void)) {
     check_unlocked();
     if (registration_error)
         return registration_error;
+    ++registrations;
     sdk_hook = hook;
+    if (early_hook && registrations == 1) {
+        sdk_hook = NULL;
+        hook();
+        assert(h2_ble.conn_pending);
+    }
     return 0;
 }
 int ble_cmd_handler_is_idle(void) { check_unlocked(); return idle; }
@@ -69,6 +76,16 @@ static void *submit(void *unused) {
 int main(int argc, char **argv) {
     assert(argc == 2);
     h2_ble.conn_handle = 42;
+    if (strcmp(argv[1], "early_hook") == 0) {
+        early_hook = 1;
+        assert(h2_update_connection(NULL, 42, &first) == 0);
+        assert(h2_ble.conn_pending);
+        assert(registrations == 2 && sdk_hook != NULL);
+        consume();
+        assert(!h2_ble.conn_pending);
+        assert(h2_update_connection(NULL, 42, &second) == 0);
+        return 0;
+    }
     if (strcmp(argv[1], "registration_error") == 0) {
         registration_error = H2_PAL_ERR_IO;
         assert(h2_update_connection(NULL, 42, &first) == H2_PAL_ERR_IO);

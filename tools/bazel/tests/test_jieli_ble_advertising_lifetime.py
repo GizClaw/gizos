@@ -37,7 +37,7 @@ class AdvertisingLifetimeTest(unittest.TestCase):
             flags = os.environ.get('JIELI_TEST_CFLAGS', '-fsanitize=address').split()
             subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-pthread', *flags,
                 '-I', str(ROOT / 'libs/pal/include'), str(test), '-o', str(binary)], check=True)
-            for case in ['extended', 'legacy_borrow', 'failed_update', 'null_uuids', 'submitting', 'state_race', 'registration_error', 'fence_error', 'stop_error', 'deferred', 'pending_init']:
+            for case in ['early_hook', 'early_restart', 'stop_hook', 'extended', 'legacy_borrow', 'failed_update', 'null_uuids', 'submitting', 'state_race', 'registration_error', 'fence_error', 'stop_error', 'deferred', 'pending_init']:
                 with self.subTest(case=case):
                     result = subprocess.run([str(binary), case], capture_output=True, text=True, timeout=15,
                         env=dict(os.environ, ASAN_OPTIONS='detect_stack_use_after_return=1'))

@@ -8,7 +8,7 @@ struct h2_pal_ble_adv_set {
     int used, started, start_requested;
 };
 static struct { struct h2_pal_ble_adv_set adv; } h2_ble;
-static struct { unsigned submitting, restart, phase; } h2_adv_commands;
+static struct { unsigned submitting, restart, phase, hook_skipped; } h2_adv_commands;
 static int locked;
 static void h2_gatt_lock(void) { assert(!locked); locked = 1; }
 static void h2_gatt_unlock(void) { assert(locked); locked = 0; }
@@ -27,6 +27,13 @@ static void h2_ble_post(int type, const void *data, size_t size) {
     (void)data;
     assert(size == sizeof(h2_pal_ble_adv_set_event_t));
 }
+static void h2_connection_command_consumed(void) {}
+static int ble_op_regist_thread_call(void (*hook)(void)) {
+    assert(!locked);
+    (void)hook;
+    return 0;
+}
+#define h2_ble_log(...) assert(!locked)
 /* REAL_PROVIDER */
 int main(void) {
     h2_ble.adv.used = h2_ble.adv.started = h2_ble.adv.start_requested = 1;
