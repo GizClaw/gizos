@@ -276,6 +276,9 @@ h2_pal_result_t h2_quectel_modem_prepare(h2_quectel_modem_t *modem) {
     if (rc != H2_PAL_OK) {
         return rc;
     }
+    /* Opening the control channel does not require a ready SIM. Keep this
+     * scope across every configuration exchange and the bounded restart;
+     * AT cancellation still checks reset_generation throughout preparation. */
     modem->preparing = 1u;
     rc = h2_quectel_modem_prepare_impl(modem);
     if (rc == H2_PAL_ERR_INVALID_STATE && modem->sim_restart_required != 0u &&

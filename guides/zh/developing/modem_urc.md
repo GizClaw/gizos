@@ -86,3 +86,38 @@ Host 测试覆盖支持/不支持/超时的 prepare、来电主叫挂断立即�
 看门狗先 try-lock operation mutex，忙则跳过本轮；持锁后重新检查来电与 opened 状态，保留已有 state-lock 释放/恢复和睡眠 gate 合同。单次查询使用 `H2_QUECTEL_RING_POLL_TIMEOUT_MS=1000` 毫秒预算；command transport 必须遵守传入超时，原始 read/write 路径按总等待预算限制 I/O。失败、超时、截断或歧义列表视为未知，不打印周期错误、不发布结束，下轮重试。成功列表按已知模组 ID（尚无 ID 时按 MT 和可用号码）关联；来电消失即复用终止事件去重发布 MODEM_CALL_ENDED，迟到 NO CARRIER 不重复。ACTIVE 发布状态变化并停止；本地接听、拒接、结束及 close/deinit 同样停止，迟到 RING 不重新开启已接听来电的看门狗。查询期间收到的新状态优先于查询结果。
 
 该能力仅覆盖未接听来电，保持现有单呼叫快照，不监控已接通通话；未配置 worker 的同步使用方式没有自动轮询。Host 测试验证周期回调、超时未知、迟到终止去重、DSCI 按次禁用、CLCC 接通和本地生命周期停止；串口实际结束时延仍需硬件验收。
+
+## 首次 open 与 SIM 启动通知
+
+`open` 打开 AT/控制通道，不等待 SIM READY 或网络注册。初始化 SIM 为 UNKNOWN、
+查询发现 ABSENT、prepare 期间插卡再 READY，都不应仅因 SIM generation 改变而失败。
+物理拔卡仍立即使数据失效，ABSENT/LOCKED 仍阻止 PPP；物理缺卡之后的迟到 CPIN READY
+仍被忽略，必须先收到插卡状态。READY 本身不增加 SIM generation。
+
+`h2_quectel_modem_open` 的错误传播路径如下：
+
+- `operation_begin` 获取 operation/state 锁；随后调用 board `init`，原样传播其错误。
+- `prepare` 设置 `preparing=1`，依次执行 AT、ATE0、CMEE、CLIP、可选 DSCI、
+  CREG/CGREG/CEREG、两个 RI QCFG，再执行 power prepare 的 CGMM、QSIMDET 查询、
+  QSIMSTAT 通知使能和可选 QSCLK。AT、CLIP 和 power prepare 的错误直接传播；
+  其余为 best-effort，但整轮最终仍检查 reset generation。
+- 两种 AT transport 都在交换期间检测 reset generation；只有非 prepare 交换才因
+  SIM generation 变化返回 `H2_PAL_ERR_INVALID_STATE`。该保护已由提交
+  `02baf05235722892fe716e535a3e9c895aafa08c` 引入。
+- QSIMDET 已匹配不会设置 `sim_restart_required`。只有配置不匹配并成功写入后才要求
+  重启；有回调时最多重启一次并重新 prepare，无回调、重启后仍不匹配或已有待重启
+  标志时保留错误。意外 RDY/reset 仍取消当前 prepare，不能当作普通 SIM 边沿忽略。
+- prepare 结束清除 `preparing`；失败时调用 board `deinit`，成功时设置 `opened`。
+  `operation_end` 只处理锁和 sleep reconcile，没有额外的 SIM generation 取消判断。
+  board command/sleep gate/锁回调返回的错误同样可以透传为 -7。
+
+回归测试在 14 个 prepare AT 步骤分别注入 ABSENT→READY、ABSENT→插卡 UNKNOWN→READY、
+真实拔卡和 RDY，覆盖 command 与 read/write 两种 transport，共 112 个组合。
+移除 prepare 的 SIM generation 豁免后，新增 open 成功断言失败；保留修复则全部通过。
+这些测试不证明台架固件包含该提交，也不覆盖外部 board 的 CMUX 恢复实现。
+
+若集成固件仍报首次 open=-7，应记录实际 GizOS revision、board init 返回码、失败 AT
+命令与返回码、交换前后 reset/SIM generation、preparing 和两个 sim_restart 标志。
+只有 `H2_MODEM_RECOVERY stage=awake rc=0` 与稍后的应用 SIM 事件，无法区分 board init
+后续失败、transport 返回 -7、意外 RDY 或旧版本的 SIM generation 误取消；应用事件
+消费时间也不能确定通知落在哪条 prepare 命令内。

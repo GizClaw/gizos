@@ -13,6 +13,8 @@ struct h2_pal_mutex {
 
 typedef struct fixture {
     h2_quectel_modem_t modem;
+    char raw_response[256];
+    size_t raw_offset;
     unsigned commands;
     unsigned restarts;
     unsigned dsci_commands;
@@ -28,6 +30,7 @@ typedef struct fixture {
     int retain_sim_level;
     const char *notify_command;
     const char *notify_line;
+    const char *notify_line_second;
     const char *sim_response;
     unsigned sleep_count;
     unsigned wake_count;
@@ -160,6 +163,9 @@ static h2_pal_result_t command(void *user, const char *cmd, char *response, size
     if (f->notify_command != NULL && strcmp(cmd, f->notify_command) == 0) {
         f->notify_command = NULL;
         h2_quectel_handle_urc_line(&f->modem, f->notify_line);
+        if (f->notify_line_second != NULL) {
+            h2_quectel_handle_urc_line(&f->modem, f->notify_line_second);
+        }
     }
     if (f->fail_command != NULL && strcmp(cmd, f->fail_command) == 0) {
         return H2_PAL_ERR_TIMEOUT;
@@ -201,6 +207,32 @@ static h2_pal_result_t command(void *user, const char *cmd, char *response, size
     strcpy(response, text);
     return H2_PAL_OK;
 }
+static h2_pal_result_t write_transport(void *user, const uint8_t *buf, size_t len,
+                                        uint32_t timeout_ms, size_t *out_len) {
+    fixture_t *f = user;
+    char cmd[H2_QUECTEL_LINE_MAX];
+    assert(len > 0u && len < sizeof(cmd) && buf[len - 1u] == '\r');
+    memcpy(cmd, buf, len - 1u);
+    cmd[len - 1u] = '\0';
+    f->raw_offset = 0u;
+    h2_pal_result_t rc = command(user, cmd, f->raw_response, sizeof(f->raw_response), timeout_ms);
+    *out_len = rc == H2_PAL_OK ? len : 0u;
+    return rc;
+}
+static h2_pal_result_t read_transport(void *user, uint8_t *buf, size_t len,
+                                       uint32_t timeout_ms, size_t *out_len) {
+    fixture_t *f = user;
+    (void)timeout_ms;
+    assert(len > 0u);
+    if (f->raw_response[f->raw_offset] == '\0') {
+        *out_len = 0u;
+        return H2_PAL_ERR_TIMEOUT;
+    }
+    *buf = (uint8_t)f->raw_response[f->raw_offset++];
+    *out_len = 1u;
+    return H2_PAL_OK;
+}
+
 static void init_fixture(fixture_t *f, h2_pal_system_event_api_t *events, int hotplug) {
     memset(f, 0, sizeof(*f));
     f->model = "EC25-E\r\nOK\r\n";
@@ -275,6 +307,62 @@ static void test_hotplug_matching_and_notifications(void) {
         h2_pal_modem_signal_t signal;
         assert(h2_pal_modem_get_signal(&f.modem.platform, &signal) == H2_PAL_ERR_INVALID_STATE);
         finish(&f);
+    }
+}
+
+/* Exercise every prepare exchange, including best-effort configuration. The
+ * transport callback runs with the state mutex released, like an RX worker. */
+static void test_startup_sim_edges_during_prepare(void) {
+    const char *commands[] = {
+        "AT", "ATE0", "AT+CMEE=2", "AT+CLIP=1", "AT^DSCI=1",
+        "AT+CREG=1", "AT+CGREG=1", "AT+CEREG=1",
+        "AT+QCFG=\"urc/ri/ring\",\"pulse\",2000,1",
+        "AT+QCFG=\"risignaltype\",\"physical\"",
+        "AT+CGMM", "AT+QSIMDET?", "AT+QSIMSTAT=1", "AT+QSCLK=0",
+    };
+    const char *lines[] = {"+CPIN: READY", "+QSIMSTAT: 1,1", "+QSIMSTAT: 1,0", "RDY"};
+    for (size_t i = 0u; i < sizeof(commands) / sizeof(commands[0]); i++) {
+        for (size_t variant = 0u; variant < 8u; variant++) {
+            const size_t j = variant % 4u;
+            fixture_t f;
+            h2_pal_system_event_api_t events;
+            init_fixture(&f, &events, 1);
+            configure_hotplug(&f, 1, 1);
+            if (variant >= 4u) {
+                f.modem.config.command = NULL;
+                f.modem.config.write = write_transport;
+                f.modem.config.read = read_transport;
+            }
+            f.model = "EC800M\r\nOK\r\n";
+            f.sim_level = 1;
+            h2_quectel_handle_urc_line(&f.modem,
+                j == 0u ? "+CME ERROR: 10" : j == 2u ? "+CPIN: READY" : "+QSIMSTAT: 1,0");
+            const uint32_t generation = f.modem.sim_generation;
+            f.notify_command = commands[i];
+            f.notify_line = lines[j];
+            if (j == 1u) { f.notify_line_second = "+CPIN: READY"; }
+            h2_pal_result_t expected = j == 3u ? H2_PAL_ERR_INVALID_STATE : H2_PAL_OK;
+            assert(h2_pal_modem_open(&f.modem.platform, 0u) == expected);
+            assert(f.notify_command == NULL);
+            assert(f.modem.opened == (expected == H2_PAL_OK));
+            assert(f.modem.prepared == (expected == H2_PAL_OK));
+            assert(!f.modem.preparing && f.modem.operation_depth == 0u);
+            assert(!f.modem.sim_restart_required && !f.modem.sim_restart_attempted);
+            assert(f.restarts == 0u && f.sim_writes == 0u);
+            assert(f.deinit_count == (expected != H2_PAL_OK));
+            if (j == 0u) {
+                assert(f.last_sim == H2_PAL_MODEM_SIM_STATE_READY);
+                assert(f.modem.sim_generation == generation);
+            } else if (j == 1u) {
+                assert(f.modem.sim_generation > generation);
+                assert(f.last_sim == H2_PAL_MODEM_SIM_STATE_READY);
+            } else if (j == 2u) {
+                /* Opening the command channel is valid without a SIM; data
+                 * operations must still reject the genuinely absent card. */
+                assert(h2_quectel_modem_dial_ppp(&f.modem) == H2_PAL_ERR_INVALID_STATE);
+            }
+            finish(&f);
+        }
     }
 }
 
@@ -587,6 +675,7 @@ static void test_dsci_prepare(void) {
 }
 
 int main(void) {
+    test_startup_sim_edges_during_prepare();
     test_dsci_prepare();
     test_hotplug_matching_and_notifications();
     test_hotplug_restart_callback();
