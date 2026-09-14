@@ -382,8 +382,10 @@ static int kv_call(lua_State *state) {
         if (capacity > job->host->config.storage.app_quota_bytes)
           capacity = job->host->config.storage.app_quota_bytes;
       }
-      if ((uint64_t)capacity > (uint64_t)UINT32_MAX + KV_OVERHEAD)
+#if SIZE_MAX > UINT32_MAX
+      if (capacity > (uint64_t)UINT32_MAX + KV_OVERHEAD)
         capacity = (size_t)((uint64_t)UINT32_MAX + KV_OVERHEAD);
+#endif
       out = lua_newuserdatauv(state, capacity == 0u ? 1u : capacity, 0);
     }
     status = h2_lua_storage_lock(job);
