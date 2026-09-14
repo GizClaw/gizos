@@ -136,9 +136,14 @@ h2_skeleton2d_definition_init(void *mem, size_t bytes,
                               h2_skeleton2d_definition_t **out) {
   if (!out)
     return H2_PAL_ERR_INVALID_ARG;
-  *out = NULL;
+  if (overlaps(out, sizeof(*out), mem, bytes) ||
+      (c && overlaps(out, sizeof(*out), c, sizeof(*c))))
+    return H2_PAL_ERR_INVALID_ARG;
   size_t need, nt, nk;
   h2_pal_result_t r = h2_skeleton2d_definition_size(c, &need);
+  if (!r && config_overlaps(out, sizeof(*out), c))
+    return H2_PAL_ERR_INVALID_ARG;
+  *out = NULL;
   if (r)
     return r;
   if (!mem || (uintptr_t)mem % alignof(storage_alignment_t))
@@ -197,9 +202,14 @@ h2_pal_result_t h2_skeleton2d_instance_init(void *mem, size_t bytes,
                                             h2_skeleton2d_t **out) {
   if (!out)
     return H2_PAL_ERR_INVALID_ARG;
-  *out = NULL;
+  if (overlaps(out, sizeof(*out), mem, bytes) ||
+      (d && overlaps(out, sizeof(*out), d, sizeof(*d))))
+    return H2_PAL_ERR_INVALID_ARG;
   size_t need;
   h2_pal_result_t r = h2_skeleton2d_instance_size(d, &need);
+  if (!r && config_overlaps(out, sizeof(*out), &d->c))
+    return H2_PAL_ERR_INVALID_ARG;
+  *out = NULL;
   if (r)
     return r;
   if (!mem || (uintptr_t)mem % alignof(storage_alignment_t))

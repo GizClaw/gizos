@@ -44,6 +44,18 @@ static void overlapping_storage_cases(void) {
     assert(h2_skeleton2d_definition_init(mem, bytes, input, &out) ==
            H2_PAL_ERR_INVALID_ARG);
     assert(!out && !memcmp(mem, snapshot, bytes));
+    unsigned char *destination = calloc(1, bytes);
+    assert(destination);
+    assert(h2_skeleton2d_definition_init(destination, bytes, input,
+               (h2_skeleton2d_definition_t **)mem) == H2_PAL_ERR_INVALID_ARG);
+    assert(!memcmp(mem, snapshot, bytes));
+    for (size_t i = 0; i < bytes; ++i)
+      assert(destination[i] == 0);
+    assert(h2_skeleton2d_definition_init(destination, bytes, &original,
+               (h2_skeleton2d_definition_t **)destination) == H2_PAL_ERR_INVALID_ARG);
+    for (size_t i = 0; i < bytes; ++i)
+      assert(destination[i] == 0);
+    free(destination);
   }
   h2_skeleton2d_definition_t *definition;
   OK(h2_skeleton2d_definition_init(mem, bytes, &original, &definition));
@@ -54,6 +66,16 @@ static void overlapping_storage_cases(void) {
   assert(h2_skeleton2d_instance_init(mem, instance_bytes, definition, &actor) ==
          H2_PAL_ERR_INVALID_ARG);
   assert(!actor && !memcmp(mem, snapshot, bytes));
+  unsigned char *instance_storage = calloc(1, instance_bytes);
+  assert(instance_storage);
+  assert(h2_skeleton2d_instance_init(instance_storage, instance_bytes, definition,
+             (h2_skeleton2d_t **)mem) == H2_PAL_ERR_INVALID_ARG);
+  assert(!memcmp(mem, snapshot, bytes));
+  assert(h2_skeleton2d_instance_init(instance_storage, instance_bytes, definition,
+             (h2_skeleton2d_t **)instance_storage) == H2_PAL_ERR_INVALID_ARG);
+  for (size_t i = 0; i < instance_bytes; ++i)
+    assert(instance_storage[i] == 0);
+  free(instance_storage);
   h2_skeleton2d_definition_deinit(definition);
   free(snapshot);
   free(mem);

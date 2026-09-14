@@ -110,7 +110,8 @@ typedef struct h2_skeleton2d_view {
  * be fresh or deinitialized; overwriting a live object is not supported.
  * Destination storage must not overlap configuration, source arrays or the
  * borrowed definition; such overlap returns INVALID_ARG before storage writes.
- * Output handles must reside outside input objects and destination storage. */
+ * Overlapping output handles also return INVALID_ARG, leaving the aliased
+ * output/input/storage unchanged instead of clearing the output handle. */
 h2_pal_result_t h2_skeleton2d_definition_size(const h2_skeleton2d_config_t *,
                                               size_t *out_bytes);
 h2_pal_result_t
