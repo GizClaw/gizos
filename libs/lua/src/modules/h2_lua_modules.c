@@ -2,6 +2,7 @@
 #include "h2_raster2d.h"
 #include "../../../raster2d/src/h2_raster2d_internal.h"
 #include "h2_lua_numeric.h"
+#include "h2_lua_skeleton2d.h"
 #include "h2_f32_math.h"
 #include "../runtime/h2_lua_internal.h"
 
@@ -477,6 +478,22 @@ static int open_delay(lua_State *state) {
   return 1;
 }
 
+static int lua_system_micros(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  uint64_t us = 0;
+  h2_pal_result_t result =
+      h2_pal_time_get_monotonic_us(job->host->config.runtime->time, &us);
+  if (result != H2_PAL_OK) {
+    lua_pushnil(state);
+    lua_pushinteger(state, result);
+    return 2;
+  }
+  if (us > (uint64_t)LUA_MAXINTEGER)
+    return luaL_error(state, "system.micros integer overflow");
+  lua_pushinteger(state, (lua_Integer)us);
+  return 1;
+}
+
 static int lua_system_millis(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
   lua_pushinteger(state, (lua_Integer)h2_lua_now_ms(job->host));
@@ -698,8 +715,9 @@ static int lua_system_heap_unsupported(lua_State *state) {
 
 static int open_system(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  lua_createtable(state, 0, 7);
+  lua_createtable(state, 0, 8);
   set_function(state, "millis", lua_system_millis, job);
+  set_function(state, "micros", lua_system_micros, job);
   set_function(state, "uptime", lua_system_uptime, job);
   set_function(state, "time", lua_system_time, job);
   set_function(state, "date", lua_system_date, job);
@@ -4851,6 +4869,7 @@ h2_pal_result_t h2_lua_register_builtin_modules(h2_lua_job_t *job) {
   add_preload(state, "system", open_system, job);
   add_preload(state, "vmath", h2_lua_open_vmath, job);
   add_preload(state, "geometry", h2_lua_open_geometry, job);
+  add_preload(state, "skeleton2d", h2_lua_open_skeleton2d, job);
   add_preload(state, "display", open_display, job);
   add_preload(state, "lcd_touch", open_lcd_touch, job);
   add_preload(state, "audio", open_audio, job);

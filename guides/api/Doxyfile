@@ -19,6 +19,7 @@ INPUT                  = libs/app_test/include \
                          projects/h2loader/libs/h2loader/include \
                          libs/iostreamikcp/include \
                          libs/lua/include/h2_lua_display.h \
+                         libs/lua/include/h2_lua_skeleton2d.h \
                          libs/lvgl/include \
                          libs/mp4_decoder/include \
                          libs/ntp/include \
@@ -28,6 +29,7 @@ INPUT                  = libs/app_test/include \
                          libs/raster2d/include \
                          libs/runtime/include \
                          libs/semver/include \
+                         libs/skeleton2d/include \
                          libs/pal/providers/sdl3/include \
                          libs/pal/providers/sqlite/include \
                          libs/pal/providers/tinyh264/include \

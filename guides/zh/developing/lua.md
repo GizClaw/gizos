@@ -536,3 +536,9 @@ Embedder 执行 App method 时，让主 chunk `return app[method](...)`，等待
 Flutter package 将解包后的源码和 manifest 随包分发，由 native assets build hook 读取 manifest，用 Flutter 选择的每个目标 C toolchain 编译各 translation unit 并链接 native asset；不能依赖 GizOS 的 Bazel archive 或预编译 library。通过 `dart:ffi` 调用现有 Host/Runtime API，native bridge 拥有 PAL objects 和所需的同步 OS 服务；UI 操作通过复制后的消息交给 Dart，再由 Dart 渲染。FFI binding 必须匹配随包 header 的 struct layout 与 callback signatures。
 
 Go/cgo consumer 同样在自己的构建步骤中读取 manifest，用目标 C compiler 编译包内 sources 与自有 PAL bridge，再把 object/archive 接入 cgo linker。cgo 不会递归编译这些子目录中的 C 文件，也不能忽略不同 source group 的 flags。Go 层通过 C bridge 发起 job、推送输入与完成 capability；PAL `user` 可由 C 分配的 context 或受管理的 opaque handle 表示，不能把生命周期不受控的 Go 指针留给 worker。宿主的 pthread、UI framework 等依赖由上层 bridge 自己声明，不属于 portable runtime manifest。
+
+## 内置 skeleton2d 与微秒计时
+
+所有 Host 内置 `require('skeleton2d')`，它消费同一份 portable C 计算库并通过公开 Display mesh 接口更新几何。定义/实例/资源/scratch 由 VM allocator 计费；成功热路径不分配，只有构造、首次 require 与错误消息允许分配。骨架/动画与帧内复用见 [Skeleton2D](./skeleton2d.md)，完整 binding 合同由生产头生成到 [API Reference](/references/skeleton2d)。
+
+`system.micros()` 返回 Runtime 单调时钟的 Lua integer 微秒值，不是 wall clock。不支持或 PAL 读取失败时返回 `nil, PAL错误码`；超出 Lua integer 正值范围抛出错误，不截断或静默改用毫秒。`system.millis()` 保持原行为。调用方应检查时钟粒度和测量开销，微秒单位不等于微秒有效精度。它不创建 timer、task 或 profiler。

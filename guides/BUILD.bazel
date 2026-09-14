@@ -77,6 +77,7 @@ api_reference(
         "//libs/raster2d",
         "//libs/runtime",
         "//libs/semver",
+        "//libs/skeleton2d",
         "//libs/utils",
         "//projects/h2loader/libs/h2loader",
     ],

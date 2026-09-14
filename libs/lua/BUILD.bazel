@@ -56,6 +56,7 @@ cc_library(
         "src/modules/h2_lua_kv.c",
         "src/modules/h2_lua_modules.c",
         "src/modules/h2_lua_numeric_internal.h",
+        "src/modules/h2_lua_skeleton2d.c",
         "src/modules/h2_lua_storage.c",
         "src/modules/h2_lua_storage_internal.h",
         "src/modules/h2_lua_vmath.c",
@@ -74,6 +75,7 @@ cc_library(
         "include/h2_lua_job.h",
         "include/h2_lua_module.h",
         "include/h2_lua_numeric.h",
+        "include/h2_lua_skeleton2d.h",
         "include/h2_lua_task_names.h",
     ],
     conlyopts = H2_C11_OPTS,
@@ -88,6 +90,7 @@ cc_library(
         "//libs/raster2d",
         "//libs/raster2d:span_internal",
         "//libs/runtime",
+        "//libs/skeleton2d",
         "//libs/utils",
         "//tools/bazel:vendor_third_party_lua",
         "//tools/bazel:vendor_third_party_yyjson",
@@ -317,4 +320,19 @@ py_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+)
+
+cc_test(
+    name = "lua_skeleton2d_test",
+    srcs = ["tests/test_h2_lua_skeleton2d.c"],
+    data = ["tests/skeleton2d.lua"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":lua_runtime", "//tools/bazel:vendor_third_party_lua"],
 )

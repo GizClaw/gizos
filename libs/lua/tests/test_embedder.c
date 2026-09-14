@@ -609,6 +609,22 @@ int main(void) {
              ((x >= 3 && x < 10 && y >= 5 && y < 14) ? 0xf800 : 0));
   assert(h2_lua_job_release(host, job) == H2_PAL_OK);
 
+  job = submit(
+      host,
+      "local sk=require('skeleton2d');local d=require('display');"
+      "local def=sk.compile{schema_version=1,bones={{0,20,30,0,1,1}},"
+      "parts={{1,1,0,1,0,0,0,1,1}},clips={}};local a=def:instance();"
+      "local w,m=sk.mesh(def,{{vertices={{0,0},{10,0},{10,10},{0,10}},"
+      "primitives={{0,1,4,63488}}}},{vertices=4,primitives=1});"
+      "a:evaluate({1,0,0,1,0,0});sk.update_mesh(w,a);d.clear('black');"
+      "d.draw_mesh(m);d.present();assert(d.present()==0)");
+  wait_state(host, job, H2_LUA_JOB_SUCCEEDED);
+  for (int y = 0; y < 240; y++)
+    for (int x = 0; x < 240; x++)
+      assert(display.pixels[y * 240 + x] ==
+             ((x >= 20 && x <= 30 && y >= 30 && y < 40) ? 0xf800 : 0));
+  assert(h2_lua_job_release(host, job) == H2_PAL_OK);
+
   atomic_store(&echo.id, 0);
   job = submit(
       host,

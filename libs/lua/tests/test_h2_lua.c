@@ -408,6 +408,7 @@ static const h2_pal_audio_api_t s_test_audio = {
 
 typedef struct test_clock {
   atomic_uint_fast64_t now_ms;
+  atomic_int micros_mode;
 } test_clock_t;
 
 static h2_pal_result_t test_clock_monotonic_ms(void *user, uint64_t *out_ms) {
@@ -422,7 +423,10 @@ static h2_pal_result_t test_clock_monotonic_us(void *user, uint64_t *out_us) {
   test_clock_t *clock = user;
   if (clock == NULL || out_us == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  *out_us = atomic_load(&clock->now_ms) * 1000u;
+  int mode = atomic_load(&clock->micros_mode);
+  if (mode == 1)
+    return H2_PAL_ERR_UNSUPPORTED;
+  *out_us = mode == 2 ? UINT64_MAX : atomic_load(&clock->now_ms) * 1000u;
   return H2_PAL_OK;
 }
 
@@ -1100,6 +1104,7 @@ static void test_display_meshes(void) {
   assert(h2_lua_register_module(host, "kv", test_mesh_open, NULL) == H2_PAL_ERR_INVALID_ARG);
   assert(h2_lua_register_module(host, "vmath", test_mesh_open, NULL) == H2_PAL_ERR_INVALID_ARG);
   assert(h2_lua_register_module(host, "geometry", test_mesh_open, NULL) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_register_module(host, "skeleton2d", test_mesh_open, NULL) == H2_PAL_ERR_INVALID_ARG);
   assert(h2_lua_register_module(host, "mesh_test", test_mesh_open, NULL) == H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   static const struct { const char *draw; const char *pixels; } cases[] = {
@@ -1191,6 +1196,63 @@ static void test_display_meshes(void) {
   assert_only_pixels(0u,NULL,0u);
   assert(s_test_display_fixture.draw_count == 1u);
   assert(s_test_display_fixture.close_count == 1u);
+  h2_lua_host_destroy(host);
+  h2_runtime_deinit(runtime);
+}
+
+static void test_skeleton_display(void) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_lua_host_t *host = create_host(runtime);
+  const char *setup =
+      "local sk=require('skeleton2d');local d=require('display');local "
+      "v=require('vmath');"
+      "local "
+      "def=sk.compile{schema_version=1,bones={{0,1,1,0,1,1},{1,2,2,0,1,1}},"
+      "parts={{1,1,0,1,0,0,0,1,1},{2,2,1,1,0,0,0,1,1}},clips={}};"
+      "local a=def:instance();local shapes={"
+      "{vertices={{0,0},{3,0},{3,3},{0,3}},primitives={{0,1,4,63488}}},"
+      "{vertices={{0,0},{3,0},{3,3},{0,3}},primitives={{0,1,4,2016}}}};"
+      "local w,m=sk.mesh(def,shapes,{vertices=8,primitives=2});"
+      "shapes=nil;def=nil;collectgarbage('collect');"
+      "local root={1,0,0,1,0,0};"
+      "local function draw() a:evaluate(root);sk.update_mesh(w,a);"
+      "d.clear('black');d.draw_mesh(m);d.present();assert(d.present()==0) "
+      "end;draw();";
+  const char *changes[] = {
+      "",
+      "local p=v.buffer(8);p:load({1,1,2,1,2,2,-1,1});a:set_parts(p);draw();",
+      "local p=v.buffer(8);p:load({1,1,0,0,2,2,1,1});a:set_parts(p);"
+      "local "
+      "pose=v.buffer(6);pose:load({2,-2,-2,0,1,1});a:set_local(pose);draw();"
+      "local old=v.buffer(10);w:copy_bounds(old);p:load({1,1,0,0,2,256,1,1});"
+      "a:set_parts(p);a:evaluate(root);assert(not pcall(sk.update_mesh,w,a));"
+      "d.clear('black');d.draw_mesh(m);d.present();"
+      "local bounds=v.buffer(10);w:copy_bounds(bounds);"
+      "for i=1,10 do assert(old:get(i)==bounds:get(i)) end;"};
+  for (size_t test = 0; test < 3; ++test) {
+    char script[2400];
+    int length = snprintf(script, sizeof(script), "%s%s", setup, changes[test]);
+    assert(length > 0 && (size_t)length < sizeof(script));
+    (void)run_display_script(host, "@skeleton-pixels.lua",
+                             (const uint8_t *)script, (size_t)length);
+    for (int y = 0; y < 8; ++y) {
+      for (int x = 0; x < 8; ++x) {
+        uint16_t expected = 0;
+        if (test == 2) {
+          if (x <= 2 && y < 2)
+            expected = 0x07e0;
+        } else {
+          int red = x >= 1 && x <= 4 && y >= 1 && y < 4;
+          int green = x >= 3 && x <= 6 && y >= 3 && y < 6;
+          if (test == 0)
+            expected = green ? 0x07e0 : red ? 0xf800 : 0;
+          else
+            expected = red ? 0xf800 : green ? 0x07e0 : 0;
+        }
+        assert(s_test_display_fixture.pixels[y * 8 + x] == expected);
+      }
+    }
+  }
   h2_lua_host_destroy(host);
   h2_runtime_deinit(runtime);
 }
@@ -1833,6 +1895,7 @@ int main(int argc, char **argv) {
     return 0;
   }
   test_display_raster2d(0);
+  test_skeleton_display();
   test_display_mesh_identity();
   test_display_mesh_cache();
   test_display_strokes();
@@ -1889,6 +1952,7 @@ int main(int argc, char **argv) {
       "ok,e=pcall("
       "s.heap.get_info,0);return type(s.time())=='number' and "
       "type(s.date())=='string' and type(s.millis())=='number' and "
+      "type(s.micros())=='number' and "
       "type(s.uptime())=='number' and s.ip()==nil and "
       "type(i)=='table' and type(i.uptime_s)=='number' and not delay_ok and "
       "not ok and "
@@ -2531,6 +2595,7 @@ int main(int argc, char **argv) {
       "local n=0;for i=1,20 do n=n+i end;return tostring(n)";
   test_clock_t clock;
   atomic_init(&clock.now_ms, 0u);
+  atomic_init(&clock.micros_mode, 0);
   const h2_pal_time_api_t test_time = {
       .user = &clock,
       .vtable = &s_test_clock_vtable,
@@ -2539,6 +2604,22 @@ int main(int argc, char **argv) {
   host = create_unstarted_host_with_scheduler(runtime, 1u, UINT32_MAX,
                                               UINT32_MAX, 4096u);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
+  static const uint8_t micros_error_script[] =
+      "local s=require('system');local ok,v,e=pcall(s.micros);"
+      "assert((ok and v==nil and type(e)=='number') or "
+      "(not ok and string.find(v,'overflow',1,true)));return 'micros-error-ok'";
+  for (int mode = 1; mode <= 2; ++mode) {
+    atomic_store(&clock.micros_mode, mode);
+    assert(h2_lua_job_submit_text(host, NULL, "@micros-error.lua",
+                                 micros_error_script,
+                                 sizeof(micros_error_script) - 1u, NULL, 0u,
+                                 &job_id) == H2_PAL_OK);
+    run_until_terminal(host, job_id, 16u);
+    assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
+    assert(strcmp(status(host, job_id).message, "micros-error-ok") == 0);
+    assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+  }
+  atomic_store(&clock.micros_mode, 0);
   assert(h2_lua_job_submit_text(host, NULL, "@large-budget.lua",
                                 resume_budget_script,
                                 sizeof(resume_budget_script) - 1u, NULL, 0u,
