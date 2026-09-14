@@ -59,6 +59,7 @@ const struct irq_info irq_info_table[] = {
 /* UART1 owns PA6: do not also register UART0 on that receive pin. The SDK
  * buffered printf backend and Loader share this one bidirectional device. */
 UART1_PLATFORM_DATA_BEGIN(uart1_data).baudrate = H2_JIELI_CONSOLE_BAUD,
+    .disable_tx_irq = 1,
     .port = PORT_REMAP, .output_channel = OUTPUT_CHANNEL0,
     .input_channel = INPUT_CHANNEL0,
     .tx_pin = IO_PORTB_03, .rx_pin = IO_PORTA_06,

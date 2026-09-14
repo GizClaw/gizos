@@ -1,6 +1,6 @@
 # Wi-Fi lifecycle follow-up — 2026-09-14
 
-This is incremental O3 evidence. Snapshot synchronization and recovery when a scan never completes remain open. Final-source hardware acceptance is pending.
+This is incremental O3 evidence. Snapshot repairs are implemented; recovery when a scan never completes is decision-needed. One offline PAL run passes; final-source lifecycle acceptance is pending.
 
 ## Late completion and SDK callback reentrancy
 

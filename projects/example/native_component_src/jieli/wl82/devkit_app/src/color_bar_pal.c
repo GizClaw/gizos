@@ -303,7 +303,7 @@ static int draw_color_bars(const h2_pal_display_api_t *display) {
   if (info.width == 0 || info.width > H2_LCD_MAX_WIDTH || info.height == 0) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
-  for (uint32_t x = 0u; x < info.width; ++x) {
+  for (uint32_t x = 0u; x < (uint32_t)info.width; ++x) {
     color_line[x] = colors[x * 8u / info.width];
   }
   for (int y = 0; y < info.height; ++y) {

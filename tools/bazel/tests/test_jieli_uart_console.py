@@ -14,7 +14,7 @@ STUB = r"""
 #include <string.h>
 #include <assert.h>
 typedef unsigned char u8;
-typedef unsigned int u32;
+typedef uintptr_t u32;
 typedef int OS_MUTEX;
 typedef int h2_pal_result_t;
 enum { H2_PAL_OK=0, H2_PAL_ERR_IO=-10, H2_PAL_ERR_UNAVAILABLE=-11,
@@ -26,14 +26,23 @@ static int handle, opens, closes, creates, locks, unlocks, held, lock_fail;
 static int init_fail=1, ioctls, read_result, flushes, writes, short_write;
 static unsigned char received[2048];
 static size_t received_count;
-static int os_mutex_create(OS_MUTEX *m) { ++creates; return 0; }
-static int os_mutex_pend(OS_MUTEX *m, int ticks) {
+static int os_mutex_create(OS_MUTEX *m) { (void)m; ++creates; return 0; }
+int os_mutex_pend(OS_MUTEX *m, int ticks) {
+  (void)m;
   assert(ticks>0); ++locks;
   if (lock_fail) return 1;
   assert(!held); held=1; return 0;
 }
-static int os_mutex_post(OS_MUTEX *m) { assert(held); held=0; ++unlocks; return 0; }
+static int os_mutex_accept(OS_MUTEX *m) { return os_mutex_pend(m, 1); }
+static struct { uint16_t CON0; } uart_registers;
+#define JL_UART1 (&uart_registers)
+#define BIT(n) (1u << (n))
+static uint32_t now;
+static uint32_t timer_get_ms(void) { return now++; }
+static void os_time_dly(unsigned ticks) { now += ticks * 10u; }
+static int os_mutex_post(OS_MUTEX *m) { (void)m; assert(held); held=0; ++unlocks; return 0; }
 static void *dev_open(const char *name, void *arg) {
+  (void)arg;
   assert(strcmp(name,"uart1")==0); ++opens; return &handle;
 }
 static int dev_close(void *h) { assert(h==&handle); ++closes; return 0; }
@@ -46,6 +55,7 @@ static int dev_ioctl(void *h, int op, u32 arg) {
   return 0;
 }
 static int dev_read(void *h, void *data, u32 size) {
+  (void)size;
   assert(h==&handle && held);
   if (read_result>0) memset(data,0xab,(size_t)read_result);
   return read_result;
@@ -54,6 +64,7 @@ static int dev_write(void *h, void *data, u32 size) {
   assert(h==&handle && held && size<=512);
   assert(((uintptr_t)data%32)==0);
   ++writes;
+  uart_registers.CON0 = BIT(15);
   if (short_write && size>17) size=17;
   memcpy(received+received_count,data,size); received_count+=size;
   return (int)size;
@@ -304,17 +315,20 @@ typedef struct { int x, y, width, height; } h2_display_rect_t;
 static uint16_t color_line[H2_LCD_MAX_WIDTH];
 static int width, height, rows;
 static int h2_pal_display_get_info(const int *d, h2_display_info_t *i) {
+  (void)d;
   i->width=width; i->height=height; return 0;
 }
 static int h2_pal_display_draw_bitmap(const int *d,
     const h2_display_rect_t *r, const void *p, size_t stride, int fmt) {
+  (void)d;
+  assert(fmt == H2_DISPLAY_PIXEL_RGB565);
   assert(r->x==0 && r->y==rows && r->width==width && r->height==1);
-  assert(r->y<height && stride >= width*2);
+  assert(r->y<height && stride >= (size_t)width*2u);
   assert(((const uint16_t *)p)[0]==0xffff);
   assert(((const uint16_t *)p)[width-1]==0);
   ++rows; return 0;
 }
-static int h2_pal_display_present(const int *d) { assert(rows==height); return 0; }
+static int h2_pal_display_present(const int *d) { (void)d; assert(rows==height); return 0; }
 '''
         main = r'''
 int main(void) {
@@ -330,7 +344,7 @@ int main(void) {
             source = Path(directory) / "test.c"
             source.write_text(stub + function + main)
             binary = Path(directory) / "test"
-            subprocess.run(["cc", "-std=c11", str(source), "-o", str(binary)],
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", str(source), "-o", str(binary)],
                            check=True, timeout=60)
             subprocess.run([str(binary)], check=True, timeout=60)
 
@@ -368,7 +382,7 @@ int main(void) {
             source = Path(directory) / "test.c"
             source.write_text(stub + app[start:end] + main)
             binary = Path(directory) / "test"
-            subprocess.run(["cc", "-std=c11", str(source), "-o", str(binary)],
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", str(source), "-o", str(binary)],
                            check=True, timeout=60)
             subprocess.run([str(binary)], check=True, timeout=60)
 
@@ -379,7 +393,7 @@ int main(void) {
             test = Path(directory) / "test.c"
             test.write_text(STUB + source + MAIN)
             binary = Path(directory) / "test"
-            subprocess.run(["cc", "-std=c11", "-Wno-pointer-to-int-cast",
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
                             str(test), "-o", str(binary)], check=True)
             subprocess.run([str(binary)], check=True)
 
