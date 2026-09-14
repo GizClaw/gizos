@@ -4713,6 +4713,7 @@ h2_pal_result_t h2_lua_register_builtin_modules(h2_lua_job_t *job) {
   add_preload(state, "capability", open_capability, job);
   add_preload(state, "link", open_link, job);
   add_preload(state, "storage", h2_lua_open_storage, job);
+  add_preload(state, "kv", h2_lua_open_kv, job);
   lua_getglobal(state, "package");
   lua_getfield(state, -1, "searchers");
   lua_pushlightuserdata(state, job);

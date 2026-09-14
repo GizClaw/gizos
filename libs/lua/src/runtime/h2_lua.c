@@ -15,7 +15,7 @@ static int module_name_is_reserved(const char *name) {
   static const char *const reserved[] = {
       "runtime", "delay", "system",     "display", "lcd_touch",
       "audio",   "json",  "capability", "link",    "storage",
-      "vmath",   "geometry",
+      "vmath",   "geometry", "kv",
   };
   for (size_t i = 0u; i < sizeof(reserved) / sizeof(reserved[0]); ++i) {
     if (strcmp(name, reserved[i]) == 0) {
