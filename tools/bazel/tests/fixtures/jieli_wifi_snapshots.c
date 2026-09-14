@@ -22,6 +22,8 @@ static void assert_sdk_unlocked(void);
 #define wifi_is_on() 1
 #define os_time_dly(ticks) ((void)(ticks), sched_yield())
 static void scan_completed(void) {}
+static void scan_reap_completed(void) {}
+static int wifi_operation_begin(void);
 static void fake_sdk_refresh(void) {
   assert_sdk_unlocked();
   if (hold_refresh) {
@@ -33,6 +35,7 @@ static void update_sta_snapshot(void) { fake_sdk_refresh(); }
 static void wifi_rxfilter_cfg(int value) { (void)value; assert_sdk_unlocked(); }
 static void post_system_event(h2_pal_system_event_type_t type, const void *payload, size_t size) {
   assert_sdk_unlocked();
+  assert(wifi_operation_begin() == H2_PAL_ERR_BUSY);
   assert(type != H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP || !atomic_load(&reject_got_ip));
   if (hold_payload && type == H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTED) {
     assert(size == sizeof(h2_pal_wifi_sta_status_t));

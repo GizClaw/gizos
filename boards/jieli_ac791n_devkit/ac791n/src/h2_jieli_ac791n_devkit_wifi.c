@@ -21,6 +21,7 @@ typedef struct h2_jieli_wifi_state {
 static h2_jieli_wifi_state_t wifi_state;
 static uint32_t wifi_state_gate;
 static uint32_t wifi_sta_generation;
+static unsigned wifi_callbacks_active;
 
 static void wifi_state_lock(void) {
   for (;;) {
@@ -121,6 +122,7 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
   const int refresh = event == WIFI_EVENT_STA_CONNECT_SUCC ||
       event == WIFI_EVENT_STA_NETWORK_STACK_DHCP_SUCC;
   wifi_state_lock();
+  ++wifi_callbacks_active;
   const uint32_t generation = wifi_sta_generation;
   wifi_state_unlock();
   if (refresh) {
@@ -138,6 +140,7 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
   h2_pal_wifi_ap_status_t ap_status;
   wifi_state_lock();
   if (refresh && generation != wifi_sta_generation) {
+    --wifi_callbacks_active;
     wifi_state_unlock();
     return 0;
   }
@@ -205,6 +208,9 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
     post_sta_event(types[index], &sta_status);
   }
   if (ap_event) post_ap_event(ap_type, &ap_status);
+  wifi_state_lock();
+  --wifi_callbacks_active;
+  wifi_state_unlock();
   return 0;
 }
 
@@ -533,6 +539,13 @@ static int ap_get_clients(
 static unsigned wifi_operation_busy;
 
 static int wifi_operation_begin(void) {
+  /* SDK event subscribers run on the network HSM task. A synchronous SDK
+   * request there would wait for the callback itself to release its mutex.
+   * Reject admission while callbacks dispatch; never wait for subscribers. */
+  wifi_state_lock();
+  const int in_callback = wifi_callbacks_active != 0u;
+  wifi_state_unlock();
+  if (in_callback) return H2_PAL_ERR_BUSY;
   if (__atomic_exchange_n(&wifi_operation_busy, 1u, __ATOMIC_ACQUIRE)) {
     return H2_PAL_ERR_BUSY;
   }

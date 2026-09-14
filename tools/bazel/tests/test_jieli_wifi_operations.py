@@ -21,6 +21,10 @@ class WifiOperationsTest(unittest.TestCase):
 #include <pthread.h>
 #include <sched.h>
 #include "h2/pal/hal/h2_pal_wifi.h"
+static pthread_mutex_t state_gate = PTHREAD_MUTEX_INITIALIZER;
+static unsigned wifi_callbacks_active;
+static void wifi_state_lock(void) { assert(pthread_mutex_lock(&state_gate) == 0); }
+static void wifi_state_unlock(void) { assert(pthread_mutex_unlock(&state_gate) == 0); }
 static int clears;
 static void wifi_clear_scan_result(void) { ++clears; }
 ''' + state + r'''
