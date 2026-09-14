@@ -30,9 +30,11 @@ typedef struct h2_lua_resource {
 #define H2_LUA_STORAGE_NAME_MAX 32u
 /** Upper bound for h2_lua_storage_config_t.app_max_files. */
 #define H2_LUA_STORAGE_MAX_FILES 64u
+/** Maximum scalar keys in one app KV snapshot. */
+#define H2_LUA_KV_MAX_KEYS 128u
 
 /**
- * Backing for the per-app `storage` Lua module.
+ * Backing for the per-app `storage` and `kv` Lua modules.
  *
  * A job submitted with an app id reads and writes only files directly under
  * `<root>/<app_id>/`. A NULL fs leaves storage unconfigured: `storage` still
@@ -45,10 +47,11 @@ typedef struct h2_lua_storage_config {
   /** Directory in the fs namespace, for example "/data/lua". Created on the
    * first write when missing. Copied at create; no trailing '/'. */
   const char *root;
-  /** Bytes of file content one app may keep. Zero selects 64 KiB. */
+  /** Bytes of file content, including the complete encoded KV snapshot, one app
+   * may keep. Zero selects 64 KiB. */
   size_t app_quota_bytes;
   /** Files one app may keep, at most H2_LUA_STORAGE_MAX_FILES. Zero selects
-   * 16. */
+   * 16. A present KV snapshot consumes one file slot. */
   size_t app_max_files;
 } h2_lua_storage_config_t;
 

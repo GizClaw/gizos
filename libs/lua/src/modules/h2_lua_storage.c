@@ -1,4 +1,4 @@
-#include "../runtime/h2_lua_internal.h"
+#include "h2_lua_storage_internal.h"
 
 #include <string.h>
 
@@ -19,22 +19,10 @@
 #define STORAGE_INDEX_NAME ".index"
 #define STORAGE_INDEX_TEMP_NAME ".index.tmp"
 #define STORAGE_DATA_TEMP_NAME ".data.tmp"
+#define STORAGE_KV_NAME ".kv"
+#define STORAGE_KV_TEMP_NAME ".kv.tmp"
 #define STORAGE_DEFAULT_QUOTA_BYTES (64u * 1024u)
 #define STORAGE_DEFAULT_MAX_FILES 16u
-#define STORAGE_READ_ATTEMPTS 4
-
-typedef enum storage_status {
-  STORAGE_OK = 0,
-  STORAGE_UNAVAILABLE,
-  STORAGE_INVALID_NAME,
-  STORAGE_NOT_FOUND,
-  STORAGE_QUOTA_EXCEEDED,
-  STORAGE_TOO_MANY_FILES,
-  STORAGE_NO_SPACE,
-  STORAGE_CHANGED,
-  STORAGE_BUSY,
-  STORAGE_IO,
-} storage_status_t;
 
 typedef struct storage_entry {
   char name[H2_LUA_STORAGE_NAME_MAX + 1u];
@@ -49,6 +37,8 @@ struct h2_lua_storage_scratch {
   size_t entry_capacity;
   size_t count;
   int dirty;
+  int kv_exists;
+  uint64_t kv_size;
   char *text;
   size_t text_capacity;
 };
@@ -200,7 +190,7 @@ static const h2_pal_fs_api_t *storage_fs(const h2_lua_job_t *job) {
   return job->host->config.storage.fs;
 }
 
-static int storage_available(const h2_lua_job_t *job) {
+int h2_lua_storage_available(const h2_lua_job_t *job) {
   return storage_fs(job) != NULL && job->host->storage_mutex != NULL &&
          job->app_id[0] != '\0';
 }
@@ -225,14 +215,14 @@ static void storage_path(const h2_lua_job_t *job, const char *name,
   out_path[offset] = '\0';
 }
 
-static storage_status_t storage_lock(h2_lua_job_t *job) {
+storage_status_t h2_lua_storage_lock(h2_lua_job_t *job) {
   return h2_pal_mutex_lock(job->host->config.runtime->sync,
                            job->host->storage_mutex) == H2_PAL_OK
              ? STORAGE_OK
              : STORAGE_BUSY;
 }
 
-static void storage_unlock(h2_lua_job_t *job) {
+void h2_lua_storage_unlock(h2_lua_job_t *job) {
   (void)h2_pal_mutex_unlock(job->host->config.runtime->sync,
                             job->host->storage_mutex);
 }
@@ -253,10 +243,16 @@ static void storage_drop(storage_scratch_t *scratch, size_t index) {
   scratch->count--;
 }
 
-static uint64_t storage_used(const storage_scratch_t *scratch) {
-  uint64_t used = 0u;
+static uint64_t storage_used_except(const storage_scratch_t *scratch,
+                                    long except, int include_kv) {
+  uint64_t used = include_kv ? scratch->kv_size : 0u;
   size_t i;
   for (i = 0u; i < scratch->count; ++i) {
+    if ((long)i == except)
+      continue;
+    if (UINT64_MAX - used < scratch->entries[i].size) {
+      return UINT64_MAX;
+    }
     used += scratch->entries[i].size;
   }
   return used;
@@ -400,6 +396,16 @@ static storage_status_t storage_load_index(h2_lua_job_t *job) {
   int result;
   scratch->count = 0u;
   scratch->dirty = 0;
+  storage_path(job, STORAGE_KV_NAME, path);
+  result = h2_pal_fs_stat(fs, path, &stat);
+  if (result != H2_PAL_OK && result != H2_PAL_ERR_NOT_FOUND) {
+    return from_pal(result);
+  }
+  if (result == H2_PAL_OK && stat.is_dir) {
+    return STORAGE_IO;
+  }
+  scratch->kv_exists = result == H2_PAL_OK;
+  scratch->kv_size = scratch->kv_exists ? stat.size : 0u;
   storage_path(job, STORAGE_INDEX_NAME, path);
   result = h2_pal_fs_stat(fs, path, &stat);
   if (result == H2_PAL_ERR_NOT_FOUND) {
@@ -475,11 +481,11 @@ static storage_status_t storage_write_locked(h2_lua_job_t *job,
     return status;
   }
   index = storage_find(scratch, name);
-  if (index < 0 && scratch->count >= job->host->config.storage.app_max_files) {
+  if (index < 0 && scratch->count + (size_t)scratch->kv_exists >=
+                       job->host->config.storage.app_max_files) {
     return STORAGE_TOO_MANY_FILES;
   }
-  used =
-      storage_used(scratch) - (index < 0 ? 0u : scratch->entries[index].size);
+  used = storage_used_except(scratch, index, 1);
   if ((uint64_t)length > quota || used > quota - (uint64_t)length) {
     return STORAGE_QUOTA_EXCEEDED;
   }
@@ -650,7 +656,7 @@ static const char *check_name(lua_State *state, int argument) {
 }
 
 static int storage_get_root_dir(lua_State *state) {
-  if (!storage_available(storage_job(state))) {
+  if (!h2_lua_storage_available(storage_job(state))) {
     return push_failure(state, STORAGE_UNAVAILABLE);
   }
   /* App files are addressed relative to the app directory, so joining the
@@ -698,17 +704,17 @@ static int storage_exists(lua_State *state) {
   const char *name = check_name(state, 1);
   uint64_t size = 0u;
   storage_status_t status;
-  if (!storage_available(job)) {
+  if (!h2_lua_storage_available(job)) {
     lua_pushboolean(state, 0);
     return 1;
   }
   if (name == NULL) {
     return push_failure(state, STORAGE_INVALID_NAME);
   }
-  status = storage_lock(job);
+  status = h2_lua_storage_lock(job);
   if (status == STORAGE_OK) {
     status = storage_size_locked(job, name, &size);
-    storage_unlock(job);
+    h2_lua_storage_unlock(job);
   }
   if (status != STORAGE_OK && status != STORAGE_NOT_FOUND) {
     return push_failure(state, status);
@@ -722,16 +728,16 @@ static int storage_stat(lua_State *state) {
   const char *name = check_name(state, 1);
   uint64_t size = 0u;
   storage_status_t status;
-  if (!storage_available(job)) {
+  if (!h2_lua_storage_available(job)) {
     return push_failure(state, STORAGE_UNAVAILABLE);
   }
   if (name == NULL) {
     return push_failure(state, STORAGE_INVALID_NAME);
   }
-  status = storage_lock(job);
+  status = h2_lua_storage_lock(job);
   if (status == STORAGE_OK) {
     status = storage_size_locked(job, name, &size);
-    storage_unlock(job);
+    h2_lua_storage_unlock(job);
   }
   if (status != STORAGE_OK) {
     return push_failure(state, status);
@@ -749,7 +755,7 @@ static int storage_read_file(lua_State *state) {
   const char *name = check_name(state, 1);
   storage_status_t status = STORAGE_CHANGED;
   int attempt;
-  if (!storage_available(job)) {
+  if (!h2_lua_storage_available(job)) {
     return push_failure(state, STORAGE_UNAVAILABLE);
   }
   if (name == NULL) {
@@ -760,10 +766,10 @@ static int storage_read_file(lua_State *state) {
        ++attempt) {
     uint64_t size = 0u;
     void *data;
-    status = storage_lock(job);
+    status = h2_lua_storage_lock(job);
     if (status == STORAGE_OK) {
       status = storage_size_locked(job, name, &size);
-      storage_unlock(job);
+      h2_lua_storage_unlock(job);
     }
     if (status != STORAGE_OK) {
       break;
@@ -774,10 +780,10 @@ static int storage_read_file(lua_State *state) {
     }
     /* Lua owns the buffer, so a memory error here leaks nothing. */
     data = lua_newuserdatauv(state, size == 0u ? 1u : (size_t)size, 0);
-    status = storage_lock(job);
+    status = h2_lua_storage_lock(job);
     if (status == STORAGE_OK) {
       status = storage_read_locked(job, name, data, (size_t)size);
-      storage_unlock(job);
+      h2_lua_storage_unlock(job);
     }
     if (status == STORAGE_OK) {
       lua_pushlstring(state, data, (size_t)size);
@@ -794,16 +800,16 @@ static int storage_write_file(lua_State *state) {
   size_t length = 0u;
   const char *data = luaL_checklstring(state, 2, &length);
   storage_status_t status;
-  if (!storage_available(job)) {
+  if (!h2_lua_storage_available(job)) {
     return push_failure(state, STORAGE_UNAVAILABLE);
   }
   if (name == NULL) {
     return push_failure(state, STORAGE_INVALID_NAME);
   }
-  status = storage_lock(job);
+  status = h2_lua_storage_lock(job);
   if (status == STORAGE_OK) {
     status = storage_write_locked(job, name, data, length);
-    storage_unlock(job);
+    h2_lua_storage_unlock(job);
   }
   return status == STORAGE_OK ? push_success(state)
                               : push_failure(state, status);
@@ -813,16 +819,16 @@ static int storage_remove(lua_State *state) {
   h2_lua_job_t *job = storage_job(state);
   const char *name = check_name(state, 1);
   storage_status_t status;
-  if (!storage_available(job)) {
+  if (!h2_lua_storage_available(job)) {
     return push_failure(state, STORAGE_UNAVAILABLE);
   }
   if (name == NULL) {
     return push_failure(state, STORAGE_INVALID_NAME);
   }
-  status = storage_lock(job);
+  status = h2_lua_storage_lock(job);
   if (status == STORAGE_OK) {
     status = storage_remove_locked(job, name);
-    storage_unlock(job);
+    h2_lua_storage_unlock(job);
   }
   return status == STORAGE_OK ? push_success(state)
                               : push_failure(state, status);
@@ -833,16 +839,16 @@ static int storage_rename(lua_State *state) {
   const char *old_name = check_name(state, 1);
   const char *new_name = check_name(state, 2);
   storage_status_t status;
-  if (!storage_available(job)) {
+  if (!h2_lua_storage_available(job)) {
     return push_failure(state, STORAGE_UNAVAILABLE);
   }
   if (old_name == NULL || new_name == NULL) {
     return push_failure(state, STORAGE_INVALID_NAME);
   }
-  status = storage_lock(job);
+  status = h2_lua_storage_lock(job);
   if (status == STORAGE_OK) {
     status = storage_rename_locked(job, old_name, new_name);
-    storage_unlock(job);
+    h2_lua_storage_unlock(job);
   }
   return status == STORAGE_OK ? push_success(state)
                               : push_failure(state, status);
@@ -856,7 +862,7 @@ static int storage_listdir(lua_State *state) {
   size_t count = 0u;
   size_t i;
   storage_status_t status;
-  if (!storage_available(job)) {
+  if (!h2_lua_storage_available(job)) {
     return push_failure(state, STORAGE_UNAVAILABLE);
   }
   if (path_length != 0u) {
@@ -868,7 +874,7 @@ static int storage_listdir(lua_State *state) {
   }
   entries = lua_newuserdatauv(
       state, job->host->storage_scratch->entry_capacity * sizeof(*entries), 0);
-  status = storage_lock(job);
+  status = h2_lua_storage_lock(job);
   if (status == STORAGE_OK) {
     status = storage_load_index(job);
     if (status == STORAGE_OK) {
@@ -876,7 +882,7 @@ static int storage_listdir(lua_State *state) {
       memcpy(entries, job->host->storage_scratch->entries,
              count * sizeof(*entries));
     }
-    storage_unlock(job);
+    h2_lua_storage_unlock(job);
   }
   if (status != STORAGE_OK) {
     return push_failure(state, status);
@@ -900,15 +906,15 @@ static int storage_get_free_space(lua_State *state) {
   uint64_t quota;
   uint64_t used = 0u;
   storage_status_t status;
-  if (!storage_available(job)) {
+  if (!h2_lua_storage_available(job)) {
     return push_failure(state, STORAGE_UNAVAILABLE);
   }
   quota = job->host->config.storage.app_quota_bytes;
-  status = storage_lock(job);
+  status = h2_lua_storage_lock(job);
   if (status == STORAGE_OK) {
     status = storage_load_index(job);
-    used = storage_used(job->host->storage_scratch);
-    storage_unlock(job);
+    used = storage_used_except(job->host->storage_scratch, -1, 1);
+    h2_lua_storage_unlock(job);
   }
   if (status != STORAGE_OK) {
     return push_failure(state, status);
@@ -946,4 +952,60 @@ int h2_lua_open_storage(lua_State *state) {
   set_storage_function(state, "rename", storage_rename, job);
   set_storage_function(state, "get_free_space", storage_get_free_space, job);
   return 1;
+}
+
+/* Reserved KV paths bypass the public filename/index surface. All helpers
+ * below require storage_mutex; they never allocate or invoke Lua. */
+storage_status_t h2_lua_storage_kv_size_locked(h2_lua_job_t *job,
+                                               uint64_t *size) {
+  char path[H2_LUA_PATH_MAX];
+  h2_pal_fs_stat_t stat;
+  storage_status_t status;
+  storage_path(job, STORAGE_KV_NAME, path);
+  status = from_pal(h2_pal_fs_stat(storage_fs(job), path, &stat));
+  *size = 0u;
+  if (status == STORAGE_NOT_FOUND)
+    return STORAGE_OK;
+  if (status != STORAGE_OK)
+    return status;
+  if (stat.is_dir)
+    return STORAGE_IO;
+  if (stat.size == 0u)
+    return STORAGE_CORRUPT;
+  *size = stat.size;
+  return STORAGE_OK;
+}
+
+storage_status_t h2_lua_storage_kv_read_locked(h2_lua_job_t *job, void *data,
+                                               size_t size) {
+  if (size == 0u)
+    return STORAGE_OK;
+  return storage_read_locked(job, STORAGE_KV_NAME, data, size);
+}
+
+storage_status_t h2_lua_storage_kv_commit_locked(h2_lua_job_t *job,
+                                                 const void *data,
+                                                 size_t size) {
+  storage_scratch_t *scratch = job->host->storage_scratch;
+  storage_status_t status;
+  uint64_t used;
+  uint64_t quota = job->host->config.storage.app_quota_bytes;
+  char path[H2_LUA_PATH_MAX];
+  if (size == 0u) {
+    storage_path(job, STORAGE_KV_NAME, path);
+    return from_pal(h2_pal_fs_remove(storage_fs(job), path));
+  }
+  status = storage_load_index(job);
+  if (status != STORAGE_OK)
+    return status;
+  if (!scratch->kv_exists &&
+      scratch->count >= job->host->config.storage.app_max_files)
+    return STORAGE_TOO_MANY_FILES;
+  used = storage_used_except(scratch, -1, 0);
+  if ((uint64_t)size > quota || used > quota - size)
+    return STORAGE_QUOTA_EXCEEDED;
+  status = storage_ensure_dir(job);
+  if (status != STORAGE_OK)
+    return status;
+  return storage_replace(job, STORAGE_KV_TEMP_NAME, STORAGE_KV_NAME, data, size);
 }

@@ -261,6 +261,7 @@ void h2_lua_job_finish(h2_lua_job_t *job, h2_lua_job_state_t state,
                        const char *message);
 h2_pal_result_t h2_lua_register_builtin_modules(h2_lua_job_t *job);
 int h2_lua_open_storage(lua_State *state);
+int h2_lua_open_kv(lua_State *state);
 int h2_lua_storage_name_is_valid(const char *name, size_t max_length);
 h2_pal_result_t h2_lua_storage_normalize(h2_lua_storage_config_t *config);
 h2_pal_result_t h2_lua_storage_host_init(h2_lua_host_t *host);

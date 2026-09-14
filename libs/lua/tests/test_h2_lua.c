@@ -937,6 +937,7 @@ static int test_mesh_open(void *lua_state, void *user) {
 static void test_display_meshes(void) {
   h2_runtime_t *runtime = create_runtime();
   h2_lua_host_t *host = create_unstarted_host(runtime);
+  assert(h2_lua_register_module(host, "kv", test_mesh_open, NULL) == H2_PAL_ERR_INVALID_ARG);
   assert(h2_lua_register_module(host, "vmath", test_mesh_open, NULL) == H2_PAL_ERR_INVALID_ARG);
   assert(h2_lua_register_module(host, "geometry", test_mesh_open, NULL) == H2_PAL_ERR_INVALID_ARG);
   assert(h2_lua_register_module(host, "mesh_test", test_mesh_open, NULL) == H2_PAL_OK);
