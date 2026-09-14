@@ -503,7 +503,7 @@ static int update_write_block(
         (unsigned)native_rc);
     h2_jieli_loader_diag_write(line);
   }
-  if (native_rc != 0u) {
+  if (native_rc != 0u || h2_jieli_upgrade_erase_failed()) {
     (void)snprintf(
         line, sizeof(line),
         "H2_JIELI_UPDATE_WRITE_ERROR offset=%u bytes=%u native=%u\r\n",
@@ -571,7 +571,8 @@ static int update_burn_complete(int error) {
   /* After a timed-out wait the result belongs to nobody; only the post of
    * the process-lifetime semaphore remains, and the next begin drains it. */
   if (__atomic_load_n(&state.burn_waiting, __ATOMIC_ACQUIRE)) {
-    state.update_result = error == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
+    state.update_result = error == 0 && !h2_jieli_upgrade_erase_failed()
+                              ? H2_PAL_OK : H2_PAL_ERR_IO;
   }
   (void)snprintf(
       line, sizeof(line), "H2_JIELI_UPDATE_BURN_CALLBACK error=%d\r\n", error);
@@ -631,6 +632,7 @@ static int image_writer_finish(
     return H2_PAL_ERR_INVALID_STATE;
   }
   int rc = update_flush_buffer();
+  if (h2_jieli_upgrade_erase_failed()) rc = H2_PAL_ERR_IO;
   if (rc == H2_PAL_OK && state.update_result != H2_PAL_OK) {
     rc = state.update_result;
   }
@@ -761,6 +763,7 @@ static int power_set_next(void *user, uint32_t partition_id) {
   char line[128];
   (void)user;
   if (state.reboot_timer_id != 0u) return H2_PAL_ERR_INVALID_STATE;
+  if (h2_jieli_upgrade_erase_failed()) return H2_PAL_ERR_IO;
   (void)snprintf(
       line, sizeof(line),
       "H2_JIELI_SET_NEXT requested=%u running=%u active=%d committed=%d "
@@ -864,6 +867,7 @@ static int power_set_next(void *user, uint32_t partition_id) {
   }
   __atomic_store_n(&state.burn_waiting, 0, __ATOMIC_RELEASE);
   if (rc == H2_PAL_OK) rc = state.update_result;
+  if (h2_jieli_upgrade_erase_failed()) rc = H2_PAL_ERR_IO;
   (void)snprintf(
       line, sizeof(line),
       "H2_JIELI_UPDATE_BURN call=%u pend=%d result=%d\r\n",

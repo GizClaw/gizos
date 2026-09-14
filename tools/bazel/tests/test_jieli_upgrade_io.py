@@ -25,8 +25,19 @@ int norflash_protect_resume(void);
 '''
         program = r'''
 #include <assert.h>
+#include <stdlib.h>
+#include <stdio.h>
 #include "adapter.c"
+static struct { int burn_waiting, update_result, update_sem; } state;
+#define H2_PAL_OK 0
+#define H2_PAL_ERR_IO -8
+static int posts;
+static void os_sem_post(int *sem) { (void)sem; posts++; }
+static void h2_jieli_loader_diag_write(const char *line) { (void)line; }
+/* COMPLETION */
 static int result, calls, suspended, resumed;
+static int erase_mode, erase_fault;
+static u32 erase_start, erase_size, verified;
 static u32 command, address, length;
 static void *buffer;
 static u32 base=0x4020;
@@ -45,6 +56,13 @@ int norflash_write(struct device *dev,void *buf,u32 len,u32 addr) {
   return norflash_read(dev,buf,len,addr);
 }
 int norflash_origin_read(u8 *buf,u32 addr,u32 len) {
+  if (erase_mode) {
+    assert(addr==erase_start+verified && len<=256 && verified+len<=erase_size);
+    verified+=len;
+    memset(buf,0xff,len);
+    if (erase_fault==2 && verified==erase_size) buf[len-1]=0;
+    return erase_fault==3 ? (int)len-1 : (int)len;
+  }
   if(emulate_flash && result==32) {
     assert(addr==HEADER_ADDR && len==32);memcpy(buf,flash_header,32);
   }
@@ -55,7 +73,25 @@ int norflash_ioctl(struct device *dev,u32 cmd,u32 addr) {
 }
 int norflash_protect_suspend(void) { suspended++;return 0; }
 int norflash_protect_resume(void) { resumed++;return 0; }
-int main(void) {
+int main(int argc,char **argv) {
+  if (argc==2) {
+    erase_mode=1;erase_fault=atoi(argv[1]);result=erase_fault==1 ? -1 : 0;
+    erase_size=4096;erase_start=0x4000;verified=0;
+    assert(dev_upgrade_erase(2,0x4123)==0);
+    erase_mode=0;result=32;emulate_flash=1;
+    memset(flash_header,0xff,32);
+    u8 header[32];memset(header,0x5a,32);
+    /* Pinned updater ignores the erase return, then continues as if OK. */
+    assert(dev_upgrade_write(header,HEADER_ADDR,32)==0);
+    assert(h2_jieli_upgrade_header_arm()==-1);
+    base=H2_JIELI_BANK_2_SFC_BASE;
+    assert(h2_jieli_upgrade_header_publish(header)==-1);
+    assert(physical_writes==0);
+    state.burn_waiting=1;state.update_result=H2_PAL_OK;
+    assert(update_burn_complete(0)==0);
+    assert(state.update_result==H2_PAL_ERR_IO && posts==1);
+    return 0;
+  }
   u8 data[32];
   u32 (*operations[])(u8 *,u32,u32)={dev_upgrade_read,
     dev_upgrade_origin_read,dev_upgrade_write};
@@ -67,10 +103,16 @@ int main(void) {
     result=-1;assert(operations[i](data,0x37c000,32)==0);
   }
   const u32 cmds[]={201,200,204};
+  const u32 sizes[]={65536,4096,256};
+  erase_mode=1;
   for (unsigned i=0;i<3;i++) {
-    calls=0;assert(dev_upgrade_erase(i+1,0x4000)==1);
-    assert(calls==1 && command==cmds[i] && address==0x4000);
+    erase_size=sizes[i];erase_start=0x4123u & ~(erase_size-1u);verified=0;
+    result=0;calls=0;
+    assert(dev_upgrade_erase(i+1,0x4123)==1);
+    assert(calls==1 && command==cmds[i] && address==0x4123);
+    assert(verified==erase_size);
   }
+  erase_mode=0;
   calls=0;assert(dev_upgrade_erase(0,0)==0);
   assert(dev_upgrade_erase(4,0)==0 && calls==0);
   switch_upgrade_dev(1);assert(get_app_boot_base_addr()==0x4020);
@@ -140,6 +182,9 @@ int main(void) {
   }
 }
 '''
+        platform = (ROOT / "projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit/src/jieli_loader_platform.c").read_text()
+        completion = platform[platform.index("static int update_burn_complete("):platform.index("static int image_writer_write(")]
+        program = program.replace("/* COMPLETION */", completion)
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "asm").mkdir()
@@ -157,8 +202,13 @@ int main(void) {
                        "-I", str(ROOT / "boards/jieli_ac791n_devkit/ac791n/include"),
                        str(root / "test.c"), "-o", str(root / "test")]
             subprocess.run(command, check=True, timeout=60)
-            subprocess.run([str(root / "test")], check=True, timeout=10)
+            for fault in (0, 1, 2, 3):
+                with self.subTest(fault=fault):
+                    subprocess.run([str(root / "test")] + ([str(fault)] if fault else []), check=True, timeout=10)
             rejected = subprocess.run(command + ["-DCONFIG_SDFILE_EXT_ENABLE=1"],
                                       capture_output=True, text=True, timeout=60)
             self.assertNotEqual(rejected.returncode, 0)
             self.assertIn("supports internal NOR only", rejected.stderr)
+
+if __name__ == "__main__":
+    unittest.main()

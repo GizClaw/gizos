@@ -5,6 +5,10 @@
 
 #define H2_JIELI_UPGRADE_HEADER_SIZE 32u
 
+/* An erase failure poisons this boot, including SDK callbacks that ignore
+ * the erase result. Completion and publication must reject it. */
+int h2_jieli_upgrade_erase_failed(void);
+
 /* Arm only after candidate payload verification on P1. The gate remains
  * latched until reset, including after errors: late SDK writes cannot publish
  * a candidate header after the caller has abandoned the transaction. */
