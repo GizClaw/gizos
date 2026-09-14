@@ -3,6 +3,10 @@
 #include <assert.h>
 #include <string.h>
 
+_Static_assert(sizeof(((h2_quectel_modem_t *)0)->maintenance_response.lines) ==
+    H2_QUECTEL_RESPONSE_MAX * H2_QUECTEL_LINE_MAX,
+    "Idle maintenance response storage must belong to the provider instance");
+
 static unsigned registration_events;
 static unsigned packet_events;
 static unsigned signal_events;
@@ -364,6 +368,8 @@ static h2_pal_result_t watchdog_command(void *user, const char *cmd,
     }
     assert(timeout_ms == H2_QUECTEL_RING_POLL_TIMEOUT_MS);
     assert(t->modem->operation_depth > 0u);
+    assert(response == t->modem->command_response);
+    assert(size == sizeof(t->modem->command_response));
     t->polls++;
     if (t->urc != NULL) { h2_quectel_handle_urc_line(t->modem, t->urc); }
     assert(strlen(t->reply) < size);

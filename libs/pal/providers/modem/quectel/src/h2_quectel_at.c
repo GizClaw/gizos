@@ -178,8 +178,8 @@ static h2_pal_result_t at_exchange_impl(
     }
 
     if (modem->config.command != NULL) {
-        char command_response[H2_QUECTEL_LINE_MAX * H2_QUECTEL_RESPONSE_MAX];
-        memset(command_response, 0, sizeof(command_response));
+        char *command_response = modem->command_response;
+        memset(command_response, 0, sizeof(modem->command_response));
         const uint32_t generation = modem->reset_generation;
         /* Initial configuration is SIM-independent; insertion/absence URCs
          * still update state but cannot invalidate these command responses. */
@@ -189,11 +189,12 @@ static h2_pal_result_t at_exchange_impl(
             modem->config.transport_user,
             cmd,
             command_response,
-            sizeof(command_response),
+            sizeof(modem->command_response),
             modem->config.command_timeout_ms);
         (void)h2_quectel_state_lock(modem);
         if (generation != modem->reset_generation ||
             (modem->preparing == 0u && sim_generation != modem->sim_generation)) {
+            memset(command_response, 0, sizeof(modem->command_response));
             return H2_PAL_ERR_INVALID_STATE;
         }
         if (allow_connect != 0 && response_text_has_connect(command_response)) {
@@ -201,9 +202,12 @@ static h2_pal_result_t at_exchange_impl(
                 response->connected = 1;
             }
             response_add_text(modem, response, command_response, cmd);
+            memset(command_response, 0, sizeof(modem->command_response));
             return H2_PAL_OK;
         }
         response_add_text(modem, response, command_response, cmd);
+        /* Transport text may echo credentials; do not retain it in the instance. */
+        memset(command_response, 0, sizeof(modem->command_response));
         return rc;
     }
     if (modem->config.read == NULL || modem->config.write == NULL) {

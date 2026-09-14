@@ -20,6 +20,13 @@ extern "C" {
 #define H2_QUECTEL_CELL_LOCATE_TOKEN_MAX 127u
 #define H2_QUECTEL_CELL_LOCATE_TIMEOUT_MS 60000u
 
+typedef struct h2_quectel_response {
+    char lines[H2_QUECTEL_RESPONSE_MAX][H2_QUECTEL_LINE_MAX];
+    size_t count;
+    int connected;
+    int truncated;
+} h2_quectel_response_t;
+
 typedef struct h2_quectel_modem h2_quectel_modem_t;
 
 typedef h2_pal_result_t (*h2_quectel_modem_init_fn)(void *user);
@@ -97,6 +104,12 @@ typedef struct h2_quectel_modem_config {
      * deinit; sync_api must implement try_lock_mutex for deferred SIM recovery
      * and incoming-call CLCC watchdog,
      * and protects state independently of serialized AT operations.
+     * Idle callbacks execute AT exchanges (CLCC watchdog and SIM readiness),
+     * so the task stack must cover provider/worker peak plus one full command
+     * callback including transport/driver callees, and safety margin. Recommend
+     * at least 8192 bytes as a starting budget; increase for measured peaks.
+     * 4096 bytes is not a portable guarantee, even with a PSRAM-backed stack.
+     * Validate target stack high-water marks under calls and SIM hot-plug.
      * With this worker, command() returns solicited text; any URCs included
      * in that text are ignored because physical RX already delivered them. */
     const h2_pal_task_api_t *urc_task_api;
@@ -138,6 +151,13 @@ struct h2_quectel_modem {
     /** State mutex; AT I/O releases it while retaining operation_lock. */
     h2_pal_mutex_t *lock;
     h2_pal_mutex_t *operation_lock;
+    /* Idle maintenance owns this parsed response from operation_begin through
+     * operation_end. Other command paths and URC handlers must not reuse it. */
+    h2_quectel_response_t maintenance_response;
+    /* Raw command text is separate from parsed responses. AT exchanges reuse
+     * it under operation_lock (external serialization without sync_api).
+     * Transport/event callbacks must not reenter AT operations. */
+    char command_response[H2_QUECTEL_LINE_MAX * H2_QUECTEL_RESPONSE_MAX];
     h2_pal_modem_status_t observed_status;
     h2_pal_modem_signal_t observed_signal;
     uint8_t registration_seen;

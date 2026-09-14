@@ -28,6 +28,12 @@ consumer 必须在只交付新字节的边界调用 `h2_quectel_rx_feed`，物�
 
 URC 的系统事件、SIM invalidation 和 sleep gate 回调不得重入 modem API，不能等待 AT/RX/URC 任务。state lock 的短临界区不意味着任意 consumer 回调都自动无阻塞，板级实现必须遵守合同。close 的 transport teardown 在 state lock 外执行，deinit 在生产者停止后于所有 provider lock 外 join worker。join 失败保留实例供重试。SIM/reset generation 用于拒绝跨失效边界的 command response。
 
+### URC 任务栈预算
+
+`$modem/urc` 不仅解析通知，还会在空闲回调中执行 AT 交换（来电 CLCC 看门狗、SIM 就绪轮询和后续刷新）。集成方配置任务栈时，必须覆盖 worker/provider 的调用链峰值，加上一次完整 `command` 回调及其 AT 缓冲、串口/CMUX 驱动等下层调用的栈开销，并留安全余量；还需覆盖事件和 sleep gate 回调路径。建议以 **至少 8192 字节**作为起始预算，若上述峰值与余量之和更大则继续增加。这不是所有 transport 的充分保证；4096 字节即使放在 PSRAM 中也不能视为通用安全值。注意平台任务 API 的栈单位可能是字节或 word，必须正确换算，并在目标板来电、SIM 热插拔及超时场景测量栈高水位。
+
+provider 将空闲维护的解析响应和共用 AT 交换的原始 command 响应分别保存在实例中，避免两块约 768 字节响应叠加占用任务栈。维护缓冲只在 `operation_begin` 到 `operation_end` 内使用；operation lock 跨越 AT 等待，释放 state lock 不释放缓冲所有权。其它命令路径和 DSCI/URC 行处理不使用维护缓冲，原始响应与解析响应也不重叠；无 sync provider 时由调用方串行化。回调禁止重入 AT 操作。DSCI 通知处理不执行 AT，也不分配大响应对象。
+
 ## 事件与诊断
 
 注册、packet、signal 按语义字段变化发布，保留 A → B → A；call/READY 不作全局去重。close/reset 清除观察状态。系统事件采用 timeout 0，失败累计 event_drop_count；观察状态不等价于 Runtime 已收到事件。

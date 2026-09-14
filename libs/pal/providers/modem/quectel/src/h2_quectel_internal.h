@@ -24,13 +24,6 @@ static inline uint32_t h2_quectel_cpin_absent_load(const h2_quectel_modem_t *mod
 #endif
 }
 
-typedef struct h2_quectel_response {
-    char lines[H2_QUECTEL_RESPONSE_MAX][H2_QUECTEL_LINE_MAX];
-    size_t count;
-    int connected;
-    int truncated;
-} h2_quectel_response_t;
-
 static inline int h2_quectel_ascii_digit(unsigned char value) {
     return value >= (unsigned char)'0' && value <= (unsigned char)'9';
 }

@@ -415,15 +415,15 @@ void h2_quectel_sim_recover(void *user) {
         (void)h2_quectel_operation_end(modem, H2_PAL_OK);
         return;
     }
-    h2_quectel_response_t response;
+    h2_quectel_response_t *response = &modem->maintenance_response;
     if (modem->sim_state != H2_PAL_MODEM_SIM_STATE_READY) {
         if (modem->sim_poll_remaining != 0u) {
             modem->sim_poll_remaining--;
-            (void)h2_quectel_at_exchange_timeout(modem, "AT+CPIN?", &response, 0, 1000u);
+            (void)h2_quectel_at_exchange_timeout(modem, "AT+CPIN?", response, 0, 1000u);
         }
     } else if (modem->sim_refresh_pending == 1u) {
         modem->sim_refresh_pending = 2u;
-        (void)h2_quectel_at_exchange_timeout(modem, "AT+CIMI", &response, 0, 1000u);
+        (void)h2_quectel_at_exchange_timeout(modem, "AT+CIMI", response, 0, 1000u);
     } else {
         const uint32_t generation = modem->sim_generation;
         h2_pal_modem_status_t status = {0};
@@ -432,11 +432,11 @@ void h2_quectel_sim_recover(void *user) {
         status.rat = H2_PAL_MODEM_RAT_LTE;
         const int packet = modem->sim_refresh_pending == 3u;
         const uint32_t observed_generation = packet ? modem->packet_generation : modem->registration_generation;
-        rc = h2_quectel_at_exchange_timeout(modem, packet ? "AT+CGATT?" : "AT+CEREG?", &response, 0, 1000u);
+        rc = h2_quectel_at_exchange_timeout(modem, packet ? "AT+CGATT?" : "AT+CEREG?", response, 0, 1000u);
         if (generation == modem->sim_generation && modem->sim_state == H2_PAL_MODEM_SIM_STATE_READY) {
             if (packet) {
                 status.packet = rc == H2_PAL_OK
-                    ? parse_packet(h2_quectel_response_find(&response, "+CGATT:")) : H2_PAL_MODEM_PACKET_UNKNOWN;
+                    ? parse_packet(h2_quectel_response_find(response, "+CGATT:")) : H2_PAL_MODEM_PACKET_UNKNOWN;
                 if (observed_generation == modem->packet_generation) {
                     h2_quectel_post_system_event(modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_PACKET_CHANGED,
                         &status, sizeof(status));
@@ -450,7 +450,7 @@ void h2_quectel_sim_recover(void *user) {
                 }
             } else {
                 status.registration = rc == H2_PAL_OK
-                    ? parse_registration_line(h2_quectel_response_find(&response, "+CEREG:"))
+                    ? parse_registration_line(h2_quectel_response_find(response, "+CEREG:"))
                     : H2_PAL_MODEM_REGISTRATION_UNKNOWN;
                 if (observed_generation == modem->registration_generation) {
                     h2_quectel_post_system_event(modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_REGISTRATION_CHANGED,
@@ -460,5 +460,6 @@ void h2_quectel_sim_recover(void *user) {
             }
         }
     }
+    memset(response, 0, sizeof(*response));
     (void)h2_quectel_operation_end(modem, H2_PAL_OK);
 }
