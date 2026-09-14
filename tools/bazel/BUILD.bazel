@@ -410,6 +410,26 @@ py_test(
 )
 
 py_test(
+    name = "jieli_usb_deadlines_test",
+    srcs = ["tests/test_jieli_usb_deadlines.py"],
+    data = [
+        "tests/fixtures/jieli_usb_deadlines.c",
+        "//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:src/loader_launcher.c",
+        "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:src/jieli_app_iostreamikcp.c",
+        "//projects/h2loader/tools/bazel:h2loader_firmware.bzl",
+        "//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:sdk_patches/bounded_cdc_write.patch",
+        "//libs/pal:pal_header_files",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_usb_deadlines.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
     name = "jieli_command_deadlines_test",
     srcs = ["tests/test_jieli_command_deadlines.py"],
     data = [

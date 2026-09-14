@@ -88,7 +88,7 @@ extern int h2_jieli_wl82_take_loader_crash_pending(void);
 extern int h2_jieli_wl82_coredump_flush_pending(void);
 
 static uint32_t ms_to_ticks(uint32_t ms) {
-  uint32_t ticks = (ms + 9u) / 10u;
+  uint32_t ticks = ms / 10u + (ms % 10u != 0u);
   return ticks == 0u ? 1u : ticks;
 }
 
@@ -250,27 +250,48 @@ static int physical_write(
   *out_written = (size_t)count;
   return H2_PAL_OK;
 #else
-  if (os_mutex_pend(&usb_tx_mutex, (int)ms_to_ticks(timeout_ms)) !=
-      OS_NO_ERR) {
-    return H2_PAL_ERR_IO;
-  }
+  if (len == 0u) return H2_PAL_OK;
   uint32_t started = timer_get_ms();
+  while (os_mutex_accept(&usb_tx_mutex) != OS_NO_ERR) {
+    if (timeout_ms == 0u) return H2_PAL_ERR_TIMEOUT;
+    uint32_t elapsed = timer_get_ms() - started;
+    if (elapsed >= timeout_ms) return H2_PAL_ERR_TIMEOUT;
+    uint32_t ticks = (timeout_ms - elapsed) / 10u;
+    if (ticks != 0u && os_mutex_pend(&usb_tx_mutex, (int)ticks) == OS_NO_ERR) break;
+  }
+  int result = H2_PAL_OK;
   while (*out_written < len) {
+    uint32_t elapsed = timeout_ms == 0u ? 0u : timer_get_ms() - started;
+    if (timeout_ms != 0u && elapsed >= timeout_ms) {
+      result = H2_PAL_ERR_TIMEOUT;
+      break;
+    }
     size_t remaining = len - *out_written;
     uint32_t take = remaining > UINT32_MAX ? UINT32_MAX : (uint32_t)remaining;
+    /* The board CDC patch performs one immediately available short packet;
+     * it never waits on native TX or a trailing zero-length packet. */
     uint32_t written = cdc_write_data(
         0, (uint8_t *)(uintptr_t)&cursor[*out_written], take);
-    if (written != 0u) {
-      *out_written += (size_t)written;
-    } else if (timer_get_ms() - started >= timeout_ms) {
-      (void)os_mutex_post(&usb_tx_mutex);
-      return H2_PAL_ERR_TIMEOUT;
-    } else {
-      os_time_dly(1u);
+    if (written > take) {
+      result = H2_PAL_ERR_IO;
+      break;
+    }
+    *out_written += written;
+    if (written == 0u) {
+      if (timeout_ms == 0u) {
+        result = H2_PAL_ERR_TIMEOUT;
+        break;
+      }
+      elapsed = timer_get_ms() - started;
+      if (elapsed >= timeout_ms) {
+        result = H2_PAL_ERR_TIMEOUT;
+        break;
+      }
+      if (timeout_ms - elapsed >= 10u) os_time_dly(1u);
     }
   }
   (void)os_mutex_post(&usb_tx_mutex);
-  return H2_PAL_OK;
+  return result;
 #endif
 }
 

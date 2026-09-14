@@ -1,6 +1,6 @@
 # Console deadline follow-up — 2026-09-14
 
-This is incremental O5 evidence. UART admission, physical submission and DMA staging ownership are repaired; Loader/App KCP output now shares command budgets; USB native submission is still being audited. Final-source lifecycle acceptance remains pending.
+This is incremental O5 evidence. UART admission, physical submission and DMA staging ownership are repaired; Loader/App KCP output now shares command budgets; USB native submission uses the bounded short-packet path audited below. Final-source lifecycle acceptance remains pending.
 
 ## Pinned UART facts
 
@@ -26,9 +26,9 @@ The existing `jieli_uart_console_test` is now registered with host-only compatib
 
 Logs: `/tmp/jieli-console-expanded-before.log`, `/tmp/jieli-console-expanded-gcc-before.log`, `/tmp/jieli-console-deadlines-after.log`, `/tmp/jieli-console-deadlines-gcc-after.log`, `/tmp/jieli-console-regression.log`, `/tmp/jieli-console-regression-gcc.log`. Both host registrations carry Linux/macOS/default-incompatible selects; iOS simulator analysis passes (`/tmp/jieli-console-ios.log`).
 
-## USB work still open
+## USB native audit
 
-The SDK `apps/common/usb/device/cdc.c:cdc_write_data` takes an indefinite internal mutex. `cpu.a:usb_phy.c.o:usb_g_bulk_write` delegates to `usb.c.o:usb_g_ep_write`, which polls TX-ready with a native deadline based on `jiffies + 200 + 2 * packet_count` (or 20 ticks before endpoint allocation), independent of a PAL caller's budget. A complete physical deadline therefore requires controlling this lower-level submission and CDC ownership; checking elapsed time only after that call is insufficient. USB is not enabled as the active transport on the current UART-owned board layout, so no USB hardware deadline result is claimed.
+The SDK `apps/common/usb/device/cdc.c:cdc_write_data` takes an indefinite internal mutex. `cpu.a:usb_phy.c.o:usb_g_bulk_write` delegates to `usb.c.o:usb_g_ep_write`, which polls TX-ready with a native deadline based on `jiffies + 200 + 2 * packet_count` (or 20 ticks before endpoint allocation), independent of a PAL caller's budget. The pre-existing board patch reduced the CDC data-mutex wait to one tick, but that still exceeded zero and sub-tick budgets and left the lower-level TX wait intact. Checking elapsed time only after that call was insufficient. USB is not enabled as the active transport on the current UART-owned board layout, so no USB hardware deadline result is claimed.
 
 ## Hardware and capture investigation
 
@@ -48,4 +48,16 @@ The command task now scopes the original deadline around read/write/flush. KCP o
 
 `//tools/bazel:jieli_command_deadlines_test` compiles both real transport structures, stream configurations, control writers and command implementations. Nine scenarios fail on each original provider (18 failures): finite, zero, send-window wait, zero with a full window, multiple frames, read-triggered output, control reply, initial flush and a fully consumed window budget. All pass with strict Clang/GCC. Logs are `/tmp/jieli-command-deadlines-expanded-before.log`, `/tmp/jieli-command-deadlines-expanded-gcc-before.log`, `/tmp/jieli-command-deadlines-final-after.log` and `/tmp/jieli-command-deadlines-final-gcc-after.log`. UART regressions also pass. Native Loader, PAL and display builds pass (68.662 seconds). The command-budget PAL package `8f8baff550fd61908be21e9e6046d3cecfa97a0f421bde9f1e1da42a946adf8a`, image `989d692e899728eb4ec27a19f7a19ffa9d316bba713d2c3a35e682a1d38b7038`, passes Filesystem 13, all eight Core cases and offline Wi-Fi 27 (10/10), with complete monitor and raw UART ledgers in `o5-command-budget/1/`. UART installation, App status and return to unchanged valid P1 succeed. Final-source Loader/lifecycle acceptance remains pending.
 
-USB still calls the SDK's internally blocking CDC writer, so propagating a correct budget does not yet establish a physical USB deadline. That native ownership/submission repair remains open.
+The subsequent bounded CDC patch completes the physical USB deadline path described next.
+
+## Bounded CDC submission
+
+The applied `bounded_cdc_write.patch` changes the layout's CDC writer to immediate data-mutex admission and one available short packet (at most native maximum packet size minus one byte). It checks native DMA allocation and TXCSR bit 0 before submission. Short packets avoid the old trailing zero-length packet call, which could wait for the preceding packet indefinitely relative to the caller budget. The SDK copies submitted bytes into its own endpoint DMA allocation before returning, so caller stack storage is no longer borrowed by that call.
+
+Pinned `cpu.a:usb_phy.c.o:usb_g_bulk_write` directly calls `usb.c.o:usb_g_ep_write`. On the ready, one-packet path the latter copies bytes, synchronizes, programs the DMA address and calls `usb_g_tx_flushfifo`; that helper writes the count and TXCSR ready bit. These paths contain no subscriber or synchronous callback. The SDK data mutex excludes all CDC task writers. `usb_g_ep_config` resets TXCSR with 72 then 16384, neither setting ready bit 0, and reuses the endpoint buffer. The layout's project source list excludes `task_pc.c`, whose `usb_pause` performs class teardown; the board starts CDC once and exposes no runtime class teardown. Thus this implementation relies on the existing boot-lifetime CDC/DMA ownership, not an invented delay or a release/reopen recovery rule.
+
+Loader/App physical writers now start the budget before outer-lock admission, use immediate admission for zero timeout, wait only whole remaining ticks, and bound each subsequent availability wait. A finite expired budget cannot submit another packet. Accepted short progress is retained in `out_written`. The two millisecond-to-tick helpers use division and remainder without overflowing `ms + 9`. SDK printf and diagnostic callers already consume returned prefixes; they use the same bounded CDC implementation. No second native writer or new configuration mode was introduced.
+
+`//tools/bazel:jieli_usb_deadlines_test` extracts both actual physical writers and the CDC function selected by the firmware patch manifest. Nine scenarios fail on each original provider with the actual pre-existing one-tick CDC patch (18 failures): tick overflow, zero/finite outer-lock contention, busy TX, disconnected CDC, absent DMA, a real pthread holding the native mutex, full packet termination and short native writes. They pass with strict Clang/TSan and GCC. Logs: `/tmp/jieli-usb-deadlines-before.log`, `/tmp/jieli-usb-deadlines-gcc-before.log`, `/tmp/jieli-usb-deadlines-final-after.log`, `/tmp/jieli-usb-deadlines-final-gcc.log`. Native Loader/PAL/display builds pass (65.322 seconds). A patch preimage preparation error was caught and corrected by native build before acceptance; baseline tests were rerun against the correct patched SDK function.
+
+USB hardware throughput, unplug/reconnect behavior and endpoint reset interleavings are **not covered on hardware** in the UART1-owned layout. Final-source UART/PAL/BLE lifecycle acceptance remains pending.

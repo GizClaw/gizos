@@ -36,6 +36,7 @@ exports_files([
     "sdk_abi.ld",
     "sdk_patches/early_app_boot.patch",
     "sdk_patches/uart1_console.patch",
+    "sdk_patches/bounded_cdc_write.patch",
     "sdk_patches/crash_recovery.patch",
     "sdk_patches/h2_retained_ram.patch",
     "sdk_patches/preserve_exception_log.patch",
