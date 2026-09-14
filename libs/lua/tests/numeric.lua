@@ -1,8 +1,14 @@
-local v, g = require('vmath'), require('geometry')
+-- No argument retains every original f64 input and tolerance.
+local kind = ...
+local tolerance = kind == 'f32' and 1e-4 or 1e-9
+local tiny = kind == 'f32' and 1e-40 or 1e-320
+local numeric, g = require('vmath'), require('geometry')
+local v = setmetatable({buffer = function(n) return numeric.buffer(n, kind) end},
+                       {__index = numeric})
 local function b(t, capacity)
   local out = v.buffer(capacity or #t); out:load(t); return out
 end
-local function near(a, z) assert(math.abs(a-z) < 1e-9, tostring(a)..' != '..tostring(z)) end
+local function near(a, z) assert(math.abs(a-z) < tolerance, tostring(a)..' != '..tostring(z)) end
 local function bad(fn) assert(not pcall(fn)) end
 local a = b({1,2,3,4,5,6})
 assert(#a == 6 and #v.buffer(0) == 0)
@@ -41,7 +47,7 @@ local vector=b({3,4,0,0,0,0})
 local lengths=v.buffer(2)
 v.length3(lengths,vector,2);near(lengths:get(1),5)
 v.normalize3(vector,vector,2);near(vector:get(1),.6);assert(vector:get(4)==0)
-vector:load({1e-320,1e-320,0});v.normalize3(vector,vector,1);near(vector:get(1),math.sqrt(.5))
+vector:load({tiny,tiny,0});v.normalize3(vector,vector,1);near(vector:get(1),math.sqrt(.5))
 v.multiply(lengths,lengths,lengths,2);near(lengths:get(1),25)
 bad(function() v.divide(lengths,lengths,lengths,2) end);near(lengths:get(1),25)
 lengths:set(2,1);v.divide(lengths,lengths,lengths,2);near(lengths:get(1),1)
@@ -326,8 +332,10 @@ local qp,qprev,qacc,qw=b({0,0,0,1,0,0}),b({0,0,0,1,0,0}),v.buffer(6),b({0,1})
 local qe,ql=b({1,2,1,0}),v.buffer(1)
 local qwgt=b({0,0,0,0})
 local qids,qedgeweights=b({2,1}),b({0,1})
+local load_values = {1,2,3,4,5,6,7,8,9,10,11,12}
 return function()
   for _=1,100 do
+    qa:load(load_values);assert(#qa==12)
     qa:set(1,1);qa:get(1);qb:fill(0);qb:copy(qa,1,1,12)
     v.clamp(1,0,2);v.lerp(0,1,.5);v.smoothstep(0,1,.5);v.spring(0,0,1,1,1,0,.01)
     v.multiply(qb,qa,qa,12);v.divide(qb,qa,qa,12);v.length3(qb,qa,4);v.normalize3(qb,qa,4)
