@@ -260,3 +260,7 @@ bazel test --config=macos_arm64 --strategy=TestRunner=local --test_env=HOME \
 ```
 
 第二条使用本机 Google Chrome 以覆盖 H.264/AAC 解码。
+
+## Raster2D example
+
+`//projects/example/targets/pkg_tar/raster2d:serve` 运行唯一无 Lua 的 C/WASM 示例，展示 RGB565 颜色端点、中间值、裁剪和覆盖。`:browser_test` 检查完整 240×240 Canvas。它复用现有 App Host，不增加 Web renderer。现有 `//projects/example/targets/pkg_tar/lua-script-vector:browser_test` 继续承担 Lua/C/WASM 显示回归；新增 binding 合同由 `//libs/lua:lua_test` 的真实 Host 测试覆盖。

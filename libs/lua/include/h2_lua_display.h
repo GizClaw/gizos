@@ -3,6 +3,34 @@
 
 /** @file h2_lua_display.h
  * @brief VM-owned procedural geometry shared by native producers and Display.
+ *
+ * Indexed rectangle Lua API (owning VM worker only):
+ * - display.compile_rects(records) returns immutable userdata copied from a
+ *   dense list of {x,y,width,height,color_index} named-field records. Integer
+ *   x/y fit int32, width/height are 0..UINT32_MAX, indices are 1..16384.
+ * - display.compile_palette(colors) copies a dense list of existing Display
+ *   color strings or named {r=...,g=...,b=...} tables (integer 0..255) into
+ *   fixed-length native RGB565 userdata. Both constructors allow 0..16384
+ *   entries; inputs can be released after return and storage counts toward VM
+ *   memory. Neither constructor itself opens or draws the Display.
+ * - display.blend_palette(output,a,b,progress) requires equal palette lengths
+ *   and integer progress 0..256. R5/G6/B5 channels use
+ *   (a*(256-progress)+b*progress+128)>>8; endpoints are exact. Output can be
+ *   either input. It returns no values, allocates nothing on success and does
+ *   not require a live Display or change palette length.
+ * - display.draw_rects(batch,palette[,left,top,right,bottom]) returns no values.
+ *   Supply all four integer half-open clip bounds or omit all four for the full
+ *   surface. Bounds must lie inside the framebuffer. Draw requires a live
+ *   acquisition and validates every index, including clipped/empty rectangles,
+ *   before writing. Later rectangles overwrite earlier ones. Successful calls
+ *   allocate nothing, mark existing dirty/background damage and do not present.
+ *
+ * Invalid arguments/acquisition raise Lua errors without partial operation
+ * writes. OOM publishes no partial object; getters' own side effects remain
+ * ordinary Lua behavior. GC/job/Host teardown reclaims userdata. Objects must
+ * not cross VMs. No new caches, public pointers or close methods are exposed.
+ * Existing commands/mesh contracts are unchanged. Standalone C applications
+ * use h2_raster2d.h without a VM; its implementation-only span helper is not API.
  */
 #include "h2/pal/core/h2_pal_errors.h"
 #include <stddef.h>

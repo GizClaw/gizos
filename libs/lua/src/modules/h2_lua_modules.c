@@ -1,4 +1,6 @@
 #include "h2_lua_display.h"
+#include "h2_raster2d.h"
+#include "../../../raster2d/src/h2_raster2d_internal.h"
 #include "h2_lua_numeric.h"
 #include "h2_f32_math.h"
 #include "../runtime/h2_lua_internal.h"
@@ -1426,18 +1428,7 @@ static void fill_span(h2_lua_job_t *job, int y, int min_x, int max_x,
   pixels = job->framebuffer + (size_t)y * (size_t)job->display_info.width +
            (size_t)min_x;
   count = (size_t)(max_x - min_x + 1);
-  while (count >= 4u) {
-    pixels[0] = color;
-    pixels[1] = color;
-    pixels[2] = color;
-    pixels[3] = color;
-    pixels += 4;
-    count -= 4u;
-  }
-  while (count != 0u) {
-    *pixels++ = color;
-    --count;
-  }
+  h2_raster2d_fill_span_unchecked(pixels, count, color);
 }
 
 static void write_pixel(h2_lua_job_t *job, int x, int y, uint16_t color) {
@@ -1902,6 +1893,156 @@ static int display_draw_commands(lua_State *state) {
       double end_y = floor(oy + command->b * sy + 0.5);
       display_clipped_line(job, x, y, end_x, end_y, color, top, bottom);
     }
+  }
+  return 0;
+}
+
+#define H2_LUA_RECTS_META "h2.display.rects"
+#define H2_LUA_PALETTE_META "h2.display.palette"
+
+typedef struct display_rect_batch {
+  size_t count;
+  h2_raster2d_rect_t rects[];
+} display_rect_batch_t;
+
+typedef struct display_palette {
+  size_t count;
+  uint16_t colors[];
+} display_palette_t;
+
+static size_t display_dense_count(lua_State *state, size_t limit) {
+  luaL_checktype(state, 1, LUA_TTABLE);
+  size_t count = lua_rawlen(state, 1);
+  if (count > limit)
+    luaL_error(state, "display batch limit exceeded");
+  lua_pushnil(state);
+  while (lua_next(state, 1)) {
+    if (!lua_isinteger(state, -2) || lua_tointeger(state, -2) < 1 ||
+        (lua_Unsigned)lua_tointeger(state, -2) > count)
+      luaL_error(state, "expected a dense display list");
+    lua_pop(state, 1);
+  }
+  return count;
+}
+
+static lua_Integer display_integer_field(lua_State *state, const char *name,
+                                         lua_Integer min, lua_Integer max) {
+  lua_getfield(state, -1, name);
+  luaL_checktype(state, -1, LUA_TNUMBER);
+  lua_Integer value = luaL_checkinteger(state, -1);
+  if (value < min || value > max)
+    luaL_error(state, "rectangle field '%s' out of range", name);
+  lua_pop(state, 1);
+  return value;
+}
+
+static int display_compile_rects(lua_State *state) {
+  size_t count = display_dense_count(state, H2_RASTER2D_RECT_LIMIT);
+  display_rect_batch_t *batch = lua_newuserdatauv(
+      state, sizeof(*batch) + count * sizeof(*batch->rects), 0);
+  batch->count = count;
+  for (size_t i = 0; i < count; ++i) {
+    lua_rawgeti(state, 1, (lua_Integer)i + 1);
+    luaL_checktype(state, -1, LUA_TTABLE);
+    h2_raster2d_rect_t *rect = &batch->rects[i];
+    rect->x = (int32_t)display_integer_field(state, "x", INT32_MIN, INT32_MAX);
+    rect->y = (int32_t)display_integer_field(state, "y", INT32_MIN, INT32_MAX);
+    rect->width =
+        (uint32_t)display_integer_field(state, "width", 0, UINT32_MAX);
+    rect->height =
+        (uint32_t)display_integer_field(state, "height", 0, UINT32_MAX);
+    rect->palette_index =
+        (uint32_t)display_integer_field(state, "color_index", 1,
+                                        H2_RASTER2D_PALETTE_LIMIT) -
+        1u;
+    lua_pop(state, 1);
+  }
+  luaL_newmetatable(state, H2_LUA_RECTS_META);
+  lua_setmetatable(state, -2);
+  return 1;
+}
+
+static int display_compile_palette(lua_State *state) {
+  size_t count = display_dense_count(state, H2_RASTER2D_PALETTE_LIMIT);
+  display_palette_t *palette = lua_newuserdatauv(
+      state, sizeof(*palette) + count * sizeof(*palette->colors), 0);
+  palette->count = count;
+  for (size_t i = 0; i < count; ++i) {
+    lua_rawgeti(state, 1, (lua_Integer)i + 1);
+    palette->colors[i] = check_color(state, -1);
+    lua_pop(state, 1);
+  }
+  luaL_newmetatable(state, H2_LUA_PALETTE_META);
+  lua_setmetatable(state, -2);
+  return 1;
+}
+
+static int display_blend_palette(lua_State *state) {
+  display_palette_t *out = luaL_checkudata(state, 1, H2_LUA_PALETTE_META);
+  const display_palette_t *a = luaL_checkudata(state, 2, H2_LUA_PALETTE_META);
+  const display_palette_t *b = luaL_checkudata(state, 3, H2_LUA_PALETTE_META);
+  luaL_checktype(state, 4, LUA_TNUMBER);
+  lua_Integer progress = luaL_checkinteger(state, 4);
+  if (a->count != b->count || a->count != out->count || progress < 0 ||
+      progress > 256)
+    return luaL_error(state, "invalid palette lengths or progress");
+  h2_pal_result_t result =
+      h2_raster2d_palette_blend(a->colors, b->colors, a->count,
+                                (unsigned)progress, out->colors, out->count);
+  if (result != H2_PAL_OK)
+    return luaL_error(state, "palette blend failed: %d", result);
+  return 0;
+}
+
+static int display_draw_rects(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  const display_rect_batch_t *batch =
+      luaL_checkudata(state, 1, H2_LUA_RECTS_META);
+  const display_palette_t *palette =
+      luaL_checkudata(state, 2, H2_LUA_PALETTE_META);
+  int argc = lua_gettop(state);
+  if (!job->display_open || (argc != 2 && argc != 6))
+    return luaL_error(state, "closed display or incomplete rectangle clip");
+  h2_raster2d_surface_t surface = {
+      job->framebuffer,
+      (size_t)job->display_info.width * (size_t)job->display_info.height,
+      (size_t)job->display_info.width, (size_t)job->display_info.height,
+      (size_t)job->display_info.width};
+  h2_raster2d_clip_t clip = {0, 0, surface.width, surface.height};
+  if (argc == 6) {
+    size_t values[4];
+    for (int i = 0; i < 4; ++i) {
+      luaL_checktype(state, i + 3, LUA_TNUMBER);
+      lua_Integer value = luaL_checkinteger(state, i + 3);
+      if (value < 0 || value > INT32_MAX)
+        return luaL_error(state, "rectangle clip out of range");
+      values[i] = (size_t)value;
+    }
+    clip = (h2_raster2d_clip_t){values[0], values[1], values[2], values[3]};
+  }
+  h2_pal_result_t result =
+      h2_raster2d_draw_rects(&surface, batch->rects, batch->count,
+                             palette->colors, palette->count, &clip);
+  if (result != H2_PAL_OK)
+    return luaL_error(state, "rectangle replay failed: %d", result);
+  /* Core validated everything before writing. This pass only marks clipped
+   * rectangles, preserving existing tile precision without callbacks/scratch.
+   */
+  for (size_t i = 0; i < batch->count; ++i) {
+    const h2_raster2d_rect_t *rect = &batch->rects[i];
+    int64_t left = rect->x, top = rect->y;
+    int64_t right = left + rect->width, bottom = top + rect->height;
+    if (left < (int64_t)clip.left)
+      left = (int64_t)clip.left;
+    if (top < (int64_t)clip.top)
+      top = (int64_t)clip.top;
+    if (right > (int64_t)clip.right)
+      right = (int64_t)clip.right;
+    if (bottom > (int64_t)clip.bottom)
+      bottom = (int64_t)clip.bottom;
+    if (left < right && top < bottom)
+      mark_dirty_rect(job, (int)left, (int)top, (int)(right - left),
+                      (int)(bottom - top));
   }
   return 0;
 }
@@ -3759,6 +3900,10 @@ static int push_display_proxy(lua_State *state, h2_lua_job_t *job) {
   set_function(state, "draw_mesh", display_draw_mesh, job);
   set_function(state, "fill_polygon", display_fill_polygon, job);
   set_function(state, "fill_ellipse", display_fill_ellipse, job);
+  set_function(state, "compile_rects", display_compile_rects, job);
+  set_function(state, "compile_palette", display_compile_palette, job);
+  set_function(state, "blend_palette", display_blend_palette, job);
+  set_function(state, "draw_rects", display_draw_rects, job);
   set_function(state, "compile_commands", display_compile_commands, job);
   set_function(state, "draw_commands", display_draw_commands, job);
   set_function(state, "clear", display_clear, job);

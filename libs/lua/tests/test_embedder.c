@@ -594,7 +594,10 @@ int main(void) {
   assert(h2_lua_job_release(host, job) == H2_PAL_OK);
 
   job = submit(host, "local d=require('display');d.present();"
-                     "d.fill_rect(3,5,7,9,'red');d.present();"
+                     "local a=d.compile_palette({'red'});local b=d.compile_palette({'blue'});"
+                     "d.blend_palette(b,a,b,0);"
+                     "local r=d.compile_rects({{x=3,y=5,width=7,height=9,color_index=1}});"
+                     "d.draw_rects(r,b);d.present();"
                      "local t=require('lcd_touch');t.poll()");
   wait_state(host, job, H2_LUA_JOB_SUCCEEDED);
   assert(display.draws == 2 && display.presents == 2);

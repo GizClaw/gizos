@@ -128,7 +128,7 @@ static const h2_pal_fs_api_t s_test_fs = {
 };
 
 typedef struct test_display_fixture {
-  uint16_t pixels[64u * 64u];
+  uint16_t pixels[240u * 240u];
   h2_display_rect_t draw_rects[4096u];
   int width, height;
   size_t draw_count;
@@ -934,6 +934,166 @@ static int test_mesh_open(void *lua_state, void *user) {
   return 1;
 }
 
+static int test_raster_noalloc(lua_State *state) {
+  luaL_checktype(state, 1, LUA_TFUNCTION);
+  assert(lua_checkstack(state, 128));
+  lua_pushvalue(state, 1);
+  assert(lua_pcall(state, 0, 0, 0) == LUA_OK);
+  lua_gc(state, LUA_GCSTOP);
+  mesh_allocator_probe_t probe = {0};
+  probe.allocate = lua_getallocf(state, &probe.user);
+  lua_setallocf(state, mesh_probe_allocate, &probe);
+  lua_pushvalue(state, 1);
+  int result = lua_pcall(state, 0, 0, 0);
+  lua_setallocf(state, probe.allocate, probe.user);
+  lua_gc(state, LUA_GCRESTART);
+  assert(result == LUA_OK && probe.calls == 0u);
+  return 0;
+}
+
+static void *test_raster_fail_allocate(void *user, void *ptr, size_t old_size,
+                                       size_t new_size) {
+  mesh_allocator_probe_t *probe = user;
+  if (new_size != 0u && (ptr == NULL || new_size > old_size))
+    return NULL;
+  return probe->allocate(probe->user, ptr, old_size, new_size);
+}
+
+static int test_raster_oom(lua_State *state) {
+  luaL_checktype(state, 1, LUA_TFUNCTION);
+  assert(lua_checkstack(state, 128));
+  mesh_allocator_probe_t probe = {0};
+  probe.allocate = lua_getallocf(state, &probe.user);
+  lua_pushvalue(state, 1);
+  lua_setallocf(state, test_raster_fail_allocate, &probe);
+  int result = lua_pcall(state, 0, 1, 0);
+  lua_setallocf(state, probe.allocate, probe.user);
+  assert(result == LUA_ERRMEM);
+  lua_pop(state, 1);
+  return 0;
+}
+
+typedef struct raster_measure_probe {
+  lua_Alloc allocate;
+  void *user;
+  size_t calls, current, peak;
+} raster_measure_probe_t;
+
+static void *raster_measure_allocate(void *user, void *ptr, size_t old_size,
+                                     size_t new_size) {
+  raster_measure_probe_t *probe = user;
+  size_t old = ptr == NULL ? 0 : old_size;
+  void *result = probe->allocate(probe->user, ptr, old_size, new_size);
+  if (new_size == 0 || result != NULL) {
+    probe->current = probe->current - old + new_size;
+    if (probe->current > probe->peak)
+      probe->peak = probe->current;
+  }
+  if (new_size != 0)
+    ++probe->calls;
+  return result;
+}
+
+static int test_raster_measure(lua_State *state) {
+  const char *name = luaL_checkstring(state, 1);
+  luaL_checktype(state, 2, LUA_TFUNCTION);
+  lua_Integer boundaries = luaL_checkinteger(state, 3);
+  int once = lua_toboolean(state, 4);
+  uint64_t samples[32];
+  size_t calls = 0, peak = 0;
+  assert(lua_checkstack(state, 128));
+  unsigned count = once ? 1u : 32u;
+  lua_gc(state, LUA_GCCOLLECT);
+  lua_gc(state, LUA_GCSTOP);
+  for (unsigned i = 0; i < count + (once ? 0u : 4u); ++i) {
+    raster_measure_probe_t probe = {0};
+    probe.allocate = lua_getallocf(state, &probe.user);
+    probe.current = (size_t)lua_gc(state, LUA_GCCOUNT) * 1024u +
+                    (size_t)lua_gc(state, LUA_GCCOUNTB);
+    probe.peak = probe.current;
+    uint64_t start = 0, end = 0;
+    const h2_pal_time_api_t *time = h2_desktop_platform_time_api();
+    assert(h2_pal_time_get_monotonic_us(time, &start) == H2_PAL_OK);
+    lua_setallocf(state, raster_measure_allocate, &probe);
+    lua_pushvalue(state, 2);
+    lua_pushinteger(state, i);
+    int result = lua_pcall(state, 1, 0, 0);
+    lua_setallocf(state, probe.allocate, probe.user);
+    assert(h2_pal_time_get_monotonic_us(time, &end) == H2_PAL_OK);
+    if (result != LUA_OK)
+      fprintf(stderr, "raster benchmark %s: %s\n", name,
+              lua_tostring(state, -1));
+    assert(result == LUA_OK);
+    if (once || i >= 4u) {
+      samples[once ? 0 : i - 4u] = end - start;
+      calls += probe.calls;
+      if (probe.peak > peak)
+        peak = probe.peak;
+    }
+  }
+  lua_gc(state, LUA_GCRESTART);
+  for (unsigned i = 1; i < count; ++i) {
+    uint64_t value = samples[i];
+    unsigned j = i;
+    while (j > 0 && samples[j - 1] > value) {
+      samples[j] = samples[j - 1];
+      --j;
+    }
+    samples[j] = value;
+  }
+  printf(
+      "raster_lua phase=%s samples=%u warmup=%u p50_us=%llu p95_us=%llu "
+      "peak_vm_bytes=%zu allocation_calls=%zu boundary_calls_per_sample=%lld\n",
+      name, count, once ? 0u : 4u, (unsigned long long)samples[count / 2],
+      (unsigned long long)samples[(count * 95u) / 100u], peak, calls,
+      (long long)boundaries);
+  return 0;
+}
+
+static int test_region_failure(lua_State *state);
+
+static int test_raster_open(void *lua_state, void *user) {
+  lua_State *state = lua_state;
+  (void)user;
+  lua_newtable(state);
+  lua_pushcfunction(state, test_raster_noalloc);
+  lua_setfield(state, -2, "noalloc");
+  lua_pushcfunction(state, test_raster_measure);
+  lua_setfield(state, -2, "measure");
+  lua_pushcfunction(state, test_region_failure);
+  lua_setfield(state, -2, "fail");
+  lua_pushcfunction(state, test_raster_oom);
+  lua_setfield(state, -2, "oom");
+  return 1;
+}
+
+static void test_display_raster2d(int benchmark) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_lua_host_t *host = NULL;
+  h2_lua_host_config_t config = {
+      .runtime = runtime,
+      .worker_count = 1,
+      .max_jobs = 1,
+      .instruction_quantum = 1000000000,
+      .execution_timeout_ms = 20000,
+      .source_limit_bytes = 16384,
+      .vm_memory_limit_bytes = benchmark ? 8u * 1024u * 1024u : 256u * 1024u};
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(h2_lua_register_module(host, "raster_test", test_raster_open, NULL) ==
+         H2_PAL_OK);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  FILE *file = fopen("libs/lua/tests/raster2d.lua", "rb");
+  assert(file != NULL);
+  uint8_t script[16384];
+  size_t size = fread(script, 1, sizeof(script), file);
+  assert(!ferror(file) && size < sizeof(script));
+  assert(fclose(file) == 0);
+  (void)run_display_script_size(host, "@raster2d.lua", script, size,
+                                benchmark ? 240 : 8, benchmark ? 240 : 8);
+  h2_lua_host_destroy(host);
+  h2_runtime_deinit(runtime);
+}
+
 static void test_display_meshes(void) {
   h2_runtime_t *runtime = create_runtime();
   h2_lua_host_t *host = create_unstarted_host(runtime);
@@ -1667,7 +1827,12 @@ static void test_job_results(h2_lua_host_t *host) {
   }
 }
 
-int main(void) {
+int main(int argc, char **argv) {
+  if (argc == 2 && strcmp(argv[1], "--raster-benchmark") == 0) {
+    test_display_raster2d(1);
+    return 0;
+  }
+  test_display_raster2d(0);
   test_display_mesh_identity();
   test_display_mesh_cache();
   test_display_strokes();

@@ -85,6 +85,8 @@ cc_library(
     deps = [
         ":lua_core",
         ":tasks",
+        "//libs/raster2d",
+        "//libs/raster2d:span_internal",
         "//libs/runtime",
         "//libs/utils",
         "//tools/bazel:vendor_third_party_lua",
@@ -159,6 +161,7 @@ cc_test(
 cc_test(
     name = "lua_test",
     srcs = ["tests/test_h2_lua.c"],
+    data = ["tests/raster2d.lua"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,

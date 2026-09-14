@@ -114,6 +114,14 @@ job。
 
 以上绘制使用 `[top,bottom)` 行裁剪和 framebuffer 列裁剪，要求整数 `0<=top<=bottom<=height`，在转换为 native int 前检查；空裁剪和零面积矩形不修改像素。参数解码完成后才开始绘制，非法参数或 Display 已关闭时抛 Lua 错误；RGB 表的 getter 仍遵循 Lua 元方法语义，其自身的副作用不属于绘制的原子性保证。编译失败不会返回部分句柄，OOM 后释放临时数据即可再次尝试较小批次。绘制只标记 dirty union，不隐式 present；Display deinit 后保留命令不持有 framebuffer，也不允许继续绘制。重复调用缓存的 `require('display')` 不代表重新打开设备。
 
+### Display indexed rectangles and palettes
+
+`display.compile_rects(records)` 复制具名 `{x,y,width,height,color_index}` 记录为不可变 userdata，`display.compile_palette(colors)` 将既有颜色字符串或具名 `{r=...,g=...,b=...}` 转为固定长度 RGB565 userdata。两者最多 16384 项，空列表合法，数据计入 VM；不改变已有 commands/mesh 接口。Lua 颜色索引从 1 开始，绘制时验证实际 palette 长度。
+
+`display.blend_palette(output,a,b,progress)` 要求三套 palette 长度一致，进度是 `0..256` 的整数，输出可与输入相同。`display.draw_rects(batch,palette[,left,top,right,bottom])` 使用已打开的 Display，四个半开 clip 整数要么全部提供，要么全部省略。成功返回零个值；调用不隐式 present，不增长容量、不分配内存。完整参数与像素合同见 [Lua API](../../references/lua.md) 和 [Raster2D](./raster2d.md)。
+
+C core 完整校验后绘制，adapter 再逐矩形标记已有 dirty/background damage。没有新缓存或损伤对象。构造和 palette blend 不自行打开 Display；`require('display')` 仍沿用既有 acquisition，关闭后的 proxy 不可绘制。参数 getter 自身可以有副作用；构造过程不写 framebuffer，后续 draw 必须重新检查 Display 状态。GC、取消、job release 与 Host teardown 继续走已有回收流程。
+
 ### Display 笔画与有界缓存
 
 `display.stroke_path(points,widths,color,offset_x=0,top=0,bottom=height,cache=false,fast=false,smooth=false,scale=1,tolerance=0)` 接受 `2..256` 个有限 ±100000 的点对、恰好 `n-1` 个 `0..1000` 宽度，以及单色或 `n-1` 个颜色。cache/fast/smooth 必须为 boolean；scale 为 `0<scale<=16`，先作用于坐标和宽度；offset 有限且位于 ±100000。top/bottom 沿用屏内整数半开行裁剪。所有参数、颜色 getter 和分配在绘制前完成并重新检查 Display。返回 `(cache_hit,fast_segment_count)`，不是帧率。
