@@ -61,3 +61,24 @@ Pinned SDK evidence (`/tmp/jieli-pal-review-sdk/wifi/`):
 Logs: `/tmp/jieli-netif-before.log`, `/tmp/jieli-netif-gcc-before.log`, `/tmp/jieli-dhcp-snapshot-before.log`, `/tmp/jieli-dhcp-snapshot-gcc-before.log`, `/tmp/jieli-dhcp-failure-before.log`, `/tmp/jieli-dhcp-failure-gcc-before.log`, `/tmp/jieli-netif-after.log`, `/tmp/jieli-netif-gcc-after.log`, `/tmp/jieli-netif-regression.log`. The new host-only target passes iOS simulator analysis (`/tmp/jieli-netif-ios.log`). Live connected Wi-Fi/DNS mutation is not yet hardware-covered.
 
 Native Loader and PAL packages pass in 37.082 seconds (`/tmp/jieli-netif-native.log`). Final-source hardware acceptance remains pending.
+
+## AP client ownership
+
+Netif and DHCP ownership is fixed in `62e2a892`. AP enumeration now copies a bounded owned client cache under the same state gate, matching ESP's event-maintained client list. Association copies the callback MAC immediately; duplicate joins do not duplicate entries, departure removes the matching MAC, and AP start/stop clears the list. Events received while AP is stopped do not repopulate it. Client event payloads are local copies dispatched outside the gate. Output capacity limits only the copied list, not the total AP client count.
+
+The pinned `ap_assoc.c.o:ap_cmm_peer_assoc_req_action` passes its six-byte stack `Addr2` to `wifi_module_ap_on_assoc` before the local lifetime ends. Peer disassociation/deauthentication likewise pass their local MAC; `ap.c.o:MacTableMaintenance` invokes disconnect before deleting the entry. `wireless_main.c.o` and `wifi_connect.c.o:wifi_module_event` synchronously forward these pointers to the registered event callback. The SDK DevKit `wifi_demo_task.c` also consumes the context as `struct eth_addr`. No borrowed MAC pointer is retained by PAL. RSSI, station ID and lease are not supplied by this callback; they remain zero instead of reading the unsafe native table. ESP's cached clients likewise leave fields absent from its SDK event unset (ESP does receive an association ID, which JieLi's event does not).
+
+The snapshot fixture fails against `62e2a892` on its explicit rejection of borrowed SDK client storage with strict Clang/GCC. After repair it verifies copied MAC lifetime, duplicate join, departure, zero-capacity output, stop/late-event exclusion, and concurrent join/departure/restart versus client/status reads under TSan. The existing capacity fixture retains its copied-field, sentinel, total-count and invalid-argument checks using an owned-cache fixture. All six Wi-Fi/netif fixtures pass; changed fixtures pass strict GCC. Logs: `/tmp/jieli-ap-clients-before.log`, `/tmp/jieli-ap-clients-gcc-before.log`, `/tmp/jieli-ap-clients-after.log`, `/tmp/jieli-ap-clients-gcc-after.log`, `/tmp/jieli-ap-clients-regression.log`. AP-client hardware traffic has not been exercised.
+
+## Missing scan completion: decision needed
+
+Late completion is safely handled by task-side cleanup. **No-completion recovery is not established by the pinned SDK.** The public header has no cancellation/drain primitive. `wifi_off` serializes HSM shutdown, but old integer scan-event RPC tasks can already be waiting for that mutex; their IDs are not retained, and shutdown has not been shown to drain them before a new scan. Restarting the radio and relabeling a later callback as belonging to a new scan could expose or clear the wrong generation's result storage.
+
+Options:
+
+1. Add a vendor-supported scan cancellation/generation-and-drain primitive, or an audited SDK change providing the same guarantee. Then recover the PAL operation state after that explicit boundary. This preserves runtime continuity and is the recommended long-term solution.
+2. Define a product policy that a permanently abandoned scan requires an owner-requested managed system restart. That gives a whole-runtime boundary but interrupts the App/Loader session; the decision must specify who requests the restart and how the failure is surfaced.
+
+Recommendation: obtain option 1; until then preserve the current failed-closed abandoned-scan ownership and document restart as the recovery boundary, without adding an automatic reboot or an unproved off/sleep/on workaround. Maintainer choice is required before introducing option 2 as runtime policy. No hardware scan-timeout recovery pass is claimed.
+
+Native Loader and PAL packages including the AP cache pass in 34.871 seconds (`/tmp/jieli-ap-clients-native.log`). Final hardware acceptance is still pending.

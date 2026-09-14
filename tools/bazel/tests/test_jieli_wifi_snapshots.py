@@ -17,6 +17,7 @@ class WifiSnapshotsTest(unittest.TestCase):
         event = source[source.index('static int wifi_event('):source.index('static int ensure_wifi_on(')]
         sta = source[source.index('static int sta_get_status('):source.index('static int sta_scan(')]
         ap = source[source.index('static int ap_get_status('):source.index('static int ap_get_clients(')]
+        clients = source[source.index('static int ap_get_clients('):source.index('/* Serialize task-side')]
         admission = source[source.index('static unsigned wifi_operation_busy;'):source.index('static int guarded_sta_scan(')]
         fixture = (ROOT / 'tools/bazel/tests/fixtures/jieli_wifi_snapshots.c').read_text()
         if 'update_sta_snapshot(h2_pal_wifi_sta_status_t *status)' in state:
@@ -37,13 +38,13 @@ class WifiSnapshotsTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             unit = Path(directory) / 'test.c'
             binary = Path(directory) / 'test'
-            unit.write_text(fixture.replace('/* REAL_PROVIDER */', state + posts + event + sta + ap + admission))
+            unit.write_text(fixture.replace('/* REAL_PROVIDER */', state + posts + event + sta + ap + clients + admission))
             subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-pthread',
                 *shlex.split(os.environ.get('JIELI_TEST_CFLAGS', '')),
                 '-I', str(ROOT / 'libs/pal/include'),
                 '-I', str(ROOT / 'native_component_src/jieli/wl82/h2_pal_core/include'),
                 str(unit), '-o', str(binary)], check=True)
-            for case in ['payload', 'readers', 'stale_refresh', 'ip_failure']:
+            for case in ['payload', 'readers', 'stale_refresh', 'ip_failure', 'ap_clients']:
                 with self.subTest(case=case):
                     result = subprocess.run([str(binary), case], capture_output=True, text=True, timeout=15)
                     self.assertNotIn("WARNING: ThreadSanitizer", result.stderr, result.stdout + result.stderr)

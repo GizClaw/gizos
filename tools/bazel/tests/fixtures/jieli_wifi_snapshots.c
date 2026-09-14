@@ -13,7 +13,8 @@ enum WIFI_EVENT {
   WIFI_EVENT_STA_CONNECT_SUCC, WIFI_EVENT_STA_NETWORK_STACK_DHCP_SUCC,
   WIFI_EVENT_STA_CONNECT_TIMEOUT_NOT_FOUND_SSID, WIFI_EVENT_STA_CONNECT_ASSOCIAT_FAIL,
   WIFI_EVENT_STA_CONNECT_ASSOCIAT_TIMEOUT, WIFI_EVENT_STA_NETWORK_STACK_DHCP_TIMEOUT,
-  WIFI_EVENT_STA_DISCONNECT, WIFI_EVENT_STA_STOP, WIFI_EVENT_AP_START, WIFI_EVENT_AP_STOP
+  WIFI_EVENT_STA_DISCONNECT, WIFI_EVENT_STA_STOP, WIFI_EVENT_AP_START, WIFI_EVENT_AP_STOP,
+  WIFI_EVENT_AP_ON_ASSOC, WIFI_EVENT_AP_ON_DISCONNECTED
 };
 enum { SCAN_IDLE, SCAN_PENDING, SCAN_ABANDONED };
 static unsigned scan_phase;
@@ -48,6 +49,14 @@ static void post_system_event(h2_pal_system_event_type_t type, const void *paylo
     assert(status->state == H2_PAL_WIFI_STA_STATE_CONNECTED);
   }
 }
+int wifi_get_sta_entry_rssi(char station, char **rssi, uint8_t **evm, uint8_t **mac) {
+  (void)station;
+  (void)rssi;
+  (void)evm;
+  (void)mac;
+  assert(!"borrowed SDK client storage must not be read");
+  return -1;
+}
 /* REAL_PROVIDER */
 static void assert_sdk_unlocked(void) {
   /* SDK_GATE_CHECK */
@@ -71,7 +80,10 @@ static void *publish_many(void *unused) {
     assert(wifi_event(NULL, WIFI_EVENT_STA_CONNECT_SUCC) == 0);
     assert(wifi_event(NULL, WIFI_EVENT_STA_NETWORK_STACK_DHCP_SUCC) == 0);
     assert(wifi_event(NULL, WIFI_EVENT_STA_DISCONNECT) == 0);
+    uint8_t mac[6] = {2, 3, 4, 5, 6, 7};
     assert(wifi_event(NULL, WIFI_EVENT_AP_START) == 0);
+    assert(wifi_event(mac, WIFI_EVENT_AP_ON_ASSOC) == 0);
+    assert(wifi_event(mac, WIFI_EVENT_AP_ON_DISCONNECTED) == 0);
     assert(wifi_event(NULL, WIFI_EVENT_AP_STOP) == 0);
   }
   return NULL;
@@ -80,7 +92,27 @@ int main(int argc, char **argv) {
   assert(argc == 2);
   wifi_state.on = 1;
   pthread_t worker;
-  if (strcmp(argv[1], "ip_failure") == 0) {
+  if (strcmp(argv[1], "ap_clients") == 0) {
+    uint8_t mac[6] = {2, 3, 4, 5, 6, 7};
+    h2_pal_wifi_ap_client_t client;
+    size_t count;
+    assert(wifi_event(NULL, WIFI_EVENT_AP_START) == 0);
+    assert(wifi_event(mac, WIFI_EVENT_AP_ON_ASSOC) == 0);
+    assert(wifi_event(mac, WIFI_EVENT_AP_ON_ASSOC) == 0);
+    memset(mac, 9, sizeof(mac));
+    assert(ap_get_clients(NULL, &client, 1, &count) == H2_PAL_OK);
+    assert(count == 1 && client.mac[0] == 2 && client.mac[5] == 7);
+    assert(client.rssi == 0 && client.station_id == 0 && !client.lease_valid);
+    assert(ap_get_clients(NULL, NULL, 0, &count) == H2_PAL_OK && count == 0);
+    assert(wifi_state.ap.client_count == 1);
+    assert(wifi_event(client.mac, WIFI_EVENT_AP_ON_DISCONNECTED) == 0);
+    assert(ap_get_clients(NULL, &client, 1, &count) == H2_PAL_OK && count == 0);
+    assert(wifi_event(mac, WIFI_EVENT_AP_ON_ASSOC) == 0);
+    assert(wifi_event(NULL, WIFI_EVENT_AP_STOP) == 0);
+    assert(wifi_event(mac, WIFI_EVENT_AP_ON_ASSOC) == 0);
+    assert(ap_get_clients(NULL, &client, 1, &count) == H2_PAL_OK && count == 0);
+    return 0;
+  } else if (strcmp(argv[1], "ip_failure") == 0) {
     refresh_error = 1;
     assert(wifi_event(NULL, WIFI_EVENT_STA_NETWORK_STACK_DHCP_SUCC) == 0);
     h2_pal_wifi_sta_status_t status;
@@ -107,6 +139,13 @@ int main(int argc, char **argv) {
       h2_pal_wifi_ap_status_t ap;
       assert(sta_get_status(NULL, &sta) == H2_PAL_OK);
       assert(ap_get_status(NULL, &ap) == H2_PAL_OK);
+      h2_pal_wifi_ap_client_t client;
+      size_t count;
+      assert(ap_get_clients(NULL, &client, 1, &count) == H2_PAL_OK);
+      assert(count <= 1);
+      if (count != 0) {
+        assert(client.mac[0] == 2 && client.mac[5] == 7);
+      }
       assert(sta.state != H2_PAL_WIFI_STA_STATE_GOT_IP || sta.ip_valid);
       assert(sta.state != H2_PAL_WIFI_STA_STATE_DISCONNECTED || !sta.ip_valid);
     }

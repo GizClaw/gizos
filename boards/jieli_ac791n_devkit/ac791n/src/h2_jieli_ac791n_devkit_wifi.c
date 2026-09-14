@@ -17,6 +17,7 @@ typedef struct h2_jieli_wifi_state {
   int on;
   h2_pal_wifi_sta_status_t sta;
   h2_pal_wifi_ap_status_t ap;
+  h2_pal_wifi_ap_client_t ap_clients[5];
 } h2_jieli_wifi_state_t;
 
 static h2_jieli_wifi_state_t wifi_state;
@@ -139,6 +140,8 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
   h2_pal_system_event_type_t ap_type = 0;
   h2_pal_wifi_sta_status_t sta_status;
   h2_pal_wifi_ap_status_t ap_status;
+  h2_pal_wifi_ap_client_event_t client_event;
+  h2_pal_system_event_type_t client_type = 0;
   wifi_state_lock();
   if (refresh && generation != wifi_sta_generation) {
     --wifi_callbacks_active;
@@ -193,17 +196,52 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
       types[count++] = H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED;
       break;
     case WIFI_EVENT_AP_START:
+      wifi_state.ap.client_count = 0u;
+      memset(wifi_state.ap_clients, 0, sizeof(wifi_state.ap_clients));
       wifi_state.ap.state = H2_PAL_WIFI_AP_STATE_STARTED;
       ap_type = H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_STARTED;
       ap_event = 1;
       sta_changed = 0;
       break;
     case WIFI_EVENT_AP_STOP:
+      wifi_state.ap.client_count = 0u;
+      memset(wifi_state.ap_clients, 0, sizeof(wifi_state.ap_clients));
       wifi_state.ap.state = H2_PAL_WIFI_AP_STATE_STOPPED;
       ap_type = H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_STOPPED;
       ap_event = 1;
       sta_changed = 0;
       break;
+    case WIFI_EVENT_AP_ON_ASSOC:
+    case WIFI_EVENT_AP_ON_DISCONNECTED: {
+      sta_changed = 0;
+      if (context == NULL || wifi_state.ap.state != H2_PAL_WIFI_AP_STATE_STARTED) break;
+      size_t index = 0u;
+      while (index < wifi_state.ap.client_count &&
+             memcmp(wifi_state.ap_clients[index].mac, context, 6u) != 0) {
+        ++index;
+      }
+      if (event == WIFI_EVENT_AP_ON_ASSOC) {
+        if (index == wifi_state.ap.client_count && index < 5u) {
+          h2_pal_wifi_ap_client_t *client = &wifi_state.ap_clients[index];
+          memset(client, 0, sizeof(*client));
+          /* The SDK event owns six MAC bytes only. As with ESP's cached
+           * clients, fields absent from the event remain zero. */
+          memcpy(client->mac, context, sizeof(client->mac));
+          ++wifi_state.ap.client_count;
+          client_event.client = *client;
+          client_type = H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_CLIENT_JOINED;
+        }
+      } else if (index < wifi_state.ap.client_count) {
+        client_event.client = wifi_state.ap_clients[index];
+        --wifi_state.ap.client_count;
+        memmove(&wifi_state.ap_clients[index], &wifi_state.ap_clients[index + 1u],
+            (wifi_state.ap.client_count - index) * sizeof(wifi_state.ap_clients[0]));
+        memset(&wifi_state.ap_clients[wifi_state.ap.client_count], 0,
+            sizeof(wifi_state.ap_clients[0]));
+        client_type = H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_CLIENT_LEFT;
+      }
+      break;
+    }
     default:
       sta_changed = 0;
       break;
@@ -216,6 +254,7 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
     post_sta_event(types[index], &sta_status);
   }
   if (ap_event) post_ap_event(ap_type, &ap_status);
+  if (client_type != 0) post_system_event(client_type, &client_event, sizeof(client_event));
   wifi_state_lock();
   --wifi_callbacks_active;
   wifi_state_unlock();
@@ -409,6 +448,8 @@ static int wifi_stop(void) {
   wifi_state.sta.state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
   wifi_state.sta.ip_valid = 0u;
   wifi_state.ap.state = H2_PAL_WIFI_AP_STATE_STOPPED;
+  wifi_state.ap.client_count = 0u;
+  memset(wifi_state.ap_clients, 0, sizeof(wifi_state.ap_clients));
   wifi_state_unlock();
   return H2_PAL_OK;
 }
@@ -515,31 +556,13 @@ static int ap_get_clients(
   if (out_count == NULL || (out_clients == NULL && max_clients != 0u)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  *out_count = 0u;
-  size_t total_clients = 0u;
-  /* Match the SDK's wifi_app_timer_func: WCID slots are 0..7 and
-   * a zero RSSI marks an unused slot, not a connected client. */
-  for (int station = 0; station < 8; ++station) {
-    char *rssi = NULL;
-    uint8_t *evm = NULL;
-    uint8_t *mac = NULL;
-    if (wifi_get_sta_entry_rssi((char)station, &rssi, &evm, &mac) != 0) {
-      break;
-    }
-    if (mac == NULL || rssi == NULL || *rssi == 0) {
-      continue;
-    }
-    ++total_clients;
-    if (*out_count >= max_clients) continue;
-    h2_pal_wifi_ap_client_t *client = &out_clients[*out_count];
-    memset(client, 0, sizeof(*client));
-    memcpy(client->mac, mac, sizeof(client->mac));
-    client->rssi = *rssi;
-    client->station_id = station;
-    ++*out_count;
-  }
   wifi_state_lock();
-  wifi_state.ap.client_count = total_clients;
+  const size_t count = wifi_state.ap.state == H2_PAL_WIFI_AP_STATE_STARTED
+      ? wifi_state.ap.client_count : 0u;
+  *out_count = count < max_clients ? count : max_clients;
+  if (*out_count != 0u) {
+    memcpy(out_clients, wifi_state.ap_clients, *out_count * sizeof(*out_clients));
+  }
   wifi_state_unlock();
   return H2_PAL_OK;
 }

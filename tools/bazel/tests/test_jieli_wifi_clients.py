@@ -27,9 +27,9 @@ static inline void wifi_state_unlock(void) {
 
 #include <string.h>
 #include "h2/pal/hal/h2_pal_wifi.h"
-static struct { h2_pal_wifi_ap_status_t ap; } wifi_state;
+static struct { h2_pal_wifi_ap_status_t ap; h2_pal_wifi_ap_client_t ap_clients[5]; } wifi_state;
 static int present = 1;
-static int wifi_get_sta_entry_rssi(char id, char **rssi, uint8_t **evm, uint8_t **mac) {
+int wifi_get_sta_entry_rssi(char id, char **rssi, uint8_t **evm, uint8_t **mac) {
     (void)evm;
     assert(fake_state_gate == 0);
     static char signal;
@@ -43,6 +43,11 @@ static int wifi_get_sta_entry_rssi(char id, char **rssi, uint8_t **evm, uint8_t 
 '''
         main = r'''
 int main(void) {
+    wifi_state.ap.state = H2_PAL_WIFI_AP_STATE_STARTED;
+    wifi_state.ap.client_count = 2;
+    wifi_state.ap_clients[0].station_id = 0;
+    wifi_state.ap_clients[0].rssi = -42;
+    wifi_state.ap_clients[1].station_id = 7;
     h2_pal_wifi_ap_client_t clients[3];
     size_t count = 99;
     memset(clients, 0xa5, sizeof(clients));
@@ -55,6 +60,7 @@ int main(void) {
     assert(ap_get_clients(NULL, clients, 3, &count) == H2_PAL_OK);
     assert(count == 2 && clients[1].station_id == 7);
     present = 0;
+    wifi_state.ap.client_count = 0;
     assert(ap_get_clients(NULL, clients, 3, &count) == H2_PAL_OK);
     assert(count == 0 && wifi_state.ap.client_count == 0);
     assert(ap_get_clients(NULL, NULL, 1, &count) == H2_PAL_ERR_INVALID_ARG);
