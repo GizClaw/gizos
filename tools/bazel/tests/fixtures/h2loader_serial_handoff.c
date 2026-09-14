@@ -149,6 +149,26 @@ int main(int argc,char **argv) {
             assert(!strcmp(output,"H2_PAL_E2E suite=64 case=13 result=0\r\n"));
             disconnect_serial();
         }
+    } else if (!strcmp(argv[1],"reset_ready")) {
+        include_ready=0;
+        assert(connect_serial()==H2_PAL_OK);
+        drain();
+        const char replay[]="[00:00:00.653]H2_LOADER_READY board=old target=old\r\n";
+        for (size_t i=0;i<sizeof replay-1;++i) {
+            assert(h2_iostreamikcp_input(connection->stream,(const uint8_t *)&replay[i],1)==H2_PAL_OK);
+        }
+        const char banner[]="H2_LOADER_READY board=fake target=fake\r\n";
+        h2_pal_result_t rc=H2_PAL_OK;
+        for (size_t i=0;i<sizeof banner-1 && rc==H2_PAL_OK;++i) {
+            rc=h2_iostreamikcp_input(connection->stream,(const uint8_t *)&banner[i],1);
+        }
+        assert(rc==H2_PAL_ERR_CLOSED);
+        disconnect_serial();
+        include_ready=1;
+        assert(connect_serial()==H2_PAL_OK);
+        drain();
+        assert(opens==2);
+        disconnect_serial();
     } else if (!strcmp(argv[1],"reconnect")) {
         include_ready=1;
         h2_h2loader_cli_transport_t transport={0};

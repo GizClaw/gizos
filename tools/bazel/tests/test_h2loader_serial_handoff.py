@@ -26,7 +26,7 @@ class SerialHandoff(unittest.TestCase):
             unit=Path(directory)/'test.c';binary=Path(directory)/'test'
             unit.write_text(fixture)
             subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror','-I'+str(ROOT/'libs/pal/include'),'-I'+str(ROOT/'libs/h2loader_host/include'),'-I'+str(ROOT/'libs/iostreamikcp/include'),str(unit),'-o',str(binary)],check=True)
-            for case in ['frame_text','split_frame_text','reconnect','upgrade_failure']:
+            for case in ['frame_text','split_frame_text','reconnect','upgrade_failure','reset_ready']:
                 with self.subTest(case=case):
                     result=subprocess.run([str(binary),case],capture_output=True,text=True,timeout=10)
                     self.assertEqual(result.returncode,0,result.stderr)
