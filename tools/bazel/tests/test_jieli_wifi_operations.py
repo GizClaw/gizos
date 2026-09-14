@@ -21,6 +21,14 @@ class WifiOperationsTest(unittest.TestCase):
 #include <pthread.h>
 #include <sched.h>
 #include "h2/pal/hal/h2_pal_wifi.h"
+#include "h2/pal/net/h2_pal_netif.h"
+#include <string.h>
+static struct { int on; h2_pal_wifi_sta_status_t sta; h2_pal_wifi_ap_status_t ap; } wifi_state;
+static uint32_t wifi_sta_generation;
+static pthread_mutex_t state_gate = PTHREAD_MUTEX_INITIALIZER;
+static unsigned wifi_callbacks_active;
+static void wifi_state_lock(void) { assert(pthread_mutex_lock(&state_gate) == 0); }
+static void wifi_state_unlock(void) { assert(pthread_mutex_unlock(&state_gate) == 0); }
 static int clears;
 static void wifi_clear_scan_result(void) { ++clears; }
 ''' + state + r'''
@@ -93,6 +101,21 @@ int main(void) {
     assert(guarded_sta_connect(NULL, NULL, 0) == H2_PAL_ERR_IO);
     assert(calls == 10 && wifi_operation_busy == 0);
     assert(clears == 1 && scan_phase == SCAN_IDLE);
+    wifi_state.on = 1;
+    wifi_state.sta.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
+    wifi_state.sta.ip_valid = 1;
+    h2_pal_netif_status_t status;
+    uint32_t generation;
+    assert(h2_jieli_wifi_netif_begin(&status, &generation) == H2_PAL_OK);
+    assert(status.kind == H2_PAL_NETIF_KIND_WIFI_STA);
+    assert(status.flags & H2_PAL_NETIF_FLAG_HAS_IPV4);
+    assert(guarded_sta_disconnect(NULL) == H2_PAL_ERR_BUSY);
+    assert(h2_jieli_wifi_netif_end(generation) == H2_PAL_OK);
+    assert(wifi_operation_busy == 0);
+    assert(h2_jieli_wifi_netif_begin(&status, &generation) == H2_PAL_OK);
+    ++wifi_sta_generation;
+    assert(h2_jieli_wifi_netif_end(generation) == H2_PAL_ERR_BUSY);
+    assert(wifi_operation_busy == 0);
     return 0;
 }
 '''

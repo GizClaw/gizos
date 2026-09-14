@@ -15,6 +15,17 @@ class WifiConnectTest(unittest.TestCase):
         end = source.index("static int ap_stop(", begin)
         fixture = r'''
 #include <assert.h>
+
+static unsigned fake_state_gate;
+static inline void wifi_state_lock(void) {
+    assert(fake_state_gate == 0);
+    fake_state_gate = 1;
+}
+static inline void wifi_state_unlock(void) {
+    assert(fake_state_gate == 1);
+    fake_state_gate = 0;
+}
+
 #include <stdint.h>
 #include <string.h>
 #include "h2/pal/hal/h2_pal_wifi.h"
@@ -32,6 +43,7 @@ static int ensure_wifi_on(void) { assert(configured > starts); ++starts; return 
 static uint32_t timer_get_ms(void) { return now; }
 static int wifi_get_channel(void) { return 1; }
 static int wifi_enter_ap_mode(char *ssid, char *password) {
+    assert(fake_state_gate == 0);
     (void)ssid; (void)password; return enter_rc;
 }
 static void os_time_dly(unsigned ticks) {
@@ -86,7 +98,7 @@ int main(void) {
             unit = root / "ap.c"
             unit.write_text(fixture + source[begin:end] + main)
             binary = root / "ap-test"
-            subprocess.run(["cc", "-std=c11", "-I", str(ROOT / "libs/pal/include"),
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", str(ROOT / "libs/pal/include"),
                             str(unit), "-o", str(binary)], check=True, timeout=30)
             subprocess.run([str(binary)], check=True, timeout=30)
 
@@ -96,6 +108,17 @@ int main(void) {
         end = source.index("static int wifi_stop(", begin)
         fixture = r'''
 #include <assert.h>
+
+static unsigned fake_state_gate;
+static inline void wifi_state_lock(void) {
+    assert(fake_state_gate == 0);
+    fake_state_gate = 1;
+}
+static inline void wifi_state_unlock(void) {
+    assert(fake_state_gate == 1);
+    fake_state_gate = 0;
+}
+
 #include <stdint.h>
 #include <string.h>
 #include "h2/pal/hal/h2_pal_wifi.h"
@@ -106,10 +129,15 @@ static int sleeps, enter_rc, requests;
 #define H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED 2
 static int last_event;
 static int ensure_wifi_on(void) { return 0; }
-static void post_sta_event(int type) { last_event = type; }
-static void update_sta_snapshot(void) {}
+static uint32_t wifi_sta_generation;
+static void post_sta_event(int type, const h2_pal_wifi_sta_status_t *status) {
+    assert(fake_state_gate == 0);
+    assert(status->state == wifi_state.sta.state);
+    last_event = type;
+}
 static uint32_t timer_get_ms(void) { return now; }
 static int wifi_enter_sta_mode(const char *ssid, const char *password) {
+    assert(fake_state_gate == 0);
     assert(strcmp(ssid, "test") == 0 && strcmp(password, "") == 0);
     ++requests; return enter_rc;
 }
@@ -141,7 +169,7 @@ int main(void) {
             unit = root / "connect.c"
             unit.write_text(fixture + source[begin:end] + main)
             binary = root / "connect-test"
-            subprocess.run(["cc", "-std=c11", "-I", str(ROOT / "libs/pal/include"),
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", str(ROOT / "libs/pal/include"),
                             str(unit), "-o", str(binary)], check=True, timeout=30)
             subprocess.run([str(binary)], check=True, timeout=30)
 
