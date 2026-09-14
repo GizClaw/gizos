@@ -152,8 +152,6 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
   h2_pal_wifi_ap_status_t ap_status;
   h2_pal_wifi_ap_client_event_t client_event;
   h2_pal_system_event_type_t client_type = 0;
-  int client_overflow = 0;
-  uint8_t overflow_mac[6];
   wifi_state_lock();
   if (refresh && generation != wifi_sta_generation) {
     --wifi_callbacks_active;
@@ -233,6 +231,7 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
         ++index;
       }
       if (event == WIFI_EVENT_AP_ON_ASSOC) {
+        /* SDK drift must not grow the owned cache or publish an uncached JOINED. */
         if (index == wifi_state.ap.client_count && index < H2_JIELI_AP_STATION_SLOTS) {
           h2_pal_wifi_ap_client_t *client = &wifi_state.ap_clients[index];
           memset(client, 0, sizeof(*client));
@@ -242,11 +241,6 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
           ++wifi_state.ap.client_count;
           client_event.client = *client;
           client_type = H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_CLIENT_JOINED;
-        } else if (index == wifi_state.ap.client_count) {
-          /* Defensive SDK drift/event inconsistency diagnostic. Keep the
-           * count bounded to owned entries and never log under the gate. */
-          memcpy(overflow_mac, context, sizeof(overflow_mac));
-          client_overflow = 1;
         }
       } else if (index < wifi_state.ap.client_count) {
         client_event.client = wifi_state.ap_clients[index];
@@ -269,14 +263,6 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
   wifi_state_unlock();
   for (size_t index = 0u; index < count; ++index) {
     post_sta_event(types[index], &sta_status);
-  }
-  if (client_overflow) {
-    printf("jieli/wifi: AP client cache full (%u slots), uncached association "
-           "%02x:%02x:%02x:%02x:%02x:%02x\n",
-           (unsigned)H2_JIELI_AP_STATION_SLOTS,
-           (unsigned)overflow_mac[0], (unsigned)overflow_mac[1],
-           (unsigned)overflow_mac[2], (unsigned)overflow_mac[3],
-           (unsigned)overflow_mac[4], (unsigned)overflow_mac[5]);
   }
   if (ap_event) post_ap_event(ap_type, &ap_status);
   if (client_type != 0) post_system_event(client_type, &client_event, sizeof(client_event));

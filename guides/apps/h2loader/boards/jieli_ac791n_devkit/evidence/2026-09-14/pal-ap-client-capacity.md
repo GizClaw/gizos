@@ -45,20 +45,21 @@ sixth-through-eighth-client loss is not reproducible within this pinned capacity
 Name the owned cache bound `H2_JIELI_AP_STATION_SLOTS = 5`, with a conditional
 static assertion against `MAX_LEN_OF_MAC_TABLE` if a future SDK exposes it.
 Keep PAL `ap_start` validation, owned snapshots, and lock ownership unchanged.
-An unexpected association when the cache is full now logs the uncached MAC and
-capacity after releasing the gate. The count remains the number of owned entries;
-this defensive diagnostic does not claim to track clients beyond the SDK bound.
+An unexpected sixth association (SDK drift) leaves the cache and client count
+unchanged and emits no JOINED event for the uncached station. There is no new
+logging path: the direct `printf` diagnostic introduced in `9abc66cc` was removed
+on review to preserve the board PAL diagnostic policy.
 
 The snapshots fixture associates five distinct MACs and checks every JOINED
 payload, status count, full listing, duplicate suppression, truncated/zero-length
 output, and each client's LEFT payload and leave/rejoin compaction. A synthetic
-sixth association must emit exactly one diagnostic with its MAC. The diagnostic
-also asserts that the PAL gate is not held.
+sixth association checks unchanged owned state, a count of five, no extra
+JOINED/LEFT events, the original five cached clients, and untouched output beyond
+the returned count.
 
-Before changing the provider, the new test failed on `d3c0f4a1` under Apple Clang
-21 and GCC 13.3 (`-Wall -Wextra -Werror`): expected one overflow diagnostic,
-received zero. The five-client capacity checks passed on that revision; only the
-missing diagnostic is a reproduced defect.
+The five-client capacity and bounded sixth-association behavior already held on
+`d3c0f4a1`. The initial test's failure there concerned only the now-removed logging
+expectation; it is not evidence of a supported-client capacity defect.
 
 ## Validation
 
@@ -66,10 +67,10 @@ missing diagnostic is a reproduced defect.
   (3/3), using `--config=macos_arm64`.
 - Linux VM `embed-zig-noble-amd64`: all three Python tests passed with GCC 13.3,
   `-Wall -Wextra -Werror`.
-- Native Loader/display package build: both succeeded in 38.660 seconds
-  (5 actions). The first attempt exposed a `stdio.h` / SDK `FILE` typedef
-  conflict; removing that unnecessary include fixed it. Final-source host tests
-  were rerun and passed.
+- Native Loader/display package build: both passed after removing the diagnostic,
+  using the command below and `--symlink_prefix=bazel-amd64-`.
+- Review follow-up: all three macOS Bazel and Linux GCC tests were rerun and
+  passed on the final source; `git diff --check` passed.
 
 Native command (no output-root owner was interrupted):
 

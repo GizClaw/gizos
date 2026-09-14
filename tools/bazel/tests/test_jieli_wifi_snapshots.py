@@ -50,9 +50,6 @@ class WifiSnapshotsTest(unittest.TestCase):
                     result = subprocess.run([str(binary), case], capture_output=True, text=True, timeout=15)
                     self.assertNotIn("WARNING: ThreadSanitizer", result.stderr, result.stdout + result.stderr)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                    if case == 'ap_capacity':
-                        self.assertEqual(result.stdout.count('AP client cache full'), 1)
-                        self.assertIn('02:03:04:05:06:05', result.stdout)
 
 
 if __name__ == '__main__':

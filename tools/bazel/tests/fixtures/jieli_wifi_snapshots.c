@@ -3,8 +3,6 @@
 #include <sched.h>
 #include <stdatomic.h>
 #include <string.h>
-#include <stdio.h>
-#include <stdarg.h>
 #include "h2/pal/hal/h2_pal_wifi.h"
 #include "h2/pal/net/h2_pal_netif.h"
 #include "h2/pal/os/h2_pal_system_event.h"
@@ -71,18 +69,7 @@ int wifi_get_sta_entry_rssi(char station, char **rssi, uint8_t **evm, uint8_t **
   assert(!"borrowed SDK client storage must not be read");
   return -1;
 }
-/* Check diagnostic ownership while retaining the actual formatted output. */
-static inline int checked_printf(const char *format, ...) {
-  assert_sdk_unlocked();
-  va_list args;
-  va_start(args, format);
-  int result = vprintf(format, args);
-  va_end(args);
-  return result;
-}
-#define printf checked_printf
 /* REAL_PROVIDER */
-#undef printf
 static void assert_sdk_unlocked(void) {
   /* SDK_GATE_CHECK */
 }
@@ -147,12 +134,20 @@ int main(int argc, char **argv) {
     assert(ap_get_clients(NULL, NULL, 0, &count) == H2_PAL_OK && count == 0);
     assert(ap_get_status(NULL, &status) == H2_PAL_OK);
     assert(status.client_count == SDK_AP_STATION_SLOTS);
-    /* Beyond the pinned SDK bound: report unexpected associations. */
+    /* SDK drift: an uncached sixth station must leave all owned state intact. */
+    h2_jieli_wifi_state_t before_overflow;
+    memcpy(&before_overflow, &wifi_state, sizeof(before_overflow));
     mac[5] = SDK_AP_STATION_SLOTS;
     assert(wifi_event(mac, WIFI_EVENT_AP_ON_ASSOC) == 0);
-    assert(joined == SDK_AP_STATION_SLOTS);
+    assert(joined == SDK_AP_STATION_SLOTS && left == 0);
+    assert(memcmp(&wifi_state, &before_overflow, sizeof(wifi_state)) == 0);
+    assert(ap_get_status(NULL, &status) == H2_PAL_OK);
+    assert(status.client_count == SDK_AP_STATION_SLOTS);
+    memset(clients, 0xa5, sizeof(clients));
     assert(ap_get_clients(NULL, clients, SDK_AP_STATION_SLOTS + 1, &count) == H2_PAL_OK);
     assert(count == SDK_AP_STATION_SLOTS);
+    assert(clients[SDK_AP_STATION_SLOTS].mac[0] == 0xa5);
+    assert(memcmp(clients, before_overflow.ap_clients, sizeof(before_overflow.ap_clients)) == 0);
     for (unsigned i = 0; i < SDK_AP_STATION_SLOTS; ++i) {
       mac[5] = (uint8_t)i;
       assert(wifi_event(mac, WIFI_EVENT_AP_ON_DISCONNECTED) == 0);
