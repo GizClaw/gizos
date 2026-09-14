@@ -72,3 +72,11 @@ Quectel provider 在每轮实际 prepare 中，与 CLIP 等通知配置一起 be
 观察到有效语音 DSCI 后，以有呼叫 ID 的 DSCI 作为远端结束依据，直到模组 reset；无 ID 的 NO CARRIER/BUSY/NO ANSWER 仍可作为 AT 结果，但不再发布呼叫结束，以免迟到通知误结束下一通。未观察到语音 DSCI 时保留原有终止 URC 回退。DSCI、CLCC 和本地接听/挂断结果共享事件状态去重；未启用 DSCI 路径的重复响铃通知保持原合同。AT 等待期间发生的新呼叫状态优先于旧的命令结果。当前 PAL 仍是单呼叫快照，不增加多通并发呼叫管理；同一模组 ID 的复用依赖有序 URC。
 
 Host 测试覆盖支持/不支持/超时的 prepare、来电主叫挂断立即结束、迟到 NO CARRIER、连续来电、接听/挂断、CLCC 去重和 PS 忽略。实际固件是否上报 DSCI、通知时延及串口接收完整性仍需台架验收。
+
+### 来电响铃看门狗
+
+配置 URC task/queue API 后，provider 复用 `$modem/urc` worker 的有界空闲等待，在未接听的 MT INCOMING/WAITING 期间查询 `AT+CLCC`。RING、初始 CLIP 或 CLCC 均可建立来电；结束后迟到的 CLIP/CLCC 仍忽略，下一次 RING/DSCI 或主动查询可建立新来电；本次来电收到有效语音 DSCI 后停止轮询，上一通的 DSCI 不会禁用下一通的兜底。默认空闲周期为 `H2_QUECTEL_RING_POLL_INTERVAL_MS=1000`，可通过编译常量调整（同时影响该 worker 的 SIM recovery 空闲周期）。持续 URC 流量、其它 AT 操作或 transport 延迟可推迟检测，不承诺硬实时一秒结束。
+
+看门狗先 try-lock operation mutex，忙则跳过本轮；持锁后重新检查来电与 opened 状态，保留已有 state-lock 释放/恢复和睡眠 gate 合同。单次查询使用 `H2_QUECTEL_RING_POLL_TIMEOUT_MS=1000` 毫秒预算；command transport 必须遵守传入超时，原始 read/write 路径按总等待预算限制 I/O。失败、超时、截断或歧义列表视为未知，不打印周期错误、不发布结束，下轮重试。成功列表按已知模组 ID（尚无 ID 时按 MT 和可用号码）关联；来电消失即复用终止事件去重发布 MODEM_CALL_ENDED，迟到 NO CARRIER 不重复。ACTIVE 发布状态变化并停止；本地接听、拒接、结束及 close/deinit 同样停止，迟到 RING 不重新开启已接听来电的看门狗。查询期间收到的新状态优先于查询结果。
+
+该能力仅覆盖未接听来电，保持现有单呼叫快照，不监控已接通通话；未配置 worker 的同步使用方式没有自动轮询。Host 测试验证周期回调、超时未知、迟到终止去重、DSCI 按次禁用、CLCC 接通和本地生命周期停止；串口实际结束时延仍需硬件验收。

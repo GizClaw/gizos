@@ -68,6 +68,12 @@ static int parse_signal_urc(const char *line, h2_pal_modem_signal_t *out_signal)
 void h2_quectel_post_call_status(h2_quectel_modem_t *modem, h2_pal_system_event_type_t type, const h2_pal_modem_call_status_t *status) {
     if (modem == NULL || status == NULL) { return; }
     h2_pal_modem_call_status_t next = *status;
+    if (next.direction == H2_PAL_MODEM_CALL_DIRECTION_INCOMING &&
+        next.call_id == modem->incoming_call_id) {
+        if (next.state == H2_PAL_MODEM_CALL_STATE_INCOMING && modem->incoming_answered) { return; }
+        if (next.state == H2_PAL_MODEM_CALL_STATE_ACTIVE ||
+            next.state == H2_PAL_MODEM_CALL_STATE_HELD) { modem->incoming_answered = 1u; }
+    }
     if (modem->call_status_seen && modem->observed_call.call_id == next.call_id &&
         modem->observed_call.direction == next.direction) {
         if (next.number[0] == '\0') {
@@ -136,6 +142,7 @@ static void handle_dsci(h2_quectel_modem_t *modem, const char *line) {
     } else {
         modem->dsci_call_id = id;
         status.call_id = dir ? h2_quectel_incoming_call_begin(modem) : id;
+        if (dir) { modem->incoming_dsci_seen = 1u; }
         modem->call_hold = 1u;
         (void)h2_quectel_power_wake(modem);
     }
@@ -217,11 +224,13 @@ void h2_quectel_handle_urc_locked(h2_quectel_modem_t *modem, const char *line) {
     }
 
     if (strncmp(line, "+CLIP:", 6) == 0) {
-        const int32_t incoming_call_id =
-            h2_quectel_incoming_call_current(modem);
-        if (incoming_call_id == 0) {
-            return;
-        }
+        /* A terminal occurrence stays terminal until a new RING/DSCI or a
+         * solicited call snapshot establishes the next occurrence. */
+        if (!modem->incoming_call_id && modem->call_status_seen &&
+            modem->observed_call.state == H2_PAL_MODEM_CALL_STATE_ENDED) { return; }
+        const int32_t incoming_call_id = h2_quectel_incoming_call_begin(modem);
+        modem->call_hold = 1u;
+        (void)h2_quectel_power_wake(modem);
         h2_pal_modem_call_status_t status;
         memset(&status, 0, sizeof(status));
         status.call_id = incoming_call_id;
@@ -238,16 +247,19 @@ void h2_quectel_handle_urc_locked(h2_quectel_modem_t *modem, const char *line) {
     if (strncmp(line, "+CLCC:", 6) == 0) {
         h2_pal_modem_call_status_t status;
         if (h2_quectel_parse_clcc_line(line, &status)) {
-            if (modem->dsci_voice_seen && modem->call_status_seen &&
+            if (!modem->incoming_call_id && modem->call_status_seen &&
+                modem->observed_call.state == H2_PAL_MODEM_CALL_STATE_ENDED) { return; }
+            if (modem->incoming_dsci_seen && modem->call_status_seen &&
                 (modem->observed_call.state == H2_PAL_MODEM_CALL_STATE_ENDED ||
                  (modem->dsci_call_id != 0 && modem->dsci_call_id != status.call_id))) {
                 return;
             }
             if (status.direction == H2_PAL_MODEM_CALL_DIRECTION_INCOMING) {
-                status.call_id = h2_quectel_incoming_call_current(modem);
-                if (status.call_id == 0) {
-                    return;
-                }
+                int32_t modem_id = status.call_id;
+                status.call_id = h2_quectel_incoming_call_begin(modem);
+                modem->incoming_modem_call_id = modem_id;
+                modem->call_hold = 1u;
+                (void)h2_quectel_power_wake(modem);
             }
             h2_quectel_post_call_status(
                 modem,

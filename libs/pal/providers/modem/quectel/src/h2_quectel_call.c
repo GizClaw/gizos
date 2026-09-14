@@ -34,6 +34,9 @@ int32_t h2_quectel_incoming_call_begin(h2_quectel_modem_t *modem) {
     if (modem->next_incoming_call_id <= 0) {
         modem->next_incoming_call_id = 1;
     }
+    modem->incoming_dsci_seen = 0u;
+    modem->incoming_answered = 0u;
+    modem->incoming_modem_call_id = 0;
     modem->incoming_call_id = modem->next_incoming_call_id;
     modem->next_incoming_call_id = modem->next_incoming_call_id == INT32_MAX
         ? 1
@@ -51,6 +54,9 @@ int32_t h2_quectel_incoming_call_end(h2_quectel_modem_t *modem) {
     }
     const int32_t call_id = modem->incoming_call_id;
     modem->incoming_call_id = 0;
+    modem->incoming_dsci_seen = 0u;
+    modem->incoming_answered = 0u;
+    modem->incoming_modem_call_id = 0;
     return call_id;
 }
 
@@ -196,7 +202,9 @@ static h2_pal_result_t h2_quectel_modem_get_call_status_impl(
         return H2_PAL_ERR_FORMAT;
     }
     if (out_status->direction == H2_PAL_MODEM_CALL_DIRECTION_INCOMING) {
+        int32_t modem_id = out_status->call_id;
         out_status->call_id = h2_quectel_incoming_call_begin(modem);
+        modem->incoming_modem_call_id = modem_id;
     }
     if (out_status->state == H2_PAL_MODEM_CALL_STATE_INCOMING) {
         h2_quectel_post_call_status(modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_INCOMING, out_status);
@@ -302,4 +310,68 @@ h2_pal_result_t h2_quectel_modem_get_call_status(
             out_status->state != H2_PAL_MODEM_CALL_STATE_ENDED;
     }
     return h2_quectel_operation_end(modem_state, rc);
+}
+
+/* Called only by the existing worker's bounded idle callback. Never wait for
+ * an app operation while holding state: RX must remain able to make progress. */
+void h2_quectel_call_watchdog(void *user) {
+    h2_quectel_modem_t *modem = user;
+    if (modem == NULL) { return; }
+    if (modem->operation_lock != NULL &&
+        h2_pal_mutex_try_lock(modem->config.sync_api, modem->operation_lock) != H2_PAL_OK) { return; }
+    h2_pal_result_t rc = h2_quectel_operation_begin(modem);
+    if (modem->operation_lock != NULL) {
+        (void)h2_pal_mutex_unlock(modem->config.sync_api, modem->operation_lock);
+    }
+    if (rc != H2_PAL_OK) { return; }
+    if (!modem->opened || !modem->incoming_call_id || modem->incoming_dsci_seen || modem->incoming_answered ||
+        modem->observed_call.direction != H2_PAL_MODEM_CALL_DIRECTION_INCOMING ||
+        (modem->observed_call.state != H2_PAL_MODEM_CALL_STATE_INCOMING &&
+         modem->observed_call.state != H2_PAL_MODEM_CALL_STATE_WAITING)) {
+        (void)h2_quectel_operation_end(modem, H2_PAL_OK);
+        return;
+    }
+    const int32_t id = modem->incoming_call_id;
+    const uint32_t generation = modem->call_generation;
+    h2_quectel_response_t response;
+    modem->call_poll_running = 1u;
+    modem->call_poll_io_budget = H2_QUECTEL_RING_POLL_TIMEOUT_MS;
+    rc = h2_quectel_at_exchange_timeout(modem, "AT+CLCC", &response, 0,
+        H2_QUECTEL_RING_POLL_TIMEOUT_MS);
+    modem->call_poll_running = 0u;
+    if (rc == H2_PAL_OK && generation == modem->call_generation &&
+        id == modem->incoming_call_id && !modem->incoming_dsci_seen) {
+        h2_pal_modem_call_status_t found = {0};
+        int valid = !response.truncated, matches = 0;
+        for (size_t i = 0u; i < response.count; i++) {
+            h2_pal_modem_call_status_t status;
+            if (strncmp(response.lines[i], "+CLCC:", 6u) != 0 ||
+                !h2_quectel_parse_clcc_line(response.lines[i], &status) ||
+                status.call_id <= 0 || status.state == H2_PAL_MODEM_CALL_STATE_IDLE) {
+                valid = 0;
+                break;
+            }
+            if (status.direction != H2_PAL_MODEM_CALL_DIRECTION_INCOMING ||
+                (modem->incoming_modem_call_id != 0 &&
+                 modem->incoming_modem_call_id != status.call_id)) { continue; }
+            if (modem->incoming_modem_call_id == 0 &&
+                modem->observed_call.number[0] != '\0' && status.number[0] != '\0' &&
+                strcmp(modem->observed_call.number, status.number) != 0) { continue; }
+            found = status;
+            matches++;
+        }
+        /* Ambiguous/malformed lists are unknown, just like a timeout. */
+        if (valid && matches == 0) {
+            found = modem->observed_call;
+            found.state = H2_PAL_MODEM_CALL_STATE_ENDED;
+            h2_quectel_post_call_status(modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_ENDED, &found);
+        } else if (valid && matches == 1) {
+            modem->incoming_modem_call_id = found.call_id;
+            found.call_id = id;
+            if (found.state != modem->observed_call.state) {
+                h2_quectel_post_call_status(modem, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_CALL_STATE_CHANGED, &found);
+            }
+        }
+    }
+    (void)h2_quectel_operation_end(modem, H2_PAL_OK);
 }

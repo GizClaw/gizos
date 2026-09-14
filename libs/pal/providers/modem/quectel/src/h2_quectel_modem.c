@@ -324,6 +324,11 @@ void h2_quectel_post_system_event(
     }
 }
 
+static void quectel_idle(void *user) {
+    h2_quectel_call_watchdog(user);
+    h2_quectel_sim_recover(user);
+}
+
 static void dispatch_urc(void *user, const char *line) {
     h2_quectel_modem_t *modem = user;
     h2_quectel_handle_urc_line(modem, line);
@@ -410,7 +415,7 @@ h2_pal_result_t h2_quectel_modem_init(
     modem->data_status.state = H2_PAL_MODEM_DATA_CLOSED;
     if (config->urc_task_api != NULL) {
         h2_pal_result_t rc = h2_modem_urc_start_idle(&modem->urc_worker,
-            config->urc_task_api, config->urc_queue_api, config->allocator, dispatch_urc, modem, h2_quectel_sim_recover, 1000u);
+            config->urc_task_api, config->urc_queue_api, config->allocator, dispatch_urc, modem, quectel_idle, H2_QUECTEL_RING_POLL_INTERVAL_MS);
         if (rc != H2_PAL_OK) {
             (void)h2_pal_mutex_destroy(config->sync_api, modem->operation_lock);
             modem->operation_lock = NULL;

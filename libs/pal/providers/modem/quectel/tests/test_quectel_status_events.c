@@ -345,6 +345,174 @@ static void test_dsci(const h2_pal_system_event_api_t *events) {
     assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
 }
 
+
+void h2_quectel_call_watchdog(void *user);
+
+typedef struct watchdog_transport {
+    h2_quectel_modem_t *modem;
+    const char *reply;
+    const char *urc;
+    h2_pal_result_t result;
+    unsigned polls;
+} watchdog_transport_t;
+
+static h2_pal_result_t watchdog_command(void *user, const char *cmd,
+    char *response, size_t size, uint32_t timeout_ms) {
+    watchdog_transport_t *t = user;
+    if (strcmp(cmd, "AT+CLCC") != 0) {
+        return command(NULL, cmd, response, size, timeout_ms);
+    }
+    assert(timeout_ms == H2_QUECTEL_RING_POLL_TIMEOUT_MS);
+    assert(t->modem->operation_depth > 0u);
+    t->polls++;
+    if (t->urc != NULL) { h2_quectel_handle_urc_line(t->modem, t->urc); }
+    assert(strlen(t->reply) < size);
+    strcpy(response, t->reply);
+    return t->result;
+}
+
+static h2_pal_result_t watchdog_busy(void *user, h2_pal_mutex_t *mutex) {
+    (void)mutex;
+    unsigned *attempts = user;
+    (*attempts)++;
+    return H2_PAL_ERR_BUSY;
+}
+
+static void test_ring_watchdog(const h2_pal_system_event_api_t *events) {
+    const char *starts[] = {"RING", "+CLIP: \"123\",129",
+        "+CLCC: 7,1,4,0,0,\"123\",129"};
+    for (unsigned mode = 0u; mode < 9u; mode++) {
+        h2_quectel_modem_t modem;
+        watchdog_transport_t t = {.modem = &modem, .reply = "OK\r\n"};
+        h2_quectel_modem_config_t config = {
+            .command = watchdog_command, .transport_user = &t, .system_events = events,
+        };
+        assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_OK);
+        assert(h2_pal_modem_open(&modem.platform, 1000u) == H2_PAL_OK);
+        h2_quectel_handle_urc_line(&modem, starts[mode % 3u]);
+        int32_t id = modem.incoming_call_id;
+        assert(id != 0);
+        unsigned ended = ended_events;
+        if (mode == 0u) {
+            unsigned attempts = 0u;
+            const h2_pal_sync_vtable_t sync_vtable = {.try_lock_mutex = watchdog_busy};
+            const h2_pal_sync_api_t sync = {.user = &attempts, .vtable = &sync_vtable};
+            modem.config.sync_api = &sync;
+            modem.operation_lock = (h2_pal_mutex_t *)&attempts;
+            h2_quectel_call_watchdog(&modem);
+            assert(attempts == 1u && t.polls == 0u && ended_events == ended);
+            modem.operation_lock = NULL;
+            modem.config.sync_api = NULL;
+            /* One worker idle interval after remote disappearance. */
+            h2_quectel_call_watchdog(&modem);
+            assert(t.polls == 1u && ended_events == ended + 1u);
+            assert(last_call.call_id == id && !modem.call_hold);
+            h2_quectel_handle_urc_line(&modem, "NO CARRIER");
+            h2_quectel_call_watchdog(&modem);
+            assert(t.polls == 1u && ended_events == ended + 1u);
+        } else if (mode == 1u) {
+            assert(h2_pal_modem_call_answer(&modem.platform, 1000u) == H2_PAL_OK);
+            h2_quectel_handle_urc_line(&modem, "RING"); /* Delayed ring cannot rearm. */
+            h2_quectel_call_watchdog(&modem);
+            assert(t.polls == 0u && last_call.state == H2_PAL_MODEM_CALL_STATE_ACTIVE);
+        } else if (mode == 2u) {
+            t.result = H2_PAL_ERR_TIMEOUT;
+            h2_quectel_call_watchdog(&modem);
+            assert(t.polls == 1u && ended_events == ended && modem.incoming_call_id == id);
+            t.result = H2_PAL_OK;
+            h2_quectel_call_watchdog(&modem);
+            assert(t.polls == 2u && ended_events == ended + 1u);
+        } else if (mode == 3u) {
+            h2_quectel_handle_urc_line(&modem, "^DSCI: 1,1,4,0,123,129");
+            h2_quectel_call_watchdog(&modem);
+            assert(t.polls == 0u);
+            h2_quectel_handle_urc_line(&modem, "^DSCI: 1,1,6,0,123,129");
+            h2_quectel_handle_urc_line(&modem, "RING");
+            h2_quectel_call_watchdog(&modem);
+            assert(t.polls == 1u && ended_events == ended + 2u);
+        } else if (mode == 4u) {
+            t.reply = "+CLCC: 7,1,0,0,0,\"123\",129\r\nOK\r\n";
+            h2_quectel_call_watchdog(&modem);
+            assert(last_call.state == H2_PAL_MODEM_CALL_STATE_ACTIVE && last_call.call_id == id);
+            h2_quectel_call_watchdog(&modem);
+            assert(t.polls == 1u && ended_events == ended);
+        } else if (mode == 5u) {
+            t.reply = "+CLCC: bad\r\nOK\r\n";
+            h2_quectel_call_watchdog(&modem);
+            assert(ended_events == ended && modem.incoming_call_id == id);
+            t.reply = "+CLCC: 8,1,4,0,0,\"456\",129\r\nOK\r\n";
+            h2_quectel_call_watchdog(&modem);
+            assert(ended_events == ended + 1u); /* Known modem ID 7 vanished. */
+        } else if (mode == 6u) {
+            t.urc = "^DSCI: 1,1,3,0,123,129";
+            h2_quectel_call_watchdog(&modem);
+            assert(last_call.state == H2_PAL_MODEM_CALL_STATE_ACTIVE && ended_events == ended);
+        } else if (mode == 7u) {
+            assert(h2_pal_modem_call_hangup(&modem.platform, 1000u) == H2_PAL_OK);
+            h2_quectel_call_watchdog(&modem);
+            assert(t.polls == 0u && ended_events == ended + 1u);
+        } else {
+            assert(h2_pal_modem_close(&modem.platform, 1000u) == H2_PAL_OK);
+            h2_quectel_call_watchdog(&modem);
+            assert(t.polls == 0u);
+        }
+        assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
+    }
+}
+
+
+typedef struct raw_watchdog_transport {
+    const char *cursor;
+    unsigned waited;
+    unsigned timeouts;
+} raw_watchdog_transport_t;
+
+static h2_pal_result_t watchdog_write(void *user, const uint8_t *data,
+    size_t size, uint32_t timeout_ms, size_t *written) {
+    raw_watchdog_transport_t *t = user;
+    assert(size == strlen("AT+CLCC\r") && memcmp(data, "AT+CLCC\r", size) == 0);
+    t->waited += timeout_ms;
+    *written = size;
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t watchdog_read(void *user, uint8_t *data,
+    size_t size, uint32_t timeout_ms, size_t *got) {
+    raw_watchdog_transport_t *t = user;
+    assert(size == 1u);
+    t->waited += timeout_ms;
+    *got = 0u;
+    if (t->timeouts != 0u) {
+        t->timeouts--;
+        return H2_PAL_ERR_TIMEOUT;
+    }
+    if (*t->cursor == '\0') { return H2_PAL_ERR_TIMEOUT; }
+    *data = (uint8_t)*t->cursor++;
+    *got = 1u;
+    return H2_PAL_OK;
+}
+
+static void test_raw_watchdog(const h2_pal_system_event_api_t *events) {
+    for (unsigned mode = 0u; mode < 2u; mode++) {
+        h2_quectel_modem_t modem;
+        raw_watchdog_transport_t t = {.cursor = mode ? "" : "OK\r\n", .timeouts = 20u};
+        const h2_quectel_modem_config_t config = {
+            .read = watchdog_read, .write = watchdog_write,
+            .transport_user = &t, .system_events = events,
+        };
+        assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_OK);
+        modem.opened = 1u; /* Isolate watchdog I/O from prepare commands. */
+        h2_quectel_handle_urc_line(&modem, "RING");
+        unsigned ended = ended_events;
+        h2_quectel_call_watchdog(&modem);
+        assert(t.waited <= H2_QUECTEL_RING_POLL_TIMEOUT_MS);
+        assert(ended_events == ended + (mode ? 0u : 1u));
+        assert(modem.operation_depth == 0u && !modem.call_poll_running);
+        modem.opened = 0u;
+        assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
+    }
+}
+
 int main(void) {
     const h2_pal_system_event_vtable_t vtable = {.post = post};
     const h2_pal_system_event_api_t events = {.vtable = &vtable};
@@ -379,6 +547,8 @@ int main(void) {
     h2_quectel_handle_urc_line(&modem, "RING");
     assert(call_events == 2u);
     assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
+    test_raw_watchdog(&events);
+    test_ring_watchdog(&events);
     test_dsci(&events);
     test_dsci_during_command(&events);
     test_sim_absent_rx(&events);

@@ -19,6 +19,13 @@ static void trim_line(char *line) {
 }
 
 static h2_pal_result_t write_all(h2_quectel_modem_t *modem, const char *data, uint32_t timeout_ms) {
+    if (modem->call_poll_running) {
+        if (timeout_ms > modem->call_poll_io_budget) { timeout_ms = modem->call_poll_io_budget; }
+        if (timeout_ms == 0u) { return H2_PAL_ERR_TIMEOUT; }
+        /* Leave most of the budget for the response. */
+        if (timeout_ms > 10u) { timeout_ms = 10u; }
+        modem->call_poll_io_budget -= timeout_ms;
+    }
     size_t len = strlen(data);
     size_t written = 0u;
     h2_quectel_state_unlock(modem);
@@ -37,9 +44,19 @@ static h2_pal_result_t read_line(h2_quectel_modem_t *modem, char *line, size_t c
     for (;;) {
         uint8_t ch = 0u;
         size_t got = 0u;
+        uint32_t wait_ms = timeout_ms;
+        if (modem->call_poll_running) {
+            if (modem->call_poll_io_budget == 0u) { return H2_PAL_ERR_TIMEOUT; }
+            wait_ms = 1u;
+            modem->call_poll_io_budget--;
+        }
         h2_quectel_state_unlock(modem);
-        h2_pal_result_t rc = modem->config.read(modem->config.transport_user, &ch, 1u, timeout_ms, &got);
+        h2_pal_result_t rc = modem->config.read(modem->config.transport_user, &ch, 1u, wait_ms, &got);
         (void)h2_quectel_state_lock(modem);
+        if (modem->call_poll_running &&
+            (rc == H2_PAL_ERR_TIMEOUT || (rc == H2_PAL_OK && got == 0u))) {
+            continue; /* The total reserved wait budget still decreases. */
+        }
         if (rc != H2_PAL_OK) {
             return rc;
         }
@@ -67,7 +84,9 @@ static h2_pal_result_t read_line(h2_quectel_modem_t *modem, char *line, size_t c
 }
 
 static void response_add_line(h2_quectel_response_t *response, const char *line) {
-    if (response == NULL || line == NULL || line[0] == '\0' || response->count >= H2_QUECTEL_RESPONSE_MAX) {
+    if (response == NULL || line == NULL || line[0] == '\0') { return; }
+    if (response->count >= H2_QUECTEL_RESPONSE_MAX) {
+        response->truncated = 1;
         return;
     }
     strncpy(response->lines[response->count], line, H2_QUECTEL_LINE_MAX - 1u);
@@ -100,6 +119,7 @@ static void response_add_text(h2_quectel_modem_t *modem, h2_quectel_response_t *
         cursor += consume;
 
         if (truncated) {
+            if (response != NULL) { response->truncated = 1; }
             continue;
         }
 

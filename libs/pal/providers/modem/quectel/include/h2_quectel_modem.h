@@ -76,6 +76,14 @@ typedef void (*h2_quectel_modem_invalidate_data_fn)(void *user);
  */
 typedef h2_pal_result_t (*h2_quectel_modem_restart_module_fn)(void *user);
 
+/* URC worker idle cadence, also used by deferred SIM recovery. */
+#ifndef H2_QUECTEL_RING_POLL_INTERVAL_MS
+#define H2_QUECTEL_RING_POLL_INTERVAL_MS 1000u
+#endif
+#ifndef H2_QUECTEL_RING_POLL_TIMEOUT_MS
+#define H2_QUECTEL_RING_POLL_TIMEOUT_MS 1000u
+#endif
+
 typedef struct h2_quectel_modem_config {
     void *transport_user;
     h2_quectel_modem_init_fn init;
@@ -87,6 +95,7 @@ typedef struct h2_quectel_modem_config {
     const h2_pal_sync_api_t *sync_api;
     /* Supply both APIs for asynchronous RX. The worker lives from init to
      * deinit; sync_api must implement try_lock_mutex for deferred SIM recovery
+     * and incoming-call CLCC watchdog,
      * and protects state independently of serialized AT operations.
      * With this worker, command() returns solicited text; any URCs included
      * in that text are ignored because physical RX already delivered them. */
@@ -167,6 +176,15 @@ struct h2_quectel_modem {
     /* Optional DSCI configuration is volatile; ERROR is latched per instance. */
     uint8_t dsci_unsupported;
     uint8_t dsci_voice_seen;
+    /* Per incoming occurrence: polling stops after voice DSCI or answer/end.
+     * Without task/queue APIs there is no autonomous watchdog. Busy operations
+     * skip a tick; failed CLCC is unknown and never synthesizes an end. */
+    uint8_t incoming_dsci_seen;
+    uint8_t incoming_answered;
+    int32_t incoming_modem_call_id;
+    /* Conservative raw-I/O wait budget used only during watchdog exchanges. */
+    uint32_t call_poll_io_budget;
+    uint8_t call_poll_running;
     uint8_t call_status_seen;
     uint32_t call_generation;
     int32_t dsci_call_id;
