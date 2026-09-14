@@ -95,6 +95,8 @@ int main(void) {
 #define F_ATTR_DIR 16
 typedef struct { char path[194]; int attributes; } FILE;
 static FILE entries[16];
+static FILE create_handle;
+static int create_attr_not_dir, create_attr_error, create_close_error;
 static int count, creates, closes, traces;
 static int fail_create, fail_attr, fail_close, wrong_type, disappear, concurrent;
 static char created_paths[16][194];
@@ -126,13 +128,18 @@ static FILE *fopen(const char *path, const char *mode) {
     if (fail_create == creates) return NULL;
     FILE *file = add(entry, wrong_type ? 0 : F_ATTR_DIR);
     if (disappear) file->path[0] = 0;
-    return concurrent ? NULL : file;
+    create_handle = *file;
+    if (create_attr_not_dir) create_handle.attributes = 0;
+    return concurrent ? NULL : &create_handle;
 }
 static int fget_attr(FILE *file, int *attributes) {
-    if (fail_attr) return -1;
+    if (fail_attr || (file == &create_handle && create_attr_error)) return -1;
     *attributes = file->attributes; return 0;
 }
-static int fclose(FILE *file) { (void)file; ++closes; return fail_close ? -1 : 0; }
+static int fclose(FILE *file) {
+    ++closes;
+    return fail_close || (file == &create_handle && create_close_error) ? -1 : 0;
+}
 static void trace_mkdir(const char *path, int native, int lookup) {
     assert(strncmp(path, H2_JIELI_SD_ROOT, strlen(H2_JIELI_SD_ROOT)) == 0);
     (void)native; (void)lookup; ++traces;
@@ -140,6 +147,7 @@ static void trace_mkdir(const char *path, int native, int lookup) {
 static void (*h2_jieli_sd_fs_trace_mkdir)(const char *, int, int) = trace_mkdir;
 static void reset(void) {
     count = creates = closes = traces = 0;
+    create_attr_not_dir = create_attr_error = create_close_error = 0;
     fail_create = fail_attr = fail_close = wrong_type = disappear = concurrent = 0;
 }
 '''
@@ -195,6 +203,21 @@ int main(void) {
     assert(ensure_directory(H2_JIELI_SD_ROOT "data/child") == H2_PAL_ERR_IO);
     assert(creates == 0 && closes == 1);
     reset(); fail_close = 1;
+    assert(ensure_directory(H2_JIELI_SD_ROOT "data") == H2_PAL_ERR_IO);
+    reset(); create_attr_not_dir = 1;
+    assert(ensure_directory(H2_JIELI_SD_ROOT "data") == H2_PAL_OK);
+    assert(creates == 1 && closes == 2);
+    reset(); create_attr_not_dir = wrong_type = 1;
+    assert(ensure_directory(H2_JIELI_SD_ROOT "data") == H2_PAL_ERR_INVALID_STATE);
+    reset(); create_attr_error = 1;
+    assert(ensure_directory(H2_JIELI_SD_ROOT "data") == H2_PAL_OK);
+    assert(closes == 2);
+    reset(); create_close_error = 1;
+    assert(ensure_directory(H2_JIELI_SD_ROOT "data") == H2_PAL_OK);
+    assert(closes == 2);
+    reset(); create_attr_error = disappear = 1;
+    assert(ensure_directory(H2_JIELI_SD_ROOT "data") == H2_PAL_ERR_IO);
+    reset(); create_close_error = disappear = 1;
     assert(ensure_directory(H2_JIELI_SD_ROOT "data") == H2_PAL_ERR_IO);
     reset(); concurrent = 1;
     assert(ensure_directory(H2_JIELI_SD_ROOT "data") == 0);
