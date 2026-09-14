@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <stdint.h>
+#include <string.h>
 #include "h2/pal/hal/h2_pal_ble.h"
 #include "h2/pal/os/h2_pal_system_event.h"
 struct h2_pal_ble_adv_set {
@@ -7,6 +8,11 @@ struct h2_pal_ble_adv_set {
     int used, started, start_requested;
 };
 static struct { struct h2_pal_ble_adv_set adv; } h2_ble;
+static struct { unsigned submitting, restart, phase; } h2_adv_commands;
+static int locked;
+static void h2_gatt_lock(void) { assert(!locked); locked = 1; }
+static void h2_gatt_unlock(void) { assert(locked); locked = 0; }
+void stack_run_loop_resume(void) { assert(!locked); }
 static const void *queued;
 static uint16_t queued_size;
 static int h2_ble_cmd_result(int result) { return result; }

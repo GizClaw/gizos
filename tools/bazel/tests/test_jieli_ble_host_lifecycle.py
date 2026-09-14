@@ -22,7 +22,10 @@ class HostLifecycleTest(unittest.TestCase):
         source = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_ble.c').read_text()
         begin = source.index('struct h2_ext_adv_enable {')
         end = source.index('} __attribute__((packed));', begin) + len('} __attribute__((packed));')
-        code = source[begin:end] + '\n' + function(source, 'static int h2_adv_set_stop(void *user, h2_pal_ble_adv_set_t *set) {')
+        code = source[begin:end] + '\n'
+        if 'static int h2_adv_stop_request(' in source:
+            code += function(source, 'static int h2_adv_stop_request(')
+        code += function(source, 'static int h2_adv_set_stop(void *user, h2_pal_ble_adv_set_t *set) {')
         fixture = (ROOT / 'tools/bazel/tests/fixtures/jieli_ble_disable_storage.c').read_text()
         with tempfile.TemporaryDirectory() as directory:
             test = Path(directory) / 'test.c'
@@ -53,6 +56,7 @@ static int h2_att_write_retained(uint16_t c, uint16_t a, uint16_t t, uint16_t o,
         code = helpers + function(source, 'static int h2_ble_start(')
         code += function(source, 'static int h2_ble_stop(')
         code += function(source, 'void bt_ble_init(void)') + retained
+        code += function(source, 'static void h2_connection_command_consumed(void) {')
         fixture = (ROOT / 'tools/bazel/tests/fixtures/jieli_ble_host_lifecycle.c').read_text()
         with tempfile.TemporaryDirectory() as directory:
             test = Path(directory) / 'test.c'
@@ -61,7 +65,7 @@ static int h2_att_write_retained(uint16_t c, uint16_t a, uint16_t t, uint16_t o,
             subprocess.run(['cc', '-std=c11', '-D_POSIX_C_SOURCE=200809L', '-Wall', '-Wextra', '-Werror', '-pthread',
                 *os.environ.get('JIELI_TEST_CFLAGS', '').split(), '-I', str(ROOT / 'libs/pal/include'),
                 str(test), '-o', str(binary)], check=True)
-            for case in ['adv_error', 'disconnect_error', 'exit_error', 'retained', 'retained_callback', 'self_stop', 'pending_init', 'late_init', 'init_dispatcher', 'admitted_start', 'init_error', 'init_publication', 'disconnect_event']:
+            for case in ['adv_error', 'disconnect_error', 'exit_error', 'retained', 'retained_callback', 'retained_command', 'self_stop', 'pending_init', 'late_init', 'init_dispatcher', 'admitted_start', 'init_error', 'init_publication', 'disconnect_event']:
                 with self.subTest(case=case):
                     result = subprocess.run([str(binary), case], capture_output=True, text=True, timeout=15)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

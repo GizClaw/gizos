@@ -43,6 +43,10 @@ static int ble_op_conn_param_request(uint16_t handle, const struct conn_update_p
     }
     return request_error;
 }
+void h2_adv_command_consumed(void) {}
+typedef struct { int unused; } h2_ble_call_t;
+int h2_ble_call_begin(h2_ble_call_t *call) { (void)call; check_unlocked(); return 0; }
+void h2_ble_call_end(h2_ble_call_t *call) { (void)call; check_unlocked(); }
 /* REAL_PROVIDER */
 static const h2_pal_ble_connection_params_t first = {
     .interval_min_ms = 50, .interval_max_ms = 100, .latency = 2, .supervision_timeout_ms = 2000,

@@ -5,6 +5,7 @@
 #include "system/includes.h"
 #include "bt_common.h"
 #include "btcontroller_config.h"
+#include "btctrler/btctrler_task.h"
 #include "btstack/avctp_user.h"
 #include "btstack/btstack_task.h"
 #include "btstack/btstack_error.h"
@@ -286,15 +287,11 @@ static void h2_att_trace_dump(void) {
 static int h2_unregister_gatt(void *user);
 static int h2_adv_set_stop(void *user, h2_pal_ble_adv_set_t *set);
 static int h2_adv_apply(struct h2_pal_ble_adv_set *set);
+static int h2_adv_apply_with_params(struct h2_pal_ble_adv_set *set,
+    const h2_pal_ble_adv_params_t *params, int automatic, int *submitted);
 
 static void h2_restart_legacy_advertising(void) {
-  if (!h2_ble.started || !h2_ble.adv.used ||
-      !h2_ble.adv.start_requested ||
-      h2_ble.adv.params.type != H2_PAL_BLE_ADV_TYPE_LEGACY) {
-    return;
-  }
-  const int rc = h2_adv_apply(&h2_ble.adv);
-  h2_ble.adv.started = rc == H2_PAL_OK;
+  const int rc = h2_adv_apply_with_params(&h2_ble.adv, NULL, 1, NULL);
   h2_ble_log("H2_JIELI_BLE_ADV_RESTART code=%d\r\n", rc);
 }
 
@@ -331,6 +328,18 @@ struct h2_ext_adv_enable {
   uint16_t duration;
   uint8_t max_events;
 } __attribute__((packed));
+
+/* Advertising command storage outlives both native pointer queues. */
+static struct {
+  struct h2_pal_ble_adv_set snapshot;
+  struct h2_ext_adv_param params;
+  struct h2_ext_adv_data data;
+  struct h2_ext_adv_enable enable;
+  uint32_t generation;
+  unsigned phase; /* 0 reusable, 1 btstack, 2 controller, 3 failed fence */
+  unsigned submitting;
+  unsigned restart;
+} h2_adv_commands;
 
 static void h2_ble_post(
     h2_pal_system_event_type_t type, const void *payload, size_t payload_size) {
@@ -428,6 +437,8 @@ static int h2_adv_append(
 static int h2_encode_adv_candidate(
     const h2_pal_ble_adv_data_t *data, uint8_t *out, size_t capacity,
     uint8_t *out_len) {
+  if (data == NULL || (data->service_uuid_count != 0u && data->service_uuids == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
   size_t used = 0u;
   const uint8_t flags = 0x06u;
   int rc = h2_adv_append(out, capacity, &used, 0x01u, &flags, 1u);
@@ -500,7 +511,7 @@ static void h2_u24(uint8_t out[3], uint32_t value) {
   out[2] = (uint8_t)(value >> 16u);
 }
 
-static int h2_adv_apply(struct h2_pal_ble_adv_set *set) {
+static int h2_adv_submit(struct h2_pal_ble_adv_set *set) {
   if (set->params.type == H2_PAL_BLE_ADV_TYPE_LEGACY) {
     if (set->data_len > H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN)
       return H2_PAL_ERR_NO_SPACE;
@@ -535,41 +546,145 @@ static int h2_adv_apply(struct h2_pal_ble_adv_set *set) {
     }
     return rc;
   }
-  struct h2_ext_adv_param params;
-  memset(&params, 0, sizeof(params));
-  params.properties =
+  struct h2_ext_adv_param *params = &h2_adv_commands.params;
+  memset(params, 0, sizeof(*params));
+  params->properties =
       set->params.mode == H2_PAL_BLE_ADV_MODE_CONNECTABLE ? 1u : 0u;
-  h2_u24(params.interval_min,
-         (set->params.interval_min_ms * 8u + 4u) / 5u);
-  h2_u24(params.interval_max,
-         (set->params.interval_max_ms * 8u + 4u) / 5u);
-  params.channel_map = 7u;
-  params.primary_phy = h2_adv_phy(set->params.primary_phy);
-  params.secondary_phy = h2_adv_phy(set->params.secondary_phy);
-  params.sid = set->params.sid;
-  struct h2_ext_adv_data encoded = {
+  h2_u24(params->interval_min, (set->params.interval_min_ms * 8u + 4u) / 5u);
+  h2_u24(params->interval_max, (set->params.interval_max_ms * 8u + 4u) / 5u);
+  params->channel_map = 7u;
+  params->primary_phy = h2_adv_phy(set->params.primary_phy);
+  params->secondary_phy = h2_adv_phy(set->params.secondary_phy);
+  params->sid = set->params.sid;
+  struct h2_ext_adv_data *encoded = &h2_adv_commands.data;
+  *encoded = (struct h2_ext_adv_data){
       .handle = 0u, .operation = 3u, .fragment_preference = 0u,
       .length = set->data_len,
   };
-  memcpy(encoded.data, set->data, set->data_len);
-  struct h2_ext_adv_enable enable = {
+  memcpy(encoded->data, set->data, set->data_len);
+  struct h2_ext_adv_enable *enable = &h2_adv_commands.enable;
+  *enable = (struct h2_ext_adv_enable){
       .enable = 1u, .number_of_sets = 1u, .handle = 0u,
       .duration = (uint16_t)(set->params.duration_ms / 10u),
       .max_events = set->params.max_adv_events,
   };
-  int rc = h2_ble_cmd_result(ble_op_set_ext_adv_param(&params, sizeof(params)));
+  int rc = h2_ble_cmd_result(ble_op_set_ext_adv_param(params, sizeof(*params)));
   if (rc == H2_PAL_OK)
     rc = h2_ble_cmd_result(ble_op_set_ext_adv_data(
-        &encoded, (uint16_t)(4u + encoded.length)));
+        encoded, (uint16_t)(4u + encoded->length)));
   if (rc == H2_PAL_OK)
-    rc = h2_ble_cmd_result(ble_op_set_ext_adv_enable(&enable, sizeof(enable)));
+    rc = h2_ble_cmd_result(ble_op_set_ext_adv_enable(enable, sizeof(*enable)));
   return rc;
 }
+
+/* Advertising command lifetime. */
+extern int ble_cmd_handler_is_idle(void);
+extern void stack_run_loop_resume(void);
+static void h2_connection_command_consumed(void);
+
+static int h2_adv_controller_consumed(int generation) {
+  h2_gatt_lock();
+  if (h2_adv_commands.phase == 2u &&
+      h2_adv_commands.generation == (uint32_t)generation)
+    h2_adv_commands.phase = 0u;
+  h2_gatt_unlock();
+  stack_run_loop_resume();
+  return 0;
+}
+
+static void h2_adv_command_consumed(void) {
+  h2_gatt_lock();
+  const uint32_t generation = h2_adv_commands.generation;
+  const int eligible = h2_adv_commands.phase == 1u &&
+                       !h2_adv_commands.submitting;
+  h2_gatt_unlock();
+  if (eligible && ble_cmd_handler_is_idle()) {
+    h2_gatt_lock();
+    const int retire = h2_adv_commands.generation == generation &&
+                       h2_adv_commands.phase == 1u &&
+                       !h2_adv_commands.submitting;
+    if (retire) h2_adv_commands.phase = 2u;
+    h2_gatt_unlock();
+    if (retire) {
+      /* Extended descriptors cross a second FIFO. Q_CALLBACK executes on
+       * the controller only after its earlier HCI messages were consumed. */
+      const int result = btctrler_hci_cmd_to_task(
+          Q_CALLBACK, 3, h2_adv_controller_consumed, 1, (int)generation);
+      if (result != 0) {
+        h2_gatt_lock();
+        if (h2_adv_commands.generation == generation &&
+            h2_adv_commands.phase == 2u)
+          h2_adv_commands.phase = 3u;
+        h2_gatt_unlock();
+        h2_ble_log("H2_JIELI_BLE_ADV_FENCE_ERROR code=%d\r\n", result);
+      }
+    }
+  }
+  h2_gatt_lock();
+  const int restart = h2_adv_commands.phase == 0u &&
+      !h2_adv_commands.submitting && h2_adv_commands.restart && !h2_ble.stopping;
+  if (restart) h2_adv_commands.restart = 0u;
+  h2_gatt_unlock();
+  if (restart) h2_restart_legacy_advertising();
+}
+
+static int h2_adv_apply_with_params(struct h2_pal_ble_adv_set *set,
+    const h2_pal_ble_adv_params_t *params, int automatic, int *submitted) {
+  if (submitted != NULL) *submitted = 0;
+  h2_gatt_lock();
+  if (set != &h2_ble.adv || !set->used || h2_ble.stopping ||
+      (!h2_ble.started && !h2_ble.starting)) {
+    h2_gatt_unlock();
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  if (automatic && (!set->start_requested || set->started ||
+      set->params.type != H2_PAL_BLE_ADV_TYPE_LEGACY || h2_ble.conn_handle != 0u)) {
+    h2_gatt_unlock();
+    return H2_PAL_OK;
+  }
+  if (h2_adv_commands.phase != 0u || h2_adv_commands.submitting) {
+    if (automatic) h2_adv_commands.restart = 1u;
+    h2_gatt_unlock();
+    return H2_PAL_ERR_WOULD_BLOCK;
+  }
+  if (params != NULL) set->params = *params;
+  set->start_requested = 1;
+  if (!h2_ble.started) {
+    h2_gatt_unlock();
+    return H2_PAL_OK;
+  }
+  h2_adv_commands.snapshot = *set;
+  h2_adv_commands.phase = 1u;
+  h2_adv_commands.submitting = 1u;
+  h2_adv_commands.restart = 0u;
+  h2_adv_commands.generation = h2_adv_commands.generation == INT32_MAX
+      ? 1u : h2_adv_commands.generation + 1u;
+  h2_gatt_unlock();
+  int rc = h2_ble_cmd_result(ble_op_regist_thread_call(h2_connection_command_consumed));
+  const int registered = rc == H2_PAL_OK;
+  if (registered) rc = h2_adv_submit(&h2_adv_commands.snapshot);
+  h2_gatt_lock();
+  h2_adv_commands.submitting = 0u;
+  if (!registered) h2_adv_commands.phase = 0u;
+  if (rc == H2_PAL_OK)
+    set->started = set->params.type != H2_PAL_BLE_ADV_TYPE_LEGACY ||
+                   h2_ble.conn_handle == 0u;
+  h2_gatt_unlock();
+  if (registered) stack_run_loop_resume();
+  if (rc == H2_PAL_OK && submitted != NULL) *submitted = 1;
+  return rc;
+}
+
+static int h2_adv_apply(struct h2_pal_ble_adv_set *set) {
+  return h2_adv_apply_with_params(set, NULL, 0, NULL);
+}
+/* End advertising command lifetime. */
 
 static int h2_legacy_set_adv_data(
     void *user, const h2_pal_ble_adv_data_t *data) {
   (void)user;
-  if (data == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (data == NULL || (data->service_uuid_count != 0u && data->service_uuids == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
   h2_pal_ble_adv_data_t primary = *data;
   primary.local_name = NULL;
   /* CoreBluetooth does not reliably merge legacy scan-response manufacturer
@@ -580,9 +695,11 @@ static int h2_legacy_set_adv_data(
     primary.service_uuids = NULL;
     primary.service_uuid_count = 0u;
   }
+  uint8_t primary_data[H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN];
+  uint8_t response_data[H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN];
   uint8_t primary_len = 0u;
   int rc = h2_encode_adv(
-      &primary, h2_ble.adv.data, H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN,
+      &primary, primary_data, sizeof(primary_data),
       &primary_len);
   if (rc != H2_PAL_OK) return rc;
 
@@ -594,46 +711,41 @@ static int h2_legacy_set_adv_data(
                            : uuid->len == 2u ? 0x03u : 0u;
       if (type == 0u || uuid->data == NULL) return H2_PAL_ERR_INVALID_ARG;
       rc = h2_adv_append(
-          h2_ble.adv.scan_response_data,
-          sizeof(h2_ble.adv.scan_response_data), &scan_response_len, type,
+          response_data,
+          sizeof(response_data), &scan_response_len, type,
           uuid->data, uuid->len);
       if (rc != H2_PAL_OK) return rc;
     }
   }
   if (data->local_name != NULL) {
     rc = h2_adv_append(
-        h2_ble.adv.scan_response_data,
-        sizeof(h2_ble.adv.scan_response_data), &scan_response_len, 0x09u,
+        response_data,
+        sizeof(response_data), &scan_response_len, 0x09u,
         (const uint8_t *)data->local_name, strlen(data->local_name));
     if (rc != H2_PAL_OK) return rc;
   }
+  h2_gatt_lock();
+  memcpy(h2_ble.adv.data, primary_data, primary_len);
+  memcpy(h2_ble.adv.scan_response_data, response_data, scan_response_len);
   h2_ble.adv.data_len = primary_len;
   h2_ble.adv.scan_response_data_len = (uint8_t)scan_response_len;
+  h2_ble.adv.used = 1;
+  h2_gatt_unlock();
   h2_ble_log("H2_JIELI_BLE_ADV_LAYOUT primary=%u response=%u identity=%s\r\n",
          (unsigned)primary_len, (unsigned)scan_response_len,
          data->manufacturer_data.len != 0u ? "primary" : "none");
-  h2_ble.adv.used = 1;
   return H2_PAL_OK;
 }
 
 static int h2_legacy_start_advertising(
     void *user, const h2_pal_ble_adv_params_t *params) {
   (void)user;
-  if (params == NULL || params->type != H2_PAL_BLE_ADV_TYPE_LEGACY ||
-      !h2_ble.adv.used) {
+  if (params == NULL || params->type != H2_PAL_BLE_ADV_TYPE_LEGACY)
     return H2_PAL_ERR_INVALID_ARG;
-  }
-  h2_ble.adv.params = *params;
-  h2_ble.adv.start_requested = 1;
-  if (!h2_ble.started) return h2_ble.starting ? H2_PAL_OK
-                                              : H2_PAL_ERR_INVALID_STATE;
-  const int rc = h2_adv_apply(&h2_ble.adv);
-  if (rc == H2_PAL_OK) h2_ble.adv.started = 1;
-  return rc;
+  return h2_adv_apply_with_params(&h2_ble.adv, params, 0, NULL);
 }
 
 static int h2_legacy_stop_advertising(void *user) {
-  if (!h2_ble.adv.used) return H2_PAL_ERR_INVALID_STATE;
   return h2_adv_set_stop(user, &h2_ble.adv);
 }
 
@@ -800,13 +912,21 @@ static int h2_adv_set_create(
     void *user, const h2_pal_ble_adv_params_t *params,
     h2_pal_ble_adv_set_t **out_set) {
   (void)user;
-  if (!h2_ble.started && !h2_ble.starting)
+  if (params == NULL || out_set == NULL) return H2_PAL_ERR_INVALID_ARG;
+  h2_gatt_lock();
+  if (!h2_ble.started && !h2_ble.starting) {
+    h2_gatt_unlock();
     return H2_PAL_ERR_INVALID_STATE;
-  if (h2_ble.adv.used) return H2_PAL_ERR_FULL;
+  }
+  if (h2_ble.adv.used) {
+    h2_gatt_unlock();
+    return H2_PAL_ERR_FULL;
+  }
   memset(&h2_ble.adv, 0, sizeof(h2_ble.adv));
   h2_ble.adv.params = *params;
   h2_ble.adv.used = 1;
   *out_set = &h2_ble.adv;
+  h2_gatt_unlock();
   return H2_PAL_OK;
 }
 
@@ -814,32 +934,50 @@ static int h2_adv_set_data(
     void *user, h2_pal_ble_adv_set_t *set,
     const h2_pal_ble_adv_data_t *data) {
   (void)user;
-  if (set != &h2_ble.adv || !set->used) return H2_PAL_ERR_INVALID_ARG;
-  return h2_encode_adv(data, set->data, sizeof(set->data), &set->data_len);
+  uint8_t candidate[H2_JIELI_ADV_DATA_MAX];
+  uint8_t length = 0u;
+  int rc = h2_encode_adv(data, candidate, sizeof(candidate), &length);
+  if (rc != H2_PAL_OK) return rc;
+  h2_gatt_lock();
+  if (set != &h2_ble.adv || !set->used) {
+    h2_gatt_unlock();
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  memcpy(set->data, candidate, length);
+  set->data_len = length;
+  h2_gatt_unlock();
+  return H2_PAL_OK;
 }
 
 static int h2_adv_set_start(void *user, h2_pal_ble_adv_set_t *set) {
   (void)user;
-  if (set != &h2_ble.adv || !set->used ||
-      (!h2_ble.started && !h2_ble.starting))
-    return H2_PAL_ERR_INVALID_STATE;
-  set->start_requested = 1;
-  if (!h2_ble.started) return H2_PAL_OK;
-  int rc = h2_adv_apply(set);
-  if (rc == H2_PAL_OK) set->started = 1;
-  const h2_pal_ble_adv_set_event_t event = {.set = set, .status = rc};
-  h2_ble_post(H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED,
-              &event, sizeof(event));
+  int submitted = 0;
+  const int rc = h2_adv_apply_with_params(set, NULL, 0, &submitted);
+  if (rc == H2_PAL_OK && submitted) {
+    const h2_pal_ble_adv_set_event_t event = {.set = set, .status = rc};
+    h2_ble_post(H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED,
+                &event, sizeof(event));
+  }
   return rc;
 }
 
-static int h2_adv_set_stop(void *user, h2_pal_ble_adv_set_t *set) {
-  (void)user;
-  if (set != &h2_ble.adv || !set->used) return H2_PAL_ERR_INVALID_ARG;
+static int h2_adv_stop_request(h2_pal_ble_adv_set_t *set, int destroy) {
+  h2_gatt_lock();
+  if (set != &h2_ble.adv || !set->used) {
+    h2_gatt_unlock();
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (h2_adv_commands.submitting) {
+    h2_gatt_unlock();
+    return H2_PAL_ERR_WOULD_BLOCK;
+  }
+  h2_adv_commands.submitting = 1u;
+  const int started = set->started;
+  const int extended = set->params.type == H2_PAL_BLE_ADV_TYPE_EXTENDED;
+  h2_gatt_unlock();
   int rc = H2_PAL_OK;
-  set->start_requested = 0;
-  if (set->started) {
-    if (set->params.type == H2_PAL_BLE_ADV_TYPE_EXTENDED) {
+  if (started) {
+    if (extended) {
       static const struct h2_ext_adv_enable disable = {
           .enable = 0u, .number_of_sets = 1u, .handle = 0u};
       rc = h2_ble_cmd_result(
@@ -847,21 +985,38 @@ static int h2_adv_set_stop(void *user, h2_pal_ble_adv_set_t *set) {
     } else {
       rc = h2_ble_cmd_result(ble_op_adv_enable(0));
     }
-    if (rc == H2_PAL_OK) set->started = 0;
   }
-  const h2_pal_ble_adv_set_event_t event = {.set = set, .status = rc};
-  h2_ble_post(H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED,
-              &event, sizeof(event));
+  h2_gatt_lock();
+  h2_adv_commands.submitting = 0u;
+  if (rc == H2_PAL_OK) {
+    set->start_requested = 0;
+    set->started = 0;
+    h2_adv_commands.restart = 0u;
+    if (destroy) memset(set, 0, sizeof(*set));
+  }
+  h2_gatt_unlock();
+  /* A pending start's pointer fence may have observed stop's submission. */
+  h2_gatt_lock();
+  const int wake = h2_adv_commands.phase == 1u;
+  h2_gatt_unlock();
+  if (wake) stack_run_loop_resume();
+  if (rc == H2_PAL_OK) {
+    const h2_pal_ble_adv_set_event_t event = {.set = set, .status = rc};
+    h2_ble_post(H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STOPPED,
+                &event, sizeof(event));
+  }
   return rc;
+}
+
+static int h2_adv_set_stop(void *user, h2_pal_ble_adv_set_t *set) {
+  (void)user;
+  return h2_adv_stop_request(set, 0);
 }
 
 static int h2_adv_set_destroy(void *user, h2_pal_ble_adv_set_t *set) {
-  int rc = h2_adv_set_stop(user, set);
-  if (rc == H2_PAL_OK) memset(set, 0, sizeof(*set));
-  return rc;
+  (void)user;
+  return h2_adv_stop_request(set, 1);
 }
-
-
 
 static int h2_register_gatt(
     void *user, const h2_pal_ble_gatt_service_t *services, size_t count) {
@@ -955,6 +1110,9 @@ extern int ble_cmd_handler_is_idle(void);
 extern void stack_run_loop_resume(void);
 
 static void h2_connection_command_consumed(void) {
+  h2_ble_call_t call;
+  if (h2_ble_call_begin(&call) != H2_PAL_OK) return;
+  h2_adv_command_consumed();
   h2_gatt_lock();
   const uint32_t generation = h2_ble.conn_generation;
   const int eligible = h2_ble.conn_pending && !h2_ble.conn_submitting;
@@ -962,11 +1120,15 @@ static void h2_connection_command_consumed(void) {
   /* This hook runs after command dispatch on the consuming SDK thread.
    * Capture eligibility before the query: this thread cannot consume a new
    * producer's commands while it is executing this hook. */
-  if (!eligible || !ble_cmd_handler_is_idle()) return;
+  if (!eligible || !ble_cmd_handler_is_idle()) {
+    h2_ble_call_end(&call);
+    return;
+  }
   h2_gatt_lock();
   if (h2_ble.conn_generation == generation && !h2_ble.conn_submitting)
     h2_ble.conn_pending = 0u;
   h2_gatt_unlock();
+  h2_ble_call_end(&call);
 }
 
 static int h2_update_connection(
@@ -1183,7 +1345,9 @@ static void h2_packet_handler(
             (unsigned)subevent, (unsigned)status, (unsigned)interval,
             (unsigned)latency, (unsigned)supervision_timeout);
         if (status != 0u) {
+          h2_gatt_lock();
           h2_ble.adv.started = 0;
+          h2_gatt_unlock();
           h2_restart_legacy_advertising();
           break;
         }
@@ -1341,6 +1505,11 @@ static void h2_packet_handler_retained(
 }
 
 void ble_profile_init(void) {
+  h2_gatt_lock();
+  h2_adv_commands.phase = 0u;
+  h2_adv_commands.submitting = 0u;
+  h2_adv_commands.restart = 0u;
+  h2_gatt_unlock();
   h2_ble_log("H2_JIELI_BLE_PROFILE_ENTER step=device_db\r\n");
   le_device_db_init();
   h2_ble_log("H2_JIELI_BLE_PROFILE_OK step=device_db\r\n");
@@ -1402,10 +1571,12 @@ void bt_ble_init(void) {
   h2_ble.started = 1;
   h2_gatt_unlock();
   h2_ble_post(H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STARTED, NULL, 0u);
-  if (h2_ble.adv.used && h2_ble.adv.start_requested &&
-      !h2_ble.adv.started) {
+  h2_gatt_lock();
+  const int pending_adv = h2_ble.adv.used && h2_ble.adv.start_requested &&
+                          !h2_ble.adv.started;
+  h2_gatt_unlock();
+  if (pending_adv) {
     const int rc = h2_adv_apply(&h2_ble.adv);
-    if (rc == H2_PAL_OK) h2_ble.adv.started = 1;
     const h2_pal_ble_adv_set_event_t event = {
         .set = &h2_ble.adv, .status = rc};
     h2_ble_post(H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED,

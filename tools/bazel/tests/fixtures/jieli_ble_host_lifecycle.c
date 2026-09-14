@@ -13,6 +13,8 @@ struct h2_pal_ble_adv_set { int used, started, start_requested; };
 static struct {
     int starting, started, stopping, stop_worker, native_created, start_failed;
     uint16_t conn_handle, retiring_connection;
+    unsigned conn_pending, conn_submitting;
+    uint32_t conn_generation;
     struct h2_pal_ble_adv_set adv;
 } h2_ble;
 const uint64_t config_btctler_le_features = 0;
@@ -125,10 +127,14 @@ int h2_att_write(uint16_t connection, uint16_t handle, uint16_t transaction,
     (void)offset;
     return h2_notify(NULL, connection, handle, data, size);
 }
+void h2_adv_command_consumed(void) { (void)h2_notify(NULL, 0, 0, NULL, 0); }
+int ble_cmd_handler_is_idle(void) { sdk_reenter_gate(); return 1; }
 /* REAL_PROVIDER */
 static void *borrow_thread(void *unused) {
     (void)unused;
-    if (callback_mode)
+    if (callback_mode == 2)
+        h2_connection_command_consumed();
+    else if (callback_mode)
         assert(h2_att_write_retained(1, 9, 0, 0, NULL, 0) == 0);
     else
         assert(h2_notify_retained(NULL, 1, 6, NULL, 0) == 0);
@@ -198,8 +204,8 @@ int main(int argc, char **argv) {
         assert(atomic_load(&disconnected) == 1 && atomic_load(&stopped) == 1);
         return 0;
     }
-    if (strcmp(argv[1], "retained") == 0 || strcmp(argv[1], "retained_callback") == 0 || strcmp(argv[1], "self_stop") == 0) {
-        callback_mode = strcmp(argv[1], "retained") != 0;
+    if (strcmp(argv[1], "retained") == 0 || strcmp(argv[1], "retained_callback") == 0 || strcmp(argv[1], "retained_command") == 0 || strcmp(argv[1], "self_stop") == 0) {
+        callback_mode = strcmp(argv[1], "retained_command") == 0 ? 2 : strcmp(argv[1], "retained") != 0;
         if (strcmp(argv[1], "self_stop") == 0) {
             self_stop_mode = 1;
             borrow_thread(NULL);
