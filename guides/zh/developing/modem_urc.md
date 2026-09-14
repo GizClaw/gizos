@@ -48,8 +48,7 @@ provider 将空闲维护的解析响应和共用 AT 交换的原始 command 响�
 
 `h2_quectel_is_urc` 接受 `+QSIMSTAT` 和非对应查询期间的 `+CPIN:`；
 `h2_quectel_handle_urc_locked` 将 READY、SIM PIN/SIM PUK 分别映射为 READY、LOCKED。
-对应 `AT+CPIN?` 的响应由 AT parser 同步处理，不依赖入队。`+QIND`、
-`Call Ready` 目前不进入队列，也不被当作 SIM 就绪依据。
+对应 `AT+CPIN?` 的响应由 AT parser 同步处理，不依赖入队。`+QIND: SMS DONE`、`+QIND: PB DONE` 和 `Call Ready` 进入队列，仅合并触发一次主动查询，不直接作为 READY 依据。
 
 新插入边沿先发布 UNKNOWN，只安排后台工作，回调不执行 AT。
 worker 在队列空闲 1000 ms 后执行一次维护，每轮最多一个 1000 ms 超时的 AT 交换，
@@ -59,7 +58,7 @@ worker 在队列空闲 1000 ms 后执行一次维护，每轮最多一个 1000 m
 IMSI 仍由既有 get_identity 现场读取，不引入身份缓存或记录 IMSI 日志。
 SIM、注册、packet 沿用系统事件和语义去重；LOCKED 停止轮询，后续 READY URC 可启动刷新。
 拔卡、reset、close 取消待办；重复插入通知不重置预算，真正拔出后再插入得到新预算。
-明确拔卡后的迟到 CPIN URC不能恢复旧卡。没有 worker 的同步使用者继续通过 get_status 查询。
+缺卡后的 CPIN READY 是独立插入证据，可恢复 READY；缺卡期间另以约 5 秒空闲间隔持续执行单次有界 CPIN 探测。没有 worker 的同步使用者继续通过 get_status 查询。
 
 移远[官方热插拔 FAQ](https://www.quectel.com/faqs/10-1-how-to-enable-hot-swap-function-of-sim-card/)
 列出 `+CPIN: NOT READY`、`+QSIMSTAT: 1,0/1,1` 及 Call Ready，
