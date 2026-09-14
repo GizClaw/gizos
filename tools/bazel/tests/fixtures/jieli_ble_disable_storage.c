@@ -7,7 +7,11 @@ struct h2_pal_ble_adv_set {
     h2_pal_ble_adv_params_t params;
     int used, started, start_requested;
 };
-static struct { struct h2_pal_ble_adv_set adv; } h2_ble;
+static struct {
+    struct h2_pal_ble_adv_set adv;
+    unsigned command_rearm_needed, command_rearm_active;
+    int stopping;
+} h2_ble;
 static struct { unsigned submitting, restart, phase, hook_skipped; } h2_adv_commands;
 static int locked;
 static void h2_gatt_lock(void) { assert(!locked); locked = 1; }

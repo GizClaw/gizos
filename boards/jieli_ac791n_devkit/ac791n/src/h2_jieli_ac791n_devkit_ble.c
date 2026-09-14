@@ -168,6 +168,8 @@ typedef struct h2_jieli_ble_state {
   unsigned conn_pending;
   unsigned conn_submitting;
   unsigned conn_hook_skipped;
+  unsigned command_rearm_needed;
+  unsigned command_rearm_active;
   uint32_t conn_generation;
 } h2_jieli_ble_state_t;
 
@@ -583,6 +585,7 @@ static int h2_adv_submit(struct h2_pal_ble_adv_set *set) {
 extern int ble_cmd_handler_is_idle(void);
 extern void stack_run_loop_resume(void);
 static void h2_connection_command_consumed(void);
+static int h2_command_rearm(void);
 
 static int h2_adv_controller_consumed(int generation) {
   h2_gatt_lock();
@@ -591,15 +594,12 @@ static int h2_adv_controller_consumed(int generation) {
     h2_adv_commands.phase = 0u;
   const int restart = h2_adv_commands.phase == 0u &&
       h2_adv_commands.restart && !h2_ble.stopping;
+  if (restart) h2_ble.command_rearm_needed = 1u;
   h2_gatt_unlock();
   /* The btstack hook is one-shot; return the deferred restart to that task. */
-  if (restart) {
-    const int result = ble_op_regist_thread_call(h2_connection_command_consumed);
-    if (result != 0)
-      h2_ble_log("H2_JIELI_BLE_ADV_REARM_ERROR code=%d\r\n", result);
-  }
+  const int result = h2_command_rearm();
   stack_run_loop_resume();
-  return 0;
+  return result;
 }
 
 static void h2_adv_command_consumed(void) {
@@ -649,6 +649,12 @@ static int h2_adv_apply_with_params(struct h2_pal_ble_adv_set *set,
     h2_gatt_unlock();
     return H2_PAL_ERR_INVALID_STATE;
   }
+  if (h2_ble.command_rearm_needed) {
+    if (automatic) h2_adv_commands.restart = 1u;
+    h2_gatt_unlock();
+    const int result = h2_command_rearm();
+    return result == H2_PAL_OK ? H2_PAL_ERR_WOULD_BLOCK : result;
+  }
   if (automatic && (!set->start_requested || set->started ||
       set->params.type != H2_PAL_BLE_ADV_TYPE_LEGACY || h2_ble.conn_handle != 0u)) {
     h2_gatt_unlock();
@@ -681,6 +687,7 @@ static int h2_adv_apply_with_params(struct h2_pal_ble_adv_set *set,
   const int rearm = h2_adv_commands.hook_skipped;
   h2_adv_commands.hook_skipped = 0u;
   if (!registered) h2_adv_commands.phase = 0u;
+  if (registered && rearm) h2_ble.command_rearm_needed = 1u;
   if (rc == H2_PAL_OK)
     set->started = set->params.type != H2_PAL_BLE_ADV_TYPE_LEGACY ||
                    h2_ble.conn_handle == 0u;
@@ -688,9 +695,8 @@ static int h2_adv_apply_with_params(struct h2_pal_ble_adv_set *set,
   /* An application-thread idle query cannot prove consumption. Requeue the
    * one-shot hook after publication instead of retiring borrowed storage here. */
   if (registered && rearm) {
-    const int result = ble_op_regist_thread_call(h2_connection_command_consumed);
-    if (result != 0)
-      h2_ble_log("H2_JIELI_BLE_ADV_REARM_ERROR code=%d\r\n", result);
+    const int result = h2_command_rearm();
+    if (result != H2_PAL_OK) rc = result;
   }
   if (registered) stack_run_loop_resume();
   if (rc == H2_PAL_OK && submitted != NULL) *submitted = 1;
@@ -924,6 +930,7 @@ static int h2_ble_stop(void *user) {
     return rc;
   }
   memset(&h2_ble, 0, sizeof(h2_ble));
+  memset(&h2_adv_commands, 0, sizeof(h2_adv_commands));
   h2_gatt_unlock();
   if (had_host)
     h2_ble_post(H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STOPPED, NULL, 0u);
@@ -989,6 +996,13 @@ static int h2_adv_stop_request(h2_pal_ble_adv_set_t *set, int destroy) {
     h2_gatt_unlock();
     return H2_PAL_ERR_INVALID_ARG;
   }
+  /* Full host exit proves consumption even when hook registration is broken. */
+  if (!h2_ble.stopping &&
+      (h2_ble.command_rearm_needed)) {
+    h2_gatt_unlock();
+    const int result = h2_command_rearm();
+    return result == H2_PAL_OK ? H2_PAL_ERR_WOULD_BLOCK : result;
+  }
   if (h2_adv_commands.submitting) {
     h2_gatt_unlock();
     return H2_PAL_ERR_WOULD_BLOCK;
@@ -1013,6 +1027,7 @@ static int h2_adv_stop_request(h2_pal_ble_adv_set_t *set, int destroy) {
   h2_adv_commands.submitting = 0u;
   const int rearm = h2_adv_commands.hook_skipped;
   h2_adv_commands.hook_skipped = 0u;
+  if (rearm) h2_ble.command_rearm_needed = 1u;
   if (rc == H2_PAL_OK) {
     set->start_requested = 0;
     set->started = 0;
@@ -1021,9 +1036,8 @@ static int h2_adv_stop_request(h2_pal_ble_adv_set_t *set, int destroy) {
   }
   h2_gatt_unlock();
   if (rearm) {
-    const int result = ble_op_regist_thread_call(h2_connection_command_consumed);
-    if (result != 0)
-      h2_ble_log("H2_JIELI_BLE_ADV_REARM_ERROR code=%d\r\n", result);
+    const int result = h2_command_rearm();
+    if (result != H2_PAL_OK) rc = result;
   }
   /* A pending start's pointer fence may have observed stop's submission. */
   h2_gatt_lock();
@@ -1134,6 +1148,36 @@ static int h2_disconnect(void *user, uint16_t conn_handle) {
 }
 
 /* Connection request lifetime. */
+/* Command hook retry. */
+static void h2_connection_command_consumed(void);
+static int h2_command_rearm(void) {
+  h2_gatt_lock();
+  if (h2_ble.stopping || !h2_ble.command_rearm_needed) {
+    h2_gatt_unlock();
+    return H2_PAL_OK;
+  }
+  if (h2_ble.command_rearm_active) {
+    h2_gatt_unlock();
+    return H2_PAL_ERR_WOULD_BLOCK;
+  }
+  /* Claim this attempt before calling the SDK: the hook can run before the
+   * call returns and request another rearm. Never erase that newer request. */
+  h2_ble.command_rearm_needed = 0u;
+  h2_ble.command_rearm_active = 1u;
+  h2_gatt_unlock();
+  const int result = h2_ble_cmd_result(
+      ble_op_regist_thread_call(h2_connection_command_consumed));
+  h2_gatt_lock();
+  h2_ble.command_rearm_active = 0u;
+  if (result != H2_PAL_OK) h2_ble.command_rearm_needed = 1u;
+  h2_gatt_unlock();
+  if (result != H2_PAL_OK)
+    h2_ble_log("H2_JIELI_BLE_REARM_ERROR code=%d\r\n", result);
+  return result;
+}
+/* End command hook retry. */
+
+
 /* These pinned SDK symbols run/query the native BLE command loop. A queue
  * empty query from an application thread is not a pointer-retirement fence. */
 extern int ble_cmd_handler_is_idle(void);
@@ -1152,6 +1196,7 @@ static void h2_connection_command_consumed(void) {
    * Capture eligibility before the query: this thread cannot consume a new
    * producer's commands while it is executing this hook. */
   if (!eligible || !ble_cmd_handler_is_idle()) {
+    (void)h2_command_rearm();
     h2_ble_call_end(&call);
     return;
   }
@@ -1159,6 +1204,7 @@ static void h2_connection_command_consumed(void) {
   if (h2_ble.conn_generation == generation && !h2_ble.conn_submitting)
     h2_ble.conn_pending = 0u;
   h2_gatt_unlock();
+  (void)h2_command_rearm();
   h2_ble_call_end(&call);
 }
 
@@ -1173,6 +1219,11 @@ static int h2_update_connection(
   if (conn_handle != h2_ble.conn_handle) {
     h2_gatt_unlock();
     return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (h2_ble.command_rearm_needed) {
+    h2_gatt_unlock();
+    const int rc = h2_command_rearm();
+    return rc == H2_PAL_OK ? H2_PAL_ERR_WOULD_BLOCK : rc;
   }
   if (h2_ble.conn_pending) {
     h2_gatt_unlock();
@@ -1200,14 +1251,11 @@ static int h2_update_connection(
   const int rearm = h2_ble.conn_hook_skipped;
   h2_ble.conn_hook_skipped = 0u;
   if (result != 0) h2_ble.conn_pending = 0u;
+  if (result == 0 && rearm) h2_ble.command_rearm_needed = 1u;
   h2_gatt_unlock();
   /* Only the consuming SDK thread can retire the request buffer. */
-  if (result == 0 && rearm) {
-    const int rearm_result =
-        ble_op_regist_thread_call(h2_connection_command_consumed);
-    if (rearm_result != 0)
-      h2_ble_log("H2_JIELI_BLE_CONN_REARM_ERROR code=%d\r\n", rearm_result);
-  }
+  const int rearm_result = result == 0 && rearm
+      ? h2_command_rearm() : H2_PAL_OK;
   if (result == 0) stack_run_loop_resume();
   h2_ble_log(
       "H2_JIELI_BLE_CONN_PARAMS request=%u-%u latency=%u timeout=%u "
@@ -1215,7 +1263,7 @@ static int h2_update_connection(
       (unsigned)params->interval_min_ms, (unsigned)params->interval_max_ms,
       (unsigned)params->latency, (unsigned)params->supervision_timeout_ms,
       result);
-  return h2_ble_cmd_result(result);
+  return rearm_result != H2_PAL_OK ? rearm_result : h2_ble_cmd_result(result);
 }
 
 static int h2_exchange_mtu(

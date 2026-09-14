@@ -13,10 +13,13 @@ struct h2_pal_ble_adv_set { int used, started, start_requested; };
 static struct {
     int starting, started, stopping, stop_worker, native_created, start_failed;
     uint16_t conn_handle, retiring_connection;
+    unsigned command_rearm_needed, command_rearm_active;
     unsigned conn_pending, conn_submitting, conn_hook_skipped;
     uint32_t conn_generation;
     struct h2_pal_ble_adv_set adv;
 } h2_ble;
+static struct { unsigned phase; } h2_adv_commands;
+int ble_op_regist_thread_call(void (*hook)(void)) { (void)hook; return 0; }
 const uint64_t config_btctler_le_features = 0;
 static pthread_mutex_t gate = PTHREAD_MUTEX_INITIALIZER;
 void h2_gatt_lock(void) { assert(pthread_mutex_lock(&gate) == 0); }
