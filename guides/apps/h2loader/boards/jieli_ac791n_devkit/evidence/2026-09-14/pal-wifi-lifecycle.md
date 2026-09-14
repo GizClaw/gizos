@@ -21,3 +21,19 @@ Native Loader and PAL packages build successfully in 36.862 seconds (`/tmp/jieli
 `wifi_off` synchronously transitions the SDK state machine off and tears down its driver and lwIP. However, integer events use separate native RPC tasks: `system.a:os_api.c.o:thread_rpc` creates a task for each request, and the Wi-Fi caller does not retain its task ID. A previously queued scan event can already be waiting on `network_hsm_mtx`. The audit has not established that radio shutdown drains these events before a new scan begins. Consequently shutdown plus a delay is not accepted as proof of scan-generation quiescence, and permanently missing completion remains open.
 
 Decoded IR is retained in the Linux VM under `/tmp/jieli-pal-review-sdk/wifi/`. No scan-timeout hardware recovery result is claimed.
+
+## Cached Wi-Fi status and subscriber payloads
+
+Wi-Fi event mutations, task-side configuration publication, connect/AP wait predicates, and STA/AP status copies now share a short gate implemented with the repo's wl82 atomic helpers. Public status reads copy owned cached state and do not borrow SDK mode strings or refresh driver/LAN storage from an arbitrary reader thread. BK's provider likewise returns its cached GOT_IP snapshot; the public PAL header does not impose a live-RSSI sampling interval. JieLi refreshes link information from its connected/DHCP event path.
+
+The SDK and subscriber calls execute outside the gate. Event dispatch copies the complete status at the same protected transition, then lends that local snapshot only for synchronous dispatch. A newer STA transition invalidates an older in-progress native refresh, so an old DHCP callback cannot publish GOT_IP after a stop. AP client-count publication is protected, but obtaining the client's borrowed SDK MAC/RSSI storage still needs the separate SDK ownership repair.
+
+The pinned `wifi_connect.c.o:WIFI_state_on_sta_connected_hdl` invokes connected and DHCP-success callbacks from the serialized state machine (IR calls with event IDs 9 and 18). Link queries remain outside the PAL gate. The raw LAN read in the DHCP refresh and all independent netif/DNS reads still require the TCP/IP snapshot repair; this change does not claim those are fixed.
+
+`//tools/bazel:jieli_wifi_snapshots_test` extracts the actual event, publication and reader functions. A held subscriber proves its CONNECTED payload remains stable while another thread disconnects. Concurrent event/read loops check complete state/IP-valid pairs, and a held fake SDK refresh checks that a newer stop suppresses the stale GOT_IP event. SDK/subscriber fakes check that the gate is free when invoked.
+
+Against `c3b867ad`, strict Clang fails all three assertions, including the inconsistent GOT_IP/IP-valid pair; GCC fails the deterministic payload and stale-refresh scenarios. With TSan enabled, the baseline also fails all three assertions; no separate TSan race-warning claim is made. After repair the three scenarios pass under strict Clang/GCC and TSan. Existing scan, connect, AP-client-capacity and operation-admission fixtures retain their cases; changed C fixtures now all compile with `-Wall -Wextra -Werror` on both compilers.
+
+Logs: `/tmp/jieli-wifi-snapshots-expanded-before.log`, `/tmp/jieli-wifi-snapshots-expanded-gcc-before.log`, `/tmp/jieli-wifi-snapshots-expanded-tsan-before.log`, `/tmp/jieli-wifi-snapshots-after.log`, `/tmp/jieli-wifi-state-regression.log`, `/tmp/jieli-wifi-state-gcc-after.log`. New host-test registration carries Linux/macOS-only compatibility. Hardware does not yet exercise these concurrent Wi-Fi transitions.
+
+Native Loader, PAL and display packages pass in 64.336 seconds (`/tmp/jieli-wifi-state-native.log`). The iOS simulator analysis of both requested target groups also passes (`/tmp/jieli-wifi-state-ios.log`). Final-source hardware acceptance remains pending.

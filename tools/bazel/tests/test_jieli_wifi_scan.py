@@ -15,10 +15,22 @@ class WifiScanTest(unittest.TestCase):
         copy = source[begin:source.index("  if (wifi_enter_ap_mode", begin)]
         program = r'''
 #include <assert.h>
+
+static unsigned fake_state_gate;
+static inline void wifi_state_lock(void) {
+    assert(fake_state_gate == 0);
+    fake_state_gate = 1;
+}
+static inline void wifi_state_unlock(void) {
+    assert(fake_state_gate == 1);
+    fake_state_gate = 0;
+}
+
 #include <string.h>
 static struct { struct { char ssid[33]; } ap; } wifi_state;
 typedef struct { char ssid[33]; unsigned ssid_len; } config_t;
 static void copy_status(const config_t *config) {
+  wifi_state_lock();
 '''+copy+r'''
 }
 int main(void) {
@@ -48,9 +60,20 @@ int main(void) {
         source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/"
                   "h2_jieli_ac791n_devkit_wifi.c").read_text()
         start = source[source.index("static int ensure_wifi_on(void)"):
-                       source.index("static void update_sta_snapshot(void) {")]
+                       source.index("static void update_sta_snapshot(", source.index("static int ensure_wifi_on(void)"))]
         stub = r'''
 #include <assert.h>
+
+static unsigned fake_state_gate;
+static inline void wifi_state_lock(void) {
+    assert(fake_state_gate == 0);
+    fake_state_gate = 1;
+}
+static inline void wifi_state_unlock(void) {
+    assert(fake_state_gate == 1);
+    fake_state_gate = 0;
+}
+
 #define H2_PAL_OK 0
 #define H2_PAL_ERR_IO -1
 static struct { int on; } wifi_state;
@@ -106,14 +129,23 @@ int main(void) {
         stub = r'''
 #include "h2/pal/hal/h2_pal_wifi.h"
 #include <assert.h>
+
+static unsigned fake_state_gate;
+static inline void wifi_state_lock(void) {
+    assert(fake_state_gate == 0);
+    fake_state_gate = 1;
+}
+static inline void wifi_state_unlock(void) {
+    assert(fake_state_gate == 1);
+    fake_state_gate = 0;
+}
+
 #include <string.h>
 static void scan_completed(void);
 static void deliver_completion(void);
 static int in_sdk_callback;
 static unsigned now, clears, requests, delivered;
 static struct { int on; h2_pal_wifi_sta_status_t sta; } wifi_state;
-static void update_sta_snapshot(void) {}
-static int wifi_is_on(void) { return 1; }
 static int request_error, complete_on_delay, complete_immediately;
 struct wifi_scan_ssid_info {
  unsigned ssid_len; char ssid[33]; unsigned char mac_addr[6];

@@ -393,6 +393,24 @@ py_test(
 )
 
 py_test(
+    name = "jieli_wifi_snapshots_test",
+    srcs = ["tests/test_jieli_wifi_snapshots.py"],
+    data = [
+        "tests/fixtures/jieli_wifi_snapshots.c",
+        "//boards/jieli_ac791n_devkit/ac791n:src/h2_jieli_ac791n_devkit_wifi.c",
+        "//libs/pal:pal_header_files",
+        "//native_component_src/jieli/wl82/h2_pal_core:include/h2_jieli_wl82_atomic.h",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_wifi_snapshots.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
     name = "jieli_wifi_scan_test",
     srcs = ["tests/test_jieli_wifi_scan.py"],
     data = [
