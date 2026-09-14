@@ -15,6 +15,8 @@
 
 #define LV_DRAW_SW_DRAW_UNIT_CNT 1
 #define LV_USE_DRAW_SW 1
+#define LV_USE_DRAW_SW_ASM LV_DRAW_SW_ASM_CUSTOM
+#define LV_DRAW_SW_ASM_CUSTOM_INCLUDE "h2_lvgl_bk_dma2d.h"
 #define LV_USE_DRAW_SDL 0
 #define LV_USE_SDL 0
 #define LV_USE_OPENGLES 0

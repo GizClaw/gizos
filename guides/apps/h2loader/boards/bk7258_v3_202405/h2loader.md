@@ -59,7 +59,7 @@ APP 确认与 Stage/reboot 命令使用同一 operation mutex；先提交运行�
 | 已消耗（magic=0）、未确认 | 留在 Loader，撤销 P2 的 `BOOTABLE` | 试运行在确认前复位或崩溃 |
 | 已消耗、已确认（confirmed=0） | 每次直接进入 App | App 启动确认后写入，行为同原生已确认的 B |
 
-Loader CP 在检查 App 向量之前先把 magic 写成 0，所以试运行时向量无效也会记为一次失败尝试，不会反复重启。对已确认记录，这次写入不改变任何位，但必须执行：实板上跳转前没有 Flash 编程操作时，App CP 在启动早期 HardFault（`pc=0`，来自 `bk_pm_module_vote_power_ctrl`）。写入 App 分区前先清除启动记录，CP 不会进入写了一半的镜像。App 每次启动都调用确认，只有记录处于“已消耗、未确认”时才写入。显式选择 Loader 会清除记录，包括失败证据。原生 ROM/系统固件烧录路径保留，CP 不承载 H2Loader UART 转发。
+Loader CP 在检查 App 向量之前先把 magic 写成 0，所以试运行时向量无效也会记为一次失败尝试，不会反复重启。对已确认记录，这次写入不改变任何位，但必须执行：实板上跳转前没有 Flash 编程操作时，App CP 在启动早期 HardFault（`pc=0`，来自 `bk_pm_module_vote_power_ctrl`）。写入 App 分区前先清除启动记录，CP 不会进入写了一半的镜像。App 每次启动都调用确认，只有记录处于“已消耗、未确认”时才写入。未确认的 App 显式返回 Loader 时保留已消耗的试运行记录，避免 AUTO 再次安装相同 Stage；由 Loader 选择自身或已确认 App 返回时仍清除记录。原生 ROM/系统固件烧录路径保留，CP 不承载 H2Loader UART 转发。
 
 ### Loader 自升级
 

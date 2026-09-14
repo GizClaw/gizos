@@ -807,7 +807,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: h2vivi/bk-avdk-smp
-          ref: aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca
+          ref: d7187c8fc75c56930b0106ec55ff770c2d5a4a93
           path: .bk-sdk
           fetch-depth: 1
           persist-credentials: false

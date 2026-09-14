@@ -2,6 +2,7 @@
 
 #include <errno.h>
 #include <limits.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/time.h>
 
@@ -258,6 +259,8 @@ static h2_pal_result_t bk_net_tls_load_ca(
     }
     mbedtls_ssl_conf_authmode(&socket->config, MBEDTLS_SSL_VERIFY_REQUIRED);
     if (config->root_ca_pem == NULL || config->root_ca_pem_len == 0u) {
+        printf("H2_BK_TLS stage=load_ca reason=missing_root_ca pal_rc=%d\n",
+               (int)H2_PAL_ERR_UNAVAILABLE);
         return H2_PAL_ERR_UNAVAILABLE;
     }
     if (config->root_ca_pem_len == SIZE_MAX) {
@@ -274,6 +277,7 @@ static h2_pal_result_t bk_net_tls_load_ca(
         &socket->ca, pem, config->root_ca_pem_len + 1u);
     h2_pal_mem_free(h2_bk_platform_default_allocator(), pem);
     if (result != 0) {
+        printf("H2_BK_TLS stage=parse_ca mbedtls_rc=%d\n", result);
         return H2_PAL_ERR_FORMAT;
     }
     mbedtls_ssl_conf_ca_chain(&socket->config, &socket->ca, NULL);
@@ -292,6 +296,8 @@ static h2_pal_result_t bk_net_tls_handshake(
         }
         if (result != MBEDTLS_ERR_SSL_WANT_READ &&
             result != MBEDTLS_ERR_SSL_WANT_WRITE) {
+            printf("H2_BK_TLS stage=handshake mbedtls_rc=%d verify_flags=%lu\n",
+                   result, (unsigned long)mbedtls_ssl_get_verify_result(&socket->ssl));
             return result == MBEDTLS_ERR_X509_CERT_VERIFY_FAILED
                 ? H2_PAL_ERR_TLS_VERIFY
                 : H2_PAL_ERR_IO;
@@ -1158,13 +1164,17 @@ static h2_pal_result_t bk_net_tls_wrap(
         mbedtls_ssl_conf_rng(&slot->config, bk_net_tls_random, slot);
         rc = bk_net_tls_load_ca(slot, config);
     } else if (rc == H2_PAL_OK) {
+        printf("H2_BK_TLS stage=config_defaults mbedtls_rc=%d\n", result);
         rc = H2_PAL_ERR_IO;
     }
     if (rc == H2_PAL_OK && config->alpn != NULL && config->alpn[0] != '\0' &&
-        mbedtls_ssl_conf_alpn_protocols(&slot->config, slot->alpn) != 0) {
+        (result = mbedtls_ssl_conf_alpn_protocols(&slot->config, slot->alpn)) != 0) {
+        printf("H2_BK_TLS stage=alpn mbedtls_rc=%d\n", result);
         rc = H2_PAL_ERR_IO;
     }
-    if (rc == H2_PAL_OK && mbedtls_ssl_setup(&slot->ssl, &slot->config) != 0) {
+    if (rc == H2_PAL_OK &&
+        (result = mbedtls_ssl_setup(&slot->ssl, &slot->config)) != 0) {
+        printf("H2_BK_TLS stage=setup mbedtls_rc=%d\n", result);
         rc = H2_PAL_ERR_IO;
     }
     if (rc == H2_PAL_OK &&
