@@ -1,5 +1,7 @@
 """Radio operations cannot invalidate an active or abandoned scan."""
 from pathlib import Path
+import os
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -12,18 +14,22 @@ class WifiOperationsTest(unittest.TestCase):
         source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c").read_text()
         begin = source.index("static unsigned wifi_operation_busy;")
         guard = source[begin:source.index("const h2_pal_wifi_sta_api_t *h2_jieli", begin)]
+        state = source[source.index("enum { SCAN_IDLE"):
+                       source.index("static void post_system_event")]
         fixture = r'''
 #include <assert.h>
 #include <pthread.h>
 #include <sched.h>
 #include "h2/pal/hal/h2_pal_wifi.h"
-enum { SCAN_IDLE, SCAN_PENDING, SCAN_READY, SCAN_ABANDONED, SCAN_CLEANING };
-static unsigned scan_phase;
+static int clears;
+static void wifi_clear_scan_result(void) { ++clears; }
+''' + state + r'''
 static int calls;
 static unsigned pause_scan, entered_scan, release_scan, abandon_scan;
 static int guarded_ap_stop(void *user, uint32_t timeout_ms);
 static int sta_scan(void *u, const h2_pal_wifi_scan_request_t *r,
     h2_pal_wifi_scan_result_fn f, void *c, uint32_t t) {
+    (void)u; (void)r; (void)f; (void)c; (void)t;
     ++calls;
     assert(guarded_ap_stop(NULL, 0) == H2_PAL_ERR_BUSY);
     if (abandon_scan) {
@@ -36,14 +42,15 @@ static int sta_scan(void *u, const h2_pal_wifi_scan_request_t *r,
     }
     return H2_PAL_ERR_IO;
 }
-static int sta_connect(void *u, const h2_pal_wifi_sta_config_t *c, uint32_t t) { ++calls; return H2_PAL_ERR_IO; }
-static int sta_disconnect(void *u) { ++calls; return H2_PAL_ERR_IO; }
-static int ap_start(void *u, const h2_pal_wifi_ap_config_t *c, uint32_t t) { ++calls; return H2_PAL_ERR_IO; }
-static int ap_stop(void *u, uint32_t t) { ++calls; return H2_PAL_ERR_IO; }
-static int wifi_get_mac_address(void *u, uint8_t mac[6]) { ++calls; return H2_PAL_ERR_IO; }
+static int sta_connect(void *u, const h2_pal_wifi_sta_config_t *c, uint32_t t) { (void)u; (void)c; (void)t; ++calls; return H2_PAL_ERR_IO; }
+static int sta_disconnect(void *u) { (void)u; ++calls; return H2_PAL_ERR_IO; }
+static int ap_start(void *u, const h2_pal_wifi_ap_config_t *c, uint32_t t) { (void)u; (void)c; (void)t; ++calls; return H2_PAL_ERR_IO; }
+static int ap_stop(void *u, uint32_t t) { (void)u; (void)t; ++calls; return H2_PAL_ERR_IO; }
+static int wifi_get_mac_address(void *u, uint8_t mac[6]) { (void)u; (void)mac; ++calls; return H2_PAL_ERR_IO; }
 '''
         main = r'''
 static void *scan_thread(void *unused) {
+    (void)unused;
     assert(guarded_sta_scan(NULL, NULL, NULL, NULL, 0) == H2_PAL_ERR_IO);
     return NULL;
 }
@@ -81,10 +88,11 @@ int main(void) {
     assert(guarded_ap_start(NULL, NULL, 0) == H2_PAL_ERR_BUSY);
     assert(guarded_sta_disconnect(NULL) == H2_PAL_ERR_BUSY);
     assert(calls == 9);
-    /* The SDK completion callback publishes IDLE only after clearing results. */
-    __atomic_store_n(&scan_phase, SCAN_IDLE, __ATOMIC_RELEASE);
+    scan_completed();
+    assert(scan_phase == SCAN_REAPABLE && clears == 0);
     assert(guarded_sta_connect(NULL, NULL, 0) == H2_PAL_ERR_IO);
     assert(calls == 10 && wifi_operation_busy == 0);
+    assert(clears == 1 && scan_phase == SCAN_IDLE);
     return 0;
 }
 '''
@@ -92,7 +100,8 @@ int main(void) {
             unit = Path(directory) / "operations.c"
             binary = Path(directory) / "operations-test"
             unit.write_text(fixture + guard + main)
-            subprocess.run(["cc", "-std=c11", "-pthread", "-I", str(ROOT / "libs/pal/include"),
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread",
+                            *shlex.split(os.environ.get("JIELI_TEST_CFLAGS", "")), "-I", str(ROOT / "libs/pal/include"),
                             str(unit), "-o", str(binary)], check=True, timeout=30)
             subprocess.run([str(binary)], check=True, timeout=10)
 

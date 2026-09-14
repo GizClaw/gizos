@@ -20,7 +20,7 @@ typedef struct h2_jieli_wifi_state {
 static h2_jieli_wifi_state_t wifi_state;
 static void update_sta_snapshot(void);
 
-enum { SCAN_IDLE, SCAN_PENDING, SCAN_READY, SCAN_ABANDONED, SCAN_CLEANING };
+enum { SCAN_IDLE, SCAN_PENDING, SCAN_READY, SCAN_ABANDONED, SCAN_CLEANING, SCAN_REAPABLE };
 static unsigned scan_phase;
 
 static void scan_completed(void) {
@@ -28,10 +28,16 @@ static void scan_completed(void) {
   if (__atomic_compare_exchange_n(&scan_phase, &expected, SCAN_READY, 0,
                                    __ATOMIC_RELEASE, __ATOMIC_RELAXED)) return;
   expected = SCAN_ABANDONED;
+  /* SDK callbacks run under network_hsm_mtx. Clearing results synchronously
+   * dispatches through that same mutex, so only publish task-side work here. */
+  (void)__atomic_compare_exchange_n(&scan_phase, &expected, SCAN_REAPABLE, 0,
+                                     __ATOMIC_RELEASE, __ATOMIC_RELAXED);
+}
+
+static void scan_reap_completed(void) {
+  unsigned expected = SCAN_REAPABLE;
   if (__atomic_compare_exchange_n(&scan_phase, &expected, SCAN_CLEANING, 0,
                                    __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
-    /* The SDK has no public cancel operation. Never clear its result while
-     * the scan is still writing it; late completion owns timeout cleanup. */
     wifi_clear_scan_result();
     __atomic_store_n(&scan_phase, SCAN_IDLE, __ATOMIC_RELEASE);
   }
@@ -440,6 +446,7 @@ static int wifi_operation_begin(void) {
   if (__atomic_exchange_n(&wifi_operation_busy, 1u, __ATOMIC_ACQUIRE)) {
     return H2_PAL_ERR_BUSY;
   }
+  scan_reap_completed();
   if (__atomic_load_n(&scan_phase, __ATOMIC_ACQUIRE) != SCAN_IDLE) {
     __atomic_store_n(&wifi_operation_busy, 0u, __ATOMIC_RELEASE);
     return H2_PAL_ERR_BUSY;
