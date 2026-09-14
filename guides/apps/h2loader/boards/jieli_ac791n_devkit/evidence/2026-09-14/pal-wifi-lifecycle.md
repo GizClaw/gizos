@@ -82,3 +82,9 @@ Options:
 Recommendation: obtain option 1; until then preserve the current failed-closed abandoned-scan ownership and document restart as the recovery boundary, without adding an automatic reboot or an unproved off/sleep/on workaround. Maintainer choice is required before introducing option 2 as runtime policy. No hardware scan-timeout recovery pass is claimed.
 
 Native Loader and PAL packages including the AP cache pass in 34.871 seconds (`/tmp/jieli-ap-clients-native.log`). Final hardware acceptance is still pending.
+
+## Incremental public PAL hardware check
+
+At source `964d56f7`, the App installed through the UART Loader passes one untraced public PAL E2E run: Filesystem 13, Core 1/2/3/4/5/6/10/11, and offline Wi-Fi 27 all return zero; aggregate 10 passed, 0 failed. [Structured result and returned board status](./pal-o3-snapshots-hardware.json) retain the exact package and image identities. The App package is `0d73cfb22fb4e3850bc8b5326355873ff33ba8f808a6e9badc557fa7bc30a34a`; its image is `f10b51882fb544c3fa5fe083a93840a20bd05390a0fea5d34b43971f756f6f85`. Raw output is in `tmp/jieli/pal-review-next/diagnostic-runs/o3-snapshots/1/pal.log` and `/tmp/jieli-o3-pal.log`.
+
+The board returned to the valid P1 Loader image `2946bbdb2cc9c64d7c08f430f977e0ede705dfc4806b89361469daafedc1a8a0`. P2 contains that tested O3 App and staging remains valid with the same App package. P1 was not changed in this check. This is offline regression evidence, not connected Wi-Fi/AP/scan-timeout evidence, and does not replace the final-source Loader/UART/BLE lifecycle round.
