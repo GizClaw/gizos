@@ -244,12 +244,12 @@ static int create_directory_component(char *path) {
     }
     if (fclose(directory) != 0) native_result = H2_PAL_ERR_IO;
   }
-  /* Verify the requested entry, including after a concurrent creator wins.
-   * Neither a native handle nor an existing regular file proves mkdir. */
+  /* The post-create lookup is authoritative, including when a concurrent
+   * creator wins or the trailing-slash creation handle reports no DIR bit.
+   * Native handle errors do not invalidate a verified directory entry. */
   int created = directory_status(path);
   if (h2_jieli_sd_fs_trace_mkdir != NULL)
     h2_jieli_sd_fs_trace_mkdir(path, native_result, created);
-  if (directory != NULL && native_result != H2_PAL_OK) return native_result;
   return created == H2_PAL_ERR_NOT_FOUND ? H2_PAL_ERR_IO : created;
 }
 
