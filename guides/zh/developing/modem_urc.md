@@ -126,3 +126,11 @@ Host 测试覆盖支持/不支持/超时的 prepare、来电主叫挂断立即�
 覆盖 open/close 的 board 在停止 RX producer、释放 transport 并完成下电后，持 operation lock 调用 provider 的 transport-closed 通知；它清除 SIM presence、去重与注册观察，保留 worker 与回调生命周期。每轮 prepare 使能 QSIMSTAT 后主动查询 QSIMSTAT/CPIN，不依赖可能早于 UART 路由配置的开机通知；暂未 READY 的插卡状态启动有界轮询。缺卡后收到 CPIN READY（包括主动查询应答）即恢复插入与 READY，发布 SIM 事件并刷新 IMSI、注册及附着状态，不再等待 QSIMSTAT 插入通知。
 
 ABSENT 期间，已有 URC worker 每约 5 秒空闲时间执行一次 AT+CPIN?，单次超时 1 秒，使用实例 response 缓冲与 operation try-lock，不在 RX 回调执行 AT；关闭实例或板级 transport 后停止。ERROR / NOT INSERTED 不产生 READY。`+QIND: SMS DONE`、`+QIND: PB DONE`、`Call Ready` 仅合并触发一次 CPIN 查询，每次拔卡重新允许触发。
+
+### 操作锁与恢复事件
+
+板级可成对提供 operation lock/unlock 回调，通过 transport_user 复用递归操作锁及 holder 诊断；普通操作请求 15000 ms，后台维护使用零超时 try-lock，竞争时让出。operation_allowed 在锁前及锁后检查取消或初始化占用，锁后拒绝会释放本次获取；板级必须允许负责 close/deinit 的任务执行清理。回调生命周期覆盖实例，不能重入 modem 操作。未配置回调时保留 PAL mutex 行为，非零 timeout 仍使用传统阻塞获取。
+
+重启前只失效旧状态，不发布 MODEM_READY；真实 RDY/APP RDY 和完成 prepare 才发布就绪。每次新来电清除旧 DSCI 关联，只有本次来电已关联的 DSCI 状态才能由对应结束通知终止。
+
+看门狗间隔与查询预算是 provider 级编译期覆盖参数，默认均为 1000 ms，支持 1–60000 ms，库和消费者必须使用一致定义，不提供实例运行期修改。间隔同时驱动 SIM 恢复空闲维护，close 停止操作、deinit 停止 worker；SIM 恢复单次 AT 预算仍为 1000 ms。

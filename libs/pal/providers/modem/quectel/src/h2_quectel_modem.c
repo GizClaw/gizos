@@ -369,6 +369,9 @@ h2_pal_result_t h2_quectel_modem_init(
          config->sync_api->vtable == NULL || config->sync_api->vtable->try_lock_mutex == NULL)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    if ((config->lock_operation == NULL) != (config->unlock_operation == NULL)) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
     memset(modem, 0, sizeof(*modem));
     modem->config = *config;
     if (modem->config.command_timeout_ms == 0u) {

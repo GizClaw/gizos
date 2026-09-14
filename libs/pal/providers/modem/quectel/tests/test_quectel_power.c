@@ -17,6 +17,7 @@ typedef struct fixture {
     size_t raw_offset;
     unsigned commands;
     unsigned restarts;
+    unsigned ready_events;
     unsigned dsci_commands;
     int dsci_error;
     unsigned prepare_count;
@@ -120,6 +121,7 @@ static h2_pal_result_t deinit_transport(void *user) {
 static int post_event(void *user, const h2_pal_system_event_t *event, uint32_t timeout_ms) {
     fixture_t *f = user;
     assert(timeout_ms == 0u);
+    if (event->type == H2_PAL_SYSTEM_EVENT_TYPE_MODEM_READY) { f->ready_events++; }
     if (event->type == H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIM_CHANGED) {
         assert(event->payload_size == sizeof(h2_pal_modem_status_t));
         f->last_sim = ((const h2_pal_modem_status_t *)event->payload)->sim;
@@ -263,6 +265,7 @@ static void finish(fixture_t *f) {
 
 static h2_pal_result_t restart_module(void *user) {
     fixture_t *f = user;
+    assert(f->ready_events == 0u); /* Invalidation must not announce readiness. */
     f->restarts++;
     assert(f->prepare_steps == 0x1ffu);
     f->prepare_steps = 0u;
@@ -379,6 +382,7 @@ static void test_hotplug_restart_callback(void) {
             mode == 2 ? H2_PAL_ERR_INVALID_STATE : H2_PAL_OK;
         assert(h2_pal_modem_open(&f.modem.platform, 0u) == expected);
         assert(f.restarts == 1u && f.sim_writes == 1u && !f.modem.preparing);
+        assert(f.ready_events == (mode == 1 ? 0u : expected == H2_PAL_OK ? 2u : 1u));
         assert(f.prepare_count == (mode == 1 ? 1u : 2u));
         assert(f.model_queries == (mode == 1 ? 1u : 2u));
         assert(f.sim_queries == (mode == 1 ? 1u : 2u));
@@ -673,7 +677,97 @@ static void test_dsci_prepare(void) {
     }
 }
 
+
+typedef struct operation_fixture {
+    unsigned depth, locks, unlocks, commands;
+    uint32_t timeout;
+    h2_pal_result_t admission, lock_result;
+    int cancel_on_lock;
+} operation_fixture_t;
+
+static h2_pal_result_t board_lock(void *user, uint32_t timeout_ms) {
+    operation_fixture_t *f = user;
+    f->locks++;
+    f->timeout = timeout_ms;
+    if (f->lock_result != H2_PAL_OK) { return f->lock_result; }
+    f->depth++;
+    if (f->cancel_on_lock) { f->admission = H2_PAL_ERR_CLOSED; }
+    return H2_PAL_OK;
+}
+static h2_pal_result_t board_unlock(void *user) {
+    operation_fixture_t *f = user;
+    assert(f->depth != 0u);
+    f->depth--;
+    f->unlocks++;
+    return H2_PAL_OK;
+}
+static h2_pal_result_t board_allowed(void *user) {
+    return ((operation_fixture_t *)user)->admission;
+}
+static h2_pal_result_t board_command(void *user, const char *cmd, char *response,
+    size_t size, uint32_t timeout_ms) {
+    operation_fixture_t *f = user;
+    (void)cmd; (void)timeout_ms;
+    assert(f->depth > 0u && size > 5u);
+    f->commands++;
+    strcpy(response, "OK\r\n");
+    return H2_PAL_OK;
+}
+void h2_quectel_call_watchdog(void *user);
+void h2_quectel_sim_recover(void *user);
+
+static void test_board_operations(void) {
+    h2_quectel_call_watchdog(NULL);
+    h2_quectel_sim_recover(NULL);
+    assert(h2_quectel_modem_lock(NULL, 0u) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_quectel_modem_unlock(NULL) == H2_PAL_ERR_INVALID_ARG);
+    for (unsigned with_sync = 0u; with_sync < 2u; with_sync++) {
+        h2_quectel_modem_t modem;
+        operation_fixture_t f = {0};
+        h2_quectel_modem_config_t config = {
+            .transport_user = &f, .command = board_command,
+            .sync_api = with_sync ? &sync_api : NULL,
+            .lock_operation = board_lock, .operation_allowed = board_allowed,
+        };
+        assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_ERR_INVALID_ARG);
+        config.lock_operation = NULL;
+        config.unlock_operation = board_unlock;
+        assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_ERR_INVALID_ARG);
+        config.lock_operation = board_lock;
+        assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_OK);
+        f.admission = H2_PAL_ERR_CLOSED;
+        assert(h2_pal_modem_open(&modem.platform, 0u) == H2_PAL_ERR_CLOSED);
+        assert(f.locks == 0u && f.commands == 0u);
+        f.admission = H2_PAL_OK;
+        f.lock_result = H2_PAL_ERR_TIMEOUT;
+        assert(h2_pal_modem_open(&modem.platform, 0u) == H2_PAL_ERR_TIMEOUT);
+        assert(f.timeout == 15000u && f.depth == 0u && f.unlocks == 0u);
+        f.lock_result = H2_PAL_OK;
+        f.cancel_on_lock = 1;
+        assert(h2_pal_modem_open(&modem.platform, 0u) == H2_PAL_ERR_CLOSED);
+        assert(f.depth == 0u && f.unlocks == 1u && f.commands == 0u);
+        f.cancel_on_lock = 0;
+        f.admission = H2_PAL_OK;
+        assert(h2_pal_modem_open(&modem.platform, 0u) == H2_PAL_OK);
+        assert(f.depth == 0u && f.commands != 0u);
+        h2_quectel_handle_urc_line(&modem, "RING");
+        unsigned commands = f.commands;
+        unsigned unlocks = f.unlocks;
+        f.lock_result = H2_PAL_ERR_BUSY;
+        h2_quectel_call_watchdog(&modem);
+        assert(f.timeout == 0u && f.commands == commands && f.unlocks == unlocks);
+        h2_quectel_handle_urc_line(&modem, "+QSIMSTAT: 1,0");
+        h2_quectel_handle_urc_line(&modem, "+QSIMSTAT: 1,1");
+        h2_quectel_sim_recover(&modem);
+        assert(f.timeout == 0u && f.commands == commands && f.unlocks == unlocks);
+        f.lock_result = H2_PAL_OK;
+        assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
+        assert(f.depth == 0u);
+    }
+}
+
 int main(void) {
+    test_board_operations();
     test_startup_sim_edges_during_prepare();
     test_dsci_prepare();
     test_hotplug_matching_and_notifications();

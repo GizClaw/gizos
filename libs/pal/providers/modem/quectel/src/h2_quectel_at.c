@@ -41,7 +41,7 @@ static h2_pal_result_t read_line(h2_quectel_modem_t *modem, char *line, size_t c
     size_t len = 0u;
     h2_pal_result_t framing_result = H2_PAL_OK;
     line[0] = '\0';
-    for (;;) {
+    for (size_t received = 0u; received < cap * 2u; ++received) {
         uint8_t ch = 0u;
         size_t got = 0u;
         uint32_t wait_ms = timeout_ms;
@@ -81,6 +81,7 @@ static h2_pal_result_t read_line(h2_quectel_modem_t *modem, char *line, size_t c
             return H2_PAL_OK;
         }
     }
+    return H2_PAL_ERR_TRUNCATED;
 }
 
 static void response_add_line(h2_quectel_response_t *response, const char *line) {

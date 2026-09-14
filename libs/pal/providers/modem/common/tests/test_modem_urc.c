@@ -443,7 +443,10 @@ static void test_identity_registration_progress(void) {
 static h2_pal_result_t recovery_command(void *user, const char *cmd, char *response,
     size_t size, uint32_t timeout_ms) {
     fixture_t *f = user;
-    assert(!pthread_equal(f->caller, pthread_self()));
+    if (pthread_equal(f->caller, pthread_self())) {
+        snprintf(response, size, "OK\r\n");
+        return H2_PAL_OK; /* Control-channel preparation runs on the caller. */
+    }
     assert(timeout_ms == 1000u);
     const char *text = "OK\r\n";
     if (strcmp(cmd, "AT+CPIN?") == 0) { text = "+CPIN: READY\r\nOK\r\n"; }
@@ -476,6 +479,7 @@ static void test_worker_insertion(void) {
     };
     assert(h2_quectel_modem_init(&f.quectel, &config) == H2_PAL_OK);
     h2_modem_rx_t receiver = {0};
+    assert(h2_pal_modem_open(&f.quectel.platform, 0u) == H2_PAL_OK);
     for (int cycle = 1; cycle <= 2; cycle++) {
         const char *removed = "+QSIMSTAT: 1,0\r\n";
         assert(h2_quectel_rx_feed(&f.quectel, &receiver, receiver.next_offset,

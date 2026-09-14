@@ -133,15 +133,16 @@ static void handle_dsci(h2_quectel_modem_t *modem, const char *line) {
     status.direction = dir ? H2_PAL_MODEM_CALL_DIRECTION_INCOMING : H2_PAL_MODEM_CALL_DIRECTION_OUTGOING;
     if (stat == 6) {
         /* Ignore duplicate/stale ends, including a previous modem call ID. */
-        if ((modem->dsci_call_id != 0 && modem->dsci_call_id != id) ||
+        if ((dir && !modem->incoming_dsci_seen) ||
+            (modem->dsci_call_id != 0 && modem->dsci_call_id != id) ||
             (modem->call_status_seen && modem->observed_call.state == H2_PAL_MODEM_CALL_STATE_ENDED)) {
             return;
         }
         status.call_id = dir ? h2_quectel_incoming_call_current(modem) : id;
         if (dir && status.call_id == 0) { return; }
     } else {
-        modem->dsci_call_id = id;
         status.call_id = dir ? h2_quectel_incoming_call_begin(modem) : id;
+        modem->dsci_call_id = id;
         if (dir) { modem->incoming_dsci_seen = 1u; }
         modem->call_hold = 1u;
         (void)h2_quectel_power_wake(modem);
@@ -348,34 +349,38 @@ void h2_quectel_handle_urc_locked(h2_quectel_modem_t *modem, const char *line) {
     }
 
     if (strcmp(line, "RDY") == 0 || strcmp(line, "APP RDY") == 0) {
-        modem->call_generation++;
-        modem->dsci_voice_seen = 0u;
-        modem->dsci_call_id = 0;
-        modem->call_status_seen = 0u;
-        (void)h2_quectel_incoming_call_end(modem);
-        modem->reset_generation++;
-        modem->registration_seen = 0u;
-        modem->packet_seen = 0u;
-        modem->signal_seen = 0u;
-        modem->prepared = 0u;
-        modem->power_configured = 0u;
-        modem->cell_locate_token_sent = 0u;
-        modem->gnss_hold = 0u;
-        modem->call_hold = 0u;
-        modem->sim_probe_ticks = 0u;
-        modem->sim_query_pending = 0u;
-        modem->sim_hint_seen = 0u;
-        modem->sim_presence = 0u;
-        modem->sim_poll_remaining = 0u;
-        modem->sim_refresh_pending = 0u;
-        modem->sim_seen = 0u;
-        h2_quectel_sim_update(modem, H2_PAL_MODEM_SIM_STATE_UNKNOWN);
+        h2_quectel_reset_state(modem);
         h2_quectel_post_system_event(
             modem,
             H2_PAL_SYSTEM_EVENT_TYPE_MODEM_READY,
             NULL,
             0u);
     }
+}
+
+void h2_quectel_reset_state(h2_quectel_modem_t *modem) {
+    modem->call_generation++;
+    modem->dsci_voice_seen = 0u;
+    modem->dsci_call_id = 0;
+    modem->call_status_seen = 0u;
+    (void)h2_quectel_incoming_call_end(modem);
+    modem->reset_generation++;
+    modem->registration_seen = 0u;
+    modem->packet_seen = 0u;
+    modem->signal_seen = 0u;
+    modem->prepared = 0u;
+    modem->power_configured = 0u;
+    modem->cell_locate_token_sent = 0u;
+    modem->gnss_hold = 0u;
+    modem->call_hold = 0u;
+    modem->sim_probe_ticks = 0u;
+    modem->sim_query_pending = 0u;
+    modem->sim_hint_seen = 0u;
+    modem->sim_presence = 0u;
+    modem->sim_poll_remaining = 0u;
+    modem->sim_refresh_pending = 0u;
+    modem->sim_seen = 0u;
+    h2_quectel_sim_update(modem, H2_PAL_MODEM_SIM_STATE_UNKNOWN);
 }
 
 void h2_quectel_sim_update(h2_quectel_modem_t *modem, h2_pal_modem_sim_state_t state) {

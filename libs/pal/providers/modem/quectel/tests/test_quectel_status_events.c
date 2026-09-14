@@ -366,6 +366,8 @@ static void test_dsci(const h2_pal_system_event_api_t *events) {
     assert(ended_events == ended);
     h2_quectel_handle_urc_line(&modem, "RING");
     int32_t ringing_id = last_call.call_id;
+    h2_quectel_handle_urc_line(&modem, "^DSCI: 1,1,6,0,123,129");
+    assert(ended_events == ended && modem.incoming_call_id == ringing_id && modem.call_hold);
     h2_quectel_handle_urc_line(&modem, "NO CARRIER");
     assert(ended_events == ended && modem.incoming_call_id == ringing_id && modem.call_hold);
     h2_quectel_handle_urc_line(&modem, "^DSCI: 2,1,4,0,\"456\",129");
@@ -523,6 +525,8 @@ typedef struct raw_watchdog_transport {
     const char *cursor;
     unsigned waited;
     unsigned timeouts;
+    unsigned reads;
+    int endless;
 } raw_watchdog_transport_t;
 
 static h2_pal_result_t watchdog_write(void *user, const uint8_t *data,
@@ -540,6 +544,8 @@ static h2_pal_result_t watchdog_read(void *user, uint8_t *data,
     assert(size == 1u);
     t->waited += timeout_ms;
     *got = 0u;
+    t->reads++;
+    if (t->endless) { *data = (uint8_t)t->endless; *got = 1u; return H2_PAL_OK; }
     if (t->timeouts != 0u) {
         t->timeouts--;
         return H2_PAL_ERR_TIMEOUT;
@@ -566,6 +572,24 @@ static void test_raw_watchdog(const h2_pal_system_event_api_t *events) {
         assert(t.waited <= H2_QUECTEL_RING_POLL_TIMEOUT_MS);
         assert(ended_events == ended + (mode ? 0u : 1u));
         assert(modem.operation_depth == 0u && !modem.call_poll_running);
+        modem.opened = 0u;
+        assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
+    }
+}
+
+static void test_unterminated_raw_line(void) {
+    const int bytes[] = {'x', '\r'};
+    for (unsigned i = 0u; i < 2u; i++) {
+        h2_quectel_modem_t modem;
+        raw_watchdog_transport_t t = {.endless = bytes[i]};
+        const h2_quectel_modem_config_t config = {
+            .read = watchdog_read, .write = watchdog_write, .transport_user = &t,
+        };
+        assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_OK);
+        modem.opened = 1u;
+        h2_pal_modem_call_status_t status;
+        assert(h2_pal_modem_get_call_status(&modem.platform, &status) == H2_PAL_ERR_TRUNCATED);
+        assert(t.reads == H2_QUECTEL_LINE_MAX * 2u && modem.operation_depth == 0u);
         modem.opened = 0u;
         assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
     }
@@ -629,6 +653,7 @@ static void test_board_power_cycles(const h2_pal_system_event_api_t *events) {
 }
 
 int main(void) {
+    test_unterminated_raw_line();
     const h2_pal_system_event_vtable_t vtable = {.post = post};
     const h2_pal_system_event_api_t events = {.vtable = &vtable};
     const h2_quectel_modem_config_t config = {.command = command, .system_events = &events};
