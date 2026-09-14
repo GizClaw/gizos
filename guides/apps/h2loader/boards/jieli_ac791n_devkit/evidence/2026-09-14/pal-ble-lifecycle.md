@@ -1,6 +1,6 @@
 # BLE lifetime follow-up — 2026-09-14
 
-This is incremental O2 evidence. GATT unregister is committed in `2137527f`. Final-source Loader/App BLE lifecycle acceptance remains pending; the earlier policy-fix lifecycle runs do not validate this change.
+This is incremental O2 evidence. GATT unregister is committed in `2137527f`; host shutdown is committed in `95c1eed2`. Final-source Loader/App BLE lifecycle acceptance remains pending; the earlier policy-fix lifecycle runs do not validate this change.
 
 ## GATT unregister
 
@@ -51,3 +51,21 @@ UART return-to-Loader and subsequent status passed. P1 remains valid and unchang
 Raw files are under `tmp/jieli/pal-review-next/diagnostic-runs/ble-host-app-status/`: `send.log`, `app.status`, `ble-status-1.log`, `ble-status-2.log`, `ble-status-3.log`, and `returned.status`.
 
 The extended-disable descriptor fixture consumes the actual queued pointer after `h2_adv_set_stop` returns. Both Clang and GCC AddressSanitizer report `stack-use-after-return` before repair, and pass with the immutable static descriptor. Together with the 13 lifecycle cases, the baseline run has 14 failing cases. The intermediate implementation also fails the disconnected-event and retry assertions before that refinement (`/tmp/jieli-ble-host-disconnect-event-before.log`, `/tmp/jieli-ble-host-disconnect-event-gcc-before.log`).
+
+## Connection, MTU and trace snapshots
+
+Connection/MTU publication and readers now use the same short gate. Notify validates one coherent snapshot before its SDK call; disconnect, connection-parameter validation, MTU reads and PHY validation also snapshot under the gate. A disconnect event must have a complete packet, successful status and the current handle before clearing the link. MTU events must name the current link and carry a value between the ATT default of 23 and the locally configured 512. Their published payloads are local snapshots. ATT trace dump copies the ring under the gate and logs the copy after unlocking.
+
+The pinned `btstack_event.h` reads the disconnect handle at bytes 3–4, status at byte 2, and MTU-event handle/MTU at bytes 2–3/4–5. Both packets contain six bytes for those fields. `att_server.c.o:att_emit_mtu_event` reports size 6. In contrast, `ll_events.c.o:hci_event_disconnection_complete` emits the four-byte `1H1` payload; `hci_controller.c.o:hci_send_event` queues all six bytes, but `hci_vendor.c.o:hci_event_handler` forwards payload length plus one as callback size (5). The disconnect guard follows that audited SDK convention and validates the payload length. A fixture using the real SDK length fails the initial six-byte guard (`/tmp/jieli-ble-sdk-disconnect-length-before.log`); it passes after correction. The provider configures the local ATT MTU to 512, so a larger negotiated value is invalid for this instance.
+
+`//tools/bazel:jieli_ble_snapshots_test` extracts the actual connection publication, disconnect/MTU event branches, MTU getter and trace functions. Before repair, stale MTU/disconnect events, out-of-range MTUs, truncated packets and failed disconnect status corrupt or publish link state under Clang and GCC. A threaded reader also observes a torn connection/MTU pair under Clang. TSan reports races in `connected` and `h2_att_trace_dump`. After repair all eight cases pass, including real-pthread connection and trace loops; SDK/log/subscriber fakes re-enter the gate to verify it is not held across those calls. The existing ATT-connection/notify checks remain strict and cover balanced gate release on all exits.
+
+Logs: `/tmp/jieli-ble-snapshots-before.log`, `/tmp/jieli-ble-snapshots-gcc-before.log`, `/tmp/jieli-ble-snapshots-tsan-before.log`, `/tmp/jieli-ble-snapshots-after.log`, `/tmp/jieli-ble-snapshots-gcc-after.log`, `/tmp/jieli-ble-snapshots-tsan-after.log`. Native Loader, PAL and display packages build successfully in 66.259 seconds (`/tmp/jieli-ble-snapshots-native.log`). Hardware validation for this snapshot change remains pending. Advertising state and queued advertising/connection-parameter storage are separate remaining O2 work.
+
+## Additional command-storage audit
+
+The pinned `hci_ll.c.o` copies legacy advertising bytes into scalar controller-task messages, but forwards extended parameters/data/enable pointers into a second queue through `btctrler_hci_cmd_to_task`. Consequently a btstack-command drain alone does **not** retire extended descriptor borrowing. The controller's `hci_ll_5_cmds.c.o` copies parameters/data and enable fields into owned advertising-group storage while processing those commands.
+
+`system.a`'s `__os_taskq_pend` handles `Q_CALLBACK` messages in FIFO order before returning normal task messages. A callback queued to the controller after btstack has forwarded its commands can establish controller consumption. This is an audited possible fence, not a claim that the remaining command-storage fix is implemented. The original btstack-hook-only idea would be insufficient.
+
+The actual SDK `local_irq_disable` in `apps/common/system/init.c` takes a global Bluetooth spinlock on multicore builds, so `ble_user_cmd_prepare` serializes its capacity check and enqueue across producers. The local-only sketch in the FreeRTOS port header is commented out. PAL gates must still be released before calling the SDK.

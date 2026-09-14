@@ -244,6 +244,7 @@ static uint8_t h2_att_trace_count;
 static void h2_att_trace_record(
     uint8_t kind, uint16_t handle, uint16_t offset,
     const uint8_t *buffer, uint16_t size) {
+  h2_gatt_lock();
   const uint8_t index = h2_att_trace_count < 16u
                             ? h2_att_trace_count
                             : (uint8_t)(h2_att_trace_count % 16u);
@@ -255,17 +256,23 @@ static void h2_att_trace_record(
       .has_buffer = buffer != NULL,
   };
   h2_att_trace_count++;
+  h2_gatt_unlock();
 }
 
 static void h2_att_trace_dump(void) {
-  const uint8_t count = h2_att_trace_count < 16u ? h2_att_trace_count : 16u;
-  const uint8_t start = h2_att_trace_count <= 16u
+  h2_jieli_att_trace_t snapshot[16];
+  h2_gatt_lock();
+  const uint8_t recorded = h2_att_trace_count;
+  memcpy(snapshot, h2_att_trace, sizeof(snapshot));
+  h2_gatt_unlock();
+  const uint8_t count = recorded < 16u ? recorded : 16u;
+  const uint8_t start = recorded <= 16u
                             ? 0u
-                            : (uint8_t)(h2_att_trace_count % 16u);
-  h2_ble_log("H2_JIELI_ATT_TRACE count=%u\r\n", (unsigned)h2_att_trace_count);
+                            : (uint8_t)(recorded % 16u);
+  h2_ble_log("H2_JIELI_ATT_TRACE count=%u\r\n", (unsigned)recorded);
   for (uint8_t i = 0u; i < count; ++i) {
     const h2_jieli_att_trace_t *entry =
-        &h2_att_trace[(uint8_t)((start + i) % 16u)];
+        &snapshot[(uint8_t)((start + i) % 16u)];
     h2_ble_log("H2_JIELI_ATT_ACCESS kind=%c handle=%u offset=%u size=%u buffer=%u\r\n",
            entry->kind == 0u ? 'R' : 'W', (unsigned)entry->handle,
            (unsigned)entry->offset, (unsigned)entry->size,
@@ -913,30 +920,42 @@ static int h2_notify(
     void *user, uint16_t conn_handle, uint16_t attr_handle,
     const uint8_t *data, size_t len) {
   (void)user;
+  h2_gatt_lock();
   if (conn_handle == 0u || conn_handle != h2_ble.conn_handle ||
       attr_handle != H2_JIELI_GATT_TX_VALUE_HANDLE ||
       (len != 0u && data == NULL) ||
       h2_ble.mtu < H2_PAL_BLE_ATT_HEADER_LEN ||
-      len > (size_t)(h2_ble.mtu - H2_PAL_BLE_ATT_HEADER_LEN))
+      len > (size_t)(h2_ble.mtu - H2_PAL_BLE_ATT_HEADER_LEN)) {
+    h2_gatt_unlock();
     return H2_PAL_ERR_INVALID_ARG;
+  }
+  h2_gatt_unlock();
   return h2_ble_cmd_result(ble_op_att_send_data(
       attr_handle, data, (uint16_t)len, ATT_OP_AUTO_READ_CCC));
 }
 
 static int h2_disconnect(void *user, uint16_t conn_handle) {
   (void)user;
-  if (conn_handle == 0u || conn_handle != h2_ble.conn_handle)
+  h2_gatt_lock();
+  if (conn_handle == 0u || conn_handle != h2_ble.conn_handle) {
+    h2_gatt_unlock();
     return H2_PAL_ERR_INVALID_ARG;
+  }
+  h2_gatt_unlock();
   return h2_ble_cmd_result(ble_op_disconnect(conn_handle));
 }
 
 static int h2_update_connection(
     void *user, uint16_t conn_handle,
     const h2_pal_ble_connection_params_t *params) {
-  /* The SDK keeps a pointer to the request until the L2CAP procedure ends. */
+  /* The SDK borrows this pointer until its command loop copies the fields
+   * into the L2CAP request. Concurrent request storage still needs a fence. */
   static struct conn_update_param_t request;
   (void)user;
-  if (conn_handle != h2_ble.conn_handle || params == NULL ||
+  h2_gatt_lock();
+  const int current = conn_handle == h2_ble.conn_handle;
+  h2_gatt_unlock();
+  if (!current || params == NULL ||
       params->interval_min_ms == 0u ||
       params->interval_max_ms < params->interval_min_ms)
     return H2_PAL_ERR_INVALID_ARG;
@@ -961,9 +980,13 @@ static int h2_exchange_mtu(
     uint32_t timeout_ms) {
   (void)user;
   (void)timeout_ms;
-  if (conn_handle != h2_ble.conn_handle || out_mtu == NULL)
+  h2_gatt_lock();
+  if (conn_handle != h2_ble.conn_handle || out_mtu == NULL) {
+    h2_gatt_unlock();
     return H2_PAL_ERR_INVALID_ARG;
+  }
   *out_mtu = h2_ble.mtu;
+  h2_gatt_unlock();
   return H2_PAL_OK;
 }
 
@@ -978,8 +1001,10 @@ static int h2_set_phy(
   (void)tx_phy;
   (void)rx_phy;
   (void)timeout_ms;
-  if (conn_handle != h2_ble.conn_handle) return H2_PAL_ERR_INVALID_ARG;
-  return H2_PAL_ERR_UNSUPPORTED;
+  h2_gatt_lock();
+  const int current = conn_handle == h2_ble.conn_handle;
+  h2_gatt_unlock();
+  return current ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_ERR_INVALID_ARG;
 }
 
 static uint16_t h2_att_read(
@@ -1125,9 +1150,11 @@ static void h2_packet_handler(
             ? hci_subevent_le_connection_complete_get_connection_handle(packet)
             : hci_subevent_le_enhanced_connection_complete_get_connection_handle(packet);
         /* Legacy connectable advertising stops automatically on connection. */
+        h2_gatt_lock();
         h2_ble.adv.started = 0;
         h2_ble.conn_handle = handle;
         h2_ble.mtu = 23u;
+        h2_gatt_unlock();
         h2_ble_log(
             "H2_JIELI_BLE_LINK_PARAMS interval=%u latency=%u timeout=%u\r\n",
             (unsigned)interval, (unsigned)latency,
@@ -1139,7 +1166,9 @@ static void h2_packet_handler(
         if (h2_ble_cmd_result(att_init_result) != H2_PAL_OK) {
           /* Keep the physical handle until the disconnect callback, but do
            * not expose an unusable ATT transport as a connected PAL link. */
-          h2_ble.mtu = 0u;
+          h2_gatt_lock();
+          if (h2_ble.conn_handle == handle) h2_ble.mtu = 0u;
+          h2_gatt_unlock();
           const int disconnect_result = ble_op_disconnect(handle);
           h2_ble_log(
               "H2_JIELI_BLE_CONNECT_ERROR step=att_send_init handle=%u "
@@ -1180,17 +1209,31 @@ static void h2_packet_handler(
       break;
     }
     case HCI_EVENT_DISCONNECTION_COMPLETE: {
-      h2_ble_log(
-          "H2_JIELI_BLE_DISCONNECT handle=%u reason=%u\r\n",
-          (unsigned)h2_ble.conn_handle, (unsigned)packet[5]);
-      h2_att_trace_dump();
-      h2_att_trace_count = 0u;
+      /* Pinned hci_event_handler reports payload length + 1, although the
+       * controller queues payload length + 2 bytes (including both headers).
+       * The four-byte disconnect payload therefore arrives with size == 5. */
+      if (size < 5u || packet[1] < 4u || packet[2] != 0u) break;
+      const uint16_t handle =
+          hci_event_disconnection_complete_get_connection_handle(packet);
+      h2_gatt_lock();
+      if (handle == 0u || handle != h2_ble.conn_handle) {
+        h2_gatt_unlock();
+        break;
+      }
       const h2_pal_ble_disconnected_info_t info = {
-          .conn_handle = h2_ble.conn_handle,
+          .conn_handle = handle,
           .reason = packet[5],
       };
       h2_ble.conn_handle = 0u;
       h2_ble.mtu = 0u;
+      h2_gatt_unlock();
+      h2_ble_log(
+          "H2_JIELI_BLE_DISCONNECT handle=%u reason=%u\r\n",
+          (unsigned)info.conn_handle, (unsigned)info.reason);
+      h2_att_trace_dump();
+      h2_gatt_lock();
+      h2_att_trace_count = 0u;
+      h2_gatt_unlock();
       (void)ble_op_att_send_init(0u, NULL, 0u, 0u);
       h2_ble_post(H2_PAL_SYSTEM_EVENT_TYPE_BLE_DISCONNECTED,
                   &info, sizeof(info));
@@ -1198,10 +1241,20 @@ static void h2_packet_handler(
       break;
     }
     case ATT_EVENT_MTU_EXCHANGE_COMPLETE: {
-      h2_ble.mtu = att_event_mtu_exchange_complete_get_MTU(packet);
-      (void)ble_op_att_set_send_mtu(h2_ble.mtu - H2_PAL_BLE_ATT_HEADER_LEN);
+      if (size < 6u) break;
+      const uint16_t handle = att_event_mtu_exchange_complete_get_handle(packet);
+      const uint16_t mtu = att_event_mtu_exchange_complete_get_MTU(packet);
+      if (mtu < 23u || mtu > H2_JIELI_ATT_MTU) break;
+      h2_gatt_lock();
+      if (handle == 0u || handle != h2_ble.conn_handle) {
+        h2_gatt_unlock();
+        break;
+      }
+      h2_ble.mtu = mtu;
+      h2_gatt_unlock();
+      (void)ble_op_att_set_send_mtu(mtu - H2_PAL_BLE_ATT_HEADER_LEN);
       const h2_pal_ble_mtu_info_t info = {
-          .conn_handle = h2_ble.conn_handle, .mtu = h2_ble.mtu};
+          .conn_handle = handle, .mtu = mtu};
       h2_ble_post(H2_PAL_SYSTEM_EVENT_TYPE_BLE_MTU_CHANGED,
                   &info, sizeof(info));
       break;

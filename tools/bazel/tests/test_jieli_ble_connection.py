@@ -8,6 +8,19 @@ ROOT = Path(__file__).resolve().parents[3]
 SOURCE = ROOT / "boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_ble.c"
 
 
+GATE = r"""
+static int gate_held;
+static void h2_gatt_lock(void) {
+ assert(!gate_held);
+ gate_held=1;
+}
+static void h2_gatt_unlock(void) {
+ assert(gate_held);
+ gate_held=0;
+}
+"""
+
+
 class BleConnectionTest(unittest.TestCase):
     def test_mac_failure_prevents_stack_start_and_allows_retry(self):
         source = SOURCE.read_text()
@@ -33,8 +46,6 @@ int le_controller_set_mac(void *addr) {
  assert(memcmp(addr,h2_ble_base_mac(),6)==0); ++mac_calls; return mac_result;
 }
 static int btstack_init(void) { ++stack_calls; return stack_result; }
-static void h2_gatt_lock(void) {}
-static void h2_gatt_unlock(void) {}
 '''
         main = r'''
 int main(void) {
@@ -59,7 +70,7 @@ int main(void) {
 '''
         with tempfile.TemporaryDirectory(prefix="h2-ble-start-") as directory:
             test = Path(directory) / "test.c"
-            test.write_text(stub + source[begin:end] + main)
+            test.write_text(stub + GATE + source[begin:end] + main)
             binary = Path(directory) / "test"
             subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
                             str(test), "-o", str(binary)], check=True, timeout=60)
@@ -119,7 +130,7 @@ int main(void) {
 '''
         with tempfile.TemporaryDirectory(prefix="h2-ble-notify-") as directory:
             test = Path(directory) / "test.c"
-            test.write_text(stub + source[begin:end] + main)
+            test.write_text(stub + GATE + source[begin:end] + main)
             binary = Path(directory) / "test"
             subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
                             str(test), "-o", str(binary)], check=True, timeout=60)
@@ -201,7 +212,7 @@ int main(void) {
 '''
         with tempfile.TemporaryDirectory(prefix="h2-ble-connection-") as directory:
             test = Path(directory) / "test.c"
-            test.write_text(stub + branch + main)
+            test.write_text(stub.replace("static void connect_event", GATE + "static void connect_event") + branch + main)
             binary = Path(directory) / "test"
             subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
                             str(test), "-o", str(binary)], check=True, timeout=60)
