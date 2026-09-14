@@ -4,6 +4,7 @@
 #include <stdatomic.h>
 #include <string.h>
 #include "h2/pal/hal/h2_pal_wifi.h"
+#include "h2/pal/net/h2_pal_netif.h"
 #include "h2/pal/os/h2_pal_system_event.h"
 #include "h2_jieli_wl82_atomic.h"
 
@@ -17,6 +18,7 @@ enum WIFI_EVENT {
 enum { SCAN_IDLE, SCAN_PENDING, SCAN_ABANDONED };
 static unsigned scan_phase;
 static atomic_int entered, release_payload, readers_ready, reject_got_ip;
+static int refresh_error;
 static _Thread_local int hold_payload, hold_refresh;
 static void assert_sdk_unlocked(void);
 #define wifi_is_on() 1
@@ -78,7 +80,14 @@ int main(int argc, char **argv) {
   assert(argc == 2);
   wifi_state.on = 1;
   pthread_t worker;
-  if (strcmp(argv[1], "payload") == 0) {
+  if (strcmp(argv[1], "ip_failure") == 0) {
+    refresh_error = 1;
+    assert(wifi_event(NULL, WIFI_EVENT_STA_NETWORK_STACK_DHCP_SUCC) == 0);
+    h2_pal_wifi_sta_status_t status;
+    assert(sta_get_status(NULL, &status) == H2_PAL_OK);
+    assert(status.state == H2_PAL_WIFI_STA_STATE_FAILED && !status.ip_valid);
+    return 0;
+  } else if (strcmp(argv[1], "payload") == 0) {
     assert(pthread_create(&worker, NULL, publish_held, NULL) == 0);
     while (!atomic_load(&entered)) sched_yield();
     assert(wifi_event(NULL, WIFI_EVENT_STA_DISCONNECT) == 0);

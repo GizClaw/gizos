@@ -21,7 +21,7 @@ class WifiSnapshotsTest(unittest.TestCase):
         fixture = (ROOT / 'tools/bazel/tests/fixtures/jieli_wifi_snapshots.c').read_text()
         if 'update_sta_snapshot(h2_pal_wifi_sta_status_t *status)' in state:
             fixture = fixture.replace('static void update_sta_snapshot(void) { fake_sdk_refresh(); }',
-                'static void update_sta_snapshot(h2_pal_wifi_sta_status_t *status) { (void)status; fake_sdk_refresh(); }')
+                'static void update_sta_snapshot(h2_pal_wifi_sta_status_t *status) { status->ip_valid = !refresh_error; fake_sdk_refresh(); }')
         if 'wifi_state_gate' in state:
             # Instrument ownership without replacing the real lock algorithm.
             state = state.replace('static void wifi_state_lock(void)',
@@ -43,7 +43,7 @@ class WifiSnapshotsTest(unittest.TestCase):
                 '-I', str(ROOT / 'libs/pal/include'),
                 '-I', str(ROOT / 'native_component_src/jieli/wl82/h2_pal_core/include'),
                 str(unit), '-o', str(binary)], check=True)
-            for case in ['payload', 'readers', 'stale_refresh']:
+            for case in ['payload', 'readers', 'stale_refresh', 'ip_failure']:
                 with self.subTest(case=case):
                     result = subprocess.run([str(binary), case], capture_output=True, text=True, timeout=15)
                     self.assertNotIn("WARNING: ThreadSanitizer", result.stderr, result.stdout + result.stderr)

@@ -1,6 +1,7 @@
 #include "asm/includes.h"
 
 #include "h2_jieli_ac791n_devkit.h"
+#include "h2_jieli_ac791n_devkit_network.h"
 #include "h2/pal/hal/h2_pal_wifi.h"
 #include "h2_jieli_wl82_platform_core.h"
 #include "h2_jieli_wl82_atomic.h"
@@ -158,6 +159,13 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
       wifi_state.sta.bssid_set = native_status.bssid_set;
       wifi_state.sta.channel = native_status.channel;
       wifi_state.sta.rssi = native_status.rssi;
+      if (event == WIFI_EVENT_STA_NETWORK_STACK_DHCP_SUCC && !native_status.ip_valid) {
+        wifi_state.sta.state = H2_PAL_WIFI_STA_STATE_FAILED;
+        wifi_state.sta.disconnect_reason = H2_PAL_ERR_IO;
+        wifi_state.sta.ip_valid = 0u;
+        types[count++] = H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP;
+        break;
+      }
       wifi_state.sta.ip_valid = event == WIFI_EVENT_STA_NETWORK_STACK_DHCP_SUCC;
       if (wifi_state.sta.ip_valid) wifi_state.sta.ip = native_status.ip;
       types[count++] = wifi_state.sta.ip_valid
@@ -200,7 +208,7 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
       sta_changed = 0;
       break;
   }
-  if (sta_changed) ++wifi_sta_generation;
+  if (sta_changed || ap_event) ++wifi_sta_generation;
   sta_status = wifi_state.sta;
   ap_status = wifi_state.ap;
   wifi_state_unlock();
@@ -236,17 +244,19 @@ static void update_sta_snapshot(h2_pal_wifi_sta_status_t *status) {
   status->channel = (uint8_t)wifi_get_channel();
   status->rssi = wifi_get_rssi();
   if (status->state == H2_PAL_WIFI_STA_STATE_GOT_IP) {
-    struct lan_setting *lan = net_get_lan_info(WIFI_NETIF);
-    if (lan != NULL) {
+    h2_pal_netif_status_t netif;
+    memset(&netif, 0, sizeof(netif));
+    /* This callback is inside the SDK HSM: radio teardown cannot overlap.
+     * IP/DNS storage still belongs to tcpip_thread, so copy there and wait. */
+    status->ip_valid = h2_jieli_netif_capture_ip(&netif) == H2_PAL_OK &&
+        (netif.flags & H2_PAL_NETIF_FLAG_HAS_IPV4) != 0u;
+    if (status->ip_valid) {
       status->ip.ip4 = pack_ip4(
-          lan->WIRELESS_IP_ADDR0, lan->WIRELESS_IP_ADDR1,
-          lan->WIRELESS_IP_ADDR2, lan->WIRELESS_IP_ADDR3);
+          netif.ipv4.ip[0], netif.ipv4.ip[1], netif.ipv4.ip[2], netif.ipv4.ip[3]);
       status->ip.netmask4 = pack_ip4(
-          lan->WIRELESS_NETMASK0, lan->WIRELESS_NETMASK1,
-          lan->WIRELESS_NETMASK2, lan->WIRELESS_NETMASK3);
+          netif.netmask4.ip[0], netif.netmask4.ip[1], netif.netmask4.ip[2], netif.netmask4.ip[3]);
       status->ip.gateway4 = pack_ip4(
-          lan->WIRELESS_GATEWAY0, lan->WIRELESS_GATEWAY1,
-          lan->WIRELESS_GATEWAY2, lan->WIRELESS_GATEWAY3);
+          netif.gateway4.ip[0], netif.gateway4.ip[1], netif.gateway4.ip[2], netif.gateway4.ip[3]);
     }
   }
 }
@@ -555,6 +565,45 @@ static int wifi_operation_begin(void) {
     return H2_PAL_ERR_BUSY;
   }
   return H2_PAL_OK;
+}
+
+int h2_jieli_wifi_netif_begin(h2_pal_netif_status_t *status, uint32_t *generation) {
+  int result = wifi_operation_begin();
+  if (result != H2_PAL_OK) return result;
+  memset(status, 0, sizeof(*status));
+  wifi_state_lock();
+  *generation = wifi_sta_generation;
+  status->kind = wifi_state.ap.state == H2_PAL_WIFI_AP_STATE_STARTED ||
+      wifi_state.ap.state == H2_PAL_WIFI_AP_STATE_STARTING
+      ? H2_PAL_NETIF_KIND_WIFI_AP : H2_PAL_NETIF_KIND_WIFI_STA;
+  status->ref.kind = status->kind;
+  status->ref.type = H2_PAL_NETIF_REF_NAME;
+  strcpy(status->ref.name, "wl0");
+  status->mtu = 1500u;
+  if (wifi_state.on) {
+    status->flags = H2_PAL_NETIF_FLAG_UP;
+    if (status->kind == H2_PAL_NETIF_KIND_WIFI_AP) {
+      if (wifi_state.ap.state == H2_PAL_WIFI_AP_STATE_STARTED) {
+        status->flags |= H2_PAL_NETIF_FLAG_LINK_UP | H2_PAL_NETIF_FLAG_HAS_IPV4;
+      }
+    } else {
+      if (wifi_state.sta.state == H2_PAL_WIFI_STA_STATE_CONNECTED ||
+          wifi_state.sta.state == H2_PAL_WIFI_STA_STATE_GOT_IP) {
+        status->flags |= H2_PAL_NETIF_FLAG_LINK_UP;
+      }
+      if (wifi_state.sta.ip_valid) status->flags |= H2_PAL_NETIF_FLAG_HAS_IPV4;
+    }
+  }
+  wifi_state_unlock();
+  return H2_PAL_OK;
+}
+
+int h2_jieli_wifi_netif_end(uint32_t generation) {
+  wifi_state_lock();
+  const int unchanged = generation == wifi_sta_generation;
+  wifi_state_unlock();
+  __atomic_store_n(&wifi_operation_busy, 0u, __ATOMIC_RELEASE);
+  return unchanged ? H2_PAL_OK : H2_PAL_ERR_BUSY;
 }
 
 static int guarded_sta_scan(void *user, const h2_pal_wifi_scan_request_t *request,
