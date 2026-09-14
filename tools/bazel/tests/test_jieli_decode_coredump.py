@@ -35,6 +35,14 @@ class RetainedLogTest(unittest.TestCase):
         self.assertEqual(head, len(text) % decoder.LOG_CAPACITY)
         self.assertEqual(total, len(text))
 
+    def test_loader_role_and_interrupted_write(self):
+        valid = bytearray(self.snapshot(b"loader"))
+        struct.pack_into("<I", valid, 0, decoder.RETAINED_LOG_MAGIC | 1)
+        self.assertEqual(decoder.decode_retained_log(valid)[0], b"loader")
+        struct.pack_into("<I", valid, 0, decoder.RETAINED_LOG_MAGIC | 0x80000001)
+        with self.assertRaises(ValueError):
+            decoder.decode_retained_log(valid)
+
     def test_empty_log(self):
         self.assertEqual(decoder.decode_retained_log(self.snapshot(b"")), (b"", 0, 0))
 

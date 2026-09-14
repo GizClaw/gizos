@@ -83,7 +83,7 @@ void h2_jieli_usb_cdc_rx_trace(uint32_t phase, uint32_t bytes) {
   if (phase == 4u) cdc_rx_bytes += bytes;
 }
 
-extern void h2_jieli_wl82_coredump_mark_loader(void);
+const uint32_t h2_jieli_wl82_coredump_loader_image = 1u;
 extern int h2_jieli_wl82_take_loader_crash_pending(void);
 extern int h2_jieli_wl82_coredump_flush_pending(void);
 
@@ -1036,14 +1036,9 @@ static void loader_task(void *private_data) {
 void app_main(void) {
   usb_tx_ready = 0;
   __atomic_store_n(&usb_debug_locked, 0, __ATOMIC_RELEASE);
-  const uint32_t reset_reason = (uint32_t)system_reset_reason_get();
-  /* A watchdog reset reaches the Loader only when the Loader was running: a
-   * crashing trial App resets into itself and then returns by software
-   * reset. Assert/exception records carry their originating image. */
-  crash_recovery_active =
-      (reset_reason & SYS_RST_WDT) != 0u ||
-      h2_jieli_wl82_take_loader_crash_pending();
-  h2_jieli_wl82_coredump_mark_loader();
+  /* The early retained record identifies the previous image, including a
+   * watchdog reset that crossed an App-to-Loader rollback boundary. */
+  crash_recovery_active = h2_jieli_wl82_take_loader_crash_pending();
   if (os_mutex_create(&usb_tx_mutex) != OS_NO_ERR) {
     puts("H2_JIELI_LOADER_ERROR step=usb_sync_create");
     return;

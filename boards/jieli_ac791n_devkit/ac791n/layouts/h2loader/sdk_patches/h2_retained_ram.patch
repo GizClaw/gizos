@@ -23,7 +23,7 @@ index d2de91d..d37e195 100644
      cache_ram(rw)       : ORIGIN =  0x1f20000+((8-FREE_IACHE_WAY)*4K), LENGTH = CACHE_RAM_SIZE
  }
  
-@@ -243,6 +246,17 @@ SECTIONS
+@@ -243,6 +246,18 @@ SECTIONS
      _MALLOC_SIZE = _HEAP_END - _HEAP_BEGIN;
      PROVIDE(MALLOC_SIZE = _HEAP_END - _HEAP_BEGIN);
  
@@ -33,6 +33,7 @@ index d2de91d..d37e195 100644
 +    . = ORIGIN(h2_retained);
 +    .h2_retained ALIGN(4) (NOLOAD):
 +    {
++        KEEP(*(.h2_retained.coredump))
 +        KEEP(*(.h2_retained))
 +        . = ALIGN(4);
 +    } > h2_retained
@@ -66,7 +67,7 @@ index 013d23a..20ce826 100644
      cache_ram(rw)       : ORIGIN =  0x1f20000+((8-FREE_IACHE_WAY)*4K), LENGTH = CACHE_RAM_SIZE
  }
  SECTIONS
-@@ -296,6 +299,15 @@ SECTIONS
+@@ -296,6 +299,16 @@ SECTIONS
      _RAM_MALLOC_SIZE = _RAM_HEAP_END - _RAM_HEAP_BEGIN;
      PROVIDE(RAM_MALLOC_SIZE = _RAM_HEAP_END - _RAM_HEAP_BEGIN);
  
@@ -74,6 +75,7 @@ index 013d23a..20ce826 100644
 +    . = ORIGIN(h2_retained);
 +    .h2_retained ALIGN(4) (NOLOAD):
 +    {
++        KEEP(*(.h2_retained.coredump))
 +        KEEP(*(.h2_retained))
 +        . = ALIGN(4);
 +    } > h2_retained

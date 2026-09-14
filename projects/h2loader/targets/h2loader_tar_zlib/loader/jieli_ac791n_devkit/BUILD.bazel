@@ -392,3 +392,67 @@ h2loader_tar_zlib(
     tags = ["no-release"],
     target = "wl82",
 )
+
+firmware_native_component(
+    name = "watchdog_trial",
+    srcs = ["src/watchdog_trial.c"],
+    component_name = "jieli_ac791n_devkit_watchdog_trial",
+    deps = ["//boards/ac791n_chip/ac791n"],
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+)
+
+h2loader_jieli_firmware(
+    name = "loader_watchdog_firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":loader_launcher",
+        ":watchdog_trial",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "loader-watchdog",
+    target = "wl82",
+    task_policy = ":loader_task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "loader_watchdog_package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":loader_watchdog_firmware",
+    image = "loader-watchdog",
+    role = "h2loader",
+    tags = ["no-release", "manual"],
+    target = "wl82",
+)
+
+firmware_native_component(
+    name = "app_watchdog_trial",
+    srcs = ["src/app_watchdog_trial.c"],
+    component_name = "jieli_ac791n_devkit_app_watchdog_trial",
+    deps = ["//boards/ac791n_chip/ac791n"],
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+)
+
+h2loader_jieli_firmware(
+    name = "app_watchdog_firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":app_watchdog_trial",
+        "//projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit:color_bar_launcher",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "app-watchdog",
+    target = "wl82",
+    task_policy = "//projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit:color_bar_task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "app_watchdog_package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":app_watchdog_firmware",
+    image = "app-watchdog",
+    role = "app",
+    tags = ["no-release", "manual"],
+    target = "wl82",
+)

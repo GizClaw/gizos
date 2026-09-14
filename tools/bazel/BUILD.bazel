@@ -410,6 +410,37 @@ py_test(
 )
 
 py_test(
+    name = "jieli_decode_coredump_test",
+    srcs = ["tests/test_jieli_decode_coredump.py"],
+    data = ["jieli_decode_coredump.py"],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_decode_coredump.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "jieli_coredump_concurrency_test",
+    srcs = ["tests/test_jieli_coredump_concurrency.py"],
+    data = [
+        "tests/fixtures/jieli_coredump_concurrency.c",
+        "//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:src/coredump.c",
+        "//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:src/jieli_warm_boot.c",
+        "//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:src/loader_launcher.c",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_coredump_concurrency.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
     name = "jieli_input_lifecycle_test",
     srcs = ["tests/test_jieli_input_lifecycle.py"],
     data = [

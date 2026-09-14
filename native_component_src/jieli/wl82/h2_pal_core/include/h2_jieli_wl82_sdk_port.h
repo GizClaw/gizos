@@ -24,6 +24,12 @@ extern "C" {
 typedef struct h2_jieli_sdk_mutex h2_jieli_sdk_mutex_t;
 typedef struct h2_jieli_sdk_sem h2_jieli_sdk_sem_t;
 
+/** Single-attempt hardware byte lock for exception-safe capture. Never spins.
+ * Storage must start at zero. Unlock publishes preceding writes. */
+int h2_jieli_sdk_try_lock_byte(volatile uint8_t *lock);
+void h2_jieli_sdk_unlock_byte(volatile uint8_t *lock);
+void h2_jieli_sdk_capture_barrier(void);
+
 /* ---- Memory (SDK heap) --------------------------------------------------- */
 
 void *h2_jieli_sdk_malloc(size_t size);

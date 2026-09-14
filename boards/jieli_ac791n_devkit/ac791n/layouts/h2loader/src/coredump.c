@@ -3,6 +3,8 @@
 #include "asm/system_reset_reason.h"
 #include "fs/fs.h"
 #include "h2_jieli_ac791n_devkit_partitions.h"
+#include "h2_jieli_wl82_sdk_port.h"
+#include "h2_jieli_wl82_atomic.h"
 #include "system/includes.h"
 #include "utils/fs/sdfile.h"
 
@@ -16,6 +18,8 @@
 #define H2_JIELI_CRASH_PENDING UINT32_C(0x48535243) /* CRSH */
 #define H2_JIELI_CRASH_ORIGIN_LOADER UINT32_C(0x5244414c) /* LADR */
 #define H2_JIELI_RETAINED_LOG_MAGIC UINT32_C(0x474f4c48) /* HLOG */
+#define H2_JIELI_RETAINED_LOG_LOADER UINT32_C(1)
+#define H2_JIELI_RETAINED_LOG_DIRTY UINT32_C(0x80000000)
 #define H2_JIELI_RETAINED_LOG_CAPACITY 2048u
 #define H2_JIELI_EXCEPTION_REASON UINT32_C(0x80000000)
 
@@ -60,18 +64,50 @@ struct h2_jieli_retained_log {
 };
 
 static uint32_t coredump_sdfile_addr SEC(.volatile_ram);
-static uint32_t coredump_sequence SEC(.h2_retained);
-static struct h2_jieli_coredump_record pending_record
-    SEC(.h2_retained);
-static volatile uint32_t crash_pending SEC(.h2_retained);
-/* Which image recorded crash_pending. running_loader is ordinary zeroed data,
- * so only the image that called h2_jieli_wl82_coredump_mark_loader() in this
- * boot can stamp the retained origin. */
-static volatile uint32_t crash_origin SEC(.h2_retained);
+/* One address-stable object: separate static globals are scalar-replaced and
+ * reordered by native LTO differently in Loader and App images. The linker
+ * places this input section first in the board-wide retained region. */
+struct h2_jieli_coredump_retained {
+  uint32_t sequence;
+  struct h2_jieli_coredump_record pending;
+  uint32_t crash_pending;
+  uint32_t crash_origin;
+  struct h2_jieli_retained_log log;
+};
+struct h2_jieli_coredump_retained h2_jieli_coredump_retained
+    SEC(.h2_retained.coredump) __attribute__((used));
+#define coredump_sequence h2_jieli_coredump_retained.sequence
+#define pending_record h2_jieli_coredump_retained.pending
+#define crash_pending h2_jieli_coredump_retained.crash_pending
+#define crash_origin h2_jieli_coredump_retained.crash_origin
+#define retained_log h2_jieli_coredump_retained.log
+_Static_assert(__builtin_offsetof(struct h2_jieli_coredump_retained, log) == 2108u,
+               "retained log offset changed");
+_Static_assert(sizeof(struct h2_jieli_coredump_retained) == 4168u,
+               "retained coredump size changed");
 static volatile uint32_t running_loader;
-static struct h2_jieli_retained_log retained_log SEC(.h2_retained);
+static volatile uint32_t capture_ready;
 static struct h2_jieli_coredump_record replay_record;
-static volatile uint8_t suppress_log_capture;
+static volatile uint32_t suppress_log_capture;
+static volatile uint8_t log_lock;
+static volatile uint8_t capture_lock;
+/* Defined only by the Loader component. Read once at early boot, before
+ * exception capture might run with flash unavailable. */
+extern const uint32_t h2_jieli_wl82_coredump_loader_image __attribute__((weak));
+
+static uint32_t h2_jieli_log_magic(void) SEC(.volatile_ram_code);
+static int h2_jieli_log_valid(void) SEC(.volatile_ram_code);
+
+static uint32_t h2_jieli_log_magic(void) {
+  return H2_JIELI_RETAINED_LOG_MAGIC |
+         (running_loader != 0u ? H2_JIELI_RETAINED_LOG_LOADER : 0u);
+}
+
+static int h2_jieli_log_valid(void) {
+  return (retained_log.magic & ~H2_JIELI_RETAINED_LOG_LOADER) ==
+             H2_JIELI_RETAINED_LOG_MAGIC &&
+         retained_log.head < sizeof(retained_log.data);
+}
 
 static uint32_t h2_jieli_checksum(
     const struct h2_jieli_coredump_record *record) SEC(.volatile_ram_code);
@@ -103,16 +139,23 @@ static int h2_jieli_record_valid(
 void h2_jieli_wl82_log_byte(char value) SEC(.volatile_ram_code);
 
 void h2_jieli_wl82_log_byte(char value) {
-  if (suppress_log_capture) return;
-  if (retained_log.magic != H2_JIELI_RETAINED_LOG_MAGIC ||
-      retained_log.head >= sizeof(retained_log.data)) {
-    retained_log.magic = H2_JIELI_RETAINED_LOG_MAGIC;
+  if (h2_jieli_atomic_load_u32(&capture_ready) == 0u ||
+      h2_jieli_atomic_load_u32(&suppress_log_capture) != 0u ||
+      !h2_jieli_sdk_try_lock_byte(&log_lock)) return;
+  if (!h2_jieli_log_valid()) {
     retained_log.head = 0u;
     retained_log.total = 0u;
   }
+  /* A watchdog can interrupt a write even though the next boot's BSS lock
+   * starts unlocked. Publish dirty first; never replay that partial ring. */
+  retained_log.magic = h2_jieli_log_magic() | H2_JIELI_RETAINED_LOG_DIRTY;
+  h2_jieli_sdk_capture_barrier();
   retained_log.data[retained_log.head] = (uint8_t)value;
   retained_log.head = (retained_log.head + 1u) % sizeof(retained_log.data);
-  ++retained_log.total;
+  if (retained_log.total != UINT32_MAX) ++retained_log.total;
+  h2_jieli_sdk_capture_barrier();
+  retained_log.magic = h2_jieli_log_magic();
+  h2_jieli_sdk_unlock_byte(&log_lock);
 }
 
 static void h2_jieli_build_record(
@@ -133,8 +176,8 @@ static void h2_jieli_build_record(
   record->boot_stage = h2_jieli_wl82_ram_marker.stage;
   record->caller = (uint32_t)(uintptr_t)caller;
   record->marker_result = (uint32_t)h2_jieli_wl82_ram_marker.result;
-  if (retained_log.magic == H2_JIELI_RETAINED_LOG_MAGIC &&
-      retained_log.head < sizeof(retained_log.data)) {
+  const int owns_log = h2_jieli_sdk_try_lock_byte(&log_lock);
+  if (owns_log && h2_jieli_log_valid()) {
     uint32_t available = retained_log.total < sizeof(retained_log.data)
                              ? retained_log.total
                              : (uint32_t)sizeof(retained_log.data);
@@ -148,11 +191,18 @@ static void h2_jieli_build_record(
           retained_log.data[(start + i) % sizeof(retained_log.data)];
     }
   }
-  record->committed = H2_JIELI_COREDUMP_COMMITTED;
   record->checksum = h2_jieli_checksum(record);
-  retained_log.magic = H2_JIELI_RETAINED_LOG_MAGIC;
-  retained_log.head = 0u;
-  retained_log.total = 0u;
+  h2_jieli_sdk_capture_barrier();
+  record->committed = H2_JIELI_COREDUMP_COMMITTED;
+  if (owns_log) {
+    retained_log.magic = h2_jieli_log_magic() | H2_JIELI_RETAINED_LOG_DIRTY;
+    h2_jieli_sdk_capture_barrier();
+    retained_log.head = 0u;
+    retained_log.total = 0u;
+    h2_jieli_sdk_capture_barrier();
+    retained_log.magic = h2_jieli_log_magic();
+    h2_jieli_sdk_unlock_byte(&log_lock);
+  }
 }
 
 /*
@@ -196,10 +246,12 @@ static int h2_jieli_write_record(
 void h2_jieli_wl82_assert_reset_hook(void *caller) SEC(.volatile_ram_code);
 
 void h2_jieli_wl82_assert_reset_hook(void *caller) {
+  if (!h2_jieli_sdk_try_lock_byte(&capture_lock)) return;
   crash_pending = H2_JIELI_CRASH_PENDING;
   crash_origin = running_loader != 0u ? H2_JIELI_CRASH_ORIGIN_LOADER : 0u;
   h2_jieli_build_record(
       &pending_record, H2_JIELI_EXCEPTION_REASON, caller);
+  h2_jieli_sdk_unlock_byte(&capture_lock);
   /* Exception context may have interrupts disabled or another core paused.
    * Persisting through the NOR driver here can therefore deadlock before the
    * reset.  The record lives in non-volatile RAM and coredump_init writes it
@@ -210,34 +262,69 @@ void h2_jieli_wl82_reset_recovery_hook(uint32_t reset_reason)
     SEC(.volatile_ram_code);
 
 void h2_jieli_wl82_reset_recovery_hook(uint32_t reset_reason) {
-  if ((reset_reason & SYS_RST_WDT) == 0u) return;
-  crash_pending = H2_JIELI_CRASH_PENDING;
-  h2_jieli_build_record(&pending_record, reset_reason, NULL);
+  /* setup_arch runs before the second core/tasks start. Decode the previous
+   * role before publishing this image's role into the existing magic word. */
+  const uint32_t previous_magic = retained_log.magic;
+  running_loader = &h2_jieli_wl82_coredump_loader_image != NULL &&
+                   h2_jieli_wl82_coredump_loader_image != 0u;
+  if ((reset_reason & SYS_RST_WDT) != 0u) {
+    crash_pending = H2_JIELI_CRASH_PENDING;
+    crash_origin =
+        (previous_magic & ~(H2_JIELI_RETAINED_LOG_DIRTY |
+                            H2_JIELI_RETAINED_LOG_LOADER)) ==
+                H2_JIELI_RETAINED_LOG_MAGIC &&
+            (previous_magic & H2_JIELI_RETAINED_LOG_LOADER) != 0u
+        ? H2_JIELI_CRASH_ORIGIN_LOADER : 0u;
+    h2_jieli_build_record(&pending_record, reset_reason, NULL);
+  }
+  if (!h2_jieli_log_valid()) {
+    retained_log.head = 0u;
+    retained_log.total = 0u;
+  }
+  retained_log.magic = h2_jieli_log_magic();
+  h2_jieli_sdk_capture_barrier();
+  h2_jieli_atomic_store_u32(&capture_ready, 1u);
 }
-
-void h2_jieli_wl82_coredump_mark_loader(void) { running_loader = 1u; }
 
 /* Consume the retained crash flag; report whether the Loader itself crashed.
  * An App crash reaches the Loader only through trial rollback and must not
  * put the Loader into its degraded recovery mode. */
 int h2_jieli_wl82_take_loader_crash_pending(void) {
-  const int pending = crash_pending == H2_JIELI_CRASH_PENDING &&
+  if (!h2_jieli_sdk_try_lock_byte(&capture_lock)) return 0;
+  const int pending = h2_jieli_record_valid(&pending_record) &&
+                      crash_pending == H2_JIELI_CRASH_PENDING &&
                       crash_origin == H2_JIELI_CRASH_ORIGIN_LOADER;
   crash_pending = 0u;
   crash_origin = 0u;
+  h2_jieli_sdk_unlock_byte(&capture_lock);
   return pending;
 }
 
 int h2_jieli_wl82_coredump_flush_pending(void) {
-  if (!h2_jieli_record_valid(&pending_record)) return 0;
-  if (h2_jieli_write_record(&pending_record) != 0) return -1;
+  struct h2_jieli_coredump_record snapshot;
+  struct h2_jieli_coredump_record verified;
+  if (!h2_jieli_sdk_try_lock_byte(&capture_lock)) return -1;
+  if (!h2_jieli_record_valid(&pending_record)) {
+    h2_jieli_sdk_unlock_byte(&capture_lock);
+    return 0;
+  }
+  memcpy(&snapshot, &pending_record, sizeof(snapshot));
+  h2_jieli_sdk_unlock_byte(&capture_lock);
+  /* Native flash calls run without either capture lock. A newer exception
+   * record remains pending if it arrives while this snapshot is persisted. */
+  if (h2_jieli_write_record(&snapshot) != 0) return -1;
   if (sdfile_reserve_zone_read(
-          &replay_record, coredump_sdfile_addr,
-          sizeof(replay_record), 0) != sizeof(replay_record) ||
-      !h2_jieli_record_valid(&replay_record)) {
+          &verified, coredump_sdfile_addr,
+          sizeof(verified), 0) != sizeof(verified) ||
+      !h2_jieli_record_valid(&verified) ||
+      memcmp(&snapshot, &verified, sizeof(snapshot)) != 0) {
     return -1;
   }
-  memset(&pending_record, 0, sizeof(pending_record));
+  if (!h2_jieli_sdk_try_lock_byte(&capture_lock)) return -1;
+  if (memcmp(&snapshot, &pending_record, sizeof(snapshot)) == 0) {
+    memset(&pending_record, 0, sizeof(pending_record));
+  }
+  h2_jieli_sdk_unlock_byte(&capture_lock);
   return 1;
 }
 
@@ -280,7 +367,7 @@ static int h2_jieli_coredump_init(void) {
           &replay_record, coredump_sdfile_addr,
           sizeof(replay_record), 0) == sizeof(replay_record) &&
       h2_jieli_record_valid(&replay_record)) {
-    suppress_log_capture = 1u;
+    h2_jieli_atomic_store_u32(&suppress_log_capture, 1u);
     printf(
         "H2_JIELI_COREDUMP_REPLAY sequence=%u reset_reason=0x%x "
         "boot_stage=%u caller=0x%x marker_result=%d log_bytes=%u "
@@ -297,7 +384,7 @@ static int h2_jieli_coredump_init(void) {
       put_buf(replay_record.log, (int)replay_record.log_bytes);
     }
     printf("\r\nH2_JIELI_COREDUMP_LOG_END\r\n");
-    suppress_log_capture = 0u;
+    h2_jieli_atomic_store_u32(&suppress_log_capture, 0u);
   }
   return 0;
 }

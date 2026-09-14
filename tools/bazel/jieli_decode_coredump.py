@@ -27,7 +27,7 @@ def decode_retained_log(data: bytes) -> tuple[bytes, int, int]:
     if len(data) != RETAINED_SIZE:
         raise ValueError(f"need {RETAINED_SIZE} bytes, got {len(data)}")
     magic, head, total = struct.unpack_from("<3I", data)
-    if magic != RETAINED_LOG_MAGIC or head >= LOG_CAPACITY:
+    if magic & ~1 != RETAINED_LOG_MAGIC or head >= LOG_CAPACITY:
         raise ValueError(f"invalid retained ring magic=0x{magic:08x} head={head}")
     available = min(total, LOG_CAPACITY)
     ring = data[RETAINED_HEADER_SIZE:]

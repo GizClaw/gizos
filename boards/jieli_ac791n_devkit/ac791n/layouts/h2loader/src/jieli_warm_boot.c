@@ -29,8 +29,8 @@
 
 #define SNAPSHOT_MAGIC UINT32_C(0x50414e53) /* "SNAP" */
 /* coredump.c's retained layout, identical in every H2Loader-layout image. */
-#define RAM_MARKER_ADDR UINT32_C(0x01c7dd4c)
-#define RETAINED_LOG_ADDR UINT32_C(0x01c7dd5c)
+#define RAM_MARKER_ADDR UINT32_C(0x01c7ed94)
+#define RETAINED_LOG_ADDR UINT32_C(0x01c7e588)
 #define RETAINED_LOG_CAPACITY 2048u
 #define IMAGE_ENTRY UINT32_C(0x02000120)
 #define FLASH_WINDOW UINT32_C(0x02000000)
@@ -80,7 +80,8 @@ void h2_jieli_warm_boot_report(void (*write)(const char *line)) {
       (unsigned)SNAPSHOT->log_magic, (unsigned)SNAPSHOT->log_head,
       (unsigned)SNAPSHOT->log_total);
   write(line);
-  if (SNAPSHOT->log_head >= RETAINED_LOG_CAPACITY) return;
+  if ((SNAPSHOT->log_magic & ~UINT32_C(1)) != UINT32_C(0x474f4c48) ||
+      SNAPSHOT->log_head >= RETAINED_LOG_CAPACITY) return;
   uint32_t available = SNAPSHOT->log_total < RETAINED_LOG_CAPACITY
                            ? SNAPSHOT->log_total
                            : RETAINED_LOG_CAPACITY;
