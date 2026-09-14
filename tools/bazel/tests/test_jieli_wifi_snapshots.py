@@ -12,7 +12,8 @@ ROOT = Path(__file__).resolve().parents[3]
 class WifiSnapshotsTest(unittest.TestCase):
     def test_snapshots(self):
         source = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c').read_text()
-        state = source[source.index('typedef struct h2_jieli_wifi_state'):source.index('enum { SCAN_IDLE')]
+        state_begin = source.index('enum { H2_JIELI_AP_STATION_SLOTS') if 'enum { H2_JIELI_AP_STATION_SLOTS' in source else source.index('typedef struct h2_jieli_wifi_state')
+        state = source[state_begin:source.index('enum { SCAN_IDLE')]
         posts = source[source.index('static void post_sta_event('):source.index('static uint32_t pack_ip4(')]
         event = source[source.index('static int wifi_event('):source.index('static int ensure_wifi_on(')]
         sta = source[source.index('static int sta_get_status('):source.index('static int sta_scan(')]
@@ -44,7 +45,7 @@ class WifiSnapshotsTest(unittest.TestCase):
                 '-I', str(ROOT / 'libs/pal/include'),
                 '-I', str(ROOT / 'native_component_src/jieli/wl82/h2_pal_core/include'),
                 str(unit), '-o', str(binary)], check=True)
-            for case in ['payload', 'readers', 'stale_refresh', 'ip_failure', 'ap_clients']:
+            for case in ['payload', 'readers', 'stale_refresh', 'ip_failure', 'ap_clients', 'ap_capacity']:
                 with self.subTest(case=case):
                     result = subprocess.run([str(binary), case], capture_output=True, text=True, timeout=15)
                     self.assertNotIn("WARNING: ThreadSanitizer", result.stderr, result.stdout + result.stderr)

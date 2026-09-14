@@ -20,7 +20,7 @@ class RequestLifetimeTest(unittest.TestCase):
             subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-pthread',
                 *os.environ.get('JIELI_TEST_CFLAGS', '').split(), '-I', str(ROOT / 'libs/pal/include'),
                 str(test), '-o', str(binary)], check=True)
-            for case in ['queued', 'submitting', 'registration_error', 'request_error', 'consumer_busy']:
+            for case in ['rearm_threaded', 'rearm_once', 'rearm_persistent', 'early_hook', 'queued', 'submitting', 'registration_error', 'request_error', 'consumer_busy']:
                 with self.subTest(case=case):
                     result = subprocess.run([str(binary), case], capture_output=True, text=True, timeout=15)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

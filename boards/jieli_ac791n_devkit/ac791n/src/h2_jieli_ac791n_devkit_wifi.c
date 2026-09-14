@@ -13,11 +13,21 @@
 
 #include <string.h>
 
+/* Pinned SDK eb04f196: wifi_get_sta_entry_rssi rejects WCID >= 5 and
+ * _MAC_TABLE.Content has five entries (wl_wifi{,_ap,_sfc}.a IR).
+ * wifi_app_timer_func's i < 8 is only a scan ceiling: it breaks on error.
+ * No station-slot constant is exported by the SDK's public Wi-Fi headers. */
+enum { H2_JIELI_AP_STATION_SLOTS = 5 };
+#ifdef MAX_LEN_OF_MAC_TABLE
+_Static_assert(H2_JIELI_AP_STATION_SLOTS == MAX_LEN_OF_MAC_TABLE,
+               "Recheck the SDK AP station-slot capacity");
+#endif
+
 typedef struct h2_jieli_wifi_state {
   int on;
   h2_pal_wifi_sta_status_t sta;
   h2_pal_wifi_ap_status_t ap;
-  h2_pal_wifi_ap_client_t ap_clients[5];
+  h2_pal_wifi_ap_client_t ap_clients[H2_JIELI_AP_STATION_SLOTS];
 } h2_jieli_wifi_state_t;
 
 static h2_jieli_wifi_state_t wifi_state;
@@ -221,7 +231,8 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
         ++index;
       }
       if (event == WIFI_EVENT_AP_ON_ASSOC) {
-        if (index == wifi_state.ap.client_count && index < 5u) {
+        /* SDK drift must not grow the owned cache or publish an uncached JOINED. */
+        if (index == wifi_state.ap.client_count && index < H2_JIELI_AP_STATION_SLOTS) {
           h2_pal_wifi_ap_client_t *client = &wifi_state.ap_clients[index];
           memset(client, 0, sizeof(*client));
           /* The SDK event owns six MAC bytes only. As with ESP's cached

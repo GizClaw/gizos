@@ -23,6 +23,7 @@ class HostLifecycleTest(unittest.TestCase):
         begin = source.index('struct h2_ext_adv_enable {')
         end = source.index('} __attribute__((packed));', begin) + len('} __attribute__((packed));')
         code = source[begin:end] + '\n'
+        code += function(source, 'static int h2_command_rearm(void) {')
         if 'static int h2_adv_stop_request(' in source:
             code += function(source, 'static int h2_adv_stop_request(')
         code += function(source, 'static int h2_adv_set_stop(void *user, h2_pal_ble_adv_set_t *set) {')
@@ -56,6 +57,8 @@ static int h2_att_write_retained(uint16_t c, uint16_t a, uint16_t t, uint16_t o,
         code = helpers + function(source, 'static int h2_ble_start(')
         code += function(source, 'static int h2_ble_stop(')
         code += function(source, 'void bt_ble_init(void)') + retained
+        code += 'static void h2_connection_command_consumed(void);\n'
+        code += function(source, 'static int h2_command_rearm(void) {')
         code += function(source, 'static void h2_connection_command_consumed(void) {')
         fixture = (ROOT / 'tools/bazel/tests/fixtures/jieli_ble_host_lifecycle.c').read_text()
         with tempfile.TemporaryDirectory() as directory:

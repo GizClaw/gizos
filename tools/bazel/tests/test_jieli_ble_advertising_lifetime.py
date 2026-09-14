@@ -27,8 +27,11 @@ class AdvertisingLifetimeTest(unittest.TestCase):
         code = source[begin:source.index('static int h2_ble_start(', begin)]
         begin = source.index('static int h2_adv_set_create(')
         code += source[begin:source.index('static int h2_register_gatt(', begin)]
+        code += function(source, 'static int h2_command_rearm(void) {')
         code += function(source, 'static void h2_connection_command_consumed(void) {')
         code += function(source, 'static void h2_restart_legacy_advertising(void) {')
+        code += function(source, 'static int h2_update_connection(')
+        code += function(source, 'static int h2_ble_stop(')
         fixture = (ROOT / 'tools/bazel/tests/fixtures/jieli_ble_advertising_lifetime.c').read_text()
         with tempfile.TemporaryDirectory() as directory:
             test = Path(directory) / 'test.c'
@@ -37,7 +40,7 @@ class AdvertisingLifetimeTest(unittest.TestCase):
             flags = os.environ.get('JIELI_TEST_CFLAGS', '-fsanitize=address').split()
             subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-pthread', *flags,
                 '-I', str(ROOT / 'libs/pal/include'), str(test), '-o', str(binary)], check=True)
-            for case in ['extended', 'legacy_borrow', 'failed_update', 'null_uuids', 'submitting', 'state_race', 'registration_error', 'fence_error', 'stop_error', 'deferred', 'pending_init']:
+            for case in ['shutdown_adv', 'shutdown_conn', 'rearm_natural', 'rearm_inline', 'rearm_apply_once', 'rearm_apply_persistent', 'rearm_stop_once', 'rearm_stop_persistent', 'rearm_restart_once', 'rearm_restart_persistent', 'early_hook', 'early_restart', 'stop_hook', 'extended', 'legacy_borrow', 'failed_update', 'null_uuids', 'submitting', 'state_race', 'registration_error', 'fence_error', 'stop_error', 'deferred', 'pending_init']:
                 with self.subTest(case=case):
                     result = subprocess.run([str(binary), case], capture_output=True, text=True, timeout=15,
                         env=dict(os.environ, ASAN_OPTIONS='detect_stack_use_after_return=1'))

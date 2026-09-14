@@ -7,9 +7,11 @@
 #include "h2/pal/hal/h2_pal_ble.h"
 struct conn_update_param_t { uint16_t interval_min, interval_max, latency, timeout; };
 static struct {
+    int stopping;
     uint16_t conn_handle;
     struct conn_update_param_t conn_params;
-    unsigned conn_pending, conn_submitting;
+    unsigned command_rearm_needed, command_rearm_active;
+    unsigned conn_pending, conn_submitting, conn_hook_skipped;
     uint32_t conn_generation;
 } h2_ble;
 static pthread_mutex_t gate = PTHREAD_MUTEX_INITIALIZER;
@@ -21,12 +23,23 @@ static int h2_ble_cmd_result(int value) { return value; }
 static void (*sdk_hook)(void);
 static const struct conn_update_param_t *borrowed;
 static atomic_int blocked, entered, release_call;
+static int fail_from, fail_persistent;
+static int early_hook, registrations;
 static int registration_error, request_error, idle = 1, requests;
 int ble_op_regist_thread_call(void (*hook)(void)) {
     check_unlocked();
     if (registration_error)
         return registration_error;
+    ++registrations;
+    if (fail_from && registrations >= fail_from &&
+        (fail_persistent || registrations == fail_from))
+        return H2_PAL_ERR_IO;
     sdk_hook = hook;
+    if (early_hook && registrations == 1) {
+        sdk_hook = NULL;
+        hook();
+        assert(h2_ble.conn_pending);
+    }
     return 0;
 }
 int ble_cmd_handler_is_idle(void) { check_unlocked(); return idle; }
@@ -63,12 +76,58 @@ static void consume(void) {
 }
 static void *submit(void *unused) {
     (void)unused;
-    assert(h2_update_connection(NULL, 42, &first) == 0);
+    assert(h2_update_connection(NULL, 42, &first) ==
+           (fail_from ? H2_PAL_ERR_IO : 0));
     return NULL;
 }
 int main(int argc, char **argv) {
     assert(argc == 2);
     h2_ble.conn_handle = 42;
+    if (strncmp(argv[1], "rearm_", 6) == 0) {
+        early_hook = 1;
+        fail_from = 2;
+        fail_persistent = strstr(argv[1], "persistent") != NULL;
+        if (strcmp(argv[1], "rearm_threaded") == 0) {
+            early_hook = 0;
+            pthread_t thread;
+            atomic_store(&blocked, 1);
+            assert(pthread_create(&thread, NULL, submit, NULL) == 0);
+            while (!atomic_load(&entered))
+                sched_yield();
+            void (*hook)(void) = sdk_hook;
+            sdk_hook = NULL;
+            assert(hook != NULL);
+            hook();
+            atomic_store(&release_call, 1);
+            assert(pthread_join(thread, NULL) == 0);
+        } else {
+            assert(h2_update_connection(NULL, 42, &first) == H2_PAL_ERR_IO);
+        }
+        assert(h2_ble.conn_pending && sdk_hook == NULL);
+        if (fail_persistent) {
+            assert(h2_update_connection(NULL, 42, &second) == H2_PAL_ERR_IO);
+            assert(h2_update_connection(NULL, 42, &second) == H2_PAL_ERR_IO);
+            assert(h2_ble.conn_pending && requests == 1);
+            fail_from = 0;
+        }
+        assert(h2_update_connection(NULL, 42, &second) == H2_PAL_ERR_WOULD_BLOCK);
+        assert(h2_ble.conn_pending && requests == 1);
+        consume();
+        sdk_hook = NULL;
+        assert(!h2_ble.conn_pending);
+        assert(h2_update_connection(NULL, 42, &second) == 0);
+        return 0;
+    }
+    if (strcmp(argv[1], "early_hook") == 0) {
+        early_hook = 1;
+        assert(h2_update_connection(NULL, 42, &first) == 0);
+        assert(h2_ble.conn_pending);
+        assert(registrations == 2 && sdk_hook != NULL);
+        consume();
+        assert(!h2_ble.conn_pending);
+        assert(h2_update_connection(NULL, 42, &second) == 0);
+        return 0;
+    }
     if (strcmp(argv[1], "registration_error") == 0) {
         registration_error = H2_PAL_ERR_IO;
         assert(h2_update_connection(NULL, 42, &first) == H2_PAL_ERR_IO);
