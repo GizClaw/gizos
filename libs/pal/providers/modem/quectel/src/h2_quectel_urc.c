@@ -157,6 +157,15 @@ void h2_quectel_handle_urc_locked(h2_quectel_modem_t *modem, const char *line) {
         return;
     }
 
+    if (strcmp(line, "+QIND: SMS DONE") == 0 ||
+        strcmp(line, "+QIND: PB DONE") == 0 || strcmp(line, "Call Ready") == 0) {
+        if (modem->sim_state != H2_PAL_MODEM_SIM_STATE_READY && !modem->sim_hint_seen) {
+            modem->sim_hint_seen = 1u;
+            modem->sim_query_pending = 1u;
+        }
+        return;
+    }
+
     if (strncmp(line, "+QSIMSTAT", 9u) == 0) {
         int enabled = -1;
         int inserted = -1;
@@ -166,6 +175,10 @@ void h2_quectel_handle_urc_locked(h2_quectel_modem_t *modem, const char *line) {
             return;
         }
         if (inserted == 0) {
+            if (modem->sim_presence != 2u) {
+                modem->sim_probe_ticks = 0u;
+                modem->sim_hint_seen = 0u;
+            }
             modem->sim_presence = 2u;
             modem->sim_poll_remaining = 0u;
             modem->sim_refresh_pending = 0u;
@@ -195,8 +208,12 @@ void h2_quectel_handle_urc_locked(h2_quectel_modem_t *modem, const char *line) {
         } else if (modem->sim_state == H2_PAL_MODEM_SIM_STATE_ABSENT) {
             state = H2_PAL_MODEM_SIM_STATE_ABSENT;
         }
-        /* A delayed readiness URC must not resurrect a physically removed SIM. */
-        if (modem->sim_presence == 2u) { return; }
+        /* CPIN is independent evidence when the insertion indication was lost. */
+        if (state == H2_PAL_MODEM_SIM_STATE_READY) {
+            modem->sim_presence = 1u;
+            modem->sim_probe_ticks = 0u;
+            modem->sim_query_pending = 0u;
+        } else if (modem->sim_presence == 2u) { return; }
         h2_quectel_sim_update(modem, state);
         return;
     }
@@ -345,6 +362,9 @@ void h2_quectel_handle_urc_locked(h2_quectel_modem_t *modem, const char *line) {
         modem->cell_locate_token_sent = 0u;
         modem->gnss_hold = 0u;
         modem->call_hold = 0u;
+        modem->sim_probe_ticks = 0u;
+        modem->sim_query_pending = 0u;
+        modem->sim_hint_seen = 0u;
         modem->sim_presence = 0u;
         modem->sim_poll_remaining = 0u;
         modem->sim_refresh_pending = 0u;
@@ -398,6 +418,10 @@ void h2_quectel_sim_update(h2_quectel_modem_t *modem, h2_pal_modem_sim_state_t s
 
 void h2_quectel_handle_urc_line(h2_quectel_modem_t *modem, const char *line) {
     if (!h2_quectel_is_urc(line, NULL) || h2_quectel_state_lock(modem) != H2_PAL_OK) {
+        return;
+    }
+    if (modem->transport_closed != 0u) {
+        h2_quectel_state_unlock(modem);
         return;
     }
     h2_quectel_handle_urc_locked(modem, line);

@@ -235,6 +235,16 @@ static h2_pal_result_t h2_quectel_modem_close_impl(h2_pal_modem_t *platform, uin
             return rc;
         }
     }
+    return h2_quectel_modem_transport_closed(modem);
+}
+
+h2_pal_result_t h2_quectel_modem_transport_closed(h2_quectel_modem_t *modem) {
+    if (modem == NULL) return H2_PAL_ERR_INVALID_ARG;
+    const h2_pal_result_t rc = h2_quectel_state_lock(modem);
+    if (rc != H2_PAL_OK) return rc;
+    modem->transport_closed = 1u;
+    modem->sim_restart_required = 0u;
+    modem->sim_restart_attempted = 0u;
     (void)h2_quectel_incoming_call_end(modem);
     modem->power_policy = H2_PAL_MODEM_POWER_POLICY_ACTIVE;
     modem->power_configured = 0u;
@@ -244,6 +254,9 @@ static h2_pal_result_t h2_quectel_modem_close_impl(h2_pal_modem_t *platform, uin
     modem->call_hold = 0u;
     modem->data_hold = 0u;
     modem->model_checked = 0u;
+    modem->sim_probe_ticks = 0u;
+    modem->sim_query_pending = 0u;
+    modem->sim_hint_seen = 0u;
     modem->sim_presence = 0u;
     modem->sim_poll_remaining = 0u;
     modem->sim_refresh_pending = 0u;
@@ -262,7 +275,10 @@ static h2_pal_result_t h2_quectel_modem_close_impl(h2_pal_modem_t *platform, uin
     /* The modem keeps the token only while it stays powered through this
      * instance, so the next open has to configure it again. */
     modem->cell_locate_token_sent = 0u;
-    return result;
+    modem->sim_generation++;
+    memset(&modem->observed_status, 0, sizeof(modem->observed_status));
+    h2_quectel_state_unlock(modem);
+    return H2_PAL_OK;
 }
 
 h2_quectel_modem_t *h2_quectel_from_platform(h2_pal_modem_t *platform) {

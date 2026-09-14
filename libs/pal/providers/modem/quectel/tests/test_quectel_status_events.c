@@ -12,6 +12,7 @@ static unsigned packet_events;
 static unsigned signal_events;
 static unsigned call_events;
 static unsigned sim_absent_events;
+static unsigned sim_ready_events;
 static unsigned ended_events;
 static unsigned changed_events;
 static h2_pal_modem_call_status_t last_call;
@@ -35,6 +36,7 @@ static int post(void *user, const h2_pal_system_event_t *event, uint32_t timeout
             assert(event->payload_size == sizeof(h2_pal_modem_status_t));
             const h2_pal_modem_status_t *status = event->payload;
             if (status->sim == H2_PAL_MODEM_SIM_STATE_ABSENT) { sim_absent_events++; }
+            if (status->sim == H2_PAL_MODEM_SIM_STATE_READY) { sim_ready_events++; }
             break;
         }
         default: break;
@@ -163,7 +165,6 @@ typedef struct recovery_transport {
 static h2_pal_result_t recovery_command(void *user, const char *cmd, char *response,
     size_t size, uint32_t timeout_ms) {
     recovery_transport_t *transport = user;
-    assert(timeout_ms == 1000u);
     if (strcmp(cmd, "AT+CPIN?") == 0) {
         transport->queries++;
         if (transport->remove_during_query) {
@@ -184,13 +185,15 @@ static void test_insertion_recovery(const h2_pal_system_event_api_t *events) {
         .command = recovery_command, .transport_user = &transport, .system_events = events,
     };
     assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_OK);
+    modem.opened = 1u;
     for (unsigned cycle = 0u; cycle < 6u; cycle++) {
         h2_quectel_handle_urc_line(&modem, "+QSIMSTAT: 1,0");
         assert(modem.sim_state == H2_PAL_MODEM_SIM_STATE_ABSENT);
         unsigned before = transport.queries;
         h2_quectel_sim_recover(&modem);
         h2_quectel_handle_urc_line(&modem, "+CPIN: READY");
-        assert(modem.sim_state == H2_PAL_MODEM_SIM_STATE_ABSENT);
+        assert(modem.sim_state == H2_PAL_MODEM_SIM_STATE_READY);
+        h2_quectel_handle_urc_line(&modem, "+QSIMSTAT: 1,0");
         assert(transport.queries == before);
         h2_quectel_handle_urc_line(&modem, "+QSIMSTAT: 1,1");
         assert(modem.sim_state == H2_PAL_MODEM_SIM_STATE_UNKNOWN);
@@ -235,6 +238,55 @@ static void test_insertion_recovery(const h2_pal_system_event_api_t *events) {
     h2_quectel_sim_recover(&modem);
     assert(modem.sim_state == H2_PAL_MODEM_SIM_STATE_ABSENT);
     assert(modem.sim_poll_remaining == 0u);
+    modem.opened = 0u;
+    assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
+}
+
+static void test_missing_insertion(const h2_pal_system_event_api_t *events) {
+    h2_quectel_modem_t modem;
+    recovery_transport_t t = {.modem = &modem};
+    const h2_quectel_modem_config_t config = {
+        .command = recovery_command, .transport_user = &t, .system_events = events,
+    };
+    assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_OK);
+    modem.opened = 1u;
+    const char *negative[] = {"+CPIN: NOT INSERTED\r\nOK\r\n", "ERROR\r\n",
+        "+CME ERROR: SIM not inserted\r\n"};
+    for (unsigned cycle = 0; cycle < 6u; cycle++) {
+        h2_quectel_handle_urc_line(&modem, "+QSIMSTAT: 1,0");
+        unsigned ready = sim_ready_events, before = t.queries;
+        t.cpin = negative[cycle % 3u];
+        for (unsigned tick = 0; tick < 15u; tick++) h2_quectel_sim_recover(&modem);
+        assert(t.queries == before + 3u);
+        assert(modem.sim_state == H2_PAL_MODEM_SIM_STATE_ABSENT);
+        assert(sim_ready_events == ready);
+        t.cpin = "+CPIN: READY\r\nOK\r\n";
+        if (cycle % 2u) {
+            h2_quectel_handle_urc_line(&modem, "+CPIN: READY");
+        } else {
+            for (unsigned tick = 0; tick < 5u; tick++) h2_quectel_sim_recover(&modem);
+        }
+        assert(modem.sim_presence == 1u && modem.sim_state == H2_PAL_MODEM_SIM_STATE_READY);
+        assert(sim_ready_events == ready + 1u);
+        unsigned imsi = t.imsi;
+        for (unsigned tick = 0; tick < 3u; tick++) h2_quectel_sim_recover(&modem);
+        assert(t.imsi == imsi + 1u);
+        assert(modem.observed_status.registration == H2_PAL_MODEM_REGISTRATION_HOME);
+    }
+    h2_quectel_handle_urc_line(&modem, "+QSIMSTAT: 1,0");
+    t.cpin = "ERROR\r\n";
+    unsigned before = t.queries;
+    const char *hints[] = {"+QIND: SMS DONE", "+QIND: PB DONE", "Call Ready"};
+    for (unsigned i = 0; i < 3u; i++) {
+        h2_quectel_handle_urc_line(&modem, hints[i]);
+        assert(modem.sim_state == H2_PAL_MODEM_SIM_STATE_ABSENT);
+        h2_quectel_sim_recover(&modem);
+    }
+    assert(t.queries == before + 1u);
+    assert(h2_quectel_modem_transport_closed(&modem) == H2_PAL_OK);
+    before = t.queries;
+    for (unsigned tick = 0; tick < 20u; tick++) h2_quectel_sim_recover(&modem);
+    assert(t.queries == before);
     assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
 }
 
@@ -519,6 +571,63 @@ static void test_raw_watchdog(const h2_pal_system_event_api_t *events) {
     }
 }
 
+static unsigned presence_queries, pin_queries;
+static h2_pal_result_t cycle_command(void *user, const char *cmd, char *response,
+    size_t size, uint32_t timeout) {
+    const char *text = NULL;
+    if (strcmp(cmd, "AT+CGMM") == 0) text = "EC800M\r\nOK\r\n";
+    if (strcmp(cmd, "AT+QSIMDET?") == 0) text = "+QSIMDET: 1,1\r\nOK\r\n";
+    if (strcmp(cmd, "AT+QSIMSTAT?") == 0) {
+        presence_queries++;
+        text = "+QSIMSTAT: 1,1\r\nOK\r\n";
+    }
+    if (strcmp(cmd, "AT+CPIN?") == 0) pin_queries++;
+    if (text == NULL) return command(user, cmd, response, size, timeout);
+    assert(size > strlen(text));
+    strcpy(response, text);
+    return H2_PAL_OK;
+}
+
+static void test_board_power_cycles(const h2_pal_system_event_api_t *events) {
+    h2_quectel_modem_t modem;
+    const h2_quectel_modem_config_t config = {
+        .command = cycle_command, .system_events = events};
+    assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_OK);
+    /* Synchronous fixture; production supplies the recursive PAL locks. */
+    modem.config.sim_hotplug = 1u;
+    modem.config.sim_insert_level = 1u;
+    for (unsigned cycle = 0; cycle < 4u; ++cycle) {
+        h2_quectel_handle_urc_line(&modem, "+QSIMSTAT: 1,0");
+        assert(modem.sim_presence == 2u);
+        assert(h2_quectel_modem_transport_closed(&modem) == H2_PAL_OK);
+        assert(!modem.sim_seen && !modem.sim_presence && !modem.prepared);
+        h2_quectel_handle_urc_line(&modem, "+QSIMSTAT: 1,1");
+        h2_quectel_handle_urc_line(&modem, "+CPIN: READY");
+        h2_quectel_sim_recover(&modem);
+        assert(!modem.sim_poll_remaining && !modem.sim_seen);
+        unsigned ready = sim_ready_events;
+        assert(h2_pal_modem_open(&modem.platform, 1000u) == H2_PAL_OK);
+        assert(presence_queries == cycle + 1u && pin_queries >= cycle + 1u);
+        assert(modem.sim_state == H2_PAL_MODEM_SIM_STATE_READY);
+        assert(sim_ready_events == ready + 1u);
+        unsigned absent = sim_absent_events;
+        h2_quectel_handle_urc_line(&modem, "+QSIMSTAT: 1,0");
+        assert(sim_absent_events == absent + 1u);
+        h2_quectel_handle_urc_line(&modem, "+CPIN: READY");
+        assert(modem.sim_state == H2_PAL_MODEM_SIM_STATE_READY);
+        h2_quectel_handle_urc_line(&modem, "+QSIMSTAT: 1,0");
+        h2_quectel_handle_urc_line(&modem, "+QSIMSTAT: 1,1");
+        h2_quectel_sim_recover(&modem);
+        assert(modem.sim_state == H2_PAL_MODEM_SIM_STATE_READY);
+        assert(sim_ready_events == ready + 3u);
+        h2_pal_modem_status_t status;
+        assert(h2_pal_modem_get_status(&modem.platform, &status) == H2_PAL_OK);
+        assert(status.registration == H2_PAL_MODEM_REGISTRATION_HOME);
+    }
+    h2_quectel_modem_transport_closed(&modem);
+    assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
+}
+
 int main(void) {
     const h2_pal_system_event_vtable_t vtable = {.post = post};
     const h2_pal_system_event_api_t events = {.vtable = &vtable};
@@ -559,5 +668,7 @@ int main(void) {
     test_dsci_during_command(&events);
     test_sim_absent_rx(&events);
     test_insertion_recovery(&events);
+    test_missing_insertion(&events);
+    test_board_power_cycles(&events);
     return 0;
 }

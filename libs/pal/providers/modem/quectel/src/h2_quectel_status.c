@@ -54,6 +54,7 @@ static h2_pal_result_t h2_quectel_modem_prepare_impl(h2_quectel_modem_t *modem) 
     if (modem->prepared != 0u) {
         return H2_PAL_OK;
     }
+    modem->transport_closed = 0u;
     const uint32_t reset_generation = modem->reset_generation;
     h2_pal_result_t rc = h2_quectel_at_exchange(modem, "AT", NULL, 0);
     if (rc != H2_PAL_OK) {
@@ -85,6 +86,17 @@ static h2_pal_result_t h2_quectel_modem_prepare_impl(h2_quectel_modem_t *modem) 
     }
     if (reset_generation != modem->reset_generation) {
         return H2_PAL_ERR_INVALID_STATE;
+    }
+    if (modem->config.sim_hotplug != 0u) {
+        /* Boot notifications may precede UART routing. Reconcile every session. */
+        h2_quectel_response_t response;
+        if (h2_quectel_at_exchange(modem, "AT+QSIMSTAT?", &response, 0) == H2_PAL_OK) {
+            const char *line = h2_quectel_response_find(&response, "+QSIMSTAT:");
+            if (line != NULL) h2_quectel_handle_urc_locked(modem, line);
+        }
+        if (modem->sim_presence != 2u) modem->sim_poll_remaining = 30u;
+        (void)h2_quectel_at_exchange(modem, "AT+CPIN?", &response, 0);
+        if (reset_generation != modem->reset_generation) return H2_PAL_ERR_INVALID_STATE;
     }
     modem->prepared = 1u;
     h2_quectel_post_system_event(
@@ -403,7 +415,18 @@ h2_pal_result_t h2_quectel_modem_get_signal(
 void h2_quectel_sim_recover(void *user) {
     h2_quectel_modem_t *modem = user;
     if (h2_quectel_state_lock(modem) != H2_PAL_OK) { return; }
-    const int pending = modem->sim_poll_remaining != 0u || modem->sim_refresh_pending != 0u;
+    if (modem->transport_closed || !modem->opened) {
+        h2_quectel_state_unlock(modem);
+        return;
+    }
+    if (modem->sim_state == H2_PAL_MODEM_SIM_STATE_ABSENT &&
+        ++modem->sim_probe_ticks >= (5000u + H2_QUECTEL_RING_POLL_INTERVAL_MS - 1u) /
+            H2_QUECTEL_RING_POLL_INTERVAL_MS) {
+        modem->sim_query_pending = 1u;
+        modem->sim_probe_ticks = 0u;
+    }
+    const int pending = modem->sim_poll_remaining != 0u || modem->sim_refresh_pending != 0u ||
+        modem->sim_query_pending != 0u;
     h2_quectel_state_unlock(modem);
     if (!pending) { return; }
     if (modem->operation_lock != NULL &&
@@ -413,15 +436,17 @@ void h2_quectel_sim_recover(void *user) {
         (void)h2_pal_mutex_unlock(modem->config.sync_api, modem->operation_lock);
     }
     if (rc != H2_PAL_OK) { return; }
-    if (modem->sim_presence == 2u ||
-        (modem->sim_poll_remaining == 0u && modem->sim_refresh_pending == 0u)) {
+    if (modem->transport_closed || !modem->opened ||
+        (modem->sim_poll_remaining == 0u && modem->sim_refresh_pending == 0u &&
+         modem->sim_query_pending == 0u)) {
         (void)h2_quectel_operation_end(modem, H2_PAL_OK);
         return;
     }
     h2_quectel_response_t *response = &modem->maintenance_response;
     if (modem->sim_state != H2_PAL_MODEM_SIM_STATE_READY) {
-        if (modem->sim_poll_remaining != 0u) {
-            modem->sim_poll_remaining--;
+        if (modem->sim_poll_remaining != 0u || modem->sim_query_pending != 0u) {
+            modem->sim_query_pending = 0u;
+            if (modem->sim_poll_remaining != 0u) modem->sim_poll_remaining--;
             (void)h2_quectel_at_exchange_timeout(modem, "AT+CPIN?", response, 0, 1000u);
         }
     } else if (modem->sim_refresh_pending == 1u) {

@@ -186,11 +186,17 @@ struct h2_quectel_modem {
     /* Deferred insertion recovery; protected by the provider state lock. */
     uint8_t sim_poll_remaining;
     uint8_t sim_refresh_pending;
+    /* One bounded CPIN query per ~5 seconds of worker idle while ABSENT.
+     * Readiness hints coalesce to one query per removal; only CPIN proves READY. */
+    uint32_t sim_probe_ticks;
+    uint8_t sim_query_pending;
+    uint8_t sim_hint_seen;
     uint8_t sim_presence; /* 0 unknown, 1 inserted, 2 removed */
     uint8_t sim_seen;
     h2_pal_modem_sim_state_t sim_state;
     uint8_t prepared;
     uint8_t opened;
+    uint8_t transport_closed;
     uint8_t cell_locate_token_sent;
     uint32_t capabilities;
     /* Optional DSCI configuration is volatile; ERROR is latched per instance. */
@@ -224,6 +230,15 @@ h2_pal_result_t h2_quectel_modem_init(
  * stops the URC worker outside the provider lock, then releases resources.
  * On failure retain the instance and retry; never free it before success. */
 h2_pal_result_t h2_quectel_modem_deinit(h2_quectel_modem_t *modem);
+
+/** @brief Reset observations after board-owned transport shutdown and power-off.
+ * @param modem Provider instance; NULL returns INVALID_ARG.
+ * The caller holds the operation lock and has stopped all RX producers.
+ * Keeps the provider worker alive, ignoring late notifications until prepare.
+ * @return OK on reset, or the state-lock error. No callbacks may reenter here.
+ */
+h2_pal_result_t h2_quectel_modem_transport_closed(h2_quectel_modem_t *modem);
+
 h2_pal_modem_t *h2_quectel_modem_platform(h2_quectel_modem_t *modem);
 h2_pal_result_t h2_quectel_modem_set_apn(
     h2_pal_modem_t *platform,

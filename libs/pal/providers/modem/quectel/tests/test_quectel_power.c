@@ -357,9 +357,8 @@ static void test_startup_sim_edges_during_prepare(void) {
                 assert(f.modem.sim_generation > generation);
                 assert(f.last_sim == H2_PAL_MODEM_SIM_STATE_READY);
             } else if (j == 2u) {
-                /* Opening the command channel is valid without a SIM; data
-                 * operations must still reject the genuinely absent card. */
-                assert(h2_quectel_modem_dial_ppp(&f.modem) == H2_PAL_ERR_INVALID_STATE);
+                /* The prepare CPIN query independently confirms reinsertion. */
+                assert(f.last_sim == H2_PAL_MODEM_SIM_STATE_READY);
             }
             finish(&f);
         }
