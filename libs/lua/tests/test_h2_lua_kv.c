@@ -576,6 +576,23 @@ static void test_format(h2_runtime_t *runtime) {
               "assert(k.set('x',false)==nil); assert(k.remove('x')==nil); "
               "return 'ok'");
   }
+  /* A well-formed future-version snapshot must not be mistaken for corrupt
+   * v1 data, an empty store, or a value which mutations may overwrite. */
+  memcpy(e->data, good, sizeof(good));
+  e->data[4] = 2;
+  fixture_seal(e);
+  uint8_t future[sizeof(good)];
+  memcpy(future, e->data, sizeof(future));
+  expect_ok(
+      host, "game",
+      "local k=require('kv');"
+      "for _,op in ipairs({k.get,k.exists,k.keys,k.remove}) do "
+      "local v,e=op('x');assert(v==nil and e=='kv: unsupported version',e) end;"
+      "local v,e=k.set('x',false);"
+      "assert(v==nil and e=='kv: unsupported version',e);return 'ok'");
+  e = fake_find("/data/lua/game/.kv");
+  assert(e != NULL && e->size == sizeof(future) &&
+         memcmp(e->data, future, sizeof(future)) == 0);
   for (size_t n = 0; n < sizeof(good); ++n) {
     memcpy(e->data, good, sizeof(good));
     e->size = n;
