@@ -2,6 +2,17 @@
 #include <math.h>
 #include <stdalign.h>
 #include <string.h>
+/* Match the fundamental alignment used by caller-owned allocation storage.
+ * MSVC's C headers omit max_align_t, as in the existing app_test allocator. */
+typedef union storage_alignment {
+#if defined(_MSC_VER) && !defined(__clang__)
+  long double floating;
+  long long integer;
+  void *pointer;
+#else
+  max_align_t value;
+#endif
+} storage_alignment_t;
 #define VALID 0x534b3244u
 #define PI 3.14159265358979323846
 struct h2_skeleton2d_definition {
@@ -19,7 +30,7 @@ struct h2_skeleton2d {
   size_t count;
 };
 static size_t aligned(size_t n) {
-  size_t a = alignof(max_align_t);
+  size_t a = alignof(storage_alignment_t);
   return (n + a - 1) / a * a;
 }
 static int number(double v) { return isfinite(v) && fabs(v) <= 1e6; }
@@ -91,6 +102,29 @@ h2_pal_result_t h2_skeleton2d_definition_size(const h2_skeleton2d_config_t *c,
          aligned(nk * sizeof(h2_skeleton2d_key_t));
   return H2_PAL_OK;
 }
+static int overlaps(const void *a, size_t an, const void *b, size_t bn) {
+  uintptr_t x = (uintptr_t)a, y = (uintptr_t)b;
+  return an && bn && (x <= y ? y - x < an : x - y < bn);
+}
+static int config_overlaps(const void *mem, size_t bytes,
+                           const h2_skeleton2d_config_t *c) {
+  if (overlaps(mem, bytes, c, sizeof(*c)) ||
+      overlaps(mem, bytes, c->bones, c->bone_count * sizeof(*c->bones)) ||
+      overlaps(mem, bytes, c->parts, c->part_count * sizeof(*c->parts)) ||
+      overlaps(mem, bytes, c->clips, c->clip_count * sizeof(*c->clips)))
+    return 1;
+  for (size_t i = 0; i < c->clip_count; ++i) {
+    const h2_skeleton2d_clip_t *clip = &c->clips[i];
+    if (overlaps(mem, bytes, clip->tracks,
+                 clip->track_count * sizeof(*clip->tracks)))
+      return 1;
+    for (size_t j = 0; j < clip->track_count; ++j)
+      if (overlaps(mem, bytes, clip->tracks[j].keys,
+                   clip->tracks[j].key_count * sizeof(*clip->tracks[j].keys)))
+        return 1;
+  }
+  return 0;
+}
 static void *take(unsigned char **p, size_t n) {
   void *r = *p;
   *p += aligned(n);
@@ -107,10 +141,12 @@ h2_skeleton2d_definition_init(void *mem, size_t bytes,
   h2_pal_result_t r = h2_skeleton2d_definition_size(c, &need);
   if (r)
     return r;
-  if (!mem || (uintptr_t)mem % alignof(max_align_t))
+  if (!mem || (uintptr_t)mem % alignof(storage_alignment_t))
     return H2_PAL_ERR_INVALID_ARG;
   if (bytes < need)
     return H2_PAL_ERR_NO_SPACE;
+  if (config_overlaps(mem, need, c))
+    return H2_PAL_ERR_INVALID_ARG;
   validate(c, &nt, &nk);
   unsigned char *p = mem;
   h2_skeleton2d_definition_t *d = take(&p, sizeof(*d));
@@ -166,10 +202,12 @@ h2_pal_result_t h2_skeleton2d_instance_init(void *mem, size_t bytes,
   h2_pal_result_t r = h2_skeleton2d_instance_size(d, &need);
   if (r)
     return r;
-  if (!mem || (uintptr_t)mem % alignof(max_align_t))
+  if (!mem || (uintptr_t)mem % alignof(storage_alignment_t))
     return H2_PAL_ERR_INVALID_ARG;
   if (bytes < need)
     return H2_PAL_ERR_NO_SPACE;
+  if (overlaps(mem, need, d, sizeof(*d)) || config_overlaps(mem, need, &d->c))
+    return H2_PAL_ERR_INVALID_ARG;
   unsigned char *p = mem;
   h2_skeleton2d_t *s = take(&p, sizeof(*s));
   memset(s, 0, sizeof(*s));

@@ -107,7 +107,10 @@ typedef struct h2_skeleton2d_view {
 } h2_skeleton2d_view_t;
 /** Queries clear out_bytes on error. Init clears out handle on failure.
  * Invalid input -> INVALID_ARG; insufficient storage -> NO_SPACE. Storage must
- * be fresh or deinitialized; overwriting a live object is not supported. */
+ * be fresh or deinitialized; overwriting a live object is not supported.
+ * Destination storage must not overlap configuration, source arrays or the
+ * borrowed definition; such overlap returns INVALID_ARG before storage writes.
+ * Output handles must reside outside input objects and destination storage. */
 h2_pal_result_t h2_skeleton2d_definition_size(const h2_skeleton2d_config_t *,
                                               size_t *out_bytes);
 h2_pal_result_t

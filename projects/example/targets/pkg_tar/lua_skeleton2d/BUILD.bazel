@@ -162,3 +162,16 @@ web_archive_browser_test(
     ],
     clicks = [["SKELETON controls DEBUG PASS", "#stop"]],
 )
+
+# Exercise every supported grid value and the wrap back to unsnapped drawing.
+web_archive_browser_test(
+    name = "grid_browser_test",
+    archive = ":lua_skeleton2d",
+    passes = ["SKELETON INPUT .*grid=16 .*step=16;", "SKELETON INPUT .*grid=0 .*step=17;", "H2_WEB_APP name=lua_skeleton2d result=PASS"],
+    taps = [["SKELETON FRAME initial", 168, 230]] + [
+        ["SKELETON INPUT .*grid=%d .*step=%d;" % (i, i), 168, 230]
+        for i in range(1, 17)
+    ],
+    clicks = [["SKELETON INPUT .*grid=0 .*step=17;", "#stop"]],
+    timeout_s = 90,
+)

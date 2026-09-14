@@ -16,7 +16,14 @@ typedef union handle {
     h2_skeleton2d_part_state_t *parts;
     size_t nb, np;
   } v;
+#if defined(_MSC_VER) && !defined(__clang__)
+  /* Match the core's caller-storage alignment on MSVC. */
+  long double align;
+  long long integer_alignment;
+  void *pointer_alignment;
+#else
   max_align_t align;
+#endif
 } handle_t;
 typedef struct resource {
   size_t nv, np;

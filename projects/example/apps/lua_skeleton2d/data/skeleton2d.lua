@@ -445,7 +445,7 @@ while true do
    if x<48 then mix=(math.floor(mix*10+.5)+2)%12/10
    elseif x<96 then speed=speed==1 and .5 or speed==.5 and 2 or 1
    elseif x<144 then flip=not flip
-   elseif x<192 then grid=(grid+1)%5
+   elseif x<192 then grid=(grid+1)%17
    else benchmark() end
   end
   changed=true

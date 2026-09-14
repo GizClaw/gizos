@@ -10,6 +10,54 @@
 #define OK(x) assert((x) == H2_PAL_OK)
 static const double identity[] = {1, 0, 0, 1, 0, 0};
 static void near(double a, double b) { assert(fabs(a - b) < 1e-9); }
+static void overlapping_storage_cases(void) {
+  h2_skeleton2d_bone_t bone = {SIZE_MAX, {0, 0, 0, 1, 1}};
+  h2_skeleton2d_part_t part = {0, {0, 0, 0, 1, 1}, 0, 0, 1};
+  h2_skeleton2d_key_t key = {0, 1};
+  h2_skeleton2d_track_t track = {0, 0, 1, 0, &key, 1};
+  h2_skeleton2d_clip_t clip = {1, &track, 1};
+  h2_skeleton2d_config_t original = {&bone, 1, &part, 1, &clip, 1};
+  size_t bytes;
+  OK(h2_skeleton2d_definition_size(&original, &bytes));
+  unsigned char *mem = malloc(bytes), *snapshot = malloc(bytes);
+  assert(mem && snapshot);
+  for (int which = 0; which < 6; ++which) {
+    h2_skeleton2d_config_t cfg = original;
+    h2_skeleton2d_clip_t cl = clip;
+    h2_skeleton2d_track_t tr = track;
+    const h2_skeleton2d_config_t *input = &cfg;
+    memset(mem, 0, bytes);
+    switch (which) {
+    case 0: memcpy(mem, &cfg, sizeof(cfg)); input = (void *)mem; break;
+    case 1: memcpy(mem, &bone, sizeof(bone)); cfg.bones = (void *)mem; break;
+    case 2: memcpy(mem, &part, sizeof(part)); cfg.parts = (void *)mem; break;
+    case 3: memcpy(mem, &clip, sizeof(clip)); cfg.clips = (void *)mem; break;
+    case 4:
+      memcpy(mem, &track, sizeof(track)); cl.tracks = (void *)mem;
+      cfg.clips = &cl; break;
+    default:
+      memcpy(mem, &key, sizeof(key)); tr.keys = (void *)mem;
+      cl.tracks = &tr; cfg.clips = &cl; break;
+    }
+    memcpy(snapshot, mem, bytes);
+    h2_skeleton2d_definition_t *out = NULL;
+    assert(h2_skeleton2d_definition_init(mem, bytes, input, &out) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(!out && !memcmp(mem, snapshot, bytes));
+  }
+  h2_skeleton2d_definition_t *definition;
+  OK(h2_skeleton2d_definition_init(mem, bytes, &original, &definition));
+  size_t instance_bytes;
+  OK(h2_skeleton2d_instance_size(definition, &instance_bytes));
+  memcpy(snapshot, mem, bytes);
+  h2_skeleton2d_t *actor = NULL;
+  assert(h2_skeleton2d_instance_init(mem, instance_bytes, definition, &actor) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(!actor && !memcmp(mem, snapshot, bytes));
+  h2_skeleton2d_definition_deinit(definition);
+  free(snapshot);
+  free(mem);
+}
 static void capacity_and_order_cases(void) {
   h2_skeleton2d_bone_t bones[128];
   h2_skeleton2d_part_t parts[257];
@@ -123,6 +171,7 @@ static void capacity_and_order_cases(void) {
   free(dm);
 }
 int main(void) {
+  overlapping_storage_cases();
   capacity_and_order_cases();
   h2_skeleton2d_bone_t bones[] = {{SIZE_MAX, {10, 20, 0, 2, 1}},
                                   {0, {5, 0, 1.5707963267948966, 1, 1}}};
