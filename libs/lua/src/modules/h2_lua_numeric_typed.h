@@ -8,19 +8,20 @@
 #undef NUM_TINY_SQUARED
 #undef NUM_DATA
 #if H2_NUMERIC_F32
+#define NUM_DATA(b) ((b)->data.f32)
 #define NUM_REAL float
 #define NUM_NAME(name) name##_f32
 #define NUM_MATH(name) name##f
 #define NUM_C(value) value##f
 #define NUM_TINY_SQUARED 1e-30f
 #else
+#define NUM_DATA(b) ((b)->data.f64)
 #define NUM_REAL double
 #define NUM_NAME(name) name##_f64
 #define NUM_MATH(name) name
 #define NUM_C(value) value
 #define NUM_TINY_SQUARED 1e-280
 #endif
-#define NUM_DATA(b) ((NUM_REAL *)(void *)(b)->data)
 
 static h2_numeric_buffer_t *NUM_NAME(buffer_check)(lua_State *s, int at) {
   h2_numeric_buffer_t *b = h2_numeric_check(s, at);

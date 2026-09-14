@@ -9,9 +9,14 @@
 typedef struct h2_numeric_buffer {
   size_t count;
   int is_f32;
-  /* Lua userdata is double-aligned. The payload has no declared numeric type;
-   * each instance is accessed only through its selected float/double type. */
-  _Alignas(double) unsigned char data[]; /* values, then private scratch */
+  /* Payload follows this header in the same userdata allocation. It has no
+   * declared array type; typed stores establish its selected effective type.
+   * The double member gives the header natural payload alignment. */
+  union {
+    float *f32;
+    double *f64;
+    double alignment;
+  } data; /* values, then private scratch */
 } h2_numeric_buffer_t;
 h2_numeric_buffer_t *h2_numeric_check(lua_State *s, int at);
 double h2_numeric_number(lua_State *s, int at);

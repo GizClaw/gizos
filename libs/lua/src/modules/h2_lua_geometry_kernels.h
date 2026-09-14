@@ -113,7 +113,7 @@ static int NUM_NAME(project)(lua_State *s) {
   for (size_t i = 0; i < n; ++i) {
     const NUM_REAL *v = NUM_DATA(p) + 3 * i;
     int visible = v[2] >= c[4];
-    NUM_DATA(mask)[mask->count + i] = visible;
+    NUM_DATA(mask)[mask->count + i] = visible ? NUM_C(1.0) : NUM_C(0.0);
     NUM_DATA(d)[d->count + 2 * i] = visible ? c[2] + c[0] * v[0] / v[2] : 0;
     NUM_DATA(d)[d->count + 2 * i + 1] = visible ? c[3] + c[1] * v[1] / v[2] : 0;
   }
@@ -206,7 +206,8 @@ static int NUM_NAME(split)(lua_State *s) {
       memcpy(out, part ? cut : v, 3 * sizeof(NUM_REAL));
       memcpy(out + 3, crossing && !part ? cut : v + 3, 3 * sizeof(NUM_REAL));
       NUM_REAL side = crossing ? (part ? b : a) : (a != 0 ? a : b);
-      NUM_DATA(tags)[tags->count + 2 * used] = side < 0 ? -1 : side > 0 ? 1 : 0;
+      NUM_DATA(tags)[tags->count + 2 * used] =
+          side < 0 ? -NUM_C(1.0) : side > 0 ? NUM_C(1.0) : NUM_C(0.0);
       NUM_DATA(tags)[tags->count + 2 * used + 1] = (NUM_REAL)i + 1;
       ++used;
     }

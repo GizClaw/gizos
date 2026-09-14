@@ -31,7 +31,15 @@ static int buffer_new(lua_State *s) {
   h2_numeric_buffer_t *b = lua_newuserdatauv(s, sizeof(*b) + bytes, 0);
   b->count = n;
   b->is_f32 = is_f32;
-  memset(b->data, 0, bytes);
+  if (is_f32) {
+    b->data.f32 = (float *)(void *)(b + 1);
+    for (size_t i = 0; i < 2 * n; ++i)
+      b->data.f32[i] = 0.0f;
+  } else {
+    b->data.f64 = (double *)(void *)(b + 1);
+    for (size_t i = 0; i < 2 * n; ++i)
+      b->data.f64[i] = 0.0;
+  }
   luaL_setmetatable(s, H2_NUMERIC_META);
   return 1;
 }
