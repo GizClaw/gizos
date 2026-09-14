@@ -95,7 +95,8 @@ static void response_add_line(h2_quectel_response_t *response, const char *line)
     response->count++;
 }
 
-static void response_add_text(h2_quectel_modem_t *modem, h2_quectel_response_t *response, const char *text, const char *cmd) {
+static void response_add_text(h2_quectel_modem_t *modem, h2_quectel_response_t *response, const char *text, const char *cmd,
+    uint32_t reset_generation, uint32_t sim_generation) {
     if (text == NULL) {
         return;
     }
@@ -134,7 +135,9 @@ static void response_add_text(h2_quectel_modem_t *modem, h2_quectel_response_t *
             }
             continue;
         }
-        if (strcmp(cmd, "AT+CPIN?") == 0 || strncmp(line, "+CME ERROR:", 11u) == 0) {
+        if (strcmp(cmd, "AT+CPIN?") == 0) {
+            h2_quectel_cpin_response_locked(modem, line, reset_generation, sim_generation);
+        } else if (strncmp(line, "+CME ERROR:", 11u) == 0) {
             h2_quectel_handle_urc_locked(modem, line);
         }
         response_add_line(response, line);
@@ -194,7 +197,8 @@ static h2_pal_result_t at_exchange_impl(
             modem->config.command_timeout_ms);
         (void)h2_quectel_state_lock(modem);
         if (generation != modem->reset_generation ||
-            (modem->preparing == 0u && sim_generation != modem->sim_generation)) {
+            ((modem->preparing == 0u || strcmp(cmd, "AT+CPIN?") == 0) &&
+             sim_generation != modem->sim_generation)) {
             memset(command_response, 0, sizeof(modem->command_response));
             return H2_PAL_ERR_INVALID_STATE;
         }
@@ -202,11 +206,11 @@ static h2_pal_result_t at_exchange_impl(
             if (response != NULL) {
                 response->connected = 1;
             }
-            response_add_text(modem, response, command_response, cmd);
+            response_add_text(modem, response, command_response, cmd, generation, sim_generation);
             memset(command_response, 0, sizeof(modem->command_response));
             return H2_PAL_OK;
         }
-        response_add_text(modem, response, command_response, cmd);
+        response_add_text(modem, response, command_response, cmd, generation, sim_generation);
         /* Transport text may echo credentials; do not retain it in the instance. */
         memset(command_response, 0, sizeof(modem->command_response));
         return rc;
@@ -234,7 +238,8 @@ static h2_pal_result_t at_exchange_impl(
             return rc;
         }
         if (reset_generation != modem->reset_generation ||
-            (modem->preparing == 0u && sim_generation != modem->sim_generation)) {
+            ((modem->preparing == 0u || strcmp(cmd, "AT+CPIN?") == 0) &&
+             sim_generation != modem->sim_generation)) {
             return H2_PAL_ERR_INVALID_STATE;
         }
         if (line[0] == '\0' || strcmp(line, cmd) == 0) {
@@ -263,7 +268,7 @@ static h2_pal_result_t at_exchange_impl(
             continue;
         }
         if (strcmp(cmd, "AT+CPIN?") == 0) {
-            h2_quectel_handle_urc_locked(modem, line);
+            h2_quectel_cpin_response_locked(modem, line, reset_generation, sim_generation);
         }
         response_add_line(response, line);
     }

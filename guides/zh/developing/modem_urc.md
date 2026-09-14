@@ -123,7 +123,7 @@ Host 测试覆盖支持/不支持/超时的 prepare、来电主叫挂断立即�
 
 ## 板级电源关闭与重新打开
 
-覆盖 open/close 的 board 在停止 RX producer、释放 transport 并完成下电后，持 operation lock 调用 provider 的 transport-closed 通知；它清除 SIM presence、去重与注册观察，保留 worker 与回调生命周期。每轮 prepare 使能 QSIMSTAT 后主动查询 QSIMSTAT/CPIN，不依赖可能早于 UART 路由配置的开机通知；暂未 READY 的插卡状态启动有界轮询。缺卡后收到 CPIN READY（包括主动查询应答）即恢复插入与 READY，发布 SIM 事件并刷新 IMSI、注册及附着状态，不再等待 QSIMSTAT 插入通知。
+覆盖 open/close 的 board 在停止 RX producer、释放 transport 并完成下电后，持 operation lock 调用 provider 的 transport-closed 通知；它清除 SIM presence、去重与注册观察，保留 worker 与回调生命周期。每轮 prepare 使能 QSIMSTAT 后主动查询 QSIMSTAT/CPIN，不依赖可能早于 UART 路由配置的开机通知；暂未 READY 的插卡状态启动有界轮询。明确缺卡后，未关联的 CPIN READY 仅调度新查询，保持 ABSENT；插入通知或拔卡后启动、且 SIM/reset generation 未改变的 CPIN 查询应答确认 READY 后，才恢复插入与 READY，发布 SIM 事件并刷新 IMSI、注册及附着状态，不再等待 QSIMSTAT 插入通知。
 
 ABSENT 期间，已有 URC worker 每约 5 秒空闲时间执行一次 AT+CPIN?，单次超时 1 秒，使用实例 response 缓冲与 operation try-lock，不在 RX 回调执行 AT；关闭实例或板级 transport 后停止。ERROR / NOT INSERTED 不产生 READY。`+QIND: SMS DONE`、`+QIND: PB DONE`、`Call Ready` 仅合并触发一次 CPIN 查询，每次拔卡重新允许触发。
 

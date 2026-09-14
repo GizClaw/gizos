@@ -209,12 +209,17 @@ void h2_quectel_handle_urc_locked(h2_quectel_modem_t *modem, const char *line) {
         } else if (modem->sim_state == H2_PAL_MODEM_SIM_STATE_ABSENT) {
             state = H2_PAL_MODEM_SIM_STATE_ABSENT;
         }
-        /* CPIN is independent evidence when the insertion indication was lost. */
+        /* An unsolicited READY may predate removal. Confirm it with a new
+         * probe rather than reviving the removed SIM from an uncorrelated URC. */
+        if (modem->sim_presence == 2u) {
+            if (state == H2_PAL_MODEM_SIM_STATE_READY) { modem->sim_query_pending = 1u; }
+            return;
+        }
         if (state == H2_PAL_MODEM_SIM_STATE_READY) {
             modem->sim_presence = 1u;
             modem->sim_probe_ticks = 0u;
             modem->sim_query_pending = 0u;
-        } else if (modem->sim_presence == 2u) { return; }
+        }
         h2_quectel_sim_update(modem, state);
         return;
     }
@@ -356,6 +361,22 @@ void h2_quectel_handle_urc_locked(h2_quectel_modem_t *modem, const char *line) {
             NULL,
             0u);
     }
+}
+
+/* Only the serialized AT parser calls this after checking the SIM/reset
+ * generations captured before sending CPIN. RX notifications use the ordinary
+ * URC entry and cannot borrow the active probe's authority. */
+void h2_quectel_cpin_response_locked(h2_quectel_modem_t *modem, const char *line,
+    uint32_t reset_generation, uint32_t sim_generation) {
+    if (reset_generation != modem->reset_generation || sim_generation != modem->sim_generation) { return; }
+    if (strncmp(line, "+CPIN:", 6u) == 0) {
+        const char *value = line + 6;
+        while (*value == ' ') { value++; }
+        if (modem->sim_presence == 2u && strcmp(value, "READY") == 0) {
+            modem->sim_presence = 1u;
+        }
+    }
+    h2_quectel_handle_urc_locked(modem, line);
 }
 
 void h2_quectel_reset_state(h2_quectel_modem_t *modem) {
