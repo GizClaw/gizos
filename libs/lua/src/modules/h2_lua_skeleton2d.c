@@ -327,7 +327,7 @@ static int copy_items(lua_State *s) {
   h2_numeric_capacity(s, b, v.item_count * 9);
   for (size_t i = 0; i < v.item_count; i++) {
     double *p = b->data + b->count + i * 9;
-    p[0] = v.items[i].part + 1;
+    p[0] = (double)(v.items[i].part + 1);
     p[1] = v.items[i].resource;
     p[2] = v.items[i].layer;
     memcpy(p + 3, v.items[i].matrix, 6 * sizeof(double));
