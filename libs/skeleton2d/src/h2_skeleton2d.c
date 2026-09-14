@@ -385,7 +385,8 @@ static void sort(h2_skeleton2d_draw_item_t *v,
     }
   }
 }
-h2_pal_result_t h2_skeleton2d_evaluate(h2_skeleton2d_t *s, const double *root) {
+h2_pal_result_t h2_skeleton2d_evaluate(h2_skeleton2d_t *s,
+                                       const double root[6]) {
   if (!instance(s))
     return H2_PAL_ERR_INVALID_STATE;
   if (!root)
