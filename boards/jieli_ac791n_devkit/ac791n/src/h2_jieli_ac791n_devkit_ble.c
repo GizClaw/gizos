@@ -164,6 +164,9 @@ typedef struct h2_jieli_ble_state {
   int gatt_registered;
   struct h2_pal_ble_adv_set adv;
   struct conn_update_param_t conn_params;
+  unsigned conn_pending;
+  unsigned conn_submitting;
+  uint32_t conn_generation;
 } h2_jieli_ble_state_t;
 
 static h2_jieli_ble_state_t h2_ble;
@@ -945,27 +948,65 @@ static int h2_disconnect(void *user, uint16_t conn_handle) {
   return h2_ble_cmd_result(ble_op_disconnect(conn_handle));
 }
 
+/* Connection request lifetime. */
+/* These pinned SDK symbols run/query the native BLE command loop. A queue
+ * empty query from an application thread is not a pointer-retirement fence. */
+extern int ble_cmd_handler_is_idle(void);
+extern void stack_run_loop_resume(void);
+
+static void h2_connection_command_consumed(void) {
+  h2_gatt_lock();
+  const uint32_t generation = h2_ble.conn_generation;
+  const int eligible = h2_ble.conn_pending && !h2_ble.conn_submitting;
+  h2_gatt_unlock();
+  /* This hook runs after command dispatch on the consuming SDK thread.
+   * Capture eligibility before the query: this thread cannot consume a new
+   * producer's commands while it is executing this hook. */
+  if (!eligible || !ble_cmd_handler_is_idle()) return;
+  h2_gatt_lock();
+  if (h2_ble.conn_generation == generation && !h2_ble.conn_submitting)
+    h2_ble.conn_pending = 0u;
+  h2_gatt_unlock();
+}
+
 static int h2_update_connection(
     void *user, uint16_t conn_handle,
     const h2_pal_ble_connection_params_t *params) {
-  /* The SDK borrows this pointer until its command loop copies the fields
-   * into the L2CAP request. Concurrent request storage still needs a fence. */
-  static struct conn_update_param_t request;
   (void)user;
-  h2_gatt_lock();
-  const int current = conn_handle == h2_ble.conn_handle;
-  h2_gatt_unlock();
-  if (!current || params == NULL ||
-      params->interval_min_ms == 0u ||
+  if (params == NULL || params->interval_min_ms == 0u ||
       params->interval_max_ms < params->interval_min_ms)
     return H2_PAL_ERR_INVALID_ARG;
-  request = (struct conn_update_param_t){
+  h2_gatt_lock();
+  if (conn_handle != h2_ble.conn_handle) {
+    h2_gatt_unlock();
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (h2_ble.conn_pending) {
+    h2_gatt_unlock();
+    return H2_PAL_ERR_WOULD_BLOCK;
+  }
+  h2_ble.conn_pending = 1u;
+  h2_ble.conn_submitting = 1u;
+  ++h2_ble.conn_generation;
+  h2_ble.conn_params = (struct conn_update_param_t){
       .interval_min = (uint16_t)(params->interval_min_ms * 4u / 5u),
       .interval_max = (uint16_t)(params->interval_max_ms * 4u / 5u),
       .latency = params->latency,
       .timeout = (uint16_t)(params->supervision_timeout_ms / 10u),
   };
-  const int result = ble_op_conn_param_request(conn_handle, &request);
+  h2_gatt_unlock();
+  /* Registration is itself queued before the borrowed request. SDK enqueue
+   * failure leaves no borrowed command; successful enqueue keeps storage
+   * immutable until the consumer hook, or full host shutdown, retires it. */
+  int result = ble_op_regist_thread_call(h2_connection_command_consumed);
+  if (result == 0)
+    result = ble_op_conn_param_request(conn_handle, &h2_ble.conn_params);
+  h2_gatt_lock();
+  h2_ble.conn_submitting = 0u;
+  if (result != 0) h2_ble.conn_pending = 0u;
+  h2_gatt_unlock();
+  /* The consumer may have visited the hook while submission was in flight. */
+  if (result == 0) stack_run_loop_resume();
   h2_ble_log(
       "H2_JIELI_BLE_CONN_PARAMS request=%u-%u latency=%u timeout=%u "
       "vendor=%d\r\n",
