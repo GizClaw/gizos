@@ -1,6 +1,6 @@
 # Console deadline follow-up — 2026-09-14
 
-This is incremental O5 evidence. UART admission, physical submission and DMA staging ownership are repaired; Loader/App USB and KCP budget propagation are still being audited. Final-source lifecycle acceptance remains pending.
+This is incremental O5 evidence. UART admission, physical submission and DMA staging ownership are repaired; Loader/App KCP output now shares command budgets; USB native submission is still being audited. Final-source lifecycle acceptance remains pending.
 
 ## Pinned UART facts
 
@@ -39,3 +39,13 @@ Earlier monitor captures omitted Filesystem 13 even though their aggregate was 1
 An experimental post-submit CPU synchronization instruction did not prevent the monitor omission and was removed. Its package is not the accepted candidate. The [machine-readable capture evidence](./pal-console-hardware.json) records package identity and raw-frame boundaries. Raw files are `o5-host-raw/1/pal.log`, `/tmp/jieli-o5-host-raw.bin`, and `o5-csync/1/raw-uart.log` under the local diagnostic evidence directory (the last is the separate experimental package).
 
 Native Loader, PAL and display builds passed (64.193 seconds). Strict Clang/TSan and GCC results are `/tmp/jieli-o5-uart-verified-host.log` and `/tmp/jieli-o5-uart-verified-gcc.log`. P1 remained Loader image `2946bbdb2cc9c64d7c08f430f977e0ede705dfc4806b89361469daafedc1a8a0`; P2 contains the accepted unconfirmed PAL App, with its stage retained.
+
+## Command-to-KCP budget propagation
+
+Loader and App previously replaced zero command-write timeout with five seconds, and KCP used its fixed five-second physical timeout for each output frame. Time already spent waiting for the send window or reading input did not reduce that timeout. The initial flush also ran before the flush budget began.
+
+The command task now scopes the original deadline around read/write/flush. KCP output and session-control replies receive the remaining budget. Multiple frames consume one budget; an exhausted finite deadline rejects further submission. Zero timeout remains immediate admission. Flush keeps its existing backlog estimate and cap, but includes its initial physical output. The scope ends on errors as well as success. No shared library configuration switch or alternate behavior mode was added.
+
+`//tools/bazel:jieli_command_deadlines_test` compiles both real transport structures, stream configurations, control writers and command implementations. Nine scenarios fail on each original provider (18 failures): finite, zero, send-window wait, zero with a full window, multiple frames, read-triggered output, control reply, initial flush and a fully consumed window budget. All pass with strict Clang/GCC. Logs are `/tmp/jieli-command-deadlines-expanded-before.log`, `/tmp/jieli-command-deadlines-expanded-gcc-before.log`, `/tmp/jieli-command-deadlines-final-after.log` and `/tmp/jieli-command-deadlines-final-gcc-after.log`. UART regressions also pass. Native Loader, PAL and display builds pass (68.662 seconds). The command-budget PAL package `8f8baff550fd61908be21e9e6046d3cecfa97a0f421bde9f1e1da42a946adf8a`, image `989d692e899728eb4ec27a19f7a19ffa9d316bba713d2c3a35e682a1d38b7038`, passes Filesystem 13, all eight Core cases and offline Wi-Fi 27 (10/10), with complete monitor and raw UART ledgers in `o5-command-budget/1/`. UART installation, App status and return to unchanged valid P1 succeed. Final-source Loader/lifecycle acceptance remains pending.
+
+USB still calls the SDK's internally blocking CDC writer, so propagating a correct budget does not yet establish a physical USB deadline. That native ownership/submission repair remains open.

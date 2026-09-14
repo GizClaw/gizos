@@ -45,6 +45,9 @@ typedef struct h2_jieli_transport {
   uint32_t conv;
   uint32_t pending_conv;
   uint32_t write_timeout_ms;
+  uint32_t io_started_ms;
+  uint32_t io_timeout_ms;
+  int io_deadline_active;
   uint32_t last_frame_ms;
   int replacement_pending;
   int close_pending;
@@ -283,6 +286,40 @@ static void write_le32(uint8_t out[4], uint32_t value) {
   out[3] = (uint8_t)(value >> 24u);
 }
 
+/* KCP may emit several frames in one call. Its per-frame default must not
+ * restart the command caller's budget. The command task owns this scope. */
+static h2_pal_result_t transport_read(
+    void *user, void *buffer, size_t len, size_t *out_read,
+    uint32_t timeout_ms) {
+  h2_jieli_transport_t *self = user;
+  return self->physical_io.read(
+      self->physical_io.user, buffer, len, out_read, timeout_ms);
+}
+
+static h2_pal_result_t transport_write(
+    void *user, const void *buffer, size_t len, size_t *out_written,
+    uint32_t timeout_ms) {
+  h2_jieli_transport_t *self = user;
+  if (self->io_deadline_active) {
+    uint32_t elapsed = timer_get_ms() - self->io_started_ms;
+    if (self->io_timeout_ms != 0u && elapsed >= self->io_timeout_ms) {
+      *out_written = 0u;
+      return H2_PAL_ERR_TIMEOUT;
+    }
+    uint32_t remaining = elapsed >= self->io_timeout_ms
+                             ? 0u : self->io_timeout_ms - elapsed;
+    if (timeout_ms > remaining) timeout_ms = remaining;
+  }
+  return self->physical_io.write(
+      self->physical_io.user, buffer, len, out_written, timeout_ms);
+}
+
+static h2_pal_result_t transport_flush(void *user) {
+  h2_jieli_transport_t *self = user;
+  return self->physical_io.flush == NULL ? H2_PAL_OK
+      : self->physical_io.flush(self->physical_io.user);
+}
+
 static int send_control(
     h2_jieli_transport_t *self, uint8_t flags, uint32_t conv) {
   uint8_t payload[H2_IOSTREAMIKCP_SESSION_CONTROL_PAYLOAD_LEN];
@@ -300,8 +337,8 @@ static int send_control(
   int rc = h2_iostreamikcp_frame_encode(
       &frame, encoded, sizeof(encoded), &encoded_len);
   if (rc == H2_PAL_OK) {
-    rc = self->physical_io.write(
-        self->physical_io.user, encoded, encoded_len, &written,
+    rc = transport_write(
+        self, encoded, encoded_len, &written,
         H2_WRITE_TIMEOUT_MS);
   }
   return rc == H2_PAL_OK && written == encoded_len
@@ -384,7 +421,8 @@ static int activate_pending(h2_jieli_transport_t *self) {
   uint32_t conv = self->pending_conv;
   deactivate_current(self);
   const h2_iostreamikcp_config_t config = {
-      .io = self->physical_io,
+      .io = {.user = self, .read = transport_read,
+             .write = transport_write, .flush = transport_flush},
       .allocator = self->allocator,
       .now_ms = now_ms32,
       .time_user = self,
@@ -419,7 +457,7 @@ static int activate_pending(h2_jieli_transport_t *self) {
   return rc;
 }
 
-static int command_read(
+static int command_read_impl(
     void *user, void *buffer, size_t len, size_t *out_read,
     uint32_t timeout_ms) {
   h2_jieli_transport_t *self = user;
@@ -447,7 +485,20 @@ static int command_read(
   }
 }
 
-static int command_write(
+static int command_read(
+    void *user, void *buffer, size_t len, size_t *out_read,
+    uint32_t timeout_ms) {
+  h2_jieli_transport_t *self = user;
+  if (self == NULL) return H2_PAL_ERR_INVALID_ARG;
+  self->io_started_ms = timer_get_ms();
+  self->io_timeout_ms = timeout_ms;
+  self->io_deadline_active = 1;
+  int result = command_read_impl(user, buffer, len, out_read, timeout_ms);
+  self->io_deadline_active = 0;
+  return result;
+}
+
+static int command_write_impl(
     void *user, const void *buffer, size_t len, size_t *out_written,
     uint32_t timeout_ms) {
   h2_jieli_transport_t *self = user;
@@ -458,9 +509,7 @@ static int command_write(
   if (stop_requested || self->replacement_pending) {
     return H2_PAL_ERR_CLOSED;
   }
-  self->write_timeout_ms = timeout_ms == 0u
-                               ? H2_WRITE_TIMEOUT_MS
-                               : timeout_ms;
+  self->write_timeout_ms = timeout_ms;
   *out_written = 0u;
   uint32_t started = timer_get_ms();
   for (;;) {
@@ -497,7 +546,20 @@ static int command_write(
   return rc;
 }
 
-static int command_flush(void *user) {
+static int command_write(
+    void *user, const void *buffer, size_t len, size_t *out_written,
+    uint32_t timeout_ms) {
+  h2_jieli_transport_t *self = user;
+  if (self == NULL) return H2_PAL_ERR_INVALID_ARG;
+  self->io_started_ms = timer_get_ms();
+  self->io_timeout_ms = timeout_ms;
+  self->io_deadline_active = 1;
+  int result = command_write_impl(user, buffer, len, out_written, timeout_ms);
+  self->io_deadline_active = 0;
+  return result;
+}
+
+static int command_flush_impl(void *user) {
   h2_jieli_transport_t *self = user;
   if (self == NULL || self->stream == NULL) {
     return H2_PAL_ERR_INVALID_STATE;
@@ -538,6 +600,26 @@ static int command_flush(void *user) {
     }
   }
   return rc;
+}
+
+static int command_flush(void *user) {
+  h2_jieli_transport_t *self = user;
+  if (self == NULL || self->stream == NULL) return H2_PAL_ERR_INVALID_STATE;
+  h2_iostreamikcp_stats_t stats = {0};
+  int result = h2_iostreamikcp_get_stats(self->stream, &stats);
+  if (result != H2_PAL_OK) return result;
+  uint64_t estimate = (uint64_t)stats.waitsnd * H2_SEGMENT_TIMEOUT_MS;
+  uint32_t budget = self->write_timeout_ms;
+  if (estimate > budget) {
+    budget = estimate > H2_MAX_FLUSH_TIMEOUT_MS
+                 ? H2_MAX_FLUSH_TIMEOUT_MS : (uint32_t)estimate;
+  }
+  self->io_started_ms = timer_get_ms();
+  self->io_timeout_ms = budget;
+  self->io_deadline_active = 1;
+  result = command_flush_impl(user);
+  self->io_deadline_active = 0;
+  return result;
 }
 
 static const h2_command_io_vtable_t command_io_vtable = {
