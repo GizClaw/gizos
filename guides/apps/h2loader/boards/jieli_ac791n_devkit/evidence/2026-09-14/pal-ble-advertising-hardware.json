@@ -1,0 +1,31 @@
+{
+  "package_sha256": "d5d03b4eda10cfbc8285f8d6d9740d71a9c2e79beef64d31d3f684c959ea3326",
+  "image_sha256": "182f51610e7b742127afe7aacb9fbf0c352bdd0bfa6dbab43372d7a32c09d5a9",
+  "p1_sha256": "6b47889e361e9ae591c1e3e1a429f2d24477ab3b414847d06c3134db312627b0",
+  "uart_install": "pass",
+  "app_status": "pass",
+  "ble_status_three": [
+    {
+      "iteration": 1,
+      "exit_code": 0,
+      "active_image_sha256": "182f51610e7b742127afe7aacb9fbf0c352bdd0bfa6dbab43372d7a32c09d5a9"
+    },
+    {
+      "iteration": 2,
+      "exit_code": 0,
+      "active_image_sha256": "182f51610e7b742127afe7aacb9fbf0c352bdd0bfa6dbab43372d7a32c09d5a9"
+    },
+    {
+      "iteration": 3,
+      "exit_code": 0,
+      "active_image_sha256": "182f51610e7b742127afe7aacb9fbf0c352bdd0bfa6dbab43372d7a32c09d5a9"
+    }
+  ],
+  "ble_source_sha256": "3603cbb40dc0d47e4eae8f62e03b2e19cf60f594ce59c7e1d26ecae4ff5b2b9d",
+  "return_to_loader": "pass",
+  "staging": "empty",
+  "final_active_role": "loader",
+  "scope": "Incremental O2 legacy advertising reconnect and shared controller fence; final-source Loader lifecycle acceptance remains pending. Extended advertising payloads and injected SDK faults are host-tested only.",
+  "terminal_window": 45495,
+  "raw_directory": "tmp/jieli/pal-review-next/diagnostic-runs/ble-advertising-app-status"
+}

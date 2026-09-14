@@ -40,7 +40,7 @@ int main(void) {
             path = Path(directory) / "test.c"
             path.write_text(program)
             binary = Path(directory) / "test"
-            subprocess.run(["cc", "-std=c11", "-Wall", "-Werror", str(path),
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", str(path),
                             "-o", str(binary)], check=True, timeout=60)
             subprocess.run([str(binary)], check=True, timeout=10)
 
@@ -97,6 +97,8 @@ int main(void) {
                   "h2_jieli_ac791n_devkit_wifi.c").read_text()
         state = source[source.index("enum { SCAN_IDLE"):
                        source.index("static void post_system_event")]
+        if "static void scan_reap_completed(void)" not in state:
+            state += "\nstatic void scan_reap_completed(void) {}\n"
         scan = source[source.index("static int sta_scan("):
                       source.index("static int sta_connect(")]
         status = source[source.index("static int sta_get_status("):
@@ -106,6 +108,8 @@ int main(void) {
 #include <assert.h>
 #include <string.h>
 static void scan_completed(void);
+static void deliver_completion(void);
+static int in_sdk_callback;
 static unsigned now, clears, requests, delivered;
 static struct { int on; h2_pal_wifi_sta_status_t sta; } wifi_state;
 static void update_sta_snapshot(void) {}
@@ -119,12 +123,14 @@ static struct wifi_scan_ssid_info item={.ssid_len=3,.ssid="abc"};
 static int ensure_wifi_on(void) { return H2_PAL_OK; }
 static uint32_t timer_get_ms(void) { return now; }
 static void os_time_dly(unsigned ticks) {
- assert(ticks==1); now+=10; if(complete_on_delay) scan_completed();
+ assert(ticks==1); now+=10; if(complete_on_delay) deliver_completion();
 }
 static int wifi_scan_req(void) {
- ++requests; if(complete_immediately) scan_completed(); return request_error;
+ ++requests;
+ if(complete_immediately) deliver_completion();
+ return request_error;
 }
-static void wifi_clear_scan_result(void) { ++clears; }
+static void wifi_clear_scan_result(void) { assert(!in_sdk_callback); ++clears; }
 static struct wifi_scan_ssid_info *wifi_get_scan_result(uint32_t *count) {
  *count=1; return &item;
 }
@@ -136,6 +142,11 @@ static bool receive(void *user,const h2_pal_wifi_scan_entry_t *entry) {
 }
 '''
         main = r'''
+static void deliver_completion(void) {
+ in_sdk_callback=1;
+ scan_completed();
+ in_sdk_callback=0;
+}
 int main(void) {
  h2_pal_wifi_sta_status_t status;
  wifi_state.on=1;
@@ -146,14 +157,17 @@ int main(void) {
  assert(status.ip_valid && wifi_state.sta.state==H2_PAL_WIFI_STA_STATE_GOT_IP);
  assert(clears==0 && requests==1 && scan_phase==SCAN_ABANDONED);
  assert(sta_scan(NULL,NULL,receive,NULL,10)==H2_PAL_ERR_BUSY && requests==1);
- scan_completed(); assert(clears==1 && scan_phase==SCAN_IDLE && delivered==0);
+ deliver_completion();
+ assert(clears==0 && delivered==0);
+ scan_reap_completed();
+ assert(clears==1 && scan_phase==SCAN_IDLE);
  assert(sta_get_status(NULL,&status)==0 && status.state==H2_PAL_WIFI_STA_STATE_GOT_IP);
  scan_phase=SCAN_PENDING;
  assert(sta_get_status(NULL,&status)==0 && status.state==H2_PAL_WIFI_STA_STATE_SCANNING);
  wifi_state.sta.state=H2_PAL_WIFI_STA_STATE_DISCONNECTED;
- scan_completed(); scan_phase=SCAN_IDLE;
+ deliver_completion(); scan_phase=SCAN_IDLE;
  assert(sta_get_status(NULL,&status)==0 && status.state==H2_PAL_WIFI_STA_STATE_DISCONNECTED);
- scan_completed(); assert(clears==1); /* duplicate/unowned completion */
+ deliver_completion(); assert(clears==1); /* duplicate/unowned completion */
  complete_on_delay=1;
  assert(sta_scan(NULL,NULL,receive,NULL,20)==H2_PAL_OK);
  assert(clears==2 && delivered==1 && scan_phase==SCAN_IDLE);
@@ -165,7 +179,10 @@ int main(void) {
  assert(clears==3 && delivered==2 && scan_phase==SCAN_IDLE);
  complete_immediately=0; unsigned before=now;
  assert(sta_scan(NULL,NULL,receive,NULL,9)==H2_PAL_ERR_TIMEOUT && before==now);
- scan_completed(); assert(clears==4 && scan_phase==SCAN_IDLE);
+ deliver_completion();
+ assert(clears==3);
+ scan_reap_completed();
+ assert(clears==4 && scan_phase==SCAN_IDLE);
  return 0;
 }
 '''
@@ -179,3 +196,7 @@ int main(void) {
             result = subprocess.run([str(binary)], capture_output=True,
                                     text=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()
