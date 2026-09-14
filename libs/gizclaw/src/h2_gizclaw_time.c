@@ -95,32 +95,40 @@ static h2_pal_result_t sync_time(h2_gizclaw_service_t *service) {
   return rc;
 }
 
+/* One calibration attempt with status bookkeeping. Returns H2_PAL_ERR_CLOSED
+ * when the lock is unavailable or the Service is being canceled. */
+static h2_pal_result_t time_attempt(h2_gizclaw_service_t *service) {
+  if (time_canceled(service))
+    return H2_PAL_ERR_CLOSED;
+  if (h2_pal_mutex_lock(service->config.sync, service->mutex) != H2_PAL_OK)
+    return H2_PAL_ERR_CLOSED;
+  service->time_sync.state = H2_GIZCLAW_TIME_SYNC_RUNNING;
+  ++service->time_sync.attempts;
+  (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
+  h2_pal_result_t rc = sync_time(service);
+  if (h2_pal_mutex_lock(service->config.sync, service->mutex) != H2_PAL_OK)
+    return H2_PAL_ERR_CLOSED;
+  service->time_sync.last_result = rc;
+  service->time_sync.state = rc == H2_PAL_OK
+                                ? H2_GIZCLAW_TIME_SYNC_SUCCEEDED
+                                : H2_GIZCLAW_TIME_SYNC_RETRY;
+  (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
+  /* A clock the platform will not let us set (a browser's host clock) is
+   * owned by the platform; retrying cannot calibrate it. */
+  const bool unsupported = rc == H2_PAL_ERR_UNSUPPORTED;
+  h2_gizclaw_service_log_request(service,
+      rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_WARN, "time",
+      rc == H2_PAL_OK ? "calibrated" : unsupported ? "unsupported" : "retry",
+      0u, rc, 0, 0u, 0u);
+  return rc;
+}
+
 static void time_worker(void *user) {
   h2_gizclaw_service_t *service = user;
   for (;;) {
-    if (time_canceled(service))
-      return;
-    if (h2_pal_mutex_lock(service->config.sync, service->mutex) != H2_PAL_OK)
-      return;
-    service->time_sync.state = H2_GIZCLAW_TIME_SYNC_RUNNING;
-    ++service->time_sync.attempts;
-    (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
-    h2_pal_result_t rc = sync_time(service);
-    if (h2_pal_mutex_lock(service->config.sync, service->mutex) != H2_PAL_OK)
-      return;
-    service->time_sync.last_result = rc;
-    service->time_sync.state = rc == H2_PAL_OK
-                                  ? H2_GIZCLAW_TIME_SYNC_SUCCEEDED
-                                  : H2_GIZCLAW_TIME_SYNC_RETRY;
-    (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
-    /* A clock the platform will not let us set (a browser's host clock) is
-     * owned by the platform; retrying cannot calibrate it. */
-    const bool unsupported = rc == H2_PAL_ERR_UNSUPPORTED;
-    h2_gizclaw_service_log_request(service,
-        rc == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_WARN, "time",
-        rc == H2_PAL_OK ? "calibrated" : unsupported ? "unsupported" : "retry",
-        0u, rc, 0, 0u, 0u);
-    if (rc == H2_PAL_OK || unsupported)
+    h2_pal_result_t rc = time_attempt(service);
+    if (rc == H2_PAL_OK || rc == H2_PAL_ERR_UNSUPPORTED ||
+        rc == H2_PAL_ERR_CLOSED)
       return;
     uint64_t now = 0u;
     if (h2_pal_time_get_monotonic_ms(service->client_config.time, &now) != H2_PAL_OK)
@@ -146,10 +154,30 @@ h2_pal_result_t h2_gizclaw_time_prepare_connect_internal(
     h2_gizclaw_service_t *service) {
   uint64_t wall_ms = 0u;
   if (h2_pal_time_get_wall_ms(service->client_config.time, &wall_ms) ==
-          H2_PAL_OK && wall_ms != 0u)
+          H2_PAL_OK && wall_ms != 0u) {
+    /* Signaling authenticates a timestamp, and a set clock can still be
+     * stale: an RTC that ran on its slow oscillator through deep sleep
+     * drifts minutes, and the server rejects the offer as expired. Calibrate
+     * once against server-info before every connect; if that fails, keep the
+     * existing clock rather than blocking the connection on it. */
+    if (service->client_config.http != NULL &&
+        service->client_config.server_endpoint.data != NULL &&
+        service->client_config.server_endpoint.len != 0u) {
+      const h2_pal_result_t rc = time_attempt(service);
+      if (rc == H2_PAL_ERR_CLOSED && time_canceled(service))
+        return H2_PAL_ERR_CLOSED;
+      /* A failed refresh keeps the normal retry interval for the background
+       * calibration that follows the connection. */
+      uint64_t now = 0u;
+      if (rc != H2_PAL_OK &&
+          h2_pal_time_get_monotonic_ms(service->client_config.time, &now) ==
+              H2_PAL_OK)
+        service->time_start_retry_ms = now + TIME_RETRY_MS;
+    }
     return H2_PAL_OK;
-  /* Signaling authenticates a timestamp. On cold boot, perform the same
-   * cancellable calibration/retry loop before sending any offer. */
+  }
+  /* On cold boot, perform the cancellable calibration/retry loop before
+   * sending any offer. */
   time_worker(service);
   if (time_canceled(service))
     return H2_PAL_ERR_CLOSED;
@@ -168,7 +196,8 @@ void h2_gizclaw_time_sync_start_internal(h2_gizclaw_service_t *service) {
    * synchronous pre-connect success also suppresses a second calibration.
    * A reconnect uses a new Service and chooses calibration from clock validity. */
   if (service->time_task != NULL ||
-      service->time_sync.state == H2_GIZCLAW_TIME_SYNC_SUCCEEDED)
+      service->time_sync.state == H2_GIZCLAW_TIME_SYNC_SUCCEEDED ||
+      service->time_sync.last_result == H2_PAL_ERR_UNSUPPORTED)
     return;
   uint64_t now = 0u;
   if (h2_pal_time_get_monotonic_ms(service->client_config.time, &now) != H2_PAL_OK ||

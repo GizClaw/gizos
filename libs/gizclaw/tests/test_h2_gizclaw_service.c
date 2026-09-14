@@ -10123,7 +10123,9 @@ static void test_conversation_public_audio_tasks(void) {
     h2_gizclaw_conversation_release(conversation);
     assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
     assert(h2_gizclaw_pcm_track_destroy(&owned_track) == H2_PAL_OK);
-    assert(atomic_load(&test.starts) == 6 && atomic_load(&test.joins) == 6);
+    /* The HTTP API here has no transport, so the pre-connect calibration
+     * reports UNSUPPORTED and no background time task is started. */
+    assert(atomic_load(&test.starts) == 5 && atomic_load(&test.joins) == 5);
     assert(test.event_close_count == 1);
     if (mode == 21)
       assert(atomic_load(&log_capture.canceled_completion));
@@ -11740,15 +11742,11 @@ static void test_time_sync_reconnect(void) {
     atomic_store(&test.http_gate, false);
     atomic_store(&env.connect_gate, false);
     assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
-    if (connection != 0) {
-      wait_for_count(&env.connect_count, 1);
-      assert(atomic_load(&test.calls) == connection);
-      atomic_store(&env.connect_gate, true);
-    }
+    /* Every connection calibrates before its offer, including a reconnect
+     * whose clock is already set: that clock may have drifted. */
     wait_for_count(&test.calls, connection + 1);
     assert(time_test_wait(service, H2_GIZCLAW_TIME_SYNC_RUNNING).attempts == 1);
-    if (connection == 0)
-      assert(atomic_load(&env.connect_count) == 0);
+    assert(atomic_load(&env.connect_count) == 0);
     uint64_t wall = 0;
     assert(h2_pal_time_get_wall_ms(&time, &wall) ==
            (connection == 0 ? H2_PAL_TIME_ERR_UNCALIBRATED : H2_PAL_OK));
@@ -11841,6 +11839,41 @@ static void test_unsettable_time_sync(void) {
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 
+/* A clock that is set but stale (an RTC that drifted through deep sleep) is
+ * calibrated against server-info before the offer is sent. */
+static void test_stale_clock_calibrates_before_connect(void) {
+  test_env_t env;
+  time_test_t test = {0};
+  const h2_pal_time_vtable_t tv = {.get_monotonic_ms = time_test_mono,
+      .get_wall_ms = time_test_wall, .get_wall_status = time_test_status,
+      .set_wall_ms = time_test_set};
+  const h2_pal_time_api_t time = {.user = &test, .vtable = &tv};
+  const h2_pal_http_vtable_t hv = {.request = time_test_http};
+  const h2_pal_http_api_t http = {.user = &test, .vtable = &hv};
+  h2_gizclaw_service_t *service = create_service(&env, 2);
+  service->config.on_event = NULL;
+  service->client_config.time = &time;
+  service->client_config.http = &http;
+  service->client_config.server_endpoint = (h2_gizclaw_str_t){"example.test:9821", 17};
+  atomic_store(&test.wall, 1700000000000ull);
+  atomic_store(&test.valid, true);
+  atomic_store(&env.connect_gate, false);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  wait_for_count(&test.calls, 1);
+  assert(atomic_load(&env.connect_count) == 0);
+  atomic_store(&test.http_gate, true);
+  wait_for_count(&env.connect_count, 1);
+  uint64_t value = 0u;
+  assert(h2_pal_time_get_wall_ms(&time, &value) == H2_PAL_OK);
+  assert(value == 1735689600123ull);
+  h2_gizclaw_time_sync_status_t status;
+  assert(h2_gizclaw_service_get_time_sync_status(service, &status) == H2_PAL_OK);
+  assert(status.state == H2_GIZCLAW_TIME_SYNC_SUCCEEDED && status.attempts == 1);
+  atomic_store(&env.connect_gate, true);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
 static void test_automatic_time_sync(void) {
   const char *invalid[] = {NULL, "{\"server_time\":0}",
       "{\"server_time\":-1}", "{\"server_time\":1.5}",
@@ -11875,13 +11908,15 @@ static void test_automatic_time_sync(void) {
     }
     atomic_store(&env.connect_gate, false);
     assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+    wait_for_count(&test.calls, 1);
     if (i == 0) {
-      /* A retained valid clock allows communication during refresh. */
+      /* A retained valid clock is refreshed once before the offer; a failed
+       * refresh keeps that clock and the connection proceeds. */
+      assert(atomic_load(&env.connect_count) == 0);
+      atomic_store(&test.http_gate, true);
       wait_for_count(&env.connect_count, 1);
-      assert(atomic_load(&test.calls) == 0);
       atomic_store(&env.connect_gate, true);
     }
-    wait_for_count(&test.calls, 1);
     if (i == 0) {
       unsigned polls = atomic_load(&env.poll_count);
       wait_for_count(&env.poll_count, polls + 2);
@@ -11967,6 +12002,7 @@ int main(int argc, char **argv) {
   }
   assert(argc == 1);
   test_preconnect_time_stop();
+  test_stale_clock_calibrates_before_connect();
   test_automatic_time_sync();
   test_unsettable_time_sync();
   test_time_sync_reconnect();
