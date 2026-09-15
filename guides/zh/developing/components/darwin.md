@@ -9,9 +9,11 @@
 - `h2_darwin_netif_api()`：基于 `getifaddrs` 的接口快照与 DNS 观察。
 - `h2_darwin_system_event_api()`：有界订阅以及 `PF_ROUTE` 默认路由监听。
 - `h2_darwin_serial_host_api()`：基于 IOKit 的 `/dev/cu.*` callout discovery。
-- `h2_darwin_corebluetooth_ble(allocator)`：CoreBluetooth BLE Host provider。
+- `h2_darwin_corebluetooth_ble(allocator, log)`：CoreBluetooth BLE Host provider。
 
 CoreBluetooth 借用调用方提供的完整 Memory PAL API，不拥有或销毁 allocator，并通过同一 Darwin SystemEvent provider 投递事件。`NULL` allocator 或在 provider lifetime 中更换 allocator 都失败。非 Darwin target 由 project composition 显式选择 simulator 或 canonical unsupported provider，不在 Darwin package 中保留 stub。
+
+CoreBluetooth delegate callback 运行在 provider 私有串行 queue `com.gizclaw.h2.darwin.corebluetooth` 上，而 Darwin SystemEvent provider 在 post 线程上同步调用 subscriber。因此 provider 用 `dispatch_queue_set_specific` 标记 backend queue：在该 queue 上产生的事件先复制 payload，再由独立串行 queue `com.gizclaw.h2.darwin.corebluetooth.events` 投递。Subscriber 不会运行在 backend queue 上，可以在 BLE event handler 中调用任意 `h2_pal_ble_*` API，不会在入口 `dispatch_sync` 上死锁。Backend 事件之间保持产生顺序；`start`、`stop`、scan start/stop 等在调用方线程产生的事件仍同步投递，不与尚在 event queue 中排队的 backend 事件排序。Handler 长时间阻塞只会延后后续 BLE 事件，不阻塞 backend queue。`corebluetooth_test` 通过 test-only hook 从真实 backend queue 投递合成的 `BLE_CONNECTED`，并在 handler 中调用 `h2_pal_ble_unregister_gatt_services()` 验证这一点，不需要 Bluetooth 硬件或权限。
 
 CoreBluetooth provider 不提供独立 legacy scan-response 配置；`h2_pal_ble_adv_set_set_scan_response_data()` 由完整 vtable entry 显式返回 `H2_PAL_ERR_UNSUPPORTED`，不能依赖零初始化 slot，也不能把 scan-response 内容合并进 primary advertising data。
 

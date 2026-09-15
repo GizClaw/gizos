@@ -41,4 +41,6 @@ void h2_darwin_corebluetooth_test_deliver_central_event(
 void h2_darwin_corebluetooth_test_set_other_connected(void);
 bool h2_darwin_corebluetooth_test_other_connected(void);
 
+void h2_darwin_corebluetooth_test_post_connected_on_backend_queue(void);
+
 #endif

@@ -95,6 +95,8 @@ typedef NS_ENUM(NSInteger, H2CoreBluetoothOperation) {
 }
 @end
 
+static char s_corebluetooth_queue_key;
+
 @interface H2CoreBluetoothBackend : NSObject <
     CBCentralManagerDelegate,
     CBPeripheralDelegate,
@@ -141,6 +143,23 @@ static void h2_corebluetooth_post(
     h2_pal_system_event_type_t type,
     const void *payload,
     size_t payloadSize) {
+    if (dispatch_get_specific(&s_corebluetooth_queue_key) != NULL) {
+        NSData *payloadCopy = payloadSize > 0u
+            ? [NSData dataWithBytes:payload length:payloadSize]
+            : nil;
+        static dispatch_queue_t eventQueue;
+        static dispatch_once_t eventQueueOnce;
+        dispatch_once(&eventQueueOnce, ^{
+            eventQueue = dispatch_queue_create(
+                "com.gizclaw.h2.darwin.corebluetooth.events",
+                DISPATCH_QUEUE_SERIAL);
+        });
+        dispatch_async(eventQueue, ^{
+            h2_corebluetooth_post(
+                type, payloadCopy.bytes, payloadCopy.length);
+        });
+        return;
+    }
     const h2_pal_system_event_t event = {
         .type = type,
         .payload = payload,
@@ -290,6 +309,11 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
     if (self != nil) {
         _queue = dispatch_queue_create(
             "com.gizclaw.h2.darwin.corebluetooth", DISPATCH_QUEUE_SERIAL);
+        dispatch_queue_set_specific(
+            _queue,
+            &s_corebluetooth_queue_key,
+            &s_corebluetooth_queue_key,
+            NULL);
         _stateSemaphore = dispatch_semaphore_create(0);
         _peripheralsByAddress = [NSMutableDictionary dictionary];
         _clientServices = [NSMutableDictionary dictionary];
@@ -1597,6 +1621,20 @@ bool h2_darwin_corebluetooth_test_other_connected(void) {
                 isEqual:@2] && backend.nextClientHandle == 3u;
     });
     return intact;
+}
+
+void h2_darwin_corebluetooth_test_post_connected_on_backend_queue(void) {
+    dispatch_async(h2_corebluetooth_backend().queue, ^{
+        const h2_pal_ble_connection_t connection = {
+            .conn_handle = H2_COREBLUETOOTH_CONN_HANDLE,
+            .role = H2_PAL_BLE_ROLE_CENTRAL,
+            .mtu = 23u,
+        };
+        h2_corebluetooth_post(
+            H2_PAL_SYSTEM_EVENT_TYPE_BLE_CONNECTED,
+            &connection,
+            sizeof(connection));
+    });
 }
 
 static h2_pal_result_t h2_corebluetooth_start(void *user) {

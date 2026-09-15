@@ -30,6 +30,13 @@ static void *connect_retry_thread(void *user) {
     return NULL;
 }
 
+typedef struct reentrant_connection_event {
+    h2_pal_ble_t *ble;
+    dispatch_semaphore_t completed;
+    h2_pal_result_t operation_result;
+    size_t observed;
+} reentrant_connection_event_t;
+
 static void *test_alloc(void *user, size_t len) {
     (void)user;
     return malloc(len);
@@ -58,6 +65,22 @@ static int test_log(void *user, h2_pal_log_level_t level,
     (void)level;
     (void)scope;
     (void)message;
+    return H2_PAL_OK;
+}
+
+static int observe_connected_and_use_ble(
+    void *user,
+    const h2_pal_system_event_t *event) {
+    reentrant_connection_event_t *observed = user;
+    assert(event->type == H2_PAL_SYSTEM_EVENT_TYPE_BLE_CONNECTED);
+    assert(event->payload_size == sizeof(h2_pal_ble_connection_t));
+    const h2_pal_ble_connection_t *connection = event->payload;
+    assert(connection->conn_handle == 1u);
+    assert(connection->mtu == 23u);
+    ++observed->observed;
+    observed->operation_result =
+        h2_pal_ble_unregister_gatt_services(observed->ble);
+    dispatch_semaphore_signal(observed->completed);
     return H2_PAL_OK;
 }
 
@@ -168,5 +191,27 @@ int main(void) {
     assert(h2_pal_ble_start_scan(
                ble, &exact_scan, ignore_scan, NULL) ==
            H2_PAL_ERR_UNSUPPORTED);
+
+    const h2_pal_system_event_api_t *system_events =
+        h2_darwin_system_event_api();
+    assert(h2_pal_system_event_init(system_events) == H2_PAL_OK);
+    reentrant_connection_event_t reentrant = {
+        .ble = ble,
+        .completed = dispatch_semaphore_create(0),
+        .operation_result = H2_PAL_ERR_INVALID_STATE,
+    };
+    h2_pal_system_event_subscription_t *connected = NULL;
+    assert(h2_pal_system_event_subscribe(
+               system_events, H2_PAL_SYSTEM_EVENT_TYPE_BLE_CONNECTED,
+               observe_connected_and_use_ble, &reentrant, &connected) ==
+           H2_PAL_OK);
+    h2_darwin_corebluetooth_test_post_connected_on_backend_queue();
+    assert(dispatch_semaphore_wait(
+               reentrant.completed,
+               dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)) == 0);
+    assert(reentrant.observed == 1u);
+    assert(reentrant.operation_result == H2_PAL_OK);
+    h2_pal_system_event_unsubscribe(system_events, connected);
+    h2_pal_system_event_deinit(system_events);
     return 0;
 }
