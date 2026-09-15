@@ -9,7 +9,12 @@
  * the erase result. Completion and publication must reject it. */
 int h2_jieli_upgrade_erase_failed(void);
 
-/* Arm only after candidate payload verification on P1. The gate remains
+/* Torn-header recovery belongs to this board layout and its pinned SDK, not
+ * the public Loader: an explicit complete reinstall from P1 erases and verifies
+ * the P2 header sector during payload transfer, before arm. Erase failure poisons
+ * the boot. Arm/publish never repair or erase a nonempty header (including a
+ * valid different bank); replacing such a bank requires a complete install.
+ * Arm only after candidate payload verification on P1. The gate remains
  * latched until reset, including after errors: late SDK writes cannot publish
  * a candidate header after the caller has abandoned the transaction. */
 int h2_jieli_upgrade_header_arm(void);

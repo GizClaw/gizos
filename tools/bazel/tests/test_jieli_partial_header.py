@@ -31,24 +31,28 @@ int norflash_origin_read(uint8_t *out,uint32_t addr,uint32_t len) {
 int norflash_protect_suspend(void) { return 0; }
 int norflash_protect_resume(void) { return 0; }
 int norflash_write(void *unused,const uint8_t *in,uint32_t len,uint32_t addr) {
-  assert(!unused && len==16 && addr==H2_JIELI_BANK_2_SFC_BASE-32);
+  assert(!unused && len==H2_JIELI_TEST_PREFIX_BYTES && addr==H2_JIELI_BANK_2_SFC_BASE-32);
   memcpy(p2,in,len); writes++; return len;
 }
 void wdt_close(void) { closed++; }
-void os_time_dly(unsigned ticks) { assert(ticks==100); longjmp(stopped,1); }
+void system_reset(void) { closed++; longjmp(stopped,1); }
+void os_time_dly(unsigned ticks) { assert(ticks==100); }
 int main(void) {
   uint8_t header[32]; memset(header,0x5a,32); memset(p2,0xff,32);
   base=H2_JIELI_BANK_1_SFC_BASE;
   h2_jieli_upgrade_publish_observer(header); assert(!writes);
   base=H2_JIELI_BANK_2_SFC_BASE; read_error=1;
-  h2_jieli_upgrade_publish_observer(header); assert(!writes);
+  if (!setjmp(stopped)) { h2_jieli_upgrade_publish_observer(header); assert(0); }
+  assert(!writes && closed==1);
   read_error=0; p1[0]=1;
-  h2_jieli_upgrade_publish_observer(header); assert(!writes);
+  if (!setjmp(stopped)) { h2_jieli_upgrade_publish_observer(header); assert(0); }
+  assert(!writes && closed==2);
   p1[0]=0; /* all-zero mock decoded P1 has valid CRC */
   if (!setjmp(stopped)) { h2_jieli_upgrade_publish_observer(header); assert(0); }
-  assert(writes==1 && closed==1);
-  assert(memcmp(p2,header,16)==0);
-  for (int i=16;i<32;i++) assert(p2[i]==0xff);
+  assert(writes==1 && closed==3);
+  assert(memcmp(p2,header,H2_JIELI_TEST_PREFIX_BYTES==32 ? 31 : 16)==0);
+  if(H2_JIELI_TEST_PREFIX_BYTES==32) assert(p2[31]==(uint8_t)(header[31]^1u));
+  for (int i=H2_JIELI_TEST_PREFIX_BYTES;i<32;i++) assert(p2[i]==0xff);
   for (int i=0;i<32;i++) assert(p1[i]==0);
 }
 '''
@@ -60,15 +64,22 @@ int main(void) {
                 "#include <stdint.h>\nint norflash_origin_read(uint8_t *,uint32_t,uint32_t);\n"
                 "int norflash_write(void *,const uint8_t *,uint32_t,uint32_t);\n"
                 "int norflash_protect_suspend(void);\nint norflash_protect_resume(void);\n")
-            (root / "asm/wdt.h").write_text("void wdt_close(void);\n")
+            (root / "asm/wdt.h").write_text("void wdt_close(void);\nvoid system_reset(void);\n")
             (root / "os/os_api.h").write_text("void os_time_dly(unsigned);\n")
             (root / "fixture.c").write_text(SOURCE.read_text())
             (root / "test.c").write_text(program)
             binary = root / "test"
-            subprocess.run([
-                "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
-                "-I", str(root), "-I", str(ROOT / "boards/jieli_ac791n_devkit/ac791n/include"),
-                "-I", str(ROOT / "boards/jieli_ac791n_devkit/ac791n/layouts/h2loader/include"),
-                str(root / "test.c"), "-o", str(binary),
-            ], check=True, timeout=60)
-            subprocess.run([str(binary)], check=True, timeout=10)
+            for prefix in (16, 32):
+                subprocess.run([
+                    "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                    f"-DH2_JIELI_TEST_PREFIX_BYTES={prefix}",
+                    "-I", str(root),
+                    "-I", str(ROOT / "boards/jieli_ac791n_devkit/ac791n/include"),
+                    "-I", str(ROOT / "boards/jieli_ac791n_devkit/ac791n/layouts/h2loader/include"),
+                    str(root / "test.c"), "-o", str(binary),
+                ], check=True, timeout=60)
+                subprocess.run([str(binary)], check=True, timeout=10)
+
+
+if __name__ == "__main__":
+    unittest.main()
