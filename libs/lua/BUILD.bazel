@@ -82,6 +82,8 @@ cc_library(
         "src/modules/h2_lua_geometry_batches_internal.h",
         "src/modules/h2_lua_kv.c",
         "src/modules/h2_lua_modules.c",
+        "src/modules/h2_lua_display.c",
+        "src/modules/h2_lua_display_internal.h",
         "src/modules/h2_lua_numeric_internal.h",
         "src/modules/h2_lua_numeric_typed.h",
         "src/modules/h2_lua_vmath_kernels.h",
