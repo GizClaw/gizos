@@ -44,8 +44,9 @@ provider 将空闲维护的解析响应和共用 AT 交换的原始 command 响�
 
 `get_signal` 和 `MODEM_SIGNAL_CHANGED` 的 `h2_pal_modem_signal_t` 保留
 `rssi_dbm`、`ber`、`rat`，追加 `rssi_valid`、`rsrp_dbm`、`rsrp_valid`。
-CSQ 99 表示未知：`rssi_valid=0`、`rssi_dbm=0`，consumer 必须忽略该 RSSI，
-不能渲染为满格；其它 CSQ 沿用 `-113 + 2 * csq`，`rssi_valid=1`。
+只有 CSQ `0..31` 是测量值：沿用 `-113 + 2 * csq`，`rssi_valid=1`。
+CSQ 99（未知）以及任何越界值（如 32、负数）一律 `rssi_valid=0`、`rssi_dbm=0`，
+consumer 必须忽略该 RSSI，不能渲染为满格。
 
 Quectel 在 CSQ 成功后查询 `AT+QCSQ`，仅接受 LTE mode 且 RSRP 在
 `-156..-31` dBm 内的值。SIMCom 查询 `AT+CESQ`，LTE RSRP index `0..97`

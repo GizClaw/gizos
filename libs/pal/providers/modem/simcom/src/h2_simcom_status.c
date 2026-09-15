@@ -70,11 +70,13 @@ static h2_pal_modem_packet_state_t parse_packet(const char *line) {
     return value != 0 ? H2_PAL_MODEM_PACKET_ATTACHED : H2_PAL_MODEM_PACKET_DETACHED;
 }
 
+/* Only CSQ 0..31 is a measurement; 99 (unknown) and anything else is invalid. */
+static int csq_is_valid(int csq) {
+    return csq >= 0 && csq <= 31;
+}
+
 static int csq_to_dbm(int csq) {
-    if (csq == 99) {
-        return 0;
-    }
-    return -113 + (2 * csq);
+    return csq_is_valid(csq) ? -113 + (2 * csq) : 0;
 }
 
 h2_pal_result_t h2_simcom_modem_prepare(h2_simcom_modem_t *modem) {
@@ -266,7 +268,7 @@ h2_pal_result_t h2_simcom_modem_get_signal(
         return H2_PAL_ERR_FORMAT;
     }
     out_signal->rssi_dbm = csq_to_dbm(csq);
-    out_signal->rssi_valid = csq != 99;
+    out_signal->rssi_valid = csq_is_valid(csq) ? 1u : 0u;
     out_signal->ber = ber;
     out_signal->rat = H2_PAL_MODEM_RAT_LTE;
     rc = h2_simcom_at_exchange(modem, "AT+CESQ", &response, 0);

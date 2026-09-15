@@ -90,6 +90,16 @@ int main(void) {
     quality_result = H2_PAL_OK;
     csq_reply = "+CSQ: 99,99\r\nOK\r\n";
     check_signal(&modem, 0, 0);
+    quality_result = H2_PAL_ERR_TIMEOUT;
+    csq_reply = "+CSQ: 31,99\r\nOK\r\n";
+    check_signal(&modem, -51, 0);
+    csq_reply = "+CSQ: 32,99\r\nOK\r\n";
+    check_signal(&modem, 0, 0);
+    csq_reply = "+CSQ: -1,99\r\nOK\r\n";
+    check_signal(&modem, 0, 0);
+    quality_result = H2_PAL_OK;
+    h2_simcom_handle_urc_line(&modem, "+CSQ: 32,99");
+    assert(last_signal.rssi_dbm == 0 && last_signal.rssi_valid == 0u);
     h2_simcom_handle_urc_line(&modem, "+CSQ: 20,99");
     assert(last_signal.rssi_valid == 1u && last_signal.rsrp_valid == 0u);
     h2_simcom_handle_urc_line(&modem, "+CSQ: 99,99");
