@@ -1467,7 +1467,7 @@ void h2_darwin_corebluetooth_test_set_pending_connect(
             backend.connectedPeripheral = central.peripheral;
             backend.clientServices[@1] = (id)[NSObject new];
             backend.clientCharacteristics[@2] = (id)[NSObject new];
-            backend.clientHandles[[NSValue valueWithPointer:address]] = @2;
+            backend.clientHandles[[NSValue valueWithNonretainedObject:central.peripheral]] = @2;
             backend.nextClientHandle = 3u;
             backend.started = YES;
         }
