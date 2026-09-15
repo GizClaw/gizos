@@ -323,7 +323,10 @@ void h2_quectel_post_system_event(
         payload_size == sizeof(h2_pal_modem_signal_t)) {
         const h2_pal_modem_signal_t *signal = payload;
         if (modem->signal_seen && modem->observed_signal.rssi_dbm == signal->rssi_dbm &&
-            modem->observed_signal.ber == signal->ber && modem->observed_signal.rat == signal->rat) {
+            modem->observed_signal.ber == signal->ber && modem->observed_signal.rat == signal->rat &&
+            modem->observed_signal.rssi_valid == signal->rssi_valid &&
+            modem->observed_signal.rsrp_dbm == signal->rsrp_dbm &&
+            modem->observed_signal.rsrp_valid == signal->rsrp_valid) {
             return;
         }
         modem->signal_seen = 1u;

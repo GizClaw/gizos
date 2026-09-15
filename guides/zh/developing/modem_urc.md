@@ -40,6 +40,22 @@ provider 将空闲维护的解析响应和共用 AT 交换的原始 command 响�
 
 `h2_modem_urc_get_stats` 提供 accepted、handled、full、truncated 计数，不输出行文本、身份或 secret。并发快照各字段独立读取，不是事务一致的队列长度。FULL 证明此队列入队失败，不能据此证明 Runtime event queue 满或组合键失效。
 
+### 信号有效性与 LTE RSRP
+
+`get_signal` 和 `MODEM_SIGNAL_CHANGED` 的 `h2_pal_modem_signal_t` 保留
+`rssi_dbm`、`ber`、`rat`，追加 `rssi_valid`、`rsrp_dbm`、`rsrp_valid`。
+CSQ 99 表示未知：`rssi_valid=0`、`rssi_dbm=0`，consumer 必须忽略该 RSSI，
+不能渲染为满格；其它 CSQ 沿用 `-113 + 2 * csq`，`rssi_valid=1`。
+
+Quectel 在 CSQ 成功后查询 `AT+QCSQ`，仅接受 LTE mode 且 RSRP 在
+`-156..-31` dBm 内的值。SIMCom 查询 `AT+CESQ`，LTE RSRP index `0..97`
+映射为 `index - 141` dBm；index 0 的低于 -140 dBm 档报告 -141，255 表示未知。
+有效测量置 `rsrp_valid=1`；无服务、非 LTE、解析失败、ERROR 或 timeout
+均保留成功的 CSQ 结果，`rsrp_valid=0`、`rsrp_dbm=0`。
+CSQ URC 不查询 RSRP，因此始终清除 RSRP 有效位。`rat` 沿用原有含义，
+不能代替测量有效位。Desktop 的配置 RSSI 有效，默认没有 RSRP 测量。
+Quectel 的信号变化去重包含三个新增字段，RSRP 单独变化也会发布事件。
+
 ## 验证边界
 
 公共回归包括分片/累计重放、重复真实通知、普通应答风暴、长事务期间消费者进度、状态边沿和生命周期失败重试。固件构建及真实按键、注册、SIM、PPP 验收由 consumer 在配对接线后完成；host 测试不能代替设备结论。

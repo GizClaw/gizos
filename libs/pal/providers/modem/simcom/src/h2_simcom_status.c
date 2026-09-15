@@ -266,8 +266,20 @@ h2_pal_result_t h2_simcom_modem_get_signal(
         return H2_PAL_ERR_FORMAT;
     }
     out_signal->rssi_dbm = csq_to_dbm(csq);
+    out_signal->rssi_valid = csq != 99;
     out_signal->ber = ber;
     out_signal->rat = H2_PAL_MODEM_RAT_LTE;
+    rc = h2_simcom_at_exchange(modem, "AT+CESQ", &response, 0);
+    if (rc == H2_PAL_OK) {
+        line = h2_simcom_response_find(&response, "+CESQ:");
+        int rxlev, cesq_ber, rscp, ecno, rsrq, rsrp;
+        if (line != NULL &&
+            sscanf(line, "+CESQ: %d,%d,%d,%d,%d,%d", &rxlev, &cesq_ber, &rscp, &ecno, &rsrq, &rsrp) == 6 &&
+            rsrp >= 0 && rsrp <= 97) {
+            out_signal->rsrp_dbm = rsrp - 141;
+            out_signal->rsrp_valid = 1u;
+        }
+    }
     h2_simcom_post_system_event(
         modem,
         H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIGNAL_CHANGED,

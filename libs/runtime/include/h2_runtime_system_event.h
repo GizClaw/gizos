@@ -299,6 +299,9 @@ typedef struct h2_runtime_system_event_modem_signal {
     int32_t rssi_dbm;
     int32_t ber;
     h2_runtime_system_modem_rat_t rat;
+    uint8_t rssi_valid; /**< 1 for measured RSSI; otherwise rssi_dbm is 0 and must be ignored. */
+    int32_t rsrp_dbm; /**< LTE reference signal received power in dBm. */
+    uint8_t rsrp_valid; /**< 1 only for a real serving LTE cell RSRP measurement. */
 } h2_runtime_system_event_modem_signal_t;
 
 typedef struct h2_runtime_system_event_modem_data {

@@ -51,6 +51,7 @@ static int parse_signal_urc(const char *line, h2_pal_modem_signal_t *out_signal)
     }
     memset(out_signal, 0, sizeof(*out_signal));
     out_signal->rssi_dbm = csq == 99 ? 0 : -113 + (2 * csq);
+    out_signal->rssi_valid = csq != 99;
     out_signal->ber = ber;
     out_signal->rat = H2_PAL_MODEM_RAT_LTE;
     return 1;
