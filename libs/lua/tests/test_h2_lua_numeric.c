@@ -925,6 +925,78 @@ static void benchmark(lua_State *s, const char *kind) {
          kind, ms);
   lua_pop(s, 1);
 }
+/* Feed original Lua doubles through the public ABI, independently classifying
+ * the old finite/range contract before any possible binary32 narrowing. */
+static void public_number_validation(lua_State *s) {
+  const double values[] = {
+      0, -0.0, DBL_TRUE_MIN, -DBL_TRUE_MIN, DBL_MIN, -DBL_MIN,
+      FLT_TRUE_MIN, -FLT_TRUE_MIN, .1, -.1,
+      nextafter(1e6, 0), nextafter(-1e6, 0), 1e6, -1e6,
+      nextafter(1e6, INFINITY), nextafter(-1e6, -INFINITY),
+      1e6 + .03125, -1e6 - .03125, DBL_MAX, -DBL_MAX,
+      NAN, INFINITY, -INFINITY};
+  ok(s, luaL_dostring(s,
+      "local v,g=require('vmath'),require('geometry');"
+      "local axis=v.buffer(3);axis:set(2,1);"
+      "local r=g.rotations(v.buffer(0),v.buffer(0),axis,0);local out=v.buffer(7);"
+      "return function(x,accepted,rounded) "
+      "local good,err=pcall(v.lerp,x,x,0);assert(good==accepted);"
+      "if not good then assert(err:find('numeric value outside finite bounds',1,true)) end;"
+      "for _,kind in ipairs{'f64','f32'} do local b=v.buffer(4,kind);"
+      "for op=1,3 do b:fill(37);local good,err=pcall(function() "
+      "if op==1 then b:set(2,x) elseif op==2 then b:fill(x) "
+      "else b:load{19,x} end end);assert(good==accepted);"
+      "if not good then assert(err:find('numeric value outside finite bounds',1,true));"
+      "for j=1,4 do assert(b:get(j)==37) end "
+      "else local expected=kind=='f32' and rounded or x;"
+      "assert(b:get(2)==expected);if expected==0 then "
+      "assert(1/b:get(2)==1/expected) end;"
+      "if op~=2 then assert(b:get(3)==37 and b:get(4)==37) end end end end;"
+      "for slot=1,6 do local args={0,0,0,0,0,0};args[slot]=x;"
+      "for _,full in ipairs{false,true} do out:fill(37);"
+      "local good,err=pcall(r.evaluate,r,out,args[1],args[2],args[3],"
+      "args[4],args[5],args[6],full,false);assert(good==accepted);"
+      "if not good then assert(err:find('numeric value outside finite bounds',1,true));"
+      "for j=1,7 do assert(out:get(j)==37) end "
+      "else for j=1,3 do assert(out:get(j)==args[3+j]) end;"
+      "for j=4,7 do assert(out:get(j)==37) end end end end end"));
+  for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i) {
+    double x = values[i];
+    int accepted = isfinite(x) && fabs(x) <= 1e6;
+    lua_pushvalue(s, -1);
+    lua_pushnumber(s, x);
+    lua_pushboolean(s, accepted);
+    lua_pushnumber(s, accepted ? (double)(float)x : 0);
+    ok(s, lua_pcall(s, 3, 0, 0));
+  }
+  lua_pop(s, 1);
+  /* Setters reject malformed stored values before the constructor can see
+   * them. Inject each field separately to exercise its own public validation. */
+  ok(s, luaL_dostring(s,
+      "local v,g=require('vmath'),require('geometry');"
+      "local seg,weight,axis=v.buffer(3),v.buffer(1),v.buffer(3);axis:set(2,1);"
+      "return function() return g.rotations(seg,weight,axis,1) end,seg,weight,axis"));
+  for (int field = 0; field < 3; ++field) {
+    h2_numeric_buffer_t *b = lua_touserdata(s, -3 + field);
+    assert(b && !b->is_f32);
+    for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i) {
+      double x = values[i];
+      b->data.f64[0] = x;
+      lua_pushvalue(s, -4);
+      int status = lua_pcall(s, 0, 1, 0);
+      int accepted = isfinite(x) && fabs(x) <= 1e6;
+      assert((status == LUA_OK) == accepted);
+      if (!accepted)
+        assert(strstr(lua_tostring(s, -1), "rotation value out of bounds"));
+      lua_pop(s, 1);
+    }
+    b->data.f64[0] = 0;
+  }
+  lua_pop(s, 4);
+  printf("public scalar/rotation validation: %zu double boundary cases\n",
+         sizeof(values) / sizeof(values[0]));
+}
+
 static void prepared_budget(lua_State *s, allocation_counter_t *a) {
   ok(s,
      luaL_dostring(
@@ -981,6 +1053,7 @@ int main(void) {
   lua_pop(s, 1);
   luaL_requiref(s, LUA_STRLIBNAME, luaopen_string, 1);
   lua_pop(s, 1);
+  public_number_validation(s);
   prepared_budget(s, &a);
   binding_oom(s, &a);
   for (int bound = 0; bound <= 1; ++bound)

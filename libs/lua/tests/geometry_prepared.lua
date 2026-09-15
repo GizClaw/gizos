@@ -60,6 +60,36 @@ local held=v.buffer(9);held:fill(42)
 assert(not pcall(function() invalid:evaluate(held,0,0,0,999999,0,0,true,false) end))
 for i=1,9 do assert(held:get(i)==42) end
 assert(not pcall(g.rotations,v.buffer(771),v.buffer(257),axis,257))
+-- Validate every scalar before work and keep the output suffix on success or
+-- late output failure. The full path stages an in-range prefix first.
+do
+  local segments,weights,axis=b{1,2,3},b{0},b{0,0,1}
+  local owned=g.rotations(segments,weights,axis,1)
+  local out=v.buffer(10)
+  segments:fill(0);weights:fill(1);axis:fill(0)
+  segments=nil;weights=nil;axis=nil;collectgarbage('collect')
+  for _,full in ipairs{false,true} do for _,shared in ipairs{false,true} do
+    out:fill(42);owned:evaluate(out,0,0,0,0,0,0,full,shared)
+    local first=full and 4 or 1
+    for j=1,3 do assert(out:get(first+j-1)==j) end
+    for j=(full and 7 or 4),10 do assert(out:get(j)==42) end
+    out:fill(42)
+    owned:evaluate(out,0,0,0,999999,999998,999997,full,shared)
+    for j=1,3 do assert(out:get(first+j-1)==1e6) end
+    for j=(full and 7 or 4),10 do assert(out:get(j)==42) end
+    out:fill(42)
+    local good,err=pcall(owned.evaluate,owned,out,0,0,0,0,0,999998,full,shared)
+    assert(not good and err:find('rotation value out of bounds',1,true))
+    for j=1,10 do assert(out:get(j)==42) end
+  end end
+  for slot=1,6 do for _,bad in ipairs{'0',false,{}} do
+    local args={0,0,0,0,0,0};args[slot]=bad;out:fill(42)
+    local good,err=pcall(owned.evaluate,owned,out,args[1],args[2],args[3],
+                         args[4],args[5],args[6],false,false)
+    assert(not good and err:find('number expected',1,true))
+    for j=1,10 do assert(out:get(j)==42) end
+  end end
+end
 local base=b{1,1, 3,1, 3,3, 1,3, 0,4, 4,4}
 local topology=b{0,1,4, 1,5,2}
 local w0=b{0,1,2,3,4,5}; local w1=b{0,0,1,1,2,2}

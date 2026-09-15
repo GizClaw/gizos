@@ -8,7 +8,7 @@ typedef struct rotation_data {
   double *segments, *weights, *dots;
 } rotation_data_t;
 static double rotation_checked(lua_State *s, double x) {
-  if (!isfinite(x) || fabs(x) > H2_LUA_NUMERIC_VALUE_LIMIT)
+  if (!(fabs(x) <= H2_LUA_NUMERIC_VALUE_LIMIT))
     luaL_error(s, "rotation value out of bounds");
   return x;
 }

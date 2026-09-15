@@ -1,7 +1,7 @@
 #include "h2_lua_numeric_internal.h"
 
 static double checked(lua_State *s, double v) {
-  if (!isfinite(v) || fabs(v) > H2_LUA_NUMERIC_VALUE_LIMIT)
+  if (!(fabs(v) <= H2_LUA_NUMERIC_VALUE_LIMIT))
     luaL_error(s, "numeric value outside finite bounds");
   return v;
 }

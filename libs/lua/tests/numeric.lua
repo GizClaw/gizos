@@ -30,6 +30,30 @@ bad(function() v.lerp(1e6,-1e6,1e6) end)
 local x,speed=v.spring(0,0,1,10,2,0,.1); near(x,.1);near(speed,1)
 bad(function() v.spring(0,0,0,-1,0,0,.1) end)
 bad(function() v.spring(0,0,0,1,0,0,1e-300) end)
+-- Input validation and result validation are separate contracts. Both
+-- spring outputs remain checked in velocity-then-position order.
+do
+ local function outside(fn)
+   local good,err=pcall(fn)
+   assert(not good and err:find('numeric value outside finite bounds',1,true))
+ end
+ assert(v.lerp(0,500000,2)==1e6)
+ outside(function() v.lerp(0,500000,2.000000000000001) end)
+ outside(function() v.lerp(-1e6,1e6,1e6) end)
+ local position,velocity=v.spring(0,1e6,0,0,0,0,.1)
+ assert(position==1e5 and velocity==1e6)
+ outside(function() v.spring(0,1e6,1,1e6,0,0,.1) end)
+ outside(function() v.spring(1e6,1,0,0,0,0,.1) end)
+ for _,fn in ipairs{v.clamp,v.lerp,v.smoothstep,v.spring} do
+   local n=fn==v.spring and 7 or 3
+   for slot=1,n do for _,bad in ipairs{'0',false,{}} do
+     local args=fn==v.spring and {0,0,0,1,0,0,.01} or {0,1,.5}
+     args[slot]=bad
+     local good,err=pcall(fn,table.unpack(args))
+     assert(not good and err:find('number expected',1,true))
+   end end
+ end
+end
 local out, src, co = b({99,99,99}), b({1,2,3}), b({1,2,3})
 v.polynomial(out,src,co,3);near(out:get(2),17)
 v.combine(out,src,co,2,-1,1,3);near(out:get(3),4)
