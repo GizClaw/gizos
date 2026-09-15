@@ -24,8 +24,8 @@ cc_library(
     ],
     hdrs = [
         "include/h2_h2loader_cli_app.h",
-        "src/h2_h2loader_cli_internal.h",
         "include/h2_h2loader_cli_task_names.h",
+        "src/h2_h2loader_cli_internal.h",
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,

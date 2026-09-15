@@ -212,9 +212,11 @@ static h2_pal_result_t monitor_output(void *user, const uint8_t *data,
       (data == NULL && len != 0u)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  context->case_result->output_bytes += len;
-  context->monitor_output_bytes += len;
-  context->case_result->log_bytes += len;
+  if (context->monitor_logs) {
+    context->case_result->output_bytes += len;
+    context->monitor_output_bytes += len;
+    context->case_result->log_bytes += len;
+  }
   return context->config->on_log == NULL
              ? H2_PAL_OK
              : context->config->on_log(context->config->log_user, data, len);
@@ -960,9 +962,12 @@ static h2_pal_result_t run_reboot_monitor(h2_e2e_transport_context_t *context,
    * failure is terminal, so repeated resets are not hidden by retries. */
   for (unsigned transition = 0u; rc == H2_PAL_OK && transition < 2u;
        ++transition) {
-    context->monitor_output_bytes = 0u;
     rc = reconnect_after_reboot(context, expected_partition, &status);
-    if (rc == H2_PAL_OK) rc = begin_monitor_window(context);
+    if (rc == H2_PAL_OK) {
+      /* Handshake logs do not satisfy the monitor window's output requirement. */
+      context->monitor_output_bytes = 0u;
+      rc = begin_monitor_window(context);
+    }
     if (rc == H2_PAL_OK) rc = finish_bounded_monitor(context, 1);
     if (rc == H2_PAL_OK) rc = read_status(context, &status);
     if ((rc == H2_PAL_ERR_CLOSED || rc == H2_PAL_ERR_TIMEOUT) &&

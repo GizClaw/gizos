@@ -126,6 +126,12 @@ typedef struct h2_h2loader_e2e_config {
   void *case_user;
   h2_h2loader_e2e_progress_event_fn on_progress;
   void *progress_user;
+  /** Optional sink and user context, borrowed for h2_h2loader_e2e_run.
+   * Called synchronously on the runner thread. UART forwards every non-frame
+   * serial byte from every runner connection; a non-OK sink result aborts the
+   * current serial operation with that result. BLE forwards connect-failure
+   * diagnostics from h2_h2loader_host_ble_connect; a sink error never replaces
+   * the connect error. */
   h2_h2loader_host_transport_log_fn on_log;
   void *log_user;
 

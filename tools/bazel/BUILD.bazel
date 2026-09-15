@@ -430,6 +430,32 @@ py_test(
 )
 
 py_test(
+    name = "h2loader_reboot_monitor_test",
+    srcs = ["tests/test_h2loader_reboot_monitor.py"],
+    data = ["//projects/h2loader/apps/e2e-runner:src/h2_h2loader_e2e_runner.c"],
+    legacy_create_init = 0,
+    main = "tests/test_h2loader_reboot_monitor.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "h2loader_stage_diagnostics_test",
+    srcs = ["tests/test_h2loader_stage_diagnostics.py"],
+    data = ["//libs/h2loader_host:src/h2_h2loader_host_serial.c"],
+    legacy_create_init = 0,
+    main = "tests/test_h2loader_stage_diagnostics.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
     name = "h2loader_serial_handoff_test",
     srcs = ["tests/test_h2loader_serial_handoff.py"],
     data = [
