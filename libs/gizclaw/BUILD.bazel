@@ -345,6 +345,28 @@ cc_test(
     ],
 )
 
+cc_test(
+    name = "h2_gizclaw_api_key_state_test",
+    srcs = [
+        "src/h2_gizclaw_service_internal.h",
+        "tests/test_h2_gizclaw_api_key_state.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    local_defines = ["H2_GIZCLAW_TESTING"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gizclaw_test_support",
+        "//libs/pal/providers/desktop/pal_core",
+    ],
+)
+
 # Manual: a timed start against a real HTTPS server (see player_live in the
 # source for arguments). Needs the network, so it never runs in CI.
 cc_test(

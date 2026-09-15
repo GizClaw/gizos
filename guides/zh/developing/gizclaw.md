@@ -148,9 +148,7 @@ optional string（tag 6 / 7），服务端据此把观测归到 by-imei 索引�
 请求自有存储。IMEI / IMSI 属于个人数据，只出现在编码后的 telemetry payload 里，
 不进入 `h2_pal_log` 输出与 trace 字符串。
 
-设备身份可用 `h2_gizclaw_rpc_api_key_create()` 创建 HTTP API key，用
-`h2_gizclaw_rpc_api_key_revoke()` 撤销；也提供相应 create/do/wait/parse/release 接口。
-返回的 secret 由调用者管理，不应写入日志。
+设备身份可用 `h2_gizclaw_rpc_api_key_create()` 创建 HTTP API key，用 `h2_gizclaw_rpc_api_key_revoke()` 撤销；也提供相应 create/do/wait/parse/release 接口。返回的 secret 由调用者管理，不应写入日志。
 
 Provider 在 `h2_gizclaw_client_poll()` 所在线程同步运行。上游 C SDK 要求 provider 在返回成功前恰好提交一次 response；GizOS adapter 将这个 responder 细节封装为同步 `out_response`，并在 provider 返回后立即把结果交回上游 responder。Request payload、response payload 和 error message 都是 protobuf byte view：输入只在 callback 期间有效，输出必须在 callback 返回后保持有效，直到 adapter 消费返回的响应；不能返回栈上 buffer。
 
@@ -299,3 +297,14 @@ completion 恰好报告一次发送成功、失败或取消；同步 admission �
 文字输入不需要可读 PCM Track。服务端音频仍通过连接级下行通道播放，即使文字输入
 已经 completion；服务器文字事件仍遵循原有“输入活跃期间观察”的 callback 合同，
 completion 后不延长文字订阅。应用无需新增下行音频处理流程。
+
+
+## API key 异步状态
+
+扫码绑定等需要可取消刷新的产品使用 `h2_gizclaw_api_key_state_t`：创建时注入借用的 Service、Mem、Sync、Time 和非零 `timeout_ms`，`display_name` 会复制。产品调用 `request_refresh` 登记请求，主循环继续调用 `service_poll` 驱动 completion，再读取 `snapshot` 展示有效 key。无需创建线程、join 或等待 RPC；原有同步 helper 和 request 接口行为不变。
+
+`request_refresh(true)` 在当前 key 有效时先撤销再创建；撤销成功或 `NOT_FOUND` 后擦除旧 key 并提交 create，其它撤销错误保留 `valid && stale` 的旧 key，下一次 `request_refresh(true)` 可重试撤销。创建成功后 key 有效且不 stale，创建失败则失效。busy 期间重复刷新返回 OK，合并到当前链，不叠加请求、不更改撤销选择、不延长截止时间。每次 refresh 的总时限包含排队、连接、撤销和创建；`snapshot` 或 `request_refresh` 检查到期后取消当前请求，清除 busy 并记录 `H2_PAL_ERR_TIMEOUT`，保留的旧 key 标为 stale。检查到期的 `request_refresh` 随后可开始新一代刷新。
+
+快照只在 mutex 内短读，不发 RPC；包含 key、valid、stale、busy、closed、last_error 和每次可见变化递增的 revision。`request_refresh`、`close` 与 `service_poll` 在同一个 owner task 上调用，`snapshot` 也可从其它线程读取并执行到期取消。completion 只在 owner task 串行执行，每个请求的 generation 隔离超时、close 后的迟到结果。初始状态 invalid、stale、idle；close 后保留的 key 仍可读但 stale，last_error 为 CLOSED，新 refresh 返回 CLOSED。
+
+生命周期顺序必须是 `close` → Service stop → `service_poll` drain → `destroy` → Service deinit。close 可在 Service stop 之前调用，立即停止接收刷新并取消在途请求；destroy 在任何 completion 尚未分发时返回 BUSY，调用方继续 drain 后重试，不等待 RPC。destroy 需要排除并发读者，会擦除持有的 secret；快照中的 secret 副本由调用方擦除，不能写日志。取消或 close 后服务端才生成的 key 无法由这个已关闭的状态对象再撤销，可能留在服务端。状态对象不做持久化、二维码或 URL 格式化，也不属于 resource store 的 kind。
