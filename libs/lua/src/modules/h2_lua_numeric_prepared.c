@@ -300,6 +300,48 @@ static const double *bounds_read(lua_State *s, int at, size_t count, size_t n) {
   }
   return b;
 }
+/* Keep the source norm in the same no-fast-math compilation unit as its
+ * refined seed. This explicit API does not alter ordinary length/normalize. */
+static int length3_refined(lua_State *s) {
+  size_t n = h2_numeric_size(s, 3, H2_LUA_NUMERIC_COUNT_LIMIT / 3);
+  h2_numeric_buffer_t *out = f64_buffer(s, 1, n),
+                      *src = f64_buffer(s, 2, 3 * n);
+  double *staged = out->data.f64 + out->count;
+  for (size_t i = 0; i < n; ++i) {
+    const double *v = src->data.f64 + 3 * i;
+    double x = finite_result(s, v[0]), y = finite_result(s, v[1]),
+           z = finite_result(s, v[2]);
+    staged[i] = finite_result(s, refined_sqrt(x * x + y * y + z * z));
+  }
+  memcpy(out->data.f64, staged, n * sizeof(double));
+  return 0;
+}
+static int workspace_displacements(lua_State *s) {
+  constraint_workspace_t *w = workspace(s);
+  loaded(s, w);
+  h2_numeric_buffer_t *out = h2_numeric_check(s, 2);
+  if (!out->is_f32)
+    return luaL_error(s, "displacements require an f32 output buffer");
+  size_t first = node_index(s, h2_numeric_number(s, 3), w->n);
+  size_t count = h2_numeric_size(s, 4, w->n - first);
+  h2_numeric_capacity(s, out, 3 * count);
+  float *staged = out->data.f32 + out->count;
+  for (size_t i = 0; i < 3 * count; ++i) {
+    size_t at = 3 * first + i;
+    double current = finite_result(s, w->p[at]),
+           previous = finite_result(s, w->previous[at]);
+    staged[i] = (float)(current - previous);
+    finite_result(s, staged[i]);
+  }
+  memcpy(out->data.f32, staged, 3 * count * sizeof(float));
+  return 0;
+}
+static double coefficient(h2_numeric_buffer_t *b, size_t i) {
+  return b->is_f32 ? (double)b->data.f32[i] : b->data.f64[i];
+}
+static float float_coefficient(h2_numeric_buffer_t *b, size_t i) {
+  return b->is_f32 ? b->data.f32[i] : (float)b->data.f64[i];
+}
 static int workspace_integrate(lua_State *s) {
   constraint_workspace_t *w = workspace(s);
   loaded(s, w);
@@ -308,8 +350,14 @@ static int workspace_integrate(lua_State *s) {
   static const char *const modes[] = {"f64", "displacement-f32", NULL};
   int mode = luaL_checkoption(s, 9, NULL, modes);
   h2_numeric_buffer_t *inputs[6];
-  for (int j = 0; j < 5; ++j)
-    inputs[j] = f64_buffer(s, 4 + j, j ? 3 * count : count);
+  for (int j = 0; j < 5; ++j) {
+    size_t extent = j ? 3 * count : count;
+    if (mode && j >= 1 && j <= 3) {
+      inputs[j] = h2_numeric_check(s, 4 + j);
+      h2_numeric_capacity(s, inputs[j], extent);
+    } else
+      inputs[j] = f64_buffer(s, 4 + j, extent);
+  }
   size_t nb = h2_numeric_size(s, 11, 3 * NODE_LIMIT);
   const double *bounds = bounds_read(s, 10, nb, w->n);
   inputs[5] = bounds ? h2_numeric_check(s, 10) : NULL;
@@ -325,7 +373,7 @@ static int workspace_integrate(lua_State *s) {
       return luaL_error(s, "negative mobility");
     for (int j = 1; j < 5; ++j)
       for (size_t k = 0; k < 3; ++k)
-        finite_result(s, inputs[j]->data.f64[3 * i + k]);
+        finite_result(s, coefficient(inputs[j], 3 * i + k));
   }
   memcpy(w->staged_p, w->p, 3 * w->n * sizeof(double));
   memcpy(w->staged_previous, w->previous, 3 * w->n * sizeof(double));
@@ -334,15 +382,20 @@ static int workspace_integrate(lua_State *s) {
       for (size_t j = 0; j < 3; ++j) {
         size_t k = 3 * i + j, at = 3 * (first + i) + j;
         double old = w->p[at], increment;
-        double before = inputs[1]->data.f64[k], g0 = inputs[2]->data.f64[k];
-        double g1 = inputs[3]->data.f64[k], after = inputs[4]->data.f64[k];
+        double after = inputs[4]->data.f64[k];
         if (mode) {
+          float before = float_coefficient(inputs[1], k),
+                g0 = float_coefficient(inputs[2], k),
+                g1 = float_coefficient(inputs[3], k);
           float d = (float)(old - w->previous[at]);
-          d = (d + (float)before) * (float)g0;
-          d = d * (float)g1;
+          d = (d + before) * g0;
+          d = d * g1;
           increment = d;
-        } else
+        } else {
+          double before = inputs[1]->data.f64[k], g0 = inputs[2]->data.f64[k],
+                 g1 = inputs[3]->data.f64[k];
           increment = ((old - w->previous[at] + before) * g0) * g1;
+        }
         w->staged_p[at] = finite_result(s, (old + increment) + after);
         w->staged_previous[at] = old;
       }
@@ -574,6 +627,7 @@ void h2_numeric_prepared_register(lua_State *s) {
         {"span", workspace_span},   {"integrate", workspace_integrate},
         {"solve", workspace_solve}, {"damp", workspace_damp},
         {"copy", workspace_copy}, {"multipliers", workspace_multipliers},
+        {"displacements", workspace_displacements},
         {NULL, NULL}};
     luaL_setfuncs(s, methods, 0);
     lua_pushboolean(s, 0);
@@ -590,4 +644,6 @@ void h2_numeric_prepared_register(lua_State *s) {
   lua_pop(s, 1);
   lua_pushcfunction(s, workspace_new);
   lua_setfield(s, -2, "constraints");
+  lua_pushcfunction(s, length3_refined);
+  lua_setfield(s, -2, "length3_refined");
 }

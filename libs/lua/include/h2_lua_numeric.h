@@ -12,8 +12,9 @@
  * Buffers hold binary64 (default "f64") or binary32 ("f32") values, fixed at
  * creation, plus equally sized private transactional scratch. Payload including
  * scratch costs 16 bytes per f64 element or 8 per f32 element, plus fixed
- * metadata/userdata overhead. All buffer operands in one call must have the same
- * kind, including coefficients, indices, masks, camera and mesh topology;
+ * metadata/userdata overhead. Except for the explicit prepared operations below,
+ * all buffer operands in one call must have the same kind, including
+ * coefficients, indices, masks, camera and mesh topology;
  * mismatches raise "mixed numeric buffer kinds (f32/f64)" even for empty calls.
  * All-f32 operations compute in float; scalar arguments are validated before
  * conversion to float once per call (load converts each imported element).
@@ -25,7 +26,7 @@
  * Values and results must be finite with absolute value <= 1e6. Sizes/indices
  * must be integers. Every misuse raises a Lua error; failed operations preserve
  * public buffer and mesh contents. Scratch contents are unspecified on error.
- * Successful operations allocate only at constructors/first require(); call
+ * Successful operations allocate only at constructors/bind/first require(); call
  * setup outside frame loops. Error construction can allocate. Numeric kernels
  * never yield, call Lua, access hardware, or retain external pointers.
  *
@@ -55,6 +56,14 @@
  * - vmath.length3(dst,src,n) -> nothing: xyz triples to n scalar lengths.
  * - vmath.normalize3(dst,src,n) -> nothing: xyz triples to unit vectors;
  *   zero vectors remain zero. Both vector operations allow n <= 21845.
+ * - vmath.length3_refined(dst_f64,src_f64,n) -> nothing: explicit f64-only
+ *   source norm, n in 0..21845. Form s=x*x+y*y+z*z in double; outside
+ *   [1e-20,1e20] use sqrt(s), otherwise root=(double)sqrtf((float)s), then
+ *   .5*(root+s/root). Refined-domain relative error <=1e-12 versus double
+ *   sqrt; fallback preserves source squared underflow (possibly zero).
+ *   Unlike length3 it does not rescale tiny inputs. Existing length3 and
+ *   normalize3 are unchanged. Source capacity >=3n, destination >=n; aliases
+ *   read original inputs, suffixes unchanged, all results stage before commit.
  * - vmath.dot(a,b,count) -> number: dot product of scalar prefixes.
  * - vmath.verlet(p,prev,accel,inv_mass,dt,drag,n) -> nothing: packed xyz;
  *   p += (p-prev)/(1+drag*dt)+accel*dt^2, prev = old p. inv_mass zero pins
@@ -124,15 +133,15 @@
  *   kind 0 polygon (3..128 vertices), 1 line (2 vertices); RGB565 0..65535.
  *   Active sizes must fit capacities. No drawing/presenting is performed.
  *
- * Prepared execution (all buffers explicitly f64; existing calls above are
- * unchanged). Constructors copy their inputs into bounded VM userdata. All
- * methods run synchronously without callbacks, allocations or yielding on
- * success. Inputs are finite +/-1e6; non-finite intermediates/results raise
- * errors. Each phase commits atomically; earlier successful phases remain.
+ * Prepared execution (buffers f64 except explicit displacement/coefficient
+ * contracts below; existing calls above are unchanged). Storage is bounded
+ * VM userdata. Warm methods run synchronously without callbacks, allocations
+ * or yielding on success; constructors and bind may allocate. Inputs are
+ * finite +/-1e6; non-finite intermediates/results raise errors. Each phase commits atomically; earlier successful phases remain.
  * Small values round/underflow in the explicitly selected float arithmetic.
  * All workspace input buffers in one call must be distinct, as must outputs.
  * - vmath.constraints(node_capacity,edge_capacity) -> workspace: capacities
- *   1..256 and 0..512. Unloaded methods except load raise errors.
+ *   1..256 and 0..512. Unloaded methods except load/bind raise errors.
  * - w:load(p,previous,edges,n,m,dt): packed xyz and six-value edge rows
  *   {a,b,rest,compliance,wa,wb}; a/b distinct indices in 1..n; other fields
  *   nonnegative. n in 1..capacity, m in 0..capacity, dt in [1e-6,.1]. Copies
@@ -165,10 +174,18 @@
  *   its coefficients without resetting lambda. w:span(a,b,rest,compliance,
  *   wa,wb) enables/patches the explicit span; w:span(nil) disables it.
  *   Span updates also retain lambda until begin/load.
+ * - w:displacements(dst_f32,first,count): first in 1..n, count in
+ *   0..n-first+1; output capacity >=3count. Subtract double p-previous before
+ *   casting each component to float; write packed xyz into the output prefix
+ *   after validating/staging the complete result, with suffixes unchanged.
+ *   State/results remain unchanged, including on error; no warm allocation.
+ *   No position export, normalization or coefficient formula is implied.
  * - w:integrate(first,count,mobility,before,gain0,gain1,after,mode,bounds,nb):
  *   mobility has count values; each other coefficient buffer has 3*count.
  *   Nonnegative mobility is a flag: zero leaves p/previous unchanged.
- *   mode is "f64" or "displacement-f32". For enabled components use
+ *   mode is "f64" (all buffers f64) or "displacement-f32" (before/gain0/
+ *   gain1 independently f32 or f64; mobility/after/bounds remain f64).
+ *   For enabled components use
  *   (old+(((old-previous+before)*gain0)*gain1))+after, then supplied bounds;
  *   previous becomes old. The float mode casts displacement, before and
  *   gains to float, keeps the two products separate, then adds the resulting

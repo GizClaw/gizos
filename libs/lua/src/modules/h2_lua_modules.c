@@ -1528,11 +1528,14 @@ static int display_clear(lua_State *state) {
   return 0;
 }
 
-static double check_geometry_number(lua_State *state, int index) {
-  double value = luaL_checknumber(state, index);
+static double check_geometry_value(lua_State *state, int index, double value) {
   if (!isfinite(value) || fabs(value) > 100000.0)
     luaL_argerror(state, index, "geometry value is out of range");
   return value;
+}
+
+static double check_geometry_number(lua_State *state, int index) {
+  return check_geometry_value(state, index, luaL_checknumber(state, index));
 }
 
 static double optional_geometry_number(lua_State *state, int index,
@@ -3002,7 +3005,32 @@ static int display_stroke_path(lua_State *state) {
   display_stroke_data_t path;
   luaL_checktype(state, 1, LUA_TTABLE);
   luaL_checktype(state, 2, LUA_TTABLE);
-  path.count = lua_rawlen(state, 1);
+  lua_settop(state, 11);
+  /* Raw descriptor fields cannot run getters. Keep the buffer rooted on the
+   * stack while colors may call Lua or collect/mutate the descriptor. */
+  lua_pushliteral(state, "buffer");
+  lua_rawget(state, 1);
+  int buffer_at = lua_gettop(state);
+  lua_pushliteral(state, "count");
+  lua_rawget(state, 1);
+  int packed = !lua_isnil(state, buffer_at) || !lua_isnil(state, -1);
+  h2_numeric_buffer_t *xy = NULL;
+  if (packed) {
+    path.count = h2_numeric_size(state, -1, 256);
+    xy = h2_numeric_check(state, buffer_at);
+    if (xy->is_f32)
+      return luaL_error(state, "stroke coordinates require f64");
+    h2_numeric_capacity(state, xy, 2 * path.count);
+    /* rawlen alone misses sparse numeric point entries. */
+    lua_pushnil(state);
+    while (lua_next(state, 1)) {
+      if (lua_type(state, -2) == LUA_TNUMBER)
+        return luaL_error(state, "mixed stroke points and buffer descriptor");
+      lua_pop(state, 1);
+    }
+  } else
+    path.count = lua_rawlen(state, 1);
+  lua_pop(state, 1);
   if (path.count < 2 || path.count > 256 || lua_rawlen(state, 2) != path.count-1)
     return luaL_error(state, "invalid stroke point/width count");
   double offset = optional_geometry_number(state, 4, 0);
@@ -3018,10 +3046,15 @@ static int display_stroke_path(lua_State *state) {
   if (colors && lua_rawlen(state, 3) != path.count-1)
     return luaL_error(state, "invalid stroke color count");
   for (size_t i = 0; i < path.count; ++i) {
-    lua_rawgeti(state, 1, (lua_Integer)i+1);
-    luaL_checktype(state, -1, LUA_TTABLE);
-    lua_rawgeti(state, -1, 1); path.x[i] = check_geometry_number(state, -1); lua_pop(state, 1);
-    lua_rawgeti(state, -1, 2); path.y[i] = check_geometry_number(state, -1); lua_pop(state, 2);
+    if (packed) {
+      path.x[i] = check_geometry_value(state, 1, xy->data.f64[2 * i]);
+      path.y[i] = check_geometry_value(state, 1, xy->data.f64[2 * i + 1]);
+    } else {
+      lua_rawgeti(state, 1, (lua_Integer)i+1);
+      luaL_checktype(state, -1, LUA_TTABLE);
+      lua_rawgeti(state, -1, 1); path.x[i] = check_geometry_number(state, -1); lua_pop(state, 1);
+      lua_rawgeti(state, -1, 2); path.y[i] = check_geometry_number(state, -1); lua_pop(state, 2);
+    }
     if (i + 1 < path.count) {
       lua_rawgeti(state, 2, (lua_Integer)i+1);
       path.width[i] = check_geometry_number(state, -1);

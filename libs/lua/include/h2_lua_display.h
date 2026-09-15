@@ -25,6 +25,19 @@
  *   before writing. Later rectangles overwrite earlier ones. Successful calls
  *   allocate nothing, mark existing dirty/background damage and do not present.
  *
+ * Existing stroke_path(points,widths,color,offset_x=0,top=0,bottom=height,
+ * cache=false,fast=false,smooth=false,scale=1,tolerance=0) also accepts
+ * points={buffer=xy,count=n}: xy is an f64 packed xy buffer, capacity>=2n,
+ * n is an integer in 2..256, coordinates finite within +/-100000. Raw-read
+ * descriptor fields; numeric table keys cannot coexist with a descriptor.
+ * All other arguments, raster, clipping and (cache_hit,fast_segment_count)
+ * returns are unchanged. Copy/validate current coordinates before drawing;
+ * descriptor owns the existing normals cache, widths owns the span cache.
+ * Values/count/style invalidate caches, never buffer identity alone. No
+ * buffer pointer survives the call; roots survive getter/GC reentry, and
+ * Display acquisition is rechecked before writes. Warm cache use allocates
+ * nothing; cold cache/smooth scratch may allocate bounded VM storage.
+ *
  * Prepared geometry Lua API (standard Host, owning VM worker only):
  * - display.draw_pose(pose,colors,origin_x,offset_x,offset_y,layer,scale,
  *   post_offset,left,top,right,bottom[,tint]) replays geometry.pose through

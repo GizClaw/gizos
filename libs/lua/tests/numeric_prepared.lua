@@ -193,9 +193,69 @@ do
  for i=1,512 do local j=(i-1)%255+1;e:set(6*i-5,j);e:set(6*i-4,j+1);e:set(6*i-3,1) end
  max:bind(a,c,e,256,512,.01);max:solve(32,nil,0);assert(max:multipliers(512)==0)
 end
+-- Displacement reads current authoritative state, subtracting before rounding.
+local displacement=v.buffer(12,'f32')
+local float_inputs={}
+for i,source in ipairs({before,gain0,gain1}) do
+  local x=v.buffer(9,'f32');for j=1,9 do x:set(j,source:get(j)) end;float_inputs[i]=x
+end
+do
+  local a,c=b{999999.001,-.0000000001,1, 2,3,4},b{999999,0,1, 1,1,1}
+  local q=v.constraints(2,0);local e=b{}
+  for _,method in ipairs({'load','bind'}) do
+    q[method](q,a,c,e,2,0,.01);displacement:fill(73)
+    q:displacements(displacement,1,2)
+    near(displacement:get(1),.001,1e-9);assert(displacement:get(2)<0)
+    assert(displacement:get(4)==1 and displacement:get(5)==2 and displacement:get(6)==3)
+    assert(displacement:get(7)==73)
+    q:node(2,5,6,7,4,4,4);q:displacements(displacement,2,1)
+    assert(displacement:get(1)==1 and displacement:get(2)==2 and displacement:get(3)==3)
+    q:displacements(displacement,2,0);assert(displacement:get(1)==1)
+    for _,args in ipairs({{0,1},{3,0},{1,3},{1.5,1},{1,-1}}) do
+      assert(not pcall(q.displacements,q,displacement,args[1],args[2]))
+    end
+    assert(not pcall(q.displacements,q,v.buffer(6),1,2))
+    assert(not pcall(q.displacements,q,v.buffer(2,'f32'),1,1))
+    q:node(2,1e6,0,0,-1e6,0,0);displacement:fill(73)
+    assert(not pcall(q.displacements,q,displacement,1,2))
+    for i=1,12 do assert(displacement:get(i)==73) end
+    assert(q:node(2)==1e6 and q:multipliers()==nil)
+    a:load{999999.001,-.0000000001,1,2,3,4};c:load{999999,0,1,1,1,1}
+  end
+  assert(not pcall(v.constraints(1,0).displacements,v.constraints(1,0),displacement,1,0))
+end
+do
+ local max=v.constraints(256,0);local a,c=v.buffer(768),v.buffer(768)
+ a:fill(1);c:fill(.5);max:bind(a,c,b{},256,0,.01)
+ local output=v.buffer(771,'f32');output:fill(17)
+ max:displacements(output,1,256)
+ assert(output:get(768)==.5 and output:get(769)==17)
+ a:set(768,.25);max:displacements(output,256,1);assert(output:get(3)==-.25)
+end
+-- Every coefficient channel independently selects f32/f64; all are rounded
+-- at the same source arithmetic boundary. Existing all-f64 float mode is oracle.
+for mask=0,7 do
+  local inputs={before,gain0,gain1}
+  for i=1,3 do if mask & (1 << (i-1)) ~= 0 then inputs[i]=float_inputs[i] end end
+  reset();w:integrate(1,3,mobility,before,gain0,gain1,after,'displacement-f32',bounds,1)
+  snapshot();local expected={};for i=1,9 do expected[i]=out:get(i) end
+  reset();w:integrate(1,3,mobility,inputs[1],inputs[2],inputs[3],after,'displacement-f32',bounds,1)
+  snapshot();for i=1,9 do assert(out:get(i)==expected[i]) end
+  if mask>0 then fail(function() w:integrate(1,3,mobility,inputs[1],inputs[2],inputs[3],after,'f64',nil,0) end) end
+end
+fail(function() w:integrate(1,3,v.buffer(3,'f32'),before,gain0,gain1,after,'displacement-f32',nil,0) end)
+fail(function() w:integrate(1,3,mobility,before,gain0,gain1,v.buffer(9,'f32'),'displacement-f32',nil,0) end)
+fail(function() w:integrate(1,3,mobility,before,gain0,gain1,after,'displacement-f32',v.buffer(5,'f32'),1) end)
+fail(function() w:integrate(1,3,mobility,float_inputs[1],float_inputs[1],gain1,after,'displacement-f32',nil,0) end)
+fail(function() w:integrate(1,3,mobility,v.buffer(8,'f32'),gain0,gain1,after,'displacement-f32',nil,0) end)
+do
+ local huge=v.buffer(9,'f32');huge:fill(1e6)
+ fail(function() w:integrate(1,3,mobility,float_inputs[1],huge,huge,after,'displacement-f32',nil,0) end)
+end
 return function()
   reset()
   w:begin(.01)
+  w:displacements(displacement,1,3)
   w:integrate(1,3,mobility,before,gain0,gain1,after,'displacement-f32',bounds,1)
   w:node(1,0,0,0,0,0,0)
   w:edge(1,1,2,1,.0001,0,2)
@@ -206,7 +266,8 @@ return function()
   -- Warm binding execution has no bind/allocation or full-state export.
   bp:copy(p,1,1,9);bprev:copy(prev,1,1,9)
   bound:begin(.01)
-  bound:integrate(1,3,mobility,before,gain0,gain1,after,'displacement-f32',bounds,1)
+  bound:displacements(displacement,1,3)
+  bound:integrate(1,3,mobility,float_inputs[1],float_inputs[2],float_inputs[3],after,'displacement-f32',bounds,1)
   bound:span(1,3,1.8,.0001,0,1)
   bound:solve(6,bounds,1);bound:damp(mobility,.25,.4,1,1e-8)
   bound:multipliers(1)

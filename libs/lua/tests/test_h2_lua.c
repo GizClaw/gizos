@@ -1838,6 +1838,7 @@ int main(int argc, char **argv) {
   }
   test_display_raster2d(0, "libs/lua/tests/raster2d.lua");
   test_display_raster2d(0, "libs/lua/tests/geometry_batches.lua");
+  test_display_raster2d(0, "libs/lua/tests/stroke_buffer.lua");
   test_display_mesh_identity();
   test_display_mesh_cache();
   test_display_strokes();

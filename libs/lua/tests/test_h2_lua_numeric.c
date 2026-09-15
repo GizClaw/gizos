@@ -253,7 +253,7 @@ static void prepared_reference(double *result) {
   result[27] = span_lambda;
 }
 static void prepared_differential(lua_State *s, allocation_counter_t *a,
-                                  int bound) {
+                                  int bound, int f32_coefficients) {
   double expected[28];
   prepared_reference(expected);
   clock_t prep = clock();
@@ -261,13 +261,13 @@ static void prepared_differential(lua_State *s, allocation_counter_t *a,
   ok(s,
      luaL_loadstring(
          s,
-         "local bound=...;local v=require('vmath');local function b(t) local "
+         "local bound,kind=...;local v=require('vmath');local function b(t) local "
          "x=v.buffer(#t);x:load(t);return x end;"
          "local p=b{0,.2,0,.8,-.1,.1,1.9,.3,.2,2.8,.1,0};"
          "local prev=b{0,.2,0,.79,-.09,.09,1.88,.28,.19,2.77,.09,0};"
          "local e=b{1,2,.7,.0001,0,2,2,3,.9,.0002,3,1,3,4,.8,.0003,2,4};"
          "local mass=b{0,1,1,1};local "
-         "before,g0,g1,after=v.buffer(12),v.buffer(12),v.buffer(12),v.buffer("
+         "before,g0,g1,after=v.buffer(12,kind),v.buffer(12,kind),v.buffer(12,kind),v.buffer("
          "12);"
          "before:fill(.001);g0:fill(.9);g1:fill(.8);after:fill(.002);"
          "local bounds=b{2,3,2,0,1e6};local w=v.constraints(4,3);"
@@ -286,9 +286,10 @@ static void prepared_differential(lua_State *s, allocation_counter_t *a,
          "for i=1,3 do assert(math.abs(lambda:get(i)-compare[24+i])<2e-11) end;"
          "assert(math.abs(sl-compare[28])<2e-11) end end"));
   lua_pushboolean(s, bound);
-  ok(s, lua_pcall(s, 1, 1, 0));
-  printf("prepared fixture setup (%s): %.3f ms CPU, %zu VM bytes\n",
-         bound ? "bound" : "owned",
+  lua_pushstring(s, f32_coefficients ? "f32" : "f64");
+  ok(s, lua_pcall(s, 2, 1, 0));
+  printf("prepared fixture setup (%s, %s coefficients): %.3f ms CPU, %zu VM bytes\n",
+         bound ? "bound" : "owned", f32_coefficients ? "f32" : "f64",
          1000.0 * (clock() - prep) / CLOCKS_PER_SEC, a->bytes - bytes);
   lua_pushvalue(s, -1);
   lua_createtable(s, 28, 0);
@@ -316,12 +317,12 @@ static void prepared_differential(lua_State *s, allocation_counter_t *a,
   }
   a->counting = 0;
   assert(a->calls == 0);
-  printf("prepared same-input 10000 runs (%s): native reference %.3f ms, Lua phase "
+  printf("prepared same-input 10000 runs (%s, %s coefficients): native reference %.3f ms, Lua phase "
          "bindings %.3f ms CPU; "
          "4 nodes/3 edges/6 sweeps, %d native calls/run (including fixture reset "
          "and full oracle export), warm allocations %zu, "
          "checksum %.6f\n",
-         bound ? "bound" : "owned", reference_ms,
+         bound ? "bound" : "owned", f32_coefficients ? "f32" : "f64", reference_ms,
          1000.0 * (clock() - warm) / CLOCKS_PER_SEC, bound ? 8 : 6, a->calls,
          (double)checksum);
   lua_pop(s, 1);
@@ -367,6 +368,48 @@ static void binding_oom(lua_State *s, allocation_counter_t *a) {
   assert(failures >= 3 && successes > 0);
   printf("binding allocation failpoints: %d rolled back, %d successful\n",
          failures, successes);
+}
+
+/* Independent source-expression oracle: no production arithmetic header.
+ * Cover the reachable refined/fallback boundary and logarithmic magnitudes.
+ * The original upper fallback (>1e20 squared) is unreachable with +/-1e6
+ * public inputs; input/output overflow is covered by the Lua rejection tests. */
+static void refined_norm_reference(lua_State *s) {
+  ok(s, luaL_dostring(s,
+      "local v=require('vmath');local p,o=v.buffer(3),v.buffer(1);"
+      "return function(x,y,z) p:set(1,x);p:set(2,y);p:set(3,z);"
+      "v.length3_refined(o,p,1);return o:get(1) end"));
+  double maximum_error = 0;
+  for (int i = 0; i < 2048; ++i) {
+    double x = ldexp(1.0 + (i % 31) / 31.0, i % 1070 - 1054),
+           y = x * .37, z = -x * .71;
+    if (i < 4) {
+      const double boundary[] = {0, 1e-10, nextafter(1e-10, 0),
+                                 nextafter(1e-10, 1)};
+      x = boundary[i]; y = z = 0;
+    }
+    double squared = x * x + y * y + z * z, expected;
+    if (squared < 1e-20 || squared > 1e20)
+      expected = sqrt(squared);
+    else {
+      double seed = (double)sqrtf((float)squared);
+      expected = .5 * (seed + squared / seed);
+    }
+    lua_pushvalue(s, -1);
+    lua_pushnumber(s, x); lua_pushnumber(s, y); lua_pushnumber(s, z);
+    ok(s, lua_pcall(s, 3, 1, 0));
+    double actual = lua_tonumber(s, -1);
+    assert(actual == expected);
+    if (squared >= 1e-20 && squared <= 1e20) {
+      double error = fabs(actual / sqrt(squared) - 1);
+      assert(error <= 1e-12);
+      if (error > maximum_error) maximum_error = error;
+    }
+    lua_pop(s, 1);
+  }
+  lua_pop(s, 1);
+  printf("refined norm: 2048 source comparisons, max relative error %.3g\n",
+         maximum_error);
 }
 
 static void suite(lua_State *s, allocation_counter_t *a, const char *kind,
@@ -491,8 +534,10 @@ int main(void) {
   lua_pop(s, 1);
   prepared_budget(s, &a);
   binding_oom(s, &a);
-  prepared_differential(s, &a, 0);
-  prepared_differential(s, &a, 1);
+  for (int bound = 0; bound <= 1; ++bound)
+    for (int f32 = 0; f32 <= 1; ++f32)
+      prepared_differential(s, &a, bound, f32);
+  refined_norm_reference(s);
   ordered_reference(s);
   float_reference(s);
   suite(s, &a, NULL, "libs/lua/tests/numeric.lua");

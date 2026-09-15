@@ -194,6 +194,7 @@ cc_test(
     srcs = ["tests/test_h2_lua.c"],
     data = [
         "tests/geometry_batches.lua",
+        "tests/stroke_buffer.lua",
         "tests/raster2d.lua",
     ],
     conlyopts = H2_C11_OPTS,

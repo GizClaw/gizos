@@ -345,6 +345,31 @@ do
   near(screen:get(1),184+260/2);near(screen:get(2),203+260*1.6/2)
 end
 
+-- Refined norm is opt-in f64; legacy tiny length/normalize retain scaling.
+if kind ~= 'f32' then
+  local src=b{3,4,0, 1e-320,0,0, 0,0,0}
+  local out=b{91,92,93,94}
+  v.length3_refined(out,src,3)
+  assert(out:get(1)==5 and out:get(2)==0 and out:get(3)==0 and out:get(4)==94)
+  v.length3(out,src,3);assert(out:get(2)>0)
+  v.normalize3(out,src,1);near(out:get(1),.6)
+  src:load{3,4,0, 5,12,0};v.length3_refined(src,src,2)
+  assert(src:get(1)==5 and src:get(2)==13 and src:get(3)==0 and src:get(4)==5)
+  src:load{3,4,0, 1e6,1e6,1e6};out:fill(71)
+  bad(function() v.length3_refined(out,src,2) end)
+  for i=1,#out do assert(out:get(i)==71) end
+  for _,n in ipairs({-1,.5,21846,'1'}) do bad(function() v.length3_refined(out,src,n) end) end
+  bad(function() v.length3_refined(v.buffer(0),src,1) end)
+  bad(function() v.length3_refined(out,v.buffer(2),1) end)
+  v.length3_refined(out,src,0);assert(out:get(1)==71)
+  bad(function() v.length3_refined(out,numeric.buffer(3,'f32'),0) end)
+  bad(function() v.length3_refined(numeric.buffer(3,'f32'),src,0) end)
+  local maxsrc=v.buffer(65535);local maxout=v.buffer(21845)
+  v.length3_refined(maxout,maxsrc,21845);assert(maxout:get(21845)==0)
+else
+  bad(function() v.length3_refined(v.buffer(3),v.buffer(3),1) end)
+end
+
 -- The C harness turns on allocator counting after compiling/initializing this
 -- closure. Exercise every successful hot API repeatedly, including mesh writes.
 local qa,qb,qc=b({1,2,3,4,5,6,7,8,9,10,11,12}),v.buffer(12),b({1})
@@ -362,6 +387,7 @@ return function()
     qa:set(1,1);qa:get(1);qb:fill(0);qb:copy(qa,1,1,12)
     v.clamp(1,0,2);v.lerp(0,1,.5);v.smoothstep(0,1,.5);v.spring(0,0,1,1,1,0,.01)
     v.multiply(qb,qa,qa,12);v.divide(qb,qa,qa,12);v.length3(qb,qa,4);v.normalize3(qb,qa,4)
+    if kind ~= 'f32' then v.length3_refined(qb,qa,4) end
     v.gather(qb,qa,1,2,6);v.scatter(qb,qa,1,2,6)
     v.combine(qb,qa,qa,1,0,0,12);v.polynomial(qb,qa,qc,12);v.clamp_bulk(qb,qa,0,10,12);v.dot(qc,qc,1)
     v.verlet(qp,qprev,qacc,qw,.01,1,2);v.relax(qp,qw,qe,ql,.01,2,2,1,true);v.damp(qp,qprev,qw,1,.5,2)
