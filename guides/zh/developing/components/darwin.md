@@ -17,6 +17,8 @@ CoreBluetooth provider 不提供独立 legacy scan-response 配置；`h2_pal_ble
 
 CoreBluetooth 也不提供逐字节 primary advertising sequence 或 scan interval/window 的 controller-unit surface。`h2_pal_ble_adv_set_set_encoded_data()` 与 exact `interval_units_625us/window_units_625us` 因此都在保存数据、callback 或改变 activity state 前返回 `H2_PAL_ERR_UNSUPPORTED`；provider 不能把 dictionary-based advertising 或系统调度描述成 exact request，也不能 round 或静默降级。
 
+`h2_pal_ble_connect()` 等待失败（timeout 等）时，provider 在 backend queue 上对该 peripheral 调用 `cancelPeripheralConnection:`，取消仍在进行的 connect request；若它已成为当前 connected peripheral，则一并清除 connected state 与 GATT client handle mapping，让下一次 connect 从干净状态开始。只有当前 connecting peripheral 的 connect 成功或失败回调可以推进连接；迟到的成功回调会再次取消该 peripheral，非当前 connected peripheral 的断开回调也会被忽略，不改变当前状态或完成其他操作。CoreBluetooth 回调不携带 attempt identity，因此同一 peripheral 重试期间收到旧 attempt 的迟到失败时，重试会返回 `H2_PAL_ERR_IO`，并由自身的 failed-wait cleanup 再次取消该 peripheral、清空状态与 pending operation，调用方仍可继续重试。Hardware-free test hook 覆盖等待失败与迟到回调路径，不等同于真实外设验收。
+
 ## Lifecycle 与依赖
 
 SystemEvent init 创建 wake descriptor 与 joinable route-monitor thread；任何 partial failure 都回收本次已创建的资源。Deinit 唤醒并 join worker、等待 in-flight callback、清空 subscription，再关闭 descriptor。默认 route 消失、恢复或改变才发布 Netif event，重复状态不重复发布。

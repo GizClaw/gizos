@@ -67,6 +67,42 @@ void h2_ios_corebluetooth_test_set_start_result(
     }
 }
 
+/* Installed only by the deterministic connect timeout test. */
+@interface H2CoreBluetoothTestPeripheral : NSObject
+@property(nonatomic, weak) id<CBPeripheralDelegate> delegate;
+@property(nonatomic, strong) NSUUID *identifier;
+@end
+
+@implementation H2CoreBluetoothTestPeripheral
+- (instancetype)init {
+    self = [super init];
+    if (self != nil) {
+        _identifier = [[NSUUID alloc] initWithUUIDString:
+            @"00000000-0000-0000-0000-000000000001"];
+    }
+    return self;
+}
+@end
+
+@interface H2CoreBluetoothTestCentral : NSObject
+@property(nonatomic, strong) CBPeripheral *peripheral;
+@property(nonatomic, strong) CBPeripheral *otherPeripheral;
+@property(nonatomic) NSUInteger cancelCount;
+@property(nonatomic) BOOL cancelledExpectedPeripheral;
+@end
+
+@implementation H2CoreBluetoothTestCentral
+- (void)connectPeripheral:(CBPeripheral *)peripheral options:(NSDictionary *)options {
+    (void)peripheral;
+    (void)options;
+    /* Deliberately never complete the connection. */
+}
+- (void)cancelPeripheralConnection:(CBPeripheral *)peripheral {
+    self.cancelCount += 1u;
+    self.cancelledExpectedPeripheral = peripheral == self.peripheral;
+}
+@end
+
 @interface H2CoreBluetoothBackend : NSObject <
     CBCentralManagerDelegate,
     CBPeripheralDelegate,
@@ -89,6 +125,7 @@ void h2_ios_corebluetooth_test_set_start_result(
 @property(nonatomic, strong) CBCharacteristic *operationCharacteristic;
 @property(nonatomic, strong) NSMutableDictionary<NSString *, CBPeripheral *> *peripheralsByAddress;
 @property(nonatomic, strong) CBPeripheral *connectedPeripheral;
+@property(nonatomic, strong) CBPeripheral *connectingPeripheral;
 @property(nonatomic, strong) NSMutableDictionary<NSNumber *, CBService *> *clientServices;
 @property(nonatomic, strong) NSMutableDictionary<NSNumber *, CBCharacteristic *> *clientCharacteristics;
 @property(nonatomic, strong) NSMutableDictionary<NSValue *, NSNumber *> *clientHandles;
@@ -411,6 +448,7 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
         return H2_PAL_OK;
     }
     dispatch_sync(self.queue, ^{
+        self.connectingPeripheral = nil;
         [self completePendingOperation:H2_PAL_ERR_CLOSED];
         [self.centralManager stopScan];
         if (self.connectedPeripheral != nil) {
@@ -724,6 +762,7 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
         if (peripheral != nil) {
             began = [self beginOperation:H2CoreBluetoothOperationConnect];
             if (began) {
+                self.connectingPeripheral = peripheral;
                 [self.centralManager connectPeripheral:peripheral options:nil];
             }
         }
@@ -733,6 +772,19 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
     h2_pal_result_t result = [self waitForOperation:timeoutMs];
     if (result == H2_PAL_OK) {
         *outHandle = H2_COREBLUETOOTH_CONN_HANDLE;
+    } else {
+        /* CoreBluetooth keeps a timed-out connect request pending until it is
+         * explicitly cancelled.  Leaving it pending makes later scans lose
+         * the peripheral and causes subsequent connect attempts to reuse
+         * stale state. */
+        dispatch_sync(self.queue, ^{
+            self.connectingPeripheral = nil;
+            [self.centralManager cancelPeripheralConnection:peripheral];
+            if (self.connectedPeripheral == peripheral) {
+                self.connectedPeripheral = nil;
+                [self clearClientMappings];
+            }
+        });
     }
     return result;
 }
@@ -1165,6 +1217,13 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
 - (void)centralManager:(CBCentralManager *)central
   didConnectPeripheral:(CBPeripheral *)peripheral {
     (void)central;
+    /* A callback may arrive after the connect wait was abandoned. */
+    if (self.operation != H2CoreBluetoothOperationConnect ||
+        peripheral != self.connectingPeripheral) {
+        [self.centralManager cancelPeripheralConnection:peripheral];
+        return;
+    }
+    self.connectingPeripheral = nil;
     self.connectedPeripheral = peripheral;
     peripheral.delegate = self;
     [self clearClientMappings];
@@ -1183,8 +1242,13 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
  didFailToConnectPeripheral:(CBPeripheral *)peripheral
                   error:(NSError *)error {
     (void)central;
-    (void)peripheral;
     (void)error;
+    /* CoreBluetooth gives no attempt identity: a late failure for the same
+     * peripheral fails an in-flight retry, whose cleanup cancels it again. */
+    if (peripheral != self.connectingPeripheral) {
+        return;
+    }
+    self.connectingPeripheral = nil;
     self.connectedPeripheral = nil;
     [self clearClientMappings];
     [self completeOperation:H2CoreBluetoothOperationConnect result:H2_PAL_ERR_IO];
@@ -1194,6 +1258,9 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
  didDisconnectPeripheral:(CBPeripheral *)peripheral
                    error:(NSError *)error {
     (void)central;
+    if (peripheral != self.connectedPeripheral) {
+        return;
+    }
     h2_pal_ble_disconnected_info_t info;
     memset(&info, 0, sizeof(info));
     info.conn_handle = H2_COREBLUETOOTH_CONN_HANDLE;
@@ -1461,6 +1528,120 @@ void h2_ios_corebluetooth_test_post_connected_on_backend_queue(void) {
             &connection,
             sizeof(connection));
     });
+}
+
+void h2_ios_corebluetooth_test_set_pending_connect(
+    const h2_pal_ble_addr_t *address) {
+    H2CoreBluetoothBackend *backend = h2_corebluetooth_backend();
+    dispatch_sync(backend.queue, ^{
+        backend.started = NO;
+        backend.centralManager = nil;
+        backend.connectedPeripheral = nil;
+        backend.connectingPeripheral = nil;
+        [backend clearClientMappings];
+        [backend.peripheralsByAddress removeAllObjects];
+        [backend abandonOperation];
+        if (address != NULL) {
+            H2CoreBluetoothTestCentral *central = [H2CoreBluetoothTestCentral new];
+            central.peripheral = (id)[H2CoreBluetoothTestPeripheral new];
+            backend.centralManager = (id)central;
+            backend.peripheralsByAddress[h2_corebluetooth_address_key(address)] =
+                central.peripheral;
+            backend.connectedPeripheral = central.peripheral;
+            backend.clientServices[@1] = (id)[NSObject new];
+            backend.clientCharacteristics[@2] = (id)[NSObject new];
+            backend.clientHandles[[NSValue valueWithNonretainedObject:central.peripheral]] = @2;
+            backend.nextClientHandle = 3u;
+            backend.started = YES;
+        }
+    });
+}
+
+bool h2_ios_corebluetooth_test_connect_pending(void) {
+    H2CoreBluetoothBackend *backend = h2_corebluetooth_backend();
+    __block BOOL pending = NO;
+    dispatch_sync(backend.queue, ^{
+        H2CoreBluetoothTestCentral *central = (id)backend.centralManager;
+        pending = [central isKindOfClass:[H2CoreBluetoothTestCentral class]] &&
+            backend.operation == H2CoreBluetoothOperationConnect &&
+            backend.connectingPeripheral == central.peripheral;
+    });
+    return pending;
+}
+
+bool h2_ios_corebluetooth_test_connect_cleanup(unsigned cancel_count) {
+    H2CoreBluetoothBackend *backend = h2_corebluetooth_backend();
+    __block BOOL cleaned = NO;
+    dispatch_sync(backend.queue, ^{
+        H2CoreBluetoothTestCentral *central = (id)backend.centralManager;
+        cleaned = [central isKindOfClass:[H2CoreBluetoothTestCentral class]] &&
+            central.cancelCount == cancel_count &&
+            central.cancelledExpectedPeripheral &&
+            backend.connectedPeripheral == nil &&
+            backend.connectingPeripheral == nil &&
+            backend.operation == H2CoreBluetoothOperationNone &&
+            backend.operationSemaphore == nil &&
+            backend.clientServices.count == 0u &&
+            backend.clientCharacteristics.count == 0u &&
+            backend.clientHandles.count == 0u &&
+            backend.nextClientHandle == 1u;
+    });
+    return cleaned;
+}
+
+void h2_ios_corebluetooth_test_deliver_central_event(
+    int event, int peripheral_index) {
+    H2CoreBluetoothBackend *backend = h2_corebluetooth_backend();
+    dispatch_sync(backend.queue, ^{
+        H2CoreBluetoothTestCentral *central = (id)backend.centralManager;
+        CBPeripheral *peripheral = peripheral_index == 0 ?
+            central.peripheral : central.otherPeripheral;
+        NSError *error = [NSError errorWithDomain:@"corebluetooth-test"
+                                            code:1 userInfo:nil];
+        switch (event) {
+        case H2_IOS_COREBLUETOOTH_TEST_CONNECTED:
+            [backend centralManager:(id)central didConnectPeripheral:peripheral];
+            break;
+        case H2_IOS_COREBLUETOOTH_TEST_FAILED:
+            [backend centralManager:(id)central
+                didFailToConnectPeripheral:peripheral error:error];
+            break;
+        case H2_IOS_COREBLUETOOTH_TEST_DISCONNECTED:
+            [backend centralManager:(id)central
+                didDisconnectPeripheral:peripheral error:error];
+            break;
+        }
+    });
+}
+
+void h2_ios_corebluetooth_test_set_other_connected(void) {
+    H2CoreBluetoothBackend *backend = h2_corebluetooth_backend();
+    dispatch_sync(backend.queue, ^{
+        H2CoreBluetoothTestCentral *central = (id)backend.centralManager;
+        central.otherPeripheral = (id)[H2CoreBluetoothTestPeripheral new];
+        backend.connectedPeripheral = central.otherPeripheral;
+        backend.clientServices[@1] = (id)central.otherPeripheral;
+        backend.clientCharacteristics[@2] = (id)central.otherPeripheral;
+        backend.clientHandles[
+            [NSValue valueWithNonretainedObject:central.otherPeripheral]] = @2;
+        backend.nextClientHandle = 3u;
+    });
+}
+
+bool h2_ios_corebluetooth_test_other_connected(void) {
+    H2CoreBluetoothBackend *backend = h2_corebluetooth_backend();
+    __block BOOL intact = NO;
+    dispatch_sync(backend.queue, ^{
+        H2CoreBluetoothTestCentral *central = (id)backend.centralManager;
+        intact = central.otherPeripheral != nil &&
+            backend.connectedPeripheral == central.otherPeripheral &&
+            backend.clientServices[@1] == (id)central.otherPeripheral &&
+            backend.clientCharacteristics[@2] == (id)central.otherPeripheral &&
+            [backend.clientHandles[
+                [NSValue valueWithNonretainedObject:central.otherPeripheral]]
+                isEqual:@2] && backend.nextClientHandle == 3u;
+    });
+    return intact;
 }
 
 static h2_pal_result_t h2_corebluetooth_start(void *user) {
