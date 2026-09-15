@@ -1203,7 +1203,7 @@ static int mesh_span_result_equal(h2_lua_display_mesh_t *mesh,
 }
 
 #define MESH_STAGE_LIMIT 1024u
-static const char s_mesh_stage_key;
+static const char s_mesh_stage_key = 0;
 
 /* Leave the chosen userdata strongly rooted on the calling Lua stack. The
  * registry owns one high-water buffer, not one buffer per mesh. */
