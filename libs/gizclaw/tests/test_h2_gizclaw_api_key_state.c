@@ -513,7 +513,30 @@ static void test_revoke_after(bool want_result, bool fail) {
   teardown(&env);
 }
 
+static void test_detached_revoke_reconciles(void) {
+  test_env_t env;
+  setup(&env, true);
+  refresh(&env, false);
+  atomic_store(&env.reply, false);
+  const unsigned starts = atomic_load(&env.starts);
+  assert(h2_gizclaw_api_key_state_request_revoke(env.state) == H2_PAL_OK);
+  wait_count(&env.starts, starts + 1u);
+  atomic_store(&env.now, atomic_load(&env.now) + 1000u);
+  h2_gizclaw_api_key_snapshot_t expired = snapshot(&env);
+  assert(!expired.busy && expired.last_error == H2_PAL_ERR_TIMEOUT);
+  assert(expired.valid && expired.stale);
+  atomic_store(&env.reply, true);
+  const uint64_t deadline = wall_ms() + 10000u;
+  while (snapshot(&env).valid) {
+    poll_once(&env);
+    assert(wall_ms() < deadline);
+  }
+  assert(snapshot(&env).key.secret[0] == 0);
+  teardown(&env);
+}
+
 int main(void) {
+  test_detached_revoke_reconciles();
   test_orphan_success(false);
   test_orphan_success(true);
   test_request_revoke();

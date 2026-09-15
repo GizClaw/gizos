@@ -134,6 +134,8 @@ typedef struct api_key_pending {
   uint64_t generation;
   bool revoke;
   bool orphan;
+  /* Revoked key name, used to reconcile a detached revoke with the snapshot. */
+  char name[sizeof(((h2_gizclaw_api_key_t *)0)->name)];
 } api_key_pending_t;
 
 struct h2_gizclaw_api_key_state {
@@ -196,6 +198,8 @@ static h2_pal_result_t api_key_submit(h2_gizclaw_api_key_state_t *state,
   h2_pal_result_t rc;
   if (revoke) {
     h2_gizclaw_str_t name = {revoke_name, strlen(revoke_name)};
+    if (name.len < sizeof(pending->name))
+      memcpy(pending->name, revoke_name, name.len + 1u);
     rc = h2_gizclaw_req_create_api_key_revoke(
         state->config.service, state->generation, name,
         state->config.timeout_ms, &pending->request);
@@ -269,7 +273,19 @@ static void api_key_complete(void *user, h2_gizclaw_req_t *request,
       state->snapshot.stale = rc != H2_PAL_OK;
       api_key_finish(state, rc);
     }
-  } else if (!pending->revoke && result->result == H2_PAL_OK) {
+  } else if (pending->revoke) {
+    /* A detached revoke still settles the snapshot key it targeted. */
+    h2_pal_result_t rc = result->result;
+    if (rc == H2_PAL_OK)
+      rc = h2_gizclaw_resp_parse_api_key_revoke(request);
+    if ((rc == H2_PAL_OK || rc == H2_PAL_ERR_NOT_FOUND) &&
+        state->snapshot.valid && pending->name[0] != '\0' &&
+        strcmp(state->snapshot.key.name, pending->name) == 0) {
+      api_key_erase(&state->snapshot.key, sizeof(state->snapshot.key));
+      state->snapshot.valid = false;
+      ++state->snapshot.revision;
+    }
+  } else if (result->result == H2_PAL_OK) {
     h2_gizclaw_api_key_t key = {0};
     h2_pal_result_t rc = h2_gizclaw_resp_parse_api_key_create(request, &key);
     api_key_erase(key.secret, sizeof(key.secret));

@@ -30,8 +30,9 @@ h2_pal_result_t h2_gizclaw_rpc_api_key_revoke(h2_gizclaw_service_t *service,
                                               h2_gizclaw_str_t name,
                                               uint32_t timeout_ms);
 /** Completion-driven secret state, independent of the blocking resource store.
- * request_refresh/request_revoke/close and service_poll belong to the same owner task.
- * snapshot also supports other threads; destroy requires exclusive access.
+ * request_refresh/request_revoke/close and service_poll belong to the same
+ * owner task. snapshot is thread-safe for any caller while the state is alive.
+ * destroy requires exclusive access (no concurrent snapshot).
  */
 typedef struct h2_gizclaw_api_key_state h2_gizclaw_api_key_state_t;
 
@@ -92,8 +93,10 @@ h2_gizclaw_api_key_state_request_revoke(h2_gizclaw_api_key_state_t *state);
  * May run on any thread while the state remains alive. This and request_refresh
  * check the total deadline: expiration detaches the request, clears busy and
  * records TIMEOUT while retaining any existing key as stale. Clock/PAL errors
- * are returned with an empty output. Late completions cannot change the snapshot. Successful orphan creates
- * submit an internal best-effort revoke; their secrets are erased immediately.
+ * are returned with an empty output. Late creates never enter the snapshot:
+ * successful orphan creates submit an internal best-effort revoke and their
+ * secrets are erased immediately. A detached revoke that succeeds (or finds
+ * NOT_FOUND) still clears the snapshot key it targeted.
  */
 h2_pal_result_t
 h2_gizclaw_api_key_state_snapshot(h2_gizclaw_api_key_state_t *state,
