@@ -31,6 +31,33 @@ env:
   BAZEL_WINDOWS_X86_64_SHA256: 5fc2f2805b8c697a54732558576938d06bab63aa0f9b6610cc01d2cae0388705
 
 jobs:
+  clang-format:
+    # Checks only lines changed by the PR until the tree is reformatted; not yet part of "CI required".
+    if: github.event_name == 'pull_request'
+    name: clang-format
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          # The default pull_request ref is the merge commit, so a diff against
+          # the base SHA contains only this PR's changes.
+          fetch-depth: 1
+
+      - name: Fetch PR base
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: git fetch --no-tags --depth=1 origin "$BASE_SHA"
+
+      - name: Install clang-format
+        run: pipx install clang-format==22.1.5
+
+      - name: Check changed C/C++ lines
+        env:
+          CLANG_FORMAT_BASE: ${{ github.event.pull_request.base.sha }}
+        run: make format-check
+
   private-dependencies:
     if: >-
       github.event_name != 'pull_request' ||
