@@ -246,6 +246,7 @@ int h2_esp_h2loader_app_commands_start_with_config(
     }
     s_ble.runtime = runtime;
     const h2_loader_ble_service_config_t service = {
+        .log = runtime->log,
         .api = {
             .ble = runtime->ble_host,
             .task = runtime->task,

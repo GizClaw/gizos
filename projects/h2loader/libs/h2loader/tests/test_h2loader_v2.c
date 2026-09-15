@@ -1,4 +1,5 @@
 #include "h2_loader_boot.h"
+#include "h2_loader_ble.h"
 #include "h2_loader_app_client.h"
 #include "h2_loader_status.h"
 
@@ -66,6 +67,9 @@ typedef struct test_fixture {
   int writer_write_result;
   int writer_finish_result;
   unsigned writer_aborts;
+  unsigned writer_finishes;
+  uint8_t digest_after_finish;
+  int read_after_finish;
   uint8_t digest_byte;
   int digest_finish_result;
 
@@ -400,6 +404,10 @@ static int image_finish(void *user,
     return fixture->writer_finish_result;
   }
   fixture->writer_active = 0;
+  ++fixture->writer_finishes;
+  if (fixture->digest_after_finish != 0u)
+    fixture->digest_byte = fixture->digest_after_finish;
+  fixture->reader_result = fixture->read_after_finish;
   return H2_PAL_OK;
 }
 
@@ -1787,7 +1795,282 @@ static void test_app_client_validates_target_archive_entry(void) {
   assert(inspection.manifest.image_size == 8u);
 }
 
-int main(void) {
+typedef struct ble_log_fixture {
+  unsigned allocations;
+  unsigned writes;
+  int write_result;
+} ble_log_fixture_t;
+
+static void *ble_log_alloc(void *user, size_t size) {
+  ble_log_fixture_t *fixture = user;
+  void *ptr = malloc(size);
+  if (ptr != NULL) ++fixture->allocations;
+  return ptr;
+}
+
+static void ble_log_free(void *user, void *ptr) {
+  ble_log_fixture_t *fixture = user;
+  assert(fixture->allocations != 0u);
+  --fixture->allocations;
+  free(ptr);
+}
+
+static int ble_log_write(void *user, h2_pal_log_level_t level,
+                         const char *scope, const char *message) {
+  ble_log_fixture_t *fixture = user;
+  assert(level == H2_PAL_LOG_ERROR);
+  assert(strcmp(scope, "h2loader/ble") == 0);
+  assert(strstr(message, "H2_LOADER_BLE_ERROR stage=server_open code=") == message);
+  assert(strlen(message) < H2_PAL_LOG_MESSAGE_MAX);
+  ++fixture->writes;
+  return fixture->write_result;
+}
+
+static int ble_log_session(void *user, h2_bleikcp_t *stream, uint16_t handle) {
+  (void)user;
+  (void)stream;
+  (void)handle;
+  assert(0 && "unsupported backend must not start a session");
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
+static void test_ble_diagnostics_preserve_failure_and_cleanup(void) {
+  ble_log_fixture_t fixture = {0};
+  const h2_pal_mem_vtable_t mem_vtable = {
+      .alloc = ble_log_alloc, .free = ble_log_free};
+  const h2_pal_mem_api_t mem = {.user = &fixture, .vtable = &mem_vtable};
+  const h2_pal_ble_host_api_t ble = {0};
+  const h2_pal_task_api_t task = {0};
+  const h2_pal_time_api_t time = {0};
+  const h2_pal_sync_api_t sync = {0};
+  const h2_pal_system_event_api_t events = {0};
+  const h2_pal_log_vtable_t log_vtable = {.write = ble_log_write};
+  h2_pal_log_api_t log = {.user = &fixture, .vtable = &log_vtable};
+  h2_loader_ble_service_config_t config = {
+      .api = {.ble = &ble, .task = &task, .time = &time, .sync = &sync,
+              .system_event = &events, .allocator = &mem},
+      .board = "test", .advertising_mode = H2_LOADER_BLE_ADVERTISING_LEGACY,
+      .handler = ble_log_session};
+  h2_loader_ble_service_t *service = NULL;
+  int expected = h2_loader_ble_service_open(&config, &service);
+  assert(expected != H2_PAL_OK && service == NULL);
+  assert(fixture.allocations == 0u && fixture.writes == 0u);
+  config.log = &log;
+  assert(h2_loader_ble_service_open(&config, &service) == expected);
+  assert(service == NULL && fixture.allocations == 0u && fixture.writes == 1u);
+  fixture.write_result = H2_PAL_ERR_IO;
+  assert(h2_loader_ble_service_open(&config, &service) == expected);
+  assert(service == NULL && fixture.allocations == 0u && fixture.writes == 2u);
+  log.vtable = NULL;
+  assert(h2_loader_ble_service_open(&config, &service) == expected);
+  assert(service == NULL && fixture.allocations == 0u && fixture.writes == 2u);
+  const h2_pal_log_vtable_t unavailable_log = {0};
+  log.vtable = &unavailable_log;
+  assert(h2_loader_ble_service_open(&config, &service) == expected);
+  assert(service == NULL && fixture.allocations == 0u && fixture.writes == 2u);
+}
+
+/* USTAR+zlib: format-1 manifest, checksum (SHA_A), and app/esp/app.bin
+ * containing "firmware". Digest callbacks deliberately return SHA_A until the
+ * writer finishes, so faults below occur only during destination verification. */
+static const uint8_t install_archive[] = {
+  0x78, 0x9c, 0xed, 0xd4, 0x4d, 0x6e, 0x83, 0x30, 0x10, 0x05, 0xe0, 0xac,
+  0x7d, 0x8a, 0x9e, 0x80, 0x18, 0x87, 0x9f, 0x6e, 0x7c, 0x96, 0x68, 0x08,
+  0x03, 0xb1, 0x52, 0x03, 0xb2, 0x9d, 0x54, 0xea, 0xe9, 0x63, 0x25, 0x22,
+  0x4a, 0xba, 0xc9, 0x02, 0x01, 0x95, 0xfa, 0x3e, 0x16, 0x63, 0xb3, 0x99,
+  0x91, 0xa5, 0x37, 0x96, 0x3a, 0xd3, 0xb0, 0x0f, 0x9b, 0x19, 0xc9, 0xa8,
+  0xc8, 0xb2, 0x5b, 0x8d, 0x7e, 0x57, 0xa9, 0x54, 0xf9, 0x38, 0xdf, 0xff,
+  0x97, 0x59, 0x59, 0x6e, 0x3e, 0xe4, 0x9c, 0x43, 0x8d, 0xce, 0x3e, 0x90,
+  0x8b, 0x2d, 0x97, 0xe8, 0xf5, 0x07, 0x35, 0xbd, 0xb3, 0x14, 0x74, 0x2a,
+  0x5c, 0xff, 0xc5, 0x9a, 0x86, 0x41, 0x54, 0x3d, 0xb9, 0x5a, 0xd7, 0x7c,
+  0x39, 0x99, 0x20, 0xe2, 0xdb, 0xb4, 0x1c, 0x34, 0xfb, 0x61, 0xa7, 0xfc,
+  0x4e, 0x5c, 0xd8, 0x79, 0xd3, 0x77, 0x5a, 0x26, 0x2a, 0x91, 0xc2, 0x58,
+  0x6a, 0x79, 0xef, 0xcd, 0x0f, 0xeb, 0xcf, 0xf1, 0x72, 0x24, 0x95, 0x17,
+  0x9a, 0xaa, 0x69, 0x9f, 0x58, 0xfb, 0x59, 0xfe, 0x8d, 0xc3, 0x91, 0x0f,
+  0x27, 0x7f, 0xb6, 0x73, 0xf6, 0x78, 0x97, 0xff, 0xf4, 0xe9, 0x3c, 0xe6,
+  0xbf, 0x48, 0x91, 0xff, 0x25, 0x4c, 0x4d, 0xea, 0xda, 0xf3, 0xc3, 0x34,
+  0x71, 0xe3, 0x6f, 0xe3, 0x76, 0xdf, 0xc6, 0x9a, 0x54, 0xa6, 0x9b, 0xa5,
+  0xc7, 0xbb, 0xfc, 0xc7, 0x05, 0xf0, 0x9a, 0xff, 0x54, 0xe6, 0x79, 0x8e,
+  0xfc, 0x2f, 0xa1, 0x31, 0xce, 0x7e, 0x93, 0xe3, 0xb5, 0xe7, 0x00, 0x00,
+  0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  0x80, 0x69, 0xae, 0x13, 0xbe, 0x82, 0x81,
+};
+
+static int install_archive_open(void *user, const char *path,
+                                h2_pal_fs_open_mode_t mode,
+                                h2_pal_fs_file_t **out) {
+  if (strcmp(path, H2_LOADER_DEFAULT_CHECKSUM_PATH) == 0)
+    return H2_PAL_FS_ERR_NOT_FOUND;
+  return archive_open(user, path, mode, out);
+}
+
+static int install_archive_read(void *user, h2_pal_fs_file_t *file,
+                                void *data, size_t len, size_t *out_read) {
+  size_t *offset = user;
+  (void)file;
+  size_t take = sizeof(install_archive) - *offset;
+  if (take > len) take = len;
+  memcpy(data, install_archive + *offset, take);
+  *offset += take;
+  *out_read = take;
+  return H2_PAL_OK;
+}
+
+static void check_package_destination(int read_result, int mismatch, int plan_only) {
+  test_fixture_t fixture;
+  fixture_init(&fixture, 1u);
+  size_t offset = 0u;
+  const h2_pal_fs_vtable_t fs_vtable = {
+      .open = install_archive_open, .read = install_archive_read,
+      .close = archive_close};
+  const h2_pal_fs_api_t fs = {.user = &offset, .vtable = &fs_vtable};
+  h2_loader_package_config_t config = fixture.config.package;
+  config.fs = &fs;
+  h2_loader_package_t package;
+  assert(h2_loader_package_init(&package, &config) == H2_PAL_OK);
+  h2_loader_package_inspection_t inspection;
+  assert(h2_loader_package_inspect_path(&package, package.config.package_path,
+                                      &inspection) == H2_PAL_OK);
+  assert(!inspection.legacy && inspection.manifest.image_size == 8u);
+  inspection.staged.valid = 1;
+  inspection.staged.size = sizeof(install_archive);
+  strcpy(inspection.staged.checksum, SHA_A);
+  h2_loader_package_install_plan_t plan = {.update_app = 1};
+  if (plan_only) {
+    fixture.reader_result = read_result;
+    assert(h2_loader_package_plan_install(&package, &inspection, 2u, &plan) ==
+           H2_PAL_OK);
+    assert(plan.update_app == 1 && plan.update_data == 1);
+    assert(fixture.writer_finishes == 0 && fixture.writer_aborts == 0);
+    return;
+  }
+  fixture.read_after_finish = read_result;
+  fixture.digest_after_finish = mismatch ? 0xcdu : 0u;
+  h2_loader_package_install_result_t result;
+  int rc = h2_loader_package_install_to(&package, &inspection, 2u, &plan, &result);
+  assert(fixture.writer_finishes == 1);
+  assert(fixture.writer_offset == 8u && !fixture.writer_active);
+  assert(memcmp(fixture.partition_bytes[1], "firmware", 8u) == 0);
+  assert(rc == (mismatch ? H2_PAL_ERR_FORMAT : read_result));
+  assert(fixture.writer_aborts == (unsigned)(mismatch || read_result != H2_PAL_OK));
+}
+
+static void test_plan_missing_destination(void) {
+  check_package_destination(H2_PAL_ERR_NOT_FOUND, 0, 1);
+}
+static void test_install_hash_mismatch_aborts(void) {
+  check_package_destination(H2_PAL_OK, 0, 0);
+  check_package_destination(H2_PAL_OK, 1, 0);
+}
+static void test_install_hash_read_error_aborts(void) {
+  check_package_destination(H2_PAL_OK, 0, 0);
+  check_package_destination(H2_PAL_ERR_IO, 0, 0);
+}
+
+static void test_ble_identity_capacity(void) {
+  const char *board = "12345678901234567890";
+  uint8_t data[64], compact[64];
+  size_t length = 0u, compact_length = 0u;
+  assert(strlen(board) <= H2_LOADER_BLE_INLINE_BOARD_MAX);
+  assert(h2_loader_ble_encode_identity(H2_LOADER_CAPABILITIES_ALL, board, data, 29u, &length) ==
+         H2_PAL_OK);
+  assert(data[4] == H2_LOADER_BLE_COMPACT_PROTOCOL_VERSION && length == 18u);
+  memcpy(compact, data, length);
+  compact_length = length;
+  assert(h2_loader_ble_encode_identity(H2_LOADER_CAPABILITIES_ALL, board, data, sizeof(data),
+                                       &length) == H2_PAL_OK);
+  assert(data[4] == H2_LOADER_BLE_PROTOCOL_VERSION && length == 11u + strlen(board));
+  assert(data[10] == strlen(board) && memcmp(data + 11, board, strlen(board)) == 0);
+  assert(memcmp(data, compact, 4u) == 0 && memcmp(data + 6, compact + 6, 4u) == 0);
+  assert(h2_loader_ble_encode_identity(H2_LOADER_CAPABILITIES_ALL, board, data,
+                                       compact_length - 1u, &length) ==
+         H2_PAL_ERR_INVALID_ARG);
+}
+
+static int size_test_read(void *user, void *data, size_t len,
+                          size_t *read_count, uint32_t timeout_ms) {
+  (void)user; (void)data; (void)len; (void)read_count; (void)timeout_ms;
+  assert(0 && "parsing tests must stop before receiving payload");
+  return H2_PAL_ERR_IO;
+}
+static int size_test_flush(void *user) { (void)user; return H2_PAL_OK; }
+
+static int size_test_write(void *user, const void *data, size_t len,
+                           size_t *written, uint32_t timeout_ms) {
+  (void)user; (void)data; (void)timeout_ms;
+  *written = len;
+  return H2_PAL_OK;
+}
+
+static void check_size_argument(const char *value, int accepted) {
+  /* Both stage routes stop at the first metadata write. Seeing that write
+   * proves parsing accepted the value without attempting a 4 GiB transfer. */
+  unsigned failures = 0u;
+  for (unsigned url = 0; url < 2; ++url) {
+    test_fixture_t fixture;
+    fixture_init(&fixture, 1u);
+    assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
+    fixture.set_blob_calls = 0u;
+    fixture.set_blob_fail_at = 1u;
+    const h2_pal_http_api_t http = {0};
+    const h2_pal_wifi_sta_api_t wifi = {0};
+    const h2_pal_disk_api_t disk = {0};
+    const h2_command_io_vtable_t io = {
+        .read = size_test_read, .write = size_test_write, .flush = size_test_flush};
+    const h2_loader_command_config_t config = {
+      .loader = &fixture.loader, .fs = &fixture.fs, .http = &http,
+      .wifi = &wifi, .disk = &disk, .digest = fixture.config.package.digest,
+      .now_ms = app_test_now, .sleep_ms = app_test_sleep,
+      .io = {.vtable = &io}};
+    h2_loader_command_t command;
+    assert(h2_loader_command_init(&command, &config) == H2_PAL_OK);
+    const char *payload[] = {"h2loader", "stage", value, SHA_A};
+    const char *download[] = {"h2loader", "stage", "url", "https://test/fw", value, SHA_A};
+    int rc = h2_loader_command_execute(&command, url ? 6u : 4u,
+                                        url ? download : payload);
+    fprintf(stderr, "size route=%s value=[%s] rc=%d writes=%u\n",
+            url ? "url" : "payload", value, rc, fixture.set_blob_calls);
+    failures += rc != (accepted ? H2_PAL_ERR_WRITE : H2_PAL_ERR_INVALID_ARG);
+    failures += fixture.set_blob_calls != (unsigned)accepted;
+    if (strcmp(value, "4294967295") != 0 && strcmp(value, "0") != 0) {
+      const char *scan[] = {"h2loader", "wifi", "scan", "--limit", value};
+      rc = h2_loader_command_execute(&command, 5u, scan);
+      fprintf(stderr, "size route=wifi value=[%s] rc=%d\n", value, rc);
+      failures += rc != H2_PAL_ERR_INVALID_ARG;
+    }
+  }
+  assert(failures == 0u);
+}
+static void test_size_plus(void) {
+  check_size_argument("-1", 0);
+  check_size_argument("4294967296", 0);
+  check_size_argument("4294967295", 1);
+  check_size_argument("0", 1);
+  check_size_argument("+5", 0);
+}
+static void test_size_space(void) {
+  check_size_argument(" 5", 0);
+}
+
+int main(int argc, char **argv) {
+  const struct { const char *name; void (*run)(void); } regressions[] = {
+    {"test_plan_missing_destination", test_plan_missing_destination},
+    {"test_install_hash_mismatch_aborts", test_install_hash_mismatch_aborts},
+    {"test_install_hash_read_error_aborts", test_install_hash_read_error_aborts},
+    {"test_ble_identity_capacity", test_ble_identity_capacity},
+    {"test_ble_diagnostics_preserve_failure_and_cleanup", test_ble_diagnostics_preserve_failure_and_cleanup},
+    {"test_size_plus", test_size_plus},
+    {"test_size_space", test_size_space},
+  };
+  int selected = 0;
+  for (size_t i = 0; i < sizeof(regressions) / sizeof(regressions[0]); ++i) {
+    if (argc == 1 || strcmp(argv[1], regressions[i].name) == 0) {
+      regressions[i].run();
+      selected = 1;
+    }
+  }
+  assert(selected);
+  if (argc > 1) return 0;
   test_app_client_validates_target_archive_entry();
   test_empty_pref_preserves_default_boot_intent();
   test_max_status_fits_public_capacity();
