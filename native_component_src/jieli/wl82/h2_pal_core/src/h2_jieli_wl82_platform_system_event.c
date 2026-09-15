@@ -14,7 +14,7 @@ struct h2_pal_system_event_subscription {
     h2_pal_system_event_type_t type;
     h2_pal_system_event_handler_t handler;
     void *handler_user;
-    uint32_t generation;
+    uint64_t generation;
     event_dispatch_t *dispatches;
     unsigned waiters;
     int retiring;
@@ -35,7 +35,9 @@ static void event_lock_wait(h2_jieli_sdk_mutex_t *lock) {
 static h2_pal_system_event_subscription_t
     s_subscriptions[H2_JIELI_SYSTEM_EVENT_MAX_SUBSCRIPTIONS];
 static h2_jieli_sdk_mutex_t *s_lock;
-static uint32_t s_generation;
+/* Registry-lock protected while ACTIVE; reset only before publishing ACTIVE.
+ * Never wrap: exhaustion rejects new subscriptions until complete teardown. */
+static uint64_t s_generation;
 
 /* Phase, init owners and in-flight operations share one atomic word. Every
  * successful init acquires one owner; deinit releases one, and only the last
@@ -143,7 +145,7 @@ static int system_event_post(
      * not place a maximum-sized subscription snapshot (about 1 KiB on WL82)
      * on those stacks.  A generation ceiling preserves snapshot semantics:
      * subscriptions created by a callback do not receive the current event. */
-    const uint32_t generation_ceiling = s_generation;
+    const uint64_t generation_ceiling = s_generation;
     (void)h2_jieli_sdk_mutex_unlock(lock);
 
     result = H2_PAL_OK;
@@ -201,16 +203,14 @@ static int system_event_subscribe(
         return H2_PAL_ERR_IO;
     }
     int result = H2_PAL_ERR_FULL;
-    for (size_t i = 0u; i < H2_JIELI_SYSTEM_EVENT_MAX_SUBSCRIPTIONS; ++i) {
+    for (size_t i = 0u; i < H2_JIELI_SYSTEM_EVENT_MAX_SUBSCRIPTIONS &&
+                        s_generation != UINT64_MAX; ++i) {
         h2_pal_system_event_subscription_t *sub = &s_subscriptions[i];
         if (sub->handler == NULL && !sub->retiring) {
             sub->type = type;
             sub->handler = handler;
             sub->handler_user = handler_user;
             sub->generation = ++s_generation;
-            if (sub->generation == 0u) {
-                sub->generation = ++s_generation;
-            }
             *out_subscription = sub;
             result = H2_PAL_OK;
             break;

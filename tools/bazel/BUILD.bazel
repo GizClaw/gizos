@@ -1191,3 +1191,23 @@ py_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )
+
+py_test(
+    name = "jieli_event_generation_test",
+    srcs = ["tests/test_jieli_event_generation.py"],
+    data = [
+        "//libs/pal:pal_header_files",
+        "//native_component_src/jieli/wl82/h2_pal_core:src/h2_jieli_wl82_platform_system_event.c",
+        "//native_component_src/jieli/wl82/h2_pal_core:tests/src/test_jieli_wl82_event_threads.c",
+        "//native_component_src/jieli/wl82/h2_pal_core:include/h2_jieli_wl82_atomic.h",
+        "//native_component_src/jieli/wl82/h2_pal_core:include/h2_jieli_wl82_platform_core.h",
+        "//native_component_src/jieli/wl82/h2_pal_core:include/h2_jieli_wl82_sdk_port.h",
+    ],
+    main = "tests/test_jieli_event_generation.py",
+    legacy_create_init = 0,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

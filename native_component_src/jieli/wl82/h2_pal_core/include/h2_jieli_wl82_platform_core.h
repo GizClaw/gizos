@@ -63,7 +63,11 @@ h2_pal_result_t h2_jieli_wl82_cond_wait_owned(
  * must not release another owner's reference. External unsubscribe waits for
  * all dispatches of that subscription; self-unsubscribe only stops admission
  * and defers slot reuse until all dispatches return. Keep callback context
- * alive across other already-running callbacks in the self-unsubscribe case. */
+ * alive across other already-running callbacks in the self-unsubscribe case.
+ * Post snapshots a registry-locked 64-bit generation ceiling: subscriptions
+ * added after that snapshot never receive that post. Generations never wrap;
+ * at UINT64_MAX subscribe returns FULL without changing live subscriptions.
+ * Only complete teardown followed by fresh init resets the generation epoch. */
 const h2_pal_system_event_api_t *h2_jieli_wl82_platform_system_event_api(void);
 
 /** Bounded FIFO with one mutex-protected ring and predicate-based condition waits. */
