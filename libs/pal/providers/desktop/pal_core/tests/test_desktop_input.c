@@ -504,6 +504,8 @@ int main(void) {
   h2_pal_modem_signal_t modem_signal;
   assert(h2_pal_modem_get_signal(modem, &modem_signal) ==
          H2_PAL_OK);
+  assert(modem_signal.rssi_valid == 1u && modem_signal.rsrp_valid == 0u);
+  assert(modem_signal.rsrp_dbm == 0);
   assert(modem_signal.rssi_dbm == -82 &&
          modem_signal.rat == H2_PAL_MODEM_RAT_LTE);
   assert(h2_pal_modem_data_close(modem, 1000u) ==
@@ -511,6 +513,8 @@ int main(void) {
   memset(&modem_signal, 0x7f, sizeof(modem_signal));
   assert(h2_pal_modem_get_signal(modem, &modem_signal) ==
          H2_PAL_ERR_UNAVAILABLE);
+  assert(modem_signal.rssi_valid == 0u && modem_signal.rsrp_valid == 0u);
+  assert(modem_signal.rsrp_dbm == 0);
   assert(modem_signal.rssi_dbm == 0 && modem_signal.ber == 0 &&
          modem_signal.rat == H2_PAL_MODEM_RAT_UNKNOWN);
   assert(h2_pal_modem_data_open(modem, 1000u) ==

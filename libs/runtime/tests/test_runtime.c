@@ -1328,6 +1328,15 @@ static void assert_system_event_mapping(
     assert(event.kind == kind);
     assert(event.sequence != 0u);
     assert(event.payload_size == runtime_payload_size);
+    if (kind == H2_RUNTIME_SYSTEM_EVENT_MODEM_SIGNAL_CHANGED) {
+        const h2_pal_modem_signal_t *pal = pal_payload;
+        h2_runtime_system_event_modem_signal_t signal;
+        memcpy(&signal, event.payload, sizeof(signal));
+        assert(signal.rssi_dbm == pal->rssi_dbm && signal.rssi_valid == pal->rssi_valid);
+        assert(signal.rsrp_dbm == pal->rsrp_dbm && signal.rsrp_valid == pal->rsrp_valid);
+        assert(signal.ber == pal->ber);
+        assert(signal.rat == (h2_runtime_system_modem_rat_t)pal->rat);
+    }
 }
 
 static h2_pal_wifi_sta_status_t test_wifi_sta_status(void) {
@@ -1572,6 +1581,9 @@ static void test_system_event_projects_all_scope_events(void) {
     h2_pal_modem_status_t modem_status = test_modem_status();
     h2_pal_modem_signal_t modem_signal = {
         .rssi_dbm = -70,
+        .rssi_valid = 1u,
+        .rsrp_dbm = -96,
+        .rsrp_valid = 1u,
         .ber = 1,
         .rat = H2_PAL_MODEM_RAT_LTE,
     };
@@ -1720,6 +1732,14 @@ static void test_system_event_projects_all_scope_events(void) {
         &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_PACKET_CHANGED, &modem_status, sizeof(modem_status),
         H2_RUNTIME_COMPONENT_SYSTEM_MODEM, H2_RUNTIME_SYSTEM_EVENT_MODEM_PACKET_CHANGED,
         sizeof(h2_runtime_system_event_modem_packet_t));
+    assert_system_event_mapping(
+        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIGNAL_CHANGED, &modem_signal, sizeof(modem_signal),
+        H2_RUNTIME_COMPONENT_SYSTEM_MODEM, H2_RUNTIME_SYSTEM_EVENT_MODEM_SIGNAL_CHANGED,
+        sizeof(h2_runtime_system_event_modem_signal_t));
+    modem_signal.rssi_dbm = 0;
+    modem_signal.rssi_valid = 0u;
+    modem_signal.rsrp_dbm = 0;
+    modem_signal.rsrp_valid = 0u;
     assert_system_event_mapping(
         &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIGNAL_CHANGED, &modem_signal, sizeof(modem_signal),
         H2_RUNTIME_COMPONENT_SYSTEM_MODEM, H2_RUNTIME_SYSTEM_EVENT_MODEM_SIGNAL_CHANGED,

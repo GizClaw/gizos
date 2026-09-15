@@ -64,7 +64,9 @@ static h2_pal_result_t unsupported_modem_get_data_status(void *p0, h2_pal_modem_
 
 static h2_pal_result_t unsupported_modem_get_signal(void *p0, h2_pal_modem_signal_t *p1) {
     (void)p0;
-    (void)p1;
+    if (p1 != NULL) {
+        memset(p1, 0, sizeof(*p1));
+    }
     return H2_PAL_ERR_UNSUPPORTED;
 }
 

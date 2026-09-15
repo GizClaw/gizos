@@ -197,6 +197,11 @@ int main(void) {
     CHECK_UNSUPPORTED_API(log);
     CHECK_UNSUPPORTED_API(mem);
     CHECK_UNSUPPORTED_API(modem);
+    h2_pal_modem_signal_t signal;
+    memset(&signal, 0xff, sizeof(signal));
+    assert(h2_pal_modem_get_signal(h2_pal_unsupported_modem_api(), &signal) == H2_PAL_ERR_UNSUPPORTED);
+    assert(signal.rssi_dbm == 0 && signal.rssi_valid == 0u);
+    assert(signal.rsrp_dbm == 0 && signal.rsrp_valid == 0u);
     CHECK_UNSUPPORTED_API(mqtt);
     CHECK_UNSUPPORTED_API(net);
     CHECK_UNSUPPORTED_API(netif);

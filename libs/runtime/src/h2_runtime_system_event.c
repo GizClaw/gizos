@@ -552,6 +552,9 @@ static h2_pal_result_t map_modem_event(
         h2_runtime_system_event_modem_signal_t *runtime =
             &out_payload->modem_signal;
         runtime->rssi_dbm = pal->rssi_dbm;
+        runtime->rssi_valid = pal->rssi_valid;
+        runtime->rsrp_dbm = pal->rsrp_dbm;
+        runtime->rsrp_valid = pal->rsrp_valid;
         runtime->ber = pal->ber;
         runtime->rat = (h2_runtime_system_modem_rat_t)pal->rat;
         *out_payload_size = sizeof(*runtime);

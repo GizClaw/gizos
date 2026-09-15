@@ -327,6 +327,13 @@ byte storage 后再转换为 struct，也不能为同一事件额外创建第二
 callback 栈上重复保留最大 payload storage。Public emit API 及 App 读取 contract
 不受该 private enqueue path 影响。
 
+`H2_RUNTIME_SYSTEM_EVENT_MODEM_SIGNAL_CHANGED` 的
+`h2_runtime_system_event_modem_signal_t` 逐字段复制 PAL 的 `rssi_dbm`、`ber`、
+`rat`、`rssi_valid`、`rsrp_dbm`、`rsrp_valid`。App 必须先检查有效位：
+`rssi_valid=0` 时忽略值为 0 的 RSSI；仅 `rsrp_valid=1` 时使用 LTE RSRP
+（dBm）。未知测量不能当作强信号；CSQ URC 没有 RSRP 测量。
+具体查询与范围见 [Modem 信号合同](modem_urc.md#信号有效性与-lte-rsrp)。
+
 System component family 包括：
 
 ```text
