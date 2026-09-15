@@ -25,8 +25,8 @@ experiment attributing every outcome to one of those commits.
 
 The distinct-image update now passes the formerly failing source read after
 candidate reboot and confirmation, copies the complete image, verifies P1,
-and converges. Ordered selected lines are retained in
-the trace (`loader-self-update-trace.log`); full local capture is
+and converges. The ordered markers needed for review are inline below;
+the full local capture is
 `tmp/jieli/2026-09-14-loader/install.log`.
 
 ```text
@@ -57,19 +57,25 @@ Loader package (918365 bytes):
 Loader image (929917 bytes):
 `42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd`.
 
-Initial status (`loader-initial.status`) confirmed old P1 image
+The independent initial status confirmed old P1 image
 `7130cfe2386c86a7dcf82ccd15854f14b64fb525be14a984cfdaa5dd19d64dfa`;
 P2 and Stage held PAL App package
 `f2d528a110827e8161154d4c7df925103f1b6a76931454b3a5afc4aae631997d`,
 image `fec8c47945b29ac9f294d177d507d19705195c34ba8f76c63a9d60d5ff95cfb7`.
-Both partitions were valid; P1 running/next, last_result=0.
+Both partitions were valid; `running_partition=1`, `next_partition=1`,
+`stage_valid=1`, `last_result=0`.
 
-After send, immediately-before-install status (`loader-before-install.status`)
+After send, the independent immediately-before-install status
 recorded unchanged P1/P2, Stage equal to the new Loader package/image above,
 and last_result=0. Send acknowledged all 918365 bytes and the exact package
-SHA. After-install status (`loader-after-install.status`) independently
+SHA. The independent after-install status
 confirmed both partitions valid and carrying the new Loader package/image,
-P1 running/next, Stage empty, boot_intent=auto, last_result=0.
+`running_partition=1`, `next_partition=1`, `stage_valid=0`,
+`boot_intent=auto`, `last_result=0`.
+
+All parsed before/after snapshots are retained in `independent_uart_status`
+in the [artifact record](./loader-artifacts.json); raw status files are not
+repository inputs. The before-install Stage was valid (`stage_valid=1`).
 
 ## Commands and host/native validation
 
@@ -92,9 +98,9 @@ bazel test --config=macos_arm64 --nocache_test_results \
   //projects/h2loader/apps/e2e-runner:h2loader_e2e_runner_test
 ```
 
-Host test output (`loader-host-tests-fresh.log`), with trailing whitespace
-trimmed in the committed copy. No behavior or test was
-changed; existing attribute fault-injection and directory regression coverage
+The four passing test names, fresh execution and elapsed time are recorded
+above. No behavior or test was changed; existing attribute fault-injection
+and directory regression coverage
 was rerun. An earlier invocation returned a cached directory-test PASS.
 
 For each standalone UART command, the executable was
@@ -121,10 +127,10 @@ bazel-bin/projects/h2loader/targets/cc_binary/e2e-runner/e2e-runner \
 ## Full UART result and final state
 
 **25/25 PASS**, rc=0, 560.440 seconds, one run, no runner/test changes.
-[Raw JSON report](./loader-uart-lifecycle.json) and
-selected ordered trace (`loader-uart-lifecycle-trace.log`).
-Full unfiltered local log remains `tmp/jieli/2026-09-14-loader/uart-lifecycle.log`;
-selected traces omit routine traffic and retain lifecycle/error markers.
+The [structured report](./loader-uart-lifecycle.json) preserves each case and
+its status; the relevant ordered markers and counts are inline in this page.
+The unfiltered log is local-only at
+`tmp/jieli/2026-09-14-loader/uart-lifecycle.log`.
 
 The status read at the end of `reboot-loader-preserves-stage`, immediately
 before the `install-loader` case starts staging, records P1 package/image
@@ -184,10 +190,11 @@ reported `H2_JIELI_TRIAL_ROLLBACK app_bootable=0 action=command-mode`.
 The runner verified 2096 coredump bytes, exported them, erased the dump and
 confirmed the blank state.
 
-Independent final UART status (`loader-final.status`) confirms UID
+The independent final UART status confirms UID
 `d879349abc9f`, P1 valid/running/next with new Loader image
 `42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd`,
-boot_intent=auto, last_result=0. P2 and Stage retain crash App package
+`running_partition=1`, `stage_valid=1`, `boot_intent=auto`, `last_result=0`.
+P2 and Stage retain crash App package
 `a6fb82b90e15d34c1889b7c8802c7f08957081f1efc71f7f29bdb10c5d83483b`,
 image `a75bdeca184ecc78ebdf5126dfc75df3170976dbe4a4fcfddfa7da363c3ac93e`.
 P2 metadata is valid but the unconfirmed crashed App is rejected for boot;

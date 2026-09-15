@@ -68,10 +68,9 @@ Local full logs, exact Terminal commands and capture/analysis scripts remain
 under `tmp/jieli/codex-ble/`: `scan.log`, `ble-identity.log`,
 `run-1-command.txt`, `run-2-command.txt`, `run-1-host.log`, `run-2-host.log`,
 `run-1-uart.log`, `run-2-uart.log`, `capture.py`, and `summarize.py`.
-Committed selected UART traces `loader-ble-run-1-uart-trace.log` and
-`loader-ble-run-2-uart-trace.log` preserve original line numbers and ordered
-connection/disconnect, reboot, update and rollback markers. They are selected
-traces, not substitutes for the full local captures.
+The committed connection JSON retains line ranges, ordered connection markers
+and per-connection counts. Raw logs are local-only provenance, not repository
+inputs; the observations needed for review are inline below.
 
 ## Artifacts and independent status
 
@@ -84,10 +83,11 @@ All package bytes/SHA-256s were freshly verified and match
 | `jieli_ac791n_devkit-crash-before-confirm-wl82.update.tar.zlib` | 887289 | `a6fb82b90e15d34c1889b7c8802c7f08957081f1efc71f7f29bdb10c5d83483b` |
 | `jieli_ac791n_devkit-loader-wl82.update.tar.zlib` | 918365 | `9b84d5fdf10b69c56bace2f3bbb4b9b4594526d0f62789f1d1fd5e1bfd0612ca` |
 
-`loader-ble-before.status`, `loader-ble-after-run-1.status`, and
-`loader-ble-after-run-2.status` are independent UART reads and byte-identical:
-UID `d879349abc9f`, active Loader, P1 running/next, boot_intent=auto,
-last_result=0, both partition metadata valid.
+Independent UART reads before the BLE runs and after each run were byte-identical.
+Their parsed fields are preserved in `independent_uart_status` in the
+[artifact record](./loader-artifacts.json): UID `d879349abc9f`, active Loader,
+`running_partition=1`, `next_partition=1`, `stage_valid=1`, `boot_intent=auto`,
+`last_result=0`, both partition metadata valid.
 
 | Location | Package SHA-256 | Image SHA-256 |
 | --- | --- | --- |
