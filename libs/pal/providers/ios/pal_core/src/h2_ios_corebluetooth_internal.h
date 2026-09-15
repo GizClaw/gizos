@@ -36,4 +36,9 @@ void h2_ios_corebluetooth_test_set_start_result(
 
 void h2_ios_corebluetooth_test_post_connected_on_backend_queue(void);
 
+/* Pass NULL to uninstall the fake and reset the backend after the test. */
+void h2_ios_corebluetooth_test_set_pending_connect(
+    const h2_pal_ble_addr_t *address);
+bool h2_ios_corebluetooth_test_connect_cleanup(unsigned cancel_count);
+
 #endif

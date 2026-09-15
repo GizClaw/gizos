@@ -1,4 +1,5 @@
 #include "h2_darwin_platform.h"
+#include "h2_darwin_corebluetooth_internal.h"
 
 #include <assert.h>
 #include <stdlib.h>
@@ -74,6 +75,18 @@ int main(void) {
     assert(h2_darwin_corebluetooth_ble(&allocator, &other_log) == NULL);
     assert(h2_darwin_corebluetooth_ble(&allocator, &log) == ble);
     assert(ble->allocator == &allocator);
+    const h2_pal_ble_addr_t timeout_address = {0};
+    const h2_pal_ble_connect_params_t timeout_params = {.timeout_ms = 20u};
+    uint16_t connection_handle = 0u;
+    h2_darwin_corebluetooth_test_set_pending_connect(&timeout_address);
+    assert(!h2_darwin_corebluetooth_test_connect_cleanup(0u));
+    for (unsigned attempt = 1u; attempt <= 2u; ++attempt) {
+        assert(h2_pal_ble_connect(ble, &timeout_address, &timeout_params,
+                                  &connection_handle) == H2_PAL_ERR_TIMEOUT);
+        assert(h2_darwin_corebluetooth_test_connect_cleanup(attempt));
+    }
+    h2_darwin_corebluetooth_test_set_pending_connect(NULL);
+
     const h2_pal_ble_adv_data_t scan_response = {0};
     assert(h2_pal_ble_adv_set_set_scan_response_data(
                ble, (h2_pal_ble_adv_set_t *)ble, &scan_response) ==

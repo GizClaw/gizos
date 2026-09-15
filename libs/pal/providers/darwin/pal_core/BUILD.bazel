@@ -108,7 +108,10 @@ cc_test(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
-    deps = [":corebluetooth"],
+    deps = [
+        ":corebluetooth",
+        ":corebluetooth_uuid",
+    ],
 )
 
 cc_test(
