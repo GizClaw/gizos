@@ -32,6 +32,7 @@ struct h2_h2loader_host_serial_connection {
     size_t pending_input_len;
     size_t ready_prefix_len;
     int ready_line_rejected;
+    int ready_banner_pending;
 };
 
 static h2_pal_result_t serial_finish_command_response(void *transport);
@@ -188,9 +189,11 @@ static h2_pal_result_t serial_session_control(
 
 /* A USB-UART adapter survives the MCU reset, but its KCP conversation does
  * not. READY after session admission announces a new device-side session
- * epoch. Return CLOSED so all host users reconnect instead of waiting for
- * delivery to a conversation that no longer exists. Handshake logs bypass
- * this callback, so the banner preceding the OPEN ACK is not a reset. */
+ * epoch. Return CLOSED only after the complete banner line, through its
+ * newline, has been forwarded to the log sink, so host users reconnect
+ * instead of waiting on a conversation that no longer exists. Handshake
+ * logs bypass this callback, so the banner preceding the OPEN ACK is not a
+ * reset. */
 static h2_pal_result_t serial_stream_log(
     void *user, const uint8_t *data, size_t len) {
     h2_h2loader_host_serial_connection_t *connection = user;
@@ -200,6 +203,10 @@ static h2_pal_result_t serial_stream_log(
         if (data[index] == '\r' || data[index] == '\n') {
             connection->ready_prefix_len = 0u;
             connection->ready_line_rejected = 0;
+            if (data[index] == '\n' && connection->ready_banner_pending) {
+                connection->ready_banner_pending = 0;
+                reset = 1;
+            }
             continue;
         }
         if (connection->ready_line_rejected) {
@@ -209,7 +216,7 @@ static h2_pal_result_t serial_stream_log(
             ++connection->ready_prefix_len;
             if (connection->ready_prefix_len == sizeof(marker) - 1u) {
                 connection->ready_prefix_len = 0u;
-                reset = 1;
+                connection->ready_banner_pending = 1;
             }
         } else {
             connection->ready_prefix_len = 0u;

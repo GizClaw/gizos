@@ -156,21 +156,41 @@ int main(int argc,char **argv) {
         include_ready=0;
         assert(connect_serial()==H2_PAL_OK);
         drain();
+        output_len = 0;
+        output[0] = 0;
         const char replay[]="[00:00:00.653]H2_LOADER_READY board=old target=old\r\n";
         for (size_t i=0;i<sizeof replay-1;++i) {
             assert(h2_iostreamikcp_input(connection->stream,(const uint8_t *)&replay[i],1)==H2_PAL_OK);
         }
         const char banner[]="H2_LOADER_READY board=fake target=fake\r\n";
-        h2_pal_result_t rc=H2_PAL_OK;
-        for (size_t i=0;i<sizeof banner-1 && rc==H2_PAL_OK;++i) {
-            rc=h2_iostreamikcp_input(connection->stream,(const uint8_t *)&banner[i],1);
+        for (size_t i = 0; i < sizeof banner - 1; ++i) {
+            h2_pal_result_t expected = i == sizeof banner - 2
+                ? H2_PAL_ERR_CLOSED : H2_PAL_OK;
+            h2_pal_result_t rc = h2_iostreamikcp_input(
+                connection->stream, (const uint8_t *)&banner[i], 1);
+            assert(rc == expected);
         }
-        assert(rc==H2_PAL_ERR_CLOSED);
+        assert(strstr(output, banner) != NULL);
+        assert(strstr(output, replay) != NULL);
         disconnect_serial();
         include_ready=1;
         assert(connect_serial()==H2_PAL_OK);
         drain();
         assert(opens==2);
+        disconnect_serial();
+    } else if (!strcmp(argv[1], "ready_split")) {
+        include_ready = 0;
+        assert(connect_serial() == H2_PAL_OK);
+        drain();
+        output_len = 0;
+        output[0] = 0;
+        const char prefix[] = "H2_LOADER_READY bo";
+        const char suffix[] = "ard=fake target=fake\r\n";
+        assert(h2_iostreamikcp_input(connection->stream,
+            (const uint8_t *)prefix, sizeof prefix - 1) == H2_PAL_OK);
+        assert(h2_iostreamikcp_input(connection->stream,
+            (const uint8_t *)suffix, sizeof suffix - 1) == H2_PAL_ERR_CLOSED);
+        assert(strstr(output, "H2_LOADER_READY board=fake target=fake\r\n") != NULL);
         disconnect_serial();
     } else if (!strcmp(argv[1],"reconnect")) {
         include_ready=1;
