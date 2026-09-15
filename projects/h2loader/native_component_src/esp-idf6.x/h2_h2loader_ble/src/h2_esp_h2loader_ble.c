@@ -246,6 +246,7 @@ int h2_esp_h2loader_app_commands_start_with_config(
     }
     s_ble.runtime = runtime;
     const h2_loader_ble_service_config_t service = {
+        .log = runtime->log,
         .api = {
             .ble = runtime->ble_host,
             .task = runtime->task,
@@ -254,7 +255,6 @@ int h2_esp_h2loader_app_commands_start_with_config(
             .system_event = runtime->system_event,
             .allocator = runtime->mem,
         },
-        .log = runtime->log,
         .board = runtime->board,
         .capabilities = s_ble.client_config.hardware_capabilities,
         .advertising_mode = H2_LOADER_BLE_ADVERTISING_LEGACY,

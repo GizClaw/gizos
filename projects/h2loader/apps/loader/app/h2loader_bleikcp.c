@@ -79,6 +79,7 @@ static int open_command_service(
         .command_config = *command_config,
     };
     const h2_loader_ble_service_config_t service_config = {
+        .log = runtime->log,
         .api = {
             .ble = runtime->ble_host,
             .task = runtime->task,
@@ -87,7 +88,6 @@ static int open_command_service(
             .system_event = runtime->system_event,
             .allocator = runtime->mem,
         },
-        .log = runtime->log,
         .board = board,
         .capabilities = capabilities,
         .advertising_mode = H2_LOADER_BLE_ADVERTISING_LEGACY,
