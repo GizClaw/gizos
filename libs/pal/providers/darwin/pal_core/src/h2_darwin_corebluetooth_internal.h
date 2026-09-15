@@ -27,6 +27,7 @@ int h2_darwin_corebluetooth_uuid_from_platform(
 /* Pass NULL to uninstall the fake and reset the backend after the test. */
 void h2_darwin_corebluetooth_test_set_pending_connect(
     const h2_pal_ble_addr_t *address);
+bool h2_darwin_corebluetooth_test_connect_pending(void);
 bool h2_darwin_corebluetooth_test_connect_cleanup(unsigned cancel_count);
 
 enum {

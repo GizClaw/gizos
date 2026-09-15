@@ -1209,6 +1209,8 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
                   error:(NSError *)error {
     (void)central;
     connection_diagnostic("connect-failed", peripheral, error);
+    /* CoreBluetooth gives no attempt identity: a late failure for the same
+     * peripheral fails an in-flight retry, whose cleanup cancels it again. */
     if (peripheral != self.connectingPeripheral) {
         return;
     }
@@ -1508,6 +1510,18 @@ void h2_darwin_corebluetooth_test_set_pending_connect(
             backend.started = YES;
         }
     });
+}
+
+bool h2_darwin_corebluetooth_test_connect_pending(void) {
+    H2CoreBluetoothBackend *backend = h2_corebluetooth_backend();
+    __block BOOL pending = NO;
+    dispatch_sync(backend.queue, ^{
+        H2CoreBluetoothTestCentral *central = (id)backend.centralManager;
+        pending = [central isKindOfClass:[H2CoreBluetoothTestCentral class]] &&
+            backend.operation == H2CoreBluetoothOperationConnect &&
+            backend.connectingPeripheral == central.peripheral;
+    });
+    return pending;
 }
 
 bool h2_darwin_corebluetooth_test_connect_cleanup(unsigned cancel_count) {
