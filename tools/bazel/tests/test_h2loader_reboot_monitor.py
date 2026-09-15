@@ -76,35 +76,48 @@ static void reset(void) {
 
 MAIN = r"""
 int main(void) {
+#define RESET_CASE() do { \
+  reset(); \
+  result = (result_t){0}; \
+  ctx.monitor_output_bytes = 0; \
+  ctx.monitor_logs = 0; \
+} while (0)
   /* Keep baseline extraction warning-clean for the fail-before check. */
   (void)cancelled; (void)read_status;
   config_t cfg={0}; result_t result={0};
   h2_e2e_transport_context_t ctx={.config=&cfg,.case_result=&result};
-  reset(); status_results[0]=H2_PAL_ERR_TIMEOUT;
+  RESET_CASE(); status_results[0]=H2_PAL_ERR_TIMEOUT;
   assert(run_reboot_monitor(&ctx,1,1)==0);
   assert(connects==2 && windows==2 && monitors==2 && statuses==2);
   assert(disconnects==3 && result.status_valid && !ctx.monitor_logs);
-  reset(); monitor_results[0]=H2_PAL_ERR_CLOSED;
+  RESET_CASE(); monitor_results[0]=H2_PAL_ERR_CLOSED;
   assert(run_reboot_monitor(&ctx,1,1)==0 && connects==2 && statuses==1);
-  reset(); status_results[0]=status_results[1]=H2_PAL_ERR_TIMEOUT;
+  RESET_CASE(); status_results[0]=status_results[1]=H2_PAL_ERR_TIMEOUT;
   assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_ERR_TIMEOUT && connects==2);
-  reset(); monitor_results[0]=monitor_results[1]=H2_PAL_ERR_CLOSED;
+  assert(!result.status_valid);
+  RESET_CASE(); monitor_results[0]=monitor_results[1]=H2_PAL_ERR_CLOSED;
   assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_ERR_CLOSED && connects==2);
-  reset(); partitions[0]=2;
+  assert(!result.status_valid);
+  RESET_CASE(); partitions[0]=2;
   assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_ERR_INVALID_STATE && connects==1);
-  reset(); window_bytes[0]=0;
+  assert(!result.status_valid);
+  RESET_CASE(); window_bytes[0]=0;
   assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_ERR_NOT_FOUND && connects==1);
-  reset(); status_results[0]=H2_PAL_ERR_TIMEOUT; cancel_flag=1;
+  assert(!result.status_valid);
+  RESET_CASE(); status_results[0]=H2_PAL_ERR_TIMEOUT; cancel_flag=1;
   monitor_results[0]=H2_PAL_OK;
   assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_ERR_TIMEOUT && connects==1);
-  reset(); handshake_bytes[0]=8; window_bytes[0]=0;
+  assert(!result.status_valid);
+  RESET_CASE(); handshake_bytes[0]=8; window_bytes[0]=0;
   assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_ERR_NOT_FOUND && connects==1);
+  assert(!result.status_valid);
   assert(monitors==1 && statuses==0 && ctx.monitor_output_bytes==0);
-  reset(); handshake_bytes[0]=8; window_bytes[0]=3;
+  RESET_CASE(); handshake_bytes[0]=8; window_bytes[0]=3;
   assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_OK && connects==1);
   assert(monitors==1 && statuses==1 && result.status_valid &&
          ctx.monitor_output_bytes==3);
   check_monitor_output();
+#undef RESET_CASE
   return 0;
 }
 """
