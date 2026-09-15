@@ -32,13 +32,25 @@ core and MQTT independently; Browser selects only core and runs it in one
 platform-owned cooperative task.
 
 The standalone `wifi` suite disconnects STA, queries STA and Netif, and rejects
-stale connection/IP/default-route flags. It requires a non-Wi-Fi control link,
-leaves STA disconnected, and never changes saved credentials. This currently
+stale connection/IP/default-route flags. A launcher must select it alone and
+provide a non-Wi-Fi control link; it leaves STA disconnected and never changes
+saved credentials. This currently
 does **not** cover scan, connect, AP clients, reconnect, or Runtime Wi-Fi events.
+
+The standalone `filesystem` suite (`H2_PAL_E2E_SUITE_FILESYSTEM`) runs only the
+`HOST_FILESYSTEM` case against a writable `/data` mount: mkdir and stat `is_dir`,
+write, stat exact size and `!is_dir`, reject mkdir on the regular file, read,
+EOF read returning 0 bytes, backward seek to offset 3 and verify re-read bytes,
+and cleanup.
+
+A case whose worker join or timer destroy fails keeps its resources in
+`retained_cleanup`; remaining suites (including MQTT) are skipped until
+`h2_pal_e2e_cleanup()` succeeds.
 
 The AC791N launcher is
 `//projects/e2e/targets/h2loader_tar_zlib/pal/jieli_ac791n_devkit:package`.
-It uses the shared H2Loader board layout and Bazel task policy, runs Core then
-Wi-Fi, and prints per-case `H2_PAL_E2E` results plus a repeating summary over
-UART1. It deliberately leaves the diagnostic App unconfirmed so reset recovers
-to Loader; this is not an App confirmation or full Loader lifecycle test.
+It uses the shared H2Loader board layout and Bazel task policy, runs the
+standalone Filesystem suite, then Core, then Wi-Fi, and prints per-case
+`H2_PAL_E2E` results plus a repeating summary over UART1. It deliberately leaves
+the diagnostic App unconfirmed so reset recovers to Loader; this is not an App
+confirmation or full Loader lifecycle test.

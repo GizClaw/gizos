@@ -110,7 +110,8 @@ int main(void) {
 
     assert(h2_pal_fs_stat(api, "/data/nested/value.txt", &stat_value) == H2_PAL_FS_OK);
     assert(!stat_value.is_dir && stat_value.size == sizeof(payload));
-    assert(h2_pal_fs_mkdir(api, "/data/nested/value.txt") != H2_PAL_FS_OK);
+    assert(h2_pal_fs_mkdir(api, "/data/nested/value.txt") == H2_PAL_ERR_INVALID_STATE);
+    assert(h2_pal_fs_mkdir(api, "/data/nested") == H2_PAL_FS_OK);
     assert(h2_pal_fs_open(api, "/data/nested/value.txt", H2_PAL_FS_OPEN_READ, &file) == H2_PAL_FS_OK);
     char read_buffer[sizeof(payload)] = {0};
     size_t read_len = 0u;
@@ -148,6 +149,7 @@ int main(void) {
     char symlink_path[PATH_MAX];
     join_path(symlink_path, sizeof(symlink_path), data_root, "escape");
     assert(symlink(dl_root, symlink_path) == 0);
+    assert(h2_pal_fs_mkdir(api, "/data/escape") == H2_PAL_FS_ERR_INVALID_ARG);
     assert(h2_pal_fs_stat(api, "/data/escape", &stat_value) == H2_PAL_FS_ERR_INVALID_ARG);
     assert(h2_pal_fs_stat(api, "/data/escape/file", &stat_value) == H2_PAL_FS_ERR_INVALID_ARG);
     assert(unlink(symlink_path) == 0);
