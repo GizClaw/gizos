@@ -353,6 +353,58 @@ py_test(
     deps = [":native_runtime"],
 )
 
+py_test(
+    name = "jieli_post_wl82_test",
+    srcs = ["tests/test_jieli_post_wl82.py"],
+    data = ["jieli/local_post_wl82.sh"],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_post_wl82.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "jieli_decode_coredump_test",
+    srcs = ["tests/test_jieli_decode_coredump.py"],
+    data = ["jieli_decode_coredump.py"],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_decode_coredump.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "jieli_task_policy_test",
+    srcs = ["tests/test_jieli_task_policy.py"],
+    data = ["jieli_task_policy.bzl"],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_task_policy.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "jieli_compile_only_project_test",
+    srcs = ["tests/test_jieli_compile_only_project.py"],
+    data = ["//boards/ac791n_chip/ac791n/layouts/compile_only:project.mk"],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_compile_only_project.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
 cc_library(
     name = "vendor_third_party_ikcp",
     tags = ["manual"],
