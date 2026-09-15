@@ -60,7 +60,10 @@ h2_pal_result_t h2_jieli_wl82_cond_wait_owned(
  * The last deinit closes admission; in-flight operations defer destruction,
  * including deinit from a handler. Init during INITIALIZING/CLOSING returns
  * BUSY and acquires nothing. Extra deinit while inactive is harmless; a caller
- * must not release another owner's reference. */
+ * must not release another owner's reference. External unsubscribe waits for
+ * all dispatches of that subscription; self-unsubscribe only stops admission
+ * and defers slot reuse until all dispatches return. Keep callback context
+ * alive across other already-running callbacks in the self-unsubscribe case. */
 const h2_pal_system_event_api_t *h2_jieli_wl82_platform_system_event_api(void);
 
 /** Bounded FIFO with one mutex-protected ring and predicate-based condition waits. */

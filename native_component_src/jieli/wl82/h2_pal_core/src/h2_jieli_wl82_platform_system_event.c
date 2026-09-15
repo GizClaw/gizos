@@ -9,19 +9,28 @@
 #define H2_JIELI_SYSTEM_EVENT_MAX_SUBSCRIPTIONS \
     (H2_PAL_SYSTEM_EVENT_TYPE_COUNT + 8u)
 
+typedef struct event_dispatch event_dispatch_t;
 struct h2_pal_system_event_subscription {
     h2_pal_system_event_type_t type;
     h2_pal_system_event_handler_t handler;
     void *handler_user;
     uint32_t generation;
+    event_dispatch_t *dispatches;
+    unsigned waiters;
+    int retiring;
 };
 
-typedef struct h2_jieli_system_event_snapshot {
-    h2_pal_system_event_subscription_t *subscription;
-    h2_pal_system_event_handler_t handler;
-    void *handler_user;
-    uint32_t generation;
-} h2_jieli_system_event_snapshot_t;
+/* Stack-owned nodes identify nested/self dispatch without SDK TLS support. */
+struct event_dispatch {
+    event_dispatch_t *next;
+    const void *task;
+};
+
+static void event_lock_wait(h2_jieli_sdk_mutex_t *lock) {
+    /* Retirement cannot abandon a borrowed callback on a transient lock error. */
+    while (h2_jieli_sdk_mutex_lock(lock, H2_JIELI_SDK_WAIT_FOREVER) != 0)
+        h2_jieli_sdk_sleep_ms(1u);
+}
 
 static h2_pal_system_event_subscription_t
     s_subscriptions[H2_JIELI_SYSTEM_EVENT_MAX_SUBSCRIPTIONS];
@@ -140,42 +149,30 @@ static int system_event_post(
     result = H2_PAL_OK;
     for (size_t i = 0u; i < H2_JIELI_SYSTEM_EVENT_MAX_SUBSCRIPTIONS; ++i) {
         if (!(h2_jieli_atomic_load_u32(&s_lifecycle) & EVENT_ACTIVE)) break;
-        h2_jieli_system_event_snapshot_t snapshot = {0};
-        if (h2_jieli_sdk_mutex_lock(lock, H2_JIELI_SDK_WAIT_FOREVER) != 0) {
-            event_release();
-            return H2_PAL_ERR_IO;
-        }
+        event_dispatch_t dispatch = {.task = h2_jieli_sdk_task_current()};
+        h2_pal_system_event_handler_t handler = NULL;
+        void *handler_user = NULL;
+        event_lock_wait(lock);
         h2_pal_system_event_subscription_t *sub = &s_subscriptions[i];
-        if (sub->handler != NULL && sub->type == event->type &&
+        if (!sub->retiring && sub->handler != NULL && sub->type == event->type &&
             sub->generation <= generation_ceiling) {
-            snapshot = (h2_jieli_system_event_snapshot_t){
-                .subscription = sub,
-                .handler = sub->handler,
-                .handler_user = sub->handler_user,
-                .generation = sub->generation,
-            };
+            handler = sub->handler;
+            handler_user = sub->handler_user;
+            dispatch.next = sub->dispatches;
+            sub->dispatches = &dispatch;
         }
         (void)h2_jieli_sdk_mutex_unlock(lock);
-        if (snapshot.handler == NULL) {
-            continue;
-        }
-        /* A callback may unsubscribe itself. Never hold the registry lock while
-         * entering application code; generation prevents a recycled slot from
-         * accidentally receiving this older event. */
-        if (h2_jieli_sdk_mutex_lock(lock, H2_JIELI_SDK_WAIT_FOREVER) != 0) {
-            event_release();
-            return H2_PAL_ERR_IO;
-        }
-        const int active =
-            snapshot.subscription->handler == snapshot.handler &&
-            snapshot.subscription->generation == snapshot.generation;
+        if (handler == NULL) continue;
+        int handler_result = handler(handler_user, event);
+        event_lock_wait(lock);
+        event_dispatch_t **entry = &sub->dispatches;
+        while (*entry != &dispatch) entry = &(*entry)->next;
+        *entry = dispatch.next;
+        if (sub->retiring && sub->dispatches == NULL && sub->waiters == 0u)
+            memset(sub, 0, sizeof(*sub));
         (void)h2_jieli_sdk_mutex_unlock(lock);
-        if (active != 0) {
-            int handler_result = snapshot.handler(snapshot.handler_user, event);
-            if (result == H2_PAL_OK && handler_result != H2_PAL_OK) {
-                result = handler_result;
-            }
-        }
+        if (result == H2_PAL_OK && handler_result != H2_PAL_OK)
+            result = handler_result;
     }
     event_release();
     return result;
@@ -206,7 +203,7 @@ static int system_event_subscribe(
     int result = H2_PAL_ERR_FULL;
     for (size_t i = 0u; i < H2_JIELI_SYSTEM_EVENT_MAX_SUBSCRIPTIONS; ++i) {
         h2_pal_system_event_subscription_t *sub = &s_subscriptions[i];
-        if (sub->handler == NULL) {
+        if (sub->handler == NULL && !sub->retiring) {
             sub->type = type;
             sub->handler = handler;
             sub->handler_user = handler_user;
@@ -241,10 +238,25 @@ static void system_event_unsubscribe(
     }
     h2_jieli_sdk_mutex_t *lock = event_retain();
     if (lock == NULL) return;
-    if (h2_jieli_sdk_mutex_lock(lock, H2_JIELI_SDK_WAIT_FOREVER) == 0) {
-        memset(subscription, 0, sizeof(*subscription));
-        (void)h2_jieli_sdk_mutex_unlock(lock);
+    event_lock_wait(lock);
+    subscription->retiring = 1;
+    subscription->handler = NULL; /* atomic with dispatch admission under lock */
+    const void *task = h2_jieli_sdk_task_current();
+    int self = 0;
+    for (event_dispatch_t *d = subscription->dispatches; d != NULL; d = d->next)
+        if (d->task == task) self = 1;
+    if (!self) {
+        ++subscription->waiters; /* prevent slot reuse while waiting */
+        while (subscription->dispatches != NULL) {
+            (void)h2_jieli_sdk_mutex_unlock(lock);
+            h2_jieli_sdk_sleep_ms(1u);
+            event_lock_wait(lock);
+        }
+        --subscription->waiters;
     }
+    if (subscription->dispatches == NULL && subscription->waiters == 0u)
+        memset(subscription, 0, sizeof(*subscription));
+    (void)h2_jieli_sdk_mutex_unlock(lock);
     event_release();
 }
 

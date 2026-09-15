@@ -5,6 +5,7 @@
 #include <sched.h>
 #include <stdatomic.h>
 #include <stdlib.h>
+#include <time.h>
 
 struct h2_jieli_sdk_mutex { pthread_mutex_t lock; };
 static atomic_int live, parked, resume_lock, park_create, create_parked, resume_create;
@@ -91,6 +92,64 @@ static void *churn(void *unused) {
     }
     return NULL;
 }
+static atomic_int dispatch_entered, dispatch_exit, unsubscribe_entered, unsubscribe_done;
+static h2_pal_system_event_subscription_t *retired;
+static _Thread_local int task_token;
+const void *h2_jieli_sdk_task_current(void) { return &task_token; }
+void h2_jieli_sdk_sleep_ms(uint32_t ms) {
+    struct timespec duration = {0, (long)ms * 1000000L};
+    nanosleep(&duration, NULL);
+}
+static int blocked_handler(void *user, const h2_pal_system_event_t *value) {
+    (void)value;
+    atomic_store(&dispatch_entered, 1);
+    while (!atomic_load(&dispatch_exit)) sched_yield();
+    assert(*(int *)user == 42);
+    return H2_PAL_OK;
+}
+static void *post_blocked(void *unused) {
+    (void)unused;
+    assert(h2_pal_system_event_post(h2_jieli_wl82_platform_system_event_api(), &event, 0) == H2_PAL_OK);
+    return NULL;
+}
+static void *retire(void *user) {
+    atomic_store(&unsubscribe_entered, 1);
+    h2_pal_system_event_unsubscribe(h2_jieli_wl82_platform_system_event_api(), retired);
+    atomic_store(&unsubscribe_done, 1);
+    free(user);
+    return NULL;
+}
+static int self_remove(void *user, const h2_pal_system_event_t *value) {
+    (void)user; (void)value;
+    h2_pal_system_event_unsubscribe(h2_jieli_wl82_platform_system_event_api(), retired);
+    atomic_fetch_add(&calls, 1);
+    return H2_PAL_OK;
+}
+static void test_unsubscribe(void) {
+    const h2_pal_system_event_api_t *api = h2_jieli_wl82_platform_system_event_api();
+    assert(h2_pal_system_event_init(api) == H2_PAL_OK);
+    int *user = malloc(sizeof(*user)); *user = 42;
+    assert(h2_pal_system_event_subscribe(api, event.type, blocked_handler, user, &retired) == H2_PAL_OK);
+    pthread_t poster, remover;
+    assert(pthread_create(&poster, NULL, post_blocked, NULL) == 0);
+    while (!atomic_load(&dispatch_entered)) sched_yield();
+    assert(pthread_create(&remover, NULL, retire, user) == 0);
+    while (!atomic_load(&unsubscribe_entered)) sched_yield();
+    h2_jieli_sdk_sleep_ms(30);
+    assert(!atomic_load(&unsubscribe_done));
+    atomic_store(&dispatch_exit, 1);
+    assert(pthread_join(poster, NULL) == 0);
+    assert(pthread_join(remover, NULL) == 0);
+    assert(atomic_load(&unsubscribe_done));
+    assert(h2_pal_system_event_post(api, &event, 0) == H2_PAL_OK);
+    assert(h2_pal_system_event_subscribe(api, event.type, self_remove, NULL, &retired) == H2_PAL_OK);
+    int before = atomic_load(&calls);
+    assert(h2_pal_system_event_post(api, &event, 0) == H2_PAL_OK);
+    assert(h2_pal_system_event_post(api, &event, 0) == H2_PAL_OK);
+    assert(atomic_load(&calls) == before + 1);
+    h2_pal_system_event_deinit(api);
+    atomic_store(&calls, 0);
+}
 static void test_owners(void) {
     const h2_pal_system_event_api_t *api = h2_jieli_wl82_platform_system_event_api();
     h2_pal_system_event_subscription_t *sub;
@@ -162,6 +221,7 @@ static void test_owners(void) {
     }
 }
 int main(void) {
+    test_unsubscribe();
     test_owners();
     const h2_pal_system_event_api_t *api = h2_jieli_wl82_platform_system_event_api();
     for (unsigned round = 0; round < 100; ++round) {
