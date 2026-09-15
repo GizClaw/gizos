@@ -217,6 +217,7 @@ static int display_open_impl(void *user) {
 }
 
 static int display_get_info_impl(void *user, h2_display_info_t *info) {
+  if (info == NULL) return H2_DISPLAY_ERR_INVALID_ARG;
   h2_display_state_t *state = user;
   if (!state->open) return H2_DISPLAY_ERR_INVALID_STATE;
   *info = (h2_display_info_t){
@@ -385,6 +386,7 @@ static h2_pal_result_t touch_open_impl(void *user) {
 
 static h2_pal_result_t touch_get_info_impl(
     void *user, h2_pal_touch_info_t *out_info) {
+  if (out_info == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (!((h2_touch_state_t *)user)->open) return H2_PAL_ERR_INVALID_STATE;
   *out_info = (h2_pal_touch_info_t){
       .width = H2_LCD_WIDTH, .height = H2_LCD_HEIGHT};
@@ -393,6 +395,7 @@ static h2_pal_result_t touch_get_info_impl(
 
 static h2_pal_result_t touch_poll_event_impl(
     void *user, h2_pal_touch_event_t *out_event) {
+  if (out_event == NULL) return H2_PAL_ERR_INVALID_ARG;
   h2_touch_state_t *state = user;
   uint8_t fingers = 0u;
   uint8_t point[4];
@@ -508,6 +511,7 @@ static h2_pal_result_t read_single_button(
     void *user, h2_pal_periph_id_t id,
     h2_pal_single_button_reading_t *out_reading) {
   (void)user;
+  if (out_reading == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (id < H2_JIELI_AC791N_ADKEY_POWER_ID ||
       id > H2_JIELI_AC791N_ADKEY_CANCEL_ID) {
     return H2_PAL_ERR_NOT_FOUND;
@@ -528,6 +532,7 @@ static h2_pal_result_t read_radio_button_group(
     void *user, h2_pal_periph_id_t id,
     h2_pal_radio_button_group_reading_t *out_reading) {
   (void)user;
+  if (out_reading == NULL) return H2_PAL_ERR_INVALID_ARG;
   if (id != H2_JIELI_AC791N_ADKEY_GROUP_ID) return H2_PAL_ERR_NOT_FOUND;
   int result = init_adkeys();
   if (result != H2_PAL_OK) return result;

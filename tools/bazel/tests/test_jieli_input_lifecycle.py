@@ -27,7 +27,7 @@ class InputLifecycleTest(unittest.TestCase):
                 '-I', str(ROOT / 'boards/jieli_ac791n_devkit/ac791n/include'),
                 '-I', str(ROOT / 'native_component_src/jieli/wl82/h2_pal_core/include'),
                 str(unit), '-o', str(binary)], check=True)
-            for case in ['flush_failure', 'display_close_error', 'touch_close_error', 'rs_order', 'flush_lost_irq', 'flush_stale', 'open_pending',
+            for case in ['invalid_input', 'flush_failure', 'display_close_error', 'touch_close_error', 'rs_order', 'flush_lost_irq', 'flush_stale', 'open_pending',
                          'iic_read_start', 'iic_read_stop', 'iic_write_start', 'iic_write_stop',
                          'adc_full', 'adc_gpio', 'draw_close', 'touch_close', 'adc_first_use']:
                 with self.subTest(case=case):

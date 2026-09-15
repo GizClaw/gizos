@@ -108,7 +108,24 @@ int main(int argc, char **argv) {
     touch_state.open = 1;
     const h2_pal_display_api_t *display = h2_jieli_ac791n_devkit_display_api();
     const h2_pal_touch_api_t *touch = h2_jieli_ac791n_devkit_touch_api();
-    if (strcmp(argv[1], "flush_failure") == 0) {
+    if (strcmp(argv[1], "invalid_input") == 0) {
+        for (int open = 0; open <= 1; ++open) {
+            display_state.open = touch_state.open = open;
+            assert(display->vtable->get_info(display->user, NULL) == H2_DISPLAY_ERR_INVALID_ARG);
+            assert(touch->vtable->get_info(touch->user, NULL) == H2_PAL_ERR_INVALID_ARG);
+            assert(touch->vtable->poll_event(touch->user, NULL) == H2_PAL_ERR_INVALID_ARG);
+        }
+        assert(read_single_button(NULL, H2_JIELI_AC791N_ADKEY_POWER_ID, NULL) == H2_PAL_ERR_INVALID_ARG);
+        assert(read_radio_button_group(NULL, H2_JIELI_AC791N_ADKEY_GROUP_ID, NULL) == H2_PAL_ERR_INVALID_ARG);
+        assert(read_single_button(NULL, 0, NULL) == H2_PAL_ERR_INVALID_ARG);
+        assert(read_radio_button_group(NULL, 0, NULL) == H2_PAL_ERR_INVALID_ARG);
+        assert(atomic_load(&adc_calls) == 0);
+        h2_display_rect_t rect = {0, 0, 1, 1};
+        uint16_t pixel = 0;
+        assert(display->vtable->draw_bitmap(display->user, NULL, &pixel, 2, H2_DISPLAY_PIXEL_RGB565) == H2_DISPLAY_ERR_INVALID_ARG);
+        assert(display->vtable->draw_bitmap(display->user, &rect, NULL, 2, H2_DISPLAY_PIXEL_RGB565) == H2_DISPLAY_ERR_INVALID_ARG);
+        assert(display->vtable->set_brightness_percent(display->user, 101) == H2_DISPLAY_ERR_INVALID_ARG);
+    } else if (strcmp(argv[1], "flush_failure") == 0) {
         assert(lcd_command(0x2a) == 0);
         flush_error = 1;
         assert(display->vtable->close(display->user) == H2_PAL_ERR_IO);
