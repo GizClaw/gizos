@@ -387,7 +387,7 @@ static h2_pal_result_t jieli_memory_stats_read(
 
 static void probe_audio(void) {
   const h2_pal_audio_api_t *audio = h2_jieli_ac791n_devkit_audio_api();
-  h2_audio_info_t info;
+  h2_audio_info_t info = {0};
   int mic_start = H2_AUDIO_ERR_UNAVAILABLE;
   int mic_read = H2_AUDIO_ERR_UNAVAILABLE;
   int mic_stop = H2_AUDIO_ERR_UNAVAILABLE;
@@ -400,6 +400,10 @@ static void probe_audio(void) {
   int peak = 0;
 
   audio_info_result = h2_pal_audio_get_info(audio, &info);
+  if (audio_info_result != H2_AUDIO_OK) {
+    usb_write_status("JIELI_AUDIO info=%d probes=skipped\r\n", audio_info_result);
+    return;
+  }
   mic_start = h2_pal_audio_start_mic(audio);
   if (mic_start == H2_AUDIO_OK) {
     h2_audio_frame_t frame = h2_audio_frame_for_buffer(

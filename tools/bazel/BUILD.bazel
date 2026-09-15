@@ -1129,3 +1129,19 @@ py_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )
+
+py_test(
+    name = "jieli_audio_probe_test",
+    srcs = ["tests/test_jieli_audio_probe.py"],
+    data = [
+        "//projects/example/native_component_src/jieli/wl82/devkit_app:src/color_bar_pal.c",
+        "//libs/pal:pal_header_files",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_audio_probe.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
