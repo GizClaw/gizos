@@ -1,9 +1,11 @@
-#include "h2_lua_display.h"
-#include "h2_raster2d.h"
 #include "../../../raster2d/src/h2_raster2d_internal.h"
-#include "h2_lua_numeric.h"
-#include "h2_f32_math.h"
 #include "../runtime/h2_lua_internal.h"
+#include "h2_f32_math.h"
+#include "h2_lua_display.h"
+#include "h2_lua_numeric.h"
+#include "h2_lua_skeleton2d.h"
+#include "h2_lua_texture_internal.h"
+#include "h2_raster2d.h"
 
 #include <limits.h>
 #include <math.h>
@@ -477,6 +479,22 @@ static int open_delay(lua_State *state) {
   return 1;
 }
 
+static int lua_system_micros(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  uint64_t us = 0;
+  h2_pal_result_t result =
+      h2_pal_time_get_monotonic_us(job->host->config.runtime->time, &us);
+  if (result != H2_PAL_OK) {
+    lua_pushnil(state);
+    lua_pushinteger(state, result);
+    return 2;
+  }
+  if (us > (uint64_t)LUA_MAXINTEGER)
+    return luaL_error(state, "system.micros integer overflow");
+  lua_pushinteger(state, (lua_Integer)us);
+  return 1;
+}
+
 static int lua_system_millis(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
   lua_pushinteger(state, (lua_Integer)h2_lua_now_ms(job->host));
@@ -698,8 +716,9 @@ static int lua_system_heap_unsupported(lua_State *state) {
 
 static int open_system(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  lua_createtable(state, 0, 7);
+  lua_createtable(state, 0, 8);
   set_function(state, "millis", lua_system_millis, job);
+  set_function(state, "micros", lua_system_micros, job);
   set_function(state, "uptime", lua_system_uptime, job);
   set_function(state, "time", lua_system_time, job);
   set_function(state, "date", lua_system_date, job);
@@ -2044,6 +2063,46 @@ static int display_draw_rects(lua_State *state) {
       mark_dirty_rect(job, (int)left, (int)top, (int)(right - left),
                       (int)(bottom - top));
   }
+  return 0;
+}
+
+static int display_draw_textures(lua_State *s) {
+  h2_lua_job_t *job = lua_touserdata(s, lua_upvalueindex(1));
+  const h2_lua_texture_batch_t *b = h2_lua_texture_batch_check(s, 1);
+  int argc = lua_gettop(s);
+  if (argc != 1 && argc != 5)
+    return luaL_error(s, "texture: incomplete clip");
+  h2_raster2d_clip_t clip = {0, 0, 0, 0};
+  size_t values[4];
+  if (argc == 5) {
+    for (int i = 0; i < 4; i++) {
+      if (!lua_isinteger(s, i + 2))
+        return luaL_error(s, "texture: expected integer clip");
+      lua_Integer v = lua_tointeger(s, i + 2);
+      if (v < 0 || v > INT32_MAX)
+        return luaL_error(s, "texture: invalid clip");
+      values[i] = (size_t)v;
+    }
+    clip = (h2_raster2d_clip_t){values[0], values[1], values[2], values[3]};
+  }
+  if (!job->display_open)
+    return luaL_error(s, "texture: closed display");
+  h2_raster2d_surface_t surface = {
+      job->framebuffer,
+      (size_t)job->display_info.width * job->display_info.height,
+      (size_t)job->display_info.width, (size_t)job->display_info.height,
+      (size_t)job->display_info.width};
+  if (argc == 1)
+    clip = (h2_raster2d_clip_t){0, 0, surface.width, surface.height};
+  h2_pal_result_t rc =
+      h2_raster2d_draw_sprites(&surface, b->items, b->count, &clip);
+  if (rc)
+    return luaL_error(s, "texture: draw failed %d", rc);
+  /* Conservative damage includes transparent/singular attachments. */
+  if (b->count && clip.left < clip.right && clip.top < clip.bottom)
+    mark_dirty_rect(job, (int)clip.left, (int)clip.top,
+                    (int)(clip.right - clip.left),
+                    (int)(clip.bottom - clip.top));
   return 0;
 }
 
@@ -3904,6 +3963,10 @@ static int push_display_proxy(lua_State *state, h2_lua_job_t *job) {
   set_function(state, "compile_palette", display_compile_palette, job);
   set_function(state, "blend_palette", display_blend_palette, job);
   set_function(state, "draw_rects", display_draw_rects, job);
+  set_function(state, "texture", h2_lua_texture_new, job);
+  set_function(state, "texture_batch", h2_lua_texture_batch_new, job);
+  set_function(state, "update_textures", h2_lua_texture_update, job);
+  set_function(state, "draw_textures", display_draw_textures, job);
   set_function(state, "compile_commands", display_compile_commands, job);
   set_function(state, "draw_commands", display_draw_commands, job);
   set_function(state, "clear", display_clear, job);
@@ -4851,6 +4914,7 @@ h2_pal_result_t h2_lua_register_builtin_modules(h2_lua_job_t *job) {
   add_preload(state, "system", open_system, job);
   add_preload(state, "vmath", h2_lua_open_vmath, job);
   add_preload(state, "geometry", h2_lua_open_geometry, job);
+  add_preload(state, "skeleton2d", h2_lua_open_skeleton2d, job);
   add_preload(state, "display", open_display, job);
   add_preload(state, "lcd_touch", open_lcd_touch, job);
   add_preload(state, "audio", open_audio, job);

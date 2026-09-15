@@ -116,6 +116,8 @@ App 必须在调用 third-party API 之前完成对应 integration 初始化，�
 
 `libs/` public surface 包括：
 
+- [`skeleton2d`](./skeleton2d.md)：与物种、Lua 和 Display 无关的骨架/动画计算；应用拥有资源、动作与朝向策略，Lua writer 适配现有 mesh。
+
 - [`app_test`](./app_test.md)：以同一份 C scenario 在 Memory 或未来 device driver
   上验证 Runtime input 到 App state 与 production LVGL subject 的映射。
 - [`audio_mixer`](./audio_mixer.md)：跨平台音频混合 API 和实现。

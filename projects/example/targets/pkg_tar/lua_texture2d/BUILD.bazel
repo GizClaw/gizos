@@ -1,0 +1,35 @@
+load("//libs/lua/web:lua_web_app.bzl", "h2_lua_web_app")
+package(default_visibility = ["//visibility:public"])
+h2_lua_web_app(
+    name = "lua_texture2d",
+    board = "//projects/example/libs/web/demo_board",
+    skin = "plain",
+    script = "//projects/example/apps/lua_skeleton2d/app:src/texture.lua",
+    vm_memory_limit_bytes = 2097152,
+    passes = ["TEXTURE pixels=PASS", "TEXTURE BENCH COMPLETE", "H2_WEB_APP name=lua_texture2d result=PASS"],
+    fails = ["TEXTURE pixels=FAIL"],
+    test_timeout_s = 300,
+    evals = [["TEXTURE FRAME cases=80 errors=PASS", """(() => {try {
+      const p=document.getElementById('canvas').getContext('2d').getImageData(0,0,240,240).data;
+      const expected=new Uint16Array(240*240);
+      const cases=[[1,0,0,1,1,1],[0,1,-1,0,5,1],[2,0,0,2,1,1],[-2,0,0,2,6,1],[1,0,.5,1,2,2],[0,0,0,1,2,2],[1,2,2,4,0,0],[.8,.6,-.6,.8,4.125,3.25],[.5,0,0,.5,2,2],[1,0,0,1,-1,-1]];
+      const colors=[0xf800,0x0400,0,0xffff];let cell=0;
+      for(const m of cases)for(let anchor=0;anchor<2;anchor++)for(let clip=0;clip<2;clip++)for(let mode=0;mode<2;mode++) {
+        const ox=cell%20*12,oy=Math.floor(cell/20)*12;cell++;
+        const det=m[0]*m[3]-m[1]*m[2];if(det===0)continue;
+        for(let y=clip;y<8-clip;y++)for(let x=clip;x<8-clip;x++)for(let v=0;v<2;v++)for(let u=0;u<2;u++) {
+          const dx=x+.5-(m[0]*(u-anchor)+m[2]*(v-anchor*.5)+m[4]);
+          const dy=y+.5-(m[1]*(u-anchor)+m[3]*(v-anchor*.5)+m[5]);
+          const U=(dx*m[3]-dy*m[2])/det,V=(dy*m[0]-dx*m[1])/det;
+          if(U>=0&&U<1&&V>=0&&V<1)expected[(oy+y)*240+ox+x]=colors[v*2+u];
+        }
+      }
+      for(const ox of [0,4])for(let y=0;y<2;y++)for(let x=0;x<2;x++)expected[(60+y)*240+ox+x]=colors[y*2+x];
+      for(let i=0;i<expected.length;i++) {
+        const c=expected[i],rgb=[Math.floor((c>>11)*255/31),Math.floor(((c>>5)&63)*255/63),Math.floor((c&31)*255/31)];
+        if(rgb.some((v,j)=>v!==p[i*4+j]))throw Error('pixel '+(i%240)+','+Math.floor(i/240)+' expected '+rgb+' got '+Array.from(p.slice(i*4,i*4+3)));
+      }
+      console.log('TEXTURE pixels=PASS');
+    }catch(e){console.error('TEXTURE pixels=FAIL '+e.message)}})()"""]],
+    clicks = [["TEXTURE pixels=PASS", "#stop"]],
+)

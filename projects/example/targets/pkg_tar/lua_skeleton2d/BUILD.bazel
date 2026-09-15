@@ -1,0 +1,171 @@
+load("//libs/lua/web:lua_web_app.bzl", "h2_lua_web_app")
+load("//tools/bazel:web_archive.bzl", "web_archive_browser_test")
+package(default_visibility = ["//visibility:public"])
+h2_lua_web_app(
+    name = "lua_skeleton2d",
+    board = "//projects/example/libs/web/demo_board",
+    skin = "plain",
+    script = "//projects/example/apps/lua_skeleton2d/app:src/skeleton2d.lua",
+    vm_memory_limit_bytes = 2097152,
+    passes = ["SKELETON pixels=PASS", "SKELETON mirror=PASS", "SKELETON order=PASS", "SKELETON INPUT scene=2", "SKELETON INPUT scene=3", "SKELETON INPUT scene=4", "H2_WEB_APP name=lua_skeleton2d result=PASS"],
+    fails = ["SKELETON pixels=FAIL"],
+    evals = [["SKELETON FRAME initial", """(() => {try {
+      const c=document.getElementById('canvas');const p=c.getContext('2d').getImageData(0,0,240,240).data;
+      for(const [x,y,r,g,b] of [[25,100,255,0,0],[60,100,0,255,255],[95,100,255,255,0],[25,90,8,16,24]]) {
+        const at=(y*240+x)*4;if(p[at]!==r||p[at+1]!==g||p[at+2]!==b)throw new Error('pixel '+x+','+y+' '+Array.from(p.slice(at,at+3)));
+      } console.log('SKELETON pixels=PASS');
+    } catch(e) {console.error('SKELETON pixels=FAIL '+e.message)}})()"""],
+        ["SKELETON INPUT scene=1.*mirror=true", """(() => {
+          const p=document.getElementById('canvas').getContext('2d').getImageData(215,100,1,1).data;
+          if(p[0]===255&&p[1]===0&&p[2]===0)console.log('SKELETON mirror=PASS');
+          else console.error('SKELETON pixels=FAIL mirror '+Array.from(p));
+        })()"""],
+        ["SKELETON INPUT scene=1.*order=true", """(() => {
+          const c=document.getElementById('canvas');const p=c.getContext('2d').getImageData(52,100,1,1).data;
+          if(p[0]===255&&p[1]===0&&p[2]===0)console.log('SKELETON order=PASS');
+          else console.error('SKELETON pixels=FAIL layer order '+Array.from(p));
+        })()"""]],
+    taps = [["SKELETON pixels=PASS", 24, 43], ["SKELETON mirror=PASS", 216, 43], ["SKELETON INPUT scene=1.*order=false mirror=false", 120, 230], ["SKELETON order=PASS", 168, 210], ["SKELETON INPUT scene=2", 168, 210], ["SKELETON INPUT scene=3", 168, 210]],
+    clicks = [["SKELETON INPUT scene=4", "#stop"]],
+)
+
+# Partition the unchanged 144000 measured frames: 72000 planar, then eight
+# 9000-frame spatial scene/view groups. Each keeps 300 warmups and 3 x 3000
+# samples per case, including actual raster/present. macOS fastbuild exceeded
+# 2400 seconds when all groups ran serially in one browser invocation.
+
+web_archive_browser_test(
+    name = "landmark_browser_test",
+    archive = ":lua_skeleton2d",
+    passes = ["SKELETON LANDMARKS PASS cases=192", "H2_WEB_APP name=lua_skeleton2d result=PASS"],
+    taps = [["SKELETON FRAME initial", 216, 64]],
+    clicks = [["SKELETON LANDMARKS PASS cases=192", "#stop"]],
+    timeout_s = 90,
+)
+
+# Each control step has a unique token, including when a view repeats.
+# step, scene, yaw, pitch, next input x/y
+_FACING = [
+    (1, 2, 45, 0, 72, 43),
+    (2, 2, 90, 0, 72, 43),
+    (3, 2, 135, 0, 72, 43),
+    (4, 2, 180, 0, 72, 43),
+    (5, 2, 225, 0, 72, 43),
+    (6, 2, 270, 0, 72, 43),
+    (7, 2, 315, 0, 72, 43),
+    (8, 2, 0, 0, 24, 64),
+    (9, 2, 0, 45, 72, 43),
+    (10, 2, 45, 45, 72, 43),
+    (11, 2, 90, 45, 72, 43),
+    (12, 2, 135, 45, 72, 43),
+    (13, 2, 180, 45, 72, 43),
+    (14, 2, 225, 45, 72, 43),
+    (15, 2, 270, 45, 72, 43),
+    (16, 2, 315, 45, 72, 43),
+    (17, 2, 0, 45, 168, 210),
+    (18, 3, 0, 45, 168, 210),
+    (19, 4, 0, 45, 72, 43),
+    (20, 4, 45, 45, 72, 43),
+    (21, 4, 90, 45, 72, 43),
+    (22, 4, 135, 45, 72, 43),
+    (23, 4, 180, 45, 72, 43),
+    (24, 4, 225, 45, 72, 43),
+    (25, 4, 270, 45, 72, 43),
+    (26, 4, 315, 45, 72, 43),
+    (27, 4, 0, 45, 24, 64),
+    (28, 4, 0, 0, 72, 43),
+    (29, 4, 45, 0, 72, 43),
+    (30, 4, 90, 0, 72, 43),
+    (31, 4, 135, 0, 72, 43),
+    (32, 4, 180, 0, 72, 43),
+    (33, 4, 225, 0, 72, 43),
+    (34, 4, 270, 0, 72, 43),
+    (35, 4, 315, 0, 72, 43),
+    (36, 4, 0, 0, -1, -1),
+ ]
+_VIEW_TOKEN = "SKELETON INPUT scene=%d .*angle=%d .*pitch=%d step=%d;"
+_TOP_PIXELS = """(() => {
+  const pixels=document.getElementById('canvas').getContext('2d').getImageData(60,74,120,100).data;
+  const top=%s;let count=0;
+  for(let k=0;k<pixels.length;k+=4)if(top.every((v,j)=>Math.abs(pixels[k+j]-v)<=7))count++;
+  if(%s)console.log('SKELETON view pixels=PASS step=%d');
+  else console.error('SKELETON view pixels=FAIL step=%d top='+count);
+})()"""
+
+web_archive_browser_test(
+    name = "facing_browser_test",
+    archive = ":lua_skeleton2d",
+    passes = ["H2_WEB_APP name=lua_skeleton2d result=PASS"] + [
+        "SKELETON view pixels=PASS step=%d" % i for i, scene, yaw, pitch, x, y in _FACING if scene in [2, 4]
+    ],
+    fails = ["SKELETON view pixels=FAIL"],
+    taps = [["SKELETON FRAME initial", 72, 43]] + [
+        [_VIEW_TOKEN % (scene, yaw, pitch, i), x, y] for i, scene, yaw, pitch, x, y in _FACING if x >= 0
+    ],
+    evals = [
+        [_VIEW_TOKEN % (scene, yaw, pitch, i), _TOP_PIXELS % (
+            "[248,128,0]" if scene == 2 else "[232,172,96]",
+            "count>3" if pitch == 45 else "count===0", i, i,
+        )] for i, scene, yaw, pitch, x, y in _FACING if scene in [2, 4]
+    ] + [
+        [_VIEW_TOKEN % (scene, yaw, pitch, i), """(() => {
+          const pixel=document.getElementById('canvas').getContext('2d').getImageData(120,%d,1,1).data;
+          const expected=%s;
+          if(!expected.every((v,j)=>Math.abs(pixel[j]-v)<=7))console.error('SKELETON view pixels=FAIL torso '+pixel);
+          const head=document.getElementById('canvas').getContext('2d').getImageData(120,%d,1,1).data;
+          const headExpected=%s;
+          if(!headExpected.every((v,j)=>Math.abs(head[j]-v)<=7))console.error('SKELETON view pixels=FAIL head '+head);
+        })()""" % (
+            100 if scene == 2 else 122,
+            ("[248,252,248]" if yaw == 90 else "[184,128,56]") if scene == 2 else ("[216,160,72]" if yaw == 90 else "[120,76,24]"),
+            # The dog tail occludes the lower head in the back view.
+            80 if scene == 2 else 94,
+            ("[248,164,128]" if scene == 2 else "[216,160,72]") if yaw == 90 else "[120,76,24]",
+        )] for i, scene, yaw, pitch, x, y in _FACING if scene in [2, 4] and pitch == 0 and yaw in [90, 270]
+    ],
+    clicks = [[_VIEW_TOKEN % (4, 0, 0, 36), "#stop"]],
+    timeout_s = 90,
+)
+
+# These checks compare real Canvas snapshots across paused/seek/debug states.
+_CAPTURE_STAGE = """window.stageSnapshot=()=>Array.from(document.getElementById('canvas').getContext('2d').getImageData(0,74,240,100).data).join(',');"""
+web_archive_browser_test(
+    name = "controls_browser_test",
+    archive = ":lua_skeleton2d",
+    passes = ["SKELETON controls HOLD PASS", "SKELETON controls SEEK PASS", "SKELETON controls MIX PASS", "SKELETON controls DEBUG PASS", "step=1; speed=0.5", "H2_WEB_APP name=lua_skeleton2d result=PASS"],
+    fails = ["SKELETON controls FAIL"],
+    evals = [
+        ["SKELETON FRAME initial", _CAPTURE_STAGE],
+        ["step=2;", "setTimeout(()=>console.log('SKELETON controls RUN WAIT'),120)"],
+        ["step=3;", """(() => {const before=stageSnapshot();setTimeout(()=>console.log(before===stageSnapshot()?'SKELETON controls HOLD PASS':'SKELETON controls FAIL pause'),120)})()"""],
+        ["step=4;", "window.seekSnapshot=stageSnapshot()"],
+        ["step=6;", "console.log(seekSnapshot===stageSnapshot()?'SKELETON controls SEEK PASS':'SKELETON controls FAIL seek')"],
+        ["step=7;", "window.blendSnapshot=stageSnapshot();console.log(blendSnapshot!==seekSnapshot?'SKELETON controls MIX PASS':'SKELETON controls FAIL mix')"],
+        ["step=9;", "console.log(blendSnapshot===stageSnapshot()?'SKELETON controls DEBUG PASS':'SKELETON controls FAIL debug')"],
+    ],
+    taps = [
+        ["SKELETON FRAME initial", 72, 230],
+        ["step=1; speed=0.5", 24, 210],
+        ["SKELETON controls RUN WAIT", 24, 210],
+        ["SKELETON controls HOLD PASS", 120, 184],
+        ["time=1000000 .*step=4;", 72, 210],
+        ["time=966667 .*step=5;", 120, 210],
+        ["SKELETON controls SEEK PASS", 24, 230],
+        ["SKELETON controls MIX PASS", 216, 210],
+        ["overlay=true .*step=8;", 216, 210],
+    ],
+    clicks = [["SKELETON controls DEBUG PASS", "#stop"]],
+)
+
+# Exercise every supported grid value and the wrap back to unsnapped drawing.
+web_archive_browser_test(
+    name = "grid_browser_test",
+    archive = ":lua_skeleton2d",
+    passes = ["SKELETON INPUT .*grid=16 .*step=16;", "SKELETON INPUT .*grid=0 .*step=17;", "H2_WEB_APP name=lua_skeleton2d result=PASS"],
+    taps = [["SKELETON FRAME initial", 168, 230]] + [
+        ["SKELETON INPUT .*grid=%d .*step=%d;" % (i, i), 168, 230]
+        for i in range(1, 17)
+    ],
+    clicks = [["SKELETON INPUT .*grid=0 .*step=17;", "#stop"]],
+    timeout_s = 90,
+)

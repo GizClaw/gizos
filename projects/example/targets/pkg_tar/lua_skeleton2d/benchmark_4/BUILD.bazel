@@ -1,0 +1,5 @@
+load("//projects/example/targets/pkg_tar/lua_skeleton2d:benchmark.bzl", "skeleton_benchmark_group")
+
+package(default_visibility = ["//visibility:public"])
+
+skeleton_benchmark_group(4)

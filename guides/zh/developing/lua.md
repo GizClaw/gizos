@@ -538,3 +538,20 @@ Embedder 执行 App method 时，让主 chunk `return app[method](...)`，等待
 Flutter package 将解包后的源码和 manifest 随包分发，由 native assets build hook 读取 manifest，用 Flutter 选择的每个目标 C toolchain 编译各 translation unit 并链接 native asset；不能依赖 GizOS 的 Bazel archive 或预编译 library。通过 `dart:ffi` 调用现有 Host/Runtime API，native bridge 拥有 PAL objects 和所需的同步 OS 服务；UI 操作通过复制后的消息交给 Dart，再由 Dart 渲染。FFI binding 必须匹配随包 header 的 struct layout 与 callback signatures。
 
 Go/cgo consumer 同样在自己的构建步骤中读取 manifest，用目标 C compiler 编译包内 sources 与自有 PAL bridge，再把 object/archive 接入 cgo linker。cgo 不会递归编译这些子目录中的 C 文件，也不能忽略不同 source group 的 flags。Go 层通过 C bridge 发起 job、推送输入与完成 capability；PAL `user` 可由 C 分配的 context 或受管理的 opaque handle 表示，不能把生命周期不受控的 Go 指针留给 worker。宿主的 pthread、UI framework 等依赖由上层 bridge 自己声明，不属于 portable runtime manifest。
+
+## 内置 skeleton2d 与微秒计时
+
+所有 Host 内置 `require('skeleton2d')`，它消费同一份 portable C 计算库并通过公开 Display mesh 接口更新几何。定义/实例/资源/scratch 由 VM allocator 计费；成功热路径不分配，只有构造、首次 require 与错误消息允许分配。骨架/动画与帧内复用见 [Skeleton2D](./skeleton2d.md)，完整 binding 合同由生产头生成到 [API Reference](/references/skeleton2d)。
+
+`system.micros()` 返回 Runtime 单调时钟的 Lua integer 微秒值，不是 wall clock。不支持或 PAL 读取失败时返回 `nil, PAL错误码`；超出 Lua integer 正值范围抛出错误，不截断或静默改用毫秒。`system.millis()` 保持原行为。调用方应检查时钟粒度和测量开销，微秒单位不等于微秒有效精度。它不创建 timer、task 或 profiler。
+
+
+### 仿射纹理批次
+
+`display.texture(width,height,rgba_string)` 将紧密排列的 RGBA8 字节复制到 VM 自有的不可变纹理；输入字符串随后可以释放。RGBA 使用 straight alpha。`display.texture_batch(attachments,capacity)` 复制图集子矩形和锚点描述，并强引用纹理。附件为 `{texture=tex,x=0,y=0,width=w,height=h,anchor_x=ax,anchor_y=ay}`，子矩形坐标从零开始。
+
+`display.update_textures(batch,buffer)` 接受每行 `{resource,a,b,c,d,tx,ty}` 的 vmath 缓冲区。resource 从 1 开始；f32/f64 均可，f32 值在适配边界提升到 C 采样器的 double，骨骼核心仍使用 double。矩阵采用 `x'=a*x+c*y+tx`、`y'=b*x+d*y+ty`。更新先验证容量、资源及矩阵，再发布整个批次；失败保留原批次。固定容量数据与事务 scratch 均计入 VM allocator，预热后的成功更新和绘制不分配。
+
+`display.draw_textures(batch[,left,top,right,bottom])` 经公共 Raster2D 采样器执行最近邻采样和 RGB565 source-over 混合，支持旋转、缩放、剪切及镜像。裁剪为半开矩形；绘制走现有 Display acquisition、background、dirty 和 present 流程，并保守标脏整个裁剪区。动画调用方仍须恢复旧背景，再画当前批次并 present，透明像素不会自动擦除上一帧。
+
+`sk.textures(definition,attachments)` 返回 writer 与 Display 批次；`sk.update_textures(writer,actor)` 按骨骼 draw items 顺序更新同一个批次。writer 强引用定义、附件资源和批次；此类 producer-owned 批次禁止手动 `display.update_textures`。对象释放或 VM 关闭时，由 userdata/GC 统一回收；不要求调用方维护输入表或字符串的寿命。完整限制、非法输入、内存与像素证据见 [Skeleton2D](./skeleton2d.md) 和 [Raster2D](./raster2d.md)。

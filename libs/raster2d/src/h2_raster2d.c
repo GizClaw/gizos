@@ -2,6 +2,7 @@
 #include "h2_raster2d_internal.h"
 
 #include <limits.h>
+#include <math.h>
 
 /* Integer ranges avoid relational comparison of unrelated C pointers. They
  * validate representability/overlap, not whether an arbitrary address is live.
@@ -119,6 +120,116 @@ h2_pal_result_t h2_raster2d_draw_rects(const h2_raster2d_surface_t *surface,
       uint16_t *pixels =
           surface->pixels + y * surface->stride_pixels + (size_t)left;
       h2_raster2d_fill_span_unchecked(pixels, (size_t)(right - left), color);
+    }
+  }
+  return H2_PAL_OK;
+}
+
+static int sprite_number(double x) {
+  return isfinite(x) && fabs(x) <= 1000000.;
+}
+
+h2_pal_result_t h2_raster2d_sprite_validate(const h2_raster2d_sprite_t *s) {
+  if (!s)
+    return H2_PAL_ERR_INVALID_ARG;
+  const h2_raster2d_texture_t *t = &s->texture;
+  if (!t->width || !t->height || t->width > 4096 || t->height > 4096 ||
+      t->stride_bytes < t->width * 4 ||
+      t->height - 1 > (SIZE_MAX - t->width * 4) / t->stride_bytes)
+    return H2_PAL_ERR_INVALID_ARG;
+  if ((t->height - 1) * t->stride_bytes + t->width * 4 > t->capacity_bytes)
+    return H2_PAL_ERR_NO_SPACE;
+  if (!valid_range(t->rgba, t->capacity_bytes, 1, 1) || s->x > t->width ||
+      s->width > t->width - s->x || s->y > t->height ||
+      s->height > t->height - s->y || !sprite_number(s->anchor_x) ||
+      !sprite_number(s->anchor_y))
+    return H2_PAL_ERR_INVALID_ARG;
+  for (int i = 0; i < 6; i++)
+    if (!sprite_number(s->matrix[i]))
+      return H2_PAL_ERR_INVALID_ARG;
+  const double *m = s->matrix;
+  double det = m[0] * m[3] - m[1] * m[2];
+  if (det != 0 && (!isfinite(m[0] / det) || !isfinite(m[1] / det) ||
+                   !isfinite(m[2] / det) || !isfinite(m[3] / det)))
+    return H2_PAL_ERR_INVALID_ARG;
+  return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_raster2d_draw_sprites(const h2_raster2d_surface_t *surface,
+                                         const h2_raster2d_sprite_t *sprites,
+                                         size_t count,
+                                         const h2_raster2d_clip_t *clip) {
+  if (count > H2_RASTER2D_SPRITE_LIMIT)
+    return H2_PAL_ERR_NO_SPACE;
+  if (!valid_range(sprites, count, sizeof(*sprites),
+                   _Alignof(h2_raster2d_sprite_t)))
+    return H2_PAL_ERR_INVALID_ARG;
+  /* Reuse the established surface, clip and descriptor validation. Empty
+   * rectangle replay cannot write or require a palette. */
+  h2_pal_result_t rc = h2_raster2d_draw_rects(surface, NULL, 0, NULL, 0, clip);
+  if (rc)
+    return rc;
+  size_t bytes =
+      (surface->width && surface->height) ? surface->capacity_pixels * 2 : 0;
+  if (overlaps(surface->pixels, bytes, sprites, count * sizeof(*sprites)))
+    return H2_PAL_ERR_INVALID_ARG;
+  for (size_t i = 0; i < count; i++) {
+    rc = h2_raster2d_sprite_validate(&sprites[i]);
+    if (rc)
+      return rc;
+    if (overlaps(surface->pixels, bytes, sprites[i].texture.rgba,
+                 sprites[i].texture.capacity_bytes))
+      return H2_PAL_ERR_INVALID_ARG;
+  }
+  h2_raster2d_clip_t c = {0, 0, surface->width, surface->height};
+  if (clip)
+    c = *clip;
+  for (size_t i = 0; i < count; i++) {
+    const h2_raster2d_sprite_t *s = &sprites[i];
+    const double *m = s->matrix;
+    double det = m[0] * m[3] - m[1] * m[2];
+    if (det == 0 || !s->width || !s->height)
+      continue;
+    double l = INFINITY, t = INFINITY, r = -INFINITY, b = -INFINITY;
+    for (int k = 0; k < 4; k++) {
+      double x = (k & 1 ? (double)s->width : 0) - s->anchor_x;
+      double y = (k & 2 ? (double)s->height : 0) - s->anchor_y;
+      double X = m[0] * x + m[2] * y + m[4], Y = m[1] * x + m[3] * y + m[5];
+      l = fmin(l, X);
+      r = fmax(r, X);
+      t = fmin(t, Y);
+      b = fmax(b, Y);
+    }
+    /* Clamp in double before integer conversion, including enormous bounds. */
+    l = fmax((double)c.left, floor(l));
+    r = fmin((double)c.right, ceil(r));
+    t = fmax((double)c.top, floor(t));
+    b = fmin((double)c.bottom, ceil(b));
+    if (l >= r || t >= b)
+      continue;
+    double ia = m[3] / det, ib = -m[1] / det, ic = -m[2] / det, id = m[0] / det;
+    for (size_t y = (size_t)t; y < (size_t)b; y++) {
+      for (size_t x = (size_t)l; x < (size_t)r; x++) {
+        double dx = (double)x + .5 - m[4], dy = (double)y + .5 - m[5];
+        double u = ia * dx + ic * dy + s->anchor_x,
+               v = ib * dx + id * dy + s->anchor_y;
+        /* Comparisons reject NaNs from extreme inverse intermediate math. */
+        if (!(u >= 0 && u < (double)s->width && v >= 0 &&
+              v < (double)s->height))
+          continue;
+        const uint8_t *p = s->texture.rgba +
+                           (s->y + (size_t)v) * s->texture.stride_bytes +
+                           (s->x + (size_t)u) * 4;
+        unsigned a = p[3];
+        if (!a)
+          continue;
+        uint16_t *out = surface->pixels + y * surface->stride_pixels + x;
+        unsigned old = *out, inv = 255 - a;
+        unsigned R = ((p[0] >> 3) * a + (old >> 11) * inv + 127) / 255;
+        unsigned G = ((p[1] >> 2) * a + ((old >> 5) & 63) * inv + 127) / 255;
+        unsigned B = ((p[2] >> 3) * a + (old & 31) * inv + 127) / 255;
+        *out = (uint16_t)((R << 11) | (G << 5) | B);
+      }
     }
   }
   return H2_PAL_OK;

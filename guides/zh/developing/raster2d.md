@@ -1,6 +1,6 @@
 # Raster2D
 
-`libs/raster2d` 提供 RGB565 调色板插值与轴对齐矩形批量重放。普通 C/C++ App 和 Lua Display adapter 调用同一份 C 实现；核心不依赖 Lua、Runtime、Display provider 或具体 board。
+`libs/raster2d` 提供 RGB565 调色板插值、轴对齐矩形重放及 RGBA8 仿射纹理批量采样。普通 C/C++ App 和 Lua Display adapter 调用同一份 C 实现；核心不依赖 Lua、Runtime、Display provider 或具体 board。
 
 ## API 与存储
 
@@ -32,3 +32,9 @@ bazel run //projects/example/targets/pkg_tar/raster2d:serve
 基准使用独立生成的通用图案，主 workload 为 240×240、1536 个不重叠矩形与共享几何的三套 palette；更小/更大批次以及裁剪重叠场景用于观察规模变化。纯 C benchmark 单独报告 palette 与 replay，Lua harness 对比逐块 fill_rect、旧 commands 与新 replay，分开统计初始化、palette、填充及损伤、恢复和提交。记录 warm-up、样本数、p50/p95、内存、调用与分配，不把初始化或首个缓存建立算作稳态分配。
 
 Host CPU/WASM 结果不等于嵌入式结果。30 FPS 仅是候选预算，不是性能承诺；显示提交时间也不是边界调用数的函数。设备测量必须记录 board、CPU/总线、toolchain、内存位置、提交方式和 operator 授权；未具备条件时记录 SKIP 及剩余风险，不自行 flash/reset。
+
+## 仿射纹理
+
+`h2_raster2d_draw_sprites` 借用 RGBA8 纹理和有序附件数组，校验全批后写入 RGB565 surface；`h2_raster2d_sprite_validate` 供 producer 发布前验证。矩阵、图集、锚点、透明混合、量化和极端输入规则以生产头为准。只在变换后的包围矩形与 clip 相交区域逐像素取样；无 allocator、缓存、资源加载、damage 或 present。
+
+`//libs/raster2d:texture_test` 用前向变换纹理格的独立 oracle 验证采样、stride guard、裁剪、透明及整批失败原子性。Lua/WASM 组合和内存预算见 [Skeleton2D](./skeleton2d.md#仿射纹理附件)。原矩形 replay 基准不是纹理性能证据。
