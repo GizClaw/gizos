@@ -17,8 +17,8 @@ diff --git a/apps/common/net/wifi_conf.c b/apps/common/net/wifi_conf.c
 +    hide += strlen("\nHideSSID=");
 +    /* These fields have fixed storage in the pinned SDK template. */
 +    if (ch[3] != '\n' || max[1] != '\n' || hide[1] != '\n') return -1;
-+    ch[0] = channel >= 10 ? '1' : '0' + channel;
-+    ch[1] = channel >= 10 ? '0' + channel % 10 : '\n';
++    ch[0] = '0' + channel / 10;
++    ch[1] = '0' + channel % 10;
 +    ch[2] = '#';
 +    max[0] = '0' + max_clients;
 +    hide[0] = '0' + hidden;

@@ -1,5 +1,6 @@
 """Exercise AP credential boundaries in the pinned vendor implementation."""
 import os
+import shlex
 from pathlib import Path
 import subprocess
 import tempfile
@@ -29,12 +30,21 @@ class WifiSdkConfigTest(unittest.TestCase):
             fields = source[begin:source.index("};", begin) + 2]
             begin = source.index("int h2_jieli_wifi_configure_ap(")
             function = source[begin:source.index("const char *GET_WL_AP_DAT", begin)]
-            fixture = '#include <assert.h>\n#include <string.h>\nstatic int on;\nint wifi_is_on(void) { return on; }\n'
+            fixture = '#include <stdio.h>\n#include <stdlib.h>\n#include <assert.h>\n#include <string.h>\nstatic int on;\nint wifi_is_on(void) { return on; }\n'
             main = r'''
 int main(void) {
     char before[sizeof(WL_AP_DAT)];
     assert(h2_jieli_wifi_configure_ap(6, 4, 1) == 0);
-    assert(strstr(WL_AP_DAT, "\nChannel=6\n#\n"));
+    for (unsigned channel = 1; channel <= 14; ++channel) {
+        char expected[16];
+        assert(h2_jieli_wifi_configure_ap(channel, 4, 1) == 0);
+        snprintf(expected, sizeof(expected), "\nChannel=%02u#\n", channel);
+        assert(strstr(WL_AP_DAT, expected));
+        const char *value = strstr(WL_AP_DAT, "\nChannel=") + 9;
+        /* Pinned cmm_profile.c.o passes base 10 to simple_strtol. */
+        assert(strtol(value, NULL, 10) == (long)channel);
+        assert(value[2] == '#' && value[3] == '\n');
+    }
     assert(strstr(WL_AP_DAT, "\nMaxStaNum=4\n"));
     assert(strstr(WL_AP_DAT, "\nHideSSID=1\n"));
     memcpy(before, WL_AP_DAT, sizeof(before));
@@ -58,7 +68,7 @@ int main(void) {
             unit = root / "options.c"
             binary = root / "options-test"
             unit.write_text(fixture + fields + function + main)
-            subprocess.run(["cc", str(unit), "-o", str(binary)], check=True, timeout=30)
+            subprocess.run([*shlex.split(os.environ.get("CC", "cc")), "-Wall", "-Wextra", "-Werror", str(unit), "-o", str(binary)], check=True, timeout=30)
             subprocess.run([str(binary)], check=True, timeout=10)
 
     def test_maximum_credentials(self):
@@ -93,13 +103,13 @@ static void *checked_memset(void *p, int c, size_t n) {
                 binary = Path(directory) / "config-test"
                 unit.write_text(fixture + fields +
                                 "\nconst char *GET_WL_AP_DAT(void) { return WL_AP_DAT; }\n" +
-                                setters + f'\nint main(void) {{ assert({setter}("' +
+                                setters + f'\nint main(void) {{ (void)wl_set_ssid; (void)wl_set_passphrase; assert({setter}("' +
                                 "a" * length + '") == 0);\n' +
                                 'assert(strstr(WL_AP_DAT, "\\nWirelessMode=9\\n"));\n' +
                                 'assert(strstr(WL_AP_DAT, "\\nChannel=11#\\n"));\n' +
                                 'assert(strstr(WL_AP_DAT, "\\nHideSSID=0\\n"));\n' +
                                 'return 0; }\n')
-                subprocess.run(["cc", str(unit), "-o", str(binary)], check=True)
+                subprocess.run([*shlex.split(os.environ.get("CC", "cc")), "-Wall", "-Wextra", "-Werror", str(unit), "-o", str(binary)], check=True)
                 subprocess.run([str(binary)], check=True, timeout=10)
 
 
