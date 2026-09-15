@@ -147,6 +147,10 @@ supervision timeout 与 LL reject 均为 0；仍有 SDK `conn nack` 等非致命
 
 [历史 P2 部分头测试](./evidence/2026-09-13/loader-partial-p2-header.md)的同身份重装仅证明当时固件的重写、校验与 Stage 清理，不作为当前 deferred-header/O11 实现的验收替代。2026-09-15 的当前源码复测覆盖持久化 CRC 无效的 16/32-byte 头，软件复位验证相同启动现场，不冒充编程中物理断电。未遍历所有 NOR 位损坏组合。
 
+### 2026-09-15：共享 NOR 写保护窗口
+
+固定 SDK 的 suspend/resume 只有一个备份配置字，不可嵌套，也不保证跨任务窗口安全。disk、Pref 和 upgrade adapter 统一通过 board-owned counted window：首个 owner 保存配置并解除保护，最后 owner 恢复，操作错误/短写同样关闭；恢复失败返回 I/O 并禁止后续窗口直到复位。此合同属于板级 NOR 适配，不改变公共 Loader 生命周期。[SDK 反汇编、27-case host/TSan 回归与 Loader/button/PAL 验收](./evidence/2026-09-15/nor-write-protection.md)记录具体覆盖及硬件状态测量限制。
+
 ### 2026-09-15：P2 残缺头的完整重装机制
 
 选择从完整 P1 通过 UART Loader **完整重装 P2**，由本 board layout 的 NOR adapter 与 pinned SDK updater 拥有机制，公共 Loader 不增加板级修复分支。SDK 的 payload 阶段先从 `target_update_addr - 32 = 0x37c000` 擦除 P2 头扇区并由 adapter 完整读回验证，完整 payload 校验后才 arm/capture；因此不会在 arm 时仍面对旧残缺头。擦除错误锁存直到复位，SDK 伪成功完成也不能继续写入或发布，P1 保持可启动。
