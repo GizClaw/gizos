@@ -100,8 +100,219 @@ static void float_reference(lua_State *s) {
   assert(fabs(lua_tonumber(s, -1) - (double)lambda[1]) < 1e-6);
   lua_pop(s, 4);
 }
-static void suite(lua_State *s, allocation_counter_t *a, const char *kind) {
-  ok(s, luaL_loadfile(s, "libs/lua/tests/numeric.lua"));
+/* Generic differential fixture derived from the extraction's compensated
+ * loop, deliberately independent of production private headers. Its three
+ * unequal edges, free endpoints and explicit bounds are not scene data. */
+typedef struct reference_pair {
+  float hi, lo;
+} reference_pair_t;
+static reference_pair_t reference_pair(double value) {
+  float hi = (float)value;
+  return (reference_pair_t){hi, (float)(value - hi)};
+}
+static reference_pair_t reference_add(reference_pair_t a, reference_pair_t b) {
+  float sum = a.hi + b.hi, v = sum - a.hi;
+  float error = (a.hi - (sum - v)) + (b.hi - v) + a.lo + b.lo;
+  float hi = sum + error;
+  return (reference_pair_t){hi, error - (hi - sum)};
+}
+static reference_pair_t reference_sub(reference_pair_t a, reference_pair_t b) {
+  return reference_add(a, (reference_pair_t){-b.hi, -b.lo});
+}
+static reference_pair_t reference_square(reference_pair_t a) {
+  float product = a.hi * a.hi,
+        error = fmaf(a.hi, a.hi, -product) + 2.0f * a.hi * a.lo + a.lo * a.lo;
+  float hi = product + error;
+  return (reference_pair_t){hi, error - (hi - product)};
+}
+static void prepared_reference(double *result) {
+  double p[4][3] = {{0, .2, 0}, {.8, -.1, .1}, {1.9, .3, .2}, {2.8, .1, 0}};
+  double prev[4][3] = {
+      {0, .2, 0}, {.79, -.09, .09}, {1.88, .28, .19}, {2.77, .09, 0}};
+  const double rest[3] = {.7, .9, .8}, compliance[3] = {.0001, .0002, .0003};
+  const float wa[3] = {0, 3, 2}, wb[3] = {2, 1, 4};
+  float alpha[3], inverse[3], lambda[3] = {0};
+  reference_pair_t squared_rest[3], q[4][3];
+  for (int i = 1; i < 4; ++i)
+    for (int j = 0; j < 3; ++j) {
+      double old = p[i][j];
+      float delta = (float)(old - prev[i][j]);
+      delta = (delta + .001f) * .9f;
+      delta = delta * .8f;
+      p[i][j] = (old + delta) + .002;
+      prev[i][j] = old;
+    }
+  for (int i = 0; i < 4; ++i)
+    for (int j = 0; j < 3; ++j)
+      q[i][j] = reference_pair(p[i][j]);
+  for (int i = 0; i < 3; ++i) {
+    double a = compliance[i] / (.01 * .01);
+    alpha[i] = (float)a;
+    inverse[i] = 1.0f / (float)((double)wa[i] + wb[i] + a);
+    squared_rest[i] = reference_pair(rest[i] * rest[i]);
+  }
+  double span_lambda = 0;
+  for (int pass = 0; pass < 6; ++pass) {
+    for (int k = 0; k < 3; ++k) {
+      int i = pass % 2 ? 2 - k : k;
+      reference_pair_t d[3];
+      for (int j = 0; j < 3; ++j)
+        d[j] = reference_sub(q[i + 1][j], q[i][j]);
+      reference_pair_t squared = reference_add(
+          reference_add(reference_square(d[0]), reference_square(d[1])),
+          reference_square(d[2]));
+      reference_pair_t difference = reference_sub(squared, squared_rest[i]);
+      float gap = difference.hi + difference.lo;
+      if (lambda[i] == 0 && gap < -1e-12f * squared_rest[i].hi)
+        continue;
+      float length = sqrtf(squared.hi);
+      if (length < 1e-8f)
+        continue;
+      float strain = gap / (length + (float)rest[i]);
+      float next =
+          fminf(0, lambda[i] + (-strain - alpha[i] * lambda[i]) * inverse[i]);
+      float scale = (next - lambda[i]) / length;
+      lambda[i] = next;
+      float a = wa[i] * scale, b = wb[i] * scale;
+      for (int j = 0; j < 3; ++j) {
+        if (wa[i] > 0)
+          q[i][j] = reference_add(q[i][j], (reference_pair_t){-a * d[j].hi, 0});
+        if (wb[i] > 0)
+          q[i + 1][j] =
+              reference_add(q[i + 1][j], (reference_pair_t){b * d[j].hi, 0});
+      }
+    }
+    double delta[3], end[3];
+    for (int j = 0; j < 3; ++j) {
+      end[j] = (double)q[3][j].hi + q[3][j].lo;
+      delta[j] = end[j] - p[0][j];
+    }
+    double squared =
+        delta[0] * delta[0] + delta[1] * delta[1] + delta[2] * delta[2];
+    double seed = sqrtf((float)squared),
+           distance = .5 * (seed + squared / seed);
+    if (distance > 2.4) {
+      double a = .0002 / (.01 * .01),
+             dl = (-(distance - 2.4) - a * span_lambda) / (4 + a);
+      span_lambda += dl;
+      double scale = 4 * dl / distance;
+      for (int j = 0; j < 3; ++j)
+        q[3][j] = reference_pair(end[j] + scale * delta[j]);
+    }
+    for (int i = 1; i < 4; ++i)
+      if (q[i][1].hi < 0)
+        q[i][1] = reference_pair(0);
+  }
+  for (int i = 0; i < 4; ++i)
+    for (int j = 0; j < 3; ++j)
+      p[i][j] = (double)q[i][j].hi + q[i][j].lo;
+  float displacement[4][3];
+  for (int i = 0; i < 4; ++i)
+    for (int j = 0; j < 3; ++j)
+      displacement[i][j] = (float)(p[i][j] - prev[i][j]);
+  for (int i = 1; i < 3; ++i)
+    for (int j = 0; j < 3; ++j)
+      prev[i][j] -=
+          (double)(((displacement[i - 1][j] + displacement[i + 1][j]) * .5f -
+                    displacement[i][j]) *
+                   .3f);
+  for (int i = 0; i < 3; ++i) {
+    float d[3];
+    for (int j = 0; j < 3; ++j)
+      d[j] = (float)(p[i + 1][j] - p[i][j]);
+    float squared = d[0] * d[0] + d[1] * d[1] + d[2] * d[2];
+    if (squared > 1e-16f &&
+        squared >= (float)rest[i] * (float)rest[i] * (.99f * .99f)) {
+      float axial =
+          (float)(p[i + 1][0] - prev[i + 1][0] - p[i][0] + prev[i][0]) * d[0] +
+          (float)(p[i + 1][1] - prev[i + 1][1] - p[i][1] + prev[i][1]) * d[1] +
+          (float)(p[i + 1][2] - prev[i + 1][2] - p[i][2] + prev[i][2]) * d[2];
+      if (axial > 0) {
+        float impulse = axial * .4f / (wa[i] + wb[i]) / squared,
+              a = wa[i] * impulse, b = wb[i] * impulse;
+        for (int j = 0; j < 3; ++j) {
+          prev[i][j] -= (double)(a * d[j]);
+          prev[i + 1][j] += (double)(b * d[j]);
+        }
+      }
+    }
+  }
+  for (int i = 0; i < 12; ++i) {
+    result[i] = p[i / 3][i % 3];
+    result[12 + i] = prev[i / 3][i % 3];
+  }
+  for (int i = 0; i < 3; ++i)
+    result[24 + i] = lambda[i];
+  result[27] = span_lambda;
+}
+static void prepared_differential(lua_State *s, allocation_counter_t *a) {
+  double expected[28];
+  prepared_reference(expected);
+  clock_t prep = clock();
+  size_t bytes = a->bytes;
+  ok(s,
+     luaL_dostring(
+         s,
+         "local v=require('vmath');local function b(t) local "
+         "x=v.buffer(#t);x:load(t);return x end;"
+         "local p=b{0,.2,0,.8,-.1,.1,1.9,.3,.2,2.8,.1,0};"
+         "local prev=b{0,.2,0,.79,-.09,.09,1.88,.28,.19,2.77,.09,0};"
+         "local e=b{1,2,.7,.0001,0,2,2,3,.9,.0002,3,1,3,4,.8,.0003,2,4};"
+         "local mass=b{0,1,1,1};local "
+         "before,g0,g1,after=v.buffer(12),v.buffer(12),v.buffer(12),v.buffer("
+         "12);"
+         "before:fill(.001);g0:fill(.9);g1:fill(.8);after:fill(.002);"
+         "local bounds=b{2,3,2,0,1e6};local w=v.constraints(4,3);"
+         "local out,old,lambda=v.buffer(12),v.buffer(12),v.buffer(3);"
+         "return function(compare) w:load(p,prev,e,4,3,.01);"
+         "w:integrate(1,4,mass,before,g0,g1,after,'displacement-f32',nil,0);"
+         "w:span(1,4,2.4,.0002,0,4);w:solve(6,bounds,1);w:damp(mass,.3,.4,.99,"
+         "1e-8);"
+         "local sl=w:copy(out,old,lambda);if compare then "
+         "for i=1,12 do assert(math.abs(out:get(i)-compare[i])<2e-11);"
+         "assert(math.abs(old:get(i)-compare[i+12])<2e-11) end;"
+         "for i=1,3 do assert(math.abs(lambda:get(i)-compare[24+i])<2e-11) end;"
+         "assert(math.abs(sl-compare[28])<2e-11) end end"));
+  printf("prepared fixture setup: %.3f ms CPU, %zu VM bytes\n",
+         1000.0 * (clock() - prep) / CLOCKS_PER_SEC, a->bytes - bytes);
+  lua_pushvalue(s, -1);
+  lua_createtable(s, 28, 0);
+  for (int i = 0; i < 28; ++i) {
+    lua_pushnumber(s, expected[i]);
+    lua_rawseti(s, -2, i + 1);
+  }
+  clock_t first = clock();
+  ok(s, lua_pcall(s, 1, 0, 0));
+  printf("prepared first execution + full-state comparison: %.3f ms CPU\n",
+         1000.0 * (clock() - first) / CLOCKS_PER_SEC);
+  volatile double checksum = 0;
+  clock_t raw = clock();
+  for (int i = 0; i < 10000; ++i) {
+    prepared_reference(expected);
+    checksum += expected[27];
+  }
+  double reference_ms = 1000.0 * (clock() - raw) / CLOCKS_PER_SEC;
+  clock_t warm = clock();
+  a->counting = 1;
+  a->calls = 0;
+  for (int i = 0; i < 10000; ++i) {
+    lua_pushvalue(s, -1);
+    ok(s, lua_pcall(s, 0, 0, 0));
+  }
+  a->counting = 0;
+  assert(a->calls == 0);
+  printf("prepared same-input 10000 runs: native reference %.3f ms, Lua phase "
+         "bindings %.3f ms CPU; "
+         "4 nodes/3 edges/6 sweeps, 6 native calls/run, warm allocations %zu, "
+         "checksum %.6f\n",
+         reference_ms, 1000.0 * (clock() - warm) / CLOCKS_PER_SEC, a->calls,
+         (double)checksum);
+  lua_pop(s, 1);
+}
+
+static void suite(lua_State *s, allocation_counter_t *a, const char *kind,
+                  const char *path) {
+  ok(s, luaL_loadfile(s, path));
   if (kind)
     lua_pushstring(s, kind);
   ok(s, lua_pcall(s, kind ? 1 : 0, 1, 0));
@@ -163,6 +374,44 @@ static void benchmark(lua_State *s, const char *kind) {
          kind, ms);
   lua_pop(s, 1);
 }
+static void prepared_budget(lua_State *s, allocation_counter_t *a) {
+  ok(s,
+     luaL_dostring(
+         s, "local v,g=require('vmath'),require('geometry');local "
+            "seg,weights,axis=v.buffer(768),v.buffer(256),v.buffer(3);axis:set("
+            "1,1);"
+            "local "
+            "xy,top,dir=v.buffer(1024),v.buffer(3),v.buffer(4);top:load{1,1,2};"
+            "local geometry=g.batch(xy,top,nil,nil,dir,512,1);"
+            "return {function() return v.constraints(256,512) end,"
+            "function() return g.rotations(seg,weights,axis,256) end,"
+            "function() return g.pose(geometry) end}"));
+  for (int factory = 1; factory <= 3; ++factory) {
+    for (size_t budget = 0; budget <= 2048; budget += 512) {
+      lua_gc(s, LUA_GCCOLLECT);
+      lua_gc(s, LUA_GCSTOP);
+      lua_rawgeti(s, -1, factory);
+      size_t baseline = a->bytes;
+      a->limit = baseline + budget;
+      assert(lua_pcall(s, 0, 1, 0) == LUA_ERRMEM);
+      a->limit = 4 * 1024 * 1024;
+      lua_pop(s, 1);
+      lua_gc(s, LUA_GCCOLLECT);
+      assert(a->bytes <= baseline + 1024);
+    }
+    lua_rawgeti(s, -1, factory);
+    size_t baseline = a->bytes;
+    ok(s, lua_pcall(s, 0, 1, 0));
+    assert(a->bytes > baseline + 4096);
+    printf("prepared constructor %d: %zu charged VM bytes\n", factory,
+           a->bytes - baseline);
+    lua_pop(s, 1);
+  }
+  lua_pop(s, 1);
+  lua_gc(s, LUA_GCCOLLECT);
+  lua_gc(s, LUA_GCSTOP);
+}
+
 int main(void) {
   allocation_counter_t a = {.limit = 4 * 1024 * 1024};
   lua_State *s = lua_newstate(allocator, &a, 0);
@@ -181,10 +430,14 @@ int main(void) {
   lua_pop(s, 1);
   luaL_requiref(s, LUA_STRLIBNAME, luaopen_string, 1);
   lua_pop(s, 1);
+  prepared_budget(s, &a);
+  prepared_differential(s, &a);
   ordered_reference(s);
   float_reference(s);
-  suite(s, &a, NULL);
-  suite(s, &a, "f32");
+  suite(s, &a, NULL, "libs/lua/tests/numeric.lua");
+  suite(s, &a, "f32", "libs/lua/tests/numeric.lua");
+  suite(s, &a, NULL, "libs/lua/tests/numeric_prepared.lua");
+  suite(s, &a, NULL, "libs/lua/tests/geometry_prepared.lua");
   ok(s, luaL_dofile(s, "libs/lua/tests/numeric_f32.lua"));
   size_t f32_empty = buffer_charge(s, &a, 0, "f32");
   size_t f64_empty = buffer_charge(s, &a, 0, "f64");

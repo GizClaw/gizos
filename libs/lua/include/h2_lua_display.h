@@ -25,6 +25,62 @@
  *   before writing. Later rectangles overwrite earlier ones. Successful calls
  *   allocate nothing, mark existing dirty/background damage and do not present.
  *
+ * Prepared geometry Lua API (standard Host, owning VM worker only):
+ * - display.draw_pose(pose,colors,origin_x,offset_x,offset_y,layer,scale,
+ *   post_offset,left,top,right,bottom[,tint]) replays geometry.pose through
+ *   the existing polygon/line raster. colors is f64 RGB565 per primitive;
+ *   optional tint uses an existing Display color string/{r,g,b} named table.
+ *   With projection, final coordinates are ((origin_x+x)+offset_x)*scale,
+ *   ((y-layer*r)+offset_y)*scale; without it only x/y scale is applied.
+ *   scale is (0,16]; post_offset shifts scanlines after polygon rasterization
+ *   and line X before clipping. All scalars finite +/-1e6; final scaled xy
+ *   within +/-1e6. Half-open integer clip bounds must fit the live surface.
+ *   All colors/vertices validate before writes, even when clipped/tinted.
+ *   Layer/color/clip changes do not invalidate or re-evaluate the pre-layer
+ *   pose. Drawing uses its bounded scratch; no separate raster cache exists.
+ * - display.polyline(capacity) -> batch: 0..256 points; VM-owned fixed storage
+ *   for copied xyz, up to three scalar channels, shared endpoint projection
+ *   and at most 2*(capacity-1) fragments (510 maximum). Constructors do not
+ *   require an open Display. batch:load(points,n[,channels]) copies packed
+ *   f64 xyz and optional packed scalar triples, n<=capacity; empty allowed.
+ *   A successful load replaces all active data; rejected load preserves it.
+ * - display.compile_line_style(values[,axis,reducer,operation]) -> immutable
+ *   style: without axis, copy 0..255 f64 integer RGB565 source-segment colors.
+ *   With axis, copy 11 f64 values {from_r,from_g,from_b,to_r,to_g,to_b,origin,
+ *   coefficient,bias,lo,hi}; RGB888 channels in [0,255], 0<=lo<=hi<=1.
+ *   axis 1..3 selects xyz, 4..6 selects a supplied scalar channel. reducer
+ *   is "mean" or "min"; operation "multiply" or "divide" (nonzero divisor).
+ *   For original source endpoints, value=reducer(a,b), delta=value-origin,
+ *   t=clamp(delta*coefficient+bias,lo,hi), or delta/coefficient+bias. Each
+ *   channel is floor(from*(1-t)+to*t), then RGB565 quantization. Fractional
+ *   RGB888 endpoints are permitted. This differs from blend_palette math.
+ * - display.draw_polyline(batch,camera,axis,offset,reverse,positive,negative,
+ *   boundary,left,top,right,bottom): camera is f64 {center_x,horizon,focal,
+ *   eye_height,near_z}; focal>0, near_z>=.001. Project
+ *   (center_x+focal*x/z,horizon+focal*(eye_height-y)/z). This descriptor keeps
+ *   its explicit expression order; it is not geometry.project_points layout.
+ *   Split at xyz axis 1..3 = offset, strictly opposite signs only; touching
+ *   or coplanar sources take boundary style. Other sources use a side only
+ *   when both endpoints have its strict sign. Fragments retain source color,
+ *   direction and side through near clipping; on-near is visible. reverse
+ *   is required boolean, reversing source order only, never its endpoints
+ *   or fragments. Shared original endpoints project once; repeated style
+ *   references compute one color per source. Explicit styles must have n-1
+ *   entries (zero for empty); selected channels must exist, even if hidden.
+ *   All inputs/results validate before any pixel writes, including hidden
+ *   styles and empty clips. Changed data/camera/plane/order/styles recompute
+ *   transient fragments, so no cross-draw cache can become stale.
+ *
+ * Prepared draw/load/evaluate calls allocate nothing on success, never call
+ * Lua per element, and retain no borrowed buffer/table/native pointers.
+ * Colors' ordinary getters may reenter Lua; acquisition and pose validity
+ * are checked after decoding. All drawing marks existing dirty/background
+ * state and requires an open Display; it never implicitly presents.
+ * Polyline payload costs 64*capacity bytes plus at most 510 fragment records
+ * (under 48 KiB at maximum capacity), and fixed metadata/userdata overhead.
+ * Styles cost 2 bytes per explicit color or 11 doubles plus fixed metadata.
+ * GC/VM teardown owns cleanup, including partial constructor failure.
+ *
  * Invalid arguments/acquisition raise Lua errors without partial operation
  * writes. OOM publishes no partial object; getters' own side effects remain
  * ordinary Lua behavior. GC/job/Host teardown reclaims userdata. Objects must

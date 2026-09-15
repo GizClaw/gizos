@@ -25,7 +25,7 @@
  * Values and results must be finite with absolute value <= 1e6. Sizes/indices
  * must be integers. Every misuse raises a Lua error; failed operations preserve
  * public buffer and mesh contents. Scratch contents are unspecified on error.
- * Successful operations allocate only at buffer()/mesh()/first require(); call
+ * Successful operations allocate only at constructors/first require(); call
  * setup outside frame loops. Error construction can allocate. Numeric kernels
  * never yield, call Lua, access hardware, or retain external pointers.
  *
@@ -123,6 +123,99 @@
  *   transactional update with packed xy and {kind,first,count,rgb565} rows;
  *   kind 0 polygon (3..128 vertices), 1 line (2 vertices); RGB565 0..65535.
  *   Active sizes must fit capacities. No drawing/presenting is performed.
+ *
+ * Prepared execution (all buffers explicitly f64; existing calls above are
+ * unchanged). Constructors copy their inputs into bounded VM userdata. All
+ * methods run synchronously without callbacks, allocations or yielding on
+ * success. Inputs are finite +/-1e6; non-finite intermediates/results raise
+ * errors. Each phase commits atomically; earlier successful phases remain.
+ * Small values round/underflow in the explicitly selected float arithmetic.
+ * All workspace input buffers in one call must be distinct, as must outputs.
+ * - vmath.constraints(node_capacity,edge_capacity) -> workspace: capacities
+ *   1..256 and 0..512. Unloaded methods except load raise errors.
+ * - w:load(p,previous,edges,n,m,dt): packed xyz and six-value edge rows
+ *   {a,b,rest,compliance,wa,wb}; a/b distinct indices in 1..n; other fields
+ *   nonnegative. n in 1..capacity, m in 0..capacity, dt in [1e-6,.1]. Copies
+ *   all active state, prepares rest squared/alpha/inverse denominators,
+ *   resets all multipliers/sweep parity and disables the optional span.
+ * - w:begin(dt): start a substep, reset edge/span lambda and sweep parity;
+ *   changed dt refreshes coefficients. It does not integrate or change p/prev.
+ * - w:node(index) -> x,y,z,px,py,pz; w:node(index,x,y,z,px,py,pz) patches
+ *   one current/previous point. Reads do not copy the whole state.
+ * - w:edge(index,a,b,rest,compliance,wa,wb) patches one edge and refreshes
+ *   its coefficients without resetting lambda. w:span(a,b,rest,compliance,
+ *   wa,wb) enables/patches the explicit span; w:span(nil) disables it.
+ *   Span updates also retain lambda until begin/load.
+ * - w:integrate(first,count,mobility,before,gain0,gain1,after,mode,bounds,nb):
+ *   mobility has count values; each other coefficient buffer has 3*count.
+ *   Nonnegative mobility is a flag: zero leaves p/previous unchanged.
+ *   mode is "f64" or "displacement-f32". For enabled components use
+ *   (old+(((old-previous+before)*gain0)*gain1))+after, then supplied bounds;
+ *   previous becomes old. The float mode casts displacement, before and
+ *   gains to float, keeps the two products separate, then adds the resulting
+ *   increment to double old and adds double after. nb bounds rows each have
+ *   {first,count,axis,lower,upper}, axis 1..3, lower<=upper, nb<=768. Bounds
+ *   apply in order only to enabled nodes of the integrated range. nil requires
+ *   nb=0. No environment, acceleration law or timestep scheduler is inferred.
+ * - w:solve(iterations,bounds,nb): iterations 1..32; bounds as above.
+ *   Each iteration runs forward/reverse alternating ordered edges, then the
+ *   optional span, then positional bounds. Repeated solves retain lambda
+ *   and parity. Local edges are tension-only, with binary64 world positions,
+ *   two-float scratch, explicit fmaf, rationalized near-taut strain and float
+ *   multipliers. Skip fully pinned edges, distances below 1e-8, and slack
+ *   zero-lambda edges using gap < -1e-12f*rest_squared.hi. Span uses binary64
+ *   distance with refined float sqrt seed (libm outside squared [1e-20,1e20])
+ *   and acts only beyond its supplied rest length. Bounds compare leading
+ *   float components and replace through two-float conversion; equal bounds
+ *   pin a component. Bounds leave previous unchanged. No per-sweep callback.
+ * - w:damp(mobility,blend,axial_blend,threshold,epsilon): n mobility flags;
+ *   blends in [0,1], threshold/epsilon>=0. First blend internal enabled nodes'
+ *   float displacements with their two neighbors; then update previous in
+ *   supplied edge order for positive separating axial displacement when
+ *   squared>=rest_f^2*threshold_f^2 and squared>epsilon_f^2. Edge endpoint
+ *   weights, independently of neighbor mobility, determine axial sharing.
+ *   Float displacement arithmetic updates double previous; p/lambda unchanged.
+ * - w:copy(out_p,out_previous,out_lambda) -> span_lambda: copy all active
+ *   state into distinct reusable f64 buffers; suffixes unchanged. Edge lambda
+ *   is float promoted to double; span lambda is double. No mutable view
+ * escapes. Workspace payload per capacity is 132 bytes/node plus two
+ * prepared-edge records and 8 bytes/edge, with fixed object/userdata overhead.
+ * It is bounded (under 160 KiB at maximum capacities) and reclaimed on GC/VM
+ * teardown.
+ *
+ * - geometry.rotations(segments,weights,axis,n) -> rotations: copies n<=256
+ *   xyz vectors, n scalar weights and a three-component nonzero supplied axis.
+ *   Does not normalize axis. Inputs must differ. Prepares 18 moments and dot
+ *   products once; no application shape/weight generation is included.
+ * - r:evaluate(dst,angle,bend,yaw,x,y,z,full,shared) -> fast: accumulate
+ *   Rodrigues(angle-bend*weight) vectors, then yaw, starting at x/y/z.
+ *   full=true writes n+1 xyz points, otherwise one endpoint. shared=true
+ *   requires bend=0 and composes one matrix before the vector loop. false
+ *   shared/full can use degree-17 moment reduction: abs(weight)<=1,
+ *   abs(bend)<=1.6, abs(angle)<=16, axis L1<=2, and a conservative remainder
+ *   plus rounding bound <=1e-9 before translation; otherwise full evaluation.
+ *   Return true only for that reduction. All outputs stage before publication.
+ *   Payload is 40*n bytes plus fixed 18x3 moments/metadata; dst owns scratch.
+ * - geometry.batch(xy,topology,w0,w1,directions,nv,np) -> immutable geometry:
+ *   copied packed xy, topology {kind,first,count}, optional nil scalar weight
+ *   channels and {dx0,dy0,dx1,dy1}. kind 0 polygon (3..128), 1 line (2).
+ *   nv<=32768, np<=4096; empty allowed. No colors or application formulas.
+ * - geometry.pose(batch) -> pose: owns a reference to immutable geometry;
+ *   initially invalid. New geometry requires a new pose. Source buffer edits
+ *   cannot change either object. Payload: geometry 32*nv plus topology;
+ *   pose 64*nv bytes (published, staged, final draw coordinates) plus metadata.
+ * - pose:evaluate(a0,a1,tx,ty,cos,sin,scale[,projection]) -> reused:
+ *   add w0*a0*direction0 then w1*a1*direction1, rotate, scale, translate.
+ *   Optional projection is {d0,d1,l0,l1,divisor,vertical_scale,origin_y}:
+ *   depth=d0*u+d1*v, lateral=l0*u+l1*v, r=1/(1+depth/divisor),
+ *   x=lateral*r, y=origin_y-(depth*vertical_scale)*r. Divisor/denominator
+ *   must be nonzero, final r finite abs<=1000; negative denominators allowed.
+ *   No projection publishes r=1. Cache key includes all scalar/projection
+ *   inputs and immutable geometry identity, before any layer/draw style.
+ *   Equal inputs return true; successful changed inputs increment generation.
+ * - pose:copy(dst) -> generation: published {x,y,r} triples; initially invalid
+ *   raises error. Failed evaluation preserves previous pose and cache validity.
+ * Use display.draw_pose for direct primitive replay with separate layer/style.
  *
  * Count parameters use prefixes; remaining output values are unchanged.
  * Geometry transforms/projection are bounded by buffer capacity (affine2/3,

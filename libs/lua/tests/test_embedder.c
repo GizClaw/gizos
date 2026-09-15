@@ -609,6 +609,33 @@ int main(void) {
              ((x >= 3 && x < 10 && y >= 5 && y < 14) ? 0xf800 : 0));
   assert(h2_lua_job_release(host, job) == H2_PAL_OK);
 
+  job = submit(
+      host,
+      "local v,g,d=require('vmath'),require('geometry'),require('display');"
+      "local function b(t) local r=v.buffer(#t);r:load(t);return r end;"
+      "local "
+      "w=v.constraints(2,1);w:load(b{0,0,0,2,0,0},b{0,0,0,2,0,0},b{1,2,1,.0001,"
+      "0,1},2,1,.01);"
+      "w:solve(2,nil,0);local "
+      "p,o,l=v.buffer(6),v.buffer(6),v.buffer(1);w:copy(p,o,l);assert(l:get(1)<"
+      "0);"
+      "local "
+      "r=g.rotations(b{1,0,0},b{1},b{0,0,1},1);assert(r:evaluate(p,0,.2,0,0,0,"
+      "0,false,false));"
+      "local "
+      "pose=g.pose(g.batch(b{2,2,8,2,8,8,2,8},b{0,1,4},nil,nil,b{0,0,0,0},4,1))"
+      ";"
+      "pose:evaluate(0,0,0,0,1,0,1,nil);d.clear('black');d.draw_pose(pose,b{"
+      "0xf800},0,0,0,0,1,0,0,0,240,240);"
+      "local line=d.polyline(2);line:load(b{-2,0,1,2,0,1},2);"
+      "local style=d.compile_line_style(b{0x07e0});"
+      "d.draw_polyline(line,b{20,20,2,0,1},1,0,false,style,style,style,0,0,240,"
+      "240);d.present()");
+  wait_state(host, job, H2_LUA_JOB_SUCCEEDED);
+  assert(display.pixels[3 * 240 + 3] == 0xf800);
+  assert(display.pixels[20 * 240 + 16] == 0x07e0);
+  assert(h2_lua_job_release(host, job) == H2_PAL_OK);
+
   atomic_store(&echo.id, 0);
   job = submit(
       host,

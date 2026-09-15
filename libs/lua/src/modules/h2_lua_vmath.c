@@ -150,6 +150,7 @@ int h2_lua_open_vmath(lua_State *s) {
                                        {"take", take},
                                        {NULL, NULL}};
   luaL_newlib(s, functions);
+  h2_numeric_prepared_register(s);
   lua_pushinteger(s, 0);
   lua_pushcclosure(s, product, 1);
   lua_setfield(s, -2, "multiply");

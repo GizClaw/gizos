@@ -2,6 +2,7 @@
 #include "h2_raster2d.h"
 #include "../../../raster2d/src/h2_raster2d_internal.h"
 #include "h2_lua_numeric.h"
+#include "h2_lua_geometry_batches_internal.h"
 #include "h2_f32_math.h"
 #include "../runtime/h2_lua_internal.h"
 
@@ -2444,6 +2445,337 @@ static int display_draw_mesh(lua_State *state) {
   return 0;
 }
 
+#define POLYLINE_META "h2.display.polyline"
+#define LINE_STYLE_META "h2.display.line_style"
+typedef struct projected_fragment {
+  double xy[4];
+  size_t source;
+  int side;
+  uint16_t color;
+} projected_fragment_t;
+typedef struct projected_polyline {
+  size_t capacity, n, generation;
+  int channels;
+  double *points, *scalars, *projected;
+  projected_fragment_t *fragments;
+} projected_polyline_t;
+typedef struct polyline_style {
+  size_t count;
+  int axis, minimum, divide;
+  double gradient[11];
+  uint16_t colors[];
+} polyline_style_t;
+static const double *display_f64(lua_State *s, int at, size_t n) {
+  h2_numeric_buffer_t *b = h2_numeric_check(s, at);
+  if (b->is_f32)
+    luaL_error(s, "prepared drawing requires f64 buffers");
+  h2_numeric_capacity(s, b, n);
+  return b->data.f64;
+}
+static double polyline_value(lua_State *s, double x) {
+  if (!isfinite(x) || fabs(x) > 1e6)
+    luaL_error(s, "polyline value out of bounds");
+  return x;
+}
+static int polyline_load(lua_State *s) {
+  projected_polyline_t *p = luaL_checkudata(s, 1, POLYLINE_META);
+  size_t n = h2_numeric_size(s, 3, p->capacity);
+  const double *points = display_f64(s, 2, 3 * n);
+  const double *channels =
+      lua_isnoneornil(s, 4) ? NULL : display_f64(s, 4, 3 * n);
+  for (size_t i = 0; i < 3 * n; ++i) {
+    polyline_value(s, points[i]);
+    if (channels)
+      polyline_value(s, channels[i]);
+  }
+  memcpy(p->points, points, 3 * n * sizeof(double));
+  if (channels)
+    memcpy(p->scalars, channels, 3 * n * sizeof(double));
+  p->n = n;
+  p->channels = channels != NULL;
+  ++p->generation;
+  return 0;
+}
+static int display_polyline_new(lua_State *s) {
+  size_t n = h2_numeric_size(s, 1, 256);
+  projected_polyline_t *p = lua_newuserdatauv(s, sizeof(*p), 2);
+  memset(p, 0, sizeof(*p));
+  p->capacity = n;
+  if (luaL_newmetatable(s, POLYLINE_META)) {
+    lua_pushcfunction(s, polyline_load);
+    lua_setfield(s, -2, "load");
+    lua_pushvalue(s, -1);
+    lua_setfield(s, -2, "__index");
+    lua_pushliteral(s, "projected polyline");
+    lua_setfield(s, -2, "__metatable");
+  }
+  lua_setmetatable(s, -2);
+  int at = lua_gettop(s);
+  p->points = lua_newuserdatauv(s, 8 * n * sizeof(double), 0);
+  p->scalars = p->points + 3 * n;
+  p->projected = p->scalars + 3 * n;
+  lua_setiuservalue(s, at, 1);
+  p->fragments = lua_newuserdatauv(
+      s, (n ? 2 * (n - 1) : 0) * sizeof(projected_fragment_t), 0);
+  lua_setiuservalue(s, at, 2);
+  return 1;
+}
+static int display_line_style(lua_State *s) {
+  h2_numeric_buffer_t *input = h2_numeric_check(s, 1);
+  int gradient = !lua_isnoneornil(s, 2);
+  size_t count = gradient ? 0 : input->count;
+  if (count > 255)
+    return luaL_error(s, "too many source colors");
+  const double *values = display_f64(s, 1, gradient ? 11 : count);
+  int axis = 0, minimum = 0, divide = 0;
+  if (gradient) {
+    axis = (int)h2_numeric_size(s, 2, 6);
+    if (!axis)
+      return luaL_error(s, "gradient axis/channel is one-based");
+    static const char *const reducers[] = {"mean", "min", NULL};
+    static const char *const operations[] = {"multiply", "divide", NULL};
+    minimum = luaL_checkoption(s, 3, NULL, reducers);
+    divide = luaL_checkoption(s, 4, NULL, operations);
+  }
+  polyline_style_t *style =
+      lua_newuserdatauv(s, sizeof(*style) + count * sizeof(uint16_t), 0);
+  memset(style, 0, sizeof(*style));
+  style->count = count;
+  style->axis = axis;
+  style->minimum = minimum;
+  style->divide = divide;
+  if (gradient) {
+    for (size_t i = 0; i < 11; ++i)
+      style->gradient[i] = polyline_value(s, values[i]);
+    for (size_t i = 0; i < 6; ++i)
+      if (values[i] < 0 || values[i] > 255)
+        return luaL_error(s, "invalid RGB888 channel");
+    if ((divide && values[7] == 0) || values[9] < 0 || values[10] > 1 ||
+        values[9] > values[10])
+      return luaL_error(s, "invalid gradient range");
+  } else
+    for (size_t i = 0; i < count; ++i) {
+      double c = values[i];
+      if (c < 0 || c > 65535 || floor(c) != c)
+        return luaL_error(s, "invalid RGB565 color");
+      style->colors[i] = (uint16_t)c;
+    }
+  luaL_newmetatable(s, LINE_STYLE_META);
+  lua_pushliteral(s, "compiled line style");
+  lua_setfield(s, -2, "__metatable");
+  lua_setmetatable(s, -2);
+  return 1;
+}
+static uint16_t polyline_color(lua_State *s, const polyline_style_t *style,
+                               const projected_polyline_t *p, size_t source) {
+  if (!style->axis)
+    return style->colors[source];
+  const double *values = style->axis <= 3 ? p->points : p->scalars;
+  size_t axis = (size_t)(style->axis - 1) % 3;
+  double a = values[3 * source + axis], b = values[3 * (source + 1) + axis];
+  double value = style->minimum ? fmin(a, b) : (a + b) * .5;
+  const double *g = style->gradient;
+  double delta = value - g[6],
+         factor = (style->divide ? delta / g[7] : delta * g[7]) + g[8];
+  if (!isfinite(factor))
+    luaL_error(s, "gradient result is not finite");
+  double t = fmax(g[9], fmin(g[10], factor));
+  uint8_t rgb[3];
+  for (size_t i = 0; i < 3; ++i)
+    rgb[i] = (uint8_t)floor(g[i] * (1 - t) + g[i + 3] * t);
+  return rgb_to_rgb565(rgb[0], rgb[1], rgb[2]);
+}
+static void polyline_project(lua_State *s, const double *p,
+                             const double *camera, double *out) {
+  out[0] = polyline_value(s, camera[0] + camera[2] * p[0] / p[2]);
+  out[1] = polyline_value(s, camera[1] + camera[2] * (camera[3] - p[1]) / p[2]);
+}
+static int polyline_fragment(lua_State *s, const double *from, const double *to,
+                             const double *camera, const double *cached_a,
+                             const double *cached_b, projected_fragment_t *f) {
+  double a[3], b[3];
+  memcpy(a, from, sizeof(a));
+  memcpy(b, to, sizeof(b));
+  double near = camera[4];
+  if (a[2] < near && b[2] < near)
+    return 0;
+  if (a[2] < near || b[2] < near) {
+    double t = (near - a[2]) / (b[2] - a[2]);
+    double x = a[0] + (b[0] - a[0]) * t, y = a[1] + (b[1] - a[1]) * t;
+    double *cut = a[2] < near ? a : b;
+    if (a[2] < near)
+      cached_a = NULL;
+    else
+      cached_b = NULL;
+    cut[0] = x;
+    cut[1] = y;
+    cut[2] = near;
+  }
+  if (cached_a)
+    memcpy(f->xy, cached_a, 2 * sizeof(double));
+  else
+    polyline_project(s, a, camera, f->xy);
+  if (cached_b)
+    memcpy(f->xy + 2, cached_b, 2 * sizeof(double));
+  else
+    polyline_project(s, b, camera, f->xy + 2);
+  return 1;
+}
+static int display_draw_polyline(lua_State *s) {
+  h2_lua_job_t *job = lua_touserdata(s, lua_upvalueindex(1));
+  projected_polyline_t *p = luaL_checkudata(s, 1, POLYLINE_META);
+  const double *camera = display_f64(s, 2, 5);
+  size_t axis = h2_numeric_size(s, 3, 3);
+  double offset = h2_numeric_number(s, 4);
+  luaL_checktype(s, 5, LUA_TBOOLEAN);
+  int reverse = lua_toboolean(s, 5);
+  polyline_style_t *styles[3];
+  for (int i = 0; i < 3; ++i)
+    styles[i] = luaL_checkudata(s, 6 + i, LINE_STYLE_META);
+  lua_Integer left = luaL_checkinteger(s, 9), top = luaL_checkinteger(s, 10);
+  lua_Integer right = luaL_checkinteger(s, 11),
+              bottom = luaL_checkinteger(s, 12);
+  if (!job->display_open || !axis || left < 0 || top < 0 || right < left ||
+      bottom < top || right > job->display_info.width ||
+      bottom > job->display_info.height)
+    return luaL_error(s, "invalid polyline clip or closed display");
+  --axis;
+  for (size_t i = 0; i < 5; ++i)
+    polyline_value(s, camera[i]);
+  if (camera[2] <= 0 || camera[4] < .001)
+    return luaL_error(s, "invalid projection camera");
+  for (size_t i = 0; i < 3; ++i) {
+    if ((!styles[i]->axis && styles[i]->count != (p->n ? p->n - 1 : 0)) ||
+        (styles[i]->axis > 3 && !p->channels))
+      return luaL_error(s, "invalid source style extent/channel");
+  }
+  for (size_t i = 0; i < p->n; ++i)
+    if (p->points[3 * i + 2] >= camera[4])
+      polyline_project(s, p->points + 3 * i, camera, p->projected + 2 * i);
+  size_t fragments = 0;
+  for (size_t k = 0; k + 1 < p->n; ++k) {
+    size_t source = reverse ? p->n - 2 - k : k;
+    const double *a = p->points + 3 * source, *b = a + 3;
+    double sign_a = a[axis] - offset, sign_b = b[axis] - offset;
+    /* Validate even hidden/unused styles before any raster write. Each style
+     * is evaluated at most once per original source segment. */
+    uint16_t colors[3];
+    for (size_t i = 0; i < 3; ++i) {
+      size_t same = 0;
+      while (same < i && styles[same] != styles[i])
+        ++same;
+      colors[i] =
+          same < i ? colors[same] : polyline_color(s, styles[i], p, source);
+    }
+    if ((sign_a < 0 && sign_b > 0) || (sign_a > 0 && sign_b < 0)) {
+      double t = (offset - a[axis]) / (b[axis] - a[axis]), cut[3];
+      for (size_t j = 0; j < 3; ++j)
+        cut[j] = a[j] + t * (b[j] - a[j]);
+      cut[axis] = offset;
+      for (size_t j = 0; j < 2; ++j) {
+        projected_fragment_t *f = p->fragments + fragments;
+        int negative = (j ? sign_b : sign_a) < 0;
+        f->source = source;
+        f->side = negative ? -1 : 1;
+        f->color = colors[negative];
+        fragments += (size_t)polyline_fragment(
+            s, j ? cut : a, j ? b : cut, camera,
+            !j && a[2] >= camera[4] ? p->projected + 2 * source : NULL,
+            j && b[2] >= camera[4] ? p->projected + 2 * (source + 1) : NULL, f);
+      }
+    } else {
+      size_t style =
+          sign_a < 0 && sign_b < 0 ? 1 : (sign_a > 0 && sign_b > 0 ? 0 : 2);
+      projected_fragment_t *f = p->fragments + fragments;
+      f->source = source;
+      f->side = style == 2 ? 0 : (style ? -1 : 1);
+      f->color = colors[style];
+      if (a[2] >= camera[4] && b[2] >= camera[4]) {
+        memcpy(f->xy, p->projected + 2 * source, 4 * sizeof(double));
+        ++fragments;
+      } else
+        fragments += (size_t)polyline_fragment(
+            s, a, b, camera,
+            a[2] >= camera[4] ? p->projected + 2 * source : NULL,
+            b[2] >= camera[4] ? p->projected + 2 * (source + 1) : NULL, f);
+    }
+  }
+  if (left == right || top == bottom)
+    return 0;
+  for (size_t i = 0; i < fragments; ++i) {
+    const projected_fragment_t *f = p->fragments + i;
+    display_clipped_line_rect(job, f->xy[0], f->xy[1], f->xy[2], f->xy[3],
+                              f->color, (int)top, (int)bottom, (int)left,
+                              (int)right);
+  }
+  return 0;
+}
+
+static int display_draw_pose(lua_State *s) {
+  h2_lua_job_t *job = lua_touserdata(s, lua_upvalueindex(1));
+  h2_geometry_pose_t *pose = luaL_checkudata(s, 1, H2_GEOMETRY_POSE_META);
+  h2_numeric_buffer_t *colors = h2_numeric_check(s, 2);
+  double origin = h2_numeric_number(s, 3), ox = h2_numeric_number(s, 4),
+         oy = h2_numeric_number(s, 5);
+  double layer = h2_numeric_number(s, 6), scale = h2_numeric_number(s, 7),
+         offset = h2_numeric_number(s, 8);
+  lua_Integer left = luaL_checkinteger(s, 9), top = luaL_checkinteger(s, 10);
+  lua_Integer right = luaL_checkinteger(s, 11),
+              bottom = luaL_checkinteger(s, 12);
+  int tinted = !lua_isnoneornil(s, 13);
+  uint16_t tint = tinted ? check_color(s, 13) : 0;
+  /* Color getters may close/reopen Display or evaluate the pose. Validate all
+   * borrowed values and acquisition after the last reentrant argument decode.
+   */
+  if (!pose->valid || !job->display_open || colors->is_f32 || scale <= 0 ||
+      scale > 16 || left < 0 || top < 0 || right < left || bottom < top ||
+      right > job->display_info.width || bottom > job->display_info.height)
+    return luaL_error(s, "invalid pose draw or closed display");
+  const h2_geometry_batch_t *g = pose->geometry;
+  h2_numeric_capacity(s, colors, g->parts);
+  for (size_t i = 0; i < g->parts; ++i) {
+    double c = colors->data.f64[i];
+    if (c < 0 || c > 65535 || floor(c) != c)
+      return luaL_error(s, "invalid primitive color");
+  }
+  for (size_t i = 0; i < g->n; ++i) {
+    const double *p = pose->positions + 3 * i;
+    double x = p[0], y = p[1];
+    if (pose->projected) {
+      x = (origin + x) + ox;
+      y = (y - layer * p[2]) + oy;
+    }
+    x *= scale;
+    y *= scale;
+    if (!isfinite(x) || !isfinite(y) || fabs(x) > 1e6 || fabs(y) > 1e6)
+      return luaL_error(s, "pose draw coordinate out of bounds");
+    pose->screen[2 * i] = x;
+    pose->screen[2 * i + 1] = y;
+  }
+  if (left == right || top == bottom)
+    return 0;
+  for (size_t i = 0; i < g->parts; ++i) {
+    const h2_geometry_part_t *p = g->topology + i;
+    uint16_t color = tinted ? tint : (uint16_t)colors->data.f64[i];
+    if (p->kind) {
+      const double *v = pose->screen + 2 * p->first;
+      display_clipped_line_rect(job, v[0] + offset, v[1], v[2] + offset, v[3],
+                                color, (int)top, (int)bottom, (int)left,
+                                (int)right);
+    } else {
+      double x[128], y[128];
+      for (size_t j = 0; j < p->count; ++j) {
+        x[j] = pose->screen[2 * (p->first + j)];
+        y[j] = pose->screen[2 * (p->first + j) + 1];
+      }
+      display_raster_polygon_rect_capture(job, x, y, p->count, color, offset,
+                                          (int)top, (int)bottom, (int)left,
+                                          (int)right, NULL);
+    }
+  }
+  return 0;
+}
+
 typedef struct display_stroke_data {
   size_t count;
   double x[256], y[256], width[256];
@@ -3898,6 +4230,10 @@ static int push_display_proxy(lua_State *state, h2_lua_job_t *job) {
   set_function(state, "compile_mesh", display_compile_mesh, job);
   set_function(state, "update_mesh", display_update_mesh, job);
   set_function(state, "draw_mesh", display_draw_mesh, job);
+  set_function(state, "draw_pose", display_draw_pose, job);
+  set_function(state, "polyline", display_polyline_new, job);
+  set_function(state, "compile_line_style", display_line_style, job);
+  set_function(state, "draw_polyline", display_draw_polyline, job);
   set_function(state, "fill_polygon", display_fill_polygon, job);
   set_function(state, "fill_ellipse", display_fill_ellipse, job);
   set_function(state, "compile_rects", display_compile_rects, job);

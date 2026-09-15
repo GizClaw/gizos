@@ -80,3 +80,32 @@ g.update_mesh(writer,xy,topology,2,1)
 ```
 
 Binary64 retains smaller displacements; binary32 halves payload storage and uses single-precision arithmetic. Bulk calls avoid per-element Lua/C calls. There is no guarantee of cross-platform bit identity or an ESP32-S3 frame rate; measure real target workloads. Game formulas, camera constants, material choices, colors and time-step policy belong to Lua consumers.
+
+## Prepared execution and ownership
+
+Prepared constraints, weighted rotations and geometry poses are explicit f64-input APIs. They preserve binary64 world coordinates and selectively use the extracted float/compensated arithmetic; they do not change any existing f32/f64 operation. Their complete signatures, capacities, precision, reset and failure rules are specified in the generated [numeric API reference](./lua.md). Direct pose/polyline drawing and RGB888 gradient descriptors are specified in the [Display API reference](./lua.md).
+
+A constraint workspace owns copied current/previous positions, ordered edge records, prepared numerical coefficients, multipliers and transactional scratch. Begin a substep explicitly, integrate supplied bulk coefficients, read/patch only endpoints needed by consumer rules, solve ordered sweeps with explicit span/bounds, then request damping. Each phase commits independently; a rejected solve preserves the integrated state and all previously published multipliers. Splitting a solve does not reset lambda or alternating sweep order. Material conversion, coefficient generation, fixed-step scheduling, endpoint laws and the choice of phases remain consumer work. Use existing bulk operations to prepare changing channels rather than per-node Lua calls.
+
+Prepared rotations copy supplied segments, weights and the unnormalized axis. Endpoint reduction retains 18 moments and degree-17 arithmetic only when weight, angle, axis, count and magnitude satisfy its documented error predicate. Full output and inputs outside that domain use the full rotation loop. Shared constant rotation is an explicit request with zero bend. Shape construction, weight laws, pivots and any additional deformation remain in Lua.
+
+An immutable geometry batch holds base vertices, topology, up to two copied weight channels and displacement directions. A pose caches weighted displacement, ordered rotation/scale/translation and optional explicitly parameterized planar perspective, before layers or colors. Applications choose when to evaluate and which layers share it. A new geometry needs a new pose; changing source buffers cannot mutate either. Each draw applies its own layer, offset, clip and colors through the existing raster path. No arbitrary expression evaluator, camera recipe, material rule or second framebuffer is introduced.
+
+Projected polylines own copied points and optional scalar channels. Every draw prepares transient fragments from the current camera/plane/order/style inputs; there is no persistent projection/raster cache to invalidate. Original shared endpoints are projected once and reused even by crossing fragments. Gradient color is evaluated on original endpoints, once per distinct source/style, before splits or near clipping. Touching/coplanar sources use the explicitly supplied boundary style. RGB888 interpolation with floor then RGB565 quantization is intentionally different from existing palette blending. The original camera expression uses `{center_x,horizon,focal,eye_height,near_z}`, distinct from `geometry.project_points`; selecting camera coefficients and side semantics remains consumer work.
+
+### Extraction mapping and verification
+
+The extraction reference is revision `7df16b01`. The mapping below identifies loops, not whole former application functions. Test fixtures use independent chains, geometry and colors.
+
+| Reference mechanism | Public execution | Consumer-owned composition |
+| --- | --- | --- |
+| `precise_float`, `refined_sqrt` | Private compensated helpers, reused `h2_f32_div` | Physical model and material conversion |
+| `advance_rope` prepared coefficient and integration loops | Workspace load/begin/edge, integrate | Environment/drag law, released state, scheduling |
+| `advance_rope` alternating local edges → span → bounds | Workspace solve with supplied records/ranges | Topology, payout, tension interpretation and positional rule selection |
+| `advance_rope` neighbor then ordered axial displacement | Workspace damp | Whether/when to damp and supplied coefficients |
+| `rod_pose` copied segments/moments, reduced endpoint and shared rotation | Prepared rotations | Shape/weights, root, calibrated load law, further deformation |
+| `compile_geometry` / `draw_geometry` storage and array loops | Geometry batch → pre-layer pose → Display primitive replay | Channel construction, application projection parameters, sharing/layer scheduling |
+| `depth_path` / `path_color` projection, split and raster loops | Display polyline with explicit plane and styles | Classification, fade coefficients, palette and draw order |
+| `rod_step` | No extraction | Entire calibrated scalar model and scheduler |
+
+The prepared translation units use `-O3 -fno-fast-math` on GNU-compatible toolchains, preserving explicit `fmaf`; the source-package dependency aspect exports the same flags per compilation unit. The independent package test checks those flags and compiles/loads the real built-ins. Existing Host numeric/raster harnesses cover complete state and pixel comparisons, failure atomicity, bounded storage, warm allocation, ownership and teardown; the existing browser fixture exercises the same standard Host. Numeric timing records setup, first execution, same-input native reference and warm phase bindings separately. Host timing is not a target FPS guarantee; paired downstream device evidence is still required before closing #383.

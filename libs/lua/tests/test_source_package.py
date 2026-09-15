@@ -33,6 +33,11 @@ def main():
         flags += ["-D" + d for d in manifest["defines"]]
         objects = []
         compiled = []
+        prepared = [u for u in manifest["compilation_units"]
+                    if any(p.endswith("/h2_lua_numeric_prepared.c") for p in u["sources"])]
+        assert len(prepared) == 1
+        for flag in ("-O3", "-fno-fast-math"):
+            assert flag in prepared[0]["cflags"], (flag, prepared[0])
         for unit in manifest["compilation_units"]:
             for source in unit["sources"]:
                 obj = str(root / (str(len(objects)) + ".o"))

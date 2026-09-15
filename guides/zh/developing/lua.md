@@ -538,3 +538,13 @@ Embedder 执行 App method 时，让主 chunk `return app[method](...)`，等待
 Flutter package 将解包后的源码和 manifest 随包分发，由 native assets build hook 读取 manifest，用 Flutter 选择的每个目标 C toolchain 编译各 translation unit 并链接 native asset；不能依赖 GizOS 的 Bazel archive 或预编译 library。通过 `dart:ffi` 调用现有 Host/Runtime API，native bridge 拥有 PAL objects 和所需的同步 OS 服务；UI 操作通过复制后的消息交给 Dart，再由 Dart 渲染。FFI binding 必须匹配随包 header 的 struct layout 与 callback signatures。
 
 Go/cgo consumer 同样在自己的构建步骤中读取 manifest，用目标 C compiler 编译包内 sources 与自有 PAL bridge，再把 object/archive 接入 cgo linker。cgo 不会递归编译这些子目录中的 C 文件，也不能忽略不同 source group 的 flags。Go 层通过 C bridge 发起 job、推送输入与完成 capability；PAL `user` 可由 C 分配的 context 或受管理的 opaque handle 表示，不能把生命周期不受控的 Go 指针留给 worker。宿主的 pthread、UI framework 等依赖由上层 bridge 自己声明，不属于 portable runtime manifest。
+
+### Prepared 数值阶段与共享几何
+
+`vmath.constraints` 提供固定容量、VM 计费的阶段 workspace。`load/begin` 明确重置 lambda 与交替 sweep 次序；`integrate` 执行调用方提供的两级 gain 和增量，`node/edge/span` 只读取或更新明确的状态，`solve` 每轮依次执行边、span、位置 bounds，`damp` 执行邻居位移和有序轴向阻尼。Lua 在 integration 之后执行依赖端点的应用规则。每个阶段独立原子提交，失败不撤销上一成功阶段，也不清空已有 lambda。完整参数、范围、两浮点补偿与 float 位移规则以 [numeric production header 生成的 API](../../references/lua.md) 为准。
+
+`geometry.rotations` 只保存调用方给出的段、权重和旋转轴；端点 reduction 在明确误差域内使用 18 moments/17 次多项式，域外执行完整循环。它不生成形状、权重函数或受力模型。`geometry.batch` 保存不可变二维顶点、拓扑和两个可选位移权重通道；`geometry.pose` 保存按原顺序计算的变形、旋转、缩放、平移和可选参数化平面透视结果。缓存键含全部 evaluate 输入与不可变 geometry，位于 layer/color 之前，应用自行决定共享时机。
+
+`display.draw_pose` 直接消费 pose，通过既有 polygon/line raster 绘制。`display.polyline` / `compile_line_style` / `draw_polyline` 保留源段身份、方向、共享端点投影、严格异号切分及近裁剪。颜色在原始端点求值，先 RGB888 插值和 floor，再转 RGB565；触平面及共面段用调用方显式提供的 boundary style。点、camera、plane、order 或 style 改动会重新准备 transient fragments，不保留可过期的跨 draw 投影缓存。各 draw 的 clip、layer、颜色只影响本次重绘，不使已发布的 pre-layer pose 失效。完整绘制参数与相机布局见 [Display API](../../references/lua.md)。
+
+这些对象及 scratch 均由 VM userdata 持有，成功暖调用不分配或逐元素回调 Lua；构造失败与 GC/VM teardown 回收所有引用。绘制在参数解析后重新检查 Display acquisition，完整验证最终坐标和样式后才写像素，并沿用 dirty/background bookkeeping；不会隐式 present。游戏状态、标量受力方程、材质转换、形状通道生成、相机 recipe、层语义和采样时钟仍属于可分发 Lua app。公共功能只做原始算法拆分；实机逐阶段帧率对齐属于下游成对验证，Host/Web 测试不能代替。

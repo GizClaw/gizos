@@ -1067,7 +1067,7 @@ static int test_raster_open(void *lua_state, void *user) {
   return 1;
 }
 
-static void test_display_raster2d(int benchmark) {
+static void test_display_raster2d(int benchmark, const char *path) {
   h2_runtime_t *runtime = create_runtime();
   h2_lua_host_t *host = NULL;
   h2_lua_host_config_t config = {
@@ -1082,14 +1082,14 @@ static void test_display_raster2d(int benchmark) {
   assert(h2_lua_register_module(host, "raster_test", test_raster_open, NULL) ==
          H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
-  FILE *file = fopen("libs/lua/tests/raster2d.lua", "rb");
+  FILE *file = fopen(path, "rb");
   assert(file != NULL);
   uint8_t script[16384];
   size_t size = fread(script, 1, sizeof(script), file);
   assert(!ferror(file) && size < sizeof(script));
   assert(fclose(file) == 0);
-  (void)run_display_script_size(host, "@raster2d.lua", script, size,
-                                benchmark ? 240 : 8, benchmark ? 240 : 8);
+  (void)run_display_script_size(host, path, script, size, benchmark ? 240 : 8,
+                                benchmark ? 240 : 8);
   h2_lua_host_destroy(host);
   h2_runtime_deinit(runtime);
 }
@@ -1828,11 +1828,16 @@ static void test_job_results(h2_lua_host_t *host) {
 }
 
 int main(int argc, char **argv) {
-  if (argc == 2 && strcmp(argv[1], "--raster-benchmark") == 0) {
-    test_display_raster2d(1);
+  if (argc == 2 && strcmp(argv[1], "--prepared-benchmark") == 0) {
+    test_display_raster2d(1, "libs/lua/tests/geometry_batches.lua");
     return 0;
   }
-  test_display_raster2d(0);
+  if (argc == 2 && strcmp(argv[1], "--raster-benchmark") == 0) {
+    test_display_raster2d(1, "libs/lua/tests/raster2d.lua");
+    return 0;
+  }
+  test_display_raster2d(0, "libs/lua/tests/raster2d.lua");
+  test_display_raster2d(0, "libs/lua/tests/geometry_batches.lua");
   test_display_mesh_identity();
   test_display_mesh_cache();
   test_display_strokes();
