@@ -133,7 +133,8 @@ static void test_route_query_resends_lost_replies(void) {
     const uint64_t started = monotonic_ms();
     assert(h2_darwin_netif_os_default_name(name) == H2_PAL_ERR_TIMEOUT);
     const uint64_t elapsed = monotonic_ms() - started;
-    assert(elapsed >= 900u && elapsed < 10000u);
+    /* 1 s deadline; ms truncation and scheduler delay allow a small margin. */
+    assert(elapsed >= 990u && elapsed < 1500u);
     assert(h2_darwin_netif_test_route_requests() >= 1u);
     h2_darwin_netif_test_drop_route_replies(0u);
 }
