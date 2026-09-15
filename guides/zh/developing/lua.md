@@ -541,6 +541,8 @@ Go/cgo consumer 同样在自己的构建步骤中读取 manifest，用目标 C c
 
 ### Prepared 数值阶段与共享几何
 
+workspace 默认通过 `load` 复制状态；可分发 Lua app 也可以创建标准 f64 numeric buffer，通过 `bind` 明确保留当前与历史位置。绑定后，公共 buffer 写入与 `node` 更新相互可见，绘制直接消费当前位置，无需每子步完整导出。每个 buffer 只能被一个活 workspace 绑定；workspace 强引用保活 buffer，弱 owner 记录不阻止 workspace 回收。重新绑定重置活动拓扑、lambda、span 与 sweep；成功 `load` 安全复制后退出绑定，失败保留旧状态。各阶段继续使用私有暂存区和原子提交；绑定状态不能同时作为阶段系数、bounds、mobility 或 `copy` 输出。`multipliers` 只返回选定边与 span 的数学结果，张力、出线与游戏规则仍由 Lua 解释。
+
 `vmath.constraints` 提供固定容量、VM 计费的阶段 workspace。`load/begin` 明确重置 lambda 与交替 sweep 次序；`integrate` 执行调用方提供的两级 gain 和增量，`node/edge/span` 只读取或更新明确的状态，`solve` 每轮依次执行边、span、位置 bounds，`damp` 执行邻居位移和有序轴向阻尼。Lua 在 integration 之后执行依赖端点的应用规则。每个阶段独立原子提交，失败不撤销上一成功阶段，也不清空已有 lambda。完整参数、范围、两浮点补偿与 float 位移规则以 [numeric production header 生成的 API](../../references/lua.md) 为准。
 
 `geometry.rotations` 只保存调用方给出的段、权重和旋转轴；端点 reduction 在明确误差域内使用 18 moments/17 次多项式，域外执行完整循环。它不生成形状、权重函数或受力模型。`geometry.batch` 保存不可变二维顶点、拓扑和两个可选位移权重通道；`geometry.pose` 保存按原顺序计算的变形、旋转、缩放、平移和可选参数化平面透视结果。缓存键含全部 evaluate 输入与不可变 geometry，位于 layer/color 之前，应用自行决定共享时机。

@@ -28,7 +28,8 @@ static int buffer_new(lua_State *s) {
   static const char *const kinds[] = {"f64", "f32", NULL};
   int is_f32 = luaL_checkoption(s, 2, "f64", kinds);
   size_t bytes = 2 * n * (is_f32 ? sizeof(float) : sizeof(double));
-  h2_numeric_buffer_t *b = lua_newuserdatauv(s, sizeof(*b) + bytes, 0);
+  /* Optional weak constraint-owner record; the workspace retains the buffer. */
+  h2_numeric_buffer_t *b = lua_newuserdatauv(s, sizeof(*b) + bytes, 1);
   b->count = n;
   b->is_f32 = is_f32;
   if (is_f32) {

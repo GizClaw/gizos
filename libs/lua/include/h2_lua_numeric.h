@@ -138,6 +138,25 @@
  *   nonnegative. n in 1..capacity, m in 0..capacity, dt in [1e-6,.1]. Copies
  *   all active state, prepares rest squared/alpha/inverse denominators,
  *   resets all multipliers/sweep parity and disables the optional span.
+ *   When bound, successful load first copies into owned storage, then releases
+ *   both bindings. Rejected load preserves the existing state and bindings.
+ * - w:bind(p,previous,edges,n,m,dt): opt into caller-created authoritative
+ *   f64 state, with the same inputs/limits/reset semantics as load. Bind retains
+ *   p/previous without changing their contents, and copies/prepares edges.
+ *   The workspace strongly references both buffers; a buffer can be bound to
+ *   only one live workspace, including cross-aliases. Binding/rebinding stages
+ *   all validation/allocation before replacing the old binding. Rebinding even
+ *   the same buffers resets multipliers/parity/span; active/topology changes
+ *   require bind/load. Construction and bind may allocate VM-accounted storage.
+ *   GC/VM teardown releases ownership; weak owner records cannot retain a dead
+ *   workspace. No borrowed native pointer or mutable internal view is exposed.
+ *   Between synchronous calls, ordinary buffer writes and node patches are
+ *   immediately visible to each other. They do not reset multipliers/parity or
+ *   refresh material metadata: Lua still supplies begin/edge/span explicitly.
+ *   Integrate/solve/damp keep private scratch and publish only after complete
+ *   validation, without callbacks/allocation in the commit section. Warm phases
+ *   allocate nothing; binding does not eliminate phase staging/copies. Bound
+ *   p/previous must not also be coefficient/bounds/mobility or copy outputs.
  * - w:begin(dt): start a substep, reset edge/span lambda and sweep parity;
  *   changed dt refreshes coefficients. It does not integrate or change p/prev.
  * - w:node(index) -> x,y,z,px,py,pz; w:node(index,x,y,z,px,py,pz) patches
@@ -182,6 +201,11 @@
  * prepared-edge records and 8 bytes/edge, with fixed object/userdata overhead.
  * It is bounded (under 160 KiB at maximum capacities) and reclaimed on GC/VM
  * teardown.
+ * - w:multipliers(edge_index=nil) -> edge_lambda_or_nil,span_lambda: read one
+ *   edge in 1..m and the stored span result without copying state or resetting
+ *   any phase. nil omits the edge (including m=0). Span disabling retains its
+ *   stored result exactly as copy does; begin/load/bind reset it. These values
+ *   have no application-specific tension, force or payout interpretation.
  *
  * - geometry.rotations(segments,weights,axis,n) -> rotations: copies n<=256
  *   xyz vectors, n scalar weights and a three-component nonzero supplied axis.

@@ -18,6 +18,8 @@ typedef struct constraint_workspace {
   int has_span;
   prepared_edge_t span;
   double *p, *previous, *staged_p, *staged_previous;
+  double *owned_p;
+  h2_numeric_buffer_t *bound_p, *bound_previous;
   prepared_edge_t *edges, *staged_edges;
   float *lambda, *staged_lambda, *displacement;
   precise_float *coordinates;
@@ -41,6 +43,46 @@ static constraint_workspace_t *workspace(lua_State *s) {
 static void loaded(lua_State *s, constraint_workspace_t *w) {
   if (!w->n)
     luaL_error(s, "constraint workspace is not loaded");
+}
+static void separate_state(lua_State *s, constraint_workspace_t *w,
+                           h2_numeric_buffer_t *b) {
+  if (b && (b == w->bound_p || b == w->bound_previous))
+    luaL_error(s, "argument aliases bound constraint state");
+}
+/* Buffer uservalue 1 is a private table with a weak workspace value. It cannot
+ * keep a dead workspace alive, and no native pointer is borrowed from Lua. */
+static void available_state(lua_State *s, int at) {
+  if (lua_getiuservalue(s, at, 1) == LUA_TTABLE) {
+    lua_rawgeti(s, -1, 1);
+    int occupied = !lua_isnil(s, -1) && !lua_rawequal(s, -1, 1);
+    lua_pop(s, 2);
+    if (occupied)
+      luaL_error(s, "numeric buffer is bound to another workspace");
+  } else
+    lua_pop(s, 1);
+}
+static void release_state(lua_State *s, constraint_workspace_t *w) {
+  if (!w->bound_p)
+    return;
+  for (int slot = 5; slot <= 6; ++slot) {
+    lua_getiuservalue(s, 1, slot);
+    lua_pushnil(s);
+    lua_setiuservalue(s, -2, 1);
+    lua_pop(s, 1);
+    lua_pushnil(s);
+    lua_setiuservalue(s, 1, slot);
+  }
+  w->bound_p = w->bound_previous = NULL;
+}
+static void validate_state(lua_State *s, constraint_workspace_t *w,
+                           int previous) {
+  if (!w->bound_p)
+    return;
+  for (size_t i = 0; i < 3 * w->n; ++i) {
+    finite_result(s, w->p[i]);
+    if (previous)
+      finite_result(s, w->previous[i]);
+  }
 }
 static size_t node_index(lua_State *s, double value, size_t n) {
   if (value < 1 || value > (double)n || floor(value) != value)
@@ -87,13 +129,14 @@ static int workspace_new(lua_State *s) {
     return luaL_error(s, "zero node capacity");
   /* Separate userdata payloads are retained by the workspace, naturally aligned
    * and charged to the VM even when a later allocation fails. */
-  constraint_workspace_t *w = lua_newuserdatauv(s, sizeof(*w), 4);
+  constraint_workspace_t *w = lua_newuserdatauv(s, sizeof(*w), 6);
   memset(w, 0, sizeof(*w));
   w->node_capacity = n;
   w->edge_capacity = m;
   luaL_setmetatable(s, WORK_META);
   int at = lua_gettop(s);
   w->p = lua_newuserdatauv(s, 12 * n * sizeof(double), 0);
+  w->owned_p = w->p;
   w->previous = w->p + 3 * n;
   w->staged_p = w->previous + 3 * n;
   w->staged_previous = w->staged_p + 3 * n;
@@ -111,6 +154,20 @@ static int workspace_new(lua_State *s) {
 }
 static int workspace_load(lua_State *s) {
   constraint_workspace_t *w = workspace(s);
+  int bind = lua_toboolean(s, lua_upvalueindex(1));
+  int owner = 0;
+  if (bind) {
+    /* Finish every allocation before inspecting mutable inputs or staging
+     * metadata: a GC finalizer may reenter during these allocations. */
+    lua_createtable(s, 1, 0);
+    owner = lua_gettop(s);
+    lua_createtable(s, 0, 1);
+    lua_pushliteral(s, "v");
+    lua_setfield(s, -2, "__mode");
+    lua_setmetatable(s, owner);
+    lua_pushvalue(s, 1);
+    lua_rawseti(s, owner, 1);
+  }
   size_t n = h2_numeric_size(s, 5, w->node_capacity);
   size_t m = h2_numeric_size(s, 6, w->edge_capacity);
   if (!n)
@@ -121,14 +178,38 @@ static int workspace_load(lua_State *s) {
                       *e = f64_buffer(s, 4, 6 * m);
   if (p == prev || p == e || prev == e)
     return luaL_error(s, "aliased constraint buffers");
+  if (bind) {
+    available_state(s, 2);
+    available_state(s, 3);
+  }
   for (size_t i = 0; i < 3 * n; ++i) {
     finite_result(s, p->data.f64[i]);
     finite_result(s, prev->data.f64[i]);
   }
   for (size_t i = 0; i < m; ++i)
     w->staged_edges[i] = edge_read(s, e->data.f64 + 6 * i, n, dt);
-  memcpy(w->p, p->data.f64, 3 * n * sizeof(double));
-  memcpy(w->previous, prev->data.f64, 3 * n * sizeof(double));
+  /* No allocation or Lua callback from here through the complete publication. */
+  if (!bind) {
+    memcpy(w->owned_p, p->data.f64, 3 * n * sizeof(double));
+    memcpy(w->owned_p + 3 * w->node_capacity, prev->data.f64,
+           3 * n * sizeof(double));
+  }
+  release_state(s, w);
+  if (bind) {
+    for (int arg = 2; arg <= 3; ++arg) {
+      lua_pushvalue(s, owner);
+      lua_setiuservalue(s, arg, 1);
+      lua_pushvalue(s, arg);
+      lua_setiuservalue(s, 1, arg + 3);
+    }
+    w->bound_p = p;
+    w->bound_previous = prev;
+    w->p = p->data.f64;
+    w->previous = prev->data.f64;
+  } else {
+    w->p = w->owned_p;
+    w->previous = w->owned_p + 3 * w->node_capacity;
+  }
   memcpy(w->edges, w->staged_edges, m * sizeof(prepared_edge_t));
   memset(w->lambda, 0, m * sizeof(float));
   w->n = n;
@@ -232,6 +313,9 @@ static int workspace_integrate(lua_State *s) {
   size_t nb = h2_numeric_size(s, 11, 3 * NODE_LIMIT);
   const double *bounds = bounds_read(s, 10, nb, w->n);
   inputs[5] = bounds ? h2_numeric_check(s, 10) : NULL;
+  for (int j = 0; j < 6; ++j)
+    separate_state(s, w, inputs[j]);
+  validate_state(s, w, 1);
   for (int j = 0; j < 6; ++j)
     for (int k = 0; k < j; ++k)
       if (inputs[j] && inputs[j] == inputs[k])
@@ -355,6 +439,9 @@ static int workspace_solve(lua_State *s) {
     return luaL_error(s, "zero constraint iterations");
   size_t nb = h2_numeric_size(s, 4, 3 * NODE_LIMIT);
   const double *bounds = bounds_read(s, 3, nb, w->n);
+  if (bounds)
+    separate_state(s, w, h2_numeric_check(s, 3));
+  validate_state(s, w, 0);
   for (size_t i = 0; i < 3 * w->n; ++i)
     w->coordinates[i] = pf_from(w->p[i]);
   memcpy(w->staged_lambda, w->lambda, w->m * sizeof(float));
@@ -395,7 +482,10 @@ static int workspace_solve(lua_State *s) {
 static int workspace_damp(lua_State *s) {
   constraint_workspace_t *w = workspace(s);
   loaded(s, w);
-  const double *mobility = f64_buffer(s, 2, w->n)->data.f64;
+  h2_numeric_buffer_t *flags = f64_buffer(s, 2, w->n);
+  separate_state(s, w, flags);
+  validate_state(s, w, 1);
+  const double *mobility = flags->data.f64;
   double blend = h2_numeric_number(s, 3), axial_blend = h2_numeric_number(s, 4);
   double threshold = h2_numeric_number(s, 5), epsilon = h2_numeric_number(s, 6);
   if (blend < 0 || blend > 1 || axial_blend < 0 || axial_blend > 1 ||
@@ -454,6 +544,9 @@ static int workspace_copy(lua_State *s) {
                       *lambda = f64_buffer(s, 4, w->m);
   if (p == prev || p == lambda || prev == lambda)
     return luaL_error(s, "aliased output buffers");
+  separate_state(s, w, p);
+  separate_state(s, w, prev);
+  separate_state(s, w, lambda);
   memcpy(p->data.f64, w->p, 3 * w->n * sizeof(double));
   memcpy(prev->data.f64, w->previous, 3 * w->n * sizeof(double));
   for (size_t i = 0; i < w->m; ++i)
@@ -461,15 +554,34 @@ static int workspace_copy(lua_State *s) {
   lua_pushnumber(s, w->span_lambda);
   return 1;
 }
+static int workspace_multipliers(lua_State *s) {
+  constraint_workspace_t *w = workspace(s);
+  loaded(s, w);
+  if (lua_isnoneornil(s, 2))
+    lua_pushnil(s);
+  else {
+    size_t i = node_index(s, h2_numeric_number(s, 2), w->m);
+    lua_pushnumber(s, w->lambda[i]);
+  }
+  lua_pushnumber(s, w->span_lambda);
+  return 2;
+}
 void h2_numeric_prepared_register(lua_State *s) {
   if (luaL_newmetatable(s, WORK_META)) {
     static const luaL_Reg methods[] = {
-        {"load", workspace_load},   {"begin", workspace_begin},
+        {"begin", workspace_begin},
         {"node", workspace_node},   {"edge", workspace_edge},
         {"span", workspace_span},   {"integrate", workspace_integrate},
         {"solve", workspace_solve}, {"damp", workspace_damp},
-        {"copy", workspace_copy},   {NULL, NULL}};
+        {"copy", workspace_copy}, {"multipliers", workspace_multipliers},
+        {NULL, NULL}};
     luaL_setfuncs(s, methods, 0);
+    lua_pushboolean(s, 0);
+    lua_pushcclosure(s, workspace_load, 1);
+    lua_setfield(s, -2, "load");
+    lua_pushboolean(s, 1);
+    lua_pushcclosure(s, workspace_load, 1);
+    lua_setfield(s, -2, "bind");
     lua_pushvalue(s, -1);
     lua_setfield(s, -2, "__index");
     lua_pushliteral(s, "constraint workspace");

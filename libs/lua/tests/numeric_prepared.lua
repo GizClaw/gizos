@@ -100,6 +100,99 @@ assert(old:get(1)==0 and old:get(4)==2)
 free:span(nil);free:solve(1,b{1,2,2,0,3,1,2,2,4,5},2)
 free:copy(out,old,lambda);assert(out:get(2)==4 and out:get(5)==4)
 -- Returned closure is checked by the C harness for successful warm allocation.
+local bound=v.constraints(3,2)
+local bp,bprev,be=v.buffer(12),v.buffer(12),v.buffer(12)
+bp:fill(91);bprev:fill(92);bp:copy(p,1,1,9);bprev:copy(prev,1,1,9);be:copy(edges,1,1,12)
+bound:bind(bp,bprev,be,3,2,.01)
+do
+ local function reject(fn)
+  local span=bound:copy(out,old,lambda)
+  local saved,ls={},{}
+  for i=1,12 do saved[i]=bp:get(i);saved[i+12]=bprev:get(i) end
+  for i=1,2 do ls[i]=lambda:get(i) end
+  assert(not pcall(fn))
+  assert(bound:copy(out,old,lambda)==span)
+  for i=1,12 do assert(bp:get(i)==saved[i] and bprev:get(i)==saved[i+12]) end
+  for i=1,2 do assert(lambda:get(i)==ls[i]) end
+ end
+ bp:set(4,1.3);assert(bound:node(2)==1.3)
+ bound:node(2,1.4,.2,.3,1.2,.1,.2)
+ assert(bp:get(4)==1.4 and bp:get(5)==.2 and bprev:get(4)==1.2)
+ bound:span(1,3,1.8,.0001,0,1);bound:solve(1,nil,0)
+ local span=bound:copy(out,old,lambda)
+ local edge,sl=bound:multipliers(1);assert(edge==lambda:get(1) and sl==span)
+ assert(select(2,bound:multipliers())==span)
+ bound:span(nil);assert(select(2,bound:multipliers(nil))==span)
+ local held=edge;bp:set(1,0);assert(bound:multipliers(1)==held)
+ reject(function() bound:multipliers(0) end)
+ reject(function() bound:multipliers(3) end)
+ reject(function() bound:multipliers(1.5) end)
+ local competitor=v.constraints(3,2)
+ reject(function() competitor:bind(bp,bprev,be,3,2,.01) end)
+ reject(function() competitor:bind(bprev,bp,be,3,2,.01) end)
+ reject(function() bound:bind(bp,bp,be,3,2,.01) end)
+ reject(function() bound:bind(bp,bprev,be,4,2,.01) end)
+ reject(function() bound:bind(v.buffer(9,'f32'),bprev,be,3,2,.01) end)
+ reject(function() bound:load(bp,bprev,b{1,2,1,0,0,1,2,4,1,0,0,1},3,2,.01) end)
+ reject(function() bound:bind(bp,bprev,b{1,2,1,0,0,1,2,4,1,0,0,1},3,2,.01) end)
+ reject(function() bound:copy(bp,old,lambda) end)
+ reject(function() bound:copy(bprev,bp,lambda) end)
+ reject(function() bound:copy(out,old,bp) end)
+ reject(function() bound:integrate(1,3,bp,before,gain0,gain1,after,'f64',nil,0) end)
+ reject(function() bound:integrate(1,3,mobility,bp,gain0,gain1,after,'f64',nil,0) end)
+ -- A valid descriptor stored in state is still forbidden as a phase argument.
+ local packed=b{1,1,2,0,1,0,0,0,0};local prv=v.buffer(9)
+ local alias_ws=v.constraints(3,0);alias_ws:bind(packed,prv,b{},3,0,.01)
+ assert(not pcall(function() alias_ws:solve(1,packed,1) end))
+ assert(not pcall(function() alias_ws:integrate(1,3,mobility,before,gain0,gain1,after,'f64',packed,1) end))
+ assert(not pcall(function() bound:damp(bp,0,0,1,1e-8) end))
+ bound:node(3,1e6,0,0,-1e6,0,0)
+ reject(function() bound:integrate(1,3,mobility,before,gain0,gain1,after,'f64',nil,0) end)
+ -- Same-buffer rebind resets results/parity/span and retains inactive tails.
+ bp:copy(p,1,1,9);bprev:copy(prev,1,1,9)
+ bound:bind(bp,bprev,be,3,2,.01)
+ assert(bound:multipliers(1)==0 and select(2,bound:multipliers())==0)
+ be:set(3,99) -- Edge metadata was copied, not bound.
+ w2:load(p,prev,edges,3,2,.01)
+ bound:solve(2,nil,0);bound:solve(1,nil,0);w2:solve(3,nil,0)
+ w2:copy(out,old,lambda)
+ for i=1,9 do assert(bp:get(i)==out:get(i) and bprev:get(i)==old:get(i)) end
+ assert(bp:get(10)==91 and bprev:get(12)==92)
+ -- A successful copy-load safely detaches even when its sources are bound.
+ bound:load(bp,bprev,edges,3,2,.01)
+ local x=bound:node(2);bp:set(4,x+1);assert(bound:node(2)==x)
+ competitor:bind(bp,bprev,edges,3,2,.01)
+ competitor:load(bp,bprev,edges,3,2,.01)
+ -- Reduced active extent/new topology rebinds; prior buffers become free.
+ local rp,rprev=b{0,0,0,1,0,0,81,82,83},b{0,0,0,1,0,0,84,85,86}
+ bound:bind(rp,rprev,b{1,2,1,0,0,1},2,1,.01)
+ competitor:bind(bp,bprev,edges,3,2,.01)
+ bound:solve(2,nil,0);assert(rp:get(7)==81 and rprev:get(9)==86)
+ competitor:load(bp,bprev,edges,3,2,.01)
+ bound:bind(bp,bprev,edges,3,2,.01)
+ -- Strong buffer references / weak workspace ownership, in both GC modes.
+ for _,mode in ipairs{'incremental','generational'} do
+  collectgarbage(mode)
+  local weak=setmetatable({}, {__mode='v'})
+  local owner=v.constraints(2,1)
+  do
+   local a,c=b{0,0,0,2,0,0},b{0,0,0,1,0,0}
+   weak[1],weak[2],weak[3]=a,c,owner;owner:bind(a,c,b{1,2,1,0,0,1},2,1,.01)
+  end
+  collectgarbage('collect');assert(weak[1] and weak[2]);owner:solve(1,nil,0)
+  local a,c=weak[1],weak[2];owner=nil
+  collectgarbage('collect');collectgarbage('collect');assert(weak[3]==nil)
+  local replacement=v.constraints(2,1);replacement:bind(a,c,b{1,2,1,0,0,1},2,1,.01)
+ end
+ collectgarbage('incremental')
+ local single=v.constraints(1,0);single:bind(b{1,2,3},b{0,1,2},b{},1,0,.01)
+ assert(single:multipliers()==nil and select(2,single:multipliers())==0)
+ assert(not pcall(function() single:multipliers(1) end))
+ -- Maximum bound extents and all ordered edges remain supported.
+ local max=v.constraints(256,512);local a,c,e=v.buffer(768),v.buffer(768),v.buffer(3072)
+ for i=1,512 do local j=(i-1)%255+1;e:set(6*i-5,j);e:set(6*i-4,j+1);e:set(6*i-3,1) end
+ max:bind(a,c,e,256,512,.01);max:solve(32,nil,0);assert(max:multipliers(512)==0)
+end
 return function()
   reset()
   w:begin(.01)
@@ -110,4 +203,12 @@ return function()
   w:solve(6,bounds,1)
   w:damp(mobility,.25,.4,.998,1e-8)
   w:copy(out,old,lambda)
+  -- Warm binding execution has no bind/allocation or full-state export.
+  bp:copy(p,1,1,9);bprev:copy(prev,1,1,9)
+  bound:begin(.01)
+  bound:integrate(1,3,mobility,before,gain0,gain1,after,'displacement-f32',bounds,1)
+  bound:span(1,3,1.8,.0001,0,1)
+  bound:solve(6,bounds,1);bound:damp(mobility,.25,.4,1,1e-8)
+  bound:multipliers(1)
+  v.scatter(bp,bp,2,2,4)
 end

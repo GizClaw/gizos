@@ -14,6 +14,7 @@
 
 typedef struct allocation_counter {
   size_t calls, bytes, limit;
+  size_t attempts, fail_after;
   int counting;
 } allocation_counter_t;
 static void *allocator(void *user, void *ptr, size_t old, size_t size) {
@@ -27,6 +28,8 @@ static void *allocator(void *user, void *ptr, size_t old, size_t size) {
   }
   if (a->counting)
     ++a->calls;
+  if (a->fail_after && ++a->attempts >= a->fail_after)
+    return NULL;
   if (size > a->limit - (a->bytes - old))
     return NULL;
   void *next = realloc(ptr, size);
@@ -249,15 +252,16 @@ static void prepared_reference(double *result) {
     result[24 + i] = lambda[i];
   result[27] = span_lambda;
 }
-static void prepared_differential(lua_State *s, allocation_counter_t *a) {
+static void prepared_differential(lua_State *s, allocation_counter_t *a,
+                                  int bound) {
   double expected[28];
   prepared_reference(expected);
   clock_t prep = clock();
   size_t bytes = a->bytes;
   ok(s,
-     luaL_dostring(
+     luaL_loadstring(
          s,
-         "local v=require('vmath');local function b(t) local "
+         "local bound=...;local v=require('vmath');local function b(t) local "
          "x=v.buffer(#t);x:load(t);return x end;"
          "local p=b{0,.2,0,.8,-.1,.1,1.9,.3,.2,2.8,.1,0};"
          "local prev=b{0,.2,0,.79,-.09,.09,1.88,.28,.19,2.77,.09,0};"
@@ -267,8 +271,12 @@ static void prepared_differential(lua_State *s, allocation_counter_t *a) {
          "12);"
          "before:fill(.001);g0:fill(.9);g1:fill(.8);after:fill(.002);"
          "local bounds=b{2,3,2,0,1e6};local w=v.constraints(4,3);"
+         "local original,previous=v.buffer(12),v.buffer(12);"
+         "original:copy(p,1,1,12);previous:copy(prev,1,1,12);"
+         "if bound then w:bind(p,prev,e,4,3,.01) end;"
          "local out,old,lambda=v.buffer(12),v.buffer(12),v.buffer(3);"
-         "return function(compare) w:load(p,prev,e,4,3,.01);"
+         "return function(compare) if bound then p:copy(original,1,1,12);"
+         "prev:copy(previous,1,1,12);w:begin(.01) else w:load(p,prev,e,4,3,.01) end;"
          "w:integrate(1,4,mass,before,g0,g1,after,'displacement-f32',nil,0);"
          "w:span(1,4,2.4,.0002,0,4);w:solve(6,bounds,1);w:damp(mass,.3,.4,.99,"
          "1e-8);"
@@ -277,7 +285,10 @@ static void prepared_differential(lua_State *s, allocation_counter_t *a) {
          "assert(math.abs(old:get(i)-compare[i+12])<2e-11) end;"
          "for i=1,3 do assert(math.abs(lambda:get(i)-compare[24+i])<2e-11) end;"
          "assert(math.abs(sl-compare[28])<2e-11) end end"));
-  printf("prepared fixture setup: %.3f ms CPU, %zu VM bytes\n",
+  lua_pushboolean(s, bound);
+  ok(s, lua_pcall(s, 1, 1, 0));
+  printf("prepared fixture setup (%s): %.3f ms CPU, %zu VM bytes\n",
+         bound ? "bound" : "owned",
          1000.0 * (clock() - prep) / CLOCKS_PER_SEC, a->bytes - bytes);
   lua_pushvalue(s, -1);
   lua_createtable(s, 28, 0);
@@ -305,13 +316,57 @@ static void prepared_differential(lua_State *s, allocation_counter_t *a) {
   }
   a->counting = 0;
   assert(a->calls == 0);
-  printf("prepared same-input 10000 runs: native reference %.3f ms, Lua phase "
+  printf("prepared same-input 10000 runs (%s): native reference %.3f ms, Lua phase "
          "bindings %.3f ms CPU; "
-         "4 nodes/3 edges/6 sweeps, 6 native calls/run, warm allocations %zu, "
+         "4 nodes/3 edges/6 sweeps, %d native calls/run (including fixture reset "
+         "and full oracle export), warm allocations %zu, "
          "checksum %.6f\n",
-         reference_ms, 1000.0 * (clock() - warm) / CLOCKS_PER_SEC, a->calls,
+         bound ? "bound" : "owned", reference_ms,
+         1000.0 * (clock() - warm) / CLOCKS_PER_SEC, bound ? 8 : 6, a->calls,
          (double)checksum);
   lua_pop(s, 1);
+}
+/* Fail every allocation position, including Lua's emergency-GC retry. A failed
+ * rebind must retain its old ownership/results and leave the candidate free. */
+static void binding_oom(lua_State *s, allocation_counter_t *a) {
+  int failures = 0, successes = 0;
+  for (size_t nth = 1; nth <= 12; ++nth) {
+    lua_gc(s, LUA_GCCOLLECT);
+    lua_gc(s, LUA_GCSTOP);
+    ok(s, luaL_dostring(s,
+        "local v=require('vmath');local function b(t) local a=v.buffer(#t);a:load(t);return a end;"
+        "local p=b{0,0,0,2,0,0};local prev=b{0,0,0,1,0,0};"
+        "local e=b{1,2,1,0,0,1};local w=v.constraints(2,1);"
+        "w:bind(p,prev,e,2,1,.01);w:span(1,2,1,.0001,0,1);w:solve(1,nil,0);"
+        "local x=w:node(2);local l,span=w:multipliers(1);"
+        "local nextp=b{0,0,0,3,0,0};local nextprev=b{0,0,0,2,0,0};"
+        "return function() w:bind(nextp,nextprev,e,2,1,.01) end,"
+        "function(success) local probe=v.constraints(2,1);"
+        "if success then assert(w:node(2)==3 and w:multipliers(1)==0);"
+        "probe:bind(p,prev,e,2,1,.01) else "
+        "assert(w:node(2)==x);local a,b=w:multipliers(1);assert(a==l and b==span);"
+        "assert(not pcall(function() probe:bind(p,prev,e,2,1,.01) end));"
+        "probe:bind(nextp,nextprev,e,2,1,.01);"
+        "p:set(4,x+.1);assert(w:node(2)==x+.1) end end"));
+    lua_pushvalue(s, -2);
+    a->attempts = 0;
+    a->fail_after = nth;
+    int status = lua_pcall(s, 0, 0, 0);
+    a->fail_after = 0;
+    if (status != LUA_OK) {
+      assert(status == LUA_ERRMEM);
+      ++failures;
+      lua_pop(s, 1);
+    } else
+      ++successes;
+    lua_pushvalue(s, -1);
+    lua_pushboolean(s, status == LUA_OK);
+    ok(s, lua_pcall(s, 1, 0, 0));
+    lua_pop(s, 2);
+  }
+  assert(failures >= 3 && successes > 0);
+  printf("binding allocation failpoints: %d rolled back, %d successful\n",
+         failures, successes);
 }
 
 static void suite(lua_State *s, allocation_counter_t *a, const char *kind,
@@ -435,7 +490,9 @@ int main(void) {
   luaL_requiref(s, LUA_STRLIBNAME, luaopen_string, 1);
   lua_pop(s, 1);
   prepared_budget(s, &a);
-  prepared_differential(s, &a);
+  binding_oom(s, &a);
+  prepared_differential(s, &a, 0);
+  prepared_differential(s, &a, 1);
   ordered_reference(s);
   float_reference(s);
   suite(s, &a, NULL, "libs/lua/tests/numeric.lua");
