@@ -29,16 +29,13 @@ h2_lua_web_app(
     clicks = [["SKELETON INPUT scene=4", "#stop"]],
 )
 
-web_archive_browser_test(
+# Partition the unchanged 144000 measured frames: 72000 planar, then eight
+# 9000-frame spatial scene/view groups. Each keeps 300 warmups and 3 x 3000
+# samples per case, including actual raster/present. macOS fastbuild exceeded
+# 2400 seconds when all groups ran serially in one browser invocation.
+test_suite(
     name = "benchmark_browser_test",
-    archive = ":lua_skeleton2d",
-    passes = ["SKELETON SPATIAL COMPLETE", "SKELETON BENCH tier=3 run=3", "SKELETON BENCH COMPLETE", "H2_WEB_APP name=lua_skeleton2d result=PASS"],
-    fails = ["SKELETON BENCH SKIP"],
-    taps = [["SKELETON FRAME initial", 216, 230]],
-    clicks = [["SKELETON BENCH COMPLETE", "#stop"]],
-    # Keep all 144000 samples; unoptimized CI needs longer than desktop -O2.
-    timeout_s = 2400,
-    size = "enormous",
+    tests = ["//projects/example/targets/pkg_tar/lua_skeleton2d/benchmark_%d:benchmark_browser_test" % group for group in range(1, 10)],
 )
 
 web_archive_browser_test(

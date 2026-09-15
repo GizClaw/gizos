@@ -1,6 +1,10 @@
 local sk,vm=require('skeleton2d'),require('vmath')
 local geometry=require('geometry')
 local d,clock,delay,touch=require('display'),require('system'),require('delay'),require('lcd_touch')
+-- Optional App launch argument partitions the same complete benchmark workload.
+-- Unset/0 runs all groups; 1 is planar, 2..9 are scene/view groups.
+local benchmark_group=tonumber(args and args.benchmark_group or '0')
+assert(benchmark_group and benchmark_group%1==0 and benchmark_group>=0 and benchmark_group<=9)
 local white={color='white',font_size=7}
 local dark={r=12,g=18,b=28}
 local cyan={r=0,g=255,b=255}
@@ -291,8 +295,9 @@ local function benchmark_spatial()
  local saved_rotation,saved_pitch,saved_overlay,saved_flip=rotation,pitch,overlay,flip
  local saved_zoom,saved_pan,saved_mirror=zoom_id,pan_id,mirrored
  overlay,flip,zoom_id,pan_id,mirrored=false,false,1,1,false
- for _,scene in ipairs({scenes[2],scenes[4]})do
-  for _,view in ipairs({{0,0},{45,0},{0,45},{45,45}})do
+ for scene_id,scene in ipairs({scenes[2],scenes[4]})do
+  for view_id,view in ipairs({{0,0},{45,0},{0,45},{45,45}})do
+   if benchmark_group==0 or benchmark_group==1+(scene_id-1)*4+view_id then
    rotation,pitch=view[1],view[2]
    for run=1,3 do
     local calc,geom,raster,present,total,switch={},{},{},{},{},{}
@@ -322,6 +327,7 @@ local function benchmark_spatial()
    end
   end
  end
+ end
  rotation,pitch,overlay,flip=saved_rotation,saved_pitch,saved_overlay,saved_flip
  zoom_id,pan_id,mirrored=saved_zoom,saved_pan,saved_mirror
  print('SKELETON SPATIAL COMPLETE')
@@ -336,6 +342,7 @@ local function benchmark()
   {1,120,true,.5,true},{1,240,false,0,false},{1,120,false,0,false},
   {1,240,true,0,false},{1,240,true,.5,false}}
  for case_id,workload in ipairs(workloads)do
+  if benchmark_group<=1 then
   local tier,edge,animated,weight,changing=table.unpack(workload)
   local clip={left=0,top=0,right=edge,bottom=edge,cache=false}
   local nb=16 << (tier-1);local np=nb*3//2;local actors={}
@@ -363,7 +370,9 @@ local function benchmark()
    delay.delay_ms(1)
   end
  end
- benchmark_spatial();print('SKELETON BENCH COMPLETE');draw()
+ end
+ if benchmark_group~=1 then benchmark_spatial() end
+ print('SKELETON BENCH COMPLETE group='..benchmark_group);draw()
 end
 -- Optional fixture validation uses closed-form joint landmarks as an oracle,
 -- independently of the production hierarchy and camera matrix construction.
