@@ -1,6 +1,6 @@
 # JieLi Components
 
-杰理 (JieLi) 芯片按产品线发布独立 SDK（AC695N 蓝牙音频、AC707N BR35、AC79 WiFi+BT 等），但共用一套私有 LLVM/Clang 工具链与 Linux post-build 打包工具。GizOS 用**一条工具链 repository、一个 `jieli_firmware` external build rule、按系列区分的 SDK locator 与 platform** 接入它们：`target = br23` 对应 AC695N，`target = br35` 对应 AC707N，`target = wl82` 对应 AC791N。本文定义该 rule 的 contract、artifact-root ownership、执行边界与烧录/升级边界，以及 BR23/BR35 PAL core provider。
+杰理 (JieLi) 芯片按产品线发布独立 SDK（AC695N 蓝牙音频、AC707N BR35、AC79 WiFi+BT 等），但共用一套私有 LLVM/Clang 工具链与 Linux post-build 打包工具。GizOS 用**一条工具链 repository、一个 `jieli_firmware` external build rule、按系列区分的 SDK locator 与 platform** 接入它们：`target = br23` 对应 AC695N，`target = br35` 对应 AC707N，`target = wl82` 对应 AC791N。本文定义该 rule 的 contract、artifact-root ownership、执行边界与烧录/升级边界，以及 BR23/BR35/WL82 PAL core provider。
 
 ## 工具链形态
 
@@ -43,6 +43,24 @@
 - Time 用 32 位 `timer_get_ms` 扩展为 64 位单调时间，wall time 不支持；Sync 提供 mutex（非递归）与 counting semaphore，condition variable 返回 `H2_PAL_ERR_UNSUPPORTED`；Queue 是 SDK mutex + 两个 semaphore 守护的堆环形缓冲，支持超时、`send_latest` 合并与 `close` 唤醒；Task `start` 走 `os_task_create`（任务返回后 park），`join` 不支持；Timer 用 `sys_timer_add`（周期）与 `sys_timeout_add`（一次性）——SDK 把回调派发到**注册该定时器的任务**上，`sys_timer_del` 不撤回已入队的回调，因此 timer 归属**第一次 start() 的任务**（其它任务再 `start()`/`reset()` 返回 `H2_PAL_ERR_INVALID_STATE`，归属不可转移）：`destroy()` 必须在该任务上调用（按 `xTaskGetCurrentTaskHandle()` 句柄判定，任务名可能重名；其它任务调用返回 `H2_PAL_ERR_INVALID_STATE`），SDK timeout 槽用尽时返回 `H2_PAL_ERR_UNAVAILABLE` 并保留 timer 供重试而不释放，它只置 `destroyed` 标志并在同一任务上注册一次性 reclaim timeout 释放存储，已入队的回调看到标志后直接返回；Firmware Info 报告 wrapper 注入的 `H2_JIELI_FIRMWARE_VERSION`。
 - os_api 的 pend 超时以 tick 计且 0 表示永久等待，PAL 的 0 表示不等待，因此 port 用 `os_*_accept` 实现非阻塞尝试，并按 10 ms tick 换算毫秒。
 
+## PAL core provider（wl82）
+
+`native_component_src/jieli/wl82/h2_pal_core` 为 AC791N 实现 Memory、Log、Time、Timer、Sync、Queue、Task、System Event 与 Firmware Info 的 PAL provider，公开入口是 `include/h2_jieli_wl82_platform_core.h`：
+
+- **SDK 边界。** Provider 只依赖 `h2_jieli_wl82_sdk_port.h`（SDK heap、调试输出、board 提供的 64 位单调时钟、`os_time_dly`、`os_mutex_*`/`os_sem_*`、`os_task_create`/删除/park/当前任务、`sys_timer` 派发，以及异常捕获用的单次 `testset` 字节锁）。`src/h2_jieli_wl82_sdk_port.c` 是唯一 include SDK 头文件的翻译单元，只由 `jieli_firmware` native 构建编译（`h2_pal_core` target 为 `manual`）。它在链接时需要 board layout 提供的 `task_info_table` 与 `h2_jieli_default_task_policy`；DevKit board、task policy 生成、linker export guard 与 firmware link 验收不属于本 package。零超时的 mutex/semaphore 用 `os_*_accept`，因为 SDK `pend(…, 0)` 表示永久等待。
+- **与 br23 的能力差异。**
+  - Sync 支持递归 mutex 和 condition variable。condition 为每个 wait 使用独立 SDK semaphore，只接受非递归 mutex，仍有等待者时 destroy 返回 `H2_PAL_ERR_INVALID_STATE`。
+  - Task 支持 `join`：每个任务有唯一 native 名 `<policy>/<hex id>`（匿名任务为 `$h2anon/…`，调用者不能使用该前缀），join 等待完成后按该名字删除；同名 policy 的多个任务互不影响。
+  - Timer 的所有生命周期操作同步派发到 SDK `sys_timer` 任务，timer 回调内调用直接内联执行；不支持 ISR 和调度器启动前调用；资源失败保持 timer 停止且可重试。
+  - Mutex、semaphore、condition 和 queue 遵循 `config->allocator`，对象从创建到销毁一直持有该 allocator。
+- **System Event。** 固定 `H2_PAL_SYSTEM_EVENT_TYPE_COUNT + 8` 个槽位，在 post 调用线程上同步派发。
+  - 每次成功 init 获得一个 owner，最多 16383 个，超出返回 `H2_PAL_ERR_FULL`；只有最后一个 deinit 关闭准入，已准入的操作结束后才销毁。
+  - 已准入的 post 会派发完它准入时的全部订阅，即使某个 handler 释放了最后一个 owner。
+  - 外部 unsubscribe 等待该订阅所有正在执行的回调返回（包括最后一个 owner 已 deinit 的 CLOSING 阶段），之后可释放 `handler_user`；handler 内的 self-unsubscribe 只停止准入，不等待自身。
+  - 订阅 generation 为 64 位且不回绕：post 只派发给 generation 不大于准入时快照的订阅，到达 `UINT64_MAX` 后 subscribe 返回 `H2_PAL_ERR_FULL`，只有完整 teardown 后重新 init 才重置。
+- **原子操作。** wl82 的 pi32v2 clang 把 C11/GCC 原子操作降级为 `__sync_*` libcall，而工具链 compiler-rt 的实现在双核上不安全。`h2_jieli_wl82_sdk_port.c` 为 1/2/4/8 字节 `__sync_*` 提供由 SDK spinlock 保护的强定义。
+- **Host 验证。** 测试链接 `tests/` 下的确定性 fake 或 pthread SDK port：`bazel test //native_component_src/jieli/wl82/...`，以及 `//tools/bazel:jieli_{allocator,dynamic_task,event_generation,log_text,runtime_events,sdk_memory,task_identity,wl82_sync_atomics}_test`。`test_jieli_event_generation.py` 与 `test_jieli_runtime_events.py` 读取 `CC` 和 `JIELI_TEST_CFLAGS`，可用 GCC 与 TSan 运行。这些测试不替代 AC791N 实机验收。
+
 ## Repository-owned native project
 
 AC695N、AC707N 与 AC791N 的 `compile_only` layout 直接拥有 `project.mk`、`app_config.h`、TASK policy、系列所需的 interrupt 配置与最小 board composition；具体 firmware launcher 自己提供 `app_main`。Runner 在 invocation-local SDK 根执行 `make -f <layout>/project.mk h2_link`，但 project 只选择 SDK 的 CPU/common substrate、headers、archives、linker inputs 与 post-build inputs，不编译 `apps/soundbox/**`、`apps/demo/**` 或其它 SDK application project。`tools/bazel/jieli/h2_project_rules.mk` 只提供 Bazel native object/archive 的通用追加规则，不 include SDK Makefile。每个 `firmware_native_component` 源文件使用 layout project 的 flags 与 Bazel include roots 编译到 `$(BUILD_DIR)/h2_bazel/`，`firmware_lib_component` archive 以 link group 进入同一条 `lto-wrapper` 链接。Bazel archive 是非 LTO ELF object，SDK source object 是 LTO bitcode。
@@ -75,6 +93,7 @@ AC695N、AC707N 与 AC791N 的 `compile_only` layout 直接拥有 `project.mk`�
 ## Validation
 
 - `bazel test //tools/bazel:jieli_runner_test //native_component_src/jieli/br23/h2_pal_core:test_jieli_br23_platform_core` 在任意 host 运行。
+- `bazel test //native_component_src/jieli/wl82/...` 在 Linux/macOS host 运行 wl82 PAL core 测试。
 - Linux x86_64：`. ../firmwares-devenv/export.sh && bazel build --config=ac695n //projects/e2e/targets/jieli_firmware/reference-smoke/ac695n_reference:firmware`，并以 `--config=ac791n` 构建对应 AC791N target；重复构建应命中 action cache。
 - macOS：同一命令应报告 target incompatible 而非失败。
 - 真机：空片首刷与 `update.ufw` 升级在开发板到位后各验证一次，记录于对应 board 文档。
