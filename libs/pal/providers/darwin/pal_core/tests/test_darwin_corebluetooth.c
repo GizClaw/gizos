@@ -68,6 +68,33 @@ static int test_log(void *user, h2_pal_log_level_t level,
     return H2_PAL_OK;
 }
 
+typedef struct queued_adv_started_event {
+    h2_pal_ble_adv_set_t *set;
+    dispatch_semaphore_t gate;
+    dispatch_semaphore_t completed;
+    size_t released_at_delivery;
+    size_t observed;
+} queued_adv_started_event_t;
+
+static int observe_adv_started_after_destroy(
+    void *user,
+    const h2_pal_system_event_t *event) {
+    queued_adv_started_event_t *observed = user;
+    assert(event->type == H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED);
+    assert(event->payload_size == sizeof(h2_pal_ble_adv_set_event_t));
+    assert(dispatch_semaphore_wait(
+               observed->gate,
+               dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)) == 0);
+    const h2_pal_ble_adv_set_event_t *payload = event->payload;
+    assert(payload->set == observed->set);
+    assert(payload->status == H2_PAL_OK);
+    observed->released_at_delivery =
+        h2_darwin_corebluetooth_test_released_adv_sets();
+    ++observed->observed;
+    dispatch_semaphore_signal(observed->completed);
+    return H2_PAL_OK;
+}
+
 static int observe_connected_and_use_ble(
     void *user,
     const h2_pal_system_event_t *event) {
@@ -212,6 +239,48 @@ int main(void) {
     assert(reentrant.observed == 1u);
     assert(reentrant.operation_result == H2_PAL_OK);
     h2_pal_system_event_unsubscribe(system_events, connected);
+
+    const h2_pal_ble_adv_params_t adv_params = {
+        .mode = H2_PAL_BLE_ADV_MODE_CONNECTABLE,
+        .interval_min_ms = 100u,
+        .interval_max_ms = 150u,
+        .type = H2_PAL_BLE_ADV_TYPE_LEGACY,
+    };
+    queued_adv_started_event_t adv_started = {
+        .gate = dispatch_semaphore_create(0),
+        .completed = dispatch_semaphore_create(0),
+    };
+    assert(h2_pal_ble_adv_set_create(ble, &adv_params, &adv_started.set) ==
+           H2_PAL_OK);
+    h2_pal_system_event_subscription_t *adv_subscription = NULL;
+    assert(h2_pal_system_event_subscribe(
+               system_events, H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED,
+               observe_adv_started_after_destroy, &adv_started,
+               &adv_subscription) == H2_PAL_OK);
+    const size_t released_before =
+        h2_darwin_corebluetooth_test_released_adv_sets();
+    h2_darwin_corebluetooth_test_post_adv_started_on_backend_queue();
+    /* The subscriber is held on the event queue while the owner destroys the set. */
+    assert(h2_pal_ble_adv_set_destroy(ble, adv_started.set) == H2_PAL_OK);
+    assert(h2_darwin_corebluetooth_test_released_adv_sets() ==
+           released_before);
+    dispatch_semaphore_signal(adv_started.gate);
+    assert(dispatch_semaphore_wait(
+               adv_started.completed,
+               dispatch_time(DISPATCH_TIME_NOW, 2 * NSEC_PER_SEC)) == 0);
+    assert(adv_started.observed == 1u);
+    assert(adv_started.released_at_delivery == released_before);
+    const uint64_t release_deadline = monotonic_ms() + 2000u;
+    while (h2_darwin_corebluetooth_test_released_adv_sets() ==
+               released_before &&
+           monotonic_ms() < release_deadline) {
+        (void)dispatch_semaphore_wait(
+            adv_started.gate,
+            dispatch_time(DISPATCH_TIME_NOW, 10 * NSEC_PER_MSEC));
+    }
+    assert(h2_darwin_corebluetooth_test_released_adv_sets() ==
+           released_before + 1u);
+    h2_pal_system_event_unsubscribe(system_events, adv_subscription);
     h2_pal_system_event_deinit(system_events);
     return 0;
 }

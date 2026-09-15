@@ -2,9 +2,11 @@
 #include "h2_darwin_netif_internal.h"
 
 #include <assert.h>
+#include <limits.h>
 #include <net/if.h>
 #include <pthread.h>
 #include <stdatomic.h>
+#include <stdint.h>
 #include <string.h>
 #include <time.h>
 
@@ -114,7 +116,30 @@ static const char *existing_interface_name(void) {
     return name;
 }
 
+static uint64_t monotonic_ms(void) {
+    struct timespec now;
+    assert(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
+    return (uint64_t)now.tv_sec * 1000u + (uint64_t)now.tv_nsec / 1000000u;
+}
+
+static void test_route_query_resends_lost_replies(void) {
+    char name[H2_PAL_NETIF_NAME_MAX];
+    h2_darwin_netif_test_drop_route_replies(2u);
+    h2_pal_result_t rc = h2_darwin_netif_os_default_name(name);
+    assert(rc == H2_PAL_OK || rc == H2_PAL_ERR_NOT_FOUND);
+    assert(h2_darwin_netif_test_route_requests() >= 3u);
+
+    h2_darwin_netif_test_drop_route_replies(UINT_MAX);
+    const uint64_t started = monotonic_ms();
+    assert(h2_darwin_netif_os_default_name(name) == H2_PAL_ERR_TIMEOUT);
+    const uint64_t elapsed = monotonic_ms() - started;
+    assert(elapsed >= 900u && elapsed < 10000u);
+    assert(h2_darwin_netif_test_route_requests() >= 1u);
+    h2_darwin_netif_test_drop_route_replies(0u);
+}
+
 int main(void) {
+    test_route_query_resends_lost_replies();
     const char *default_name = existing_interface_name();
     h2_pal_netif_status_t fixture[2];
     memset(fixture, 0, sizeof(fixture));

@@ -42,5 +42,7 @@ void h2_darwin_corebluetooth_test_set_other_connected(void);
 bool h2_darwin_corebluetooth_test_other_connected(void);
 
 void h2_darwin_corebluetooth_test_post_connected_on_backend_queue(void);
+void h2_darwin_corebluetooth_test_post_adv_started_on_backend_queue(void);
+size_t h2_darwin_corebluetooth_test_released_adv_sets(void);
 
 #endif
