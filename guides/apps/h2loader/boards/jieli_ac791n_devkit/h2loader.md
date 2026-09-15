@@ -138,14 +138,20 @@ supervision timeout 与 LL reject 均为 0；仍有 SDK `conn nack` 等非致命
 
 随后补齐了以下具体部分写入边界；不能将定点测试扩大为任意损坏模式的保证：
 
-| 中断现场 | 实际断电后的结果 | 证据 |
+| 中断现场 | 重启后的结果（复位类型见证据） | 证据 |
 | --- | --- | --- |
-| P2 原生启动头仅写入前 16/32 字节，CRC 无效；P1 完整 | ROM 回到 P1 Loader；无需 DL，UART 可重写 P2、校验镜像并清空 Stage | [P2 部分头](./evidence/2026-09-13/loader-partial-p2-header.md) |
+| P2 原生启动头 16-byte 部分写入或 32-byte 错误编程，CRC 无效；P1 完整 | 2026-09-15 当前诊断软件复位后回原 P1；UART 完整重装 button、P2 试运行确认并返回原 P1，两轮均 Stage 清空 | [当前 SDK 完整重装验收](./evidence/2026-09-15/p2-header-reinstall.md) |
 | P1 原生启动头仅写入前 16/32 字节；已确认 P2 完整 | P2 恢复回写 P1，最终 P1 启动，Stage 清空 | [P1 部分头](./evidence/2026-09-13/partial-p1-header-powercut.md) |
 | Preference 替换期间 Flash 页仅写入前 128/256 字节 | 旧或新值完整，独立 sentinel 保留，重试写入与完整回读成功，P1 Loader 可通信 | [Preference](./evidence/2026-09-13/preference-powercut-plan.md) |
 | `lfs_rename` 内部 Flash 页仅写入前 23/256 字节（变化范围 0–45） | 同上；真实 POWER ON 后验证，不混用升级期间旧固件的恢复日志 | [rename 事务](./evidence/2026-09-13/preference-powercut-plan.md#rename-boundary-physical-recovery-pass-for-the-injected-program) |
 
-P2 部分头测试的同身份重装仅证明损坏分区可重写、校验和清理 Stage，不代替前述不同身份 self-update 回归。原始 P2 日志同时包含就绪标记与 POWER ON；各证据文件记录具体镜像和恢复范围。未遍历所有 NOR 位损坏组合，不声称穷尽掉电安全验证。
+[历史 P2 部分头测试](./evidence/2026-09-13/loader-partial-p2-header.md)的同身份重装仅证明当时固件的重写、校验与 Stage 清理，不作为当前 deferred-header/O11 实现的验收替代。2026-09-15 的当前源码复测覆盖持久化 CRC 无效的 16/32-byte 头，软件复位验证相同启动现场，不冒充编程中物理断电。未遍历所有 NOR 位损坏组合。
+
+### 2026-09-15：P2 残缺头的完整重装机制
+
+选择从完整 P1 通过 UART Loader **完整重装 P2**，由本 board layout 的 NOR adapter 与 pinned SDK updater 拥有机制，公共 Loader 不增加板级修复分支。SDK 的 payload 阶段先从 `target_update_addr - 32 = 0x37c000` 擦除 P2 头扇区并由 adapter 完整读回验证，完整 payload 校验后才 arm/capture；因此不会在 arm 时仍面对旧残缺头。擦除错误锁存直到复位，SDK 伪成功完成也不能继续写入或发布，P1 保持可启动。
+
+直接 arm/publish 不修复非空冲突头；有效但不同的完整 bank 也不得自动擦除，只允许显式完整安装替换。相同头 publish 幂等，P2 arm 拒绝，不在 P2 增加恢复擦除。[固定 SDK 追踪、host 回归与两轮 UART 验收](./evidence/2026-09-15/p2-header-reinstall.md)记录擦除命令/地址、镜像 SHA、独立状态及未捕获确认文本的限制。
 
 ### 2026-09-12：原生更新流程基线
 
