@@ -36,6 +36,8 @@ void h2_darwin_netif_test_set_default(
 h2_pal_result_t h2_darwin_netif_test_reconcile_default(
     const h2_pal_netif_ref_t *ref,
     int valid);
+void h2_darwin_netif_test_drop_route_replies(unsigned count);
+unsigned h2_darwin_netif_test_route_requests(void);
 #endif
 
 #endif
