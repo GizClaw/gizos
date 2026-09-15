@@ -121,11 +121,11 @@ def requirements():
                           method + "-assert"))
     rules.append(Rule(snapshot, "device-api", (snapshot,), snapshot,
                       "debug_snapshot-assert"))
-    # Refresh and close are only proven by the state observed afterwards.
+    # State mutations are only proven by the state observed afterwards.
     snapshot = PREFIX + "api_key_state_snapshot"
-    for method in "create request_refresh snapshot close destroy".split():
+    for method in "create request_refresh request_revoke snapshot close destroy".split():
         symbol = PREFIX + "api_key_state_" + method
-        observed = method in {"create", "request_refresh", "close"}
+        observed = method in {"create", "request_refresh", "request_revoke", "close"}
         rules.append(Rule(symbol, "rpc/api-key",
                           (symbol, snapshot) if observed else (symbol,),
                           snapshot if observed else symbol,
@@ -148,9 +148,9 @@ def validate_inventory(rules, text):
     text = re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.S)
     inventory = re.findall(r"H2_GIZCLAW_API\((h2_gizclaw_\w+)\)", text)
     names = [rule.symbol for rule in rules]
-    if (len(inventory) != 223 or len(set(inventory)) != 223 or
-            len(names) != 223 or len(set(names)) != 223 or set(names) != set(inventory)):
-        raise ValueError("coverage matrix does not match the approved 223-function inventory")
+    if (len(inventory) != 224 or len(set(inventory)) != 224 or
+            len(names) != 224 or len(set(names)) != 224 or set(names) != set(inventory)):
+        raise ValueError("coverage matrix does not match the approved 224-function inventory")
     if any(rule.case not in CASES for rule in rules):
         raise ValueError("coverage matrix references an unknown case")
 

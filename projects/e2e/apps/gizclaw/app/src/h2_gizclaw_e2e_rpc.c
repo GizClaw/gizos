@@ -235,6 +235,31 @@ static int run_api_key_state(h2_gizclaw_e2e_fixture_t *fixture) {
     rc = H2_PAL_ERR_INVALID_STATE;
   h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api_key_state_request_refresh-assert", rc);
   h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api_key_state_snapshot-assert", rc);
+  if (rc != H2_PAL_OK) return rc;
+  uint64_t ready_revision = ready.revision;
+  rc = h2_gizclaw_api_key_state_request_revoke(actor->api_key_state);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_request_revoke", "api-key-state", rc);
+  if (rc != H2_PAL_OK) return rc;
+  start = now = 0u;
+  rc = h2_pal_time_get_monotonic_ms(fixture->time, &start);
+  while (rc == H2_PAL_OK) {
+    size_t dispatched = 0u;
+    rc = h2_gizclaw_service_poll(actor->service, 8u, &dispatched);
+    if (rc != H2_PAL_OK) break;
+    rc = h2_gizclaw_api_key_state_snapshot(actor->api_key_state, &ready);
+    if (rc != H2_PAL_OK || !ready.busy) break;
+    rc = h2_pal_time_get_monotonic_ms(fixture->time, &now);
+    if (rc == H2_PAL_OK && (now - start >= 30000u ||
+        !h2_gizclaw_e2e_fixture_has_time(fixture, 1u)))
+      rc = H2_PAL_ERR_TIMEOUT;
+    if (rc == H2_PAL_OK) rc = h2_pal_time_sleep_ms(fixture->time, 1u);
+  }
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api-key-state", rc);
+  if (rc == H2_PAL_OK && (ready.valid || ready.busy || ready.stale ||
+      ready.last_error != H2_PAL_OK || ready.revision <= ready_revision ||
+      ready.key.name[0] || ready.key.secret[0]))
+    rc = H2_PAL_ERR_INVALID_STATE;
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api_key_state_request_revoke-assert", rc);
   if (rc == H2_PAL_OK) {
     rc = h2_gizclaw_api_key_state_close(actor->api_key_state);
     h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_close", "api-key-state", rc);
@@ -242,7 +267,7 @@ static int run_api_key_state(h2_gizclaw_e2e_fixture_t *fixture) {
       rc = h2_gizclaw_api_key_state_snapshot(actor->api_key_state, &closed);
       h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api-key-state", rc);
     }
-    if (rc == H2_PAL_OK && (!closed.closed || closed.busy || !closed.valid ||
+    if (rc == H2_PAL_OK && (!closed.closed || closed.busy || closed.valid ||
         !closed.stale || closed.last_error != H2_PAL_ERR_CLOSED ||
         closed.revision <= ready.revision ||
         memcmp(&closed.key, &ready.key, sizeof(ready.key)) != 0 ||

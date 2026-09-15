@@ -301,10 +301,12 @@ completion 后不延长文字订阅。应用无需新增下行音频处理流程
 
 ## API key 异步状态
 
-扫码绑定等需要可取消刷新的产品使用 `h2_gizclaw_api_key_state_t`：创建时注入借用的 Service、Mem、Sync、Time 和非零 `timeout_ms`，`display_name` 会复制。产品调用 `request_refresh` 登记请求，主循环继续调用 `service_poll` 驱动 completion，再读取 `snapshot` 展示有效 key。无需创建线程、join 或等待 RPC；原有同步 helper 和 request 接口行为不变。
+扫码绑定等需要异步刷新和撤销的产品使用 `h2_gizclaw_api_key_state_t`：创建时注入借用的 Service、Mem、Sync、Time 和非零 `timeout_ms`，`display_name` 会复制。产品调用 `request_refresh` 登记请求，主循环继续调用 `service_poll` 驱动 completion，再读取 `snapshot` 展示有效 key。无需创建线程、join 或等待 RPC；原有同步 helper 和 request 接口行为不变。
 
-`request_refresh(true)` 在当前 key 有效时先撤销再创建；撤销成功或 `NOT_FOUND` 后擦除旧 key 并提交 create，其它撤销错误保留 `valid && stale` 的旧 key，下一次 `request_refresh(true)` 可重试撤销。创建成功后 key 有效且不 stale，创建失败则失效。busy 期间重复刷新返回 OK，合并到当前链，不叠加请求、不更改撤销选择、不延长截止时间。每次 refresh 的总时限包含排队、连接、撤销和创建；`snapshot` 或 `request_refresh` 检查到期后取消当前请求，清除 busy 并记录 `H2_PAL_ERR_TIMEOUT`，保留的旧 key 标为 stale。检查到期的 `request_refresh` 随后可开始新一代刷新。
+`request_refresh(true)` 在当前 key 有效时先撤销再创建；撤销成功或 `NOT_FOUND` 后擦除旧 key 并提交 create，其它撤销错误保留 `valid && stale` 的旧 key，下一次 `request_refresh(true)` 可重试撤销。创建成功后 key 有效且不 stale，创建失败则失效。busy 期间重复刷新返回 OK，合并到当前链，不叠加请求、清除 revoke-after 标记、不延长截止时间。每次 refresh 的总时限包含排队、连接、撤销和创建；`snapshot` 或 `request_refresh` 检查到期后将当前请求分离为 orphan（不取消），清除 busy 并记录 `H2_PAL_ERR_TIMEOUT`，保留的旧 key 标为 stale。检查到期的 `request_refresh` 随后可开始新一代刷新。
 
-快照只在 mutex 内短读，不发 RPC；包含 key、valid、stale、busy、closed、last_error 和每次可见变化递增的 revision。`request_refresh`、`close` 与 `service_poll` 在同一个 owner task 上调用，`snapshot` 也可从其它线程读取并执行到期取消。completion 只在 owner task 串行执行，每个请求的 generation 隔离超时、close 后的迟到结果。初始状态 invalid、stale、idle；close 后保留的 key 仍可读但 stale，last_error 为 CLOSED，新 refresh 返回 CLOSED。
+快照只在 mutex 内短读，不发 RPC；包含 key、valid、stale、busy、closed、last_error 和每次可见变化递增的 revision。`request_refresh`、`request_revoke`、`close` 与 `service_poll` 在同一个 owner task 上调用，`snapshot` 也可从其它线程读取并执行到期分离。completion 只在 owner task 串行执行，每个请求的 generation 隔离超时、close 后的迟到结果。初始状态 invalid、stale、idle；close 后保留的 key 仍可读但 stale，last_error 为 CLOSED，新 refresh 返回 CLOSED。
 
-生命周期顺序必须是 `close` → Service stop → `service_poll` drain → `destroy` → Service deinit。close 可在 Service stop 之前调用，立即停止接收刷新并取消在途请求；destroy 在任何 completion 尚未分发时返回 BUSY，调用方继续 drain 后重试，不等待 RPC。destroy 需要排除并发读者，会擦除持有的 secret；快照中的 secret 副本由调用方擦除，不能写日志。取消或 close 后服务端才生成的 key 无法由这个已关闭的状态对象再撤销，可能留在服务端。状态对象不做持久化、二维码或 URL 格式化，也不属于 resource store 的 kind。
+生命周期顺序必须是 `close` → Service stop → `service_poll` drain → `destroy` → Service deinit。close 可在 Service stop 之前调用，立即停止接收刷新和撤销请求，并将在途请求分离为 orphan；destroy 在任何 completion（包括 orphan revoke）尚未分发时返回 BUSY，调用方继续 drain 后重试，不等待 RPC。destroy 需要排除并发读者，会擦除持有的 secret；快照中的 secret 副本由调用方擦除，不能写日志。超时或 close 后迟到的 create 成功响应会立即触发内部 best-effort revoke：解析 name 后立即擦除 secret，不进入快照；迟到的 revoke 或失败 create 无需后续操作。Service stop 后提交 revoke 可能返回 CLOSED，忽略该错误。无法撤销的情况是 Service 已停止或传输先失败导致 create 响应未到设备，设备从未获知 key 的 name；服务端 owner 的 list API 可返回明文 secret，因此未展示不代表凭证无效。状态对象不做持久化、二维码或 URL 格式化，也不属于 resource store 的 kind。
+
+`h2_gizclaw_api_key_state_request_revoke` 非阻塞：idle 且有有效 key 时提交撤销，期间 busy；OK/NOT_FOUND 后擦除 key 并置 valid=false，失败保留 valid+stale 及 last_error。无 key 返回 OK。刷新 busy 时设置 revoke-after，create 成功后直接撤销新 key 而不展示，最终 valid=false，撤销成功 last_error=OK，失败记录错误且不暴露 secret。busy 期间再次 request_refresh 会清除该标记，表示调用方重新需要刷新结果。closed 返回 CLOSED。
