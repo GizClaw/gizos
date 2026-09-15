@@ -596,3 +596,148 @@ py_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )
+
+py_test(
+    name = "jieli_allocator_test",
+    srcs = ["tests/test_jieli_allocator.py"],
+    data = [
+        "//libs/pal:pal_header_files",
+        "//native_component_src/jieli/wl82/h2_pal_core:allocator_fixture_sources",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_allocator.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "jieli_dynamic_task_test",
+    srcs = ["tests/test_jieli_dynamic_task.py"],
+    data = ["//native_component_src/jieli/wl82/h2_pal_core:src/h2_jieli_wl82_sdk_port.c"],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_dynamic_task.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "jieli_event_generation_test",
+    srcs = ["tests/test_jieli_event_generation.py"],
+    data = [
+        "//libs/pal:pal_header_files",
+        "//native_component_src/jieli/wl82/h2_pal_core:src/h2_jieli_wl82_platform_system_event.c",
+        "//native_component_src/jieli/wl82/h2_pal_core:tests/src/test_jieli_wl82_event_threads.c",
+        "//native_component_src/jieli/wl82/h2_pal_core:include/h2_jieli_wl82_atomic.h",
+        "//native_component_src/jieli/wl82/h2_pal_core:include/h2_jieli_wl82_platform_core.h",
+        "//native_component_src/jieli/wl82/h2_pal_core:include/h2_jieli_wl82_sdk_port.h",
+    ],
+    main = "tests/test_jieli_event_generation.py",
+    legacy_create_init = 0,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "jieli_sdk_memory_test",
+    srcs = ["tests/test_jieli_sdk_memory.py"],
+    data = ["//native_component_src/jieli/wl82/h2_pal_core:src/h2_jieli_wl82_sdk_port.c"],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_sdk_memory.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "jieli_log_text_test",
+    srcs = ["tests/test_jieli_log_text.py"],
+    data = [
+        "//native_component_src/jieli/wl82/h2_pal_core:src/h2_jieli_wl82_sdk_port.c",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_log_text.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "jieli_task_identity_test",
+    srcs = ["tests/test_jieli_task_identity.py"],
+    data = [
+        "//libs/pal:pal_header_files",
+        "//native_component_src/jieli/wl82/h2_pal_core:include/h2_jieli_wl82_platform_core.h",
+        "//native_component_src/jieli/wl82/h2_pal_core:include/h2_jieli_wl82_sdk_port.h",
+        "//native_component_src/jieli/wl82/h2_pal_core:src/h2_jieli_wl82_platform_task.c",
+        "//native_component_src/jieli/wl82/h2_pal_core:tests/src/test_jieli_wl82_task_identity.c",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_task_identity.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "jieli_wl82_sync_atomics_test",
+    srcs = ["tests/test_jieli_wl82_sync_atomics.py"],
+    data = [
+        "//native_component_src/jieli/wl82/h2_pal_core:src/h2_jieli_wl82_sdk_port.c",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_wl82_sync_atomics.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "jieli_runtime_events_test",
+    srcs = ["tests/test_jieli_runtime_events.py"],
+    data = [
+        "//libs/pal:pal_header_files",
+        "//libs/pal:unsupported",
+        "//libs/runtime",
+        "//native_component_src/jieli/wl82/h2_pal_core:include/h2_jieli_wl82_allocator.h",
+        "//native_component_src/jieli/wl82/h2_pal_core:include/h2_jieli_wl82_atomic.h",
+        "//native_component_src/jieli/wl82/h2_pal_core:include/h2_jieli_wl82_platform_core.h",
+        "//native_component_src/jieli/wl82/h2_pal_core:include/h2_jieli_wl82_sdk_port.h",
+        "//native_component_src/jieli/wl82/h2_pal_core:src/h2_jieli_wl82_platform_firmware_info.c",
+        "//native_component_src/jieli/wl82/h2_pal_core:src/h2_jieli_wl82_platform_log.c",
+        "//native_component_src/jieli/wl82/h2_pal_core:src/h2_jieli_wl82_platform_mem.c",
+        "//native_component_src/jieli/wl82/h2_pal_core:src/h2_jieli_wl82_platform_queue.c",
+        "//native_component_src/jieli/wl82/h2_pal_core:src/h2_jieli_wl82_platform_sync.c",
+        "//native_component_src/jieli/wl82/h2_pal_core:src/h2_jieli_wl82_platform_system_event.c",
+        "//native_component_src/jieli/wl82/h2_pal_core:src/h2_jieli_wl82_platform_task.c",
+        "//native_component_src/jieli/wl82/h2_pal_core:src/h2_jieli_wl82_platform_time.c",
+        "//native_component_src/jieli/wl82/h2_pal_core:src/h2_jieli_wl82_platform_timer.c",
+        "//native_component_src/jieli/wl82/h2_pal_core:tests/include/h2_jieli_wl82_sdk_port_fake.h",
+        "//native_component_src/jieli/wl82/h2_pal_core:tests/src/h2_jieli_wl82_sdk_port_fake.c",
+        "//native_component_src/jieli/wl82/h2_pal_core:tests/src/test_jieli_wl82_event_threads.c",
+        "//native_component_src/jieli/wl82/h2_pal_core:tests/src/test_jieli_wl82_runtime_events.c",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_runtime_events.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
