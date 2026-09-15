@@ -22,6 +22,14 @@ typedef struct scenario {
     uint64_t bitrate_bps;
 } scenario_t;
 
+/* The client leaves params.block_len at 0, so iperf3 sends blocks of the
+ * library default for the protocol. */
+static uint64_t scenario_block_len(const scenario_t *scenario) {
+    return scenario->protocol == H2_IPERF_PROTOCOL_UDP
+        ? H2_IPERF_DEFAULT_UDP_BLOCK_LEN
+        : H2_IPERF_DEFAULT_TCP_BLOCK_LEN;
+}
+
 static void run_scenario(const char *iperf3, const scenario_t *scenario) {
     h2_iperf_test_env_t env;
     h2_iperf_test_env_init(&env, false);
@@ -56,12 +64,27 @@ static void run_scenario(const char *iperf3, const scenario_t *scenario) {
     const h2_iperf_stream_stats_t *receiver = scenario->reverse ? &result.local : &result.remote;
     assert(sender->bytes > 0u);
     assert(receiver->bytes > 0u);
-    assert(receiver->bytes <= sender->bytes);
+    if (scenario->reverse) {
+        /* iperf3 3.21 handles TEST_END on its main thread without stopping
+         * the sender thread, and adds a block to bytes_sent only after
+         * write() returns. On a loaded host that thread can still be waiting
+         * for a CPU after the kernel accepted the block, so the reported sender
+         * total misses at most that one block while the PAL receiver
+         * already counted it. */
+        assert(receiver->bytes <= sender->bytes + scenario_block_len(scenario));
+    } else {
+        assert(receiver->bytes <= sender->bytes);
+    }
     /* Loopback keeps almost everything for reliable transports; UDP on a
-     * loaded CI host can drop a large share, so only a coarse bound applies. */
+     * loaded CI host can drop a large share, so only a coarse bound applies.
+     * iperf3 stops counting received bytes at TEST_END and drops whatever is
+     * still queued in the socket buffers. A 1 s run moves far more than those
+     * buffers hold. An 8 MiB run does not: TEST_END follows the last write
+     * at once, and a server receive thread that is behind on a loaded host
+     * can report MiBs short. Byte mode therefore has no lower bound. */
     if (scenario->protocol == H2_IPERF_PROTOCOL_UDP) {
         assert(receiver->bytes * 2u >= sender->bytes);
-    } else {
+    } else if (scenario->bytes == 0u) {
         assert(receiver->bytes * 10u >= sender->bytes * 9u);
     }
     if (scenario->bytes != 0u) {
