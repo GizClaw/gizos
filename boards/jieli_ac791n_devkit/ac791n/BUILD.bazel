@@ -1,3 +1,4 @@
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
@@ -19,10 +20,17 @@ firmware_native_component(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        ":wifi_sta_lib",
         "//boards/ac791n_chip/ac791n",
         "//libs/pal:pal_header_files",
         "//libs/runtime:runtime_header_files",
         "//native_component_src/jieli/wl82/h2_pal_core",
         "//native_component_src/jieli/wl82/h2_pal_unsupported",
     ],
+)
+
+firmware_lib_component(
+    name = "wifi_sta_lib",
+    component_name = "jieli_wifi_sta",
+    deps = ["//libs/wifi_sta"],
 )

@@ -1145,3 +1145,22 @@ py_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )
+
+py_test(
+    name = "jieli_wifi_save_test",
+    srcs = ["tests/test_jieli_wifi_save.py"],
+    data = [
+        "//boards/jieli_ac791n_devkit/ac791n:src/h2_jieli_ac791n_devkit_wifi.c",
+        "//libs/pal:pal_header_files",
+        "//libs/wifi_sta:include/h2_wifi_sta.h",
+        "//libs/wifi_sta:src/h2_wifi_sta.c",
+        "//libs/wifi_sta:tests/test_wifi_sta.c",
+    ],
+    main = "tests/test_jieli_wifi_save.py",
+    legacy_create_init = 0,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

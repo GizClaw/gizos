@@ -13,7 +13,7 @@ class WifiOperationsTest(unittest.TestCase):
     def test_reentry_and_failure_release(self):
         source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c").read_text()
         begin = source.index("static unsigned wifi_operation_busy;")
-        guard = source[begin:source.index("const h2_pal_wifi_sta_api_t *h2_jieli", begin)]
+        guard = source[begin:source.index("static int sta_connect_and_save(", begin)]
         state = source[source.index("enum { SCAN_IDLE"):
                        source.index("static void post_system_event")]
         fixture = r'''

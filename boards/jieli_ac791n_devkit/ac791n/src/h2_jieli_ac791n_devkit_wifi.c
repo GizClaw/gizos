@@ -1,3 +1,4 @@
+#include "h2_wifi_sta.h"
 #include "asm/includes.h"
 
 #include "h2_jieli_ac791n_devkit.h"
@@ -689,11 +690,30 @@ static int guarded_wifi_get_mac(void *user, uint8_t out_mac[6]) {
   return result;
 }
 
+static int sta_connect_and_save(void *user,
+    const h2_pal_wifi_sta_config_t *config, uint32_t timeout_ms) {
+  int result = wifi_operation_begin();
+  if (result != H2_PAL_OK) return result;
+  static const h2_pal_wifi_sta_vtable_t raw_vtable = {
+      .get_status = sta_get_status, .connect = sta_connect, .disconnect = sta_disconnect,
+  };
+  const h2_pal_wifi_sta_api_t raw = {user, &raw_vtable};
+  const h2_wifi_sta_dependencies_t deps = {
+      .sta = &raw,
+      .settings = h2_jieli_ac791n_devkit_wifi_settings_api(),
+      .time = h2_jieli_wl82_platform_time_api(),
+  };
+  result = h2_wifi_sta_connect_and_save(&deps, config, timeout_ms);
+  __atomic_store_n(&wifi_operation_busy, 0u, __ATOMIC_RELEASE);
+  return result;
+}
+
 const h2_pal_wifi_sta_api_t *h2_jieli_ac791n_devkit_wifi_sta_api(void) {
   static const h2_pal_wifi_sta_vtable_t vtable = {
       .get_status = sta_get_status,
       .scan = guarded_sta_scan,
       .connect = guarded_sta_connect,
+      .connect_and_save = sta_connect_and_save,
       .disconnect = guarded_sta_disconnect,
       .get_mac = guarded_wifi_get_mac,
   };
