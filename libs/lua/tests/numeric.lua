@@ -39,6 +39,29 @@ local interleaved=b({1,10,2,20,3,30})
 v.gather(out,interleaved,2,2,3);assert(out:get(3)==30)
 v.scatter(interleaved,co,2,2,3);assert(interleaved:get(6)==3 and interleaved:get(5)==3)
 bad(function() v.gather(out,interleaved,2,3,3) end)
+-- Scattering overlapping sources must use the original packed values and
+-- preserve every unwritten element, even with a large inactive capacity.
+do
+ local wide=v.buffer(768); local source=b{11,22,33,44,55}
+ wide:fill(97);v.scatter(wide,source,2,3,5)
+ for i=1,768 do
+  local k=(i-2)/3+1
+  assert(wide:get(i)==((k>=1 and k<=5 and k==math.floor(k)) and source:get(k) or 97))
+ end
+ local alias=b{1,2,3,4,5,6,7,8,9,10}
+ v.scatter(alias,alias,2,2,5)
+ for i,x in ipairs{1,1,3,2,5,3,7,4,9,5} do assert(alias:get(i)==x) end
+ v.scatter(alias,alias,1,1,10)
+ local saved={};for i=1,10 do saved[i]=alias:get(i) end
+ v.scatter(alias,alias,10,1,0)
+ for _,args in ipairs{{2,3,4},{1,0,1},{0,1,0},{11,1,0},{1,1,11}} do
+  bad(function() v.scatter(alias,alias,table.unpack(args)) end)
+  for i=1,10 do assert(alias:get(i)==saved[i]) end
+ end
+ local other=numeric.buffer(10,kind=='f32' and 'f64' or 'f32')
+ bad(function() v.scatter(alias,other,1,1,0) end)
+ for i=1,10 do assert(alias:get(i)==saved[i]) end
+end
 v.clamp_bulk(out,co,2,3,3)
 v.combine(src,src,src,1,1,0,3);assert(src:get(3)==6)
 bad(function() v.combine(out,src,co,1e6,0,0,3) end);assert(out:get(1)==2)
