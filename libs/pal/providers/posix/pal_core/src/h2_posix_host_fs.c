@@ -196,8 +196,18 @@ static int posix_host_fs_mkdir(void *user, const char *path) {
     if (rc != H2_PAL_FS_OK) {
         return rc;
     }
-    rc = mkdir(host_path, 0777) == 0 || errno == EEXIST ?
-        H2_PAL_FS_OK : map_errno(errno);
+    if (mkdir(host_path, 0777) == 0) {
+        rc = H2_PAL_FS_OK;
+    } else if (errno == EEXIST) {
+        struct stat existing;
+        if (lstat(host_path, &existing) != 0) {
+            rc = map_errno(errno);
+        } else {
+            rc = S_ISDIR(existing.st_mode) ? H2_PAL_FS_OK : H2_PAL_ERR_INVALID_STATE;
+        }
+    } else {
+        rc = map_errno(errno);
+    }
     free(host_path);
     return rc;
 }

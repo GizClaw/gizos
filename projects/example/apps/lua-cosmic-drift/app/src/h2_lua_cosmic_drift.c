@@ -132,11 +132,12 @@ h2_lua_cosmic_drift_run(h2_runtime_t *runtime,
       (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "lua-cosmic-drift",
                              diagnostic);
     }
-    if (status.state == H2_LUA_JOB_FAILED ||
-        status.state == H2_LUA_JOB_TIMED_OUT) {
+    /* Cancellation may complete asynchronously after an entrypoint callback
+     * failed. Cleanup status must not replace that original failure. */
+    if (result == H2_PAL_OK &&
+        (status.state == H2_LUA_JOB_FAILED ||
+         status.state == H2_LUA_JOB_TIMED_OUT)) {
       result = H2_PAL_ERR_INVALID_STATE;
-    } else if (status.state == H2_LUA_JOB_CANCELLED) {
-      result = H2_PAL_OK;
     }
     if (terminal(status.state)) {
       (void)h2_lua_job_release(host, job_id);

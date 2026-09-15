@@ -153,6 +153,26 @@ cc_test(
 )
 
 cc_test(
+    name = "h2loader_host_ble_diagnostics_test",
+    srcs = ["tests/test_h2loader_host_ble_diagnostics.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    # The test defines the BLE-iKCP client functions used by the Host; link
+    # statically so its definitions win over the unreferenced archive members.
+    linkstatic = True,
+    deps = [
+        ":h2loader_host",
+        "//libs/bleikcp",
+    ],
+)
+
+cc_test(
     name = "h2loader_host_discovery_test",
     srcs = ["tests/test_h2loader_host_discovery.c"],
     conlyopts = H2_C11_OPTS,

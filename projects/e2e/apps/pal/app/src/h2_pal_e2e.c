@@ -72,6 +72,11 @@ typedef struct h2_pal_e2e_concurrency_worker {
 } h2_pal_e2e_concurrency_worker_t;
 
 struct h2_pal_e2e_cleanup {
+  h2_pal_timer_t *timer;
+  int timer_calls;
+  h2_pal_e2e_task_state_t task_worker;
+  h2_pal_e2e_condition_state_t condition_worker;
+  h2_pal_e2e_queue_state_t queue_worker;
   h2_pal_e2e_concurrency_state_t state;
   h2_pal_e2e_concurrency_worker_t
       workers[H2_PAL_E2E_CONCURRENCY_TASKS];
@@ -292,46 +297,65 @@ static h2_pal_result_t h2_pal_e2e_core_time(h2_runtime_t *runtime) {
 
 static h2_pal_result_t h2_pal_e2e_core_timer(
     h2_runtime_t *runtime, h2_pal_e2e_result_t *e2e_result) {
-  int calls = 0;
-  h2_pal_timer_t *timer = NULL;
+  h2_pal_e2e_cleanup_t *run = h2_pal_mem_alloc(runtime->mem, sizeof(*run));
+  if (run == NULL) return H2_PAL_ERR_NO_MEMORY;
+  memset(run, 0, sizeof(*run));
   const h2_pal_timer_config_t config = {
       .name = "pal-e2e",
       .period_ms = 1u,
       .flags = H2_PAL_TIMER_FLAG_AUTO_START,
       .cb = h2_pal_e2e_timer_callback,
-      .cb_user = &calls,
+      .cb_user = &run->timer_calls,
   };
-  h2_pal_result_t result = h2_pal_timer_create(runtime->timer, &config, &timer);
+  h2_pal_result_t result = h2_pal_timer_create(runtime->timer, &config, &run->timer);
   if (result == H2_PAL_OK) {
     result = h2_pal_time_sleep_ms(runtime->time, 2u);
   }
-  h2_pal_result_t cleanup = timer == NULL
-      ? H2_PAL_OK : h2_pal_timer_destroy(runtime->timer, timer);
+  h2_pal_result_t cleanup = run->timer == NULL
+      ? H2_PAL_OK : h2_pal_timer_destroy(runtime->timer, run->timer);
   h2_pal_e2e_record_cleanup(e2e_result, cleanup);
-  if (result == H2_PAL_OK && cleanup != H2_PAL_OK) {
-    result = cleanup;
+  if (cleanup != H2_PAL_OK) {
+    e2e_result->retained_cleanup = run;
+    return result == H2_PAL_OK ? cleanup : result;
   }
+  const int calls = run->timer_calls;
+  h2_pal_mem_free(runtime->mem, run);
+  if (result != H2_PAL_OK) return result;
   return result == H2_PAL_OK && calls == 1 ? H2_PAL_OK
                                            : H2_PAL_ERR_INVALID_STATE;
 }
 
-static h2_pal_result_t h2_pal_e2e_core_task(h2_runtime_t *runtime) {
-  h2_pal_e2e_task_state_t state = {0};
-  h2_pal_task_t *task = NULL;
+static h2_pal_result_t h2_pal_e2e_core_task(
+    h2_runtime_t *runtime, h2_pal_e2e_result_t *e2e_result) {
+  h2_pal_e2e_cleanup_t *run = h2_pal_mem_alloc(runtime->mem, sizeof(*run));
+  if (run == NULL) return H2_PAL_ERR_NO_MEMORY;
+  memset(run, 0, sizeof(*run));
   const h2_pal_task_options_t options = {
       .name = h2_pal_e2e_core_task_name,
   };
   h2_pal_result_t result = h2_pal_task_start(
-      runtime->task, &options, h2_pal_e2e_task_entry, &state, &task);
+      runtime->task, &options, h2_pal_e2e_task_entry,
+      &run->task_worker, &run->tasks[0]);
   if (result == H2_PAL_OK) {
-    result = h2_pal_task_join(runtime->task, task);
+    run->started = 1u;
+    result = h2_pal_e2e_concurrency_join(runtime, &run->tasks[0]);
+    if (run->tasks[0] != NULL) {
+      h2_pal_e2e_record_cleanup(e2e_result, result);
+      e2e_result->retained_cleanup = run;
+      return result;
+    }
   }
-  return result == H2_PAL_OK && state.ran == 1 ? H2_PAL_OK
-                                               : H2_PAL_ERR_INVALID_STATE;
+  const int ran = run->task_worker.ran;
+  h2_pal_mem_free(runtime->mem, run);
+  if (result != H2_PAL_OK) return result;
+  return ran == 1 ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
 }
 
 static h2_pal_result_t h2_pal_e2e_core_queue(
     h2_runtime_t *runtime, h2_pal_e2e_result_t *e2e_result) {
+  h2_pal_e2e_cleanup_t *run = h2_pal_mem_alloc(runtime->mem, sizeof(*run));
+  if (run == NULL) return H2_PAL_ERR_NO_MEMORY;
+  memset(run, 0, sizeof(*run));
   h2_pal_queue_t *queue = NULL;
   const h2_pal_queue_config_t config = {
       .name = "pal-e2e",
@@ -341,7 +365,8 @@ static h2_pal_result_t h2_pal_e2e_core_queue(
   };
   h2_pal_result_t result = (h2_pal_result_t)h2_pal_queue_create(
       runtime->queue, &config, &queue);
-  h2_pal_e2e_queue_state_t state = {
+  run->state.queue = queue;
+  run->queue_worker = (h2_pal_e2e_queue_state_t){
       .runtime = runtime,
       .queue = queue,
       .result = H2_PAL_ERR_INVALID_STATE,
@@ -352,7 +377,7 @@ static h2_pal_result_t h2_pal_e2e_core_queue(
         .name = h2_pal_e2e_queue_task_name,
     };
     result = h2_pal_task_start(runtime->task, &options, h2_pal_e2e_queue_entry,
-                               &state, &task);
+                               &run->queue_worker, &task);
   }
   if (result == H2_PAL_OK) {
     result = h2_pal_time_sleep_ms(runtime->time, 1u);
@@ -362,16 +387,30 @@ static h2_pal_result_t h2_pal_e2e_core_queue(
     result = (h2_pal_result_t)h2_pal_queue_send(
         runtime->queue, queue, &sent, 1000u);
   }
-  if (result == H2_PAL_OK) {
-    result = h2_pal_task_join(runtime->task, task);
+  if (task != NULL) {
+    /* A failed send still leaves the receiver alive. Close to wake it, then
+     * join before releasing either its queue or its entry context. */
+    if (result != H2_PAL_OK) {
+      const h2_pal_result_t close_result = (h2_pal_result_t)
+          h2_pal_queue_close(runtime->queue, queue);
+      run->queue_closed = close_result == H2_PAL_OK;
+      h2_pal_e2e_record_cleanup(e2e_result, close_result);
+    }
+    run->tasks[0] = task;
+    run->started = 1u;
+    const h2_pal_result_t join =
+        h2_pal_e2e_concurrency_join(runtime, &run->tasks[0]);
+    if (result == H2_PAL_OK) result = join;
+    if (run->tasks[0] != NULL) {
+      h2_pal_e2e_record_cleanup(e2e_result, join);
+      e2e_result->retained_cleanup = run;
+      return result;
+    }
   }
-  if (queue != NULL) {
-    const h2_pal_result_t cleanup = (h2_pal_result_t)h2_pal_queue_close(
-        runtime->queue, queue);
-    h2_pal_e2e_record_cleanup(e2e_result, cleanup);
-    if (result == H2_PAL_OK) result = cleanup;
-    h2_pal_queue_destroy(runtime->queue, queue);
-  }
+  const h2_pal_e2e_queue_state_t state = run->queue_worker;
+  const h2_pal_result_t cleanup =
+      h2_pal_e2e_concurrency_release(runtime, run, e2e_result);
+  if (result == H2_PAL_OK) result = cleanup;
   return result == H2_PAL_OK && state.result == H2_PAL_OK &&
                  state.value == sent
              ? H2_PAL_OK
@@ -420,6 +459,9 @@ static h2_pal_result_t h2_pal_e2e_core_semaphore(
 
 static h2_pal_result_t h2_pal_e2e_core_condition(
     h2_runtime_t *runtime, h2_pal_e2e_result_t *e2e_result) {
+  h2_pal_e2e_cleanup_t *run = h2_pal_mem_alloc(runtime->mem, sizeof(*run));
+  if (run == NULL) return H2_PAL_ERR_NO_MEMORY;
+  memset(run, 0, sizeof(*run));
   h2_pal_mutex_t *mutex = NULL;
   h2_pal_cond_t *condition = NULL;
   h2_pal_task_t *task = NULL;
@@ -437,7 +479,9 @@ static h2_pal_result_t h2_pal_e2e_core_condition(
   if (result == H2_PAL_OK) {
     result = h2_pal_cond_create(runtime->sync, &condition_config, &condition);
   }
-  h2_pal_e2e_condition_state_t state = {
+  run->state.mutex = mutex;
+  run->state.ready_condition = condition;
+  run->condition_worker = (h2_pal_e2e_condition_state_t){
       .runtime = runtime,
       .mutex = mutex,
       .condition = condition,
@@ -448,7 +492,8 @@ static h2_pal_result_t h2_pal_e2e_core_condition(
         .name = h2_pal_e2e_condition_task_name,
     };
     result = h2_pal_task_start(
-        runtime->task, &options, h2_pal_e2e_condition_entry, &state, &task);
+        runtime->task, &options, h2_pal_e2e_condition_entry,
+        &run->condition_worker, &task);
   }
   if (result == H2_PAL_OK) {
     result = h2_pal_time_sleep_ms(runtime->time, 1u);
@@ -457,31 +502,30 @@ static h2_pal_result_t h2_pal_e2e_core_condition(
     h2_pal_result_t wake_result =
         h2_pal_mutex_lock(runtime->sync, mutex);
     if (wake_result == H2_PAL_OK) {
-      state.signaled = 1;
+      run->condition_worker.signaled = 1;
       wake_result = h2_pal_cond_signal(runtime->sync, condition);
       const h2_pal_result_t unlock =
           h2_pal_mutex_unlock(runtime->sync, mutex);
       if (wake_result == H2_PAL_OK) wake_result = unlock;
     }
     if (result == H2_PAL_OK) result = wake_result;
-    const h2_pal_result_t join = h2_pal_task_join(runtime->task, task);
+    run->started = 1u;
+    run->tasks[0] = task;
+    const h2_pal_result_t join =
+        h2_pal_e2e_concurrency_join(runtime, &run->tasks[0]);
     if (result == H2_PAL_OK) result = join;
-    task = NULL;
+    if (run->tasks[0] != NULL) {
+      h2_pal_e2e_record_cleanup(e2e_result, join);
+      e2e_result->retained_cleanup = run;
+      return result;
+    }
   }
-  if (condition != NULL) {
-    const h2_pal_result_t cleanup =
-        h2_pal_cond_destroy(runtime->sync, condition);
-    h2_pal_e2e_record_cleanup(e2e_result, cleanup);
-    if (result == H2_PAL_OK) result = cleanup;
-  }
-  if (mutex != NULL) {
-    const h2_pal_result_t cleanup =
-        h2_pal_mutex_destroy(runtime->sync, mutex);
-    h2_pal_e2e_record_cleanup(e2e_result, cleanup);
-    if (result == H2_PAL_OK) result = cleanup;
-  }
+  const h2_pal_e2e_condition_state_t state = run->condition_worker;
+  const h2_pal_result_t cleanup =
+      h2_pal_e2e_concurrency_release(runtime, run, e2e_result);
+  if (result == H2_PAL_OK) result = cleanup;
   if (result != H2_PAL_OK) return result;
-  return task == NULL && state.waiting && state.signaled &&
+  return state.waiting && state.signaled &&
                  state.result == H2_PAL_OK
              ? H2_PAL_OK
              : H2_PAL_ERR_INVALID_STATE;
@@ -652,34 +696,48 @@ static h2_pal_result_t h2_pal_e2e_core_concurrency(
   return result;
 }
 
-static h2_pal_result_t h2_pal_e2e_core_unsupported(h2_runtime_t *runtime) {
-  return (h2_pal_result_t)h2_pal_fs_mkdir(runtime->fs, "/unsupported") ==
-                 H2_PAL_ERR_UNSUPPORTED
-             ? H2_PAL_OK
-             : H2_PAL_ERR_INVALID_STATE;
+static void h2_pal_e2e_trace_case(h2_runtime_t *runtime,
+    h2_pal_e2e_case_id_t case_id, const char *phase, h2_pal_result_t result) {
+  char line[96];
+  snprintf(line, sizeof(line), "case=%u phase=%s result=%d",
+      (unsigned)case_id, phase, (int)result);
+  (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-e2e", line);
 }
+
+/* The expression is evaluated only after the begin record is emitted. Logging
+ * is optional and must never replace the case's actual result. */
+#define H2_PAL_E2E_CORE_CASE(id, expression) do { \
+  h2_pal_e2e_trace_case(runtime, (id), "begin", H2_PAL_OK); \
+  const h2_pal_result_t case_result = (expression); \
+  h2_pal_e2e_trace_case(runtime, (id), "end", case_result); \
+  h2_pal_e2e_record(result, (id), case_result); \
+} while (0)
 
 static void h2_pal_e2e_run_core(h2_runtime_t *runtime,
                                 h2_pal_e2e_result_t *result) {
-  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_TIME,
+  H2_PAL_E2E_CORE_CASE(H2_PAL_E2E_CASE_TIME,
                     h2_pal_e2e_core_time(runtime));
-  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_TIMER,
+  H2_PAL_E2E_CORE_CASE(H2_PAL_E2E_CASE_TIMER,
                     h2_pal_e2e_core_timer(runtime, result));
-  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_TASK,
-                    h2_pal_e2e_core_task(runtime));
-  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_QUEUE,
+  if (result->retained_cleanup != NULL) return;
+  H2_PAL_E2E_CORE_CASE(H2_PAL_E2E_CASE_TASK,
+                    h2_pal_e2e_core_task(runtime, result));
+  if (result->retained_cleanup != NULL) return;
+  H2_PAL_E2E_CORE_CASE(H2_PAL_E2E_CASE_QUEUE,
                     h2_pal_e2e_core_queue(runtime, result));
-  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_MUTEX,
+  if (result->retained_cleanup != NULL) return;
+  H2_PAL_E2E_CORE_CASE(H2_PAL_E2E_CASE_MUTEX,
                     h2_pal_e2e_core_mutex(runtime, result));
-  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_SEMAPHORE,
+  H2_PAL_E2E_CORE_CASE(H2_PAL_E2E_CASE_SEMAPHORE,
                     h2_pal_e2e_core_semaphore(runtime, result));
-  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_CONDITION,
+  H2_PAL_E2E_CORE_CASE(H2_PAL_E2E_CASE_CONDITION,
                     h2_pal_e2e_core_condition(runtime, result));
-  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_CONCURRENCY,
+  if (result->retained_cleanup != NULL) return;
+  H2_PAL_E2E_CORE_CASE(H2_PAL_E2E_CASE_CONCURRENCY,
                     h2_pal_e2e_core_concurrency(runtime, result));
-  h2_pal_e2e_record(result, H2_PAL_E2E_CASE_UNSUPPORTED,
-                    h2_pal_e2e_core_unsupported(runtime));
 }
+
+#undef H2_PAL_E2E_CORE_CASE
 
 static h2_pal_result_t h2_pal_e2e_host_memory(h2_runtime_t *runtime) {
   uint8_t *memory = h2_pal_mem_alloc(runtime->mem, 17u);
@@ -706,6 +764,14 @@ static h2_pal_result_t h2_pal_e2e_host_filesystem(
   static const char payload[] = "h2-pal-host-e2e";
   h2_pal_result_t result = (h2_pal_result_t)h2_pal_fs_mkdir(
       runtime->fs, "/data/pal-host-e2e");
+  if (result == H2_PAL_OK) {
+    h2_pal_fs_stat_t directory_stat = {0};
+    result = (h2_pal_result_t)h2_pal_fs_stat(
+        runtime->fs, "/data/pal-host-e2e", &directory_stat);
+    if (result == H2_PAL_OK && !directory_stat.is_dir) {
+      result = H2_PAL_ERR_INVALID_STATE;
+    }
+  }
   h2_pal_fs_file_t *file = NULL;
   if (result == H2_PAL_OK) {
     result = (h2_pal_result_t)h2_pal_fs_open(
@@ -727,6 +793,19 @@ static h2_pal_result_t h2_pal_e2e_host_filesystem(
     file = NULL;
   }
   if (result == H2_PAL_OK) {
+    h2_pal_fs_stat_t file_stat = {0};
+    result = (h2_pal_result_t)h2_pal_fs_stat(
+        runtime->fs, "/data/pal-host-e2e/value", &file_stat);
+    if (result == H2_PAL_OK &&
+        (file_stat.is_dir || file_stat.size != sizeof(payload))) {
+      result = H2_PAL_ERR_INVALID_STATE;
+    }
+  }
+  if (result == H2_PAL_OK &&
+      h2_pal_fs_mkdir(runtime->fs, "/data/pal-host-e2e/value") == H2_PAL_OK) {
+    result = H2_PAL_ERR_INVALID_STATE;
+  }
+  if (result == H2_PAL_OK) {
     result = (h2_pal_result_t)h2_pal_fs_open(
         runtime->fs, "/data/pal-host-e2e/value", H2_PAL_FS_OPEN_READ,
         &file);
@@ -741,6 +820,26 @@ static h2_pal_result_t h2_pal_e2e_host_filesystem(
       (transferred != sizeof(buffer) ||
        memcmp(buffer, payload, sizeof(payload)) != 0)) {
     result = H2_PAL_ERR_INVALID_STATE;
+  }
+  if (result == H2_PAL_OK) {
+    transferred = sizeof(buffer);
+    result = (h2_pal_result_t)h2_pal_fs_read(
+        runtime->fs, file, buffer, sizeof(buffer), &transferred);
+    if (result == H2_PAL_OK && transferred != 0u) {
+      result = H2_PAL_ERR_INVALID_STATE;
+    }
+  }
+  if (result == H2_PAL_OK) {
+    result = (h2_pal_result_t)h2_pal_fs_seek(runtime->fs, file, 3u);
+  }
+  if (result == H2_PAL_OK) {
+    transferred = 0u;
+    result = (h2_pal_result_t)h2_pal_fs_read(
+        runtime->fs, file, buffer, 4u, &transferred);
+    if (result == H2_PAL_OK &&
+        (transferred != 4u || memcmp(buffer, payload + 3u, 4u) != 0)) {
+      result = H2_PAL_ERR_INVALID_STATE;
+    }
   }
   if (file != NULL) {
     h2_pal_result_t cleanup = (h2_pal_result_t)h2_pal_fs_close(
@@ -1094,6 +1193,39 @@ static h2_pal_result_t h2_pal_e2e_host_netif(h2_runtime_t *runtime) {
              : count != 0u ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
 }
 
+static int h2_pal_e2e_disconnected_netif(
+    void *user, const h2_pal_netif_ref_t *ref,
+    const h2_pal_netif_status_t *status) {
+  size_t *count = user;
+  if (ref == NULL || status == NULL) return H2_PAL_ERR_INVALID_STATE;
+  if (status->kind == H2_PAL_NETIF_KIND_WIFI_STA) ++*count;
+  if (status->kind == H2_PAL_NETIF_KIND_WIFI_STA &&
+      (status->flags & (H2_PAL_NETIF_FLAG_LINK_UP |
+                        H2_PAL_NETIF_FLAG_HAS_IPV4 |
+                        H2_PAL_NETIF_FLAG_DEFAULT_ROUTE)) != 0u) {
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t h2_pal_e2e_wifi_disconnect_status(h2_runtime_t *runtime) {
+  h2_pal_result_t result = h2_pal_wifi_sta_disconnect(runtime->wifi_sta);
+  if (result != H2_PAL_OK) return result;
+  h2_pal_wifi_sta_status_t status = {0};
+  result = h2_pal_wifi_sta_get_status(runtime->wifi_sta, &status);
+  if (result != H2_PAL_OK) return result;
+  if (status.ip_valid ||
+      (status.state != H2_PAL_WIFI_STA_STATE_IDLE &&
+       status.state != H2_PAL_WIFI_STA_STATE_DISCONNECTED)) {
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  size_t count = 0u;
+  result = h2_pal_netif_list(runtime->netif, NULL,
+                             h2_pal_e2e_disconnected_netif, &count);
+  if (result != H2_PAL_OK) return result;
+  return count != 0u ? H2_PAL_OK : H2_PAL_ERR_NOT_FOUND;
+}
+
 static int h2_pal_e2e_host_event_handler(
     void *user, const h2_pal_system_event_t *event) {
   int *calls = user;
@@ -1142,15 +1274,18 @@ static void h2_pal_e2e_run_host(h2_runtime_t *runtime,
   h2_pal_e2e_record(result, H2_PAL_E2E_CASE_TIME,
                     h2_pal_e2e_core_time(runtime));
   h2_pal_e2e_record(result, H2_PAL_E2E_CASE_TASK,
-                    h2_pal_e2e_core_task(runtime));
+                    h2_pal_e2e_core_task(runtime, result));
+  if (result->retained_cleanup != NULL) return;
   h2_pal_e2e_record(result, H2_PAL_E2E_CASE_QUEUE,
                     h2_pal_e2e_core_queue(runtime, result));
+  if (result->retained_cleanup != NULL) return;
   h2_pal_e2e_record(result, H2_PAL_E2E_CASE_MUTEX,
                     h2_pal_e2e_core_mutex(runtime, result));
   h2_pal_e2e_record(result, H2_PAL_E2E_CASE_SEMAPHORE,
                     h2_pal_e2e_core_semaphore(runtime, result));
   h2_pal_e2e_record(result, H2_PAL_E2E_CASE_CONDITION,
                     h2_pal_e2e_core_condition(runtime, result));
+  if (result->retained_cleanup != NULL) return;
   h2_pal_e2e_record(result, H2_PAL_E2E_CASE_HOST_FILESYSTEM,
                     h2_pal_e2e_host_filesystem(runtime));
   h2_pal_e2e_record(result, H2_PAL_E2E_CASE_HOST_RESOLVE_SYNC,
@@ -1199,14 +1334,18 @@ static void h2_pal_e2e_run_browser(h2_runtime_t *runtime,
                     h2_pal_e2e_core_time(runtime));
   h2_pal_e2e_record(result, H2_PAL_E2E_CASE_TIMER,
                     h2_pal_e2e_core_timer(runtime, result));
+  if (result->retained_cleanup != NULL) return;
   h2_pal_e2e_record(result, H2_PAL_E2E_CASE_TASK,
-                    h2_pal_e2e_core_task(runtime));
+                    h2_pal_e2e_core_task(runtime, result));
+  if (result->retained_cleanup != NULL) return;
   h2_pal_e2e_record(result, H2_PAL_E2E_CASE_QUEUE,
                     h2_pal_e2e_core_queue(runtime, result));
+  if (result->retained_cleanup != NULL) return;
   h2_pal_e2e_record(result, H2_PAL_E2E_CASE_MUTEX,
                     h2_pal_e2e_core_mutex(runtime, result));
   h2_pal_e2e_record(result, H2_PAL_E2E_CASE_CONDITION,
                     h2_pal_e2e_core_condition(runtime, result));
+  if (result->retained_cleanup != NULL) return;
   h2_pal_e2e_record(result, H2_PAL_E2E_CASE_HOST_FILESYSTEM,
                     h2_pal_e2e_host_filesystem(runtime));
   h2_pal_e2e_record(result, H2_PAL_E2E_CASE_BROWSER_HTTP,
@@ -1468,9 +1607,13 @@ h2_pal_result_t h2_pal_e2e_run(h2_runtime_t *runtime,
                               H2_PAL_E2E_SUITE_MQTT |
                               H2_PAL_E2E_SUITE_PREF |
                               H2_PAL_E2E_SUITE_HOST |
-                              H2_PAL_E2E_SUITE_BROWSER)) != 0u ||
+                              H2_PAL_E2E_SUITE_BROWSER |
+                              H2_PAL_E2E_SUITE_WIFI |
+                              H2_PAL_E2E_SUITE_FILESYSTEM)) != 0u ||
       ((config->suite_mask & H2_PAL_E2E_SUITE_PREF) != 0u &&
-       config->suite_mask != H2_PAL_E2E_SUITE_PREF)) {
+       config->suite_mask != H2_PAL_E2E_SUITE_PREF) ||
+      ((config->suite_mask & H2_PAL_E2E_SUITE_WIFI) != 0u &&
+       config->suite_mask != H2_PAL_E2E_SUITE_WIFI)) {
     out_result->result = H2_PAL_ERR_INVALID_ARG;
     out_result->failed = 1u;
     out_result->complete = 1;
@@ -1482,13 +1625,25 @@ h2_pal_result_t h2_pal_e2e_run(h2_runtime_t *runtime,
   if ((config->suite_mask & H2_PAL_E2E_SUITE_CORE) != 0u) {
     h2_pal_e2e_run_core(runtime, out_result);
   }
-  if ((config->suite_mask & H2_PAL_E2E_SUITE_HOST) != 0u) {
+  if (out_result->retained_cleanup == NULL &&
+      (config->suite_mask & H2_PAL_E2E_SUITE_HOST) != 0u) {
     h2_pal_e2e_run_host(runtime, config, out_result);
   }
-  if ((config->suite_mask & H2_PAL_E2E_SUITE_BROWSER) != 0u) {
+  if (out_result->retained_cleanup == NULL &&
+      (config->suite_mask & H2_PAL_E2E_SUITE_FILESYSTEM) != 0u) {
+    h2_pal_e2e_record(out_result, H2_PAL_E2E_CASE_HOST_FILESYSTEM,
+                      h2_pal_e2e_host_filesystem(runtime));
+  }
+  if (out_result->retained_cleanup == NULL &&
+      (config->suite_mask & H2_PAL_E2E_SUITE_BROWSER) != 0u) {
     h2_pal_e2e_run_browser(runtime, config, out_result);
   }
-  if ((config->suite_mask & H2_PAL_E2E_SUITE_MQTT) != 0u) {
+  if ((config->suite_mask & H2_PAL_E2E_SUITE_WIFI) != 0u) {
+    h2_pal_e2e_record(out_result, H2_PAL_E2E_CASE_WIFI_DISCONNECT_STATUS,
+                      h2_pal_e2e_wifi_disconnect_status(runtime));
+  }
+  if (out_result->retained_cleanup == NULL &&
+      (config->suite_mask & H2_PAL_E2E_SUITE_MQTT) != 0u) {
     const h2_pal_result_t mqtt_result =
         h2_pal_e2e_run_mqtt(runtime, config, out_result);
     h2_pal_e2e_record(out_result, H2_PAL_E2E_CASE_MQTT, mqtt_result);
@@ -1508,6 +1663,14 @@ h2_pal_result_t h2_pal_e2e_cleanup(h2_runtime_t *runtime,
   if (run == NULL) return H2_PAL_OK;
 
   h2_pal_result_t cleanup = H2_PAL_OK;
+  if (run->timer != NULL) {
+    cleanup = h2_pal_timer_destroy(runtime->timer, run->timer);
+    if (cleanup != H2_PAL_OK) {
+      h2_pal_e2e_record_cleanup(result, cleanup);
+      return cleanup;
+    }
+    run->timer = NULL;
+  }
   for (size_t index = 0u; index < run->started; ++index) {
     if (run->tasks[index] == NULL) continue;
     const h2_pal_result_t join =
