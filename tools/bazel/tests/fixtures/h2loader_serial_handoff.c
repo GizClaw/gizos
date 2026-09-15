@@ -5,7 +5,7 @@
 #include "h2_h2loader_host.h"
 #include "h2_iostreamikcp.h"
 /* FRAME */
-typedef struct { unsigned char transport_log_line[4096]; size_t transport_log_line_len; unsigned transport_log_line_discard; const struct config *config; const struct runtime *runtime; } h2_h2loader_cli_context_t;
+typedef struct { const struct config *config; const struct runtime *runtime; } h2_h2loader_cli_context_t;
 struct config { h2_h2loader_host_cancelled_fn is_cancelled; void *cancel_user; };
 struct runtime { const h2_pal_time_api_t *time; };
 static char output[65536];
@@ -108,7 +108,7 @@ static const h2_pal_serial_host_api_t serial_api={.vtable=&serial_vtable};
 static h2_h2loader_host_serial_connection_t *connection;
 static h2_h2loader_cli_context_t context;
 static h2_pal_result_t connect_serial(void) {
-    const h2_h2loader_host_serial_connection_config_t config={.serial=&serial_api,.time=&timer,.allocator=&memory,.port_id="fake",.conversation_id=7,.handshake_timeout_ms=60000,.on_log=h2_h2loader_cli_transport_log,.log_user=&context};
+    const h2_h2loader_host_serial_connection_config_t config={.serial=&serial_api,.time=&timer,.allocator=&memory,.port_id="fake",.conversation_id=7,.handshake_timeout_ms=60000,.on_log=transport_log,.log_user=&context};
     return h2_h2loader_host_serial_connect(&config,&connection);
 }
 static void drain(void) {

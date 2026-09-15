@@ -440,7 +440,6 @@ py_test(
         "//libs/iostreamikcp:include/h2_iostreamikcp.h",
         "//libs/iostreamikcp:include/h2_iostreamikcp_types.h",
         "//libs/pal:pal_header_files",
-        "//projects/h2loader/apps/cli/app:src/h2_h2loader_cli_output.c",
         "//projects/h2loader/apps/cli/app:src/h2_h2loader_cli_app.c",
     ],
     legacy_create_init = 0,

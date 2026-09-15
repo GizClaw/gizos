@@ -6,6 +6,7 @@
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 typedef struct fake_output {
@@ -106,73 +107,45 @@ static const h2_pal_ble_host_api_t *fake_acquire_ble(void *user) {
     return source->api;
 }
 
-static int run_cli_with_ble(
+static int run_cli_with_ble_outputs(
     fake_output_t *output,
+    fake_output_t *error_output,
+    const h2_runtime_t *runtime_override,
     int argc,
     const char *const *argv,
     fake_ble_source_t *ble_source) {
     h2_command_io_api_t io = {.user = output, .vtable = &output_vtable};
+    h2_command_io_api_t error_io = {
+        .user = error_output, .vtable = &output_vtable,
+    };
     h2_runtime_t runtime = {
         .mem = h2_pal_unsupported_mem_api(),
         .time = h2_pal_unsupported_time_api(),
         .fs = h2_pal_unsupported_fs_api(),
     };
+    if (runtime_override != NULL) runtime = *runtime_override;
     h2_h2loader_cli_config_t config = {
         .argc = argc,
         .argv = argv,
         .serial = h2_pal_unsupported_serial_host_api(),
         .stdout_io = &io,
-        .stderr_io = &io,
+        .stderr_io = &error_io,
         .acquire_ble = ble_source != NULL ? fake_acquire_ble : NULL,
         .ble_user = ble_source,
     };
     return h2_h2loader_cli_main(&runtime, &config);
 }
 
-static int run_cli(fake_output_t *output, int argc, const char *const *argv) {
-    return run_cli_with_ble(output, argc, argv, NULL);
+static int run_cli_with_ble(
+    fake_output_t *output,
+    int argc,
+    const char *const *argv,
+    fake_ble_source_t *ble_source) {
+    return run_cli_with_ble_outputs(output, output, NULL, argc, argv, ble_source);
 }
 
-static void test_transport_log_is_atomic_and_rejects_binary(void) {
-    fake_output_t output = {0};
-    h2_command_io_api_t io = {.user = &output, .vtable = &output_vtable};
-    h2_runtime_t runtime = {0};
-    h2_h2loader_cli_config_t config = {
-        .stdout_io = &io,
-        .stderr_io = &io,
-    };
-    h2_h2loader_cli_context_t context = {
-        .runtime = &runtime,
-        .config = &config,
-    };
-    const uint8_t binary[] = {'b', 'a', 'd', 0x00u, 0xffu, '\n'};
-
-    assert(h2_h2loader_cli_transport_log(
-        &context, (const uint8_t *)"loader ready", 12u) == H2_PAL_OK);
-    assert(output.len == 0u);
-    assert(h2_h2loader_cli_transport_log(
-        &context, (const uint8_t *)"\n", 1u) == H2_PAL_OK);
-    assert(strcmp(output.bytes, "loader ready\n") == 0);
-
-    assert(h2_h2loader_cli_transport_log(
-        &context, binary, sizeof(binary)) == H2_PAL_OK);
-    assert(strcmp(output.bytes, "loader ready\n") == 0);
-    assert(h2_h2loader_cli_transport_log(
-        &context, (const uint8_t *)"recovered\r\n", 11u) == H2_PAL_OK);
-    assert(strcmp(output.bytes, "loader ready\nrecovered\r\n") == 0);
-
-    h2_h2loader_cli_options_t options = {
-        .transport = H2_H2LOADER_HOST_TRANSPORT_SERIAL,
-    };
-    h2_h2loader_cli_transport_t transport;
-    h2_h2loader_cli_transport_init(&transport, &context, &options, 1000u);
-    assert(transport.on_log == h2_h2loader_cli_transport_log);
-    assert(transport.log_user == &context);
-
-    options.transport = H2_H2LOADER_HOST_TRANSPORT_BLE;
-    h2_h2loader_cli_transport_init(&transport, &context, &options, 1000u);
-    assert(transport.on_log == h2_h2loader_cli_transport_log);
-    assert(transport.log_user == &context);
+static int run_cli(fake_output_t *output, int argc, const char *const *argv) {
+    return run_cli_with_ble(output, argc, argv, NULL);
 }
 
 static void test_help_and_usage(void) {
@@ -268,6 +241,131 @@ static void test_ble_transport_routes_the_shared_device_command(void) {
     assert(source.calls == 1u);
     assert(strstr(output.bytes, "usage: h2loader") == NULL);
     assert(strstr(output.bytes, "command failed") != NULL);
+}
+
+static void *fake_diagnostic_alloc(void *user, size_t size) {
+    (void)user;
+    return malloc(size);
+}
+
+static void fake_diagnostic_free(void *user, void *ptr) {
+    (void)user;
+    free(ptr);
+}
+
+static h2_pal_result_t fake_diagnostic_connect(
+    void *user, const h2_pal_ble_addr_t *address,
+    const h2_pal_ble_connect_params_t *params, uint16_t *out_handle) {
+    unsigned *calls = user;
+    (void)address;
+    (void)params;
+    (void)out_handle;
+    ++*calls;
+    return H2_PAL_ERR_TIMEOUT;
+}
+
+static h2_pal_result_t fake_diagnostic_mutex_create(
+    void *user, const h2_pal_mutex_config_t *config, h2_pal_mutex_t **out_mutex) {
+    (void)config;
+    *out_mutex = (h2_pal_mutex_t *)user;
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t fake_diagnostic_mutex(void *user, h2_pal_mutex_t *mutex) {
+    assert(mutex == (h2_pal_mutex_t *)user);
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t fake_diagnostic_start_scan(
+    void *user, const h2_pal_ble_scan_params_t *params,
+    h2_pal_ble_scan_result_fn on_result, void *scan_user) {
+    static const uint8_t identity[] = {
+        'H', '2', 'L', 'D', 1u, 0u, 7u, 0u, 0u, 0u,
+        6u, 'd', 'e', 'v', 'k', 'i', 't',
+    };
+    const h2_pal_ble_scan_result_t result = {
+        .addr = {
+            .type = H2_PAL_BLE_ADDR_TYPE_PUBLIC,
+            .value = {0x00u, 0x11u, 0x22u, 0x33u, 0x44u, 0x55u},
+        },
+        .connectable = true,
+        .manufacturer_data = {.data = identity, .len = sizeof(identity)},
+    };
+    (void)user;
+    (void)params;
+    assert(on_result(scan_user, &result));
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t fake_diagnostic_stop_scan(void *user) {
+    (void)user;
+    return H2_PAL_OK;
+}
+
+static void test_ble_connect_diagnostic_uses_stderr(void) {
+    const char *argv[] = {
+        "h2loader", "--transport", "bleikcp", "--port",
+        "1:001122334455", "status",
+    };
+    fake_output_t output = {0};
+    fake_output_t error_output = {0};
+    unsigned connect_calls = 0u;
+    const h2_pal_mem_vtable_t mem_vtable = {
+        .alloc = fake_diagnostic_alloc, .free = fake_diagnostic_free,
+    };
+    const h2_pal_mem_api_t mem = {.vtable = &mem_vtable};
+    const h2_pal_ble_vtable_t ble_vtable = {
+        .connect = fake_diagnostic_connect,
+        .start_scan = fake_diagnostic_start_scan,
+        .stop_scan = fake_diagnostic_stop_scan,
+    };
+    const h2_pal_ble_host_api_t ble = {
+        .user = &connect_calls, .vtable = &ble_vtable,
+    };
+    const h2_pal_task_api_t task = {0};
+    const h2_pal_sync_vtable_t sync_vtable = {
+        .create_mutex = fake_diagnostic_mutex_create,
+        .destroy_mutex = fake_diagnostic_mutex,
+        .lock_mutex = fake_diagnostic_mutex,
+        .unlock_mutex = fake_diagnostic_mutex,
+    };
+    const h2_pal_sync_api_t sync = {.user = &connect_calls, .vtable = &sync_vtable};
+    const h2_pal_system_event_api_t event = {0};
+    const h2_runtime_t runtime = {
+        .mem = &mem, .time = h2_pal_unsupported_time_api(),
+        .fs = h2_pal_unsupported_fs_api(),
+        .task = &task, .sync = &sync, .system_event = &event,
+    };
+    fake_ble_source_t source = {.api = &ble};
+
+    assert(run_cli_with_ble_outputs(
+        &output, &error_output, &runtime, 6, argv, &source) ==
+        H2_H2LOADER_CLI_EXIT_RUNTIME);
+    assert(source.calls == 1u);
+    assert(connect_calls == 1u);
+    assert(strstr(error_output.bytes, "H2_BLE_HOST_DIAG stage=connect rc=") != NULL);
+    assert(strstr(output.bytes, "H2_BLE_HOST_DIAG") == NULL);
+}
+
+static void test_transport_diagnostic_arguments(void) {
+    fake_output_t output = {0};
+    h2_command_io_api_t io = {.user = &output, .vtable = &output_vtable};
+    h2_h2loader_cli_config_t config = {.stderr_io = &io};
+    h2_h2loader_cli_context_t context = {.config = &config};
+    const uint8_t data[] = "diagnostic\n";
+
+    assert(h2_h2loader_cli_transport_diagnostic(NULL, data, sizeof(data) - 1u) ==
+        H2_PAL_ERR_INVALID_ARG);
+    assert(h2_h2loader_cli_transport_diagnostic(&context, NULL, 1u) ==
+        H2_PAL_ERR_INVALID_ARG);
+    assert(h2_h2loader_cli_transport_diagnostic(&context, NULL, 0u) == H2_PAL_OK);
+    assert(output.len == 0u);
+    assert(h2_h2loader_cli_transport_diagnostic(&context, data, sizeof(data) - 1u) ==
+        H2_PAL_OK);
+    assert(strcmp(output.bytes, "diagnostic\n") == 0);
+    output.write_result = H2_PAL_ERR_IO;
+    assert(h2_h2loader_cli_transport_diagnostic(&context, data, sizeof(data) - 1u) ==
+        H2_PAL_ERR_IO);
 }
 
 static void test_ble_uid_mismatch_stops_reconnect(void) {
@@ -682,7 +780,8 @@ static void test_reboot_final_status_is_authoritative(void) {
 }
 
 int main(void) {
-    test_transport_log_is_atomic_and_rejects_binary();
+    test_ble_connect_diagnostic_uses_stderr();
+    test_transport_diagnostic_arguments();
     test_help_and_usage();
     test_ble_transport_routes_the_shared_device_command();
     test_ble_uid_mismatch_stops_reconnect();

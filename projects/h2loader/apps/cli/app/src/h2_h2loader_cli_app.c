@@ -361,6 +361,10 @@ static h2_pal_result_t command_output(void *user, const uint8_t *data, size_t le
         context, H2_H2LOADER_CLI_STREAM_STDOUT, data, len);
 }
 
+static h2_pal_result_t transport_log(void *user, const uint8_t *data, size_t len) {
+    return command_output(user, data, len);
+}
+
 static h2_pal_result_t file_read(
     void *user,
     uint64_t offset,
@@ -898,6 +902,10 @@ static int device_command(
     }
     h2_h2loader_cli_transport_init(
         &transport, context, options, options->read_timeout_ms);
+    if (monitor_after) {
+        transport.on_log = transport_log;
+        transport.log_user = context;
+    }
     rc = h2_h2loader_cli_transport_connect(&transport, &status);
     if (rc == H2_PAL_OK &&
         options->transport == H2_H2LOADER_HOST_TRANSPORT_BLE &&
@@ -1010,6 +1018,8 @@ static int monitor_command(
     }
     h2_h2loader_cli_transport_init(
         &transport, context, options, options->read_timeout_ms);
+    transport.on_log = transport_log;
+    transport.log_user = context;
     rc = h2_h2loader_cli_transport_connect(&transport, &status);
     if (rc == H2_PAL_OK) {
         rc = monitor_transport(context, &transport, 1, 0, NULL);
