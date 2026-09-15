@@ -2,8 +2,10 @@
 
 This headless portable App runs provider-neutral PAL integration cases through
 an initialized Runtime. The `core` suite validates Time, Timer, Task, Queue,
-Mutex, Semaphore, Condition wait/signal, blocking wake plus timeout wait-u32,
-and a canonical unsupported wrapper. Its provider-neutral concurrency case
+Mutex, Semaphore, Condition wait/signal, and blocking wake plus timeout wait-u32.
+It does not assume a real filesystem rejects `mkdir`; that old unsupported
+case was removed rather than treating a supported filesystem as a failure.
+Its provider-neutral concurrency case
 runs three producers and three consumers through a bounded queue, starts them
 through a condition-variable barrier, contends on one mutex, and proves that
 all 96 uniquely identified messages are produced and consumed exactly once
@@ -28,3 +30,19 @@ Backend- and adapter-local PAL tests remain owned by their target component;
 this App owns only reusable Runtime-level integration flows. Desktop can select
 core and MQTT independently; Browser selects only core and runs it in one
 platform-owned cooperative task.
+
+The standalone `wifi` suite disconnects STA, queries STA and Netif, and rejects
+stale connection/IP/default-route flags. A launcher must select it alone and
+provide a non-Wi-Fi control link; it leaves STA disconnected and never changes
+saved credentials. This currently
+does **not** cover scan, connect, AP clients, reconnect, or Runtime Wi-Fi events.
+
+The standalone `filesystem` suite (`H2_PAL_E2E_SUITE_FILESYSTEM`) runs only the
+`HOST_FILESYSTEM` case against a writable `/data` mount: mkdir and stat `is_dir`,
+write, stat exact size and `!is_dir`, reject mkdir on the regular file, read,
+EOF read returning 0 bytes, backward seek to offset 3 and verify re-read bytes,
+and cleanup.
+
+A case whose worker join or timer destroy fails keeps its resources in
+`retained_cleanup`; remaining suites (including MQTT) are skipped until
+`h2_pal_e2e_cleanup()` succeeds.
