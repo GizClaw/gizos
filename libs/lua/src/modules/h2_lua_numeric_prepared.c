@@ -6,11 +6,13 @@
 #define NODE_LIMIT 256u
 #define EDGE_LIMIT 512u
 
+enum { EDGE_FIXED = 1u, EDGE_MOVE_A = 2u, EDGE_MOVE_B = 4u };
 typedef struct prepared_edge {
   size_t a, b;
   double rest, compliance, wa, wb, alpha64;
   float inverse, weight_a, weight_b, alpha, rest_f;
   precise_float rest_squared;
+  unsigned int predicates;
 } prepared_edge_t;
 typedef struct constraint_workspace {
   size_t node_capacity, edge_capacity, n, m, sweep;
@@ -96,6 +98,11 @@ static double step(lua_State *s, int at) {
   return dt;
 }
 static void prepare(prepared_edge_t *e, double dt) {
+  /* Test the original doubles, not weights rounded to float. A positive
+   * subnormal weight must still enter the source arithmetic/error path. */
+  e->predicates = (e->wa + e->wb == 0 ? EDGE_FIXED : 0) |
+                  (e->wa > 0 ? EDGE_MOVE_A : 0) |
+                  (e->wb > 0 ? EDGE_MOVE_B : 0);
   double alpha = e->compliance / (dt * dt);
   e->alpha64 = alpha;
   double denominator = e->wa + e->wb + alpha;
@@ -426,7 +433,7 @@ static int workspace_integrate(lua_State *s) {
 }
 static void edge_sweep(lua_State *s, constraint_workspace_t *w, size_t i) {
   const prepared_edge_t *e = w->edges + i;
-  if (e->wa + e->wb == 0)
+  if (e->predicates & EDGE_FIXED)
     return;
   precise_float *a = w->coordinates + 3 * e->a, *b = w->coordinates + 3 * e->b;
   precise_float x = pf_sub(b[0], a[0]), y = pf_sub(b[1], a[1]),
@@ -451,28 +458,31 @@ static void edge_sweep(lua_State *s, constraint_workspace_t *w, size_t i) {
   float aq = e->weight_a * q, bq = e->weight_b * q;
   precise_float delta[3] = {x, y, z};
   for (size_t j = 0; j < 3; ++j) {
-    if (e->wa > 0)
+    if (e->predicates & EDGE_MOVE_A)
       a[j] = pf_add(a[j], (precise_float){-aq * delta[j].hi, 0});
-    if (e->wb > 0)
+    if (e->predicates & EDGE_MOVE_B)
       b[j] = pf_add(b[j], (precise_float){bq * delta[j].hi, 0});
   }
 }
 static double span_coordinate(constraint_workspace_t *w, size_t at,
-                              double weight) {
-  precise_float p = w->coordinates[at], original = pf_from(w->p[at]);
+                              int pinned, precise_float original) {
+  precise_float p = w->coordinates[at];
   /* Preserve the original binary64 pinned endpoint used by the source span. */
-  if (weight == 0 && p.hi == original.hi && p.lo == original.lo)
+  if (pinned && p.hi == original.hi && p.lo == original.lo)
     return w->p[at];
   return (double)p.hi + p.lo;
 }
-static double span_sweep(constraint_workspace_t *w, double lambda) {
+static double span_sweep(constraint_workspace_t *w, double lambda,
+                         const precise_float original[6]) {
   const prepared_edge_t *e = &w->span;
-  if (!w->has_span || e->wa + e->wb == 0)
+  if (!w->has_span || (e->predicates & EDGE_FIXED))
     return lambda;
   double a[3], b[3], delta[3];
   for (size_t j = 0; j < 3; ++j) {
-    a[j] = span_coordinate(w, 3 * e->a + j, e->wa);
-    b[j] = span_coordinate(w, 3 * e->b + j, e->wb);
+    a[j] = span_coordinate(w, 3 * e->a + j,
+                           !(e->predicates & EDGE_MOVE_A), original[j]);
+    b[j] = span_coordinate(w, 3 * e->b + j,
+                           !(e->predicates & EDGE_MOVE_B), original[3 + j]);
     delta[j] = b[j] - a[j];
   }
   double distance = refined_sqrt(delta[0] * delta[0] + delta[1] * delta[1] +
@@ -484,9 +494,9 @@ static double span_sweep(constraint_workspace_t *w, double lambda) {
     lambda += dl;
     double qa = e->wa * dl / distance, qb = e->wb * dl / distance;
     for (size_t j = 0; j < 3; ++j) {
-      if (e->wa > 0)
+      if (e->predicates & EDGE_MOVE_A)
         w->coordinates[3 * e->a + j] = pf_from(a[j] - qa * delta[j]);
-      if (e->wb > 0)
+      if (e->predicates & EDGE_MOVE_B)
         w->coordinates[3 * e->b + j] = pf_from(b[j] + qb * delta[j]);
     }
   }
@@ -505,12 +515,21 @@ static int workspace_solve(lua_State *s) {
   validate_state(s, w, 0);
   for (size_t i = 0; i < 3 * w->n; ++i)
     w->coordinates[i] = pf_from(w->p[i]);
+  /* These are the already-converted original endpoints. Published p is fixed
+   * until commit; refresh this call-local snapshot after every public write. */
+  precise_float span_original[6];
+  if (w->has_span && !(w->span.predicates & EDGE_FIXED)) {
+    memcpy(span_original, w->coordinates + 3 * w->span.a,
+           3 * sizeof(precise_float));
+    memcpy(span_original + 3, w->coordinates + 3 * w->span.b,
+           3 * sizeof(precise_float));
+  }
   memcpy(w->staged_lambda, w->lambda, w->m * sizeof(float));
   double span_lambda = w->span_lambda;
   for (size_t pass = 0; pass < iterations; ++pass) {
     for (size_t k = 0; k < w->m; ++k)
       edge_sweep(s, w, (w->sweep + pass) % 2 ? w->m - 1 - k : k);
-    span_lambda = span_sweep(w, span_lambda);
+    span_lambda = span_sweep(w, span_lambda, span_original);
     for (size_t k = 0; k < nb; ++k) {
       const double *r = bounds + 5 * k;
       size_t first = (size_t)r[0] - 1, end = first + (size_t)r[1],
@@ -569,7 +588,7 @@ static int workspace_damp(lua_State *s) {
       }
   for (size_t i = 0; i < w->m; ++i) {
     const prepared_edge_t *e = w->edges + i;
-    if (e->wa + e->wb == 0)
+    if (e->predicates & EDGE_FIXED)
       continue;
     const double *a = w->p + 3 * e->a, *b = w->p + 3 * e->b;
     double *ap = w->staged_previous + 3 * e->a,

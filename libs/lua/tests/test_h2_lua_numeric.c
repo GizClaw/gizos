@@ -136,6 +136,95 @@ static reference_pair_t reference_square(reference_pair_t a) {
   float hi = product + error;
   return (reference_pair_t){hi, error - (hi - product)};
 }
+/* Keep the former span expression independent of prepared predicates and
+ * snapshots. Recompute original pairs on every pass as the source did. */
+static void span_reference(lua_State *s) {
+  ok(s, luaL_loadstring(s,
+      "local bound=...;local v=require('vmath');local p,prev=v.buffer(12),v.buffer(12);"
+      "local w=v.constraints(4,0);local out,old,l=v.buffer(12),v.buffer(12),v.buffer(0);"
+      "local bounds=v.buffer(5);bounds:load({1,4,2,.17,.17});"
+      "p:fill(0);prev:fill(0);w[bound and 'bind' or 'load'](w,p,prev,l,4,0,.01);"
+      "return function(values,a,b,wa,wb,dt,passes,clamp) "
+      "if bound then p:load(values) else for i=1,4 do local k=3*i;"
+      "w:node(i,values[k-2],values[k-1],values[k],0,0,0) end end;"
+      "w:span(a,b,.4,.0001,wa,wb);w:begin(dt);"
+      "w:solve(passes,clamp and bounds or nil,clamp and 1 or 0);"
+      "local sl=w:copy(out,old,l);local result={};"
+      "for i=1,12 do result[i]=out:get(i) end;return sl,result end"));
+  /* Reuse each workspace across changed coordinates, endpoints, weights and
+   * timesteps. Bound writes must refresh the span's original-coordinate view. */
+  for (int bound = 0; bound <= 1; ++bound) {
+    lua_pushvalue(s, -1);
+    lua_pushboolean(s, bound);
+    ok(s, lua_pcall(s, 1, 1, 0));
+    const double weights[][2] = {{0, 1}, {3, 0}, {2, 5}, {-0.0, 0},
+                                {1e-320, 1}, {1, 1e-320}};
+    for (int round = 0; round < 72; ++round) {
+      double p[12];
+      reference_pair_t q[12];
+      for (int i = 0; i < 12; ++i) {
+        p[i] = (i + 1) / 7.0 + round / 13.0;
+        q[i] = reference_pair(p[i]);
+      }
+      size_t a = (size_t)(round % 4), b = (a + 1 + round % 3) % 4;
+      double wa = weights[round % 6][0], wb = weights[round % 6][1];
+      double dt = round % 2 ? .02 : .01, lambda = 0;
+      int passes = round % 3 == 0 ? 32 : 4, clamp = round % 2;
+      for (int pass = 0; pass < passes; ++pass) {
+        if (wa + wb != 0) {
+          double av[3], bv[3], delta[3];
+          for (int j = 0; j < 3; ++j) {
+            size_t ai = 3 * a + j, bi = 3 * b + j;
+            reference_pair_t ap = reference_pair(p[ai]), bp = reference_pair(p[bi]);
+            av[j] = wa == 0 && q[ai].hi == ap.hi && q[ai].lo == ap.lo
+                        ? p[ai] : (double)q[ai].hi + q[ai].lo;
+            bv[j] = wb == 0 && q[bi].hi == bp.hi && q[bi].lo == bp.lo
+                        ? p[bi] : (double)q[bi].hi + q[bi].lo;
+            delta[j] = bv[j] - av[j];
+          }
+          double squared = delta[0] * delta[0] + delta[1] * delta[1] +
+                           delta[2] * delta[2];
+          double seed = (double)sqrtf((float)squared);
+          double distance = squared < 1e-20 || squared > 1e20
+                                ? sqrt(squared) : .5 * (seed + squared / seed);
+          if (distance > .4) {
+            double alpha = .0001 / (dt * dt);
+            double dl = (- (distance - .4) - alpha * lambda) / (wa + wb + alpha);
+            lambda += dl;
+            double qa = wa * dl / distance, qb = wb * dl / distance;
+            for (int j = 0; j < 3; ++j) {
+              if (wa > 0) q[3 * a + j] = reference_pair(av[j] - qa * delta[j]);
+              if (wb > 0) q[3 * b + j] = reference_pair(bv[j] + qb * delta[j]);
+            }
+          }
+        }
+        /* Equal bounds deliberately move even a span-pinned endpoint after
+         * the first pass: matching only the weight would be incorrect. */
+        if (clamp)
+          for (int i = 0; i < 4; ++i) q[3 * i + 1] = reference_pair(.17);
+      }
+      lua_pushvalue(s, -1);
+      lua_createtable(s, 12, 0);
+      for (int i = 0; i < 12; ++i) {
+        lua_pushnumber(s, p[i]); lua_rawseti(s, -2, i + 1);
+      }
+      lua_pushinteger(s, (lua_Integer)a + 1);
+      lua_pushinteger(s, (lua_Integer)b + 1);
+      lua_pushnumber(s, wa); lua_pushnumber(s, wb); lua_pushnumber(s, dt);
+      lua_pushinteger(s, passes); lua_pushboolean(s, clamp);
+      ok(s, lua_pcall(s, 8, 2, 0));
+      assert(lua_tonumber(s, -2) == lambda);
+      for (int i = 0; i < 12; ++i) {
+        lua_rawgeti(s, -1, i + 1);
+        assert(lua_tonumber(s, -1) == (double)q[i].hi + q[i].lo);
+        lua_pop(s, 1);
+      }
+      lua_pop(s, 2);
+    }
+    lua_pop(s, 1);
+  }
+  lua_pop(s, 1);
+}
 static void prepared_reference(double *result) {
   double p[4][3] = {{0, .2, 0}, {.8, -.1, .1}, {1.9, .3, .2}, {2.8, .1, 0}};
   double prev[4][3] = {
@@ -636,6 +725,7 @@ int main(void) {
       prepared_differential(s, &a, bound, f32);
   refined_norm_reference(s);
   integration_coefficient_validation(s);
+  span_reference(s);
   ordered_reference(s);
   float_reference(s);
   suite(s, &a, NULL, "libs/lua/tests/numeric.lua");

@@ -99,6 +99,50 @@ near(free:copy(out,old,lambda),-.2);near(out:get(1),.2);near(out:get(4),1.4)
 assert(old:get(1)==0 and old:get(4)==2)
 free:span(nil);free:solve(1,b{1,2,2,0,3,1,2,2,4,5},2)
 free:copy(out,old,lambda);assert(out:get(2)==4 and out:get(5)==4)
+-- Changed prepared weight predicates must agree with the original 1D equation,
+-- through load/bind, in-place edge replacement and timestep preparation.
+do
+  local weights={{0,0},{0,1},{3,0},{2,5},{-0.0,1},{1e-320,1},{1,1e-320}}
+  for _,bind in ipairs({false,true}) do
+    local x,previous=b{0,0,0,2,0,0},b{0,0,0,2,0,0}
+    local row=b{1,2,1,.0001,0,0}
+    local work=v.constraints(2,1)
+    for cycle=1,4 do
+      for _,weight in ipairs(weights) do
+        x:load({0,0,0,2,0,0})
+        local wa,wb=weight[1],weight[2]
+        if cycle<=2 then
+          row:load({1,2,1,.0001,wa,wb})
+          work[bind and 'bind' or 'load'](work,x,previous,row,2,1,.01)
+        else
+          if not bind then
+            work:node(1,0,0,0,0,0,0);work:node(2,2,0,0,2,0,0)
+          end
+          work:edge(1,1,2,1,.0001,wa,wb)
+        end
+        local dt=cycle%2==0 and .02 or .01
+        work:begin(dt);work:solve(1,nil,0);work:copy(out,old,lambda)
+        local dl=wa+wb==0 and 0 or -1/(wa+wb+.0001/(dt*dt))
+        near(lambda:get(1),dl,1e-7)
+        near(out:get(1),-wa*dl,2e-7);near(out:get(4),2+wb*dl,2e-7)
+        assert(old:get(1)==0 and old:get(4)==2)
+      end
+    end
+    -- Positive double weights rounded to float zero must not be classified as
+    -- fixed: the original reciprocal/product is non-finite and must fail.
+    work:edge(1,1,2,1,0,1e-320,1e-320)
+    work:begin(.01);local sl=work:copy(out,old,lambda)
+    local a,c,l=out:get(1),out:get(4),lambda:get(1)
+    assert(not pcall(function() work:solve(1,nil,0) end))
+    assert(work:copy(out,old,lambda)==sl)
+    assert(out:get(1)==a and out:get(4)==c and lambda:get(1)==l)
+    assert(not pcall(function() work:edge(1,1,2,1,0,-1,0) end))
+    assert(not pcall(function() work:begin(0) end))
+    assert(not pcall(function() work:solve(1,nil,0) end))
+    work:edge(1,1,2,1,0,-0.0,0);work:solve(32,nil,0)
+    work:copy(out,old,lambda);assert(out:get(1)==a and out:get(4)==c)
+  end
+end
 -- Returned closure is checked by the C harness for successful warm allocation.
 local bound=v.constraints(3,2)
 local bp,bprev,be=v.buffer(12),v.buffer(12),v.buffer(12)
