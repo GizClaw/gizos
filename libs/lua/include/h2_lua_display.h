@@ -38,6 +38,26 @@
  * Display acquisition is rechecked before writes. Warm cache use allocates
  * nothing; cold cache/smooth scratch may allocate bounded VM storage.
  *
+ * Mesh draw extension (standard Host, owning VM worker only):
+ * - display.draw_mesh(mesh,{transform={x=...,y=...,scale=...,angle=...},
+ *   grid=...}) raw-reads named fields, exclusive with an explicit matrix. Require
+ *   all four finite fields, x/y/angle in +/-100000, 0<scale<=100 and explicit
+ *   integer grid in 1..16. Keep source order (x+(vx*cos-vy*sin)*scale)/grid
+ *   and the y counterpart. Use the original conservative binary32 half-grid
+ *   predicate (64*FLT_EPSILON bound), otherwise the original double expression;
+ *   vertices outside +/-100000 use the double fallback. Round floor(q+.5)*grid.
+ *   Final coordinates remain finite +/-16000000. Existing matrix arithmetic,
+ *   raster, clipping, offset, color and explicit-present contracts remain.
+ * - Successful updates revalidate derived data but retain the last valid span
+ *   candidate. Reuse requires equal active counts, primitive kind/range/color,
+ *   final coordinates, clip/viewport/offset/recolor and a valid complete cache.
+ *   Different source/transform values may produce equal final coordinates.
+ *   Failed operations preserve prior candidates; all final values validate
+ *   before publishing derived results or pixels. Warm drawing allocates nothing.
+ *   Cold retained drawing allocates 8192 span records plus one vertex/primitive
+ *   snapshot at the mesh's declared capacities, alignment and fixed metadata.
+ *   Cache overflow still draws completely and never replays a partial cache.
+ *
  * Prepared geometry Lua API (standard Host, owning VM worker only):
  * - display.draw_pose(pose,colors,origin_x,offset_x,offset_y,layer,scale,
  *   post_offset,left,top,right,bottom[,tint]) replays geometry.pose through
@@ -98,7 +118,7 @@
  * writes. OOM publishes no partial object; getters' own side effects remain
  * ordinary Lua behavior. GC/job/Host teardown reclaims userdata. Objects must
  * not cross VMs. No new caches, public pointers or close methods are exposed.
- * Existing commands/mesh contracts are unchanged. Standalone C applications
+ * Existing commands retain their contract. Standalone C applications
  * use h2_raster2d.h without a VM; its implementation-only span helper is not API.
  */
 #include "h2/pal/core/h2_pal_errors.h"
@@ -177,7 +197,8 @@ h2_pal_result_t h2_lua_display_mesh_push(
  * @param stack_index Positive or relative stack index of a retained mesh;
  * zero, pseudo-indices and other userdata are rejected.
  * @param data Borrowed replacement arrays, copied only after full validation.
- * @return OK replaces data and invalidates derived coordinates/span caches. INVALID_ARG
+ * @return OK atomically replaces data and requires derived-coordinate revalidation.
+ * Verified equivalent draw results may reuse prior span caches. INVALID_ARG
  * leaves all prior data/cache state unchanged. Stack is unchanged on both paths.
  *
  * No allocation, stack growth, Lua callback or framebuffer access. Caller must

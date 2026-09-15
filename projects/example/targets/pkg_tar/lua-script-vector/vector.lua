@@ -88,6 +88,11 @@ display.draw_polyline(chain,b{40,234,2,0,1},1,0,false,green,blue,white,0,0,240,2
 local stroke={buffer=b{180,230,190,230},count=2};local widths={1}
 display.stroke_path(stroke,widths,'white',0,0,240,true,true)
 assert(display.stroke_path(stroke,widths,'white',0,0,240,true,true))
+local transformed=display.compile_mesh({{0,0},{8,0},{8,8},{0,8}},{{0,1,4,'blue'}})
+local mesh_opts={transform={x=200.01,y=120,scale=1,angle=0},grid=2,cache=true}
+display.draw_mesh(transformed,mesh_opts)
+display.update_mesh(transformed,{{.01,0},{8,0},{8,8},{0,8}},{{0,1,4,'blue'}})
+display.draw_mesh(transformed,mesh_opts)
 display.present()
 print('LUA_VECTOR calls=PASS')
 while true do delay.delay_ms(20) end

@@ -73,24 +73,64 @@ cc_library(
 
 # Portable lower layer: platform access depends only on PAL interfaces.
 # Providers and optional transports belong to the caller's assembly.
+# Preserve source arithmetic optimization only in public numeric/Display units.
+# Core, Runtime and the remaining modules keep their existing compile contract.
+cc_library(
+    name = "display_numeric",
+    srcs = [
+        "src/core/h2_lua_internal.h",
+        "src/modules/h2_lua_display.c",
+        "src/modules/h2_lua_display_internal.h",
+        "src/modules/h2_lua_geometry.c",
+        "src/modules/h2_lua_geometry_batches_internal.h",
+        "src/modules/h2_lua_geometry_kernels.h",
+        "src/modules/h2_lua_numeric_internal.h",
+        "src/modules/h2_lua_numeric_typed.h",
+        "src/modules/h2_lua_vmath.c",
+        "src/modules/h2_lua_vmath_kernels.h",
+        "src/runtime/h2_lua_internal.h",
+    ],
+    hdrs = [
+        "include/h2_lua.h",
+        "include/h2_lua_capability.h",
+        "include/h2_lua_display.h",
+        "include/h2_lua_esp_claw.h",
+        "include/h2_lua_event.h",
+        "include/h2_lua_job.h",
+        "include/h2_lua_module.h",
+        "include/h2_lua_numeric.h",
+        "include/h2_lua_task_names.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + h2_gnu_only_copts([
+        "-O3",
+        "-fno-fast-math",
+    ]),
+    includes = ["include"],
+    visibility = ["//visibility:private"],
+    deps = [
+        ":lua_core",
+        ":numeric_prepared",
+        "//libs/raster2d",
+        "//libs/raster2d:span_internal",
+        "//libs/runtime",
+        "//libs/utils",
+        "//tools/bazel:vendor_third_party_lua",
+    ],
+)
+
 cc_library(
     name = "lua_runtime",
     srcs = [
         "src/core/h2_lua_internal.h",
         "src/modules/h2_lua_esp_claw.c",
-        "src/modules/h2_lua_geometry.c",
         "src/modules/h2_lua_geometry_batches_internal.h",
         "src/modules/h2_lua_kv.c",
         "src/modules/h2_lua_modules.c",
-        "src/modules/h2_lua_display.c",
         "src/modules/h2_lua_display_internal.h",
         "src/modules/h2_lua_numeric_internal.h",
-        "src/modules/h2_lua_numeric_typed.h",
-        "src/modules/h2_lua_vmath_kernels.h",
-        "src/modules/h2_lua_geometry_kernels.h",
         "src/modules/h2_lua_storage.c",
         "src/modules/h2_lua_storage_internal.h",
-        "src/modules/h2_lua_vmath.c",
         "src/runtime/h2_lua.c",
         "src/runtime/h2_lua_event.c",
         "src/runtime/h2_lua_internal.h",
@@ -115,6 +155,7 @@ cc_library(
         "include",
     ],
     deps = [
+        ":display_numeric",
         ":lua_core",
         ":numeric_prepared",
         ":tasks",
@@ -197,6 +238,7 @@ cc_test(
     data = [
         "tests/geometry_batches.lua",
         "tests/stroke_buffer.lua",
+        "tests/mesh_source_paths.lua",
         "tests/raster2d.lua",
     ],
     conlyopts = H2_C11_OPTS,

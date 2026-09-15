@@ -6,6 +6,7 @@
 #include "h2_f32_math.h"
 #include "h2_lua_display_internal.h"
 
+#include <float.h>
 #include <limits.h>
 #include <math.h>
 #include <stdio.h>
@@ -394,17 +395,6 @@ static void display_check_clip(lua_State *state, h2_lua_job_t *job,
   *top = (int)first;
   *bottom = (int)end;
 }
-
-typedef struct display_cached_span {
-  int32_t left, right, y, end_y; /* Negative end_y: span; otherwise a line. */
-  uint16_t color;
-} display_cached_span_t;
-
-typedef struct display_span_cache {
-  size_t count, capacity;
-  int valid;
-  display_cached_span_t spans[];
-} display_span_cache_t;
 
 static void display_cache_record(display_span_cache_t *cache, int left,
                                   int right, int y, int end_y, uint16_t color) {
@@ -890,19 +880,6 @@ static int display_draw_rects(lua_State *state) {
 }
 
 /* One representation for Lua tables and allocation-free native updates. */
-typedef struct h2_lua_display_mesh {
-  size_t vertex_capacity, primitive_capacity;
-  size_t vertex_count, primitive_count;
-  double matrix[6];
-  int grid;
-  int positions_valid;
-  int spans_valid;
-  int span_left, span_right, span_top, span_bottom, span_width, span_height;
-  int span_recolor;
-  uint16_t span_color;
-  double span_offset;
-} h2_lua_display_mesh_t;
-
 static const char s_display_mesh_meta = 0;
 
 _Static_assert(_Alignof(h2_lua_display_mesh_t) >=
@@ -959,7 +936,7 @@ static void mesh_replace(h2_lua_display_mesh_t *mesh,
   mesh->vertex_count = data->vertex_count;
   mesh->primitive_count = data->primitive_count;
   mesh->positions_valid = 0;
-  mesh->spans_valid = 0;
+  mesh->span_result_valid = 0;
 }
 
 /* Two spare slots, no allocator or metamethod calls, even for wrong types. */
@@ -1166,13 +1143,73 @@ static h2_lua_display_vertex_t mesh_transform(
   return p;
 }
 
+/* Mesh span snapshots follow the fixed span array. Their lifetime is the
+ * cache userdata's, independently of source updates or non-retained draws. */
+static size_t mesh_span_snapshot_offset(void) {
+  size_t size = sizeof(display_span_cache_t) + 8192u * sizeof(display_cached_span_t);
+  size_t alignment = _Alignof(h2_lua_display_vertex_t);
+  return (size + alignment - 1u) / alignment * alignment;
+}
+
+static h2_lua_display_vertex_t *mesh_span_positions(display_span_cache_t *cache) {
+  return (h2_lua_display_vertex_t *)((char *)cache + mesh_span_snapshot_offset());
+}
+
+static h2_lua_display_primitive_t *mesh_span_primitives(
+    h2_lua_display_mesh_t *mesh, display_span_cache_t *cache) {
+  return (h2_lua_display_primitive_t *)(mesh_span_positions(cache) +
+                                       mesh->vertex_capacity);
+}
+
+static h2_lua_display_vertex_t mesh_source_transform(
+    h2_lua_display_vertex_t v, const double t[4], double ca, double sa, int grid) {
+  double x = t[0], y = t[1], scale = t[2];
+  float fx = ((float)x + ((float)v.x * (float)ca -
+              (float)v.y * (float)sa) * (float)scale) / (float)grid;
+  float fy = ((float)y + ((float)v.x * (float)sa +
+              (float)v.y * (float)ca) * (float)scale) / (float)grid;
+  float error = 64 * FLT_EPSILON * (fabsf((float)x) + fabsf((float)y) +
+      (fabsf((float)v.x) + fabsf((float)v.y)) * (float)scale + 1);
+  /* Wider public mesh inputs use the source double fallback. Do not convert
+   * to an integer before the caller has checked the complete result bounds. */
+  int fast = fabs(v.x) <= 100000 && fabs(v.y) <= 100000 && error < .25f;
+  h2_lua_display_vertex_t p;
+  p.x = fast && fabsf(fx - floorf(fx) - .5f) > error
+      ? (double)(floorf(fx + .5f) * (float)grid)
+      : floor((x + (v.x * ca - v.y * sa) * scale) / grid + .5) * grid;
+  p.y = fast && fabsf(fy - floorf(fy) - .5f) > error
+      ? (double)(floorf(fy + .5f) * (float)grid)
+      : floor((y + (v.x * sa + v.y * ca) * scale) / grid + .5) * grid;
+  return p;
+}
+
+static int mesh_span_result_equal(h2_lua_display_mesh_t *mesh,
+                                  display_span_cache_t *cache,
+                                  const h2_lua_display_vertex_t *positions) {
+  if (mesh->span_vertex_count != mesh->vertex_count ||
+      mesh->span_primitive_count != mesh->primitive_count)
+    return 0;
+  const h2_lua_display_vertex_t *old = mesh_span_positions(cache);
+  for (size_t i = 0; i < mesh->vertex_count; ++i)
+    if (old[i].x != positions[i].x || old[i].y != positions[i].y)
+      return 0;
+  const h2_lua_display_primitive_t *before = mesh_span_primitives(mesh, cache);
+  const h2_lua_display_primitive_t *after = mesh_primitives(mesh);
+  for (size_t i = 0; i < mesh->primitive_count; ++i)
+    if (before[i].kind != after[i].kind || before[i].first != after[i].first ||
+        before[i].count != after[i].count || before[i].color != after[i].color)
+      return 0;
+  return 1;
+}
+
 static int display_draw_mesh(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
   h2_lua_display_mesh_t *mesh = mesh_check(state, 1);
   if (!lua_isnoneornil(state, 2)) luaL_checktype(state, 2, LUA_TTABLE);
   double matrix[6] = {1, 0, 0, 1, 0, 0};
   mesh_option(state, "matrix");
-  if (!lua_isnil(state, -1)) {
+  int has_matrix = !lua_isnil(state, -1);
+  if (has_matrix) {
     luaL_checktype(state, -1, LUA_TTABLE);
     for (int i = 0; i < 6; ++i) {
       lua_rawgeti(state, -1, i + 1);
@@ -1181,7 +1218,26 @@ static int display_draw_mesh(lua_State *state) {
     }
   }
   lua_pop(state, 1);
+  double transform[4] = {0, 0, 1, 0};
+  mesh_option(state, "transform");
+  int source_transform = !lua_isnil(state, -1);
+  if (source_transform) {
+    if (has_matrix) return luaL_error(state, "matrix and transform are exclusive");
+    luaL_checktype(state, -1, LUA_TTABLE);
+    const char *names[] = {"x", "y", "scale", "angle"};
+    for (int i = 0; i < 4; ++i) {
+      lua_pushstring(state, names[i]);
+      lua_rawget(state, -2);
+      transform[i] = check_geometry_number(state, -1);
+      lua_pop(state, 1);
+    }
+    if (transform[2] <= 0 || transform[2] > 100)
+      return luaL_error(state, "mesh transform scale out of range");
+  }
+  lua_pop(state, 1);
   lua_Integer grid = mesh_integer_option(state, "grid", 0);
+  if (source_transform && (grid < 1 || grid > 16))
+    return luaL_error(state, "mesh transform requires grid in 1..16");
   lua_Integer left = mesh_integer_option(state, "left", 0);
   lua_Integer right = mesh_integer_option(state, "right", job->display_info.width);
   lua_Integer top = mesh_integer_option(state, "top", 0);
@@ -1202,8 +1258,9 @@ static int display_draw_mesh(lua_State *state) {
     lua_getiuservalue(state, 1, 1);
     if (lua_isnil(state, -1)) {
       lua_pop(state, 1);
-      cache = lua_newuserdatauv(state, sizeof(*cache) +
-          8192u * sizeof(display_cached_span_t), 0);
+      cache = lua_newuserdatauv(state, mesh_span_snapshot_offset() +
+          mesh->vertex_capacity * sizeof(h2_lua_display_vertex_t) +
+          mesh->primitive_capacity * sizeof(h2_lua_display_primitive_t), 0);
       cache->capacity = 8192;
       cache->count = 0;
       cache->valid = 0;
@@ -1218,30 +1275,57 @@ static int display_draw_mesh(lua_State *state) {
     return luaL_error(state, "invalid mesh options or closed display");
   h2_lua_display_vertex_t *positions = mesh_positions(mesh);
   const h2_lua_display_vertex_t *vertices = mesh_vertices(mesh);
-  int identity = grid == 0 && matrix[0] == 1 && matrix[1] == 0 &&
+  int identity = !source_transform && grid == 0 && matrix[0] == 1 && matrix[1] == 0 &&
                  matrix[2] == 0 && matrix[3] == 1 && matrix[4] == 0 &&
                  matrix[5] == 0;
+  int same_parameters = mesh->trigonometry_valid;
+  for (int i = 0; i < 4; ++i)
+    if (mesh->transform[i] != transform[i]) same_parameters = 0;
+  double ca = mesh->cosine, sa = mesh->sine;
+  if (source_transform && !same_parameters) {
+    ca = cos(transform[3]);
+    sa = sin(transform[3]);
+  }
+  int same_matrix = 1;
+  for (int i = 0; i < 6; ++i)
+    if (mesh->matrix[i] != matrix[i]) same_matrix = 0;
   if (!mesh->positions_valid || mesh->grid != grid ||
-      memcmp(mesh->matrix, matrix, sizeof(matrix)) != 0) {
+      mesh->source_transform != source_transform ||
+      (source_transform ? !same_parameters : !same_matrix)) {
     if (!identity) {
-      /* Validate the complete transform before changing cache or pixels. */
+      /* Validate everything before changing derived state or a span candidate. */
       for (size_t i = 0; i < mesh->vertex_count; ++i) {
-        h2_lua_display_vertex_t p = mesh_transform(vertices[i], matrix, (int)grid);
+        h2_lua_display_vertex_t p = source_transform
+            ? mesh_source_transform(vertices[i], transform, ca, sa, (int)grid)
+            : mesh_transform(vertices[i], matrix, (int)grid);
         if (!isfinite(p.x) || !isfinite(p.y) || fabs(p.x) > 16000000 ||
             fabs(p.y) > 16000000)
           return luaL_error(state, "transformed mesh coordinate out of range");
       }
       for (size_t i = 0; i < mesh->vertex_count; ++i)
-        positions[i] = mesh_transform(vertices[i], matrix, (int)grid);
+        positions[i] = source_transform
+            ? mesh_source_transform(vertices[i], transform, ca, sa, (int)grid)
+            : mesh_transform(vertices[i], matrix, (int)grid);
     }
+    mesh->span_result_valid = 0;
     memcpy(mesh->matrix, matrix, sizeof(matrix));
+    if (source_transform) {
+      memcpy(mesh->transform, transform, sizeof(transform));
+      mesh->cosine = ca;
+      mesh->sine = sa;
+      mesh->trigonometry_valid = 1;
+    }
+    mesh->source_transform = source_transform;
     mesh->grid = (int)grid;
     mesh->positions_valid = 1;
-    mesh->spans_valid = 0;
   }
+  const h2_lua_display_vertex_t *draw_positions = identity ? vertices : positions;
   if (top == bottom || left == right) return 0;
   if (cache != NULL) {
-    if (mesh->spans_valid && cache->valid && mesh->span_left == left &&
+    if (mesh->spans_valid && cache->valid && !mesh->span_result_valid)
+      mesh->span_result_valid = mesh_span_result_equal(mesh, cache, draw_positions);
+    if (mesh->spans_valid && cache->valid && mesh->span_result_valid &&
+        mesh->span_left == left &&
         mesh->span_right == right && mesh->span_top == top &&
         mesh->span_bottom == bottom && mesh->span_width == job->display_info.width &&
         mesh->span_height == job->display_info.height && mesh->span_offset == offset &&
@@ -1265,7 +1349,6 @@ static int display_draw_mesh(lua_State *state) {
   /* Exact identity reads the mesh's own validated, bounded vertices, without
    * copying to positions. Select on cache hits too: positions may still hold
    * an older general transform. Signed zeros are raster-equivalent. */
-  const h2_lua_display_vertex_t *draw_positions = identity ? vertices : positions;
   const h2_lua_display_primitive_t *primitives = mesh_primitives(mesh);
   for (size_t i = 0; i < mesh->primitive_count; ++i) {
     const h2_lua_display_primitive_t *p = &primitives[i];
@@ -1282,7 +1365,18 @@ static int display_draw_mesh(lua_State *state) {
                                  (int)top, (int)bottom, (int)left, (int)right, cache);
     }
   }
-  if (cache != NULL) mesh->spans_valid = cache->valid;
+  if (cache != NULL) {
+    if (cache->valid) {
+      memcpy(mesh_span_positions(cache), draw_positions,
+             mesh->vertex_count * sizeof(*draw_positions));
+      memcpy(mesh_span_primitives(mesh, cache), primitives,
+             mesh->primitive_count * sizeof(*primitives));
+      mesh->span_result_valid = 1;
+      mesh->span_vertex_count = mesh->vertex_count;
+      mesh->span_primitive_count = mesh->primitive_count;
+    }
+    mesh->spans_valid = cache->valid;
+  }
   return 0;
 }
 

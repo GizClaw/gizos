@@ -1,3 +1,4 @@
+#include "../src/modules/h2_lua_display_internal.h"
 #include "h2_desktop_platform.h"
 #include "h2_lua.h"
 #include "h2_lua_capability.h"
@@ -9,6 +10,7 @@
 #include "h2_pal.h"
 
 #include <assert.h>
+#include <float.h>
 #include <math.h>
 #include <stdatomic.h>
 #include <stdint.h>
@@ -1052,10 +1054,62 @@ static int test_raster_measure(lua_State *state) {
 
 static int test_region_failure(lua_State *state);
 
+/* Independent extraction-source oracle; no production transform helper. */
+static int test_mesh_source(lua_State *s) {
+  double x = luaL_checknumber(s, 2), y = luaL_checknumber(s, 3);
+  double scale = luaL_checknumber(s, 4), angle = luaL_checknumber(s, 5);
+  double grid = luaL_checknumber(s, 6), ca = cos(angle), sa = sin(angle);
+  size_t n = lua_rawlen(s, 1);
+  lua_settop(s, 7);
+  lua_createtable(s, (int)n, 0);
+  for (size_t i = 0; i < n; ++i) {
+    lua_rawgeti(s, 1, (lua_Integer)i + 1);
+    lua_rawgeti(s, -1, 1); double vx = lua_tonumber(s, -1); lua_pop(s, 1);
+    lua_rawgeti(s, -1, 2); double vy = lua_tonumber(s, -1); lua_pop(s, 2);
+    float fx=((float)x+((float)vx*(float)ca-(float)vy*(float)sa)*(float)scale)/(float)grid;
+    float fy=((float)y+((float)vx*(float)sa+(float)vy*(float)ca)*(float)scale)/(float)grid;
+    float error=64*FLT_EPSILON*(fabsf((float)x)+fabsf((float)y)+(fabsf((float)vx)+fabsf((float)vy))*(float)scale+1);
+    double px,py;
+    if(fabs(vx)<=100000 && fabs(vy)<=100000 && error<.25f && fabsf(fx-floorf(fx)-.5f)>error)
+      px=floorf(fx+.5f)*(float)grid;
+    else px=floor((x+(vx*ca-vy*sa)*scale)/grid+.5)*grid;
+    if(fabs(vx)<=100000 && fabs(vy)<=100000 && error<.25f && fabsf(fy-floorf(fy)-.5f)>error)
+      py=floorf(fy+.5f)*(float)grid;
+    else py=floor((y+(vx*sa+vy*ca)*scale)/grid+.5)*grid;
+    if (!lua_isnoneornil(s, 7)) {
+      h2_lua_display_mesh_t *mesh = lua_touserdata(s, 7);
+      assert(mesh->positions_valid && mesh->source_transform);
+      h2_lua_display_vertex_t *positions =
+          (h2_lua_display_vertex_t *)(mesh + 1) + mesh->vertex_capacity;
+      assert(positions[i].x == px && positions[i].y == py);
+    }
+    lua_createtable(s,2,0);
+    lua_pushnumber(s,px);lua_rawseti(s,-2,1);
+    lua_pushnumber(s,py);lua_rawseti(s,-2,2);
+    lua_rawseti(s,-2,(lua_Integer)i+1);
+  }
+  return 1;
+}
+
+/* Poison one private replay record. A reraster overwrites the marker even
+ * when pixels/present would otherwise be identical. No production counter. */
+static int test_mesh_marker(lua_State *s) {
+  assert(lua_getiuservalue(s, 1, 1) == LUA_TUSERDATA);
+  display_span_cache_t *cache = lua_touserdata(s, -1);
+  assert(cache->valid && cache->count > 0);
+  if (lua_toboolean(s, 2)) cache->spans[0].color = 0xabcd;
+  lua_pushboolean(s, cache->spans[0].color == 0xabcd);
+  return 1;
+}
+
 static int test_raster_open(void *lua_state, void *user) {
   lua_State *state = lua_state;
   (void)user;
   lua_newtable(state);
+  lua_pushcfunction(state, test_mesh_source);
+  lua_setfield(state, -2, "mesh_source");
+  lua_pushcfunction(state, test_mesh_marker);
+  lua_setfield(state, -2, "mesh_marker");
   lua_pushcfunction(state, test_raster_noalloc);
   lua_setfield(state, -2, "noalloc");
   lua_pushcfunction(state, test_raster_measure);
@@ -1841,6 +1895,7 @@ int main(int argc, char **argv) {
   test_display_raster2d(0, "libs/lua/tests/stroke_buffer.lua");
   test_display_mesh_identity();
   test_display_mesh_cache();
+  test_display_raster2d(1, "libs/lua/tests/mesh_source_paths.lua");
   test_display_strokes();
   test_display_regions();
   test_display_meshes();

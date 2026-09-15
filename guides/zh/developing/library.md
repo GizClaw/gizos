@@ -193,3 +193,5 @@ Lua prepared execution 的公共边界是有独立数学合同的计算机制：
 数值状态可由可分发 Lua app 使用标准 numeric buffer 创建，再由 prepared workspace 显式绑定并保活；这仍是 `libs/lua` 内部的 VM 生命周期契约，不要求 launcher 分配裸指针或注册私有 C 扩展。绑定只改变公共状态的所有权与访问路径，材料元数据和原子阶段暂存仍由 library 持有；应用负责阶段顺序、拓扑更新和必要的状态读取。
 
 位移导出、显式修正求长和直接读取坐标 buffer 的描边属于公共数值与绘制机制。它们保留源实现的算术/光栅路径，不在库内判断环境、生成拖曳系数、构造竿形或决定阶段调度。显式精度入口不改变既有通用 API 的默认精度合同；packed 描边复用既有缓存与 Display 生命周期。
+
+公共 mesh 的最终坐标比较、保守 float 变换和网格取整属于 Display；pose、grid 选择和更新调度仍由 Lua app 决定。既有 Display 实现在 `h2_lua_display.c` 中独立编译，与 `h2_lua_vmath.c`、`h2_lua_geometry.c` 和 prepared units 使用 `-O3 -fno-fast-math`，通过现有源码包导出逐单元合同。此边界不改变 Lua core、Runtime、其他 module 或独立 raster library 的编译选项，也不建立第二份绘制实现。

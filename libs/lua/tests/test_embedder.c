@@ -639,11 +639,17 @@ int main(void) {
       "local line=d.polyline(2);line:load(b{-2,0,1,2,0,1},2);"
       "local style=d.compile_line_style(b{0x07e0});"
       "d.draw_polyline(line,b{20,20,2,0,1},1,0,false,style,style,style,0,0,240,"
-      "240);d.stroke_path({buffer=b{30,30,40,30},count=2},{1},'white');d.present()");
+      "240);d.stroke_path({buffer=b{30,30,40,30},count=2},{1},'white');"
+      "local mesh=d.compile_mesh({{0,0},{6,0},{6,6},{0,6}},{{0,1,4,'blue'}});"
+      "local opts={transform={x=60.01,y=60,scale=1,angle=0},grid=1,cache=true};"
+      "d.draw_mesh(mesh,opts);d.update_mesh(mesh,{{.01,0},{6,0},{6,6},{0,6}},"
+      "{{0,1,4,'blue'}});d.draw_mesh(mesh,opts);d.present()");
   wait_state(host, job, H2_LUA_JOB_SUCCEEDED);
   assert(display.pixels[3 * 240 + 3] == 0xf800);
   assert(display.pixels[20 * 240 + 16] == 0x07e0);
   assert(display.pixels[30 * 240 + 35] == 0xffff);
+  assert(display.pixels[63 * 240 + 63] == 0x001f);
+  assert(display.pixels[63 * 240 + 59] == 0);
   assert(h2_lua_job_release(host, job) == H2_PAL_OK);
 
   atomic_store(&echo.id, 0);
