@@ -609,6 +609,49 @@ int main(void) {
              ((x >= 3 && x < 10 && y >= 5 && y < 14) ? 0xf800 : 0));
   assert(h2_lua_job_release(host, job) == H2_PAL_OK);
 
+  job = submit(
+      host,
+      "local v,g,d=require('vmath'),require('geometry'),require('display');"
+      "local function b(t) local r=v.buffer(#t);r:load(t);return r end;"
+      "local "
+      "w=v.constraints(2,1);w:load(b{0,0,0,2,0,0},b{0,0,0,2,0,0},b{1,2,1,.0001,"
+      "0,1},2,1,.01);"
+      "w:solve(2,nil,0);local "
+      "p,o,l=v.buffer(6),v.buffer(6),v.buffer(1);w:copy(p,o,l);assert(l:get(1)<"
+      "0);"
+      "w:bind(p,o,b{1,2,1,.0001,0,1},2,1,.01);p:set(4,2);"
+      "assert(w:node(2)==2);w:solve(1,nil,0);assert(w:multipliers(1)<0);"
+      "assert(p:get(4)<2);w:load(p,o,b{1,2,1,.0001,0,1},2,1,.01);"
+      "local delta=v.buffer(6,'f32');w:node(2,999999.001,0,0,999999,0,0);"
+      "w:displacements(delta,2,1);assert(math.abs(delta:get(1)-.001)<1e-9);"
+      "local zero,one=v.buffer(3,'f32'),v.buffer(3,'f32');one:fill(1);"
+      "w:integrate(2,1,b{1},zero,one,b{1,1,1},b{0,0,0},'displacement-f32',nil,0);"
+      "assert(w:node(2)>999999.001);local norm=v.buffer(1);"
+      "v.length3_refined(norm,b{.3,.4,0},1);assert(math.abs(norm:get(1)-.5)<1e-12);"
+      "local "
+      "r=g.rotations(b{1,0,0},b{1},b{0,0,1},1);assert(r:evaluate(p,0,.2,0,0,0,"
+      "0,false,false));"
+      "local "
+      "pose=g.pose(g.batch(b{2,2,8,2,8,8,2,8},b{0,1,4},nil,nil,b{0,0,0,0},4,1))"
+      ";"
+      "pose:evaluate(0,0,0,0,1,0,1,nil);d.clear('black');d.draw_pose(pose,b{"
+      "0xf800},0,0,0,0,1,0,0,0,240,240);"
+      "local line=d.polyline(2);line:load(b{-2,0,1,2,0,1},2);"
+      "local style=d.compile_line_style(b{0x07e0});"
+      "d.draw_polyline(line,b{20,20,2,0,1},1,0,false,style,style,style,0,0,240,"
+      "240);d.stroke_path({buffer=b{30,30,40,30},count=2},{1},'white');"
+      "local mesh=d.compile_mesh({{0,0},{6,0},{6,6},{0,6}},{{0,1,4,'blue'}});"
+      "local opts={transform={x=60.01,y=60,scale=1,angle=0},grid=1,cache=true};"
+      "d.draw_mesh(mesh,opts);d.update_mesh(mesh,{{.01,0},{6,0},{6,6},{0,6}},"
+      "{{0,1,4,'blue'}});d.draw_mesh(mesh,opts);d.present()");
+  wait_state(host, job, H2_LUA_JOB_SUCCEEDED);
+  assert(display.pixels[3 * 240 + 3] == 0xf800);
+  assert(display.pixels[20 * 240 + 16] == 0x07e0);
+  assert(display.pixels[30 * 240 + 35] == 0xffff);
+  assert(display.pixels[63 * 240 + 63] == 0x001f);
+  assert(display.pixels[63 * 240 + 59] == 0);
+  assert(h2_lua_job_release(host, job) == H2_PAL_OK);
+
   atomic_store(&echo.id, 0);
   job = submit(
       host,
