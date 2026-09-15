@@ -1161,24 +1161,29 @@ static h2_lua_display_primitive_t *mesh_span_primitives(
                                        mesh->vertex_capacity);
 }
 
+typedef struct mesh_source_f32 {
+  float x, y, scale, ca, sa, grid;
+} mesh_source_f32_t;
+
 static h2_lua_display_vertex_t mesh_source_transform(
-    h2_lua_display_vertex_t v, const double t[4], double ca, double sa, int grid) {
+    h2_lua_display_vertex_t v, const double t[4], double ca, double sa, int grid,
+    const mesh_source_f32_t *f) {
   double x = t[0], y = t[1], scale = t[2];
-  float fx = ((float)x + ((float)v.x * (float)ca -
-              (float)v.y * (float)sa) * (float)scale) / (float)grid;
-  float fy = ((float)y + ((float)v.x * (float)sa +
-              (float)v.y * (float)ca) * (float)scale) / (float)grid;
-  float error = 64 * FLT_EPSILON * (fabsf((float)x) + fabsf((float)y) +
-      (fabsf((float)v.x) + fabsf((float)v.y)) * (float)scale + 1);
+  float fx = (f->x + ((float)v.x * f->ca -
+              (float)v.y * f->sa) * f->scale) / f->grid;
+  float fy = (f->y + ((float)v.x * f->sa +
+              (float)v.y * f->ca) * f->scale) / f->grid;
+  float error = 64 * FLT_EPSILON * (fabsf(f->x) + fabsf(f->y) +
+      (fabsf((float)v.x) + fabsf((float)v.y)) * f->scale + 1);
   /* Wider public mesh inputs use the source double fallback. Do not convert
    * to an integer before the caller has checked the complete result bounds. */
   int fast = fabs(v.x) <= 100000 && fabs(v.y) <= 100000 && error < .25f;
   h2_lua_display_vertex_t p;
   p.x = fast && fabsf(fx - floorf(fx) - .5f) > error
-      ? (double)(floorf(fx + .5f) * (float)grid)
+      ? (double)(floorf(fx + .5f) * f->grid)
       : floor((x + (v.x * ca - v.y * sa) * scale) / grid + .5) * grid;
   p.y = fast && fabsf(fy - floorf(fy) - .5f) > error
-      ? (double)(floorf(fy + .5f) * (float)grid)
+      ? (double)(floorf(fy + .5f) * f->grid)
       : floor((y + (v.x * sa + v.y * ca) * scale) / grid + .5) * grid;
   return p;
 }
@@ -1339,10 +1344,16 @@ static int display_draw_mesh(lua_State *state) {
       mesh->source_transform != source_transform ||
       (source_transform ? !same_parameters : !same_matrix)) {
     if (!identity) {
+      /* Prepare source invariants after the last allocation/reentrant callback.
+       * Both transactional passes use these same rounded scalar values. */
+      mesh_source_f32_t source_f32 = {0};
+      if (source_transform)
+        source_f32 = (mesh_source_f32_t){(float)transform[0], (float)transform[1],
+            (float)transform[2], (float)ca, (float)sa, (float)grid};
       /* Validate everything before changing derived state or a span candidate. */
       for (size_t i = 0; i < mesh->vertex_count; ++i) {
         h2_lua_display_vertex_t p = source_transform
-            ? mesh_source_transform(vertices[i], transform, ca, sa, (int)grid)
+            ? mesh_source_transform(vertices[i], transform, ca, sa, (int)grid, &source_f32)
             : mesh_transform(vertices[i], matrix, (int)grid);
         if (!isfinite(p.x) || !isfinite(p.y) || fabs(p.x) > 16000000 ||
             fabs(p.y) > 16000000)
@@ -1354,7 +1365,7 @@ static int display_draw_mesh(lua_State *state) {
       else
         for (size_t i = 0; i < mesh->vertex_count; ++i)
           positions[i] = source_transform
-              ? mesh_source_transform(vertices[i], transform, ca, sa, (int)grid)
+              ? mesh_source_transform(vertices[i], transform, ca, sa, (int)grid, &source_f32)
               : mesh_transform(vertices[i], matrix, (int)grid);
     }
     mesh->span_result_valid = 0;

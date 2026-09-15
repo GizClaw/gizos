@@ -42,6 +42,13 @@ for _,magnitude in ipairs({1000,8190,8192,8194,10922.2,10922.333333333,10922.4,1
   compare(pts,{x=-math.min(magnitude*scale,100000),y=0,scale=scale,angle=0},1)
  end
 end
+-- Each draw must refresh all prepared constants, including underflowed scale
+-- and signed/tiny translations; the reference keeps the original expression.
+for _,scale in ipairs({1e-320,1e-40,.00001,1,100}) do
+ for _,x in ipairs({-0.0,0,1e-320,-1e-320,-.5,.5}) do
+  compare(unit,{x=x,y=-x,scale=scale,angle=.37},3)
+ end
+end
 for i=1,100 do
  compare(vertices,{x=20+(i%7)*.11,y=22-(i%11)*.09,scale=.03+(i%23)*.7,angle=i*.17},1+i%16)
 end
@@ -108,7 +115,9 @@ d.draw_mesh(edge,limit);p.mesh_source(bounds,0,0,100,0,1,edge)
 bounds[2][1]=-160000;d.update_mesh(edge,bounds,{{1,1,2,'red'}})
 d.draw_mesh(edge,limit);p.mesh_source(bounds,0,0,100,0,1,edge)
 bounds[2][1]=160001;d.update_mesh(edge,bounds,{{1,1,2,'red'}})
+local failed_snapshot=p.mesh_snapshot(edge)
 bad(d.draw_mesh,edge,limit)
+assert(p.mesh_snapshot(edge)==failed_snapshot)
 
 -- Full validation applies to hidden/empty clips, preserves pixels and candidates.
 d.clear('black');d.draw_mesh(m,stable);d.present()

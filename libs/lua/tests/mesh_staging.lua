@@ -5,6 +5,7 @@ local function reopen()
 end
 local shift={matrix={1,0,0,1,1,0}}
 local identity={}
+local source_shift={transform={x=1,y=0,scale=1,angle=0},grid=1}
 local function bytes() collectgarbage('collect');return collectgarbage('count')*1024 end
 
 -- Full public active size is accepted, while the >1024 path allocates no stage.
@@ -15,6 +16,18 @@ for _,count in ipairs({1025,65536}) do
  p.noalloc(function() d.draw_mesh(m,shift);p.mesh_shifted(m,2) end)
  shift.matrix[5]=1
 end
+-- Source preparation is shared by the bounded stage and the original
+-- two-pass fallback, with no allocation after warming either path.
+for _,count in ipairs({0,1,1023,1024,1025,65536}) do
+ local m=p.mesh_capacity(math.max(count,1))
+ if count==0 then d.update_mesh(m,{},{}) end
+ d.draw_mesh(m,source_shift)
+ p.noalloc(function()
+  source_shift.transform.x=source_shift.transform.x==1 and 2 or 1
+  d.draw_mesh(m,source_shift);p.mesh_shifted(m,source_shift.transform.x)
+ end)
+end
+source_shift.transform.x=1
 collectgarbage('collect')
 
 -- Cold growth OOM preserves an existing complete candidate and derived data.
@@ -93,7 +106,7 @@ local function during_allocation(action,draw,native)
  collectgarbage('param','pause',pause);collectgarbage('param','stepmul',mul)
  collectgarbage('param','stepsize',step)
 end
-for mode=1,6 do
+for _,source in ipairs({false,true}) do for mode=1,6 do
  reopen()
  local changing=d.compile_mesh(pts,faces,mode==2 and 16 or 2048,1)
  local other=p.mesh_capacity(1024)
@@ -108,7 +121,8 @@ for mode=1,6 do
   elseif mode==3 then d.deinit()
   else reopen();d.update_mesh(changing,updated,update_faces) end
  end
- local options={cache=true,matrix=shift.matrix}
+ local transform=source and source_shift or shift
+ local options={cache=true,matrix=transform.matrix,transform=transform.transform,grid=transform.grid}
  local native=d.draw_mesh
  during_allocation(action,function()
   local ok=pcall(native,changing,options)
@@ -118,11 +132,11 @@ for mode=1,6 do
   local current=mode==2 and pts or updated
   local fs=mode==2 and faces or update_faces
   local ref=d.compile_mesh(current,fs)
-  d.clear('black');d.draw_mesh(ref,shift);d.present({retained=true})
-  d.clear('black');d.draw_mesh(changing,{cache=true,matrix=shift.matrix})
+  d.clear('black');d.draw_mesh(ref,transform);d.present({retained=true})
+  d.clear('black');d.draw_mesh(changing,options)
   assert(d.present()==0,'reentrant current mesh pixels')
  end
-end
+end end
 -- Trigger reentry in span-cache allocation after stage capacity is already warm.
 -- A finalizer installs a complete candidate; the failing outer call retains it.
 reopen()
