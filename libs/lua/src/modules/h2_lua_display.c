@@ -2915,12 +2915,19 @@ static int display_draw_region(lua_State *state) {
   int last_y = bottom - y < region->height ? bottom - y : region->height;
   if (first_x >= last_x) return 0;
   uint16_t *pixels = display_region_pixels(region);
+  if (!region->masked && !keyed) {
+    /* Every clipped pixel is copied; one mark covers the same rectangle. */
+    for (int row = first_y; row < last_y; ++row)
+      memcpy(job->framebuffer + (size_t)(y + row) * job->display_info.width + x + first_x,
+             pixels + region->rows[row].offset + first_x,
+             (size_t)(last_x - first_x) * sizeof(uint16_t));
+    mark_dirty_rect(job, x + first_x, y + first_y,
+                    last_x - first_x, last_y - first_y);
+    return 0;
+  }
   for (int row = first_y; row < last_y; ++row) {
     display_region_row_t *r = &region->rows[row];
-    if (!region->masked && !keyed) {
-      display_copy_region_span(job, x + first_x, y + row,
-          pixels + r->offset + first_x, last_x - first_x);
-    } else if (region->masked && keyed && key == region->key) {
+    if (region->masked && keyed && key == region->key) {
       for (int i = 0; i < r->run_count; ++i) {
         display_region_run_t run = display_region_runs(region)[r->first_run + i];
         int a = run.left > first_x ? run.left : first_x;
@@ -2995,8 +3002,11 @@ static int display_restore_background(lua_State *state) {
           mark_dirty_rect(job, 0, ty * 16, region->width, bottom - ty * 16);
         } else {
           for (int y = ty * 16; y < bottom; ++y)
-            display_copy_region_span(job, first * 16, y,
-                pixels + (size_t)y * region->width + first * 16, right - first * 16);
+            memcpy(job->framebuffer + (size_t)y * region->width + first * 16,
+                pixels + (size_t)y * region->width + first * 16,
+                (size_t)(right - first * 16) * sizeof(uint16_t));
+          mark_dirty_rect(job, first * 16, ty * 16, right - first * 16,
+                          bottom - ty * 16);
         }
       }
     }

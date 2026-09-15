@@ -1551,6 +1551,78 @@ static int test_background_restore(lua_State *state) {
   return 0;
 }
 
+/* Source colors are supplied independently of the packed region layout.
+ * Observe dirty bounds and background bytes before present can hide excess. */
+static int test_region_draw(lua_State *state) {
+  luaL_checktype(state, 1, LUA_TFUNCTION);
+  luaL_checktype(state, 4, LUA_TTABLE);
+  assert(lua_getupvalue(state, 1, 1) != NULL);
+  h2_lua_job_t *job = lua_touserdata(state, -1);
+  lua_pop(state, 1);
+  assert(job && job->display_open);
+  int width = job->display_info.width, height = job->display_info.height;
+  size_t count = (size_t)width * height, columns = (size_t)(width + 15) / 16;
+  size_t tiles = columns * (size_t)((height + 15) / 16);
+  void *background = luaL_checkudata(state, 2, "h2.display.region");
+  assert(background == job->display_background);
+  size_t bytes = lua_rawlen(state, 2);
+  assert(bytes >= tiles + count * sizeof(uint16_t));
+  const uint8_t *damage = (const uint8_t *)background + bytes - tiles;
+  uint8_t *expected_damage = malloc(tiles);
+  uint16_t *expected = malloc(count * sizeof(*expected));
+  assert(expected && expected_damage);
+  memcpy(expected_damage, damage, tiles);
+  memcpy(expected, job->framebuffer, count * sizeof(*expected));
+  int sw = (int)luaL_checkinteger(state, 5), sh = (int)luaL_checkinteger(state, 6);
+  int x = (int)luaL_checkinteger(state, 7), y = (int)luaL_checkinteger(state, 8);
+  int clip_top = (int)luaL_checkinteger(state, 9);
+  int clip_bottom = (int)luaL_checkinteger(state, 10);
+  int keyed = !lua_isnil(state, 11);
+  uint16_t key = 0;
+  if (keyed) {
+    const char *name = luaL_checkstring(state, 11);
+    assert(strcmp(name, "black") == 0 || strcmp(name, "blue") == 0);
+    key = strcmp(name, "blue") == 0 ? 31 : 0;
+  }
+  int clip_left = (int)luaL_checkinteger(state, 12);
+  int clip_right = (int)luaL_checkinteger(state, 13);
+  int valid = job->dirty_valid, left = job->dirty_min_x, top = job->dirty_min_y;
+  int right = job->dirty_max_x, bottom = job->dirty_max_y;
+  for (int py = 0; py < height; ++py)
+    for (int px = 0; px < width; ++px) {
+      int sx = px - x, sy = py - y;
+      if (px < clip_left || px >= clip_right || py < clip_top ||
+          py >= clip_bottom || sx < 0 || sx >= sw || sy < 0 || sy >= sh)
+        continue;
+      lua_rawgeti(state, 4, (lua_Integer)sy * sw + sx + 1);
+      uint16_t color = (uint16_t)luaL_checkinteger(state, -1);
+      lua_pop(state, 1);
+      if (keyed && color == key) continue;
+      expected[(size_t)py * width + px] = color;
+      expected_damage[(size_t)(py / 16) * columns + (size_t)px / 16] = 1;
+      if (!valid) { left = right = px; top = bottom = py; valid = 1; }
+      if (px < left) left = px;
+      if (px > right) right = px;
+      if (py < top) top = py;
+      if (py > bottom) bottom = py;
+    }
+  lua_pushvalue(state, 1);
+  lua_pushvalue(state, 3);
+  for (int i = 7; i <= 13; ++i) lua_pushvalue(state, i);
+  assert(lua_pcall(state, 8, 0, 0) == LUA_OK);
+  assert(memcmp(expected, job->framebuffer, count * sizeof(*expected)) == 0);
+  assert(memcmp(expected_damage, damage, tiles) == 0);
+  assert(job->dirty_valid == valid);
+  if (valid) {
+    assert(job->dirty_min_x == left && job->dirty_max_x == right);
+    assert(job->dirty_min_y == top && job->dirty_max_y == bottom);
+  }
+  free(expected);
+  free(expected_damage);
+  lua_pushinteger(state, valid ? (lua_Integer)(right - left + 1) * (bottom - top + 1) : 0);
+  return 1;
+}
+
 static int test_region_open(void *lua_state, void *user) {
   (void)user;
   lua_State *state = lua_state;
@@ -1559,6 +1631,8 @@ static int test_region_open(void *lua_state, void *user) {
   lua_setfield(state, -2, "fail");
   lua_pushcfunction(state, test_region_finalizer);
   lua_setfield(state, -2, "finalizer");
+  lua_pushcfunction(state, test_region_draw);
+  lua_setfield(state, -2, "draw");
   lua_pushcfunction(state, test_background_restore);
   lua_setfield(state, -2, "restore");
   lua_pushcfunction(state, test_raster_noalloc);
@@ -1753,6 +1827,31 @@ static void test_display_regions(void) {
       "collectgarbage('collect');assert(weak[1]);d.release_background();"
       "collectgarbage('collect');assert(not weak[1]);"
       "d.deinit();assert(not pcall(d.restore_background,other))";
+  static const uint8_t region_damage[] =
+      "local d=require('display');local n=require('region_test');"
+      "local w,h=d.width,d.height;local sw,sh=math.min(w,49),math.min(h,35);"
+      "for pattern=1,3 do local colors={};d.clear('black');"
+      "for y=0,sh-1 do for x=0,sw-1 do local c=0;"
+      "if pattern==1 then c=(x+y)%3==0 and 31 or 63488 "
+      "elseif pattern==2 and ((x==1 and y==1) or (x==33 and y==17)) then c=63488 end;"
+      "colors[#colors+1]=c;d.fill_rect(x,y,1,1,c==0 and 'black' or c==31 and 'blue' or 'red') end end;"
+      "local regions={d.capture_region(0,0,sw,sh),d.capture_region(0,0,sw,sh,'black')};"
+      "d.clear('blue');local bg=d.capture_region(0,0,w,h);"
+      "d.restore_background(bg);d.present({retained=false});"
+      "for _,r in ipairs(regions) do for _,key in ipairs({false,'black','blue'}) do "
+      "for _,pos in ipairs({{0,0},{-3,-7},{w-2,h-3},{w,h},{-2*w,-2*h}}) do "
+      "for inset=0,1 do local left=math.min(inset,w);local right=math.max(left,w-inset);"
+      "local top=math.min(inset,h);local bottom=math.max(top,h-inset);"
+      "if inset==1 then d.fill_rect(w-1,h-1,1,1,'green') end;"
+      "local area=n.draw(d.draw_region,bg,r,colors,sw,sh,pos[1],pos[2],"
+      "top,bottom,key or nil,left,right);local p,rects=d.present();"
+      "assert(p==area and rects==(area>0 and 1 or 0),'nonretained dirty union');"
+      "n.restore(d.restore_background,bg);d.present() end end end end;"
+      "local r=regions[1];n.noalloc(function() d.draw_region(r,0,0) end);"
+      "n.restore(d.restore_background,bg);d.present();"
+      "n.noalloc(function() d.fill_rect(w-1,h-1,1,1,'red');d.restore_background(bg) end);"
+      "d.present();d.release_background() end;"
+      "d.deinit()";
   static const int restore_sizes[][2] = {{1,1}, {17,17}, {31,35}, {48,48}, {240,240}};
   /* A retained 240x240 frame plus two full captures exceeds the small region
    * fixture's 256 KiB VM. Use the device-sized budget for this distinct suite. */
@@ -1770,6 +1869,11 @@ static void test_display_regions(void) {
                                   sizeof(restore_width)-1, width, height);
     for (int p = 0; p < width * height; ++p)
       assert(s_test_display_fixture.pixels[p] == 0x0400u);
+    assert(s_test_display_fixture.close_count == 1);
+    (void)run_display_script_size(restore_host, "@region-damage.lua", region_damage,
+                                  sizeof(region_damage)-1, width, height);
+    for (int p = 0; p < width * height; ++p)
+      assert(s_test_display_fixture.pixels[p] == 0x001fu);
     assert(s_test_display_fixture.close_count == 1);
   }
   h2_lua_host_destroy(restore_host);
