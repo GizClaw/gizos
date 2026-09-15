@@ -388,6 +388,7 @@ h2_pal_result_t h2_h2loader_host_ble_connect(
         config->advertised_board[0] != '\0' &&
         strcmp(config->advertised_board, out_status->board) != 0) {
         rc = H2_PAL_ERR_INVALID_STATE;
+        connect_diagnostic(config, "status", rc);
         goto fail;
     }
     *out_connection = connection;

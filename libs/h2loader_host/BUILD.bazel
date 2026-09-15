@@ -163,7 +163,13 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":h2loader_host"],
+    # The test defines the BLE-iKCP client functions used by the Host; link
+    # statically so its definitions win over the unreferenced archive members.
+    linkstatic = True,
+    deps = [
+        ":h2loader_host",
+        "//libs/bleikcp",
+    ],
 )
 
 cc_test(
