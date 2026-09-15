@@ -1103,10 +1103,66 @@ static int test_mesh_marker(lua_State *s) {
   return 1;
 }
 
+/* Construct the full public vertex range without a large Lua-table fixture. */
+static int test_mesh_capacity(lua_State *s) {
+  lua_Integer count = luaL_checkinteger(s, 1);
+  assert(count > 0 && count <= H2_LUA_DISPLAY_VERTEX_LIMIT);
+  size_t n = (size_t)count;
+  h2_lua_display_vertex_t *vertices = malloc(n * sizeof(*vertices));
+  assert(vertices != NULL);
+  for (size_t i = 0; i < n; ++i)
+    vertices[i] = (h2_lua_display_vertex_t){(double)(i % 7), (double)(i % 5)};
+  h2_lua_display_mesh_config_t config = {n, 0, {vertices, n, NULL, 0}};
+  h2_pal_result_t result = h2_lua_display_mesh_push(s, &config);
+  free(vertices);
+  assert(result == H2_PAL_OK);
+  return 1;
+}
+
+static int test_mesh_shifted(lua_State *s) {
+  h2_lua_display_mesh_t *mesh = lua_touserdata(s, 1);
+  double shift = luaL_checknumber(s, 2);
+  assert(mesh && mesh->positions_valid);
+  const h2_lua_display_vertex_t *source = (const void *)(mesh + 1);
+  const h2_lua_display_vertex_t *positions = source + mesh->vertex_capacity;
+  for (size_t i = 0; i < mesh->vertex_count; ++i) {
+    assert(positions[i].x == source[i].x + shift);
+    assert(positions[i].y == source[i].y);
+  }
+  return 0;
+}
+
+static int test_mesh_snapshot(lua_State *s) {
+  assert(lua_isuserdata(s, 1));
+  lua_pushlstring(s, lua_touserdata(s, 1), lua_rawlen(s, 1));
+  return 1;
+}
+
+/* Ensure allocation-driven finalizers really run inside the draw binding. */
+static int test_in_call(lua_State *s) {
+  lua_Debug frame;
+  for (int i = 1; lua_getstack(s, i, &frame); ++i) {
+    assert(lua_getinfo(s, "f", &frame));
+    int same = lua_rawequal(s, 1, -1);
+    lua_pop(s, 1);
+    if (same) { lua_pushboolean(s, 1); return 1; }
+  }
+  lua_pushboolean(s, 0);
+  return 1;
+}
+
 static int test_raster_open(void *lua_state, void *user) {
   lua_State *state = lua_state;
   (void)user;
   lua_newtable(state);
+  lua_pushcfunction(state, test_mesh_capacity);
+  lua_setfield(state, -2, "mesh_capacity");
+  lua_pushcfunction(state, test_mesh_shifted);
+  lua_setfield(state, -2, "mesh_shifted");
+  lua_pushcfunction(state, test_mesh_snapshot);
+  lua_setfield(state, -2, "mesh_snapshot");
+  lua_pushcfunction(state, test_in_call);
+  lua_setfield(state, -2, "in_call");
   lua_pushcfunction(state, test_mesh_source);
   lua_setfield(state, -2, "mesh_source");
   lua_pushcfunction(state, test_mesh_marker);
@@ -2014,6 +2070,7 @@ int main(int argc, char **argv) {
   test_display_mesh_identity();
   test_display_mesh_cache();
   test_display_raster2d(1, "libs/lua/tests/mesh_source_paths.lua");
+  test_display_raster2d(1, "libs/lua/tests/mesh_staging.lua");
   test_display_strokes();
   test_display_regions();
   test_display_meshes();

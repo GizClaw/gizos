@@ -1202,6 +1202,37 @@ static int mesh_span_result_equal(h2_lua_display_mesh_t *mesh,
   return 1;
 }
 
+#define MESH_STAGE_LIMIT 1024u
+static const char s_mesh_stage_key;
+
+/* Leave the chosen userdata strongly rooted on the calling Lua stack. The
+ * registry owns one high-water buffer, not one buffer per mesh. */
+static h2_lua_display_vertex_t *mesh_stage(lua_State *state, h2_lua_job_t *job,
+                                          size_t capacity) {
+  size_t count = capacity < MESH_STAGE_LIMIT ? capacity : MESH_STAGE_LIMIT;
+  size_t bytes = count * sizeof(h2_lua_display_vertex_t);
+  lua_rawgetp(state, LUA_REGISTRYINDEX, &s_mesh_stage_key);
+  if (lua_isuserdata(state, -1) && lua_rawlen(state, -1) >= bytes)
+    return lua_touserdata(state, -1);
+  lua_pop(state, 1);
+  h2_lua_display_vertex_t *candidate = lua_newuserdatauv(state, bytes, 0);
+  int at = lua_gettop(state);
+  /* Allocation can finalize a mesh that draws with a larger scratch buffer.
+   * Keep that newer allocation instead of shrinking the shared high-water. */
+  lua_rawgetp(state, LUA_REGISTRYINDEX, &s_mesh_stage_key);
+  if (lua_isuserdata(state, -1) && lua_rawlen(state, -1) >= bytes) {
+    h2_lua_display_vertex_t *current = lua_touserdata(state, -1);
+    lua_remove(state, at);
+    return current;
+  }
+  lua_pop(state, 1);
+  if (job->display_open) {
+    lua_pushvalue(state, at);
+    lua_rawsetp(state, LUA_REGISTRYINDEX, &s_mesh_stage_key);
+  }
+  return candidate;
+}
+
 static int display_draw_mesh(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
   h2_lua_display_mesh_t *mesh = mesh_check(state, 1);
@@ -1253,7 +1284,14 @@ static int display_draw_mesh(lua_State *state) {
   if (!lua_isnil(state, -1)) luaL_checktype(state, -1, LUA_TBOOLEAN);
   int retain_spans = lua_toboolean(state, -1);
   lua_pop(state, 1);
+  int identity = !source_transform && grid == 0 && matrix[0] == 1 && matrix[1] == 0 &&
+                 matrix[2] == 0 && matrix[3] == 1 && matrix[4] == 0 &&
+                 matrix[5] == 0;
+  h2_lua_display_vertex_t *staged = NULL;
+  if (!identity && mesh->vertex_count != 0 && mesh->vertex_count <= MESH_STAGE_LIMIT)
+    staged = mesh_stage(state, job, mesh->vertex_capacity);
   display_span_cache_t *cache = NULL;
+  int cache_at = 0, new_cache = 0;
   if (retain_spans) {
     lua_getiuservalue(state, 1, 1);
     if (lua_isnil(state, -1)) {
@@ -1264,9 +1302,17 @@ static int display_draw_mesh(lua_State *state) {
       cache->capacity = 8192;
       cache->count = 0;
       cache->valid = 0;
-      lua_pushvalue(state, -1);
-      lua_setiuservalue(state, 1, 1);
-      mesh->spans_valid = 0;
+      cache_at = lua_gettop(state);
+      /* A finalizer may have installed a complete candidate during allocation.
+       * Reuse it; do not overwrite it with the outer call's empty cache. */
+      lua_getiuservalue(state, 1, 1);
+      if (!lua_isnil(state, -1)) {
+        cache = lua_touserdata(state, -1);
+        lua_remove(state, cache_at);
+      } else {
+        lua_pop(state, 1);
+        new_cache = 1;
+      }
     } else cache = lua_touserdata(state, -1);
   }
   if (!job->display_open || grid < 0 || grid > 16 || left < 0 ||
@@ -1275,9 +1321,9 @@ static int display_draw_mesh(lua_State *state) {
     return luaL_error(state, "invalid mesh options or closed display");
   h2_lua_display_vertex_t *positions = mesh_positions(mesh);
   const h2_lua_display_vertex_t *vertices = mesh_vertices(mesh);
-  int identity = !source_transform && grid == 0 && matrix[0] == 1 && matrix[1] == 0 &&
-                 matrix[2] == 0 && matrix[3] == 1 && matrix[4] == 0 &&
-                 matrix[5] == 0;
+  /* No allocation or callback from this final view through publication.
+   * Reentry can change active size, so a now-larger mesh uses the old path. */
+  if (mesh->vertex_count > MESH_STAGE_LIMIT) staged = NULL;
   int same_parameters = mesh->trigonometry_valid;
   for (int i = 0; i < 4; ++i)
     if (mesh->transform[i] != transform[i]) same_parameters = 0;
@@ -1301,11 +1347,15 @@ static int display_draw_mesh(lua_State *state) {
         if (!isfinite(p.x) || !isfinite(p.y) || fabs(p.x) > 16000000 ||
             fabs(p.y) > 16000000)
           return luaL_error(state, "transformed mesh coordinate out of range");
+        if (staged != NULL) staged[i] = p;
       }
-      for (size_t i = 0; i < mesh->vertex_count; ++i)
-        positions[i] = source_transform
-            ? mesh_source_transform(vertices[i], transform, ca, sa, (int)grid)
-            : mesh_transform(vertices[i], matrix, (int)grid);
+      if (staged != NULL)
+        memcpy(positions, staged, mesh->vertex_count * sizeof(*positions));
+      else
+        for (size_t i = 0; i < mesh->vertex_count; ++i)
+          positions[i] = source_transform
+              ? mesh_source_transform(vertices[i], transform, ca, sa, (int)grid)
+              : mesh_transform(vertices[i], matrix, (int)grid);
     }
     mesh->span_result_valid = 0;
     memcpy(mesh->matrix, matrix, sizeof(matrix));
@@ -1318,6 +1368,11 @@ static int display_draw_mesh(lua_State *state) {
     mesh->source_transform = source_transform;
     mesh->grid = (int)grid;
     mesh->positions_valid = 1;
+  }
+  if (new_cache) {
+    lua_pushvalue(state, cache_at);
+    lua_setiuservalue(state, 1, 1);
+    mesh->spans_valid = 0;
   }
   const h2_lua_display_vertex_t *draw_positions = identity ? vertices : positions;
   if (top == bottom || left == right) return 0;
@@ -3164,6 +3219,13 @@ static void display_release(lua_State *state, h2_lua_job_t *job) {
   job->framebuffer = NULL;
   job->display_open = job->frame_open = job->dirty_valid = 0;
   if (state != NULL) {
+    lua_rawgetp(state, LUA_REGISTRYINDEX, &s_mesh_stage_key);
+    int has_stage_key = !lua_isnil(state, -1);
+    lua_pop(state, 1);
+    if (has_stage_key) {
+      lua_pushboolean(state, 0);
+      lua_rawsetp(state, LUA_REGISTRYINDEX, &s_mesh_stage_key);
+    }
     display_release_background(state, job);
     display_release_presented(state, job);
     int smooth_ref = job->display_smooth_ref;
@@ -3188,6 +3250,15 @@ static int display_close(lua_State *state) {
 
 int h2_lua_push_display_proxy(lua_State *state, h2_lua_job_t *job) {
   h2_pal_result_t result;
+  /* Reserve the registry key before drawing. Replacing its value later does
+   * not grow the table, including after release/reacquisition. */
+  lua_rawgetp(state, LUA_REGISTRYINDEX, &s_mesh_stage_key);
+  int has_stage_key = !lua_isnil(state, -1);
+  lua_pop(state, 1);
+  if (!has_stage_key) {
+    lua_pushboolean(state, 0);
+    lua_rawsetp(state, LUA_REGISTRYINDEX, &s_mesh_stage_key);
+  }
   result = display_open(job);
   if (result != H2_PAL_OK) {
     lua_pushnil(state);

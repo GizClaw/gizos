@@ -57,6 +57,15 @@
  *   Cold retained drawing allocates 8192 span records plus one vertex/primitive
  *   snapshot at the mesh's declared capacities, alignment and fixed metadata.
  *   Cache overflow still draws completely and never replays a partial cache.
+ * - Nonidentity transforms of at most 1024 active vertices may stage once in
+ *   independent VM-accounted storage shared by Display meshes. Reserve up to
+ *   min(vertex_capacity,1024)*16 payload bytes plus userdata metadata, growing
+ *   only at a cold capacity transition. Growth can temporarily retain both old
+ *   and new allocations. Display release/VM teardown releases the shared root.
+ *   Larger active meshes keep the original validation/transform passes; the
+ *   public 65536-vertex limit is unchanged. No source, committed positions or
+ *   complete span snapshot is borrowed as scratch. Reentrant allocation is
+ *   followed by a fresh mesh/Display view, with no callbacks during publication.
  *
  * Prepared geometry Lua API (standard Host, owning VM worker only):
  * - display.draw_pose(pose,colors,origin_x,offset_x,offset_y,layer,scale,

@@ -239,6 +239,7 @@ cc_test(
         "tests/geometry_batches.lua",
         "tests/stroke_buffer.lua",
         "tests/mesh_source_paths.lua",
+        "tests/mesh_staging.lua",
         "tests/raster2d.lua",
     ],
     conlyopts = H2_C11_OPTS,

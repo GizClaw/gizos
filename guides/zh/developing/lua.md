@@ -168,6 +168,8 @@ smooth 显式启用圆端点连续覆盖，每像素只混合最大 alpha 一次
 
 精确单位矩阵且 `grid=0` 时，绘制直接读取 mesh 自有、已在创建／更新阶段验证的顶点，不再复制到派生坐标缓存或逐点重复计算单位变换，也不借用调用方缓冲区。既有派生坐标存储仍为一般变换保留，不增加容量或分配。此快路径不使用近似比较；非单位矩阵或非零 grid 仍在修改坐标缓存和像素前完整验证变换结果，错误、像素和缓存失效合同不变。
 
+非 identity 变换在活动顶点不超过 1024 时，可使用独立的 Display 共享暂存区一次计算、完整验证后提交。暂存区按 `min(vertex_capacity,1024)*16` 字节 payload 加 userdata 开销计入 VM，多个 mesh 复用容量；首次使用或增长容量可能分配，增长期间旧、新分配可能同时存活。Display release 或 VM teardown 释放共享引用。活动顶点超过 1024 时仍使用原来的验证／变换两遍路径，公开 65536 顶点上限不变。暂存区不借用源顶点、已提交位置或完整 span 候选；所有可能重入的分配之后重新读取 mesh 与 Display 状态，完整验证到发布之间不分配、不回调。失败不撤销用户 finalizer 自身的合法修改，也不得用外层旧状态覆盖它们。
+
 私有 native 计算模块通过生产公共头 `h2_lua_display.h` 创建／更新同一种 userdata，再交给 `display.draw_mesh`。C API 的完整参数、错误和 ownership 合同见从该头 Doxygen 生成的 [Lua Display API Reference](/references/lua)；native indices 从 0 开始，不同于 Lua 表。native 更新不分配、不增长 Lua stack，调用方预留两个空栈槽；创建通过受保护的 Lua 调用处理 OOM，失败恢复栈。它们不打开 Display、不绘制、不暴露内部存储地址，模块不得获取 job/framebuffer 或 include runtime 私有头。鱼身变形、场景投影、分色、网格选择等策略由应用先计算。
 
 ### Audio Track 的帧契约
