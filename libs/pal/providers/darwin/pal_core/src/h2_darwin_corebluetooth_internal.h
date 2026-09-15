@@ -29,4 +29,15 @@ void h2_darwin_corebluetooth_test_set_pending_connect(
     const h2_pal_ble_addr_t *address);
 bool h2_darwin_corebluetooth_test_connect_cleanup(unsigned cancel_count);
 
+enum {
+    H2_DARWIN_COREBLUETOOTH_TEST_CONNECTED,
+    H2_DARWIN_COREBLUETOOTH_TEST_FAILED,
+    H2_DARWIN_COREBLUETOOTH_TEST_DISCONNECTED,
+};
+/* Peripheral index 0 is the timed-out fake; index 1 is the other connection. */
+void h2_darwin_corebluetooth_test_deliver_central_event(
+    int event, int peripheral_index);
+void h2_darwin_corebluetooth_test_set_other_connected(void);
+bool h2_darwin_corebluetooth_test_other_connected(void);
+
 #endif

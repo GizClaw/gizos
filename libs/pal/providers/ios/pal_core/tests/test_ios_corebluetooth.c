@@ -106,6 +106,21 @@ void h2_ios_test_corebluetooth(void) {
                                   &connection_handle) == H2_PAL_ERR_TIMEOUT);
         assert(h2_ios_corebluetooth_test_connect_cleanup(attempt));
     }
+    h2_ios_corebluetooth_test_deliver_central_event(
+        H2_IOS_COREBLUETOOTH_TEST_CONNECTED, 0);
+    assert(h2_ios_corebluetooth_test_connect_cleanup(3u));
+    assert(h2_pal_ble_connect(ble, &timeout_address, &timeout_params,
+                              &connection_handle) == H2_PAL_ERR_TIMEOUT);
+    assert(h2_ios_corebluetooth_test_connect_cleanup(4u));
+
+    h2_ios_corebluetooth_test_set_other_connected();
+    assert(h2_ios_corebluetooth_test_other_connected());
+    h2_ios_corebluetooth_test_deliver_central_event(
+        H2_IOS_COREBLUETOOTH_TEST_FAILED, 0);
+    assert(h2_ios_corebluetooth_test_other_connected());
+    h2_ios_corebluetooth_test_deliver_central_event(
+        H2_IOS_COREBLUETOOTH_TEST_DISCONNECTED, 0);
+    assert(h2_ios_corebluetooth_test_other_connected());
     h2_ios_corebluetooth_test_set_pending_connect(NULL);
 
     const h2_pal_ble_adv_data_t scan_response = {0};
