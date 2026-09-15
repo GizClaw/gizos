@@ -363,6 +363,10 @@ static void test_provider_receive(void) {
             assert(h2_pal_modem_open(modem, 0u) == H2_PAL_OK);
             h2_pal_modem_signal_t signal;
             assert(h2_pal_modem_get_signal(modem, &signal) == (timeout ? H2_PAL_ERR_TIMEOUT : H2_PAL_OK));
+            if (!timeout) {
+                assert(signal.rssi_dbm == -73 && signal.rssi_valid == 1u);
+                assert(signal.rsrp_dbm == 0 && signal.rsrp_valid == 0u);
+            }
             wait_value(&f, &f.received, 1);
             fail_join = 1;
             assert((vendor == 0 ? h2_quectel_modem_deinit(&f.quectel)

@@ -167,3 +167,5 @@ Friend 与 Friend Group 语音只通过各自 system Workspace（内置 `system-
 ### 下行边界与取消
 
 下行媒体不看 EOS，除按下后的 `waiting_for_bos` 外收到即解码；标志只由按下后的下一个下行音频 BOS 清除。清空与 decoder 写入 Track 串行化：清空时持有解码锁，丢弃待解码 Opus、重置解码器并标记 Track 下行水位，旧数据不会在清空后再写入。已交给平台输出的音频缓冲不在此清空保证内。不新增 RTP payload 或时间戳格式。
+
+`h2_gizclaw_conversation_cancel` 只关闭本轮输入并清空本地缓冲，不停止服务端 run；SFU 房间下行可继续到达。显式离开当前 run 使用 `h2_gizclaw_rpc_run_stop`，服务端停止 runtime 并断开房间，成功后库再清空 Service 的 Opus 队列、解码器和未播放 PCM（无 Session 时也一样）。下行仍由 Service 共享 Track 承接，不按 stream 或 Workspace 过滤；已交给平台输出的缓冲仍不在清空保证内。
