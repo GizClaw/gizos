@@ -33,10 +33,6 @@ h2_lua_web_app(
 # 9000-frame spatial scene/view groups. Each keeps 300 warmups and 3 x 3000
 # samples per case, including actual raster/present. macOS fastbuild exceeded
 # 2400 seconds when all groups ran serially in one browser invocation.
-test_suite(
-    name = "benchmark_browser_test",
-    tests = ["//projects/example/targets/pkg_tar/lua_skeleton2d/benchmark_%d:benchmark_browser_test" % group for group in range(1, 10)],
-)
 
 web_archive_browser_test(
     name = "landmark_browser_test",

@@ -133,7 +133,7 @@ bazel test --config=macos_arm64 \
 
 ### CI 基准分组
 
-`//projects/example/targets/pkg_tar/lua_skeleton2d:benchmark_browser_test` 汇总九个独立浏览器测试。App 的可选启动参数 `benchmark_group` 为 1 时执行八种二维配置（72000 个记录帧），为 2..9 时依次执行 human/dog 的四种视角，每组 9000 个记录帧。未设置或为 0 时，交互 BENCH 仍完整执行所有组。每个配置保持三轮，每轮 300 帧预热、3000 帧记录，所有帧仍调用生产骨骼求值、几何更新、真实 raster 和 present；空间视角切换测量也保持不变。
+使用 `bazel test //projects/example/targets/pkg_tar/lua_skeleton2d/...` 直接发现九个独立基准测试及交互测试；不创建 `test_suite`。App 的可选启动参数 `benchmark_group` 为 1 时执行八种二维配置（72000 个记录帧），为 2..9 时依次执行 human/dog 的四种视角，每组 9000 个记录帧。未设置或为 0 时，交互 BENCH 仍完整执行所有组。每个配置保持三轮，每轮 300 帧预热、3000 帧记录，所有帧仍调用生产骨骼求值、几何更新、真实 raster 和 present；空间视角切换测量也保持不变。
 
 拆分依据是 PR #380 提交 `331afab3` 的 macOS fastbuild CI：二维组已完成，空间组仍在推进时，单次 harness 达到 2400 秒上限。各组现在独立拥有 2400 秒运行预算，避免所有组共享一次超时；不减少总计 144000 个记录帧，也不取消任何平台验收。各浏览器独立初始化，因此跨组 VM/GC 历史不同；并行 CI 的时间数据不能直接用于替换前述受控运行的性能测量。
 
