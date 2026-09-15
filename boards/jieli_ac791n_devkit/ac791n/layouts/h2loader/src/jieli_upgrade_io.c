@@ -2,6 +2,7 @@
 #include "asm/sfc_norflash_api.h"
 #include "device/ioctl_cmds.h"
 #include "jieli_upgrade_io.h"
+#include "h2_jieli_ac791n_devkit_flash_window.h"
 #include "h2_jieli_warm_request.h"
 #include <string.h>
 
@@ -80,11 +81,10 @@ int h2_jieli_upgrade_header_publish(const u8 header[H2_JIELI_UPGRADE_HEADER_SIZE
   if (memcmp(physical, header, sizeof(physical)) == 0) return 0;
   if (!erased(physical)) goto failed;
   h2_jieli_upgrade_publish_observer(header);
-  /* SDK callers ignore these return values; physical readback, not an
-   * undocumented protection-helper convention, determines commit success. */
-  (void)norflash_protect_suspend();
+  h2_jieli_flash_window_t window = {0};
+  if (h2_jieli_flash_window_open(&window) != 0) goto failed;
   int written = norflash_write(NULL, (void *)header, sizeof(physical), HEADER_ADDR);
-  (void)norflash_protect_resume();
+  if (h2_jieli_flash_window_close(&window) != 0) goto failed;
   if (written != (int)sizeof(physical) ||
       norflash_origin_read(physical, HEADER_ADDR, sizeof(physical)) !=
           (int)sizeof(physical)) goto failed;
@@ -142,7 +142,11 @@ u32 dev_upgrade_write(u8 *buf, u32 addr, u32 len) {
     return 0u;
   }
   h2_jieli_upgrade_write_observer(buf, addr, len);
-  return norflash_write(NULL, buf, len, addr) == (int)len ? len : 0u;
+  h2_jieli_flash_window_t window = {0};
+  if (h2_jieli_flash_window_open(&window) != 0) return 0u;
+  int written = norflash_write(NULL, buf, len, addr);
+  int closed = h2_jieli_flash_window_close(&window);
+  return written == (int)len && closed == 0 ? len : 0u;
 }
 
 u8 dev_upgrade_erase(u32 command, u32 addr) {
@@ -158,7 +162,11 @@ u8 dev_upgrade_erase(u32 command, u32 addr) {
    * wait result. Verify every byte, even when ioctl reports success. */
   u32 start = addr & ~(size - 1u);
   u8 physical[256];
-  if (norflash_ioctl(NULL, ioctl, addr) != 0) goto failed;
+  h2_jieli_flash_window_t window = {0};
+  if (h2_jieli_flash_window_open(&window) != 0) goto failed;
+  int erased_result = norflash_ioctl(NULL, ioctl, addr);
+  int closed = h2_jieli_flash_window_close(&window);
+  if (erased_result != 0 || closed != 0) goto failed;
   for (u32 offset = 0u; offset < size; offset += sizeof(physical)) {
     if (norflash_origin_read(physical, start + offset, sizeof(physical)) !=
         (int)sizeof(physical)) goto failed;
@@ -174,10 +182,20 @@ failed:
   return 0u;
 }
 
+/* SDK has one active updater transaction; its init/exit may run on different
+ * tasks. Token state is protected by the shared window lock, not task identity.
+ * Per-operation leases above also cover calls outside that outer transaction. */
+static h2_jieli_flash_window_t upgrade_window;
 void dev_upgrade_protect_suspend(void) {
-  (void)norflash_protect_suspend();
+  if (h2_jieli_flash_window_open(&upgrade_window) != 0) {
+    __atomic_store_n(&erase_failed, 1u, __ATOMIC_RELEASE);
+    __atomic_store_n(&header_gate, GATE_FAILED, __ATOMIC_RELEASE);
+  }
 }
 
 void dev_upgrade_protect_resume(void) {
-  (void)norflash_protect_resume();
+  if (h2_jieli_flash_window_close(&upgrade_window) != 0) {
+    __atomic_store_n(&erase_failed, 1u, __ATOMIC_RELEASE);
+    __atomic_store_n(&header_gate, GATE_FAILED, __ATOMIC_RELEASE);
+  }
 }

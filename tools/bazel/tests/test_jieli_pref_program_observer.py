@@ -1,6 +1,7 @@
 """Exercise the actual NOR program adapter with and without a diagnostic hook."""
 from pathlib import Path
 import subprocess
+import os
 import tempfile
 import unittest
 
@@ -10,7 +11,10 @@ SOURCE = ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_pr
 
 class ObserverTest(unittest.TestCase):
     def test_program_observer(self):
-        source = SOURCE.read_text()
+        baseline = os.environ.get("JIELI_WINDOW_BASELINE")
+        source = subprocess.check_output(
+            ["git", "show", f"{baseline}:{SOURCE.relative_to(ROOT)}"], text=True
+        ) if baseline else SOURCE.read_text()
         adapter = source[source.index('static int pref_flash_read('):
                          source.index('static int pref_flash_sync(')]
         stub = r'''
@@ -27,10 +31,15 @@ struct lfs_config { uint32_t block_size; };
 #define LFS_ERR_OK 0
 #define IOCTL_SET_WRITE_PROTECT 1
 #define IOCTL_ERASE_SECTOR 2
-int writes, observed, fail, reads, erases;
+int writes, observed, fail, reads, erases, window_active;
+/* This fixture isolates observer order; real protection is in flash_window. */
+typedef struct { int active; } h2_jieli_flash_window_t;
+int h2_jieli_flash_window_open(h2_jieli_flash_window_t *w) {w->active=1;window_active=1;return 0;}
+int h2_jieli_flash_window_close(h2_jieli_flash_window_t *w) {w->active=0;window_active=0;return 0;}
 static int norflash_ioctl(void *p, int cmd, unsigned arg) {
   (void)p;
   if (cmd == IOCTL_ERASE_SECTOR) {
+    assert(window_active);
     assert(arg == 0x11000u); ++erases;
     return fail ? -1 : 0;
   }
@@ -41,6 +50,7 @@ static int norflash_read(void *p, void *buf, unsigned n, unsigned addr) {
   ++reads; return fail ? 0 : (int)n;
 }
 static int norflash_write(void *p, void *buf, unsigned n, unsigned addr) {
+  assert(window_active);
   (void)p; assert(buf && n==256 && addr==0x11000);
   ++writes; return fail ? 0 : (int)n;
 }
@@ -80,7 +90,7 @@ int main(void) {
   assert(pref_flash_erase(&cfg,1)==LFS_ERR_IO);
   assert(reads==2 && erases==2);
   assert(pref_flash_program(&cfg,1,0,data,256)==LFS_ERR_IO);
-  assert(writes==2);
+  assert(writes==2 && !window_active);
   assert(observed==EXPECTED);
 }
 '''

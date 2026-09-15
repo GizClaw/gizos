@@ -1,5 +1,6 @@
 #include "asm/sfc_norflash_api.h"
 #include "device/ioctl_cmds.h"
+#include "h2_jieli_ac791n_devkit_flash_window.h"
 
 #include "h2_jieli_ac791n_devkit.h"
 #include "h2_jieli_ac791n_devkit_partitions.h"
@@ -119,16 +120,20 @@ static h2_pal_result_t erase_partition(
     return H2_PAL_ERR_INVALID_ARG;
   }
   if (length == 0u) return H2_PAL_OK;
-  (void)norflash_ioctl(NULL, IOCTL_SET_WRITE_PROTECT, 0u);
+  h2_jieli_flash_window_t window = {0};
+  if (h2_jieli_flash_window_open(&window) != 0) return H2_PAL_ERR_IO;
   uint32_t address = partition->address + (uint32_t)offset;
   uint32_t end = address + (uint32_t)length;
+  h2_pal_result_t result = H2_PAL_OK;
   while (address < end) {
     if (norflash_ioctl(NULL, IOCTL_ERASE_SECTOR, address) != 0) {
-      return H2_PAL_ERR_IO;
+      result = H2_PAL_ERR_IO;
+      break;
     }
     address += H2_JIELI_FLASH_SECTOR_SIZE;
   }
-  return H2_PAL_OK;
+  if (h2_jieli_flash_window_close(&window) != 0) result = H2_PAL_ERR_IO;
+  return result;
 }
 
 static h2_pal_result_t write_partition(
@@ -143,10 +148,12 @@ static h2_pal_result_t write_partition(
     return H2_PAL_ERR_INVALID_ARG;
   }
   if (length == 0u) return H2_PAL_OK;
-  (void)norflash_ioctl(NULL, IOCTL_SET_WRITE_PROTECT, 0u);
+  h2_jieli_flash_window_t window = {0};
+  if (h2_jieli_flash_window_open(&window) != 0) return H2_PAL_ERR_IO;
   int result = norflash_write(
       NULL, (void *)data, (uint32_t)length,
       partition->address + (uint32_t)offset);
+  if (h2_jieli_flash_window_close(&window) != 0) return H2_PAL_ERR_IO;
   return result == (int)length ? H2_PAL_OK : H2_PAL_ERR_IO;
 }
 

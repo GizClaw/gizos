@@ -1,5 +1,6 @@
 #include "asm/sfc_norflash_api.h"
 #include "device/ioctl_cmds.h"
+#include "h2_jieli_ac791n_devkit_flash_window.h"
 #include "lfs.h"
 #include "os/os_api.h"
 
@@ -106,12 +107,12 @@ static int pref_flash_program(
   }
   h2_jieli_pref_program_observer(
       H2_JIELI_PREF_ADDRESS + address, buffer, size);
-  (void)norflash_ioctl(NULL, IOCTL_SET_WRITE_PROTECT, 0u);
-  return norflash_write(
-             NULL, (void *)buffer, size, H2_JIELI_PREF_ADDRESS + address) ==
-          (int)size
-      ? LFS_ERR_OK
-      : LFS_ERR_IO;
+  h2_jieli_flash_window_t window = {0};
+  if (h2_jieli_flash_window_open(&window) != 0) return LFS_ERR_IO;
+  int result = norflash_write(
+      NULL, (void *)buffer, size, H2_JIELI_PREF_ADDRESS + address);
+  if (h2_jieli_flash_window_close(&window) != 0) return LFS_ERR_IO;
+  return result == (int)size ? LFS_ERR_OK : LFS_ERR_IO;
 }
 
 static int pref_flash_erase(
@@ -125,11 +126,12 @@ static int pref_flash_erase(
       config->block_size > H2_JIELI_PREF_SIZE - address) {
     return LFS_ERR_IO;
   }
-  (void)norflash_ioctl(NULL, IOCTL_SET_WRITE_PROTECT, 0u);
-  return norflash_ioctl(
-             NULL, IOCTL_ERASE_SECTOR, H2_JIELI_PREF_ADDRESS + address) == 0
-      ? LFS_ERR_OK
-      : LFS_ERR_IO;
+  h2_jieli_flash_window_t window = {0};
+  if (h2_jieli_flash_window_open(&window) != 0) return LFS_ERR_IO;
+  int result = norflash_ioctl(
+      NULL, IOCTL_ERASE_SECTOR, H2_JIELI_PREF_ADDRESS + address);
+  if (h2_jieli_flash_window_close(&window) != 0) return LFS_ERR_IO;
+  return result == 0 ? LFS_ERR_OK : LFS_ERR_IO;
 }
 
 static int pref_flash_sync(const struct lfs_config *config) {

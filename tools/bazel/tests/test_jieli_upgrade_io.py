@@ -1,6 +1,7 @@
 """Exercise the layout-owned NOR upgrade adapter against a fake SDK driver."""
 from pathlib import Path
 import subprocess
+import os
 import tempfile
 import unittest
 
@@ -27,6 +28,7 @@ int norflash_protect_resume(void);
 #include <assert.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include "h2_jieli_ac791n_devkit_flash_window.h"
 #include "adapter.c"
 static struct { int burn_waiting, update_result, update_sem; } state;
 #define H2_PAL_OK 0
@@ -51,6 +53,7 @@ int norflash_read(struct device *dev,void *buf,u32 len,u32 addr) {
   assert(dev==NULL);calls++;buffer=buf;length=len;address=addr;return result;
 }
 int norflash_write(struct device *dev,void *buf,u32 len,u32 addr) {
+  assert(suspended>resumed);
   if (reinstall_mode) {
     assert(addr>=HEADER_ADDR && addr+len<=HEADER_ADDR+sizeof(p2_sectors));
     for(u32 i=0;i<len;i++) p2_sectors[addr-HEADER_ADDR+i]&=((u8 *)buf)[i];
@@ -81,6 +84,7 @@ int norflash_origin_read(u8 *buf,u32 addr,u32 len) {
   return norflash_read(NULL,buf,len,addr);
 }
 int norflash_ioctl(struct device *dev,u32 cmd,u32 addr) {
+  assert(suspended>resumed);
   assert(dev==NULL);calls++;command=cmd;address=addr;
   if (reinstall_mode) {
     assert(cmd==IOCTL_ERASE_SECTOR && (addr==HEADER_ADDR || addr==HEADER_ADDR+4096));
@@ -93,6 +97,14 @@ int norflash_ioctl(struct device *dev,u32 cmd,u32 addr) {
 }
 int norflash_protect_suspend(void) { suspended++;return 0; }
 int norflash_protect_resume(void) { resumed++;return 0; }
+/* Protection concurrency is exercised with the real helper in flash_window. */
+int h2_jieli_flash_window_open(h2_jieli_flash_window_t *window) {
+  window->active=1;return norflash_protect_suspend();
+}
+int h2_jieli_flash_window_close(h2_jieli_flash_window_t *window) {
+  if(!window->active)return 0;
+  window->active=0;return norflash_protect_resume();
+}
 
 /* Replay the pinned update.a callback boundary, not a replacement updater.
  * allow-check initializes curr_erase_addr=target_update_addr-32=0x37c000.
@@ -202,6 +214,7 @@ int main(int argc,char **argv) {
   calls=0;assert(dev_upgrade_erase(0,0)==0);
   assert(dev_upgrade_erase(4,0)==0 && calls==0);
   switch_upgrade_dev(1);assert(get_app_boot_base_addr()==0x4020);
+  suspended=resumed=0;
   dev_upgrade_protect_suspend();dev_upgrade_protect_resume();
   assert(suspended==1 && resumed==1);
   emulate_flash=1;result=32;memset(flash_header,0xff,32);
@@ -280,7 +293,11 @@ int main(int argc,char **argv) {
             (root / "device/ioctl_cmds.h").write_text(
                 "#define IOCTL_ERASE_BLOCK 201\n#define IOCTL_ERASE_SECTOR 200\n"
                 "#define IOCTL_ERASE_PAGE 204\n")
-            (root / "adapter.c").write_text(SOURCE.read_text())
+            baseline = os.environ.get("JIELI_WINDOW_BASELINE")
+            adapter = subprocess.check_output(
+                ["git", "show", f"{baseline}:{SOURCE.relative_to(ROOT)}"], text=True
+            ) if baseline else SOURCE.read_text()
+            (root / "adapter.c").write_text(adapter)
             (root / "test.c").write_text(program)
             command = ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
                        "-I", str(root),
