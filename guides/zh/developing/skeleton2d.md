@@ -16,7 +16,7 @@ Lua 的 `require('skeleton2d')` 在所有 Host 内置，不能被自定义模块
 
 时间使用整数微秒。Clamp 包含 duration 端点，repeat 为 `[0,duration)`，负时间使用非负余数。轨道严格按 key 时间排序；缺失通道回默认姿态，轨道范围外保持端值。Step 在命中 key 时切换；linear 支持 shortest-angle 或显式多圈 unwrapped。两路混合角度采用 `[-π,π)` 的最短差，weight 0/1 精确复现对应输入。层级、资源和 visible 不参与数值混合，应用成批设置它们。
 
-正/侧/背造型需要不同资源与层级输入，不是 2D 旋转能够生成的三维视图。首期不包含仿射纹理、多骨蒙皮、IK、动画事件或行为状态机。连接处采用应用提供的重叠端盖/覆盖片；库不保证任意资源自动无缝。
+正/侧/背造型需要不同资源与层级输入，不是 2D 旋转能够生成的三维视图。纹理附件通过下述 Display 适配器绘制；不包含多骨蒙皮、IK、动画事件或行为状态机。连接处采用应用提供的重叠端盖/覆盖片；库不保证任意资源自动无缝。
 
 ## 绘制与像素
 
@@ -70,3 +70,62 @@ Host/WASM 结果不能推断 ESP32-S3 或 BK7258 的帧率、屏幕完成时间�
 完整八种二维配置加八种角色/视角配置，共 144000 个记录帧中，没有超过 33.33 ms 的帧。全矩阵最大单帧为 10.100 ms。浏览器时钟大量量化到约 100 微秒，不能把子阶段记录的 0 当作零成本；Host 调度使 p95 与 p50 存在明显差距。该数据包含实际 raster 和 PAL 接收，不包含物理屏幕完成信号。
 
 小型 raw Lua 合同 fixture 的 VM 分配峰值为 53740 B；成功的采样、混合、局部覆盖、求值及 writer 更新在预热后连续 10000 帧分配次数为 0，关闭 VM 后计费为 0。它不代表完整示例或设备总 RAM。完整 CSV、阶段分位数、内存范围及测量源码摘要随性能报告提供；ESP32-S3/BK7258 的预算继续保持未验证。
+
+## 仿射纹理附件
+
+纹理采样与 RGBA→RGB565 混合由 `libs/raster2d` 统一实现，Lua Display 管理纹理、引用和计费；Skeleton2D Lua adapter 只把已发布的资源 ID 和矩阵映射到固定容量批次。C core 不持有图片、几何或 AABB。
+
+```lua
+local display, sk = require('display'), require('skeleton2d')
+-- rgba 是应用加载的原始 RGBA8 字节串；PNG 等格式需由资源流程解码。
+local texture = display.texture(32, 32, rgba)
+local writer, batch = sk.textures(definition, {
+  {texture=texture, x=0, y=0, width=32, height=32, anchor_x=16, anchor_y=24},
+})
+local root = {1, 0, 0, 1, 120, 120}
+-- 帧内复用 definition、actor、writer、batch 和 root。
+actor:sample(1, time_us, 'repeat')
+actor:evaluate(root)
+sk.update_textures(writer, actor)
+display.draw_textures(batch)
+display.present()
+```
+
+图集坐标以纹理左上角为原点，锚点相对于选定区域的左上角。纹理格中心在 `(x+0.5,y+0.5)`；目标像素中心逆变换到局部区域后取 floor，源区域采用半开区间。整数 identity/平移逐格对齐，支持旋转、非均匀缩放、shear、镜像；行列式恰为零时不画，非零但逆矩阵非有限时报错。最近邻不提供抗锯齿。透明源不改背景，半透明在 RGB565 通道内 source-over；RGB8 截断到 5/6/5 位，不能承诺转换后与 RGBA 字节相同。
+
+Display 复制 RGBA 字符串及附件描述，批次强引用纹理；writer 强引用 definition 和批次。热更新先校验全批再发布，失败保留旧批次。返回批次仅供绘制，不能手工更新。完整源纹理约占 `4*w*h` 字节，批次含资源描述及两份容量数组；Lua header、引用表、初始化字符串、帧缓冲和 PAL 存储另计，预算以 allocator 实测峰值为准。当前 damage 保守标记整个 clip，透明或零缩放也可能导致多余提交；局部重绘由应用指定 clip 并恢复旧背景。
+
+公共用例 `//projects/example/targets/pkg_tar/lua_texture2d:browser_test` 读取真实 WASM Canvas，对照 80 组独立/骨骼绘制结果。纹理性能由该用例单独测量，不能使用上方旧 mesh 数据。MCU 性能未实测，状态为 **SKIP**。资源拆分、关节覆盖、朝向贴图和关键帧一致性仍由应用验证，静态整角色贴图回放不能作为骨骼动画完成证据。
+
+### 纹理验证记录（2026-09-15）
+
+本次测量使用 Apple M2、16 GiB、macOS 26.6.2，仓库 WASM/Chromium harness，`-c opt --copt=-UNDEBUG`。以下数字只覆盖通用测试纹理，不能代替私有角色验收。生产源码摘要为 `304909b75817cfd18305d5a86910e6fd736eea077d793d7ddede965c7d79eebe`（按路径排序，对 Raster2D C/头、Lua texture C/私有头、skeleton adapter C 和 modules C 的 `路径+NUL+内容` 连接计算 SHA-256）。
+
+每个工作负载为 1 bone、1 或 16 个附件，共享一张 32×32 RGBA8 纹理（4096 B），包含不透明、半透明及全透明像素。附件有重叠，骨骼角度持续采样；edge=120/240 是屏幕左上 25%/100% 的恢复及绘制 clip。每组预热 300 帧、记录 3000 帧、重复三轮，共 36000 个记录帧。表中取三轮 p95 的最大值，单位 μs。
+
+| 附件数 | clip edge | 恢复背景 | 纹理 raster | present | 端到端 |
+| ---: | ---: | ---: | ---: | ---: | ---: |
+| 1 | 120 | 低于时钟分辨率 | 100 | 101 | 200 |
+| 1 | 240 | 100 | 100 | 201 | 299 |
+| 16 | 120 | 低于时钟分辨率 | 101 | 101 | 200 |
+| 16 | 240 | 100 | 200 | 201 | 301 |
+
+采样/求值和适配分别计时，但 p95 低于浏览器约 100 μs 的有效分辨率，不能记为零成本。所有记录帧中没有超过 33.33 ms，最大端到端值为 6600 μs；该轮与其他本地构建检查并行，调度尾延迟不等于渲染器独占成本。每帧提交 1 个矩形，edge=120/240 分别提交 14400/57600 像素。当前 conservative damage 的成本已包括在内；present 仅是 PAL 接收，不是物理屏幕完成。
+
+raw Lua allocator 从 VM 创建计量到关闭：含原 mesh fixture 和新增 32×32 纹理、两附件 writer，峰值 62471 B，预热后的 10000 帧更新分配次数为 0，关闭后计费为 0。真实 Host 的 32×32/16 附件初始化阶段测得 VM 峰值 76065 B（包含当时已存在的合同测试资源和输入字符串）；该 fixture 的 10000 帧 update/draw 也通过零分配断言，但绘制 clip 为 8×8。Web benchmark 的约 267 KiB VM 快照包含采样数组，**不是 allocator 峰值**。这些数值均不包含完整 PAL/framebuffer/线程栈，不能直接作 MCU RAM 预算。
+
+最终软件验证：16 项优化测试通过，覆盖 C texture oracle、原 Raster2D/Skeleton2D、Lua Host/raw VM、source package、原 vector/skeleton Web 和新 texture Web。C 独立前向纹理格 oracle 覆盖 44 组变换/锚点/clip 组合；另有透明、越界/溢出/奇异输入、整批失败及 guard 检查。ASan/UBSan 的 C 测试通过。Web 对整个 Canvas 逐像素对照 80 组独立/骨骼纹理结果及失败后旧批次内容。
+
+```sh
+bazel test --config=macos_arm64 \
+  --repo_env=DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  -c opt --copt=-UNDEBUG \
+  //libs/lua:all //libs/raster2d:all //libs/skeleton2d:all \
+  //projects/example/targets/pkg_tar/lua_texture2d:browser_test \
+  //projects/example/targets/pkg_tar/lua-script-vector:browser_test \
+  //projects/example/targets/pkg_tar/lua_skeleton2d:browser_test
+```
+
+完整图也已执行，但未全部通过：macOS 全图测试有 481 项通过、39 项跳过，纹理迭代期间的两个失败由上述最终回归覆盖；文档因缺少 Doxygen/Docker 无法生成。macOS 全图 build 被旧示例所需的 `macosx10.11` SDK 阻塞，ESP32-S3 全图分析缺少 Pion 的 C++ toolchain；BK 全图编译器为 x86_64，在本机处于持续等待后中止。不能将这些结果写成全仓 green。ESP32-S3/BK7258 实机性能、RAM、屏幕完成与栈高水位均为 **SKIP**。
+
+自审结论：C core 无渲染依赖变化；RGBA/引用/事务 scratch 均由 Display owner 管理，adapter 不复制采样器；非法批次在写入前完整校验，旧批次保留；typed 尾部数组保证 32 位/WASM 的矩阵对齐；资源 GC 和关闭归零有真实计费验证。迭代发现并修复了 32 位对齐、过严的极小行列式校验，以及测试计费钩子对 Lua 5.5 长字符串 allocator 生命周期的误用。修复后重新审阅，没有遗留的已知功能性负面发现；上面的工具链/设备验证限制仍成立。

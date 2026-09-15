@@ -1,10 +1,11 @@
-#include "h2_lua_display.h"
-#include "h2_raster2d.h"
 #include "../../../raster2d/src/h2_raster2d_internal.h"
+#include "../runtime/h2_lua_internal.h"
+#include "h2_f32_math.h"
+#include "h2_lua_display.h"
 #include "h2_lua_numeric.h"
 #include "h2_lua_skeleton2d.h"
-#include "h2_f32_math.h"
-#include "../runtime/h2_lua_internal.h"
+#include "h2_lua_texture_internal.h"
+#include "h2_raster2d.h"
 
 #include <limits.h>
 #include <math.h>
@@ -2065,6 +2066,46 @@ static int display_draw_rects(lua_State *state) {
   return 0;
 }
 
+static int display_draw_textures(lua_State *s) {
+  h2_lua_job_t *job = lua_touserdata(s, lua_upvalueindex(1));
+  const h2_lua_texture_batch_t *b = h2_lua_texture_batch_check(s, 1);
+  int argc = lua_gettop(s);
+  if (argc != 1 && argc != 5)
+    return luaL_error(s, "texture: incomplete clip");
+  h2_raster2d_clip_t clip = {0, 0, 0, 0};
+  size_t values[4];
+  if (argc == 5) {
+    for (int i = 0; i < 4; i++) {
+      if (!lua_isinteger(s, i + 2))
+        return luaL_error(s, "texture: expected integer clip");
+      lua_Integer v = lua_tointeger(s, i + 2);
+      if (v < 0 || v > INT32_MAX)
+        return luaL_error(s, "texture: invalid clip");
+      values[i] = (size_t)v;
+    }
+    clip = (h2_raster2d_clip_t){values[0], values[1], values[2], values[3]};
+  }
+  if (!job->display_open)
+    return luaL_error(s, "texture: closed display");
+  h2_raster2d_surface_t surface = {
+      job->framebuffer,
+      (size_t)job->display_info.width * job->display_info.height,
+      (size_t)job->display_info.width, (size_t)job->display_info.height,
+      (size_t)job->display_info.width};
+  if (argc == 1)
+    clip = (h2_raster2d_clip_t){0, 0, surface.width, surface.height};
+  h2_pal_result_t rc =
+      h2_raster2d_draw_sprites(&surface, b->items, b->count, &clip);
+  if (rc)
+    return luaL_error(s, "texture: draw failed %d", rc);
+  /* Conservative damage includes transparent/singular attachments. */
+  if (b->count && clip.left < clip.right && clip.top < clip.bottom)
+    mark_dirty_rect(job, (int)clip.left, (int)clip.top,
+                    (int)(clip.right - clip.left),
+                    (int)(clip.bottom - clip.top));
+  return 0;
+}
+
 /* One representation for Lua tables and allocation-free native updates. */
 typedef struct h2_lua_display_mesh {
   size_t vertex_capacity, primitive_capacity;
@@ -3922,6 +3963,10 @@ static int push_display_proxy(lua_State *state, h2_lua_job_t *job) {
   set_function(state, "compile_palette", display_compile_palette, job);
   set_function(state, "blend_palette", display_blend_palette, job);
   set_function(state, "draw_rects", display_draw_rects, job);
+  set_function(state, "texture", h2_lua_texture_new, job);
+  set_function(state, "texture_batch", h2_lua_texture_batch_new, job);
+  set_function(state, "update_textures", h2_lua_texture_update, job);
+  set_function(state, "draw_textures", display_draw_textures, job);
   set_function(state, "compile_commands", display_compile_commands, job);
   set_function(state, "draw_commands", display_draw_commands, job);
   set_function(state, "clear", display_clear, job);

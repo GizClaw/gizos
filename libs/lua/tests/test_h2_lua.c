@@ -1098,6 +1098,31 @@ static void test_display_raster2d(int benchmark) {
   h2_runtime_deinit(runtime);
 }
 
+static void test_display_textures(void) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_lua_host_t *host = NULL;
+  h2_lua_host_config_t config = {.runtime = runtime,
+                                 .worker_count = 1,
+                                 .max_jobs = 1,
+                                 .instruction_quantum = 1000000000,
+                                 .execution_timeout_ms = 20000,
+                                 .source_limit_bytes = 16384,
+                                 .vm_memory_limit_bytes = 256u * 1024u};
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(h2_lua_register_module(host, "raster_test", test_raster_open, NULL) ==
+         H2_PAL_OK);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  FILE *file = fopen("libs/lua/tests/texture.lua", "rb");
+  assert(file != NULL);
+  uint8_t script[16384];
+  size_t size = fread(script, 1, sizeof(script), file);
+  assert(!ferror(file) && size < sizeof(script));
+  assert(fclose(file) == 0);
+  (void)run_display_script_size(host, "@texture.lua", script, size, 8, 8);
+  h2_lua_host_destroy(host);
+  h2_runtime_deinit(runtime);
+}
+
 static void test_display_meshes(void) {
   h2_runtime_t *runtime = create_runtime();
   h2_lua_host_t *host = create_unstarted_host(runtime);
@@ -1895,6 +1920,7 @@ int main(int argc, char **argv) {
     return 0;
   }
   test_display_raster2d(0);
+  test_display_textures();
   test_skeleton_display();
   test_display_mesh_identity();
   test_display_mesh_cache();

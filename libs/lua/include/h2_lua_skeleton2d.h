@@ -51,6 +51,23 @@
  * definition; writer owns mesh and immutable resource copies. Only Lua's owning
  * worker may call these APIs. The returned mesh is draw-only: do not modify it
  * through another Display producer because unchanged poses reuse its contents.
+ *
+ * Texture attachment adapter:
+ * skeleton2d.textures(definition,attachments) -> writer,batch.
+ * Attachments use display.texture_batch records and one-based resource IDs;
+ * metadata is copied and Display retains the immutable textures. Writer owns
+ * definition and batch strongly. Batch capacity equals definition part count;
+ * every visible draw item consumes one slot. No core C contract changes.
+ * skeleton2d.update_textures(writer,actor) -> same batch, using published draw
+ * items in stable layer/part order. Actor must have the identical definition.
+ * Entire update validates resource IDs/matrices before publishing. Failure
+ * preserves the previous batch; success allocates nothing and does not draw.
+ * Caller draws with display.draw_textures(batch[,clip...]) then presents.
+ * Returned batch is draw-only; display.update_textures rejects it.
+ * The adapter stores no copied pixels, geometry or AABBs; Display owns texture
+ * storage and transactional batch scratch. Resource/layer/visibility changes
+ * follow actor evaluation. Singular transforms follow Raster2D rules. Authored
+ * overlap/caps are application data, not automatic joint repair or skinning.
  */
 #include "lua.h"
 #ifdef __cplusplus

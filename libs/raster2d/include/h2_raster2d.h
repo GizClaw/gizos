@@ -95,6 +95,49 @@ h2_pal_result_t h2_raster2d_draw_rects(const h2_raster2d_surface_t *surface,
                                        size_t palette_count,
                                        const h2_raster2d_clip_t *clip);
 
+/** Immutable straight (not premultiplied) RGBA8 bytes, row-major. Dimensions
+ * are 1..4096, stride/capacity in bytes. No allocation or ownership transfer.
+ * Pixel centers are (x+.5,y+.5); byte order is R,G,B,A on every host. */
+typedef struct h2_raster2d_texture {
+  const uint8_t *rgba;
+  size_t capacity_bytes, width, height, stride_bytes;
+} h2_raster2d_texture_t;
+
+/** Atlas source rectangle, zero-based and half-open, wholly inside texture.
+ * Source texel (x,y) occupies local [x-anchor_x,x+1-anchor_x) relative to
+ * the atlas rectangle, not the full atlas. Matrix maps local edges to screen:
+ * X=a*x+c*y+tx, Y=b*x+d*y+ty. All numbers finite, magnitude <= 1e6.
+ * Full affine including shear and reflection. Exactly singular matrices draw
+ * nothing (determinant uses double arithmetic; underflow to zero counts as
+ * singular). Nonzero determinants whose inverse is nonfinite are rejected.
+ * Nearest sampling inverse-maps destination centers and floors source coords;
+ * atlas neighbors never bleed. Identity/integer translations align exactly.
+ */
+typedef struct h2_raster2d_sprite {
+  h2_raster2d_texture_t texture;
+  size_t x, y, width, height;
+  double anchor_x, anchor_y;
+  double matrix[6];
+} h2_raster2d_sprite_t;
+#define H2_RASTER2D_SPRITE_LIMIT 4096u
+
+/** Validate the entire ordered batch, even clipped/singular items. Same errors,
+ * borrowing, overlap, serialization and failure atomicity as draw_rects.
+ * Surface/input descriptors and RGBA data must not overlap output storage.
+ * Transparent samples preserve destination. Other samples quantize RGB8 to
+ * R5/G6/B5 by truncation, then straight source-over each native channel using
+ * (src*alpha+dst*(255-alpha)+127)/255. This is not RGBA-byte equivalence or
+ * gamma-correct compositing. No allocation, retained state or display submit.
+ */
+h2_pal_result_t h2_raster2d_draw_sprites(const h2_raster2d_surface_t *surface,
+                                         const h2_raster2d_sprite_t *sprites,
+                                         size_t count,
+                                         const h2_raster2d_clip_t *clip);
+
+/** Resource/matrix validation without drawing; useful for transactional
+ * producer publication. NULL is invalid. Does not inspect pixel values. */
+h2_pal_result_t h2_raster2d_sprite_validate(const h2_raster2d_sprite_t *sprite);
+
 #ifdef __cplusplus
 }
 #endif

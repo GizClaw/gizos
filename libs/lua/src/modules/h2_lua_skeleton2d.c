@@ -1,10 +1,11 @@
 #include "h2_lua_skeleton2d.h"
 #include "h2_lua_display.h"
 #include "h2_lua_numeric_internal.h"
+#include "h2_lua_texture_internal.h"
 #include "h2_skeleton2d.h"
 #include <limits.h>
-#include <stddef.h>
 #include <stdalign.h>
+#include <stddef.h>
 #define DEF "h2.skeleton2d.definition"
 #define ACTOR "h2.skeleton2d.actor"
 #define WRITER "h2.skeleton2d.writer"
@@ -529,6 +530,49 @@ static int writer_bytes(lua_State *s) {
   lua_pushinteger(s, w->bytes);
   return 1;
 }
+#define TEXTURE_WRITER "h2.skeleton2d.texture_writer"
+typedef struct texture_writer {
+  const void *definition;
+} texture_writer_t;
+static int textures_new(lua_State *s) {
+  handle_t *d = handle(s, 1, DEF);
+  texture_writer_t *w = lua_newuserdatauv(s, sizeof(*w), 2);
+  w->definition = d->v.ptr;
+  int wi = lua_gettop(s);
+  luaL_getmetatable(s, TEXTURE_WRITER);
+  lua_setmetatable(s, wi);
+  lua_pushvalue(s, 1);
+  lua_setiuservalue(s, wi, 1);
+  h2_lua_texture_batch_t *b =
+      h2_lua_texture_batch_push(s, 2, h2_skeleton2d_part_count(d->v.ptr));
+  b->producer_owned = 1;
+  lua_pushvalue(s, -1);
+  lua_setiuservalue(s, wi, 2);
+  return 2;
+}
+static int update_textures(lua_State *s) {
+  texture_writer_t *w = luaL_checkudata(s, 1, TEXTURE_WRITER);
+  handle_t *a = handle(s, 2, ACTOR);
+  if (a->v.definition != w->definition)
+    return luaL_error(s, "skeleton2d: definition mismatch");
+  h2_skeleton2d_view_t v;
+  check(s, h2_skeleton2d_view(a->v.ptr, &v), "update_textures");
+  lua_getiuservalue(s, 1, 2);
+  h2_lua_texture_batch_t *b = h2_lua_texture_batch_check(s, -1);
+  if (v.item_count > b->capacity)
+    return luaL_error(s, "skeleton2d: texture capacity");
+  for (size_t i = 0; i < v.item_count; i++) {
+    const h2_skeleton2d_draw_item_t *it = &v.items[i];
+    if (it->resource < 1 || it->resource > b->resources)
+      return luaL_error(s, "skeleton2d: missing texture");
+    b->scratch[i] = b->source[it->resource - 1];
+    memcpy(b->scratch[i].matrix, it->matrix, sizeof(it->matrix));
+    check(s, h2_raster2d_sprite_validate(&b->scratch[i]), "update_textures");
+  }
+  memcpy(b->items, b->scratch, v.item_count * sizeof(*b->items));
+  b->count = v.item_count;
+  return 1;
+}
 static void meta(lua_State *s, const char *name, const luaL_Reg *methods) {
   luaL_newmetatable(s, name);
   luaL_setfuncs(s, methods, 0);
@@ -557,10 +601,12 @@ int h2_lua_open_skeleton2d(lua_State *s) {
   meta(s, DEF, defs);
   meta(s, ACTOR, actors);
   meta(s, WRITER, writers);
-  static const luaL_Reg funcs[] = {{"compile", compile},
-                                   {"mesh", mesh_new},
-                                   {"update_mesh", update_mesh},
-                                   {NULL, NULL}};
+  static const luaL_Reg texture_methods[] = {{NULL, NULL}};
+  meta(s, TEXTURE_WRITER, texture_methods);
+  static const luaL_Reg funcs[] = {
+      {"compile", compile},         {"mesh", mesh_new},
+      {"textures", textures_new},   {"update_textures", update_textures},
+      {"update_mesh", update_mesh}, {NULL, NULL}};
   luaL_newlib(s, funcs);
   return 1;
 }

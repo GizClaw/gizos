@@ -56,6 +56,8 @@ cc_library(
         "src/modules/h2_lua_kv.c",
         "src/modules/h2_lua_modules.c",
         "src/modules/h2_lua_numeric_internal.h",
+        "src/modules/h2_lua_texture_internal.h",
+        "src/modules/h2_lua_texture.c",
         "src/modules/h2_lua_skeleton2d.c",
         "src/modules/h2_lua_storage.c",
         "src/modules/h2_lua_storage_internal.h",
@@ -164,7 +166,7 @@ cc_test(
 cc_test(
     name = "lua_test",
     srcs = ["tests/test_h2_lua.c"],
-    data = ["tests/raster2d.lua"],
+    data = ["tests/raster2d.lua", "tests/texture.lua"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,

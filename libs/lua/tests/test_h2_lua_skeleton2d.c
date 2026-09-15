@@ -1,4 +1,5 @@
 #include "h2_lua_numeric.h"
+#include "../src/modules/h2_lua_texture_internal.h"
 #include "h2_lua_skeleton2d.h"
 #include "lauxlib.h"
 #include "lua.h"
@@ -88,6 +89,8 @@ int main(void) {
   lua_pop(s, 1);
   luaL_requiref(s, "skeleton2d", h2_lua_open_skeleton2d, 0);
   lua_pop(s, 1);
+  lua_pushcfunction(s, h2_lua_texture_new);
+  lua_setglobal(s, "test_texture_new");
   ok(s, luaL_loadfile(s, "libs/lua/tests/skeleton2d.lua"));
   ok(s, lua_pcall(s, 0, 1, 0));
   assert(lua_isfunction(s, -1));

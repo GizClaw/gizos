@@ -35,12 +35,17 @@ spec.clips[1].tracks[1].keys[2][1]=0;fails(sk.compile,spec)
 local locals=v.buffer(12);locals:load({1,0,0,0,1,1,1,0,0,0,1,1});fails(actor.set_local,actor,locals)
 assert(def:bytes()>0 and actor:bytes()>0 and writer:bytes()>0)
 local override=v.buffer(6);override:load({2,20,0,0,1,1})
+-- Exercise the production Display resource owner without acquiring a Display;
+-- the C harness measures the entire VM from creation through zero at close.
+local texture=test_texture_new(32,32,string.char(255,80,16,128):rep(1024))
+local tw,tb=sk.textures(def,{{texture=texture,x=0,y=0,width=32,height=32,anchor_x=16,anchor_y=16}})
+texture=nil;collectgarbage('collect')
 -- Reused closure, tables, buffers and output mesh in a 10000-frame steady loop.
 return function()
  for i=1,10000 do
   actor:sample(1,i*33333,'repeat','a');actor:sample(1,i*33333+200000,'repeat','b');actor:blend(.5)
   actor:set_parts(parts);actor:set_local(override)
-  actor:evaluate(root);sk.update_mesh(writer,actor)
+  actor:evaluate(root);sk.update_mesh(writer,actor);assert(sk.update_textures(tw,actor)==tb)
   actor:copy_matrices(matrices);actor:copy_draw_items(items);writer:copy_bounds(bounds)
  end
 end
