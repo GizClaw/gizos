@@ -182,6 +182,34 @@ class BleAdvertisingContractTest(unittest.TestCase):
         self.assertIn("bk_ble_gatts_send_indicate(", notify_body)
         self.assertNotIn("h2_bk_ble_wait_notify(", notify_body)
 
+    def test_legacy_identity_encoding_reserves_ad_header(self):
+        runfiles = Path(os.environ["TEST_SRCDIR"])
+        source = next(runfiles.rglob("h2_loader_ble.c")).read_text(encoding="utf-8")
+        opening = source[source.index("int h2_loader_ble_service_open("):]
+        self.assertIn(
+            "const size_t identity_capacity = config->advertising_mode ==\n"
+            "            H2_LOADER_BLE_ADVERTISING_LEGACY\n"
+            "        ? H2_PAL_BLE_LEGACY_ADV_DATA_MAX_LEN - 2u\n"
+            "        : sizeof(service->service_data);",
+            opening,
+        )
+        self.assertIn("service->service_data, identity_capacity,", opening)
+
+    def test_stream_diagnostics_use_borrowed_sink_and_split_records(self):
+        runfiles = Path(os.environ["TEST_SRCDIR"])
+        source = next(runfiles.rglob("h2_loader_ble.c")).read_text(encoding="utf-8")
+        self.assertIn("stream_config.user = &service->config;", source)
+        start = source.index("static void h2_loader_ble_stream_event(")
+        end = source.index("\n}", start)
+        event = source[start:end]
+        self.assertIn("const h2_loader_ble_service_config_t *config = user;", event)
+        self.assertEqual(3, event.count("h2_loader_ble_log(config, H2_PAL_LOG_INFO,"))
+        self.assertEqual(3, event.count("H2_LOADER_BLE_SESSION conn=%u"))
+        self.assertNotRegex(source, r"(?<![a-zA-Z_])printf\s*\(")
+        for name in ("h2loader_bleikcp.c", "h2_bk_h2loader_app_bleikcp.c"):
+            caller = next(runfiles.rglob(name)).read_text(encoding="utf-8")
+            self.assertIn(".log = runtime->log,", caller)
+
     def test_loader_ble_memory_budget_fits_display_layout(self):
         runfiles = Path(os.environ["TEST_SRCDIR"])
         sources = list(runfiles.rglob("h2_loader_ble.c"))
