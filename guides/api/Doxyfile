@@ -18,12 +18,14 @@ INPUT                  = libs/app_test/include \
                          libs/pal/providers/h2sctp/include \
                          projects/h2loader/libs/h2loader/include \
                          libs/iostreamikcp/include \
+                         libs/lua/include/h2_lua_display.h \
                          libs/lvgl/include \
                          libs/mp4_decoder/include \
                          libs/ntp/include \
                          libs/pal/include \
                          libs/pixa/include \
                          libs/pal/providers/portaudio/include \
+                         libs/raster2d/include \
                          libs/runtime/include \
                          libs/semver/include \
                          libs/pal/providers/sdl3/include \

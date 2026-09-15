@@ -1301,3 +1301,51 @@ h2_pal_result_t h2_gizclaw_session_audio_start(h2_gizclaw_session_t *s) {
 h2_pal_result_t h2_gizclaw_session_audio_end(h2_gizclaw_session_t *s) {
   return audio_input(s, false);
 }
+
+h2_pal_result_t h2_gizclaw_session_send_text(h2_gizclaw_session_t *s,
+                                             h2_gizclaw_str_t text) {
+  h2_gizclaw_audio_log_t logs = {0};
+  if (s == NULL || text.data == NULL || text.len == 0u ||
+      text.len > H2_GIZCLAW_CONVERSATION_TEXT_MAX_BYTES)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_pal_result_t rc = lock(s);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (s->closed || s->busy || s->workspace_rpc_active ||
+      s->state.workspace != H2_GIZCLAW_SESSION_READY ||
+      s->conversation == NULL) {
+    record_audio(s, "send_text_rejected", &logs, H2_PAL_ERR_INVALID_STATE, 0u, 0);
+    unlock_audio(s, &logs);
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  /* Text never interrupts: an open input or a pending one must finish. */
+  if (s->state.conversation_input_open || s->conversation_running) {
+    record_audio(s, "send_text_busy", &logs, H2_PAL_ERR_BUSY, 0u, 0);
+    unlock_audio(s, &logs);
+    return H2_PAL_ERR_BUSY;
+  }
+  rc = h2_gizclaw_conversation_send_text_internal(s->conversation, text, &logs);
+  record_audio(s, "send_text", &logs, rc, 0u, (int)text.len);
+  if (rc == H2_PAL_OK) {
+    /* Sent input awaits the server's sound, as after a push-to-talk release. */
+    uint64_t now = 0u;
+    (void)h2_pal_time_get_monotonic_ms(s->config.time, &now);
+    s->wait_mark =
+        h2_gizclaw_conversation_downlink_writes_internal(s->config.service);
+    s->wait_deadline_ms = now + H2_GIZCLAW_SESSION_WAIT_MS;
+    s->state.conversation = H2_GIZCLAW_SESSION_CONVERSATION_WAITING;
+    s->conversation_running = true;
+    s->state.last_error = H2_PAL_OK;
+    s->state.error_stage = H2_GIZCLAW_SESSION_BLOCK_NONE;
+    s->state.error_code[0] = '\0';
+    s->state.retryable = false;
+    changed(s);
+  } else if (rc != H2_PAL_ERR_WOULD_BLOCK && rc != H2_PAL_ERR_BUSY &&
+             rc != H2_PAL_ERR_INVALID_ARG) {
+    s->state.last_error = rc;
+    s->state.error_stage = H2_GIZCLAW_SESSION_BLOCK_CONVERSATION;
+    changed(s);
+  }
+  unlock_audio(s, &logs);
+  return rc;
+}

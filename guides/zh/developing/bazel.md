@@ -288,3 +288,7 @@ make bazel-test BAZEL_CONFIG=linux_x86_64
 ```
 
 Review 必须覆盖所有修改到的 platform config、native runner、workflow、cache contract 和 public Make command；证据必须对应最终 head。
+
+## Lua portable 源码包
+
+`bazel build //libs/lua:runtime_sources` 导出下层 Runtime 的 C/H 源码和机器可读 manifest，供 Flutter native assets、cgo 与 native embedder 使用自己的目标工具链编译。源码 inventory 和编译参数来自 Bazel aspect，不依赖 archive 路径或另一份手写 source list；`//libs/lua:source_package_test` 解包后只用 manifest、普通 C compiler 和自建 PAL harness 验证，runner 不调用 Bazel。分层、schema 与消费流程见 [Lua 嵌入分层与源码包](./lua.md#嵌入分层与源码包)。

@@ -1,0 +1,60 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//libs/lua/web:lua_web_app.bzl", "h2_lua_web_app")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "vector_extension",
+    srcs = ["vector_extension.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    deps = [
+        "//libs/lua:lua_runtime",
+        "//libs/lua/web:lua_app_extension",
+        "//tools/bazel:vendor_third_party_lua",
+    ],
+)
+
+h2_lua_web_app(
+    name = "lua-script-vector",
+    board = "//projects/example/libs/web/demo_board",
+    canvas_min = 1000,
+    clicks = [["LUA_VECTOR pixels=PASS", "#stop"]],
+    evals = [[
+        "H2_WEB_APP name=lua-script-vector stage=ready",
+        """(() => {
+          try {
+          const canvas = document.getElementById('canvas');
+          const p = canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
+          const check = (x,y,r,g,b) => {
+            const at=(y*canvas.width+x)*4;
+            if(p[at]!==r || p[at+1]!==g || p[at+2]!==b)
+              throw new Error('vector pixel mismatch '+x+','+y+': '+Array.from(p.slice(at,at+3)));
+          };
+          check(15,15,255,0,0); check(70,15,0,0,0);
+          check(60,39,255,0,0); check(60,40,0,0,0);
+          check(100,100,0,0,255); check(100,110,0,0,0);
+          check(25,155,0,255,0); check(40,155,0,0,0);
+          check(200,180,0,255,0); check(200,179,0,0,0);
+          check(155,25,255,0,0); check(165,65,0,0,255);
+          check(190,65,0,0,0); check(165,90,0,0,0);
+          check(200,200,0,0,0); check(214,215,0,0,0);
+          check(215,215,255,0,0); check(225,225,255,0,0);
+          check(40,210,255,0,0); check(40,207,0,0,0);
+          check(110,210,0,0,255); check(110,209,0,0,0);
+          console.log('LUA_VECTOR pixels=PASS');
+          } catch (error) {
+            console.error('LUA_VECTOR pixels=FAIL '+error.message);
+          }
+        })()""",
+    ]],
+    extension = ":vector_extension",
+    fails = ["LUA_VECTOR pixels=FAIL"],
+    passes = [
+        "LUA_VECTOR calls=PASS",
+        "LUA_VECTOR pixels=PASS",
+        "H2_WEB_APP name=lua-script-vector result=PASS rc=0 fs=0 destroy=0",
+    ],
+    script = "vector.lua",
+)

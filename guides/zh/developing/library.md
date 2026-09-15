@@ -16,6 +16,8 @@
 
 Public header 只暴露稳定类型和函数，不暴露 board header、SDK object、内部 task、private state 或 target-specific implementation。
 
+RGB565 矩形批量重放、调色板插值与最小 span 填充由 `libs/raster2d` 拥有，普通 C/C++ App 可直接使用。Lua 的程序绘图适配、其他图元算法、VM 生命周期、缓存与损伤管理仍由 `libs/lua` 的 Display module 拥有。内部 span header 通过仅对 Lua adapter 可见的 Bazel target 共享，不作为应用 API 或公共 include 路径。私有 native producer 可以使用其公共 `h2_lua_display.h` 批量更新 VM 所有的顶点／primitive 数据，再由 Lua Display 绘制；不能把 runtime 私有头、job 或 framebuffer 当作应用扩展 API。场景几何、变形、投影和配色策略留在应用自己的 portable library，公共层只处理明确输入的通用光栅、缓存和生命周期。
+
 每个 library 都必须提供自己的 `BUILD.bazel`。其中的主要 `cc_library` target 名与目录名一致；测试目录统一使用 `tests/`，不再使用单数形式的 `test/`。Library 是否进入某个平台 graph 只由 toolchain 和 compatibility 决定，不声明自定义 CI tag。
 
 PAL 是其中的 contract-only 特例：只需要类型和 provider vtable 的 library 依赖
@@ -46,6 +48,8 @@ Library 不能直接依赖：
 需要 Bazel 平台实现的 library，由 `libs/pal/providers/<platform>` 封装；需要原生 SDK source glue 的 library，由 `native_component_src/<sdk-family>` 封装；需要 board 差异配置时，由 BSP 提供。
 
 明确命名的 library compiled variant（例如 `//libs/lvgl:lvgl_desktop`）可以直接依赖 `third_party` overlay 暴露的稳定 upstream target，以取得对应工具链产出的 header 和 link input。该 target 必须是无需 first-party source、config 或 platform adapter 的纯 upstream contract；平台选择留在 overlay 内部，consumer 不依赖带 `_macos`、`_linux` 等后缀的 label。Library 即使是 platform variant 也不能反向依赖 `components/`，更不能取得 PAL backend、launcher policy 或 board 类型。
+
+`//libs/lua:lua_runtime` 的下层只通过 PAL interfaces 访问平台；具体 provider 与可选 `lua_link` 由上层组装。非 Bazel consumer 使用从同一依赖图导出的 C 源码包，仍填写既有 PAL vtables，见 [Lua 嵌入分层与源码包](./lua.md#嵌入分层与源码包)。
 
 ## Third-party 兼容层
 
@@ -139,11 +143,12 @@ App 必须在调用 third-party API 之前完成对应 integration 初始化，�
 - [`ntp`](./ntp.md)：跨平台 NTP client。
 - [`pal`](./platform_abstract_layer.md)：Platform Abstraction Layer contract。
 - [`pixa`](./pixa.md)：PIXA image、pack、decode、reader 和 blit。
+- [`raster2d`](./raster2d.md)：无 VM、无分配的 RGB565 矩形重放和 palette 插值。
 - [`qrcode`](./qrcode.md)：QR Code Model 2 编码与 RGB565 band 栅格化，全部缓冲区由调用方提供。
 - [`tinyh264`](./tinyh264.md)：TinyH264 的 portable Video Decoder PAL provider。
 - [`runtime`](./runtime.md)：提供给 app 使用的跨平台 Runtime。
 - [`semver`](./semver.md)：无堆分配的 SemVer 校验和排序，非法版本统一低于合法版本。
-- [`utils`](./utils.md)：APN 等小型 portable helper。
+- [`utils`](./utils.md)：APN 和单份 binary32 reciprocal/FMA 除法等小型 portable helper；数值编译假设与异常语义由生产公共头定义，不在 Lua 或应用中复制实现。
 - [`wolfssl`](./wolfssl.md)：同一 upstream 下的裁剪 Crypto PAL variant 与
   完整 Crypto/DTLS provider；不公开 WolfSSL private type。
 

@@ -128,6 +128,8 @@ typedef struct h2_lua_job {
   size_t worker_index;
   h2_lua_job_state_t state;
   h2_lua_vm_t *vm;
+  const char *result; /* Rooted on the main task stack; VM-accounted. */
+  size_t result_size;
   h2_lua_task_t *tasks;
   size_t task_count;
   size_t next_task_index;
@@ -151,6 +153,16 @@ typedef struct h2_lua_job {
   int dirty_min_y;
   int dirty_max_x;
   int dirty_max_y;
+  /* Cache storage is VM-owned; zero registry references mean detached state. */
+  void *display_background;
+  int display_background_ref;
+  int display_background_valid;
+  void *display_presented;
+  int display_presented_ref;
+  int display_presented_valid;
+  void *display_smooth;
+  int display_smooth_ref;
+  int display_shutting_down;
   uint8_t display_fade_phase;
   int touch_open;
   int touch_initialized;
@@ -172,6 +184,9 @@ typedef struct h2_lua_job {
   /* Empty when the job was submitted without a storage identity. */
   char app_id[H2_LUA_STORAGE_APP_ID_MAX + 1u];
 } h2_lua_job_t;
+
+/* Detach Display storage before VM finalizers run; forbid reopening on teardown. */
+void h2_lua_job_close_display(h2_lua_job_t *job);
 
 /*
  * Hooks installed by //libs/lua:lua_link before Host start. open_module adds
@@ -246,6 +261,7 @@ void h2_lua_job_finish(h2_lua_job_t *job, h2_lua_job_state_t state,
                        const char *message);
 h2_pal_result_t h2_lua_register_builtin_modules(h2_lua_job_t *job);
 int h2_lua_open_storage(lua_State *state);
+int h2_lua_open_kv(lua_State *state);
 int h2_lua_storage_name_is_valid(const char *name, size_t max_length);
 h2_pal_result_t h2_lua_storage_normalize(h2_lua_storage_config_t *config);
 h2_pal_result_t h2_lua_storage_host_init(h2_lua_host_t *host);

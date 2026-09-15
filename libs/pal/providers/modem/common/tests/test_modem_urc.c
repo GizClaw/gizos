@@ -4,6 +4,7 @@
 #include "h2_simcom_modem.h"
 
 #include <assert.h>
+#include <errno.h>
 #include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -95,10 +96,21 @@ static int queue_send(void *user, h2_pal_queue_t *q, const void *item, uint32_t 
 }
 static int queue_recv(void *user, h2_pal_queue_t *q, void *item, uint32_t timeout_ms) {
     (void)user;
-    assert(timeout_ms == H2_PAL_QUEUE_WAIT_FOREVER);
+    struct timespec until;
+    assert(clock_gettime(CLOCK_REALTIME, &until) == 0);
+    until.tv_sec += timeout_ms / 1000u;
+    until.tv_nsec += (long)(timeout_ms % 1000u) * 1000000L;
+    if (until.tv_nsec >= 1000000000L) { until.tv_sec++; until.tv_nsec -= 1000000000L; }
     assert(pthread_mutex_lock(&q->mutex) == 0);
     while (!q->closed && q->count == 0u) {
-        assert(pthread_cond_wait(&q->changed, &q->mutex) == 0);
+        int wait_rc = timeout_ms == H2_PAL_QUEUE_WAIT_FOREVER
+            ? pthread_cond_wait(&q->changed, &q->mutex)
+            : pthread_cond_timedwait(&q->changed, &q->mutex, &until);
+        if (wait_rc == ETIMEDOUT) {
+            assert(pthread_mutex_unlock(&q->mutex) == 0);
+            return H2_PAL_ERR_TIMEOUT;
+        }
+        assert(wait_rc == 0);
     }
     int rc = H2_PAL_ERR_CLOSED;
     if (!q->closed) {
@@ -155,7 +167,12 @@ static h2_pal_result_t mutex_unlock(void *user, h2_pal_mutex_t *mutex) {
     assert(pthread_mutex_unlock(&mutex->mutex) == 0);
     return H2_PAL_OK;
 }
+static h2_pal_result_t mutex_try_lock(void *user, h2_pal_mutex_t *mutex) {
+    (void)user;
+    return pthread_mutex_trylock(&mutex->mutex) == 0 ? H2_PAL_OK : H2_PAL_ERR_BUSY;
+}
 static const h2_pal_sync_vtable_t sync_vtable = {
+    .try_lock_mutex = mutex_try_lock,
     .create_mutex = mutex_create, .destroy_mutex = mutex_destroy,
     .lock_mutex = mutex_lock, .unlock_mutex = mutex_unlock,
 };
@@ -423,7 +440,63 @@ static void test_identity_registration_progress(void) {
     }
 }
 
+static h2_pal_result_t recovery_command(void *user, const char *cmd, char *response,
+    size_t size, uint32_t timeout_ms) {
+    fixture_t *f = user;
+    if (pthread_equal(f->caller, pthread_self())) {
+        snprintf(response, size, "OK\r\n");
+        return H2_PAL_OK; /* Control-channel preparation runs on the caller. */
+    }
+    assert(timeout_ms == 1000u);
+    const char *text = "OK\r\n";
+    if (strcmp(cmd, "AT+CPIN?") == 0) { text = "+CPIN: READY\r\nOK\r\n"; }
+    if (strcmp(cmd, "AT+CEREG?") == 0) { text = "+CEREG: 1,1\r\nOK\r\n"; }
+    if (strcmp(cmd, "AT+CGATT?") == 0) { text = "+CGATT: 1\r\nOK\r\n"; }
+    snprintf(response, size, "%s", text);
+    return H2_PAL_OK;
+}
+static int recovery_event(void *user, const h2_pal_system_event_t *event, uint32_t timeout_ms) {
+    fixture_t *f = user;
+    (void)timeout_ms;
+    if (event->type == H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIM_CHANGED) {
+        const h2_pal_modem_status_t *status = event->payload;
+        assert(pthread_mutex_lock(&f->mutex) == 0);
+        if (status->sim == H2_PAL_MODEM_SIM_STATE_READY) { f->received++; }
+        if (status->sim == H2_PAL_MODEM_SIM_STATE_ABSENT) { f->entered++; }
+        assert(pthread_cond_broadcast(&f->changed) == 0);
+        assert(pthread_mutex_unlock(&f->mutex) == 0);
+    }
+    return H2_PAL_OK;
+}
+static void test_worker_insertion(void) {
+    fixture_t f;
+    init_fixture(&f);
+    const h2_pal_system_event_vtable_t recovery_vtable = {.post = recovery_event};
+    h2_pal_system_event_api_t events = {.user = &f, .vtable = &recovery_vtable};
+    h2_quectel_modem_config_t config = {
+        .transport_user = &f, .command = recovery_command, .sync_api = &sync_api,
+        .urc_task_api = &tasks, .urc_queue_api = &queues, .system_events = &events,
+    };
+    assert(h2_quectel_modem_init(&f.quectel, &config) == H2_PAL_OK);
+    h2_modem_rx_t receiver = {0};
+    assert(h2_pal_modem_open(&f.quectel.platform, 0u) == H2_PAL_OK);
+    for (int cycle = 1; cycle <= 2; cycle++) {
+        const char *removed = "+QSIMSTAT: 1,0\r\n";
+        assert(h2_quectel_rx_feed(&f.quectel, &receiver, receiver.next_offset,
+            (const uint8_t *)removed, strlen(removed), NULL) == H2_PAL_OK);
+        wait_value(&f, &f.entered, cycle);
+        const char *inserted = cycle == 1 ? "+QSIMSTAT: 1,1\r\n"
+            : "+QSIMSTAT: 1,1\r\n+QIND: SMS DONE\r\n+CPIN: READY\r\n";
+        assert(h2_quectel_rx_feed(&f.quectel, &receiver, receiver.next_offset,
+            (const uint8_t *)inserted, strlen(inserted), NULL) == H2_PAL_OK);
+        wait_value(&f, &f.received, cycle);
+    }
+    assert(h2_quectel_modem_deinit(&f.quectel) == H2_PAL_OK);
+    finish_fixture(&f);
+}
+
 int main(void) {
+    test_worker_insertion();
     test_queue_and_lifecycle();
     test_provider_receive();
     test_quectel_rx_storm();
