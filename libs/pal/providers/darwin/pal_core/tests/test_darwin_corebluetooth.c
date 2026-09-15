@@ -1,7 +1,34 @@
 #include "h2_darwin_platform.h"
+#include "h2_darwin_corebluetooth_internal.h"
 
 #include <assert.h>
+#include <dispatch/dispatch.h>
 #include <stdlib.h>
+#include <pthread.h>
+#include <time.h>
+
+typedef struct connect_retry {
+    h2_pal_ble_t *ble;
+    h2_pal_ble_addr_t address;
+    dispatch_semaphore_t completed;
+    h2_pal_result_t result;
+} connect_retry_t;
+
+static uint64_t monotonic_ms(void) {
+    struct timespec now;
+    assert(clock_gettime(CLOCK_MONOTONIC, &now) == 0);
+    return (uint64_t)now.tv_sec * 1000u + (uint64_t)now.tv_nsec / 1000000u;
+}
+
+static void *connect_retry_thread(void *user) {
+    connect_retry_t *retry = user;
+    const h2_pal_ble_connect_params_t params = {.timeout_ms = 2000u};
+    uint16_t handle = 0u;
+    retry->result = h2_pal_ble_connect(
+        retry->ble, &retry->address, &params, &handle);
+    dispatch_semaphore_signal(retry->completed);
+    return NULL;
+}
 
 static void *test_alloc(void *user, size_t len) {
     (void)user;
@@ -74,6 +101,56 @@ int main(void) {
     assert(h2_darwin_corebluetooth_ble(&allocator, &other_log) == NULL);
     assert(h2_darwin_corebluetooth_ble(&allocator, &log) == ble);
     assert(ble->allocator == &allocator);
+    const h2_pal_ble_addr_t timeout_address = {0};
+    const h2_pal_ble_connect_params_t timeout_params = {.timeout_ms = 20u};
+    uint16_t connection_handle = 0u;
+    h2_darwin_corebluetooth_test_set_pending_connect(&timeout_address);
+    assert(!h2_darwin_corebluetooth_test_connect_cleanup(0u));
+    for (unsigned attempt = 1u; attempt <= 2u; ++attempt) {
+        assert(h2_pal_ble_connect(ble, &timeout_address, &timeout_params,
+                                  &connection_handle) == H2_PAL_ERR_TIMEOUT);
+        assert(h2_darwin_corebluetooth_test_connect_cleanup(attempt));
+    }
+    h2_darwin_corebluetooth_test_deliver_central_event(
+        H2_DARWIN_COREBLUETOOTH_TEST_CONNECTED, 0);
+    assert(h2_darwin_corebluetooth_test_connect_cleanup(3u));
+    assert(h2_pal_ble_connect(ble, &timeout_address, &timeout_params,
+                              &connection_handle) == H2_PAL_ERR_TIMEOUT);
+    assert(h2_darwin_corebluetooth_test_connect_cleanup(4u));
+
+    /* A late failure cannot be distinguished from this same-object retry. */
+    connect_retry_t retry = {
+        .ble = ble,
+        .address = timeout_address,
+        .completed = dispatch_semaphore_create(0),
+        .result = H2_PAL_ERR_INVALID_STATE,
+    };
+    pthread_t retry_thread;
+    assert(pthread_create(&retry_thread, NULL, connect_retry_thread, &retry) == 0);
+    uint64_t pending_deadline = monotonic_ms() + 5000u;
+    while (!h2_darwin_corebluetooth_test_connect_pending()) {
+        assert(monotonic_ms() < pending_deadline);
+        const struct timespec pause = {.tv_nsec = 1000000};
+        (void)nanosleep(&pause, NULL);
+    }
+    h2_darwin_corebluetooth_test_deliver_central_event(
+        H2_DARWIN_COREBLUETOOTH_TEST_FAILED, 0);
+    assert(dispatch_semaphore_wait(retry.completed, DISPATCH_TIME_FOREVER) == 0);
+    assert(pthread_join(retry_thread, NULL) == 0);
+    assert(retry.result == H2_PAL_ERR_IO);
+    assert(h2_darwin_corebluetooth_test_connect_cleanup(5u));
+    dispatch_release(retry.completed);
+
+    h2_darwin_corebluetooth_test_set_other_connected();
+    assert(h2_darwin_corebluetooth_test_other_connected());
+    h2_darwin_corebluetooth_test_deliver_central_event(
+        H2_DARWIN_COREBLUETOOTH_TEST_FAILED, 0);
+    assert(h2_darwin_corebluetooth_test_other_connected());
+    h2_darwin_corebluetooth_test_deliver_central_event(
+        H2_DARWIN_COREBLUETOOTH_TEST_DISCONNECTED, 0);
+    assert(h2_darwin_corebluetooth_test_other_connected());
+    h2_darwin_corebluetooth_test_set_pending_connect(NULL);
+
     const h2_pal_ble_adv_data_t scan_response = {0};
     assert(h2_pal_ble_adv_set_set_scan_response_data(
                ble, (h2_pal_ble_adv_set_t *)ble, &scan_response) ==
