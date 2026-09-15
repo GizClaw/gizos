@@ -109,10 +109,21 @@ static h2_pal_result_t h2_jieli_netif_get_status(
     void *user, const h2_pal_netif_ref_t *ref,
     h2_pal_netif_status_t *out_status) {
   (void)user;
-  if (ref != NULL && !h2_pal_netif_ref_is_default(ref) &&
-      !(ref->type == H2_PAL_NETIF_REF_NAME &&
-        strcmp(ref->name, "wl0") == 0)) {
-    return H2_PAL_ERR_NOT_FOUND;
+  if (ref != NULL) {
+    if (!h2_pal_netif_kind_is_valid(ref->kind) ||
+        (ref->type != H2_PAL_NETIF_REF_DEFAULT &&
+         ref->type != H2_PAL_NETIF_REF_NAME &&
+         ref->type != H2_PAL_NETIF_REF_ID)) {
+      return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (!h2_pal_netif_ref_is_default(ref)) {
+      if (ref->type != H2_PAL_NETIF_REF_NAME) return H2_PAL_ERR_NOT_FOUND;
+      size_t length = strnlen(ref->name, sizeof(ref->name));
+      if (length == sizeof(ref->name)) return H2_PAL_ERR_INVALID_ARG;
+      if (length != 3u || memcmp(ref->name, "wl0", 3u) != 0) {
+        return H2_PAL_ERR_NOT_FOUND;
+      }
+    }
   }
   return status_for_wifi(out_status);
 }

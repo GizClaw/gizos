@@ -21,7 +21,7 @@ class NetifSnapshotTest(unittest.TestCase):
             unit = Path(directory) / 'test.c'
             binary = Path(directory) / 'test'
             unit.write_text(fixture.replace('/* REAL_PROVIDER */', source))
-            subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-pthread',
+            subprocess.run(['cc', '-std=c11', '-D_POSIX_C_SOURCE=200809L', '-Wall', '-Wextra', '-Werror', '-pthread',
                 *shlex.split(os.environ.get('JIELI_TEST_CFLAGS', '')),
                 '-I', str(ROOT / 'libs/pal/include'), str(unit), '-o', str(binary)], check=True)
             result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=15)

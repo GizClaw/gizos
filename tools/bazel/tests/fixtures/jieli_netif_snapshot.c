@@ -93,6 +93,20 @@ static h2_pal_result_t subscriber(void *user, const h2_pal_netif_ref_t *ref,
     return H2_PAL_ERR_IO;
 }
 int main(void) {
+    h2_pal_netif_status_t checked;
+    h2_pal_netif_ref_t ref = {.type = H2_PAL_NETIF_REF_NAME};
+    memset(ref.name, 'x', sizeof(ref.name));
+    assert(h2_jieli_netif_get_status(NULL, &ref, &checked) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_jieli_netif_get_dns(NULL, &ref, NULL, 0, &(size_t){0}) == H2_PAL_ERR_INVALID_ARG);
+    strcpy(ref.name, "wl0");
+    ref.kind = (h2_pal_netif_kind_t)-1;
+    assert(h2_jieli_netif_get_status(NULL, &ref, &checked) == H2_PAL_ERR_INVALID_ARG);
+    ref.kind = H2_PAL_NETIF_KIND_UNKNOWN;
+    assert(h2_jieli_netif_get_status(NULL, &ref, &checked) == H2_PAL_OK);
+    strcpy(ref.name, "wl0extra");
+    assert(h2_jieli_netif_get_status(NULL, &ref, &checked) == H2_PAL_ERR_NOT_FOUND);
+    ref.type = (h2_pal_netif_ref_type_t)99;
+    assert(h2_jieli_netif_get_status(NULL, &ref, &checked) == H2_PAL_ERR_INVALID_ARG);
     h2_pal_wifi_sta_status_t sta = {.state = H2_PAL_WIFI_STA_STATE_GOT_IP};
     atomic_store(&radio_pin, 1);
     update_sta_snapshot(&sta);
