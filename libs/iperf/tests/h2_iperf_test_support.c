@@ -77,12 +77,27 @@ h2_pal_net_addr_t h2_iperf_test_loopback(uint16_t port) {
 }
 
 uint16_t h2_iperf_test_free_port(const h2_pal_net_api_t *net) {
-    h2_pal_net_socket_t sock = -1;
-    h2_pal_net_addr_t bound;
-    assert(h2_pal_net_tcp_listen(net, H2_PAL_NET_FAMILY_IPV4, 0u, NULL, &sock, &bound) == H2_PAL_OK);
-    assert(bound.port != 0u);
-    h2_pal_net_close(net, sock);
-    return bound.port;
+    /* iperf3 binds its UDP stream listener on the control port, so the port
+     * must also be free for UDP. */
+    for (unsigned attempt = 0u; attempt < 32u; ++attempt) {
+        h2_pal_net_socket_t tcp = -1;
+        h2_pal_net_addr_t bound;
+        assert(h2_pal_net_tcp_listen(net, H2_PAL_NET_FAMILY_IPV4, 0u, NULL, &tcp, &bound) == H2_PAL_OK);
+        assert(bound.port != 0u);
+        h2_pal_net_socket_t udp = -1;
+        h2_pal_net_addr_t udp_bound;
+        bool udp_free =
+            h2_pal_net_udp_open_bound(net, H2_PAL_NET_FAMILY_IPV4, bound.port, NULL, &udp, &udp_bound) == H2_PAL_OK;
+        if (udp_free) {
+            h2_pal_net_close(net, udp);
+        }
+        h2_pal_net_close(net, tcp);
+        if (udp_free) {
+            return bound.port;
+        }
+    }
+    assert(!"no port free for both TCP and UDP");
+    return 0u;
 }
 
 pid_t h2_iperf_test_spawn(char *const argv[]) {

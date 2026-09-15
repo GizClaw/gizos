@@ -26,7 +26,7 @@ void h2_iperf_test_env_deinit(h2_iperf_test_env_t *env);
 /** 127.0.0.1 with the given port. */
 h2_pal_net_addr_t h2_iperf_test_loopback(uint16_t port);
 
-/** Reserves and releases an ephemeral TCP port for an external process. */
+/** Reserves and releases an ephemeral port that is free for both TCP and UDP, for an external process. */
 uint16_t h2_iperf_test_free_port(const h2_pal_net_api_t *net);
 
 /** Starts `argv[0]` with stdout/stderr redirected to the test log. */

@@ -5,20 +5,24 @@
  *
  * The server port comes from a probe that is released before iperf3 binds, so
  * another socket can take it in between. Each server is therefore started on
- * 127.0.0.1 only, the client waits for iperf3's listener banner, and a listener
- * bind failure is retried on a fresh port a bounded number of times.
+ * 127.0.0.1 only and the client waits for iperf3's listener banner. A control
+ * listener bind failure restarts iperf3 on a fresh port. A UDP stream listener
+ * bind failure, which iperf3 hits only after the client connected, reruns the
+ * scenario on a fresh port. Both retries share one bounded budget.
  */
 #include "h2_iperf_test_support.h"
 
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
+#include <arpa/inet.h>
 #include <assert.h>
 #include <limits.h>
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -28,6 +32,14 @@
 #define SERVER_START_ATTEMPTS 5u
 #define SERVER_LOG_CAP 4096u
 
+typedef enum busy_port {
+    BUSY_PORT_NONE = 0,
+    /* TCP taken: iperf3 cannot start its control listener. */
+    BUSY_PORT_TCP,
+    /* Only UDP taken: iperf3 listens, then fails its UDP stream listener. */
+    BUSY_PORT_UDP,
+} busy_port_t;
+
 typedef struct scenario {
     const char *name;
     h2_iperf_protocol_t protocol;
@@ -35,13 +47,15 @@ typedef struct scenario {
     uint64_t bytes;
     uint64_t bitrate_bps;
     /* Holds the first candidate port so iperf3 must fail and retry. */
-    bool first_port_busy;
+    busy_port_t busy_first_port;
 } scenario_t;
 
 typedef struct official_server {
     pid_t pid;
     uint16_t port;
     unsigned attempts;
+    /* Set by official_server_finish(). */
+    bool stream_listener_failed;
     int log_fd;
     char log_path[PATH_MAX];
 } official_server_t;
@@ -112,16 +126,17 @@ static bool server_wait_listening(const official_server_t *server) {
 /*
  * Starts `iperf3 -s -1` on 127.0.0.1 and returns once it is listening. The
  * first attempt uses `first_port` when non-zero; every other attempt probes a
- * fresh port. Only a listener bind failure is retried.
+ * fresh port. Only a listener bind failure is retried, up to `max_attempts`.
  */
 static void official_server_start(
     const h2_pal_net_api_t *net,
     const char *iperf3,
     uint16_t first_port,
+    unsigned max_attempts,
     official_server_t *server) {
     memset(server, 0, sizeof(*server));
     server->log_fd = -1;
-    for (unsigned attempt = 0u; attempt < SERVER_START_ATTEMPTS; ++attempt) {
+    for (unsigned attempt = 0u; attempt < max_attempts; ++attempt) {
         server->attempts = attempt + 1u;
         server->port = (attempt == 0u && first_port != 0u) ? first_port : h2_iperf_test_free_port(net);
         char port_text[8];
@@ -149,6 +164,9 @@ static void official_server_start(
 /* Waits for the one-shot server to exit and copies its output to the test log. */
 static int official_server_finish(official_server_t *server) {
     int exit_code = h2_iperf_test_wait(server->pid, SERVER_EXIT_TIMEOUT_MS);
+    char log[SERVER_LOG_CAP];
+    server_log_read(server, log, sizeof(log));
+    server->stream_listener_failed = strstr(log, "unable to start stream listener") != NULL;
     server_log_close(server);
     return exit_code;
 }
@@ -161,33 +179,42 @@ static uint64_t scenario_block_len(const scenario_t *scenario) {
         : H2_IPERF_DEFAULT_TCP_BLOCK_LEN;
 }
 
+/* Binds 127.0.0.1:port for UDP without SO_REUSEADDR, so iperf3 cannot share it. */
+static int hold_udp_port(uint16_t port) {
+    int fd = socket(AF_INET, SOCK_DGRAM, 0);
+    assert(fd >= 0);
+    struct sockaddr_in addr;
+    memset(&addr, 0, sizeof(addr));
+    addr.sin_family = AF_INET;
+    addr.sin_port = htons(port);
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    assert(bind(fd, (struct sockaddr *)&addr, sizeof(addr)) == 0);
+    return fd;
+}
+
 static void run_scenario(const char *iperf3, const scenario_t *scenario) {
     h2_iperf_test_env_t env;
     h2_iperf_test_env_init(&env, false);
-    h2_pal_net_socket_t busy = -1;
+    h2_pal_net_socket_t busy_tcp = -1;
+    int busy_udp = -1;
     uint16_t first_port = 0u;
-    if (scenario->first_port_busy) {
+    if (scenario->busy_first_port == BUSY_PORT_TCP) {
         const h2_pal_net_bind_t loopback = {
             .type = H2_PAL_NET_BIND_SOURCE_ADDR,
             .source_addr = h2_iperf_test_loopback(0u),
         };
         h2_pal_net_addr_t bound;
-        assert(h2_pal_net_tcp_listen(env.config.net, H2_PAL_NET_FAMILY_IPV4, 0u, &loopback, &busy, &bound) ==
+        assert(h2_pal_net_tcp_listen(env.config.net, H2_PAL_NET_FAMILY_IPV4, 0u, &loopback, &busy_tcp, &bound) ==
                H2_PAL_OK);
         first_port = bound.port;
-    }
-    official_server_t server;
-    official_server_start(env.config.net, iperf3, first_port, &server);
-    if (scenario->first_port_busy) {
-        assert(server.attempts >= 2u);
-        assert(server.port != first_port);
-        h2_pal_net_close(env.config.net, busy);
+    } else if (scenario->busy_first_port == BUSY_PORT_UDP) {
+        first_port = h2_iperf_test_free_port(env.config.net);
+        busy_udp = hold_udp_port(first_port);
     }
 
     h2_iperf_client_params_t params;
     memset(&params, 0, sizeof(params));
     params.server_addr = h2_iperf_test_loopback(0u);
-    params.port = server.port;
     params.protocol = scenario->protocol;
     params.reverse = scenario->reverse;
     params.duration_ms = scenario->bytes != 0u ? 0u : 1000u;
@@ -196,11 +223,41 @@ static void run_scenario(const char *iperf3, const scenario_t *scenario) {
     params.connect_timeout_ms = 5000u;
     params.control_timeout_ms = 10000u;
     h2_iperf_result_t result;
-    h2_pal_result_t status = h2_iperf_client_run(&env.config, &params, &result);
-    int exit_code = official_server_finish(&server);
+    h2_pal_result_t status = H2_PAL_ERR_INVALID_STATE;
+    int exit_code = -1;
+    official_server_t server;
+    unsigned first_start_attempts = 0u;
+    unsigned attempts = 0u;
+    for (;;) {
+        official_server_start(
+            env.config.net, iperf3, attempts == 0u ? first_port : 0u, SERVER_START_ATTEMPTS - attempts, &server);
+        if (attempts == 0u) {
+            first_start_attempts = server.attempts;
+        }
+        attempts += server.attempts;
+        params.port = server.port;
+        status = h2_iperf_client_run(&env.config, &params, &result);
+        exit_code = official_server_finish(&server);
+        if (status == H2_PAL_OK || !server.stream_listener_failed || attempts >= SERVER_START_ATTEMPTS) {
+            break;
+        }
+        printf("iperf3 on port %u could not bind its UDP stream listener (attempt %u); "
+               "rerunning on a fresh port\n",
+               (unsigned)server.port, attempts);
+        fflush(stdout);
+    }
+    if (busy_tcp != -1) {
+        assert(first_start_attempts >= 2u);
+        h2_pal_net_close(env.config.net, busy_tcp);
+    }
+    if (busy_udp != -1) {
+        assert(attempts >= 2u);
+        close(busy_udp);
+    }
+    assert(server.port != first_port || scenario->busy_first_port == BUSY_PORT_NONE);
 
     printf("== %s\n", scenario->name);
-    printf("client status %d, iperf3 exit %d, server attempts %u\n", (int)status, exit_code, server.attempts);
+    printf("client status %d, iperf3 exit %d, attempts %u\n", (int)status, exit_code, attempts);
     h2_iperf_test_print_result("client", &result);
     assert(status == H2_PAL_OK);
     assert(exit_code == 0);
@@ -247,12 +304,13 @@ static void run_scenario(const char *iperf3, const scenario_t *scenario) {
 int main(int argc, char **argv) {
     assert(argc >= 2);
     static const scenario_t scenarios[] = {
-        {"tcp -> iperf3 -s", H2_IPERF_PROTOCOL_TCP, false, 0u, 0u, false},
-        {"tcp bytes -> iperf3 -s", H2_IPERF_PROTOCOL_TCP, false, 8u * 1024u * 1024u, 0u, false},
-        {"tcp reverse <- iperf3 -s", H2_IPERF_PROTOCOL_TCP, true, 0u, 0u, false},
-        {"udp -> iperf3 -s", H2_IPERF_PROTOCOL_UDP, false, 0u, 4u * 1024u * 1024u, false},
-        {"udp reverse <- iperf3 -s", H2_IPERF_PROTOCOL_UDP, true, 0u, 4u * 1024u * 1024u, false},
-        {"tcp -> iperf3 -s after busy port", H2_IPERF_PROTOCOL_TCP, false, 0u, 0u, true},
+        {"tcp -> iperf3 -s", H2_IPERF_PROTOCOL_TCP, false, 0u, 0u, BUSY_PORT_NONE},
+        {"tcp bytes -> iperf3 -s", H2_IPERF_PROTOCOL_TCP, false, 8u * 1024u * 1024u, 0u, BUSY_PORT_NONE},
+        {"tcp reverse <- iperf3 -s", H2_IPERF_PROTOCOL_TCP, true, 0u, 0u, BUSY_PORT_NONE},
+        {"udp -> iperf3 -s", H2_IPERF_PROTOCOL_UDP, false, 0u, 4u * 1024u * 1024u, BUSY_PORT_NONE},
+        {"udp reverse <- iperf3 -s", H2_IPERF_PROTOCOL_UDP, true, 0u, 4u * 1024u * 1024u, BUSY_PORT_NONE},
+        {"tcp -> iperf3 -s after busy port", H2_IPERF_PROTOCOL_TCP, false, 0u, 0u, BUSY_PORT_TCP},
+        {"udp -> iperf3 -s after busy udp port", H2_IPERF_PROTOCOL_UDP, false, 0u, 4u * 1024u * 1024u, BUSY_PORT_UDP},
     };
     for (size_t i = 0u; i < sizeof(scenarios) / sizeof(scenarios[0]); ++i) {
         run_scenario(argv[1], &scenarios[i]);
