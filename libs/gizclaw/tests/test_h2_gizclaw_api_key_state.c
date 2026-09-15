@@ -8,7 +8,6 @@
 #undef NDEBUG
 #endif
 #include <assert.h>
-#include <sched.h>
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
@@ -33,6 +32,17 @@ typedef struct test_env {
 } test_env_t;
 static test_env_t *s_env;
 
+/* Real time bounds scheduling waits; env->time remains the fake RPC clock. */
+static uint64_t wall_ms(void) {
+  uint64_t now;
+  assert(h2_pal_time_get_monotonic_ms(h2_desktop_platform_time_api(), &now) ==
+         H2_PAL_OK);
+  return now;
+}
+static void pause_poll(void) {
+  assert(h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u) == H2_PAL_OK);
+}
+
 static h2_pal_result_t fake_init(const h2_gizclaw_config_t *config,
                                  h2_gizclaw_client_t **out_client) {
   s_env->cancel = config->cancel_requested;
@@ -42,10 +52,12 @@ static h2_pal_result_t fake_init(const h2_gizclaw_config_t *config,
 }
 static h2_pal_result_t fake_connect(h2_gizclaw_client_t *client) {
   (void)client;
+  const uint64_t deadline = wall_ms() + 10000u;
   while (!atomic_load(&s_env->connected)) {
+    assert(wall_ms() < deadline);
     if (s_env->cancel(s_env->cancel_user))
       return H2_PAL_ERR_CLOSED;
-    sched_yield();
+    pause_poll();
   }
   return H2_PAL_OK;
 }
@@ -199,30 +211,38 @@ static h2_gizclaw_api_key_snapshot_t snapshot(test_env_t *env) {
 static void poll_once(test_env_t *env) {
   size_t count = 0u;
   assert(h2_gizclaw_service_poll(env->service, 1u, &count) == H2_PAL_OK);
-  sched_yield();
+  pause_poll();
 }
 static void finish(test_env_t *env) {
-  for (unsigned i = 0u; i < 1000000u; ++i) {
+  const uint64_t deadline = wall_ms() + 10000u;
+  do {
     poll_once(env);
     if (!snapshot(env).busy)
       return;
-  }
+  } while (wall_ms() < deadline);
   assert(false);
 }
 static void wait_count(atomic_uint *count, unsigned expected) {
-  for (unsigned i = 0u; i < 1000000u; ++i) {
+  const uint64_t deadline = wall_ms() + 10000u;
+  do {
     if (atomic_load(count) >= expected)
       return;
-    sched_yield();
-  }
+    pause_poll();
+  } while (wall_ms() < deadline);
   assert(false);
 }
 static void teardown(test_env_t *env) {
   assert(h2_gizclaw_api_key_state_close(env->state) == H2_PAL_OK);
   assert(h2_gizclaw_service_stop(env->service) == H2_PAL_OK);
-  for (unsigned i = 0u; i < 32u; ++i)
+  const uint64_t deadline = wall_ms() + 10000u;
+  int rc;
+  do {
     poll_once(env);
-  assert(h2_gizclaw_api_key_state_destroy(&env->state) == H2_PAL_OK);
+    rc = h2_gizclaw_api_key_state_destroy(&env->state);
+    if (rc != H2_PAL_ERR_BUSY)
+      break;
+  } while (wall_ms() < deadline);
+  assert(rc == H2_PAL_OK);
   assert(env->state == NULL);
   assert(h2_gizclaw_api_key_state_destroy(&env->state) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(env->service) == H2_PAL_OK);
@@ -334,8 +354,15 @@ static void test_close_and_late_completion(bool complete_before_close) {
   assert(h2_gizclaw_api_key_state_destroy(&env.state) == H2_PAL_ERR_BUSY);
   assert(h2_gizclaw_service_stop(env.service) == H2_PAL_OK);
   assert(h2_gizclaw_api_key_state_destroy(&env.state) == H2_PAL_ERR_BUSY);
-  for (unsigned i = 0u; i < 32u; ++i)
-    poll_once(&env);
+  const uint64_t deadline = wall_ms() + 10000u;
+  size_t count;
+  do {
+    assert(h2_gizclaw_service_poll(env.service, 1u, &count) == H2_PAL_OK);
+    if (count == 0u)
+      break;
+    pause_poll();
+  } while (wall_ms() < deadline);
+  assert(count == 0u);
   h2_gizclaw_api_key_snapshot_t drained = snapshot(&env);
   assert(memcmp(&closed, &drained, sizeof(closed)) == 0);
   teardown(&env);
