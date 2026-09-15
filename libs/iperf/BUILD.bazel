@@ -124,7 +124,10 @@ cc_test(
     srcs = ["tests/test_official_server.c"],
     args = ["$(rootpath @h2_vendor_iperf//:iperf3)"],
     conlyopts = H2_C11_OPTS,
-    copts = H2_WARNING_COPTS,
+    copts = H2_WARNING_COPTS + select({
+        "@platforms//os:linux": ["-D_DEFAULT_SOURCE"],
+        "//conditions:default": [],
+    }),
     data = ["@h2_vendor_iperf//:iperf3"],
     tags = ["exclusive"],
     target_compatible_with = _HOST_TEST_COMPATIBILITY,
