@@ -1989,15 +1989,15 @@ static void test_ble_identity_capacity(void) {
          H2_PAL_ERR_INVALID_ARG);
 }
 
-static int size_test_read(void *user, void *data, size_t len,
+static h2_pal_result_t size_test_read(void *user, void *data, size_t len,
                           size_t *read_count, uint32_t timeout_ms) {
   (void)user; (void)data; (void)len; (void)read_count; (void)timeout_ms;
   assert(0 && "parsing tests must stop before receiving payload");
   return H2_PAL_ERR_IO;
 }
-static int size_test_flush(void *user) { (void)user; return H2_PAL_OK; }
+static h2_pal_result_t size_test_flush(void *user) { (void)user; return H2_PAL_OK; }
 
-static int size_test_write(void *user, const void *data, size_t len,
+static h2_pal_result_t size_test_write(void *user, const void *data, size_t len,
                            size_t *written, uint32_t timeout_ms) {
   (void)user; (void)data; (void)timeout_ms;
   *written = len;
