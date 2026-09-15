@@ -53,7 +53,14 @@ const h2_pal_sync_api_t *h2_jieli_wl82_platform_sync_api(void);
 h2_pal_result_t h2_jieli_wl82_cond_wait_owned(
     h2_pal_cond_t *cond, h2_pal_mutex_t *mutex, uint32_t timeout_ms, int *out_locked);
 
-/** Thread-safe in-process event fanout used by BLE, network and loader services. */
+/** Thread-safe in-process event fanout used by BLE, network and loader services.
+ * Each successful init acquires one owner (maximum 16383; overflow returns FULL).
+ * Pair each with one deinit, after retiring that owner's subscriptions. Other
+ * owners and their subscriptions remain active until the final owner releases.
+ * The last deinit closes admission; in-flight operations defer destruction,
+ * including deinit from a handler. Init during INITIALIZING/CLOSING returns
+ * BUSY and acquires nothing. Extra deinit while inactive is harmless; a caller
+ * must not release another owner's reference. */
 const h2_pal_system_event_api_t *h2_jieli_wl82_platform_system_event_api(void);
 
 /** Bounded FIFO with one mutex-protected ring and predicate-based condition waits. */

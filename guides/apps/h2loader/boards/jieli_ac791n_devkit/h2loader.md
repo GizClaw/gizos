@@ -81,6 +81,12 @@ Loader 只有 UART 与 BLE capability，不提供 Wi-Fi 与 HTTP；runner 一旦
 
 ## 验收记录
 
+### 2026-09-15：system-event owner 引用计数
+
+Provider 的每次成功 init 各取得一个 owner，Runtime deinit 只释放自己的 owner，
+launcher/BLE 的订阅继续工作；最后一个 owner 释放后才关闭，并等在途操作退出后销毁。
+[退出路径的失败回归、TSan 与 button 实机证据](./evidence/2026-09-15/system-event-owners.md)。
+
 ### 2026-09-15：共享 launcher 与 Runtime 事件复用
 
 `5b1d822a` 的 ACTIVE event provider 已支持重复初始化；真实 Runtime/provider

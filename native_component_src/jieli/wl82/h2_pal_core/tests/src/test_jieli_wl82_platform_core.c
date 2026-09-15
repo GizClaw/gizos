@@ -455,6 +455,8 @@ static void test_system_event_lifecycle_and_dispatch(void)
     CHECK(h2_pal_system_event_post(api, &event, 0u) == H2_PAL_OK);
     CHECK(calls == 1);
     h2_pal_system_event_deinit(api);
+    CHECK(h2_pal_system_event_post(api, &event, 0u) == H2_PAL_OK);
+    h2_pal_system_event_deinit(api);
     CHECK(h2_pal_system_event_post(api, &event, 0u) == H2_PAL_ERR_INVALID_STATE);
     CHECK(h2_jieli_fake_live_allocations() == 0);
 }

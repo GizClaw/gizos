@@ -28,13 +28,20 @@ static h2_pal_system_event_subscription_t
 static h2_jieli_sdk_mutex_t *s_lock;
 static uint32_t s_generation;
 
-/* Phase and references share one atomic word: an operation cannot retain a
- * pointer after teardown has detached it. Deinit from a handler never waits
- * for that same handler; the last operation performs deferred destruction. */
+/* Phase, init owners and in-flight operations share one atomic word. Every
+ * successful init acquires one owner; deinit releases one, and only the last
+ * owner closes admission. Keeping both counts in the same CAS prevents a new
+ * owner from racing final teardown. At most 16383 owners / 32767 operations
+ * fit; saturation is rejected without changing state. Deinit while inactive
+ * is harmless, but callers must balance their own successful init calls.
+ * Deinit from a handler never waits for that handler: the final operation
+ * performs deferred destruction after the final owner enters CLOSING. */
 #define EVENT_ACTIVE (1u << 31)
 #define EVENT_CLOSING (1u << 30)
 #define EVENT_INITIALIZING (1u << 29)
-#define EVENT_REFS (EVENT_INITIALIZING - 1u)
+#define EVENT_OWNER_ONE (1u << 15)
+#define EVENT_OWNERS (EVENT_INITIALIZING - EVENT_OWNER_ONE)
+#define EVENT_REFS (EVENT_OWNER_ONE - 1u)
 static uint32_t s_lifecycle;
 
 static h2_jieli_sdk_mutex_t *event_retain(void)
@@ -66,9 +73,17 @@ static void event_release(void)
 static int system_event_init(void *user)
 {
     (void)user;
-    uint32_t expected = 0u;
-    if (!h2_jieli_atomic_cas_u32(&s_lifecycle, &expected, EVENT_INITIALIZING)) {
-        return (expected & EVENT_ACTIVE) ? H2_PAL_OK : H2_PAL_ERR_BUSY;
+    uint32_t state = h2_jieli_atomic_load_u32(&s_lifecycle);
+    for (;;) {
+        if (state & EVENT_ACTIVE) {
+            if ((state & EVENT_OWNERS) == EVENT_OWNERS) return H2_PAL_ERR_FULL;
+            if (h2_jieli_atomic_cas_u32(&s_lifecycle, &state, state + EVENT_OWNER_ONE))
+                return H2_PAL_OK;
+        } else if (state != 0u) {
+            return H2_PAL_ERR_BUSY;
+        } else if (h2_jieli_atomic_cas_u32(&s_lifecycle, &state, EVENT_INITIALIZING)) {
+            break;
+        }
     }
     s_lock = h2_jieli_sdk_mutex_create();
     if (s_lock == NULL) {
@@ -77,7 +92,7 @@ static int system_event_init(void *user)
     }
     memset(s_subscriptions, 0, sizeof(s_subscriptions));
     s_generation = 0u;
-    h2_jieli_atomic_store_u32(&s_lifecycle, EVENT_ACTIVE);
+    h2_jieli_atomic_store_u32(&s_lifecycle, EVENT_ACTIVE | EVENT_OWNER_ONE);
     return H2_PAL_OK;
 }
 
@@ -85,11 +100,14 @@ static void system_event_deinit(void *user)
 {
     (void)user;
     uint32_t state = h2_jieli_atomic_load_u32(&s_lifecycle);
+    uint32_t next;
     do {
         if (!(state & EVENT_ACTIVE)) return;
-    } while (!h2_jieli_atomic_cas_u32(
-        &s_lifecycle, &state, EVENT_CLOSING | (state & EVENT_REFS)));
-    if ((state & EVENT_REFS) == 0u) event_destroy();
+        next = (state & EVENT_OWNERS) > EVENT_OWNER_ONE
+            ? state - EVENT_OWNER_ONE
+            : EVENT_CLOSING | (state & EVENT_REFS);
+    } while (!h2_jieli_atomic_cas_u32(&s_lifecycle, &state, next));
+    if (next == EVENT_CLOSING) event_destroy();
 }
 
 static int system_event_post(

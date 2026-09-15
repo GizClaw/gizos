@@ -1,5 +1,7 @@
 """Compile the Runtime/JieLi provider integration fixture with the host compiler."""
 from pathlib import Path
+import os
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -9,6 +11,18 @@ CORE = ROOT / 'native_component_src/jieli/wl82/h2_pal_core'
 
 
 class RuntimeEventsTest(unittest.TestCase):
+    def test_owner_threads(self):
+        with tempfile.TemporaryDirectory() as directory:
+            binary = Path(directory) / 'event-threads'
+            subprocess.run([*shlex.split(os.environ.get('CC', 'cc')),
+                            '-std=c11', '-Wall', '-Wextra', '-Werror', '-pthread',
+                            *shlex.split(os.environ.get('JIELI_TEST_CFLAGS', '')),
+                            '-I', str(ROOT / 'libs/pal/include'), '-I', str(CORE / 'include'),
+                            str(CORE / 'src/h2_jieli_wl82_platform_system_event.c'),
+                            str(CORE / 'tests/src/test_jieli_wl82_event_threads.c'),
+                            '-o', str(binary)], check=True)
+            subprocess.run([str(binary)], check=True, timeout=60)
+
     def test_launcher_then_runtime(self):
         sources = sorted((ROOT / 'libs/runtime/src').glob('*.c'))
         sources += sorted((ROOT / 'libs/pal/src/unsupported').glob('*.c'))

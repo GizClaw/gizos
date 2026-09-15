@@ -76,9 +76,14 @@ int main(void) {
     h2_jieli_fake_run_last_task_once();
     assert(started == 1);
     assert(h2_pal_task_join(runtime->task, task) == H2_PAL_OK);
-    /* Stop the launcher subscriber before Runtime tears down the registry. */
-    h2_pal_system_event_unsubscribe(api, ble);
+    /* Runtime releases only its owner; the launcher and BLE remain live. */
     h2_runtime_deinit(runtime);
+    assert(h2_pal_system_event_post(api, &event, 0) == H2_PAL_OK);
+    assert(delivered == 2);
+    h2_pal_system_event_unsubscribe(api, ble);
+    h2_pal_system_event_deinit(api);
+    assert(h2_pal_system_event_post(api, &event, 0) == H2_PAL_ERR_INVALID_STATE);
+    h2_pal_system_event_deinit(api); /* extra release while inactive is harmless */
     assert(h2_jieli_fake_live_allocations() == 0);
     return 0;
 }

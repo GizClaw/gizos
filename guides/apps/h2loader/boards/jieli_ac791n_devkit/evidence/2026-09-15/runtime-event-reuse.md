@@ -1,5 +1,15 @@
 # Shared launcher and Runtime event reuse — 2026-09-15
 
+## Follow-up: teardown ownership
+
+This record only established startup reuse at `40f8c636`; its test stopped the
+launcher subscriber before Runtime teardown and therefore missed a real ownership
+bug. The provider had no init-owner count, so Runtime deinit destroyed the registry
+while the launcher still owned it. The [owner-count correction](./system-event-owners.md)
+adds lifecycle references and tests that keep the launcher subscriber alive through
+Runtime deinit. The startup results below remain historical evidence, not proof of
+safe shared teardown.
+
 ## Finding disposition
 
 The review of `5b1d822a` alleged that the launcher's event initialization makes
@@ -11,10 +21,11 @@ This behavior was already present in `a37942f5`, before the portable-atomic chan
 `b743fa41` and the reviewed head. No production ownership change or target exception
 was introduced for this finding.
 
-The launcher initializes the provider before BLE subscribes. Runtime initialization
-reuses the active provider and adds its subscriptions. Consumers must stop before
-Runtime deinitialization tears down the shared registry; repeated init is not an
-independent ownership reference. These Apps keep Runtime alive for their lifetime.
+At that revision, the launcher initialized the provider before BLE subscribed;
+Runtime initialization reused the registry and added subscriptions, but repeated
+init did not acquire an independent owner. The test removed the launcher subscriber
+before Runtime deinit, masking teardown of the still-owned provider. Keeping Runtime
+alive in the tested Apps only established startup behavior, not correct ownership.
 
 ## Host regression
 
