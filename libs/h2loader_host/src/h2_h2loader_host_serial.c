@@ -27,6 +27,11 @@ struct h2_h2loader_host_serial_connection {
     uint32_t post_command_delay_ms;
     h2_h2loader_host_transport_log_fn on_log;
     void *log_user;
+    /* Bytes after the OPEN ACK belong to the newly established stream. */
+    uint8_t pending_input[512];
+    size_t pending_input_len;
+    size_t ready_prefix_len;
+    int ready_line_rejected;
 };
 
 static h2_pal_result_t serial_finish_command_response(void *transport);
@@ -152,16 +157,26 @@ static h2_pal_result_t serial_session_control(
             rc != H2_PAL_ERR_WOULD_BLOCK) {
             return rc;
         }
-        if (read > 0u) {
+        for (size_t index = 0u; index < read; ++index) {
             rc = h2_iostreamikcp_filter_input_with_log(
-                &filter, input, read, session_frame, &ack,
+                &filter, &input[index], 1u, session_frame, &ack,
                 connection->on_log, connection->log_user);
             if (rc != H2_PAL_OK) {
                 return rc;
             }
-            if (ack.received) {
+            if (ack.received &&
+                request_flags == H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_OPEN) {
+                /* Do not let this temporary parser consume a prefix of the
+                 * next frame. Its state dies here; the stream owns every byte
+                 * after the ACK, including a frame split across reads. */
+                connection->pending_input_len = read - index - 1u;
+                memcpy(connection->pending_input, &input[index + 1u],
+                       connection->pending_input_len);
                 return H2_PAL_OK;
             }
+        }
+        if (ack.received) {
+            return H2_PAL_OK;
         }
         rc = serial_now(connection->time, &now);
         if (rc != H2_PAL_OK) {
@@ -169,6 +184,45 @@ static h2_pal_result_t serial_session_control(
         }
     }
     return H2_PAL_ERR_TIMEOUT;
+}
+
+/* A USB-UART adapter survives the MCU reset, but its KCP conversation does
+ * not. READY after session admission announces a new device-side session
+ * epoch. Return CLOSED so all host users reconnect instead of waiting for
+ * delivery to a conversation that no longer exists. Handshake logs bypass
+ * this callback, so the banner preceding the OPEN ACK is not a reset. */
+static h2_pal_result_t serial_stream_log(
+    void *user, const uint8_t *data, size_t len) {
+    h2_h2loader_host_serial_connection_t *connection = user;
+    static const char marker[] = "H2_LOADER_READY ";
+    int reset = 0;
+    for (size_t index = 0u; index < len; ++index) {
+        if (data[index] == '\r' || data[index] == '\n') {
+            connection->ready_prefix_len = 0u;
+            connection->ready_line_rejected = 0;
+            continue;
+        }
+        if (connection->ready_line_rejected) {
+            continue;
+        }
+        if (data[index] == (uint8_t)marker[connection->ready_prefix_len]) {
+            ++connection->ready_prefix_len;
+            if (connection->ready_prefix_len == sizeof(marker) - 1u) {
+                connection->ready_prefix_len = 0u;
+                reset = 1;
+            }
+        } else {
+            connection->ready_prefix_len = 0u;
+            connection->ready_line_rejected = 1;
+        }
+    }
+    if (connection->on_log != NULL) {
+        h2_pal_result_t rc = connection->on_log(connection->log_user, data, len);
+        if (rc != H2_PAL_OK) {
+            return rc;
+        }
+    }
+    return reset ? H2_PAL_ERR_CLOSED : H2_PAL_OK;
 }
 
 static h2_pal_result_t serial_wait_ready_marker(
@@ -547,10 +601,16 @@ h2_pal_result_t h2_h2loader_host_serial_connect(
         .rx_buffer_size = H2_H2LOADER_HOST_SERIAL_RX_SIZE,
         .receive_window = H2_H2LOADER_HOST_SERIAL_RECEIVE_WINDOW,
         .write_timeout_ms = connection->command_timeout_ms,
-        .on_log = config->on_log,
-        .log_user = config->log_user,
+        .on_log = serial_stream_log,
+        .log_user = connection,
     };
     rc = h2_iostreamikcp_open(&stream_config, &connection->stream);
+    if (rc != H2_PAL_OK) {
+        goto fail;
+    }
+    rc = h2_iostreamikcp_input(connection->stream, connection->pending_input,
+                              connection->pending_input_len);
+    connection->pending_input_len = 0u;
     if (rc != H2_PAL_OK) {
         goto fail;
     }

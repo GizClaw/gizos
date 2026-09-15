@@ -104,7 +104,7 @@ Host 每次 probe、connect 或 reconnect 都生成新的非零 conversation ID�
 - `mtu`：KCP payload MTU；`0` 使用 `352`，有效范围为 `64` 到 `1024` bytes。
 - `receive_window`：本端可接收的 KCP segment 数；`0` 使用 `64`。UART backend 应按驱动 RX buffer 容量缩小窗口，避免可靠层突发量超过物理层缓存。
 
-H2Loader 的 ESP32-S3 与 BK7258 UART adapter 使用 20-segment receive window。Physical poll 每次最多读取 `512` bytes，并把阻塞等待限制为 `10` ms；每次 poll 后调用 KCP update。KCP 自身 interval 同样为 `10` ms，CWND 保持开启；Host 写入按 KCP MSS 分块，使每个 message 对应一个 KCP segment。
+H2Loader 的 ESP32-S3 与 BK7258 UART adapter 使用 20-segment receive window。Physical poll 每次最多读取 `512` bytes，并把阻塞等待限制为 `10` ms；每次 poll 后调用 KCP update。Frame callback 返回错误（例如 ACK 写入 deadline 耗尽）时，filter 中可能还缓存着完整 frame；因此即使 physical read 以 `TIMEOUT`/`WOULD_BLOCK` 返回 0 bytes，poll 仍以空输入调用 frame filter，恢复交付已缓存的完整 frame，不完整 frame 继续保留。Physical read 的其它错误先原样返回，不解析缓存。KCP 自身 interval 同样为 `10` ms，CWND 保持开启；Host 写入按 KCP MSS 分块，使每个 message 对应一个 KCP segment。
 
 BK7258 上 AP 直接拥有 UART1，日志和 IO Stream iKCP 共享物理串口。AP UART PAL 接管 RX，并在完整协议帧写入期间暂停 shell TX；CP 不转发串口数据，不再有 mailbox 分片或 completion ACK。
 - `rx_buffer_size`：内部 byte-stream RX ring 大小；`0` 使用 `4096`，且不能小于 MTU。

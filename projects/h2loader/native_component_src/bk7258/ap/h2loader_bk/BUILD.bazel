@@ -5,6 +5,8 @@ load("@rules_cc//cc:defs.bzl", "cc_test")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(["src/h2_bk_h2loader_iostreamikcp.c"])
+
 cc_test(
     name = "power_test",
     srcs = [

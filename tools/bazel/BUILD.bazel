@@ -526,3 +526,47 @@ py_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )
+
+py_test(
+    name = "h2loader_serial_handoff_test",
+    srcs = ["tests/test_h2loader_serial_handoff.py"],
+    data = [
+        "tests/fixtures/h2loader_serial_handoff.c",
+        "//libs/h2loader_host:src/h2_h2loader_host_serial.c",
+        "//libs/h2loader_host:include/h2_h2loader_host.h",
+        "//libs/h2loader_host:include/h2_h2loader_host_catalog.h",
+        "//libs/iostreamikcp:src/h2_iostreamikcp_frame.c",
+        "//libs/iostreamikcp:include/h2_iostreamikcp.h",
+        "//libs/iostreamikcp:include/h2_iostreamikcp_types.h",
+        "//libs/pal:pal_header_files",
+        "//projects/h2loader/apps/cli/app:src/h2_h2loader_cli_app.c",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_h2loader_serial_handoff.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "h2loader_buffered_poll_test",
+    srcs = ["tests/test_h2loader_buffered_poll.py"],
+    data = [
+        "tests/fixtures/h2loader_buffered_poll.c",
+        "//libs/iostreamikcp:src/h2_iostreamikcp_frame.c",
+        "//libs/iostreamikcp:include/h2_iostreamikcp.h",
+        "//libs/iostreamikcp:include/h2_iostreamikcp_types.h",
+        "//libs/pal:pal_header_files",
+        "//projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime:src/h2_esp_h2loader_iostreamikcp.c",
+        "//projects/h2loader/native_component_src/bk7258/ap/h2loader_bk:src/h2_bk_h2loader_iostreamikcp.c",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_h2loader_buffered_poll.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
