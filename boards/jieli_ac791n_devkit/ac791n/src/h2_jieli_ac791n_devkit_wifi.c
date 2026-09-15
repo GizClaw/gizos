@@ -1,5 +1,6 @@
-#include "h2_wifi_sta.h"
 #include "asm/includes.h"
+
+#include "h2_wifi_sta.h"
 
 #include "h2_jieli_ac791n_devkit.h"
 #include "h2_jieli_ac791n_devkit_network.h"

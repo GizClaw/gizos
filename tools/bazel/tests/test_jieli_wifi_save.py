@@ -3,6 +3,20 @@ from pathlib import Path
 import subprocess,tempfile,unittest
 ROOT=Path(__file__).resolve().parents[3]
 class SaveTest(unittest.TestCase):
+    def test_sdk_bool_header_order(self):
+        source=(ROOT/'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c').read_text()
+        headers = [line for line in source.splitlines()
+                   if line in ('#include "asm/includes.h"', '#include "h2_wifi_sta.h"')]
+        with tempfile.TemporaryDirectory() as directory:
+            root=Path(directory)
+            (root/'asm').mkdir()
+            (root/'asm/includes.h').write_text('typedef unsigned char bool;\n')
+            (root/'test.c').write_text('\n'.join(headers)+'\nint main(void) { return 0; }\n')
+            subprocess.run(['cc','-std=c11','-Wall','-Wextra','-Werror',
+                            '-I',str(root),'-I',str(ROOT/'libs/pal/include'),
+                            '-I',str(ROOT/'libs/wifi_sta/include'),str(root/'test.c'),
+                            '-o',str(root/'test')],check=True)
+
     def test_save(self):
         source=(ROOT/'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c').read_text()
         shared=(ROOT/'libs/wifi_sta/tests/test_wifi_sta.c').read_text()
