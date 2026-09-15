@@ -5279,6 +5279,89 @@ static void test_workspace_request_and_response_paths(void) {
          strcmp(activation.workspace_name, "ws") == 0);
 }
 
+static void test_run_stop_downlink(void) {
+  for (unsigned attached = 0u; attached < 2u; ++attached) {
+    test_env_t env;
+    h2_gizclaw_service_t* service = create_profile_service(&env);
+    h2_gizclaw_async_rpc_test_set_ops(&workspace_test_ops);
+    h2_gizclaw_track_t* track = NULL;
+    const h2_gizclaw_pcm_track_config_t track_config = {
+        .allocator = service->client_config.allocator,
+        .uplink_capacity = 1024u,
+        .downlink_capacity = 4096u};
+    assert(h2_gizclaw_pcm_track_create(&track_config, &track) == H2_PAL_OK);
+    assert(h2_gizclaw_service_set_track(service, track) == H2_PAL_OK);
+    h2_gizclaw_conversation_t* conversation = NULL;
+    assert(h2_gizclaw_conversation_create(
+               service, (h2_gizclaw_str_t){"room-b", 6u}, NULL, NULL, NULL,
+               &conversation) == H2_PAL_OK);
+    h2_gizclaw_session_t* session = NULL;
+    if (attached) {
+      static const char* const collections[] = {"test"};
+      const h2_gizclaw_session_config_t config = {
+          .service = service,
+          .mem = service->client_config.allocator,
+          .sync = service->config.sync,
+          .time = service->client_config.time,
+          .collections = collections,
+          .collection_count = 1u,
+          .max_workflows = 1u,
+          .catalog_bytes = 4096u};
+      assert(h2_gizclaw_session_create(&config, &session) == H2_PAL_OK);
+    }
+    assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+    h2_gizclaw_resp_storage_t storage = {0};
+    const uint8_t packet[] = {0xf8, 0xff, 0xfe};
+    uint8_t pcm[640] = {1};
+    assert(h2_gizclaw_service_media_write_opus(service, packet,
+                                               sizeof(packet)) == H2_PAL_OK);
+    assert(h2_gizclaw_service_pcm_write_internal(service, pcm, sizeof(pcm)) ==
+           H2_PAL_OK);
+    static const uint8_t stopped[] = {0x0a, 0x00};
+    test_contact_rpc_t mock = {.expected_method = 20,
+                               .response = stopped,
+                               .response_len = sizeof(stopped)};
+    workspace_test_use_single(&mock);
+    assert(h2_gizclaw_rpc_run_stop(service, 1234u, &storage) == H2_PAL_OK);
+    assert(mock.calls == 1 && mock.request_matches && storage.used == 0u);
+    assert(h2_gizclaw_pcm_track_read(track, pcm, sizeof(pcm)) ==
+           H2_PAL_ERR_WOULD_BLOCK);
+    size_t writes = h2_gizclaw_conversation_downlink_writes_internal(service);
+    h2_gizclaw_conversation_downlink_step_internal(service);
+    assert(h2_gizclaw_conversation_downlink_writes_internal(service) == writes);
+    for (unsigned failure = 0u; failure < 2u; ++failure) {
+      mock = (test_contact_rpc_t){
+          .expected_method = 20,
+          .has_error = failure == 0u,
+          .error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND,
+          .transport_result = failure ? H2_PAL_ERR_TIMEOUT : H2_PAL_OK};
+      h2_pal_result_t expected =
+          failure ? H2_PAL_ERR_TIMEOUT : H2_PAL_ERR_NOT_FOUND;
+      assert(h2_gizclaw_rpc_run_stop(service, 1234u, &storage) == expected);
+      assert(mock.calls == 1 && mock.request_matches);
+      if (session != NULL) {
+        h2_gizclaw_session_state_t state;
+        assert(h2_gizclaw_session_snapshot(session, &state) == H2_PAL_OK);
+        assert(state.workspace == H2_GIZCLAW_SESSION_FAILED);
+        assert(state.last_error == expected);
+      }
+    }
+    if (session != NULL) {
+      assert(h2_gizclaw_session_close(session) == H2_PAL_OK);
+      mock.calls = 0;
+      assert(h2_gizclaw_rpc_run_stop(service, 1234u, &storage) ==
+             H2_PAL_ERR_CLOSED);
+      assert(mock.calls == 0);
+      assert(h2_gizclaw_session_destroy(&session) == H2_PAL_OK);
+    }
+    h2_gizclaw_conversation_release(conversation);
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+    assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+    h2_gizclaw_async_rpc_test_set_ops(NULL);
+  }
+}
+
 static void test_workspace_reload_with_options(void) {
   test_env_t env;
   h2_gizclaw_service_t *service = create_profile_service(&env);
@@ -5370,6 +5453,29 @@ static void test_workspace_reload_with_options(void) {
              H2_GIZCLAW_CONVERSATION_INITIATIVE_AGENT);
     }
   }
+  /* Stop is method 20 with an empty request; the status body is optional to
+   * callers. It participates even when the Session has no current name. */
+  for (unsigned i = 0; i < 2u; ++i) {
+    static const uint8_t stopped[] = {0x0a, 0x00};
+    test_contact_rpc_t stop_mock = {.expected_method = 20,
+                                    .response = stopped,
+                                    .response_len = sizeof(stopped)};
+    workspace_test_use_single(&stop_mock);
+    assert(h2_gizclaw_rpc_run_stop(service, 1234u, &storage) == H2_PAL_OK);
+    assert(stop_mock.calls == 1 && stop_mock.request_matches);
+    h2_gizclaw_session_state_t state;
+    assert(h2_gizclaw_session_snapshot(session, &state) == H2_PAL_OK);
+    assert(state.workspace == H2_GIZCLAW_SESSION_EMPTY);
+    assert(state.current_workspace[0] == '\0');
+  }
+  /* Restore the current route for the delete cases below. */
+  h2_gizclaw_workspace_activation_t restored = {
+      .active_workspace_name = "ws",
+      .runtime_state = H2_GIZCLAW_WORKSPACE_RUNTIME_RUNNING};
+  assert(h2_gizclaw_session_workspace_begin_internal(
+             session, (h2_gizclaw_str_t){"ws", 2u}, 1234u) == H2_PAL_OK);
+  assert(h2_gizclaw_session_workspace_finish_internal(
+             session, H2_PAL_OK, &restored, NULL) == H2_PAL_OK);
   /* The synchronous delete RPC participates only for the current Workspace. */
   uint8_t delete_response[128];
   size_t delete_response_len = 0u;
@@ -12093,6 +12199,7 @@ int main(int argc, char **argv) {
   test_closed_http_retries_cold_boot();
   test_time_sync_reconnect();
   test_stream_sink_one_shot();
+  test_run_stop_downlink();
   test_workspace_reload_with_options();
   test_workspace_selection_boundaries();
   test_req_remote_error_mapping();
