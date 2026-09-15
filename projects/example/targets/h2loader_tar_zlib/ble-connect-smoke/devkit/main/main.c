@@ -67,6 +67,9 @@ static void image_entry(void *user) {
         rc = h2_runtime_init(&config, &runtime);
     }
     if (rc == H2_PAL_OK) {
+        rc = h2_esp_h2loader_app_commands_start(runtime, "ble-connect-smoke", 1u, 3u);
+    }
+    if (rc == H2_PAL_OK) {
         rc = h2_esp_platform_confirm_running_app();
     }
     if (rc == H2_PAL_OK) {
