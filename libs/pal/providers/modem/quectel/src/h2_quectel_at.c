@@ -292,6 +292,9 @@ h2_pal_result_t h2_quectel_at_exchange_locked(
         h2_quectel_cpin_absent_store(modem, 0u);
     }
     h2_pal_result_t rc = at_exchange_impl(modem, cmd, response, allow_connect);
+    if (cpin && modem->config.command == NULL && rc != H2_PAL_OK) {
+        modem->raw_cpin_uncertain = 1u;
+    }
     if (cpin && rc != H2_PAL_OK && h2_quectel_cpin_absent_load(modem) != 0u &&
         reset_generation == modem->reset_generation && sim_generation == modem->sim_generation) {
         h2_quectel_sim_update(modem, H2_PAL_MODEM_SIM_STATE_ABSENT);

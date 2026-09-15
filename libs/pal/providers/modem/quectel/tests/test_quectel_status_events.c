@@ -612,6 +612,46 @@ static void test_unterminated_raw_line(void) {
     }
 }
 
+h2_pal_result_t h2_quectel_at_exchange(h2_quectel_modem_t *modem, const char *cmd,
+    h2_quectel_response_t *response, int allow_connect);
+
+static h2_pal_result_t cpin_raw_write(void *user, const uint8_t *data, size_t size,
+    uint32_t timeout_ms, size_t *written) {
+    (void)user; (void)timeout_ms;
+    assert(size == strlen("AT+CPIN?\r") && memcmp(data, "AT+CPIN?\r", size) == 0);
+    *written = size;
+    return H2_PAL_OK;
+}
+
+static void test_delayed_raw_cpin(const h2_pal_system_event_api_t *events) {
+    h2_quectel_modem_t modem;
+    raw_watchdog_transport_t transport = {.cursor = ""};
+    h2_quectel_modem_config_t config = {
+        .read = watchdog_read, .write = cpin_raw_write,
+        .transport_user = &transport, .system_events = events,
+    };
+    assert(h2_quectel_modem_init(&modem, &config) == H2_PAL_OK);
+    h2_quectel_response_t response;
+    assert(h2_quectel_at_exchange(&modem, "AT+CPIN?", &response, 0) == H2_PAL_ERR_TIMEOUT);
+    h2_quectel_handle_urc_line(&modem, "+QSIMSTAT: 1,0");
+    unsigned ready = sim_ready_events;
+    /* This old reply is indistinguishable from the next probe's reply. */
+    transport.cursor = "+CPIN: READY\r\nOK\r\n";
+    assert(h2_quectel_at_exchange(&modem, "AT+CPIN?", &response, 0) == H2_PAL_OK);
+    assert(modem.sim_state == H2_PAL_MODEM_SIM_STATE_ABSENT && sim_ready_events == ready);
+    h2_quectel_handle_urc_line(&modem, "+QSIMSTAT: 1,1");
+    transport.cursor = "+CPIN: READY\r\nOK\r\n";
+    assert(h2_quectel_at_exchange(&modem, "AT+CPIN?", &response, 0) == H2_PAL_OK);
+    assert(modem.sim_state == H2_PAL_MODEM_SIM_STATE_READY && sim_ready_events == ready + 1u);
+    /* A real modem reset establishes a new serial session. */
+    h2_quectel_handle_urc_line(&modem, "RDY");
+    h2_quectel_handle_urc_line(&modem, "+QSIMSTAT: 1,0");
+    transport.cursor = "+CPIN: READY\r\nOK\r\n";
+    assert(h2_quectel_at_exchange(&modem, "AT+CPIN?", &response, 0) == H2_PAL_OK);
+    assert(modem.sim_state == H2_PAL_MODEM_SIM_STATE_READY && sim_ready_events == ready + 2u);
+    assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
+}
+
 static unsigned presence_queries, pin_queries;
 static h2_pal_result_t cycle_command(void *user, const char *cmd, char *response,
     size_t size, uint32_t timeout) {
@@ -709,6 +749,7 @@ int main(void) {
     assert(h2_quectel_modem_deinit(&modem) == H2_PAL_OK);
     test_raw_watchdog(&events);
     test_ring_watchdog(&events);
+    test_delayed_raw_cpin(&events);
     test_dsci(&events);
     test_dsci_during_command(&events);
     test_sim_absent_rx(&events);

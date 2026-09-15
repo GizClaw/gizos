@@ -134,3 +134,5 @@ ABSENT 期间，已有 URC worker 每约 5 秒空闲时间执行一次 AT+CPIN?�
 重启前只失效旧状态，不发布 MODEM_READY；真实 RDY/APP RDY 和完成 prepare 才发布就绪。每次新来电清除旧 DSCI 关联，只有本次来电已关联的 DSCI 状态才能由对应结束通知终止。
 
 看门狗间隔与查询预算是 provider 级编译期覆盖参数，默认均为 1000 ms，支持 1–60000 ms，库和消费者必须使用一致定义，不提供实例运行期修改。间隔同时驱动 SIM 恢复空闲维护，close 停止操作、deinit 停止 worker；SIM 恢复单次 AT 预算仍为 1000 ms。
+
+raw read/write 传输没有请求 ID；一次 CPIN 交换中断后，后续 READY 无法证明来自新查询，因此锁存应答不可信，不能仅凭后续 raw CPIN 从明确 ABSENT 恢复。明确插入通知仍允许 READY；模组 reset 建立新串口会话后解除锁存。板级 command 回调必须保证返回文本属于本次命令，丢弃旧请求应答后才能开启新事务，provider 不替它推断串口事务边界。

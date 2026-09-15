@@ -44,6 +44,10 @@ typedef h2_pal_result_t (*h2_quectel_modem_write_fn)(
     size_t len,
     uint32_t timeout_ms,
     size_t *out_len);
+/** @brief Serialized command transaction with caller-owned response storage.
+ * Returned text must belong to this command. After interruption the transport
+ * must discard/resynchronize old replies before admitting another transaction;
+ * SIM/reset generations do not identify serial responses. Honor timeout_ms. */
 typedef h2_pal_result_t (*h2_quectel_modem_command_fn)(
     void *user,
     const char *cmd,
@@ -204,6 +208,7 @@ struct h2_quectel_modem {
     uint32_t sim_generation;
     /* RX-written CPIN outcome; access atomically as in modem/common counters. */
     uint32_t cpin_absent_seen;
+    uint8_t raw_cpin_uncertain; /* Interrupted raw CPIN lacks response ownership. */
     /* Deferred insertion recovery; protected by the provider state lock. */
     uint8_t sim_poll_remaining;
     uint8_t sim_refresh_pending;

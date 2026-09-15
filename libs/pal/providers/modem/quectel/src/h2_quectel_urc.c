@@ -373,6 +373,9 @@ void h2_quectel_cpin_response_locked(h2_quectel_modem_t *modem, const char *line
         const char *value = line + 6;
         while (*value == ' ') { value++; }
         if (modem->sim_presence == 2u && strcmp(value, "READY") == 0) {
+            /* Generations do not identify delayed serial replies. Once a raw
+             * CPIN was interrupted, only insertion/reset can restore trust. */
+            if (modem->config.command == NULL && modem->raw_cpin_uncertain) { return; }
             modem->sim_presence = 1u;
         }
     }
@@ -380,6 +383,7 @@ void h2_quectel_cpin_response_locked(h2_quectel_modem_t *modem, const char *line
 }
 
 void h2_quectel_reset_state(h2_quectel_modem_t *modem) {
+    modem->raw_cpin_uncertain = 0u;
     modem->call_generation++;
     modem->dsci_voice_seen = 0u;
     modem->dsci_call_id = 0;
