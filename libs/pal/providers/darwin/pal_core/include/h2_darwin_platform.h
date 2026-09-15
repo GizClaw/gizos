@@ -3,6 +3,7 @@
 
 #include "h2/pal/hal/h2_pal_ble.h"
 #include "h2/pal/os/h2_pal_mem.h"
+#include "h2/pal/os/h2_pal_log.h"
 #include "h2/pal/net/h2_pal_net.h"
 #include "h2/pal/net/h2_pal_netif.h"
 #include "h2/pal/os/h2_pal_fs.h"
@@ -33,14 +34,16 @@ const h2_pal_system_event_api_t *h2_darwin_system_event_api(void);
 const h2_pal_serial_host_api_t *h2_darwin_serial_host_api(void);
 
 /**
- * @brief Bind a borrowed allocator and return the Darwin CoreBluetooth provider.
+ * @brief Bind borrowed Memory/Log services and return the CoreBluetooth provider.
  *
- * The first successful call binds allocator for the provider lifetime. Repeated
- * calls with the same allocator return the same provider. A NULL, incomplete,
- * or different allocator returns NULL. The provider never owns the allocator.
+ * The first successful call binds both services for the provider lifetime.
+ * Repeated calls with the same API pointers return the same provider. NULL,
+ * incomplete, or different services return NULL. The caller keeps both API
+ * objects and their user state alive; asynchronous diagnostics run on the
+ * backend queue, so the Log service must support calls from that queue.
  */
 h2_pal_ble_t *h2_darwin_corebluetooth_ble(
-    const h2_pal_mem_api_t *allocator);
+    const h2_pal_mem_api_t *allocator, const h2_pal_log_api_t *log);
 
 #ifdef __cplusplus
 }
