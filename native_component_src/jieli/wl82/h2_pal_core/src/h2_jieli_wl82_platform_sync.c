@@ -105,7 +105,6 @@ static h2_pal_result_t sync_lock_mutex(void *user, h2_pal_mutex_t *mutex)
     const void *current = h2_jieli_sdk_task_current();
     if (mutex->recursive != 0 && current != NULL &&
         h2_jieli_atomic_load_ptr(&mutex->owner) == current) {
-        if (mutex->depth == UINT32_MAX) return H2_PAL_ERR_FULL;
         mutex->depth++;
         return H2_PAL_OK;
     }
@@ -128,7 +127,6 @@ static h2_pal_result_t sync_try_lock_mutex(void *user, h2_pal_mutex_t *mutex)
     const void *current = h2_jieli_sdk_task_current();
     if (mutex->recursive != 0 && current != NULL &&
         h2_jieli_atomic_load_ptr(&mutex->owner) == current) {
-        if (mutex->depth == UINT32_MAX) return H2_PAL_ERR_FULL;
         mutex->depth++;
         return H2_PAL_OK;
     }

@@ -23,8 +23,41 @@ static int generation_old(void *user, const h2_pal_system_event_t *event) {
                                             NULL, &new_sub);
     return H2_PAL_OK;
 }
+static atomic_int saturated_entered, saturated_done;
+static void *saturated_unsubscribe(void *subscription) {
+    atomic_store(&saturated_entered, 1);
+    system_event_unsubscribe(NULL, subscription);
+    atomic_store(&saturated_done, 1);
+    return NULL;
+}
+static void test_saturated(void) {
+    assert(system_event_init(NULL) == H2_PAL_OK);
+    const h2_pal_system_event_t event = {.type = H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STARTED};
+    h2_pal_system_event_subscription_t *sub = NULL, *replacement = NULL;
+    assert(system_event_subscribe(NULL, event.type, generation_new, NULL, &sub) == H2_PAL_OK);
+    const uint32_t previous = h2_jieli_atomic_load_u32(&s_lifecycle);
+    h2_jieli_atomic_store_u32(&s_lifecycle, (previous & ~EVENT_REFS) | EVENT_REFS);
+    pthread_t thread;
+    assert(pthread_create(&thread, NULL, saturated_unsubscribe, sub) == 0);
+    while (!atomic_load(&saturated_entered)) sched_yield();
+    h2_jieli_sdk_sleep_ms(30u);
+    assert(!atomic_load(&saturated_done));
+    h2_jieli_atomic_store_u32(&s_lifecycle, previous);
+    assert(pthread_join(thread, NULL) == 0);
+    assert(atomic_load(&saturated_done));
+    assert(system_event_post(NULL, &event, 0u) == H2_PAL_OK);
+    assert(new_calls == 0u);
+    assert(system_event_subscribe(NULL, event.type, generation_new, NULL, &replacement) == H2_PAL_OK);
+    assert(replacement == sub);
+    system_event_unsubscribe(NULL, replacement);
+    system_event_deinit(NULL);
+}
 int main(int argc, char **argv) {
     assert(argc == 2);
+    if (strcmp(argv[1], "saturated") == 0) {
+        test_saturated();
+        return 0;
+    }
     const int limit = strcmp(argv[1], "limit") == 0;
     assert(system_event_init(NULL) == H2_PAL_OK);
     event_lock_wait(s_lock);
@@ -75,7 +108,7 @@ class GenerationTest(unittest.TestCase):
                             *shlex.split(os.environ.get('JIELI_TEST_CFLAGS', '')),
                             '-I', str(ROOT / 'libs/pal/include'),
                             '-I', str(CORE / 'include'), str(unit), '-o', str(binary)], check=True)
-            for case in ('snapshot', 'limit'):
+            for case in ('snapshot', 'limit', 'saturated'):
                 with self.subTest(case=case):
                     subprocess.run([str(binary), case], check=True, timeout=60)
 

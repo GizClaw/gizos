@@ -60,14 +60,20 @@ static uint32_t s_lifecycle;
 static h2_jieli_sdk_mutex_t *event_retain(int retiring)
 {
     uint32_t state = h2_jieli_atomic_load_u32(&s_lifecycle);
-    do {
-        if ((!(state & EVENT_ACTIVE) &&
-             !(retiring && (state & EVENT_CLOSING) && (state & EVENT_REFS))) ||
-            (state & EVENT_REFS) == EVENT_REFS) {
+    for (;;) {
+        if (!(state & EVENT_ACTIVE) &&
+            !(retiring && (state & EVENT_CLOSING) && (state & EVENT_REFS))) {
             return NULL;
         }
-    } while (!h2_jieli_atomic_cas_u32(&s_lifecycle, &state, state + 1u));
-    return s_lock;
+        if ((state & EVENT_REFS) == EVENT_REFS) {
+            if (!retiring) return NULL;
+            /* Retirement must wait for reference capacity instead of abandoning callbacks. */
+            h2_jieli_sdk_sleep_ms(1u);
+            state = h2_jieli_atomic_load_u32(&s_lifecycle);
+            continue;
+        }
+        if (h2_jieli_atomic_cas_u32(&s_lifecycle, &state, state + 1u)) return s_lock;
+    }
 }
 
 static void event_destroy(void)
