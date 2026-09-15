@@ -506,6 +506,13 @@ static double span_sweep(constraint_workspace_t *w, double lambda,
   }
   return lambda;
 }
+/* Inspect binary32 storage without aliasing or FPU comparisons: some target
+ * FPUs may flush subnormals, so those bounds/coordinates keep double compares. */
+static int float_subnormal(const float *value) {
+  uint32_t bits;
+  memcpy(&bits, value, sizeof(bits));
+  return (bits & 0x7f800000u) == 0 && (bits & 0x007fffffu) != 0;
+}
 static int workspace_solve(lua_State *s) {
   constraint_workspace_t *w = workspace(s);
   loaded(s, w);
@@ -538,16 +545,25 @@ static int workspace_solve(lua_State *s) {
       const double *r = bounds + 5 * k;
       size_t first = (size_t)r[0] - 1, end = first + (size_t)r[1],
              axis = (size_t)r[2] - 1;
+      if (first == end)
+        continue;
+      float lower = (float)r[3], upper = (float)r[4];
+      int exact = !float_subnormal(&lower) && !float_subnormal(&upper) &&
+                  (double)lower == r[3] && (double)upper == r[4];
+      int fixed = exact ? lower == upper : r[3] == r[4];
+      /* Retain the original double endpoint and its signed-zero residual. */
+      precise_float low = pf_from(r[3]), high = pf_from(r[4]);
       for (size_t i = first; i < end; ++i) {
         precise_float *v = w->coordinates + 3 * i + axis;
         if (!isfinite(v->hi) || !isfinite(v->lo))
           return luaL_error(s, "non-finite constraint intermediate");
-        if (v->hi < r[3])
-          *v = pf_from(r[3]);
-        else if (v->hi > r[4])
-          *v = pf_from(r[4]);
-        else if (r[3] == r[4])
-          *v = pf_from(r[3]);
+        int use_float = exact && !float_subnormal(&v->hi);
+        if (use_float ? v->hi < lower : v->hi < r[3])
+          *v = low;
+        else if (use_float ? v->hi > upper : v->hi > r[4])
+          *v = high;
+        else if (fixed)
+          *v = low;
       }
     }
   }

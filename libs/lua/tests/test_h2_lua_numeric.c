@@ -144,9 +144,10 @@ static void span_reference(lua_State *s) {
       "local w=v.constraints(4,0);local out,old,l=v.buffer(12),v.buffer(12),v.buffer(0);"
       "local bounds=v.buffer(5);bounds:load({1,4,2,.17,.17});"
       "p:fill(0);prev:fill(0);w[bound and 'bind' or 'load'](w,p,prev,l,4,0,.01);"
-      "return function(values,a,b,wa,wb,dt,passes,clamp) "
+      "return function(values,a,b,wa,wb,dt,passes,clamp,value) "
       "if bound then p:load(values) else for i=1,4 do local k=3*i;"
       "w:node(i,values[k-2],values[k-1],values[k],0,0,0) end end;"
+      "bounds:set(4,value);bounds:set(5,value);"
       "w:span(a,b,.4,.0001,wa,wb);w:begin(dt);"
       "w:solve(passes,clamp and bounds or nil,clamp and 1 or 0);"
       "local sl=w:copy(out,old,l);local result={};"
@@ -170,6 +171,9 @@ static void span_reference(lua_State *s) {
       double wa = weights[round % 6][0], wb = weights[round % 6][1];
       double dt = round % 2 ? .02 : .01, lambda = 0;
       int passes = round % 3 == 0 ? 32 : 4, clamp = round % 2;
+      const double limits[] = {0, -0.0, .17, FLT_MIN, nextafterf(0, 1),
+                               nextafter(0, 1)};
+      double limit = limits[(round / 2) % 6];
       for (int pass = 0; pass < passes; ++pass) {
         if (wa + wb != 0) {
           double av[3], bv[3], delta[3];
@@ -201,7 +205,7 @@ static void span_reference(lua_State *s) {
         /* Equal bounds deliberately move even a span-pinned endpoint after
          * the first pass: matching only the weight would be incorrect. */
         if (clamp)
-          for (int i = 0; i < 4; ++i) q[3 * i + 1] = reference_pair(.17);
+          for (int i = 0; i < 4; ++i) q[3 * i + 1] = reference_pair(limit);
       }
       lua_pushvalue(s, -1);
       lua_createtable(s, 12, 0);
@@ -212,7 +216,8 @@ static void span_reference(lua_State *s) {
       lua_pushinteger(s, (lua_Integer)b + 1);
       lua_pushnumber(s, wa); lua_pushnumber(s, wb); lua_pushnumber(s, dt);
       lua_pushinteger(s, passes); lua_pushboolean(s, clamp);
-      ok(s, lua_pcall(s, 8, 2, 0));
+      lua_pushnumber(s, limit);
+      ok(s, lua_pcall(s, 9, 2, 0));
       assert(lua_tonumber(s, -2) == lambda);
       for (int i = 0; i < 12; ++i) {
         lua_rawgeti(s, -1, i + 1);
@@ -225,6 +230,136 @@ static void span_reference(lua_State *s) {
   }
   lua_pop(s, 1);
 }
+/* Exercise actual solver publication against the former double bounds loop.
+ * All world components, previous state and inactive output capacity are checked
+ * bit-for-bit, including signed-zero/residual behavior after repeated rows. */
+static void bounds_reference(lua_State *s, allocation_counter_t *allocation) {
+  const double limits[] = {-1e6, nextafter(-1e6, 0), -1, -.1, -FLT_MIN,
+      -nextafterf(0, 1), -DBL_MIN, -0.0, 0, DBL_MIN, nextafterf(0, 1),
+      FLT_MIN, .1, nextafter(.1, 0), nextafter(.1, 1), 1, nextafter(1e6, 0), 1e6};
+  const double values[] = {-1e6, -1, nextafter(-1, -2), nextafter(-1, 0),
+      -.1, -1e-30, -FLT_MIN,
+      -nextafterf(0, 1), -DBL_MIN, -0.0, 0, DBL_MIN, nextafterf(0, 1),
+      FLT_MIN, 1e-30, .1, nextafter(.1, 0), nextafter(.1, 1),
+      1, nextafter(1, 0), nextafter(1, 2), 1e6};
+  const size_t counts[] = {0, 1, 2, 32, 256};
+  size_t cases = 0;
+  for (int bound = 0; bound <= 1; ++bound) {
+    int top = lua_gettop(s);
+    ok(s, luaL_loadstring(s,
+        "local bound=...;local v=require('vmath');"
+        "local p,prev=v.buffer(771),v.buffer(771);"
+        "local out,old=v.buffer(771),v.buffer(771);out:fill(73);old:fill(74);"
+        "local b=v.buffer(15);local e,l=v.buffer(0),v.buffer(0);"
+        "local w=v.constraints(256,0);"
+        "return p,prev,b,out,old,"
+        "function(n) w[bound and 'bind' or 'load'](w,p,prev,e,n,0,.01) end,"
+        "function(passes,rows) w:solve(passes,b,rows) end,"
+        "function() return w:copy(out,old,l) end,"
+        "function() w:node(1,0,0,0,0,0,0);w:node(2,0,0,0,0,0,0);"
+        "w:node(3,2,0,0,2,0,0);w:span(2,3,0,0,1e-320,1e-320) end"));
+    lua_pushboolean(s, bound);
+    ok(s, lua_pcall(s, 1, 9, 0));
+    h2_numeric_buffer_t *p = h2_numeric_check(s, top + 1),
+                        *prev = h2_numeric_check(s, top + 2),
+                        *bounds = h2_numeric_check(s, top + 3),
+                        *out = h2_numeric_check(s, top + 4),
+                        *old = h2_numeric_check(s, top + 5);
+    for (size_t lo = 0; lo < sizeof(limits) / sizeof(*limits); ++lo)
+      for (size_t hi = 0; hi < sizeof(limits) / sizeof(*limits); ++hi) {
+        if (limits[lo] > limits[hi]) continue;
+        for (size_t v = 0; v < sizeof(values) / sizeof(*values); ++v) {
+          size_t count = counts[(lo + hi + v) % 5], n = count < 256 ? count + 2 : 256;
+          size_t first = count < 256 ? 1 : 0;
+          int passes = v % 3 ? 1 : 32, rows = v % 2 ? 2 : 1;
+          double expected[771], previous[771];
+          reference_pair_t coordinates[768];
+          for (size_t i = 0; i < 771; ++i) {
+            p->data.f64[i] = values[v];
+            previous[i] = prev->data.f64[i] = .125 + (double)i / 1024;
+            expected[i] = out->data.f64[i] = 73;
+            old->data.f64[i] = 74;
+          }
+          double descriptors[] = {(double)first + 1, (double)count, 2,
+              limits[lo], limits[hi], (double)first + 1, (double)count, 2, -.25, .25,
+              1, 0, 1, -0.0, 0};
+          memcpy(bounds->data.f64, descriptors, sizeof(descriptors));
+          if (!count) rows = 3;
+          for (size_t i = 0; i < 3 * n; ++i)
+            coordinates[i] = reference_pair(p->data.f64[i]);
+          for (int pass = 0; pass < passes; ++pass)
+            for (int row = 0; row < rows; ++row) {
+              const double *r = descriptors + 5 * row;
+              for (size_t i = (size_t)r[0] - 1; i < (size_t)r[0] - 1 + (size_t)r[1]; ++i) {
+                reference_pair_t *q = coordinates + 3 * i + (size_t)r[2] - 1;
+                if (q->hi < r[3]) *q = reference_pair(r[3]);
+                else if (q->hi > r[4]) *q = reference_pair(r[4]);
+                else if (r[3] == r[4]) *q = reference_pair(r[3]);
+              }
+            }
+          for (size_t i = 0; i < 3 * n; ++i)
+            expected[i] = (double)coordinates[i].hi + coordinates[i].lo;
+          lua_pushvalue(s, top + 6); lua_pushinteger(s, (lua_Integer)n);
+          ok(s, lua_pcall(s, 1, 0, 0));
+          lua_pushvalue(s, top + 7); lua_pushinteger(s, passes); lua_pushinteger(s, rows);
+          allocation->calls = 0; allocation->counting = 1;
+          ok(s, lua_pcall(s, 2, 0, 0));
+          allocation->counting = 0;
+          assert(allocation->calls == 0);
+          lua_pushvalue(s, top + 8); ok(s, lua_pcall(s, 0, 1, 0));
+          assert(lua_tonumber(s, -1) == 0); lua_pop(s, 1);
+          assert(memcmp(out->data.f64, expected, sizeof(expected)) == 0);
+          assert(memcmp(old->data.f64, previous, 3 * n * sizeof(double)) == 0);
+          assert(memcmp(prev->data.f64, previous, sizeof(previous)) == 0);
+          for (size_t i = 3 * n; i < 771; ++i)
+            assert(old->data.f64[i] == 74 && p->data.f64[i] == values[v]);
+          if (bound) assert(memcmp(p->data.f64, expected, 3 * n * sizeof(double)) == 0);
+          ++cases;
+        }
+      }
+    /* A malformed late row must not publish the preceding valid clamp. */
+    const double invalid[] = {NAN, INFINITY, -INFINITY, nextafter(1e6, INFINITY)};
+    for (size_t i = 0; i < sizeof(invalid) / sizeof(*invalid); ++i) {
+      double saved[1542];
+      lua_pushvalue(s, top + 8); ok(s, lua_pcall(s, 0, 1, 0)); lua_pop(s, 1);
+      memcpy(saved, out->data.f64, 771 * sizeof(double));
+      memcpy(saved + 771, old->data.f64, 771 * sizeof(double));
+      double rows[] = {1, 1, 2, 0, 0, 1, 1, 2, 0, invalid[i]};
+      memcpy(bounds->data.f64, rows, sizeof(rows));
+      lua_pushvalue(s, top + 7); lua_pushinteger(s, 2); lua_pushinteger(s, 2);
+      assert(lua_pcall(s, 2, 0, 0) == LUA_ERRRUN); lua_pop(s, 1);
+      lua_pushvalue(s, top + 8); ok(s, lua_pcall(s, 0, 1, 0));
+      assert(lua_tonumber(s, -1) == 0); lua_pop(s, 1);
+      assert(memcmp(saved, out->data.f64, 771 * sizeof(double)) == 0);
+      assert(memcmp(saved + 771, old->data.f64, 771 * sizeof(double)) == 0);
+      ++cases;
+    }
+    /* A late non-finite compensated node must not publish an earlier clamp
+     * or the overflowing span multiplier. This uses only public operations. */
+    lua_pushvalue(s, top + 6); lua_pushinteger(s, 3);
+    ok(s, lua_pcall(s, 1, 0, 0));
+    lua_pushvalue(s, top + 9); ok(s, lua_pcall(s, 0, 0, 0));
+    lua_pushvalue(s, top + 8); ok(s, lua_pcall(s, 0, 1, 0));
+    double saved[1542], span = lua_tonumber(s, -1); lua_pop(s, 1);
+    memcpy(saved, out->data.f64, 771 * sizeof(double));
+    memcpy(saved + 771, old->data.f64, 771 * sizeof(double));
+    const double clamp[] = {1, 3, 2, 1, 1};
+    memcpy(bounds->data.f64, clamp, sizeof(clamp));
+    lua_pushvalue(s, top + 7); lua_pushinteger(s, 1); lua_pushinteger(s, 1);
+    assert(lua_pcall(s, 2, 0, 0) == LUA_ERRRUN);
+    assert(strstr(lua_tostring(s, -1), "non-finite constraint intermediate"));
+    lua_pop(s, 1);
+    lua_pushvalue(s, top + 8); ok(s, lua_pcall(s, 0, 1, 0));
+    assert(lua_tonumber(s, -1) == span); lua_pop(s, 1);
+    assert(memcmp(saved, out->data.f64, 771 * sizeof(double)) == 0);
+    assert(memcmp(saved + 771, old->data.f64, 771 * sizeof(double)) == 0);
+    ++cases;
+    lua_settop(s, top);
+    lua_gc(s, LUA_GCCOLLECT);
+  }
+  printf("solver bounds: %zu actual-binding exact publication cases\n", cases);
+}
+
 static void prepared_reference(double *result) {
   double p[4][3] = {{0, .2, 0}, {.8, -.1, .1}, {1.9, .3, .2}, {2.8, .1, 0}};
   double prev[4][3] = {
@@ -855,6 +990,7 @@ int main(void) {
   integration_coefficient_validation(s);
   displacement_validation(s, &a);
   span_reference(s);
+  bounds_reference(s, &a);
   ordered_reference(s);
   float_reference(s);
   suite(s, &a, NULL, "libs/lua/tests/numeric.lua");
