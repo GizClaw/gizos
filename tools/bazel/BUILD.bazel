@@ -1283,3 +1283,16 @@ py_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )
+
+py_test(
+    name = "jieli_board_inputs_test",
+    srcs = ["tests/test_jieli_board_inputs.py"],
+    data = ["//boards/jieli_ac791n_devkit:BUILD.bazel"],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_board_inputs.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
