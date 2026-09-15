@@ -342,6 +342,7 @@ py_test(
     data = [
         "jieli/local_post_br35.sh",
         "jieli_runner.py",
+        "//projects/example/targets/native_firmware/mp4-player/jieli_ac791n_devkit:BUILD.bazel",
     ],
     legacy_create_init = 0,
     main = "tests/test_jieli_runner.py",

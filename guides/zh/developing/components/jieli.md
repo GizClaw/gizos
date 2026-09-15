@@ -187,3 +187,8 @@ BR35 PAL core 在 `native_component_src/jieli/br35/h2_pal_core`，使用 UCOS，
 不依赖未导出的 `os_sem_accept` / `os_mutex_accept`。任务 join 由创建者回收，
 条件变量使用逐等待者信号量。SDK sys_timer 回调仍属于注册任务；PAL task queue
 专用，sleep 期间通过 `os_taskq_pend_timeout` 派发回调。真机时序尚未验证。
+
+AC791N 独立 MP4 vendor firmware 的 terminal label 为
+`//projects/example/targets/native_firmware/mp4-player/jieli_ac791n_devkit:firmware`；
+它不使用 Loader package 安装路径。Loader 托管的 MP4 App 仍由
+`projects/example/targets/h2loader_tar_zlib/mp4-player/jieli_ac791n_devkit` 拥有。
