@@ -14,7 +14,7 @@ STUBS = r"""
 #include <string.h>
 typedef int h2_pal_result_t;
 typedef int h2_h2loader_host_command_t;
-enum { H2_PAL_OK=0, H2_PAL_ERR_CLOSED=-1, H2_PAL_ERR_TIMEOUT=-2,
+enum { H2_PAL_EXIT=2, H2_PAL_OK=0, H2_PAL_ERR_CLOSED=-1, H2_PAL_ERR_TIMEOUT=-2,
        H2_PAL_ERR_IO=-3, H2_PAL_ERR_INVALID_STATE=-4,
        H2_PAL_ERR_NOT_FOUND=-5, H2_PAL_ERR_INVALID_ARG=-6, H2_H2LOADER_HOST_COMMAND_TERMINAL_OK=1 };
 typedef struct { uint32_t running_partition; } h2_h2loader_host_status_t;
@@ -29,10 +29,12 @@ typedef struct {
 } config_t;
 typedef struct { int terminal, status_valid; size_t output_bytes, log_bytes; h2_h2loader_host_status_t status; } result_t;
 typedef struct {
+  void *serial_connection;
   int monitor_logs; size_t monitor_output_bytes; config_t *config; result_t *case_result;
 } h2_e2e_transport_context_t;
 static int connects, disconnects, monitors, statuses, windows, cancel_flag;
 static int monitor_results[2], status_results[2], partitions[2];
+static size_t handshake_bytes[2], window_bytes[2];
 static int cancelled(config_t *c) { (void)c; return cancel_flag; }
 static void count_output(void *u) { (void)u; }
 static int connect_transport(h2_e2e_transport_context_t *c, h2_h2loader_host_status_t *s) {
@@ -44,10 +46,19 @@ static int execute_command(h2_e2e_transport_context_t *c,
 }
 static int disconnect_transport(h2_e2e_transport_context_t *c) { (void)c; ++disconnects; return 0; }
 static int reconnect_after_reboot(h2_e2e_transport_context_t *c, uint32_t p,
-    h2_h2loader_host_status_t *s) { (void)c; ++connects; s->running_partition=p; return 0; }
+    h2_h2loader_host_status_t *s) {
+  assert(connects<2); c->monitor_output_bytes += handshake_bytes[connects++];
+  s->running_partition=p; return 0;
+}
 static int begin_monitor_window(h2_e2e_transport_context_t *c) { (void)c; ++windows; return 0; }
-static int finish_bounded_monitor(h2_e2e_transport_context_t *c, int require) {
-  (void)c; assert(require==1 && monitors<2); return monitor_results[monitors++];
+static int monitor_cancelled(void *user) { (void)user; return 1; }
+static int h2_h2loader_host_serial_monitor_logs(void *connection,
+    int (*cancel_fn)(void *), void *user) {
+  h2_e2e_transport_context_t *c = user;
+  assert(connection == c->serial_connection && cancel_fn == monitor_cancelled);
+  assert(monitors<2);
+  c->monitor_output_bytes += window_bytes[monitors];
+  return monitor_results[monitors++];
 }
 static int read_status(h2_e2e_transport_context_t *c, h2_h2loader_host_status_t *s) {
   (void)c; assert(statuses<2); s->running_partition=(uint32_t)partitions[statuses];
@@ -55,7 +66,9 @@ static int read_status(h2_e2e_transport_context_t *c, h2_h2loader_host_status_t 
 }
 static void reset(void) {
   connects=disconnects=monitors=statuses=windows=cancel_flag=0;
-  memset(monitor_results,0,sizeof(monitor_results));
+  monitor_results[0]=monitor_results[1]=H2_PAL_EXIT;
+  memset(handshake_bytes,0,sizeof(handshake_bytes));
+  window_bytes[0]=window_bytes[1]=1;
   memset(status_results,0,sizeof(status_results));
   partitions[0]=partitions[1]=1;
 }
@@ -79,10 +92,18 @@ int main(void) {
   assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_ERR_CLOSED && connects==2);
   reset(); partitions[0]=2;
   assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_ERR_INVALID_STATE && connects==1);
-  reset(); monitor_results[0]=H2_PAL_ERR_NOT_FOUND;
+  reset(); window_bytes[0]=0;
   assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_ERR_NOT_FOUND && connects==1);
   reset(); status_results[0]=H2_PAL_ERR_TIMEOUT; cancel_flag=1;
+  monitor_results[0]=H2_PAL_OK;
   assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_ERR_TIMEOUT && connects==1);
+  reset(); handshake_bytes[0]=8; window_bytes[0]=0;
+  assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_ERR_NOT_FOUND && connects==1);
+  assert(monitors==1 && statuses==0 && ctx.monitor_output_bytes==0);
+  reset(); handshake_bytes[0]=8; window_bytes[0]=3;
+  assert(run_reboot_monitor(&ctx,1,1)==H2_PAL_OK && connects==1);
+  assert(monitors==1 && statuses==1 && result.status_valid &&
+         ctx.monitor_output_bytes==3);
   check_monitor_output();
   return 0;
 }
@@ -134,7 +155,10 @@ class RebootMonitorTests(unittest.TestCase):
             test = Path(directory) / "test.c"
             log_start = source.index("static h2_pal_result_t monitor_output(")
             log_end = source.index("static int monitor_cancelled(", log_start)
-            test.write_text(STUBS + source[log_start:log_end] + LOG_MAIN + source[start:end] + MAIN)
+            finish_start = source.index("static h2_pal_result_t\nfinish_bounded_monitor(")
+            finish_end = source.index("static h2_pal_result_t run_monitor(", finish_start)
+            test.write_text(STUBS + source[log_start:log_end] + LOG_MAIN +
+                            source[finish_start:finish_end] + source[start:end] + MAIN)
             binary = Path(directory) / "test"
             subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", str(test), "-o", str(binary)], check=True)
             subprocess.run([str(binary)], check=True)
