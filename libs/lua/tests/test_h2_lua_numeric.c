@@ -2,6 +2,10 @@
 #include "lauxlib.h"
 #include "lua.h"
 #include "lualib.h"
+/* Release toolchains must execute the oracle and allocation checks too. */
+#ifdef NDEBUG
+#undef NDEBUG
+#endif
 #include <assert.h>
 #include <math.h>
 #include <stdio.h>
