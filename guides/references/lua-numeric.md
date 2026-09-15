@@ -2,11 +2,15 @@
 
 The Host preloads `vmath` and `geometry` on desktop, embedded and browser targets. Standard Lua `math` is unchanged. Neither module needs an app extension or a Display device. The production contract is `libs/lua/include/h2_lua_numeric.h`.
 
-Allocate buffers and meshes during setup. Buffers store binary64 values and an equal-sized private scratch area (approximately 16 bytes per scalar plus userdata overhead), all charged to the VM memory budget. Successful hot calls allocate nothing; error construction may allocate. Indices are one-based integers. Every numeric input/result must be finite and within ±1e6. Invalid types, bounds, parameters, topology or numeric overflow raise Lua errors without changing any published output. Prefix operations leave unused suffixes unchanged. Multiple outputs must differ; input/output aliasing is otherwise supported except for the physics restrictions below. No resizing, views or retained C pointers exist.
+Allocate buffers and meshes during setup. Buffers store `"f64"` (binary64, default) or `"f32"` (binary32) values and an equal-sized private scratch area (16 or 8 bytes per scalar respectively, plus fixed metadata/userdata overhead), all charged to the VM memory budget. Successful hot calls allocate nothing; error construction may allocate. Indices are one-based integers. Every numeric input/result must be finite and within ±1e6. Invalid types, bounds, parameters, topology or numeric overflow raise Lua errors without changing any published output. Prefix operations leave unused suffixes unchanged. Multiple outputs must differ; input/output aliasing is otherwise supported except for the physics restrictions below. No resizing, views or retained C pointers exist.
+
+Every buffer operand in one call must have the same kind, including coefficients, weights, camera, masks, indices, tags and mesh topology. Mixed kinds raise `mixed numeric buffer kinds (f32/f64)` before publishing output, even for empty prefixes. There is no implicit conversion. `geometry.update_mesh` accepts f32 xy with f32 topology; the writer and Display mesh are independent of numeric precision.
+
+All-f32 buffer calls compute in `float`, including float math functions. Lua scalar inputs are checked for finite/±1e6 bounds before conversion to float once per call; `load` converts each imported element. Parameter intervals are checked in the selected precision. Storage and arithmetic round to that precision; very small values may underflow to zero. `get` and `dot` return ordinary Lua numbers. Scalar-only `clamp`, `lerp`, `smoothstep`, `spring` and standard Lua `math` retain double semantics.
 
 | API | Result and semantics |
 | --- | --- |
-| `vmath.buffer(count)` | Zeroed buffer, count 0..65536. |
+| `vmath.buffer(count[,kind])` | Zeroed buffer, count 0..65536; `"f64"` (default, also for nil) or `"f32"`. |
 | `#b` | Fixed scalar count. |
 | `b:get(index)` | Scalar value. |
 | `b:set(index,value)` | Store one scalar; no result. |
@@ -63,10 +67,10 @@ All transforms and point projection accept n ≤ 21845; prefix3 n ≤ 21844; pol
 
 ```lua
 local v, g = require('vmath'), require('geometry')
-local xyz, xy, mask, camera = v.buffer(6), v.buffer(4), v.buffer(2), v.buffer(5)
+local xyz, xy, mask, camera = v.buffer(6, "f32"), v.buffer(4, "f32"), v.buffer(2, "f32"), v.buffer(5, "f32")
 xyz:load({0,0,2, 1,1,2})
 camera:load({100,-100,160,120,.1})
-local topology = v.buffer(4)
+local topology = v.buffer(4, "f32")
 topology:load({1,1,2,65535})
 local writer, mesh = g.mesh(2,1)
 -- Reuse this storage in the frame loop:
@@ -75,4 +79,4 @@ g.update_mesh(writer,xy,topology,2,1)
 -- Submit mesh using the existing Display batch API.
 ```
 
-Binary64 retains small displacements; bulk calls avoid per-element Lua/C calls. There is no guarantee of cross-platform bit identity or an ESP32-S3 frame rate; measure real target workloads. Game formulas, camera constants, material choices, colors and time-step policy belong to Lua consumers.
+Binary64 retains smaller displacements; binary32 halves payload storage and uses single-precision arithmetic. Bulk calls avoid per-element Lua/C calls. There is no guarantee of cross-platform bit identity or an ESP32-S3 frame rate; measure real target workloads. Game formulas, camera constants, material choices, colors and time-step policy belong to Lua consumers.

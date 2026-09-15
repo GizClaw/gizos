@@ -42,7 +42,8 @@
  * Resource topology/vertices are copied at construction. Capacity cannot grow.
  * Copy methods write from buffer element 1 and preserve unused trailing
  * elements; they require vmath numeric buffers large enough for every output
- * row. Sparse input buffers contain exactly the supplied rows; duplicate IDs
+ * row. Both f32 and f64 storage are accepted; values convert at the double-
+ * precision core boundary. Sparse input buffers contain exactly the supplied rows; duplicate IDs
  * fail. Buffer IDs must be integral. Reuse buffers and root_matrix in frame
  * loops. skeleton2d.update_mesh(writer,actor) -> same mesh, no drawing or
  * present. writer:copy_bounds(buffer) -> part count; rows

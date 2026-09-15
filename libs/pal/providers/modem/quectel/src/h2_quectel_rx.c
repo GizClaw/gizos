@@ -18,7 +18,9 @@ int h2_quectel_is_urc(const char *line, const char *command) {
     }
     if (strcmp(line, "RING") == 0 || strcmp(line, "NO CARRIER") == 0 ||
         strcmp(line, "BUSY") == 0 || strcmp(line, "NO ANSWER") == 0 ||
-        strcmp(line, "RDY") == 0 || strcmp(line, "APP RDY") == 0 ||
+        strcmp(line, "+QIND: SMS DONE") == 0 || strcmp(line, "+QIND: PB DONE") == 0 ||
+        strcmp(line, "Call Ready") == 0 || strcmp(line, "RDY") == 0 || strcmp(line, "APP RDY") == 0 ||
+        strncmp(line, "^DSCI:", 6u) == 0 ||
         strncmp(line, "+CRING:", 7u) == 0 || strncmp(line, "+CLIP:", 6u) == 0) {
         return 1;
     }

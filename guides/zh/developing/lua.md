@@ -473,7 +473,9 @@ MP4 播放器配置也支持同名选项。启动动画可以借用同一个 Dis
 
 所有 Host（Desktop、设备、Wasm/browser）默认提供 `require('vmath')` 和 `require('geometry')`，不需要 App 注册 native module。`vmath` 不覆盖标准 `math`；两者都不依赖 Display 设备。API 的完整参数和边界契约见生产头文件 `libs/lua/include/h2_lua_numeric.h` 和 [Lua 数值 API](../../references/lua-numeric.md)。
 
-`vmath.buffer(count)` 创建固定容量 binary64 userdata，最多 65536 个数值。存储及等长事务 scratch 都通过 VM allocator 计费，约为 `16 * count` 字节加 userdata 开销。索引从 1 开始；点布局为连续 `x,y` 或 `x,y,z`，没有嵌套表。在初始化时分配缓冲区、mesh writer 和 mesh，帧内复用。成功的批量调用不分配；错误消息可以分配。所有数值及结果必须有限且绝对值不超过 1e6，越界、错误类型、无效拓扑或容量不足都会抛出 Lua error，已发布的缓冲区和 mesh 不变。
+`vmath.buffer(count[,kind])` 创建固定容量 userdata，最多 65536 个数值。kind 为 `"f64"`（默认，nil 也使用默认值）或 `"f32"`，分别存储 binary64 或 binary32。存储及等长事务 scratch 都通过 VM allocator 计费，分别为 `16 * count` 或 `8 * count` 字节，加固定 metadata/userdata 开销。索引从 1 开始；点布局为连续 `x,y` 或 `x,y,z`，没有嵌套表。在初始化时分配缓冲区、mesh writer 和 mesh，帧内复用。成功的批量调用不分配；错误消息可以分配。所有数值及结果必须有限且绝对值不超过 1e6，越界、错误类型、无效拓扑或容量不足都会抛出 Lua error，已发布的缓冲区和 mesh 不变。
+
+同一次调用的所有缓冲区必须使用相同 kind，包括系数、权重、相机、mask、索引、tag 和 mesh topology；混用会在发布结果前抛出 `mixed numeric buffer kinds (f32/f64)`，空前缀也不例外，不做隐式转换。全 f32 调用使用 float 运算和单精度数学函数；Lua 标量先验证有限性及 ±1e6 范围，再在调用入口转换为 float（load 对每个导入元素转换一次）。参数区间按所选精度检查；存储和运算按该精度舍入，极小值可能下溢为零。get/dot 返回普通 Lua number，纯标量 clamp/lerp/smoothstep/spring 及标准 math 保持 double 语义。
 
 数学模块提供标量插值/夹取/弹簧步进，缓冲区线性组合、逐元素乘除、多项式、点积、三维长度/归一化和通道 gather/scatter，以及批量 Verlet、XPBD 距离约束和位移阻尼。物理输入显式传入加速度、逆质量、约束边与 compliance；零逆质量固定节点，时间步范围是 `[1e-6,.1]` 秒。`relax` 每次将 lambda 清零，可选择双向距离或仅张力约束，最多 256 点、512 边和 32 次交替迭代；它不包含碰撞、材质或游戏规则。
 
@@ -481,7 +483,7 @@ MP4 播放器配置也支持同名选项。启动动画可以借用同一个 Dis
 
 几何模块提供二维/三维仿射、按权重位移和旋转、位移前缀和、折线展开、轴平面切分与近裁面裁剪投影。相机是 `{fx,fy,cx,cy,near}`，在相机空间沿 +Z 看，投影为 `(cx+fx*x/z, cy+fy*y/z)`，`near >= .001`；可用负 `fy` 翻转屏幕 Y。切分输出 `{side,source_index}`，投影输出源 segment 索引，Lua 可据此决定颜色。游戏公式、镜头参数、材质、颜色和时间步策略仍由 Lua 组合。
 
-`geometry.mesh(vc,pc)` 返回 writer 和现有公共 Display mesh。 `geometry.update_mesh(writer,xy,topology,nv,np)` 将结果直接复制到 mesh，返回同一 mesh；topology 每行是 `{kind,first,count,rgb565}`，kind 0 为 3..128 点多边形， kind 1 为两点线段。该操作不绘制、不 present；使用现有 Display 批次绘制接口。数值采用 double 保留小位移，批量调用消除逐点 Lua/C 边界开销；尚不承诺 S3 帧率或不同平台结果逐位一致，设备侧应按实际点数和迭代数测量。
+`geometry.mesh(vc,pc)` 返回 writer 和现有公共 Display mesh。 `geometry.update_mesh(writer,xy,topology,nv,np)` 将结果直接复制到 mesh，返回同一 mesh；topology 每行是 `{kind,first,count,rgb565}`，kind 0 为 3..128 点多边形， kind 1 为两点线段。xy 和 topology 可以同时使用 f32；writer 和公共 Display mesh 不绑定数值精度。该操作不绘制、不 present；使用现有 Display 批次绘制接口。f64 保留更小的位移，f32 将数据及 scratch 空间减半并使用单精度运算，批量调用消除逐点 Lua/C 边界开销；尚不承诺 S3 帧率或不同平台结果逐位一致，设备侧应按实际点数和迭代数测量。
 
 ## 嵌入分层与源码包
 
@@ -542,3 +544,14 @@ Go/cgo consumer 同样在自己的构建步骤中读取 manifest，用目标 C c
 所有 Host 内置 `require('skeleton2d')`，它消费同一份 portable C 计算库并通过公开 Display mesh 接口更新几何。定义/实例/资源/scratch 由 VM allocator 计费；成功热路径不分配，只有构造、首次 require 与错误消息允许分配。骨架/动画与帧内复用见 [Skeleton2D](./skeleton2d.md)，完整 binding 合同由生产头生成到 [API Reference](/references/skeleton2d)。
 
 `system.micros()` 返回 Runtime 单调时钟的 Lua integer 微秒值，不是 wall clock。不支持或 PAL 读取失败时返回 `nil, PAL错误码`；超出 Lua integer 正值范围抛出错误，不截断或静默改用毫秒。`system.millis()` 保持原行为。调用方应检查时钟粒度和测量开销，微秒单位不等于微秒有效精度。它不创建 timer、task 或 profiler。
+
+
+### 仿射纹理批次
+
+`display.texture(width,height,rgba_string)` 将紧密排列的 RGBA8 字节复制到 VM 自有的不可变纹理；输入字符串随后可以释放。RGBA 使用 straight alpha。`display.texture_batch(attachments,capacity)` 复制图集子矩形和锚点描述，并强引用纹理。附件为 `{texture=tex,x=0,y=0,width=w,height=h,anchor_x=ax,anchor_y=ay}`，子矩形坐标从零开始。
+
+`display.update_textures(batch,buffer)` 接受每行 `{resource,a,b,c,d,tx,ty}` 的 vmath 缓冲区。resource 从 1 开始；f32/f64 均可，f32 值在适配边界提升到 C 采样器的 double，骨骼核心仍使用 double。矩阵采用 `x'=a*x+c*y+tx`、`y'=b*x+d*y+ty`。更新先验证容量、资源及矩阵，再发布整个批次；失败保留原批次。固定容量数据与事务 scratch 均计入 VM allocator，预热后的成功更新和绘制不分配。
+
+`display.draw_textures(batch[,left,top,right,bottom])` 经公共 Raster2D 采样器执行最近邻采样和 RGB565 source-over 混合，支持旋转、缩放、剪切及镜像。裁剪为半开矩形；绘制走现有 Display acquisition、background、dirty 和 present 流程，并保守标脏整个裁剪区。动画调用方仍须恢复旧背景，再画当前批次并 present，透明像素不会自动擦除上一帧。
+
+`sk.textures(definition,attachments)` 返回 writer 与 Display 批次；`sk.update_textures(writer,actor)` 按骨骼 draw items 顺序更新同一个批次。writer 强引用定义、附件资源和批次；此类 producer-owned 批次禁止手动 `display.update_textures`。对象释放或 VM 关闭时，由 userdata/GC 统一回收；不要求调用方维护输入表或字符串的寿命。完整限制、非法输入、内存与像素证据见 [Skeleton2D](./skeleton2d.md) 和 [Raster2D](./raster2d.md)。

@@ -275,6 +275,30 @@ static int blend(lua_State *s) {
         "blend");
   return 0;
 }
+/* Numeric storage precision is independent of the double-precision core.
+ * Convert at the adapter boundary and publish only after validating scratch. */
+static double buffer_value(const h2_numeric_buffer_t *b, size_t i) {
+  return b->is_f32 ? (double)b->data.f32[i] : b->data.f64[i];
+}
+static void buffer_stage(lua_State *s, h2_numeric_buffer_t *b, size_t i, double value) {
+  if (!isfinite(value) || fabs(value) > 1000000.0)
+    luaL_error(s, "numeric value outside finite bounds");
+  if (b->is_f32)
+    b->data.f32[b->count + i] = (float)value;
+  else
+    b->data.f64[b->count + i] = value;
+}
+static void buffer_commit(lua_State *s, h2_numeric_buffer_t *b, size_t n) {
+  for (size_t i = 0; i < n; ++i) {
+    double value = buffer_value(b, b->count + i);
+    if (!isfinite(value) || fabs(value) > 1000000.0)
+      luaL_error(s, "numeric value outside finite bounds");
+  }
+  if (b->is_f32)
+    memcpy(b->data.f32, b->data.f32 + b->count, n * sizeof(float));
+  else
+    memcpy(b->data.f64, b->data.f64 + b->count, n * sizeof(double));
+}
 static size_t buffer_id(lua_State *s, double v, size_t max) {
   if (!isfinite(v) || v < 1 || v > max || floor(v) != v)
     luaL_error(s, "skeleton2d: invalid buffer ID");
@@ -288,7 +312,9 @@ static int set_local(lua_State *s) {
   h2_skeleton2d_local_t *rows = a->v.locals;
   size_t n = b->count / 6;
   for (size_t i = 0; i < n; i++) {
-    const double *v = b->data + 6 * i;
+    double v[6];
+    for (size_t j = 0; j < 6; ++j)
+      v[j] = buffer_value(b, 6 * i + j);
     rows[i] = (h2_skeleton2d_local_t){buffer_id(s, v[0], 128),
                                       {v[1], v[2], v[3], v[4], v[5]}};
   }
@@ -303,7 +329,9 @@ static int set_parts(lua_State *s) {
   h2_skeleton2d_part_state_t *rows = a->v.parts;
   size_t n = b->count / 4;
   for (size_t i = 0; i < n; i++) {
-    const double *v = b->data + 4 * i;
+    double v[4];
+    for (size_t j = 0; j < 4; ++j)
+      v[j] = buffer_value(b, 4 * i + j);
     if (!isfinite(v[2]) || fabs(v[2]) > 1e6 || floor(v[2]) != v[2] ||
         (v[3] != 0 && v[3] != 1))
       luaL_error(s, "skeleton2d: invalid part state");
@@ -329,8 +357,9 @@ static int copy_matrices(lua_State *s) {
   check(s, h2_skeleton2d_view(handle(s, 1, ACTOR)->v.ptr, &v), "copy_matrices");
   h2_numeric_buffer_t *b = h2_numeric_check(s, 2);
   h2_numeric_capacity(s, b, v.bone_count * 6);
-  memcpy(b->data + b->count, v.matrices, v.bone_count * 6 * sizeof(double));
-  h2_numeric_commit(s, b, v.bone_count * 6);
+  for (size_t i = 0; i < v.bone_count * 6; ++i)
+    buffer_stage(s, b, i, v.matrices[i]);
+  buffer_commit(s, b, v.bone_count * 6);
   lua_pushinteger(s, v.bone_count);
   return 1;
 }
@@ -341,13 +370,15 @@ static int copy_items(lua_State *s) {
   h2_numeric_buffer_t *b = h2_numeric_check(s, 2);
   h2_numeric_capacity(s, b, v.item_count * 9);
   for (size_t i = 0; i < v.item_count; i++) {
-    double *p = b->data + b->count + i * 9;
+    double p[9];
     p[0] = (double)(v.items[i].part + 1);
     p[1] = v.items[i].resource;
     p[2] = v.items[i].layer;
     memcpy(p + 3, v.items[i].matrix, 6 * sizeof(double));
+    for (size_t j = 0; j < 9; ++j)
+      buffer_stage(s, b, i * 9 + j, p[j]);
   }
-  h2_numeric_commit(s, b, v.item_count * 9);
+  buffer_commit(s, b, v.item_count * 9);
   lua_pushinteger(s, v.item_count);
   return 1;
 }
@@ -520,8 +551,9 @@ static int bounds(lua_State *s) {
   writer_t *w = luaL_checkudata(s, 1, WRITER);
   h2_numeric_buffer_t *b = h2_numeric_check(s, 2);
   h2_numeric_capacity(s, b, w->nparts * 5);
-  memcpy(b->data + b->count, w->bounds, w->nparts * 5 * sizeof(double));
-  h2_numeric_commit(s, b, w->nparts * 5);
+  for (size_t i = 0; i < w->nparts * 5; ++i)
+    buffer_stage(s, b, i, w->bounds[i]);
+  buffer_commit(s, b, w->nparts * 5);
   lua_pushinteger(s, w->nparts);
   return 1;
 }

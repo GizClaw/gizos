@@ -35,6 +35,19 @@ spec.clips[1].tracks[1].keys[2][1]=0;fails(sk.compile,spec)
 local locals=v.buffer(12);locals:load({1,0,0,0,1,1,1,0,0,0,1,1});fails(actor.set_local,actor,locals)
 assert(def:bytes()>0 and actor:bytes()>0 and writer:bytes()>0)
 local override=v.buffer(6);override:load({2,20,0,0,1,1})
+-- Both numeric storage kinds cross the double-precision core boundary.
+for _,kind in ipairs({'f64','f32'}) do
+ local fparts=v.buffer(8,kind);fparts:load({1,1,2,1,2,1,-1,1})
+ local flocal=v.buffer(6,kind);flocal:load({2,20,0,0,1,1})
+ actor:set_parts(fparts);actor:set_local(flocal);actor:evaluate(root)
+ local fm,fi,fb=v.buffer(12,kind),v.buffer(18,kind),v.buffer(10,kind)
+ actor:copy_matrices(fm);actor:copy_matrices(matrices)
+ actor:copy_draw_items(fi);actor:copy_draw_items(items)
+ sk.update_mesh(writer,actor);writer:copy_bounds(fb);writer:copy_bounds(bounds)
+ for i=1,12 do assert(math.abs(fm:get(i)-matrices:get(i))<.001) end
+ for i=1,18 do assert(math.abs(fi:get(i)-items:get(i))<.001) end
+ for i=1,10 do assert(math.abs(fb:get(i)-bounds:get(i))<.001) end
+end
 -- Exercise the production Display resource owner without acquiring a Display;
 -- the C harness measures the entire VM from creation through zero at close.
 local texture=test_texture_new(32,32,string.char(255,80,16,128):rep(1024))

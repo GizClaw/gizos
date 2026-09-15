@@ -24,12 +24,6 @@ static inline uint32_t h2_quectel_cpin_absent_load(const h2_quectel_modem_t *mod
 #endif
 }
 
-typedef struct h2_quectel_response {
-    char lines[H2_QUECTEL_RESPONSE_MAX][H2_QUECTEL_LINE_MAX];
-    size_t count;
-    int connected;
-} h2_quectel_response_t;
-
 static inline int h2_quectel_ascii_digit(unsigned char value) {
     return value >= (unsigned char)'0' && value <= (unsigned char)'9';
 }
@@ -59,6 +53,8 @@ int h2_quectel_parse_int_after(const char *text, const char *prefix, int *out_va
 void h2_quectel_copy_token(char *dst, size_t dst_len, const char *src);
 h2_pal_modem_registration_state_t h2_quectel_parse_registration_stat(int stat);
 int h2_quectel_parse_clcc_line(const char *line, h2_pal_modem_call_status_t *out_status);
+void h2_quectel_call_watchdog(void *user);
+void h2_quectel_post_call_status(h2_quectel_modem_t *modem, h2_pal_system_event_type_t type, const h2_pal_modem_call_status_t *status);
 int32_t h2_quectel_incoming_call_begin(h2_quectel_modem_t *modem);
 int32_t h2_quectel_incoming_call_current(const h2_quectel_modem_t *modem);
 int32_t h2_quectel_incoming_call_end(h2_quectel_modem_t *modem);
@@ -87,6 +83,10 @@ h2_pal_result_t h2_quectel_power_wake(h2_quectel_modem_t *modem);
 h2_pal_result_t h2_quectel_power_prepare(h2_quectel_modem_t *modem);
 h2_pal_result_t h2_quectel_set_power_policy(void *user, h2_pal_modem_power_policy_t policy);
 h2_pal_result_t h2_quectel_get_power_status(void *user, h2_pal_modem_power_status_t *out_status);
+void h2_quectel_sim_recover(void *user);
+void h2_quectel_cpin_response_locked(h2_quectel_modem_t *modem, const char *line,
+    uint32_t reset_generation, uint32_t sim_generation);
+void h2_quectel_reset_state(h2_quectel_modem_t *modem);
 void h2_quectel_sim_update(h2_quectel_modem_t *modem, h2_pal_modem_sim_state_t state);
 void h2_quectel_handle_urc_locked(h2_quectel_modem_t *modem, const char *line);
 

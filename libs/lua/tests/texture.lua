@@ -49,6 +49,15 @@ for _,m in ipairs(cases) do for clip=0,1 do
  d.clear('black');d.draw_textures(sprites,l,t,r,b)
  assert(d.present()==0,'skeleton texture oracle')
 end end
+-- f32 rows publish their rounded values through the same C sampler.
+local row32=vm.buffer(7,'f32')
+for _,m in ipairs(cases) do
+ row32:load({1,table.unpack(m)})
+ local rounded={};for i=1,6 do rounded[i]=row32:get(i+1) end
+ expected(rounded,0,0,8,8);d.present({retained=true})
+ d.update_textures(batch,row32);d.clear('black');d.draw_textures(batch)
+ assert(d.present()==0,'f32 texture oracle')
+end
 local root={1,0,0,1,3,3}
 actor:sample(1,500000,'clamp');actor:evaluate(root);sk.update_textures(writer,actor)
 local m={math.cos(.5),math.sin(.5),-math.sin(.5),math.cos(.5),3,3}

@@ -43,6 +43,7 @@
  *   grows. Each record has texture, x, y, width, height, anchor_x, anchor_y.
  *   Atlas coordinates/sizes are integers 0..4096; rectangle must fit texture.
  *   Anchors are finite numbers within +/-1e6. Zero-area rectangles are valid.
+ * - Numeric texture rows accept f32 or f64 storage; sampling uses double.
  * - display.update_textures(batch,buffer) transactionally publishes ordered
  *   rows {resource,a,b,c,d,tx,ty} from a vmath numeric buffer of exact 7*N
  *   length. resource is an integral one-based attachment index; N<=capacity.

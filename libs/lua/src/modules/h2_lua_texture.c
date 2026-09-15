@@ -117,11 +117,14 @@ int h2_lua_texture_update(lua_State *s) {
     return luaL_error(s, "texture: invalid rows/capacity");
   size_t n = v->count / 7;
   for (size_t i = 0; i < n; i++) {
-    double id = v->data[i * 7];
+    double id = v->is_f32 ? (double)v->data.f32[i * 7] : v->data.f64[i * 7];
     if (!isfinite(id) || id < 1 || id > (double)b->resources || floor(id) != id)
       return luaL_error(s, "texture: invalid resource ID");
     b->scratch[i] = b->source[(size_t)id - 1];
-    memcpy(b->scratch[i].matrix, v->data + i * 7 + 1, 6 * sizeof(double));
+    for (size_t j = 0; j < 6; ++j)
+      b->scratch[i].matrix[j] = v->is_f32
+          ? (double)v->data.f32[i * 7 + 1 + j]
+          : v->data.f64[i * 7 + 1 + j];
     if (h2_raster2d_sprite_validate(&b->scratch[i]))
       return luaL_error(s, "texture: invalid matrix");
   }
