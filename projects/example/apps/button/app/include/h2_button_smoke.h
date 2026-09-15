@@ -26,7 +26,18 @@ typedef struct h2_button_smoke_config {
   void *started_user;
 } h2_button_smoke_config_t;
 
-/** Run a display-backed Runtime Button event monitor. */
+/**
+ * Run a display-backed Runtime Button event monitor.
+ * buttons is a borrowed array of button_count (1..16) entries, valid until
+ * this call returns; each entry has a non-NULL name and a component id.
+ * width/height must match Display info and the RGB565 frame must fit UINT32_MAX
+ * bytes. should_stop is required. Invalid arguments return H2_PAL_ERR_INVALID_ARG
+ * before initialization (Display dimension mismatch is checked after opening).
+ * on_started is optional and called once with the initialization result after
+ * argument validation. Returns the first display/flush/time error, otherwise
+ * H2_PAL_OK when should_stop returns non-zero. Other initialization failures
+ * return the corresponding error.
+ */
 h2_pal_result_t h2_button_smoke_run(
     h2_runtime_t *runtime, const h2_button_smoke_config_t *config);
 
