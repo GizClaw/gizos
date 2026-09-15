@@ -23,6 +23,8 @@ Session 不内置产品 collection、默认 Workflow、命名规则或文件路�
 
 Conversation 创建在同一个准备操作中完成 Workspace 校验，然后绑定当前 Workspace。后续切换成功时，核心在旧 generation 结束后更新保留 route 的目标，下一次输入使用新 Workspace。 产品显式调用 Session audio start/end 开启或结束输入；回复、取消和完成沿用现有 Conversation callback。Session 先更新自身状态，再转发 callback。产品必须使用 Session 对应的 release 释放该 route，不能在活动对话结束前释放。等待或回复期间调用 audio start 由核心取消旧 generation，等待取消分发后在同一路由开始新输入；不要求产品先判断 UI 状态。重复 start（输入已开）与重复 end（输入已关）幂等，空闲 end 不会复活旧轮次。
 
+`h2_gizclaw_rpc_run_stop(service, timeout_ms, storage)` 停止 Peer 唯一的服务端 run，不删除 Workspace。附有 Session 时总是参与状态管理，即使没有当前 Workspace 也发送 `server.run.stop`（method 20，空参数）。先以 `H2_GIZCLAW_CANCEL_WORKSPACE` 停止本地 Conversation，最多等待 timeout_ms 完成本地取消分发；与其它同步 Workspace RPC 串行，已有 RPC 或输入重启时返回 BUSY，Session 已关闭时返回 CLOSED。成功后 workspace 为 EMPTY，清除当前 Workspace、Workflow 和已确认参数；target 与原 current 相同时也清除。下一次 select 或 conversation_create 从 get、reload 重新准备，同名也重新附着。进入操作后的任何失败（包括取消分发超时和 RPC 超时）都置 FAILED，因为服务端 run 是否停止可能不确定。成功后清空 Service 缓冲的下行 Opus/PCM；没有 Session 时同样清空。返回的 run status 不保留，合法的 response storage 不消耗字节。
+
 ## 交互模式与对话状态
 
 快照中的 `parameters` 复用现有 Workspace 参数类型，`input` 为 Push-to-Talk 或RealTime，`initiative` 保持既有 PEER / AGENT 含义；不引入新的首句发言者字段。只合并成功应用的 patch，省略成员保留原值，失败保留此前已确认参数。

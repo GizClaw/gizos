@@ -256,6 +256,21 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_delete(
     h2_gizclaw_service_t *service, h2_gizclaw_str_t name, uint32_t timeout_ms,
     h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workspace_t *out_result);
 
+/** Stop the Peer's server run without deleting its Workspace. With a Session,
+ * first stop its conversation using CANCEL_WORKSPACE and wait up to timeout_ms
+ * for local cancellation dispatch. Serialized with synchronous workspace RPCs:
+ * an active RPC or input restart returns BUSY; a closed Session returns CLOSED.
+ * Success clears current Workspace, Workflow and confirmed parameters, clears
+ * target when it equals current, and leaves EMPTY. The next select/conversation
+ * creation prepares from scratch (get, reload), even for the same name. Any
+ * admitted failure, including timeout, leaves FAILED because the run may or may
+ * not have stopped. Sends even without a current Workspace or attached Session.
+ * Success flushes buffered Service downlink Opus/PCM. The response run status
+ * is ignored; storage must be valid but no storage bytes are consumed. */
+h2_pal_result_t h2_gizclaw_rpc_run_stop(h2_gizclaw_service_t* service,
+                                        uint32_t timeout_ms,
+                                        h2_gizclaw_resp_storage_t* storage);
+
 h2_pal_result_t h2_gizclaw_rpc_workspace_activate(
     h2_gizclaw_service_t *service, h2_gizclaw_str_t name, uint32_t timeout_ms,
     h2_gizclaw_resp_storage_t *storage,

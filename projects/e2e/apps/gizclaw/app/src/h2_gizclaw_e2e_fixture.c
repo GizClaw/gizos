@@ -373,6 +373,11 @@ static int actor_session_dispose(h2_gizclaw_e2e_actor_t *actor) {
 static int actor_stop(h2_gizclaw_e2e_actor_t *actor) {
   if (actor->service == NULL)
     return H2_PAL_OK;
+  if (actor->api_key_state != NULL) {
+    int close_rc = h2_gizclaw_api_key_state_close(actor->api_key_state);
+    if (close_rc != H2_PAL_OK)
+      return close_rc;
+  }
   int rc = actor->session == NULL ? H2_PAL_OK : h2_gizclaw_session_close(actor->session);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_service_stop(actor->service);
@@ -393,6 +398,9 @@ static int actor_stop(h2_gizclaw_e2e_actor_t *actor) {
        * claim that stop alone dispatched hooks or released their resources. */
       h2_gizclaw_e2e_evidence("h2_gizclaw_service_stop", "service_stop-assert",
                               H2_PAL_OK);
+      rc = h2_gizclaw_api_key_state_destroy(&actor->api_key_state);
+      if (rc != H2_PAL_OK)
+        return rc;
       rc = actor_session_dispose(actor);
       if (rc != H2_PAL_OK)
         return rc;

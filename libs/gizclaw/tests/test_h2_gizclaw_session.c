@@ -513,6 +513,8 @@ static void test_control_boundaries(void) {
          H2_PAL_OK);
   wait_flag(&cancel_entered);
   assert(atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_RESTART);
+  assert(h2_gizclaw_session_run_stop_begin_internal(session, 1000u) ==
+         H2_PAL_ERR_BUSY);
   terminal(terminal_user, conversation, &canceled);
   assert(h2_pal_task_join(tasks, task) == H2_PAL_OK);
   assert(result == H2_PAL_OK && audio_starts == 2u && terminal_count == 0u);
@@ -528,6 +530,8 @@ static void test_control_boundaries(void) {
   assert(h2_pal_task_start(tasks, NULL, start_thread, &result, &task) == H2_PAL_OK);
   wait_flag(&cancel_entered);
   assert(atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_RESTART);
+  assert(h2_gizclaw_session_run_stop_begin_internal(session, 1000u) ==
+         H2_PAL_ERR_BUSY);
   terminal(terminal_user, conversation, &canceled);
   assert(h2_pal_task_join(tasks, task) == H2_PAL_OK);
   assert(result == H2_PAL_ERR_INVALID_ARG);
@@ -578,6 +582,92 @@ static void assert_deleted_empty(void) {
   assert(state.error_stage == H2_GIZCLAW_SESSION_BLOCK_NONE);
   assert(!state.can_start &&
          state.blocking_reason == H2_GIZCLAW_SESSION_BLOCK_WORKSPACE);
+}
+
+/* Typed boundary for stopping the Peer's run. */
+static h2_pal_result_t stop_run(h2_pal_result_t result, uint32_t timeout) {
+  h2_pal_result_t rc =
+      h2_gizclaw_session_run_stop_begin_internal(session, timeout);
+  if (rc != H2_PAL_OK) return rc;
+  trace('s');
+  if (result == H2_PAL_OK)
+    h2_gizclaw_conversation_downlink_flush_internal(NULL);
+  return h2_gizclaw_session_workspace_delete_finish_internal(session, result);
+}
+static void stop_run_thread(void* user) {
+  *(h2_pal_result_t*)user = stop_run(H2_PAL_OK, 1000u);
+}
+static void test_run_stop(void) {
+  setup(1u);
+  assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+  h2_gizclaw_session_selection_t sel = selection;
+  sel.workspace_name = "room-b";
+  h2_gizclaw_conversation_t* conversation = NULL;
+  assert(h2_gizclaw_session_conversation_create(session, &sel, 1000u, NULL,
+                                                completed, NULL,
+                                                &conversation) == H2_PAL_OK);
+  assert(h2_gizclaw_session_audio_start(session) == H2_PAL_OK);
+  rpc_trace[0] = '\0';
+  unsigned before = flushes;
+  h2_pal_result_t result = H2_PAL_ERR_IO;
+  h2_pal_task_t* task = NULL;
+  const h2_pal_task_api_t* tasks = h2_desktop_platform_task_api();
+  assert(h2_pal_task_start(tasks, NULL, stop_run_thread, &result, &task) ==
+         H2_PAL_OK);
+  wait_flag(&cancel_entered);
+  assert(atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_WORKSPACE);
+  assert(rpc_trace[0] == '\0');
+  assert(stop_run(H2_PAL_OK, 1000u) == H2_PAL_ERR_BUSY);
+  const h2_gizclaw_operation_result_t canceled = {
+      .terminal_kind = H2_GIZCLAW_OPERATION_CANCELED, .result = H2_PAL_OK};
+  terminal(terminal_user, conversation, &canceled);
+  assert(h2_pal_task_join(tasks, task) == H2_PAL_OK);
+  assert(result == H2_PAL_OK && strcmp(rpc_trace, "s") == 0);
+  assert(flushes > before);
+  assert_deleted_empty();
+  /* Even the same name must reload after stop. */
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(strcmp(rpc_trace, "sgr") == 0);
+  assert(stop_run(H2_PAL_OK, 1000u) == H2_PAL_OK);
+  sel.workspace_name = "room-a";
+  rpc_trace[0] = '\0';
+  assert(h2_gizclaw_session_conversation_create(session, &sel, 1000u, NULL,
+                                                completed, NULL,
+                                                &conversation) == H2_PAL_OK);
+  assert(strcmp(rpc_trace, "gr") == 0);
+  assert(strcmp(snapshot().current_workspace, "room-a") == 0);
+  h2_gizclaw_session_conversation_release(session, conversation);
+  const h2_pal_result_t errors[] = {H2_PAL_ERR_IO, H2_PAL_ERR_TIMEOUT};
+  for (size_t i = 0; i < sizeof(errors) / sizeof(errors[0]); ++i) {
+    rpc_trace[0] = '\0';
+    assert(stop_run(errors[i], 1000u) == errors[i]);
+    assert(snapshot().workspace == H2_GIZCLAW_SESSION_FAILED);
+    assert(snapshot().last_error == errors[i]);
+    assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+    assert(strcmp(rpc_trace, "sgr") == 0);
+  }
+  assert(h2_gizclaw_session_workspace_begin_internal(
+             session, (h2_gizclaw_str_t){"room-a", 6u}, 1000u) == H2_PAL_OK);
+  assert(stop_run(H2_PAL_OK, 1000u) == H2_PAL_ERR_BUSY);
+  h2_gizclaw_session_workspace_delete_finish_internal(session, H2_PAL_OK);
+  assert(stop_run(H2_PAL_OK, 1000u) == H2_PAL_OK);
+  assert_deleted_empty();
+  /* Local cancellation dispatch timeout fails before sending the RPC. */
+  assert(h2_gizclaw_session_conversation_create(session, &sel, 1000u, NULL,
+                                                completed, NULL,
+                                                &conversation) == H2_PAL_OK);
+  assert(h2_gizclaw_session_audio_start(session) == H2_PAL_OK);
+  rpc_trace[0] = '\0';
+  assert(stop_run(H2_PAL_OK, 1u) == H2_PAL_ERR_TIMEOUT);
+  assert(snapshot().workspace == H2_GIZCLAW_SESSION_FAILED);
+  assert(rpc_trace[0] == '\0');
+  terminal(terminal_user, conversation, &canceled);
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(strcmp(rpc_trace, "gr") == 0);
+  h2_gizclaw_session_conversation_release(session, conversation);
+  assert(h2_gizclaw_session_close(session) == H2_PAL_OK);
+  assert(stop_run(H2_PAL_OK, 1000u) == H2_PAL_ERR_CLOSED);
+  teardown();
 }
 
 static void test_workspace_delete(void) {
@@ -783,6 +873,8 @@ static void test_send_text(void) {
          H2_PAL_OK);
   wait_flag(&cancel_entered);
   assert(atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_RESTART);
+  assert(h2_gizclaw_session_run_stop_begin_internal(session, 1000u) ==
+         H2_PAL_ERR_BUSY);
   terminal(terminal_user, conversation, &canceled);
   assert(h2_pal_task_join(tasks, task) == H2_PAL_OK);
   assert(result == H2_PAL_OK && audio_starts == starts_before + 1u);
@@ -830,6 +922,7 @@ static void test_send_text(void) {
 int main(void) {
   test_send_text();
   test_control_boundaries();
+  test_run_stop();
   test_workspace_delete();
   test_waiting_selection(false);
   test_waiting_selection(true);
