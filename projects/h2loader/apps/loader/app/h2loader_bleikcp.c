@@ -79,6 +79,7 @@ static int open_command_service(
         .command_config = *command_config,
     };
     const h2_loader_ble_service_config_t service_config = {
+        .log = runtime->log,
         .api = {
             .ble = runtime->ble_host,
             .task = runtime->task,
