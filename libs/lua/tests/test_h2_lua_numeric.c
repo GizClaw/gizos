@@ -2,11 +2,15 @@
 #include "lauxlib.h"
 #include "lua.h"
 #include "lualib.h"
+/* Inject invalid stored coefficients to exercise phase validation separately
+ * from buffer setters, which already reject those values. */
+#include "../src/modules/h2_lua_numeric_internal.h"
 /* Release toolchains must execute the oracle and allocation checks too. */
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
 #include <assert.h>
+#include <float.h>
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -412,6 +416,99 @@ static void refined_norm_reference(lua_State *s) {
          maximum_error);
 }
 
+/* Exercise the actual integration entrypoint with late invalid stored values,
+ * including disabled nodes. The old double predicate is the acceptance oracle;
+ * raw injection is private to this test and never exposed as a Lua binding. */
+static void integration_coefficient_validation(lua_State *s) {
+  const double values[] = {
+      0, -0.0, FLT_MIN, -FLT_MIN, nextafterf(0, 1), -nextafterf(0, 1),
+      1000000, -1000000, nextafterf(1000000, 0), nextafterf(-1000000, 0),
+      nextafterf(1000000, INFINITY), nextafterf(-1000000, -INFINITY),
+      nextafter(1000000, INFINITY), nextafter(-1000000, -INFINITY),
+      INFINITY, -INFINITY, NAN};
+  size_t cases = 0;
+  for (int bound = 0; bound <= 1; ++bound) {
+    for (int f32 = 0; f32 <= 1; ++f32) {
+      for (int channel = 1; channel <= 3; ++channel) {
+        int top = lua_gettop(s);
+        ok(s, luaL_dostring(s,
+            "return function(bound,kind,channel) local v=require('vmath');"
+            "local p,prev=v.buffer(12),v.buffer(12);p:fill(91);prev:fill(92);"
+            "p:load({0,0,0,1,0,0,2,0,0});prev:copy(p,1,1,9);"
+            "local e=v.buffer(12);e:load({1,2,.9,.0001,0,1,2,3,.9,.0001,1,1});"
+            "local w=v.constraints(3,2);"
+            "if bound then w:bind(p,prev,e,3,2,.01) else w:load(p,prev,e,3,2,.01) end;"
+            "w:span(1,3,1.8,.0001,0,1);w:solve(1,nil,0);"
+            "local mobility=v.buffer(2);mobility:load({1,0});"
+            "local inputs={v.buffer(9,kind),v.buffer(9,kind),v.buffer(9,kind)};"
+            "inputs[2]:fill(1);inputs[3]:fill(1);"
+            "local after=v.buffer(6);after:set(1,.01);"
+            "local out,old,lambda=v.buffer(12),v.buffer(12),v.buffer(2);"
+            "out:fill(93);old:fill(94);"
+            "return inputs[channel],function(count) w:integrate(2,count,mobility,"
+            "inputs[1],inputs[2],inputs[3],after,'displacement-f32',nil,0) end,"
+            "function() return w:copy(out,old,lambda) end,out,old,lambda end"));
+        lua_pushboolean(s, bound);
+        lua_pushstring(s, f32 ? "f32" : "f64");
+        lua_pushinteger(s, channel);
+        ok(s, lua_pcall(s, 3, 6, 0));
+        h2_numeric_buffer_t *input = h2_numeric_check(s, top + 1);
+        h2_numeric_buffer_t *out = h2_numeric_check(s, top + 4);
+        h2_numeric_buffer_t *old = h2_numeric_check(s, top + 5);
+        h2_numeric_buffer_t *lambda = h2_numeric_check(s, top + 6);
+        /* An invalid capacity suffix is not an active coefficient. */
+        if (f32) input->data.f32[8] = NAN;
+        else input->data.f64[8] = NAN;
+        for (size_t i = 0; i < sizeof(values) / sizeof(values[0]); ++i) {
+          double value = f32 ? (double)(float)values[i] : values[i];
+          if (f32) input->data.f32[5] = (float)value;
+          else input->data.f64[5] = value;
+          lua_pushvalue(s, top + 3);
+          ok(s, lua_pcall(s, 0, 1, 0));
+          double span = lua_tonumber(s, -1), saved[26];
+          lua_pop(s, 1);
+          memcpy(saved, out->data.f64, 12 * sizeof(double));
+          memcpy(saved + 12, old->data.f64, 12 * sizeof(double));
+          memcpy(saved + 24, lambda->data.f64, 2 * sizeof(double));
+          lua_pushvalue(s, top + 2);
+          lua_pushinteger(s, 2);
+          int status = lua_pcall(s, 1, 0, 0);
+          int accepted = isfinite(value) && fabs(value) <= 1000000.0;
+          assert((status == LUA_OK) == accepted);
+          if (!accepted) {
+            assert(status == LUA_ERRRUN);
+            assert(strstr(lua_tostring(s, -1),
+                          "prepared numeric result out of bounds"));
+            lua_pop(s, 1);
+          }
+          lua_pushvalue(s, top + 3);
+          ok(s, lua_pcall(s, 0, 1, 0));
+          assert(lua_tonumber(s, -1) == span);
+          lua_pop(s, 1);
+          assert(memcmp(saved + 24, lambda->data.f64, 2 * sizeof(double)) == 0);
+          if (!accepted) {
+            assert(memcmp(saved, out->data.f64, 12 * sizeof(double)) == 0);
+            assert(memcmp(saved + 12, old->data.f64, 12 * sizeof(double)) == 0);
+          } else {
+            /* The disabled node and capacity suffix remain bit-identical. */
+            assert(memcmp(saved + 6, out->data.f64 + 6, 6 * sizeof(double)) == 0);
+            assert(memcmp(saved + 18, old->data.f64 + 6, 6 * sizeof(double)) == 0);
+          }
+          ++cases;
+        }
+        /* A zero-count operation still ignores all coefficient contents. */
+        if (f32) input->data.f32[0] = NAN;
+        else input->data.f64[0] = NAN;
+        lua_pushvalue(s, top + 2);
+        lua_pushinteger(s, 0);
+        ok(s, lua_pcall(s, 1, 0, 0));
+        lua_settop(s, top);
+      }
+    }
+  }
+  printf("integration coefficient validation: %zu typed boundary cases\n", cases);
+}
+
 static void suite(lua_State *s, allocation_counter_t *a, const char *kind,
                   const char *path) {
   ok(s, luaL_loadfile(s, path));
@@ -538,6 +635,7 @@ int main(void) {
     for (int f32 = 0; f32 <= 1; ++f32)
       prepared_differential(s, &a, bound, f32);
   refined_norm_reference(s);
+  integration_coefficient_validation(s);
   ordered_reference(s);
   float_reference(s);
   suite(s, &a, NULL, "libs/lua/tests/numeric.lua");

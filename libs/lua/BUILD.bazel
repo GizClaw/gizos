@@ -339,7 +339,10 @@ cc_test(
 
 cc_test(
     name = "lua_numeric_test",
-    srcs = ["tests/test_h2_lua_numeric.c"],
+    srcs = [
+        "src/modules/h2_lua_numeric_internal.h",
+        "tests/test_h2_lua_numeric.c",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS + h2_gnu_only_copts([
         "-O3",

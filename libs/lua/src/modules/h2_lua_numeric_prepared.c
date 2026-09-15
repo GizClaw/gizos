@@ -336,8 +336,16 @@ static int workspace_displacements(lua_State *s) {
   memcpy(out->data.f32, staged, 3 * count * sizeof(float));
   return 0;
 }
-static double coefficient(h2_numeric_buffer_t *b, size_t i) {
-  return b->is_f32 ? (double)b->data.f32[i] : b->data.f64[i];
+static void validate_coefficient(lua_State *s, const h2_numeric_buffer_t *b,
+                                  size_t i) {
+  if (b->is_f32) {
+    /* The public limit is exactly representable in float. Validate stored
+     * coefficients without a software double promotion on single-FPU hosts. */
+    float value = b->data.f32[i];
+    if (!isfinite(value) || fabsf(value) > (float)H2_LUA_NUMERIC_VALUE_LIMIT)
+      luaL_error(s, "prepared numeric result out of bounds");
+  } else
+    finite_result(s, b->data.f64[i]);
 }
 static float float_coefficient(h2_numeric_buffer_t *b, size_t i) {
   return b->is_f32 ? b->data.f32[i] : (float)b->data.f64[i];
@@ -373,7 +381,7 @@ static int workspace_integrate(lua_State *s) {
       return luaL_error(s, "negative mobility");
     for (int j = 1; j < 5; ++j)
       for (size_t k = 0; k < 3; ++k)
-        finite_result(s, coefficient(inputs[j], 3 * i + k));
+        validate_coefficient(s, inputs[j], 3 * i + k);
   }
   memcpy(w->staged_p, w->p, 3 * w->n * sizeof(double));
   memcpy(w->staged_previous, w->previous, 3 * w->n * sizeof(double));
