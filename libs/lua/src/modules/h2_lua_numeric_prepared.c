@@ -28,7 +28,9 @@ typedef struct constraint_workspace {
 } constraint_workspace_t;
 
 static double finite_result(lua_State *s, double value) {
-  if (!isfinite(value) || fabs(value) > H2_LUA_NUMERIC_VALUE_LIMIT)
+  /* A finite positive limit also rejects NaN/infinity via the ordered check,
+   * without separate software-double finiteness comparisons on FPU hosts. */
+  if (!(fabs(value) <= H2_LUA_NUMERIC_VALUE_LIMIT))
     luaL_error(s, "prepared numeric result out of bounds");
   return value;
 }
@@ -338,7 +340,9 @@ static int workspace_displacements(lua_State *s) {
     double current = finite_result(s, w->p[at]),
            previous = finite_result(s, w->previous[at]);
     staged[i] = (float)(current - previous);
-    finite_result(s, staged[i]);
+    /* Validate the stored float; the public limit is exactly representable. */
+    if (!(fabsf(staged[i]) <= (float)H2_LUA_NUMERIC_VALUE_LIMIT))
+      luaL_error(s, "prepared numeric result out of bounds");
   }
   memcpy(out->data.f32, staged, 3 * count * sizeof(float));
   return 0;

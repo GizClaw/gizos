@@ -511,7 +511,9 @@ static void refined_norm_reference(lua_State *s) {
 static void integration_coefficient_validation(lua_State *s) {
   const double values[] = {
       0, -0.0, FLT_MIN, -FLT_MIN, nextafterf(0, 1), -nextafterf(0, 1),
+      DBL_MIN, -DBL_MIN, nextafter(0, 1), -nextafter(0, 1),
       1000000, -1000000, nextafterf(1000000, 0), nextafterf(-1000000, 0),
+      nextafter(1000000, 0), nextafter(-1000000, 0),
       nextafterf(1000000, INFINITY), nextafterf(-1000000, -INFINITY),
       nextafter(1000000, INFINITY), nextafter(-1000000, -INFINITY),
       INFINITY, -INFINITY, NAN};
@@ -596,6 +598,132 @@ static void integration_coefficient_validation(lua_State *s) {
     }
   }
   printf("integration coefficient validation: %zu typed boundary cases\n", cases);
+}
+
+/* Compare public displacement publication against the former stored-result
+ * predicate, including double differences which round back onto the f32 limit.
+ * Raw invalid bound values also distinguish range reads from whole-state
+ * integration validation; no production-only test entrypoint is needed. */
+static void displacement_validation(lua_State *s, allocation_counter_t *a) {
+  const double pairs[][2] = {
+      {0, -0.0}, {-0.0, 0}, {DBL_MIN, 0}, {-DBL_MIN, 0},
+      {nextafter(0, 1), 0}, {-nextafter(0, 1), 0},
+      {nextafterf(0, 1), 0}, {-nextafterf(0, 1), 0},
+      {1000000, 0}, {-1000000, 0},
+      {nextafter(1000000, 0), 0}, {nextafter(-1000000, 0), 0},
+      {1000000, -.01}, {-1000000, .01},
+      {1000000, -.03125}, {-1000000, .03125},
+      {1000000, -.04}, {-1000000, .04},
+      {1000000, -1}, {-1000000, 1},
+      {1000000, -1000000}, {-1000000, 1000000}};
+  const double invalid[] = {nextafter(1000000, INFINITY),
+                            nextafter(-1000000, -INFINITY),
+                            INFINITY, -INFINITY, NAN};
+  size_t cases = 0;
+  for (int bound = 0; bound <= 1; ++bound) {
+    int top = lua_gettop(s);
+    ok(s, luaL_loadstring(s,
+        "local bound=...;local v=require('vmath');"
+        "local p,prev=v.buffer(12),v.buffer(12);"
+        "local out,old=v.buffer(12),v.buffer(12);out:fill(93);old:fill(94);"
+        "local dst=v.buffer(6,'f32');local e,l=v.buffer(0),v.buffer(0);"
+        "local w=v.constraints(3,0);local inputs={};"
+        "for i=1,5 do inputs[i]=v.buffer(0) end;"
+        "return p,prev,dst,"
+        "function() w[bound and 'bind' or 'load'](w,p,prev,e,3,0,.01) end,"
+        "function() w:displacements(dst,2,1) end,"
+        "function() w:integrate(2,0,inputs[1],inputs[2],inputs[3],"
+        "inputs[4],inputs[5],'f64',nil,0) end,"
+        "function() w:copy(out,old,l) end,out,old"));
+    lua_pushboolean(s, bound);
+    ok(s, lua_pcall(s, 1, 9, 0));
+    h2_numeric_buffer_t *p = h2_numeric_check(s, top + 1),
+                        *prev = h2_numeric_check(s, top + 2),
+                        *dst = h2_numeric_check(s, top + 3),
+                        *out = h2_numeric_check(s, top + 8),
+                        *old = h2_numeric_check(s, top + 9);
+    for (size_t i = 0; i < sizeof(pairs) / sizeof(pairs[0]); ++i) {
+      for (size_t j = 0; j < 12; ++j) {
+        p->data.f64[j] = (double)j;
+        prev->data.f64[j] = (double)j - .25;
+      }
+      p->data.f64[5] = pairs[i][0];
+      prev->data.f64[5] = pairs[i][1];
+      /* Capacity suffixes are not active state. */
+      p->data.f64[11] = prev->data.f64[11] = NAN;
+      lua_pushvalue(s, top + 4);
+      ok(s, lua_pcall(s, 0, 0, 0));
+      double state[24];
+      memcpy(state, p->data.f64, 12 * sizeof(double));
+      memcpy(state + 12, prev->data.f64, 12 * sizeof(double));
+      for (size_t j = 0; j < 6; ++j) dst->data.f32[j] = 73;
+      float expected = (float)(pairs[i][0] - pairs[i][1]);
+      int accepted = isfinite((double)expected) && fabs((double)expected) <= 1e6;
+      lua_pushvalue(s, top + 5);
+      a->calls = 0; a->counting = 1;
+      int status = lua_pcall(s, 0, 0, 0);
+      a->counting = 0;
+      assert((status == LUA_OK) == accepted);
+      if (accepted) {
+        assert(a->calls == 0);
+        assert(dst->data.f32[0] == .25f && dst->data.f32[1] == .25f);
+        assert(memcmp(dst->data.f32 + 2, &expected, sizeof(float)) == 0);
+      } else {
+        assert(status == LUA_ERRRUN);
+        assert(strstr(lua_tostring(s, -1), "prepared numeric result out of bounds"));
+        lua_pop(s, 1);
+        for (size_t j = 0; j < 3; ++j) assert(dst->data.f32[j] == 73);
+      }
+      for (size_t j = 3; j < 6; ++j) assert(dst->data.f32[j] == 73);
+      lua_pushvalue(s, top + 7);
+      ok(s, lua_pcall(s, 0, 0, 0));
+      assert(memcmp(p->data.f64, state, 12 * sizeof(double)) == 0);
+      assert(memcmp(prev->data.f64, state + 12, 12 * sizeof(double)) == 0);
+      assert(memcmp(out->data.f64, state, 9 * sizeof(double)) == 0);
+      assert(memcmp(old->data.f64, state + 12, 9 * sizeof(double)) == 0);
+      for (size_t j = 9; j < 12; ++j)
+        assert(out->data.f64[j] == 93 && old->data.f64[j] == 94);
+      ++cases;
+    }
+    if (bound) {
+      p->data.f64[5] = prev->data.f64[5] = 0;
+      for (int history = 0; history <= 1; ++history)
+        for (size_t at = 0; at <= 5; at += 5)
+          for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
+            double *value = (history ? prev : p)->data.f64 + at;
+            double saved = *value;
+            *value = invalid[i];
+            double state[24];
+            memcpy(state, p->data.f64, 12 * sizeof(double));
+            memcpy(state + 12, prev->data.f64, 12 * sizeof(double));
+            for (size_t j = 0; j < 6; ++j) dst->data.f32[j] = 73;
+            for (int operation = 0; operation <= 1; ++operation) {
+              lua_pushvalue(s, top + 5 + operation);
+              int status = lua_pcall(s, 0, 0, 0);
+              int accepted = !operation && at == 0;
+              assert((status == LUA_OK) == accepted);
+              if (!accepted) {
+                assert(status == LUA_ERRRUN);
+                assert(strstr(lua_tostring(s, -1),
+                              "prepared numeric result out of bounds"));
+                lua_pop(s, 1);
+              }
+              if (at == 5)
+                for (size_t j = 0; j < 6; ++j) assert(dst->data.f32[j] == 73);
+              lua_pushvalue(s, top + 7);
+              ok(s, lua_pcall(s, 0, 0, 0));
+              assert(memcmp(p->data.f64, state, 12 * sizeof(double)) == 0);
+              assert(memcmp(prev->data.f64, state + 12, 12 * sizeof(double)) == 0);
+              assert(memcmp(out->data.f64, state, 9 * sizeof(double)) == 0);
+              assert(memcmp(old->data.f64, state + 12, 9 * sizeof(double)) == 0);
+              ++cases;
+            }
+            *value = saved;
+          }
+    }
+    lua_settop(s, top);
+  }
+  printf("displacement/state validation: %zu boundary and atomicity cases\n", cases);
 }
 
 static void suite(lua_State *s, allocation_counter_t *a, const char *kind,
@@ -725,6 +853,7 @@ int main(void) {
       prepared_differential(s, &a, bound, f32);
   refined_norm_reference(s);
   integration_coefficient_validation(s);
+  displacement_validation(s, &a);
   span_reference(s);
   ordered_reference(s);
   float_reference(s);
