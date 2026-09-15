@@ -111,20 +111,6 @@ typedef struct h2_quectel_modem_config {
     h2_quectel_modem_write_fn write;
     h2_quectel_modem_command_fn command;
     const h2_pal_sync_api_t *sync_api;
-    /** Optional board operation arbitration. Callbacks own the recursive
-     * operation mutex and diagnostics; timeout_ms=0 means try-lock. Both
-     * callbacks must be supplied together and outlive this instance. The user
-     * argument is transport_user. Public operations request 15000 ms; worker
-     * maintenance requests 0 and skips contention. Callbacks return PAL errors
-     * unchanged and must support recursive acquisition by the owning task. */
-    h2_pal_result_t (*lock_operation)(void *user, uint32_t timeout_ms);
-    h2_pal_result_t (*unlock_operation)(void *user);
-    /** Nonblocking admission check: CLOSED when power is not requested, BUSY
-     * while another task owns board initialization. NULL permits operations.
-     * Called before and after acquisition with transport_user; cancellation
-     * after acquisition releases the mutex. Must permit the owning shutdown
-     * task through close/deinit, and must not reenter modem operations. */
-    h2_pal_result_t (*operation_allowed)(void *user);
     /* Supply both APIs for asynchronous RX. The worker lives from init to
      * deinit; sync_api must implement try_lock_mutex for deferred SIM recovery
      * and incoming-call CLCC watchdog,
@@ -248,14 +234,6 @@ struct h2_quectel_modem {
     char last_username[H2_PAL_MODEM_APN_MAX];
     char last_password[H2_PAL_MODEM_APN_MAX];
 };
-
-/** @brief Acquire the board/provider operation mutex without the state lock.
- * timeout_ms=0 is nonblocking. Pair each successful acquisition with unlock.
- * Board callbacks provide timed acquisition and holder diagnostics; without
- * them a nonzero timeout uses the legacy sync mutex acquisition. */
-h2_pal_result_t h2_quectel_modem_lock(h2_quectel_modem_t *modem, uint32_t timeout_ms);
-/** @brief Release one recursive operation acquisition on the owning task. */
-h2_pal_result_t h2_quectel_modem_unlock(h2_quectel_modem_t *modem);
 
 h2_pal_result_t h2_quectel_modem_init(
     h2_quectel_modem_t *modem,

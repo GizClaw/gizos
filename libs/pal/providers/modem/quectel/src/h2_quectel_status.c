@@ -415,8 +415,6 @@ h2_pal_result_t h2_quectel_modem_get_signal(
 void h2_quectel_sim_recover(void *user) {
     h2_quectel_modem_t *modem = user;
     if (modem == NULL) { return; }
-    if (modem->config.operation_allowed != NULL &&
-        modem->config.operation_allowed(modem->config.transport_user) != H2_PAL_OK) return;
     if (h2_quectel_state_lock(modem) != H2_PAL_OK) { return; }
     if (modem->transport_closed || !modem->opened) {
         h2_quectel_state_unlock(modem);
@@ -432,11 +430,11 @@ void h2_quectel_sim_recover(void *user) {
         modem->sim_query_pending != 0u;
     h2_quectel_state_unlock(modem);
     if (!pending) { return; }
-    if ((modem->operation_lock != NULL || modem->config.lock_operation != NULL) &&
-        h2_quectel_modem_lock(modem, 0u) != H2_PAL_OK) { return; }
+    if (modem->operation_lock != NULL &&
+        h2_pal_mutex_try_lock(modem->config.sync_api, modem->operation_lock) != H2_PAL_OK) { return; }
     h2_pal_result_t rc = h2_quectel_operation_begin(modem);
-    if (modem->operation_lock != NULL || modem->config.lock_operation != NULL) {
-        (void)h2_quectel_modem_unlock(modem);
+    if (modem->operation_lock != NULL) {
+        (void)h2_pal_mutex_unlock(modem->config.sync_api, modem->operation_lock);
     }
     if (rc != H2_PAL_OK) { return; }
     if (modem->transport_closed || !modem->opened ||
