@@ -41,7 +41,10 @@ bazel test //libs/iperf:all
 
 - `loopback_test`：PAL client ↔ PAL server，TCP/UDP/SCTP 正向、反向、按字节数结束和限速。
 - `official_server_test`：PAL client ↔ 官方 `iperf3 -s`（`@h2_vendor_iperf//:iperf3`，
-  从 esnet/iperf 3.21 源码用 Bazel 构建），TCP 与 UDP。
+  从 esnet/iperf 3.21 源码用 Bazel 构建），TCP 与 UDP。每个 `iperf3 -s` 只绑定
+  `127.0.0.1`，client 等到 iperf3 输出 `Server listening on` 才连接；探测端口释放后被
+  占用导致 `unable to start listener` 时换新端口重试，最多 5 次，并有一个先占住端口的
+  场景覆盖重试路径。
 - `official_client_test`：官方 `iperf3 -c` ↔ PAL server，TCP 与 UDP，含 64-bit UDP
   counter 和被拒绝的多流请求。
 - `official_server_sctp_test`（manual）：PAL SCTP client ↔ 外部 Linux kernel SCTP

@@ -86,11 +86,18 @@ uint16_t h2_iperf_test_free_port(const h2_pal_net_api_t *net) {
 }
 
 pid_t h2_iperf_test_spawn(char *const argv[]) {
+    return h2_iperf_test_spawn_redirected(argv, -1);
+}
+
+pid_t h2_iperf_test_spawn_redirected(char *const argv[], int out_fd) {
     fflush(stdout);
     fflush(stderr);
     pid_t pid = fork();
     assert(pid >= 0);
     if (pid == 0) {
+        if (out_fd >= 0 && (dup2(out_fd, STDOUT_FILENO) < 0 || dup2(out_fd, STDERR_FILENO) < 0)) {
+            _exit(126);
+        }
         execv(argv[0], argv);
         perror("execv");
         _exit(127);

@@ -31,6 +31,8 @@ uint16_t h2_iperf_test_free_port(const h2_pal_net_api_t *net);
 
 /** Starts `argv[0]` with stdout/stderr redirected to the test log. */
 pid_t h2_iperf_test_spawn(char *const argv[]);
+/** Starts `argv[0]` with stdout and stderr redirected to `out_fd` (-1 keeps the test log). */
+pid_t h2_iperf_test_spawn_redirected(char *const argv[], int out_fd);
 /** Waits up to `timeout_ms`; returns the exit status or -1 on timeout/error. */
 int h2_iperf_test_wait(pid_t pid, uint32_t timeout_ms);
 void h2_iperf_test_sleep_ms(uint32_t ms);
