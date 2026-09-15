@@ -15,6 +15,7 @@
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "lua.h"
 #include "lauxlib.h"
@@ -1443,6 +1444,57 @@ static int test_region_finalizer(lua_State *state) {
   return 0;
 }
 
+/* Independent per-pixel damage oracle, observing the private framebuffer and
+ * region's trailing tile bytes before present can hide extra dirty coverage. */
+static int test_background_restore(lua_State *state) {
+  luaL_checktype(state, 1, LUA_TFUNCTION);
+  void *region = luaL_checkudata(state, 2, "h2.display.region");
+  assert(lua_getupvalue(state, 1, 1) != NULL);
+  h2_lua_job_t *job = lua_touserdata(state, -1);
+  lua_pop(state, 1);
+  assert(job != NULL && job->display_open);
+  int width = job->display_info.width, height = job->display_info.height;
+  size_t count = (size_t)width * height, columns = (size_t)(width + 15) / 16;
+  size_t tiles = columns * (size_t)((height + 15) / 16);
+  /* Opaque full-screen captures end with contiguous pixels then damage bytes;
+   * no duplicated production header layout or public test API is required. */
+  size_t bytes = lua_rawlen(state, 2);
+  assert(bytes >= tiles + count * sizeof(uint16_t));
+  const uint8_t *damage = (const uint8_t *)region + bytes - tiles;
+  const uint16_t *source = (const uint16_t *)(damage - count * sizeof(uint16_t));
+  uint16_t *expected = malloc(count * sizeof(*expected));
+  assert(expected != NULL);
+  int valid = job->dirty_valid, left = job->dirty_min_x, top = job->dirty_min_y;
+  int right = job->dirty_max_x, bottom = job->dirty_max_y;
+  int full = job->display_background != region || !job->display_background_valid;
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      size_t at = (size_t)y * width + x;
+      int restore = full || damage[(size_t)(y / 16) * columns + (size_t)x / 16];
+      expected[at] = restore ? source[at] : job->framebuffer[at];
+      if (!restore) continue;
+      if (!valid) { left = right = x; top = bottom = y; valid = 1; }
+      if (x < left) left = x;
+      if (x > right) right = x;
+      if (y < top) top = y;
+      if (y > bottom) bottom = y;
+    }
+  }
+  lua_pushvalue(state, 1);
+  lua_pushvalue(state, 2);
+  assert(lua_pcall(state, 1, 0, 0) == LUA_OK);
+  assert(memcmp(expected, job->framebuffer, count * sizeof(*expected)) == 0);
+  assert(job->dirty_valid == valid);
+  if (valid) {
+    assert(job->dirty_min_x == left && job->dirty_max_x == right);
+    assert(job->dirty_min_y == top && job->dirty_max_y == bottom);
+  }
+  for (size_t i = 0; i < tiles; ++i) assert(damage[i] == 0);
+  assert(job->display_background == region && job->display_background_valid);
+  free(expected);
+  return 0;
+}
+
 static int test_region_open(void *lua_state, void *user) {
   (void)user;
   lua_State *state = lua_state;
@@ -1451,6 +1503,10 @@ static int test_region_open(void *lua_state, void *user) {
   lua_setfield(state, -2, "fail");
   lua_pushcfunction(state, test_region_finalizer);
   lua_setfield(state, -2, "finalizer");
+  lua_pushcfunction(state, test_background_restore);
+  lua_setfield(state, -2, "restore");
+  lua_pushcfunction(state, test_raster_noalloc);
+  lua_setfield(state, -2, "noalloc");
   return 1;
 }
 
@@ -1599,6 +1655,68 @@ static void test_display_regions(void) {
                                 sizeof(drawing_paths)-1, 31, 35);
   for (size_t i = 0; i < 31u*35u; ++i)
     assert(s_test_display_fixture.pixels[i] == 0x001fu);
+  static const uint8_t restore_width[] =
+      "local d=require('display');local n=require('region_test');"
+      "local w,h=d.width,d.height;d.clear('blue');"
+      "d.fill_rect(0,0,w,math.max(1,h//2),'green');"
+      "local bg=d.capture_region(0,0,w,h);"
+      "n.restore(d.restore_background,bg);d.present({retained=true});"
+      "local draws={"
+      "function() d.fill_rect(0,0,w,1,'red') end,"
+      "function() d.fill_rect(0,0,w,math.min(32,h),'red') end,"
+      "function() d.fill_rect(0,h-1,w,1,'red') end,"
+      "function() d.fill_rect(0,0,1,1,'red') end,"
+      "function() d.fill_rect(w-1,h-1,1,1,'red') end,"
+      "function() d.fill_rect(0,0,1,1,'red');d.fill_rect(w-1,0,1,1,'red') end,"
+      "function() d.fill_rect(0,0,w,1,'red');d.fill_rect(w-1,h-1,1,1,'red') end};"
+      "for _,draw in ipairs(draws) do draw();d.present();"
+      "n.restore(d.restore_background,bg);d.present();"
+      "n.restore(d.restore_background,bg);assert(d.present()==0) end;"
+      /* Preserve an existing dirty rectangle while adding restored tile bounds. */
+      "d.fill_rect(w-1,h-1,1,1,'red');n.restore(d.restore_background,bg);"
+      "assert(d.present()==0);"
+      /* Every measured restore has a full-width damaged tile, not a warm no-op. */
+      "local function warm() d.fill_rect(0,0,w,1,'red');d.restore_background(bg) end;"
+      "n.noalloc(warm);assert(d.present()==0);"
+      /* Failure in either submission stage invalidates the background baseline. */
+      "for _,present_failure in ipairs({false,true}) do "
+      "d.fill_rect(0,0,w,h,'red');d.present();n.restore(d.restore_background,bg);"
+      "n.fail(present_failure and 0 or 1,present_failure);assert(not pcall(d.present));"
+      "n.restore(d.restore_background,bg);local pixels,rects=d.present();"
+      "assert(pixels==w*h and rects==1);n.restore(d.restore_background,bg);"
+      "assert(d.present()==0) end;"
+      /* Full binding, reused capture invalidation and release retain their paths. */
+      "d.clear('red');local other=d.capture_region(0,0,w,h);"
+      "n.restore(d.restore_background,other);d.present();"
+      "n.restore(d.restore_background,bg);d.present();"
+      "d.clear('green');d.capture_region(0,0,w,h,nil,bg);d.clear('red');"
+      "n.restore(d.restore_background,bg);d.present();"
+      "d.release_background();d.release_background();"
+      "n.restore(d.restore_background,bg);d.present();"
+      "local weak=setmetatable({bg},{__mode='v'});bg=nil;draws=nil;warm=nil;"
+      "collectgarbage('collect');assert(weak[1]);d.release_background();"
+      "collectgarbage('collect');assert(not weak[1]);"
+      "d.deinit();assert(not pcall(d.restore_background,other))";
+  static const int restore_sizes[][2] = {{1,1}, {17,17}, {31,35}, {48,48}, {240,240}};
+  /* A retained 240x240 frame plus two full captures exceeds the small region
+   * fixture's 256 KiB VM. Use the device-sized budget for this distinct suite. */
+  h2_lua_host_t *restore_host = NULL;
+  const h2_lua_host_config_t restore_config = {
+      .runtime = runtime, .worker_count = 1u, .max_jobs = 1u,
+      .vm_memory_limit_bytes = 4u * 1024u * 1024u, .execution_timeout_ms = 5000u,
+  };
+  assert(h2_lua_host_create(&restore_config, &restore_host) == H2_PAL_OK);
+  assert(h2_lua_register_module(restore_host, "region_test", test_region_open, NULL) == H2_PAL_OK);
+  assert(h2_lua_host_start(restore_host) == H2_PAL_OK);
+  for (size_t i = 0; i < sizeof(restore_sizes)/sizeof(restore_sizes[0]); ++i) {
+    int width = restore_sizes[i][0], height = restore_sizes[i][1];
+    (void)run_display_script_size(restore_host, "@background-full-width.lua", restore_width,
+                                  sizeof(restore_width)-1, width, height);
+    for (int p = 0; p < width * height; ++p)
+      assert(s_test_display_fixture.pixels[p] == 0x0400u);
+    assert(s_test_display_fixture.close_count == 1);
+  }
+  h2_lua_host_destroy(restore_host);
   static const uint8_t close[] =
       "local d=require('display');local n=require('region_test');"
       "local bg=d.capture_region(0,0,8,8);d.restore_background(bg);d.present({retained=true});"

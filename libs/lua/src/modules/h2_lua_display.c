@@ -2921,9 +2921,17 @@ static int display_restore_background(lua_State *state) {
         while (tx < columns && damage[(size_t)ty * columns + tx]) ++tx;
         int right = tx * 16 < region->width ? tx * 16 : region->width;
         int bottom = (ty + 1) * 16 < region->height ? (ty + 1) * 16 : region->height;
-        for (int y = ty * 16; y < bottom; ++y)
-          display_copy_region_span(job, first * 16, y,
-              pixels + (size_t)y * region->width + first * 16, right - first * 16);
+        if (first == 0 && right == region->width) {
+          /* Opaque full-width rows are contiguous in both buffers. */
+          size_t start = (size_t)ty * 16 * region->width;
+          memcpy(job->framebuffer + start, pixels + start,
+                 (size_t)region->width * (bottom - ty * 16) * sizeof(uint16_t));
+          mark_dirty_rect(job, 0, ty * 16, region->width, bottom - ty * 16);
+        } else {
+          for (int y = ty * 16; y < bottom; ++y)
+            display_copy_region_span(job, first * 16, y,
+                pixels + (size_t)y * region->width + first * 16, right - first * 16);
+        }
       }
     }
   }
