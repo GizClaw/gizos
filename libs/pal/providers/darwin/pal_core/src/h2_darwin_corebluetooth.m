@@ -95,6 +95,34 @@ typedef NS_ENUM(NSInteger, H2CoreBluetoothOperation) {
 }
 @end
 
+static char s_corebluetooth_queue_key;
+static _Atomic size_t s_released_adv_sets;
+
+/* Delivers events raised on the backend queue so subscribers can call BLE APIs. */
+static dispatch_queue_t h2_corebluetooth_event_queue(void) {
+    static dispatch_queue_t eventQueue;
+    static dispatch_once_t eventQueueOnce;
+    dispatch_once(&eventQueueOnce, ^{
+        eventQueue = dispatch_queue_create(
+            "com.gizclaw.h2.darwin.corebluetooth.events",
+            DISPATCH_QUEUE_SERIAL);
+    });
+    return eventQueue;
+}
+
+/*
+ * Queued backend events borrow the set identity, so free it only after every
+ * event queued before the release has been delivered.
+ */
+static void h2_corebluetooth_release_adv_set(h2_pal_ble_adv_set_t *set) {
+    if (set == NULL) return;
+    dispatch_async(h2_corebluetooth_event_queue(), ^{
+        free(set);
+        atomic_fetch_add_explicit(
+            &s_released_adv_sets, 1u, memory_order_release);
+    });
+}
+
 @interface H2CoreBluetoothBackend : NSObject <
     CBCentralManagerDelegate,
     CBPeripheralDelegate,
@@ -141,6 +169,16 @@ static void h2_corebluetooth_post(
     h2_pal_system_event_type_t type,
     const void *payload,
     size_t payloadSize) {
+    if (dispatch_get_specific(&s_corebluetooth_queue_key) != NULL) {
+        NSData *payloadCopy = payloadSize > 0u
+            ? [NSData dataWithBytes:payload length:payloadSize]
+            : nil;
+        dispatch_async(h2_corebluetooth_event_queue(), ^{
+            h2_corebluetooth_post(
+                type, payloadCopy.bytes, payloadCopy.length);
+        });
+        return;
+    }
     const h2_pal_system_event_t event = {
         .type = type,
         .payload = payload,
@@ -290,6 +328,11 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
     if (self != nil) {
         _queue = dispatch_queue_create(
             "com.gizclaw.h2.darwin.corebluetooth", DISPATCH_QUEUE_SERIAL);
+        dispatch_queue_set_specific(
+            _queue,
+            &s_corebluetooth_queue_key,
+            &s_corebluetooth_queue_key,
+            NULL);
         _stateSemaphore = dispatch_semaphore_create(0);
         _peripheralsByAddress = [NSMutableDictionary dictionary];
         _clientServices = [NSMutableDictionary dictionary];
@@ -413,6 +456,7 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
     if (!self.started) {
         return H2_PAL_OK;
     }
+    __block h2_pal_ble_adv_set_t *advertisingSet = NULL;
     dispatch_sync(self.queue, ^{
         self.connectingPeripheral = nil;
         [self completePendingOperation:H2_PAL_ERR_CLOSED];
@@ -434,11 +478,10 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
         self.advertisementData = nil;
         self.advertising = NO;
         self.peripheralConnected = NO;
-    });
-    if (self.advertisingSet != NULL) {
-        free(self.advertisingSet);
+        advertisingSet = self.advertisingSet;
         self.advertisingSet = NULL;
-    }
+    });
+    h2_corebluetooth_release_adv_set(advertisingSet);
     self.started = NO;
     h2_corebluetooth_post(H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STOPPED, NULL, 0u);
     return H2_PAL_OK;
@@ -542,9 +585,11 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     (void)[self stopAdvertising];
-    free(set);
-    self.advertisingSet = NULL;
-    self.advertisementData = nil;
+    dispatch_sync(self.queue, ^{
+        self.advertisingSet = NULL;
+        self.advertisementData = nil;
+    });
+    h2_corebluetooth_release_adv_set(set);
     return H2_PAL_OK;
 }
 
@@ -1597,6 +1642,33 @@ bool h2_darwin_corebluetooth_test_other_connected(void) {
                 isEqual:@2] && backend.nextClientHandle == 3u;
     });
     return intact;
+}
+
+void h2_darwin_corebluetooth_test_post_connected_on_backend_queue(void) {
+    dispatch_async(h2_corebluetooth_backend().queue, ^{
+        const h2_pal_ble_connection_t connection = {
+            .conn_handle = H2_COREBLUETOOTH_CONN_HANDLE,
+            .role = H2_PAL_BLE_ROLE_CENTRAL,
+            .mtu = 23u,
+        };
+        h2_corebluetooth_post(
+            H2_PAL_SYSTEM_EVENT_TYPE_BLE_CONNECTED,
+            &connection,
+            sizeof(connection));
+    });
+}
+
+void h2_darwin_corebluetooth_test_post_adv_started_on_backend_queue(void) {
+    H2CoreBluetoothBackend *backend = h2_corebluetooth_backend();
+    dispatch_async(backend.queue, ^{
+        h2_corebluetooth_post_adv(
+            H2_PAL_SYSTEM_EVENT_TYPE_BLE_ADVERTISING_STARTED,
+            backend.advertisingSet, H2_PAL_OK);
+    });
+}
+
+size_t h2_darwin_corebluetooth_test_released_adv_sets(void) {
+    return atomic_load_explicit(&s_released_adv_sets, memory_order_acquire);
 }
 
 static h2_pal_result_t h2_corebluetooth_start(void *user) {
