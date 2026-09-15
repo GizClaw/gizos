@@ -160,6 +160,34 @@ static void test_unsubscribe(int closing) {
     h2_pal_system_event_deinit(api);
     atomic_store(&calls, 0);
 }
+static int fanout_release_handler(void *user, const h2_pal_system_event_t *value) {
+    ++*(unsigned *)user;
+    return release_handler(NULL, value);
+}
+static int fanout_later_handler(void *user, const h2_pal_system_event_t *value) {
+    (void)value;
+    ++*(unsigned *)user;
+    assert(atomic_load(&live) == 1);
+    return H2_PAL_OK;
+}
+static void test_fanout_after_last_deinit(void) {
+    const h2_pal_system_event_api_t *api = h2_jieli_wl82_platform_system_event_api();
+    h2_pal_system_event_subscription_t *first, *later;
+    unsigned first_calls = 0, later_calls = 0;
+    assert(h2_pal_system_event_init(api) == H2_PAL_OK);
+    assert(h2_pal_system_event_subscribe(api, event.type, fanout_release_handler,
+                                       &first_calls, &first) == H2_PAL_OK);
+    assert(h2_pal_system_event_subscribe(api, event.type, fanout_later_handler,
+                                       &later_calls, &later) == H2_PAL_OK);
+    assert(h2_pal_system_event_post(api, &event, 0) == H2_PAL_OK);
+    assert(first_calls == 1);
+    assert(later_calls == 1);
+    assert(atomic_load(&live) == 0);
+    assert(h2_pal_system_event_post(api, &event, 0) == H2_PAL_ERR_INVALID_STATE);
+    assert(h2_pal_system_event_init(api) == H2_PAL_OK);
+    h2_pal_system_event_deinit(api);
+    assert(atomic_load(&live) == 0);
+}
 static void test_owners(void) {
     const h2_pal_system_event_api_t *api = h2_jieli_wl82_platform_system_event_api();
     h2_pal_system_event_subscription_t *sub;
@@ -233,6 +261,7 @@ static void test_owners(void) {
 int main(void) {
     test_unsubscribe(0);
     test_unsubscribe(1);
+    test_fanout_after_last_deinit();
     test_owners();
     const h2_pal_system_event_api_t *api = h2_jieli_wl82_platform_system_event_api();
     for (unsigned round = 0; round < 100; ++round) {

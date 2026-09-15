@@ -160,7 +160,6 @@ static int system_event_post(
 
     result = H2_PAL_OK;
     for (size_t i = 0u; i < H2_JIELI_SYSTEM_EVENT_MAX_SUBSCRIPTIONS; ++i) {
-        if (!(h2_jieli_atomic_load_u32(&s_lifecycle) & EVENT_ACTIVE)) break;
         event_dispatch_t dispatch = {.task = h2_jieli_sdk_task_current()};
         h2_pal_system_event_handler_t handler = NULL;
         void *handler_user = NULL;

@@ -67,6 +67,8 @@ h2_pal_result_t h2_jieli_wl82_cond_wait_owned(
  * Post snapshots a registry-locked 64-bit generation ceiling: subscriptions
  * added after that snapshot never receive that post. Generations never wrap;
  * at UINT64_MAX subscribe returns FULL without changing live subscriptions.
+ * An admitted post still dispatches to every subscription it admitted even if
+ * a handler releases the last owner; destruction is deferred until it returns.
  * Only complete teardown followed by fresh init resets the generation epoch. */
 const h2_pal_system_event_api_t *h2_jieli_wl82_platform_system_event_api(void);
 
