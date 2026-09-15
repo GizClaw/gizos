@@ -1313,11 +1313,13 @@ static uint16_t h2_att_read(
     return copied;
   }
   if (handle != H2_JIELI_GATT_TX_CCCD_HANDLE) return 0u;
-  if (buffer != NULL && offset == 0u && buffer_size >= 2u) {
-    buffer[0] = att_get_ccc_config(handle);
-    buffer[1] = 0u;
-  }
-  return 2u;
+  if (offset >= 2u) return 0u;
+  if (buffer == NULL) return 2u;
+  const uint8_t cccd[2] = {(uint8_t)att_get_ccc_config(handle), 0u};
+  const uint16_t remaining = 2u - offset;
+  const uint16_t copied = remaining < buffer_size ? remaining : buffer_size;
+  memcpy(buffer, cccd + offset, copied);
+  return copied;
 }
 
 static int h2_att_write(
