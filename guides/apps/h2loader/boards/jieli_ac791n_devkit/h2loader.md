@@ -81,6 +81,13 @@ Loader 只有 UART 与 BLE capability，不提供 Wi-Fi 与 HTTP；runner 一旦
 
 ## 验收记录
 
+### 2026-09-15：共享 launcher 与 Runtime 事件复用
+
+`5b1d822a` 的 ACTIVE event provider 已支持重复初始化；真实 Runtime/provider
+主机回归和 button、touch、audio-system 三个生产包实机验证均成功。
+三个目标通过 UART Loader 安装到 P2，观察 READY、确认成功及独立状态，最后返回 P1。
+[源码判定、测试与完整验收边界](./evidence/2026-09-15/runtime-event-reuse.md)。
+
 ### 2026-09-14：当前源码 Loader 自更新与 UART 回归
 
 源码 `2a814d32`（含 FAT 属性 stat、SDK 单次路径编码和单层 mkdir 修正）
