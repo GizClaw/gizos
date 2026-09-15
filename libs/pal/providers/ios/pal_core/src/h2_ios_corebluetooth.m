@@ -6,12 +6,6 @@
 
 #include <string.h>
 
-static void connection_diagnostic(
-    const char *event, CBPeripheral *peripheral, NSError *error) {
-    NSLog(@"ble/corebluetooth event=%s id=%@ error=%@",
-          event, peripheral.identifier.UUIDString, error);
-}
-
 #define H2_COREBLUETOOTH_CONN_HANDLE 1u
 #define H2_COREBLUETOOTH_WAIT_MS 10000u
 #define H2_COREBLUETOOTH_DISCOVERY_MAX 64u
@@ -1248,7 +1242,7 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
  didFailToConnectPeripheral:(CBPeripheral *)peripheral
                   error:(NSError *)error {
     (void)central;
-    connection_diagnostic("connect-failed", peripheral, error);
+    (void)error;
     if (peripheral != self.connectingPeripheral) {
         return;
     }
@@ -1262,9 +1256,6 @@ static CBATTError h2_corebluetooth_att_error(h2_pal_result_t result) {
  didDisconnectPeripheral:(CBPeripheral *)peripheral
                    error:(NSError *)error {
     (void)central;
-    if (error != nil) {
-        connection_diagnostic("disconnected", peripheral, error);
-    }
     if (peripheral != self.connectedPeripheral) {
         return;
     }
