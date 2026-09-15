@@ -27,6 +27,7 @@ typedef enum h2_gizclaw_e2e_actor_role {
 
 typedef struct h2_gizclaw_e2e_actor {
   h2_gizclaw_service_t *service;
+  h2_gizclaw_api_key_state_t *api_key_state;
   h2_gizclaw_session_t *session;
   h2_gizclaw_config_t config;
   char private_key[H2_PAL_CRYPTO_X25519_KEY_SIZE * 2u + 1u];

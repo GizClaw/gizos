@@ -663,6 +663,17 @@ static void test_call_sync(h2_runtime_t *runtime,
   runtime->task = saved_task;
 }
 
+/* These fixture tests never create API key state; keep the Service mock
+ * isolated from the real state implementation's Service dependencies. */
+h2_pal_result_t h2_gizclaw_api_key_state_close(h2_gizclaw_api_key_state_t *state) {
+  assert(state == NULL);
+  return H2_PAL_OK;
+}
+h2_pal_result_t h2_gizclaw_api_key_state_destroy(h2_gizclaw_api_key_state_t **state) {
+  assert(state != NULL && *state == NULL);
+  return H2_PAL_OK;
+}
+
 int main(int argc, char **argv) {
   const h2_gizclaw_str_t empty = h2_gizclaw_e2e_str(NULL);
   assert(empty.data == NULL && empty.len == 0u);
