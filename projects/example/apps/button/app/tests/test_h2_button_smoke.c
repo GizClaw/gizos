@@ -4,6 +4,7 @@
 #include "h2_smoke_host_runtime.h"
 
 #include <assert.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <stdatomic.h>
 #include <string.h>
@@ -164,6 +165,37 @@ int main(void) {
   invalid = config; invalid.width = 65536u; invalid.height = 65536u;
   assert(h2_button_smoke_run(runtime, &invalid) == H2_PAL_ERR_INVALID_ARG);
   assert(f.opened == 0u && f.started == 0u);
+  assert(f.allocations == baseline_allocations);
+  const uint32_t invalid_dimensions[][2] = {
+      {0u, 480u},
+      {640u, 0u},
+      {(uint32_t)INT_MAX + 1u, 1u},
+      {1u, (uint32_t)INT_MAX + 1u},
+  };
+  for (size_t i = 0u;
+       i < sizeof(invalid_dimensions) / sizeof(invalid_dimensions[0]); ++i) {
+    invalid = config;
+    invalid.width = invalid_dimensions[i][0];
+    invalid.height = invalid_dimensions[i][1];
+    assert(h2_button_smoke_run(runtime, &invalid) == H2_PAL_ERR_INVALID_ARG);
+    assert(f.opened == 0u && f.started == 0u);
+    assert(f.allocations == baseline_allocations);
+  }
+  for (unsigned api = 0u; api < 7u; ++api) {
+    h2_runtime_t copy = *runtime;
+    switch (api) {
+      case 0u: copy.mem = NULL; break;
+      case 1u: copy.log = NULL; break;
+      case 2u: copy.display = NULL; break;
+      case 3u: copy.time = NULL; break;
+      case 4u: copy.task = NULL; break;
+      case 5u: copy.sync = NULL; break;
+      case 6u: copy.queue = NULL; break;
+    }
+    assert(h2_button_smoke_run(&copy, &config) == H2_PAL_ERR_INVALID_ARG);
+    assert(f.opened == 0u && f.started == 0u);
+    assert(f.allocations == baseline_allocations);
+  }
   for (unsigned axis = 0u; axis < 2u; ++axis) {
     invalid = config;
     if (axis == 0u) ++invalid.width; else ++invalid.height;
