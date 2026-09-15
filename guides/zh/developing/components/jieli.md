@@ -57,7 +57,7 @@ AC791N `compile_only/project.mk` 支持调用方提供 `H2_JIELI_LAYOUT_ROOT`，
 
 ## Target task policy
 
-`tools/bazel/jieli_task_policy.bzl` 提供 `jieli_target_task_policy(name, graph, policies, sdk_policies, default_policy, deps = [])`，生成 SDK `task_info_table` 并审计 graph 中声明的 PAL 任务。每行格式为 `任务名 优先级 栈word数 队列word数`（栈的 word 为 4 字节），`policies` 覆盖 PAL 任务，`sdk_policies` 注册直接通过 SDK 创建的任务。SDK 的 `#C0` / `#C1` 核绑定前缀保留在生成表中，审计使用去掉前缀的逻辑任务名。
+`tools/bazel/jieli_task_policy.bzl` 提供 `jieli_target_task_policy(name, graph, policies, sdk_policies, default_policy, deps = [], tags = [])`，生成 SDK `task_info_table` 并审计 graph 中声明的 PAL 任务。每行格式为 `任务名 优先级 栈word数 队列word数`（栈的 word 为 4 字节），`policies` 覆盖 PAL 任务，`sdk_policies` 注册直接通过 SDK 创建的任务。SDK 的 `#C0` / `#C1` 核绑定前缀保留在生成表中，审计使用去掉前缀的逻辑任务名。
 
 `default_policy` 格式为 `优先级 栈word数 队列word数`，提供动态命名任务的默认预算；静态声明的任务仍须显式配置。生成器拒绝重复名称、非法名称、保留的 `$h2anon/` 名称及越界预算。
 
@@ -95,6 +95,7 @@ FDK AAC 与 Linux FDK AAC decoder provider 允许 pi32v2；`libs/fdk_aac` 在该
 ## Validation
 
 - `bazel test --config=macos_arm64 //tools/bazel:jieli_runner_test //tools/bazel:jieli_post_wl82_test //tools/bazel:jieli_decode_coredump_test //tools/bazel:jieli_task_policy_test //tools/bazel:jieli_compile_only_project_test` 验证 runner、离线打包、解码、task policy 与 Make hooks；Linux host 使用对应 host config。
+- `bazel test --config=macos_arm64 //tools/bazel/tests/jieli_task_policy:generated_policy_test //tools/bazel/tests/jieli_task_policy:missing_policy_test //tools/bazel/tests/jieli_task_policy:undeclared_policy_test` 实际加载 task policy 宏，验证生成 C、audit task list，以及缺失策略和未声明任务的 analysis failure；Linux host 使用对应 host config。
 - `bazel test //native_component_src/jieli/br23/h2_pal_core:test_jieli_br23_platform_core` 验证 BR23 PAL core。
 - Linux x86_64：`. ../firmwares-devenv/export.sh && bazel build --config=ac695n //projects/e2e/targets/jieli_firmware/reference-smoke/ac695n_reference:firmware`，并以 `--config=ac791n` 构建对应 AC791N target；重复构建应命中 action cache。
 - macOS：同一命令应报告 target incompatible 而非失败。
