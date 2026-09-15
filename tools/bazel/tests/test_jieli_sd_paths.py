@@ -23,7 +23,7 @@ enum { H2_PAL_OK=0, H2_PAL_ERR_INVALID_ARG=-1, H2_PAL_ERR_NO_SPACE=-2 };
 '''
         main = r'''
 int main(void) {
- char out[H2_JIELI_SD_PATH_MAX];
+ char out[H2_JIELI_SD_PATH_MAX + 1u]; /* One extra canary at the capacity boundary. */
  const char *bad[]={NULL,"","/","/other","/dl/../data/file",
   "/data/a/../../other","/dl/.","/dl/..","/data//file","/dl/",
   "/data/file/","/data/a/./file","/data/a//file","/dl/..\\other",
@@ -36,15 +36,34 @@ int main(void) {
  const char *paths[]={"/dl","/data","/dl/update.tar.zlib.tmp",
   "/dl/update.tar.zlib.prev","/dl/update.tar.zlib",
   "/dl/.h2loader-image.tmp","/dl/.h2loader-image-1",
-  "/dl/.h2loader-image-2","/data/.checksum","/data/nested/video.mp4"};
+  "/dl/.h2loader-image-2","/data/.checksum","/data/nested/video.mp4","/dl/x","/data/a/b"};
  const char *mapped[]={"dl","data","dl/H2STAGE.TMP","dl/H2PREV.BIN",
   "dl/H2STAGE.BIN","dl/H2IMG.TMP","dl/H2IMG1.BIN",
-  "dl/H2IMG2.BIN","data/H2CHECK.SUM","data/nested/video.mp4"};
+  "dl/H2IMG2.BIN","data/H2CHECK.SUM","data/nested/video.mp4","dl/x","data/a/b"};
  for(unsigned i=0;i<sizeof(paths)/sizeof(paths[0]);++i) {
+  memset(out,0x5a,sizeof(out));
   assert(translate_path(paths[i],out)==0);
+  size_t length = strlen(H2_JIELI_SD_ROOT) + strlen(mapped[i]);
+  assert(strlen(out)==length);
+  assert(out[length + 1u]==0x5a);
   assert(strncmp(out,H2_JIELI_SD_ROOT,strlen(H2_JIELI_SD_ROOT))==0);
   assert(strcmp(out+strlen(H2_JIELI_SD_ROOT),mapped[i])==0);
  }
+ /* The maximum translated length is capacity minus its terminator. */
+ size_t suffix_length = H2_JIELI_SD_PATH_MAX - strlen(H2_JIELI_SD_ROOT);
+ char boundary[H2_JIELI_SD_PATH_MAX + 1u];
+ memset(boundary,'a',sizeof(boundary));
+ memcpy(boundary,"/data/",6u);
+ boundary[suffix_length]='\0';
+ memset(out,0x5a,sizeof(out));
+ assert(translate_path(boundary,out)==H2_PAL_OK);
+ assert(strlen(out)==H2_JIELI_SD_PATH_MAX - 1u);
+ assert(out[H2_JIELI_SD_PATH_MAX]==0x5a);
+ boundary[suffix_length]='a';
+ boundary[suffix_length + 1u]='\0';
+ memset(out,0x5a,sizeof(out));
+ assert(translate_path(boundary,out)==H2_PAL_ERR_NO_SPACE);
+ for(size_t i=0;i<sizeof(out);++i) assert(out[i]==0x5a);
  char long_path[300]; memset(long_path,'a',sizeof(long_path));
  memcpy(long_path,"/data/",6); long_path[299]=0;
  assert(translate_path(long_path,out)==H2_PAL_ERR_NO_SPACE);
@@ -57,7 +76,12 @@ int main(void) {
             test.write_text(stub + source[begin:end] + main)
             binary = Path(directory) / "test"
             subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                            "-fsanitize=address", "-fno-omit-frame-pointer",
                             str(test), "-o", str(binary)], check=True, timeout=60)
             result = subprocess.run([str(binary)], capture_output=True,
                                     text=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()

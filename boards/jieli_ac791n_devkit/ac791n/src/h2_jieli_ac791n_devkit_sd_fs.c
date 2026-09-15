@@ -201,11 +201,14 @@ static int translate_path(
   }
   size_t root_len = strlen(H2_JIELI_SD_ROOT);
   size_t suffix_len = strlen(suffix);
+  /* Full written length includes the NUL replacing the leading slash:
+   * at most H2_JIELI_SD_PATH_MAX bytes, the size of the mapped[] buffers. */
   if (root_len + suffix_len > H2_JIELI_SD_PATH_MAX) {
     return H2_PAL_ERR_NO_SPACE;
   }
   memcpy(out, H2_JIELI_SD_ROOT, root_len);
-  memcpy(out + root_len, suffix + 1, suffix_len);
+  memcpy(out + root_len, suffix + 1, suffix_len - 1u);
+  out[root_len + suffix_len - 1u] = '\0';
   return H2_PAL_OK;
 }
 
