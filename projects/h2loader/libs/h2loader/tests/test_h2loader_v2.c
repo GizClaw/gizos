@@ -1916,7 +1916,8 @@ static int install_archive_read(void *user, h2_pal_fs_file_t *file,
   return H2_PAL_OK;
 }
 
-static void check_package_destination(int read_result, int mismatch, int plan_only) {
+static void check_package_destination(int destination_read_result,
+                                      bool hash_mismatch, bool plan_only) {
   test_fixture_t fixture;
   fixture_init(&fixture, 1u);
   size_t offset = 0u;
@@ -1937,34 +1938,35 @@ static void check_package_destination(int read_result, int mismatch, int plan_on
   strcpy(inspection.staged.checksum, SHA_A);
   h2_loader_package_install_plan_t plan = {.update_app = 1};
   if (plan_only) {
-    fixture.reader_result = read_result;
+    fixture.reader_result = destination_read_result;
     assert(h2_loader_package_plan_install(&package, &inspection, 2u, &plan) ==
            H2_PAL_OK);
     assert(plan.update_app == 1 && plan.update_data == 1);
     assert(fixture.writer_finishes == 0 && fixture.writer_aborts == 0);
     return;
   }
-  fixture.read_after_finish = read_result;
-  fixture.digest_after_finish = mismatch ? 0xcdu : 0u;
+  fixture.read_after_finish = destination_read_result;
+  fixture.digest_after_finish = hash_mismatch ? 0xcdu : 0u;
   h2_loader_package_install_result_t result;
   int rc = h2_loader_package_install_to(&package, &inspection, 2u, &plan, &result);
   assert(fixture.writer_finishes == 1);
   assert(fixture.writer_offset == 8u && !fixture.writer_active);
   assert(memcmp(fixture.partition_bytes[1], "firmware", 8u) == 0);
-  assert(rc == (mismatch ? H2_PAL_ERR_FORMAT : read_result));
-  assert(fixture.writer_aborts == (unsigned)(mismatch || read_result != H2_PAL_OK));
+  assert(rc == (hash_mismatch ? H2_PAL_ERR_FORMAT : destination_read_result));
+  assert(fixture.writer_aborts == (unsigned)(hash_mismatch || destination_read_result != H2_PAL_OK));
 }
 
 static void test_plan_missing_destination(void) {
-  check_package_destination(H2_PAL_ERR_NOT_FOUND, 0, 1);
+  check_package_destination(H2_PAL_ERR_NOT_FOUND, false, true);
+}
+static void test_install_verified_destination_does_not_abort(void) {
+  check_package_destination(H2_PAL_OK, false, false);
 }
 static void test_install_hash_mismatch_aborts(void) {
-  check_package_destination(H2_PAL_OK, 0, 0);
-  check_package_destination(H2_PAL_OK, 1, 0);
+  check_package_destination(H2_PAL_OK, true, false);
 }
 static void test_install_hash_read_error_aborts(void) {
-  check_package_destination(H2_PAL_OK, 0, 0);
-  check_package_destination(H2_PAL_ERR_IO, 0, 0);
+  check_package_destination(H2_PAL_ERR_IO, false, false);
 }
 
 static void test_ble_identity_capacity(void) {
@@ -2005,7 +2007,6 @@ static int size_test_write(void *user, const void *data, size_t len,
 static void check_size_argument(const char *value, int accepted) {
   /* Both stage routes stop at the first metadata write. Seeing that write
    * proves parsing accepted the value without attempting a 4 GiB transfer. */
-  unsigned failures = 0u;
   for (unsigned url = 0; url < 2; ++url) {
     test_fixture_t fixture;
     fixture_init(&fixture, 1u);
@@ -2028,49 +2029,32 @@ static void check_size_argument(const char *value, int accepted) {
     const char *download[] = {"h2loader", "stage", "url", "https://test/fw", value, SHA_A};
     int rc = h2_loader_command_execute(&command, url ? 6u : 4u,
                                         url ? download : payload);
-    fprintf(stderr, "size route=%s value=[%s] rc=%d writes=%u\n",
-            url ? "url" : "payload", value, rc, fixture.set_blob_calls);
-    failures += rc != (accepted ? H2_PAL_ERR_WRITE : H2_PAL_ERR_INVALID_ARG);
-    failures += fixture.set_blob_calls != (unsigned)accepted;
+    assert(rc == (accepted ? H2_PAL_ERR_WRITE : H2_PAL_ERR_INVALID_ARG));
+    assert(fixture.set_blob_calls == (unsigned)accepted);
     if (strcmp(value, "4294967295") != 0 && strcmp(value, "0") != 0) {
       const char *scan[] = {"h2loader", "wifi", "scan", "--limit", value};
       rc = h2_loader_command_execute(&command, 5u, scan);
-      fprintf(stderr, "size route=wifi value=[%s] rc=%d\n", value, rc);
-      failures += rc != H2_PAL_ERR_INVALID_ARG;
+      assert(rc == H2_PAL_ERR_INVALID_ARG);
     }
   }
-  assert(failures == 0u);
 }
-static void test_size_plus(void) {
+static void test_size_argument_accepts_only_bounded_decimal(void) {
   check_size_argument("-1", 0);
   check_size_argument("4294967296", 0);
+  check_size_argument("+5", 0);
+  check_size_argument(" 5", 0);
   check_size_argument("4294967295", 1);
   check_size_argument("0", 1);
-  check_size_argument("+5", 0);
-}
-static void test_size_space(void) {
-  check_size_argument(" 5", 0);
 }
 
-int main(int argc, char **argv) {
-  const struct { const char *name; void (*run)(void); } regressions[] = {
-    {"test_plan_missing_destination", test_plan_missing_destination},
-    {"test_install_hash_mismatch_aborts", test_install_hash_mismatch_aborts},
-    {"test_install_hash_read_error_aborts", test_install_hash_read_error_aborts},
-    {"test_ble_identity_capacity", test_ble_identity_capacity},
-    {"test_ble_diagnostics_preserve_failure_and_cleanup", test_ble_diagnostics_preserve_failure_and_cleanup},
-    {"test_size_plus", test_size_plus},
-    {"test_size_space", test_size_space},
-  };
-  int selected = 0;
-  for (size_t i = 0; i < sizeof(regressions) / sizeof(regressions[0]); ++i) {
-    if (argc == 1 || strcmp(argv[1], regressions[i].name) == 0) {
-      regressions[i].run();
-      selected = 1;
-    }
-  }
-  assert(selected);
-  if (argc > 1) return 0;
+int main(void) {
+  test_plan_missing_destination();
+  test_install_verified_destination_does_not_abort();
+  test_install_hash_mismatch_aborts();
+  test_install_hash_read_error_aborts();
+  test_ble_identity_capacity();
+  test_ble_diagnostics_preserve_failure_and_cleanup();
+  test_size_argument_accepts_only_bounded_decimal();
   test_app_client_validates_target_archive_entry();
   test_empty_pref_preserves_default_boot_intent();
   test_max_status_fits_public_capacity();
