@@ -5,6 +5,20 @@
 
 #include <assert.h>
 
+static _Thread_local int s_settle_unlocks;
+
+static h2_pal_result_t sync_unlock_mutex(void *user,
+    h2_pal_mutex_t *mutex) {
+  const h2_pal_sync_api_t *sync = h2_desktop_platform_sync_api();
+  const h2_pal_result_t result =
+      sync->vtable->unlock_mutex(user, mutex);
+  if (s_settle_unlocks > 0) {
+    --s_settle_unlocks;
+    (void)h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 10u);
+  }
+  return result;
+}
+
 typedef struct fixture {
   size_t display_open;
   size_t draw;
@@ -92,6 +106,9 @@ static h2_pal_result_t ready(void *user) {
 
 static h2_pal_result_t fail_ready(void *user) {
   ((fixture_t *)user)->ready++;
+  /* Let the worker finish cancellation before the App reads final status,
+   * without depending on which App-thread unlock releases the cancel lock. */
+  s_settle_unlocks = 16;
   return H2_PAL_ERR_IO;
 }
 
@@ -118,7 +135,12 @@ int main(void) {
       &display);
   runtime_config.log = h2_desktop_platform_log_api();
   runtime_config.task = h2_desktop_platform_task_api();
-  runtime_config.sync = h2_desktop_platform_sync_api();
+  static h2_pal_sync_vtable_t sync_vtable;
+  sync_vtable = *h2_desktop_platform_sync_api()->vtable;
+  sync_vtable.unlock_mutex = sync_unlock_mutex;
+  const h2_pal_sync_api_t sync = {
+      h2_desktop_platform_sync_api()->user, &sync_vtable};
+  runtime_config.sync = &sync;
   runtime_config.touch = &touch;
   h2_runtime_t *runtime = NULL;
   assert(h2_runtime_init(&runtime_config, &runtime) == H2_PAL_OK);
