@@ -183,19 +183,13 @@ static int display_open_impl(void *user) {
    * the second frame. */
   if (dev_ioctl(
           state->device, EMI_SET_ISR_CB, (uintptr_t)display_emi_send_complete) != 0) {
-    dev_close(state->device);
-    state->device = NULL;
-    return H2_DISPLAY_ERR_IO;
+    goto failed;
   }
   if (dev_ioctl(state->device, EMI_USE_SEND_SEM, 1) != 0) {
-    dev_close(state->device);
-    state->device = NULL;
-    return H2_DISPLAY_ERR_IO;
+    goto failed;
   }
   if (dev_ioctl(state->device, IOCTL_EMI_WRITE_NON_BLOCK, 1) != 0) {
-    dev_close(state->device);
-    state->device = NULL;
-    return H2_DISPLAY_ERR_IO;
+    goto failed;
   }
   gpio_direction_output(H2_LCD_BACKLIGHT_PIN, 1);
   gpio_direction_output(H2_LCD_RS_PIN, 1);
@@ -206,14 +200,22 @@ static int display_open_impl(void *user) {
   gpio_direction_output(H2_LCD_RESET_PIN, 1);
   delay_ms(100u);
   if ((use_ili9488 ? init_ili9488() : init_ili9481()) != 0) {
-    if (display_flush(state) != H2_DISPLAY_OK) return H2_DISPLAY_ERR_IO;
-    dev_close(state->device);
-    state->device = NULL;
-    return H2_DISPLAY_ERR_IO;
+    goto failed;
   }
   state->open = 1;
   gpio_direction_output(H2_LCD_BACKLIGHT_PIN, 0);
   return H2_DISPLAY_OK;
+
+failed:
+  /* A failed init must release the handle even when DMA flushing fails.
+   * Preserve the original IO error; close errors must not strand a retry. */
+  (void)display_flush(state);
+  (void)dev_close(state->device);
+  state->device = NULL;
+  state->open = 0;
+  state->pending = 0;
+  h2_jieli_atomic_store_u32(&state->dma_done, 0u);
+  return H2_DISPLAY_ERR_IO;
 }
 
 static int display_get_info_impl(void *user, h2_display_info_t *info) {

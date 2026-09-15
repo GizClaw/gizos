@@ -151,16 +151,19 @@ int main(int argc, char **argv) {
         lost_irq = 0;
         complete_transfer();
         assert(display->vtable->close(display->user) == H2_PAL_OK && closes == 1);
-    } else if (strcmp(argv[1], "open_pending") == 0) {
+    } else if (strcmp(argv[1], "open_pending") == 0 ||
+               strcmp(argv[1], "open_flush_error") == 0) {
         display_state.device = NULL;
         display_state.open = 0;
-        lost_irq = 1;
-        assert(display->vtable->open(display->user) == H2_PAL_ERR_IO);
-        assert(display_state.device == &emi_handle && !display_state.open && closes == 0);
-        assert(display->vtable->open(display->user) == H2_PAL_ERR_INVALID_STATE);
-        lost_irq = 0;
-        complete_transfer();
-        assert(display->vtable->close(display->user) == H2_PAL_OK && closes == 1);
+        lost_irq = strcmp(argv[1], "open_pending") == 0;
+        flush_error = !lost_irq;
+        close_error = 1; /* Preserve the initialization error even on close failure. */
+        assert(display->vtable->open(display->user) == H2_DISPLAY_ERR_IO);
+        assert(display_state.device == NULL && !display_state.open && closes == 1);
+        assert(!display_state.pending && !h2_jieli_atomic_load_u32(&display_state.dma_done));
+        lost_irq = flush_error = close_error = 0;
+        assert(display->vtable->open(display->user) == H2_DISPLAY_OK);
+        assert(display->vtable->close(display->user) == H2_DISPLAY_OK && closes == 2);
     } else if (strcmp(argv[1], "flush_stale") == 0) {
         check_rs = 1;
         assert(lcd_command(0x2a) == 0);
