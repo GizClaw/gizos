@@ -59,7 +59,7 @@ int h2_runtime_init(const h2_runtime_config_t *c, h2_runtime_t **out) {
  assert(!atomic_exchange(&live, 1)); ++inits; *out = &instance; return 0;
 }
 void h2_runtime_deinit(h2_runtime_t *r) {
- assert(r == &instance && !retained && (!audio_active || fault == 7)); assert(atomic_exchange(&live, 0)); ++deinits;
+ assert(r == &instance && !retained && !audio_active); assert(atomic_exchange(&live, 0)); ++deinits;
 }
 int h2_runtime_input_start(h2_runtime_t *r, const void *c) { (void)c; assert(r == &instance && live); return fault == 3 ? -13 : 0; }
 int h2_pal_time_sleep_ms(const void *time, unsigned ms) { (void)time; assert(ms == 10u); ++sleep_calls; assert(live); os_time_dly(1); return 0; }
@@ -136,9 +136,11 @@ int main(void) {
   if (result == H2_AUDIO_OK) {
    /* Successful entry hands the still-running scene to the boot lifetime. */
    assert(inits == 1 && deinits == 0 && live && audio_active && !audio_stop_calls);
+  } else if (fault == 7) {
+   assert(result == -15 && audio_stop_calls == 100 && sleep_calls == 99);
+   assert(inits == 1 && deinits == 0 && live && audio_active);
   } else {
-   assert(inits == deinits && !live && (!audio_active || fault == 7));
-   if (fault == 7) assert(audio_stop_calls == 100 && sleep_calls == 99 && deinits == 1);
+   assert(inits == deinits && !live && !audio_active);
    if (fault == 4) assert(audio_stop_calls == 2);
   }
 #else

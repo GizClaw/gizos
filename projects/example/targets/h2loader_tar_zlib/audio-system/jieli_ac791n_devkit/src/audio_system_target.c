@@ -5,7 +5,9 @@
 #include <stdio.h>
 
 /* A started audio scene owns Runtime for this boot; the launcher never reloads
- * images in-process, so returning successfully must leave playback running. */
+ * images in-process, so returning successfully must leave playback running.
+ * Failed starts release Runtime only after cleanup succeeds; exhausted retries
+ * intentionally retain it for workers that may still borrow it. */
 int h2_jieli_target_application_run(void) {
   h2_runtime_config_t config;
   h2_runtime_t *runtime = NULL;
@@ -40,10 +42,11 @@ int h2_jieli_target_application_run(void) {
       }
     }
     if (cleanup_result != H2_AUDIO_OK) {
-      printf("H2_JIELI_AUDIO_SYSTEM cleanup did not complete result=%d attempts=100\n",
+      printf("H2_JIELI_AUDIO_SYSTEM cleanup did not complete; Runtime intentionally retained result=%d attempts=100\n",
              cleanup_result);
+    } else {
+      h2_runtime_deinit(runtime);
     }
-    h2_runtime_deinit(runtime);
   }
   return result;
 }

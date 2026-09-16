@@ -68,7 +68,7 @@ class RuntimeLifetimeTest(unittest.TestCase):
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     if name == 'audio-system':
                         self.assertEqual(result.stdout.count(
-                            'cleanup did not complete result=-16 attempts=100'), 1)
+                            'cleanup did not complete; Runtime intentionally retained result=-16 attempts=100'), 1)
 
 
 if __name__ == '__main__':
