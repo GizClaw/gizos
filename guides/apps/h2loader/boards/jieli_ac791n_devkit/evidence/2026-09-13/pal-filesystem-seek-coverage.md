@@ -10,12 +10,8 @@ The JieLi PAL firmware and tar.zlib package built successfully with the native A
 
 Both existing Web targets were executed with `--nocache_test_results`:
 
-- `//projects/e2e/targets/pkg_tar/pal:pal_wasm_test`: passed (Core suite only;
-  this is not filesystem evidence).
-- `//projects/e2e/targets/pkg_tar/pal:browser_test`: real Chromium loaded the
-  archive with `?suite=browser`; 12/12 cases passed, including filesystem case
-  13 (`rc=0`). Final cleanup and teardown reported `cleanup=0`, `fs=0`,
-  `destroy=0`. This exercises the new EOF/backward-seek assertions on Web PAL.
+- `//projects/e2e/targets/pkg_tar/pal:pal_wasm_test`: passed (Core suite only; this is not filesystem evidence).
+- `//projects/e2e/targets/pkg_tar/pal:browser_test`: real Chromium loaded the archive with `?suite=browser`; 12/12 cases passed, including filesystem case 13 (`rc=0`). Final cleanup and teardown reported `cleanup=0`, `fs=0`, `destroy=0`. This exercises the new EOF/backward-seek assertions on Web PAL.
 
 Local command logs: `tmp/jieli/pal-seek-wasm.log` and `tmp/jieli/pal-seek-browser.log`. The actual browser ledger was inspected in `bazel-testlogs/projects/e2e/targets/pkg_tar/pal/browser_test/test.log`. Neither result substitutes for JieLi hardware execution.
 

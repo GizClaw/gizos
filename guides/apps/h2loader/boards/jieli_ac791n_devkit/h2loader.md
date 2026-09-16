@@ -13,6 +13,14 @@ bazel build --config=ac791n \
 
 Managed package 内的 `app/jieli/update.ufw` 是 native updater 消费的 image。空片首刷使用杰理 USB UBOOT 工具或烧写器，之后只通过 H2Loader `send` 加 `reboot upgrade` 更新。
 
+### App watchdog 诊断
+
+`//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:app_watchdog_package` 是手动诊断 App，不属于任何发布镜像：`:app_watchdog_trial` 带 `manual`，package 带 `no-release` 与 `manual`，`scripts/bazel/bazel-release.py` 的发布目录查询排除 `no-release`，因此它不会进入 release packaging。
+
+该镜像从共享 color-bar launcher 启动；launcher 在确认 trial 前调用强符号 `h2_jieli_target_application_run()` hook，输出一行 `H2_WDT_TRIAL role=app core=<id> control=0x<wdt_con> action=hang`，随后关闭当前核中断并永久执行 `idle`，使该核停止喂狗。它不修改 watchdog 超时或复位模式，也不调用 `wdt_close()`，用于验证双核喂狗策略在任一核停喂时会复位整板。该镜像始终不确认 trial，因此复位回到 P1 后，`jieli_trial_attempt` 仍匹配 P2 App 的 image checksum，PAL 将该 App 判为不可启动，公共 Loader 留在命令模式。
+
+同一 BUILD 文件中的 `:loader_watchdog_package` 在 Loader stage `105` 执行相同的停喂检查。编译通过不代表复位行为已验证；实机记录保留在 PR #178。
+
 ## 分区与启动
 
 `[0, 0x700000)` 由 SDK double-bank packer 管理。当前 pinned WL82 layout 的两个 SFC 映射基址分别为 `0x4020`、`0x37c020`；它们不是可跨 SDK/layout 复用的公共 PAL 常量。稳定 Loader 在 P1；P2 保存 App，或在 Loader 自更新期间暂存候选 Loader。
@@ -36,7 +44,7 @@ Trial 证据保存在 H2Loader Preference：Loader 在请求 App 启动前写入
 
 ### Loader 自更新及剩余安全边界
 
-Loader self-update 现在复用 SDK updater，但通过本 layout 的 NOR adapter 暂存 P2 的 32-byte BootInfo，不提前改变 ROM 的启动选择。暂存启动头连同候选 SHA、原生代码长度和 CRC 写入 Preference；候选通过热启动进入 P2，公共 Loader 的确认回调验证候选记录，随后在公共回写流程擦除 P1 之前发布 P2 BootInfo。2026-09-13 已实测不同 Loader 镜像之间的正常路径，以及独立的[确认前故障注入恢复](./evidence/2026-09-13/loader-preconfirm-recovery.md)：候选在 stage 105 保存断言记录并复位，自动返回旧 P1，UART 可查询状态并导出匹配的 coredump。这个测试不覆盖任意硬件异常，也不代表断电验收。
+Loader self-update 现在复用 SDK updater，但通过本 layout 的 NOR adapter 暂存 P2 的 32-byte BootInfo，不提前改变 ROM 的启动选择。暂存启动头连同候选 SHA、原生代码长度和 CRC 写入 Preference；候选通过热启动进入 P2，公共 Loader 的确认回调验证候选记录，随后在公共回写流程擦除 P1 之前发布 P2 BootInfo。确认前故障可用 `loader_trial_crash_package` 在 stage 105 注入；应检查旧 P1 恢复、候选保留及 coredump，不能以一次复位代替验收。2026-09-13 已实测不同 Loader 镜像之间的正常路径，以及独立的[确认前故障注入恢复](./evidence/2026-09-13/loader-preconfirm-recovery.md)：候选在 stage 105 保存断言记录并复位，自动返回旧 P1，UART 可查询状态并导出匹配的 coredump。这个测试不覆盖任意硬件异常，也不代表断电验收。
 
 此前通过 GNU `--wrap` 截取 SDK BootInfo 写入的实验已撤销：该工具链的内部 LTO 调用没有经过 wrapper。当前 adapter 完整提供 pinned `update.a` 中 NOR I/O member 的八个导出函数，使 archive 不再抽取原 member，固件反汇编已确认 SDK 调用绑定本实现；实际 NOR 读写、擦除和保护操作仍调用官方驱动。该替换限定于本 NOR layout，不支持 `CONFIG_SDFILE_EXT_ENABLE`。不能重新启用只在主机 mock 中有效、实际固件未拦截的实现。
 
@@ -79,23 +87,37 @@ bazel run //projects/h2loader/targets/cc_binary/e2e-runner:e2e-runner -- \
 
 Loader 只有 UART 与 BLE capability，不提供 Wi-Fi 与 HTTP；runner 一旦收到 Wi-Fi 参数就会在 Loader 上执行 Wi-Fi case，因此本板不传 URL 与 Wi-Fi 参数。
 
+## 恢复机制与验收边界
+
+历史实机证据见下方[验收记录](#验收记录)。编译与主机测试不能替代实机断电、UART/BLE 生命周期验收。
+
+### 共享 NOR 写保护窗口
+
+固定 SDK 的 suspend/resume 只有一个备份配置字，不可嵌套，也不保证跨任务窗口安全。disk、Pref 和 upgrade adapter 统一通过 board-owned counted window：首个 owner 保存配置并解除保护，最后 owner 恢复，操作错误/短写同样关闭；恢复失败返回 I/O 并禁止后续窗口直到复位。此合同属于板级 NOR 适配，不改变公共 Loader 生命周期。[SDK 反汇编、27-case host/TSan 回归与 Loader/button/PAL 验收](./evidence/2026-09-15/nor-write-protection.md)记录具体覆盖及硬件状态测量限制。
+
+### P2 残缺头的完整重装机制
+
+选择从完整 P1 通过 UART Loader **完整重装 P2**，由本 board layout 的 NOR adapter 与 pinned SDK updater 拥有机制，公共 Loader 不增加板级修复分支。SDK 的 payload 阶段先从 `target_update_addr - 32 = 0x37c000` 擦除 P2 头扇区并由 adapter 完整读回验证，完整 payload 校验后才 arm/capture；因此不会在 arm 时仍面对旧残缺头。擦除错误锁存直到复位，SDK 伪成功完成也不能继续写入或发布，P1 保持可启动。
+
+直接 arm/publish 不修复非空冲突头；有效但不同的完整 bank 也不得自动擦除，只允许显式完整安装替换。相同头 publish 幂等，P2 arm 拒绝，不在 P2 增加恢复擦除。[固定 SDK 追踪、host 回归与两轮 UART 验收](./evidence/2026-09-15/p2-header-reinstall.md)记录擦除命令/地址、镜像 SHA、独立状态及未捕获确认文本的限制。
+
 ## 验收记录
 
 ### 2026-09-15：system-event owner 引用计数
 
-Provider 的每次成功 init 各取得一个 owner，Runtime deinit 只释放自己的 owner， launcher/BLE 的订阅继续工作；最后一个 owner 释放后才关闭，并等在途操作退出后销毁。 [退出路径的失败回归、TSan 与 button 实机证据](./evidence/2026-09-15/system-event-owners.md)。
+Provider 的每次成功 init 各取得一个 owner，Runtime deinit 只释放自己的 owner，launcher/BLE 的订阅继续工作；最后一个 owner 释放后才关闭，并等在途操作退出后销毁。[退出路径的失败回归、TSan 与 button 实机证据](./evidence/2026-09-15/system-event-owners.md)。
 
 ### 2026-09-15：共享 launcher 与 Runtime 事件复用
 
-`5b1d822a` 的 ACTIVE event provider 已支持重复初始化；真实 Runtime/provider 主机回归和 button、touch、audio-system 三个生产包实机验证均成功。 三个目标通过 UART Loader 安装到 P2，观察 READY、确认成功及独立状态，最后返回 P1。 [源码判定、测试与完整验收边界](./evidence/2026-09-15/runtime-event-reuse.md)。
+`5b1d822a` 的 ACTIVE event provider 已支持重复初始化；真实 Runtime/provider 主机回归和 button、touch、audio-system 三个生产包实机验证均成功。三个目标通过 UART Loader 安装到 P2，观察 READY、确认成功及独立状态，最后返回 P1。[源码判定、测试与完整验收边界](./evidence/2026-09-15/runtime-event-reuse.md)。
 
 ### 2026-09-14：当前源码 Loader 自更新与 UART 回归
 
-源码 `2a814d32`（含 FAT 属性 stat、SDK 单次路径编码和单层 mkdir 修正） 在 UID `d879349abc9f` 上完成不同镜像 Loader 自更新：P2 确认并发布启动头后， 读取 SD shadow、回写 P1 并收敛；独立 status 确认 P1/P2 SHA 一致、Stage 空、 last_result=0。随后在该 Loader 上执行完整 UART suite，25/25 PASS，560.440 秒。 两项重连等待明显偏长且原因未定；本轮未覆盖 BLE 或断电。 [完整证据与最终板端状态](./evidence/2026-09-14/loader-uart-lifecycle.md)。
+源码 `2a814d32`（含 FAT 属性 stat、SDK 单次路径编码和单层 mkdir 修正）在 UID `d879349abc9f` 上完成不同镜像 Loader 自更新：P2 确认并发布启动头后，读取 SD shadow、回写 P1 并收敛；独立 status 确认 P1/P2 SHA 一致、Stage 空、last_result=0。随后在该 Loader 上执行完整 UART suite，25/25 PASS，560.440 秒。两项重连等待明显偏长且原因未定；本轮未覆盖 BLE 或断电。[完整证据与最终板端状态](./evidence/2026-09-14/loader-uart-lifecycle.md)。
 
 ### 2026-09-14：当前源码 Loader BLE 连续两轮回归
 
-同一 UID `d879349abc9f`、当前源码 Loader，经重新发现的 BLE endpoint `5:818f070641f0` 完成两轮完整 BLE-only lifecycle：22/22 PASS（385.850 秒） 和 22/22 PASS（357.072 秒）。UART 并行记录 34 / 33 次连接，每条连接的 supervision timeout 与 LL reject 均为 0；仍有 SDK `conn nack` 等非致命诊断。 独立 UART status 确认 P1 SHA 不变、last_result=0，P2/Stage 保留预期 crash App。 未修改代码，不声称已根治历史间歇性问题或覆盖新断电测试。 [两轮逐项结果、连接统计与最终状态](./evidence/2026-09-14/loader-ble-lifecycle.md)。
+同一 UID `d879349abc9f`、当前源码 Loader，经重新发现的 BLE endpoint `5:818f070641f0` 完成两轮完整 BLE-only lifecycle：22/22 PASS（385.850 秒）和 22/22 PASS（357.072 秒）。UART 并行记录 34 / 33 次连接，每条连接的 supervision timeout 与 LL reject 均为 0；仍有 SDK `conn nack` 等非致命诊断。独立 UART status 确认 P1 SHA 不变、last_result=0，P2/Stage 保留预期 crash App。未修改代码，不声称已根治历史间歇性问题或覆盖新断电测试。[两轮逐项结果、连接统计与最终状态](./evidence/2026-09-14/loader-ble-lifecycle.md)。
 
 ### 2026-09-13：恢复固件后的独立 UART / BLE 回归
 
@@ -130,16 +152,6 @@ Provider 的每次成功 init 各取得一个 owner，Runtime deinit 只释放�
 | `lfs_rename` 内部 Flash 页仅写入前 23/256 字节（变化范围 0–45） | 同上；真实 POWER ON 后验证，不混用升级期间旧固件的恢复日志 | [rename 事务](./evidence/2026-09-13/preference-powercut-plan.md#rename-boundary-physical-recovery-pass-for-the-injected-program) |
 
 [历史 P2 部分头测试](./evidence/2026-09-13/loader-partial-p2-header.md)的同身份重装仅证明当时固件的重写、校验与 Stage 清理，不作为当前 deferred-header/O11 实现的验收替代。2026-09-15 的当前源码复测覆盖持久化 CRC 无效的 16/32-byte 头，软件复位验证相同启动现场，不冒充编程中物理断电。未遍历所有 NOR 位损坏组合。
-
-### 2026-09-15：共享 NOR 写保护窗口
-
-固定 SDK 的 suspend/resume 只有一个备份配置字，不可嵌套，也不保证跨任务窗口安全。disk、Pref 和 upgrade adapter 统一通过 board-owned counted window：首个 owner 保存配置并解除保护，最后 owner 恢复，操作错误/短写同样关闭；恢复失败返回 I/O 并禁止后续窗口直到复位。此合同属于板级 NOR 适配，不改变公共 Loader 生命周期。[SDK 反汇编、27-case host/TSan 回归与 Loader/button/PAL 验收](./evidence/2026-09-15/nor-write-protection.md)记录具体覆盖及硬件状态测量限制。
-
-### 2026-09-15：P2 残缺头的完整重装机制
-
-选择从完整 P1 通过 UART Loader **完整重装 P2**，由本 board layout 的 NOR adapter 与 pinned SDK updater 拥有机制，公共 Loader 不增加板级修复分支。SDK 的 payload 阶段先从 `target_update_addr - 32 = 0x37c000` 擦除 P2 头扇区并由 adapter 完整读回验证，完整 payload 校验后才 arm/capture；因此不会在 arm 时仍面对旧残缺头。擦除错误锁存直到复位，SDK 伪成功完成也不能继续写入或发布，P1 保持可启动。
-
-直接 arm/publish 不修复非空冲突头；有效但不同的完整 bank 也不得自动擦除，只允许显式完整安装替换。相同头 publish 幂等，P2 arm 拒绝，不在 P2 增加恢复擦除。[固定 SDK 追踪、host 回归与两轮 UART 验收](./evidence/2026-09-15/p2-header-reinstall.md)记录擦除命令/地址、镜像 SHA、独立状态及未捕获确认文本的限制。
 
 ### 2026-09-12：原生更新流程基线
 

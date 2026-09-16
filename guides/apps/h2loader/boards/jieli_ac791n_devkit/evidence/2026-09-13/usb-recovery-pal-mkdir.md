@@ -85,18 +85,9 @@ This fresh run proves short nested creation and component-by-component descent w
 
 The pinned SDK is `eb04f1966cf2b7cbb72cbb54db906bcb293b5a4a`. Inspection of `fs.a` LLVM IR confirms:
 
-- `fmk_dir` passes the folder to ioctl 15 and then `f_mkdir(..., fp=NULL)`.
-  `create_name` stops at eight basename characters. If the resulting lookup
-  fails with unconsumed characters, `follow_path` returns 132 (`FR_NO_PATH`).
-  This explains the misleading error for the long *leaf*, despite a valid
-  parent.
-- SDK `fopen` already calls `long_file_name_encode` for JLFAT unless the first
-  volume-relative component starts with the encoded-name marker. Calling
-  `fopen_by_utf8` first therefore encodes a long child twice when the first
-  component is short `/data` or `/dl`; embedded UTF-16 NULs truncate the second
-  pass. Changing mkdir alone would leave open/stat/remove using the wrong name.
-- The `fopen` long-name parser treats a trailing slash as a directory component.
-  The SDK header documents automatic file/directory creation through `fopen`.
+- `fmk_dir` passes the folder to ioctl 15 and then `f_mkdir(..., fp=NULL)`. `create_name` stops at eight basename characters. If the resulting lookup fails with unconsumed characters, `follow_path` returns 132 (`FR_NO_PATH`). This explains the misleading error for the long *leaf*, despite a valid parent.
+- SDK `fopen` already calls `long_file_name_encode` for JLFAT unless the first volume-relative component starts with the encoded-name marker. Calling `fopen_by_utf8` first therefore encodes a long child twice when the first component is short `/data` or `/dl`; embedded UTF-16 NULs truncate the second pass. Changing mkdir alone would leave open/stat/remove using the wrong name.
+- The `fopen` long-name parser treats a trailing slash as a directory component. The SDK header documents automatic file/directory creation through `fopen`.
 
 Package `c7614511bd2fb026852fd2391bbdb8a621362e0cd920759e21530cc7adab340c` called raw SDK `fopen("storage/sd0/C/data/h2-raw-directory/", "w+")` for openprobe index 0. The returned handle had `F_ATTR_DIR` (16), while the old PAL lookup still failed:
 

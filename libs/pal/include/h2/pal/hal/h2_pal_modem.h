@@ -24,6 +24,7 @@ typedef enum h2_pal_modem_capability {
     H2_PAL_MODEM_CAPABILITY_GNSS = 1u << 2,
     H2_PAL_MODEM_CAPABILITY_CELL_LOCATE = 1u << 3,
     H2_PAL_MODEM_CAPABILITY_LOW_POWER = 1u << 4,
+    H2_PAL_MODEM_CAPABILITY_CALL_VOLUME = 1u << 5,
 } h2_pal_modem_capability_t;
 
 /** Modem policy is volatile; product preferences remain owned by the app. */
@@ -224,6 +225,13 @@ typedef struct h2_pal_modem_vtable {
     h2_pal_result_t (*call_answer)(void *user, uint32_t timeout_ms);
     h2_pal_result_t (*call_hangup)(void *user, uint32_t timeout_ms);
     h2_pal_result_t (*get_call_status)(void *user, h2_pal_modem_call_status_t *out_status);
+    /** Call speaker volume in 0..100 percent, mapped to the module's scale.
+     * Both operations block in task context and serialize with other AT
+     * operations. Use the modem task, never a UI/main loop or ISR. No active
+     * call is required. Volume is volatile: no implicit save or restore across
+     * close/open; callers re-apply it when needed. */
+    h2_pal_result_t (*set_call_volume)(void *user, uint32_t percent);
+    h2_pal_result_t (*get_call_volume)(void *user, uint32_t *out_percent);
     h2_pal_result_t (*gnss_start)(void *user, uint32_t timeout_ms);
     h2_pal_result_t (*gnss_stop)(void *user, uint32_t timeout_ms);
     h2_pal_result_t (*get_gnss_state)(void *user, h2_pal_modem_gnss_state_t *out_state);
@@ -443,6 +451,30 @@ static inline h2_pal_result_t h2_pal_modem_get_call_status(
         return H2_PAL_ERR_UNSUPPORTED;
     }
     return modem->vtable->get_call_status(modem->user, out_status);
+}
+
+/** @brief Set volatile call speaker volume; see the blocking vtable contract. */
+static inline h2_pal_result_t h2_pal_modem_set_call_volume(
+    const h2_pal_modem_api_t *modem, uint32_t percent) {
+    if (percent > 100u) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (modem == NULL || modem->vtable == NULL || modem->vtable->set_call_volume == NULL) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    return modem->vtable->set_call_volume(modem->user, percent);
+}
+
+/** @brief Read current call speaker volume in 0..100 percent, blocking in task context. */
+static inline h2_pal_result_t h2_pal_modem_get_call_volume(
+    const h2_pal_modem_api_t *modem, uint32_t *out_percent) {
+    if (out_percent == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (modem == NULL || modem->vtable == NULL || modem->vtable->get_call_volume == NULL) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    return modem->vtable->get_call_volume(modem->user, out_percent);
 }
 
 static inline h2_pal_result_t h2_pal_modem_gnss_start(

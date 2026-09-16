@@ -9,12 +9,9 @@ Observed sequence in `tmp/jieli/powercut-v2-install-monitor.log`:
 1. P2 candidate confirmation, `LOADER_HEADER published=1`, copy event 2.
 2. Repeated `POWERCUT_READY p1_header=erased p2_header=present`.
 3. User switched power off/on; SDK reports `system reset reason: POWER ON`.
-4. Copy completes with digest `7f922ab9...`, then
-   `POWER_REBOOT running=2 next=1 committed=1`.
+4. Copy completes with digest `7f922ab9...`, then `POWER_REBOOT running=2 next=1 committed=1`.
 5. P1 native BootInfo: base `0x4020`, version 16, followed by event 4 / READY.
-6. Monitor stopped; independent UART status exits successfully: running/next
-   P1, both partition image checksums equal the full SHA above, Stage empty,
-   `last_result=0`, UID `3ce9e275d7aa`.
+6. Monitor stopped; independent UART status exits successfully: running/next P1, both partition image checksums equal the full SHA above, Stage empty, `last_result=0`, UID `3ce9e275d7aa`.
 
 Status source: `tmp/jieli/powercut-v2-after.status`. No host flashing or reboot command was issued between the pause and the physical restart. The fixture skips its pause on restart when P1's header is already erased.
 

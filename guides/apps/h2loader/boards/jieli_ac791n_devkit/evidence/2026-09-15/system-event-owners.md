@@ -8,19 +8,9 @@ One wl82 atomic state word contains phase, 14-bit init-owner count and 15-bit in
 
 ## Failing-before and passing-after
 
-- Updated Runtime/provider test leaves the launcher subscriber registered while
-  `h2_runtime_deinit` executes, then posts through the original provider. On
-  `40f8c636` it fails at `h2_pal_system_event_post(...) == H2_PAL_OK` after teardown,
-  with both Clang and GCC. After the fix it delivers to the launcher, and final
-  launcher deinit destroys the registry without leaks; extra deinit is harmless.
-- The pthread fixture fails before at `live == 1` after releasing the second init
-  owner. After the fix it covers owner saturation, partial release, last release,
-  callback-driven release with one/two owners, INITIALIZING/CLOSING BUSY, and
-  retained post/subscribe operations during teardown.
-- Four threads each acquire/post/release 2000 times, both with an anchored launcher
-  owner/subscription and without one (racing final teardown and fresh init).
-  Apple Clang ThreadSanitizer passes with no reported races. The direct strict
-  Clang/GCC runs and the existing core provider fixture also pass warning-free.
+- Updated Runtime/provider test leaves the launcher subscriber registered while `h2_runtime_deinit` executes, then posts through the original provider. On `40f8c636` it fails at `h2_pal_system_event_post(...) == H2_PAL_OK` after teardown, with both Clang and GCC. After the fix it delivers to the launcher, and final launcher deinit destroys the registry without leaks; extra deinit is harmless.
+- The pthread fixture fails before at `live == 1` after releasing the second init owner. After the fix it covers owner saturation, partial release, last release, callback-driven release with one/two owners, INITIALIZING/CLOSING BUSY, and retained post/subscribe operations during teardown.
+- Four threads each acquire/post/release 2000 times, both with an anchored launcher owner/subscription and without one (racing final teardown and fresh init). Apple Clang ThreadSanitizer passes with no reported races. The direct strict Clang/GCC runs and the existing core provider fixture also pass warning-free.
 
 Commands:
 

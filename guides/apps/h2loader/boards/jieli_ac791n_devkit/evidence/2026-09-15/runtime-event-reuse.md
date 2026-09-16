@@ -15,15 +15,9 @@ At that revision, the launcher initialized the provider before BLE subscribed; R
 `test_jieli_wl82_runtime_events.c` links the real Runtime and JieLi core providers with the existing deterministic SDK fake. It initializes the launcher provider, registers a BLE subscriber, calls `h2_runtime_init`, posts an event to the retained subscriber, starts/runs a smoke task through the PAL task provider, then cleans up.
 
 - The unchanged reviewed production code passes with `runtime-init=0`.
-- A temporary source copy that changes the ACTIVE reuse branch to return BUSY
-  fails at the Runtime success assertion (`runtime-init=-18`). This is a sensitivity
-  check, **not** claimed as a failing-before result from `5b1d822a`.
-- Both results were checked with Apple Clang 21 and OrbStack GCC 13.3, using
-  `-std=c11 -Wall -Wextra -Werror`. No compiler warnings occurred.
-- `//native_component_src/jieli/wl82/h2_pal_core:test_jieli_wl82_runtime_events`
-  and the existing event concurrency test pass under `--config=macos_arm64`.
-  The new cc_test has a host-only compatibility select. The direct compiler runner
-  is `tools/bazel/tests/test_jieli_runtime_events.py`.
+- A temporary source copy that changes the ACTIVE reuse branch to return BUSY fails at the Runtime success assertion (`runtime-init=-18`). This is a sensitivity check, **not** claimed as a failing-before result from `5b1d822a`.
+- Both results were checked with Apple Clang 21 and OrbStack GCC 13.3, using `-std=c11 -Wall -Wextra -Werror`. No compiler warnings occurred.
+- `//native_component_src/jieli/wl82/h2_pal_core:test_jieli_wl82_runtime_events` and the existing event concurrency test pass under `--config=macos_arm64`. The new cc_test has a host-only compatibility select. The direct compiler runner is `tools/bazel/tests/test_jieli_runtime_events.py`.
 
 Logs: `/tmp/jieli-review-events-{clang,gcc}.log`, `/tmp/jieli-review-events-busy-{clang,gcc}.log`, `/tmp/jieli-review-events-bazel.log`. The mutation was compiled from a temporary copy; the working provider was never replaced.
 

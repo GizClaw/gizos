@@ -35,14 +35,10 @@ The five-client capacity and bounded sixth-association behavior already held on 
 
 ## Validation
 
-- macOS: requested Bazel clients, snapshots, and operations targets all passed
-  (3/3), using `--config=macos_arm64`.
-- Linux VM `embed-zig-noble-amd64`: all three Python tests passed with GCC 13.3,
-  `-Wall -Wextra -Werror`.
-- Native Loader/display package build: both passed after removing the diagnostic,
-  using the command below and `--symlink_prefix=bazel-amd64-`.
-- Review follow-up: all three macOS Bazel and Linux GCC tests were rerun and
-  passed on the final source; `git diff --check` passed.
+- macOS: requested Bazel clients, snapshots, and operations targets all passed (3/3), using `--config=macos_arm64`.
+- Linux VM `embed-zig-noble-amd64`: all three Python tests passed with GCC 13.3, `-Wall -Wextra -Werror`.
+- Native Loader/display package build: both passed after removing the diagnostic, using the command below and `--symlink_prefix=bazel-amd64-`.
+- Review follow-up: all three macOS Bazel and Linux GCC tests were rerun and passed on the final source; `git diff --check` passed.
 
 Native command (no output-root owner was interrupted):
 

@@ -2,6 +2,7 @@
 from pathlib import Path
 import re
 import unittest
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[3]
 EVIDENCE = ROOT / 'guides/apps/h2loader/boards/jieli_ac791n_devkit/evidence'
@@ -18,9 +19,16 @@ class EvidenceTest(unittest.TestCase):
         self.assertEqual(sorted(rejected), [], 'Captured outputs do not belong in implementation evidence')
         for path in EVIDENCE.rglob('*.md'):
             with self.subTest(path=path.name):
-                targets = re.findall(r'\]\(([^)]+)\)', path.read_text())
-                self.assertFalse(any(re.search(r'\.(?:log|status|json)(?:#.*)?$', t)
-                                     for t in targets))
+                text = path.read_text()
+                # The closing label also matches images: ![alt](target).
+                targets = re.findall(r'\]\(((?:[^()\n]|\([^()\n]*\))+)\)', text)
+                targets += re.findall(r'^ {0,3}\[[^]\n]+\]:[ \t]*(.+)$', text, re.MULTILINE)
+                for target in targets:
+                    target = re.sub(r"\s+(?:\"[^\"]*\"|'[^']*')\s*$", '', target).strip()
+                    if target.startswith('<') and target.endswith('>'):
+                        target = target[1:-1]
+                    suffix = Path(urlsplit(target).path).suffix.lower()
+                    self.assertNotIn(suffix, ('.log', '.status', '.json', '.orig', '.rej'))
 
     def test_independent_status_facts_are_inline(self):
         day = EVIDENCE / '2026-09-14'
@@ -60,7 +68,7 @@ class EvidenceTest(unittest.TestCase):
             self.assertIn('stage_valid=0', doc)
             self.assertIn('last_result=0', doc)
             self.assertRegex(doc, r'[0-9a-f]{64}')
-        final = (day / 'pal-final-acceptance.md').read_text()
+        final = (EVIDENCE / '2026-09-15' / 'pal-final-acceptance.md').read_text()
         for fact in ('5698d9ad9935073970857040c0986fec4c678f26f6fffbfff9ebbeb5b1088ada',
                      '9f3eea5602a5919f65dd17d3f293bf5b08e1b1a428c0298da3ac11e59fc5ecae',
                      'result=0 passed=10 failed=0', '331.305', '371.637', '366.230',

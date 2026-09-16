@@ -207,6 +207,10 @@ struct h2_quectel_modem {
     uint8_t sim_seen;
     h2_pal_modem_sim_state_t sim_state;
     uint8_t prepared;
+    /* CLVL range is discovered lazily for each open session. */
+    int call_volume_min;
+    int call_volume_max;
+    uint8_t call_volume_range_cached;
     uint8_t opened;
     uint8_t transport_closed;
     uint8_t cell_locate_token_sent;

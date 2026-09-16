@@ -6,8 +6,7 @@ The injected fault remains at SDK boot stage 105, with caller marker `0x48324352
 
 Validation:
 
-- Bazel dependency query for the new smoke package found no dependencies
-  under `projects/example/targets` or `projects/h2loader/targets`.
+- Bazel dependency query for the new smoke package found no dependencies under `projects/example/targets` or `projects/h2loader/targets`.
 - Native AC791N builds through both old package aliases succeeded.
 - No diagnostic package was installed in this verification pass.
 

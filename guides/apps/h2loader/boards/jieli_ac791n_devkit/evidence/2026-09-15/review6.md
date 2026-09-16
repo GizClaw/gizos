@@ -4,29 +4,10 @@ Base: `6fbd2852`. Local fixes: input `100b861d`, Wi-Fi persistence `c01fe68f` pl
 
 ## Host regressions
 
-- Input: `test_jieli_input_lifecycle.py` failed its new `invalid_input` case
-  before repair under strict Clang and GCC. Display/touch output NULL checks
-  precede open state; button NULL reads do not access ADC. All cases pass after.
-- Wi-Fi: `test_jieli_wifi_save.py` failed because the STA vtable callback was
-  absent. The real callback now uses the shared `libs/wifi_sta` transaction,
-  retaining radio admission through fresh association, IP validation and durable
-  save. Success replaces settings; connect failure preserves old credentials;
-  save failure propagates. The native build additionally exposed SDK `bool`
-  typedef versus `stdbool.h` include ordering; its strict host reproduction
-  fails before and passes with SDK headers first.
-- Events: `test_jieli_runtime_events.py` failed on
-  `assert(!atomic_load(&unsubscribe_done))` while the handler still borrowed
-  its heap context. Clang/GCC pass after repair; Clang ThreadSanitizer passes
-  the pthread fixture, including self-unsubscribe and concurrent init/deinit.
-  External unsubscribe retires admission and waits for all dispatches; self
-  unsubscribe returns without waiting and retains the slot until dispatches
-  finish. The caller must keep context alive for other already-running calls.
-  Darwin/Windows providers similarly count in-flight callbacks and wait on a
-  condition; ESP delegates unregister to `esp_event_handler_instance_unregister`.
-  JieLi retains synchronous delivery and existing owner/operation references.
-- MP4: the runner layout case failed with the missing `native_firmware`
-  BUILD on both hosts. The complete runner tests now pass; `:firmware` remains
-  the terminal target. The Loader-managed MP4 target is unchanged.
+- Input: `test_jieli_input_lifecycle.py` failed its new `invalid_input` case before repair under strict Clang and GCC. Display/touch output NULL checks precede open state; button NULL reads do not access ADC. All cases pass after.
+- Wi-Fi: `test_jieli_wifi_save.py` failed because the STA vtable callback was absent. The real callback now uses the shared `libs/wifi_sta` transaction, retaining radio admission through fresh association, IP validation and durable save. Success replaces settings; connect failure preserves old credentials; save failure propagates. The native build additionally exposed SDK `bool` typedef versus `stdbool.h` include ordering; its strict host reproduction fails before and passes with SDK headers first.
+- Events: `test_jieli_runtime_events.py` failed on `assert(!atomic_load(&unsubscribe_done))` while the handler still borrowed its heap context. Clang/GCC pass after repair; Clang ThreadSanitizer passes the pthread fixture, including self-unsubscribe and concurrent init/deinit. External unsubscribe retires admission and waits for all dispatches; self unsubscribe returns without waiting and retains the slot until dispatches finish. The caller must keep context alive for other already-running calls. Darwin/Windows providers similarly count in-flight callbacks and wait on a condition; ESP delegates unregister to `esp_event_handler_instance_unregister`. JieLi retains synchronous delivery and existing owner/operation references.
+- MP4: the runner layout case failed with the missing `native_firmware` BUILD on both hosts. The complete runner tests now pass; `:firmware` remains the terminal target. The Loader-managed MP4 target is unchanged.
 
 Logs are retained locally as `/tmp/review6-{input,wifi,events,path}-*.log` and `/tmp/review6-wifi-order-*.log`. Touched Bazel tests passed with `--config=macos_arm64`: input lifecycle, Wi-Fi save/operations, shared Wi-Fi STA, wl82 event threads/Runtime integration, and JieLi runner. The host-only compatibility selections remain in place. iOS analysis passed:
 

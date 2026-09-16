@@ -18,16 +18,10 @@
 ## 真实断电及恢复结果
 
 1. 诊断候选输出 `H2_JIELI_PARTIAL_HEADER_READY bank=2 prefix=16 p1_crc=valid`。
-2. 用户按提示断电、重新上电后，原始 `partial-header-v1-monitor.log`
-   第 2577 行记录 `reset reason: POWER ON`，随后捕获到 Loader 启动及 UART 心跳。监控最终
-   返回 `code=-7`，因此没有把监控退出当成设备状态证据。
-3. 独立 `status` 返回成功：`running_partition=1`、正式 v5 镜像身份、
-   `stage_valid=1`；没有启动部分头的 P2 候选。
-4. 不进入 USB DL，通过 UART 发送正式 v5 包，`send` 返回 OK，916907 字节
-   与包 SHA 匹配；执行 `reboot upgrade --monitor`。
-5. 写入日志：`H2_JIELI_UPDATE_WRITE_DONE expected=928573 native=928573 result=0`；
-   完整镜像摘要匹配正式 v5，随后 `H2_JIELI_STARTUP_EVENT event=4 code=0`。
-6. 停止监控后独立查询：`running_partition=1`，P1/P2 元数据均为正式 v5，
-   `stage_valid=0`、`last_result=0`，UART 命令可用。
+2. 用户按提示断电、重新上电后，原始 `partial-header-v1-monitor.log` 第 2577 行记录 `reset reason: POWER ON`，随后捕获到 Loader 启动及 UART 心跳。监控最终返回 `code=-7`，因此没有把监控退出当成设备状态证据。
+3. 独立 `status` 返回成功：`running_partition=1`、正式 v5 镜像身份、 `stage_valid=1`；没有启动部分头的 P2 候选。
+4. 不进入 USB DL，通过 UART 发送正式 v5 包，`send` 返回 OK，916907 字节与包 SHA 匹配；执行 `reboot upgrade --monitor`。
+5. 写入日志：`H2_JIELI_UPDATE_WRITE_DONE expected=928573 native=928573 result=0`； 完整镜像摘要匹配正式 v5，随后 `H2_JIELI_STARTUP_EVENT event=4 code=0`。
+6. 停止监控后独立查询：`running_partition=1`，P1/P2 元数据均为正式 v5， `stage_valid=0`、`last_result=0`，UART 命令可用。
 
 本次重装镜像与原 P1 相同，因此证明的是损坏 P2 可重写、校验及清理 Stage， 不是一次不同身份候选的试运行或 P2→P1 搬运。原始本地采集在 `tmp/jieli/partial-header-v1-monitor.log` 和 `tmp/jieli/partial-header-recovery-v5-monitor.log`；这些临时日志不属于发布包。

@@ -10,26 +10,12 @@ The pinned SDK is `eb04f1966cf2b7cbb72cbb54db906bcb293b5a4a`. The [source/IR own
 
 The board owns bounded PCM rings and connects directly to audio-server VFS. The opaque SDK PCM helper cannot supply the required deadline, drain and borrower-lifetime operations. Its now-unused runtime patch is removed from the layout and firmware composition. No vendor checkout is changed.
 
-- A PAL mutex/condition protects lifecycle, rings and predicates. Whole-frame
-  writes use one deadline, including gate contention, and return WOULD_BLOCK
-  when capacity is unavailable. No blocking PCM SDK write occurs under a lock.
-- Drain captures the accepted-byte sequence and waits for the consumer to pass
-  it. Future writes do not extend that wait.
-- Close marks the track closing, wakes waiters, and waits for writers, drainers,
-  volume requests and VFS callbacks before SDK STOP/close. In particular, a
-  decoder's stack-owned condition waiter retires before SDK task deletion.
-  STOP errors are returned; the void SDK close consumes the native server.
-- VFS callbacks carry nonrecycled generation tokens and only access static
-  slots after validating them under the gate. Late callbacks cannot reach a
-  freed ring or publish microphone data into a restarted session.
-- Microphone overflow drops oldest samples under the same gate as reads.
-  Predicate waits replace semaphore tokens, so a successful immediate read
-  cannot leave an obsolete wakeup for a later empty read.
-- SDK OPEN/START/STOP/volume requests and synchronous callbacks execute outside
-  the gate. Empty startup reads retain the SDK helper's nonblocking `-2`
-  behavior. Mono-to-stereo conversion, 16 kHz format, DAC software AEC reference,
-  default volume, track capacity and saturating microphone-monitor gain remain.
-  Per-write UART diagnostics are removed from the deadline-bearing write path.
+- A PAL mutex/condition protects lifecycle, rings and predicates. Whole-frame writes use one deadline, including gate contention, and return WOULD_BLOCK when capacity is unavailable. No blocking PCM SDK write occurs under a lock.
+- Drain captures the accepted-byte sequence and waits for the consumer to pass it. Future writes do not extend that wait.
+- Close marks the track closing, wakes waiters, and waits for writers, drainers, volume requests and VFS callbacks before SDK STOP/close. In particular, a decoder's stack-owned condition waiter retires before SDK task deletion. STOP errors are returned; the void SDK close consumes the native server.
+- VFS callbacks carry nonrecycled generation tokens and only access static slots after validating them under the gate. Late callbacks cannot reach a freed ring or publish microphone data into a restarted session.
+- Microphone overflow drops oldest samples under the same gate as reads. Predicate waits replace semaphore tokens, so a successful immediate read cannot leave an obsolete wakeup for a later empty read.
+- SDK OPEN/START/STOP/volume requests and synchronous callbacks execute outside the gate. Empty startup reads retain the SDK helper's nonblocking `-2` behavior. Mono-to-stereo conversion, 16 kHz format, DAC software AEC reference, default volume, track capacity and saturating microphone-monitor gain remain. Per-write UART diagnostics are removed from the deadline-bearing write path.
 
 ## Host evidence
 
