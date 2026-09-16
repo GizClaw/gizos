@@ -1,0 +1,76 @@
+{
+  "source_commit": "964d56f7",
+  "result": [
+    {
+      "variant": "o3-snapshots",
+      "iteration": 1,
+      "outcome": "aggregate",
+      "monitor_rc": 130,
+      "elapsed_s": 33.651104792021215,
+      "core_elapsed_s": 10.732180582999717,
+      "package_sha256": "0d73cfb22fb4e3850bc8b5326355873ff33ba8f808a6e9badc557fa7bc30a34a",
+      "image_sha256": "f10b51882fb544c3fa5fe083a93840a20bd05390a0fea5d34b43971f756f6f85",
+      "core_pass": true,
+      "cases": [
+        {
+          "suite": 64,
+          "case": 13,
+          "result": 0
+        },
+        {
+          "suite": 1,
+          "case": 1,
+          "result": 0
+        },
+        {
+          "suite": 1,
+          "case": 2,
+          "result": 0
+        },
+        {
+          "suite": 1,
+          "case": 3,
+          "result": 0
+        },
+        {
+          "suite": 1,
+          "case": 4,
+          "result": 0
+        },
+        {
+          "suite": 1,
+          "case": 5,
+          "result": 0
+        },
+        {
+          "suite": 1,
+          "case": 6,
+          "result": 0
+        },
+        {
+          "suite": 1,
+          "case": 10,
+          "result": 0
+        },
+        {
+          "suite": 1,
+          "case": 11,
+          "result": 0
+        },
+        {
+          "suite": 32,
+          "case": 27,
+          "result": 0
+        }
+      ],
+      "aggregate": [
+        [
+          "0",
+          "10",
+          "0"
+        ]
+      ]
+    }
+  ],
+  "returned_status": "H2_LOADER_STATUS board=jieli_ac791n_devkit target=wl82 chip=ac791n device_uid=d879349abc9f capabilities=0x00000005 command_availability=0x00081d1f active_role=loader active_version=bazel-native-artifacts active_checksum=2946bbdb2cc9c64d7c08f430f977e0ede705dfc4806b89361469daafedc1a8a0 active_image_size=933705 running_partition=1 next_partition=1 boot_intent=loader stage_valid=1 stage_package_checksum=0d73cfb22fb4e3850bc8b5326355873ff33ba8f808a6e9badc557fa7bc30a34a stage_package_size=886617 stage_image_checksum=f10b51882fb544c3fa5fe083a93840a20bd05390a0fea5d34b43971f756f6f85 stage_image_size=897833 stage_role=app stage_version=bazel-native-artifacts stage_board=jieli_ac791n_devkit stage_target=wl82 partition_1_valid=1 partition_1_package_checksum=d55308de78eeb139006dee8dd7b3e2ce529d76d48d18a7fd933836b186002909 partition_1_package_size=922425 partition_1_image_checksum=2946bbdb2cc9c64d7c08f430f977e0ede705dfc4806b89361469daafedc1a8a0 partition_1_image_size=933705 partition_1_role=loader partition_1_version=bazel-native-artifacts partition_1_board=jieli_ac791n_devkit partition_1_target=wl82 partition_2_valid=1 partition_2_package_checksum=0d73cfb22fb4e3850bc8b5326355873ff33ba8f808a6e9badc557fa7bc30a34a partition_2_package_size=886617 partition_2_image_checksum=f10b51882fb544c3fa5fe083a93840a20bd05390a0fea5d34b43971f756f6f85 partition_2_image_size=897833 partition_2_role=app partition_2_version=bazel-native-artifacts partition_2_board=jieli_ac791n_devkit partition_2_target=wl82 last_result=0 mfg_mode=1 mfg_steps=0000000000000000000000"
+}

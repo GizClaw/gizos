@@ -1,0 +1,14 @@
+{
+  "loader": {
+    "bytes": 912728,
+    "sha256": "f3e064e6c09932abd8b04644607799f18038fc7cc48a38631300f54db57af07f"
+  },
+  "color-bar": {
+    "bytes": 857725,
+    "sha256": "757862c536f460a7c1a09bb68a67e7f1ac3b07847389fd9802f65a025e2f718d"
+  },
+  "crash-before-confirm": {
+    "bytes": 887467,
+    "sha256": "a0d4aacb54c3aa03097bbb23319c0aeb7645b22ac8f50e009f406edad6ec843f"
+  }
+}

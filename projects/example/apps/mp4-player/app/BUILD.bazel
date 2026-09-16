@@ -25,6 +25,13 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],
+    local_defines = select({
+        "//tools/bazel/platforms:is_pi32v2": [
+            "H2_MP4_PLAYER_DECODER_TASK_STACK_BYTES=131072",
+            "H2_MP4_PLAYER_PROGRESS_LOG_INTERVAL=15",
+        ],
+        "//conditions:default": [],
+    }),
     deps = [
         ":tasks",
         "//libs/mp4_decoder",

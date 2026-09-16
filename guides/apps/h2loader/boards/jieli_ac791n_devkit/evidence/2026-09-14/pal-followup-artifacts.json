@@ -1,0 +1,30 @@
+[
+  {
+    "package": "jieli_ac791n_devkit-color-bar-wl82.update.tar.zlib",
+    "package_bytes": 856103,
+    "package_sha256": "06941449c9ad321788873d20516e823cda0938c9292f916a109980e9a5a3ed81",
+    "image_bytes": 868169,
+    "image_sha256": "e86dd350d34348a9ce1103ee74d451097b5162fcc7720f592ac6dc2643b4083b"
+  },
+  {
+    "package": "jieli_ac791n_devkit-crash-before-confirm-wl82.update.tar.zlib",
+    "package_bytes": 887309,
+    "package_sha256": "0c5c046cd3def06f760c6002db7048662ef2dfb7b4eebf628a365719d3631033",
+    "image_bytes": 899433,
+    "image_sha256": "e8085bf01b2b1335f995dbf2255c8cbff5627a5d59e6291a552a224c071e4141"
+  },
+  {
+    "package": "jieli_ac791n_devkit-loader-wl82.update.tar.zlib",
+    "package_bytes": 918572,
+    "package_sha256": "ea9bb0f6ef4b71d04afc286ffcfeb7033d61edb1fef8dd4ca8008fb0e961828e",
+    "image_bytes": 930237,
+    "image_sha256": "20ffe2acebec1c4d11ef6d975b82affaed6150359aca288c6f568299c8b51c71"
+  },
+  {
+    "package": "jieli_ac791n_devkit-pal-wl82.update.tar.zlib",
+    "package_bytes": 882042,
+    "package_sha256": "9f02c0c56c9f9af3ecd0a436bd16c7c71ca147cd05580a0cf87e81505b58a2af",
+    "image_bytes": 894013,
+    "image_sha256": "bf635cc1a18dd6e0415e0f88fd0ce34002867261b0bf3e50f4788e46436d3501"
+  }
+]

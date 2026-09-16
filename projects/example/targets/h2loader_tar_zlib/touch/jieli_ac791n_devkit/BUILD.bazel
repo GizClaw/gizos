@@ -1,0 +1,92 @@
+load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_jieli_firmware")
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel:jieli_task_policy.bzl", "jieli_target_task_policy")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+
+package(default_visibility = ["//visibility:public"])
+
+AC791N_COMPATIBILITY = select({
+    "//tools/bazel/platforms:ci_graph": [],
+    "//tools/bazel/platforms:is_ac791n": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+
+jieli_target_task_policy(
+    name = "touch_task_policy",
+    default_policy = "10 4096 128",
+    graph = [":touch_target", "//projects/example/native_component_src/jieli/wl82/devkit_app:launcher"],
+    policies = [
+        "touch-smoke 10 16384 128",
+        "h2color/runtime 10 2048 128",
+        "h2loader/appcmd 10 12288 128",
+        "$runtime/input 10 4096 128",
+        "$runtime/nfc 10 4096 128",
+        "$lvgl/swdraw 10 8192 128",
+        "$lvgl/g2ddraw 10 4096 128",
+        "$lvgl/pxpdraw 10 4096 128",
+        "$lvgl/nemagfx 10 4096 128",
+        # The App command loop runs synchronously on the session task.
+        "$bleikcp/server 10 12288 128",
+        "$bleikcp/kcp 10 1536 128",
+        "$h2loader/blelink 10 1536 64",
+        "$h2loader/return 10 4096 128",
+        "$h2loader/uartcmd 10 4096 128",
+        "h2loader/blecmd 10 12288 128",
+    ],
+    sdk_policies = [
+        "app_core 15 8192 1024",
+        "sys_event 29 512 0",
+        "systimer 14 256 0",
+        "sys_timer 9 512 128",
+        "dw_update 21 512 32",
+        "h2app_rx 12 4096 128",
+        "#C0btctrler 19 768 384",
+        "#C0btstack 18 1536 384",
+    ],
+)
+
+h2_tasks(
+    name = "touch_tasks",
+    tasks = ["touch-smoke"],
+)
+
+firmware_native_component(
+    name = "touch_target",
+    srcs = ["src/touch_target.c"],
+    hdrs = ["//projects/example/apps/touch/app:include/h2_touch_smoke.h"],
+    include_roots = ["projects/example/apps/touch/app/include"],
+    native_srcs = ["//projects/example/apps/touch/app:src/h2_touch_smoke.c"],
+    component_name = "jieli_ac791n_devkit_touch_target",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = [
+        "//projects/example/native_component_src/jieli/wl82/devkit_app:ui_libs",
+        ":touch_tasks",
+        "//boards/jieli_ac791n_devkit/ac791n",
+        "//libs/pal:pal_header_files",
+    ],
+)
+
+h2loader_jieli_firmware(
+    name = "touch_firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":touch_target",
+        "//projects/example/native_component_src/jieli/wl82/devkit_app:launcher",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "touch",
+    target = "wl82",
+    task_policy = ":touch_task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "touch_package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":touch_firmware",
+    image = "touch",
+    role = "app",
+    target = "wl82",
+)

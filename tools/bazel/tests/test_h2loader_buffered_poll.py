@@ -6,6 +6,8 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 SOURCES = [
+    'projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit/src/loader_launcher.c',
+    'projects/h2loader/native_component_src/jieli/wl82/h2loader_app/src/jieli_app_iostreamikcp.c',
     'projects/h2loader/native_component_src/esp-idf6.x/h2_h2loader_runtime/src/h2_esp_h2loader_iostreamikcp.c',
     'projects/h2loader/native_component_src/bk7258/ap/h2loader_bk/src/h2_bk_h2loader_iostreamikcp.c',
 ]

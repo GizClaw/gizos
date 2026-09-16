@@ -89,6 +89,11 @@ typedef struct h2_pal_system_event_vtable {
         h2_pal_system_event_handler_t handler,
         void *handler_user,
         h2_pal_system_event_subscription_t **out_subscription);
+    /* Stop admission before returning. External unsubscribe waits for all
+     * in-flight calls of this subscription, so handler_user can then be freed.
+     * Self-unsubscribe stops new calls without waiting for its own dispatch;
+     * retain handler_user until all already-running calls finish. Do not hold
+     * locks needed by a handler while waiting for external unsubscribe. */
     void (*unsubscribe)(void *user, h2_pal_system_event_subscription_t *subscription);
 } h2_pal_system_event_vtable_t;
 

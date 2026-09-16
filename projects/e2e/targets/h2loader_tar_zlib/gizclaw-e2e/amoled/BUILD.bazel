@@ -14,6 +14,7 @@ esp_target_task_policy(
     policies = [
         "$gizclaw/net             5        0  4096  psram",
         "h2loader/appcmd          8        0  4096  psram",
+        "h2loader/blecmd          8        0  4096  psram",
         "$h2loader/return         8        0  4096  psram",
         "$h2loader/blelink        6        0  4096  psram",
         "$bleikcp/kcp             7        0  4096  psram",
