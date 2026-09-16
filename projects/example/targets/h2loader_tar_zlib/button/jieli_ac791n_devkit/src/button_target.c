@@ -201,6 +201,7 @@ static void button_task(void *user) {
   state->runtime = NULL;
 }
 
+/* The image-owned smoke worker retains Runtime across successful entry return. */
 int h2_jieli_target_application_run(void) {
   h2_runtime_config_t config;
   h2_runtime_t *runtime = NULL;

@@ -4,6 +4,8 @@
 
 #include <stdio.h>
 
+/* A started audio scene owns Runtime for this boot; the launcher never reloads
+ * images in-process, so returning successfully must leave playback running. */
 int h2_jieli_target_application_run(void) {
   h2_runtime_config_t config;
   h2_runtime_t *runtime = NULL;
@@ -23,10 +25,10 @@ int h2_jieli_target_application_run(void) {
   printf("H2_JIELI_AUDIO_SYSTEM stage=run result=%d\n", result);
   if (result == H2_AUDIO_OK) {
     printf("H2_JIELI_AUDIO_SYSTEM_READY mic=1 speaker=1 aec=dac-software-ref\n");
+    return result;
   }
-  /* run() starts scene-owned workers; its return does not retire them.
-   * This entry retains no owner after returning, so stop/join first. Failed
-   * cleanup remains retryable only while the borrowed Runtime is alive. */
+  /* Failed startup may retain workers: stop/join before releasing Runtime.
+   * Cleanup remains retryable while the borrowed Runtime is alive. */
   while (h2_smoke_audio_system_stop() != H2_AUDIO_OK) {
     (void)h2_pal_time_sleep_ms(runtime->time, 10u);
   }

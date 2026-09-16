@@ -451,6 +451,7 @@ static h2_pal_result_t mp4_runtime_config(h2_runtime_config_t *out_config) {
   return H2_PAL_OK;
 }
 
+/* Playback owns Runtime while running; a returned player releases that owner. */
 static void mp4_runtime(void *user) {
   (void)user;
   boot_marker(7u, H2_PAL_OK);

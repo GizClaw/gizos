@@ -27,6 +27,7 @@ static void crash_now(void *user) {
 
 /* The color-bar launcher runs this after the UART and BLE App command
  * services are live and before it confirms the trial image. */
+/* Runtime lives until the intentional reset; release it if the reset returns. */
 int h2_jieli_target_application_run(void) {
   h2_runtime_config_t config;
   h2_runtime_t *runtime = NULL;

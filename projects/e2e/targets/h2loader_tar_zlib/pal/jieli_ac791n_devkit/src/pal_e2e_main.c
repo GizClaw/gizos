@@ -125,6 +125,7 @@ static int start_commands(void) {
 }
 
 
+/* Suites own Runtime through deferred cleanup; the final ledger needs no owner. */
 static void run_suites(void *user) {
   (void)user;
   int result = H2_PAL_OK;

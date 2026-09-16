@@ -58,6 +58,7 @@ class RuntimeLifetimeTest(unittest.TestCase):
                     code = function(text, 'int h2_jieli_target_application_run(')
                 unit_text = fixture.replace('/* TARGET */', code).replace('WORKER_TARGET', '1' if worker else '0')
                 unit_text = unit_text.replace('CRASH_TARGET', '1' if name == 'crash-before-confirm' else '0')
+                unit_text = unit_text.replace('AUDIO_TARGET', '1' if name == 'audio-system' else '0')
                 with tempfile.TemporaryDirectory() as directory:
                     unit = Path(directory) / 'test.c'; binary = Path(directory) / 'test'
                     unit.write_text(unit_text)
