@@ -280,6 +280,12 @@ h2/pal/hal/h2_pal_wifi_settings.h
 
 Single-button periph payload 同时声明输入交付模式。`POLL_STATE` 表示 Runtime 通过 Button PAL 读取稳定的 pressed/released 状态；`PUSH_EDGE` 表示拥有该 periph 的 adapter 主动向 Runtime 推送 raw down/up edge，Runtime 不再调用 Button PAL read。未提供 payload 的既有 single-button periph 按 `POLL_STATE` 处理。交付模式是 periph 能力，不是 App component 类型；launcher 仍通过 component mapping 把相同的 App Button component 映射到不同来源。
 
+### Modem 通话扬声器音量
+
+`h2_pal_modem` 通过 `H2_PAL_MODEM_CAPABILITY_CALL_VOLUME` 声明通话扬声器音量能力，`h2_pal_modem_set_call_volume()` / `h2_pal_modem_get_call_volume()` 统一使用 `0..100` percent，模块原生档位由 provider 映射。Quectel 使用 `AT+CLVL`，每次 open 后首次使用时探测并缓存范围；SIMCom 暂不实现，未提供该能力的 provider 返回 `H2_PAL_ERR_UNSUPPORTED`。该接口不控制麦克风、铃声、音频路由或功放，也不要求已有通话，可在拨号前设置。
+
+两个调用都是 task context 下的阻塞操作，与其它 AT 操作串行，应由处理拨号、接听和挂断的 modem task 调用，不能放在 UI/main loop 或 ISR 中。支持 LOW_POWER 的 Quectel 实例要求 modem 已 open，并在命令前完成唤醒准备；音量操作不改变通话持有的唤醒状态。音量是模块的易失状态，不隐式跨 close/open 保存或恢复，调用方应在需要时重新设置。
+
 ### Touch
 
 `h2_pal_touch_api_t` 描述一个已经校准到逻辑 viewport 的 single-pointer Touch source。Provider 通过 `open -> get_info -> poll_event -> close` 交付 raw `DOWN`、`MOVE`、`UP` edge；`poll_event` 没有新 edge 时返回 `H2_PAL_ERR_WOULD_BLOCK`。坐标变换、axis inversion、Linux evdev identity 和 controller protocol 属于 component/BSP，不能进入 portable App。Multi-touch contact lifecycle 不属于 V1 contract，provider 不能把多个 contact 混成同一个不稳定 pointer stream。

@@ -90,4 +90,7 @@ void h2_quectel_reset_state(h2_quectel_modem_t *modem);
 void h2_quectel_sim_update(h2_quectel_modem_t *modem, h2_pal_modem_sim_state_t state);
 void h2_quectel_handle_urc_locked(h2_quectel_modem_t *modem, const char *line);
 
+h2_pal_result_t h2_quectel_set_call_volume(void *user, uint32_t percent);
+h2_pal_result_t h2_quectel_get_call_volume(void *user, uint32_t *out_percent);
+
 #endif
