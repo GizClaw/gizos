@@ -637,6 +637,37 @@ fail:
     return rc;
 }
 
+/* Console output during a monitor session can arrive either as raw non-frame
+ * bytes (delivered through the stream log sink) or tunnelled inside reliable
+ * iKCP DATA frames when the device has an active session. serial_pump()
+ * forwards only the non-frame bytes; the decoded frame payload lands in the
+ * stream receive buffer, which the monitor must drain or the tunnelled console
+ * lines are lost. Route the decoded bytes through the same log wrapper so the
+ * caller's sink and the READY-banner session retirement apply uniformly to
+ * console text regardless of transport. */
+static h2_pal_result_t serial_drain_decoded_logs(
+    h2_h2loader_host_serial_connection_t *connection) {
+    for (;;) {
+        uint8_t buffer[512];
+        size_t read = 0u;
+        h2_pal_result_t rc = h2_iostreamikcp_read(
+            connection->stream, buffer, sizeof(buffer), &read);
+        if (rc == H2_PAL_ERR_WOULD_BLOCK) {
+            return H2_PAL_OK;
+        }
+        if (rc != H2_PAL_OK) {
+            return rc;
+        }
+        if (read == 0u) {
+            return H2_PAL_OK;
+        }
+        rc = serial_stream_log(connection, buffer, read);
+        if (rc != H2_PAL_OK) {
+            return rc;
+        }
+    }
+}
+
 h2_pal_result_t h2_h2loader_host_serial_monitor_logs(
     h2_h2loader_host_serial_connection_t *connection,
     h2_h2loader_host_cancelled_fn is_cancelled,
@@ -647,6 +678,10 @@ h2_pal_result_t h2_h2loader_host_serial_monitor_logs(
     while (!is_cancelled(cancel_user)) {
         h2_pal_result_t rc = serial_pump(
             connection, H2_H2LOADER_HOST_SERIAL_POLL_MS);
+        if (rc != H2_PAL_OK) {
+            return rc;
+        }
+        rc = serial_drain_decoded_logs(connection);
         if (rc != H2_PAL_OK) {
             return rc;
         }
