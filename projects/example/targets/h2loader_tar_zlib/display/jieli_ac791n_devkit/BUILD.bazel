@@ -37,13 +37,8 @@ jieli_target_task_policy(
     ],
 )
 
-# The color-bar image is the shared launcher with no application hook; the
-# other example images reuse these two labels.
-alias(
-    name = "color_bar_tasks",
-    actual = LAUNCHER + ":tasks",
-)
-
+# The color-bar image is the shared launcher with no application hook. The
+# crash-before-confirm image reuses this alias and the task policy above.
 alias(
     name = "color_bar_launcher",
     actual = LAUNCHER + ":launcher",
