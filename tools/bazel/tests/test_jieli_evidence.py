@@ -2,6 +2,7 @@
 from pathlib import Path
 import re
 import unittest
+from urllib.parse import urlsplit
 
 ROOT = Path(__file__).resolve().parents[3]
 EVIDENCE = ROOT / 'guides/apps/h2loader/boards/jieli_ac791n_devkit/evidence'
@@ -19,8 +20,12 @@ class EvidenceTest(unittest.TestCase):
         for path in EVIDENCE.rglob('*.md'):
             with self.subTest(path=path.name):
                 targets = re.findall(r'\]\(([^)]+)\)', path.read_text())
-                self.assertFalse(any(re.search(r'\.(?:log|status|json|orig|rej)(?:#.*)?$', t)
-                                     for t in targets))
+                for target in targets:
+                    target = re.sub(r"\s+(?:\"[^\"]*\"|'[^']*')\s*$", '', target).strip()
+                    if target.startswith('<') and target.endswith('>'):
+                        target = target[1:-1]
+                    suffix = Path(urlsplit(target).path).suffix.lower()
+                    self.assertNotIn(suffix, ('.log', '.status', '.json', '.orig', '.rej'))
 
     def test_independent_status_facts_are_inline(self):
         day = EVIDENCE / '2026-09-14'
