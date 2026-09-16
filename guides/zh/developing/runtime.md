@@ -71,11 +71,17 @@ input source 超出所选容量时才返回 `H2_PAL_ERR_NO_SPACE`。
 
 ## Wi-Fi 凭据与恢复
 
-`runtime->wifi_sta` 1:1 暴露注入的 PAL provider，不替换 vtable，也不按 timeout 推断持久化策略。`connect` 只连接，不写入、清除或覆盖保存凭据；`connect_and_save` 显式执行目标网络认证、有效 IP 验证与持久化。菜单、BLE、GizClaw RPC 和 Loader 用户配网调用后者；产测临时连接与读取已存配置后的重连调用前者。
+Runtime 拥有最多 `H2_RUNTIME_WIFI_SAVED_MAX`（8）条网络的集合。`h2_runtime_wifi_saved_list` 按最近连接优先复制，容量不足时截断，`out_count` 返回实际复制数量，零容量允许空缓冲区。`h2_runtime_wifi_saved_save` 按 SSID 长度及大小写敏感字节值去重，更新凭据并置顶；满额插入新 SSID 时淘汰末尾。`h2_runtime_wifi_saved_remove` 只删除指定 SSID，保留其余顺序，不存在返回 NOT_FOUND；`h2_runtime_wifi_saved_clear` 写入空集合。这些操作不改变 PAL 单条凭据，也不改变当前连接。
 
-`connect_and_save` 在调用任务中执行，非零 timeout 是关联与 DHCP 的总预算；零值返回 INVALID_ARG，不改变连接或存储。Provider 串行接纳 connect、connect_and_save 和 disconnect，重叠调用返回 BUSY。连接失败保留旧凭据，保存失败返回真实错误；即使连接同一 SSID 也重新认证，避免旧关联掩盖错误密码。等待与存储算法由 `libs/wifi_sta` 复用，原子替换由 Wi-Fi Settings provider 保证。调用方等待操作结束后才能销毁 provider 或 Runtime。
+集合使用 Runtime 专属 Preference namespace `h2runtime_wifi`、key `saved_v1`。V1 blob 固定 **920 字节**（8 字节头 + 8 × 114 字节记录，不含存储后端元数据），小于 1 KiB。头为 little-endian u32 magic `0x4e573248`（`H2WN`）、u16 version=1、u8 count、u8 reserved=0；每条记录为 u8 SSID 长度、u8 password 长度、6 字节 BSSID、u8 bssid_set、u8 channel、32 字节 SSID、64 字节 password、little-endian u64 `last_connected_at_ms`。未使用空间写零，不保存 C struct padding 或终止符。每次修改整块替换同一 key，依赖 pref 的单 key 原子替换，写失败保留旧集合；不做多 key 事务。解码校验尺寸、头、数量、长度、BSSID 标记和重复 SSID，损坏或未知 version 返回 FORMAT，不暴露部分列表，也不做静默迁移；namespace 或 key 不存在读作空集合，平台没有 Preference provider，或注入的是 canonical unsupported provider（vtable 存在但 open 返回 UNSUPPORTED）时，读取一律视为空集合，`_save` 与 `_clear` 返回 UNSUPPORTED，`_remove` 因集合为空先返回 NOT_FOUND。
 
-开机网络 worker 调用 `h2_runtime_wifi_connect_saved()` 恢复同一持久配置，该显式 API 的零 timeout 使用 15 秒默认关联预算；没有配置返回 NOT_FOUND。恢复调用不重写凭据，返回成功表示 provider 已完成关联，IP 可随后通过 station event/state 到达。Runtime init 不阻塞等待网络，也不自行打开无线连接。调用方负责启动时机和失败重试，不能把公共恢复算法重新写进产品页面。
+存储位置定义最近连接顺序。时间戳来自 `h2_pal_time_get_wall_ms`，是 UTC Unix 毫秒；时钟未校准或不可用时写 0，仅作显示信息，不能用它重排列表。对同一持久 pref store 重新初始化 Runtime 后，列表和顺序仍然保留。不迁移 PAL 原有单条凭据，升级后通过成功配网逐步建立集合。
+
+`h2_runtime_wifi_connect_and_save(runtime, config, timeout_ms)` 是配网入口：先调用 PAL `h2_pal_wifi_sta_connect_and_save`，仅当成功后才把网络写入 Runtime 集合并置顶。BLE 配网使用此入口。PAL 失败不添加记录。PAL 成功但 Runtime 集合写入失败时返回 OK 并记 WARN 日志：设备已经连上、PAL 单条凭据已更新，集合只是记账，不能把可用的连接报成配网失败；此时可观察状态是已连接、PAL 凭据已更新、集合未变。Runtime 不增加等待 IP 的逻辑；PAL 原有非零关联/DHCP 总预算、有效 IP 验证和保存语义不变，零 timeout 仍返回 INVALID_ARG。
+
+`h2_runtime_wifi_connect_best_saved(runtime, timeout_ms)` 读取 Runtime 集合后扫描，回调仅为每个保存 SSID 保留最强 AP，不在栈上保存完整扫描表。候选按 RSSI 降序，同强度按存储顺序排列，并钉上实际扫描到的 BSSID/channel；不可见网络不参与。依次调用 `h2_pal_wifi_sta_connect`，首个关联成功后将它置顶并刷新时间戳——回写的是集合里原本存的凭据，不是钉了 BSSID 的候选，避免下次同一 SSID 换了 AP 连不上；全部失败返回最后一个连接错误，空集合或全部不可见返回 NOT_FOUND。列表读取、扫描和各次连接共用总预算，零值默认 15 秒，每次连接使用剩余预算，下一次尝试前耗尽返回 TIMEOUT；存储、扫描和单调时钟错误直接传播。此恢复流程不写 PAL 凭据、不等待 IP；置顶写入失败同样只记 WARN 日志并返回 OK，集合保持不变。
+
+`runtime->wifi_sta` 仍 1:1 暴露注入的 PAL provider。PAL Settings 始终只保存一条凭据，含义是最近一次通过持久化连接成功保存的网络；临时 connect（包括 best-saved）不会覆盖它。`h2_runtime_wifi_connect_saved()` 保持原样：读取 PAL 单条凭据，调用 connect，不重写任何存储；零 timeout 默认 15 秒，无凭据返回 NOT_FOUND。两种恢复调用成功均只保证关联完成，IP 可随后到达。应用负责调用时机、重试策略和所有列表/连接操作的串行化，须在 Runtime deinit 前完成操作；Runtime init 不自动联网。
 
 音量和静音由 Runtime 的 audio state 共同持有。UI 与 GizClaw 使用 `h2_runtime_system_state_audio()` 读取同一 snapshot，用 `h2_runtime_audio_set_volume()` 同时提交设定音量和静音。静音保留设定音量，PAL 实际输出为零；解除静音可直接使用 snapshot 中的设定值。现有 `runtime->audio` percent setter 同样更新这份 state 并取消静音，percent getter 仍返回实际输出音量。失败的 PAL 写入不改变 state，重叠操作返回 BUSY。Getter 对比 backend 实际值以识别绕过 proxy 的外部调整；GizClaw 和产品不得另存音量真值。
 
