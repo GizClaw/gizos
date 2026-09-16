@@ -1,4 +1,5 @@
 #include "h2_iostreamikcp.h"
+#include "h2_iostreamikcp_internal.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -513,6 +514,106 @@ static void test_monitor_recovers_text_around_broken_frame(void) {
     }
 }
 
+static void test_monitor_recovers_text_after_every_invalid_candidate(void) {
+    static const char boot[] = "boot line\r\n";
+    static const char text[] =
+        "H2_JIELI_BUTTON_SMOKE_READY buttons=8 display=480x320 result=0\r\n"
+        "JIELI_APP_CONFIRM result=OK code=0 target=0 transport=0\r\n";
+    static const char tail[] = "tail line\r\n";
+    const uint8_t payload[] = { 0x41u, 0x80u, 0x42u };
+    enum { BAD_VERSION, BAD_FLAGS, OVERSIZED_LENGTH, BAD_CRC, INVALID_CONTROL };
+    for (size_t kind = BAD_VERSION; kind <= INVALID_CONTROL; ++kind) {
+        uint8_t input[256] = { 0 };
+        size_t len = sizeof(boot) - 1u;
+        memcpy(input, boot, len);
+        uint8_t *candidate = input + len;
+        size_t candidate_len = H2_IOSTREAMIKCP_FRAME_HEADER_LEN;
+        memcpy(candidate, "H2IKCP", H2_IOSTREAMIKCP_FRAME_MAGIC_LEN);
+        candidate[6] = H2_IOSTREAMIKCP_FRAME_VERSION;
+        candidate[7] = H2_IOSTREAMIKCP_FRAME_FLAG_DATA;
+        h2_iostreamikcp_write_le32(candidate + 8u, 7u);
+        h2_iostreamikcp_write_le16(candidate + 12u, 0u);
+        h2_iostreamikcp_write_le32(candidate + 14u, h2_iostreamikcp_crc32(payload, 0u));
+        h2_iostreamikcp_frame_t frame = {
+            .flags = H2_IOSTREAMIKCP_FRAME_FLAG_DATA,
+            .conv = 7u,
+            .payload = payload,
+            .payload_len = sizeof(payload),
+        };
+        switch (kind) {
+        case BAD_VERSION:
+            candidate[6] = H2_IOSTREAMIKCP_FRAME_VERSION + 1u;
+            break;
+        case BAD_FLAGS:
+            candidate[7] = 0xffu;
+            break;
+        case OVERSIZED_LENGTH:
+            h2_iostreamikcp_write_le16(candidate + 12u, H2_IOSTREAMIKCP_MAX_PAYLOAD_LEN + 1u);
+            break;
+        case BAD_CRC:
+            CHECK(h2_iostreamikcp_frame_encode(
+                      &frame, candidate, sizeof(input) - len, &candidate_len) == H2_PAL_OK);
+            candidate[candidate_len - 1u] ^= 1u;
+            break;
+        case INVALID_CONTROL:
+            candidate[7] = H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_OPEN;
+            h2_iostreamikcp_write_le16(candidate + 12u, H2_IOSTREAMIKCP_SESSION_CONTROL_PAYLOAD_LEN);
+            h2_iostreamikcp_write_le32(candidate + H2_IOSTREAMIKCP_FRAME_HEADER_LEN, 8u);
+            h2_iostreamikcp_write_le32(candidate + 14u, h2_iostreamikcp_crc32(
+                candidate + H2_IOSTREAMIKCP_FRAME_HEADER_LEN,
+                H2_IOSTREAMIKCP_SESSION_CONTROL_PAYLOAD_LEN));
+            candidate_len += H2_IOSTREAMIKCP_SESSION_CONTROL_PAYLOAD_LEN;
+            break;
+        }
+        len += candidate_len;
+        memcpy(input + len, text, sizeof(text) - 1u);
+        len += sizeof(text) - 1u;
+        size_t frame_start = len;
+        size_t encoded_len = 0u;
+        CHECK(h2_iostreamikcp_frame_encode(
+                  &frame, input + len, sizeof(input) - len, &encoded_len) == H2_PAL_OK);
+        len += encoded_len;
+        memcpy(input + len, tail, sizeof(tail) - 1u);
+        len += sizeof(tail) - 1u;
+
+        /* Every split alignment, plus bytewise (0) and whole-buffer (len) input. */
+        for (size_t split = 0u; split <= len; ++split) {
+            h2_iostreamikcp_filter_t filter;
+            frame_capture_t frames = { 0 };
+            log_capture_t logs = { 0 };
+            h2_iostreamikcp_filter_init(&filter);
+            for (size_t offset = 0u; offset < len;) {
+                size_t n = split == 0u ? 1u : (offset == 0u ? split : len - offset);
+                CHECK(h2_iostreamikcp_filter_input_with_log(
+                          &filter, input + offset, n, capture_frame, &frames,
+                          capture_log, &logs) == H2_PAL_OK);
+                offset += n;
+            }
+            CHECK(log_contains(&logs, "H2_JIELI_BUTTON_SMOKE_READY"));
+            CHECK(log_contains(&logs, "JIELI_APP_CONFIRM result=OK"));
+            CHECK(log_contains(&logs, "boot line"));
+            CHECK(log_contains(&logs, "tail line"));
+            CHECK(frames.count == 1u);
+            CHECK(frames.flags[0] == frame.flags);
+            CHECK(frames.conv[0] == frame.conv);
+            CHECK(frames.len[0] == sizeof(payload));
+            CHECK(memcmp(frames.payload[0], payload, sizeof(payload)) == 0);
+            CHECK(logs.len == len - encoded_len);
+            CHECK(memcmp(logs.bytes, input, frame_start) == 0);
+            CHECK(memcmp(logs.bytes + frame_start, input + frame_start + encoded_len,
+                         len - frame_start - encoded_len) == 0);
+            CHECK(filter.log_bytes == logs.len);
+            if (kind == BAD_CRC) {
+                CHECK(filter.crc_errors == 1u);
+                CHECK(filter.errors == 0u);
+            } else {
+                CHECK(filter.errors >= 1u);
+                CHECK(filter.crc_errors == 0u);
+            }
+        }
+    }
+}
+
 static h2_iostreamikcp_t *open_stream_ex(
     memory_io_t *io,
     uint32_t conv,
@@ -801,6 +902,7 @@ static void test_timeout_and_empty_read(void) {
 int main(void) {
     test_frame_filter_extracts_from_dirty_stream();
     test_filter_delivers_only_proven_log_bytes();
+    test_monitor_recovers_text_after_every_invalid_candidate();
     test_monitor_recovers_text_around_broken_frame();
     test_session_control_frames();
     test_filter_rejects_invalid_control_frame();
