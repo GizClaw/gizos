@@ -270,6 +270,13 @@ void h2_runtime_audio_bind(h2_runtime_t *runtime);
 
 struct h2_runtime_private {
     int initialized;
+    struct {
+      h2_pal_mutex_t *mutex;
+      h2_pal_cond_t *cond;
+      uint32_t generation;
+      /* LOST_IP has no distinct station status in the PAL snapshot. */
+      h2_runtime_event_kind_t kind;
+    } wifi_connect_wait;
     h2_runtime_system_state_publication_t system_state;
     size_t allocation_size;
     h2_pal_queue_t *event_queue;

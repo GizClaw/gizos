@@ -2,6 +2,8 @@
 
 #include <string.h>
 
+#define H2_RUNTIME_WIFI_ADDRESS_WAIT_MS 8000u
+
 h2_pal_result_t h2_runtime_wifi_connect_saved(h2_runtime_t *runtime,
                                              uint32_t timeout_ms) {
     if (!h2_runtime_ready(runtime))
@@ -291,6 +293,70 @@ static int wifi_remaining(h2_runtime_t *runtime, uint64_t started, uint32_t budg
     return H2_PAL_OK;
 }
 
+/* The generation is captured before connect, including synchronous PAL events.
+ * Never query PAL status here: only the existing event handler publishes state.
+ */
+static int wifi_wait_for_address(h2_runtime_t *runtime,
+                                 const h2_pal_wifi_sta_config_t *candidate,
+                                 uint32_t generation, uint64_t started,
+                                 uint32_t budget) {
+  struct h2_runtime_private *state = runtime->private_state;
+  h2_runtime_system_wifi_sta_state_t station = {0};
+  if (!state->wifi_connect_wait.cond) {
+    (void)h2_runtime_system_state_wifi_sta(runtime, &station);
+    return H2_PAL_OK;
+  }
+  uint64_t wait_started = 0;
+  int rc = h2_pal_time_get_monotonic_ms(runtime->time, &wait_started);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (wait_started < started || wait_started - started >= budget)
+    return H2_PAL_ERR_UNAVAILABLE;
+  uint32_t window = budget - (uint32_t)(wait_started - started);
+  if (window > H2_RUNTIME_WIFI_ADDRESS_WAIT_MS)
+    window = H2_RUNTIME_WIFI_ADDRESS_WAIT_MS;
+  int wait_rc = H2_PAL_OK;
+  h2_pal_mutex_lock(runtime->sync, state->wifi_connect_wait.mutex);
+  for (;;) {
+    if (generation != state->wifi_connect_wait.generation) {
+      generation = state->wifi_connect_wait.generation;
+      rc = h2_runtime_system_state_wifi_sta(runtime, &station);
+      if (rc != H2_PAL_OK)
+        break;
+      if (station.valid) {
+        if (station.status == H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_GOT_IP &&
+            station.ip_valid && station.ssid_len == candidate->ssid_len &&
+            !memcmp(station.ssid, candidate->ssid, candidate->ssid_len))
+          break;
+        if (station.status == H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_DISCONNECTED ||
+            station.status == H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_FAILED ||
+            state->wifi_connect_wait.kind ==
+                H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_LOST_IP) {
+          rc = H2_PAL_ERR_UNAVAILABLE;
+          break;
+        }
+      }
+    }
+    if (wait_rc != H2_PAL_OK) {
+      rc = wait_rc == H2_PAL_ERR_TIMEOUT ? H2_PAL_ERR_UNAVAILABLE : wait_rc;
+      break;
+    }
+    uint64_t now = 0;
+    rc = h2_pal_time_get_monotonic_ms(runtime->time, &now);
+    if (rc != H2_PAL_OK)
+      break;
+    if (now < wait_started || now - wait_started >= window) {
+      rc = H2_PAL_ERR_UNAVAILABLE;
+      break;
+    }
+    uint32_t remaining = window - (uint32_t)(now - wait_started);
+    wait_rc = h2_pal_cond_wait(runtime->sync, state->wifi_connect_wait.cond,
+                               state->wifi_connect_wait.mutex, remaining);
+  }
+  h2_pal_mutex_unlock(runtime->sync, state->wifi_connect_wait.mutex);
+  return rc;
+}
+
 h2_pal_result_t h2_runtime_wifi_connect_best_saved(h2_runtime_t *runtime, uint32_t timeout_ms) {
     if (!h2_runtime_ready(runtime))
         return H2_PAL_ERR_INVALID_ARG;
@@ -358,7 +424,18 @@ h2_pal_result_t h2_runtime_wifi_connect_best_saved(h2_runtime_t *runtime, uint32
             rc = budget_rc;
             break;
         }
+        uint32_t generation = 0;
+        if (runtime->private_state->wifi_connect_wait.mutex) {
+          h2_pal_mutex_lock(runtime->sync,
+                            runtime->private_state->wifi_connect_wait.mutex);
+          generation = runtime->private_state->wifi_connect_wait.generation;
+          h2_pal_mutex_unlock(runtime->sync,
+                              runtime->private_state->wifi_connect_wait.mutex);
+        }
         rc = h2_pal_wifi_sta_connect(runtime->wifi_sta, &candidates[i], remaining);
+        if (rc == H2_PAL_OK)
+          rc = wifi_wait_for_address(runtime, &candidates[i], generation,
+                                     started, budget);
         if (rc == H2_PAL_OK) {
             /* Fronting the entry is bookkeeping: report it, but never turn a
              * working connection into a failure. */

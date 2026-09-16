@@ -217,10 +217,15 @@ h2_pal_result_t h2_runtime_wifi_connect_and_save(h2_runtime_t *runtime,
                                                  uint32_t timeout_ms);
 /** Scan and try visible saved networks by RSSI, then stored recency.
  * Pin each candidate to its strongest observed AP. Success fronts the entry
- * and refreshes wall time, without writing PAL credentials or waiting for IP.
- * Zero selects a 15-second total listing/scan/association budget. Return the
- * last connection error if all fail, NOT_FOUND for an empty/invisible set,
- * TIMEOUT before the next attempt, or the underlying storage/scan/clock error.
+ * and refreshes wall time only after GOT_IP with a valid address for that SSID.
+ * Station events wake the wait without main-loop draining or status polling.
+ * Failed address acquisition tries the next candidate using the same scan and
+ * remaining budget. Without system events, association still counts as success.
+ * PAL credentials are unchanged; the original saved credential is fronted.
+ * Zero selects a 15-second total listing/scan/association/address budget.
+ * Return the last connection error if all fail, NOT_FOUND for an
+ * empty/invisible set, TIMEOUT before the next attempt, or the underlying
+ * storage/scan/clock error.
  */
 h2_pal_result_t h2_runtime_wifi_connect_best_saved(h2_runtime_t *runtime, uint32_t timeout_ms);
 

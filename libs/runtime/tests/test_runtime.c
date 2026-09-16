@@ -133,6 +133,8 @@ typedef struct test_sync {
     h2_pal_result_t cond_create_rc;
     h2_pal_result_t mutex_create_rc;
     h2_pal_result_t cond_wait_rc;
+    int (*wait_hook)(void *user, uint32_t timeout);
+    void *wait_user;
     h2_pal_result_t cond_broadcast_rc;
 } test_sync_t;
 
@@ -382,7 +384,13 @@ static h2_pal_result_t test_sync_wait_cond(
     test_sync_t *sync = (test_sync_t *)user;
     (void)cond;
     (void)mutex;
-    (void)timeout_ms;
+    if (sync->wait_hook) {
+      assert(mutex->locked);
+      mutex->locked = 0;
+      int rc = sync->wait_hook(sync->wait_user, timeout_ms);
+      mutex->locked = 1;
+      return rc;
+    }
     return sync->cond_wait_rc != H2_PAL_OK
                ? sync->cond_wait_rc
                : H2_PAL_ERR_WOULD_BLOCK;
@@ -3986,6 +3994,10 @@ typedef struct best_saved_fixture {
     size_t connects, scans, saves;
     int results[8], list_rc, scan_rc;
     test_time_t *time;
+    test_runtime_env_t *env;
+    void (*on_connect)(struct best_saved_fixture *f);
+    size_t waits, status_reads;
+    int scenario;
 } best_saved_fixture_t;
 
 static int saved_pref_close(h2_pal_pref_namespace_t *ns) {
@@ -4184,7 +4196,10 @@ static int best_saved_connect(void *user, const h2_pal_wifi_sta_config_t *config
     f->attempts[f->connects] = *config;
     f->budgets[f->connects] = timeout;
     f->time->now_ms += f->connect_ms;
-    return f->results[f->connects++];
+    int rc = f->results[f->connects++];
+    if (f->on_connect)
+      f->on_connect(f);
+    return rc;
 }
 
 static int best_saved_provision(void *user, const h2_pal_wifi_sta_config_t *config,
@@ -4345,6 +4360,165 @@ static void test_wifi_best_saved(void) {
     h2_runtime_deinit(runtime);
 }
 
+static void best_saved_event(best_saved_fixture_t *f,
+                             h2_pal_system_event_type_t type,
+                             h2_pal_wifi_sta_state_t state, bool valid_ip,
+                             char ssid) {
+  h2_pal_wifi_sta_status_t status = {
+      .state = state, .ssid_len = 1, .ip_valid = valid_ip};
+  status.ssid[0] = ssid;
+  status.ip.ip4 = valid_ip ? 0x0a000001u : 0;
+  assert(test_system_event_dispatch(f->env, type, &status, sizeof(status)) ==
+         H2_PAL_OK);
+}
+
+static void best_saved_associated(best_saved_fixture_t *f) {
+  char ssid = f->attempts[f->connects - 1].ssid[0];
+  best_saved_event(f, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTED,
+                   H2_PAL_WIFI_STA_STATE_CONNECTED, false, ssid);
+  if (f->scenario == 1)
+    best_saved_event(f, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP,
+                     H2_PAL_WIFI_STA_STATE_GOT_IP, true, ssid);
+}
+
+static int best_saved_status(void *user, h2_pal_wifi_sta_status_t *status) {
+  best_saved_fixture_t *f = user;
+  (void)status;
+  ++f->status_reads;
+  return H2_PAL_ERR_UNAVAILABLE;
+}
+
+static int best_saved_wait(void *user, uint32_t timeout) {
+  best_saved_fixture_t *f = user;
+  ++f->waits;
+  assert(!f->status_reads);
+  if (f->scenario >= 10) {
+    assert(timeout == (f->connects == 1 ? 8000u : 6960u));
+    if (f->connects == 1) {
+      f->time->now_ms += timeout;
+      return f->scenario == 10 ? H2_PAL_ERR_TIMEOUT : H2_PAL_OK;
+    }
+  } else {
+    assert(timeout <= 70);
+  }
+  if (f->scenario == 4) {
+    /* A spurious wake with neither an event nor clock progress must not
+     * cause a PAL status query. The next wait exhausts the candidate window. */
+    if (f->waits == 1)
+      return H2_PAL_OK;
+    assert(f->waits == 2 && timeout == 70);
+    f->time->now_ms += timeout;
+    return H2_PAL_ERR_TIMEOUT;
+  }
+  f->time->now_ms += 5;
+  char ssid = f->attempts[f->connects - 1].ssid[0];
+  if (f->scenario == 3 ||
+      ((f->scenario == 2 || f->scenario == 9) && f->connects == 1)) {
+    best_saved_event(f, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED,
+                     f->scenario == 9 ? H2_PAL_WIFI_STA_STATE_FAILED
+                                      : H2_PAL_WIFI_STA_STATE_DISCONNECTED,
+                     false, ssid);
+  } else if (f->scenario == 5 && f->connects == 1) {
+    best_saved_event(f, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP,
+                     H2_PAL_WIFI_STA_STATE_CONNECTED, false, ssid);
+  } else if (f->scenario == 6 && f->waits < 3) {
+    /* Neither another SSID nor an invalid address satisfies the wait. */
+    best_saved_event(f, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP,
+                     H2_PAL_WIFI_STA_STATE_GOT_IP, f->waits == 1,
+                     f->waits == 1 ? 'x' : ssid);
+  } else {
+    best_saved_event(f, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP,
+                     H2_PAL_WIFI_STA_STATE_GOT_IP, true, ssid);
+  }
+  return f->scenario == 8 ? H2_PAL_ERR_TIMEOUT : H2_PAL_OK;
+}
+
+static void test_wifi_best_saved_address(void) {
+  for (int scenario = 0; scenario < 12; ++scenario) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    h2_pal_time_vtable_t time_vtable = *env.time.vtable;
+    time_vtable.get_wall_ms = test_wall_get;
+    time_vtable.get_wall_status = test_wall_status;
+    env.time.vtable = &time_vtable;
+    env.time_state.wall_valid = 1;
+    env.time_state.wall_ms = 100;
+    best_saved_fixture_t f = {
+        .env = &env,
+        .time = &env.time_state,
+        .scenario = scenario,
+        .scan_ms = 20,
+        .connect_ms = 10,
+        .scan_count = 2,
+        .scan = {{.ssid = "a", .ssid_len = 1, .rssi = -20, .bssid = {1}},
+                 {.ssid = "b", .ssid_len = 1, .rssi = -40, .bssid = {2}}},
+    };
+    if (scenario == 4)
+      f.scan_count = 1; /* Last candidate expiry returns its own failure. */
+    env.sync_state.wait_hook = best_saved_wait;
+    env.sync_state.wait_user = &f;
+    const h2_pal_wifi_sta_vtable_t sta_vtable = {.scan = best_saved_scan,
+                                                 .connect = best_saved_connect,
+                                                 .get_status =
+                                                     best_saved_status};
+    const h2_pal_wifi_sta_api_t sta = {&f, &sta_vtable};
+    const h2_pal_pref_api_t pref = {&f, &saved_pref_vtable};
+    h2_runtime_config_t config = test_runtime_config(&env);
+    config.wifi_sta = &sta;
+    config.pref = &pref;
+    config.event_queue_capacity = 16;
+    if (scenario != 7) {
+      config.system_event = &env.system_event;
+      f.on_connect = best_saved_associated;
+    }
+    h2_runtime_t *runtime = NULL;
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    h2_pal_wifi_sta_config_t network = {
+        .ssid = "a", .ssid_len = 1, .password = "secret", .password_len = 6};
+    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+    network.ssid[0] = 'b';
+    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+    uint8_t before[920];
+    memcpy(before, f.blob, sizeof(before));
+    env.time_state.wall_ms = 200;
+    int expected = scenario == 3   ? H2_PAL_ERR_UNAVAILABLE
+                   : scenario == 4 ? H2_PAL_ERR_UNAVAILABLE
+                                   : H2_PAL_OK;
+    assert(h2_runtime_wifi_connect_best_saved(
+               runtime, scenario >= 10 ? 0 : 100) == expected);
+    assert(f.scans == 1 && !f.status_reads);
+    assert(f.connects == ((scenario == 2 || scenario == 3 || scenario == 5 ||
+                           scenario == 9 || scenario >= 10)
+                              ? 2u
+                              : 1u));
+    if (f.connects == 2) {
+      assert(f.attempts[1].ssid[0] == 'b');
+      assert(f.budgets[1] == (scenario >= 10 ? 6970u : 65u));
+    }
+    if (expected != H2_PAL_OK)
+      assert(!memcmp(before, f.blob, sizeof(before)));
+    else {
+      h2_runtime_wifi_saved_network_t saved[2];
+      size_t count = 0;
+      assert(h2_runtime_wifi_saved_list(runtime, saved, 2, &count) ==
+             H2_PAL_OK);
+      assert(count == 2 && saved[0].last_connected_at_ms == 200);
+      assert(saved[0].config.ssid[0] == (f.connects == 2 ? 'b' : 'a'));
+      assert(!saved[0].config.bssid_set && !saved[0].config.channel);
+      assert(saved[0].config.password_len == 6 &&
+             !memcmp(saved[0].config.password, "secret", 6));
+    }
+    assert(f.waits == ((scenario == 1 || scenario == 7) ? 0u
+                       : scenario == 6                  ? 3u
+                       : ((scenario >= 2 && scenario <= 5) || scenario == 9 ||
+                          scenario >= 10)
+                           ? 2u
+                           : 1u));
+    h2_runtime_deinit(runtime);
+    assert(!env.allocator_state.live_allocations);
+  }
+}
+
 static h2_pal_result_t test_wall_set(void *user, uint64_t wall_ms) {
     test_time_t *time = user;
     if (time->sleep_rc == H2_PAL_OK) {
@@ -4416,6 +4590,7 @@ int main(void) {
     test_wifi_connection_persistence();
     test_wifi_saved_set();
     test_wifi_best_saved();
+    test_wifi_best_saved_address();
     test_time_adjusted_event();
     test_runtime_firmware_info_provider();
     test_runtime_capabilities_are_bound_at_init();
