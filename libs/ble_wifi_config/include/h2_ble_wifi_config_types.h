@@ -83,36 +83,6 @@ typedef void (*h2_ble_wifi_config_event_fn)(
     int status);
 
 /**
- * Optional replacement for the built-in connect step.
- *
- * The callback runs on the service worker task, one call at a time, with no
- * service lock held. It is synchronous: the attempt is finished when it
- * returns, and the service encodes its result into the provisioning result
- * frame right after. There is no cancellation and no service-side timeout, so
- * the callback owns its own bound and must return within it;
- * h2_ble_wifi_config_close() waits for an attempt already in flight. The
- * callback owns the whole attempt, including the access-point check,
- * connecting, and persisting the credentials when it succeeds, and neither
- * h2_ble_wifi_config_config_t::connect_timeout_ms nor
- * h2_ble_wifi_config_config_t::skip_ap_verification_before_connect applies
- * to it.
- *
- * @param user h2_ble_wifi_config_config_t::user.
- * @param credentials Borrowed credentials, valid only for the call and never
- * retained by the service after the attempt.
- * @param out_reason Preset to H2_BLE_WIFI_CONFIG_REASON_NONE. On failure the
- * callback writes the reason byte to report; leaving it unchanged reports
- * H2_BLE_WIFI_CONFIG_REASON_UNKNOWN. It is ignored on success.
- * @return H2_PAL_OK when the station reached an address, or any other result
- * to report a failure. The returned value is not sent to the peer; only
- * @p out_reason is.
- */
-typedef int (*h2_ble_wifi_config_connect_fn)(
-    void *user,
-    const h2_ble_wifi_config_credentials_t *credentials,
-    h2_ble_wifi_config_reason_t *out_reason);
-
-/**
  * Optional replacement for the built-in disconnect-reason mapping.
  *
  * @param user h2_ble_wifi_config_config_t::user.
@@ -128,8 +98,8 @@ typedef h2_ble_wifi_config_reason_t (*h2_ble_wifi_config_reason_fn)(
 /** Platform capabilities borrowed by the service for its whole lifetime. */
 typedef struct h2_ble_wifi_config_api {
     /*
-     * Required for the built-in provisioning step, which records successful
-     * connections in the Runtime saved set. Must outlive this service.
+     * Required: the provisioning step records successful connections in the
+     * Runtime saved set. Must outlive this service.
      * Station transitions come from the Runtime's published snapshot rather
      * than raw PAL events: the Runtime already consumes those events and keeps
      * one coherent state, and only its main loop may drain the event queue.
@@ -184,8 +154,6 @@ typedef struct h2_ble_wifi_config_config {
      */
     bool gatt_service_registered_by_caller;
     h2_pal_task_options_t worker_task_options;
-    /** NULL selects the built-in Runtime connect-and-save step. */
-    h2_ble_wifi_config_connect_fn connect;
     /** NULL selects h2_ble_wifi_config_default_reason(). */
     h2_ble_wifi_config_reason_fn map_reason;
     h2_ble_wifi_config_event_fn on_event;

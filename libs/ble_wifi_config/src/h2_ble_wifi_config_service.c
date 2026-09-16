@@ -32,7 +32,7 @@ const uint8_t h2_ble_wifi_config_default_provision_uuid[16] = {
 
 static bool h2_ble_wifi_config_api_valid(const h2_ble_wifi_config_api_t *api) {
     return api != NULL && api->ble != NULL && api->wifi_sta != NULL &&
-           api->task != NULL && api->sync != NULL &&
+           api->runtime != NULL && api->task != NULL && api->sync != NULL &&
            api->system_event != NULL && api->allocator != NULL;
 }
 
@@ -405,15 +405,6 @@ static int h2_ble_wifi_config_connect(
     h2_ble_wifi_config_peer_t peer,
     h2_ble_wifi_config_reason_t *out_reason) {
     *out_reason = H2_BLE_WIFI_CONFIG_REASON_NONE;
-    if (service->config.connect != NULL) {
-        int rc = service->config.connect(
-            service->config.user, credentials, out_reason);
-        if (rc != H2_PAL_OK && *out_reason == H2_BLE_WIFI_CONFIG_REASON_NONE) {
-            *out_reason = H2_BLE_WIFI_CONFIG_REASON_UNKNOWN;
-        }
-        return rc;
-    }
-
     if (!service->config.skip_ap_verification_before_connect &&
         !h2_ble_wifi_config_ap_present(service, credentials)) {
         *out_reason = H2_BLE_WIFI_CONFIG_REASON_AP_NOT_FOUND;
@@ -969,7 +960,7 @@ int h2_ble_wifi_config_open(
         return H2_PAL_ERR_INVALID_ARG;
     }
     *out_service = NULL;
-    if (!h2_ble_wifi_config_api_valid(api) || ((!config || !config->connect) && !api->runtime)) {
+    if (!h2_ble_wifi_config_api_valid(api)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     h2_ble_wifi_config_t *service =
