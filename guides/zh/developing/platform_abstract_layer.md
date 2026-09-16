@@ -10,7 +10,7 @@ Platform Abstraction Layer（PAL）定义 GizOS 使用的平台抽象能力。PA
 
 `libs/pal/include` 中实际参与项目构建的头文件是 PAL 的生产 Public API contract。
 
-PAL 包定义 contract，并提供一组可选的 canonical unsupported API object：
+PAL 包定义 contract，并提供可选的 canonical unsupported API object 与可复用的逐项 unsupported stub：
 
 ```text
 libs/pal/include/
@@ -21,7 +21,7 @@ libs/pal/include/
     ├── net/                    # 网络与传输能力
     ├── application/            # 应用协议能力
     ├── hal/                    # 硬件抽象能力
-    └── h2_pal_unsupported.h    # canonical unsupported API accessor
+    └── h2_pal_unsupported.h    # canonical unsupported API accessor 与逐项 stub
 libs/pal/src/unsupported/       # 每个 capability 一个 canonical unsupported translation unit
 └── <capability>.c
 ```
@@ -31,9 +31,15 @@ Bazel package、target、Runtime surface 或 provider ownership。
 
 `src/unsupported/` 是 `libs/pal` 中允许存在的唯一通用 backend source。真实平台实现、dummy backend 和 fake backend 不属于 PAL contract 包。
 
+`h2_pal_unsupported.h` 同时提供整项 capability 的 canonical accessor
+`h2_pal_unsupported_*_api()` 与逐项 vtable stub `h2_pal_unsupported_ble_*`。
+只实现部分 capability 的 provider 必须用对应 unsupported stub 填满其余 vtable
+member，不能留 `NULL`，使未实现的 operation 返回 `H2_PAL_ERR_UNSUPPORTED`，
+避免与 inline wrapper 对空 slot 返回的 `H2_PAL_ERR_INVALID_ARG` 混淆。
+
 `//libs/pal:pal` 是 header-only contract target；只消费 PAL 类型、vtable 或真实
-provider 的 target 只依赖它。直接调用 `h2_pal_unsupported_*_api()` 的 target 显式
-依赖 `//libs/pal:unsupported`。后者按 capability 拆成独立 translation unit，使静态
+provider 的 target 只依赖它。直接调用 `src/unsupported/` 中 accessor 或逐项 stub
+的 target 显式依赖 `//libs/pal:unsupported`。后者按 capability 拆成独立 translation unit，使静态
 链接器只抽取真正引用的 unsupported API object，不使用 `alwayslink` 或 whole-archive。
 
 ESP-IDF、BK7258 和 BK3633 由 Bazel 使用对应 firmware toolchain 将

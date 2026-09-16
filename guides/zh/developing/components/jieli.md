@@ -49,7 +49,7 @@
 
 `native_component_src/jieli/wl82/h2_pal_core` 为 AC791N 实现 Memory、Log、Time、Timer、Sync、Queue、Task、System Event 与 Firmware Info 的 PAL provider，公开入口是 `include/h2_jieli_wl82_platform_core.h`：
 
-- **SDK 边界。** Provider 只依赖 `h2_jieli_wl82_sdk_port.h`（SDK heap、调试输出、board 提供的 64 位单调时钟、`os_time_dly`、`os_mutex_*`/`os_sem_*`、`os_task_create`/删除/park/当前任务、`sys_timer` 派发，以及异常捕获用的单次 `testset` 字节锁）。`src/h2_jieli_wl82_sdk_port.c` 是唯一 include SDK 头文件的翻译单元，只由 `jieli_firmware` native 构建编译（`h2_pal_core` target 为 `manual`）。它在链接时需要 board layout 提供的 `task_info_table` 与 `h2_jieli_default_task_policy`；DevKit board、task policy 生成、linker export guard 与 firmware link 验收不属于本 package。零超时的 mutex/semaphore 用 `os_*_accept`，因为 SDK `pend(…, 0)` 表示永久等待。
+- **SDK 边界。** Provider 只依赖 `h2_jieli_wl82_sdk_port.h`（SDK heap、调试输出、board 提供的 64 位单调时钟、`os_time_dly`、`os_mutex_*`/`os_sem_*`、`os_task_create`/删除/park/当前任务、`sys_timer` 派发，以及异常捕获用的单次 `testset` 字节锁）。`src/h2_jieli_wl82_sdk_port.c` 是唯一 include SDK 头文件的翻译单元，只由 `jieli_firmware` native 构建编译（`h2_pal_core` target 为 `manual`）。它在链接时需要 board layout 提供的 `task_info_table` 与 `h2_jieli_default_task_policy`；AC791N DevKit BSP 位于 `boards/jieli_ac791n_devkit/ac791n`；板级实现、task policy 生成、linker export guard 与 firmware link 验收不属于 `h2_pal_core` package。零超时的 mutex/semaphore 用 `os_*_accept`，因为 SDK `pend(…, 0)` 表示永久等待。
 - **与 br23 的能力差异。**
   - Sync 支持递归 mutex 和 condition variable。condition 为每个 wait 使用独立 SDK semaphore，只接受非递归 mutex，仍有等待者时 destroy 返回 `H2_PAL_ERR_INVALID_STATE`。
   - Task 支持 `join`：每个任务有唯一 native 名 `<policy>/<hex id>`（匿名任务为 `$h2anon/…`，调用者不能使用该前缀），join 等待完成后按该名字删除；同名 policy 的多个任务互不影响。
@@ -103,6 +103,16 @@ FDK AAC 与 Linux FDK AAC decoder provider 允许 pi32v2；`libs/fdk_aac` 在该
 - 两种 artifact 都继承底层 `jieli_firmware` rule 的 Linux x86_64 execution 与 target
   compatibility；macOS 通过 Linux/amd64 container 构建，不引入 macOS 原生 vendor
   toolchain contract。
+
+### AC791N DevKit BSP
+
+`boards/jieli_ac791n_devkit/ac791n` 提供 board identity 与 device UID、TIMER5 单调时钟、UART console、NOR disk partition、NOR 上基于 LittleFS 的 Pref、共享引用计数 NOR write window、SD filesystem、Net/Netif 与 Wi-Fi（STA、AP、saved settings）、BLE host、Audio、Display/Touch/Button input，以及 board runtime config。
+
+所有 NOR erase/write 都必须通过 `h2_jieli_flash_window_open()` / `h2_jieli_flash_window_close()` 配对管理；包括失败在内的每条退出路径都关闭 lease，最后一次 close 恢复 SDK write protection。嵌套或重叠 lease 始终保留首次 open 保存的 protection 值，直到最后一个 lease 关闭。
+
+Board 不安装任何 `NULL` vtable member；未实现的 operation 返回 `H2_PAL_ERR_UNSUPPORTED`，包括 `tcp_listen`、`tcp_accept`、`set_default`，以及通过共享 `h2_pal_unsupported_ble_*` stub 填充的 BLE scan / central-GATT entry。
+
+`h2_jieli_ac791n_devkit_runtime_config()` 只提供 `h2_runtime_config_t`，`h2_jieli_ac791n_devkit_runtime_deinit()` 只释放 board 持有的 SD filesystem 资源。完整 Runtime 初始化、input 启动、app 调用和 `h2_runtime_deinit()` 属于最终 artifact target，见 [Runtime 初始化与接线](../runtime.md#初始化与接线)。
 
 ## 烧录与升级边界
 
