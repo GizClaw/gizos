@@ -664,6 +664,69 @@ static void test_nonprogress_does_not_wake_data_waiters(
     CHECK(h2_bleikcp_stream_destroy(stream) == H2_PAL_OK);
 }
 
+/* A full input frame queue drops the datagram for the peer's KCP to
+ * retransmit; it must not close the stream or publish a fatal status. */
+static void test_input_overflow_drops_frames(const h2_bleikcp_api_t *api) {
+    const h2_bleikcp_config_t config = { .input_frame_capacity = 2u };
+    h2_bleikcp_resolved_config_t resolved;
+    CHECK(h2_bleikcp_resolve_config(api, &config, &resolved) == H2_PAL_OK);
+    h2_bleikcp_t *stream = NULL;
+    CHECK(h2_bleikcp_stream_create(
+              api, &resolved, H2_BLEIKCP_ROLE_SERVER, 10u, 244u, false,
+              &stream) == H2_PAL_OK);
+
+    /* A KCP window-size segment (cmd 84) for the stream's conv: valid input
+     * that only updates the remote window. */
+    uint8_t frame[H2_BLEIKCP_KCP_OVERHEAD] = {0};
+    frame[0] = (uint8_t)resolved.value.conv;
+    frame[1] = (uint8_t)(resolved.value.conv >> 8u);
+    frame[2] = (uint8_t)(resolved.value.conv >> 16u);
+    frame[3] = (uint8_t)(resolved.value.conv >> 24u);
+    frame[4] = 84u;
+    frame[6] = 8u;
+
+    CHECK(h2_bleikcp_stream_input(stream, frame, sizeof(frame)) == H2_PAL_OK);
+    CHECK(h2_bleikcp_stream_input(stream, frame, sizeof(frame)) == H2_PAL_OK);
+    CHECK(h2_bleikcp_stream_input(stream, frame, sizeof(frame)) ==
+          H2_PAL_ERR_FULL);
+    CHECK(stream->input.count == 2u);
+    CHECK(!stream->closing);
+    CHECK(stream->fatal_status == H2_PAL_OK);
+    h2_bleikcp_stats_t stats;
+    CHECK(h2_bleikcp_get_stats(stream, &stats) == H2_PAL_OK);
+    CHECK(stats.dropped_input == 1u);
+    CHECK(stats.rx_frames == 0u);
+
+    /* The worker drains the queued frames and the stream keeps running. */
+    CHECK(h2_bleikcp_stream_start(stream) == H2_PAL_OK);
+    uint64_t started_ms = 0u;
+    CHECK(h2_pal_time_get_monotonic_ms(api->time, &started_ms) == H2_PAL_OK);
+    for (;;) {
+        CHECK(h2_bleikcp_get_stats(stream, &stats) == H2_PAL_OK);
+        if (stats.rx_frames == 2u) break;
+        uint64_t now_ms = 0u;
+        CHECK(h2_pal_time_get_monotonic_ms(api->time, &now_ms) == H2_PAL_OK);
+        CHECK(now_ms - started_ms < TEST_IO_TIMEOUT_MS);
+        CHECK(h2_pal_time_sleep_ms(api->time, 1u) == H2_PAL_OK);
+    }
+    CHECK(h2_bleikcp_stream_input(stream, frame, sizeof(frame)) == H2_PAL_OK);
+    for (;;) {
+        CHECK(h2_bleikcp_get_stats(stream, &stats) == H2_PAL_OK);
+        if (stats.rx_frames == 3u) break;
+        uint64_t now_ms = 0u;
+        CHECK(h2_pal_time_get_monotonic_ms(api->time, &now_ms) == H2_PAL_OK);
+        CHECK(now_ms - started_ms < TEST_IO_TIMEOUT_MS);
+        CHECK(h2_pal_time_sleep_ms(api->time, 1u) == H2_PAL_OK);
+    }
+    (void)h2_pal_mutex_lock(api->sync, stream->mutex);
+    CHECK(!stream->closing);
+    CHECK(stream->fatal_status == H2_PAL_OK);
+    (void)h2_pal_mutex_unlock(api->sync, stream->mutex);
+    CHECK(stats.dropped_input == 1u);
+    CHECK(stats.input_errors == 0u);
+    CHECK(h2_bleikcp_stream_destroy(stream) == H2_PAL_OK);
+}
+
 static void test_task_name_ownership(const h2_bleikcp_api_t *api) {
     const h2_bleikcp_config_t config = {
         .worker_task_options = { "caller/worker", 7u * 1024u },
@@ -908,6 +971,7 @@ int main(void) {
     test_task_name_ownership(&api);
     test_flush_result_precedence(&api);
     test_nonprogress_does_not_wake_data_waiters(&runtime, &api);
+    test_input_overflow_drops_frames(&api);
     test_extra_characteristics(&runtime, &api);
     handler_state_t handler_state = { .api = &api };
     event_state_t event_state = {0};

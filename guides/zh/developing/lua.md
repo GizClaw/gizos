@@ -329,7 +329,9 @@ interval、2000 ms supervision timeout 连接；掉电或离开范围在一个 s
 内报告 `"lost"`。Host 可以重新协商连接参数：运行 H2Loader BLE 命令服务的 App image
 会把每个 peripheral 连接改为 15 ms interval、4000 ms supervision timeout，此时
 `"lost"` 约 4 s 后到达。bleikcp 使用 244-byte datagram、16-segment
-window、32 帧输入队列和 4096-byte TX/RX buffer，关闭 congestion window。KCP 上的帧
+window、32 帧输入队列和 4096-byte TX/RX buffer，关闭 congestion window。输入队列在
+bleikcp worker 一个 slice 内被一个 window 加其重传塞满时只丢帧、由对端 KCP 重传，不会
+结束 session。KCP 上的帧
 为 `[type u8][len u16 big-endian][payload]`：`HELLO`（双方先发，5000 ms 内校验）、
 `BYE`（close、job 结束或 Host stop 时发送并最多 flush 400 ms，对端立即报告
 `"peer_closed"`；BYE 是有界的尽力而为，预算内未送达时对端报告 `"lost"`）、`MESSAGE`（一条可靠消息）和 `STREAM`（最多 512 字节流数据）。
