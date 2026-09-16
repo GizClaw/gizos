@@ -1,5 +1,6 @@
 #include "h2_quectel_internal.h"
 
+#include <errno.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -377,4 +378,95 @@ void h2_quectel_call_watchdog(void *user) {
     }
     memset(response, 0, sizeof(*response));
     (void)h2_quectel_operation_end(modem, H2_PAL_OK);
+}
+
+/* strtol plus explicit bounds avoids accepting overflowing or partial levels. */
+static int parse_volume_integer(const char **cursor, int *out) {
+    char *end;
+    errno = 0;
+    long value = strtol(*cursor, &end, 10);
+    if (end == *cursor || errno == ERANGE || value < INT_MIN || value > INT_MAX) {
+        return 0;
+    }
+    while (h2_quectel_ascii_space((unsigned char)*end)) { end++; }
+    *cursor = end;
+    *out = (int)value;
+    return 1;
+}
+
+/* The caller owns the operation lock across preparation, probe and command. */
+static h2_pal_result_t prepare_call_volume(h2_quectel_modem_t *modem) {
+    if ((modem->capabilities & H2_PAL_MODEM_CAPABILITY_LOW_POWER) != 0u) {
+        if (modem->opened == 0u) { return H2_PAL_ERR_CLOSED; }
+        h2_pal_result_t rc = h2_quectel_modem_prepare(modem);
+        if (rc != H2_PAL_OK) { return rc; }
+    }
+    if (modem->call_volume_range_cached) { return H2_PAL_OK; }
+    h2_quectel_response_t response;
+    h2_pal_result_t rc = h2_quectel_at_exchange(modem, "AT+CLVL=?", &response, 0);
+    if (rc != H2_PAL_OK) { return rc; }
+    int min = 0, max = 5;
+    const char *line = h2_quectel_response_find(&response, "+CLVL:");
+    int valid = 0;
+    if (line != NULL && !response.truncated) {
+        const char *cursor = line + strlen("+CLVL:");
+        while (h2_quectel_ascii_space((unsigned char)*cursor)) { cursor++; }
+        if (*cursor == '(') {
+            cursor++;
+            if (parse_volume_integer(&cursor, &min) && *cursor == '-') {
+                cursor++;
+                if (parse_volume_integer(&cursor, &max) && *cursor == ')') {
+                    cursor++;
+                    while (h2_quectel_ascii_space((unsigned char)*cursor)) { cursor++; }
+                    valid = *cursor == '\0' && min >= 0 && max > min;
+                }
+            }
+        }
+    }
+    modem->call_volume_min = valid ? min : 0;
+    modem->call_volume_max = valid ? max : 5;
+    modem->call_volume_range_cached = 1u;
+    return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_quectel_set_call_volume(void *user, uint32_t percent) {
+    h2_quectel_modem_t *modem = user;
+    if (percent > 100u) { return H2_PAL_ERR_INVALID_ARG; }
+    h2_pal_result_t rc = h2_quectel_operation_begin(modem);
+    if (rc != H2_PAL_OK) { return rc; }
+    rc = prepare_call_volume(modem);
+    if (rc == H2_PAL_OK) {
+        const uint64_t span = (uint64_t)(modem->call_volume_max - modem->call_volume_min);
+        const int level = modem->call_volume_min + (int)((percent * span + 50u) / 100u);
+        char command[32];
+        (void)snprintf(command, sizeof(command), "AT+CLVL=%d", level);
+        rc = h2_quectel_at_exchange(modem, command, NULL, 0);
+    }
+    return h2_quectel_operation_end(modem, rc);
+}
+
+h2_pal_result_t h2_quectel_get_call_volume(void *user, uint32_t *out_percent) {
+    h2_quectel_modem_t *modem = user;
+    if (out_percent == NULL) { return H2_PAL_ERR_INVALID_ARG; }
+    h2_pal_result_t rc = h2_quectel_operation_begin(modem);
+    if (rc != H2_PAL_OK) { return rc; }
+    rc = prepare_call_volume(modem);
+    if (rc == H2_PAL_OK) {
+        h2_quectel_response_t response;
+        rc = h2_quectel_at_exchange(modem, "AT+CLVL?", &response, 0);
+        if (rc == H2_PAL_OK) {
+            const char *line = h2_quectel_response_find(&response, "+CLVL:");
+            const char *cursor = line != NULL ? line + strlen("+CLVL:") : "";
+            int level;
+            if (response.truncated || !parse_volume_integer(&cursor, &level) || *cursor != '\0') {
+                rc = H2_PAL_ERR_FORMAT;
+            } else {
+                if (level < modem->call_volume_min) { level = modem->call_volume_min; }
+                if (level > modem->call_volume_max) { level = modem->call_volume_max; }
+                const uint64_t span = (uint64_t)(modem->call_volume_max - modem->call_volume_min);
+                *out_percent = (uint32_t)(((uint64_t)(level - modem->call_volume_min) * 100u + span / 2u) / span);
+            }
+        }
+    }
+    return h2_quectel_operation_end(modem, rc);
 }
