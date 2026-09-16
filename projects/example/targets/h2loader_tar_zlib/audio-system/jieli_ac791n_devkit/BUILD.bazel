@@ -1,3 +1,6 @@
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load("//tools/bazel:build_setting_header.bzl", "build_setting_header")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_jieli_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
@@ -12,41 +15,54 @@ AC791N_COMPATIBILITY = select({
     "//conditions:default": ["@platforms//:incompatible"],
 })
 
+AUDIO_DEFAULT_POLICY = "10 4096 128"
+
+AUDIO_POLICIES = [
+    "audio-system/music 10 24576 128",
+    "#C0audio-system/mic 10 8192 128",
+    "h2color/runtime 10 2048 128",
+    "h2loader/appcmd 10 12288 128",
+    "h2loader/blecmd 10 12288 128",
+    # The App command loop runs synchronously on the session task.
+    "$bleikcp/server 10 12288 128",
+    "$bleikcp/kcp 10 1536 128",
+    "$h2loader/blelink 10 1536 64",
+    "$h2loader/return 10 4096 128",
+    "$h2loader/uartcmd 10 4096 128",
+    "$runtime/input 10 4096 128",
+    "$runtime/nfc 10 4096 128",
+]
+
+AUDIO_SDK_POLICIES = [
+    "app_core 15 8192 1024",
+    "sys_event 29 512 0",
+    "systimer 14 256 0",
+    "sys_timer 9 512 128",
+    "dw_update 21 512 32",
+    "h2app_rx 12 4096 128",
+    "#C0audio_server 16 2048 256",
+    "#C0audio_decoder 30 2048 64",
+    "#C0audio_encoder 12 2048 64",
+    "#C0aec_encoder 13 1024 0",
+    "#C0audio_mix 28 2048 64",
+    "#C0btctrler 19 768 384",
+    "#C0btstack 18 1536 384",
+]
 
 jieli_target_task_policy(
     name = "audio_system_task_policy",
-    default_policy = "10 4096 128",
+    default_policy = AUDIO_DEFAULT_POLICY,
     graph = [":audio_system_target", "//projects/example/native_component_src/jieli/wl82/devkit_app:launcher"],
-    policies = [
-        "audio-system/music 10 24576 128",
-        "#C0audio-system/mic 10 8192 128",
-        "h2color/runtime 10 2048 128",
-        "h2loader/appcmd 10 12288 128",
-        "h2loader/blecmd 10 12288 128",
-        # The App command loop runs synchronously on the session task.
-        "$bleikcp/server 10 12288 128",
-        "$bleikcp/kcp 10 1536 128",
-        "$h2loader/blelink 10 1536 64",
-        "$h2loader/return 10 4096 128",
-        "$h2loader/uartcmd 10 4096 128",
-        "$runtime/input 10 4096 128",
-        "$runtime/nfc 10 4096 128",
-    ],
-    sdk_policies = [
-        "app_core 15 8192 1024",
-        "sys_event 29 512 0",
-        "systimer 14 256 0",
-        "sys_timer 9 512 128",
-        "dw_update 21 512 32",
-        "h2app_rx 12 4096 128",
-        "#C0audio_server 16 2048 256",
-        "#C0audio_decoder 30 2048 64",
-        "#C0audio_encoder 12 2048 64",
-        "#C0aec_encoder 13 1024 0",
-        "#C0audio_mix 28 2048 64",
-        "#C0btctrler 19 768 384",
-        "#C0btstack 18 1536 384",
-    ],
+    policies = AUDIO_POLICIES,
+    sdk_policies = AUDIO_SDK_POLICIES,
+)
+
+jieli_target_task_policy(
+    name = "audio_stop_restart_task_policy",
+    default_policy = AUDIO_DEFAULT_POLICY,
+    graph = [":audio_stop_restart_target", "//projects/example/native_component_src/jieli/wl82/devkit_app:launcher"],
+    policies = AUDIO_POLICIES + ["audio-cycle 10 32768 128"],
+    sdk_policies = AUDIO_SDK_POLICIES,
 )
 
 firmware_lib_component(
@@ -101,6 +117,74 @@ h2loader_tar_zlib(
     image = "audio-system",
     package_data = ["//projects/example/apps/audio-system:data/audio/music_loop.ogg"],
     package_data_root = "projects/example/apps/audio-system/data",
+    role = "app",
+    target = "wl82",
+)
+
+string_flag(
+    name = "stop_restart_cycles",
+    build_setting_default = "10",
+)
+
+build_setting_header(
+    name = "stop_restart_config",
+    flag = ":stop_restart_cycles",
+    macro = "H2_AUDIO_STOP_RESTART_CYCLES",
+    out = "h2_audio_stop_restart_config.h",
+)
+
+h2_tasks(
+    name = "audio_stop_restart_tasks",
+    tasks = ["audio-cycle"],
+)
+
+firmware_native_component(
+    name = "audio_stop_restart_target",
+    srcs = ["src/audio_stop_restart_target.c"],
+    hdrs = [
+        ":stop_restart_config",
+        "//projects/example/apps/audio-system/app:include/h2_smoke_audio_system.h",
+        "//projects/example/apps/audio-system/app:include/h2_smoke_audio_system_task_names.h",
+    ],
+    include_roots = ["projects/example/apps/audio-system/app/include"],
+    native_srcs = [
+        "//projects/example/apps/audio-system/app:src/app.c",
+        "//projects/example/apps/audio-system/app:src/task_names.c",
+    ],
+    component_name = "jieli_ac791n_devkit_audio_stop_restart_target",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = [
+        ":audio_stop_restart_tasks",
+        "//projects/example/apps/audio-system/app:tasks",
+        ":audio_system_libs",
+        "//boards/jieli_ac791n_devkit/ac791n",
+        "//libs/pal:pal_header_files",
+        "//native_component_src/jieli/wl82/opus_port",
+    ],
+)
+
+h2loader_jieli_firmware(
+    name = "audio_stop_restart_firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":audio_stop_restart_target",
+        "//projects/example/native_component_src/jieli/wl82/devkit_app:launcher",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "audio-stop-restart",
+    target = "wl82",
+    task_policy = ":audio_stop_restart_task_policy",
+)
+
+h2loader_tar_zlib(
+    name = "audio_stop_restart_package",
+    board = "jieli_ac791n_devkit",
+    firmware = ":audio_stop_restart_firmware",
+    image = "audio-stop-restart",
+    package_data = ["//projects/example/apps/audio-system:data/audio/music_loop.ogg"],
+    package_data_root = "projects/example/apps/audio-system/data",
+    tags = ["no-release", "manual"],
     role = "app",
     target = "wl82",
 )
