@@ -21,6 +21,14 @@ Managed package 内的 `app/jieli/update.ufw` 是 native updater 消费的 image
 
 同一 BUILD 文件中的 `:loader_watchdog_package` 在 Loader stage `105` 执行相同的停喂检查。编译通过不代表复位行为已验证；实机记录保留在 PR #178。
 
+### Audio stop/restart 诊断
+
+`//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:audio_stop_restart_package` 是手动诊断 App（`manual`、`no-release`，不进入发布目录），用于在实机上证明板级 audio provider 能承受受控的停止→重启循环。它复用 audio-system 场景（Opus 音乐播放加麦克风回环）：入口初始化 Runtime、打印 `H2_JIELI_AUDIO_CYCLE baseline heap_free=<n> tasks=<n> cycles=<N>`，启动 image 自有的 `audio-cycle` worker，并在第一轮 `h2_smoke_audio_system_run()` 返回后以 `H2_JIELI_AUDIO_CYCLE_READY cycles=<N> result=<rc>` 返回该结果，使 launcher 在 120 s trial 窗口内确认；随后 worker 持有 Runtime 完成其余循环。循环次数 N 是 Bazel build setting，默认 10，可用 `--//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:stop_restart_cycles=50` 覆盖。
+
+每轮循环启动场景、流式运行 3 s、经正常 `h2_smoke_audio_system_stop()` 路径停止（失败时按 audio target 的 100 次、10 ms 间隔有界重试），然后用 `h2_jieli_ac791n_devkit_audio_idle_probe()` 检查 provider 已无打开 track、无保留操作、无 PCM ring 字节、无 SDK server 句柄、麦克风关闭且扬声器停止，并最多等待 2 s 让 `os_tasks_num_query()` 回到参考值。每轮打印一行 `H2_JIELI_AUDIO_CYCLE cycle=<i>/<N> run=<rc> mic_frames=<n> music_frames=<n> consumed=<bytes> stop=<rc> stop_ms=<ms> idle=<0|1> heap_free=<bytes> tasks=<n> result=<ok|fail>`：`run=0`、`mic_frames>0`、`music_frames>0`、`consumed>0`（SDK decoder 确实从 track ring 取走 PCM）、`stop=0`、`idle=1` 且 `tasks` 等于参考值才算 `ok`。参考值取自第 1 轮结束后的堆余量和任务数，因此 SDK 首次打开后按设计常驻的分配不计为泄漏，但 baseline 仍打印以便看到首轮差值。结束时打印 `H2_JIELI_AUDIO_CYCLE_SUMMARY cycles=<N> ok=<n> failed=<n> heap_baseline=<b> heap_ref=<r> heap_last=<l> heap_min=<m> tasks_baseline=<b> tasks_ref=<r> tasks_max=<x> result=<ok|fail>`，`result=ok` 要求全部循环 `ok` 且 `heap_last >= heap_ref`。任一轮 `run()` 或停止失败即终止循环，但汇总行始终打印。
+
+Runtime 归属遵循 audio target 的规则：最后一次停止成功后 worker 调用 `h2_runtime_deinit()`；有界清理耗尽时打印 `cleanup did not complete; Runtime intentionally retained` 并保留 Runtime，不释放 worker 仍可能借用的内存。该镜像在循环结束后保持已确认状态留在 P2，主机用 `reboot loader` 返回 P1。
+
 ## 分区与启动
 
 `[0, 0x700000)` 由 SDK double-bank packer 管理。当前 pinned WL82 layout 的两个 SFC 映射基址分别为 `0x4020`、`0x37c020`；它们不是可跨 SDK/layout 复用的公共 PAL 常量。稳定 Loader 在 P1；P2 保存 App，或在 Loader 自更新期间暂存候选 Loader。
@@ -102,6 +110,10 @@ Loader 只有 UART 与 BLE capability，不提供 Wi-Fi 与 HTTP；runner 一旦
 直接 arm/publish 不修复非空冲突头；有效但不同的完整 bank 也不得自动擦除，只允许显式完整安装替换。相同头 publish 幂等，P2 arm 拒绝，不在 P2 增加恢复擦除。[固定 SDK 追踪、host 回归与两轮 UART 验收](./evidence/2026-09-15/p2-header-reinstall.md)记录擦除命令/地址、镜像 SHA、独立状态及未捕获确认文本的限制。
 
 ## 验收记录
+
+### 2026-09-17：audio provider 停止/重启循环
+
+`031b5da4`（Issue #450，基于 main `4fd6e947`）新增 `audio-stop-restart` 手动诊断镜像，在同一 UID `d879349abc9f` 上以 N=10（package `f80f53bf…`）和 N=50（package `a73eda3a…`）各跑一轮：两轮 `H2_JIELI_AUDIO_CYCLE_READY result=0`、`JIELI_APP_CONFIRM result=OK`，逐轮均 `run=0 stop=0 idle=1 result=ok`，`heap_free` 从第 1 轮结束起恒为 `7171688`、`tasks` 恒为 `16`（baseline `7315688` / `15` 的一次性差值来自 SDK audio server 首次打开），N=50 的 `stop_ms` 在 81–961 ms 之间，汇总行均 `result=ok`；最终独立 status 为 P1 Loader、Stage 空、`last_result=0`。写入阻塞时停止与过期回调拒绝仅由 host 测试覆盖。[全部镜像 SHA、逐步结果、堆与任务数与边界](./evidence/2026-09-17/audio-stop-restart.md)。
 
 ### 2026-09-17：System Event provider 迁移到 SDK sys_event
 
