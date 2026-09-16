@@ -86,6 +86,11 @@ typedef struct fake_runtime {
     int events[64];
     size_t event_count;
 
+    h2_runtime_t *runtime;
+    h2_pal_pref_api_t pref;
+    h2_pal_pref_namespace_t pref_ns;
+    uint8_t saved_blob[920];
+    size_t saved_blob_len;
     h2_pal_mem_api_t allocator;
     h2_pal_ble_t ble;
     h2_pal_wifi_sta_t wifi_sta;
@@ -588,6 +593,133 @@ static const h2_pal_wifi_sta_vtable_t s_wifi_vtable = {
     .connect_and_save = fake_wifi_connect,
 };
 
+/* Runtime never starts its input worker in these service tests. */
+struct h2_pal_queue {
+    unsigned unused;
+};
+
+static int fake_queue_create(void *user, const h2_pal_queue_config_t *config,
+                             h2_pal_queue_t **out) {
+    (void)user;
+    (void)config;
+    *out = calloc(1, sizeof(**out));
+    return *out ? H2_PAL_OK : H2_PAL_ERR_NO_MEMORY;
+}
+
+static void fake_queue_destroy(void *user, h2_pal_queue_t *queue) {
+    (void)user;
+    free(queue);
+}
+
+static int fake_queue_recv(void *user, h2_pal_queue_t *queue, void *out, uint32_t timeout) {
+    (void)user;
+    (void)queue;
+    (void)out;
+    (void)timeout;
+    return H2_PAL_ERR_TIMEOUT;
+}
+
+static int fake_pref_close(h2_pal_pref_namespace_t *ns) {
+    (void)ns;
+    return H2_PAL_OK;
+}
+
+static int fake_pref_get(h2_pal_pref_namespace_t *ns, const h2_pal_mem_api_t *mem, const char *key,
+                         void **out, size_t *len) {
+    fake_runtime_t *runtime = ns->user;
+    CHECK(strcmp(key, "saved_v1") == 0);
+    if (!runtime->saved_blob_len)
+        return H2_PAL_ERR_NOT_FOUND;
+    *len = runtime->saved_blob_len;
+    *out = h2_pal_mem_alloc(mem, *len);
+    CHECK(*out);
+    memcpy(*out, runtime->saved_blob, *len);
+    return H2_PAL_OK;
+}
+
+static int fake_pref_set(h2_pal_pref_namespace_t *ns, const char *key, const void *data,
+                         size_t len) {
+    fake_runtime_t *runtime = ns->user;
+    CHECK(strcmp(key, "saved_v1") == 0 && len == sizeof(runtime->saved_blob));
+    memcpy(runtime->saved_blob, data, len);
+    runtime->saved_blob_len = len;
+    return H2_PAL_OK;
+}
+
+static int fake_pref_commit(h2_pal_pref_namespace_t *ns) {
+    (void)ns;
+    return H2_PAL_OK;
+}
+
+static int fake_pref_open(void *user, const char *name, h2_pal_pref_open_mode_t mode,
+                          h2_pal_pref_namespace_t **out) {
+    fake_runtime_t *runtime = user;
+    CHECK(strcmp(name, "h2runtime_wifi") == 0);
+    (void)mode;
+    *out = &runtime->pref_ns;
+    return H2_PAL_OK;
+}
+
+static void fake_runtime_bind(fake_runtime_t *runtime) {
+    static const h2_pal_queue_vtable_t queue_vtable = {
+        .create = fake_queue_create, .destroy = fake_queue_destroy, .recv = fake_queue_recv};
+    static const h2_pal_queue_api_t queue = {.vtable = &queue_vtable};
+    static const h2_pal_pref_vtable_t pref_vtable = {.open = fake_pref_open};
+    runtime->pref = (h2_pal_pref_api_t){runtime, &pref_vtable};
+    runtime->pref_ns = (h2_pal_pref_namespace_t){.user = runtime,
+                                                 .close = fake_pref_close,
+                                                 .get_blob = fake_pref_get,
+                                                 .set_blob = fake_pref_set,
+                                                 .commit = fake_pref_commit};
+    h2_runtime_config_t config = {
+        .board = "ble-test",
+        .target = "host",
+        .chip = "host",
+        .mem = &runtime->allocator,
+        .task = &runtime->task,
+        .sync = &runtime->sync,
+        .queue = &queue,
+        .pref = &runtime->pref,
+        .wifi_sta = &runtime->wifi_sta,
+        .firmware_info = h2_pal_unsupported_firmware_info_api(),
+        .log = h2_pal_unsupported_log_api(),
+        .time = h2_pal_unsupported_time_api(),
+        .timer = h2_pal_unsupported_timer_api(),
+        .fs = h2_pal_unsupported_fs_api(),
+        .disk = h2_pal_unsupported_disk_api(),
+        .crypto = h2_pal_unsupported_crypto_api(),
+        .http = h2_pal_unsupported_http_api(),
+        .net = h2_pal_unsupported_net_api(),
+        .netif = h2_pal_unsupported_netif_api(),
+        .mqtt = h2_pal_unsupported_mqtt_api(),
+        .webrtc = h2_pal_unsupported_webrtc_api(),
+        .wifi_ap = h2_pal_unsupported_wifi_ap_api(),
+        .wifi_csi = h2_pal_unsupported_wifi_csi_api(),
+        .wifi_settings = h2_pal_unsupported_wifi_settings_api(),
+        .ble_host = h2_pal_unsupported_ble_host_api(),
+        .modem = h2_pal_unsupported_modem_api(),
+        .power = h2_pal_unsupported_power_api(),
+        .display = h2_pal_unsupported_display_api(),
+        .audio = h2_pal_unsupported_audio_api(),
+        .audio_decoder = h2_pal_unsupported_audio_decoder_api(),
+        .periph = h2_pal_unsupported_periph_api(),
+        .button = h2_pal_unsupported_button_api(),
+        .touch = h2_pal_unsupported_touch_api(),
+        .buzzer = h2_pal_unsupported_buzzer_api(),
+        .nfc = h2_pal_unsupported_nfc_api(),
+        .nfc_card_emulation = h2_pal_unsupported_nfc_card_emulation_api(),
+        .imu = h2_pal_unsupported_imu_api(),
+        .gpio_irq = h2_pal_unsupported_gpio_irq_api(),
+        .led = h2_pal_unsupported_led_api(),
+        .switch_api = h2_pal_unsupported_switch_api(),
+        .pwm_switch = h2_pal_unsupported_pwm_switch_api(),
+        .input = h2_pal_unsupported_input_api(),
+        .system_event = h2_pal_unsupported_system_event_api(),
+        .video_decoder = h2_pal_unsupported_video_decoder_api(),
+    };
+    CHECK(h2_runtime_init(&config, &runtime->runtime) == H2_PAL_OK);
+}
+
 static void fake_runtime_init(fake_runtime_t *runtime) {
     memset(runtime, 0, sizeof(*runtime));
     CHECK(pthread_mutex_init(&runtime->mutex, NULL) == 0);
@@ -617,6 +749,7 @@ static void fake_runtime_init(fake_runtime_t *runtime) {
         .user = runtime,
         .vtable = &s_event_vtable,
     };
+    fake_runtime_bind(runtime);
 }
 
 /*
@@ -625,12 +758,14 @@ static void fake_runtime_init(fake_runtime_t *runtime) {
  * Every capability it does not touch is the canonical unsupported one.
  */
 static void fake_runtime_deinit(fake_runtime_t *runtime) {
+    h2_runtime_deinit(runtime->runtime);
     (void)pthread_cond_destroy(&runtime->cond);
     (void)pthread_mutex_destroy(&runtime->mutex);
 }
 
 static void fake_api(fake_runtime_t *runtime, h2_ble_wifi_config_api_t *out_api) {
     *out_api = (h2_ble_wifi_config_api_t){
+        .runtime = runtime->runtime,
         .ble = &runtime->ble,
         .wifi_sta = &runtime->wifi_sta,
         .task = &runtime->task,
@@ -871,7 +1006,13 @@ static void connect_and_subscribe(fake_runtime_t *runtime) {
 static void test_open_registers_schema(void) {
     fake_runtime_t runtime;
     fake_runtime_init(&runtime);
-    h2_ble_wifi_config_t *service = open_service(&runtime, NULL);
+    h2_ble_wifi_config_api_t missing_runtime;
+    fake_api(&runtime, &missing_runtime);
+    missing_runtime.runtime = NULL;
+    h2_ble_wifi_config_t *service = NULL;
+    CHECK(h2_ble_wifi_config_open(&missing_runtime, NULL, &service) == H2_PAL_ERR_INVALID_ARG);
+    CHECK(service == NULL);
+    service = open_service(&runtime, NULL);
 
     const h2_pal_ble_gatt_service_t *schema = h2_ble_wifi_config_gatt_service(service);
     CHECK(schema != NULL);
@@ -1067,6 +1208,13 @@ static void test_provision_success(void) {
     CHECK(runtime.filtered_scan_calls == 1);
 
     CHECK(h2_ble_wifi_config_close(service) == H2_PAL_OK);
+    h2_runtime_wifi_saved_network_t saved[H2_RUNTIME_WIFI_SAVED_MAX];
+    size_t count = 0;
+    CHECK(h2_runtime_wifi_saved_list(runtime.runtime, saved, H2_RUNTIME_WIFI_SAVED_MAX, &count) ==
+          H2_PAL_OK);
+    CHECK(count == 1 && saved[0].config.ssid_len == 6);
+    CHECK(!memcmp(saved[0].config.ssid, "office", 6));
+    CHECK(saved[0].config.password_len == 8 && !memcmp(saved[0].config.password, "hunter2!", 8));
     fake_runtime_deinit(&runtime);
 }
 

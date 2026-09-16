@@ -46,3 +46,7 @@ int main(void) {
                             str(ROOT / "boards/jieli_ac791n_devkit/ac791n/layouts/h2loader/include"),
                             str(source), "-o", str(binary)], check=True, timeout=60)
             subprocess.run([str(binary)], check=True, timeout=10)
+
+
+if __name__ == "__main__":
+    unittest.main()
