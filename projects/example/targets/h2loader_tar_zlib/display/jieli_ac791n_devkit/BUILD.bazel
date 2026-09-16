@@ -4,12 +4,7 @@ load("//tools/bazel:jieli_task_policy.bzl", "jieli_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
-AC791N_COMPATIBILITY = select({
-    "//tools/bazel/platforms:ci_graph": [],
-    "//tools/bazel/platforms:is_ac791n": [],
-    "//conditions:default": ["@platforms//:incompatible"],
-})
-
+LAUNCHER = "//projects/example/native_component_src/jieli/wl82/devkit_app"
 
 jieli_target_task_policy(
     name = "color_bar_task_policy",
@@ -42,118 +37,13 @@ jieli_target_task_policy(
     ],
 )
 
-
-alias(
-    name = "coredump_smoke",
-    actual = "//projects/e2e/targets/h2loader_tar_zlib/coredump/jieli_ac791n_devkit:launcher",
-    tags = ["manual", "no-release"],
-)
-
-alias(
-    name = "mp4_player_small_task_policy",
-    actual = "//projects/example/targets/h2loader_tar_zlib/mp4-player/jieli_ac791n_devkit:mp4_player_small_task_policy",
-)
-
-alias(
-    name = "speaker_smoke_task_policy",
-    actual = "//projects/e2e/targets/h2loader_tar_zlib/speaker-smoke/jieli_ac791n_devkit:speaker_smoke_task_policy",
-    tags = ["manual", "no-release"],
-)
-
-alias(
-    name = "audio_system_task_policy",
-    actual = "//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:audio_system_task_policy",
-)
-
-alias(
-    name = "touch_task_policy",
-    actual = "//projects/example/targets/h2loader_tar_zlib/touch/jieli_ac791n_devkit:touch_task_policy",
-)
-
-alias(
-    name = "touch_tasks",
-    actual = "//projects/example/targets/h2loader_tar_zlib/touch/jieli_ac791n_devkit:touch_tasks",
-)
-
-alias(
-    name = "button_task_policy",
-    actual = "//projects/example/targets/h2loader_tar_zlib/button/jieli_ac791n_devkit:button_task_policy",
-)
-
-alias(
-    name = "button_tasks",
-    actual = "//projects/example/targets/h2loader_tar_zlib/button/jieli_ac791n_devkit:button_tasks",
-)
-
-alias(
-    name = "audio_system_libs",
-    actual = "//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:audio_system_libs",
-)
-
-alias(
-    name = "touch_libs",
-    actual = "//projects/example/native_component_src/jieli/wl82/devkit_app:ui_libs",
-)
-
-alias(
-    name = "audio_system_target",
-    actual = "//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:audio_system_target",
-)
-
-alias(
-    name = "touch_target",
-    actual = "//projects/example/targets/h2loader_tar_zlib/touch/jieli_ac791n_devkit:touch_target",
-)
-
-alias(
-    name = "button_target",
-    actual = "//projects/example/targets/h2loader_tar_zlib/button/jieli_ac791n_devkit:button_target",
-)
-
-alias(
-    name = "speaker_smoke",
-    actual = "//projects/e2e/targets/h2loader_tar_zlib/speaker-smoke/jieli_ac791n_devkit:speaker_smoke",
-    tags = ["manual", "no-release"],
-)
-
-
-
-
-
-
-alias(
-    name = "color_bar_tasks",
-    actual = "//projects/example/native_component_src/jieli/wl82/devkit_app:tasks",
-)
-
+# The color-bar image is the shared launcher with no application hook. The
+# crash-before-confirm image reuses this alias and the task policy above.
 alias(
     name = "color_bar_launcher",
-    actual = "//projects/example/native_component_src/jieli/wl82/devkit_app:launcher",
+    actual = LAUNCHER + ":launcher",
     tags = ["manual"],
 )
-
-
-
-alias(
-    name = "mp4_player_libs",
-    actual = "//projects/example/targets/h2loader_tar_zlib/mp4-player/jieli_ac791n_devkit:mp4_player_libs",
-)
-
-alias(
-    name = "mp4_player_launcher_tasks",
-    actual = "//projects/example/targets/h2loader_tar_zlib/mp4-player/jieli_ac791n_devkit:mp4_player_launcher_tasks",
-)
-
-alias(
-    name = "mp4_player_small_launcher",
-    actual = "//projects/example/targets/h2loader_tar_zlib/mp4-player/jieli_ac791n_devkit:mp4_player_small_launcher",
-)
-
-alias(
-    name = "mp4_player_small_direct_mode",
-    actual = "//projects/example/targets/h2loader_tar_zlib/mp4-player/jieli_ac791n_devkit:mp4_player_small_direct_mode",
-)
-
 
 h2loader_jieli_firmware(
     name = "firmware",
@@ -167,51 +57,6 @@ h2loader_jieli_firmware(
     task_policy = ":color_bar_task_policy",
 )
 
-
-alias(
-    name = "coredump_smoke_firmware",
-    actual = "//projects/e2e/targets/h2loader_tar_zlib/coredump/jieli_ac791n_devkit:smoke_firmware",
-    tags = ["manual", "no-release"],
-)
-
-# Compatibility labels: the E2E owner supplies the diagnostic entry and policy.
-alias(
-    name = "coredump_minimal_firmware",
-    actual = "//projects/e2e/targets/h2loader_tar_zlib/coredump/jieli_ac791n_devkit:minimal_firmware",
-    tags = ["manual", "no-release"],
-)
-
-alias(
-    name = "mp4_player_small_firmware",
-    actual = "//projects/example/targets/h2loader_tar_zlib/mp4-player/jieli_ac791n_devkit:mp4_player_small_firmware",
-)
-
-alias(
-    name = "mp4_player_small_direct_firmware",
-    actual = "//projects/example/targets/h2loader_tar_zlib/mp4-player/jieli_ac791n_devkit:mp4_player_small_direct_firmware",
-)
-
-alias(
-    name = "speaker_smoke_firmware",
-    actual = "//projects/e2e/targets/h2loader_tar_zlib/speaker-smoke/jieli_ac791n_devkit:speaker_smoke_firmware",
-    tags = ["manual", "no-release"],
-)
-
-alias(
-    name = "audio_system_firmware",
-    actual = "//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:audio_system_firmware",
-)
-
-alias(
-    name = "touch_firmware",
-    actual = "//projects/example/targets/h2loader_tar_zlib/touch/jieli_ac791n_devkit:touch_firmware",
-)
-
-alias(
-    name = "button_firmware",
-    actual = "//projects/example/targets/h2loader_tar_zlib/button/jieli_ac791n_devkit:button_firmware",
-)
-
 h2loader_tar_zlib(
     name = "package",
     board = "jieli_ac791n_devkit",
@@ -219,41 +64,4 @@ h2loader_tar_zlib(
     image = "color-bar",
     role = "app",
     target = "wl82",
-)
-
-alias(
-    name = "coredump_smoke_package",
-    actual = "//projects/e2e/targets/h2loader_tar_zlib/coredump/jieli_ac791n_devkit:smoke_package",
-    tags = ["manual", "no-release"],
-)
-
-alias(
-    name = "coredump_minimal_package",
-    actual = "//projects/e2e/targets/h2loader_tar_zlib/coredump/jieli_ac791n_devkit:minimal_package",
-    tags = ["manual", "no-release"],
-)
-
-alias(
-    name = "mp4_player_small_package",
-    actual = "//projects/example/targets/h2loader_tar_zlib/mp4-player/jieli_ac791n_devkit:mp4_player_small_package",
-)
-
-alias(
-    name = "mp4_player_large_package",
-    actual = "//projects/example/targets/h2loader_tar_zlib/mp4-player/jieli_ac791n_devkit:mp4_player_large_package",
-)
-
-alias(
-    name = "audio_system_package",
-    actual = "//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:audio_system_package",
-)
-
-alias(
-    name = "touch_package",
-    actual = "//projects/example/targets/h2loader_tar_zlib/touch/jieli_ac791n_devkit:touch_package",
-)
-
-alias(
-    name = "button_package",
-    actual = "//projects/example/targets/h2loader_tar_zlib/button/jieli_ac791n_devkit:button_package",
 )
