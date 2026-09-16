@@ -429,6 +429,10 @@ KV 和普通 storage 写入在同一 mutex 下检查配额和提交。临时文�
 
 ## Source loading and failure
 
+`h2_lua_resource` 默认将 `.lua` 源文件逐字节嵌入 C resource；需要减少固件只读存储占用的 consumer 可以显式设置 `compact = True`。精简发生在构建期，仅删除注释、行首/行尾空白和多余横向空白，不重命名标识符、不改写表达式、不生成 bytecode，也不增加运行时解压或 buffer。短字符串（包括转义）、任意等号层级的长字符串保持原始字节；token 间仍保留必要分隔，字符串之外的换行按 Lua 的 CR/LF 配对规则归一化以保留原源码行号。含 NUL 的输入（包括注释内）以及未终止的字符串或长注释在生成阶段报错；完整语法仍由现有 Lua 文本加载器验证。默认生成行为、C symbol 与 Host lifecycle 不变，`source_size` 和 source limit 以实际嵌入文本计。
+
+生成器的 Python 回归覆盖 token 分隔、字符串/注释边界、换行和默认兼容性；`//libs/lua:compact_resource_test` 在实际 VM 中对比原始与精简后的同一 fixture，验证结果和错误行号。业务 consumer 仍需对自己的精简资源执行功能回归和 exact firmware build，不能把构建期节省直接写成 VM 内存或运行时性能收益。
+
 所有入口只加载 Lua 文本。绝对路径、空段、`.`/`..`、反斜线、非受限 root、
 bytecode、超限或 malformed chunk 都失败关闭。`package.cpath` 为空，
 `package.loadlib` 不存在；local `require()` 只能读取当前 Skill root 下的 `.lua`
