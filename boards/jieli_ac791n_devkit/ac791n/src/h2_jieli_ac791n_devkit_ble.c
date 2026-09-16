@@ -21,6 +21,7 @@
 #include "h2_jieli_wl82_platform_core.h"
 #include "h2_jieli_wl82_atomic.h"
 #include "h2_jieli_wl82_sdk_port.h"
+#include "h2/pal/h2_pal_unsupported.h"
 
 #include <string.h>
 #include <stdarg.h>
@@ -1832,6 +1833,20 @@ static int h2_set_phy_retained(void *user, uint16_t connection, h2_pal_ble_phy_t
 const h2_pal_ble_host_api_t *h2_jieli_ac791n_devkit_ble_host_api(const h2_pal_log_api_t *log) {
   if (!h2_ble_log_bind(log)) return NULL;
   static const h2_pal_ble_vtable_t vtable = {
+      .adv_set_set_encoded_data = h2_pal_unsupported_ble_adv_set_set_encoded_data,
+      .adv_set_set_scan_response_data = h2_pal_unsupported_ble_adv_set_set_scan_response_data,
+      .start_scan = h2_pal_unsupported_ble_start_scan,
+      .stop_scan = h2_pal_unsupported_ble_stop_scan,
+      .unregister_gatt_service = h2_pal_unsupported_ble_unregister_gatt_service,
+      .indicate = h2_pal_unsupported_ble_indicate,
+      .connect = h2_pal_unsupported_ble_connect,
+      .configure_pairing = h2_pal_unsupported_ble_configure_pairing,
+      .pair = h2_pal_unsupported_ble_pair,
+      .read_phy = h2_pal_unsupported_ble_read_phy,
+      .gatt_discover = h2_pal_unsupported_ble_gatt_discover,
+      .gatt_read = h2_pal_unsupported_ble_gatt_read,
+      .gatt_write = h2_pal_unsupported_ble_gatt_write,
+      .gatt_subscribe = h2_pal_unsupported_ble_gatt_subscribe,
       .start = h2_ble_start_retained,
       .stop = h2_ble_stop,
       .set_adv_data = h2_legacy_set_adv_data_retained,
