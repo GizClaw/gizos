@@ -103,6 +103,10 @@ Loader 只有 UART 与 BLE capability，不提供 Wi-Fi 与 HTTP；runner 一旦
 
 ## 验收记录
 
+### 2026-09-16：main 验收尝试未完成
+
+`667cd925` 的验收在第一步因执行者使用不存在的 button Bazel target 而停止，尚未执行固件安装或硬件套件；这不构成 main 的编译缺陷或硬件失败证据。独立 UART status 确认原 P1 Loader 响应、Stage 空、`last_result=0`。[构建错误、工具 SHA、独立状态与全部未执行项](./evidence/2026-09-16/main-acceptance.md)。
+
 ### 2026-09-15：system-event owner 引用计数
 
 Provider 的每次成功 init 各取得一个 owner，Runtime deinit 只释放自己的 owner，launcher/BLE 的订阅继续工作；最后一个 owner 释放后才关闭，并等在途操作退出后销毁。[退出路径的失败回归、TSan 与 button 实机证据](./evidence/2026-09-15/system-event-owners.md)。
