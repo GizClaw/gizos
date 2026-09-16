@@ -651,6 +651,28 @@ py_test(
 )
 
 py_test(
+    name = "h2loader_monitor_text_loss_test",
+    srcs = ["tests/test_h2loader_monitor_text_loss.py"],
+    data = [
+        "tests/fixtures/h2loader_monitor_text_loss.c",
+        "//libs/h2loader_host:src/h2_h2loader_host_serial.c",
+        "//libs/h2loader_host:include/h2_h2loader_host.h",
+        "//libs/h2loader_host:include/h2_h2loader_host_catalog.h",
+        "//libs/iostreamikcp:src/h2_iostreamikcp_frame.c",
+        "//libs/iostreamikcp:include/h2_iostreamikcp.h",
+        "//libs/iostreamikcp:include/h2_iostreamikcp_types.h",
+        "//libs/pal:pal_header_files",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_h2loader_monitor_text_loss.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
     name = "h2loader_buffered_poll_test",
     srcs = ["tests/test_h2loader_buffered_poll.py"],
     data = [

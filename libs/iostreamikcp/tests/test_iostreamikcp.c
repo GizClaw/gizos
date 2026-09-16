@@ -28,7 +28,7 @@ typedef struct frame_capture {
 } frame_capture_t;
 
 typedef struct log_capture {
-    uint8_t bytes[64];
+    uint8_t bytes[8192];
     size_t len;
     h2_pal_result_t result;
 } log_capture_t;
@@ -259,7 +259,7 @@ static void test_filter_discards_oversized_binary_candidate(void) {
               &filter, oversized, sizeof(oversized), capture_frame, &capture) == H2_PAL_OK);
     CHECK(capture.count == 0u);
     CHECK(filter.errors == 1u);
-    CHECK(filter.log_bytes == 0u);
+    CHECK(filter.log_bytes == sizeof(oversized));
     const uint8_t payload[] = { 1u };
     h2_iostreamikcp_frame_t good = {
         .flags = H2_IOSTREAMIKCP_FRAME_FLAG_DATA,
@@ -280,7 +280,7 @@ static void test_filter_discards_oversized_binary_candidate(void) {
               capture_frame,
               &capture) == H2_PAL_OK);
     CHECK(filter.resyncing == 0);
-    CHECK(filter.log_bytes == 0u);
+    CHECK(filter.log_bytes == sizeof(oversized) + H2_IOSTREAMIKCP_DEFAULT_MTU);
     CHECK(capture.count == 1u);
 }
 
@@ -297,17 +297,21 @@ static void test_filter_rejects_false_magic_and_crc(void) {
 
     h2_iostreamikcp_filter_t filter;
     frame_capture_t capture = { 0 };
+    log_capture_t logs = { 0 };
     h2_iostreamikcp_filter_init(&filter);
     const uint8_t false_magic[] = { 'H', '2', 'I', 'X', 'x' };
-    CHECK(h2_iostreamikcp_filter_input(&filter, false_magic, sizeof(false_magic), capture_frame, &capture) == H2_PAL_OK);
+    CHECK(h2_iostreamikcp_filter_input_with_log(&filter, false_magic, sizeof(false_magic), capture_frame, &capture, capture_log, &logs) == H2_PAL_OK);
     CHECK(capture.count == 0u);
 
     uint64_t log_before = filter.log_bytes;
     encoded[encoded_len - 1u] ^= 0x55u;
-    CHECK(h2_iostreamikcp_filter_input(&filter, encoded, encoded_len, capture_frame, &capture) == H2_PAL_OK);
+    CHECK(h2_iostreamikcp_filter_input_with_log(&filter, encoded, encoded_len, capture_frame, &capture, capture_log, &logs) == H2_PAL_OK);
     CHECK(capture.count == 0u);
     CHECK(filter.crc_errors == 1u);
-    CHECK(filter.log_bytes == log_before);
+    CHECK(filter.log_bytes == log_before + encoded_len);
+    CHECK(logs.len == sizeof(false_magic) + encoded_len);
+    CHECK(memcmp(logs.bytes, false_magic, sizeof(false_magic)) == 0);
+    CHECK(memcmp(logs.bytes + sizeof(false_magic), encoded, encoded_len) == 0);
 }
 
 static void test_filter_resyncs_before_invalid_metadata_length(void) {
@@ -342,6 +346,7 @@ static void test_filter_resyncs_before_invalid_metadata_length(void) {
                   capture_frame,
                   &capture) == H2_PAL_OK);
         CHECK(filter.errors == 1u);
+        CHECK(filter.log_bytes == H2_IOSTREAMIKCP_FRAME_HEADER_LEN);
         CHECK(capture.count == 1u);
         CHECK(capture.conv[0] == 19u);
         CHECK(capture.len[0] == sizeof(payload));
@@ -422,11 +427,90 @@ static void test_filter_resyncs_to_frame_inside_bad_crc_candidate(void) {
               capture_frame,
               &capture) == H2_PAL_OK);
     CHECK(filter.crc_errors == 1u);
-    CHECK(filter.log_bytes == 0u);
+    CHECK(filter.log_bytes == H2_IOSTREAMIKCP_FRAME_HEADER_LEN + 2u);
     CHECK(capture.count == 1u);
     CHECK(capture.conv[0] == 19u);
     CHECK(capture.len[0] == sizeof(payload));
     CHECK(memcmp(capture.payload[0], payload, sizeof(payload)) == 0);
+}
+
+static int log_contains(const log_capture_t *logs, const char *text) {
+    size_t len = strlen(text);
+    for (size_t i = 0u; i + len <= logs->len; ++i) {
+        if (memcmp(logs->bytes + i, text, len) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static void test_monitor_recovers_text_around_broken_frame(void) {
+    static const char text[] =
+        "H2_JIELI_BUTTON_SMOKE_READY buttons=8 display=480x320 result=0\r\n"
+        "JIELI_APP_CONFIRM result=OK code=0 target=0 transport=0\r\n";
+    static const char next[] = "[00:00:00.100]next\r\n";
+    const uint8_t payload[] = { 0u, 0x80u, 1u };
+    for (size_t variant = 0u; variant < 4u; ++variant) {
+        uint8_t input[1024] = { 0 };
+        size_t len = 0u;
+        /* End a padding line exactly at the 256-byte read boundary. */
+        if (variant == 3u) {
+            memset(input, 'x', 254u);
+            input[254] = '\r';
+            input[255] = '\n';
+            len = 256u;
+        }
+        size_t frame_start = len;
+        h2_iostreamikcp_frame_t frame = {
+            .flags = H2_IOSTREAMIKCP_FRAME_FLAG_DATA,
+            .conv = 7u,
+            .payload = variant == 2u ? payload : (const uint8_t *)text,
+            .payload_len = variant == 2u ? sizeof(payload) : sizeof(text) - 1u,
+        };
+        size_t encoded_len = 0u;
+        CHECK(h2_iostreamikcp_frame_encode(
+                  &frame, input + len, sizeof(input) - len, &encoded_len) == H2_PAL_OK);
+        len += encoded_len;
+        if (variant == 2u) {
+            memcpy(input + len, text, sizeof(text) - 1u);
+            len += sizeof(text) - 1u;
+        } else {
+            input[frame_start + 14u] ^= 0xffu;
+        }
+        memcpy(input + len, next, sizeof(next) - 1u);
+        len += sizeof(next) - 1u;
+        /* A high-bit byte in the console region must survive verbatim. */
+        input[len++] = 0x80u;
+        input[len++] = '\r';
+        input[len++] = '\n';
+        h2_iostreamikcp_filter_t filter;
+        frame_capture_t frames = { 0 };
+        log_capture_t logs = { 0 };
+        h2_iostreamikcp_filter_init(&filter);
+        size_t chunk = variant == 1u ? 1u : 256u;
+        for (size_t offset = 0u; offset < len; offset += chunk) {
+            size_t n = len - offset < chunk ? len - offset : chunk;
+            CHECK(h2_iostreamikcp_filter_input_with_log(
+                      &filter, input + offset, n, capture_frame, &frames,
+                      capture_log, &logs) == H2_PAL_OK);
+        }
+        CHECK(log_contains(&logs, "H2_JIELI_BUTTON_SMOKE_READY"));
+        CHECK(log_contains(&logs, "JIELI_APP_CONFIRM result=OK"));
+        CHECK(logs.bytes[logs.len - 3u] == 0x80u);
+        CHECK(filter.log_bytes == logs.len);
+        if (variant == 2u) {
+            CHECK(frames.count == 1u);
+            CHECK(frames.len[0] == sizeof(payload));
+            CHECK(memcmp(frames.payload[0], payload, sizeof(payload)) == 0);
+            CHECK(logs.len == len - encoded_len);
+            CHECK(memcmp(logs.bytes, input + encoded_len, logs.len) == 0);
+        } else {
+            CHECK(frames.count == 0u);
+            CHECK(filter.crc_errors == 1u);
+            CHECK(logs.len == len);
+            CHECK(memcmp(logs.bytes, input, len) == 0);
+        }
+    }
 }
 
 static h2_iostreamikcp_t *open_stream_ex(
@@ -717,6 +801,7 @@ static void test_timeout_and_empty_read(void) {
 int main(void) {
     test_frame_filter_extracts_from_dirty_stream();
     test_filter_delivers_only_proven_log_bytes();
+    test_monitor_recovers_text_around_broken_frame();
     test_session_control_frames();
     test_filter_rejects_invalid_control_frame();
     test_filter_discards_oversized_binary_candidate();
