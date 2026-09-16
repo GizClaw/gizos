@@ -4139,6 +4139,18 @@ static void test_wifi_saved_set(void) {
     memcpy(f.blob, previous, sizeof(previous));
     memcpy(f.blob + 8 + 114, f.blob + 8, 114);
     assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_ERR_FORMAT && !count);
+    /* Only the canonical encoding decodes: padding past each length and every
+     * slot beyond the count must be zero. */
+    const size_t garbage_offsets[] = {
+        8 + 10 + previous[8],       /* one byte past the first record's SSID */
+        8 + 42 + previous[8 + 1],   /* one byte past its password */
+        8 + 7 * 114,                /* an unused slot */
+    };
+    for (size_t i = 0; i < sizeof(garbage_offsets) / sizeof(garbage_offsets[0]); ++i) {
+        memcpy(f.blob, previous, sizeof(previous));
+        f.blob[garbage_offsets[i]] = 1;
+        assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_ERR_FORMAT && !count);
+    }
     f.blob_len--;
     assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_ERR_FORMAT && !count);
     f.write_rc = 0;

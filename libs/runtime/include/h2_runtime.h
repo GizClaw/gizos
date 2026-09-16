@@ -207,8 +207,10 @@ h2_pal_result_t h2_runtime_wifi_saved_remove(h2_runtime_t *runtime, const char *
                                              size_t ssid_len);
 h2_pal_result_t h2_runtime_wifi_saved_clear(h2_runtime_t *runtime);
 /** Provision through PAL, then record in the Runtime set only on success.
- * PAL timeout/IP semantics are unchanged; Runtime adds no IP wait. A Runtime
- * pref failure propagates even though PAL may already have saved credentials.
+ * PAL timeout/IP semantics are unchanged; Runtime adds no IP wait. Returns the
+ * PAL result: once PAL reports success the station is connected and the
+ * platform credential is stored, so a failed set write is logged and still
+ * returns OK rather than reporting a working connection as failed provisioning.
  */
 h2_pal_result_t h2_runtime_wifi_connect_and_save(h2_runtime_t *runtime,
                                                  const h2_pal_wifi_sta_config_t *config,

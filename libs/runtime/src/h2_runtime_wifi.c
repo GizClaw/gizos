@@ -43,6 +43,13 @@ static bool saved_storage_absent(int rc) {
     return rc == H2_PAL_ERR_NOT_FOUND || rc == H2_PAL_ERR_UNSUPPORTED;
 }
 
+static bool saved_bytes_zero(const uint8_t *bytes, size_t len) {
+    for (size_t i = 0; i < len; ++i)
+        if (bytes[i])
+            return false;
+    return true;
+}
+
 static int saved_read(h2_runtime_t *runtime, h2_runtime_wifi_saved_network_t *saved,
                       size_t *count) {
     *count = 0;
@@ -80,7 +87,14 @@ static int saved_read(h2_runtime_t *runtime, h2_runtime_wifi_saved_network_t *sa
                 memcpy(entry->config.password, record + 42, 64);
                 for (size_t j = 0; j < 8; ++j)
                     entry->last_connected_at_ms |= (uint64_t)record[106 + j] << (j * 8);
-                if (!saved_config_valid(&entry->config)) {
+                /* Only the canonical encoding is accepted: padding past each
+                 * length carries no meaning, so a non-zero byte there means the
+                 * blob was not written by this codec. */
+                if (!saved_config_valid(&entry->config) ||
+                    !saved_bytes_zero(record + 10 + entry->config.ssid_len,
+                                      32 - entry->config.ssid_len) ||
+                    !saved_bytes_zero(record + 42 + entry->config.password_len,
+                                      64 - entry->config.password_len)) {
                     rc = H2_PAL_ERR_FORMAT;
                     break;
                 }
@@ -90,6 +104,11 @@ static int saved_read(h2_runtime_t *runtime, h2_runtime_wifi_saved_network_t *sa
                 if (rc != H2_PAL_OK)
                     break;
             }
+            /* Slots past the count are unused and must be zero as written. */
+            if (rc == H2_PAL_OK &&
+                !saved_bytes_zero(blob + 8 + blob[6] * WIFI_SAVED_RECORD_SIZE,
+                                  (H2_RUNTIME_WIFI_SAVED_MAX - blob[6]) * WIFI_SAVED_RECORD_SIZE))
+                rc = H2_PAL_ERR_FORMAT;
             if (rc == H2_PAL_OK)
                 *count = blob[6];
         }
