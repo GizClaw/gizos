@@ -11,7 +11,7 @@ class DisplayBoundsTest(unittest.TestCase):
     def test_rectangles_are_rejected_before_hardware_access(self):
         source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/"
                   "h2_jieli_ac791n_devkit_input.c").read_text()
-        begin = source.index("static int display_draw_bitmap(")
+        begin = source.index("static int display_draw_bitmap_impl(")
         end = source.index("  /* Official JieLi LCD fills", begin)
         stub = r'''
 #include <assert.h>
@@ -35,16 +35,16 @@ int main(void) {
   {-1,0,1,1},{0,-1,1,1},{0,0,0,1},{0,0,1,0},
   {480,0,1,1},{0,320,1,1},{479,319,2,1},{479,319,1,2}};
  for (unsigned i=0;i<sizeof(invalid)/sizeof(invalid[0]);++i)
-  assert(display_draw_bitmap(&state,&invalid[i],&pixel,SIZE_MAX,1)==-1);
+  assert(display_draw_bitmap_impl(&state,&invalid[i],&pixel,SIZE_MAX,1)==-1);
  h2_display_rect_t full={0,0,480,320}, corner={479,319,1,1};
- assert(display_draw_bitmap(&state,&full,&pixel,960,1)==0);
- assert(display_draw_bitmap(&state,&corner,&pixel,2,1)==0);
- assert(display_draw_bitmap(&state,&full,&pixel,959,1)==-1);
- assert(display_draw_bitmap(&state,NULL,&pixel,960,1)==-1);
- assert(display_draw_bitmap(&state,&full,NULL,960,1)==-1);
- assert(display_draw_bitmap(&state,&full,&pixel,960,0)==-1);
+ assert(display_draw_bitmap_impl(&state,&full,&pixel,960,1)==0);
+ assert(display_draw_bitmap_impl(&state,&corner,&pixel,2,1)==0);
+ assert(display_draw_bitmap_impl(&state,&full,&pixel,959,1)==-1);
+ assert(display_draw_bitmap_impl(&state,NULL,&pixel,960,1)==-1);
+ assert(display_draw_bitmap_impl(&state,&full,NULL,960,1)==-1);
+ assert(display_draw_bitmap_impl(&state,&full,&pixel,960,0)==-1);
  state.open=0;
- assert(display_draw_bitmap(&state,&full,&pixel,960,1)==-2);
+ assert(display_draw_bitmap_impl(&state,&full,&pixel,960,1)==-2);
  return 0;
 }
 '''
@@ -58,3 +58,7 @@ int main(void) {
             result = subprocess.run([str(binary)], capture_output=True,
                                     text=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
+if __name__ == "__main__":
+    unittest.main()

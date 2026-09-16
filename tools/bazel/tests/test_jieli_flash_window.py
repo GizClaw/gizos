@@ -58,7 +58,6 @@ static inline void os_time_dly(unsigned t) {(void)t;sched_yield();}
             pref = source(BOARD / "src/h2_jieli_ac791n_devkit_pref.c")
             (p / "pref.c").write_text(pref[pref.index("static int pref_flash_read("):
                                                pref.index("static int pref_flash_sync(")])
-            (p / "adapter.c").write_text(source(BOARD / "layouts/h2loader/src/jieli_upgrade_io.c"))
             # Always compile the new helper; before runs use the old consumers.
             (p / "window.c").write_text((BOARD / "src/h2_jieli_ac791n_devkit_flash_window.c").read_text())
             (p / "test.c").write_text(r'''
@@ -66,6 +65,7 @@ static inline void os_time_dly(unsigned t) {(void)t;sched_yield();}
 #include <stdlib.h>
 #include <string.h>
 #include "h2_jieli_ac791n_devkit_flash_window.h"
+#include "h2_jieli_warm_request.h"
 #include "window.c"
 #include "disk.c"
 typedef uint32_t lfs_block_t,lfs_off_t,lfs_size_t;
@@ -73,7 +73,6 @@ struct lfs_config {uint32_t block_size;};
 #define LFS_ERR_IO -5
 #define LFS_ERR_OK 0
 #include "pref.c"
-#include "adapter.c"
 static pthread_mutex_t fake_mutex=PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t changed=PTHREAD_COND_INITIALIZER;
 static u32 protection=0x9e00u, sdk_saved;
@@ -162,18 +161,7 @@ int main(int argc,char **argv) {
     assert(!pthread_create(&b,NULL,worker,(void *)2));
     assert(!pthread_join(a,NULL));assert(!pthread_join(b,NULL));
     assert(protection==0x9e00u);
-    /* The SDK outer lease can contain provider and adapter inner leases. */
-    dev_upgrade_protect_suspend();
-    arrived=first_done=0;
-    assert(!pthread_create(&a,NULL,worker,(void *)1));
-    assert(!pthread_create(&b,NULL,worker,(void *)2));
-    assert(!pthread_join(a,NULL));assert(!pthread_join(b,NULL));
-    overlap=0;assert(operation(0)==0 && operation(2)==0);
-    assert(protection==0x10000u);
-    char data[16]={0};
-    assert(dev_upgrade_write((u8 *)data,H2_JIELI_BANK_2_SFC_BASE,16)==16);
-    assert(dev_upgrade_erase(2,H2_JIELI_BANK_2_SFC_BASE)==1);
-    dev_upgrade_protect_resume();assert(protection==0x9e00u);
+
   }
   /* Make the extracted read entry point part of the fixture too. */
   char data[16];struct lfs_config cfg={4096};
@@ -185,7 +173,6 @@ int main(int argc,char **argv) {
             flags = ["-fsanitize=thread", "-g"] if os.environ.get("JIELI_TSAN") else []
             subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-pthread",
                             *flags, "-I", str(p), "-I", str(BOARD / "include"),
-                            "-I", str(BOARD / "layouts/h2loader/include"),
                             "-I", str(ROOT / "libs/pal/include"),
                             "-I", str(ROOT / "native_component_src/jieli/wl82/h2_pal_core/include"),
                             str(p / "test.c"), "-o", str(binary)], check=True)

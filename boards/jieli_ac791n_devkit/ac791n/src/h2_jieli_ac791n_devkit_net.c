@@ -468,6 +468,31 @@ static h2_pal_result_t icmp_echo(
   return H2_PAL_ERR_UNSUPPORTED;
 }
 
+static int tcp_listen(
+    void *user, h2_pal_net_family_t family, uint16_t port,
+    const h2_pal_net_bind_t *bind, h2_pal_net_socket_t *out_socket,
+    h2_pal_net_addr_t *out_bind_addr) {
+  (void)user;
+  (void)family;
+  (void)port;
+  (void)bind;
+  (void)out_socket;
+  (void)out_bind_addr;
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
+static h2_pal_result_t tcp_accept(
+    void *user, h2_pal_net_socket_t listen_socket,
+    h2_pal_net_socket_t *out_socket, h2_pal_net_addr_t *out_peer_addr,
+    uint32_t timeout_ms) {
+  (void)user;
+  (void)listen_socket;
+  (void)out_socket;
+  (void)out_peer_addr;
+  (void)timeout_ms;
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static void close_socket(void *user, h2_pal_net_socket_t socket_fd) {
   (void)user;
   closesocket(socket_fd);
@@ -485,6 +510,8 @@ const h2_pal_net_api_t *h2_jieli_ac791n_devkit_net_api(void) {
       .udp_recvfrom = udp_recvfrom,
       .udp_open_bound = udp_open_bound,
       .udp_join_multicast = udp_join_multicast,
+      .tcp_listen = tcp_listen,
+      .tcp_accept = tcp_accept,
       .tcp_open = tcp_open,
       .tcp_open_bound = tcp_open_bound,
       .tcp_connect = tcp_connect,

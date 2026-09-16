@@ -146,12 +146,20 @@ static h2_pal_result_t h2_jieli_netif_get_dns(
   return H2_PAL_OK;
 }
 
+static h2_pal_result_t h2_jieli_netif_set_default(
+    void *user, const h2_pal_netif_ref_t *ref) {
+  (void)user;
+  (void)ref;
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
 const h2_pal_netif_api_t *h2_jieli_ac791n_devkit_netif_api(void) {
   static const h2_pal_netif_vtable_t vtable = {
       .list = h2_jieli_netif_list,
       .find = h2_jieli_netif_find,
       .get_status = h2_jieli_netif_get_status,
       .get_dns_servers = h2_jieli_netif_get_dns,
+      .set_default = h2_jieli_netif_set_default,
   };
   static const h2_pal_netif_api_t api = {.user = NULL, .vtable = &vtable};
   return &api;
