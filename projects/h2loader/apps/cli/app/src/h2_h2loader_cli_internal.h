@@ -109,6 +109,11 @@ h2_pal_result_t h2_h2loader_cli_output_json_string(
     h2_h2loader_cli_stream_t stream,
     const char *value);
 
+h2_pal_result_t h2_h2loader_cli_transport_diagnostic(
+    void *user,
+    const uint8_t *data,
+    size_t len);
+
 void h2_h2loader_cli_send_progress(
     void *user,
     uint64_t acknowledged_bytes,

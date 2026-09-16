@@ -6,6 +6,8 @@ The decoder task copies each borrowed MP4 presentation frame into one of three r
 
 The three-slot pipeline absorbs bounded output jitter but does not increase decoder throughput. Each target asset must still keep its native Video Decoder provider below the presentation deadline.
 
+Runtime Sync provides the mutex protecting slot consumer release. The decoder does not wait for the first Audio PAL write: a playback block can require PCM from multiple presentation frames, so such a wait would prevent the audio writer from receiving enough data. The host regression uses 2048-sample audio blocks to exercise this startup case.
+
 ## Test Asset
 
 The Bazel package keeps portable App ownership separate from media ownership. `:mp4_player` contains the App and its documentation, while `:large_media` contains only the 1024×600 sample. Every launcher that consumes this shared asset depends on the portable target plus the matching media target; H2Loader launchers with target-native media keep that media under their own launcher root.

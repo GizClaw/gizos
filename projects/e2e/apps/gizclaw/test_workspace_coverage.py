@@ -25,14 +25,14 @@ class WorkspaceCoverageTest(unittest.TestCase):
         self.assertFalse(result["valid"])
         return {row["symbol"] for row in result["functions"] if row["status"] == "covered"}
 
-    def test_twenty_seven_functions(self):
+    def test_twenty_eight_functions(self):
         observed = self.audit_case("--emit-success-evidence")
-        expected = {rule.symbol for rule in api_coverage.requirements() if "_workspace_" in rule.symbol}
-        self.assertEqual(len(expected), 27)
+        expected = {rule.symbol for rule in api_coverage.requirements() if "_workspace_" in rule.symbol or rule.symbol == "h2_gizclaw_rpc_run_stop"}
+        self.assertEqual(len(expected), 28)
         self.assertEqual(observed, expected)
 
     def test_partial_success_is_not_coverage(self):
-        for failure, budget in ([(i, 0) for i in range(1, 65)] + [(0, i) for i in range(1, 33)]):
+        for failure, budget in ([(i, 0) for i in range(1, 74)] + [(0, i) for i in range(1, 37)]):
             with self.subTest(failure=failure, budget=budget):
                 self.assertEqual(self.audit_case("--emit-failure-evidence", str(failure), str(budget)), set())
 

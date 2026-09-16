@@ -74,6 +74,10 @@ h2_pal_result_t h2_gizclaw_session_workspace_finish_internal(
 h2_pal_result_t h2_gizclaw_session_workspace_delete_begin_internal(
     h2_gizclaw_session_t *session, h2_gizclaw_str_t name, uint32_t timeout_ms,
     bool *out_participating);
+/* Run stop always participates, even without a current Workspace, and uses
+ * workspace_delete_finish_internal for the same EMPTY/FAILED transition. */
+h2_pal_result_t h2_gizclaw_session_run_stop_begin_internal(
+    h2_gizclaw_session_t* session, uint32_t timeout_ms);
 /* Success publishes EMPTY with no current Workspace, Workflow or confirmed
  * parameters; any failure, including an uncertain result, publishes FAILED. */
 h2_pal_result_t h2_gizclaw_session_workspace_delete_finish_internal(

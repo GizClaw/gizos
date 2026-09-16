@@ -235,6 +235,16 @@ static h2_pal_result_t h2_quectel_modem_close_impl(h2_pal_modem_t *platform, uin
             return rc;
         }
     }
+    return h2_quectel_modem_transport_closed(modem);
+}
+
+h2_pal_result_t h2_quectel_modem_transport_closed(h2_quectel_modem_t *modem) {
+    if (modem == NULL) return H2_PAL_ERR_INVALID_ARG;
+    const h2_pal_result_t rc = h2_quectel_state_lock(modem);
+    if (rc != H2_PAL_OK) return rc;
+    modem->transport_closed = 1u;
+    modem->sim_restart_required = 0u;
+    modem->sim_restart_attempted = 0u;
     (void)h2_quectel_incoming_call_end(modem);
     modem->power_policy = H2_PAL_MODEM_POWER_POLICY_ACTIVE;
     modem->power_configured = 0u;
@@ -244,6 +254,12 @@ static h2_pal_result_t h2_quectel_modem_close_impl(h2_pal_modem_t *platform, uin
     modem->call_hold = 0u;
     modem->data_hold = 0u;
     modem->model_checked = 0u;
+    modem->sim_probe_ticks = 0u;
+    modem->sim_query_pending = 0u;
+    modem->sim_hint_seen = 0u;
+    modem->sim_presence = 0u;
+    modem->sim_poll_remaining = 0u;
+    modem->sim_refresh_pending = 0u;
     modem->sim_seen = 0u;
     modem->registration_seen = 0u;
     modem->packet_seen = 0u;
@@ -259,7 +275,10 @@ static h2_pal_result_t h2_quectel_modem_close_impl(h2_pal_modem_t *platform, uin
     /* The modem keeps the token only while it stays powered through this
      * instance, so the next open has to configure it again. */
     modem->cell_locate_token_sent = 0u;
-    return result;
+    modem->sim_generation++;
+    memset(&modem->observed_status, 0, sizeof(modem->observed_status));
+    h2_quectel_state_unlock(modem);
+    return H2_PAL_OK;
 }
 
 h2_quectel_modem_t *h2_quectel_from_platform(h2_pal_modem_t *platform) {
@@ -304,7 +323,10 @@ void h2_quectel_post_system_event(
         payload_size == sizeof(h2_pal_modem_signal_t)) {
         const h2_pal_modem_signal_t *signal = payload;
         if (modem->signal_seen && modem->observed_signal.rssi_dbm == signal->rssi_dbm &&
-            modem->observed_signal.ber == signal->ber && modem->observed_signal.rat == signal->rat) {
+            modem->observed_signal.ber == signal->ber && modem->observed_signal.rat == signal->rat &&
+            modem->observed_signal.rssi_valid == signal->rssi_valid &&
+            modem->observed_signal.rsrp_dbm == signal->rsrp_dbm &&
+            modem->observed_signal.rsrp_valid == signal->rsrp_valid) {
             return;
         }
         modem->signal_seen = 1u;
@@ -319,6 +341,11 @@ void h2_quectel_post_system_event(
         h2_pal_system_event_post(modem->config.system_events, &event, 0u) != H2_PAL_OK) {
         modem->event_drop_count++;
     }
+}
+
+static void quectel_idle(void *user) {
+    h2_quectel_call_watchdog(user);
+    h2_quectel_sim_recover(user);
 }
 
 static void dispatch_urc(void *user, const char *line) {
@@ -341,7 +368,8 @@ h2_pal_result_t h2_quectel_modem_init(
         return H2_PAL_ERR_INVALID_ARG;
     }
     if ((config->urc_task_api != NULL || config->urc_queue_api != NULL) &&
-        (config->urc_task_api == NULL || config->urc_queue_api == NULL || config->sync_api == NULL)) {
+        (config->urc_task_api == NULL || config->urc_queue_api == NULL || config->sync_api == NULL ||
+         config->sync_api->vtable == NULL || config->sync_api->vtable->try_lock_mutex == NULL)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     memset(modem, 0, sizeof(*modem));
@@ -405,8 +433,8 @@ h2_pal_result_t h2_quectel_modem_init(
         : &s_quectel_modem_vtable;
     modem->data_status.state = H2_PAL_MODEM_DATA_CLOSED;
     if (config->urc_task_api != NULL) {
-        h2_pal_result_t rc = h2_modem_urc_start(&modem->urc_worker,
-            config->urc_task_api, config->urc_queue_api, config->allocator, dispatch_urc, modem);
+        h2_pal_result_t rc = h2_modem_urc_start_idle(&modem->urc_worker,
+            config->urc_task_api, config->urc_queue_api, config->allocator, dispatch_urc, modem, quectel_idle, H2_QUECTEL_RING_POLL_INTERVAL_MS);
         if (rc != H2_PAL_OK) {
             (void)h2_pal_mutex_destroy(config->sync_api, modem->operation_lock);
             modem->operation_lock = NULL;

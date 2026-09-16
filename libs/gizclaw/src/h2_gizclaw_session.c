@@ -1072,6 +1072,22 @@ h2_pal_result_t h2_gizclaw_session_workspace_begin_internal(
   return rc;
 }
 
+h2_pal_result_t h2_gizclaw_session_run_stop_begin_internal(
+    h2_gizclaw_session_t* s, uint32_t timeout) {
+  if (s == NULL) return H2_PAL_OK;
+  h2_gizclaw_audio_log_t logs = {0};
+  h2_pal_result_t rc = lock(s);
+  if (rc != H2_PAL_OK) return rc;
+  if (s->closed)
+    rc = H2_PAL_ERR_CLOSED;
+  else if (s->workspace_rpc_active || s->restarting_input)
+    rc = H2_PAL_ERR_BUSY;
+  else
+    rc = enter_workspace_rpc_locked(s, timeout, &logs);
+  unlock_audio(s, &logs);
+  return rc;
+}
+
 h2_pal_result_t h2_gizclaw_session_workspace_delete_begin_internal(
     h2_gizclaw_session_t *s, h2_gizclaw_str_t name, uint32_t timeout,
     bool *out_participating) {
@@ -1111,7 +1127,7 @@ h2_pal_result_t h2_gizclaw_session_workspace_delete_finish_internal(
   if (!s->closed &&
       (!s->busy || s->operation_generation == s->state.generation)) {
     if (result == H2_PAL_OK) {
-      /* The deleted Workspace's identity and confirmed parameters are gone;
+      /* The Workspace's identity and confirmed parameters are gone;
        * the next select must get/create/reload it from scratch. */
       if (same(s->state.target_workspace, s->state.current_workspace))
         s->state.target_workspace[0] = '\0';
@@ -1120,7 +1136,7 @@ h2_pal_result_t h2_gizclaw_session_workspace_delete_finish_internal(
       s->state.workflow_name[0] = '\0';
       memset(&s->state.parameters, 0, sizeof(s->state.parameters));
     } else {
-      /* Deletion may have happened; never keep an uncertain name as READY. */
+      /* The run may be gone; never keep an uncertain name as READY. */
       s->state.workspace = H2_GIZCLAW_SESSION_FAILED;
     }
     s->state.last_error = result;
