@@ -1,5 +1,7 @@
 """Fault-inject timeout configuration in the real socket provider functions."""
 from pathlib import Path
+import os
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -12,9 +14,10 @@ class NetTimeoutErrorsTest(unittest.TestCase):
         source = (ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_net.c').read_text()
         def section(begin, end):
             return source[source.index(begin):source.index(end, source.index(begin))]
-        functions = section('static h2_pal_result_t map_socket_error(', 'static int resolve_addr(')
-        functions += section('static int udp_recvfrom(', 'static int udp_join_multicast(')
-        functions += section('static int tcp_connect(', 'static h2_pal_result_t tls_wrap(')
+        functions = section('static uint32_t stack_gate;', 'static h2_pal_result_t map_socket_error(')
+        functions += section('static h2_pal_result_t map_socket_error(', 'static int resolve_addr(')
+        functions += section('static int udp_recvfrom_active(', 'static int udp_join_multicast_active(')
+        functions += section('static int tcp_connect_active(', 'static h2_pal_result_t tls_wrap(')
         stub = r'''
 #include <assert.h>
 #include <errno.h>
@@ -39,17 +42,19 @@ static int fake_recvfrom(int fd,void *p,size_t n,int f,struct sockaddr *a,sockle
 static int fake_recv(int fd,void *p,size_t n,int f) {return fake_recvfrom(fd,p,n,f,NULL,NULL);}
 static int fake_send(int fd,const void *p,size_t n,int f) {return fake_recv(fd,(void *)p,n,f);}
 static int mode_calls, connect_pending, fail_restore;
-static int initial_mode, current_mode, terminal_stage;
+static int initial_mode, current_mode, terminal_stage, fail_flags, fail_nonblocking;
 int fake_fcntl(int fd, int cmd, int value) {
  (void)fd;
  (void)value;
  assert(cmd==F_GETFL);
+ if(fail_flags) {errno=EIO; return -1;}
  return initial_mode ? O_NONBLOCK : 0;
 }
 #define fcntl fake_fcntl
 static int fake_ioctl(int fd,unsigned long cmd,unsigned long *mode) {
  (void)fd;(void)cmd; ++mode_calls;
  current_mode=(*mode!=0);
+ if(*mode!=0 && fail_nonblocking) {errno=EIO; return -1;}
  if (*mode==0 && fail_restore) {errno=EIO; return -1;} return 0;
 }
 static int fake_connect(int fd,const struct sockaddr *a,socklen_t len) {
@@ -79,8 +84,21 @@ static int fake_getsockopt(int fd,int l,int o,void *v,socklen_t *n) {
 #define recv fake_recv
 #define send fake_send
 '''
+        stub += r'''
+#define MEMP_NUM_NETCONN 55
+#define LWIP_SOCKET_OFFSET 0
+static int h2_jieli_atomic_cas_u32(uint32_t *p,uint32_t *e,uint32_t v) {
+ return __atomic_compare_exchange_n(p,e,v,0,__ATOMIC_ACQ_REL,__ATOMIC_ACQUIRE);
+}
+static void h2_jieli_atomic_store_u32(uint32_t *p,uint32_t v) {
+ __atomic_store_n(p,v,__ATOMIC_RELEASE);
+}
+static void os_time_dly(unsigned n) {(void)n;}
+'''
         main = r'''
 int main(void) {
+ h2_jieli_net_stack_started();
+ assert(stack_enter()==0); stack_leave(); slot_opened(1);
  uint8_t data=0; h2_pal_net_addr_t addr={.family=H2_PAL_NET_FAMILY_IPV4};
  struct sockaddr_in native;
  assert(addr_to_sockaddr(&addr,&native)==H2_PAL_OK);
@@ -107,12 +125,18 @@ int main(void) {
   mode_calls=0; fail_restore=0;
   assert(tcp_connect(NULL,1,&addr,100)==H2_PAL_OK && mode_calls==2);
  }
+ fail_flags=1;
+ assert(tcp_connect(NULL,1,&addr,100)==H2_PAL_ERR_IO && sockets[1].busy==0);
+ fail_flags=0; fail_nonblocking=1;
+ assert(tcp_connect(NULL,1,&addr,100)==H2_PAL_ERR_IO && sockets[1].busy==0);
+ fail_nonblocking=0;
  connect_pending=1;
  for (initial_mode=0;initial_mode<=1;++initial_mode) {
   for (terminal_stage=1;terminal_stage<=4;++terminal_stage) {
    mode_calls=0;
    assert(tcp_connect(NULL,1,&addr,100)!=H2_PAL_OK);
    assert(mode_calls==2 && current_mode==initial_mode);
+   assert(sockets[1].busy==0);
   }
  }
  terminal_stage=5;
@@ -126,7 +150,7 @@ int main(void) {
             test = Path(directory) / 'test.c'
             test.write_text(stub + functions + main)
             binary = Path(directory) / 'test'
-            subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-I', str(ROOT / 'libs/pal/include'), str(test), '-o', str(binary)], check=True)
+            subprocess.run([os.environ.get('CC', 'cc'), *shlex.split(os.environ.get('JIELI_TEST_CFLAGS', '')), '-std=c11', '-Wall', '-Wextra', '-Werror', '-I', str(ROOT / 'libs/pal/include'), str(test), '-o', str(binary)], check=True)
             result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stderr)
 

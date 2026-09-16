@@ -1967,3 +1967,38 @@ py_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )
+
+py_test(
+    name = "jieli_net_concurrency_test",
+    srcs = ["tests/test_jieli_net_concurrency.py"],
+    data = [
+        "//libs/pal:pal_header_files",
+        "//boards/jieli_ac791n_devkit/ac791n:src/h2_jieli_ac791n_devkit_net.c",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_net_concurrency.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "jieli_net_stack_lifecycle_test",
+    srcs = [
+        "tests/test_jieli_net_concurrency.py",
+        "tests/test_jieli_net_stack_lifecycle.py",
+    ],
+    data = [
+        "//libs/pal:pal_header_files",
+        "//boards/jieli_ac791n_devkit/ac791n:src/h2_jieli_ac791n_devkit_net.c",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_net_stack_lifecycle.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

@@ -95,6 +95,18 @@ const h2_pal_wifi_sta_api_t *h2_jieli_ac791n_devkit_wifi_sta_api(void);
 const h2_pal_wifi_ap_api_t *h2_jieli_ac791n_devkit_wifi_ap_api(void);
 const h2_pal_wifi_settings_api_t *
 h2_jieli_ac791n_devkit_wifi_settings_api(void);
+/* lwIP full-duplex supports one reader, one writer and one closer; close
+ * wakes blocked recv/send/connect. The provider returns BUSY for overlapping
+ * same-direction operations or connect versus any transfer. Calls outside a
+ * started PAL Wi-Fi interface and stale-generation descriptors are UNAVAILABLE.
+ * Stop drains in-flight native operations and settles pending DNS as UNAVAILABLE.
+ * Close every socket and resolver before disconnect/ap_stop: descriptors left
+ * across stop cannot be reclaimed safely, even by close (a no-op for stale fds).
+ * DNS has four pending slots; TIMEOUT/WOULD_BLOCK leave a lookup pending.
+ * There is no DNS cancellation: early close leaves backend ownership until
+ * completion or stop, and late callbacks after settlement are ignored. lwIP
+ * owns retries (1, 1, 2, 3 seconds per server); the provider does not shorten them.
+ * Synchronous DNS uses caller-owned address storage, not a shared hostent. */
 const h2_pal_net_api_t *h2_jieli_ac791n_devkit_net_api(void);
 const h2_pal_netif_api_t *h2_jieli_ac791n_devkit_netif_api(void);
 
