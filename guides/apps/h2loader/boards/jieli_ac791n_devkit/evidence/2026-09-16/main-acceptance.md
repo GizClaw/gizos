@@ -2,7 +2,7 @@
 
 ## Outcome and source
 
-**Partial: Loader self-update and PAL 10/10 passed; the full UART rerun passed 25/25 and both BLE rounds passed 22/22.** The original UART cancellation was traced to an external broad `pkill`, not a failing case. Acceptance stops at step 6: button installed and independent status shows confirmed P2 with empty Stage, but READY and confirmation text were absent from both installation and one normal relaunch capture. Audio was not run. Final independent status confirms the new Loader back on P1, Stage empty and last_result=0.
+**FAIL: button image startup log capture.** Loader self-update, PAL 10/10, UART 25/25, BLE 22/22 twice and audio-system smoke passed. Both CLI button captures lost READY and confirmation text after input-start result=0 despite correct independent P2 state; that state does not substitute for the missing lines. The reviewer authorized audio, final status and focused raw-reader diagnosis after this failed item. Final independent status verifies the new P1 Loader, Stage empty and last_result=0.
 
 Tested firmware and host source is origin/main `667cd92585a92bcc81001090bbf90a5ed907ab10`, verified against the remote at the start of this round. Build checkout was on `jieli-main-acceptance` at documentation-only commit `9c1a0e58`; the continuation began at documentation-only commit `a7148fd9`. Both diffs from that main revision contain only this evidence page and its board-guide link; the same frozen packages and host binary bytes were used throughout. No production source or suite code was modified. The pre-existing untracked `lock` file was preserved.
 
@@ -15,9 +15,9 @@ Tested firmware and host source is origin/main `667cd92585a92bcc81001090bbf90a5e
 | 3: PAL | PASS | Ten distinct case results captured, all 0; aggregate `result=0 passed=10 failed=0`; verified P2 identity and returned to original/new P1 Loader. |
 | 4: UART lifecycle | PASS | Complete detached run: 25/25, rc=0, process exit 0, 329.006 s. Earlier externally interrupted partial run: 20/20 PASS, process exit 130. |
 | 5: BLE lifecycle twice | PASS | Terminal.app: 22/22, rc=0, exit 0, 372.900 s; then 22/22, rc=0, exit 0, 369.925 s. |
-| 6: button App | INCOMPLETE CAPTURE | P2 identity and cleared Stage verified; required READY/confirmation lines missing twice. Returned to original/new P1. |
-| 7: audio-system | NOT RUN | Package built; stopped after the unresolved step-6 capture failure. No streaming or retained Runtime evidence. |
-| 8: final independent state | SAFE STOP STATE VERIFIED | New Loader running on P1, next P1, Stage empty, last_result=0; P2 retains button App. Full round remains incomplete. |
+| 6: button image startup log capture | FAIL | Correct P2 App, Stage empty and last_result=0 twice; READY and confirmation text missing twice after input-start result=0. |
+| 7: audio-system | PASS | READY captured; 30.801 s subsequent streaming observation, 24 microphone peak reports; independent active P2 App, Stage empty, last_result=0; returned to P1. |
+| 8: final independent state | PASS | New P1 Loader, Stage empty, last_result=0 after audio; repeated after focused button diagnosis, with P2 retaining button App. Overall round retains the failed button item. |
 
 ## Builds and immutable artifacts
 
@@ -195,7 +195,7 @@ Both BLE runs were launched through Terminal.app using AppleScript `do script`, 
 | coredump-status-after-erase | 0 / 510 | 0 / 2613 | 0 / 2158 |
 | install-app | not a case for this transport | 0 / 63089 | 0 / 58216 |
 
-## Button capture gap and safe stop
+## Button image startup log capture: failed item
 
 The button package was installed once through UART Loader into P2. The ordinary install monitor captured `H2_JIELI_BUTTON_SMOKE stage=runtime-init result=0` and `H2_JIELI_BUTTON_SMOKE stage=input-start result=0`, followed by bytes `fe e4 a4`; neither `H2_JIELI_BUTTON_SMOKE_READY` nor `JIELI_APP_CONFIRM result=OK` was present anywhere in the capture. Monitoring was deliberately stopped after 65.273 s (exit 130). Independent status verified active App P2 with the exact button image, Stage empty and last_result=0. This establishes persisted install/confirmation state, but does not substitute for the requested text evidence.
 
@@ -208,7 +208,37 @@ Following the board's previously documented capture procedure, the App was retur
 
 Context hex dumps are retained only under `/tmp/jieli-main-acceptance-2026-09-16/button-upgrade-garble.hex.txt` and `button-relaunch-garble.hex.txt`. The following SDK startup text appears after these direct status writes; its order is not treated as independent proof of an extra reset or board failure. Source inspection locates READY immediately before target-entry release and confirmation immediately after successful target return; the captures do not establish why those writes were lost. The observed button-task event output and independent active App status are retained as positive evidence, without claiming controlled physical button testing.
 
-Step 6 is not marked PASS because its required READY and confirmation lines were not captured. After the repeated capture gap, `reboot loader` returned the board to the original/new P1, verified independently. No further button retry, source edit, transport workaround or audio installation was attempted. Audio-system remains build-only; 30-second streaming and Runtime-retaining behavior are not accepted by this round.
+Step 6 is explicitly failed as **button image startup log capture**. The reviewer authorized continuation through audio and final status before a focused raw-reader diagnosis; no source changes were made.
+
+## Audio-system smoke
+
+The frozen audio package was installed through UART Loader into P2. The monitor captured `H2_JIELI_AUDIO_SYSTEM_READY mic=1 speaker=1 aec=dac-software-ref`, then observed 30.801 seconds of continued streaming with 24 `H2_SMOKE_AUDIO_MIC peak=` reports. The 63.002-second install/monitor invocation ended with deliberately requested SIGINT (exit 130) after the observation window. Independent status after closing the monitor showed the exact audio image still active as App in P2, Stage empty and last_result=0, establishing that the Runtime-retaining entry left the image running. This is streaming/log and independent-state evidence, not a listening test of acoustic quality.
+
+`reboot loader` returned to the unchanged new P1; both audio-returned and the subsequent step-8 independent status showed running/next P1, Stage empty and last_result=0, with the audio image retained in P2. Only after these checks was the same frozen button package restored through Loader into P2 for the requested diagnosis.
+
+
+## Open issue: button image startup log capture
+
+**Host monitor text-path defect: open, no code fix attempted.** The corrected raw UART capture contains both required lines intact immediately after input-start result=0, while both CLI monitor captures lost them at that location and emitted short garbage spans. This establishes that the board emits the bytes and isolates the observed button loss to the host monitor path under this comparison. It is the same family of text-loss symptom as PAL's 76-byte garble; an identical underlying cause for PAL is not established by this button-only experiment. The diagnostic success does not change the failed button acceptance item.
+
+After audio and step 8, the same frozen button package was restored through the UART Loader into P2, independently verified as active App with Stage empty and last_result=0, and returned to the new P1 before the diagnostic boot. Exact-device `lsof` found no stale UART reader; no kill was needed. The raw method was `/bin/cat /dev/cu.usbserial-20131240 > /tmp/jieli-main-acceptance-2026-09-16/button-raw-boot.bin`, with cat already holding the port while `stty -f /dev/cu.usbserial-20131240 460800 raw -echo -hupcl clocal cs8 -parenb -cstopb -ixon -ixoff -crtscts min 1 time 0` configured it. A subsequent `stty -a` verified `speed 460800 baud` before the reboot trigger. Cat PID 50204 was the sole UART owner.
+
+A separate CLI invocation launched through Terminal.app first checked BLE UID and both partition identities, then issued `ac791n-cli --transport bleikcp --port 5:818f070641f0 reboot app` (exit 0). It never opened UART. Cat captured before this trigger and for 40.250 seconds afterward, covering the complete boot, then was deliberately terminated by its exact PID (SIGTERM, exit -15). Independent UART status was taken only after cat exited. This avoids competing UART readers and the sequential-reboot late-open capture gap.
+
+The first raw-reader setup attempt configured stty before cat opened the port; closing/reopening the device reverted the speed to 9600, as the saved settings show. Its garbage-only capture is invalid for host/device attribution and is preserved under `/tmp/jieli-main-acceptance-2026-09-16/raw-setup-9600/`. That attempt also performed a software App reboot and returned to independently verified P1. The corrected setup above therefore required one additional diagnostic reboot; this is a disclosed host setup error, not a device or suite failure. There was one valid full-boot raw comparison at verified 460800.
+
+The valid raw capture is 35245 bytes, SHA-256 `c73911092640dd0e49aac18a84c7deaec14de321c5ea0afc7ee739ae3b82e230`. Input-start begins at byte 16554, READY at 16604, and confirmation at 16695. The region is intact CRLF-delimited ASCII, with no truncation, interleaving or garbage between these lines; the whole capture contains no `H2IKCP` frame magic. Context hex dumps for both CLI captures and the raw capture are retained under `/tmp/jieli-main-acceptance-2026-09-16/` as `button-upgrade-garble.hex.txt`, `button-relaunch-garble.hex.txt` and `button-raw-gap.hex.txt`.
+
+```text
+H2_JIELI_BUTTON_SMOKE stage=input-start result=0
+H2_JIELI_BUTTON_SMOKE_READY buttons=8 display=480x320 result=0
+JIELI_TARGET_APP result=0
+JIELI_APP_CONFIRM result=OK code=0 target=0 transport=0
+```
+
+The [2026-09-15 16-byte torn-header recovery run](../2026-09-15/p2-header-reinstall.md) also lost these same two lines, so the CLI capture symptom is reproducible across rounds. The current raw comparison narrows the button issue to the host path; it does not retrospectively supply missing acceptance text to the older run.
+
+After the valid raw boot, independent status verified active button App P2, Stage empty and last_result=0. An explicit UART `reboot loader` returned to the unchanged new P1; both raw-button-returned and round-final independent snapshots confirmed Loader P1, next P1, Stage empty and last_result=0. No source code was changed during diagnosis.
 
 ## Independent UART snapshots
 
@@ -245,8 +275,20 @@ In the table, `old-loader` denotes package `f96cf7e5ec91b66aa7aba0c2ff1c46c710f7
 | button-after-relaunch | app | 2 / 2 | auto | 0 / empty | loader | button | 0 |
 | button-returned | loader | 1 / 1 | loader | 0 / empty | loader | button | 0 |
 | continuation-final | loader | 1 / 1 | loader | 0 / empty | loader | button | 0 |
+| audio-before | loader | 1 / 1 | loader | 0 / empty | loader | button | 0 |
+| audio-staged | loader | 1 / 1 | loader | 1 / audio | loader | button | 0 |
+| audio-after | app | 2 / 2 | auto | 0 / empty | loader | audio | 0 |
+| audio-returned | loader | 1 / 1 | loader | 0 / empty | loader | audio | 0 |
+| step8-after-audio | loader | 1 / 1 | loader | 0 / empty | loader | audio | 0 |
+| raw-button-restore-staged | loader | 1 / 1 | loader | 1 / button | loader | audio | 0 |
+| raw-button-restored-app | app | 2 / 2 | auto | 0 / empty | loader | button | 0 |
+| raw-button-ready-loader | loader | 1 / 1 | loader | 0 / empty | loader | button | 0 |
+| raw-button-before | loader | 1 / 1 | loader | 0 / empty | loader | button | 0 |
+| raw-button-after | app | 2 / 2 | auto | 0 / empty | loader | button | 0 |
+| raw-button-returned | loader | 1 / 1 | loader | 0 / empty | loader | button | 0 |
+| round-final | loader | 1 / 1 | loader | 0 / empty | loader | button | 0 |
 
-Final independent status after the button capture gap and return to P1 (the earlier `final` snapshot records the previous UART partial-run stop; `continuation-final` is this continuation stop checkpoint):
+Final independent `round-final` status after the focused button diagnosis and return to P1 (earlier `final` and `continuation-final` snapshots retain the previous partial-run checkpoints):
 
 ```text
 H2_LOADER_STATUS board=jieli_ac791n_devkit target=wl82 chip=ac791n device_uid=d879349abc9f capabilities=0x00000005 command_availability=0x00081d1f active_role=loader active_version=bazel-native-artifacts active_checksum=28123452b282b325471e8f64fa5d462d314c63c934bf6fea66e6e3936bd3258f active_image_size=938857 running_partition=1 next_partition=1 boot_intent=loader stage_valid=0 stage_package_checksum=- stage_package_size=0 stage_image_checksum=- stage_image_size=0 stage_role=unknown stage_version=- stage_board=- stage_target=- partition_1_valid=1 partition_1_package_checksum=d3cfaf7229b7b0d230c281ca0d1a6add06d497a7b8740df01eac0192c92730c0 partition_1_package_size=928062 partition_1_image_checksum=28123452b282b325471e8f64fa5d462d314c63c934bf6fea66e6e3936bd3258f partition_1_image_size=938857 partition_1_role=loader partition_1_version=bazel-native-artifacts partition_1_board=jieli_ac791n_devkit partition_1_target=wl82 partition_2_valid=1 partition_2_package_checksum=b01937d9c3bcd6287b49220b0901fe6c5a48050e9295a52266c8818cfd3b07e2 partition_2_package_size=1278347 partition_2_image_checksum=eb5f587ff952469649d6c0e03915c104a2413e8e11f61f9a5ff60e9f0c57a0dd partition_2_image_size=1292785 partition_2_role=app partition_2_version=bazel-native-artifacts partition_2_board=jieli_ac791n_devkit partition_2_target=wl82 last_result=0 mfg_mode=1 mfg_steps=0000000000000000000000
@@ -256,7 +298,7 @@ H2_LOADER_STATUS board=jieli_ac791n_devkit target=wl82 chip=ac791n device_uid=d8
 
 Wi-Fi credential persistence was explicitly skipped because no bench AP credentials were supplied. PAL Wi-Fi case 27 is offline coverage only. No connected Wi-Fi/AP or HTTP cases were enabled in the lifecycle runner.
 
-Both full BLE rounds completed. Button installation and persistent confirmation state were verified, but READY/confirmation text capture failed twice. Audio was not run. The round does not establish long-duration BLE/RF stability, physical button interaction, audio streaming, acoustic quality, controlled audio stop/restart or power-loss atomicity.
+Both full BLE rounds and audio streaming smoke completed. Button installation and persistent confirmation state were verified, but READY/confirmation text capture failed twice and remains a failed acceptance item. The round does not establish long-duration BLE/RF stability, controlled physical button interaction, acoustic quality, controlled audio stop/restart or power-loss atomicity.
 
 Resets were software resets through Loader lifecycle commands and the expected crash-before-confirm rollback; none was a physical power cut. There was no power cut, manual power cycling, USB DL, format operation, other serial port access or P1 modification outside the normal Loader self-update flow. No independent status timeout or 90-second unresponsive post-reset interval was observed. Early PAL capture loss was filled by the same run's ledger replay, but the initial boot transcript remains incomplete.
 

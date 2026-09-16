@@ -103,9 +103,9 @@ Loader 只有 UART 与 BLE capability，不提供 Wi-Fi 与 HTTP；runner 一旦
 
 ## 验收记录
 
-### 2026-09-16：main UART/BLE 通过，button 日志验收未完成
+### 2026-09-16：main 硬件验收，button 启动日志捕获失败
 
-`667cd925` 在 UID `d879349abc9f` 上完成新 Loader 自更新、PAL 10/10、UART 25/25（329.006 秒）和 BLE 22/22 两轮（372.900 / 369.925 秒）。原 UART 20/20 partial 的外部宽泛 `pkill` 来源已查明；button 安装后独立状态显示已确认 P2，但安装与一次正常重启均未捕获必需 READY/确认文本，因此停在第 6 步，audio 未运行。最终独立 status 为新 P1 Loader、Stage 空、`last_result=0`。[全部 SHA、中断来源、PAL 十六进制分析、逐项结果与 button 捕获缺口](./evidence/2026-09-16/main-acceptance.md)。
+`667cd925` 在 UID `d879349abc9f` 上完成新 Loader 自更新、PAL 10/10、UART 25/25、BLE 22/22 两轮及 audio-system READY 后 30.801 秒流式运行。button image startup log capture 判定失败：两次 CLI 捕获均丢失 READY/确认文本；随后经验证的 460800 原始 cat 捕获包含两行，定位为 host monitor 文本路径问题，尚未修复。原 UART 20/20 partial 的外部宽泛 `pkill` 来源已查明。最终独立 status 为新 P1 Loader、Stage 空、`last_result=0`；Wi-Fi 凭据持久化跳过。[全部 SHA、独立状态、逐项结果及开放问题](./evidence/2026-09-16/main-acceptance.md)。
 
 ### 2026-09-15：system-event owner 引用计数
 
