@@ -154,6 +154,14 @@ typedef struct h2_ble_wifi_config_config {
      */
     bool gatt_service_registered_by_caller;
     h2_pal_task_options_t worker_task_options;
+    /*
+     * There is deliberately no connect override. The service borrows the
+     * Runtime, so provisioning has exactly one path: check the access point,
+     * connect through the PAL, and record the network in the Runtime saved
+     * set. A replaceable step would have to re-implement all three and could
+     * persist credentials under a different policy, leaving two answers to
+     * "which networks are saved".
+     */
     /** NULL selects h2_ble_wifi_config_default_reason(). */
     h2_ble_wifi_config_reason_fn map_reason;
     h2_ble_wifi_config_event_fn on_event;

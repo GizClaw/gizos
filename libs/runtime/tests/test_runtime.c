@@ -4276,12 +4276,41 @@ static void test_wifi_best_saved(void) {
     f.list_rc = H2_PAL_ERR_UNSUPPORTED;
     assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_UNSUPPORTED);
     f.list_rc = 0;
-    assert(h2_runtime_wifi_saved_clear(runtime) == H2_PAL_OK);
+    /* The stored entry keeps the credential as provisioned: a candidate pinned
+     * to the AP that happened to be strongest must not be written back. */
+    f.scan_count = 1;
+    f.scan[0] = (h2_pal_wifi_scan_entry_t){
+        .ssid = "a", .ssid_len = 1, .rssi = -30, .channel = 11, .bssid = {3}};
+    network.ssid[0] = 'a';
+    network.bssid_set = 0;
+    network.channel = 0;
+    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+    f.connects = 0;
+    f.results[0] = H2_PAL_OK;
+    f.results[1] = H2_PAL_OK;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
+    assert(f.connects == 1 && f.attempts[0].bssid_set == 1 && f.attempts[0].channel == 11);
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &saved_count) == H2_PAL_OK);
+    assert(list[0].config.ssid[0] == 'a' && !list[0].config.bssid_set && !list[0].config.channel);
+    /* A failed bookkeeping write never turns a working connection into an
+     * error, and it leaves the stored set untouched. */
+    memcpy(previous, f.blob, sizeof(previous));
+    f.write_rc = H2_PAL_ERR_IO;
+    f.connects = 0;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
+    assert(f.connects == 1 && !memcmp(previous, f.blob, sizeof(previous)));
+    f.connects = 0;
+    size_t provisions = f.saves;
+    assert(h2_runtime_wifi_connect_and_save(runtime, &provision, 100) == H2_PAL_OK);
+    assert(f.saves == provisions + 1 && !memcmp(previous, f.blob, sizeof(previous)));
+    f.write_rc = 0;
+    f.connects = 0;
     size_t scans = f.scans;
+    assert(h2_runtime_wifi_saved_clear(runtime) == H2_PAL_OK);
     assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_NOT_FOUND);
     assert(f.scans == scans && !f.connects);
 
-    assert(f.saves == 2); /* Best-saved must never call PAL connect_and_save. */
+    assert(f.saves == 3); /* Best-saved must never call PAL connect_and_save. */
     h2_runtime_deinit(runtime);
 }
 

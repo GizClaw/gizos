@@ -29,9 +29,18 @@ static bool saved_ssid_equal(const h2_pal_wifi_sta_config_t *a, const h2_pal_wif
     return a->ssid_len == b->ssid_len && memcmp(a->ssid, b->ssid, a->ssid_len) == 0;
 }
 
+/* A platform without Preference simply has no saved set: listing is empty and
+ * storing is unsupported, never an argument error from the caller. */
+static bool saved_storage_available(const h2_runtime_t *runtime) {
+    return runtime->pref != NULL && runtime->pref->vtable != NULL &&
+           runtime->pref->vtable->open != NULL;
+}
+
 static int saved_read(h2_runtime_t *runtime, h2_runtime_wifi_saved_network_t *saved,
                       size_t *count) {
     *count = 0;
+    if (!saved_storage_available(runtime))
+        return H2_PAL_OK;
     h2_pal_pref_namespace_t *ns = NULL;
     int rc = h2_pal_pref_open(runtime->pref, WIFI_SAVED_NAMESPACE, H2_PAL_PREF_OPEN_READ_ONLY, &ns);
     if (rc == H2_PAL_ERR_NOT_FOUND)
@@ -102,6 +111,10 @@ static int saved_write(h2_runtime_t *runtime, const h2_runtime_wifi_saved_networ
         memcpy(record + 42, config->password, config->password_len);
         for (size_t j = 0; j < 8; ++j)
             record[106 + j] = (uint8_t)(saved[i].last_connected_at_ms >> (j * 8));
+    }
+    if (!saved_storage_available(runtime)) {
+        memset(blob, 0, sizeof(blob));
+        return H2_PAL_ERR_UNSUPPORTED;
     }
     h2_pal_pref_namespace_t *ns = NULL;
     int rc =
@@ -197,7 +210,16 @@ h2_pal_result_t h2_runtime_wifi_connect_and_save(h2_runtime_t *runtime,
     if (!h2_runtime_ready(runtime) || !saved_config_valid(config))
         return H2_PAL_ERR_INVALID_ARG;
     int rc = h2_pal_wifi_sta_connect_and_save(runtime->wifi_sta, config, timeout_ms);
-    return rc == H2_PAL_OK ? h2_runtime_wifi_saved_save(runtime, config) : rc;
+    if (rc != H2_PAL_OK)
+        return rc;
+    /* The station is connected and the platform credential is stored. Recording
+     * it in the Runtime set is bookkeeping: report the failure, but never turn a
+     * working connection into a provisioning failure. */
+    const int save_rc = h2_runtime_wifi_saved_save(runtime, config);
+    if (save_rc != H2_PAL_OK)
+        (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_WARN, "runtime/wifi",
+                               "saved set not updated after provisioning");
+    return H2_PAL_OK;
 }
 
 /* Retain only the strongest AP for each saved SSID, even for long scans. */
@@ -254,6 +276,9 @@ h2_pal_result_t h2_runtime_wifi_connect_best_saved(h2_runtime_t *runtime, uint32
         return rc;
     saved_scan_t scan = {0};
     h2_pal_wifi_sta_config_t candidates[H2_RUNTIME_WIFI_SAVED_MAX] = {0};
+    /* Candidates are pinned to the AP just observed; the stored entry keeps the
+     * credential as provisioned, so a later attempt is not tied to that AP. */
+    h2_pal_wifi_sta_config_t origins[H2_RUNTIME_WIFI_SAVED_MAX] = {0};
     size_t count = 0;
     rc = h2_runtime_wifi_saved_list(runtime, scan.saved, H2_RUNTIME_WIFI_SAVED_MAX,
                                     &scan.saved_count);
@@ -289,10 +314,12 @@ h2_pal_result_t h2_runtime_wifi_connect_best_saved(h2_runtime_t *runtime, uint32
             while (position && strengths[position - 1] < ap->rssi) {
                 strengths[position] = strengths[position - 1];
                 candidates[position] = candidates[position - 1];
+                origins[position] = origins[position - 1];
                 --position;
             }
             strengths[position] = ap->rssi;
             candidates[position] = candidate;
+            origins[position] = scan.saved[i].config;
             memset(&candidate, 0, sizeof(candidate));
             ++count;
             break;
@@ -307,12 +334,17 @@ h2_pal_result_t h2_runtime_wifi_connect_best_saved(h2_runtime_t *runtime, uint32
         }
         rc = h2_pal_wifi_sta_connect(runtime->wifi_sta, &candidates[i], remaining);
         if (rc == H2_PAL_OK) {
-            rc = h2_runtime_wifi_saved_save(runtime, &candidates[i]);
+            /* Fronting the entry is bookkeeping: report it, but never turn a
+             * working connection into a failure. */
+            if (h2_runtime_wifi_saved_save(runtime, &origins[i]) != H2_PAL_OK)
+                (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_WARN, "runtime/wifi",
+                                       "saved set not reordered after reconnect");
             break;
         }
     }
 done:
     memset(candidates, 0, sizeof(candidates));
+    memset(origins, 0, sizeof(origins));
     memset(&scan, 0, sizeof(scan));
     return rc;
 }
