@@ -24,9 +24,12 @@ firmware_native_component(
     srcs = PROVIDER_SRCS + ["src/h2_jieli_br23_sdk_port.c"],
     hdrs = glob(["include/*.h"]),
     component_name = "h2_pal_core",
-    include_roots = ["native_component_src/jieli/br23/h2_pal_core/include"],
+    include_roots = [
+        "libs/pal/include",
+        "native_component_src/jieli/br23/h2_pal_core/include",
+    ],
     tags = ["manual"],
-    deps = ["//libs/pal"],
+    deps = ["//libs/pal:pal_header_files"],
 )
 
 cc_library(
