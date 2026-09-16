@@ -20,19 +20,18 @@ static_assert(
     "the NFC fixture owns inline UID storage; only uid_len is caller-controlled");
 
 std::mutex wifi_settings_mutex;
-size_t wifi_settings_count = 0;
-h2_pal_wifi_saved_network_t
-    wifi_settings_configs[H2_PAL_WIFI_SAVED_NETWORK_MAX] = {};
+bool wifi_settings_saved = false;
+h2_pal_wifi_sta_config_t wifi_settings_config = {};
 
 int wifi_settings_get(void *, h2_pal_wifi_sta_config_t *out_config) {
   if (out_config == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   std::lock_guard<std::mutex> lock(wifi_settings_mutex);
-  if (!wifi_settings_count) {
+  if (!wifi_settings_saved) {
     return H2_PAL_ERR_NOT_FOUND;
   }
-  *out_config = wifi_settings_configs[0].config;
+  *out_config = wifi_settings_config;
   return H2_PAL_OK;
 }
 
@@ -43,14 +42,17 @@ int wifi_settings_set(void *, const h2_pal_wifi_sta_config_t *config) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   std::lock_guard<std::mutex> lock(wifi_settings_mutex);
-  return h2_wifi_saved_list_insert(wifi_settings_configs, &wifi_settings_count,
-                                   config);
+  wifi_settings_config = *config;
+  wifi_settings_config.ssid[config->ssid_len] = '\0';
+  wifi_settings_config.password[config->password_len] = '\0';
+  wifi_settings_saved = true;
+  return H2_PAL_OK;
 }
 
 int wifi_settings_clear(void *) {
   std::lock_guard<std::mutex> lock(wifi_settings_mutex);
-  std::memset(wifi_settings_configs, 0, sizeof(wifi_settings_configs));
-  wifi_settings_count = 0;
+  wifi_settings_config = {};
+  wifi_settings_saved = false;
   return H2_PAL_OK;
 }
 
@@ -59,30 +61,15 @@ int wifi_settings_has(void *, int *out_has_config) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   std::lock_guard<std::mutex> lock(wifi_settings_mutex);
-  *out_has_config = wifi_settings_count ? 1 : 0;
+  *out_has_config = wifi_settings_saved ? 1 : 0;
   return H2_PAL_OK;
-}
-
-int wifi_settings_list(void *, h2_pal_wifi_saved_network_t *out,
-                       size_t capacity, size_t *out_count) {
-  if (!out_count || (capacity && !out))
-    return H2_PAL_ERR_INVALID_ARG;
-  std::lock_guard<std::mutex> lock(wifi_settings_mutex);
-  *out_count = capacity < wifi_settings_count ? capacity : wifi_settings_count;
-  if (*out_count)
-    std::memcpy(out, wifi_settings_configs, *out_count * sizeof(*out));
-  return H2_PAL_OK;
-}
-
-int wifi_settings_remove(void *, const char *ssid, size_t ssid_len) {
-  std::lock_guard<std::mutex> lock(wifi_settings_mutex);
-  return h2_wifi_saved_list_remove(wifi_settings_configs, &wifi_settings_count,
-                                   ssid, ssid_len);
 }
 
 const h2_pal_wifi_settings_vtable_t wifi_settings_vtable = {
-    wifi_settings_get, wifi_settings_set,  wifi_settings_clear,
-    wifi_settings_has, wifi_settings_list, wifi_settings_remove,
+    wifi_settings_get,
+    wifi_settings_set,
+    wifi_settings_clear,
+    wifi_settings_has,
 };
 h2_pal_wifi_settings_t wifi_settings = {nullptr, &wifi_settings_vtable};
 

@@ -55,7 +55,6 @@ RUNTIME_HDRS = [
 RUNTIME_DEPS = [
     ":tasks",
     "//libs/pal",
-    "//libs/wifi_sta",
 ]
 
 # Host platforms, where the Runtime unit tests can actually run.

@@ -54,9 +54,7 @@ static size_t s_h2_esp_wifi_ap_client_count;
 #define H2_ESP_WIFI_EVENT_CONNECTED BIT0
 #define H2_ESP_WIFI_EVENT_DISCONNECTED BIT1
 #define H2_ESP_WIFI_EVENT_GOT_IP BIT2
-/* Migration encodes the 888-byte list on the internal stack. Reserve 8 KiB
- * for this plus NVS; the SafeCall worker has 16 KiB available. */
-#define H2_ESP_WIFI_SAFE_STACK_DEPTH 8192u
+#define H2_ESP_WIFI_SAFE_STACK_DEPTH 4096u
 #define H2_ESP_WIFI_STA_RECONNECT_ATTEMPTS 5u
 
 typedef enum h2_esp_wifi_safe_op {
@@ -70,17 +68,11 @@ typedef enum h2_esp_wifi_safe_op {
 typedef struct h2_esp_wifi_safe_call {
     h2_esp_wifi_safe_op_t op;
     wifi_interface_t interface;
-    /* Operations are exclusive: sharing payload storage keeps the 888-byte
-     * blob within SafeCall's 1024-byte internal context capacity. */
-    union {
-      wifi_init_config_t init_config;
-      wifi_config_t config;
-      uint8_t record[H2_WIFI_SAVED_LIST_BLOB_SIZE];
-    };
+    wifi_init_config_t init_config;
+    wifi_config_t config;
+    uint8_t record[H2_ESP_WIFI_SAVED_RECORD_SIZE];
     esp_err_t result;
 } h2_esp_wifi_safe_call_t;
-_Static_assert(sizeof(h2_esp_wifi_safe_call_t) <= 1024u,
-               "Wi-Fi payload exceeds SafeCall internal context capacity");
 
 static size_t h2_esp_wifi_strnlen(const uint8_t *value, size_t max_len);
 static int h2_esp_wifi_map_error(esp_err_t err);
@@ -175,7 +167,7 @@ static SemaphoreHandle_t h2_esp_wifi_safe_mutex(void) {
  * The versioned tombstone prevents a forgotten legacy network reappearing. */
 static esp_err_t h2_esp_wifi_saved_io(h2_esp_wifi_safe_call_t *call, bool write) {
     char name[] = "h2wifi";
-    char key[] = "nets_v1";
+    char key[] = "sta_v1";
     nvs_handle_t handle;
     esp_err_t rc = nvs_open(name, NVS_READWRITE, &handle);
     if (rc != ESP_OK)
@@ -183,35 +175,23 @@ static esp_err_t h2_esp_wifi_saved_io(h2_esp_wifi_safe_call_t *call, bool write)
     if (!write) {
         size_t length = sizeof(call->record);
         rc = nvs_get_blob(handle, key, call->record, &length);
-        if (rc == ESP_OK && (length != sizeof(call->record)))
-          rc = ESP_ERR_INVALID_SIZE;
-        if (rc == ESP_ERR_NVS_NOT_FOUND) {
-          char old_key[] = "sta_v1";
-          uint8_t old[H2_ESP_WIFI_SAVED_RECORD_SIZE] = {0};
-          length = sizeof(old);
-          rc = nvs_get_blob(handle, old_key, old, &length);
-          if (rc == ESP_OK && length != sizeof(old))
+        if (rc == ESP_OK && (length != sizeof(call->record) || call->record[0] != 1u))
             rc = ESP_ERR_INVALID_SIZE;
-          if (rc == ESP_ERR_NVS_NOT_FOUND) {
-            const wifi_config_t *legacy = &s_h2_esp_wifi_legacy_config;
+        if (rc == ESP_ERR_NVS_NOT_FOUND) {
+            const wifi_config_t legacy = s_h2_esp_wifi_legacy_config;
             rc = s_h2_esp_wifi_legacy_result;
             if (rc == ESP_OK) {
-              old[0] = 1u;
-              old[1] = (uint8_t)h2_esp_wifi_strnlen(legacy->sta.ssid, 32u);
-              old[2] = (uint8_t)h2_esp_wifi_strnlen(legacy->sta.password, 64u);
-              old[3] = legacy->sta.bssid_set ? 1u : 0u;
-              old[4] = legacy->sta.channel;
-              memcpy(old + 5u, legacy->sta.bssid, 6u);
-              memcpy(old + 11u, legacy->sta.ssid, old[1]);
-              memcpy(old + 43u, legacy->sta.password, old[2]);
+                memset(call->record, 0, sizeof(call->record));
+                call->record[0] = 1u;
+                call->record[1] = (uint8_t)h2_esp_wifi_strnlen(legacy.sta.ssid, 32u);
+                call->record[2] = (uint8_t)h2_esp_wifi_strnlen(legacy.sta.password, 64u);
+                call->record[3] = legacy.sta.bssid_set ? 1u : 0u;
+                call->record[4] = legacy.sta.channel;
+                memcpy(call->record + 5u, legacy.sta.bssid, 6u);
+                memcpy(call->record + 11u, legacy.sta.ssid, call->record[1]);
+                memcpy(call->record + 43u, legacy.sta.password, call->record[2]);
+                write = true;
             }
-          }
-          if (rc == ESP_OK) {
-            if (h2_esp_wifi_saved_import(old, call->record) != H2_PAL_OK)
-              rc = ESP_ERR_INVALID_SIZE;
-            else
-              write = true;
-          }
         }
     }
     if (write && rc == ESP_OK) {
@@ -268,36 +248,19 @@ static esp_err_t h2_esp_wifi_run_safe(h2_esp_wifi_safe_call_t *call) {
     return rc == H2_PAL_OK ? call->result : ESP_ERR_NO_MEM;
 }
 
-int h2_esp_platform_wifi_saved_transaction(int (*operation)(void *),
-                                           void *context) {
-  SemaphoreHandle_t mutex = h2_esp_wifi_safe_mutex();
-  if (!operation)
-    return H2_PAL_ERR_INVALID_ARG;
-  if (mutex == NULL || xSemaphoreTake(mutex, portMAX_DELAY) != pdTRUE)
-    return H2_PAL_ERR_NO_MEMORY;
-  int rc = operation(context);
-  (void)xSemaphoreGive(mutex);
-  return rc;
-}
-
 int h2_esp_platform_wifi_saved_record(
-    uint8_t record[H2_WIFI_SAVED_LIST_BLOB_SIZE], bool write) {
-  if (record == NULL)
-    return H2_PAL_ERR_INVALID_ARG;
-  h2_esp_wifi_safe_call_t call = {
-      .op = write ? H2_ESP_WIFI_SAFE_WRITE_SAVED : H2_ESP_WIFI_SAFE_READ_SAVED,
-  };
-  if (write)
-    memcpy(call.record, record, sizeof(call.record));
-  /* The caller holds the Wi-Fi safe mutex across the whole transaction. */
-  int rc =
-      h2_esp_platform_safe_call(h2_esp_wifi_safe_callback, &call, sizeof(call),
-                                H2_ESP_WIFI_SAFE_STACK_DEPTH);
-  if (rc == H2_PAL_OK)
-    rc = h2_esp_wifi_map_error(call.result);
-  if (rc == H2_PAL_OK && !write)
-    memcpy(record, call.record, sizeof(call.record));
-  return rc;
+    uint8_t record[H2_ESP_WIFI_SAVED_RECORD_SIZE], bool write) {
+    if (record == NULL)
+        return H2_PAL_ERR_INVALID_ARG;
+    h2_esp_wifi_safe_call_t call = {
+        .op = write ? H2_ESP_WIFI_SAFE_WRITE_SAVED : H2_ESP_WIFI_SAFE_READ_SAVED,
+    };
+    if (write)
+        memcpy(call.record, record, sizeof(call.record));
+    const int rc = h2_esp_wifi_map_error(h2_esp_wifi_run_safe(&call));
+    if (rc == H2_PAL_OK && !write)
+        memcpy(record, call.record, sizeof(call.record));
+    return rc;
 }
 
 int h2_esp_platform_wifi_set_config_safe(

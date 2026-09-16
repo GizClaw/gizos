@@ -377,21 +377,15 @@ Host Serial PAL 不解析 H2Loader response、不推断 board、不合并 BLE id
 
 ## Wi-Fi 连接与持久化
 
-Wi-Fi Settings 保存最多 `H2_PAL_WIFI_SAVED_NETWORK_MAX`（8）条网络，按最近连接顺序排列。`set_saved_sta_config` 按 SSID 的长度和大小写敏感字节值去重，更新凭据并移到首位；满 8 条时插入新 SSID 淘汰末尾最久未连接的网络。整个更新必须原子完成，失败保留原列表。`get_saved_sta_config` 返回首条，空列表返回 NOT_FOUND；`clear_saved_sta_config` 清空全部；`remove_saved_sta_config(settings, ssid, ssid_len)` 只删除匹配项，保留其余顺序，不存在返回 NOT_FOUND。上述操作不改变当前连接。
+Wi-Fi Settings 始终只保存**一条** STA 凭据，表示“最近一次连上的网络”（由成功的 `connect_and_save` 更新）。`set_saved_sta_config` 原子替换该条，写失败保留旧值；`get_saved_sta_config` 返回该条，空时返回 NOT_FOUND；`clear_saved_sta_config` 清除该条。显式 get/set/clear 不改变当前连接；临时 `connect` 不更新保存值。PAL 不提供网络集合、list/remove 或多网络排序能力，provider 和原有单条格式保持不变。
 
-`list_saved_sta_configs` 按最近优先复制到调用方缓冲区，`out_count` 表示实际复制条数；容量不足时截断，容量为零时允许空指针并返回零条。list/remove 是可选 vtable 成员：旧 provider 的 list 回退到 get，产生 0 或 1 条；remove 仅在 get 的 SSID 匹配时调用 clear。canonical unsupported 对这两个操作仍返回 UNSUPPORTED。
+最多 8 条的网络集合归 Runtime，保存在其专属 pref namespace `h2runtime_wifi` 的 `saved_v1` key 中，与 PAL Wi-Fi Settings 分离。Runtime 使用固定 920 字节小端 blob，整块原子替换；存储位置表示最近连接顺序，UTC 时间戳未校准时为 0。集合 API、格式、淘汰和重连排序详见 [Runtime 的 Wi-Fi 凭据与恢复](./runtime.md#wi-fi-凭据与恢复)。不将已有 PAL 凭据迁移到集合。
 
-`libs/wifi_sta` 统一提供 `h2_wifi_saved_list_decode/encode/insert/remove`。V1 blob 固定为 **888 字节**（8 字节头 + 8 × 110 字节记录），低于 1 KiB，不包含存储后端元数据。头部是 little-endian u32 magic `0x4e573248`（字节 `H2WN`）、u16 version=1、u8 count、u8 reserved=0。每条记录依次为 u8 SSID 长度、u8 password 长度、6 字节 BSSID、u8 bssid_set、u8 channel、32 字节 SSID、64 字节 password、little-endian u32 `last_connected_seq`。未使用空间写零，不落盘 C struct 的 padding 或终止符。解码校验大小、头部、数量、凭据长度、BSSID 标记、信道及重复 SSID，不返回部分成功列表；空列表同样编码为完整 blob。记录按最近优先排列，序号用于合并来源时的同 RSSI 排序；序号溢出前按已有顺序重新编号。
-
-持久化 provider 负责原始 blob I/O，以及把旧单条格式解码后导入 slot 0，再写新格式；之后不再写旧 key。清空必须保存显式空列表，防止旧驱动凭据重新导入。Desktop 与 testing PAL 使用同一插入/删除算法维护进程内列表；设备端旧格式迁移与断电保存需通过设备 provider 的独立验证。
-
-`h2_wifi_sta_rank_saved_candidates`是无副作用的纯函数：取扫描结果与已保存 SSID 的交集，每个 SSID 只保留 RSSI 最强 AP，按 RSSI 降序、同 RSSI 按 `last_connected_seq` 降序排序；序号也相同则保留列表顺序。候选保留密码，覆盖为实际扫描到的 BSSID/channel 并设置 `bssid_set`；未扫描到的保存网络不进入候选。输出缓冲区须容纳 8 条配置。
-
-`h2_runtime_wifi_connect_best_saved` 使用该排序依次尝试临时连接，首个成功返回 OK，全部失败返回最后一次连接错误，空列表或无可见保存网络返回 NOT_FOUND。列表读取、扫描与各次连接共享总预算（零值默认 15 秒），开始下一步前预算耗尽返回 TIMEOUT；底层读取/扫描/时钟错误直接传播。它不写凭据，也不更新保存顺序；成功表示关联完成，不保证已取得 IP。调用时机、重试节奏及连接操作串行化由应用负责。
+Runtime 配网入口先调用 PAL `connect_and_save`，成功后才记录到自己的集合；best-saved 则按扫描 RSSI 和集合顺序尝试 PAL `connect`，成功后只更新 Runtime 集合，不写 PAL 凭据、不等待 IP。原有 `h2_runtime_wifi_connect_saved` 继续只恢复 PAL 单条凭据。
 
 Wi-Fi STA 的 `connect` 与 `connect_and_save` 是两个独立 operation。前者对所有 timeout 都只改变当前连接；后者必须重新验证目标凭据，取得目标 SSID（指定 BSSID 时也匹配 BSSID）的有效非零 IPv4 后才调用 Wi-Fi Settings 保存。后者要求非零关联/DHCP 总预算，零值无副作用地返回 INVALID_ARG。连接、IP 或保存失败均不得伪装为配网成功；旧凭据在连接失败时保留，保存失败由 Settings 原子替换合同保护。get/set/clear/has_saved_sta_config 仍是显式的独立存储能力。
 
-ESP-IDF、BK7258、Desktop simulator 和 testing PAL 共用 `libs/wifi_sta` 的事务算法。Runtime 只转发同一 PAL API；不可在 Runtime、BLE、RPC 或 Loader 中再实现一份等待 IP 与保存的算法。Desktop 与 testing PAL 的 Settings 是进程内模拟，不能据此声称设备断电持久化通过。无 Wi-Fi 的 canonical unsupported 与 ESP32-P4 unsupported provider 对新 operation 明确返回 UNSUPPORTED。
+ESP-IDF、BK7258、Desktop simulator 和 testing PAL 共用 `libs/wifi_sta` 的事务算法。Runtime 的配网入口复用同一 PAL 事务，成功后独立更新自己的集合；不可在 Runtime、BLE、RPC 或 Loader 中重复实现 PAL 的等待 IP 与单条凭据保存算法。Desktop 与 testing PAL 的 Settings 是进程内模拟，不能据此声称设备断电持久化通过。无 Wi-Fi 的 canonical unsupported 与 ESP32-P4 unsupported provider 对新 operation 明确返回 UNSUPPORTED。
 
 ## Contract 形态
 

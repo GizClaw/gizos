@@ -116,7 +116,7 @@ typedef int (*h2_ble_wifi_config_connect_fn)(
  * Optional replacement for the built-in disconnect-reason mapping.
  *
  * @param user h2_ble_wifi_config_config_t::user.
- * @param connect_result Result returned by h2_pal_wifi_sta_connect_and_save().
+ * @param connect_result Result returned by h2_runtime_wifi_connect_and_save().
  * @param status Borrowed station status, or NULL when it could not be read.
  * @return The reason byte to report to the application.
  */
@@ -128,6 +128,8 @@ typedef h2_ble_wifi_config_reason_t (*h2_ble_wifi_config_reason_fn)(
 /** Platform capabilities borrowed by the service for its whole lifetime. */
 typedef struct h2_ble_wifi_config_api {
     /*
+     * Required for the built-in provisioning step, which records successful
+     * connections in the Runtime saved set. Must outlive this service.
      * Station transitions come from the Runtime's published snapshot rather
      * than raw PAL events: the Runtime already consumes those events and keeps
      * one coherent state, and only its main loop may drain the event queue.
@@ -182,7 +184,7 @@ typedef struct h2_ble_wifi_config_config {
      */
     bool gatt_service_registered_by_caller;
     h2_pal_task_options_t worker_task_options;
-    /** NULL selects the built-in Wi-Fi PAL connect step. */
+    /** NULL selects the built-in Runtime connect-and-save step. */
     h2_ble_wifi_config_connect_fn connect;
     /** NULL selects h2_ble_wifi_config_default_reason(). */
     h2_ble_wifi_config_reason_fn map_reason;

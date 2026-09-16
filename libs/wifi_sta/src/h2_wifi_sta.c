@@ -66,8 +66,7 @@ int h2_wifi_sta_connect_and_save(const h2_wifi_sta_dependencies_t *deps,
             memcmp(status.ssid, config->ssid, config->ssid_len) == 0 &&
             (!config->bssid_set || (status.bssid_set &&
              memcmp(status.bssid, config->bssid, sizeof(config->bssid)) == 0))) {
-          /* Settings owns SSID deduplication, recency and tail eviction. */
-          return h2_pal_wifi_settings_set_saved_sta_config(settings, config);
+            return h2_pal_wifi_settings_set_saved_sta_config(settings, config);
         }
         if (status.state == H2_PAL_WIFI_STA_STATE_FAILED ||
             status.state == H2_PAL_WIFI_STA_STATE_DISCONNECTED)

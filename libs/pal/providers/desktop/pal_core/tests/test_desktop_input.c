@@ -380,58 +380,6 @@ int main(void) {
   assert(h2_pal_wifi_sta_connect_and_save(h2_desktop_platform_wifi_sta(), &connect_config, 100u) == H2_PAL_ERR_IO);
   assert(h2_pal_wifi_settings_get_saved_sta_config(saved_api, &saved_config) == H2_PAL_OK);
   assert(saved_config.password[0] == 's');
-  h2_pal_wifi_saved_network_t saved_list[H2_PAL_WIFI_SAVED_NETWORK_MAX] = {0};
-  size_t saved_count = 0;
-  assert(h2_pal_wifi_settings_list_saved_sta_configs(
-             saved_api, saved_list, 8, &saved_count) == H2_PAL_OK);
-  assert(saved_count == 2);
-  assert(!memcmp(&saved_list[0].config, &saved_config, sizeof(saved_config)));
-  assert(!memcmp(&saved_list[1].config, &previous, sizeof(previous)));
-  assert(h2_pal_wifi_settings_remove_saved_sta_config(
-             saved_api, "missing", 7) == H2_PAL_ERR_NOT_FOUND);
-  assert(h2_pal_wifi_settings_remove_saved_sta_config(saved_api, "previous",
-                                                      8) == H2_PAL_OK);
-  assert(h2_pal_wifi_settings_list_saved_sta_configs(
-             saved_api, saved_list, 8, &saved_count) == H2_PAL_OK);
-  assert(saved_count == 1);
-  assert(h2_pal_wifi_settings_clear_saved_sta_config(saved_api) == H2_PAL_OK);
-  for (unsigned int i = 0; i < 9; ++i) {
-    h2_pal_wifi_sta_config_t c = {.ssid = "site0", .ssid_len = 5};
-    c.ssid[4] = (char)('0' + i);
-    assert(h2_pal_wifi_settings_set_saved_sta_config(saved_api, &c) ==
-           H2_PAL_OK);
-  }
-  assert(h2_pal_wifi_settings_list_saved_sta_configs(
-             saved_api, saved_list, 8, &saved_count) == H2_PAL_OK);
-  assert(saved_count == 8 && saved_list[0].config.ssid[4] == '8' &&
-         saved_list[7].config.ssid[4] == '1');
-  h2_pal_wifi_sta_config_t replacement = saved_list[3].config;
-  replacement.password[0] = 'x';
-  replacement.password_len = 1;
-  assert(h2_pal_wifi_settings_set_saved_sta_config(saved_api, &replacement) ==
-         H2_PAL_OK);
-  assert(h2_pal_wifi_settings_get_saved_sta_config(saved_api, &saved_config) ==
-         H2_PAL_OK);
-  assert(saved_config.ssid[4] == '5' && saved_config.password[0] == 'x');
-  assert(h2_pal_wifi_settings_list_saved_sta_configs(
-             saved_api, saved_list, 2, &saved_count) == H2_PAL_OK);
-  assert(saved_count == 2 && saved_list[1].config.ssid[4] == '8');
-  assert(h2_pal_wifi_settings_remove_saved_sta_config(saved_api, "site5", 5) ==
-         H2_PAL_OK);
-  assert(h2_pal_wifi_settings_list_saved_sta_configs(
-             saved_api, saved_list, 8, &saved_count) == H2_PAL_OK);
-  assert(saved_count == 7 && saved_list[0].config.ssid[4] == '8' &&
-         saved_list[3].config.ssid[4] == '4');
-  assert(h2_pal_wifi_settings_clear_saved_sta_config(saved_api) == H2_PAL_OK);
-  assert(h2_pal_wifi_settings_list_saved_sta_configs(
-             saved_api, NULL, 0, &saved_count) == H2_PAL_OK);
-  assert(saved_count == 0);
-  assert(h2_pal_wifi_settings_get_saved_sta_config(saved_api, &saved_config) ==
-         H2_PAL_ERR_NOT_FOUND);
-  int has_saved = 1;
-  assert(h2_pal_wifi_settings_has_saved_sta_config(saved_api, &has_saved) ==
-         H2_PAL_OK);
-  assert(!has_saved);
 
   const h2_desktop_wifi_scan_entry_config_t duplicate_ssid_entries[] = {
       {.ssid = "Duplicate",

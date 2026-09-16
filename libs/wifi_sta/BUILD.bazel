@@ -5,7 +5,7 @@ package(default_visibility = ["//visibility:public"])
 
 cc_library(
     name = "wifi_sta",
-    srcs = ["src/h2_wifi_sta.c", "src/h2_wifi_sta_saved_list.c"],
+    srcs = ["src/h2_wifi_sta.c"],
     hdrs = ["include/h2_wifi_sta.h"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,

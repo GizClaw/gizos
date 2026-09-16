@@ -1,5 +1,6 @@
 #include "h2_ble_wifi_config_internal.h"
 #include "h2_ble_wifi_config_task_names.h"
+#include "h2_runtime.h"
 
 #include <string.h>
 
@@ -429,8 +430,7 @@ static int h2_ble_wifi_config_connect(
     uint32_t budget = service->config.connect_timeout_ms;
     uint32_t dhcp = service->config.dhcp_timeout_ms;
     budget = dhcp > UINT32_MAX - budget ? UINT32_MAX : budget + dhcp;
-    int rc = h2_pal_wifi_sta_connect_and_save(
-        service->api.wifi_sta, &sta_config, budget);
+    int rc = h2_runtime_wifi_connect_and_save(service->api.runtime, &sta_config, budget);
     memset(&sta_config, 0, sizeof(sta_config));
 
     h2_pal_wifi_sta_status_t status;
@@ -969,7 +969,7 @@ int h2_ble_wifi_config_open(
         return H2_PAL_ERR_INVALID_ARG;
     }
     *out_service = NULL;
-    if (!h2_ble_wifi_config_api_valid(api)) {
+    if (!h2_ble_wifi_config_api_valid(api) || ((!config || !config->connect) && !api->runtime)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     h2_ble_wifi_config_t *service =
