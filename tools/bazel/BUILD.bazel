@@ -1612,3 +1612,20 @@ py_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )
+
+py_test(
+    name = "jieli_idle_console_test",
+    srcs = ["tests/test_jieli_idle_console.py"],
+    data = [
+        "tests/fixtures/jieli_idle_console.c",
+        "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:src/jieli_app_iostreamikcp.c",
+        "//projects/h2loader/libs/h2loader:src/h2_loader_app_client.c",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_idle_console.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
