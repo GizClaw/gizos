@@ -3971,6 +3971,380 @@ static void test_wifi_connection_persistence(void) {
     h2_runtime_deinit(runtime);
 }
 
+typedef struct best_saved_fixture {
+    uint8_t blob[920];
+    size_t blob_len;
+    /* Mirror the Preference contract: writes stay pending until commit. */
+    uint8_t pending[920];
+    size_t pending_len;
+    h2_pal_pref_namespace_t ns;
+    int write_rc;
+    h2_pal_wifi_scan_entry_t scan[24];
+    size_t scan_count;
+    h2_pal_wifi_sta_config_t attempts[8];
+    uint32_t budgets[8], scan_budget, scan_ms, connect_ms, list_ms;
+    size_t connects, scans, saves;
+    int results[8], list_rc, scan_rc;
+    test_time_t *time;
+} best_saved_fixture_t;
+
+static int saved_pref_close(h2_pal_pref_namespace_t *ns) {
+    best_saved_fixture_t *f = ns->user;
+    f->pending_len = 0;
+    return H2_PAL_OK;
+}
+
+static int saved_pref_get(h2_pal_pref_namespace_t *ns, const h2_pal_mem_api_t *mem, const char *key,
+                          void **out, size_t *len) {
+    best_saved_fixture_t *f = ns->user;
+    assert(strcmp(key, "saved_v1") == 0);
+    f->time->now_ms += f->list_ms;
+    if (f->list_rc)
+        return f->list_rc;
+    if (!f->blob_len)
+        return H2_PAL_ERR_NOT_FOUND;
+    *out = h2_pal_mem_alloc(mem, f->blob_len);
+    assert(*out);
+    *len = f->blob_len;
+    memcpy(*out, f->blob, *len);
+    return H2_PAL_OK;
+}
+
+static int saved_pref_set(h2_pal_pref_namespace_t *ns, const char *key, const void *data,
+                          size_t len) {
+    best_saved_fixture_t *f = ns->user;
+    assert(strcmp(key, "saved_v1") == 0 && len == sizeof(f->blob));
+    if (f->write_rc)
+        return f->write_rc;
+    memcpy(f->pending, data, len);
+    f->pending_len = len;
+    return H2_PAL_OK;
+}
+
+static int saved_pref_commit(h2_pal_pref_namespace_t *ns) {
+    best_saved_fixture_t *f = ns->user;
+    if (f->pending_len) {
+        memcpy(f->blob, f->pending, f->pending_len);
+        f->blob_len = f->pending_len;
+        f->pending_len = 0;
+    }
+    return H2_PAL_OK;
+}
+
+static int saved_pref_open(void *user, const char *name, h2_pal_pref_open_mode_t mode,
+                           h2_pal_pref_namespace_t **out) {
+    best_saved_fixture_t *f = user;
+    assert(strcmp(name, "h2runtime_wifi") == 0);
+    assert(mode == H2_PAL_PREF_OPEN_READ_ONLY || mode == H2_PAL_PREF_OPEN_READ_WRITE);
+    f->ns = (h2_pal_pref_namespace_t){.user = f,
+                                      .close = saved_pref_close,
+                                      .get_blob = saved_pref_get,
+                                      .set_blob = saved_pref_set,
+                                      .commit = saved_pref_commit};
+    *out = &f->ns;
+    return H2_PAL_OK;
+}
+
+static const h2_pal_pref_vtable_t saved_pref_vtable = {.open = saved_pref_open};
+static h2_pal_result_t test_wall_get(void *user, uint64_t *out);
+static h2_pal_result_t test_wall_status(void *user, h2_pal_time_wall_status_t *out);
+
+static void test_wifi_saved_set(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    h2_pal_time_vtable_t time_vtable = *env.time.vtable;
+    time_vtable.get_wall_ms = test_wall_get;
+    time_vtable.get_wall_status = test_wall_status;
+    env.time.vtable = &time_vtable;
+    best_saved_fixture_t f = {.time = &env.time_state};
+    h2_pal_pref_api_t pref = {&f, &saved_pref_vtable};
+    h2_runtime_config_t config = test_runtime_config(&env);
+    config.pref = &pref;
+    h2_runtime_t *runtime = NULL;
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    h2_runtime_wifi_saved_network_t list[8];
+    size_t count = 99;
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK && !count);
+    h2_pal_wifi_sta_config_t network = {.ssid = "a", .ssid_len = 1};
+    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+    env.time_state.wall_valid = 1;
+    /* The canonical unsupported provider installs a real vtable whose open
+     * returns UNSUPPORTED: reads see an empty set, writes report UNSUPPORTED. */
+    {
+        h2_runtime_config_t no_pref = config;
+        no_pref.pref = h2_pal_unsupported_pref_api();
+        h2_runtime_t *bare = NULL;
+        assert(h2_runtime_init(&no_pref, &bare) == H2_PAL_OK);
+        size_t bare_count = 99;
+        assert(h2_runtime_wifi_saved_list(bare, list, 8, &bare_count) == H2_PAL_OK && !bare_count);
+        assert(h2_runtime_wifi_saved_save(bare, &network) == H2_PAL_ERR_UNSUPPORTED);
+        /* Nothing is stored, so removal answers NOT_FOUND before any write. */
+        assert(h2_runtime_wifi_saved_remove(bare, "a", 1) == H2_PAL_ERR_NOT_FOUND);
+        assert(h2_runtime_wifi_saved_clear(bare) == H2_PAL_ERR_UNSUPPORTED);
+        h2_runtime_deinit(bare);
+    }
+    env.time_state.wall_ms = UINT64_C(1800000000123);
+    network.ssid[0] = 'b';
+    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+    assert(f.blob_len == 920 && memcmp(f.blob, "H2WN\1\0\2\0", 8) == 0);
+    assert(f.blob[8 + 106] == (uint8_t)env.time_state.wall_ms);
+    h2_runtime_deinit(runtime);
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK && count == 2);
+    assert(list[0].config.ssid[0] == 'b' && list[1].config.ssid[0] == 'a');
+    assert(list[0].last_connected_at_ms == env.time_state.wall_ms);
+    assert(list[1].last_connected_at_ms == 0);
+    /* Loss of wall calibration must not undo stored recency. */
+    env.time_state.wall_valid = 0;
+    network.ssid[0] = 'a';
+    memcpy(network.password, "new-pass", 8);
+    network.password_len = 8;
+    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK && count == 2);
+    assert(list[0].config.ssid[0] == 'a' && list[0].last_connected_at_ms == 0);
+    assert(list[0].config.password_len == 8 && !memcmp(list[0].config.password, "new-pass", 8));
+    for (char name = 'c'; name <= 'i'; ++name) {
+        network.ssid[0] = name;
+        assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+    }
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK && count == 8);
+    assert(list[0].config.ssid[0] == 'i' && list[7].config.ssid[0] == 'a');
+    assert(h2_runtime_wifi_saved_remove(runtime, "b", 1) == H2_PAL_ERR_NOT_FOUND);
+    assert(h2_runtime_wifi_saved_remove(runtime, "e", 1) == H2_PAL_OK);
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK && count == 7);
+    const char expected[] = "ihgfdca";
+    for (size_t i = 0; i < count; ++i)
+        assert(list[i].config.ssid[0] == expected[i]);
+    uint8_t previous[920];
+    memcpy(previous, f.blob, sizeof(previous));
+    f.write_rc = H2_PAL_ERR_IO;
+    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_ERR_IO);
+    assert(h2_runtime_wifi_saved_remove(runtime, "a", 1) == H2_PAL_ERR_IO);
+    assert(h2_runtime_wifi_saved_clear(runtime) == H2_PAL_ERR_IO);
+    assert(!memcmp(previous, f.blob, sizeof(previous)));
+    assert(h2_runtime_wifi_saved_list(runtime, list, 1, &count) == H2_PAL_OK && count == 1);
+    assert(h2_runtime_wifi_saved_list(runtime, NULL, 0, &count) == H2_PAL_OK && !count);
+    assert(h2_runtime_wifi_saved_list(runtime, NULL, 1, &count) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_runtime_wifi_saved_save(runtime, NULL) == H2_PAL_ERR_INVALID_ARG);
+    network.ssid_len = 33;
+    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_runtime_wifi_saved_remove(runtime, "", 0) == H2_PAL_ERR_INVALID_ARG);
+    /* Reject malformed and duplicate records without exposing a partial set. */
+    const size_t bad_offsets[] = {0, 4, 6, 7, 8, 9, 16};
+    for (size_t i = 0; i < sizeof(bad_offsets) / sizeof(bad_offsets[0]); ++i) {
+        memcpy(f.blob, previous, sizeof(previous));
+        f.blob[bad_offsets[i]] = 255;
+        assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_ERR_FORMAT && !count);
+    }
+    memcpy(f.blob, previous, sizeof(previous));
+    memcpy(f.blob + 8 + 114, f.blob + 8, 114);
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_ERR_FORMAT && !count);
+    /* Only the canonical encoding decodes: padding past each length and every
+     * slot beyond the count must be zero. */
+    const size_t garbage_offsets[] = {
+        8 + 10 + previous[8],       /* one byte past the first record's SSID */
+        8 + 42 + previous[8 + 1],   /* one byte past its password */
+        8 + 7 * 114,                /* an unused slot */
+    };
+    for (size_t i = 0; i < sizeof(garbage_offsets) / sizeof(garbage_offsets[0]); ++i) {
+        memcpy(f.blob, previous, sizeof(previous));
+        f.blob[garbage_offsets[i]] = 1;
+        assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_ERR_FORMAT && !count);
+    }
+    f.blob_len--;
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_ERR_FORMAT && !count);
+    f.write_rc = 0;
+    assert(h2_runtime_wifi_saved_clear(runtime) == H2_PAL_OK);
+    h2_runtime_deinit(runtime);
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK && !count);
+    h2_runtime_deinit(runtime);
+}
+
+static int best_saved_scan(void *user, const h2_pal_wifi_scan_request_t *request,
+                           h2_pal_wifi_scan_result_fn callback, void *callback_user,
+                           uint32_t timeout) {
+    best_saved_fixture_t *f = user;
+    assert(!request);
+    ++f->scans;
+    f->scan_budget = timeout;
+    f->time->now_ms += f->scan_ms;
+    if (f->scan_rc)
+        return f->scan_rc;
+    for (size_t i = 0; i < f->scan_count; ++i)
+        if (!callback(callback_user, &f->scan[i]))
+            break;
+    return H2_PAL_OK;
+}
+
+static int best_saved_connect(void *user, const h2_pal_wifi_sta_config_t *config,
+                              uint32_t timeout) {
+    best_saved_fixture_t *f = user;
+    assert(f->connects < 8);
+    f->attempts[f->connects] = *config;
+    f->budgets[f->connects] = timeout;
+    f->time->now_ms += f->connect_ms;
+    return f->results[f->connects++];
+}
+
+static int best_saved_provision(void *user, const h2_pal_wifi_sta_config_t *config,
+                                uint32_t timeout) {
+    best_saved_fixture_t *f = user;
+    ++f->saves;
+    return best_saved_connect(user, config, timeout);
+}
+
+static void test_wifi_best_saved(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    h2_pal_time_vtable_t time_vtable = *env.time.vtable;
+    time_vtable.get_wall_ms = test_wall_get;
+    time_vtable.get_wall_status = test_wall_status;
+    env.time.vtable = &time_vtable;
+    env.time_state.wall_valid = 1;
+    env.time_state.wall_ms = UINT64_C(1800000000000);
+    best_saved_fixture_t f = {
+        .time = &env.time_state,
+        .scan_count = 3,
+        .scan_ms = 20,
+        .list_ms = 5,
+        .connect_ms = 10,
+        .scan = {{.ssid = "a", .ssid_len = 1, .rssi = -70, .bssid = {1}, .channel = 1},
+                 {.ssid = "b", .ssid_len = 1, .rssi = -20, .bssid = {2}, .channel = 6},
+                 {.ssid = "a", .ssid_len = 1, .rssi = -40, .bssid = {3}, .channel = 11}}};
+    const h2_pal_wifi_sta_vtable_t sta_vtable = {.scan = best_saved_scan,
+                                                 .connect = best_saved_connect,
+                                                 .connect_and_save = best_saved_provision};
+
+    const h2_pal_wifi_sta_api_t sta = {&f, &sta_vtable};
+    const h2_pal_pref_api_t pref = {&f, &saved_pref_vtable};
+    h2_runtime_config_t config = test_runtime_config(&env);
+    config.wifi_sta = &sta;
+    config.pref = &pref;
+    h2_runtime_t *runtime = NULL;
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    h2_pal_wifi_sta_config_t network = {.ssid = "b", .ssid_len = 1};
+    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+    network.ssid[0] = 'a';
+    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+    h2_pal_wifi_sta_config_t provision = {.ssid = "phone", .ssid_len = 5};
+    f.results[0] = H2_PAL_ERR_IO;
+    assert(h2_runtime_wifi_connect_and_save(runtime, &provision, 100) == H2_PAL_ERR_IO);
+    h2_runtime_wifi_saved_network_t list[8];
+    size_t saved_count = 0;
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &saved_count) == H2_PAL_OK &&
+           saved_count == 2);
+    f.connects = 0;
+    f.results[0] = H2_PAL_OK;
+    assert(h2_runtime_wifi_connect_and_save(runtime, &provision, 100) == H2_PAL_OK);
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &saved_count) == H2_PAL_OK &&
+           saved_count == 3);
+    assert(!memcmp(list[0].config.ssid, "phone", 5));
+    f.connects = 0;
+    assert(h2_runtime_wifi_connect_best_saved(NULL, 100) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
+    assert(f.connects == 1 && f.attempts[0].ssid[0] == 'b');
+    assert(f.attempts[0].bssid_set && f.attempts[0].bssid[0] == 2 && f.attempts[0].channel == 6);
+    assert(f.scan_budget == 95 && f.budgets[0] == 75);
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &saved_count) == H2_PAL_OK);
+    assert(list[0].config.ssid[0] == 'b' && list[0].last_connected_at_ms == env.time_state.wall_ms);
+    env.time_state.wall_ms += 1000;
+    f.connects = 0;
+    f.results[0] = H2_PAL_ERR_IO;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
+    assert(f.connects == 2 && f.attempts[1].ssid[0] == 'a');
+    assert(f.attempts[1].bssid[0] == 3 && f.attempts[1].channel == 11);
+    assert(f.budgets[0] == 75 && f.budgets[1] == 65);
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &saved_count) == H2_PAL_OK);
+    assert(list[0].config.ssid[0] == 'a' && list[0].last_connected_at_ms == env.time_state.wall_ms);
+    uint8_t previous[920];
+    memcpy(previous, f.blob, sizeof(previous));
+    f.connects = 0;
+    f.results[1] = H2_PAL_ERR_UNAVAILABLE;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_UNAVAILABLE);
+    assert(f.connects == 2);
+    assert(!memcmp(previous, f.blob, sizeof(previous)));
+    f.connects = 0;
+    f.connect_ms = 75;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_TIMEOUT);
+    assert(f.connects == 1);
+    f.connects = 0;
+    f.scan_ms = 100;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_TIMEOUT);
+    assert(!f.connects);
+    f.scan_ms = 20;
+    f.connect_ms = 10;
+    f.results[0] = H2_PAL_OK;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 0) == H2_PAL_OK);
+    assert(f.budgets[0] == 14975);
+    f.connects = 0;
+    f.scan[2].rssi = -20;
+    env.time_state.wall_valid = 0;
+    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
+    assert(f.attempts[0].ssid[0] == 'a');
+    /* A matching AP after more than SCAN_MAX_RESULTS must still be seen. */
+    f.connects = 0;
+    for (size_t i = 0; i < 23; ++i)
+        f.scan[i] = (h2_pal_wifi_scan_entry_t){.ssid = "other", .ssid_len = 5};
+    f.scan[23] = (h2_pal_wifi_scan_entry_t){.ssid = "a", .ssid_len = 1, .rssi = -30};
+    f.scan_count = 24;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
+    assert(f.connects == 1 && f.attempts[0].ssid[0] == 'a');
+    f.connects = 0;
+    f.scan_count = 23;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_NOT_FOUND);
+    assert(!f.connects);
+    f.scan_count = 0;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_NOT_FOUND);
+    f.scan_rc = H2_PAL_ERR_IO;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_IO);
+    f.scan_rc = 0;
+    /* Unsupported storage reads as an empty set, so there is nothing to try;
+     * a real storage error still propagates. */
+    f.list_rc = H2_PAL_ERR_UNSUPPORTED;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_NOT_FOUND);
+    f.list_rc = H2_PAL_ERR_IO;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_IO);
+    f.list_rc = 0;
+    /* The stored entry keeps the credential as provisioned: a candidate pinned
+     * to the AP that happened to be strongest must not be written back. */
+    f.scan_count = 1;
+    f.scan[0] = (h2_pal_wifi_scan_entry_t){
+        .ssid = "a", .ssid_len = 1, .rssi = -30, .channel = 11, .bssid = {3}};
+    network.ssid[0] = 'a';
+    network.bssid_set = 0;
+    network.channel = 0;
+    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+    f.connects = 0;
+    f.results[0] = H2_PAL_OK;
+    f.results[1] = H2_PAL_OK;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
+    assert(f.connects == 1 && f.attempts[0].bssid_set == 1 && f.attempts[0].channel == 11);
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &saved_count) == H2_PAL_OK);
+    assert(list[0].config.ssid[0] == 'a' && !list[0].config.bssid_set && !list[0].config.channel);
+    /* A failed bookkeeping write never turns a working connection into an
+     * error, and it leaves the stored set untouched. */
+    memcpy(previous, f.blob, sizeof(previous));
+    f.write_rc = H2_PAL_ERR_IO;
+    f.connects = 0;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
+    assert(f.connects == 1 && !memcmp(previous, f.blob, sizeof(previous)));
+    f.connects = 0;
+    size_t provisions = f.saves;
+    assert(h2_runtime_wifi_connect_and_save(runtime, &provision, 100) == H2_PAL_OK);
+    assert(f.saves == provisions + 1 && !memcmp(previous, f.blob, sizeof(previous)));
+    f.write_rc = 0;
+    f.connects = 0;
+    size_t scans = f.scans;
+    assert(h2_runtime_wifi_saved_clear(runtime) == H2_PAL_OK);
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_NOT_FOUND);
+    assert(f.scans == scans && !f.connects);
+
+    assert(f.saves == 3); /* Best-saved must never call PAL connect_and_save. */
+    h2_runtime_deinit(runtime);
+}
+
 static h2_pal_result_t test_wall_set(void *user, uint64_t wall_ms) {
     test_time_t *time = user;
     if (time->sleep_rc == H2_PAL_OK) {
@@ -4040,6 +4414,8 @@ int main(void) {
     test_audio_level_timestamp_survives_rollover();
     test_audio_level_reads_unaligned_frames();
     test_wifi_connection_persistence();
+    test_wifi_saved_set();
+    test_wifi_best_saved();
     test_time_adjusted_event();
     test_runtime_firmware_info_provider();
     test_runtime_capabilities_are_bound_at_init();

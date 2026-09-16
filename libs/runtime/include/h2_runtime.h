@@ -181,6 +181,49 @@ void h2_runtime_deinit(h2_runtime_t *runtime);
  * The caller must finish this operation before Runtime deinit.
  */
 h2_pal_result_t h2_runtime_wifi_connect_saved(h2_runtime_t *runtime, uint32_t timeout_ms);
+#define H2_RUNTIME_WIFI_SAVED_MAX 8u
+
+typedef struct h2_runtime_wifi_saved_network {
+    h2_pal_wifi_sta_config_t config;
+    uint64_t last_connected_at_ms;
+} h2_runtime_wifi_saved_network_t;
+
+/** Runtime-owned durable set, stored most recently connected first.
+ * Serialize all saved-set and connection operations; finish before deinit.
+ * List truncates to capacity and reports copied entries; NULL is allowed at
+ * zero capacity. Missing storage is an empty list. Storage errors propagate.
+ */
+h2_pal_result_t h2_runtime_wifi_saved_list(h2_runtime_t *runtime,
+                                           h2_runtime_wifi_saved_network_t *out, size_t capacity,
+                                           size_t *out_count);
+/** Replace by SSID, front the entry and evict the tail at capacity.
+ * Wall time is informational (zero if unavailable); position defines recency.
+ * One 920-byte pref blob is replaced atomically. PAL credentials are unchanged.
+ */
+h2_pal_result_t h2_runtime_wifi_saved_save(h2_runtime_t *runtime,
+                                           const h2_pal_wifi_sta_config_t *config);
+/** Remove exactly one SSID; return NOT_FOUND if absent. */
+h2_pal_result_t h2_runtime_wifi_saved_remove(h2_runtime_t *runtime, const char *ssid,
+                                             size_t ssid_len);
+h2_pal_result_t h2_runtime_wifi_saved_clear(h2_runtime_t *runtime);
+/** Provision through PAL, then record in the Runtime set only on success.
+ * PAL timeout/IP semantics are unchanged; Runtime adds no IP wait. Returns the
+ * PAL result: once PAL reports success the station is connected and the
+ * platform credential is stored, so a failed set write is logged and still
+ * returns OK rather than reporting a working connection as failed provisioning.
+ */
+h2_pal_result_t h2_runtime_wifi_connect_and_save(h2_runtime_t *runtime,
+                                                 const h2_pal_wifi_sta_config_t *config,
+                                                 uint32_t timeout_ms);
+/** Scan and try visible saved networks by RSSI, then stored recency.
+ * Pin each candidate to its strongest observed AP. Success fronts the entry
+ * and refreshes wall time, without writing PAL credentials or waiting for IP.
+ * Zero selects a 15-second total listing/scan/association budget. Return the
+ * last connection error if all fail, NOT_FOUND for an empty/invisible set,
+ * TIMEOUT before the next attempt, or the underlying storage/scan/clock error.
+ */
+h2_pal_result_t h2_runtime_wifi_connect_best_saved(h2_runtime_t *runtime, uint32_t timeout_ms);
+
 h2_pal_result_t h2_runtime_periph_id(const h2_runtime_t *runtime, h2_runtime_component_id_t component_id, h2_pal_periph_id_t *out_periph_id);
 
 #ifdef __cplusplus
