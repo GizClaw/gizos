@@ -112,6 +112,8 @@ FDK AAC 与 Linux FDK AAC decoder provider 允许 pi32v2；`libs/fdk_aac` 在该
 
 `boards/jieli_ac791n_devkit/ac791n` 提供 board identity 与 device UID、TIMER5 单调时钟、UART console、NOR disk partition、NOR 上基于 LittleFS 的 Pref、共享引用计数 NOR write window、SD filesystem、Net/Netif 与 Wi-Fi（STA、AP、saved settings）、BLE host、Audio、Display/Touch/Button input，以及 board runtime config。
 
+STA 需要提取 `wpasupplicant.a` 中的真实 supplicant，覆盖 `wl_wifi.a` 的弱 stub。H2Loader layout 将 `wpasupplicant.a` 放在 `wl_wifi.a` 前，移除 `hostapd_and_wpasupplicant.a`，并通过 `LFLAGS += --undefined=wpa_supplicant_get_state` 保证提取该成员。连接前调用 SDK `wifi_set_sta_connect_timeout()`，非零 PAL 预算向上取整为秒，零预算使用 30 秒。
+
 所有 NOR erase/write 都必须通过 `h2_jieli_flash_window_open()` / `h2_jieli_flash_window_close()` 配对管理；包括失败在内的每条退出路径都关闭 lease，最后一次 close 恢复 SDK write protection。嵌套或重叠 lease 始终保留首次 open 保存的 protection 值，直到最后一个 lease 关闭。
 
 Board 不安装任何 `NULL` vtable member；未实现的 operation 返回 `H2_PAL_ERR_UNSUPPORTED`，包括 `tcp_listen`、`tcp_accept`、`set_default`，以及通过共享 `h2_pal_unsupported_ble_*` stub 填充的 BLE scan / central-GATT entry。

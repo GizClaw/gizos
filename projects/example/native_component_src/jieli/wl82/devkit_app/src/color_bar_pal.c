@@ -604,6 +604,23 @@ static void fail_app_startup(const char *step, int result) {
   }
 }
 
+/* restore_saved_wifi begin */
+static void restore_saved_wifi(void) {
+  h2_pal_wifi_sta_config_t saved = {0};
+  int result = h2_pal_wifi_settings_get_saved_sta_config(
+      h2_jieli_ac791n_devkit_wifi_settings_api(), &saved);
+  if (result != H2_PAL_OK) {
+    usb_write_status("JIELI_WIFI_RESTORE saved=0 result=%d ssid=-\r\n", result);
+  } else {
+    result = h2_pal_wifi_sta_connect(
+        h2_jieli_ac791n_devkit_wifi_sta_api(), &saved, 0u);
+    usb_write_status("JIELI_WIFI_RESTORE saved=1 result=%d ssid=%.*s\r\n",
+                     result, (int)saved.ssid_len, saved.ssid);
+  }
+  memset(&saved, 0, sizeof(saved));
+}
+/* restore_saved_wifi end */
+
 void app_main(void) {
   usb_write_status("JIELI_APP_INIT step=enter\r\n");
   const h2_pal_display_api_t *display =
@@ -662,6 +679,8 @@ void app_main(void) {
   usb_write_status(
       "JIELI_TRIAL_TIMER state=armed id=%u delay_ms=120000\r\n",
       (unsigned)trial_recovery_timer);
+
+  restore_saved_wifi();
 
   loader_result = h2_jieli_app_iostreamikcp_start(
       &loader_client,

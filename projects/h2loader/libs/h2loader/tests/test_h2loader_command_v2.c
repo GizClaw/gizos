@@ -211,6 +211,7 @@ static void test_command_availability_is_runtime_and_capability_bounded(void) {
 
 typedef struct wifi_fixture {
   int result;
+  int status_result, settings_result, get_result, saved, disconnected;
   unsigned saves, connects;
   h2_pal_wifi_sta_config_t target;
 } wifi_fixture_t;
@@ -231,7 +232,15 @@ static int wifi_status(void *user, h2_pal_wifi_sta_status_t *status) {
   status->ip_valid = 1;
   status->ssid_len = f->target.ssid_len;
   memcpy(status->ssid, f->target.ssid, status->ssid_len);
-  return H2_PAL_OK;
+  status->ip.ip4 = 0xc0000201u;
+  status->rssi = -42;
+  if (f->disconnected) {
+    status->state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
+    status->ip_valid = 0;
+    status->ssid_len = 0;
+    status->disconnect_reason = 7;
+  }
+  return f->status_result;
 }
 static int wifi_connect_and_save(void *user, const h2_pal_wifi_sta_config_t *config,
                                  uint32_t timeout_ms) {
@@ -263,7 +272,101 @@ static void test_wifi_saves_only_after_connection(void) {
   assert(f.saves == 1); /* Exactly one persistent provider operation. */
 }
 
+static int wifi_has_saved(void *user, int *out) {
+    wifi_fixture_t *f = user;
+    *out = f->saved;
+    return f->settings_result;
+}
+
+static int wifi_get_saved(void *user, h2_pal_wifi_sta_config_t *out) {
+    wifi_fixture_t *f = user;
+    *out = f->target;
+    return f->get_result;
+}
+
+static unsigned status_locks, status_unlocks;
+static h2_pal_result_t status_lock(void *user, h2_pal_mutex_t *mutex) {
+    assert((void *)mutex == user); /* The Wi-Fi mutex is deliberately different. */
+    ++status_locks;
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t status_unlock(void *user, h2_pal_mutex_t *mutex) {
+    assert((void *)mutex == user);
+    ++status_unlocks;
+    return H2_PAL_OK;
+}
+
+static void test_wifi_status_snapshot(void) {
+    command_io_fixture_t io = {0};
+    h2_loader_t loader = {0};
+    loader.status.capabilities = H2_LOADER_CAPABILITY_WIFI;
+    h2_loader_command_t command;
+    assert(command_init(&command, &loader, &io) == H2_PAL_OK);
+    wifi_fixture_t f = {.saved = 1, .target = {
+        .ssid = "a b", .ssid_len = 3, .password = "placeholder", .password_len = 11}};
+    const h2_pal_wifi_sta_vtable_t sta_vtable = {.get_status = wifi_status};
+    const h2_pal_wifi_sta_api_t sta = {&f, &sta_vtable};
+    const h2_pal_wifi_settings_vtable_t settings_vtable = {
+        .has_saved_sta_config = wifi_has_saved, .get_saved_sta_config = wifi_get_saved};
+    const h2_pal_wifi_settings_api_t settings = {&f, &settings_vtable};
+    command.config.wifi = &sta;
+    command.config.wifi_settings = &settings;
+    const h2_pal_sync_vtable_t sync_vtable = {
+        .lock_mutex = status_lock, .unlock_mutex = status_unlock};
+    const h2_pal_sync_api_t sync = {.user = &f, .vtable = &sync_vtable};
+    command.config.operation_sync = &sync;
+    command.config.operation_mutex = (h2_pal_mutex_t *)&f;
+    command.config.wifi_operation_sync = &sync;
+    command.config.wifi_operation_mutex = (h2_pal_mutex_t *)&io;
+    const char *args[] = {"h2loader", "wifi", "status"};
+    assert(H2_LOADER_COMMAND_AVAILABLE_WIFI_STATUS == (1u << 20));
+    assert(h2_loader_get_command_availability(&loader, &loader.status) &
+        H2_LOADER_COMMAND_AVAILABLE_WIFI_STATUS);
+    assert(h2_loader_command_execute(&command, 3, args) == H2_PAL_OK);
+    assert(strcmp(io.output, "H2_LOADER_WIFI_STATUS result=OK state=5 ip_valid=1 "
+        "ip=192.0.2.1 ssid_hex=612062 rssi=-42 disconnect_reason=0 "
+        "saved=1 saved_code=0 saved_ssid_hex=612062\n") == 0);
+    assert(strstr(io.output, "placeholder") == NULL);
+    assert(status_locks == 1 && status_unlocks == 1);
+    memset(&io, 0, sizeof(io));
+    f.saved = 0;
+    f.disconnected = 1;
+    assert(h2_loader_command_execute(&command, 3, args) == H2_PAL_OK);
+    assert(strstr(io.output, "saved=0 saved_code=0 saved_ssid_hex=-\n"));
+    assert(strstr(io.output, "ip_valid=0 ip=0.0.0.0 ssid_hex=- rssi=-42 disconnect_reason=7"));
+    memset(&io, 0, sizeof(io));
+    f.disconnected = 0;
+    f.settings_result = H2_PAL_ERR_IO;
+    assert(h2_loader_command_execute(&command, 3, args) == H2_PAL_OK);
+    assert(strstr(io.output, "result=OK state=5"));
+    char expected[100];
+    snprintf(expected, sizeof(expected), "saved=error saved_code=%d saved_ssid_hex=-\n", H2_PAL_ERR_IO);
+    assert(strstr(io.output, expected));
+    memset(&io, 0, sizeof(io));
+    f.settings_result = 0;
+    f.saved = 1;
+    f.get_result = H2_PAL_ERR_IO;
+    assert(h2_loader_command_execute(&command, 3, args) == H2_PAL_OK);
+    assert(strstr(io.output, expected));
+    memset(&io, 0, sizeof(io));
+    f.status_result = H2_PAL_ERR_IO;
+    assert(h2_loader_command_execute(&command, 3, args) == H2_PAL_ERR_IO);
+    snprintf(expected, sizeof(expected), "H2_LOADER_WIFI_STATUS result=error code=%d\n", H2_PAL_ERR_IO);
+    assert(strcmp(io.output, expected) == 0);
+    memset(&io, 0, sizeof(io));
+    loader.status.capabilities = H2_LOADER_CAPABILITY_UART;
+    assert(!(h2_loader_get_command_availability(&loader, &loader.status) &
+        H2_LOADER_COMMAND_AVAILABLE_WIFI_STATUS));
+    assert(h2_loader_command_execute(&command, 3, args) == H2_PAL_ERR_INVALID_STATE);
+    assert(h2_loader_set_command_availability(&loader,
+        H2_LOADER_COMMAND_AVAILABLE_WIFI_STATUS, false) == H2_PAL_OK);
+    loader.status.capabilities |= H2_LOADER_CAPABILITY_WIFI;
+    assert(h2_loader_command_execute(&command, 3, args) == H2_PAL_ERR_INVALID_STATE);
+}
+
 int main(void) {
+  test_wifi_status_snapshot();
   test_wifi_saves_only_after_connection();
   test_exact_v2_routes_and_help();
   test_removed_commands_are_unroutable();

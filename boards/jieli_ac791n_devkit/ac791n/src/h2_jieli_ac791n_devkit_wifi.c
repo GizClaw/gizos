@@ -419,6 +419,8 @@ static int sta_connect(
   status = wifi_state.sta;
   wifi_state_unlock();
   post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING, &status);
+  wifi_set_sta_connect_timeout(timeout_ms == 0u
+      ? 30 : (int)(timeout_ms / 1000u + (timeout_ms % 1000u != 0u)));
   result = wifi_enter_sta_mode(ssid, password);
   if (result != 0) {
     wifi_state_lock();

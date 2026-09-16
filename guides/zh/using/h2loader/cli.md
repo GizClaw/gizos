@@ -115,7 +115,7 @@ Loader 与 app image 都返回结构化 `H2_LOADER_STATUS`。状态包括 device
 
 ## 连接 Wi-Fi
 
-设备运行 Loader image 时，可以先通过 reliable command session 扫描附近的 Wi-Fi AP：
+当前 image 具有 Wi-Fi capability 时，可以先通过 reliable command session 扫描附近的 Wi-Fi AP：
 
 ```sh
 bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- \
@@ -127,7 +127,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 
 结果包含 one-based `index`、`ssid_hex`、12 位十六进制 BSSID、channel、RSSI 和 security enum。SSID 使用十六进制编码，确保隐藏网络、包含空白或非 UTF-8 字节的名称不会破坏逐行协议；operator 可以把 `ssid_hex` 解码为原始 SSID 字节。这里的 `wifi scan` 扫描 Wi-Fi AP，不同于顶层 `h2loader scan` 对 H2Loader 串口/BLE management endpoint 的发现。
 
-Wi-Fi typed command 不按 transport 复制两套协议：serial IO Stream iKCP 的 `h2_h2loader_host_serial_execute_command()` 与 BLE-iKCP 的 `h2_h2loader_host_ble_execute_command()` 都发送同一个 `h2loader wifi scan/connect/disconnect` wire command，并在命令尚未结束时逐块交付输出。native CLI 通过全局 `--transport` 对同一个 `wifi` 子命令选择 adapter；BLE 形式只需把 scan 返回的 BLE endpoint 传给 `--port`。
+Wi-Fi typed command 不按 transport 复制两套协议：serial IO Stream iKCP 的 `h2_h2loader_host_serial_execute_command()` 与 BLE-iKCP 的 `h2_h2loader_host_ble_execute_command()` 都发送同一个 `h2loader wifi status/scan/connect/disconnect` wire command，并在命令尚未结束时逐块交付输出。native CLI 通过全局 `--transport` 对同一个 `wifi` 子命令选择 adapter；BLE 形式只需把 scan 返回的 BLE endpoint 传给 `--port`。
 
 选择 SSID 后连接 Wi-Fi：
 
@@ -137,7 +137,7 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
   wifi connect <ssid> <password>
 ```
 
-`ssid` 和 `password` 都是必填的单个参数，当前 contract 不接受空值或 ASCII 空白字符。命令只有在设备取得 IP 并返回 `H2_LOADER_WIFI result=connected` 后才成功；如果该 Loader 提供 Wi-Fi settings storage，设备会在连接成功后保存这份 STA 配置，后续 App 可以通过 Runtime `wifi_settings` 读取并重新连接。认证失败、关联超时、没有取得 IP、配置保存失败、PAL 不支持或 transport 失败都会让 CLI 返回非零状态，不能记为已连接。
+`ssid` 和 `password` 都是必填的单个参数，当前 contract 不接受空值或 ASCII 空白字符。命令只有在设备取得 IP 并返回 `H2_LOADER_WIFI result=connected ssid=<ssid>` 后才成功；如果该 Loader 提供 Wi-Fi settings storage，设备会在连接成功后保存这份 STA 配置，后续 App 可以读取并重新连接；AC791N DevKit 共享 App launcher 在启动命令传输前直接通过 PAL 恢复保存的网络，不依赖 Runtime。认证失败、关联超时、没有取得 IP、配置保存失败、PAL 不支持或 transport 失败都会让 CLI 返回非零状态，不能记为已连接。
 
 该命令是否可用只由当前连接的 `command_availability` 决定；APP 与 Loader 使用相同命令和响应，不由 Host 根据 role 另设限制。CLI 不提供任意 raw command 旁路。主动断开当前连接：
 
@@ -147,7 +147,21 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
   wifi disconnect
 ```
 
-`wifi disconnect` 不删除已经保存的 STA 配置。仓库和 operation environment wrapper 都不补默认 SSID 或 password；依赖 Runtime `wifi_settings` 的 App 必须先在 Loader 中成功执行 `wifi connect`。SSID 和 password 会作为当前进程的命令行参数，可能被本机进程查看工具或 shell history 记录；CLI 的 help、usage 和错误输出不会主动回显 password。不要把真实 credential 写入仓库文档、脚本或提交记录。
+只读查询当前站点与保存的网络：
+
+```sh
+h2loader --port <serial-port> wifi status
+```
+
+成功时输出一行：
+
+```text
+H2_LOADER_WIFI_STATUS result=OK state=<int> ip_valid=<0|1> ip=<a.b.c.d> ssid_hex=<hex|-> rssi=<int> disconnect_reason=<int> saved=<0|1|error> saved_code=<int> saved_ssid_hex=<hex|->
+```
+
+`state` 为 PAL STA 状态（5 表示取得 IP），无有效 IP 时 `ip=0.0.0.0`；两个 SSID 均使用十六进制编码，空值为 `-`。`saved` 表示是否保存配置，settings 读取失败时为 `error`，`saved_code` 给出错误码，站点快照仍为 `result=OK`。站点读取失败则输出 `H2_LOADER_WIFI_STATUS result=error code=<rc>`。输出不包含密码。
+
+`wifi disconnect` 不删除已经保存的 STA 配置。仓库和 operation environment wrapper 都不补默认 SSID 或 password；App 使用保存的配置前，须在具备 Wi-Fi capability 的 image 中成功执行 `wifi connect`；AC791N DevKit Loader 不具备 Wi-Fi capability。SSID 和 password 会作为当前进程的命令行参数，可能被本机进程查看工具或 shell history 记录；CLI 的 help、usage 和错误输出不会主动回显 password。不要把真实 credential 写入仓库文档、脚本或提交记录。
 
 ## 构建 Package
 
