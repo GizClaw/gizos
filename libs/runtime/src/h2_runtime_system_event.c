@@ -816,6 +816,12 @@ h2_pal_result_t h2_runtime_start_system_events(h2_runtime_t *runtime) {
                              runtime->private_state->wifi_connect_wait.mutex);
       runtime->private_state->wifi_connect_wait.mutex = NULL;
       runtime->private_state->wifi_connect_wait.cond = NULL;
+      /* Only refusal is a degraded configuration. Allocation or provider
+       * failures keep their usual initialization contract. */
+      if (rc != H2_PAL_ERR_UNSUPPORTED) {
+        h2_pal_system_event_deinit(api);
+        return rc;
+      }
       rc = H2_PAL_OK;
     }
     atomic_store_explicit(

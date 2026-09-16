@@ -430,10 +430,17 @@ h2_pal_result_t h2_runtime_wifi_connect_best_saved(h2_runtime_t *runtime, uint32
             break;
         }
         uint32_t generation = 0;
-        if (runtime->private_state->wifi_connect_wait.cond != NULL &&
-            h2_pal_mutex_lock(
-                runtime->sync,
-                runtime->private_state->wifi_connect_wait.mutex) == H2_PAL_OK) {
+        if (runtime->private_state->wifi_connect_wait.cond != NULL) {
+          /* Without a generation captured before connect, a station event that
+           * already happened could be mistaken for this attempt's result, so
+           * the candidate is abandoned before it starts. */
+          if (h2_pal_mutex_lock(
+                  runtime->sync,
+                  runtime->private_state->wifi_connect_wait.mutex) !=
+              H2_PAL_OK) {
+            rc = H2_PAL_ERR_UNAVAILABLE;
+            continue;
+          }
           generation = runtime->private_state->wifi_connect_wait.generation;
           (void)h2_pal_mutex_unlock(
               runtime->sync, runtime->private_state->wifi_connect_wait.mutex);

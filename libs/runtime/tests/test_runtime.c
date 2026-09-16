@@ -4473,6 +4473,14 @@ static void test_wifi_best_saved_degraded(void) {
     config.system_event = &env.system_event;
     f.on_connect = best_saved_associated;
     h2_runtime_t *runtime = NULL;
+    if (!zero_ip) {
+      /* Only refusal degrades: a provider failure keeps the usual contract. */
+      env.sync_state.cond_create_rc = H2_PAL_ERR_IO;
+      assert(h2_runtime_init(&config, &runtime) == H2_PAL_ERR_IO);
+      assert(runtime == NULL);
+      assert(!env.allocator_state.live_allocations);
+      env.sync_state.cond_create_rc = H2_PAL_ERR_UNSUPPORTED;
+    }
     /* Refusing the condition is a degraded configuration, not an init error. */
     assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
     h2_pal_wifi_sta_config_t network = {
