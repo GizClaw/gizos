@@ -103,9 +103,9 @@ Loader 只有 UART 与 BLE capability，不提供 Wi-Fi 与 HTTP；runner 一旦
 
 ## 验收记录
 
-### 2026-09-16：main 验收尝试未完成
+### 2026-09-16：main 验收在 UART 套件取消后停止
 
-`667cd925` 的验收在第一步因执行者使用不存在的 button Bazel target 而停止，尚未执行固件安装或硬件套件；这不构成 main 的编译缺陷或硬件失败证据。独立 UART status 确认原 P1 Loader 响应、Stage 空、`last_result=0`。[构建错误、工具 SHA、独立状态与全部未执行项](./evidence/2026-09-16/main-acceptance.md)。
+`667cd925` 的六个包构建、不同镜像 Loader 自更新和 PAL 10/10 通过；UART 前 20 项全部 PASS，但 runner 随后以取消状态退出（汇总 FAIL/rc=1，进程 exit=130），剩余五项、两轮 BLE、button 和 audio 验收未执行。信号来源未确定，不据此判定板卡故障或源码回归；独立 UART status 确认新 Loader 在 P1/P2、Stage 空、`last_result=0`。[完整 SHA、逐项结果、独立状态与验收限制](./evidence/2026-09-16/main-acceptance.md)。
 
 ### 2026-09-15：system-event owner 引用计数
 
