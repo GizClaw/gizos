@@ -12,6 +12,7 @@ PATHS = {name: f'{BASE}/{name}/jieli_ac791n_devkit/src/{file}.c' for name, file 
     ('audio-system', 'audio_system_target'), ('button', 'button_target'),
     ('touch', 'touch_target'), ('crash-before-confirm', 'crash_before_confirm_target'),
     ('mp4-player', 'mp4_player_small_pal'))}
+PATHS['pal'] = 'projects/e2e/targets/h2loader_tar_zlib/pal/jieli_ac791n_devkit/src/pal_e2e_main.c'
 
 
 def source(path):
@@ -44,6 +45,15 @@ class RuntimeLifetimeTest(unittest.TestCase):
                     code = text[text.index('static void mp4_runtime('):text.index('  emit("H2_JIELI_MP4_FAIL')]
                     code = code.replace('static void mp4_runtime(void *user)', 'int h2_jieli_target_application_run(void)').replace('  (void)user;\n', '')
                     code += '  return result;\n}\n'
+                elif name == 'pal':
+                    start = text.index('  if (result == H2_PAL_OK) result = h2_runtime_init')
+                    code = '''int h2_jieli_target_application_run(void) {
+ h2_runtime_config_t config = {0}; h2_runtime_t *runtime = NULL;
+ int result = h2_jieli_ac791n_devkit_runtime_config(&config);
+ h2_pal_e2e_result_t reports[3] = {{0}};
+ const uint32_t suites[3] = {1, 2, 3}; size_t passed = 0, failed = 0;
+'''+text[start:text.index('  /* Deliberately leave this diagnostic App', start)]
+                    code += ' (void)passed; (void)failed; return result;\n}\n'
                 else:
                     code = function(text, 'int h2_jieli_target_application_run(')
                 unit_text = fixture.replace('/* TARGET */', code).replace('WORKER_TARGET', '1' if worker else '0')
