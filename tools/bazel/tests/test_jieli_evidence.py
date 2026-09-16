@@ -19,7 +19,7 @@ class EvidenceTest(unittest.TestCase):
         for path in EVIDENCE.rglob('*.md'):
             with self.subTest(path=path.name):
                 targets = re.findall(r'\]\(([^)]+)\)', path.read_text())
-                self.assertFalse(any(re.search(r'\.(?:log|status|json)(?:#.*)?$', t)
+                self.assertFalse(any(re.search(r'\.(?:log|status|json|orig|rej)(?:#.*)?$', t)
                                      for t in targets))
 
     def test_independent_status_facts_are_inline(self):
@@ -60,7 +60,7 @@ class EvidenceTest(unittest.TestCase):
             self.assertIn('stage_valid=0', doc)
             self.assertIn('last_result=0', doc)
             self.assertRegex(doc, r'[0-9a-f]{64}')
-        final = (day / 'pal-final-acceptance.md').read_text()
+        final = (EVIDENCE / '2026-09-15' / 'pal-final-acceptance.md').read_text()
         for fact in ('5698d9ad9935073970857040c0986fec4c678f26f6fffbfff9ebbeb5b1088ada',
                      '9f3eea5602a5919f65dd17d3f293bf5b08e1b1a428c0298da3ac11e59fc5ecae',
                      'result=0 passed=10 failed=0', '331.305', '371.637', '366.230',

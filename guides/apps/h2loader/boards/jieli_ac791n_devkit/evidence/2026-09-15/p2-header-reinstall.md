@@ -36,7 +36,7 @@ OrbStack 使用 `--config=ac791n --symlink_prefix=bazel-amd64-` 构建 Loader、
 
 设备 UID `d879349abc9f`；先重新枚举 `/dev/cu.*`，全程只用 `/dev/cu.usbserial-20131240` @ 460800 UART Loader 安装 P2。未使用 USB DL、format 或其它端口。每个复位后的判断使用新 CLI 进程的独立 `status`，没有超过 90 秒无响应的情况。
 
-保留原 P1 Loader 镜像 `5698d9ad9935073970857040c0986fec4c678f26f6fffbfff9ebbeb5b1088ada`，包 SHA `9f3eea5602a5919f65dd17d3f293bf5b08e1b1a428c0298da3ac11e59fc5ecae`。[原 P1 构建记录](../2026-09-14/pal-final-acceptance.md)为源码 `3d7db276`；本次重新检查 `git diff 3d7db276 0404a537 --` 对 `jieli_upgrade_io.c` 与 `jieli_loader_platform.c` 均为空，SDK revision/hash 相同。因此实际负责重装的 P1 含当前 deferred-header / O11 实现，但不声称整份 P1 已换成当前主分支固件。两个诊断和 button 均从本次源码重建。
+保留原 P1 Loader 镜像 `5698d9ad9935073970857040c0986fec4c678f26f6fffbfff9ebbeb5b1088ada`，包 SHA `9f3eea5602a5919f65dd17d3f293bf5b08e1b1a428c0298da3ac11e59fc5ecae`。[原 P1 构建记录](pal-final-acceptance.md)为源码 `3d7db276`；本次重新检查 `git diff 3d7db276 0404a537 --` 对 `jieli_upgrade_io.c` 与 `jieli_loader_platform.c` 均为空，SDK revision/hash 相同。因此实际负责重装的 P1 含当前 deferred-header / O11 实现，但不声称整份 P1 已换成当前主分支固件。两个诊断和 button 均从本次源码重建。
 
 | 当前重建包 | 包 SHA-256 | 镜像 SHA-256 | 包/镜像字节数 |
 | --- | --- | --- | --- |
