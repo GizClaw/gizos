@@ -22,10 +22,10 @@ cfg-doctor:
 	@scripts/config/cfg-doctor.sh
 
 format:
-	@scripts/check-clang-format.sh --fix
+	@scripts/format.sh --fix
 
 format-check:
-	@scripts/check-clang-format.sh
+	@scripts/format.sh
 
 bazel-build:
 	@scripts/bazel/bazel-build.py

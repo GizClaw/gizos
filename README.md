@@ -75,7 +75,7 @@ To verify that public targets also work when GizOS is consumed as a dependency:
 make bazel-test-downstream-consumer
 ```
 
-Run `make format` before committing C/C++ changes; it formats the lines you changed since `origin/main` with the pinned clang-format 22.1.5. `make format-check` runs the same check as CI without modifying files. Paths in `.clang-format-ignore` are skipped.
+Run `make format` before committing. It formats changes since `origin/main` with pinned tools: clang-format 22.1.5 for C/C++ (changed lines only; paths in `.clang-format-ignore` are skipped), StyLua 2.5.2 for Lua and buildifier 10.0.1 for Bazel files (whole changed files). StyLua and buildifier are downloaded and checksum-verified on first use. `make format-check` runs the same check as CI without modifying files.
 
 ## Use GizOS from Bzlmod
 
