@@ -41,7 +41,7 @@ jieli_target_task_policy(
 )
 
 h2loader_jieli_firmware(
-    name = "speaker_smoke_firmware",
+    name = "firmware",
     board = "jieli_ac791n_devkit",
     graph = [
         ":speaker_smoke",
