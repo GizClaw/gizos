@@ -1,7 +1,6 @@
 """Exercise the actual NOR program adapter with and without a diagnostic hook."""
 from pathlib import Path
 import subprocess
-import os
 import tempfile
 import unittest
 
@@ -11,10 +10,7 @@ SOURCE = ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_pr
 
 class ObserverTest(unittest.TestCase):
     def test_program_observer(self):
-        baseline = os.environ.get("JIELI_WINDOW_BASELINE")
-        source = subprocess.check_output(
-            ["git", "show", f"{baseline}:{SOURCE.relative_to(ROOT)}"], text=True
-        ) if baseline else SOURCE.read_text()
+        source = SOURCE.read_text()
         adapter = source[source.index('static int pref_flash_read('):
                          source.index('static int pref_flash_sync(')]
         stub = r'''

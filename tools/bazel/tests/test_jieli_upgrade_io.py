@@ -1,7 +1,6 @@
 """Exercise the layout-owned NOR upgrade adapter against a fake SDK driver."""
 from pathlib import Path
 import subprocess
-import os
 import tempfile
 import unittest
 
@@ -293,11 +292,7 @@ int main(int argc,char **argv) {
             (root / "device/ioctl_cmds.h").write_text(
                 "#define IOCTL_ERASE_BLOCK 201\n#define IOCTL_ERASE_SECTOR 200\n"
                 "#define IOCTL_ERASE_PAGE 204\n")
-            baseline = os.environ.get("JIELI_WINDOW_BASELINE")
-            adapter = subprocess.check_output(
-                ["git", "show", f"{baseline}:{SOURCE.relative_to(ROOT)}"], text=True
-            ) if baseline else SOURCE.read_text()
-            (root / "adapter.c").write_text(adapter)
+            (root / "adapter.c").write_text(SOURCE.read_text())
             (root / "test.c").write_text(program)
             command = ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
                        "-I", str(root),
