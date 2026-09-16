@@ -30,10 +30,17 @@ static bool saved_ssid_equal(const h2_pal_wifi_sta_config_t *a, const h2_pal_wif
 }
 
 /* A platform without Preference simply has no saved set: listing is empty and
- * storing is unsupported, never an argument error from the caller. */
+ * storing is unsupported, never an argument error from the caller. The
+ * canonical unsupported provider is not detectable by inspection, because it
+ * installs a real vtable whose open returns UNSUPPORTED, so reads treat that
+ * result as an empty set too. */
 static bool saved_storage_available(const h2_runtime_t *runtime) {
     return runtime->pref != NULL && runtime->pref->vtable != NULL &&
            runtime->pref->vtable->open != NULL;
+}
+
+static bool saved_storage_absent(int rc) {
+    return rc == H2_PAL_ERR_NOT_FOUND || rc == H2_PAL_ERR_UNSUPPORTED;
 }
 
 static int saved_read(h2_runtime_t *runtime, h2_runtime_wifi_saved_network_t *saved,
@@ -43,7 +50,7 @@ static int saved_read(h2_runtime_t *runtime, h2_runtime_wifi_saved_network_t *sa
         return H2_PAL_OK;
     h2_pal_pref_namespace_t *ns = NULL;
     int rc = h2_pal_pref_open(runtime->pref, WIFI_SAVED_NAMESPACE, H2_PAL_PREF_OPEN_READ_ONLY, &ns);
-    if (rc == H2_PAL_ERR_NOT_FOUND)
+    if (saved_storage_absent(rc))
         return H2_PAL_OK;
     if (rc != H2_PAL_OK)
         return rc;
@@ -52,7 +59,7 @@ static int saved_read(h2_runtime_t *runtime, h2_runtime_wifi_saved_network_t *sa
     rc = ns->get_blob ? ns->get_blob(ns, runtime->mem, WIFI_SAVED_KEY, &data, &len)
                       : H2_PAL_ERR_UNSUPPORTED;
     int close_rc = ns->close(ns);
-    if (rc == H2_PAL_ERR_NOT_FOUND)
+    if (saved_storage_absent(rc))
         rc = H2_PAL_OK;
     else if (rc == H2_PAL_OK) {
         const uint8_t *blob = data;

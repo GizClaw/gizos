@@ -4068,6 +4068,21 @@ static void test_wifi_saved_set(void) {
     h2_pal_wifi_sta_config_t network = {.ssid = "a", .ssid_len = 1};
     assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
     env.time_state.wall_valid = 1;
+    /* The canonical unsupported provider installs a real vtable whose open
+     * returns UNSUPPORTED: reads see an empty set, writes report UNSUPPORTED. */
+    {
+        h2_runtime_config_t no_pref = config;
+        no_pref.pref = h2_pal_unsupported_pref_api();
+        h2_runtime_t *bare = NULL;
+        assert(h2_runtime_init(&no_pref, &bare) == H2_PAL_OK);
+        size_t bare_count = 99;
+        assert(h2_runtime_wifi_saved_list(bare, list, 8, &bare_count) == H2_PAL_OK && !bare_count);
+        assert(h2_runtime_wifi_saved_save(bare, &network) == H2_PAL_ERR_UNSUPPORTED);
+        /* Nothing is stored, so removal answers NOT_FOUND before any write. */
+        assert(h2_runtime_wifi_saved_remove(bare, "a", 1) == H2_PAL_ERR_NOT_FOUND);
+        assert(h2_runtime_wifi_saved_clear(bare) == H2_PAL_ERR_UNSUPPORTED);
+        h2_runtime_deinit(bare);
+    }
     env.time_state.wall_ms = UINT64_C(1800000000123);
     network.ssid[0] = 'b';
     assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
@@ -4273,8 +4288,12 @@ static void test_wifi_best_saved(void) {
     f.scan_rc = H2_PAL_ERR_IO;
     assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_IO);
     f.scan_rc = 0;
+    /* Unsupported storage reads as an empty set, so there is nothing to try;
+     * a real storage error still propagates. */
     f.list_rc = H2_PAL_ERR_UNSUPPORTED;
-    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_UNSUPPORTED);
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_NOT_FOUND);
+    f.list_rc = H2_PAL_ERR_IO;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_IO);
     f.list_rc = 0;
     /* The stored entry keeps the credential as provisioned: a candidate pinned
      * to the AP that happened to be strongest must not be written back. */
