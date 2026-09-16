@@ -36,11 +36,17 @@ Trial 证据保存在 H2Loader Preference：Loader 在请求 App 启动前写入
 
 ### Loader 自更新及剩余安全边界
 
-Loader self-update 现在复用 SDK updater，但通过本 layout 的 NOR adapter 暂存 P2 的 32-byte BootInfo，不提前改变 ROM 的启动选择。暂存启动头连同候选 SHA、原生代码长度和 CRC 写入 Preference；候选通过热启动进入 P2，公共 Loader 的确认回调验证候选记录，随后在公共回写流程擦除 P1 之前发布 P2 BootInfo。确认前故障可用 `loader_trial_crash_package` 在 stage 105 注入；应检查旧 P1 恢复、候选保留及 coredump，不能以一次复位代替验收。
+Loader self-update 现在复用 SDK updater，但通过本 layout 的 NOR adapter 暂存 P2 的 32-byte BootInfo，不提前改变 ROM 的启动选择。暂存启动头连同候选 SHA、原生代码长度和 CRC 写入 Preference；候选通过热启动进入 P2，公共 Loader 的确认回调验证候选记录，随后在公共回写流程擦除 P1 之前发布 P2 BootInfo。确认前故障可用 `loader_trial_crash_package` 在 stage 105 注入；应检查旧 P1 恢复、候选保留及 coredump，不能以一次复位代替验收。2026-09-13 已实测不同 Loader 镜像之间的正常路径，以及独立的[确认前故障注入恢复](./evidence/2026-09-13/loader-preconfirm-recovery.md)：候选在 stage 105 保存断言记录并复位，自动返回旧 P1，UART 可查询状态并导出匹配的 coredump。这个测试不覆盖任意硬件异常，也不代表断电验收。
 
 此前通过 GNU `--wrap` 截取 SDK BootInfo 写入的实验已撤销：该工具链的内部 LTO 调用没有经过 wrapper。当前 adapter 完整提供 pinned `update.a` 中 NOR I/O member 的八个导出函数，使 archive 不再抽取原 member，固件反汇编已确认 SDK 调用绑定本实现；实际 NOR 读写、擦除和保护操作仍调用官方驱动。该替换限定于本 NOR layout，不支持 `CONFIG_SDFILE_EXT_ENABLE`。不能重新启用只在主机 mock 中有效、实际固件未拦截的实现。
 
-候选启动记录采用固定 112-byte little-endian 编码，不直接持久化 C 结构体填充。字段偏移为 magic 0、代码长度 4、代码 CRC 8、保留字段 10、65-byte SHA 字符串 12、32-byte 启动头 77，尾部 109–111 必须为零。解码同时要求精确长度，后续仍验证候选身份和启动头 CRC。
+正常自更新实测的候选包 SHA 为 `3af1c30a724182da5b49ae3e77075651cc438b40be2f5fb816a2a1530d243da2`：依次观察到 `LOADER_COMMIT mode=warm boot_info=unpublished`、P2 的 native BootInfo 不存在但逻辑分区为 2、`LOADER_TRIAL confirmed=1`、`LOADER_HEADER published=1`、回写事件 2、原生 P1 启动及完成事件 4。最终状态为 P1/next P1、Stage 空、`last_result=0`，运行镜像 SHA 为 `3a3ae59391c4f4e17b7edde708be1725cc82dca4afc0411e5fcd8051ca22b0f8`。这些证据仅证明正常路径，不证明提交中断恢复。
+
+v2 已完成一次[空闲状态实际断电后的 App 恢复](./evidence/2026-09-13/installed-app-powercycle.md)。最终 v5 也完成了[独立断电复测](./evidence/2026-09-13/installed-app-v5-powercycle.md)：用户断电上电，UART 断开后重新连接，捕获 App 确认与心跳；独立状态查询确认原 App SHA、v5 Loader SHA、Stage 空和 last_result=0。v5 串口重新枚举期间未捕获最早的 Loader 日志，不能宣称记录了全部早期启动过程。提交写入过程中断电仍未验收，本页保持 WIP。
+
+候选启动记录采用固定 112-byte little-endian 编码，不直接持久化 C 结构体填充。字段偏移为 magic 0、代码长度 4、代码 CRC 8、保留字段 10、65-byte SHA 字符串 12、32-byte 启动头 77，尾部 109–111 必须为零。解码同时要求精确长度，后续仍验证候选身份和启动头 CRC。v5 已完成[不同镜像 self-update](./evidence/2026-09-13/loader-v5-self-update.md)、[确认前故障恢复](./evidence/2026-09-13/loader-v5-preconfirm-recovery.md)及下表 UART/BLE 完整回归；不能把这些结果扩展为提交中断或全部 PAL 的验收。
+
+2026-09-13 另做了[无 Stage 的已安装 App 往返验证](./evidence/2026-09-13/installed-app-relaunch.md)：确认 App 后只执行 `reboot loader` 和 `reboot app`，三个状态快照均为 Stage 空，P2 SHA 不变；P1 请求 P2 时没有活动更新或已提交候选，App 重新确认并持续心跳。这项证据独立于安装流程和 E2E 总数，不表示真实断电已经通过。
 
 ## BLE
 
@@ -75,14 +81,76 @@ Loader 只有 UART 与 BLE capability，不提供 Wi-Fi 与 HTTP；runner 一旦
 
 ## 恢复机制与验收边界
 
-本页只描述 Loader 镜像及诊断入口；历史实机记录保留在 PR #178，不随本次拆分引入。编译与主机测试不能替代实机断电、UART/BLE 生命周期验收。
+历史实机证据见下方[验收记录](#验收记录)。编译与主机测试不能替代实机断电、UART/BLE 生命周期验收。
 
 ### 共享 NOR 写保护窗口
 
-固定 SDK 的 suspend/resume 只有一个备份配置字，不可嵌套，也不保证跨任务窗口安全。disk、Pref 和 upgrade adapter 统一通过 board-owned counted window：首个 owner 保存配置并解除保护，最后 owner 恢复，操作错误/短写同样关闭；恢复失败返回 I/O 并禁止后续窗口直到复位。此合同属于板级 NOR 适配，不改变公共 Loader 生命周期。
+固定 SDK 的 suspend/resume 只有一个备份配置字，不可嵌套，也不保证跨任务窗口安全。disk、Pref 和 upgrade adapter 统一通过 board-owned counted window：首个 owner 保存配置并解除保护，最后 owner 恢复，操作错误/短写同样关闭；恢复失败返回 I/O 并禁止后续窗口直到复位。此合同属于板级 NOR 适配，不改变公共 Loader 生命周期。[SDK 反汇编、27-case host/TSan 回归与 Loader/button/PAL 验收](./evidence/2026-09-15/nor-write-protection.md)记录具体覆盖及硬件状态测量限制。
 
 ### P2 残缺头的完整重装机制
 
 选择从完整 P1 通过 UART Loader **完整重装 P2**，由本 board layout 的 NOR adapter 与 pinned SDK updater 拥有机制，公共 Loader 不增加板级修复分支。SDK 的 payload 阶段先从 `target_update_addr - 32 = 0x37c000` 擦除 P2 头扇区并由 adapter 完整读回验证，完整 payload 校验后才 arm/capture；因此不会在 arm 时仍面对旧残缺头。擦除错误锁存直到复位，SDK 伪成功完成也不能继续写入或发布，P1 保持可启动。
 
-直接 arm/publish 不修复非空冲突头；有效但不同的完整 bank 也不得自动擦除，只允许显式完整安装替换。相同头 publish 幂等，P2 arm 拒绝，不在 P2 增加恢复擦除。
+直接 arm/publish 不修复非空冲突头；有效但不同的完整 bank 也不得自动擦除，只允许显式完整安装替换。相同头 publish 幂等，P2 arm 拒绝，不在 P2 增加恢复擦除。[固定 SDK 追踪、host 回归与两轮 UART 验收](./evidence/2026-09-15/p2-header-reinstall.md)记录擦除命令/地址、镜像 SHA、独立状态及未捕获确认文本的限制。
+
+## 验收记录
+
+### 2026-09-15：system-event owner 引用计数
+
+Provider 的每次成功 init 各取得一个 owner，Runtime deinit 只释放自己的 owner，launcher/BLE 的订阅继续工作；最后一个 owner 释放后才关闭，并等在途操作退出后销毁。[退出路径的失败回归、TSan 与 button 实机证据](./evidence/2026-09-15/system-event-owners.md)。
+
+### 2026-09-15：共享 launcher 与 Runtime 事件复用
+
+`5b1d822a` 的 ACTIVE event provider 已支持重复初始化；真实 Runtime/provider 主机回归和 button、touch、audio-system 三个生产包实机验证均成功。三个目标通过 UART Loader 安装到 P2，观察 READY、确认成功及独立状态，最后返回 P1。[源码判定、测试与完整验收边界](./evidence/2026-09-15/runtime-event-reuse.md)。
+
+### 2026-09-14：当前源码 Loader 自更新与 UART 回归
+
+源码 `2a814d32`（含 FAT 属性 stat、SDK 单次路径编码和单层 mkdir 修正）在 UID `d879349abc9f` 上完成不同镜像 Loader 自更新：P2 确认并发布启动头后，读取 SD shadow、回写 P1 并收敛；独立 status 确认 P1/P2 SHA 一致、Stage 空、last_result=0。随后在该 Loader 上执行完整 UART suite，25/25 PASS，560.440 秒。两项重连等待明显偏长且原因未定；本轮未覆盖 BLE 或断电。[完整证据与最终板端状态](./evidence/2026-09-14/loader-uart-lifecycle.md)。
+
+### 2026-09-14：当前源码 Loader BLE 连续两轮回归
+
+同一 UID `d879349abc9f`、当前源码 Loader，经重新发现的 BLE endpoint `5:818f070641f0` 完成两轮完整 BLE-only lifecycle：22/22 PASS（385.850 秒）和 22/22 PASS（357.072 秒）。UART 并行记录 34 / 33 次连接，每条连接的 supervision timeout 与 LL reject 均为 0；仍有 SDK `conn nack` 等非致命诊断。独立 UART status 确认 P1 SHA 不变、last_result=0，P2/Stage 保留预期 crash App。未修改代码，不声称已根治历史间歇性问题或覆盖新断电测试。[两轮逐项结果、连接统计与最终状态](./evidence/2026-09-14/loader-ble-lifecycle.md)。
+
+### 2026-09-13：恢复固件后的独立 UART / BLE 回归
+
+在 `3870bf72` 基础上含本文描述的未提交热启动改动，USB DL 使用本次构建输入执行官方 `-format all` 后，设备 UID 为 `3ce9e275d7aa`。报告中的 package SHA-256 是产物身份；不能把未提交构建归为 `3870bf72` 原始产物。
+
+| 路径 | 结果 | 原始报告 |
+| --- | --- | --- |
+| UART，460800 | 25/25 PASS，283.8 s | [UART](evidence/2026-09-13/lifecycle-summary.md#retained-acceptance-facts-restored-uart-e2e) |
+| 首次 BLE | 19/22 PASS，3 FAIL，319.1 s | [首次失败](evidence/2026-09-13/lifecycle-summary.md#retained-acceptance-facts-restored-ble-e2e) |
+| BLE，UART 旁路记录日志 | 22/22 PASS，339.7 s | [旁路观察](evidence/2026-09-13/lifecycle-summary.md#retained-acceptance-facts-ble-full-uart-observed) |
+| BLE，无 UART 监控，runner 接入连接失败诊断 | 22/22 PASS，324.4 s | [诊断复测](evidence/2026-09-13/lifecycle-summary.md#retained-acceptance-facts-ble-diagnostic-full) |
+| BLE，新版延迟发布启动头 Loader（v2） | 22/22 PASS，333.6 s | [新版 BLE](evidence/2026-09-13/lifecycle-summary.md#retained-acceptance-facts-deferred-v2-ble-e2e) |
+| UART，新版候选保护，单一读口进程 | 25/25 PASS，284.7 s | [新版 UART](evidence/2026-09-13/lifecycle-summary.md#retained-acceptance-facts-deferred-clean-uart-e2e) |
+| UART，v5（显式候选记录编码、修正 P1 回写误报） | 25/25 PASS，268.6 s | [v5 UART](evidence/2026-09-13/lifecycle-summary.md#retained-acceptance-facts-deferred-v5-uart-e2e) |
+| BLE，v5，无 UART 并行监控 | 22/22 PASS，342.1 s | [v5 BLE](evidence/2026-09-13/lifecycle-summary.md#retained-acceptance-facts-deferred-v5-ble-e2e) |
+
+这些完整回归包括正常 App 安装与确认、App 命令与传输、跨重启 Stage 保留、正常 Loader self-update、崩溃 App 回滚及 2096-byte coredump 的查询/导出/擦除。测试未提供 Wi-Fi/URL 参数，不覆盖相应能力，也不覆盖实际断电或候选 Loader 崩溃恢复。
+
+首次 BLE 失败发生在 `install-crash-app`，后续 `coredump-status` / `coredump-dump` 因 runner 未取得预期长度而以 0 比较，产生连带失败。首次失败根因尚未确定；后两轮通过不代表该间歇性问题已经修复。runner 新增接线仅转发已有 Host BLE 连接失败诊断，不放宽身份、回滚或 coredump 验收条件。
+
+### 2026-09-13：P1 擦除后的真实断电恢复
+
+[定点断电验收](./evidence/2026-09-13/loader-copy-powercut.md)已通过：候选 P2 确认并发布启动头后，在 P1 启动头擦除完成处暂停，用户实际断电上电。设备继续从 P2 回写 P1，最终两个镜像校验一致、Stage 清空、last_result=0。诊断包使用正式 layout 和 task policy，但含测试停点，不能作为正式发行固件。
+
+随后补齐了以下具体部分写入边界；不能将定点测试扩大为任意损坏模式的保证：
+
+| 中断现场 | 重启后的结果（复位类型见证据） | 证据 |
+| --- | --- | --- |
+| P2 原生启动头 16-byte 部分写入或 32-byte 错误编程，CRC 无效；P1 完整 | 2026-09-15 当前诊断软件复位后回原 P1；UART 完整重装 button、P2 试运行确认并返回原 P1，两轮均 Stage 清空 | [当前 SDK 完整重装验收](./evidence/2026-09-15/p2-header-reinstall.md) |
+| P1 原生启动头仅写入前 16/32 字节；已确认 P2 完整 | P2 恢复回写 P1，最终 P1 启动，Stage 清空 | [P1 部分头](./evidence/2026-09-13/partial-p1-header-powercut.md) |
+| Preference 替换期间 Flash 页仅写入前 128/256 字节 | 旧或新值完整，独立 sentinel 保留，重试写入与完整回读成功，P1 Loader 可通信 | [Preference](./evidence/2026-09-13/preference-powercut-plan.md) |
+| `lfs_rename` 内部 Flash 页仅写入前 23/256 字节（变化范围 0–45） | 同上；真实 POWER ON 后验证，不混用升级期间旧固件的恢复日志 | [rename 事务](./evidence/2026-09-13/preference-powercut-plan.md#rename-boundary-physical-recovery-pass-for-the-injected-program) |
+
+[历史 P2 部分头测试](./evidence/2026-09-13/loader-partial-p2-header.md)的同身份重装仅证明当时固件的重写、校验与 Stage 清理，不作为当前 deferred-header/O11 实现的验收替代。2026-09-15 的当前源码复测覆盖持久化 CRC 无效的 16/32-byte 头，软件复位验证相同启动现场，不冒充编程中物理断电。未遍历所有 NOR 位损坏组合。
+
+### 2026-09-12：原生更新流程基线
+
+2026-09-12 在 AC791N DevKit 上以 `1bac88f4` 源码构建的三个包完成 UART + BLE 合并回归，46/46 PASS（约 12.4 分钟），BLE 过程中没有 supervision timeout：
+
+- UART 20 项：命令面、payload Stage 与 abort、monitor、`reboot loader/upgrade/app --monitor`、App 安装与确认、App 命令面、两种跨重启 Stage 保留、Loader self-update（P2 候选回写 P1）。
+- BLE 20 项：同一生命周期全部经 BLE 执行，包括 App 安装与 Loader self-update。
+- crash-before-confirm 回滚后，UART 与 BLE 各自完成 coredump status/dump/erase 与擦除后空白复查。
+
+852 KB App package 的 `send`：BLE 32.6 s，UART 27.6 s。本轮不含 Wi-Fi/URL、真实断电，也不覆盖"Loader 无新 Stage 时启动已安装 App"（见 [JieLi Components](/zh/developing/components/jieli)）。报告与产物身份：[UART + BLE 报告](evidence/2026-09-12/lifecycle-summary.md#retained-acceptance-facts-uart-ble-lifecycle)、[固件包身份](evidence/2026-09-12/lifecycle-summary.md#retained-acceptance-facts-artifacts)。

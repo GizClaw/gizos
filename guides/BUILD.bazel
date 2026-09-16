@@ -156,3 +156,8 @@ vitepress_bin.vitepress_binary(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )
+
+filegroup(
+    name = "jieli_evidence_sources",
+    srcs = glob(["apps/h2loader/boards/jieli_ac791n_devkit/evidence/**"]),
+)
