@@ -497,7 +497,7 @@ static int h2_loader_ble_start_link_task(h2_loader_ble_service_t *service) {
     int rc = h2_pal_mutex_create(
         service->config.api.sync, &mutex_config, &service->link_mutex);
     if (rc != H2_PAL_OK) {
-        return rc;
+        return h2_loader_ble_open_error(&service->config, "link_mutex_create", rc);
     }
     rc = h2_pal_mutex_create(
         service->config.api.sync,
@@ -517,7 +517,7 @@ static int h2_loader_ble_start_link_task(h2_loader_ble_service_t *service) {
         &semaphore_config,
         &service->link_semaphore);
     if (rc != H2_PAL_OK) {
-        return rc;
+        return h2_loader_ble_open_error(&service->config, "link_semaphore_create", rc);
     }
     semaphore_config.name = "h2loader/blemtu";
     rc = h2_pal_semaphore_create(
@@ -525,18 +525,19 @@ static int h2_loader_ble_start_link_task(h2_loader_ble_service_t *service) {
         &semaphore_config,
         &service->mtu_semaphore);
     if (rc != H2_PAL_OK) {
-        return rc;
+        return h2_loader_ble_open_error(&service->config, "mtu_semaphore_create", rc);
     }
     const h2_pal_task_options_t task_options = {
         .name = h2_loader_ble_link_task_name,
         .min_stack_size = H2_LOADER_BLE_LINK_TASK_STACK_SIZE,
     };
-    return h2_pal_task_start(
+    rc = h2_pal_task_start(
         service->config.api.task,
         &task_options,
         h2_loader_ble_link_task,
         service,
         &service->link_task);
+    return rc;
 }
 
 static int h2_loader_ble_stop_link_task(h2_loader_ble_service_t *service) {

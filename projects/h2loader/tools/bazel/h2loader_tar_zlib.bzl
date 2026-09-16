@@ -84,8 +84,8 @@ def _native_firmware(ctx):
         )
     if JieliFirmwareInfo in target:
         firmware = target[JieliFirmwareInfo]
-        if firmware.target != "br35" or ctx.attr.role != "app":
-            fail("JieLi packaging currently supports BR35 App UFW payloads only")
+        if firmware.target != "wl82" and (firmware.target != "br35" or ctx.attr.role != "app"):
+            fail("JieLi packaging supports WL82 managed firmware and BR35 Apps only")
         return struct(
             app_image = firmware.update_image,
             app_path = "app/jieli/update.ufw",
@@ -97,11 +97,12 @@ def _native_firmware(ctx):
                 struct(name = "jl_isd.bin", file = firmware.flash_image),
                 struct(name = "jl_isd.fw", file = firmware.fw),
                 struct(name = "update.ufw", file = firmware.update_image),
+                struct(name = "manifest.json", file = firmware.manifest),
             ],
             platform = "jieli",
             recovery_image = None,
             recovery_inputs = [],
-            target = "ac707n",
+            target = "ac707n" if firmware.target == "br35" else firmware.target,
             version = firmware.version,
         )
     fail("firmware must provide FirmwareInfo, Bk7258FirmwareInfo or JieliFirmwareInfo")
@@ -118,7 +119,7 @@ def _h2loader_tar_zlib_impl(ctx):
     metadata = ctx.actions.declare_file(ctx.label.name + "/" + stem + ".firmware.json")
     factory = None
     recovery = None
-    if ctx.attr.role == "h2loader":
+    if ctx.attr.role == "h2loader" and firmware.platform in ("esp", "bk7258"):
         recovery = ctx.actions.declare_file(ctx.label.name + "/" + stem + ".recovery.h2fb")
         if firmware.factory_image:
             factory = ctx.actions.declare_file(ctx.label.name + "/" + stem + ".combined_factory.bin")

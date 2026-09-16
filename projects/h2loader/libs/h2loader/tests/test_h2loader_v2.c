@@ -1746,11 +1746,58 @@ static int archive_close(void *user, h2_pal_fs_file_t *file) {
 static uint64_t app_test_now(void *user) { (void)user; return 0u; }
 static void app_test_sleep(void *user, uint32_t ms) { (void)user; (void)ms; }
 
+static void test_app_client_package_entry_matches_loader(void) {
+  test_fixture_t fixture;
+  fixture_init(&fixture, 2u);
+  const h2_pal_disk_api_t disk = {0};
+  const h2_pal_http_api_t http = {0};
+  const h2_pal_wifi_sta_api_t wifi = {0};
+  h2_loader_app_client_t client;
+  h2_loader_app_client_config_t config = {
+      .pref = &fixture.pref, .power = &fixture.power,
+      .allocator = &fixture.mem, .fs = &fixture.fs,
+      .disk = &disk, .http = &http, .wifi = &wifi,
+      .digest = fixture.config.package.digest,
+      .board = fixture.config.board, .target = fixture.config.target,
+      .chip = fixture.config.chip,
+      .active_identity = identity(H2_LOADER_IMAGE_ROLE_APP, SHA_B),
+      .hardware_capabilities = fixture.config.hardware_capabilities,
+      .h2loader_partition_id = 1u, .app_partition_id = 2u,
+      .now_ms = app_test_now, .sleep_ms = app_test_sleep,
+  };
+  assert(h2_loader_app_client_init(&client, &config) == H2_PAL_OK);
+  assert(strcmp(client.loader.package.config.app_entry_path,
+                H2_LOADER_DEFAULT_APP_ENTRY_PATH) == 0);
+  config.app_entry_path = "app/jieli/update.ufw";
+  assert(h2_loader_app_client_init(&client, &config) == H2_PAL_OK);
+  assert(strcmp(client.loader.config.package.app_entry_path,
+                config.app_entry_path) == 0);
+  assert(strcmp(client.loader.package.config.app_entry_path,
+                config.app_entry_path) == 0);
+}
+
+
 #if defined(H2_LOADER_REQUIRE_OUTPUT_CALLBACK) && H2_LOADER_REQUIRE_OUTPUT_CALLBACK
 static int no_stdio_read(void *user, uint32_t timeout_ms) {
   (void)user; (void)timeout_ms; return -1;
 }
 #endif
+
+static int synchronous_console_reads;
+static int synchronous_console_read(void *user, uint32_t timeout_ms) {
+  (void)user;
+  assert(timeout_ms <= 50u);
+  ++synchronous_console_reads;
+  return synchronous_console_reads == 1
+      ? H2_LOADER_APP_CLIENT_SESSION_RESET
+      : H2_LOADER_APP_CLIENT_SESSION_CLOSED;
+}
+
+static int synchronous_console_write(void *user, const char *data, size_t len) {
+  (void)user;
+  assert(data != NULL && len != 0u);
+  return H2_PAL_OK;
+}
 
 static void test_app_client_validates_target_archive_entry(void) {
   test_fixture_t fixture;
@@ -1793,6 +1840,19 @@ static void test_app_client_validates_target_archive_entry(void) {
                                       &inspection) == H2_PAL_OK);
   assert(strcmp(inspection.image_path, config.app_entry_path) == 0);
   assert(inspection.manifest.image_size == 8u);
+  const h2_loader_app_client_return_console_config_t synchronous = {
+      .client = &client,
+      .read_byte = synchronous_console_read,
+      .write = synchronous_console_write,
+  };
+  assert(h2_loader_app_client_run_return_console(NULL) == H2_PAL_ERR_INVALID_ARG);
+  for (unsigned session = 0; session < 2u; ++session) {
+    synchronous_console_reads = 0;
+    assert(h2_loader_app_client_run_return_console(&synchronous) == H2_PAL_OK);
+    assert(synchronous_console_reads == 2);
+    assert(client.return_console_task == NULL);
+    assert(client.return_console_private == NULL);
+  }
 }
 
 typedef struct ble_log_fixture {
@@ -2055,6 +2115,7 @@ int main(void) {
   test_ble_identity_capacity();
   test_ble_diagnostics_preserve_failure_and_cleanup();
   test_size_argument_accepts_only_bounded_decimal();
+  test_app_client_package_entry_matches_loader();
   test_app_client_validates_target_archive_entry();
   test_empty_pref_preserves_default_boot_intent();
   test_max_status_fits_public_capacity();

@@ -36,7 +36,9 @@ static int handle_session(
     h2loader_ble_session_t session;
     h2_pal_task_t *task = NULL;
     const h2_pal_task_options_t options = {
-        .name = h2loader_app_command_task_name,
+        /* Separate from the persistent UART command task: name-addressed
+         * backends must not delete that task when a BLE session is joined. */
+        .name = h2loader_ble_command_task_name,
         .min_stack_size = 49152u,
     };
     (void)conn_handle;

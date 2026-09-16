@@ -1,0 +1,318 @@
+"""Exercise the layout-owned NOR upgrade adapter against a fake SDK driver."""
+from pathlib import Path
+import subprocess
+import os
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[3]
+SOURCE = ROOT / "boards/jieli_ac791n_devkit/ac791n/layouts/h2loader/src/jieli_upgrade_io.c"
+
+
+class UpgradeIoTest(unittest.TestCase):
+    def test_nor_adapter_preserves_sdk_calls_and_results(self):
+        declarations = r'''
+#include <stddef.h>
+#include <stdint.h>
+typedef uint8_t u8;
+typedef uint32_t u32;
+struct device;
+int norflash_read(struct device *,void *,u32,u32);
+int norflash_origin_read(u8 *,u32,u32);
+int norflash_write(struct device *,void *,u32,u32);
+int norflash_ioctl(struct device *,u32,u32);
+int norflash_protect_suspend(void);
+int norflash_protect_resume(void);
+'''
+        program = r'''
+#include <assert.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include "h2_jieli_ac791n_devkit_flash_window.h"
+#include "adapter.c"
+static struct { int burn_waiting, update_result, update_sem; } state;
+#define H2_PAL_OK 0
+#define H2_PAL_ERR_IO -8
+static int posts;
+static void os_sem_post(int *sem) { (void)sem; posts++; }
+static void h2_jieli_loader_diag_write(const char *line) { (void)line; }
+/* COMPLETION */
+static int result, calls, suspended, resumed;
+static int erase_mode, erase_fault;
+static u32 erase_start, erase_size, verified;
+static u32 command, address, length;
+static void *buffer;
+static u32 base=0x4020;
+static int emulate_flash, physical_writes;
+static unsigned programmed_bytes=32;
+static u8 flash_header[32];
+static int reinstall_mode, reinstall_erases;
+static u8 p2_sectors[8192], p1_saved[32];
+u32 boot_info_get_sfc_base_addr(void) { return base; }
+int norflash_read(struct device *dev,void *buf,u32 len,u32 addr) {
+  assert(dev==NULL);calls++;buffer=buf;length=len;address=addr;return result;
+}
+int norflash_write(struct device *dev,void *buf,u32 len,u32 addr) {
+  assert(suspended>resumed);
+  if (reinstall_mode) {
+    assert(addr>=HEADER_ADDR && addr+len<=HEADER_ADDR+sizeof(p2_sectors));
+    for(u32 i=0;i<len;i++) p2_sectors[addr-HEADER_ADDR+i]&=((u8 *)buf)[i];
+    physical_writes++;return len;
+  }
+  if (emulate_flash) {
+    assert(addr==HEADER_ADDR && len==32);physical_writes++;
+    if(result==32) memcpy(flash_header,buf,programmed_bytes);
+  }
+  return norflash_read(dev,buf,len,addr);
+}
+int norflash_origin_read(u8 *buf,u32 addr,u32 len) {
+  if (reinstall_mode) {
+    assert(addr>=HEADER_ADDR && addr+len<=HEADER_ADDR+sizeof(p2_sectors));
+    memcpy(buf,p2_sectors+addr-HEADER_ADDR,len);
+    return erase_fault==3 ? (int)len-1 : (int)len;
+  }
+  if (erase_mode) {
+    assert(addr==erase_start+verified && len<=256 && verified+len<=erase_size);
+    verified+=len;
+    memset(buf,0xff,len);
+    if (erase_fault==2 && verified==erase_size) buf[len-1]=0;
+    return erase_fault==3 ? (int)len-1 : (int)len;
+  }
+  if(emulate_flash && result==32) {
+    assert(addr==HEADER_ADDR && len==32);memcpy(buf,flash_header,32);
+  }
+  return norflash_read(NULL,buf,len,addr);
+}
+int norflash_ioctl(struct device *dev,u32 cmd,u32 addr) {
+  assert(suspended>resumed);
+  assert(dev==NULL);calls++;command=cmd;address=addr;
+  if (reinstall_mode) {
+    assert(cmd==IOCTL_ERASE_SECTOR && (addr==HEADER_ADDR || addr==HEADER_ADDR+4096));
+    reinstall_erases++;
+    if(erase_fault==1) return -1;
+    if(erase_fault!=2) memset(p2_sectors+addr-HEADER_ADDR,0xff,4096);
+    return 0;
+  }
+  return result;
+}
+int norflash_protect_suspend(void) { suspended++;return 0; }
+int norflash_protect_resume(void) { resumed++;return 0; }
+/* Protection concurrency is exercised with the real helper in flash_window. */
+int h2_jieli_flash_window_open(h2_jieli_flash_window_t *window) {
+  window->active=1;return norflash_protect_suspend();
+}
+int h2_jieli_flash_window_close(h2_jieli_flash_window_t *window) {
+  if(!window->active)return 0;
+  window->active=0;return norflash_protect_resume();
+}
+
+/* Replay the pinned update.a callback boundary, not a replacement updater.
+ * allow-check initializes curr_erase_addr=target_update_addr-32=0x37c000.
+ * The first 4096-byte payload at 0x37c020 spans two sectors: the SDK emits
+ * erase(2,0x37c000), erase(2,0x37d000), then write(first block). Arm occurs only after the whole payload is verified.
+ * The SDK's helper ignores erase results; the real adapter's latch must win.
+ */
+static void sdk_first_payload(void) {
+  u8 payload[4096];memset(payload,0x96,sizeof(payload));
+  (void)dev_upgrade_erase(2,HEADER_ADDR);
+  /* The write loop extends erase coverage until the whole block fits. */
+  (void)dev_upgrade_erase(2,HEADER_ADDR+4096);
+  (void)dev_upgrade_write(payload,H2_JIELI_BANK_2_SFC_BASE,sizeof(payload));
+}
+static void make_valid_header(u8 out[32], u8 fill) {
+  memset(out,fill,32);
+  uint16_t crc=0;
+  for(unsigned i=2;i<32;i++) {
+    crc^=(uint16_t)out[i]<<8;
+    for(unsigned b=0;b<8;b++) crc=(uint16_t)((crc<<1)^((crc&0x8000)?0x1021:0));
+  }
+  out[0]=(u8)crc;out[1]=(u8)(crc>>8);
+}
+static int reinstall_cases(void) {
+  u8 target[32], other[32], copy[32];
+  make_valid_header(target,0x5a);make_valid_header(other,0x69);
+  memset(p1_saved,0x3c,sizeof(p1_saved));
+  reinstall_mode=1;
+  for(unsigned prefix=16;prefix<=32;prefix+=16) {
+    for(int fault=0;fault<=3;fault++) {
+      base=H2_JIELI_BANK_1_SFC_BASE;header_gate=GATE_OFF;erase_failed=0;
+      erase_fault=0;reinstall_erases=physical_writes=0;
+      memset(p2_sectors,0xff,sizeof(p2_sectors));
+      memcpy(p2_sectors,target,prefix);if(prefix==32)p2_sectors[31]^=1;
+      assert(h2_jieli_upgrade_header_arm()==-1 && reinstall_erases==0);
+      erase_fault=fault;sdk_first_payload();
+      if(fault) {
+        assert(h2_jieli_upgrade_erase_failed() && physical_writes==0);
+        assert(h2_jieli_upgrade_header_arm()==-1);
+        base=H2_JIELI_BANK_2_SFC_BASE;
+        assert(h2_jieli_upgrade_header_publish(target)==-1);
+        state.burn_waiting=1;state.update_result=H2_PAL_OK;
+        update_burn_complete(0);assert(state.update_result==H2_PAL_ERR_IO);
+      } else {
+        assert(reinstall_erases==2 && erased(p2_sectors));
+        assert(h2_jieli_upgrade_header_arm()==0);
+        assert(dev_upgrade_write(target,HEADER_ADDR,32)==32);
+        assert(h2_jieli_upgrade_header_copy(copy)==0 && !memcmp(copy,target,32));
+        base=H2_JIELI_BANK_2_SFC_BASE;
+        assert(h2_jieli_upgrade_header_arm()==-1);
+        assert(h2_jieli_upgrade_header_publish(target)==0);
+        int writes=physical_writes;
+        assert(h2_jieli_upgrade_header_publish(target)==0 && physical_writes==writes);
+        assert(h2_jieli_upgrade_header_publish(other)==-1);
+        assert(reinstall_erases==2 && physical_writes==writes);
+        base=H2_JIELI_BANK_1_SFC_BASE;header_gate=GATE_OFF;
+        /* Valid different bank: no automatic repair/erase by arm. Replacement
+         * is permitted only as a new explicit, complete SDK install. */
+        assert(h2_jieli_upgrade_header_arm()==-1 && reinstall_erases==2);
+      }
+      for(unsigned i=0;i<32;i++)assert(p1_saved[i]==0x3c);
+    }
+  }
+  return 0;
+}
+int main(int argc,char **argv) {
+  if (argc==2 && strcmp(argv[1],"reinstall")==0) return reinstall_cases();
+  if (argc==2) {
+    erase_mode=1;erase_fault=atoi(argv[1]);result=erase_fault==1 ? -1 : 0;
+    erase_size=4096;erase_start=0x4000;verified=0;
+    assert(dev_upgrade_erase(2,0x4123)==0);
+    erase_mode=0;result=32;emulate_flash=1;
+    memset(flash_header,0xff,32);
+    u8 header[32];memset(header,0x5a,32);
+    /* Pinned updater ignores the erase return, then continues as if OK. */
+    assert(dev_upgrade_write(header,HEADER_ADDR,32)==0);
+    assert(h2_jieli_upgrade_header_arm()==-1);
+    base=H2_JIELI_BANK_2_SFC_BASE;
+    assert(h2_jieli_upgrade_header_publish(header)==-1);
+    assert(physical_writes==0);
+    state.burn_waiting=1;state.update_result=H2_PAL_OK;
+    assert(update_burn_complete(0)==0);
+    assert(state.update_result==H2_PAL_ERR_IO && posts==1);
+    return 0;
+  }
+  u8 data[32];
+  u32 (*operations[])(u8 *,u32,u32)={dev_upgrade_read,
+    dev_upgrade_origin_read,dev_upgrade_write};
+  for (unsigned i=0;i<3;i++) {
+    result=32;calls=0;
+    assert(operations[i](data,0x37c000,32)==32);
+    assert(calls==1 && buffer==data && address==0x37c000 && length==32);
+    result=31;assert(operations[i](data,0x37c000,32)==0);
+    result=-1;assert(operations[i](data,0x37c000,32)==0);
+  }
+  const u32 cmds[]={201,200,204};
+  const u32 sizes[]={65536,4096,256};
+  erase_mode=1;
+  for (unsigned i=0;i<3;i++) {
+    erase_size=sizes[i];erase_start=0x4123u & ~(erase_size-1u);verified=0;
+    result=0;calls=0;
+    assert(dev_upgrade_erase(i+1,0x4123)==1);
+    assert(calls==1 && command==cmds[i] && address==0x4123);
+    assert(verified==erase_size);
+  }
+  erase_mode=0;
+  calls=0;assert(dev_upgrade_erase(0,0)==0);
+  assert(dev_upgrade_erase(4,0)==0 && calls==0);
+  switch_upgrade_dev(1);assert(get_app_boot_base_addr()==0x4020);
+  suspended=resumed=0;
+  dev_upgrade_protect_suspend();dev_upgrade_protect_resume();
+  assert(suspended==1 && resumed==1);
+  emulate_flash=1;result=32;memset(flash_header,0xff,32);
+  memset(data,0x5a,32);u8 copy[32];
+  assert(h2_jieli_upgrade_header_copy(copy)==-1);
+  assert(h2_jieli_upgrade_header_arm()==0);
+  assert(h2_jieli_upgrade_header_arm()==-1);
+  assert(dev_upgrade_origin_read(copy,HEADER_ADDR,32)==0);
+  assert(dev_upgrade_write(data,HEADER_ADDR,32)==32);
+  assert(physical_writes==0 && erased(flash_header));
+  assert(h2_jieli_upgrade_header_copy(copy)==0 && memcmp(copy,data,32)==0);
+  assert(dev_upgrade_origin_read(copy,HEADER_ADDR,32)==32);
+  assert(dev_upgrade_write(data,HEADER_ADDR,32)==32 && physical_writes==0);
+  data[0]^=1;
+  assert(dev_upgrade_write(data,HEADER_ADDR,32)==0);
+  assert(h2_jieli_upgrade_header_copy(copy)==-1 && erased(flash_header));
+  assert(dev_upgrade_write(data,HEADER_ADDR,32)==0 && physical_writes==0);
+  for(unsigned offset=0;offset<32;offset++) {
+    header_gate=GATE_OFF;assert(h2_jieli_upgrade_header_arm()==0);
+    assert(dev_upgrade_write(data,HEADER_ADDR+offset,1)==0);
+    assert(dev_upgrade_write(data,HEADER_ADDR,32)==0 && physical_writes==0);
+  }
+  header_gate=GATE_OFF;assert(h2_jieli_upgrade_header_arm()==0);
+  assert(dev_upgrade_write(data,HEADER_ADDR-1,32)==0);
+  assert(h2_jieli_upgrade_header_publish(data)==-1); /* P1 cannot publish */
+  base=H2_JIELI_BANK_2_SFC_BASE;
+  assert(h2_jieli_upgrade_header_arm()==-1);
+  assert(h2_jieli_upgrade_header_publish(data)==0);
+  assert(physical_writes==1 && memcmp(data,flash_header,32)==0);
+  assert(h2_jieli_upgrade_header_publish(data)==0 && physical_writes==1);
+  data[1]^=1;assert(h2_jieli_upgrade_header_publish(data)==-1);
+  assert(physical_writes==1); /* never erase/rewrite a conflicting header */
+  memset(flash_header,0xff,32);result=31;
+  assert(h2_jieli_upgrade_header_publish(data)==-1 && physical_writes==1);
+  result=32;memset(data,0xff,32);
+  assert(h2_jieli_upgrade_header_publish(data)==-1 && physical_writes==1);
+  /* Fault injection: a driver reports success but only a prefix reached NOR.
+   * Readback must reject every partial header. A simulated restart clears
+   * volatile gating, not flash; a retry must not claim recovery or erase it.
+   * This checks adapter behavior, not ROM selection after physical power loss.
+   */
+  memset(data,0x5a,32);
+  for (unsigned prefix=1;prefix<32;prefix++) {
+    memset(flash_header,0xff,32);programmed_bytes=prefix;
+    base=H2_JIELI_BANK_1_SFC_BASE;header_gate=GATE_OFF;
+    assert(h2_jieli_upgrade_header_arm()==0);
+    assert(dev_upgrade_write(data,HEADER_ADDR,32)==32);
+    base=H2_JIELI_BANK_2_SFC_BASE;
+    int before=physical_writes;
+    assert(h2_jieli_upgrade_header_publish(data)==-1);
+    assert(header_gate==GATE_FAILED);
+    assert(dev_upgrade_write(data,HEADER_ADDR,32)==0);
+    assert(dev_upgrade_origin_read(copy,HEADER_ADDR,32)==0);
+    assert(h2_jieli_upgrade_header_copy(copy)==-1);
+    assert(physical_writes==before+1);
+    assert(memcmp(flash_header,data,prefix)==0);
+    for(unsigned i=prefix;i<32;i++) assert(flash_header[i]==0xff);
+    header_gate=GATE_OFF;programmed_bytes=32;
+    assert(h2_jieli_upgrade_header_publish(data)==-1);
+    assert(physical_writes==before+1);
+    base=H2_JIELI_BANK_1_SFC_BASE;
+    assert(h2_jieli_upgrade_header_arm()==-1);
+    base=H2_JIELI_BANK_2_SFC_BASE;
+  }
+}
+'''
+        platform = (ROOT / "projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit/src/jieli_loader_platform.c").read_text()
+        completion = platform[platform.index("static int update_burn_complete("):platform.index("static int image_writer_write(")]
+        program = program.replace("/* COMPLETION */", completion)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "asm").mkdir()
+            (root / "device").mkdir()
+            (root / "app_config.h").write_text("")
+            (root / "asm/sfc_norflash_api.h").write_text(declarations)
+            (root / "device/ioctl_cmds.h").write_text(
+                "#define IOCTL_ERASE_BLOCK 201\n#define IOCTL_ERASE_SECTOR 200\n"
+                "#define IOCTL_ERASE_PAGE 204\n")
+            baseline = os.environ.get("JIELI_WINDOW_BASELINE")
+            adapter = subprocess.check_output(
+                ["git", "show", f"{baseline}:{SOURCE.relative_to(ROOT)}"], text=True
+            ) if baseline else SOURCE.read_text()
+            (root / "adapter.c").write_text(adapter)
+            (root / "test.c").write_text(program)
+            command = ["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                       "-I", str(root),
+                       "-I", str(SOURCE.parent.parent / "include"),
+                       "-I", str(ROOT / "boards/jieli_ac791n_devkit/ac791n/include"),
+                       str(root / "test.c"), "-o", str(root / "test")]
+            subprocess.run(command, check=True, timeout=60)
+            for fault in (0, 1, 2, 3):
+                with self.subTest(fault=fault):
+                    subprocess.run([str(root / "test")] + ([str(fault)] if fault else []), check=True, timeout=10)
+            subprocess.run([str(root / "test"), "reinstall"], check=True, timeout=10)
+            rejected = subprocess.run(command + ["-DCONFIG_SDFILE_EXT_ENABLE=1"],
+                                      capture_output=True, text=True, timeout=60)
+            self.assertNotEqual(rejected.returncode, 0)
+            self.assertIn("supports internal NOR only", rejected.stderr)
+
+if __name__ == "__main__":
+    unittest.main()
