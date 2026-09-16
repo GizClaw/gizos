@@ -607,7 +607,7 @@ static void test_monitor_recovers_text_after_every_invalid_candidate(void) {
                 CHECK(filter.crc_errors == 1u);
                 CHECK(filter.errors == 0u);
             } else {
-                CHECK(filter.errors >= 1u);
+                CHECK(filter.errors == 1u);
                 CHECK(filter.crc_errors == 0u);
             }
         }
