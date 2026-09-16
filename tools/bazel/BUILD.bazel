@@ -1853,3 +1853,36 @@ py_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )
+
+py_test(
+    name = "jieli_cdc_control_test",
+    srcs = ["tests/test_jieli_cdc_control.py"],
+    data = [
+        "//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:sdk_patches/early_app_boot.patch",
+    ],
+    env_inherit = ["JIELI_AC791N_SDK_PATH"],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_cdc_control.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "jieli_wifi_sdk_config_test",
+    srcs = ["tests/test_jieli_wifi_sdk_config.py"],
+    data = [
+        "//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:sdk_patches/wifi_ap_config.patch",
+        "//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:sdk_patches/wifi_ap_credentials.patch",
+    ],
+    env_inherit = ["JIELI_AC791N_SDK_PATH"],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_wifi_sdk_config.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
