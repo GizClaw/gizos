@@ -205,9 +205,11 @@ static void run_fs_probes(void) {
   fs_probe_cleanup("path_192");
   strcpy(path, "/data/h2-probe/");
   offset = strlen(path);
-  memset(path + offset, 'c', 185u);
-  path[offset + 185u] = '\0';
-  fs_probe_name("component_185", path, 0);
+  /* 160 bytes keeps the translated path under 192 while exceeding the
+   * SDK's 130-unit component limit, so the SDK answer is what is recorded. */
+  memset(path + offset, 'c', 160u);
+  path[offset + 160u] = '\0';
+  fs_probe_name("component_160", path, 0);
   fs_probe_name("utf8_short", "/data/h2-probe/日志.txt", 1);
   fs_probe_name("utf8_long", "/data/h2-probe/日志-测试-非常长的文件名.txt", 1);
   fs_probe_cleanup("utf8_long");
