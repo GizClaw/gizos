@@ -7,13 +7,9 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[3]
 BOARD = ROOT / "boards/jieli_ac791n_devkit/ac791n"
-BASELINE = os.environ.get("JIELI_WINDOW_BASELINE")
 
 
 def source(path):
-    if BASELINE:
-        return subprocess.check_output(
-            ["git", "show", f"{BASELINE}:{path.relative_to(ROOT)}"], text=True)
     return path.read_text()
 
 
@@ -58,7 +54,6 @@ static inline void os_time_dly(unsigned t) {(void)t;sched_yield();}
             pref = source(BOARD / "src/h2_jieli_ac791n_devkit_pref.c")
             (p / "pref.c").write_text(pref[pref.index("static int pref_flash_read("):
                                                pref.index("static int pref_flash_sync(")])
-            # Always compile the new helper; before runs use the old consumers.
             (p / "window.c").write_text((BOARD / "src/h2_jieli_ac791n_devkit_flash_window.c").read_text())
             (p / "test.c").write_text(r'''
 #include <assert.h>

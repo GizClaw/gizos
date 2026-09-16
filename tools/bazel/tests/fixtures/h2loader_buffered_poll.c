@@ -10,15 +10,21 @@ typedef struct transport {
     h2_iostreamikcp_filter_t filter;
     h2_iostreamikcp_t *stream;
 } transport_t;
+typedef transport_t h2_jieli_transport_t;
+typedef transport_t h2_jieli_app_transport_t;
 typedef transport_t h2_esp_h2loader_command_transport_t;
 typedef transport_t h2_bk_serial_transport_t;
 enum {
+    H2_PHYSICAL_READ_SIZE = 512,
+    H2_PHYSICAL_POLL_MS = 10,
     H2_LOADER_TRANSPORT_PHYSICAL_READ_SIZE = 512,
     H2_LOADER_TRANSPORT_POLL_INTERVAL_MS = 10,
     H2_BK_SERIAL_PHYSICAL_READ_SIZE = 512,
     H2_BK_SERIAL_POLL_INTERVAL_MS = 10
 };
+#define stop_requested 0
 #define transport_stop_requested(transport) 0
+#define timer_get_ms() 0u
 #define transport_now_ms(user) 0u
 #define transport_on_frame on_frame
 static uint8_t input[512];
@@ -35,10 +41,8 @@ static h2_pal_result_t read_physical(void *user, void *buffer, size_t size,
     (void)user;
     assert(timeout_ms <= 10u);
     *count = 0u;
-    if (read_result != H2_PAL_OK)
-        return read_result;
-    if (input_size == 0u)
-        return empty_result;
+    if (read_result != H2_PAL_OK) return read_result;
+    if (input_size == 0u) return empty_result;
     assert(input_size <= size);
     memcpy(buffer, input, input_size);
     *count = input_size;
@@ -109,8 +113,7 @@ int main(int argc, char **argv) {
         assert(opens == 1 && transport.filter.len == 0u);
         return 0;
     }
-    if (strcmp(argv[1], "would_block") == 0)
-        empty_result = H2_PAL_ERR_WOULD_BLOCK;
+    if (strcmp(argv[1], "would_block") == 0) empty_result = H2_PAL_ERR_WOULD_BLOCK;
     for (unsigned i = 0u; i < 20u; ++i) append(H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_OPEN);
     append(H2_IOSTREAMIKCP_FRAME_FLAG_DATA);
     callback_timeout = 1;

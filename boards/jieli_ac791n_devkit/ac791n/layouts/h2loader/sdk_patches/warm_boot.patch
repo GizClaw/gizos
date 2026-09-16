@@ -1,0 +1,19 @@
+diff --git a/apps/common/system/init.c b/apps/common/system/init.c
+index f7bb866..6039864 100644
+--- a/apps/common/system/init.c
++++ b/apps/common/system/init.c
+@@ -317,6 +317,14 @@ void early_puts(char *s)
+ 
+ int main()
+ {
++    /* H2Loader warm hand-off to another flash bank. It runs before any other
++     * code touches retained state (the boot probe below overwrites the marker
++     * the previous image left) and before setup_arch() changes clocks,
++     * peripherals or starts CPU1. */
++    extern void h2_jieli_wl82_warm_boot_early(void) __attribute__((weak));
++    if (h2_jieli_wl82_warm_boot_early) {
++        h2_jieli_wl82_warm_boot_early();
++    }
+     h2_jieli_wl82_probe(80);
+     //init_for_stack_info();
+ 

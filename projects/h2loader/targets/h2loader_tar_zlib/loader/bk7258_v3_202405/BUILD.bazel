@@ -34,6 +34,7 @@ bk7258_target_task_policy(
     ap_policies = [
         "bk/h2loader        6        0  24576  default",
         "h2loader/appcmd    5        0  49152  psram",
+        "h2loader/blecmd    5        0  49152  psram",
         "$h2loader/uartcmd  5        0  49152  psram",
         "$bleikcp/kcp       default",
         "$bleikcp/server    default",
@@ -98,6 +99,7 @@ firmware_native_component(
         "manual",
     ],
     deps = [
+        "//projects/h2loader/apps/loader/app:ble_tasks",
         "//projects/h2loader/apps/loader/app:tasks",
         ":entry_tasks",
         ":ap_launcher_component",

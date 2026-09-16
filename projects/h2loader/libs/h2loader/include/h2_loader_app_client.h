@@ -100,6 +100,11 @@ int h2_loader_app_client_coredump(
     const char *subcommand,
     void *write_user,
     h2_loader_app_client_write_fn write);
+/** Run on the calling session task until transport closure. Borrows client and
+ * I/O only until return; creates no task and requires exclusive client ownership.
+ * task, task_name and stack_size are unused; the caller supplies command stack. */
+int h2_loader_app_client_run_return_console(
+    const h2_loader_app_client_return_console_config_t *config);
 int h2_loader_app_client_start_return_console(
     const h2_loader_app_client_return_console_config_t *config);
 /** Joins a console that exited because its transport closed. */

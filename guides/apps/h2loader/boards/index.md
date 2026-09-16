@@ -13,6 +13,7 @@ H2Loader 统一使用 `h2loader`、`app`、`dl`、`data`、`preference` 和 `cor
 - [AMOLED](./amoled/)
 - [BK7258 V3 202405](./bk7258_v3_202405/)
 - [DevKit](./devkit/)
+- [JieLi AC791N DevKit](./jieli_ac791n_devkit/)
 - [SZP](./szp/)
 - [Waveshare ESP32-S3-A7670E-4G](./waveshare_esp32s3_a7670e_4g/)
 - [Waveshare ESP32-P4-WIFI6-Touch-LCD-4.3](./waveshare_esp32p4_wifi6_touch_lcd_4_3/)
