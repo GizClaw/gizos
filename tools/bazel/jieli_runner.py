@@ -86,6 +86,7 @@ def parse_arguments(argv: list[str]) -> argparse.Namespace:
     parser.add_argument("--native-component-source", action="append", default=[])
     parser.add_argument("--native-include-root", action="append", default=[])
     parser.add_argument("--prebuilt-component", action="append", default=[])
+    parser.add_argument("--sdk-patch", action="append", default=[])
     return parser.parse_args(argv)
 
 
@@ -228,6 +229,28 @@ def copy_sdk(source: Path, destination: Path) -> None:
         return {name for name in names if name in IGNORED_SDK_DIRECTORIES}
 
     shutil.copytree(source, destination, symlinks=True, ignore=ignore)
+
+
+def apply_sdk_patches(
+    git: Path,
+    sdk_copy: Path,
+    patches: list[Path],
+    environment: dict[str, str],
+) -> None:
+    """Apply declared repository patches only to the invocation-local SDK."""
+    for patch in patches:
+        result = subprocess.run(
+            [str(git), "-C", str(sdk_copy), "apply", "--whitespace=error", str(patch)],
+            env=environment,
+            check=False,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        if result.returncode != 0:
+            raise RunnerError(
+                f"cannot apply JieLi SDK patch {patch}: {result.stderr.strip()}"
+            )
 
 
 def run_native_make(
@@ -374,6 +397,13 @@ def build(arguments: argparse.Namespace) -> None:
     )
     if not project_rules.is_file():
         raise RunnerError(f"JieLi project rules are missing: {project_rules}")
+    sdk_patches = [
+        resolve_under(source_root, patch, "JieLi SDK patch")
+        for patch in arguments.sdk_patch
+    ]
+    for patch in sdk_patches:
+        if not patch.is_file() or patch.suffix != ".patch":
+            raise RunnerError(f"JieLi SDK patch is invalid: {patch}")
     require_supported_host()
     try:
         environment = required_environment(arguments)
@@ -413,6 +443,7 @@ def build(arguments: argparse.Namespace) -> None:
             output_root = temporary_root / "out"
             output_root.mkdir()
             copy_sdk(sdk_root, sdk_copy)
+            apply_sdk_patches(git, sdk_copy, sdk_patches, environment)
             native_environment = dict(environment)
             native_environment["HOME"] = str(temporary_root / "home")
             (temporary_root / "home").mkdir()

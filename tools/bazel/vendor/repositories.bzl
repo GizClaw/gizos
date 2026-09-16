@@ -242,6 +242,8 @@ def _fdk_aac_repository_impl(repository_ctx):
             ".." in destination.split("/")):
             fail("invalid FDK-AAC overlay destination: %s" % destination)
         repository_ctx.file(destination, repository_ctx.read(source))
+    for patch in repository_ctx.attr.patches:
+        repository_ctx.patch(patch, strip = 1)
 
 _fdk_aac_repository = repository_rule(
     implementation = _fdk_aac_repository_impl,
@@ -251,6 +253,7 @@ _fdk_aac_repository = repository_rule(
             mandatory = True,
         ),
         "overlay_files": attr.label_keyed_string_dict(allow_files = True),
+        "patches": attr.label_list(allow_files = True),
     },
 )
 
@@ -377,6 +380,7 @@ def _vendor_repositories_impl(module_ctx):
             "//third_party/fdk_aac_patch:libFDK/include/fixmul.h": "libFDK/include/fixmul.h",
             "//third_party/fdk_aac_patch:libFDK/include/fixpoint_math.h": "libFDK/include/fixpoint_math.h",
         },
+        patches = ["//third_party/fdk_aac_patch:fdk_aac_embedded_no_stdio.patch"],
     )
     _k4b_cedarx_repository(
         name = "h2_k4b_cedarx_sdk",
