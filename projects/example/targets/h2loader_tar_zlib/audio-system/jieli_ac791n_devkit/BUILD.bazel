@@ -121,6 +121,9 @@ h2loader_tar_zlib(
     target = "wl82",
 )
 
+# Cycle count for the stop/restart diagnostic: a canonical decimal in
+# [1, 1000]; any other override fails analysis, so the C loop counter and the
+# cycle-1 startup handshake always see a positive bounded value.
 string_flag(
     name = "stop_restart_cycles",
     build_setting_default = "10",
@@ -130,6 +133,8 @@ build_setting_header(
     name = "stop_restart_config",
     flag = ":stop_restart_cycles",
     macro = "H2_AUDIO_STOP_RESTART_CYCLES",
+    maximum = 1000,
+    minimum = 1,
     out = "h2_audio_stop_restart_config.h",
 )
 
