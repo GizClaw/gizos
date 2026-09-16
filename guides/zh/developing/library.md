@@ -187,3 +187,11 @@ API Reference 只从参与生产构建的 Public Header 生成，不能从手写
 [Lua Runtime](./lua)。`//libs/lua:lua_core` 不得依赖 Runtime/PAL；
 `//libs/lua:lua_runtime` 是唯一可以借用 `h2_runtime_t` 的 adapter，
 `//libs/lua:lua` 是符合 library ownership 规则的 semantic target。
+
+Lua prepared execution 的公共边界是有独立数学合同的计算机制：补偿约束循环、预计算系数、有序 bulk integration/damping、带适用域的旋转 reduction、显式几何变换以及既有 raster 的批量执行。某段代码原来用 C 写成，或者把所有常量改成参数，不代表应用方程就属于 library。游戏状态机、校准受力模型、形状/权重生成、材质选择、相机 recipe、layer 意义与调度留在可分发 Lua 包中。数值 kernel 的编译选项限制在专属 translation units，由现有 source-package aspect 原样导出；不得为此修改整个 Lua library、Runtime、PAL 或 board 的行为。
+
+数值状态可由可分发 Lua app 使用标准 numeric buffer 创建，再由 prepared workspace 显式绑定并保活；这仍是 `libs/lua` 内部的 VM 生命周期契约，不要求 launcher 分配裸指针或注册私有 C 扩展。绑定只改变公共状态的所有权与访问路径，材料元数据和原子阶段暂存仍由 library 持有；应用负责阶段顺序、拓扑更新和必要的状态读取。
+
+位移导出、显式修正求长和直接读取坐标 buffer 的描边属于公共数值与绘制机制。它们保留源实现的算术/光栅路径，不在库内判断环境、生成拖曳系数、构造竿形或决定阶段调度。显式精度入口不改变既有通用 API 的默认精度合同；packed 描边复用既有缓存与 Display 生命周期。
+
+公共 mesh 的最终坐标比较、保守 float 变换和网格取整属于 Display；pose、grid 选择和更新调度仍由 Lua app 决定。既有 Display 实现在 `h2_lua_display.c` 中独立编译，与 `h2_lua_vmath.c`、`h2_lua_geometry.c` 和 prepared units 使用 `-O3 -fno-fast-math`，通过现有源码包导出逐单元合同。此边界不改变 Lua core、Runtime、其他 module 或独立 raster library 的编译选项，也不建立第二份绘制实现。

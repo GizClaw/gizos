@@ -30,6 +30,30 @@ bad(function() v.lerp(1e6,-1e6,1e6) end)
 local x,speed=v.spring(0,0,1,10,2,0,.1); near(x,.1);near(speed,1)
 bad(function() v.spring(0,0,0,-1,0,0,.1) end)
 bad(function() v.spring(0,0,0,1,0,0,1e-300) end)
+-- Input validation and result validation are separate contracts. Both
+-- spring outputs remain checked in velocity-then-position order.
+do
+ local function outside(fn)
+   local good,err=pcall(fn)
+   assert(not good and err:find('numeric value outside finite bounds',1,true))
+ end
+ assert(v.lerp(0,500000,2)==1e6)
+ outside(function() v.lerp(0,500000,2.000000000000001) end)
+ outside(function() v.lerp(-1e6,1e6,1e6) end)
+ local position,velocity=v.spring(0,1e6,0,0,0,0,.1)
+ assert(position==1e5 and velocity==1e6)
+ outside(function() v.spring(0,1e6,1,1e6,0,0,.1) end)
+ outside(function() v.spring(1e6,1,0,0,0,0,.1) end)
+ for _,fn in ipairs{v.clamp,v.lerp,v.smoothstep,v.spring} do
+   local n=fn==v.spring and 7 or 3
+   for slot=1,n do for _,bad in ipairs{'0',false,{}} do
+     local args=fn==v.spring and {0,0,0,1,0,0,.01} or {0,1,.5}
+     args[slot]=bad
+     local good,err=pcall(fn,table.unpack(args))
+     assert(not good and err:find('number expected',1,true))
+   end end
+ end
+end
 local out, src, co = b({99,99,99}), b({1,2,3}), b({1,2,3})
 v.polynomial(out,src,co,3);near(out:get(2),17)
 v.combine(out,src,co,2,-1,1,3);near(out:get(3),4)
@@ -39,6 +63,29 @@ local interleaved=b({1,10,2,20,3,30})
 v.gather(out,interleaved,2,2,3);assert(out:get(3)==30)
 v.scatter(interleaved,co,2,2,3);assert(interleaved:get(6)==3 and interleaved:get(5)==3)
 bad(function() v.gather(out,interleaved,2,3,3) end)
+-- Scattering overlapping sources must use the original packed values and
+-- preserve every unwritten element, even with a large inactive capacity.
+do
+ local wide=v.buffer(768); local source=b{11,22,33,44,55}
+ wide:fill(97);v.scatter(wide,source,2,3,5)
+ for i=1,768 do
+  local k=(i-2)/3+1
+  assert(wide:get(i)==((k>=1 and k<=5 and k==math.floor(k)) and source:get(k) or 97))
+ end
+ local alias=b{1,2,3,4,5,6,7,8,9,10}
+ v.scatter(alias,alias,2,2,5)
+ for i,x in ipairs{1,1,3,2,5,3,7,4,9,5} do assert(alias:get(i)==x) end
+ v.scatter(alias,alias,1,1,10)
+ local saved={};for i=1,10 do saved[i]=alias:get(i) end
+ v.scatter(alias,alias,10,1,0)
+ for _,args in ipairs{{2,3,4},{1,0,1},{0,1,0},{11,1,0},{1,1,11}} do
+  bad(function() v.scatter(alias,alias,table.unpack(args)) end)
+  for i=1,10 do assert(alias:get(i)==saved[i]) end
+ end
+ local other=numeric.buffer(10,kind=='f32' and 'f64' or 'f32')
+ bad(function() v.scatter(alias,other,1,1,0) end)
+ for i=1,10 do assert(alias:get(i)==saved[i]) end
+end
 v.clamp_bulk(out,co,2,3,3)
 v.combine(src,src,src,1,1,0,3);assert(src:get(3)==6)
 bad(function() v.combine(out,src,co,1e6,0,0,3) end);assert(out:get(1)==2)
@@ -322,6 +369,31 @@ do
   near(screen:get(1),184+260/2);near(screen:get(2),203+260*1.6/2)
 end
 
+-- Refined norm is opt-in f64; legacy tiny length/normalize retain scaling.
+if kind ~= 'f32' then
+  local src=b{3,4,0, 1e-320,0,0, 0,0,0}
+  local out=b{91,92,93,94}
+  v.length3_refined(out,src,3)
+  assert(out:get(1)==5 and out:get(2)==0 and out:get(3)==0 and out:get(4)==94)
+  v.length3(out,src,3);assert(out:get(2)>0)
+  v.normalize3(out,src,1);near(out:get(1),.6)
+  src:load{3,4,0, 5,12,0};v.length3_refined(src,src,2)
+  assert(src:get(1)==5 and src:get(2)==13 and src:get(3)==0 and src:get(4)==5)
+  src:load{3,4,0, 1e6,1e6,1e6};out:fill(71)
+  bad(function() v.length3_refined(out,src,2) end)
+  for i=1,#out do assert(out:get(i)==71) end
+  for _,n in ipairs({-1,.5,21846,'1'}) do bad(function() v.length3_refined(out,src,n) end) end
+  bad(function() v.length3_refined(v.buffer(0),src,1) end)
+  bad(function() v.length3_refined(out,v.buffer(2),1) end)
+  v.length3_refined(out,src,0);assert(out:get(1)==71)
+  bad(function() v.length3_refined(out,numeric.buffer(3,'f32'),0) end)
+  bad(function() v.length3_refined(numeric.buffer(3,'f32'),src,0) end)
+  local maxsrc=v.buffer(65535);local maxout=v.buffer(21845)
+  v.length3_refined(maxout,maxsrc,21845);assert(maxout:get(21845)==0)
+else
+  bad(function() v.length3_refined(v.buffer(3),v.buffer(3),1) end)
+end
+
 -- The C harness turns on allocator counting after compiling/initializing this
 -- closure. Exercise every successful hot API repeatedly, including mesh writes.
 local qa,qb,qc=b({1,2,3,4,5,6,7,8,9,10,11,12}),v.buffer(12),b({1})
@@ -339,6 +411,7 @@ return function()
     qa:set(1,1);qa:get(1);qb:fill(0);qb:copy(qa,1,1,12)
     v.clamp(1,0,2);v.lerp(0,1,.5);v.smoothstep(0,1,.5);v.spring(0,0,1,1,1,0,.01)
     v.multiply(qb,qa,qa,12);v.divide(qb,qa,qa,12);v.length3(qb,qa,4);v.normalize3(qb,qa,4)
+    if kind ~= 'f32' then v.length3_refined(qb,qa,4) end
     v.gather(qb,qa,1,2,6);v.scatter(qb,qa,1,2,6)
     v.combine(qb,qa,qa,1,0,0,12);v.polynomial(qb,qa,qc,12);v.clamp_bulk(qb,qa,0,10,12);v.dot(qc,qc,1)
     v.verlet(qp,qprev,qacc,qw,.01,1,2);v.relax(qp,qw,qe,ql,.01,2,2,1,true);v.damp(qp,qprev,qw,1,.5,2)
