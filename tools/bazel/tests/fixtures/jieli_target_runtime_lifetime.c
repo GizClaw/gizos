@@ -36,6 +36,7 @@ typedef struct { uint32_t suite_mask; } h2_pal_e2e_config_t;
 typedef struct { size_t case_count, passed, failed; struct { unsigned case_id; int result; } cases[1]; void *retained_cleanup; } h2_pal_e2e_result_t;
 static h2_runtime_t instance;
 static atomic_int live, finishes;
+static atomic_int sleep_calls;
 static int fault, inits, deinits, retained, audio_active, audio_stop_calls;
 #if WORKER_TARGET
 static const int periph_api = 0, component_mapper = 0;
@@ -58,14 +59,16 @@ int h2_runtime_init(const h2_runtime_config_t *c, h2_runtime_t **out) {
  assert(!atomic_exchange(&live, 1)); ++inits; *out = &instance; return 0;
 }
 void h2_runtime_deinit(h2_runtime_t *r) {
- assert(r == &instance && !retained && !audio_active); assert(atomic_exchange(&live, 0)); ++deinits;
+ assert(r == &instance && !retained && (!audio_active || fault == 7)); assert(atomic_exchange(&live, 0)); ++deinits;
 }
 int h2_runtime_input_start(h2_runtime_t *r, const void *c) { (void)c; assert(r == &instance && live); return fault == 3 ? -13 : 0; }
-int h2_pal_time_sleep_ms(const void *time, unsigned ms) { (void)time; (void)ms; assert(live); os_time_dly(1); return 0; }
-int h2_smoke_audio_system_run(h2_runtime_t *r, const h2_smoke_audio_system_config_t *c) { (void)c; assert(r == &instance && live); audio_active = 1; return fault == 5 || fault == 4 ? -15 : 0; }
+int h2_pal_time_sleep_ms(const void *time, unsigned ms) { (void)time; assert(ms == 10u); ++sleep_calls; assert(live); os_time_dly(1); return 0; }
+int h2_smoke_audio_system_run(h2_runtime_t *r, const h2_smoke_audio_system_config_t *c) { (void)c; assert(r == &instance && live); audio_active = 1; return fault == 5 || fault == 4 || fault == 7 ? -15 : 0; }
 int h2_smoke_audio_system_stop(void) {
  assert(live && audio_active);
- if (++audio_stop_calls == 1 && fault == 4) return -16;
+ ++audio_stop_calls;
+ assert(audio_stop_calls <= 100); /* Fail fast on the old unbounded loop. */
+ if (fault == 7 || (audio_stop_calls == 1 && fault == 4)) return -16;
  audio_active = 0; return 0;
 }
 void crash_now(void *user) { (void)user; }
@@ -102,9 +105,10 @@ int h2_touch_smoke_run(h2_runtime_t *r, const smoke_config_t *c) { return smoke_
 #endif
 /* TARGET */
 int main(void) {
- const int faults[] = {5, 1, 2, 3, 4, 6, 0};
+ const int faults[] = {7, 5, 1, 2, 3, 4, 6, 0};
  for (size_t i = 0; i < sizeof(faults) / sizeof(faults[0]); ++i) {
   fault = faults[i];
+  atomic_store(&sleep_calls, 0);
   inits = deinits = retained = audio_active = audio_stop_calls = 0; atomic_store(&live, 0); atomic_store(&finishes, 0);
 #if WORKER_TARGET
   worker_started = 0; atomic_store(&allow_finish, 0);
@@ -122,15 +126,19 @@ int main(void) {
   if (worker_started) assert(pthread_join(worker, NULL) == 0);
 #else
   else if (CRASH_TARGET) assert(result == H2_PAL_ERR_INVALID_STATE);
-  else if (fault == 5 || (AUDIO_TARGET && fault == 4)) assert(result == -15);
+  else if (fault == 5 || (AUDIO_TARGET && (fault == 4 || fault == 7))) assert(result == -15);
   else assert(result == 0 || (fault == 3 && result == -13));
 #endif
 #if AUDIO_TARGET
+  if (fault == 1 || fault == 2) {
+   assert(!audio_stop_calls && !sleep_calls && !deinits && !inits);
+  }
   if (result == H2_AUDIO_OK) {
    /* Successful entry hands the still-running scene to the boot lifetime. */
    assert(inits == 1 && deinits == 0 && live && audio_active && !audio_stop_calls);
   } else {
-   assert(inits == deinits && !live && !audio_active);
+   assert(inits == deinits && !live && (!audio_active || fault == 7));
+   if (fault == 7) assert(audio_stop_calls == 100 && sleep_calls == 99 && deinits == 1);
    if (fault == 4) assert(audio_stop_calls == 2);
   }
 #else

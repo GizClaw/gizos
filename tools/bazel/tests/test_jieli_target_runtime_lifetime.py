@@ -66,6 +66,9 @@ class RuntimeLifetimeTest(unittest.TestCase):
                         *shlex.split(os.environ.get('JIELI_TEST_CFLAGS', '')), str(unit), '-o', str(binary)], check=True)
                     result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=15)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    if name == 'audio-system':
+                        self.assertEqual(result.stdout.count(
+                            'cleanup did not complete result=-16 attempts=100'), 1)
 
 
 if __name__ == '__main__':
