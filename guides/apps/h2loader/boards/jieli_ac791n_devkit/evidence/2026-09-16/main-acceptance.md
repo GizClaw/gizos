@@ -216,7 +216,6 @@ The frozen audio package was installed through UART Loader into P2. The monitor 
 
 `reboot loader` returned to the unchanged new P1; both audio-returned and the subsequent step-8 independent status showed running/next P1, Stage empty and last_result=0, with the audio image retained in P2. Only after these checks was the same frozen button package restored through Loader into P2 for the requested diagnosis.
 
-
 ## Open issue: button image startup log capture
 
 **Host monitor text-path defect: open, no code fix attempted.** The corrected raw UART capture contains both required lines intact immediately after input-start result=0, while both CLI monitor captures lost them at that location and emitted short garbage spans. This establishes that the board emits the bytes and isolates the observed button loss to the host monitor path under this comparison. It is the same family of text-loss symptom as PAL's 76-byte garble; an identical underlying cause for PAL is not established by this button-only experiment. The diagnostic success does not change the failed button acceptance item.
