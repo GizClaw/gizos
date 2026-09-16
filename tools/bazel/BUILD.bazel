@@ -1178,6 +1178,32 @@ py_test(
 )
 
 py_test(
+    name = "jieli_task_policy_test",
+    srcs = ["tests/test_jieli_task_policy.py"],
+    data = ["jieli_task_policy.bzl"],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_task_policy.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "jieli_compile_only_project_test",
+    srcs = ["tests/test_jieli_compile_only_project.py"],
+    data = ["//boards/ac791n_chip/ac791n/layouts/compile_only:project.mk"],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_compile_only_project.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
     name = "jieli_allocator_test",
     srcs = ["tests/test_jieli_allocator.py"],
     data = [

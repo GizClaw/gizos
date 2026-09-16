@@ -2,6 +2,8 @@
 # reusable CPU, common runtime, header, archive and linker inputs only.
 
 H2_JIELI_LAYOUT_ROOT ?= $(abspath $(dir $(lastword $(MAKEFILE_LIST))))
+# Capture this makefile before later includes change MAKEFILE_LIST.
+H2_JIELI_LAYOUT_ROOT := $(H2_JIELI_LAYOUT_ROOT)
 H2_JIELI_RESERVED_EXPAND_CONFIG_FILE ?=
 
 # make 编译并下载

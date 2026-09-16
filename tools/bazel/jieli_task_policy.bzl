@@ -57,12 +57,13 @@ _source = rule(
     },
 )
 
-def jieli_target_task_policy(name, graph, policies, sdk_policies, default_policy, deps = []):
+def jieli_target_task_policy(name, graph, policies, sdk_policies, default_policy, deps = [], tags = []):
     """Own SDK task budgets and validate all reachable portable task names.
 
     default_policy has three columns: priority, stack words, queue words.
     It supplies dynamically named tasks; all statically declared tasks still
     require an explicit row and cannot silently inherit the fallback.
+    tags are forwarded to the source, audit, and native component targets.
     """
     declared = {}
     for row in policies:
@@ -77,12 +78,14 @@ def jieli_target_task_policy(name, graph, policies, sdk_policies, default_policy
         name = name + "_source",
         rows = sdk_policies + policies,
         default_policy = default_policy,
+        tags = tags,
     )
     task_policy_audit(
         name = name + "_audit",
         graph = graph,
         policies_json = json.encode(declared),
         policy_label = str(native.package_name()) + ":" + name,
+        tags = tags,
     )
     firmware_native_component(
         name = name,
@@ -90,4 +93,5 @@ def jieli_target_task_policy(name, graph, policies, sdk_policies, default_policy
         data = [":" + name + "_audit"],
         component_name = name,
         deps = deps,
+        tags = tags,
     )

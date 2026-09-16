@@ -2,7 +2,7 @@
 from pathlib import Path
 import unittest
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(__file__).parents[3]
 
 
 class TaskPolicyTest(unittest.TestCase):
@@ -31,3 +31,7 @@ class TaskPolicyTest(unittest.TestCase):
     def test_boundary_values(self):
         self.parse("x" * 31 + " 255 4294967295 65535")
         self.parse("#C0" + "x" * 31 + " 0 1 0")
+
+
+if __name__ == "__main__":
+    unittest.main()
