@@ -679,7 +679,7 @@ int h2_jieli_ac791n_devkit_audio_idle_probe(h2_jieli_ac791n_devkit_audio_idle_t 
     const jieli_audio_track_t *track = &audio_state.tracks[i];
     out->open_tracks += track->state != AUDIO_FREE;
     out->retained_operations += track->operations;
-    out->ring_bytes += track->ring.count;
+    out->ring_bytes += track->ring.capacity;
     out->sdk_servers += track->server != NULL;
     if (track->state == AUDIO_OPEN) out->consumed_bytes += track->consumed;
   }

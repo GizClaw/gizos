@@ -240,7 +240,7 @@ const h2_pal_audio_api_t *h2_jieli_ac791n_devkit_audio_api(void);
 typedef struct h2_jieli_ac791n_devkit_audio_idle {
   uint32_t open_tracks;         /* tracks not in the free state */
   uint32_t retained_operations; /* referenced writers, drainers, volume requests and callbacks */
-  uint32_t ring_bytes;          /* PCM ring bytes still owned by tracks */
+  uint32_t ring_bytes;          /* PCM ring storage still allocated by tracks */
   uint32_t sdk_servers;         /* live encoder and decoder handles */
   uint32_t mic_open;            /* microphone session is not free */
   uint32_t speaker_started;
@@ -367,7 +367,7 @@ static void test_cycles(void) {
         assert(music_request.vfs_ops->fread(music_request.file, scratch, sizeof(scratch)) == 1280);
         consume();
         assert(h2_jieli_ac791n_devkit_audio_idle_probe(&probe) == H2_AUDIO_OK);
-        assert(probe.consumed_bytes == 1280u && probe.ring_bytes == 0u);
+        assert(probe.consumed_bytes == 1280u && probe.ring_bytes == 1280u);
         normal_stop(music, mic);
     }
     assert(allocations == 100u);

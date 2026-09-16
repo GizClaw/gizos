@@ -122,6 +122,7 @@ int h2_jieli_target_application_run(void) {
   int result = h2_jieli_ac791n_devkit_runtime_config(&config);
   if (result == H2_PAL_OK) result = h2_runtime_init(&config, &runtime);
   if (result != H2_PAL_OK) {
+    printf("H2_JIELI_AUDIO_CYCLE stage=runtime-init result=%d\n", result);
     if (runtime != NULL) h2_runtime_deinit(runtime);
     return result;
   }
