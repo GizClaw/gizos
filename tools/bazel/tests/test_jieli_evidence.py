@@ -19,7 +19,10 @@ class EvidenceTest(unittest.TestCase):
         self.assertEqual(sorted(rejected), [], 'Captured outputs do not belong in implementation evidence')
         for path in EVIDENCE.rglob('*.md'):
             with self.subTest(path=path.name):
-                targets = re.findall(r'\]\(([^)]+)\)', path.read_text())
+                text = path.read_text()
+                # The closing label also matches images: ![alt](target).
+                targets = re.findall(r'\]\(((?:[^()\n]|\([^()\n]*\))+)\)', text)
+                targets += re.findall(r'^ {0,3}\[[^]\n]+\]:[ \t]*(.+)$', text, re.MULTILINE)
                 for target in targets:
                     target = re.sub(r"\s+(?:\"[^\"]*\"|'[^']*')\s*$", '', target).strip()
                     if target.startswith('<') and target.endswith('>'):
