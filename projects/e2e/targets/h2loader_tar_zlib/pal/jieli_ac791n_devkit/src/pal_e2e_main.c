@@ -10,7 +10,7 @@
 #include "jieli_h2loader_app_support.h"
 #include "jieli_app_iostreamikcp.h"
 #include "device/device.h"
-#include "fs/fs.h"
+#include "pal_e2e_sdk_fs_probe.h"
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -99,10 +99,9 @@ static void fs_probe_native(const char *name, const char *step, int native) {
         name, step, native == 0 ? H2_PAL_OK : H2_PAL_ERR_IO, native);
 }
 
-static void fs_probe_native_open(const char *name, const char *step, FILE *file) {
-  /* Record NULL/non-NULL without truncating a pointer to an integer. */
+static void fs_probe_native_open(const char *name, const char *step, int opened) {
   trace("H2_PAL_FS_PROBE name=%s step=%s rc=%d native=%d\r\n",
-        name, step, file == NULL ? H2_PAL_ERR_IO : H2_PAL_OK, file != NULL);
+        name, step, opened ? H2_PAL_OK : H2_PAL_ERR_IO, opened);
 }
 
 static void run_fs_probes(void) {
@@ -215,26 +214,25 @@ static void run_fs_probes(void) {
   fs_probe_cleanup("utf8_long");
 
   name = "sdk_frename_existing";
-  const char *native_a = "storage/sd0/C/data/h2-probe/a";
-  const char *native_b = "storage/sd0/C/data/h2-probe/b";
-  FILE *sdk_a = fopen(native_a, "w+");
-  fs_probe_native_open(name, "create_a", sdk_a);
-  FILE *sdk_b = fopen(native_b, "w+");
-  fs_probe_native_open(name, "create_b", sdk_b);
-  if (sdk_b != NULL) fs_probe_native(name, "close_b", fclose(sdk_b));
-  fs_probe_native(name, "rename", sdk_a == NULL ? -1 : frename(sdk_a, "b"));
-  if (sdk_a != NULL) fs_probe_native(name, "close_a", fclose(sdk_a));
-  sdk_a = fopen(native_a, "r");
-  fs_probe_native(name, "delete_a", sdk_a == NULL ? -1 : fdelete(sdk_a));
-  sdk_b = fopen(native_b, "r");
-  fs_probe_native(name, "delete_b", sdk_b == NULL ? -1 : fdelete(sdk_b));
+  h2_pal_e2e_sdk_rename_probe_t rename_probe = {0};
+  h2_pal_e2e_sdk_probe_frename_existing(
+      "storage/sd0/C/data/h2-probe/a", "storage/sd0/C/data/h2-probe/b",
+      &rename_probe);
+  fs_probe_native_open(name, "create_a", rename_probe.create_a);
+  fs_probe_native_open(name, "create_b", rename_probe.create_b);
+  fs_probe_native(name, "close_b", rename_probe.close_b);
+  fs_probe_native(name, "rename", rename_probe.rename);
+  fs_probe_native(name, "close_a", rename_probe.close_a);
+  fs_probe_native(name, "delete_a", rename_probe.delete_a);
+  fs_probe_native(name, "delete_b", rename_probe.delete_b);
   fs_probe_cleanup(name);
 
   name = "sdk_fopen_dir_write";
   fs_probe_rc(name, "mkdir_d", h2_pal_fs_mkdir(base_fs, d));
-  FILE *sdk_dir = fopen("storage/sd0/C/data/h2-probe/d", "w+");
-  fs_probe_native_open(name, "open", sdk_dir);
-  if (sdk_dir != NULL) fs_probe_native(name, "close", fclose(sdk_dir));
+  h2_pal_e2e_sdk_open_probe_t open_probe = {0};
+  h2_pal_e2e_sdk_probe_fopen_dir_write("storage/sd0/C/data/h2-probe/d", &open_probe);
+  fs_probe_native_open(name, "open", open_probe.opened);
+  if (open_probe.opened) fs_probe_native(name, "close", open_probe.close);
   fs_probe_cleanup(name);
   fs_probe_rc("cleanup", "remove", h2_pal_fs_remove(base_fs, "/data/h2-probe"));
 }
