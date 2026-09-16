@@ -6,7 +6,9 @@ Linux x86_64（或 macOS 上的 Linux x86_64 dev container）：
 
 ```sh
 bazel build --config=ac791n \
-  //projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:package
+  //projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:package \
+  //projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit:package \
+  //projects/example/targets/h2loader_tar_zlib/crash-before-confirm/jieli_ac791n_devkit:package
 ```
 
 Managed package 内的 `app/jieli/update.ufw` 是 native updater 消费的 image。空片首刷使用杰理 USB UBOOT 工具或烧写器，之后只通过 H2Loader `send` 加 `reboot upgrade` 更新。
@@ -52,9 +54,7 @@ Loader self-update 现在复用 SDK updater，但通过本 layout 的 NOR adapte
 
 macOS 上 854,092-byte App package 的 BLE `send` 端到端 32 s（2M）/ 46 s（1M），2M 稳态约 30 KiB/s。
 
-## E2E runner（需另行准备 App 测试包）
-
-App 与 crash-before-confirm 示例包保留在 PR #178，本次只提供 Loader；以下命令需另行准备对应 App 包后执行。
+## E2E runner
 
 macOS 上 BLE Host 由 CoreBluetooth 提供，runner 必须从拥有 Bluetooth 权限的 responsible process（例如 Terminal.app）启动。
 

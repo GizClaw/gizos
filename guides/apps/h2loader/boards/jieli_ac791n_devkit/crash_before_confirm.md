@@ -2,9 +2,13 @@
 
 `crash-before-confirm` 复用 color-bar launcher 的 trial boot、UART/BLE App command service 和确认流程，在两者之间通过 SDK `cpu_assert_debug()` 触发断言。它用于验证未确认 App 的 trial rollback、Loader 不修改 Stage 与 Partition 2 metadata，以及 UART/BLE coredump 读取；一次断言或重启本身不算通过。
 
-## 范围
+## 构建
 
-App 的 crash-before-confirm 示例镜像保留在 PR #178，不包含在本次 Loader 拆分中。下列步骤描述配合该 App 的验证合同；本分支的 `loader_trial_crash_package` 则用于候选 Loader 在确认前的故障注入，两者不可混作同一项验收。
+```sh
+bazel build --config=ac791n \
+  //projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:package \
+  //projects/example/targets/h2loader_tar_zlib/crash-before-confirm/jieli_ac791n_devkit:package
+```
 
 ## 预期表现
 
