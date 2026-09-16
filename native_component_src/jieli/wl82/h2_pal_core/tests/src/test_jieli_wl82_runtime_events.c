@@ -69,6 +69,7 @@ int main(void) {
     /* Runtime init must retain the launcher's existing BLE subscription. */
     const h2_pal_system_event_t event = {.type = H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STARTED};
     assert(h2_pal_system_event_post(api, &event, 0) == H2_PAL_OK);
+    h2_jieli_fake_event_drain();
     assert(delivered == 1);
     const h2_pal_task_options_t options = {.name = "smoke", .min_stack_size = 4096};
     h2_pal_task_t *task = NULL;
@@ -79,6 +80,7 @@ int main(void) {
     /* Runtime releases only its owner; the launcher and BLE remain live. */
     h2_runtime_deinit(runtime);
     assert(h2_pal_system_event_post(api, &event, 0) == H2_PAL_OK);
+    h2_jieli_fake_event_drain();
     assert(delivered == 2);
     h2_pal_system_event_unsubscribe(api, ble);
     h2_pal_system_event_deinit(api);

@@ -438,9 +438,11 @@ static void test_system_event_lifecycle_and_dispatch(void)
     CHECK(h2_pal_system_event_subscribe(api, event.type,
               system_event_deinit_handler, &teardown_calls, &subscription) == H2_PAL_OK);
     CHECK(h2_pal_system_event_post(api, &event, 0u) == H2_PAL_OK);
+    h2_jieli_fake_event_drain();
     CHECK(teardown_calls == 1u);
     CHECK(h2_pal_system_event_init(api) == H2_PAL_OK);
     CHECK(h2_pal_system_event_post(api, &event, 0u) == H2_PAL_OK);
+    h2_jieli_fake_event_drain();
     CHECK(teardown_calls == 1u);
     h2_pal_system_event_deinit(api);
     CHECK(h2_pal_system_event_init(api) == H2_PAL_OK);
@@ -450,14 +452,165 @@ static void test_system_event_lifecycle_and_dispatch(void)
           H2_PAL_OK);
     CHECK(subscription != NULL);
     CHECK(h2_pal_system_event_post(api, &event, 0u) == H2_PAL_OK);
+    h2_jieli_fake_event_drain();
     CHECK(calls == 1);
     h2_pal_system_event_unsubscribe(api, subscription);
     CHECK(h2_pal_system_event_post(api, &event, 0u) == H2_PAL_OK);
+    h2_jieli_fake_event_drain();
     CHECK(calls == 1);
     h2_pal_system_event_deinit(api);
     CHECK(h2_pal_system_event_post(api, &event, 0u) == H2_PAL_OK);
     h2_pal_system_event_deinit(api);
     CHECK(h2_pal_system_event_post(api, &event, 0u) == H2_PAL_ERR_INVALID_STATE);
+    CHECK(h2_jieli_fake_live_allocations() == 0);
+}
+
+static unsigned async_calls;
+static unsigned char async_expected[1024];
+static size_t async_size;
+static const void *posting_task;
+static int copied_handler(void *user, const h2_pal_system_event_t *value)
+{
+    (void)user;
+    CHECK(h2_jieli_sdk_task_current() != posting_task);
+    CHECK(value->type == H2_PAL_SYSTEM_EVENT_TYPE_BLE_CONNECTED);
+    CHECK(value->source_id == 77u && value->timestamp_ms == UINT64_C(0x100000001));
+    CHECK(value->payload_size == async_size);
+    CHECK(memcmp(value->payload, async_expected, async_size) == 0);
+    ++async_calls;
+    return H2_PAL_ERR_IO; /* Delivery results cannot change enqueue success. */
+}
+
+static void test_system_event_copies_and_limits(void)
+{
+    const h2_pal_system_event_api_t *api = h2_jieli_wl82_platform_system_event_api();
+    unsigned char payload[1025];
+    h2_pal_system_event_t value = {
+        .type = H2_PAL_SYSTEM_EVENT_TYPE_BLE_CONNECTED,
+        .source_id = 77u, .timestamp_ms = UINT64_C(0x100000001), .payload = payload,
+    };
+    h2_jieli_fake_reset();
+    posting_task = h2_jieli_sdk_task_current();
+    async_calls = 0;
+    CHECK(h2_pal_system_event_init(api) == H2_PAL_OK);
+    h2_pal_system_event_subscription_t *sub;
+    CHECK(h2_pal_system_event_subscribe(api, value.type, copied_handler, NULL, &sub) == H2_PAL_OK);
+    const size_t sizes[] = {8u, 9u, 1024u};
+    for (size_t i = 0; i < sizeof(sizes) / sizeof(sizes[0]); ++i) {
+        async_size = value.payload_size = sizes[i];
+        memset(payload, (int)(i + 1u), sizeof(payload));
+        memcpy(async_expected, payload, async_size);
+        const int baseline = h2_jieli_fake_live_allocations();
+        CHECK(h2_pal_system_event_post(api, &value, 0u) == H2_PAL_OK);
+        CHECK(async_calls == i);
+        CHECK(h2_jieli_fake_event_queued() == 1u);
+        CHECK(h2_jieli_fake_live_allocations() == baseline + (sizes[i] > 8u));
+        memset(payload, 0, sizeof(payload));
+        h2_jieli_fake_event_drain();
+        CHECK(async_calls == i + 1u);
+        CHECK(h2_jieli_fake_live_allocations() == baseline);
+    }
+    uint32_t overflow = h2_jieli_wl82_platform_system_event_overflow_count();
+    value.payload_size = 1025u;
+    CHECK(h2_pal_system_event_post(api, &value, 0u) == H2_PAL_ERR_INVALID_ARG);
+    value.payload_size = 9u;
+    h2_jieli_fake_fail_next_malloc();
+    CHECK(h2_pal_system_event_post(api, &value, 0u) == H2_PAL_ERR_NO_MEMORY);
+    CHECK(h2_jieli_fake_event_queued() == 0u);
+    CHECK(h2_jieli_wl82_platform_system_event_overflow_count() == overflow);
+    h2_jieli_fake_set_in_interrupt(1);
+    CHECK(h2_pal_system_event_post(api, &value, 0u) == H2_PAL_ERR_INVALID_STATE);
+    CHECK(h2_jieli_fake_event_queued() == 0u);
+    CHECK(h2_jieli_wl82_platform_system_event_overflow_count() == overflow);
+    h2_jieli_fake_set_in_interrupt(0);
+    async_size = value.payload_size = 8u;
+    memset(async_expected, 0, async_size);
+    for (unsigned i = 0; i < 4u; ++i)
+        CHECK(h2_pal_system_event_post(api, &value, 0u) == H2_PAL_OK);
+    CHECK(h2_jieli_fake_event_queued() == 4u);
+    CHECK(h2_pal_system_event_post(api, &value, 0u) == H2_PAL_ERR_FULL);
+    CHECK(h2_jieli_wl82_platform_system_event_overflow_count() == overflow + 1u);
+    h2_jieli_fake_event_drain();
+    h2_jieli_fake_fail_next_event_post();
+    CHECK(h2_pal_system_event_post(api, &value, 0u) == H2_PAL_ERR_FULL);
+    CHECK(h2_jieli_wl82_platform_system_event_overflow_count() == overflow + 2u);
+    CHECK(h2_jieli_fake_event_queued() == 0u);
+    h2_jieli_fake_set_event_capacity(0u);
+    CHECK(h2_pal_system_event_post(api, &value, 0u) == H2_PAL_ERR_FULL);
+    CHECK(h2_jieli_wl82_platform_system_event_overflow_count() == overflow + 3u);
+    h2_jieli_fake_set_event_capacity(8u);
+    CHECK(h2_pal_system_event_post(api, &value, 0u) == H2_PAL_OK);
+    h2_jieli_fake_event_drain();
+    uint32_t slept = h2_jieli_fake_sleep_total_ms();
+    h2_pal_system_event_unsubscribe(api, sub);
+    CHECK(h2_jieli_fake_sleep_total_ms() == slept);
+    h2_pal_system_event_deinit(api);
+    CHECK(h2_jieli_fake_live_allocations() == 0);
+    CHECK(h2_pal_system_event_init(api) == H2_PAL_OK);
+    CHECK(h2_jieli_fake_event_dispatcher_starts() == 1);
+    CHECK(h2_pal_system_event_subscribe(api, value.type, copied_handler, NULL, &sub) == H2_PAL_OK);
+    async_size = value.payload_size = 9u;
+    memset(async_expected, 0, async_size);
+    CHECK(h2_pal_system_event_post(api, &value, 0u) == H2_PAL_OK);
+    h2_pal_system_event_deinit(api);
+    CHECK(h2_jieli_fake_live_allocations() == 2);
+    h2_jieli_fake_event_drain();
+    CHECK(h2_jieli_fake_live_allocations() == 0);
+    CHECK(h2_jieli_wl82_platform_system_event_overflow_count() == overflow + 3u);
+
+    h2_jieli_fake_reset();
+    h2_jieli_fake_fail_event_dispatcher_start(1);
+    CHECK(h2_pal_system_event_init(api) == H2_PAL_ERR_TASK);
+    CHECK(h2_pal_system_event_post(api, &value, 0u) == H2_PAL_ERR_INVALID_STATE);
+    CHECK(h2_jieli_fake_live_allocations() == 0);
+}
+
+static h2_pal_system_event_subscription_t *cross_sub, *created_sub;
+static unsigned first_calls, cross_calls, created_calls;
+static int count_event(void *user, const h2_pal_system_event_t *value)
+{
+    (void)value;
+    ++*(unsigned *)user;
+    return H2_PAL_OK;
+}
+static int cross_unsubscribe(void *user, const h2_pal_system_event_t *value)
+{
+    (void)user;
+    const h2_pal_system_event_api_t *api = h2_jieli_wl82_platform_system_event_api();
+    if (++first_calls == 1u) {
+        uint32_t slept = h2_jieli_fake_sleep_total_ms();
+        h2_pal_system_event_unsubscribe(api, cross_sub);
+        CHECK(h2_jieli_fake_sleep_total_ms() == slept);
+        CHECK(h2_pal_system_event_subscribe(api, value->type, count_event,
+                                           &created_calls, &created_sub) == H2_PAL_OK);
+    }
+    return H2_PAL_OK;
+}
+static void test_system_event_subscription_snapshot(void)
+{
+    h2_jieli_fake_reset();
+    const h2_pal_system_event_api_t *api = h2_jieli_wl82_platform_system_event_api();
+    const h2_pal_system_event_t value = {.type = H2_PAL_SYSTEM_EVENT_TYPE_BLE_CONNECTED};
+    h2_pal_system_event_subscription_t *first, *late, *reused;
+    unsigned late_calls = 0;
+    first_calls = cross_calls = created_calls = 0;
+    CHECK(h2_pal_system_event_init(api) == H2_PAL_OK);
+    CHECK(h2_pal_system_event_subscribe(api, value.type, cross_unsubscribe, NULL, &first) == H2_PAL_OK);
+    CHECK(h2_pal_system_event_subscribe(api, value.type, count_event, &cross_calls, &cross_sub) == H2_PAL_OK);
+    CHECK(h2_pal_system_event_post(api, &value, 0u) == H2_PAL_OK);
+    CHECK(h2_pal_system_event_subscribe(api, value.type, count_event, &late_calls, &late) == H2_PAL_OK);
+    h2_jieli_fake_event_drain();
+    CHECK(first_calls == 1u && cross_calls == 0u && late_calls == 0u && created_calls == 0u);
+    CHECK(h2_pal_system_event_subscribe(api, value.type, count_event, &cross_calls, &reused) == H2_PAL_OK);
+    CHECK(reused == cross_sub);
+    CHECK(h2_pal_system_event_post(api, &value, 0u) == H2_PAL_OK);
+    h2_jieli_fake_event_drain();
+    CHECK(first_calls == 2u && cross_calls == 1u && late_calls == 1u && created_calls == 1u);
+    h2_pal_system_event_unsubscribe(api, first);
+    h2_pal_system_event_unsubscribe(api, late);
+    h2_pal_system_event_unsubscribe(api, reused);
+    h2_pal_system_event_unsubscribe(api, created_sub);
+    h2_pal_system_event_deinit(api);
     CHECK(h2_jieli_fake_live_allocations() == 0);
 }
 
@@ -874,6 +1027,8 @@ int main(void)
     test_queue_wait_relock_failure();
     test_task_start_and_join();
     test_system_event_lifecycle_and_dispatch();
+    test_system_event_copies_and_limits();
+    test_system_event_subscription_snapshot();
     test_timer_one_shot_and_periodic();
     test_timer_destroy_from_callback_defers_release();
     test_timer_destroy_racing_dispatched_callback();

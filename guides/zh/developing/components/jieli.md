@@ -55,13 +55,17 @@
   - Task 支持 `join`：每个任务有唯一 native 名 `<policy>/<hex id>`（匿名任务为 `$h2anon/…`，调用者不能使用该前缀），join 等待完成后按该名字删除；同名 policy 的多个任务互不影响。
   - Timer 的所有生命周期操作同步派发到 SDK `sys_timer` 任务，timer 回调内调用直接内联执行；不支持 ISR 和调度器启动前调用；资源失败保持 timer 停止且可重试。
   - Mutex、semaphore、condition 和 queue 遵循 `config->allocator`，对象从创建到销毁一直持有该 allocator。
-- **System Event。** 固定 `H2_PAL_SYSTEM_EVENT_TYPE_COUNT + 8` 个槽位，在 post 调用线程上同步派发。
-  - 每次成功 init 获得一个 owner，最多 16383 个，超出返回 `H2_PAL_ERR_FULL`；只有最后一个 deinit 关闭准入，已准入的操作结束后才销毁。
-  - 已准入的 post 会派发完它准入时的全部订阅，即使某个 handler 释放了最后一个 owner。
-  - 外部 unsubscribe 等待该订阅所有正在执行的回调返回（包括最后一个 owner 已 deinit 的 CLOSING 阶段），之后可释放 `handler_user`；handler 内的 self-unsubscribe 只停止准入，不等待自身。
-  - 订阅 generation 为 64 位且不回绕：post 只派发给 generation 不大于准入时快照的订阅，到达 `UINT64_MAX` 后 subscribe 返回 `H2_PAL_ERR_FULL`，只有完整 teardown 后重新 init 才重置。
+- **System Event。** 固定 `H2_PAL_SYSTEM_EVENT_TYPE_COUNT + 8` 个订阅槽位，通过 SDK `sys_event` 异步派发；每条消息为 32 字节 envelope（64 位 generation ceiling、时间戳、source ID、type、flags、payload 长度与 8 字节数据区），使用 `type=0x0100`、`from=0x50`，不会超过 SDK 的 32 字节读取缓冲区。
+  - Port 创建常驻 `h2_sysevt` 任务（priority 20、1024 stack words、32 queue words），由该任务注册 handler 并循环 `os_taskq_pend`；SDK 在注册任务的 pend 内执行 `Q_CALLBACK`，所有 PAL handler 按 SDK 入队顺序串行执行。首次启动最多等待 1000 ms，失败返回 `H2_PAL_ERR_TASK`；后续 init 周期复用任务与注册。
+  - post 复制 payload：不超过 8 字节内联，9..1024 字节使用 SDK heap 副本，超过 1024 字节返回 `H2_PAL_ERR_INVALID_ARG`，分配失败返回 `H2_PAL_ERR_NO_MEMORY`；post 返回后不再引用调用者内存，副本在整条事件派发完毕或丢弃时释放，handler 的 payload 仅在回调期间有效。
+  - 最多保留 4 条尚未完成派发的 PAL 事件；深度耗尽或 SDK ring 返回 -12 时 post 返回 `H2_PAL_ERR_FULL`，并增加只读的 `h2_jieli_wl82_platform_system_event_overflow_count()`，该计数不随 init/deinit 清零。四条消息连同 SDK header 共占 144 字节，SDK 的 256 字节 ring 还与 key、device、network、Bluetooth 等事件共享，因此未达到 PAL 深度上限也可能 FULL。
+  - post 的 `timeout_ms` 只约束注册表锁获取；成功表示入队，不传递 handler 返回值，没有匹配订阅时直接返回 OK 而不触碰 SDK。SDK 的 notify 支持中断上下文，但 PAL 的锁、64 位 generation 和 heap 复制不支持，中断 post 返回 `H2_PAL_ERR_INVALID_STATE`，不入队也不增加 overflow。
+  - 每次成功 init 获得一个 owner，最多 16383 个，超出返回 `H2_PAL_ERR_FULL`；最后一个 deinit 关闭准入，之后 post/subscribe 返回 `H2_PAL_ERR_INVALID_STATE`，INITIALIZING/CLOSING 期间 init 返回 `H2_PAL_ERR_BUSY`。已排队事件持有操作引用，仍向准入时且尚未退订的订阅交付，即使某个 handler 释放最后一个 owner；最后一个引用释放后才销毁注册表和锁。
+  - unsubscribe 先停止准入；外部任务等待该订阅排队事件被消费且运行中的回调返回（包括 CLOSING 阶段），返回后可释放 `handler_user`。dispatcher 内对自身或其他订阅的 unsubscribe 都不等待，以免阻塞唯一的消费任务；已退订的排队回调被跳过，槽位待 queued、dispatching、waiters 全部归零后复用，已准入回调的 user 必须保持有效。
+  - 订阅 generation 为 64 位且不回绕：post 在锁内记录 ceiling，入队准入后新建的订阅不会收到该事件，无论由其他任务还是 handler 创建；到达 `UINT64_MAX` 后 subscribe 返回 `H2_PAL_ERR_FULL`，只有完整 teardown 后重新 init 才重置。
+  - SDK `sys_event` 任务等待整条 handler 链完成，默认超时 40 s，超时触发 assert 或系统复位；handler 必须保持短小、非阻塞。
 - **原子操作。** wl82 的 pi32v2 clang 把 C11/GCC 原子操作降级为 `__sync_*` libcall，而工具链 compiler-rt 的实现在双核上不安全。`h2_jieli_wl82_sdk_port.c` 为 1/2/4/8 字节 `__sync_*` 提供由 SDK spinlock 保护的强定义。
-- **Host 验证。** 测试链接 `tests/` 下的确定性 fake 或 pthread SDK port：`bazel test //native_component_src/jieli/wl82/...`，以及 `//tools/bazel:jieli_{allocator,dynamic_task,event_generation,log_text,runtime_events,sdk_memory,task_identity,wl82_sync_atomics}_test`。`test_jieli_event_generation.py` 与 `test_jieli_runtime_events.py` 读取 `CC` 和 `JIELI_TEST_CFLAGS`，可用 GCC 与 TSan 运行。这些测试不替代 AC791N 实机验收。
+- **Host 验证。** 测试链接 `tests/` 下的确定性 fake 或 pthread SDK port：`bazel test //native_component_src/jieli/wl82/...`，以及 `//tools/bazel:jieli_{allocator,dynamic_task,event_generation,log_text,runtime_events,sdk_memory,sys_event_port,task_identity,wl82_sync_atomics}_test`。`test_jieli_event_generation.py`、`test_jieli_runtime_events.py` 与 `test_jieli_sys_event_port.py` 读取 `CC` 和 `JIELI_TEST_CFLAGS`，可用 GCC 与 TSan 运行。这些测试不替代 AC791N 实机验收。
 
 ## Repository-owned native project
 

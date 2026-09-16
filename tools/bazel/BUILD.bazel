@@ -1530,6 +1530,23 @@ py_test(
 )
 
 py_test(
+    name = "jieli_sys_event_port_test",
+    srcs = ["tests/test_jieli_sys_event_port.py"],
+    data = [
+        "//native_component_src/jieli/wl82/h2_pal_core:include/h2_jieli_wl82_sdk_port.h",
+        "//native_component_src/jieli/wl82/h2_pal_core:include/h2_jieli_wl82_platform_core.h",
+        "//native_component_src/jieli/wl82/h2_pal_core:src/h2_jieli_wl82_sdk_port.c",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_sys_event_port.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
     name = "jieli_runtime_events_test",
     srcs = ["tests/test_jieli_runtime_events.py"],
     data = [
