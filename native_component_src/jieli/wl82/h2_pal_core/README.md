@@ -28,15 +28,9 @@ cpu/wl82/liba/system.a:os_api.c.o:00000000 T os_mutex_accept
 cpu/wl82/liba/system.a:os_api.c.o:00000000 T os_sem_accept
 ```
 
-The shared DevKit layout passes `sdk_abi.ld` to the actual native linker. `EXTERN` retains both operations through LTO/GC, and `ASSERT(DEFINED(...))` rejects missing definitions before any firmware can be packaged. `tools/bazel/tests/test_jieli_sdk_abi.py` tests the linker script with both definitions present and with each definition individually missing; run it on Linux with `python3 -m unittest tools.bazel.tests.test_jieli_sdk_abi`.
+The linker-script export guard and its regression test belong to the AC791N DevKit board integration (GizClaw/gizos PR #178) and are not part of this package.
 
-When changing the SDK revision, repeat the export check and link the actual firmware using the configured AC791N SDK/toolchain environment:
-
-```sh
-bazel build --config=ac791n \
-  //projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:package \
-  //projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit:mp4_player_small_package
-```
+When changing the SDK revision, repeat the export check above. The firmware link check belongs to the AC791N DevKit board integration (GizClaw/gizos PR #178), using its configured SDK/toolchain environment and package targets; it is not part of this package.
 
 Export and link checks establish symbol availability only; they do not substitute for on-device synchronization and boot-lifecycle acceptance.
 

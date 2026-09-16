@@ -55,15 +55,25 @@ static uint64_t s_generation;
 #define EVENT_REFS (EVENT_OWNER_ONE - 1u)
 static uint32_t s_lifecycle;
 
-static h2_jieli_sdk_mutex_t *event_retain(void)
+/* Retirement may join CLOSING while a live operation still pins the registry.
+ * A CAS cannot resurrect CLOSING with zero references during destruction. */
+static h2_jieli_sdk_mutex_t *event_retain(int retiring)
 {
     uint32_t state = h2_jieli_atomic_load_u32(&s_lifecycle);
-    do {
-        if (!(state & EVENT_ACTIVE) || (state & EVENT_REFS) == EVENT_REFS) {
+    for (;;) {
+        if (!(state & EVENT_ACTIVE) &&
+            !(retiring && (state & EVENT_CLOSING) && (state & EVENT_REFS))) {
             return NULL;
         }
-    } while (!h2_jieli_atomic_cas_u32(&s_lifecycle, &state, state + 1u));
-    return s_lock;
+        if ((state & EVENT_REFS) == EVENT_REFS) {
+            if (!retiring) return NULL;
+            /* Retirement must wait for reference capacity instead of abandoning callbacks. */
+            h2_jieli_sdk_sleep_ms(1u);
+            state = h2_jieli_atomic_load_u32(&s_lifecycle);
+            continue;
+        }
+        if (h2_jieli_atomic_cas_u32(&s_lifecycle, &state, state + 1u)) return s_lock;
+    }
 }
 
 static void event_destroy(void)
@@ -131,7 +141,7 @@ static int system_event_post(
     if (result != H2_PAL_OK) {
         return result;
     }
-    h2_jieli_sdk_mutex_t *lock = event_retain();
+    h2_jieli_sdk_mutex_t *lock = event_retain(0);
     if (lock == NULL) {
         return H2_PAL_ERR_INVALID_STATE;
     }
@@ -150,7 +160,6 @@ static int system_event_post(
 
     result = H2_PAL_OK;
     for (size_t i = 0u; i < H2_JIELI_SYSTEM_EVENT_MAX_SUBSCRIPTIONS; ++i) {
-        if (!(h2_jieli_atomic_load_u32(&s_lifecycle) & EVENT_ACTIVE)) break;
         event_dispatch_t dispatch = {.task = h2_jieli_sdk_task_current()};
         h2_pal_system_event_handler_t handler = NULL;
         void *handler_user = NULL;
@@ -194,7 +203,7 @@ static int system_event_subscribe(
         return H2_PAL_ERR_INVALID_ARG;
     }
     *out_subscription = NULL;
-    h2_jieli_sdk_mutex_t *lock = event_retain();
+    h2_jieli_sdk_mutex_t *lock = event_retain(0);
     if (lock == NULL) {
         return H2_PAL_ERR_INVALID_STATE;
     }
@@ -236,7 +245,7 @@ static void system_event_unsubscribe(
         (address - begin) % sizeof(*subscription) != 0u) {
         return;
     }
-    h2_jieli_sdk_mutex_t *lock = event_retain();
+    h2_jieli_sdk_mutex_t *lock = event_retain(1);
     if (lock == NULL) return;
     event_lock_wait(lock);
     subscription->retiring = 1;

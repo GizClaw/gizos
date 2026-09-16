@@ -396,6 +396,34 @@ void h2_jieli_sdk_timer_del(uint16_t id, int repeat)
     }
 }
 
+/* Exception capture cannot enter the normal atomic runtime's blocking lock.
+ * Match asm/cpu.h's testset convention, but make exactly one attempt. */
+int h2_jieli_sdk_try_lock_byte(volatile uint8_t *lock) SEC(.volatile_ram_code);
+void h2_jieli_sdk_unlock_byte(volatile uint8_t *lock) SEC(.volatile_ram_code);
+void h2_jieli_sdk_capture_barrier(void) SEC(.volatile_ram_code);
+
+int h2_jieli_sdk_try_lock_byte(volatile uint8_t *lock) {
+    unsigned acquired;
+    __asm__ volatile (
+        "csync;\n\t"
+        "%0 = 0;\n\t"
+        "testset b[%1];\n\t"
+        "ifeq goto 1f;\n\t"
+        "%0 = 1;\n\t"
+        "1: csync;\n\t"
+        : "=&r"(acquired) : "r"(lock) : "memory");
+    return (int)acquired;
+}
+
+void h2_jieli_sdk_capture_barrier(void) {
+    __asm__ volatile ("csync;" ::: "memory");
+}
+
+void h2_jieli_sdk_unlock_byte(volatile uint8_t *lock) {
+    h2_jieli_sdk_capture_barrier();
+    *lock = 0u;
+}
+
 /* ---------------------------------------------------------------------------
  * Atomic runtime for C11/GCC atomics on the dual-core wl82.
  *
@@ -456,31 +484,3 @@ H2_JIELI_SYNC_WIDTH(1, uint8_t)
 H2_JIELI_SYNC_WIDTH(2, uint16_t)
 H2_JIELI_SYNC_WIDTH(4, uint32_t)
 H2_JIELI_SYNC_WIDTH(8, uint64_t)
-
-/* Exception capture cannot enter the normal atomic runtime's blocking lock.
- * Match asm/cpu.h's testset convention, but make exactly one attempt. */
-int h2_jieli_sdk_try_lock_byte(volatile uint8_t *lock) SEC(.volatile_ram_code);
-void h2_jieli_sdk_unlock_byte(volatile uint8_t *lock) SEC(.volatile_ram_code);
-void h2_jieli_sdk_capture_barrier(void) SEC(.volatile_ram_code);
-
-int h2_jieli_sdk_try_lock_byte(volatile uint8_t *lock) {
-    unsigned acquired;
-    __asm__ volatile (
-        "csync;\n\t"
-        "%0 = 0;\n\t"
-        "testset b[%1];\n\t"
-        "ifeq goto 1f;\n\t"
-        "%0 = 1;\n\t"
-        "1: csync;\n\t"
-        : "=&r"(acquired) : "r"(lock) : "memory");
-    return (int)acquired;
-}
-
-void h2_jieli_sdk_capture_barrier(void) {
-    __asm__ volatile ("csync;" ::: "memory");
-}
-
-void h2_jieli_sdk_unlock_byte(volatile uint8_t *lock) {
-    h2_jieli_sdk_capture_barrier();
-    *lock = 0u;
-}
