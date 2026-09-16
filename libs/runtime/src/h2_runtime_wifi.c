@@ -316,7 +316,10 @@ static int wifi_wait_for_address(h2_runtime_t *runtime,
   if (window > H2_RUNTIME_WIFI_ADDRESS_WAIT_MS)
     window = H2_RUNTIME_WIFI_ADDRESS_WAIT_MS;
   int wait_rc = H2_PAL_OK;
-  h2_pal_mutex_lock(runtime->sync, state->wifi_connect_wait.mutex);
+  /* Without the lock the generation and the condition cannot be read safely,
+   * so the candidate is abandoned rather than accepted on association alone. */
+  if (h2_pal_mutex_lock(runtime->sync, state->wifi_connect_wait.mutex) != H2_PAL_OK)
+    return H2_PAL_ERR_UNAVAILABLE;
   for (;;) {
     if (generation != state->wifi_connect_wait.generation) {
       generation = state->wifi_connect_wait.generation;
@@ -324,8 +327,10 @@ static int wifi_wait_for_address(h2_runtime_t *runtime,
       if (rc != H2_PAL_OK)
         break;
       if (station.valid) {
+        /* A zero IPv4 is not an address, whatever the valid flag says. */
         if (station.status == H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_GOT_IP &&
-            station.ip_valid && station.ssid_len == candidate->ssid_len &&
+            station.ip_valid && station.ip.ip4 != 0u &&
+            station.ssid_len == candidate->ssid_len &&
             !memcmp(station.ssid, candidate->ssid, candidate->ssid_len))
           break;
         if (station.status == H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_DISCONNECTED ||
@@ -425,12 +430,13 @@ h2_pal_result_t h2_runtime_wifi_connect_best_saved(h2_runtime_t *runtime, uint32
             break;
         }
         uint32_t generation = 0;
-        if (runtime->private_state->wifi_connect_wait.mutex) {
-          h2_pal_mutex_lock(runtime->sync,
-                            runtime->private_state->wifi_connect_wait.mutex);
+        if (runtime->private_state->wifi_connect_wait.cond != NULL &&
+            h2_pal_mutex_lock(
+                runtime->sync,
+                runtime->private_state->wifi_connect_wait.mutex) == H2_PAL_OK) {
           generation = runtime->private_state->wifi_connect_wait.generation;
-          h2_pal_mutex_unlock(runtime->sync,
-                              runtime->private_state->wifi_connect_wait.mutex);
+          (void)h2_pal_mutex_unlock(
+              runtime->sync, runtime->private_state->wifi_connect_wait.mutex);
         }
         rc = h2_pal_wifi_sta_connect(runtime->wifi_sta, &candidates[i], remaining);
         if (rc == H2_PAL_OK)

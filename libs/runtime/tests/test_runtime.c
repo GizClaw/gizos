@@ -3993,6 +3993,7 @@ typedef struct best_saved_fixture {
     uint32_t budgets[8], scan_budget, scan_ms, connect_ms, list_ms;
     size_t connects, scans, saves;
     int results[8], list_rc, scan_rc;
+  bool zero_ip;
     test_time_t *time;
     test_runtime_env_t *env;
     void (*on_connect)(struct best_saved_fixture *f);
@@ -4367,7 +4368,7 @@ static void best_saved_event(best_saved_fixture_t *f,
   h2_pal_wifi_sta_status_t status = {
       .state = state, .ssid_len = 1, .ip_valid = valid_ip};
   status.ssid[0] = ssid;
-  status.ip.ip4 = valid_ip ? 0x0a000001u : 0;
+  status.ip.ip4 = valid_ip && !f->zero_ip ? 0x0a000001u : 0;
   assert(test_system_event_dispatch(f->env, type, &status, sizeof(status)) ==
          H2_PAL_OK);
 }
@@ -4431,6 +4432,67 @@ static int best_saved_wait(void *user, uint32_t timeout) {
                      H2_PAL_WIFI_STA_STATE_GOT_IP, true, ssid);
   }
   return f->scenario == 8 ? H2_PAL_ERR_TIMEOUT : H2_PAL_OK;
+}
+
+/* A provider may publish system events yet refuse condition variables, and a
+ * GOT_IP snapshot may still carry no address. Neither may break the recovery. */
+static void test_wifi_best_saved_degraded(void) {
+  for (int zero_ip = 0; zero_ip < 2; ++zero_ip) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    h2_pal_time_vtable_t time_vtable = *env.time.vtable;
+    time_vtable.get_wall_ms = test_wall_get;
+    time_vtable.get_wall_status = test_wall_status;
+    env.time.vtable = &time_vtable;
+    env.time_state.wall_valid = 1;
+    env.time_state.wall_ms = 100;
+    best_saved_fixture_t f = {
+        .env = &env,
+        .time = &env.time_state,
+        .scan_ms = 20,
+        .connect_ms = 10,
+        .scan_count = 2,
+        .zero_ip = zero_ip != 0,
+        .scan = {{.ssid = "a", .ssid_len = 1, .rssi = -20, .bssid = {1}},
+                 {.ssid = "b", .ssid_len = 1, .rssi = -40, .bssid = {2}}},
+    };
+    env.sync_state.wait_hook = best_saved_wait;
+    env.sync_state.wait_user = &f;
+    if (!zero_ip)
+      env.sync_state.cond_create_rc = H2_PAL_ERR_UNSUPPORTED;
+    const h2_pal_wifi_sta_vtable_t sta_vtable = {
+        .scan = best_saved_scan,
+        .connect = best_saved_connect,
+        .get_status = best_saved_status};
+    const h2_pal_wifi_sta_api_t sta = {&f, &sta_vtable};
+    const h2_pal_pref_api_t pref = {&f, &saved_pref_vtable};
+    h2_runtime_config_t config = test_runtime_config(&env);
+    config.wifi_sta = &sta;
+    config.pref = &pref;
+    config.event_queue_capacity = 16;
+    config.system_event = &env.system_event;
+    f.on_connect = best_saved_associated;
+    h2_runtime_t *runtime = NULL;
+    /* Refusing the condition is a degraded configuration, not an init error. */
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    h2_pal_wifi_sta_config_t network = {
+        .ssid = "a", .ssid_len = 1, .password = "secret", .password_len = 6};
+    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+    env.time_state.wall_ms = 200;
+    if (!zero_ip) {
+      /* No condition to wait on: association alone completes the call. */
+      assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
+      assert(f.connects == 1 && !f.waits && f.scans == 1);
+    } else {
+      /* GOT_IP with a zero address is not an address: the candidate expires
+       * and there is no second saved network to fall through to. */
+      assert(h2_runtime_wifi_connect_best_saved(runtime, 100) ==
+             H2_PAL_ERR_UNAVAILABLE);
+      assert(f.connects == 1 && f.waits && f.scans == 1);
+    }
+    h2_runtime_deinit(runtime);
+    assert(!env.allocator_state.live_allocations);
+  }
 }
 
 static void test_wifi_best_saved_address(void) {
@@ -4591,6 +4653,7 @@ int main(void) {
     test_wifi_saved_set();
     test_wifi_best_saved();
     test_wifi_best_saved_address();
+  test_wifi_best_saved_degraded();
     test_time_adjusted_event();
     test_runtime_firmware_info_provider();
     test_runtime_capabilities_are_bound_at_init();

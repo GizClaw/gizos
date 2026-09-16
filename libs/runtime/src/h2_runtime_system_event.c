@@ -766,7 +766,11 @@ static int h2_runtime_system_event_handler(void *user, const h2_pal_system_event
     if (kind >= H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTING &&
         kind <= H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_LOST_IP) {
       struct h2_runtime_private *state = runtime->private_state;
-      h2_pal_mutex_lock(runtime->sync, state->wifi_connect_wait.mutex);
+      /* No waiter can exist without the condition, and a failed lock must not
+       * be mistaken for one that was taken. */
+      if (state->wifi_connect_wait.cond == NULL ||
+          h2_pal_mutex_lock(runtime->sync, state->wifi_connect_wait.mutex) != H2_PAL_OK)
+        return h2_runtime_enqueue_event(runtime, &queued);
       ++state->wifi_connect_wait.generation;
       state->wifi_connect_wait.kind = kind;
       h2_pal_cond_broadcast(runtime->sync, state->wifi_connect_wait.cond);
@@ -803,13 +807,16 @@ h2_pal_result_t h2_runtime_start_system_events(h2_runtime_t *runtime) {
     if (rc == H2_PAL_OK)
       rc = h2_pal_cond_create(runtime->sync, &cond_config,
                               &runtime->private_state->wifi_connect_wait.cond);
+    /* A provider may publish system events yet refuse condition variables.
+     * That is a supported degraded configuration, not an init failure: the
+     * saved-network recovery falls back to association-only waiting. */
     if (rc != H2_PAL_OK) {
       if (runtime->private_state->wifi_connect_wait.mutex)
         h2_pal_mutex_destroy(runtime->sync,
                              runtime->private_state->wifi_connect_wait.mutex);
       runtime->private_state->wifi_connect_wait.mutex = NULL;
-      h2_pal_system_event_deinit(api);
-      return rc;
+      runtime->private_state->wifi_connect_wait.cond = NULL;
+      rc = H2_PAL_OK;
     }
     atomic_store_explicit(
         &runtime->private_state->system_event_active, 1,
@@ -858,10 +865,12 @@ void h2_runtime_stop_system_events(h2_runtime_t *runtime) {
     runtime->private_state->system_event_subscription_count = 0u;
     if (was_active != 0) {
         h2_pal_system_event_deinit(api);
-        h2_pal_cond_destroy(runtime->sync,
-                            runtime->private_state->wifi_connect_wait.cond);
-        h2_pal_mutex_destroy(runtime->sync,
-                             runtime->private_state->wifi_connect_wait.mutex);
+        if (runtime->private_state->wifi_connect_wait.cond != NULL)
+            h2_pal_cond_destroy(runtime->sync,
+                                runtime->private_state->wifi_connect_wait.cond);
+        if (runtime->private_state->wifi_connect_wait.mutex != NULL)
+            h2_pal_mutex_destroy(runtime->sync,
+                                 runtime->private_state->wifi_connect_wait.mutex);
         runtime->private_state->wifi_connect_wait.cond = NULL;
         runtime->private_state->wifi_connect_wait.mutex = NULL;
     }
