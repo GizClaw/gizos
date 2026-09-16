@@ -22,6 +22,8 @@ h2_numeric_buffer_t *h2_numeric_check(lua_State *s, int at);
 double h2_numeric_number(lua_State *s, int at);
 size_t h2_numeric_size(lua_State *s, int at, size_t max);
 
+void h2_geometry_prepared_register(lua_State *s);
+void h2_numeric_prepared_register(lua_State *s);
 void h2_numeric_capacity(lua_State *s, h2_numeric_buffer_t *b, size_t count);
 /* Dispatch once; each typed check rejects heterogeneous operands, including
  * camera/index/mask/topology buffers, before any public write. */

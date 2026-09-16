@@ -1,3 +1,4 @@
+#include "../src/modules/h2_lua_display_internal.h"
 #include "h2_desktop_platform.h"
 #include "h2_lua.h"
 #include "h2_lua_capability.h"
@@ -9,10 +10,12 @@
 #include "h2_pal.h"
 
 #include <assert.h>
+#include <float.h>
 #include <math.h>
 #include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "lua.h"
 #include "lauxlib.h"
@@ -1052,10 +1055,118 @@ static int test_raster_measure(lua_State *state) {
 
 static int test_region_failure(lua_State *state);
 
+/* Independent extraction-source oracle; no production transform helper. */
+static int test_mesh_source(lua_State *s) {
+  double x = luaL_checknumber(s, 2), y = luaL_checknumber(s, 3);
+  double scale = luaL_checknumber(s, 4), angle = luaL_checknumber(s, 5);
+  double grid = luaL_checknumber(s, 6), ca = cos(angle), sa = sin(angle);
+  size_t n = lua_rawlen(s, 1);
+  lua_settop(s, 7);
+  lua_createtable(s, (int)n, 0);
+  for (size_t i = 0; i < n; ++i) {
+    lua_rawgeti(s, 1, (lua_Integer)i + 1);
+    lua_rawgeti(s, -1, 1); double vx = lua_tonumber(s, -1); lua_pop(s, 1);
+    lua_rawgeti(s, -1, 2); double vy = lua_tonumber(s, -1); lua_pop(s, 2);
+    float fx=((float)x+((float)vx*(float)ca-(float)vy*(float)sa)*(float)scale)/(float)grid;
+    float fy=((float)y+((float)vx*(float)sa+(float)vy*(float)ca)*(float)scale)/(float)grid;
+    float error=64*FLT_EPSILON*(fabsf((float)x)+fabsf((float)y)+(fabsf((float)vx)+fabsf((float)vy))*(float)scale+1);
+    double px,py;
+    if(fabs(vx)<=100000 && fabs(vy)<=100000 && error<.25f && fabsf(fx-floorf(fx)-.5f)>error)
+      px=floorf(fx+.5f)*(float)grid;
+    else px=floor((x+(vx*ca-vy*sa)*scale)/grid+.5)*grid;
+    if(fabs(vx)<=100000 && fabs(vy)<=100000 && error<.25f && fabsf(fy-floorf(fy)-.5f)>error)
+      py=floorf(fy+.5f)*(float)grid;
+    else py=floor((y+(vx*sa+vy*ca)*scale)/grid+.5)*grid;
+    if (!lua_isnoneornil(s, 7)) {
+      h2_lua_display_mesh_t *mesh = lua_touserdata(s, 7);
+      assert(mesh->positions_valid && mesh->source_transform);
+      h2_lua_display_vertex_t *positions =
+          (h2_lua_display_vertex_t *)(mesh + 1) + mesh->vertex_capacity;
+      assert(positions[i].x == px && positions[i].y == py);
+    }
+    lua_createtable(s,2,0);
+    lua_pushnumber(s,px);lua_rawseti(s,-2,1);
+    lua_pushnumber(s,py);lua_rawseti(s,-2,2);
+    lua_rawseti(s,-2,(lua_Integer)i+1);
+  }
+  return 1;
+}
+
+/* Poison one private replay record. A reraster overwrites the marker even
+ * when pixels/present would otherwise be identical. No production counter. */
+static int test_mesh_marker(lua_State *s) {
+  assert(lua_getiuservalue(s, 1, 1) == LUA_TUSERDATA);
+  display_span_cache_t *cache = lua_touserdata(s, -1);
+  assert(cache->valid && cache->count > 0);
+  if (lua_toboolean(s, 2)) cache->spans[0].color = 0xabcd;
+  lua_pushboolean(s, cache->spans[0].color == 0xabcd);
+  return 1;
+}
+
+/* Construct the full public vertex range without a large Lua-table fixture. */
+static int test_mesh_capacity(lua_State *s) {
+  lua_Integer count = luaL_checkinteger(s, 1);
+  assert(count > 0 && count <= H2_LUA_DISPLAY_VERTEX_LIMIT);
+  size_t n = (size_t)count;
+  h2_lua_display_vertex_t *vertices = malloc(n * sizeof(*vertices));
+  assert(vertices != NULL);
+  for (size_t i = 0; i < n; ++i)
+    vertices[i] = (h2_lua_display_vertex_t){(double)(i % 7), (double)(i % 5)};
+  h2_lua_display_mesh_config_t config = {n, 0, {vertices, n, NULL, 0}};
+  h2_pal_result_t result = h2_lua_display_mesh_push(s, &config);
+  free(vertices);
+  assert(result == H2_PAL_OK);
+  return 1;
+}
+
+static int test_mesh_shifted(lua_State *s) {
+  h2_lua_display_mesh_t *mesh = lua_touserdata(s, 1);
+  double shift = luaL_checknumber(s, 2);
+  assert(mesh && mesh->positions_valid);
+  const h2_lua_display_vertex_t *source = (const void *)(mesh + 1);
+  const h2_lua_display_vertex_t *positions = source + mesh->vertex_capacity;
+  for (size_t i = 0; i < mesh->vertex_count; ++i) {
+    assert(positions[i].x == source[i].x + shift);
+    assert(positions[i].y == source[i].y);
+  }
+  return 0;
+}
+
+static int test_mesh_snapshot(lua_State *s) {
+  assert(lua_isuserdata(s, 1));
+  lua_pushlstring(s, lua_touserdata(s, 1), lua_rawlen(s, 1));
+  return 1;
+}
+
+/* Ensure allocation-driven finalizers really run inside the draw binding. */
+static int test_in_call(lua_State *s) {
+  lua_Debug frame;
+  for (int i = 1; lua_getstack(s, i, &frame); ++i) {
+    assert(lua_getinfo(s, "f", &frame));
+    int same = lua_rawequal(s, 1, -1);
+    lua_pop(s, 1);
+    if (same) { lua_pushboolean(s, 1); return 1; }
+  }
+  lua_pushboolean(s, 0);
+  return 1;
+}
+
 static int test_raster_open(void *lua_state, void *user) {
   lua_State *state = lua_state;
   (void)user;
   lua_newtable(state);
+  lua_pushcfunction(state, test_mesh_capacity);
+  lua_setfield(state, -2, "mesh_capacity");
+  lua_pushcfunction(state, test_mesh_shifted);
+  lua_setfield(state, -2, "mesh_shifted");
+  lua_pushcfunction(state, test_mesh_snapshot);
+  lua_setfield(state, -2, "mesh_snapshot");
+  lua_pushcfunction(state, test_in_call);
+  lua_setfield(state, -2, "in_call");
+  lua_pushcfunction(state, test_mesh_source);
+  lua_setfield(state, -2, "mesh_source");
+  lua_pushcfunction(state, test_mesh_marker);
+  lua_setfield(state, -2, "mesh_marker");
   lua_pushcfunction(state, test_raster_noalloc);
   lua_setfield(state, -2, "noalloc");
   lua_pushcfunction(state, test_raster_measure);
@@ -1067,7 +1178,7 @@ static int test_raster_open(void *lua_state, void *user) {
   return 1;
 }
 
-static void test_display_raster2d(int benchmark) {
+static void test_display_raster2d(int benchmark, const char *path) {
   h2_runtime_t *runtime = create_runtime();
   h2_lua_host_t *host = NULL;
   h2_lua_host_config_t config = {
@@ -1082,14 +1193,14 @@ static void test_display_raster2d(int benchmark) {
   assert(h2_lua_register_module(host, "raster_test", test_raster_open, NULL) ==
          H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
-  FILE *file = fopen("libs/lua/tests/raster2d.lua", "rb");
+  FILE *file = fopen(path, "rb");
   assert(file != NULL);
   uint8_t script[16384];
   size_t size = fread(script, 1, sizeof(script), file);
   assert(!ferror(file) && size < sizeof(script));
   assert(fclose(file) == 0);
-  (void)run_display_script_size(host, "@raster2d.lua", script, size,
-                                benchmark ? 240 : 8, benchmark ? 240 : 8);
+  (void)run_display_script_size(host, path, script, size, benchmark ? 240 : 8,
+                                benchmark ? 240 : 8);
   h2_lua_host_destroy(host);
   h2_runtime_deinit(runtime);
 }
@@ -1389,6 +1500,129 @@ static int test_region_finalizer(lua_State *state) {
   return 0;
 }
 
+/* Independent per-pixel damage oracle, observing the private framebuffer and
+ * region's trailing tile bytes before present can hide extra dirty coverage. */
+static int test_background_restore(lua_State *state) {
+  luaL_checktype(state, 1, LUA_TFUNCTION);
+  void *region = luaL_checkudata(state, 2, "h2.display.region");
+  assert(lua_getupvalue(state, 1, 1) != NULL);
+  h2_lua_job_t *job = lua_touserdata(state, -1);
+  lua_pop(state, 1);
+  assert(job != NULL && job->display_open);
+  int width = job->display_info.width, height = job->display_info.height;
+  size_t count = (size_t)width * height, columns = (size_t)(width + 15) / 16;
+  size_t tiles = columns * (size_t)((height + 15) / 16);
+  /* Opaque full-screen captures end with contiguous pixels then damage bytes;
+   * no duplicated production header layout or public test API is required. */
+  size_t bytes = lua_rawlen(state, 2);
+  assert(bytes >= tiles + count * sizeof(uint16_t));
+  const uint8_t *damage = (const uint8_t *)region + bytes - tiles;
+  const uint16_t *source = (const uint16_t *)(damage - count * sizeof(uint16_t));
+  uint16_t *expected = malloc(count * sizeof(*expected));
+  assert(expected != NULL);
+  int valid = job->dirty_valid, left = job->dirty_min_x, top = job->dirty_min_y;
+  int right = job->dirty_max_x, bottom = job->dirty_max_y;
+  int full = job->display_background != region || !job->display_background_valid;
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      size_t at = (size_t)y * width + x;
+      int restore = full || damage[(size_t)(y / 16) * columns + (size_t)x / 16];
+      expected[at] = restore ? source[at] : job->framebuffer[at];
+      if (!restore) continue;
+      if (!valid) { left = right = x; top = bottom = y; valid = 1; }
+      if (x < left) left = x;
+      if (x > right) right = x;
+      if (y < top) top = y;
+      if (y > bottom) bottom = y;
+    }
+  }
+  lua_pushvalue(state, 1);
+  lua_pushvalue(state, 2);
+  assert(lua_pcall(state, 1, 0, 0) == LUA_OK);
+  assert(memcmp(expected, job->framebuffer, count * sizeof(*expected)) == 0);
+  assert(job->dirty_valid == valid);
+  if (valid) {
+    assert(job->dirty_min_x == left && job->dirty_max_x == right);
+    assert(job->dirty_min_y == top && job->dirty_max_y == bottom);
+  }
+  for (size_t i = 0; i < tiles; ++i) assert(damage[i] == 0);
+  assert(job->display_background == region && job->display_background_valid);
+  free(expected);
+  return 0;
+}
+
+/* Source colors are supplied independently of the packed region layout.
+ * Observe dirty bounds and background bytes before present can hide excess. */
+static int test_region_draw(lua_State *state) {
+  luaL_checktype(state, 1, LUA_TFUNCTION);
+  luaL_checktype(state, 4, LUA_TTABLE);
+  assert(lua_getupvalue(state, 1, 1) != NULL);
+  h2_lua_job_t *job = lua_touserdata(state, -1);
+  lua_pop(state, 1);
+  assert(job && job->display_open);
+  int width = job->display_info.width, height = job->display_info.height;
+  size_t count = (size_t)width * height, columns = (size_t)(width + 15) / 16;
+  size_t tiles = columns * (size_t)((height + 15) / 16);
+  void *background = luaL_checkudata(state, 2, "h2.display.region");
+  assert(background == job->display_background);
+  size_t bytes = lua_rawlen(state, 2);
+  assert(bytes >= tiles + count * sizeof(uint16_t));
+  const uint8_t *damage = (const uint8_t *)background + bytes - tiles;
+  uint8_t *expected_damage = malloc(tiles);
+  uint16_t *expected = malloc(count * sizeof(*expected));
+  assert(expected && expected_damage);
+  memcpy(expected_damage, damage, tiles);
+  memcpy(expected, job->framebuffer, count * sizeof(*expected));
+  int sw = (int)luaL_checkinteger(state, 5), sh = (int)luaL_checkinteger(state, 6);
+  int x = (int)luaL_checkinteger(state, 7), y = (int)luaL_checkinteger(state, 8);
+  int clip_top = (int)luaL_checkinteger(state, 9);
+  int clip_bottom = (int)luaL_checkinteger(state, 10);
+  int keyed = !lua_isnil(state, 11);
+  uint16_t key = 0;
+  if (keyed) {
+    const char *name = luaL_checkstring(state, 11);
+    assert(strcmp(name, "black") == 0 || strcmp(name, "blue") == 0);
+    key = strcmp(name, "blue") == 0 ? 31 : 0;
+  }
+  int clip_left = (int)luaL_checkinteger(state, 12);
+  int clip_right = (int)luaL_checkinteger(state, 13);
+  int valid = job->dirty_valid, left = job->dirty_min_x, top = job->dirty_min_y;
+  int right = job->dirty_max_x, bottom = job->dirty_max_y;
+  for (int py = 0; py < height; ++py)
+    for (int px = 0; px < width; ++px) {
+      int sx = px - x, sy = py - y;
+      if (px < clip_left || px >= clip_right || py < clip_top ||
+          py >= clip_bottom || sx < 0 || sx >= sw || sy < 0 || sy >= sh)
+        continue;
+      lua_rawgeti(state, 4, (lua_Integer)sy * sw + sx + 1);
+      uint16_t color = (uint16_t)luaL_checkinteger(state, -1);
+      lua_pop(state, 1);
+      if (keyed && color == key) continue;
+      expected[(size_t)py * width + px] = color;
+      expected_damage[(size_t)(py / 16) * columns + (size_t)px / 16] = 1;
+      if (!valid) { left = right = px; top = bottom = py; valid = 1; }
+      if (px < left) left = px;
+      if (px > right) right = px;
+      if (py < top) top = py;
+      if (py > bottom) bottom = py;
+    }
+  lua_pushvalue(state, 1);
+  lua_pushvalue(state, 3);
+  for (int i = 7; i <= 13; ++i) lua_pushvalue(state, i);
+  assert(lua_pcall(state, 8, 0, 0) == LUA_OK);
+  assert(memcmp(expected, job->framebuffer, count * sizeof(*expected)) == 0);
+  assert(memcmp(expected_damage, damage, tiles) == 0);
+  assert(job->dirty_valid == valid);
+  if (valid) {
+    assert(job->dirty_min_x == left && job->dirty_max_x == right);
+    assert(job->dirty_min_y == top && job->dirty_max_y == bottom);
+  }
+  free(expected);
+  free(expected_damage);
+  lua_pushinteger(state, valid ? (lua_Integer)(right - left + 1) * (bottom - top + 1) : 0);
+  return 1;
+}
+
 static int test_region_open(void *lua_state, void *user) {
   (void)user;
   lua_State *state = lua_state;
@@ -1397,6 +1631,12 @@ static int test_region_open(void *lua_state, void *user) {
   lua_setfield(state, -2, "fail");
   lua_pushcfunction(state, test_region_finalizer);
   lua_setfield(state, -2, "finalizer");
+  lua_pushcfunction(state, test_region_draw);
+  lua_setfield(state, -2, "draw");
+  lua_pushcfunction(state, test_background_restore);
+  lua_setfield(state, -2, "restore");
+  lua_pushcfunction(state, test_raster_noalloc);
+  lua_setfield(state, -2, "noalloc");
   return 1;
 }
 
@@ -1545,6 +1785,98 @@ static void test_display_regions(void) {
                                 sizeof(drawing_paths)-1, 31, 35);
   for (size_t i = 0; i < 31u*35u; ++i)
     assert(s_test_display_fixture.pixels[i] == 0x001fu);
+  static const uint8_t restore_width[] =
+      "local d=require('display');local n=require('region_test');"
+      "local w,h=d.width,d.height;d.clear('blue');"
+      "d.fill_rect(0,0,w,math.max(1,h//2),'green');"
+      "local bg=d.capture_region(0,0,w,h);"
+      "n.restore(d.restore_background,bg);d.present({retained=true});"
+      "local draws={"
+      "function() d.fill_rect(0,0,w,1,'red') end,"
+      "function() d.fill_rect(0,0,w,math.min(32,h),'red') end,"
+      "function() d.fill_rect(0,h-1,w,1,'red') end,"
+      "function() d.fill_rect(0,0,1,1,'red') end,"
+      "function() d.fill_rect(w-1,h-1,1,1,'red') end,"
+      "function() d.fill_rect(0,0,1,1,'red');d.fill_rect(w-1,0,1,1,'red') end,"
+      "function() d.fill_rect(0,0,w,1,'red');d.fill_rect(w-1,h-1,1,1,'red') end};"
+      "for _,draw in ipairs(draws) do draw();d.present();"
+      "n.restore(d.restore_background,bg);d.present();"
+      "n.restore(d.restore_background,bg);assert(d.present()==0) end;"
+      /* Preserve an existing dirty rectangle while adding restored tile bounds. */
+      "d.fill_rect(w-1,h-1,1,1,'red');n.restore(d.restore_background,bg);"
+      "assert(d.present()==0);"
+      /* Every measured restore has a full-width damaged tile, not a warm no-op. */
+      "local function warm() d.fill_rect(0,0,w,1,'red');d.restore_background(bg) end;"
+      "n.noalloc(warm);assert(d.present()==0);"
+      /* Failure in either submission stage invalidates the background baseline. */
+      "for _,present_failure in ipairs({false,true}) do "
+      "d.fill_rect(0,0,w,h,'red');d.present();n.restore(d.restore_background,bg);"
+      "n.fail(present_failure and 0 or 1,present_failure);assert(not pcall(d.present));"
+      "n.restore(d.restore_background,bg);local pixels,rects=d.present();"
+      "assert(pixels==w*h and rects==1);n.restore(d.restore_background,bg);"
+      "assert(d.present()==0) end;"
+      /* Full binding, reused capture invalidation and release retain their paths. */
+      "d.clear('red');local other=d.capture_region(0,0,w,h);"
+      "n.restore(d.restore_background,other);d.present();"
+      "n.restore(d.restore_background,bg);d.present();"
+      "d.clear('green');d.capture_region(0,0,w,h,nil,bg);d.clear('red');"
+      "n.restore(d.restore_background,bg);d.present();"
+      "d.release_background();d.release_background();"
+      "n.restore(d.restore_background,bg);d.present();"
+      "local weak=setmetatable({bg},{__mode='v'});bg=nil;draws=nil;warm=nil;"
+      "collectgarbage('collect');assert(weak[1]);d.release_background();"
+      "collectgarbage('collect');assert(not weak[1]);"
+      "d.deinit();assert(not pcall(d.restore_background,other))";
+  static const uint8_t region_damage[] =
+      "local d=require('display');local n=require('region_test');"
+      "local w,h=d.width,d.height;local sw,sh=math.min(w,49),math.min(h,35);"
+      "for pattern=1,3 do local colors={};d.clear('black');"
+      "for y=0,sh-1 do for x=0,sw-1 do local c=0;"
+      "if pattern==1 then c=(x+y)%3==0 and 31 or 63488 "
+      "elseif pattern==2 and ((x==1 and y==1) or (x==33 and y==17)) then c=63488 end;"
+      "colors[#colors+1]=c;d.fill_rect(x,y,1,1,c==0 and 'black' or c==31 and 'blue' or 'red') end end;"
+      "local regions={d.capture_region(0,0,sw,sh),d.capture_region(0,0,sw,sh,'black')};"
+      "d.clear('blue');local bg=d.capture_region(0,0,w,h);"
+      "d.restore_background(bg);d.present({retained=false});"
+      "for _,r in ipairs(regions) do for _,key in ipairs({false,'black','blue'}) do "
+      "for _,pos in ipairs({{0,0},{-3,-7},{w-2,h-3},{w,h},{-2*w,-2*h}}) do "
+      "for inset=0,1 do local left=math.min(inset,w);local right=math.max(left,w-inset);"
+      "local top=math.min(inset,h);local bottom=math.max(top,h-inset);"
+      "if inset==1 then d.fill_rect(w-1,h-1,1,1,'green') end;"
+      "local area=n.draw(d.draw_region,bg,r,colors,sw,sh,pos[1],pos[2],"
+      "top,bottom,key or nil,left,right);local p,rects=d.present();"
+      "assert(p==area and rects==(area>0 and 1 or 0),'nonretained dirty union');"
+      "n.restore(d.restore_background,bg);d.present() end end end end;"
+      "local r=regions[1];n.noalloc(function() d.draw_region(r,0,0) end);"
+      "n.restore(d.restore_background,bg);d.present();"
+      "n.noalloc(function() d.fill_rect(w-1,h-1,1,1,'red');d.restore_background(bg) end);"
+      "d.present();d.release_background() end;"
+      "d.deinit()";
+  static const int restore_sizes[][2] = {{1,1}, {17,17}, {31,35}, {48,48}, {240,240}};
+  /* A retained 240x240 frame plus two full captures exceeds the small region
+   * fixture's 256 KiB VM. Use the device-sized budget for this distinct suite. */
+  h2_lua_host_t *restore_host = NULL;
+  const h2_lua_host_config_t restore_config = {
+      .runtime = runtime, .worker_count = 1u, .max_jobs = 1u,
+      .vm_memory_limit_bytes = 4u * 1024u * 1024u, .execution_timeout_ms = 5000u,
+  };
+  assert(h2_lua_host_create(&restore_config, &restore_host) == H2_PAL_OK);
+  assert(h2_lua_register_module(restore_host, "region_test", test_region_open, NULL) == H2_PAL_OK);
+  assert(h2_lua_host_start(restore_host) == H2_PAL_OK);
+  for (size_t i = 0; i < sizeof(restore_sizes)/sizeof(restore_sizes[0]); ++i) {
+    int width = restore_sizes[i][0], height = restore_sizes[i][1];
+    (void)run_display_script_size(restore_host, "@background-full-width.lua", restore_width,
+                                  sizeof(restore_width)-1, width, height);
+    for (int p = 0; p < width * height; ++p)
+      assert(s_test_display_fixture.pixels[p] == 0x0400u);
+    assert(s_test_display_fixture.close_count == 1);
+    (void)run_display_script_size(restore_host, "@region-damage.lua", region_damage,
+                                  sizeof(region_damage)-1, width, height);
+    for (int p = 0; p < width * height; ++p)
+      assert(s_test_display_fixture.pixels[p] == 0x001fu);
+    assert(s_test_display_fixture.close_count == 1);
+  }
+  h2_lua_host_destroy(restore_host);
   static const uint8_t close[] =
       "local d=require('display');local n=require('region_test');"
       "local bg=d.capture_region(0,0,8,8);d.restore_background(bg);d.present({retained=true});"
@@ -1828,13 +2160,21 @@ static void test_job_results(h2_lua_host_t *host) {
 }
 
 int main(int argc, char **argv) {
-  if (argc == 2 && strcmp(argv[1], "--raster-benchmark") == 0) {
-    test_display_raster2d(1);
+  if (argc == 2 && strcmp(argv[1], "--prepared-benchmark") == 0) {
+    test_display_raster2d(1, "libs/lua/tests/geometry_batches.lua");
     return 0;
   }
-  test_display_raster2d(0);
+  if (argc == 2 && strcmp(argv[1], "--raster-benchmark") == 0) {
+    test_display_raster2d(1, "libs/lua/tests/raster2d.lua");
+    return 0;
+  }
+  test_display_raster2d(0, "libs/lua/tests/raster2d.lua");
+  test_display_raster2d(0, "libs/lua/tests/geometry_batches.lua");
+  test_display_raster2d(0, "libs/lua/tests/stroke_buffer.lua");
   test_display_mesh_identity();
   test_display_mesh_cache();
+  test_display_raster2d(1, "libs/lua/tests/mesh_source_paths.lua");
+  test_display_raster2d(1, "libs/lua/tests/mesh_staging.lua");
   test_display_strokes();
   test_display_regions();
   test_display_meshes();

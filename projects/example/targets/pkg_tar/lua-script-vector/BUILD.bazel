@@ -43,6 +43,9 @@ h2_lua_web_app(
           check(215,215,255,0,0); check(225,225,255,0,0);
           check(40,210,255,0,0); check(40,207,0,0,0);
           check(110,210,0,0,255); check(110,209,0,0,0);
+          check(12,232,255,0,0); check(36,234,0,0,255); check(44,234,0,255,0);
+          check(185,230,255,255,255); check(185,228,0,0,0);
+          check(204,124,0,0,255); check(198,124,0,0,0);
           console.log('LUA_VECTOR pixels=PASS');
           } catch (error) {
             console.error('LUA_VECTOR pixels=FAIL '+error.message);

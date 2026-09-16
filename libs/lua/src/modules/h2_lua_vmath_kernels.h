@@ -56,10 +56,11 @@ static int NUM_NAME(channel)(lua_State *s) {
   if (!stride || (n && (n - 1) > (strided->count - 1 - first) / stride))
     return luaL_error(s, "strided range out of bounds");
   if (scatter) {
-    memcpy(NUM_DATA(d) + d->count, NUM_DATA(d), d->count * sizeof(NUM_REAL));
+    /* Snapshot only the write set, before publishing any overlapping source. */
     for (size_t i = 0; i < n; ++i)
-      NUM_DATA(d)[d->count + first + i * stride] = NUM_DATA(src)[i];
-    NUM_NAME(commit)(s, d, d->count);
+      NUM_DATA(d)[d->count + i] = NUM_NAME(checked)(s, NUM_DATA(src)[i]);
+    for (size_t i = 0; i < n; ++i)
+      NUM_DATA(d)[first + i * stride] = NUM_DATA(d)[d->count + i];
   } else {
     for (size_t i = 0; i < n; ++i)
       NUM_DATA(d)[d->count + i] = NUM_DATA(src)[first + i * stride];

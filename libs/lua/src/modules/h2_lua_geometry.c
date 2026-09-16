@@ -1,5 +1,6 @@
 #include "h2_lua_display.h"
 #include "h2_lua_numeric_internal.h"
+#include "h2_lua_geometry_batches_internal.h"
 
 static void distinct(lua_State *s, h2_numeric_buffer_t *a,
                      h2_numeric_buffer_t *b) {
@@ -65,6 +66,8 @@ int h2_lua_open_geometry(lua_State *s) {
                                        {"update_mesh", mesh_update},
                                        {NULL, NULL}};
   luaL_newlib(s, functions);
+  h2_geometry_prepared_register(s);
+  h2_geometry_batches_register(s);
   lua_pushinteger(s, 2);
   lua_pushcclosure(s, affine, 1);
   lua_setfield(s, -2, "affine2");
