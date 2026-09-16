@@ -45,7 +45,20 @@ const h2_pal_disk_api_t *h2_jieli_ac791n_devkit_disk_api(void);
 /* FAT filesystem on the board SD slot, mapped to /dl and /data.
  * The composition root serializes init/deinit and stops all API consumers and
  * closes every file before deinit. An existing external mount is borrowed;
- * only a mount created here is unmounted, including failed-init cleanup. */
+ * only a mount created here is unmounted, including failed-init cleanup.
+ * Rename replaces a regular destination by delete-then-rename, not atomically;
+ * identical mapped paths are a no-op after a successful open/close. Directory
+ * destinations and directory opens return INVALID_STATE; cross-directory
+ * rename returns UNSUPPORTED. Rename/remove/clear and truncating opens return
+ * BUSY while another PAL handle holds the affected path (clear includes its
+ * descendants); a read open also returns BUSY while a writer holds the path.
+ * Two readers may coexist. The registry gate covers open/close and mutations;
+ * direct SDK callers are outside this protection. Same-path rename only checks
+ * existence and close status, even with an open PAL handle.
+ * Translated paths allow 191 bytes plus NUL; JLFAT components allow 130 UTF-16
+ * units, with UTF-8 long names encoded by SDK fopen. The path limit can reject
+ * a component before its SDK limit is reached. On jlfat sync/f_free_cache is a
+ * successful no-op; native fclose writes size and clusters to the card. */
 h2_pal_result_t h2_jieli_ac791n_devkit_sd_fs_init(h2_pal_fs_api_t *out_api);
 h2_pal_result_t h2_jieli_ac791n_devkit_sd_fs_deinit(void);
 const char *h2_jieli_ac791n_devkit_sd_fs_last_stage(void);
