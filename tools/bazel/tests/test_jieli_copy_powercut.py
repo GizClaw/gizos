@@ -69,3 +69,7 @@ int main(void) {
                 str(root / "test.c"), "-o", str(binary),
             ], check=True, timeout=60)
             subprocess.run([str(binary)], check=True, timeout=10)
+
+
+if __name__ == "__main__":
+    unittest.main()
