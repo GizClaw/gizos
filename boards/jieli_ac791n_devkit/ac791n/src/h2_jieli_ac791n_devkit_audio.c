@@ -666,6 +666,27 @@ static int audio_set_volume(void *user, uint32_t percent) {
   return result;
 }
 
+int h2_jieli_ac791n_devkit_audio_idle_probe(h2_jieli_ac791n_devkit_audio_idle_t *out) {
+  if (out == NULL) return H2_AUDIO_ERR_INVALID_ARG;
+  int rc = audio_lock(0u, UINT32_MAX);
+  if (rc != H2_AUDIO_OK) return rc;
+  *out = (h2_jieli_ac791n_devkit_audio_idle_t){
+      .sdk_servers = audio_state.mic_server != NULL,
+      .mic_open = audio_state.mic_state != AUDIO_FREE,
+      .speaker_started = audio_state.speaker_started != 0,
+  };
+  for (size_t i = 0u; i < H2_AUDIO_MAX_TRACKS; ++i) {
+    const jieli_audio_track_t *track = &audio_state.tracks[i];
+    out->open_tracks += track->state != AUDIO_FREE;
+    out->retained_operations += track->operations;
+    out->ring_bytes += track->ring.count;
+    out->sdk_servers += track->server != NULL;
+    if (track->state == AUDIO_OPEN) out->consumed_bytes += track->consumed;
+  }
+  audio_unlock();
+  return H2_AUDIO_OK;
+}
+
 const h2_pal_audio_api_t *h2_jieli_ac791n_devkit_audio_api(void) {
   static const h2_pal_audio_vtable_t vtable = {
       .get_info = audio_get_info,
@@ -690,6 +711,11 @@ const h2_pal_audio_api_t *h2_jieli_ac791n_devkit_audio_api(void) {
 #include "h2_jieli_ac791n_devkit.h"
 
 extern const h2_pal_audio_api_t *h2_pal_unsupported_audio_api(void);
+
+int h2_jieli_ac791n_devkit_audio_idle_probe(h2_jieli_ac791n_devkit_audio_idle_t *out) {
+  (void)out;
+  return H2_AUDIO_ERR_UNSUPPORTED;
+}
 
 const h2_pal_audio_api_t *h2_jieli_ac791n_devkit_audio_api(void) {
   return h2_pal_unsupported_audio_api();
