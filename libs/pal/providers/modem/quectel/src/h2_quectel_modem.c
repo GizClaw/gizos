@@ -153,6 +153,8 @@ static h2_pal_result_t quectel_cell_locate(
     .call_answer = quectel_call_answer, \
     .call_hangup = quectel_call_hangup, \
     .get_call_status = quectel_get_call_status, \
+    .set_call_volume = h2_quectel_set_call_volume, \
+    .get_call_volume = h2_quectel_get_call_volume, \
     .gnss_start = quectel_gnss_start, \
     .gnss_stop = quectel_gnss_stop, \
     .get_gnss_state = quectel_get_gnss_state, \
@@ -191,6 +193,7 @@ static h2_pal_result_t h2_quectel_modem_open_impl(h2_pal_modem_t *platform, uint
         (void)h2_quectel_state_lock(modem);
     }
     if (rc == H2_PAL_OK) {
+        modem->call_volume_range_cached = 0u;
         modem->opened = 1u;
     }
     return rc;
@@ -270,6 +273,7 @@ h2_pal_result_t h2_quectel_modem_transport_closed(h2_quectel_modem_t *modem) {
     if (modem->config.invalidate_data != NULL) {
         modem->config.invalidate_data(modem->config.transport_user);
     }
+    modem->call_volume_range_cached = 0u;
     modem->opened = 0u;
     modem->prepared = 0u;
     /* The modem keeps the token only while it stays powered through this
@@ -383,6 +387,7 @@ h2_pal_result_t h2_quectel_modem_init(
     modem->capabilities = config->capabilities != 0u
         ? config->capabilities
         : (H2_PAL_MODEM_CAPABILITY_CALL | H2_PAL_MODEM_CAPABILITY_GNSS);
+    modem->capabilities |= H2_PAL_MODEM_CAPABILITY_CALL_VOLUME;
     modem->capabilities &= ~(uint32_t)H2_PAL_MODEM_CAPABILITY_LOW_POWER;
     if (config->profile == H2_QUECTEL_MODEM_PROFILE_EC25_UART &&
         config->sleep_gate != NULL && config->sync_api != NULL && config->command != NULL) {

@@ -94,6 +94,18 @@ static h2_pal_result_t unsupported_modem_get_call_status(void *p0, h2_pal_modem_
     return H2_PAL_ERR_UNSUPPORTED;
 }
 
+static h2_pal_result_t unsupported_modem_set_call_volume(void *user, uint32_t percent) {
+    (void)user;
+    (void)percent;
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+
+static h2_pal_result_t unsupported_modem_get_call_volume(void *user, uint32_t *out_percent) {
+    (void)user;
+    (void)out_percent;
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static h2_pal_result_t unsupported_modem_gnss_start(void *p0, uint32_t p1) {
     (void)p0;
     (void)p1;
@@ -149,6 +161,8 @@ static const h2_pal_modem_vtable_t unsupported_modem_vtable = {
     .call_answer = unsupported_modem_call_answer,
     .call_hangup = unsupported_modem_call_hangup,
     .get_call_status = unsupported_modem_get_call_status,
+    .set_call_volume = unsupported_modem_set_call_volume,
+    .get_call_volume = unsupported_modem_get_call_volume,
     .gnss_start = unsupported_modem_gnss_start,
     .gnss_stop = unsupported_modem_gnss_stop,
     .get_gnss_state = unsupported_modem_get_gnss_state,
