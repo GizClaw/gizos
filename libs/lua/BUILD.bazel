@@ -4,6 +4,7 @@ load("@rules_python//python:defs.bzl", "py_binary", "py_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS", "h2_gnu_only_copts")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel:tasks.bzl", "h2_tasks")
+load(":lua_resource.bzl", "h2_lua_resource")
 load(":source_package.bzl", "lua_source_package")
 
 package(default_visibility = ["//visibility:public"])
@@ -43,6 +44,55 @@ cc_library(
     cxxopts = H2_CXX17_OPTS,
     includes = ["include"],
     deps = ["//tools/bazel:vendor_third_party_lua"],
+)
+
+py_test(
+    name = "embed_resource_test",
+    srcs = [
+        "embed_resource.py",
+        "tests/test_embed_resource.py",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_embed_resource.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+h2_lua_resource(
+    name = "original_fixture",
+    src = "tests/compact_resource.lua",
+    symbol = "original_fixture",
+    visibility = ["//visibility:private"],
+)
+
+h2_lua_resource(
+    name = "compact_fixture",
+    compact = True,
+    src = "tests/compact_resource.lua",
+    symbol = "compact_fixture",
+    visibility = ["//visibility:private"],
+)
+
+cc_test(
+    name = "compact_resource_test",
+    srcs = ["tests/test_compact_resource.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":compact_fixture",
+        ":lua_core",
+        ":original_fixture",
+    ],
 )
 
 # Prepared arithmetic retains the extraction source's optimization contract.
