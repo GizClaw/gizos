@@ -433,6 +433,8 @@ KV 和普通 storage 写入在同一 mutex 下检查配额和提交。临时文�
 
 生成器的 Python 回归覆盖 token 分隔、字符串/注释边界、换行和默认兼容性；`//libs/lua:compact_resource_test` 在实际 VM 中对比原始与精简后的同一 fixture，验证结果和错误行号。业务 consumer 仍需对自己的精简资源执行功能回归和 exact firmware build，不能把构建期节省直接写成 VM 内存或运行时性能收益。
 
+嵌入资源走 `luaL_loadbufferx` 文本加载，不提供 `luaL_loadfilex` 的 shebang 首行跳过行为；精简不会把 `#!` 首行当注释删除，也不会把 `1..2` 等非法数字改写为合法表达式。空源文件或精简后为空的资源使用一个零字节作为 C backing array，逻辑 size 仍为零；非空资源的默认生成内容不变。
+
 所有入口只加载 Lua 文本。绝对路径、空段、`.`/`..`、反斜线、非受限 root、
 bytecode、超限或 malformed chunk 都失败关闭。`package.cpath` 为空，
 `package.loadlib` 不存在；local `require()` 只能读取当前 Skill root 下的 `.lua`

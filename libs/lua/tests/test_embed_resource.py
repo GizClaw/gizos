@@ -20,9 +20,25 @@ class CompactSourceTest(unittest.TestCase):
         self.assertEqual(compact(b"a[ --[[ gap ]] [1] ]"), b"a[ [1] ]")
         self.assertEqual(compact(b"return 1 .. -- comment\n .5"), b"return 1 ..\n.5")
 
+    def test_numbers_and_adjacent_tokens_are_not_rewritten(self):
+        for source in (b"return a - -b", b"return a..b", b"return 1 .. 2",
+                       b"return 1..2", b"return 0x1p4, 1e-3, .5, 0xe+1",
+                       b"return 1 e3", b"return 0x1 p4", b"return 1 . . 2",
+                       b"return a / / b", b"return a < < b"):
+            with self.subTest(source=source):
+                self.assertEqual(compact(source), source)
+        for left, right in ((b"1", b"e3"), (b"0x1", b"p4"), (b".", b"."),
+                            (b"-", b"-"), (b"[", b"["), (b"/", b"/"),
+                            (b"<", b"<"), (b"=", b"="), (b":", b":")):
+            with self.subTest(left=left, right=right):
+                self.assertEqual(compact(left + b" --[[gap]]" + right),
+                                 left + b" " + right)
+
     def test_quoted_strings_are_verbatim(self):
         for literal in (b"'-- not a comment'", b'"x\\\" -- y"',
                         b"'x\\\\'", b'"a\\z \t\r\n  b"', b'"a\\\n b"',
+                        br'"\x22\x5c\u{22}\u{1F642}\034\092\000\255"',
+                        br'"\1x\12x\1234"', b'"a\\z \t\v\f\r\n\n\r b"',
                         "'中文 -- 文本'".encode()):
             self.assertEqual(compact(b"  return  " + literal), b"return " + literal)
 
@@ -32,6 +48,15 @@ class CompactSourceTest(unittest.TestCase):
             self.assertEqual(compact(b"return " + literal), b"return " + literal)
         self.assertEqual(compact(b"a--[==[ ]=]\n \r\n]==]b"), b"a\n\nb")
         self.assertEqual(compact(b"a--[=not-long\nb"), b"a\nb")
+        self.assertEqual(compact(b"a--[ 'not a string\nb"), b"a\nb")
+        for level in (0, 1, 2, 8, 128):
+            opening = b"[" + b"=" * level + b"["
+            closing = b"]" + b"=" * level + b"]"
+            wrong_close = b"]" + b"=" * (level + 1) + b"]"
+            literal = opening + b"-- ' \r\n" + wrong_close + b" " + closing
+            with self.subTest(level=level):
+                self.assertEqual(compact(b"return " + literal), b"return " + literal)
+                self.assertEqual(compact(b"a--" + literal + b"b"), b"a\nb")
 
     def test_line_numbers_do_not_merge_newlines(self):
         self.assertEqual(compact(b"a\r\nb\n\rc\rd\ne"), b"a\nb\nc\nd\ne")
@@ -45,6 +70,19 @@ class CompactSourceTest(unittest.TestCase):
         self.assertEqual(compact(original), result)
         self.assertEqual(compact(result), result)
         self.assertEqual(compact(b" \t-- all comment"), b"")
+
+    def test_shebang_is_not_a_lua_buffer_comment(self):
+        # Only Lua's file loader strips this line. Embedded VM buffers reject it.
+        self.assertEqual(compact(b"#!/usr/bin/env lua\n  return 1"),
+                         b"#!/usr/bin/env lua\nreturn 1")
+
+    def test_end_of_file_does_not_add_a_newline(self):
+        for source, expected in ((b"", b""), (b"return 1", b"return 1"),
+                                 (b"return 1 --tail", b"return 1"),
+                                 (b"return 'x'--[[tail]]", b"return 'x'"),
+                                 (b"return [[x]]\t", b"return [[x]]")):
+            with self.subTest(source=source):
+                self.assertEqual(compact(source), expected)
 
     def test_unterminated_literals_fail_closed(self):
         for source in (b"'abc", b'"a\\"', b"[=[abc", b"--[=[abc"):
@@ -67,7 +105,7 @@ class CompactSourceTest(unittest.TestCase):
                 compact(source)
 
     def test_cli_default_and_compact_embedding(self):
-        source = b"  -- source comment\n  return  'a -- b'  \n"
+        source = b"  -- source comment\r\n  return  'a -- b'  \n\r\t"
         with tempfile.TemporaryDirectory() as temporary:
             root = pathlib.Path(temporary)
             path = root / "source.lua"
@@ -89,10 +127,12 @@ class CompactSourceTest(unittest.TestCase):
                 path.write_bytes(invalid)
                 self.assertNotEqual(subprocess.run(command + ["--compact"],
                                                   capture_output=True).returncode, 0)
-            path.write_bytes(b"-- comment only")
-            subprocess.run(command + ["--compact"], check=True, capture_output=True)
-            self.assertIn("const size_t fixture_size = 0u;", implementation.read_text())
-            self.assertIn("  0,", implementation.read_text())
+            for source, options in ((b"", []), (b"", ["--compact"]),
+                                    (b"-- comment only", ["--compact"])):
+                path.write_bytes(source)
+                subprocess.run(command + options, check=True, capture_output=True)
+                self.assertIn("const size_t fixture_size = 0u;", implementation.read_text())
+                self.assertIn("  0,", implementation.read_text())
 
 
 if __name__ == "__main__":

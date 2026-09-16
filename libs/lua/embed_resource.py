@@ -14,6 +14,7 @@ def compact_source(data: bytes) -> bytes:
 
     Always keep a separator where a comment or horizontal whitespace separated
     tokens. This deliberately does not rename identifiers or rewrite Lua tokens.
+    Like the VM's luaL_loadbufferx, this does not strip a file-loader shebang.
     """
     if b"\0" in data:
         # The text loader rejects NUL even inside comments. Do not erase one
