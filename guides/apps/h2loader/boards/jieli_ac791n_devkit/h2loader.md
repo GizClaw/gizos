@@ -103,9 +103,9 @@ Loader 只有 UART 与 BLE capability，不提供 Wi-Fi 与 HTTP；runner 一旦
 
 ## 验收记录
 
-### 2026-09-16：main 验收在 UART 套件取消后停止
+### 2026-09-16：main UART/BLE 通过，button 日志验收未完成
 
-`667cd925` 的六个包构建、不同镜像 Loader 自更新和 PAL 10/10 通过；UART 前 20 项全部 PASS，但 runner 随后以取消状态退出（汇总 FAIL/rc=1，进程 exit=130），剩余五项、两轮 BLE、button 和 audio 验收未执行。信号来源未确定，不据此判定板卡故障或源码回归；独立 UART status 确认新 Loader 在 P1/P2、Stage 空、`last_result=0`。[完整 SHA、逐项结果、独立状态与验收限制](./evidence/2026-09-16/main-acceptance.md)。
+`667cd925` 在 UID `d879349abc9f` 上完成新 Loader 自更新、PAL 10/10、UART 25/25（329.006 秒）和 BLE 22/22 两轮（372.900 / 369.925 秒）。原 UART 20/20 partial 的外部宽泛 `pkill` 来源已查明；button 安装后独立状态显示已确认 P2，但安装与一次正常重启均未捕获必需 READY/确认文本，因此停在第 6 步，audio 未运行。最终独立 status 为新 P1 Loader、Stage 空、`last_result=0`。[全部 SHA、中断来源、PAL 十六进制分析、逐项结果与 button 捕获缺口](./evidence/2026-09-16/main-acceptance.md)。
 
 ### 2026-09-15：system-event owner 引用计数
 
