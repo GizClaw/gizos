@@ -49,6 +49,7 @@ class SessionGateTest(unittest.TestCase):
                             *shlex.split(os.environ.get('JIELI_TEST_CFLAGS', '')),
                             '-I', str(ROOT / 'libs/pal/include'),
                             '-I', str(ROOT / 'libs/iostreamikcp/include'),
+                            '-I', str(ROOT / 'native_component_src/jieli/wl82/h2_pal_core/include'),
                             str(unit), '-o', str(binary)], check=True)
             for case in CASES:
                 with self.subTest(case=case):

@@ -1589,6 +1589,7 @@ py_test(
     data = [
         "tests/fixtures/jieli_session_gate.c",
         "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:src/jieli_app_iostreamikcp.c",
+        "//native_component_src/jieli/wl82/h2_pal_core:include/h2_jieli_wl82_atomic.h",
         "//libs/iostreamikcp:include/h2_iostreamikcp.h",
         "//libs/iostreamikcp:include/h2_iostreamikcp_types.h",
         "//libs/pal:pal_header_files",

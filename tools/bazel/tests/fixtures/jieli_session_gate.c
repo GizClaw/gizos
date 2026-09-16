@@ -14,6 +14,7 @@
 #include <stdint.h>
 #include <string.h>
 #include "h2_iostreamikcp.h"
+#include "h2_jieli_wl82_atomic.h"
 
 #define H2_WRITE_TIMEOUT_MS 5000u
 #define H2_IOSTREAMIKCP_SESSION_CONTROL_PAYLOAD_LEN 4u

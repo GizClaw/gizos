@@ -113,6 +113,7 @@ class UartConsoleTest(unittest.TestCase):
         stub = r'''
 #include <assert.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <string.h>
 enum { OS_NO_ERR=0, H2_PAL_OK=0, H2_PAL_ERR_NO_MEMORY=-1,
        H2_PAL_ERR_INVALID_ARG=-2, H2_PAL_ERR_INVALID_STATE=-3,
@@ -128,7 +129,13 @@ typedef struct {
   const h2_pal_mem_api_t *allocator;
   h2_iostreamikcp_io_t physical_io;
   int filter;
+  volatile uint32_t sessions_admitted;
+  uint32_t gate_started_ms;
 } transport_t;
+static uint32_t now_ms_value = 1234u;
+static uint32_t timer_get_ms(void) { return now_ms_value; }
+static uint32_t h2_jieli_atomic_load_u32(volatile uint32_t *a) { return *a; }
+static void h2_jieli_atomic_store_u32(volatile uint32_t *a, uint32_t v) { *a = v; }
 typedef struct {
   transport_t transport;
   h2_command_io_api_t io;
@@ -198,6 +205,10 @@ int main(void) {
   assert(h2_jieli_app_iostreamikcp_start(&client,&task,&allocator)==H2_PAL_ERR_IO);
   assert(live==0 && !state.initialized);
   board_fail=0;
+  /* A session admission requested before the transport starts must survive
+   * both the fresh initialization and every command-task retry below. */
+  h2_jieli_app_iostreamikcp_admit_sessions();
+  assert(state.transport.sessions_admitted==1u);
 #ifndef CONFIG_H2_UART1_DEBUG_ENABLE
   worker_fail=1;
   assert(h2_jieli_app_iostreamikcp_start(&client,&task,&allocator)==H2_PAL_ERR_NO_MEMORY);
@@ -217,6 +228,7 @@ int main(void) {
   command_fail=0;
   assert(h2_jieli_app_iostreamikcp_start(&client,&task,&allocator)==0);
   assert(state.started && state.usb_id==1 && state.rx_mutex==saved_mutex);
+  assert(state.transport.sessions_admitted==1u && state.transport.gate_started_ms==now_ms_value);
   assert(creates==saved_creates && board_calls==saved_board_calls && live==4);
 #ifndef CONFIG_H2_UART1_DEBUG_ENABLE
   assert(worker_count==1 && handlers==USB_MAX_HW_NUM);
