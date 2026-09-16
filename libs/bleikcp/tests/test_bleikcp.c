@@ -767,7 +767,7 @@ static void release_workers(fake_runtime_t *runtime) {
 
 typedef struct overflow_handler_state {
     const h2_bleikcp_api_t *api;
-    h2_bleikcp_t *volatile stream;
+    _Atomic(h2_bleikcp_t *) stream;
     atomic_int received;
     atomic_int finish;
     atomic_int done;
@@ -779,7 +779,7 @@ typedef struct overflow_handler_state {
 static int overflow_handler(void *user, h2_bleikcp_t *stream, uint16_t conn_handle) {
     overflow_handler_state_t *state = user;
     (void)conn_handle;
-    state->stream = stream;
+    atomic_store(&state->stream, stream);
     uint8_t buffer[64];
     while (atomic_load(&state->received) < 300) {
         size_t len = 0u;
@@ -824,13 +824,13 @@ static void test_server_write_drops_on_full_queue(
     CHECK(h2_bleikcp_client_open(api, &config, conn_handle, 244u, &client) == H2_PAL_OK);
     uint64_t started_ms = 0u;
     CHECK(h2_pal_time_get_monotonic_ms(api->time, &started_ms) == H2_PAL_OK);
-    while (state.stream == NULL) {
+    while (atomic_load(&state.stream) == NULL) {
         uint64_t now_ms = 0u;
         CHECK(h2_pal_time_get_monotonic_ms(api->time, &now_ms) == H2_PAL_OK);
         CHECK(now_ms - started_ms < TEST_IO_TIMEOUT_MS);
         CHECK(h2_pal_time_sleep_ms(api->time, 1u) == H2_PAL_OK);
     }
-    h2_bleikcp_t *stream = state.stream;
+    h2_bleikcp_t *stream = atomic_load(&state.stream);
 
     /* Park the server and client workers so nothing drains the queue. */
     gate_workers(runtime, 2);
