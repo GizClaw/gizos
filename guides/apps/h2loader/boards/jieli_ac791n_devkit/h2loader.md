@@ -119,14 +119,14 @@ supervision timeout 与 LL reject 均为 0；仍有 SDK `conn nack` 等非致命
 
 | 路径 | 结果 | 原始报告 |
 | --- | --- | --- |
-| UART，460800 | 25/25 PASS，283.8 s | [UART](./evidence/2026-09-13/restored-uart-e2e.json) |
-| 首次 BLE | 19/22 PASS，3 FAIL，319.1 s | [首次失败](./evidence/2026-09-13/restored-ble-e2e.json) |
-| BLE，UART 旁路记录日志 | 22/22 PASS，339.7 s | [旁路观察](./evidence/2026-09-13/ble-full-uart-observed.json) |
-| BLE，无 UART 监控，runner 接入连接失败诊断 | 22/22 PASS，324.4 s | [诊断复测](./evidence/2026-09-13/ble-diagnostic-full.json) |
-| BLE，新版延迟发布启动头 Loader（v2） | 22/22 PASS，333.6 s | [新版 BLE](./evidence/2026-09-13/deferred-v2-ble-e2e.json) |
-| UART，新版候选保护，单一读口进程 | 25/25 PASS，284.7 s | [新版 UART](./evidence/2026-09-13/deferred-clean-uart-e2e.json) |
-| UART，v5（显式候选记录编码、修正 P1 回写误报） | 25/25 PASS，268.6 s | [v5 UART](./evidence/2026-09-13/deferred-v5-uart-e2e.json) |
-| BLE，v5，无 UART 并行监控 | 22/22 PASS，342.1 s | [v5 BLE](./evidence/2026-09-13/deferred-v5-ble-e2e.json) |
+| UART，460800 | 25/25 PASS，283.8 s | [UART](evidence/2026-09-13/lifecycle-summary.md#retained-acceptance-facts-restored-uart-e2e) |
+| 首次 BLE | 19/22 PASS，3 FAIL，319.1 s | [首次失败](evidence/2026-09-13/lifecycle-summary.md#retained-acceptance-facts-restored-ble-e2e) |
+| BLE，UART 旁路记录日志 | 22/22 PASS，339.7 s | [旁路观察](evidence/2026-09-13/lifecycle-summary.md#retained-acceptance-facts-ble-full-uart-observed) |
+| BLE，无 UART 监控，runner 接入连接失败诊断 | 22/22 PASS，324.4 s | [诊断复测](evidence/2026-09-13/lifecycle-summary.md#retained-acceptance-facts-ble-diagnostic-full) |
+| BLE，新版延迟发布启动头 Loader（v2） | 22/22 PASS，333.6 s | [新版 BLE](evidence/2026-09-13/lifecycle-summary.md#retained-acceptance-facts-deferred-v2-ble-e2e) |
+| UART，新版候选保护，单一读口进程 | 25/25 PASS，284.7 s | [新版 UART](evidence/2026-09-13/lifecycle-summary.md#retained-acceptance-facts-deferred-clean-uart-e2e) |
+| UART，v5（显式候选记录编码、修正 P1 回写误报） | 25/25 PASS，268.6 s | [v5 UART](evidence/2026-09-13/lifecycle-summary.md#retained-acceptance-facts-deferred-v5-uart-e2e) |
+| BLE，v5，无 UART 并行监控 | 22/22 PASS，342.1 s | [v5 BLE](evidence/2026-09-13/lifecycle-summary.md#retained-acceptance-facts-deferred-v5-ble-e2e) |
 
 这些完整回归包括正常 App 安装与确认、App 命令与传输、跨重启 Stage 保留、正常 Loader self-update、崩溃 App 回滚及 2096-byte coredump 的查询/导出/擦除。测试未提供 Wi-Fi/URL 参数，不覆盖相应能力，也不覆盖实际断电或候选 Loader 崩溃恢复。
 
@@ -165,4 +165,4 @@ supervision timeout 与 LL reject 均为 0；仍有 SDK `conn nack` 等非致命
 - BLE 20 项：同一生命周期全部经 BLE 执行，包括 App 安装与 Loader self-update。
 - crash-before-confirm 回滚后，UART 与 BLE 各自完成 coredump status/dump/erase 与擦除后空白复查。
 
-852 KB App package 的 `send`：BLE 32.6 s，UART 27.6 s。本轮不含 Wi-Fi/URL、真实断电，也不覆盖"Loader 无新 Stage 时启动已安装 App"（见 [JieLi Components](/zh/developing/components/jieli)）。报告与产物身份：[UART + BLE 报告](./evidence/2026-09-12/uart-ble-lifecycle.json)、[固件包身份](./evidence/2026-09-12/artifacts.json)。
+852 KB App package 的 `send`：BLE 32.6 s，UART 27.6 s。本轮不含 Wi-Fi/URL、真实断电，也不覆盖"Loader 无新 Stage 时启动已安装 App"（见 [JieLi Components](/zh/developing/components/jieli)）。报告与产物身份：[UART + BLE 报告](evidence/2026-09-12/lifecycle-summary.md#retained-acceptance-facts-uart-ble-lifecycle)、[固件包身份](evidence/2026-09-12/lifecycle-summary.md#retained-acceptance-facts-artifacts)。

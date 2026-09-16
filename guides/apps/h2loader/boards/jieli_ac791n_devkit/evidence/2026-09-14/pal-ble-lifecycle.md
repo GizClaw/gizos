@@ -46,7 +46,7 @@ Logs: `/tmp/jieli-ble-host-before.log`, `/tmp/jieli-ble-host-gcc-before.log`, `/
 
 This probe used the intermediate host-stop implementation before the final INIT-publication and disconnect-notification refinements; the structured result records its BLE source hash. It is not final-source acceptance. The native display App build completed in 32.411 seconds. After installation through UART Loader into P2, App BLE status passed three consecutive times through Terminal.app, each reporting App image `9b44b3e39c1261a38750c10df56da98cfe0db0dcd25cb485c64565ee9b5af3be`. Package SHA-256: `fc6204e74d988e9e8e516348e14de6e128942c3d52e4b3b61da1006b8646daab`.
 
-UART return-to-Loader and subsequent status passed. P1 remains valid and unchanged at `6b47889e361e9ae591c1e3e1a429f2d24477ab3b414847d06c3134db312627b0`; staging is empty. See [structured results](./pal-ble-host-hardware.json). The background UART capture exited without data, so this evidence relies on the three successful BLE CLI status records and the final UART status. It is not a direct test of host stop/restart, concurrent unregister, or SDK failure injection. Full final-source UART/BLE lifecycle and PAL E2E remain required.
+UART return-to-Loader and subsequent status passed. P1 remains valid and unchanged at `6b47889e361e9ae591c1e3e1a429f2d24477ab3b414847d06c3134db312627b0`; staging is empty. See [acceptance facts](pal-ble-lifecycle.md#retained-acceptance-facts-pal-ble-host-hardware). The background UART capture exited without data, so this evidence relies on the three successful BLE CLI status records and the final UART status. It is not a direct test of host stop/restart, concurrent unregister, or SDK failure injection. Full final-source UART/BLE lifecycle and PAL E2E remain required.
 
 Raw files are under `tmp/jieli/pal-review-next/diagnostic-runs/ble-host-app-status/`: `send.log`, `app.status`, `ble-status-1.log`, `ble-status-2.log`, `ble-status-3.log`, and `returned.status`.
 
@@ -80,7 +80,7 @@ The hook captures the generation and completed-submission predicate under the ga
 
 Native Loader, PAL and display packages build in 64.269 seconds (`/tmp/jieli-ble-request-native.log`). The display App was installed through UART Loader into P2, then passed three consecutive BLE status sessions through Terminal.app (window 45492), each identifying image `02e3d31041c01e7466bb8e227b797a5f518ea4afa26f24bef64556b6c9574ef1`. Package SHA-256: `a630798350fc8084b959d389090a4dc85b53f1b15a0001b2426cd9a7eee8d513`. These sessions exercise reconnect after the audited disconnect-length change; the Loader BLE link worker requests connection parameters on each connection. No direct hardware failure injection or command-consumption trace is claimed.
 
-UART return-to-Loader and status passed; P1 remains unchanged at `6b47889e361e9ae591c1e3e1a429f2d24477ab3b414847d06c3134db312627b0`, staging empty. See [structured incremental results](./pal-ble-request-hardware.json), including the exact BLE source hash. Full final-source Loader installation, PAL, UART and twice-run BLE lifecycle acceptance remains pending.
+UART return-to-Loader and status passed; P1 remains unchanged at `6b47889e361e9ae591c1e3e1a429f2d24477ab3b414847d06c3134db312627b0`, staging empty. See [structured incremental results](pal-ble-lifecycle.md#retained-acceptance-facts-pal-ble-request-hardware), including the exact BLE source hash. Full final-source Loader installation, PAL, UART and twice-run BLE lifecycle acceptance remains pending.
 
 ## Advertising publication and two-queue retirement
 
@@ -98,4 +98,85 @@ Logs: `/tmp/jieli-ble-advertising-before.log`, `/tmp/jieli-ble-advertising-gcc-b
 
 Native Loader, PAL and display packages build in 63.338 seconds after the command-hook retention refinement (`/tmp/jieli-ble-advertising-native-complete.log`). The UART-installed display App then passes three consecutive BLE status sessions through Terminal.app (window 45495), all identifying image `182f51610e7b742127afe7aacb9fbf0c352bdd0bfa6dbab43372d7a32c09d5a9`. Package SHA-256: `d5d03b4eda10cfbc8285f8d6d9740d71a9c2e79beef64d31d3f684c959ea3326`. This exercises legacy advertising and reconnect through the shared controller fence. Extended advertising payloads and injected SDK failures remain host-tested only.
 
-UART return-to-Loader and status pass; P1 remains unchanged at `6b47889e361e9ae591c1e3e1a429f2d24477ab3b414847d06c3134db312627b0`, staging empty. See [structured advertising results](./pal-ble-advertising-hardware.json) with the exact BLE source hash. This incremental check does not replace final-source Loader installation and full PAL/UART/twice-run BLE lifecycle acceptance.
+UART return-to-Loader and status pass; P1 remains unchanged at `6b47889e361e9ae591c1e3e1a429f2d24477ab3b414847d06c3134db312627b0`, staging empty. See [structured advertising results](pal-ble-lifecycle.md#retained-acceptance-facts-pal-ble-advertising-hardware) with the exact BLE source hash. This incremental check does not replace final-source Loader installation and full PAL/UART/twice-run BLE lifecycle acceptance.
+
+## Retained acceptance facts: pal-ble-advertising-hardware
+
+Historical run summary transcribed from `pal-ble-advertising-hardware.json`; raw capture removed from implementation scope. Values below retain their original units. Absent image/package SHA, partition, Stage, `last_result` or case totals were not recorded in this capture; this summary does not claim them.
+
+| Fact | Recorded value |
+| --- | --- |
+| package_sha256 | `d5d03b4eda10cfbc8285f8d6d9740d71a9c2e79beef64d31d3f684c959ea3326` |
+| image_sha256 | `182f51610e7b742127afe7aacb9fbf0c352bdd0bfa6dbab43372d7a32c09d5a9` |
+| p1_sha256 | `6b47889e361e9ae591c1e3e1a429f2d24477ab3b414847d06c3134db312627b0` |
+| uart_install | `pass` |
+| app_status | `pass` |
+| ble_status_three[1].iteration | `1` |
+| ble_status_three[1].exit_code | `0` |
+| ble_status_three[1].active_image_sha256 | `182f51610e7b742127afe7aacb9fbf0c352bdd0bfa6dbab43372d7a32c09d5a9` |
+| ble_status_three[2].iteration | `2` |
+| ble_status_three[2].exit_code | `0` |
+| ble_status_three[2].active_image_sha256 | `182f51610e7b742127afe7aacb9fbf0c352bdd0bfa6dbab43372d7a32c09d5a9` |
+| ble_status_three[3].iteration | `3` |
+| ble_status_three[3].exit_code | `0` |
+| ble_status_three[3].active_image_sha256 | `182f51610e7b742127afe7aacb9fbf0c352bdd0bfa6dbab43372d7a32c09d5a9` |
+| ble_source_sha256 | `3603cbb40dc0d47e4eae8f62e03b2e19cf60f594ce59c7e1d26ecae4ff5b2b9d` |
+| return_to_loader | `pass` |
+| staging | `empty` |
+| final_active_role | `loader` |
+| scope | `Incremental O2 legacy advertising reconnect and shared controller fence; final-source Loader lifecycle acceptance remains pending. Extended advertising payloads and injected SDK faults are host-tested only.` |
+
+## Retained acceptance facts: pal-ble-host-hardware
+
+Historical run summary transcribed from `pal-ble-host-hardware.json`; raw capture removed from implementation scope. Values below retain their original units. Absent image/package SHA, partition, Stage, `last_result` or case totals were not recorded in this capture; this summary does not claim them.
+
+| Fact | Recorded value |
+| --- | --- |
+| package_sha256 | `fc6204e74d988e9e8e516348e14de6e128942c3d52e4b3b61da1006b8646daab` |
+| image_sha256 | `9b44b3e39c1261a38750c10df56da98cfe0db0dcd25cb485c64565ee9b5af3be` |
+| p1_sha256 | `6b47889e361e9ae591c1e3e1a429f2d24477ab3b414847d06c3134db312627b0` |
+| uart_install | `pass` |
+| app_status | `pass` |
+| ble_status[1].run | `1` |
+| ble_status[1].exit_code | `0` |
+| ble_status[1].active_role | `app` |
+| ble_status[1].active_checksum | `9b44b3e39c1261a38750c10df56da98cfe0db0dcd25cb485c64565ee9b5af3be` |
+| ble_status[2].run | `2` |
+| ble_status[2].exit_code | `0` |
+| ble_status[2].active_role | `app` |
+| ble_status[2].active_checksum | `9b44b3e39c1261a38750c10df56da98cfe0db0dcd25cb485c64565ee9b5af3be` |
+| ble_status[3].run | `3` |
+| ble_status[3].exit_code | `0` |
+| ble_status[3].active_role | `app` |
+| ble_status[3].active_checksum | `9b44b3e39c1261a38750c10df56da98cfe0db0dcd25cb485c64565ee9b5af3be` |
+| returned_loader | `pass` |
+| uart_capture | `unavailable: background reader exited without data; BLE status evidence is CLI output` |
+| source | `2137527f plus intermediate host-stop implementation, before final INIT-publication and disconnect-notification refinements; not final-source acceptance` |
+| coverage | `UART App install, App BLE status three times via Terminal.app, UART return to unchanged Loader; not a direct host stop/restart or fault-injection test` |
+| ble_provider_source_sha256 | `e0f7d73a0bf8525b9a1401a81006a47c1a84ad3b15ed803095677f52c0e1e745` |
+
+## Retained acceptance facts: pal-ble-request-hardware
+
+Historical run summary transcribed from `pal-ble-request-hardware.json`; raw capture removed from implementation scope. Values below retain their original units. Absent image/package SHA, partition, Stage, `last_result` or case totals were not recorded in this capture; this summary does not claim them.
+
+| Fact | Recorded value |
+| --- | --- |
+| package_sha256 | `a630798350fc8084b959d389090a4dc85b53f1b15a0001b2426cd9a7eee8d513` |
+| image_sha256 | `02e3d31041c01e7466bb8e227b797a5f518ea4afa26f24bef64556b6c9574ef1` |
+| p1_sha256 | `6b47889e361e9ae591c1e3e1a429f2d24477ab3b414847d06c3134db312627b0` |
+| uart_install | `pass` |
+| app_status | `pass` |
+| ble_status_three[1].iteration | `1` |
+| ble_status_three[1].exit_code | `0` |
+| ble_status_three[1].active_image_sha256 | `02e3d31041c01e7466bb8e227b797a5f518ea4afa26f24bef64556b6c9574ef1` |
+| ble_status_three[2].iteration | `2` |
+| ble_status_three[2].exit_code | `0` |
+| ble_status_three[2].active_image_sha256 | `02e3d31041c01e7466bb8e227b797a5f518ea4afa26f24bef64556b6c9574ef1` |
+| ble_status_three[3].iteration | `3` |
+| ble_status_three[3].exit_code | `0` |
+| ble_status_three[3].active_image_sha256 | `02e3d31041c01e7466bb8e227b797a5f518ea4afa26f24bef64556b6c9574ef1` |
+| ble_source_sha256 | `689d4c8f464cdf8b243a858284f099e8bfea6b4ce1e729c0ab7bd33fc4123a89` |
+| return_to_loader | `pass` |
+| staging | `empty` |
+| final_active_role | `loader` |
+| scope | `Incremental O2 connection snapshots and request retention; advertising lifecycle work and final package acceptance remain pending.` |

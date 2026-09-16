@@ -18,4 +18,18 @@ Audited SDK revision `eb04f1966cf2b7cbb72cbb54db906bcb293b5a4a`, `cpu.a` members
 
 Logs: `/tmp/jieli-input-lifecycle-expanded-before.log`, `/tmp/jieli-input-lifecycle-expanded-gcc-before.log`, `/tmp/jieli-input-lifecycle-final-after.log`, `/tmp/jieli-input-lifecycle-final-gcc.log`. Native Loader, PAL and Display packages build successfully in 70.603 seconds (`/tmp/jieli-input-lifecycle-native.log`). The iOS incompatible-target analysis passes (`/tmp/jieli-input-lifecycle-ios.log`).
 
-The [hardware record](./pal-input-hardware.json) records a successful UART Display App install, matching App status and return to the unchanged Loader. Raw evidence is under `tmp/jieli/pal-review-next/diagnostic-runs/o6-display/`: `send.log`, `app.log`, `app.status`, and `returned.status`. The captured startup includes EMI open success, but does not contain the later display diagnostic report. This is transport/boot evidence only; SDK fault injection, physical touch/button actuation, teardown and electrical LCD correctness remain host-only or unverified on hardware.
+The [hardware record](pal-input-lifecycle.md#retained-acceptance-facts-pal-input-hardware) records a successful UART Display App install, matching App status and return to the unchanged Loader. Raw evidence is under `tmp/jieli/pal-review-next/diagnostic-runs/o6-display/`: `send.log`, `app.log`, `app.status`, and `returned.status`. The captured startup includes EMI open success, but does not contain the later display diagnostic report. This is transport/boot evidence only; SDK fault injection, physical touch/button actuation, teardown and electrical LCD correctness remain host-only or unverified on hardware.
+
+## Retained acceptance facts: pal-input-hardware
+
+Historical run summary transcribed from `pal-input-hardware.json`; raw capture removed from implementation scope. Values below retain their original units. Absent image/package SHA, partition, Stage, `last_result` or case totals were not recorded in this capture; this summary does not claim them.
+
+| Fact | Recorded value |
+| --- | --- |
+| package_sha256 | `560d8a9e21f6a0158b37982469d1e51123309d93582fad3857381a687f6220fa` |
+| image_sha256 | `7d8752a108ec758bec27709d92b52c6f3fa4e9b0c2cbef204841dcf5a75dc963` |
+| p1_sha256 | `2946bbdb2cc9c64d7c08f430f977e0ede705dfc4806b89361469daafedc1a8a0` |
+| uart_install | `pass` |
+| app_status | `pass` |
+| returned_loader | `pass` |
+| coverage | `UART install, App identity/status and return to unchanged Loader; no electrical/physical input or injected SDK failure validation` |

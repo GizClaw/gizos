@@ -70,7 +70,7 @@ Local logs are `/tmp/jieli-audio-before.log`, `/tmp/jieli-audio-tsan-before.log`
 ## Hardware scope
 
 The first audio probe exposed the separate task-affinity regression, repaired
-in `c1f681df`; see [that comparison](./pal-task-affinity-hardware.json). The
+in `c1f681df`; see [that comparison](pal-blocker-followup.md#retained-acceptance-facts-pal-task-affinity-hardware). The
 replacement buffer path subsequently reached READY and produced 24 microphone
 reports during a 30-second observation, before the final VFS retention change.
 That intermediate result is not final-source acceptance.
@@ -84,7 +84,7 @@ UART/BLE/PAL acceptance remain part of the overall review task.
 
 ## Final O1 package observations
 
-[Hardware records](./pal-audio-lifecycle-hardware.json) distinguish the
+[Hardware records](pal-audio-lifecycle.md#retained-acceptance-facts-pal-audio-lifecycle-hardware) distinguish the
 intermediate stream from the final VFS-retention package. The final audio App,
 UART-installed into P2, reaches READY and emits 25 microphone reports over a
 30-second observation. Its package SHA-256 is
@@ -103,3 +103,46 @@ This SDK directory-handle discrepancy is tracked with O9 for source/IR audit;
 it is not attributed to audio without evidence. Both Apps return through UART
 to the same valid P1 Loader. Overall final-source PAL/UART/BLE acceptance
 remains outstanding.
+
+## Retained acceptance facts: pal-audio-lifecycle-hardware
+
+Historical run summary transcribed from `pal-audio-lifecycle-hardware.json`; raw capture removed from implementation scope. Values below retain their original units. Absent image/package SHA, partition, Stage, `last_result` or case totals were not recorded in this capture; this summary does not claim them.
+
+| Fact | Recorded value |
+| --- | --- |
+| record[1].case_count | `0` |
+| record[1].variant | `audio-buffer-fixed` |
+| record[1].iteration | `1` |
+| record[1].outcome | `audio-ready-observed-30s` |
+| record[1].monitor_rc | `130` |
+| record[1].elapsed_s | `58.35092491598334` |
+| record[1].core_elapsed_s | `30.810555957985343` |
+| record[1].package_sha256 | `5814fcc83ea8cedffd89b4bbad215b0bc6c3e5aeac5cd15f7906fd53e011b763` |
+| record[1].image_sha256 | `e3d890f9434428b34e0b818a08090c5980808eaf45ee909f0ab36d9c0e3937c8` |
+| record[1].audio_ready | `True` |
+| record[1].mic_reports | `24` |
+| record[2].case_count | `0` |
+| record[2].variant | `audio-final-vfs-retention` |
+| record[2].iteration | `1` |
+| record[2].outcome | `audio-ready-observed-30s` |
+| record[2].monitor_rc | `130` |
+| record[2].elapsed_s | `58.43692283300334` |
+| record[2].core_elapsed_s | `30.853937415988185` |
+| record[2].package_sha256 | `8b09a2d3baab14dfecb90163e8b386ec21dcfaf239e6411b1834be14db3927b6` |
+| record[2].image_sha256 | `814a5edae7d32596da8bdeb2a99a1c230ce94339a1fff1310f5599d1fdc1a7d0` |
+| record[2].audio_ready | `True` |
+| record[2].mic_reports | `25` |
+| record[3].case_count | `10` |
+| record[3].case_results | `-7=1, 0=9` |
+| record[3].variant | `audio-final-pal` |
+| record[3].iteration | `1` |
+| record[3].outcome | `aggregate` |
+| record[3].monitor_rc | `130` |
+| record[3].elapsed_s | `23.47860774997389` |
+| record[3].core_elapsed_s | `0.5182613749930169` |
+| record[3].package_sha256 | `a25d567873a0d7dbdf363a144fb6b66d3d02ae9bd0495830549b85207ec9ee24` |
+| record[3].image_sha256 | `bac95c02f7189e4e7a5a0ea5f3546ae07d886553f19b848faad90c9da48e7e7d` |
+| record[3].core_pass | `True` |
+| record[3].aggregate[1][1] | `-7` |
+| record[3].aggregate[1][2] | `9` |
+| record[3].aggregate[1][3] | `1` |

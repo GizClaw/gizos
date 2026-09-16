@@ -1,9 +1,0 @@
-{
-  "package_sha256": "560d8a9e21f6a0158b37982469d1e51123309d93582fad3857381a687f6220fa",
-  "image_sha256": "7d8752a108ec758bec27709d92b52c6f3fa4e9b0c2cbef204841dcf5a75dc963",
-  "p1_sha256": "2946bbdb2cc9c64d7c08f430f977e0ede705dfc4806b89361469daafedc1a8a0",
-  "uart_install": "pass",
-  "app_status": "pass",
-  "returned_loader": "pass",
-  "coverage": "UART install, App identity/status and return to unchanged Loader; no electrical/physical input or injected SDK failure validation"
-}

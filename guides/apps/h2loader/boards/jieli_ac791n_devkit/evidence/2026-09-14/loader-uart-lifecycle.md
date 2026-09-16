@@ -51,7 +51,7 @@ independent status succeeded.
 
 ## Package identities and before/after status
 
-[All three package/image SHA-256s and sizes](./loader-artifacts.json).
+[All three package/image SHA-256s and sizes](loader-uart-lifecycle.md#retained-acceptance-facts-loader-artifacts).
 Loader package (918365 bytes):
 `9b84d5fdf10b69c56bace2f3bbb4b9b4594526d0f62789f1d1fd5e1bfd0612ca`.
 Loader image (929917 bytes):
@@ -74,7 +74,7 @@ confirmed both partitions valid and carrying the new Loader package/image,
 `boot_intent=auto`, `last_result=0`.
 
 All parsed before/after snapshots are retained in `independent_uart_status`
-in the [artifact record](./loader-artifacts.json); raw status files are not
+in the [artifact record](loader-uart-lifecycle.md#retained-acceptance-facts-loader-artifacts); raw status files are not
 repository inputs. The before-install Stage was valid (`stage_valid=1`).
 
 ## Commands and host/native validation
@@ -127,7 +127,7 @@ bazel-bin/projects/h2loader/targets/cc_binary/e2e-runner/e2e-runner \
 ## Full UART result and final state
 
 **25/25 PASS**, rc=0, 560.440 seconds, one run, no runner/test changes.
-The [structured report](./loader-uart-lifecycle.json) preserves each case and
+The [structured report](loader-uart-lifecycle.md#retained-acceptance-facts-loader-uart-lifecycle) preserves each case and
 its status; the relevant ordered markers and counts are inline in this page.
 The unfiltered log is local-only at
 `tmp/jieli/2026-09-14-loader/uart-lifecycle.log`.
@@ -204,3 +204,107 @@ released (`lsof` found no holder). No post-suite cleanup/install was performed.
 No new BLE, actual power-cycle, interruption-during-write, or broad PAL
 acceptance is claimed. This closes the current-source normal self-update
 and full UART lifecycle retest, while retaining the reconnect-latency caveat.
+
+## Retained acceptance facts: loader-artifacts
+
+Historical run summary transcribed from `loader-artifacts.json`; raw capture removed from implementation scope. Values below retain their original units. Absent image/package SHA, partition, Stage, `last_result` or case totals were not recorded in this capture; this summary does not claim them.
+
+| Fact | Recorded value |
+| --- | --- |
+| source | `2a814d324455a9f2995c3b4348e82bb300bb77b7` |
+| artifacts[1].package | `jieli_ac791n_devkit-color-bar-wl82.update.tar.zlib` |
+| artifacts[1].package_bytes | `856298` |
+| artifacts[1].package_sha256 | `354ad51fe0520caf0dd2508a1cdfe137f18191f3ddee6db6f5b6879a4ab1c2d9` |
+| artifacts[1].image_bytes | `868201` |
+| artifacts[1].image_sha256 | `e42c0e08bd8fc00362ea9d75d0656010b29cbc92d3604c68e2b5e2e3b5941aef` |
+| artifacts[2].package | `jieli_ac791n_devkit-crash-before-confirm-wl82.update.tar.zlib` |
+| artifacts[2].package_bytes | `887289` |
+| artifacts[2].package_sha256 | `a6fb82b90e15d34c1889b7c8802c7f08957081f1efc71f7f29bdb10c5d83483b` |
+| artifacts[2].image_bytes | `899305` |
+| artifacts[2].image_sha256 | `a75bdeca184ecc78ebdf5126dfc75df3170976dbe4a4fcfddfa7da363c3ac93e` |
+| artifacts[3].package | `jieli_ac791n_devkit-loader-wl82.update.tar.zlib` |
+| artifacts[3].package_bytes | `918365` |
+| artifacts[3].package_sha256 | `9b84d5fdf10b69c56bace2f3bbb4b9b4594526d0f62789f1d1fd5e1bfd0612ca` |
+| artifacts[3].image_bytes | `929917` |
+| artifacts[3].image_sha256 | `42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd` |
+| independent_uart_status.after_install.device_uid | `d879349abc9f` |
+| independent_uart_status.after_install.active_role | `loader` |
+| independent_uart_status.after_install.active_checksum | `42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd` |
+| independent_uart_status.after_install.active_image_size | `929917` |
+| identity.partition_1_package_checksum | `9b84d5fdf10b69c56bace2f3bbb4b9b4594526d0f62789f1d1fd5e1bfd0612ca` |
+| identity.partition_1_image_checksum | `42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd`; `7130cfe2386c86a7dcf82ccd15854f14b64fb525be14a984cfdaa5dd19d64dfa` |
+| identity.partition_2_package_checksum | `9b84d5fdf10b69c56bace2f3bbb4b9b4594526d0f62789f1d1fd5e1bfd0612ca`; `f2d528a110827e8161154d4c7df925103f1b6a76931454b3a5afc4aae631997d`; `a6fb82b90e15d34c1889b7c8802c7f08957081f1efc71f7f29bdb10c5d83483b` |
+| identity.partition_2_image_checksum | `42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd`; `fec8c47945b29ac9f294d177d507d19705195c34ba8f76c63a9d60d5ff95cfb7`; `a75bdeca184ecc78ebdf5126dfc75df3170976dbe4a4fcfddfa7da363c3ac93e` |
+| independent_uart_status.before_install.device_uid | `d879349abc9f` |
+| independent_uart_status.before_install.active_role | `loader` |
+| independent_uart_status.before_install.active_checksum | `7130cfe2386c86a7dcf82ccd15854f14b64fb525be14a984cfdaa5dd19d64dfa` |
+| independent_uart_status.before_install.active_image_size | `929981` |
+| identity.stage_package_checksum | `9b84d5fdf10b69c56bace2f3bbb4b9b4594526d0f62789f1d1fd5e1bfd0612ca`; `a6fb82b90e15d34c1889b7c8802c7f08957081f1efc71f7f29bdb10c5d83483b`; `f2d528a110827e8161154d4c7df925103f1b6a76931454b3a5afc4aae631997d` |
+| identity.stage_image_checksum | `42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd`; `a75bdeca184ecc78ebdf5126dfc75df3170976dbe4a4fcfddfa7da363c3ac93e`; `fec8c47945b29ac9f294d177d507d19705195c34ba8f76c63a9d60d5ff95cfb7` |
+| independent_uart_status.ble_after_run_1.device_uid | `d879349abc9f` |
+| independent_uart_status.ble_after_run_1.active_role | `loader` |
+| independent_uart_status.ble_after_run_1.active_checksum | `42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd` |
+| independent_uart_status.ble_after_run_1.active_image_size | `929917` |
+| independent_uart_status.ble_after_run_2.device_uid | `d879349abc9f` |
+| independent_uart_status.ble_after_run_2.active_role | `loader` |
+| independent_uart_status.ble_after_run_2.active_checksum | `42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd` |
+| independent_uart_status.ble_after_run_2.active_image_size | `929917` |
+| independent_uart_status.ble_before.device_uid | `d879349abc9f` |
+| independent_uart_status.ble_before.active_role | `loader` |
+| independent_uart_status.ble_before.active_checksum | `42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd` |
+| independent_uart_status.ble_before.active_image_size | `929917` |
+| independent_uart_status.final.device_uid | `d879349abc9f` |
+| independent_uart_status.final.active_role | `loader` |
+| independent_uart_status.final.active_checksum | `42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd` |
+| independent_uart_status.final.active_image_size | `929917` |
+| independent_uart_status.initial.device_uid | `d879349abc9f` |
+| independent_uart_status.initial.active_role | `loader` |
+| independent_uart_status.initial.active_checksum | `7130cfe2386c86a7dcf82ccd15854f14b64fb525be14a984cfdaa5dd19d64dfa` |
+| independent_uart_status.initial.active_image_size | `929981` |
+
+| Status checkpoint(s) | Running partition / Stage / result |
+| --- | --- |
+| record.independent_uart_status.after_install | `running_partition=1; next_partition=1; last_result=0; boot_intent=auto; stage_valid=0; partition_1_image_checksum=42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd; partition_1_package_checksum=9b84d5fdf10b69c56bace2f3bbb4b9b4594526d0f62789f1d1fd5e1bfd0612ca; partition_2_image_checksum=42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd; partition_2_package_checksum=9b84d5fdf10b69c56bace2f3bbb4b9b4594526d0f62789f1d1fd5e1bfd0612ca` |
+| record.independent_uart_status.before_install | `running_partition=1; next_partition=1; last_result=0; boot_intent=loader; stage_valid=1; partition_1_image_checksum=7130cfe2386c86a7dcf82ccd15854f14b64fb525be14a984cfdaa5dd19d64dfa; partition_2_image_checksum=fec8c47945b29ac9f294d177d507d19705195c34ba8f76c63a9d60d5ff95cfb7; partition_2_package_checksum=f2d528a110827e8161154d4c7df925103f1b6a76931454b3a5afc4aae631997d; stage_image_checksum=42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd; stage_package_checksum=9b84d5fdf10b69c56bace2f3bbb4b9b4594526d0f62789f1d1fd5e1bfd0612ca` |
+| record.independent_uart_status.ble_after_run_1, record.independent_uart_status.ble_after_run_2, record.independent_uart_status.ble_before, record.independent_uart_status.final | `running_partition=1; next_partition=1; last_result=0; boot_intent=auto; stage_valid=1; partition_1_image_checksum=42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd; partition_1_package_checksum=9b84d5fdf10b69c56bace2f3bbb4b9b4594526d0f62789f1d1fd5e1bfd0612ca; partition_2_image_checksum=a75bdeca184ecc78ebdf5126dfc75df3170976dbe4a4fcfddfa7da363c3ac93e; partition_2_package_checksum=a6fb82b90e15d34c1889b7c8802c7f08957081f1efc71f7f29bdb10c5d83483b; stage_image_checksum=a75bdeca184ecc78ebdf5126dfc75df3170976dbe4a4fcfddfa7da363c3ac93e; stage_package_checksum=a6fb82b90e15d34c1889b7c8802c7f08957081f1efc71f7f29bdb10c5d83483b` |
+| record.independent_uart_status.initial | `running_partition=1; next_partition=1; last_result=0; boot_intent=loader; stage_valid=1; partition_1_image_checksum=7130cfe2386c86a7dcf82ccd15854f14b64fb525be14a984cfdaa5dd19d64dfa; partition_2_image_checksum=fec8c47945b29ac9f294d177d507d19705195c34ba8f76c63a9d60d5ff95cfb7; partition_2_package_checksum=f2d528a110827e8161154d4c7df925103f1b6a76931454b3a5afc4aae631997d; stage_image_checksum=fec8c47945b29ac9f294d177d507d19705195c34ba8f76c63a9d60d5ff95cfb7; stage_package_checksum=f2d528a110827e8161154d4c7df925103f1b6a76931454b3a5afc4aae631997d` |
+
+## Retained acceptance facts: loader-uart-lifecycle
+
+Historical run summary transcribed from `loader-uart-lifecycle.json`; raw capture removed from implementation scope. Values below retain their original units. Absent image/package SHA, partition, Stage, `last_result` or case totals were not recorded in this capture; this summary does not claim them.
+
+| Fact | Recorded value |
+| --- | --- |
+| case_count | `25` |
+| case_results | `PASS=25` |
+| result | `PASS` |
+| rc | `0` |
+| uart_endpoint | `/dev/cu.usbserial-20131240` |
+| uart_baud_rate | `460800` |
+| repeat | `1` |
+| monitor_duration_ms | `3000` |
+| app_firmware.bytes | `856298` |
+| app_firmware.sha256 | `354ad51fe0520caf0dd2508a1cdfe137f18191f3ddee6db6f5b6879a4ab1c2d9` |
+| loader_firmware.bytes | `918365` |
+| loader_firmware.sha256 | `9b84d5fdf10b69c56bace2f3bbb4b9b4594526d0f62789f1d1fd5e1bfd0612ca` |
+| crash_firmware.bytes | `887289` |
+| crash_firmware.sha256 | `a6fb82b90e15d34c1889b7c8802c7f08957081f1efc71f7f29bdb10c5d83483b` |
+| firmware_url.bytes | `0` |
+| coredump.expected_bytes | `2096` |
+| summary.cases | `25` |
+| summary.passed | `25` |
+| summary.failed | `0` |
+| summary.elapsed_ms | `560440` |
+| identity.active_checksum | `42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd`; `e42c0e08bd8fc00362ea9d75d0656010b29cbc92d3604c68e2b5e2e3b5941aef` |
+| identity.package_checksum | `9b84d5fdf10b69c56bace2f3bbb4b9b4594526d0f62789f1d1fd5e1bfd0612ca`; `354ad51fe0520caf0dd2508a1cdfe137f18191f3ddee6db6f5b6879a4ab1c2d9`; `a6fb82b90e15d34c1889b7c8802c7f08957081f1efc71f7f29bdb10c5d83483b` |
+| identity.image_checksum | `42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd`; `e42c0e08bd8fc00362ea9d75d0656010b29cbc92d3604c68e2b5e2e3b5941aef`; `a75bdeca184ecc78ebdf5126dfc75df3170976dbe4a4fcfddfa7da363c3ac93e` |
+
+| Status checkpoint(s) | Running partition / Stage / result |
+| --- | --- |
+| record.case[help], record.case[status], record.case[stats], record.case[legacy-commands-absent], record.case[stage-abort-after-send], record.case[monitor], record.case[install-loader] | `running_partition=1; next_partition=1; last_result=0; boot_intent=auto; stage_valid=0; partition_1_image_checksum=42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd; partition_1_package_checksum=9b84d5fdf10b69c56bace2f3bbb4b9b4594526d0f62789f1d1fd5e1bfd0612ca; partition_2_image_checksum=42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd; partition_2_package_checksum=9b84d5fdf10b69c56bace2f3bbb4b9b4594526d0f62789f1d1fd5e1bfd0612ca` |
+| record.case[send] | `running_partition=1; next_partition=1; last_result=0; boot_intent=auto; stage_valid=1; partition_1_image_checksum=42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd; partition_1_package_checksum=9b84d5fdf10b69c56bace2f3bbb4b9b4594526d0f62789f1d1fd5e1bfd0612ca; partition_2_image_checksum=42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd; partition_2_package_checksum=9b84d5fdf10b69c56bace2f3bbb4b9b4594526d0f62789f1d1fd5e1bfd0612ca; stage_image_checksum=e42c0e08bd8fc00362ea9d75d0656010b29cbc92d3604c68e2b5e2e3b5941aef; stage_package_checksum=354ad51fe0520caf0dd2508a1cdfe137f18191f3ddee6db6f5b6879a4ab1c2d9` |
+| record.case[reboot-loader-monitor] | `running_partition=1; next_partition=1; last_result=0; boot_intent=loader; stage_valid=0; partition_1_image_checksum=42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd; partition_1_package_checksum=9b84d5fdf10b69c56bace2f3bbb4b9b4594526d0f62789f1d1fd5e1bfd0612ca; partition_2_image_checksum=42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd; partition_2_package_checksum=9b84d5fdf10b69c56bace2f3bbb4b9b4594526d0f62789f1d1fd5e1bfd0612ca` |
+| record.case[reboot-upgrade-monitor], record.case[reboot-app-monitor], record.case[app-help], record.case[app-status], record.case[app-stats], record.case[app-memory], record.case[app-legacy-commands-absent], record.case[app-stage-abort-after-send], record.case[reboot-app-preserves-stage] | `running_partition=2; next_partition=2; last_result=0; boot_intent=auto; stage_valid=0; partition_1_image_checksum=42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd; partition_1_package_checksum=9b84d5fdf10b69c56bace2f3bbb4b9b4594526d0f62789f1d1fd5e1bfd0612ca; partition_2_image_checksum=e42c0e08bd8fc00362ea9d75d0656010b29cbc92d3604c68e2b5e2e3b5941aef; partition_2_package_checksum=354ad51fe0520caf0dd2508a1cdfe137f18191f3ddee6db6f5b6879a4ab1c2d9` |
+| record.case[app-send] | `running_partition=2; next_partition=2; last_result=0; boot_intent=auto; stage_valid=1; partition_1_image_checksum=42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd; partition_1_package_checksum=9b84d5fdf10b69c56bace2f3bbb4b9b4594526d0f62789f1d1fd5e1bfd0612ca; partition_2_image_checksum=e42c0e08bd8fc00362ea9d75d0656010b29cbc92d3604c68e2b5e2e3b5941aef; partition_2_package_checksum=354ad51fe0520caf0dd2508a1cdfe137f18191f3ddee6db6f5b6879a4ab1c2d9; stage_image_checksum=e42c0e08bd8fc00362ea9d75d0656010b29cbc92d3604c68e2b5e2e3b5941aef; stage_package_checksum=354ad51fe0520caf0dd2508a1cdfe137f18191f3ddee6db6f5b6879a4ab1c2d9` |
+| record.case[reboot-loader-preserves-stage] | `running_partition=1; next_partition=1; last_result=0; boot_intent=loader; stage_valid=0; partition_1_image_checksum=42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd; partition_1_package_checksum=9b84d5fdf10b69c56bace2f3bbb4b9b4594526d0f62789f1d1fd5e1bfd0612ca; partition_2_image_checksum=e42c0e08bd8fc00362ea9d75d0656010b29cbc92d3604c68e2b5e2e3b5941aef; partition_2_package_checksum=354ad51fe0520caf0dd2508a1cdfe137f18191f3ddee6db6f5b6879a4ab1c2d9` |
+| record.case[install-crash-app], record.case[coredump-status], record.case[coredump-dump], record.case[coredump-erase], record.case[coredump-status-after-erase] | `running_partition=1; next_partition=1; last_result=0; boot_intent=auto; stage_valid=1; partition_1_image_checksum=42c39b7aae00917e44e9807503fe57fdb4ccad25b58793ab12087a2da03d22cd; partition_1_package_checksum=9b84d5fdf10b69c56bace2f3bbb4b9b4594526d0f62789f1d1fd5e1bfd0612ca; partition_2_image_checksum=a75bdeca184ecc78ebdf5126dfc75df3170976dbe4a4fcfddfa7da363c3ac93e; partition_2_package_checksum=a6fb82b90e15d34c1889b7c8802c7f08957081f1efc71f7f29bdb10c5d83483b; stage_image_checksum=a75bdeca184ecc78ebdf5126dfc75df3170976dbe4a4fcfddfa7da363c3ac93e; stage_package_checksum=a6fb82b90e15d34c1889b7c8802c7f08957081f1efc71f7f29bdb10c5d83483b` |

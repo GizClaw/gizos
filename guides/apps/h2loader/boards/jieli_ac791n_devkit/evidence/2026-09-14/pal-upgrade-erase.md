@@ -12,4 +12,26 @@ Logs: `/tmp/jieli-erase-before.log`, `/tmp/jieli-erase-gcc-before.log`, `/tmp/ji
 
 ## Install-loader acceptance
 
-The normal Loader flow installed package `3a75f4ad6d1f9f2a054615ac608bc6d5efd53bc4778f37e4f4bb01467fd3a37d`, image `224b3b84a278d65677d5fa9bfae7ab585007ef89079e62084a3e4cffb676e3f9`. Candidate confirmation, header publication, P1 copy and event 4 convergence all passed. Independent UART status verifies the new P1 and matching valid P2, Stage cleared and result zero. [Exact hardware identity](./pal-upgrade-erase-hardware.json). Raw artifacts: `tmp/jieli/pal-review-next/final-acceptance/loader-send.log`, `loader-upgrade.log`, `loader-after.status`. Native build of Loader, Display, crash-before-confirm, PAL and audio completed successfully in 116.592 seconds. No physical erase fault was injected.
+The normal Loader flow installed package `3a75f4ad6d1f9f2a054615ac608bc6d5efd53bc4778f37e4f4bb01467fd3a37d`, image `224b3b84a278d65677d5fa9bfae7ab585007ef89079e62084a3e4cffb676e3f9`. Candidate confirmation, header publication, P1 copy and event 4 convergence all passed. Independent UART status verifies the new P1 and matching valid P2, Stage cleared and result zero. [Exact hardware identity](pal-upgrade-erase.md#retained-acceptance-facts-pal-upgrade-erase-hardware). Raw artifacts: `tmp/jieli/pal-review-next/final-acceptance/loader-send.log`, `loader-upgrade.log`, `loader-after.status`. Native build of Loader, Display, crash-before-confirm, PAL and audio completed successfully in 116.592 seconds. No physical erase fault was injected.
+
+## Retained acceptance facts: pal-upgrade-erase-hardware
+
+Historical run summary transcribed from `pal-upgrade-erase-hardware.json`; raw capture removed from implementation scope. Values below retain their original units. Absent image/package SHA, partition, Stage, `last_result` or case totals were not recorded in this capture; this summary does not claim them.
+
+| Fact | Recorded value |
+| --- | --- |
+| source | `O11 working source after fd8c61d5` |
+| package_sha256 | `3a75f4ad6d1f9f2a054615ac608bc6d5efd53bc4778f37e4f4bb01467fd3a37d` |
+| image_sha256 | `224b3b84a278d65677d5fa9bfae7ab585007ef89079e62084a3e4cffb676e3f9` |
+| status.device_uid | `d879349abc9f` |
+| status.active_role | `loader` |
+| status.active_checksum | `224b3b84a278d65677d5fa9bfae7ab585007ef89079e62084a3e4cffb676e3f9` |
+| status.active_image_size | `937001` |
+| identity.partition_1_package_checksum | `3a75f4ad6d1f9f2a054615ac608bc6d5efd53bc4778f37e4f4bb01467fd3a37d` |
+| identity.partition_1_image_checksum | `224b3b84a278d65677d5fa9bfae7ab585007ef89079e62084a3e4cffb676e3f9` |
+| identity.partition_2_package_checksum | `3a75f4ad6d1f9f2a054615ac608bc6d5efd53bc4778f37e4f4bb01467fd3a37d` |
+| identity.partition_2_image_checksum | `224b3b84a278d65677d5fa9bfae7ab585007ef89079e62084a3e4cffb676e3f9` |
+
+| Status checkpoint(s) | Running partition / Stage / result |
+| --- | --- |
+| record | `running_partition=1; next_partition=1; last_result=0; boot_intent=auto; stage_valid=0; partition_1_image_checksum=224b3b84a278d65677d5fa9bfae7ab585007ef89079e62084a3e4cffb676e3f9; partition_1_package_checksum=3a75f4ad6d1f9f2a054615ac608bc6d5efd53bc4778f37e4f4bb01467fd3a37d; partition_2_image_checksum=224b3b84a278d65677d5fa9bfae7ab585007ef89079e62084a3e4cffb676e3f9; partition_2_package_checksum=3a75f4ad6d1f9f2a054615ac608bc6d5efd53bc4778f37e4f4bb01467fd3a37d` |

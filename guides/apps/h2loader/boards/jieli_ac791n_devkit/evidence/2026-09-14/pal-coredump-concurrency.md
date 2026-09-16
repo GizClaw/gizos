@@ -24,7 +24,7 @@ Logs: `/tmp/jieli-coredump-before.log`, `/tmp/jieli-coredump-gcc-before.log`, `/
 
 ## Hardware blocker: stop after Loader watchdog trial
 
-The [hardware record](./pal-coredump-hardware.json) contains exact package and image hashes. The new production Loader was installed through the existing Loader upgrade flow and verified as P1 image `63157615c4ab3d2a3fe4168e955cd7a640a4662bc4fbbec46e789646c5f09cd1` (package `9e774c5cba488053b069d3d8e66fe11fdafa534e76c3cf672b5cef5783337252`).
+The [hardware record](pal-coredump-concurrency.md#retained-acceptance-facts-pal-coredump-hardware) contains exact package and image hashes. The new production Loader was installed through the existing Loader upgrade flow and verified as P1 image `63157615c4ab3d2a3fe4168e955cd7a640a4662bc4fbbec46e789646c5f09cd1` (package `9e774c5cba488053b069d3d8e66fe11fdafa534e76c3cf672b5cef5783337252`).
 
 The App watchdog trial returned to that Loader. UART status and a checksum-valid 2,096-byte coredump passed; reset reason is `0x4` (WDT), and no Loader crash-recovery marker appeared. The host monitor exceeded its existing 15-second SIGINT shutdown wait but exited before reader inspection; this harness failure is recorded separately from the subsequent successful board checks. The dump's boot stage is 80, because the SDK boot probe overwrites that marker before reset recovery; it is not evidence of the faulting App's last stage.
 
@@ -35,3 +35,51 @@ Raw evidence: `tmp/jieli/pal-review-next/o10/loader-before.status`, `loader-upgr
 ## Subsequent investigation
 
 See the [watchdog recovery follow-up](./pal-watchdog-recovery.md) for the SDK policy defects, production correction and partial repeat-trial results. The historical blackout above was physically reset by the maintainer before that investigation.
+
+## Retained acceptance facts: pal-coredump-hardware
+
+Historical run summary transcribed from `pal-coredump-hardware.json`; raw capture removed from implementation scope. Values below retain their original units. Absent image/package SHA, partition, Stage, `last_result` or case totals were not recorded in this capture; this summary does not claim them.
+
+| Fact | Recorded value |
+| --- | --- |
+| source | `uncommitted O10 work based on 5ee52a92` |
+| loader_install.source | `O10 working source after 5ee52a92` |
+| loader_install.package_sha256 | `9e774c5cba488053b069d3d8e66fe11fdafa534e76c3cf672b5cef5783337252` |
+| loader_install.image_sha256 | `63157615c4ab3d2a3fe4168e955cd7a640a4662bc4fbbec46e789646c5f09cd1` |
+| loader_install.status.device_uid | `d879349abc9f` |
+| loader_install.status.active_role | `loader` |
+| loader_install.status.active_checksum | `63157615c4ab3d2a3fe4168e955cd7a640a4662bc4fbbec46e789646c5f09cd1` |
+| loader_install.status.active_image_size | `936169` |
+| identity.partition_1_package_checksum | `9e774c5cba488053b069d3d8e66fe11fdafa534e76c3cf672b5cef5783337252` |
+| identity.partition_1_image_checksum | `63157615c4ab3d2a3fe4168e955cd7a640a4662bc4fbbec46e789646c5f09cd1` |
+| identity.partition_2_package_checksum | `9e774c5cba488053b069d3d8e66fe11fdafa534e76c3cf672b5cef5783337252`; `a6b4f759004630c2a2508daee3cf7d822af778d4d297c8fecd2ac2afafb69cc5` |
+| identity.partition_2_image_checksum | `63157615c4ab3d2a3fe4168e955cd7a640a4662bc4fbbec46e789646c5f09cd1`; `19eaef2d797d6c2bfd314746f72a7faabf2361c8f5859d83dbaae162b18dc31c` |
+| app_watchdog.trial | `app-watchdog` |
+| app_watchdog.package_sha256 | `a6b4f759004630c2a2508daee3cf7d822af778d4d297c8fecd2ac2afafb69cc5` |
+| app_watchdog.p1_sha256 | `63157615c4ab3d2a3fe4168e955cd7a640a4662bc4fbbec46e789646c5f09cd1` |
+| app_watchdog.reset_reason | `4` |
+| app_watchdog.boot_stage | `80` |
+| app_watchdog.log_bytes | `2048` |
+| app_watchdog.recovery_marker | `False` |
+| app_watchdog.status.device_uid | `d879349abc9f` |
+| app_watchdog.status.active_role | `loader` |
+| app_watchdog.status.active_checksum | `63157615c4ab3d2a3fe4168e955cd7a640a4662bc4fbbec46e789646c5f09cd1` |
+| app_watchdog.status.active_image_size | `936169` |
+| identity.stage_package_checksum | `a6b4f759004630c2a2508daee3cf7d822af778d4d297c8fecd2ac2afafb69cc5` |
+| identity.stage_image_checksum | `19eaef2d797d6c2bfd314746f72a7faabf2361c8f5859d83dbaae162b18dc31c` |
+| app_watchdog.monitor_shutdown | `SIGINT wait exceeded 15 seconds; process exited before lsof inspection; subsequent status/dump passed` |
+| loader_watchdog.trial | `loader-watchdog` |
+| loader_watchdog.result | `blocked` |
+| loader_watchdog.package_sha256 | `c3feec8f6179578411b9f400bdebdf4ce005c5a2a443ed15d91c2d9373cca1f8` |
+| loader_watchdog.image_sha256 | `3fca330cb29cc8f39e8121f5b8a2c5b9da943544e4d60811bd6ef139434bd646` |
+| loader_watchdog.last_verified_p1_sha256 | `63157615c4ab3d2a3fe4168e955cd7a640a4662bc4fbbec46e789646c5f09cd1` |
+| loader_watchdog.status_error | `-6` |
+| loader_watchdog.current_board_state | `unverified after watchdog trial reboot handoff` |
+| loader_watchdog.recovery_attempted | `False` |
+| loader_watchdog.last_monitor_line | `H2_JIELI_REBOOT_EXECUTE reset=core` |
+| loader_watchdog.p2_header_before_handoff | `SDK completion returned zero; Loader reported boot_info=unpublished` |
+
+| Status checkpoint(s) | Running partition / Stage / result |
+| --- | --- |
+| record.loader_install | `running_partition=1; next_partition=1; last_result=0; boot_intent=auto; stage_valid=0; partition_1_image_checksum=63157615c4ab3d2a3fe4168e955cd7a640a4662bc4fbbec46e789646c5f09cd1; partition_1_package_checksum=9e774c5cba488053b069d3d8e66fe11fdafa534e76c3cf672b5cef5783337252; partition_2_image_checksum=63157615c4ab3d2a3fe4168e955cd7a640a4662bc4fbbec46e789646c5f09cd1; partition_2_package_checksum=9e774c5cba488053b069d3d8e66fe11fdafa534e76c3cf672b5cef5783337252` |
+| record.app_watchdog | `running_partition=1; next_partition=1; last_result=0; boot_intent=auto; stage_valid=1; partition_1_image_checksum=63157615c4ab3d2a3fe4168e955cd7a640a4662bc4fbbec46e789646c5f09cd1; partition_1_package_checksum=9e774c5cba488053b069d3d8e66fe11fdafa534e76c3cf672b5cef5783337252; partition_2_image_checksum=19eaef2d797d6c2bfd314746f72a7faabf2361c8f5859d83dbaae162b18dc31c; partition_2_package_checksum=a6b4f759004630c2a2508daee3cf7d822af778d4d297c8fecd2ac2afafb69cc5; stage_image_checksum=19eaef2d797d6c2bfd314746f72a7faabf2361c8f5859d83dbaae162b18dc31c; stage_package_checksum=a6b4f759004630c2a2508daee3cf7d822af778d4d297c8fecd2ac2afafb69cc5` |

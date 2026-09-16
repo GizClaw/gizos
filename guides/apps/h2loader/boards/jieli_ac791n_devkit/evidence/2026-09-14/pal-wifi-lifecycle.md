@@ -85,6 +85,28 @@ Native Loader and PAL packages including the AP cache pass in 34.871 seconds (`/
 
 ## Incremental public PAL hardware check
 
-At source `964d56f7`, the App installed through the UART Loader passes one untraced public PAL E2E run: Filesystem 13, Core 1/2/3/4/5/6/10/11, and offline Wi-Fi 27 all return zero; aggregate 10 passed, 0 failed. [Structured result and returned board status](./pal-o3-snapshots-hardware.json) retain the exact package and image identities. The App package is `0d73cfb22fb4e3850bc8b5326355873ff33ba8f808a6e9badc557fa7bc30a34a`; its image is `f10b51882fb544c3fa5fe083a93840a20bd05390a0fea5d34b43971f756f6f85`. Raw output is in `tmp/jieli/pal-review-next/diagnostic-runs/o3-snapshots/1/pal.log` and `/tmp/jieli-o3-pal.log`.
+At source `964d56f7`, the App installed through the UART Loader passes one untraced public PAL E2E run: Filesystem 13, Core 1/2/3/4/5/6/10/11, and offline Wi-Fi 27 all return zero; aggregate 10 passed, 0 failed. [Structured result and returned board status](pal-wifi-lifecycle.md#retained-acceptance-facts-pal-o3-snapshots-hardware) retain the exact package and image identities. The App package is `0d73cfb22fb4e3850bc8b5326355873ff33ba8f808a6e9badc557fa7bc30a34a`; its image is `f10b51882fb544c3fa5fe083a93840a20bd05390a0fea5d34b43971f756f6f85`. Raw output is in `tmp/jieli/pal-review-next/diagnostic-runs/o3-snapshots/1/pal.log` and `/tmp/jieli-o3-pal.log`.
 
 The board returned to the valid P1 Loader image `2946bbdb2cc9c64d7c08f430f977e0ede705dfc4806b89361469daafedc1a8a0`. P2 contains that tested O3 App and staging remains valid with the same App package. P1 was not changed in this check. This is offline regression evidence, not connected Wi-Fi/AP/scan-timeout evidence, and does not replace the final-source Loader/UART/BLE lifecycle round.
+
+## Retained acceptance facts: pal-o3-snapshots-hardware
+
+Historical run summary transcribed from `pal-o3-snapshots-hardware.json`; raw capture removed from implementation scope. Values below retain their original units. Absent image/package SHA, partition, Stage, `last_result` or case totals were not recorded in this capture; this summary does not claim them.
+
+| Fact | Recorded value |
+| --- | --- |
+| source_commit | `964d56f7` |
+| result[1].case_count | `10` |
+| result[1].case_results | `0=10` |
+| result[1].variant | `o3-snapshots` |
+| result[1].iteration | `1` |
+| result[1].outcome | `aggregate` |
+| result[1].monitor_rc | `130` |
+| result[1].elapsed_s | `33.651104792021215` |
+| result[1].core_elapsed_s | `10.732180582999717` |
+| result[1].package_sha256 | `0d73cfb22fb4e3850bc8b5326355873ff33ba8f808a6e9badc557fa7bc30a34a` |
+| result[1].image_sha256 | `f10b51882fb544c3fa5fe083a93840a20bd05390a0fea5d34b43971f756f6f85` |
+| result[1].core_pass | `True` |
+| result[1].aggregate[1][1] | `0` |
+| result[1].aggregate[1][2] | `10` |
+| result[1].aggregate[1][3] | `0` |

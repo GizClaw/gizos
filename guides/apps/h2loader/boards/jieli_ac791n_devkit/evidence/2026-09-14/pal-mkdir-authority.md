@@ -26,7 +26,7 @@ IR was inspected in the Linux VM under `/tmp/jieli-fs-inspect.YUeOhV/`. The audi
 
 ## Hardware
 
-**All three untraced public PAL runs pass 10/10: Filesystem 13, Core cases 1–6/10/11, and offline Wi-Fi 27.** See [structured results and returned status](./pal-mkdir-authority-hardware.json).
+**All three untraced public PAL runs pass 10/10: Filesystem 13, Core cases 1–6/10/11, and offline Wi-Fi 27.** See [acceptance facts and returned status](pal-mkdir-authority.md#retained-acceptance-facts-pal-mkdir-authority-hardware).
 
 Each run installs the same fixed PAL package through UART Loader into P2. Between runs, the normal display App is installed through the same flow, so the next PAL installation is not rejected by the same-image rollback guard. No test instrumentation, tracing, timeout or retry changes were introduced. Core suites completed in 11.596, 15.678 and 10.704 seconds after their entry marker; all produced the successful aggregate.
 
@@ -35,3 +35,76 @@ PAL package SHA-256: `e19f958f1c3667c1e9c06dbb05cd56b4f3f3fe2c1613a079f9fe0e64b6
 Final checkpoint state: UID `d879349abc9f`, active valid Loader P1 `2946bbdb2cc9c64d7c08f430f977e0ede705dfc4806b89361469daafedc1a8a0`, fixed PAL App P2 and retained staging (`stage_valid=1`), boot intent Loader. P1 was unchanged during these runs. No recovery flashing, format or other-port access occurred. The final-source Loader self-install and full UART/BLE round will be repeated after the remaining items.
 
 Raw evidence is under `tmp/jieli/pal-review-next/diagnostic-runs/mkdir-authority-{1,2,3}/1/` (`pal.log`, `send.log`, `returned.status`) and `mkdir-alternate-{2,3}/`. Frozen packages and SDK audit notes are under `tmp/jieli/pal-review-next/mkdir-authority/`.
+
+## Retained acceptance facts: pal-mkdir-authority-hardware
+
+Historical run summary transcribed from `pal-mkdir-authority-hardware.json`; raw capture removed from implementation scope. Values below retain their original units. Absent image/package SHA, partition, Stage, `last_result` or case totals were not recorded in this capture; this summary does not claim them.
+
+| Fact | Recorded value |
+| --- | --- |
+| base_commit | `b090f2b9` |
+| sd_fs_source_sha256 | `4e29d564b409362dece3342e10f368b81d5252bc0b1b8500a39d5dd20dd47a4c` |
+| runs[1].case_count | `10` |
+| runs[1].case_results | `0=10` |
+| runs[1].variant | `mkdir-authority-1` |
+| runs[1].iteration | `1` |
+| runs[1].outcome | `aggregate` |
+| runs[1].monitor_rc | `130` |
+| runs[1].elapsed_s | `34.72017370801768` |
+| runs[1].core_elapsed_s | `11.59597833402222` |
+| runs[1].package_sha256 | `e19f958f1c3667c1e9c06dbb05cd56b4f3f3fe2c1613a079f9fe0e64b6c23194` |
+| runs[1].image_sha256 | `b893055693de9c7e7430d1dc1acfa93ca5fe03515e09c33aa707b32ab4279375` |
+| runs[1].core_pass | `True` |
+| runs[1].aggregate[1][1] | `0` |
+| runs[1].aggregate[1][2] | `10` |
+| runs[1].aggregate[1][3] | `0` |
+| runs[1].returned_status.device_uid | `d879349abc9f` |
+| runs[1].returned_status.active_role | `loader` |
+| runs[1].returned_status.active_checksum | `2946bbdb2cc9c64d7c08f430f977e0ede705dfc4806b89361469daafedc1a8a0` |
+| runs[1].returned_status.active_image_size | `933705` |
+| identity.stage_package_checksum | `e19f958f1c3667c1e9c06dbb05cd56b4f3f3fe2c1613a079f9fe0e64b6c23194` |
+| identity.stage_image_checksum | `b893055693de9c7e7430d1dc1acfa93ca5fe03515e09c33aa707b32ab4279375` |
+| identity.partition_1_package_checksum | `d55308de78eeb139006dee8dd7b3e2ce529d76d48d18a7fd933836b186002909` |
+| identity.partition_1_image_checksum | `2946bbdb2cc9c64d7c08f430f977e0ede705dfc4806b89361469daafedc1a8a0` |
+| identity.partition_2_package_checksum | `e19f958f1c3667c1e9c06dbb05cd56b4f3f3fe2c1613a079f9fe0e64b6c23194` |
+| identity.partition_2_image_checksum | `b893055693de9c7e7430d1dc1acfa93ca5fe03515e09c33aa707b32ab4279375` |
+| runs[2].case_count | `10` |
+| runs[2].case_results | `0=10` |
+| runs[2].variant | `mkdir-authority-2` |
+| runs[2].iteration | `1` |
+| runs[2].outcome | `aggregate` |
+| runs[2].monitor_rc | `130` |
+| runs[2].elapsed_s | `38.48210220798501` |
+| runs[2].core_elapsed_s | `15.677648667013273` |
+| runs[2].package_sha256 | `e19f958f1c3667c1e9c06dbb05cd56b4f3f3fe2c1613a079f9fe0e64b6c23194` |
+| runs[2].image_sha256 | `b893055693de9c7e7430d1dc1acfa93ca5fe03515e09c33aa707b32ab4279375` |
+| runs[2].core_pass | `True` |
+| runs[2].aggregate[1][1] | `0` |
+| runs[2].aggregate[1][2] | `10` |
+| runs[2].aggregate[1][3] | `0` |
+| runs[2].returned_status.device_uid | `d879349abc9f` |
+| runs[2].returned_status.active_role | `loader` |
+| runs[2].returned_status.active_checksum | `2946bbdb2cc9c64d7c08f430f977e0ede705dfc4806b89361469daafedc1a8a0` |
+| runs[2].returned_status.active_image_size | `933705` |
+| runs[3].case_count | `10` |
+| runs[3].case_results | `0=10` |
+| runs[3].variant | `mkdir-authority-3` |
+| runs[3].iteration | `1` |
+| runs[3].outcome | `aggregate` |
+| runs[3].monitor_rc | `130` |
+| runs[3].elapsed_s | `33.60711920799804` |
+| runs[3].core_elapsed_s | `10.704230999981519` |
+| runs[3].package_sha256 | `e19f958f1c3667c1e9c06dbb05cd56b4f3f3fe2c1613a079f9fe0e64b6c23194` |
+| runs[3].image_sha256 | `b893055693de9c7e7430d1dc1acfa93ca5fe03515e09c33aa707b32ab4279375` |
+| runs[3].core_pass | `True` |
+| runs[3].aggregate[1][1] | `0` |
+| runs[3].aggregate[1][2] | `10` |
+| runs[3].aggregate[1][3] | `0` |
+| runs[3].returned_status.device_uid | `d879349abc9f` |
+| runs[3].returned_status.active_role | `loader` |
+| runs[3].returned_status.active_checksum | `2946bbdb2cc9c64d7c08f430f977e0ede705dfc4806b89361469daafedc1a8a0` |
+| runs[3].returned_status.active_image_size | `933705` |
+
+| Status checkpoint(s) | Running partition / Stage / result |
+| --- | --- |
+| record.runs[1].returned_status, record.runs[2].returned_status, record.runs[3].returned_status | `running_partition=1; next_partition=1; last_result=0; boot_intent=loader; stage_valid=1; partition_1_image_checksum=2946bbdb2cc9c64d7c08f430f977e0ede705dfc4806b89361469daafedc1a8a0; partition_1_package_checksum=d55308de78eeb139006dee8dd7b3e2ce529d76d48d18a7fd933836b186002909; partition_2_image_checksum=b893055693de9c7e7430d1dc1acfa93ca5fe03515e09c33aa707b32ab4279375; partition_2_package_checksum=e19f958f1c3667c1e9c06dbb05cd56b4f3f3fe2c1613a079f9fe0e64b6c23194; stage_image_checksum=b893055693de9c7e7430d1dc1acfa93ca5fe03515e09c33aa707b32ab4279375; stage_package_checksum=e19f958f1c3667c1e9c06dbb05cd56b4f3f3fe2c1613a079f9fe0e64b6c23194` |

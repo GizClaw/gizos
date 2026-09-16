@@ -89,7 +89,7 @@ to P1 image `5698d9ad9935073970857040c0986fec4c678f26f6fffbfff9ebbeb5b1088ada`,
 next P1, Stage empty and `last_result=0`. No UART status request timed out.
 The observed install/relaunch/return interval after `reboot upgrade` was 54.554 s.
 
-[Acceptance data](./system-event-owners.json) contains all five package hashes,
+[Acceptance data](system-event-owners.md#retained-acceptance-facts-system-event-owners) contains all five package hashes,
 the provider source digest and independent App/P1 status snapshots. Raw commands
 and logs are under `tmp/jieli/event-owners/`: `accept.py`, `button/send.log`,
 `button/boot.log`, `button/after.status`, `button/relaunch.log`,
@@ -99,3 +99,63 @@ This board run verifies button startup and trial confirmation. Runtime teardown
 while the launcher stays alive is proven by the host regression, not by pretending
 the button App normally shuts its Runtime down. Loader/display/touch/audio-system
 were built, not installed in this round. Physical button interaction was not tested.
+
+## Retained acceptance facts: system-event-owners
+
+Historical run summary transcribed from `system-event-owners.json`; raw capture removed from implementation scope. Values below retain their original units. Absent image/package SHA, partition, Stage, `last_result` or case totals were not recorded in this capture; this summary does not claim them.
+
+| Fact | Recorded value |
+| --- | --- |
+| base | `40f8c636` |
+| provider_sha256 | `9ccc90e274a65eacb9fccf23618eb8a29fb06af71b10c9fcdec618269db4ba16` |
+| native_build_seconds | `95.765` |
+| packages[1].file | `jieli_ac791n_devkit-audio-system-wl82.update.tar.zlib` |
+| packages[1].package_bytes | `1076637` |
+| packages[1].package_sha256 | `06fb5cefcd624f957602300b426ce31e0518c7bb1922df40422d8aa44896e869` |
+| packages[1].image_bytes | `986205` |
+| packages[1].image_sha256 | `90e5760e75ad22e316baafa2c1a88589a29b7aed335bc37749ed3d102a3955b6` |
+| packages[2].file | `jieli_ac791n_devkit-button-wl82.update.tar.zlib` |
+| packages[2].package_bytes | `1276499` |
+| packages[2].package_sha256 | `44be9f24acd9affa25417b01e3a5d9e7231dee73c5183187fe83f4e2ff5ced42` |
+| packages[2].image_bytes | `1290929` |
+| packages[2].image_sha256 | `290b6b9776f1ba1e7855d7e99539cd83e3076516225b992662d1a3e1885f3cf1` |
+| packages[3].file | `jieli_ac791n_devkit-color-bar-wl82.update.tar.zlib` |
+| packages[3].package_bytes | `863879` |
+| packages[3].package_sha256 | `5bce4c6979a61b5e02e017051613ab931ea820fef8377e6c233f4ed6cf1ff815` |
+| packages[3].image_bytes | `874909` |
+| packages[3].image_sha256 | `a763eeedde6e15592efbf2eb560299812c4e4a5ba665ba2de080840ffbc1d643` |
+| packages[4].file | `jieli_ac791n_devkit-loader-wl82.update.tar.zlib` |
+| packages[4].package_bytes | `925994` |
+| packages[4].package_sha256 | `98c7351d4352c7c01bad8cee0905378a1ed651cc5ac8d794eed55da3644dd83f` |
+| packages[4].image_bytes | `937065` |
+| packages[4].image_sha256 | `9f2261ae74d1ef6bff2b884528540046a2e8ed8b01f6758372c9840e785531e7` |
+| packages[5].file | `jieli_ac791n_devkit-touch-wl82.update.tar.zlib` |
+| packages[5].package_bytes | `1277348` |
+| packages[5].package_sha256 | `3215044cd81c250111658464ce706aa04a108f2352fe77704e6bcad2adf48cfb` |
+| packages[5].image_bytes | `1291537` |
+| packages[5].image_sha256 | `cdb8da982c144f9dcccd04240a8a0ef4c06b2cbbcf17a9ce59938ed4623d5c3d` |
+| button.package_sha256 | `44be9f24acd9affa25417b01e3a5d9e7231dee73c5183187fe83f4e2ff5ced42` |
+| button.image_sha256 | `290b6b9776f1ba1e7855d7e99539cd83e3076516225b992662d1a3e1885f3cf1` |
+| button.elapsed_s | `54.554` |
+| button.ready | `True` |
+| button.confirmed | `True` |
+| button.independent_status | `True` |
+| button.returned_p1 | `True` |
+| button.relaunch_for_log | `True` |
+| button.app_status.device_uid | `d879349abc9f` |
+| button.app_status.active_role | `app` |
+| button.app_status.active_checksum | `290b6b9776f1ba1e7855d7e99539cd83e3076516225b992662d1a3e1885f3cf1` |
+| button.app_status.active_image_size | `1290929` |
+| identity.partition_1_package_checksum | `9f3eea5602a5919f65dd17d3f293bf5b08e1b1a428c0298da3ac11e59fc5ecae` |
+| identity.partition_1_image_checksum | `5698d9ad9935073970857040c0986fec4c678f26f6fffbfff9ebbeb5b1088ada` |
+| identity.partition_2_package_checksum | `44be9f24acd9affa25417b01e3a5d9e7231dee73c5183187fe83f4e2ff5ced42` |
+| identity.partition_2_image_checksum | `290b6b9776f1ba1e7855d7e99539cd83e3076516225b992662d1a3e1885f3cf1` |
+| button.returned_status.device_uid | `d879349abc9f` |
+| button.returned_status.active_role | `loader` |
+| button.returned_status.active_checksum | `5698d9ad9935073970857040c0986fec4c678f26f6fffbfff9ebbeb5b1088ada` |
+| button.returned_status.active_image_size | `937001` |
+
+| Status checkpoint(s) | Running partition / Stage / result |
+| --- | --- |
+| record.button.app_status | `running_partition=2; next_partition=2; last_result=0; boot_intent=auto; stage_valid=0; partition_1_image_checksum=5698d9ad9935073970857040c0986fec4c678f26f6fffbfff9ebbeb5b1088ada; partition_1_package_checksum=9f3eea5602a5919f65dd17d3f293bf5b08e1b1a428c0298da3ac11e59fc5ecae; partition_2_image_checksum=290b6b9776f1ba1e7855d7e99539cd83e3076516225b992662d1a3e1885f3cf1; partition_2_package_checksum=44be9f24acd9affa25417b01e3a5d9e7231dee73c5183187fe83f4e2ff5ced42` |
+| record.button.returned_status | `running_partition=1; next_partition=1; last_result=0; boot_intent=loader; stage_valid=0; partition_1_image_checksum=5698d9ad9935073970857040c0986fec4c678f26f6fffbfff9ebbeb5b1088ada; partition_1_package_checksum=9f3eea5602a5919f65dd17d3f293bf5b08e1b1a428c0298da3ac11e59fc5ecae; partition_2_image_checksum=290b6b9776f1ba1e7855d7e99539cd83e3076516225b992662d1a3e1885f3cf1; partition_2_package_checksum=44be9f24acd9affa25417b01e3a5d9e7231dee73c5183187fe83f4e2ff5ced42` |

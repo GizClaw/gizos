@@ -72,7 +72,7 @@ no USB DL, format, manual reset or P1 replacement was used.
 | touch | runtime-init=0, input-start=0, `H2_JIELI_TOUCH_SMOKE_READY ... result=0` | confirmation OK; App P2 identity matches, Stage empty; returned to P1 |
 | audio-system | runtime-init=0, run=0, `H2_JIELI_AUDIO_SYSTEM_READY mic=1 speaker=1` | confirmation OK; App P2 identity matches, Stage empty; returned to P1 |
 
-[Package hashes and independent status snapshots](./runtime-event-reuse.json)
+[Package hashes and independent status snapshots](runtime-event-reuse.md#retained-acceptance-facts-runtime-event-reuse)
 record every image and package SHA. The final board state is responsive P1 Loader,
 next P1, boot intent Loader, Stage empty, `last_result=0`; P2 retains audio-system.
 There was no independent UART status timeout and no 90-second unresponsive interval.
@@ -98,3 +98,74 @@ This verifies task startup and Loader trial lifecycle. It does not establish
 physical button/touch interaction, display quality, acoustic quality, connected
 Wi-Fi/AP traffic, or live BLE Read Blob boundary behavior. The other three review
 fixes have separate failing-before Clang/GCC host regressions.
+
+## Retained acceptance facts: runtime-event-reuse
+
+Historical run summary transcribed from `runtime-event-reuse.json`; raw capture removed from implementation scope. Values below retain their original units. Absent image/package SHA, partition, Stage, `last_result` or case totals were not recorded in this capture; this summary does not claim them.
+
+| Fact | Recorded value |
+| --- | --- |
+| date | `2026-09-15` |
+| firmware_source | `d44dcd40` |
+| review_base | `5b1d822a` |
+| device_uid | `d879349abc9f` |
+| uart | `/dev/cu.usbserial-20131240` |
+| baud | `460800` |
+| results[1].package_sha256 | `cea9d74d906253f35d31312bf8d583a83d22955b5e49650b183a169639deeb3a` |
+| results[1].image_sha256 | `7ff0657bd3fbc643eee7fdff307e5e0b5554fd8e1477f64b712000f91387e14a` |
+| results[1].ready | `True` |
+| results[1].confirmed | `True` |
+| results[1].independent_status | `True` |
+| results[1].returned_p1 | `True` |
+| results[1].note | `Initial 25s install monitor ended before readiness. Subsequent status cleared Stage; no-Stage relaunch captured READY and confirmation.` |
+| results[1].app_status.device_uid | `d879349abc9f` |
+| results[1].app_status.active_role | `app` |
+| results[1].app_status.active_checksum | `7ff0657bd3fbc643eee7fdff307e5e0b5554fd8e1477f64b712000f91387e14a` |
+| results[1].app_status.active_image_size | `1290865` |
+| identity.partition_1_package_checksum | `9f3eea5602a5919f65dd17d3f293bf5b08e1b1a428c0298da3ac11e59fc5ecae` |
+| identity.partition_1_image_checksum | `5698d9ad9935073970857040c0986fec4c678f26f6fffbfff9ebbeb5b1088ada` |
+| identity.partition_2_package_checksum | `cea9d74d906253f35d31312bf8d583a83d22955b5e49650b183a169639deeb3a`; `028a89a14ac95cde2e932e8813c0979129aaf433825b2674a232967d8af5a043`; `9ae8bba3b5788119a7124ce27ebb5d8c01e0a8fe0f8074c97fdd228c01eeecc4` |
+| identity.partition_2_image_checksum | `7ff0657bd3fbc643eee7fdff307e5e0b5554fd8e1477f64b712000f91387e14a`; `1857000e7aac33b6ed7fb36ad546c8cdb0cd9edd692e28213340bd5d7068b69a`; `e1748679d4618799086cc67adac8a50ffc0821c1bc66aa8726ec5062de025856` |
+| results[1].returned_status.device_uid | `d879349abc9f` |
+| results[1].returned_status.active_role | `loader` |
+| results[1].returned_status.active_checksum | `5698d9ad9935073970857040c0986fec4c678f26f6fffbfff9ebbeb5b1088ada` |
+| results[1].returned_status.active_image_size | `937001` |
+| results[2].package_sha256 | `028a89a14ac95cde2e932e8813c0979129aaf433825b2674a232967d8af5a043` |
+| results[2].image_sha256 | `1857000e7aac33b6ed7fb36ad546c8cdb0cd9edd692e28213340bd5d7068b69a` |
+| results[2].ready | `True` |
+| results[2].confirmed | `True` |
+| results[2].independent_status | `True` |
+| results[2].returned_p1 | `True` |
+| results[2].note | `Install monitor missed confirmation; independent status cleared Stage. No-Stage relaunch captured READY and confirmation.` |
+| results[2].app_status.device_uid | `d879349abc9f` |
+| results[2].app_status.active_role | `app` |
+| results[2].app_status.active_checksum | `1857000e7aac33b6ed7fb36ad546c8cdb0cd9edd692e28213340bd5d7068b69a` |
+| results[2].app_status.active_image_size | `1291473` |
+| results[2].returned_status.device_uid | `d879349abc9f` |
+| results[2].returned_status.active_role | `loader` |
+| results[2].returned_status.active_checksum | `5698d9ad9935073970857040c0986fec4c678f26f6fffbfff9ebbeb5b1088ada` |
+| results[2].returned_status.active_image_size | `937001` |
+| results[3].package_sha256 | `9ae8bba3b5788119a7124ce27ebb5d8c01e0a8fe0f8074c97fdd228c01eeecc4` |
+| results[3].image_sha256 | `e1748679d4618799086cc67adac8a50ffc0821c1bc66aa8726ec5062de025856` |
+| results[3].ready | `True` |
+| results[3].confirmed | `True` |
+| results[3].independent_status | `True` |
+| results[3].returned_p1 | `True` |
+| results[3].note | `Install monitor missed confirmation; independent status cleared Stage. No-Stage relaunch captured READY and confirmation.` |
+| results[3].app_status.device_uid | `d879349abc9f` |
+| results[3].app_status.active_role | `app` |
+| results[3].app_status.active_checksum | `e1748679d4618799086cc67adac8a50ffc0821c1bc66aa8726ec5062de025856` |
+| results[3].app_status.active_image_size | `986141` |
+| results[3].returned_status.device_uid | `d879349abc9f` |
+| results[3].returned_status.active_role | `loader` |
+| results[3].returned_status.active_checksum | `5698d9ad9935073970857040c0986fec4c678f26f6fffbfff9ebbeb5b1088ada` |
+| results[3].returned_status.active_image_size | `937001` |
+
+| Status checkpoint(s) | Running partition / Stage / result |
+| --- | --- |
+| record.results[1].app_status | `running_partition=2; next_partition=2; last_result=0; boot_intent=auto; stage_valid=0; partition_1_image_checksum=5698d9ad9935073970857040c0986fec4c678f26f6fffbfff9ebbeb5b1088ada; partition_1_package_checksum=9f3eea5602a5919f65dd17d3f293bf5b08e1b1a428c0298da3ac11e59fc5ecae; partition_2_image_checksum=7ff0657bd3fbc643eee7fdff307e5e0b5554fd8e1477f64b712000f91387e14a; partition_2_package_checksum=cea9d74d906253f35d31312bf8d583a83d22955b5e49650b183a169639deeb3a` |
+| record.results[1].returned_status | `running_partition=1; next_partition=1; last_result=0; boot_intent=loader; stage_valid=0; partition_1_image_checksum=5698d9ad9935073970857040c0986fec4c678f26f6fffbfff9ebbeb5b1088ada; partition_1_package_checksum=9f3eea5602a5919f65dd17d3f293bf5b08e1b1a428c0298da3ac11e59fc5ecae; partition_2_image_checksum=7ff0657bd3fbc643eee7fdff307e5e0b5554fd8e1477f64b712000f91387e14a; partition_2_package_checksum=cea9d74d906253f35d31312bf8d583a83d22955b5e49650b183a169639deeb3a` |
+| record.results[2].app_status | `running_partition=2; next_partition=2; last_result=0; boot_intent=auto; stage_valid=0; partition_1_image_checksum=5698d9ad9935073970857040c0986fec4c678f26f6fffbfff9ebbeb5b1088ada; partition_1_package_checksum=9f3eea5602a5919f65dd17d3f293bf5b08e1b1a428c0298da3ac11e59fc5ecae; partition_2_image_checksum=1857000e7aac33b6ed7fb36ad546c8cdb0cd9edd692e28213340bd5d7068b69a; partition_2_package_checksum=028a89a14ac95cde2e932e8813c0979129aaf433825b2674a232967d8af5a043` |
+| record.results[2].returned_status | `running_partition=1; next_partition=1; last_result=0; boot_intent=loader; stage_valid=0; partition_1_image_checksum=5698d9ad9935073970857040c0986fec4c678f26f6fffbfff9ebbeb5b1088ada; partition_1_package_checksum=9f3eea5602a5919f65dd17d3f293bf5b08e1b1a428c0298da3ac11e59fc5ecae; partition_2_image_checksum=1857000e7aac33b6ed7fb36ad546c8cdb0cd9edd692e28213340bd5d7068b69a; partition_2_package_checksum=028a89a14ac95cde2e932e8813c0979129aaf433825b2674a232967d8af5a043` |
+| record.results[3].app_status | `running_partition=2; next_partition=2; last_result=0; boot_intent=auto; stage_valid=0; partition_1_image_checksum=5698d9ad9935073970857040c0986fec4c678f26f6fffbfff9ebbeb5b1088ada; partition_1_package_checksum=9f3eea5602a5919f65dd17d3f293bf5b08e1b1a428c0298da3ac11e59fc5ecae; partition_2_image_checksum=e1748679d4618799086cc67adac8a50ffc0821c1bc66aa8726ec5062de025856; partition_2_package_checksum=9ae8bba3b5788119a7124ce27ebb5d8c01e0a8fe0f8074c97fdd228c01eeecc4` |
+| record.results[3].returned_status | `running_partition=1; next_partition=1; last_result=0; boot_intent=loader; stage_valid=0; partition_1_image_checksum=5698d9ad9935073970857040c0986fec4c678f26f6fffbfff9ebbeb5b1088ada; partition_1_package_checksum=9f3eea5602a5919f65dd17d3f293bf5b08e1b1a428c0298da3ac11e59fc5ecae; partition_2_image_checksum=e1748679d4618799086cc67adac8a50ffc0821c1bc66aa8726ec5062de025856; partition_2_package_checksum=9ae8bba3b5788119a7124ce27ebb5d8c01e0a8fe0f8074c97fdd228c01eeecc4` |
