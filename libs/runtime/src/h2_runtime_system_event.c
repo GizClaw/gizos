@@ -772,7 +772,6 @@ static int h2_runtime_system_event_handler(void *user, const h2_pal_system_event
           h2_pal_mutex_lock(runtime->sync, state->wifi_connect_wait.mutex) != H2_PAL_OK)
         return h2_runtime_enqueue_event(runtime, &queued);
       ++state->wifi_connect_wait.generation;
-      state->wifi_connect_wait.kind = kind;
       h2_pal_cond_broadcast(runtime->sync, state->wifi_connect_wait.cond);
       h2_pal_mutex_unlock(runtime->sync, state->wifi_connect_wait.mutex);
     }

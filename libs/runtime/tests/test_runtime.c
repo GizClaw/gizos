@@ -4420,8 +4420,12 @@ static int best_saved_wait(void *user, uint32_t timeout) {
                                       : H2_PAL_WIFI_STA_STATE_DISCONNECTED,
                      false, ssid);
   } else if (f->scenario == 5 && f->connects == 1) {
+    /* Losing the address leaves the station associated with no address to
+     * report, so it does not satisfy the wait; the window expiry is what
+     * abandons the candidate. */
     best_saved_event(f, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP,
                      H2_PAL_WIFI_STA_STATE_CONNECTED, false, ssid);
+    return H2_PAL_ERR_TIMEOUT;
   } else if (f->scenario == 6 && f->waits < 3) {
     /* Neither another SSID nor an invalid address satisfies the wait. */
     best_saved_event(f, H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP,

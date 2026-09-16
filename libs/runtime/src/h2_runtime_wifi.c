@@ -333,10 +333,10 @@ static int wifi_wait_for_address(h2_runtime_t *runtime,
             station.ssid_len == candidate->ssid_len &&
             !memcmp(station.ssid, candidate->ssid, candidate->ssid_len))
           break;
+        /* Losing the address leaves the snapshot without a valid one, so the
+         * candidate simply runs out its window; no event kind is retained. */
         if (station.status == H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_DISCONNECTED ||
-            station.status == H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_FAILED ||
-            state->wifi_connect_wait.kind ==
-                H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_LOST_IP) {
+            station.status == H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_FAILED) {
           rc = H2_PAL_ERR_UNAVAILABLE;
           break;
         }
