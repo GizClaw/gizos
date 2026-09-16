@@ -51,4 +51,3 @@ h2loader_jieli_firmware(
     target = "wl82",
     task_policy = ":speaker_smoke_task_policy",
 )
-
