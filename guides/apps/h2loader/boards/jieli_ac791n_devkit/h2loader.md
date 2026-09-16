@@ -103,6 +103,10 @@ Loader 只有 UART 与 BLE capability，不提供 Wi-Fi 与 HTTP；runner 一旦
 
 ## 验收记录
 
+### 2026-09-17：System Event provider 迁移到 SDK sys_event
+
+`99f1f89a`（Issue #448，基于 main `e6c7b6aa`）把 wl82 PAL System Event 改为通过 SDK `sys_event` 入队、在常驻 `h2_sysevt` 任务上异步派发；同一 UID `d879349abc9f` 上完成新 Loader 自更新（`H2_JIELI_LOADER_TRIAL confirmed=1`，双分区收敛到 `ed7d71a6…`）、PAL 首轮十条 case 全在且 `result=0 passed=10 failed=0`、UART 25/25（339.512 s）、BLE 22/22 两轮（373.098 s、382.811 s）、button 与 touch 试运行均捕获 READY、`JIELI_APP_CONFIRM result=OK` 与 trial timer 删除并返回 P1、audio-system READY 后 35 s 内 27 条 mic peak 报告；最终独立 status 为新 P1 Loader、Stage 空、`last_result=0`。溢出、SDK 40 s handler 超时与中断 post 仅由 host 测试覆盖。[全部镜像 SHA、逐项结果与边界](./evidence/2026-09-17/sys-event-provider-acceptance.md)。
+
 ### 2026-09-17：button 确认控制台在会话下的丢失修复
 
 2026-09-16 定位的 button 确认文本丢失是设备侧问题：一旦主机在确认之前打开可靠 iKCP 会话，App 之后产生的原始控制台写入就不再上线（原始 `cat` 无会话时可捕获，字节级 tee 证实会话下不上线）。修复在共享 App transport 增加会话准入门：确认控制台产生完毕前 App 不应答 `SESSION_OPEN`，这些行沿无会话原始路径上线，随后 App 打开门；一个有界回退期限保证从不确认的启动也不会把主机永久挡在命令通道之外。实测普通 `reboot app --monitor` 现可捕获 `H2_JIELI_BUTTON_SMOKE_READY`、`JIELI_APP_CONFIRM result=OK` 与 `JIELI_TRIAL_TIMER state=deleted id=11`，独立 status 为 P2 确认、Stage 空、`last_result=0`，字节级 tee 显示确认行在 `H2IKCP` 会话应答帧之前上线，PAL 首轮十条 case 全在且无 12 字节乱码，最终返回 P1 Loader。[全部镜像 SHA、独立状态、逐项结果与边界](./evidence/2026-09-17/button-console-flush.md)。
