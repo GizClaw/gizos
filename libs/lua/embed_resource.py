@@ -67,9 +67,22 @@ def compact_source(data: bytes) -> bytes:
         elif byte in b"'\"":
             end = index + 1
             while end < len(data) and data[end] != byte:
-                # Copy escaped characters verbatim, including escaped quotes,
-                # newlines and all whitespace following Lua's \\z escape.
-                end += 2 if data[end] == ord("\\") else 1
+                if data[end] in b"\r\n":
+                    raise ValueError("unescaped newline in Lua short string")
+                if data[end] != ord("\\"):
+                    end += 1
+                    continue
+                end += 1
+                if end >= len(data):
+                    break
+                escaped = data[end]
+                end += 1
+                if escaped == ord("z"):
+                    while end < len(data) and data[end] in b" \t\v\f\r\n":
+                        end += 1
+                elif escaped in b"\r\n":
+                    if end < len(data) and data[end] in b"\r\n" and data[end] != escaped:
+                        end += 1
             if end >= len(data):
                 raise ValueError("unterminated Lua short string")
             end += 1
