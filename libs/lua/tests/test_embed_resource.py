@@ -51,6 +51,16 @@ class CompactSourceTest(unittest.TestCase):
             with self.subTest(source=source), self.assertRaises(ValueError):
                 compact(source)
 
+    def test_short_string_newlines_require_an_escape(self):
+        for newline in (b"\r", b"\n", b"\r\n", b"\n\r"):
+            for quote in (b"'", b'"'):
+                with self.subTest(newline=newline, quote=quote):
+                    with self.assertRaises(ValueError):
+                        compact(quote + b"a" + newline + b"b" + quote)
+                    for escape in (b"\\", b"\\z \t"):
+                        literal = quote + b"a" + escape + newline + b"b" + quote
+                        self.assertEqual(compact(literal), literal)
+
     def test_nul_cannot_be_hidden_in_a_removed_comment(self):
         for source in (b"return 1 -- \0", b"--[[\0]]return 1", b"return '\0'"):
             with self.subTest(source=source), self.assertRaises(ValueError):
@@ -75,7 +85,7 @@ class CompactSourceTest(unittest.TestCase):
                 self.assertEqual(embedded, expected)
                 subprocess.run(command + options, check=True, capture_output=True)
                 self.assertEqual(implementation.read_text(), generated)
-            for invalid in (b"\x1bLua", b"--[=[unclosed", b"--\0"):
+            for invalid in (b"\x1bLua", b"--[=[unclosed", b"--\0", b"'a\nb'"):
                 path.write_bytes(invalid)
                 self.assertNotEqual(subprocess.run(command + ["--compact"],
                                                   capture_output=True).returncode, 0)
