@@ -69,6 +69,14 @@ void h2_jieli_fake_fail_next_mutex_lock(void);
 /** Attempts to unlock a mutex not held in the deterministic fake. */
 int h2_jieli_fake_invalid_mutex_unlocks(void);
 
+void h2_jieli_fake_set_event_capacity(size_t capacity);
+void h2_jieli_fake_event_drain(void);
+size_t h2_jieli_fake_event_queued(void);
+void h2_jieli_fake_fail_next_event_post(void);
+void h2_jieli_fake_set_in_interrupt(int in_interrupt);
+int h2_jieli_fake_event_dispatcher_starts(void);
+void h2_jieli_fake_fail_event_dispatcher_start(int fail);
+
 #ifdef __cplusplus
 }
 #endif

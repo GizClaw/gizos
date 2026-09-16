@@ -12,6 +12,7 @@
 
 #include "system/includes.h"
 #include "system/timer.h"
+#include "event/event.h"
 #include "asm/cpu.h"
 
 #include <string.h>
@@ -394,6 +395,74 @@ void h2_jieli_sdk_timer_del(uint16_t id, int repeat)
     } else {
         sys_timeout_del(id);
     }
+}
+
+/* ---- System events (SDK sys_event) --------------------------------------- */
+
+static h2_jieli_sdk_event_handler_t h2_jieli_event_handler;
+static OS_SEM h2_jieli_event_ready;
+/* 0: not created, 1: starting, 2: registered, 3: registration failed.
+ * A timed-out task must stay alive: the SDK cannot recall owner callbacks. */
+static uint32_t h2_jieli_event_state;
+
+static void h2_jieli_sdk_event_trampoline(struct sys_event *event)
+{
+    if (event != NULL && event->type == 0x0100 && event->from == 0x50 &&
+        event->len == H2_JIELI_SDK_EVENT_MESSAGE_SIZE)
+        h2_jieli_event_handler(event->payload, event->len);
+}
+
+static void h2_jieli_event_task(void *unused)
+{
+    (void)unused;
+    int result = register_sys_event_handler(0x0100, 0x50, 0,
+                                            h2_jieli_sdk_event_trampoline);
+    __atomic_store_n(&h2_jieli_event_state, result == 0 ? 2u : 3u, __ATOMIC_RELEASE);
+    (void)os_sem_post(&h2_jieli_event_ready);
+    int msg[8];
+    for (;;) (void)os_taskq_pend("taskq", msg, 8);
+}
+
+int h2_jieli_sdk_event_dispatcher_start(h2_jieli_sdk_event_handler_t handler)
+{
+    if (handler == NULL) return -1;
+    uint32_t expected = 0u;
+    if (!__atomic_compare_exchange_n(&h2_jieli_event_state, &expected, 1u, 0,
+                                     __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        /* Only the creator consumes the ready semaphore. Other callers wait
+         * for the same publication, without creating another owner task. */
+        for (unsigned ticks = 0; expected == 1u && ticks < 100u; ++ticks) {
+            os_time_dly(1);
+            expected = __atomic_load_n(&h2_jieli_event_state, __ATOMIC_ACQUIRE);
+        }
+        return expected == 2u ? 0 : -1;
+    }
+    h2_jieli_event_handler = handler;
+    if (os_sem_create(&h2_jieli_event_ready, 0) != 0) {
+        __atomic_store_n(&h2_jieli_event_state, 0u, __ATOMIC_RELEASE);
+        return -1;
+    }
+    if (os_task_create(h2_jieli_event_task, NULL, 20, 1024, 32, "h2_sysevt") != 0) {
+        (void)os_sem_del(&h2_jieli_event_ready, 0);
+        __atomic_store_n(&h2_jieli_event_state, 0u, __ATOMIC_RELEASE);
+        return -1;
+    }
+    /* Keep the static semaphore alive even on timeout: the task may still
+     * finish registration and post it after this caller has returned. */
+    if (os_sem_pend(&h2_jieli_event_ready, 100) != 0) return -1;
+    return __atomic_load_n(&h2_jieli_event_state, __ATOMIC_ACQUIRE) == 2u ? 0 : -1;
+}
+
+int h2_jieli_sdk_event_post(const void *message, size_t size)
+{
+    if (message == NULL || size != H2_JIELI_SDK_EVENT_MESSAGE_SIZE) return -1;
+    int result = sys_event_notify(0x0100, 0x50, (void *)message, (u8)size);
+    return result == 0 ? 0 : (result == -12 ? 1 : -1);
+}
+
+int h2_jieli_sdk_in_interrupt(void)
+{
+    return cpu_in_irq() != 0;
 }
 
 /* Exception capture cannot enter the normal atomic runtime's blocking lock.

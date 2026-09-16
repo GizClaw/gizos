@@ -6,6 +6,86 @@
 #include <stdatomic.h>
 #include <stdlib.h>
 #include <time.h>
+#include <string.h>
+
+static pthread_mutex_t driver_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t driver_cond = PTHREAD_COND_INITIALIZER;
+static unsigned char driver_ring[16][H2_JIELI_SDK_EVENT_MESSAGE_SIZE];
+static size_t driver_head, driver_count;
+static int driver_started, driver_paused, driver_busy;
+static h2_jieli_sdk_event_handler_t driver_handler;
+
+static void *event_driver(void *unused)
+{
+    (void)unused;
+    assert(pthread_mutex_lock(&driver_lock) == 0);
+    for (;;) {
+        while (driver_paused || driver_count == 0u)
+            assert(pthread_cond_wait(&driver_cond, &driver_lock) == 0);
+        unsigned char message[H2_JIELI_SDK_EVENT_MESSAGE_SIZE];
+        memcpy(message, driver_ring[driver_head], sizeof(message));
+        driver_head = (driver_head + 1u) % 16u;
+        --driver_count;
+        driver_busy = 1;
+        assert(pthread_mutex_unlock(&driver_lock) == 0);
+        driver_handler(message, sizeof(message));
+        assert(pthread_mutex_lock(&driver_lock) == 0);
+        driver_busy = 0;
+        assert(pthread_cond_broadcast(&driver_cond) == 0);
+    }
+    return NULL;
+}
+int h2_jieli_sdk_event_dispatcher_start(h2_jieli_sdk_event_handler_t handler)
+{
+    assert(pthread_mutex_lock(&driver_lock) == 0);
+    if (!driver_started) {
+        pthread_t thread;
+        driver_handler = handler;
+        assert(pthread_create(&thread, NULL, event_driver, NULL) == 0);
+        assert(pthread_detach(thread) == 0);
+        driver_started = 1;
+    }
+    assert(pthread_mutex_unlock(&driver_lock) == 0);
+    return 0;
+}
+int h2_jieli_sdk_event_post(const void *message, size_t size)
+{
+    if (message == NULL || size != H2_JIELI_SDK_EVENT_MESSAGE_SIZE) return -1;
+    assert(pthread_mutex_lock(&driver_lock) == 0);
+    int result = 1;
+    if (driver_count < 16u) {
+        memcpy(driver_ring[(driver_head + driver_count) % 16u], message, size);
+        ++driver_count;
+        result = 0;
+        assert(pthread_cond_broadcast(&driver_cond) == 0);
+    }
+    assert(pthread_mutex_unlock(&driver_lock) == 0);
+    return result;
+}
+int h2_jieli_sdk_in_interrupt(void) { return 0; }
+void *h2_jieli_sdk_malloc(size_t size) { return malloc(size); }
+void h2_jieli_sdk_free(void *memory) { free(memory); }
+static void drain(void)
+{
+    assert(pthread_mutex_lock(&driver_lock) == 0);
+    while (driver_count != 0u || driver_busy)
+        assert(pthread_cond_wait(&driver_cond, &driver_lock) == 0);
+    assert(pthread_mutex_unlock(&driver_lock) == 0);
+}
+static void pause_driver(void)
+{
+    assert(pthread_mutex_lock(&driver_lock) == 0);
+    driver_paused = 1;
+    while (driver_busy) assert(pthread_cond_wait(&driver_cond, &driver_lock) == 0);
+    assert(pthread_mutex_unlock(&driver_lock) == 0);
+}
+static void resume_driver(void)
+{
+    assert(pthread_mutex_lock(&driver_lock) == 0);
+    driver_paused = 0;
+    assert(pthread_cond_broadcast(&driver_cond) == 0);
+    assert(pthread_mutex_unlock(&driver_lock) == 0);
+}
 
 struct h2_jieli_sdk_mutex { pthread_mutex_t lock; };
 static atomic_int live, parked, resume_lock, park_create, create_parked, resume_create;
@@ -87,7 +167,11 @@ static void *churn(void *unused) {
             if (rc == H2_PAL_ERR_BUSY) sched_yield();
         } while (rc == H2_PAL_ERR_BUSY);
         assert(rc == H2_PAL_OK);
-        assert(h2_pal_system_event_post(api, &event, 0) == H2_PAL_OK);
+        do {
+            rc = h2_pal_system_event_post(api, &event, 0);
+            if (rc == H2_PAL_ERR_FULL) sched_yield();
+        } while (rc == H2_PAL_ERR_FULL);
+        assert(rc == H2_PAL_OK);
         h2_pal_system_event_deinit(api);
     }
     return NULL;
@@ -146,6 +230,7 @@ static void test_unsubscribe(int closing) {
     atomic_store(&dispatch_exit, 1);
     assert(pthread_join(poster, NULL) == 0);
     assert(pthread_join(remover, NULL) == 0);
+    drain();
     assert(atomic_load(&unsubscribe_done));
     if (closing) {
         assert(atomic_load(&live) == 0);
@@ -156,6 +241,7 @@ static void test_unsubscribe(int closing) {
     int before = atomic_load(&calls);
     assert(h2_pal_system_event_post(api, &event, 0) == H2_PAL_OK);
     assert(h2_pal_system_event_post(api, &event, 0) == H2_PAL_OK);
+    drain();
     assert(atomic_load(&calls) == before + 1);
     h2_pal_system_event_deinit(api);
     atomic_store(&calls, 0);
@@ -180,6 +266,7 @@ static void test_fanout_after_last_deinit(void) {
     assert(h2_pal_system_event_subscribe(api, event.type, fanout_later_handler,
                                        &later_calls, &later) == H2_PAL_OK);
     assert(h2_pal_system_event_post(api, &event, 0) == H2_PAL_OK);
+    drain();
     assert(first_calls == 1);
     assert(later_calls == 1);
     assert(atomic_load(&live) == 0);
@@ -197,6 +284,7 @@ static void test_owners(void) {
     h2_pal_system_event_deinit(api);
     assert(atomic_load(&live) == 1);
     assert(h2_pal_system_event_post(api, &event, 0) == H2_PAL_OK);
+    drain();
     assert(atomic_load(&calls) == 1);
     h2_pal_system_event_unsubscribe(api, sub);
     h2_pal_system_event_deinit(api);
@@ -220,6 +308,7 @@ static void test_owners(void) {
             assert(h2_pal_system_event_init(api) == H2_PAL_OK);
         assert(h2_pal_system_event_subscribe(api, event.type, release_handler, NULL, &sub) == H2_PAL_OK);
         assert(h2_pal_system_event_post(api, &event, 0) == H2_PAL_OK);
+        drain();
         assert(atomic_load(&live) == (int)(owners - 1));
         if (owners == 2) {
             h2_pal_system_event_unsubscribe(api, sub);
@@ -250,6 +339,7 @@ static void test_owners(void) {
         for (unsigned i = 0; i < 4; ++i)
             assert(pthread_create(&workers[i], NULL, churn, NULL) == 0);
         for (unsigned i = 0; i < 4; ++i) assert(pthread_join(workers[i], NULL) == 0);
+        drain();
         if (anchored) {
             assert(atomic_load(&calls) == 8001);
             h2_pal_system_event_unsubscribe(api, sub);
@@ -258,7 +348,82 @@ static void test_owners(void) {
         assert(atomic_load(&live) == 0);
     }
 }
+static void test_queued_unsubscribe(void)
+{
+    const h2_pal_system_event_api_t *api = h2_jieli_wl82_platform_system_event_api();
+    atomic_store(&unsubscribe_entered, 0);
+    atomic_store(&unsubscribe_done, 0);
+    atomic_store(&calls, 0);
+    assert(h2_pal_system_event_init(api) == H2_PAL_OK);
+    assert(h2_pal_system_event_subscribe(api, event.type, owner_handler, NULL, &retired) == H2_PAL_OK);
+    pause_driver();
+    assert(h2_pal_system_event_post(api, &event, 0) == H2_PAL_OK);
+    pthread_t remover;
+    assert(pthread_create(&remover, NULL, retire, NULL) == 0);
+    while (!atomic_load(&unsubscribe_entered)) sched_yield();
+    h2_jieli_sdk_sleep_ms(30);
+    assert(!atomic_load(&unsubscribe_done));
+    assert(atomic_load(&calls) == 0);
+    resume_driver();
+    drain();
+    assert(pthread_join(remover, NULL) == 0);
+    assert(atomic_load(&unsubscribe_done) && atomic_load(&calls) == 0);
+    h2_pal_system_event_deinit(api);
+    assert(atomic_load(&live) == 0);
+}
+static void test_queued_deinit(void)
+{
+    const h2_pal_system_event_api_t *api = h2_jieli_wl82_platform_system_event_api();
+    h2_pal_system_event_subscription_t *sub;
+    atomic_store(&calls, 0);
+    assert(h2_pal_system_event_init(api) == H2_PAL_OK);
+    assert(h2_pal_system_event_subscribe(api, event.type, owner_handler, NULL, &sub) == H2_PAL_OK);
+    pause_driver();
+    assert(h2_pal_system_event_post(api, &event, 0) == H2_PAL_OK);
+    assert(h2_pal_system_event_post(api, &event, 0) == H2_PAL_OK);
+    h2_pal_system_event_deinit(api);
+    assert(h2_pal_system_event_post(api, &event, 0) == H2_PAL_ERR_INVALID_STATE);
+    assert(h2_pal_system_event_init(api) == H2_PAL_ERR_BUSY);
+    assert(atomic_load(&live) == 1 && atomic_load(&calls) == 0);
+    resume_driver();
+    drain();
+    assert(atomic_load(&calls) == 2 && atomic_load(&live) == 0);
+    assert(h2_pal_system_event_init(api) == H2_PAL_OK);
+    h2_pal_system_event_deinit(api);
+    atomic_store(&calls, 0);
+}
+static unsigned order[4], order_count;
+static int nested_post(void *user, const h2_pal_system_event_t *value)
+{
+    order[order_count++] = value->source_id * 2u + *(unsigned *)user;
+    if (value->source_id == 0u && *(unsigned *)user == 0u) {
+        h2_pal_system_event_t next = *value;
+        next.source_id = 1u;
+        assert(h2_pal_system_event_post(h2_jieli_wl82_platform_system_event_api(), &next, 0) == H2_PAL_OK);
+    }
+    return H2_PAL_OK;
+}
+static void test_nested_post_order(void)
+{
+    const h2_pal_system_event_api_t *api = h2_jieli_wl82_platform_system_event_api();
+    unsigned first = 0, second = 1;
+    h2_pal_system_event_subscription_t *a, *b;
+    order_count = 0;
+    assert(h2_pal_system_event_init(api) == H2_PAL_OK);
+    assert(h2_pal_system_event_subscribe(api, event.type, nested_post, &first, &a) == H2_PAL_OK);
+    assert(h2_pal_system_event_subscribe(api, event.type, nested_post, &second, &b) == H2_PAL_OK);
+    assert(h2_pal_system_event_post(api, &event, 0) == H2_PAL_OK);
+    drain();
+    assert(order_count == 4u);
+    for (unsigned i = 0; i < 4u; ++i) assert(order[i] == i);
+    h2_pal_system_event_unsubscribe(api, a);
+    h2_pal_system_event_unsubscribe(api, b);
+    h2_pal_system_event_deinit(api);
+}
 int main(void) {
+    test_queued_unsubscribe();
+    test_queued_deinit();
+    test_nested_post_order();
     test_unsubscribe(0);
     test_unsubscribe(1);
     test_fanout_after_last_deinit();
@@ -275,6 +440,7 @@ int main(void) {
         assert(h2_pal_system_event_init(api) == H2_PAL_ERR_BUSY);
         atomic_store(&resume_lock, 1);
         assert(pthread_join(thread, NULL) == 0);
+        drain();
         assert(atomic_load(&live) == 0);
         assert(h2_pal_system_event_init(api) == H2_PAL_OK);
         h2_pal_system_event_deinit(api);
