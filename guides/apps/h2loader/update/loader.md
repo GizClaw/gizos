@@ -51,6 +51,14 @@ AC791N 遵循上述公共确认、P2→P1 完整复制、失败恢复和 P1 收�
 
 ### 验收证据与边界
 
-本次拆分不携带历史实机记录。正常更新、确认前故障、P1 擦除后断电及原生头部分写入需要分别验收；诊断包只提供定点注入，不能代表任意故障覆盖。
+以下是已有板级验收，不代表本次文档更新重新执行过断电测试：
 
-主机测试应覆盖公共确认失败不得复制、P2 回写各失败边界及重新进入，板级测试覆盖 pending-boot 解码、发布 gate 和读回失败。实机最终验收必须停止监控后独立查询 UART status，核对运行 P1、新 Loader image/package metadata、Stage invalid 和 `last_result=0`。定点测试结果不推广为任意 NOR/Preference 写入损坏或所有硬件异常保证；SDK pin、布局或启动映射变化后需重新验收。
+| 路径 | 证据及范围 |
+| --- | --- |
+| 不同镜像 Loader 更新 | [v5 self-update](../boards/jieli_ac791n_devkit/evidence/2026-09-13/loader-v5-self-update.md)：确认→发布 P2 头→回写→P1 独立 status，Stage 空 |
+| 确认前故障 | [v5 pre-confirm recovery](../boards/jieli_ac791n_devkit/evidence/2026-09-13/loader-v5-preconfirm-recovery.md)：stage 105 定点断言复位，旧 P1 可查询且保留候选和 coredump |
+| P1 擦除后实际断电 | [copy power cut](../boards/jieli_ac791n_devkit/evidence/2026-09-13/loader-copy-powercut.md)：从已确认 P2 恢复回写，最终 P1/Stage 收敛 |
+| 原生头部分写入 | [P2 部分头](../boards/jieli_ac791n_devkit/evidence/2026-09-13/loader-partial-p2-header.md)、[P1 部分头](../boards/jieli_ac791n_devkit/evidence/2026-09-13/partial-p1-header-powercut.md)：仅覆盖各自 16/32-byte 前缀中断 |
+| 后续正式包回归 | [PAL final acceptance](../boards/jieli_ac791n_devkit/evidence/2026-09-15/pal-final-acceptance.md)：不同 Loader 更新、UART 25/25 与 BLE 22/22 两轮；具体源码及镜像身份以记录为准 |
+
+主机测试应覆盖公共确认失败不得复制、P2 回写各失败边界及重新进入，板级测试覆盖 pending-boot 解码、发布 gate 和读回失败。实机最终验收必须停止监控后独立查询 UART status，核对运行 P1、新 Loader image/package metadata、Stage invalid 和 `last_result=0`。上述定点证据不推广为任意 NOR/Preference 写入损坏或所有硬件异常保证；SDK pin、布局或启动映射变化后需重新验收。
