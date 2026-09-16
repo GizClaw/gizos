@@ -421,18 +421,11 @@ static int sta_connect(
   post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING, &status);
   wifi_set_sta_connect_timeout(timeout_ms == 0u
       ? 30 : (int)(timeout_ms / 1000u + (timeout_ms % 1000u != 0u)));
-  result = wifi_enter_sta_mode(ssid, password);
-  if (result != 0) {
-    wifi_state_lock();
-    ++wifi_sta_generation;
-    wifi_state.sta.state = H2_PAL_WIFI_STA_STATE_FAILED;
-    wifi_state.sta.ip_valid = 0u;
-    wifi_state.sta.disconnect_reason = result;
-    status = wifi_state.sta;
-    wifi_state_unlock();
-    post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED, &status);
-    return H2_PAL_ERR_IO;
-  }
+  /* With network_connect_block == 0, the SDK queues the credentials and its
+   * tail returns wifi_sta_connect_state != 5 ? -1 : 0 without waiting. This
+   * only reflects whether STA was already connected, not whether starting
+   * the connection failed. SDK events and the PAL budget decide the outcome. */
+  (void)wifi_enter_sta_mode(ssid, password);
   if (timeout_ms == 0u) return H2_PAL_OK;
   const uint32_t started = timer_get_ms();
   for (;;) {

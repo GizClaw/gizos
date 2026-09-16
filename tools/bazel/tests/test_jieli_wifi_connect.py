@@ -130,6 +130,7 @@ static int sleeps, enter_rc, requests;
 static int last_event;
 static int ensure_wifi_on(void) { return 0; }
 static uint32_t wifi_sta_generation;
+static void wifi_set_sta_connect_timeout(int seconds) { assert(seconds > 0); }
 static void post_sta_event(int type, const h2_pal_wifi_sta_status_t *status) {
     assert(fake_state_gate == 0);
     assert(status->state == wifi_state.sta.state);
@@ -157,10 +158,10 @@ int main(void) {
     assert(sta_connect(NULL, &config, 50) == H2_PAL_ERR_TIMEOUT);
     assert(sleeps == 2 && now == 60);
     enter_rc = -1; sleeps = 0;
-    assert(sta_connect(NULL, &config, 0) == H2_PAL_ERR_IO && sleeps == 0);
-    assert(wifi_state.sta.state == H2_PAL_WIFI_STA_STATE_FAILED);
-    assert(last_event == H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED);
-    assert(wifi_state.sta.ip_valid == 0 && wifi_state.sta.disconnect_reason == -1);
+    assert(sta_connect(NULL, &config, 0) == H2_PAL_OK && sleeps == 0);
+    assert(wifi_state.sta.state == H2_PAL_WIFI_STA_STATE_CONNECTING);
+    assert(last_event == H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING);
+    assert(wifi_state.sta.ip_valid == 0 && wifi_state.sta.disconnect_reason == 0);
     return 0;
 }
 '''
@@ -172,6 +173,151 @@ int main(void) {
             subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", str(ROOT / "libs/pal/include"),
                             str(unit), "-o", str(binary)], check=True, timeout=30)
             subprocess.run([str(binary)], check=True, timeout=30)
+
+
+STUB = r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#define H2_PAL_OK 0
+#define H2_PAL_ERR_IO -4
+#define H2_PAL_ERR_TIMEOUT -6
+#define H2_PAL_WIFI_SSID_MAX 32
+#define H2_PAL_WIFI_PASSWORD_MAX 64
+#define H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING 1
+#define H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED 2
+typedef enum {
+  H2_PAL_WIFI_STA_STATE_UNKNOWN = 0,
+  H2_PAL_WIFI_STA_STATE_IDLE = 1,
+  H2_PAL_WIFI_STA_STATE_SCANNING = 2,
+  H2_PAL_WIFI_STA_STATE_CONNECTING = 3,
+  H2_PAL_WIFI_STA_STATE_CONNECTED = 4,
+  H2_PAL_WIFI_STA_STATE_GOT_IP = 5,
+  H2_PAL_WIFI_STA_STATE_DISCONNECTED = 6,
+  H2_PAL_WIFI_STA_STATE_FAILED = 7,
+} h2_pal_wifi_sta_state_t;
+typedef struct {
+  char ssid[33], password[65];
+  size_t ssid_len, password_len;
+} h2_pal_wifi_sta_config_t;
+typedef struct {
+  h2_pal_wifi_sta_state_t state;
+  char ssid[33];
+  size_t ssid_len;
+  uint8_t ip_valid;
+  int disconnect_reason;
+} h2_pal_wifi_sta_status_t;
+static struct { h2_pal_wifi_sta_status_t sta; } wifi_state;
+static uint32_t wifi_sta_generation;
+static uint32_t now_ms;
+static int sdk_timeout, timeout_calls, connect_calls, delays;
+static int events[8], event_count;
+static h2_pal_wifi_sta_state_t next_state;
+static char received_ssid[33], received_password[65];
+static int h2_pal_wifi_settings_validate_sta_config(const h2_pal_wifi_sta_config_t *config) {
+  assert(config && config->ssid_len <= 32 && config->password_len <= 64);
+  return H2_PAL_OK;
+}
+static int ensure_wifi_on(void) { return H2_PAL_OK; }
+static void wifi_state_lock(void) {}
+static void wifi_state_unlock(void) {}
+static void post_sta_event(int type, const h2_pal_wifi_sta_status_t *status) {
+  assert(status->state == wifi_state.sta.state);
+  assert(event_count < 8);
+  events[event_count++] = type;
+}
+static void wifi_set_sta_connect_timeout(int seconds) {
+  sdk_timeout = seconds; ++timeout_calls;
+}
+static int wifi_enter_sta_mode(const char *ssid, const char *password) {
+  strcpy(received_ssid, ssid); strcpy(received_password, password);
+  ++connect_calls;
+  return -1;
+}
+static uint32_t timer_get_ms(void) { return now_ms; }
+static void os_time_dly(unsigned ticks) {
+  assert(ticks == 1u);
+  now_ms += 100u;
+  ++delays;
+  if (next_state != H2_PAL_WIFI_STA_STATE_UNKNOWN) {
+    wifi_state.sta.state = next_state;
+  }
+}
+static void reset(void) {
+  memset(&wifi_state, 0, sizeof(wifi_state));
+  wifi_state.sta.state = H2_PAL_WIFI_STA_STATE_IDLE;
+  wifi_sta_generation = now_ms = 0;
+  sdk_timeout = timeout_calls = connect_calls = delays = event_count = 0;
+  next_state = H2_PAL_WIFI_STA_STATE_UNKNOWN;
+  memset(received_ssid, 0, sizeof(received_ssid));
+  memset(received_password, 0, sizeof(received_password));
+}
+static void check_start(int expected_timeout) {
+  assert(connect_calls == 1 && timeout_calls == 1);
+  assert(sdk_timeout == expected_timeout);
+  assert(strcmp(received_ssid, "test-network") == 0);
+  assert(strcmp(received_password, "placeholder") == 0);
+  assert(event_count == 1);
+  assert(events[0] == H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING);
+  assert(wifi_sta_generation == 1);
+}
+'''
+MAIN = r'''
+int main(void) {
+  const h2_pal_wifi_sta_config_t config = {
+    .ssid = "test-network", .ssid_len = 12,
+    .password = "placeholder", .password_len = 11,
+  };
+  reset();
+  int result = sta_connect(NULL, &config, 0u);
+  if (result != H2_PAL_OK) {
+    fprintf(stderr, "case (a): expected H2_PAL_OK, got %d\n", result);
+    return 1;
+  }
+  assert(wifi_state.sta.state == H2_PAL_WIFI_STA_STATE_CONNECTING);
+  assert(wifi_state.sta.disconnect_reason == 0);
+  assert(delays == 0 && now_ms == 0);
+  check_start(30);
+
+  reset(); next_state = H2_PAL_WIFI_STA_STATE_GOT_IP;
+  assert(sta_connect(NULL, &config, 2500u) == H2_PAL_OK);
+  assert(wifi_state.sta.state == H2_PAL_WIFI_STA_STATE_GOT_IP);
+  assert(delays == 1);
+  check_start(3);
+
+  reset(); next_state = H2_PAL_WIFI_STA_STATE_FAILED;
+  assert(sta_connect(NULL, &config, 1000u) == H2_PAL_ERR_IO);
+  assert(wifi_state.sta.state == H2_PAL_WIFI_STA_STATE_FAILED);
+  assert(delays == 1);
+  check_start(1);
+
+  reset();
+  assert(sta_connect(NULL, &config, 1000u) == H2_PAL_ERR_TIMEOUT);
+  assert(wifi_state.sta.state == H2_PAL_WIFI_STA_STATE_CONNECTING);
+  assert(now_ms == 1000u && delays == 10);
+  check_start(1);
+  return 0;
+}
+'''
+
+
+def run_connect_fixture(source):
+    begin = source.index("static int sta_connect(")
+    end = source.index("static int wifi_stop(", begin)
+    with tempfile.TemporaryDirectory(prefix="h2-wifi-connect-") as directory:
+        test = Path(directory) / "test.c"
+        test.write_text(STUB + source[begin:end] + MAIN)
+        binary = Path(directory) / "test"
+        subprocess.run(["cc", "-std=c11", "-Werror", str(test), "-o", str(binary)],
+                       check=True, timeout=60)
+        return subprocess.run([str(binary)], capture_output=True, text=True, timeout=10)
+
+
+class NonblockingWifiConnectTest(unittest.TestCase):
+    def test_nonblocking_start_and_event_outcomes(self):
+        result = run_connect_fixture(SOURCE.read_text())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
 if __name__ == "__main__":
