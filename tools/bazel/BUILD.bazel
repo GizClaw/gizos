@@ -1818,3 +1818,20 @@ py_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )
+
+py_test(
+    name = "esp_ble_scan_publication_test",
+    srcs = ["tests/test_esp_ble_scan_publication.py"],
+    data = [
+        "//libs/pal:pal_header_files",
+        "//projects/example/targets/h2loader_tar_zlib/ble-connect-smoke/devkit:main/main.c",
+        "//projects/example/targets/h2loader_tar_zlib/ble-connect-smoke/amoled:main/main.c",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_esp_ble_scan_publication.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

@@ -8,17 +8,21 @@
 #include "freertos/task.h"
 
 #include <stdbool.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 
 typedef struct scan_state {
-    volatile bool found;
+    atomic_bool found;
     h2_pal_ble_addr_t addr;
     int rssi;
 } scan_state_t;
 
 static bool on_scan_result(void *user, const h2_pal_ble_scan_result_t *result) {
     scan_state_t *state = user;
+    /* NimBLE serializes scan callbacks on its host task. Publish only once:
+     * later results must not overwrite the snapshot consumed by the entry. */
+    if (atomic_load_explicit(&state->found, memory_order_acquire)) return true;
     bool matches = false;
     if (!matches && result->local_name != NULL &&
         result->local_name_len == 5u &&
@@ -33,7 +37,7 @@ static bool on_scan_result(void *user, const h2_pal_ble_scan_result_t *result) {
     }
     state->addr = result->addr;
     state->rssi = result->rssi;
-    state->found = true;
+    atomic_store_explicit(&state->found, true, memory_order_release);
     printf("H2_AMOLED_JIELI stage=found rssi=%d type=%u addr_type=%u addr=%02x:%02x:%02x:%02x:%02x:%02x\n",
            result->rssi, (unsigned)result->adv_type,
            (unsigned)result->addr.type,
@@ -71,6 +75,7 @@ static void image_entry(void *user) {
 
     for (unsigned attempt = 1u; rc == H2_PAL_OK && attempt <= 3u; ++attempt) {
         scan_state_t scan = {0};
+        atomic_init(&scan.found, false);
         const h2_pal_ble_scan_params_t params = {
             .mode = H2_PAL_BLE_SCAN_MODE_ACTIVE,
             .interval_ms = 50u,
@@ -82,18 +87,21 @@ static void image_entry(void *user) {
         printf("H2_AMOLED_JIELI stage=scan attempt=%u\n", attempt);
         rc = h2_pal_ble_start_scan(
             runtime->ble_host, &params, on_scan_result, &scan);
-        for (unsigned elapsed = 0u; rc == H2_PAL_OK && !scan.found &&
+        for (unsigned elapsed = 0u; rc == H2_PAL_OK && !atomic_load_explicit(&scan.found, memory_order_acquire) &&
              elapsed < 5500u; elapsed += 50u) {
             vTaskDelay(pdMS_TO_TICKS(50u));
         }
         (void)h2_pal_ble_stop_scan(runtime->ble_host);
-        if (rc != H2_PAL_OK || !scan.found) {
+        if (rc != H2_PAL_OK || !atomic_load_explicit(&scan.found, memory_order_acquire)) {
             printf("H2_AMOLED_JIELI stage=scan-result attempt=%u found=0 rc=%d\n",
                    attempt, rc);
             rc = H2_PAL_OK;
             vTaskDelay(pdMS_TO_TICKS(500u));
             continue;
         }
+        /* The acquire above makes both fields visible; use this local snapshot. */
+        const h2_pal_ble_addr_t peer_addr = scan.addr;
+        const int peer_rssi = scan.rssi;
         vTaskDelay(pdMS_TO_TICKS(500u));
         const h2_pal_ble_connect_params_t connect_params = {
             .timeout_ms = 10000u,
@@ -104,9 +112,9 @@ static void image_entry(void *user) {
         };
         uint16_t conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
         printf("H2_AMOLED_JIELI stage=connect attempt=%u rssi=%d\n",
-               attempt, scan.rssi);
+               attempt, peer_rssi);
         int connect_rc = h2_pal_ble_connect(
-            runtime->ble_host, &scan.addr, &connect_params, &conn_handle);
+            runtime->ble_host, &peer_addr, &connect_params, &conn_handle);
         printf("H2_AMOLED_JIELI stage=connect-result attempt=%u rc=%d handle=%u\n",
                attempt, connect_rc, (unsigned)conn_handle);
         if (connect_rc == H2_PAL_OK) {
