@@ -90,7 +90,12 @@ const h2_pal_audio_api_t *h2_jieli_ac791n_devkit_audio_api(void);
 const h2_pal_ble_host_api_t *h2_jieli_ac791n_devkit_ble_host_api(const h2_pal_log_api_t *log);
 
 /* On-chip 2.4 GHz Wi-Fi. Network-enabled layouts provide STA and AP modes;
- * compact layouts return explicit unsupported providers through Runtime. */
+ * compact layouts return explicit unsupported providers through Runtime.
+ * Scans require STA mode (otherwise INVALID_STATE) and association (otherwise
+ * SDK refusal returns BUSY). TIMEOUT leaves the scan SDK-owned: scan/connect
+ * stay BUSY until completion is reaped or the interface is stopped. Disconnect,
+ * AP stop and AP start admit this reset; successful wifi_off releases ownership.
+ * After timeout, status reports the association state, never SCANNING. */
 const h2_pal_wifi_sta_api_t *h2_jieli_ac791n_devkit_wifi_sta_api(void);
 const h2_pal_wifi_ap_api_t *h2_jieli_ac791n_devkit_wifi_ap_api(void);
 const h2_pal_wifi_settings_api_t *

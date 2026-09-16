@@ -13,6 +13,7 @@
 #include "lwip.h"
 #include "wifi/wifi_connect.h"
 
+#include <stdlib.h>
 #include <string.h>
 
 /* Pinned SDK eb04f196: wifi_get_sta_entry_rssi rejects WCID >= 5 and
@@ -324,7 +325,7 @@ static int sta_get_status(void *user, h2_pal_wifi_sta_status_t *out_status) {
   }
   wifi_state_unlock();
   const unsigned phase = __atomic_load_n(&scan_phase, __ATOMIC_ACQUIRE);
-  if (phase == SCAN_PENDING || phase == SCAN_ABANDONED) {
+  if (phase == SCAN_PENDING) {
     /* Report the live scan without overwriting association/IP state, which
      * can continue to change through SDK events while scanning. */
     out_status->state = H2_PAL_WIFI_STA_STATE_SCANNING;
@@ -340,6 +341,9 @@ static int sta_scan(
   if (on_result == NULL) return H2_PAL_ERR_INVALID_ARG;
   int result = ensure_wifi_on();
   if (result != H2_PAL_OK) return result;
+  struct wifi_mode_info info;
+  wifi_get_mode_cur_info(&info);
+  if (info.mode != STA_MODE) return H2_PAL_ERR_INVALID_STATE;
   unsigned expected = SCAN_IDLE;
   if (!__atomic_compare_exchange_n(&scan_phase, &expected, SCAN_PENDING, 0,
                                     __ATOMIC_ACQ_REL, __ATOMIC_RELAXED)) {
@@ -388,6 +392,7 @@ static int sta_scan(
     entry.security = map_security(source->auth_mode);
     if (!on_result(callback_user, &entry)) break;
   }
+  if (entries != NULL) free(entries);
   wifi_clear_scan_result();
   __atomic_store_n(&scan_phase, SCAN_IDLE, __ATOMIC_RELEASE);
   return H2_PAL_OK;
@@ -455,6 +460,7 @@ static int wifi_stop(void) {
   wifi_state_unlock();
   if (!on && !wifi_is_on()) return H2_PAL_OK;
   if (wifi_off() != 0) return H2_PAL_ERR_IO;
+  __atomic_store_n(&scan_phase, SCAN_IDLE, __ATOMIC_RELEASE);
   wifi_state_lock();
   ++wifi_sta_generation;
   wifi_state.on = 0;
@@ -581,10 +587,10 @@ static int ap_get_clients(
 }
 
 /* Serialize task-side radio mutations, including reentrant scan callbacks.
- * A timed-out scan still owns SDK storage until its completion callback. */
+ * A timed-out scan still owns SDK storage until completion or a successful stop. */
 static unsigned wifi_operation_busy;
 
-static int wifi_operation_begin(void) {
+static int wifi_operation_begin_internal(int for_stop) {
   /* SDK event subscribers run on the network HSM task. A synchronous SDK
    * request there would wait for the callback itself to release its mutex.
    * Reject admission while callbacks dispatch; never wait for subscribers. */
@@ -596,11 +602,16 @@ static int wifi_operation_begin(void) {
     return H2_PAL_ERR_BUSY;
   }
   scan_reap_completed();
-  if (__atomic_load_n(&scan_phase, __ATOMIC_ACQUIRE) != SCAN_IDLE) {
+  const unsigned phase = __atomic_load_n(&scan_phase, __ATOMIC_ACQUIRE);
+  if (phase != SCAN_IDLE && !(for_stop && phase == SCAN_ABANDONED)) {
     __atomic_store_n(&wifi_operation_busy, 0u, __ATOMIC_RELEASE);
     return H2_PAL_ERR_BUSY;
   }
   return H2_PAL_OK;
+}
+
+static int wifi_operation_begin(void) {
+  return wifi_operation_begin_internal(0);
 }
 
 int h2_jieli_wifi_netif_begin(h2_pal_netif_status_t *status, uint32_t *generation) {
@@ -659,8 +670,12 @@ static int guarded_sta_connect(void *user, const h2_pal_wifi_sta_config_t *confi
   return result;
 }
 
+static int wifi_operation_begin_for_stop(void) {
+  return wifi_operation_begin_internal(1);
+}
+
 static int guarded_sta_disconnect(void *user) {
-  int result = wifi_operation_begin();
+  int result = wifi_operation_begin_for_stop();
   if (result != H2_PAL_OK) return result;
   result = sta_disconnect(user);
   __atomic_store_n(&wifi_operation_busy, 0u, __ATOMIC_RELEASE);
@@ -668,7 +683,7 @@ static int guarded_sta_disconnect(void *user) {
 }
 
 static int guarded_ap_start(void *user, const h2_pal_wifi_ap_config_t *config, uint32_t timeout_ms) {
-  int result = wifi_operation_begin();
+  int result = wifi_operation_begin_for_stop();
   if (result != H2_PAL_OK) return result;
   result = ap_start(user, config, timeout_ms);
   __atomic_store_n(&wifi_operation_busy, 0u, __ATOMIC_RELEASE);
@@ -676,7 +691,7 @@ static int guarded_ap_start(void *user, const h2_pal_wifi_ap_config_t *config, u
 }
 
 static int guarded_ap_stop(void *user, uint32_t timeout_ms) {
-  int result = wifi_operation_begin();
+  int result = wifi_operation_begin_for_stop();
   if (result != H2_PAL_OK) return result;
   result = ap_stop(user, timeout_ms);
   __atomic_store_n(&wifi_operation_busy, 0u, __ATOMIC_RELEASE);

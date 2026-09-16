@@ -115,9 +115,10 @@ static int start_commands(void) {
   static h2_loader_app_client_config_t config;
   for (unsigned i = 0; !dev_online("sd0") && i < 500u; ++i) os_time_dly(1u);
   int rc = h2_jieli_ac791n_devkit_sd_fs_init(&loader_fs);
+  /* The PAL diagnostic exposes UART wifi commands for the scan-timeout diagnostic. */
   if (rc == H2_PAL_OK) rc = h2_jieli_app_loader_config_init(
       &config, &loader_fs, &power, (h2_loader_memory_stats_api_t){0},
-      H2_LOADER_CAPABILITY_UART);
+      H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI);
   if (rc == H2_PAL_OK) rc = h2_loader_app_client_init(&loader_client, &config);
   if (rc == H2_PAL_OK) rc = h2_jieli_app_iostreamikcp_start(
       &loader_client, h2_jieli_wl82_platform_task_api(), h2_jieli_wl82_platform_mem_api());

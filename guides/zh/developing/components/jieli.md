@@ -116,6 +116,8 @@ FDK AAC 与 Linux FDK AAC decoder provider 允许 pi32v2；`libs/fdk_aac` 在该
 
 Board 不安装任何 `NULL` vtable member；未实现的 operation 返回 `H2_PAL_ERR_UNSUPPORTED`，包括 `tcp_listen`、`tcp_accept`、`set_default`，以及通过共享 `h2_pal_unsupported_ble_*` stub 填充的 BLE scan / central-GATT entry。
 
+Wi-Fi scan 要求当前处于 STA mode 且已关联：非 STA mode 返回 `H2_PAL_ERR_INVALID_STATE`，未关联时 SDK 拒绝请求并返回 `H2_PAL_ERR_BUSY`。scan 返回 `H2_PAL_ERR_TIMEOUT` 后，status 恢复报告关联状态，不再报告 `SCANNING`，但 scan 仍由 SDK 持有，新的 scan / connect 返回 `H2_PAL_ERR_BUSY`，直到迟到的完成事件被回收，或通过 `sta_disconnect` / `ap_stop` / `ap_start` 的停止路径复位；只有 `wifi_off()` 成功后才释放 scan 所有权，正在等待完成或清理中的 scan 仍拒绝停止操作。
+
 `h2_jieli_ac791n_devkit_runtime_config()` 只提供 `h2_runtime_config_t`，`h2_jieli_ac791n_devkit_runtime_deinit()` 只释放 board 持有的 SD filesystem 资源。完整 Runtime 初始化、input 启动、app 调用和 `h2_runtime_deinit()` 属于最终 artifact target，见 [Runtime 初始化与接线](../runtime.md#初始化与接线)。
 
 ## 烧录与升级边界
