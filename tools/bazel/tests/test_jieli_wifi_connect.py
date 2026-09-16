@@ -152,6 +152,7 @@ static void os_time_dly(unsigned ticks) {
 '''
         main = r'''
 int main(void) {
+    (void)h2_jieli_net_stack_stopping; (void)h2_jieli_net_stack_stopped;
     h2_pal_wifi_sta_config_t config = {0};
     memcpy(config.ssid, "test", 4); config.ssid_len = 4;
     assert(sta_connect(NULL, &config, 0) == H2_PAL_OK);
@@ -170,7 +171,9 @@ int main(void) {
     wifi_state.on=1;
     assert(wifi_stop()==0 && stop_order==3 && !wifi_state.on);
     stop_order=0; sdk_on=1; off_result=-1; wifi_state.on=1;
-    assert(wifi_stop()==H2_PAL_ERR_IO && stop_order==3 && !wifi_state.on);
+    assert(wifi_stop()==H2_PAL_ERR_IO && stop_order==2 && wifi_state.on);
+    stop_order=0; off_result=0;
+    assert(wifi_stop()==H2_PAL_OK && stop_order==3 && !wifi_state.on);
     return 0;
 }
 '''

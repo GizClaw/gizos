@@ -26,12 +26,25 @@ static int fail_option, io_calls, flags_seen, option_calls;
 static pthread_mutex_t mu=PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t cv=PTHREAD_COND_INITIALIZER;
 static int blocked, release_io, close_io, block_recv, block_connect, block_send;
+static int reuse_mode, reuse_entered, old_woken, reuse_release[2];
+static int reuse_recv(void) {
+ pthread_mutex_lock(&mu);
+ int id=reuse_entered++;
+ pthread_cond_broadcast(&cv);
+ if(id<2) {
+  while(!reuse_release[id]) pthread_cond_wait(&cv,&mu);
+ }
+ pthread_mutex_unlock(&mu);
+ if(id==0) {errno=ENOTCONN; return -1;}
+ return 1;
+}
 static void wait_io(void) {
  pthread_mutex_lock(&mu);
  assert(!blocked); blocked=1; pthread_cond_broadcast(&cv);
  while(!release_io) pthread_cond_wait(&cv,&mu);
  blocked=0; pthread_mutex_unlock(&mu);
 }
+static void resolver_reap(void) {}
 static void os_time_dly(unsigned n) {
  (void)n; struct timespec t={0,1000000}; nanosleep(&t,NULL);
 }
@@ -46,6 +59,7 @@ static int fake_recvfrom(int fd,void *p,size_t n,int f,struct sockaddr *a,sockle
  return 1;
 }
 static int fake_recv(int fd,void *p,size_t n,int f) {
+ if(reuse_mode) return reuse_recv();
  if(block_recv) wait_io();
  if(close_io) {errno=ENOTCONN; return -1;}
  return fake_recvfrom(fd,p,n,f,NULL,NULL);
@@ -107,7 +121,11 @@ static int fake_socket(int f,int t,int p) {(void)f;(void)t;(void)p; ++io_calls; 
 static int fake_bind(int f,const struct sockaddr *a,socklen_t n) {(void)f;(void)a;(void)n; ++io_calls; return 0;}
 static int fake_getsockname(int f,struct sockaddr *a,socklen_t *n) {(void)f;(void)n; memset(a,0,sizeof(struct sockaddr_in)); return 0;}
 static int fake_close(int fd) {
- (void)fd; ++io_calls; pthread_mutex_lock(&mu); close_io=1; release_io=1;
+ (void)fd; ++io_calls; pthread_mutex_lock(&mu);
+ if(reuse_mode) {
+  old_woken=1; pthread_cond_broadcast(&cv); pthread_mutex_unlock(&mu); return 0;
+ }
+ close_io=1; release_io=1;
  pthread_cond_broadcast(&cv); pthread_mutex_unlock(&mu); return 0;
 }
 static int fake_sendto(int f,const void *p,size_t n,int flags,const struct sockaddr *a,socklen_t l) {
@@ -177,6 +195,39 @@ int main(void) {
 }
 '''
 
+REUSE_MAIN = r'''
+static void *reuse_reader(void *p) {
+ uint8_t b; *(int *)p=tcp_recv(NULL,1,&b,1,100); return NULL;
+}
+static void await_readers(int n) {
+ pthread_mutex_lock(&mu);
+ while(reuse_entered<n) pthread_cond_wait(&cv,&mu);
+ pthread_mutex_unlock(&mu);
+}
+static void release_reader(int id) {
+ pthread_mutex_lock(&mu); reuse_release[id]=1;
+ pthread_cond_broadcast(&cv); pthread_mutex_unlock(&mu);
+}
+int main(void) {
+ h2_jieli_net_stack_started(); reuse_mode=1;
+ int fd, first_result, second_result; uint8_t b=0;
+ assert(tcp_open(NULL,H2_PAL_NET_FAMILY_IPV4,&fd)==0 && fd==1);
+ pthread_t first, second;
+ pthread_create(&first,NULL,reuse_reader,&first_result); await_readers(1);
+ close_socket(NULL,fd);
+ assert(old_woken); /* old recv is awake but parked before returning to PAL */
+ assert(tcp_open(NULL,H2_PAL_NET_FAMILY_IPV4,&fd)==0 && fd==1);
+ pthread_create(&second,NULL,reuse_reader,&second_result); await_readers(2);
+ release_reader(0); pthread_join(first,NULL);
+ assert(first_result==H2_PAL_ERR_CLOSED);
+ assert(tcp_recv(NULL,fd,&b,1,10)==H2_PAL_ERR_BUSY);
+ release_reader(1); pthread_join(second,NULL);
+ assert(second_result==1);
+ assert(tcp_recv(NULL,fd,&b,1,10)==1);
+ return 0;
+}
+'''
+
 def functions(source):
     def section(begin, end):
         return source[source.index(begin):source.index(end, source.index(begin))]
@@ -188,7 +239,7 @@ def functions(source):
 def run(main, extra='', source=None):
     source = SOURCE.read_text() if source is None else source
     # Reference every extracted entry so -Werror also checks the whole provider slice.
-    refs = '(void)h2_jieli_atomic_cas_u32; (void)h2_jieli_atomic_store_u32; (void)os_time_dly; (void)udp_open; (void)tcp_open_bound; (void)udp_join_multicast; (void)udp_sendto; (void)udp_recvfrom; (void)close_socket; (void)connector; (void)sender; (void)receiver; (void)stopper; (void)wait_blocked; (void)release_blocked;'
+    refs = '(void)resolver_reap; (void)tcp_send; (void)h2_jieli_atomic_cas_u32; (void)h2_jieli_atomic_store_u32; (void)os_time_dly; (void)udp_open; (void)tcp_open_bound; (void)udp_join_multicast; (void)udp_sendto; (void)udp_recvfrom; (void)close_socket; (void)connector; (void)sender; (void)receiver; (void)stopper; (void)wait_blocked; (void)release_blocked;'
     main = main.replace('int main(void) {', 'int main(void) {' + refs)
     with tempfile.TemporaryDirectory(prefix='h2-net-thread-') as directory:
         unit = Path(directory) / 'test.c'
@@ -199,6 +250,9 @@ def run(main, extra='', source=None):
         assert result.returncode == 0, result.stdout + result.stderr
 
 class NetConcurrencyTest(unittest.TestCase):
+    def test_close_and_descriptor_reuse(self):
+        run(REUSE_MAIN)
+
     def test_concurrent_operations(self):
         run(MAIN)
 

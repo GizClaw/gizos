@@ -93,6 +93,7 @@ static int h2_jieli_atomic_cas_u32(uint32_t *p,uint32_t *e,uint32_t v) {
 static void h2_jieli_atomic_store_u32(uint32_t *p,uint32_t v) {
  __atomic_store_n(p,v,__ATOMIC_RELEASE);
 }
+static void resolver_reap(void) {}
 static void os_time_dly(unsigned n) {(void)n;}
 '''
         main = r'''

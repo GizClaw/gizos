@@ -456,14 +456,8 @@ static int wifi_stop(void) {
   wifi_state_unlock();
   if (!on && !wifi_is_on()) return H2_PAL_OK;
   h2_jieli_net_stack_stopping();
-  int result = wifi_off();
+  if (wifi_off() != 0) return H2_PAL_ERR_IO;
   h2_jieli_net_stack_stopped();
-  if (result != 0) {
-    wifi_state_lock();
-    wifi_state.on = 0;
-    wifi_state_unlock();
-    return H2_PAL_ERR_IO;
-  }
   wifi_state_lock();
   ++wifi_sta_generation;
   wifi_state.on = 0;

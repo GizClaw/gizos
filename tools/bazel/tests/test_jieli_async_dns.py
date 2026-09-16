@@ -13,9 +13,10 @@ class AsyncDnsTest(unittest.TestCase):
     def test_pending_close_capacity_and_completion(self):
         source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/"
                   "h2_jieli_ac791n_devkit_net.c").read_text()
+        assert 'static uint32_t stack_gate;' in source, 'DNS requires stack lifecycle settlement'
         state = source[source.index("struct h2_pal_net_resolver {"):
                        source.index("static h2_pal_result_t map_socket_error")]
-        state = state[:state.index("enum { SLOT_RECV")] + source[source.index("static void stack_lock("):source.index("static int slot_enter(")]
+        state = state[:state.index("enum { SLOT_RECV")] + source[source.index("static void resolver_reap(void);" if "static void resolver_reap(void);" in source else "static void stack_lock("):source.index("static int slot_enter(")]
         funcs = source[source.index("static void resolver_release("):
                        source.index("static int get_host_addr(")]
         stub = r'''
@@ -40,6 +41,18 @@ static void (*queued[8])(void *); static void *contexts[8];
 static void (*found)(const char *,const ip_addr_t *,void *);
 static void *found_user; static int queued_count, queue_error, dns_result;
 static unsigned now, delays;
+static void *tracked, *reusable;
+static unsigned tracked_frees;
+static void *counting_malloc(size_t n) {
+ if(reusable) {void *p=reusable; reusable=NULL; return p;}
+ return malloc(n);
+}
+static void counting_free(void *p) {
+ if(p==tracked) {assert(!reusable); ++tracked_frees; reusable=p; return;}
+ free(p);
+}
+#define malloc counting_malloc
+#define free counting_free
 static uint32_t timer_get_ms(void) { return now; }
 static void os_time_dly(unsigned ticks) { assert(ticks==1); now+=10; ++delays; }
 static err_t tcpip_try_callback(void (*fn)(void *),void *arg) {
@@ -104,22 +117,30 @@ int main(void) {
  assert(registered()==0);
  assert(resolve_start(NULL,"",&r)==H2_PAL_ERR_INVALID_ARG);
  assert(resolve_start(NULL,"example.test",&r)==0); dispatch();
- void *late=found_user;
+ void *late=found_user; tracked=r;
+ unsigned frees_before=tracked_frees;
  h2_jieli_net_stack_stopping(); h2_jieli_net_stack_stopped();
  assert(resolve_poll(NULL,r,&out,0)==H2_PAL_ERR_UNAVAILABLE);
  assert(registered()==0); resolve_close(NULL,r);
+ assert(tracked_frees==frees_before);
  int queued_before=queued_count;
  assert(resolve_start(NULL,"example.test",&r)==H2_PAL_ERR_UNAVAILABLE);
  assert(queued_count==queued_before);
  found("example.test",&addr,late);
  assert(registered()==0);
  h2_jieli_net_stack_started();
- assert(resolve_start(NULL,"example.test",&r)==0);
+ assert(tracked_frees==frees_before+1);
+ assert(resolve_start(NULL,"example.test",&r)==0 && (void *)r==tracked);
+ found("example.test",&addr,late);
+ assert(resolve_poll(NULL,r,&out,0)==H2_PAL_ERR_WOULD_BLOCK);
  resolve_close(NULL,r);
+ unsigned pending_frees=tracked_frees;
  h2_jieli_net_stack_stopping(); h2_jieli_net_stack_stopped();
+ assert(tracked_frees==pending_frees);
  dispatch(); /* queued begin after stop must not dereference its old pointer */
  assert(registered()==0);
  h2_jieli_net_stack_started();
+ assert(tracked_frees==pending_frees+1);
  for(int i=0;i<4;++i) assert(resolve_start(NULL,"example.test",&slots[i])==0);
  for(int i=0;i<4;++i) resolve_close(NULL,slots[i]);
  assert(resolve_start(NULL,"example.test",&r)==H2_PAL_ERR_NO_SPACE);
@@ -127,6 +148,9 @@ int main(void) {
  assert(resolve_start(NULL,"example.test",&r)==0);
  resolve_close(NULL,r);
  h2_jieli_net_stack_stopping(); h2_jieli_net_stack_stopped();
+ h2_jieli_net_stack_started();
+#undef free
+ free(reusable);
  return 0;
 }
 '''
