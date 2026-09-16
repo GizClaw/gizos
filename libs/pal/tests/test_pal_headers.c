@@ -121,7 +121,50 @@ static void test_valid_wall(void) {
     assert(value == 0);
 }
 
+static unsigned volume_calls;
+
+static h2_pal_result_t volume_set(void *user, uint32_t percent) {
+    (void)user;
+    (void)percent;
+    volume_calls++;
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t volume_get(void *user, uint32_t *out_percent) {
+    (void)user;
+    volume_calls++;
+    *out_percent = 50u;
+    return H2_PAL_OK;
+}
+
+static void test_call_volume_wrappers(void) {
+    uint32_t percent = 0u;
+    const h2_pal_modem_vtable_t empty = {0};
+    h2_pal_modem_api_t modem = {0};
+    assert(H2_PAL_MODEM_CAPABILITY_CALL_VOLUME == (1u << 5));
+    assert(h2_pal_modem_set_call_volume(NULL, 50u) == H2_PAL_ERR_UNSUPPORTED);
+    assert(h2_pal_modem_get_call_volume(NULL, &percent) == H2_PAL_ERR_UNSUPPORTED);
+    assert(h2_pal_modem_set_call_volume(&modem, 50u) == H2_PAL_ERR_UNSUPPORTED);
+    assert(h2_pal_modem_get_call_volume(&modem, &percent) == H2_PAL_ERR_UNSUPPORTED);
+    modem.vtable = &empty;
+    assert(h2_pal_modem_set_call_volume(&modem, 50u) == H2_PAL_ERR_UNSUPPORTED);
+    assert(h2_pal_modem_get_call_volume(&modem, &percent) == H2_PAL_ERR_UNSUPPORTED);
+    const h2_pal_modem_vtable_t implemented = {
+        .set_call_volume = volume_set,
+        .get_call_volume = volume_get,
+    };
+    modem.vtable = &implemented;
+    assert(h2_pal_modem_set_call_volume(&modem, 101u) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_pal_modem_set_call_volume(&modem, UINT32_MAX) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_pal_modem_get_call_volume(&modem, NULL) == H2_PAL_ERR_INVALID_ARG);
+    assert(volume_calls == 0u);
+    assert(h2_pal_modem_set_call_volume(&modem, 50u) == H2_PAL_OK);
+    assert(h2_pal_modem_get_call_volume(&modem, &percent) == H2_PAL_OK);
+    assert(volume_calls == 2u && percent == 50u);
+}
+
 int main(void) {
+    test_call_volume_wrappers();
     test_valid_wall();
     use_firmware_info();
     use_video_decoder();
