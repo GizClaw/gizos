@@ -1,0 +1,9 @@
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+
+package(default_visibility = ["//visibility:public"])
+
+firmware_lib_component(
+    name = "h2_pal_unsupported",
+    component_name = "h2_pal_unsupported",
+    deps = ["//libs/pal:unsupported"],
+)
