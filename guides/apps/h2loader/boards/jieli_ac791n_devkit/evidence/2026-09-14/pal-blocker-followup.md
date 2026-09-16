@@ -70,40 +70,13 @@ Additional pinned IR audit: `xQueueGiveMutexRecursive` returns failure only for 
 
 ## Affinity preservation after unique task naming
 
-The audio-system hardware probe exposed a regression in `d91c2c1f`: the music
-worker starts, but the microphone worker cannot resolve its target policy and
-startup reports `-5`. The target's policy is `#C0audio-system/mic`; its public
-PAL label is `audio-system/mic`. The native decoder/microphone servers opened
-and were stopped during the App's startup-failure cleanup. This is not a
-successful audio streaming result.
+The audio-system hardware probe exposed a regression in `d91c2c1f`: the music worker starts, but the microphone worker cannot resolve its target policy and startup reports `-5`. The target's policy is `#C0audio-system/mic`; its public PAL label is `audio-system/mic`. The native decoder/microphone servers opened and were stopped during the App's startup-failure cleanup. This is not a successful audio streaming result.
 
-Pinned `system.a:task.c.o`, `get_task_priority` (IR lines 20–61), matches both
-literal names and the suffix after `#C0`/`#C1`. `task_create` then passes the
-original prefixed policy name to `os_task_create`. In `tasks.c.o`,
-`prvInitialiseNewTask` (IR lines 210–249), that prefix selects CPU affinity and
-is removed before the TCB name is stored. The PAL adapter must preserve both
-steps when substituting a unique native identity: resolve the canonical label,
-prepend the selected affinity only for SDK creation, and retain the canonical
-unique name for join/deletion.
+Pinned `system.a:task.c.o`, `get_task_priority` (IR lines 20–61), matches both literal names and the suffix after `#C0`/`#C1`. `task_create` then passes the original prefixed policy name to `os_task_create`. In `tasks.c.o`, `prvInitialiseNewTask` (IR lines 210–249), that prefix selects CPU affinity and is removed before the TCB name is stored. The PAL adapter must preserve both steps when substituting a unique native identity: resolve the canonical label, prepend the selected affinity only for SDK creation, and retain the canonical unique name for join/deletion.
 
-The SDK dispatch fixture now fails before for a canonical label with a CPU-0
-policy. It checks CPU-0/CPU-1, explicit prefixed lookup, priority/queue/stack
-budgets, and unchanged anonymous/named dispatch afterward. The real-pthread
-identity test also fails before when a prefixed PAL label leaks into the
-retained deletion identity; canonical and prefixed labels both pass afterward.
-Clang, GCC strict-warning builds, the BLE stack-budget fixture, and TSan pass.
-The affinity correction is validated independently with the preceding audio
-provider, before the pending O1 replacement is included.
+The SDK dispatch fixture now fails before for a canonical label with a CPU-0 policy. It checks CPU-0/CPU-1, explicit prefixed lookup, priority/queue/stack budgets, and unchanged anonymous/named dispatch afterward. The real-pthread identity test also fails before when a prefixed PAL label leaks into the retained deletion identity; canonical and prefixed labels both pass afterward. Clang, GCC strict-warning builds, the BLE stack-budget fixture, and TSan pass. The affinity correction is validated independently with the preceding audio provider, before the pending O1 replacement is included.
 
-[Hardware comparison](pal-blocker-followup.md#retained-acceptance-facts-pal-task-affinity-hardware): with the affinity-only
-correction and the preceding audio provider, the UART-installed audio-system
-App reaches READY and emits 25 microphone reports during a 30-second
-observation. Its package SHA-256 is
-`36a4e1ca2cdc3c7d7154a1a8946ecfd39e19b0b68cfaeee5cd6f9eb8b761e51c`.
-Loader, PAL and audio-system native builds pass (64.911 seconds). The App
-returns through UART to the unchanged valid P1 Loader. This verifies worker
-creation and streaming, not the pending O1 deadline/drain replacement or a
-controlled stop/restart cycle.
+[Hardware comparison](pal-blocker-followup.md#retained-acceptance-facts-pal-task-affinity-hardware): with the affinity-only correction and the preceding audio provider, the UART-installed audio-system App reaches READY and emits 25 microphone reports during a 30-second observation. Its package SHA-256 is `36a4e1ca2cdc3c7d7154a1a8946ecfd39e19b0b68cfaeee5cd6f9eb8b761e51c`. Loader, PAL and audio-system native builds pass (64.911 seconds). The App returns through UART to the unchanged valid P1 Loader. This verifies worker creation and streaming, not the pending O1 deadline/drain replacement or a controlled stop/restart cycle.
 
 ## Retained acceptance facts: pal-allocator-hardware
 

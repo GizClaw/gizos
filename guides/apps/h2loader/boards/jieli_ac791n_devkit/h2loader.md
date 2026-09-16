@@ -83,35 +83,19 @@ Loader 只有 UART 与 BLE capability，不提供 Wi-Fi 与 HTTP；runner 一旦
 
 ### 2026-09-15：system-event owner 引用计数
 
-Provider 的每次成功 init 各取得一个 owner，Runtime deinit 只释放自己的 owner，
-launcher/BLE 的订阅继续工作；最后一个 owner 释放后才关闭，并等在途操作退出后销毁。
-[退出路径的失败回归、TSan 与 button 实机证据](./evidence/2026-09-15/system-event-owners.md)。
+Provider 的每次成功 init 各取得一个 owner，Runtime deinit 只释放自己的 owner， launcher/BLE 的订阅继续工作；最后一个 owner 释放后才关闭，并等在途操作退出后销毁。 [退出路径的失败回归、TSan 与 button 实机证据](./evidence/2026-09-15/system-event-owners.md)。
 
 ### 2026-09-15：共享 launcher 与 Runtime 事件复用
 
-`5b1d822a` 的 ACTIVE event provider 已支持重复初始化；真实 Runtime/provider
-主机回归和 button、touch、audio-system 三个生产包实机验证均成功。
-三个目标通过 UART Loader 安装到 P2，观察 READY、确认成功及独立状态，最后返回 P1。
-[源码判定、测试与完整验收边界](./evidence/2026-09-15/runtime-event-reuse.md)。
+`5b1d822a` 的 ACTIVE event provider 已支持重复初始化；真实 Runtime/provider 主机回归和 button、touch、audio-system 三个生产包实机验证均成功。 三个目标通过 UART Loader 安装到 P2，观察 READY、确认成功及独立状态，最后返回 P1。 [源码判定、测试与完整验收边界](./evidence/2026-09-15/runtime-event-reuse.md)。
 
 ### 2026-09-14：当前源码 Loader 自更新与 UART 回归
 
-源码 `2a814d32`（含 FAT 属性 stat、SDK 单次路径编码和单层 mkdir 修正）
-在 UID `d879349abc9f` 上完成不同镜像 Loader 自更新：P2 确认并发布启动头后，
-读取 SD shadow、回写 P1 并收敛；独立 status 确认 P1/P2 SHA 一致、Stage 空、
-last_result=0。随后在该 Loader 上执行完整 UART suite，25/25 PASS，560.440 秒。
-两项重连等待明显偏长且原因未定；本轮未覆盖 BLE 或断电。
-[完整证据与最终板端状态](./evidence/2026-09-14/loader-uart-lifecycle.md)。
+源码 `2a814d32`（含 FAT 属性 stat、SDK 单次路径编码和单层 mkdir 修正） 在 UID `d879349abc9f` 上完成不同镜像 Loader 自更新：P2 确认并发布启动头后， 读取 SD shadow、回写 P1 并收敛；独立 status 确认 P1/P2 SHA 一致、Stage 空、 last_result=0。随后在该 Loader 上执行完整 UART suite，25/25 PASS，560.440 秒。 两项重连等待明显偏长且原因未定；本轮未覆盖 BLE 或断电。 [完整证据与最终板端状态](./evidence/2026-09-14/loader-uart-lifecycle.md)。
 
 ### 2026-09-14：当前源码 Loader BLE 连续两轮回归
 
-同一 UID `d879349abc9f`、当前源码 Loader，经重新发现的 BLE endpoint
-`5:818f070641f0` 完成两轮完整 BLE-only lifecycle：22/22 PASS（385.850 秒）
-和 22/22 PASS（357.072 秒）。UART 并行记录 34 / 33 次连接，每条连接的
-supervision timeout 与 LL reject 均为 0；仍有 SDK `conn nack` 等非致命诊断。
-独立 UART status 确认 P1 SHA 不变、last_result=0，P2/Stage 保留预期 crash App。
-未修改代码，不声称已根治历史间歇性问题或覆盖新断电测试。
-[两轮逐项结果、连接统计与最终状态](./evidence/2026-09-14/loader-ble-lifecycle.md)。
+同一 UID `d879349abc9f`、当前源码 Loader，经重新发现的 BLE endpoint `5:818f070641f0` 完成两轮完整 BLE-only lifecycle：22/22 PASS（385.850 秒） 和 22/22 PASS（357.072 秒）。UART 并行记录 34 / 33 次连接，每条连接的 supervision timeout 与 LL reject 均为 0；仍有 SDK `conn nack` 等非致命诊断。 独立 UART status 确认 P1 SHA 不变、last_result=0，P2/Stage 保留预期 crash App。 未修改代码，不声称已根治历史间歇性问题或覆盖新断电测试。 [两轮逐项结果、连接统计与最终状态](./evidence/2026-09-14/loader-ble-lifecycle.md)。
 
 ### 2026-09-13：恢复固件后的独立 UART / BLE 回归
 

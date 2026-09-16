@@ -2,16 +2,9 @@
 
 ## 范围
 
-设备 `3ce9e275d7aa`，UART `/dev/cu.usbserial-20131240`，460800。
-本次只覆盖原生 P2 启动头的 16 字节前缀写入；不代表所有损坏模式、P1
-启动头写入中断或 Preference 写入中断已经通过。
+设备 `3ce9e275d7aa`，UART `/dev/cu.usbserial-20131240`，460800。 本次只覆盖原生 P2 启动头的 16 字节前缀写入；不代表所有损坏模式、P1 启动头写入中断或 Preference 写入中断已经通过。
 
-诊断组件 `loader_partial_header` 仅链接到独立、禁止发布的测试包。
-它只在 P2 运行且 P1 启动头 CRC 有效时操作 P2：写入 32 字节启动头的前
-16 字节，读回确认后 16 字节仍为擦除值，并确认部分头的 CRC 无效；关闭
-看门狗并持续输出 `H2_JIELI_PARTIAL_HEADER_READY`，等待真实断电。
-不会擦除 P1。主机单测覆盖运行分区、读取失败、P1 CRC 和写入范围守卫；
-单测中的解码是 mock，不代替下述硬件结果。
+诊断组件 `loader_partial_header` 仅链接到独立、禁止发布的测试包。 它只在 P2 运行且 P1 启动头 CRC 有效时操作 P2：写入 32 字节启动头的前 16 字节，读回确认后 16 字节仍为擦除值，并确认部分头的 CRC 无效；关闭 看门狗并持续输出 `H2_JIELI_PARTIAL_HEADER_READY`，等待真实断电。 不会擦除 P1。主机单测覆盖运行分区、读取失败、P1 CRC 和写入范围守卫； 单测中的解码是 mock，不代替下述硬件结果。
 
 ## 镜像身份
 
@@ -37,7 +30,4 @@
 6. 停止监控后独立查询：`running_partition=1`，P1/P2 元数据均为正式 v5，
    `stage_valid=0`、`last_result=0`，UART 命令可用。
 
-本次重装镜像与原 P1 相同，因此证明的是损坏 P2 可重写、校验及清理 Stage，
-不是一次不同身份候选的试运行或 P2→P1 搬运。原始本地采集在
-`tmp/jieli/partial-header-v1-monitor.log` 和
-`tmp/jieli/partial-header-recovery-v5-monitor.log`；这些临时日志不属于发布包。
+本次重装镜像与原 P1 相同，因此证明的是损坏 P2 可重写、校验及清理 Stage， 不是一次不同身份候选的试运行或 P2→P1 搬运。原始本地采集在 `tmp/jieli/partial-header-v1-monitor.log` 和 `tmp/jieli/partial-header-recovery-v5-monitor.log`；这些临时日志不属于发布包。

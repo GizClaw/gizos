@@ -1,7 +1,6 @@
 # Partial P1 header: physical power-loss recovery
 
-Operator confirmed the requested power-off/on operation (not Reset) on
-2026-09-13. UART capture independently records POWER ON after the fixture.
+Operator confirmed the requested power-off/on operation (not Reset) on 2026-09-13. UART capture independently records POWER ON after the fixture.
 
 - Device: `3ce9e275d7aa`; UART `/dev/cu.usbserial-20131240`, 460800.
 - Package: `6c92406e55ce0ea40e3c2efb6f36ccda46a9e32a4b1d7b8534da843c791a3ddd`, 917481 bytes.
@@ -22,11 +21,6 @@ Observed sequence:
 6. Independent UART status succeeds: running/next partition 1, Stage invalid
    (cleared), last_result 0, both partition image identities equal the SHA above.
 
-Result: PASS for recovery from this specific torn P1 header and safe retry to
-P1 after physical power loss. This is not exhaustive coverage of every flash
-bit pattern or an acceptance claim for Preference-write interruption.
+Result: PASS for recovery from this specific torn P1 header and safe retry to P1 after physical power loss. This is not exhaustive coverage of every flash bit pattern or an acceptance claim for Preference-write interruption.
 
-During the extended diagnostic hold the SDK emitted
-`UART0_CIRCULAR_BUFFER_WRITE_OVERLAY` warnings. These remain disclosed; normal
-post-recovery UART status succeeds, but this test does not establish their root
-cause or resolve logging robustness generally.
+During the extended diagnostic hold the SDK emitted `UART0_CIRCULAR_BUFFER_WRITE_OVERLAY` warnings. These remain disclosed; normal post-recovery UART status succeeds, but this test does not establish their root cause or resolve logging robustness generally.

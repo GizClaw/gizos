@@ -1,7 +1,6 @@
 # Partial P1 header: reset recovery only
 
-The operator explicitly confirmed pressing Reset, not removing power. This
-attempt must not be counted as physical power-loss acceptance.
+The operator explicitly confirmed pressing Reset, not removing power. This attempt must not be counted as physical power-loss acceptance.
 
 - Device: `3ce9e275d7aa`, UART `/dev/cu.usbserial-20131240`, 460800.
 - Package SHA-256: `6c92406e55ce0ea40e3c2efb6f36ccda46a9e32a4b1d7b8534da843c791a3ddd`.
@@ -14,6 +13,4 @@ attempt must not be counted as physical power-loss acceptance.
 - Status reported `running_partition=1 next_partition=1 stage_valid=0
   last_result=0`, with both partition identities matching the image above.
 
-This supports recovery after reset from the partial-header fixture. It does not
-provide uninterrupted ROM-selection logs or evidence of physical power removal.
-Physical power-loss recovery and Preference-write interruption remain pending.
+This supports recovery after reset from the partial-header fixture. It does not provide uninterrupted ROM-selection logs or evidence of physical power removal. Physical power-loss recovery and Preference-write interruption remain pending.
