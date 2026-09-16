@@ -1,0 +1,54 @@
+load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_jieli_firmware")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel:jieli_task_policy.bzl", "jieli_target_task_policy")
+
+package(default_visibility = ["//visibility:public"])
+
+AC791N_COMPATIBILITY = select({
+    "//tools/bazel/platforms:ci_graph": [],
+    "//tools/bazel/platforms:is_ac791n": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+firmware_native_component(
+    name = "speaker_smoke",
+    srcs = ["src/speaker_smoke.c"],
+    component_name = "jieli_ac791n_devkit_speaker_smoke",
+    tags = ["manual"],
+    target_compatible_with = AC791N_COMPATIBILITY,
+    deps = [
+        "//boards/jieli_ac791n_devkit/ac791n",
+        "//libs/pal:pal_header_files",
+    ],
+)
+
+jieli_target_task_policy(
+    name = "speaker_smoke_task_policy",
+    default_policy = "10 4096 128",
+    graph = [":speaker_smoke"],
+    policies = [],
+    sdk_policies = [
+        "speaker_smoke 10 4096 128",
+        "app_core 15 8192 1024",
+        "sys_event 29 512 0",
+        "systimer 14 256 0",
+        "sys_timer 9 512 128",
+        "dw_update 21 512 32",
+        "audio_server 16 1024 256",
+        "audio_decoder 30 1024 64",
+        "audio_mix 28 512 0",
+    ],
+)
+
+h2loader_jieli_firmware(
+    name = "speaker_smoke_firmware",
+    board = "jieli_ac791n_devkit",
+    graph = [
+        ":speaker_smoke",
+        "//boards/jieli_ac791n_devkit/ac791n",
+    ],
+    image = "speaker-smoke",
+    target = "wl82",
+    task_policy = ":speaker_smoke_task_policy",
+)
+

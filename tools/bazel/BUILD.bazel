@@ -380,6 +380,22 @@ py_test(
 )
 
 py_test(
+    name = "jieli_target_runtime_lifetime_test",
+    srcs = ["tests/test_jieli_target_runtime_lifetime.py"],
+    data = [
+        "tests/fixtures/jieli_target_runtime_lifetime.c",
+        "//projects/e2e/targets/h2loader_tar_zlib/pal/jieli_ac791n_devkit:src/pal_e2e_main.c",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_target_runtime_lifetime.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
     name = "jieli_task_policy_test",
     srcs = ["tests/test_jieli_task_policy.py"],
     data = ["jieli_task_policy.bzl"],

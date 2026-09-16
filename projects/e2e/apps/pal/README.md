@@ -46,3 +46,11 @@ and cleanup.
 A case whose worker join or timer destroy fails keeps its resources in
 `retained_cleanup`; remaining suites (including MQTT) are skipped until
 `h2_pal_e2e_cleanup()` succeeds.
+
+The AC791N launcher is
+`//projects/e2e/targets/h2loader_tar_zlib/pal/jieli_ac791n_devkit:package`.
+It uses the shared H2Loader board layout and Bazel task policy, runs the
+standalone Filesystem suite, then Core, then Wi-Fi, and prints per-case
+`H2_PAL_E2E` results plus a repeating summary over UART1. It deliberately leaves
+the diagnostic App unconfirmed so reset recovers to Loader; this is not an App
+confirmation or full Loader lifecycle test.
