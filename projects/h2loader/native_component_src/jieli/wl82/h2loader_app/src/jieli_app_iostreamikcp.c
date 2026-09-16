@@ -30,6 +30,11 @@ enum {
    * before nested metadata formatting and KCP I/O. PAL sizes are bytes. */
   H2_APP_COMMAND_STACK_SIZE = 48 * 1024,
   H2_USB_RX_TASK_STACK_SIZE = 4096,
+  /* Upper bound on how long SESSION_OPEN is deferred while the App flushes its
+   * boot and confirmation console on the raw pre-session path. The App normally
+   * lifts the gate at confirmation (~1 s); this fallback keeps a boot that never
+   * reaches confirmation from locking the host out of the command transport. */
+  H2_SESSION_GATE_FALLBACK_MS = 8000,
 };
 
 typedef struct h2_jieli_app_transport {
@@ -45,6 +50,13 @@ typedef struct h2_jieli_app_transport {
   int io_deadline_active;
   int replacement_pending;
   int close_pending;
+  /* Session admission gate. While closed, SESSION_OPEN is ignored so every
+   * console byte already produced leaves on the raw pre-session path the host
+   * captures losslessly; the App opens it once its confirmation has drained,
+   * and a fallback deadline opens it regardless so a stuck boot cannot lock the
+   * host out. Sticky once open. */
+  int sessions_admitted;
+  uint32_t gate_started_ms;
 } h2_jieli_app_transport_t;
 
 typedef struct h2_jieli_app_console {
@@ -304,6 +316,17 @@ static int on_frame(void *user, const h2_iostreamikcp_frame_t *frame) {
   h2_jieli_app_transport_t *self = user;
   if (frame->flags == H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_OPEN) {
     if (frame->conv == 0u) return H2_PAL_ERR_INVALID_ARG;
+    /* Hold the session closed until the App has flushed its boot and
+     * confirmation console. Answering here would move the console into the
+     * reliable tunnel mid-flush, and the queued lines would be discarded when
+     * the App proceeds; ignoring the frame makes the host retransmit it, and
+     * the confirmation reaches the wire raw in the meantime. */
+    if (!self->sessions_admitted &&
+        (uint32_t)(timer_get_ms() - self->gate_started_ms) <
+            H2_SESSION_GATE_FALLBACK_MS) {
+      return H2_PAL_OK;
+    }
+    self->sessions_admitted = 1;
     if (self->stream != NULL && frame->conv == self->conv) {
       return send_control(
           self, H2_IOSTREAMIKCP_FRAME_FLAG_SESSION_ACK, frame->conv);
@@ -702,6 +725,12 @@ int h2_jieli_app_iostreamikcp_start(
 #endif
   state.initialized = 1;
 start_command:
+  /* Start the session-admission gate now: the command task begins polling as
+   * soon as it is created, and the host may send SESSION_OPEN before the App
+   * confirms. The gate closes here and the App opens it after its confirmation
+   * has drained. */
+  state.transport.sessions_admitted = 0;
+  state.transport.gate_started_ms = timer_get_ms();
   state.started = 1;
   const h2_loader_app_client_return_console_config_t console = {
       .client = client,
@@ -716,4 +745,10 @@ start_command:
   int rc = h2_loader_app_client_start_return_console(&console);
   if (rc != H2_PAL_OK) state.started = 0;
   return rc;
+}
+
+void h2_jieli_app_iostreamikcp_admit_sessions(void) {
+  /* Idempotent and safe before start: the command task only reads the flag
+   * inside on_frame, which runs after start. Once set it stays set. */
+  state.transport.sessions_admitted = 1;
 }

@@ -709,6 +709,11 @@ void app_main(void) {
           "JIELI_TRIAL_TIMER state=deleted id=%u\r\n",
           (unsigned)timer_to_delete);
     }
+    /* Boot and confirmation console has now been produced on the raw
+     * pre-session path. Admit the reliable command session so `--monitor` and
+     * subsequent commands proceed; earlier admission would have moved these
+     * lines into the tunnel and lost them when this branch returned. */
+    h2_jieli_app_iostreamikcp_admit_sessions();
     return;
   }
 
@@ -769,5 +774,7 @@ void app_main(void) {
         "JIELI_TRIAL_TIMER state=deleted id=%u\r\n",
         (unsigned)timer_to_delete);
   }
-
+  /* The diagnostic scene's confirmation console has been produced on the raw
+   * pre-session path; admit the reliable command session now. */
+  h2_jieli_app_iostreamikcp_admit_sessions();
 }
