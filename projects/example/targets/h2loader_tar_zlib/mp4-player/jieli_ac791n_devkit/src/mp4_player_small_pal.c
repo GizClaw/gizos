@@ -496,6 +496,7 @@ static void mp4_runtime(void *user) {
     emit("H2_JIELI_MP4_WATCHDOG mode=playback-progress\r\n");
     result = h2_smoke_mp4_player_run(runtime, &player_config);
   }
+  if (runtime != NULL) h2_runtime_deinit(runtime);
   emit("H2_JIELI_MP4_FAIL stage=run rc=%d heap_free=%u\r\n", result,
        (unsigned)get_malloc_remain_heap_size());
   if (h2_jieli_mp4_is_direct_boot()) {

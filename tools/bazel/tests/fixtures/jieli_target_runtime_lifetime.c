@@ -1,0 +1,129 @@
+#define _POSIX_C_SOURCE 200809L
+#include <assert.h>
+#include <pthread.h>
+#include <stdatomic.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <string.h>
+#include <time.h>
+#define H2_PAL_OK 0
+#define H2_AUDIO_OK 0
+#define H2_PAL_ERR_INVALID_STATE -7
+#define H2_PAL_ERR_TIMEOUT -8
+#define H2_PAL_ERR_NOT_FOUND -9
+#define H2_SMOKE_MP4_PLAYER_DISPLAY_CENTER 0
+typedef int h2_pal_result_t;
+typedef struct { int unused; } h2_pal_task_t;
+typedef struct { const void *task, *time, *display, *fs; } h2_runtime_t;
+typedef struct { const void *periph, *component_mapper; } h2_runtime_config_t;
+typedef struct { const char *name; unsigned min_stack_size; } h2_pal_task_options_t;
+typedef struct { int unused; } h2_pal_fs_stat_t;
+typedef struct { const char *music_path; unsigned speaker_volume_percent; } h2_smoke_audio_system_config_t;
+typedef struct { void (*crash)(void *); } h2_crash_before_confirm_config_t;
+typedef struct {
+ unsigned width, height; const void *buttons; size_t button_count;
+ int (*should_stop)(void *); void *stop_user;
+ void (*on_started)(void *, int); void *started_user;
+} smoke_config_t;
+typedef smoke_config_t h2_button_smoke_config_t;
+typedef smoke_config_t h2_touch_smoke_config_t;
+typedef struct {
+ const char *media_path; unsigned acquire_timeout_ms; int looping, display_mode, require_audio;
+ int (*should_stop)(void *); int (*on_ready)(void *); void *ready_user;
+} h2_smoke_mp4_player_config_t;
+typedef struct { uint32_t suite_mask; } h2_pal_e2e_config_t;
+typedef struct { size_t case_count, passed, failed; struct { unsigned case_id; int result; } cases[1]; void *retained_cleanup; } h2_pal_e2e_result_t;
+static h2_runtime_t instance;
+static atomic_int live, finishes;
+static int fault, inits, deinits, retained, audio_active, audio_stop_calls;
+#if WORKER_TARGET
+static const int periph_api = 0, component_mapper = 0;
+const int app_buttons[1] = {0};
+static pthread_t worker;
+static atomic_int allow_finish;
+static void (*worker_fn)(void *);
+static void *worker_arg;
+static int worker_started;
+#endif
+void emit(const char *format, ...) { (void)format; }
+void trace(const char *format, ...) { (void)format; }
+void boot_marker(unsigned stage, int result) { (void)stage; (void)result; }
+unsigned get_malloc_remain_heap_size(void) { return 0; }
+void os_time_dly(unsigned ticks) { (void)ticks; struct timespec t = {0, 1000000}; nanosleep(&t, NULL); }
+int h2_jieli_ac791n_devkit_runtime_config(h2_runtime_config_t *c) { memset(c, 0, sizeof(*c)); return fault == 1 ? -11 : 0; }
+int mp4_runtime_config(h2_runtime_config_t *c) { return h2_jieli_ac791n_devkit_runtime_config(c); }
+int h2_runtime_init(const h2_runtime_config_t *c, h2_runtime_t **out) {
+ (void)c; if (fault == 2) return -12;
+ assert(!atomic_exchange(&live, 1)); ++inits; *out = &instance; return 0;
+}
+void h2_runtime_deinit(h2_runtime_t *r) {
+ assert(r == &instance && !retained && !audio_active); assert(atomic_exchange(&live, 0)); ++deinits;
+}
+int h2_runtime_input_start(h2_runtime_t *r, const void *c) { (void)c; assert(r == &instance && live); return fault == 3 ? -13 : 0; }
+int h2_pal_time_sleep_ms(const void *time, unsigned ms) { (void)time; (void)ms; assert(live); os_time_dly(1); return 0; }
+int h2_smoke_audio_system_run(h2_runtime_t *r, const h2_smoke_audio_system_config_t *c) { (void)c; assert(r == &instance && live); audio_active = 1; return fault == 5 ? -15 : 0; }
+int h2_smoke_audio_system_stop(void) {
+ assert(live && audio_active);
+ if (++audio_stop_calls == 1 && fault == 4) return -16;
+ audio_active = 0; return 0;
+}
+void crash_now(void *user) { (void)user; }
+void cpu_assert_debug(void) { assert(live); }
+int h2_crash_before_confirm_run(h2_runtime_t *r, const h2_crash_before_confirm_config_t *c) { (void)c; assert(r == &instance && live); return -15; }
+int h2_pal_display_open(const void *d) { (void)d; assert(live); return fault == 3 ? -13 : 0; }
+int h2_pal_fs_stat(const void *fs, const char *path, h2_pal_fs_stat_t *st) { (void)fs; (void)path; (void)st; assert(live); return H2_PAL_ERR_NOT_FOUND; }
+int mp4_watchdog_poll(void *u) { (void)u; return 0; }
+int confirm_ready(void *u) { (void)u; return 0; }
+int h2_smoke_mp4_player_run(h2_runtime_t *r, const h2_smoke_mp4_player_config_t *c) { (void)c; assert(r == &instance && live); return fault == 5 ? -15 : 0; }
+int h2_pal_e2e_run(h2_runtime_t *r, const h2_pal_e2e_config_t *c, h2_pal_e2e_result_t *report) {
+ (void)c; assert(r == &instance && live);
+ if (fault == 5) { report->retained_cleanup = report; retained = 2; return -15; }
+ return 0;
+}
+int h2_pal_e2e_cleanup(h2_runtime_t *r, h2_pal_e2e_result_t *report) {
+ assert(r == &instance && live && retained); if (--retained == 0) report->retained_cleanup = NULL; return retained ? -6 : 0;
+}
+#if WORKER_TARGET
+static void *run_worker(void *arg) { (void)arg; worker_fn(worker_arg); atomic_store(&finishes, 1); return NULL; }
+int h2_pal_task_start(const void *api, const h2_pal_task_options_t *options, void (*fn)(void *), void *arg, h2_pal_task_t **out) {
+ (void)api; (void)options; (void)out; if (fault == 4) return -14;
+ worker_fn = fn; worker_arg = arg; worker_started = 1; assert(pthread_create(&worker, NULL, run_worker, NULL) == 0); return 0;
+}
+static int smoke_run(h2_runtime_t *r, const smoke_config_t *c) {
+ assert(r == &instance && live);
+ if (fault == 6) { while (!c->should_stop(c->stop_user)) os_time_dly(1); return -8; }
+ c->on_started(c->started_user, fault == 5 ? -15 : 0);
+ if (fault != 5) while (!atomic_load(&allow_finish)) { assert(live); os_time_dly(1); }
+ return fault == 5 ? -15 : 0;
+}
+int h2_button_smoke_run(h2_runtime_t *r, const smoke_config_t *c) { return smoke_run(r, c); }
+int h2_touch_smoke_run(h2_runtime_t *r, const smoke_config_t *c) { return smoke_run(r, c); }
+#endif
+/* TARGET */
+int main(void) {
+ for (fault = 0; fault <= 6; ++fault) {
+  inits = deinits = retained = audio_active = audio_stop_calls = 0; atomic_store(&live, 0); atomic_store(&finishes, 0);
+#if WORKER_TARGET
+  worker_started = 0; atomic_store(&allow_finish, 0);
+#endif
+  int result = h2_jieli_target_application_run();
+  if (fault == 1) assert(result == -11);
+  else if (fault == 2) assert(result == -12);
+#if WORKER_TARGET
+  else if (fault == 3) assert(result == -13);
+  else if (fault == 4) assert(result == -14);
+  else if (fault == 5) assert(result == -15);
+  else if (fault == 6) assert(result == H2_PAL_ERR_TIMEOUT);
+  else { assert(result == 0 && live); }
+  atomic_store(&allow_finish, 1);
+  if (worker_started) assert(pthread_join(worker, NULL) == 0);
+#else
+  else if (CRASH_TARGET) assert(result == H2_PAL_ERR_INVALID_STATE);
+  else if (fault == 5) assert(result == -15);
+  else assert(result == 0 || (fault == 3 && result == -13));
+#endif
+  assert(inits == deinits && !live && !retained);
+ }
+ return 0;
+}

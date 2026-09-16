@@ -1629,3 +1629,24 @@ py_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )
+
+py_test(
+    name = "jieli_target_runtime_lifetime_test",
+    srcs = ["tests/test_jieli_target_runtime_lifetime.py"],
+    data = [
+        "tests/fixtures/jieli_target_runtime_lifetime.c",
+        "//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:src/audio_system_target.c",
+        "//projects/example/targets/h2loader_tar_zlib/button/jieli_ac791n_devkit:src/button_target.c",
+        "//projects/example/targets/h2loader_tar_zlib/touch/jieli_ac791n_devkit:src/touch_target.c",
+        "//projects/example/targets/h2loader_tar_zlib/crash-before-confirm/jieli_ac791n_devkit:src/crash_before_confirm_target.c",
+        "//projects/example/targets/h2loader_tar_zlib/mp4-player/jieli_ac791n_devkit:src/mp4_player_small_pal.c",
+        "//projects/e2e/targets/h2loader_tar_zlib/pal/jieli_ac791n_devkit:src/pal_e2e_main.c",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_target_runtime_lifetime.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)

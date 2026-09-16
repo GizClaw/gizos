@@ -24,5 +24,12 @@ int h2_jieli_target_application_run(void) {
   if (result == H2_AUDIO_OK) {
     printf("H2_JIELI_AUDIO_SYSTEM_READY mic=1 speaker=1 aec=dac-software-ref\n");
   }
+  /* run() starts scene-owned workers; its return does not retire them.
+   * This entry retains no owner after returning, so stop/join first. Failed
+   * cleanup remains retryable only while the borrowed Runtime is alive. */
+  while (h2_smoke_audio_system_stop() != H2_AUDIO_OK) {
+    (void)h2_pal_time_sleep_ms(runtime->time, 10u);
+  }
+  h2_runtime_deinit(runtime);
   return result;
 }

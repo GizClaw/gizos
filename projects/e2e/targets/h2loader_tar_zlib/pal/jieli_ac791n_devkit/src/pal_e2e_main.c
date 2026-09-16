@@ -198,6 +198,15 @@ static void run_suites(void *user) {
       if (report->retained_cleanup != NULL) break;
     }
   }
+  /* Retained Task cleanup borrows the Runtime. Make progress until all
+   * workers release it, then keep only the value-only ledger below. */
+  for (size_t s = 0; s < sizeof(suites) / sizeof(suites[0]); ++s) {
+    while (reports[s].retained_cleanup != NULL) {
+      (void)h2_pal_e2e_cleanup(runtime, &reports[s]);
+      if (reports[s].retained_cleanup != NULL) os_time_dly(1u);
+    }
+  }
+  if (runtime != NULL) h2_runtime_deinit(runtime);
   /* Deliberately leave this diagnostic App unconfirmed: a reset must recover
    * to Loader even if a later PAL test hangs. UART commands remain available. */
   for (;;) {

@@ -40,5 +40,6 @@ int h2_jieli_target_application_run(void) {
   const h2_crash_before_confirm_config_t crash_config = {.crash = crash_now};
   (void)h2_crash_before_confirm_run(runtime, &crash_config);
   cpu_assert_debug();
+  h2_runtime_deinit(runtime);
   return H2_PAL_ERR_INVALID_STATE;
 }

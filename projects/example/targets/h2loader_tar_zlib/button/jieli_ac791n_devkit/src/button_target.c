@@ -22,6 +22,8 @@ typedef struct button_target_state {
   h2_runtime_t *runtime;
   h2_pal_task_t *task;
   atomic_bool started;
+  atomic_bool entry_released;
+  atomic_bool stop_requested;
   atomic_int startup_result;
 } button_target_state_t;
 
@@ -168,7 +170,7 @@ static const h2_runtime_component_mapper_t component_mapper = {
 
 static int should_stop(void *user) {
   (void)user;
-  return 0;
+  return atomic_load_explicit(&button_target.stop_requested, memory_order_acquire);
 }
 
 static void on_started(void *user, h2_pal_result_t result) {
@@ -190,6 +192,13 @@ static void button_task(void *user) {
   };
   int result = h2_button_smoke_run(state->runtime, &config);
   emit("H2_JIELI_BUTTON_SMOKE stage=stopped result=%d\r\n", result);
+  /* The entry lends the Runtime until its startup handshake is complete.
+   * This worker then owns it until the smoke flow has released its users. */
+  while (!atomic_load_explicit(&state->entry_released, memory_order_acquire)) {
+    (void)h2_pal_time_sleep_ms(state->runtime->time, 10u);
+  }
+  h2_runtime_deinit(state->runtime);
+  state->runtime = NULL;
 }
 
 int h2_jieli_target_application_run(void) {
@@ -198,6 +207,8 @@ int h2_jieli_target_application_run(void) {
   emit("H2_JIELI_BUTTON_SMOKE stage=target-enter\r\n");
   memset(&button_target, 0, sizeof(button_target));
   atomic_init(&button_target.started, false);
+  atomic_init(&button_target.entry_released, false);
+  atomic_init(&button_target.stop_requested, false);
   atomic_init(&button_target.startup_result, H2_PAL_ERR_INVALID_STATE);
   int result = h2_jieli_ac791n_devkit_runtime_config(&config);
   if (result == H2_PAL_OK) {
@@ -208,23 +219,34 @@ int h2_jieli_target_application_run(void) {
   emit("H2_JIELI_BUTTON_SMOKE stage=runtime-init result=%d\r\n", result);
   if (result == H2_PAL_OK) result = h2_runtime_input_start(runtime, NULL);
   emit("H2_JIELI_BUTTON_SMOKE stage=input-start result=%d\r\n", result);
-  if (result != H2_PAL_OK) return result;
+  if (result != H2_PAL_OK) {
+    if (runtime != NULL) h2_runtime_deinit(runtime);
+    button_target.runtime = NULL;
+    return result;
+  }
 
   button_target.runtime = runtime;
   const h2_pal_task_options_t options = {
       .name = "button-smoke", .min_stack_size = 16384u};
   result = h2_pal_task_start(runtime->task, &options, button_task,
                              &button_target, &button_target.task);
-  if (result != H2_PAL_OK) return result;
+  if (result != H2_PAL_OK) {
+    if (runtime != NULL) h2_runtime_deinit(runtime);
+    button_target.runtime = NULL;
+    return result;
+  }
   for (unsigned attempt = 0u; attempt < 300u; ++attempt) {
     if (atomic_load_explicit(&button_target.started, memory_order_acquire)) {
       result = atomic_load_explicit(&button_target.startup_result,
                                     memory_order_acquire);
       emit("H2_JIELI_BUTTON_SMOKE_READY buttons=8 display=480x320 result=%d\r\n",
            result);
+      atomic_store_explicit(&button_target.entry_released, true, memory_order_release);
       return result;
     }
     (void)h2_pal_time_sleep_ms(runtime->time, 10u);
   }
+  atomic_store_explicit(&button_target.stop_requested, true, memory_order_release);
+  atomic_store_explicit(&button_target.entry_released, true, memory_order_release);
   return H2_PAL_ERR_TIMEOUT;
 }

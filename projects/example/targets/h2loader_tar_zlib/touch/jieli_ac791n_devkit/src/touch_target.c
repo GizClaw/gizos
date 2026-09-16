@@ -11,6 +11,8 @@ typedef struct touch_target_state {
   h2_runtime_t *runtime;
   h2_pal_task_t *task;
   atomic_bool started;
+  atomic_bool entry_released;
+  atomic_bool stop_requested;
   atomic_int startup_result;
 } touch_target_state_t;
 
@@ -111,7 +113,7 @@ static const h2_runtime_component_mapper_t component_mapper = {
 
 static int should_stop(void *user) {
   (void)user;
-  return 0;
+  return atomic_load_explicit(&touch_target.stop_requested, memory_order_acquire);
 }
 
 static void on_started(void *user, h2_pal_result_t result) {
@@ -132,6 +134,13 @@ static void touch_task(void *user) {
   };
   int result = h2_touch_smoke_run(state->runtime, &config);
   emit("H2_JIELI_TOUCH_SMOKE stage=stopped result=%d\r\n", result);
+  /* The entry lends the Runtime until its startup handshake is complete.
+   * This worker then owns it until the smoke flow has released its users. */
+  while (!atomic_load_explicit(&state->entry_released, memory_order_acquire)) {
+    (void)h2_pal_time_sleep_ms(state->runtime->time, 10u);
+  }
+  h2_runtime_deinit(state->runtime);
+  state->runtime = NULL;
 }
 
 int h2_jieli_target_application_run(void) {
@@ -140,6 +149,8 @@ int h2_jieli_target_application_run(void) {
   emit("H2_JIELI_TOUCH_SMOKE stage=target-enter\r\n");
   memset(&touch_target, 0, sizeof(touch_target));
   atomic_init(&touch_target.started, false);
+  atomic_init(&touch_target.entry_released, false);
+  atomic_init(&touch_target.stop_requested, false);
   atomic_init(&touch_target.startup_result, H2_PAL_ERR_INVALID_STATE);
 
   emit("H2_JIELI_TOUCH_SMOKE stage=runtime-config-enter\r\n");
@@ -153,14 +164,22 @@ int h2_jieli_target_application_run(void) {
   emit("H2_JIELI_TOUCH_SMOKE stage=runtime-init result=%d\r\n", result);
   if (result == H2_PAL_OK) result = h2_runtime_input_start(runtime, NULL);
   emit("H2_JIELI_TOUCH_SMOKE stage=input-start result=%d\r\n", result);
-  if (result != H2_PAL_OK) return result;
+  if (result != H2_PAL_OK) {
+    if (runtime != NULL) h2_runtime_deinit(runtime);
+    touch_target.runtime = NULL;
+    return result;
+  }
 
   touch_target.runtime = runtime;
   const h2_pal_task_options_t options = {
       .name = "touch-smoke", .min_stack_size = 16384u};
   result = h2_pal_task_start(
       runtime->task, &options, touch_task, &touch_target, &touch_target.task);
-  if (result != H2_PAL_OK) return result;
+  if (result != H2_PAL_OK) {
+    if (runtime != NULL) h2_runtime_deinit(runtime);
+    touch_target.runtime = NULL;
+    return result;
+  }
 
   for (unsigned attempt = 0u; attempt < 300u; ++attempt) {
     if (atomic_load_explicit(&touch_target.started, memory_order_acquire)) {
@@ -168,11 +187,14 @@ int h2_jieli_target_application_run(void) {
           &touch_target.startup_result, memory_order_acquire);
       emit("H2_JIELI_TOUCH_SMOKE_READY touch=ft6236 display=480x320 result=%d\r\n",
            result);
+      atomic_store_explicit(&touch_target.entry_released, true, memory_order_release);
       return result;
     }
     (void)h2_pal_time_sleep_ms(runtime->time, 10u);
   }
   emit("H2_JIELI_TOUCH_SMOKE stage=start-timeout result=%d\r\n",
        H2_PAL_ERR_TIMEOUT);
+  atomic_store_explicit(&touch_target.stop_requested, true, memory_order_release);
+  atomic_store_explicit(&touch_target.entry_released, true, memory_order_release);
   return H2_PAL_ERR_TIMEOUT;
 }
