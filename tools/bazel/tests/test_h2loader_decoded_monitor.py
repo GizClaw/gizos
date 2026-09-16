@@ -36,7 +36,7 @@ class DecodedMonitor(unittest.TestCase):
                 '-I' + str(ROOT / 'libs/iostreamikcp/include'),
                 str(unit), '-o', str(binary),
             ], check=True)
-            for case in ['tunnelled', 'mixed']:
+            for case in ['tunnelled', 'mixed', 'raw_only']:
                 with self.subTest(case=case):
                     result = subprocess.run(
                         [str(binary), case], capture_output=True, text=True, timeout=10)
