@@ -25,11 +25,13 @@
 
 ## Bazel external rule
 
-`jieli_firmware(name, target, board, image, project_makefile, graph, srcs)`：
+`jieli_firmware(name, target, board, image, project_makefile, graph, srcs, sdk_patches = [])`：
 
 - `target` 只能是 `br23`、`br35` 或 `wl82`；macro 按 target 绑定 SDK locator、commit 文件、本地 post 脚本（`tools/bazel/jieli/local_post_<target>.sh`）与 SDK 子目录，调用方不得覆盖。
 - `project_makefile` 必须是 `boards/<board>/<chip>/layouts/<profile>/project.mk` 中的仓库文件。它拥有完整 compiler flags、defines、include paths、SDK source inventory、linker inputs、generated files 与 output paths；SDK application/demo Makefile 不得成为 input，也不得被 include。
 - Runner 把 SDK 子树复制到 invocation-local 目录（排除 `.git`、`doc`、`ui_project`），在 SDK 根执行 layout-owned project，并用 `TOOL_DIR=<pi32v2/bin>` 覆盖 `/opt/jieli` 默认值。SDK 只提供 source/header/archive/linker/post-build substrate。随后仓库自有 post 脚本用 objcopy、`isd_download`、`fw_add` 与 `ufw_maker` 生成发布输出。
+- `sdk_patches` 是仓库内 `.patch` 文件的 label list，进入 action inputs，按声明顺序通过 `git apply --whitespace=error` 应用于 invocation-local SDK 副本，原始 SDK checkout 不被修改。路径越出 source root、文件不存在、后缀不符或 patch 无法应用都会使 action 失败。
+- WL82 post-build 先清除副本中的旧打包输出，`jl_isd.bin` 发布 `-extend-bin` 生成的 `jl_isd_extend.bin` 完整镜像；`BR22_TWS_DB=YES;` 双 bank 模式下，`update.ufw` 承载 `db_update_files_data.bin`，单 bank 模式保留原有 UFW 打包流程。
 - 固定输出 `firmware/firmware.elf`、`symbols.txt`（objsizedump 符号表）、`jl_isd.bin`（完整 NOR flash 镜像）、`jl_isd.fw`、`update.ufw`（USB 虚拟盘 / SD 卡 / OTA 升级包）与 `manifest.json`；`JieliFirmwareInfo`、`DefaultInfo.files` 与 `OutputGroupInfo.release` 暴露相同文件。不返回 `FirmwareReleaseInfo`，不进入 H2Loader package 或 GitHub Release matrix。
 - Action 在当前 runner 上 unsandboxed、non-remote-exec 执行，不设置 `local`，声明 4 CPU / 4 GiB；只读取 allowlist environment（fixed PATH、`QT_QPA_PLATFORM=offscreen`、invocation-local `HOME`/`TMPDIR`），不继承 caller `PATH`。成功结果进入 local/GCS action cache。Action 不执行 flash、串口或设备操作。
 - **执行平台只能是 Linux x86_64。** Rule 的 compatibility 同时要求 `h2_firmware_target` 与 `h2_host_os=linux`，macOS host 上 `bazel build --config=ac695n //...` 把 firmware target 标为 incompatible 并跳过；macOS 开发者在 Linux dev container 内运行整个 Bazel。Runner 自身也在触碰 SDK 前拒绝非 Linux x86_64 host。不在 Bazel action 内包装 `docker run`。
@@ -65,6 +67,24 @@
 
 AC695N、AC707N 与 AC791N 的 `compile_only` layout 直接拥有 `project.mk`、`app_config.h`、TASK policy、系列所需的 interrupt 配置与最小 board composition；具体 firmware launcher 自己提供 `app_main`。Runner 在 invocation-local SDK 根执行 `make -f <layout>/project.mk h2_link`，但 project 只选择 SDK 的 CPU/common substrate、headers、archives、linker inputs 与 post-build inputs，不编译 `apps/soundbox/**`、`apps/demo/**` 或其它 SDK application project。`tools/bazel/jieli/h2_project_rules.mk` 只提供 Bazel native object/archive 的通用追加规则，不 include SDK Makefile。每个 `firmware_native_component` 源文件使用 layout project 的 flags 与 Bazel include roots 编译到 `$(BUILD_DIR)/h2_bazel/`，`firmware_lib_component` archive 以 link group 进入同一条 `lto-wrapper` 链接。Bazel archive 是非 LTO ELF object，SDK source object 是 LTO bitcode。
 
+AC791N `compile_only/project.mk` 支持调用方提供 `H2_JIELI_LAYOUT_ROOT`，并通过以下 hooks 扩展 reference build；不设置时保持原有配置：
+
+- `H2_JIELI_BOARD_DEFINES`、`H2_JIELI_BOARD_INCLUDES`、`H2_JIELI_BOARD_C_SRC_FILES` 分别追加到 `DEFINES`、`INCLUDES`、`c_SRC_FILES`；`H2_JIELI_BOARD_LIBS` 追加到 `LFLAGS` 的 `--start-group` / `--end-group` 内。
+- `H2_JIELI_SDRAM_ENABLE=1` 使用 `-DH2_JIELI_SDRAM_ENABLE=1`，默认仍使用 `-DCONFIG_NO_SDRAM_ENABLE`。
+- `H2_JIELI_RESERVED_EXPAND_CONFIG_FILE` 非空时，`pre_build` 将该文件的配置行插入生成的 `isd_config.ini` 中 `[BURNER_CONFIG]` 之前。
+
+## Target task policy
+
+`tools/bazel/jieli_task_policy.bzl` 提供 `jieli_target_task_policy(name, graph, policies, sdk_policies, default_policy, deps = [], tags = [])`，生成 SDK `task_info_table` 并审计 graph 中声明的 PAL 任务。每行格式为 `任务名 优先级 栈word数 队列word数`（栈的 word 为 4 字节），`policies` 覆盖 PAL 任务，`sdk_policies` 注册直接通过 SDK 创建的任务。SDK 的 `#C0` / `#C1` 核绑定前缀保留在生成表中，审计使用去掉前缀的逻辑任务名。
+
+`default_policy` 格式为 `优先级 栈word数 队列word数`，提供动态命名任务的默认预算；静态声明的任务仍须显式配置。生成器拒绝重复名称、非法名称、保留的 `$h2anon/` 名称及越界预算。
+
+## Portable libraries 与离线诊断
+
+FDK AAC 与 Linux FDK AAC decoder provider 允许 pi32v2；`libs/fdk_aac` 在该平台设置 `H2_FDK_EMBEDDED_NO_STDIO=1`，repository patch 将 FDK 的格式化 stdio / getchar 包装替换为空实现，不影响其他平台。LVGL 两个 library 允许 AC791N。tinyh264 使用标准 `<string.h>` 替代 `<memory.h>`，该 patch 应用于所有平台；provider 的 pi32v2 compatibility 保持原有门控。
+
+`tools/bazel/jieli_decode_coredump.py` 用于离线解码 H2CORE v2 record 或完整 flash image，支持 `--offset` 和 `--show-log`；`--retained-ring` 解码 RAM retained log ring，offset 需由对应 ELF 确定。H2CORE 校验记录尺寸、版本、commit marker 与 checksum；retained ring 是 best-effort 日志快照，不代表日志提及的操作已经完成。
+
 ## 板与 artifact entry
 
 - `boards/ac695n_chip/ac695n/layouts/compile_only/`、`boards/ac707n_chip/ac707n/layouts/compile_only/` 与 `boards/ac791n_chip/ac791n/layouts/compile_only/` 拥有裸芯片验证 project。
@@ -92,7 +112,9 @@ AC695N、AC707N 与 AC791N 的 `compile_only` layout 直接拥有 `project.mk`�
 
 ## Validation
 
-- `bazel test //tools/bazel:jieli_runner_test //native_component_src/jieli/br23/h2_pal_core:test_jieli_br23_platform_core` 在任意 host 运行。
+- `bazel test --config=macos_arm64 //tools/bazel:jieli_runner_test //tools/bazel:jieli_post_wl82_test //tools/bazel:jieli_decode_coredump_test //tools/bazel:jieli_task_policy_test //tools/bazel:jieli_compile_only_project_test` 验证 runner、离线打包、解码、task policy 与 Make hooks；Linux host 使用对应 host config。
+- `bazel test --config=macos_arm64 //tools/bazel/tests/jieli_task_policy:generated_policy_test //tools/bazel/tests/jieli_task_policy:missing_policy_test //tools/bazel/tests/jieli_task_policy:undeclared_policy_test` 实际加载 task policy 宏，验证生成 C、audit task list，以及缺失策略和未声明任务的 analysis failure；Linux host 使用对应 host config。
+- `bazel test //native_component_src/jieli/br23/h2_pal_core:test_jieli_br23_platform_core` 验证 BR23 PAL core。
 - `bazel test //native_component_src/jieli/wl82/...` 在 Linux/macOS host 运行 wl82 PAL core 测试。
 - Linux x86_64：`. ../firmwares-devenv/export.sh && bazel build --config=ac695n //projects/e2e/targets/jieli_firmware/reference-smoke/ac695n_reference:firmware`，并以 `--config=ac791n` 构建对应 AC791N target；重复构建应命中 action cache。
 - macOS：同一命令应报告 target incompatible 而非失败。

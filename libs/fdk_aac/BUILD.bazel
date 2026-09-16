@@ -15,10 +15,15 @@ cc_library(
         "-fno-sanitize=shift-base",
         "-w",
     ],
+    local_defines = select({
+        "//tools/bazel/platforms:is_pi32v2": ["H2_FDK_EMBEDDED_NO_STDIO=1"],
+        "//conditions:default": [],
+    }),
     target_compatible_with = select({
         "//tools/bazel/platforms:is_linux_x86_64": [],
         "//tools/bazel/platforms:is_linux_arm64": [],
         "//tools/bazel/platforms:is_linux_armv7_gnueabihf": [],
+        "//tools/bazel/platforms:is_pi32v2": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = ["@h2_fdk_aac//:headers"],
