@@ -226,6 +226,16 @@ int main(void) {
     CHECK_UNSUPPORTED_API(wifi_ap);
     CHECK_UNSUPPORTED_API(wifi_csi);
     CHECK_UNSUPPORTED_API(wifi_settings);
+    h2_pal_wifi_saved_network_t saved_networks[H2_PAL_WIFI_SAVED_NETWORK_MAX];
+    size_t saved_count = 99u;
+    assert(h2_pal_wifi_settings_list_saved_sta_configs(
+               h2_pal_unsupported_wifi_settings_api(), saved_networks,
+               H2_PAL_WIFI_SAVED_NETWORK_MAX,
+               &saved_count) == H2_PAL_ERR_UNSUPPORTED);
+    assert(saved_count == 0u);
+    assert(h2_pal_wifi_settings_remove_saved_sta_config(
+               h2_pal_unsupported_wifi_settings_api(), "home", 4u) ==
+           H2_PAL_ERR_UNSUPPORTED);
     CHECK_UNSUPPORTED_API(wifi_sta);
 
     h2_pal_json_document_t *json_document =

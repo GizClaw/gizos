@@ -67,29 +67,65 @@ static int get_saved(void *u, h2_pal_wifi_sta_config_t *out) {
   int rc = h2_app_test_fault_take(&w->get_saved);
   if (rc)
     return rc;
-  if (!w->saved_present)
+  if (!w->saved_count)
     return H2_PAL_ERR_NOT_FOUND;
-  *out = w->saved;
+  *out = w->saved_networks[0].config;
   return 0;
+}
+static void sync_saved_snapshot(h2_app_test_wifi_t *w) {
+  w->saved_present = w->saved_count != 0u;
+  w->saved = w->saved_count ? w->saved_networks[0].config
+                            : (h2_pal_wifi_sta_config_t){0};
 }
 static int set_saved(void *u, const h2_pal_wifi_sta_config_t *c) {
   h2_app_test_wifi_t *w = u;
   if (!valid(c))
     return H2_PAL_ERR_INVALID_ARG;
   int rc = h2_app_test_fault_take(&w->set_saved);
-  if (!rc) {
-    w->saved = *c;
-    w->saved_present = true;
-  }
+  if (!rc)
+    rc = h2_wifi_saved_list_insert(w->saved_networks, &w->saved_count, c);
+  if (!rc)
+    sync_saved_snapshot(w);
   return rc;
 }
 static int clear_saved(void *u) {
   h2_app_test_wifi_t *w = u;
   int rc = h2_app_test_fault_take(&w->clear_saved);
   if (!rc) {
-    memset(&w->saved, 0, sizeof(w->saved));
-    w->saved_present = false;
+    memset(w->saved_networks, 0, sizeof(w->saved_networks));
+    w->saved_count = 0;
+    sync_saved_snapshot(w);
   }
+  return rc;
+}
+static int list_saved(void *u, h2_pal_wifi_saved_network_t *out,
+                      size_t capacity, size_t *out_count) {
+  h2_app_test_wifi_t *w = u;
+  if (!out_count)
+    return H2_PAL_ERR_INVALID_ARG;
+  *out_count = 0;
+  if (capacity && !out)
+    return H2_PAL_ERR_INVALID_ARG;
+  int rc = h2_app_test_fault_take(&w->list_saved);
+  if (rc)
+    return rc;
+  if (w->saved_count > H2_PAL_WIFI_SAVED_NETWORK_MAX)
+    return H2_PAL_ERR_FORMAT;
+  *out_count = capacity < w->saved_count ? capacity : w->saved_count;
+  if (*out_count)
+    memcpy(out, w->saved_networks, *out_count * sizeof(*out));
+  return H2_PAL_OK;
+}
+static int remove_saved(void *u, const char *ssid, size_t ssid_len) {
+  h2_app_test_wifi_t *w = u;
+  if (!ssid || !ssid_len || ssid_len > H2_PAL_WIFI_SSID_MAX)
+    return H2_PAL_ERR_INVALID_ARG;
+  int rc = h2_app_test_fault_take(&w->remove_saved);
+  if (!rc)
+    rc = h2_wifi_saved_list_remove(w->saved_networks, &w->saved_count, ssid,
+                                   ssid_len);
+  if (!rc)
+    sync_saved_snapshot(w);
   return rc;
 }
 static int connect_and_save(void *u, const h2_pal_wifi_sta_config_t *c,
@@ -106,7 +142,9 @@ static const h2_pal_wifi_sta_vtable_t vtable = {.get_status = status,
 static const h2_pal_wifi_settings_vtable_t settings = {
     .get_saved_sta_config = get_saved,
     .set_saved_sta_config = set_saved,
-    .clear_saved_sta_config = clear_saved};
+    .clear_saved_sta_config = clear_saved,
+    .list_saved_sta_configs = list_saved,
+    .remove_saved_sta_config = remove_saved};
 void h2_app_test_wifi_init(h2_app_test_wifi_t *w) {
   if (!w)
     return;

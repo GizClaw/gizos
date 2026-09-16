@@ -20,12 +20,16 @@ typedef struct h2_app_test_wifi {
   h2_app_test_time_t time;
   h2_pal_wifi_scan_entry_t entries[H2_PAL_WIFI_SCAN_MAX_RESULTS];
   size_t entry_count;
+  /** Per-instance authoritative list, most recent first. */
+  h2_pal_wifi_saved_network_t saved_networks[H2_PAL_WIFI_SAVED_NETWORK_MAX];
+  size_t saved_count;
+  /** Read-only compatibility snapshots of the first saved entry. */
   bool saved_present;
   h2_pal_wifi_sta_config_t saved, last_connect;
   h2_pal_wifi_scan_request_t last_scan;
   uint32_t last_timeout_ms;
   h2_app_test_fault_t get_status, scan, connect, disconnect, get_saved,
-      set_saved, clear_saved;
+      set_saved, clear_saved, list_saved, remove_saved;
 } h2_app_test_wifi_t;
 /** Initialize caller-owned storage, default status IDLE and no saved network.
  */

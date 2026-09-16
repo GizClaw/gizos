@@ -181,6 +181,15 @@ void h2_runtime_deinit(h2_runtime_t *runtime);
  * The caller must finish this operation before Runtime deinit.
  */
 h2_pal_result_t h2_runtime_wifi_connect_saved(h2_runtime_t *runtime, uint32_t timeout_ms);
+/** Scan and try visible saved networks by RSSI, then recency, without saving.
+ * Zero timeout selects a 15-second total listing/scan/association budget.
+ * Returns OK on first association, the last connection error if all fail,
+ * NOT_FOUND for an empty/invisible saved set, or TIMEOUT before the next
+ * attempt. Does not wait for IP. Caller owns retry policy and operation
+ * serialization. */
+h2_pal_result_t h2_runtime_wifi_connect_best_saved(h2_runtime_t *runtime,
+                                                   uint32_t timeout_ms);
+
 h2_pal_result_t h2_runtime_periph_id(const h2_runtime_t *runtime, h2_runtime_component_id_t component_id, h2_pal_periph_id_t *out_periph_id);
 
 #ifdef __cplusplus

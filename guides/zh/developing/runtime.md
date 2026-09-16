@@ -71,6 +71,10 @@ input source 超出所选容量时才返回 `H2_PAL_ERR_NO_SPACE`。
 
 ## Wi-Fi 凭据与恢复
 
+Wi-Fi Settings 的保存上限为 8 条。set 按 SSID 去重更新并置顶，满额时淘汰末尾最久未连接项；get 读取首条，list 按最近优先枚举，remove 删除指定 SSID，clear 清空全部。共享 V1 blob 的固定预算为 888 字节（8 字节头 + 8 × 110 字节记录，不含后端元数据），格式和兼容 fallback 见 [PAL 的 Wi-Fi 连接与持久化](./platform_abstract_layer.md#wi-fi-连接与持久化)。
+
+`h2_runtime_wifi_connect_best_saved(runtime, timeout_ms)` 读取保存列表并扫描，使用 `libs/wifi_sta` 的纯函数 `h2_wifi_sta_rank_saved_candidates` 选择可见候选。每个 SSID 仅使用最强 AP；候选按 RSSI 降序，同 RSSI 按 recency 序号降序，序号相同保留保存列表顺序，并携带扫描到的 BSSID/channel。它按顺序调用 `h2_pal_wifi_sta_connect`，首个成功返回 OK，全部失败返回最后一个连接错误；保存列表为空或没有可见保存网络返回 NOT_FOUND。列表读取、扫描、各次连接共享总超时预算，零值使用 15 秒；每次传递剩余预算，开始下一步前耗尽返回 TIMEOUT，列表/扫描/时钟错误直接返回。调用不写凭据、不更新 recency，成功只表示关联完成。应用负责调用时机、重试与连接操作串行化，Runtime init 不自动执行该恢复策略。
+
 `runtime->wifi_sta` 1:1 暴露注入的 PAL provider，不替换 vtable，也不按 timeout 推断持久化策略。`connect` 只连接，不写入、清除或覆盖保存凭据；`connect_and_save` 显式执行目标网络认证、有效 IP 验证与持久化。菜单、BLE、GizClaw RPC 和 Loader 用户配网调用后者；产测临时连接与读取已存配置后的重连调用前者。
 
 `connect_and_save` 在调用任务中执行，非零 timeout 是关联与 DHCP 的总预算；零值返回 INVALID_ARG，不改变连接或存储。Provider 串行接纳 connect、connect_and_save 和 disconnect，重叠调用返回 BUSY。连接失败保留旧凭据，保存失败返回真实错误；即使连接同一 SSID 也重新认证，避免旧关联掩盖错误密码。等待与存储算法由 `libs/wifi_sta` 复用，原子替换由 Wi-Fi Settings provider 保证。调用方等待操作结束后才能销毁 provider 或 Runtime。
