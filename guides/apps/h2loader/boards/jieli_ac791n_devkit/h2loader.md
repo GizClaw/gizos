@@ -103,6 +103,10 @@ Loader 只有 UART 与 BLE capability，不提供 Wi-Fi 与 HTTP；runner 一旦
 
 ## 验收记录
 
+### 2026-09-17：SD rename/open 的 SDK 审计
+
+PR #456（Issue #451，基于 main `4fd6e947`）关闭 2026-09-14 PAL review 的 O9：从 `fs.a` bitcode 与实机探针确认 jlfat 拒绝重命名到已有名称、允许以写模式打开目录、`fdelete` 总是消费句柄、`f_free_cache` 不落盘、超过 130 个 UTF-16 单元的组件会被静默截断；provider 改为“删除再重命名”替换、拒绝目录 open 与超长组件、对有 PAL 句柄的路径返回 `H2_PAL_ERR_BUSY`。同一 UID `d879349abc9f` 上经 UART Loader 安装 PAL App 后所有探针按合同返回，UTF-8 短名/长名读写往返成功，首轮十条 case 全在且 `result=0 passed=10 failed=0`，最终独立 status 为 P1 main Loader、`last_result=0`。[SDK 事实、探针结果与边界](./evidence/2026-09-17/sd-rename-open-audit.md)。
+
 ### 2026-09-17：System Event provider 迁移到 SDK sys_event
 
 `99f1f89a`（Issue #448，基于 main `e6c7b6aa`）把 wl82 PAL System Event 改为通过 SDK `sys_event` 入队、在常驻 `h2_sysevt` 任务上异步派发；同一 UID `d879349abc9f` 上完成新 Loader 自更新（`H2_JIELI_LOADER_TRIAL confirmed=1`，双分区收敛到 `ed7d71a6…`）、PAL 首轮十条 case 全在且 `result=0 passed=10 failed=0`、UART 25/25（339.512 s）、BLE 22/22 两轮（373.098 s、382.811 s）、button 与 touch 试运行均捕获 READY、`JIELI_APP_CONFIRM result=OK` 与 trial timer 删除并返回 P1、audio-system READY 后 35 s 内 27 条 mic peak 报告；最终独立 status 为新 P1 Loader、Stage 空、`last_result=0`。溢出、SDK 40 s handler 超时与中断 post 仅由 host 测试覆盖。[全部镜像 SHA、逐项结果与边界](./evidence/2026-09-17/sys-event-provider-acceptance.md)。
