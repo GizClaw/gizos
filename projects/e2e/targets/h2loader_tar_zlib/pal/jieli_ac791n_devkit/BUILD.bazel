@@ -14,7 +14,11 @@ AC791N_COMPATIBILITY = select({
 
 firmware_native_component(
     name = "pal_smoke",
-    srcs = ["src/pal_e2e_main.c"],
+    srcs = [
+        "src/pal_e2e_main.c",
+        "src/pal_e2e_sdk_fs_probe.c",
+    ],
+    hdrs = ["src/pal_e2e_sdk_fs_probe.h"],
     component_name = "jieli_ac791n_devkit_pal_e2e",
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,

@@ -111,6 +111,10 @@ Loader 只有 UART 与 BLE capability，不提供 Wi-Fi 与 HTTP；runner 一旦
 
 ## 验收记录
 
+### 2026-09-17：SD rename/open 的 SDK 审计
+
+PR #456（Issue #451，验收 head `5dbfe8c5`）关闭 2026-09-14 PAL review 的 O9：从 `fs.a` bitcode 与实机探针确认 jlfat 拒绝重命名到已有名称、允许以写模式打开目录、`fdelete` 总是消费句柄、`f_free_cache` 不落盘、超过 130 个 UTF-16 单元的组件会被静默截断；provider 改为“删除再重命名”替换、拒绝目录 open 与超长组件（131 字节组件返回 `H2_PAL_ERR_NO_SPACE`）、对有 PAL 句柄的路径返回 `H2_PAL_ERR_BUSY`。同一 UID `d879349abc9f` 上经 UART Loader 安装该 head 的 PAL App 后所有探针按合同返回，UTF-8 短名/长名读写往返成功，首轮十条 case 全在且 `result=0 passed=10 failed=0`，最终独立 status 为 P1 main Loader、`last_result=0`。[SDK 事实、探针结果与边界](./evidence/2026-09-17/sd-rename-open-audit.md)。
+
 ### 2026-09-17：Net provider 的 socket 并发与 DNS 生命周期审计
 
 PR #457（Issue #452，基于 main `4fd6e947`）关闭 2026-09-14 PAL review 的 O7：固定 SDK 的 lwIP 只保证每个 socket 一个 reader、一个 writer、一个 closer，Wi-Fi HSM 退出时 `tcpip_uninit` 只清标志，之后任何 `tcpip_send_msg_wait_sem` 永久阻塞；provider 为每个 descriptor 增加 BUSY 门控与栈 generation，PAL Wi-Fi 未启动或已停止时返回 `H2_PAL_ERR_UNAVAILABLE`，stop 先排空在途操作再关闭 SDK 并结算 pending resolver，同步 DNS 改用 `netconn_gethostbyname_addrtype`。同一 UID `d879349abc9f` 上经 UART Loader 安装 PAL App 后首轮十条 case 全在且 `result=0 passed=10 failed=0`，Wi-Fi 27 经过新的 stop hook，最终独立 status 为 P1 main Loader、`last_result=0`。[SDK 事实、host 与实机结果](./evidence/2026-09-17/net-socket-dns-audit.md)。
