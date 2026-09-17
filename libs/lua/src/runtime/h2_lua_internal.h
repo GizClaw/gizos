@@ -6,6 +6,7 @@
 #include "h2_lua_event.h"
 #include "h2_lua_job.h"
 #include "h2_lua_module.h"
+#include "h2_lua_sfx.h"
 
 #include "lauxlib.h"
 
@@ -89,6 +90,12 @@ typedef struct h2_lua_capability_entry {
   void *user;
 } h2_lua_capability_entry_t;
 
+typedef struct h2_lua_sfx_entry {
+  char name[H2_LUA_NAME_MAX];
+  h2_lua_sfx_play_fn play;
+  void *user;
+} h2_lua_sfx_entry_t;
+
 typedef enum h2_lua_capability_request_state {
   H2_LUA_CAPABILITY_REQUEST_UNUSED = 0,
   H2_LUA_CAPABILITY_REQUEST_PENDING,
@@ -108,6 +115,14 @@ typedef struct h2_lua_capability_request {
   h2_lua_capability_entry_t *capability;
 } h2_lua_capability_request_t;
 
+typedef struct h2_lua_audio_sound {
+  struct h2_lua_job *job;
+  size_t references;
+  size_t bytes;
+  h2_audio_pcm_format_t format;
+  uint8_t pcm[];
+} h2_lua_audio_sound_t;
+
 typedef struct h2_lua_audio_track_slot {
   struct h2_lua_job *job;
   h2_pal_audio_track_t *track;
@@ -118,6 +133,8 @@ typedef struct h2_lua_audio_track_slot {
    * Allocated lazily, holds fewer bytes than one device frame. */
   uint8_t *carry;
   size_t carry_bytes;
+  h2_lua_audio_sound_t *sound;
+  size_t sound_offset;
 } h2_lua_audio_track_slot_t;
 
 typedef struct h2_lua_job {
@@ -173,6 +190,7 @@ typedef struct h2_lua_job {
   h2_runtime_component_id_t button_component_id;
   h2_lua_audio_track_slot_t *audio_tracks;
   size_t active_audio_track_count;
+  size_t audio_sound_bytes;
   uint32_t next_audio_track_generation;
   int audio_speaker_acquired;
   uint8_t *audio_mic_buffer;
@@ -225,6 +243,8 @@ struct h2_lua_host {
   size_t module_count;
   h2_lua_capability_entry_t capabilities[16];
   size_t capability_count;
+  h2_lua_sfx_entry_t sfx[H2_LUA_SFX_MAX];
+  size_t sfx_count;
   h2_lua_capability_request_t *capability_requests;
   h2_lua_capability_request_id_t next_capability_request_id;
   h2_pal_mutex_t *capability_mutex;
@@ -266,6 +286,11 @@ int h2_lua_storage_name_is_valid(const char *name, size_t max_length);
 h2_pal_result_t h2_lua_storage_normalize(h2_lua_storage_config_t *config);
 h2_pal_result_t h2_lua_storage_host_init(h2_lua_host_t *host);
 void h2_lua_storage_host_deinit(h2_lua_host_t *host);
+int h2_lua_audio_new_sound(lua_State *state);
+h2_lua_audio_sound_t *h2_lua_audio_check_sound(lua_State *state, int index);
+void h2_lua_audio_sound_unref(h2_lua_audio_sound_t *sound);
+void h2_lua_audio_sound_stop(h2_lua_audio_track_slot_t *slot);
+void h2_lua_audio_sound_pump(h2_lua_audio_track_slot_t *slot);
 void h2_lua_job_close_audio_tracks(h2_lua_job_t *job);
 void h2_lua_audio_track_slot_flush_carry(h2_lua_audio_track_slot_t *slot);
 void h2_lua_audio_track_slot_release_carry(h2_lua_audio_track_slot_t *slot,

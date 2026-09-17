@@ -63,6 +63,8 @@ typedef struct h2_lua_host_config {
   size_t event_delivery_capacity;
   size_t callback_capacity_per_job;
   size_t audio_track_capacity_per_job;
+  /** Runtime-owned sound PCM bytes per job. Zero selects 256 KiB. */
+  size_t audio_sound_bytes_per_job;
   size_t max_coroutines_per_vm;
   size_t ready_queue_capacity;
   size_t waiter_capacity;

@@ -127,6 +127,7 @@ static void release_job(h2_lua_job_t *job) {
   h2_pal_mem_free(mem, job->callbacks);
   h2_pal_mem_free(mem, job->events);
   h2_pal_mem_free(mem, job->audio_tracks);
+  job->audio_tracks = NULL;
   h2_lua_vm_close(job->vm);
   memset(job, 0, sizeof(*job));
 }
@@ -256,6 +257,10 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
       normalized.callback_capacity_per_job == 0u
           ? 8u
           : normalized.callback_capacity_per_job;
+  normalized.audio_sound_bytes_per_job =
+      normalized.audio_sound_bytes_per_job == 0u
+          ? 256u * 1024u
+          : normalized.audio_sound_bytes_per_job;
   normalized.audio_track_capacity_per_job =
       normalized.audio_track_capacity_per_job == 0u
           ? 8u
@@ -678,6 +683,31 @@ h2_pal_result_t h2_lua_register_capability(h2_lua_host_t *host,
   (void)strcpy(entry->name, name);
   entry->call = call;
   entry->cancel = cancel;
+  entry->user = user;
+  return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_lua_register_sfx(h2_lua_host_t *host, const char *name,
+                                    h2_lua_sfx_play_fn play, void *user) {
+  h2_lua_sfx_entry_t *entry;
+  if (host == NULL || name == NULL || play == NULL || name[0] == '\0' ||
+      strlen(name) >= H2_LUA_NAME_MAX) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (atomic_load(&host->started) != 0) {
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  for (size_t i = 0u; i < host->sfx_count; ++i) {
+    if (strcmp(host->sfx[i].name, name) == 0) {
+      return H2_PAL_ERR_INVALID_STATE;
+    }
+  }
+  if (host->sfx_count == H2_LUA_SFX_MAX) {
+    return H2_PAL_ERR_FULL;
+  }
+  entry = &host->sfx[host->sfx_count++];
+  (void)strcpy(entry->name, name);
+  entry->play = play;
   entry->user = user;
   return H2_PAL_OK;
 }

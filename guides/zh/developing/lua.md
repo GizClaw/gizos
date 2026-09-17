@@ -39,7 +39,7 @@ provider 可以让不同 VM 在多个 worker 上并行。
 
 ## Host 和 job
 
-`h2_lua_host_config_t` 的容量均有界：`worker_count`、`worker_stack_size`、`max_jobs`、`max_coroutines_per_vm`、`ready_queue_capacity`、`waiter_capacity`、`event_delivery_capacity`、`callback_capacity_per_job`、`audio_track_capacity_per_job`、`pending_capability_capacity`、`instruction_quantum`、`resume_time_budget_ms`、`source_limit_bytes`、`output_limit_bytes` 和 `vm_memory_limit_bytes`。零使用声明的默认值；ready/waiter 容量不得小于 VM 的 coroutine 上限。`storage` 配置每个 App 的持久化存储，见 [App 存储](#app-存储)；全零表示未配置。
+`h2_lua_host_config_t` 的容量均有界：`worker_count`、`worker_stack_size`、`max_jobs`、`max_coroutines_per_vm`、`ready_queue_capacity`、`waiter_capacity`、`event_delivery_capacity`、`callback_capacity_per_job`、`audio_track_capacity_per_job`、`audio_sound_bytes_per_job`、`pending_capability_capacity`、`instruction_quantum`、`resume_time_budget_ms`、`source_limit_bytes`、`output_limit_bytes` 和 `vm_memory_limit_bytes`。零使用声明的默认值；ready/waiter 容量不得小于 VM 的 coroutine 上限。`storage` 配置每个 App 的持久化存储，见 [App 存储](#app-存储)；全零表示未配置。
 
 Host 的正常生命周期是：
 
@@ -200,6 +200,66 @@ PAL mixer 支撑的 Audio System 只接受 frame 大小与设备一致的 Track�
   `"audio output: busy"` 或 `"audio output: write failed"`，`written` 是本次调用
   中已被 Track 接收的字节数。script 应从 `written` 偏移处续写剩余数据，不要重放
   已被接收的前缀；失败时已有的残留保持不变，重传同一 buffer 是安全的。
+
+### Audio SFX
+
+`audio.play_sfx(name)` 播放由嵌入方 app 注册的具名音效，Lua 不持有 PCM，也不打开
+Track。app 在创建 Host 后、`h2_lua_host_start()` 前调用
+`h2_lua_register_sfx(host, name, play, user)` 为每个名字注册 handler（见
+`h2_lua_sfx.h`），最多 `H2_LUA_SFX_MAX`（32）个；空名、超长名、NULL handler 返回
+`INVALID_ARG`，重名或 start 之后注册返回 `INVALID_STATE`，超过容量返回 `FULL`。
+
+handler 在 Lua worker 上、持有该 job mutex 时同步调用，参数为注册时的 `user`、
+调用 job 的 `app_id`（未指定时为空串）和名字，两个字符串只在调用期间有效。handler
+必须立即返回、不做阻塞音频 I/O、不回调 Lua Host，应把音效交给 app 自己的播放器
+（例如产品的 SFX worker），混音、音量和 speaker 生命周期都由 app 负责。
+
+返回 `H2_PAL_OK` 时 Lua 得到 `true`；`BUSY`/`WOULD_BLOCK` 得到
+`nil, "audio sfx: busy"`；其他错误得到 `nil, "audio sfx: failed"`；名字未注册得到
+`nil, "audio sfx: unknown"`，script 可据此回退到 `audio.new_sound`。非字符串参数
+抛出 Lua 参数错误。
+
+### Audio Sound
+
+`audio.new_sound(pcm[,options])` 复制非空 S16LE PCM，长度必须是 `2 * channels`
+的整数倍。`options` 的 `sample_rate` 默认 `16000`，须为正整数；`channels`
+默认 `1`，仅支持 `1..2`。PCM 存在 Runtime 内存（`h2_pal_mem`）中，不计入 VM 内存；
+Lua userdata 只持有指针。每个 job 的 `audio_sound_bytes_per_job` 限制 PCM
+总字节数，零使用默认 `256 KiB`，最后一个引用释放后归还额度。
+
+`audio.new_sound(spec)` 也可在 C 中合成音效。table 使用相同的采样率和通道字段，
+并按数组顺序包含 `1..64` 段：
+
+- `ms` 为 `1..10000` 的整数；每段每通道 sample 数为 `floor(ms * sample_rate / 1000)`。
+- `freq` 为 `0..sample_rate/2`，默认 `0`（静音）；`freq_end` 默认等于 `freq`，
+  在段内线性变化。各段相位连续。
+- `gain` 为 `0..1`，默认 `0.2`，表示满量程峰值比例。
+- `wave` 为 `sine`（默认）、`square`、`triangle` 或 `noise`；noise 使用固定种子，
+  同一 spec 的结果确定。
+- `envelope` 为 `flat`（默认）、`decay`（`(1-u)^2`）或 `bell`（`sin(pi*u)^2`），
+  `u` 是段内位置。
+
+创建前先计算大小并检查额度。成功返回 Sound；值越界返回 `nil, "audio sound: invalid"`，
+超额返回 `nil, "audio sound: limit reached"`，分配失败返回 `nil, "audio sound: no memory"`。
+参数类型错误抛出 Lua 参数错误。`sound:info()` 返回 `bytes`、`sample_rate`、
+`channels`、`duration_ms`；`sound:release()` 立即释放 handle 引用，可重复调用，
+释放后 info 字段均为 `0`。GC 执行相同释放逻辑。
+
+`output:play(sound)` 返回 `true`，替换该 Track 尚未提交的 Sound 余量；设备已经
+排队的帧继续播放。已有 `write` 残留按 close 的规则补零并尽力写出，然后立即泵送
+Sound。Track 关闭、Sound 已释放、格式不一致分别返回 `nil` 和
+`"audio output: closed"`、`"audio output: invalid sound"`、`"audio output: format mismatch"`。
+固定帧设备的补零缓冲在 play 时分配，失败返回 `nil, "audio output: no memory"`，
+不接管该 Sound，已有的播放保持不变。
+不做采样率或通道转换，多声部仍使用多条 Track，由 Audio System 混音。
+
+Host 在非终态 job 的每次 step、恢复 Lua 之前泵送余量，timeout 为 `0`；设备忙时
+保留偏移，下次 step 继续，因此 script sleep 时也能播放。固定帧设备的最后不足
+一帧部分补零；没有固定帧大小时每次最多提交 `65535` 个 sample frame。
+`output:info().playing` 表示仍有待提交的 Sound，期间 `write` 返回
+`nil, "audio output: busy", 0`。`output:stop()` 丢弃待提交余量并返回 `true`。
+Track 自己持有 Sound 引用，释放或 GC handle 不影响播放；stop、close、替换和
+job 回收都会释放相应引用。job 先关闭 Track，再关闭 VM，最终释放全部 Sound。
 
 ### Audio Input 的帧契约
 

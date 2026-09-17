@@ -1382,6 +1382,10 @@ static int audio_output_write(lua_State *state) {
   size_t consumed = 0u;
   h2_audio_frame_t frame;
   int result = H2_PAL_OK;
+  if (slot != NULL && slot->generation == generation && slot->track != NULL &&
+      slot->sound != NULL) {
+    return audio_write_result(state, H2_PAL_ERR_BUSY, 0u);
+  }
   if (slot == NULL || slot->generation != generation || slot->track == NULL ||
       frame_bytes == 0u || size == 0u || size % frame_bytes != 0u) {
     lua_pushnil(state);
@@ -1448,7 +1452,9 @@ static int audio_output_info(lua_State *state) {
   uint32_t generation = (uint32_t)lua_tointeger(state, lua_upvalueindex(2));
   int opened =
       slot != NULL && slot->generation == generation && slot->track != NULL;
-  lua_createtable(state, 0, 7);
+  lua_createtable(state, 0, 8);
+  lua_pushboolean(state, opened && slot->sound != NULL);
+  lua_setfield(state, -2, "playing");
   lua_pushliteral(state, "output");
   lua_setfield(state, -2, "role");
   lua_pushinteger(
@@ -1474,6 +1480,7 @@ static int audio_output_close(lua_State *state) {
   if (slot != NULL && slot->generation == generation && slot->track != NULL) {
     h2_lua_job_t *job = slot->job;
     int result;
+    h2_lua_audio_sound_stop(slot);
     h2_lua_audio_track_slot_flush_carry(slot);
     h2_lua_audio_track_slot_release_carry(slot, job->host->config.runtime->mem);
     result = h2_pal_audio_track_close(slot->track);
@@ -1490,6 +1497,53 @@ static int audio_output_close(lua_State *state) {
       return 2;
     }
   }
+  lua_pushboolean(state, 1);
+  return 1;
+}
+
+static int audio_output_stop(lua_State *state) {
+  h2_lua_audio_track_slot_t *slot = lua_touserdata(state, lua_upvalueindex(1));
+  uint32_t generation = (uint32_t)lua_tointeger(state, lua_upvalueindex(2));
+  if (slot != NULL && slot->generation == generation) {
+    h2_lua_audio_sound_stop(slot);
+  }
+  lua_pushboolean(state, 1);
+  return 1;
+}
+
+static int audio_output_play(lua_State *state) {
+  h2_lua_audio_track_slot_t *slot = lua_touserdata(state, lua_upvalueindex(1));
+  uint32_t generation = (uint32_t)lua_tointeger(state, lua_upvalueindex(2));
+  h2_lua_audio_sound_t *sound = h2_lua_audio_check_sound(state, 2);
+  const char *error = NULL;
+  if (slot == NULL || slot->generation != generation || slot->track == NULL) {
+    error = "audio output: closed";
+  } else if (sound == NULL) {
+    error = "audio output: invalid sound";
+  } else if (sound->format.sample_rate_hz != slot->format.sample_rate_hz ||
+             sound->format.channels != slot->format.channels) {
+    error = "audio output: format mismatch";
+  } else if (slot->format.frame_samples_per_channel != 0u &&
+             slot->carry == NULL) {
+    /* The pump zero-pads the final frame in the carry buffer; allocate it
+     * here so a started sound can always finish. */
+    slot->carry = h2_pal_mem_alloc(slot->job->host->config.runtime->mem,
+                                   audio_slot_chunk_bytes(slot));
+    slot->carry_bytes = 0u;
+    if (slot->carry == NULL) {
+      error = "audio output: no memory";
+    }
+  }
+  if (error != NULL) {
+    lua_pushnil(state);
+    lua_pushstring(state, error);
+    return 2;
+  }
+  sound->references++;
+  h2_lua_audio_sound_stop(slot);
+  h2_lua_audio_track_slot_flush_carry(slot);
+  slot->sound = sound;
+  h2_lua_audio_sound_pump(slot);
   lua_pushboolean(state, 1);
   return 1;
 }
@@ -1835,16 +1889,47 @@ static int audio_new_output(lua_State *state) {
     job->next_audio_track_generation = 1u;
   }
   job->active_audio_track_count++;
-  lua_createtable(state, 0, 3);
+  lua_createtable(state, 0, 5);
+  set_audio_track_function(state, "play", audio_output_play, slot);
+  set_audio_track_function(state, "stop", audio_output_stop, slot);
   set_audio_track_function(state, "write", audio_output_write, slot);
   set_audio_track_function(state, "info", audio_output_info, slot);
   set_audio_track_function(state, "close", audio_output_close, slot);
   return 1;
 }
 
+/* Hands a named effect to the handler the embedding app registered. The Host
+ * registry is immutable after start, so it is read without a lock. */
+static int audio_play_sfx(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  const char *name = luaL_checkstring(state, 1);
+  h2_lua_host_t *host = job->host;
+  h2_pal_result_t result;
+  for (size_t i = 0u; i < host->sfx_count; ++i) {
+    if (strcmp(host->sfx[i].name, name) == 0) {
+      result = host->sfx[i].play(host->sfx[i].user, job->app_id, name);
+      if (result == H2_PAL_OK) {
+        lua_pushboolean(state, 1);
+        return 1;
+      }
+      lua_pushnil(state);
+      lua_pushstring(state,
+                     result == H2_PAL_ERR_BUSY || result == H2_PAL_ERR_WOULD_BLOCK
+                         ? "audio sfx: busy"
+                         : "audio sfx: failed");
+      return 2;
+    }
+  }
+  lua_pushnil(state);
+  lua_pushliteral(state, "audio sfx: unknown");
+  return 2;
+}
+
 static int push_audio_proxy(lua_State *state, h2_lua_job_t *job) {
-  lua_createtable(state, 0, 2);
+  lua_createtable(state, 0, 4);
+  set_function(state, "play_sfx", audio_play_sfx, job);
   set_function(state, "new_input", audio_new_input, job);
+  set_function(state, "new_sound", h2_lua_audio_new_sound, job);
   set_function(state, "new_output", audio_new_output, job);
   return 1;
 }
