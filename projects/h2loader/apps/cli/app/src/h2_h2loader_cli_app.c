@@ -239,6 +239,7 @@ static const char help_text[] =
     "wifi:     wifi scan [--limit <1-16>] [--timeout-ms <1-30000>]\n"
     "          wifi connect <ssid> <password>\n"
     "          wifi disconnect\n"
+    "          wifi status\n"
     "coredump: coredump status|erase\n"
     "          coredump dump [--output <file>]\n";
 
@@ -567,6 +568,7 @@ static h2_h2loader_host_command_t command_kind(int argc, const char *const *argv
     if (argc == 2 && strcmp(argv[0], "reboot") == 0 &&
         strcmp(argv[1], "upgrade") == 0) return H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE;
     if (argc == 2 && strcmp(argv[0], "stage") == 0 && strcmp(argv[1], "abort") == 0) return H2_H2LOADER_HOST_COMMAND_STAGE_ABORT;
+    if (argc == 2 && strcmp(argv[0], "wifi") == 0 && strcmp(argv[1], "status") == 0) return H2_H2LOADER_HOST_COMMAND_WIFI_STATUS;
     if (argc == 2 && strcmp(argv[0], "wifi") == 0 && strcmp(argv[1], "disconnect") == 0) return H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT;
     if (argc >= 2 && strcmp(argv[0], "wifi") == 0 && strcmp(argv[1], "scan") == 0) return H2_H2LOADER_HOST_COMMAND_WIFI_SCAN;
     if (argc == 2 && strcmp(argv[0], "coredump") == 0 && strcmp(argv[1], "status") == 0) return H2_H2LOADER_HOST_COMMAND_COREDUMP_STATUS;

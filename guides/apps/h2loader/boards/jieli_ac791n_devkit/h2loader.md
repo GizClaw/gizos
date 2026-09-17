@@ -111,6 +111,10 @@ Loader 只有 UART 与 BLE capability，不提供 Wi-Fi 与 HTTP；runner 一旦
 
 ## 验收记录
 
+### 2026-09-17：App Wi-Fi 凭据持久化与重启自动重连
+
+`efbabcc3`（PR #459，Issue #454，含 main `3eeb1b55`）在 UID `d879349abc9f` 上完成台架验收：display App 通过 UART `wifi connect` 用 2 s 保存 `HAIVIVI-MFG`，`wifi status` 报告 `state=5 ip=192.168.4.150 saved=1`；此后 `reboot app`、`reboot loader` 再 `reboot app`、全新安装的 button App 每次启动都从保存的凭据自动重连，无需再次 `wifi connect`。错误密码由认证失败事件结束（host 墙钟 6 s，`code=-4 disconnect_reason=11`），不存在的 SSID 在设备侧 15 s `connect_and_save` 预算到期时返回 `TIMEOUT`（`code=-6`；host 墙钟 17 s，另含串口会话建立与状态读取），保存的凭据均不变，随后重启仍自动重连；显式 `wifi disconnect` 后可再次连接。在最终镜像上连续 10 次连接全部成功，无复位、栈溢出或 netif 断言。途中修复了弱 supplicant stub、非阻塞返回值误判、缺失的 SDK Wi-Fi 驱动任务、冷启动须先安装 STA 默认模式、断开时 `wifi_off` 导致的 netif 重复添加，以及 `RtmpMlmeTask` 栈溢出。Loader 仍无 Wi-Fi capability；台架网络未清除（没有对应命令）；未覆盖断电。[逐步结果、镜像 SHA 与边界](./evidence/2026-09-17/wifi-persistence.md)。
+
 ### 2026-09-17：SD rename/open 的 SDK 审计
 
 PR #456（Issue #451，验收 head `5dbfe8c5`）关闭 2026-09-14 PAL review 的 O9：从 `fs.a` bitcode 与实机探针确认 jlfat 拒绝重命名到已有名称、允许以写模式打开目录、`fdelete` 总是消费句柄、`f_free_cache` 不落盘、超过 130 个 UTF-16 单元的组件会被静默截断；provider 改为“删除再重命名”替换、拒绝目录 open 与超长组件（131 字节组件返回 `H2_PAL_ERR_NO_SPACE`）、对有 PAL 句柄的路径返回 `H2_PAL_ERR_BUSY`。同一 UID `d879349abc9f` 上经 UART Loader 安装该 head 的 PAL App 后所有探针按合同返回，UTF-8 短名/长名读写往返成功，首轮十条 case 全在且 `result=0 passed=10 failed=0`，最终独立 status 为 P1 main Loader、`last_result=0`。[SDK 事实、探针结果与边界](./evidence/2026-09-17/sd-rename-open-audit.md)。
