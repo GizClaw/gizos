@@ -22,7 +22,7 @@ After `wifi_off()` every `tcpip_send_msg_wait_sem` caller (socket, connect, send
 
 Each descriptor has busy bits (`RECV`, `SEND`, `CONNECT`) and a stack generation: overlapping same-direction calls and connect against any transfer return `H2_PAL_ERR_BUSY`, a descriptor from an older generation returns `H2_PAL_ERR_UNAVAILABLE` and its close is a no-op.
 A stack gate shared through `h2_jieli_ac791n_devkit_network.h` makes every lwIP-reaching call return `H2_PAL_ERR_UNAVAILABLE` before `h2_jieli_net_stack_started` and after `h2_jieli_net_stack_stopping`; stopping waits for in-flight native calls to return before `wifi_off`, and stopped settles pending resolvers with `H2_PAL_ERR_UNAVAILABLE`.
-Resolvers live in a four-slot registry; a late lwIP callback is matched by pointer and ignored when its resolver was settled, so the memory is never dereferenced; `resolve_addr` uses `netconn_gethostbyname_addrtype` with caller-owned storage.
+Resolvers live in a four-slot registry and lwIP receives a monotonically increasing nonzero callback ID as its opaque context instead of the resolver pointer; a callback is matched by ID against the registry only, so a settled, reaped or address-reused resolver is never dereferenced, and resolvers settled by a stop stay allocated in a graveyard until the next successful start releases their lwIP reference; a failed `wifi_off` leaves the stack unavailable without settling anything; `resolve_addr` uses `netconn_gethostbyname_addrtype` with caller-owned storage.
 
 ## Host validation
 
