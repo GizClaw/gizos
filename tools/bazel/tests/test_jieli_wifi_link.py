@@ -20,7 +20,7 @@ class WifiLinkTest(unittest.TestCase):
         rows = [
             "tcpip_thread 16 800 0",
             "tasklet 10 1400 0",
-            "RtmpMlmeTask 17 700 0",
+            "RtmpMlmeTask 17 1400 0",
             "RtmpCmdQTask 17 300 0",
             "wl_rx_irq_thread 5 256 0",
         ]
@@ -29,6 +29,7 @@ class WifiLinkTest(unittest.TestCase):
                 build = (ROOT / "projects/example/targets/h2loader_tar_zlib" /
                          name / "jieli_ac791n_devkit/BUILD.bazel").read_text()
                 self.assertNotIn(removed_policy, build)
+                self.assertNotIn("RtmpMlmeTask 17 700 0", build)
                 for row in rows:
                     self.assertIn('"' + row + '"', build)
 
