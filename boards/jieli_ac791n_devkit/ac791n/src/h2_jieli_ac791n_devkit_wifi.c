@@ -493,7 +493,26 @@ static int wifi_stop(void) {
 
 static int sta_disconnect(void *user) {
   (void)user;
-  return wifi_stop();
+  if (!wifi_is_on()) return H2_PAL_OK;
+  /* wifi_off() is irreversible for STA use on this SDK: wifi_on() re-adds
+   * the retained lwIP netif and asserts "netif already added". Leave STA
+   * through config/monitor mode instead, keeping the radio and lwIP up. */
+  /* Like wifi_enter_sta_mode, this only posts an asynchronous HSM message;
+   * its return value does not report completion of the mode transition. */
+  (void)wifi_enter_smp_cfg_mode();
+  h2_pal_wifi_sta_status_t status;
+  wifi_state_lock();
+  const int had_ip = wifi_state.sta.state == H2_PAL_WIFI_STA_STATE_GOT_IP;
+  ++wifi_sta_generation;
+  wifi_state.sta.state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
+  wifi_state.sta.ip_valid = 0u;
+  status = wifi_state.sta;
+  wifi_state_unlock();
+  if (had_ip) {
+    post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP, &status);
+  }
+  post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED, &status);
+  return H2_PAL_OK;
 }
 
 static int wifi_get_mac_address(void *user, uint8_t out_mac[6]) {

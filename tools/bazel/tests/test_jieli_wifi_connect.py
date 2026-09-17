@@ -394,5 +394,113 @@ class NonblockingWifiConnectTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
 
+DISCONNECT_STUB = r'''
+#include <assert.h>
+#include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#define H2_PAL_OK 0
+#define H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP 1
+#define H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED 2
+typedef enum {
+  H2_PAL_WIFI_STA_STATE_CONNECTING = 3,
+  H2_PAL_WIFI_STA_STATE_GOT_IP = 5,
+  H2_PAL_WIFI_STA_STATE_DISCONNECTED = 6,
+} h2_pal_wifi_sta_state_t;
+typedef struct {
+  h2_pal_wifi_sta_state_t state;
+  uint8_t ip_valid;
+} h2_pal_wifi_sta_status_t;
+static struct { int on; h2_pal_wifi_sta_status_t sta; } wifi_state;
+static uint32_t wifi_sta_generation;
+static int radio_on, smp_calls, off_calls, stop_calls, locked;
+static int events[2], event_count;
+static int wifi_is_on(void) { return radio_on; }
+static int wifi_enter_smp_cfg_mode(void) {
+  assert(!locked);
+  ++smp_calls;
+  return -1; /* Queued mode transitions have no synchronous success result. */
+}
+static int wifi_off(void) { ++off_calls; radio_on = 0; return 0; }
+static int wifi_stop(void) {
+  ++stop_calls;
+  (void)wifi_off();
+  fprintf(stderr, "STA disconnect must not call wifi_stop\n");
+  assert(0 && "STA disconnect must not call wifi_stop");
+  return 0;
+}
+static void wifi_state_lock(void) { assert(!locked); locked = 1; }
+static void wifi_state_unlock(void) { assert(locked); locked = 0; }
+static void post_sta_event(int type, const h2_pal_wifi_sta_status_t *status) {
+  assert(!locked && event_count < 2);
+  assert(status->state == H2_PAL_WIFI_STA_STATE_DISCONNECTED);
+  assert(status->ip_valid == 0);
+  assert(wifi_sta_generation == 8);
+  events[event_count++] = type;
+}
+static void reset(int on, h2_pal_wifi_sta_state_t state) {
+  radio_on = wifi_state.on = on;
+  wifi_state.sta.state = state;
+  wifi_state.sta.ip_valid = state == H2_PAL_WIFI_STA_STATE_GOT_IP;
+  wifi_sta_generation = 7;
+  smp_calls = off_calls = stop_calls = locked = event_count = 0;
+  memset(events, 0, sizeof(events));
+}
+'''
+DISCONNECT_MAIN = r'''
+int main(int argc, char **argv) {
+  int test_case = argc > 1 ? atoi(argv[1]) : 0;
+  if (test_case == 0 || test_case == 1) {
+    reset(0, H2_PAL_WIFI_STA_STATE_DISCONNECTED);
+    assert(sta_disconnect(NULL) == H2_PAL_OK);
+    assert(smp_calls == 0 && off_calls == 0 && stop_calls == 0);
+    assert(event_count == 0 && wifi_sta_generation == 7);
+  }
+  if (test_case == 0 || test_case == 2) {
+    reset(1, H2_PAL_WIFI_STA_STATE_GOT_IP);
+    assert(sta_disconnect(NULL) == H2_PAL_OK);
+    assert(smp_calls == 1 && off_calls == 0 && stop_calls == 0);
+    assert(radio_on == 1 && wifi_state.on == 1);
+    assert(wifi_state.sta.state == H2_PAL_WIFI_STA_STATE_DISCONNECTED);
+    assert(wifi_state.sta.ip_valid == 0 && wifi_sta_generation == 8);
+    assert(event_count == 2);
+    assert(events[0] == H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP);
+    assert(events[1] == H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED);
+  }
+  if (test_case == 0 || test_case == 3) {
+    reset(1, H2_PAL_WIFI_STA_STATE_CONNECTING);
+    assert(sta_disconnect(NULL) == H2_PAL_OK);
+    assert(smp_calls == 1 && off_calls == 0 && stop_calls == 0);
+    assert(radio_on == 1 && wifi_state.on == 1);
+    assert(wifi_state.sta.state == H2_PAL_WIFI_STA_STATE_DISCONNECTED);
+    assert(wifi_state.sta.ip_valid == 0 && wifi_sta_generation == 8);
+    assert(event_count == 1);
+    assert(events[0] == H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED);
+  }
+  return 0;
+}
+'''
+
+
+def run_disconnect_fixture(source, test_case=0):
+    begin = source.index("static int sta_disconnect(")
+    end = source.index("static int wifi_get_mac_address(", begin)
+    with tempfile.TemporaryDirectory(prefix="h2-wifi-disconnect-") as directory:
+        test = Path(directory) / "test.c"
+        test.write_text(DISCONNECT_STUB + source[begin:end] + DISCONNECT_MAIN)
+        binary = Path(directory) / "test"
+        subprocess.run(["cc", "-std=c11", "-Werror", str(test), "-o", str(binary)],
+                       check=True, timeout=60)
+        return subprocess.run([str(binary), str(test_case)], cwd=directory,
+                              capture_output=True, text=True, timeout=10)
+
+
+class WifiDisconnectTest(unittest.TestCase):
+    def test_disconnect_keeps_radio_and_lwip_alive(self):
+        result = run_disconnect_fixture(SOURCE.read_text())
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
 if __name__ == "__main__":
     unittest.main()
