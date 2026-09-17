@@ -19,10 +19,10 @@ class AudioLifecycleTest(unittest.TestCase):
             test.write_text(fixture.replace('/* REAL_PROVIDER */', source))
             binary = Path(directory) / 'test'
             flags = os.environ.get('JIELI_TEST_CFLAGS', '').split()
-            subprocess.run(['cc', '-std=c11', '-D_POSIX_C_SOURCE=200809L', '-Wall', '-Wextra', '-Werror', '-pthread', *flags,
+            subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-D_POSIX_C_SOURCE=200809L', '-Wall', '-Wextra', '-Werror', '-pthread', *flags,
                 '-I', str(ROOT / 'libs/pal/include'), '-I', str(ROOT / 'native_component_src/jieli/wl82/h2_pal_core/include'),
                 str(test), '-o', str(binary)], check=True)
-            for case in ['write', 'drain', 'drain_target', 'close', 'close_decoder', 'mic_generation', 'mic_tokens', 'mic_threads', 'sdk_failure', 'create_failure_open', 'create_failure_start']:
+            for case in ['cycles', 'cycle_blocked_write', 'cycle_stale_callback', 'write', 'drain', 'drain_target', 'close', 'close_decoder', 'mic_generation', 'mic_tokens', 'mic_threads', 'sdk_failure', 'create_failure_open', 'create_failure_start']:
                 with self.subTest(case=case):
                     result = subprocess.run([str(binary), case], capture_output=True, text=True, timeout=15)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

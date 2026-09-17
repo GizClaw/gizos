@@ -59,6 +59,15 @@ typedef struct audio_scene {
 } audio_scene_t;
 
 static audio_scene_t s_scene;
+/* Keep counters readable even while stop clears the scene's owned resources. */
+static atomic_uint_least32_t s_mic_frames;
+static atomic_uint_least32_t s_music_frames;
+
+void h2_smoke_audio_system_get_stats(h2_smoke_audio_system_stats_t *out) {
+    if (out == NULL) return;
+    out->mic_frames = atomic_load_explicit(&s_mic_frames, memory_order_relaxed);
+    out->music_frames = atomic_load_explicit(&s_music_frames, memory_order_relaxed);
+}
 
 static size_t sample_count_for_format(const h2_audio_pcm_format_t *format) {
     if (format == NULL) {
@@ -320,10 +329,14 @@ static int music_write_once(audio_scene_t *scene) {
         scene->info.playback_format);
     frame.bytes = frame_samples * sizeof(scene->music_frame[0]);
     frame.samples_per_channel = scene->info.playback_format.frame_samples_per_channel;
-    return h2_pal_audio_track_write(
+    int rc = h2_pal_audio_track_write(
         scene->music_track,
         &frame,
         H2_SMOKE_AUDIO_IO_TIMEOUT_MS);
+    if (rc == H2_AUDIO_OK) {
+        atomic_fetch_add_explicit(&s_music_frames, 1u, memory_order_relaxed);
+    }
+    return rc;
 }
 
 static int mic_loop_once(audio_scene_t *scene) {
@@ -335,6 +348,7 @@ static int mic_loop_once(audio_scene_t *scene) {
     if (rc != H2_AUDIO_OK || mic.bytes == 0u) {
         return rc;
     }
+    atomic_fetch_add_explicit(&s_mic_frames, 1u, memory_order_relaxed);
     if (mic.bytes > sizeof(scene->mic_frame)) {
         return H2_AUDIO_ERR_NO_MEMORY;
     }
@@ -459,6 +473,8 @@ int h2_smoke_audio_system_run(
 
     memset(&s_scene, 0, sizeof(s_scene));
     atomic_init(&s_scene.stop_requested, false);
+    atomic_store_explicit(&s_mic_frames, 0u, memory_order_relaxed);
+    atomic_store_explicit(&s_music_frames, 0u, memory_order_relaxed);
     s_scene.active = 1;
     s_scene.audio = runtime->audio;
     s_scene.task = runtime->task;
