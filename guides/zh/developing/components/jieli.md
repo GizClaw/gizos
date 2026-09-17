@@ -118,6 +118,8 @@ Board 不安装任何 `NULL` vtable member；未实现的 operation 返回 `H2_P
 
 Wi-Fi scan 要求当前处于 STA mode 且已关联：非 STA mode 返回 `H2_PAL_ERR_INVALID_STATE`，未关联时 SDK 拒绝请求并返回 `H2_PAL_ERR_BUSY`。scan 返回 `H2_PAL_ERR_TIMEOUT` 后，status 恢复报告关联状态，不再报告 `SCANNING`，但 scan 仍由 SDK 持有，新的 scan / connect 返回 `H2_PAL_ERR_BUSY`，直到迟到的完成事件被回收，或通过 `sta_disconnect` / `ap_stop` / `ap_start` 的停止路径复位；只有 `wifi_off()` 成功后才释放 scan 所有权，正在等待完成或清理中的 scan 仍拒绝停止操作。
 
+Net provider 在 lwIP full-duplex 的单 reader、单 writer、单 closer 保证上增加每个 socket 的操作门控：同方向操作重叠、connect 与收发重叠返回 `H2_PAL_ERR_BUSY`，close 仍可唤醒阻塞的 recv / send / connect。PAL Wi-Fi 尚未启动或正在停止时，访问 lwIP 的操作返回 `H2_PAL_ERR_UNAVAILABLE`；stop 先等待正在执行的操作退出，再停止 SDK 栈并将 pending resolver 结算为 `UNAVAILABLE`。每次启动推进栈 generation，旧 descriptor 不可继续使用，也不能在停栈后安全回收；调用方必须在 disconnect / ap_stop 前关闭所有 socket 和 resolver。同步 DNS 使用调用方独占的地址存储；异步 DNS 保持四个 pending slot，`TIMEOUT` / `WOULD_BLOCK` 不取消查询，提前 close 后由后端持有到完成或停栈，结算后的迟到 callback 被忽略，重试时序仍由 lwIP 决定。
+
 `h2_jieli_ac791n_devkit_runtime_config()` 只提供 `h2_runtime_config_t`，`h2_jieli_ac791n_devkit_runtime_deinit()` 只释放 board 持有的 SD filesystem 资源。完整 Runtime 初始化、input 启动、app 调用和 `h2_runtime_deinit()` 属于最终 artifact target，见 [Runtime 初始化与接线](../runtime.md#初始化与接线)。
 
 ## 烧录与升级边界

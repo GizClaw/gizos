@@ -36,6 +36,9 @@ static void wifi_clear_scan_result(void) { ++clears; }
 ''' + state + r'''
 static int off_error = 1, off_calls;
 static int wifi_is_on(void) { return 1; }
+static int stack_stopping_calls, stack_stopped_calls;
+static void h2_jieli_net_stack_stopping(void) { ++stack_stopping_calls; }
+static void h2_jieli_net_stack_stopped(void) { ++stack_stopped_calls; }
 static int wifi_off(void) { ++off_calls; return off_error; }
 ''' + stop + r'''
 static int calls;

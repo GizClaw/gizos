@@ -79,7 +79,10 @@ static inline void wifi_state_unlock(void) {
 #define H2_PAL_OK 0
 #define H2_PAL_ERR_IO -1
 static struct { int on; } wifi_state;
-static int sdk_on, registrations, starts, start_error;
+static int sdk_on, registrations, starts, start_error, stack_starts;
+static void h2_jieli_net_stack_started(void) {
+ assert(sdk_on && !wifi_state.on); ++stack_starts;
+}
 static void wifi_event(void) {}
 static void (*callback)(void);
 static void wifi_set_event_callback(void (*cb)(void)) {
@@ -97,15 +100,15 @@ int main(void) {
  sdk_on=1;
  assert(ensure_wifi_on()==0);
  assert(callback==wifi_event && registrations==1 && starts==0);
- assert(ensure_wifi_on()==0 && registrations==1);
+ assert(ensure_wifi_on()==0 && registrations==1 && stack_starts==1);
  /* Model a successful stop, then a cold start. */
  sdk_on=0; wifi_state.on=0;
- assert(ensure_wifi_on()==0 && registrations==2 && starts==1);
- assert(ensure_wifi_on()==0 && registrations==2 && starts==1);
+ assert(ensure_wifi_on()==0 && registrations==2 && starts==1 && stack_starts==2);
+ assert(ensure_wifi_on()==0 && registrations==2 && starts==1 && stack_starts==2);
  sdk_on=0; wifi_state.on=0; start_error=-1;
- assert(ensure_wifi_on()==H2_PAL_ERR_IO && !wifi_state.on);
+ assert(ensure_wifi_on()==H2_PAL_ERR_IO && !wifi_state.on && stack_starts==2);
  start_error=0;
- assert(ensure_wifi_on()==0 && wifi_state.on && starts==3);
+ assert(ensure_wifi_on()==0 && wifi_state.on && starts==3 && stack_starts==3);
  return 0;
 }
 '''
