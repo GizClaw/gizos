@@ -36,4 +36,4 @@ After the probes the suites reported `suite=64 case=13 result=0`, Core cases 1, 
 
 ## Boundaries
 
-The replace is delete-then-rename; a power loss between the two steps leaves no destination, which every in-repo caller already tolerates because it removes the destination itself. Direct SDK callers bypass the registry. The 130-unit component limit is the SDK's; the provider still enforces only the 191-byte translated path limit.
+The replace is delete-then-rename; a power loss between the two steps leaves no destination, which every in-repo caller already tolerates because it removes the destination itself. Direct SDK callers bypass the registry and the component check. The 130-unit component limit is the SDK's number; the provider enforces it by counting UTF-16 units of the UTF-8 component, so a name the SDK would accept only after truncation is refused up front.
