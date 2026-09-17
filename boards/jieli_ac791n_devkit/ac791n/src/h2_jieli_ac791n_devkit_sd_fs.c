@@ -5,6 +5,7 @@
 #include "system/includes.h"
 
 #include "h2_jieli_ac791n_devkit.h"
+#include "h2_jieli_wl82_atomic.h"
 
 #include <limits.h>
 #include <stddef.h>
@@ -36,7 +37,39 @@ struct h2_pal_fs_file {
   FILE *native;
   size_t write_offset;
   size_t next_write_trace;
+  char path[H2_JIELI_SD_PATH_MAX];
+  h2_pal_fs_open_mode_t mode;
+  struct h2_pal_fs_file *next;
 };
+
+static h2_pal_fs_file_t *sd_open_files;
+static uint32_t sd_files_gate;
+
+static void sd_files_lock(void) {
+  for (;;) {
+    uint32_t expected = 0u;
+    if (h2_jieli_atomic_cas_u32(&sd_files_gate, &expected, 1u)) return;
+    os_time_dly(1u);
+  }
+}
+
+static void sd_files_unlock(void) {
+  h2_jieli_atomic_store_u32(&sd_files_gate, 0u);
+}
+
+/* Caller holds sd_files_gate; descendants match only at a separator. */
+static int sd_path_busy(
+    const char *path, int descendants, h2_pal_fs_open_mode_t mode) {
+  size_t length = strlen(path);
+  for (h2_pal_fs_file_t *file = sd_open_files; file != NULL; file = file->next) {
+    if (strcmp(file->path, path) != 0 &&
+        !(descendants && strncmp(file->path, path, length) == 0 &&
+          file->path[length] == '/')) continue;
+    if (mode != H2_PAL_FS_OPEN_READ ||
+        file->mode == H2_PAL_FS_OPEN_WRITE_TRUNCATE) return 1;
+  }
+  return 0;
+}
 
 static int sd_mounted;
 static int sd_mount_owned;
@@ -159,9 +192,17 @@ static int translate_path(
    * parent traversal. A leading dot in a normal filename remains valid. */
   if (path[0] != '/') return H2_PAL_ERR_INVALID_ARG;
   const char *component = path + 1;
+  size_t component_units = 0u;
   for (const char *cursor = component;; ++cursor) {
     if (*cursor == '\\') return H2_PAL_ERR_INVALID_ARG;
-    if (*cursor != '/' && *cursor != '\0') continue;
+    if (*cursor != '/' && *cursor != '\0') {
+      unsigned char byte = (unsigned char)*cursor;
+      /* JLFAT silently truncates components beyond 130 UTF-16 units. */
+      if ((byte & 0xc0u) != 0x80u) ++component_units;
+      if (byte >= 0xf0u && byte <= 0xf7u) ++component_units;
+      if (component_units > 130u) return H2_PAL_ERR_NO_SPACE;
+      continue;
+    }
     const size_t length = (size_t)(cursor - component);
     if (length == 0u ||
         (length == 1u && component[0] == '.') ||
@@ -170,6 +211,7 @@ static int translate_path(
     }
     if (*cursor == '\0') break;
     component = cursor + 1;
+    component_units = 0u;
   }
   /* JLFAT's frename API accepts only a native filename for the destination.
    * Keep Loader's public paths unchanged while mapping its transactional
@@ -300,22 +342,58 @@ static int fs_open(
                                 : mode == H2_PAL_FS_OPEN_WRITE_TRUNCATE ? "w+"
                                                                         : NULL;
   if (native_mode == NULL) return H2_PAL_ERR_INVALID_ARG;
+  sd_files_lock();
+  if (sd_path_busy(mapped, 0, mode)) {
+    sd_files_unlock();
+    return H2_PAL_ERR_BUSY;
+  }
+  /* JLFAT can open a directory for writing, exposing its data to writes.
+   * Inspect an existing entry before allowing a native write open. */
+  if (mode == H2_PAL_FS_OPEN_WRITE_TRUNCATE) {
+    FILE *existing = fopen(mapped, "r");
+    if (existing != NULL) {
+      int attributes = 0;
+      int attr_result = fget_attr(existing, &attributes);
+      int close_result = fclose(existing);
+      if (attr_result != 0 || close_result != 0 ||
+          (attributes & F_ATTR_DIR) != 0) {
+        sd_files_unlock();
+        return attr_result != 0 || close_result != 0
+            ? H2_PAL_ERR_IO : H2_PAL_ERR_INVALID_STATE;
+      }
+    }
+  }
   sd_last_stage = "fopen-enter";
   FILE *native = fopen(mapped, native_mode);
   sd_last_stage = "fopen-return";
   if (native == NULL) {
+    sd_files_unlock();
     return mode == H2_PAL_FS_OPEN_READ ? H2_PAL_ERR_NOT_FOUND
                                        : H2_PAL_ERR_IO;
   }
+  int attributes = 0;
+  int attr_result = fget_attr(native, &attributes);
+  if (attr_result != 0 || (attributes & F_ATTR_DIR) != 0) {
+    int close_result = fclose(native);
+    sd_files_unlock();
+    return attr_result != 0 || close_result != 0
+        ? H2_PAL_ERR_IO : H2_PAL_ERR_INVALID_STATE;
+  }
   h2_pal_fs_file_t *file = malloc(sizeof(*file));
   if (file == NULL) {
-    fclose(native);
+    (void)fclose(native);
+    sd_files_unlock();
     return H2_PAL_ERR_NO_MEMORY;
   }
   file->native = native;
   file->write_offset = 0u;
   file->next_write_trace = 0u;
+  memcpy(file->path, mapped, strlen(mapped) + 1u);
+  file->mode = mode;
+  file->next = sd_open_files;
+  sd_open_files = file;
   *out_file = file;
+  sd_files_unlock();
   return H2_PAL_OK;
 }
 
@@ -398,12 +476,17 @@ static int fs_close(void *user, h2_pal_fs_file_t *file) {
   if (trace) {
     h2_jieli_sd_fs_trace_write("close-enter", file->write_offset, 0u, 0);
   }
+  sd_files_lock();
   int result = fclose(file->native);
   if (trace) {
     h2_jieli_sd_fs_trace_write("close-return", file->write_offset, 0u, result);
   }
+  h2_pal_fs_file_t **link = &sd_open_files;
+  while (*link != NULL && *link != file) link = &(*link)->next;
+  if (*link == file) *link = file->next;
   file->native = NULL;
   free(file);
+  sd_files_unlock();
   return map_error(result);
 }
 
@@ -438,9 +521,15 @@ static int fs_clear(void *user, const char *path) {
   char mapped[H2_JIELI_SD_PATH_MAX];
   int result = translate_path(path, mapped);
   if (result != H2_PAL_OK) return result;
+  sd_files_lock();
+  if (sd_path_busy(mapped, 1, H2_PAL_FS_OPEN_WRITE_TRUNCATE)) {
+    sd_files_unlock();
+    return H2_PAL_ERR_BUSY;
+  }
   result = fdelete_dir(mapped);
-  if (result != 0) return H2_PAL_ERR_IO;
-  return ensure_directory(mapped);
+  result = result == 0 ? ensure_directory(mapped) : H2_PAL_ERR_IO;
+  sd_files_unlock();
+  return result;
 }
 
 static int fs_remove(void *user, const char *path) {
@@ -448,8 +537,16 @@ static int fs_remove(void *user, const char *path) {
   char mapped[H2_JIELI_SD_PATH_MAX];
   int result = translate_path(path, mapped);
   if (result != H2_PAL_OK) return result;
+  sd_files_lock();
+  if (sd_path_busy(mapped, 0, H2_PAL_FS_OPEN_WRITE_TRUNCATE)) {
+    sd_files_unlock();
+    return H2_PAL_ERR_BUSY;
+  }
   FILE *file = fopen(mapped, "r");
-  if (file == NULL) return H2_PAL_ERR_NOT_FOUND;
+  if (file == NULL) {
+    sd_files_unlock();
+    return H2_PAL_ERR_NOT_FOUND;
+  }
   /* Jieli's fdelete() removes the entry represented by the already-open
    * handle and closes that handle atomically.  Closing it first and then
    * resolving the path again through fdelete_by_name() can leave JLFAT
@@ -458,6 +555,7 @@ static int fs_remove(void *user, const char *path) {
   /* fdelete() commits the directory mutation while closing the handle.  Do
    * not follow it with f_free_cache(): on WL82/JLFAT that whole-volume cache
    * flush can block forever after a previously interrupted write. */
+  sd_files_unlock();
   return map_error(result);
 }
 
@@ -477,17 +575,53 @@ static int fs_rename(
       memcmp(old_mapped, new_mapped, (size_t)(old_name - old_mapped)) != 0) {
     return H2_PAL_ERR_UNSUPPORTED;
   }
+  sd_files_lock();
+  if (strcmp(old_mapped, new_mapped) == 0) {
+    FILE *file = fopen(old_mapped, "r");
+    result = file == NULL ? H2_PAL_ERR_NOT_FOUND : map_error(fclose(file));
+    sd_files_unlock();
+    return result;
+  }
+  /* Keep the registry gate through the mutation: another open must not gain
+   * a stale JLFAT directory-entry pointer between the check and rename. */
+  if (sd_path_busy(old_mapped, 0, H2_PAL_FS_OPEN_WRITE_TRUNCATE) ||
+      sd_path_busy(new_mapped, 0, H2_PAL_FS_OPEN_WRITE_TRUNCATE)) {
+    sd_files_unlock();
+    return H2_PAL_ERR_BUSY;
+  }
   FILE *file = fopen(old_mapped, "r");
-  if (file == NULL) return H2_PAL_ERR_NOT_FOUND;
+  if (file == NULL) {
+    sd_files_unlock();
+    return H2_PAL_ERR_NOT_FOUND;
+  }
+  FILE *destination = fopen(new_mapped, "r");
+  if (destination != NULL) {
+    int attributes = 0;
+    int attr_result = fget_attr(destination, &attributes);
+    if (attr_result != 0 || (attributes & F_ATTR_DIR) != 0) {
+      int destination_close = fclose(destination);
+      int source_close = fclose(file);
+      sd_files_unlock();
+      return attr_result != 0 || destination_close != 0 || source_close != 0
+          ? H2_PAL_ERR_IO : H2_PAL_ERR_INVALID_STATE;
+    }
+    /* fdelete consumes the destination handle even when unlink fails. */
+    if (fdelete(destination) != 0) {
+      (void)fclose(file);
+      sd_files_unlock();
+      return H2_PAL_ERR_IO;
+    }
+  }
   result = frename(file, new_name + 1);
-  (void)fclose(file);
-  if (result != 0 || f_free_cache(H2_JIELI_SD_ROOT) != 0) {
+  int close_result = fclose(file);
+  if (result != 0 || close_result != 0) {
+    sd_files_unlock();
     return H2_PAL_ERR_IO;
   }
   file = fopen(new_mapped, "r");
-  if (file == NULL) return H2_PAL_ERR_IO;
-  (void)fclose(file);
-  return H2_PAL_OK;
+  result = file == NULL ? H2_PAL_ERR_IO : map_error(fclose(file));
+  sd_files_unlock();
+  return result;
 }
 
 static int wait_sd_online(void) {
