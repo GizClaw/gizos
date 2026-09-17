@@ -100,7 +100,8 @@ p.noalloc(function() d.draw_mesh(m,identity) end)
 local writer,handle=g.mesh(4,1)
 local xy=v.buffer(8);xy:load{1,1,6,1,6,6,1,6}
 local topology=v.buffer(4);topology:load{0,1,4,63488}
-g.update_mesh(writer,xy,topology,4,1);d.draw_mesh(handle,stable)
+-- Two replays leave the span cache shrunk before the steady-state probe.
+g.update_mesh(writer,xy,topology,4,1);d.draw_mesh(handle,stable);d.draw_mesh(handle,stable);d.draw_mesh(handle,stable)
 p.mesh_marker(handle,true)
 p.noalloc(function() g.update_mesh(writer,xy,topology,4,1);d.draw_mesh(handle,stable) end)
 assert(p.mesh_marker(handle,false),'native update lost equivalent spans')
