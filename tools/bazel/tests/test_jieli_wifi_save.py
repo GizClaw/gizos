@@ -23,8 +23,20 @@ class SaveTest(unittest.TestCase):
         fixture=shared[:shared.index('static void run_cases')]
         begin=source.find('static int sta_connect_and_save(void *user,')
         callback='' if begin<0 else source[begin:source.index('\n}\n',begin)+3]
+        helper_begin=source.index('static int sta_validate_sdk_password(')
+        helper=source[helper_begin:source.index('\n}\n',helper_begin)+3]
         wired='.connect_and_save = sta_connect_and_save' in source
+        # Match the pinned SDK password storage used by the real preflight helper.
         fixture+=r'''
+enum WIFI_MODE { STA_MODE=1, AP_MODE, P2P_MODE, SMP_CFG_MODE, MP_TEST_MODE, NONE_MODE };
+enum P2P_ROLE { P2P_GC_MODE=1, P2P_GO_MODE };
+struct wifi_store_info {
+ enum WIFI_MODE mode;
+ unsigned char pwd[2][64], ssid[2][33];
+ enum P2P_ROLE p2p_role;
+ unsigned char sta_cnt, connect_best_network;
+} __attribute__((packed));
+'''+helper+r'''
 static fixture_t f;
 static unsigned wifi_operation_busy;
 static int wifi_operation_begin(void) { if(wifi_operation_busy) return H2_PAL_ERR_BUSY; wifi_operation_busy=1; return 0; }
@@ -55,6 +67,13 @@ int main(void) {
  assert(h2_pal_wifi_sta_connect_and_save(&api,&target,100)==H2_PAL_ERR_IO);
  assert(f.saves==1 && !memcmp(&f.saved,&old,sizeof(old)));
  assert(!wifi_operation_busy);
+ h2_pal_wifi_sta_config_t oversized=target;
+ memset(oversized.password,'p',64); oversized.password_len=64;
+ f=(fixture_t){.saved=old,.status={.state=H2_PAL_WIFI_STA_STATE_GOT_IP,.ip_valid=1}};
+ assert(h2_pal_wifi_sta_connect_and_save(&api,&oversized,100)==H2_PAL_ERR_INVALID_ARG);
+ assert(!f.disconnects && !f.connects && !f.saves && !wifi_operation_busy);
+ assert(f.status.state==H2_PAL_WIFI_STA_STATE_GOT_IP && f.status.ip_valid);
+ assert(!memcmp(&f.saved,&old,sizeof(old)));
  wifi_operation_busy=1;
  assert(h2_pal_wifi_sta_connect_and_save(&api,&target,100)==H2_PAL_ERR_BUSY);
  return 0;

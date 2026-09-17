@@ -125,8 +125,8 @@ int main(void) {
                        source.index("static void post_system_event")]
         if "static void scan_reap_completed(void)" not in state:
             state += "\nstatic void scan_reap_completed(void) {}\n"
-        scan = source[source.index("static int sta_scan("):
-                      source.index("static int sta_connect(")]
+        scan_begin = source.index("static int sta_scan(")
+        scan = source[scan_begin:source.index("\n}\n", scan_begin) + 3]
         status = source[source.index("static int sta_get_status("):
                         source.index("static int sta_scan(")]
         stub = r'''
