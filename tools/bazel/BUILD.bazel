@@ -2071,3 +2071,9 @@ py_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )
+
+cc_library(
+    name = "vendor_third_party_tlsf",
+    tags = ["manual"],
+    deps = ["@h2_vendor_tlsf//:tlsf"],
+)

@@ -84,6 +84,31 @@ typedef struct h2_lua_host_config {
   int borrow_display;
   /** Per-app persistent storage; zero-initialized leaves it unconfigured. */
   h2_lua_storage_config_t storage;
+  /** Optional shared VM heap in bytes. Zero (default) allocates each VM block
+   * directly from Runtime mem. Nonzero reserves this many bytes from Runtime
+   * mem at Host creation and serves every job's VM object, Lua state,
+   * userdata, strings and tables from it with TLSF, serialized by a Runtime
+   * Sync mutex. Callbacks, events, tasks and framebuffer still use Runtime mem.
+   *
+   * The reservation is one block when Runtime mem has one; otherwise the Host
+   * shrinks the request by an eighth per refusal and takes up to 8 blocks of
+   * at least 256 KiB (only the final remainder may be smaller), each added to
+   * the same TLSF heap. A
+   * single VM allocation must fit inside one block. When the bytes cannot be
+   * reserved within those limits create returns H2_PAL_ERR_NO_MEMORY with no
+   * Host and no leaked allocations.
+   *
+   * Must be at least tlsf_size() + tlsf_pool_overhead() +
+   * 8 * (tlsf_block_size_min() + tlsf_alloc_overhead()), and its usable pool
+   * must not exceed tlsf_block_size_max(); otherwise create returns
+   * H2_PAL_ERR_INVALID_ARG.
+   *
+   * Independent of the unchanged per-VM vm_memory_limit_bytes quota. Pool
+   * exhaustion returns allocation failure to Lua, allowing emergency GC
+   * before OOM. Size for all simultaneously live VMs plus TLSF metadata and
+   * per-block overhead; measure the workload rather than assuming the quota.
+   * Destroy releases every block after all jobs and VMs are released. */
+  size_t vm_heap_bytes;
 } h2_lua_host_config_t;
 
 /** Creates a stopped Host that borrows, but never consumes or destroys,

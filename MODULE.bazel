@@ -346,6 +346,17 @@ vendor_repositories.repository(
     urls = ["https://codeload.github.com/higan-emu/libco/tar.gz/e18e09d634d612a01781168ad4d76be10a7e3bad"],
 )
 vendor_repositories.repository(
+    name = "h2_vendor_tlsf",
+    build_file = "//third_party:tlsf.BUILD.bazel",
+    overlay_files = {
+        "//third_party/tlsf_patch:h2_tlsf.h": "src/h2_tlsf.h",
+        "//third_party/tlsf_patch:h2_tlsf_embedded_stdio.h": "src/h2_tlsf_embedded_stdio.h",
+    },
+    sha256 = "df67543d45ad5e67d96168b54022a0f4803f8d5ae9770d398e20dd9a0e2934d6",
+    strip_prefix = "tlsf-deff9ab509341f264addbd3c8ada533678591905",
+    urls = ["https://codeload.github.com/mattconte/tlsf/tar.gz/deff9ab509341f264addbd3c8ada533678591905"],
+)
+vendor_repositories.repository(
     name = "h2_vendor_lua",
     build_file = "//third_party:lua.BUILD.bazel",
     overlay_files = {
@@ -486,6 +497,7 @@ use_repo(
     "h2_vendor_speexdsp",
     "h2_vendor_sqlite",
     "h2_vendor_tinyh264",
+    "h2_vendor_tlsf",
     "h2_vendor_wolfssl",
     "h2_vendor_yyjson",
     "h2_vendor_zlib",
