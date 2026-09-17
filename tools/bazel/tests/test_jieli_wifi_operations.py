@@ -110,6 +110,7 @@ int main(void) {
     assert(guarded_sta_disconnect(NULL) == H2_PAL_OK);
     assert(off_calls == before_off + 1 && scan_phase == SCAN_IDLE);
     scan_completed();
+    (void)scan_reset_after_sta_exit;
     assert(scan_phase == SCAN_IDLE && clears == 0);
     abandon_scan = 0; pause_scan = 0; scan_success = 1;
     assert(guarded_sta_scan(NULL, NULL, NULL, NULL, 0) == H2_PAL_OK);
