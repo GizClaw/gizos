@@ -282,6 +282,7 @@ static int ensure_wifi_on(void) {
   /* Bind events even when board startup already enabled the SDK interface. */
   wifi_set_event_callback(wifi_event);
   if (!wifi_is_on() && wifi_on() != 0) return H2_PAL_ERR_IO;
+  h2_jieli_net_stack_started();
   wifi_state_lock();
   wifi_state.on = 1;
   wifi_state_unlock();
@@ -478,7 +479,9 @@ static int wifi_stop(void) {
   const int on = wifi_state.on;
   wifi_state_unlock();
   if (!on && !wifi_is_on()) return H2_PAL_OK;
+  h2_jieli_net_stack_stopping();
   if (wifi_off() != 0) return H2_PAL_ERR_IO;
+  h2_jieli_net_stack_stopped();
   wifi_state_lock();
   ++wifi_sta_generation;
   wifi_state.on = 0;

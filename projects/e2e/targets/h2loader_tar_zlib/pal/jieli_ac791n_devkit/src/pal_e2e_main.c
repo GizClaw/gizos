@@ -10,6 +10,7 @@
 #include "jieli_h2loader_app_support.h"
 #include "jieli_app_iostreamikcp.h"
 #include "device/device.h"
+#include "pal_e2e_sdk_fs_probe.h"
 
 #include <stdio.h>
 #include <stdarg.h>
@@ -43,6 +44,198 @@ void h2_jieli_sd_fs_trace_mkdir(
 }
 
 static const h2_pal_fs_api_t *base_fs;
+
+static void fs_probe_rc(const char *name, const char *step, int rc) {
+  trace("H2_PAL_FS_PROBE name=%s step=%s rc=%d\r\n", name, step, rc);
+}
+
+static void fs_probe_stat(const char *name, const char *step, const char *path) {
+  h2_pal_fs_stat_t st = {0};
+  int rc = h2_pal_fs_stat(base_fs, path, &st);
+  trace("H2_PAL_FS_PROBE name=%s step=%s rc=%d is_dir=%d size=%llu\r\n",
+        name, step, rc, st.is_dir, (unsigned long long)st.size);
+}
+
+static int fs_probe_create(const char *path) {
+  h2_pal_fs_file_t *file = NULL;
+  int rc = h2_pal_fs_open(base_fs, path, H2_PAL_FS_OPEN_WRITE_TRUNCATE, &file);
+  if (file != NULL) {
+    int close_rc = h2_pal_fs_close(base_fs, file);
+    if (rc == H2_PAL_OK) rc = close_rc;
+  }
+  return rc;
+}
+
+static void fs_probe_cleanup(const char *name) {
+  fs_probe_rc(name, "clear", h2_pal_fs_clear(base_fs, "/data/h2-probe"));
+}
+
+static void fs_probe_name(const char *name, const char *path, int transfer) {
+  h2_pal_fs_file_t *file = NULL;
+  size_t count = 0u;
+  char data[4] = {0};
+  int rc = h2_pal_fs_open(base_fs, path, H2_PAL_FS_OPEN_WRITE_TRUNCATE, &file);
+  fs_probe_rc(name, "open_write", rc);
+  if (transfer) {
+    fs_probe_rc(name, "write", h2_pal_fs_write(base_fs, file, "test", 4u, &count));
+  }
+  fs_probe_rc(name, "close_write", h2_pal_fs_close(base_fs, file));
+  file = NULL;
+  fs_probe_stat(name, "stat", path);
+  if (transfer) {
+    fs_probe_rc(name, "open_read", h2_pal_fs_open(
+        base_fs, path, H2_PAL_FS_OPEN_READ, &file));
+    rc = h2_pal_fs_read(base_fs, file, data, sizeof(data), &count);
+    if (rc == H2_PAL_OK && (count != 4u || memcmp(data, "test", 4u) != 0))
+      rc = H2_PAL_ERR_IO;
+    fs_probe_rc(name, "read", rc);
+    fs_probe_rc(name, "close_read", h2_pal_fs_close(base_fs, file));
+  }
+  fs_probe_rc(name, "remove", h2_pal_fs_remove(base_fs, path));
+}
+
+static void fs_probe_native(const char *name, const char *step, int native) {
+  trace("H2_PAL_FS_PROBE name=%s step=%s rc=%d native=%d\r\n",
+        name, step, native == 0 ? H2_PAL_OK : H2_PAL_ERR_IO, native);
+}
+
+static void fs_probe_native_open(const char *name, const char *step, int opened) {
+  trace("H2_PAL_FS_PROBE name=%s step=%s rc=%d native=%d\r\n",
+        name, step, opened ? H2_PAL_OK : H2_PAL_ERR_IO, opened);
+}
+
+static void run_fs_probes(void) {
+  const char *a = "/data/h2-probe/a";
+  const char *b = "/data/h2-probe/b";
+  const char *d = "/data/h2-probe/d";
+  const char *f = "/data/h2-probe/f";
+  const char *name = "setup";
+  fs_probe_rc(name, "mkdir", h2_pal_fs_mkdir(base_fs, "/data/h2-probe"));
+  fs_probe_cleanup(name);
+
+  name = "rename_replace";
+  fs_probe_rc(name, "create_a", fs_probe_create(a));
+  fs_probe_rc(name, "create_b", fs_probe_create(b));
+  fs_probe_rc(name, "rename", h2_pal_fs_rename(base_fs, a, b));
+  fs_probe_stat(name, "stat_b", b);
+  fs_probe_stat(name, "stat_a", a);
+  fs_probe_cleanup(name);
+
+  name = "rename_same";
+  fs_probe_rc(name, "create_a", fs_probe_create(a));
+  fs_probe_rc(name, "rename", h2_pal_fs_rename(base_fs, a, a));
+  fs_probe_cleanup(name);
+
+  name = "rename_onto_dir";
+  fs_probe_rc(name, "mkdir_d", h2_pal_fs_mkdir(base_fs, d));
+  fs_probe_rc(name, "create_f", fs_probe_create(f));
+  fs_probe_rc(name, "rename", h2_pal_fs_rename(base_fs, f, d));
+  fs_probe_cleanup(name);
+
+  fs_probe_rc("rename_cross_dir", "rename",
+              h2_pal_fs_rename(base_fs, "/data/x", "/dl/x"));
+
+  h2_pal_fs_file_t *file = NULL;
+  name = "rename_open";
+  fs_probe_rc(name, "open_write", h2_pal_fs_open(
+      base_fs, a, H2_PAL_FS_OPEN_WRITE_TRUNCATE, &file));
+  fs_probe_rc(name, "rename", h2_pal_fs_rename(base_fs, a, b));
+  fs_probe_rc(name, "close", h2_pal_fs_close(base_fs, file));
+  file = NULL;
+  fs_probe_stat(name, "stat_a", a);
+  fs_probe_stat(name, "stat_b", b);
+  fs_probe_cleanup(name);
+
+  name = "remove_open";
+  fs_probe_rc(name, "open_write", h2_pal_fs_open(
+      base_fs, a, H2_PAL_FS_OPEN_WRITE_TRUNCATE, &file));
+  fs_probe_rc(name, "remove", h2_pal_fs_remove(base_fs, a));
+  fs_probe_rc(name, "close", h2_pal_fs_close(base_fs, file));
+  file = NULL;
+  fs_probe_cleanup(name);
+
+  name = "open_twice";
+  h2_pal_fs_file_t *second = NULL;
+  h2_pal_fs_file_t *reader = NULL;
+  fs_probe_rc(name, "open_write", h2_pal_fs_open(
+      base_fs, a, H2_PAL_FS_OPEN_WRITE_TRUNCATE, &file));
+  fs_probe_rc(name, "open_write_again", h2_pal_fs_open(
+      base_fs, a, H2_PAL_FS_OPEN_WRITE_TRUNCATE, &second));
+  fs_probe_rc(name, "open_read", h2_pal_fs_open(
+      base_fs, a, H2_PAL_FS_OPEN_READ, &reader));
+  if (second != NULL)
+    fs_probe_rc(name, "close_second", h2_pal_fs_close(base_fs, second));
+  if (reader != NULL)
+    fs_probe_rc(name, "close_reader", h2_pal_fs_close(base_fs, reader));
+  fs_probe_rc(name, "close", h2_pal_fs_close(base_fs, file));
+  file = NULL;
+  fs_probe_cleanup(name);
+
+  const h2_pal_fs_open_mode_t modes[] = {
+      H2_PAL_FS_OPEN_READ, H2_PAL_FS_OPEN_WRITE_TRUNCATE};
+  const char *dir_names[] = {"open_dir_read", "open_dir_write"};
+  for (size_t i = 0u; i < 2u; ++i) {
+    name = dir_names[i];
+    fs_probe_rc(name, "mkdir_d", h2_pal_fs_mkdir(base_fs, d));
+    fs_probe_rc(name, "open", h2_pal_fs_open(base_fs, d, modes[i], &file));
+    if (file != NULL) fs_probe_rc(name, "close", h2_pal_fs_close(base_fs, file));
+    file = NULL;
+    fs_probe_cleanup(name);
+  }
+
+  /* Two components keep the path boundary separate from the SDK's 130-unit
+   * component limit. All entries stay inside the probe directory. */
+  const char *prefix = "/data/h2-probe/length/";
+  fs_probe_rc("path_191", "mkdir", h2_pal_fs_mkdir(base_fs, "/data/h2-probe/length"));
+  char path[224];
+  strcpy(path, prefix);
+  size_t offset = strlen(prefix);
+  memset(path + offset, 'p', 80u);
+  path[offset + 80u] = '\0';
+  fs_probe_rc("path_191", "mkdir_component", h2_pal_fs_mkdir(base_fs, path));
+  path[offset + 80u] = '/';
+  offset += 81u;
+  for (size_t length = 191u; length <= 192u; ++length) {
+    size_t public_length = length - (strlen("storage/sd0/C/") - 1u);
+    memset(path + offset, 'n', public_length - offset);
+    path[public_length] = '\0';
+    fs_probe_name(length == 191u ? "path_191" : "path_192", path, 0);
+  }
+  fs_probe_cleanup("path_192");
+  strcpy(path, "/data/h2-probe/");
+  offset = strlen(path);
+  /* Stay below the full-path limit and exercise provider component rejection. */
+  memset(path + offset, 'c', 131u);
+  path[offset + 131u] = '\0';
+  fs_probe_name("component_131", path, 0);
+  fs_probe_name("utf8_short", "/data/h2-probe/日志.txt", 1);
+  fs_probe_name("utf8_long", "/data/h2-probe/日志-测试-非常长的文件名.txt", 1);
+  fs_probe_cleanup("utf8_long");
+
+  name = "sdk_frename_existing";
+  h2_pal_e2e_sdk_rename_probe_t rename_probe = {0};
+  h2_pal_e2e_sdk_probe_frename_existing(
+      "storage/sd0/C/data/h2-probe/a", "storage/sd0/C/data/h2-probe/b",
+      &rename_probe);
+  fs_probe_native_open(name, "create_a", rename_probe.create_a);
+  fs_probe_native_open(name, "create_b", rename_probe.create_b);
+  fs_probe_native(name, "close_b", rename_probe.close_b);
+  fs_probe_native(name, "rename", rename_probe.rename);
+  fs_probe_native(name, "close_a", rename_probe.close_a);
+  fs_probe_native(name, "delete_a", rename_probe.delete_a);
+  fs_probe_native(name, "delete_b", rename_probe.delete_b);
+  fs_probe_cleanup(name);
+
+  name = "sdk_fopen_dir_write";
+  fs_probe_rc(name, "mkdir_d", h2_pal_fs_mkdir(base_fs, d));
+  h2_pal_e2e_sdk_open_probe_t open_probe = {0};
+  h2_pal_e2e_sdk_probe_fopen_dir_write("storage/sd0/C/data/h2-probe/d", &open_probe);
+  fs_probe_native_open(name, "open", open_probe.opened);
+  if (open_probe.opened) fs_probe_native(name, "close", open_probe.close);
+  fs_probe_cleanup(name);
+  fs_probe_rc("cleanup", "remove", h2_pal_fs_remove(base_fs, "/data/h2-probe"));
+}
+
 #define TRACE_FS(name, parameters, arguments) \
   static int trace_fs_##name parameters { \
     (void)user; \
@@ -181,6 +374,7 @@ static void run_suites(void *user) {
       trace("H2_PAL_FS missing_parent skipped stat=%d\r\n", before);
     }
   }
+  if (result == H2_PAL_OK && base_fs != NULL) run_fs_probes();
   if (result == H2_PAL_OK) result = h2_runtime_init(&config, &runtime);
   trace("H2_PAL_E2E phase=runtime result=%d\r\n", result);
   if (result == H2_PAL_OK) {

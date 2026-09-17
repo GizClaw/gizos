@@ -5,9 +5,12 @@
 
 #ifdef H2_JIELI_NETWORK_ENABLE
 
+#include "h2_jieli_wl82_atomic.h"
+#include "h2_jieli_ac791n_devkit_network.h"
+
 #include "lwip.h"
 #include "lwip/inet.h"
-#include "lwip/netdb.h"
+#include "lwip/api.h"
 #include "lwip/sockets.h"
 #include "lwip/dns.h"
 #include "lwip/tcpip.h"
@@ -19,13 +22,114 @@
 
 struct h2_pal_net_resolver {
   unsigned references;
+  unsigned slot;
+  uintptr_t callback_id;
   h2_pal_result_t result;
   h2_pal_net_addr_t address;
   char host[DNS_MAX_NAME_LENGTH];
 };
 
 enum { H2_JIELI_DNS_CAPACITY = 4 };
-static unsigned resolver_count;
+static h2_pal_net_resolver_t *resolvers[H2_JIELI_DNS_CAPACITY];
+static h2_pal_net_resolver_t *resolver_graveyard[H2_JIELI_DNS_CAPACITY];
+static uintptr_t resolver_callback_id;
+static uint32_t stack_gate;
+static int stack_ready;
+static uint32_t stack_generation;
+static uint32_t stack_users;
+enum { SLOT_RECV = 1, SLOT_SEND = 2, SLOT_CONNECT = 4 };
+static struct {
+  uint8_t busy;
+  uint32_t generation;
+  uint32_t instance;
+} sockets[MEMP_NUM_NETCONN];
+
+static void resolver_reap(void);
+
+static void stack_lock(void) {
+  for (;;) {
+    uint32_t expected = 0u;
+    if (h2_jieli_atomic_cas_u32(&stack_gate, &expected, 1u)) return;
+    os_time_dly(1u);
+  }
+}
+
+static void stack_unlock(void) {
+  h2_jieli_atomic_store_u32(&stack_gate, 0u);
+}
+
+void h2_jieli_net_stack_started(void) {
+  stack_lock();
+  resolver_reap();
+  if (++stack_generation == 0u) ++stack_generation;
+  stack_ready = 1;
+  stack_unlock();
+}
+
+void h2_jieli_net_stack_stopping(void) {
+  stack_lock();
+  stack_ready = 0;
+  while (stack_users != 0u) {
+    stack_unlock();
+    os_time_dly(1u);
+    stack_lock();
+  }
+  stack_unlock();
+}
+
+static int stack_enter(void) {
+  stack_lock();
+  int result = stack_ready ? H2_PAL_OK : H2_PAL_ERR_UNAVAILABLE;
+  if (result == H2_PAL_OK) ++stack_users;
+  stack_unlock();
+  return result;
+}
+
+static void stack_leave(void) {
+  stack_lock();
+  --stack_users;
+  stack_unlock();
+}
+
+static int slot_enter(int fd, uint8_t bit, uint32_t *instance) {
+  if (fd < LWIP_SOCKET_OFFSET || fd - LWIP_SOCKET_OFFSET >= MEMP_NUM_NETCONN) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  unsigned index = (unsigned)(fd - LWIP_SOCKET_OFFSET);
+  stack_lock();
+  int result = H2_PAL_OK;
+  if (!stack_ready || (sockets[index].generation != 0u &&
+                      sockets[index].generation != stack_generation)) {
+    result = H2_PAL_ERR_UNAVAILABLE;
+  } else if (bit != 0u && (sockets[index].busy &
+             (bit == SLOT_CONNECT ? (SLOT_RECV | SLOT_SEND | SLOT_CONNECT) :
+                                    (bit | SLOT_CONNECT))) != 0u) {
+    result = H2_PAL_ERR_BUSY;
+  } else {
+    *instance = sockets[index].instance;
+    sockets[index].busy |= bit;
+    ++stack_users;
+  }
+  stack_unlock();
+  return result;
+}
+
+static void slot_leave(int fd, uint8_t bit, uint32_t instance) {
+  stack_lock();
+  if (sockets[fd - LWIP_SOCKET_OFFSET].instance == instance) {
+    sockets[fd - LWIP_SOCKET_OFFSET].busy &= (uint8_t)~bit;
+  }
+  --stack_users;
+  stack_unlock();
+}
+
+static void slot_opened(int fd) {
+  stack_lock();
+  ++sockets[fd - LWIP_SOCKET_OFFSET].instance;
+  sockets[fd - LWIP_SOCKET_OFFSET].generation = stack_generation;
+  sockets[fd - LWIP_SOCKET_OFFSET].busy = 0u;
+  stack_unlock();
+}
 
 static h2_pal_result_t map_socket_error(void) {
   switch (errno) {
@@ -87,52 +191,104 @@ static int resolve_addr(
     void *user, const char *host, h2_pal_net_addr_t *out_addr) {
   (void)user;
   if (host == NULL || out_addr == NULL) return H2_PAL_ERR_INVALID_ARG;
-  struct hostent *resolved = gethostbyname(host);
-  if (resolved == NULL || resolved->h_addrtype != AF_INET ||
-      resolved->h_length != 4 || resolved->h_addr_list == NULL ||
-      resolved->h_addr_list[0] == NULL) {
-    return H2_PAL_ERR_NOT_FOUND;
+  int result = stack_enter();
+  if (result != H2_PAL_OK) return result;
+  ip_addr_t address;
+  err_t error = netconn_gethostbyname_addrtype(host, &address, NETCONN_DNS_IPV4);
+  if (error == ERR_OK) {
+    memset(out_addr, 0, sizeof(*out_addr));
+    out_addr->family = H2_PAL_NET_FAMILY_IPV4;
+    memcpy(out_addr->ip, &ip_2_ip4(&address)->addr, 4u);
   }
-  memset(out_addr, 0, sizeof(*out_addr));
-  out_addr->family = H2_PAL_NET_FAMILY_IPV4;
-  memcpy(out_addr->ip, resolved->h_addr_list[0], 4u);
-  return H2_PAL_OK;
+  stack_leave();
+  return error == ERR_OK ? H2_PAL_OK :
+      (error == ERR_VAL || error == ERR_ARG ? H2_PAL_ERR_NOT_FOUND : H2_PAL_ERR_IO);
 }
 
 static void resolver_release(h2_pal_net_resolver_t *resolver) {
   if (__atomic_sub_fetch(&resolver->references, 1u, __ATOMIC_ACQ_REL) == 0u) {
     free(resolver);
-    __atomic_sub_fetch(&resolver_count, 1u, __ATOMIC_RELEASE);
   }
+}
+
+/* Called under stack_gate at the next successful Wi-Fi start. */
+static void resolver_reap(void) {
+  for (unsigned i = 0; i < H2_JIELI_DNS_CAPACITY; ++i) {
+    h2_pal_net_resolver_t *resolver = resolver_graveyard[i];
+    resolver_graveyard[i] = NULL;
+    if (resolver != NULL) resolver_release(resolver);
+  }
+}
+
+void h2_jieli_net_stack_stopped(void) {
+  stack_lock();
+  for (unsigned i = 0; i < H2_JIELI_DNS_CAPACITY; ++i) {
+    if (resolvers[i] != NULL) {
+      __atomic_store_n(&resolvers[i]->result, H2_PAL_ERR_UNAVAILABLE, __ATOMIC_RELEASE);
+      resolver_graveyard[i] = resolvers[i];
+      resolvers[i] = NULL;
+    }
+  }
+  stack_unlock();
+}
+
+static void resolver_complete(
+    void *user, const ip_addr_t *address, h2_pal_result_t result) {
+  stack_lock();
+  h2_pal_net_resolver_t *resolver = NULL;
+  for (unsigned i = 0; i < H2_JIELI_DNS_CAPACITY; ++i) {
+    if (resolvers[i] != NULL && resolvers[i]->callback_id == (uintptr_t)user) {
+      resolver = resolvers[i];
+      resolvers[i] = NULL;
+      break;
+    }
+  }
+  if (resolver != NULL) {
+    if (address != NULL && IP_IS_V4(address)) {
+      resolver->address.family = H2_PAL_NET_FAMILY_IPV4;
+      memcpy(resolver->address.ip, &ip_2_ip4(address)->addr, 4u);
+      result = H2_PAL_OK;
+    }
+    __atomic_store_n(&resolver->result, result, __ATOMIC_RELEASE);
+  }
+  stack_unlock();
+  if (resolver != NULL) resolver_release(resolver);
 }
 
 static void resolver_found(const char *name, const ip_addr_t *address, void *user) {
   (void)name;
-  h2_pal_net_resolver_t *resolver = user;
-  h2_pal_result_t result = H2_PAL_ERR_NOT_FOUND;
-  if (address != NULL && IP_IS_V4(address)) {
-    resolver->address.family = H2_PAL_NET_FAMILY_IPV4;
-    memcpy(resolver->address.ip, &ip_2_ip4(address)->addr, 4u);
-    result = H2_PAL_OK;
-  }
-  __atomic_store_n(&resolver->result, result, __ATOMIC_RELEASE);
-  resolver_release(resolver);
+  resolver_complete(user, address, H2_PAL_ERR_NOT_FOUND);
 }
 
 /* Raw lwIP DNS APIs belong to the TCP/IP thread. Its reference survives an
- * early caller close and is released by either immediate or delayed completion. */
+ * early caller close until completion, or until the next start after stop. */
 static void resolver_begin(void *user) {
-  h2_pal_net_resolver_t *resolver = user;
+  stack_lock();
+  h2_pal_net_resolver_t *resolver = NULL;
+  for (unsigned i = 0; i < H2_JIELI_DNS_CAPACITY; ++i) {
+    if (resolvers[i] != NULL && resolvers[i]->callback_id == (uintptr_t)user) {
+      resolver = resolvers[i];
+      break;
+    }
+  }
+  /* A start queued before stopping must not enter lwIP during teardown; the
+   * stop settles it. The raw DNS call is an in-flight user like any socket
+   * call, so stopping waits for it before wifi_off. */
+  if (resolver == NULL || !stack_ready) {
+    stack_unlock();
+    return;
+  }
+  ++stack_users;
   ip_addr_t address;
   const err_t result = dns_gethostbyname_addrtype(
-      resolver->host, &address, resolver_found, resolver, LWIP_DNS_ADDRTYPE_IPV4);
+      resolver->host, &address, resolver_found, user, LWIP_DNS_ADDRTYPE_IPV4);
+  --stack_users;
+  stack_unlock();
   if (result == ERR_OK) {
-    resolver_found(resolver->host, &address, resolver);
+    resolver_found(NULL, &address, user);
   } else if (result != ERR_INPROGRESS) {
-    __atomic_store_n(&resolver->result,
-                    result == ERR_MEM ? H2_PAL_ERR_NO_SPACE : H2_PAL_ERR_IO,
-                    __ATOMIC_RELEASE);
-    resolver_release(resolver);
+    resolver_complete(user, NULL,
+                      result == ERR_MEM ? H2_PAL_ERR_NO_SPACE : H2_PAL_ERR_IO);
   }
 }
 
@@ -145,25 +301,40 @@ static h2_pal_result_t resolve_start(
   if (length == 0u || length == DNS_MAX_NAME_LENGTH) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  unsigned count = __atomic_load_n(&resolver_count, __ATOMIC_RELAXED);
-  do {
-    if (count >= H2_JIELI_DNS_CAPACITY) return H2_PAL_ERR_NO_SPACE;
-  } while (!__atomic_compare_exchange_n(&resolver_count, &count, count + 1u,
-                                        0, __ATOMIC_ACQ_REL, __ATOMIC_RELAXED));
+  int result = stack_enter();
+  if (result != H2_PAL_OK) return result;
+  stack_lock();
+  unsigned slot = 0u;
+  while (slot < H2_JIELI_DNS_CAPACITY && resolvers[slot] != NULL) ++slot;
+  /* Callback identities must not alias even if an old TCP/IP thread lingers
+   * past the next start and malloc reuses the resolver's address. */
+  if (slot == H2_JIELI_DNS_CAPACITY || resolver_callback_id == UINTPTR_MAX) {
+    stack_unlock();
+    stack_leave();
+    return H2_PAL_ERR_NO_SPACE;
+  }
   h2_pal_net_resolver_t *resolver = malloc(sizeof(*resolver));
   if (resolver == NULL) {
-    __atomic_sub_fetch(&resolver_count, 1u, __ATOMIC_RELEASE);
+    stack_unlock();
+    stack_leave();
     return H2_PAL_ERR_NO_MEMORY;
   }
   memset(resolver, 0, sizeof(*resolver));
   resolver->references = 2u;
+  resolver->slot = slot;
+  resolver->callback_id = ++resolver_callback_id;
   resolver->result = H2_PAL_ERR_WOULD_BLOCK;
   memcpy(resolver->host, host, length + 1u);
-  if (tcpip_try_callback(resolver_begin, resolver) != ERR_OK) {
+  resolvers[slot] = resolver;
+  stack_unlock();
+  void *callback = (void *)resolver->callback_id;
+  if (tcpip_try_callback(resolver_begin, callback) != ERR_OK) {
+    resolver_complete(callback, NULL, H2_PAL_ERR_NO_SPACE);
     resolver_release(resolver);
-    resolver_release(resolver);
+    stack_leave();
     return H2_PAL_ERR_NO_SPACE;
   }
+  stack_leave();
   *out_resolver = resolver;
   return H2_PAL_OK;
 }
@@ -238,7 +409,7 @@ static int bind_socket(
   return H2_PAL_OK;
 }
 
-static int udp_open_bound(
+static int udp_open_bound_active(
     void *user, h2_pal_net_family_t family, uint16_t port,
     const h2_pal_net_bind_t *binding, h2_pal_net_socket_t *out_socket,
     h2_pal_net_addr_t *out_bind_addr) {
@@ -258,6 +429,19 @@ static int udp_open_bound(
   return H2_PAL_OK;
 }
 
+static int udp_open_bound(
+    void *user, h2_pal_net_family_t family, uint16_t port,
+    const h2_pal_net_bind_t *binding, h2_pal_net_socket_t *out_socket,
+    h2_pal_net_addr_t *out_bind_addr) {
+  int result = stack_enter();
+  if (result != H2_PAL_OK) return result;
+  result = udp_open_bound_active(
+      user, family, port, binding, out_socket, out_bind_addr);
+  if (result == H2_PAL_OK) slot_opened(*out_socket);
+  stack_leave();
+  return result;
+}
+
 static int udp_open(
     void *user, h2_pal_net_family_t family, uint16_t port,
     h2_pal_net_socket_t *out_socket, h2_pal_net_addr_t *out_bind_addr) {
@@ -265,7 +449,7 @@ static int udp_open(
       user, family, port, NULL, out_socket, out_bind_addr);
 }
 
-static int udp_sendto(
+static int udp_sendto_active(
     void *user, h2_pal_net_socket_t socket_fd,
     const h2_pal_net_addr_t *address, const uint8_t *data, size_t length) {
   (void)user;
@@ -280,7 +464,18 @@ static int udp_sendto(
   return sent < 0 ? map_socket_error() : sent;
 }
 
-static int udp_recvfrom(
+static int udp_sendto(
+    void *user, h2_pal_net_socket_t socket_fd,
+    const h2_pal_net_addr_t *address, const uint8_t *data, size_t length) {
+  uint32_t instance;
+  int result = slot_enter(socket_fd, SLOT_SEND, &instance);
+  if (result != H2_PAL_OK) return result;
+  result = udp_sendto_active(user, socket_fd, address, data, length);
+  slot_leave(socket_fd, SLOT_SEND, instance);
+  return result;
+}
+
+static int udp_recvfrom_active(
     void *user, h2_pal_net_socket_t socket_fd, h2_pal_net_addr_t *out_addr,
     uint8_t *data, size_t length, uint32_t timeout_ms) {
   (void)user;
@@ -299,7 +494,18 @@ static int udp_recvfrom(
   return received;
 }
 
-static int udp_join_multicast(
+static int udp_recvfrom(
+    void *user, h2_pal_net_socket_t socket_fd, h2_pal_net_addr_t *out_addr,
+    uint8_t *data, size_t length, uint32_t timeout_ms) {
+  uint32_t instance;
+  int result = slot_enter(socket_fd, SLOT_RECV, &instance);
+  if (result != H2_PAL_OK) return result;
+  result = udp_recvfrom_active(user, socket_fd, out_addr, data, length, timeout_ms);
+  slot_leave(socket_fd, SLOT_RECV, instance);
+  return result;
+}
+
+static int udp_join_multicast_active(
     void *user, h2_pal_net_socket_t socket_fd,
     const h2_pal_net_addr_t *address) {
   (void)user;
@@ -316,7 +522,18 @@ static int udp_join_multicast(
              : map_socket_error();
 }
 
-static int tcp_open(
+static int udp_join_multicast(
+    void *user, h2_pal_net_socket_t socket_fd,
+    const h2_pal_net_addr_t *address) {
+  uint32_t instance;
+  int result = slot_enter(socket_fd, SLOT_SEND, &instance);
+  if (result != H2_PAL_OK) return result;
+  result = udp_join_multicast_active(user, socket_fd, address);
+  slot_leave(socket_fd, SLOT_SEND, instance);
+  return result;
+}
+
+static int tcp_open_active(
     void *user, h2_pal_net_family_t family,
     h2_pal_net_socket_t *out_socket) {
   (void)user;
@@ -328,10 +545,21 @@ static int tcp_open(
   return H2_PAL_OK;
 }
 
-static int tcp_open_bound(
+static int tcp_open(
+    void *user, h2_pal_net_family_t family,
+    h2_pal_net_socket_t *out_socket) {
+  int result = stack_enter();
+  if (result != H2_PAL_OK) return result;
+  result = tcp_open_active(user, family, out_socket);
+  if (result == H2_PAL_OK) slot_opened(*out_socket);
+  stack_leave();
+  return result;
+}
+
+static int tcp_open_bound_active(
     void *user, h2_pal_net_family_t family,
     const h2_pal_net_bind_t *binding, h2_pal_net_socket_t *out_socket) {
-  int result = tcp_open(user, family, out_socket);
+  int result = tcp_open_active(user, family, out_socket);
   if (result != H2_PAL_OK) return result;
   result = bind_socket(*out_socket, binding == NULL ? 0u : binding->source_addr.port,
                        binding, NULL);
@@ -342,7 +570,18 @@ static int tcp_open_bound(
   return result;
 }
 
-static int tcp_connect(
+static int tcp_open_bound(
+    void *user, h2_pal_net_family_t family,
+    const h2_pal_net_bind_t *binding, h2_pal_net_socket_t *out_socket) {
+  int result = stack_enter();
+  if (result != H2_PAL_OK) return result;
+  result = tcp_open_bound_active(user, family, binding, out_socket);
+  if (result == H2_PAL_OK) slot_opened(*out_socket);
+  stack_leave();
+  return result;
+}
+
+static int tcp_connect_active(
     void *user, h2_pal_net_socket_t socket_fd,
     const h2_pal_net_addr_t *address, uint32_t timeout_ms) {
   (void)user;
@@ -409,7 +648,18 @@ terminal_error:
              ? result : map_socket_error();
 }
 
-static int tcp_send_timeout(
+static int tcp_connect(
+    void *user, h2_pal_net_socket_t socket_fd,
+    const h2_pal_net_addr_t *address, uint32_t timeout_ms) {
+  uint32_t instance;
+  int result = slot_enter(socket_fd, SLOT_CONNECT, &instance);
+  if (result != H2_PAL_OK) return result;
+  result = tcp_connect_active(user, socket_fd, address, timeout_ms);
+  slot_leave(socket_fd, SLOT_CONNECT, instance);
+  return result;
+}
+
+static int tcp_send_timeout_active(
     void *user, h2_pal_net_socket_t socket_fd, const uint8_t *data,
     size_t length, uint32_t timeout_ms) {
   (void)user;
@@ -423,13 +673,24 @@ static int tcp_send_timeout(
   return sent < 0 ? map_timed_socket_error(timeout_ms) : sent;
 }
 
+static int tcp_send_timeout(
+    void *user, h2_pal_net_socket_t socket_fd, const uint8_t *data,
+    size_t length, uint32_t timeout_ms) {
+  uint32_t instance;
+  int result = slot_enter(socket_fd, SLOT_SEND, &instance);
+  if (result != H2_PAL_OK) return result;
+  result = tcp_send_timeout_active(user, socket_fd, data, length, timeout_ms);
+  slot_leave(socket_fd, SLOT_SEND, instance);
+  return result;
+}
+
 static int tcp_send(
     void *user, h2_pal_net_socket_t socket_fd,
     const uint8_t *data, size_t length) {
   return tcp_send_timeout(user, socket_fd, data, length, 0u);
 }
 
-static int tcp_recv(
+static int tcp_recv_active(
     void *user, h2_pal_net_socket_t socket_fd, uint8_t *data,
     size_t length, uint32_t timeout_ms) {
   (void)user;
@@ -442,6 +703,17 @@ static int tcp_recv(
       socket_fd, data, length, timeout_ms == 0u ? MSG_DONTWAIT : 0);
   if (received == 0) return H2_PAL_ERR_CLOSED;
   return received < 0 ? map_timed_socket_error(timeout_ms) : received;
+}
+
+static int tcp_recv(
+    void *user, h2_pal_net_socket_t socket_fd, uint8_t *data,
+    size_t length, uint32_t timeout_ms) {
+  uint32_t instance;
+  int result = slot_enter(socket_fd, SLOT_RECV, &instance);
+  if (result != H2_PAL_OK) return result;
+  result = tcp_recv_active(user, socket_fd, data, length, timeout_ms);
+  slot_leave(socket_fd, SLOT_RECV, instance);
+  return result;
 }
 
 static h2_pal_result_t tls_wrap(
@@ -495,7 +767,16 @@ static h2_pal_result_t tcp_accept(
 
 static void close_socket(void *user, h2_pal_net_socket_t socket_fd) {
   (void)user;
+  uint32_t instance;
+  if (slot_enter(socket_fd, 0u, &instance) != H2_PAL_OK) return;
   closesocket(socket_fd);
+  stack_lock();
+  if (sockets[socket_fd - LWIP_SOCKET_OFFSET].instance == instance) {
+    sockets[socket_fd - LWIP_SOCKET_OFFSET].generation = 0u;
+    sockets[socket_fd - LWIP_SOCKET_OFFSET].busy = 0u;
+  }
+  stack_unlock();
+  stack_leave();
 }
 
 const h2_pal_net_api_t *h2_jieli_ac791n_devkit_net_api(void) {

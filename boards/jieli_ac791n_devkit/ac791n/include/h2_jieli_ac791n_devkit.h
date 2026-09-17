@@ -45,7 +45,21 @@ const h2_pal_disk_api_t *h2_jieli_ac791n_devkit_disk_api(void);
 /* FAT filesystem on the board SD slot, mapped to /dl and /data.
  * The composition root serializes init/deinit and stops all API consumers and
  * closes every file before deinit. An existing external mount is borrowed;
- * only a mount created here is unmounted, including failed-init cleanup. */
+ * only a mount created here is unmounted, including failed-init cleanup.
+ * Rename replaces a regular destination by delete-then-rename, not atomically;
+ * identical mapped paths are a no-op after a successful open/close. Directory
+ * destinations and directory opens return INVALID_STATE; cross-directory
+ * rename returns UNSUPPORTED. Rename/remove/clear and truncating opens return
+ * BUSY while another PAL handle holds the affected path (clear includes its
+ * descendants); a read open also returns BUSY while a writer holds the path.
+ * Two readers may coexist. The registry gate covers open/close and mutations;
+ * direct SDK callers are outside this protection. Same-path rename only checks
+ * existence and close status, even with an open PAL handle.
+ * Translated paths allow 191 bytes plus NUL; the provider also enforces a
+ * limit of 130 UTF-16 units per component, returning NO_SPACE before calling the
+ * SDK to prevent silent name truncation. UTF-8 long names are encoded by SDK
+ * fopen. On jlfat sync/f_free_cache is a successful no-op; native fclose writes
+ * size and clusters to the card. */
 h2_pal_result_t h2_jieli_ac791n_devkit_sd_fs_init(h2_pal_fs_api_t *out_api);
 h2_pal_result_t h2_jieli_ac791n_devkit_sd_fs_deinit(void);
 const char *h2_jieli_ac791n_devkit_sd_fs_last_stage(void);
@@ -81,6 +95,19 @@ const h2_pal_button_api_t *h2_jieli_ac791n_devkit_button_api(void);
 /* On-chip MIC1 ADC and DAC/PA on the development board. */
 const h2_pal_audio_api_t *h2_jieli_ac791n_devkit_audio_api(void);
 
+typedef struct h2_jieli_ac791n_devkit_audio_idle {
+  uint32_t open_tracks;         /* tracks not in the free state */
+  uint32_t retained_operations; /* referenced writers, drainers, volume requests and callbacks */
+  uint32_t ring_bytes;          /* PCM ring storage still allocated by tracks */
+  uint32_t sdk_servers;         /* live encoder and decoder handles */
+  uint32_t mic_open;            /* microphone session is not free */
+  uint32_t speaker_started;
+  uint64_t consumed_bytes;      /* PCM consumed from currently open tracks */
+} h2_jieli_ac791n_devkit_audio_idle_t;
+
+/* Snapshot under the provider gate; idle means all fields except consumed_bytes are zero. */
+int h2_jieli_ac791n_devkit_audio_idle_probe(h2_jieli_ac791n_devkit_audio_idle_t *out);
+
 /* BLE 5 peripheral Host with the H2Loader GATT schema, Extended Advertising,
  * DLE and MTU exchange. PAL PHY requests return UNSUPPORTED; the central
  * owns connection PHY selection. */
@@ -95,6 +122,21 @@ const h2_pal_wifi_sta_api_t *h2_jieli_ac791n_devkit_wifi_sta_api(void);
 const h2_pal_wifi_ap_api_t *h2_jieli_ac791n_devkit_wifi_ap_api(void);
 const h2_pal_wifi_settings_api_t *
 h2_jieli_ac791n_devkit_wifi_settings_api(void);
+/* lwIP full-duplex supports one reader, one writer and one closer; close
+ * wakes blocked recv/send/connect. The provider returns BUSY for overlapping
+ * same-direction operations or connect versus any transfer. Calls outside a
+ * started PAL Wi-Fi interface and stale-generation descriptors are UNAVAILABLE.
+ * Stop drains in-flight native operations; successful shutdown settles pending
+ * DNS as UNAVAILABLE. A failed radio stop leaves the stack unavailable until a
+ * later successful stop and start.
+ * Close every socket and resolver before disconnect/ap_stop: descriptors left
+ * across stop cannot be reclaimed safely, even by close (a no-op for stale fds).
+ * DNS has four pending slots; TIMEOUT/WOULD_BLOCK leave a lookup pending.
+ * There is no DNS cancellation: early close leaves backend ownership until
+ * completion, or in a graveyard after stop until the next successful start.
+ * Unique callback identities ignore late delivery even after address reuse. lwIP
+ * owns retries (1, 1, 2, 3 seconds per server); the provider does not shorten them.
+ * Synchronous DNS uses caller-owned address storage, not a shared hostent. */
 const h2_pal_net_api_t *h2_jieli_ac791n_devkit_net_api(void);
 const h2_pal_netif_api_t *h2_jieli_ac791n_devkit_netif_api(void);
 

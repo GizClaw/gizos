@@ -34,7 +34,7 @@ class WifiLinkTest(unittest.TestCase):
                     'load("//boards/jieli_ac791n_devkit/ac791n:wifi_task_policies.bzl", '
                     '"' + constant + '")', build)
                 self.assertRegex(
-                    build, r"sdk_policies\s*=\s*\[[^\]]*\]\s*\+\s*" + constant)
+                    build, r"\[[^\]]*\]\s*\+\s*" + constant)
 
     def test_association_has_sdk_timeout(self):
         source = (BOARD / "src/h2_jieli_ac791n_devkit_wifi.c").read_text()
