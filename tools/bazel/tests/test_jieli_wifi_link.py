@@ -1,4 +1,5 @@
 """Pin SDK supplicant extraction and bounded association."""
+import ast
 from pathlib import Path
 import unittest
 
@@ -13,6 +14,27 @@ class WifiLinkTest(unittest.TestCase):
                         source.index("cpu/wl82/liba/wl_wifi.a"))
         self.assertNotIn("hostapd_and_wpasupplicant.a", source)
         self.assertRegex(source, r"LFLAGS\s*\+=\s*--undefined=wpa_supplicant_get_state")
+
+    def test_apps_register_sdk_wifi_tasks(self):
+        constant = "JIELI_AC791N_WIFI_SDK_TASK_POLICIES"
+        source = (BOARD / "wifi_task_policies.bzl").read_text()
+        rows = ast.literal_eval(source.split(constant + " =", 1)[1].strip())
+        self.assertEqual(rows, [
+            "tcpip_thread 16 800 0",
+            "tasklet 10 1400 0",
+            "RtmpMlmeTask 17 700 0",
+            "RtmpCmdQTask 17 300 0",
+            "wl_rx_irq_thread 5 256 0",
+        ])
+        for name in ("display", "button", "touch", "audio-system", "mp4-player"):
+            with self.subTest(app=name):
+                build = (ROOT / "projects/example/targets/h2loader_tar_zlib" /
+                         name / "jieli_ac791n_devkit/BUILD.bazel").read_text()
+                self.assertIn(
+                    'load("//boards/jieli_ac791n_devkit/ac791n:wifi_task_policies.bzl", '
+                    '"' + constant + '")', build)
+                self.assertRegex(
+                    build, r"sdk_policies\s*=\s*\[[^\]]*\]\s*\+\s*" + constant)
 
     def test_association_has_sdk_timeout(self):
         source = (BOARD / "src/h2_jieli_ac791n_devkit_wifi.c").read_text()

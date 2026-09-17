@@ -3,6 +3,8 @@ load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(["wifi_task_policies.bzl"])
+
 firmware_native_component(
     name = "ac791n",
     srcs = glob(["src/*.c"]),

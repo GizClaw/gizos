@@ -1,3 +1,4 @@
+load("//boards/jieli_ac791n_devkit/ac791n:wifi_task_policies.bzl", "JIELI_AC791N_WIFI_SDK_TASK_POLICIES")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_jieli_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("//tools/bazel:jieli_task_policy.bzl", "jieli_target_task_policy")
@@ -34,7 +35,7 @@ jieli_target_task_policy(
         "audio_mix 28 512 0",
         "#C0btctrler 19 768 384",
         "#C0btstack 18 1536 384",
-    ],
+    ] + JIELI_AC791N_WIFI_SDK_TASK_POLICIES,
 )
 
 # The color-bar image is the shared launcher with no application hook. The
