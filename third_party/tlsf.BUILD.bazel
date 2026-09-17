@@ -1,0 +1,21 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+licenses(["notice"])
+
+# Upstream detects LP64 (including macOS arm64 and Linux x86_64) and
+# _WIN64. wasm32, Xtensa, RV32 and ARM32 retain its 32-bit layout.
+cc_library(
+    name = "tlsf",
+    srcs = ["src/tlsf.c"] + select({
+        "@platforms//os:none": ["src/h2_tlsf_embedded_stdio.h"],
+        "//conditions:default": [],
+    }),
+    hdrs = ["src/tlsf.h"],
+    copts = select({
+        "@platforms//os:none": ["-include", "h2_tlsf_embedded_stdio.h"],
+        "//conditions:default": [],
+    }),
+    includes = ["src"],
+)

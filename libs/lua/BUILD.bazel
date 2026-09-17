@@ -182,6 +182,7 @@ cc_library(
         "src/modules/h2_lua_storage.c",
         "src/modules/h2_lua_storage_internal.h",
         "src/runtime/h2_lua.c",
+        "src/runtime/h2_lua_heap.c",
         "src/runtime/h2_lua_event.c",
         "src/runtime/h2_lua_internal.h",
         "src/runtime/h2_lua_job.c",
@@ -214,6 +215,7 @@ cc_library(
         "//libs/runtime",
         "//libs/utils",
         "//tools/bazel:vendor_third_party_lua",
+        "//tools/bazel:vendor_third_party_tlsf",
         "//tools/bazel:vendor_third_party_yyjson",
     ] + select({
         "@platforms//os:none": ["//third_party/lua_patch"],

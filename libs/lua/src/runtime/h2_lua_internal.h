@@ -221,6 +221,8 @@ struct h2_lua_host {
   atomic_int joined;
   h2_lua_worker_t *workers;
   h2_pal_mutex_t *jobs_mutex;
+  void *vm_heap;
+  h2_pal_mutex_t *vm_heap_mutex;
   h2_lua_module_entry_t modules[16];
   size_t module_count;
   h2_lua_capability_entry_t capabilities[16];
@@ -249,6 +251,12 @@ struct h2_lua_host {
 static inline h2_pal_mutex_t *h2_lua_job_mutex(const h2_lua_job_t *job) {
   return job->host->job_mutexes[job - job->host->jobs];
 }
+
+int h2_lua_heap_size_valid(size_t bytes);
+h2_pal_result_t h2_lua_heap_init(h2_lua_host_t *host);
+void h2_lua_heap_deinit(h2_lua_host_t *host);
+void *h2_lua_heap_realloc(void *user, void *ptr, size_t old_size,
+                          size_t new_size);
 
 void *h2_lua_runtime_realloc(void *user, void *ptr, size_t old_size,
                              size_t new_size);

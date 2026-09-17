@@ -2159,6 +2159,201 @@ static void test_job_results(h2_lua_host_t *host) {
   }
 }
 
+/* Each allocation has a maximally aligned header, so this wrapper preserves
+ * malloc alignment while measuring every byte owned by the Host. */
+typedef union heap_test_header {
+  max_align_t alignment;
+  size_t bytes;
+} heap_test_header_t;
+
+typedef struct heap_test_mem {
+  atomic_size_t bytes;
+  atomic_size_t allocs;
+  atomic_size_t frees;
+  atomic_size_t rejected;
+  atomic_size_t pool_allocs;
+  size_t pool_bytes;
+  size_t max_allocation;
+  int reject_pool;
+} heap_test_mem_t;
+
+static void *heap_test_alloc(void *user, size_t size) {
+  heap_test_mem_t *mem = user;
+  heap_test_header_t *header;
+  if ((mem->max_allocation != 0u && size > mem->max_allocation) ||
+      (mem->reject_pool && size == mem->pool_bytes)) {
+    atomic_fetch_add(&mem->rejected, 1u);
+    return NULL;
+  }
+  assert(size <= SIZE_MAX - sizeof(*header));
+  header = malloc(sizeof(*header) + size);
+  assert(header != NULL);
+  header->bytes = size;
+  atomic_fetch_add(&mem->bytes, size);
+  atomic_fetch_add(&mem->allocs, 1u);
+  if (size == mem->pool_bytes) {
+    atomic_fetch_add(&mem->pool_allocs, 1u);
+  }
+  return header + 1;
+}
+
+static void heap_test_free(void *user, void *ptr) {
+  heap_test_mem_t *mem = user;
+  if (ptr != NULL) {
+    heap_test_header_t *header = (heap_test_header_t *)ptr - 1;
+    atomic_fetch_sub(&mem->bytes, header->bytes);
+    atomic_fetch_add(&mem->frees, 1u);
+    free(header);
+  }
+}
+
+static void *heap_test_realloc(void *user, void *ptr, size_t size) {
+  if (size == 0u) {
+    heap_test_free(user, ptr);
+    return NULL;
+  }
+  void *next = heap_test_alloc(user, size);
+  if (next != NULL && ptr != NULL) {
+    size_t old_size = ((heap_test_header_t *)ptr - 1)->bytes;
+    memcpy(next, ptr, old_size < size ? old_size : size);
+    heap_test_free(user, ptr);
+  }
+  return next;
+}
+
+static const h2_pal_mem_vtable_t heap_test_mem_vtable = {
+    .alloc = heap_test_alloc,
+    .realloc = heap_test_realloc,
+    .free = heap_test_free,
+};
+
+static void heap_test_balanced(const heap_test_mem_t *mem) {
+  assert(atomic_load(&mem->bytes) == 0u);
+  assert(atomic_load(&mem->allocs) == atomic_load(&mem->frees));
+}
+
+static void heap_test_run(h2_lua_host_t *host, const char *source,
+                          h2_lua_job_state_t expected) {
+  h2_lua_job_id_t id;
+  assert(h2_lua_job_submit_text(host, NULL, "@heap.lua",
+                                (const uint8_t *)source, strlen(source), NULL,
+                                0u, &id) == H2_PAL_OK);
+  run_until_terminal(host, id, 6000u);
+  h2_lua_job_status_t value = status(host, id);
+  assert(value.state == expected);
+  if (expected == H2_LUA_JOB_FAILED) {
+    assert(strstr(value.message, "not enough memory") != NULL);
+  }
+  assert(h2_lua_job_release(host, id) == H2_PAL_OK);
+}
+
+static void test_reserved_vm_heap(void) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_runtime_t probe = *runtime;
+  heap_test_mem_t mem = {0};
+  h2_pal_mem_api_t api = {.user = &mem, .vtable = &heap_test_mem_vtable};
+  probe.mem = &api;
+  h2_lua_host_config_t config = {
+      .runtime = &probe,
+      .max_jobs = 4u,
+      .worker_count = 2u,
+      .vm_memory_limit_bytes = 2u * 1024u * 1024u,
+      .execution_timeout_ms = 5000u,
+  };
+  h2_lua_host_t *host = NULL;
+  /* Identical quotas and a fragmented system heap: only the reserved case
+   * can allocate a 120 KiB string. Cap applies to alloc AND realloc. */
+  for (size_t reserved = 0u; reserved < 2u; ++reserved) {
+    config.vm_heap_bytes = reserved ? 3u * 1024u * 1024u : 0u;
+    mem.pool_bytes = config.vm_heap_bytes;
+    mem.max_allocation = 0u;
+    assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+    mem.max_allocation = 64u * 1024u;
+    assert(h2_lua_host_start(host) == H2_PAL_OK);
+    size_t rejected = atomic_load(&mem.rejected);
+    heap_test_run(host, "local s=string.rep('x',120*1024);assert(#s==120*1024)",
+                  reserved ? H2_LUA_JOB_SUCCEEDED : H2_LUA_JOB_FAILED);
+    assert(reserved ? atomic_load(&mem.rejected) == rejected
+                    : atomic_load(&mem.rejected) > rejected);
+    h2_lua_host_destroy(host);
+    heap_test_balanced(&mem);
+  }
+  mem.max_allocation = 0u;
+  /* Quota and physical pool exhaustion are independent OOM paths. */
+  for (size_t small_pool = 0u; small_pool < 2u; ++small_pool) {
+    config.vm_heap_bytes = small_pool ? 256u * 1024u : 4u * 1024u * 1024u;
+    config.vm_memory_limit_bytes =
+        small_pool ? 4u * 1024u * 1024u : 256u * 1024u;
+    mem.pool_bytes = config.vm_heap_bytes;
+    assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+    assert(h2_lua_host_start(host) == H2_PAL_OK);
+    heap_test_run(host, "return string.rep('x',512*1024)", H2_LUA_JOB_FAILED);
+    /* An OOM must leave the allocator and job slot reusable. */
+    heap_test_run(host, "assert(#string.rep('y',4096)==4096)",
+                  H2_LUA_JOB_SUCCEEDED);
+    h2_lua_host_destroy(host);
+    heap_test_balanced(&mem);
+  }
+  config.vm_heap_bytes = 4u * 1024u * 1024u;
+  config.vm_memory_limit_bytes = 512u * 1024u;
+  mem.pool_bytes = config.vm_heap_bytes;
+  for (size_t cycle = 0u; cycle < 5u; ++cycle) {
+    size_t pool_allocs = atomic_load(&mem.pool_allocs);
+    assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+    assert(atomic_load(&mem.pool_allocs) == pool_allocs + 1u);
+    /* A failed grow must preserve the original allocation and its contents. */
+    unsigned char *block = h2_lua_heap_realloc(host, NULL, 99u, 128u);
+    assert(block != NULL);
+    memset(block, 0x5a, 128u);
+    assert(h2_lua_heap_realloc(host, block, 128u, config.vm_heap_bytes) ==
+           NULL);
+    for (size_t i = 0u; i < 128u; ++i) {
+      assert(block[i] == 0x5a);
+    }
+    block = h2_lua_heap_realloc(host, block, 128u, 64u);
+    assert(block != NULL && block[63] == 0x5a);
+    assert(h2_lua_heap_realloc(host, block, 64u, 0u) == NULL);
+    assert(h2_lua_heap_realloc(host, NULL, 0u, 0u) == NULL);
+    assert(h2_lua_host_start(host) == H2_PAL_OK);
+    const char *source =
+        "local runtime=require('runtime');"
+        "for round=1,20 do local t={} for i=1,300 do "
+        "t[i]={i,string.rep(tostring(i),40)} end "
+        "t=nil;collectgarbage('collect');runtime.yield() end";
+    h2_lua_job_id_t ids[4];
+    /* Keep four VMs live across both workers to exercise the shared mutex. */
+    for (size_t i = 0u; i < 4u; ++i) {
+      assert(h2_lua_job_submit_text(host, NULL, "@heap-churn.lua",
+                                    (const uint8_t *)source, strlen(source),
+                                    NULL, 0u, &ids[i]) == H2_PAL_OK);
+    }
+    for (size_t i = 0u; i < 4u; ++i) {
+      run_until_terminal(host, ids[i], 6000u);
+      assert(status(host, ids[i]).state == H2_LUA_JOB_SUCCEEDED);
+    }
+    assert(h2_lua_host_stop(host) == H2_PAL_OK);
+    assert(h2_lua_host_join(host) == H2_PAL_OK);
+    /* Destroy must also close retained terminal VMs. */
+    h2_lua_host_destroy(host);
+    assert(atomic_load(&mem.pool_allocs) == pool_allocs + 1u);
+    heap_test_balanced(&mem);
+  }
+  config.vm_heap_bytes = 1u;
+  size_t allocs = atomic_load(&mem.allocs);
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_INVALID_ARG);
+  assert(host == NULL);
+  assert(atomic_load(&mem.allocs) == allocs);
+  config.vm_heap_bytes = SIZE_MAX;
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_INVALID_ARG);
+  assert(host == NULL);
+  config.vm_heap_bytes = mem.pool_bytes;
+  mem.reject_pool = 1;
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_NO_MEMORY);
+  assert(host == NULL);
+  heap_test_balanced(&mem);
+  h2_runtime_deinit(runtime);
+}
+
 int main(int argc, char **argv) {
   if (argc == 2 && strcmp(argv[1], "--prepared-benchmark") == 0) {
     test_display_raster2d(1, "libs/lua/tests/geometry_batches.lua");
@@ -2168,6 +2363,7 @@ int main(int argc, char **argv) {
     test_display_raster2d(1, "libs/lua/tests/raster2d.lua");
     return 0;
   }
+  test_reserved_vm_heap();
   test_display_raster2d(0, "libs/lua/tests/raster2d.lua");
   test_display_raster2d(0, "libs/lua/tests/geometry_batches.lua");
   test_display_raster2d(0, "libs/lua/tests/stroke_buffer.lua");

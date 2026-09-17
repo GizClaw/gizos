@@ -420,8 +420,11 @@ h2_lua_job_submit_text(h2_lua_host_t *host, const char *app_id,
   job->next_audio_track_generation = 1u;
   job->audio_mic_generation = 1u;
   vm_config = (h2_lua_vm_config_t){
-      .realloc_fn = h2_lua_runtime_realloc,
-      .allocator_user = (void *)host->config.runtime->mem,
+      .realloc_fn =
+          host->vm_heap != NULL ? h2_lua_heap_realloc : h2_lua_runtime_realloc,
+      .allocator_user = host->vm_heap != NULL
+                            ? (void *)host
+                            : (void *)host->config.runtime->mem,
       .memory_limit_bytes = host->config.vm_memory_limit_bytes,
       .source_limit_bytes = host->config.source_limit_bytes,
       .output_limit_bytes = host->config.output_limit_bytes,
