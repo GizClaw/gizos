@@ -105,7 +105,7 @@ int main(void) {
     def test_async_and_elapsed_time_budget(self):
         source = SOURCE.read_text()
         begin = source.index("static int sta_connect(")
-        end = source.index("static int wifi_stop(", begin)
+        end = source.index("static int sta_disconnect(", begin)
         fixture = r'''
 #include <assert.h>
 
@@ -122,7 +122,12 @@ static inline void wifi_state_unlock(void) {
 #include <stdint.h>
 #include <string.h>
 #include "h2/pal/hal/h2_pal_wifi.h"
-static struct { h2_pal_wifi_sta_status_t sta; } wifi_state;
+static struct { int on; h2_pal_wifi_sta_status_t sta; h2_pal_wifi_ap_status_t ap; char ap_clients[4]; } wifi_state;
+static int stop_order, off_result, sdk_on;
+static int wifi_is_on(void) {return sdk_on;}
+static void h2_jieli_net_stack_stopping(void) {assert(stop_order==0); stop_order=1;}
+static int wifi_off(void) {assert(stop_order==1); stop_order=2; return off_result;}
+static void h2_jieli_net_stack_stopped(void) {assert(stop_order==2); stop_order=3;}
 static uint32_t now;
 static int sleeps, enter_rc, requests;
 #define H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING 1
@@ -147,6 +152,7 @@ static void os_time_dly(unsigned ticks) {
 '''
         main = r'''
 int main(void) {
+    (void)h2_jieli_net_stack_stopping; (void)h2_jieli_net_stack_stopped;
     h2_pal_wifi_sta_config_t config = {0};
     memcpy(config.ssid, "test", 4); config.ssid_len = 4;
     assert(sta_connect(NULL, &config, 0) == H2_PAL_OK);
@@ -161,6 +167,13 @@ int main(void) {
     assert(wifi_state.sta.state == H2_PAL_WIFI_STA_STATE_FAILED);
     assert(last_event == H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED);
     assert(wifi_state.sta.ip_valid == 0 && wifi_state.sta.disconnect_reason == -1);
+    assert(wifi_stop()==0 && stop_order==0);
+    wifi_state.on=1;
+    assert(wifi_stop()==0 && stop_order==3 && !wifi_state.on);
+    stop_order=0; sdk_on=1; off_result=-1; wifi_state.on=1;
+    assert(wifi_stop()==H2_PAL_ERR_IO && stop_order==2 && wifi_state.on);
+    stop_order=0; off_result=0;
+    assert(wifi_stop()==H2_PAL_OK && stop_order==3 && !wifi_state.on);
     return 0;
 }
 '''
