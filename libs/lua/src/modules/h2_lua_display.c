@@ -1143,16 +1143,27 @@ static h2_lua_display_vertex_t mesh_transform(
   return p;
 }
 
-/* Mesh span snapshots follow the fixed span array. Their lifetime is the
- * cache userdata's, independently of source updates or non-retained draws. */
-static size_t mesh_span_snapshot_offset(void) {
-  size_t size = sizeof(display_span_cache_t) + 8192u * sizeof(display_cached_span_t);
+/* A new mesh cache can hold this many spans. Once a static mesh replays, the
+ * cache is reallocated to the spans it actually produced. */
+#define MESH_SPAN_CAPACITY 8192u
+#define MESH_SPAN_COMPACT_SLACK 256u
+
+/* Mesh span snapshots follow the span array. Their lifetime is the cache
+ * userdata's, independently of source updates or non-retained draws. */
+static size_t mesh_span_snapshot_offset(size_t capacity) {
+  size_t size = sizeof(display_span_cache_t) + capacity * sizeof(display_cached_span_t);
   size_t alignment = _Alignof(h2_lua_display_vertex_t);
   return (size + alignment - 1u) / alignment * alignment;
 }
 
 static h2_lua_display_vertex_t *mesh_span_positions(display_span_cache_t *cache) {
-  return (h2_lua_display_vertex_t *)((char *)cache + mesh_span_snapshot_offset());
+  return (h2_lua_display_vertex_t *)((char *)cache +
+                                     mesh_span_snapshot_offset(cache->capacity));
+}
+
+static size_t mesh_span_snapshot_bytes(const h2_lua_display_mesh_t *mesh) {
+  return mesh->vertex_capacity * sizeof(h2_lua_display_vertex_t) +
+         mesh->primitive_capacity * sizeof(h2_lua_display_primitive_t);
 }
 
 static h2_lua_display_primitive_t *mesh_span_primitives(
@@ -1301,12 +1312,13 @@ static int display_draw_mesh(lua_State *state) {
     lua_getiuservalue(state, 1, 1);
     if (lua_isnil(state, -1)) {
       lua_pop(state, 1);
-      cache = lua_newuserdatauv(state, mesh_span_snapshot_offset() +
-          mesh->vertex_capacity * sizeof(h2_lua_display_vertex_t) +
-          mesh->primitive_capacity * sizeof(h2_lua_display_primitive_t), 0);
-      cache->capacity = 8192;
+      cache = lua_newuserdatauv(state, mesh_span_snapshot_offset(MESH_SPAN_CAPACITY) +
+          mesh_span_snapshot_bytes(mesh), 0);
+      cache->capacity = MESH_SPAN_CAPACITY;
       cache->count = 0;
       cache->valid = 0;
+      cache->hits = 0;
+      cache->full = 0;
       cache_at = lua_gettop(state);
       /* A finalizer may have installed a complete candidate during allocation.
        * Reuse it; do not overwrite it with the outer call's empty cache. */
@@ -1318,7 +1330,49 @@ static int display_draw_mesh(lua_State *state) {
         lua_pop(state, 1);
         new_cache = 1;
       }
-    } else cache = lua_touserdata(state, -1);
+    } else {
+      cache = lua_touserdata(state, -1);
+      /* Shrink a replayed cache to its spans; regrow one that overflowed after
+       * shrinking and keep it full, so an animated mesh does not reallocate. */
+      int shrink = cache->valid && mesh->spans_valid && cache->hits != 0 &&
+                   !cache->full &&
+                   cache->capacity - cache->count >= MESH_SPAN_COMPACT_SLACK;
+      int regrow = !cache->valid && cache->capacity < MESH_SPAN_CAPACITY;
+      if (shrink || regrow) {
+        display_span_cache_t *old = cache;
+        const size_t count = old->count, capacity = old->capacity;
+        const int valid = old->valid;
+        const size_t next_capacity = regrow ? MESH_SPAN_CAPACITY : count;
+        display_span_cache_t *next = lua_newuserdatauv(state,
+            mesh_span_snapshot_offset(next_capacity) + mesh_span_snapshot_bytes(mesh), 0);
+        /* Allocation may run finalizers that draw this mesh; only replace an
+         * unchanged cache, otherwise keep using the original one. */
+        lua_getiuservalue(state, 1, 1);
+        int unchanged = lua_touserdata(state, -1) == old && old->count == count &&
+                        old->capacity == capacity && old->valid == valid;
+        lua_pop(state, 1);
+        if (unchanged) {
+          memcpy(next, old, sizeof(*old) + (regrow ? 0u : count) * sizeof(old->spans[0]));
+          next->capacity = next_capacity;
+          if (regrow) {
+            next->count = 0;
+            next->valid = 0;
+            next->hits = 0;
+            next->full = 1;
+            mesh->spans_valid = 0;
+          } else {
+            memcpy(mesh_span_positions(next), mesh_span_positions(old),
+                   mesh_span_snapshot_bytes(mesh));
+          }
+          lua_pushvalue(state, -1);
+          lua_setiuservalue(state, 1, 1);
+          lua_remove(state, -2);
+          cache = next;
+        } else {
+          lua_pop(state, 1);
+        }
+      }
+    }
   }
   if (!job->display_open || grid < 0 || grid > 16 || left < 0 ||
       left > right || right > job->display_info.width || top < 0 ||
@@ -1397,11 +1451,13 @@ static int display_draw_mesh(lua_State *state) {
         mesh->span_height == job->display_info.height && mesh->span_offset == offset &&
         mesh->span_recolor == recolor && (!recolor || mesh->span_color == ink)) {
       display_cache_replay(job, cache);
+      if (cache->hits < INT_MAX) ++cache->hits;
       return 0;
     }
     mesh->spans_valid = 0;
     cache->valid = 1;
     cache->count = 0;
+    cache->hits = 0;
     mesh->span_left = (int)left;
     mesh->span_right = (int)right;
     mesh->span_top = (int)top;
