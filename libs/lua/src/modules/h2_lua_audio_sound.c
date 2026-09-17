@@ -277,11 +277,8 @@ void h2_lua_audio_sound_pump(h2_lua_audio_track_slot_t *slot) {
     void *data = sound->pcm + slot->sound_offset;
     if (take < chunk && slot->format.frame_samples_per_channel != 0u) {
       if (slot->carry == NULL) {
-        slot->carry =
-            h2_pal_mem_alloc(slot->job->host->config.runtime->mem, chunk);
-        if (slot->carry == NULL) {
-          return;
-        }
+        /* play() allocates it; never leave a sound pending that cannot end. */
+        break;
       }
       memcpy(slot->carry, data, take);
       memset(slot->carry + take, 0, chunk - take);

@@ -249,6 +249,8 @@ Lua userdata 只持有指针。每个 job 的 `audio_sound_bytes_per_job` 限制
 排队的帧继续播放。已有 `write` 残留按 close 的规则补零并尽力写出，然后立即泵送
 Sound。Track 关闭、Sound 已释放、格式不一致分别返回 `nil` 和
 `"audio output: closed"`、`"audio output: invalid sound"`、`"audio output: format mismatch"`。
+固定帧设备的补零缓冲在 play 时分配，失败返回 `nil, "audio output: no memory"`，
+不接管该 Sound，已有的播放保持不变。
 不做采样率或通道转换，多声部仍使用多条 Track，由 Audio System 混音。
 
 Host 在非终态 job 的每次 step、恢复 Lua 之前泵送余量，timeout 为 `0`；设备忙时

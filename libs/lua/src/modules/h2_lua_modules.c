@@ -1523,6 +1523,16 @@ static int audio_output_play(lua_State *state) {
   } else if (sound->format.sample_rate_hz != slot->format.sample_rate_hz ||
              sound->format.channels != slot->format.channels) {
     error = "audio output: format mismatch";
+  } else if (slot->format.frame_samples_per_channel != 0u &&
+             slot->carry == NULL) {
+    /* The pump zero-pads the final frame in the carry buffer; allocate it
+     * here so a started sound can always finish. */
+    slot->carry = h2_pal_mem_alloc(slot->job->host->config.runtime->mem,
+                                   audio_slot_chunk_bytes(slot));
+    slot->carry_bytes = 0u;
+    if (slot->carry == NULL) {
+      error = "audio output: no memory";
+    }
   }
   if (error != NULL) {
     lua_pushnil(state);

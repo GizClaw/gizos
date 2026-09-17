@@ -2437,6 +2437,26 @@ static void test_audio_sounds(void) {
   s_test_audio_frame_samples = 2u;
   assert(memory.allocations == baseline);
 
+  /* A carry buffer that cannot be allocated fails play, not the pump. */
+  job = sound_test_submit(
+      host,
+      "local a=require('audio');local o=assert(a.new_output({}));"
+      "local s=assert(a.new_sound('ab'));_G.o=o;_G.s=s;"
+      "require('runtime').yield();"
+      "local ok,e=o:play(s);assert(not ok and e=='audio output: no memory');"
+      "assert(not o:info().playing);require('runtime').yield();"
+      "assert(o:play(s));s:release();o:close()");
+  sound_test_step(job);
+  memory.fail_size = 4u;
+  sound_test_step(job);
+  memory.fail_size = 0;
+  assert(job->audio_tracks[0].sound == NULL);
+  s_test_audio_written_bytes = 0u;
+  sound_test_finish(job);
+  assert(s_test_audio_written_bytes == 4u &&
+         memcmp(s_test_audio_written, "ab\0\0", 4) == 0);
+  assert(memory.allocations == baseline);
+
   memory.fail_size = sizeof(h2_lua_audio_sound_t) + 1234u;
   job = sound_test_submit(
       host,
