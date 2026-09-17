@@ -20,6 +20,7 @@ static void heap_release_chunks(h2_lua_host_t *host) {
     host->vm_heap_chunks[i] = NULL;
   }
   host->vm_heap_chunk_count = 0u;
+  host->vm_heap_reserved = 0u;
   host->vm_heap = NULL;
 }
 
@@ -40,11 +41,15 @@ h2_pal_result_t h2_lua_heap_init(h2_lua_host_t *host) {
   if (result != H2_PAL_OK) {
     return result;
   }
-  while (remaining >= pool_min) {
+  while (remaining != 0u) {
     void *chunk;
     size_t pool_offset = 0u;
     if (request > remaining) {
       request = remaining;
+    }
+    /* Never leave a remainder too small to become a TLSF pool. */
+    if (request != remaining && remaining - request < pool_min) {
+      request = remaining - pool_min;
     }
     if (host->vm_heap_chunk_count == H2_LUA_HEAP_MAX_CHUNKS ||
         (request < H2_LUA_HEAP_CHUNK_MIN_BYTES && request != remaining)) {
@@ -75,6 +80,7 @@ h2_pal_result_t h2_lua_heap_init(h2_lua_host_t *host) {
       return H2_PAL_ERR_INVALID_ARG;
     }
     remaining -= request;
+    host->vm_heap_reserved += request;
   }
   return H2_PAL_OK;
 }

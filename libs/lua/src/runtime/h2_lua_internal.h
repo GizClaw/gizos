@@ -226,6 +226,7 @@ struct h2_lua_host {
   void *vm_heap;
   void *vm_heap_chunks[H2_LUA_HEAP_MAX_CHUNKS];
   size_t vm_heap_chunk_count;
+  size_t vm_heap_reserved;
   h2_pal_mutex_t *vm_heap_mutex;
   h2_lua_module_entry_t modules[16];
   size_t module_count;

@@ -2346,7 +2346,9 @@ static void test_reserved_vm_heap(void) {
   assert(host == NULL);
   /* No single 3 MiB block: the reservation is split into shrunken blocks that
    * still serve a 120 KiB allocation and are all returned on destroy. */
-  config.vm_heap_bytes = 3u * 1024u * 1024u;
+  /* A split reservation still reserves every requested byte, including an
+   * odd tail. */
+  config.vm_heap_bytes = 3u * 1024u * 1024u + 7u;
   config.vm_memory_limit_bytes = 2u * 1024u * 1024u;
   mem.pool_bytes = 0u;
   mem.max_allocation = 1024u * 1024u;
@@ -2355,6 +2357,8 @@ static void test_reserved_vm_heap(void) {
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
   assert(atomic_load(&mem.rejected) > rejected);
   assert(atomic_load(&mem.bytes) >= config.vm_heap_bytes);
+  assert(host->vm_heap_reserved == config.vm_heap_bytes);
+  assert(host->vm_heap_chunk_count > 1u);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   heap_test_run(host, "local s=string.rep('x',120*1024);assert(#s==120*1024)",
                 H2_LUA_JOB_SUCCEEDED);
