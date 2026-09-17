@@ -41,20 +41,22 @@ provider 可以让不同 VM 在多个 worker 上并行。
 
 `h2_lua_host_config_t` 的容量均有界：`worker_count`、`worker_stack_size`、`max_jobs`、`max_coroutines_per_vm`、`ready_queue_capacity`、`waiter_capacity`、`event_delivery_capacity`、`callback_capacity_per_job`、`audio_track_capacity_per_job`、`pending_capability_capacity`、`instruction_quantum`、`resume_time_budget_ms`、`source_limit_bytes`、`output_limit_bytes`、`vm_memory_limit_bytes` 和 `vm_heap_bytes`。零使用声明的默认值；ready/waiter 容量不得小于 VM 的 coroutine 上限。`storage` 配置每个 App 的持久化存储，见 [App 存储](#app-存储)；全零表示未配置。
 
-`vm_heap_bytes` 可选地在 `h2_lua_host_create()` 时从 Runtime mem 一次预留连续块，
+`vm_heap_bytes` 可选地在 `h2_lua_host_create()` 时从 Runtime mem 预留一段 VM 专用堆，
 供同一 Host 的所有 job/worker 通过带 PAL mutex 保护的 TLSF 共享。默认 `0` 保持
 VM 逐块向 Runtime mem 申请，Web 入口也保持此默认值。适合设备系统堆碎片化、
-需要为大字符串或全屏 `display.capture_region` userdata 保留大块分配空间的场景。
-VM 本体、Lua 状态、userdata、字符串和表都使用预留池；callbacks、events、tasks
-和 framebuffer 等仍使用 Runtime mem。预留失败返回 `H2_PAL_ERR_NO_MEMORY`，
-不创建 Host，也不泄漏资源；destroy 在所有 job/VM 释放后整块归还 Runtime mem。
+大字符串或全屏 `display.capture_region` userdata 等大块分配会与其他模块争抢连续空间的场景。
+VM 本体、Lua 状态、userdata、字符串和表都使用预留堆；callbacks、events、tasks
+和 framebuffer 等仍使用 Runtime mem。
 
-`vm_memory_limit_bytes` 仍是独立的每 VM 配额，预留块大小不会改变配额检查。
-共享池需覆盖所有同时存活的 VM（包括尚未 release 的已完成 job）；建议从它们的
-配额总和的 **125% + 16 KiB** 起步，例如单 VM 配额 2 MiB 时预留 2.5 MiB + 16 KiB，
-为 VM 本体、TLSF 元数据、对齐和块内碎片留余量，并按实际负载调整；此值不保证任意
-分配序列都不碎片化。块小于配额也允许，但可能先耗尽池；Lua 仍会先尝试 emergency GC，
-无法满足分配时再报内存错误。非零块的最小值为
+Runtime mem 有足够大的连续块时预留为一整块；否则 Host 把申请大小逐次减半，最多取
+8 块、每块至少 256 KiB（只有最后的余量可以更小），全部加入同一个 TLSF。单次 VM
+分配必须能放进其中一块。在这些限制内凑不够时返回 `H2_PAL_ERR_NO_MEMORY`，不创建
+Host，也不泄漏已取得的块；destroy 在所有 job/VM 释放后归还全部块。
+
+`vm_memory_limit_bytes` 仍是独立的每 VM 配额，预留大小不会改变配额检查。预留堆需
+覆盖所有同时存活的 VM（包括尚未 release 的已完成 job）以及 TLSF 元数据和每块分配
+头；按实际负载测量设定，不要直接等同配额。预留小于配额也允许，此时预留堆先耗尽；
+Lua 仍会先尝试 emergency GC，无法满足分配时再报内存错误。非零值的最小值为
 `tlsf_size() + tlsf_pool_overhead() + 8 * (tlsf_block_size_min() + tlsf_alloc_overhead())`，
 可用池也不得超过 `tlsf_block_size_max()`；越界返回 `H2_PAL_ERR_INVALID_ARG`。
 

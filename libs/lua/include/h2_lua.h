@@ -85,23 +85,28 @@ typedef struct h2_lua_host_config {
   /** Per-app persistent storage; zero-initialized leaves it unconfigured. */
   h2_lua_storage_config_t storage;
   /** Optional shared VM heap in bytes. Zero (default) allocates each VM block
-   * directly from Runtime mem. Nonzero reserves one contiguous Runtime mem
-   * block at Host creation; TLSF serves every job's VM object, Lua state,
-   * userdata, strings and tables from it, serialized by a Runtime Sync mutex.
-   * Callbacks, events, tasks and framebuffer still use Runtime mem.
+   * directly from Runtime mem. Nonzero reserves this many bytes from Runtime
+   * mem at Host creation and serves every job's VM object, Lua state,
+   * userdata, strings and tables from it with TLSF, serialized by a Runtime
+   * Sync mutex. Callbacks, events, tasks and framebuffer still use Runtime mem.
+   *
+   * The reservation is one block when Runtime mem has one; otherwise the Host
+   * halves the request and takes up to 8 blocks of at least 256 KiB (only the
+   * final remainder may be smaller), each added to the same TLSF heap. A
+   * single VM allocation must fit inside one block. When the bytes cannot be
+   * reserved within those limits create returns H2_PAL_ERR_NO_MEMORY with no
+   * Host and no leaked allocations.
    *
    * Must be at least tlsf_size() + tlsf_pool_overhead() +
    * 8 * (tlsf_block_size_min() + tlsf_alloc_overhead()), and its usable pool
    * must not exceed tlsf_block_size_max(); otherwise create returns
-   * H2_PAL_ERR_INVALID_ARG. Failure to reserve returns H2_PAL_ERR_NO_MEMORY
-   * with no Host and no leaked allocations.
+   * H2_PAL_ERR_INVALID_ARG.
    *
    * Independent of the unchanged per-VM vm_memory_limit_bytes quota. Pool
    * exhaustion returns allocation failure to Lua, allowing emergency GC
    * before OOM. Size for all simultaneously live VMs plus TLSF metadata and
-   * internal fragmentation; start with 125% of their combined quotas plus
-   * 16 KiB and tune to the workload (not a fragmentation guarantee).
-   * Destroy releases the whole block after all jobs and VMs are released. */
+   * per-block overhead; measure the workload rather than assuming the quota.
+   * Destroy releases every block after all jobs and VMs are released. */
   size_t vm_heap_bytes;
 } h2_lua_host_config_t;
 
