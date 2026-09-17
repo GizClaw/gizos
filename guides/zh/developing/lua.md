@@ -39,7 +39,26 @@ provider 可以让不同 VM 在多个 worker 上并行。
 
 ## Host 和 job
 
-`h2_lua_host_config_t` 的容量均有界：`worker_count`、`worker_stack_size`、`max_jobs`、`max_coroutines_per_vm`、`ready_queue_capacity`、`waiter_capacity`、`event_delivery_capacity`、`callback_capacity_per_job`、`audio_track_capacity_per_job`、`pending_capability_capacity`、`instruction_quantum`、`resume_time_budget_ms`、`source_limit_bytes`、`output_limit_bytes` 和 `vm_memory_limit_bytes`。零使用声明的默认值；ready/waiter 容量不得小于 VM 的 coroutine 上限。`storage` 配置每个 App 的持久化存储，见 [App 存储](#app-存储)；全零表示未配置。
+`h2_lua_host_config_t` 的容量均有界：`worker_count`、`worker_stack_size`、`max_jobs`、`max_coroutines_per_vm`、`ready_queue_capacity`、`waiter_capacity`、`event_delivery_capacity`、`callback_capacity_per_job`、`audio_track_capacity_per_job`、`pending_capability_capacity`、`instruction_quantum`、`resume_time_budget_ms`、`source_limit_bytes`、`output_limit_bytes`、`vm_memory_limit_bytes` 和 `vm_heap_bytes`。零使用声明的默认值；ready/waiter 容量不得小于 VM 的 coroutine 上限。`storage` 配置每个 App 的持久化存储，见 [App 存储](#app-存储)；全零表示未配置。
+
+`vm_heap_bytes` 可选地在 `h2_lua_host_create()` 时从 Runtime mem 预留一段 VM 专用堆，
+供同一 Host 的所有 job/worker 通过带 PAL mutex 保护的 TLSF 共享。默认 `0` 保持
+VM 逐块向 Runtime mem 申请，Web 入口也保持此默认值。适合设备系统堆碎片化、
+大字符串或全屏 `display.capture_region` userdata 等大块分配会与其他模块争抢连续空间的场景。
+VM 本体、Lua 状态、userdata、字符串和表都使用预留堆；callbacks、events、tasks
+和 framebuffer 等仍使用 Runtime mem。
+
+Runtime mem 有足够大的连续块时预留为一整块；否则 Host 每次被拒后把申请大小缩小 1/8、贴近实际最大空闲块，最多取
+8 块、每块至少 256 KiB（只有最后的余量可以更小），全部加入同一个 TLSF。单次 VM
+分配必须能放进其中一块。在这些限制内凑不够时返回 `H2_PAL_ERR_NO_MEMORY`，不创建
+Host，也不泄漏已取得的块；destroy 在所有 job/VM 释放后归还全部块。
+
+`vm_memory_limit_bytes` 仍是独立的每 VM 配额，预留大小不会改变配额检查。预留堆需
+覆盖所有同时存活的 VM（包括尚未 release 的已完成 job）以及 TLSF 元数据和每块分配
+头；按实际负载测量设定，不要直接等同配额。预留小于配额也允许，此时预留堆先耗尽；
+Lua 仍会先尝试 emergency GC，无法满足分配时再报内存错误。非零值的最小值为
+`tlsf_size() + tlsf_pool_overhead() + 8 * (tlsf_block_size_min() + tlsf_alloc_overhead())`，
+可用池也不得超过 `tlsf_block_size_max()`；越界返回 `H2_PAL_ERR_INVALID_ARG`。
 
 Host 的正常生命周期是：
 
@@ -160,9 +179,9 @@ smooth 显式启用圆端点连续覆盖，每像素只混合最大 alpha 一次
 | `offset_x` | 有限且在 ±100000 内，默认 0；多边形在交点取整后横移，线段在连续裁剪前横移，不与 matrix 平移合并 |
 | `left,top,right,bottom` | 默认整个 framebuffer 的整数半开裁剪矩形，范围必须完全位于 framebuffer 内；空矩形合法 |
 | `color` | 可选 Display 颜色覆盖，不修改保留颜色 |
-| `cache` | boolean，默认 false；按需保留最多 8192 条有序扫描段/线记录 |
+| `cache` | boolean，默认 false；按需保留有序扫描段/线记录，最多 8192 条；容量从 512 条起按需增长，重放后收缩到实际条数 |
 
-所有派生顶点在光栅化前验证为有限且在 ±16000000 内。多边形沿用上述 even-odd 扫描和交点取整规则；线先连续裁剪再按 `floor(endpoint+0.5)` 取整并执行 Bresenham。绘制不隐式 present，关闭 Display 后拒绝绘制。派生顶点缓存以内容更新、matrix／transform 和 grid 为失效条件；裁剪、颜色、offset 每次绘制应用，不能因坐标缓存命中而跳过。可选 span 缓存还比较裁剪、viewport、offset 和 recolor，命中时按原顺序重放并标记 dirty/background damage；容量溢出仍完整绘制，但不发布部分缓存。成功的 native/Lua 更新要求重新验证派生坐标，但保留上一次成功绘制的 span 候选。完整验证后，只有活动顶点／primitive 数量、primitive 类型／范围／颜色、最终坐标和上述绘制参数全部相同时才能复用；不能只比较地址或包围盒。连续更新、失败调用和不保留缓存的绘制不会覆盖候选快照，相同输入的热调用复用已验证的比较结果。首次启用缓存时除 8192 条记录外，按声明容量分配一份顶点／primitive 快照及对齐／固定元数据；热绘制不分配。数据和缓存计入 VM；引用释放后由 GC 或 VM teardown 回收。
+所有派生顶点在光栅化前验证为有限且在 ±16000000 内。多边形沿用上述 even-odd 扫描和交点取整规则；线先连续裁剪再按 `floor(endpoint+0.5)` 取整并执行 Bresenham。绘制不隐式 present，关闭 Display 后拒绝绘制。派生顶点缓存以内容更新、matrix／transform 和 grid 为失效条件；裁剪、颜色、offset 每次绘制应用，不能因坐标缓存命中而跳过。可选 span 缓存还比较裁剪、viewport、offset 和 recolor，命中时按原顺序重放并标记 dirty/background damage；容量溢出仍完整绘制，但不发布部分缓存。成功的 native/Lua 更新要求重新验证派生坐标，但保留上一次成功绘制的 span 候选。完整验证后，只有活动顶点／primitive 数量、primitive 类型／范围／颜色、最终坐标和上述绘制参数全部相同时才能复用；不能只比较地址或包围盒。连续更新、失败调用和不保留缓存的绘制不会覆盖候选快照，相同输入的热调用复用已验证的比较结果。首次启用缓存时分配 512 条记录，并按声明容量分配一份顶点／primitive 快照及对齐／固定元数据。一次光栅化超出容量时本帧仍完整绘制但不发布缓存，下一次绘制在入口把缓存换成 4 倍容量（最多 8192 条）。缓存至少被重放一次后，若剩余空位不少于 256 条，下一次绘制在入口把它换成恰好容纳现有记录的缓存，复制记录与快照；收缩后的缓存若再次溢出，直接恢复为 8192 条并不再收缩，动画网格不会反复分配。增长、收缩或恢复都只在入口分配；分配引起的 finalizer 重入若改变了缓存，则放弃替换并沿用重入留下的缓存。此后热绘制不分配。数据和缓存计入 VM；引用释放后由 GC 或 VM teardown 回收。
 
 显式 transform 保留 `(x+(vx*cos(angle)-vy*sin(angle))*scale)/grid` 及 y 对应式的运算顺序，不预乘为 affine matrix。三角函数在参数不变时复用。每轴使用原版 float 表达式和 `64*FLT_EPSILON` 误差界：远离半格点且误差小于 0.25 时走 float 取整，否则使用原版 double 表达式；源顶点超出 ±100000 时也回退。应用决定 grid、pose、布局和复用时机；库内没有尺寸阈值或额外输出缩放。
 

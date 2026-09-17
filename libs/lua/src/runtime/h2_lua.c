@@ -242,6 +242,9 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
       config->runtime->task->vtable->join == NULL) {
     return H2_PAL_ERR_UNSUPPORTED;
   }
+  if (!h2_lua_heap_size_valid(config->vm_heap_bytes)) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
   normalized = *config;
   normalized.worker_count =
       normalized.worker_count == 0u ? 1u : normalized.worker_count;
@@ -466,6 +469,13 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
       return storage_result;
     }
   }
+  {
+    h2_pal_result_t heap_result = h2_lua_heap_init(host);
+    if (heap_result != H2_PAL_OK) {
+      h2_lua_host_destroy(host);
+      return heap_result;
+    }
+  }
   *out_host = host;
   return H2_PAL_OK;
 }
@@ -595,6 +605,7 @@ void h2_lua_host_destroy(h2_lua_host_t *host) {
   for (i = 0u; i < host->config.max_jobs; ++i) {
     release_job(&host->jobs[i]);
   }
+  h2_lua_heap_deinit(host);
   h2_lua_storage_host_deinit(host);
   if (host->link_hooks != NULL) {
     host->link_hooks->destroy(host->link_user);
