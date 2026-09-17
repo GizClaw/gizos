@@ -123,6 +123,9 @@ int main(void) {
     def test_timeout_is_cleaned_only_after_completion(self):
         source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/"
                   "h2_jieli_ac791n_devkit_wifi.c").read_text()
+        event = source[source.index("static int wifi_event("):
+                       source.index("static int ensure_wifi_on(void)")]
+        self.assertRegex(event, r"WIFI_EVENT_SMP_CFG_START\)\s+scan_reset_after_sta_exit\(\)")
         state = source[source.index("enum { SCAN_IDLE"):
                        source.index("static void post_system_event")]
         if "static void scan_reap_completed(void)" not in state:
@@ -234,6 +237,32 @@ int main(void) {
  assert(clears==3);
  scan_reap_completed();
  assert(clears==4 && scan_phase==SCAN_IDLE);
+ unsigned clears_before_reset=clears;
+ scan_phase=SCAN_ABANDONED;
+ in_sdk_callback=1;
+ scan_reset_after_sta_exit();
+ in_sdk_callback=0;
+ assert(scan_phase==SCAN_IDLE && clears==clears_before_reset);
+ complete_on_delay=1;
+ assert(sta_scan(NULL,NULL,receive,NULL,20)==H2_PAL_OK);
+ clears_before_reset=clears;
+ scan_phase=SCAN_REAPABLE;
+ in_sdk_callback=1;
+ scan_reset_after_sta_exit();
+ assert(scan_phase==SCAN_IDLE && clears==clears_before_reset);
+ scan_phase=SCAN_PENDING;
+ scan_reset_after_sta_exit();
+ assert(scan_phase==SCAN_PENDING && clears==clears_before_reset);
+ scan_phase=SCAN_CLEANING;
+ scan_reset_after_sta_exit();
+ assert(scan_phase==SCAN_CLEANING && clears==clears_before_reset);
+ scan_phase=SCAN_READY;
+ scan_reset_after_sta_exit();
+ assert(scan_phase==SCAN_READY && clears==clears_before_reset);
+ scan_phase=SCAN_IDLE;
+ scan_reset_after_sta_exit();
+ assert(scan_phase==SCAN_IDLE && clears==clears_before_reset);
+ in_sdk_callback=0;
  return 0;
 }
 '''

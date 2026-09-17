@@ -75,6 +75,18 @@ static void scan_reap_completed(void) {
   }
 }
 
+/* STA exit halts the driver and scan timers before SMP_CFG_START; no late
+ * scan completion can follow. Under network_hsm_mtx, no synchronous SDK call
+ * is allowed here. */
+static void scan_reset_after_sta_exit(void) {
+  unsigned expected = SCAN_ABANDONED;
+  if (__atomic_compare_exchange_n(&scan_phase, &expected, SCAN_IDLE, 0,
+                                   __ATOMIC_RELEASE, __ATOMIC_RELAXED)) return;
+  expected = SCAN_REAPABLE;
+  (void)__atomic_compare_exchange_n(&scan_phase, &expected, SCAN_IDLE, 0,
+                                     __ATOMIC_RELEASE, __ATOMIC_RELAXED);
+}
+
 static void post_system_event(
     h2_pal_system_event_type_t type, const void *payload,
     size_t payload_size) {
@@ -130,6 +142,7 @@ static int wifi_event(void *context, enum WIFI_EVENT event) {
     scan_completed();
     return 0;
   }
+  if (event == WIFI_EVENT_SMP_CFG_START) scan_reset_after_sta_exit();
   /* These SDK queries execute in its serialized Wi-Fi event context, never
    * under the PAL gate. A newer PAL transition invalidates this refresh. */
   h2_pal_wifi_sta_status_t native_status;
