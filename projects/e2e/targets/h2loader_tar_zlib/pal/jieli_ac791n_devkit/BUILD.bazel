@@ -51,6 +51,13 @@ jieli_target_task_policy(
     ],
     sdk_policies = [
         "app_core 15 4096 256",
+        # SDK Wi-Fi driver tasks: the PAL image exposes UART wifi commands, and SDK task_create()
+        # fails for names missing from task_info_table. RtmpMlmeTask needs 1400 words (#459 bench).
+        "tcpip_thread 16 800 0",
+        "tasklet 10 1400 0",
+        "RtmpMlmeTask 17 1400 0",
+        "RtmpCmdQTask 17 300 0",
+        "wl_rx_irq_thread 5 256 0",
         "sys_event 29 512 0",
         "systimer 14 256 0",
         "sys_timer 9 512 64",
