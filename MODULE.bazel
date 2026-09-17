@@ -349,6 +349,7 @@ vendor_repositories.repository(
     name = "h2_vendor_tlsf",
     build_file = "//third_party:tlsf.BUILD.bazel",
     overlay_files = {
+        "//third_party/tlsf_patch:h2_tlsf.h": "src/h2_tlsf.h",
         "//third_party/tlsf_patch:h2_tlsf_embedded_stdio.h": "src/h2_tlsf_embedded_stdio.h",
     },
     sha256 = "df67543d45ad5e67d96168b54022a0f4803f8d5ae9770d398e20dd9a0e2934d6",

@@ -1,5 +1,5 @@
 #include "h2_lua_internal.h"
-#include "tlsf.h"
+#include "h2_tlsf.h"
 
 int h2_lua_heap_size_valid(size_t bytes) {
   const size_t overhead = tlsf_size() + tlsf_pool_overhead();

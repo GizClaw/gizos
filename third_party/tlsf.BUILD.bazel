@@ -6,15 +6,26 @@ licenses(["notice"])
 
 # Upstream detects LP64 (including macOS arm64 and Linux x86_64) and
 # _WIN64. wasm32, Xtensa, RV32 and ARM32 retain its 32-bit layout.
+# Consumers include h2_tlsf.h: it renames every public symbol to h2_tlsf_*,
+# because SDK heaps such as ESP-IDF link their own TLSF under upstream names.
 cc_library(
     name = "tlsf",
     srcs = ["src/tlsf.c"] + select({
         "@platforms//os:none": ["src/h2_tlsf_embedded_stdio.h"],
         "//conditions:default": [],
     }),
-    hdrs = ["src/tlsf.h"],
-    copts = select({
-        "@platforms//os:none": ["-include", "h2_tlsf_embedded_stdio.h"],
+    hdrs = [
+        "src/h2_tlsf.h",
+        "src/tlsf.h",
+    ],
+    copts = [
+        "-include",
+        "h2_tlsf.h",
+    ] + select({
+        "@platforms//os:none": [
+            "-include",
+            "h2_tlsf_embedded_stdio.h",
+        ],
         "//conditions:default": [],
     }),
     includes = ["src"],

@@ -1053,7 +1053,7 @@
     "//tools/bazel/vendor:repositories.bzl%vendor_repositories": {
       "general": {
         "bzlTransitiveDigest": "GN36J8ZXGtronxAfN2q+0sqa5qSORQLPGXJJoOa1qYw=",
-        "usagesDigest": "w3vDvfweTUMzNbSrdTSK1YR3lSexe1uSbhcZA/Ok6x4=",
+        "usagesDigest": "y3Cgpo1VPRVc5A0iL3z5pCv06dHQcjP4eiPR59/+4Jg=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "h2_fdk_aac": {
@@ -1275,6 +1275,7 @@
               "nested_archive_strip_prefix": {},
               "nested_archive_urls": {},
               "overlay_files": {
+                "@@//third_party/tlsf_patch:h2_tlsf.h": "src/h2_tlsf.h",
                 "@@//third_party/tlsf_patch:h2_tlsf_embedded_stdio.h": "src/h2_tlsf_embedded_stdio.h"
               },
               "patches": [],

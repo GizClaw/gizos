@@ -1,1 +1,4 @@
-exports_files(["h2_tlsf_embedded_stdio.h"])
+exports_files([
+    "h2_tlsf.h",
+    "h2_tlsf_embedded_stdio.h",
+])
