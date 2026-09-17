@@ -113,7 +113,7 @@ Loader 只有 UART 与 BLE capability，不提供 Wi-Fi 与 HTTP；runner 一旦
 
 ### 2026-09-17：audio provider 停止/重启循环
 
-`031b5da4`（Issue #450，基于 main `4fd6e947`）新增 `audio-stop-restart` 手动诊断镜像，在同一 UID `d879349abc9f` 上以 N=10（package `f80f53bf…`）和 N=50（package `a73eda3a…`）各跑一轮：两轮 `H2_JIELI_AUDIO_CYCLE_READY result=0`、`JIELI_APP_CONFIRM result=OK`，逐轮均 `run=0 stop=0 idle=1 result=ok`，`heap_free` 从第 1 轮结束起恒为 `7171688`、`tasks` 恒为 `16`（baseline `7315688` / `15` 的一次性差值来自 SDK audio server 首次打开），N=50 的 `stop_ms` 在 81–961 ms 之间，汇总行均 `result=ok`；最终独立 status 为 P1 Loader、Stage 空、`last_result=0`。写入阻塞时停止与过期回调拒绝仅由 host 测试覆盖。[全部镜像 SHA、逐步结果、堆与任务数与边界](./evidence/2026-09-17/audio-stop-restart.md)。
+`705bd197`（Issue #450，基于 main `4fd6e947`）新增 `audio-stop-restart` 手动诊断镜像，在同一 UID `d879349abc9f` 上以 N=10（package `be7ecd28…`）和 N=50（package `0b7e502e…`）各跑一轮：两轮 `H2_JIELI_AUDIO_CYCLE_READY result=0`、`JIELI_APP_CONFIRM result=OK`，逐轮均 `run=0 stop=0 idle=1 result=ok`，`heap_free` 从第 1 轮结束起恒为 `7171688`、`tasks` 恒为 `16`（baseline `7315688` / `15` 的一次性差值来自 SDK audio server 首次打开），N=50 的 `stop_ms` 在 80–991 ms 之间，汇总行均 `result=ok`；最终独立 status 为 P1 Loader、Stage 空、`last_result=0`。写入阻塞时停止与过期回调拒绝仅由 host 测试覆盖。[全部镜像 SHA、逐步结果、堆与任务数与边界](./evidence/2026-09-17/audio-stop-restart.md)。
 
 ### 2026-09-17：System Event provider 迁移到 SDK sys_event
 
