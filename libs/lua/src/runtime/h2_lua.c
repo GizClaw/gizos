@@ -127,6 +127,7 @@ static void release_job(h2_lua_job_t *job) {
   h2_pal_mem_free(mem, job->callbacks);
   h2_pal_mem_free(mem, job->events);
   h2_pal_mem_free(mem, job->audio_tracks);
+  job->audio_tracks = NULL;
   h2_lua_vm_close(job->vm);
   memset(job, 0, sizeof(*job));
 }
@@ -256,6 +257,10 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
       normalized.callback_capacity_per_job == 0u
           ? 8u
           : normalized.callback_capacity_per_job;
+  normalized.audio_sound_bytes_per_job =
+      normalized.audio_sound_bytes_per_job == 0u
+          ? 256u * 1024u
+          : normalized.audio_sound_bytes_per_job;
   normalized.audio_track_capacity_per_job =
       normalized.audio_track_capacity_per_job == 0u
           ? 8u

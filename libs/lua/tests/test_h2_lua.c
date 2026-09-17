@@ -271,16 +271,24 @@ static const h2_pal_touch_api_t s_test_touch = {
 
 /* Records the PCM the module hands to the device so the test can assert that
  * consecutive writes form one gapless stream. */
-static uint8_t s_test_audio_written[64];
+static uint8_t s_test_audio_written[300000];
 static size_t s_test_audio_written_bytes;
 static size_t s_test_audio_frame_count;
+static int s_test_audio_busy;
+static uint16_t s_test_audio_frame_samples = 2u;
+static size_t s_test_audio_accept_frames = SIZE_MAX;
 
 static int test_audio_track_write(h2_pal_audio_track_t *track,
                                   const h2_audio_frame_t *frame,
                                   uint32_t timeout_ms) {
   (void)track;
-  (void)timeout_ms;
-  if (frame == NULL || frame->bytes != 4u) {
+  assert(timeout_ms == 0u);
+  if (s_test_audio_busy || s_test_audio_accept_frames == 0u) {
+    return H2_PAL_ERR_WOULD_BLOCK;
+  }
+  if (frame == NULL || frame->samples_per_channel == 0u ||
+      (s_test_audio_frame_samples != 0u &&
+       frame->samples_per_channel != s_test_audio_frame_samples)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   if (s_test_audio_written_bytes + frame->bytes <=
@@ -290,6 +298,9 @@ static int test_audio_track_write(h2_pal_audio_track_t *track,
     s_test_audio_written_bytes += frame->bytes;
   }
   s_test_audio_frame_count++;
+  if (s_test_audio_accept_frames != SIZE_MAX) {
+    s_test_audio_accept_frames--;
+  }
   return H2_PAL_OK;
 }
 
@@ -363,7 +374,7 @@ static int test_audio_create_track(void *user,
     return H2_PAL_ERR_INVALID_ARG;
   /* Mixer-backed devices reject Tracks whose frame size differs from the
    * playback frame size reported by get_info. */
-  if (config->format.frame_samples_per_channel != 2u)
+  if (config->format.frame_samples_per_channel != s_test_audio_frame_samples)
     return H2_PAL_ERR_UNSUPPORTED;
   *out_track = &s_test_audio_track;
   return H2_PAL_OK;
@@ -392,6 +403,7 @@ static int test_audio_get_info(void *user, h2_audio_info_t *info) {
       .track_queue_frames = 4u,
       .max_tracks = 4u,
   };
+  info->playback_format.frame_samples_per_channel = s_test_audio_frame_samples;
   return H2_PAL_OK;
 }
 
@@ -2159,11 +2171,302 @@ static void test_job_results(h2_lua_host_t *host) {
   }
 }
 
+typedef struct sound_test_memory {
+  size_t allocations;
+  size_t fail_size;
+} sound_test_memory_t;
+
+static void *sound_test_alloc(void *user, size_t size) {
+  sound_test_memory_t *memory = user;
+  if (size == memory->fail_size) return NULL;
+  void *ptr = malloc(size);
+  if (ptr != NULL) memory->allocations++;
+  return ptr;
+}
+
+static void *sound_test_realloc(void *user, void *ptr, size_t size) {
+  sound_test_memory_t *memory = user;
+  if (ptr == NULL) return sound_test_alloc(user, size);
+  if (size == 0u) {
+    free(ptr);
+    memory->allocations--;
+    return NULL;
+  }
+  return realloc(ptr, size);
+}
+
+static void sound_test_free(void *user, void *ptr) {
+  sound_test_memory_t *memory = user;
+  if (ptr != NULL) {
+    assert(memory->allocations != 0u);
+    memory->allocations--;
+    free(ptr);
+  }
+}
+
+static h2_lua_job_t *sound_test_submit(h2_lua_host_t *host,
+                                       const char *script) {
+  h2_lua_job_id_t id;
+  assert(h2_lua_job_submit_text(host, NULL, "@sound.lua",
+                                (const uint8_t *)script, strlen(script), NULL,
+                                0u, &id) == H2_PAL_OK);
+  h2_lua_job_t *job = h2_lua_find_job(host, id);
+  assert(job != NULL);
+  return job;
+}
+
+static void sound_test_step(h2_lua_job_t *job) {
+  assert(h2_pal_mutex_lock(job->host->config.runtime->sync,
+                           h2_lua_job_mutex(job)) == H2_PAL_OK);
+  assert(h2_lua_step_job(job) == H2_PAL_OK);
+  if (job->state == H2_LUA_JOB_FAILED) fprintf(stderr, "%s\n", job->message);
+  assert(job->state != H2_LUA_JOB_FAILED);
+  h2_lua_unlock_job(job);
+}
+
+static void sound_test_finish(h2_lua_job_t *job) {
+  for (int i = 0; i < 100 && job->state != H2_LUA_JOB_SUCCEEDED; ++i) {
+    sound_test_step(job);
+  }
+  assert(job->state == H2_LUA_JOB_SUCCEEDED);
+  assert(h2_lua_job_release(job->host, job->id) == H2_PAL_OK);
+}
+
+static void test_audio_sounds(void) {
+  static const h2_pal_mem_vtable_t memory_vtable = {
+      .alloc = sound_test_alloc,
+      .realloc = sound_test_realloc,
+      .free = sound_test_free,
+  };
+  sound_test_memory_t memory = {0};
+  h2_pal_mem_api_t mem = {.user = &memory, .vtable = &memory_vtable};
+  h2_runtime_t *runtime = create_runtime();
+  h2_runtime_t probe = *runtime;
+  probe.mem = &mem;
+  h2_lua_host_t *host = NULL;
+  h2_lua_host_config_t config = {
+      .runtime = &probe,
+      .instruction_quantum = 1000000u,
+      .resume_time_budget_ms = 1000u,
+      .execution_timeout_ms = 60000u,
+      .source_limit_bytes = 16384u,
+  };
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(host->config.audio_sound_bytes_per_job == 262144u);
+  /* Drive the worker entry point synchronously so busy and resume are exact. */
+  atomic_store(&host->started, 1);
+  size_t baseline = memory.allocations;
+  s_test_audio_written_bytes = 0u;
+  s_test_audio_frame_count = 0u;
+  s_test_audio_accept_frames = 1u;
+  h2_lua_job_t *job = sound_test_submit(
+      host,
+      "local a=require('audio');local o=assert(a.new_output({}));"
+      "local s=assert(a.new_sound(string.char(1,2,3,4,5,6)));"
+      "local i=s:info();assert(i.bytes==6 and i.sample_rate==16000 and "
+      "i.channels==1 and i.duration_ms==0.1875);assert(o:play(s));"
+      "assert(o:info().playing);s:release();s:release();"
+      "for _,v in pairs(s:info()) do assert(v==0) end;"
+      "local ok,e,n=o:write('ab');assert(not ok and e=='audio output: busy' "
+      "and n==0);"
+      "require('delay').delay_ms(10000);assert(not o:info().playing)");
+  sound_test_step(job);
+  assert(job->audio_sound_bytes == 6u);
+  assert(s_test_audio_written_bytes == 4u);
+  assert(job->audio_tracks[0].sound_offset == 4u);
+  sound_test_step(job);
+  assert(job->audio_tracks[0].sound_offset == 4u);
+  s_test_audio_accept_frames = SIZE_MAX;
+  sound_test_step(job);
+  static const uint8_t expected[] = {1, 2, 3, 4, 5, 6, 0, 0};
+  assert(s_test_audio_written_bytes == sizeof(expected));
+  assert(memcmp(s_test_audio_written, expected, sizeof(expected)) == 0);
+  assert(job->audio_sound_bytes == 0u);
+  assert(job->audio_tracks[0].sound == NULL);
+  assert(h2_lua_job_cancel(host, job->id) == H2_PAL_OK);
+  sound_test_step(job);
+  assert(h2_lua_job_release(host, job->id) == H2_PAL_OK);
+  assert(memory.allocations == baseline);
+
+  s_test_audio_busy = 1;
+  job = sound_test_submit(
+      host,
+      "local a=require('audio');local o=assert(a.new_output({}));"
+      "local x=assert(a.new_sound('abcdef'));local y=assert(a.new_sound('gh'));"
+      "assert(o:play(x));x:release();assert(o:play(y));"
+      "assert(o:info().playing);assert(o:stop());assert(o:stop());"
+      "assert(not "
+      "o:info().playing);assert(o:play(y));y=nil;collectgarbage('collect');"
+      "require('runtime').yield();assert(not o:info().playing);"
+      "local s=assert(a.new_sound('ab'));s:release();"
+      "local ok,e=o:play(s);assert(not ok and e=='audio output: invalid "
+      "sound');"
+      "for _,opts in ipairs({{sample_rate=8000},{channels=2}}) do "
+      "local bad=assert(a.new_sound('abcd',opts));ok,e=o:play(bad);"
+      "assert(not ok and e=='audio output: format mismatch');bad:release() end;"
+      "assert(o:close());ok,e=o:play(s);assert(not ok and e=='audio output: "
+      "closed')");
+  sound_test_step(job);
+  assert(job->audio_sound_bytes == 2u);
+  s_test_audio_busy = 0;
+  s_test_audio_written_bytes = 0;
+  sound_test_finish(job);
+  assert(s_test_audio_written_bytes == 4 &&
+         memcmp(s_test_audio_written, "gh\0\0", 4) == 0);
+  assert(memory.allocations == baseline);
+
+  host->config.audio_sound_bytes_per_job = 8u;
+  job = sound_test_submit(
+      host,
+      "local a=require('audio');local s=assert(a.new_sound('12345678'));"
+      "local x,e=a.new_sound('ab');assert(not x and e=='audio sound: limit "
+      "reached');"
+      "s:release();s=assert(a.new_sound('12345678'));s:release();"
+      "x,e=a.new_sound({{ms=1}});assert(not x and e=='audio sound: limit "
+      "reached');"
+      "local o=assert(a.new_output({}));s=assert(a.new_sound('12345678'));"
+      "assert(o:play(s));s:release();x,e=a.new_sound('ab');"
+      "assert(not x and e=='audio sound: limit reached');o:close();"
+      "s=assert(a.new_sound('12345678'));s:release()");
+  s_test_audio_busy = 1;
+  sound_test_finish(job);
+  assert(memory.allocations == baseline);
+  host->config.audio_sound_bytes_per_job = 262144u;
+
+  /* Live slot and handle references are both reclaimed during job release. */
+  job = sound_test_submit(
+      host,
+      "local a=require('audio');local o=assert(a.new_output({}));"
+      "local s=assert(a.new_sound('abcd'));assert(o:play(s));_G.saved=s");
+  sound_test_finish(job);
+  assert(memory.allocations == baseline);
+  s_test_audio_busy = 0;
+
+  s_test_audio_written_bytes = 0u;
+  job = sound_test_submit(
+      host,
+      "local a=require('audio');local o=assert(a.new_output({}));"
+      "assert(o:write('ab'));assert(o:play(assert(a.new_sound('cd'))));o:close("
+      ")");
+  sound_test_finish(job);
+  assert(s_test_audio_written_bytes == 8u);
+  assert(memcmp(s_test_audio_written, "ab\0\0cd\0\0", 8) == 0);
+  assert(memory.allocations == baseline);
+
+  job = sound_test_submit(
+      host,
+      "local a=require('audio');local function bad(v,opts) local "
+      "s,e=a.new_sound(v,opts);"
+      "assert(not s and e=='audio sound: invalid') end;"
+      "bad('');bad('a');bad('ab',{channels=2});"
+      "for _,v in ipairs({0,-1,1.5,4294967296,math.huge,0/0}) do "
+      "bad('ab',{sample_rate=v}) end;"
+      "for _,v in ipairs({0,3,1.5,math.huge}) do bad('ab',{channels=v}) end;"
+      "bad({});local t={};for i=1,65 do t[i]={ms=1} end;bad(t);"
+      "for _,v in ipairs({0,-1,10001,1.5,math.huge}) do bad({{ms=v}}) end;"
+      "for _,k in ipairs({'freq','freq_end'}) do for _,v in "
+      "ipairs({-1,8001,math.huge,0/0}) do "
+      "local t={ms=1};t[k]=v;bad({t}) end end;"
+      "for _,v in ipairs({-0.1,1.1,math.huge,0/0}) do bad({{ms=1,gain=v}}) end;"
+      "bad({{ms=1,wave='saw'}});bad({{ms=1,envelope='bad'}});"
+      "assert(not pcall(a.new_sound,42));assert(not "
+      "pcall(a.new_sound,'ab',42));"
+      "t[65]=nil;local "
+      "s=assert(a.new_sound(t));assert(s:info().bytes==2048);s:release();"
+      "s=assert(a.new_sound({sample_rate=8000,channels=2,{ms=25,freq=4000}}));"
+      "assert(s:info().bytes==800 and s:info().duration_ms==25);s:release()");
+  sound_test_finish(job);
+  assert(memory.allocations == baseline);
+
+  for (int repeat = 0; repeat < 2; ++repeat) {
+    job = sound_test_submit(
+        host,
+        "local a=require('audio');local o=assert(a.new_output({}));"
+        "for _,w in ipairs({'sine','square','triangle','noise'}) do "
+        "for _,e in ipairs({'flat','decay','bell'}) do "
+        "local "
+        "s=assert(a.new_sound({{ms=2,freq=1000,freq_end=2000,wave=w,envelope=e}"
+        ","
+        "{ms=1,freq=500,wave=w,envelope=e}}));assert(s:info().bytes==96);"
+        "assert(o:play(s));s:release() end end;o:close()");
+    s_test_audio_written_bytes = 0u;
+    sound_test_finish(job);
+    static uint8_t first[1152];
+    assert(s_test_audio_written_bytes == sizeof(first));
+    for (size_t i = 0; i < 12; ++i) {
+      int nonzero = 0;
+      for (size_t j = 0; j < 96; ++j)
+        nonzero |= s_test_audio_written[i * 96 + j];
+      assert(nonzero);
+    }
+    if (repeat == 0)
+      memcpy(first, s_test_audio_written, sizeof(first));
+    else
+      assert(memcmp(first, s_test_audio_written, sizeof(first)) == 0);
+    assert(memory.allocations == baseline);
+  }
+  s_test_audio_written_bytes = 0;
+  job = sound_test_submit(
+      host,
+      "local a=require('audio');local o=assert(a.new_output({}));"
+      "for _,w in ipairs({'sine','square','triangle','noise'}) do "
+      "assert(o:play(assert(a.new_sound({{ms=1,freq=0,wave=w}})))) "
+      "end;o:close()");
+  sound_test_finish(job);
+  assert(s_test_audio_written_bytes == 128u);
+  for (size_t i = 0; i < s_test_audio_written_bytes; ++i)
+    assert(s_test_audio_written[i] == 0);
+
+  s_test_audio_frame_samples = 0u;
+  s_test_audio_frame_count = 0u;
+  s_test_audio_written_bytes = 0u;
+  job = sound_test_submit(
+      host,
+      "local a=require('audio');local o=assert(a.new_output({}));"
+      "local "
+      "s=assert(a.new_sound(string.rep('ab',65536)));assert(o:play(s));s:"
+      "release()");
+  sound_test_finish(job);
+  assert(s_test_audio_frame_count == 2u &&
+         s_test_audio_written_bytes == 131072u);
+  for (size_t i = 0; i < s_test_audio_written_bytes; i += 2) {
+    assert(s_test_audio_written[i] == 'a' &&
+           s_test_audio_written[i + 1] == 'b');
+  }
+  s_test_audio_frame_samples = 2u;
+  assert(memory.allocations == baseline);
+
+  memory.fail_size = sizeof(h2_lua_audio_sound_t) + 1234u;
+  job = sound_test_submit(
+      host,
+      "local s,e=require('audio').new_sound(string.rep('ab',617));"
+      "assert(not s and e=='audio sound: no memory')");
+  sound_test_finish(job);
+  memory.fail_size = 0;
+  assert(memory.allocations == baseline);
+  job = sound_test_submit(
+      host,
+      "local a=require('audio');local o=assert(a.new_output({}));"
+      "_G.sound=assert(a.new_sound({{ms=6000,freq=440}}));"
+      "assert(sound:info().bytes==192000);assert(o:play(sound));"
+      "require('runtime').yield()");
+  s_test_audio_busy = 1;
+  sound_test_step(job);
+  assert(job->audio_sound_bytes == 192000u);
+  assert(status(host, job->id).memory_used < 192000u);
+  atomic_store(&host->started, 0);
+  h2_lua_host_destroy(host);
+  s_test_audio_busy = 0;
+  assert(memory.allocations == 0u);
+  h2_runtime_deinit(runtime);
+}
+
 int main(int argc, char **argv) {
   if (argc == 2 && strcmp(argv[1], "--prepared-benchmark") == 0) {
     test_display_raster2d(1, "libs/lua/tests/geometry_batches.lua");
     return 0;
   }
+  test_audio_sounds();
   if (argc == 2 && strcmp(argv[1], "--raster-benchmark") == 0) {
     test_display_raster2d(1, "libs/lua/tests/raster2d.lua");
     return 0;

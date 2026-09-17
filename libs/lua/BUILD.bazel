@@ -173,6 +173,7 @@ cc_library(
     name = "lua_runtime",
     srcs = [
         "src/core/h2_lua_internal.h",
+        "src/modules/h2_lua_audio_sound.c",
         "src/modules/h2_lua_esp_claw.c",
         "src/modules/h2_lua_geometry_batches_internal.h",
         "src/modules/h2_lua_kv.c",

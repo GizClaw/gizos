@@ -106,6 +106,7 @@ void h2_lua_job_close_audio_tracks(h2_lua_job_t *job) {
       job->audio_tracks[i].track = NULL;
     }
     if (job->audio_tracks != NULL) {
+      h2_lua_audio_sound_stop(&job->audio_tracks[i]);
       h2_lua_audio_track_slot_release_carry(&job->audio_tracks[i],
                                             job->host->config.runtime->mem);
     }
@@ -800,6 +801,9 @@ h2_pal_result_t h2_lua_step_job(h2_lua_job_t *job) {
     }
     return H2_PAL_OK;
   }
+  for (i = 0u; i < job->host->config.audio_track_capacity_per_job; ++i) {
+    h2_lua_audio_sound_pump(&job->audio_tracks[i]);
+  }
   h2_lua_deliver_events(job);
   if (job->host->link_hooks != NULL) {
     job->host->link_hooks->deliver(job->host->link_user, job);
@@ -960,6 +964,7 @@ h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host,
   h2_pal_mem_free(mem, job->callbacks);
   h2_pal_mem_free(mem, job->events);
   h2_pal_mem_free(mem, job->audio_tracks);
+  job->audio_tracks = NULL;
   h2_lua_vm_close(job->vm);
   memset(job, 0, sizeof(*job));
   (void)h2_pal_mutex_unlock(host->config.runtime->sync, job_mutex);
