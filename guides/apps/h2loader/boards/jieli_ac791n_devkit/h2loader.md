@@ -103,6 +103,10 @@ Loader 只有 UART 与 BLE capability，不提供 Wi-Fi 与 HTTP；runner 一旦
 
 ## 验收记录
 
+### 2026-09-17：Net provider 的 socket 并发与 DNS 生命周期审计
+
+PR #457（Issue #452，基于 main `4fd6e947`）关闭 2026-09-14 PAL review 的 O7：固定 SDK 的 lwIP 只保证每个 socket 一个 reader、一个 writer、一个 closer，Wi-Fi HSM 退出时 `tcpip_uninit` 只清标志，之后任何 `tcpip_send_msg_wait_sem` 永久阻塞；provider 为每个 descriptor 增加 BUSY 门控与栈 generation，PAL Wi-Fi 未启动或已停止时返回 `H2_PAL_ERR_UNAVAILABLE`，stop 先排空在途操作再关闭 SDK 并结算 pending resolver，同步 DNS 改用 `netconn_gethostbyname_addrtype`。同一 UID `d879349abc9f` 上经 UART Loader 安装 PAL App 后首轮十条 case 全在且 `result=0 passed=10 failed=0`，Wi-Fi 27 经过新的 stop hook，最终独立 status 为 P1 main Loader、`last_result=0`。[SDK 事实、host 与实机结果](./evidence/2026-09-17/net-socket-dns-audit.md)。
+
 ### 2026-09-17：System Event provider 迁移到 SDK sys_event
 
 `99f1f89a`（Issue #448，基于 main `e6c7b6aa`）把 wl82 PAL System Event 改为通过 SDK `sys_event` 入队、在常驻 `h2_sysevt` 任务上异步派发；同一 UID `d879349abc9f` 上完成新 Loader 自更新（`H2_JIELI_LOADER_TRIAL confirmed=1`，双分区收敛到 `ed7d71a6…`）、PAL 首轮十条 case 全在且 `result=0 passed=10 failed=0`、UART 25/25（339.512 s）、BLE 22/22 两轮（373.098 s、382.811 s）、button 与 touch 试运行均捕获 READY、`JIELI_APP_CONFIRM result=OK` 与 trial timer 删除并返回 P1、audio-system READY 后 35 s 内 27 条 mic peak 报告；最终独立 status 为新 P1 Loader、Stage 空、`last_result=0`。溢出、SDK 40 s handler 超时与中断 post 仅由 host 测试覆盖。[全部镜像 SHA、逐项结果与边界](./evidence/2026-09-17/sys-event-provider-acceptance.md)。
