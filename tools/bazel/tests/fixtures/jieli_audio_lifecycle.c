@@ -237,7 +237,31 @@ static int h2_jieli_ac791n_devkit_console_write(const void *p, size_t n, uint32_
     (void)p; (void)n; (void)ms; return 0;
 }
 const h2_pal_audio_api_t *h2_jieli_ac791n_devkit_audio_api(void);
+typedef struct h2_jieli_ac791n_devkit_audio_idle {
+  uint32_t open_tracks;         /* tracks not in the free state */
+  uint32_t retained_operations; /* referenced writers, drainers, volume requests and callbacks */
+  uint32_t ring_bytes;          /* PCM ring storage still allocated by tracks */
+  uint32_t sdk_servers;         /* live encoder and decoder handles */
+  uint32_t mic_open;            /* microphone session is not free */
+  uint32_t speaker_started;
+  uint64_t consumed_bytes;      /* PCM consumed from currently open tracks */
+} h2_jieli_ac791n_devkit_audio_idle_t;
+
+static atomic_uint allocations, frees, live_blocks;
+static void *counted_malloc(size_t size) {
+    void *block = malloc(size);
+    if (block != NULL) { ++allocations; ++live_blocks; }
+    return block;
+}
+static void counted_free(void *block) {
+    if (block != NULL) { ++frees; assert(atomic_fetch_sub(&live_blocks, 1u) > 0u); }
+    free(block);
+}
+#define malloc counted_malloc
+#define free counted_free
 /* REAL_PROVIDER */
+#undef malloc
+#undef free
 
 static h2_audio_frame_t frame_for(int16_t *data) {
     return (h2_audio_frame_t){.data = data, .capacity = 640, .bytes = 640,
@@ -296,8 +320,101 @@ static void *mic_producer(void *unused) {
     }
     return NULL;
 }
+static void assert_idle(void) {
+    h2_jieli_ac791n_devkit_audio_idle_t idle;
+    memset(&idle, 0xff, sizeof(idle));
+    assert(h2_jieli_ac791n_devkit_audio_idle_probe(NULL) == H2_AUDIO_ERR_INVALID_ARG);
+    assert(h2_jieli_ac791n_devkit_audio_idle_probe(&idle) == H2_AUDIO_OK);
+    assert(idle.open_tracks == 0u && idle.retained_operations == 0u && idle.ring_bytes == 0u);
+    assert(idle.sdk_servers == 0u && idle.mic_open == 0u && idle.speaker_started == 0u);
+    assert(idle.consumed_bytes == 0u && live_servers == 0);
+    assert(live_blocks == 0u && allocations == frees);
+}
+static void normal_stop(h2_pal_audio_track_t *music, h2_pal_audio_track_t *mic) {
+    assert(audio_stop_mic(NULL) == H2_AUDIO_OK);
+    assert(audio_stop_speaker(NULL) == H2_AUDIO_OK);
+    if (music != NULL) assert(track_close(music) == H2_AUDIO_OK);
+    if (mic != NULL) assert(track_close(mic) == H2_AUDIO_OK);
+    assert_idle();
+}
+static void test_cycles(void) {
+    uintptr_t generation = 0u;
+    int16_t data[320] = {1}, scratch[640];
+    h2_audio_frame_t frame = frame_for(data);
+    for (unsigned cycle = 0u; cycle < 50u; ++cycle) {
+        assert(audio_start_mic(NULL) == H2_AUDIO_OK);
+        assert((uintptr_t)encoder->request.file > generation);
+        generation = (uintptr_t)encoder->request.file;
+        h2_pal_audio_track_t *music = make_track(1);
+        struct audio_request music_request = decoder->request;
+        assert((uintptr_t)music_request.file > generation);
+        generation = (uintptr_t)music_request.file;
+        h2_audio_track_config_t config = {.name = "audio-system-mic", .buffer_frames = 1u,
+            .volume_factor_milli = 1000u,
+            .format = {.sample_rate_hz = 16000u, .channels = 1u, .sample_format = H2_AUDIO_SAMPLE_S16LE}};
+        h2_pal_audio_track_t *mic = NULL;
+        assert(audio_create_track(NULL, &config, &mic) == H2_AUDIO_OK);
+        assert((uintptr_t)decoder->request.file > generation);
+        generation = (uintptr_t)decoder->request.file;
+        assert(encoder->request.vfs_ops->fwrite(encoder->request.file, data, sizeof(data)) == 640);
+        assert(audio_mic_read(NULL, &frame, 0u) == H2_AUDIO_OK && frame.bytes == 640u);
+        assert(track_write(music, &frame, 0u) == H2_AUDIO_OK);
+        assert(track_write(mic, &frame, 0u) == H2_AUDIO_OK);
+        h2_jieli_ac791n_devkit_audio_idle_t probe;
+        assert(h2_jieli_ac791n_devkit_audio_idle_probe(&probe) == H2_AUDIO_OK);
+        assert(probe.open_tracks == 2u && probe.ring_bytes == 1280u && probe.sdk_servers == 3u);
+        assert(probe.mic_open == 1u && probe.speaker_started == 1u && probe.retained_operations == 0u);
+        assert(music_request.vfs_ops->fread(music_request.file, scratch, sizeof(scratch)) == 1280);
+        consume();
+        assert(h2_jieli_ac791n_devkit_audio_idle_probe(&probe) == H2_AUDIO_OK);
+        assert(probe.consumed_bytes == 1280u && probe.ring_bytes == 1280u);
+        normal_stop(music, mic);
+    }
+    assert(allocations == 100u);
+}
+static void test_cycle_blocked_write(void) {
+    h2_pal_audio_track_t *track = make_track(1);
+    int16_t data[320] = {1};
+    h2_audio_frame_t frame = frame_for(data);
+    assert(track_write(track, &frame, 0u) == H2_AUDIO_OK);
+    struct write_job job = {.track = track};
+    pthread_t worker;
+    assert(pthread_create(&worker, NULL, write_worker, &job) == 0);
+    while (h2_jieli_atomic_load_u32(&waiting) == 0u) h2_jieli_sdk_sleep_ms(1u);
+    h2_jieli_ac791n_devkit_audio_idle_t probe;
+    assert(h2_jieli_ac791n_devkit_audio_idle_probe(&probe) == H2_AUDIO_OK);
+    assert(probe.retained_operations == 1u);
+    normal_stop(track, NULL);
+    assert(pthread_join(worker, NULL) == 0);
+    assert(job.result == H2_AUDIO_ERR_INVALID_STATE);
+    track = make_track(1);
+    assert(track_write(track, &frame, 0u) == H2_AUDIO_OK);
+    consume();
+    normal_stop(track, NULL);
+}
+static void test_cycle_stale_callback(void) {
+    int16_t data[320] = {1}, scratch[640];
+    h2_audio_frame_t frame = frame_for(data);
+    assert(audio_start_mic(NULL) == H2_AUDIO_OK);
+    h2_pal_audio_track_t *track = make_track(1);
+    struct audio_request old_encoder = encoder->request, old_decoder = decoder->request;
+    normal_stop(track, NULL);
+    assert(audio_start_mic(NULL) == H2_AUDIO_OK);
+    track = make_track(1);
+    assert(old_encoder.vfs_ops->fwrite(old_encoder.file, data, sizeof(data)) == 640);
+    assert(audio_mic_read(NULL, &frame, 0u) == H2_AUDIO_ERR_WOULD_BLOCK && frame.bytes == 0u);
+    assert(encoder->request.vfs_ops->fwrite(encoder->request.file, data, sizeof(data)) == 640);
+    assert(audio_mic_read(NULL, &frame, 0u) == H2_AUDIO_OK && frame.bytes == 640u);
+    assert(track_write(track, &frame, 0u) == H2_AUDIO_OK);
+    assert(old_decoder.vfs_ops->fread(old_decoder.file, scratch, sizeof(scratch)) == 0);
+    consume();
+    normal_stop(track, NULL);
+}
 int main(int argc, char **argv) {
     assert(argc == 2);
+    if (strcmp(argv[1], "cycles") == 0) { test_cycles(); return 0; }
+    if (strcmp(argv[1], "cycle_blocked_write") == 0) { test_cycle_blocked_write(); return 0; }
+    if (strcmp(argv[1], "cycle_stale_callback") == 0) { test_cycle_stale_callback(); return 0; }
     close_case = strcmp(argv[1], "close") == 0;
     /* Keep both pre/post SDK surfaces warning-free without suppressing warnings. */
     (void)h2_jieli_wl82_platform_sync_api;
