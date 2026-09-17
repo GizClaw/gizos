@@ -1,4 +1,3 @@
-load("//boards/jieli_ac791n_devkit/ac791n:wifi_task_policies.bzl", "JIELI_AC791N_WIFI_SDK_TASK_POLICIES")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_jieli_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
@@ -42,7 +41,13 @@ jieli_target_task_policy(
         "audio_mix 28 512 0",
         "#C0btctrler 19 768 384",
         "#C0btstack 18 1536 384",
-    ] + JIELI_AC791N_WIFI_SDK_TASK_POLICIES,
+        # SDK Wi-Fi driver tasks: SDK task_create() fails for names missing from task_info_table.
+        "tcpip_thread 16 800 0",
+        "tasklet 10 1400 0",
+        "RtmpMlmeTask 17 700 0",
+        "RtmpCmdQTask 17 300 0",
+        "wl_rx_irq_thread 5 256 0",
+    ],
 )
 
 firmware_lib_component(

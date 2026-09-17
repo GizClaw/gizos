@@ -2021,7 +2021,6 @@ py_test(
     name = "jieli_wifi_link_test",
     srcs = ["tests/test_jieli_wifi_link.py"],
     data = [
-        "//boards/jieli_ac791n_devkit/ac791n:wifi_task_policies.bzl",
         "//projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit:BUILD.bazel",
         "//projects/example/targets/h2loader_tar_zlib/button/jieli_ac791n_devkit:BUILD.bazel",
         "//projects/example/targets/h2loader_tar_zlib/touch/jieli_ac791n_devkit:BUILD.bazel",
