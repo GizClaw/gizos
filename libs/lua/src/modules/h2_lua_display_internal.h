@@ -12,9 +12,10 @@ typedef struct display_cached_span {
 typedef struct display_span_cache {
   size_t count, capacity;
   int valid;
-  /* Mesh caches only: replays since the last raster, and whether a compacted
-   * cache overflowed so it stays at full capacity. */
-  int hits, full;
+  /* Mesh caches only: replays since the last raster; whether recording ran
+   * out of capacity; whether the cache was shrunk; and whether a shrunk cache
+   * overflowed, which keeps it at full capacity. */
+  int hits, overflow, shrunk, full;
   display_cached_span_t spans[];
 } display_span_cache_t;
 

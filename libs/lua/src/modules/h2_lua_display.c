@@ -399,7 +399,7 @@ static void display_check_clip(lua_State *state, h2_lua_job_t *job,
 static void display_cache_record(display_span_cache_t *cache, int left,
                                   int right, int y, int end_y, uint16_t color) {
   if (cache == NULL || !cache->valid) return;
-  if (cache->count == cache->capacity) cache->valid = 0;
+  if (cache->count == cache->capacity) { cache->valid = 0; cache->overflow = 1; }
   else cache->spans[cache->count++] =
       (display_cached_span_t){left, right, y, end_y, color};
 }
@@ -1143,8 +1143,10 @@ static h2_lua_display_vertex_t mesh_transform(
   return p;
 }
 
-/* A new mesh cache can hold this many spans. Once a static mesh replays, the
- * cache is reallocated to the spans it actually produced. */
+/* A new mesh cache starts small and grows fourfold after an overflow, up to
+ * the maximum. Once a static mesh replays, the cache is reallocated to the
+ * spans it actually produced. */
+#define MESH_SPAN_INITIAL_CAPACITY 512u
 #define MESH_SPAN_CAPACITY 8192u
 #define MESH_SPAN_COMPACT_SLACK 256u
 
@@ -1312,13 +1314,10 @@ static int display_draw_mesh(lua_State *state) {
     lua_getiuservalue(state, 1, 1);
     if (lua_isnil(state, -1)) {
       lua_pop(state, 1);
-      cache = lua_newuserdatauv(state, mesh_span_snapshot_offset(MESH_SPAN_CAPACITY) +
+      cache = lua_newuserdatauv(state, mesh_span_snapshot_offset(MESH_SPAN_INITIAL_CAPACITY) +
           mesh_span_snapshot_bytes(mesh), 0);
-      cache->capacity = MESH_SPAN_CAPACITY;
-      cache->count = 0;
-      cache->valid = 0;
-      cache->hits = 0;
-      cache->full = 0;
+      memset(cache, 0, sizeof(*cache));
+      cache->capacity = MESH_SPAN_INITIAL_CAPACITY;
       cache_at = lua_gettop(state);
       /* A finalizer may have installed a complete candidate during allocation.
        * Reuse it; do not overwrite it with the outer call's empty cache. */
@@ -1332,17 +1331,22 @@ static int display_draw_mesh(lua_State *state) {
       }
     } else {
       cache = lua_touserdata(state, -1);
-      /* Shrink a replayed cache to its spans; regrow one that overflowed after
-       * shrinking and keep it full, so an animated mesh does not reallocate. */
+      /* Grow a cache that overflowed; shrink a replayed cache to its spans. A
+       * shrunk cache that overflows returns to full capacity and stays there,
+       * so an animated mesh does not keep reallocating. */
       int shrink = cache->valid && mesh->spans_valid && cache->hits != 0 &&
                    !cache->full &&
                    cache->capacity - cache->count >= MESH_SPAN_COMPACT_SLACK;
-      int regrow = !cache->valid && cache->capacity < MESH_SPAN_CAPACITY;
+      int regrow = cache->overflow && cache->capacity < MESH_SPAN_CAPACITY;
       if (shrink || regrow) {
         display_span_cache_t *old = cache;
         const size_t count = old->count, capacity = old->capacity;
         const int valid = old->valid;
-        const size_t next_capacity = regrow ? MESH_SPAN_CAPACITY : count;
+        size_t next_capacity = count;
+        if (regrow) {
+          next_capacity = old->shrunk || capacity > MESH_SPAN_CAPACITY / 4u
+              ? MESH_SPAN_CAPACITY : capacity * 4u;
+        }
         display_span_cache_t *next = lua_newuserdatauv(state,
             mesh_span_snapshot_offset(next_capacity) + mesh_span_snapshot_bytes(mesh), 0);
         /* Allocation may run finalizers that draw this mesh; only replace an
@@ -1362,9 +1366,11 @@ static int display_draw_mesh(lua_State *state) {
             next->count = 0;
             next->valid = 0;
             next->hits = 0;
-            next->full = 1;
+            next->overflow = 0;
+            next->full = old->shrunk;
             mesh->spans_valid = 0;
           } else {
+            next->shrunk = 1;
             memcpy(mesh_span_positions(next), mesh_span_positions(old),
                    mesh_span_snapshot_bytes(mesh));
           }
@@ -1460,6 +1466,7 @@ static int display_draw_mesh(lua_State *state) {
     cache->valid = 1;
     cache->count = 0;
     cache->hits = 0;
+    cache->overflow = 0;
     mesh->span_left = (int)left;
     mesh->span_right = (int)right;
     mesh->span_top = (int)top;

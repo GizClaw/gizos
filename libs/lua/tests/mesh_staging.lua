@@ -149,33 +149,48 @@ during_allocation(function()
  d.draw_mesh(late,{cache=true});p.mesh_marker(late,true);installed=p.mesh_snapshot(late)
 end,function() assert(not pcall(native,late,invalid)) end,native)
 assert(p.mesh_snapshot(late)==installed and p.mesh_marker(late,false))
--- A replayed static cache shrinks to its spans and keeps replaying the same
--- pixels; overflowing after that regrows it once to full capacity.
+-- Span caches start small, grow fourfold after an overflow, shrink to their
+-- spans once replayed, and return to full capacity if a shrunk cache overflows.
 reopen()
-local small=d.compile_mesh(pts,faces,4,1)
 local cached={cache=true}
-local function same(points)
- local ref=d.compile_mesh(points,faces)
+local function same(m,points,fs)
+ local ref=d.compile_mesh(points,fs)
  d.clear('black');d.draw_mesh(ref,identity);d.present({retained=true})
- d.clear('black');d.draw_mesh(small,cached)
+ d.clear('black');d.draw_mesh(m,cached)
  assert(d.present()==0,'cached mesh pixels')
 end
-d.draw_mesh(small,cached);d.draw_mesh(small,cached)
-local full=bytes()
-d.draw_mesh(small,cached)
-assert(full-bytes()>=8000*20,'replayed span cache shrinks')
-same(pts)
-p.mesh_marker(small,true);d.draw_mesh(small,cached)
-assert(p.mesh_marker(small,false),'shrunk cache replays')
-local big={{1,1},{200,1},{200,200},{1,200}}
-d.update_mesh(small,big,faces)
-d.draw_mesh(small,cached)
+local function replays(m) p.mesh_marker(m,true);d.draw_mesh(m,cached);return p.mesh_marker(m,false) end
+local function squares(n,size)
+ local points,fs={},{}
+ for i=0,n-1 do
+  for _,xy in ipairs({{1,1},{size,1},{size,size},{1,size}}) do points[#points+1]=xy end
+  fs[#fs+1]={0,4*i+1,4,'red'}
+ end
+ return points,fs
+end
+local small=d.compile_mesh(pts,faces,4,1)
+local before=bytes();d.draw_mesh(small,cached)
+assert(bytes()-before<32*1024,'a new span cache starts small')
+d.draw_mesh(small,cached);same(small,pts,faces)
+assert(replays(small),'small cache replays')
+local sp,sf=squares(11,200)
+local grow=d.compile_mesh(sp,sf,44,11)
+d.draw_mesh(grow,cached);d.draw_mesh(grow,cached)
+local grown=bytes()
+d.draw_mesh(grow,cached)
+assert(bytes()-grown>=(8192-2048)*20-1024,'overflow grows the span cache')
+d.draw_mesh(grow,cached)
+local replayed=bytes()
+d.draw_mesh(grow,cached)
+assert(replayed-bytes()>=(8192-2200)*20-1024,'a replayed span cache shrinks')
+same(grow,sp,sf);assert(replays(grow),'shrunk cache replays')
+local bp,bf=squares(11,220)
+d.update_mesh(grow,bp,bf);d.draw_mesh(grow,cached)
 local shrunk=bytes()
-d.draw_mesh(small,cached);d.draw_mesh(small,cached);d.draw_mesh(small,cached)
-assert(bytes()-shrunk>=8000*20,'overflowed span cache regrows and stays full')
-same(big)
-p.mesh_marker(small,true);d.draw_mesh(small,cached)
-assert(p.mesh_marker(small,false),'regrown cache replays')
+d.draw_mesh(grow,cached);d.draw_mesh(grow,cached);d.draw_mesh(grow,cached)
+assert(bytes()-shrunk>=(8192-2200)*20-1024,'a shrunk cache that overflows returns to full capacity')
+same(grow,bp,bf);assert(replays(grow),'regrown cache replays')
+local big={{1,1},{200,1},{200,200},{1,200}}
 -- A finalizer that redraws the mesh during the shrink or regrow allocation
 -- changes the cache; the outer call keeps that cache and draws current pixels.
 local function reentrant(prepare,points)
@@ -187,7 +202,7 @@ local function reentrant(prepare,points)
  during_allocation(function()
   d.update_mesh(small,points,faces);native(small,cached)
  end,function() native(small,cached) end,native)
- same(points)
+ same(small,points,faces)
  p.mesh_marker(small,true);d.draw_mesh(small,cached);d.draw_mesh(small,cached)
  assert(p.mesh_marker(small,false),'reentrant cache replays')
 end
