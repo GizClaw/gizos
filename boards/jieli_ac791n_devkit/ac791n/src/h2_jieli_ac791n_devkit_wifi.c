@@ -394,11 +394,35 @@ static int sta_scan(
   return H2_PAL_OK;
 }
 
+static int sta_validate_sdk_password(const h2_pal_wifi_sta_config_t *config) {
+  /* Both our default-mode copy and SDK wifi_enter_sta_mode's strncpy(..., 63)
+   * reserve a NUL byte in wifi_store_info.pwd[0]; neither can carry 64 bytes. */
+  if (config == NULL ||
+      config->password_len > sizeof(((struct wifi_store_info *)0)->pwd[0]) - 1u) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  return H2_PAL_OK;
+}
+
+static void sta_connect_fail(int reason) {
+  h2_pal_wifi_sta_status_t status;
+  wifi_state_lock();
+  ++wifi_sta_generation;
+  wifi_state.sta.state = H2_PAL_WIFI_STA_STATE_FAILED;
+  wifi_state.sta.ip_valid = 0u;
+  wifi_state.sta.disconnect_reason = reason;
+  status = wifi_state.sta;
+  wifi_state_unlock();
+  post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED, &status);
+}
+
 static int sta_connect(
     void *user, const h2_pal_wifi_sta_config_t *config,
     uint32_t timeout_ms) {
   (void)user;
   int result = h2_pal_wifi_settings_validate_sta_config(config);
+  if (result != H2_PAL_OK) return result;
+  result = sta_validate_sdk_password(config);
   if (result != H2_PAL_OK) return result;
   char ssid[H2_PAL_WIFI_SSID_MAX + 1];
   char password[H2_PAL_WIFI_PASSWORD_MAX + 1];
@@ -433,21 +457,20 @@ static int sta_connect(
         0 /* PAL settings own persistence; do not store in the SDK. */);
     memset(&parm, 0, sizeof(parm));
     if (result != 0) {
-      wifi_state_lock();
-      ++wifi_sta_generation;
-      wifi_state.sta.state = H2_PAL_WIFI_STA_STATE_FAILED;
-      wifi_state.sta.ip_valid = 0u;
-      wifi_state.sta.disconnect_reason = result;
-      status = wifi_state.sta;
-      wifi_state_unlock();
-      post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED, &status);
+      sta_connect_fail(result);
       return H2_PAL_ERR_IO;
     }
     result = ensure_wifi_on();
-    if (result != H2_PAL_OK) return result;
+    if (result != H2_PAL_OK) {
+      sta_connect_fail(result);
+      return result;
+    }
   } else {
     result = ensure_wifi_on();
-    if (result != H2_PAL_OK) return result;
+    if (result != H2_PAL_OK) {
+      sta_connect_fail(result);
+      return result;
+    }
     wifi_set_sta_connect_timeout(timeout_ms == 0u
         ? 30 : (int)(timeout_ms / 1000u + (timeout_ms % 1000u != 0u)));
     /* With network_connect_block == 0, the SDK queues the credentials and its
@@ -741,6 +764,11 @@ static int sta_connect_and_save(void *user,
     const h2_pal_wifi_sta_config_t *config, uint32_t timeout_ms) {
   int result = wifi_operation_begin();
   if (result != H2_PAL_OK) return result;
+  result = sta_validate_sdk_password(config);
+  if (result != H2_PAL_OK) {
+    __atomic_store_n(&wifi_operation_busy, 0u, __ATOMIC_RELEASE);
+    return result;
+  }
   static const h2_pal_wifi_sta_vtable_t raw_vtable = {
       .get_status = sta_get_status, .connect = sta_connect, .disconnect = sta_disconnect,
   };

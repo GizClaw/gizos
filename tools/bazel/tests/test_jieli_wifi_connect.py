@@ -120,7 +120,7 @@ int main(void) {
 
     def test_async_and_elapsed_time_budget(self):
         source = SOURCE.read_text()
-        begin = source.index("static int sta_connect(")
+        begin = source.index("static int sta_validate_sdk_password(")
         end = source.index("static int sta_disconnect(", begin)
         fixture = r'''
 #include <assert.h>
@@ -216,6 +216,7 @@ STUB = SDK_TYPES + r'''
 #include <stdio.h>
 #include <string.h>
 #define H2_PAL_OK 0
+#define H2_PAL_ERR_INVALID_ARG -1
 #define H2_PAL_ERR_IO -4
 #define H2_PAL_ERR_TIMEOUT -6
 #define H2_PAL_WIFI_SSID_MAX 32
@@ -390,16 +391,106 @@ int main(void) {
 '''
 
 
-def run_connect_fixture(source):
-    begin = source.index("static int sta_connect(")
+def run_connect_fixture(source, main=MAIN):
+    begin = source.find("static int sta_validate_sdk_password(")
+    if begin < 0:
+        begin = source.index("static int sta_connect(")
     end = source.index("static int wifi_stop(", begin)
     with tempfile.TemporaryDirectory(prefix="h2-wifi-connect-") as directory:
         test = Path(directory) / "test.c"
-        test.write_text(STUB + source[begin:end] + MAIN)
+        test.write_text(STUB + source[begin:end] + main)
         binary = Path(directory) / "test"
         subprocess.run(["cc", "-std=c11", "-Werror", str(test), "-o", str(binary)],
                        check=True, timeout=60)
-        return subprocess.run([str(binary)], capture_output=True, text=True, timeout=10)
+        return subprocess.run([str(binary)], cwd=directory, capture_output=True, text=True, timeout=10)
+
+
+PASSWORD_BOUNDARY_MAIN = r'''
+int main(void) {
+  h2_pal_wifi_sta_config_t config = {.ssid = "test-network", .ssid_len = 12};
+  memset(config.password, 'p', 64);
+  config.password[64] = '\0';
+  config.password_len = 64;
+  for (int on = 0; on <= 1; ++on) {
+    reset(); radio_on = on;
+    wifi_state.sta.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
+    wifi_state.sta.ip_valid = 1;
+    const h2_pal_wifi_sta_status_t before = wifi_state.sta;
+    int rc = sta_connect(NULL, &config, 0u);
+    if (rc != H2_PAL_ERR_INVALID_ARG) {
+      fprintf(stderr, "A: 64-byte password was not rejected (radio_on=%d rc=%d)\n", on, rc);
+      return 1;
+    }
+    assert(event_count == 0 && default_calls == 0 && connect_calls == 0);
+    assert(ensure_calls == 0 && timeout_calls == 0 && wifi_sta_generation == 0);
+    assert(memcmp(&before, &wifi_state.sta, sizeof(before)) == 0);
+  }
+  config.password_len = 63;
+  config.password[63] = '\0';
+  for (int on = 0; on <= 1; ++on) {
+    reset(); radio_on = on;
+    assert(sta_connect(NULL, &config, 0u) == H2_PAL_OK);
+    assert(ensure_calls == 1 && event_count == 1);
+    if (on) {
+      assert(connect_calls == 1 && default_calls == 0);
+      assert(memcmp(received_password, config.password, 64) == 0);
+    } else {
+      assert(default_calls == 1 && connect_calls == 0);
+      assert(memcmp(recorded_default.pwd[0], config.password, 64) == 0);
+    }
+  }
+  return 0;
+}
+'''
+STARTUP_FAILURE_MAIN = r'''
+int main(void) {
+  const h2_pal_wifi_sta_config_t config = {
+    .ssid = "test-network", .ssid_len = 12,
+    .password = "placeholder", .password_len = 11,
+  };
+  reset(); radio_on = RADIO_ON; ensure_rc = H2_PAL_ERR_IO;
+  assert(sta_connect(NULL, &config, 0u) == H2_PAL_ERR_IO);
+  if (wifi_state.sta.state != H2_PAL_WIFI_STA_STATE_FAILED) {
+    fprintf(stderr, "B: startup failure left state=%d (radio_on=%d)\n",
+            wifi_state.sta.state, RADIO_ON);
+    return 1;
+  }
+  assert(ensure_calls == 1 && connect_calls == 0);
+  assert(default_calls == (RADIO_ON ? 0 : 1));
+  assert(wifi_state.sta.ip_valid == 0 && wifi_state.sta.disconnect_reason == -4);
+  assert(wifi_sta_generation == 2 && event_count == 2);
+  assert(events[0] == H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING);
+  assert(events[1] == H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED);
+  return 0;
+}
+'''
+
+
+class WifiStartupValidationTest(unittest.TestCase):
+    def test_sdk_password_boundary(self):
+        result = run_connect_fixture(SOURCE.read_text(), PASSWORD_BOUNDARY_MAIN)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_startup_failure_clears_connecting(self):
+        for on in (0, 1):
+            with self.subTest(radio_on=on):
+                result = run_connect_fixture(
+                    SOURCE.read_text(), STARTUP_FAILURE_MAIN.replace("RADIO_ON", str(on)))
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+    def test_save_validates_before_disconnect_and_releases_busy(self):
+        source = SOURCE.read_text()
+        begin = source.index("static int sta_connect_and_save(")
+        end = source.index("const h2_pal_wifi_sta_api_t *", begin)
+        function = source[begin:end]
+        validation = function.index("sta_validate_sdk_password(config)")
+        connection = function.index("h2_wifi_sta_connect_and_save(")
+        self.assertLess(function.index("wifi_operation_begin()"), validation)
+        self.assertLess(validation, connection)
+        self.assertRegex(function[validation:connection],
+                         r"if \(result != H2_PAL_OK\) \{\s*"
+                         r"__atomic_store_n\(&wifi_operation_busy, 0u, __ATOMIC_RELEASE\);\s*"
+                         r"return result;")
 
 
 class NonblockingWifiConnectTest(unittest.TestCase):
