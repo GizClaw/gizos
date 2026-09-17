@@ -12,6 +12,7 @@ PATHS = {name: f'{BASE}/{name}/jieli_ac791n_devkit/src/{file}.c' for name, file 
     ('audio-system', 'audio_system_target'), ('button', 'button_target'),
     ('touch', 'touch_target'), ('crash-before-confirm', 'crash_before_confirm_target'),
     ('mp4-player', 'mp4_player_small_pal'))}
+PATHS['audio-stop-restart'] = f'{BASE}/audio-system/jieli_ac791n_devkit/src/audio_stop_restart_target.c'
 PATHS['pal'] = 'projects/e2e/targets/h2loader_tar_zlib/pal/jieli_ac791n_devkit/src/pal_e2e_main.c'
 
 
@@ -36,8 +37,12 @@ class RuntimeLifetimeTest(unittest.TestCase):
         for name, path in PATHS.items():
             with self.subTest(target=name):
                 text = source(path)
-                worker = name in ('button', 'touch')
-                if worker:
+                worker = name in ('button', 'touch', 'audio-stop-restart')
+                if name == 'audio-stop-restart':
+                    start = text.index('#define H2_AUDIO_STOP_RESTART_STREAM_MS')
+                    code = text[start:text.index('int h2_jieli_target_application_run(')]
+                    code += function(text, 'int h2_jieli_target_application_run(')
+                elif worker:
                     start = text.index(f'typedef struct {name}_target_state')
                     code = text[start:text.index('static void emit(', start)]
                     code += text[text.index('static int should_stop('):]
@@ -57,12 +62,13 @@ class RuntimeLifetimeTest(unittest.TestCase):
                 else:
                     code = function(text, 'int h2_jieli_target_application_run(')
                 unit_text = fixture.replace('/* TARGET */', code).replace('WORKER_TARGET', '1' if worker else '0')
+                unit_text = unit_text.replace('CYCLE_TARGET', '1' if name == 'audio-stop-restart' else '0')
                 unit_text = unit_text.replace('CRASH_TARGET', '1' if name == 'crash-before-confirm' else '0')
                 unit_text = unit_text.replace('AUDIO_TARGET', '1' if name == 'audio-system' else '0')
                 with tempfile.TemporaryDirectory() as directory:
                     unit = Path(directory) / 'test.c'; binary = Path(directory) / 'test'
                     unit.write_text(unit_text)
-                    subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-pthread',
+                    subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra', '-Werror', '-pthread',
                         *shlex.split(os.environ.get('JIELI_TEST_CFLAGS', '')), str(unit), '-o', str(binary)], check=True)
                     result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=15)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
