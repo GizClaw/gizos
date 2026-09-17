@@ -1,5 +1,7 @@
 """Exercise timeout ownership and late Wi-Fi scan result cleanup."""
 from pathlib import Path
+import os
+import shlex
 import subprocess
 import tempfile
 import unittest
@@ -52,7 +54,7 @@ int main(void) {
             path = Path(directory) / "test.c"
             path.write_text(program)
             binary = Path(directory) / "test"
-            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", str(path),
+            subprocess.run([os.environ.get("CC", "cc"), *shlex.split(os.environ.get("JIELI_TEST_CFLAGS", "")), "-std=c11", "-Wall", "-Wextra", "-Werror", str(path),
                             "-o", str(binary)], check=True, timeout=60)
             subprocess.run([str(binary)], check=True, timeout=10)
 
@@ -114,13 +116,16 @@ int main(void) {
             test = Path(directory) / "test.c"
             test.write_text(stub + start + main)
             binary = Path(directory) / "test"
-            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+            subprocess.run([os.environ.get("CC", "cc"), *shlex.split(os.environ.get("JIELI_TEST_CFLAGS", "")), "-std=c11", "-Wall", "-Wextra", "-Werror",
                             str(test), "-o", str(binary)], check=True, timeout=60)
             subprocess.run([str(binary)], check=True, timeout=10)
 
     def test_timeout_is_cleaned_only_after_completion(self):
         source = (ROOT / "boards/jieli_ac791n_devkit/ac791n/src/"
                   "h2_jieli_ac791n_devkit_wifi.c").read_text()
+        event = source[source.index("static int wifi_event("):
+                       source.index("static int ensure_wifi_on(void)")]
+        self.assertRegex(event, r"WIFI_EVENT_SMP_CFG_START\)\s+scan_reset_after_sta_exit\(\)")
         state = source[source.index("enum { SCAN_IDLE"):
                        source.index("static void post_system_event")]
         if "static void scan_reap_completed(void)" not in state:
@@ -150,11 +155,20 @@ static int in_sdk_callback;
 static unsigned now, clears, requests, delivered;
 static struct { int on; h2_pal_wifi_sta_status_t sta; } wifi_state;
 static int request_error, complete_on_delay, complete_immediately;
+#define STA_MODE 1
+struct wifi_mode_info { int mode; };
+static int mode = STA_MODE;
+static inline void wifi_get_mode_cur_info(struct wifi_mode_info *info) { info->mode = mode; }
+static unsigned frees;
+static int keep_receiving;
+
 struct wifi_scan_ssid_info {
  unsigned ssid_len; char ssid[33]; unsigned char mac_addr[6];
  int channel_number, rssi, auth_mode;
 };
 static struct wifi_scan_ssid_info item={.ssid_len=3,.ssid="abc"};
+static inline void fake_free(void *buffer) { assert(buffer == &item); ++frees; }
+#define free fake_free
 static int ensure_wifi_on(void) { return H2_PAL_OK; }
 static uint32_t timer_get_ms(void) { return now; }
 static void os_time_dly(unsigned ticks) {
@@ -173,7 +187,7 @@ static h2_pal_wifi_security_t map_security(int mode) {
  (void)mode; return H2_PAL_WIFI_SECURITY_OPEN;
 }
 static bool receive(void *user,const h2_pal_wifi_scan_entry_t *entry) {
- (void)user; assert(entry->ssid_len==3); ++delivered; return 0;
+ (void)user; assert(entry->ssid_len==3); ++delivered; return keep_receiving;
 }
 '''
         main = r'''
@@ -184,11 +198,16 @@ static void deliver_completion(void) {
 }
 int main(void) {
  h2_pal_wifi_sta_status_t status;
+ (void)wifi_get_mode_cur_info; (void)fake_free;
+ mode=0;
+ assert(sta_scan(NULL,NULL,receive,NULL,0)==H2_PAL_ERR_INVALID_STATE);
+ assert(requests==0 && scan_phase==SCAN_IDLE && clears==0 && frees==0);
+ mode=STA_MODE;
  wifi_state.on=1;
  wifi_state.sta.state=H2_PAL_WIFI_STA_STATE_GOT_IP;
  wifi_state.sta.ip_valid=1;
  assert(sta_scan(NULL,NULL,receive,NULL,0)==H2_PAL_ERR_TIMEOUT);
- assert(sta_get_status(NULL,&status)==0 && status.state==H2_PAL_WIFI_STA_STATE_SCANNING);
+ assert(sta_get_status(NULL,&status)==0 && status.state==H2_PAL_WIFI_STA_STATE_GOT_IP);
  assert(status.ip_valid && wifi_state.sta.state==H2_PAL_WIFI_STA_STATE_GOT_IP);
  assert(clears==0 && requests==1 && scan_phase==SCAN_ABANDONED);
  assert(sta_scan(NULL,NULL,receive,NULL,10)==H2_PAL_ERR_BUSY && requests==1);
@@ -205,19 +224,45 @@ int main(void) {
  deliver_completion(); assert(clears==1); /* duplicate/unowned completion */
  complete_on_delay=1;
  assert(sta_scan(NULL,NULL,receive,NULL,20)==H2_PAL_OK);
- assert(clears==2 && delivered==1 && scan_phase==SCAN_IDLE);
+ assert(clears==2 && delivered==1 && frees==1 && scan_phase==SCAN_IDLE);
  complete_on_delay=0; request_error=-1;
  assert(sta_scan(NULL,NULL,receive,NULL,20)==H2_PAL_ERR_BUSY);
  assert(clears==2 && scan_phase==SCAN_IDLE);
- request_error=0; complete_immediately=1;
+ request_error=0; complete_immediately=1; keep_receiving=1;
  assert(sta_scan(NULL,NULL,receive,NULL,0)==H2_PAL_OK);
- assert(clears==3 && delivered==2 && scan_phase==SCAN_IDLE);
+ assert(clears==3 && delivered==2 && frees==2 && scan_phase==SCAN_IDLE);
  complete_immediately=0; unsigned before=now;
  assert(sta_scan(NULL,NULL,receive,NULL,9)==H2_PAL_ERR_TIMEOUT && before==now);
  deliver_completion();
  assert(clears==3);
  scan_reap_completed();
  assert(clears==4 && scan_phase==SCAN_IDLE);
+ unsigned clears_before_reset=clears;
+ scan_phase=SCAN_ABANDONED;
+ in_sdk_callback=1;
+ scan_reset_after_sta_exit();
+ in_sdk_callback=0;
+ assert(scan_phase==SCAN_IDLE && clears==clears_before_reset);
+ complete_on_delay=1;
+ assert(sta_scan(NULL,NULL,receive,NULL,20)==H2_PAL_OK);
+ clears_before_reset=clears;
+ scan_phase=SCAN_REAPABLE;
+ in_sdk_callback=1;
+ scan_reset_after_sta_exit();
+ assert(scan_phase==SCAN_IDLE && clears==clears_before_reset);
+ scan_phase=SCAN_PENDING;
+ scan_reset_after_sta_exit();
+ assert(scan_phase==SCAN_PENDING && clears==clears_before_reset);
+ scan_phase=SCAN_CLEANING;
+ scan_reset_after_sta_exit();
+ assert(scan_phase==SCAN_CLEANING && clears==clears_before_reset);
+ scan_phase=SCAN_READY;
+ scan_reset_after_sta_exit();
+ assert(scan_phase==SCAN_READY && clears==clears_before_reset);
+ scan_phase=SCAN_IDLE;
+ scan_reset_after_sta_exit();
+ assert(scan_phase==SCAN_IDLE && clears==clears_before_reset);
+ in_sdk_callback=0;
  return 0;
 }
 '''
@@ -225,7 +270,7 @@ int main(void) {
             test = Path(directory) / "test.c"
             test.write_text(stub + state + status + scan + main)
             binary = Path(directory) / "test"
-            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+            subprocess.run([os.environ.get("CC", "cc"), *shlex.split(os.environ.get("JIELI_TEST_CFLAGS", "")), "-std=c11", "-Wall", "-Wextra", "-Werror",
                             "-I" + str(ROOT / "libs/pal/include"), str(test),
                             "-o", str(binary)], check=True, timeout=60)
             result = subprocess.run([str(binary)], capture_output=True,

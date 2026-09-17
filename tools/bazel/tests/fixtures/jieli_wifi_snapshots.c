@@ -9,7 +9,7 @@
 #include "h2_jieli_wl82_atomic.h"
 
 enum WIFI_EVENT {
-  WIFI_EVENT_STA_START, WIFI_EVENT_STA_SCAN_COMPLETED,
+  WIFI_EVENT_STA_START, WIFI_EVENT_STA_SCAN_COMPLETED, WIFI_EVENT_SMP_CFG_START,
   WIFI_EVENT_STA_CONNECT_SUCC, WIFI_EVENT_STA_NETWORK_STACK_DHCP_SUCC,
   WIFI_EVENT_STA_CONNECT_TIMEOUT_NOT_FOUND_SSID, WIFI_EVENT_STA_CONNECT_ASSOCIAT_FAIL,
   WIFI_EVENT_STA_CONNECT_ASSOCIAT_TIMEOUT, WIFI_EVENT_STA_NETWORK_STACK_DHCP_TIMEOUT,
@@ -31,6 +31,7 @@ static void assert_sdk_unlocked(void);
 #define os_time_dly(ticks) ((void)(ticks), sched_yield())
 static void scan_completed(void) {}
 static void scan_reap_completed(void) {}
+static void scan_reset_after_sta_exit(void) {}
 static int wifi_operation_begin(void);
 static void fake_sdk_refresh(void) {
   assert_sdk_unlocked();
