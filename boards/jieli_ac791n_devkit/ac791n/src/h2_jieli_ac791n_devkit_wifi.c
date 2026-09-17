@@ -399,8 +399,6 @@ static int sta_connect(
   (void)user;
   int result = h2_pal_wifi_settings_validate_sta_config(config);
   if (result != H2_PAL_OK) return result;
-  result = ensure_wifi_on();
-  if (result != H2_PAL_OK) return result;
   char ssid[H2_PAL_WIFI_SSID_MAX + 1];
   char password[H2_PAL_WIFI_PASSWORD_MAX + 1];
   memcpy(ssid, config->ssid, config->ssid_len);
@@ -419,13 +417,44 @@ static int sta_connect(
   status = wifi_state.sta;
   wifi_state_unlock();
   post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING, &status);
-  wifi_set_sta_connect_timeout(timeout_ms == 0u
-      ? 30 : (int)(timeout_ms / 1000u + (timeout_ms % 1000u != 0u)));
-  /* With network_connect_block == 0, the SDK queues the credentials and its
-   * tail returns wifi_sta_connect_state != 5 ? -1 : 0 without waiting. This
-   * only reflects whether STA was already connected, not whether starting
-   * the connection failed. SDK events and the PAL budget decide the outcome. */
-  (void)wifi_enter_sta_mode(ssid, password);
+  if (!wifi_is_on()) {
+    /* The SDK demos install the target before wifi_on(): a placeholder-SSID
+     * first HSM STA entry followed by wifi_enter_sta_mode never associates. */
+    struct wifi_store_info parm = {0};
+    parm.mode = STA_MODE;
+    strncpy((char *)parm.ssid[0], ssid, sizeof(parm.ssid[0]) - 1u);
+    strncpy((char *)parm.pwd[0], password, sizeof(parm.pwd[0]) - 1u);
+    parm.connect_best_network = 0;
+    wifi_set_sta_connect_timeout(timeout_ms == 0u
+        ? 30 : (int)(timeout_ms / 1000u + (timeout_ms % 1000u != 0u)));
+    result = wifi_set_default_mode(
+        &parm, 1 /* Force this mode after wifi_on. */,
+        0 /* PAL settings own persistence; do not store in the SDK. */);
+    memset(&parm, 0, sizeof(parm));
+    if (result != 0) {
+      wifi_state_lock();
+      ++wifi_sta_generation;
+      wifi_state.sta.state = H2_PAL_WIFI_STA_STATE_FAILED;
+      wifi_state.sta.ip_valid = 0u;
+      wifi_state.sta.disconnect_reason = result;
+      status = wifi_state.sta;
+      wifi_state_unlock();
+      post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED, &status);
+      return H2_PAL_ERR_IO;
+    }
+    result = ensure_wifi_on();
+    if (result != H2_PAL_OK) return result;
+  } else {
+    result = ensure_wifi_on();
+    if (result != H2_PAL_OK) return result;
+    wifi_set_sta_connect_timeout(timeout_ms == 0u
+        ? 30 : (int)(timeout_ms / 1000u + (timeout_ms % 1000u != 0u)));
+    /* With network_connect_block == 0, the SDK queues the credentials and its
+     * tail returns wifi_sta_connect_state != 5 ? -1 : 0 without waiting. This
+     * only reflects whether STA was already connected, not whether starting
+     * the connection failed. SDK events and the PAL budget decide the outcome. */
+    (void)wifi_enter_sta_mode(ssid, password);
+  }
   if (timeout_ms == 0u) return H2_PAL_OK;
   const uint32_t started = timer_get_ms();
   for (;;) {

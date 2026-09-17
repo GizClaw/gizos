@@ -8,6 +8,22 @@ ROOT = Path(__file__).resolve().parents[3]
 SOURCE = ROOT / "boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_wifi.c"
 
 
+# Pinned SDK include_lib/net/wifi/wifi_connect.h (eb04f1966cf2).
+SDK_TYPES = r'''
+typedef unsigned char u8;
+enum WIFI_MODE { STA_MODE = 1, AP_MODE, P2P_MODE, SMP_CFG_MODE, MP_TEST_MODE, NONE_MODE };
+enum P2P_ROLE { P2P_GC_MODE = 1, P2P_GO_MODE };
+struct wifi_store_info {
+  enum WIFI_MODE mode;
+  u8 pwd[2][64];
+  u8 ssid[2][33];
+  enum P2P_ROLE p2p_role;
+  u8 sta_cnt;
+  u8 connect_best_network;
+} __attribute__((packed));
+'''
+
+
 class WifiConnectTest(unittest.TestCase):
     def test_ap_elapsed_time_budget(self):
         source = SOURCE.read_text()
@@ -96,7 +112,7 @@ int main(void) {
         with tempfile.TemporaryDirectory(prefix="h2-wifi-ap-") as directory:
             root = Path(directory)
             unit = root / "ap.c"
-            unit.write_text(fixture + source[begin:end] + main)
+            unit.write_text(SDK_TYPES + fixture + source[begin:end] + main)
             binary = root / "ap-test"
             subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", str(ROOT / "libs/pal/include"),
                             str(unit), "-o", str(binary)], check=True, timeout=30)
@@ -129,6 +145,11 @@ static int sleeps, enter_rc, requests;
 #define H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED 2
 static int last_event;
 static int ensure_wifi_on(void) { return 0; }
+static int wifi_is_on(void) { return 1; }
+static int wifi_set_default_mode(struct wifi_store_info *parm, char force, char store) {
+    (void)parm; (void)force; (void)store;
+    assert(0); return -1;
+}
 static uint32_t wifi_sta_generation;
 static void wifi_set_sta_connect_timeout(int seconds) { assert(seconds > 0); }
 static void post_sta_event(int type, const h2_pal_wifi_sta_status_t *status) {
@@ -168,14 +189,14 @@ int main(void) {
         with tempfile.TemporaryDirectory(prefix="h2-wifi-connect-") as directory:
             root = Path(directory)
             unit = root / "connect.c"
-            unit.write_text(fixture + source[begin:end] + main)
+            unit.write_text(SDK_TYPES + fixture + source[begin:end] + main)
             binary = root / "connect-test"
             subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror", "-I", str(ROOT / "libs/pal/include"),
                             str(unit), "-o", str(binary)], check=True, timeout=30)
             subprocess.run([str(binary)], check=True, timeout=30)
 
 
-STUB = r'''
+STUB = SDK_TYPES + r'''
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -213,13 +234,29 @@ static uint32_t wifi_sta_generation;
 static uint32_t now_ms;
 static int sdk_timeout, timeout_calls, connect_calls, delays;
 static int events[8], event_count;
+static int radio_on, default_rc, default_calls, ensure_calls, ensure_rc;
+static int recorded_force, recorded_store;
+static struct wifi_store_info recorded_default;
 static h2_pal_wifi_sta_state_t next_state;
 static char received_ssid[33], received_password[65];
 static int h2_pal_wifi_settings_validate_sta_config(const h2_pal_wifi_sta_config_t *config) {
   assert(config && config->ssid_len <= 32 && config->password_len <= 64);
   return H2_PAL_OK;
 }
-static int ensure_wifi_on(void) { return H2_PAL_OK; }
+static int wifi_is_on(void) { return radio_on; }
+static int wifi_set_default_mode(struct wifi_store_info *parm, char force, char store) {
+  assert(!radio_on && ensure_calls == 0 && timeout_calls == 1);
+  recorded_default = *parm;
+  recorded_force = force; recorded_store = store;
+  ++default_calls;
+  return default_rc;
+}
+static int ensure_wifi_on(void) {
+  ++ensure_calls;
+  if (!radio_on) assert(default_calls == 1 && default_rc == 0);
+  if (ensure_rc == H2_PAL_OK) radio_on = 1;
+  return ensure_rc;
+}
 static void wifi_state_lock(void) {}
 static void wifi_state_unlock(void) {}
 static void post_sta_event(int type, const h2_pal_wifi_sta_status_t *status) {
@@ -231,6 +268,7 @@ static void wifi_set_sta_connect_timeout(int seconds) {
   sdk_timeout = seconds; ++timeout_calls;
 }
 static int wifi_enter_sta_mode(const char *ssid, const char *password) {
+  assert(radio_on && timeout_calls == 1);
   strcpy(received_ssid, ssid); strcpy(received_password, password);
   ++connect_calls;
   return -1;
@@ -250,11 +288,16 @@ static void reset(void) {
   wifi_sta_generation = now_ms = 0;
   sdk_timeout = timeout_calls = connect_calls = delays = event_count = 0;
   next_state = H2_PAL_WIFI_STA_STATE_UNKNOWN;
+  radio_on = 1;
+  default_rc = default_calls = ensure_calls = ensure_rc = 0;
+  recorded_force = recorded_store = -1;
+  memset(&recorded_default, 0, sizeof(recorded_default));
   memset(received_ssid, 0, sizeof(received_ssid));
   memset(received_password, 0, sizeof(received_password));
 }
 static void check_start(int expected_timeout) {
   assert(connect_calls == 1 && timeout_calls == 1);
+  assert(default_calls == 0);
   assert(sdk_timeout == expected_timeout);
   assert(strcmp(received_ssid, "test-network") == 0);
   assert(strcmp(received_password, "placeholder") == 0);
@@ -297,6 +340,37 @@ int main(void) {
   assert(wifi_state.sta.state == H2_PAL_WIFI_STA_STATE_CONNECTING);
   assert(now_ms == 1000u && delays == 10);
   check_start(1);
+
+  reset(); radio_on = 0;
+  assert(sta_connect(NULL, &config, 0u) == H2_PAL_OK);
+  assert(default_calls == 1 && ensure_calls == 1 && connect_calls == 0);
+  assert(timeout_calls == 1 && sdk_timeout == 30);
+  assert(recorded_default.mode == STA_MODE);
+  assert(strcmp((char *)recorded_default.ssid[0], "test-network") == 0);
+  assert(strcmp((char *)recorded_default.pwd[0], "placeholder") == 0);
+  assert(recorded_default.connect_best_network == 0);
+  assert(recorded_default.sta_cnt == 0 && recorded_default.p2p_role == 0);
+  assert(recorded_default.ssid[1][0] == 0 && recorded_default.pwd[1][0] == 0);
+  assert(recorded_force == 1 && recorded_store == 0);
+  assert(event_count == 1 && events[0] == H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING);
+  assert(wifi_state.sta.state == H2_PAL_WIFI_STA_STATE_CONNECTING);
+
+  reset(); radio_on = 0; default_rc = -1;
+  assert(sta_connect(NULL, &config, 0u) == H2_PAL_ERR_IO);
+  assert(default_calls == 1 && ensure_calls == 0 && connect_calls == 0);
+  assert(timeout_calls == 1 && sdk_timeout == 30);
+  assert(wifi_state.sta.state == H2_PAL_WIFI_STA_STATE_FAILED);
+  assert(wifi_state.sta.disconnect_reason == -1 && wifi_state.sta.ip_valid == 0);
+  assert(event_count == 2 && events[1] == H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED);
+
+  reset(); radio_on = 0; next_state = H2_PAL_WIFI_STA_STATE_GOT_IP;
+  assert(sta_connect(NULL, &config, 2500u) == H2_PAL_OK);
+  assert(default_calls == 1 && connect_calls == 0 && sdk_timeout == 3);
+  assert(delays == 1);
+
+  reset(); radio_on = 0; ensure_rc = H2_PAL_ERR_IO;
+  assert(sta_connect(NULL, &config, 0u) == H2_PAL_ERR_IO);
+  assert(default_calls == 1 && ensure_calls == 1 && connect_calls == 0);
   return 0;
 }
 '''
