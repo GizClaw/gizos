@@ -271,13 +271,18 @@ static void resolver_begin(void *user) {
       break;
     }
   }
-  if (resolver == NULL) {
+  /* A start queued before stopping must not enter lwIP during teardown; the
+   * stop settles it. The raw DNS call is an in-flight user like any socket
+   * call, so stopping waits for it before wifi_off. */
+  if (resolver == NULL || !stack_ready) {
     stack_unlock();
     return;
   }
+  ++stack_users;
   ip_addr_t address;
   const err_t result = dns_gethostbyname_addrtype(
       resolver->host, &address, resolver_found, user, LWIP_DNS_ADDRTYPE_IPV4);
+  --stack_users;
   stack_unlock();
   if (result == ERR_OK) {
     resolver_found(NULL, &address, user);

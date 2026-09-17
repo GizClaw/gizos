@@ -39,7 +39,7 @@ typedef struct { uint32_t addr; } ip_addr_t;
 #define ip_2_ip4(p) (p)
 static void (*queued[8])(void *); static void *contexts[8];
 static void (*found)(const char *,const ip_addr_t *,void *);
-static void *found_user; static int queued_count, queue_error, dns_result;
+static void *found_user; static int queued_count, queue_error, dns_result, dns_calls;
 static unsigned now, delays;
 static void *tracked, *reusable;
 static unsigned tracked_frees;
@@ -62,7 +62,7 @@ static err_t tcpip_try_callback(void (*fn)(void *),void *arg) {
 static err_t dns_gethostbyname_addrtype(const char *host,ip_addr_t *addr,
  void (*fn)(const char *,const ip_addr_t *,void *),void *arg,int type) {
  assert(strcmp(host,"example.test")==0 && type==LWIP_DNS_ADDRTYPE_IPV4);
- addr->addr=0x0100007f; found=fn; found_user=arg; return dns_result;
+ ++dns_calls; addr->addr=0x0100007f; found=fn; found_user=arg; return dns_result;
 }
 static void dispatch(void) {
  int count=queued_count; queued_count=0;
@@ -141,6 +141,14 @@ int main(void) {
  assert(registered()==0);
  h2_jieli_net_stack_started();
  assert(tracked_frees==pending_frees+1);
+ assert(resolve_start(NULL,"example.test",&r)==0 && queued_count==1);
+ { int calls=dns_calls;
+   h2_jieli_net_stack_stopping(); /* stopping alone: still registered, not ready */
+   dispatch(); /* a queued begin must not enter lwIP once stopping began */
+   assert(dns_calls==calls && stack_users==0 && registered()==1);
+   h2_jieli_net_stack_stopped();
+   assert(resolve_poll(NULL,r,&out,0)==H2_PAL_ERR_UNAVAILABLE && registered()==0);
+   resolve_close(NULL,r); h2_jieli_net_stack_started(); }
  for(int i=0;i<4;++i) assert(resolve_start(NULL,"example.test",&slots[i])==0);
  for(int i=0;i<4;++i) resolve_close(NULL,slots[i]);
  assert(resolve_start(NULL,"example.test",&r)==H2_PAL_ERR_NO_SPACE);
