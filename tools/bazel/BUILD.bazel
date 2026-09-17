@@ -2070,6 +2070,8 @@ py_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+)
+
 cc_library(
     name = "vendor_third_party_tlsf",
     tags = ["manual"],
