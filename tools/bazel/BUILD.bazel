@@ -2018,6 +2018,27 @@ py_test(
 )
 
 py_test(
+    name = "jieli_wifi_link_test",
+    srcs = ["tests/test_jieli_wifi_link.py"],
+    data = [
+        "//projects/example/targets/h2loader_tar_zlib/display/jieli_ac791n_devkit:BUILD.bazel",
+        "//projects/example/targets/h2loader_tar_zlib/button/jieli_ac791n_devkit:BUILD.bazel",
+        "//projects/example/targets/h2loader_tar_zlib/touch/jieli_ac791n_devkit:BUILD.bazel",
+        "//projects/example/targets/h2loader_tar_zlib/audio-system/jieli_ac791n_devkit:BUILD.bazel",
+        "//projects/example/targets/h2loader_tar_zlib/mp4-player/jieli_ac791n_devkit:BUILD.bazel",
+        "//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:project.mk",
+        "//boards/jieli_ac791n_devkit/ac791n:src/h2_jieli_ac791n_devkit_wifi.c",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_wifi_link.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
     name = "jieli_net_stack_lifecycle_test",
     srcs = [
         "tests/test_jieli_net_concurrency.py",
@@ -2029,6 +2050,21 @@ py_test(
     ],
     legacy_create_init = 0,
     main = "tests/test_jieli_net_stack_lifecycle.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+py_test(
+    name = "jieli_wifi_restore_test",
+    srcs = ["tests/test_jieli_wifi_restore.py"],
+    data = [
+        "//projects/example/native_component_src/jieli/wl82/devkit_app:src/color_bar_pal.c",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_jieli_wifi_restore.py",
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],

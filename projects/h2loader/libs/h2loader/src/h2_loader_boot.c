@@ -115,7 +115,8 @@ uint32_t h2_loader_get_command_availability(const h2_loader_t *loader,
   available = load_availability(&loader->implemented_commands) &
               load_availability(&loader->command_availability);
   if ((status->capabilities & H2_LOADER_CAPABILITY_WIFI) == 0u) {
-    available &= ~(H2_LOADER_COMMAND_AVAILABLE_WIFI_SCAN |
+    available &= ~(H2_LOADER_COMMAND_AVAILABLE_WIFI_STATUS |
+                   H2_LOADER_COMMAND_AVAILABLE_WIFI_SCAN |
                    H2_LOADER_COMMAND_AVAILABLE_WIFI_CONNECT |
                    H2_LOADER_COMMAND_AVAILABLE_WIFI_DISCONNECT |
                    H2_LOADER_COMMAND_AVAILABLE_STAGE_URL);

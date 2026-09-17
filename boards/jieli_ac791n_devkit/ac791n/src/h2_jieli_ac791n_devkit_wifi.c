@@ -412,13 +412,35 @@ static int sta_scan(
   return H2_PAL_OK;
 }
 
+static int sta_validate_sdk_password(const h2_pal_wifi_sta_config_t *config) {
+  /* Both our default-mode copy and SDK wifi_enter_sta_mode's strncpy(..., 63)
+   * reserve a NUL byte in wifi_store_info.pwd[0]; neither can carry 64 bytes. */
+  if (config == NULL ||
+      config->password_len > sizeof(((struct wifi_store_info *)0)->pwd[0]) - 1u) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  return H2_PAL_OK;
+}
+
+static void sta_connect_fail(int reason) {
+  h2_pal_wifi_sta_status_t status;
+  wifi_state_lock();
+  ++wifi_sta_generation;
+  wifi_state.sta.state = H2_PAL_WIFI_STA_STATE_FAILED;
+  wifi_state.sta.ip_valid = 0u;
+  wifi_state.sta.disconnect_reason = reason;
+  status = wifi_state.sta;
+  wifi_state_unlock();
+  post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED, &status);
+}
+
 static int sta_connect(
     void *user, const h2_pal_wifi_sta_config_t *config,
     uint32_t timeout_ms) {
   (void)user;
   int result = h2_pal_wifi_settings_validate_sta_config(config);
   if (result != H2_PAL_OK) return result;
-  result = ensure_wifi_on();
+  result = sta_validate_sdk_password(config);
   if (result != H2_PAL_OK) return result;
   char ssid[H2_PAL_WIFI_SSID_MAX + 1];
   char password[H2_PAL_WIFI_PASSWORD_MAX + 1];
@@ -438,17 +460,42 @@ static int sta_connect(
   status = wifi_state.sta;
   wifi_state_unlock();
   post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTING, &status);
-  result = wifi_enter_sta_mode(ssid, password);
-  if (result != 0) {
-    wifi_state_lock();
-    ++wifi_sta_generation;
-    wifi_state.sta.state = H2_PAL_WIFI_STA_STATE_FAILED;
-    wifi_state.sta.ip_valid = 0u;
-    wifi_state.sta.disconnect_reason = result;
-    status = wifi_state.sta;
-    wifi_state_unlock();
-    post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED, &status);
-    return H2_PAL_ERR_IO;
+  if (!wifi_is_on()) {
+    /* The SDK demos install the target before wifi_on(): a placeholder-SSID
+     * first HSM STA entry followed by wifi_enter_sta_mode never associates. */
+    struct wifi_store_info parm = {0};
+    parm.mode = STA_MODE;
+    strncpy((char *)parm.ssid[0], ssid, sizeof(parm.ssid[0]) - 1u);
+    strncpy((char *)parm.pwd[0], password, sizeof(parm.pwd[0]) - 1u);
+    parm.connect_best_network = 0;
+    wifi_set_sta_connect_timeout(timeout_ms == 0u
+        ? 30 : (int)(timeout_ms / 1000u + (timeout_ms % 1000u != 0u)));
+    result = wifi_set_default_mode(
+        &parm, 1 /* Force this mode after wifi_on. */,
+        0 /* PAL settings own persistence; do not store in the SDK. */);
+    memset(&parm, 0, sizeof(parm));
+    if (result != 0) {
+      sta_connect_fail(result);
+      return H2_PAL_ERR_IO;
+    }
+    result = ensure_wifi_on();
+    if (result != H2_PAL_OK) {
+      sta_connect_fail(result);
+      return result;
+    }
+  } else {
+    result = ensure_wifi_on();
+    if (result != H2_PAL_OK) {
+      sta_connect_fail(result);
+      return result;
+    }
+    wifi_set_sta_connect_timeout(timeout_ms == 0u
+        ? 30 : (int)(timeout_ms / 1000u + (timeout_ms % 1000u != 0u)));
+    /* With network_connect_block == 0, the SDK queues the credentials and its
+     * tail returns wifi_sta_connect_state != 5 ? -1 : 0 without waiting. This
+     * only reflects whether STA was already connected, not whether starting
+     * the connection failed. SDK events and the PAL budget decide the outcome. */
+    (void)wifi_enter_sta_mode(ssid, password);
   }
   if (timeout_ms == 0u) return H2_PAL_OK;
   const uint32_t started = timer_get_ms();
@@ -491,7 +538,26 @@ static int wifi_stop(void) {
 
 static int sta_disconnect(void *user) {
   (void)user;
-  return wifi_stop();
+  if (!wifi_is_on()) return H2_PAL_OK;
+  /* wifi_off() is irreversible for STA use on this SDK: wifi_on() re-adds
+   * the retained lwIP netif and asserts "netif already added". Leave STA
+   * through config/monitor mode instead, keeping the radio and lwIP up. */
+  /* Like wifi_enter_sta_mode, this only posts an asynchronous HSM message;
+   * its return value does not report completion of the mode transition. */
+  (void)wifi_enter_smp_cfg_mode();
+  h2_pal_wifi_sta_status_t status;
+  wifi_state_lock();
+  const int had_ip = wifi_state.sta.state == H2_PAL_WIFI_STA_STATE_GOT_IP;
+  ++wifi_sta_generation;
+  wifi_state.sta.state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
+  wifi_state.sta.ip_valid = 0u;
+  status = wifi_state.sta;
+  wifi_state_unlock();
+  if (had_ip) {
+    post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP, &status);
+  }
+  post_sta_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED, &status);
+  return H2_PAL_OK;
 }
 
 static int wifi_get_mac_address(void *user, uint8_t out_mac[6]) {
@@ -726,6 +792,11 @@ static int sta_connect_and_save(void *user,
     const h2_pal_wifi_sta_config_t *config, uint32_t timeout_ms) {
   int result = wifi_operation_begin();
   if (result != H2_PAL_OK) return result;
+  result = sta_validate_sdk_password(config);
+  if (result != H2_PAL_OK) {
+    __atomic_store_n(&wifi_operation_busy, 0u, __ATOMIC_RELEASE);
+    return result;
+  }
   static const h2_pal_wifi_sta_vtable_t raw_vtable = {
       .get_status = sta_get_status, .connect = sta_connect, .disconnect = sta_disconnect,
   };
