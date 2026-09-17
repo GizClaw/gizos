@@ -91,8 +91,9 @@ typedef struct h2_lua_host_config {
    * Sync mutex. Callbacks, events, tasks and framebuffer still use Runtime mem.
    *
    * The reservation is one block when Runtime mem has one; otherwise the Host
-   * halves the request and takes up to 8 blocks of at least 256 KiB (only the
-   * final remainder may be smaller), each added to the same TLSF heap. A
+   * shrinks the request by an eighth per refusal and takes up to 8 blocks of
+   * at least 256 KiB (only the final remainder may be smaller), each added to
+   * the same TLSF heap. A
    * single VM allocation must fit inside one block. When the bytes cannot be
    * reserved within those limits create returns H2_PAL_ERR_NO_MEMORY with no
    * Host and no leaked allocations.

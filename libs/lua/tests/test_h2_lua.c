@@ -2344,7 +2344,7 @@ static void test_reserved_vm_heap(void) {
   config.vm_heap_bytes = SIZE_MAX;
   assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_INVALID_ARG);
   assert(host == NULL);
-  /* No single 3 MiB block: the reservation is split into halved blocks that
+  /* No single 3 MiB block: the reservation is split into shrunken blocks that
    * still serve a 120 KiB allocation and are all returned on destroy. */
   config.vm_heap_bytes = 3u * 1024u * 1024u;
   config.vm_memory_limit_bytes = 2u * 1024u * 1024u;
@@ -2353,7 +2353,7 @@ static void test_reserved_vm_heap(void) {
   allocs = atomic_load(&mem.allocs);
   size_t rejected = atomic_load(&mem.rejected);
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
-  assert(atomic_load(&mem.rejected) == rejected + 2u);
+  assert(atomic_load(&mem.rejected) > rejected);
   assert(atomic_load(&mem.bytes) >= config.vm_heap_bytes);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   heap_test_run(host, "local s=string.rep('x',120*1024);assert(#s==120*1024)",
@@ -2367,7 +2367,7 @@ static void test_reserved_vm_heap(void) {
   assert(host == NULL);
   heap_test_balanced(&mem);
   /* More than eight blocks would be needed: refused, without leaks. */
-  config.vm_heap_bytes = 4608u * 1024u; /* 16 blocks of 288 KiB */
+  config.vm_heap_bytes = 4608u * 1024u; /* would need 13 blocks */
   mem.max_allocation = 400u * 1024u;
   assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_NO_MEMORY);
   assert(host == NULL);

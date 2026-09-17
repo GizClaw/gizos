@@ -48,7 +48,7 @@ VM 逐块向 Runtime mem 申请，Web 入口也保持此默认值。适合设备
 VM 本体、Lua 状态、userdata、字符串和表都使用预留堆；callbacks、events、tasks
 和 framebuffer 等仍使用 Runtime mem。
 
-Runtime mem 有足够大的连续块时预留为一整块；否则 Host 把申请大小逐次减半，最多取
+Runtime mem 有足够大的连续块时预留为一整块；否则 Host 每次被拒后把申请大小缩小 1/8、贴近实际最大空闲块，最多取
 8 块、每块至少 256 KiB（只有最后的余量可以更小），全部加入同一个 TLSF。单次 VM
 分配必须能放进其中一块。在这些限制内凑不够时返回 `H2_PAL_ERR_NO_MEMORY`，不创建
 Host，也不泄漏已取得的块；destroy 在所有 job/VM 释放后归还全部块。

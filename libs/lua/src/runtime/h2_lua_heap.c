@@ -9,7 +9,9 @@ int h2_lua_heap_size_valid(size_t bytes) {
 }
 
 /* A fragmented system heap may not hold the whole reservation in one block.
- * Halve the request down to this floor and add each block as a TLSF pool. */
+ * Shrink the request by an eighth per refusal, so each block tracks the
+ * largest free region closely, down to this floor; each block becomes a TLSF
+ * pool. */
 #define H2_LUA_HEAP_CHUNK_MIN_BYTES (256u * 1024u)
 
 static void heap_release_chunks(h2_lua_host_t *host) {
@@ -56,7 +58,7 @@ h2_pal_result_t h2_lua_heap_init(h2_lua_host_t *host) {
         heap_release_chunks(host);
         return H2_PAL_ERR_NO_MEMORY;
       }
-      request /= 2u;
+      request -= request / 8u;
       continue;
     }
     host->vm_heap_chunks[host->vm_heap_chunk_count++] = chunk;
