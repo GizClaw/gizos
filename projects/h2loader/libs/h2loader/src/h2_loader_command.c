@@ -710,7 +710,11 @@ static int h2loader_wifi_status_command(h2_loader_command_t *self) {
     uint8_t ip[4] = {0};
     int has_saved = 0;
     int rc = h2_pal_wifi_sta_get_status(self->config.wifi, &status);
+    if (rc == H2_PAL_OK && status.ssid_len > H2_PAL_WIFI_SSID_MAX) {
+        rc = H2_PAL_ERR_FORMAT;
+    }
     if (rc != H2_PAL_OK) {
+        memset(&saved, 0, sizeof(saved));
         printf("H2_LOADER_WIFI_STATUS result=error code=%d\n", rc);
         return rc;
     }
@@ -721,6 +725,9 @@ static int h2loader_wifi_status_command(h2_loader_command_t *self) {
     if (rc == H2_PAL_OK && has_saved) {
         rc = h2_pal_wifi_settings_get_saved_sta_config(
             self->config.wifi_settings, &saved);
+        if (rc == H2_PAL_OK && saved.ssid_len > H2_PAL_WIFI_SSID_MAX) {
+            rc = H2_PAL_ERR_FORMAT;
+        }
         if (rc == H2_PAL_OK) {
             h2loader_wifi_ssid_hex(saved_ssid_hex, saved.ssid, saved.ssid_len);
         }

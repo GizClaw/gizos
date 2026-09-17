@@ -159,7 +159,7 @@ h2loader --port <serial-port> wifi status
 H2_LOADER_WIFI_STATUS result=OK state=<int> ip_valid=<0|1> ip=<a.b.c.d> ssid_hex=<hex|-> rssi=<int> disconnect_reason=<int> saved=<0|1|error> saved_code=<int> saved_ssid_hex=<hex|->
 ```
 
-`state` 为 PAL STA 状态（5 表示取得 IP），无有效 IP 时 `ip=0.0.0.0`；两个 SSID 均使用十六进制编码，空值为 `-`。`saved` 表示是否保存配置，settings 读取失败时为 `error`，`saved_code` 给出错误码，站点快照仍为 `result=OK`。站点读取失败则输出 `H2_LOADER_WIFI_STATUS result=error code=<rc>`。输出不包含密码。
+`state` 为 PAL STA 状态（5 表示取得 IP），无有效 IP 时 `ip=0.0.0.0`；两个 SSID 均使用十六进制编码，空值为 `-`。`saved` 表示是否保存配置，settings 读取失败时为 `error`，`saved_code` 给出错误码，站点快照仍为 `result=OK`。站点读取失败则输出 `H2_LOADER_WIFI_STATUS result=error code=<rc>`；站点或已保存 SSID 的长度超过 32 字节时，分别按站点错误或 settings 错误报告 `FORMAT`（-15）。输出不包含密码。
 
 `wifi disconnect` 不删除已经保存的 STA 配置。仓库和 operation environment wrapper 都不补默认 SSID 或 password；App 使用保存的配置前，须在具备 Wi-Fi capability 的 image 中成功执行 `wifi connect`；AC791N DevKit Loader 不具备 Wi-Fi capability。SSID 和 password 会作为当前进程的命令行参数，可能被本机进程查看工具或 shell history 记录；CLI 的 help、usage 和错误输出不会主动回显 password。不要把真实 credential 写入仓库文档、脚本或提交记录。
 

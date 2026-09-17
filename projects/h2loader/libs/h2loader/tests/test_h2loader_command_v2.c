@@ -213,6 +213,7 @@ typedef struct wifi_fixture {
   int result;
   int status_result, settings_result, get_result, saved, disconnected;
   unsigned saves, connects;
+  size_t saved_ssid_len;
   h2_pal_wifi_sta_config_t target;
 } wifi_fixture_t;
 
@@ -281,6 +282,7 @@ static int wifi_has_saved(void *user, int *out) {
 static int wifi_get_saved(void *user, h2_pal_wifi_sta_config_t *out) {
     wifi_fixture_t *f = user;
     *out = f->target;
+    if (f->saved_ssid_len != 0u) out->ssid_len = f->saved_ssid_len;
     return f->get_result;
 }
 
@@ -329,6 +331,20 @@ static void test_wifi_status_snapshot(void) {
         "saved=1 saved_code=0 saved_ssid_hex=612062\n") == 0);
     assert(strstr(io.output, "placeholder") == NULL);
     assert(status_locks == 1 && status_unlocks == 1);
+    memset(&io, 0, sizeof(io));
+    f.target.ssid_len = 33u;
+    assert(h2_loader_command_execute(&command, 3, args) == H2_PAL_ERR_FORMAT);
+    assert(strcmp(io.output,
+        "H2_LOADER_WIFI_STATUS result=error code=-15\n") == 0);
+    memset(&io, 0, sizeof(io));
+    f.target.ssid_len = 3u;
+    f.saved_ssid_len = 33u;
+    assert(h2_loader_command_execute(&command, 3, args) == H2_PAL_OK);
+    assert(strcmp(io.output, "H2_LOADER_WIFI_STATUS result=OK state=5 ip_valid=1 "
+        "ip=192.0.2.1 ssid_hex=612062 rssi=-42 disconnect_reason=0 "
+        "saved=error saved_code=-15 saved_ssid_hex=-\n") == 0);
+    assert(strstr(io.output, "placeholder") == NULL);
+    f.saved_ssid_len = 0u;
     memset(&io, 0, sizeof(io));
     f.saved = 0;
     f.disconnected = 1;
