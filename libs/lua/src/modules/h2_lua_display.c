@@ -1346,12 +1346,16 @@ static int display_draw_mesh(lua_State *state) {
         display_span_cache_t *next = lua_newuserdatauv(state,
             mesh_span_snapshot_offset(next_capacity) + mesh_span_snapshot_bytes(mesh), 0);
         /* Allocation may run finalizers that draw this mesh; only replace an
-         * unchanged cache, otherwise keep using the original one. */
+         * unchanged cache, otherwise continue with the cache they left. */
         lua_getiuservalue(state, 1, 1);
         int unchanged = lua_touserdata(state, -1) == old && old->count == count &&
                         old->capacity == capacity && old->valid == valid;
-        lua_pop(state, 1);
-        if (unchanged) {
+        if (!unchanged) {
+          lua_remove(state, -2);
+          lua_remove(state, -2);
+          cache = lua_touserdata(state, -1);
+        } else {
+          lua_pop(state, 1);
           memcpy(next, old, sizeof(*old) + (regrow ? 0u : count) * sizeof(old->spans[0]));
           next->capacity = next_capacity;
           if (regrow) {
@@ -1368,8 +1372,6 @@ static int display_draw_mesh(lua_State *state) {
           lua_setiuservalue(state, 1, 1);
           lua_remove(state, -2);
           cache = next;
-        } else {
-          lua_pop(state, 1);
         }
       }
     }
