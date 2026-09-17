@@ -192,9 +192,17 @@ static int translate_path(
    * parent traversal. A leading dot in a normal filename remains valid. */
   if (path[0] != '/') return H2_PAL_ERR_INVALID_ARG;
   const char *component = path + 1;
+  size_t component_units = 0u;
   for (const char *cursor = component;; ++cursor) {
     if (*cursor == '\\') return H2_PAL_ERR_INVALID_ARG;
-    if (*cursor != '/' && *cursor != '\0') continue;
+    if (*cursor != '/' && *cursor != '\0') {
+      unsigned char byte = (unsigned char)*cursor;
+      /* JLFAT silently truncates components beyond 130 UTF-16 units. */
+      if ((byte & 0xc0u) != 0x80u) ++component_units;
+      if (byte >= 0xf0u && byte <= 0xf7u) ++component_units;
+      if (component_units > 130u) return H2_PAL_ERR_NO_SPACE;
+      continue;
+    }
     const size_t length = (size_t)(cursor - component);
     if (length == 0u ||
         (length == 1u && component[0] == '.') ||
@@ -203,6 +211,7 @@ static int translate_path(
     }
     if (*cursor == '\0') break;
     component = cursor + 1;
+    component_units = 0u;
   }
   /* JLFAT's frename API accepts only a native filename for the destination.
    * Keep Loader's public paths unchanged while mapping its transactional
@@ -338,8 +347,8 @@ static int fs_open(
     sd_files_unlock();
     return H2_PAL_ERR_BUSY;
   }
-  /* JLFAT rejects directory write opens with NULL, indistinguishable from
-   * other write errors. Inspect an existing entry before truncating it. */
+  /* JLFAT can open a directory for writing, exposing its data to writes.
+   * Inspect an existing entry before allowing a native write open. */
   if (mode == H2_PAL_FS_OPEN_WRITE_TRUNCATE) {
     FILE *existing = fopen(mapped, "r");
     if (existing != NULL) {
