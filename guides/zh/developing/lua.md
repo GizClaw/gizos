@@ -201,6 +201,24 @@ PAL mixer 支撑的 Audio System 只接受 frame 大小与设备一致的 Track�
   中已被 Track 接收的字节数。script 应从 `written` 偏移处续写剩余数据，不要重放
   已被接收的前缀；失败时已有的残留保持不变，重传同一 buffer 是安全的。
 
+### Audio SFX
+
+`audio.play_sfx(name)` 播放由嵌入方 app 注册的具名音效，Lua 不持有 PCM，也不打开
+Track。app 在创建 Host 后、`h2_lua_host_start()` 前调用
+`h2_lua_register_sfx(host, name, play, user)` 为每个名字注册 handler（见
+`h2_lua_sfx.h`），最多 `H2_LUA_SFX_MAX`（32）个；空名、超长名、NULL handler 返回
+`INVALID_ARG`，重名或 start 之后注册返回 `INVALID_STATE`，超过容量返回 `FULL`。
+
+handler 在 Lua worker 上、持有该 job mutex 时同步调用，参数为注册时的 `user`、
+调用 job 的 `app_id`（未指定时为空串）和名字，两个字符串只在调用期间有效。handler
+必须立即返回、不做阻塞音频 I/O、不回调 Lua Host，应把音效交给 app 自己的播放器
+（例如产品的 SFX worker），混音、音量和 speaker 生命周期都由 app 负责。
+
+返回 `H2_PAL_OK` 时 Lua 得到 `true`；`BUSY`/`WOULD_BLOCK` 得到
+`nil, "audio sfx: busy"`；其他错误得到 `nil, "audio sfx: failed"`；名字未注册得到
+`nil, "audio sfx: unknown"`，script 可据此回退到 `audio.new_sound`。非字符串参数
+抛出 Lua 参数错误。
+
 ### Audio Sound
 
 `audio.new_sound(pcm[,options])` 复制非空 S16LE PCM，长度必须是 `2 * channels`

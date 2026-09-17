@@ -3,6 +3,7 @@
 #include "h2_lua.h"
 #include "h2_lua_capability.h"
 #include "h2_lua_display.h"
+#include "h2_lua_sfx.h"
 #include "h2_lua_module.h"
 #include "h2_lua_esp_claw.h"
 #include "h2_lua_event.h"
@@ -2461,6 +2462,77 @@ static void test_audio_sounds(void) {
   h2_runtime_deinit(runtime);
 }
 
+typedef struct sfx_test_player {
+  char app_id[32];
+  char names[64];
+  int calls;
+  h2_pal_result_t result;
+} sfx_test_player_t;
+
+static h2_pal_result_t sfx_test_play(void *user, const char *app_id,
+                                     const char *name) {
+  sfx_test_player_t *player = user;
+  player->calls++;
+  (void)snprintf(player->app_id, sizeof(player->app_id), "%s", app_id);
+  (void)strncat(player->names, name,
+                sizeof(player->names) - strlen(player->names) - 1u);
+  (void)strncat(player->names, ";",
+                sizeof(player->names) - strlen(player->names) - 1u);
+  return player->result;
+}
+
+static void test_audio_sfx(h2_runtime_t *runtime) {
+  static const char script[] =
+      "local a=require('audio');assert(a.play_sfx('miao'));"
+      "local ok,e=a.play_sfx('meow');assert(not ok and e=='audio sfx: unknown');"
+      "ok,e=a.play_sfx('busy');assert(not ok and e=='audio sfx: busy');"
+      "ok,e=a.play_sfx('bad');assert(not ok and e=='audio sfx: failed');"
+      "assert(not pcall(a.play_sfx));return 'sfx-ok'";
+  sfx_test_player_t miao = {.result = H2_PAL_OK};
+  sfx_test_player_t busy = {.result = H2_PAL_ERR_BUSY};
+  sfx_test_player_t bad = {.result = H2_PAL_ERR_IO};
+  char name[H2_LUA_NAME_MAX + 1u];
+  h2_lua_host_t *host = create_unstarted_host(runtime);
+  h2_lua_job_id_t id = H2_LUA_JOB_ID_NONE;
+  assert(h2_lua_register_sfx(NULL, "x", sfx_test_play, NULL) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_register_sfx(host, "", sfx_test_play, NULL) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_register_sfx(host, "x", NULL, NULL) == H2_PAL_ERR_INVALID_ARG);
+  memset(name, 'n', H2_LUA_NAME_MAX);
+  name[H2_LUA_NAME_MAX] = '\0';
+  assert(h2_lua_register_sfx(host, name, sfx_test_play, NULL) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_register_sfx(host, "miao", sfx_test_play, &miao) == H2_PAL_OK);
+  assert(h2_lua_register_sfx(host, "miao", sfx_test_play, &miao) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(h2_lua_register_sfx(host, "busy", sfx_test_play, &busy) == H2_PAL_OK);
+  assert(h2_lua_register_sfx(host, "bad", sfx_test_play, &bad) == H2_PAL_OK);
+  for (unsigned i = 3u; i < H2_LUA_SFX_MAX; ++i) {
+    (void)snprintf(name, sizeof(name), "fill%u", i);
+    assert(h2_lua_register_sfx(host, name, sfx_test_play, NULL) == H2_PAL_OK);
+  }
+  assert(h2_lua_register_sfx(host, "full", sfx_test_play, NULL) ==
+         H2_PAL_ERR_FULL);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  assert(h2_lua_register_sfx(host, "late", sfx_test_play, NULL) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(h2_lua_job_submit_text(host, "cat_app", "@sfx.lua",
+                                (const uint8_t *)script, sizeof(script) - 1u,
+                                NULL, 0u, &id) == H2_PAL_OK);
+  run_until_terminal(host, id, 1000u);
+  if (status(host, id).state != H2_LUA_JOB_SUCCEEDED)
+    fprintf(stderr, "sfx: %s\n", status(host, id).message);
+  assert(status(host, id).state == H2_LUA_JOB_SUCCEEDED);
+  assert(miao.calls == 1 && strcmp(miao.app_id, "cat_app") == 0 &&
+         strcmp(miao.names, "miao;") == 0);
+  assert(busy.calls == 1 && bad.calls == 1);
+  assert(h2_lua_job_release(host, id) == H2_PAL_OK);
+  assert(h2_lua_host_stop(host) == H2_PAL_OK);
+  assert(h2_lua_host_join(host) == H2_PAL_OK);
+  h2_lua_host_destroy(host);
+}
+
 int main(int argc, char **argv) {
   if (argc == 2 && strcmp(argv[1], "--prepared-benchmark") == 0) {
     test_display_raster2d(1, "libs/lua/tests/geometry_batches.lua");
@@ -2645,6 +2717,7 @@ int main(int argc, char **argv) {
   h2_lua_host_destroy(invalid_size_host);
   h2_lua_host_t *host = create_host(runtime);
   test_job_results(host);
+  test_audio_sfx(runtime);
   h2_lua_job_id_t job_id = H2_LUA_JOB_ID_NONE;
   static const h2_lua_arg_t file_args[] = {{"value", "ok"}};
   h2_runtime_button_action_event_t click = {

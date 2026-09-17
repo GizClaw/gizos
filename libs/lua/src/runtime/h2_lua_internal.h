@@ -6,6 +6,7 @@
 #include "h2_lua_event.h"
 #include "h2_lua_job.h"
 #include "h2_lua_module.h"
+#include "h2_lua_sfx.h"
 
 #include "lauxlib.h"
 
@@ -88,6 +89,12 @@ typedef struct h2_lua_capability_entry {
   h2_lua_capability_cancel_fn cancel;
   void *user;
 } h2_lua_capability_entry_t;
+
+typedef struct h2_lua_sfx_entry {
+  char name[H2_LUA_NAME_MAX];
+  h2_lua_sfx_play_fn play;
+  void *user;
+} h2_lua_sfx_entry_t;
 
 typedef enum h2_lua_capability_request_state {
   H2_LUA_CAPABILITY_REQUEST_UNUSED = 0,
@@ -236,6 +243,8 @@ struct h2_lua_host {
   size_t module_count;
   h2_lua_capability_entry_t capabilities[16];
   size_t capability_count;
+  h2_lua_sfx_entry_t sfx[H2_LUA_SFX_MAX];
+  size_t sfx_count;
   h2_lua_capability_request_t *capability_requests;
   h2_lua_capability_request_id_t next_capability_request_id;
   h2_pal_mutex_t *capability_mutex;

@@ -1888,8 +1888,36 @@ static int audio_new_output(lua_State *state) {
   return 1;
 }
 
+/* Hands a named effect to the handler the embedding app registered. The Host
+ * registry is immutable after start, so it is read without a lock. */
+static int audio_play_sfx(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  const char *name = luaL_checkstring(state, 1);
+  h2_lua_host_t *host = job->host;
+  h2_pal_result_t result;
+  for (size_t i = 0u; i < host->sfx_count; ++i) {
+    if (strcmp(host->sfx[i].name, name) == 0) {
+      result = host->sfx[i].play(host->sfx[i].user, job->app_id, name);
+      if (result == H2_PAL_OK) {
+        lua_pushboolean(state, 1);
+        return 1;
+      }
+      lua_pushnil(state);
+      lua_pushstring(state,
+                     result == H2_PAL_ERR_BUSY || result == H2_PAL_ERR_WOULD_BLOCK
+                         ? "audio sfx: busy"
+                         : "audio sfx: failed");
+      return 2;
+    }
+  }
+  lua_pushnil(state);
+  lua_pushliteral(state, "audio sfx: unknown");
+  return 2;
+}
+
 static int push_audio_proxy(lua_State *state, h2_lua_job_t *job) {
-  lua_createtable(state, 0, 3);
+  lua_createtable(state, 0, 4);
+  set_function(state, "play_sfx", audio_play_sfx, job);
   set_function(state, "new_input", audio_new_input, job);
   set_function(state, "new_sound", h2_lua_audio_new_sound, job);
   set_function(state, "new_output", audio_new_output, job);
