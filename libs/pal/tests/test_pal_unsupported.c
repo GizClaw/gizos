@@ -282,6 +282,16 @@ int main(void) {
                NULL) == H2_PAL_ERR_UNSUPPORTED);
     assert(h2_pal_wifi_csi_stop(h2_pal_unsupported_wifi_csi_api()) == H2_PAL_OK);
     assert(h2_pal_power_reboot(h2_pal_unsupported_power_api(), 0u) == H2_PAL_ERR_UNSUPPORTED);
+    assert(h2_pal_power_set_deep_sleep_wake_timer(h2_pal_unsupported_power_api(), 1000u) ==
+           H2_PAL_ERR_UNSUPPORTED);
+    assert(h2_pal_power_set_deep_sleep_wake_timer(NULL, 1000u) == H2_PAL_ERR_UNSUPPORTED);
+    const h2_pal_power_vtable_t empty_power_vtable = {0};
+    const h2_pal_power_api_t no_vtable_power = {NULL, NULL};
+    const h2_pal_power_api_t empty_slot_power = {NULL, &empty_power_vtable};
+    assert(h2_pal_power_set_deep_sleep_wake_timer(&no_vtable_power, 1000u) ==
+           H2_PAL_ERR_UNSUPPORTED);
+    assert(h2_pal_power_set_deep_sleep_wake_timer(&empty_slot_power, 1000u) ==
+           H2_PAL_ERR_UNSUPPORTED);
     const h2_pal_net_api_t *unsupported_net = h2_pal_unsupported_net_api();
     assert(unsupported_net->vtable->tcp_send_timeout != NULL);
     const uint8_t tcp_byte = 0u;

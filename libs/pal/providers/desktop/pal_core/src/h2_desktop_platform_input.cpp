@@ -724,6 +724,10 @@ h2_pal_result_t power_deep_sleep(void *, uint32_t reason) {
   return H2_PAL_OK;
 }
 
+h2_pal_result_t power_set_deep_sleep_wake_timer(void *, uint32_t) {
+  return H2_PAL_ERR_UNSUPPORTED;
+}
+
 const h2_pal_power_vtable_t power_vtable = {
     power_capabilities,
     power_boot_info,
@@ -738,7 +742,7 @@ const h2_pal_power_vtable_t power_vtable = {
     power_reboot,
     nullptr,
     power_deep_sleep,
-    nullptr,
+    power_set_deep_sleep_wake_timer,
 };
 h2_pal_power_api_t power_api = {nullptr, &power_vtable};
 

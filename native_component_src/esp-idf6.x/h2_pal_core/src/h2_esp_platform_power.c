@@ -1,4 +1,5 @@
 #include "h2_esp_platform_core.h"
+#include "h2_esp_platform_power_wake.h"
 #include "h2_esp_platform_pref_migration.h"
 #include "h2_esp_platform_safe_call.h"
 
@@ -14,7 +15,6 @@
 
 #define H2_ESP_POWER_PARTITION_LOADER 1u
 #define H2_ESP_POWER_PARTITION_APP 2u
-#define H2_ESP_POWER_DEEP_SLEEP_WAKE_US (1000ULL * 1000ULL)
 #define H2_ESP_POWER_OTA_TASK_STACK_DEPTH 4096u
 
 typedef enum h2_esp_power_ota_op {
@@ -299,11 +299,10 @@ static h2_pal_result_t power_get_boot_info(void *user, h2_pal_power_boot_info_t 
         out_info->reset_reason = H2_PAL_POWER_RESET_REASON_UNKNOWN;
         break;
     }
-    if (reason == ESP_RST_DEEPSLEEP &&
+    out_info->source = h2_esp_power_wake_boot_source(
+        reason == ESP_RST_DEEPSLEEP,
         (esp_sleep_get_wakeup_causes() &
-         (1u << (unsigned int)ESP_SLEEP_WAKEUP_TIMER)) != 0u) {
-        out_info->source = H2_PAL_POWER_BOOT_SOURCE_TIMER;
-    }
+         (1u << (unsigned int)ESP_SLEEP_WAKEUP_TIMER)) != 0u);
     return H2_PAL_OK;
 }
 
@@ -472,9 +471,8 @@ static h2_pal_result_t power_deep_sleep(void *user, uint32_t reason) {
 
     (void)user;
     (void)reason;
-    const uint32_t wake_ms = s_deep_sleep_wake_ms;
     err = esp_sleep_enable_timer_wakeup(
-        wake_ms != 0u ? (uint64_t)wake_ms * 1000ULL : H2_ESP_POWER_DEEP_SLEEP_WAKE_US);
+        h2_esp_power_deep_sleep_wake_us(s_deep_sleep_wake_ms));
     if (err != ESP_OK) {
         return H2_PAL_ERR_IO;
     }

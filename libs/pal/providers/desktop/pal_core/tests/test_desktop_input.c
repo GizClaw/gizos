@@ -534,6 +534,8 @@ int main(void) {
 
   assert(h2_pal_power_set_hold(h2_desktop_platform_power_api(), 1) ==
          H2_PAL_OK);
+  assert(h2_pal_power_set_deep_sleep_wake_timer(
+             h2_desktop_platform_power_api(), 1000u) == H2_PAL_ERR_UNSUPPORTED);
   assert(h2_pal_power_deep_sleep(h2_desktop_platform_power_api(), 7u) ==
          H2_PAL_OK);
   h2_desktop_power_snapshot_t power;
