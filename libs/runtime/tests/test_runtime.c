@@ -2916,6 +2916,47 @@ static void test_input_worker_keeps_running_after_poll_error(void) {
     assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
+static void test_input_fault_release_never_precedes_its_snapshot(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+    h2_runtime_t *runtime = test_runtime_create(&env);
+    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+    h2_runtime_event_t event = event_with_payload(payload);
+
+    /* Pin two slots across publications so every retired slot is pinned. */
+    const h2_runtime_state_bank_t *bank = NULL;
+    uint8_t pinned[2];
+    assert(h2_runtime_state_read_begin(runtime, &bank, &pinned[0]) ==
+           H2_PAL_OK);
+    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+    env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    assert(h2_runtime_state_read_begin(runtime, &bank, &pinned[1]) ==
+           H2_PAL_OK);
+    env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
+    }
+    const uint32_t dropped_before =
+        runtime->private_state->dropped_event_count;
+
+    env.time_state.sleep_rc = H2_PAL_ERR_IO;
+    env.task_state.current->entry(env.task_state.current->ctx);
+    h2_pal_result_t rc;
+    while ((rc = h2_runtime_poll_event(runtime, &event)) == H2_PAL_OK) {
+        assert(event.kind != H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
+    }
+    assert(rc == H2_PAL_ERR_CLOSED);
+    assert(runtime->private_state->dropped_event_count > dropped_before);
+
+    assert(h2_runtime_state_read_end(runtime, pinned[0]) == H2_PAL_OK);
+    assert(h2_runtime_state_read_end(runtime, pinned[1]) == H2_PAL_OK);
+    env.time_state.sleep_rc = H2_PAL_OK;
+    h2_runtime_deinit(runtime);
+    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+}
+
 static void test_input_fault_releases_held_buttons(void) {
     test_runtime_env_t env;
     test_env_init(&env);
@@ -4599,6 +4640,7 @@ int main(void) {
     test_input_start_after_worker_fault_is_rejected();
     test_input_worker_keeps_running_after_poll_error();
     test_input_fault_releases_held_buttons();
+    test_input_fault_release_never_precedes_its_snapshot();
     test_input_fault_release_with_full_queue_keeps_state_released();
     test_input_lifecycle_is_closed_during_test_session();
     test_station_snapshot_unavailable_without_mutex();

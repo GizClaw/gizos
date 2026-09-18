@@ -131,10 +131,13 @@ typedef enum h2_runtime_input_stage {
  * fatal stop releases every held Button through the normal release path, so
  * its state reads released, and queues BUTTON_UP and a released BUTTON_ACTION
  * ahead of the close under the normal producer rule (a full event queue drops
- * them and counts the drop). If the input writer mutex itself cannot be
+ * them and counts the drop). Events never precede their snapshot: if readers
+ * keep every retired state slot pinned through three short retries, the
+ * release events are dropped and counted too. If the input writer mutex itself cannot be
  * taken, the release is skipped and the log line says so. Images built with
  * H2_RUNTIME_INPUT_LOG_ENABLED=0 (bk3633) write no input log lines; the
- * status below is unaffected. The stop then latches `worker_result`,
+ * status below and h2_runtime_input_stage_name() are unaffected (with no log
+ * referencing the names, an image that does not call it links none of them). The stop then latches `worker_result`,
  * closes the Runtime event queue and moves the phase to FAULTED.
  *
  * The health fields have their own lock, separate from the input writer

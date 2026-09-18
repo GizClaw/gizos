@@ -1337,8 +1337,8 @@ static h2_pal_result_t input_worker_poll(
  * recording that never ends). Release each held Button through the normal
  * release path, publish the snapshot so its state reads released, and queue
  * the pending events ahead of the close under the normal producer rule: a
- * full event queue drops them and counts the drop. Returns the number of
- * released Buttons.
+ * full event queue drops them and counts the drop, and so does a snapshot
+ * that readers keep pinned. Returns the number of released Buttons.
  */
 static uint32_t release_held_buttons_locked(h2_runtime_t *runtime) {
     if (runtime->private_state->test_control != NULL) {
@@ -1357,8 +1357,27 @@ static uint32_t release_held_buttons_locked(h2_runtime_t *runtime) {
             released += 1u;
         }
     }
-    (void)publish_snapshot(runtime, 0);
-    (void)enqueue_pending_events(runtime);
+    /*
+     * Events never become dequeueable before their snapshot. Readers pin
+     * slots only briefly, so retry a few times; if the snapshot still cannot
+     * be published the events are dropped and counted instead.
+     */
+    h2_pal_result_t rc = H2_PAL_ERR_WOULD_BLOCK;
+    for (uint32_t attempt = 0u;
+         attempt < 3u && rc == H2_PAL_ERR_WOULD_BLOCK;
+         ++attempt) {
+        rc = publish_snapshot(runtime, 0);
+        if (rc == H2_PAL_ERR_WOULD_BLOCK) {
+            (void)h2_pal_time_sleep_ms(runtime->time, 10u);
+        }
+    }
+    if (rc == H2_PAL_OK) {
+        (void)enqueue_pending_events(runtime);
+    } else {
+        runtime->private_state->dropped_event_count +=
+            (uint32_t)runtime->private_state->input_pending_event_count;
+        runtime->private_state->input_pending_event_count = 0u;
+    }
     return released;
 }
 
