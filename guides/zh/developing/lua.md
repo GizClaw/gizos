@@ -67,11 +67,12 @@ Host 的正常生命周期是：
 3. `h2_lua_host_start()` 冻结 registry 并创建 worker；
 4. 通过 text、compiled resource 或 Runtime Filesystem 提交 job，同时给出决定 `storage` 作用域的 app id（可为 `NULL`）；
 5. App 消费 Runtime Event queue，并通过 `h2_lua_dispatch_runtime_event()` 定向
-   投递给一个 live `job_id`；事件入队返回 `H2_PAL_OK`，job 已进入终态返回
-   `H2_PAL_ERR_CLOSED`，job 内未投递事件已达 `event_delivery_capacity` 返回
-   `H2_PAL_ERR_FULL`，未知或已 release 的 job 返回 `H2_PAL_ERR_NOT_FOUND`，失败时
-   事件不入队。job 可能在同一批 Runtime event 之间结束，因此 App 把 `CLOSED`
-   当作“该 job 不再消费事件”，而不是故障；
+   投递给一个 live `job_id`；事件入队返回 `H2_PAL_OK`，事件格式错误或 component
+   kind 与 Runtime component 不符返回 `H2_PAL_ERR_INVALID_ARG`，未知或已 release 的
+   job 返回 `H2_PAL_ERR_NOT_FOUND`，job 已进入终态返回 `H2_PAL_ERR_CLOSED`，job 内
+   未投递事件已达 `event_delivery_capacity` 返回 `H2_PAL_ERR_FULL`，失败时事件不
+   入队。job 可能在同一批 Runtime event 之间进入终态，所以同一 job 上 `CLOSED`
+   可以紧跟在 `OK` 之后出现；
 6. `stop()` 拒绝新 job、取消等待，`join()` 等待 worker 退出，最后 `destroy()`。
 
 `h2_lua_host_step()` 只用于提示 worker 有新工作，不会让调用线程进入 VM。

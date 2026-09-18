@@ -21,8 +21,8 @@ extern "C" {
  * or released job, H2_PAL_ERR_CLOSED for a job that already reached a terminal
  * state, and H2_PAL_ERR_FULL when the job already holds
  * `event_delivery_capacity` undelivered events. The event is not queued on any
- * error. A job can finish between two events of one Runtime batch, so an App
- * treats CLOSED as "this job no longer consumes events", not as a fault.
+ * error. A job can reach a terminal state between two events of one Runtime
+ * batch, so CLOSED can follow OK for the same job without any other call.
  */
 h2_pal_result_t h2_lua_dispatch_runtime_event(h2_lua_host_t *host,
                                               h2_lua_job_id_t job_id,
