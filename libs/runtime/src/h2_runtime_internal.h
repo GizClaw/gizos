@@ -151,13 +151,6 @@ typedef struct h2_runtime_input_source {
     h2_runtime_imu_recognizer_t imu;
 } h2_runtime_input_source_t;
 
-typedef enum h2_runtime_input_phase {
-    H2_RUNTIME_INPUT_PHASE_STOPPED = 0,
-    H2_RUNTIME_INPUT_PHASE_STARTING,
-    H2_RUNTIME_INPUT_PHASE_TASK_RUNNING,
-    H2_RUNTIME_INPUT_PHASE_STOPPING,
-    H2_RUNTIME_INPUT_PHASE_FAULTED,
-} h2_runtime_input_phase_t;
 
 typedef union h2_runtime_input_event_payload {
     h2_runtime_button_down_event_t button_down;
@@ -403,6 +396,20 @@ struct h2_runtime_private {
     size_t input_pending_event_count;
     size_t event_payload_capacity;
     h2_runtime_sequence_t input_event_sequence_ceiling;
+    /*
+     * Input worker health reported by h2_runtime_input_status(). Written by
+     * the poller under the input writer mutex; the stage names the step that
+     * produced the error of the poll in progress.
+     */
+    h2_runtime_input_stage_t input_error_stage;
+    h2_pal_result_t input_last_error;
+    h2_runtime_input_stage_t input_last_error_stage;
+    h2_runtime_timestamp_ms_t input_last_error_at_ms;
+    h2_runtime_timestamp_ms_t input_poll_now_ms;
+    uint32_t input_error_count;
+    uint32_t input_consecutive_error_count;
+    uint32_t input_poll_count;
+    h2_runtime_timestamp_ms_t input_last_poll_ok_at_ms;
     /* State publication (owned by h2_runtime_state.c). */
     h2_runtime_state_publication_t state_publication;
     int state_dirty;

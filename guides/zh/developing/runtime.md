@@ -472,7 +472,9 @@ Lifecycle 的合法调用如下，其余情况一律 fail closed：
 source table 与 publication。`start` 则必须拒绝，否则 poller 会和 test source table
 竞争。两者刻意不对称。
 
-后台采集失败会保存 worker result、把 input phase 置为 faulted，并关闭 Runtime event queue，使阻塞的 App consumer 被唤醒。Queue close 是终态：PAL queue contract 没有 reopen，重启采集只会得到一个仍在采样却无法投递事件的 Runtime。因此 worker result 同时作为 fault latch，fault 之后 `stop` 返回该 result 并报告失败原因，随后的 `start` 返回 `H2_PAL_ERR_INVALID_STATE`；唯一的恢复路径是 `h2_runtime_deinit()` 后重新 `h2_runtime_init()`。
+单步采集失败不会停掉 input worker：读 PAL 出错、事件放不进 pending 缓冲、时间读取失败等都只记入健康状态，按 stage 打日志（`H2_RUNTIME_INPUT_ERROR stage=... rc=...`，同一错误连续出现时每 100 次再打一行，恢复时打 `H2_RUNTIME_INPUT_RECOVERED`），退避后继续下一轮（最长 500 ms 一次）。其余 source 在同一轮照常采集，已产生的事件照常发布。`h2_runtime_input_status()` 返回 phase、latch 的 worker result、最近一次错误及其 stage 和时间、累计与连续错误数、成功轮数与最近成功时间，以及 snapshot 延迟发布计数，任何 phase 都可以调用。
+
+只有 worker 无法再自我节拍（sleep 失败）或 Runtime 已不可用才是致命的。致命时 worker 先把所有仍按住的 Button 释放为松开，把 `BUTTON_UP` 与 released `BUTTON_ACTION` 排在关闭之前，再保存 worker result、把 input phase 置为 faulted 并关闭 Runtime event queue，使阻塞的 App consumer 被唤醒；consumer 先拉到释放事件，再看到 `H2_PAL_ERR_CLOSED`。Queue close 是终态：PAL queue contract 没有 reopen，重启采集只会得到一个仍在采样却无法投递事件的 Runtime。因此 worker result 同时作为 fault latch，fault 之后 `stop` 返回该 result 并报告失败原因，随后的 `start` 返回 `H2_PAL_ERR_INVALID_STATE`；唯一的恢复路径是 `h2_runtime_deinit()` 后重新 `h2_runtime_init()`。NFC task 投递扫描结果失败只丢这一轮结果，不 fault。
 
 Test Control session 在打开期间独占 source table。它在 open 时作废 production source table，并在 close 之后留待下一次采集惰性重新发现，因此 close 之后的第一次 `start` 或 poll 会重建 production source。这是 init 之外唯一一次重新发现的路径。
 
