@@ -61,6 +61,20 @@ event post 串行化，避免 ESP event-loop 与 modem task 的旧快照反向�
 不接管 IDF route priority。Board/modem 在 interface 存活期通过 registration hook
 补充 PPP 等不能仅凭 if-key 可靠判断的 kind。
 
+同一次 TCPIP context reconcile 还负责 lwIP resolver 与当前 default 一致：在
+`CONFIG_ESP_NETIF_SET_DNS_PER_DEFAULT_NETIF` 下，把 default `esp_netif` 自己的
+DNS server 逐项写回全局 resolver（该接口没有 fallback server 时保留已配置的
+fallback）；default 接口换了或任一 server 被改写时调用 `dns_clear_cache()`，并打一行
+`H2_ESP_NETIF_DNS` WARN 日志，写出 default if-key、是否换接口、是否改写 server 和
+当前 dns0/dns1。这覆盖 IDF 自身不会补回的两条路径：任一接口启动 DHCP client 会清空
+全局 server，而调用过 `esp_netif_set_default_netif()` 后 IDF 不再在 GOT_IP 时重新应用
+default；同时避免经旧 default 的 DNS 解析出的地址在切换后继续命中缓存（lwIP 缓存最长
+保留 `DNS_MAX_TTL`）。清缓存会让当时仍在等待的解析立即失败，调用方按自己的重试策略
+重新解析。Wi-Fi provider 在 `esp_netif_create_default_wifi_sta()` 之后另外注册一个
+`WIFI_EVENT_STA_CONNECTED` 专用 handler 调用 reconcile：esp_event 先执行 `ANY_ID`
+observer、再按注册顺序执行专用 handler，只有排在 ESP-NETIF 默认 handler 之后，才能在
+其启动 DHCP client 清空全局 server 之后补回（例如 STA 重新关联时 PPP 仍是 default）。
+
 ESP SIMCOM 的数据会话关闭与整机关闭是两个独立生命周期。`data_close` 让 modem 保持供电，通过 COMMAND/PPP 交互有界地退出数据模式；失败时保留非 `CLOSED` 状态供调用方重试。整机 `close` 不复用该交互路径：transport 先驱动配置的 modem power GPIO 到关闭电平，再只依赖 ESP 本机状态恢复 default netif、同步注销 PPP/IP event handler、销毁 DCE、PPP netif 和 event group。default netif 恢复失败会在销毁 PPP netif 前返回并保留 route ownership state，供下一次 close 重试。
 
 PPP/IP handler 注销利用 ESP-IDF default event loop 的 mutex 作为 quiescence barrier：从普通 task 调用 close 时，注销要么在 event loop 空闲时直接移除 handler，要么等待正在执行的 callback 释放 loop mutex；返回成功后，已排队 event 也不会再调用被注销的实例。因此只有全部 handler 注销成功后，teardown 才能释放 DCE、PPP netif 和 event group；任一次注销失败均立即返回并保留尚未销毁的本机资源供重试。SIMCOM 的私有 PPP/IP callback 不调用 close；从 ESP default event-loop callback 内重入整机 close 不受支持，调用方必须把 close handoff 到普通 task。`power_gpio < 0` 明确表示 BSP 没有可驱动的物理断电能力；此时 teardown 仍释放本机资源，但不能据此声称 modem 已物理断电。
