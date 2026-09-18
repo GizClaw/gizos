@@ -1120,6 +1120,28 @@ static void input_writer_mutex_destroy(h2_runtime_t *runtime) {
             runtime->sync, runtime->private_state->input_writer_mutex);
         runtime->private_state->input_writer_mutex = NULL;
     }
+    if (runtime->private_state->input_health_mutex != NULL) {
+        (void)h2_pal_mutex_destroy(
+            runtime->sync, runtime->private_state->input_health_mutex);
+        runtime->private_state->input_health_mutex = NULL;
+    }
+}
+
+/* Health is only written by the input workers, which exist only after the
+ * mutexes were created; without a mutex nothing writes it. */
+static h2_pal_result_t input_health_lock(h2_runtime_t *runtime) {
+    if (runtime->private_state->input_health_mutex == NULL) {
+        return H2_PAL_OK;
+    }
+    return h2_pal_mutex_lock(
+        runtime->sync, runtime->private_state->input_health_mutex);
+}
+
+static void input_health_unlock(h2_runtime_t *runtime) {
+    if (runtime->private_state->input_health_mutex != NULL) {
+        (void)h2_pal_mutex_unlock(
+            runtime->sync, runtime->private_state->input_health_mutex);
+    }
 }
 
 static h2_pal_result_t input_poll_once_locked(
@@ -1181,126 +1203,233 @@ static void input_log(
 }
 
 /*
- * Records one worker poll in the health counters. Runs under the writer
- * mutex, like the poll itself; returns whether the outcome is worth a log line
- * so the caller can write it after unlocking.
+ * Records one worker poll in the health counters under the health mutex.
+ * Returns whether the outcome is worth a log line, which the caller writes
+ * after unlocking; out_consecutive is the consecutive failure count after
+ * this poll.
  */
 static int input_record_poll(
     h2_runtime_t *runtime,
     h2_pal_result_t rc,
     h2_runtime_input_stage_t stage,
+    h2_runtime_timestamp_ms_t now_ms,
+    uint32_t snapshot_deferred_count,
     uint32_t *out_consecutive,
     uint32_t *out_total) {
     h2_runtime_private_t *state = runtime->private_state;
+    *out_consecutive = 0u;
+    *out_total = 0u;
+    if (input_health_lock(runtime) != H2_PAL_OK) {
+        return rc != H2_PAL_OK;
+    }
+    int log_it;
+    state->input_snapshot_deferred_count = snapshot_deferred_count;
     if (rc == H2_PAL_OK) {
         const uint32_t recovered_after = state->input_consecutive_error_count;
         state->input_poll_count += 1u;
-        state->input_last_poll_ok_at_ms = state->input_poll_now_ms;
+        state->input_last_poll_ok_at_ms = now_ms;
         state->input_consecutive_error_count = 0u;
         *out_consecutive = recovered_after;
-        *out_total = state->input_error_count;
-        return recovered_after != 0u;
+        log_it = recovered_after != 0u;
+    } else {
+        const int changed = state->input_last_error != rc ||
+                            state->input_last_error_stage != stage;
+        state->input_last_error = rc;
+        state->input_last_error_stage = stage;
+        state->input_last_error_at_ms = now_ms;
+        state->input_error_count += 1u;
+        state->input_consecutive_error_count += 1u;
+        *out_consecutive = state->input_consecutive_error_count;
+        log_it = changed || *out_consecutive == 1u ||
+                 *out_consecutive % H2_RUNTIME_INPUT_ERROR_LOG_EVERY == 0u;
     }
-    const int changed = state->input_last_error != rc ||
-                        state->input_last_error_stage != stage;
-    state->input_last_error = rc;
-    state->input_last_error_stage = stage;
-    state->input_last_error_at_ms = state->input_poll_now_ms;
-    state->input_error_count += 1u;
-    state->input_consecutive_error_count += 1u;
-    *out_consecutive = state->input_consecutive_error_count;
     *out_total = state->input_error_count;
-    return changed || *out_consecutive == 1u ||
-           *out_consecutive % H2_RUNTIME_INPUT_ERROR_LOG_EVERY == 0u;
+    input_health_unlock(runtime);
+    return log_it;
 }
 
-/* The worker's poll: one frame plus its health record, both under the lock. */
-static h2_pal_result_t input_worker_poll(h2_runtime_t *runtime) {
+/*
+ * The worker's poll: one frame under the writer mutex, then its health
+ * record. out_consecutive receives the consecutive failure count.
+ */
+static h2_pal_result_t input_worker_poll(
+    h2_runtime_t *runtime,
+    uint32_t *out_consecutive) {
+    h2_runtime_input_stage_t stage = H2_RUNTIME_INPUT_STAGE_LOCK;
+    h2_runtime_timestamp_ms_t now_ms = 0u;
+    uint32_t deferred = 0u;
     h2_pal_result_t rc = input_writer_lock(runtime);
-    if (rc != H2_PAL_OK) {
-        /* Nothing else can be touched without the lock; just report it. */
-        runtime->private_state->input_error_stage = H2_RUNTIME_INPUT_STAGE_LOCK;
-        char line[H2_PAL_LOG_MESSAGE_MAX];
-        (void)snprintf(line, sizeof(line),
-                       "H2_RUNTIME_INPUT_ERROR stage=lock rc=%d", (int)rc);
-        input_log(runtime, H2_PAL_LOG_ERROR, line);
-        return rc;
+    if (rc == H2_PAL_OK) {
+        rc = input_poll_once_unlocked(runtime, 0, 0);
+        stage = rc == H2_PAL_OK ? H2_RUNTIME_INPUT_STAGE_NONE
+                                : runtime->private_state->input_error_stage;
+        now_ms = runtime->private_state->input_poll_now_ms;
+        deferred = (uint32_t)runtime->private_state->state_publication
+                       .deferred_count;
+        const h2_pal_result_t unlock_rc = input_writer_unlock(runtime);
+        if (rc == H2_PAL_OK && unlock_rc != H2_PAL_OK) {
+            rc = unlock_rc;
+            stage = H2_RUNTIME_INPUT_STAGE_LOCK;
+        }
+    } else if (input_now(runtime, &now_ms) != H2_PAL_OK) {
+        now_ms = 0u;
     }
-    rc = input_poll_once_unlocked(runtime, 0, 0);
-    const h2_runtime_input_stage_t stage =
-        rc == H2_PAL_OK ? H2_RUNTIME_INPUT_STAGE_NONE
-                        : runtime->private_state->input_error_stage;
-    uint32_t consecutive = 0u;
+    if (stage == H2_RUNTIME_INPUT_STAGE_LOCK) {
+        /* The publication counter is writer-owned; keep the last copy. */
+        if (input_health_lock(runtime) == H2_PAL_OK) {
+            deferred = runtime->private_state->input_snapshot_deferred_count;
+            input_health_unlock(runtime);
+        }
+    }
     uint32_t total = 0u;
-    const int log_it =
-        input_record_poll(runtime, rc, stage, &consecutive, &total);
-    const h2_pal_result_t unlock_rc = input_writer_unlock(runtime);
+    const int log_it = input_record_poll(
+        runtime, rc, stage, now_ms, deferred, out_consecutive, &total);
     if (log_it != 0) {
         char line[H2_PAL_LOG_MESSAGE_MAX];
         if (rc == H2_PAL_OK) {
             (void)snprintf(line, sizeof(line),
                            "H2_RUNTIME_INPUT_RECOVERED after=%u total=%u",
-                           (unsigned)consecutive, (unsigned)total);
+                           (unsigned)*out_consecutive, (unsigned)total);
+            *out_consecutive = 0u;
             input_log(runtime, H2_PAL_LOG_WARN, line);
         } else {
             (void)snprintf(line, sizeof(line),
                            "H2_RUNTIME_INPUT_ERROR stage=%s rc=%d "
                            "consecutive=%u total=%u",
                            h2_runtime_input_stage_name(stage), (int)rc,
-                           (unsigned)consecutive, (unsigned)total);
+                           (unsigned)*out_consecutive, (unsigned)total);
             input_log(runtime, H2_PAL_LOG_ERROR, line);
         }
-    }
-    if (rc == H2_PAL_OK && unlock_rc != H2_PAL_OK) {
-        runtime->private_state->input_error_stage = H2_RUNTIME_INPUT_STAGE_LOCK;
-        return unlock_rc;
+    } else if (rc == H2_PAL_OK) {
+        *out_consecutive = 0u;
     }
     return rc;
+}
+
+/* How long a fault release may wait for event queue space per event. */
+#define H2_RUNTIME_INPUT_FAULT_EVENT_WAIT_MS 100u
+/* Attempts to publish the released snapshot past pinned readers. */
+#define H2_RUNTIME_INPUT_FAULT_PUBLISH_ATTEMPTS 10u
+
+/*
+ * Publishes the snapshot and then queues every pending event, waiting up to
+ * H2_RUNTIME_INPUT_FAULT_EVENT_WAIT_MS for space per event instead of
+ * dropping on a full queue. Returns how many events did not get in.
+ */
+static uint32_t fault_flush_pending(h2_runtime_t *runtime) {
+    if (runtime->private_state->input_pending_event_count == 0u) {
+        return 0u;
+    }
+    for (uint32_t attempt = 0u;
+         attempt < H2_RUNTIME_INPUT_FAULT_PUBLISH_ATTEMPTS &&
+         runtime->private_state->state_dirty != 0 &&
+         publish_snapshot(runtime, 0) == H2_PAL_ERR_WOULD_BLOCK;
+         ++attempt) {
+        (void)h2_pal_time_sleep_ms(runtime->time, 10u);
+    }
+    uint32_t undelivered = 0u;
+    for (size_t i = 0u;
+         i < runtime->private_state->input_pending_event_count;
+         ++i) {
+        const h2_runtime_input_pending_event_t *pending =
+            &runtime->private_state->input_pending_events[i];
+        h2_runtime_queued_event_t queued = {
+            .kind = pending->kind,
+            .component = pending->component,
+            .component_id = pending->component_id,
+            .sequence = pending->sequence,
+            .timestamp_ms = pending->timestamp_ms,
+            .payload_size = pending->payload_size,
+        };
+        memcpy(queued.payload.bytes, &pending->payload, pending->payload_size);
+        if (h2_runtime_enqueue_event_strict(
+                runtime, &queued, H2_RUNTIME_INPUT_FAULT_EVENT_WAIT_MS) !=
+            H2_PAL_OK) {
+            undelivered += 1u;
+        }
+    }
+    runtime->private_state->input_pending_event_count = 0u;
+    return undelivered;
 }
 
 /*
  * A stopped worker must not leave a Button frozen in the pressed state: every
  * consumer would keep acting on a hold nobody is making (a push-to-talk
- * recording that never ends). Release them, and queue the edges ahead of the
- * close so consumers drain BUTTON_UP before they see the queue closed.
+ * recording that never ends). Release each held Button through the normal
+ * release path and queue its BUTTON_UP and released BUTTON_ACTION ahead of
+ * the close, waiting for queue space rather than dropping them. Events still
+ * pending from the last poll go first, so the release keeps its order.
+ * Returns the number of released Buttons; *out_undelivered counts events the
+ * queue did not take in time (their Button state still reads released).
  */
-static void release_held_buttons_locked(h2_runtime_t *runtime) {
+static uint32_t release_held_buttons_locked(
+    h2_runtime_t *runtime,
+    uint32_t *out_undelivered) {
+    *out_undelivered = 0u;
     if (runtime->private_state->test_control != NULL) {
-        return;
+        return 0u;
     }
     h2_runtime_timestamp_ms_t now_ms = 0u;
     if (input_now(runtime, &now_ms) != H2_PAL_OK) {
         now_ms = runtime->private_state->input_poll_now_ms;
     }
+    *out_undelivered += fault_flush_pending(runtime);
+    uint32_t released = 0u;
     for (size_t i = 0u; i < runtime->private_state->input_source_count; ++i) {
         h2_runtime_input_source_t *source =
             &runtime->private_state->input_sources[i];
-        if (source->component == H2_RUNTIME_COMPONENT_BUTTON &&
-            source->button.initialized != 0 &&
-            source->button.is_pressed != 0) {
-            (void)update_button_pressed(runtime, source, 0, now_ms);
+        if (source->component != H2_RUNTIME_COMPONENT_BUTTON ||
+            source->button.initialized == 0 ||
+            source->button.is_pressed == 0) {
+            continue;
         }
+        /* The buffer was just flushed, so one release (UP + ACTION) fits. */
+        if (update_button_pressed(runtime, source, 0, now_ms) != H2_PAL_OK) {
+            *out_undelivered += 2u;
+        }
+        released += 1u;
+        *out_undelivered += fault_flush_pending(runtime);
     }
-    (void)publish_snapshot(runtime, 0);
-    (void)enqueue_pending_events(runtime);
+    return released;
 }
 
 static void input_worker_fault(
     h2_runtime_t *runtime,
     h2_pal_result_t rc,
     h2_runtime_input_stage_t stage) {
-    char line[H2_PAL_LOG_MESSAGE_MAX];
-    (void)snprintf(line, sizeof(line),
-                   "H2_RUNTIME_INPUT_FAULT stage=%s rc=%d; input stopped",
-                   h2_runtime_input_stage_name(stage), (int)rc);
-    input_log(runtime, H2_PAL_LOG_ERROR, line);
-    if (input_writer_lock(runtime) == H2_PAL_OK) {
-        release_held_buttons_locked(runtime);
-        runtime->private_state->input_last_error = rc;
-        runtime->private_state->input_last_error_stage = stage;
-        runtime->private_state->input_error_count += 1u;
+    uint32_t released = 0u;
+    uint32_t undelivered = 0u;
+    const h2_pal_result_t lock_rc = input_writer_lock(runtime);
+    if (lock_rc == H2_PAL_OK) {
+        released = release_held_buttons_locked(runtime, &undelivered);
         (void)input_writer_unlock(runtime);
     }
+    h2_runtime_timestamp_ms_t now_ms = 0u;
+    (void)input_now(runtime, &now_ms);
+    if (input_health_lock(runtime) == H2_PAL_OK) {
+        runtime->private_state->input_last_error = rc;
+        runtime->private_state->input_last_error_stage = stage;
+        runtime->private_state->input_last_error_at_ms = now_ms;
+        runtime->private_state->input_error_count += 1u;
+        runtime->private_state->input_consecutive_error_count += 1u;
+        input_health_unlock(runtime);
+    }
+    char line[H2_PAL_LOG_MESSAGE_MAX];
+    if (lock_rc == H2_PAL_OK) {
+        (void)snprintf(line, sizeof(line),
+                       "H2_RUNTIME_INPUT_FAULT stage=%s rc=%d released=%u "
+                       "undelivered=%u; input stopped",
+                       h2_runtime_input_stage_name(stage), (int)rc,
+                       (unsigned)released, (unsigned)undelivered);
+    } else {
+        /* The source table cannot be touched without the writer mutex. */
+        (void)snprintf(line, sizeof(line),
+                       "H2_RUNTIME_INPUT_FAULT stage=%s rc=%d release=skipped "
+                       "lock_rc=%d; input stopped",
+                       h2_runtime_input_stage_name(stage), (int)rc,
+                       (int)lock_rc);
+    }
+    input_log(runtime, H2_PAL_LOG_ERROR, line);
     atomic_store(&runtime->private_state->input_worker_result, rc);
     atomic_store(&runtime->private_state->input_stop_requested, 1);
     atomic_store(
@@ -1310,10 +1439,10 @@ static void input_worker_fault(
         runtime->queue, runtime->private_state->event_queue);
 }
 
-static uint32_t input_backoff_ms(const h2_runtime_t *runtime) {
+static uint32_t input_backoff_ms(
+    const h2_runtime_t *runtime,
+    uint32_t failures) {
     const uint32_t tick = runtime->private_state->input_tick_ms;
-    const uint32_t failures =
-        runtime->private_state->input_consecutive_error_count;
     if (failures <= 1u) {
         return tick;
     }
@@ -1331,7 +1460,8 @@ static void input_task_entry(void *ctx) {
          * hardware reads, a full buffer or a busy reader are transient, and
          * stopping here would freeze every Button and sensor for good.
          */
-        const h2_pal_result_t poll_rc = input_worker_poll(runtime);
+        uint32_t failures = 0u;
+        const h2_pal_result_t poll_rc = input_worker_poll(runtime, &failures);
         if (poll_rc == H2_PAL_ERR_INVALID_ARG &&
             !h2_runtime_ready(runtime)) {
             input_worker_fault(
@@ -1345,7 +1475,7 @@ static void input_task_entry(void *ctx) {
         const h2_pal_result_t sleep_rc = h2_pal_time_sleep_ms(
             runtime->time,
             poll_rc == H2_PAL_OK ? runtime->private_state->input_tick_ms
-                                 : input_backoff_ms(runtime));
+                                 : input_backoff_ms(runtime, failures));
         if (sleep_rc != H2_PAL_OK) {
             input_worker_fault(runtime, sleep_rc, H2_RUNTIME_INPUT_STAGE_SLEEP);
             return;
@@ -1360,7 +1490,10 @@ h2_pal_result_t h2_runtime_input_status(
         return H2_PAL_ERR_INVALID_ARG;
     }
     h2_runtime_private_t *state = runtime->private_state;
-    const int locked = input_writer_lock(runtime) == H2_PAL_OK;
+    const h2_pal_result_t rc = input_health_lock(runtime);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
     *out_status = (h2_runtime_input_status_t){
         .phase = (h2_runtime_input_phase_t)atomic_load(&state->input_phase),
         .worker_result = atomic_load(&state->input_worker_result),
@@ -1371,12 +1504,9 @@ h2_pal_result_t h2_runtime_input_status(
         .consecutive_error_count = state->input_consecutive_error_count,
         .poll_count = state->input_poll_count,
         .last_poll_ok_at_ms = state->input_last_poll_ok_at_ms,
-        .snapshot_deferred_count =
-            (uint32_t)state->state_publication.deferred_count,
+        .snapshot_deferred_count = state->input_snapshot_deferred_count,
     };
-    if (locked != 0) {
-        (void)input_writer_unlock(runtime);
-    }
+    input_health_unlock(runtime);
     return H2_PAL_OK;
 }
 
@@ -1492,6 +1622,20 @@ h2_pal_result_t h2_runtime_input_prepare(h2_runtime_t *runtime) {
         &runtime->private_state->input_writer_mutex);
     if (rc != H2_PAL_OK) {
         runtime->private_state->input_writer_mutex = NULL;
+        return rc;
+    }
+    const h2_pal_mutex_config_t health_mutex_config = {
+        .name = "h2-runtime-input-health",
+        .allocator = runtime->mem,
+        .flags = H2_PAL_MUTEX_FLAG_NONE,
+    };
+    rc = h2_pal_mutex_create(
+        runtime->sync,
+        &health_mutex_config,
+        &runtime->private_state->input_health_mutex);
+    if (rc != H2_PAL_OK) {
+        runtime->private_state->input_health_mutex = NULL;
+        input_writer_mutex_destroy(runtime);
         return rc;
     }
     rc = h2_runtime_state_publication_init(runtime);

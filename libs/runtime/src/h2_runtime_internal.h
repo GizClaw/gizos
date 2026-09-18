@@ -397,19 +397,25 @@ struct h2_runtime_private {
     size_t event_payload_capacity;
     h2_runtime_sequence_t input_event_sequence_ceiling;
     /*
-     * Input worker health reported by h2_runtime_input_status(). Written by
-     * the poller under the input writer mutex; the stage names the step that
-     * produced the error of the poll in progress.
+     * The stage of the poll in progress that failed, and that poll's clock;
+     * both belong to the poll and live under the writer mutex.
      */
     h2_runtime_input_stage_t input_error_stage;
+    h2_runtime_timestamp_ms_t input_poll_now_ms;
+    /*
+     * Input worker health reported by h2_runtime_input_status(). Its own
+     * mutex guards it, so a worker that cannot take the writer mutex can
+     * still record that, and status never reads it unlocked.
+     */
+    h2_pal_mutex_t *input_health_mutex;
     h2_pal_result_t input_last_error;
     h2_runtime_input_stage_t input_last_error_stage;
     h2_runtime_timestamp_ms_t input_last_error_at_ms;
-    h2_runtime_timestamp_ms_t input_poll_now_ms;
     uint32_t input_error_count;
     uint32_t input_consecutive_error_count;
     uint32_t input_poll_count;
     h2_runtime_timestamp_ms_t input_last_poll_ok_at_ms;
+    uint32_t input_snapshot_deferred_count;
     /* State publication (owned by h2_runtime_state.c). */
     h2_runtime_state_publication_t state_publication;
     int state_dirty;

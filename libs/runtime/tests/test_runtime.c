@@ -2956,6 +2956,34 @@ static void test_input_fault_releases_held_buttons(void) {
     assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
+static void test_input_fault_release_with_full_queue_keeps_state_released(
+    void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+    h2_runtime_t *runtime = test_runtime_create(&env);
+    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+    env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+
+    /* The consumer never drains: the release cannot be queued. */
+    env.queue_state.send_rc = H2_PAL_ERR_FULL;
+    env.time_state.sleep_rc = H2_PAL_ERR_IO;
+    env.task_state.current->entry(env.task_state.current->ctx);
+    h2_runtime_button_state_t state;
+    assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
+           H2_PAL_OK);
+    assert(!state.pressed);
+    h2_runtime_input_status_t status;
+    assert(h2_runtime_input_status(runtime, &status) == H2_PAL_OK);
+    assert(status.phase == H2_RUNTIME_INPUT_PHASE_FAULTED);
+
+    env.queue_state.send_rc = H2_PAL_OK;
+    env.time_state.sleep_rc = H2_PAL_OK;
+    h2_runtime_deinit(runtime);
+    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+}
+
 static void test_input_join_failure_is_retryable(void) {
     test_runtime_env_t env;
     test_env_init(&env);
@@ -3240,15 +3268,15 @@ static void test_input_snapshot_does_not_create_condition(void) {
     assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
     assert(runtime != NULL);
     /*
-     * Two mutexes, the system state lock and the input writer lock, and no
-     * condition variable: the snapshot readers and the input poller both
-     * take a lock, neither waits on one.
+     * Three mutexes, the system state lock, the input writer lock and the
+     * input health lock, and no condition variable: the snapshot readers and
+     * the input poller both take a lock, neither waits on one.
      */
-    assert(env.sync_state.creates == 2u);
+    assert(env.sync_state.creates == 3u);
     assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
-    assert(env.sync_state.creates == 2u);
+    assert(env.sync_state.creates == 3u);
     h2_runtime_deinit(runtime);
-    assert(env.sync_state.destroys == 2u);
+    assert(env.sync_state.destroys == 3u);
     assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
@@ -4571,6 +4599,7 @@ int main(void) {
     test_input_start_after_worker_fault_is_rejected();
     test_input_worker_keeps_running_after_poll_error();
     test_input_fault_releases_held_buttons();
+    test_input_fault_release_with_full_queue_keeps_state_released();
     test_input_lifecycle_is_closed_during_test_session();
     test_station_snapshot_unavailable_without_mutex();
     test_input_snapshot_does_not_create_condition();

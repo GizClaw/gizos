@@ -127,10 +127,18 @@ typedef enum h2_runtime_input_stage {
  * A failed poll step is recoverable: the worker records it here, logs it with
  * its stage, backs off and polls again, so one bad ADC read or a momentarily
  * full buffer never silences the buttons. Only a failure that leaves the
- * worker unable to pace itself (sleep) or an unusable Runtime is fatal; it
- * releases every held Button (BUTTON_UP and a released BUTTON_ACTION are
- * queued ahead of the close), latches `worker_result`, closes the Runtime
- * event queue and moves the phase to FAULTED.
+ * worker unable to pace itself (sleep) or an unusable Runtime is fatal. A
+ * fatal stop releases every held Button through the normal release path, so
+ * its state reads released, and queues BUTTON_UP and a released BUTTON_ACTION
+ * ahead of the close, waiting up to 100 ms per event for queue space; events
+ * the queue still does not take are counted in the `H2_RUNTIME_INPUT_FAULT`
+ * log line. If the input writer mutex itself cannot be taken, the release is
+ * skipped and the log line says so. The stop then latches `worker_result`,
+ * closes the Runtime event queue and moves the phase to FAULTED.
+ *
+ * The health fields have their own lock, separate from the input writer
+ * mutex, so a failure to take the writer mutex is recorded too (stage
+ * `lock`).
  */
 typedef struct h2_runtime_input_status {
     h2_runtime_input_phase_t phase;
@@ -154,12 +162,15 @@ typedef struct h2_runtime_input_status {
  * Read the health of Runtime-owned input acquisition.
  *
  * Safe to call from any task at any phase, including after a fault. Counters
- * accumulate for the life of the Runtime.
+ * accumulate for the life of the Runtime. The copy is taken under the health
+ * lock and is consistent with itself; `phase` and `worker_result` are read
+ * atomically alongside it.
  *
  * @param runtime Initialized Runtime instance.
  * @param out_status Receives the status.
- * @return `H2_PAL_OK`, or `H2_PAL_ERR_INVALID_ARG` for an unusable Runtime or
- *         a null output.
+ * @return `H2_PAL_OK`; `H2_PAL_ERR_INVALID_ARG` for an unusable Runtime or a
+ *         null output; the Sync PAL result when the health lock cannot be
+ *         taken, in which case `out_status` is left untouched.
  */
 h2_pal_result_t h2_runtime_input_status(
     h2_runtime_t *runtime,
