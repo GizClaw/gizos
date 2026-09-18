@@ -738,6 +738,7 @@ const h2_pal_power_vtable_t power_vtable = {
     power_reboot,
     nullptr,
     power_deep_sleep,
+    nullptr,
 };
 h2_pal_power_api_t power_api = {nullptr, &power_vtable};
 
