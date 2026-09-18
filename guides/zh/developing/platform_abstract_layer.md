@@ -282,6 +282,8 @@ h2/pal/hal/h2_pal_wifi_csi.h
 h2/pal/hal/h2_pal_wifi_settings.h
 ```
 
+`h2_pal_power.h` 的 `h2_pal_power_set_deep_sleep_wake_timer()` 为下一次 `deep_sleep()` 设置定时唤醒，单位毫秒，从进入 deep sleep 时开始计时；传 0 恢复 provider 的默认唤醒策略。设置值在被改写或设备离开 deep sleep 前一直有效。定时唤醒后 boot info 的 source 为 `H2_PAL_POWER_BOOT_SOURCE_TIMER`。支持该能力的 provider 声明 `H2_PAL_POWER_CAPABILITY_DEEP_SLEEP_WAKE_TIMER`，其余返回 `H2_PAL_ERR_UNSUPPORTED`。释放 power hold 的物理关机不保留定时器。精度取决于 deep sleep 期间的 RTC 时钟源，片内 RC 慢时钟在长时间睡眠下可能有分钟级偏差，需要准点的调用方应自行对时。
+
 `h2_pal_periph.h` 描述 board 实际存在的硬件及其 `periph_id`。具体 GPIO、bus、address、channel 和 wiring 由 BSP 配置。
 
 Single-button periph payload 同时声明输入交付模式。`POLL_STATE` 表示 Runtime 通过 Button PAL 读取稳定的 pressed/released 状态；`PUSH_EDGE` 表示拥有该 periph 的 adapter 主动向 Runtime 推送 raw down/up edge，Runtime 不再调用 Button PAL read。未提供 payload 的既有 single-button periph 按 `POLL_STATE` 处理。交付模式是 periph 能力，不是 App component 类型；launcher 仍通过 component mapping 把相同的 App Button component 映射到不同来源。
