@@ -30,6 +30,9 @@ static int s_h2_esp_wifi_started;
 static wifi_config_t s_h2_esp_wifi_legacy_config;
 static esp_err_t s_h2_esp_wifi_legacy_result = ESP_ERR_INVALID_STATE;
 static int s_h2_esp_wifi_events_registered;
+/* Set once the STA_CONNECTED DNS handler sits after the default handlers of
+ * the current STA netif; cleared with that netif so the next one re-registers. */
+static int s_h2_esp_wifi_sta_dns_handler_registered;
 static int s_h2_esp_wifi_sta_disconnect_reason;
 static int s_h2_esp_wifi_sta_reconnect_enabled;
 static uint32_t s_h2_esp_wifi_sta_reconnect_attempts;
@@ -434,6 +437,7 @@ static int h2_esp_wifi_stop_driver_if_sta_idle(void) {
     if (s_h2_esp_wifi_sta_netif != NULL) {
         esp_netif_destroy_default_wifi(s_h2_esp_wifi_sta_netif);
         s_h2_esp_wifi_sta_netif = NULL;
+        s_h2_esp_wifi_sta_dns_handler_registered = 0;
         (void)h2_esp_platform_netif_reconcile_default();
     }
     s_h2_esp_wifi_started = 0;
@@ -678,12 +682,17 @@ int h2_esp_platform_wifi_ensure_started(void) {
         if (s_h2_esp_wifi_sta_netif == NULL) {
             return H2_PAL_ERR_NO_MEMORY;
         }
+        s_h2_esp_wifi_sta_dns_handler_registered = 0;
+    }
+
+    if (s_h2_esp_wifi_sta_dns_handler_registered == 0) {
         /* ESP-NETIF's STA_CONNECTED handler starts the DHCP client, which
          * clears lwIP's global DNS servers even while another interface is
          * the default. esp_event runs ANY_ID observers before id-specific
          * handlers, and id-specific handlers in registration order, so this
          * handler must be (re-)registered after the default handlers that
-         * esp_netif_create_default_wifi_sta() just installed. */
+         * esp_netif_create_default_wifi_sta() installed; a failed
+         * registration is retried on the next start. */
         (void)esp_event_handler_unregister(WIFI_EVENT, WIFI_EVENT_STA_CONNECTED,
                                            h2_esp_wifi_sta_connected_dns_handler);
         err = esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_CONNECTED,
@@ -691,6 +700,7 @@ int h2_esp_platform_wifi_ensure_started(void) {
         if (err != ESP_OK) {
             return h2_esp_wifi_map_error(err);
         }
+        s_h2_esp_wifi_sta_dns_handler_registered = 1;
     }
 
     if (s_h2_esp_wifi_events_registered == 0) {
