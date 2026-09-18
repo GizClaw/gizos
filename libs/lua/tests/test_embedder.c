@@ -474,13 +474,31 @@ static uint64_t wait_request(pending_call_t *pending) {
   assert(!"capability deadline exceeded");
   return 0;
 }
+/* One Button edge queues BUTTON_DOWN and BUTTON_ACTION, and a held Button
+ * repeats both on every poll. A job whose handler ends it on the first event
+ * is already terminal when the rest arrive, so CLOSED is the contract result
+ * for those, and only for a job that SUCCEEDED. A full delivery queue is
+ * retried so no event is dropped. Anything else fails with its result code. */
 static void dispatch(h2_runtime_t *runtime, h2_lua_host_t *host,
                      h2_lua_job_id_t job) {
   unsigned char payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
   h2_runtime_event_t event = {.payload = payload,
                               .payload_capacity = sizeof(payload)};
-  while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK)
-    assert(h2_lua_dispatch_runtime_event(host, job, &event) == H2_PAL_OK);
+  while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
+    h2_pal_result_t result = h2_lua_dispatch_runtime_event(host, job, &event);
+    for (unsigned i = 0; i < 5000 && result == H2_PAL_ERR_FULL; ++i) {
+      sleep_ms(NULL, 1);
+      result = h2_lua_dispatch_runtime_event(host, job, &event);
+    }
+    h2_lua_job_state_t state = status(host, job).state;
+    if (result == H2_PAL_OK ||
+        (result == H2_PAL_ERR_CLOSED && state == H2_LUA_JOB_SUCCEEDED))
+      continue;
+    fprintf(stderr, "dispatch result %d for event kind %d component %u in job "
+            "state %d\n", (int)result, (int)event.kind,
+            (unsigned)event.component_id, (int)state);
+    abort();
+  }
 }
 static void test_job_results(h2_lua_host_t *host) {
   size_t invalid_size = 99;
