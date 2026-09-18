@@ -7,6 +7,7 @@
 #include "h2_gizclaw_service_internal.h"
 #include "h2_gizclaw_task_names.h"
 #include "h2_gizclaw_telemetry.h"
+#include "h2_gizclaw_time_stretch_internal.h"
 #include "payload/audioplayer.pb.h"
 #include "payload/firmware.pb.h"
 #include "payload/system.pb.h"
@@ -33,6 +34,8 @@ struct h2_gizclaw_device {
   audio_download_t *download;
   atomic_bool stopping;
   atomic_uint generation;
+  /* Playback rate in permille, read by the worker once per stretch step. */
+  atomic_uint rate;
   uint32_t worker_generation, sequence;
   bool playing, dirty;
   gizclaw_rpc_v1_AudioPlayerStatus status;
@@ -1184,6 +1187,170 @@ static int write_player_pcm(h2_gizclaw_device_t *d, h2_pal_audio_track_t *track,
     (void)h2_pal_time_sleep_ms(d->config.time, 5);
   }
 }
+/* Packs PCM into complete PAL frames and keeps the reported position on the
+ * media timeline. source_bytes counts the source PCM the packed output stands
+ * for; at the recorded speed it equals the packed bytes and the arithmetic is
+ * the plain "handed to the track minus what is still queued". A stretched
+ * playback maps the queued output back through its rate. */
+typedef struct player_output {
+  h2_gizclaw_device_t *d;
+  h2_pal_audio_track_t *track;
+  uint8_t *frame;
+  size_t frame_bytes, buffered;
+  uint32_t frame_samples, buffer_frames;
+  bool music;
+  /* Rate of the output being packed, for mapping the queue back. */
+  uint32_t rate;
+  uint64_t origin_bytes, submitted_bytes, source_bytes;
+  uint64_t position_ms, reported_ms;
+} player_output_t;
+/* Writes the packed frame, padding it with silence when it is the last. */
+static int output_frame(player_output_t *o) {
+  h2_gizclaw_device_t *d = o->d;
+  memset(o->frame + o->buffered, 0, o->frame_bytes - o->buffered);
+  h2_audio_frame_t frame = {.data = o->frame,
+                            .capacity = o->frame_bytes,
+                            .bytes = o->frame_bytes,
+                            .sample_rate_hz = 16000,
+                            .samples_per_channel = o->frame_samples,
+                            .channels = 1,
+                            .sample_format = H2_AUDIO_SAMPLE_S16LE};
+  int rc = write_player_pcm(d, o->track, &frame);
+  if (rc != H2_PAL_OK)
+    return rc;
+  o->submitted_bytes += o->buffered;
+  o->buffered = 0;
+  /* Keep feeding the PCM queue continuously. A drain barrier on every
+   * frame inserts silence in PAL mixers. During playback, conservatively
+   * subtract the requested queue capacity plus one in-flight frame. */
+  const uint64_t queued =
+      (uint64_t)o->frame_bytes * (o->buffer_frames + 1u) * o->rate / 1000u;
+  uint64_t position_ms =
+      (o->origin_bytes +
+       (o->source_bytes > queued ? o->source_bytes - queued : 0u)) /
+      32u;
+  /* A rate change leaves output of the old rate queued; never go back. */
+  if (position_ms < o->position_ms)
+    position_ms = o->position_ms;
+  o->position_ms = position_ms;
+  lock(d);
+  if (o->music && !interrupted(d)) {
+    strcpy(d->status.state, "playing");
+    d->status.position_ms = position_ms;
+  }
+  unlock(d);
+  if (o->music && (position_ms - o->reported_ms >= 1000 || o->reported_ms == 0)) {
+    report_player(d);
+    o->reported_ms = position_ms;
+  }
+  return H2_PAL_OK;
+}
+/* Packs len output bytes that stand for source_bytes of source, crediting
+ * the source in proportion as the output is packed. */
+static int output_write(player_output_t *o, const uint8_t *data, size_t len,
+                        uint64_t source_bytes) {
+  if (!len) {
+    o->source_bytes += source_bytes;
+    return H2_PAL_OK;
+  }
+  uint64_t credited = 0;
+  for (size_t offset = 0; offset < len;) {
+    if (interrupted(o->d))
+      return H2_PAL_ERR_CLOSED;
+    size_t count = len - offset;
+    if (count > o->frame_bytes - o->buffered)
+      count = o->frame_bytes - o->buffered;
+    memcpy(o->frame + o->buffered, data + offset, count);
+    o->buffered += count;
+    offset += count;
+    const uint64_t due = source_bytes * offset / len;
+    o->source_bytes += due - credited;
+    credited = due;
+    if (o->buffered == o->frame_bytes) {
+      const int rc = output_frame(o);
+      if (rc != H2_PAL_OK)
+        return rc;
+    }
+  }
+  return H2_PAL_OK;
+}
+/* Per-item stretch state: the work buffer exists only once the rate has left
+ * the recorded speed during this item. */
+typedef struct player_stretch {
+  h2_gizclaw_stretch_t *state;
+  bool active, failed;
+  uint32_t rate;
+  uint64_t audio_bytes, decode_us, stretch_us;
+} player_stretch_t;
+static uint32_t player_rate(const player_output_t *o,
+                            const player_stretch_t *s) {
+  return o->music && !s->failed ? atomic_load(&o->d->rate)
+                                : H2_GIZCLAW_PLAYER_RATE_NORMAL;
+}
+static uint64_t now_us(h2_gizclaw_device_t *d) {
+  uint64_t now = 0;
+  return h2_pal_time_get_monotonic_us(d->config.time, &now) == H2_PAL_OK ? now
+                                                                         : 0u;
+}
+static int stretch_flush(player_output_t *o, player_stretch_t *s) {
+  const int16_t *out = NULL;
+  size_t count = 0;
+  uint64_t source = 0;
+  h2_gizclaw_stretch_flush(s->state, &out, &count, &source);
+  s->active = false;
+  o->rate = H2_GIZCLAW_PLAYER_RATE_NORMAL;
+  return output_write(o, (const uint8_t *)out, count * 2u, source * 2u);
+}
+/* Decoded source PCM to the track, through the stretcher when the rate is
+ * not the recorded speed. The rate is re-read before every step. */
+static int player_feed(player_output_t *o, player_stretch_t *s,
+                       const int16_t *pcm, size_t samples) {
+  int rc = H2_PAL_OK;
+  for (size_t done = 0; rc == H2_PAL_OK && done < samples;) {
+    const uint32_t rate = player_rate(o, s);
+    if (rate == H2_GIZCLAW_PLAYER_RATE_NORMAL) {
+      if (s->active) {
+        rc = stretch_flush(o, s);
+        continue;
+      }
+      return output_write(o, (const uint8_t *)(pcm + done),
+                          (samples - done) * 2u, (samples - done) * 2u);
+    }
+    if (!s->active) {
+      if (!s->state) {
+        s->state = h2_pal_mem_alloc(o->d->config.allocator, sizeof(*s->state));
+        if (!s->state) {
+          /* Keep playing at the recorded speed rather than fail the item. */
+          s->failed = true;
+          trace(o->d, "player-rate-fallback", (int)rate, H2_PAL_ERR_NO_MEMORY);
+          continue;
+        }
+      }
+      h2_gizclaw_stretch_reset(s->state);
+      s->active = true;
+    }
+    done += h2_gizclaw_stretch_push(s->state, pcm + done, samples - done);
+    for (;;) {
+      const uint32_t step_rate = player_rate(o, s);
+      if (step_rate == H2_GIZCLAW_PLAYER_RATE_NORMAL)
+        break;
+      const int16_t *out = NULL;
+      size_t count = 0;
+      uint64_t source = 0;
+      const uint64_t started = now_us(o->d);
+      const bool stepped =
+          h2_gizclaw_stretch_step(s->state, step_rate, &out, &count, &source);
+      s->stretch_us += now_us(o->d) - started;
+      if (!stepped)
+        break;
+      s->rate = o->rate = step_rate;
+      rc = output_write(o, (const uint8_t *)out, count * 2u, source * 2u);
+      if (rc != H2_PAL_OK)
+        break;
+    }
+  }
+  return rc;
+}
 /* start_ms > 0 with a known duration_ms seeks: a probe for the headers, a
  * ranged request from about the start, and the decoder resyncing on the next
  * valid page. Anything that goes wrong before the first sample is known
@@ -1244,19 +1411,35 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
   if (rc == H2_PAL_OK)
     rc = h2_pal_audio_create_track(d->config.audio, &audio, &track);
   trace(d, "player-track", 0, rc);
-  uint8_t pcm[H2_GIZCLAW_OGG_OPUS_PCM_BYTES];
+  /* Samples, not bytes, so the stretcher can read them in place. */
+  int16_t pcm[H2_GIZCLAW_OGG_OPUS_PCM_BYTES / 2u];
   /* 16 kHz mono PCM16 is 32 bytes per millisecond. */
   const uint64_t limit_bytes = (uint64_t)limit_ms * 32u;
-  uint64_t submitted_bytes = 0, reported_ms = 0;
+  player_output_t out = {.d = d,
+                         .track = track,
+                         .frame = output,
+                         .frame_bytes = frame_bytes,
+                         .frame_samples = audio.format.frame_samples_per_channel,
+                         .buffer_frames = audio.buffer_frames,
+                         .music = music,
+                         .rate = H2_GIZCLAW_PLAYER_RATE_NORMAL};
+  player_stretch_t stretch = {0};
   /* PCM bytes a start-from-zero playback would have produced before the
-   * first sample of this one; known once `located`. */
-  uint64_t origin_bytes = 0;
+   * first sample of this one (out.origin_bytes); known once `located`. */
   bool located = source == AUDIO_SOURCE_PLAIN, seek_pending = !located;
-  size_t buffered = 0;
   bool finished = false;
   while (rc == H2_PAL_OK && !interrupted(d) && !finished) {
     size_t length = 0;
-    rc = h2_gizclaw_ogg_opus_next(decoder, pcm, sizeof(pcm), &length);
+    /* Decode cost is measured only while stretching, for the CPU trace. */
+    const bool measure = player_rate(&out, &stretch) !=
+                         H2_GIZCLAW_PLAYER_RATE_NORMAL;
+    const uint64_t decode_started = measure ? now_us(d) : 0u;
+    rc = h2_gizclaw_ogg_opus_next(decoder, (uint8_t *)pcm, sizeof(pcm),
+                                  &length);
+    if (measure) {
+      stretch.decode_us += now_us(d) - decode_started;
+      stretch.audio_bytes += length;
+    }
     if (rc == H2_PAL_OK && seek_pending &&
         h2_gizclaw_ogg_opus_headers_done(decoder)) {
       seek_pending = false;
@@ -1281,10 +1464,10 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
         h2_gizclaw_ogg_opus_origin(decoder, &origin)) {
       /* Exact from here on: the granule-derived start, not the estimate. */
       located = true;
-      origin_bytes = origin * 2u;
+      out.origin_bytes = origin * 2u;
       lock(d);
       if (music && !interrupted(d)) {
-        d->status.position_ms = origin_bytes / 32u;
+        d->status.position_ms = out.origin_bytes / 32u;
         changed(d);
       }
       unlock(d);
@@ -1297,8 +1480,10 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
       break;
     if (limit_ms) {
       /* Saturate: the limit must stay in force even if the consumed count
-       * ever reaches it without the cut below having ended the loop. */
-      const uint64_t consumed = submitted_bytes + buffered;
+       * ever reaches it without the cut below having ended the loop. Limited
+       * playback is a named sound, which never stretches, so output bytes
+       * are source bytes. */
+      const uint64_t consumed = out.submitted_bytes + out.buffered;
       const uint64_t remaining =
           consumed < limit_bytes ? limit_bytes - consumed : 0u;
       if ((uint64_t)length >= remaining) {
@@ -1306,54 +1491,27 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
         finished = true;
       }
     }
-    for (size_t offset = 0; (offset < length || (finished && buffered)) &&
-                            rc == H2_PAL_OK && !interrupted(d);) {
-      size_t count = length - offset;
-      if (count > frame_bytes - buffered)
-        count = frame_bytes - buffered;
-      memcpy(output + buffered, pcm + offset, count);
-      buffered += count;
-      offset += count;
-      if (buffered < frame_bytes && !finished)
-        continue;
-      if (buffered < frame_bytes && offset < length)
-        continue;
-      /* PAL tracks require complete hardware frames. Pad only the final one;
-       * playback progress counts source samples, excluding this silence. */
-      memset(output + buffered, 0, frame_bytes - buffered);
-      h2_audio_frame_t frame = {.data = output,
-                                .capacity = frame_bytes,
-                                .bytes = frame_bytes,
-                                .sample_rate_hz = 16000,
-                                .samples_per_channel =
-                                    audio.format.frame_samples_per_channel,
-                                .channels = 1,
-                                .sample_format = H2_AUDIO_SAMPLE_S16LE};
-      rc = write_player_pcm(d, track, &frame);
-      if (rc != H2_PAL_OK)
-        break;
-      submitted_bytes += buffered;
-      buffered = 0;
-      /* Keep feeding the PCM queue continuously. A drain barrier on every
-       * frame inserts silence in PAL mixers. During playback, conservatively
-       * subtract the requested queue capacity plus one in-flight frame. */
-      uint64_t pending_bytes = frame_bytes * (audio.buffer_frames + 1u);
-      uint64_t position_ms =
-          (origin_bytes + (submitted_bytes > pending_bytes
-                               ? submitted_bytes - pending_bytes
-                               : 0u)) /
-          32u;
-      lock(d);
-      if (music && !interrupted(d)) {
-        strcpy(d->status.state, "playing");
-        d->status.position_ms = position_ms;
-      }
-      unlock(d);
-      if (music && (position_ms - reported_ms >= 1000 || reported_ms == 0)) {
-        report_player(d);
-        reported_ms = position_ms;
-      }
-    }
+    rc = player_feed(&out, &stretch, pcm, length / 2u);
+    /* The stretcher's tail and the last partial PAL frame, padded. */
+    if (rc == H2_PAL_OK && finished && stretch.active)
+      rc = stretch_flush(&out, &stretch);
+    if (rc == H2_PAL_OK && finished && out.buffered && !interrupted(d))
+      rc = output_frame(&out);
+  }
+  if (stretch.state) {
+    char message[160];
+    (void)snprintf(message, sizeof(message),
+                   "player-rate rate=%u audio_ms=%llu decode_us=%llu "
+                   "stretch_us=%llu fallback=%d",
+                   (unsigned)stretch.rate,
+                   (unsigned long long)(stretch.audio_bytes / 32u),
+                   (unsigned long long)stretch.decode_us,
+                   (unsigned long long)stretch.stretch_us, stretch.failed);
+    (void)h2_pal_log_write(d->config.log, H2_PAL_LOG_INFO, "gizclaw", message);
+    h2_pal_mem_free(d->config.allocator, stretch.state);
+  } else if (stretch.failed) {
+    (void)h2_pal_log_write(d->config.log, H2_PAL_LOG_WARN, "gizclaw",
+                           "player-rate fallback=1");
   }
   h2_pal_mem_free(d->config.allocator, output);
   if (interrupted(d))
@@ -1364,7 +1522,7 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
       if (rc == H2_PAL_OK && music) {
         lock(d);
         if (!interrupted(d))
-          d->status.position_ms = (origin_bytes + submitted_bytes) / 32u;
+          d->status.position_ms = (out.origin_bytes + out.source_bytes) / 32u;
         unlock(d);
       }
     }
@@ -1679,6 +1837,7 @@ h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service) {
   d->service = service;
   atomic_init(&d->stopping, false);
   atomic_init(&d->generation, 0);
+  atomic_init(&d->rate, H2_GIZCLAW_PLAYER_RATE_NORMAL);
   strcpy(d->status.state, "stopped");
   strcpy(d->status.repeat, "off");
   const h2_pal_mutex_config_t mutex = {.name = "gizclaw-device",
@@ -1906,6 +2065,27 @@ h2_pal_result_t h2_gizclaw_player_repeat_set(h2_gizclaw_service_t *service,
   unlock(d);
   return rc;
 }
+/* A player property rather than a play argument, so it reaches auto-advance,
+ * repeat and remote plays, and changes the item already playing in place. */
+h2_pal_result_t h2_gizclaw_player_rate_set(h2_gizclaw_service_t *service,
+                                           uint32_t rate_permille) {
+  if (!service)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_device_t *d = service->device;
+  if (!d || !d->playlist)
+    return H2_PAL_ERR_UNSUPPORTED;
+  if (rate_permille < H2_GIZCLAW_PLAYER_RATE_MIN ||
+      rate_permille > H2_GIZCLAW_PLAYER_RATE_MAX)
+    return H2_PAL_ERR_INVALID_ARG;
+  lock(d);
+  int rc = H2_PAL_OK;
+  if (!d->task || atomic_load(&d->stopping))
+    rc = H2_PAL_ERR_CLOSED;
+  else
+    atomic_store(&d->rate, rate_permille);
+  unlock(d);
+  return rc;
+}
 h2_pal_result_t h2_gizclaw_player_get_status(h2_gizclaw_service_t *service,
                                              h2_gizclaw_player_status_t *out) {
   if (!out)
@@ -1929,6 +2109,7 @@ h2_pal_result_t h2_gizclaw_player_get_status(h2_gizclaw_service_t *service,
   out->current_index = d->status.current_index;
   out->playlist_length = d->status.playlist_length;
   out->playlist_revision = d->status.playlist_revision;
+  out->rate_permille = atomic_load(&d->rate);
   unlock(d);
   return H2_PAL_OK;
 }

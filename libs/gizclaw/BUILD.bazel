@@ -93,6 +93,8 @@ _FIRMWARE_COMPATIBLE_SRCS = [
     "src/h2_gizclaw_social_ops.c",
     "src/h2_gizclaw_speech.c",
     "src/h2_gizclaw_telemetry.c",
+    "src/h2_gizclaw_time_stretch.c",
+    "src/h2_gizclaw_time_stretch_internal.h",
     "src/h2_gizclaw_workflow.c",
     "src/h2_gizclaw_workspace.c",
 ]
@@ -197,6 +199,8 @@ cc_library(
         "src/h2_gizclaw_social_ops.c",
         "src/h2_gizclaw_speech.c",
         "src/h2_gizclaw_telemetry.c",
+        "src/h2_gizclaw_time_stretch.c",
+        "src/h2_gizclaw_time_stretch_internal.h",
         "src/h2_gizclaw_workflow.c",
         "src/h2_gizclaw_workspace.c",
     ],
@@ -292,6 +296,24 @@ cc_test(
         "//libs/pal",
         "//tools/bazel:vendor_third_party_opus",
     ],
+)
+
+cc_test(
+    name = "h2_gizclaw_time_stretch_test",
+    srcs = [
+        "src/h2_gizclaw_time_stretch.c",
+        "src/h2_gizclaw_time_stretch_internal.h",
+        "tests/test_h2_gizclaw_time_stretch.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )
 
 cc_test(

@@ -16,6 +16,16 @@ Peer connection 内的上下行 Opus RTP track、双向 Agent Event Stream、BOS
 
 `h2_gizclaw_player_repeat_set()` 接受与 `client.device.audioplayer.mode.set` 相同的 `off` / `one` / `all`，其他值返回 `H2_PAL_ERR_INVALID_ARG` 并保持当前模式不变，快照的 `repeat` 字段即为回读入口。末曲推进与循环由 library 的 worker 按该模式负责：`one` 重播当前曲，`all` 到末尾回到第 0 条，`off` 播完即停。产品必须设置模式而不是自己实现“下一首、到末尾回绕”，否则会与库内推进重复触发。
 
+### 变速播放（保持音调）
+
+`h2_gizclaw_player_rate_set(service, rate_permille)` 让本地播放器以录制速度的 `rate_permille`‰ 播放，范围 `H2_GIZCLAW_PLAYER_RATE_MIN`（500）到 `H2_GIZCLAW_PLAYER_RATE_MAX`（2000），`H2_GIZCLAW_PLAYER_RATE_NORMAL`（1000）为原速；越界返回 `H2_PAL_ERR_INVALID_ARG` 且速率不变，`get_status()` 的 `rate_permille` 读回当前值。它面向播客、有声书这类整段下载的语音：变速在设备上做，改的是语速不是音高。实时下行的对话回复不走这里——设备放慢实时流会越积越多，那类语速由服务端合成时决定。
+
+速率是播放器属性而不是单次播放参数：设置后在一个 32 ms 步长内作用于正在播放的条目（不重启下载、不重新定位），并对之后的每一条、自动下一首、单曲循环和服务器发起的 `audioplayer.play` 持续生效，直到再次设置。这样产品在用户改偏好时设一次即可；原速播放的内容（如音乐）在开始前设回 1000。命名音效（`client.device.sound.play`）始终原速。
+
+时间轴一律按媒体本身：`status.position_ms`、结束时的 `duration_ms`、`play_index_at()` 的 `start_ms` 和 `playlist_set()` 的 `duration_ms` 都是原始媒体时间，放慢不会改变续播点或上报的时长；变速中途切换时位置只增不减。
+
+实现是定点 SOLA：40 ms 序列、8 ms 线性交叉淡化、在 15 ms 窗口内按绝对差之和找与上一段尾部最相似的起点，每步输出 32 ms、按速率推进源位置。1000 为直通，不分配缓冲、不增加逐样本计算，输出与不变速时逐字节相同；其他速率在条目播放期间占用一块约 5.5 KiB 的固定工作缓冲，条目结束即释放。下载环形缓冲不变——慢放只是消费更慢，已有背压让下载等待更久，不会多预取或涨内存。工作缓冲分配失败时该条目按原速继续播放并记 WARN `player-rate fallback=1`，不会让播放失败；这也是 CPU 不足时的降级方向。每个变速过的条目结束时记一行 INFO `player-rate rate=… audio_ms=… decode_us=… stretch_us=…`，用于在真实板子上核对解码与变速各占多少 CPU。
+
 HTTPS 下载由独立 PAL task 写入有界压缩环形缓冲，默认容量 64 KiB、启动与补缓冲阈值 16 KiB。设备 worker 增量读取 Ogg page 和 Opus packet，输出 16 kHz mono S16LE，并组装成 Audio PAL 要求的完整 PCM frame。下载侧缓冲满时等待，播放侧 `WOULD_BLOCK` 重试同一帧；不会把整首文件载入内存，也不会逐帧 drain 插入静音。只有尾帧补零，正常结束时 drain；播放进度扣除排队帧，最终不计补零样本。
 
 停止使当前 generation 失效并取消 HTTP，下载 task join 成功后才释放其缓冲；播放器只关闭自己的 Track，不关闭共享扬声器。下载、解码或输出失败进入 error 并上报 telemetry。命名音效由补充 vtable 解析名称为 HTTPS Ogg/Opus URL；名称须适合内部有界存储，非法输入在预留任务前拒绝。
