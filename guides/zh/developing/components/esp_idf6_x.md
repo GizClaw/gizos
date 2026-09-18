@@ -70,7 +70,10 @@ fallback）；default 接口换了或任一 server 被改写时调用 `dns_clear
 全局 server，而调用过 `esp_netif_set_default_netif()` 后 IDF 不再在 GOT_IP 时重新应用
 default；同时避免经旧 default 的 DNS 解析出的地址在切换后继续命中缓存（lwIP 缓存最长
 保留 `DNS_MAX_TTL`）。清缓存会让当时仍在等待的解析立即失败，调用方按自己的重试策略
-重新解析。
+重新解析。Wi-Fi provider 在 `esp_netif_create_default_wifi_sta()` 之后另外注册一个
+`WIFI_EVENT_STA_CONNECTED` 专用 handler 调用 reconcile：esp_event 先执行 `ANY_ID`
+observer、再按注册顺序执行专用 handler，只有排在 ESP-NETIF 默认 handler 之后，才能在
+其启动 DHCP client 清空全局 server 之后补回（例如 STA 重新关联时 PPP 仍是 default）。
 
 ESP SIMCOM 的数据会话关闭与整机关闭是两个独立生命周期。`data_close` 让 modem 保持供电，通过 COMMAND/PPP 交互有界地退出数据模式；失败时保留非 `CLOSED` 状态供调用方重试。整机 `close` 不复用该交互路径：transport 先驱动配置的 modem power GPIO 到关闭电平，再只依赖 ESP 本机状态恢复 default netif、同步注销 PPP/IP event handler、销毁 DCE、PPP netif 和 event group。default netif 恢复失败会在销毁 PPP netif 前返回并保留 route ownership state，供下一次 close 重试。
 

@@ -446,6 +446,16 @@ static int h2_esp_wifi_stop_driver_if_sta_idle(void) {
     return H2_PAL_OK;
 }
 
+static void h2_esp_wifi_sta_connected_dns_handler(void *arg, esp_event_base_t event_base,
+                                                  int32_t event_id, void *event_data) {
+    (void)arg;
+    (void)event_base;
+    (void)event_id;
+    (void)event_data;
+    /* Put the default interface's DNS servers back after DHCP start. */
+    (void)h2_esp_platform_netif_reconcile_default();
+}
+
 static void h2_esp_wifi_event_handler(
     void *arg,
     esp_event_base_t event_base,
@@ -667,6 +677,19 @@ int h2_esp_platform_wifi_ensure_started(void) {
         s_h2_esp_wifi_sta_netif = esp_netif_create_default_wifi_sta();
         if (s_h2_esp_wifi_sta_netif == NULL) {
             return H2_PAL_ERR_NO_MEMORY;
+        }
+        /* ESP-NETIF's STA_CONNECTED handler starts the DHCP client, which
+         * clears lwIP's global DNS servers even while another interface is
+         * the default. esp_event runs ANY_ID observers before id-specific
+         * handlers, and id-specific handlers in registration order, so this
+         * handler must be (re-)registered after the default handlers that
+         * esp_netif_create_default_wifi_sta() just installed. */
+        (void)esp_event_handler_unregister(WIFI_EVENT, WIFI_EVENT_STA_CONNECTED,
+                                           h2_esp_wifi_sta_connected_dns_handler);
+        err = esp_event_handler_register(WIFI_EVENT, WIFI_EVENT_STA_CONNECTED,
+                                         h2_esp_wifi_sta_connected_dns_handler, NULL);
+        if (err != ESP_OK) {
+            return h2_esp_wifi_map_error(err);
         }
     }
 
