@@ -3230,6 +3230,14 @@ typedef struct seek_test_state {
   unsigned server;
   atomic_uint calls, writes;
   char ranges[8][48];
+  /* Rate tests: at write number switch_at the rate becomes switch_rate from
+   * the worker's own thread, and every write checks the reported position
+   * never moves back. */
+  h2_gizclaw_service_t *service;
+  unsigned switch_at;
+  uint32_t switch_rate;
+  uint64_t last_position;
+  bool position_regressed;
 } seek_test_state_t;
 static int seek_audio_info(void *user, h2_audio_info_t *out) {
   (void)user;
@@ -3244,7 +3252,18 @@ static int seek_pcm_write(h2_pal_audio_track_t *track,
                           const h2_audio_frame_t *frame, uint32_t timeout_ms) {
   (void)timeout_ms;
   assert(frame->bytes == 320u);
-  atomic_fetch_add(&((seek_test_state_t *)track->user)->writes, 1u);
+  seek_test_state_t *state = track->user;
+  const unsigned writes = atomic_fetch_add(&state->writes, 1u) + 1u;
+  if (state->service) {
+    if (state->switch_at && writes == state->switch_at)
+      assert(h2_gizclaw_player_rate_set(state->service, state->switch_rate) ==
+             H2_PAL_OK);
+    h2_gizclaw_player_status_t status;
+    assert(h2_gizclaw_player_get_status(state->service, &status) == H2_PAL_OK);
+    if (status.position_ms < state->last_position)
+      state->position_regressed = true;
+    state->last_position = status.position_ms;
+  }
   return H2_PAL_OK;
 }
 static int seek_pcm_drain(h2_pal_audio_track_t *track, uint32_t timeout_ms) {
@@ -3372,6 +3391,8 @@ static unsigned seek_play(h2_gizclaw_service_t *service,
   atomic_store(&state->calls, 0u);
   atomic_store(&state->writes, 0u);
   memset(state->ranges, 0, sizeof(state->ranges));
+  state->last_position = 0;
+  state->position_regressed = false;
   assert(h2_gizclaw_player_play_index_at(service, 0, start_ms) == H2_PAL_OK);
   h2_gizclaw_player_status_t status;
   assert(h2_gizclaw_player_get_status(service, &status) == H2_PAL_OK);
@@ -3500,6 +3521,139 @@ static void test_device_player_timed_start(void) {
   assert(atomic_load(&state.calls) == 1u && !state.ranges[0][0]);
 
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_gizclaw_test_set_telemetry_send(NULL, NULL);
+}
+
+static h2_pal_result_t seek_resolve_sound(void *user, const char *name,
+                                          char *out_url, size_t capacity) {
+  (void)user;
+  assert(strcmp(name, "episode") == 0);
+  (void)snprintf(out_url, capacity, "https://example.test/episode.ogg");
+  return H2_PAL_OK;
+}
+/* Frames a playback of source16 samples writes at rate, within the slack of
+ * the stretcher's first and last steps. */
+static bool rate_frames_near(unsigned frames, uint64_t source16,
+                             uint32_t rate) {
+  const uint64_t expected = source16 * 1000u / rate / 160u;
+  const uint64_t slack = 2u * 640u / 160u + 1u;
+  return frames + slack >= expected && frames <= expected + slack;
+}
+
+static void test_device_player_rate(void) {
+  static seek_test_state_t state;
+  memset(&state, 0, sizeof(state));
+  seek_fixture_build(&state);
+  const h2_pal_audio_vtable_t audio_vtable = {.get_info = seek_audio_info,
+    .start_speaker = seek_speaker, .create_track = seek_track_create};
+  const h2_pal_audio_api_t audio = {.user = &state, .vtable = &audio_vtable};
+  const h2_pal_http_vtable_t http_vtable = {.request = seek_http};
+  const h2_pal_http_api_t http = {.user = &state, .vtable = &http_vtable};
+  const h2_gizclaw_vtable_t vtable = {.resolve_sound_url = seek_resolve_sound};
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  service->client_config.audio = &audio;
+  service->client_config.http = &http;
+  service->client_config.vtable = &vtable;
+  service->client_config.audio_buffer_bytes = 4096;
+  assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
+  h2_gizclaw_test_set_telemetry_send(device_telemetry, NULL);
+  /* Before the worker runs, like every other player command. */
+  assert(h2_gizclaw_player_rate_set(service, 800u) == H2_PAL_ERR_CLOSED);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  state.service = service;
+
+  /* The recorded speed until changed; out-of-range and NULL are rejected
+   * without touching it. */
+  h2_gizclaw_player_status_t status;
+  assert(h2_gizclaw_player_get_status(service, &status) == H2_PAL_OK);
+  assert(status.rate_permille == H2_GIZCLAW_PLAYER_RATE_NORMAL);
+  assert(h2_gizclaw_player_rate_set(service, 499u) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_rate_set(service, 2001u) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_rate_set(NULL, 800u) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_player_get_status(service, &status) == H2_PAL_OK);
+  assert(status.rate_permille == H2_GIZCLAW_PLAYER_RATE_NORMAL);
+
+  /* NORMAL is the passthrough: exactly the frames of today's player. */
+  assert(seek_play(service, &state, 30000, 0, 0) == seek_frames(&state, 0));
+
+  /* Slower and faster: about 1/rate as many frames, and the item still ends
+   * with its real length on the media timeline. */
+  const uint32_t rates[] = {800u, 500u, 2000u};
+  for (size_t i = 0; i < 3u; ++i) {
+    assert(h2_gizclaw_player_rate_set(service, rates[i]) == H2_PAL_OK);
+    assert(h2_gizclaw_player_get_status(service, &status) == H2_PAL_OK);
+    assert(status.rate_permille == rates[i]);
+    const unsigned frames = seek_play(service, &state, 30000, 0, 0);
+    assert(rate_frames_near(frames, state.plain16, rates[i]));
+    assert(!state.position_regressed);
+  }
+
+  /* A timed start at a slow rate lands on the same granule-exact start and
+   * stretches only what follows it. */
+  assert(h2_gizclaw_player_rate_set(service, 800u) == H2_PAL_OK);
+  const unsigned timed = seek_play(service, &state, 30000, 20000, 20000);
+  assert(atomic_load(&state.calls) == 2u);
+  assert(rate_frames_near(timed, state.plain16 - 20000u * 16u, 800u));
+  assert(!state.position_regressed);
+
+  /* Changing the rate mid-item continues the same download: slow for the
+   * first 5 s of output, then the recorded speed for the rest. */
+  state.switch_at = 500u;
+  state.switch_rate = H2_GIZCLAW_PLAYER_RATE_NORMAL;
+  const unsigned switched = seek_play(service, &state, 30000, 0, 0);
+  assert(atomic_load(&state.calls) == 1u);
+  assert(!state.position_regressed);
+  /* 500 frames at 0.8x stand for about 4 s of source. */
+  const uint64_t slow16 = 500u * 160u * 800u / 1000u;
+  assert(rate_frames_near(switched - 500u, state.plain16 - slow16, 1000u));
+  /* And back to a slow rate mid-item from NORMAL. */
+  state.switch_rate = 800u;
+  const unsigned slowed = seek_play(service, &state, 30000, 0, 0);
+  assert(atomic_load(&state.calls) == 1u);
+  assert(!state.position_regressed);
+  assert(rate_frames_near(slowed - 500u, state.plain16 - 500u * 160u, 800u));
+  /* The widest switch: the queue still holds 2x output (two source frames
+   * per frame) when 0.5x output (half a source frame per frame) follows.
+   * Each queued frame is subtracted at the rate that produced it, so the
+   * position neither jumps ahead nor steps back. */
+  assert(h2_gizclaw_player_rate_set(service, 2000u) == H2_PAL_OK);
+  state.switch_rate = 500u;
+  const unsigned widest = seek_play(service, &state, 30000, 0, 0);
+  assert(!state.position_regressed);
+  /* The switch lands inside a 32 ms step whose remaining frames are still
+   * 2x output, so up to one step (about 3 frames, 12 frames at 0.5x) of
+   * source moves to the fast side. */
+  const unsigned widest_expected =
+      500u + (unsigned)((state.plain16 - 500u * 160u * 2u) * 2u / 160u);
+  assert(widest + 20u >= widest_expected && widest <= widest_expected + 6u);
+  state.switch_at = 0;
+
+  /* A named sound is a cue, not content: always the recorded speed. */
+  assert(h2_gizclaw_player_rate_set(service, 800u) == H2_PAL_OK);
+  assert(h2_gizclaw_player_get_status(service, &status) == H2_PAL_OK);
+  assert(status.rate_permille == 800u);
+  gizclaw_rpc_v1_ClientDeviceSoundPlayRequest sound = {0};
+  strcpy(sound.sound, "episode");
+  h2_gizclaw_rpc_provider_response_t response;
+  atomic_store(&state.calls, 0u);
+  atomic_store(&state.writes, 0u);
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_SOUND_PLAY,
+      gizclaw_rpc_v1_ClientDeviceSoundPlayRequest_fields, &sound,
+      &response) == 0);
+  assert(response.on_complete != NULL);
+  response.on_complete(response.complete_user, H2_PAL_OK);
+  for (unsigned i = 0; h2_gizclaw_device_action_pending_internal(service);
+       ++i) {
+    assert(i < 5000u && "sound action did not finish");
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  }
+  assert(atomic_load(&state.writes) == seek_frames(&state, 0));
+
+  state.service = NULL;
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_player_rate_set(service, 800u) == H2_PAL_ERR_CLOSED);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
   h2_gizclaw_test_set_telemetry_send(NULL, NULL);
 }
@@ -12255,6 +12409,7 @@ int main(int argc, char **argv) {
   test_device_provider_pal_and_player();
   test_device_playback_speaker_hooks();
   test_device_player_timed_start();
+  test_device_player_rate();
   test_device_forwards_find_and_social_ping();
   test_device_identifiers_imeis();
   test_device_ota_telemetry_copy();

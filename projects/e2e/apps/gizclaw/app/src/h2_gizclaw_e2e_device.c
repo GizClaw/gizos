@@ -228,6 +228,26 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
   h2_gizclaw_e2e_evidence("h2_gizclaw_player_play", "player_play-assert", rc);
   h2_gizclaw_e2e_evidence("h2_gizclaw_player_get_status",
                           "player_get_status-assert", rc);
+  /* The rate is a player property: set while the local item may still be
+   * playing, it is read back at once and the item keeps playing (or has
+   * ended) without an error; a rejected rate leaves it unchanged. Restored
+   * before the lanes below, which measure cadence at the recorded speed. */
+  CHECK(h2_gizclaw_player_rate_set(service, 800u));
+  h2_gizclaw_e2e_evidence("h2_gizclaw_player_rate_set", "local-player", rc);
+  int rate_rejected = H2_PAL_OK;
+  if (rc == H2_PAL_OK)
+    rate_rejected = h2_gizclaw_player_rate_set(service, 3000u);
+  ASSERT(rate_rejected == H2_PAL_ERR_INVALID_ARG);
+  CHECK(h2_pal_time_sleep_ms(fixture->time, 500));
+  CHECK(h2_gizclaw_player_get_status(service, &local));
+  ASSERT(local.rate_permille == 800u &&
+         (!strcmp(local.state, "playing") || !strcmp(local.state, "buffering") ||
+          !strcmp(local.state, "ended")));
+  CHECK(h2_gizclaw_player_rate_set(service, H2_GIZCLAW_PLAYER_RATE_NORMAL));
+  CHECK(h2_gizclaw_player_get_status(service, &local));
+  ASSERT(local.rate_permille == H2_GIZCLAW_PLAYER_RATE_NORMAL);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_player_rate_set",
+                          "player_rate_set-assert", rc);
   CHECK(h2_gizclaw_player_stop(service));
   h2_gizclaw_e2e_evidence("h2_gizclaw_player_stop", "local-player", rc);
   CHECK(h2_gizclaw_player_get_status(service, &local));
