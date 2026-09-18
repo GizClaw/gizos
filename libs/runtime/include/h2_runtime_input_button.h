@@ -7,6 +7,9 @@
  * Apps receive one BUTTON_DOWN sample and one BUTTON_ACTION on every due poll
  * while pressed, followed by BUTTON_UP and one final BUTTON_ACTION. The action
  * carries only press/release timestamps; product code derives all semantics.
+ * Held samples are dropped when the event queue is full; the press edge and
+ * the release edge (BUTTON_UP plus the final action) wait for queue space and
+ * keep their timestamps, so DOWN/UP always pair up for a consumer.
  */
 
 #include "h2/pal/core/h2_pal_errors.h"

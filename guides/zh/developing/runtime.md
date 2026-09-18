@@ -277,7 +277,7 @@ while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
 drain_library_dispatch_queues();
 ```
 
-`h2_runtime_poll_event()` 不等待。每次 wait 之后必须把 queue 完全拉空再 wait：wake 按入队给出并合并，只拉了一半的 queue 里剩下的 event 没有对应的 pending wake。被一个没有对应 event 的 wake 叫醒（Library 的 `notify`，或者更早的 poll 已经拉空 queue）是正常情况，App 照常走 drain 路径。Event queue 满时丢弃新事件并增加 internal dropped-event counter，不阻塞 producer，也不给出 wake；该 counter 是 Runtime private state，不属于 Public API。
+`h2_runtime_poll_event()` 不等待。每次 wait 之后必须把 queue 完全拉空再 wait：wake 按入队给出并合并，只拉了一半的 queue 里剩下的 event 没有对应的 pending wake。被一个没有对应 event 的 wake 叫醒（Library 的 `notify`，或者更早的 poll 已经拉空 queue）是正常情况，App 照常走 drain 路径。Event queue 满时 Runtime 自己的 producer（input、system event、time adjusted、Test Control）丢弃新事件并计数，不阻塞 producer，也不给出 wake；Button 边沿例外，见 [Button 边沿保留](#button-边沿保留)。`h2_runtime_dropped_event_count()` 返回自 `h2_runtime_init()` 以来的累计丢弃数（32 位，回绕后按无符号差值比较，任何 task 可读）；custom event 满队列时直接把 `H2_PAL_ERR_FULL` 返回投递方，不计入。丢弃还会经 Runtime 的 PAL log 输出 scope 为 `runtime/event` 的 WARN，内容包括本次报告新增数、累计总数和最后一个被丢事件的 kind/component/component_id；两行 WARN 至少间隔 `H2_RUNTIME_DROPPED_EVENT_WARN_INTERVAL_MS`（1000 ms），第一次丢弃立即输出，窗口内的后续丢弃只计数，由窗口过后的下一次丢弃或下一个 input tick 补报。
 
 ## Event Type
 
@@ -490,7 +490,25 @@ App 读取的 component state 来自 `h2_runtime_state.c` 拥有的 state public
 
 Input task 的一次 tick 按各 source deadline 处理到期的 mapped input。相同 radio group 只执行一次 PAL read，再把结果投影到各 child。没有 public state update 时不 copy、不 switch；该路径在 source discovery 完成后不做 per-tick allocation。
 
-Event payload 表达发生时的历史事实，snapshot 表达最近一次完成的 publication。Queue full 或 timeout 继续使用 drop-newest policy；已经更新的 working state 与后续 publication 不回滚。
+Event payload 表达发生时的历史事实，snapshot 表达最近一次完成的 publication。Queue full 或 timeout 继续使用 drop-newest policy（Button 边沿按下节保留）；已经更新的 working state 与后续 publication 不回滚。
+
+### Button 边沿保留
+
+按住期间每个 poll 的 `BUTTON_DOWN`/`BUTTON_ACTION` 是 sample，consumer 停顿时会迅速填满 event queue。Sample 仍然可以丢弃，但 consumer 靠 DOWN/UP 跟踪按住状态，丢掉 `BUTTON_UP` 会让它永远停在按下。因此 input 路径区分两类事件：
+
+- **边沿**：开始一次按下的 `BUTTON_DOWN`（从松开到按下的那次，包括首帧就是按下），以及松开时的 `BUTTON_UP` 和最后一个 `BUTTON_ACTION`（`released_at_ms != 0`）。
+- **Sample**：仍在按住时重复的 `BUTTON_DOWN`/`BUTTON_ACTION`（包括按下那一帧的 action），以及 NFC、IMU 和 error 事件。
+
+规则：
+
+1. Input writer 按顺序投递一次 poll 的事件。第一次遇到 `H2_PAL_ERR_FULL`（provider 报告的 no-wait timeout/would-block 也按 FULL 处理）后，本轮不再尝试入队：之后的边沿保留在所属 Button source 上，sample 丢弃并计数。Queue closed 等其它错误仍按原样让 input worker fault。
+2. 保留的边沿在下一次 input poll 开始时（默认每 20 ms，先于该 poll 的任何新采样）按原顺序重新入队。重新入队的事件保留原 payload 和原 `timestamp_ms`（按下边沿仍满足 `timestamp_ms == pressed_at_ms`），但领取新的 sequence，并照常先发布 snapshot 再入队。
+3. Source 持有保留边沿期间，它的新边沿直接排在保留边沿之后，它的新 sample 丢弃并计数，保证同一 source 的事件不会越过更早的边沿。不同 source 之间不保证相对顺序。
+4. 每个 source 最多保留 2 个边沿（`H2_RUNTIME_BUTTON_RETAINED_EDGE_MAX`）。同一 source 的边沿必然按下/松开交替，第 3 个到来时最早的两个一定是一对互补边沿，丢弃这一对并计入丢弃数，consumer 最终看到的按下/松开状态仍然正确，只少了一次完整点击。
+5. 保留边沿只存在 source 上，不占 pending event list；重新入队时一个 source 的全部保留事件放不进 pending list 就整体等下一次 poll。Pending list 本身只在全部 retired snapshot slot 都被 pin 住时跨 poll 存活，此时再耗尽也不会让 input worker fault：sample 丢弃计数，边沿把该 source 已在 pending list 里的事件按顺序挪到保留区后保留。
+6. Test Control 打开或关闭时 source table 被替换，未投递的保留边沿与已排队事件一起丢弃，不计数。`h2_runtime_input_stop()` 不清除它们，下一次 start 的首帧重新入队。
+
+Test Control 直接注入的事件、custom event 和 system event 不参与保留。
 
 State getter 返回 caller-owned copy，不承诺反映仍在进行的 input tick。Slow PAL operation 期间 reader 得到 previous completed publication；`updated_at_ms` 表达对应 source 最近完成的更新时间。每次 start 的 successful first pass 发布完整 snapshot；state 保留到下一次发布、Test Control 切换或 Runtime deinit，`h2_runtime_input_stop()` 不清除它。已经排队的 event 独立于当前 snapshot，consumer 使用 event payload 解释历史事件。
 

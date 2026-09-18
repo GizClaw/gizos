@@ -144,18 +144,168 @@ static void source_set_event_time(
     source->timestamp_ms = now_ms;
 }
 
+/*
+ * Button edge retention.
+ *
+ * Held repeats (BUTTON_DOWN/BUTTON_ACTION while still pressed) are samples and
+ * stay lossy. The press edge (BUTTON_DOWN that starts a press) and the release
+ * edge (BUTTON_UP plus the final BUTTON_ACTION) are what a consumer needs to
+ * track the held state, so when the event queue cannot take them they are
+ * kept on their source and re-emitted, oldest first, at the start of the next
+ * input poll. Rules:
+ *
+ * - A source never has pending and retained events at once. While it holds
+ *   retained edges, its new edges go straight to the retained list and its
+ *   repeats are dropped, so nothing of that source overtakes an older edge.
+ * - A source keeps at most H2_RUNTIME_BUTTON_RETAINED_EDGE_MAX edges. Edges of
+ *   one source alternate, so when another one arrives the two oldest are a
+ *   press/release (or release/press) pair; they are discarded and counted as
+ *   dropped, and the level the consumer ends up seeing stays correct.
+ * - Re-emitted events keep their payload and their original timestamp but
+ *   take a fresh sequence, which goes through the normal pending path: the
+ *   snapshot is published before the events become dequeueable.
+ */
+static void record_input_drop(
+    h2_runtime_t *runtime,
+    const h2_runtime_input_source_t *source,
+    h2_runtime_event_kind_t kind) {
+    h2_runtime_record_dropped_event(
+        runtime, kind, source->component, source->component_id);
+}
+
+static void evict_retained_edges(
+    h2_runtime_t *runtime,
+    h2_runtime_input_source_t *source) {
+    h2_runtime_button_recognizer_t *button = &source->button;
+    for (size_t i = 0u; i < button->retained_count; ++i) {
+        const h2_runtime_button_retained_edge_t *edge = &button->retained[i];
+        if (edge->edge_owed != 0u) {
+            record_input_drop(
+                runtime,
+                source,
+                edge->release != 0u ? H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP
+                                    : H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+        }
+        if (edge->action_owed != 0u) {
+            record_input_drop(
+                runtime, source, H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
+        }
+    }
+    button->retained_count = 0u;
+}
+
+static void retain_button_event(
+    h2_runtime_t *runtime,
+    h2_runtime_input_source_t *source,
+    h2_runtime_event_kind_t kind,
+    const void *payload) {
+    h2_runtime_button_recognizer_t *button = &source->button;
+    h2_runtime_button_retained_edge_t edge;
+    memset(&edge, 0, sizeof(edge));
+    if (kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN) {
+        h2_runtime_button_down_event_t down;
+        memcpy(&down, payload, sizeof(down));
+        edge.pressed_at_ms = down.pressed_at_ms;
+        edge.edge_owed = 1u;
+    } else if (kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP) {
+        h2_runtime_button_up_event_t up;
+        memcpy(&up, payload, sizeof(up));
+        edge.pressed_at_ms = up.pressed_at_ms;
+        edge.released_at_ms = up.released_at_ms;
+        edge.release = 1u;
+        edge.edge_owed = 1u;
+    } else {
+        h2_runtime_button_action_event_t action;
+        memcpy(&action, payload, sizeof(action));
+        if (button->retained_count != 0u) {
+            /* The final action joins the BUTTON_UP retained right before it. */
+            h2_runtime_button_retained_edge_t *last =
+                &button->retained[button->retained_count - 1u];
+            if (last->release != 0u && last->action_owed == 0u &&
+                last->pressed_at_ms == action.pressed_at_ms &&
+                last->released_at_ms == action.released_at_ms) {
+                last->action_owed = 1u;
+                return;
+            }
+        }
+        /* BUTTON_UP was delivered; only the final action is still owed. */
+        edge.pressed_at_ms = action.pressed_at_ms;
+        edge.released_at_ms = action.released_at_ms;
+        edge.release = 1u;
+        edge.action_owed = 1u;
+    }
+    if (button->retained_count >= H2_RUNTIME_BUTTON_RETAINED_EDGE_MAX) {
+        evict_retained_edges(runtime, source);
+    }
+    button->retained[button->retained_count++] = edge;
+}
+
+/* Keeps a retained-class event on its source; drops (and counts) the rest. */
+static void keep_or_drop_input_event(
+    h2_runtime_t *runtime,
+    h2_runtime_input_source_t *source,
+    h2_runtime_event_kind_t kind,
+    const void *payload,
+    int retain) {
+    if (retain != 0 && source->component == H2_RUNTIME_COMPONENT_BUTTON) {
+        retain_button_event(runtime, source, kind, payload);
+        return;
+    }
+    record_input_drop(runtime, source, kind);
+}
+
+/* Moves one source's pending events out of the pending list, in order. */
+static void spill_source_pending_events(
+    h2_runtime_t *runtime,
+    h2_runtime_input_source_t *source) {
+    h2_runtime_private_t *private_state = runtime->private_state;
+    size_t kept = 0u;
+    for (size_t i = 0u; i < private_state->input_pending_event_count; ++i) {
+        const h2_runtime_input_pending_event_t *pending =
+            &private_state->input_pending_events[i];
+        if (pending->component == source->component &&
+            pending->component_id == source->component_id) {
+            keep_or_drop_input_event(
+                runtime, source, pending->kind, &pending->payload,
+                pending->retain);
+            continue;
+        }
+        if (kept != i) {
+            private_state->input_pending_events[kept] = *pending;
+        }
+        kept += 1u;
+    }
+    private_state->input_pending_event_count = kept;
+}
+
 static h2_pal_result_t append_input_event(
     h2_runtime_t *runtime,
     h2_runtime_input_source_t *source,
     h2_runtime_event_kind_t kind,
     h2_runtime_timestamp_ms_t now_ms,
     const void *payload,
-    size_t payload_size) {
-    if (runtime->private_state->input_pending_event_count >=
-            runtime->private_state->input_pending_event_capacity ||
-        payload == NULL ||
+    size_t payload_size,
+    int retain) {
+    if (payload == NULL ||
         payload_size > sizeof(h2_runtime_input_event_payload_t)) {
         return H2_PAL_ERR_NO_SPACE;
+    }
+    if (source->button.retained_count != 0u) {
+        keep_or_drop_input_event(runtime, source, kind, payload, retain);
+        return H2_PAL_OK;
+    }
+    if (runtime->private_state->input_pending_event_count >=
+        runtime->private_state->input_pending_event_capacity) {
+        /*
+         * The pending list only outlives a poll while every retired snapshot
+         * slot is pinned. Exhausting it drops a sample or retains an edge; it
+         * never faults the input worker.
+         */
+        if (retain != 0) {
+            spill_source_pending_events(runtime, source);
+        }
+        keep_or_drop_input_event(runtime, source, kind, payload, retain);
+        return H2_PAL_OK;
     }
 
     h2_runtime_sequence_t sequence = h2_runtime_next_sequence(runtime);
@@ -164,6 +314,7 @@ static h2_pal_result_t append_input_event(
             runtime->private_state->input_pending_event_count++];
     memset(pending, 0, sizeof(*pending));
     pending->kind = kind;
+    pending->retain = retain;
     pending->component = source->component;
     pending->component_id = source->component_id;
     pending->sequence = sequence;
@@ -180,29 +331,132 @@ static h2_pal_result_t append_input_event(
     return H2_PAL_OK;
 }
 
+static h2_pal_result_t send_input_event(
+    h2_runtime_t *runtime,
+    const h2_runtime_input_pending_event_t *pending) {
+    h2_runtime_queued_event_t queued;
+    memset(&queued, 0, sizeof(queued));
+    queued.kind = pending->kind;
+    queued.component = pending->component;
+    queued.component_id = pending->component_id;
+    queued.sequence = pending->sequence;
+    queued.timestamp_ms = pending->timestamp_ms;
+    queued.payload_size = pending->payload_size;
+    memcpy(queued.payload.bytes, &pending->payload, pending->payload_size);
+    return h2_runtime_enqueue_event_strict(
+        runtime, &queued, H2_PAL_QUEUE_NO_WAIT);
+}
+
+/*
+ * Sends pending events in order. The first FULL stops sending for the rest of
+ * the pass, so a later event can never overtake a retained edge; every event
+ * after it is kept (edges) or dropped and counted (everything else).
+ */
 static h2_pal_result_t enqueue_pending_events(h2_runtime_t *runtime) {
+    h2_runtime_private_t *private_state = runtime->private_state;
     h2_pal_result_t first_error = H2_PAL_OK;
-    for (size_t i = 0u;
-         i < runtime->private_state->input_pending_event_count;
-         ++i) {
+    int full = 0;
+    for (size_t i = 0u; i < private_state->input_pending_event_count; ++i) {
         const h2_runtime_input_pending_event_t *pending =
-            &runtime->private_state->input_pending_events[i];
-        h2_pal_result_t rc = h2_runtime_emit_event(
-            runtime,
-            pending->kind,
-            pending->component,
-            pending->component_id,
-            pending->sequence,
-            pending->timestamp_ms,
-            &pending->payload,
-            pending->payload_size);
-        if (rc != H2_PAL_OK) {
-            first_error = rc;
-            break;
+            &private_state->input_pending_events[i];
+        if (full == 0) {
+            const h2_pal_result_t rc = send_input_event(runtime, pending);
+            if (rc == H2_PAL_OK) {
+                continue;
+            }
+            if (rc != H2_PAL_ERR_FULL) {
+                first_error = rc;
+                break;
+            }
+            full = 1;
+        }
+        h2_runtime_input_source_t *source = h2_runtime_find_input_source(
+            runtime, pending->component, pending->component_id);
+        if (source == NULL) {
+            h2_runtime_record_dropped_event(
+                runtime, pending->kind, pending->component,
+                pending->component_id);
+            continue;
+        }
+        keep_or_drop_input_event(
+            runtime, source, pending->kind, &pending->payload,
+            pending->retain);
+    }
+    private_state->input_pending_event_count = 0u;
+    return first_error;
+}
+
+static size_t retained_event_count(
+    const h2_runtime_button_recognizer_t *button) {
+    size_t count = 0u;
+    for (size_t i = 0u; i < button->retained_count; ++i) {
+        count += button->retained[i].edge_owed;
+        count += button->retained[i].action_owed;
+    }
+    return count;
+}
+
+/*
+ * Moves every retained edge that fits back into the pending list, one whole
+ * source at a time; a source that does not fit keeps its edges for the next
+ * poll. The events then take the normal publish path.
+ */
+static h2_pal_result_t requeue_retained_edges(
+    h2_runtime_t *runtime,
+    int *out_requeued) {
+    h2_runtime_private_t *private_state = runtime->private_state;
+    *out_requeued = 0;
+    for (size_t index = 0u; index < private_state->input_source_count;
+         ++index) {
+        h2_runtime_input_source_t *source =
+            &private_state->input_sources[index];
+        h2_runtime_button_recognizer_t *button = &source->button;
+        if (button->retained_count == 0u ||
+            retained_event_count(button) >
+                private_state->input_pending_event_capacity -
+                    private_state->input_pending_event_count) {
+            continue;
+        }
+        h2_runtime_button_retained_edge_t
+            edges[H2_RUNTIME_BUTTON_RETAINED_EDGE_MAX];
+        const size_t edge_count = button->retained_count;
+        memcpy(edges, button->retained, edge_count * sizeof(edges[0]));
+        button->retained_count = 0u;
+        *out_requeued = 1;
+        for (size_t i = 0u; i < edge_count; ++i) {
+            const h2_runtime_button_retained_edge_t *edge = &edges[i];
+            h2_pal_result_t rc = H2_PAL_OK;
+            if (edge->edge_owed != 0u && edge->release == 0u) {
+                const h2_runtime_button_down_event_t event = {
+                    .pressed_at_ms = edge->pressed_at_ms,
+                };
+                rc = append_input_event(
+                    runtime, source, H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN,
+                    edge->pressed_at_ms, &event, sizeof(event), 1);
+            } else if (edge->edge_owed != 0u) {
+                const h2_runtime_button_up_event_t event = {
+                    .pressed_at_ms = edge->pressed_at_ms,
+                    .released_at_ms = edge->released_at_ms,
+                };
+                rc = append_input_event(
+                    runtime, source, H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP,
+                    edge->released_at_ms, &event, sizeof(event), 1);
+            }
+            if (rc == H2_PAL_OK && edge->action_owed != 0u) {
+                const h2_runtime_button_action_event_t event = {
+                    .pressed_at_ms = edge->pressed_at_ms,
+                    .released_at_ms = edge->released_at_ms,
+                };
+                rc = append_input_event(
+                    runtime, source, H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION,
+                    edge->released_at_ms, &event, sizeof(event), 1);
+            }
+            if (rc != H2_PAL_OK) {
+                return rc;
+            }
         }
     }
-    runtime->private_state->input_pending_event_count = 0u;
-    return first_error;
+    return H2_PAL_OK;
 }
 
 static h2_pal_result_t publish_pending_events(h2_runtime_t *runtime) {
@@ -261,7 +515,8 @@ static h2_pal_result_t publish_error(
         H2_RUNTIME_COMPONENT_EVENT_ERROR,
         now_ms,
         &result,
-        sizeof(result));
+        sizeof(result),
+        0);
 }
 
 static int source_periph_duplicate(
@@ -473,6 +728,7 @@ static h2_pal_result_t update_button_pressed(
     int emit_down = 0;
     int emit_up = 0;
     int emit_action = 0;
+    int press_edge = 0;
     int state_changed = 0;
     if (button->initialized == 0) {
         button->initialized = 1;
@@ -484,6 +740,7 @@ static h2_pal_result_t update_button_pressed(
             source->button_state.pressed_at_ms = now_ms;
             emit_down = 1;
             emit_action = 1;
+            press_edge = 1;
         } else {
             source->button_state.pressed = false;
             source->button_state.pressed_at_ms = 0u;
@@ -495,6 +752,7 @@ static h2_pal_result_t update_button_pressed(
         source->button_state.pressed_at_ms = now_ms;
         emit_down = 1;
         emit_action = 1;
+        press_edge = 1;
         state_changed = 1;
     } else if (is_pressed != 0 && button->is_pressed != 0) {
         emit_down = 1;
@@ -529,7 +787,8 @@ static h2_pal_result_t update_button_pressed(
             H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN,
             now_ms,
             &event,
-            sizeof(event));
+            sizeof(event),
+            press_edge);
         if (rc != H2_PAL_OK) {
             return rc;
         }
@@ -545,7 +804,8 @@ static h2_pal_result_t update_button_pressed(
             H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP,
             now_ms,
             &event,
-            sizeof(event));
+            sizeof(event),
+            1);
         if (rc != H2_PAL_OK) {
             return rc;
         }
@@ -561,7 +821,8 @@ static h2_pal_result_t update_button_pressed(
             H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION,
             now_ms,
             &event,
-            sizeof(event));
+            sizeof(event),
+            emit_up);
     }
     return H2_PAL_OK;
 }
@@ -718,7 +979,8 @@ static h2_pal_result_t apply_nfc_scan(
         H2_RUNTIME_COMPONENT_EVENT_NFC_STATE,
         now_ms,
         &payload,
-        sizeof(payload));
+        sizeof(payload),
+        0);
 }
 
 static h2_runtime_input_source_t *find_nfc_source(
@@ -797,7 +1059,8 @@ static h2_pal_result_t emit_imu_gesture(
         H2_RUNTIME_COMPONENT_EVENT_IMU_GESTURE,
         now_ms,
         event,
-        sizeof(*event));
+        sizeof(*event),
+        0);
 }
 
 static h2_pal_result_t poll_imu(
@@ -962,7 +1225,18 @@ static h2_pal_result_t input_poll_once_unlocked(
     }
 
     /* Pending events left by a deferred snapshot publication are kept and
-     * published together with the snapshot below. */
+     * published together with the snapshot below. Button edges the event
+     * queue refused on an earlier poll are retried first, before any new
+     * sample of their source. */
+    int requeued = 0;
+    rc = requeue_retained_edges(runtime, &requeued);
+    if (rc == H2_PAL_OK && requeued != 0) {
+        rc = publish_pending_events(runtime);
+    }
+    if (rc != H2_PAL_OK) {
+        runtime->private_state->input_pending_event_count = 0u;
+        return rc;
+    }
 
     rc = consume_push_button_edges(runtime);
     if (rc != H2_PAL_OK) {
@@ -1041,7 +1315,10 @@ static h2_pal_result_t input_poll_once_unlocked(
         }
     }
 
-    return publish_snapshot_if_due(runtime, now_ms, force_due);
+    rc = publish_snapshot_if_due(runtime, now_ms, force_due);
+    /* Reports drops whose WARN a busy rate-limit window held back. */
+    h2_runtime_report_dropped_events(runtime);
+    return rc;
 }
 
 /*

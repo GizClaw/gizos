@@ -18,6 +18,14 @@ extern "C" {
 
 #define H2_RUNTIME_RADIO_BUTTON_TRANSITION_EVENT_MAX 4u
 #define H2_RUNTIME_BUTTON_PUSH_EDGE_QUEUE_CAPACITY 16u
+/*
+ * Undelivered Button edges one source may hold while the event queue is full.
+ * Two edges keep one complete press/release (or release/re-press) pair; a
+ * third edge discards the two oldest, which are always complementary.
+ */
+#define H2_RUNTIME_BUTTON_RETAINED_EDGE_MAX 2u
+/* Minimum spacing between two dropped-event WARN lines. */
+#define H2_RUNTIME_DROPPED_EVENT_WARN_INTERVAL_MS 1000u
 
 typedef enum h2_runtime_input_source_kind {
     H2_RUNTIME_INPUT_SOURCE_NONE = 0,
@@ -107,10 +115,31 @@ _Static_assert(offsetof(h2_runtime_queued_event_t, payload) %
                    0u,
                "queued payload offset must satisfy union alignment");
 
+/*
+ * One Button edge the event queue could not take. A press edge re-emits
+ * BUTTON_DOWN; a release edge re-emits BUTTON_UP and the final BUTTON_ACTION.
+ * The owed flags track which of those events still have to be delivered.
+ */
+typedef struct h2_runtime_button_retained_edge {
+    h2_runtime_timestamp_ms_t pressed_at_ms;
+    h2_runtime_timestamp_ms_t released_at_ms;
+    uint8_t release;
+    uint8_t edge_owed;
+    uint8_t action_owed;
+} h2_runtime_button_retained_edge_t;
+
 typedef struct h2_runtime_button_recognizer {
     int initialized;
     int is_pressed;
     h2_runtime_timestamp_ms_t pressed_at_ms;
+    /*
+     * Oldest first. While non-empty, every new event of this source is routed
+     * here (edges) or dropped (held repeats) instead of entering the pending
+     * list, so a source never has pending and retained events at once.
+     */
+    size_t retained_count;
+    h2_runtime_button_retained_edge_t
+        retained[H2_RUNTIME_BUTTON_RETAINED_EDGE_MAX];
 } h2_runtime_button_recognizer_t;
 
 typedef struct h2_runtime_button_push_edge {
@@ -170,6 +199,8 @@ typedef union h2_runtime_input_event_payload {
 
 typedef struct h2_runtime_input_pending_event {
     h2_runtime_event_kind_t kind;
+    /* Button press edge, release edge or final action: kept when FULL. */
+    int retain;
     h2_runtime_component_t component;
     h2_runtime_component_id_t component_id;
     h2_runtime_sequence_t sequence;
@@ -370,7 +401,26 @@ struct h2_runtime_private {
      */
     atomic_flag sequence_lock;
     atomic_uint next_sequence;
-    uint32_t dropped_event_count;
+    /*
+     * Events a full queue refused. Written by every producer task, read by
+     * h2_runtime_dropped_event_count(); dropped_event_lock guards the add
+     * where fetch_add is not lock-free. The last_dropped_* fields only feed
+     * the WARN line, so a reader pairing fields of two drops is harmless.
+     */
+    atomic_flag dropped_event_lock;
+    atomic_uint dropped_event_count;
+    atomic_int last_dropped_kind;
+    atomic_int last_dropped_component;
+    atomic_uint last_dropped_component_id;
+    /*
+     * Rate limit for the WARN line. drop_report_lock is only ever tried,
+     * never spun on: a producer that loses the race skips reporting and the
+     * winner (or the next input tick) reports the newer total.
+     */
+    atomic_flag drop_report_lock;
+    int drop_reported_once;
+    uint32_t drop_reported_count;
+    h2_runtime_timestamp_ms_t drop_reported_at_ms;
 
     atomic_int system_event_active;
     h2_pal_system_event_subscription_t *
@@ -467,6 +517,23 @@ h2_pal_result_t h2_runtime_emit_event(
 h2_pal_result_t h2_runtime_enqueue_event(
     h2_runtime_t *runtime,
     const h2_runtime_queued_event_t *queued);
+
+/*
+ * Counts one event a full queue refused and reports it through the rate
+ * limited WARN below. Safe from any producer task.
+ */
+void h2_runtime_record_dropped_event(
+    h2_runtime_t *runtime,
+    h2_runtime_event_kind_t kind,
+    h2_runtime_component_t component,
+    h2_runtime_component_id_t component_id);
+
+/*
+ * Logs one WARN when the dropped total moved since the last report and at
+ * least H2_RUNTIME_DROPPED_EVENT_WARN_INTERVAL_MS passed (the first drop is
+ * reported at once). Never blocks on another reporter.
+ */
+void h2_runtime_report_dropped_events(h2_runtime_t *runtime);
 
 /* Gives the coalescing wake token; never blocks, never fails. */
 void h2_runtime_notify_internal(h2_runtime_t *runtime);
