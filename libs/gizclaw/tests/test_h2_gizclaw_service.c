@@ -4002,6 +4002,631 @@ static void test_device_forwards_find_and_social_ping(void) {
   }
 }
 
+/* Methods 128-132: the library owns the protobuf and the validation, four of
+ * them call one typed product hook, and client.rpc.methods.get is derived from
+ * what is actually configured. */
+typedef struct device_config_state {
+  h2_gizclaw_device_settings_t reported;
+  h2_gizclaw_device_settings_t received;
+  h2_pal_result_t get_result, set_result;
+  unsigned get_calls, set_calls;
+  atomic_uint factory_resets, workspace_sets;
+  bool keep_network, kickoff;
+  char workspace_name[257];
+} device_config_state_t;
+
+static h2_pal_result_t config_get_settings(void *user,
+                                          h2_gizclaw_device_settings_t *out) {
+  device_config_state_t *state = user;
+  ++state->get_calls;
+  if (state->get_result != H2_PAL_OK)
+    return state->get_result;
+  *out = state->reported;
+  return H2_PAL_OK;
+}
+static h2_pal_result_t
+config_set_settings(void *user, const h2_gizclaw_device_settings_t *patch,
+                    h2_gizclaw_device_settings_t *out) {
+  device_config_state_t *state = user;
+  ++state->set_calls;
+  state->received = *patch;
+  if (state->set_result != H2_PAL_OK)
+    return state->set_result;
+  *out = state->reported;
+  return H2_PAL_OK;
+}
+static h2_pal_result_t config_factory_reset(void *user, bool keep_network) {
+  device_config_state_t *state = user;
+  state->keep_network = keep_network;
+  atomic_fetch_add(&state->factory_resets, 1);
+  return H2_PAL_OK;
+}
+static h2_pal_result_t config_run_workspace_set(void *user, const char *name,
+                                                bool kickoff) {
+  device_config_state_t *state = user;
+  assert(name != NULL);
+  (void)snprintf(state->workspace_name, sizeof(state->workspace_name), "%s",
+                 name);
+  state->kickoff = kickoff;
+  atomic_fetch_add(&state->workspace_sets, 1);
+  return H2_PAL_OK;
+}
+
+/* Decode the repeated method names the library encodes by hand. */
+typedef struct method_list {
+  gizclaw_rpc_v1_ClientRpcMethodsGetResponse reply;
+} method_list_t;
+static void device_methods_list(h2_gizclaw_service_t *service,
+                                method_list_t *out) {
+  h2_gizclaw_rpc_provider_response_t response;
+  gizclaw_rpc_v1_ClientRpcMethodsGetRequest request = {0};
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_RPC_METHODS_GET,
+                     gizclaw_rpc_v1_ClientRpcMethodsGetRequest_fields, &request,
+                     &response) == 0);
+  memset(out, 0, sizeof(*out));
+  pb_istream_t input =
+      pb_istream_from_buffer(response.payload.data, response.payload.len);
+  assert(pb_decode(&input, gizclaw_rpc_v1_ClientRpcMethodsGetResponse_fields,
+                   &out->reply));
+}
+static bool method_listed(const method_list_t *list, const char *name) {
+  for (pb_size_t i = 0; i < list->reply.methods_count; ++i) {
+    if (strcmp(list->reply.methods[i], name) == 0)
+      return true;
+  }
+  return false;
+}
+
+/* Every advertised name must be answered by the provider entry, and every
+ * client method the library knows but does not advertise must answer
+ * UNIMPLEMENTED, so the list cannot drift from the dispatch. */
+static void device_methods_agree(h2_gizclaw_service_t *service) {
+  static const struct {
+    int method;
+    const char *name;
+    const pb_msgdesc_t *fields;
+  } known[] = {
+      {H2_GIZCLAW_RPC_CLIENT_INFO_GET, "client.info.get",
+       gizclaw_rpc_v1_ClientGetInfoRequest_fields},
+      {H2_GIZCLAW_RPC_CLIENT_IDENTIFIERS_GET, "client.identifiers.get",
+       gizclaw_rpc_v1_ClientGetIdentifiersRequest_fields},
+      {H2_GIZCLAW_RPC_CLIENT_DEVICE_STATUS_GET, "client.device.status.get",
+       gizclaw_rpc_v1_ClientDeviceStatusGetRequest_fields},
+      {H2_GIZCLAW_RPC_CLIENT_DEVICE_VOLUME_SET, "client.device.volume.set",
+       gizclaw_rpc_v1_ClientDeviceVolumeSetRequest_fields},
+      {H2_GIZCLAW_RPC_CLIENT_DEVICE_SOUND_PLAY, "client.device.sound.play",
+       gizclaw_rpc_v1_ClientDeviceSoundPlayRequest_fields},
+      {H2_GIZCLAW_RPC_CLIENT_WIFI_STATUS_GET, "client.wifi.status.get",
+       gizclaw_rpc_v1_ClientWifiStatusGetRequest_fields},
+      {H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_LIST, "client.wifi.saved.list",
+       gizclaw_rpc_v1_ClientWifiSavedListRequest_fields},
+      {H2_GIZCLAW_RPC_CLIENT_WIFI_SCAN, "client.wifi.scan",
+       gizclaw_rpc_v1_ClientWifiScanRequest_fields},
+      {H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_GET,
+       "client.device.audioplayer.get",
+       gizclaw_rpc_v1_ClientDeviceAudioPlayerGetRequest_fields},
+      {H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_GET, "client.device.settings.get",
+       gizclaw_rpc_v1_ClientDeviceSettingsGetRequest_fields},
+      {H2_GIZCLAW_RPC_CLIENT_RPC_METHODS_GET, "client.rpc.methods.get",
+       gizclaw_rpc_v1_ClientRpcMethodsGetRequest_fields},
+      {H2_GIZCLAW_RPC_CLIENT_DEVICE_FACTORY_RESET,
+       "client.device.factory_reset",
+       gizclaw_rpc_v1_ClientDeviceFactoryResetRequest_fields},
+      {H2_GIZCLAW_RPC_CLIENT_RUN_WORKSPACE_SET, "client.run.workspace.set",
+       gizclaw_rpc_v1_ClientRunWorkspaceSetRequest_fields},
+      {H2_GIZCLAW_RPC_CLIENT_DEVICE_FIND, "client.device.find",
+       gizclaw_rpc_v1_ClientDeviceFindRequest_fields},
+      {H2_GIZCLAW_RPC_CLIENT_SOCIAL_PING, "client.social.ping",
+       gizclaw_rpc_v1_ClientSocialPingRequest_fields},
+  };
+  method_list_t list;
+  device_methods_list(service, &list);
+  for (size_t i = 0; i < sizeof(known) / sizeof(known[0]); ++i) {
+    h2_gizclaw_rpc_provider_response_t response;
+    uint8_t payload[64];
+    pb_ostream_t stream = pb_ostream_from_buffer(payload, sizeof(payload));
+    /* Every request in this table is an empty or all-optional message, so an
+     * empty encoding is a valid request for it. */
+    (void)stream;
+    assert(service->client_config.rpc_provider(
+               service->client_config.rpc_provider_user, known[i].method,
+               (h2_gizclaw_rpc_bytes_t){payload, 0u}, &response) == H2_PAL_OK);
+    const bool unimplemented =
+        response.has_error &&
+        response.error_code == H2_GIZCLAW_RPC_ERROR_UNIMPLEMENTED;
+    if (method_listed(&list, known[i].name))
+      assert(!unimplemented);
+    else
+      assert(unimplemented);
+    if (response.on_complete)
+      response.on_complete(response.complete_user, H2_PAL_ERR_CLOSED);
+  }
+}
+
+static void test_device_configuration_rpcs(void) {
+  const h2_pal_audio_vtable_t audio_vtable = {.get_info = speaker_audio_info};
+  const h2_pal_audio_api_t audio = {.vtable = &audio_vtable};
+  device_config_state_t state = {0};
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  service->client_config.audio = &audio;
+  service->client_config.model = "fixture";
+  service->client_config.user = &state;
+  /* No hooks yet: the library must answer UNIMPLEMENTED rather than forward. */
+  const h2_gizclaw_vtable_t bare = {0};
+  service->client_config.vtable = &bare;
+  assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
+  /* Reserving a device action cancels playback, which marks the player status
+   * dirty and makes the worker submit audioplayer telemetry. Route it to the
+   * test sink instead of the unconnected client, as the other device tests do. */
+  h2_gizclaw_test_set_telemetry_send(device_telemetry, NULL);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+
+  h2_gizclaw_rpc_provider_response_t response;
+  gizclaw_rpc_v1_ClientDeviceSettingsGetRequest get = {0};
+  gizclaw_rpc_v1_ClientDeviceFactoryResetRequest reset = {0};
+  gizclaw_rpc_v1_ClientRunWorkspaceSetRequest switch_request = {0};
+  strcpy(switch_request.workspace_name, "demo-home");
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_GET,
+                     gizclaw_rpc_v1_ClientDeviceSettingsGetRequest_fields, &get,
+                     &response) == H2_GIZCLAW_RPC_ERROR_UNIMPLEMENTED);
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_FACTORY_RESET,
+                     gizclaw_rpc_v1_ClientDeviceFactoryResetRequest_fields,
+                     &reset, &response) == H2_GIZCLAW_RPC_ERROR_UNIMPLEMENTED);
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_RUN_WORKSPACE_SET,
+                     gizclaw_rpc_v1_ClientRunWorkspaceSetRequest_fields,
+                     &switch_request,
+                     &response) == H2_GIZCLAW_RPC_ERROR_UNIMPLEMENTED);
+  /* client.rpc.methods.get answers with no hook configured at all. */
+  method_list_t list;
+  device_methods_list(service, &list);
+  assert(method_listed(&list, "client.rpc.methods.get"));
+  assert(method_listed(&list, "client.device.audioplayer.get"));
+  assert(!method_listed(&list, "client.device.settings.get"));
+  assert(!method_listed(&list, "client.device.settings.set"));
+  assert(!method_listed(&list, "client.device.factory_reset"));
+  assert(!method_listed(&list, "client.run.workspace.set"));
+  assert(!method_listed(&list, "client.wifi.status.get"));
+  assert(!method_listed(&list, "client.device.find"));
+  device_methods_agree(service);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+
+  /* With every hook and a declared product method, all five are answered. */
+  static const h2_gizclaw_rpc_method_t declared[] = {
+      H2_GIZCLAW_RPC_CLIENT_DEVICE_FIND, H2_GIZCLAW_RPC_CLIENT_SOCIAL_PING};
+  const h2_gizclaw_vtable_t hooks = {
+      .get_device_settings = config_get_settings,
+      .set_device_settings = config_set_settings,
+      .request_factory_reset = config_factory_reset,
+      .request_run_workspace_set = config_run_workspace_set,
+  };
+  service = create_profile_service(&env);
+  service->client_config.audio = &audio;
+  service->client_config.model = "fixture";
+  service->client_config.user = &state;
+  service->client_config.vtable = &hooks;
+  service->client_config.rpc_provider = product_rpc;
+  static product_rpc_state_t product;
+  memset(&product, 0, sizeof(product));
+  service->client_config.rpc_provider_user = &product;
+  service->client_config.rpc_provider_methods = declared;
+  service->client_config.rpc_provider_method_count = 2u;
+  assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+
+  state.reported = (h2_gizclaw_device_settings_t){
+      .has_screen_brightness = true,
+      .screen_brightness = 80,
+      .has_locale = true,
+      .has_alert_mode = true,
+      .alert_mode = H2_GIZCLAW_DEVICE_ALERT_VIBRATE,
+      .has_auto_sleep_timeout_ms = true,
+      .auto_sleep_timeout_ms = 0,
+  };
+  strcpy(state.reported.locale, "zh-Hant-TW");
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_GET,
+                     gizclaw_rpc_v1_ClientDeviceSettingsGetRequest_fields, &get,
+                     &response) == 0);
+  gizclaw_rpc_v1_ClientDeviceSettingsGetResponse reply = {0};
+  pb_istream_t input =
+      pb_istream_from_buffer(response.payload.data, response.payload.len);
+  assert(pb_decode(&input,
+                   gizclaw_rpc_v1_ClientDeviceSettingsGetResponse_fields,
+                   &reply));
+  assert(state.get_calls == 1 && reply.has_value);
+  assert(reply.value.has_screen_brightness &&
+         reply.value.screen_brightness == 80);
+  assert(reply.value.has_locale && !strcmp(reply.value.locale, "zh-Hant-TW"));
+  assert(reply.value.has_alert_mode &&
+         reply.value.alert_mode ==
+             gizclaw_rpc_v1_DeviceAlertMode_DEVICE_ALERT_MODE_VIBRATE);
+  /* An unsupported option stays absent: that is what "absent" means here. */
+  assert(!reply.value.has_cellular_enabled && !reply.value.has_nfc_enabled);
+  assert(reply.value.has_auto_sleep_timeout_ms &&
+         reply.value.auto_sleep_timeout_ms == 0);
+
+  /* A set carries only the members the caller sent, and the reply is the full
+   * settings after the change. */
+  gizclaw_rpc_v1_ClientDeviceSettingsSetRequest set = {.has_value = true};
+  set.value.has_led_brightness = true;
+  set.value.led_brightness = 25;
+  set.value.has_key_feedback = true;
+  set.value.key_feedback =
+      gizclaw_rpc_v1_DeviceKeyFeedback_DEVICE_KEY_FEEDBACK_SOUND_AND_VIBRATE;
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_SET,
+                     gizclaw_rpc_v1_ClientDeviceSettingsSetRequest_fields, &set,
+                     &response) == 0);
+  assert(state.set_calls == 1);
+  assert(state.received.has_led_brightness &&
+         state.received.led_brightness == 25);
+  assert(state.received.has_key_feedback &&
+         state.received.key_feedback ==
+             H2_GIZCLAW_DEVICE_KEY_FEEDBACK_SOUND_AND_VIBRATE);
+  assert(!state.received.has_screen_brightness && !state.received.has_locale);
+
+  /* Every out-of-range member is rejected on its own, and the product is never
+   * called, so a set is refused before anything is applied. */
+  const struct {
+    const char *what;
+    gizclaw_rpc_v1_DeviceSettings value;
+  } invalid[] = {
+      {"brightness over 100",
+       {.has_screen_brightness = true, .screen_brightness = 101}},
+      {"negative brightness",
+       {.has_screen_brightness = true, .screen_brightness = -1}},
+      {"led brightness over 100",
+       {.has_led_brightness = true, .led_brightness = 101}},
+      {"negative screen timeout",
+       {.has_screen_off_timeout_ms = true, .screen_off_timeout_ms = -1}},
+      {"negative sleep timeout",
+       {.has_auto_sleep_timeout_ms = true, .auto_sleep_timeout_ms = -1}},
+      {"posix locale", {.has_locale = true, .locale = "zh_CN"}},
+      {"free text locale", {.has_locale = true, .locale = "not a locale"}},
+      {"one letter primary subtag", {.has_locale = true, .locale = "z"}},
+      {"overlong subtag", {.has_locale = true, .locale = "zh-Hanttttttt"}},
+      {"unspecified interaction mode",
+       {.has_default_interaction_mode = true,
+        .default_interaction_mode = (gizclaw_rpc_v1_DeviceInteractionMode)0}},
+      {"unknown interaction mode",
+       {.has_default_interaction_mode = true,
+        .default_interaction_mode = (gizclaw_rpc_v1_DeviceInteractionMode)3}},
+      {"unspecified key feedback",
+       {.has_key_feedback = true,
+        .key_feedback = (gizclaw_rpc_v1_DeviceKeyFeedback)0}},
+      {"unknown key feedback",
+       {.has_key_feedback = true,
+        .key_feedback = (gizclaw_rpc_v1_DeviceKeyFeedback)5}},
+      {"unspecified alert mode",
+       {.has_alert_mode = true,
+        .alert_mode = (gizclaw_rpc_v1_DeviceAlertMode)0}},
+      {"unknown alert mode",
+       {.has_alert_mode = true,
+        .alert_mode = (gizclaw_rpc_v1_DeviceAlertMode)4}},
+  };
+  const unsigned before = state.set_calls;
+  for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
+    gizclaw_rpc_v1_ClientDeviceSettingsSetRequest bad = {.has_value = true};
+    bad.value = invalid[i].value;
+    assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_SET,
+                       gizclaw_rpc_v1_ClientDeviceSettingsSetRequest_fields,
+                       &bad, &response) ==
+           H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT);
+    assert(state.set_calls == before);
+  }
+  /* A 36-byte locale cannot be encoded into the 35-byte wire field, so the
+   * overlength case is checked against the mirror directly. */
+  {
+    h2_gizclaw_device_settings_t overlong = {.has_locale = true};
+    memset(overlong.locale, 'a', sizeof(overlong.locale) - 1);
+    state.reported = overlong;
+    assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_GET,
+                       gizclaw_rpc_v1_ClientDeviceSettingsGetRequest_fields,
+                       &get, &response) ==
+           H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT);
+  }
+  /* A product reply the server would reject fails the RPC instead of being
+   * sent on. */
+  state.reported = (h2_gizclaw_device_settings_t){.has_led_brightness = true,
+                                                  .led_brightness = 200};
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_GET,
+                     gizclaw_rpc_v1_ClientDeviceSettingsGetRequest_fields, &get,
+                     &response) == H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT);
+  state.reported = (h2_gizclaw_device_settings_t){.has_nfc_enabled = true};
+  state.get_result = H2_PAL_ERR_UNSUPPORTED;
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_GET,
+                     gizclaw_rpc_v1_ClientDeviceSettingsGetRequest_fields, &get,
+                     &response) == H2_GIZCLAW_RPC_ERROR_UNIMPLEMENTED);
+  state.get_result = H2_PAL_OK;
+
+  /* An empty Workspace name never reaches the product and reserves nothing. */
+  gizclaw_rpc_v1_ClientRunWorkspaceSetRequest empty_name = {0};
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_RUN_WORKSPACE_SET,
+                     gizclaw_rpc_v1_ClientRunWorkspaceSetRequest_fields,
+                     &empty_name,
+                     &response) == H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT);
+  assert(atomic_load(&state.workspace_sets) == 0);
+
+  /* The two deferred methods reply first: a failed reply cancels the action and
+   * a successful one runs the hook exactly once afterwards. */
+  reset.has_keep_network = true;
+  reset.keep_network = true;
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_FACTORY_RESET,
+                     gizclaw_rpc_v1_ClientDeviceFactoryResetRequest_fields,
+                     &reset, &response) == 0);
+  assert(response.on_complete && atomic_load(&state.factory_resets) == 0);
+  response.on_complete(response.complete_user, H2_PAL_ERR_CLOSED);
+  assert(atomic_load(&state.factory_resets) == 0);
+  assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_FACTORY_RESET,
+                     gizclaw_rpc_v1_ClientDeviceFactoryResetRequest_fields,
+                     &reset, &response) == 0);
+  assert(response.on_complete && atomic_load(&state.factory_resets) == 0);
+  response.on_complete(response.complete_user, H2_PAL_OK);
+  wait_for_count(&state.factory_resets, 1);
+  assert(state.keep_network);
+
+  switch_request.has_kickoff = true;
+  switch_request.kickoff = true;
+  h2_pal_result_t reserved = H2_PAL_ERR_BUSY;
+  for (unsigned i = 0; i < 3000 && reserved != H2_PAL_OK; ++i) {
+    if (device_call(service, H2_GIZCLAW_RPC_CLIENT_RUN_WORKSPACE_SET,
+                    gizclaw_rpc_v1_ClientRunWorkspaceSetRequest_fields,
+                    &switch_request, &response) == 0)
+      reserved = H2_PAL_OK;
+    else
+      assert(h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u) ==
+             H2_PAL_OK);
+  }
+  assert(reserved == H2_PAL_OK && response.on_complete);
+  assert(atomic_load(&state.workspace_sets) == 0);
+  response.on_complete(response.complete_user, H2_PAL_OK);
+  wait_for_count(&state.workspace_sets, 1);
+  assert(!strcmp(state.workspace_name, "demo-home") && state.kickoff);
+
+  /* The list now covers every hook plus the two declared product methods, and
+   * still agrees with what the provider entry answers. */
+  device_methods_list(service, &list);
+  assert(method_listed(&list, "client.device.settings.get"));
+  assert(method_listed(&list, "client.device.settings.set"));
+  assert(method_listed(&list, "client.device.factory_reset"));
+  assert(method_listed(&list, "client.run.workspace.set"));
+  assert(method_listed(&list, "client.device.find"));
+  assert(method_listed(&list, "client.social.ping"));
+  assert(!method_listed(&list, "client.tool.invoke"));
+  assert(!method_listed(&list, "client.wifi.scan"));
+  device_methods_agree(service);
+  h2_gizclaw_test_set_telemetry_send(NULL, NULL);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
+/* rpc_provider_methods is config, so a mistake in it must fail service init
+ * rather than be silently dropped from the capability list. */
+static void test_device_provider_methods_validation(void) {
+  const h2_pal_audio_vtable_t audio_vtable = {.get_info = speaker_audio_info};
+  const h2_pal_audio_api_t audio = {.vtable = &audio_vtable};
+  static const h2_gizclaw_rpc_method_t duplicated[] = {
+      H2_GIZCLAW_RPC_CLIENT_DEVICE_FIND, H2_GIZCLAW_RPC_CLIENT_DEVICE_FIND};
+  static const h2_gizclaw_rpc_method_t built_in[] = {
+      H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT};
+  static const h2_gizclaw_rpc_method_t unknown[] = {4242};
+  static const h2_gizclaw_rpc_method_t over_cap[
+      H2_GIZCLAW_RPC_PROVIDER_METHODS_MAX + 1] = {
+      H2_GIZCLAW_RPC_CLIENT_DEVICE_FIND};
+  static const h2_gizclaw_rpc_method_t one[] = {
+      H2_GIZCLAW_RPC_CLIENT_TOOL_INVOKE};
+  const struct {
+    const h2_gizclaw_rpc_method_t *methods;
+    size_t count;
+    bool device;
+    h2_pal_result_t expected;
+  } cases[] = {
+      {duplicated, 2u, true, H2_PAL_ERR_INVALID_ARG},
+      {built_in, 1u, true, H2_PAL_ERR_INVALID_ARG},
+      {unknown, 1u, true, H2_PAL_ERR_INVALID_ARG},
+      {over_cap, sizeof(over_cap) / sizeof(over_cap[0]), true,
+       H2_PAL_ERR_INVALID_ARG},
+      {NULL, 1u, true, H2_PAL_ERR_INVALID_ARG},
+      /* Nothing answers client.rpc.methods.get without the built-in provider. */
+      {one, 1u, false, H2_PAL_ERR_INVALID_ARG},
+      {one, 1u, true, H2_PAL_OK},
+      {NULL, 0u, true, H2_PAL_OK},
+  };
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    test_env_t env;
+    h2_gizclaw_service_t *service = create_profile_service(&env);
+    if (cases[i].device) {
+      service->client_config.audio = &audio;
+      service->client_config.model = "fixture";
+    }
+    service->client_config.rpc_provider_methods = cases[i].methods;
+    service->client_config.rpc_provider_method_count = cases[i].count;
+    assert(h2_gizclaw_device_init_internal(service) == cases[i].expected);
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  }
+}
+
+/* An ACTIVITY observation is copied into the request, validated against the
+ * server's grammar, and a rejection is logged without its value. */
+#define TELEMETRY_ACTIVITY_ID "audioplayer"
+#define TELEMETRY_ACTIVITY_DETAIL "Bedtime stories"
+typedef struct telemetry_activity_capture {
+  unsigned calls;
+  bool mapped, detail_absent;
+} telemetry_activity_capture_t;
+static int telemetry_activity_send(void *user,
+                                   const gzc_telemetry_frame_t *frame) {
+  telemetry_activity_capture_t *capture = user;
+  ++capture->calls;
+  const gzc_telemetry_observation_t *observation = &frame->observations[0];
+  capture->mapped =
+      frame->observation_count == 1u &&
+      observation->kind == GZC_TELEMETRY_OBSERVATION_ACTIVITY &&
+      observation->activity.activity.len == strlen(TELEMETRY_ACTIVITY_ID) &&
+      memcmp(observation->activity.activity.data, TELEMETRY_ACTIVITY_ID,
+             strlen(TELEMETRY_ACTIVITY_ID)) == 0;
+  if (capture->detail_absent)
+    capture->mapped = capture->mapped && !observation->activity.has_detail;
+  else
+    capture->mapped =
+        capture->mapped && observation->activity.has_detail &&
+        observation->activity.detail.len ==
+            strlen(TELEMETRY_ACTIVITY_DETAIL) &&
+        memcmp(observation->activity.detail.data, TELEMETRY_ACTIVITY_DETAIL,
+               strlen(TELEMETRY_ACTIVITY_DETAIL)) == 0;
+  return GZC_OK;
+}
+
+static int telemetry_firmware_send(void *user,
+                                   const gzc_telemetry_frame_t *frame) {
+  telemetry_activity_capture_t *capture = user;
+  ++capture->calls;
+  const gzc_telemetry_system_t *system = &frame->observations[0].system;
+  capture->mapped = frame->observation_count == 1u &&
+                    frame->observations[0].kind ==
+                        GZC_TELEMETRY_OBSERVATION_SYSTEM &&
+                    system->has_firmware_version &&
+                    system->firmware_version.len == 10u &&
+                    memcmp(system->firmware_version.data, "1.4.2+h106", 10u) == 0;
+  return GZC_OK;
+}
+
+typedef struct activity_log_capture {
+  unsigned calls;
+  bool leaked;
+  char last[160];
+} activity_log_capture_t;
+static int activity_capture_log(void *user, h2_pal_log_level_t level,
+                                const char *scope, const char *message) {
+  activity_log_capture_t *capture = user;
+  (void)level;
+  (void)scope;
+  ++capture->calls;
+  (void)snprintf(capture->last, sizeof(capture->last), "%s", message);
+  if (strstr(message, TELEMETRY_ACTIVITY_DETAIL) ||
+      strstr(message, TELEMETRY_ACTIVITY_ID))
+    capture->leaked = true;
+  return H2_PAL_OK;
+}
+
+static void test_req_telemetry_activity(void) {
+  static const h2_pal_time_vtable_t vtable = {
+      .get_monotonic_ms = fake_req_clock,
+      .get_wall_ms = fake_valid_wall,
+      .get_wall_status = fake_valid_wall_status};
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  const h2_pal_time_api_t time = {.user = &env, .vtable = &vtable};
+  activity_log_capture_t log_capture = {0};
+  static const h2_pal_log_vtable_t log_vtable = {.write = activity_capture_log};
+  const h2_pal_log_api_t log = {.user = &log_capture, .vtable = &log_vtable};
+  service->client_config.time = &time;
+  service->client_config.log = &log;
+  env.rpc_result = H2_PAL_OK;
+  telemetry_activity_capture_t capture = {0};
+  h2_gizclaw_test_set_telemetry_send(telemetry_activity_send, &capture);
+
+  char id[] = TELEMETRY_ACTIVITY_ID;
+  char detail[] = TELEMETRY_ACTIVITY_DETAIL;
+  h2_gizclaw_telemetry_observation_t observation = {
+      .kind = H2_GIZCLAW_TELEMETRY_ACTIVITY,
+      .value.activity = {.activity = {id, sizeof(id) - 1u},
+                         .has_detail = true,
+                         .detail = {detail, sizeof(detail) - 1u}},
+  };
+  const h2_gizclaw_telemetry_frame_t frame = {
+      .sequence = 4u, .observations = &observation, .observation_count = 1u};
+  h2_gizclaw_req_t *request = NULL;
+  assert(h2_gizclaw_req_create_telemetry_send(service, 1u, &frame, 30u,
+                                              &request) == H2_PAL_OK);
+  /* The request owns its copy, so mutating the borrowed spans changes nothing. */
+  id[0] = 'X';
+  detail[0] = 'X';
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+  assert(h2_gizclaw_req_wait(request, 2000u) == H2_PAL_OK);
+  assert(h2_gizclaw_resp_parse_telemetry_send(request) == H2_PAL_OK);
+  h2_gizclaw_req_release(request);
+  assert(capture.calls == 1u && capture.mapped);
+  id[0] = TELEMETRY_ACTIVITY_ID[0];
+  detail[0] = TELEMETRY_ACTIVITY_DETAIL[0];
+
+  /* An empty detail span is the same as an unset detail: nothing is encoded,
+   * which is how a new activity clears the previous detail. */
+  capture = (telemetry_activity_capture_t){.detail_absent = true};
+  observation.value.activity.detail = (h2_gizclaw_str_t){0};
+  assert(h2_gizclaw_rpc_telemetry_send(service, &frame, 30u) == H2_PAL_OK);
+  assert(capture.calls == 1u && capture.mapped);
+  observation.value.activity.has_detail = false;
+  capture = (telemetry_activity_capture_t){.detail_absent = true};
+  assert(h2_gizclaw_rpc_telemetry_send(service, &frame, 30u) == H2_PAL_OK);
+  assert(capture.calls == 1u && capture.mapped);
+
+  /* Every malformed id or detail is rejected before the wire, and each
+   * rejection logs the field and its length but never the value. */
+  char long_id[H2_GIZCLAW_TELEMETRY_ACTIVITY_ID_MAX + 2];
+  memset(long_id, 'a', sizeof(long_id) - 1u);
+  long_id[sizeof(long_id) - 1u] = '\0';
+  char long_detail[H2_GIZCLAW_TELEMETRY_ACTIVITY_DETAIL_MAX + 2];
+  memset(long_detail, 'd', sizeof(long_detail) - 1u);
+  long_detail[sizeof(long_detail) - 1u] = '\0';
+  const struct {
+    const char *field;
+    h2_gizclaw_telemetry_activity_t value;
+  } rejected[] = {
+      {"activity", {.activity = {NULL, 0u}}},
+      {"activity", {.activity = {"", 0u}}},
+      {"activity", {.activity = {long_id, sizeof(long_id) - 1u}}},
+      {"activity", {.activity = {"_chat", 5u}}},
+      {"activity", {.activity = {".chat", 5u}}},
+      {"activity", {.activity = {"-chat", 5u}}},
+      {"activity", {.activity = {"Chat", 4u}}},
+      {"activity", {.activity = {"my chat", 7u}}},
+      {"activity", {.activity = {"chat\0x", 6u}}},
+      {"detail",
+       {.activity = {TELEMETRY_ACTIVITY_ID, strlen(TELEMETRY_ACTIVITY_ID)},
+        .has_detail = true,
+        .detail = {long_detail, sizeof(long_detail) - 1u}}},
+  };
+  for (size_t i = 0; i < sizeof(rejected) / sizeof(rejected[0]); ++i) {
+    const h2_gizclaw_telemetry_observation_t bad = {
+        .kind = H2_GIZCLAW_TELEMETRY_ACTIVITY, .value.activity = rejected[i].value};
+    const h2_gizclaw_telemetry_frame_t bad_frame = {
+        .sequence = 5u, .observations = &bad, .observation_count = 1u};
+    log_capture.calls = 0u;
+    h2_gizclaw_req_t *rejected_request = (h2_gizclaw_req_t *)1;
+    assert(h2_gizclaw_req_create_telemetry_send(service, 1u, &bad_frame, 30u,
+                                               &rejected_request) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(rejected_request == NULL && capture.calls == 1u);
+    assert(log_capture.calls == 1u && !log_capture.leaked);
+    char expected[64];
+    (void)snprintf(expected, sizeof(expected), "field=%s", rejected[i].field);
+    assert(strstr(log_capture.last, "telemetry activity rejected"));
+    assert(strstr(log_capture.last, expected));
+  }
+
+  /* SystemObservation.firmware_version now lands in PeerStatus, so the mapped
+   * frame must carry it. */
+  h2_gizclaw_test_set_telemetry_send(telemetry_firmware_send, &capture);
+  const h2_gizclaw_telemetry_observation_t system = {
+      .kind = H2_GIZCLAW_TELEMETRY_SYSTEM,
+      .value.system = {.has_firmware_version = true,
+                       .firmware_version = {"1.4.2+h106", 10u}},
+  };
+  const h2_gizclaw_telemetry_frame_t system_frame = {
+      .sequence = 6u, .observations = &system, .observation_count = 1u};
+  capture = (telemetry_activity_capture_t){0};
+  assert(h2_gizclaw_rpc_telemetry_send(service, &system_frame, 30u) ==
+         H2_PAL_OK);
+  assert(capture.calls == 1u && capture.mapped);
+
+  h2_gizclaw_test_set_telemetry_send(NULL, NULL);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
 static h2_pal_result_t ota_random_failure(void *user, uint8_t *out, size_t len) {
   (void)user; (void)out; (void)len;
   return H2_PAL_ERR_IO;
@@ -5124,15 +5749,18 @@ static void test_workspace_direct_input_update(void) {
           strcmp(workspace.name, "workspace-1") == 0 &&
           strcmp(workspace.workflow_name, "chat") == 0 && workspace.available,
       "workspace input update is one request and owns its response");
-  /* Verify every patch field combination on the wire and copied ownership. */
-  for (unsigned mask = 1u; mask < 8u; ++mask) {
+  /* Verify every patch field combination on the wire and copied ownership.
+   * mask 8 is a rate-only patch, which is a complete parameters.set on its own. */
+  for (unsigned mask = 1u; mask < 16u; ++mask) {
     h2_gizclaw_workspace_parameters_patch_t patch = {
         .has_input = (mask & 1u) != 0u,
         .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
         .has_initiative = (mask & 2u) != 0u,
         .initiative = H2_GIZCLAW_CONVERSATION_INITIATIVE_AGENT,
         .has_agent_initiative_policy = (mask & 4u) != 0u,
-        .agent_initiative_policy = H2_GIZCLAW_AGENT_INITIATIVE_ON_RELOAD};
+        .agent_initiative_policy = H2_GIZCLAW_AGENT_INITIATIVE_ON_RELOAD,
+        .has_tts_speech_rate_percent = (mask & 8u) != 0u,
+        .tts_speech_rate_percent = 70};
     uint8_t wire[32];
     memcpy(wire, workspace_get_request, sizeof(workspace_get_request));
     size_t n = sizeof(workspace_get_request);
@@ -5154,6 +5782,10 @@ static void test_workspace_direct_input_update(void) {
         wire[n++] = 0x10;
         wire[n++] = 2u;
       }
+    }
+    if (patch.has_tts_speech_rate_percent) {
+      wire[n++] = 0x18;
+      wire[n++] = 70u;
     }
     wire[patch_length] = (uint8_t)(n - patch_length - 1u);
     workspace_input_mock.expected_request = wire;
@@ -5178,7 +5810,13 @@ static void test_workspace_direct_input_update(void) {
       {0},
       {.has_input = true, .input = 0},
       {.has_initiative = true, .initiative = 0},
-      {.has_agent_initiative_policy = true, .agent_initiative_policy = 0}};
+      {.has_agent_initiative_policy = true, .agent_initiative_policy = 0},
+      /* The server answers INVALID_ARGUMENT outside 50..200, so reject the
+       * boundaries and zero before any network I/O. */
+      {.has_tts_speech_rate_percent = true, .tts_speech_rate_percent = 49},
+      {.has_tts_speech_rate_percent = true, .tts_speech_rate_percent = 201},
+      {.has_tts_speech_rate_percent = true, .tts_speech_rate_percent = 0},
+      {.has_tts_speech_rate_percent = true, .tts_speech_rate_percent = -1}};
   for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
     h2_gizclaw_req_t *request = NULL;
     assert(h2_gizclaw_req_create_workspace_set_parameters(
@@ -5554,7 +6192,8 @@ static void test_workspace_reload_with_options(void) {
         .has_initiative = true,
         .initiative = H2_GIZCLAW_CONVERSATION_INITIATIVE_AGENT,
         .has_agent_initiative_policy = true,
-        .agent_initiative_policy = H2_GIZCLAW_AGENT_INITIATIVE_ON_RELOAD};
+        .agent_initiative_policy = H2_GIZCLAW_AGENT_INITIATIVE_ON_RELOAD,
+        .has_tts_speech_rate_percent = true, .tts_speech_rate_percent = 70};
     uint8_t payload[32];
     size_t len = 0;
     if (mode & 1u) {
@@ -5563,8 +6202,10 @@ static void test_workspace_reload_with_options(void) {
       len += sizeof(name_bytes);
     }
     if (mode & 2u) {
-      const uint8_t patch_bytes[] = {0x12, 8, 0x08, 2, 0x12, 4,
-                                    0x08, 2, 0x10, 2};
+      /* parameters { input=2, conversation { policy=2, initiative=2 },
+       * tts_speech_rate_percent=70 }: the rate is tag 3 of the patch. */
+      const uint8_t patch_bytes[] = {0x12, 10, 0x08, 2, 0x12, 4,
+                                    0x08, 2, 0x10, 2, 0x18, 70};
       memcpy(payload + len, patch_bytes, sizeof(patch_bytes));
       len += sizeof(patch_bytes);
     }
@@ -5605,6 +6246,8 @@ static void test_workspace_reload_with_options(void) {
       assert(core.parameters.input == H2_GIZCLAW_WORKSPACE_INPUT_REALTIME);
       assert(core.parameters.initiative ==
              H2_GIZCLAW_CONVERSATION_INITIATIVE_AGENT);
+      assert(core.parameters.has_tts_speech_rate_percent &&
+             core.parameters.tts_speech_rate_percent == 70);
     }
   }
   /* Stop is method 20 with an empty request; the status body is optional to
@@ -5701,6 +6344,17 @@ static void test_workspace_reload_with_options(void) {
   assert(h2_gizclaw_req_create_workspace_reload_with_options(
       service, 1u, (h2_gizclaw_str_t){0}, &bad, 1234u, &request) ==
       H2_PAL_ERR_INVALID_ARG && request == NULL);
+  /* The rate range is enforced on this entry point too, and the accepted
+   * boundaries must still pass admission. */
+  const int32_t rates[] = {49, 201, 0, -1};
+  for (size_t i = 0; i < sizeof(rates) / sizeof(rates[0]); ++i) {
+    const h2_gizclaw_workspace_parameters_patch_t rate = {
+        .has_tts_speech_rate_percent = true,
+        .tts_speech_rate_percent = rates[i]};
+    assert(h2_gizclaw_req_create_workspace_reload_with_options(
+        service, 1u, (h2_gizclaw_str_t){0}, &rate, 1234u, &request) ==
+        H2_PAL_ERR_INVALID_ARG && request == NULL);
+  }
   assert(h2_gizclaw_req_create_workspace_reload_with_options(
       service, 1u, (h2_gizclaw_str_t){NULL, 2}, NULL, 1234u, &request) ==
       H2_PAL_ERR_INVALID_ARG);
@@ -12411,12 +13065,15 @@ int main(int argc, char **argv) {
   test_device_player_timed_start();
   test_device_player_rate();
   test_device_forwards_find_and_social_ping();
+  test_device_configuration_rpcs();
+  test_device_provider_methods_validation();
   test_device_identifiers_imeis();
   test_device_ota_telemetry_copy();
   test_ota_status_before_stage_failure();
   test_ota_status_successful_stage();
   test_req_telemetry_copy_and_backpressure();
   test_req_telemetry_network_identity();
+  test_req_telemetry_activity();
   test_req_workflow_public_paths();
   h2_gizclaw_async_rpc_test_set_ops(NULL);
   test_fifo_capacity_and_dispatch();
