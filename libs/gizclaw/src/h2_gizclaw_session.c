@@ -87,7 +87,12 @@ static h2_gizclaw_str_t str(const char *text) {
 static bool patch_valid(const h2_gizclaw_workspace_parameters_patch_t *p) {
   return p == NULL ||
          ((p->has_input || p->has_initiative ||
-           p->has_agent_initiative_policy) &&
+           p->has_agent_initiative_policy || p->has_tts_speech_rate_percent) &&
+          (!p->has_tts_speech_rate_percent ||
+           (p->tts_speech_rate_percent >=
+                H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MIN_PERCENT &&
+            p->tts_speech_rate_percent <=
+                H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MAX_PERCENT)) &&
           (!p->has_input ||
            p->input == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK ||
            p->input == H2_GIZCLAW_WORKSPACE_INPUT_REALTIME) &&
@@ -107,7 +112,10 @@ static bool patch_same(const h2_gizclaw_workspace_parameters_patch_t *a,
           (a->has_initiative && a->initiative == b->initiative)) &&
          (!b->has_agent_initiative_policy ||
           (a->has_agent_initiative_policy &&
-           a->agent_initiative_policy == b->agent_initiative_policy));
+           a->agent_initiative_policy == b->agent_initiative_policy)) &&
+         (!b->has_tts_speech_rate_percent ||
+          (a->has_tts_speech_rate_percent &&
+           a->tts_speech_rate_percent == b->tts_speech_rate_percent));
 }
 
 h2_pal_result_t
@@ -1203,6 +1211,11 @@ h2_pal_result_t h2_gizclaw_session_workspace_finish_internal(
           s->state.parameters.has_agent_initiative_policy = true;
           s->state.parameters.agent_initiative_policy =
               p->agent_initiative_policy;
+        }
+        if (p->has_tts_speech_rate_percent) {
+          s->state.parameters.has_tts_speech_rate_percent = true;
+          s->state.parameters.tts_speech_rate_percent =
+              p->tts_speech_rate_percent;
         }
       }
     }

@@ -14,6 +14,10 @@ extern "C" {
 /** Wire method number from gizclaw.rpc.v1.RpcMethod. */
 typedef int32_t h2_gizclaw_rpc_method_t;
 
+/** Most client methods a product may declare for its own rpc_provider in
+ * h2_gizclaw_config_t::rpc_provider_methods. */
+#define H2_GIZCLAW_RPC_PROVIDER_METHODS_MAX 16u
+
 enum {
   H2_GIZCLAW_RPC_SERVER_APP_CONFIG_LIST = 121,
   H2_GIZCLAW_RPC_SERVER_APP_CONFIG_GET = 122,
@@ -94,6 +98,17 @@ enum {
   H2_GIZCLAW_RPC_SERVER_FRIEND_PING = 123,
   H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_PING = 124,
   H2_GIZCLAW_RPC_SERVER_PROFILE_GET = 125,
+  /** Device configuration reverse RPCs. The library owns the protobuf and the
+   * validation of all five; 128, 129, 130 and 132 then call one typed hook in
+   * h2_gizclaw_vtable_t and answer UNIMPLEMENTED when it is unset, while 131 is
+   * answered entirely inside the library from the capabilities that are
+   * configured plus h2_gizclaw_config_t::rpc_provider_methods. None of the five
+   * reaches rpc_provider. */
+  H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_GET = 128,
+  H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_SET = 129,
+  H2_GIZCLAW_RPC_CLIENT_DEVICE_FACTORY_RESET = 130,
+  H2_GIZCLAW_RPC_CLIENT_RPC_METHODS_GET = 131,
+  H2_GIZCLAW_RPC_CLIENT_RUN_WORKSPACE_SET = 132,
   /** Product-owned reverse RPCs: the library has no built-in handler and
    * forwards them to the configured rpc_provider (UNIMPLEMENTED without one).
    * The Server counts a social ping as delivered only on a success reply. */

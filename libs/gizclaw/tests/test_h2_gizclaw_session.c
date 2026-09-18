@@ -919,7 +919,78 @@ static void test_send_text(void) {
   teardown();
 }
 
+
+/* The TTS speech rate is a patch member like the others: it is range-checked at
+ * admission, it makes an otherwise identical selection different so the reload
+ * is not skipped, and a confirmed value is published in the snapshot. */
+static void test_speech_rate_parameter(void) {
+  const h2_gizclaw_workspace_parameters_patch_t slow = {
+      .has_input = true,
+      .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
+      .has_tts_speech_rate_percent = true,
+      .tts_speech_rate_percent = 70,
+  };
+  h2_gizclaw_session_selection_t sel = selection;
+  sel.parameters = &slow;
+
+  setup(1u);
+  assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(snapshot().parameters.has_tts_speech_rate_percent &&
+         snapshot().parameters.tts_speech_rate_percent == 70);
+
+  /* Confirmed parameters make a repeat selection a no-op. */
+  rpc_trace[0] = '\0';
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(rpc_trace[0] == '\0');
+
+  /* Changing only the rate must still reload, or the Server would keep the old
+   * rate while the Session reported the new one. */
+  const h2_gizclaw_workspace_parameters_patch_t faster = {
+      .has_input = true,
+      .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
+      .has_tts_speech_rate_percent = true,
+      .tts_speech_rate_percent = 150,
+  };
+  sel.parameters = &faster;
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(strchr(rpc_trace, 'r') != NULL);
+  assert(snapshot().parameters.tts_speech_rate_percent == 150);
+
+  /* A rate-only patch is a complete patch, and the boundaries are accepted. */
+  const int32_t accepted[] = {
+      H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MIN_PERCENT, 100,
+      H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MAX_PERCENT};
+  for (size_t i = 0u; i < sizeof(accepted) / sizeof(accepted[0]); ++i) {
+    const h2_gizclaw_workspace_parameters_patch_t rate = {
+        .has_tts_speech_rate_percent = true,
+        .tts_speech_rate_percent = accepted[i]};
+    sel.parameters = &rate;
+    assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+    assert(snapshot().parameters.tts_speech_rate_percent == accepted[i]);
+    /* input stays confirmed: an absent member preserves the stored value. */
+    assert(snapshot().parameters.has_input &&
+           snapshot().parameters.input ==
+               H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK);
+  }
+
+  /* Out of range is refused at admission, with no RPC at all. */
+  const int32_t refused[] = {49, 201, 0, -1};
+  for (size_t i = 0u; i < sizeof(refused) / sizeof(refused[0]); ++i) {
+    const h2_gizclaw_workspace_parameters_patch_t rate = {
+        .has_tts_speech_rate_percent = true,
+        .tts_speech_rate_percent = refused[i]};
+    sel.parameters = &rate;
+    rpc_trace[0] = '\0';
+    assert(h2_gizclaw_session_select(session, &sel, 1000u) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(rpc_trace[0] == '\0');
+  }
+  teardown();
+}
+
 int main(void) {
+  test_speech_rate_parameter();
   test_send_text();
   test_control_boundaries();
   test_run_stop();
