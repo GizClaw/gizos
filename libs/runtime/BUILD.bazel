@@ -80,10 +80,12 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS + select({
         # bk3633 is BLE-only with no audio path, and its OAD image budget has
-        # no room for observational code, so audio levels build out there.
+        # no room for observational code, so audio levels and the input
+        # worker's log text build out there (input health counters stay).
         "//tools/bazel/platforms:is_bk3633": [
             "-Wno-error=type-limits",
             "-DH2_RUNTIME_AUDIO_LEVELS=0",
+            "-DH2_RUNTIME_INPUT_LOG_ENABLED=0",
         ],
         "//tools/bazel/platforms:is_bk7258": ["-Wno-error=type-limits"],
         "//conditions:default": [],
@@ -95,9 +97,9 @@ cc_library(
     deps = RUNTIME_DEPS,
 )
 
-# The same Runtime, built with audio level measurement compiled out, so the
-# disabled contract is covered by a test that runs instead of only by a
-# cross-compile. local_defines keeps the switch off this library's own sources
+# The same Runtime, built the way bk3633 builds it (audio level measurement
+# and input worker log text compiled out), so the disabled contract is covered
+# by a test that runs instead of only by a cross-compile. local_defines keeps the switch off this library's own sources
 # without leaking it to anything that depends on it, and testonly keeps a
 # product from picking the variant up by accident.
 cc_library(
@@ -111,7 +113,10 @@ cc_library(
     includes = [
         "include",
     ],
-    local_defines = ["H2_RUNTIME_AUDIO_LEVELS=0"],
+    local_defines = [
+        "H2_RUNTIME_AUDIO_LEVELS=0",
+        "H2_RUNTIME_INPUT_LOG_ENABLED=0",
+    ],
     target_compatible_with = RUNTIME_HOST_ONLY,
     deps = RUNTIME_DEPS,
 )
