@@ -42,6 +42,13 @@ typedef struct fake_runtime {
     atomic_int fail_next_join;
     atomic_int drop_next_gatt_write;
     atomic_int cond_broadcasts;
+    /* Sleep gate: while armed, every sleep from a thread other than the test
+     * main thread parks until released, which holds KCP workers still. */
+    pthread_t main_thread;
+    pthread_mutex_t gate_mutex;
+    pthread_cond_t gate_cond;
+    int gate_armed;
+    int gate_parked;
     uint32_t rx_properties_override;
     h2_pal_mem_api_t allocator;
     h2_pal_ble_t ble;
@@ -224,7 +231,19 @@ static h2_pal_result_t fake_monotonic(void *user, uint64_t *out_ms) {
 }
 
 static h2_pal_result_t fake_sleep(void *user, uint32_t ms) {
-    (void)user;
+    fake_runtime_t *runtime = user;
+    if (!pthread_equal(pthread_self(), runtime->main_thread)) {
+        pthread_mutex_lock(&runtime->gate_mutex);
+        if (runtime->gate_armed) {
+            runtime->gate_parked++;
+            pthread_cond_broadcast(&runtime->gate_cond);
+            while (runtime->gate_armed) {
+                pthread_cond_wait(&runtime->gate_cond, &runtime->gate_mutex);
+            }
+            runtime->gate_parked--;
+        }
+        pthread_mutex_unlock(&runtime->gate_mutex);
+    }
     struct timespec delay = {
         .tv_sec = ms / 1000u,
         .tv_nsec = (long)(ms % 1000u) * 1000000L,
@@ -493,6 +512,9 @@ static h2_pal_result_t fake_disconnect(void *user, uint16_t conn_handle) {
 static void fake_runtime_init(fake_runtime_t *runtime) {
     memset(runtime, 0, sizeof(*runtime));
     CHECK(pthread_mutex_init(&runtime->event_mutex, NULL) == 0);
+    runtime->main_thread = pthread_self();
+    CHECK(pthread_mutex_init(&runtime->gate_mutex, NULL) == 0);
+    CHECK(pthread_cond_init(&runtime->gate_cond, NULL) == 0);
     runtime->allocator = (h2_pal_mem_api_t){
         .user = runtime,
         .vtable = &s_allocator_vtable,
@@ -662,6 +684,208 @@ static void test_nonprogress_does_not_wake_data_waiters(
     CHECK(h2_pal_time_sleep_ms(api->time, 50u) == H2_PAL_OK);
     CHECK(atomic_load(&runtime->cond_broadcasts) == broadcasts_before);
     CHECK(h2_bleikcp_stream_destroy(stream) == H2_PAL_OK);
+}
+
+/* A full input frame queue drops the datagram for the peer's KCP to
+ * retransmit; it must not close the stream or publish a fatal status. */
+static void test_input_overflow_drops_frames(const h2_bleikcp_api_t *api) {
+    const h2_bleikcp_config_t config = { .input_frame_capacity = 2u };
+    h2_bleikcp_resolved_config_t resolved;
+    CHECK(h2_bleikcp_resolve_config(api, &config, &resolved) == H2_PAL_OK);
+    h2_bleikcp_t *stream = NULL;
+    CHECK(h2_bleikcp_stream_create(
+              api, &resolved, H2_BLEIKCP_ROLE_SERVER, 10u, 244u, false,
+              &stream) == H2_PAL_OK);
+
+    /* A KCP window-size segment (cmd 84) for the stream's conv: valid input
+     * that only updates the remote window. */
+    uint8_t frame[H2_BLEIKCP_KCP_OVERHEAD] = {0};
+    frame[0] = (uint8_t)resolved.value.conv;
+    frame[1] = (uint8_t)(resolved.value.conv >> 8u);
+    frame[2] = (uint8_t)(resolved.value.conv >> 16u);
+    frame[3] = (uint8_t)(resolved.value.conv >> 24u);
+    frame[4] = 84u;
+    frame[6] = 8u;
+
+    CHECK(h2_bleikcp_stream_input(stream, frame, sizeof(frame)) == H2_PAL_OK);
+    CHECK(h2_bleikcp_stream_input(stream, frame, sizeof(frame)) == H2_PAL_OK);
+    CHECK(h2_bleikcp_stream_input(stream, frame, sizeof(frame)) ==
+          H2_PAL_ERR_FULL);
+    CHECK(stream->input.count == 2u);
+    CHECK(!stream->closing);
+    CHECK(stream->fatal_status == H2_PAL_OK);
+    h2_bleikcp_stats_t stats;
+    CHECK(h2_bleikcp_get_stats(stream, &stats) == H2_PAL_OK);
+    CHECK(stats.dropped_input == 1u);
+    CHECK(stats.rx_frames == 0u);
+
+    /* The worker drains the queued frames and the stream keeps running. */
+    CHECK(h2_bleikcp_stream_start(stream) == H2_PAL_OK);
+    uint64_t started_ms = 0u;
+    CHECK(h2_pal_time_get_monotonic_ms(api->time, &started_ms) == H2_PAL_OK);
+    for (;;) {
+        CHECK(h2_bleikcp_get_stats(stream, &stats) == H2_PAL_OK);
+        if (stats.rx_frames == 2u) break;
+        uint64_t now_ms = 0u;
+        CHECK(h2_pal_time_get_monotonic_ms(api->time, &now_ms) == H2_PAL_OK);
+        CHECK(now_ms - started_ms < TEST_IO_TIMEOUT_MS);
+        CHECK(h2_pal_time_sleep_ms(api->time, 1u) == H2_PAL_OK);
+    }
+    CHECK(h2_bleikcp_stream_input(stream, frame, sizeof(frame)) == H2_PAL_OK);
+    for (;;) {
+        CHECK(h2_bleikcp_get_stats(stream, &stats) == H2_PAL_OK);
+        if (stats.rx_frames == 3u) break;
+        uint64_t now_ms = 0u;
+        CHECK(h2_pal_time_get_monotonic_ms(api->time, &now_ms) == H2_PAL_OK);
+        CHECK(now_ms - started_ms < TEST_IO_TIMEOUT_MS);
+        CHECK(h2_pal_time_sleep_ms(api->time, 1u) == H2_PAL_OK);
+    }
+    (void)h2_pal_mutex_lock(api->sync, stream->mutex);
+    CHECK(!stream->closing);
+    CHECK(stream->fatal_status == H2_PAL_OK);
+    (void)h2_pal_mutex_unlock(api->sync, stream->mutex);
+    CHECK(stats.dropped_input == 1u);
+    CHECK(stats.input_errors == 0u);
+    CHECK(h2_bleikcp_stream_destroy(stream) == H2_PAL_OK);
+}
+
+static void gate_workers(fake_runtime_t *runtime, int parked) {
+    pthread_mutex_lock(&runtime->gate_mutex);
+    runtime->gate_armed = 1;
+    while (runtime->gate_parked < parked) {
+        pthread_cond_wait(&runtime->gate_cond, &runtime->gate_mutex);
+    }
+    pthread_mutex_unlock(&runtime->gate_mutex);
+}
+
+static void release_workers(fake_runtime_t *runtime) {
+    pthread_mutex_lock(&runtime->gate_mutex);
+    runtime->gate_armed = 0;
+    pthread_cond_broadcast(&runtime->gate_cond);
+    pthread_mutex_unlock(&runtime->gate_mutex);
+}
+
+typedef struct overflow_handler_state {
+    const h2_bleikcp_api_t *api;
+    _Atomic(h2_bleikcp_t *) stream;
+    atomic_int received;
+    atomic_int finish;
+    atomic_int done;
+} overflow_handler_state_t;
+
+/* Publishes the borrowed stream, reads the 300 bytes the client sends after
+ * the overflow so the session provably still carries data, and keeps the
+ * session open until the test has read the final stats. */
+static int overflow_handler(void *user, h2_bleikcp_t *stream, uint16_t conn_handle) {
+    overflow_handler_state_t *state = user;
+    (void)conn_handle;
+    atomic_store(&state->stream, stream);
+    uint8_t buffer[64];
+    while (atomic_load(&state->received) < 300) {
+        size_t len = 0u;
+        int rc = h2_bleikcp_read(stream, buffer, sizeof(buffer), &len, TEST_IO_TIMEOUT_MS);
+        if (rc != H2_PAL_OK) return rc;
+        for (size_t i = 0u; i < len; ++i) {
+            if (buffer[i] != (uint8_t)((atomic_load(&state->received) + i) & 0xffu)) {
+                return H2_PAL_ERR_FORMAT;
+            }
+        }
+        atomic_fetch_add(&state->received, (int)len);
+    }
+    wait_for_atomic_at_least(state->api, &state->finish, 1, "overflow finish");
+    atomic_store(&state->done, 1);
+    return H2_PAL_OK;
+}
+
+/* A GATT write that finds the active session's input queue full is served:
+ * the server maps the drop to H2_PAL_OK so a synchronous provider never
+ * feeds H2_PAL_ERR_FULL into the peer's KCP output, and both the server and
+ * the client stream keep working once the peer retransmits. */
+static void test_server_write_drops_on_full_queue(
+    fake_runtime_t *runtime,
+    const h2_bleikcp_api_t *api) {
+    const h2_bleikcp_config_t config = { .input_frame_capacity = 2u };
+    h2_bleikcp_resolved_config_t resolved;
+    CHECK(h2_bleikcp_resolve_config(api, &config, &resolved) == H2_PAL_OK);
+    overflow_handler_state_t state = { .api = api };
+    h2_bleikcp_server_t *server = NULL;
+    CHECK(h2_bleikcp_server_open(
+              api, &config, overflow_handler, &state, &server) == H2_PAL_OK);
+    const uint16_t conn_handle = 12u;
+    const h2_pal_ble_connection_t connection = {
+        .conn_handle = conn_handle,
+        .role = H2_PAL_BLE_ROLE_PERIPHERAL,
+        .mtu = 244u,
+    };
+    CHECK(fake_post_payload(
+              runtime, H2_PAL_SYSTEM_EVENT_TYPE_BLE_CONNECTED,
+              &connection, sizeof(connection)) == H2_PAL_OK);
+    h2_bleikcp_t *client = NULL;
+    CHECK(h2_bleikcp_client_open(api, &config, conn_handle, 244u, &client) == H2_PAL_OK);
+    uint64_t started_ms = 0u;
+    CHECK(h2_pal_time_get_monotonic_ms(api->time, &started_ms) == H2_PAL_OK);
+    while (atomic_load(&state.stream) == NULL) {
+        uint64_t now_ms = 0u;
+        CHECK(h2_pal_time_get_monotonic_ms(api->time, &now_ms) == H2_PAL_OK);
+        CHECK(now_ms - started_ms < TEST_IO_TIMEOUT_MS);
+        CHECK(h2_pal_time_sleep_ms(api->time, 1u) == H2_PAL_OK);
+    }
+    h2_bleikcp_t *stream = atomic_load(&state.stream);
+
+    /* Park the server and client workers so nothing drains the queue. */
+    gate_workers(runtime, 2);
+    uint8_t frame[H2_BLEIKCP_KCP_OVERHEAD] = {0};
+    frame[0] = (uint8_t)resolved.value.conv;
+    frame[1] = (uint8_t)(resolved.value.conv >> 8u);
+    frame[2] = (uint8_t)(resolved.value.conv >> 16u);
+    frame[3] = (uint8_t)(resolved.value.conv >> 24u);
+    frame[4] = 84u;
+    frame[6] = 8u;
+    (void)h2_pal_mutex_lock(api->sync, stream->mutex);
+    size_t queued = stream->input.count;
+    (void)h2_pal_mutex_unlock(api->sync, stream->mutex);
+    CHECK(queued <= 2u);
+    for (size_t i = queued; i < 3u; ++i) {
+        CHECK(h2_pal_ble_gatt_write(
+                  api->ble, conn_handle, stream->rx_value_handle, frame,
+                  sizeof(frame), false, 1000u) == H2_PAL_OK);
+    }
+    h2_bleikcp_stats_t stats;
+    CHECK(h2_bleikcp_get_stats(stream, &stats) == H2_PAL_OK);
+    CHECK(stats.dropped_input == 1u);
+    (void)h2_pal_mutex_lock(api->sync, stream->mutex);
+    CHECK(stream->input.count == 2u);
+    CHECK(!stream->closing);
+    CHECK(stream->fatal_status == H2_PAL_OK);
+    (void)h2_pal_mutex_unlock(api->sync, stream->mutex);
+    (void)h2_pal_mutex_lock(api->sync, client->mutex);
+    CHECK(!client->closing);
+    CHECK(client->fatal_status == H2_PAL_OK);
+    (void)h2_pal_mutex_unlock(api->sync, client->mutex);
+    release_workers(runtime);
+
+    /* The session still carries data after the drop. */
+    uint8_t request[300];
+    for (size_t i = 0u; i < sizeof(request); ++i) request[i] = (uint8_t)(i & 0xffu);
+    CHECK(h2_bleikcp_write(client, request, sizeof(request), 1000u) == H2_PAL_OK);
+    CHECK(h2_bleikcp_flush(client, TEST_IO_TIMEOUT_MS) == H2_PAL_OK);
+    wait_for_atomic_at_least(api, &state.received, 300, "overflow bytes");
+    /* The transfer itself overflows the two-frame queue again; every drop
+     * was recovered by the client's retransmit. */
+    CHECK(h2_bleikcp_get_stats(stream, &stats) == H2_PAL_OK);
+    CHECK(stats.dropped_input >= 1u);
+    CHECK(stats.input_errors == 0u);
+    (void)h2_pal_mutex_lock(api->sync, stream->mutex);
+    CHECK(!stream->closing);
+    CHECK(stream->fatal_status == H2_PAL_OK);
+    (void)h2_pal_mutex_unlock(api->sync, stream->mutex);
+    atomic_store(&state.finish, 1);
+    wait_for_atomic_at_least(api, &state.done, 1, "overflow handler");
+    CHECK(h2_bleikcp_close(client) == H2_PAL_OK);
+    wait_for_server_idle(runtime, api, conn_handle);
+    CHECK(h2_bleikcp_server_close(server) == H2_PAL_OK);
+    CHECK(runtime->service == NULL);
+    runtime->unregister_count = 0;
 }
 
 static void test_task_name_ownership(const h2_bleikcp_api_t *api) {
@@ -908,6 +1132,8 @@ int main(void) {
     test_task_name_ownership(&api);
     test_flush_result_precedence(&api);
     test_nonprogress_does_not_wake_data_waiters(&runtime, &api);
+    test_input_overflow_drops_frames(&api);
+    test_server_write_drops_on_full_queue(&runtime, &api);
     test_extra_characteristics(&runtime, &api);
     handler_state_t handler_state = { .api = &api };
     event_state_t event_state = {0};

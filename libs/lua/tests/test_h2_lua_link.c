@@ -212,7 +212,9 @@ static const char s_join_burst[] =
 static const char s_host_exit_on_first_message[] =
     LUA_PRELUDE
     "assert(link.host({tag=args.tag}));"
-    "wait(function() return #s.msgs>0 end);"
+    "wait(function() return #s.msgs>0 or s.disc or s.err end);"
+    "assert(#s.msgs>0,'no message: disc='..tostring(s.disc)..' result='.."
+    "tostring(s.disc_result)..' err='..tostring(s.err));"
     "return 'exit-ok'";
 
 static const char s_join_flood[] =
@@ -459,6 +461,23 @@ static void test_release_during_traffic(void) {
                                   s_host_exit_on_first_message, "flood");
     h2_lua_job_id_t join =
         submit(pair.host[1], "@flood.lua", s_join_flood, "flood");
+    {
+      const h2_lua_job_status_t status = wait_job(pair.host[0], host);
+      if (status.state != H2_LUA_JOB_SUCCEEDED) {
+        h2_lua_job_status_t peer;
+        assert(h2_lua_job_get_status(pair.host[1], join, &peer) == H2_PAL_OK);
+        const fake_snapshot_t a = fake_snapshot(&pair.air.devices[0]);
+        const fake_snapshot_t b = fake_snapshot(&pair.air.devices[1]);
+        fprintf(stderr,
+                "round %d: host state=%d msg=%s | join state=%d msg=%s | "
+                "dev0 adv=%d scan=%d reg=%d conn=%d | dev1 adv=%d scan=%d "
+                "reg=%d conn=%d\n",
+                round, (int)status.state, status.message, (int)peer.state,
+                peer.message, a.adv_running, a.scanning, a.registered,
+                a.connected, b.adv_running, b.scanning, b.registered,
+                b.connected);
+      }
+    }
     expect_success(pair.host[0], host, "exit-ok");
     h2_lua_job_id_t reused =
         submit(pair.host[0], "@reuse.lua", s_reused_slot, "flood");

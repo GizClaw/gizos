@@ -508,11 +508,14 @@ int h2_bleikcp_stream_input(h2_bleikcp_t *stream, const uint8_t *data, size_t le
         return H2_PAL_ERR_CLOSED;
     }
     if (stream->input.count == stream->input.capacity) {
+        /*
+         * KCP already treats the link as lossy: a datagram that arrives while
+         * the worker has not drained the queue yet is dropped here and the
+         * peer retransmits it. Closing the stream instead would turn one late
+         * worker slice (a starved host thread, a burst plus its retransmit)
+         * into a lost link.
+         */
         stream->stats.dropped_input++;
-        stream->fatal_status = H2_PAL_ERR_FULL;
-        stream->closing = true;
-        (void)h2_pal_cond_broadcast(stream->api.sync, stream->read_cond);
-        (void)h2_pal_cond_broadcast(stream->api.sync, stream->write_cond);
         (void)h2_pal_mutex_unlock(stream->api.sync, stream->mutex);
         return H2_PAL_ERR_FULL;
     }
