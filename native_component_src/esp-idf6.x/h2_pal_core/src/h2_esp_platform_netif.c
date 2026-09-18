@@ -534,14 +534,16 @@ h2_pal_result_t h2_esp_platform_netif_reconcile_default(void) {
   }
   if (sync.netif_changed != 0 || sync.servers_changed != 0) {
     char dns0[IPADDR_STRLEN_MAX];
-    char dns1[IPADDR_STRLEN_MAX];
+    char dns1[IPADDR_STRLEN_MAX] = "-";
+    (void)ipaddr_ntoa_r(&sync.servers[0], dns0, sizeof(dns0));
+#if DNS_MAX_SERVERS > 1
+    (void)ipaddr_ntoa_r(&sync.servers[1], dns1, sizeof(dns1));
+#endif
     ESP_LOGW(TAG,
              "H2_ESP_NETIF_DNS default=%s netif_changed=%d "
              "servers_changed=%d dns0=%s dns1=%s cache=cleared",
              sync.key[0] != '\0' ? sync.key : "-", sync.netif_changed,
-             sync.servers_changed,
-             ipaddr_ntoa_r(&sync.servers[0], dns0, sizeof(dns0)),
-             ipaddr_ntoa_r(&sync.servers[1], dns1, sizeof(dns1)));
+             sync.servers_changed, dns0, dns1);
   }
   const h2_pal_netif_ref_t next = sync.read.ref;
   const int next_valid = sync.read.valid;
