@@ -114,6 +114,23 @@ h2_pal_result_t h2_runtime_wait_notify(
     h2_runtime_t *runtime,
     uint32_t timeout_ms);
 
+/*
+ * Reads how many events the Runtime's own producers (input, system events,
+ * time adjustment, Test Control) discarded because the event queue was full,
+ * since h2_runtime_init(). Custom events are not counted: their full queue is
+ * returned to the poster instead. Held Button repeats are counted when
+ * dropped; Button press/release edges are only counted once they are
+ * discarded for good, not while they wait for queue space.
+ *
+ * The count wraps at UINT32_MAX; compare two reads by unsigned difference.
+ * Drops are also reported by at most one WARN log line per second. Any task
+ * may call this. Returns H2_PAL_ERR_INVALID_ARG for a NULL or uninitialized
+ * runtime or a NULL out_count.
+ */
+h2_pal_result_t h2_runtime_dropped_event_count(
+    const h2_runtime_t *runtime,
+    uint32_t *out_count);
+
 #ifdef __cplusplus
 }
 #endif

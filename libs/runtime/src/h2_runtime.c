@@ -418,6 +418,15 @@ h2_pal_result_t h2_runtime_init(
         }
     }
     atomic_flag_clear(&private_state->sequence_lock);
+    atomic_flag_clear(&private_state->dropped_event_lock);
+    atomic_flag_clear(&private_state->drop_report_lock);
+    atomic_init(&private_state->dropped_event_count, 0u);
+    atomic_init(&private_state->last_dropped_kind, H2_RUNTIME_EVENT_NONE);
+    atomic_init(
+        &private_state->last_dropped_component, H2_RUNTIME_COMPONENT_NONE);
+    atomic_init(
+        &private_state->last_dropped_component_id,
+        H2_RUNTIME_COMPONENT_ID_NONE);
     atomic_init(&private_state->system_event_active, 0);
     atomic_init(
         &private_state->input_phase,

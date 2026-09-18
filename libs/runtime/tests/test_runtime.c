@@ -8,6 +8,7 @@
 #include "h2/pal/hal/h2_pal_wifi.h"
 
 #include <assert.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -2069,6 +2070,331 @@ static void test_event_queue_timeout_drops_event(void) {
     h2_runtime_deinit(runtime);
 }
 
+static uint32_t dropped_events(const h2_runtime_t *runtime) {
+    uint32_t count = UINT32_MAX;
+    assert(h2_runtime_dropped_event_count(runtime, &count) == H2_PAL_OK);
+    return count;
+}
+
+static size_t drain_events(h2_runtime_t *runtime) {
+    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+    h2_runtime_event_t event = event_with_payload(payload);
+    size_t count = 0u;
+    while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
+        count += 1u;
+    }
+    return count;
+}
+
+static void poll_button_at(
+    test_runtime_env_t *env,
+    h2_runtime_t *runtime,
+    h2_pal_button_state_t state,
+    uint64_t now_ms) {
+    env->button_state.single_state = state;
+    env->time_state.now_ms = now_ms;
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+}
+
+static void test_dropped_event_count_rejects_invalid_arguments(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    h2_runtime_t *runtime = test_runtime_create(&env);
+    uint32_t count = 7u;
+    assert(h2_runtime_dropped_event_count(NULL, &count) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(count == 7u);
+    assert(h2_runtime_dropped_event_count(runtime, NULL) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(h2_runtime_dropped_event_count(runtime, &count) == H2_PAL_OK);
+    assert(count == 0u);
+    h2_runtime_deinit(runtime);
+}
+
+/*
+ * A held key fills the queue with repeats while the consumer is stalled. The
+ * repeats are dropped and counted, but the release edge waits for space and
+ * is delivered with its original timestamps once the consumer drains.
+ */
+static void test_button_release_survives_full_queue(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+    h2_runtime_t *runtime = test_runtime_create(&env);
+    assert(dropped_events(runtime) == 0u);
+
+    /* Queue capacity 4: press (DOWN + ACTION) and one repeat fill it. */
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 10u);
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 30u);
+    assert(dropped_events(runtime) == 0u);
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 50u);
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 70u);
+    assert(dropped_events(runtime) == 4u);
+
+    /* Released while the queue is still full: the edge is kept, not lost. */
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 90u);
+    assert(runtime->private_state->input_sources[0].button.retained_count ==
+           1u);
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 110u);
+    assert(dropped_events(runtime) == 4u);
+    h2_runtime_button_state_t state;
+    assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
+           H2_PAL_OK);
+    assert(!state.pressed);
+
+    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+    h2_runtime_event_t event = event_with_payload(payload);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    assert(event.timestamp_ms == 10u);
+    assert(drain_events(runtime) == 3u);
+
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 130u);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
+    assert(event.timestamp_ms == 90u);
+    h2_runtime_button_up_event_t up;
+    memcpy(&up, event.payload, sizeof(up));
+    assert(up.pressed_at_ms == 10u);
+    assert(up.released_at_ms == 90u);
+    const h2_runtime_sequence_t up_sequence = event.sequence;
+    h2_runtime_button_action_event_t action =
+        poll_button_action(runtime, &event);
+    assert(action.pressed_at_ms == 10u);
+    assert(action.released_at_ms == 90u);
+    assert(h2_runtime_sequence_after(event.sequence, up_sequence));
+    const h2_runtime_state_publication_t *publication =
+        &runtime->private_state->state_publication;
+    assert(!h2_runtime_sequence_after(
+        event.sequence,
+        publication->banks[atomic_load(&publication->active_index)]
+            .event_sequence_ceiling));
+    assert(h2_runtime_poll_event(runtime, &event) ==
+           H2_PAL_ERR_WOULD_BLOCK);
+    assert(runtime->private_state->input_sources[0].button.retained_count ==
+           0u);
+    assert(dropped_events(runtime) == 4u);
+
+    h2_runtime_deinit(runtime);
+}
+
+/*
+ * A press edge refused by a full queue is delivered before any later sample
+ * of the same source, with the timestamp that marks it as the first sample.
+ */
+static void test_button_press_edge_waits_for_queue_space(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+    h2_runtime_t *runtime = test_runtime_create(&env);
+
+    const uint32_t filler = 1u;
+    const h2_runtime_custom_event_t custom = {
+        .id = H2_RUNTIME_CUSTOM_EVENT_ID(0x0106u, 1u),
+        .payload = &filler,
+        .payload_size = sizeof(filler),
+    };
+    for (size_t i = 0u; i < 4u; ++i) {
+        assert(h2_runtime_post_custom_event(runtime, &custom) == H2_PAL_OK);
+    }
+
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 10u);
+    /* Only the press action, a held sample, is dropped. */
+    assert(dropped_events(runtime) == 1u);
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 30u);
+    /* Repeats of a source with a retained edge never overtake it. */
+    assert(dropped_events(runtime) == 3u);
+    assert(drain_events(runtime) == 4u);
+
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 50u);
+    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+    h2_runtime_event_t event = event_with_payload(payload);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    h2_runtime_button_down_event_t down;
+    memcpy(&down, event.payload, sizeof(down));
+    assert(down.pressed_at_ms == 10u);
+    assert(event.timestamp_ms == down.pressed_at_ms);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    assert(event.timestamp_ms == 50u);
+    h2_runtime_button_action_event_t action =
+        poll_button_action(runtime, &event);
+    assert(action.pressed_at_ms == 10u);
+    assert(action.released_at_ms == 0u);
+    assert(dropped_events(runtime) == 3u);
+
+    h2_runtime_deinit(runtime);
+}
+
+/*
+ * A source keeps at most two undelivered edges. A third discards the oldest
+ * complementary pair, so the consumer still ends on the right level.
+ */
+static void test_button_retained_edges_discard_oldest_pair(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+    h2_runtime_t *runtime = test_runtime_create(&env);
+
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 10u);
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 30u);
+    assert(dropped_events(runtime) == 0u);
+
+    /* release (UP + action), press (DOWN), release: 3 edges, cap 2. */
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 50u);
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 70u);
+    const h2_runtime_button_recognizer_t *button =
+        &runtime->private_state->input_sources[0].button;
+    assert(button->retained_count == 2u);
+    /* The press action of the retained re-press is a dropped sample. */
+    assert(dropped_events(runtime) == 1u);
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 90u);
+    assert(button->retained_count == 1u);
+    /* The discarded pair: UP + final action at 50, DOWN at 70. */
+    assert(dropped_events(runtime) == 4u);
+
+    assert(drain_events(runtime) == 4u);
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 110u);
+    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+    h2_runtime_event_t event = event_with_payload(payload);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
+    h2_runtime_button_up_event_t up;
+    memcpy(&up, event.payload, sizeof(up));
+    assert(up.pressed_at_ms == 70u);
+    assert(up.released_at_ms == 90u);
+    h2_runtime_button_action_event_t action =
+        poll_button_action(runtime, &event);
+    assert(action.pressed_at_ms == 70u);
+    assert(action.released_at_ms == 90u);
+    assert(h2_runtime_poll_event(runtime, &event) ==
+           H2_PAL_ERR_WOULD_BLOCK);
+    assert(button->retained_count == 0u);
+
+    h2_runtime_deinit(runtime);
+}
+
+/* An UP that fit while its final action did not still delivers the action. */
+static void test_button_final_action_is_retained_alone(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+    h2_runtime_t *runtime = test_runtime_create(&env);
+
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 10u);
+    const uint32_t filler = 1u;
+    const h2_runtime_custom_event_t custom = {
+        .id = H2_RUNTIME_CUSTOM_EVENT_ID(0x0106u, 1u),
+        .payload = &filler,
+        .payload_size = sizeof(filler),
+    };
+    assert(h2_runtime_post_custom_event(runtime, &custom) == H2_PAL_OK);
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 30u);
+    const h2_runtime_button_recognizer_t *button =
+        &runtime->private_state->input_sources[0].button;
+    assert(button->retained_count == 1u);
+    assert(button->retained[0].edge_owed == 0u);
+    assert(button->retained[0].action_owed == 1u);
+    assert(dropped_events(runtime) == 0u);
+
+    assert(drain_events(runtime) == 4u);
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_RELEASED, 50u);
+    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+    h2_runtime_event_t event = event_with_payload(payload);
+    h2_runtime_button_action_event_t action =
+        poll_button_action(runtime, &event);
+    assert(action.pressed_at_ms == 10u);
+    assert(action.released_at_ms == 30u);
+    assert(event.timestamp_ms == 30u);
+    assert(h2_runtime_poll_event(runtime, &event) ==
+           H2_PAL_ERR_WOULD_BLOCK);
+
+    h2_runtime_deinit(runtime);
+}
+
+typedef struct test_log {
+    size_t warn_count;
+    char last_scope[32];
+    char last_message[H2_PAL_LOG_MESSAGE_MAX];
+} test_log_t;
+
+static int test_log_write(
+    void *user,
+    h2_pal_log_level_t level,
+    const char *scope,
+    const char *message) {
+    test_log_t *log = (test_log_t *)user;
+    if (level == H2_PAL_LOG_WARN) {
+        log->warn_count += 1u;
+        const size_t scope_len = strlen(scope);
+        const size_t message_len = strlen(message);
+        assert(scope_len < sizeof(log->last_scope));
+        assert(message_len < sizeof(log->last_message));
+        memcpy(log->last_scope, scope, scope_len + 1u);
+        memcpy(log->last_message, message, message_len + 1u);
+    }
+    return H2_PAL_OK;
+}
+
+static void test_dropped_events_warn_at_most_once_per_second(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+    test_log_t log_state;
+    memset(&log_state, 0, sizeof(log_state));
+    static const h2_pal_log_vtable_t log_vtable = {.write = test_log_write};
+    const h2_pal_log_api_t log = {.user = &log_state, .vtable = &log_vtable};
+    h2_runtime_config_t config = test_runtime_config(&env);
+    config.log = &log;
+    h2_runtime_t *runtime = NULL;
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
+
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 10u);
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 30u);
+    assert(log_state.warn_count == 0u);
+
+    /* The first drop is reported at once. */
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 50u);
+    assert(log_state.warn_count == 1u);
+    assert(strcmp(log_state.last_scope, "runtime/event") == 0);
+    char expected[96];
+    (void)snprintf(expected, sizeof(expected),
+                   "event queue full: dropped 1 event(s), total 1; "
+                   "last kind %d component %d id 1",
+                   (int)H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN,
+                   (int)H2_RUNTIME_COMPONENT_BUTTON);
+    assert(strcmp(log_state.last_message, expected) == 0);
+
+    /* Further drops inside the window are counted, not logged. */
+    for (uint64_t now = 70u; now < 1050u; now += 20u) {
+        poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, now);
+    }
+    assert(log_state.warn_count == 1u);
+    const uint32_t total = dropped_events(runtime);
+    assert(total > 2u);
+
+    /*
+     * Drops stopped inside the window; once it passes, the next input poll
+     * reports the held-back total even though that poll drops nothing.
+     */
+    assert(drain_events(runtime) == 4u);
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 1050u);
+    assert(dropped_events(runtime) == total);
+    assert(log_state.warn_count == 2u);
+    (void)snprintf(expected, sizeof(expected),
+                   "dropped %u event(s), total %u;", total - 1u, total);
+    assert(strstr(log_state.last_message, expected) != NULL);
+
+    /* No new drop, no new line. */
+    assert(drain_events(runtime) == 2u);
+    poll_button_at(&env, runtime, H2_PAL_BUTTON_STATE_PRESSED, 3000u);
+    assert(log_state.warn_count == 2u);
+
+    h2_runtime_deinit(runtime);
+}
+
 /*
  * Custom events share the queue with input events and keep their arrival
  * order relative to them.
@@ -3528,7 +3854,9 @@ static void test_control_preserves_runtime_queue_drop_behavior(void) {
                11u,
                NULL,
                0u) == H2_PAL_OK);
-    assert(runtime->private_state->dropped_event_count == 1u);
+    uint32_t dropped = 0u;
+    assert(h2_runtime_dropped_event_count(runtime, &dropped) == H2_PAL_OK);
+    assert(dropped == 1u);
     assert(runtime->private_state->next_sequence == 3u);
 
     uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
@@ -4403,7 +4731,9 @@ static void test_time_adjusted_event(void) {
     env.time_state.sleep_rc = H2_PAL_OK;
     for (size_t i = 0; i < 5u; ++i)
         assert(h2_pal_time_set_wall_ms(runtime->time, utc + i) == H2_PAL_OK);
-    assert(runtime->private_state->dropped_event_count == 1u);
+    uint32_t dropped = 0u;
+    assert(h2_runtime_dropped_event_count(runtime, &dropped) == H2_PAL_OK);
+    assert(dropped == 1u);
     h2_runtime_deinit(runtime);
 }
 
@@ -4442,6 +4772,12 @@ int main(void) {
     test_system_event_advertising_queue_failure();
     test_event_small_buffer_does_not_dequeue();
     test_event_queue_timeout_drops_event();
+    test_dropped_event_count_rejects_invalid_arguments();
+    test_button_release_survives_full_queue();
+    test_button_press_edge_waits_for_queue_space();
+    test_button_retained_edges_discard_oldest_pair();
+    test_button_final_action_is_retained_alone();
+    test_dropped_events_warn_at_most_once_per_second();
     test_custom_events_interleave_with_input_events();
     test_button_action_emits_on_release();
     test_button_action_emits_on_every_pressed_poll();

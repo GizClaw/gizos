@@ -916,6 +916,96 @@ static void test_publication_defers_when_all_retired_slots_are_pinned(void) {
     concurrency_env_deinit(&env);
 }
 
+/*
+ * While every retired slot is pinned the pending list outlives each poll. A
+ * held key then exhausts it: the input worker keeps running, held samples are
+ * dropped and counted, and the press and release edges are kept and delivered
+ * once publication resumes.
+ */
+static void test_pending_exhaustion_drops_samples_and_keeps_edges(void) {
+    concurrency_env_t env;
+    concurrency_env_init(&env);
+    add_single_button(&env);
+    h2_runtime_t *runtime = concurrency_runtime_create(&env);
+    const size_t capacity =
+        runtime->private_state->input_pending_event_capacity;
+
+    const h2_runtime_state_bank_t *bank = NULL;
+    uint8_t slots[H2_RUNTIME_STATE_SLOT_COUNT];
+    assert(h2_runtime_state_read_begin(runtime, &bank, &slots[0]) ==
+           H2_PAL_OK);
+    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+    atomic_store(&env.time_state.now_ms, 20u);
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    assert(h2_runtime_state_read_begin(runtime, &bank, &slots[1]) ==
+           H2_PAL_OK);
+    env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
+    atomic_store(&env.time_state.now_ms, 40u);
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    assert(h2_runtime_state_read_begin(runtime, &bank, &slots[2]) ==
+           H2_PAL_OK);
+
+    /* Press edge + press action, then one DOWN + ACTION repeat per poll. */
+    uint64_t now = 60u;
+    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+    for (size_t polls = 0u; polls < capacity / 2u + 2u; ++polls) {
+        atomic_store(&env.time_state.now_ms, now);
+        assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+        now += 20u;
+    }
+    assert(runtime->private_state->input_pending_event_count == capacity);
+    uint32_t dropped = 0u;
+    assert(h2_runtime_dropped_event_count(runtime, &dropped) == H2_PAL_OK);
+    assert(dropped == 4u);
+
+    /* The release spills the source: its samples drop, its edges stay. */
+    const uint64_t released_at = now;
+    env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
+    atomic_store(&env.time_state.now_ms, released_at);
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    assert(runtime->private_state->input_pending_event_count == 0u);
+    assert(runtime->private_state->input_sources[0].button.retained_count ==
+           2u);
+    assert(h2_runtime_dropped_event_count(runtime, &dropped) == H2_PAL_OK);
+    assert(dropped == 4u + (uint32_t)capacity - 1u);
+
+    for (size_t i = 0u; i < H2_RUNTIME_STATE_SLOT_COUNT; ++i) {
+        assert(h2_runtime_state_read_end(runtime, slots[i]) == H2_PAL_OK);
+    }
+    atomic_store(&env.time_state.now_ms, released_at + 20u);
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+
+    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+    h2_runtime_event_t event = {
+        .payload = payload,
+        .payload_capacity = sizeof(payload),
+    };
+    h2_runtime_event_kind_t kinds[8];
+    h2_runtime_timestamp_ms_t stamps[8];
+    size_t count = 0u;
+    while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
+        assert(count < 8u);
+        kinds[count] = event.kind;
+        stamps[count] = event.timestamp_ms;
+        count += 1u;
+    }
+    /* 20: DOWN + ACTION, 40: UP + ACTION, then the kept edges. */
+    assert(count == 7u);
+    assert(kinds[4] == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    assert(stamps[4] == 60u);
+    assert(kinds[5] == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
+    assert(stamps[5] == released_at);
+    assert(kinds[6] == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
+    assert(stamps[6] == released_at);
+    h2_runtime_button_state_t state;
+    assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
+           H2_PAL_OK);
+    assert(!state.pressed);
+
+    h2_runtime_deinit(runtime);
+    concurrency_env_deinit(&env);
+}
+
 static void test_publication_counts_and_event_ceiling(void) {
     concurrency_env_t env;
     concurrency_env_init(&env);
@@ -1256,6 +1346,7 @@ int main(void) {
     test_pinned_reader_does_not_block_publication();
     test_restart_keeps_publication_and_reader_pins_valid();
     test_publication_defers_when_all_retired_slots_are_pinned();
+    test_pending_exhaustion_drops_samples_and_keeps_edges();
     test_publication_counts_and_event_ceiling();
     test_radio_error_batch_uses_one_switch();
     test_radio_state_and_transition_batches_use_one_switch();
