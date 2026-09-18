@@ -79,7 +79,8 @@ bazel build --config=esp32s3 --define=H2_GIZCLAW_E2E_DEVICE_ONLY=ON \
 `h2_gizclaw_device_settings_t` 的每个成员在两个方向上都是可选的：set 请求里缺席表示
 “不改动”，回包里缺席表示“设备不支持”。库按服务端同一套规则校验（亮度 `[0, 100]`、
 超时 `>= 0`、`locale` 为 well-formed BCP 47、枚举取具名值），任一成员越界整份 patch
-被拒且产品 hook 不被调用；产品回包越界时 RPC 失败而不是发出非法值。亮度、`locale` 等
+被拒且产品 hook 不被调用；产品回包越界时 RPC 失败而不是发出非法值。`locale` 的长度在
+内联缓冲区内扫描，产品 hook 填满全部字节而不留 NUL 时按非法值拒绝。亮度、`locale` 等
 值不在库内落到 PAL —— `h2_pal_display` / `h2_pal_led` 只能写不能读，库若自己写入就无法
 如实回答 get。恢复出厂与切 Workspace 复用 `client.device.reboot` 的“回复之后交接”时序，
 切换本身由产品在 App 线程上调用 `h2_gizclaw_session_select()` 完成，库不越过 Session。

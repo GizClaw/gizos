@@ -107,8 +107,10 @@ typedef struct h2_gizclaw_config {
      * Service init returns H2_PAL_ERR_INVALID_ARG for a count above
      * H2_GIZCLAW_RPC_PROVIDER_METHODS_MAX, a duplicate, a method the built-in
      * device provider owns, a number that is not a client method of the pinned
-     * registry, or a non-empty list while no built-in device capability is
-     * configured, so a declaration is never silently ignored.
+     * registry, a non-empty list without rpc_provider set, or a non-empty list
+     * while no built-in device capability is configured, so a declaration is
+     * never silently ignored and never advertises a method that would only
+     * answer UNIMPLEMENTED.
      */
     const h2_gizclaw_rpc_method_t *rpc_provider_methods;
     size_t rpc_provider_method_count;

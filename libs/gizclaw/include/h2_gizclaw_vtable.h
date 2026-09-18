@@ -73,7 +73,9 @@ typedef enum h2_gizclaw_device_alert_mode {
  * well-formed BCP 47 tag of at most H2_GIZCLAW_DEVICE_LOCALE_MAX bytes (a
  * 2-8 letter primary subtag then hyphen-separated 1-8 character alphanumeric
  * subtags, so "zh_CN" is rejected), and each enum one of its named values.
- * locale is an inline buffer, so nothing is borrowed from the product.
+ * locale is an inline buffer, so nothing is borrowed from the product; it must
+ * be NUL-terminated within the buffer, and one that fills every byte without a
+ * NUL is rejected like any other invalid value.
  */
 typedef struct h2_gizclaw_device_settings {
   bool has_cellular_enabled;

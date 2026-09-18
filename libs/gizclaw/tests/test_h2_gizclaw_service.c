@@ -4325,6 +4325,22 @@ static void test_device_configuration_rpcs(void) {
                        &get, &response) ==
            H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT);
   }
+  /* A hook that fills every byte without a NUL is rejected. Only a product hook
+   * can produce this: nanopb refuses to encode a string that fills the wire
+   * field, and settings_from_wire forces the terminator anyway. The rejection
+   * is what this asserts; keeping the length scan inside the buffer is a
+   * property of locale_valid(), which no assertion here can observe because an
+   * overread of one struct member into the next is invisible to the compiler
+   * and to ASan alike. */
+  {
+    h2_gizclaw_device_settings_t unterminated = {.has_locale = true};
+    memset(unterminated.locale, 'a', sizeof(unterminated.locale));
+    state.reported = unterminated;
+    assert(device_call(service, H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_GET,
+                       gizclaw_rpc_v1_ClientDeviceSettingsGetRequest_fields,
+                       &get, &response) ==
+           H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT);
+  }
   /* A product reply the server would reject fails the RPC instead of being
    * sent on. */
   state.reported = (h2_gizclaw_device_settings_t){.has_led_brightness = true,
@@ -4419,25 +4435,36 @@ static void test_device_provider_methods_validation(void) {
     const h2_gizclaw_rpc_method_t *methods;
     size_t count;
     bool device;
+    bool provider;
     h2_pal_result_t expected;
   } cases[] = {
-      {duplicated, 2u, true, H2_PAL_ERR_INVALID_ARG},
-      {built_in, 1u, true, H2_PAL_ERR_INVALID_ARG},
-      {unknown, 1u, true, H2_PAL_ERR_INVALID_ARG},
-      {over_cap, sizeof(over_cap) / sizeof(over_cap[0]), true,
+      {duplicated, 2u, true, true, H2_PAL_ERR_INVALID_ARG},
+      {built_in, 1u, true, true, H2_PAL_ERR_INVALID_ARG},
+      {unknown, 1u, true, true, H2_PAL_ERR_INVALID_ARG},
+      {over_cap, sizeof(over_cap) / sizeof(over_cap[0]), true, true,
        H2_PAL_ERR_INVALID_ARG},
-      {NULL, 1u, true, H2_PAL_ERR_INVALID_ARG},
+      {NULL, 1u, true, true, H2_PAL_ERR_INVALID_ARG},
       /* Nothing answers client.rpc.methods.get without the built-in provider. */
-      {one, 1u, false, H2_PAL_ERR_INVALID_ARG},
-      {one, 1u, true, H2_PAL_OK},
-      {NULL, 0u, true, H2_PAL_OK},
+      {one, 1u, false, true, H2_PAL_ERR_INVALID_ARG},
+      /* Without a product provider the declared method would answer
+       * UNIMPLEMENTED, so advertising it is refused. */
+      {one, 1u, true, false, H2_PAL_ERR_INVALID_ARG},
+      {one, 1u, true, true, H2_PAL_OK},
+      {NULL, 0u, true, true, H2_PAL_OK},
+      {NULL, 0u, true, false, H2_PAL_OK},
   };
+  static product_rpc_state_t product;
   for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
     test_env_t env;
     h2_gizclaw_service_t *service = create_profile_service(&env);
     if (cases[i].device) {
       service->client_config.audio = &audio;
       service->client_config.model = "fixture";
+    }
+    if (cases[i].provider) {
+      memset(&product, 0, sizeof(product));
+      service->client_config.rpc_provider = product_rpc;
+      service->client_config.rpc_provider_user = &product;
     }
     service->client_config.rpc_provider_methods = cases[i].methods;
     service->client_config.rpc_provider_method_count = cases[i].count;

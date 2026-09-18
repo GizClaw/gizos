@@ -600,8 +600,14 @@ static bool ascii_alpha(char value) {
 static bool ascii_alnum(char value) {
   return ascii_alpha(value) || (value >= '0' && value <= '9');
 }
-static bool locale_valid(const char *locale) {
-  const size_t length = strlen(locale);
+/* The array comes straight from a product hook, so its length is measured
+ * inside the buffer instead of with strlen(): a hook that fills all
+ * H2_GIZCLAW_DEVICE_LOCALE_MAX + 1 bytes without a NUL is rejected here rather
+ * than read past the end of h2_gizclaw_device_settings_t. */
+static bool locale_valid(const char locale[H2_GIZCLAW_DEVICE_LOCALE_MAX + 1]) {
+  size_t length = 0;
+  while (length <= H2_GIZCLAW_DEVICE_LOCALE_MAX && locale[length] != '\0')
+    ++length;
   if (!length || length > H2_GIZCLAW_DEVICE_LOCALE_MAX)
     return false;
   size_t index = 0, start = 0;
@@ -913,7 +919,9 @@ validate_provider_methods(const h2_gizclaw_config_t *config) {
   const size_t count = config->rpc_provider_method_count;
   if (!count)
     return H2_PAL_OK;
-  if (config->rpc_provider_methods == NULL ||
+  /* Without a provider the declared methods answer UNIMPLEMENTED through the
+   * fallback, so advertising them in client.rpc.methods.get would be a lie. */
+  if (config->rpc_provider_methods == NULL || config->rpc_provider == NULL ||
       count > H2_GIZCLAW_RPC_PROVIDER_METHODS_MAX)
     return H2_PAL_ERR_INVALID_ARG;
   const size_t names =

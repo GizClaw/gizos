@@ -122,7 +122,9 @@ HTTP、Time、Crypto、allocator 复用已有字段，Task、Queue、Sync 复用
   hook 完全不会被调用，不存在“改了一半”的状态；产品回包同样过这套校验，越界时 RPC
   失败而不是把非法值发出去。亮度、`locale` 等值不在库内直接落到 PAL：
   `h2_pal_display` / `h2_pal_led` 只有 `set_brightness_percent`、没有读回接口，库若
-  自己写入就无法如实回答 get，“absent = 不支持”会变成谎言，因此这些值全部由产品持有。
+  自己写入就无法如实回答 get，“absent = 不支持”会变成谎言，因此这些值全部由产品持有。`locale` 是内联
+  缓冲区，长度在缓冲区内扫描而不是用 `strlen`：产品 hook 把每个字节都填满而不留 NUL
+  时按非法值拒绝，不会读到 `h2_gizclaw_device_settings_t` 之外。
 
   `request_factory_reset` 与 `request_run_workspace_set` 和 `request_reboot` 同一套
   时序：本地 RPC 回复发送完成后才在 `$gizclaw/device` task 上调用一次，回调只能复制
@@ -140,8 +142,9 @@ HTTP、Time、Crypto、allocator 复用已有字段，Task、Queue、Sync 复用
   方法通过 `h2_gizclaw_config_t` 的 `rpc_provider_methods` /
   `rpc_provider_method_count` 声明（例如 82、126、127），上限
   `H2_GIZCLAW_RPC_PROVIDER_METHODS_MAX`（16）。声明里出现重复项、内置 provider 自己
-  拥有的方法、pinned registry 里不存在的号码、超过上限，或在没有启用内置 device
-  provider 时非空，`service_init` 都返回 `INVALID_ARG`，不会被静默忽略。清单与实际
+  拥有的方法、pinned registry 里不存在的号码、超过上限、没有设置 `rpc_provider`
+  （那些方法只会经 fallback 回 `UNIMPLEMENTED`，上报就是谎报），或在没有启用内置
+  device provider 时非空，`service_init` 都返回 `INVALID_ARG`，不会被静默忽略。清单与实际
   可答方法的一致性由 `h2_gizclaw_service_test` 双向保证：每个上报的方法经 provider
   入口必须不回 `UNIMPLEMENTED`，每个已知但未上报的 client 方法必须回
   `UNIMPLEMENTED`。回包 `ClientRpcMethodsGetResponse` 的生成 struct 是
