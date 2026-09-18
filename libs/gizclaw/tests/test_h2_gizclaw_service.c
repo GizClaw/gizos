@@ -3614,9 +3614,24 @@ static void test_device_player_rate(void) {
   assert(atomic_load(&state.calls) == 1u);
   assert(!state.position_regressed);
   assert(rate_frames_near(slowed - 500u, state.plain16 - 500u * 160u, 800u));
+  /* The widest switch: the queue still holds 2x output (two source frames
+   * per frame) when 0.5x output (half a source frame per frame) follows.
+   * Each queued frame is subtracted at the rate that produced it, so the
+   * position neither jumps ahead nor steps back. */
+  assert(h2_gizclaw_player_rate_set(service, 2000u) == H2_PAL_OK);
+  state.switch_rate = 500u;
+  const unsigned widest = seek_play(service, &state, 30000, 0, 0);
+  assert(!state.position_regressed);
+  /* The switch lands inside a 32 ms step whose remaining frames are still
+   * 2x output, so up to one step (about 3 frames, 12 frames at 0.5x) of
+   * source moves to the fast side. */
+  const unsigned widest_expected =
+      500u + (unsigned)((state.plain16 - 500u * 160u * 2u) * 2u / 160u);
+  assert(widest + 20u >= widest_expected && widest <= widest_expected + 6u);
   state.switch_at = 0;
 
   /* A named sound is a cue, not content: always the recorded speed. */
+  assert(h2_gizclaw_player_rate_set(service, 800u) == H2_PAL_OK);
   assert(h2_gizclaw_player_get_status(service, &status) == H2_PAL_OK);
   assert(status.rate_permille == 800u);
   gizclaw_rpc_v1_ClientDeviceSoundPlayRequest sound = {0};

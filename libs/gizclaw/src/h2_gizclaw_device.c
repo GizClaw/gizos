@@ -1187,22 +1187,30 @@ static int write_player_pcm(h2_gizclaw_device_t *d, h2_pal_audio_track_t *track,
     (void)h2_pal_time_sleep_ms(d->config.time, 5);
   }
 }
+/* Frames of output assumed still queued: the requested track queue plus one
+ * in flight, bounded so the per-frame record below stays a fixed array. */
+#define PLAYER_QUEUED_FRAMES_MAX 32u
 /* Packs PCM into complete PAL frames and keeps the reported position on the
  * media timeline. source_bytes counts the source PCM the packed output stands
- * for; at the recorded speed it equals the packed bytes and the arithmetic is
- * the plain "handed to the track minus what is still queued". A stretched
- * playback maps the queued output back through its rate. */
+ * for, and every written frame records how much of it that frame carried, so
+ * the frames still queued are subtracted at the rate they were produced at
+ * even across a rate change. At the recorded speed every frame carries its
+ * own bytes and this is the plain "handed to the track minus what is still
+ * queued". */
 typedef struct player_output {
   h2_gizclaw_device_t *d;
   h2_pal_audio_track_t *track;
   uint8_t *frame;
   size_t frame_bytes, buffered;
-  uint32_t frame_samples, buffer_frames;
+  uint32_t frame_samples, queued_frames;
   bool music;
-  /* Rate of the output being packed, for mapping the queue back. */
-  uint32_t rate;
   uint64_t origin_bytes, submitted_bytes, source_bytes;
-  uint64_t position_ms, reported_ms;
+  /* source_bytes when the previous frame was written, and the source each
+   * of the last queued_frames frames carried (a ring) with their sum. */
+  uint64_t framed_source, queued_source;
+  uint64_t frame_source[PLAYER_QUEUED_FRAMES_MAX];
+  uint32_t frame_count;
+  uint64_t reported_ms;
 } player_output_t;
 /* Writes the packed frame, padding it with silence when it is the last. */
 static int output_frame(player_output_t *o) {
@@ -1222,17 +1230,18 @@ static int output_frame(player_output_t *o) {
   o->buffered = 0;
   /* Keep feeding the PCM queue continuously. A drain barrier on every
    * frame inserts silence in PAL mixers. During playback, conservatively
-   * subtract the requested queue capacity plus one in-flight frame. */
-  const uint64_t queued =
-      (uint64_t)o->frame_bytes * (o->buffer_frames + 1u) * o->rate / 1000u;
-  uint64_t position_ms =
-      (o->origin_bytes +
-       (o->source_bytes > queued ? o->source_bytes - queued : 0u)) /
-      32u;
-  /* A rate change leaves output of the old rate queued; never go back. */
-  if (position_ms < o->position_ms)
-    position_ms = o->position_ms;
-  o->position_ms = position_ms;
+   * subtract the requested queue capacity plus one in-flight frame, each at
+   * the source it carried. */
+  const uint64_t carried = o->source_bytes - o->framed_source;
+  o->framed_source = o->source_bytes;
+  uint64_t *slot = &o->frame_source[o->frame_count % o->queued_frames];
+  if (o->frame_count >= o->queued_frames)
+    o->queued_source -= *slot;
+  *slot = carried;
+  o->queued_source += carried;
+  ++o->frame_count;
+  const uint64_t position_ms =
+      (o->origin_bytes + o->source_bytes - o->queued_source) / 32u;
   lock(d);
   if (o->music && !interrupted(d)) {
     strcpy(d->status.state, "playing");
@@ -1298,7 +1307,6 @@ static int stretch_flush(player_output_t *o, player_stretch_t *s) {
   uint64_t source = 0;
   h2_gizclaw_stretch_flush(s->state, &out, &count, &source);
   s->active = false;
-  o->rate = H2_GIZCLAW_PLAYER_RATE_NORMAL;
   return output_write(o, (const uint8_t *)out, count * 2u, source * 2u);
 }
 /* Decoded source PCM to the track, through the stretcher when the rate is
@@ -1343,7 +1351,7 @@ static int player_feed(player_output_t *o, player_stretch_t *s,
       s->stretch_us += now_us(o->d) - started;
       if (!stepped)
         break;
-      s->rate = o->rate = step_rate;
+      s->rate = step_rate;
       rc = output_write(o, (const uint8_t *)out, count * 2u, source * 2u);
       if (rc != H2_PAL_OK)
         break;
@@ -1420,9 +1428,11 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
                          .frame = output,
                          .frame_bytes = frame_bytes,
                          .frame_samples = audio.format.frame_samples_per_channel,
-                         .buffer_frames = audio.buffer_frames,
-                         .music = music,
-                         .rate = H2_GIZCLAW_PLAYER_RATE_NORMAL};
+                         .queued_frames =
+                             audio.buffer_frames + 1u < PLAYER_QUEUED_FRAMES_MAX
+                                 ? audio.buffer_frames + 1u
+                                 : PLAYER_QUEUED_FRAMES_MAX,
+                         .music = music};
   player_stretch_t stretch = {0};
   /* PCM bytes a start-from-zero playback would have produced before the
    * first sample of this one (out.origin_bytes); known once `located`. */
