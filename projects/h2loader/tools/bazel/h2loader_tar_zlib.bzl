@@ -154,7 +154,12 @@ def _h2loader_tar_zlib_impl(ctx):
     if ctx.attr.package_data_root:
         args.add("--package-data-root", ctx.attr.package_data_root)
     for data_file in ctx.files.package_data:
-        args.add("--package-data-file", data_file.path)
+        # The short path is the entry's repository-relative name and the path is
+        # where its bytes are, so package data may be produced by a rule instead
+        # of checked in under the declared root. They are separate arguments
+        # because either may contain any character a filename may contain.
+        args.add("--package-data-file", data_file.short_path)
+        args.add("--package-data-source", data_file.path)
     for native in firmware.native_artifacts:
         args.add("--native-artifact", "%s=%s" % (native.name, native.file.path))
 
