@@ -6,6 +6,7 @@
 
 #include "FreeRTOS.h"
 #include "semphr.h"
+#include "task.h"
 
 struct h2_pal_task {
   beken_thread_t thread;
@@ -98,11 +99,34 @@ static int bk_task_create(beken_thread_t *thread,
 #endif
 }
 
+/* rtos_delete_thread(NULL) only queues the stack and TCB on the kernel's
+ * termination list; the idle task of the owning core has to run before
+ * prvDeleteTCB() releases them. A finished worker therefore stays allocated for
+ * as long as the product starves idle, which is the whole failure being fixed,
+ * so no worker self-deletes any more: it publishes completion and parks until
+ * join reclaims it. The loop matters because vTaskSuspend() returns if anything
+ * resumes the task. */
 static void bk_task_trampoline(void *raw) {
   h2_pal_task_t *task = (h2_pal_task_t *)raw;
   task->entry(task->ctx);
+  /* Join may free the PAL handle as soon as this signal is consumed. Do not
+   * access task or the entry context after giving the semaphore. */
   (void)xSemaphoreGive((SemaphoreHandle_t)task->done);
-  rtos_delete_thread(NULL);
+  for (;;) {
+    rtos_suspend_thread(NULL);
+  }
+}
+
+/* The entry has returned, so the worker only has to leave the CPU. vTaskSuspend()
+ * merely sends a yield request to the other core, and vTaskDelete() re-queues a
+ * still-running task for idle cleanup, so wait for the scheduler to switch the
+ * worker out before deleting it. Only then does rtos_delete_thread() free the
+ * stack and TCB on this thread. */
+static void bk_task_reclaim(h2_pal_task_t *task) {
+  rtos_suspend_thread(&task->thread);
+  while (eTaskGetState((TaskHandle_t)task->thread) == eRunning) {
+  }
+  rtos_delete_thread(&task->thread);
 }
 
 static void bk_task_free(h2_pal_task_t *task) {
@@ -201,6 +225,7 @@ static int bk_task_join(void *user, h2_pal_task_t *task) {
   if (ret != pdPASS) {
     return H2_PAL_ERR_TASK;
   }
+  bk_task_reclaim(task);
   bk_task_free(task);
   return H2_PAL_OK;
 }

@@ -14,4 +14,5 @@ void rtos_deinit_semaphore(beken_semaphore_t *);
 int rtos_create_thread(beken_thread_t *, uint8_t, const char *, beken_thread_function_t, uint32_t, void *);
 int rtos_create_psram_thread(beken_thread_t *, uint8_t, const char *, beken_thread_function_t, uint32_t, void *);
 void rtos_delete_thread(beken_thread_t *);
+void rtos_suspend_thread(beken_thread_t *);
 #endif

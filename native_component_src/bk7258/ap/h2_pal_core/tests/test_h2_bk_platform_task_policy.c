@@ -1,25 +1,47 @@
 #include "FreeRTOS.h"
 #include "h2_bk_platform_core.h"
 #include "semphr.h"
+#include "task.h"
 #include <assert.h>
 #include <os/os.h>
+#include <setjmp.h>
 #include <stdlib.h>
 #include <string.h>
 
 void h2_bk_platform_task_test_reset(void);
 static struct {
   int fail_alloc, fail_sem, fail_create, fail_join, creates, frees;
+  int entry_calls, gives, takes;
+  int handle_deletes, self_suspends, handle_suspends;
+  int join_on_give, running_reports, state_queries;
+  beken_thread_function_t trampoline;
+  void *trampoline_ctx;
+  h2_pal_task_t *pal_task;
   uint8_t priority;
   uint32_t stack;
   const char *name;
   const char *resolver_name;
 } s;
+static int s_native_task;
+static jmp_buf s_worker_exit;
+
+/* Run the real trampoline until the SDK would take it off the CPU. These
+ * deterministic schedules test PAL ownership, not FreeRTOS scheduling. */
+static void run_worker(void) {
+  if (setjmp(s_worker_exit) == 0) {
+    s.trampoline(s.trampoline_ctx);
+    assert(0 && "a task trampoline must not return");
+  }
+}
+
 static void *alloc(void *u, size_t n) {
   (void)u;
   return s.fail_alloc ? NULL : malloc(n);
 }
 static void release(void *u, void *p) {
   (void)u;
+  /* A reclaimed worker must be deleted before its PAL handle disappears. */
+  assert(s.handle_deletes == 0 || s.handle_suspends == 1);
   s.frees++;
   free(p);
 }
@@ -28,17 +50,40 @@ static const h2_pal_mem_api_t mem_api = {.vtable = &mem_vtable};
 void *os_memset(void *p, int v, size_t n) { return memset(p, v, n); }
 void *os_malloc(size_t n) { return malloc(n); }
 void os_free(void *p) { free(p); }
+static StaticSemaphore_t *s_semaphore;
 SemaphoreHandle_t xSemaphoreCreateBinaryStatic(StaticSemaphore_t *st) {
-  return s.fail_sem ? NULL : (SemaphoreHandle_t)st;
+  if (s.fail_sem) {
+    return NULL;
+  }
+  s_semaphore = st;
+  return (SemaphoreHandle_t)st;
 }
 BaseType_t xSemaphoreGive(SemaphoreHandle_t x) {
-  (void)x;
+  assert(x == (SemaphoreHandle_t)s_semaphore);
+  assert(s.entry_calls == 1 && s.gives == 0);
+  assert(s.handle_deletes == 0 && s.frees == 0);
+  s.gives++;
+  if (s.join_on_give) {
+    /* Model a joiner scheduled the moment completion is published, before the
+     * worker reaches its own suspension. The worker must not touch the PAL
+     * handle afterwards, whichever stack region it used. */
+    assert(h2_pal_task_join(h2_bk_platform_task_api(), s.pal_task) == H2_PAL_OK);
+    s.pal_task = NULL;
+    longjmp(s_worker_exit, 1);
+  }
   return pdPASS;
 }
 BaseType_t xSemaphoreTake(SemaphoreHandle_t x, uint32_t t) {
-  (void)x;
-  (void)t;
-  return s.fail_join ? 0 : pdPASS;
+  assert(x == (SemaphoreHandle_t)s_semaphore && t == portMAX_DELAY);
+  if (s.fail_join) {
+    return 0;
+  }
+  if (s.gives == 0) {
+    run_worker();
+  }
+  assert(s.gives == 1 && s.entry_calls == 1);
+  s.takes++;
+  return pdPASS;
 }
 static int create(beken_thread_t *out, uint8_t pr, const char *name,
                   beken_thread_function_t e, uint32_t stack, void *ctx) {
@@ -47,7 +92,9 @@ static int create(beken_thread_t *out, uint8_t pr, const char *name,
   s.priority = pr;
   s.name = name;
   s.stack = stack;
-  *out = (void *)1;
+  s.trampoline = e;
+  s.trampoline_ctx = ctx;
+  *out = &s_native_task;
   return s.fail_create ? -1 : kNoErr;
 }
 int rtos_create_thread(beken_thread_t *a, uint8_t b, const char *c,
@@ -76,7 +123,42 @@ int rtos_core1_create_psram_thread(beken_thread_t *a, uint8_t b, const char *c,
                                    void *f) {
   return create(a, b, c, d, e, f);
 }
-void rtos_delete_thread(beken_thread_t *x) { assert(x == NULL); }
+void rtos_delete_thread(beken_thread_t *x) {
+  /* No worker may self-delete any more: that is the idle-deferred path being
+   * removed, and it is what the pre-change implementation did. */
+  assert(x != NULL && "a worker must never self-delete");
+  /* Join-time reclamation deletes the explicit handle after suspending it and
+   * waiting for the scheduler to switch it out, and before the handle is freed. */
+  assert(*x == &s_native_task);
+  assert(s.takes == 1 && s.handle_suspends == 1 && s.running_reports == 0);
+  /* The joiner must have observed the worker leave the running state. */
+  assert(s.state_queries >= 1);
+  assert(s.handle_deletes == 0 && s.frees == 0);
+  s.handle_deletes++;
+}
+void rtos_suspend_thread(beken_thread_t *x) {
+  if (x == NULL) {
+    /* The worker parks itself after publishing completion. */
+    assert(s.gives == 1);
+    s.self_suspends++;
+    longjmp(s_worker_exit, 1);
+  }
+  assert(*x == &s_native_task);
+  assert(s.takes == 1 && s.handle_deletes == 0);
+  s.handle_suspends++;
+}
+eTaskState eTaskGetState(TaskHandle_t task) {
+  assert(task == &s_native_task);
+  assert(s.handle_suspends == 1 && s.handle_deletes == 0);
+  s.state_queries++;
+  /* Model a worker that is still running on the other core when the joiner
+   * suspends it: vTaskSuspend() only requests a yield there. */
+  if (s.running_reports > 0) {
+    s.running_reports--;
+    return eRunning;
+  }
+  return eSuspended;
+}
 static h2_pal_result_t resolve(void *u, const char *n,
                                h2_bk_task_policy_t *out) {
   assert(u == &s);
@@ -112,11 +194,58 @@ static h2_bk_task_policy_config_t cfg(void) {
   return (h2_bk_task_policy_config_t){
       .resolver = resolve, .resolver_user = &s, .task_allocator = &mem_api};
 }
-static void entry(void *u) { (void)u; }
+static void entry(void *u) {
+  assert(s.gives == 0 && s.frees == 0);
+  s.entry_calls++;
+  if (u != NULL) {
+    *(int *)u = 42;
+  }
+}
 static void reset(void) {
   h2_bk_platform_task_test_reset();
   memset(&s, 0, sizeof(s));
+  s_semaphore = NULL;
 }
+
+/* Run one worker to completion and join it, covering both stack regions and
+ * both orderings of completion against the joiner. */
+static void test_completion(const char *name, int join_on_give,
+                            int running_reports) {
+  const int expected_queries = running_reports + 1;
+  reset();
+  h2_bk_task_policy_config_t c = cfg();
+  assert(h2_bk_platform_task_configure(&c) == H2_PAL_OK);
+  const h2_pal_task_api_t *api = h2_bk_platform_task_api();
+  h2_pal_task_options_t o = {.name = name, .min_stack_size = 1};
+  int result = 0;
+  assert(h2_pal_task_start(api, &o, entry, &result, &s.pal_task) == H2_PAL_OK);
+  s.join_on_give = join_on_give;
+  s.running_reports = running_reports;
+  run_worker();
+  assert(result == 42 && s.entry_calls == 1 && s.gives == 1);
+
+  if (!join_on_give) {
+    /* Completion alone releases nothing, and a failed join must leave the
+     * handle intact and reusable. */
+    assert(s.frees == 0 && s.handle_deletes == 0);
+    s.fail_join = 1;
+    assert(h2_pal_task_join(api, s.pal_task) == H2_PAL_ERR_TASK);
+    assert(s.frees == 0 && s.handle_deletes == 0 && s.takes == 0);
+    s.fail_join = 0;
+    assert(h2_pal_task_join(api, s.pal_task) == H2_PAL_OK);
+    s.pal_task = NULL;
+  }
+
+  /* Every worker, in either stack region, is reclaimed by the joiner rather
+   * than queued for an idle task. */
+  assert(s.takes == 1 && s.frees == 1);
+  assert(s.handle_suspends == 1 && s.handle_deletes == 1);
+  assert(s.running_reports == 0 && s.state_queries == expected_queries);
+  /* Without join_on_give the worker parks itself first; otherwise the joiner
+   * deleted it before it ever reached its own suspension. */
+  assert(s.self_suspends == (join_on_give ? 0 : 1));
+}
+
 int main(void) {
   const h2_pal_task_api_t *api = h2_bk_platform_task_api();
   h2_pal_task_options_t o = {.name = "known", .min_stack_size = 1};
@@ -138,10 +267,25 @@ int main(void) {
   assert(api->vtable->start(NULL, &o, entry, NULL, &t) == H2_PAL_OK);
   assert(s.creates == 1 && s.priority == 5 && s.stack == 8192 &&
          strcmp(s.name, "sdk") == 0);
+  s.pal_task = t;
+  run_worker();
   s.fail_join = 1;
   assert(api->vtable->join(NULL, t) == H2_PAL_ERR_TASK);
   s.fail_join = 0;
   assert(api->vtable->join(NULL, t) == H2_PAL_OK && s.frees == 1);
+
+  /* The worker parks itself, then the joiner reclaims it. */
+  test_completion("known", 0, 0);
+  /* The joiner wins the race between completion and self-suspension. */
+  test_completion("known", 1, 0);
+  /* The worker is still running on the other core when the joiner suspends it. */
+  test_completion("known", 0, 3);
+  test_completion("known", 1, 2);
+  /* The default stack region takes the same path. */
+  test_completion("dynamic-high", 0, 0);
+  test_completion("dynamic-high", 1, 0);
+  test_completion("dynamic-high", 0, 2);
+
   reset();
   c = cfg();
   assert(h2_bk_platform_task_configure(&c) == H2_PAL_OK);
@@ -156,6 +300,8 @@ int main(void) {
   assert(api->vtable->start(NULL, &o, entry, NULL, &t) == H2_PAL_OK);
   assert(strcmp(s.resolver_name, "dynamic-high") == 0 && s.priority == 8 &&
          s.stack == 12288 && strcmp(s.name, "dynamic-sdk") == 0);
+  s.pal_task = t;
+  run_worker();
   assert(api->vtable->join(NULL, t) == H2_PAL_OK);
   reset();
   c = cfg();

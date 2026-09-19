@@ -16,6 +16,7 @@ int rtos_core0_create_psram_thread(beken_thread_t *, uint8_t, const char *, beke
 int rtos_core1_create_thread(beken_thread_t *, uint8_t, const char *, beken_thread_function_t, uint32_t, void *);
 int rtos_core1_create_psram_thread(beken_thread_t *, uint8_t, const char *, beken_thread_function_t, uint32_t, void *);
 void rtos_delete_thread(beken_thread_t *);
+void rtos_suspend_thread(beken_thread_t *);
 uint32_t rtos_enter_critical(void);
 void rtos_exit_critical(uint32_t);
 int rtos_lock_mutex(beken_mutex_t *);
