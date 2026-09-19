@@ -13,5 +13,6 @@ TaskHandle_t xTaskCreateStaticPinnedToCore(TaskFunction_t entry,
     BaseType_t core);
 StackType_t *xTaskGetStackStart(TaskHandle_t task);
 void vTaskDelete(TaskHandle_t task);
+void vTaskSuspend(TaskHandle_t task);
 void vTaskDelay(TickType_t ticks);
 #endif

@@ -98,15 +98,25 @@ static h2_pal_result_t esp_policy_validate(const char *name,
   return H2_PAL_OK;
 }
 
+/* IDF WithCaps self-deletion allocates a temporary cleanup task, which then
+ * self-deletes and needs idle time for reclamation. Let join reclaim PSRAM
+ * workers directly, without allocating another task under memory pressure.
+ * Internal stacks keep self-deletion so delayed joins do not retain scarce
+ * Internal memory needed during startup. */
 static void esp_task_trampoline(void *raw) {
   h2_pal_task_t *task = (h2_pal_task_t *)raw;
   const int stack_with_caps = task->stack_with_caps;
   task->entry(task->ctx);
+  /* Join may free the PAL handle as soon as this signal is consumed. Do not
+   * access task or the entry context after giving the semaphore. */
   xSemaphoreGive(task->done);
-  if (stack_with_caps) {
-    vTaskDeleteWithCaps(NULL);
-  } else {
+  if (!stack_with_caps) {
+    /* An Internal stack is small and scarce: let the idle task reclaim it as
+     * soon as it runs rather than hold it until join. */
     vTaskDelete(NULL);
+  }
+  for (;;) {
+    vTaskSuspend(NULL);
   }
 }
 
@@ -197,6 +207,13 @@ static int esp_task_join(void *user, h2_pal_task_t *task) {
   }
   if (xSemaphoreTake(task->done, portMAX_DELAY) != pdTRUE) {
     return H2_PAL_ERR_TASK;
+  }
+  /* The entry has returned. IDF's WithCaps deletion suspends the worker and
+   * waits for it to stop running before freeing its stack and TCB, including
+   * when join wins the race between xSemaphoreGive and vTaskSuspend on another
+   * core. Keep the semaphore and PAL handle alive until deletion returns. */
+  if (task->stack_with_caps) {
+    vTaskDeleteWithCaps(task->task);
   }
   vSemaphoreDelete(task->done);
   free(task);
