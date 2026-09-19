@@ -14,8 +14,9 @@ struct h2_pal_task {
     void *ctx;
     h2_jieli_sdk_sem_t *done;
     /* Published by the worker before it runs the entry and read by joining
-     * tasks; a stale NULL only costs a self-join check, and the worker always
-     * observes its own write. */
+     * tasks, so both sides go through the atomic helpers. A reader may still
+     * observe a stale NULL, which only skips a self-join check that reader
+     * could never satisfy anyway. */
     const void *volatile self;
     /* Owned by the joining caller; retain completion across delete retries. */
     int completion_observed;
@@ -29,7 +30,7 @@ static void task_trampoline(void *arg)
     /* Identify this worker before the entry can hand the handle around, so a
      * self-join is rejected instead of waiting for a completion that only this
      * task could publish. */
-    task->self = h2_jieli_sdk_task_current();
+    h2_jieli_atomic_store_ptr(&task->self, h2_jieli_sdk_task_current());
     task->entry(task->ctx);
     /* Publishing completion hands the task, its semaphore and this handle to
      * the joining caller; nothing may touch them after the give returns. */
@@ -100,7 +101,8 @@ static int task_join(void *user, h2_pal_task_t *task)
     /* Only the worker publishes completion, so a worker joining itself would
      * block forever. A handle is unique while its task lives; an unpublished
      * NULL never matches a running task. */
-    if (task->self != NULL && task->self == h2_jieli_sdk_task_current()) {
+    const void *worker = h2_jieli_atomic_load_ptr(&task->self);
+    if (worker != NULL && worker == h2_jieli_sdk_task_current()) {
         return H2_PAL_ERR_INVALID_STATE;
     }
     if (!task->completion_observed) {
