@@ -61,15 +61,34 @@ int h2_jieli_sdk_sem_give(h2_jieli_sdk_sem_t *sem);
 /* ---- Tasks --------------------------------------------------------------- */
 
 /**
+ * Bytes the SDK keeps for a task name, including the terminator. This is the
+ * br23 FreeRTOS `configMAX_TASK_NAME_LEN`; the kernel silently truncates a
+ * longer name, so any identity used for deletion has to fit.
+ */
+#define H2_JIELI_BR23_TASK_NAME_MAX 12u
+
+/**
  * Creates an SDK task running `entry(ctx)`.
  *
- * Task names must be unique per the SDK; `stack_bytes` is rounded up to the SDK
- * stack unit. Returns 0 on success, negative on error.
+ * `name` is the SDK's only task identity and must be unique among live tasks;
+ * it is truncated to `H2_JIELI_BR23_TASK_NAME_MAX - 1` characters.
+ * `stack_bytes` is rounded up to the SDK stack unit. Returns 0 on success,
+ * negative on error.
  */
 int h2_jieli_sdk_task_create(void (*entry)(void *ctx), void *ctx, const char *name, size_t stack_bytes);
 /**
+ * Deletes the SDK task registered under `name` (`os_task_del`).
+ *
+ * The named task must be parked rather than the caller, and must hold no SDK
+ * lock: the scheduler unlinks it and releases its stack and TCB inside this
+ * call instead of deferring the release to the idle task. Returns 0 on
+ * success, negative on error.
+ */
+int h2_jieli_sdk_task_delete(const char *name);
+/**
  * Parks the calling SDK task forever once its PAL entry returned; SDK tasks
- * must never return from their entry function. The host fake returns instead.
+ * must never return from their entry function. Parking holds no SDK lock, so
+ * the joining caller can delete the task. The host fake returns instead.
  */
 void h2_jieli_sdk_task_park(void);
 /**
