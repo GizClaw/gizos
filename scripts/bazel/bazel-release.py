@@ -23,13 +23,14 @@ from common.bazel import cache_options  # noqa: E402
 VERSION_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+){0,2}$")
 SLICES = (
     "catalog",
+    "npm-packages",
     "esp32s3",
     "esp32p4",
     "bk7258",
     "firmware-bundle",
     "release-bundle",
 )
-PRODUCERS = frozenset({"catalog"})
+PRODUCERS = frozenset({"catalog", "npm-packages"})
 CATALOG_CONFIGS = ("esp32s3", "esp32p4", "bk7258")
 FIRMWARE_SLICES = {
     "esp32s3": ("esp", "esp32s3"),
@@ -360,6 +361,22 @@ def build_firmware_bundle(
     )
 
 
+def build_npm_packages(
+    root: Path,
+    bazel: str,
+    version: str,
+    output: Path,
+) -> None:
+    label = "//tools/bazel:npm_release_bundle"
+    options = [f"--//tools/bazel:release_version={version}"]
+    command(root, [bazel, "build", *cache_options(), *options, label])
+    result = command(root, [bazel, "cquery", *options, "--output=files", label])
+    paths = [Path(line) for line in result.stdout.splitlines() if line]
+    if len(paths) != 1 or not paths[0].is_dir():
+        raise ReleaseError("npm bundle target returned an invalid output")
+    copy_unique(input_files(paths[0]), output)
+
+
 def checksum_entries(path: Path) -> dict[str, str]:
     entries: dict[str, str] = {}
     for line in path.read_text(encoding="ascii").splitlines():
@@ -395,7 +412,7 @@ def assemble_final(
 ) -> None:
     by_name = {path.name: path for path in files}
     names = set(by_name)
-    required = {"firmware-index.json", "SHA256SUMS"}
+    required = {"firmware-index.json", "npm-index.json", "SHA256SUMS"}
     if missing := required - names:
         raise ReleaseError(f"final release input is incomplete: {sorted(missing)}")
     try:
@@ -433,11 +450,50 @@ def assemble_final(
             ):
                 raise ReleaseError(f"invalid firmware release asset: {name}")
             asset_names.add(name)
-    expected = {
-        "firmware-index.json",
-        "SHA256SUMS",
-        *asset_names,
-    }
+    try:
+        npm_index = json.loads(by_name["npm-index.json"].read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise ReleaseError(f"invalid npm index: {error}") from error
+    if not isinstance(npm_index, dict):
+        raise ReleaseError("npm index must be an object")
+    packages = npm_index.get("packages")
+    if (
+        type(npm_index.get("format")) is not int
+        or npm_index["format"] != 1
+        or npm_index.get("version") != version
+        or not isinstance(packages, list)
+        or type(npm_index.get("package_count")) is not int
+        or npm_index["package_count"] != len(packages)
+        or not packages
+    ):
+        raise ReleaseError("npm index identity is invalid")
+    npm_assets: set[str] = set()
+    package_names: list[str] = []
+    for item in packages:
+        if (
+            not isinstance(item, dict)
+            or any(
+                not isinstance(item.get(key), str) or not item[key].strip()
+                for key in ("name", "version")
+            )
+            or not isinstance(item.get("sha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", item["sha256"]) is None
+            or type(item.get("size")) is not int
+            or item["size"] <= 0
+        ):
+            raise ReleaseError("npm index contains an invalid entry")
+        name = item.get("tarball")
+        if (
+            not isinstance(name, str)
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]*\.tgz", name) is None
+            or name in npm_assets | asset_names | required
+        ):
+            raise ReleaseError(f"invalid or duplicate npm release tarball: {name}")
+        npm_assets.add(name)
+        package_names.append(item["name"])
+    if package_names != sorted(set(package_names)):
+        raise ReleaseError("npm index packages must have unique names sorted by name")
+    expected = required | asset_names | npm_assets
     if names != expected:
         raise ReleaseError(
             f"final release inputs differ: missing={sorted(expected - names)}, "
@@ -448,6 +504,10 @@ def assemble_final(
         by_name,
         {"firmware-index.json", *asset_names},
     )
+    for item in packages:
+        source = by_name[item["tarball"]]
+        if source.stat().st_size != item["size"] or sha256(source) != item["sha256"]:
+            raise ReleaseError(f"npm release tarball integrity mismatch: {source.name}")
     copy_unique(
         [path for path in files if path.name != "SHA256SUMS"],
         output,
@@ -476,6 +536,8 @@ def run_slice(
     prepare_output(output)
     if slice_name == "catalog":
         build_catalog(root, bazel, version, output)
+    elif slice_name == "npm-packages":
+        build_npm_packages(root, bazel, version, output)
     elif slice_name in FIRMWARE_SLICES:
         build_firmware(root, bazel, slice_name, version, files, output)
     elif slice_name == "firmware-bundle":

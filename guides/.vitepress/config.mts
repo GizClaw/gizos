@@ -112,6 +112,7 @@ const appItems = [
     collapsed: true,
     items: [
       { text: "总览", link: "/apps/h2loader/" },
+      { text: "npm Release", link: "/apps/h2loader/npm_release" },
       {
         text: "项目结构",
         link: "/apps/h2loader/project_structure",

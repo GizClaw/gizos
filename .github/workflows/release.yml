@@ -156,6 +156,45 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  npm-packages:
+    name: Release npm packages
+    needs: [catalog]
+    runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
+    timeout-minutes: 30
+    steps:
+      - name: Check out GizOS
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+          submodules: false
+          persist-credentials: false
+
+      - name: Authenticate read-write Bazel remote cache
+        if: vars.BAZEL_REMOTE_CACHE_URL != ''
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+
+      - name: Install Bazel
+        run: |
+          curl --fail --location --silent --show-error "https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
+          printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
+          chmod +x "$RUNNER_TEMP/bazel"
+
+      - name: Build npm packages slice
+        run: make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE=npm-packages RELEASE_VERSION="${{ needs.catalog.outputs.version }}" RELEASE_STAGING_DIR=build/release/npm-packages
+
+      - name: Upload npm packages slice
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-npm-bundle
+          path: build/release/npm-packages/
+          if-no-files-found: error
+          retention-days: 14
+
   esp:
     name: Release ${{ matrix.slice }}
     needs: catalog
@@ -460,12 +499,31 @@ jobs:
           service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
           create_credentials_file: true
 
-      - name: Download firmware inputs
+      # Download only firmware producers; release-npm-bundle belongs to the final job.
+      # Keep artifact directories separate so duplicate basenames fail validation.
+      - name: Download catalog
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          pattern: release-*
-          path: build/release/input
-          merge-multiple: true
+          name: release-catalog
+          path: build/release/input/catalog
+
+      - name: Download ESP32-S3 inputs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-esp32s3
+          path: build/release/input/esp32s3
+
+      - name: Download ESP32-P4 inputs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-esp32p4
+          path: build/release/input/esp32p4
+
+      - name: Download BK7258 inputs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-bk7258
+          path: build/release/input/bk7258
 
       - name: Install Bazel
         run: |
@@ -486,7 +544,7 @@ jobs:
 
   release-bundle:
     name: Complete release bundle
-    needs: [catalog, firmware-bundle]
+    needs: [catalog, firmware-bundle, npm-packages]
     runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
     timeout-minutes: 30
     permissions:
@@ -512,7 +570,8 @@ jobs:
         with:
           pattern: release-*-bundle
           path: build/release/input
-          merge-multiple: true
+          # Preserve both bundles until input_files checks duplicate basenames.
+          merge-multiple: false
 
       - name: Install Bazel
         run: |
