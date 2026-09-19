@@ -184,23 +184,91 @@ static void task_entry(void *ctx)
     *flag = 42;
 }
 
-static void test_task_start_uses_sdk_task_and_join_is_unsupported(void)
+static void test_task_start_and_join_reclaims_task_and_handle(void)
 {
     const h2_pal_task_api_t *api = h2_jieli_br23_platform_task_api();
     const h2_pal_task_options_t options = {.name = "pal_e2e", .min_stack_size = 8192u};
     h2_pal_task_t *task = NULL;
+    char joined_name[H2_JIELI_BR23_TASK_NAME_MAX];
     int flag = 0;
     h2_jieli_fake_reset();
     CHECK(h2_pal_task_start(api, &options, task_entry, &flag, &task) == H2_PAL_OK);
     CHECK(task != NULL);
     CHECK(h2_jieli_fake_task_create_calls() == 1);
-    CHECK(strcmp(h2_jieli_fake_last_task_name(), "pal_e2e") == 0);
+    /* The SDK keeps only H2_JIELI_BR23_TASK_NAME_MAX - 1 characters and uses
+     * that string as the task identity, so start generates a unique native
+     * name that fills the buffer instead of passing the caller label through. */
+    strcpy(joined_name, h2_jieli_fake_last_task_name());
+    CHECK(strlen(joined_name) == H2_JIELI_BR23_TASK_NAME_MAX - 1u);
+    CHECK(strncmp(joined_name, "h2_", 3u) == 0);
+    CHECK(strspn(joined_name + 3u, "0123456789abcdef") == 8u);
     CHECK(h2_jieli_fake_last_task_stack_bytes() == 8192u);
+    /* The deterministic fake reports an unsatisfied wait instead of blocking.
+     * A premature join must delete nothing and retain both resources. */
+    CHECK(h2_pal_task_join(api, task) == H2_PAL_ERR_TASK);
+    CHECK(h2_jieli_fake_task_delete_calls() == 0);
+    CHECK(h2_jieli_fake_live_allocations() == 2);
     h2_jieli_fake_run_last_task_once();
     CHECK(flag == 42);
-    CHECK(h2_pal_task_join(api, task) == H2_PAL_ERR_UNSUPPORTED);
+    /* A failed delete keeps the handle, the semaphore and the observed
+     * completion so the caller can retry without waiting a second time. */
+    h2_jieli_fake_fail_task_delete(1);
+    CHECK(h2_pal_task_join(api, task) == H2_PAL_ERR_TASK);
+    CHECK(h2_jieli_fake_live_allocations() == 2);
+    CHECK(h2_pal_task_join(api, task) == H2_PAL_ERR_TASK);
+    h2_jieli_fake_fail_task_delete(0);
+    CHECK(h2_pal_task_join(api, task) == H2_PAL_OK);
+    CHECK(h2_jieli_fake_task_delete_calls() == 1);
+    CHECK(h2_jieli_fake_live_allocations() == 0);
+    /* Two live workers started from the same PAL name must stay separately
+     * deletable, so their native identities differ. */
+    h2_pal_task_t *first = NULL;
+    h2_pal_task_t *second = NULL;
+    char first_name[H2_JIELI_BR23_TASK_NAME_MAX];
+    CHECK(h2_pal_task_start(api, &options, task_entry, &flag, &first) == H2_PAL_OK);
+    strcpy(first_name, h2_jieli_fake_last_task_name());
+    h2_jieli_fake_run_last_task_once();
+    CHECK(h2_pal_task_start(api, &options, task_entry, &flag, &second) == H2_PAL_OK);
+    CHECK(strcmp(first_name, h2_jieli_fake_last_task_name()) != 0);
+    h2_jieli_fake_run_last_task_once();
+    CHECK(h2_pal_task_join(api, first) == H2_PAL_OK);
+    CHECK(h2_pal_task_join(api, second) == H2_PAL_OK);
+    CHECK(h2_jieli_fake_live_allocations() == 0);
+    CHECK(h2_pal_task_join(api, NULL) == H2_PAL_ERR_INVALID_ARG);
     h2_jieli_fake_fail_task_create(1);
     CHECK(h2_pal_task_start(api, NULL, task_entry, &flag, &task) == H2_PAL_ERR_TASK);
+    CHECK(task == NULL);
+    CHECK(h2_jieli_fake_live_allocations() == 0);
+}
+
+/* A worker that joins itself would ask the SDK to delete the running task.
+ * Completion is published only after the entry returns, so the wait fails
+ * first and nothing is deleted or released. */
+static const h2_pal_task_api_t *s_self_join_api;
+static h2_pal_task_t *s_self_join_task;
+static int s_self_join_result;
+
+static void self_join_entry(void *ctx)
+{
+    (void)ctx;
+    s_self_join_result = h2_pal_task_join(s_self_join_api, s_self_join_task);
+}
+
+static void test_task_join_from_the_worker_deletes_nothing(void)
+{
+    const h2_pal_task_api_t *api = h2_jieli_br23_platform_task_api();
+    int flag = 0;
+    h2_jieli_fake_reset();
+    s_self_join_api = api;
+    s_self_join_task = NULL;
+    s_self_join_result = H2_PAL_OK;
+    CHECK(h2_pal_task_start(api, NULL, self_join_entry, &flag, &s_self_join_task) == H2_PAL_OK);
+    h2_jieli_fake_run_last_task_once();
+    CHECK(s_self_join_result == H2_PAL_ERR_TASK);
+    CHECK(h2_jieli_fake_task_delete_calls() == 0);
+    CHECK(h2_jieli_fake_live_allocations() == 2);
+    CHECK(h2_pal_task_join(api, s_self_join_task) == H2_PAL_OK);
+    CHECK(h2_jieli_fake_live_allocations() == 0);
 }
 
 static int timer_fires;
@@ -483,7 +551,8 @@ int main(void)
     test_time_extends_32bit_wrap_and_sleeps();
     test_sync_mutex_and_semaphore();
     test_queue_fifo_full_timeout_latest_and_close();
-    test_task_start_uses_sdk_task_and_join_is_unsupported();
+    test_task_start_and_join_reclaims_task_and_handle();
+    test_task_join_from_the_worker_deletes_nothing();
     test_timer_one_shot_and_periodic();
     test_timer_destroy_from_callback_defers_release();
     test_timer_destroy_racing_dispatched_callback();
