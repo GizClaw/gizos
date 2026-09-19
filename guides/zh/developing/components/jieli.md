@@ -52,7 +52,7 @@
 - **SDK 边界。** Provider 只依赖 `h2_jieli_wl82_sdk_port.h`（SDK heap、调试输出、board 提供的 64 位单调时钟、`os_time_dly`、`os_mutex_*`/`os_sem_*`、`os_task_create`/删除/park/当前任务、`sys_timer` 派发，以及异常捕获用的单次 `testset` 字节锁）。`src/h2_jieli_wl82_sdk_port.c` 是唯一 include SDK 头文件的翻译单元，只由 `jieli_firmware` native 构建编译（`h2_pal_core` target 为 `manual`）。它在链接时需要 board layout 提供的 `task_info_table` 与 `h2_jieli_default_task_policy`；AC791N DevKit BSP 位于 `boards/jieli_ac791n_devkit/ac791n`；板级实现、task policy 生成、linker export guard 与 firmware link 验收不属于 `h2_pal_core` package。零超时的 mutex/semaphore 用 `os_*_accept`，因为 SDK `pend(…, 0)` 表示永久等待。
 - **与 br23 的能力差异。**
   - Sync 支持递归 mutex 和 condition variable。condition 为每个 wait 使用独立 SDK semaphore，只接受非递归 mutex，仍有等待者时 destroy 返回 `H2_PAL_ERR_INVALID_STATE`。
-  - Task 支持 `join`：每个任务有唯一 native 名 `<policy>/<hex id>`（匿名任务为 `$h2anon/…`，调用者不能使用该前缀），join 等待完成后按该名字删除；同名 policy 的多个任务互不影响。
+  - Task 支持 `join`：每个任务有唯一 native 名 `<policy>/<hex id>`（匿名任务为 `$h2anon/…`，调用者不能使用该前缀），join 等待完成后按该名字删除；同名 policy 的多个任务互不影响。完成只由 worker 自己发布，所以 worker join 自己会永久等待：trampoline 在执行 entry 前先记录自身 `h2_jieli_sdk_task_current()` 句柄，join 在等待之前比较该句柄并对 self-join 返回 `H2_PAL_ERR_INVALID_STATE`，不删除也不释放任何资源，同一 handle 仍可被其它任务 join；尚未发布的句柄为 NULL，不会匹配任何运行中的任务，另一个核读到过期 NULL 也只是走正常等待。
   - Timer 的所有生命周期操作同步派发到 SDK `sys_timer` 任务，timer 回调内调用直接内联执行；不支持 ISR 和调度器启动前调用；资源失败保持 timer 停止且可重试。
   - Mutex、semaphore、condition 和 queue 遵循 `config->allocator`，对象从创建到销毁一直持有该 allocator。
 - **System Event。** 固定 `H2_PAL_SYSTEM_EVENT_TYPE_COUNT + 8` 个订阅槽位，通过 SDK `sys_event` 异步派发；每条消息为 32 字节 envelope（64 位 generation ceiling、时间戳、source ID、type、flags、payload 长度与 8 字节数据区），使用 `type=0x0100`、`from=0x50`，不会超过 SDK 的 32 字节读取缓冲区。

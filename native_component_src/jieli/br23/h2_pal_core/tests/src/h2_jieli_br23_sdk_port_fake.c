@@ -37,6 +37,10 @@ static int s_fail_task_create;
 static int s_task_running;
 static int s_fail_task_delete;
 static int s_task_delete_calls;
+/* Simulated SDK task handles. A PAL context is neither unique nor non-NULL,
+ * so each created task gets its own identity from this pool. */
+static int s_task_identities[16];
+static const void *s_last_task_identity;
 
 static void (*s_timer_dispatch_hook)(void);
 static int s_default_task;
@@ -62,6 +66,7 @@ void h2_jieli_fake_reset(void)
     s_task_running = 0;
     s_fail_task_delete = 0;
     s_task_delete_calls = 0;
+    s_last_task_identity = NULL;
 }
 
 const char *h2_jieli_fake_log_output(void)
@@ -229,6 +234,8 @@ int h2_jieli_sdk_task_create(void (*entry)(void *ctx), void *ctx, const char *na
         return -1;
     }
     strncpy(s_last_task_name, name, sizeof(s_last_task_name) - 1u);
+    s_last_task_identity = &s_task_identities[(size_t)(s_task_create_calls - 1) %
+        (sizeof(s_task_identities) / sizeof(s_task_identities[0]))];
     s_last_task_stack_bytes = stack_bytes;
     s_last_task_entry = entry;
     s_last_task_ctx = ctx;
@@ -271,10 +278,9 @@ void h2_jieli_fake_run_last_task_once(void)
     if (s_last_task_entry != NULL) {
         const void *caller = s_current_task;
         s_task_running = 1;
-        /* The entry runs on its own SDK task. Each PAL context is a distinct
-         * live object, so it stands in for that task's handle and keeps
-         * h2_jieli_sdk_task_current() different from the starting task's. */
-        s_current_task = s_last_task_ctx;
+        /* The entry runs on its own SDK task, under the identity recorded for
+         * it at creation rather than the starting task's handle. */
+        s_current_task = s_last_task_identity;
         s_last_task_entry(s_last_task_ctx);
         s_current_task = caller;
     }

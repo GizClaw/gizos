@@ -257,12 +257,13 @@ static void self_join_entry(void *ctx)
 static void test_task_join_from_the_worker_deletes_nothing(void)
 {
     const h2_pal_task_api_t *api = h2_jieli_br23_platform_task_api();
-    int flag = 0;
     h2_jieli_fake_reset();
     s_self_join_api = api;
     s_self_join_task = NULL;
     s_self_join_result = H2_PAL_OK;
-    CHECK(h2_pal_task_start(api, NULL, self_join_entry, &flag, &s_self_join_task) == H2_PAL_OK);
+    /* A NULL entry context is valid and several workers may share one, so the
+     * worker's identity must not be derived from it. */
+    CHECK(h2_pal_task_start(api, NULL, self_join_entry, NULL, &s_self_join_task) == H2_PAL_OK);
     h2_jieli_fake_run_last_task_once();
     CHECK(s_self_join_result == H2_PAL_ERR_INVALID_STATE);
     CHECK(h2_jieli_fake_task_delete_calls() == 0);
