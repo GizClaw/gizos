@@ -174,6 +174,114 @@ class H2LoaderTarZlibRunnerTest(unittest.TestCase):
                     ["manifest", "checksum", "data/media/startup.mp4", "app/bk/app_ab_crc.rbl"],
                 )
 
+    def test_packages_generated_data_under_its_repository_relative_name(self):
+        """A rule may produce package data instead of a checked-in copy."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            app = root / "firmware/app.bin"
+            generated = root / "bazel-out/bin/project/data/media/startup.mp4"
+            app.parent.mkdir(parents=True)
+            generated.parent.mkdir(parents=True)
+            app.write_bytes(b"application")
+            generated.write_bytes(b"video")
+            package = root / "out/example.update.tar.zlib"
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(RUNNER),
+                    "--source-root",
+                    str(root),
+                    "--app-image",
+                    str(app),
+                    "--app-path",
+                    "app/bk/app_ab_crc.rbl",
+                    "--entry",
+                    "entry",
+                    "--platform",
+                    "bk7258",
+                    "--board",
+                    "board",
+                    "--image",
+                    "example",
+                    "--role",
+                    "app",
+                    "--target",
+                    "bk7258",
+                    "--version",
+                    "1.2.3",
+                    "--package-output",
+                    str(package),
+                    "--metadata-output",
+                    str(root / "out/example.firmware.json"),
+                    "--package-data-root",
+                    "project/data",
+                    "--package-data-file",
+                    "project/data/media/startup.mp4",
+                    "--package-data-source",
+                    "bazel-out/bin/project/data/media/startup.mp4",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            with tarfile.open(fileobj=BytesIO(zlib.decompress(package.read_bytes()))) as archive:
+                self.assertEqual(
+                    archive.getnames(),
+                    ["manifest", "checksum", "data/media/startup.mp4", "app/bk/app_ab_crc.rbl"],
+                )
+                member = archive.extractfile("data/media/startup.mp4")
+                self.assertIsNotNone(member)
+                self.assertEqual(member.read(), b"video")
+
+    def test_rejects_package_data_source_without_a_file(self):
+        """Losing the file/source correspondence must fail, not package nothing."""
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            app = root / "firmware/app.bin"
+            generated = root / "bazel-out/bin/project/data/media/startup.mp4"
+            app.parent.mkdir(parents=True)
+            generated.parent.mkdir(parents=True)
+            app.write_bytes(b"application")
+            generated.write_bytes(b"video")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(RUNNER),
+                    "--source-root",
+                    str(root),
+                    "--app-image",
+                    str(app),
+                    "--app-path",
+                    "app/bk/app_ab_crc.rbl",
+                    "--entry",
+                    "entry",
+                    "--platform",
+                    "bk7258",
+                    "--board",
+                    "board",
+                    "--image",
+                    "example",
+                    "--role",
+                    "app",
+                    "--target",
+                    "bk7258",
+                    "--version",
+                    "1.2.3",
+                    "--package-output",
+                    str(root / "out/example.update.tar.zlib"),
+                    "--metadata-output",
+                    str(root / "out/example.firmware.json"),
+                    "--package-data-root",
+                    "project/data",
+                    "--package-data-source",
+                    "bazel-out/bin/project/data/media/startup.mp4",
+                ],
+                capture_output=True,
+                text=True,
+            )
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn("one source per file", result.stderr)
+
     def test_packages_platform_image_data_and_metadata(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
