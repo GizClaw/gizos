@@ -4,9 +4,6 @@
 #include <stdio.h>
 #include <string.h>
 
-static h2_pal_result_t release_job(h2_lua_host_t *host,
-                                 h2_lua_job_id_t job_id, int cancel);
-
 h2_pal_result_t h2_lua_job_acquire_audio_speaker(h2_lua_job_t *job) {
   h2_lua_host_t *host;
   h2_pal_result_t result;
@@ -319,9 +316,11 @@ static h2_lua_job_t *find_empty_job(h2_lua_host_t *host) {
 /* Fills `buffer` with up to `capacity` more bytes; 0 ends the source. */
 typedef h2_pal_result_t (*source_read_fn)(void *user, uint8_t *buffer,
                                           size_t capacity, size_t *out_size);
+typedef h2_pal_result_t (*source_close_fn)(void *user);
 
 typedef struct source_stream {
   source_read_fn read;
+  source_close_fn close;
   void *user;
   uint8_t *window;
   size_t delivered;
@@ -549,6 +548,12 @@ submit_chunk(h2_lua_host_t *host, const char *app_id, const char *chunk_name,
   if (stream != NULL) {
     load_status =
         lua_load(job->tasks[0].thread, stream_reader, stream, chunk_name, "t");
+    /* A compile error can stop the reader before EOF. Close that source too,
+     * while the slot is private, before publishing even a FAILED job. */
+    const h2_pal_result_t close_result = stream->close(stream->user);
+    if (stream->result == H2_PAL_OK) {
+      stream->result = close_result;
+    }
     /* A source Host could not read is not a failed app: release the slot and
      * hand the caller the read's own result, the way the checks above do. */
     if (stream->result != H2_PAL_OK) {
@@ -593,6 +598,7 @@ h2_lua_job_submit_text(h2_lua_host_t *host, const char *app_id,
 
 static h2_pal_result_t submit_stream(h2_lua_host_t *host, const char *app_id,
                                     const char *chunk_name, source_read_fn read,
+                                    source_close_fn close,
                                     void *read_user, const h2_lua_arg_t *args,
                                     size_t arg_count,
                                     h2_lua_job_id_t *out_job_id) {
@@ -605,6 +611,7 @@ static h2_pal_result_t submit_stream(h2_lua_host_t *host, const char *app_id,
     return H2_PAL_ERR_NO_MEMORY;
   }
   stream.read = read;
+  stream.close = close;
   stream.user = read_user;
   stream.limit = host->config.source_limit_bytes;
   result = submit_chunk(host, app_id, chunk_name, NULL, 0u, &stream, args,
@@ -666,10 +673,25 @@ typedef struct file_source {
   size_t remaining;
 } file_source_t;
 
+static h2_pal_result_t file_source_close(void *user) {
+  file_source_t *source = (file_source_t *)user;
+  h2_pal_result_t result;
+  if (source->file == NULL) {
+    return H2_PAL_OK;
+  }
+  result = (h2_pal_result_t)h2_pal_fs_close(source->fs, source->file);
+  source->file = NULL;
+  return result;
+}
+
 static h2_pal_result_t file_source_read(void *user, uint8_t *buffer,
                                         size_t capacity, size_t *out_size) {
   file_source_t *source = (file_source_t *)user;
   size_t read_size = 0u;
+  *out_size = 0u;
+  if (source->remaining == 0u) {
+    return file_source_close(source);
+  }
   const h2_pal_result_t result = (h2_pal_result_t)h2_pal_fs_read(
       source->fs, source->file, buffer, capacity, &read_size);
   if (result != H2_PAL_OK) {
@@ -681,7 +703,9 @@ static h2_pal_result_t file_source_read(void *user, uint8_t *buffer,
   }
   source->remaining -= read_size;
   *out_size = read_size;
-  return H2_PAL_OK;
+  /* The final window is not handed to Lua until close succeeds, so a close
+   * failure follows the same pre-publication cleanup as a read failure. */
+  return source->remaining == 0u ? file_source_close(source) : H2_PAL_OK;
 }
 
 /* Compiles a Runtime Filesystem path straight out of Host's window, so nothing
@@ -695,7 +719,6 @@ static h2_pal_result_t submit_fs_path(h2_lua_host_t *host, const char *app_id,
   h2_pal_fs_stat_t stat;
   file_source_t source = {0};
   h2_pal_result_t result;
-  h2_pal_result_t close_result;
   *out_job_id = H2_LUA_JOB_ID_NONE;
   if (host->config.runtime->fs == NULL ||
       host->config.runtime->fs->vtable == NULL ||
@@ -721,19 +744,11 @@ static h2_pal_result_t submit_fs_path(h2_lua_host_t *host, const char *app_id,
   if (result != H2_PAL_OK) {
     return result;
   }
-  result = submit_stream(host, app_id, chunk_name, file_source_read, &source,
-                         args, arg_count, out_job_id);
-  close_result =
-      (h2_pal_result_t)h2_pal_fs_close(host->config.runtime->fs, source.file);
-  if (result == H2_PAL_OK) {
-    if (close_result != H2_PAL_OK) {
-      /* The caller cannot own a job from a failed submit. Cancel and release
-       * it synchronously, even if its worker has not run it yet. */
-      (void)release_job(host, *out_job_id, 1);
-      *out_job_id = H2_LUA_JOB_ID_NONE;
-    }
-    result = close_result;
-  }
+  result = submit_stream(host, app_id, chunk_name, file_source_read,
+                         file_source_close, &source, args, arg_count, out_job_id);
+  /* Setup can refuse submission before lua_load invokes the reader. Preserve
+   * that error while closing any file still owned by this call. */
+  (void)file_source_close(&source);
   return result;
 }
 
@@ -1071,8 +1086,8 @@ h2_pal_result_t h2_lua_job_get_result(const h2_lua_host_t *host,
   return result;
 }
 
-static h2_pal_result_t release_job(h2_lua_host_t *host,
-                                 h2_lua_job_id_t job_id, int cancel) {
+h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host,
+                                  h2_lua_job_id_t job_id) {
   h2_lua_job_t *job = NULL;
   h2_pal_mutex_t *job_mutex;
   const h2_pal_mem_api_t *mem;
@@ -1095,12 +1110,6 @@ static h2_pal_result_t release_job(h2_lua_host_t *host,
   if (result != H2_PAL_OK) {
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
     return result;
-  }
-  if (cancel) {
-    /* Holding the job mutex excludes its worker. A cancel request alone would
-     * leave a queued or waiting job busy until the worker next steps it. */
-    job->cancel_requested = 1;
-    h2_lua_job_finish(job, H2_LUA_JOB_CANCELLED, "job cancelled");
   }
   if (!is_terminal(job->state)) {
     h2_lua_unlock_job(job);
@@ -1129,9 +1138,4 @@ static h2_pal_result_t release_job(h2_lua_host_t *host,
   (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
   h2_lua_release_job_capabilities(host, job_id, job_generation);
   return H2_PAL_OK;
-}
-
-h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host,
-                                  h2_lua_job_id_t job_id) {
-  return release_job(host, job_id, 0);
 }

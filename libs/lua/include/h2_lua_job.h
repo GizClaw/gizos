@@ -64,6 +64,10 @@ h2_lua_job_submit_resource(h2_lua_host_t *host, const char *app_id,
  * a text submit (`H2_PAL_ERR_NO_SPACE`, `H2_PAL_ERR_INVALID_ARG`,
  * `H2_PAL_ERR_FORMAT`), decided as the bytes arrive, and a filesystem failure
  * or a short read aborts the submit and is returned unchanged, leaving no job.
+ * The reader closes the source at end of input, before the job is published
+ * or its worker is woken. A compile error that stops reading early also closes
+ * the source before publication. Close failure leaves `*out_job_id` as
+ * `H2_LUA_JOB_ID_NONE`, and the chunk never runs.
  */
 h2_pal_result_t h2_lua_job_submit_path(h2_lua_host_t *host, const char *app_id,
                                        const char *chunk_name,
