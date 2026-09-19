@@ -6,6 +6,7 @@
 
 #include "FreeRTOS.h"
 #include "semphr.h"
+#include "task.h"
 
 struct h2_pal_task {
   beken_thread_t thread;
@@ -14,6 +15,7 @@ struct h2_pal_task {
   const h2_pal_mem_api_t *allocator;
   h2_pal_task_entry_t entry;
   void *ctx;
+  bool join_reclaims;
 };
 
 static h2_bk_task_policy_config_t s_task_config;
@@ -98,11 +100,40 @@ static int bk_task_create(beken_thread_t *thread,
 #endif
 }
 
+/* Self-deletion only queues the stack and TCB on the kernel's termination list;
+ * the idle task of the owning core has to run before prvDeleteTCB() releases
+ * them. A PSRAM stack therefore stays allocated for as long as the product
+ * starves idle. Let join reclaim those workers directly instead.
+ *
+ * Default-region stacks come from the internal heap that CONFIG_CUSTOMIZE_HEAP_SIZE
+ * caps at 160 KiB, and every BK image assigns that region only to long-lived
+ * singletons. Holding one until a late join would take scarce startup memory
+ * for no reclamation benefit, so those keep self-deleting. */
 static void bk_task_trampoline(void *raw) {
   h2_pal_task_t *task = (h2_pal_task_t *)raw;
+  const bool join_reclaims = task->join_reclaims;
   task->entry(task->ctx);
+  /* Join may free the PAL handle as soon as this signal is consumed. Do not
+   * access task or the entry context after giving the semaphore. */
   (void)xSemaphoreGive((SemaphoreHandle_t)task->done);
-  rtos_delete_thread(NULL);
+  if (!join_reclaims) {
+    rtos_delete_thread(NULL);
+  }
+  for (;;) {
+    rtos_suspend_thread(NULL);
+  }
+}
+
+/* The entry has returned, so the worker only has to leave the CPU. vTaskSuspend()
+ * merely sends a yield request to the other core, and vTaskDelete() re-queues a
+ * still-running task for idle cleanup, so wait for the scheduler to switch the
+ * worker out before deleting it. Only then does rtos_delete_thread() free the
+ * stack and TCB on this thread. */
+static void bk_task_reclaim(h2_pal_task_t *task) {
+  rtos_suspend_thread(&task->thread);
+  while (eTaskGetState((TaskHandle_t)task->thread) == eRunning) {
+  }
+  rtos_delete_thread(&task->thread);
 }
 
 static void bk_task_free(h2_pal_task_t *task) {
@@ -172,6 +203,7 @@ static int bk_task_start(void *user, const h2_pal_task_options_t *options,
   }
   task->entry = entry;
   task->ctx = ctx;
+  task->join_reclaims = policy.stack_region == H2_BK_TASK_STACK_PSRAM;
 
   const char *sdk_name = bk_task_sdk_name(options->name, &policy);
   int ret = bk_task_create(&task->thread, &policy, sdk_name,
@@ -200,6 +232,9 @@ static int bk_task_join(void *user, h2_pal_task_t *task) {
   BaseType_t ret = xSemaphoreTake((SemaphoreHandle_t)task->done, portMAX_DELAY);
   if (ret != pdPASS) {
     return H2_PAL_ERR_TASK;
+  }
+  if (task->join_reclaims) {
+    bk_task_reclaim(task);
   }
   bk_task_free(task);
   return H2_PAL_OK;
