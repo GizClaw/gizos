@@ -309,20 +309,80 @@ static h2_lua_job_t *find_empty_job(h2_lua_host_t *host) {
   return NULL;
 }
 
-h2_pal_result_t
-h2_lua_job_submit_text(h2_lua_host_t *host, const char *app_id,
-                       const char *chunk_name, const uint8_t *source,
-                       size_t source_size, const h2_lua_arg_t *args,
-                       size_t arg_count, h2_lua_job_id_t *out_job_id) {
+/* One window of source on its way from a reader into the compiler. Host owns
+ * the window for the submit, so a 200 KiB app never needs a block that size. */
+#define H2_LUA_SOURCE_WINDOW_BYTES 4096u
+
+/* Fills `buffer` with up to `capacity` more bytes; 0 ends the source. */
+typedef h2_pal_result_t (*source_read_fn)(void *user, uint8_t *buffer,
+                                          size_t capacity, size_t *out_size);
+typedef h2_pal_result_t (*source_close_fn)(void *user);
+
+typedef struct source_stream {
+  source_read_fn read;
+  source_close_fn close;
+  void *user;
+  uint8_t *window;
+  size_t delivered;
+  size_t limit;
+  h2_pal_result_t result;
+  int started;
+} source_stream_t;
+
+static const char *stream_reader(lua_State *state, void *user, size_t *size) {
+  source_stream_t *stream = (source_stream_t *)user;
+  size_t read_size = 0u;
+  (void)state;
+  *size = 0u;
+  if (stream->result != H2_PAL_OK) {
+    return NULL;
+  }
+  stream->result = stream->read(stream->user, stream->window,
+                                H2_LUA_SOURCE_WINDOW_BYTES, &read_size);
+  if (stream->result != H2_PAL_OK) {
+    return NULL;
+  }
+  if (read_size == 0u) {
+    return NULL;
+  }
+  if (read_size > H2_LUA_SOURCE_WINDOW_BYTES) {
+    stream->result = H2_PAL_ERR_INVALID_STATE;
+    return NULL;
+  }
+  /* The same rejections a text submit makes up front, as the bytes arrive. */
+  if (stream->delivered >= stream->limit ||
+      read_size > stream->limit - stream->delivered) {
+    stream->result = H2_PAL_ERR_NO_SPACE;
+    return NULL;
+  }
+  if (memchr(stream->window, '\0', read_size) != NULL) {
+    stream->result = H2_PAL_ERR_INVALID_ARG;
+    return NULL;
+  }
+  if (!stream->started && stream->window[0] == 0x1bu) {
+    stream->result = H2_PAL_ERR_FORMAT;
+    return NULL;
+  }
+  stream->started = 1;
+  stream->delivered += read_size;
+  *size = read_size;
+  return (const char *)stream->window;
+}
+
+static h2_pal_result_t
+submit_chunk(h2_lua_host_t *host, const char *app_id, const char *chunk_name,
+             const uint8_t *source, size_t source_size,
+             source_stream_t *stream, const h2_lua_arg_t *args,
+             size_t arg_count, h2_lua_job_id_t *out_job_id) {
   h2_lua_job_t *job;
   h2_lua_vm_config_t vm_config;
   lua_State *root;
   h2_lua_job_id_t new_job_id;
   size_t i;
   int load_status;
-  if (host == NULL || chunk_name == NULL || source == NULL ||
-      out_job_id == NULL || arg_count > INT_MAX ||
-      (arg_count != 0u && args == NULL) ||
+  if (host == NULL || chunk_name == NULL ||
+      (source == NULL && stream == NULL) || out_job_id == NULL ||
+      arg_count > INT_MAX || (arg_count != 0u && args == NULL) ||
       (app_id != NULL &&
        !h2_lua_storage_name_is_valid(app_id, H2_LUA_STORAGE_APP_ID_MAX))) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -331,14 +391,16 @@ h2_lua_job_submit_text(h2_lua_host_t *host, const char *app_id,
   if (atomic_load(&host->started) == 0 || atomic_load(&host->stopping) != 0) {
     return H2_PAL_ERR_INVALID_STATE;
   }
-  if (source_size > host->config.source_limit_bytes) {
-    return H2_PAL_ERR_NO_SPACE;
-  }
-  if (memchr(source, '\0', source_size) != NULL) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  if (source_size != 0u && source[0] == 0x1bu) {
-    return H2_PAL_ERR_FORMAT;
+  if (stream == NULL) {
+    if (source_size > host->config.source_limit_bytes) {
+      return H2_PAL_ERR_NO_SPACE;
+    }
+    if (memchr(source, '\0', source_size) != NULL) {
+      return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (source_size != 0u && source[0] == 0x1bu) {
+      return H2_PAL_ERR_FORMAT;
+    }
   }
   if (h2_pal_mutex_lock(host->config.runtime->sync, host->jobs_mutex) !=
       H2_PAL_OK) {
@@ -483,8 +545,33 @@ h2_lua_job_submit_text(h2_lua_host_t *host, const char *app_id,
   *(h2_lua_execution_context_t **)lua_getextraspace(job->tasks[0].thread) =
       &job->tasks[0].context;
   job->task_count = 1u;
-  load_status = luaL_loadbufferx(job->tasks[0].thread, (const char *)source,
-                                 source_size, chunk_name, "t");
+  if (stream != NULL) {
+    load_status =
+        lua_load(job->tasks[0].thread, stream_reader, stream, chunk_name, "t");
+    /* A compile error can stop the reader before EOF. Close that source too,
+     * while the slot is private, before publishing even a FAILED job. */
+    const h2_pal_result_t close_result = stream->close(stream->user);
+    if (stream->result == H2_PAL_OK) {
+      stream->result = close_result;
+    }
+    /* A source Host could not read is not a failed app: release the slot and
+     * hand the caller the read's own result, the way the checks above do. */
+    if (stream->result != H2_PAL_OK) {
+      const h2_pal_result_t read_result = stream->result;
+      h2_lua_vm_close(job->vm);
+      h2_pal_mem_free(host->config.runtime->mem, job->callbacks);
+      h2_pal_mem_free(host->config.runtime->mem, job->events);
+      h2_pal_mem_free(host->config.runtime->mem, job->tasks);
+      h2_pal_mem_free(host->config.runtime->mem, job->audio_tracks);
+      memset(job, 0, sizeof(*job));
+      (void)h2_pal_mutex_unlock(host->config.runtime->sync, job_mutex);
+      (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
+      return read_result;
+    }
+  } else {
+    load_status = luaL_loadbufferx(job->tasks[0].thread, (const char *)source,
+                                   source_size, chunk_name, "t");
+  }
   if (load_status != LUA_OK) {
     h2_lua_job_finish(job, H2_LUA_JOB_FAILED,
                       lua_tostring(job->tasks[0].thread, -1));
@@ -498,6 +585,39 @@ h2_lua_job_submit_text(h2_lua_host_t *host, const char *app_id,
   (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
   h2_lua_host_wake_job(job);
   return H2_PAL_OK;
+}
+
+h2_pal_result_t
+h2_lua_job_submit_text(h2_lua_host_t *host, const char *app_id,
+                       const char *chunk_name, const uint8_t *source,
+                       size_t source_size, const h2_lua_arg_t *args,
+                       size_t arg_count, h2_lua_job_id_t *out_job_id) {
+  return submit_chunk(host, app_id, chunk_name, source, source_size, NULL, args,
+                      arg_count, out_job_id);
+}
+
+static h2_pal_result_t submit_stream(h2_lua_host_t *host, const char *app_id,
+                                    const char *chunk_name, source_read_fn read,
+                                    source_close_fn close,
+                                    void *read_user, const h2_lua_arg_t *args,
+                                    size_t arg_count,
+                                    h2_lua_job_id_t *out_job_id) {
+  source_stream_t stream = {0};
+  h2_pal_result_t result;
+  stream.window =
+      h2_pal_mem_alloc(host->config.runtime->mem, H2_LUA_SOURCE_WINDOW_BYTES);
+  if (stream.window == NULL) {
+    *out_job_id = H2_LUA_JOB_ID_NONE;
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  stream.read = read;
+  stream.close = close;
+  stream.user = read_user;
+  stream.limit = host->config.source_limit_bytes;
+  result = submit_chunk(host, app_id, chunk_name, NULL, 0u, &stream, args,
+                        arg_count, out_job_id);
+  h2_pal_mem_free(host->config.runtime->mem, stream.window);
+  return result;
 }
 
 static int relative_path_is_valid(const char *path) {
@@ -547,21 +667,59 @@ h2_lua_job_submit_resource(h2_lua_host_t *host, const char *app_id,
   return H2_PAL_ERR_NOT_FOUND;
 }
 
-h2_pal_result_t h2_lua_job_submit_file(h2_lua_host_t *host, const char *app_id,
-                                       const char *relative_path,
-                                       const h2_lua_arg_t *args,
-                                       size_t arg_count,
-                                       h2_lua_job_id_t *out_job_id) {
-  h2_pal_fs_stat_t stat;
-  h2_pal_fs_file_t *file = NULL;
-  uint8_t *source = NULL;
-  size_t offset = 0u;
+typedef struct file_source {
+  const h2_pal_fs_api_t *fs;
+  h2_pal_fs_file_t *file;
+  size_t remaining;
+} file_source_t;
+
+static h2_pal_result_t file_source_close(void *user) {
+  file_source_t *source = (file_source_t *)user;
   h2_pal_result_t result;
-  char chunk_name[H2_LUA_PATH_MAX + 2u];
-  if (host == NULL || out_job_id == NULL ||
-      !relative_path_is_valid(relative_path)) {
-    return H2_PAL_ERR_INVALID_ARG;
+  if (source->file == NULL) {
+    return H2_PAL_OK;
   }
+  result = (h2_pal_result_t)h2_pal_fs_close(source->fs, source->file);
+  source->file = NULL;
+  return result;
+}
+
+static h2_pal_result_t file_source_read(void *user, uint8_t *buffer,
+                                        size_t capacity, size_t *out_size) {
+  file_source_t *source = (file_source_t *)user;
+  size_t read_size = 0u;
+  *out_size = 0u;
+  if (source->remaining == 0u) {
+    return file_source_close(source);
+  }
+  const h2_pal_result_t result = (h2_pal_result_t)h2_pal_fs_read(
+      source->fs, source->file, buffer, capacity, &read_size);
+  if (result != H2_PAL_OK) {
+    return result;
+  }
+  if (read_size > source->remaining ||
+      (read_size == 0u && source->remaining != 0u)) {
+    return H2_PAL_ERR_TRUNCATED;
+  }
+  source->remaining -= read_size;
+  *out_size = read_size;
+  /* The final window is not handed to Lua until close succeeds, so a close
+   * failure follows the same pre-publication cleanup as a read failure. */
+  return source->remaining == 0u ? file_source_close(source) : H2_PAL_OK;
+}
+
+/* Compiles a Runtime Filesystem path straight out of Host's window, so nothing
+ * ever holds the whole source: on a fragmented heap that is the difference
+ * between an app that starts and one that reports NO_MEMORY. */
+static h2_pal_result_t submit_fs_path(h2_lua_host_t *host, const char *app_id,
+                                     const char *chunk_name, const char *path,
+                                     const h2_lua_arg_t *args,
+                                     size_t arg_count,
+                                     h2_lua_job_id_t *out_job_id) {
+  h2_pal_fs_stat_t stat;
+  file_source_t source = {0};
+  h2_pal_result_t result;
+  *out_job_id = H2_LUA_JOB_ID_NONE;
   if (host->config.runtime->fs == NULL ||
       host->config.runtime->fs->vtable == NULL ||
       host->config.runtime->fs->vtable->stat == NULL ||
@@ -570,8 +728,8 @@ h2_pal_result_t h2_lua_job_submit_file(h2_lua_host_t *host, const char *app_id,
       host->config.runtime->fs->vtable->close == NULL) {
     return H2_PAL_ERR_UNSUPPORTED;
   }
-  result = (h2_pal_result_t)h2_pal_fs_stat(host->config.runtime->fs,
-                                           relative_path, &stat);
+  result = (h2_pal_result_t)h2_pal_fs_stat(host->config.runtime->fs, path,
+                                           &stat);
   if (result != H2_PAL_OK) {
     return result;
   }
@@ -579,37 +737,48 @@ h2_pal_result_t h2_lua_job_submit_file(h2_lua_host_t *host, const char *app_id,
       stat.size > SIZE_MAX - 1u) {
     return stat.is_dir ? H2_PAL_ERR_FORMAT : H2_PAL_ERR_NO_SPACE;
   }
-  source = h2_pal_mem_alloc(host->config.runtime->mem, (size_t)stat.size + 1u);
-  if (source == NULL) {
-    return H2_PAL_ERR_NO_MEMORY;
+  source.fs = host->config.runtime->fs;
+  source.remaining = (size_t)stat.size;
+  result = (h2_pal_result_t)h2_pal_fs_open(host->config.runtime->fs, path,
+                                           H2_PAL_FS_OPEN_READ, &source.file);
+  if (result != H2_PAL_OK) {
+    return result;
   }
-  result = (h2_pal_result_t)h2_pal_fs_open(
-      host->config.runtime->fs, relative_path, H2_PAL_FS_OPEN_READ, &file);
-  while (result == H2_PAL_OK && offset < (size_t)stat.size) {
-    size_t read_size = 0u;
-    result = (h2_pal_result_t)h2_pal_fs_read(
-        host->config.runtime->fs, file, source + offset,
-        (size_t)stat.size - offset, &read_size);
-    if (result == H2_PAL_OK && read_size == 0u) {
-      result = H2_PAL_ERR_TRUNCATED;
-    }
-    offset += read_size;
-  }
-  if (file != NULL) {
-    h2_pal_result_t close_result =
-        (h2_pal_result_t)h2_pal_fs_close(host->config.runtime->fs, file);
-    if (result == H2_PAL_OK) {
-      result = close_result;
-    }
-  }
-  if (result == H2_PAL_OK) {
-    source[offset] = '\0';
-    (void)snprintf(chunk_name, sizeof(chunk_name), "@%s", relative_path);
-    result = h2_lua_job_submit_text(host, app_id, chunk_name, source, offset,
-                                    args, arg_count, out_job_id);
-  }
-  h2_pal_mem_free(host->config.runtime->mem, source);
+  result = submit_stream(host, app_id, chunk_name, file_source_read,
+                         file_source_close, &source, args, arg_count, out_job_id);
+  /* Setup can refuse submission before lua_load invokes the reader. Preserve
+   * that error while closing any file still owned by this call. */
+  (void)file_source_close(&source);
   return result;
+}
+
+h2_pal_result_t h2_lua_job_submit_path(h2_lua_host_t *host, const char *app_id,
+                                       const char *chunk_name,
+                                       const char *path,
+                                       const h2_lua_arg_t *args,
+                                       size_t arg_count,
+                                       h2_lua_job_id_t *out_job_id) {
+  if (host == NULL || chunk_name == NULL || path == NULL || path[0] == '\0' ||
+      out_job_id == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  return submit_fs_path(host, app_id, chunk_name, path, args, arg_count,
+                        out_job_id);
+}
+
+h2_pal_result_t h2_lua_job_submit_file(h2_lua_host_t *host, const char *app_id,
+                                       const char *relative_path,
+                                       const h2_lua_arg_t *args,
+                                       size_t arg_count,
+                                       h2_lua_job_id_t *out_job_id) {
+  char chunk_name[H2_LUA_PATH_MAX + 2u];
+  if (host == NULL || out_job_id == NULL ||
+      !relative_path_is_valid(relative_path)) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  (void)snprintf(chunk_name, sizeof(chunk_name), "@%s", relative_path);
+  return submit_fs_path(host, app_id, chunk_name, relative_path, args,
+                        arg_count, out_job_id);
 }
 
 static int task_is_terminal(h2_lua_task_state_t state) {
@@ -918,7 +1087,7 @@ h2_pal_result_t h2_lua_job_get_result(const h2_lua_host_t *host,
 }
 
 h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host,
-                                   h2_lua_job_id_t job_id) {
+                                  h2_lua_job_id_t job_id) {
   h2_lua_job_t *job = NULL;
   h2_pal_mutex_t *job_mutex;
   const h2_pal_mem_api_t *mem;

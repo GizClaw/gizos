@@ -16,7 +16,7 @@
 #define H2_LUA_CAPABILITY_OUTPUT_MAX 512u
 #define H2_LUA_PATH_MAX 192u
 /* Most Runtime mem blocks one reserved VM heap may be split across. */
-#define H2_LUA_HEAP_MAX_CHUNKS 8u
+#define H2_LUA_HEAP_MAX_CHUNKS 16u
 
 typedef enum h2_lua_task_state {
   H2_LUA_TASK_UNUSED = 0,

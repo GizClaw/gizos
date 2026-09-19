@@ -11,8 +11,12 @@ int h2_lua_heap_size_valid(size_t bytes) {
 /* A fragmented system heap may not hold the whole reservation in one block.
  * Shrink the request by an eighth per refusal, so each block tracks the
  * largest free region closely, down to this floor; each block becomes a TLSF
- * pool. */
-#define H2_LUA_HEAP_CHUNK_MIN_BYTES (256u * 1024u)
+ * pool. Because the largest block is taken first, the pools that can serve a
+ * big single allocation come first and the floor only decides how much of the
+ * tail is usable: a heap holding 512+384+256+256+192 KiB plus five 64 KiB
+ * blocks has 1.9 MiB to give, but a 256 KiB floor can only assemble 1.4 MiB of
+ * it. A single VM allocation still has to fit inside one block. */
+#define H2_LUA_HEAP_CHUNK_MIN_BYTES (64u * 1024u)
 
 static void heap_release_chunks(h2_lua_host_t *host) {
   for (size_t i = 0u; i < host->vm_heap_chunk_count; ++i) {

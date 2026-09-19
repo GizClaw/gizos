@@ -49,9 +49,12 @@ VM 本体、Lua 状态、userdata、字符串和表都使用预留堆；callback
 和 framebuffer 等仍使用 Runtime mem。
 
 Runtime mem 有足够大的连续块时预留为一整块；否则 Host 每次被拒后把申请大小缩小 1/8、贴近实际最大空闲块，最多取
-8 块、每块至少 256 KiB（只有最后的余量可以更小），全部加入同一个 TLSF。单次 VM
-分配必须能放进其中一块。在这些限制内凑不够时返回 `H2_PAL_ERR_NO_MEMORY`，不创建
-Host，也不泄漏已取得的块；destroy 在所有 job/VM 释放后归还全部块。
+16 块、每块至少 64 KiB（只有最后的余量可以更小），全部加入同一个 TLSF。因为总是先
+取最大的块，能服务大块单次分配的池排在前面，下限只决定尾部还能用掉多少：一个还剩
+512+384+256+256+192 KiB 和五个 64 KiB 块的堆共有 1.9 MiB 可给，而 256 KiB 的下限只能
+凑出 1.4 MiB。单次 VM 分配仍必须能放进其中一块。在这些限制内凑不够时返回
+`H2_PAL_ERR_NO_MEMORY`，不创建 Host，也不泄漏已取得的块；destroy 在所有 job/VM 释放
+后归还全部块。
 
 `vm_memory_limit_bytes` 仍是独立的每 VM 配额，预留大小不会改变配额检查。预留堆需
 覆盖所有同时存活的 VM（包括尚未 release 的已完成 job）以及 TLSF 元数据和每块分配
@@ -65,7 +68,7 @@ Host 的正常生命周期是：
 1. `h2_lua_host_create()` 借用 Runtime 并分配固定容量；
 2. 在 start 前注册 native module 和 capability；
 3. `h2_lua_host_start()` 冻结 registry 并创建 worker；
-4. 通过 text、compiled resource 或 Runtime Filesystem 提交 job，同时给出决定 `storage` 作用域的 app id（可为 `NULL`）；
+4. 通过 text、compiled resource 或 Runtime Filesystem 提交 job，同时给出决定 `storage` 作用域的 app id（可为 `NULL`）；`h2_lua_job_submit_path()` 接收调用方给的路径与 chunk 名，`h2_lua_job_submit_file()` 接收受限相对路径并自动生成 `@<path>` chunk 名，两者都由 Host 用自己的 4 KiB 窗口把源码分片喂给编译器，调用方和 Host 都不持有整份源码：在碎片化的堆上，一个 200 KiB 的 app 不再需要一块同样大的连续内存。超出 `source_limit_bytes` 返回 `NO_SPACE`、内嵌 NUL 返回 `INVALID_ARG`、预编译 chunk 返回 `FORMAT`，与 text 提交一致，只是改为随字节到达时判定；reader 在读完最后一个字节时关闭文件，空文件在首次读取时关闭；若编译错误使读取提前结束，也在发布 `FAILED` job 前关闭。只有关闭成功后才发布 job 并唤醒 worker；文件系统失败（包括关闭失败）或读到一半截断中止提交、释放 job 槽位并原样返回该结果，`*out_job_id` 保持 `H2_LUA_JOB_ID_NONE`，不会产生或运行 job。提前拒绝提交也会关闭已打开的文件，已有提交或读取错误优先于清理时的关闭错误；
 5. App 消费 Runtime Event queue，并通过 `h2_lua_dispatch_runtime_event()` 定向
    投递给一个 live `job_id`；事件入队返回 `H2_PAL_OK`，事件格式错误或 component
    kind 与 Runtime component 不符返回 `H2_PAL_ERR_INVALID_ARG`，未知或已 release 的

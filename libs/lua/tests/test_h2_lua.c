@@ -24,6 +24,8 @@ typedef struct test_fs_file {
   const uint8_t *source;
   size_t source_size;
   size_t offset;
+  size_t close_count;
+  int is_open;
 } test_fs_file_t;
 
 typedef struct test_fs_entry {
@@ -38,12 +40,27 @@ static const uint8_t s_file_main[] =
 static const uint8_t s_file_helper[] = "return 'file'";
 static const uint8_t s_file_bytecode[] = {0x1bu, 'L', 'u', 'a'};
 static const uint8_t s_file_malformed[] = "return function(";
+static const uint8_t s_file_absolute[] = "return 'path:ok'";
+static const uint8_t s_file_waiting[] =
+    "require('source_effect');require('delay').delay_ms(10000);return 'done'";
+static uint8_t s_file_streamed[8192u];
+static uint8_t s_file_early_malformed[8192u];
+static int s_fs_fail_read_after = -1;
+static h2_pal_result_t s_fs_close_result = H2_PAL_OK;
+static const h2_lua_job_id_t *s_fs_close_job_id;
+static atomic_int s_source_effect_count;
 static const test_fs_entry_t s_fs_entries[] = {
+    {"/data/lua/app.lua", s_file_absolute, sizeof(s_file_absolute) - 1u, 0u},
     {"scripts/main.lua", s_file_main, sizeof(s_file_main) - 1u, 0u},
     {"scripts/helper.lua", s_file_helper, sizeof(s_file_helper) - 1u, 0u},
     {"scripts/bytecode.lua", s_file_bytecode, sizeof(s_file_bytecode), 0u},
     {"scripts/malformed.lua", s_file_malformed, sizeof(s_file_malformed) - 1u,
      0u},
+    {"scripts/waiting.lua", s_file_waiting, sizeof(s_file_waiting) - 1u, 0u},
+    {"scripts/streamed.lua", s_file_streamed, sizeof(s_file_streamed), 0u},
+    {"scripts/early_malformed.lua", s_file_early_malformed,
+     sizeof(s_file_early_malformed), 0u},
+    {"scripts/empty.lua", (const uint8_t *)"", 0u, 0u},
     {"scripts/oversize.lua", NULL, 4097u, 0u},
     {"scripts/invalid_size.lua", NULL, 0u, UINT64_MAX},
 };
@@ -68,6 +85,8 @@ static int test_fs_open(void *user, const char *path,
   if (entry == NULL) {
     return H2_PAL_ERR_NOT_FOUND;
   }
+  assert(!file->is_open);
+  file->is_open = 1;
   file->source = entry->source;
   file->source_size = entry->source_size;
   file->offset = 0u;
@@ -85,8 +104,17 @@ static int test_fs_read(void *user, h2_pal_fs_file_t *file_handle, void *data,
       file->source == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  if (s_fs_fail_read_after >= 0 &&
+      file->offset >= (size_t)s_fs_fail_read_after) {
+    return H2_PAL_ERR_IO;
+  }
+  assert(file->is_open);
   remaining = file->source_size - file->offset;
   copied = length < remaining ? length : remaining;
+  if (s_fs_fail_read_after >= 0 &&
+      copied > (size_t)s_fs_fail_read_after - file->offset) {
+    copied = (size_t)s_fs_fail_read_after - file->offset;
+  }
   if (copied != 0u) {
     memcpy(data, file->source + file->offset, copied);
   }
@@ -96,8 +124,20 @@ static int test_fs_read(void *user, h2_pal_fs_file_t *file_handle, void *data,
 }
 
 static int test_fs_close(void *user, h2_pal_fs_file_t *file) {
+  test_fs_file_t *source = (test_fs_file_t *)file;
   (void)user;
-  return file == NULL ? H2_PAL_ERR_INVALID_ARG : H2_PAL_OK;
+  if (source == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  assert(source->is_open);
+  source->is_open = 0;
+  source->close_count++;
+  if (s_fs_close_job_id != NULL) {
+    /* Observe publication on the submitting thread without reentering Host. */
+    assert(*s_fs_close_job_id == H2_LUA_JOB_ID_NONE);
+    assert(atomic_load(&s_source_effect_count) == 0);
+  }
+  return s_fs_close_result;
 }
 
 static int test_fs_stat(void *user, const char *path,
@@ -2365,18 +2405,137 @@ static void test_reserved_vm_heap(void) {
   h2_lua_host_destroy(host);
   assert(atomic_load(&mem.allocs) > allocs + 3u);
   heap_test_balanced(&mem);
-  /* Blocks below the 256 KiB floor are refused as a whole, without leaks. */
+  /* A heap whose largest blocks are 200 KiB still serves a 1.75 MiB
+   * reservation, which the 256 KiB floor used to refuse outright. */
+  config.vm_heap_bytes = 1792u * 1024u;
   mem.max_allocation = 200u * 1024u;
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(host->vm_heap_reserved == config.vm_heap_bytes);
+  assert(host->vm_heap_chunk_count > 8u);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  /* A single allocation still has to fit one block: 120 KiB does, and the
+   * quota-sized one does not. */
+  heap_test_run(host, "local s=string.rep('x',120*1024);assert(#s==120*1024)",
+                H2_LUA_JOB_SUCCEEDED);
+  heap_test_run(host, "return string.rep('x',300*1024)", H2_LUA_JOB_FAILED);
+  h2_lua_host_destroy(host);
+  heap_test_balanced(&mem);
+  /* Blocks below the 64 KiB floor are refused as a whole, without leaks. */
+  mem.max_allocation = 32u * 1024u;
   assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_NO_MEMORY);
   assert(host == NULL);
   heap_test_balanced(&mem);
-  /* More than eight blocks would be needed: refused, without leaks. */
-  config.vm_heap_bytes = 4608u * 1024u; /* would need 13 blocks */
-  mem.max_allocation = 400u * 1024u;
+  /* More than sixteen blocks would be needed: refused, without leaks. */
+  config.vm_heap_bytes = 4608u * 1024u; /* would need 47 blocks */
+  mem.max_allocation = 100u * 1024u;
   assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_NO_MEMORY);
   assert(host == NULL);
   heap_test_balanced(&mem);
   mem.max_allocation = 0u;
+  h2_runtime_deinit(runtime);
+}
+
+static int test_source_effect_open(void *lua_state, void *user) {
+  (void)user;
+  atomic_fetch_add(&s_source_effect_count, 1);
+  lua_pushboolean((lua_State *)lua_state, 1);
+  return 1;
+}
+
+static void test_streamed_close_failure(void) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_lua_host_t *host = NULL;
+  const h2_lua_host_config_t config = {
+      .runtime = runtime,
+      .worker_count = 1u,
+      .max_jobs = 1u,
+      .execution_timeout_ms = 30000u,
+  };
+  const char *paths[] = {"scripts/waiting.lua", "scripts/streamed.lua",
+                         "scripts/empty.lua", "scripts/malformed.lua",
+                         "scripts/early_malformed.lua"};
+  const char effect_source[] = "require('source_effect');return 'done'";
+  memset(s_file_streamed, ' ', sizeof(s_file_streamed));
+  memcpy(s_file_streamed, effect_source, sizeof(effect_source) - 1u);
+  memset(s_file_early_malformed, ' ', sizeof(s_file_early_malformed));
+  s_file_early_malformed[0] = ')';
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(h2_lua_register_module(host, "source_effect", test_source_effect_open,
+                                 NULL) == H2_PAL_OK);
+  {
+    h2_lua_job_id_t job_id = 12345u;
+    size_t close_count = s_test_fs_file.close_count;
+    s_fs_close_result = H2_PAL_ERR_IO;
+    assert(h2_lua_job_submit_path(host, NULL, "unstarted",
+                                 "scripts/streamed.lua", NULL, 0u,
+                                 &job_id) == H2_PAL_ERR_INVALID_STATE);
+    assert(job_id == H2_LUA_JOB_ID_NONE);
+    assert(!s_test_fs_file.is_open);
+    assert(s_test_fs_file.close_count == close_count + 1u);
+    assert(s_test_fs_file.offset == 0u);
+    s_fs_close_result = H2_PAL_OK;
+  }
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  for (size_t use_file = 0u; use_file < 2u; ++use_file) {
+    for (size_t i = 0u; i < sizeof(paths) / sizeof(paths[0]); ++i) {
+      h2_lua_job_id_t job_id = 12345u;
+      size_t close_count = s_test_fs_file.close_count;
+      atomic_store(&s_source_effect_count, 0);
+      s_fs_close_job_id = &job_id;
+      s_fs_close_result = H2_PAL_ERR_IO;
+      /* Close must precede publication, including empty sources and syntax
+       * errors that stop the compiler before it has drained the source. */
+      if (use_file) {
+        assert(h2_lua_job_submit_file(host, NULL, paths[i], NULL, 0u,
+                                     &job_id) == H2_PAL_ERR_IO);
+      } else {
+        assert(h2_lua_job_submit_path(host, NULL, "close-failure", paths[i],
+                                     NULL, 0u, &job_id) == H2_PAL_ERR_IO);
+      }
+      s_fs_close_job_id = NULL;
+      assert(job_id == H2_LUA_JOB_ID_NONE);
+      assert(atomic_load(&s_source_effect_count) == 0);
+      assert(!s_test_fs_file.is_open);
+      assert(s_test_fs_file.close_count == close_count + 1u);
+      s_fs_close_result = H2_PAL_OK;
+      assert(h2_lua_job_submit_path(host, NULL, "after-close-failure",
+                                   "/data/lua/app.lua", NULL, 0u,
+                                   &job_id) == H2_PAL_OK);
+      run_until_terminal(host, job_id, 1000u);
+      assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
+      assert(strcmp(status(host, job_id).message, "path:ok") == 0);
+      assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+    }
+  }
+  /* The same multi-window chunk does produce its side effect when close
+   * succeeds, and close still happens before publication. */
+  h2_lua_job_id_t job_id = H2_LUA_JOB_ID_NONE;
+  s_fs_close_job_id = &job_id;
+  assert(h2_lua_job_submit_path(host, NULL, "effect", "scripts/streamed.lua",
+                               NULL, 0u, &job_id) == H2_PAL_OK);
+  s_fs_close_job_id = NULL;
+  run_until_terminal(host, job_id, 1000u);
+  assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
+  assert(atomic_load(&s_source_effect_count) == 1);
+  {
+    h2_lua_job_id_t refused_id = 12345u;
+    size_t close_count = s_test_fs_file.close_count;
+    assert(h2_lua_job_submit_path(host, NULL, "full", "scripts/streamed.lua",
+                                 NULL, 0u, &refused_id) == H2_PAL_ERR_FULL);
+    assert(refused_id == H2_LUA_JOB_ID_NONE);
+    assert(!s_test_fs_file.is_open);
+    assert(s_test_fs_file.close_count == close_count + 1u);
+    assert(s_test_fs_file.offset == 0u);
+  }
+  assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+  assert(h2_lua_job_submit_path(host, NULL, "early-syntax-error",
+                               "scripts/early_malformed.lua", NULL, 0u,
+                               &job_id) == H2_PAL_OK);
+  assert(status(host, job_id).state == H2_LUA_JOB_FAILED);
+  assert(!s_test_fs_file.is_open);
+  assert(s_test_fs_file.offset < s_test_fs_file.source_size);
+  assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+  h2_lua_host_destroy(host);
   h2_runtime_deinit(runtime);
 }
 
@@ -2389,6 +2548,7 @@ int main(int argc, char **argv) {
     test_display_raster2d(1, "libs/lua/tests/raster2d.lua");
     return 0;
   }
+  test_streamed_close_failure();
   test_reserved_vm_heap();
   test_display_raster2d(0, "libs/lua/tests/raster2d.lua");
   test_display_raster2d(0, "libs/lua/tests/geometry_batches.lua");
@@ -2676,6 +2836,39 @@ int main(int argc, char **argv) {
   run_until_terminal(host, job_id, 16u);
   assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
   assert(strcmp(status(host, job_id).message, "file:ok") == 0);
+  assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+
+  /* A path submit reads through Runtime Filesystem with the caller's chunk
+   * name, takes the path as given, and needs no buffer the size of the source.
+   */
+  assert(h2_lua_job_submit_path(host, NULL, "app", "/data/lua/app.lua", NULL,
+                                0u, &job_id) == H2_PAL_OK);
+  run_until_terminal(host, job_id, 16u);
+  assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
+  assert(strcmp(status(host, job_id).message, "path:ok") == 0);
+  assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+  assert(h2_lua_job_submit_path(host, NULL, "app", "", NULL, 0u, &job_id) ==
+         H2_PAL_ERR_INVALID_ARG);
+  job_id = 12345u;
+  assert(h2_lua_job_submit_path(host, NULL, "app", "/data/lua/missing.lua",
+                                NULL, 0u, &job_id) == H2_PAL_ERR_NOT_FOUND);
+  assert(job_id == H2_LUA_JOB_ID_NONE);
+  assert(h2_lua_job_submit_path(host, NULL, "app", "scripts/oversize.lua", NULL,
+                                0u, &job_id) == H2_PAL_ERR_NO_SPACE);
+  assert(h2_lua_job_submit_path(host, NULL, "app", "scripts/bytecode.lua", NULL,
+                                0u, &job_id) == H2_PAL_ERR_FORMAT);
+  /* A read that fails partway is the caller's failure: no job is created and
+   * the slot it used is free again. */
+  s_fs_fail_read_after = 4;
+  job_id = 12345u;
+  assert(h2_lua_job_submit_path(host, NULL, "app", "/data/lua/app.lua", NULL,
+                                0u, &job_id) == H2_PAL_ERR_IO);
+  assert(job_id == H2_LUA_JOB_ID_NONE);
+  s_fs_fail_read_after = -1;
+  assert(h2_lua_job_submit_path(host, NULL, "app", "/data/lua/app.lua", NULL,
+                                0u, &job_id) == H2_PAL_OK);
+  run_until_terminal(host, job_id, 16u);
+  assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
 
   assert(h2_lua_job_submit_text(host, NULL, "@system-profile.lua",
