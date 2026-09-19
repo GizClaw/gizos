@@ -99,6 +99,8 @@ bazel test //projects/h2loader/libs/web:all
 bazel build //projects/h2loader/targets/npm_package/h2loader:h2loader
 ```
 
+Browser SDK 的 snapshot Release 构建、确定性 tarball 与下游 `npm-index.json` 合同见 [npm Release](/apps/h2loader/npm_release)。该路径与 GitHub Packages 发布并行，共用 package 自身的版本。
+
 Fake、PTY 和 cross-compile 只证明 contract 与 host behavior。最终产品验收仍需在准确 reviewed build 上记录 live discovery、authoritative identity、Stage、reboot、partition copy-back 与最终 checksum/metadata。当前 ESP DevKit 已提供 UART/BLE 实板证据；BK 实板因硬件不可用明确 deferred，不能由 build 结果替代。
 
 BK7258 UART1 provider 的写入 deadline 同时覆盖互斥锁竞争、console FIFO 排空与发送背压；零超时不等待，有部分接收时返回已写字节数，无进展时返回 WOULD_BLOCK。不能调用无截止时间的 log flush 或满 FIFO 忙等发送。
