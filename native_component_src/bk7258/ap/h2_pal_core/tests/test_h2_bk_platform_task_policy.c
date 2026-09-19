@@ -12,7 +12,7 @@ void h2_bk_platform_task_test_reset(void);
 static struct {
   int fail_alloc, fail_sem, fail_create, fail_join, creates, frees;
   int entry_calls, gives, takes;
-  int self_deletes, handle_deletes, self_suspends, handle_suspends;
+  int handle_deletes, self_suspends, handle_suspends;
   int join_on_give, running_reports, state_queries;
   beken_thread_function_t trampoline;
   void *trampoline_ctx;
@@ -61,7 +61,7 @@ SemaphoreHandle_t xSemaphoreCreateBinaryStatic(StaticSemaphore_t *st) {
 BaseType_t xSemaphoreGive(SemaphoreHandle_t x) {
   assert(x == (SemaphoreHandle_t)s_semaphore);
   assert(s.entry_calls == 1 && s.gives == 0);
-  assert(s.self_deletes == 0 && s.handle_deletes == 0 && s.frees == 0);
+  assert(s.handle_deletes == 0 && s.frees == 0);
   s.gives++;
   if (s.join_on_give) {
     /* Model a joiner scheduled the moment completion is published, before the
@@ -69,9 +69,7 @@ BaseType_t xSemaphoreGive(SemaphoreHandle_t x) {
      * handle afterwards, whichever stack region it used. */
     assert(h2_pal_task_join(h2_bk_platform_task_api(), s.pal_task) == H2_PAL_OK);
     s.pal_task = NULL;
-    if (s.handle_deletes != 0) {
-      longjmp(s_worker_exit, 1);
-    }
+    longjmp(s_worker_exit, 1);
   }
   return pdPASS;
 }
@@ -126,25 +124,22 @@ int rtos_core1_create_psram_thread(beken_thread_t *a, uint8_t b, const char *c,
   return create(a, b, c, d, e, f);
 }
 void rtos_delete_thread(beken_thread_t *x) {
-  if (x == NULL) {
-    /* Only a default-region worker self-deletes, and only after publishing
-     * completion. */
-    assert(s.gives == 1 && s.handle_deletes == 0 && s.self_suspends == 0);
-    s.self_deletes++;
-    longjmp(s_worker_exit, 1);
-  }
+  /* No worker may self-delete any more: that is the idle-deferred path being
+   * removed, and it is what the pre-change implementation did. */
+  assert(x != NULL && "a worker must never self-delete");
   /* Join-time reclamation deletes the explicit handle after suspending it and
    * waiting for the scheduler to switch it out, and before the handle is freed. */
   assert(*x == &s_native_task);
   assert(s.takes == 1 && s.handle_suspends == 1 && s.running_reports == 0);
   /* The joiner must have observed the worker leave the running state. */
   assert(s.state_queries >= 1);
-  assert(s.self_deletes == 0 && s.handle_deletes == 0 && s.frees == 0);
+  assert(s.handle_deletes == 0 && s.frees == 0);
   s.handle_deletes++;
 }
 void rtos_suspend_thread(beken_thread_t *x) {
   if (x == NULL) {
-    assert(s.gives == 1 && s.self_deletes == 0);
+    /* The worker parks itself after publishing completion. */
+    assert(s.gives == 1);
     s.self_suspends++;
     longjmp(s_worker_exit, 1);
   }
@@ -214,7 +209,7 @@ static void reset(void) {
 
 /* Run one worker to completion and join it, covering both stack regions and
  * both orderings of completion against the joiner. */
-static void test_completion(const char *name, int psram, int join_on_give,
+static void test_completion(const char *name, int join_on_give,
                             int running_reports) {
   const int expected_queries = running_reports + 1;
   reset();
@@ -241,25 +236,14 @@ static void test_completion(const char *name, int psram, int join_on_give,
     s.pal_task = NULL;
   }
 
+  /* Every worker, in either stack region, is reclaimed by the joiner rather
+   * than queued for an idle task. */
   assert(s.takes == 1 && s.frees == 1);
-  if (psram) {
-    /* A PSRAM worker suspends instead of self-deleting, and the joiner frees
-     * its stack and TCB rather than waiting for an idle task. */
-    assert(s.handle_suspends == 1 && s.handle_deletes == 1);
-    assert(s.self_deletes == 0);
-    assert(s.running_reports == 0 && s.state_queries == expected_queries);
-    /* Without join_on_give the worker parks itself first; otherwise the joiner
-     * deleted it before it ever reached its own suspension. */
-    assert(s.self_suspends == (join_on_give ? 0 : 1));
-  } else {
-    /* A default-region worker keeps idle reclamation, and join must never
-     * touch its already released native handle. */
-    assert(s.self_deletes == 1);
-    assert(s.handle_suspends == 0 && s.handle_deletes == 0);
-    assert(s.state_queries == 0);
-    (void)expected_queries;
-    assert(s.self_suspends == 0);
-  }
+  assert(s.handle_suspends == 1 && s.handle_deletes == 1);
+  assert(s.running_reports == 0 && s.state_queries == expected_queries);
+  /* Without join_on_give the worker parks itself first; otherwise the joiner
+   * deleted it before it ever reached its own suspension. */
+  assert(s.self_suspends == (join_on_give ? 0 : 1));
 }
 
 int main(void) {
@@ -290,16 +274,17 @@ int main(void) {
   s.fail_join = 0;
   assert(api->vtable->join(NULL, t) == H2_PAL_OK && s.frees == 1);
 
-  /* PSRAM: the worker parks itself, then the joiner reclaims it. */
-  test_completion("known", 1, 0, 0);
-  /* PSRAM: the joiner wins the race between completion and self-suspension. */
-  test_completion("known", 1, 1, 0);
-  /* PSRAM: the worker is still running on the other core when suspended. */
-  test_completion("known", 1, 0, 3);
-  test_completion("known", 1, 1, 2);
-  /* Default region: self-deletion survives both orderings. */
-  test_completion("dynamic-high", 0, 0, 0);
-  test_completion("dynamic-high", 0, 1, 0);
+  /* The worker parks itself, then the joiner reclaims it. */
+  test_completion("known", 0, 0);
+  /* The joiner wins the race between completion and self-suspension. */
+  test_completion("known", 1, 0);
+  /* The worker is still running on the other core when the joiner suspends it. */
+  test_completion("known", 0, 3);
+  test_completion("known", 1, 2);
+  /* The default stack region takes the same path. */
+  test_completion("dynamic-high", 0, 0);
+  test_completion("dynamic-high", 1, 0);
+  test_completion("dynamic-high", 0, 2);
 
   reset();
   c = cfg();
