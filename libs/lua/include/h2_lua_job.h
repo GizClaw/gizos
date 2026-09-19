@@ -53,8 +53,27 @@ h2_lua_job_submit_resource(h2_lua_host_t *host, const char *app_id,
                            const char *resource_name, const h2_lua_arg_t *args,
                            size_t arg_count, h2_lua_job_id_t *out_job_id);
 
-/** Loads and submits a confined relative text path through Runtime Filesystem.
+/**
+ * Submits a text chunk Host reads through Runtime Filesystem at `path`, which
+ * is passed to the filesystem exactly as given, and compiles through one small
+ * window Host owns for the call: neither the caller nor Host ever holds the
+ * whole source, so a large app does not need a block its own size on a
+ * fragmented heap. `chunk_name` is the caller's, as with a text submit.
+ *
+ * The limit, embedded-NUL and precompiled-chunk rejections keep the results of
+ * a text submit (`H2_PAL_ERR_NO_SPACE`, `H2_PAL_ERR_INVALID_ARG`,
+ * `H2_PAL_ERR_FORMAT`), decided as the bytes arrive, and a filesystem failure
+ * or a short read aborts the submit and is returned unchanged, leaving no job.
  */
+h2_pal_result_t h2_lua_job_submit_path(h2_lua_host_t *host, const char *app_id,
+                                       const char *chunk_name,
+                                       const char *path,
+                                       const h2_lua_arg_t *args,
+                                       size_t arg_count,
+                                       h2_lua_job_id_t *out_job_id);
+
+/** Loads and submits a confined relative text path through Runtime Filesystem,
+ * streaming it the way `h2_lua_job_submit_path` does. */
 h2_pal_result_t h2_lua_job_submit_file(h2_lua_host_t *host, const char *app_id,
                                        const char *relative_path,
                                        const h2_lua_arg_t *args,

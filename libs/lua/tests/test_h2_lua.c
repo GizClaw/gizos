@@ -38,7 +38,10 @@ static const uint8_t s_file_main[] =
 static const uint8_t s_file_helper[] = "return 'file'";
 static const uint8_t s_file_bytecode[] = {0x1bu, 'L', 'u', 'a'};
 static const uint8_t s_file_malformed[] = "return function(";
+static const uint8_t s_file_absolute[] = "return 'path:ok'";
+static int s_fs_fail_read_after = -1;
 static const test_fs_entry_t s_fs_entries[] = {
+    {"/data/lua/app.lua", s_file_absolute, sizeof(s_file_absolute) - 1u, 0u},
     {"scripts/main.lua", s_file_main, sizeof(s_file_main) - 1u, 0u},
     {"scripts/helper.lua", s_file_helper, sizeof(s_file_helper) - 1u, 0u},
     {"scripts/bytecode.lua", s_file_bytecode, sizeof(s_file_bytecode), 0u},
@@ -84,6 +87,10 @@ static int test_fs_read(void *user, h2_pal_fs_file_t *file_handle, void *data,
   if (file == NULL || out_read == NULL || (length != 0u && data == NULL) ||
       file->source == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
+  }
+  if (s_fs_fail_read_after >= 0 &&
+      file->offset >= (size_t)s_fs_fail_read_after) {
+    return H2_PAL_ERR_IO;
   }
   remaining = file->source_size - file->offset;
   copied = length < remaining ? length : remaining;
@@ -2676,6 +2683,37 @@ int main(int argc, char **argv) {
   run_until_terminal(host, job_id, 16u);
   assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
   assert(strcmp(status(host, job_id).message, "file:ok") == 0);
+  assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+
+  /* A path submit reads through Runtime Filesystem with the caller's chunk
+   * name, takes the path as given, and needs no buffer the size of the source.
+   */
+  assert(h2_lua_job_submit_path(host, NULL, "app", "/data/lua/app.lua", NULL,
+                                0u, &job_id) == H2_PAL_OK);
+  run_until_terminal(host, job_id, 16u);
+  assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
+  assert(strcmp(status(host, job_id).message, "path:ok") == 0);
+  assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+  assert(h2_lua_job_submit_path(host, NULL, "app", "", NULL, 0u, &job_id) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_job_submit_path(host, NULL, "app", "/data/lua/missing.lua",
+                                NULL, 0u, &job_id) == H2_PAL_ERR_NOT_FOUND);
+  assert(h2_lua_job_submit_path(host, NULL, "app", "scripts/oversize.lua", NULL,
+                                0u, &job_id) == H2_PAL_ERR_NO_SPACE);
+  assert(h2_lua_job_submit_path(host, NULL, "app", "scripts/bytecode.lua", NULL,
+                                0u, &job_id) == H2_PAL_ERR_FORMAT);
+  /* A read that fails partway is the caller's failure: no job is created and
+   * the slot it used is free again. */
+  s_fs_fail_read_after = 4;
+  job_id = 12345u;
+  assert(h2_lua_job_submit_path(host, NULL, "app", "/data/lua/app.lua", NULL,
+                                0u, &job_id) == H2_PAL_ERR_IO);
+  assert(job_id == H2_LUA_JOB_ID_NONE);
+  s_fs_fail_read_after = -1;
+  assert(h2_lua_job_submit_path(host, NULL, "app", "/data/lua/app.lua", NULL,
+                                0u, &job_id) == H2_PAL_OK);
+  run_until_terminal(host, job_id, 16u);
+  assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
 
   assert(h2_lua_job_submit_text(host, NULL, "@system-profile.lua",

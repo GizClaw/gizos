@@ -65,7 +65,7 @@ Host 的正常生命周期是：
 1. `h2_lua_host_create()` 借用 Runtime 并分配固定容量；
 2. 在 start 前注册 native module 和 capability；
 3. `h2_lua_host_start()` 冻结 registry 并创建 worker；
-4. 通过 text、compiled resource 或 Runtime Filesystem 提交 job，同时给出决定 `storage` 作用域的 app id（可为 `NULL`）；
+4. 通过 text、compiled resource 或 Runtime Filesystem 提交 job，同时给出决定 `storage` 作用域的 app id（可为 `NULL`）；`h2_lua_job_submit_path()` 接收调用方给的路径与 chunk 名，`h2_lua_job_submit_file()` 接收受限相对路径并自动生成 `@<path>` chunk 名，两者都由 Host 用自己的 4 KiB 窗口把源码分片喂给编译器，调用方和 Host 都不持有整份源码：在碎片化的堆上，一个 200 KiB 的 app 不再需要一块同样大的连续内存。超出 `source_limit_bytes` 返回 `NO_SPACE`、内嵌 NUL 返回 `INVALID_ARG`、预编译 chunk 返回 `FORMAT`，与 text 提交一致，只是改为随字节到达时判定；文件系统失败或读到一半截断中止提交、释放 job 槽位并原样返回该结果，不会产生 job；
 5. App 消费 Runtime Event queue，并通过 `h2_lua_dispatch_runtime_event()` 定向
    投递给一个 live `job_id`；事件入队返回 `H2_PAL_OK`，事件格式错误或 component
    kind 与 Runtime component 不符返回 `H2_PAL_ERR_INVALID_ARG`，未知或已 release 的
