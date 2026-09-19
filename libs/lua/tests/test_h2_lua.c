@@ -2372,14 +2372,29 @@ static void test_reserved_vm_heap(void) {
   h2_lua_host_destroy(host);
   assert(atomic_load(&mem.allocs) > allocs + 3u);
   heap_test_balanced(&mem);
-  /* Blocks below the 256 KiB floor are refused as a whole, without leaks. */
+  /* A heap whose largest blocks are 200 KiB still serves a 1.75 MiB
+   * reservation, which the 256 KiB floor used to refuse outright. */
+  config.vm_heap_bytes = 1792u * 1024u;
   mem.max_allocation = 200u * 1024u;
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(host->vm_heap_reserved == config.vm_heap_bytes);
+  assert(host->vm_heap_chunk_count > 8u);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  /* A single allocation still has to fit one block: 120 KiB does, and the
+   * quota-sized one does not. */
+  heap_test_run(host, "local s=string.rep('x',120*1024);assert(#s==120*1024)",
+                H2_LUA_JOB_SUCCEEDED);
+  heap_test_run(host, "return string.rep('x',300*1024)", H2_LUA_JOB_FAILED);
+  h2_lua_host_destroy(host);
+  heap_test_balanced(&mem);
+  /* Blocks below the 64 KiB floor are refused as a whole, without leaks. */
+  mem.max_allocation = 32u * 1024u;
   assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_NO_MEMORY);
   assert(host == NULL);
   heap_test_balanced(&mem);
-  /* More than eight blocks would be needed: refused, without leaks. */
-  config.vm_heap_bytes = 4608u * 1024u; /* would need 13 blocks */
-  mem.max_allocation = 400u * 1024u;
+  /* More than sixteen blocks would be needed: refused, without leaks. */
+  config.vm_heap_bytes = 4608u * 1024u; /* would need 47 blocks */
+  mem.max_allocation = 100u * 1024u;
   assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_NO_MEMORY);
   assert(host == NULL);
   heap_test_balanced(&mem);
