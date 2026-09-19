@@ -39,7 +39,10 @@ static const uint8_t s_file_helper[] = "return 'file'";
 static const uint8_t s_file_bytecode[] = {0x1bu, 'L', 'u', 'a'};
 static const uint8_t s_file_malformed[] = "return function(";
 static const uint8_t s_file_absolute[] = "return 'path:ok'";
+static const uint8_t s_file_waiting[] =
+    "require('delay').delay_ms(10000);return 'done'";
 static int s_fs_fail_read_after = -1;
+static h2_pal_result_t s_fs_close_result = H2_PAL_OK;
 static const test_fs_entry_t s_fs_entries[] = {
     {"/data/lua/app.lua", s_file_absolute, sizeof(s_file_absolute) - 1u, 0u},
     {"scripts/main.lua", s_file_main, sizeof(s_file_main) - 1u, 0u},
@@ -47,6 +50,7 @@ static const test_fs_entry_t s_fs_entries[] = {
     {"scripts/bytecode.lua", s_file_bytecode, sizeof(s_file_bytecode), 0u},
     {"scripts/malformed.lua", s_file_malformed, sizeof(s_file_malformed) - 1u,
      0u},
+    {"scripts/waiting.lua", s_file_waiting, sizeof(s_file_waiting) - 1u, 0u},
     {"scripts/oversize.lua", NULL, 4097u, 0u},
     {"scripts/invalid_size.lua", NULL, 0u, UINT64_MAX},
 };
@@ -104,7 +108,7 @@ static int test_fs_read(void *user, h2_pal_fs_file_t *file_handle, void *data,
 
 static int test_fs_close(void *user, h2_pal_fs_file_t *file) {
   (void)user;
-  return file == NULL ? H2_PAL_ERR_INVALID_ARG : H2_PAL_OK;
+  return file == NULL ? H2_PAL_ERR_INVALID_ARG : s_fs_close_result;
 }
 
 static int test_fs_stat(void *user, const char *path,
@@ -2402,6 +2406,46 @@ static void test_reserved_vm_heap(void) {
   h2_runtime_deinit(runtime);
 }
 
+static void test_streamed_close_failure(void) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_lua_host_t *host = NULL;
+  const h2_lua_host_config_t config = {
+      .runtime = runtime,
+      .worker_count = 1u,
+      .max_jobs = 1u,
+      .execution_timeout_ms = 30000u,
+  };
+  const char *paths[] = {"scripts/waiting.lua", "scripts/malformed.lua"};
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  for (size_t use_file = 0u; use_file < 2u; ++use_file) {
+    for (size_t i = 0u; i < sizeof(paths) / sizeof(paths[0]); ++i) {
+      h2_lua_job_id_t job_id = 12345u;
+      s_fs_close_result = H2_PAL_ERR_IO;
+      /* Close can fail while the job is still queued or waiting, or after a
+       * compile error. Every case must return the only slot to the caller. */
+      if (use_file) {
+        assert(h2_lua_job_submit_file(host, NULL, paths[i], NULL, 0u,
+                                     &job_id) == H2_PAL_ERR_IO);
+      } else {
+        assert(h2_lua_job_submit_path(host, NULL, "close-failure", paths[i],
+                                     NULL, 0u, &job_id) == H2_PAL_ERR_IO);
+      }
+      assert(job_id == H2_LUA_JOB_ID_NONE);
+      s_fs_close_result = H2_PAL_OK;
+      assert(h2_lua_job_submit_path(host, NULL, "after-close-failure",
+                                   "/data/lua/app.lua", NULL, 0u,
+                                   &job_id) == H2_PAL_OK);
+      run_until_terminal(host, job_id, 1000u);
+      assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
+      assert(strcmp(status(host, job_id).message, "path:ok") == 0);
+      assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+    }
+  }
+  h2_lua_host_destroy(host);
+  h2_runtime_deinit(runtime);
+}
+
 int main(int argc, char **argv) {
   if (argc == 2 && strcmp(argv[1], "--prepared-benchmark") == 0) {
     test_display_raster2d(1, "libs/lua/tests/geometry_batches.lua");
@@ -2411,6 +2455,7 @@ int main(int argc, char **argv) {
     test_display_raster2d(1, "libs/lua/tests/raster2d.lua");
     return 0;
   }
+  test_streamed_close_failure();
   test_reserved_vm_heap();
   test_display_raster2d(0, "libs/lua/tests/raster2d.lua");
   test_display_raster2d(0, "libs/lua/tests/geometry_batches.lua");
@@ -2711,8 +2756,10 @@ int main(int argc, char **argv) {
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
   assert(h2_lua_job_submit_path(host, NULL, "app", "", NULL, 0u, &job_id) ==
          H2_PAL_ERR_INVALID_ARG);
+  job_id = 12345u;
   assert(h2_lua_job_submit_path(host, NULL, "app", "/data/lua/missing.lua",
                                 NULL, 0u, &job_id) == H2_PAL_ERR_NOT_FOUND);
+  assert(job_id == H2_LUA_JOB_ID_NONE);
   assert(h2_lua_job_submit_path(host, NULL, "app", "scripts/oversize.lua", NULL,
                                 0u, &job_id) == H2_PAL_ERR_NO_SPACE);
   assert(h2_lua_job_submit_path(host, NULL, "app", "scripts/bytecode.lua", NULL,

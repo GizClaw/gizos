@@ -4,6 +4,9 @@
 #include <stdio.h>
 #include <string.h>
 
+static h2_pal_result_t release_job(h2_lua_host_t *host,
+                                 h2_lua_job_id_t job_id, int cancel);
+
 h2_pal_result_t h2_lua_job_acquire_audio_speaker(h2_lua_job_t *job) {
   h2_lua_host_t *host;
   h2_pal_result_t result;
@@ -693,6 +696,7 @@ static h2_pal_result_t submit_fs_path(h2_lua_host_t *host, const char *app_id,
   file_source_t source = {0};
   h2_pal_result_t result;
   h2_pal_result_t close_result;
+  *out_job_id = H2_LUA_JOB_ID_NONE;
   if (host->config.runtime->fs == NULL ||
       host->config.runtime->fs->vtable == NULL ||
       host->config.runtime->fs->vtable->stat == NULL ||
@@ -722,6 +726,12 @@ static h2_pal_result_t submit_fs_path(h2_lua_host_t *host, const char *app_id,
   close_result =
       (h2_pal_result_t)h2_pal_fs_close(host->config.runtime->fs, source.file);
   if (result == H2_PAL_OK) {
+    if (close_result != H2_PAL_OK) {
+      /* The caller cannot own a job from a failed submit. Cancel and release
+       * it synchronously, even if its worker has not run it yet. */
+      (void)release_job(host, *out_job_id, 1);
+      *out_job_id = H2_LUA_JOB_ID_NONE;
+    }
     result = close_result;
   }
   return result;
@@ -1061,8 +1071,8 @@ h2_pal_result_t h2_lua_job_get_result(const h2_lua_host_t *host,
   return result;
 }
 
-h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host,
-                                   h2_lua_job_id_t job_id) {
+static h2_pal_result_t release_job(h2_lua_host_t *host,
+                                 h2_lua_job_id_t job_id, int cancel) {
   h2_lua_job_t *job = NULL;
   h2_pal_mutex_t *job_mutex;
   const h2_pal_mem_api_t *mem;
@@ -1085,6 +1095,12 @@ h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host,
   if (result != H2_PAL_OK) {
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
     return result;
+  }
+  if (cancel) {
+    /* Holding the job mutex excludes its worker. A cancel request alone would
+     * leave a queued or waiting job busy until the worker next steps it. */
+    job->cancel_requested = 1;
+    h2_lua_job_finish(job, H2_LUA_JOB_CANCELLED, "job cancelled");
   }
   if (!is_terminal(job->state)) {
     h2_lua_unlock_job(job);
@@ -1113,4 +1129,9 @@ h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host,
   (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
   h2_lua_release_job_capabilities(host, job_id, job_generation);
   return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host,
+                                  h2_lua_job_id_t job_id) {
+  return release_job(host, job_id, 0);
 }
