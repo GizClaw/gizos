@@ -13,6 +13,10 @@ struct h2_pal_task {
     h2_pal_task_entry_t entry;
     void *ctx;
     h2_jieli_sdk_sem_t *done;
+    /* Published by the worker before it runs the entry and read by joining
+     * tasks; a stale NULL only costs a self-join check, and the worker always
+     * observes its own write. */
+    const void *volatile self;
     /* Owned by the joining caller; retain completion across delete retries. */
     int completion_observed;
     /* Unique native identity retained until the joining caller deletes it. */
@@ -22,6 +26,10 @@ struct h2_pal_task {
 static void task_trampoline(void *arg)
 {
     h2_pal_task_t *task = (h2_pal_task_t *)arg;
+    /* Identify this worker before the entry can hand the handle around, so a
+     * self-join is rejected instead of waiting for a completion that only this
+     * task could publish. */
+    task->self = h2_jieli_sdk_task_current();
     task->entry(task->ctx);
     /* Publishing completion hands the task, its semaphore and this handle to
      * the joining caller; nothing may touch them after the give returns. */
@@ -88,6 +96,12 @@ static int task_join(void *user, h2_pal_task_t *task)
     (void)user;
     if (task == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
+    }
+    /* Only the worker publishes completion, so a worker joining itself would
+     * block forever. A handle is unique while its task lives; an unpublished
+     * NULL never matches a running task. */
+    if (task->self != NULL && task->self == h2_jieli_sdk_task_current()) {
+        return H2_PAL_ERR_INVALID_STATE;
     }
     if (!task->completion_observed) {
         if (h2_jieli_sdk_sem_take(task->done, H2_JIELI_SDK_WAIT_FOREVER) != 0) {

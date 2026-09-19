@@ -241,9 +241,9 @@ static void test_task_start_and_join_reclaims_task_and_handle(void)
     CHECK(h2_jieli_fake_live_allocations() == 0);
 }
 
-/* A worker that joins itself would ask the SDK to delete the running task.
- * Completion is published only after the entry returns, so the wait fails
- * first and nothing is deleted or released. */
+/* Only the worker publishes completion, so a worker joining itself would wait
+ * for itself forever. Join must recognise the calling task and reject it
+ * before the wait, deleting and releasing nothing. */
 static const h2_pal_task_api_t *s_self_join_api;
 static h2_pal_task_t *s_self_join_task;
 static int s_self_join_result;
@@ -264,10 +264,13 @@ static void test_task_join_from_the_worker_deletes_nothing(void)
     s_self_join_result = H2_PAL_OK;
     CHECK(h2_pal_task_start(api, NULL, self_join_entry, &flag, &s_self_join_task) == H2_PAL_OK);
     h2_jieli_fake_run_last_task_once();
-    CHECK(s_self_join_result == H2_PAL_ERR_TASK);
+    CHECK(s_self_join_result == H2_PAL_ERR_INVALID_STATE);
     CHECK(h2_jieli_fake_task_delete_calls() == 0);
     CHECK(h2_jieli_fake_live_allocations() == 2);
+    /* The rejection is identity-based, so the same handle still joins from
+     * the task that started the worker. */
     CHECK(h2_pal_task_join(api, s_self_join_task) == H2_PAL_OK);
+    CHECK(h2_jieli_fake_task_delete_calls() == 1);
     CHECK(h2_jieli_fake_live_allocations() == 0);
 }
 

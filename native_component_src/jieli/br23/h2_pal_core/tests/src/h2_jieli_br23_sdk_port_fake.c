@@ -269,8 +269,14 @@ size_t h2_jieli_fake_last_task_stack_bytes(void)
 void h2_jieli_fake_run_last_task_once(void)
 {
     if (s_last_task_entry != NULL) {
+        const void *caller = s_current_task;
         s_task_running = 1;
+        /* The entry runs on its own SDK task. Each PAL context is a distinct
+         * live object, so it stands in for that task's handle and keeps
+         * h2_jieli_sdk_task_current() different from the starting task's. */
+        s_current_task = s_last_task_ctx;
         s_last_task_entry(s_last_task_ctx);
+        s_current_task = caller;
     }
 }
 
