@@ -45,6 +45,12 @@ Runtime-capable launcher 必须在 board Runtime configuration、`h2_runtime_ini
 
 Maintained Runtime scope 是使用 ESP32-S3 与 ESP32-P4 五种 public board layouts 的 H2Loader firmware targets。特定 App 的 route 只进入实际构建它的 target：`bleikcp-speed/*` 只属于 BLEIKCP speed client/server，modem routes 只属于 modem smoke。`standard` 与 ESP32-C5 `compile_only` images 不初始化 Runtime，因此不安装 task policy，也不属于此 contract 的 firmware validation scope。
 
+PSRAM-stack PAL task 的 entry 返回后先发出 completion semaphore，再 suspend 等待 join。`esp_task_join()` 消费 completion 后调用 `vTaskDeleteWithCaps(handle)`，由 joiner 同步回收 worker stack 和 TCB，再销毁 semaphore 和 PAL handle，不为每个结束的 worker 创建临时清理 task。仓库锁定的 ESP-IDF 实现会先 suspend 目标并等待它退出 running 状态，再执行删除和释放，因此 join 可以发生在 completion signal 与 worker 自行 suspend 之间，包括跨 core 的情形。Worker 发出 completion 后不再访问 PAL handle 或 entry context。
+
+Internal-stack task 仍在 completion 后调用 `vTaskDelete(NULL)`，由 idle task 回收原生 stack 和 TCB，避免 delayed join 长时间保留启动所需的 Internal RAM。两种 placement 都要求 caller 最终成功 join；失败的 join 保留 handle 供重试。没有 detached task contract：永不 join 原本就会泄漏 PAL handle 和 semaphore，PSRAM task 现在还会保留 suspended worker 的 stack 和 TCB，不能把它当成受支持的 fire-and-forget 用法。
+
+`//native_component_src/esp-idf6.x/h2_pal_core:task_policy_test` 在 host 上执行真实 trampoline 和 join，覆盖先 join 后完成、先完成后 join、completion 发布时立即 join、Internal self-delete、PSRAM join-delete、清理顺序和失败重试。SDK mock 只验证 PAL ownership；跨 core 的停止与释放依赖锁定的 IDF 实现，持续负载下的 task count、PSRAM 回收和启动资源仍需 target bench 验证。
+
 Netif provider 枚举现有 `esp_netif`，以 implementation index 优先、if-key 兜底
 建立稳定 identity，并映射 IPv4、MAC、DNS 与当前 default。没有 active netif
 时返回空 list/`NOT_FOUND`，不是 `UNSUPPORTED`。Portable `set_default` 只接受
