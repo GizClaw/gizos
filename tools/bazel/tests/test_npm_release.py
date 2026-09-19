@@ -24,8 +24,8 @@ class NpmReleaseTest(unittest.TestCase):
         }), encoding="utf-8")
         (package / "package.json").write_bytes(manifest.read_bytes())
         (package / "lib").mkdir()
-        (package / "lib/index.js").write_text("export default 42;\n", encoding="utf-8")
-        (package / "README.md").write_text("Example\n", encoding="utf-8")
+        (package / "lib/index.js").write_bytes(b"export default 42;\n")
+        (package / "README.md").write_bytes(b"Example\n")
         return package, manifest
 
     def test_reproducible_pack_ignores_source_metadata(self) -> None:
