@@ -372,6 +372,10 @@ void h2_gizclaw_conversation_downlink_hold_internal(
     h2_gizclaw_service_t *service);
 void h2_gizclaw_conversation_downlink_bos_internal(
     h2_gizclaw_service_t *service);
+/* Lift a hold without a stream announcement, for when the press that set it
+ * has ended and holding can only mute the reply. */
+void h2_gizclaw_conversation_downlink_resume_internal(
+    h2_gizclaw_service_t *service);
 #if defined(H2_GIZCLAW_TESTING)
 /* Opus packets the downlink accepted into its ring so far. */
 size_t h2_gizclaw_test_downlink_frames(h2_gizclaw_service_t *service);

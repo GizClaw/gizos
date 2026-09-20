@@ -772,8 +772,8 @@ void h2_gizclaw_conversation_downlink_step_internal(
   downlink_release(service);
 }
 
-/* Pressing push-to-talk: drop downstream audio until the next downstream
- * audio BOS. */
+/* Pressing push-to-talk: drop downstream audio until a downstream audio BOS
+ * or the matching input release. */
 void h2_gizclaw_conversation_downlink_hold_internal(
     h2_gizclaw_service_t *service) {
   h2_gizclaw_conversation_downlink_t *downlink =
@@ -807,6 +807,20 @@ void h2_gizclaw_conversation_downlink_flush_internal(
       h2_gizclaw_service_pcm_discard_downlink_internal(service);
     (void)h2_pal_mutex_unlock(service->config.sync, downlink->decode_lock);
   }
+  downlink_release(service);
+}
+
+/* Resume after discarding the release-time backlog. A missing audio BOS must
+ * not leave media_write_opus silently dropping every later reply packet.
+ * This local gate does not identify the turn of packets still in flight. */
+void h2_gizclaw_conversation_downlink_resume_internal(
+    h2_gizclaw_service_t *service) {
+  h2_gizclaw_conversation_downlink_t *downlink =
+      downlink_acquire_any(service, NULL);
+  if (downlink == NULL)
+    return;
+  atomic_store_explicit(&downlink->waiting_for_bos, false,
+                        memory_order_release);
   downlink_release(service);
 }
 
@@ -2142,15 +2156,20 @@ h2_pal_result_t h2_gizclaw_service_audio_control_internal(
       *out_empty = atomic_load_explicit(
           &conversation->service_request->input_empty, memory_order_acquire);
   }
-  (void)h2_pal_mutex_unlock(service->config.sync, service->audio_mutex);
-  /* Pressing holds back downstream audio until the server starts a new
-   * stream; releasing clears what is buffered at that moment. */
+  /* Keep hold and release flush/resume inside the control transition. Once
+   * audio_mutex is unlocked, a later press may set a new hold that this
+   * release must never clear. Downlink helpers do not acquire audio_mutex. */
   if (rc == H2_PAL_OK && speech == NULL && conversation != NULL) {
-    if (start)
+    if (start) {
       h2_gizclaw_conversation_downlink_hold_internal(service);
-    else if (releasing)
+    } else if (releasing) {
+      /* Discard what the press buffered before accepting what follows, so
+       * the held-back audio cannot surface as the reply's first frames. */
       h2_gizclaw_conversation_downlink_flush_internal(service);
+      h2_gizclaw_conversation_downlink_resume_internal(service);
+    }
   }
+  (void)h2_pal_mutex_unlock(service->config.sync, service->audio_mutex);
   return rc;
 }
 

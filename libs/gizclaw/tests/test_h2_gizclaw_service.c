@@ -10444,6 +10444,168 @@ static void test_conversation_downlink_waits_for_bos(void) {
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 
+typedef struct {
+  h2_gizclaw_service_t *service;
+  const h2_pal_sync_api_t *sync;
+  pthread_t app_thread;
+  unsigned completions;
+  bool restart_on_unlock;
+} downlink_release_test_t;
+static downlink_release_test_t *s_downlink_release;
+
+static h2_pal_result_t downlink_release_connect(h2_gizclaw_client_t *client) {
+  (void)h2_gizclaw_test_replace_event_stream(
+      client, (gzc_event_stream_t *)s_downlink_release);
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t downlink_release_poll(h2_gizclaw_client_t *client,
+                                             int timeout) {
+  (void)client;
+  (void)timeout;
+  h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
+  return H2_PAL_ERR_WOULD_BLOCK;
+}
+
+/* Empty inputs send only control BOS/EOS. No downstream BOS is supplied. */
+static int downlink_release_send(void *user, gzc_event_stream_t *stream,
+                                  const gzc_peer_event_t *event) {
+  assert(stream == (gzc_event_stream_t *)user);
+  assert(event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_BOS ||
+         event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS);
+  return GZC_OK;
+}
+
+static int downlink_release_read(void *user, gzc_event_stream_t *stream,
+                                  int timeout, gzc_peer_event_t *event) {
+  (void)user;
+  (void)stream;
+  (void)timeout;
+  (void)event;
+  return GZC_ERR_WOULD_BLOCK;
+}
+
+static void downlink_release_close(void *user, gzc_event_stream_t *stream) {
+  (void)user;
+  (void)stream;
+}
+
+static void downlink_release_complete(
+    void *user, h2_gizclaw_conversation_t *conversation,
+    const h2_gizclaw_operation_result_t *result) {
+  (void)conversation;
+  downlink_release_test_t *test = user;
+  assert(pthread_equal(pthread_self(), test->app_thread));
+  assert(result->result == H2_PAL_OK);
+  ++test->completions;
+}
+
+static void downlink_release_wait(downlink_release_test_t *test,
+                                   unsigned completions) {
+  for (unsigned i = 0u; i < 2000u && test->completions < completions; ++i) {
+    size_t dispatched = 0u;
+    assert(h2_gizclaw_service_poll(test->service, 8u, &dispatched) == H2_PAL_OK);
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
+  }
+  assert(test->completions == completions);
+}
+
+static h2_pal_result_t downlink_release_unlock(void *user,
+                                                h2_pal_mutex_t *mutex) {
+  downlink_release_test_t *test = s_downlink_release;
+  const h2_pal_result_t rc = test->sync->vtable->unlock_mutex(user, mutex);
+  if (rc == H2_PAL_OK && mutex == test->service->audio_mutex &&
+      pthread_equal(pthread_self(), test->app_thread) &&
+      test->restart_on_unlock) {
+    test->restart_on_unlock = false;
+    /* Model a preemption immediately after release gives up audio_mutex:
+     * dispatch the completed input and start the next one before the earlier
+     * audio_end returns. No sleep-based race or production test hook. */
+    downlink_release_wait(test, 1u);
+    assert(h2_gizclaw_service_audio_start(test->service) == H2_PAL_OK);
+  }
+  return rc;
+}
+
+static void test_conversation_downlink_resumes_on_release(void) {
+  for (unsigned interleave = 0u; interleave < 2u; ++interleave) {
+    test_env_t env;
+    h2_gizclaw_service_t *service = create_service(&env, 4u);
+    downlink_release_test_t test = {
+        .service = service, .sync = service->config.sync,
+        .app_thread = pthread_self()};
+    s_downlink_release = &test;
+    h2_pal_sync_vtable_t sync_vtable = *test.sync->vtable;
+    sync_vtable.unlock_mutex = downlink_release_unlock;
+    const h2_pal_sync_api_t sync = {
+        .user = test.sync->user, .vtable = &sync_vtable};
+    service->config.sync = &sync;
+    static const h2_gizclaw_service_client_ops_t ops = {
+        .connect = downlink_release_connect, .poll = downlink_release_poll};
+    h2_gizclaw_service_test_set_client_ops(&ops);
+    h2_gizclaw_test_set_event_ops(downlink_release_send, downlink_release_read,
+                                  downlink_release_close, &test);
+    static const h2_pal_http_api_t http = {0};
+    static const h2_pal_crypto_api_t crypto = {0};
+    static const h2_pal_webrtc_api_t webrtc = {0};
+    service->client_config.http = &http;
+    service->client_config.crypto = &crypto;
+    service->client_config.webrtc = &webrtc;
+    service->client_config.connect_timeout_ms = 1000;
+    service->client_config.server_endpoint = (h2_gizclaw_str_t){"127.0.0.1:1", 11};
+    service->client_config.private_key = (h2_gizclaw_str_t){"test-key", 8};
+    service->config.client_config = &service->client_config;
+    service->config.on_event = NULL;
+    service->config.prepare = NULL;
+    service->config.cleanup = NULL;
+    service->config.terminal = NULL;
+    const h2_gizclaw_pcm_track_config_t config = {
+        .allocator = service->client_config.allocator,
+        .uplink_capacity = 1024u, .downlink_capacity = 1024u};
+    h2_gizclaw_track_t *track = NULL;
+    assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
+    assert(h2_gizclaw_service_set_track(service, track) == H2_PAL_OK);
+    assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+    h2_gizclaw_conversation_t *conversation = NULL;
+    assert(h2_gizclaw_conversation_create(
+               service, (h2_gizclaw_str_t){"workspace", 9u}, NULL,
+               downlink_release_complete, &test, &conversation) == H2_PAL_OK);
+    const uint8_t packet[3] = {0xf8, 0xff, 0xfe};
+    const uint8_t stale_pcm[2] = {0x12, 0x34};
+    uint8_t pcm[2];
+    assert(h2_gizclaw_service_pcm_write_internal(
+               service, stale_pcm, sizeof(stale_pcm)) == H2_PAL_OK);
+    assert(h2_gizclaw_service_audio_start(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
+           H2_PAL_OK);
+    assert(h2_gizclaw_test_downlink_frames(service) == 0u);
+    test.restart_on_unlock = interleave != 0u;
+    assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
+    assert(h2_gizclaw_pcm_track_read(track, pcm, sizeof(pcm)) ==
+           H2_PAL_ERR_WOULD_BLOCK);
+    assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
+           H2_PAL_OK);
+    const size_t accepted = interleave != 0u ? 0u : 1u;
+    assert(h2_gizclaw_test_downlink_frames(service) == accepted);
+    if (interleave == 0u) {
+      downlink_release_wait(&test, 1u);
+      assert(h2_gizclaw_service_audio_start(service) == H2_PAL_OK);
+    }
+    /* A later press must hold even if it ran before the prior end returned. */
+    assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
+           H2_PAL_OK);
+    assert(h2_gizclaw_test_downlink_frames(service) == accepted);
+    assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
+    downlink_release_wait(&test, 2u);
+    h2_gizclaw_conversation_release(conversation);
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_unset_track(service, track) == H2_PAL_OK);
+    assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+    h2_gizclaw_test_set_event_ops(NULL, NULL, NULL, NULL);
+  }
+}
+
 /* Between turns, with no request running and no application event sink, the
  * network loop still reads downstream events: a text BOS keeps the hold, the
  * next audio BOS clears it. */
@@ -13050,6 +13212,7 @@ int main(int argc, char **argv) {
   test_conversation_accepts_downstream_events();
   test_conversation_downlink_policy();
   test_conversation_downlink_waits_for_bos();
+  test_conversation_downlink_resumes_on_release();
   test_conversation_drains_events_between_turns();
   test_diagnostics_public_invalid_arguments();
   test_speedtest_managed_requests();
