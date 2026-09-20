@@ -280,9 +280,9 @@ Service stop 会取消并丢弃在途请求，快照保留最后确认的模式�
 
 ## 上游 API 同步
 
-`@h2_gizclaw_c_sdk//:gizclaw_core` 中的 RPC registry 与 protobuf payload 是 wire contract 的生成结果。RPC schema 更新时，先把 `MODULE.bazel` 中 `h2_gizclaw_c_sdk` 的 Release archive URL、SRI integrity 与 `strip_prefix` 原子更新到同一个规范版本，再同步已有 `libs/gizclaw` stable wrapper；不能只修改手写 method number、复制旧 protobuf struct，或只更新产品文档。没有 GizOS-owned domain/lifecycle 语义的 RPC（例如 Firmware metadata）直接使用 generic RPC API 与 pinned generated schema，不为相同字段再增加一层 typed wrapper。GizOS 中公开的 RPC method 常量通过 compile-time assertion 与上游 registry 对齐，registry 再次漂移时必须使 build 失败。
+`@gizclaw_c_sdk//:gizclaw_core` 中的 RPC registry 与 protobuf payload 是 wire contract 的生成结果。RPC schema 更新时，先把 `MODULE.bazel` 中 `gizclaw_c_sdk` 的 `bazel_dep` 版本更新到同一个规范版本，再同步已有 `libs/gizclaw` stable wrapper；不能只修改手写 method number、复制旧 protobuf struct，或只更新产品文档。没有 GizOS-owned domain/lifecycle 语义的 RPC（例如 Firmware metadata）直接使用 generic RPC API 与 pinned generated schema，不为相同字段再增加一层 typed wrapper。GizOS 中公开的 RPC method 常量通过 compile-time assertion 与上游 registry 对齐，registry 再次漂移时必须使 build 失败。
 
-Archive 自带 Bazel targets、生成代码和精确的 nanopb runtime；GizOS 通过 `use_repo_rule(http_archive)` 声明可传递给下游 Bzlmod consumer 的 immutable repository，不再注入 BUILD overlay、单独解析 nanopb 或维护 SDK source patch。该 archive 尚未发布到 Bazel Central Registry，因此不能使用只在根 module 生效的 `archive_override` 作为传递依赖。具体版本和完整性校验以 `MODULE.bazel` 中的 `h2_gizclaw_c_sdk` 声明为准。
+Module 自带 Bazel targets、生成代码和精确的 nanopb runtime，不再注入 BUILD overlay、单独解析 nanopb 或维护 SDK source patch。`gizclaw_c_sdk` 发布在 GizClaw 自有的 Bazel registry（`https://static-volc.gizclaw.com/bazel/`）上，`.bazelrc` 通过 `--registry` 把它排在 `https://bcr.bazel.build` 之后，只有 BCR 不提供的 module 才落到它；因为它是正常的 Bzlmod module，下游 consumer 直接 `bazel_dep` 即可，不需要 `archive_override` 或手写 integrity。具体版本以 `MODULE.bazel` 中的 `bazel_dep(name = "gizclaw_c_sdk", ...)` 声明为准，archive 的 SRI 校验由 registry 的 `source.json` 提供。
 
 Wire message 使用 `name` / `*_name`。GizOS wrapper 将 Peer-addressable resource 继续公开为 name；将 occurrence、relationship、history 和 ledger 的 wire name 逐字节映射到既有 public `id` / `*_id`，不做 trim、派生、翻译或 storage-ID 替换。技术性 transport request ID、idempotency key 和 `gear_id` 不属于这层业务 identity 映射：
 

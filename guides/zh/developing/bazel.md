@@ -220,6 +220,14 @@ Repository cache 只保存由 Bazel 按 digest 索引的下载内容，不保存
 
 `kickpi_k4b` config 固定 Linux x86_64 execution platform 与 ARMv7 GNU EABI hard-float target，并固定使用 `-c opt`。Bazel repository rule 从 Arm 官方地址下载 `gcc-arm-8.2-2018.11-x86_64-arm-linux-gnueabihf`，校验 SHA-256 并把完整 compiler/sysroot distribution 注册为 C/C++ toolchain；C 与 C++ builtin include 都来自该 distribution，compile/link action 不读取 `K4B_TOOLCHAIN_ROOT`、ambient `CC` 或 `PATH`。MP4 Player 另外通过 `--repo_env=K4B_CEDARX_INCLUDE_DIR` 与 `--repo_env=K4B_CEDARX_LIB_DIR` 把 `firmwares-devenv` provision 的 CedarX headers 和目标 image shared library closure 映射为 `@h2_k4b_cedarx_sdk`，由 `cc_import` 参与同一 Bazel link graph；AAC-LC decoder 则由 Bazel 使用固定 URL/SHA-256 下载 FDK-AAC 2.0.1 source 并交叉编译 decoder-only source closure。K4B board、launcher 与 CedarX production target 必须声明 Linux/ARMv7 `target_compatible_with`。没有 CedarX env 时真正分析、编译或链接 private CedarX consumer 必须 fail closed。
 
+## GizClaw Bzlmod registry
+
+GizClaw 自有的 Bzlmod module（当前为 `gizclaw_c_sdk`）发布在 `https://static-volc.gizclaw.com/bazel/`，而不是 Bazel Central Registry。`.bazelrc` 用两条 `common --registry` 依次声明 `https://bcr.bazel.build` 和该 registry：`--registry` 会整体替换默认 registry 列表，因此 BCR 必须显式列出并排在前面，只有 BCR 不提供的 module 才落到 GizClaw registry。
+
+这些依赖只通过 `MODULE.bazel` 的 `bazel_dep` 固定版本；archive URL、SRI integrity 和 extracted root 由 registry 的 `modules/<module>/<version>/source.json` 提供，仓库内不再为它们声明 `http_archive`、手写 integrity，也不使用只对 root module 生效的 `archive_override`，因此它们对下游 Bzlmod consumer 仍是正常的传递依赖。两个 registry 的解析结果（包含 not found）由 `MODULE.bazel.lock` 固定，registry 列表或 module 版本变化时必须提交更新后的 lockfile。
+
+Registry 列表属于 root module 配置。使用 GizOS 的下游 root 必须在自己的 `.bazelrc` 中声明同一组 `--registry`；忽略 rc file 的 build（例如 `scripts/bazel/bazel-test-downstream-consumer.sh` 的 fixture root）必须在命令行上传入同一组 `--registry`，不能依赖 GizOS 仓库的 `.bazelrc`。缺少该 registry 时 module resolution 必须直接失败，不允许回退到 archive override 或未校验的下载。
+
 ## CI Cache
 
 Bazel 的 repository cache 固定在 `~/.cache/bazel/repository`，保存带 integrity 的 module、toolchain 和 external repository 下载；disk cache 固定在 `~/.cache/bazel/disk`，保存本机 compile、link、test、foreign C/C++ build 和生成 action 的 content-addressed output。本机默认只使用这两个 cache，不自动探测 CI、hostname 或 GCP credential，也不访问 GCS。
