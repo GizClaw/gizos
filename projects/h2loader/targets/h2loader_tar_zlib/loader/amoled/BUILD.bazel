@@ -1,16 +1,10 @@
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
-load("//tools/bazel:firmware.bzl", "firmware_version")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
-
-firmware_version(
-    name = "version",
-    value = "0.1.0",
-)
 
 esp_target_task_policy(
     default_policy = "4 any 4096 psram",
@@ -96,7 +90,6 @@ h2loader_esp_idf_firmware(
     project_name = "h2loader",
     target = "esp32s3",
     task_policy = ":task_policy",
-    version = ":version",
 )
 
 h2loader_tar_zlib(
@@ -105,6 +98,5 @@ h2loader_tar_zlib(
     firmware = ":firmware",
     image = "loader",
     role = "h2loader",
-    tags = ["firmware-release"],
     target = "esp32s3",
 )

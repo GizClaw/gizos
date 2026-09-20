@@ -105,15 +105,15 @@ class ReleaseTest(unittest.TestCase):
 
     def test_catalog_queries_all_configs_with_opt_in_and_independent_versions(self):
         entries = [catalog_entry(), catalog_entry("p4", target="esp32p4", version="2.0.0"),
-                   catalog_entry("bk", "bk7258", "bk7258"), catalog_entry("jl", "jieli", "wl82")]
+                   catalog_entry("bk", "bk7258", "bk7258")]
         results = [subprocess.CompletedProcess([], 0, query_xml([i["label"] for i in entries]), "")]
         results += [subprocess.CompletedProcess([], 0, json.dumps(item), "") for item in entries]
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(release, "command", side_effect=results) as command:
             release.build_catalog(ROOT, "bazel", Path(directory))
-            self.assertEqual(command.call_count, 5)
+            self.assertEqual(command.call_count, 4)
             self.assertEqual(command.call_args_list[0].args[1][2:4], [release.RELEASE_QUERY, "--output=xml"])
             self.assertIn('attr("tags", "firmware-release",', release.RELEASE_QUERY)
-            for config, call in zip(release.CATALOG_CONFIGS, command.call_args_list[1:]):
+            for config, call in zip(("esp32s3", "esp32p4", "bk7258"), command.call_args_list[1:]):
                 self.assertIn("--config=" + config, call.args[1])
                 self.assertFalse(any("firmware_version=" in arg for arg in call.args[1]))
             data = json.loads((Path(directory) / "firmware-catalog.json").read_text())
@@ -126,7 +126,7 @@ class ReleaseTest(unittest.TestCase):
                 with self.assertRaisesRegex(release.ReleaseError, "exactly one"):
                     release.build_catalog(ROOT, "bazel", Path("unused"))
         results = [subprocess.CompletedProcess([], 0, query_xml([catalog_entry()["label"], catalog_entry("missing")["label"]]), "")]
-        results += [subprocess.CompletedProcess([], 0, json.dumps(catalog_entry()) if i == 0 else "", "") for i in range(4)]
+        results += [subprocess.CompletedProcess([], 0, json.dumps(catalog_entry()) if i == 0 else "", "") for i in range(3)]
         with tempfile.TemporaryDirectory() as directory, mock.patch.object(release, "command", side_effect=results):
             with self.assertRaisesRegex(release.ReleaseError, "coverage"):
                 release.build_catalog(ROOT, "bazel", Path(directory))

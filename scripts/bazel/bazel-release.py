@@ -40,18 +40,16 @@ SLICES = (
     "esp32s3",
     "esp32p4",
     "bk7258",
-    "ac791n",
     "firmware-bundle",
     "package",
     "release-bundle",
 )
 PRODUCERS = frozenset({"catalog", "npm-packages"})
-CATALOG_CONFIGS = ("esp32s3", "esp32p4", "bk7258", "ac791n")
+CATALOG_CONFIGS = ("esp32s3", "esp32p4", "bk7258")
 FIRMWARE_SLICES = {
     "esp32s3": ("esp", "esp32s3"),
     "esp32p4": ("esp", "esp32p4"),
     "bk7258": ("bk7258", "bk7258"),
-    "ac791n": ("jieli", "wl82"),
 }
 
 

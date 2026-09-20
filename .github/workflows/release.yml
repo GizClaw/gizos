@@ -129,18 +129,9 @@ jobs:
           printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
           chmod +x "$RUNNER_TEMP/bazel"
 
-      - name: Export ESP SDK environment
-        run: |
-          . firmware-devenv/export.sh
-          printf 'IDF_PATH=%s\nIDF_TOOLS_PATH=%s\n' "$IDF_PATH" "$IDF_TOOLS_PATH" >> "$GITHUB_ENV"
-
-      - name: Set up AC791N release tools
-        uses: ./.github/actions/setup-ac791n-release
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-
       - name: Build catalog slice
         run: |
+          . firmware-devenv/export.sh
           make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE=catalog RELEASE_BATCH="${{ steps.batch.outputs.value }}" RELEASE_STAGING_DIR=build/release/catalog
 
       - name: Save ESP-IDF tool cache seed
@@ -478,67 +469,9 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  ac791n:
-    name: Release AC791N
-    needs: catalog
-    runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
-    timeout-minutes: 120
-    steps:
-      - name: Check out GizOS
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          fetch-depth: 1
-          persist-credentials: false
-          submodules: false
-
-      - id: app-token
-        name: Create read-only h2vivi token
-        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2
-        with:
-          app-id: ${{ secrets.H2VIVI_GITHUB_APP_ID }}
-          private-key: ${{ secrets.H2VIVI_GITHUB_APP_PRIVATE_KEY }}
-          owner: h2vivi
-
-      - name: Set up AC791N release tools
-        uses: ./.github/actions/setup-ac791n-release
-        with:
-          token: ${{ steps.app-token.outputs.token }}
-
-      - name: Install Bazel
-        run: |
-          curl --fail --location --silent --show-error "https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
-          printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
-          chmod +x "$RUNNER_TEMP/bazel"
-
-      - name: Authenticate read-write Bazel remote cache
-        if: vars.BAZEL_REMOTE_CACHE_URL != ''
-        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
-        with:
-          project_id: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
-          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
-          create_credentials_file: true
-
-      - name: Download catalog
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: release-catalog
-          path: build/release/input
-
-      - name: Build AC791N release slice
-        run: make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE=ac791n RELEASE_BATCH="${{ needs.catalog.outputs.batch }}" RELEASE_INPUT_DIR=build/release/input RELEASE_STAGING_DIR=build/release/ac791n
-
-      - name: Upload AC791N slice
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        with:
-          name: release-ac791n
-          path: build/release/ac791n/
-          if-no-files-found: error
-          retention-days: 14
-
   firmware-bundle:
     name: Release firmware bundle
-    needs: [catalog, esp, bk7258, ac791n]
+    needs: [catalog, esp, bk7258]
     runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
     timeout-minutes: 30
     permissions:
@@ -585,12 +518,6 @@ jobs:
         with:
           name: release-bk7258
           path: build/release/input/bk7258
-
-      - name: Download AC791N inputs
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
-        with:
-          name: release-ac791n
-          path: build/release/input/ac791n
 
       - name: Install Bazel
         run: |

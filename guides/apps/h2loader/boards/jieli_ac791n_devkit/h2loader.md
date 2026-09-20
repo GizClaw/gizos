@@ -1,5 +1,7 @@
 # JieLi AC791N DevKit H2Loader <Badge type="warning" text="WIP" />
 
+本板不在固件发布集合中，canonical `:package` 不标记 `firmware-release`，Release 工作流不提供 AC791N slice。普通 Bazel 构建与 JieLi CI 继续保留。
+
 ## 构建
 
 Linux x86_64（或 macOS 上的 Linux x86_64 dev container）：

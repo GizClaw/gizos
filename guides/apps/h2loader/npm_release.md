@@ -4,7 +4,7 @@
 
 ## Slice 与本地构建
 
-`catalog` 生成批次后，`npm-packages` 与 ESP/BK7258/AC791N 构建并行。npm job 只需要 checkout、Bazel 和已有 remote-cache auth，不依赖 ESP-IDF 或 firmware-devenv。`firmware-bundle` 只接收 catalog 与四个固件 producer，`package` 再将它压成一个 ZIP。`release-npm-bundle` 与 `release-firmware-package` 最后汇入 `release-bundle`；各输入保留独立子目录，避免下载时覆盖重名文件。
+`catalog` 生成批次后，`npm-packages` 与 `esp32s3`、`esp32p4`、`bk7258` 三个固件 slice 构建并行，每个固件 slice 恰好对应一块发布板。npm job 只需要 checkout、Bazel 和已有 remote-cache auth，不依赖 ESP-IDF 或 firmware-devenv。`firmware-bundle` 只接收 catalog 与三个固件 producer，`package` 再将它压成一个 ZIP。`release-npm-bundle` 与 `release-firmware-package` 最后汇入 `release-bundle`；各输入保留独立子目录，避免下载时覆盖重名文件。
 
 在仓库根目录执行：
 
