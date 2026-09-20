@@ -1,15 +1,15 @@
 # npm Release
 
-`@gizclaw/h2loader` 的 npm tarball 与固件属于同一个 GizOS snapshot Release。`.github/workflows/release.yml` 在 `v*` tag push 时发布该 Release；手动 `workflow_dispatch` 只构建 Actions artifact，发布步骤仍只允许 `github.event_name == 'push'`。
+`@gizclaw/h2loader` 的 npm tarball 与固件属于同一个 GizOS snapshot Release。`.github/workflows/release.yml` 只由 `workflow_dispatch` 触发，自动生成 UTC `RELEASE_BATCH=YYYYMMDD-HHMMSS` 与 `v<batch>` tag；不再接受 version 输入。上传 draft Release 后重新下载并逐文件 `cmp`，成功才公开；公开前失败会回滚生成的 draft 和 tag。
 
 ## Slice 与本地构建
 
-`catalog` 解析 Release batch version 后，`npm-packages` 与 ESP/BK7258 构建并行。npm job 只需要 checkout、Bazel 和已有 remote-cache auth，不依赖 ESP-IDF 或 firmware-devenv。`release-npm-bundle` artifact 直接进入最终 `release-bundle`；`firmware-bundle` 显式下载 catalog 和三个固件 producer artifact，不能消费 npm slice。两个 assembly job 都保留 artifact 子目录，避免下载时覆盖重名文件，使后续 duplicate-basename 校验能够拒绝冲突。
+`catalog` 生成批次后，`npm-packages` 与 ESP/BK7258/AC791N 构建并行。npm job 只需要 checkout、Bazel 和已有 remote-cache auth，不依赖 ESP-IDF 或 firmware-devenv。`firmware-bundle` 只接收 catalog 与四个固件 producer，`package` 再将它压成一个 ZIP。`release-npm-bundle` 与 `release-firmware-package` 最后汇入 `release-bundle`；各输入保留独立子目录，避免下载时覆盖重名文件。
 
 在仓库根目录执行：
 
 ```sh
-make bazel-release RELEASE_SLICE=npm-packages RELEASE_VERSION=0.1.0 RELEASE_STAGING_DIR=build/release/npm-packages
+make bazel-release RELEASE_SLICE=npm-packages RELEASE_BATCH=20260920-120000 RELEASE_STAGING_DIR=build/release/npm-packages
 bazel test //tools/bazel:npm_release_test //tools/bazel:release_test //tools/bazel:release_bundle_test //projects/h2loader/targets/npm_package/h2loader:release_tarball_test
 ```
 
@@ -19,12 +19,12 @@ bazel test //tools/bazel:npm_release_test //tools/bazel:release_test //tools/baz
 
 ```sh
 mkdir -p build/release/input
-cp -R build/release/firmware-bundle build/release/input/firmware
+cp -R build/release/package build/release/input/firmware
 cp -R build/release/npm-packages build/release/input/npm
-make bazel-release RELEASE_SLICE=release-bundle RELEASE_VERSION=0.1.0 RELEASE_INPUT_DIR=build/release/input RELEASE_STAGING_DIR=build/release/final
+make bazel-release RELEASE_SLICE=release-bundle RELEASE_BATCH=20260920-120000 RELEASE_INPUT_DIR=build/release/input RELEASE_STAGING_DIR=build/release/final
 ```
 
-`release-bundle` 要求 `firmware-index.json`、固件 bundle 的 `SHA256SUMS` 和 `npm-index.json` 同时存在。它保持原有固件 identity、checksum coverage 和 exact-set 校验，并校验 npm identity、索引中每个 tarball 的 SHA-256 与字节数；多余或缺少任一 asset 都失败。最终重算的顶层 `SHA256SUMS` 覆盖全部固件、npm tarball、`firmware-index.json` 和 `npm-index.json`，但不包含自身。
+`release-bundle` 要求 `firmware-release-v<batch>.zip`、`npm-index.json` 与索引声明的全部 npm tarball。它重新校验 ZIP 内固件 identity、checksum coverage、SHA-256/size 和 exact-set，并校验 npm identity 与每个 tarball 的 SHA-256、字节数；多余或缺少任一 asset 都失败。当前恰好四个顶层资产：`firmware-release-v<batch>.zip`、`gizclaw-h2loader-0.2.2.tgz`、`npm-index.json`、重新计算的 `SHA256SUMS`。顶层校验和仅覆盖前三个文件；`firmware-index.json` 与固件自身的 `SHA256SUMS` 位于 ZIP 内。固件 ZIP 的布局和本地 `package` 命令见 [Firmware Release](./index#firmware-release)。
 
 ## Tarball 合同
 
@@ -38,7 +38,7 @@ make bazel-release RELEASE_SLICE=release-bundle RELEASE_VERSION=0.1.0 RELEASE_IN
 
 ## npm-index.json
 
-这是 `GizClaw/deploy` 的稳定消费合同，沿用 `firmware-index.json` 的 `format: 1` 与 Release batch `version` 约定。JSON object keys 排序、缩进为两个空格、末尾保留一个换行。下例 digest 和 size 仅用于展示字段形状，真实值由 tarball 字节计算：
+这是 `GizClaw/deploy` 的稳定消费合同，保留 `format: 1` 与顶层 `version` 字段，后者现在存放 UTC `RELEASE_BATCH`，以保持现有 npm index 字段合同；固件索引则使用顶层 `batch`。JSON object keys 排序、缩进为两个空格、末尾保留一个换行。下例 digest 和 size 仅用于展示字段形状，真实值由 tarball 字节计算：
 
 ```json
 {
@@ -53,14 +53,14 @@ make bazel-release RELEASE_SLICE=release-bundle RELEASE_VERSION=0.1.0 RELEASE_IN
       "version": "0.2.2"
     }
   ],
-  "version": "0.1.0"
+  "version": "20260920-120000"
 }
 ```
 
 | 字段 | 合同 |
 | --- | --- |
 | `format` | integer `1`；字段名不是 `schema_version` |
-| 顶层 `version` | 与其它 slice 完全相同的 `RELEASE_VERSION`，独立于 npm package version |
+| 顶层 `version` | 与其它 slice 完全相同的 `RELEASE_BATCH`，独立于 npm package version |
 | `package_count` | 正整数，等于 `len(packages)` |
 | `packages` | 非空数组，按 `name` 排序，同一 name 只允许一个 entry |
 | `packages[].name` | package 自己的非空 npm name，保留 scope |

@@ -115,7 +115,7 @@ def pack(package: Path, manifest_path: Path, output: Path) -> Path:
     return tarball
 
 
-def assemble(packages: list[tuple[Path, Path]], output: Path, version: str) -> None:
+def assemble(packages: list[tuple[Path, Path]], output: Path, batch: str) -> None:
     if not packages:
         raise ValueError("npm release must contain at least one package")
     entries = []
@@ -149,7 +149,7 @@ def assemble(packages: list[tuple[Path, Path]], output: Path, version: str) -> N
         shutil.copyfile(source, output / source.name)
     index = {
         "format": 1,
-        "version": version,
+        "version": batch,
         "package_count": len(entries),
         "packages": sorted(entries, key=lambda item: item["name"]),
     }
@@ -169,13 +169,13 @@ def main() -> int:
     bundle_parser = commands.add_parser("bundle")
     bundle_parser.add_argument("--package", action="append", nargs=2, type=Path, default=[])
     bundle_parser.add_argument("--output", required=True, type=Path)
-    bundle_parser.add_argument("--version", required=True)
+    bundle_parser.add_argument("--batch", required=True)
     args = parser.parse_args()
     try:
         if args.command == "pack":
             pack(args.package, args.manifest, args.output)
         else:
-            assemble(args.package, args.output, args.version)
+            assemble(args.package, args.output, args.batch)
     except (OSError, ValueError) as error:
         print(f"error: {error}", file=sys.stderr)
         return 1

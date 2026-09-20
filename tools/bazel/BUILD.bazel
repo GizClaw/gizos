@@ -161,7 +161,7 @@ firmware_version_flag(
 )
 
 firmware_version_flag(
-    name = "release_version",
+    name = "release_batch",
     build_setting_default = "bazel-release-batch",
 )
 
@@ -617,7 +617,10 @@ py_test(
 
 py_test(
     name = "release_test",
-    srcs = ["tests/test_release.py"],
+    srcs = [
+        "release_bundle.py",
+        "tests/test_release.py",
+    ],
     data = ["//:make_command_files"],
     legacy_create_init = 0,
     main = "tests/test_release.py",
