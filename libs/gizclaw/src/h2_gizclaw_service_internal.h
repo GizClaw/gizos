@@ -7,6 +7,7 @@
 #include "h2_gizclaw_speech.h"
 
 #include <stdatomic.h>
+#include <stdint.h>
 
 typedef struct h2_gizclaw_conversation_request
     h2_gizclaw_conversation_request_t;
@@ -375,6 +376,25 @@ void h2_gizclaw_conversation_downlink_bos_internal(
 /* Lift a hold without a stream announcement, for when the press that set it
  * has ended and holding can only mute the reply. */
 void h2_gizclaw_conversation_downlink_resume_internal(
+    h2_gizclaw_service_t *service);
+
+/* Downlink-lifetime ingress counters, wrapping at uint_least32_t's width.
+ * received includes valid zero-length PLC markers, but not invalid arguments
+ * or arrivals without a downlink. Drop reasons follow ingress priority;
+ * CLOSED and later flush/decode losses are not ring-full drops. */
+typedef struct h2_gizclaw_conversation_downlink_counters {
+  uint_least32_t received;
+  uint_least32_t dropped_no_track;
+  uint_least32_t dropped_waiting_for_bos;
+  uint_least32_t dropped_ring_full;
+} h2_gizclaw_conversation_downlink_counters_t;
+
+/* Acquire one downlink reference for all fields, even while its Track is
+ * occupied. NULL/absent downlink returns zeroes. Fields are individually
+ * atomic observations, not a transactional snapshot of concurrent writes.
+ * Hold, BOS, flush and Conversation release do not reset these counters. */
+h2_gizclaw_conversation_downlink_counters_t
+h2_gizclaw_conversation_downlink_counters_internal(
     h2_gizclaw_service_t *service);
 #if defined(H2_GIZCLAW_TESTING)
 /* Opus packets the downlink accepted into its ring so far. */
