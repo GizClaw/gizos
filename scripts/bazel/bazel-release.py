@@ -102,6 +102,13 @@ def validate_batch(batch: str) -> None:
         raise ReleaseError("RELEASE_BATCH must fit the ZIP timestamp range 1980..2107")
 
 
+def zip_timestamp(batch: str) -> tuple[int, ...]:
+    """Return the batch timestamp floored to DOS's two-second resolution."""
+    validate_batch(batch)
+    timestamp = datetime.strptime(batch, "%Y%m%d-%H%M%S")
+    return timestamp.replace(second=timestamp.second // 2 * 2).timetuple()[:6]
+
+
 def resolve_output(root: Path, slice_name: str, value: Path | None) -> Path:
     output = value or Path("build/release") / slice_name
     if output.is_absolute():
@@ -399,7 +406,7 @@ def bundle_assets(index: object, batch: str) -> dict[str, dict[str, object]]:
 
 
 def package_bundle(files: list[Path], output: Path, batch: str) -> None:
-    validate_batch(batch)
+    timestamp = zip_timestamp(batch)
     by_name = {path.name: path for path in files}
     if len(by_name) != len(files):
         raise ReleaseError("release bundle contains duplicate basenames")
@@ -414,10 +421,9 @@ def package_bundle(files: list[Path], output: Path, batch: str) -> None:
         if by_name[name].stat().st_size != asset["size"] or sha256(by_name[name]) != asset["sha256"]:
             raise ReleaseError(f"firmware asset integrity mismatch: {name}")
     stem = f"firmware-release-v{batch}"
-    timestamp = datetime.strptime(batch, "%Y%m%d-%H%M%S")
     with zipfile.ZipFile(output / f"{stem}.zip", "x", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
         for name in sorted(by_name):
-            info = zipfile.ZipInfo(f"{stem}/{name}", date_time=timestamp.timetuple()[:6])
+            info = zipfile.ZipInfo(f"{stem}/{name}", date_time=timestamp)
             info.compress_type = zipfile.ZIP_DEFLATED
             info.create_system = 3
             info.external_attr = 0o100644 << 16
@@ -425,6 +431,7 @@ def package_bundle(files: list[Path], output: Path, batch: str) -> None:
 
 
 def validate_archive(path: Path, batch: str) -> None:
+    timestamp = zip_timestamp(batch)
     prefix = f"firmware-release-v{batch}/"
     try:
         with zipfile.ZipFile(path) as archive:
@@ -437,6 +444,11 @@ def validate_archive(path: Path, batch: str) -> None:
                         or info.create_system != 3 or info.external_attr != 0o100644 << 16
                         or info.compress_type != zipfile.ZIP_DEFLATED):
                     raise ReleaseError(f"invalid firmware ZIP member: {info.filename}")
+                if info.date_time != timestamp:
+                    raise ReleaseError(
+                        f"firmware ZIP member timestamp mismatch: {info.filename}: "
+                        f"expected {timestamp} for batch {batch}, got {info.date_time}"
+                    )
                 by_name[name] = info
             if not {"firmware-index.json", "SHA256SUMS"} <= set(by_name):
                 raise ReleaseError("firmware ZIP must contain index and checksums")

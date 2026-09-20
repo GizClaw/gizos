@@ -125,7 +125,7 @@ ZIP 内只有 `firmware-release-v<batch>/` 前缀下的文件：
 
 原生 package 输出仍采用 `<board>-<image>-<target>` 文件名；`firmware-bundle` 校验原始 metadata、操作类型、SHA-256、size 和完整集合后，按上述发布名复制资产并生成索引。`.firmware.json`、ELF、map 和诊断 archive 不进入 ZIP。AC791N 目前只提供 managed install 包；BK3633 不在发布集合中。
 
-`package` slice 校验固件索引、资产及校验和后，按文件名排序生成 ZIP，使用 `ZIP_DEFLATED`、compression level `9`、batch 时间戳、`create_system = 3` 和 `external_attr = 0o100644 << 16`；输入文件的 mtime、权限、目录和枚举顺序不影响输出。ZIP 时间字段精度为两秒，batch 年份限制为 ZIP 支持的 1980–2107。相同 batch 和相同文件字节产生相同 ZIP。
+`package` slice 校验固件索引、资产及校验和后，按文件名排序生成 ZIP，使用 `ZIP_DEFLATED`、compression level `9`、batch 时间戳、`create_system = 3` 和 `external_attr = 0o100644 << 16`；输入文件的 mtime、权限、目录和枚举顺序不影响输出。ZIP 时间字段精度为两秒，batch 的奇数秒向下取整为偶数秒，batch 本身保持不变；最终组装逐项校验 ZIP member 时间戳必须与该取整值一致。batch 年份限制为 ZIP 支持的 1980–2107。相同 batch 和相同文件字节产生相同 ZIP。
 
 ```sh
 make bazel-release RELEASE_SLICE=catalog RELEASE_BATCH=20260920-120000

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import importlib.util
 import json
 import os
@@ -37,7 +38,7 @@ def query_xml(labels, tag="firmware-release"):
 
 
 class ReleaseTest(unittest.TestCase):
-    def firmware_inputs(self, root):
+    def firmware_inputs(self, root, batch=BATCH):
         item = catalog_entry()
         item["package_manifest"] = dict(format=1, board=item["board"], role=item["role"],
             target=item["target"], version=item["version"], image_size=8, image_sha256="0" * 64)
@@ -51,7 +52,7 @@ class ReleaseTest(unittest.TestCase):
                 asset["flash_offset"] = 0
             item["assets"].append(asset)
         (root / "firmware-index.json").write_text(json.dumps(dict(
-            format=1, batch=BATCH, firmware_count=1, firmware=[item])))
+            format=1, batch=batch, firmware_count=1, firmware=[item])))
         self.write_checksums(root)
         return list(root.iterdir())
 
@@ -180,6 +181,41 @@ class ReleaseTest(unittest.TestCase):
                     self.assertEqual(info.compress_type, zipfile.ZIP_DEFLATED)
             release.validate_archive(first / ARCHIVE, BATCH)
 
+    def test_zip_odd_second_batch_round_trip(self):
+        for batch, seconds in (("20260920-120001", 0), ("20260920-120059", 58)):
+            with self.subTest(batch=batch), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                inputs = root / "input"
+                inputs.mkdir()
+                release.package_bundle(self.firmware_inputs(inputs, batch), root, batch)
+                path = root / f"firmware-release-v{batch}.zip"
+                with zipfile.ZipFile(path) as archive:
+                    for info in archive.infolist():
+                        self.assertEqual(info.date_time, (2026, 9, 20, 12, 0, seconds))
+                release.validate_archive(path, batch)
+
+    def test_zip_rejects_tampered_member_timestamps(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            files = self.final_inputs(root)
+            path = root / ARCHIVE
+            with zipfile.ZipFile(path) as archive:
+                contents = [(info, archive.read(info)) for info in archive.infolist()]
+            for member, _ in contents:
+                with self.subTest(member=member.filename):
+                    with zipfile.ZipFile(path, "w") as archive:
+                        for original, data in contents:
+                            info = copy.copy(original)
+                            if info.filename == member.filename:
+                                info.date_time = (2026, 9, 20, 12, 0, 2)
+                            archive.writestr(info, data)
+                    with self.assertRaisesRegex(release.ReleaseError, "ZIP member timestamp mismatch") as error:
+                        release.validate_archive(path, BATCH)
+                    self.assertIn(member.filename, str(error.exception))
+                    self.assertIn(BATCH, str(error.exception))
+                    with self.assertRaisesRegex(release.ReleaseError, "ZIP member timestamp mismatch"):
+                        release.assemble_final(files, root / "output", BATCH)
+
     def test_package_rejects_checksum_coverage_tamper_and_extra_inputs(self):
         for mutation in ("missing-checksum", "tamper", "extra", "batch", "release-name", "missing-asset"):
             with self.subTest(mutation=mutation), tempfile.TemporaryDirectory() as directory:
@@ -258,7 +294,7 @@ class ReleaseTest(unittest.TestCase):
                             data = json.dumps(index).encode()
                         archive.writestr(info, data)
                     if mutation in {"extra", "duplicate", "traversal"}:
-                        info = zipfile.ZipInfo(ARCHIVE[:-4] + "/" + {"extra": "extra", "duplicate": "SHA256SUMS", "traversal": "../escape"}[mutation])
+                        info = zipfile.ZipInfo(ARCHIVE[:-4] + "/" + {"extra": "extra", "duplicate": "SHA256SUMS", "traversal": "../escape"}[mutation], date_time=(2026, 9, 20, 12, 0, 0))
                         info.create_system = 3; info.external_attr = 0o100644 << 16; info.compress_type = zipfile.ZIP_DEFLATED
                         archive.writestr(info, b"extra")
                 with self.assertRaises(release.ReleaseError):
