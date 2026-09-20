@@ -432,7 +432,7 @@ cc_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["@h2_gizclaw_c_sdk//:gizclaw_core"],
+    deps = ["@gizclaw_c_sdk//:gizclaw_core"],
 )
 
 cc_test(
