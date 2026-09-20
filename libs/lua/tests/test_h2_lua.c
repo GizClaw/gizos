@@ -1780,6 +1780,25 @@ static void test_display_string_regions(void) {
   (void)run_display_script_size(host, "@string-region-full.lua", full, sizeof(full)-1, 240, 240);
   for (size_t i = 0; i < 240u * 240u; ++i)
     assert(s_test_display_fixture.pixels[i] == 0x1212);
+  /* Independently encoded literal block covers every one of the 85 digits. */
+  static const uint8_t alphabet_script[] =
+      "local d=require('display');local enc='rgb565be-lz4-b85';local data="
+      "\"00000203@c;4vNs`+nZMG6yr0q6;$RusH|45PAHh;(wTBGbpk=i3{wf<V8>@|MJ5Nx&nN08Yfe#a15qU$t}*&=JS{YIkeG=0VoSh"
+      "W2{kJuq<#t&Gb>N9-UA!@VyMULt-e8mn|p!`LS*C1)K4p*S*GJC`zX|nr7jn*=I#0^%T=tPayA84`qR-foGdczE8vHC-d)gF4o3{"
+      "{@zFpSk6XR!G~p64)m!V6Te`9h1-9cID{RGsE8c+?$culPZV<}Y}`3R9f;L5kBHWv&WSoaHWez#L_+_dto#E_c8QQk&#JiP9Tnt@"
+      "cuz<Sll;2xP7HKZwy9cE1Qwn&T{p(Hdi{^*);8EOovIP^|SnhtL^fz6Vg5;wyB}8DgvSJ%-{dbiD>onDjk{&lq8<22YsbDs#LTVX"
+      "E^yh0ZE-yai5|;5>!S7htLKPM6>*a=Qdzsq#C7%@%UI1WlITD1^-xU#Rgqmft9Gx&ut8@j8Rd6<)dnOqJdzaLg56r|>y~-Y0Om0!"
+      "x(eIfBa+U8Vv{l-(w8xD;Kc?>K?VCU3X_N|W3;fyxtHrS3|T+$C<e09>W+H-O0!ZnpqQlG`MJ$r4+n?KYCzByG0;NTlsHf5;J9w*"
+      "N?x+9Pbp5n7|{HGbM7Y_<MJknA;n#}HYf{zs76B5Sk|S)%JSea0dH\";"
+      "local r=d.region_from_string(16,16,data,enc);d.draw_region(r,0,0);d.present();"
+      "local alphabet='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+-;<=>?@^_`{|}~';for c=0,255 do local ch=string.char(c);if not alphabet:find(ch,1,true) then local bad=data:sub(1,8)..ch..data:sub(10);assert(not pcall(d.region_from_string,16,16,bad,enc)) end end;";
+  (void)run_display_script_size(host, "@base85-alphabet.lua", alphabet_script,
+                                sizeof(alphabet_script)-1, 16, 16);
+  for (size_t i = 0; i < 256; ++i) {
+    unsigned high = ((2*i)*73+((2*i)/7)*19)%256;
+    unsigned low = ((2*i+1)*73+((2*i+1)/7)*19)%256;
+    assert(s_test_display_fixture.pixels[i] == (uint16_t)(high << 8 | low));
+  }
   h2_lua_host_destroy(host);
   h2_runtime_deinit(runtime);
 }

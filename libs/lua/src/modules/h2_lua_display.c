@@ -2877,9 +2877,26 @@ typedef struct display_b85_reader {
 } display_b85_reader_t;
 
 static unsigned display_b85_byte(display_b85_reader_t *r) {
-  static const char alphabet[] =
-      "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
-      "!#$%&()*+-;<=>?@^_`{|}~";
+  /* Python b85 digits indexed by unsigned input byte; 255 rejects all
+   * non-alphabet bytes, including NUL and bytes above ASCII. Read-only storage. */
+  static const uint8_t digits[256] = {
+      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+      255,  62, 255,  63,  64,  65,  66, 255,  67,  68,  69,  70, 255,  71, 255, 255,
+        0,   1,   2,   3,   4,   5,   6,   7,   8,   9, 255,  72,  73,  74,  75,  76,
+       77,  10,  11,  12,  13,  14,  15,  16,  17,  18,  19,  20,  21,  22,  23,  24,
+       25,  26,  27,  28,  29,  30,  31,  32,  33,  34,  35, 255, 255, 255,  78,  79,
+       80,  36,  37,  38,  39,  40,  41,  42,  43,  44,  45,  46,  47,  48,  49,  50,
+       51,  52,  53,  54,  55,  56,  57,  58,  59,  60,  61,  81,  82,  83,  84, 255,
+      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+  };
   if (r->position == r->length)
     luaL_error(r->state, "truncated region LZ4 block");
   unsigned slot = (unsigned)(r->position % 4);
@@ -2887,10 +2904,10 @@ static unsigned display_b85_byte(display_b85_reader_t *r) {
     uint32_t word = 0;
     const char *group = r->text + (r->position / 4) * 5;
     for (int i = 0; i < 5; ++i) {
-      const char *digit = group[i] ? strchr(alphabet, group[i]) : NULL;
-      if (digit == NULL || word > (UINT32_MAX - (unsigned)(digit - alphabet)) / 85)
+      unsigned digit = digits[(unsigned char)group[i]];
+      if (digit == 255 || word > (UINT32_MAX - digit) / 85)
         luaL_error(r->state, "invalid region base85 group");
-      word = word * 85 + (unsigned)(digit - alphabet);
+      word = word * 85 + digit;
     }
     r->word = word;
     size_t remaining = r->length - r->position;
