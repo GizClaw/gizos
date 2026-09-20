@@ -44,7 +44,22 @@ class ReleaseTest(unittest.TestCase):
             f"{release.sha256(index)}  {index.name}\n",
             encoding="ascii",
         )
-        return [asset, index, checksums]
+        tarball = root / "scope-example-2.3.4.tgz"
+        tarball.write_bytes(b"npm tarball fixture")
+        npm_index = root / "npm-index.json"
+        npm_index.write_text(json.dumps({
+            "format": 1,
+            "version": "1.2.3",
+            "package_count": 1,
+            "packages": [{
+                "name": "@scope/example",
+                "version": "2.3.4",
+                "tarball": tarball.name,
+                "sha256": release.sha256(tarball),
+                "size": tarball.stat().st_size,
+            }],
+        }), encoding="utf-8")
+        return [asset, index, checksums, tarball, npm_index]
 
     def test_retired_desktop_slice_is_not_registered(self):
         self.assertNotIn("desktop-" + "macos-arm64", release.SLICES)
@@ -285,7 +300,155 @@ class ReleaseTest(unittest.TestCase):
             checksums = (output / "SHA256SUMS").read_text(encoding="ascii")
             self.assertIn("firmware-index.json", checksums)
             self.assertIn("board.update.tar.zlib", checksums)
+            self.assertIn("npm-index.json", checksums)
+            self.assertIn("scope-example-2.3.4.tgz", checksums)
             self.assertNotIn("SHA256SUMS\n", checksums)
+            release.validate_checksums(
+                output / "SHA256SUMS",
+                {path.name: path for path in output.iterdir()},
+                {"firmware-index.json", "board.update.tar.zlib", "npm-index.json", "scope-example-2.3.4.tgz"},
+            )
+
+    def test_final_bundle_rejects_missing_npm_index(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            files = self.final_inputs(root)
+            with self.assertRaisesRegex(release.ReleaseError, "incomplete.*npm-index.json"):
+                release.assemble_final([path for path in files if path.name != "npm-index.json"], root / "output", "1.2.3")
+
+    def test_final_slice_merges_separate_artifacts_and_multiple_packages(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            inputs = root / "input"
+            inputs.mkdir()
+            files = self.final_inputs(inputs)
+            for path in files:
+                artifact = inputs / (
+                    "release-npm-bundle"
+                    if path.name == "npm-index.json" or path.suffix == ".tgz"
+                    else "release-firmware-bundle"
+                )
+                artifact.mkdir(exist_ok=True)
+                path.rename(artifact / path.name)
+            npm = inputs / "release-npm-bundle"
+            second = npm / "zebra-4.5.6.tgz"
+            second.write_bytes(b"second package")
+            index_path = npm / "npm-index.json"
+            index = json.loads(index_path.read_text())
+            index["packages"].append({
+                "name": "zebra",
+                "version": "4.5.6",
+                "tarball": second.name,
+                "sha256": release.sha256(second),
+                "size": second.stat().st_size,
+            })
+            index["package_count"] = 2
+            index_path.write_text(json.dumps(index))
+            output = root / "output"
+            release.run_slice(
+                root, "unused-bazel", "release-bundle", "1.2.3", inputs, output
+            )
+            expected = {
+                "firmware-index.json", "board.update.tar.zlib", "npm-index.json",
+                "scope-example-2.3.4.tgz", "zebra-4.5.6.tgz",
+            }
+            self.assertEqual({path.name for path in output.iterdir()}, expected | {"SHA256SUMS"})
+            release.validate_checksums(
+                output / "SHA256SUMS",
+                {path.name: path for path in output.iterdir()},
+                expected,
+            )
+            # A second partial checksum file must not overwrite the firmware one.
+            (npm / "SHA256SUMS").write_text("unexpected npm checksums\n")
+            with self.assertRaisesRegex(release.ReleaseError, "duplicate.*SHA256SUMS"):
+                release.run_slice(
+                    root, "unused-bazel", "release-bundle", "1.2.3", inputs, output
+                )
+            # Input rejection happens before clearing a previously valid staging dir.
+            self.assertEqual({path.name for path in output.iterdir()}, expected | {"SHA256SUMS"})
+
+    def test_final_bundle_still_requires_exact_firmware_checksum_coverage(self):
+        for checksum_asset in ("board.update.tar.zlib", "npm-index.json"):
+            with self.subTest(asset=checksum_asset), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                files = self.final_inputs(root)
+                checksums = root / "SHA256SUMS"
+                lines = checksums.read_text().splitlines(keepends=True)
+                if checksum_asset == "board.update.tar.zlib":
+                    checksums.write_text("".join(line for line in lines if checksum_asset not in line))
+                else:
+                    checksums.write_text("".join(lines) + f"{release.sha256(root / checksum_asset)}  {checksum_asset}\n")
+                with self.assertRaisesRegex(release.ReleaseError, "checksum coverage differs"):
+                    release.assemble_final(files, root / "output", "1.2.3")
+
+    def test_final_bundle_rejects_corrupt_npm_tarball(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            files = self.final_inputs(root)
+            tarball = root / "scope-example-2.3.4.tgz"
+            # Preserve size so this exercises the digest check specifically.
+            tarball.write_bytes(b"x" * tarball.stat().st_size)
+            with self.assertRaisesRegex(release.ReleaseError, "tarball integrity mismatch"):
+                release.assemble_final(files, root / "output", "1.2.3")
+
+    def test_final_bundle_rejects_missing_npm_tarball(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            files = self.final_inputs(root)
+            with self.assertRaisesRegex(release.ReleaseError, "inputs differ: missing=.*scope-example"):
+                release.assemble_final([path for path in files if path.suffix != ".tgz"], root / "output", "1.2.3")
+
+    def test_final_bundle_rejects_invalid_npm_index_identity(self):
+        for key, value in (("format", 2), ("format", True), ("version", "2.0.0"), ("package_count", 2), ("package_count", True), ("packages", [])):
+            with self.subTest(key=key, value=value), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                files = self.final_inputs(root)
+                path = root / "npm-index.json"
+                data = json.loads(path.read_text())
+                data[key] = value
+                path.write_text(json.dumps(data))
+                with self.assertRaisesRegex(release.ReleaseError, "npm index identity"):
+                    release.assemble_final(files, root / "output", "1.2.3")
+
+    def test_final_bundle_rejects_invalid_npm_entry(self):
+        for key, value in (
+            ("tarball", "dir/package.tgz"), ("tarball", "../package.tgz"),
+            ("tarball", "dir\\package.tgz"), ("tarball", ""),
+            ("sha256", "F" * 64), ("sha256", "0" * 63),
+            ("sha256", "0" * 64), ("size", 1),
+            ("size", True), ("size", 0), ("size", -1), ("size", 2.5),
+            ("name", ""), ("name", "  "), ("version", ""),
+        ):
+            with self.subTest(key=key, value=value), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                files = self.final_inputs(root)
+                path = root / "npm-index.json"
+                data = json.loads(path.read_text())
+                data["packages"][0][key] = value
+                path.write_text(json.dumps(data))
+                with self.assertRaises(release.ReleaseError):
+                    release.assemble_final(files, root / "output", "1.2.3")
+
+    def test_final_bundle_rejects_duplicate_or_unsorted_npm_packages(self):
+        for name, tarball in (("@scope/example", "second.tgz"), ("@scope/another", "second.tgz"), ("@scope/zebra", "scope-example-2.3.4.tgz")):
+            with self.subTest(name=name, tarball=tarball), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                files = self.final_inputs(root)
+                path = root / "npm-index.json"
+                data = json.loads(path.read_text())
+                data["packages"].append({**data["packages"][0], "name": name, "tarball": tarball})
+                data["package_count"] = 2
+                path.write_text(json.dumps(data))
+                with self.assertRaisesRegex(release.ReleaseError, "unique names|duplicate npm"):
+                    release.assemble_final(files, root / "output", "1.2.3")
+
+    def test_npm_slice_is_a_producer_and_rejects_input(self):
+        self.assertIn("npm-packages", release.SLICES)
+        self.assertIn("npm-packages", release.PRODUCERS)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaisesRegex(release.ReleaseError, "does not accept"):
+                release.run_slice(root, "bazel", "npm-packages", "1.2.3", root, root / "output")
 
     def test_final_bundle_rejects_unexpected_input(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -317,6 +480,7 @@ class ReleaseTest(unittest.TestCase):
     def test_final_bundle_rejects_bk3633_and_unexpected_inputs(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            files = self.final_inputs(root)
             index = root / "firmware-index.json"
             index.write_text(
                 json.dumps({
@@ -341,7 +505,7 @@ class ReleaseTest(unittest.TestCase):
                 "invalid entry",
             ):
                 release.assemble_final(
-                    [index, checksums],
+                    files,
                     root / "output",
                     "1.2.3",
                 )

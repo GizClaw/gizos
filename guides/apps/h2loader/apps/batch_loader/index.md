@@ -30,3 +30,5 @@ bazel run //projects/h2loader/targets/npm_package/h2loader:h2loader.publish -- -
 ```
 
 `package.json` 是独立版本源。相关变更进入 `main` 后，发布 workflow 只发布 registry 中尚不存在的版本。npm package 仅支持 Browser/Web Serial，不提供 Node.js serial-port runtime。
+
+同一 package 也通过 [npm Release](/apps/h2loader/npm_release) slice 生成确定性 `.tgz` 和 `npm-index.json`，与固件一起进入 GizOS snapshot Release，并由顶层 `SHA256SUMS` 覆盖。`h2loader-npm-publish.yml` 的 GitHub Packages 发布继续并行保留。
