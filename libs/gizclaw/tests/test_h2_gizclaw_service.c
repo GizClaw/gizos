@@ -10444,6 +10444,39 @@ static void test_conversation_downlink_waits_for_bos(void) {
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 
+/* Releasing the input lifts the hold on its own. A reply whose stream
+ * announcement is never read would otherwise be dropped for the whole turn
+ * with every write reporting success, which is silence the device cannot
+ * distinguish from a server that said nothing. */
+static void test_conversation_downlink_resumes_on_release(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_service(&env, 2u);
+  h2_gizclaw_conversation_t *conversation = NULL;
+  assert(h2_gizclaw_conversation_create(
+             service, (h2_gizclaw_str_t){"workspace", 9u}, NULL, NULL, NULL,
+             &conversation) == H2_PAL_OK);
+  const uint8_t packet[3] = {0xf8, 0xff, 0xfe};
+  h2_gizclaw_conversation_downlink_hold_internal(service);
+  assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_test_downlink_frames(service) == 0u);
+  /* No BOS arrives; the release alone has to make the reply audible. */
+  h2_gizclaw_conversation_downlink_flush_internal(service);
+  h2_gizclaw_conversation_downlink_resume_internal(service);
+  assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_test_downlink_frames(service) == 1u);
+  /* The next press holds again, so a resume is not a permanent opt-out. */
+  h2_gizclaw_conversation_downlink_hold_internal(service);
+  assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_test_downlink_frames(service) == 1u);
+  h2_gizclaw_conversation_downlink_flush_internal(service);
+  h2_gizclaw_conversation_release(conversation);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
 /* Between turns, with no request running and no application event sink, the
  * network loop still reads downstream events: a text BOS keeps the hold, the
  * next audio BOS clears it. */
@@ -13050,6 +13083,7 @@ int main(int argc, char **argv) {
   test_conversation_accepts_downstream_events();
   test_conversation_downlink_policy();
   test_conversation_downlink_waits_for_bos();
+  test_conversation_downlink_resumes_on_release();
   test_conversation_drains_events_between_turns();
   test_diagnostics_public_invalid_arguments();
   test_speedtest_managed_requests();

@@ -810,6 +810,23 @@ void h2_gizclaw_conversation_downlink_flush_internal(
   downlink_release(service);
 }
 
+/* Releasing push-to-talk also ends the reason for holding: the peer has
+ * stopped speaking and the buffer was just discarded, so whatever arrives
+ * next is the reply. Waiting for a BOS beyond this point makes one missed
+ * or unread stream announcement mute the whole turn, silently -- the drop
+ * in media_write_opus reports success -- and nothing else ever clears the
+ * hold. A turn that is already over cannot echo. */
+void h2_gizclaw_conversation_downlink_resume_internal(
+    h2_gizclaw_service_t *service) {
+  h2_gizclaw_conversation_downlink_t *downlink =
+      downlink_acquire_any(service, NULL);
+  if (downlink == NULL)
+    return;
+  atomic_store_explicit(&downlink->waiting_for_bos, false,
+                        memory_order_release);
+  downlink_release(service);
+}
+
 /* The server announced a downstream audio stream: its audio plays. */
 void h2_gizclaw_conversation_downlink_bos_internal(
     h2_gizclaw_service_t *service) {
@@ -2146,10 +2163,14 @@ h2_pal_result_t h2_gizclaw_service_audio_control_internal(
   /* Pressing holds back downstream audio until the server starts a new
    * stream; releasing clears what is buffered at that moment. */
   if (rc == H2_PAL_OK && speech == NULL && conversation != NULL) {
-    if (start)
+    if (start) {
       h2_gizclaw_conversation_downlink_hold_internal(service);
-    else if (releasing)
+    } else if (releasing) {
+      /* Discard what the press buffered before accepting what follows, so
+       * the held-back audio cannot surface as the reply's first frames. */
       h2_gizclaw_conversation_downlink_flush_internal(service);
+      h2_gizclaw_conversation_downlink_resume_internal(service);
+    }
   }
   return rc;
 }
