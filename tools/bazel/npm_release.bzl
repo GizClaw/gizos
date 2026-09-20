@@ -54,7 +54,7 @@ def _bundle_impl(ctx):
     args = ctx.actions.args()
     args.add("bundle")
     args.add("--output", output.path)
-    args.add("--version", ctx.attr._release_version[FirmwareVersionInfo].value)
+    args.add("--batch", ctx.attr._release_batch[FirmwareVersionInfo].value)
     inputs = []
     for dep in ctx.attr.packages:
         info = dep[NpmReleaseInfo]
@@ -75,7 +75,7 @@ def _bundle_impl(ctx):
 npm_release_bundle = rule(
     implementation = _bundle_impl,
     attrs = {
-        "_release_version": attr.label(default = "//tools/bazel:release_version"),
+        "_release_batch": attr.label(default = "//tools/bazel:release_batch"),
         "_tool": attr.label(
             default = "//tools/bazel:npm_release_tool",
             cfg = "exec",

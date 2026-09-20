@@ -120,13 +120,13 @@ class NpmReleaseTest(unittest.TestCase):
                 tarball = pack(package, manifest, root / f"tarball-{index}")
                 packages.append((tarball.parent, manifest))
             output = root / "output"
-            assemble(packages, output, "2026.9.20")
+            assemble(packages, output, "20260920-120000")
             text = (output / "npm-index.json").read_text()
             index = json.loads(text)
             self.assertEqual(text, json.dumps(index, indent=2, sort_keys=True) + "\n")
             self.assertEqual(set(index), {"format", "version", "package_count", "packages"})
             self.assertEqual(index["format"], 1)
-            self.assertEqual(index["version"], "2026.9.20")
+            self.assertEqual(index["version"], "20260920-120000")
             self.assertEqual(index["package_count"], 2)
             self.assertEqual([item["name"] for item in index["packages"]], ["@scope/alpha", "zebra"])
             self.assertEqual([item["version"] for item in index["packages"]], ["2.3.4", "1.0.0-rc.1"])
@@ -136,6 +136,19 @@ class NpmReleaseTest(unittest.TestCase):
                 data = (output / item["tarball"]).read_bytes()
                 self.assertEqual(item["sha256"], hashlib.sha256(data).hexdigest())
                 self.assertEqual(item["size"], len(data))
+
+    def test_batch_changes_only_index_identity(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            package, manifest = self.package(root)
+            tarball = pack(package, manifest, root / "tarball")
+            for batch in ("20260920-120000", "20260921-120000"):
+                output = root / batch
+                assemble([(tarball.parent, manifest)], output, batch)
+                index = json.loads((output / "npm-index.json").read_text())
+                self.assertEqual(index["version"], batch)
+                self.assertEqual(index["packages"][0]["version"], "2.3.4")
+                self.assertEqual((output / tarball.name).read_bytes(), tarball.read_bytes())
 
     def test_bundle_rejects_empty_duplicate_and_extra_inputs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
