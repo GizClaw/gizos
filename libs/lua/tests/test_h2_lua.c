@@ -1680,6 +1680,110 @@ static int test_region_open(void *lua_state, void *user) {
   return 1;
 }
 
+
+static void test_display_string_regions(void) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_lua_host_t *host = create_unstarted_host(runtime);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  /* Base85 fixtures encode small, independently specified LZ4 byte sequences:
+   * primary colors; malformed lengths/offsets; offset-1 overlap and extensions. */
+  static const uint8_t script[] =
+      "local d=require('display');"
+      "local f=d.region_from_string;"
+      "local enc='rgb565be-lz4-b85';"
+      "local raw=string.char(248,0,7,224,0,31,255,255);"
+      "local function bad(w,h,s,e) assert(not pcall(f,w,h,s,e)) end;"
+      "for _,n in ipairs({0,-1,4097,4294967296,1.5}) do bad(n,1,raw);"
+      "bad(1,n,raw) end;"
+      "bad(2,2,12);"
+      "bad(2,2,raw,'unknown');"
+      "bad(2,2,raw,'rgb565be\\0extra');"
+      "bad(2,2,raw..'x');"
+      "bad(2,2,raw:sub(2));"
+      "local encoded=\"00000009fcO9h-~b>0{{R30\";"
+      "for i=0,#encoded-1 do bad(2,2,encoded:sub(1,i),enc) end;"
+      "bad(2,2,\"00000000\",enc);"
+      "bad(2,2,\"00000001@Bjb+\",enc);"
+      "bad(2,2,\"00000002@c#e+\",enc);"
+      "bad(2,2,\"00000009koW)x-~b>0{{R30\",enc);"
+      "bad(2,2,\"0000000afcO9h-~b>0{{R30\",enc);"
+      "bad(2,2,\"0000000bfcO9h-~b>0{{R30\",enc);"
+      "bad(2,2,\"000000045C8xG\",enc);"
+      "bad(2,2,\"000000045C8%I\",enc);"
+      "bad(2,2,\"000000059{>RW{{R30\",enc);"
+      "bad(2,2,\"00000008aQFZR-~b>0\",enc);"
+      "bad(2,2,\"00000009f%pIi-~b>0{{R30\",enc);"
+      "bad(2,2,\"000000045C8!H\",enc);"
+      "bad(2,2,\"zzzzzzzz00000\",enc);"
+      "bad(2,2,\"ffffffff00000\",enc);"
+      "bad(2,2,\"00000001~~~~~\",enc);"
+      "bad(2,2,\"0000000100001\",enc);"
+      "bad(2,2,\"00000001     \",enc);"
+      "bad(2,2,\"000000010000\\000\",enc);"
+      "bad(2,2,\"00000009fcO9h-~b>0{{R3000000\",enc);"
+      "local repeat_region=f(150,1,\"0000000c9})oo{}fOX5)u*;\",enc);"
+      "local extended=f(16,1,\"00000022@DTt30s{mE1_uZU3JVMk4i69!5)%{^78e*98XFuP9v=Vz\",enc);"
+      "local weak=setmetatable({extended,repeat_region},{__mode='v'});"
+      "extended=nil;"
+      "repeat_region=nil;"
+      "collectgarbage('collect');"
+      "assert(not weak[1] and not weak[2]);"
+      "collectgarbage('collect');"
+      "local before=collectgarbage('count');"
+      "for i=1,100 do bad(2,2,'000000045C8xG',enc) end;"
+      "collectgarbage('collect');"
+      "assert(collectgarbage('count')<before+1);"
+      "local held={};"
+      "local payload=string.rep(raw,512);"
+      "local oom=false;"
+      "for i=1,100 do local ok,r=pcall(f,64,32,payload);"
+      "if not ok then assert(r=='not enough memory');"
+      "oom=true;"
+      "break end;"
+      "held[i]=r end;"
+      "assert(oom);"
+      "held=nil;"
+      "collectgarbage('collect');"
+      "assert(f(64,32,payload));"
+      "local a=f(2,2,raw);"
+      "local b=f(2,2,encoded,enc);"
+      "d.clear('black');"
+      "d.draw_region(a,0,0);"
+      "d.draw_region(b,2,0);"
+      "d.draw_region(f(150,1,'0000000c9})oo{}fOX5)u*;',enc),0,2);"
+      "d.draw_region(f(16,1,'00000022@DTt30s{mE1_uZU3JVMk4i69!5)%{^78e*98XFuP9v=Vz',enc),0,3);"
+      "d.present();"
+      "d.deinit();"
+      "assert(f(2,2,raw));";
+  (void)run_display_script(host, "@string-regions.lua", script, sizeof(script)-1);
+  const uint16_t expected[] = {0xf800,0x07e0,0xf800,0x07e0,0,0,0,0,0x001f,0xffff,0x001f,0xffff};
+  for (size_t i=0;i<sizeof(expected)/sizeof(expected[0]);++i)
+    assert(s_test_display_fixture.pixels[i] == expected[i]);
+  for (int i = 0; i < 8; ++i) {
+    assert(s_test_display_fixture.pixels[16+i] == 0x1212);
+    assert(s_test_display_fixture.pixels[24+i] == (uint16_t)((2*i << 8) | (2*i+1)));
+  }
+  /* A full 240x240 fixture, independent of any application asset. */
+  static const uint8_t full[] =
+      "local d=require('display');local enc='rgb565be-lz4-b85';local data='000001ce9})oo|NsC0|NsC0|NsC0|NsC"
+      "0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC"
+      "0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC"
+      "0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC"
+      "0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC"
+      "0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC"
+      "0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsB0P!bXn5)uFa';collectgarbage('collect');local before=col"
+      "lectgarbage('count');local r=d.region_from_string(240,240,data,enc);assert(collectgarbage('count')-b"
+      "efore>=112.5);d.restore_background(r);d.present();d.release_background();r=nil;collectgarbage('colle"
+      "ct');assert(collectgarbage('count')<before+1);local ok,e=pcall(d.region_from_string,4096,4096,data,e"
+      "nc);assert(not ok and e=='not enough memory');collectgarbage('collect');assert(d.region_from_string("
+      "240,240,data,enc));";
+  (void)run_display_script_size(host, "@string-region-full.lua", full, sizeof(full)-1, 240, 240);
+  for (size_t i = 0; i < 240u * 240u; ++i)
+    assert(s_test_display_fixture.pixels[i] == 0x1212);
+  h2_lua_host_destroy(host);
+  h2_runtime_deinit(runtime);
+}
+
 static void test_display_regions(void) {
   h2_runtime_t *runtime = create_runtime();
   h2_lua_host_t *host = create_unstarted_host(runtime);
@@ -2558,6 +2662,7 @@ int main(int argc, char **argv) {
   test_display_raster2d(1, "libs/lua/tests/mesh_source_paths.lua");
   test_display_raster2d(1, "libs/lua/tests/mesh_staging.lua");
   test_display_strokes();
+  test_display_string_regions();
   test_display_regions();
   test_display_meshes();
   test_display_vectors();

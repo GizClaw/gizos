@@ -4,6 +4,19 @@
 /** @file h2_lua_display.h
  * @brief VM-owned procedural geometry shared by native producers and Display.
  *
+ * String region Lua API (owning VM worker only):
+ * - display.region_from_string(width,height,data,encoding="rgb565be") creates
+ *   opaque region userdata for draw_region and full-screen restore_background.
+ *   Dimensions are integers 1..4096. The data must be a string. No live display
+ *   is required and construction does not draw. Region storage counts toward
+ *   the VM quota and is collected by Lua; the input is not retained.
+ * - rgb565be is exactly width*height*2 row-major bytes, high byte first.
+ * - rgb565be-lz4-b85 is eight hex digits of compressed byte length followed by
+ *   Python base64.b85encode(block,pad=True) text for a standard raw LZ4 block.
+ *   Padding must be zero, all input must be consumed, output must match the
+ *   dimensions, and standard LZ4 final-sequence conditions apply. Malformed
+ *   data raises a Lua error. Decoding uses the output userdata directly.
+ *
  * Indexed rectangle Lua API (owning VM worker only):
  * - display.compile_rects(records) returns immutable userdata copied from a
  *   dense list of {x,y,width,height,color_index} named-field records. Integer
