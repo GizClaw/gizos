@@ -58,8 +58,8 @@ class ReleaseTest(unittest.TestCase):
 
     def write_checksums(self, root):
         (root / "SHA256SUMS").write_text(''.join(
-            f"{release.sha256(p)}  {p.name}\n" for p in sorted(root.iterdir())
-            if p.name != "SHA256SUMS"))
+            f"{release.sha256(root / name)}  {name}\n" for name in sorted(p.name for p in root.iterdir())
+            if name != "SHA256SUMS"))
 
     def final_inputs(self, root):
         with tempfile.TemporaryDirectory() as directory:
@@ -173,7 +173,8 @@ class ReleaseTest(unittest.TestCase):
             release.package_bundle(list(reversed(files)), second, BATCH)
             self.assertEqual((first / ARCHIVE).read_bytes(), (second / ARCHIVE).read_bytes())
             with zipfile.ZipFile(first / ARCHIVE) as archive:
-                self.assertEqual(archive.namelist(), [ARCHIVE[:-4] + "/" + p.name for p in sorted(files)])
+                # Match package_bundle's string ordering; Windows Path ordering ignores case.
+                self.assertEqual(archive.namelist(), [ARCHIVE[:-4] + "/" + name for name in sorted(p.name for p in files)])
                 for info in archive.infolist():
                     self.assertEqual(info.date_time, (2026, 9, 20, 12, 0, 0))
                     self.assertEqual(info.create_system, 3)
