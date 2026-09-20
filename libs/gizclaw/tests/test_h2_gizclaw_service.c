@@ -10358,6 +10358,61 @@ static void test_conversation_accepts_downstream_events(void) {
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 
+static void assert_downlink_counters(h2_gizclaw_service_t *service,
+                                     uint_least32_t received,
+                                     uint_least32_t no_track,
+                                     uint_least32_t waiting_for_bos,
+                                     uint_least32_t ring_full) {
+  const h2_gizclaw_conversation_downlink_counters_t counters =
+      h2_gizclaw_conversation_downlink_counters_internal(service);
+  assert(counters.received == received);
+  assert(counters.dropped_no_track == no_track);
+  assert(counters.dropped_waiting_for_bos == waiting_for_bos);
+  assert(counters.dropped_ring_full == ring_full);
+}
+
+static void test_conversation_downlink_counters(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_service(&env, 2u);
+  const uint8_t packet[3] = {0xf8, 0xff, 0xfe};
+  assert_downlink_counters(NULL, 0u, 0u, 0u, 0u);
+  assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
+         H2_PAL_OK);
+  assert_downlink_counters(service, 0u, 0u, 0u, 0u);
+
+  h2_gizclaw_conversation_t *conversation = NULL;
+  assert(h2_gizclaw_conversation_create(
+             service, (h2_gizclaw_str_t){"workspace", 9u}, NULL, NULL, NULL,
+             &conversation) == H2_PAL_OK);
+  assert_downlink_counters(service, 0u, 0u, 0u, 0u);
+  assert(h2_gizclaw_service_media_write_opus(NULL, packet, sizeof(packet)) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_service_media_write_opus(service, NULL, 1u) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_service_media_write_opus(
+             service, packet, H2_GIZCLAW_CONVERSATION_OPUS_MAX_BYTES + 1u) ==
+         H2_PAL_ERR_INVALID_ARG);
+  assert_downlink_counters(service, 0u, 0u, 0u, 0u);
+  assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
+         H2_PAL_OK);
+  assert_downlink_counters(service, 1u, 0u, 0u, 0u);
+  assert(h2_gizclaw_test_downlink_frames(service) == 1u);
+  /* A loss marker is a valid ingress call, not an invalid empty packet. */
+  assert(h2_gizclaw_service_media_write_opus(service, NULL, 0u) == H2_PAL_OK);
+  assert_downlink_counters(service, 2u, 0u, 0u, 0u);
+  assert(h2_gizclaw_test_downlink_frames(service) == 2u);
+  h2_gizclaw_conversation_downlink_flush_internal(service);
+  h2_gizclaw_conversation_release(conversation);
+  assert_downlink_counters(service, 2u, 0u, 0u, 0u);
+  assert(h2_gizclaw_conversation_create(
+             service, (h2_gizclaw_str_t){"workspace", 9u}, NULL, NULL, NULL,
+             &conversation) == H2_PAL_OK);
+  assert_downlink_counters(service, 2u, 0u, 0u, 0u);
+  h2_gizclaw_conversation_release(conversation);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
 /* Downlink policy without a running worker: packets are dropped while
  * another request owns the Track, the 32-slot ring then fills and refuses
  * further packets, and a release flush empties it. */
@@ -10369,26 +10424,44 @@ static void test_conversation_downlink_policy(void) {
              service, (h2_gizclaw_str_t){"workspace", 9u}, NULL, NULL, NULL,
              &conversation) == H2_PAL_OK);
   const uint8_t packet[3] = {0xf8, 0xff, 0xfe};
-  assert(h2_pal_mutex_lock(service->config.sync, service->mutex) == H2_PAL_OK);
-  service->audio_play = (struct h2_gizclaw_audio_play *)(uintptr_t)1u;
-  assert(h2_pal_mutex_unlock(service->config.sync, service->mutex) ==
-         H2_PAL_OK);
-  for (unsigned i = 0u; i < 40u; ++i)
-    assert(h2_gizclaw_service_media_write_opus(service, packet,
-                                               sizeof(packet)) == H2_PAL_OK);
-  assert(h2_pal_mutex_lock(service->config.sync, service->mutex) == H2_PAL_OK);
-  service->audio_play = NULL;
-  assert(h2_pal_mutex_unlock(service->config.sync, service->mutex) ==
-         H2_PAL_OK);
+  for (unsigned owner = 0u; owner < 2u; ++owner) {
+    assert(h2_pal_mutex_lock(service->config.sync, service->mutex) == H2_PAL_OK);
+    if (owner == 0u)
+      service->audio_play = (struct h2_gizclaw_audio_play *)(uintptr_t)1u;
+    else
+      atomic_store(&service->speech_request,
+                   (struct h2_gizclaw_speech_context *)(uintptr_t)1u);
+    assert(h2_pal_mutex_unlock(service->config.sync, service->mutex) ==
+           H2_PAL_OK);
+    /* Even with a hold, Track ownership is the first rejection reason. */
+    h2_gizclaw_conversation_downlink_hold_internal(service);
+    for (unsigned i = 0u; i < 40u; ++i)
+      assert(h2_gizclaw_service_media_write_opus(service, packet,
+                                                 sizeof(packet)) == H2_PAL_OK);
+    assert_downlink_counters(service, 40u * (owner + 1u),
+                             40u * (owner + 1u), 0u, 0u);
+    assert(h2_gizclaw_test_downlink_frames(service) == 0u);
+    h2_gizclaw_conversation_downlink_bos_internal(service);
+    assert(h2_pal_mutex_lock(service->config.sync, service->mutex) == H2_PAL_OK);
+    service->audio_play = NULL;
+    atomic_store(&service->speech_request, NULL);
+    assert(h2_pal_mutex_unlock(service->config.sync, service->mutex) ==
+           H2_PAL_OK);
+  }
   /* Nothing was queued while the Track was owned: the ring is empty. */
   for (unsigned i = 0u; i < 32u; ++i)
     assert(h2_gizclaw_service_media_write_opus(service, packet,
                                                sizeof(packet)) == H2_PAL_OK);
+  assert_downlink_counters(service, 112u, 80u, 0u, 0u);
   assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
          H2_PAL_ERR_WOULD_BLOCK);
+  assert_downlink_counters(service, 113u, 80u, 0u, 1u);
+  assert(h2_gizclaw_test_downlink_frames(service) == 32u);
   h2_gizclaw_conversation_downlink_flush_internal(service);
+  assert_downlink_counters(service, 113u, 80u, 0u, 1u);
   assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
          H2_PAL_OK);
+  assert_downlink_counters(service, 114u, 80u, 0u, 1u);
   assert(h2_gizclaw_conversation_downlink_writes_internal(service) == 0u);
   h2_gizclaw_conversation_release(conversation);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
@@ -10432,14 +10505,22 @@ static void test_conversation_downlink_waits_for_bos(void) {
   for (unsigned i = 0u; i < 40u; ++i)
     assert(h2_gizclaw_service_media_write_opus(service, packet,
                                                sizeof(packet)) == H2_PAL_OK);
+  assert_downlink_counters(service, 40u, 0u, 40u, 0u);
+  assert(h2_gizclaw_test_downlink_frames(service) == 0u);
   h2_gizclaw_conversation_downlink_bos_internal(service);
+  assert_downlink_counters(service, 40u, 0u, 40u, 0u);
   for (unsigned i = 0u; i < 32u; ++i)
     assert(h2_gizclaw_service_media_write_opus(service, packet,
                                                sizeof(packet)) == H2_PAL_OK);
+  assert_downlink_counters(service, 72u, 0u, 40u, 0u);
+  assert(h2_gizclaw_test_downlink_frames(service) == 32u);
   assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
          H2_PAL_ERR_WOULD_BLOCK);
+  assert_downlink_counters(service, 73u, 0u, 40u, 1u);
   h2_gizclaw_conversation_downlink_flush_internal(service);
+  assert_downlink_counters(service, 73u, 0u, 40u, 1u);
   h2_gizclaw_conversation_release(conversation);
+  assert_downlink_counters(service, 73u, 0u, 40u, 1u);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
@@ -13210,6 +13291,7 @@ int main(int argc, char **argv) {
   test_service_partial_start_and_join_failures();
   test_service_terminal_callback_obeys_poll_budget();
   test_conversation_accepts_downstream_events();
+  test_conversation_downlink_counters();
   test_conversation_downlink_policy();
   test_conversation_downlink_waits_for_bos();
   test_conversation_downlink_resumes_on_release();

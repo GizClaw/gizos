@@ -132,6 +132,12 @@ struct h2_gizclaw_conversation_downlink {
   int plc_frame_samples;
   atomic_size_t frames;
   atomic_size_t bytes;
+  /* Lifetime ingress diagnostics; unsigned counters wrap at uint_least32_t's
+   * width. Relaxed accounting does not publish audio state. */
+  atomic_uint_least32_t received;
+  atomic_uint_least32_t dropped_no_track;
+  atomic_uint_least32_t dropped_waiting_for_bos;
+  atomic_uint_least32_t dropped_ring_full;
   /* Chunks written to the Track: the Session's sign that sound arrived. */
   atomic_size_t pcm_writes;
   /* Set by a push-to-talk press: downstream audio is dropped until the next
@@ -426,13 +432,18 @@ downlink_acquire_any(h2_gizclaw_service_t *service, bool *out_track) {
 
 static void downlink_release(h2_gizclaw_service_t *service);
 
-/* A downlink whose audio may reach the Track now. */
+/* Ingress-only acquisition: count arrivals before rejecting Track ownership.
+ * With no downlink object there is no lifetime to count against. */
 static h2_gizclaw_conversation_downlink_t *
 downlink_acquire(h2_gizclaw_service_t *service) {
   bool track = false;
   h2_gizclaw_conversation_downlink_t *downlink =
       downlink_acquire_any(service, &track);
+  if (downlink != NULL)
+    atomic_fetch_add_explicit(&downlink->received, 1u, memory_order_relaxed);
   if (downlink != NULL && !track) {
+    atomic_fetch_add_explicit(&downlink->dropped_no_track, 1u,
+                              memory_order_relaxed);
     downlink_release(service);
     return NULL;
   }
@@ -461,6 +472,8 @@ h2_gizclaw_service_media_write_opus(h2_gizclaw_service_t *service,
   if (downlink == NULL)
     return H2_PAL_OK;
   if (atomic_load_explicit(&downlink->waiting_for_bos, memory_order_acquire)) {
+    atomic_fetch_add_explicit(&downlink->dropped_waiting_for_bos, 1u,
+                              memory_order_relaxed);
     downlink_release(service);
     return H2_PAL_OK;
   }
@@ -472,6 +485,9 @@ h2_gizclaw_service_media_write_opus(h2_gizclaw_service_t *service,
   if (rc == H2_PAL_OK) {
     atomic_fetch_add_explicit(&downlink->frames, 1u, memory_order_relaxed);
     atomic_fetch_add_explicit(&downlink->bytes, opus_len, memory_order_relaxed);
+  } else if (rc == H2_PAL_ERR_WOULD_BLOCK) {
+    atomic_fetch_add_explicit(&downlink->dropped_ring_full, 1u,
+                              memory_order_relaxed);
   } else if (rc == H2_PAL_ERR_CLOSED) {
     rc = H2_PAL_OK;
   }
@@ -848,6 +864,26 @@ size_t h2_gizclaw_conversation_downlink_writes_internal(
   return writes;
 }
 
+h2_gizclaw_conversation_downlink_counters_t
+h2_gizclaw_conversation_downlink_counters_internal(
+    h2_gizclaw_service_t *service) {
+  h2_gizclaw_conversation_downlink_counters_t counters = {0};
+  h2_gizclaw_conversation_downlink_t *downlink =
+      downlink_acquire_any(service, NULL);
+  if (downlink == NULL)
+    return counters;
+  counters.received =
+      atomic_load_explicit(&downlink->received, memory_order_relaxed);
+  counters.dropped_no_track =
+      atomic_load_explicit(&downlink->dropped_no_track, memory_order_relaxed);
+  counters.dropped_waiting_for_bos = atomic_load_explicit(
+      &downlink->dropped_waiting_for_bos, memory_order_relaxed);
+  counters.dropped_ring_full =
+      atomic_load_explicit(&downlink->dropped_ring_full, memory_order_relaxed);
+  downlink_release(service);
+  return counters;
+}
+
 static h2_pal_result_t
 downlink_create(h2_gizclaw_service_t *service,
                 h2_gizclaw_conversation_downlink_t **out_downlink) {
@@ -861,6 +897,10 @@ downlink_create(h2_gizclaw_service_t *service,
   downlink->plc_frame_samples = 320;
   atomic_init(&downlink->frames, 0u);
   atomic_init(&downlink->bytes, 0u);
+  atomic_init(&downlink->received, 0u);
+  atomic_init(&downlink->dropped_no_track, 0u);
+  atomic_init(&downlink->dropped_waiting_for_bos, 0u);
+  atomic_init(&downlink->dropped_ring_full, 0u);
   atomic_init(&downlink->pcm_writes, 0u);
   atomic_init(&downlink->waiting_for_bos, false);
   const h2_pal_mutex_config_t lock_config = {

@@ -176,6 +176,10 @@ Friend 与 Friend Group 语音只通过各自 system Workspace（内置 `system-
 
 ### 下行边界与取消
 
+库内诊断通过 `h2_gizclaw_conversation_downlink_counters_internal(service)` 一次取得 `h2_gizclaw_conversation_downlink_counters_t` 快照：`received` 是 downlink 存在期间收到的合法 Opus 写入次数（包含零长度 PLC 标记），`dropped_no_track` 是 audio play 或 Speech 占用 Track 时的丢弃数，`dropped_waiting_for_bos` 是 hold 尚未解除时的丢弃数，`dropped_ring_full` 是 Opus ring 返回 `WOULD_BLOCK` 时的丢弃数。按现有入口判断顺序归因：Track 占用优先于 hold，一次写入最多增加一种丢弃原因。读取时只获取一次 downlink 引用，Track 被占用时仍可读取；这属于 private internal 诊断接口，不是 App public API。
+
+四个计数随 downlink 创建归零、随 Service deinit 销毁，hold、BOS、flush 和 Conversation release 都不重置；使用 `atomic_uint_least32_t`，按 `uint_least32_t` 的位宽无符号回绕。各字段单独原子读取，并发写入时快照不保证字段间处于同一时刻；诊断可比较同一 downlink 生命周期内相邻快照的增量。对象尚未创建或 service 为 NULL 时读取全零，无对象时的到达和非法参数不计数。计数只观察既有接收路径：no-track 和 waiting-for-bos 仍返回 OK，ring-full 仍返回 `WOULD_BLOCK`，CLOSED 仍映射为 OK 且不计入 ring-full；后续 flush、解码失败及实际扬声器播放量不在这三个丢弃计数内，不能用它们推断已经听到了回复。
+
 下行媒体不看 EOS，除按下后的 `waiting_for_bos` 外收到即解码；标志只由按下后的下一个下行音频 BOS 清除。清空与 decoder 写入 Track 串行化：清空时持有解码锁，丢弃待解码 Opus、重置解码器并标记 Track 下行水位，旧数据不会在清空后再写入。已交给平台输出的音频缓冲不在此清空保证内。不新增 RTP payload 或时间戳格式。
 
 `h2_gizclaw_conversation_cancel` 只关闭本轮输入并清空本地缓冲，不停止服务端 run；SFU 房间下行可继续到达。显式离开当前 run 使用 `h2_gizclaw_rpc_run_stop`，服务端停止 runtime 并断开房间，成功后库再清空 Service 的 Opus 队列、解码器和未播放 PCM（无 Session 时也一样）。下行仍由 Service 共享 Track 承接，不按 stream 或 Workspace 过滤；已交给平台输出的缓冲仍不在清空保证内。
