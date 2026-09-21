@@ -7,8 +7,11 @@
  * String region Lua API (owning VM worker only):
  * - display.region_from_string(width,height,data,encoding="rgb565be") creates
  *   opaque region userdata for draw_region and full-screen restore_background.
- *   Dimensions are integers 1..4096. The data must be a string. No live display
- *   is required and construction does not draw. Region storage counts toward
+ *   Dimensions are integers 1..4096. The data must be a string. Construction
+ *   does not acquire or draw to Display and remains usable after deinit on an
+ *   existing proxy. Initial require("display") still acquires Display and
+ *   raises on acquisition failure; cached require does not reopen after deinit.
+ *   Drawing still requires a live acquisition. Region storage counts toward
  *   the VM quota and is collected by Lua; the input is not retained.
  * - rgb565be is exactly width*height*2 row-major bytes, high byte first.
  * - rgb565be-lz4-b85 is eight hex digits of compressed byte length followed by

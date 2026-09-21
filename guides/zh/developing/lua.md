@@ -163,7 +163,7 @@ smooth 显式启用圆端点连续覆盖，每像素只混合最大 alpha 一次
 
 ### Display 快照、背景恢复与 retained 提交
 
-`display.region_from_string(width,height,data,encoding="rgb565be")` 直接从 Lua 字符串创建不透明 region，宽高必须为 `1..4096` 的整数。构造不要求已打开 Display，不绘制也不隐式 present；结果可传给 `draw_region`，同屏尺寸的结果还可传给 `restore_background`。像素数据和调用时机由应用拥有，不读取文件或提前加载资源。
+`display.region_from_string(width,height,data,encoding="rgb565be")` 直接从 Lua 字符串创建不透明 region，宽高必须为 `1..4096` 的整数。构造函数本身不获取 Display，在已取得的 proxy 上调用 `deinit` 后仍可创建资源，不绘制也不隐式 present。首次 `require('display')` 仍遵循既有 acquisition 契约，获取失败抛错；缓存的 require 不重新打开设备，关闭后的绘制仍然失败。有效绘制会话中的结果可传给 `draw_region`，同屏尺寸的结果还可传给 `restore_background`。像素数据和调用时机由应用拥有，不读取文件或提前加载资源。
 
 默认 `rgb565be` 接受恰好 `width*height*2` 个按行排列的二进制字节，每个 RGB565 像素高字节在前。`rgb565be-lz4-b85` 接受 8 位 ASCII 十六进制压缩长度与 Python `base64.b85encode(block,pad=True)` 文本，block 为标准 raw LZ4，不含 frame 或额外输出尺寸；输出必须恰好匹配宽高。Base85 字符、文本长度、32-bit group 溢出、零 padding、LZ4 截断、offset、输出边界及末尾序列条件均校验，不接受额外尾部数据。完整编码契约与示例见 [Lua Display API](../../references/lua.md#regions-from-strings)。
 

@@ -8,7 +8,7 @@ Built-in numeric buffers, physics and geometry: [Lua numeric API](./lua-numeric.
 
 ## Regions from strings
 
-`display.region_from_string(width, height, data[, encoding])` creates an opaque region for `display.draw_region(region, x, y, ...)` and, for a matching full-screen image, `display.restore_background(region)`. It does not acquire or draw to the display. Width and height must be integers from 1 through 4096; `data` must be a Lua string. The default encoding is `"rgb565be"`.
+`display.region_from_string(width, height, data[, encoding])` creates an opaque region for `display.draw_region(region, x, y, ...)` and, for a matching full-screen image, `display.restore_background(region)`. The constructor does not acquire or draw to the display and remains usable on an existing proxy after `deinit`. Initial `require('display')` still acquires Display and raises on failure; cached `require` does not reopen it after `deinit`, and drawing still requires a live acquisition. Width and height must be integers from 1 through 4096; `data` must be a Lua string. The default encoding is `"rgb565be"`.
 
 - `"rgb565be"`: exactly `width * height * 2` binary bytes, row-major, high byte first for each RGB565 pixel (red = `F8 00`, green = `07 E0`, blue = `00 1F`).
 - `"rgb565be-lz4-b85"`: eight ASCII hexadecimal digits containing the compressed byte length, followed by Python `base64.b85encode(block, pad=True)` text. The block is a standard raw LZ4 block, without a frame or stored output size. The decoded size must equal `width * height * 2`. All Base85 groups and zero padding, lengths, LZ4 sequences, offsets and output bounds are checked. No whitespace or trailing data is accepted. LZ4 final literals and last-match distance must obey the block format's end conditions.

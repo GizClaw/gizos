@@ -1754,8 +1754,15 @@ static void test_display_string_regions(void) {
       "d.draw_region(f(16,1,'00000022@DTt30s{mE1_uZU3JVMk4i69!5)%{^78e*98XFuP9v=Vz',enc),0,3);"
       "d.present();"
       "d.deinit();"
-      "assert(f(2,2,raw));";
+      "local closed_raw=f(2,2,raw);local closed_lz4=f(2,2,encoded,enc);"
+      "assert(require('display')==d);"
+      "assert(not pcall(d.draw_region,closed_raw,0,0));"
+      "assert(not pcall(d.draw_region,closed_lz4,0,0));"
+      "assert(not pcall(d.capture_region,0,0,2,2));"
+      "assert(not pcall(d.present));d.deinit();";
   (void)run_display_script(host, "@string-regions.lua", script, sizeof(script)-1);
+  assert(s_test_display_fixture.open_count == 1);
+  assert(s_test_display_fixture.close_count == 1);
   const uint16_t expected[] = {0xf800,0x07e0,0xf800,0x07e0,0,0,0,0,0x001f,0xffff,0x001f,0xffff};
   for (size_t i=0;i<sizeof(expected)/sizeof(expected[0]);++i)
     assert(s_test_display_fixture.pixels[i] == expected[i]);
