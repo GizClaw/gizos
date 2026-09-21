@@ -45,6 +45,7 @@ api_reference(
         "//libs/bundle",
         "//libs/command",
         "//libs/dns",
+        "//libs/encoding",
         "//libs/drivers/motion/qmi8658",
         "//libs/drivers/nfc/fm175xx",
         "//libs/drivers/nfc/type2",

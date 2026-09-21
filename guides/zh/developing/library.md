@@ -130,6 +130,7 @@ App 必须在调用 third-party API 之前完成对应 integration 初始化，�
 - [`coremqtt`](./coremqtt.md)：CoreMQTT 的 GizOS integration。
 - [`corehttp`](./corehttp.md)：通过 Net PAL 提供 HTTP/1.1 的 portable coreHTTP provider。
 - [`dns`](./dns.md)：跨平台 DNS client。
+- [`encoding`](./encoding.md)：参照 Go `encoding` 的 hex、base32、base64 与 base85 编解码，按算法族加 alphabet 描述，无堆分配。
 - [`drivers`](./drivers.md)：modem、motion、NFC 等 portable driver family。
   NFC 子目录中的 `type2` protocol engine 与 `fm17660k` controller driver 分别拥有协议和设备状态机；board wiring 仍由 component/BSP 注入。
 - [`game_runtime`](./game_runtime.md)：跨平台 game runtime。

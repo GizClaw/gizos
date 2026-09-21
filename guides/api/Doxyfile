@@ -10,6 +10,7 @@ INPUT                  = libs/app_test/include \
                          libs/pal/providers/corehttp/include \
                          libs/pal/providers/coremqtt/include \
                          libs/dns/include \
+                         libs/encoding/include \
                          libs/pal/providers/ffmpeg/include \
                          libs/drivers \
                          libs/game_runtime/include \

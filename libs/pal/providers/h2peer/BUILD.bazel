@@ -26,7 +26,6 @@ cc_library(
     srcs = [
         "src/providers/portable/address.c",
         "src/providers/portable/agent.c",
-        "src/providers/portable/base64.c",
         "src/providers/portable/dtls_srtp.c",
         "src/providers/portable/ice.c",
         "src/providers/portable/ice_transport.c",

@@ -24,7 +24,6 @@ endif()
 set(H2PEER_PORTABLE_SOURCES
   "${H2PEER_ROOT}/src/providers/portable/address.c"
   "${H2PEER_ROOT}/src/providers/portable/agent.c"
-  "${H2PEER_ROOT}/src/providers/portable/base64.c"
   "${H2PEER_ROOT}/src/providers/portable/dtls_srtp.c"
   "${H2PEER_ROOT}/src/providers/portable/ice.c"
   "${H2PEER_ROOT}/src/providers/portable/ice_transport.c"

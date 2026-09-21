@@ -8,6 +8,7 @@ export const apiSources = [
   { id: "corehttp", roots: ["libs/pal/providers/corehttp/include"] },
   { id: "coremqtt", roots: ["libs/pal/providers/coremqtt/include"] },
   { id: "dns", roots: ["libs/dns/include"] },
+  { id: "encoding", roots: ["libs/encoding/include"] },
   { id: "ffmpeg", roots: ["libs/pal/providers/ffmpeg/include"] },
   {
     id: "drivers",

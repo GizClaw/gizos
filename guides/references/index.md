@@ -12,6 +12,7 @@
 - [CoreHTTP](./corehttp.md)
 - [CoreMQTT](./coremqtt.md)
 - [DNS](./dns.md)
+- [Encoding](./encoding.md)
 - [Drivers](./drivers.md)
 - [Game Runtime](./game_runtime.md)
 - [GizClaw](./gizclaw.md)
