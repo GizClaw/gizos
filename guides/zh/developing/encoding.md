@@ -25,11 +25,17 @@
 
 编码和解码都只扫描输入一遍，每次调用没有建表或校验描述之类的固定开销，逐块调用也不会额外变慢。库不分配堆内存，不使用可变全局状态，不等待外部资源，栈上只有常数大小的局部变量。
 
-分块编码时，除最后一块外每块长度取块大小的整数倍（base64 3 字节、base32 5 字节、base85 4 字节，hex 任意），拼接结果与一次性编码相同。解码可以按完整分组逐组调用，例如边读边解的 base85 消费方每次传入 5 个字符。本库不提供流式 reader/writer。
+分块编码时，除最后一块外每块长度取块大小的整数倍（base64 3 字节、base32 5 字节、base85 4 字节，hex 任意），拼接结果与一次性编码相同。本库不提供流式 reader/writer。
+
+## 逐组解码
+
+边读边解、每次只缓存一个分组的 base85 消费方使用头文件中的 `static inline` 函数 `h2_encoding_decode_base85_group()`：它把恰好 5 个数字解成一个 32 位大端值，只在 5 个字节都是字母表数字且值不超过 `0xffffffff` 时成功。它没有函数调用和参数检查开销，不解释 `zero_group`，末尾不完整分组、padding 和长度等外层规则由调用方负责。`h2_encoding_decode()` 的 base85 快路径也使用它。
+
+Lua Display 的 `rgb565be-lz4-b85` 读取器用它和 `h2_encoding_base85_rfc1924` 替代原来的私有 256 项表；8 位十六进制长度头、完整分组要求和末尾补零字节检查仍由 Display 负责，接受的输入、错误信息和输出不变。
 
 ## 性能
 
-`//libs/encoding:benchmark_encoding` 用 `clock()` 统计 CPU 时间，每个样本处理 512 KiB 原始字节，预热 4 次、采样 64 次，按原始字节报告 p50/p95 的 ns/byte 和 MiB/s。它覆盖 hex、base32、base64、两种 base85 在 64 B、4 KiB、64 KiB 下的编码和解码，base64 按 4 字符、base85 按 5 字符逐组解码，以及不做任何校验的 base85 查表循环作为下限参考。
+`//libs/encoding:benchmark_encoding` 用 `clock()` 统计 CPU 时间，每个样本处理 512 KiB 原始字节，预热 4 次、采样 64 次，按原始字节报告 p50/p95 的 ns/byte 和 MiB/s。它覆盖 hex、base32、base64、两种 base85 在 64 B、4 KiB、64 KiB 下的编码和解码，base64 按 4 字符、base85 按 5 字符逐组调用 `h2_encoding_decode()`，`h2_encoding_decode_base85_group()` 逐组解码，以及不做任何校验的 base85 查表循环作为下限参考。
 
 Host 结果只用于比较实现和发现回退，不等于嵌入式设备上的结果。设备测量需要记录 board、CPU 频率、toolchain、数据所在内存和优化级别。
 
@@ -46,4 +52,4 @@ bazel test --config=macos_arm64 //libs/encoding:all
 bazel run -c opt --config=macos_arm64 //libs/encoding:benchmark_encoding
 ```
 
-Linux 和 Windows host 分别使用 `--config=linux_x86_64` 和 `--config=windows_x86_64`。测试覆盖 RFC 4648 与 Python 生成的向量、每类损坏输入及其偏移、损坏优先于空间不足、空间不足时的精确大小、非法描述与非法参数、尺寸溢出、预置解码表与 `h2_encoding_init()` 一致、自定义字母表、手工修改描述不越界、分块编码、全部预置编码 0–70 字节往返和 C++ 链接。
+Linux 和 Windows host 分别使用 `--config=linux_x86_64` 和 `--config=windows_x86_64`。测试覆盖 RFC 4648 与 Python 生成的向量、每类损坏输入及其偏移、损坏优先于空间不足、空间不足时的精确大小、非法描述与非法参数、尺寸溢出、预置解码表与 `h2_encoding_init()` 一致、自定义字母表、手工修改描述不越界、逐组解码的边界与逐字节替换、分块编码、全部预置编码 0–70 字节往返和 C++ 链接。Display 的 base85 行为由 `//libs/lua:all` 中的区域字符串测试覆盖。

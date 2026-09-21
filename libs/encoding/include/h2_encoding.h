@@ -171,6 +171,54 @@ h2_encoding_err_t h2_encoding_decode(const h2_encoding_t *enc,
                                      uint8_t *dst, size_t dst_cap,
                                      size_t *out_len);
 
+/**
+ * @brief Decode exactly five base85 digits into one 32-bit big-endian group.
+ * This is the inline building block for streaming readers that consume whole
+ * groups themselves: it does no per-call argument checks, does not interpret
+ * a zero group byte, and leaves framing (partial groups, trailing padding) to
+ * the caller. A group is accepted when all five bytes are alphabet digits and
+ * its value is at most 0xffffffff.
+ * @param[in] enc Borrowed base85 descriptor; a descriptor of another kind
+ *                yields unspecified results but no out-of-bounds access.
+ * @param[in] src Five borrowed encoded bytes; no NUL terminator is required.
+ * @param[out] out_word Caller-owned storage, written only on success.
+ * @return true when the group is valid, false otherwise.
+ */
+static inline bool h2_encoding_decode_base85_group(const h2_encoding_t *enc, const char *src,
+                                                   uint32_t *out_word) {
+    /* One branch per digit exits early on a bad symbol and measured fastest
+     * in the per-group reader benchmark. UINT32_MAX == 85 * 50529027: the
+     * first four digits may not exceed 50529027, and may equal it only when
+     * the fifth digit is 0. */
+    const uint8_t *map = enc->decode_map;
+    uint32_t d0 = map[(unsigned char)src[0]];
+    if (d0 == 0xffu) {
+        return false;
+    }
+    uint32_t d1 = map[(unsigned char)src[1]];
+    if (d1 == 0xffu) {
+        return false;
+    }
+    uint32_t d2 = map[(unsigned char)src[2]];
+    if (d2 == 0xffu) {
+        return false;
+    }
+    uint32_t d3 = map[(unsigned char)src[3]];
+    if (d3 == 0xffu) {
+        return false;
+    }
+    uint32_t d4 = map[(unsigned char)src[4]];
+    if (d4 == 0xffu) {
+        return false;
+    }
+    uint32_t head = ((d0 * 85u + d1) * 85u + d2) * 85u + d3;
+    if (head > 50529027u || (head == 50529027u && d4 != 0)) {
+        return false;
+    }
+    *out_word = head * 85u + d4;
+    return true;
+}
+
 #ifdef __cplusplus
 }
 #endif

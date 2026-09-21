@@ -451,18 +451,13 @@ static bool base85_tail(uint32_t prefix, size_t count, uint32_t *payload) {
 
 /* Decodes whole groups with room already guaranteed; returns the symbols
  * consumed, stopping at the first group that is invalid or overflows. */
-static size_t decode_base85_groups(const uint8_t *map, const char *src, size_t groups,
+static size_t decode_base85_groups(const h2_encoding_t *enc, const char *src, size_t groups,
                                    uint8_t *out) {
     for (size_t i = 0; i < groups; ++i, src += 5, out += 4) {
-        const unsigned char *g = (const unsigned char *)src;
-        uint32_t d0 = map[g[0]], d1 = map[g[1]], d2 = map[g[2]], d3 = map[g[3]];
-        uint32_t d4 = map[g[4]];
-        uint32_t head = ((d0 * 85u + d1) * 85u + d2) * 85u + d3;
-        if (((d0 | d1 | d2 | d3 | d4) & 0x80u) != 0 || head > BASE85_MAX_HEAD ||
-            (head == BASE85_MAX_HEAD && d4 != 0)) {
+        uint32_t v;
+        if (!h2_encoding_decode_base85_group(enc, src, &v)) {
             return 5 * i;
         }
-        uint32_t v = head * 85u + d4;
         out[0] = (uint8_t)(v >> 24);
         out[1] = (uint8_t)(v >> 16);
         out[2] = (uint8_t)(v >> 8);
@@ -482,7 +477,7 @@ static h2_encoding_err_t decode_base85(const h2_encoding_t *enc, const char *src
         /* Without a zero group the output size follows from the length, so
          * whole groups skip the per-group capacity bookkeeping. The general
          * loop below reports any group this stops at. */
-        i = decode_base85_groups(map, src, len / 5, dst);
+        i = decode_base85_groups(enc, src, len / 5, dst);
         n = i / 5 * 4;
     }
     while (i < len) {

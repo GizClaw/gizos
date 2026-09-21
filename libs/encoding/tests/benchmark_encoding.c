@@ -15,7 +15,7 @@ static uint8_t decoded[MAX_PLAIN];
 static char text[MAX_PLAIN * 2u];
 static volatile uint32_t sink;
 
-typedef enum { OP_ENCODE, OP_DECODE, OP_DECODE_GROUPS, OP_BASELINE } op_t;
+typedef enum { OP_ENCODE, OP_DECODE, OP_DECODE_GROUPS, OP_GROUP_INLINE, OP_BASELINE } op_t;
 
 static int compare(const void *a_value, const void *b_value) {
     double a = *(const double *)a_value, b = *(const double *)b_value;
@@ -64,6 +64,19 @@ static void run_once(op_t op, const h2_encoding_t *enc, size_t size, size_t text
         }
         break;
     }
+    case OP_GROUP_INLINE:
+        /* The inline single-group decoder, as streaming readers use it. */
+        for (size_t i = 0, o = 0; i + 5 <= text_len; i += 5, o += 4) {
+            uint32_t v;
+            if (!h2_encoding_decode_base85_group(enc, text + i, &v)) {
+                abort();
+            }
+            decoded[o] = (uint8_t)(v >> 24);
+            decoded[o + 1] = (uint8_t)(v >> 16);
+            decoded[o + 2] = (uint8_t)(v >> 8);
+            decoded[o + 3] = (uint8_t)v;
+        }
+        break;
     case OP_BASELINE:
         sink ^= baseline_base85(enc->decode_map, text, text_len, decoded);
         break;
@@ -72,7 +85,8 @@ static void run_once(op_t op, const h2_encoding_t *enc, size_t size, size_t text
 }
 
 static void measure(const char *name, op_t op, const h2_encoding_t *enc, size_t size) {
-    static const char *const op_names[] = {"encode", "decode", "decode_per_group", "baseline"};
+    static const char *const op_names[] = {"encode", "decode", "decode_per_group", "group_inline",
+                                           "baseline"};
     size_t text_len = 0;
     check(h2_encoding_encode(enc, plain, size, text, sizeof(text), &text_len));
     unsigned repeats = (unsigned)(SAMPLE_BYTES / size);
@@ -128,6 +142,7 @@ int main(void) {
     }
     measure("base64_std", OP_DECODE_GROUPS, &h2_encoding_base64_std, 4095);
     measure("base85_rfc1924", OP_DECODE_GROUPS, &h2_encoding_base85_rfc1924, MAX_PLAIN);
+    measure("base85_rfc1924", OP_GROUP_INLINE, &h2_encoding_base85_rfc1924, MAX_PLAIN);
     measure("base85_rfc1924", OP_BASELINE, &h2_encoding_base85_rfc1924, MAX_PLAIN);
     return 0;
 }

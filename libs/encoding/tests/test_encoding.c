@@ -405,6 +405,38 @@ static void test_edited_descriptor_stays_in_bounds(void) {
     }
 }
 
+/* The inline group decoder accepts exactly the groups whose five bytes are
+ * digits and whose value fits in 32 bits, matching h2_encoding_decode. */
+static void test_base85_group(void) {
+    const h2_encoding_t *enc = &h2_encoding_base85_rfc1924;
+    uint32_t word = 0;
+    CHECK(h2_encoding_decode_base85_group(enc, "00000", &word) && word == 0);
+    CHECK(h2_encoding_decode_base85_group(enc, "W^Zp|", &word) && word == 0x666f6f62u);
+    CHECK(h2_encoding_decode_base85_group(enc, "|NsC0", &word) && word == 0xffffffffu);
+    word = 7;
+    CHECK(!h2_encoding_decode_base85_group(enc, "|NsC1", &word) && word == 7);
+    CHECK(!h2_encoding_decode_base85_group(enc, "~~~~~", &word) && word == 7);
+    CHECK(!h2_encoding_decode_base85_group(enc, "|NsD0", &word) && word == 7);
+    for (size_t pos = 0; pos < 5; ++pos) {
+        for (int c = 0; c < 256; ++c) {
+            char group[5];
+            memcpy(group, "|NsC0", 5);
+            group[pos] = (char)c;
+            uint8_t bytes[4];
+            size_t n = 0;
+            bool ok = h2_encoding_decode_base85_group(enc, group, &word);
+            bool lib_ok = h2_encoding_decode(enc, group, 5, bytes, 4, &n) == H2_ENCODING_OK;
+            CHECK(ok == lib_ok);
+            CHECK(!ok || word == ((uint32_t)bytes[0] << 24 | (uint32_t)bytes[1] << 16 |
+                                  (uint32_t)bytes[2] << 8 | bytes[3]));
+        }
+    }
+    /* The zero group byte is not interpreted, and digit zeros stay valid. */
+    CHECK(!h2_encoding_decode_base85_group(&h2_encoding_base85_ascii85, "zzzzz", &word));
+    CHECK(h2_encoding_decode_base85_group(&h2_encoding_base85_ascii85, "!!!!!", &word) &&
+          word == 0);
+}
+
 static void test_invalid_arguments(void) {
     const h2_encoding_t *enc = &h2_encoding_base64_std;
     uint8_t byte = 0;
@@ -449,6 +481,7 @@ int main(void) {
     test_predefined_match_init();
     test_invalid_descriptors();
     test_edited_descriptor_stays_in_bounds();
+    test_base85_group();
     test_invalid_arguments();
     return 0;
 }
