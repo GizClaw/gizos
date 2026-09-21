@@ -244,6 +244,10 @@ int h2_gizclaw_client_read_packet_internal(gzc_client_t *client, int timeout_ms,
 #include "platform/gzc_platform_webrtc.h"
 
 bool h2_gizclaw_test_rpc_diagnostic(void);
+/* Completes an RPC started on `client` with `status`; `inbound` counts one
+ * message received on the Peer while it was outstanding. */
+void h2_gizclaw_test_rpc_complete_on_client(h2_gizclaw_client_t *client,
+                                            int status, bool inbound);
 int h2_gizclaw_test_stream_failure_result(int pal_error, bool eos,
                                           int *out_sdk_result);
 typedef int (*h2_gizclaw_test_event_send_fn)(void *user,
