@@ -4654,6 +4654,37 @@ static void test_req_telemetry_activity(void) {
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 
+static void test_deinit_refusal_names_holders_once(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  activity_log_capture_t log_capture = {0};
+  static const h2_pal_log_vtable_t log_vtable = {.write = activity_capture_log};
+  const h2_pal_log_api_t log = {.user = &log_capture, .vtable = &log_vtable};
+  service->client_config.log = &log;
+
+  /* A refusal names every holder; owners retry each loop, so the same state
+   * is logged once. */
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_ERR_INVALID_STATE);
+  assert(log_capture.calls == 1u);
+  assert(strstr(log_capture.last, "stage=service_deinit_blocked stopped=0") !=
+         NULL);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_ERR_INVALID_STATE);
+  assert(log_capture.calls == 1u);
+
+  /* A new holder is a new state and is logged again. */
+  h2_gizclaw_req_t *request = NULL;
+  assert(h2_gizclaw_req_create_profile_get(service, 2, 1234, &request) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_ERR_INVALID_STATE);
+  assert(log_capture.calls == 2u);
+  assert(strstr(log_capture.last, "request_refs=1") != NULL);
+  h2_gizclaw_req_release(request);
+
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
 static h2_pal_result_t ota_random_failure(void *user, uint8_t *out, size_t len) {
   (void)user; (void)out; (void)len;
   return H2_PAL_ERR_IO;
@@ -13346,6 +13377,7 @@ int main(int argc, char **argv) {
   test_req_telemetry_copy_and_backpressure();
   test_req_telemetry_network_identity();
   test_req_telemetry_activity();
+  test_deinit_refusal_names_holders_once();
   test_req_workflow_public_paths();
   h2_gizclaw_async_rpc_test_set_ops(NULL);
   test_fifo_capacity_and_dispatch();
