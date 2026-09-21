@@ -377,17 +377,22 @@ static int test_unresponsive_peer_closes(const h2_gizclaw_config_t *config) {
   test_client_poll_t poll = {.result = GZC_ERR_WOULD_BLOCK};
   h2_gizclaw_test_set_client_poll(test_client_poll_call, &poll);
 
+  test_warn_logs = 0;
   h2_gizclaw_test_rpc_complete_on_client(client, GZC_ERR_TIMEOUT, true);
   h2_gizclaw_test_rpc_complete_on_client(client, GZC_ERR_CLOSED, false);
   fails += expect(h2_gizclaw_client_poll(client, 0) == H2_PAL_ERR_WOULD_BLOCK &&
-                      !h2_gizclaw_test_client_terminal_closed(client),
+                      !h2_gizclaw_test_client_terminal_closed(client) &&
+                      test_warn_logs == 0,
                   "a timeout with traffic, or a non-timeout failure, keeps "
                   "the client open");
 
   h2_gizclaw_test_rpc_complete_on_client(client, GZC_ERR_TIMEOUT, false);
   fails += expect(h2_gizclaw_client_poll(client, 0) == H2_PAL_ERR_CLOSED &&
                       poll.calls == 2 &&
-                      h2_gizclaw_test_client_terminal_closed(client),
+                      h2_gizclaw_test_client_terminal_closed(client) &&
+                      test_warn_logs == 1 &&
+                      strstr(test_last_log_message,
+                             "stage=peer_unresponsive") != NULL,
                   "a timeout with nothing received closes the client so the "
                   "service reconnects");
   fails += expect(h2_gizclaw_client_poll(client, 0) == H2_PAL_ERR_CLOSED &&
