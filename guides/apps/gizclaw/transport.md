@@ -74,6 +74,25 @@ callback 期间借给调用方；terminal callback 返回后，调用方释放 h
 继续 dispatch，直到完成队列为空。这样同一 Client 不会同时被后台 poll 与应用 task 的同步
 RPC 轮询。
 
+## Peer 无响应判定
+
+Portable h2peer 的 ICE keepalive 只证明 STUN 仍有应答：DTLS/SCTP 和媒体已经停止时，
+binding response 仍可能按时到达，Peer 状态一直保持 connected。Client 因此另外以应用层
+证据判定 Peer 失效：
+
+- `h2_gzc_peer_poll` 每收到一条 DataChannel message 或一帧 Opus，就把 Client 的入站计数加一；
+  Agent event 也经 DataChannel 到达，空闲但健康的 Peer 会持续推进这个计数。
+- Unary 和 streaming RPC 启动时记录当时的计数。请求以 `GZC_ERR_TIMEOUT` 结束且计数未变，
+  说明整个期限内 Peer 没有送达任何内容，Client 标记为无响应。其他终态，或期限内有任何
+  入站流量，都不改变这个标记。
+- 下一次 `h2_gizclaw_client_poll` 在 SDK poll 未报错时检查标记，记录 WARN
+  `stage=peer_unresponsive`，并按 SDK `GZC_ERR_CLOSED` 处理：Client 进入终态、释放 Event
+  handle、完成 provider 终态并返回 `H2_PAL_ERR_CLOSED`。
+
+Service 把该结果当作 transport 终态，完成挂起请求并回调 owner；owner 按既有重试策略重建
+连接。最坏在一个 RPC 期限后恢复，而不是等到无关的重启。这个判定不区分服务端停止应答与
+本地 DTLS/SCTP 停滞，也不改变 RPC 期限或重试策略。
+
 ## DataChannel 终态 ownership
 
 PAL WebRTC 的 `CLOSED` 和 `ERROR` callback 是 DataChannel ownership 的终止边界。Callback 中的 handle 是 borrowed view，backend 可以在 callback 返回后释放它；GizClaw C SDK 因此必须在返回前撤销所有 matching alias，而不是把地址留给稍后的 request 或 client cleanup。
