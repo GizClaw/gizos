@@ -2979,7 +2979,8 @@ static int display_region_from_string(lua_State *state) {
       size_t literals = display_lz4_length(&reader, token >> 4, bytes - position);
       if (literals > reader.length - reader.position)
         return luaL_error(state, "truncated region LZ4 literals");
-      for (size_t i = 0; i < literals; ++i) out[position++] = display_b85_byte(&reader);
+      for (size_t i = 0; i < literals; ++i)
+        out[position++] = (unsigned char)display_b85_byte(&reader);
       if (reader.position == reader.length) {
         if ((token & 15) != 0 || position != bytes ||
             (matched && (literals < 5 || bytes - last_match_start < 12)))
