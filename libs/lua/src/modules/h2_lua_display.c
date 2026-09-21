@@ -2868,6 +2868,147 @@ static display_region_t *display_new_region(lua_State *state, int width,
   return region;
 }
 
+/* Streaming Python b85 alphabet reader; only four decoded bytes are buffered. */
+typedef struct display_b85_reader {
+  lua_State *state;
+  const char *text;
+  size_t length, position;
+  uint32_t word;
+} display_b85_reader_t;
+
+static unsigned display_b85_byte(display_b85_reader_t *r) {
+  /* Python b85 digits indexed by unsigned input byte; 255 rejects all
+   * non-alphabet bytes, including NUL and bytes above ASCII. Read-only storage. */
+  static const uint8_t digits[256] = {
+      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+      255,  62, 255,  63,  64,  65,  66, 255,  67,  68,  69,  70, 255,  71, 255, 255,
+        0,   1,   2,   3,   4,   5,   6,   7,   8,   9, 255,  72,  73,  74,  75,  76,
+       77,  10,  11,  12,  13,  14,  15,  16,  17,  18,  19,  20,  21,  22,  23,  24,
+       25,  26,  27,  28,  29,  30,  31,  32,  33,  34,  35, 255, 255, 255,  78,  79,
+       80,  36,  37,  38,  39,  40,  41,  42,  43,  44,  45,  46,  47,  48,  49,  50,
+       51,  52,  53,  54,  55,  56,  57,  58,  59,  60,  61,  81,  82,  83,  84, 255,
+      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+      255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255,
+  };
+  if (r->position == r->length)
+    luaL_error(r->state, "truncated region LZ4 block");
+  unsigned slot = (unsigned)(r->position % 4);
+  if (slot == 0) {
+    uint32_t word = 0;
+    const char *group = r->text + (r->position / 4) * 5;
+    for (int i = 0; i < 5; ++i) {
+      unsigned digit = digits[(unsigned char)group[i]];
+      if (digit == 255 || word > (UINT32_MAX - digit) / 85)
+        luaL_error(r->state, "invalid region base85 group");
+      word = word * 85 + digit;
+    }
+    r->word = word;
+    size_t remaining = r->length - r->position;
+    if (remaining < 4 && (word & (UINT32_MAX >> (remaining * 8))) != 0)
+      luaL_error(r->state, "nonzero region base85 padding");
+  }
+  ++r->position;
+  return (r->word >> (24 - slot * 8)) & 255;
+}
+
+static size_t display_lz4_length(display_b85_reader_t *r, size_t n,
+                                 size_t available) {
+  if (n == 15) {
+    unsigned extra;
+    do {
+      extra = display_b85_byte(r);
+      if (n > available || extra > available - n)
+        luaL_error(r->state, "region LZ4 output overflow");
+      n += extra;
+    } while (extra == 255);
+  }
+  if (n > available) luaL_error(r->state, "region LZ4 output overflow");
+  return n;
+}
+
+static int display_region_from_string(lua_State *state) {
+  int width = display_integer(state, 1, 0, 1, 4096);
+  int height = display_integer(state, 2, 0, 1, 4096);
+  size_t size;
+  luaL_checktype(state, 3, LUA_TSTRING);
+  const char *data = lua_tolstring(state, 3, &size);
+  static const char *const encodings[] = {"rgb565be", "rgb565be-lz4-b85", NULL};
+  int encoding = luaL_checkoption(state, 4, "rgb565be", encodings);
+  if (!lua_isnoneornil(state, 4) && lua_rawlen(state, 4) != strlen(encodings[encoding]))
+    return luaL_argerror(state, 4, "invalid region encoding");
+  size_t count = (size_t)width * height;
+  size_t bytes = count * 2;
+  display_b85_reader_t reader = {state, NULL, 0, 0, 0};
+  if (!encoding) {
+    if (size != bytes) return luaL_error(state, "region RGB565 length mismatch");
+  } else {
+    if (size < 8) return luaL_error(state, "truncated region header");
+    uint32_t length = 0;
+    for (int i = 0; i < 8; ++i) {
+      unsigned c = (unsigned char)data[i];
+      unsigned digit = c >= '0' && c <= '9' ? c - '0' :
+          c >= 'a' && c <= 'f' ? c - 'a' + 10 :
+          c >= 'A' && c <= 'F' ? c - 'A' + 10 : 16;
+      if (digit == 16) return luaL_error(state, "invalid region hex header");
+      length = length * 16 + digit;
+    }
+    /* Compare groups without overflowing size_t on 32-bit targets. */
+    size_t groups = length / 4 + (length % 4 != 0);
+    if (length == 0 || (size - 8) % 5 || (size - 8) / 5 != groups)
+      return luaL_error(state, "region base85 length mismatch");
+    reader.text = data + 8;
+    reader.length = length;
+  }
+  display_region_t *region = display_new_region(state, width, height, count, 0, 0, 0);
+  uint16_t *pixels = display_region_pixels(region);
+  unsigned char *out = (unsigned char *)pixels;
+  if (!encoding) {
+    memcpy(out, data, bytes);
+  } else {
+    size_t position = 0, last_match_start = 0;
+    int matched = 0;
+    for (;;) {
+      unsigned token = display_b85_byte(&reader);
+      size_t literals = display_lz4_length(&reader, token >> 4, bytes - position);
+      if (literals > reader.length - reader.position)
+        return luaL_error(state, "truncated region LZ4 literals");
+      for (size_t i = 0; i < literals; ++i)
+        out[position++] = (unsigned char)display_b85_byte(&reader);
+      if (reader.position == reader.length) {
+        if ((token & 15) != 0 || position != bytes ||
+            (matched && (literals < 5 || bytes - last_match_start < 12)))
+          return luaL_error(state, "invalid region LZ4 final sequence");
+        break;
+      }
+      unsigned offset = display_b85_byte(&reader);
+      offset |= display_b85_byte(&reader) << 8;
+      if (offset == 0 || offset > position)
+        return luaL_error(state, "invalid region LZ4 offset");
+      if (bytes - position < 4)
+        return luaL_error(state, "region LZ4 output overflow");
+      matched = 1;
+      last_match_start = position;
+      size_t match = display_lz4_length(&reader, token & 15, bytes - position - 4) + 4;
+      for (size_t i = 0; i < match; ++i) {
+        out[position] = out[position - offset];
+        ++position;
+      }
+    }
+  }
+  for (size_t i = 0; i < count; ++i)
+    pixels[i] = (uint16_t)((unsigned)out[2 * i] << 8 | out[2 * i + 1]);
+  for (int row = 0; row < height; ++row)
+    region->rows[row] = (display_region_row_t){(size_t)row * width, 0, 0, width, 0};
+  return 1;
+}
+
 static void display_check_capture(lua_State *state, h2_lua_job_t *job,
                                    int x, int y, int width, int height) {
   if (!job->display_open || width > job->display_info.width ||
@@ -3353,6 +3494,7 @@ int h2_lua_push_display_proxy(lua_State *state, h2_lua_job_t *job) {
   }
   lua_createtable(state, 0, 31);
   set_function(state, "stroke_path", display_stroke_path, job);
+  set_function(state, "region_from_string", display_region_from_string, job);
   set_function(state, "capture_region", display_capture_region, job);
   set_function(state, "draw_region", display_draw_region, job);
   set_function(state, "restore_background", display_restore_background, job);
