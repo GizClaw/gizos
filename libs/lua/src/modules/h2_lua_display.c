@@ -2882,7 +2882,8 @@ static unsigned display_b85_byte(display_b85_reader_t *r) {
     luaL_error(r->state, "truncated region LZ4 block");
   unsigned slot = (unsigned)(r->position % 4);
   if (slot == 0) {
-    uint32_t word;
+    /* luaL_error does not return, but GCC cannot see that. */
+    uint32_t word = 0;
     const char *group = r->text + (r->position / 4) * 5;
     if (!h2_encoding_decode_base85_group(&h2_encoding_base85_rfc1924, group, &word))
       luaL_error(r->state, "invalid region base85 group");
