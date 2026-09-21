@@ -161,6 +161,7 @@ cc_library(
     deps = [
         ":lua_core",
         ":numeric_prepared",
+        "//libs/encoding",
         "//libs/raster2d",
         "//libs/raster2d:span_internal",
         "//libs/runtime",

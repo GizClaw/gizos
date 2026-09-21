@@ -167,7 +167,7 @@ smooth 显式启用圆端点连续覆盖，每像素只混合最大 alpha 一次
 
 默认 `rgb565be` 接受恰好 `width*height*2` 个按行排列的二进制字节，每个 RGB565 像素高字节在前。`rgb565be-lz4-b85` 接受 8 位 ASCII 十六进制压缩长度与 Python `base64.b85encode(block,pad=True)` 文本，block 为标准 raw LZ4，不含 frame 或额外输出尺寸；输出必须恰好匹配宽高。Base85 字符、文本长度、32-bit group 溢出、零 padding、LZ4 截断、offset、输出边界及末尾序列条件均校验，不接受额外尾部数据。完整编码契约与示例见 [Lua Display API](../../references/lua.md#regions-from-strings)。
 
-同步解码在所属 VM worker 中直接写入 region userdata，不构造像素 Lua 表或完整中间解压缓冲区；Base85 字符使用 256 字节只读查表。像素、行元数据与 damage tiles 计入 VM 配额，输入字符串存活时也占自身配额，但 region 不保留输入引用。非法输入抛 Lua error，配额耗尽使用正常 Lua memory error；失败不发布半成品 region，不改变 framebuffer，临时 userdata 可由 GC 回收，释放其他数据后可以重试。普通 region 在最后引用释放后回收，背景持有的 region 沿用 `release_background` 和 teardown 的释放规则。
+同步解码在所属 VM worker 中直接写入 region userdata，不构造像素 Lua 表或完整中间解压缓冲区；Base85 分组由 [`libs/encoding`](./encoding.md) 的 `h2_encoding_decode_base85_group()` 按 `h2_encoding_base85_rfc1924` 的只读解码表逐组解码，长度头、完整分组、零 padding 与 LZ4 规则仍由 Display 校验。像素、行元数据与 damage tiles 计入 VM 配额，输入字符串存活时也占自身配额，但 region 不保留输入引用。非法输入抛 Lua error，配额耗尽使用正常 Lua memory error；失败不发布半成品 region，不改变 framebuffer，临时 userdata 可由 GC 回收，释放其他数据后可以重试。普通 region 在最后引用释放后回收，背景持有的 region 沿用 `release_background` 和 teardown 的释放规则。
 
 `display.capture_region(x,y,width,height,key=nil,reuse=nil)` 捕获 framebuffer 中的正尺寸区域，宽高各不超过 4096，位置和尺寸必须为整数且完整位于屏内。它只保存已绘制的 RGB565 像素，不加载贴图或文件。省略 key 保存不透明区域；指定 key 时压缩每行两侧透明边距，并预编译非透明连续段。透明捕获先取得 VM 内完整临时副本，再对不可变副本压缩，防止 allocation-triggered GC 改变两次扫描之间的像素。reuse 仅接受同尺寸的不透明快照，且本次不能指定 key；返回同一 userdata，不重新分配像素存储。重新捕获当前背景会使恢复基线失效，下次完整恢复。
 
