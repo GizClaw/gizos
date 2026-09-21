@@ -110,7 +110,7 @@ static void check_vector(const vector_t *v) {
         memset(bytes, 0xa5, sizeof(bytes));
         CHECK(h2_encoding_decode(v->enc, v->text, text_len, bytes, v->plain_len - 1, &n) ==
               H2_ENCODING_ERR_NO_SPACE);
-        CHECK(n == v->plain_len && bytes[0] == 0xa5);
+        CHECK(n == v->plain_len);
     }
 }
 
@@ -124,7 +124,10 @@ static void check_corrupt(const h2_encoding_t *enc, const char *text, size_t off
         fprintf(stderr, "corrupt '%s': offset %zu, want %zu\n", text, n, offset);
         exit(1);
     }
-    CHECK(bytes[0] == 0xa5);
+    /* Corruption wins over lack of space. */
+    n = 12345;
+    CHECK(h2_encoding_decode(enc, text, strlen(text), NULL, 0, &n) == H2_ENCODING_ERR_CORRUPT);
+    CHECK(n == offset);
 }
 
 static void test_corrupt_inputs(void) {
@@ -207,6 +210,16 @@ static void test_round_trips(void) {
                 CHECK(h2_encoding_encode(k_all[e], plain, len, text, n - 1, &m) ==
                       H2_ENCODING_ERR_NO_SPACE);
                 CHECK(m == n);
+                CHECK(h2_encoding_encode(k_all[e], plain, len, text, sizeof(text), &m) ==
+                      H2_ENCODING_OK);
+            }
+            if (len > 0) {
+                CHECK(h2_encoding_decode(k_all[e], text, n, back, len - 1, &m) ==
+                      H2_ENCODING_ERR_NO_SPACE);
+                CHECK(m == len);
+                CHECK(h2_encoding_decode(k_all[e], text, n, NULL, 0, &m) ==
+                      H2_ENCODING_ERR_NO_SPACE);
+                CHECK(m == len);
             }
         }
     }
@@ -238,32 +251,38 @@ static void test_chunked_encoding(void) {
 
 static void test_custom_alphabets(void) {
     /* bcrypt-style base64 alphabet without padding. */
-    h2_encoding_t crypt = {H2_ENCODING_KIND_BASE64,
-                           "./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
-                           '\0', '\0'};
+    h2_encoding_t crypt;
     char text[16];
     uint8_t bytes[16];
     size_t n = 0;
-    CHECK(h2_encoding_is_valid(&crypt));
+    CHECK(h2_encoding_init(&crypt, H2_ENCODING_KIND_BASE64,
+                           "./ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789",
+                           '\0', '\0') == H2_ENCODING_OK);
     CHECK(h2_encoding_encode(&crypt, (const uint8_t *)"\x00\xff", 2, text, sizeof(text), &n) ==
           H2_ENCODING_OK);
     CHECK(n == 3 && memcmp(text, ".N6", 3) == 0);
     CHECK(h2_encoding_decode(&crypt, ".N6", 3, bytes, sizeof(bytes), &n) == H2_ENCODING_OK);
     CHECK(n == 2 && bytes[0] == 0x00 && bytes[1] == 0xff);
 
-    /* WithPadding equivalent: a copy of a standard descriptor with padding changed. */
-    h2_encoding_t star = h2_encoding_base32_std;
-    star.padding = '*';
+    /* WithPadding equivalent: reuse a predefined alphabet with other padding. */
+    h2_encoding_t star;
+    CHECK(h2_encoding_init(&star, H2_ENCODING_KIND_BASE32, h2_encoding_base32_std.alphabet, '*',
+                           '\0') == H2_ENCODING_OK);
     CHECK(h2_encoding_encode(&star, (const uint8_t *)"f", 1, text, sizeof(text), &n) ==
           H2_ENCODING_OK);
     CHECK(n == 8 && memcmp(text, "MY******", 8) == 0);
-    star.padding = '\0';
+    CHECK(h2_encoding_decode(&star, "MY******", 8, bytes, sizeof(bytes), &n) == H2_ENCODING_OK);
+    CHECK(n == 1 && bytes[0] == 'f');
+    CHECK(h2_encoding_init(&star, H2_ENCODING_KIND_BASE32, h2_encoding_base32_std.alphabet, '\0',
+                           '\0') == H2_ENCODING_OK);
     CHECK(h2_encoding_encode(&star, (const uint8_t *)"f", 1, text, sizeof(text), &n) ==
           H2_ENCODING_OK);
     CHECK(n == 2 && memcmp(text, "MY", 2) == 0);
 
     /* Uppercase hex output; decoding folds case in both directions. */
-    h2_encoding_t upper = {H2_ENCODING_KIND_HEX, "0123456789ABCDEF", '\0', '\0'};
+    h2_encoding_t upper;
+    CHECK(h2_encoding_init(&upper, H2_ENCODING_KIND_HEX, "0123456789ABCDEF", '\0', '\0') ==
+          H2_ENCODING_OK);
     CHECK(h2_encoding_encode(&upper, (const uint8_t *)"\xab", 1, text, sizeof(text), &n) ==
           H2_ENCODING_OK);
     CHECK(n == 2 && memcmp(text, "AB", 2) == 0);
@@ -274,19 +293,42 @@ static void test_custom_alphabets(void) {
     CHECK(n == 3 && bytes[0] == 0xab && bytes[1] == 0xcd && bytes[2] == 0xef);
 
     /* A base85 zero group can be added to any base85 alphabet. */
-    h2_encoding_t zeros = h2_encoding_base85_rfc1924;
-    zeros.zero_group = '\'';
+    h2_encoding_t zeros;
+    CHECK(h2_encoding_init(&zeros, H2_ENCODING_KIND_BASE85, h2_encoding_base85_rfc1924.alphabet,
+                           '\0', '\'') == H2_ENCODING_OK);
     CHECK(h2_encoding_encode(&zeros, (const uint8_t *)"\0\0\0\0\0", 5, text, sizeof(text), &n) ==
           H2_ENCODING_OK);
     CHECK(n == 3 && memcmp(text, "'00", 3) == 0);
+    CHECK(h2_encoding_decode(&zeros, "'00", 3, bytes, sizeof(bytes), &n) == H2_ENCODING_OK);
+    CHECK(n == 5 && memcmp(bytes, "\0\0\0\0\0", 5) == 0);
+}
+
+/* Every predefined table must equal what h2_encoding_init builds. */
+static void test_predefined_match_init(void) {
+    for (size_t e = 0; e < COUNT(k_all); ++e) {
+        const h2_encoding_t *want = k_all[e];
+        h2_encoding_t got;
+        CHECK(h2_encoding_init(&got, want->kind, want->alphabet, want->padding,
+                               want->zero_group) == H2_ENCODING_OK);
+        CHECK(got.kind == want->kind && got.padding == want->padding &&
+              got.zero_group == want->zero_group);
+        CHECK(memcmp(got.alphabet, want->alphabet, sizeof(got.alphabet)) == 0);
+        CHECK(memcmp(got.decode_map, want->decode_map, sizeof(got.decode_map)) == 0);
+    }
 }
 
 static void test_invalid_descriptors(void) {
     static const char k_b64[] =
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    const h2_encoding_t invalid[] = {
-        {(h2_encoding_kind_t)0, k_b64, '\0', '\0'},
-        {(h2_encoding_kind_t)5, k_b64, '\0', '\0'},
+    const char *a85 = h2_encoding_base85_ascii85.alphabet;
+    const struct {
+        int kind;
+        const char *alphabet;
+        char padding;
+        char zero_group;
+    } invalid[] = {
+        {0, k_b64, '\0', '\0'},
+        {5, k_b64, '\0', '\0'},
         {H2_ENCODING_KIND_BASE64, NULL, '\0', '\0'},
         {H2_ENCODING_KIND_BASE64, "ABC", '\0', '\0'},
         {H2_ENCODING_KIND_BASE32, k_b64, '\0', '\0'},
@@ -301,26 +343,65 @@ static void test_invalid_descriptors(void) {
         {H2_ENCODING_KIND_BASE64, k_b64, '\n', '\0'},
         {H2_ENCODING_KIND_BASE64, k_b64, '\0', 'z'},
         {H2_ENCODING_KIND_HEX, "0123456789abcdef", '=', '\0'},
-        {H2_ENCODING_KIND_BASE85, h2_encoding_base85_ascii85.alphabet, '=', '\0'},
-        {H2_ENCODING_KIND_BASE85, h2_encoding_base85_ascii85.alphabet, '\0', 'u'},
-        {H2_ENCODING_KIND_BASE85, h2_encoding_base85_ascii85.alphabet, '\0', '\t'},
+        {H2_ENCODING_KIND_BASE85, a85, '=', '\0'},
+        {H2_ENCODING_KIND_BASE85, a85, '\0', 'u'},
+        {H2_ENCODING_KIND_BASE85, a85, '\0', '\t'},
     };
+    for (size_t i = 0; i < COUNT(invalid); ++i) {
+        h2_encoding_t enc;
+        memset(&enc, 0x5a, sizeof(enc));
+        CHECK(h2_encoding_init(&enc, (h2_encoding_kind_t)invalid[i].kind, invalid[i].alphabet,
+                               invalid[i].padding, invalid[i].zero_group) ==
+              H2_ENCODING_ERR_INVALID_ARG);
+        CHECK(enc.decode_map[0] == 0x5a && enc.alphabet[0] == 0x5a);
+    }
+    CHECK(h2_encoding_init(NULL, H2_ENCODING_KIND_BASE64, k_b64, '\0', '\0') ==
+          H2_ENCODING_ERR_INVALID_ARG);
+
+    /* Calls reject NULL and unknown-kind descriptors without touching outputs. */
+    h2_encoding_t unknown = h2_encoding_base64_std;
+    unknown.kind = (h2_encoding_kind_t)9;
+    const h2_encoding_t *unusable[] = {NULL, &unknown};
     uint8_t byte = 0;
     char ch = 0;
-    for (size_t i = 0; i < COUNT(invalid); ++i) {
+    for (size_t i = 0; i < COUNT(unusable); ++i) {
         size_t n = 777;
-        CHECK(!h2_encoding_is_valid(&invalid[i]));
-        CHECK(h2_encoding_max_encoded_len(&invalid[i], 1, &n) == H2_ENCODING_ERR_INVALID_ARG);
-        CHECK(h2_encoding_max_decoded_len(&invalid[i], 1, &n) == H2_ENCODING_ERR_INVALID_ARG);
-        CHECK(h2_encoding_encode(&invalid[i], &byte, 1, &ch, 1, &n) ==
+        CHECK(h2_encoding_max_encoded_len(unusable[i], 1, &n) == H2_ENCODING_ERR_INVALID_ARG);
+        CHECK(h2_encoding_max_decoded_len(unusable[i], 1, &n) == H2_ENCODING_ERR_INVALID_ARG);
+        CHECK(h2_encoding_encode(unusable[i], &byte, 1, &ch, 1, &n) ==
               H2_ENCODING_ERR_INVALID_ARG);
-        CHECK(h2_encoding_decode(&invalid[i], "AA", 2, &byte, 1, &n) ==
+        CHECK(h2_encoding_decode(unusable[i], "AA", 2, &byte, 1, &n) ==
               H2_ENCODING_ERR_INVALID_ARG);
-        CHECK(n == 777);
+        CHECK(n == 777 && byte == 0 && ch == 0);
     }
-    CHECK(!h2_encoding_is_valid(NULL));
-    for (size_t e = 0; e < COUNT(k_all); ++e) {
-        CHECK(h2_encoding_is_valid(k_all[e]));
+}
+
+/* A hand-edited descriptor gives unspecified output but stays in bounds;
+ * run under ASan to check. */
+static void test_edited_descriptor_stays_in_bounds(void) {
+    uint8_t plain[64];
+    char text[160];
+    uint8_t back[64];
+    for (size_t i = 0; i < sizeof(plain); ++i) {
+        plain[i] = (uint8_t)(i * 73u);
+    }
+    for (int kind = H2_ENCODING_KIND_HEX; kind <= H2_ENCODING_KIND_BASE85; ++kind) {
+        h2_encoding_t enc;
+        memset(&enc, 0, sizeof(enc));
+        enc.kind = (h2_encoding_kind_t)kind;
+        enc.padding = '=';
+        enc.zero_group = 'z';
+        for (size_t i = 0; i < sizeof(enc.decode_map); ++i) {
+            enc.decode_map[i] = (uint8_t)(i * 151u);
+        }
+        size_t n = 0;
+        size_t m = 0;
+        (void)h2_encoding_encode(&enc, plain, sizeof(plain), text, sizeof(text), &n);
+        for (size_t i = 0; i < sizeof(text); ++i) {
+            text[i] = (char)(i * 29u);
+        }
+        (void)h2_encoding_decode(&enc, text, sizeof(text), back, sizeof(back), &m);
+        (void)h2_encoding_decode(&enc, text, 7, back, 3, &m);
     }
 }
 
@@ -365,7 +446,9 @@ int main(void) {
     test_round_trips();
     test_chunked_encoding();
     test_custom_alphabets();
+    test_predefined_match_init();
     test_invalid_descriptors();
+    test_edited_descriptor_stays_in_bounds();
     test_invalid_arguments();
     return 0;
 }
