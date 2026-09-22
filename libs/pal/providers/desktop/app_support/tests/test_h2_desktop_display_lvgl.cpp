@@ -14,6 +14,7 @@ void run_lifecycle() {
       h2_desktop_platform_default_allocator(), h2_desktop_platform_task_api(),
       h2_desktop_platform_sync_api(),          h2_desktop_platform_queue_api(),
       h2_desktop_platform_time_api(),
+      0u, 0u,
   };
   assert(h2_lvgl_platform_init(&platform) == H2_PAL_OK);
   lv_init();

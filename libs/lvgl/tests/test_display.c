@@ -111,6 +111,7 @@ int main(void) {
         h2_desktop_platform_sync_api(),
         h2_desktop_platform_queue_api(),
         h2_desktop_platform_time_api(),
+        0u, 0u,
     };
     const h2_pal_display_vtable_t display_vtable = {
         display_open, display_info, display_draw, display_present, NULL,
