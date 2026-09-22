@@ -60,6 +60,7 @@ void app_main(AppContext *context) {
       context->runtime->sync,
       context->runtime->queue,
       context->runtime->time,
+      0u, 0u,
   };
   if (h2_lvgl_platform_init(&platform) != 0) {
     context->result = H2_PAL_ERR_UNAVAILABLE;
