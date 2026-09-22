@@ -18,6 +18,8 @@ static bool list_failure, bad_revision, missing, close_during_list,
     reload_failure;
 static bool paginated, empty_cycle, get_failure;
 static const char *server_revision;
+static const char *workflow_get_collection;
+static unsigned workflow_gets;
 static unsigned closed_after_reload;
 static h2_gizclaw_conversation_completion_fn terminal;
 static h2_gizclaw_conversation_callback_fn on_event;
@@ -30,6 +32,38 @@ static atomic_int last_cancel_source;
 static unsigned end_noops;
 static size_t downlink_writes;
 static unsigned flushes;
+static bool stream_mode;
+static unsigned sink_begin, sink_pages, sink_commit, sink_abort;
+static h2_pal_result_t sink_result;
+static char sink_revision[129];
+static h2_pal_result_t catalog_sink(void *user,
+                                    h2_gizclaw_catalog_event_t event,
+                                    const h2_gizclaw_workflow_page_t *page,
+                                    const char *profile,
+                                    const char *revision) {
+  (void)user;
+  assert(strcmp(profile, "test-profile") == 0);
+  assert(revision != NULL && revision[0] != '\0');
+  switch (event) {
+  case H2_GIZCLAW_CATALOG_BEGIN:
+    ++sink_begin;
+    sink_revision[0] = '\0';
+    return H2_PAL_OK;
+  case H2_GIZCLAW_CATALOG_PAGE:
+    assert(page != NULL && page->runtime_profile_revision != NULL);
+    ++sink_pages;
+    strcpy(sink_revision, page->runtime_profile_revision);
+    return sink_result;
+  case H2_GIZCLAW_CATALOG_COMMIT:
+    ++sink_commit;
+    return H2_PAL_OK;
+  case H2_GIZCLAW_CATALOG_ABORT:
+    ++sink_abort;
+    return H2_PAL_OK;
+  }
+  assert(false);
+  return H2_PAL_ERR_INVALID_ARG;
+}
 /* Typed RPC order: d=delete, g=get, c=create, r=reload. */
 static char rpc_trace[16];
 static void trace(char step) {
@@ -168,6 +202,23 @@ h2_pal_result_t h2_gizclaw_rpc_workflow_list(h2_gizclaw_service_t *service,
     out->next_cursor = copy(&arena, "next");
   return h2_gizclaw_resp_arena_end(&arena, H2_PAL_OK);
 }
+h2_pal_result_t h2_gizclaw_rpc_workflow_get(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t name, uint32_t timeout,
+    h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_workflow_get_result_t *out) {
+  (void)service;
+  assert(timeout > 0u);
+  ++workflow_gets;
+  h2_gizclaw_resp_arena_t arena;
+  assert(h2_gizclaw_resp_arena_begin(storage, &arena) == H2_PAL_OK);
+  *out = (h2_gizclaw_workflow_get_result_t){
+      .workflow = {.collection = copy(&arena, workflow_get_collection),
+                   .name = copy(&arena, name.data)},
+      .runtime_profile_name = copy(&arena, "test-profile"),
+      .runtime_profile_revision = copy(&arena, server_revision),
+  };
+  return h2_gizclaw_resp_arena_end(&arena, H2_PAL_OK);
+}
 h2_pal_result_t
 h2_gizclaw_rpc_workspace_get(h2_gizclaw_service_t *service,
                              h2_gizclaw_str_t name, uint32_t timeout,
@@ -300,6 +351,9 @@ static void setup(size_t collections) {
   text_result = H2_PAL_OK;
   text_seen[0] = '\0';
   flushes = 0u;
+  sink_begin = sink_pages = sink_commit = sink_abort = 0u;
+  sink_result = H2_PAL_OK;
+  sink_revision[0] = '\0';
   downlink_writes = 0u;
   audio_input_empty = false;
   audio_start_result = audio_end_result = H2_PAL_OK;
@@ -310,6 +364,8 @@ static void setup(size_t collections) {
       false;
   paginated = empty_cycle = get_failure = false;
   server_revision = "v1";
+  workflow_get_collection = "alpha";
+  workflow_gets = 0u;
   closed_after_reload = 0u;
   now = list_delay = 0u;
   atomic_store(&gate_list, false);
@@ -328,8 +384,9 @@ static void setup(size_t collections) {
       .time = &time_api,
       .collections = names,
       .collection_count = collections,
-      .max_workflows = 4u,
+      .max_workflows = stream_mode ? 1u : 4u,
       .catalog_bytes = 16384u,
+      .catalog_sink = stream_mode ? catalog_sink : NULL,
   };
   assert(h2_gizclaw_session_create(&config, &session) == H2_PAL_OK);
 }
@@ -346,6 +403,52 @@ static const h2_gizclaw_session_selection_t selection = {
 static void teardown(void) {
   assert(h2_gizclaw_session_destroy(&session) == H2_PAL_OK);
   assert(session == NULL);
+}
+static void test_streaming(void) {
+  stream_mode = true;
+  setup(2u);
+  stream_mode = false;
+  paginated = true;
+  assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+  assert(sink_begin == 1u && sink_pages == 4u && sink_commit == 1u &&
+         sink_abort == 0u && snapshot().workflow_count == 4u);
+  assert(strcmp(sink_revision, "v1") == 0);
+  uint8_t bytes[64];
+  h2_gizclaw_resp_storage_t storage = {bytes, sizeof(bytes), 0u};
+  h2_gizclaw_workflow_page_t catalog;
+  assert(h2_gizclaw_session_catalog_copy(session, &storage, &catalog) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  h2_gizclaw_session_selection_t other = selection;
+  other.collection = "outside-catalog";
+  workflow_get_collection = other.collection;
+  assert(h2_gizclaw_session_select(session, &other, 1000u) == H2_PAL_OK);
+  assert(workflow_gets == 1u);
+  server_revision = "v2";
+  assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_OK);
+  assert(sink_commit == 2u && strcmp(snapshot().profile_revision, "v2") == 0);
+  sink_result = H2_PAL_ERR_IO;
+  assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_ERR_IO);
+  assert(sink_abort == 1u && sink_commit == 2u);
+  teardown();
+
+  stream_mode = true;
+  setup(1u);
+  stream_mode = false;
+  close_during_list = true;
+  assert(h2_gizclaw_session_register(session, "token", 1000u) ==
+         H2_PAL_ERR_CLOSED);
+  assert(sink_abort == 1u && sink_commit == 0u);
+  teardown();
+
+  stream_mode = true;
+  setup(1u);
+  stream_mode = false;
+  paginated = true;
+  bad_revision = true;
+  assert(h2_gizclaw_session_register(session, "token", 1000u) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(sink_pages == 1u && sink_abort == 1u && sink_commit == 0u);
+  teardown();
 }
 static void register_thread(void *out) {
   *(h2_pal_result_t *)out =
@@ -990,6 +1093,7 @@ static void test_speech_rate_parameter(void) {
 }
 
 int main(void) {
+  test_streaming();
   test_speech_rate_parameter();
   test_send_text();
   test_control_boundaries();

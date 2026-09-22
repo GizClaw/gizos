@@ -16,6 +16,12 @@ GizClaw library 负责 SDK 集成和 client protocol，不创建具体 HTTP、We
 
 Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Workflow projection 中复制 driver enum，也不要求调用方根据 driver 构造 Workspace 参数。Workspace 更新统一使用 `h2_gizclaw_*workspace_set_parameters`，对应 SDK 0.15.5 的 `server.workspace.parameters.set`（110）；旧的 `workspace_set_input` 入口已删除。
 
+### Session Workflow 目录流
+
+`h2_gizclaw_session_config_t.catalog_sink` 启用逐页刷新。Session 用固定的 `catalog_bytes` response buffer 依次读取配置的 collection；回调收到 `BEGIN`、零或多次 `PAGE`、最后 `COMMIT`，任何 RPC、格式、超时、取消或 sink 错误则收到 `ABORT`。PAGE 中的字符串和 item 只在回调期间有效；sink 应将新目录暂存，COMMIT 后原子发布，ABORT 丢弃暂存。回调在调用 refresh/register 的任务上执行，不得重入同一个 Session。每页携带 Runtime Profile 名称和 revision；一轮内不一致会失败。目录大小不受 `max_workflows` 限制，Session 不保留全部 item，`catalog_copy` 在此模式返回 `UNSUPPORTED`。调用方可用文件保存目录并按可见窗口读取，是否跳过相同 revision 的重写由 sink 决定。
+
+流式模式下 Workspace selection 以调用方提供的 collection、Workflow name、Workspace name 和可选参数发起服务端请求；Session 不先从内存目录查找，而是用 Workflow get 核对 collection 与 Profile identity，再进行 Workspace create/get/reload。未配置 sink 的旧调用方继续使用有界的保留目录与 `catalog_copy`。
+
 依赖的 GizClaw C SDK 当前固定为 0.18.16。自 0.17.0 起，`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
 
 `h2_gizclaw_workspace_parameters_patch_t` 通过独立 `has_*` 标记选择 input（PTT/Realtime）、conversation initiative（peer/agent）、agent initiative policy（once_when_empty/on_reload）和 TTS 语速（见 [Workspace 参数补丁](#workspace-参数补丁)）。`workspace_set_parameters` 至少指定一个字段；显式的无效枚举值、空 patch、非法名称在发送前返回 INVALID_ARG。create 编码并持有 patch 数据，调用方随后可释放或修改原对象；同步入口沿用同一 request/parse 流程。

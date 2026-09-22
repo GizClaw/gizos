@@ -741,6 +741,16 @@ h2_pal_result_t h2_gizclaw_rpc_workflow_list(h2_gizclaw_service_t *service,
       .runtime_profile_name="profile", .runtime_profile_revision="v1"};
   return H2_PAL_OK;
 }
+h2_pal_result_t h2_gizclaw_rpc_workflow_get(h2_gizclaw_service_t *service,
+    h2_gizclaw_str_t name, uint32_t timeout,
+    h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_workflow_get_result_t *out) {
+  (void)service; (void)timeout; (void)storage;
+  *out = (h2_gizclaw_workflow_get_result_t){
+      .workflow={.collection="assistants", .name=(char *)name.data},
+      .runtime_profile_name="profile", .runtime_profile_revision="v1"};
+  return H2_PAL_OK;
+}
 h2_pal_result_t h2_gizclaw_rpc_workspace_get(h2_gizclaw_service_t *service,
     h2_gizclaw_str_t name, uint32_t timeout, h2_gizclaw_resp_storage_t *storage,
     h2_gizclaw_workspace_get_result_t *out) {

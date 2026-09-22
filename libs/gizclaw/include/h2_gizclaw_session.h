@@ -12,6 +12,24 @@ extern "C" {
 
 typedef struct h2_gizclaw_session h2_gizclaw_session_t;
 
+/** A streamed refresh is transactional from the caller's point of view.
+ * BEGIN starts a replacement after the first page establishes Profile identity;
+ * PAGE borrows one decoded page for this call,
+ * COMMIT publishes it atomically or leaves the prior publication intact, and
+ * ABORT discards staging. The sink must never call back into this Session;
+ * COMMIT runs under the Session lock. A non-OK result stops refresh;
+ * ABORT is best effort. Profile name and revision are valid for every event. */
+typedef enum h2_gizclaw_catalog_event {
+  H2_GIZCLAW_CATALOG_BEGIN,
+  H2_GIZCLAW_CATALOG_PAGE,
+  H2_GIZCLAW_CATALOG_COMMIT,
+  H2_GIZCLAW_CATALOG_ABORT,
+} h2_gizclaw_catalog_event_t;
+typedef h2_pal_result_t (*h2_gizclaw_catalog_sink_fn)(
+    void *user, h2_gizclaw_catalog_event_t event,
+    const h2_gizclaw_workflow_page_t *page, const char *profile_name,
+    const char *profile_revision);
+
 typedef enum h2_gizclaw_session_phase {
   H2_GIZCLAW_SESSION_EMPTY = 0,
   H2_GIZCLAW_SESSION_PREPARING,
@@ -93,6 +111,9 @@ typedef struct h2_gizclaw_session_config {
   size_t collection_count;
   size_t max_workflows;
   size_t catalog_bytes;
+  /** When set, retain only a single page. max_workflows is ignored. */
+  h2_gizclaw_catalog_sink_fn catalog_sink;
+  void *catalog_sink_user;
 } h2_gizclaw_session_config_t;
 
 /** Product-selected names; NULL collection/workflow opens an existing workspace
@@ -117,6 +138,7 @@ h2_pal_result_t
 h2_gizclaw_session_snapshot(h2_gizclaw_session_t *session,
                             h2_gizclaw_session_state_t *out_state);
 /** Copies the complete valid catalog and Profile identity into caller storage.
+ * Returns UNSUPPORTED in streamed mode.
  * Failure clears out_catalog. Retained stale data is never returned as valid.
  */
 h2_pal_result_t
