@@ -2469,6 +2469,7 @@ static void test_host_allocator(void) {
     heap_test_balanced(&host_mem);
   }
   assert(atomic_load(&runtime_mem.allocs) == 0u);
+  h2_runtime_deinit(runtime);
 }
 
 static void test_reserved_vm_heap(void) {
