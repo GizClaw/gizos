@@ -2,6 +2,8 @@
 
 `libs/mem_arena` 把调用方的一块内存作为有边界的分配域，通过标准 Memory PAL 借给 consumer。Core 只依赖 PAL 和已有的 portable TLSF，不选择平台内存、不创建锁，也不替换默认 allocator。
 
+TLSF 的 build adapter 强制包含 `h2_tlsf.h`，把内部依赖的公共符号统一映射为 `h2_tlsf_*`，避免与 SDK 自带 TLSF 冲突。Windows MSVC 使用 `/FI`，其余工具链使用 `-include`；arena host test 同时验证该符号映射能够完成链接。
+
 ## API Reference
 
 [API Reference](/references/mem_arena) 由生产 Public Header `libs/mem_arena/include/h2_mem_arena.h` 生成，参数、统计字段和返回值以该头文件为准。
