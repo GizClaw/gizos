@@ -4522,12 +4522,13 @@ static int telemetry_firmware_send(void *user,
 typedef struct activity_log_capture {
   unsigned calls;
   bool leaked;
-  char last[160];
+  h2_pal_log_level_t level;
+  char last[512];
 } activity_log_capture_t;
 static int activity_capture_log(void *user, h2_pal_log_level_t level,
                                 const char *scope, const char *message) {
   activity_log_capture_t *capture = user;
-  (void)level;
+  capture->level = level;
   (void)scope;
   ++capture->calls;
   (void)snprintf(capture->last, sizeof(capture->last), "%s", message);
@@ -4650,6 +4651,67 @@ static void test_req_telemetry_activity(void) {
   assert(capture.calls == 1u && capture.mapped);
 
   h2_gizclaw_test_set_telemetry_send(NULL, NULL);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
+static void test_deinit_refusal_names_holders_once(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  activity_log_capture_t log_capture = {0};
+  static const h2_pal_log_vtable_t log_vtable = {.write = activity_capture_log};
+  const h2_pal_log_api_t log = {.user = &log_capture, .vtable = &log_vtable};
+  service->client_config.log = &log;
+
+  /* A refusal names every holder; owners retry each loop, so the same state
+   * is logged once. */
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_ERR_INVALID_STATE);
+  assert(log_capture.calls == 1u);
+  assert(log_capture.level == H2_PAL_LOG_WARN);
+  assert(strstr(log_capture.last, "stage=service_deinit_blocked stopped=0") !=
+         NULL);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_ERR_INVALID_STATE);
+  assert(log_capture.calls == 1u);
+
+  /* A new holder is a new state and is logged again. */
+  h2_gizclaw_req_t *request = NULL;
+  assert(h2_gizclaw_req_create_profile_get(service, 2, 1234, &request) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_ERR_INVALID_STATE);
+  assert(log_capture.calls == 2u);
+  assert(strstr(log_capture.last, "request_refs=1") != NULL);
+  /* Large counters must not truncate the final holder fields. */
+  service->active_count = SIZE_MAX;
+  service->caller_reference_count = SIZE_MAX;
+  service->request_reference_count = SIZE_MAX;
+  service->pcm_track_refs = SIZE_MAX;
+  service->downlink_refs = SIZE_MAX;
+  service->queued_event_count = SIZE_MAX;
+  service->dispatch_item_count = SIZE_MAX;
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_ERR_INVALID_STATE);
+  assert(log_capture.calls == 3u);
+  const char *counter_names[] = {"active", "caller_refs", "request_refs",
+                                 "track_refs", "downlink_refs", "queued_events",
+                                 "dispatch_items"};
+  for (size_t i = 0; i < sizeof(counter_names) / sizeof(counter_names[0]); ++i) {
+    char expected[64];
+    (void)snprintf(expected, sizeof(expected), "%s=%zu ", counter_names[i],
+                   SIZE_MAX);
+    assert(strstr(log_capture.last, expected) != NULL);
+  }
+  assert(strstr(log_capture.last, "audio_conversation=0 session=0") != NULL);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_ERR_INVALID_STATE);
+  assert(log_capture.calls == 3u);
+  service->active_count = 0u;
+  service->caller_reference_count = 0u;
+  service->request_reference_count = 1u;
+  service->pcm_track_refs = 0u;
+  service->downlink_refs = 0u;
+  service->queued_event_count = 0u;
+  service->dispatch_item_count = 0u;
+  h2_gizclaw_req_release(request);
+
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
@@ -13346,6 +13408,7 @@ int main(int argc, char **argv) {
   test_req_telemetry_copy_and_backpressure();
   test_req_telemetry_network_identity();
   test_req_telemetry_activity();
+  test_deinit_refusal_names_holders_once();
   test_req_workflow_public_paths();
   h2_gizclaw_async_rpc_test_set_ops(NULL);
   test_fifo_capacity_and_dispatch();

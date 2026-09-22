@@ -1457,7 +1457,37 @@ h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service) {
       service->pcm_track_unsetting || service->queued_event_count != 0u ||
       service->dispatch_item_count != 0u ||
       (service->terminal_pending && !service->terminal_dispatched)) {
+    /* The owner can only retry; name what still holds the Service so a leak
+     * is traceable from one field log. Formatted under the lock, written
+     * after it. */
+    /* Includes all seven size_t counters at their full decimal width. */
+    char message[512];
+    (void)snprintf(
+        message, sizeof(message),
+        "stage=service_deinit_blocked stopped=%d dispatching=%d active=%zu "
+        "caller_refs=%zu request_refs=%zu track_refs=%zu downlink_refs=%zu "
+        "track_unsetting=%d queued_events=%zu dispatch_items=%zu "
+        "terminal_pending=%d terminal_dispatched=%d audio_conversation=%d "
+        "session=%d",
+        service->stopped ? 1 : 0, service->dispatching ? 1 : 0,
+        service->active_count, service->caller_reference_count,
+        service->request_reference_count,
+        service->pcm_track_refs, service->downlink_refs,
+        service->pcm_track_unsetting ? 1 : 0,
+        service->queued_event_count, service->dispatch_item_count,
+        service->terminal_pending ? 1 : 0, service->terminal_dispatched ? 1 : 0,
+        service->audio_conversation != NULL ? 1 : 0,
+        service->session != NULL ? 1 : 0);
+    /* Owners retry every loop; log a refusal only when its state changes. */
+    uint32_t signature = 2166136261u;
+    for (const char *c = message; *c != '\0'; ++c)
+      signature = (signature ^ (uint8_t)*c) * 16777619u;
+    const bool changed = signature != service->deinit_blocked_signature;
+    service->deinit_blocked_signature = signature;
     unlock_service(service);
+    if (changed)
+      (void)h2_pal_log_write(service->config.client_config->log,
+                            H2_PAL_LOG_WARN, "gizclaw", message);
     return H2_PAL_ERR_INVALID_STATE;
   }
   h2_gizclaw_track_t *track = atomic_exchange(&service->pcm_track, NULL);
