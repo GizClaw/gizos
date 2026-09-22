@@ -326,6 +326,10 @@ static void test_lifecycle(void) {
     state.reallocs = 0u;
     assert(h2_lvgl_platform_init(&config) == 0);
     assert(state.calls == 0u);
+    assert(h2_lvgl_platform_init(&config) == 0); /* Legacy native rebinding. */
+    h2_lvgl_platform_config_t pool_request = config_for(&mem);
+    assert(h2_lvgl_platform_init(&pool_request) < 0);
+    assert(state.calls == 0u);
     void *ptr = lv_malloc_core(16u);
     assert(state.calls == 1u && state.live == 1u);
     ptr = lv_realloc_core(ptr, 32u);

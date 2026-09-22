@@ -148,7 +148,9 @@ int h2_lvgl_memory_prepare(void) {
 }
 
 int h2_lvgl_memory_init(const h2_lvgl_platform_config_t *config, int threaded) {
-    if (s_memory.allocator != NULL) return H2_PAL_ERR_INVALID_STATE;
+    if (s_memory.allocator != NULL &&
+        (s_memory.initial_bytes != 0u || config->pool_initial_bytes != 0u))
+        return H2_PAL_ERR_INVALID_STATE;
     if (config->pool_initial_bytes != 0u) {
         size_t grow = config->pool_grow_bytes != 0u ?
             config->pool_grow_bytes : config->pool_initial_bytes;

@@ -139,7 +139,7 @@ int h2_lvgl_platform_init(const h2_lvgl_platform_config_t *config) {
         config->task_api == NULL ||
         config->sync_api == NULL ||
         config->queue_api == NULL ||
-        config->time_api == NULL || s_h2_lvgl_platform.initialized) {
+        config->time_api == NULL) {
         return -1;
     }
 

@@ -27,8 +27,11 @@ typedef struct h2_lvgl_platform_config {
 } h2_lvgl_platform_config_t;
 
 /** @brief Bind borrowed PAL APIs before lv_init; return 0 on success.
- * A second binding, invalid settings or failed pool setup returns a negative
- * result without retaining new resources. APIs remain valid through lv_deinit
+ * Invalid settings or failed pool setup return a negative result and unwind.
+ * Rebinding with an active or requested pool requires platform_deinit first.
+ * Native direct-to-direct rebinding keeps its prior behavior; release live
+ * allocations before changing APIs. Web rejects duplicate bindings.
+ * APIs remain valid through lv_deinit
  * and platform_deinit. Lifecycle calls require quiescent consumers/workers.
  * Pool allocator callbacks must not reenter LVGL memory hooks. */
 int h2_lvgl_platform_init(const h2_lvgl_platform_config_t *config);
