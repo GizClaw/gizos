@@ -485,7 +485,7 @@ static h2_pal_result_t refresh_stream(h2_gizclaw_session_t *s) {
       rc = h2_gizclaw_rpc_workflow_list(
           s->config.service, str(s->config.collections[c]),
           str(cursor[0] != '\0' ? cursor : NULL),
-          H2_GIZCLAW_WORKFLOW_PAGE_MAX_ITEMS, timeout, &storage, &page);
+          8u, timeout, &storage, &page);
       if (rc != H2_PAL_OK)
         break;
       if (!same(page.runtime_profile_name, profile) ||

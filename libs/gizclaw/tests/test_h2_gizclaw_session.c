@@ -72,6 +72,7 @@ static void catalog_test_free(void *user, void *data) {
 static const h2_pal_mem_vtable_t catalog_test_mem_vtable = {
     .alloc = catalog_test_alloc, .free = catalog_test_free};
 static atomic_uint lists, gets, creates, reloads, conversations;
+static size_t list_limit;
 static bool list_failure, bad_revision, missing, close_during_list,
     reload_failure;
 static bool paginated, empty_cycle, get_failure;
@@ -185,7 +186,7 @@ h2_pal_result_t h2_gizclaw_rpc_workflow_list(h2_gizclaw_service_t *service,
                                              h2_gizclaw_resp_storage_t *storage,
                                              h2_gizclaw_workflow_page_t *out) {
   (void)service;
-  (void)limit;
+  list_limit = limit;
   assert(timeout > 0u);
   ++lists;
   atomic_store(&list_entered, true);
@@ -382,6 +383,7 @@ static h2_gizclaw_session_config_t session_config(size_t collections) {
   check_catalog_during_workspace = false;
   wrong_workflow_get_name = false;
   lists = gets = creates = reloads = conversations = terminal_count = 0u;
+  list_limit = 0u;
   audio_starts = audio_ends = 0u;
   releases = text_sends = 0u;
   text_result = H2_PAL_OK;
@@ -505,6 +507,7 @@ static void test_streaming_catalog(void) {
   assert(h2_gizclaw_session_create(&config, &session) == H2_PAL_OK);
   paginated = true;
   assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+  assert(list_limit == 8u);
   assert(sink.begin == 1u && sink.pages == 2u && sink.commit == 1u &&
          sink.entries == 2u && strcmp(sink.revision, "v1") == 0);
   assert(snapshot().workflow_count == 2u);
