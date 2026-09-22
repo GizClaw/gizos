@@ -18,7 +18,7 @@ typedef struct h2_mem_arena_config {
      * Includes arena/TLSF metadata; create never allocates outside this block. */
     void *block;
     size_t block_bytes;
-    /** Payload requests <= this value use the small pool in split mode. */
+    /** Payload requests <= this value prefer the small pool in split mode. */
     size_t small_request_max;
     /** First region's size, a multiple of TLSF alignment (8 bytes is portable).
      * Zero disables the small pool: large serves every size. In split mode
@@ -42,14 +42,20 @@ typedef struct h2_mem_arena_pool_stats {
     /** Requested payload in this pool, excluding fallback and metadata. */
     size_t live_bytes;
     size_t peak_bytes;
+    /** Largest payload requested from this class or successfully borrowed. */
     size_t largest_request;
-    /** Cumulative pool misses and requested bytes, including failed or absent
-     * fallback. Unrepresentable sizes are rejected before counting a request.
+    /** Cumulative misses after trying both pools, charged to the requested
+     * class, including failed or absent fallback. Unrepresentable sizes are
+     * rejected before counting a request.
      * Counters saturate at UINT64_MAX. */
     uint64_t fallback_count;
     uint64_t fallback_bytes;
     /** Live fallback payload belonging to this request class. */
     size_t fallback_live_bytes;
+    /** Cumulative successful allocations/reallocations this pool served for
+     * its sibling request class. Saturates at UINT64_MAX; free never decrements
+     * it. Live/peak bytes belong to the pool actually serving the block. */
+    uint64_t borrowed_count;
 } h2_mem_arena_pool_stats_t;
 
 typedef struct h2_mem_arena_stats {
@@ -70,9 +76,9 @@ h2_pal_result_t h2_mem_arena_create(const h2_mem_arena_config_t *config,
 /** @brief Borrow Memory PAL until destroy (NULL arena returns NULL).
  * Allocations are aligned for fundamental C types. Only this API may free or
  * realloc its blocks. Zero size frees and returns NULL; free(NULL) is a no-op.
- * Requests never borrow from the other size class. Realloc uses the original
- * pool when the class is unchanged, migrates across classes or fallback as
- * needed, and preserves the old allocation/data on failure.
+ * Requests try their preferred size class, then the sibling pool, then the
+ * optional fallback. Realloc can resize in its actual owning pool or migrate
+ * across pools/fallback, preserving the old allocation/data on failure.
  */
 const h2_pal_mem_api_t *h2_mem_arena_mem(h2_mem_arena_t *arena);
 

@@ -134,35 +134,39 @@ static void test_routing_and_stats(void) {
     finish(arena);
 }
 
-static void test_no_borrowing(bool with_fallback) {
+static void test_borrows_before_failing(bool with_fallback) {
     h2_mem_arena_t *arena = create(true, with_fallback);
     const h2_pal_mem_api_t *mem = h2_mem_arena_mem(arena);
-    void *small[32];
+    void *small[64];
     size_t count = 0u;
+    /* A full small pool borrows from the large pool instead of failing or
+     * spilling: the split keeps sizes apart, it must not strand free space. */
     do {
-        assert(count < 32u);
+        assert(count < 64u);
         small[count++] = h2_pal_mem_alloc(mem, SMALL_MAX);
     } while (inside(small[count - 1u], 0u, SMALL_BYTES));
-    assert(!inside(small[count - 1u], SMALL_BYTES, BLOCK_BYTES - SMALL_BYTES));
-    assert((small[count - 1u] != NULL) == with_fallback);
+    assert(inside(small[count - 1u], SMALL_BYTES, BLOCK_BYTES - SMALL_BYTES));
     h2_mem_arena_stats_t s = stats(arena);
-    assert(s.small.fallback_count == 1u && s.small.fallback_bytes == SMALL_MAX);
-    assert(s.large.live_bytes == 0u && s.large.fallback_count == 0u);
-    /* Churn a full small pool without consuming space for a large buffer. */
+    assert(s.small.fallback_count == 0u && s.large.fallback_count == 0u);
+    assert(s.large.borrowed_count == 1u);
+    assert(s.large.live_bytes == SMALL_MAX);
+    /* Large requests still come from the large pool. */
     void *large = h2_pal_mem_alloc(mem, 256u * 1024u);
     assert(inside(large, SMALL_BYTES, BLOCK_BYTES - SMALL_BYTES));
     for (size_t i = 0; i < count; ++i)
         h2_pal_mem_free(mem, small[i]);
     h2_pal_mem_free(mem, large);
-    large = h2_pal_mem_alloc(mem, BLOCK_BYTES - SMALL_BYTES);
+    s = stats(arena);
+    assert(s.small.live_bytes == 0u && s.large.live_bytes == 0u);
+    /* Neither pool can hold the whole block, so the request leaves the arena
+     * only when a fallback exists; otherwise it fails. */
+    large = h2_pal_mem_alloc(mem, BLOCK_BYTES);
     assert(!inside(large, 0u, BLOCK_BYTES));
     assert((large != NULL) == with_fallback);
     s = stats(arena);
-    assert(s.small.live_bytes == 0u && s.large.live_bytes == 0u);
     assert(s.large.fallback_count == 1u);
-    assert(s.large.fallback_bytes == BLOCK_BYTES - SMALL_BYTES);
     if (with_fallback) {
-        assert(s.fallback_live_bytes == BLOCK_BYTES - SMALL_BYTES);
+        assert(s.fallback_live_bytes == BLOCK_BYTES);
         assert(h2_mem_arena_destroy(arena) == H2_PAL_ERR_INVALID_STATE);
     }
     h2_pal_mem_free(mem, large);
@@ -247,18 +251,95 @@ static void test_fallback_without_realloc(void) {
     finish(arena);
 }
 
-static void test_class_change_failure(void) {
+static void test_class_change_borrowing(void) {
     h2_mem_arena_t *arena = create(true, false);
     const h2_pal_mem_api_t *mem = h2_mem_arena_mem(arena);
     void *p = h2_pal_mem_alloc(mem, 128u);
     memset(p, 0x3c, 128u);
     void *full = h2_pal_mem_alloc(mem, 360u * 1024u);
     assert(full != NULL);
-    assert(h2_pal_mem_realloc(mem, p, 32u * 1024u) == NULL);
+    /* Growing across the class boundary finds the large pool full and is
+     * served by the small pool it came from; the payload survives. */
+    void *grown = h2_pal_mem_realloc(mem, p, 32u * 1024u);
+    assert(grown != NULL && inside(grown, 0u, SMALL_BYTES));
+    p = grown;
     check(p, 128u, 0x3c);
-    assert(stats(arena).small.live_bytes == 128u);
+    assert(stats(arena).small.live_bytes == 32u * 1024u);
+    assert(stats(arena).small.borrowed_count == 1u);
     h2_pal_mem_free(mem, full);
     h2_pal_mem_free(mem, p);
+    finish(arena);
+}
+
+static void test_borrowed_realloc_accounting(void) {
+    h2_mem_arena_t *arena = create(true, true);
+    const h2_pal_mem_api_t *mem = h2_mem_arena_mem(arena);
+    void *full = h2_pal_mem_alloc(mem, 360u * 1024u);
+    void *p = h2_pal_mem_alloc(mem, 48u * 1024u);
+    assert(full != NULL && inside(p, 0u, SMALL_BYTES));
+    memset(p, 0x6b, 1024u);
+    /* A second 80 KiB block cannot fit; growth must resize the borrowed block. */
+    assert(h2_pal_mem_realloc(mem, p, 80u * 1024u) == p);
+    check(p, 1024u, 0x6b);
+    h2_mem_arena_stats_t s = stats(arena);
+    assert(s.small.live_bytes == 80u * 1024u);
+    assert(s.small.peak_bytes == s.small.live_bytes);
+    assert(s.small.largest_request == s.small.live_bytes);
+    assert(s.small.borrowed_count == 2u && s.large.borrowed_count == 0u);
+    assert(s.large.fallback_count == 0u);
+    h2_mem_arena_block_info_t info;
+    assert(h2_mem_arena_block_info(arena, p, &info) == H2_PAL_OK);
+    assert(info.pool == 0u && !info.fallback);
+    fail_heap = true;
+    assert(h2_pal_mem_realloc(mem, p, BLOCK_BYTES) == NULL);
+    check(p, 1024u, 0x6b);
+    assert(stats(arena).small.live_bytes == 80u * 1024u);
+    assert(stats(arena).small.borrowed_count == 2u);
+    fail_heap = false;
+    p = h2_pal_mem_realloc(mem, p, BLOCK_BYTES);
+    check(p, 1024u, 0x6b);
+    s = stats(arena);
+    assert(s.small.live_bytes == 0u && s.small.borrowed_count == 2u);
+    assert(s.large.fallback_live_bytes == BLOCK_BYTES);
+    assert(s.large.fallback_count == 2u && s.small.fallback_count == 0u);
+    /* Free the preferred pool, then migrate from fallback back to that pool. */
+    h2_pal_mem_free(mem, full);
+    p = h2_pal_mem_realloc(mem, p, 80u * 1024u);
+    check(p, 1024u, 0x6b);
+    assert(inside(p, SMALL_BYTES, BLOCK_BYTES - SMALL_BYTES));
+    s = stats(arena);
+    assert(s.small.live_bytes == 0u && s.large.live_bytes == 80u * 1024u);
+    assert(s.fallback_live_bytes == 0u && s.small.borrowed_count == 2u);
+    h2_pal_mem_free(mem, p);
+    finish(arena);
+}
+
+static void test_small_borrow_migration(void) {
+    h2_mem_arena_t *arena = create(true, false);
+    const h2_pal_mem_api_t *mem = h2_mem_arena_mem(arena);
+    void *small[32];
+    size_t count = 0u;
+    do {
+        assert(count < 32u);
+        small[count++] = h2_pal_mem_alloc(mem, SMALL_MAX);
+    } while (inside(small[count - 1u], 0u, SMALL_BYTES));
+    void *p = small[--count];
+    assert(inside(p, SMALL_BYTES, BLOCK_BYTES - SMALL_BYTES));
+    memset(p, 0x7c, 1024u);
+    p = h2_pal_mem_realloc(mem, p, SMALL_MAX - 1u);
+    check(p, 1024u, 0x7c);
+    assert(stats(arena).large.live_bytes == SMALL_MAX - 1u);
+    assert(stats(arena).large.borrowed_count == 2u);
+    for (size_t i = 0u; i < count; ++i)
+        h2_pal_mem_free(mem, small[i]);
+    p = h2_pal_mem_realloc(mem, p, 1024u);
+    check(p, 1024u, 0x7c);
+    assert(inside(p, 0u, SMALL_BYTES));
+    h2_mem_arena_stats_t s = stats(arena);
+    assert(s.small.live_bytes == 1024u && s.large.live_bytes == 0u);
+    assert(s.large.borrowed_count == 2u);
+    assert(s.small.fallback_count == 0u && s.large.fallback_count == 0u);
+    assert(h2_pal_mem_realloc(mem, p, 0u) == NULL);
     finish(arena);
 }
 
@@ -355,11 +436,13 @@ static void test_inspection(void) {
 
 int main(void) {
     test_routing_and_stats();
-    test_no_borrowing(true);
-    test_no_borrowing(false);
+    test_borrows_before_failing(true);
+    test_borrows_before_failing(false);
     test_realloc();
     test_fallback_without_realloc();
-    test_class_change_failure();
+    test_class_change_borrowing();
+    test_borrowed_realloc_accounting();
+    test_small_borrow_migration();
     test_single_pool();
     test_invalid_config();
     test_inspection();

@@ -84,9 +84,9 @@ static void *arena_realloc(void *user, void *ptr, size_t bytes) {
         return NULL;
     h2_mem_arena_t *arena = user;
     arena->config.lock(arena->config.lock_user);
-    const unsigned pool = arena->config.small_pool_bytes != 0u &&
-                                  bytes <= arena->config.small_request_max
-                              ? 0u : 1u;
+    unsigned pool = arena->config.small_pool_bytes != 0u &&
+                            bytes <= arena->config.small_request_max
+                        ? 0u : 1u;
     h2_mem_arena_pool_stats_t *stats = pool_stats(arena, pool);
     arena_header_t *old = ptr != NULL ? (arena_header_t *)ptr - 1 : NULL;
     /* Capture everything before realloc, which can invalidate the header. */
@@ -111,6 +111,30 @@ static void *arena_realloc(void *user, void *ptr, size_t bytes) {
             resized = base != NULL;
         } else {
             base = tlsf_malloc(arena->pools[pool], total);
+        }
+    }
+    /* A full pool borrows from its sibling before the request fails: the
+     * split exists to keep small blocks away from large ones, not to strand
+     * free arena space. The header records where the block really came from. */
+    if (base == NULL && arena->config.small_pool_bytes != 0u) {
+        const unsigned other = pool == 0u ? 1u : 0u;
+        h2_mem_arena_pool_stats_t *other_stats = pool_stats(arena, other);
+        if (total < other_stats->reserved_bytes &&
+            total < tlsf_block_size_max() - tlsf_align_size()) {
+            if (had_old && !old_fallback && old_pool == other) {
+                base = tlsf_realloc(arena->pools[other], old_base, total);
+                resized = base != NULL;
+            } else {
+                base = tlsf_malloc(arena->pools[other], total);
+            }
+            if (base != NULL) {
+                pool = other;
+                stats = other_stats;
+                if (bytes > stats->largest_request)
+                    stats->largest_request = bytes;
+                if (stats->borrowed_count != UINT64_MAX)
+                    ++stats->borrowed_count;
+            }
         }
     }
     const bool fallback = base == NULL;
