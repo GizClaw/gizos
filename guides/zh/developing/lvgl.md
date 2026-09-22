@@ -16,6 +16,8 @@
 
 `h2_lvgl_platform_init()` 在调用 `lv_init()` 前绑定 Runtime 提供的 Memory、Task、Sync、Queue 和 Time PAL API。LVGL 的 custom malloc ABI 由 `libs/lvgl` 实现，所有 widget、TinyTTF glyph cache、filesystem cache 和 LVGL internal object 都通过绑定的 Memory PAL 分配；target 不能回退到 libc heap。调用方必须在 `lv_deinit()` 完成后再调用 `h2_lvgl_platform_deinit()`，保证 allocator 的生命周期覆盖全部 LVGL object。
 
+当前固定的 upstream revision 在 `lv_os_init()` 中创建 general OS mutex，但 `lv_deinit()` 没有对应的删除操作。Custom OSAL 的 `lv_mem_deinit()` 在最终内存清理阶段释放该 mutex 及其 wrapper，并清空 handle，保证重复 init/deinit 不累积这些分配。Memory PAL 与 Sync PAL 必须在整个 `lv_deinit()` 期间保持有效，随后才能解除 platform 绑定。
+
 文件资源通过 `h2_lvgl_fs_register()` 注册为 LVGL drive。Adapter 把 `P:/...` 这类 LVGL path 映射到调用方注入的 PAL Filesystem，并在 backend 不支持 seek 时使用有界 scratch buffer 实现 forward seek 或 reopen。字体、图片和其它 consumer 只使用 LVGL path，不能直接依赖 POSIX、ESP-IDF、Armino 或 Desktop 文件 API。
 
 `h2_lvgl_touch_create()` 把一个已校准到 display viewport 的 Touch PAL 注册成 LVGL pointer indev，不知道 evdev、GPIO、controller 或 board identity。`h2_lvgl_button_bind()` 解析 App Button component 到 mapped `PUSH_EDGE` periph，再把 widget 的 pressed/released edge 写入 Runtime；它不在 LVGL callback 中自行识别 click 或 long press。Adapter 对同一 Runtime/periph ID 强制唯一 live producer，重复 bind 返回 `H2_PAL_ERR_BUSY`；widget delete 释放 ownership 后才允许 rebind。
