@@ -1,0 +1,45 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+
+h2_tasks(
+    name = "tasks",
+    tasks = [
+        "worker",
+        "internal",
+        "tiny",
+        "group/child",
+        "group/nested/child",
+        "group/special",
+    ],
+)
+
+esp_target_task_policy(
+    name = "policy",
+    default_policy = "4 any 16384 psram",
+    graph = [":tasks"],
+    policies = [
+        "worker 4 any 65536 psram",
+        "internal 4 any 4096 internal",
+        "tiny 4 any 512 psram",
+        "group/* 4 any 8192 psram",
+        "group/nested/* 4 any 32768 psram",
+        "group/special 4 any 4096 internal",
+    ],
+)
+
+cc_test(
+    name = "stack_accounting_test",
+    srcs = [
+        "test_stack_accounting.c",
+        ":policy_stack_accounting",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
