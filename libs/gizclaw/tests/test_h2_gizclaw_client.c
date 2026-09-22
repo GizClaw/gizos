@@ -1101,11 +1101,20 @@ static h2_pal_result_t test_track_read(void *user, uint8_t *data,
   return H2_PAL_ERR_WOULD_BLOCK;
 }
 
+static const h2_pal_mem_api_t *test_peer_allocator;
+
 static h2_pal_result_t
 test_webrtc_peer_create(void *user, h2_pal_webrtc_peer_t **out_peer) {
   (void)user;
   *out_peer = (h2_pal_webrtc_peer_t *)0x2;
   return H2_PAL_OK;
+}
+
+static h2_pal_result_t test_webrtc_peer_create_with_config(
+    void *user, const h2_pal_webrtc_peer_config_t *config,
+    h2_pal_webrtc_peer_t **out_peer) {
+  assert(config != NULL && config->allocator == test_peer_allocator);
+  return test_webrtc_peer_create(user, out_peer);
 }
 
 static h2_pal_result_t test_peer_set_track(h2_pal_webrtc_peer_t *peer,
@@ -1315,6 +1324,7 @@ int main(void) {
   const h2_pal_http_api_t http = {0};
   const h2_pal_webrtc_vtable_t webrtc_vtable = {
       .peer_create = test_webrtc_peer_create,
+      .peer_create_with_config = test_webrtc_peer_create_with_config,
       .peer_poll = test_peer_poll,
       .peer_set_track = test_peer_set_track,
       .peer_unset_track = test_peer_unset_track,
@@ -1336,6 +1346,7 @@ int main(void) {
       .vtable = &time_vtable,
   };
   config.allocator = &mem;
+  test_peer_allocator = &mem;
   config.http = &http;
   config.webrtc = &webrtc;
   config.crypto = &crypto;

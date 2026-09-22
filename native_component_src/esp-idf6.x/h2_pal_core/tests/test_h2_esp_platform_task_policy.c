@@ -1,3 +1,4 @@
+#include "h2_test_allocator.h"
 #include "h2_esp_platform_core.h"
 
 #include "esp_heap_caps.h"
@@ -24,6 +25,14 @@ typedef struct test_state {
   int self_deletes;
   int caps_deletes;
   int join_on_give;
+  int static_create;
+  int static_deletes;
+  int external_suspends;
+  int running_queries;
+  int yields;
+  int tcb_live;
+  int fail_tcb;
+  void *stack;
   TaskFunction_t trampoline;
   void *trampoline_ctx;
   h2_pal_task_t *pal_task;
@@ -62,7 +71,7 @@ BaseType_t xSemaphoreGive(SemaphoreHandle_t semaphore) {
      * give returns. Internal workers must also survive handle release here. */
     assert(h2_pal_task_join(h2_esp_platform_task_api(), s.pal_task) == H2_PAL_OK);
     s.pal_task = NULL;
-    if (s.caps != 0u) {
+    if (s.caps != 0u || s.static_create) {
       longjmp(s_worker_exit, 1);
     }
   }
@@ -84,9 +93,10 @@ BaseType_t xSemaphoreTake(SemaphoreHandle_t semaphore, uint32_t timeout) {
 void vSemaphoreDelete(SemaphoreHandle_t semaphore) {
   assert(semaphore == &s_semaphore);
   assert(s.deletes == 0);
-  if (!s.fail_create) {
+  if (!s.fail_create && s.creates != 0) {
     assert(s.takes == 1);
     assert(s.caps == 0u || s.caps_deletes == 1);
+    assert(!s.static_create || s.static_deletes == 1);
   }
   s.deletes++;
 }
@@ -123,6 +133,12 @@ BaseType_t xTaskCreatePinnedToCoreWithCaps(TaskFunction_t entry,
   return capture_create(name, stack_size, priority, out_task, core, caps);
 }
 void vTaskDelete(TaskHandle_t task) {
+  if (task != NULL) {
+    assert(task == &s_native_task && s.static_create && s.external_suspends == 1);
+    assert(s.running_queries == 0 && s.tcb_live == 1);
+    s.static_deletes++;
+    return;
+  }
   assert(task == NULL && s.caps == 0u && s.gives == 1);
   s.self_deletes++;
   longjmp(s_worker_exit, 1);
@@ -133,10 +149,53 @@ void vTaskDeleteWithCaps(TaskHandle_t task) {
   s.caps_deletes++;
 }
 void vTaskSuspend(TaskHandle_t task) {
-  assert(task == NULL && s.caps != 0u && s.gives == 1);
+  if (task != NULL) {
+    assert(task == &s_native_task && s.static_create && s.takes == 1);
+    s.external_suspends++;
+    return;
+  }
+  assert((s.caps != 0u || s.static_create) && s.gives == 1);
   assert(s.caps_deletes == 0 && s.deletes == 0);
   s.suspends++;
   longjmp(s_worker_exit, 1);
+}
+
+void *heap_caps_malloc(size_t size, unsigned int caps) {
+  assert(size == sizeof(StaticTask_t));
+  assert(caps == (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
+  if (s.fail_tcb) return NULL;
+  ++s.tcb_live;
+  return malloc(size);
+}
+void heap_caps_free(void *ptr) {
+  if (ptr != NULL) {
+    assert(s.tcb_live == 1);
+    --s.tcb_live;
+    free(ptr);
+  }
+}
+TaskHandle_t xTaskCreateStaticPinnedToCore(TaskFunction_t entry, const char *name,
+    uint32_t stack_size, void *ctx, UBaseType_t priority, StackType_t *stack,
+    StaticTask_t *storage, BaseType_t core) {
+  assert(stack != NULL && storage != NULL && s.tcb_live == 1);
+  s.static_create = 1;
+  s.stack = stack;
+  s.trampoline = entry;
+  s.trampoline_ctx = ctx;
+  TaskHandle_t task;
+  return capture_create(name, stack_size, priority, &task, core, 0u) == pdPASS
+             ? task : NULL;
+}
+TaskHandle_t xTaskGetCurrentTaskHandleForCore(BaseType_t core) {
+  if (core == 1 && s.running_queries > 0) {
+    --s.running_queries;
+    return &s_native_task;
+  }
+  return NULL;
+}
+void vTaskDelay(TickType_t ticks) {
+  assert(ticks == 0u && s.static_deletes == 0 && s.tcb_live == 1);
+  ++s.yields;
 }
 
 static h2_pal_result_t resolve(void *user, const char *name,
@@ -219,7 +278,7 @@ static void test_completion(const char *name, int join_on_give) {
     s.pal_task = NULL;
   }
   assert(s.takes == 1 && s.deletes == 1);
-  if (s.caps != 0u) {
+  if (s.caps != 0u || s.static_create) {
     assert(s.caps_deletes == 1 && s.self_deletes == 0);
     assert(s.suspends == (join_on_give ? 0 : 1));
   } else {
@@ -227,7 +286,49 @@ static void test_completion(const char *name, int join_on_give) {
   }
 }
 
+static void test_stack_allocator(void) {
+  for (int mode = 0; mode < 7; ++mode) {
+    reset();
+    h2_test_allocator_t arena;
+    h2_test_allocator_init(&arena);
+    h2_esp_task_policy_config_t cfg = config();
+    assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_OK);
+    h2_pal_task_options_t options = {
+        .name = mode == 2 ? "known" : "dynamic-high",
+        .stack_allocator = &arena.api,
+    };
+    s.fail_create = mode == 3;
+    s.fail_tcb = mode == 4;
+    if (mode == 5) atomic_store(&arena.fail_on_call, 1u);
+    int rc = h2_pal_task_start(h2_esp_platform_task_api(), &options, entry,
+                              NULL, &s.pal_task);
+    if (mode >= 3 && mode <= 5) {
+      assert(rc == (mode == 3 ? H2_PAL_ERR_TASK : H2_PAL_ERR_NO_MEMORY));
+      assert(s.pal_task == NULL && s.tcb_live == 0);
+    } else {
+      assert(rc == H2_PAL_OK);
+      assert(atomic_load(&arena.live) == (mode == 2 ? 0u : 1u));
+      if (mode != 2) assert(s.stack_size == 12288u);
+      if (mode == 6) {
+        s.fail_join = 1;
+        assert(h2_pal_task_join(h2_esp_platform_task_api(), s.pal_task) == H2_PAL_ERR_TASK);
+        assert(atomic_load(&arena.live) == 1u && s.tcb_live == 1);
+        s.fail_join = 0;
+      }
+      s.join_on_give = mode == 1;
+      s.running_queries = mode == 2 ? 0 : 2;
+      run_worker();
+      if (!s.join_on_give)
+        assert(h2_pal_task_join(h2_esp_platform_task_api(), s.pal_task) == H2_PAL_OK);
+      assert(s.tcb_live == 0);
+      if (mode != 2) assert(s.static_deletes == 1 && s.yields == 2);
+    }
+    assert(atomic_load(&arena.live) == 0u);
+  }
+}
+
 int main(void) {
+  test_stack_allocator();
   const h2_pal_task_api_t *api = h2_esp_platform_task_api();
   h2_pal_task_t *task = (h2_pal_task_t *)(uintptr_t)7u;
   h2_pal_task_options_t options = {.name = "known", .min_stack_size = 1024u};

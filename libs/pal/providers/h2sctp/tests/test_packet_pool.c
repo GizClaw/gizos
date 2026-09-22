@@ -1,3 +1,4 @@
+#include "h2_test_allocator.h"
 #include "h2_sctp_internal.h"
 #include "h2_sctp_reliability.h"
 #include "h2_sctp_test_peer.h"
@@ -225,7 +226,45 @@ static void pool_allocation_failure(void) {
            endpoint.free_count + endpoint.allocation_failure_count);
 }
 
+static void association_allocators(void) {
+    h2_sctp_test_pair_t pair;
+    assert(h2_sctp_test_pair_init(&pair, 256u, 4096u) == H2_PAL_OK);
+    h2_test_allocator_t arenas[2];
+    h2_sctp_test_endpoint_t *endpoints[] = {&pair.active, &pair.passive};
+    for (size_t i = 0u; i < 2u; ++i) {
+        h2_sctp_test_endpoint_t *ep = endpoints[i];
+        h2_pal_sctp_association_config_t config = ep->association->config;
+        assert(h2_pal_sctp_association_close(ep->api, &ep->association) == H2_PAL_OK);
+        h2_test_allocator_init(&arenas[i]);
+        config.allocator = &arenas[i].api;
+        unsigned before = ep->allocation_count;
+        assert(h2_pal_sctp_association_create(ep->api, &config, &ep->association) == H2_PAL_OK);
+        assert(ep->allocation_count == before);
+        assert(atomic_load(&arenas[i].live) == 2u); /* association + rx_assembly */
+        assert(ep->packet_allocation_count == ep->packet_free_count + 1u);
+    }
+    assert(h2_sctp_test_connect(&pair));
+    uint8_t payload[1500];
+    memset(payload, 0x5a, sizeof(payload));
+    const h2_pal_sctp_message_t message = {
+        .stream_id = 1u, .ppid = 51u, .data = payload, .len = sizeof(payload),
+    };
+    assert(h2_pal_sctp_association_send_message(pair.active.api,
+        pair.active.association, &message, pair.now_ms) == H2_PAL_OK);
+    (void)h2_sctp_test_pump(&pair, 128u);
+    assert(pair.passive.message_count == 1u);
+    assert(pair.passive.messages[0].len == sizeof(payload));
+    assert(memcmp(pair.passive.messages[0].data, payload, sizeof(payload)) == 0);
+    h2_sctp_test_pair_deinit(&pair);
+    for (size_t i = 0u; i < 2u; ++i) {
+        assert(atomic_load(&arenas[i].calls) > 4u);
+        assert(atomic_load(&arenas[i].live) == 0u);
+        assert(endpoints[i]->packet_allocation_count == endpoints[i]->packet_free_count);
+    }
+}
+
 int main(void) {
+    association_allocators();
     pool_placement_and_sizing();
     acquire_exhaust_and_reuse();
     exhaustion_reports_would_block_then_recovers();

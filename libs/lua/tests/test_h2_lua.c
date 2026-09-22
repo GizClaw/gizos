@@ -401,6 +401,7 @@ static int test_audio_create_track(void *user,
   if (config == NULL || out_track == NULL ||
       config->format.sample_format != H2_AUDIO_SAMPLE_S16LE)
     return H2_PAL_ERR_INVALID_ARG;
+  assert(config->allocator != NULL);
   /* Mixer-backed devices reject Tracks whose frame size differs from the
    * playback frame size reported by get_info. */
   if (config->format.frame_samples_per_channel != 2u)
@@ -2415,6 +2416,18 @@ static void heap_test_run(h2_lua_host_t *host, const char *source,
   assert(h2_lua_job_release(host, id) == H2_PAL_OK);
 }
 
+static int allocator_task_start(void *user, const h2_pal_task_options_t *options,
+                                h2_pal_task_entry_t entry, void *ctx,
+                                h2_pal_task_t **out_task) {
+  assert(options->stack_allocator == user);
+  return h2_pal_task_start(h2_desktop_platform_task_api(), options, entry, ctx, out_task);
+}
+
+static int allocator_task_join(void *user, h2_pal_task_t *task) {
+  (void)user;
+  return h2_pal_task_join(h2_desktop_platform_task_api(), task);
+}
+
 /* Everything the Host allocates goes through config.allocator, so a caller
  * can place the Host in its own arena; Runtime mem stays untouched. */
 static void test_host_allocator(void) {
@@ -2427,6 +2440,11 @@ static void test_host_allocator(void) {
   h2_pal_mem_api_t host_api = {.user = &host_mem,
                                .vtable = &heap_test_mem_vtable};
   probe.mem = &runtime_api;
+  const h2_pal_task_vtable_t task_vtable = {
+      .start = allocator_task_start, .join = allocator_task_join,
+  };
+  const h2_pal_task_api_t task_api = {.user = &host_api, .vtable = &task_vtable};
+  probe.task = &task_api;
   h2_lua_host_config_t config = {
       .runtime = &probe,
       .allocator = &host_api,

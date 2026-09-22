@@ -1,3 +1,4 @@
+#include "h2_test_allocator.h"
 #include "h2/pal/h2_pal_unsupported.h"
 #include "h2_desktop_platform.h"
 #include "h2_peer_internal.h"
@@ -274,7 +275,54 @@ static void wake_and_unset(void) {
   active = NULL;
 }
 
+static void release_on_worker(void *user) {
+  h2_pal_webrtc_event_release(user);
+}
+
+static void peer_allocators(void) {
+  fixture_t f;
+  initialize(&f);
+  h2_pal_webrtc_peer_close(f.api, f.peer);
+  h2_test_allocator_t arenas[2];
+  h2_pal_webrtc_peer_t *peers[2];
+  h2_pal_webrtc_event_t events[2] = {0};
+  size_t default_calls = atomic_load(&f.allocations);
+  for (size_t i = 0u; i < 2u; ++i) {
+    h2_test_allocator_init(&arenas[i]);
+    const h2_pal_webrtc_peer_config_t config = {.allocator = &arenas[i].api};
+    assert(h2_pal_webrtc_peer_create_with_config(f.api, &config, &peers[i]) == H2_PAL_OK);
+    h2_pal_webrtc_channel_t *channel = NULL;
+    const h2_pal_webrtc_channel_config_t channel_config = {
+        .label = {"arena", 5u}, .ordered = 1, .reliable = 1,
+    };
+    assert(h2_pal_webrtc_peer_create_data_channel(f.api, peers[i], &channel_config,
+                                                 &channel) == H2_PAL_OK);
+    const uint8_t data[] = {1u, 2u, 3u};
+    assert(h2_peer_webrtc_emit_channel_message(peers[i], channel, data,
+                                               sizeof(data), 0) == H2_PAL_OK);
+    assert(h2_pal_webrtc_peer_poll(f.api, peers[i], 0, &events[i]) == H2_PAL_OK);
+    assert(events[i].kind == H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE);
+    assert(events[i].data_len == sizeof(data));
+    assert(atomic_load(&arenas[i].calls) > 4u);
+    assert(atomic_load(&f.allocations) == default_calls);
+  }
+  for (size_t i = 0u; i < 2u; ++i) h2_pal_webrtc_peer_close(f.api, peers[i]);
+  h2_peer_destroy(&f.owner);
+  for (size_t i = 0u; i < 2u; ++i) {
+    assert(atomic_load(&arenas[i].live) > 0u);
+    h2_pal_task_t *worker = NULL;
+    const h2_pal_task_options_t options = {.name = "peer-event-free"};
+    assert(h2_pal_task_start(h2_desktop_platform_task_api(), &options,
+        release_on_worker, &events[i], &worker) == H2_PAL_OK);
+    assert(h2_pal_task_join(h2_desktop_platform_task_api(), worker) == H2_PAL_OK);
+    assert(atomic_load(&arenas[i].live) == 0u);
+  }
+  assert(atomic_load(&f.allocations) == atomic_load(&f.frees));
+  active = NULL;
+}
+
 int main(void) {
+  peer_allocators();
   error_fallbacks();
   wake_and_unset();
   return 0;

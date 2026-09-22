@@ -1516,7 +1516,8 @@ static int start_audio_download(h2_gizclaw_device_t *d, const char *url,
   }
   const h2_pal_task_options_t options = {
       .name = H2_GIZCLAW_AUDIO_DOWNLOAD_TASK_NAME_VALUE,
-      .min_stack_size = 32768};
+      .min_stack_size = 32768,
+      .stack_allocator = d->config.allocator};
   return h2_pal_task_start(d->service->config.task, &options,
                            audio_download_worker, download, &download->task);
 }
@@ -1779,6 +1780,7 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
     rc = start_decoder(d, &decoder);
   h2_audio_track_config_t audio = {
       .name = "gizclaw-player",
+      .allocator = d->config.allocator,
       .format = {.sample_rate_hz = 16000,
                  .frame_samples_per_channel = 320,
                  .channels = 1,
@@ -2300,7 +2302,8 @@ h2_pal_result_t h2_gizclaw_device_start_internal(h2_gizclaw_device_t *d) {
   if (!d)
     return H2_PAL_OK;
   const h2_pal_task_options_t options = {
-      .name = H2_GIZCLAW_DEVICE_TASK_NAME_VALUE, .min_stack_size = 32768};
+      .name = H2_GIZCLAW_DEVICE_TASK_NAME_VALUE, .min_stack_size = 32768,
+      .stack_allocator = d->config.allocator};
   return h2_pal_task_start(d->service->config.task, &options, device_worker, d,
                            &d->task);
 }

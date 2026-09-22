@@ -1500,7 +1500,11 @@ static int h2_gzc_peer_create(void *user,
   }
   client->gzc_callbacks = *callbacks;
   h2_pal_webrtc_peer_t *peer = NULL;
-  int rc = h2_pal_webrtc_peer_create(client->config.webrtc, &peer);
+  const h2_pal_webrtc_peer_config_t config = {
+      .allocator = client->config.allocator,
+  };
+  int rc = h2_pal_webrtc_peer_create_with_config(
+      client->config.webrtc, &config, &peer);
   h2_gizclaw_log_webrtc_rc(client, "peer_create", rc);
   if (rc != H2_PAL_OK) {
     return GZC_ERR_WEBRTC;

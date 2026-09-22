@@ -161,7 +161,10 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":h2sctp"],
+    deps = [
+        ":h2sctp",
+        "//libs/pal:test_allocator",
+    ],
 )
 
 cc_test(

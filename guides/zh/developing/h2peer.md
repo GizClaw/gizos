@@ -2,6 +2,8 @@
 
 H2Peer 是 `libs/pal/providers/h2peer` 中由 GizOS 维护的 portable WebRTC core。它实现 `h2_pal_webrtc_api_t`，但不拥有产品 signaling、codec、音频设备或 target wiring。现有 target 只有在各自 component 显式选择并提供经过验证的安全 provider 后，才会使用 H2Peer。
 
+`h2_pal_webrtc_peer_config_t.allocator` 由 `h2_pal_webrtc_peer_create_with_config()` 传入，可覆盖 PeerConnection、channel/TX slot、事件/payload、stream table、DCEP 及 SCTP/SRTP 会话存储；NULL 保持默认，显式 control/packet allocator 仍用于需要 internal RAM 的对象。私有 `h2_libsrtp_session_config_t.allocator` 按值记录会话分配器（NULL 使用 init 默认），session、scratch、operation arena 和第三方块均保存正确释放归属，允许不同 allocator 共存；arena 必须活到 peer 关闭及最后一个 owned event 释放。
+
 ## Ownership
 
 ```text

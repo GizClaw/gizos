@@ -15,4 +15,6 @@ StackType_t *xTaskGetStackStart(TaskHandle_t task);
 void vTaskDelete(TaskHandle_t task);
 void vTaskSuspend(TaskHandle_t task);
 void vTaskDelay(TickType_t ticks);
+TaskHandle_t xTaskGetCurrentTaskHandleForCore(BaseType_t core);
+#define taskYIELD() vTaskDelay(0u)
 #endif

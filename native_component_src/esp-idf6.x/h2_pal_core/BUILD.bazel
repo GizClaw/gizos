@@ -72,7 +72,10 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal"],
+    deps = [
+        "//libs/pal",
+        "//libs/pal:test_allocator",
+    ],
 )
 
 cc_test(

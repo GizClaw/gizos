@@ -2,6 +2,7 @@
 #define H2_PAL_TASK_H
 
 #include "h2/pal/core/h2_pal_errors.h"
+#include "h2/pal/os/h2_pal_mem.h"
 
 #include <stddef.h>
 
@@ -16,6 +17,10 @@ typedef void (*h2_pal_task_entry_t)(void *ctx);
 typedef struct h2_pal_task_options {
     const char *name;
     size_t min_stack_size;
+    /* Optional stack storage; NULL preserves the provider default. ESP honors
+     * this unless board policy requires internal RAM. Other providers may
+     * ignore it. The allocator must remain valid until successful join. */
+    const h2_pal_mem_api_t *stack_allocator;
 } h2_pal_task_options_t;
 
 typedef struct h2_pal_task_vtable {

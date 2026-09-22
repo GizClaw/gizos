@@ -29,16 +29,22 @@ void h2_libsrtp_allocator_leave(void) {
     h2_libsrtp_active_session = NULL;
 }
 
+/* Heap blocks retain their owner even when another thread destroys a session.
+ * Arena blocks keep the existing bounded layout; every operation, including
+ * destruction, enters the owning session before calling upstream code. */
+typedef union h2_libsrtp_block {
+    max_align_t alignment;
+    h2_pal_mem_api_t owner;
+} h2_libsrtp_block_t;
+
 static int h2_libsrtp_arena_contains(
     const h2_libsrtp_session_t *session,
     const void *ptr) {
-    uintptr_t address;
-    uintptr_t start;
     if (session == NULL || session->operation_arena == NULL || ptr == NULL) {
         return 0;
     }
-    address = (uintptr_t)ptr;
-    start = (uintptr_t)session->operation_arena;
+    uintptr_t address = (uintptr_t)ptr;
+    uintptr_t start = (uintptr_t)session->operation_arena;
     return address >= start &&
            address - start < session->operation_arena_capacity;
 }
@@ -47,8 +53,9 @@ void *srtp_crypto_alloc(size_t size) {
     const size_t alignment = _Alignof(h2_libsrtp_arena_alignment_t);
     h2_libsrtp_session_t *session = h2_libsrtp_active_session;
     size_t aligned_used;
-    void *ptr;
-    if (!h2_libsrtp_state.ready || size == 0u) {
+    h2_libsrtp_block_t *block;
+    if (!h2_libsrtp_state.ready || size == 0u ||
+        size > SIZE_MAX - sizeof(*block)) {
         return NULL;
     }
     if (session != NULL && session->operation_arena != NULL) {
@@ -62,21 +69,25 @@ void *srtp_crypto_alloc(size_t size) {
             size > session->operation_arena_capacity - aligned_used) {
             return NULL;
         }
-        ptr = session->operation_arena + aligned_used;
+        void *ptr = session->operation_arena + aligned_used;
         session->operation_arena_used = aligned_used + size;
         memset(ptr, 0, size);
         return ptr;
     }
-    ptr = h2_pal_mem_alloc(&h2_libsrtp_state.mem, size);
-    if (ptr != NULL) {
-        memset(ptr, 0, size);
-    }
-    return ptr;
+    const h2_pal_mem_api_t *mem = session != NULL
+                                      ? &session->mem : &h2_libsrtp_state.mem;
+    block = h2_pal_mem_alloc(mem, sizeof(*block) + size);
+    if (block == NULL) return NULL;
+    block->owner = *mem;
+    memset(block + 1, 0, size);
+    return block + 1;
 }
 
 void srtp_crypto_free(void *ptr) {
     if (ptr != NULL &&
         !h2_libsrtp_arena_contains(h2_libsrtp_active_session, ptr)) {
-        h2_pal_mem_free(&h2_libsrtp_state.mem, ptr);
+        h2_libsrtp_block_t *block = (h2_libsrtp_block_t *)ptr - 1;
+        h2_pal_mem_api_t owner = block->owner;
+        h2_pal_mem_free(&owner, block);
     }
 }

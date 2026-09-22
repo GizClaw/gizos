@@ -1809,6 +1809,7 @@ static int audio_new_output(lua_State *state) {
   }
   config = (h2_audio_track_config_t){
       .name = "lua-output",
+      .allocator = job->host->config.allocator,
       .format = slot->format,
       .volume_factor_milli = (uint32_t)volume * 10u,
       .buffer_frames = 8u,

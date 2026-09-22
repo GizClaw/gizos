@@ -2,6 +2,7 @@
 #define H2_PAL_WEBRTC_H
 
 #include "h2/pal/core/h2_pal_errors.h"
+#include "h2/pal/os/h2_pal_mem.h"
 #include "h2/pal/core/h2_pal_types.h"
 
 #include <stddef.h>
@@ -133,6 +134,13 @@ struct h2_pal_webrtc_event {
     h2_pal_webrtc_event_release_fn _release;
 };
 
+typedef struct h2_pal_webrtc_peer_config {
+    /* Optional per-peer storage. NULL keeps the provider default. Keep the
+     * allocator alive through peer close and release of all owned events.
+     * Providers may retain separate internal/control/packet allocators. */
+    const h2_pal_mem_api_t *allocator;
+} h2_pal_webrtc_peer_config_t;
+
 typedef struct h2_pal_webrtc_vtable {
   h2_pal_result_t (*peer_create)(void *user, h2_pal_webrtc_peer_t **out_peer);
   h2_pal_result_t (*peer_add_ice_server)(
@@ -158,6 +166,10 @@ typedef struct h2_pal_webrtc_vtable {
                                   const uint8_t *data, size_t len, int is_text);
   void (*channel_close)(h2_pal_webrtc_channel_t *channel);
   void (*peer_close)(h2_pal_webrtc_peer_t *peer);
+  /* Optional extension; legacy providers keep using peer_create. */
+  h2_pal_result_t (*peer_create_with_config)(
+      void *user, const h2_pal_webrtc_peer_config_t *config,
+      h2_pal_webrtc_peer_t **out_peer);
 } h2_pal_webrtc_vtable_t;
 
 typedef struct h2_pal_webrtc_api {
@@ -173,6 +185,20 @@ h2_pal_webrtc_peer_create(const h2_pal_webrtc_api_t *api,
         return H2_PAL_ERR_INVALID_ARG;
     }
     return api->vtable->peer_create(api->user, out_peer);
+}
+
+static inline h2_pal_result_t
+h2_pal_webrtc_peer_create_with_config(
+    const h2_pal_webrtc_api_t *api,
+    const h2_pal_webrtc_peer_config_t *config,
+    h2_pal_webrtc_peer_t **out_peer) {
+    if (api == NULL || api->vtable == NULL || out_peer == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    if (api->vtable->peer_create_with_config != NULL) {
+        return api->vtable->peer_create_with_config(api->user, config, out_peer);
+    }
+    return h2_pal_webrtc_peer_create(api, out_peer);
 }
 
 /*

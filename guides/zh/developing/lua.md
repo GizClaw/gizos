@@ -4,6 +4,8 @@
 只负责文本 chunk、Lua stack、GC、coroutine 与受限标准库；Host 负责 allocator、
 worker、Timer、Filesystem、事件投递、原生 module 和每个 Skill 的隔离生命周期。
 
+Host 归一化后的 `allocator` 同时用于 Lua Link 对象、mutex/cond 和 BLE-KCP，并传给 worker/Link 任务的 `stack_allocator` 及 Lua 音轨的 `allocator`；ESP 的栈使用仍服从板级 internal 策略。Host allocator 为 NULL 时仍回退 Runtime mem，共享平台和驱动内部资源保留各自的分配器。
+
 ## Ownership
 
 ```text

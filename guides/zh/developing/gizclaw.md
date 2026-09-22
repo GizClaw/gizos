@@ -2,6 +2,8 @@
 
 `libs/gizclaw` 将 GizClaw C SDK 集成为跨平台 client，提供连接、RegistrationToken 注册、轮询、generic RPC、Server 反向 RPC provider、ping 和 speed test 能力，并提供可由多个产品复用的单 client request service。
 
+`h2_gizclaw_config_t.allocator` 继续传给 HTTP 请求，并贯穿 WebRTC peer、设备播放器音轨，以及 Service、时间同步、设备 worker 和音频下载任务的 `stack_allocator`。产品可以让 GizClaw 与 Lua Host 共用一个 arena，但必须等子任务 join、音轨关闭和 owned WebRTC event 全部释放后再销毁 arena；ESP internal 栈策略与 provider 的独立 internal/control/packet 存储不受此配置覆盖。
+
 ## API Reference
 
 [API Reference](/references/gizclaw)

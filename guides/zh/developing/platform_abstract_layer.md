@@ -4,6 +4,10 @@ Modem provider 的接收分帧、命令串行与 URC 并发合同见 [Modem URC]
 
 Platform Abstraction Layer（PAL）定义 GizOS 使用的平台抽象能力。PAL 把芯片 SDK、操作系统和具体硬件实现隔离在跨平台代码之外，使 `libs`、runtime 和 app 可以使用稳定的 C contract。
 
+`h2_pal_task_options_t.stack_allocator` 可选地指定任务栈分配器，NULL 保持平台默认；ESP 用它创建静态任务并在 join 确认任务退出、完成删除后归还栈，TCB 留在 internal RAM，板级策略强制 internal 栈时忽略该字段。Darwin、Linux、Windows、Web、Android、BK 和 JieLi provider 可以忽略此字段，allocator 必须存活到成功 join。
+
+`h2_pal_webrtc_peer_create_with_config()` 接收可选的 `h2_pal_webrtc_peer_config_t.allocator`，NULL 或旧 `peer_create()` 保持原行为；H2Peer 把它用于 peer 私有存储并传给 SCTP/SRTP，独立 internal/control/packet allocator 保留，旧 provider 可以回退到原创建入口。`h2_audio_track_config_t.allocator` 同样可选，Runtime wrapper 和 mixer 的音轨队列、scratch 跟随它，NULL 保持各层原有默认分配器。
+
 ## API Reference
 
 [API Reference](/references/pal)

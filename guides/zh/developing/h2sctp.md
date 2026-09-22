@@ -5,6 +5,8 @@ H2SCTP 是 GizOS 自有的 portable SCTP provider。它实现
 DTLS record transport 上组装；它不打开 socket，不启动线程或 task，也不拥有 DTLS、
 DCEP、WebRTC PPID 映射或 target selector。
 
+`h2_pal_sctp_association_config_t.allocator` 可选地指定 association、rx_assembly、stream、TX/RX fragment 及重组缓冲的分配器，NULL 保持 provider mem。显式 `packet_mem` 仍独立管理 packet pool，否则 pool 跟随 association allocator；allocator 必须活到 association close 完成。
+
 ## API Reference
 
 [H2SCTP API Reference](/references/h2sctp)

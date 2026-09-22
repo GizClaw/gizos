@@ -1,3 +1,4 @@
+#include "h2_test_allocator.h"
 #include "h2_runtime_internal.h"
 #include "h2_runtime_task_names.h"
 #include "h2_runtime_test.h"
@@ -3848,6 +3849,34 @@ static const h2_pal_audio_vtable_t level_audio_vtable = {
     .create_track = level_create_track,
 };
 
+static void test_audio_track_allocator(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    audio_level_fixture_t f = {0};
+    const h2_pal_audio_api_t audio = {&f, &level_audio_vtable};
+    h2_runtime_config_t config = test_runtime_config(&env);
+    config.audio = &audio;
+    h2_runtime_t *runtime = NULL;
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    h2_test_allocator_t arena;
+    h2_test_allocator_init(&arena);
+    size_t baseline = env.allocator_state.live_allocations;
+    for (int custom = 0; custom < 2; ++custom) {
+        h2_audio_track_config_t track_config = {
+            .name = "arena", .allocator = custom ? &arena.api : NULL,
+        };
+        h2_pal_audio_track_t *track = NULL;
+        assert(h2_pal_audio_create_track(runtime->audio, &track_config, &track) == H2_PAL_OK);
+        assert(atomic_load(&arena.live) == (custom ? 1u : 0u));
+        assert(env.allocator_state.live_allocations == baseline + (custom ? 0u : 1u));
+        assert(h2_pal_audio_track_close(track) == H2_PAL_OK);
+        assert(atomic_load(&arena.live) == 0u);
+        assert(env.allocator_state.live_allocations == baseline);
+    }
+    h2_runtime_deinit(runtime);
+    assert(env.allocator_state.live_allocations == 0u);
+}
+
 static void test_audio_levels_follow_measured_frames(void) {
     test_runtime_env_t env;
     test_env_init(&env);
@@ -4577,6 +4606,7 @@ static void test_time_adjusted_event(void) {
 
 int main(void) {
     test_audio_shared_state();
+    test_audio_track_allocator();
     test_audio_levels_follow_measured_frames();
     test_audio_track_wrapper_forwards_absent_operations();
     test_audio_level_timestamp_survives_rollover();

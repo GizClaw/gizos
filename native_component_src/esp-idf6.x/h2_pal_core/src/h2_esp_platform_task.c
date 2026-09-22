@@ -27,6 +27,9 @@ struct h2_pal_task {
   h2_pal_task_entry_t entry;
   void *ctx;
   int stack_with_caps;
+  const h2_pal_mem_api_t *stack_allocator;
+  StackType_t *stack;
+  StaticTask_t *task_storage;
 };
 
 static h2_esp_task_policy_config_t s_task_config;
@@ -105,7 +108,7 @@ static h2_pal_result_t esp_policy_validate(const char *name,
  * Internal memory needed during startup. */
 static void esp_task_trampoline(void *raw) {
   h2_pal_task_t *task = (h2_pal_task_t *)raw;
-  const int stack_with_caps = task->stack_with_caps;
+  const int stack_with_caps = task->stack_with_caps || task->stack_allocator != NULL;
   task->entry(task->ctx);
   /* Join may free the PAL handle as soon as this signal is consumed. Do not
    * access task or the entry context after giving the semaphore. */
@@ -177,6 +180,23 @@ static int esp_task_start(void *user, const h2_pal_task_options_t *options,
     ok = xTaskCreatePinnedToCore(
         esp_task_trampoline, esp_task_name(options->name), stack_size, task,
         (UBaseType_t)policy.priority, &task->task, core);
+  } else if (options->stack_allocator != NULL) {
+    task->stack_allocator = options->stack_allocator;
+    task->stack = h2_pal_mem_alloc(task->stack_allocator, stack_size);
+    task->task_storage = heap_caps_malloc(
+        sizeof(*task->task_storage), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (task->stack == NULL || task->task_storage == NULL) {
+      h2_pal_mem_free(task->stack_allocator, task->stack);
+      heap_caps_free(task->task_storage);
+      vSemaphoreDelete(task->done);
+      free(task);
+      esp_task_fail(options->name, "allocate", "stack-or-tcb");
+      return H2_PAL_ERR_NO_MEMORY;
+    }
+    task->task = xTaskCreateStaticPinnedToCore(
+        esp_task_trampoline, esp_task_name(options->name), stack_size, task,
+        (UBaseType_t)policy.priority, task->stack, task->task_storage, core);
+    ok = task->task != NULL ? pdPASS : 0;
   } else {
     task->stack_with_caps = 1;
     ok = xTaskCreatePinnedToCoreWithCaps(
@@ -185,6 +205,8 @@ static int esp_task_start(void *user, const h2_pal_task_options_t *options,
         MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   }
   if (ok != pdPASS) {
+    h2_pal_mem_free(task->stack_allocator, task->stack);
+    heap_caps_free(task->task_storage);
     vSemaphoreDelete(task->done);
     free(task);
     esp_task_fail(options->name, "create", "sdk");
@@ -212,7 +234,25 @@ static int esp_task_join(void *user, h2_pal_task_t *task) {
    * waits for it to stop running before freeing its stack and TCB, including
    * when join wins the race between xSemaphoreGive and vTaskSuspend on another
    * core. Keep the semaphore and PAL handle alive until deletion returns. */
-  if (task->stack_with_caps) {
+  if (task->stack_allocator != NULL) {
+    /* As in IDF's WithCaps deletion, wait until vTaskDelete can reclaim the
+     * kernel state synchronously, even if join wins on the other core. */
+    vTaskSuspend(task->task);
+    for (;;) {
+      bool running = false;
+      for (BaseType_t core = 0; core < CONFIG_FREERTOS_NUMBER_OF_CORES; ++core) {
+        if (xTaskGetCurrentTaskHandleForCore(core) == task->task) {
+          running = true;
+          break;
+        }
+      }
+      if (!running) break;
+      taskYIELD();
+    }
+    vTaskDelete(task->task);
+    h2_pal_mem_free(task->stack_allocator, task->stack);
+    heap_caps_free(task->task_storage);
+  } else if (task->stack_with_caps) {
     vTaskDeleteWithCaps(task->task);
   }
   vSemaphoreDelete(task->done);

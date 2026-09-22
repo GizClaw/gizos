@@ -5,4 +5,5 @@
 #define MALLOC_CAP_8BIT 2u
 #define MALLOC_CAP_INTERNAL 4u
 void *heap_caps_malloc(size_t size, unsigned int caps);
+void heap_caps_free(void *ptr);
 #endif
