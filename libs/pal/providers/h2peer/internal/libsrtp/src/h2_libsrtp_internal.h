@@ -5,16 +5,19 @@
 
 #include "srtp.h"
 
+#include <stdatomic.h>
+
 typedef struct h2_libsrtp_state {
     h2_pal_mem_api_t mem;
     h2_pal_crypto_api_t crypto;
     size_t max_packet_size;
     size_t owner_refs;
-    size_t live_sessions;
+    atomic_size_t live_sessions;
     int ready;
 } h2_libsrtp_state_t;
 
 struct h2_libsrtp_session {
+    h2_pal_mem_api_t mem;
     srtp_t upstream;
     h2_libsrtp_direction_t direction;
     h2_libsrtp_profile_t profile;

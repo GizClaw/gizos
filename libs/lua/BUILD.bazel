@@ -386,6 +386,7 @@ cc_test(
     deps = [
         ":link_fake_ble",
         ":lua_link",
+        "//libs/pal:test_allocator",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
     ],

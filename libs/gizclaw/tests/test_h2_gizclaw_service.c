@@ -2392,6 +2392,7 @@ static int device_pcm_close(h2_pal_audio_track_t *track) {
 static int device_track_create(void *user, const h2_audio_track_config_t *config,
                                 h2_pal_audio_track_t **out) {
   device_test_state_t *state = user;
+  assert(config->allocator == s_env->service->client_config.allocator);
   assert(config->format.sample_rate_hz == 16000);
   assert(config->format.frame_samples_per_channel == 512);
   state->track = (h2_pal_audio_track_t){.user = state, .write = device_pcm_write,

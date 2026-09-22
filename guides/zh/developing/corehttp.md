@@ -7,6 +7,8 @@ ESP-IDF 与 BK7258 使用所选 Bazel embedded toolchain 编译这个 semantic t
 `h2_pal_core` 只导入其 archive closure，不再从 native SDK source list 重编 wrapper、
 coreHTTP 或 llhttp。
 
+请求的 `h2_pal_http_request_t.allocator` 非 NULL 时，该请求的 header buffer、响应 header/Location、URL/authority/path 与 redirect 临时副本全部由它分配并配对释放；NULL 时保持 provider allocator。共享 provider 与 root CA 的存储仍归 provider，response body 继续遵守独立的 response allocator 契约。
+
 ## API Reference
 
 [API Reference](/references/corehttp)

@@ -2,7 +2,84 @@
 #include "h2_bleikcp_task_names.h"
 
 #include <limits.h>
+#include <stdatomic.h>
+#include <stdlib.h>
 #include <string.h>
+
+/* ikcp has process-global hooks. Allocation context is scoped to each call;
+ * ownership survives the worker thread and is never inferred at free time.
+ * Keep a registry so libc blocks from other ikcp users (including instances
+ * predating hook installation) still use their original free path. */
+typedef union h2_bleikcp_kcp_block h2_bleikcp_kcp_block_t;
+union h2_bleikcp_kcp_block {
+#if defined(_MSC_VER) && !defined(__clang__)
+    /* MSVC's C headers omit max_align_t; cover its scalar alignments. */
+    long double alignment;
+    long long integer_alignment;
+    void *pointer_alignment;
+#else
+    max_align_t alignment;
+#endif
+    struct {
+        h2_pal_mem_api_t allocator;
+        h2_bleikcp_kcp_block_t *next;
+    } owner;
+};
+
+static _Thread_local const h2_pal_mem_api_t *s_kcp_allocator;
+static atomic_flag s_kcp_lock = ATOMIC_FLAG_INIT;
+static bool s_kcp_hooks_installed;
+static h2_bleikcp_kcp_block_t *s_kcp_blocks;
+
+static void h2_bleikcp_kcp_lock(void) {
+    while (atomic_flag_test_and_set_explicit(&s_kcp_lock, memory_order_acquire)) {
+    }
+}
+
+static void h2_bleikcp_kcp_unlock(void) {
+    atomic_flag_clear_explicit(&s_kcp_lock, memory_order_release);
+}
+
+static void *h2_bleikcp_kcp_alloc(size_t size) {
+    if (s_kcp_allocator == NULL) return malloc(size);
+    if (size > SIZE_MAX - sizeof(h2_bleikcp_kcp_block_t)) return NULL;
+    h2_bleikcp_kcp_block_t *block = h2_pal_mem_alloc(
+        s_kcp_allocator, sizeof(*block) + size);
+    if (block == NULL) return NULL;
+    block->owner.allocator = *s_kcp_allocator;
+    h2_bleikcp_kcp_lock();
+    block->owner.next = s_kcp_blocks;
+    s_kcp_blocks = block;
+    h2_bleikcp_kcp_unlock();
+    return block + 1;
+}
+
+static void h2_bleikcp_kcp_free(void *ptr) {
+    if (ptr == NULL) return;
+    h2_bleikcp_kcp_lock();
+    h2_bleikcp_kcp_block_t **cursor = &s_kcp_blocks;
+    while (*cursor != NULL && (void *)(*cursor + 1) != ptr) {
+        cursor = &(*cursor)->owner.next;
+    }
+    h2_bleikcp_kcp_block_t *block = *cursor;
+    if (block != NULL) *cursor = block->owner.next;
+    h2_bleikcp_kcp_unlock();
+    if (block != NULL) {
+        h2_pal_mem_api_t allocator = block->owner.allocator;
+        h2_pal_mem_free(&allocator, block);
+    } else {
+        free(ptr);
+    }
+}
+
+static void h2_bleikcp_kcp_install(void) {
+    h2_bleikcp_kcp_lock();
+    if (!s_kcp_hooks_installed) {
+        ikcp_allocator(h2_bleikcp_kcp_alloc, h2_bleikcp_kcp_free);
+        s_kcp_hooks_installed = true;
+    }
+    h2_bleikcp_kcp_unlock();
+}
 
 static const uint8_t s_service_uuid[] = { 0xe0u, 0xfeu };
 static const uint8_t s_tx_uuid[] = { 0xe1u, 0xfeu };
@@ -209,7 +286,11 @@ static void h2_bleikcp_drain_input(h2_bleikcp_t *stream) {
         size_t index = stream->input.head;
         size_t len = stream->input.lengths[index];
         const uint8_t *data = stream->input.data + index * stream->input.frame_size;
-        if (ikcp_input(stream->kcp, (const char *)data, (long)len) < 0) {
+        const h2_pal_mem_api_t *previous = s_kcp_allocator;
+        s_kcp_allocator = stream->api.allocator;
+        int result = ikcp_input(stream->kcp, (const char *)data, (long)len);
+        s_kcp_allocator = previous;
+        if (result < 0) {
             stream->stats.input_errors++;
             stream->fatal_status = H2_PAL_ERR_IO;
             break;
@@ -226,7 +307,11 @@ static void h2_bleikcp_drain_tx(h2_bleikcp_t *stream) {
            ikcp_waitsnd(stream->kcp) < (int)stream->config.value.send_window) {
         size_t len = stream->tx.len < mss ? stream->tx.len : mss;
         h2_bleikcp_ring_read(&stream->tx, stream->scratch, len);
-        if (ikcp_send(stream->kcp, (const char *)stream->scratch, (int)len) < 0) {
+        const h2_pal_mem_api_t *previous = s_kcp_allocator;
+        s_kcp_allocator = stream->api.allocator;
+        int result = ikcp_send(stream->kcp, (const char *)stream->scratch, (int)len);
+        s_kcp_allocator = previous;
+        if (result < 0) {
             stream->fatal_status = H2_PAL_ERR_IO;
             break;
         }
@@ -417,13 +502,20 @@ int h2_bleikcp_stream_create(
     if (rc != H2_PAL_OK) goto fail;
     rc = h2_bleikcp_alloc_storage(stream);
     if (rc != H2_PAL_OK) goto fail;
+    h2_bleikcp_kcp_install();
+    const h2_pal_mem_api_t *previous = s_kcp_allocator;
+    s_kcp_allocator = api->allocator;
     stream->kcp = ikcp_create(config->value.conv, stream);
+    s_kcp_allocator = previous;
     if (stream->kcp == NULL) {
         rc = H2_PAL_ERR_NO_MEMORY;
         goto fail;
     }
     ikcp_setoutput(stream->kcp, h2_bleikcp_kcp_output);
-    if (ikcp_setmtu(stream->kcp, stream->kcp_mtu) != 0 ||
+    s_kcp_allocator = api->allocator;
+    int mtu_result = ikcp_setmtu(stream->kcp, stream->kcp_mtu);
+    s_kcp_allocator = previous;
+    if (mtu_result != 0 ||
         ikcp_wndsize(stream->kcp, config->value.send_window, config->value.recv_window) != 0 ||
         ikcp_nodelay(stream->kcp, config->value.nodelay, config->value.interval_ms,
             config->value.resend, config->value.no_congestion_control) != 0) {

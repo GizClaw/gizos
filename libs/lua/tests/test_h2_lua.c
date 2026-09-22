@@ -401,6 +401,7 @@ static int test_audio_create_track(void *user,
   if (config == NULL || out_track == NULL ||
       config->format.sample_format != H2_AUDIO_SAMPLE_S16LE)
     return H2_PAL_ERR_INVALID_ARG;
+  assert(config->allocator != NULL);
   /* Mixer-backed devices reject Tracks whose frame size differs from the
    * playback frame size reported by get_info. */
   if (config->format.frame_samples_per_channel != 2u)

@@ -4,6 +4,8 @@ Modem provider 的接收分帧、命令串行与 URC 并发合同见 [Modem URC]
 
 Platform Abstraction Layer（PAL）定义 GizOS 使用的平台抽象能力。PAL 把芯片 SDK、操作系统和具体硬件实现隔离在跨平台代码之外，使 `libs`、runtime 和 app 可以使用稳定的 C contract。
 
+`h2_pal_webrtc_peer_create_with_config()` 接收可选的 `h2_pal_webrtc_peer_config_t.allocator`，NULL 或旧 `peer_create()` 保持原行为；H2Peer 把它用于 peer 私有存储并传给 SCTP/SRTP，独立 internal/control/packet allocator 保留，未实现扩展的旧 provider 只在 NULL/default config 时回退到原创建入口；收到非 NULL allocator 时返回 `H2_PAL_ERR_UNSUPPORTED`，不能静默忽略分配要求。`h2_audio_track_config_t.allocator` 同样可选，Runtime wrapper 和 mixer 的音轨队列、scratch 跟随它，NULL 保持各层原有默认分配器。
+
 ## API Reference
 
 [API Reference](/references/pal)

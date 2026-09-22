@@ -89,6 +89,8 @@ cc_test(
     }),
     deps = [
         ":libsrtp",
+        "//libs/pal:test_allocator",
+        "//libs/pal/providers/desktop/pal_core",
         "//libs/pal/providers/wolfssl:wolfcrypt",
     ],
 )

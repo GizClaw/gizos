@@ -213,7 +213,10 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":portable_protocol_providers"],
+    deps = [
+        ":portable_protocol_providers",
+        "//libs/pal:test_allocator",
+    ],
 )
 
 cc_test(
@@ -378,7 +381,10 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":h2peer"],
+    deps = [
+        ":h2peer",
+        "//libs/pal:test_allocator",
+    ],
 )
 
 cc_test(
@@ -398,6 +404,7 @@ cc_test(
     }),
     deps = [
         ":h2peer",
+        "//libs/pal:test_allocator",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
     ],

@@ -43,7 +43,10 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":audio_mixer"],
+    deps = [
+        ":audio_mixer",
+        "//libs/pal:test_allocator",
+    ],
 )
 
 cc_test(

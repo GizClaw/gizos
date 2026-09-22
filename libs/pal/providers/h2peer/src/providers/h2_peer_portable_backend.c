@@ -52,7 +52,7 @@ static void h2_peer_portable_global_release(void) {
 }
 
 static void *h2_peer_portable_alloc(h2_pal_webrtc_peer_t *peer, size_t len) {
-    void *ptr = h2_pal_mem_alloc(peer->owner->config.mem, len);
+    void *ptr = h2_pal_mem_alloc(h2_peer_mem(peer), len);
     if (ptr != NULL) {
         memset(ptr, 0, len);
     }
@@ -60,7 +60,7 @@ static void *h2_peer_portable_alloc(h2_pal_webrtc_peer_t *peer, size_t len) {
 }
 
 static void h2_peer_portable_free(h2_pal_webrtc_peer_t *peer, void *ptr) {
-    h2_pal_mem_free(peer->owner->config.mem, ptr);
+    h2_pal_mem_free(h2_peer_mem(peer), ptr);
 }
 
 static h2_pal_webrtc_channel_t *
@@ -280,7 +280,8 @@ h2_peer_portable_create_connection(h2_pal_webrtc_peer_t *peer) {
     PeerConfiguration config;
     memset(&config, 0, sizeof(config));
     config.log = peer->owner->config.log;
-    config.mem = peer->owner->config.mem;
+    config.mem = h2_peer_mem(peer);
+    config.allocator = peer->allocator;
     config.net = peer->owner->config.net;
     config.time = peer->owner->config.time;
     config.crypto = peer->owner->config.crypto;

@@ -217,6 +217,7 @@ int h2_game_audio_create(const h2_game_audio_config_t *config, h2_game_audio_t *
         audio->playback_format,
         1000,
         4,
+        nullptr,
     };
     if (h2_pal_audio_create_track(config->audio, &track_config, &audio->track) != H2_AUDIO_OK) {
         h2_pal_mem_free(config->mem, audio->samples);
