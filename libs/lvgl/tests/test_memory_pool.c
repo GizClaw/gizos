@@ -10,7 +10,14 @@
 
 typedef union allocation_header {
     size_t bytes;
+#if defined(_MSC_VER) && !defined(__clang__)
+    /* MSVC's C headers omit max_align_t; cover its scalar alignments. */
+    long double alignment;
+    long long integer_alignment;
+    void *pointer_alignment;
+#else
     max_align_t alignment;
+#endif
 } allocation_header_t;
 
 typedef struct allocator_state {
@@ -97,7 +104,7 @@ static void assert_empty(allocator_state_t *state) {
 
 static void check_bytes(const void *ptr, size_t size, unsigned char value) {
     assert(ptr != NULL);
-    assert((uintptr_t)ptr % _Alignof(max_align_t) == 0u);
+    assert((uintptr_t)ptr % _Alignof(allocation_header_t) == 0u);
     for (size_t i = 0u; i < size; ++i)
         assert(((const unsigned char *)ptr)[i] == value);
 }
@@ -188,7 +195,7 @@ static void test_isolated_block_reuse(void) {
     blocks[middle] = lv_malloc_core(16u);
     assert(blocks[middle] != NULL);
     assert(state.calls == calls); /* An isolated freed block must suffice. */
-    assert((uintptr_t)blocks[middle] % _Alignof(max_align_t) == 0u);
+    assert((uintptr_t)blocks[middle] % _Alignof(allocation_header_t) == 0u);
     for (size_t i = 0u; i < count; ++i) lv_free_core(blocks[i]);
     h2_lvgl_platform_deinit();
     assert_empty(&state);

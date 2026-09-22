@@ -5,6 +5,17 @@
 #include <stdint.h>
 #include <string.h>
 
+typedef union h2_lvgl_alignment {
+#if defined(_MSC_VER) && !defined(__clang__)
+    /* MSVC's C headers omit max_align_t; cover its scalar alignments. */
+    long double floating;
+    long long integer;
+    void *pointer;
+#else
+    max_align_t value;
+#endif
+} h2_lvgl_alignment_t;
+
 typedef union h2_lvgl_chunk h2_lvgl_chunk_t;
 union h2_lvgl_chunk {
     struct {
@@ -12,7 +23,7 @@ union h2_lvgl_chunk {
         size_t bytes;
         pool_t pool;
     } info;
-    max_align_t alignment;
+    h2_lvgl_alignment_t alignment;
 };
 
 typedef union h2_lvgl_direct h2_lvgl_direct_t;
@@ -21,7 +32,7 @@ union h2_lvgl_direct {
         h2_lvgl_direct_t *next;
         size_t bytes;
     } info;
-    max_align_t alignment;
+    h2_lvgl_alignment_t alignment;
 };
 
 typedef struct h2_lvgl_memory_state {
@@ -50,7 +61,7 @@ static void memory_unlock(void) {
 }
 
 static size_t pool_alignment(void) {
-    const size_t alignment = _Alignof(max_align_t);
+    const size_t alignment = _Alignof(h2_lvgl_alignment_t);
     return alignment > tlsf_align_size() ? alignment : tlsf_align_size();
 }
 
