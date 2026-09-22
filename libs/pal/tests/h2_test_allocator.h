@@ -19,7 +19,14 @@ typedef struct h2_test_allocator {
 } h2_test_allocator_t;
 
 typedef union h2_test_allocation {
+#if defined(_MSC_VER) && !defined(__clang__)
+    /* MSVC's C headers omit max_align_t; cover its scalar alignments. */
+    long double alignment;
+    long long integer_alignment;
+    void *pointer_alignment;
+#else
     max_align_t alignment;
+#endif
     struct {
         h2_test_allocator_t *owner;
         size_t size;

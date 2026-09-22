@@ -12,7 +12,14 @@
  * predating hook installation) still use their original free path. */
 typedef union h2_bleikcp_kcp_block h2_bleikcp_kcp_block_t;
 union h2_bleikcp_kcp_block {
+#if defined(_MSC_VER) && !defined(__clang__)
+    /* MSVC's C headers omit max_align_t; cover its scalar alignments. */
+    long double alignment;
+    long long integer_alignment;
+    void *pointer_alignment;
+#else
     max_align_t alignment;
+#endif
     struct {
         h2_pal_mem_api_t allocator;
         h2_bleikcp_kcp_block_t *next;

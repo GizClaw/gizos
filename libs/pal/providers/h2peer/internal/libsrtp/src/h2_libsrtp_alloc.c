@@ -33,7 +33,14 @@ void h2_libsrtp_allocator_leave(void) {
  * Arena blocks keep the existing bounded layout; every operation, including
  * destruction, enters the owning session before calling upstream code. */
 typedef union h2_libsrtp_block {
+#if defined(_MSC_VER) && !defined(__clang__)
+    /* MSVC's C headers omit max_align_t; cover its scalar alignments. */
+    long double alignment;
+    long long integer_alignment;
+    void *pointer_alignment;
+#else
     max_align_t alignment;
+#endif
     h2_pal_mem_api_t owner;
 } h2_libsrtp_block_t;
 
