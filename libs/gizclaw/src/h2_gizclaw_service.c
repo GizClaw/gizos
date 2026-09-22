@@ -1466,22 +1466,21 @@ h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service) {
     /* The owner can only retry; name what still holds the Service so a leak
      * is traceable from one field log. Formatted under the lock, written
      * after it. */
-    char message[256];
+    /* Grouped fields keep even seven 64-bit SIZE_MAX counters within the PAL
+     * limit: refs=caller/request/track/downlink, terminal=pending/dispatched,
+     * attached=audio_conversation/session. */
+    char message[H2_PAL_LOG_MESSAGE_MAX];
     (void)snprintf(
         message, sizeof(message),
-        "stage=service_deinit_blocked stopped=%d dispatching=%d active=%u "
-        "caller_refs=%u request_refs=%u track_refs=%u downlink_refs=%u "
-        "track_unsetting=%d queued_events=%u dispatch_items=%u "
-        "terminal_pending=%d terminal_dispatched=%d audio_conversation=%d "
-        "session=%d",
+        "stage=service_deinit_blocked stopped=%d dispatch=%d active=%zu "
+        "refs=%zu/%zu/%zu/%zu unset=%d queued=%zu items=%zu "
+        "terminal=%d/%d attached=%d/%d",
         service->stopped ? 1 : 0, service->dispatching ? 1 : 0,
-        (unsigned)service->active_count,
-        (unsigned)service->caller_reference_count,
-        (unsigned)service->request_reference_count,
-        (unsigned)service->pcm_track_refs, (unsigned)service->downlink_refs,
+        service->active_count, service->caller_reference_count,
+        service->request_reference_count,
+        service->pcm_track_refs, service->downlink_refs,
         service->pcm_track_unsetting ? 1 : 0,
-        (unsigned)service->queued_event_count,
-        (unsigned)service->dispatch_item_count,
+        service->queued_event_count, service->dispatch_item_count,
         service->terminal_pending ? 1 : 0, service->terminal_dispatched ? 1 : 0,
         service->audio_conversation != NULL ? 1 : 0,
         service->session != NULL ? 1 : 0);
@@ -1494,7 +1493,7 @@ h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service) {
     unlock_service(service);
     if (changed)
       (void)h2_pal_log_write(service->config.client_config->log,
-                             H2_PAL_LOG_WARN, "gizclaw", message);
+                            H2_PAL_LOG_WARN, "gizclaw", message);
     return H2_PAL_ERR_INVALID_STATE;
   }
   h2_gizclaw_track_t *track = atomic_exchange(&service->pcm_track, NULL);
