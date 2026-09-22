@@ -6,6 +6,11 @@
 #include <stdbool.h>
 #include <stdlib.h>
 #include <string.h>
+#if defined(ESP_PLATFORM)
+#include "esp_debug_helpers.h"
+#include <stdarg.h>
+#include <stdio.h>
+#endif
 
 #define RESERVATION (64u * 1024u)
 
@@ -15,7 +20,7 @@ static struct {
     void *ptr;
     size_t bytes;
     unsigned caps;
-} blocks[32];
+} blocks[1024];
 static size_t live_blocks;
 static bool fail_psram;
 static bool fail_internal;
@@ -24,6 +29,13 @@ static void *reservation;
 static unsigned mutex_count;
 static bool locked;
 static unsigned takes;
+static unsigned heap_calls;
+#if defined(ESP_PLATFORM)
+static bool fail_registry;
+#define BASE_BLOCKS 3u
+#else
+#define BASE_BLOCKS 2u
+#endif
 
 static size_t block_index(void *ptr) {
     for (size_t i = 0; i < live_blocks; ++i)
@@ -34,13 +46,19 @@ static size_t block_index(void *ptr) {
 }
 
 void *heap_caps_malloc(size_t bytes, unsigned caps) {
+    ++heap_calls;
+#if defined(ESP_PLATFORM)
+    if (fail_registry && caps == (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) &&
+        bytes != RESERVATION)
+        return NULL;
+#endif
     assert(caps == (MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) ||
            caps == (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
     if (((caps & MALLOC_CAP_SPIRAM) && fail_psram) ||
         ((caps & MALLOC_CAP_INTERNAL) && fail_internal))
         return NULL;
     void *ptr = malloc(bytes);
-    assert(ptr != NULL && live_blocks < 32u);
+    assert(ptr != NULL && live_blocks < 1024u);
     blocks[live_blocks].ptr = ptr;
     blocks[live_blocks].bytes = bytes;
     blocks[live_blocks++].caps = caps;
@@ -91,7 +109,7 @@ BaseType_t xSemaphoreGive(SemaphoreHandle_t semaphore) {
 }
 
 void vSemaphoreDelete(SemaphoreHandle_t semaphore) {
-    assert(semaphore != NULL && !locked && mutex_count == 1u);
+    assert(semaphore != NULL && !locked && mutex_count > 0u);
     --mutex_count;
 }
 
@@ -100,11 +118,13 @@ static bool in_arena(const void *ptr) {
     return p >= start && p - start < RESERVATION;
 }
 
-static h2_esp_platform_arena_t *create(void) {
-    const h2_esp_platform_arena_config_t config = {.reserved_bytes = RESERVATION, .name = "test"};
+static h2_esp_platform_arena_t *create(bool spill) {
+    const h2_esp_platform_arena_config_t config = {
+        .reserved_bytes = RESERVATION, .name = "test", .spill_to_system = spill,
+    };
     h2_esp_platform_arena_t *arena = NULL;
     assert(h2_esp_platform_arena_create(&config, &arena) == H2_PAL_OK);
-    assert(arena != NULL && live_blocks == 2u && mutex_count == 1u);
+    assert(arena != NULL && live_blocks == (spill ? BASE_BLOCKS : 2u) && mutex_count == 1u);
     return arena;
 }
 
@@ -140,7 +160,7 @@ static void check_bytes(void *ptr, size_t n, unsigned char value) {
 }
 
 static void test_arena(void) {
-    h2_esp_platform_arena_t *arena = create();
+    h2_esp_platform_arena_t *arena = create(false);
     const h2_pal_mem_api_t *mem = h2_esp_platform_arena_mem(arena);
     void *a = h2_pal_mem_alloc(mem, 129u);
     void *guard = h2_pal_mem_alloc(mem, 64u);
@@ -169,7 +189,7 @@ static void test_arena(void) {
 /* Growing within a nearly full pool must reuse the owner's realloc, rather
  * than require a second large allocation and fall back unnecessarily. */
 static void test_in_place_growth(void) {
-    h2_esp_platform_arena_t *arena = create();
+    h2_esp_platform_arena_t *arena = create(false);
     const h2_pal_mem_api_t *mem = h2_esp_platform_arena_mem(arena);
     void *p = h2_pal_mem_alloc(mem, 24u * 1024u);
     memset(p, 0x5a, 24u * 1024u);
@@ -182,7 +202,7 @@ static void test_in_place_growth(void) {
 }
 
 static void test_fallback_and_migration(void) {
-    h2_esp_platform_arena_t *arena = create();
+    h2_esp_platform_arena_t *arena = create(true);
     const h2_pal_mem_api_t *mem = h2_esp_platform_arena_mem(arena);
     void *a = h2_pal_mem_alloc(mem, 128u);
     memset(a, 0x3c, 128u);
@@ -210,7 +230,7 @@ static void test_fallback_and_migration(void) {
     check_bytes(a, 128u, 0x3c);
     h2_esp_platform_arena_stats_t stats = snapshot(arena);
     assert(stats.large.live_bytes == 256u && stats.large.peak_bytes == 256u);
-    assert(stats.fallback_live_bytes == 0u && live_blocks == 2u);
+    assert(stats.fallback_live_bytes == 0u && live_blocks == BASE_BLOCKS);
     assert(stats.large.fallback_count == 4u &&
            stats.large.fallback_bytes == 6u * RESERVATION);
     assert(stats.large.largest_request == 2u * RESERVATION);
@@ -244,6 +264,27 @@ static void test_split_pools(void) {
     assert(stats.small.reserved_bytes == RESERVATION / 2u);
     h2_pal_mem_free(mem, small);
     h2_pal_mem_free(mem, large);
+    finish(arena);
+}
+
+static void test_default_no_spill(void) {
+    const h2_esp_platform_arena_config_t config = {.reserved_bytes = RESERVATION};
+    h2_esp_platform_arena_t *arena = NULL;
+    assert(h2_esp_platform_arena_create(&config, &arena) == H2_PAL_OK);
+    const h2_pal_mem_api_t *mem = h2_esp_platform_arena_mem(arena);
+    void *p = h2_pal_mem_alloc(mem, 128u);
+    memset(p, 0x31, 128u);
+    const unsigned initial_calls = heap_calls;
+    assert(h2_pal_mem_alloc(mem, RESERVATION) == NULL);
+    assert(h2_pal_mem_realloc(mem, p, RESERVATION) == NULL);
+    check_bytes(p, 128u, 0x31);
+    assert(heap_calls == initial_calls);
+    h2_esp_platform_arena_stats_t stats = snapshot(arena);
+    assert(stats.large.live_bytes == 128u && stats.fallback_live_bytes == 0u);
+    assert(stats.large.fallback_count == 2u);
+    h2_pal_mem_free(mem, p);
+    h2_esp_platform_arena_log_spills(NULL, NULL, false);
+    h2_esp_platform_arena_log_spills(arena, "no-spill", true);
     finish(arena);
 }
 
@@ -281,14 +322,242 @@ static void test_failure(void) {
     assert(stats.reserved_bytes == 0u && stats.fallback_live_bytes == 0u);
     assert(h2_esp_platform_arena_mem(NULL) == NULL);
     assert(h2_esp_platform_arena_destroy(NULL) == H2_PAL_OK);
-    finish(create());
+    finish(create(false));
 }
+
+#if defined(ESP_PLATFORM)
+static int64_t now_us;
+static uint32_t caller_pc = 0x40001000u;
+static unsigned captures;
+static unsigned summary_logs;
+static unsigned failure_logs;
+static unsigned site_logs;
+static size_t logged_bytes, logged_other;
+static unsigned logged_blocks, logged_groups;
+static unsigned long long logged_untracked;
+static uint32_t logged_pc;
+static char last_failure[256];
+
+int64_t esp_timer_get_time(void) { return now_us; }
+size_t heap_caps_get_free_size(unsigned caps) { (void)caps; return 4096u; }
+size_t heap_caps_get_largest_free_block(unsigned caps) { (void)caps; return 2048u; }
+
+void esp_backtrace_get_start(uint32_t *pc, uint32_t *sp, uint32_t *next_pc) {
+    assert(locked);
+    ++captures;
+    *pc = caller_pc;
+    *sp = 0u;
+    *next_pc = caller_pc + 4u;
+}
+
+bool esp_backtrace_get_next_frame(esp_backtrace_frame_t *frame) {
+    frame->pc = frame->next_pc;
+    frame->next_pc += 4u;
+    return true;
+}
+
+void test_arena_log(const char *tag, const char *format, ...) {
+    assert(strcmp(tag, "h2_arena") == 0);
+    char line[512];
+    va_list args;
+    va_start(args, format);
+    const int bytes = vsnprintf(line, sizeof(line), format, args);
+    va_end(args);
+    assert(bytes > 0 && (size_t)bytes < sizeof(line));
+    if (strstr(line, "H2_ARENA_SPILL_LIVE") != NULL) {
+        assert(!locked);
+        ++summary_logs;
+        assert(sscanf(line, "H2_ARENA_SPILL_LIVE phase=%*s bytes=%zu blocks=%u "
+                      "groups=%u other=%zu untracked=%llu",
+                      &logged_bytes, &logged_blocks, &logged_groups,
+                      &logged_other, &logged_untracked) == 5);
+        site_logs = 0u;
+    } else if (strstr(line, "H2_ARENA_SPILL_SITE") != NULL) {
+        assert(!locked);
+        ++site_logs;
+        unsigned pc;
+        assert(sscanf(line, "H2_ARENA_SPILL_SITE rank=%*u bytes=%*u blocks=%*u "
+                      "pc=0x%x", &pc) == 1);
+        logged_pc = pc;
+    } else {
+        assert(locked && strstr(line, "H2_ARENA_SPILL_FAILED") != NULL);
+        ++failure_logs;
+        assert(strlen(line) < sizeof(last_failure));
+        strcpy(last_failure, line);
+    }
+}
+
+static void dump(h2_esp_platform_arena_t *arena) {
+    const unsigned before = heap_calls;
+    h2_esp_platform_arena_log_spills(arena, NULL, true);
+    assert(heap_calls == before && site_logs == logged_groups);
+}
+
+static void test_spill_lifecycle(void) {
+    h2_esp_platform_arena_t *arena = create(true);
+    const h2_pal_mem_api_t *mem = h2_esp_platform_arena_mem(arena);
+    caller_pc = 0x40001000u;
+    void *a = h2_pal_mem_alloc(mem, RESERVATION);
+    void *b = h2_pal_mem_alloc(mem, RESERVATION);
+    assert(a != NULL && b != NULL);
+    memset(a, 0x42, 128u);
+    dump(arena);
+    assert(logged_blocks == 2u && logged_groups == 1u);
+    const size_t original_bytes = logged_bytes;
+    assert(original_bytes > 2u * RESERVATION && logged_untracked == 0u);
+    const unsigned before_captures = captures;
+    caller_pc = 0x40002000u;
+    a = h2_pal_mem_realloc(mem, a, 2u * RESERVATION);
+    check_bytes(a, 128u, 0x42);
+    dump(arena);
+    assert(logged_blocks == 2u && logged_groups == 1u);
+    assert(logged_bytes == original_bytes + RESERVATION);
+    assert(captures == before_captures);
+#if CONFIG_IDF_TARGET_ARCH_XTENSA
+    assert(logged_pc == 0x40001000u);
+#else
+    assert(logged_pc == 0u);
+#endif
+    const unsigned before_failures = failure_logs;
+    fail_psram = true;
+    assert(h2_pal_mem_realloc(mem, a, 3u * RESERVATION) == NULL);
+    assert(h2_pal_mem_alloc(mem, RESERVATION) == NULL);
+    fail_psram = false;
+    assert(failure_logs == before_failures + 2u);
+    assert(strstr(last_failure, "op=alloc") != NULL);
+    check_bytes(a, 128u, 0x42);
+    dump(arena);
+    assert(logged_bytes == original_bytes + RESERVATION && logged_blocks == 2u);
+    a = h2_pal_mem_realloc(mem, a, 128u);
+    assert(in_arena(a));
+    check_bytes(a, 128u, 0x42);
+    dump(arena);
+    assert(logged_blocks == 1u && logged_bytes == original_bytes / 2u);
+    assert(h2_pal_mem_realloc(mem, b, 0u) == NULL);
+    h2_pal_mem_free(mem, a);
+    dump(arena);
+    assert(logged_blocks == 0u && logged_bytes == 0u);
+    finish(arena);
+}
+
+static void test_spill_capacity(void) {
+    h2_esp_platform_arena_t *arena = create(true);
+    const h2_pal_mem_api_t *mem = h2_esp_platform_arena_mem(arena);
+    void *ptrs[513];
+    for (unsigned i = 0u; i < 513u; ++i) {
+        caller_pc = 0x40001000u + i * 32u;
+        ptrs[i] = h2_pal_mem_alloc(mem, RESERVATION);
+        assert(ptrs[i] != NULL);
+    }
+    dump(arena);
+    assert(logged_blocks == 512u && logged_untracked == 1u);
+#if CONFIG_IDF_TARGET_ARCH_XTENSA
+    assert(logged_groups == 24u && logged_other > 0u);
+#else
+    assert(logged_groups == 1u && logged_other == 0u);
+#endif
+    h2_pal_mem_free(mem, ptrs[0]);
+    ptrs[0] = h2_pal_mem_alloc(mem, RESERVATION);
+    assert(ptrs[0] != NULL);
+    dump(arena);
+    assert(logged_blocks == 512u && logged_untracked == 1u);
+    /* A formerly untracked block can enter a slot when resized after a free. */
+    h2_pal_mem_free(mem, ptrs[1]);
+    ptrs[1] = NULL;
+    ptrs[512] = h2_pal_mem_realloc(mem, ptrs[512], 2u * RESERVATION);
+    assert(ptrs[512] != NULL);
+    dump(arena);
+    assert(logged_blocks == 512u && logged_untracked == 1u);
+    for (unsigned i = 0u; i < 513u; ++i)
+        h2_pal_mem_free(mem, ptrs[i]);
+    dump(arena);
+    assert(logged_blocks == 0u && logged_bytes == 0u && logged_untracked == 1u);
+    finish(arena);
+}
+
+static void test_spill_isolation_and_throttle(void) {
+    h2_esp_platform_arena_t *a = create(true), *b = NULL;
+    const h2_esp_platform_arena_config_t config = {
+        .reserved_bytes = RESERVATION, .spill_to_system = true,
+    };
+    assert(h2_esp_platform_arena_create(&config, &b) == H2_PAL_OK);
+    const h2_pal_mem_api_t *ma = h2_esp_platform_arena_mem(a);
+    const h2_pal_mem_api_t *mb = h2_esp_platform_arena_mem(b);
+    void *pa = h2_pal_mem_alloc(ma, RESERVATION);
+    void *pb = h2_pal_mem_alloc(mb, 2u * RESERVATION);
+    assert(pa != NULL && pb != NULL);
+    unsigned before = summary_logs;
+    now_us = 0;
+    h2_esp_platform_arena_log_spills(a, "a", false);
+    assert(summary_logs == before + 1u && logged_blocks == 1u);
+    const size_t a_bytes = logged_bytes;
+    h2_esp_platform_arena_log_spills(b, "b", false);
+    assert(summary_logs == before + 2u && logged_blocks == 1u);
+    assert(logged_bytes == a_bytes + RESERVATION);
+    h2_esp_platform_arena_log_spills(a, "a", false);
+    assert(summary_logs == before + 2u);
+    now_us = 59999999;
+    h2_esp_platform_arena_log_spills(a, "a", false);
+    assert(summary_logs == before + 2u);
+    now_us = 60000000;
+    h2_esp_platform_arena_log_spills(a, "a", false);
+    assert(summary_logs == before + 3u);
+    dump(a);
+    assert(summary_logs == before + 4u);
+    before = failure_logs;
+    fail_psram = true;
+    for (unsigned i = 0u; i < 64u; ++i)
+        assert(h2_pal_mem_alloc(ma, RESERVATION) == NULL);
+    assert(failure_logs == before + 17u);
+    assert(h2_pal_mem_alloc(mb, RESERVATION) == NULL);
+    assert(failure_logs == before + 18u);
+    fail_psram = false;
+    h2_pal_mem_free(ma, pa);
+    assert(h2_esp_platform_arena_destroy(a) == H2_PAL_OK);
+    dump(b);
+    assert(logged_blocks == 1u && logged_bytes == a_bytes + RESERVATION);
+    h2_pal_mem_free(mb, pb);
+    finish(b);
+}
+
+static void test_spill_registry_allocation_failure(void) {
+    h2_esp_platform_arena_t *arena = NULL;
+    h2_esp_platform_arena_config_t config = {
+        .reserved_bytes = RESERVATION, .spill_to_system = true,
+    };
+    fail_registry = true;
+    assert(h2_esp_platform_arena_create(&config, &arena) == H2_PAL_OK);
+    fail_registry = false;
+    assert(live_blocks == 2u);
+    const h2_pal_mem_api_t *mem = h2_esp_platform_arena_mem(arena);
+    void *p = h2_pal_mem_alloc(mem, RESERVATION);
+    assert(p != NULL);
+    dump(arena);
+    assert(logged_blocks == 0u && logged_untracked == 1u);
+    h2_pal_mem_free(mem, p);
+    finish(arena);
+    fail_mutex = true;
+    assert(h2_esp_platform_arena_create(&config, &arena) == H2_PAL_ERR_NO_MEMORY);
+    fail_mutex = false;
+    assert(arena == NULL && live_blocks == 0u);
+    config.small_pool_bytes = 1u;
+    assert(h2_esp_platform_arena_create(&config, &arena) == H2_PAL_ERR_INVALID_ARG);
+    assert(arena == NULL && live_blocks == 0u && mutex_count == 0u);
+}
+#endif
 
 int main(void) {
     test_arena();
     test_in_place_growth();
     test_fallback_and_migration();
     test_split_pools();
+    test_default_no_spill();
     test_failure();
+#if defined(ESP_PLATFORM)
+    test_spill_lifecycle();
+    test_spill_capacity();
+    test_spill_isolation_and_throttle();
+    test_spill_registry_allocation_failure();
+#endif
     return 0;
 }
