@@ -111,7 +111,7 @@ static void release_job(h2_lua_job_t *job) {
   if (job == NULL || job->host == NULL) {
     return;
   }
-  mem = job->host->config.runtime->mem;
+  mem = job->host->config.allocator;
   job_id = job->id;
   job_generation = job->generation;
   h2_lua_release_job_capabilities(job->host, job_id, job_generation);
@@ -246,6 +246,8 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
     return H2_PAL_ERR_INVALID_ARG;
   }
   normalized = *config;
+  if (normalized.allocator == NULL)
+    normalized.allocator = config->runtime->mem;
   normalized.worker_count =
       normalized.worker_count == 0u ? 1u : normalized.worker_count;
   normalized.worker_stack_size = normalized.worker_stack_size == 0u
@@ -338,7 +340,7 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
   }
 
   host_size = sizeof(*host) + normalized.max_jobs * sizeof(*host->job_mutexes);
-  host = h2_pal_mem_alloc(normalized.runtime->mem, host_size);
+  host = h2_pal_mem_alloc(normalized.allocator, host_size);
   if (host == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -350,29 +352,29 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
   host->next_job_id = 1u;
   host->next_job_generation = 1u;
   host->next_capability_request_id = 1u;
-  host->jobs = h2_pal_mem_alloc(normalized.runtime->mem,
+  host->jobs = h2_pal_mem_alloc(normalized.allocator,
                                 normalized.max_jobs * sizeof(*host->jobs));
   if (host->jobs == NULL) {
-    h2_pal_mem_free(normalized.runtime->mem, host);
+    h2_pal_mem_free(normalized.allocator, host);
     return H2_PAL_ERR_NO_MEMORY;
   }
   memset(host->jobs, 0, normalized.max_jobs * sizeof(*host->jobs));
   host->workers =
-      h2_pal_mem_alloc(normalized.runtime->mem,
+      h2_pal_mem_alloc(normalized.allocator,
                        normalized.worker_count * sizeof(*host->workers));
   if (host->workers == NULL) {
-    h2_pal_mem_free(normalized.runtime->mem, host->jobs);
-    h2_pal_mem_free(normalized.runtime->mem, host);
+    h2_pal_mem_free(normalized.allocator, host->jobs);
+    h2_pal_mem_free(normalized.allocator, host);
     return H2_PAL_ERR_NO_MEMORY;
   }
   memset(host->workers, 0, normalized.worker_count * sizeof(*host->workers));
   host->capability_requests = h2_pal_mem_alloc(
-      normalized.runtime->mem, normalized.pending_capability_capacity *
+      normalized.allocator, normalized.pending_capability_capacity *
                                    sizeof(*host->capability_requests));
   if (host->capability_requests == NULL) {
-    h2_pal_mem_free(normalized.runtime->mem, host->workers);
-    h2_pal_mem_free(normalized.runtime->mem, host->jobs);
-    h2_pal_mem_free(normalized.runtime->mem, host);
+    h2_pal_mem_free(normalized.allocator, host->workers);
+    h2_pal_mem_free(normalized.allocator, host->jobs);
+    h2_pal_mem_free(normalized.allocator, host);
     return H2_PAL_ERR_NO_MEMORY;
   }
   memset(host->capability_requests, 0,
@@ -383,20 +385,20 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
         h2_pal_mutex_create(normalized.runtime->sync,
                             &(h2_pal_mutex_config_t){
                                 .name = "h2-lua-capability",
-                                .allocator = normalized.runtime->mem,
+                                .allocator = normalized.allocator,
                             },
                             &host->capability_mutex);
     if (mutex_result != H2_PAL_OK && mutex_result != H2_PAL_ERR_UNSUPPORTED) {
-      h2_pal_mem_free(normalized.runtime->mem, host->capability_requests);
-      h2_pal_mem_free(normalized.runtime->mem, host->workers);
-      h2_pal_mem_free(normalized.runtime->mem, host->jobs);
-      h2_pal_mem_free(normalized.runtime->mem, host);
+      h2_pal_mem_free(normalized.allocator, host->capability_requests);
+      h2_pal_mem_free(normalized.allocator, host->workers);
+      h2_pal_mem_free(normalized.allocator, host->jobs);
+      h2_pal_mem_free(normalized.allocator, host);
       return mutex_result;
     }
     mutex_result = h2_pal_mutex_create(normalized.runtime->sync,
                                        &(h2_pal_mutex_config_t){
                                            .name = "h2-lua-jobs",
-                                           .allocator = normalized.runtime->mem,
+                                           .allocator = normalized.allocator,
                                        },
                                        &host->jobs_mutex);
     if (mutex_result != H2_PAL_OK) {
@@ -404,16 +406,16 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
         (void)h2_pal_mutex_destroy(normalized.runtime->sync,
                                    host->capability_mutex);
       }
-      h2_pal_mem_free(normalized.runtime->mem, host->capability_requests);
-      h2_pal_mem_free(normalized.runtime->mem, host->workers);
-      h2_pal_mem_free(normalized.runtime->mem, host->jobs);
-      h2_pal_mem_free(normalized.runtime->mem, host);
+      h2_pal_mem_free(normalized.allocator, host->capability_requests);
+      h2_pal_mem_free(normalized.allocator, host->workers);
+      h2_pal_mem_free(normalized.allocator, host->jobs);
+      h2_pal_mem_free(normalized.allocator, host);
       return mutex_result;
     }
     mutex_result = h2_pal_mutex_create(normalized.runtime->sync,
                                        &(h2_pal_mutex_config_t){
                                            .name = "h2-lua-audio",
-                                           .allocator = normalized.runtime->mem,
+                                           .allocator = normalized.allocator,
                                        },
                                        &host->audio_mutex);
     if (mutex_result != H2_PAL_OK) {
@@ -422,10 +424,10 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
         (void)h2_pal_mutex_destroy(normalized.runtime->sync,
                                    host->capability_mutex);
       }
-      h2_pal_mem_free(normalized.runtime->mem, host->capability_requests);
-      h2_pal_mem_free(normalized.runtime->mem, host->workers);
-      h2_pal_mem_free(normalized.runtime->mem, host->jobs);
-      h2_pal_mem_free(normalized.runtime->mem, host);
+      h2_pal_mem_free(normalized.allocator, host->capability_requests);
+      h2_pal_mem_free(normalized.allocator, host->workers);
+      h2_pal_mem_free(normalized.allocator, host->jobs);
+      h2_pal_mem_free(normalized.allocator, host);
       return mutex_result;
     }
     for (size_t job_index = 0u; job_index < normalized.max_jobs; ++job_index) {
@@ -433,7 +435,7 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
           h2_pal_mutex_create(normalized.runtime->sync,
                               &(h2_pal_mutex_config_t){
                                   .name = "h2-lua-job",
-                                  .allocator = normalized.runtime->mem,
+                                  .allocator = normalized.allocator,
                               },
                               &host->job_mutexes[job_index]);
       if (mutex_result != H2_PAL_OK) {
@@ -448,18 +450,18 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
           (void)h2_pal_mutex_destroy(normalized.runtime->sync,
                                      host->capability_mutex);
         }
-        h2_pal_mem_free(normalized.runtime->mem, host->capability_requests);
-        h2_pal_mem_free(normalized.runtime->mem, host->workers);
-        h2_pal_mem_free(normalized.runtime->mem, host->jobs);
-        h2_pal_mem_free(normalized.runtime->mem, host);
+        h2_pal_mem_free(normalized.allocator, host->capability_requests);
+        h2_pal_mem_free(normalized.allocator, host->workers);
+        h2_pal_mem_free(normalized.allocator, host->jobs);
+        h2_pal_mem_free(normalized.allocator, host);
         return mutex_result;
       }
     }
   } else {
-    h2_pal_mem_free(normalized.runtime->mem, host->capability_requests);
-    h2_pal_mem_free(normalized.runtime->mem, host->workers);
-    h2_pal_mem_free(normalized.runtime->mem, host->jobs);
-    h2_pal_mem_free(normalized.runtime->mem, host);
+    h2_pal_mem_free(normalized.allocator, host->capability_requests);
+    h2_pal_mem_free(normalized.allocator, host->workers);
+    h2_pal_mem_free(normalized.allocator, host->jobs);
+    h2_pal_mem_free(normalized.allocator, host);
     return H2_PAL_ERR_UNSUPPORTED;
   }
   {
@@ -500,7 +502,7 @@ h2_pal_result_t h2_lua_host_start(h2_lua_host_t *host) {
             .name = "h2-lua-worker",
             .item_size = sizeof(uint8_t),
             .item_count = 1u,
-            .allocator = host->config.runtime->mem,
+            .allocator = host->config.allocator,
         },
         &host->workers[i].wake_queue);
     if (result != H2_PAL_OK) {
@@ -597,7 +599,7 @@ void h2_lua_host_destroy(h2_lua_host_t *host) {
   if (host == NULL) {
     return;
   }
-  mem = host->config.runtime->mem;
+  mem = host->config.allocator;
   (void)h2_lua_host_stop(host);
   if (h2_lua_host_join(host) != H2_PAL_OK) {
     return;

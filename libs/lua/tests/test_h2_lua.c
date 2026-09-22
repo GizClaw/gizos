@@ -2415,6 +2415,45 @@ static void heap_test_run(h2_lua_host_t *host, const char *source,
   assert(h2_lua_job_release(host, id) == H2_PAL_OK);
 }
 
+/* Everything the Host allocates goes through config.allocator, so a caller
+ * can place the Host in its own arena; Runtime mem stays untouched. */
+static void test_host_allocator(void) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_runtime_t probe = *runtime;
+  heap_test_mem_t runtime_mem = {0};
+  heap_test_mem_t host_mem = {0};
+  h2_pal_mem_api_t runtime_api = {.user = &runtime_mem,
+                                  .vtable = &heap_test_mem_vtable};
+  h2_pal_mem_api_t host_api = {.user = &host_mem,
+                               .vtable = &heap_test_mem_vtable};
+  probe.mem = &runtime_api;
+  h2_lua_host_config_t config = {
+      .runtime = &probe,
+      .allocator = &host_api,
+      .max_jobs = 2u,
+      .worker_count = 1u,
+      .vm_memory_limit_bytes = 1024u * 1024u,
+      .execution_timeout_ms = 5000u,
+  };
+  for (size_t reserved = 0u; reserved < 2u; ++reserved) {
+    h2_lua_host_t *host = NULL;
+    config.vm_heap_bytes = reserved ? 1024u * 1024u : 0u;
+    host_mem.pool_bytes = config.vm_heap_bytes;
+    const size_t host_allocs = atomic_load(&host_mem.allocs);
+    const size_t pool_allocs = atomic_load(&host_mem.pool_allocs);
+    assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+    assert(h2_lua_host_start(host) == H2_PAL_OK);
+    heap_test_run(host, "local t={} for i=1,200 do t[i]=tostring(i) end",
+                  H2_LUA_JOB_SUCCEEDED);
+    h2_lua_host_destroy(host);
+    assert(atomic_load(&host_mem.allocs) > host_allocs);
+    assert(atomic_load(&host_mem.pool_allocs) == pool_allocs + reserved);
+    heap_test_balanced(&host_mem);
+  }
+  assert(atomic_load(&runtime_mem.allocs) == 0u);
+  h2_runtime_deinit(runtime);
+}
+
 static void test_reserved_vm_heap(void) {
   h2_runtime_t *runtime = create_runtime();
   h2_runtime_t probe = *runtime;
@@ -2679,6 +2718,7 @@ int main(int argc, char **argv) {
     return 0;
   }
   test_streamed_close_failure();
+  test_host_allocator();
   test_reserved_vm_heap();
   test_display_raster2d(0, "libs/lua/tests/raster2d.lua");
   test_display_raster2d(0, "libs/lua/tests/geometry_batches.lua");

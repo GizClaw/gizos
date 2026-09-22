@@ -107,13 +107,13 @@ void h2_lua_job_close_audio_tracks(h2_lua_job_t *job) {
     }
     if (job->audio_tracks != NULL) {
       h2_lua_audio_track_slot_release_carry(&job->audio_tracks[i],
-                                            job->host->config.runtime->mem);
+                                            job->host->config.allocator);
     }
   }
   job->active_audio_track_count = 0u;
   h2_lua_job_release_audio_speaker(job);
   h2_lua_job_release_audio_mic(job);
-  h2_pal_mem_free(job->host->config.runtime->mem, job->audio_mic_buffer);
+  h2_pal_mem_free(job->host->config.allocator, job->audio_mic_buffer);
   job->audio_mic_buffer = NULL;
   job->audio_mic_buffer_capacity = 0u;
   memset(&job->audio_mic_format, 0, sizeof(job->audio_mic_format));
@@ -447,24 +447,24 @@ submit_chunk(h2_lua_host_t *host, const char *app_id, const char *chunk_name,
   job->state = H2_LUA_JOB_QUEUED;
   job->next_task_id = 1u;
   job->next_callback_token = 1u;
-  job->callbacks = h2_pal_mem_alloc(host->config.runtime->mem,
+  job->callbacks = h2_pal_mem_alloc(host->config.allocator,
                                     host->config.callback_capacity_per_job *
                                         sizeof(*job->callbacks));
-  job->events = h2_pal_mem_alloc(host->config.runtime->mem,
+  job->events = h2_pal_mem_alloc(host->config.allocator,
                                  host->config.event_delivery_capacity *
                                      sizeof(*job->events));
-  job->tasks = h2_pal_mem_alloc(host->config.runtime->mem,
+  job->tasks = h2_pal_mem_alloc(host->config.allocator,
                                 host->config.max_coroutines_per_vm *
                                     sizeof(*job->tasks));
   job->audio_tracks = h2_pal_mem_alloc(
-      host->config.runtime->mem,
+      host->config.allocator,
       host->config.audio_track_capacity_per_job * sizeof(*job->audio_tracks));
   if (job->callbacks == NULL || job->events == NULL || job->tasks == NULL ||
       job->audio_tracks == NULL) {
-    h2_pal_mem_free(host->config.runtime->mem, job->callbacks);
-    h2_pal_mem_free(host->config.runtime->mem, job->events);
-    h2_pal_mem_free(host->config.runtime->mem, job->tasks);
-    h2_pal_mem_free(host->config.runtime->mem, job->audio_tracks);
+    h2_pal_mem_free(host->config.allocator, job->callbacks);
+    h2_pal_mem_free(host->config.allocator, job->events);
+    h2_pal_mem_free(host->config.allocator, job->tasks);
+    h2_pal_mem_free(host->config.allocator, job->audio_tracks);
     memset(job, 0, sizeof(*job));
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, job_mutex);
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
@@ -486,16 +486,16 @@ submit_chunk(h2_lua_host_t *host, const char *app_id, const char *chunk_name,
           host->vm_heap != NULL ? h2_lua_heap_realloc : h2_lua_runtime_realloc,
       .allocator_user = host->vm_heap != NULL
                             ? (void *)host
-                            : (void *)host->config.runtime->mem,
+                            : (void *)host->config.allocator,
       .memory_limit_bytes = host->config.vm_memory_limit_bytes,
       .source_limit_bytes = host->config.source_limit_bytes,
       .output_limit_bytes = host->config.output_limit_bytes,
   };
   if (h2_lua_vm_create(&vm_config, &job->vm) != H2_LUA_VM_OK) {
-    h2_pal_mem_free(host->config.runtime->mem, job->callbacks);
-    h2_pal_mem_free(host->config.runtime->mem, job->events);
-    h2_pal_mem_free(host->config.runtime->mem, job->tasks);
-    h2_pal_mem_free(host->config.runtime->mem, job->audio_tracks);
+    h2_pal_mem_free(host->config.allocator, job->callbacks);
+    h2_pal_mem_free(host->config.allocator, job->events);
+    h2_pal_mem_free(host->config.allocator, job->tasks);
+    h2_pal_mem_free(host->config.allocator, job->audio_tracks);
     memset(job, 0, sizeof(*job));
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, job_mutex);
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
@@ -506,10 +506,10 @@ submit_chunk(h2_lua_host_t *host, const char *app_id, const char *chunk_name,
   *(h2_lua_execution_context_t **)lua_getextraspace(root) = &job->root_context;
   if (h2_lua_register_builtin_modules(job) != H2_PAL_OK) {
     h2_lua_vm_close(job->vm);
-    h2_pal_mem_free(host->config.runtime->mem, job->callbacks);
-    h2_pal_mem_free(host->config.runtime->mem, job->events);
-    h2_pal_mem_free(host->config.runtime->mem, job->tasks);
-    h2_pal_mem_free(host->config.runtime->mem, job->audio_tracks);
+    h2_pal_mem_free(host->config.allocator, job->callbacks);
+    h2_pal_mem_free(host->config.allocator, job->events);
+    h2_pal_mem_free(host->config.allocator, job->tasks);
+    h2_pal_mem_free(host->config.allocator, job->audio_tracks);
     memset(job, 0, sizeof(*job));
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, job_mutex);
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
@@ -520,10 +520,10 @@ submit_chunk(h2_lua_host_t *host, const char *app_id, const char *chunk_name,
     if (args[i].name == NULL || args[i].value == NULL) {
       lua_pop(root, 1);
       h2_lua_vm_close(job->vm);
-      h2_pal_mem_free(host->config.runtime->mem, job->callbacks);
-      h2_pal_mem_free(host->config.runtime->mem, job->events);
-      h2_pal_mem_free(host->config.runtime->mem, job->tasks);
-      h2_pal_mem_free(host->config.runtime->mem, job->audio_tracks);
+      h2_pal_mem_free(host->config.allocator, job->callbacks);
+      h2_pal_mem_free(host->config.allocator, job->events);
+      h2_pal_mem_free(host->config.allocator, job->tasks);
+      h2_pal_mem_free(host->config.allocator, job->audio_tracks);
       memset(job, 0, sizeof(*job));
       (void)h2_pal_mutex_unlock(host->config.runtime->sync, job_mutex);
       (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
@@ -559,10 +559,10 @@ submit_chunk(h2_lua_host_t *host, const char *app_id, const char *chunk_name,
     if (stream->result != H2_PAL_OK) {
       const h2_pal_result_t read_result = stream->result;
       h2_lua_vm_close(job->vm);
-      h2_pal_mem_free(host->config.runtime->mem, job->callbacks);
-      h2_pal_mem_free(host->config.runtime->mem, job->events);
-      h2_pal_mem_free(host->config.runtime->mem, job->tasks);
-      h2_pal_mem_free(host->config.runtime->mem, job->audio_tracks);
+      h2_pal_mem_free(host->config.allocator, job->callbacks);
+      h2_pal_mem_free(host->config.allocator, job->events);
+      h2_pal_mem_free(host->config.allocator, job->tasks);
+      h2_pal_mem_free(host->config.allocator, job->audio_tracks);
       memset(job, 0, sizeof(*job));
       (void)h2_pal_mutex_unlock(host->config.runtime->sync, job_mutex);
       (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
@@ -605,7 +605,7 @@ static h2_pal_result_t submit_stream(h2_lua_host_t *host, const char *app_id,
   source_stream_t stream = {0};
   h2_pal_result_t result;
   stream.window =
-      h2_pal_mem_alloc(host->config.runtime->mem, H2_LUA_SOURCE_WINDOW_BYTES);
+      h2_pal_mem_alloc(host->config.allocator, H2_LUA_SOURCE_WINDOW_BYTES);
   if (stream.window == NULL) {
     *out_job_id = H2_LUA_JOB_ID_NONE;
     return H2_PAL_ERR_NO_MEMORY;
@@ -616,7 +616,7 @@ static h2_pal_result_t submit_stream(h2_lua_host_t *host, const char *app_id,
   stream.limit = host->config.source_limit_bytes;
   result = submit_chunk(host, app_id, chunk_name, NULL, 0u, &stream, args,
                         arg_count, out_job_id);
-  h2_pal_mem_free(host->config.runtime->mem, stream.window);
+  h2_pal_mem_free(host->config.allocator, stream.window);
   return result;
 }
 
@@ -1116,7 +1116,7 @@ h2_pal_result_t h2_lua_job_release(h2_lua_host_t *host,
     (void)h2_pal_mutex_unlock(host->config.runtime->sync, host->jobs_mutex);
     return H2_PAL_ERR_BUSY;
   }
-  mem = host->config.runtime->mem;
+  mem = host->config.allocator;
   job_generation = job->generation;
   /* Stop link posts and wakes for this slot before it is cleared. */
   h2_lua_link_job_ended(host, job_id, job_generation);
