@@ -39,9 +39,15 @@ h2_pal_result_t
 h2_esp_platform_arena_create(const h2_esp_platform_arena_config_t *config,
                              h2_esp_platform_arena_t **out_arena);
 
-/** Borrow the allocator until destroy. NULL arena returns NULL. */
+/** Borrow the allocator until destroy. NULL arena returns NULL. Its user
+ * pointer is the ESP arena, not the portable core. Failed nonzero alloc and
+ * realloc requests emit rate-limited ESP-only refusal diagnostics. */
 const h2_pal_mem_api_t *
 h2_esp_platform_arena_mem(h2_esp_platform_arena_t *arena);
+
+/** Borrow the portable core for block inspection until destroy. NULL arena
+ * returns NULL; the allocator's user pointer is not the core. */
+h2_mem_arena_t *h2_esp_platform_arena_core(h2_esp_platform_arena_t *arena);
 
 /** Copy a mutex-protected snapshot; NULL arena returns INVALID_STATE and zeros.
  * Logging is caller-owned and must happen after this call returns. */

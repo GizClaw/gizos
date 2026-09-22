@@ -162,6 +162,11 @@ static void check_bytes(void *ptr, size_t n, unsigned char value) {
 static void test_arena(void) {
     h2_esp_platform_arena_t *arena = create(false);
     const h2_pal_mem_api_t *mem = h2_esp_platform_arena_mem(arena);
+    assert(h2_esp_platform_arena_core(arena) != NULL);
+    assert(mem->user == arena && mem->user != h2_esp_platform_arena_core(arena));
+    h2_mem_arena_pool_inspection_t pools[2];
+    assert(h2_mem_arena_inspect(h2_esp_platform_arena_core(arena), pools) ==
+           H2_PAL_OK);
     void *a = h2_pal_mem_alloc(mem, 129u);
     void *guard = h2_pal_mem_alloc(mem, 64u);
     assert(in_arena(a) && in_arena(guard));
@@ -321,6 +326,7 @@ static void test_failure(void) {
            H2_PAL_ERR_INVALID_STATE);
     assert(stats.reserved_bytes == 0u && stats.fallback_live_bytes == 0u);
     assert(h2_esp_platform_arena_mem(NULL) == NULL);
+    assert(h2_esp_platform_arena_core(NULL) == NULL);
     assert(h2_esp_platform_arena_destroy(NULL) == H2_PAL_OK);
     finish(create(false));
 }
@@ -335,6 +341,9 @@ static bool corrupt_frame;
 static uint32_t logged_frames[6];
 static unsigned summary_logs;
 static unsigned failure_logs;
+static unsigned refusal_logs;
+static unsigned long long last_refusal_count;
+static char last_refusal[512];
 static unsigned site_logs;
 static size_t logged_bytes, logged_other;
 static unsigned logged_blocks, logged_groups;
@@ -391,6 +400,20 @@ void test_arena_log(const char *tag, const char *format, ...) {
         logged_pc = pcs[0];
         for (unsigned i = 0u; i < 6u; ++i)
             logged_frames[i] = pcs[i];
+    } else if (strstr(line, "H2_ARENA_REFUSED") != NULL) {
+        assert(!locked);
+        ++refusal_logs;
+        assert(strstr(line, "small_live=") != NULL);
+        assert(strstr(line, "small_free=") != NULL);
+        assert(strstr(line, "small_largest=") != NULL);
+        assert(strstr(line, "large_live=") != NULL);
+        assert(strstr(line, "large_free=") != NULL);
+        assert(strstr(line, "large_largest=") != NULL);
+        assert(strstr(line, "psram_free=4096 psram_largest=2048 "
+                            "internal_free=4096") != NULL);
+        assert(sscanf(line, "H2_ARENA_REFUSED op=%*s bytes=%*zu count=%llu",
+                      &last_refusal_count) == 1);
+        strcpy(last_refusal, line);
     } else {
         assert(locked && strstr(line, "H2_ARENA_SPILL_FAILED") != NULL);
         ++failure_logs;
@@ -593,6 +616,30 @@ static void test_spill_registry_allocation_failure(void) {
     assert(h2_esp_platform_arena_create(&config, &arena) == H2_PAL_ERR_INVALID_ARG);
     assert(arena == NULL && live_blocks == 0u && mutex_count == 0u);
 }
+
+static void test_refusal_logging(void) {
+    h2_esp_platform_arena_t *arena = create(false);
+    const h2_pal_mem_api_t *mem = h2_esp_platform_arena_mem(arena);
+    const unsigned before = refusal_logs;
+    assert(h2_pal_mem_alloc(mem, RESERVATION) == NULL);
+    assert(refusal_logs == before + 1u && last_refusal_count == 1u);
+    assert(strstr(last_refusal, "op=alloc bytes=65536") != NULL);
+    void *p = h2_pal_mem_alloc(mem, 128u);
+    assert(p != NULL);
+    assert(h2_pal_mem_realloc(mem, p, RESERVATION) == NULL);
+    assert(refusal_logs == before + 2u && last_refusal_count == 2u);
+    assert(strstr(last_refusal, "op=realloc bytes=65536") != NULL);
+    assert(h2_pal_mem_realloc(mem, p, 0u) == NULL);
+    assert(refusal_logs == before + 2u);
+    for (unsigned i = 2u; i < 64u; ++i)
+        assert(h2_pal_mem_alloc(mem, RESERVATION) == NULL);
+    assert(refusal_logs == before + 25u && last_refusal_count == 64u);
+    finish(arena);
+    arena = create(false);
+    assert(h2_pal_mem_alloc(h2_esp_platform_arena_mem(arena), RESERVATION) == NULL);
+    assert(refusal_logs == before + 26u && last_refusal_count == 1u);
+    finish(arena);
+}
 #endif
 
 int main(void) {
@@ -608,6 +655,7 @@ int main(void) {
     test_spill_capacity();
     test_spill_isolation_and_throttle();
     test_spill_registry_allocation_failure();
+    test_refusal_logging();
 #endif
     return 0;
 }

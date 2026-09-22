@@ -34,6 +34,7 @@ typedef struct spill_group {
 #endif
 
 struct h2_esp_platform_arena {
+    h2_pal_mem_api_t watched;
     void *block;
     h2_mem_arena_t *core;
     SemaphoreHandle_t lock;
@@ -44,6 +45,7 @@ struct h2_esp_platform_arena {
     spill_entry_t *spills;
     uint64_t untracked_events;
     uint64_t spill_failures;
+    uint64_t refusals;
     int64_t last_spill_log_us;
     bool spill_log_emitted;
 #endif
@@ -168,6 +170,65 @@ static const h2_pal_mem_vtable_t psram_vtable = {
     .alloc = psram_alloc, .realloc = psram_realloc, .free = psram_free,
 };
 
+static void log_refusal(h2_esp_platform_arena_t *arena, const char *op,
+                        size_t bytes) {
+#if defined(ESP_PLATFORM)
+    arena_lock(arena);
+    if (arena->refusals != UINT64_MAX)
+        ++arena->refusals;
+    const uint64_t count = arena->refusals;
+    arena_unlock(arena);
+    if (count > 24u && count % 64u != 0u)
+        return;
+    h2_mem_arena_stats_t stats;
+    h2_mem_arena_pool_inspection_t pools[2] = {0};
+    if (h2_mem_arena_stats(arena->core, &stats) != H2_PAL_OK ||
+        h2_mem_arena_inspect(arena->core, pools) != H2_PAL_OK)
+        return;
+    ESP_LOGW("h2_arena",
+             "H2_ARENA_REFUSED op=%s bytes=%zu count=%llu "
+             "small_live=%zu small_free=%zu small_largest=%zu "
+             "large_live=%zu large_free=%zu large_largest=%zu "
+             "psram_free=%zu psram_largest=%zu internal_free=%zu",
+             op, bytes, (unsigned long long)count, stats.small.live_bytes,
+             pools[0].free_bytes, pools[0].largest_free_block,
+             stats.large.live_bytes, pools[1].free_bytes,
+             pools[1].largest_free_block,
+             heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
+             heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM),
+             heap_caps_get_free_size(MALLOC_CAP_INTERNAL));
+#else
+    (void)arena;
+    (void)op;
+    (void)bytes;
+#endif
+}
+
+static void *watched_alloc(void *user, size_t bytes) {
+    h2_esp_platform_arena_t *arena = user;
+    void *ptr = h2_pal_mem_alloc(h2_mem_arena_mem(arena->core), bytes);
+    if (ptr == NULL && bytes != 0u)
+        log_refusal(arena, "alloc", bytes);
+    return ptr;
+}
+
+static void *watched_realloc(void *user, void *ptr, size_t bytes) {
+    h2_esp_platform_arena_t *arena = user;
+    void *moved = h2_pal_mem_realloc(h2_mem_arena_mem(arena->core), ptr, bytes);
+    if (moved == NULL && bytes != 0u)
+        log_refusal(arena, "realloc", bytes);
+    return moved;
+}
+
+static void watched_free(void *user, void *ptr) {
+    h2_esp_platform_arena_t *arena = user;
+    h2_pal_mem_free(h2_mem_arena_mem(arena->core), ptr);
+}
+
+static const h2_pal_mem_vtable_t watched_vtable = {
+    .alloc = watched_alloc, .realloc = watched_realloc, .free = watched_free,
+};
+
 h2_pal_result_t
 h2_esp_platform_arena_create(const h2_esp_platform_arena_config_t *config,
                              h2_esp_platform_arena_t **out_arena) {
@@ -217,6 +278,8 @@ h2_esp_platform_arena_create(const h2_esp_platform_arena_config_t *config,
     rc = h2_mem_arena_create(&core_config, &arena->core);
     if (rc != H2_PAL_OK)
         goto unavailable;
+    arena->watched = (h2_pal_mem_api_t){.user = arena,
+                                        .vtable = &watched_vtable};
     *out_arena = arena;
     return H2_PAL_OK;
 unavailable:
@@ -232,7 +295,11 @@ unavailable:
 
 const h2_pal_mem_api_t *
 h2_esp_platform_arena_mem(h2_esp_platform_arena_t *arena) {
-    return h2_mem_arena_mem(arena != NULL ? arena->core : NULL);
+    return arena != NULL ? &arena->watched : NULL;
+}
+
+h2_mem_arena_t *h2_esp_platform_arena_core(h2_esp_platform_arena_t *arena) {
+    return arena != NULL ? arena->core : NULL;
 }
 
 h2_pal_result_t
