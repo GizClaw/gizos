@@ -353,6 +353,104 @@ static void test_inspection(void) {
     finish(arena);
 }
 
+static void test_exact_fit(size_t extra, bool grow, bool with_fallback) {
+    const size_t request = 256u * 1024u;
+    const size_t old_bytes = 32u * 1024u;
+    h2_mem_arena_t *arena = create(true, with_fallback);
+    const h2_pal_mem_api_t *mem = h2_mem_arena_mem(arena);
+    h2_mem_arena_pool_inspection_t initial[2], fragmented[2], restored[2];
+    assert(h2_mem_arena_inspect(arena, initial) == H2_PAL_OK);
+    void *hole = h2_pal_mem_alloc(mem, request + extra);
+    void *old = h2_pal_mem_alloc(mem, old_bytes);
+    void *guard = h2_pal_mem_alloc(mem, old_bytes);
+    assert(hole != NULL && old != NULL && guard != NULL);
+    memset(old, 0xa5, old_bytes);
+    memset(guard, 0x3c, old_bytes);
+    h2_pal_mem_free(mem, hole);
+    assert(h2_mem_arena_inspect(arena, fragmented) == H2_PAL_OK);
+    /* The header/alignment allowance puts the request inside the 8 KiB
+     * class starting at 256 KiB. Only the freed hole can satisfy it. */
+    assert(fragmented[1].largest_free_block > request + extra);
+    assert(fragmented[1].largest_free_block < request + 8192u);
+    assert(fragmented[1].free_bytes > fragmented[1].largest_free_block);
+    h2_mem_arena_stats_t before = stats(arena);
+    assert(before.large.fallback_count == 0u);
+    fail_heap = true;
+    void *p = grow ? h2_pal_mem_realloc(mem, old, request)
+                   : h2_pal_mem_alloc(mem, request);
+    assert(p != NULL && p == hole);
+    if (grow)
+        check(p, old_bytes, 0xa5);
+    memset(p, 0x5a, request);
+    check(p, request, 0x5a);
+    check(guard, old_bytes, 0x3c);
+    h2_mem_arena_block_info_t info;
+    assert(h2_mem_arena_block_info(arena, p, &info) == H2_PAL_OK);
+    assert(info.pool == 1u && !info.fallback && info.requested_bytes == request);
+    h2_mem_arena_stats_t after = stats(arena);
+    assert(after.large.live_bytes == before.large.live_bytes + request -
+                                        (grow ? old_bytes : 0u));
+    assert(after.large.fallback_count == 0u && after.large.fallback_bytes == 0u);
+    assert(after.fallback_live_bytes == 0u && block_count == 0u);
+    fail_heap = false;
+    h2_pal_mem_free(mem, p);
+    if (!grow)
+        h2_pal_mem_free(mem, old);
+    h2_pal_mem_free(mem, guard);
+    assert(h2_mem_arena_inspect(arena, restored) == H2_PAL_OK);
+    assert(restored[1].free_bytes == initial[1].free_bytes);
+    assert(restored[1].largest_free_block == initial[1].largest_free_block);
+    finish(arena);
+}
+
+static void test_exact_fit_list(void) {
+    const size_t request = 128u * 1024u + 2048u;
+    const size_t old_bytes = 32u * 1024u;
+    h2_mem_arena_t *arena = create(false, false);
+    const h2_pal_mem_api_t *mem = h2_mem_arena_mem(arena);
+    h2_mem_arena_pool_inspection_t initial[2], fragmented[2], restored[2];
+    assert(h2_mem_arena_inspect(arena, initial) == H2_PAL_OK);
+    void *hole = h2_pal_mem_alloc(mem, request + 512u);
+    void *guard = h2_pal_mem_alloc(mem, old_bytes);
+    void *smaller = h2_pal_mem_alloc(mem, request - 1024u);
+    void *old = h2_pal_mem_alloc(mem, old_bytes);
+    void *tail = h2_pal_mem_alloc(mem, 64u * 1024u);
+    assert(hole != NULL && guard != NULL && smaller != NULL);
+    assert(old != NULL && tail != NULL);
+    memset(old, 0xa5, old_bytes);
+    /* Both holes are in [128 KiB, 132 KiB). Free lists prepend entries,
+     * so the insufficient block is encountered before the fitting block. */
+    h2_pal_mem_free(mem, hole);
+    h2_pal_mem_free(mem, smaller);
+    assert(h2_mem_arena_inspect(arena, fragmented) == H2_PAL_OK);
+    assert(fragmented[1].largest_free_block > request + 512u);
+    assert(fragmented[1].largest_free_block < request + 1024u);
+    h2_mem_arena_stats_t before = stats(arena);
+    assert(before.large.fallback_count == 0u);
+    /* No entry fits this larger request: reaching the sentinel must leave
+     * the old block and free lists untouched. The smaller request then fits. */
+    assert(h2_pal_mem_realloc(mem, old, request + 1024u) == NULL);
+    check(old, old_bytes, 0xa5);
+    assert(stats(arena).large.live_bytes == before.large.live_bytes);
+    void *p = h2_pal_mem_realloc(mem, old, request);
+    assert(p != NULL && p == hole);
+    check(p, old_bytes, 0xa5);
+    memset(p, 0x5a, request);
+    check(p, request, 0x5a);
+    h2_mem_arena_stats_t after = stats(arena);
+    assert(after.large.live_bytes == before.large.live_bytes + request - old_bytes);
+    assert(after.large.fallback_count == 1u);
+    assert(after.large.fallback_bytes == request + 1024u);
+    assert(after.fallback_live_bytes == 0u);
+    h2_pal_mem_free(mem, p);
+    h2_pal_mem_free(mem, guard);
+    h2_pal_mem_free(mem, tail);
+    assert(h2_mem_arena_inspect(arena, restored) == H2_PAL_OK);
+    assert(restored[1].free_bytes == initial[1].free_bytes);
+    assert(restored[1].largest_free_block == initial[1].largest_free_block);
+    finish(arena);
+}
+
 int main(void) {
     test_routing_and_stats();
     test_no_borrowing(true);
@@ -363,5 +461,12 @@ int main(void) {
     test_single_pool();
     test_invalid_config();
     test_inspection();
+    for (unsigned extra = 0u; extra <= 512u; extra += 512u) {
+        test_exact_fit(extra, false, false);
+        test_exact_fit(extra, false, true);
+        test_exact_fit(extra, true, false);
+        test_exact_fit(extra, true, true);
+    }
+    test_exact_fit_list();
     return 0;
 }

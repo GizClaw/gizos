@@ -1,0 +1,33 @@
+--- src/tlsf.c
++++ src/tlsf.c
+@@ -768,4 +768,26 @@
+-		if (fl < FL_INDEX_COUNT)
+-		{
+-			block = search_suitable_block(control, &fl, &sl);
+-		}
++		if (fl < FL_INDEX_COUNT)
++		{
++			block = search_suitable_block(control, &fl, &sl);
++		}
++
++		/* Good-fit rounding can skip a sufficient block in the request's
++		** own class. Scan only that list, and only after the fast path fails.
++		** This slow path is linear in the number of free blocks in the class.
++		*/
++		if (!block)
++		{
++			mapping_insert(size, &fl, &sl);
++			if (fl < FL_INDEX_COUNT)
++			{
++				block_header_t* candidate = control->blocks[fl][sl];
++				while (candidate != &control->block_null)
++				{
++					if (block_size(candidate) >= size)
++					{
++						block = candidate;
++						break;
++					}
++					candidate = candidate->next_free;
++				}
++			}
++		}

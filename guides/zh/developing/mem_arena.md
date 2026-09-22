@@ -12,7 +12,11 @@ TLSF 的 build adapter 强制包含 `h2_tlsf.h`，把内部依赖的公共符号
 
 调用方在创建前独占 backing block，提供成对 lock/unlock；arena instance 与 TLSF metadata 都存放在块内。按请求大小选择 small 或 large 独立池；small pool 大小为零时只使用 large。池耗尽只能尝试可选 fallback，不借用另一池，因此小对象 churn 不会消耗预留给大块的容量。
 
+池内先执行 TLSF 原有的常数时间 good-fit 搜索。该搜索按 size class 向上取整；找不到块时，再扫描已计入 arena overhead 并按 TLSF alignment 调整的请求所属 free list，取第一个实际大小足够的块，沿用 TLSF 的移除、切分和剩余块管理。只有两次搜索都失败才尝试 fallback。此慢路径只扫描一个 size class，耗时与该链表中的空闲块数量成正比；它在调用方锁内执行，因此碎片化可能增加锁持有时间，不能把完整分配过程视为严格常数时间。补丁只作用于仓库独立命名的 TLSF，不修改 SDK allocator。
+
 每块记录分配基址、请求大小与 pool/fallback owner；free 和 realloc 必须经过同一个 arena Memory PAL。Realloc 可原地扩展或跨池、fallback 迁移，保留 payload 对齐和原有数据；失败保持旧块有效。Fallback 可以只提供 alloc/free，不要求 realloc。
+
+同池 realloc 无法原地扩展时，TLSF 的搬迁分配复用上述搜索；成功后仍按池内 allocation 记账，不增加 fallback 计数。Inspection 的 largest free block 是 TLSF raw block 大小，与 payload 请求比较时必须计入 arena header、padding 和 TLSF alignment。
 
 所有可变操作与查询在调用方锁内完成，fallback 也在该锁内执行，因此回调不得重入 arena。RTOS 锁必须支持优先级继承；单线程环境可提供 no-op callbacks。日志在查询返回、锁释放后由调用方输出。
 
@@ -32,6 +36,7 @@ TLSF 的 build adapter 强制包含 `h2_tlsf.h`，把内部依赖的公共符号
 
 ```sh
 bazel test //libs/mem_arena/... //libs/lvgl:arena_test --test_output=errors
+bazel test //libs/mem_arena:mem_arena_test --runs_per_test=20 --test_output=errors
 ```
 
-Host tests 验证分池隔离、alignment、owner 路由、realloc 数据保留和失败原子性、逐池统计与按需诊断。ESP SDK fake tests 和 desktop provider tests 位于各自 owning package；实际 PSRAM/XIP 行为与调度延迟需设备验证。
+Host tests 验证分池隔离、alignment、owner 路由、realloc 数据保留和失败原子性、逐池统计与按需诊断。碎片回归覆盖 256 KiB 请求复用同 size class 的唯一足够空闲块、realloc 搬迁、链表前部块过小、链表耗尽、剩余块切分，以及 fallback 不可用时仍从池内成功分配；全部释放后检查空闲容量恢复。ESP SDK fake tests 和 desktop provider tests 位于各自 owning package；实际 PSRAM/XIP 行为与调度延迟需设备验证。

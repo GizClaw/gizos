@@ -1316,7 +1316,7 @@
     "//tools/bazel/vendor:repositories.bzl%vendor_repositories": {
       "general": {
         "bzlTransitiveDigest": "GN36J8ZXGtronxAfN2q+0sqa5qSORQLPGXJJoOa1qYw=",
-        "usagesDigest": "y3Cgpo1VPRVc5A0iL3z5pCv06dHQcjP4eiPR59/+4Jg=",
+        "usagesDigest": "rFZ4tjxjvN4fJdVUq5g414MTB/q/HCpujAVATcOOvfg=",
         "recordedInputs": [],
         "generatedRepoSpecs": {
           "h2_fdk_aac": {
@@ -1541,7 +1541,9 @@
                 "@@//third_party/tlsf_patch:h2_tlsf.h": "src/h2_tlsf.h",
                 "@@//third_party/tlsf_patch:h2_tlsf_embedded_stdio.h": "src/h2_tlsf_embedded_stdio.h"
               },
-              "patches": [],
+              "patches": [
+                "@@//third_party/tlsf_patch:tlsf_exact_fit.patch"
+              ],
               "sha256": "df67543d45ad5e67d96168b54022a0f4803f8d5ae9770d398e20dd9a0e2934d6",
               "strip_prefix": "tlsf-deff9ab509341f264addbd3c8ada533678591905",
               "urls": [
