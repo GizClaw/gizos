@@ -20,6 +20,7 @@ struct h2_gizclaw_session {
   uint64_t operation_generation;
   uint64_t deadline;
   uint8_t *catalog_data;
+  uint8_t *catalog_scratch;
   h2_gizclaw_workflow_page_t catalog;
   h2_gizclaw_conversation_t *conversation;
   bool conversation_running;
@@ -161,16 +162,32 @@ h2_gizclaw_session_create(const h2_gizclaw_session_config_t *config,
     h2_pal_mem_free(config->mem, session);
     return rc;
   }
+  if (config->retain_catalog_buffer) {
+    session->catalog_data = h2_pal_mem_alloc(config->mem, config->catalog_bytes);
+    if (session->catalog_data == NULL) {
+      rc = H2_PAL_ERR_NO_MEMORY;
+      goto fail;
+    }
+    session->catalog_scratch =
+        h2_pal_mem_alloc(config->mem, config->catalog_bytes);
+    if (session->catalog_scratch == NULL) {
+      rc = H2_PAL_ERR_NO_MEMORY;
+      goto fail;
+    }
+  }
   session->state.generation = 1u;
   rc = h2_gizclaw_service_attach_session_internal(config->service, session);
-  if (rc != H2_PAL_OK) {
-    (void)h2_pal_cond_destroy(config->sync, session->progress);
-    (void)h2_pal_mutex_destroy(config->sync, session->mutex);
-    h2_pal_mem_free(config->mem, session);
-    return rc;
-  }
+  if (rc != H2_PAL_OK)
+    goto fail;
   *out_session = session;
   return H2_PAL_OK;
+fail:
+  h2_pal_mem_free(config->mem, session->catalog_scratch);
+  h2_pal_mem_free(config->mem, session->catalog_data);
+  (void)h2_pal_cond_destroy(config->sync, session->progress);
+  (void)h2_pal_mutex_destroy(config->sync, session->mutex);
+  h2_pal_mem_free(config->mem, session);
+  return rc;
 }
 
 h2_pal_result_t h2_gizclaw_session_destroy(h2_gizclaw_session_t **ptr) {
@@ -200,6 +217,7 @@ h2_pal_result_t h2_gizclaw_session_destroy(h2_gizclaw_session_t **ptr) {
   if (rc != H2_PAL_OK)
     return rc;
   h2_pal_mem_free(session->config.mem, session->catalog_data);
+  h2_pal_mem_free(session->config.mem, session->catalog_scratch);
   h2_pal_mem_free(session->config.mem, session);
   *ptr = NULL;
   return H2_PAL_OK;
@@ -409,6 +427,19 @@ static h2_pal_result_t finish(h2_gizclaw_session_t *s, h2_pal_result_t result,
   return result;
 }
 
+/* Only the operation admitted by begin() may use scratch. Published catalog
+ * storage remains separate so copied reads cannot observe RPC writes. */
+static uint8_t *catalog_scratch_acquire(h2_gizclaw_session_t *s) {
+  return s->config.retain_catalog_buffer
+             ? s->catalog_scratch
+             : h2_pal_mem_alloc(s->config.mem, s->config.catalog_bytes);
+}
+
+static void catalog_scratch_release(h2_gizclaw_session_t *s, uint8_t *data) {
+  if (!s->config.retain_catalog_buffer)
+    h2_pal_mem_free(s->config.mem, data);
+}
+
 static h2_pal_result_t refresh(h2_gizclaw_session_t *s) {
   h2_pal_result_t rc = lock(s);
   if (rc != H2_PAL_OK)
@@ -422,7 +453,7 @@ static h2_pal_result_t refresh(h2_gizclaw_session_t *s) {
   memcpy(expected, s->state.profile_name, sizeof(expected));
   changed(s);
   unlock(s);
-  uint8_t *data = h2_pal_mem_alloc(s->config.mem, s->config.catalog_bytes);
+  uint8_t *data = catalog_scratch_acquire(s);
   h2_gizclaw_resp_storage_t storage = {data, s->config.catalog_bytes, 0u};
   h2_gizclaw_resp_arena_t arena;
   h2_gizclaw_workflow_page_t catalog = {0};
@@ -503,7 +534,7 @@ done:
   {
     h2_pal_result_t lock_rc = lock(s);
     if (lock_rc != H2_PAL_OK) {
-      h2_pal_mem_free(s->config.mem, data);
+      catalog_scratch_release(s, data);
       return lock_rc;
     }
     if (s->closed || s->operation_generation != s->state.generation)
@@ -514,7 +545,10 @@ done:
         s->state.current_workspace[0] = '\0';
         memset(&s->state.parameters, 0, sizeof(s->state.parameters));
       }
-      h2_pal_mem_free(s->config.mem, s->catalog_data);
+      if (s->config.retain_catalog_buffer)
+        s->catalog_scratch = s->catalog_data;
+      else
+        h2_pal_mem_free(s->config.mem, s->catalog_data);
       s->catalog_data = data;
       data = NULL;
       s->catalog = catalog;
@@ -526,7 +560,7 @@ done:
                                          : H2_GIZCLAW_SESSION_FAILED;
     changed(s);
     unlock(s);
-    h2_pal_mem_free(s->config.mem, data);
+    catalog_scratch_release(s, data);
   }
   return rc;
 }
@@ -633,7 +667,7 @@ prepare_workspace(h2_gizclaw_session_t *s,
     return rc;
   if (!catalog_contains_selection(s, selection))
     return H2_PAL_ERR_NOT_FOUND;
-  uint8_t *data = h2_pal_mem_alloc(s->config.mem, s->config.catalog_bytes);
+  uint8_t *data = catalog_scratch_acquire(s);
   if (data == NULL)
     return H2_PAL_ERR_NO_MEMORY;
   h2_gizclaw_resp_storage_t storage = {data, s->config.catalog_bytes, 0u};
@@ -701,7 +735,7 @@ prepare_workspace(h2_gizclaw_session_t *s,
     unlock(s);
   }
 done:
-  h2_pal_mem_free(s->config.mem, data);
+  catalog_scratch_release(s, data);
   return rc;
 }
 

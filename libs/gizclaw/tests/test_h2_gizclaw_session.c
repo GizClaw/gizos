@@ -13,6 +13,63 @@
 /* These fakes sit at the typed RPC boundary. The real Session owns all state,
  * pagination, catalog memory, workspace preparation and callback forwarding. */
 static h2_gizclaw_session_t *session;
+static h2_pal_result_t attach_result;
+static unsigned attaches;
+static bool check_catalog_during_workspace;
+static void assert_catalog(void);
+
+enum { CATALOG_TEST_BYTES = 16384u };
+typedef struct catalog_test_memory {
+  unsigned attempts, allocations, frees, live;
+  unsigned buffer_allocations, buffer_frees;
+  unsigned fail_at;
+  bool reject_allocations;
+  struct {
+    void *data;
+    size_t size;
+  } blocks[16];
+} catalog_test_memory_t;
+
+static void *catalog_test_alloc(void *user, size_t size) {
+  catalog_test_memory_t *memory = user;
+  ++memory->attempts;
+  if (memory->reject_allocations || memory->attempts == memory->fail_at)
+    return NULL;
+  void *data = h2_pal_mem_alloc(h2_desktop_platform_default_allocator(), size);
+  assert(data != NULL);
+  for (size_t i = 0u; i < sizeof(memory->blocks) / sizeof(memory->blocks[0]); ++i) {
+    if (memory->blocks[i].data == NULL) {
+      memory->blocks[i].data = data;
+      memory->blocks[i].size = size;
+      ++memory->allocations;
+      ++memory->live;
+      if (size == CATALOG_TEST_BYTES)
+        ++memory->buffer_allocations;
+      return data;
+    }
+  }
+  assert(false && "too many live Session allocations");
+  return NULL;
+}
+
+static void catalog_test_free(void *user, void *data) {
+  catalog_test_memory_t *memory = user;
+  for (size_t i = 0u; i < sizeof(memory->blocks) / sizeof(memory->blocks[0]); ++i) {
+    if (memory->blocks[i].data == data) {
+      if (memory->blocks[i].size == CATALOG_TEST_BYTES)
+        ++memory->buffer_frees;
+      memory->blocks[i].data = NULL;
+      ++memory->frees;
+      --memory->live;
+      h2_pal_mem_free(h2_desktop_platform_default_allocator(), data);
+      return;
+    }
+  }
+  assert(false && "free must belong to the Session allocator");
+}
+
+static const h2_pal_mem_vtable_t catalog_test_mem_vtable = {
+    .alloc = catalog_test_alloc, .free = catalog_test_free};
 static atomic_uint lists, gets, creates, reloads, conversations;
 static bool list_failure, bad_revision, missing, close_during_list,
     reload_failure;
@@ -178,6 +235,10 @@ h2_gizclaw_rpc_workspace_get(h2_gizclaw_service_t *service,
   (void)storage;
   ++gets;
   trace('g');
+  if (check_catalog_during_workspace) {
+    memset(storage->data, 0xa5, storage->capacity);
+    assert_catalog();
+  }
   if (get_failure)
     return H2_PAL_ERR_IO;
   if (missing)
@@ -219,6 +280,10 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_reload_with_options(
   (void)storage;
   ++reloads;
   trace('r');
+  if (check_catalog_during_workspace) {
+    memset(storage->data, 0x5a, storage->capacity);
+    assert_catalog();
+  }
   h2_gizclaw_session_state_t state;
   assert(h2_gizclaw_session_snapshot(session, &state) == H2_PAL_OK);
   assert(!state.can_start);
@@ -292,8 +357,11 @@ static void completed(void *user, h2_gizclaw_conversation_t *conversation,
   ++terminal_count;
   h2_gizclaw_session_conversation_release(session, conversation);
 }
-static void setup(size_t collections) {
+static h2_gizclaw_session_config_t session_config(size_t collections) {
   static const char *const names[] = {"alpha", "beta"};
+  attach_result = H2_PAL_OK;
+  attaches = 0u;
+  check_catalog_during_workspace = false;
   lists = gets = creates = reloads = conversations = terminal_count = 0u;
   audio_starts = audio_ends = 0u;
   releases = text_sends = 0u;
@@ -329,8 +397,12 @@ static void setup(size_t collections) {
       .collections = names,
       .collection_count = collections,
       .max_workflows = 4u,
-      .catalog_bytes = 16384u,
+      .catalog_bytes = CATALOG_TEST_BYTES,
   };
+  return config;
+}
+static void setup(size_t collections) {
+  h2_gizclaw_session_config_t config = session_config(collections);
   assert(h2_gizclaw_session_create(&config, &session) == H2_PAL_OK);
 }
 static h2_gizclaw_session_state_t snapshot(void) {
@@ -347,6 +419,115 @@ static void teardown(void) {
   assert(h2_gizclaw_session_destroy(&session) == H2_PAL_OK);
   assert(session == NULL);
 }
+
+static void assert_catalog(void) {
+  uint8_t bytes[4096];
+  h2_gizclaw_resp_storage_t storage = {bytes, sizeof(bytes), 0u};
+  h2_gizclaw_workflow_page_t catalog;
+  assert(h2_gizclaw_session_catalog_copy(session, &storage, &catalog) ==
+         H2_PAL_OK);
+  assert(catalog.count == 2u);
+  assert(strcmp(catalog.runtime_profile_name, "test-profile") == 0);
+  assert(strcmp(catalog.runtime_profile_revision, server_revision) == 0);
+  assert(strcmp(catalog.items[0].collection, "alpha") == 0);
+  assert(strcmp(catalog.items[0].name, "alpha") == 0);
+  assert(strcmp(catalog.items[1].collection, "beta") == 0);
+  assert(strcmp(catalog.items[1].name, "beta") == 0);
+}
+
+static void test_catalog_buffer_lifetime(bool retain) {
+  catalog_test_memory_t memory = {0};
+  const h2_pal_mem_api_t mem = {
+      .user = &memory, .vtable = &catalog_test_mem_vtable};
+  h2_gizclaw_session_config_t config = session_config(2u);
+  config.mem = &mem;
+  config.retain_catalog_buffer = retain;
+  assert(h2_gizclaw_session_create(&config, &session) == H2_PAL_OK);
+  assert(memory.buffer_allocations == (retain ? 2u : 0u));
+  const unsigned create_attempts = memory.attempts;
+  /* Model fragmentation by rejecting every subsequent allocator request. */
+  memory.reject_allocations = retain;
+  assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+  check_catalog_during_workspace = true;
+  for (unsigned i = 0u; i < 4u; ++i) {
+    assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_OK);
+    assert_catalog();
+    h2_gizclaw_session_selection_t other = selection;
+    other.workspace_name = i % 2u == 0u ? "first" : "second";
+    rpc_trace[0] = '\0';
+    assert(h2_gizclaw_session_select(session, &other, 1000u) == H2_PAL_OK);
+    assert_catalog();
+  }
+  assert(reloads == 4u);
+  assert(memory.buffer_allocations == (retain ? 2u : 9u));
+  assert(memory.buffer_frees == (retain ? 0u : 8u));
+
+  /* A failed refresh never publishes its partially written scratch. */
+  bad_revision = true;
+  assert(h2_gizclaw_session_refresh(session, 1000u) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(snapshot().catalog == H2_GIZCLAW_SESSION_FAILED);
+  uint8_t bytes[4096];
+  h2_gizclaw_resp_storage_t storage = {bytes, sizeof(bytes), 0u};
+  h2_gizclaw_workflow_page_t catalog = {.count = 99u};
+  assert(h2_gizclaw_session_catalog_copy(session, &storage, &catalog) ==
+         H2_PAL_ERR_UNAVAILABLE);
+  assert(catalog.items == NULL && catalog.count == 0u);
+  bad_revision = false;
+  assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_OK);
+  assert_catalog();
+
+  rpc_trace[0] = '\0';
+  reload_failure = true;
+  assert(h2_gizclaw_session_select(session, &selection, 1000u) == H2_PAL_ERR_IO);
+  assert_catalog();
+  reload_failure = false;
+  assert(h2_gizclaw_session_select(session, &selection, 1000u) == H2_PAL_OK);
+  assert_catalog();
+
+  if (retain) {
+    assert(memory.attempts == create_attempts);
+    assert(memory.buffer_allocations == 2u && memory.buffer_frees == 0u);
+  } else {
+    memory.reject_allocations = true;
+    assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_ERR_NO_MEMORY);
+    memory.reject_allocations = false;
+    assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_OK);
+    assert_catalog();
+  }
+  const unsigned frees = memory.buffer_frees;
+  assert(h2_gizclaw_session_close(session) == H2_PAL_OK);
+  assert(memory.buffer_frees == frees);
+  teardown();
+  assert(memory.live == 0u && memory.allocations == memory.frees);
+  assert(memory.buffer_allocations == memory.buffer_frees);
+}
+
+static void test_catalog_buffer_create_failure(void) {
+  catalog_test_memory_t memory = {0};
+  const h2_pal_mem_api_t mem = {
+      .user = &memory, .vtable = &catalog_test_mem_vtable};
+  h2_gizclaw_session_config_t config = session_config(1u);
+  config.mem = &mem;
+  config.retain_catalog_buffer = true;
+  assert(h2_gizclaw_session_create(&config, &session) == H2_PAL_OK);
+  const unsigned create_attempts = memory.attempts;
+  teardown();
+  for (unsigned i = 1u; i <= create_attempts; ++i) {
+    memory = (catalog_test_memory_t){.fail_at = i};
+    attaches = 0u;
+    session = (h2_gizclaw_session_t *)&memory;
+    assert(h2_gizclaw_session_create(&config, &session) == H2_PAL_ERR_NO_MEMORY);
+    assert(session == NULL && attaches == 0u);
+    assert(memory.live == 0u && memory.allocations == memory.frees);
+  }
+  memory = (catalog_test_memory_t){0};
+  attach_result = H2_PAL_ERR_BUSY;
+  assert(h2_gizclaw_session_create(&config, &session) == H2_PAL_ERR_BUSY);
+  assert(session == NULL && attaches == 1u);
+  assert(memory.buffer_allocations == 2u && memory.buffer_frees == 2u);
+  assert(memory.live == 0u && memory.allocations == memory.frees);
+}
 static void register_thread(void *out) {
   *(h2_pal_result_t *)out =
       h2_gizclaw_session_register(session, "token", 1000u);
@@ -355,8 +536,10 @@ static void select_thread(void *out) {
   *(h2_pal_result_t *)out =
       h2_gizclaw_session_select(session, &selection, 1000u);
 }
-static void test_waiting_selection(bool cancel) {
-  setup(1u);
+static void test_waiting_selection(bool cancel, bool retain) {
+  h2_gizclaw_session_config_t config = session_config(1u);
+  config.retain_catalog_buffer = retain;
+  assert(h2_gizclaw_session_create(&config, &session) == H2_PAL_OK);
   atomic_store(&gate_list, true);
   h2_pal_task_t *registration = NULL, *selection_thread = NULL;
   const h2_pal_task_api_t *tasks = h2_desktop_platform_task_api();
@@ -369,6 +552,8 @@ static void test_waiting_selection(bool cancel) {
                            &selection_thread) == H2_PAL_OK);
   wait_flag(&waiter_entered);
   assert(!snapshot().can_start);
+  assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_ERR_BUSY);
+  assert(h2_gizclaw_session_destroy(&session) == H2_PAL_ERR_BUSY);
   if (cancel)
     assert(h2_gizclaw_session_cancel_pending(session) == H2_PAL_OK);
   atomic_store(&gate_list, false);
@@ -990,13 +1175,18 @@ static void test_speech_rate_parameter(void) {
 }
 
 int main(void) {
+  test_catalog_buffer_lifetime(false);
+  test_catalog_buffer_lifetime(true);
+  test_catalog_buffer_create_failure();
   test_speech_rate_parameter();
   test_send_text();
   test_control_boundaries();
   test_run_stop();
   test_workspace_delete();
-  test_waiting_selection(false);
-  test_waiting_selection(true);
+  test_waiting_selection(false, false);
+  test_waiting_selection(true, false);
+  test_waiting_selection(false, true);
+  test_waiting_selection(true, true);
   setup(2u);
   assert(!snapshot().can_start);
   assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
@@ -1188,7 +1378,8 @@ h2_gizclaw_service_attach_session_internal(h2_gizclaw_service_t *service,
                                            h2_gizclaw_session_t *s) {
   (void)service;
   (void)s;
-  return H2_PAL_OK;
+  ++attaches;
+  return attach_result;
 }
 h2_pal_result_t
 h2_gizclaw_service_detach_session_internal(h2_gizclaw_service_t *service) {

@@ -93,6 +93,12 @@ typedef struct h2_gizclaw_session_config {
   size_t collection_count;
   size_t max_workflows;
   size_t catalog_bytes;
+  /** Reserve two catalog_bytes buffers from mem during create: one published
+   * catalog and one scratch buffer shared by serialized refresh/select work.
+   * Each buffer is allocated once and retained until destroy, including after
+   * failed operations or close. Create returns NO_MEMORY if either allocation
+   * fails. False (the default) keeps allocation per operation. */
+  bool retain_catalog_buffer;
 } h2_gizclaw_session_config_t;
 
 /** Product-selected names; NULL collection/workflow opens an existing workspace
@@ -104,6 +110,8 @@ typedef struct h2_gizclaw_session_selection {
   const h2_gizclaw_workspace_parameters_patch_t *parameters;
 } h2_gizclaw_session_selection_t;
 
+/** Creates a Session; failure leaves out_session NULL and releases all owned
+ * allocations, including optional retained catalog buffers. */
 h2_pal_result_t
 h2_gizclaw_session_create(const h2_gizclaw_session_config_t *config,
                           h2_gizclaw_session_t **out_session);
