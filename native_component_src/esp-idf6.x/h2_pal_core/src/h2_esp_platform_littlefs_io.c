@@ -30,6 +30,9 @@ typedef struct h2_esp_pref_io_call {
     h2_esp_pref_io_op_t op;
     char base_path[H2_ESP_PREF_IO_BASE_PATH_MAX];
     size_t committed_budget;
+    /* The worker builds a store per call; carry the kept total both ways. */
+    size_t committed_total;
+    int committed_total_valid;
     char name_space[H2_ESP_PREF_IO_NAMESPACE_MAX + 1u];
     char key[H2_ESP_PREF_IO_KEY_MAX + 1u];
     char marker[H2_ESP_PREF_IO_MARKER_MAX + 1u];
@@ -52,13 +55,15 @@ static int copy_text(char *out, size_t out_size, const char *text) {
 }
 
 static int init_call(h2_esp_pref_io_call_t *call,
-                     const h2_esp_pref_store_t *store,
+                     h2_esp_pref_store_t *store,
                      h2_esp_pref_io_op_t op) {
     if (call == NULL || store == NULL || store->base_path == NULL)
         return H2_PAL_ERR_INVALID_ARG;
     memset(call, 0, sizeof(*call));
     call->op = op;
     call->committed_budget = store->committed_budget;
+    call->committed_total = store->committed_total;
+    call->committed_total_valid = store->committed_total_valid;
     return copy_text(call->base_path, sizeof(call->base_path), store->base_path);
 }
 
@@ -67,6 +72,8 @@ static void IRAM_ATTR pref_io_callback(void *context) {
     h2_esp_pref_store_t store = {
         .base_path = call->base_path,
         .committed_budget = call->committed_budget,
+        .committed_total = call->committed_total,
+        .committed_total_valid = call->committed_total_valid,
     };
     if (call->op == H2_ESP_PREF_IO_PREPARE) {
         call->result = h2_esp_pref_store_prepare(&store);
@@ -107,21 +114,27 @@ static void IRAM_ATTR pref_io_callback(void *context) {
     } else {
         call->result = H2_PAL_ERR_INVALID_ARG;
     }
+    call->committed_total = store.committed_total;
+    call->committed_total_valid = store.committed_total_valid;
 }
 
-static int run_call(h2_esp_pref_io_call_t *call) {
+static int run_call_on(h2_esp_pref_store_t *store,
+                       h2_esp_pref_io_call_t *call) {
     int rc = h2_esp_platform_safe_call(pref_io_callback, call, sizeof(*call),
                                        H2_ESP_PREF_IO_STACK_DEPTH);
-    return rc == H2_PAL_OK ? call->result : rc;
+    if (rc != H2_PAL_OK) return rc;
+    store->committed_total = call->committed_total;
+    store->committed_total_valid = call->committed_total_valid;
+    return call->result;
 }
 
-int h2_esp_pref_io_prepare(const h2_esp_pref_store_t *store) {
+int h2_esp_pref_io_prepare(h2_esp_pref_store_t *store) {
     h2_esp_pref_io_call_t call;
     int rc = init_call(&call, store, H2_ESP_PREF_IO_PREPARE);
-    return rc == H2_PAL_OK ? run_call(&call) : rc;
+    return rc == H2_PAL_OK ? run_call_on(store, &call) : rc;
 }
 
-int h2_esp_pref_io_get(const h2_esp_pref_store_t *store,
+int h2_esp_pref_io_get(h2_esp_pref_store_t *store,
                        const char *name_space, const char *key,
                        h2_pal_pref_entry_type_t expected_type,
                        uint8_t **out_value, size_t *out_value_size) {
@@ -145,7 +158,7 @@ int h2_esp_pref_io_get(const h2_esp_pref_store_t *store,
     }
     call.type = expected_type;
     call.scratch = scratch;
-    rc = run_call(&call);
+    rc = run_call_on(store, &call);
     if (rc == H2_PAL_OK) {
         copy = (uint8_t *)malloc(call.value_size == 0u ? 1u : call.value_size);
         if (copy == NULL) rc = H2_PAL_ERR_NO_MEMORY;
@@ -159,7 +172,7 @@ int h2_esp_pref_io_get(const h2_esp_pref_store_t *store,
     return rc;
 }
 
-int h2_esp_pref_io_set(const h2_esp_pref_store_t *store,
+int h2_esp_pref_io_set(h2_esp_pref_store_t *store,
                        const char *name_space, const char *key,
                        h2_pal_pref_entry_type_t type, const void *value,
                        size_t value_size) {
@@ -182,33 +195,33 @@ int h2_esp_pref_io_set(const h2_esp_pref_store_t *store,
     call.type = type;
     call.scratch = scratch;
     call.value_size = value_size;
-    rc = run_call(&call);
+    rc = run_call_on(store, &call);
     h2_esp_platform_safe_io_release();
     return rc;
 }
 
-static int run_names(const h2_esp_pref_store_t *store, h2_esp_pref_io_op_t op,
+static int run_names(h2_esp_pref_store_t *store, h2_esp_pref_io_op_t op,
                      const char *name_space, const char *key,
                      h2_esp_pref_io_call_t *call) {
     int rc = init_call(call, store, op);
     if (rc == H2_PAL_OK) rc = copy_text(call->name_space, sizeof(call->name_space), name_space);
     if (rc == H2_PAL_OK && key != NULL) rc = copy_text(call->key, sizeof(call->key), key);
-    return rc == H2_PAL_OK ? run_call(call) : rc;
+    return rc == H2_PAL_OK ? run_call_on(store, call) : rc;
 }
 
-int h2_esp_pref_io_remove(const h2_esp_pref_store_t *store,
+int h2_esp_pref_io_remove(h2_esp_pref_store_t *store,
                           const char *name_space, const char *key) {
     h2_esp_pref_io_call_t call;
     return run_names(store, H2_ESP_PREF_IO_REMOVE, name_space, key, &call);
 }
 
-int h2_esp_pref_io_clear(const h2_esp_pref_store_t *store,
+int h2_esp_pref_io_clear(h2_esp_pref_store_t *store,
                          const char *name_space) {
     h2_esp_pref_io_call_t call;
     return run_names(store, H2_ESP_PREF_IO_CLEAR, name_space, NULL, &call);
 }
 
-int h2_esp_pref_io_list(const h2_esp_pref_store_t *store,
+int h2_esp_pref_io_list(h2_esp_pref_store_t *store,
                         const char *name_space,
                         h2_esp_pref_store_entry_t **out_entries,
                         size_t *out_count) {
@@ -225,16 +238,16 @@ int h2_esp_pref_io_list(const h2_esp_pref_store_t *store,
     return rc;
 }
 
-int h2_esp_pref_io_write_marker(const h2_esp_pref_store_t *store,
+int h2_esp_pref_io_write_marker(h2_esp_pref_store_t *store,
                                 const char *marker, const char *value) {
     h2_esp_pref_io_call_t call;
     int rc = init_call(&call, store, H2_ESP_PREF_IO_WRITE_MARKER);
     if (rc == H2_PAL_OK) rc = copy_text(call.marker, sizeof(call.marker), marker);
     if (rc == H2_PAL_OK) rc = copy_text(call.marker_value, sizeof(call.marker_value), value);
-    return rc == H2_PAL_OK ? run_call(&call) : rc;
+    return rc == H2_PAL_OK ? run_call_on(store, &call) : rc;
 }
 
-int h2_esp_pref_io_read_marker(const h2_esp_pref_store_t *store,
+int h2_esp_pref_io_read_marker(h2_esp_pref_store_t *store,
                                const char *marker, char *out_value,
                                size_t out_value_size) {
     h2_esp_pref_io_call_t call;
@@ -242,7 +255,7 @@ int h2_esp_pref_io_read_marker(const h2_esp_pref_store_t *store,
     if (out_value == NULL || out_value_size == 0u) return H2_PAL_ERR_INVALID_ARG;
     rc = init_call(&call, store, H2_ESP_PREF_IO_READ_MARKER);
     if (rc == H2_PAL_OK) rc = copy_text(call.marker, sizeof(call.marker), marker);
-    if (rc == H2_PAL_OK) rc = run_call(&call);
+    if (rc == H2_PAL_OK) rc = run_call_on(store, &call);
     if (rc == H2_PAL_OK) rc = copy_text(out_value, out_value_size, call.marker_value);
     return rc;
 }

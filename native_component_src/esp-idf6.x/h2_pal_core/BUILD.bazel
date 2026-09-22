@@ -300,6 +300,33 @@ cc_test(
 )
 
 cc_test(
+    name = "pref_io_test",
+    srcs = [
+        "include/h2_esp_platform_safe_call.h",
+        "src/h2_esp_platform_littlefs_io.c",
+        "src/h2_esp_platform_littlefs_io.h",
+        "src/h2_esp_platform_pref_store.c",
+        "src/h2_esp_platform_pref_store.h",
+        "tests/test_h2_esp_platform_littlefs_io.c",
+    ] + glob(["tests/sdk/**/*.h"]),
+    conlyopts = H2_C11_OPTS + h2_gnu_only_copts([
+        "-D_POSIX_C_SOURCE=200809L",
+    ]),
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+        "tests/sdk",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
     name = "net_socket_test",
     srcs = [
         "src/h2_esp_platform_net_socket.c",
