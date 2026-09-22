@@ -435,18 +435,27 @@ static void assert_catalog(void) {
   assert(strcmp(catalog.items[1].name, "beta") == 0);
 }
 
-static void test_catalog_buffer_lifetime(bool retain) {
+static void test_catalog_buffer_lifetime(bool retain, bool separate) {
   catalog_test_memory_t memory = {0};
   const h2_pal_mem_api_t mem = {
       .user = &memory, .vtable = &catalog_test_mem_vtable};
   h2_gizclaw_session_config_t config = session_config(2u);
   config.mem = &mem;
   config.retain_catalog_buffer = retain;
+  catalog_test_memory_t retained = {0};
+  const h2_pal_mem_api_t retained_mem = {
+      .user = &retained, .vtable = &catalog_test_mem_vtable};
+  config.retained_allocator = separate ? &retained_mem : NULL;
+  catalog_test_memory_t *buffers = retain && separate ? &retained : &memory;
   assert(h2_gizclaw_session_create(&config, &session) == H2_PAL_OK);
-  assert(memory.buffer_allocations == (retain ? 2u : 0u));
+  assert(buffers->buffer_allocations == (retain ? 2u : 0u));
+  assert(retained.allocations == (retain && separate ? 2u : 0u));
+  assert(!separate || !retain || memory.buffer_allocations == 0u);
+  const unsigned retained_attempts = retained.attempts;
   const unsigned create_attempts = memory.attempts;
   /* Model fragmentation by rejecting every subsequent allocator request. */
   memory.reject_allocations = retain;
+  retained.reject_allocations = true;
   assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
   check_catalog_during_workspace = true;
   for (unsigned i = 0u; i < 4u; ++i) {
@@ -459,8 +468,8 @@ static void test_catalog_buffer_lifetime(bool retain) {
     assert_catalog();
   }
   assert(reloads == 4u);
-  assert(memory.buffer_allocations == (retain ? 2u : 9u));
-  assert(memory.buffer_frees == (retain ? 0u : 8u));
+  assert(buffers->buffer_allocations == (retain ? 2u : 9u));
+  assert(buffers->buffer_frees == (retain ? 0u : 8u));
 
   /* A failed refresh never publishes its partially written scratch. */
   bad_revision = true;
@@ -487,7 +496,7 @@ static void test_catalog_buffer_lifetime(bool retain) {
 
   if (retain) {
     assert(memory.attempts == create_attempts);
-    assert(memory.buffer_allocations == 2u && memory.buffer_frees == 0u);
+    assert(buffers->buffer_allocations == 2u && buffers->buffer_frees == 0u);
   } else {
     memory.reject_allocations = true;
     assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_ERR_NO_MEMORY);
@@ -495,12 +504,14 @@ static void test_catalog_buffer_lifetime(bool retain) {
     assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_OK);
     assert_catalog();
   }
-  const unsigned frees = memory.buffer_frees;
+  const unsigned frees = buffers->buffer_frees;
   assert(h2_gizclaw_session_close(session) == H2_PAL_OK);
-  assert(memory.buffer_frees == frees);
+  assert(buffers->buffer_frees == frees);
   teardown();
+  assert(retained.attempts == retained_attempts);
+  assert(retained.live == 0u && retained.allocations == retained.frees);
   assert(memory.live == 0u && memory.allocations == memory.frees);
-  assert(memory.buffer_allocations == memory.buffer_frees);
+  assert(buffers->buffer_allocations == buffers->buffer_frees);
 }
 
 static void test_catalog_buffer_create_failure(void) {
@@ -528,6 +539,32 @@ static void test_catalog_buffer_create_failure(void) {
   assert(memory.buffer_allocations == 2u && memory.buffer_frees == 2u);
   assert(memory.live == 0u && memory.allocations == memory.frees);
 }
+static void test_retained_allocator_create_failure(void) {
+  catalog_test_memory_t memory = {0}, retained = {0};
+  const h2_pal_mem_api_t mem = {
+      .user = &memory, .vtable = &catalog_test_mem_vtable};
+  const h2_pal_mem_api_t retained_mem = {
+      .user = &retained, .vtable = &catalog_test_mem_vtable};
+  h2_gizclaw_session_config_t config = session_config(1u);
+  config.mem = &mem;
+  config.retain_catalog_buffer = true;
+  config.retained_allocator = &retained_mem;
+  for (unsigned i = 1u; i <= 3u; ++i) {
+    memory = (catalog_test_memory_t){0};
+    retained = (catalog_test_memory_t){.fail_at = i};
+    attaches = 0u;
+    attach_result = i == 3u ? H2_PAL_ERR_BUSY : H2_PAL_OK;
+    assert(h2_gizclaw_session_create(&config, &session) ==
+           (i == 3u ? H2_PAL_ERR_BUSY : H2_PAL_ERR_NO_MEMORY));
+    assert(session == NULL && attaches == (i == 3u ? 1u : 0u));
+    assert(retained.allocations == i - 1u);
+    assert(retained.buffer_allocations == retained.allocations);
+    assert(retained.live == 0u && retained.allocations == retained.frees);
+    assert(memory.buffer_allocations == 0u);
+    assert(memory.live == 0u && memory.allocations == memory.frees);
+  }
+}
+
 static void register_thread(void *out) {
   *(h2_pal_result_t *)out =
       h2_gizclaw_session_register(session, "token", 1000u);
@@ -1175,9 +1212,12 @@ static void test_speech_rate_parameter(void) {
 }
 
 int main(void) {
-  test_catalog_buffer_lifetime(false);
-  test_catalog_buffer_lifetime(true);
+  test_catalog_buffer_lifetime(false, false);
+  test_catalog_buffer_lifetime(true, false);
+  test_catalog_buffer_lifetime(false, true);
+  test_catalog_buffer_lifetime(true, true);
   test_catalog_buffer_create_failure();
+  test_retained_allocator_create_failure();
   test_speech_rate_parameter();
   test_send_text();
   test_control_boundaries();

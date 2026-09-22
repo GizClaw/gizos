@@ -146,6 +146,8 @@ h2_gizclaw_session_create(const h2_gizclaw_session_config_t *config,
     return H2_PAL_ERR_NO_MEMORY;
   memset(session, 0, sizeof(*session));
   session->config = *config;
+  if (!config->retain_catalog_buffer || config->retained_allocator == NULL)
+    session->config.retained_allocator = config->mem;
   const h2_pal_mutex_config_t mutex_config = {.name = "gizclaw-session",
                                               .allocator = config->mem};
   h2_pal_result_t rc =
@@ -163,13 +165,14 @@ h2_gizclaw_session_create(const h2_gizclaw_session_config_t *config,
     return rc;
   }
   if (config->retain_catalog_buffer) {
-    session->catalog_data = h2_pal_mem_alloc(config->mem, config->catalog_bytes);
+    session->catalog_data =
+        h2_pal_mem_alloc(session->config.retained_allocator, config->catalog_bytes);
     if (session->catalog_data == NULL) {
       rc = H2_PAL_ERR_NO_MEMORY;
       goto fail;
     }
     session->catalog_scratch =
-        h2_pal_mem_alloc(config->mem, config->catalog_bytes);
+        h2_pal_mem_alloc(session->config.retained_allocator, config->catalog_bytes);
     if (session->catalog_scratch == NULL) {
       rc = H2_PAL_ERR_NO_MEMORY;
       goto fail;
@@ -182,8 +185,8 @@ h2_gizclaw_session_create(const h2_gizclaw_session_config_t *config,
   *out_session = session;
   return H2_PAL_OK;
 fail:
-  h2_pal_mem_free(config->mem, session->catalog_scratch);
-  h2_pal_mem_free(config->mem, session->catalog_data);
+  h2_pal_mem_free(session->config.retained_allocator, session->catalog_scratch);
+  h2_pal_mem_free(session->config.retained_allocator, session->catalog_data);
   (void)h2_pal_cond_destroy(config->sync, session->progress);
   (void)h2_pal_mutex_destroy(config->sync, session->mutex);
   h2_pal_mem_free(config->mem, session);
@@ -216,8 +219,8 @@ h2_pal_result_t h2_gizclaw_session_destroy(h2_gizclaw_session_t **ptr) {
   rc = h2_pal_mutex_destroy(session->config.sync, session->mutex);
   if (rc != H2_PAL_OK)
     return rc;
-  h2_pal_mem_free(session->config.mem, session->catalog_data);
-  h2_pal_mem_free(session->config.mem, session->catalog_scratch);
+  h2_pal_mem_free(session->config.retained_allocator, session->catalog_data);
+  h2_pal_mem_free(session->config.retained_allocator, session->catalog_scratch);
   h2_pal_mem_free(session->config.mem, session);
   *ptr = NULL;
   return H2_PAL_OK;
