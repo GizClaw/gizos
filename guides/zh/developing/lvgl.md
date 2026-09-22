@@ -16,6 +16,8 @@
 
 `h2_lvgl_platform_init()` 在调用 `lv_init()` 前绑定 Runtime 提供的 Memory、Task、Sync、Queue 和 Time PAL API。LVGL 的 custom malloc ABI 由 `libs/lvgl` 实现，所有 widget、TinyTTF glyph cache、filesystem cache 和 LVGL internal object 都通过绑定的 Memory PAL 分配；target 不能回退到 libc heap。调用方必须在 `lv_deinit()` 完成后再调用 `h2_lvgl_platform_deinit()`，保证 allocator 的生命周期覆盖全部 LVGL object。
 
+当前固定的 upstream revision 在 `lv_os_init()` 中创建 general OS mutex，但 `lv_deinit()` 没有对应的删除操作。Custom OSAL 的 `lv_mem_deinit()` 在最终内存清理阶段释放该 mutex 及其 wrapper，并清空 handle，保证重复 init/deinit 不累积这些分配。Memory PAL 与 Sync PAL 必须在整个 `lv_deinit()` 期间保持有效，随后才能解除 platform 绑定。
+
 文件资源通过 `h2_lvgl_fs_register()` 注册为 LVGL drive。Adapter 把 `P:/...` 这类 LVGL path 映射到调用方注入的 PAL Filesystem，并在 backend 不支持 seek 时使用有界 scratch buffer 实现 forward seek 或 reopen。字体、图片和其它 consumer 只使用 LVGL path，不能直接依赖 POSIX、ESP-IDF、Armino 或 Desktop 文件 API。
 
 `h2_lvgl_touch_create()` 把一个已校准到 display viewport 的 Touch PAL 注册成 LVGL pointer indev，不知道 evdev、GPIO、controller 或 board identity。`h2_lvgl_button_bind()` 解析 App Button component 到 mapped `PUSH_EDGE` periph，再把 widget 的 pressed/released edge 写入 Runtime；它不在 LVGL callback 中自行识别 click 或 long press。Adapter 对同一 Runtime/periph ID 强制唯一 live producer，重复 bind 返回 `H2_PAL_ERR_BUSY`；widget delete 释放 ownership 后才允许 rebind。
@@ -43,3 +45,7 @@ Bazel package 编译 LVGL portable source，并排除 target-specific driver 和
 固件 `firmware` variant 与 Desktop 一样启用公共 LodePNG decoder，固件 source group 同时包含 decoder 和 LodePNG codec。Consumer 可以使用 RAW/RAW_ALPHA PNG image descriptor；下载、尺寸和体积限制、缓存生命周期仍由 consumer 管理。Feature define 由公共 library 传播，不能仅在最终 SDK 配置中启用而遗漏 Bazel archive 中的 codec。
 
 `@h2_vendor_lvgl//:firmware_sources` 是放入 `//libs/lvgl:firmware.srcs` 的 `filegroup`，不是独立编译的 `cc_library` dependency。因此 `firmware.defines` 中的 `LV_USE_LODEPNG=1` 直接参与 `lv_lodepng.c` 和 `lodepng.c` 的编译，并传播给 consumer；验证时应检查这两个源码的 compile action 和 archive 中的 decoder/codec 定义。
+
+## Arena allocator
+
+Platform allocator 可使用 `libs/mem_arena` 借出的 Memory PAL；LVGL allocation、OSAL object 和 display adapter buffer 的生命周期均须结束后才能销毁 arena。先删除 display adapter，再完成 `lv_deinit()` 和 `h2_lvgl_platform_deinit()`，最后检查逐池 live 与 fallback live 归零。`//libs/lvgl:arena_test` 覆盖 small/large/fallback 之间的 realloc 数据保留及多轮初始化、退出后的完整释放。

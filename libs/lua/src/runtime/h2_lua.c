@@ -515,7 +515,6 @@ h2_pal_result_t h2_lua_host_start(h2_lua_host_t *host) {
         &(h2_pal_task_options_t){
             .name = h2_lua_worker_task_name,
             .min_stack_size = host->config.worker_stack_size,
-            .stack_allocator = host->config.allocator,
         },
         worker_entry, &host->workers[i], &host->workers[i].task);
     if (result != H2_PAL_OK) {

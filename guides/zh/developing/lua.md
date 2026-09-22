@@ -45,20 +45,9 @@ provider 可以让不同 VM 在多个 worker 上并行。
 
 `allocator` 可选地指定 Host 自身的所有分配（Host/job 状态、队列、缓冲、音频 track、Lua Link、VM 堆预留，以及未预留时的每个 VM 块）使用的 `h2_pal_mem_api_t`，为 NULL 时使用 Runtime mem。Host 只借用这个指针、不复制它，因此它和它的 `user` 上下文必须保持有效，直到 `h2_lua_host_destroy()` 返回；调用方可以借此把 Host 自身的存储放进自己的 arena。下文统称为“Host allocator”。
 
-`vm_heap_bytes` 可选地在 `h2_lua_host_create()` 时从 Host allocator 预留一段 VM 专用堆，
-供同一 Host 的所有 job/worker 通过带 PAL mutex 保护的 TLSF 共享。默认 `0` 保持
-VM 逐块向 Host allocator 申请，Web 入口也保持此默认值。适合设备系统堆碎片化、
-大字符串或全屏 `display.capture_region` userdata 等大块分配会与其他模块争抢连续空间的场景。
-VM 本体、Lua 状态、userdata、字符串和表都使用预留堆；callbacks、events、tasks
-和 framebuffer 等直接使用 Host allocator。
+`vm_heap_bytes` 可选地在 `h2_lua_host_create()` 时从 Host allocator 预留一段 VM 专用堆，供同一 Host 的所有 job/worker 通过带 PAL mutex 保护的 TLSF 共享。默认 `0` 保持 VM 逐块向 Host allocator 申请，Web 入口也保持此默认值。适合设备系统堆碎片化、大字符串或全屏 `display.capture_region` userdata 等大块分配会与其他模块争抢连续空间的场景。VM 本体、Lua 状态、userdata、字符串和表都使用预留堆；callbacks、events、tasks 和 framebuffer 等直接使用 Host allocator。
 
-Host allocator 有足够大的连续块时预留为一整块；否则 Host 每次被拒后把申请大小缩小 1/8、贴近实际最大空闲块，最多取
-16 块、每块至少 64 KiB（只有最后的余量可以更小），全部加入同一个 TLSF。因为总是先
-取最大的块，能服务大块单次分配的池排在前面，下限只决定尾部还能用掉多少：一个还剩
-512+384+256+256+192 KiB 和五个 64 KiB 块的堆共有 1.9 MiB 可给，而 256 KiB 的下限只能
-凑出 1.4 MiB。单次 VM 分配仍必须能放进其中一块。在这些限制内凑不够时返回
-`H2_PAL_ERR_NO_MEMORY`，不创建 Host，也不泄漏已取得的块；destroy 在所有 job/VM 释放
-后归还全部块。
+Host allocator 有足够大的连续块时预留为一整块；否则 Host 每次被拒后把申请大小缩小 1/8、贴近实际最大空闲块，最多取 16 块、每块至少 64 KiB（只有最后的余量可以更小），全部加入同一个 TLSF。因为总是先取最大的块，能服务大块单次分配的池排在前面，下限只决定尾部还能用掉多少：一个还剩 512+384+256+256+192 KiB 和五个 64 KiB 块的堆共有 1.9 MiB 可给，而 256 KiB 的下限只能凑出 1.4 MiB。单次 VM 分配仍必须能放进其中一块。在这些限制内凑不够时返回 `H2_PAL_ERR_NO_MEMORY`，不创建 Host，也不泄漏已取得的块；destroy 在所有 job/VM 释放后归还全部块。
 
 `vm_memory_limit_bytes` 仍是独立的每 VM 配额，预留大小不会改变配额检查。预留堆需
 覆盖所有同时存活的 VM（包括尚未 release 的已完成 job）以及 TLSF 元数据和每块分配

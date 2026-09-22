@@ -282,3 +282,15 @@ Desktop Component 不应该：
 Desktop App 的 `layout.json` 可以在 `simulation.wifi_sta.scan_results` 中声明扫描可见的 Wi-Fi，包含 SSID、RSSI、信道、安全类型和加密网络的预期密码；open 网络不得配置密码。`wifi_sta.scan_outcome` 可以配置 `success`、`io_error` 或 `timeout`，`scan_delay_ms` 可以在 60 秒内延迟结果，用于验证失败、PAL timeout、取消和迟到结果；当延迟超过 PAL 调用的 `timeout_ms` 时，Desktop 必须在 deadline 返回 timeout，不能再投递结果。`wifi_sta` 的当前连接状态与扫描列表分开配置。`simulation.modem` 可以声明 modem 是否可用、`mobile_data_enabled` 初始用户期望、运营商、信号和 RAT；不能用瞬时 PPP 连接结果代替初始用户期望。Desktop H106 只在 `cellular_enabled` preference 缺失时用该值初始化 preference，随后通过正式 Modem PAL 恢复状态；用户在页面上的修改继续跨启动保留。Desktop modem 在移动数据关闭时不报告有效 RSSI，H106 在后台恢复或切换完成后也必须立即刷新 Header，不能留下与当前模拟状态不一致的旧信号。Desktop backend 必须复制配置，并通过正式的 Wi-Fi STA 与 Modem PAL 返回和修改状态；App 不能直接读取 JSON 配置。Desktop H106 示例中加密网络的测试密码是 `h106test`。
 
 Wi-Fi 用户配网通过显式 PAL `connect_and_save` 调用 `libs/wifi_sta` 的共享事务；普通 `connect` 不写保存配置。Provider 在整个事务期间串行接纳连接和断开，只有目标网络认证且得到有效 IP 后才保存，保存失败原样返回。Desktop 成功连接使用文档示例网段的模拟 IPv4，保存仅在当前进程有效；不访问宿主真实 Wi-Fi 配置。
+
+## Task 栈记账
+
+Desktop PAL task 保留 OS thread stack。可选的 `h2_desktop_platform_configure_task_stacks()` 接受长期借用的 allocator、尺寸 resolver 和 user，在 task start 前解析 placeholder 大小；零表示不占位，非零在启动线程前分配并持有到 join。解析/分配失败不启动线程、不发布 handle，线程创建失败归还占位。配置尚有 start/join borrower 时替换或清除返回 BUSY；消费者先 join，再移除 hook，再销毁 allocator。该接口属于 desktop provider，不改变 portable `h2_pal_task_options_t` 或 ESP task 行为。
+
+需要与 ESP 对齐的 desktop consumer 可以使用 `esp_target_task_policy` 生成的 `*_stack_accounting` filegroup：它从同一 target policy 表产生不依赖 SDK 的 C fragment，按 exact match、最长 prefix、default 的顺序解析；internal 返回零，PSRAM 返回 PAL request、policy floor 与 4096 的最大值。Consumer 在包含 `<stddef.h>`、`<string.h>` 后，将 fragment 放入自己的 namespace，并将函数接到 resolver。这样 task policy 仍由最终 firmware target 单点拥有，无需复制第二份桌面表。
+
+## Arena 诊断边界
+
+`libs/mem_arena` 的普通 alloc/free/realloc 和轻量 stats 不含 tag、pattern、hash 或调用栈追踪。可选的 `h2_mem_arena_block_info()` 在常数时间内返回请求、实际 TLSF block 占用和 pool/fallback；`h2_mem_arena_inspect()` 只在显式调用时遍历两个池，报告 raw free total、largest free block 和已分配块 consumed。这些查询不扩大 arena instance，不改变布局或 ESP 分配路径。Fallback 的 consumed 是交给 fallback allocator 的大小下界，无法从 Memory PAL 推导 system allocator 自身开销。
+
+Desktop consumer 可以在标准 Memory PAL 外层维护 owner view 和 allocation generation，元数据放在 system heap，精确记录同时存活总量刷新时的 owner composition。Content sampling 必须同时与 allocation lifetime 和业务写入同步，短时复制后在锁外分析；allocator 锁只保护块的生命周期，不授权对并发写入的 payload 进行无锁读取。Pattern tail 是未写空间的启发式估计，hash 相同只是重复候选，二者不能直接判定泄漏或允许删减 buffer。Task placeholder 不代表实际业务数据，应排除这些内容分析。

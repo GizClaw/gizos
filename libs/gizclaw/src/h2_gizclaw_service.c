@@ -1056,10 +1056,8 @@ h2_pal_result_t h2_gizclaw_service_start(h2_gizclaw_service_t *service) {
   }
   service->started = true;
   unlock_service(service);
-  h2_pal_task_options_t net_options = service->config.net_task_options;
-  net_options.stack_allocator = service->client_config.allocator;
   rc =
-      h2_pal_task_start(service->config.task, &net_options,
+      h2_pal_task_start(service->config.task, &service->config.net_task_options,
                         net_worker, service, &service->net_task);
   if (rc != H2_PAL_OK) {
     (void)lock_service(service);
@@ -1068,28 +1066,24 @@ h2_pal_result_t h2_gizclaw_service_start(h2_gizclaw_service_t *service) {
     return rc;
   }
   const h2_pal_task_options_t uplink_options = {
-      .name = h2_gizclaw_audio_uplink_task_name, .min_stack_size = 65536u,
-      .stack_allocator = service->client_config.allocator};
+      .name = h2_gizclaw_audio_uplink_task_name, .min_stack_size = 65536u};
   rc = h2_pal_task_start(service->config.task, &uplink_options, uplink_worker,
                          service, &service->uplink_task);
   if (rc == H2_PAL_OK) {
     const h2_pal_task_options_t downlink_options = {
-        .name = h2_gizclaw_audio_downlink_task_name, .min_stack_size = 16384u,
-        .stack_allocator = service->client_config.allocator};
+        .name = h2_gizclaw_audio_downlink_task_name, .min_stack_size = 16384u};
     rc = h2_pal_task_start(service->config.task, &downlink_options,
                            downlink_worker, service, &service->downlink_task);
   }
   if (rc == H2_PAL_OK) {
     const h2_pal_task_options_t options = {.name = "$gizclaw/data-up",
-                                           .min_stack_size = 16384u,
-                                           .stack_allocator = service->client_config.allocator};
+                                           .min_stack_size = 16384u};
     rc = h2_pal_task_start(service->config.task, &options, data_uplink_worker,
                            service, &service->data_uplink_task);
   }
   if (rc == H2_PAL_OK) {
     const h2_pal_task_options_t options = {.name = "$gizclaw/data-down",
-                                           .min_stack_size = 16384u,
-                                           .stack_allocator = service->client_config.allocator};
+                                           .min_stack_size = 16384u};
     rc = h2_pal_task_start(service->config.task, &options, data_downlink_worker,
                            service, &service->data_downlink_task);
   }

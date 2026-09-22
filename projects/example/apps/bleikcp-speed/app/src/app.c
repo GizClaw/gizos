@@ -1240,8 +1240,8 @@ static h2_bleikcp_config_t h2_speed_config(h2_speed_context_t *context) {
         .output_retry_count = 40u,
         .output_retry_delay_ms = 2u,
         .setup_timeout_ms = H2_SPEED_SETUP_TIMEOUT_MS,
-        .worker_task_options = { h2_bleikcp_speed_kcp_task_name, 12u * 1024u, NULL },
-        .server_task_options = { h2_bleikcp_speed_server_task_name, 12u * 1024u, NULL },
+        .worker_task_options = { h2_bleikcp_speed_kcp_task_name, 12u * 1024u },
+        .server_task_options = { h2_bleikcp_speed_server_task_name, 12u * 1024u },
         .user = context,
     };
 }

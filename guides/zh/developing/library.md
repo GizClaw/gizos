@@ -140,6 +140,7 @@ App 必须在调用 third-party API 之前完成对应 integration 初始化，�
 - [`h2sctp`](./h2sctp.md)：由 GizOS 维护、在调用方 DTLS packet transport 上运行的 portable SCTP PAL provider。
 - [`iperf`](./iperf.md)：只依赖 PAL 的 iperf3 兼容吞吐测试 client 与 server，覆盖 TCP、UDP 和 SCTP。
 - [`lvgl`](./lvgl.md)：LVGL platform 与 OSAL contract。
+- [`mem_arena`](./mem_arena.md)：把调用方的一块内存分成独立 small/large TLSF pool，借出 Memory PAL，支持 fallback、按 owner 释放、逐池统计和按需碎片诊断。调用方提供成对 lock/unlock；core 不依赖 SDK，也不分配外部控制对象。ESP reservation 与 mutex adapter 由 [ESP-IDF 6.x](./components/esp_idf6_x.md#psram-arena) 拥有，桌面占位栈统计见 [Desktop](./components/desktop.md)。
 - [`mp4_decoder`](./mp4_decoder.md)：从 random-access MP4 source 产生同步、可写的音视频 presentation frame。
 - [`ntp`](./ntp.md)：跨平台 NTP client。
 - [`pal`](./platform_abstract_layer.md)：Platform Abstraction Layer contract。

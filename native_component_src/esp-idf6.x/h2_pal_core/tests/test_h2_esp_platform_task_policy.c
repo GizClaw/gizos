@@ -31,6 +31,9 @@ typedef struct test_state {
   int running_queries;
   int yields;
   int tcb_live;
+  int tcb_allocations;
+  int tcb_frees;
+  int stack_frees;
   int fail_tcb;
   void *stack;
   TaskFunction_t trampoline;
@@ -165,12 +168,14 @@ void *heap_caps_malloc(size_t size, unsigned int caps) {
   assert(caps == (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
   if (s.fail_tcb) return NULL;
   ++s.tcb_live;
+  ++s.tcb_allocations;
   return malloc(size);
 }
 void heap_caps_free(void *ptr) {
   if (ptr != NULL) {
     assert(s.tcb_live == 1);
     --s.tcb_live;
+    ++s.tcb_frees;
     free(ptr);
   }
 }
@@ -286,16 +291,31 @@ static void test_completion(const char *name, int join_on_give) {
   }
 }
 
-static void test_stack_allocator(void) {
-  for (int mode = 0; mode < 7; ++mode) {
+static void stack_free(void *user, void *ptr) {
+  if (ptr != NULL) {
+    assert(s.fail_create || s.fail_tcb || s.static_deletes == 1);
+    assert(s.stack_frees == 0);
+    ++s.stack_frees;
+  }
+  h2_test_free(user, ptr);
+}
+
+static void test_psram_stack_allocator(void) {
+  /* PSRAM, racing join, internal, SDK failure, TCB failure, stack failure,
+   * retryable join, and NULL allocator retaining the WithCaps path. */
+  for (int mode = 0; mode < 8; ++mode) {
     reset();
     h2_test_allocator_t arena;
     h2_test_allocator_init(&arena);
+    const h2_pal_mem_vtable_t vtable = {
+        .alloc = h2_test_alloc, .realloc = h2_test_realloc, .free = stack_free,
+    };
+    arena.api.vtable = &vtable;
     h2_esp_task_policy_config_t cfg = config();
+    cfg.psram_stack_allocator = mode == 7 ? NULL : &arena.api;
     assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_OK);
     h2_pal_task_options_t options = {
         .name = mode == 2 ? "known" : "dynamic-high",
-        .stack_allocator = &arena.api,
     };
     s.fail_create = mode == 3;
     s.fail_tcb = mode == 4;
@@ -305,9 +325,11 @@ static void test_stack_allocator(void) {
     if (mode >= 3 && mode <= 5) {
       assert(rc == (mode == 3 ? H2_PAL_ERR_TASK : H2_PAL_ERR_NO_MEMORY));
       assert(s.pal_task == NULL && s.tcb_live == 0);
+      assert(s.creates == (mode == 3 ? 1 : 0));
+      assert(s.deletes == 1 && s.entry_calls == 0);
     } else {
       assert(rc == H2_PAL_OK);
-      assert(atomic_load(&arena.live) == (mode == 2 ? 0u : 1u));
+      assert(atomic_load(&arena.live) == (mode == 2 || mode == 7 ? 0u : 1u));
       if (mode != 2) assert(s.stack_size == 12288u);
       if (mode == 6) {
         s.fail_join = 1;
@@ -316,19 +338,30 @@ static void test_stack_allocator(void) {
         s.fail_join = 0;
       }
       s.join_on_give = mode == 1;
-      s.running_queries = mode == 2 ? 0 : 2;
+      s.running_queries = mode == 2 || mode == 7 ? 0 : 2;
       run_worker();
       if (!s.join_on_give)
         assert(h2_pal_task_join(h2_esp_platform_task_api(), s.pal_task) == H2_PAL_OK);
       assert(s.tcb_live == 0);
-      if (mode != 2) assert(s.static_deletes == 1 && s.yields == 2);
+      if (mode != 2 && mode != 7) {
+        assert(s.static_create == 1 && s.static_deletes == 1 && s.yields == 2);
+        assert(s.caps_deletes == 0 && s.self_deletes == 0);
+      } else {
+        assert(s.static_create == 0 && s.static_deletes == 0);
+        assert(s.caps_deletes == (mode == 7 ? 1 : 0));
+        assert(s.caps == (mode == 7 ? MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT : 0u));
+      }
     }
     assert(atomic_load(&arena.live) == 0u);
+    assert(atomic_load(&arena.calls) == (mode == 2 || mode == 7 ? 0u : 1u));
+    assert(s.stack_frees == (mode == 2 || mode == 5 || mode == 7 ? 0 : 1));
+    assert(s.tcb_allocations == (mode == 2 || mode == 4 || mode == 7 ? 0 : 1));
+    assert(s.tcb_frees == s.tcb_allocations);
   }
 }
 
 int main(void) {
-  test_stack_allocator();
+  test_psram_stack_allocator();
   const h2_pal_task_api_t *api = h2_esp_platform_task_api();
   h2_pal_task_t *task = (h2_pal_task_t *)(uintptr_t)7u;
   h2_pal_task_options_t options = {.name = "known", .min_stack_size = 1024u};
@@ -344,6 +377,18 @@ int main(void) {
   assert(h2_esp_platform_task_configure(NULL) == H2_PAL_ERR_INVALID_ARG);
   cfg = config();
   cfg.resolver = NULL;
+  assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_ERR_INVALID_ARG);
+  cfg = config();
+  h2_pal_mem_vtable_t invalid_vtable = {0};
+  h2_pal_mem_api_t invalid_allocator = {0};
+  cfg.psram_stack_allocator = &invalid_allocator;
+  assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_ERR_INVALID_ARG);
+  invalid_allocator.vtable = &invalid_vtable;
+  assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_ERR_INVALID_ARG);
+  invalid_vtable.alloc = h2_test_alloc;
+  assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_ERR_INVALID_ARG);
+  invalid_vtable.alloc = NULL;
+  invalid_vtable.free = h2_test_free;
   assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_ERR_INVALID_ARG);
   cfg = config();
   assert(h2_esp_platform_task_configure(&cfg) == H2_PAL_OK);

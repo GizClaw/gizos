@@ -235,7 +235,7 @@ int h2_game_audio_create(const h2_game_audio_config_t *config, h2_game_audio_t *
         pixelroot32::platforms::PlatformCapabilities(),
         kBlockSamples);
     audio->scheduler.start();
-    const h2_pal_task_options_t options = {h2_game_runtime_audio_task_name, 8192, nullptr};
+    const h2_pal_task_options_t options = {h2_game_runtime_audio_task_name, 8192};
     if (h2_pal_task_start(config->task, &options, audio_worker, audio, &audio->worker) != H2_PAL_OK) {
         h2_pal_queue_destroy(config->queue, audio->commands); h2_pal_audio_track_close(audio->track);
         h2_pal_mem_free(config->mem, audio->samples);

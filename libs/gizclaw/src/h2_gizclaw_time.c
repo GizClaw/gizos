@@ -212,8 +212,7 @@ void h2_gizclaw_time_sync_start_internal(h2_gizclaw_service_t *service) {
       service->client_config.server_endpoint.data != NULL &&
       service->client_config.server_endpoint.len != 0u) {
     const h2_pal_task_options_t options = {
-        .name = "$gizclaw/time", .min_stack_size = 16384u,
-        .stack_allocator = service->client_config.allocator};
+        .name = "$gizclaw/time", .min_stack_size = 16384u};
     rc = h2_pal_task_start(service->config.task, &options, time_worker, service,
                            &service->time_task);
   }

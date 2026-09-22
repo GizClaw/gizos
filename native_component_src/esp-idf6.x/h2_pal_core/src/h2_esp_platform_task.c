@@ -180,8 +180,8 @@ static int esp_task_start(void *user, const h2_pal_task_options_t *options,
     ok = xTaskCreatePinnedToCore(
         esp_task_trampoline, esp_task_name(options->name), stack_size, task,
         (UBaseType_t)policy.priority, &task->task, core);
-  } else if (options->stack_allocator != NULL) {
-    task->stack_allocator = options->stack_allocator;
+  } else if (s_task_config.psram_stack_allocator != NULL) {
+    task->stack_allocator = s_task_config.psram_stack_allocator;
     task->stack = h2_pal_mem_alloc(task->stack_allocator, stack_size);
     task->task_storage = heap_caps_malloc(
         sizeof(*task->task_storage), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
@@ -267,6 +267,13 @@ h2_esp_platform_task_configure(const h2_esp_task_policy_config_t *config) {
   }
   if (config == NULL || config->resolver == NULL) {
     esp_task_fail(NULL, "configure", "invalid-config");
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  const h2_pal_mem_api_t *allocator = config->psram_stack_allocator;
+  if (allocator != NULL &&
+      (allocator->vtable == NULL || allocator->vtable->alloc == NULL ||
+       allocator->vtable->free == NULL)) {
+    esp_task_fail(NULL, "configure", "invalid-stack-allocator");
     return H2_PAL_ERR_INVALID_ARG;
   }
   s_task_config = *config;

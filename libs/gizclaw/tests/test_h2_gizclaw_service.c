@@ -1575,7 +1575,6 @@ static int stop_join_start(void *user, const h2_pal_task_options_t *options,
                            h2_pal_task_entry_t entry, void *ctx,
                            h2_pal_task_t **out) {
   stop_join_test_t *test = user;
-  assert(options->stack_allocator == test->env->service->client_config.allocator);
   assert(test->starts < 5);
   ++test->start_attempts;
   if (test->fail_start && test->starts == test->start_failure_index) {

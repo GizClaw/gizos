@@ -1753,7 +1753,6 @@ static h2_pal_result_t h2_peer_network_init(h2_pal_webrtc_peer_t *peer) {
   const h2_pal_task_options_t task_options = {
       .name = h2_peer_network_task_name,
       .min_stack_size = H2_PEER_NETWORK_STACK_SIZE,
-      .stack_allocator = peer->allocator,
   };
   result = h2_pal_task_start(owner->config.task, &task_options,
                              h2_peer_network_task, peer, &peer->network_task);

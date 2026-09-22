@@ -1516,8 +1516,7 @@ static int start_audio_download(h2_gizclaw_device_t *d, const char *url,
   }
   const h2_pal_task_options_t options = {
       .name = H2_GIZCLAW_AUDIO_DOWNLOAD_TASK_NAME_VALUE,
-      .min_stack_size = 32768,
-      .stack_allocator = d->config.allocator};
+      .min_stack_size = 32768};
   return h2_pal_task_start(d->service->config.task, &options,
                            audio_download_worker, download, &download->task);
 }
@@ -2302,8 +2301,7 @@ h2_pal_result_t h2_gizclaw_device_start_internal(h2_gizclaw_device_t *d) {
   if (!d)
     return H2_PAL_OK;
   const h2_pal_task_options_t options = {
-      .name = H2_GIZCLAW_DEVICE_TASK_NAME_VALUE, .min_stack_size = 32768,
-      .stack_allocator = d->config.allocator};
+      .name = H2_GIZCLAW_DEVICE_TASK_NAME_VALUE, .min_stack_size = 32768};
   return h2_pal_task_start(d->service->config.task, &options, device_worker, d,
                            &d->task);
 }
