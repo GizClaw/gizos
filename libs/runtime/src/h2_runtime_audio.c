@@ -136,6 +136,7 @@ typedef struct runtime_audio_track {
     h2_pal_audio_track_t track;
     h2_pal_audio_track_t *backend_track;
     h2_runtime_t *runtime;
+    const h2_pal_mem_api_t *allocator;
 } runtime_audio_track_t;
 
 static runtime_audio_track_t *track_of(h2_pal_audio_track_t *track) {
@@ -161,7 +162,7 @@ static int track_close(h2_pal_audio_track_t *track) {
     if (wrapper == NULL)
         return H2_AUDIO_ERR_INVALID_ARG;
     int rc = h2_pal_audio_track_close(wrapper->backend_track);
-    h2_pal_mem_free(wrapper->runtime->mem, wrapper);
+    h2_pal_mem_free(wrapper->allocator, wrapper);
     return rc;
 }
 
@@ -202,14 +203,17 @@ static int create_track(void *user, const h2_audio_track_config_t *config,
         return rc;
     if (backend_track == NULL)
         return H2_AUDIO_ERR_INVALID_ARG;
+    const h2_pal_mem_api_t *allocator =
+        config != NULL && config->allocator != NULL ? config->allocator : runtime->mem;
     runtime_audio_track_t *wrapper =
-        (runtime_audio_track_t *)h2_pal_mem_alloc(runtime->mem, sizeof(*wrapper));
+        (runtime_audio_track_t *)h2_pal_mem_alloc(allocator, sizeof(*wrapper));
     if (wrapper == NULL) {
         (void)h2_pal_audio_track_close(backend_track);
         return H2_PAL_ERR_NO_MEMORY;
     }
     wrapper->backend_track = backend_track;
     wrapper->runtime = runtime;
+    wrapper->allocator = allocator;
     /* An operation the backend track does not provide stays NULL here, so the
      * PAL helpers report it exactly as they would on the backend track. */
     wrapper->track = (h2_pal_audio_track_t){

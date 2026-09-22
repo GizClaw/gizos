@@ -87,5 +87,8 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":corehttp"],
+    deps = [
+        ":corehttp",
+        "//libs/pal:test_allocator",
+    ],
 )

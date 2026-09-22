@@ -76,6 +76,7 @@ struct h2_pal_webrtc_channel {
 
 struct h2_pal_webrtc_peer {
   h2_peer_t *owner;
+  const h2_pal_mem_api_t *allocator;
   struct h2_pal_webrtc_peer *next;
   h2_pal_webrtc_track_t *media_track;
   uint8_t media_pending_opus[H2_PAL_WEBRTC_OPUS_MAX_PACKET_SIZE];
@@ -127,6 +128,10 @@ struct h2_peer {
   atomic_uint refs;
   int destroying;
 };
+
+static inline const h2_pal_mem_api_t *h2_peer_mem(const h2_pal_webrtc_peer_t *peer) {
+  return peer->allocator != NULL ? peer->allocator : peer->owner->config.mem;
+}
 
 void h2_peer_webrtc_on_stream_reset(
     h2_pal_webrtc_peer_t *peer, const h2_pal_sctp_stream_reset_event_t *event);

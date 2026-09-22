@@ -33,7 +33,7 @@ typedef enum h2_libsrtp_ssrc_policy {
 } h2_libsrtp_ssrc_policy_t;
 
 typedef struct h2_libsrtp_config {
-    /** Memory provider copied by value and used for all owned allocations. */
+    /** Default memory provider, copied by value; also owns the global kernel. */
     h2_pal_mem_api_t mem;
     /** Crypto provider copied by value and used by every SRTP primitive. */
     h2_pal_crypto_api_t crypto;
@@ -50,14 +50,17 @@ typedef struct h2_libsrtp_session_config {
     size_t master_key_len;
     const uint8_t *master_salt;
     size_t master_salt_len;
+    /** Optional session allocator, copied by value. NULL uses the init default. */
+    const h2_pal_mem_api_t *allocator;
 } h2_libsrtp_session_config_t;
 
 /**
  * Initializes the process-global libSRTP kernel.
  *
- * Repeated calls with the same Memory and Crypto provider add owner
- * references. A different provider is rejected until all owners and sessions
- * have been released.
+ * Repeated calls with the same Crypto provider and packet limit add owner
+ * references. Memory may differ; the first init owns shared kernel storage,
+ * and each session can supply its own allocator. The first Memory provider
+ * must remain valid until the final deinit.
  */
 h2_pal_result_t h2_libsrtp_init(const h2_libsrtp_config_t *config);
 

@@ -1,4 +1,5 @@
 #include "h2_peer_internal.h"
+#include "h2_test_allocator.h"
 
 // These tests use assertions for both checks and the operations under test.
 #ifdef NDEBUG
@@ -87,8 +88,8 @@ static void cleanup(fixture_t *f) {
     for (size_t slot = 0u; slot < H2_PEER_INPUT_SLOT_COUNT; ++slot) {
       h2_peer_tx_item_t *item = f->channels[i].tx_storage[slot];
       if (item != NULL) {
-        deallocate(f, item->data);
-        deallocate(f, item);
+        h2_pal_mem_free(h2_peer_mem(&f->peer), item->data);
+        h2_pal_mem_free(h2_peer_mem(&f->peer), item);
       }
     }
   }
@@ -226,7 +227,22 @@ static void message_budget_bounds_a_round(void) {
   cleanup(&f);
 }
 
+static void tx_uses_peer_allocator(void) {
+  fixture_t f;
+  initialize(&f, 1u);
+  h2_test_allocator_t arena;
+  h2_test_allocator_init(&arena);
+  f.peer.allocator = &arena.api;
+  assert(push(&f, 0u, 128u) == H2_PAL_OK);
+  assert(push(&f, 0u, 256u) == H2_PAL_OK);
+  assert(f.allocations == 0u);
+  assert(atomic_load(&arena.live) == 4u); /* two slots + two payloads */
+  cleanup(&f);
+  assert(atomic_load(&arena.live) == 0u);
+}
+
 int main(void) {
+  tx_uses_peer_allocator();
   ring_depth_fifo_and_reuse();
   byte_budget_bounds_a_round();
   channels_alternate_within_the_budget();

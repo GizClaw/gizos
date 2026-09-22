@@ -2,6 +2,7 @@
 #define _POSIX_C_SOURCE 200809L
 #endif
 
+#include "h2_test_allocator.h"
 #include "h2_bleikcp_internal.h"
 #include "h2_bleikcp_task_names.h"
 
@@ -20,8 +21,8 @@
 
 #define TEST_IO_TIMEOUT_MS 15000u
 
-struct h2_pal_mutex { pthread_mutex_t value; };
-struct h2_pal_cond { pthread_cond_t value; };
+struct h2_pal_mutex { pthread_mutex_t value; const h2_pal_mem_api_t *allocator; };
+struct h2_pal_cond { pthread_cond_t value; const h2_pal_mem_api_t *allocator; };
 struct h2_pal_task { pthread_t thread; h2_pal_task_entry_t entry; void *ctx; };
 struct h2_pal_system_event_subscription {
     h2_pal_system_event_type_t type;
@@ -90,14 +91,15 @@ static h2_pal_result_t fake_mutex_create(
         h2_pal_mem_free(config->allocator, mutex);
         return H2_PAL_ERR_IO;
     }
+    mutex->allocator = config->allocator;
     *out_mutex = mutex;
     return H2_PAL_OK;
 }
 
 static h2_pal_result_t fake_mutex_destroy(void *user, h2_pal_mutex_t *mutex) {
-    fake_runtime_t *runtime = user;
+    (void)user;
     (void)pthread_mutex_destroy(&mutex->value);
-    h2_pal_mem_free(&runtime->allocator, mutex);
+    h2_pal_mem_free(mutex->allocator, mutex);
     return H2_PAL_OK;
 }
 
@@ -128,14 +130,15 @@ static h2_pal_result_t fake_cond_create(
         h2_pal_mem_free(config->allocator, cond);
         return H2_PAL_ERR_IO;
     }
+    cond->allocator = config->allocator;
     *out_cond = cond;
     return H2_PAL_OK;
 }
 
 static h2_pal_result_t fake_cond_destroy(void *user, h2_pal_cond_t *cond) {
-    fake_runtime_t *runtime = user;
+    (void)user;
     (void)pthread_cond_destroy(&cond->value);
-    h2_pal_mem_free(&runtime->allocator, cond);
+    h2_pal_mem_free(cond->allocator, cond);
     return H2_PAL_OK;
 }
 
@@ -890,8 +893,8 @@ static void test_server_write_drops_on_full_queue(
 
 static void test_task_name_ownership(const h2_bleikcp_api_t *api) {
     const h2_bleikcp_config_t config = {
-        .worker_task_options = { "caller/worker", 7u * 1024u },
-        .server_task_options = { "caller/server", 8u * 1024u },
+        .worker_task_options = { .name = "caller/worker", .min_stack_size = 7u * 1024u },
+        .server_task_options = { .name = "caller/server", .min_stack_size = 8u * 1024u },
     };
     h2_bleikcp_resolved_config_t resolved;
     CHECK(h2_bleikcp_resolve_config(api, &config, &resolved) == H2_PAL_OK);
@@ -1117,7 +1120,63 @@ static void test_per_service_unregister(void) {
     }
 }
 
+static int discard_kcp_output(const char *data, int len, ikcpcb *kcp, void *user) {
+    (void)data; (void)len; (void)kcp; (void)user;
+    return 0;
+}
+
+static void test_kcp_allocators(void) {
+    /* A different KCP consumer can already own libc blocks when BLE installs
+     * its hooks, and can continue to allocate after installation. */
+    ikcpcb *legacy = ikcp_create(1u, NULL);
+    CHECK(legacy != NULL);
+    fake_runtime_t runtime;
+    fake_runtime_init(&runtime);
+    h2_test_allocator_t arenas[2];
+    h2_bleikcp_t *streams[2];
+    size_t calls[2];
+    for (size_t i = 0; i < 2u; ++i) {
+        h2_test_allocator_init(&arenas[i]);
+        h2_bleikcp_api_t api = {
+            .ble = &runtime.ble, .task = &runtime.task, .time = &runtime.time,
+            .sync = &runtime.sync, .system_event = &runtime.events,
+            .allocator = &arenas[i].api,
+        };
+        h2_bleikcp_config_t config = {.conv = (uint32_t)i + 10u};
+        h2_bleikcp_resolved_config_t resolved;
+        CHECK(h2_bleikcp_resolve_config(&api, &config, &resolved) == H2_PAL_OK);
+        CHECK(h2_bleikcp_stream_create(&api, &resolved, H2_BLEIKCP_ROLE_CLIENT,
+                  10u, 244u, false, &streams[i]) == H2_PAL_OK);
+        ikcp_setoutput(streams[i]->kcp, discard_kcp_output);
+        calls[i] = atomic_load(&arenas[i].calls);
+        uint8_t frame[25] = {0};
+        frame[0] = (uint8_t)config.conv;
+        frame[4] = 81u; /* PUSH creates RX segment and grows the ACK list. */
+        frame[6] = 32u;
+        frame[20] = 1u;
+        frame[24] = 42u;
+        CHECK(h2_bleikcp_stream_input(streams[i], frame, sizeof(frame)) == H2_PAL_OK);
+        CHECK(h2_bleikcp_write(streams[i], frame + 24, 1u, 0u) == H2_PAL_OK);
+        CHECK(h2_bleikcp_stream_start(streams[i]) == H2_PAL_OK);
+    }
+    for (size_t i = 0; i < 2u; ++i) {
+        uint8_t byte;
+        size_t len = 0u;
+        CHECK(h2_bleikcp_read(streams[i], &byte, 1u, &len, TEST_IO_TIMEOUT_MS) == H2_PAL_OK);
+        CHECK(len == 1u && byte == 42u);
+        CHECK(atomic_load(&arenas[i].calls) >= calls[i] + 3u);
+        CHECK(h2_bleikcp_stream_destroy(streams[i]) == H2_PAL_OK);
+        CHECK(atomic_load(&arenas[i].live) == 0u);
+    }
+    CHECK(ikcp_send(legacy, "x", 1) >= 0);
+    ikcp_release(legacy);
+    CHECK(pthread_mutex_destroy(&runtime.event_mutex) == 0);
+    CHECK(pthread_mutex_destroy(&runtime.gate_mutex) == 0);
+    CHECK(pthread_cond_destroy(&runtime.gate_cond) == 0);
+}
+
 int main(void) {
+    test_kcp_allocators();
     test_per_service_unregister();
     fake_runtime_t runtime;
     fake_runtime_init(&runtime);

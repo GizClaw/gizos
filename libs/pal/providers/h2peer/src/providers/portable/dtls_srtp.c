@@ -95,11 +95,12 @@ static int dtls_srtp_parse_fingerprint(
 }
 
 static int dtls_srtp_create_session(
-    h2_libsrtp_direction_t direction,
+    const h2_pal_mem_api_t *allocator, h2_libsrtp_direction_t direction,
     const uint8_t* key,
     const uint8_t* salt,
     h2_libsrtp_session_t** out_session) {
   const h2_libsrtp_session_config_t config = {
+      .allocator = allocator,
       .profile = H2_LIBSRTP_PROFILE_AES128_CM_SHA1_80,
       .direction = direction,
       .ssrc_policy = H2_LIBSRTP_SSRC_ANY,
@@ -139,11 +140,11 @@ static int dtls_srtp_configure_srtp(DtlsSrtp* dtls_srtp) {
   }
 
   int result = dtls_srtp_create_session(
-      H2_LIBSRTP_DIRECTION_INBOUND, remote_key, remote_salt,
+      dtls_srtp->allocator, H2_LIBSRTP_DIRECTION_INBOUND, remote_key, remote_salt,
       &dtls_srtp->srtp_in);
   if (result == 0) {
     result = dtls_srtp_create_session(
-        H2_LIBSRTP_DIRECTION_OUTBOUND, local_key, local_salt,
+        dtls_srtp->allocator, H2_LIBSRTP_DIRECTION_OUTBOUND, local_key, local_salt,
         &dtls_srtp->srtp_out);
   }
   memset(key_material, 0, sizeof(key_material));

@@ -1,3 +1,4 @@
+#include "h2_test_allocator.h"
 #include "h2_audio_mixer.h"
 
 #include <assert.h>
@@ -16,6 +17,8 @@ typedef struct test_queue {
     size_t head;
     size_t count;
     uint8_t items[TEST_QUEUE_ITEMS][TEST_QUEUE_ITEM_BYTES];
+    const h2_pal_mem_api_t *allocator;
+    void *storage;
     int used;
     int closed;
 } test_queue_t;
@@ -110,6 +113,12 @@ static int test_queue_create(void *user, const h2_pal_queue_config_t *config,
         if (queue->used)
             continue;
         memset(queue, 0, sizeof(*queue));
+        queue->allocator = config->allocator;
+        if (queue->allocator != NULL) {
+            queue->storage = h2_pal_mem_alloc(queue->allocator,
+                config->item_size * config->item_count);
+            if (queue->storage == NULL) return H2_PAL_QUEUE_ERR_NO_MEMORY;
+        }
         queue->used = 1;
         queue->item_size = config->item_size;
         queue->capacity = config->item_count;
@@ -126,6 +135,7 @@ static void test_queue_destroy(void *user, h2_pal_queue_t *opaque) {
     test_queue_t *queue = (test_queue_t *)opaque;
     if (env->drain_queue == queue)
         env->drain_queue = NULL;
+    h2_pal_mem_free(queue->allocator, queue->storage);
     memset(queue, 0, sizeof(*queue));
 }
 
@@ -363,6 +373,33 @@ int main(void) {
     assert(memcmp(mixed, replacement_samples, sizeof(mixed)) == 0);
     assert(h2_pal_audio_track_close(replacement) == H2_AUDIO_OK);
     h2_audio_mixer_deinit(&mixer);
+    h2_test_allocator_t default_mem, arena;
+    h2_test_allocator_init(&default_mem);
+    h2_test_allocator_init(&arena);
+    h2_audio_mixer_config_t owned_config = config;
+    owned_config.allocator = &default_mem.api;
+    assert(h2_audio_mixer_init(&mixer, &owned_config) == H2_AUDIO_OK);
+    const size_t baseline = atomic_load(&default_mem.live);
+    for (int custom = 0; custom < 2; ++custom) {
+        h2_audio_track_config_t owned_track = track_config;
+        owned_track.allocator = custom ? &arena.api : NULL;
+        assert(h2_audio_mixer_create_track(&mixer, NULL, &owned_track, &track) == H2_AUDIO_OK);
+        /* Two queues and both reusable scratch buffers. */
+        assert(atomic_load(&arena.live) == (custom ? 4u : 0u));
+        assert(atomic_load(&default_mem.live) == baseline + (custom ? 0u : 4u));
+        assert(h2_pal_audio_track_close(track) == H2_AUDIO_OK);
+        assert(atomic_load(&arena.live) == 0u);
+        assert(atomic_load(&default_mem.live) == baseline);
+    }
+    for (size_t fail = 1u; fail <= 4u; ++fail) {
+        atomic_store(&arena.fail_on_call, atomic_load(&arena.calls) + fail);
+        h2_audio_track_config_t owned_track = track_config;
+        owned_track.allocator = &arena.api;
+        assert(h2_audio_mixer_create_track(&mixer, NULL, &owned_track, &track) == H2_AUDIO_ERR_NO_MEMORY);
+        assert(atomic_load(&arena.live) == 0u);
+    }
+    h2_audio_mixer_deinit(&mixer);
+    assert(atomic_load(&default_mem.live) == 0u);
     puts("PASS h2_audio_mixer drain and track reuse");
     return 0;
 }

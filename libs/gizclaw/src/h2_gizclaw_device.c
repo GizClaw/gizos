@@ -1779,6 +1779,7 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
     rc = start_decoder(d, &decoder);
   h2_audio_track_config_t audio = {
       .name = "gizclaw-player",
+      .allocator = d->config.allocator,
       .format = {.sample_rate_hz = 16000,
                  .frame_samples_per_channel = 320,
                  .channels = 1,

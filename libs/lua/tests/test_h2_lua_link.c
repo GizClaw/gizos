@@ -1,3 +1,4 @@
+#include "h2_test_allocator.h"
 #include "h2/pal/h2_pal_unsupported.h"
 #include "h2_desktop_platform.h"
 #include "h2_lua.h"
@@ -32,9 +33,10 @@ static h2_pal_result_t mark_call(void *user, h2_lua_capability_request_id_t id,
 }
 
 static h2_lua_host_t *create_host(h2_runtime_t *runtime, int enable_link,
-                                  atomic_int *mark) {
+                                  atomic_int *mark, const h2_pal_mem_api_t *allocator) {
   const h2_lua_host_config_t config = {
       .runtime = runtime,
+      .allocator = allocator,
       .worker_count = 2u,
       .max_jobs = 2u,
       .execution_timeout_ms = 60000u,
@@ -46,7 +48,11 @@ static h2_lua_host_t *create_host(h2_runtime_t *runtime, int enable_link,
   h2_lua_host_t *host = NULL;
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
   if (enable_link) {
+    size_t before = allocator != NULL
+        ? atomic_load(&((h2_test_allocator_t *)allocator->user)->calls) : 0u;
     assert(h2_lua_link_enable(host, &link_config) == H2_PAL_OK);
+    if (allocator != NULL)
+      assert(atomic_load(&((h2_test_allocator_t *)allocator->user)->calls) == before + 3u);
     assert(h2_lua_link_enable(host, &link_config) == H2_PAL_ERR_INVALID_STATE);
   }
   if (mark != NULL) {
@@ -363,7 +369,10 @@ typedef struct pair {
   fake_air_t air;
   h2_runtime_t *runtime[2];
   h2_lua_host_t *host[2];
+  h2_test_allocator_t arenas[2];
 } pair_t;
+
+static int s_count_pair;
 
 static void pair_open(pair_t *pair) {
   fake_air_init(&pair->air);
@@ -372,7 +381,9 @@ static void pair_open(pair_t *pair) {
     pair->runtime[i] = fake_create_runtime(&pair->air.devices[i].ble,
                                       &pair->air.devices[i].events);
     fake_set_baseline(&pair->air.devices[i]);
-    pair->host[i] = create_host(pair->runtime[i], 1, &s_marks[i]);
+    h2_test_allocator_init(&pair->arenas[i]);
+    pair->host[i] = create_host(pair->runtime[i], 1, &s_marks[i],
+        s_count_pair ? &pair->arenas[i].api : NULL);
   }
 }
 
@@ -381,6 +392,7 @@ static void pair_close(pair_t *pair) {
     if (pair->host[i] != NULL) {
       h2_lua_host_destroy(pair->host[i]);
     }
+    assert(atomic_load(&pair->arenas[i].live) == 0u);
     assert(fake_is_released(&pair->air.devices[i]));
     h2_runtime_deinit(pair->runtime[i]);
   }
@@ -633,7 +645,7 @@ static void test_host_destroy_releases_link(void) {
 
   /* A connected session is also torn down by destroy, and the peer sees
    * the BYE. */
-  pair.host[0] = create_host(pair.runtime[0], 1, &s_marks[0]);
+  pair.host[0] = create_host(pair.runtime[0], 1, &s_marks[0], NULL);
   atomic_store(&s_marks[0], 0);
   atomic_store(&s_marks[1], 0);
   h2_lua_job_id_t host =
@@ -687,7 +699,7 @@ static void test_capability_off(void) {
   h2_runtime_t *runtime = fake_create_runtime(&air.devices[0].ble,
                                          &air.devices[0].events);
   fake_set_baseline(&air.devices[0]);
-  h2_lua_host_t *host = create_host(runtime, 0, NULL);
+  h2_lua_host_t *host = create_host(runtime, 0, NULL, NULL);
   expect_success(host, submit(host, "@off.lua", s_unavailable, "x"),
                  "unavailable-ok");
   assert(h2_lua_link_enable(host, &link_config) == H2_PAL_ERR_INVALID_STATE);
@@ -724,6 +736,9 @@ static void test_capability_off(void) {
 int main(void) {
   fprintf(stderr, "== test_capability_off\n");
   test_capability_off();
+  s_count_pair = 1;
+  test_round_trip_and_peer_close();
+  s_count_pair = 0;
   fprintf(stderr, "== test_round_trip_and_peer_close\n");
   test_round_trip_and_peer_close();
   fprintf(stderr, "== test_three_transports\n");

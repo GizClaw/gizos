@@ -296,7 +296,7 @@ static h2_pal_result_t h2_sctp_association_handle_init_ack(
         values.cookie_len > association->config.max_packet_size - 16u) {
         return H2_PAL_ERR_FORMAT;
     }
-    uint8_t *cookie = h2_sctp_alloc(association->owner, values.cookie_len);
+    uint8_t *cookie = h2_sctp_alloc(association->mem, values.cookie_len);
     if (cookie == NULL) {
         return H2_PAL_ERR_WOULD_BLOCK;
     }
@@ -304,9 +304,9 @@ static h2_pal_result_t h2_sctp_association_handle_init_ack(
 
     const size_t chunk_len = 4u + values.cookie_len;
     const size_t padded_len = (chunk_len + 3u) & ~(size_t)3u;
-    uint8_t *cookie_echo = h2_sctp_alloc(association->owner, padded_len);
+    uint8_t *cookie_echo = h2_sctp_alloc(association->mem, padded_len);
     if (cookie_echo == NULL) {
-        h2_sctp_free(association->owner, cookie);
+        h2_sctp_free(association->mem, cookie);
         return H2_PAL_ERR_WOULD_BLOCK;
     }
     cookie_echo[0] = H2_SCTP_CHUNK_COOKIE_ECHO;
@@ -322,17 +322,17 @@ static h2_pal_result_t h2_sctp_association_handle_init_ack(
         padded_len,
         H2_SCTP_CONTROL_COOKIE_ECHO,
         now_ms);
-    h2_sctp_free(association->owner, cookie_echo);
+    h2_sctp_free(association->mem, cookie_echo);
     if (result == H2_PAL_ERR_NO_MEMORY) {
         h2_sctp_association_restore_peer_state(association, &peer_state);
-        h2_sctp_free(association->owner, cookie);
+        h2_sctp_free(association->mem, cookie);
         return H2_PAL_ERR_WOULD_BLOCK;
     }
     if (result != H2_PAL_OK && result != H2_PAL_ERR_WOULD_BLOCK) {
-        h2_sctp_free(association->owner, cookie);
+        h2_sctp_free(association->mem, cookie);
         return result;
     }
-    h2_sctp_free(association->owner, association->peer_cookie);
+    h2_sctp_free(association->mem, association->peer_cookie);
     association->peer_cookie = cookie;
     association->peer_cookie_len = values.cookie_len;
     return result == H2_PAL_ERR_WOULD_BLOCK ? H2_PAL_OK : result;
@@ -395,7 +395,7 @@ static h2_pal_result_t h2_sctp_association_handle_heartbeat(
     }
     const size_t chunk_len = 4u + chunk->len;
     const size_t padded_len = (chunk_len + 3u) & ~(size_t)3u;
-    uint8_t *reply = h2_sctp_alloc(association->owner, padded_len);
+    uint8_t *reply = h2_sctp_alloc(association->mem, padded_len);
     if (reply == NULL) {
         return H2_PAL_ERR_WOULD_BLOCK;
     }
@@ -409,7 +409,7 @@ static h2_pal_result_t h2_sctp_association_handle_heartbeat(
         padded_len,
         H2_SCTP_CONTROL_NONE,
         now_ms);
-    h2_sctp_free(association->owner, reply);
+    h2_sctp_free(association->mem, reply);
     if (result == H2_PAL_ERR_NO_MEMORY) {
         return H2_PAL_ERR_WOULD_BLOCK;
     }
