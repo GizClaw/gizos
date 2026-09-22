@@ -1460,15 +1460,15 @@ h2_pal_result_t h2_gizclaw_service_deinit(h2_gizclaw_service_t *service) {
     /* The owner can only retry; name what still holds the Service so a leak
      * is traceable from one field log. Formatted under the lock, written
      * after it. */
-    /* Includes all seven size_t counters at their full decimal width. */
-    char message[512];
+    /* Grouped fields keep even seven 64-bit SIZE_MAX counters within the PAL
+     * limit: refs=caller/request/track/downlink, terminal=pending/dispatched,
+     * attached=audio_conversation/session. */
+    char message[H2_PAL_LOG_MESSAGE_MAX];
     (void)snprintf(
         message, sizeof(message),
-        "stage=service_deinit_blocked stopped=%d dispatching=%d active=%zu "
-        "caller_refs=%zu request_refs=%zu track_refs=%zu downlink_refs=%zu "
-        "track_unsetting=%d queued_events=%zu dispatch_items=%zu "
-        "terminal_pending=%d terminal_dispatched=%d audio_conversation=%d "
-        "session=%d",
+        "stage=service_deinit_blocked stopped=%d dispatch=%d active=%zu "
+        "refs=%zu/%zu/%zu/%zu unset=%d queued=%zu items=%zu "
+        "terminal=%d/%d attached=%d/%d",
         service->stopped ? 1 : 0, service->dispatching ? 1 : 0,
         service->active_count, service->caller_reference_count,
         service->request_reference_count,

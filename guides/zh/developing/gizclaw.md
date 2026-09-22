@@ -49,7 +49,7 @@ Capacity 覆盖 request-queued、running、progress-pending、completion-pending
 
 正常 domain error 只结束当前 operation。Initial connect、fatal poll 或 transport closed 会关闭 service generation；受影响 operation 以 `SERVICE_CLOSED` 完成，terminal callback 在 operation callback 之后由 `dispatch` 恰好调用一次。Client close 前，optional worker cleanup 先释放仍由 worker 独占的 conversation 等 caller-owned client resource；产品 Audio 和状态仍由 dispatch callback 清理。Teardown 顺序是拒绝新 submit、stop 并 join worker、dispatch drain、release caller handle、deinit；`stop` 不内联执行产品 callback。
 
-`h2_gizclaw_service_deinit()` 在尚未停止或仍有持有者等拒绝条件成立时返回 `H2_PAL_ERR_INVALID_STATE`，并以 WARN `stage=service_deinit_blocked` 列出 `stopped`、`dispatching`、`active`、`caller_refs`、`request_refs`、`track_refs`、`downlink_refs`、`track_unsetting`、`queued_events`、`dispatch_items`、`terminal_pending`、`terminal_dispatched`、`audio_conversation` 和 `session`。状态在 service lock 内格式化，在解锁后记录；日志缓冲区保留完整计数值和末尾字段。拒绝状态的签名与上次相同时不重复记录，签名变化才再记录；拒绝条件、返回值和成功 teardown 流程保持不变。
+`h2_gizclaw_service_deinit()` 在尚未停止或仍有持有者等拒绝条件成立时返回 `H2_PAL_ERR_INVALID_STATE`，并以 WARN `stage=service_deinit_blocked` 列出全部拒绝状态。`stopped`、`dispatch`、`active` 分别表示已停止、正在 dispatch 和 active operation 数；`refs=caller/request/track/downlink` 按固定顺序给出四类引用数；`unset` 表示 Track 正在解绑，`queued` 和 `items` 分别是排队事件数和 dispatch 项数；`terminal=pending/dispatched` 与 `attached=audio_conversation/session` 分别按固定顺序给出两个布尔状态。该紧凑格式在七个计数均为 64 位 `SIZE_MAX` 时仍不超过 `H2_PAL_LOG_MESSAGE_MAX`（含 NUL 共 256 字节），保留完整计数值和末尾字段。状态在 service lock 内格式化，在解锁后记录；拒绝状态的签名与上次相同时不重复记录，签名变化才再记录。拒绝条件、返回值和成功 teardown 流程保持不变。
 
 Encrypted mode 通过显式 X25519 key/public/shared types、HKDF-SHA256 和对应
 AEAD enum 调用 Crypto PAL。GizClaw 的 plaintext mode 在 library 内做经过长度和
