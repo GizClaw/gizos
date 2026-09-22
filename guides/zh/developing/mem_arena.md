@@ -4,6 +4,8 @@
 
 TLSF 的 build adapter 强制包含 `h2_tlsf.h`，把内部依赖的公共符号统一映射为 `h2_tlsf_*`，避免与 SDK 自带 TLSF 冲突。Windows MSVC 使用 `/FI`，其余工具链使用 `-include`；arena host test 同时验证该符号映射能够完成链接。
 
+`third_party/tlsf_patch/tlsf.c` 是固定 upstream revision 的完整 source overlay，通过 `MODULE.bazel` 的 `overlay_files` 装配；本地扩展仅为 `block_locate_free` 的同 size class 慢搜索。更新 archive pin 时必须与 upstream 对照并保留该行为及回归测试；若 upstream 已覆盖相同行为，可移除 replacement overlay。
+
 ## API Reference
 
 [API Reference](/references/mem_arena) 由生产 Public Header `libs/mem_arena/include/h2_mem_arena.h` 生成，参数、统计字段和返回值以该头文件为准。
