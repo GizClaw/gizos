@@ -225,6 +225,22 @@ h2_pal_result_t h2_gizclaw_rpc_workflow_list(h2_gizclaw_service_t *service,
     out->next_cursor = copy(&arena, "next");
   return h2_gizclaw_resp_arena_end(&arena, H2_PAL_OK);
 }
+h2_pal_result_t h2_gizclaw_rpc_workflow_get(
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t name, uint32_t timeout,
+    h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_workflow_get_result_t *out) {
+  (void)service;
+  assert(timeout > 0u);
+  h2_gizclaw_resp_arena_t arena;
+  assert(h2_gizclaw_resp_arena_begin(storage, &arena) == H2_PAL_OK);
+  *out = (h2_gizclaw_workflow_get_result_t){
+      .workflow = {.collection = copy(&arena, "alpha"),
+                   .name = copy(&arena, name.data)},
+      .runtime_profile_name = copy(&arena, "test-profile"),
+      .runtime_profile_revision = copy(&arena, server_revision),
+  };
+  return h2_gizclaw_resp_arena_end(&arena, H2_PAL_OK);
+}
 h2_pal_result_t
 h2_gizclaw_rpc_workspace_get(h2_gizclaw_service_t *service,
                              h2_gizclaw_str_t name, uint32_t timeout,
@@ -433,6 +449,91 @@ static void assert_catalog(void) {
   assert(strcmp(catalog.items[0].name, "alpha") == 0);
   assert(strcmp(catalog.items[1].collection, "beta") == 0);
   assert(strcmp(catalog.items[1].name, "beta") == 0);
+}
+
+typedef struct streaming_sink_state {
+  unsigned begin, pages, commit, abort;
+  size_t entries;
+  bool fail_page;
+  bool fail_commit;
+  bool cancel_page;
+  char revision[32];
+} streaming_sink_state_t;
+
+static h2_pal_result_t streaming_sink(
+    void *user, h2_gizclaw_catalog_event_t event,
+    const h2_gizclaw_workflow_page_t *page, const char *profile,
+    const char *revision) {
+  streaming_sink_state_t *sink = user;
+  assert(strcmp(profile, "test-profile") == 0);
+  switch (event) {
+  case H2_GIZCLAW_CATALOG_BEGIN:
+    assert(page == NULL);
+    ++sink->begin;
+    sink->entries = 0u;
+    return H2_PAL_OK;
+  case H2_GIZCLAW_CATALOG_PAGE:
+    assert(page != NULL && page->count <= H2_GIZCLAW_WORKFLOW_PAGE_MAX_ITEMS);
+    ++sink->pages;
+    sink->entries += page->count;
+    if (sink->cancel_page)
+      assert(h2_gizclaw_session_close(session) == H2_PAL_OK);
+    return sink->fail_page ? H2_PAL_ERR_IO : H2_PAL_OK;
+  case H2_GIZCLAW_CATALOG_COMMIT:
+    assert(page == NULL);
+    ++sink->commit;
+    strcpy(sink->revision, revision);
+    return sink->fail_commit ? H2_PAL_ERR_IO : H2_PAL_OK;
+  case H2_GIZCLAW_CATALOG_ABORT:
+    assert(page == NULL);
+    ++sink->abort;
+    return H2_PAL_OK;
+  }
+  assert(false);
+  return H2_PAL_ERR_INVALID_ARG;
+}
+
+static void test_streaming_catalog(void) {
+  streaming_sink_state_t sink = {0};
+  h2_gizclaw_session_config_t config = session_config(1u);
+  config.max_workflows = 1u;
+  config.catalog_sink = streaming_sink;
+  config.catalog_sink_user = &sink;
+  assert(h2_gizclaw_session_create(&config, &session) == H2_PAL_OK);
+  paginated = true;
+  assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+  assert(sink.begin == 1u && sink.pages == 2u && sink.commit == 1u &&
+         sink.entries == 2u && strcmp(sink.revision, "v1") == 0);
+  assert(snapshot().workflow_count == 2u);
+  uint8_t bytes[4096];
+  h2_gizclaw_resp_storage_t storage = {bytes, sizeof(bytes), 0u};
+  h2_gizclaw_workflow_page_t catalog;
+  assert(h2_gizclaw_session_catalog_copy(session, &storage, &catalog) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_gizclaw_session_select(session, &selection, 1000u) == H2_PAL_OK);
+  assert(gets == 1u && snapshot().can_start);
+  server_revision = "v2";
+  assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_OK);
+  assert(sink.commit == 2u && strcmp(sink.revision, "v2") == 0);
+  sink.fail_page = true;
+  assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_ERR_IO);
+  assert(sink.abort == 1u && snapshot().catalog == H2_GIZCLAW_SESSION_FAILED);
+  sink.fail_page = false;
+  sink.fail_commit = true;
+  assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_ERR_IO);
+  assert(sink.abort == 2u);
+  teardown();
+
+  sink = (streaming_sink_state_t){0};
+  config = session_config(1u);
+  config.catalog_sink = streaming_sink;
+  config.catalog_sink_user = &sink;
+  assert(h2_gizclaw_session_create(&config, &session) == H2_PAL_OK);
+  sink.cancel_page = true;
+  assert(h2_gizclaw_session_register(session, "token", 1000u) ==
+         H2_PAL_ERR_CLOSED);
+  assert(sink.commit == 0u && sink.abort == 1u);
+  teardown();
 }
 
 static void test_catalog_buffer_lifetime(bool retain, bool separate) {
@@ -1212,6 +1313,7 @@ static void test_speech_rate_parameter(void) {
 }
 
 int main(void) {
+  test_streaming_catalog();
   test_catalog_buffer_lifetime(false, false);
   test_catalog_buffer_lifetime(true, false);
   test_catalog_buffer_lifetime(false, true);

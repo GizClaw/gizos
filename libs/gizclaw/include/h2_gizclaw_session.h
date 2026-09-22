@@ -73,6 +73,21 @@ typedef struct h2_gizclaw_session_state {
   bool retryable;
 } h2_gizclaw_session_state_t;
 
+/** A streaming catalog transaction. PAGE borrows all strings and items only
+ * until the callback returns. BEGIN has no page; COMMIT publishes the complete
+ * sequence; ABORT discards it after any RPC, callback, timeout or cancel error.
+ * The sink must keep its previous published catalog until COMMIT succeeds. */
+typedef enum h2_gizclaw_catalog_event {
+  H2_GIZCLAW_CATALOG_BEGIN,
+  H2_GIZCLAW_CATALOG_PAGE,
+  H2_GIZCLAW_CATALOG_COMMIT,
+  H2_GIZCLAW_CATALOG_ABORT,
+} h2_gizclaw_catalog_event_t;
+typedef h2_pal_result_t (*h2_gizclaw_catalog_sink_fn)(
+    void *user, h2_gizclaw_catalog_event_t event,
+    const h2_gizclaw_workflow_page_t *page, const char *profile_name,
+    const char *profile_revision);
+
 /** Dependencies and collection strings are borrowed until destroy. One Session
  * per Service; use Session operations exclusively for registration, catalog,
  * and conversations on that Service. Existing synchronous workspace RPCs
@@ -92,7 +107,14 @@ typedef struct h2_gizclaw_session_config {
   const char *const *collections;
   size_t collection_count;
   size_t max_workflows;
+  /** Response storage for one page or one Workspace RPC. In streaming mode
+   * this does not scale with the total number of workflows. */
   size_t catalog_bytes;
+  /** If set, refresh sends bounded pages to this transactional sink and does
+   * not retain a whole catalog. max_workflows and retained buffers are unused.
+   * The callback and user context remain valid until destroy. */
+  h2_gizclaw_catalog_sink_fn catalog_sink;
+  void *catalog_sink_user;
   /** Reserve two catalog_bytes buffers during create: one published
    * catalog and one scratch buffer shared by serialized refresh/select work.
    * Each buffer is allocated once and retained until destroy, including after
@@ -130,6 +152,7 @@ h2_pal_result_t
 h2_gizclaw_session_snapshot(h2_gizclaw_session_t *session,
                             h2_gizclaw_session_state_t *out_state);
 /** Copies the complete valid catalog and Profile identity into caller storage.
+ * Unavailable in streaming mode; the sink owns the published catalog.
  * Failure clears out_catalog. Retained stale data is never returned as valid.
  */
 h2_pal_result_t
@@ -140,14 +163,15 @@ h2_gizclaw_session_catalog_copy(h2_gizclaw_session_t *session,
  * the Service worker. Preparations are serialized. Select/conversation requests
  * wait behind preparation within their deadline; register/refresh return BUSY.
  * timeout_ms is a total monotonic deadline, including every page and RPC.
- * Registration automatically loads the requested catalog. Catalog failure does
+ * Registration automatically refreshes the requested catalog. Catalog failure does
  * not undo successful registration; inspect both phases in the snapshot. */
 h2_pal_result_t h2_gizclaw_session_register(h2_gizclaw_session_t *session,
                                             const char *token,
                                             uint32_t timeout_ms);
 h2_pal_result_t h2_gizclaw_session_refresh(h2_gizclaw_session_t *session,
                                            uint32_t timeout_ms);
-/** Ensures catalog validity and prepares the named Workspace. Current changes
+/** Prepares the named Workspace. Streaming selection uses the supplied names
+ * directly and needs no in-memory catalog. Current changes
  * only after server confirmation; a failed switch cannot publish its target as
  * current. A version mismatch permits one catalog refresh and retry. */
 h2_pal_result_t
