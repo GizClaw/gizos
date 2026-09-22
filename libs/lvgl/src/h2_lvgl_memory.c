@@ -84,7 +84,9 @@ static int add_chunk(size_t bytes) {
     h2_lvgl_chunk_t *chunk = h2_pal_mem_alloc(
         s_memory.allocator, overhead + bytes);
     if (chunk == NULL) return H2_PAL_ERR_NO_MEMORY;
-    /* The first user pointer is one TLSF size word after the pool start.
+    /* Vendored tlsf_add_pool places the block header at pool - sizeof(size_t),
+     * and block_to_ptr adds two words. The first user pointer is therefore
+     * pool + sizeof(size_t); the pool base itself only needs TLSF alignment.
      * Combined with pooled_size(), this keeps split/coalesced blocks aligned
      * without tlsf_memalign's conservative extra-space search on every call. */
     chunk->info.pool = tlsf_add_pool(
