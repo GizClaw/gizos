@@ -329,6 +329,10 @@ static void test_failure(void) {
 static int64_t now_us;
 static uint32_t caller_pc = 0x40001000u;
 static unsigned captures;
+static unsigned trace_frames = 6u;
+static unsigned frame_steps;
+static bool corrupt_frame;
+static uint32_t logged_frames[6];
 static unsigned summary_logs;
 static unsigned failure_logs;
 static unsigned site_logs;
@@ -345,14 +349,19 @@ size_t heap_caps_get_largest_free_block(unsigned caps) { (void)caps; return 2048
 void esp_backtrace_get_start(uint32_t *pc, uint32_t *sp, uint32_t *next_pc) {
     assert(locked);
     ++captures;
+    assert(pc != sp && pc != next_pc && sp != next_pc);
     *pc = caller_pc;
     *sp = 0u;
-    *next_pc = caller_pc + 4u;
+    *next_pc = trace_frames > 1u ? caller_pc + 4u : 0u;
 }
 
 bool esp_backtrace_get_next_frame(esp_backtrace_frame_t *frame) {
+    ++frame_steps;
+    if (corrupt_frame)
+        return false;
     frame->pc = frame->next_pc;
-    frame->next_pc += 4u;
+    ++frame->sp;
+    frame->next_pc = frame->sp + 1u < trace_frames ? frame->pc + 4u : 0u;
     return true;
 }
 
@@ -375,10 +384,13 @@ void test_arena_log(const char *tag, const char *format, ...) {
     } else if (strstr(line, "H2_ARENA_SPILL_SITE") != NULL) {
         assert(!locked);
         ++site_logs;
-        unsigned pc;
+        unsigned pcs[6];
         assert(sscanf(line, "H2_ARENA_SPILL_SITE rank=%*u bytes=%*u blocks=%*u "
-                      "pc=0x%x", &pc) == 1);
-        logged_pc = pc;
+                      "pc=0x%x 0x%x 0x%x 0x%x 0x%x 0x%x", &pcs[0], &pcs[1],
+                      &pcs[2], &pcs[3], &pcs[4], &pcs[5]) == 6);
+        logged_pc = pcs[0];
+        for (unsigned i = 0u; i < 6u; ++i)
+            logged_frames[i] = pcs[i];
     } else {
         assert(locked && strstr(line, "H2_ARENA_SPILL_FAILED") != NULL);
         ++failure_logs;
@@ -437,6 +449,43 @@ static void test_spill_lifecycle(void) {
     h2_pal_mem_free(mem, a);
     dump(arena);
     assert(logged_blocks == 0u && logged_bytes == 0u);
+    finish(arena);
+}
+
+static void test_spill_short_backtrace(void) {
+    h2_esp_platform_arena_t *arena = create(true);
+    const h2_pal_mem_api_t *mem = h2_esp_platform_arena_mem(arena);
+    caller_pc = 0x40003000u;
+    for (unsigned scenario = 0u; scenario < 3u; ++scenario) {
+        /* Reuse a formerly full-trace slot: short or corrupt walks must not
+         * leave stale caller PCs in the remaining positions. */
+        trace_frames = 6u;
+        void *p = h2_pal_mem_alloc(mem, RESERVATION);
+        assert(p != NULL);
+        h2_pal_mem_free(mem, p);
+        trace_frames = scenario == 0u ? 1u : 3u;
+        corrupt_frame = scenario == 2u;
+        const unsigned steps_before = frame_steps;
+        p = h2_pal_mem_alloc(mem, RESERVATION);
+        assert(p != NULL);
+        dump(arena);
+        assert(logged_blocks == 1u && logged_groups == 1u);
+#if CONFIG_IDF_TARGET_ARCH_XTENSA
+        const unsigned expected_frames = corrupt_frame ? 1u : trace_frames;
+        for (unsigned i = 0u; i < 6u; ++i)
+            assert(logged_frames[i] ==
+                   (i < expected_frames ? caller_pc + i * 4u : 0u));
+        assert(frame_steps - steps_before ==
+               (corrupt_frame ? 1u : trace_frames - 1u));
+#else
+        assert(frame_steps == steps_before);
+        for (unsigned i = 0u; i < 6u; ++i)
+            assert(logged_frames[i] == 0u);
+#endif
+        h2_pal_mem_free(mem, p);
+        corrupt_frame = false;
+    }
+    trace_frames = 6u;
     finish(arena);
 }
 
@@ -555,6 +604,7 @@ int main(void) {
     test_failure();
 #if defined(ESP_PLATFORM)
     test_spill_lifecycle();
+    test_spill_short_backtrace();
     test_spill_capacity();
     test_spill_isolation_and_throttle();
     test_spill_registry_allocation_failure();

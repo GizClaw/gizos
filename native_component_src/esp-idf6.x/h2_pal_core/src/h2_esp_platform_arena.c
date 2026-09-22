@@ -85,6 +85,8 @@ static void spill_capture(uint32_t pc[H2_ESP_ARENA_SPILL_FRAMES]) {
     memset(pc, 0, H2_ESP_ARENA_SPILL_FRAMES * sizeof(pc[0]));
 #if CONFIG_IDF_TARGET_ARCH_XTENSA
     esp_backtrace_frame_t frame = {0};
+    /* IDF 6.0.3 esp_debug_helpers.h takes three output pointers here;
+     * only esp_backtrace_get_next_frame below takes a frame pointer. */
     esp_backtrace_get_start(&frame.pc, &frame.sp, &frame.next_pc);
     for (unsigned depth = 0u; depth < H2_ESP_ARENA_SPILL_FRAMES; ++depth) {
         pc[depth] = esp_cpu_process_stack_pc(frame.pc);

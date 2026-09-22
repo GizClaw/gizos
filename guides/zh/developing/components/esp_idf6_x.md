@@ -328,7 +328,7 @@ Stats 在 mutex 下分别对 small/large 取一致快照；每池 reserved 包�
 
 `h2_esp_platform_arena_log_spills()` 在 mutex 下抓取快照，释放锁后输出 `H2_ARENA_SPILL_LIVE` 和按字节数降序排列的 `H2_ARENA_SPILL_SITE`。分组使用完整的已捕获调用帧，至多输出 24 组；其余已追踪条目的字节数归入 `other`，不从总量中扣除。快照和分组使用固定栈空间，不在查询时分配堆内存；每实例每分钟最多一次，`force=true` 可立即输出，NULL arena 是 no-op。调用方必须保证 arena 在整个调用中存活。Spill allocator 失败在当前 arena 锁内通过 SDK `ESP_LOGW` 输出 `H2_ARENA_SPILL_FAILED`，包含操作、请求大小、失败次数和 PSRAM/Internal free/largest；每实例前 16 次及其后每 64 次输出，未启用 spill 的正常耗尽不输出此日志。
 
-Host SDK fake tests 验证默认耗尽不调用系统 heap、显式 spill、owner 路由、alignment、双向迁移、realloc 失败原子性、统计分离和创建失败清理。`arena_spill_test` 以 Xtensa SDK stubs 编译并执行 ESP 诊断路径，`arena_spill_riscv_test` 验证无 Xtensa 回溯时的路径；覆盖 realloc/free 追踪、表满与重用、表分配失败、多实例独立统计及限频。PSRAM/XIP 压力、实际调用帧质量与调度延迟仍需设备测量。
+Host SDK fake tests 验证默认耗尽不调用系统 heap、显式 spill、owner 路由、alignment、双向迁移、realloc 失败原子性、统计分离和创建失败清理。`arena_spill_test` 以 Xtensa SDK stubs 编译并执行 ESP 诊断路径，`arena_spill_riscv_test` 验证无 Xtensa 回溯时的路径；覆盖 realloc/free 追踪、表满与重用、表分配失败、多实例独立统计、限频及回溯提前结束或损坏时的尾部清零。PSRAM/XIP 压力、实际调用帧质量与调度延迟仍需设备测量。
 
 ```sh
 bazel test //libs/mem_arena/... //native_component_src/esp-idf6.x/h2_pal_core:all //libs/lvgl:arena_test --test_output=errors
