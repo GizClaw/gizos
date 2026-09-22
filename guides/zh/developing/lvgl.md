@@ -45,3 +45,7 @@ Bazel package 编译 LVGL portable source，并排除 target-specific driver 和
 固件 `firmware` variant 与 Desktop 一样启用公共 LodePNG decoder，固件 source group 同时包含 decoder 和 LodePNG codec。Consumer 可以使用 RAW/RAW_ALPHA PNG image descriptor；下载、尺寸和体积限制、缓存生命周期仍由 consumer 管理。Feature define 由公共 library 传播，不能仅在最终 SDK 配置中启用而遗漏 Bazel archive 中的 codec。
 
 `@h2_vendor_lvgl//:firmware_sources` 是放入 `//libs/lvgl:firmware.srcs` 的 `filegroup`，不是独立编译的 `cc_library` dependency。因此 `firmware.defines` 中的 `LV_USE_LODEPNG=1` 直接参与 `lv_lodepng.c` 和 `lodepng.c` 的编译，并传播给 consumer；验证时应检查这两个源码的 compile action 和 archive 中的 decoder/codec 定义。
+
+## Arena allocator
+
+Platform allocator 可使用 `libs/mem_arena` 借出的 Memory PAL；LVGL allocation、OSAL object 和 display adapter buffer 的生命周期均须结束后才能销毁 arena。先删除 display adapter，再完成 `lv_deinit()` 和 `h2_lvgl_platform_deinit()`，最后检查逐池 live 与 fallback live 归零。`//libs/lvgl:arena_test` 覆盖 small/large/fallback 之间的 realloc 数据保留及多轮初始化、退出后的完整释放。

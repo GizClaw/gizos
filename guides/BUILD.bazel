@@ -56,6 +56,7 @@ api_reference(
         "//libs/iperf",
         "//libs/lua",
         "//libs/lvgl",
+        "//libs/mem_arena",
         "//libs/mp4_decoder",
         "//libs/ntp",
         "//libs/pal",
