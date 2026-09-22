@@ -166,7 +166,9 @@ typedef struct h2_pal_webrtc_vtable {
                                   const uint8_t *data, size_t len, int is_text);
   void (*channel_close)(h2_pal_webrtc_channel_t *channel);
   void (*peer_close)(h2_pal_webrtc_peer_t *peer);
-  /* Optional extension; legacy providers keep using peer_create. */
+  /* Optional extension; legacy providers keep using peer_create. Without it,
+   * h2_pal_webrtc_peer_create_with_config() rejects a non-NULL allocator with
+   * H2_PAL_ERR_UNSUPPORTED instead of ignoring it. */
   h2_pal_result_t (*peer_create_with_config)(
       void *user, const h2_pal_webrtc_peer_config_t *config,
       h2_pal_webrtc_peer_t **out_peer);
@@ -197,6 +199,11 @@ h2_pal_webrtc_peer_create_with_config(
     }
     if (api->vtable->peer_create_with_config != NULL) {
         return api->vtable->peer_create_with_config(api->user, config, out_peer);
+    }
+    /* A requested allocator must not be silently ignored: the caller would
+     * believe it owns the peer state. Only a default config falls back. */
+    if (config != NULL && config->allocator != NULL) {
+        return H2_PAL_ERR_UNSUPPORTED;
     }
     return h2_pal_webrtc_peer_create(api, out_peer);
 }

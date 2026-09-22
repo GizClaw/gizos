@@ -1505,6 +1505,12 @@ static int h2_gzc_peer_create(void *user,
   };
   int rc = h2_pal_webrtc_peer_create_with_config(
       client->config.webrtc, &config, &peer);
+  if (rc == H2_PAL_ERR_UNSUPPORTED && config.allocator != NULL) {
+    /* The provider cannot place peer state in the client allocator; keep
+     * the connection working on its default allocator and say so. */
+    h2_gizclaw_log_webrtc_rc(client, "peer_allocator_unsupported", rc);
+    rc = h2_pal_webrtc_peer_create(client->config.webrtc, &peer);
+  }
   h2_gizclaw_log_webrtc_rc(client, "peer_create", rc);
   if (rc != H2_PAL_OK) {
     return GZC_ERR_WEBRTC;
