@@ -214,6 +214,8 @@ evidence。
 
 ## Upstream archive 获取
 
+ESP CI 从 Firmwares devenv 取得 SDK 目录后，按当前受测分支的 `tools/bazel/native_versions/esp_idf_commit.txt` fetch 并 detach checkout ESP-IDF，再初始化该 revision 的全部 submodule 和安装工具。devenv 的 submodule pin 独立前进时，受测分支仍构建自己声明的 SDK revision；Bazel 的 exact-commit 校验继续生效。
+
 CI checkout 使用当前 event exact head 且不初始化 submodule。`MODULE.bazel` 为每个公开 upstream dependency 声明 immutable commit archive URL、SHA-256 和 extracted root；依赖实际消费的 nested upstream source 同样以原 submodule path、exact commit archive、SHA-256 和 extracted root 显式声明，不递归 Git checkout。`vendor_repositories` 下载到 Bazel repository cache，验证 digest 和 archive layout 后才创建 `@h2_vendor_*` repository。缺失 archive、digest mismatch、错误 extracted root 或无法应用的 patch/overlay 必须在编译前 fail closed。
 
 Repository cache 只保存由 Bazel 按 digest 索引的下载内容，不保存 expanded external repository、Git config、credential、hook、worktree、LFS payload 或 build output。Cache miss、eviction、corruption 或 restore/save error 只会触发重新下载，不能跳过 integrity validation、Bazel analysis 或 consumer。`third_party/` 中碰巧存在同名目录不能改变 archive resolution。

@@ -575,7 +575,12 @@ jobs:
         # read-only and costs nothing extra, since it walks and initializes the
         # same set either way.
         run: |
+          esp_idf_commit="$(tr -d '\r\n' < tools/bazel/native_versions/esp_idf_commit.txt)"
+          [[ "$esp_idf_commit" =~ ^[0-9a-f]{40}$ ]]
           git -C firmware-devenv submodule update --init --depth 1 third_party/esp_idf_6.0
+          # Devenv may advance independently of the source branch's SDK pin.
+          git -C firmware-devenv/third_party/esp_idf_6.0 fetch --depth 1 origin "$esp_idf_commit"
+          git -C firmware-devenv/third_party/esp_idf_6.0 checkout --detach "$esp_idf_commit"
           git -C firmware-devenv/third_party/esp_idf_6.0 submodule update --init --recursive
 
       - name: Restore ESP-IDF tool cache
