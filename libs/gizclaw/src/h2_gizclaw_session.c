@@ -828,7 +828,8 @@ prepare_workspace(h2_gizclaw_session_t *s,
                                      &storage, &workflow);
     if (rc != H2_PAL_OK)
       goto done;
-    if (!same(workflow.workflow.collection, selection->collection)) {
+    if (!same(workflow.workflow.name, selection->workflow_name) ||
+        !same(workflow.workflow.collection, selection->collection)) {
       rc = H2_PAL_ERR_NOT_FOUND;
       goto done;
     }

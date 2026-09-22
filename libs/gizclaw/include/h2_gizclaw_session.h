@@ -73,10 +73,17 @@ typedef struct h2_gizclaw_session_state {
   bool retryable;
 } h2_gizclaw_session_state_t;
 
-/** A streaming catalog transaction. PAGE borrows all strings and items only
- * until the callback returns. BEGIN has no page; COMMIT publishes the complete
- * sequence; ABORT discards it after any RPC, callback, timeout or cancel error.
- * The sink must keep its previous published catalog until COMMIT succeeds. */
+/** A streaming catalog transaction. BEGIN is called once after the first
+ * valid page, followed by one PAGE per RPC and one COMMIT on success. BEGIN,
+ * COMMIT and ABORT receive a NULL page. The nonempty Profile name and revision
+ * are identical on every event; all strings and PAGE items are borrowed only
+ * until that callback returns. A non-OK callback result aborts the refresh and
+ * is propagated. After BEGIN, any failure (including BEGIN or COMMIT failure,
+ * timeout and cancellation) calls ABORT once; its result is ignored. No event
+ * is sent if refresh fails before BEGIN. COMMIT runs under the Session mutex
+ * through state publication, so a sink must not reenter any Session API.
+ * The sink keeps its prior publication until COMMIT succeeds and removes its
+ * candidate on ABORT. Callbacks run synchronously on the refresh caller task. */
 typedef enum h2_gizclaw_catalog_event {
   H2_GIZCLAW_CATALOG_BEGIN,
   H2_GIZCLAW_CATALOG_PAGE,

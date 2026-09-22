@@ -16,6 +16,7 @@ static h2_gizclaw_session_t *session;
 static h2_pal_result_t attach_result;
 static unsigned attaches;
 static bool check_catalog_during_workspace;
+static bool wrong_workflow_get_name;
 static void assert_catalog(void);
 
 enum { CATALOG_TEST_BYTES = 16384u };
@@ -233,9 +234,10 @@ h2_pal_result_t h2_gizclaw_rpc_workflow_get(
   assert(timeout > 0u);
   h2_gizclaw_resp_arena_t arena;
   assert(h2_gizclaw_resp_arena_begin(storage, &arena) == H2_PAL_OK);
+  const char *returned_name = wrong_workflow_get_name ? "other" : name.data;
   *out = (h2_gizclaw_workflow_get_result_t){
       .workflow = {.collection = copy(&arena, "alpha"),
-                   .name = copy(&arena, name.data)},
+                   .name = copy(&arena, returned_name)},
       .runtime_profile_name = copy(&arena, "test-profile"),
       .runtime_profile_revision = copy(&arena, server_revision),
   };
@@ -378,6 +380,7 @@ static h2_gizclaw_session_config_t session_config(size_t collections) {
   attach_result = H2_PAL_OK;
   attaches = 0u;
   check_catalog_during_workspace = false;
+  wrong_workflow_get_name = false;
   lists = gets = creates = reloads = conversations = terminal_count = 0u;
   audio_starts = audio_ends = 0u;
   releases = text_sends = 0u;
@@ -510,6 +513,11 @@ static void test_streaming_catalog(void) {
   h2_gizclaw_workflow_page_t catalog;
   assert(h2_gizclaw_session_catalog_copy(session, &storage, &catalog) ==
          H2_PAL_ERR_UNSUPPORTED);
+  wrong_workflow_get_name = true;
+  assert(h2_gizclaw_session_select(session, &selection, 1000u) ==
+         H2_PAL_ERR_NOT_FOUND);
+  assert(gets == 0u && creates == 0u && reloads == 0u);
+  wrong_workflow_get_name = false;
   assert(h2_gizclaw_session_select(session, &selection, 1000u) == H2_PAL_OK);
   assert(gets == 1u && snapshot().can_start);
   server_revision = "v2";
