@@ -969,7 +969,7 @@ static int lua_json_decode(lua_State *state) {
       .malloc = json_malloc,
       .realloc = json_realloc,
       .free = json_free,
-      .ctx = (void *)job->host->config.runtime->mem,
+      .ctx = (void *)job->host->config.allocator,
   };
   yyjson_read_err error;
   yyjson_doc *document;
@@ -1403,7 +1403,7 @@ static int audio_output_write(lua_State *state) {
   chunk_bytes = audio_slot_chunk_bytes(slot);
   if (slot->carry == NULL) {
     slot->carry =
-        h2_pal_mem_alloc(slot->job->host->config.runtime->mem, chunk_bytes);
+        h2_pal_mem_alloc(slot->job->host->config.allocator, chunk_bytes);
     if (slot->carry == NULL) {
       return audio_write_result(state, H2_PAL_ERR_NO_MEMORY, 0u);
     }
@@ -1475,7 +1475,7 @@ static int audio_output_close(lua_State *state) {
     h2_lua_job_t *job = slot->job;
     int result;
     h2_lua_audio_track_slot_flush_carry(slot);
-    h2_lua_audio_track_slot_release_carry(slot, job->host->config.runtime->mem);
+    h2_lua_audio_track_slot_release_carry(slot, job->host->config.allocator);
     result = h2_pal_audio_track_close(slot->track);
     slot->track = NULL;
     if (job->active_audio_track_count != 0u) {
@@ -1684,7 +1684,7 @@ static int audio_input_close(lua_State *state) {
   h2_lua_job_t *job = audio_input_job(state);
   if (job != NULL) {
     h2_lua_job_release_audio_mic(job);
-    h2_pal_mem_free(job->host->config.runtime->mem, job->audio_mic_buffer);
+    h2_pal_mem_free(job->host->config.allocator, job->audio_mic_buffer);
     job->audio_mic_buffer = NULL;
     job->audio_mic_buffer_capacity = 0u;
     memset(&job->audio_mic_format, 0, sizeof(job->audio_mic_format));
@@ -1727,7 +1727,7 @@ static int audio_new_input(lua_State *state) {
   }
   job->audio_mic_buffer_capacity =
       (size_t)info.mic_format.frame_samples_per_channel * frame_bytes;
-  job->audio_mic_buffer = h2_pal_mem_alloc(job->host->config.runtime->mem,
+  job->audio_mic_buffer = h2_pal_mem_alloc(job->host->config.allocator,
                                            job->audio_mic_buffer_capacity);
   if (job->audio_mic_buffer == NULL) {
     job->audio_mic_buffer_capacity = 0u;
@@ -1738,7 +1738,7 @@ static int audio_new_input(lua_State *state) {
   job->audio_mic_format = info.mic_format;
   result = h2_lua_job_acquire_audio_mic(job);
   if (result != H2_PAL_OK) {
-    h2_pal_mem_free(job->host->config.runtime->mem, job->audio_mic_buffer);
+    h2_pal_mem_free(job->host->config.allocator, job->audio_mic_buffer);
     job->audio_mic_buffer = NULL;
     job->audio_mic_buffer_capacity = 0u;
     memset(&job->audio_mic_format, 0, sizeof(job->audio_mic_format));
@@ -1792,7 +1792,7 @@ static int audio_new_output(lua_State *state) {
     return 2;
   }
   slot->job = job;
-  h2_lua_audio_track_slot_release_carry(slot, job->host->config.runtime->mem);
+  h2_lua_audio_track_slot_release_carry(slot, job->host->config.allocator);
   slot->format = (h2_audio_pcm_format_t){
       .sample_rate_hz = (uint32_t)sample_rate,
       .frame_samples_per_channel = 0u,
@@ -1964,7 +1964,7 @@ static int load_local_module(lua_State *state) {
       return luaL_error(state, "local module source limit reached");
     }
     if (result == H2_PAL_OK && !stat.is_dir) {
-      owned_source = h2_pal_mem_alloc(job->host->config.runtime->mem,
+      owned_source = h2_pal_mem_alloc(job->host->config.allocator,
                                       (size_t)stat.size + 1u);
       if (owned_source == NULL) {
         return luaL_error(state, "local module allocation failed");
@@ -1995,18 +1995,18 @@ static int load_local_module(lua_State *state) {
     }
   }
   if (source == NULL) {
-    h2_pal_mem_free(job->host->config.runtime->mem, owned_source);
+    h2_pal_mem_free(job->host->config.allocator, owned_source);
     lua_pushfstring(state, "\n\tno confined module '%s'", path);
     return 1;
   }
   if (memchr(source, '\0', source_size) != NULL) {
-    h2_pal_mem_free(job->host->config.runtime->mem, owned_source);
+    h2_pal_mem_free(job->host->config.allocator, owned_source);
     return luaL_error(state, "local module contains embedded NUL");
   }
   (void)snprintf(chunk_name, sizeof(chunk_name), "@%s", path);
   load_result = luaL_loadbufferx(state, (const char *)source, source_size,
                                  chunk_name, "t");
-  h2_pal_mem_free(job->host->config.runtime->mem, owned_source);
+  h2_pal_mem_free(job->host->config.allocator, owned_source);
   if (load_result != LUA_OK) {
     return lua_error(state);
   }

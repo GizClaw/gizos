@@ -41,6 +41,8 @@ provider 可以让不同 VM 在多个 worker 上并行。
 
 `h2_lua_host_config_t` 的容量均有界：`worker_count`、`worker_stack_size`、`max_jobs`、`max_coroutines_per_vm`、`ready_queue_capacity`、`waiter_capacity`、`event_delivery_capacity`、`callback_capacity_per_job`、`audio_track_capacity_per_job`、`pending_capability_capacity`、`instruction_quantum`、`resume_time_budget_ms`、`source_limit_bytes`、`output_limit_bytes`、`vm_memory_limit_bytes` 和 `vm_heap_bytes`。零使用声明的默认值；ready/waiter 容量不得小于 VM 的 coroutine 上限。`storage` 配置每个 App 的持久化存储，见 [App 存储](#app-存储)；全零表示未配置。
 
+`allocator` 可选地指定 Host 自身的所有分配（Host/job 状态、队列、缓冲、VM 堆预留，以及未预留时的每个 VM 块）使用的 `h2_pal_mem_api_t`，为 NULL 时使用 Runtime mem。调用方可以借此把整个 Host 放进自己的 arena；它必须比 Host 活得久。下文的“Runtime mem”在设置了 `allocator` 时都指这个 allocator。
+
 `vm_heap_bytes` 可选地在 `h2_lua_host_create()` 时从 Runtime mem 预留一段 VM 专用堆，
 供同一 Host 的所有 job/worker 通过带 PAL mutex 保护的 TLSF 共享。默认 `0` 保持
 VM 逐块向 Runtime mem 申请，Web 入口也保持此默认值。适合设备系统堆碎片化、

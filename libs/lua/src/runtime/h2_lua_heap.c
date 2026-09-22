@@ -20,7 +20,7 @@ int h2_lua_heap_size_valid(size_t bytes) {
 
 static void heap_release_chunks(h2_lua_host_t *host) {
   for (size_t i = 0u; i < host->vm_heap_chunk_count; ++i) {
-    h2_pal_mem_free(host->config.runtime->mem, host->vm_heap_chunks[i]);
+    h2_pal_mem_free(host->config.allocator, host->vm_heap_chunks[i]);
     host->vm_heap_chunks[i] = NULL;
   }
   host->vm_heap_chunk_count = 0u;
@@ -29,7 +29,7 @@ static void heap_release_chunks(h2_lua_host_t *host) {
 }
 
 h2_pal_result_t h2_lua_heap_init(h2_lua_host_t *host) {
-  const h2_pal_mem_api_t *mem = host->config.runtime->mem;
+  const h2_pal_mem_api_t *mem = host->config.allocator;
   const size_t pool_min = tlsf_pool_overhead() + tlsf_block_size_min() +
                           tlsf_alloc_overhead();
   size_t remaining = host->config.vm_heap_bytes;
