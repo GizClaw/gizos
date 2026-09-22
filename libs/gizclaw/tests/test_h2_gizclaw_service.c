@@ -4522,15 +4522,18 @@ static int telemetry_firmware_send(void *user,
 typedef struct activity_log_capture {
   unsigned calls;
   bool leaked;
-  char last[160];
+  bool truncated;
+  h2_pal_log_level_t level;
+  char last[H2_PAL_LOG_MESSAGE_MAX];
 } activity_log_capture_t;
 static int activity_capture_log(void *user, h2_pal_log_level_t level,
                                 const char *scope, const char *message) {
   activity_log_capture_t *capture = user;
-  (void)level;
+  capture->level = level;
   (void)scope;
   ++capture->calls;
-  (void)snprintf(capture->last, sizeof(capture->last), "%s", message);
+  int written = snprintf(capture->last, sizeof(capture->last), "%s", message);
+  capture->truncated = written < 0 || (size_t)written >= sizeof(capture->last);
   if (strstr(message, TELEMETRY_ACTIVITY_DETAIL) ||
       strstr(message, TELEMETRY_ACTIVITY_ID))
     capture->leaked = true;
@@ -4650,6 +4653,75 @@ static void test_req_telemetry_activity(void) {
   assert(capture.calls == 1u && capture.mapped);
 
   h2_gizclaw_test_set_telemetry_send(NULL, NULL);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
+static void test_deinit_refusal_names_holders_once(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  activity_log_capture_t log_capture = {0};
+  static const h2_pal_log_vtable_t log_vtable = {.write = activity_capture_log};
+  const h2_pal_log_api_t log = {.user = &log_capture, .vtable = &log_vtable};
+  service->client_config.log = &log;
+
+  /* A refusal names every holder; owners retry each loop, so the same state
+   * is logged once. */
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_ERR_INVALID_STATE);
+  assert(log_capture.calls == 1u);
+  assert(log_capture.level == H2_PAL_LOG_WARN);
+  assert(strstr(log_capture.last, "stage=service_deinit_blocked stopped=0") !=
+         NULL);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_ERR_INVALID_STATE);
+  assert(log_capture.calls == 1u);
+
+  /* A new holder is a new state and is logged again. */
+  h2_gizclaw_req_t *request = NULL;
+  assert(h2_gizclaw_req_create_profile_get(service, 2, 1234, &request) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_ERR_INVALID_STATE);
+  assert(log_capture.calls == 2u);
+  assert(strstr(log_capture.last, "refs=0/1/0/0") != NULL);
+  /* Distinct values preserve the documented caller/request/track/downlink
+   * ordering in the compact record. */
+  service->caller_reference_count = 11u;
+  service->pcm_track_refs = 22u;
+  service->downlink_refs = 33u;
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_ERR_INVALID_STATE);
+  assert(log_capture.calls == 3u);
+  assert(strstr(log_capture.last, "refs=11/1/22/33") != NULL);
+  /* Large counters must not truncate the final holder fields. */
+  service->active_count = SIZE_MAX;
+  service->caller_reference_count = SIZE_MAX;
+  service->request_reference_count = SIZE_MAX;
+  service->pcm_track_refs = SIZE_MAX;
+  service->downlink_refs = SIZE_MAX;
+  service->queued_event_count = SIZE_MAX;
+  service->dispatch_item_count = SIZE_MAX;
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_ERR_INVALID_STATE);
+  assert(log_capture.calls == 4u);
+  assert(!log_capture.truncated);
+  char expected[H2_PAL_LOG_MESSAGE_MAX];
+  int expected_size = snprintf(
+      expected, sizeof(expected),
+      "stage=service_deinit_blocked stopped=0 dispatch=0 active=%zu "
+      "refs=%zu/%zu/%zu/%zu unset=0 queued=%zu items=%zu "
+      "terminal=0/0 attached=0/0",
+      SIZE_MAX, SIZE_MAX, SIZE_MAX, SIZE_MAX, SIZE_MAX, SIZE_MAX, SIZE_MAX);
+  assert(expected_size > 0 && (size_t)expected_size < sizeof(expected));
+  assert(strcmp(log_capture.last, expected) == 0);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_ERR_INVALID_STATE);
+  assert(log_capture.calls == 4u);
+  service->active_count = 0u;
+  service->caller_reference_count = 0u;
+  service->request_reference_count = 1u;
+  service->pcm_track_refs = 0u;
+  service->downlink_refs = 0u;
+  service->queued_event_count = 0u;
+  service->dispatch_item_count = 0u;
+  h2_gizclaw_req_release(request);
+
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
@@ -13346,6 +13418,7 @@ int main(int argc, char **argv) {
   test_req_telemetry_copy_and_backpressure();
   test_req_telemetry_network_identity();
   test_req_telemetry_activity();
+  test_deinit_refusal_names_holders_once();
   test_req_workflow_public_paths();
   h2_gizclaw_async_rpc_test_set_ops(NULL);
   test_fifo_capacity_and_dispatch();

@@ -281,6 +281,8 @@ struct h2_gizclaw_service {
   size_t request_reference_count;
   size_t queued_event_count;
   size_t dispatch_item_count;
+  /* Hash of the last logged service_deinit refusal, to log each state once. */
+  uint32_t deinit_blocked_signature;
   uint64_t next_trace_sequence;
   bool started;
   bool stopping;
