@@ -12,6 +12,9 @@ extern "C" {
 #endif
 
 typedef struct h2_lvgl_platform_config {
+    /** Borrowed for every LVGL allocation, including OSAL objects. Keep this
+     * API and its backing storage valid and unchanged through lv_deinit(),
+     * then call h2_lvgl_platform_deinit() before destroying the allocator. */
     const h2_pal_mem_api_t *allocator;
     const h2_pal_task_api_t *task_api;
     const h2_pal_sync_api_t *sync_api;

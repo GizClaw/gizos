@@ -18,10 +18,13 @@ cc_library(
         "src/h2_tlsf.h",
         "src/tlsf.h",
     ],
-    copts = [
-        "-include",
-        "h2_tlsf.h",
-    ] + select({
+    copts = select({
+        "@platforms//os:windows": ["/FIh2_tlsf.h"],
+        "//conditions:default": [
+            "-include",
+            "h2_tlsf.h",
+        ],
+    }) + select({
         "@platforms//os:none": [
             "-include",
             "h2_tlsf_embedded_stdio.h",

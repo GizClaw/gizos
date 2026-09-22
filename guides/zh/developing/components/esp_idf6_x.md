@@ -45,7 +45,7 @@ Runtime-capable launcher 必须在 board Runtime configuration、`h2_runtime_ini
 
 Maintained Runtime scope 是使用 ESP32-S3 与 ESP32-P4 五种 public board layouts 的 H2Loader firmware targets。特定 App 的 route 只进入实际构建它的 target：`bleikcp-speed/*` 只属于 BLEIKCP speed client/server，modem routes 只属于 modem smoke。`standard` 与 ESP32-C5 `compile_only` images 不初始化 Runtime，因此不安装 task policy，也不属于此 contract 的 firmware validation scope。
 
-PSRAM-stack PAL task 的 entry 返回后先发出 completion semaphore，再 suspend 等待 join。`esp_task_join()` 消费 completion 后调用 `vTaskDeleteWithCaps(handle)`，由 joiner 同步回收 worker stack 和 TCB，再销毁 semaphore 和 PAL handle，不为每个结束的 worker 创建临时清理 task。仓库锁定的 ESP-IDF 实现会先 suspend 目标并等待它退出 running 状态，再执行删除和释放，因此 join 可以发生在 completion signal 与 worker 自行 suspend 之间，包括跨 core 的情形。Worker 发出 completion 后不再访问 PAL handle 或 entry context。
+PSRAM-stack PAL task 的 entry 返回后先发出 completion semaphore，再 suspend 等待 join。默认 `esp_task_join()` 消费 completion 后调用 `vTaskDeleteWithCaps(handle)`；配置 `psram_stack_allocator` 时则挂起并等待 worker 离开所有 core，调用 `vTaskDelete` 后分别释放 caller stack 和 internal TCB。两条路径均由 joiner 同步回收 worker storage，再销毁 semaphore 和 PAL handle，不为每个结束的 worker 创建临时清理 task。仓库锁定的 ESP-IDF 实现会先 suspend 目标并等待它退出 running 状态，再执行删除和释放，因此 join 可以发生在 completion signal 与 worker 自行 suspend 之间，包括跨 core 的情形。Worker 发出 completion 后不再访问 PAL handle 或 entry context。
 
 Internal-stack task 仍在 completion 后调用 `vTaskDelete(NULL)`，由 idle task 回收原生 stack 和 TCB，避免 delayed join 长时间保留启动所需的 Internal RAM。两种 placement 都要求 caller 最终成功 join；失败的 join 保留 handle 供重试。没有 detached task contract：永不 join 原本就会泄漏 PAL handle 和 semaphore，PSRAM task 现在还会保留 suspended worker 的 stack 和 TCB，不能把它当成受支持的 fire-and-forget 用法。
 
@@ -315,3 +315,17 @@ bazel test //libs/drivers/audio/es8311:volume_test \
 `//projects/example/targets/h2loader_tar_zlib/`。分别使用 `--config=esp32s3` 和
 `--config=esp32p4`。ESP32-C5 的 ES8311 消费路径目前没有可构建的板级 target，
 因此该 codec 路径标记为 SKIP；C5 通用 CI 通过也不证明其 codec 集成或硬件行为。
+
+## PSRAM arena
+
+`h2_pal_core` 的 `h2_esp_platform_arena.h` 为公共 `libs/mem_arena` core 提供 PSRAM reservation、fallback 与 FreeRTOS lock adapter。Core 将调用方提供的一块内存按 `small_pool_bytes` 分成独立的 small/large TLSF；请求大小不超过 `small_request_max` 时使用 small，否则使用 large。某池耗尽只回退到配置的 allocator，不借用另一池；`small_pool_bytes=0` 保留单一 large pool。Board 在 Wi-Fi、UI、音频等 consumer 初始化之前指定预留字节数和诊断名称，持有 opaque instance，向需要降低碎片的 consumer 借出标准 Memory PAL；Runtime 默认 allocator 不被全局替换。Reservation 与 fallback 都从 `MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT` 分配，控制对象和 FreeRTOS 静态 mutex storage 位于 Internal RAM。Mutex 具有优先级继承，所有操作只允许普通 task context，不使用 spin lock。
+
+每块保存原始分配基址和请求字节数，按块头记录的 pool/fallback owner 路由 free/realloc；realloc 可在 TLSF 与 PSRAM heap 间双向迁移，并在底层移动后重新对齐有效数据。失败保留旧块；零字节释放并返回 NULL。创建失败清理部分资源并返回 NULL，由 board 决定是否继续使用默认分配器。销毁前调用方必须停止并 join 所有 borrower；仍有 arena 或 fallback 块时返回 INVALID_STATE，保留实例。
+
+Stats 在 mutex 下分别对 small/large 取一致快照；每池 reserved 包括元数据，live/peak 只统计池内请求 payload，fallback_live 单列，fallback_count/bytes 累计回退尝试（含失败），largest 记录该请求类别的最大有效请求。日志由调用方在 stats 返回后输出，不在 allocator 锁内调用 Log PAL。Host SDK fake tests 验证 owner 路由、alignment、双向迁移、realloc 失败原子性、统计分离和创建失败清理；PSRAM/XIP 压力与调度延迟仍需设备测量。
+
+ESP task provider 从 `h2_esp_task_policy_config_t.psram_stack_allocator` 借用可选 allocator。解析后的 PSRAM policy 使用该 allocator 分配栈、用 internal 8-bit RAM 分配 `StaticTask_t`，并通过 `xTaskCreateStaticPinnedToCore` 创建任务；internal policy 和 NULL allocator 分别保留原有普通 SDK 与 WithCaps 路径。栈或 TCB 分配失败时完整释放、返回 NO_MEMORY 且不发布 task。Join 等待 entry 返回，挂起任务并确认所有 core 均未运行它，再 `vTaskDelete`，最后各释放一次栈与 TCB；allocator 生命周期覆盖所有 task 的成功 join。
+
+生成的 `h2_esp_target_task_policy_install_with_configure()` 同步把目标 resolver 配置交给 board callback，board 可先创建 arena，再复制配置并设置 `psram_stack_allocator`，最后调用 `h2_esp_platform_task_configure()`。无参数 installer 保留默认配置路径；生成器不依赖私有 board。
+
+Arena 的诊断查询与普通 stats 分离：`h2_mem_arena_inspect()` 显式遍历池才计算 free total、largest raw free block 和 consumed；`h2_mem_arena_block_info()` 查询仍存活且由调用方排除并发 free/realloc 的块。它们没有增加 instance/header state，也不增加 ESP alloc/free 的追踪工作。每块 consumed 包含 arena header、alignment 和 TLSF block/header；fallback 值是下界，固定控制元数据不归属某个块。生成的 task policy 额外提供 `*_stack_accounting` filegroup，供 desktop consumer 复用相同的栈尺寸/region 决策；它不参与 ESP firmware 的源码编译或改变其行为。

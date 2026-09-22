@@ -165,6 +165,28 @@ const h2_pal_queue_api_t *h2_desktop_platform_queue_api(void);
 const h2_pal_log_api_t *h2_desktop_platform_log_api(void);
 const h2_pal_time_api_t *h2_desktop_platform_time_api(void);
 const h2_pal_task_api_t *h2_desktop_platform_task_api(void);
+/** Optional task stack accounting, configured before starting its borrowers.
+ * resolve returns bytes to reserve (zero skips the task), including any target
+ * policy floor. It must not reenter configure. NULL config disables accounting.
+ * The thread still uses its OS stack; placeholder memory is held until join.
+ * Allocator/resolver/user are borrowed through all successful joins. Configure
+ * returns BUSY while a configured start/join is outstanding. Resolution or
+ * allocation failure prevents starting the thread and publishes no handle.
+ */
+typedef struct h2_desktop_task_stack_config {
+  const h2_pal_mem_api_t *allocator;
+  h2_pal_result_t (*resolve)(void *user, const h2_pal_task_options_t *options,
+                             size_t *out_bytes);
+  void *user;
+} h2_desktop_task_stack_config_t;
+/** @brief Copy or clear the process-wide desktop task accounting configuration.
+ * @param config Copied value, or NULL to disable; referenced objects are borrowed.
+ * @return OK, INVALID_ARG for an incomplete config, or BUSY while a configured
+ * start/join is outstanding. Does not alter existing OS thread stacks.
+ */
+h2_pal_result_t h2_desktop_platform_configure_task_stacks(
+    const h2_desktop_task_stack_config_t *config);
+
 /** Return the configured simulated peripheral enumeration API. */
 const h2_pal_periph_api_t *h2_desktop_platform_periph_api(void);
 /** Return the keyboard-backed single-button API. */

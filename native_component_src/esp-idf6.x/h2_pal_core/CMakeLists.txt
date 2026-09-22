@@ -5,6 +5,7 @@ option(H2_ESP_PLATFORM_ENABLE_WEBRTC "Enable ESP WebRTC platform implementation 
 set(H2_ESP_PLATFORM_CORE_SRCS
   "src/h2_esp_lazy_audio.c"
   "src/h2_esp_platform_mem.c"
+  "src/h2_esp_platform_arena.c"
   "src/h2_esp_platform_log.c"
   "src/h2_esp_platform_firmware_info.c"
   "src/h2_esp_platform_partition.c"
@@ -93,6 +94,7 @@ idf_component_register(
   INCLUDE_DIRS
     "include"
     "${REPO_ROOT}/libs/pal/include"
+    "${REPO_ROOT}/libs/mem_arena/include"
     "${REPO_ROOT}/libs/wifi_sta/include"
     "${REPO_ROOT}/libs/pal/providers/corehttp/include"
     "${REPO_ROOT}/libs/pal/providers/h2peer/include"

@@ -305,6 +305,30 @@ static void test_concurrent_hooks(void) {
     assert_empty(&state);
 }
 
+static unsigned s_frame_flushes;
+
+static void flush_frame(lv_display_t *display, const lv_area_t *area,
+                        uint8_t *pixels) {
+    (void)area;
+    (void)pixels;
+    ++s_frame_flushes;
+    lv_display_flush_ready(display);
+}
+
+static void render_frame(void) {
+    uint32_t pixels[8u * 8u];
+    lv_display_t *display = lv_display_create(8, 8);
+    assert(display != NULL);
+    lv_display_set_buffers(display, pixels, NULL, sizeof(pixels),
+                           LV_DISPLAY_RENDER_MODE_FULL);
+    lv_display_set_flush_cb(display, flush_frame);
+    s_frame_flushes = 0u;
+    lv_obj_invalidate(lv_display_get_screen_active(display));
+    lv_refr_now(display);
+    assert(s_frame_flushes > 0u);
+    lv_display_delete(display);
+}
+
 static void test_lifecycle(void) {
     allocator_state_t state = {0};
     const h2_pal_mem_api_t mem = {&state, &s_mem_vtable};
@@ -316,6 +340,9 @@ static void test_lifecycle(void) {
             lv_init();
             lv_lock();
             lv_unlock();
+            /* Complete real work before teardown so the upstream rendering
+             * worker has finished its asynchronous startup. */
+            render_frame();
             assert(lv_malloc_core(16u) != NULL);
             assert(lv_malloc_core(8192u) != NULL);
             assert(snapshot().direct_blocks > 0u);
