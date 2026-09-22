@@ -170,7 +170,7 @@ static h2_pal_result_t display_open(h2_lua_job_t *job) {
       (void)h2_pal_display_close(job->host->config.runtime->display);
     return H2_PAL_ERR_NO_SPACE;
   }
-  job->framebuffer = h2_pal_mem_alloc(job->host->config.runtime->mem,
+  job->framebuffer = h2_pal_mem_alloc(job->host->config.allocator,
                                       pixel_count * sizeof(*job->framebuffer));
   if (job->framebuffer == NULL) {
     if (!job->host->config.borrow_display)
@@ -3440,7 +3440,7 @@ static void display_release(lua_State *state, h2_lua_job_t *job) {
   }
   if (was_open && !job->host->config.borrow_display)
     (void)h2_pal_display_close(job->host->config.runtime->display);
-  h2_pal_mem_free(job->host->config.runtime->mem, pixels);
+  h2_pal_mem_free(job->host->config.allocator, pixels);
 }
 
 void h2_lua_job_close_display(h2_lua_job_t *job) {
