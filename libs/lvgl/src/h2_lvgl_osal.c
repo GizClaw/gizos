@@ -2,6 +2,7 @@
 #include "h2_lvgl_task_names.h"
 
 #include "lvgl.h"
+#include "core/lv_global.h"
 #include "osal/lv_os_private.h"
 
 #include <stddef.h>
@@ -60,6 +61,14 @@ void lv_mem_init(void) {
 }
 
 void lv_mem_deinit(void) {
+#if LV_USE_OS != LV_OS_NONE
+    /* This LVGL revision creates the general mutex in lv_os_init but does not
+     * destroy it in lv_deinit. Release it at the final memory hook, while the
+     * borrowed allocator and Sync PAL are still valid. */
+    lv_mutex_t *mutex = &LV_GLOBAL_DEFAULT()->lv_general_mutex;
+    if (*mutex != NULL)
+        (void)lv_mutex_delete(mutex);
+#endif
 }
 
 lv_mem_pool_t lv_mem_add_pool(void *mem, size_t bytes) {
