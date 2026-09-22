@@ -43,16 +43,16 @@ provider 可以让不同 VM 在多个 worker 上并行。
 
 `h2_lua_host_config_t` 的容量均有界：`worker_count`、`worker_stack_size`、`max_jobs`、`max_coroutines_per_vm`、`ready_queue_capacity`、`waiter_capacity`、`event_delivery_capacity`、`callback_capacity_per_job`、`audio_track_capacity_per_job`、`pending_capability_capacity`、`instruction_quantum`、`resume_time_budget_ms`、`source_limit_bytes`、`output_limit_bytes`、`vm_memory_limit_bytes` 和 `vm_heap_bytes`。零使用声明的默认值；ready/waiter 容量不得小于 VM 的 coroutine 上限。`storage` 配置每个 App 的持久化存储，见 [App 存储](#app-存储)；全零表示未配置。
 
-`allocator` 可选地指定 Host 自身的所有分配（Host/job 状态、队列、缓冲、VM 堆预留，以及未预留时的每个 VM 块）使用的 `h2_pal_mem_api_t`，为 NULL 时使用 Runtime mem。调用方可以借此把整个 Host 放进自己的 arena；它必须比 Host 活得久。下文的“Runtime mem”在设置了 `allocator` 时都指这个 allocator。
+`allocator` 可选地指定 Host 自身的所有分配（Host/job 状态、队列、缓冲、worker 栈、音频 track、Lua Link、VM 堆预留，以及未预留时的每个 VM 块）使用的 `h2_pal_mem_api_t`，为 NULL 时使用 Runtime mem。Host 只借用这个指针、不复制它，因此它和它的 `user` 上下文必须保持有效，直到 `h2_lua_host_destroy()` 返回；调用方可以借此把整个 Host 放进自己的 arena。下文统称为“Host allocator”。
 
-`vm_heap_bytes` 可选地在 `h2_lua_host_create()` 时从 Runtime mem 预留一段 VM 专用堆，
+`vm_heap_bytes` 可选地在 `h2_lua_host_create()` 时从 Host allocator 预留一段 VM 专用堆，
 供同一 Host 的所有 job/worker 通过带 PAL mutex 保护的 TLSF 共享。默认 `0` 保持
-VM 逐块向 Runtime mem 申请，Web 入口也保持此默认值。适合设备系统堆碎片化、
+VM 逐块向 Host allocator 申请，Web 入口也保持此默认值。适合设备系统堆碎片化、
 大字符串或全屏 `display.capture_region` userdata 等大块分配会与其他模块争抢连续空间的场景。
 VM 本体、Lua 状态、userdata、字符串和表都使用预留堆；callbacks、events、tasks
-和 framebuffer 等仍使用 Runtime mem。
+和 framebuffer 等直接使用 Host allocator。
 
-Runtime mem 有足够大的连续块时预留为一整块；否则 Host 每次被拒后把申请大小缩小 1/8、贴近实际最大空闲块，最多取
+Host allocator 有足够大的连续块时预留为一整块；否则 Host 每次被拒后把申请大小缩小 1/8、贴近实际最大空闲块，最多取
 16 块、每块至少 64 KiB（只有最后的余量可以更小），全部加入同一个 TLSF。因为总是先
 取最大的块，能服务大块单次分配的池排在前面，下限只决定尾部还能用掉多少：一个还剩
 512+384+256+256+192 KiB 和五个 64 KiB 块的堆共有 1.9 MiB 可给，而 256 KiB 的下限只能
