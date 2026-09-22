@@ -989,7 +989,81 @@ static void test_speech_rate_parameter(void) {
   teardown();
 }
 
+static void test_safety_fence_parameter(void) {
+  setup(1u);
+  assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+  const h2_gizclaw_workspace_parameters_patch_t input = {
+      .has_input = true, .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK};
+  h2_gizclaw_session_selection_t sel = selection;
+  sel.parameters = &input;
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(!snapshot().parameters.has_safety_fence_level);
+
+  const h2_gizclaw_safety_fence_level_t levels[] = {
+      H2_GIZCLAW_SAFETY_FENCE_LEVEL_GENERAL,
+      H2_GIZCLAW_SAFETY_FENCE_LEVEL_CHILD,
+      H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF};
+  for (size_t i = 0u; i < sizeof(levels) / sizeof(levels[0]); ++i) {
+    const h2_gizclaw_workspace_parameters_patch_t patch = {
+        .has_safety_fence_level = true, .safety_fence_level = levels[i]};
+    sel.parameters = &patch;
+    rpc_trace[0] = '\0';
+    assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+    assert(strchr(rpc_trace, 'r') != NULL);
+    assert(snapshot().parameters.has_safety_fence_level &&
+           snapshot().parameters.safety_fence_level == levels[i]);
+    assert(snapshot().parameters.has_input &&
+           snapshot().parameters.input == input.input);
+
+    /* A confirmed identical fence does not reload. */
+    rpc_trace[0] = '\0';
+    assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+    assert(rpc_trace[0] == '\0');
+  }
+
+  /* A different field reloads without clearing the confirmed OFF value;
+   * an invalid fence is ignored when its presence flag is false. */
+  const h2_gizclaw_workspace_parameters_patch_t rate = {
+      .has_tts_speech_rate_percent = true,
+      .tts_speech_rate_percent = 70,
+      .safety_fence_level = 99};
+  sel.parameters = &rate;
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(strchr(rpc_trace, 'r') != NULL);
+  assert(snapshot().parameters.has_safety_fence_level &&
+         snapshot().parameters.safety_fence_level ==
+             H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF);
+  rpc_trace[0] = '\0';
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(rpc_trace[0] == '\0');
+
+  const h2_gizclaw_safety_fence_level_t invalid[] = {0, -1, 4, 99};
+  for (size_t i = 0u; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
+    const h2_gizclaw_workspace_parameters_patch_t patch = {
+        .has_safety_fence_level = true, .safety_fence_level = invalid[i]};
+    sel.parameters = &patch;
+    assert(h2_gizclaw_session_select(session, &sel, 1000u) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(rpc_trace[0] == '\0');
+    assert(snapshot().parameters.safety_fence_level ==
+           H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF);
+  }
+  /* A failed reload cannot publish the requested fence as confirmed. */
+  const h2_gizclaw_workspace_parameters_patch_t child = {
+      .has_safety_fence_level = true,
+      .safety_fence_level = H2_GIZCLAW_SAFETY_FENCE_LEVEL_CHILD};
+  sel.parameters = &child;
+  reload_failure = true;
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_ERR_IO);
+  assert(strchr(rpc_trace, 'r') != NULL);
+  assert(snapshot().parameters.has_safety_fence_level &&
+         snapshot().parameters.safety_fence_level ==
+             H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF);
+  teardown();
+}
+
 int main(void) {
+  test_safety_fence_parameter();
   test_speech_rate_parameter();
   test_send_text();
   test_control_boundaries();

@@ -14,9 +14,9 @@ GizClaw library 负责 SDK 集成和 client protocol，不创建具体 HTTP、We
 
 Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Workflow projection 中复制 driver enum，也不要求调用方根据 driver 构造 Workspace 参数。Workspace 更新统一使用 `h2_gizclaw_*workspace_set_parameters`，对应 SDK 0.15.5 的 `server.workspace.parameters.set`（110）；旧的 `workspace_set_input` 入口已删除。
 
-依赖的 GizClaw C SDK 当前固定为 0.18.16。自 0.17.0 起，`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
+依赖的 GizClaw C SDK 当前固定为 0.20.2。自 0.17.0 起，`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
 
-`h2_gizclaw_workspace_parameters_patch_t` 通过独立 `has_*` 标记选择 input（PTT/Realtime）、conversation initiative（peer/agent）、agent initiative policy（once_when_empty/on_reload）和 TTS 语速（见 [Workspace 参数补丁](#workspace-参数补丁)）。`workspace_set_parameters` 至少指定一个字段；显式的无效枚举值、空 patch、非法名称在发送前返回 INVALID_ARG。create 编码并持有 patch 数据，调用方随后可释放或修改原对象；同步入口沿用同一 request/parse 流程。
+`h2_gizclaw_workspace_parameters_patch_t` 通过独立 `has_*` 标记选择 input（PTT/Realtime）、conversation initiative（peer/agent）、agent initiative policy（once_when_empty/on_reload）、TTS 语速和 safety fence level（见 [Workspace 参数补丁](#workspace-参数补丁)）。`workspace_set_parameters` 至少指定一个字段；显式的无效枚举值、空 patch、非法名称在发送前返回 INVALID_ARG。create 编码并持有 patch 数据，调用方随后可释放或修改原对象；同步入口沿用同一 request/parse 流程。
 
 客户端只发送指定字段，不先 GET typed `WorkspaceParameters`，不解析或重写其 agent_type，也不再依据未知、额外、缺失或重复的服务端 typed 参数字段拒绝更新。服务端根据绑定的 Workflow driver 校验 patch、合并指定字段并保留其他参数；不支持的 driver/字段通过原有远端错误路径返回。公开 patch 是固定的可写字段集合，不是对服务端 metadata 的封闭枚举。SFU input 支持由上游实现，E2E 保留真实配置请求，不能通过跳过它声称完整验收通过。
 
@@ -29,6 +29,10 @@ Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Work
 0.18.7 相对 0.18.5 只有增量：`FriendGroupMemberObject` 增加仅由 `server.friend_group.members.list` 填写的 `online` / `last_seen_at`；control API 的变化 GizOS 不使用。`h2_gizclaw_friend_group_member_t` 因此在成员列表中带出 `has_online` / `online` / `last_seen_at`：`online` 表示成员设备是否连接到回答请求的 Server，未报告在线状态（包括 presence 读取失败或旧服务端未提供字段）时 `has_online` 为 false；`last_seen_at` 是 UTC RFC 3339 文本，最多 64 字节，Server 从未观察到该成员时为 NULL。超长、含 NUL 或非法 UTF-8 的时间文本使整页返回 `H2_PAL_ERR_FORMAT` 并回滚 storage。member add/put/delete 仍不带 presence（`has_online` 为 false，`last_seen_at` 为 NULL），即使响应携带这些字段也忽略；公开 API 函数数量不变。
 
 0.18.16 相对 0.18.7 只有增量，GizOS 引用的结构无一改变形状：`gzc_telemetry_observation_kind_t` 增加 `ACTIVITY = 6` 与 `gzc_telemetry_activity_t`，`SystemObservation.firmware_version` 改为被服务端采用（此前校验后丢弃），RPC registry 增加 128–132 并进入 SDK 的 `inbound_is_client_method` 白名单，`payload/enums.pb.h` 增加 `DeviceInteractionMode` / `DeviceKeyFeedback` / `DeviceAlertMode`，`payload/system.pb.h` 增加 `DeviceSettings` 与五对 request/response，`WorkspaceParametersPatch` 和各 `*WorkspaceParameters` 增加可选 `tts_speech_rate_percent`（tag 3）。GizOS 只在本次同步中新增 enum 常量、struct 成员和 vtable hook，公开 API 函数数量不变。
+
+0.20.2 相对 registry 中的 0.19.0 archive，`WorkspaceParametersPatch` 增加可选 `safety_fence_level`（tag 4），六种 AI driver 的 typed Workspace 参数也增加该字段；对应 initializer 和最大编码长度随之更新，`workspace.pb.c` 本身不变，继续绑定更新后的 header descriptor。GizOS 在共享 patch 中显式映射 OFF、GENERAL、CHILD，并同步 Session 参数校验、比较和已确认值；不解析服务端 typed 参数，不新增公开函数。两个 archive 的 SHA-256 均经校验，0.20.2 的 registry integrity 为 `sha256-4fQ+bd3QJhCsoCifTkBN4UjLycVX7J5tWsYh+i5XVFE=`。
+
+其余 SDK 差异为新增 `giznet_v1_AdmissionCredential`、可选 admission credential API 和 signaling envelope 支持，以及 module/provenance、上游测试与 `ai.pb.c` 空白变化。已有 client config struct 和 connect 签名不变；GizOS 未设置 admission credential，仍发送原有 bare SDP。SDK 现在拒绝超过 `256 * 1024 - 4096 - 7 - 16` 字节的 offer SDP。RPC registry 和 nanopb runtime 未改变，本次不扩展 admission 能力。
 
 设备间社交提醒使用三组 typed wrapper，沿用 Social 的 create/parse/sync 生命周期：
 
@@ -237,22 +241,15 @@ Provider 在 `h2_gizclaw_client_poll()` 所在线程同步运行。上游 C SDK 
 
 ## Workspace 参数补丁
 
-`h2_gizclaw_workspace_parameters_patch_t` 是 `workspace.parameters.set`（110）和
-`server.run.workspace.reload-with-options`（120）共用的补丁：缺席的成员保留服务端已存
-的值，值在创建请求时复制，不借用调用方的补丁存储。
+`h2_gizclaw_workspace_parameters_patch_t` 是 `workspace.parameters.set`（110）和 `server.run.workspace.reload-with-options`（120）共用的补丁：缺席的成员保留服务端已存的值，值在创建请求时复制，不借用调用方的补丁存储。
 
-`tts_speech_rate_percent` 缩放服务端为 agent 回复合成的语音，取
-`H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MIN_PERCENT` 到
-`H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MAX_PERCENT`（50 到 200，100 为正常），缺席表示
-沿用 Workflow 配置，下一次 reload 生效。语速必须在合成侧生效：下行音频是实时到达的，
-在设备侧放慢播放只会让缓冲和延迟持续增长。越界值在创建请求时就返回
-`H2_PAL_ERR_INVALID_ARG`、不产生网络请求，与服务端的 `INVALID_ARGUMENT` 一致；system
-（SFU）Workspace 接受合法值但不做任何事，所以一份补丁可以发给任何 Workspace。设备只需
-在每次 `reload-with-options` 里把语速和 `input` 一起带上，不需要额外调用。
+`tts_speech_rate_percent` 缩放服务端为 agent 回复合成的语音，取 `H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MIN_PERCENT` 到 `H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MAX_PERCENT`（50 到 200，100 为正常），缺席表示沿用 Workflow 配置，下一次 reload 生效。语速必须在合成侧生效：下行音频是实时到达的，在设备侧放慢播放只会让缓冲和延迟持续增长。越界值在创建请求时就返回 `H2_PAL_ERR_INVALID_ARG`、不产生网络请求，与服务端的 `INVALID_ARGUMENT` 一致；system（SFU）Workspace 接受合法值但不做任何事，所以一份补丁可以发给任何 Workspace。设备只需在每次 `reload-with-options` 里把语速和 `input` 一起带上，不需要额外调用。
 
-只改语速的补丁是完整的补丁：`h2_gizclaw_session_select()` 会因为已确认参数不同而重新
-reload，不会被当成“参数没变”跳过，成功后语速出现在
-`h2_gizclaw_session_snapshot().parameters` 里。
+`safety_fence_level` 通过独立的 `has_safety_fence_level` 控制 presence，合法值为 OFF、GENERAL、CHILD。缺席时忽略该成员的数值并保留服务端已存值；显式 OFF 关闭围栏，不能用缺席表示关闭。GizOS 不公开 UNSPECIFIED，presence 为 true 时传入 0 或其他非法枚举值，在创建请求或 Session selection 时返回 `H2_PAL_ERR_INVALID_ARG`，不产生网络请求。围栏与语速一样在下一次 reload 生效，可以和 `input`、语速放在同一份 `reload-with-options.parameters` 中。
+
+围栏文本由服务端 RuntimeProfile 提供，Workflow 决定如何使用对应变量；设备只选择级别。支持提示词的 driver 在所选 Profile 围栏缺失或非法时 reload 失败，已保存的参数不会因此回滚；ASTTranslate 只保存合法级别而不应用围栏，SFU 接受合法级别但不保存或应用。库沿用原有远端错误路径，不在设备侧生成围栏文本。
+
+只改语速或围栏级别的补丁都是完整补丁：`h2_gizclaw_session_select()` 会因为已确认参数不同而重新 reload，不会被当成“参数没变”跳过；重复选择相同的已确认值可以跳过 reload。成功后的值出现在 `h2_gizclaw_session_snapshot().parameters` 中，后续补丁缺席的成员保留已确认值。该快照反映本地成功应用的 patch，不是服务端 typed Workspace 参数的读取结果。
 
 ## 设备 Debug 访问模式
 
