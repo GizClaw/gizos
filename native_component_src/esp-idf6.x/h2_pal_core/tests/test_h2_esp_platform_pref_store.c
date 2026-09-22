@@ -126,6 +126,20 @@ int main(void) {
     assert(h2_esp_pref_store_set(&store, "suite/ns", "over-budget",
                                  H2_PAL_PREF_ENTRY_BLOB, blob,
                                  sizeof(blob)) == H2_PAL_ERR_NO_SPACE);
+    /* The kept total must match the tree byte for byte: four records of
+     * 39 + 39 + 35 + 33 bytes, plus room for exactly one 32-byte record. */
+    store.committed_budget = 146u + 32u;
+    assert(h2_esp_pref_store_set(&store, "suite/ns", "cap",
+                                 H2_PAL_PREF_ENTRY_BOOL, &boolean,
+                                 sizeof(boolean)) == H2_PAL_OK);
+    assert(h2_esp_pref_store_set(&store, "suite/ns", "cbp",
+                                 H2_PAL_PREF_ENTRY_BOOL, &boolean,
+                                 sizeof(boolean)) == H2_PAL_ERR_NO_SPACE);
+    assert(h2_esp_pref_store_remove(&store, "suite/ns", "cap") == H2_PAL_OK);
+    assert(h2_esp_pref_store_set(&store, "suite/ns", "cbp",
+                                 H2_PAL_PREF_ENTRY_BOOL, &boolean,
+                                 sizeof(boolean)) == H2_PAL_OK);
+    assert(h2_esp_pref_store_remove(&store, "suite/ns", "cbp") == H2_PAL_OK);
     store.committed_budget = 128u * 1024u;
 
     assert(h2_esp_pref_store_write_marker(&store, "migration", "complete") ==

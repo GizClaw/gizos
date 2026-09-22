@@ -153,7 +153,7 @@ task、timer 或 thread。
 
 BK3633 的 Preference provider 使用 BSP 提供的 declarative mapping，把 portable namespace/key 映射到 application-owned NVDS tag。Provider 初始化会拒绝重复 namespace/key、重复 tag、空名称、未知类型、非法最大长度以及 application range 外的 tag；未知 key 不会动态取得 tag。`BLOB` 保存原始 bytes，`STRING` 保存不含 NUL terminator 的 UTF-8 bytes，读取时使用调用方的 Memory PAL 分配并追加 terminator；`U32` 和 `I32` 使用四字节 little-endian，`BOOL` 使用单字节 `0` 或 `1`。NVDS 写入立即持久化，因此 `commit` 是成功 no-op，不承诺 multi-key transaction atomicity。
 
-ESP Preference 使用私有的 256 KiB `pref` LittleFS，不使用系统 NVS 保存新值。每个 key 是独立的 CRC record；set 通过同目录临时文件、sync、close 和 atomic rename 立即持久化，remove 立即 unlink，`commit` 因此是成功 no-op。这个合同只保证单 key replacement，不承诺多 key transaction atomicity。Provider 对 committed record bytes 施加 128 KiB logical budget；删除和替换产生的 LittleFS block 由 filesystem 正常回收，`NO_SPACE` 不触发 format 或清空 live data。
+ESP Preference 使用私有的 256 KiB `pref` LittleFS，不使用系统 NVS 保存新值。每个 key 是独立的 CRC record；set 通过同目录临时文件、sync、close 和 atomic rename 立即持久化，remove 立即 unlink，`commit` 因此是成功 no-op。这个合同只保证单 key replacement，不承诺多 key transaction atomicity。Provider 对 committed record bytes 施加 128 KiB logical budget；总量只在 prepare 后第一次 set 时遍历一遍，之后由 set、remove 和 clear 增量维护，set 不再逐个打开全部已存 record（该遍历在 core 0 优先级 9 的 safe-call worker 上会占满 CPU 数秒）；删除和替换产生的 LittleFS block 由 filesystem 正常回收，`NO_SPACE` 不触发 format 或清空 live data。
 
 BK3633 的 Disk provider 只暴露 BSP 声明的 raw Flash partition，portable caller 使用 partition-relative offset，不能传入 absolute address。Provider 对 partition ID、权限、整数 overflow、边界、erase alignment、write alignment、zero-length operation 和 buffer 做完整校验；firmware、Stack、factory identity、calibration、NVDS 和未声明区域不进入可见 partition inventory。
 
