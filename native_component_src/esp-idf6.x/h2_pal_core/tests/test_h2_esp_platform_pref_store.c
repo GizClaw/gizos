@@ -110,6 +110,7 @@ int main(void) {
         assert(h2_esp_pref_store_set(&store, "suite/ns", "blob/key",
                                      H2_PAL_PREF_ENTRY_BLOB, replacement,
                                      sizeof(replacement)) == H2_PAL_ERR_IO);
+        assert(!store.committed_total_valid);
         expect_value(&store, "blob/key", H2_PAL_PREF_ENTRY_BLOB, blob,
                      sizeof(blob));
         store.test_fault_once = fault;

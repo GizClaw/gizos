@@ -2,6 +2,7 @@
 #include "h2_esp_platform_safe_call.h"
 
 #include <assert.h>
+#include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -9,7 +10,7 @@
 #include <unistd.h>
 
 /* Like the device worker: run on a copy of the context, then copy it back. */
-static uint8_t s_worker_context[4096];
+_Alignas(max_align_t) static uint8_t s_worker_context[4096];
 static uint8_t s_scratch[16u * 1024u];
 
 h2_pal_result_t h2_esp_platform_safe_call(
@@ -73,6 +74,15 @@ int main(void) {
 
     assert(unlink(path) == 0);
     assert(h2_esp_pref_io_clear(&store, "io/ns") == H2_PAL_OK);
+    assert(!store.committed_total_valid);
+    store.committed_budget = 29u;
+    assert(h2_esp_pref_io_set(&store, "io/ns", "eee", H2_PAL_PREF_ENTRY_BOOL,
+                              &one, sizeof(one)) == H2_PAL_OK);
+    assert(store.committed_total_valid && store.committed_total == 29u);
+    assert(h2_esp_pref_io_set(&store, "io/ns", "fff", H2_PAL_PREF_ENTRY_BOOL,
+                              &one, sizeof(one)) == H2_PAL_ERR_NO_SPACE);
+    assert(h2_esp_pref_io_clear(&store, "io/ns") == H2_PAL_OK);
+    assert(!store.committed_total_valid);
     assert(rmdir(root) == 0);
     return 0;
 }

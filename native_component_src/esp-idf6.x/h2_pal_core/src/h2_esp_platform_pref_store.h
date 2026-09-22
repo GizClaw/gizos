@@ -18,8 +18,8 @@ typedef enum h2_esp_pref_store_fault {
 typedef struct h2_esp_pref_store {
     const char *base_path;
     size_t committed_budget;
-    /* Sum of committed record sizes, walked once and then kept by set,
-     * remove and clear so a write does not reopen every stored record. */
+    /* Sum of committed record sizes, kept by successful set/remove.
+     * Prepare, clear and failed writes invalidate it for the next set. */
     size_t committed_total;
     int committed_total_valid;
     h2_esp_pref_store_fault_t test_fault_once;
