@@ -5,10 +5,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#if defined(_MSC_VER)
-#include <intrin.h>
-#endif
-
 #define H2_LOADER_REBOOT_REASON_DEFAULT 0u
 #define H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED (UINT32_C(1) << 30)
 
@@ -22,25 +18,9 @@ static void copy_text(char *out, size_t capacity, const char *value) {
   (void)snprintf(out, capacity, "%s", value != NULL ? value : "");
 }
 
-static int atomic_load(const h2_loader_atomic_flag_t *value) {
-#if defined(_MSC_VER)
-  return (int)_InterlockedCompareExchange((volatile long *)value, 0, 0);
-#else
-  return __atomic_load_n(value, __ATOMIC_ACQUIRE);
-#endif
-}
-
-static void atomic_store(h2_loader_atomic_flag_t *value, int stored) {
-#if defined(_MSC_VER)
-  (void)_InterlockedExchange((volatile long *)value, (long)stored);
-#else
-  __atomic_store_n(value, stored, __ATOMIC_RELEASE);
-#endif
-}
-
 static void atomic_update_flags(h2_loader_atomic_flag_t *value, uint32_t flags,
                                 bool available) {
-  int expected = atomic_load(value);
+  int expected = h2_atomic_int_load(value, H2_ATOMIC_ACQUIRE);
   for (;;) {
     uint32_t base = (uint32_t)expected;
     if ((base & H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED) == 0u) {
@@ -49,23 +29,15 @@ static void atomic_update_flags(h2_loader_atomic_flag_t *value, uint32_t flags,
     }
     uint32_t next = available ? base | flags : base & ~flags;
     next |= H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED;
-#if defined(_MSC_VER)
-    int observed = (int)_InterlockedCompareExchange((volatile long *)value,
-                                                    (long)next, (long)expected);
-    if (observed == expected)
-      return;
-    expected = observed;
-#else
-    if (__atomic_compare_exchange_n(value, &expected, (int)next, 0,
-                                    __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+    if (h2_atomic_int_compare_exchange(value, &expected, (int)next,
+                                       H2_ATOMIC_ACQ_REL, H2_ATOMIC_ACQUIRE)) {
       return;
     }
-#endif
   }
 }
 
 static uint32_t load_availability(const h2_loader_atomic_flag_t *value) {
-  uint32_t stored = (uint32_t)atomic_load(value);
+  uint32_t stored = (uint32_t)h2_atomic_int_load(value, H2_ATOMIC_ACQUIRE);
   return (stored & H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED) != 0u
              ? stored & H2_LOADER_COMMAND_AVAILABILITY_ALL
              : H2_LOADER_COMMAND_AVAILABILITY_ALL;
@@ -73,7 +45,7 @@ static uint32_t load_availability(const h2_loader_atomic_flag_t *value) {
 
 static int mfg_gate_satisfied(const h2_loader_t *loader) {
   return loader != NULL &&
-         (atomic_load(&loader->mfg_gate_bypass) != 0 ||
+         (h2_atomic_int_load(&loader->mfg_gate_bypass, H2_ATOMIC_ACQUIRE) != 0 ||
           loader->config.mfg_required_total == 0u ||
           h2_loader_mfg_summary_is_passed(&loader->status.mfg,
                                           loader->config.mfg_required_total));
@@ -83,7 +55,7 @@ int h2_loader_set_mfg_gate_bypass(h2_loader_t *loader, int enabled) {
   if (loader == NULL || (enabled != 0 && enabled != 1)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  atomic_store(&loader->mfg_gate_bypass, enabled);
+  h2_atomic_int_store(&loader->mfg_gate_bypass, enabled, H2_ATOMIC_RELEASE);
   return H2_PAL_OK;
 }
 
@@ -92,8 +64,9 @@ int h2_loader_set_implemented_commands(h2_loader_t *loader, uint32_t commands) {
       (commands & ~H2_LOADER_COMMAND_AVAILABILITY_ALL) != 0u) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  atomic_store(&loader->implemented_commands,
-               (int)(H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED | commands));
+  h2_atomic_int_store(&loader->implemented_commands,
+                      (int)(H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED | commands),
+                      H2_ATOMIC_RELEASE);
   return H2_PAL_OK;
 }
 
@@ -900,15 +873,34 @@ int h2_loader_init(h2_loader_t *loader, const h2_loader_config_t *config) {
   if (loader->config.package.app_partition_id == 0u) {
     loader->config.package.app_partition_id = config->app_partition_id;
   }
-  atomic_store(&loader->implemented_commands,
-               (int)H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED);
-  atomic_store(&loader->command_availability,
-               (int)(H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED |
-                     H2_LOADER_COMMAND_AVAILABILITY_ALL));
+  if (h2_atomic_int_init(&loader->mfg_gate_bypass, 0) != H2_ATOMIC_OK ||
+      h2_atomic_int_init(&loader->implemented_commands,
+                         (int)H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED) != H2_ATOMIC_OK ||
+      h2_atomic_int_init(&loader->command_availability,
+                         (int)(H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED |
+                               H2_LOADER_COMMAND_AVAILABILITY_ALL)) != H2_ATOMIC_OK) {
+    h2_atomic_int_destroy(&loader->mfg_gate_bypass);
+    h2_atomic_int_destroy(&loader->implemented_commands);
+    h2_atomic_int_destroy(&loader->command_availability);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
   rc = h2_loader_package_init(&loader->package, &loader->config.package);
-  if (rc != H2_PAL_OK)
+  if (rc != H2_PAL_OK) {
+    h2_loader_deinit(loader);
     return rc;
-  return h2_loader_read_status(loader, &loader->status);
+  }
+  rc = h2_loader_read_status(loader, &loader->status);
+  if (rc != H2_PAL_OK)
+    h2_loader_deinit(loader);
+  return rc;
+}
+
+void h2_loader_deinit(h2_loader_t *loader) {
+  if (loader == NULL)
+    return;
+  h2_atomic_int_destroy(&loader->mfg_gate_bypass);
+  h2_atomic_int_destroy(&loader->implemented_commands);
+  h2_atomic_int_destroy(&loader->command_availability);
 }
 
 int h2_loader_startup(h2_loader_t *loader,

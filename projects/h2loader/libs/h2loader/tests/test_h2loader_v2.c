@@ -1069,6 +1069,7 @@ static void test_interrupted_replacement_does_not_boot_failed_app(void) {
   assert(h2_loader_begin_stage(&fixture.loader, "/dl/update.tar.zlib.tmp",
                                "/dl/update.tar.zlib.prev") == H2_PAL_OK);
   /* A reset after begin but before publish leaves no replacement Stage. */
+  h2_loader_deinit(&fixture.loader);
   assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
   assert(!fixture.loader.status.stage.valid);
   assert(h2_loader_startup(&fixture.loader, &action) == H2_PAL_OK);
