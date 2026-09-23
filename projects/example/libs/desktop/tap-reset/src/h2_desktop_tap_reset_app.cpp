@@ -6,7 +6,7 @@
 #include "h2_tap_reset.h"
 #include "layout_config.h"
 
-#include <atomic>
+#include "h2_atomic.h"
 #include <chrono>
 #include <cstdio>
 #include <thread>
@@ -28,8 +28,8 @@ constexpr h2::desktop::Layout kLayout = {
 struct AppContext {
   h2_runtime_t *runtime;
   h2::desktop::OwnedDisplay *display;
-  std::atomic<bool> stop{false};
-  std::atomic<bool> finished{false};
+  h2_atomic_bool_t stop{};
+  h2_atomic_bool_t finished{};
   h2_pal_result_t result = H2_PAL_OK;
 };
 
@@ -50,7 +50,7 @@ h2_pal_result_t read_pointer(void *user,
 
 int should_stop(void *user) {
   const auto *context = static_cast<AppContext *>(user);
-  return context == nullptr || context->stop.load(std::memory_order_acquire);
+  return context == nullptr || h2_atomic_bool_load(&context->stop, H2_ATOMIC_ACQUIRE);
 }
 
 void app_main(AppContext *context) {
@@ -64,7 +64,7 @@ void app_main(AppContext *context) {
   };
   if (h2_lvgl_platform_init(&platform) != 0) {
     context->result = H2_PAL_ERR_UNAVAILABLE;
-    context->finished.store(true, std::memory_order_release);
+    h2_atomic_bool_store(&context->finished, true, H2_ATOMIC_RELEASE);
     return;
   }
   const h2_tap_reset_config_t config = {
@@ -78,7 +78,7 @@ void app_main(AppContext *context) {
   };
   context->result = h2_tap_reset_run(context->runtime, &config);
   h2_lvgl_platform_deinit();
-  context->finished.store(true, std::memory_order_release);
+  h2_atomic_bool_store(&context->finished, true, H2_ATOMIC_RELEASE);
 }
 
 } // namespace
@@ -112,6 +112,18 @@ int h2_desktop_tap_reset_app_run(void) {
   AppContext context = {};
   context.runtime = runtime;
   context.display = &display_provider;
+  if (h2_atomic_bool_init(&context.stop, false) != H2_ATOMIC_OK ||
+      h2_atomic_bool_init(&context.finished, false) != H2_ATOMIC_OK) {
+    h2_atomic_bool_destroy(&context.stop);
+    h2_atomic_bool_destroy(&context.finished);
+    (void)h2_pal_display_close(display);
+    h2_runtime_deinit(runtime);
+    return 1;
+  }
+  auto destroy_context = [&context]() {
+    h2_atomic_bool_destroy(&context.stop);
+    h2_atomic_bool_destroy(&context.finished);
+  };
   std::thread worker;
   try {
     worker = std::thread(app_main, &context);
@@ -119,15 +131,16 @@ int h2_desktop_tap_reset_app_run(void) {
     (void)h2_pal_display_close(display);
     (void)h2::desktop::poll_events(&display_provider);
     h2_runtime_deinit(runtime);
+    destroy_context();
     std::fprintf(stderr, "desktop tap-reset: App thread creation failed\n");
     return 1;
   }
 
-  while (!context.finished.load(std::memory_order_acquire) &&
+  while (!h2_atomic_bool_load(&context.finished, H2_ATOMIC_ACQUIRE) &&
          h2::desktop::poll_events(&display_provider) == 0) {
     std::this_thread::sleep_for(std::chrono::milliseconds(8));
   }
-  context.stop.store(true, std::memory_order_release);
+  h2_atomic_bool_store(&context.stop, true, H2_ATOMIC_RELEASE);
   worker.join();
   (void)h2_pal_display_close(display);
   (void)h2::desktop::poll_events(&display_provider);
@@ -136,8 +149,10 @@ int h2_desktop_tap_reset_app_run(void) {
     std::fprintf(stderr, "desktop tap-reset: App exited with result %d\n",
                  context.result);
     h2_runtime_deinit(runtime);
+    destroy_context();
     return 1;
   }
   h2_runtime_deinit(runtime);
+  destroy_context();
   return 0;
 }
