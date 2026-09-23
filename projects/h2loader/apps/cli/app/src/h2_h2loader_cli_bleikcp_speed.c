@@ -5,7 +5,7 @@
 
 #include <errno.h>
 #include <stdbool.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,21 +19,22 @@ static const uint8_t speed_tx_uuid[] = {0xe1u, 0xfeu};
 static const uint8_t speed_rx_uuid[] = {0xe2u, 0xfeu};
 
 typedef struct speed_scan {
-    atomic_bool owned;
-    atomic_flag guard;
+    h2_atomic_bool_t owned;
+    h2_atomic_flag_t guard;
     h2_pal_ble_addr_t address;
     int rssi;
     int found;
 } speed_scan_t;
 
-static speed_scan_t speed_scan = {.guard = ATOMIC_FLAG_INIT};
+static speed_scan_t speed_scan;
+static bool speed_scan_initialized;
 
 static void speed_scan_lock(speed_scan_t *scan) {
-    while (atomic_flag_test_and_set_explicit(&scan->guard, memory_order_acquire)) {}
+    while (h2_atomic_flag_test_and_set(&scan->guard, H2_ATOMIC_ACQUIRE)) {}
 }
 
 static void speed_scan_unlock(speed_scan_t *scan) {
-    atomic_flag_clear_explicit(&scan->guard, memory_order_release);
+    h2_atomic_flag_clear(&scan->guard, H2_ATOMIC_RELEASE);
 }
 
 typedef struct speed_result {
@@ -85,7 +86,7 @@ static bool speed_scan_result(
         return false;
     }
     speed_scan_lock(scan);
-    if (atomic_load_explicit(&scan->owned, memory_order_relaxed) &&
+    if (h2_atomic_load_explicit(&scan->owned, H2_ATOMIC_RELAXED) &&
         (!scan->found || result->rssi > scan->rssi)) {
         scan->address = result->addr;
         scan->rssi = result->rssi;
@@ -173,12 +174,21 @@ h2_pal_result_t h2_h2loader_cli_find_ble_peer(
     int scan_started = 0;
     int scan_quiesced = 1;
     h2_pal_result_t rc;
-    if (!atomic_compare_exchange_strong_explicit(
+    speed_scan_lock(scan);
+    if (!speed_scan_initialized) {
+        if (h2_atomic_bool_init(&scan->owned, false) != H2_ATOMIC_OK) {
+            speed_scan_unlock(scan);
+            return H2_PAL_ERR_NO_MEMORY;
+        }
+        speed_scan_initialized = true;
+    }
+    speed_scan_unlock(scan);
+    if (!h2_atomic_compare_exchange_strong_explicit(
             &scan->owned,
             &expected,
             true,
-            memory_order_acq_rel,
-            memory_order_acquire)) {
+            H2_ATOMIC_ACQ_REL,
+            H2_ATOMIC_ACQUIRE)) {
         return H2_PAL_ERR_BUSY;
     }
     speed_scan_lock(scan);
@@ -248,7 +258,7 @@ h2_pal_result_t h2_h2loader_cli_find_ble_peer(
         speed_scan_unlock(scan);
     }
     if (scan_quiesced) {
-        atomic_store_explicit(&scan->owned, false, memory_order_release);
+        h2_atomic_store_explicit(&scan->owned, false, H2_ATOMIC_RELEASE);
     }
     return rc;
 }
