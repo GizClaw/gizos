@@ -7,7 +7,6 @@
 #include <errno.h>
 #include <pthread.h>
 #include <sched.h>
-#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -38,18 +37,18 @@ struct h2_pal_queue {
 };
 
 typedef struct concurrency_allocator {
-    atomic_size_t alloc_calls;
-    atomic_size_t free_calls;
+    h2_atomic_size_t alloc_calls;
+    h2_atomic_size_t free_calls;
 } concurrency_allocator_t;
 
 typedef struct concurrency_time {
-    atomic_uint_fast64_t now_ms;
+    h2_atomic_u32_t now_ms;
 } concurrency_time_t;
 
 typedef struct concurrency_sync {
-    atomic_int fail_signal_once;
-    atomic_size_t signal_calls;
-    atomic_size_t broadcast_calls;
+    h2_atomic_int_t fail_signal_once;
+    h2_atomic_size_t signal_calls;
+    h2_atomic_size_t broadcast_calls;
 } concurrency_sync_t;
 
 typedef struct concurrency_periphs {
@@ -93,14 +92,14 @@ typedef struct runtime_call {
 static void *concurrency_alloc(void *user, size_t len) {
     concurrency_allocator_t *allocator =
         (concurrency_allocator_t *)user;
-    atomic_fetch_add(&allocator->alloc_calls, 1u);
+    h2_atomic_fetch_add(&allocator->alloc_calls, 1u);
     return calloc(1u, len);
 }
 
 static void concurrency_free(void *user, void *ptr) {
     concurrency_allocator_t *allocator =
         (concurrency_allocator_t *)user;
-    atomic_fetch_add(&allocator->free_calls, 1u);
+    h2_atomic_fetch_add(&allocator->free_calls, 1u);
     free(ptr);
 }
 
@@ -108,7 +107,7 @@ static h2_pal_result_t concurrency_now(
     void *user,
     uint64_t *out_ms) {
     concurrency_time_t *time = (concurrency_time_t *)user;
-    *out_ms = atomic_load(&time->now_ms);
+    *out_ms = h2_atomic_load(&time->now_ms);
     return H2_PAL_OK;
 }
 
@@ -232,8 +231,8 @@ static h2_pal_result_t concurrency_cond_signal(
     void *user,
     h2_pal_cond_t *cond) {
     concurrency_sync_t *sync = (concurrency_sync_t *)user;
-    atomic_fetch_add(&sync->signal_calls, 1u);
-    if (atomic_exchange(&sync->fail_signal_once, 0) != 0) {
+    h2_atomic_fetch_add(&sync->signal_calls, 1u);
+    if (h2_atomic_exchange(&sync->fail_signal_once, 0) != 0) {
         return H2_PAL_ERR_IO;
     }
     return pthread_cond_signal(&cond->native) == 0
@@ -245,7 +244,7 @@ static h2_pal_result_t concurrency_cond_broadcast(
     void *user,
     h2_pal_cond_t *cond) {
     concurrency_sync_t *sync = (concurrency_sync_t *)user;
-    atomic_fetch_add(&sync->broadcast_calls, 1u);
+    h2_atomic_fetch_add(&sync->broadcast_calls, 1u);
     return pthread_cond_broadcast(&cond->native) == 0
                ? H2_PAL_OK
                : H2_PAL_ERR_IO;
@@ -448,12 +447,12 @@ static h2_pal_result_t concurrency_read_radio_group(
 
 static void concurrency_env_init(concurrency_env_t *env) {
     memset(env, 0, sizeof(*env));
-    atomic_init(&env->allocator_state.alloc_calls, 0u);
-    atomic_init(&env->allocator_state.free_calls, 0u);
-    atomic_init(&env->time_state.now_ms, 0u);
-    atomic_init(&env->sync_state.fail_signal_once, 0);
-    atomic_init(&env->sync_state.signal_calls, 0u);
-    atomic_init(&env->sync_state.broadcast_calls, 0u);
+    assert(h2_atomic_size_init(&env->allocator_state.alloc_calls, 0u) == H2_ATOMIC_OK);
+    assert(h2_atomic_size_init(&env->allocator_state.free_calls, 0u) == H2_ATOMIC_OK);
+    assert(h2_atomic_u32_init(&env->time_state.now_ms, 0u) == H2_ATOMIC_OK);
+    assert(h2_atomic_int_init(&env->sync_state.fail_signal_once, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_size_init(&env->sync_state.signal_calls, 0u) == H2_ATOMIC_OK);
+    assert(h2_atomic_size_init(&env->sync_state.broadcast_calls, 0u) == H2_ATOMIC_OK);
     assert(pthread_mutex_init(&env->button_state.mutex, NULL) == 0);
     assert(pthread_cond_init(&env->button_state.cond, NULL) == 0);
 
@@ -527,6 +526,12 @@ static void concurrency_env_init(concurrency_env_t *env) {
 }
 
 static void concurrency_env_deinit(concurrency_env_t *env) {
+    h2_atomic_destroy(&env->allocator_state.alloc_calls);
+    h2_atomic_destroy(&env->allocator_state.free_calls);
+    h2_atomic_destroy(&env->time_state.now_ms);
+    h2_atomic_destroy(&env->sync_state.fail_signal_once);
+    h2_atomic_destroy(&env->sync_state.signal_calls);
+    h2_atomic_destroy(&env->sync_state.broadcast_calls);
     assert(pthread_cond_destroy(&env->button_state.cond) == 0);
     assert(pthread_mutex_destroy(&env->button_state.mutex) == 0);
 }
@@ -661,7 +666,7 @@ static void test_slow_pal_does_not_block_snapshot_read(void) {
     env.button_state.single_read_entered = 0;
     env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
     assert(pthread_mutex_unlock(&env.button_state.mutex) == 0);
-    atomic_store(
+    h2_atomic_store(
         &env.time_state.now_ms,
         H2_RUNTIME_BUTTON_POLL_INTERVAL_MS);
 
@@ -715,7 +720,7 @@ static void test_push_edge_does_not_write_while_poller_is_blocked(void) {
     env.button_state.block_single_read = 1;
     env.button_state.single_read_entered = 0;
     assert(pthread_mutex_unlock(&env.button_state.mutex) == 0);
-    atomic_store(
+    h2_atomic_store(
         &env.time_state.now_ms,
         H2_RUNTIME_BUTTON_POLL_INTERVAL_MS);
 
@@ -777,7 +782,7 @@ static void test_pinned_reader_does_not_block_publication(void) {
     assert(slot_index == initial_index);
 
     env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-    atomic_store(
+    h2_atomic_store(
         &env.time_state.now_ms,
         H2_RUNTIME_BUTTON_POLL_INTERVAL_MS);
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
@@ -831,7 +836,7 @@ static void test_restart_keeps_publication_and_reader_pins_valid(void) {
     const unsigned int pinned_index = h2_atomic_load_explicit(&publication->active_index, H2_ATOMIC_ACQUIRE);
     assert(slot_index == pinned_index);
     env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-    atomic_store(
+    h2_atomic_store(
         &env.time_state.now_ms,
         H2_RUNTIME_BUTTON_POLL_INTERVAL_MS * 4u);
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
@@ -864,7 +869,7 @@ static void test_publication_defers_when_all_retired_slots_are_pinned(void) {
                runtime, &bank, &slots[0]) == H2_PAL_OK);
 
     env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-    atomic_store(
+    h2_atomic_store(
         &env.time_state.now_ms,
         H2_RUNTIME_BUTTON_POLL_INTERVAL_MS);
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
@@ -872,7 +877,7 @@ static void test_publication_defers_when_all_retired_slots_are_pinned(void) {
                runtime, &bank, &slots[1]) == H2_PAL_OK);
 
     env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
-    atomic_store(
+    h2_atomic_store(
         &env.time_state.now_ms,
         H2_RUNTIME_BUTTON_POLL_INTERVAL_MS * 2u);
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
@@ -882,7 +887,7 @@ static void test_publication_defers_when_all_retired_slots_are_pinned(void) {
     const unsigned int active_before = h2_atomic_load_explicit(&publication->active_index, H2_ATOMIC_ACQUIRE);
     const uint64_t deferred_before = publication->deferred_count;
     env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-    atomic_store(
+    h2_atomic_store(
         &env.time_state.now_ms,
         H2_RUNTIME_BUTTON_POLL_INTERVAL_MS * 3u);
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
@@ -924,7 +929,7 @@ static void test_publication_counts_and_event_ceiling(void) {
     assert(h2_atomic_load_explicit(&publication->active_index, H2_ATOMIC_ACQUIRE) ==
            initial_bank);
     size_t allocations =
-        atomic_load(&env.allocator_state.alloc_calls);
+        h2_atomic_load(&env.allocator_state.alloc_calls);
     unsigned int first_poll_bank = h2_atomic_load_explicit(&publication->active_index, H2_ATOMIC_ACQUIRE);
     copies = publication->copy_count;
     switches = publication->switch_count;
@@ -938,7 +943,7 @@ static void test_publication_counts_and_event_ceiling(void) {
     switches = publication->switch_count;
 
     env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
-    atomic_store(
+    h2_atomic_store(
         &env.time_state.now_ms,
         H2_RUNTIME_BUTTON_POLL_INTERVAL_MS);
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
@@ -950,7 +955,7 @@ static void test_publication_counts_and_event_ceiling(void) {
     switches = publication->switch_count;
 
     env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
-    atomic_store(
+    h2_atomic_store(
         &env.time_state.now_ms,
         H2_RUNTIME_BUTTON_POLL_INTERVAL_MS * 2u);
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
@@ -958,7 +963,7 @@ static void test_publication_counts_and_event_ceiling(void) {
     assert(publication->switch_count == switches + 1u);
     assert(h2_atomic_load_explicit(&publication->active_index, H2_ATOMIC_ACQUIRE) !=
            first_poll_bank);
-    assert(atomic_load(&env.allocator_state.alloc_calls) == allocations);
+    assert(h2_atomic_load(&env.allocator_state.alloc_calls) == allocations);
 
     uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
     h2_runtime_event_t event = {
@@ -1046,7 +1051,7 @@ static void test_radio_state_and_transition_batches_use_one_switch(void) {
            H2_PAL_ERR_WOULD_BLOCK);
 
     env.button_state.radio_pressed_id = 1u;
-    atomic_store(
+    h2_atomic_store(
         &env.time_state.now_ms,
         H2_RUNTIME_BUTTON_POLL_INTERVAL_MS);
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
@@ -1058,7 +1063,7 @@ static void test_radio_state_and_transition_batches_use_one_switch(void) {
            H2_PAL_ERR_WOULD_BLOCK);
 
     env.button_state.radio_pressed_id = 2u;
-    atomic_store(
+    h2_atomic_store(
         &env.time_state.now_ms,
         H2_RUNTIME_BUTTON_POLL_INTERVAL_MS * 2u);
     switches = publication->switch_count;
@@ -1092,20 +1097,20 @@ static void test_radio_state_and_transition_batches_use_one_switch(void) {
  */
 typedef struct station_reader_args {
     h2_runtime_t *runtime;
-    atomic_int stop;
-    atomic_ulong reads;
+    h2_atomic_int_t stop;
+    h2_atomic_size_t reads;
     int torn;
 } station_reader_args_t;
 
 static void *station_reader_main(void *ctx) {
     station_reader_args_t *args = ctx;
-    while (atomic_load(&args->stop) == 0) {
+    while (h2_atomic_load(&args->stop) == 0) {
         h2_runtime_system_wifi_sta_state_t state;
         memset(&state, 0, sizeof(state));
         if (h2_runtime_system_state_wifi_sta(args->runtime, &state) != H2_PAL_OK) {
             continue;
         }
-        atomic_fetch_add(&args->reads, 1ul);
+        h2_atomic_fetch_add(&args->reads, 1ul);
         if (state.valid == 0u) {
             continue;
         }
@@ -1128,15 +1133,15 @@ static void test_station_snapshot_survives_a_publication_burst(void) {
     h2_runtime_t *runtime = concurrency_runtime_create(&env);
 
     station_reader_args_t args = { .runtime = runtime };
-    atomic_init(&args.stop, 0);
-    atomic_init(&args.reads, 0ul);
+    assert(h2_atomic_int_init(&args.stop, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_size_init(&args.reads, 0u) == H2_ATOMIC_OK);
     pthread_t reader;
     assert(pthread_create(&reader, NULL, station_reader_main, &args) == 0);
     /*
      * Let the reader get going first. Starting the burst immediately can
      * finish it before the thread runs at all, which proves nothing.
      */
-    while (atomic_load(&args.reads) == 0ul) {
+    while (h2_atomic_load(&args.reads) == 0ul) {
         sched_yield();
     }
 
@@ -1154,10 +1159,12 @@ static void test_station_snapshot_survives_a_publication_burst(void) {
                H2_PAL_OK);
     }
 
-    atomic_store(&args.stop, 1);
+    h2_atomic_store(&args.stop, 1);
     assert(pthread_join(reader, NULL) == 0);
-    assert(atomic_load(&args.reads) > 0ul);
+    assert(h2_atomic_load(&args.reads) > 0ul);
     assert(args.torn == 0);
+    h2_atomic_destroy(&args.stop);
+    h2_atomic_destroy(&args.reads);
 
     /* The last publication is what a later reader sees. */
     h2_runtime_system_wifi_sta_state_t final_state;
