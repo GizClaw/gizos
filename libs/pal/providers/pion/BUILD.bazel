@@ -144,6 +144,7 @@ cc_test(
     }),
     deps = [
         ":pion_testable",
+        "//libs/atomic/providers/c11",
         "//libs/pal/providers/desktop/pal_core",
     ],
 )
