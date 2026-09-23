@@ -17,7 +17,6 @@ STUB = r'''
 #include <pthread.h>
 #include <setjmp.h>
 #include <string.h>
-#include <stdatomic.h>
 typedef unsigned char u8;
 typedef unsigned short u16;
 typedef int OS_SEM;
