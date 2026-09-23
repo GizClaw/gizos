@@ -1,4 +1,5 @@
 #include "h2_gizclaw_service_internal.h"
+#include "h2_atomic.h"
 
 #include <limits.h>
 #include <stdio.h>
@@ -45,8 +46,8 @@ typedef struct h2_gizclaw_managed_request {
   h2_gizclaw_operation_t *operation;
   h2_pal_mutex_t *mutex;
   h2_pal_semaphore_t *completed;
-  atomic_uint refs;
-  atomic_bool terminal;
+  h2_atomic_uint_t refs;
+  h2_atomic_bool_t terminal;
   bool started;
   bool clock_started;
   uint64_t identity;
@@ -512,7 +513,7 @@ static void stream_detach(managed_request_t *request) {
 
 static void managed_unref(void *user) {
   managed_request_t *request = user;
-  if (atomic_fetch_sub_explicit(&request->refs, 1u, memory_order_acq_rel) != 1u)
+  if (h2_atomic_fetch_sub_explicit(&request->refs, 1u, H2_ATOMIC_ACQ_REL) != 1u)
     return;
   h2_gizclaw_service_t *service = request->service;
   const h2_pal_mem_api_t *allocator = service->client_config.allocator;
@@ -548,7 +549,7 @@ static void managed_settle(void *user, h2_gizclaw_operation_t *operation,
         request->service->client_config.time, &request->completed_ms);
   managed_log_speedtest_failure(request, operation);
   operation->result.result = request->result;
-  atomic_store_explicit(&request->terminal, true, memory_order_release);
+  h2_atomic_store_explicit(&request->terminal, true, H2_ATOMIC_RELEASE);
   (void)h2_pal_semaphore_give(request->service->config.sync,
                               request->completed);
 }
@@ -810,7 +811,7 @@ static h2_pal_result_t managed_do(h2_gizclaw_req_t *base, void *user,
     return rc;
   }
   if (request->started ||
-      atomic_load_explicit(&request->terminal, memory_order_acquire)) {
+      h2_atomic_load_explicit(&request->terminal, H2_ATOMIC_ACQUIRE)) {
     (void)h2_pal_mutex_unlock(sync, request->mutex);
     return H2_PAL_ERR_INVALID_STATE;
   }
@@ -842,7 +843,7 @@ static h2_pal_result_t managed_do(h2_gizclaw_req_t *base, void *user,
   request->on_complete = on_complete;
   /* One execution reference and one for this call: completion may release the
    * execution reference before submit returns. */
-  atomic_fetch_add_explicit(&request->refs, 2u, memory_order_relaxed);
+  h2_atomic_fetch_add_explicit(&request->refs, 2u, H2_ATOMIC_RELAXED);
   rc = h2_gizclaw_service_submit_request_internal(
       request->service, request->identity, managed_start,
       request->send != NULL ? NULL : managed_poll, managed_settle,
@@ -856,7 +857,7 @@ static h2_pal_result_t managed_do(h2_gizclaw_req_t *base, void *user,
      * operation queue rejects the request. */
     if (request->stream != NULL || admit != NULL)
       managed_stop(request);
-    atomic_fetch_sub_explicit(&request->refs, 1u, memory_order_relaxed);
+    h2_atomic_fetch_sub_explicit(&request->refs, 1u, H2_ATOMIC_RELAXED);
   }
   (void)h2_pal_mutex_unlock(sync, request->mutex);
   managed_unref(request);
@@ -866,7 +867,7 @@ static h2_pal_result_t managed_do(h2_gizclaw_req_t *base, void *user,
 static h2_pal_result_t managed_wait(h2_gizclaw_req_t *base,
                                     uint32_t timeout_ms) {
   managed_request_t *request = (managed_request_t *)base;
-  if (atomic_load_explicit(&request->terminal, memory_order_acquire))
+  if (h2_atomic_load_explicit(&request->terminal, H2_ATOMIC_ACQUIRE))
     return request->result;
   const h2_pal_sync_api_t *sync = request->service->config.sync;
   h2_pal_result_t rc = h2_pal_mutex_lock(sync, request->mutex);
@@ -881,7 +882,7 @@ static h2_pal_result_t managed_wait(h2_gizclaw_req_t *base,
     /* A terminal request is a level-triggered condition, not a consumable
      * notification. Pass the wakeup on to concurrent/repeated waiters. */
     (void)h2_pal_semaphore_give(sync, request->completed);
-    (void)atomic_load_explicit(&request->terminal, memory_order_acquire);
+    (void)h2_atomic_load_explicit(&request->terminal, H2_ATOMIC_ACQUIRE);
     return request->result;
   }
   return rc;
@@ -893,13 +894,13 @@ static h2_pal_result_t managed_cancel(h2_gizclaw_req_t *base) {
   h2_pal_result_t rc = h2_pal_mutex_lock(sync, request->mutex);
   if (rc != H2_PAL_OK)
     return rc;
-  if (atomic_load_explicit(&request->terminal, memory_order_acquire)) {
+  if (h2_atomic_load_explicit(&request->terminal, H2_ATOMIC_ACQUIRE)) {
     rc = H2_PAL_OK;
   } else if (request->started) {
     rc = h2_gizclaw_operation_cancel(request->operation);
   } else {
     request->result = H2_PAL_ERR_CLOSED;
-    atomic_store_explicit(&request->terminal, true, memory_order_release);
+    h2_atomic_store_explicit(&request->terminal, true, H2_ATOMIC_RELEASE);
     (void)h2_pal_semaphore_give(sync, request->completed);
   }
   (void)h2_pal_mutex_unlock(sync, request->mutex);
@@ -949,8 +950,14 @@ create_request(h2_gizclaw_service_t *service, uint64_t identity,
   request->context = context;
   request->timeout_ms = timeout_ms;
   request->clock_result = H2_PAL_ERR_UNAVAILABLE;
-  atomic_init(&request->refs, 1u);
-  atomic_init(&request->terminal, false);
+  if (h2_atomic_uint_init(&request->refs, 1u) != H2_ATOMIC_OK ||
+      h2_atomic_bool_init(&request->terminal, false) != H2_ATOMIC_OK) {
+    h2_atomic_uint_destroy(&request->refs);
+    h2_atomic_bool_destroy(&request->terminal);
+    h2_pal_mem_free(allocator, request);
+    (void)h2_pal_mutex_unlock(sync, service->mutex);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
   const h2_pal_mutex_config_t mutex_config = {
       .name = "$gizclaw/req",
       .allocator = allocator,
@@ -979,6 +986,8 @@ create_request(h2_gizclaw_service_t *service, uint64_t identity,
       (void)h2_pal_semaphore_destroy(sync, request->completed);
     if (request->mutex != NULL)
       (void)h2_pal_mutex_destroy(sync, request->mutex);
+    h2_atomic_uint_destroy(&request->refs);
+    h2_atomic_bool_destroy(&request->terminal);
     h2_pal_mem_free(allocator, request);
   } else {
     /* A created request owns the service even before it occupies an active
@@ -1225,7 +1234,7 @@ h2_pal_result_t h2_gizclaw_req_context_internal(const h2_gizclaw_req_t *base,
   const managed_request_t *request = (const managed_request_t *)base;
   if (request->tag != tag || request->context == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  if (!atomic_load_explicit(&request->terminal, memory_order_acquire))
+  if (!h2_atomic_load_explicit(&request->terminal, H2_ATOMIC_ACQUIRE))
     return H2_PAL_ERR_INVALID_STATE;
   if (request->result != H2_PAL_OK)
     return request->result;
@@ -1243,7 +1252,7 @@ h2_pal_result_t h2_gizclaw_req_response_internal(
   const managed_request_t *request = (const managed_request_t *)base;
   if (request->tag != tag || request->send != NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  if (!atomic_load_explicit(&request->terminal, memory_order_acquire))
+  if (!h2_atomic_load_explicit(&request->terminal, H2_ATOMIC_ACQUIRE))
     return H2_PAL_ERR_INVALID_STATE;
   if (request->result != H2_PAL_OK)
     return request->result;
