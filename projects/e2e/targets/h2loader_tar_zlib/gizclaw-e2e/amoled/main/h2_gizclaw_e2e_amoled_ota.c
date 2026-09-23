@@ -9,7 +9,7 @@
 #include "h2_loader_stage.h"
 #include "h2_yyjson_json.h"
 #include "nvs.h"
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -36,7 +36,7 @@ typedef struct ota_lane {
   char public_key[65];
   char update_id[97];
   h2_gizclaw_api_key_t api_key;
-  atomic_bool activate;
+  h2_atomic_bool_t activate;
   /* HTTP status polling is owned by the runner, not the device worker. */
   char baseline_update_id[129];
   bool action_accepted;
@@ -207,7 +207,7 @@ static void abort_stage(void *user) {
 }
 static h2_pal_result_t activate(void *user) {
   ota_lane_t *state = user;
-  atomic_store_explicit(&state->activate, true, memory_order_release);
+  h2_atomic_store_explicit(&state->activate, true, H2_ATOMIC_RELEASE);
   return H2_PAL_OK;
 }
 static const h2_gizclaw_vtable_t vtable = {
@@ -512,7 +512,7 @@ static int run(void) {
     rc = h2_gizclaw_service_poll(lane.service, 8, &dispatched);
     if (rc)
       return rc;
-    if (atomic_load_explicit(&lane.activate, memory_order_acquire)) {
+    if (h2_atomic_load_explicit(&lane.activate, H2_ATOMIC_ACQUIRE)) {
       /* The RPC owner has already sent its reply. Stop and join the Service
        * before H2Loader changes the boot selection and reboots. */
       rc = h2_gizclaw_service_stop(lane.service);
@@ -537,8 +537,8 @@ static int run(void) {
 }
 void h2_gizclaw_e2e_amoled_ota_run(h2_runtime_t *runtime) {
   lane.runtime = runtime;
-  atomic_init(&lane.activate, false);
-  int rc = run();
+  int rc = h2_atomic_init(&lane.activate, false) == H2_ATOMIC_OK
+               ? run() : H2_PAL_ERR_NO_MEMORY;
   /* A failed acceptance must not keep its network worker or API key alive.
    * Retain NVS until stop succeeds because Stage callbacks borrow it. */
   if (lane.service) {
@@ -582,6 +582,7 @@ void h2_gizclaw_e2e_amoled_ota_run(h2_runtime_t *runtime) {
   if (lane.pref_open)
     nvs_close(lane.pref);
   memset(&lane.api_key, 0, sizeof(lane.api_key));
+  h2_atomic_destroy(&lane.activate);
   for (;;) {
     evidence("terminal", rc);
     (void)h2_pal_time_sleep_ms(runtime->time, 10000);

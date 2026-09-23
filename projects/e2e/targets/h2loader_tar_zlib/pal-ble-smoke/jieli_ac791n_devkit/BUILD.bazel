@@ -18,6 +18,7 @@ firmware_native_component(
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
+        "//libs/atomic",
         "//boards/jieli_ac791n_devkit/ac791n",
         "//libs/pal:pal_header_files",
         "//projects/h2loader/native_component_src/jieli/wl82/h2loader_app:app_transport",

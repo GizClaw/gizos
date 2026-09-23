@@ -82,6 +82,7 @@ firmware_native_component(
     deps = [
         ":firmware_lib",
         "//boards/amoled/esp32s3",
+        "//libs/atomic",
         "//libs/gizclaw",
         "//libs/pal",
         "//native_component_src/esp-idf6.x/h2_es8311_audio_system",

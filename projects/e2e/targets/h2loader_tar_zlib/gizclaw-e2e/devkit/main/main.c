@@ -20,7 +20,7 @@
 #include "freertos/task.h"
 
 #include <stdalign.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -41,7 +41,7 @@ typedef struct h2_gizclaw_e2e_devkit_runner {
   h2_runtime_t *runtime;
   h2_gizclaw_e2e_result_t result;
   h2_gizclaw_e2e_exit_t exit_code;
-  atomic_bool exited;
+  h2_atomic_bool_t exited;
 } h2_gizclaw_e2e_devkit_runner_t;
 
 typedef struct h2_gizclaw_e2e_devkit_wifi_supervisor {
@@ -131,7 +131,7 @@ static void run_e2e(void *raw) {
   };
   runner->exit_code =
       h2_gizclaw_e2e_run(runner->runtime, &app_config, &runner->result);
-  atomic_store_explicit(&runner->exited, true, memory_order_release);
+  h2_atomic_store_explicit(&runner->exited, true, H2_ATOMIC_RELEASE);
 }
 
 static void supervise_wifi(void *raw) {
@@ -324,7 +324,8 @@ static void image_entry(void *user) {
       s_runner.runtime = runtime;
       s_runner.result = (h2_gizclaw_e2e_result_t){0};
       s_runner.exit_code = H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
-      atomic_init(&s_runner.exited, false);
+      if (h2_atomic_init(&s_runner.exited, false) != H2_ATOMIC_OK)
+        fail_launcher("runner_atomic_init", H2_PAL_ERR_NO_MEMORY, true);
       const h2_pal_task_options_t runner_options = {
           .name = h2_gizclaw_e2e_launcher_task_name,
           .min_stack_size = H2_GIZCLAW_E2E_DEVKIT_RUNNER_STACK_SIZE,
@@ -340,12 +341,13 @@ static void image_entry(void *user) {
 
     uint64_t now_ms = 0u;
     if (runner_task != NULL && !state.runner_complete &&
-        atomic_load_explicit(&s_runner.exited, memory_order_acquire)) {
+        h2_atomic_load_explicit(&s_runner.exited, H2_ATOMIC_ACQUIRE)) {
       rc = h2_pal_task_join(runtime->task, runner_task);
       if (rc != H2_PAL_OK) {
         fail_launcher("runner_join", rc, true);
       }
       runner_task = NULL;
+      h2_atomic_destroy(&s_runner.exited);
       if (h2_pal_time_get_monotonic_ms(runtime->time, &now_ms) != H2_PAL_OK) {
         fail_launcher("summary_clock", H2_PAL_ERR_UNAVAILABLE, true);
       }

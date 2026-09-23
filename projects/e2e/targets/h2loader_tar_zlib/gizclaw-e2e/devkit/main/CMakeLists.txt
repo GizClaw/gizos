@@ -17,6 +17,7 @@ idf_component_register(
     "${CMAKE_CURRENT_LIST_DIR}"
     "${H2_GIZCLAW_E2E_APP_DIR}/include"
     "${H2_GIZCLAW_E2E_APP_DIR}/src"
+    "${H2_REPO_ROOT}/libs/atomic/include"
     "${H2_REPO_ROOT}/libs/gizclaw/include"
     "${H2_REPO_ROOT}/libs/pal/include"
     "${H2_REPO_ROOT}/libs/runtime/include"
