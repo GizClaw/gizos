@@ -1,6 +1,7 @@
 #include "h2_gizclaw_speech.h"
 #include "h2_gizclaw_response_internal.h"
 #include "h2_gizclaw_service_internal.h"
+#include "h2_atomic.h"
 #include "payload/ai.pb.h"
 #include "pb_decode.h"
 #include "pb_encode.h"
@@ -20,7 +21,7 @@ struct h2_gizclaw_speech_context {
   uint8_t capture_pending[SPEECH_FRAME_BYTES];
   size_t capture_pending_len;
   /* Only the uplink worker sets this, after handing off the frozen tail. */
-  atomic_bool producer_done;
+  h2_atomic_bool_t producer_done;
   size_t uplink_refs; /* Protected by Service mutex. */
   bool response_seen;
   bool eos_seen;
@@ -93,7 +94,7 @@ void h2_gizclaw_speech_uplink_step_internal(h2_gizclaw_service_t *service) {
 
   h2_pal_result_t rc = h2_pal_mutex_lock(sync, speech->input_mutex);
   if (rc == H2_PAL_OK) {
-    if (speech->input.active && !atomic_load(&speech->producer_done)) {
+    if (speech->input.active && !h2_atomic_load(&speech->producer_done)) {
       rc = h2_gizclaw_service_pcm_input_internal(service, &speech->input,
                                                  H2_GIZCLAW_PCM_INPUT_PREPARE,
                                                  NULL, 0u, NULL);
@@ -115,18 +116,18 @@ void h2_gizclaw_speech_uplink_step_internal(h2_gizclaw_service_t *service) {
       if (rc != H2_PAL_OK && rc != H2_PAL_ERR_WOULD_BLOCK &&
           rc != H2_PAL_ERR_TIMEOUT) {
         h2_gizclaw_req_pcm_end_internal(speech->request, rc);
-        atomic_store(&speech->producer_done, true);
+        h2_atomic_store(&speech->producer_done, true);
       } else if (speech->input.ended && speech->input.tail_taken &&
                  speech->input.tail_offset == speech->input.tail_len &&
                  speech->capture_pending_len == 0u) {
         h2_gizclaw_req_pcm_end_internal(speech->request, H2_PAL_OK);
-        atomic_store(&speech->producer_done, true);
+        h2_atomic_store(&speech->producer_done, true);
       }
     }
     (void)h2_pal_mutex_unlock(sync, speech->input_mutex);
   } else {
     h2_gizclaw_req_pcm_end_internal(speech->request, rc);
-    atomic_store(&speech->producer_done, true);
+    h2_atomic_store(&speech->producer_done, true);
   }
   (void)h2_pal_mutex_lock(sync, service->mutex);
   --speech->uplink_refs;
@@ -231,6 +232,7 @@ static void speech_destroy(void *context) {
   if (speech->input_mutex != NULL)
     (void)h2_pal_mutex_destroy(speech->service->config.sync,
                                speech->input_mutex);
+  h2_atomic_bool_destroy(&speech->producer_done);
   h2_gizclaw_pcm_input_deinit(&speech->input);
   h2_pal_mem_free(speech->allocator, speech);
 }
@@ -256,7 +258,10 @@ static h2_pal_result_t create_speech(h2_gizclaw_service_t *service,
   memset(speech, 0, sizeof(*speech));
   speech->service = service;
   speech->allocator = service->client_config.allocator;
-  atomic_init(&speech->producer_done, false);
+  if (h2_atomic_bool_init(&speech->producer_done, false) != H2_ATOMIC_OK) {
+    h2_pal_mem_free(speech->allocator, speech);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
   uint8_t *payload =
       h2_pal_mem_alloc(speech->allocator, size == 0u ? 1u : size);
   h2_pal_result_t rc = H2_PAL_ERR_NO_MEMORY;
