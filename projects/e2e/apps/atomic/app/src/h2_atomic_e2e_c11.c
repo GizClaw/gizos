@@ -8,15 +8,12 @@ typedef struct c11_state {
   atomic_uint cas;
   bool psram;
 } c11_state_t;
-static c11_state_t s_storage;
 static atomic_flag s_in_use = ATOMIC_FLAG_INIT;
 
 static int create(const h2_pal_mem_api_t *mem, bool psram, void **out) {
-  /* Static storage is internal DRAM on ESP, matching the h2_atomic provider. */
   if (atomic_flag_test_and_set(&s_in_use))
     return H2_PAL_ERR_BUSY;
-  c11_state_t *state = psram ? h2_pal_mem_alloc(mem, sizeof(*state))
-                             : &s_storage;
+  c11_state_t *state = h2_pal_mem_alloc(mem, sizeof(*state));
   if (state == NULL) {
     atomic_flag_clear(&s_in_use);
     return H2_PAL_ERR_NO_MEMORY;
@@ -28,7 +25,8 @@ static int create(const h2_pal_mem_api_t *mem, bool psram, void **out) {
   return H2_PAL_OK;
 }
 static void destroy(const h2_pal_mem_api_t *mem, bool psram, void *state) {
-  if (psram) h2_pal_mem_free(mem, state);
+  (void)psram;
+  h2_pal_mem_free(mem, state);
   atomic_flag_clear(&s_in_use);
 }
 static unsigned work(void *opaque, unsigned iterations) {
@@ -41,7 +39,7 @@ static unsigned work(void *opaque, unsigned iterations) {
     bool done = false;
     const unsigned max_attempts = state->psram ? 32u : 1000000u;
     for (unsigned attempt = 0u; attempt < max_attempts; ++attempt) {
-      if (atomic_compare_exchange_weak_explicit(
+      if (atomic_compare_exchange_strong_explicit(
               &state->cas, &expected, expected + 1u,
               memory_order_seq_cst, memory_order_seq_cst)) {
         done = true;

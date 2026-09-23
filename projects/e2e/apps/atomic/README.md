@@ -50,10 +50,16 @@ C11 runs failed with lost counts. For example, one run ended with 28,533 and
 24,679 respectively against the expected 40,000; both workers were observed
 on separate cores and the C11 state address was verified as PSRAM.
 
-After switching the ESP provider to C11 operations on DIRAM-allocated storage,
-the same DevKit again passed all six `h2_atomic` cases and failed all three
-direct-C11-in-PSRAM cases. The PSRAM-wrapper `h2_atomic` cases took 35.6–36.0
-ms per run, down from 86.5–87.0 ms with the earlier global-critical-section
-provider. This is an end-to-end workload comparison, not an isolated atomic
-instruction benchmark; the `h2_atomic` API also incurs out-of-line calls and
-an extra storage-pointer lookup.
+After switching the ESP provider to C11 operations on DIRAM-allocated storage
+and enabling hardware atomics for that provider source, the same DevKit again
+passed all six `h2_atomic` cases and failed all three direct-C11-in-PSRAM
+cases. The E2E backends now both allocate through the same placement allocator
+and use strong CAS with the same retry limits. In the final run, internal-RAM
+`h2_atomic` took 69.3–69.8 ms versus 23.0–24.8 ms for direct C11. For the
+PSRAM-wrapper case, `h2_atomic` took 13.9 and 14.2 ms in two samples; one
+sample was a 112.3 ms scheduling outlier. All three returned the expected
+40,000/40,000 counts. The earlier global-critical-section provider took
+86.5–87.0 ms in this smaller workload. Disassembly confirms that the final
+ESP provider uses the S32C1I hardware atomic instruction; its API still adds
+an out-of-line call and storage-pointer lookup per operation. These figures
+describe the full E2E workload, not an isolated instruction benchmark.

@@ -6,14 +6,15 @@
 typedef struct h2_state {
   h2_atomic_uint_t added;
   h2_atomic_uint_t cas;
+  bool psram;
 } h2_state_t;
 
 static int create(const h2_pal_mem_api_t *mem, bool psram, void **out) {
-  (void)psram;
   h2_state_t *state = h2_pal_mem_alloc(mem, sizeof(*state));
   if (state == NULL)
     return H2_PAL_ERR_NO_MEMORY;
   memset(state, 0, sizeof(*state));
+  state->psram = psram;
   h2_atomic_result_t init_rc = h2_atomic_uint_init(&state->added, 0u);
   if (init_rc == H2_ATOMIC_OK)
     init_rc = h2_atomic_uint_init(&state->cas, 0u);
@@ -42,7 +43,8 @@ static unsigned work(void *opaque, unsigned iterations) {
   for (unsigned i = 0u; i < iterations; ++i) {
     unsigned expected = h2_atomic_uint_load(&state->cas, H2_ATOMIC_SEQ_CST);
     bool done = false;
-    for (unsigned attempt = 0u; attempt < 1000000u; ++attempt) {
+    const unsigned max_attempts = state->psram ? 32u : 1000000u;
+    for (unsigned attempt = 0u; attempt < max_attempts; ++attempt) {
       if (h2_atomic_uint_compare_exchange(&state->cas, &expected,
                                           expected + 1u, H2_ATOMIC_SEQ_CST,
                                           H2_ATOMIC_SEQ_CST)) {

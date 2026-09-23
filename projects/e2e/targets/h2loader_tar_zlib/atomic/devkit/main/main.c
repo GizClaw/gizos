@@ -45,6 +45,8 @@ void app_main(void) {
 
   const h2_atomic_e2e_backend_t *backends[] = {
       h2_atomic_e2e_h2_backend(), h2_atomic_e2e_c11_backend()};
+  /* Let a USB monitor attach and drain boot logs before the short workload. */
+  (void)h2_pal_time_sleep_ms(h2_esp_platform_time_api(), 1500u);
   unsigned failures = 0u;
   for (unsigned placement = 0u; placement < 2u; ++placement) {
     const bool psram = placement == 1u;
@@ -82,6 +84,7 @@ void app_main(void) {
                (unsigned)storage_ok, result.elapsed_us,
                passed ? "PASS" : "FAIL", rc);
         fflush(stdout);
+        (void)h2_pal_time_sleep_ms(h2_esp_platform_time_api(), 100u);
         if (!passed) ++failures;
       }
     }

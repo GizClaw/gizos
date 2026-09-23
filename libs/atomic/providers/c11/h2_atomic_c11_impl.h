@@ -12,6 +12,7 @@
 
 /* Include this implementation in exactly one platform source. The platform
  * controls storage placement through H2_ATOMIC_C11_ALLOC/FREE. */
+#ifndef H2_ATOMIC_C11_ORDER
 static memory_order c11_order(h2_atomic_order_t order) {
     switch (order) {
         case H2_ATOMIC_RELAXED: return memory_order_relaxed;
@@ -22,6 +23,8 @@ static memory_order c11_order(h2_atomic_order_t order) {
     }
     return memory_order_seq_cst;
 }
+#define H2_ATOMIC_C11_ORDER(order) c11_order(order)
+#endif
 
 #define H2_ATOMIC_DEFINE_INTEGER(name, type) \
     struct h2_atomic_##name##_storage { _Atomic(type) value; }; \
@@ -39,29 +42,29 @@ static memory_order c11_order(h2_atomic_order_t order) {
         object->storage = NULL; \
     } \
     type h2_atomic_##name##_load(const h2_atomic_##name##_t *object, h2_atomic_order_t order) { \
-        return atomic_load_explicit(&object->storage->value, c11_order(order)); \
+        return atomic_load_explicit(&object->storage->value, H2_ATOMIC_C11_ORDER(order)); \
     } \
     void h2_atomic_##name##_store(h2_atomic_##name##_t *object, type next, h2_atomic_order_t order) { \
-        atomic_store_explicit(&object->storage->value, next, c11_order(order)); \
+        atomic_store_explicit(&object->storage->value, next, H2_ATOMIC_C11_ORDER(order)); \
     } \
     type h2_atomic_##name##_exchange(h2_atomic_##name##_t *object, type next, h2_atomic_order_t order) { \
-        return atomic_exchange_explicit(&object->storage->value, next, c11_order(order)); \
+        return atomic_exchange_explicit(&object->storage->value, next, H2_ATOMIC_C11_ORDER(order)); \
     } \
     bool h2_atomic_##name##_compare_exchange(h2_atomic_##name##_t *object, type *expected, type desired, h2_atomic_order_t success, h2_atomic_order_t failure) { \
         (void)failure; \
-        return atomic_compare_exchange_strong_explicit(&object->storage->value, expected, desired, c11_order(success), c11_order(failure)); \
+        return atomic_compare_exchange_strong_explicit(&object->storage->value, expected, desired, H2_ATOMIC_C11_ORDER(success), H2_ATOMIC_C11_ORDER(failure)); \
     } \
     type h2_atomic_##name##_fetch_add(h2_atomic_##name##_t *object, type amount, h2_atomic_order_t order) { \
-        return atomic_fetch_add_explicit(&object->storage->value, amount, c11_order(order)); \
+        return atomic_fetch_add_explicit(&object->storage->value, amount, H2_ATOMIC_C11_ORDER(order)); \
     } \
     type h2_atomic_##name##_fetch_sub(h2_atomic_##name##_t *object, type amount, h2_atomic_order_t order) { \
-        return atomic_fetch_sub_explicit(&object->storage->value, amount, c11_order(order)); \
+        return atomic_fetch_sub_explicit(&object->storage->value, amount, H2_ATOMIC_C11_ORDER(order)); \
     } \
     type h2_atomic_##name##_fetch_or(h2_atomic_##name##_t *object, type mask, h2_atomic_order_t order) { \
-        return atomic_fetch_or_explicit(&object->storage->value, mask, c11_order(order)); \
+        return atomic_fetch_or_explicit(&object->storage->value, mask, H2_ATOMIC_C11_ORDER(order)); \
     } \
     type h2_atomic_##name##_fetch_and(h2_atomic_##name##_t *object, type mask, h2_atomic_order_t order) { \
-        return atomic_fetch_and_explicit(&object->storage->value, mask, c11_order(order)); \
+        return atomic_fetch_and_explicit(&object->storage->value, mask, H2_ATOMIC_C11_ORDER(order)); \
     }
 
 H2_ATOMIC_DEFINE_INTEGER(int, int)
@@ -87,20 +90,20 @@ void h2_atomic_bool_destroy(h2_atomic_bool_t *object) {
     object->storage = NULL;
 }
 bool h2_atomic_bool_load(const h2_atomic_bool_t *object, h2_atomic_order_t order) {
-    return atomic_load_explicit(&object->storage->value, c11_order(order));
+    return atomic_load_explicit(&object->storage->value, H2_ATOMIC_C11_ORDER(order));
 }
 void h2_atomic_bool_store(h2_atomic_bool_t *object, bool next, h2_atomic_order_t order) {
-    atomic_store_explicit(&object->storage->value, next, c11_order(order));
+    atomic_store_explicit(&object->storage->value, next, H2_ATOMIC_C11_ORDER(order));
 }
 bool h2_atomic_bool_exchange(h2_atomic_bool_t *object, bool next, h2_atomic_order_t order) {
-    return atomic_exchange_explicit(&object->storage->value, next, c11_order(order));
+    return atomic_exchange_explicit(&object->storage->value, next, H2_ATOMIC_C11_ORDER(order));
 }
 bool h2_atomic_bool_compare_exchange(h2_atomic_bool_t *object, bool *expected,
                                      bool desired, h2_atomic_order_t success,
                                      h2_atomic_order_t failure) {
     (void)failure;
     return atomic_compare_exchange_strong_explicit(&object->storage->value, expected, desired,
-                                       c11_order(success), c11_order(failure));
+                                       H2_ATOMIC_C11_ORDER(success), H2_ATOMIC_C11_ORDER(failure));
 }
 
 struct h2_atomic_ptr_storage { _Atomic(void *) value; };
@@ -118,20 +121,20 @@ void h2_atomic_ptr_destroy(h2_atomic_ptr_t *object) {
     object->storage = NULL;
 }
 void *h2_atomic_ptr_load(const h2_atomic_ptr_t *object, h2_atomic_order_t order) {
-    return atomic_load_explicit(&object->storage->value, c11_order(order));
+    return atomic_load_explicit(&object->storage->value, H2_ATOMIC_C11_ORDER(order));
 }
 void h2_atomic_ptr_store(h2_atomic_ptr_t *object, void *next, h2_atomic_order_t order) {
-    atomic_store_explicit(&object->storage->value, next, c11_order(order));
+    atomic_store_explicit(&object->storage->value, next, H2_ATOMIC_C11_ORDER(order));
 }
 void *h2_atomic_ptr_exchange(h2_atomic_ptr_t *object, void *next, h2_atomic_order_t order) {
-    return atomic_exchange_explicit(&object->storage->value, next, c11_order(order));
+    return atomic_exchange_explicit(&object->storage->value, next, H2_ATOMIC_C11_ORDER(order));
 }
 bool h2_atomic_ptr_compare_exchange(h2_atomic_ptr_t *object, void **expected,
                                     void *desired, h2_atomic_order_t success,
                                     h2_atomic_order_t failure) {
     (void)failure;
     return atomic_compare_exchange_strong_explicit(&object->storage->value, expected, desired,
-                                       c11_order(success), c11_order(failure));
+                                       H2_ATOMIC_C11_ORDER(success), H2_ATOMIC_C11_ORDER(failure));
 }
 
 static atomic_flag s_flag_lock = ATOMIC_FLAG_INIT;
