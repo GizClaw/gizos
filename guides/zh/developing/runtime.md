@@ -93,7 +93,7 @@ Runtime 只发布原始的“最近一帧峰值”，**不做衰减**。Runtime 
 
 这些电平只用于观测。UI 可以据此画 level meter，但任何音频路径都不得由它决定：不得用来开关 mic/speaker、判定 VAD、门控发送或改变对话状态。
 
-发布电平不加锁，写入在音频热路径上只有原子 store。level 和 timestamp 是两个独立的 32 位原子（64 位原子在 ARMv5 target 上会退化成 SDK 没有提供的 libatomic 调用），因此与某一帧竞争的读者可能把新的 level 和上一帧的 timestamp 配在一起；两帧相差一个 frame period，level meter 看不出来，消费者也不得依赖这对值的严格配对。
+发布电平使用独立的 `libs/atomic` typed wrapper：每个方向各有一个 level 和一个 monotonic 毫秒低 32 位字段。Runtime 初始化这些 provider-owned 字段并在并发访问结束后销毁；初始化失败向创建调用方返回错误。Atomic 不通过 PAL 注入，ESP 的实际存储由平台实现置于内部 RAM，wrapper 可以位于 PSRAM。发布电平不加锁，写入在音频热路径上只有原子 store。level 和 timestamp 是两个独立的 32 位原子（64 位原子在 ARMv5 target 上会退化成 SDK 没有提供的 libatomic 调用），因此与某一帧竞争的读者可能把新的 level 和上一帧的 timestamp 配在一起；两帧相差一个 frame period，level meter 看不出来，消费者也不得依赖这对值的严格配对。
 
 存储的 timestamp 只保留 monotonic 毫秒的低 32 位，读取时用当前时钟补回高位，因此跨 `UINT32_MAX` 毫秒（约 49.7 天）回绕的帧仍然落在正确的 epoch 上，回绕边界上低位为 0 的帧也不会被当成“从未测量”。这个补位对任何比约 24 天更新的帧都成立。
 
