@@ -5,7 +5,7 @@
 #include <assert.h>
 #include <errno.h>
 #include <pthread.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdlib.h>
 #include <time.h>
 
@@ -16,15 +16,15 @@ struct h2_jieli_sdk_sem {
     unsigned count;
     unsigned max_count;
 };
-static atomic_int allocations, entered, parked, hold_notified;
+static h2_atomic_int_t allocations, entered, parked, hold_notified;
 
 void *h2_jieli_sdk_malloc(size_t size) {
     void *p = calloc(1, size);
-    if (p != NULL) atomic_fetch_add(&allocations, 1);
+    if (p != NULL) h2_atomic_fetch_add(&allocations, 1);
     return p;
 }
 void h2_jieli_sdk_free(void *p) {
-    if (p != NULL) atomic_fetch_sub(&allocations, 1);
+    if (p != NULL) h2_atomic_fetch_sub(&allocations, 1);
     free(p);
 }
 void h2_jieli_sdk_sleep_ms(uint32_t ms) {
@@ -90,7 +90,7 @@ int h2_jieli_sdk_sem_take(h2_jieli_sdk_sem_t *s, uint32_t timeout) {
         deadline.tv_nsec -= 1000000000L;
     }
     assert(pthread_mutex_lock(&s->lock) == 0);
-    atomic_fetch_add(&entered, 1);
+    h2_atomic_fetch_add(&entered, 1);
     int rc = 0;
     while (s->count == 0u && rc == 0) {
         rc = timeout == 0u ? ETIMEDOUT :
@@ -100,10 +100,10 @@ int h2_jieli_sdk_sem_take(h2_jieli_sdk_sem_t *s, uint32_t timeout) {
     assert(pthread_mutex_unlock(&s->lock) == 0);
     assert(rc == 0 || rc == ETIMEDOUT);
     if (rc == 0) {
-        atomic_fetch_add(&parked, 1);
+        h2_atomic_fetch_add(&parked, 1);
         /* Hold a notified waiter before PAL unlink, allowing a late waiter
          * and destroy to race the precise notification-retirement interval. */
-        while (atomic_load(&hold_notified)) h2_jieli_sdk_sleep_ms(1u);
+        while (h2_atomic_load(&hold_notified)) h2_jieli_sdk_sleep_ms(1u);
     }
     return rc == 0 ? 0 : 1;
 }
@@ -121,9 +121,9 @@ static void *wait_thread(void *arg) {
     assert(h2_pal_mutex_destroy(api, mutex) == H2_PAL_OK);
     return NULL;
 }
-static void await_count(atomic_int *counter, int value) {
+static void await_count(h2_atomic_int_t *counter, int value) {
     for (unsigned i = 0; i < 5000u; ++i) {
-        if (atomic_load(counter) == value) return;
+        if (h2_atomic_load(counter) == value) return;
         h2_jieli_sdk_sleep_ms(1u);
     }
     assert(!"worker did not reach barrier");
@@ -151,18 +151,23 @@ static void test_recursive_contention(void) {
     for (unsigned i = 0; i < 4u; ++i)
         assert(pthread_join(workers[i], NULL) == 0);
     assert(h2_pal_mutex_destroy(api, mutex) == H2_PAL_OK);
-    assert(atomic_load(&allocations) == 0);
+    assert(h2_atomic_load(&allocations) == 0);
 }
 int main(void) {
+    assert(h2_atomic_int_init(&allocations, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_int_init(&entered, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_int_init(&parked, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_int_init(&hold_notified, 0) == H2_ATOMIC_OK);
+
     test_recursive_contention();
     const h2_pal_sync_api_t *api = h2_jieli_wl82_platform_sync_api();
     const h2_pal_cond_config_t config = {.name = "threaded-cond"};
     for (unsigned iteration = 0; iteration < 20u; ++iteration) {
         h2_pal_cond_t *cond = NULL;
         assert(h2_pal_cond_create(api, &config, &cond) == H2_PAL_OK);
-        atomic_store(&entered, 0);
-        atomic_store(&parked, 0);
-        atomic_store(&hold_notified, 1);
+        h2_atomic_store(&entered, 0);
+        h2_atomic_store(&parked, 0);
+        h2_atomic_store(&hold_notified, 1);
         worker_t a = {cond, 10000u, -1}, b = {cond, 10000u, -1};
         pthread_t first, second;
         assert(pthread_create(&first, NULL, wait_thread, &a) == 0);
@@ -177,12 +182,16 @@ int main(void) {
         assert(h2_pal_cond_broadcast(api, cond) == H2_PAL_OK);
         await_count(&parked, 2);
         assert(h2_pal_cond_destroy(api, cond) == H2_PAL_ERR_INVALID_STATE);
-        atomic_store(&hold_notified, 0);
+        h2_atomic_store(&hold_notified, 0);
         assert(pthread_join(first, NULL) == 0);
         assert(pthread_join(second, NULL) == 0);
         assert(a.result == H2_PAL_OK && b.result == H2_PAL_OK);
         assert(h2_pal_cond_destroy(api, cond) == H2_PAL_OK);
-        assert(atomic_load(&allocations) == 0);
+        assert(h2_atomic_load(&allocations) == 0);
     }
+    h2_atomic_int_destroy(&allocations);
+    h2_atomic_int_destroy(&entered);
+    h2_atomic_int_destroy(&parked);
+    h2_atomic_int_destroy(&hold_notified);
     return 0;
 }

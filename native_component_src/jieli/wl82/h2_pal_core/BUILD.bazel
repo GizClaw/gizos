@@ -22,15 +22,20 @@ PROVIDER_SRCS = [
 
 firmware_native_component(
     name = "h2_pal_core",
-    srcs = PROVIDER_SRCS + ["src/h2_jieli_wl82_sdk_port.c"],
+    srcs = PROVIDER_SRCS + [
+        "src/h2_jieli_wl82_sdk_port.c",
+        "src/h2_jieli_wl82_atomic_provider.c",
+    ],
     hdrs = glob(["include/*.h"]),
     component_name = "h2_pal_core",
     include_roots = [
         "libs/pal/include",
+        "libs/atomic/include",
+        "libs/atomic/providers/locked",
         "native_component_src/jieli/wl82/h2_pal_core/include",
     ],
     tags = ["manual"],
-    deps = ["//libs/pal:pal_header_files"],
+    deps = ["//libs/atomic", "//libs/atomic:locked_template", "//libs/pal:pal_header_files"],
 )
 
 cc_library(
@@ -76,7 +81,7 @@ cc_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal"],
+    deps = ["//libs/atomic", "//libs/atomic/providers/c11", "//libs/pal"],
 )
 
 cc_test(
@@ -99,7 +104,7 @@ cc_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal"],
+    deps = ["//libs/atomic", "//libs/atomic/providers/c11", "//libs/pal"],
 )
 
 cc_test(
@@ -121,7 +126,7 @@ cc_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal"],
+    deps = ["//libs/atomic", "//libs/atomic/providers/c11", "//libs/pal"],
 )
 
 cc_test(
@@ -160,7 +165,7 @@ cc_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal"],
+    deps = ["//libs/atomic", "//libs/atomic/providers/c11", "//libs/pal"],
 )
 
 filegroup(
