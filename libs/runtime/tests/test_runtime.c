@@ -3866,10 +3866,10 @@ static void test_audio_track_allocator(void) {
         };
         h2_pal_audio_track_t *track = NULL;
         assert(h2_pal_audio_create_track(runtime->audio, &track_config, &track) == H2_PAL_OK);
-        assert(atomic_load(&arena.live) == (custom ? 1u : 0u));
+        assert(h2_atomic_load(&arena.live) == (custom ? 1u : 0u));
         assert(env.allocator_state.live_allocations == baseline + (custom ? 0u : 1u));
         assert(h2_pal_audio_track_close(track) == H2_PAL_OK);
-        assert(atomic_load(&arena.live) == 0u);
+        assert(h2_atomic_load(&arena.live) == 0u);
         assert(env.allocator_state.live_allocations == baseline);
     }
     h2_runtime_deinit(runtime);

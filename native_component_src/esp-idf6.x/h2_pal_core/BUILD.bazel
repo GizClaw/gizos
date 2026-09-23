@@ -75,6 +75,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic/providers/c11",
         "//libs/pal",
         "//libs/pal:test_allocator",
     ],

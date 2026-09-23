@@ -319,7 +319,7 @@ static void test_psram_stack_allocator(void) {
     };
     s.fail_create = mode == 3;
     s.fail_tcb = mode == 4;
-    if (mode == 5) atomic_store(&arena.fail_on_call, 1u);
+    if (mode == 5) h2_atomic_store(&arena.fail_on_call, 1u);
     int rc = h2_pal_task_start(h2_esp_platform_task_api(), &options, entry,
                               NULL, &s.pal_task);
     if (mode >= 3 && mode <= 5) {
@@ -329,12 +329,12 @@ static void test_psram_stack_allocator(void) {
       assert(s.deletes == 1 && s.entry_calls == 0);
     } else {
       assert(rc == H2_PAL_OK);
-      assert(atomic_load(&arena.live) == (mode == 2 || mode == 7 ? 0u : 1u));
+      assert(h2_atomic_load(&arena.live) == (mode == 2 || mode == 7 ? 0u : 1u));
       if (mode != 2) assert(s.stack_size == 12288u);
       if (mode == 6) {
         s.fail_join = 1;
         assert(h2_pal_task_join(h2_esp_platform_task_api(), s.pal_task) == H2_PAL_ERR_TASK);
-        assert(atomic_load(&arena.live) == 1u && s.tcb_live == 1);
+        assert(h2_atomic_load(&arena.live) == 1u && s.tcb_live == 1);
         s.fail_join = 0;
       }
       s.join_on_give = mode == 1;
@@ -352,8 +352,8 @@ static void test_psram_stack_allocator(void) {
         assert(s.caps == (mode == 7 ? MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT : 0u));
       }
     }
-    assert(atomic_load(&arena.live) == 0u);
-    assert(atomic_load(&arena.calls) == (mode == 2 || mode == 7 ? 0u : 1u));
+    assert(h2_atomic_load(&arena.live) == 0u);
+    assert(h2_atomic_load(&arena.calls) == (mode == 2 || mode == 7 ? 0u : 1u));
     assert(s.stack_frees == (mode == 2 || mode == 5 || mode == 7 ? 0 : 1));
     assert(s.tcb_allocations == (mode == 2 || mode == 4 || mode == 7 ? 0 : 1));
     assert(s.tcb_frees == s.tcb_allocations);
