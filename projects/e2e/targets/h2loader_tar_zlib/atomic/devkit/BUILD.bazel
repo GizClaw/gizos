@@ -17,6 +17,12 @@ esp_target_task_policy(
         "$h2loader/return 8 0 4096 psram",
         "$h2loader/blelink 6 0 4096 psram",
         "$h2loader/uartcmd default",
+        "$bleikcp/kcp 7 0 4096 psram",
+        "$bleikcp/server 5 0 4096 psram",
+        "$h2peer/net 7 0 4096 psram",
+        "$h2peer/udp 7 0 4096 psram",
+        "$runtime/input default",
+        "$runtime/nfc default",
     ],
 )
 
