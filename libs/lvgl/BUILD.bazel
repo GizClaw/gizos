@@ -362,7 +362,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":lvgl"],
+    deps = [":lvgl", "//libs/atomic/providers/c11"],
 )
 
 cc_test(
