@@ -1,4 +1,5 @@
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -13,4 +14,18 @@ cc_library(
     hdrs = ["providers/locked/h2_atomic_locked_impl.h"],
     includes = ["providers/locked"],
     deps = [":atomic"],
+)
+
+cc_test(
+    name = "locked_flag_no_allocator_test",
+    srcs = ["tests/test_h2_atomic_locked_flag.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    linkopts = ["-pthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":locked_template"],
 )
