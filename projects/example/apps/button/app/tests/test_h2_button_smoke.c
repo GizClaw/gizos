@@ -6,11 +6,10 @@
 #include <assert.h>
 #include <limits.h>
 #include <stdlib.h>
-#include <stdatomic.h>
 #include <string.h>
 
 typedef struct fixture {
-  atomic_size_t allocations;
+  size_t allocations;
   unsigned opened, closed, drawn, presented, started, logs, polls;
   h2_pal_result_t started_result;
   int draw_result, close_result;

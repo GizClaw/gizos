@@ -21,6 +21,7 @@ objc_library(
     target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
     deps = [
         "//libs/atomic",
+        "//libs/atomic/providers/pthread:pthread",
         "//libs/pal/providers/ios/pal_core",
         "//projects/example/libs/host_runtime",
         "//projects/example/libs/mobile/tap-reset:app",
