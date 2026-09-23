@@ -1089,6 +1089,15 @@ jobs:
         run: |
           git -C .firmware-devenv-jieli lfs install --local
           git -C .firmware-devenv-jieli lfs pull --include='tools/jieli_toolchain/archives/**'
+          while read -r kind archive _; do
+            case "$kind" in ''|'#'*) continue ;; esac
+            path=".firmware-devenv-jieli/tools/jieli_toolchain/archives/$archive"
+            test -s "$path"
+            if [[ $(head -c 64 "$path") == 'version https://git-lfs.github.com/spec/v1'* ]]; then
+              echo "JieLi toolchain archive remains a Git LFS pointer: $path" >&2
+              exit 1
+            fi
+          done < tools/bazel/native_versions/jieli_toolchain_archives.txt
           git -C .firmware-devenv-jieli config --unset-all http.https://github.com/.extraheader || true
           git -C .firmware-devenv-jieli config --unset-all core.sshCommand || true
 
