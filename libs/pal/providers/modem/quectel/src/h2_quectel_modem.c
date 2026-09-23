@@ -432,7 +432,8 @@ h2_pal_result_t h2_quectel_modem_init(
             return rc;
         }
     }
-    if (h2_atomic_u32_init(&modem->cpin_absent_seen, 0u) != H2_ATOMIC_OK) {
+    h2_atomic_result_t atomic_rc = h2_atomic_u32_init(&modem->cpin_absent_seen, 0u);
+    if (atomic_rc != H2_ATOMIC_OK) {
         if (modem->operation_lock != NULL) {
             (void)h2_pal_mutex_destroy(config->sync_api, modem->operation_lock);
             modem->operation_lock = NULL;
@@ -441,7 +442,8 @@ h2_pal_result_t h2_quectel_modem_init(
             (void)h2_pal_mutex_destroy(config->sync_api, modem->lock);
             modem->lock = NULL;
         }
-        return H2_PAL_ERR_NO_MEMORY;
+        return atomic_rc == H2_ATOMIC_UNSUPPORTED
+            ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_ERR_NO_MEMORY;
     }
     modem->platform.user = modem;
     modem->platform.vtable = cell_locate_ready

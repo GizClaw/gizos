@@ -1,10 +1,11 @@
+#include "asm/includes.h"
+
 #include "jieli_loader_platform.h"
 #include "h2_atomic.h"
 #include "jieli_warm_boot.h"
 #include "jieli_native_image.h"
 #include "jieli_pending_boot.h"
 
-#include "asm/includes.h"
 #include "h2_jieli_ac791n_devkit_partitions.h"
 #include "h2_loader_boot.h"
 #include "os/os_api.h"

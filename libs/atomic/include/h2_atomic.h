@@ -39,6 +39,8 @@ typedef enum h2_atomic_result {
     H2_ATOMIC_INVALID_ARG,
     H2_ATOMIC_INVALID_STATE,
     H2_ATOMIC_NO_MEMORY,
+    /* The linked platform provider has no atomic implementation. */
+    H2_ATOMIC_UNSUPPORTED,
 } h2_atomic_result_t;
 
 typedef enum h2_atomic_order {
@@ -50,7 +52,8 @@ typedef enum h2_atomic_order {
 } h2_atomic_order_t;
 
 /* No implementation or fallback is supplied by this target. A final binary
- * must link one implementation of these symbols for its platform. */
+ * must link one implementation of these symbols for its platform. Callers
+ * must check init before using a value; unsupported providers trap on use. */
 #define H2_ATOMIC_DECLARE_INTEGER(name, type) \
     h2_atomic_result_t h2_atomic_##name##_init(h2_atomic_##name##_t *value, type initial); \
     void h2_atomic_##name##_destroy(h2_atomic_##name##_t *value); \

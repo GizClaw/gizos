@@ -16,6 +16,26 @@ cc_library(
     deps = [":atomic"],
 )
 
+cc_library(
+    name = "unsupported_template",
+    hdrs = ["providers/unsupported/h2_atomic_unsupported_impl.h"],
+    includes = ["providers/unsupported"],
+    deps = [":atomic"],
+)
+
+cc_test(
+    name = "unsupported_provider_test",
+    srcs = ["tests/test_h2_atomic_unsupported.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":unsupported_template"],
+)
+
 cc_test(
     name = "locked_flag_no_allocator_test",
     srcs = ["tests/test_h2_atomic_locked_flag.c"],

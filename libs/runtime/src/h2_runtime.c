@@ -294,32 +294,34 @@ static void runtime_atomic_destroy(h2_runtime_private_t *state) {
 }
 
 static h2_pal_result_t runtime_atomic_init(h2_runtime_private_t *state) {
-    if (h2_atomic_int_init(&state->state_publication.ready, 0) != H2_ATOMIC_OK) goto no_memory;
-    if (h2_atomic_uint_init(&state->state_publication.active_index, 0u) != H2_ATOMIC_OK) goto no_memory;
-    if (h2_atomic_flag_init(&state->state_publication.reader_lock) != H2_ATOMIC_OK) goto no_memory;
-    if (h2_atomic_flag_init(&state->audio_state_busy) != H2_ATOMIC_OK) goto no_memory;
+    h2_atomic_result_t atomic_rc = H2_ATOMIC_OK;
+    if ((atomic_rc = h2_atomic_int_init(&state->state_publication.ready, 0)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_uint_init(&state->state_publication.active_index, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_flag_init(&state->state_publication.reader_lock)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_flag_init(&state->audio_state_busy)) != H2_ATOMIC_OK) goto atomic_failure;
 #if !defined(H2_RUNTIME_AUDIO_LEVELS) || H2_RUNTIME_AUDIO_LEVELS
-    if (h2_atomic_uint_init(&state->audio_capture_level, 0u) != H2_ATOMIC_OK) goto no_memory;
-    if (h2_atomic_uint_init(&state->audio_capture_level_ms, 0u) != H2_ATOMIC_OK) goto no_memory;
-    if (h2_atomic_uint_init(&state->audio_playback_level, 0u) != H2_ATOMIC_OK) goto no_memory;
-    if (h2_atomic_uint_init(&state->audio_playback_level_ms, 0u) != H2_ATOMIC_OK) goto no_memory;
+    if ((atomic_rc = h2_atomic_uint_init(&state->audio_capture_level, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_uint_init(&state->audio_capture_level_ms, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_uint_init(&state->audio_playback_level, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_uint_init(&state->audio_playback_level_ms, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
 #endif
-    if (h2_atomic_flag_init(&state->custom_event_lock) != H2_ATOMIC_OK) goto no_memory;
-    if (h2_atomic_uint_init(&state->custom_event_in_flight, 0u) != H2_ATOMIC_OK) goto no_memory;
-    if (h2_atomic_int_init(&state->custom_event_closed, 0) != H2_ATOMIC_OK) goto no_memory;
-    if (h2_atomic_flag_init(&state->sequence_lock) != H2_ATOMIC_OK) goto no_memory;
-    if (h2_atomic_uint_init(&state->next_sequence, 1u) != H2_ATOMIC_OK) goto no_memory;
-    if (h2_atomic_int_init(&state->system_event_active, 0) != H2_ATOMIC_OK) goto no_memory;
-    if (h2_atomic_int_init(&state->input_phase, H2_RUNTIME_INPUT_PHASE_STOPPED) != H2_ATOMIC_OK) goto no_memory;
-    if (h2_atomic_int_init(&state->input_stop_requested, 0) != H2_ATOMIC_OK) goto no_memory;
-    if (h2_atomic_int_init(&state->input_worker_result, H2_PAL_OK) != H2_ATOMIC_OK) goto no_memory;
+    if ((atomic_rc = h2_atomic_flag_init(&state->custom_event_lock)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_uint_init(&state->custom_event_in_flight, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_int_init(&state->custom_event_closed, 0)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_flag_init(&state->sequence_lock)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_uint_init(&state->next_sequence, 1u)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_int_init(&state->system_event_active, 0)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_int_init(&state->input_phase, H2_RUNTIME_INPUT_PHASE_STOPPED)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_int_init(&state->input_stop_requested, 0)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_int_init(&state->input_worker_result, H2_PAL_OK)) != H2_ATOMIC_OK) goto atomic_failure;
     for (size_t i = 0; i < H2_RUNTIME_STATE_SLOT_COUNT; ++i) {
-        if (h2_atomic_uint_init(&state->state_publication.reader_count[i], 0u) != H2_ATOMIC_OK) goto no_memory;
+        if ((atomic_rc = h2_atomic_uint_init(&state->state_publication.reader_count[i], 0u)) != H2_ATOMIC_OK) goto atomic_failure;
     }
     return H2_PAL_OK;
-no_memory:
+atomic_failure:
     runtime_atomic_destroy(state);
-    return H2_PAL_ERR_NO_MEMORY;
+    return atomic_rc == H2_ATOMIC_UNSUPPORTED
+        ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_ERR_NO_MEMORY;
 }
 
 static h2_pal_result_t runtime_init_release(

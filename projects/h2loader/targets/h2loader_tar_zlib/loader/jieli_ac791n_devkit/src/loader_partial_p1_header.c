@@ -1,3 +1,4 @@
+#include "asm/includes.h"
 #include "asm/sfc_norflash_api.h"
 #include "asm/wdt.h"
 #include "os/os_api.h"

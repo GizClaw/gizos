@@ -31,11 +31,11 @@ firmware_native_component(
     include_roots = [
         "libs/pal/include",
         "libs/atomic/include",
-        "libs/atomic/providers/locked",
+        "libs/atomic/providers/unsupported",
         "native_component_src/jieli/wl82/h2_pal_core/include",
     ],
     tags = ["manual"],
-    deps = ["//libs/atomic", "//libs/atomic:locked_template", "//libs/pal:pal_header_files"],
+    deps = ["//libs/atomic", "//libs/atomic:unsupported_template", "//libs/pal:pal_header_files"],
 )
 
 cc_library(

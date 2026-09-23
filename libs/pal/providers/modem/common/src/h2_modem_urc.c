@@ -72,12 +72,14 @@ h2_pal_result_t h2_modem_urc_start_idle(
         .task_api = task_api, .queue_api = queue_api, .handler = handler, .user = user,
         .idle = idle, .idle_timeout_ms = idle_timeout_ms,
     };
-    if (h2_atomic_u32_init(&worker->accepted_atomic, 0u) != H2_ATOMIC_OK ||
-        h2_atomic_u32_init(&worker->handled_atomic, 0u) != H2_ATOMIC_OK ||
-        h2_atomic_u32_init(&worker->full_atomic, 0u) != H2_ATOMIC_OK ||
-        h2_atomic_u32_init(&worker->truncated_atomic, 0u) != H2_ATOMIC_OK) {
+    h2_atomic_result_t atomic_rc = h2_atomic_u32_init(&worker->accepted_atomic, 0u);
+    if (atomic_rc == H2_ATOMIC_OK) atomic_rc = h2_atomic_u32_init(&worker->handled_atomic, 0u);
+    if (atomic_rc == H2_ATOMIC_OK) atomic_rc = h2_atomic_u32_init(&worker->full_atomic, 0u);
+    if (atomic_rc == H2_ATOMIC_OK) atomic_rc = h2_atomic_u32_init(&worker->truncated_atomic, 0u);
+    if (atomic_rc != H2_ATOMIC_OK) {
         counters_destroy(worker);
-        return H2_PAL_ERR_NO_MEMORY;
+        return atomic_rc == H2_ATOMIC_UNSUPPORTED
+            ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_ERR_NO_MEMORY;
     }
     h2_pal_queue_config_t queue_config = {
         .name = H2_MODEM_URC_TASK_NAME,
