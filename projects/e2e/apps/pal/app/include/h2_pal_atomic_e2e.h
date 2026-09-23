@@ -9,6 +9,7 @@ extern "C" {
 
 typedef enum h2_pal_atomic_e2e_case {
     H2_PAL_ATOMIC_E2E_FETCH_ADD,
+    H2_PAL_ATOMIC_E2E_I32_FETCH_ADD,
     H2_PAL_ATOMIC_E2E_CAS,
     H2_PAL_ATOMIC_E2E_EXCHANGE,
     H2_PAL_ATOMIC_E2E_FLAG,
@@ -21,9 +22,9 @@ typedef void (*h2_pal_atomic_e2e_yield_fn_t)(void *user);
 
 /** Borrowed dependencies and initialized storage, retained through run_case. */
 typedef struct h2_pal_atomic_e2e_config {
-    const h2_pal_atomic_api_t *atomic;
-    h2_pal_atomic_u32_t *counter;
-    h2_pal_atomic_flag_t *flag;
+    _Atomic uint32_t *counter;
+    _Atomic int32_t *signed_counter;
+    atomic_flag *flag;
     h2_pal_atomic_e2e_run_pair_fn_t run_pair;
     h2_pal_atomic_e2e_yield_fn_t yield;
     void *user;

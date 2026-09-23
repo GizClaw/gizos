@@ -53,7 +53,7 @@ cc_library(
         "include/h2/pal/net/h2_pal_netif.h",
         "include/h2/pal/net/h2_pal_sctp.h",
         "include/h2/pal/os/h2_pal_atomic.h",
-        "include/h2/pal/os/h2_pal_atomic_c11_impl.h",
+        "include/h2/pal/os/h2_pal_atomic_malloc_impl.h",
         "include/h2/pal/os/h2_pal_crypto.h",
         "include/h2/pal/os/h2_pal_disk.h",
         "include/h2/pal/os/h2_pal_firmware_info.h",

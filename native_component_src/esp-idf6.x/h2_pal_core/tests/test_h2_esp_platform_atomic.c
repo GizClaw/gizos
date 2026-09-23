@@ -1,50 +1,52 @@
 #include "h2_esp_platform_core.h"
-
+#include "esp_heap_caps.h"
 #include <assert.h>
+#include <stdatomic.h>
 #include <stdint.h>
+#include <stdlib.h>
 
-int h2_test_critical_entries;
-uintptr_t h2_test_extram_low;
-uintptr_t h2_test_extram_high;
-
-static void mark_external(const void *address, size_t bytes) {
-    h2_test_extram_low = (uintptr_t)address;
-    h2_test_extram_high = h2_test_extram_low + bytes;
+static unsigned allocations;
+static unsigned frees;
+static unsigned last_caps;
+void *heap_caps_malloc(size_t size, unsigned caps) {
+    ++allocations;
+    last_caps = caps;
+    return malloc(size);
 }
+void heap_caps_free(void *value) { ++frees; free(value); }
 
 int main(void) {
     const h2_pal_atomic_api_t *api = h2_esp_platform_atomic_api();
-    h2_pal_atomic_u32_t count = H2_PAL_ATOMIC_U32_INIT(1);
-    h2_pal_atomic_flag_t flag = H2_PAL_ATOMIC_FLAG_INIT;
-    uint32_t old = 0, expected = 2;
-    bool changed = false, previous = false;
+    _Atomic uint32_t *slots[65] = {0};
     assert(api != NULL);
-    mark_external(&count, sizeof(count));
-    assert(h2_pal_atomic_u32_fetch_add(api, &count, 1, &old, H2_PAL_ATOMIC_SEQ_CST) == H2_PAL_OK);
-    assert(old == 1);
-    assert(h2_pal_atomic_u32_compare_exchange(api, &count, &expected, 7, &changed,
-        H2_PAL_ATOMIC_ACQ_REL, H2_PAL_ATOMIC_ACQUIRE) == H2_PAL_OK);
-    assert(changed);
+    for (unsigned n = 0; n < 64; ++n) {
+        assert(h2_pal_atomic_alloc_u32(api, n, &slots[n]) == H2_PAL_OK);
+        assert(atomic_load(slots[n]) == n);
+    }
 #if CONFIG_SPIRAM
-    assert(h2_test_critical_entries == 2);
-#else
-    assert(h2_test_critical_entries == 0);
+    assert(allocations == 0);
 #endif
-    mark_external(&flag, sizeof(flag));
-    assert(h2_pal_atomic_flag_test_and_set(api, &flag, &previous, H2_PAL_ATOMIC_ACQUIRE) == H2_PAL_OK);
-    assert(!previous);
-    assert(h2_pal_atomic_flag_clear(api, &flag, H2_PAL_ATOMIC_RELEASE) == H2_PAL_OK);
+    assert(h2_pal_atomic_alloc_u32(api, 64, &slots[64]) == H2_PAL_OK);
 #if CONFIG_SPIRAM
-    assert(h2_test_critical_entries == 4);
+    assert(allocations == 1);
+    assert(last_caps == (MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT));
 #endif
-    h2_test_extram_low = 0;
-    h2_test_extram_high = 0;
-    assert(h2_pal_atomic_u32_load(api, &count, &old, H2_PAL_ATOMIC_ACQUIRE) == H2_PAL_OK);
-    assert(old == 7);
+    assert(atomic_fetch_add(slots[64], 1) == 64);
+    assert(h2_pal_atomic_free(api, slots[0]) == H2_PAL_OK);
+    _Atomic uint32_t *reused = NULL;
+    assert(h2_pal_atomic_alloc_u32(api, 99, &reused) == H2_PAL_OK);
 #if CONFIG_SPIRAM
-    assert(h2_test_critical_entries == 4);
-#else
-    assert(h2_test_critical_entries == 0);
+    assert(reused == slots[0] && allocations == 1);
 #endif
+    assert(atomic_load(reused) == 99);
+    assert(h2_pal_atomic_free(api, reused) == H2_PAL_OK);
+    for (unsigned n = 1; n < 65; ++n) assert(h2_pal_atomic_free(api, slots[n]) == H2_PAL_OK);
+#if CONFIG_SPIRAM
+    assert(frees == 1);
+#endif
+    _Atomic uint32_t *bad = NULL;
+    assert(h2_pal_atomic_alloc_u32(api, 0, NULL) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_pal_atomic_alloc_raw(api, 4, 3, (void **)&bad) == H2_PAL_ERR_INVALID_ARG);
+    assert(bad == NULL);
     return 0;
 }

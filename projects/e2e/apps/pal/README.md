@@ -43,7 +43,7 @@ write, stat exact size and `!is_dir`, reject mkdir on the regular file, read,
 EOF read returning 0 bytes, backward seek to offset 3 and verify re-read bytes,
 and cleanup.
 
-The separate `pal_atomic_e2e` library runs two concurrent workers supplied by the launcher. The DevKit H2Loader package at `//projects/e2e/targets/h2loader_tar_zlib/pal-atomic/devkit:package` pins one worker to each ESP32-S3 core. It requires exact 2,000,000 PAL increments in both PSRAM and internal RAM, then tests concurrent CAS, exchange, and flag in PSRAM. A direct C11 PSRAM increment control records lost updates without affecting PASS/FAIL. Each case and the summary emit structured UART lines.
+The separate `pal_atomic_e2e` library runs two concurrent workers supplied by the launcher. The DevKit H2Loader package at `//projects/e2e/targets/h2loader_tar_zlib/pal-atomic/devkit:package` pins one task to each ESP32-S3 core. PAL allocates internal-RAM u32/i32/flag storage; both cores use standard C11 atomics. Each counter must reach 2,000,000 after 1,000,000 increments per core. Concurrent CAS, exchange, and flag cases must also be exact. A control counter allocated with `MALLOC_CAP_SPIRAM` uses the same standard `atomic_fetch_add` for 5,000,000 increments per core. Its `EXPECTED_LOSS lost=N` result records PSRAM lost updates; `LOSS_NOT_REPRODUCED` is a warning and does not fail the suite. Each case and summary emit structured UART lines.
 
 A case whose worker join or timer destroy fails keeps its resources in
 `retained_cleanup`; remaining suites (including MQTT) are skipped until

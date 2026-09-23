@@ -31,13 +31,16 @@ static h2_pal_result_t test_run_pair(
 }
 
 int main(void) {
-    h2_pal_atomic_u32_t counter = H2_PAL_ATOMIC_U32_INIT(0);
-    h2_pal_atomic_flag_t flag = H2_PAL_ATOMIC_FLAG_INIT;
+    const h2_pal_atomic_api_t *api = h2_c11_pal_atomic_api();
+    _Atomic uint32_t *counter = NULL;
+    _Atomic int32_t *signed_counter = NULL;
+    atomic_flag *flag = NULL;
+    assert(h2_pal_atomic_alloc_u32(api, 0, &counter) == H2_PAL_OK);
+    assert(h2_pal_atomic_alloc_i32(api, 0, &signed_counter) == H2_PAL_OK);
+    assert(h2_pal_atomic_alloc_flag(api, &flag) == H2_PAL_OK);
     h2_pal_atomic_e2e_config_t config = {
-        .atomic = h2_c11_pal_atomic_api(),
-        .counter = &counter,
-        .flag = &flag,
-        .run_pair = test_run_pair,
+        .counter = counter, .signed_counter = signed_counter,
+        .flag = flag, .run_pair = test_run_pair,
     };
     for (int operation = H2_PAL_ATOMIC_E2E_FETCH_ADD;
          operation <= H2_PAL_ATOMIC_E2E_FLAG; ++operation) {
@@ -48,5 +51,8 @@ int main(void) {
     }
     assert(h2_pal_atomic_e2e_run_case(&config, H2_PAL_ATOMIC_E2E_FETCH_ADD,
         0, NULL) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_pal_atomic_free(api, counter) == H2_PAL_OK);
+    assert(h2_pal_atomic_free(api, signed_counter) == H2_PAL_OK);
+    assert(h2_pal_atomic_free(api, flag) == H2_PAL_OK);
     return 0;
 }

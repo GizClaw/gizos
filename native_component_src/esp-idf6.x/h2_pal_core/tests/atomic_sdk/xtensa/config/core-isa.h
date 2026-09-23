@@ -1,4 +1,0 @@
-#ifndef H2_ATOMIC_TEST_CORE_ISA_H
-#define H2_ATOMIC_TEST_CORE_ISA_H
-#define XCHAL_HAVE_S32C1I 1
-#endif

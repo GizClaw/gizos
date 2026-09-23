@@ -111,6 +111,8 @@ h2/pal/os/h2_pal_time.h
 h2/pal/os/h2_pal_timer.h
 ```
 
+`h2_pal_atomic.h` 只负责为共享 C11 原子变量选择可靠的内存位置。C 调用方通过 `h2_pal_atomic_alloc_u32/i32/bool/ptr/flag()` 获取已初始化的变量，用标准 `atomic_load/store/exchange/compare_exchange_*`、`atomic_fetch_add/sub/or/and` 和 `atomic_flag_test_and_set/clear` 直接操作，最后在所有并发访问停止后调用 `h2_pal_atomic_free()`。API 仍采用 `user + const vtable`，vtable 只有通用 alloc/free。分配和释放默认不可在 ISR 调用；分配后的 lock-free 标准原子操作可在 ISR 使用。C++ 翻译单元可包含 PAL umbrella，但这些 `_Atomic` 类型的分配 helper 只对 C 暴露。无 64 位分配接口。ESP32-S3 上静态/全局原子通常位于内部 DRAM，可直接使用；多个 task 共享的堆对象或 task 栈可能在 PSRAM，必须经此 PAL 分配，避免外部 PSRAM 上 `S32C1I` 跨核丢更新。ESP 使用内部 DRAM 8 字节小槽位池，耗尽后回退 internal heap；无 SPIRAM 时使用普通分配。BK7258、BK3633、JieLi 暂用各平台普通分配，PSRAM/多核语义尚未实板核实。
+
 `h2_pal_mem.h` 定义内存分配能力，属于操作系统抽象，不是公共基础类型。它使用 `h2_pal_mem_api_t = user + const h2_pal_mem_vtable_t *`，并通过 `h2_pal_mem_alloc()`、`h2_pal_mem_realloc()` 和 `h2_pal_mem_free()` wrapper 使用。`h2_pal_firmware_info.h` 读取编译进当前运行固件的版本；ESP provider 使用 ESP-IDF app description，BK provider 使用 build wiring 注入的版本字符串，portable app 不直接读取 SDK metadata 或 build variable。`h2_pal_system_event.h` 抽象平台系统事件来源，runtime 再把需要暴露给 app 的事件投影为 runtime event/state。
 
 Time PAL 的真实 provider 必须同时提供 `get_monotonic_ms` 和 `get_monotonic_us`。两者读取同一个不受 wall-clock 校时影响的单调时间域；`get_monotonic_us` 使用微秒单位，但硬件实际分辨率可以粗于一微秒。Canonical unsupported provider 仍提供完整 operation 并返回 `H2_PAL_ERR_UNSUPPORTED`，真实 provider 不能通过 `monotonic_ms * 1000` 伪造微秒时钟。

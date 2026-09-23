@@ -480,22 +480,22 @@ cc_test(
 )
 
 cc_test(
-    name = "atomic_route_test",
+    name = "atomic_pool_test",
     srcs = [
         "include/h2_esp_platform_core.h",
         "src/h2_esp_platform_atomic.c",
         "tests/test_h2_esp_platform_atomic.c",
-    ] + glob(["tests/atomic_sdk/**/*.h"]),
+    ] + glob(["tests/atomic_sdk/**/*.h", "tests/sdk/esp_heap_caps.h"]),
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    includes = ["include", "tests/atomic_sdk"],
+    includes = ["include", "tests/atomic_sdk", "tests/sdk"],
     local_defines = ["__XTENSA__", "CONFIG_SPIRAM=1"],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal", "//libs/pal/providers/c11/atomic"],
+    deps = ["//libs/pal"],
 )
 
 cc_test(
@@ -504,15 +504,15 @@ cc_test(
         "include/h2_esp_platform_core.h",
         "src/h2_esp_platform_atomic.c",
         "tests/test_h2_esp_platform_atomic.c",
-    ] + glob(["tests/atomic_sdk/**/*.h"]),
+    ] + glob(["tests/atomic_sdk/**/*.h", "tests/sdk/esp_heap_caps.h"]),
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    includes = ["include", "tests/atomic_sdk"],
+    includes = ["include", "tests/atomic_sdk", "tests/sdk"],
     local_defines = ["__XTENSA__", "CONFIG_SPIRAM=0"],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal", "//libs/pal/providers/c11/atomic"],
+    deps = ["//libs/pal"],
 )

@@ -50,7 +50,7 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 
 Desktop launcher 位于 `projects/e2e/targets/cc_binary/pal`。MQTT public-broker target 从现有 `H2_MQTT_SMOKE_*` environment surface 读取 endpoint policy；loopback target 持有 POSIX broker fixture。`pref_test` 在 `TEST_TMPDIR` 下创建进程独占的 SQLite store，每阶段销毁并重新打开真实 provider，最后只删除自己的临时根。DevKit 与 Tiga adapter 分别位于 `projects/e2e/targets/h2loader_tar_zlib/pal-pref/devkit` 和 `projects/e2e/targets/h2loader_tar_zlib/pal-pref/tiga_esp_v4_2`；两者每次启动运行一个 Preference phase，只在 seed 成功后确认 App，并对两个 transition 使用真实重启；失败和终态都保持 H2Loader command-responsive。
 
-DevKit `projects/e2e/targets/h2loader_tar_zlib/pal-atomic/devkit:package` 通过 H2Loader 安装，使用两个分别固定在 core 0/1 的 task 对 PSRAM 与内部 RAM 各执行每核 1,000,000 次 PAL fetch_add，要求精确得到 2,000,000。PSRAM 上的 CAS、exchange 与 flag 另有并发正确性用例；直接 C11 PSRAM fetch_add 只报告实际值和丢更新数，不能作为通过条件。设备每案输出 `H2_PAL_ATOMIC_E2E_CASE`，最终输出 `H2_PAL_ATOMIC_E2E_SUMMARY`，全部 PAL 案例通过后才确认测试 App。
+DevKit `projects/e2e/targets/h2loader_tar_zlib/pal-atomic/devkit:package` 通过 H2Loader 安装。两个分别固定在 core 0/1 的 task，对 PAL alloc 的内部 RAM u32/i32 变量用标准 C11 `atomic_fetch_add` 各执行每核 1,000,000 次，必须精确得到 2,000,000；CAS、exchange、flag 并发结果也必须精确。对照组以 `MALLOC_CAP_SPIRAM` 分配变量，同样用标准 C11 `atomic_fetch_add`，每核至少 5,000,000 次。丢更新时输出 `EXPECTED_LOSS lost=N`；偶然未重现则输出 `LOSS_NOT_REPRODUCED` 警告，不影响实验组 PASS/FAIL。设备每案输出 `H2_PAL_ATOMIC_E2E_CASE`，最终输出 `H2_PAL_ATOMIC_E2E_SUMMARY`。
 
 Public MQTT broker 是 PAL 中唯一个 manual Bazel test，通过独立入口运行：
 

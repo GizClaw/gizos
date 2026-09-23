@@ -1,8 +1,8 @@
 #ifndef H2_ATOMIC_TEST_FREERTOS_H
 #define H2_ATOMIC_TEST_FREERTOS_H
-extern int h2_test_critical_entries;
-typedef int portMUX_TYPE;
-#define portMUX_INITIALIZER_UNLOCKED 0
-#define portENTER_CRITICAL_SAFE(lock) ((void)(lock), ++h2_test_critical_entries)
-#define portEXIT_CRITICAL_SAFE(lock) ((void)(lock))
+#include <pthread.h>
+typedef pthread_mutex_t portMUX_TYPE;
+#define portMUX_INITIALIZER_UNLOCKED PTHREAD_MUTEX_INITIALIZER
+#define portENTER_CRITICAL(lock) ((void)pthread_mutex_lock(lock))
+#define portEXIT_CRITICAL(lock) ((void)pthread_mutex_unlock(lock))
 #endif

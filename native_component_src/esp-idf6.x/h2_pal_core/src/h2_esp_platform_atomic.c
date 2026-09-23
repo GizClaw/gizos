@@ -1,536 +1,73 @@
 #include "h2_esp_platform_core.h"
+#include "esp_heap_caps.h"
 #include "esp_attr.h"
-#include "sdkconfig.h"
 #include "freertos/FreeRTOS.h"
-#include "soc/soc.h"
-#if defined(__XTENSA__)
-#include "xtensa/config/core-isa.h"
-#endif
-#define H2_C11_ATOMIC_ATTR IRAM_ATTR
-#include "h2/pal/os/h2_pal_atomic_c11_impl.h"
+#include <stdint.h>
+#include <stdlib.h>
 
-_Static_assert(sizeof(((h2_pal_atomic_u32_t *)0)->storage) == sizeof(uint32_t),
-               "u32 atomic storage must have native size");
-_Static_assert(sizeof(((h2_pal_atomic_i32_t *)0)->storage) == sizeof(int),
-               "i32 atomic storage must have native size");
-_Static_assert(sizeof(((h2_pal_atomic_ptr_t *)0)->storage) == sizeof(void *),
-               "pointer atomic storage must have native size");
-
-#if defined(CONFIG_SPIRAM) && CONFIG_SPIRAM && defined(XCHAL_HAVE_S32C1I) && XCHAL_HAVE_S32C1I
-#define H2_ESP_ATOMIC_PSRAM 1
-static DRAM_ATTR portMUX_TYPE s_atomic_lock = portMUX_INITIALIZER_UNLOCKED;
-#else
-#define H2_ESP_ATOMIC_PSRAM 0
+/* S32C1I is not cross-core atomic in PSRAM on ESP32-S3. Small shared atomics
+ * therefore live in a DRAM slot pool. Each slot is 8-byte aligned. */
+#define H2_ESP_ATOMIC_POOL_SLOTS 64u
+#if CONFIG_SPIRAM
+static DRAM_ATTR _Alignas(8) uint8_t s_slots[H2_ESP_ATOMIC_POOL_SLOTS][8];
+static DRAM_ATTR uint64_t s_used;
+static DRAM_ATTR portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
 #endif
 
-static IRAM_ATTR bool h2_esp_atomic_external(const void *address) {
-#if H2_ESP_ATOMIC_PSRAM
-    uintptr_t ptr = (uintptr_t)address;
-    return ptr >= SOC_EXTRAM_DATA_LOW && ptr < SOC_EXTRAM_DATA_HIGH;
-#else
-    (void)address;
-    return false;
-#endif
-}
-
-/* The critical section serializes all PAL accesses to PSRAM storage. */
-static IRAM_ATTR h2_pal_result_t h2_esp_u32_load(void * user, const h2_pal_atomic_u32_t * value, uint32_t * out_value, h2_pal_atomic_order_t order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_u32_load(user, value, out_value, order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
+static h2_pal_result_t h2_esp_atomic_alloc(void *user, size_t size,
+                                             size_t alignment, void **out) {
     (void)user;
-    (void)order;
-    volatile uint32_t *cell = (volatile uint32_t *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *out_value = *cell;
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static IRAM_ATTR h2_pal_result_t h2_esp_u32_store(void * user, h2_pal_atomic_u32_t * value, uint32_t desired, h2_pal_atomic_order_t order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_u32_store(user, value, desired, order);
+    if (out == NULL || size == 0 || alignment == 0 ||
+        (alignment & (alignment - 1)) != 0) return H2_PAL_ERR_INVALID_ARG;
+    *out = NULL;
+    if (alignment > 8) return H2_PAL_ERR_UNSUPPORTED;
+#if CONFIG_SPIRAM
+    if (size <= 8) {
+        portENTER_CRITICAL(&s_lock);
+        for (unsigned i = 0; i < H2_ESP_ATOMIC_POOL_SLOTS; ++i) {
+            uint64_t bit = UINT64_C(1) << i;
+            if ((s_used & bit) == 0) {
+                s_used |= bit;
+                *out = s_slots[i];
+                break;
+            }
+        }
+        portEXIT_CRITICAL(&s_lock);
+        if (*out != NULL) return H2_PAL_OK;
     }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    volatile uint32_t *cell = (volatile uint32_t *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *cell = desired;
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
+    *out = heap_caps_malloc(size, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
 #else
-    return H2_PAL_ERR_UNSUPPORTED;
+    *out = malloc(size);
 #endif
+    return *out != NULL ? H2_PAL_OK : H2_PAL_ERR_NO_MEMORY;
 }
 
-static IRAM_ATTR h2_pal_result_t h2_esp_u32_exchange(void * user, h2_pal_atomic_u32_t * value, uint32_t desired, uint32_t * out_previous, h2_pal_atomic_order_t order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_u32_exchange(user, value, desired, out_previous, order);
+static void h2_esp_atomic_free(void *user, void *value) {
+    (void)user;
+    if (value == NULL) return;
+#if CONFIG_SPIRAM
+    uintptr_t start = (uintptr_t)&s_slots[0][0];
+    uintptr_t address = (uintptr_t)value;
+    if (address >= start && address < start + sizeof(s_slots)) {
+        size_t offset = (size_t)(address - start);
+        if (offset % 8 == 0) {
+            portENTER_CRITICAL(&s_lock);
+            s_used &= ~(UINT64_C(1) << (offset / 8));
+            portEXIT_CRITICAL(&s_lock);
+        }
+        return;
     }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    volatile uint32_t *cell = (volatile uint32_t *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *out_previous = *cell;
-    *cell = desired;
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
+    heap_caps_free(value);
 #else
-    return H2_PAL_ERR_UNSUPPORTED;
+    free(value);
 #endif
 }
 
-static IRAM_ATTR h2_pal_result_t h2_esp_u32_compare_exchange(void * user, h2_pal_atomic_u32_t * value, uint32_t * expected, uint32_t desired, bool * out_exchanged, h2_pal_atomic_order_t order, h2_pal_atomic_order_t failure_order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_u32_compare_exchange(user, value, expected, desired, out_exchanged, order, failure_order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    (void)failure_order;
-    volatile uint32_t *cell = (volatile uint32_t *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *out_exchanged = (*cell == *expected);
-    if (*out_exchanged) *cell = desired;
-    else *expected = *cell;
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static IRAM_ATTR h2_pal_result_t h2_esp_u32_fetch_add(void * user, h2_pal_atomic_u32_t * value, uint32_t operand, uint32_t * out_previous, h2_pal_atomic_order_t order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_u32_fetch_add(user, value, operand, out_previous, order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    volatile uint32_t *cell = (volatile uint32_t *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *out_previous = *cell;
-    *cell = (uint32_t)(*cell + operand);
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static IRAM_ATTR h2_pal_result_t h2_esp_u32_fetch_sub(void * user, h2_pal_atomic_u32_t * value, uint32_t operand, uint32_t * out_previous, h2_pal_atomic_order_t order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_u32_fetch_sub(user, value, operand, out_previous, order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    volatile uint32_t *cell = (volatile uint32_t *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *out_previous = *cell;
-    *cell = (uint32_t)(*cell - operand);
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static IRAM_ATTR h2_pal_result_t h2_esp_u32_fetch_or(void * user, h2_pal_atomic_u32_t * value, uint32_t operand, uint32_t * out_previous, h2_pal_atomic_order_t order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_u32_fetch_or(user, value, operand, out_previous, order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    volatile uint32_t *cell = (volatile uint32_t *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *out_previous = *cell;
-    *cell = (uint32_t)(*cell | operand);
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static IRAM_ATTR h2_pal_result_t h2_esp_u32_fetch_and(void * user, h2_pal_atomic_u32_t * value, uint32_t operand, uint32_t * out_previous, h2_pal_atomic_order_t order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_u32_fetch_and(user, value, operand, out_previous, order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    volatile uint32_t *cell = (volatile uint32_t *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *out_previous = *cell;
-    *cell = (uint32_t)(*cell & operand);
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static IRAM_ATTR h2_pal_result_t h2_esp_i32_load(void * user, const h2_pal_atomic_i32_t * value, int * out_value, h2_pal_atomic_order_t order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_i32_load(user, value, out_value, order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    volatile int *cell = (volatile int *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *out_value = *cell;
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static IRAM_ATTR h2_pal_result_t h2_esp_i32_store(void * user, h2_pal_atomic_i32_t * value, int desired, h2_pal_atomic_order_t order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_i32_store(user, value, desired, order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    volatile int *cell = (volatile int *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *cell = desired;
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static IRAM_ATTR h2_pal_result_t h2_esp_i32_exchange(void * user, h2_pal_atomic_i32_t * value, int desired, int * out_previous, h2_pal_atomic_order_t order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_i32_exchange(user, value, desired, out_previous, order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    volatile int *cell = (volatile int *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *out_previous = *cell;
-    *cell = desired;
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static IRAM_ATTR h2_pal_result_t h2_esp_i32_compare_exchange(void * user, h2_pal_atomic_i32_t * value, int * expected, int desired, bool * out_exchanged, h2_pal_atomic_order_t order, h2_pal_atomic_order_t failure_order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_i32_compare_exchange(user, value, expected, desired, out_exchanged, order, failure_order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    (void)failure_order;
-    volatile int *cell = (volatile int *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *out_exchanged = (*cell == *expected);
-    if (*out_exchanged) *cell = desired;
-    else *expected = *cell;
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static IRAM_ATTR h2_pal_result_t h2_esp_i32_fetch_add(void * user, h2_pal_atomic_i32_t * value, int operand, int * out_previous, h2_pal_atomic_order_t order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_i32_fetch_add(user, value, operand, out_previous, order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    volatile int *cell = (volatile int *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *out_previous = *cell;
-    *cell = (int)((uint32_t)*cell + (uint32_t)operand);
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static IRAM_ATTR h2_pal_result_t h2_esp_i32_fetch_sub(void * user, h2_pal_atomic_i32_t * value, int operand, int * out_previous, h2_pal_atomic_order_t order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_i32_fetch_sub(user, value, operand, out_previous, order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    volatile int *cell = (volatile int *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *out_previous = *cell;
-    *cell = (int)((uint32_t)*cell - (uint32_t)operand);
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static IRAM_ATTR h2_pal_result_t h2_esp_i32_fetch_or(void * user, h2_pal_atomic_i32_t * value, int operand, int * out_previous, h2_pal_atomic_order_t order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_i32_fetch_or(user, value, operand, out_previous, order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    volatile int *cell = (volatile int *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *out_previous = *cell;
-    *cell = (int)(*cell | operand);
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static IRAM_ATTR h2_pal_result_t h2_esp_i32_fetch_and(void * user, h2_pal_atomic_i32_t * value, int operand, int * out_previous, h2_pal_atomic_order_t order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_i32_fetch_and(user, value, operand, out_previous, order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    volatile int *cell = (volatile int *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *out_previous = *cell;
-    *cell = (int)(*cell & operand);
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static IRAM_ATTR h2_pal_result_t h2_esp_bool_load(void * user, const h2_pal_atomic_bool_t * value, bool * out_value, h2_pal_atomic_order_t order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_bool_load(user, value, out_value, order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    volatile bool *cell = (volatile bool *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *out_value = *cell;
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static IRAM_ATTR h2_pal_result_t h2_esp_bool_store(void * user, h2_pal_atomic_bool_t * value, bool desired, h2_pal_atomic_order_t order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_bool_store(user, value, desired, order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    volatile bool *cell = (volatile bool *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *cell = desired;
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static IRAM_ATTR h2_pal_result_t h2_esp_bool_exchange(void * user, h2_pal_atomic_bool_t * value, bool desired, bool * out_previous, h2_pal_atomic_order_t order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_bool_exchange(user, value, desired, out_previous, order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    volatile bool *cell = (volatile bool *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *out_previous = *cell;
-    *cell = desired;
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static IRAM_ATTR h2_pal_result_t h2_esp_bool_compare_exchange(void * user, h2_pal_atomic_bool_t * value, bool * expected, bool desired, bool * out_exchanged, h2_pal_atomic_order_t order, h2_pal_atomic_order_t failure_order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_bool_compare_exchange(user, value, expected, desired, out_exchanged, order, failure_order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    (void)failure_order;
-    volatile bool *cell = (volatile bool *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *out_exchanged = (*cell == *expected);
-    if (*out_exchanged) *cell = desired;
-    else *expected = *cell;
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static IRAM_ATTR h2_pal_result_t h2_esp_ptr_load(void * user, const h2_pal_atomic_ptr_t * value, void * * out_value, h2_pal_atomic_order_t order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_ptr_load(user, value, out_value, order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    void * volatile *cell = (void * volatile *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *out_value = *cell;
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static IRAM_ATTR h2_pal_result_t h2_esp_ptr_store(void * user, h2_pal_atomic_ptr_t * value, void * desired, h2_pal_atomic_order_t order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_ptr_store(user, value, desired, order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    void * volatile *cell = (void * volatile *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *cell = desired;
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static IRAM_ATTR h2_pal_result_t h2_esp_ptr_exchange(void * user, h2_pal_atomic_ptr_t * value, void * desired, void * * out_previous, h2_pal_atomic_order_t order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_ptr_exchange(user, value, desired, out_previous, order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    void * volatile *cell = (void * volatile *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *out_previous = *cell;
-    *cell = desired;
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static IRAM_ATTR h2_pal_result_t h2_esp_ptr_compare_exchange(void * user, h2_pal_atomic_ptr_t * value, void * * expected, void * desired, bool * out_exchanged, h2_pal_atomic_order_t order, h2_pal_atomic_order_t failure_order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_ptr_compare_exchange(user, value, expected, desired, out_exchanged, order, failure_order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    (void)failure_order;
-    void * volatile *cell = (void * volatile *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *out_exchanged = (*cell == *expected);
-    if (*out_exchanged) *cell = desired;
-    else *expected = *cell;
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static IRAM_ATTR h2_pal_result_t h2_esp_flag_test_and_set(void * user, h2_pal_atomic_flag_t * value, bool * out_previous, h2_pal_atomic_order_t order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_flag_test_and_set(user, value, out_previous, order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    volatile bool *cell = (volatile bool *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *out_previous = *cell;
-    *cell = true;
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static IRAM_ATTR h2_pal_result_t h2_esp_flag_clear(void * user, h2_pal_atomic_flag_t * value, h2_pal_atomic_order_t order) {
-    if (!h2_esp_atomic_external(&value->storage)) {
-        return h2_c11_flag_clear(user, value, order);
-    }
-#if H2_ESP_ATOMIC_PSRAM
-    (void)user;
-    (void)order;
-    volatile bool *cell = (volatile bool *)&value->storage;
-    portENTER_CRITICAL_SAFE(&s_atomic_lock);
-    *cell = false;
-    portEXIT_CRITICAL_SAFE(&s_atomic_lock);
-    return H2_PAL_OK;
-#else
-    return H2_PAL_ERR_UNSUPPORTED;
-#endif
-}
-
-static DRAM_ATTR const h2_pal_atomic_vtable_t s_vtable = {
-    .u32_load = h2_esp_u32_load,
-    .u32_store = h2_esp_u32_store,
-    .u32_exchange = h2_esp_u32_exchange,
-    .u32_compare_exchange = h2_esp_u32_compare_exchange,
-    .u32_fetch_add = h2_esp_u32_fetch_add,
-    .u32_fetch_sub = h2_esp_u32_fetch_sub,
-    .u32_fetch_or = h2_esp_u32_fetch_or,
-    .u32_fetch_and = h2_esp_u32_fetch_and,
-    .i32_load = h2_esp_i32_load,
-    .i32_store = h2_esp_i32_store,
-    .i32_exchange = h2_esp_i32_exchange,
-    .i32_compare_exchange = h2_esp_i32_compare_exchange,
-    .i32_fetch_add = h2_esp_i32_fetch_add,
-    .i32_fetch_sub = h2_esp_i32_fetch_sub,
-    .i32_fetch_or = h2_esp_i32_fetch_or,
-    .i32_fetch_and = h2_esp_i32_fetch_and,
-    .bool_load = h2_esp_bool_load,
-    .bool_store = h2_esp_bool_store,
-    .bool_exchange = h2_esp_bool_exchange,
-    .bool_compare_exchange = h2_esp_bool_compare_exchange,
-    .ptr_load = h2_esp_ptr_load,
-    .ptr_store = h2_esp_ptr_store,
-    .ptr_exchange = h2_esp_ptr_exchange,
-    .ptr_compare_exchange = h2_esp_ptr_compare_exchange,
-    .flag_test_and_set = h2_esp_flag_test_and_set,
-    .flag_clear = h2_esp_flag_clear,
+static const h2_pal_atomic_vtable_t s_vtable = {
+    .alloc = h2_esp_atomic_alloc, .free = h2_esp_atomic_free,
 };
-static DRAM_ATTR const h2_pal_atomic_api_t s_api = { .user = NULL, .vtable = &s_vtable };
+static const h2_pal_atomic_api_t s_api = { .user = NULL, .vtable = &s_vtable };
 
-IRAM_ATTR const h2_pal_atomic_api_t *h2_esp_platform_atomic_api(void) {
+const h2_pal_atomic_api_t *h2_esp_platform_atomic_api(void) {
     return &s_api;
 }

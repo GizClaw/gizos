@@ -92,73 +92,68 @@ static void h2_atomic_entry(void *user) {
     }
 
     const h2_pal_atomic_api_t *atomic = h2_esp_board_atomic_api();
-    h2_pal_atomic_u32_t *psram_count = heap_caps_malloc(sizeof(*psram_count),
-        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    h2_pal_atomic_u32_t *internal_count = heap_caps_malloc(sizeof(*internal_count),
-        MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
-    h2_pal_atomic_flag_t *psram_flag = heap_caps_malloc(sizeof(*psram_flag),
-        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    _Atomic uint32_t *raw_count = heap_caps_malloc(sizeof(*raw_count),
-        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-    if (atomic == NULL || psram_count == NULL || internal_count == NULL ||
-        psram_flag == NULL || raw_count == NULL ||
-        !esp_ptr_external_ram(psram_count) || !esp_ptr_external_ram(psram_flag) ||
-        !esp_ptr_external_ram(raw_count) || !esp_ptr_internal(internal_count)) {
+    _Atomic uint32_t *counter = NULL;
+    _Atomic int32_t *signed_counter = NULL;
+    atomic_flag *flag = NULL;
+    _Atomic uint32_t *psram_count = heap_caps_malloc(sizeof(*psram_count), MALLOC_CAP_SPIRAM);
+    if (atomic == NULL ||
+        h2_pal_atomic_alloc_u32(atomic, 0, &counter) != H2_PAL_OK ||
+        h2_pal_atomic_alloc_i32(atomic, 0, &signed_counter) != H2_PAL_OK ||
+        h2_pal_atomic_alloc_flag(atomic, &flag) != H2_PAL_OK ||
+        psram_count == NULL || !esp_ptr_internal(counter) ||
+        !esp_ptr_internal(signed_counter) || !esp_ptr_internal(flag) ||
+        !esp_ptr_external_ram(psram_count)) {
         printf("H2_PAL_ATOMIC_E2E_FAIL stage=allocation\n");
         fflush(stdout);
         h2_atomic_hold();
     }
-    atomic_init(&psram_count->storage, 0);
-    atomic_init(&internal_count->storage, 0);
-    atomic_init(&psram_flag->storage, false);
-    atomic_init(raw_count, 0);
+    atomic_init(psram_count, 0);
     h2_pal_atomic_e2e_config_t config = {
-        .atomic = atomic, .counter = psram_count, .flag = psram_flag,
+        .counter = counter, .signed_counter = signed_counter, .flag = flag,
         .run_pair = h2_atomic_run_pair, .yield = h2_atomic_yield,
     };
     const struct {
         const char *name;
         h2_pal_atomic_e2e_case_t test_case;
         uint32_t iterations;
-        bool internal;
     } cases[] = {
-        { "psram_fetch_add", H2_PAL_ATOMIC_E2E_FETCH_ADD, H2_ATOMIC_COUNT_ITERATIONS, false },
-        { "internal_fetch_add", H2_PAL_ATOMIC_E2E_FETCH_ADD, H2_ATOMIC_COUNT_ITERATIONS, true },
-        { "psram_cas", H2_PAL_ATOMIC_E2E_CAS, H2_ATOMIC_CAS_ITERATIONS, false },
-        { "psram_exchange", H2_PAL_ATOMIC_E2E_EXCHANGE, H2_ATOMIC_LOCK_ITERATIONS, false },
-        { "psram_flag", H2_PAL_ATOMIC_E2E_FLAG, H2_ATOMIC_LOCK_ITERATIONS, false },
+        { "pal_u32_fetch_add", H2_PAL_ATOMIC_E2E_FETCH_ADD, H2_ATOMIC_COUNT_ITERATIONS },
+        { "pal_i32_fetch_add", H2_PAL_ATOMIC_E2E_I32_FETCH_ADD, H2_ATOMIC_COUNT_ITERATIONS },
+        { "pal_cas", H2_PAL_ATOMIC_E2E_CAS, H2_ATOMIC_CAS_ITERATIONS },
+        { "pal_exchange", H2_PAL_ATOMIC_E2E_EXCHANGE, H2_ATOMIC_LOCK_ITERATIONS },
+        { "pal_flag", H2_PAL_ATOMIC_E2E_FLAG, H2_ATOMIC_LOCK_ITERATIONS },
     };
     unsigned failures = 0;
-    for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
-        config.counter = cases[i].internal ? internal_count : psram_count;
+    for (size_t n = 0; n < sizeof(cases) / sizeof(cases[0]); ++n) {
         uint32_t actual = 0;
         printf("H2_PAL_ATOMIC_E2E_BEGIN case=%s iterations_per_core=%u\n",
-            cases[i].name, (unsigned)cases[i].iterations);
+            cases[n].name, (unsigned)cases[n].iterations);
         fflush(stdout);
-        rc = h2_pal_atomic_e2e_run_case(&config, cases[i].test_case,
-            cases[i].iterations, &actual);
+        rc = h2_pal_atomic_e2e_run_case(&config, cases[n].test_case,
+            cases[n].iterations, &actual);
         printf("H2_PAL_ATOMIC_E2E_CASE case=%s expected=%u actual=%u rc=%d status=%s\n",
-            cases[i].name, (unsigned)(cases[i].iterations * 2),
+            cases[n].name, (unsigned)(cases[n].iterations * 2),
             (unsigned)actual, rc, rc == H2_PAL_OK ? "PASS" : "FAIL");
         fflush(stdout);
         if (rc != H2_PAL_OK) ++failures;
     }
-    h2_pal_atomic_e2e_c11_control_t raw = {
-        .counter = raw_count, .iterations = H2_ATOMIC_CONTROL_ITERATIONS,
+    h2_pal_atomic_e2e_c11_control_t control = {
+        .counter = psram_count, .iterations = H2_ATOMIC_CONTROL_ITERATIONS,
         .yield = h2_atomic_yield,
     };
-    atomic_store_explicit(raw_count, 0, memory_order_relaxed);
-    printf("H2_PAL_ATOMIC_E2E_BEGIN case=direct_c11_psram iterations_per_core=%u\n",
+    printf("H2_PAL_ATOMIC_E2E_BEGIN case=c11_psram_control iterations_per_core=%u\n",
         H2_ATOMIC_CONTROL_ITERATIONS);
     fflush(stdout);
     rc = h2_atomic_run_pair(NULL, h2_pal_atomic_e2e_direct_c11_worker,
-        &raw, &raw);
-    uint32_t direct_actual = atomic_load_explicit(raw_count, memory_order_relaxed);
-    uint32_t direct_lost = direct_actual <= H2_ATOMIC_CONTROL_ITERATIONS * 2
-        ? H2_ATOMIC_CONTROL_ITERATIONS * 2 - direct_actual : 0;
-    printf("H2_PAL_ATOMIC_E2E_CONTROL case=direct_c11_psram expected=%u actual=%u lost=%u rc=%d status=OBSERVED\n",
-        H2_ATOMIC_CONTROL_ITERATIONS * 2, (unsigned)direct_actual,
-        (unsigned)direct_lost, rc);
+        &control, &control);
+    uint32_t control_expected = H2_ATOMIC_CONTROL_ITERATIONS * 2;
+    uint32_t control_actual = atomic_load(psram_count);
+    uint32_t control_lost = control_actual < control_expected
+        ? control_expected - control_actual : 0;
+    const char *control_status = control_lost != 0 ? "EXPECTED_LOSS" : "LOSS_NOT_REPRODUCED";
+    printf("H2_PAL_ATOMIC_E2E_CONTROL case=c11_psram_control expected=%u actual=%u lost=%u rc=%d status=%s\n",
+        (unsigned)control_expected, (unsigned)control_actual,
+        (unsigned)control_lost, rc, control_status);
     fflush(stdout);
     if (rc != H2_PAL_OK) ++failures;
 
@@ -168,7 +163,7 @@ static void h2_atomic_entry(void *user) {
     }
     printf("H2_PAL_ATOMIC_E2E_SUMMARY cases=%u failed=%u control_lost=%u status=%s\n",
         (unsigned)(sizeof(cases) / sizeof(cases[0])), failures,
-        (unsigned)direct_lost, failures == 0 ? "PASS" : "FAIL");
+        (unsigned)control_lost, failures == 0 ? "PASS" : "FAIL");
     fflush(stdout);
     h2_atomic_hold();
 }
