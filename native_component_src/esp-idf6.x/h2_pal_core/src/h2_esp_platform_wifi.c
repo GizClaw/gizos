@@ -1382,7 +1382,7 @@ static int h2_esp_wifi_ap_get_mac(h2_pal_wifi_ap_t *ap, uint8_t out_mac[6]) {
 #endif
 
 /* One admission gate covers the entire authentication/IP/save transaction. */
-static h2_atomic_flag_t s_h2_esp_wifi_connect_busy = {0};
+static h2_atomic_flag_t s_h2_esp_wifi_connect_busy = H2_ATOMIC_FLAG_INIT;
 
 static int h2_esp_wifi_connect(void *user,
                              const h2_pal_wifi_sta_config_t *config,

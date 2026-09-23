@@ -26,7 +26,7 @@ typedef struct speed_scan {
     int found;
 } speed_scan_t;
 
-static speed_scan_t speed_scan;
+static speed_scan_t speed_scan = {.guard = H2_ATOMIC_FLAG_INIT};
 static bool speed_scan_initialized;
 
 static void speed_scan_lock(speed_scan_t *scan) {
