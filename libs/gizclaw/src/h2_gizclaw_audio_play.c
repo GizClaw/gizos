@@ -32,9 +32,9 @@ static h2_pal_result_t play_admit(void *user) {
   h2_pal_result_t rc = h2_pal_mutex_lock(sync, service->mutex);
   if (rc != H2_PAL_OK)
     return rc;
-  h2_gizclaw_track_t *track = atomic_load(&service->pcm_track);
+  h2_gizclaw_track_t *track = h2_atomic_load(&service->pcm_track);
   if (service->audio_play != NULL ||
-      atomic_load(&service->media_request) != NULL)
+      h2_atomic_load(&service->media_request) != NULL)
     rc = H2_PAL_ERR_BUSY;
   else if (service->pcm_track_unsetting || track == NULL ||
            track->vtable == NULL || track->vtable->write == NULL)

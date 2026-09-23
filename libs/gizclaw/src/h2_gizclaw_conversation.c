@@ -306,11 +306,11 @@ media_request_acquire_tagged(h2_gizclaw_service_t *service, int tag) {
       h2_pal_mutex_lock(service->config.sync, service->mutex) != H2_PAL_OK)
     return NULL;
   h2_gizclaw_conversation_request_t *request =
-      atomic_load(&service->media_request);
+      h2_atomic_load(&service->media_request);
   if (request != NULL) {
-    atomic_fetch_add(&service->media_callback_refs, 1);
-    atomic_store_explicit(&service->media_holder_tag, tag,
-                          memory_order_relaxed);
+    h2_atomic_fetch_add(&service->media_callback_refs, 1);
+    h2_atomic_store_explicit(&service->media_holder_tag, tag,
+                          H2_ATOMIC_RELAXED);
   }
   (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
   return request;
@@ -321,7 +321,7 @@ media_request_acquire_tagged(h2_gizclaw_service_t *service, int tag) {
 
 static void media_request_release(h2_gizclaw_service_t *service) {
   (void)h2_pal_mutex_lock(service->config.sync, service->mutex);
-  atomic_fetch_sub(&service->media_callback_refs, 1);
+  h2_atomic_fetch_sub(&service->media_callback_refs, 1);
   (void)h2_pal_cond_broadcast(service->config.sync, service->progress_cond);
   (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
 }
@@ -333,13 +333,13 @@ h2_pal_result_t h2_gizclaw_conversation_media_attach(
   h2_pal_result_t rc = h2_pal_mutex_lock(service->config.sync, service->mutex);
   if (rc != H2_PAL_OK)
     return rc;
-  h2_gizclaw_conversation_request_t *expected = NULL;
+  void *expected = NULL;
   if (service->pcm_track_unsetting ||
-      atomic_load(&service->speech_request) != NULL ||
+      h2_atomic_load(&service->speech_request) != NULL ||
       service->audio_play != NULL ||
-      !atomic_compare_exchange_strong_explicit(
-          &service->media_request, &expected, request, memory_order_seq_cst,
-          memory_order_seq_cst)) {
+      !h2_atomic_compare_exchange_strong_explicit(
+          &service->media_request, &expected, request, H2_ATOMIC_SEQ_CST,
+          H2_ATOMIC_SEQ_CST)) {
     (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
     return H2_PAL_ERR_INVALID_STATE;
   }
@@ -354,24 +354,24 @@ void h2_gizclaw_conversation_media_detach(
     return;
   h2_gizclaw_service_t *service = request->service;
   (void)h2_pal_mutex_lock(service->config.sync, service->mutex);
-  h2_gizclaw_conversation_request_t *expected = request;
-  (void)atomic_compare_exchange_strong(&service->media_request, &expected,
+  void *expected = request;
+  (void)h2_atomic_compare_exchange_strong(&service->media_request, &expected,
                                        NULL);
   request->media_attached = false;
   unsigned int waits = 0u;
-  while (atomic_load(&service->media_callback_refs) != 0) {
+  while (h2_atomic_load(&service->media_callback_refs) != 0) {
     const h2_pal_result_t wait_rc = h2_pal_cond_wait(
         service->config.sync, service->progress_cond, service->mutex, 1000u);
     if (wait_rc == H2_PAL_ERR_TIMEOUT &&
-        atomic_load(&service->media_callback_refs) != 0) {
+        h2_atomic_load(&service->media_callback_refs) != 0) {
       /* A media callback is holding the request for far longer than one
        * audio period. Name the last acquirer so the stall can be traced. */
       h2_gizclaw_service_log_request(
           service, H2_PAL_LOG_WARN, "conversation", "media_detach_wait",
           request->identity, H2_PAL_ERR_TIMEOUT,
-          atomic_load_explicit(&service->media_holder_tag,
-                               memory_order_relaxed),
-          atomic_load(&service->media_callback_refs), ++waits);
+          h2_atomic_load_explicit(&service->media_holder_tag,
+                               H2_ATOMIC_RELAXED),
+          h2_atomic_load(&service->media_callback_refs), ++waits);
     }
   }
   (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
@@ -425,7 +425,7 @@ downlink_acquire_any(h2_gizclaw_service_t *service, bool *out_track) {
     ++service->downlink_refs;
   if (out_track != NULL)
     *out_track = service->audio_play == NULL &&
-                 atomic_load(&service->speech_request) == NULL;
+                 h2_atomic_load(&service->speech_request) == NULL;
   (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
   return downlink;
 }
@@ -2063,8 +2063,8 @@ h2_pal_result_t h2_gizclaw_conversation_send_text_internal(
     else if (!service->started)
       rc = H2_PAL_ERR_INVALID_STATE;
     else if (conversation->service_request != NULL ||
-             atomic_load(&service->media_request) != NULL ||
-             atomic_load(&service->speech_request) != NULL ||
+             h2_atomic_load(&service->media_request) != NULL ||
+             h2_atomic_load(&service->speech_request) != NULL ||
              service->audio_play != NULL)
       rc = H2_PAL_ERR_BUSY;
     (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
@@ -2164,7 +2164,7 @@ h2_pal_result_t h2_gizclaw_service_audio_control_internal(
     (void)h2_pal_mutex_unlock(service->config.sync, service->audio_mutex);
     return rc;
   }
-  void *speech = atomic_load(&service->speech_request);
+  void *speech = h2_atomic_load(&service->speech_request);
   h2_gizclaw_conversation_t *conversation = service->audio_conversation;
   bool closed = service->stopping || service->stopped;
   bool started = service->started;

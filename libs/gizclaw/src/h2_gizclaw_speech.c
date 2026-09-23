@@ -85,7 +85,7 @@ void h2_gizclaw_speech_uplink_step_internal(h2_gizclaw_service_t *service) {
   const h2_pal_sync_api_t *sync = service->config.sync;
   if (h2_pal_mutex_lock(sync, service->mutex) != H2_PAL_OK)
     return;
-  speech_t *speech = atomic_load(&service->speech_request);
+  speech_t *speech = h2_atomic_load(&service->speech_request);
   if (speech != NULL)
     ++speech->uplink_refs;
   (void)h2_pal_mutex_unlock(sync, service->mutex);
@@ -139,8 +139,8 @@ static void detach_input(speech_t *speech) {
   h2_gizclaw_service_t *service = speech->service;
   const h2_pal_sync_api_t *sync = service->config.sync;
   (void)h2_pal_mutex_lock(sync, service->mutex);
-  speech_t *expected = speech;
-  (void)atomic_compare_exchange_strong(&service->speech_request, &expected,
+  void *expected = speech;
+  (void)h2_atomic_compare_exchange_strong(&service->speech_request, &expected,
                                        NULL);
   while (speech->uplink_refs != 0u)
     (void)h2_pal_cond_wait(sync, service->progress_cond, service->mutex,
@@ -202,15 +202,15 @@ static h2_pal_result_t speech_admit(void *context) {
     (void)h2_pal_mutex_unlock(service->config.sync, service->audio_mutex);
     return rc;
   }
-  h2_gizclaw_track_t *track = atomic_load(&service->pcm_track);
+  h2_gizclaw_track_t *track = h2_atomic_load(&service->pcm_track);
   if (track == NULL || service->pcm_track_unsetting ||
       track->vtable->read == NULL)
     rc = H2_PAL_ERR_INVALID_STATE;
-  else if (atomic_load(&service->speech_request) != NULL ||
-           atomic_load(&service->media_request) != NULL)
+  else if (h2_atomic_load(&service->speech_request) != NULL ||
+           h2_atomic_load(&service->media_request) != NULL)
     rc = H2_PAL_ERR_BUSY;
   else {
-    atomic_store(&service->speech_request, speech);
+    h2_atomic_store(&service->speech_request, speech);
     service->audio_ended = false;
   }
   (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
