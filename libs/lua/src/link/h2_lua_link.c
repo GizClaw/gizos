@@ -1552,7 +1552,7 @@ h2_pal_result_t h2_lua_link_enable(h2_lua_host_t *host,
        config->scan_type != H2_PAL_BLE_SCAN_TYPE_EXTENDED)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  if (atomic_load(&host->started) != 0 || host->link_hooks != NULL) {
+  if (h2_atomic_load(&host->started) != 0 || host->link_hooks != NULL) {
     return H2_PAL_ERR_INVALID_STATE;
   }
   runtime = host->config.runtime;

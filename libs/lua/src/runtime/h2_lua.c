@@ -11,6 +11,12 @@ static int is_terminal(h2_lua_job_state_t state) {
          state == H2_LUA_JOB_STOPPED;
 }
 
+static void destroy_host_atomics(h2_lua_host_t *host) {
+  h2_atomic_destroy(&host->started);
+  h2_atomic_destroy(&host->stopping);
+  h2_atomic_destroy(&host->joined);
+}
+
 static int module_name_is_reserved(const char *name) {
   static const char *const reserved[] = {
       "runtime", "delay", "system",     "display", "lcd_touch",
@@ -29,7 +35,7 @@ static void worker_entry(void *context) {
   h2_lua_worker_t *worker = context;
   h2_lua_host_t *host = worker->host;
   uint8_t wake = 0u;
-  while (atomic_load(&host->stopping) == 0) {
+  while (h2_atomic_load(&host->stopping) == 0) {
     uint64_t sweep_started_ms = h2_lua_now_ms(host);
     int progressed = 0;
     size_t i;
@@ -60,7 +66,7 @@ static void worker_entry(void *context) {
       h2_lua_cancel_job_capabilities(host, terminal_job_id,
                                      terminal_job_generation);
     }
-    if (!progressed && atomic_load(&host->stopping) == 0) {
+    if (!progressed && h2_atomic_load(&host->stopping) == 0) {
       (void)h2_pal_queue_recv(host->config.runtime->queue, worker->wake_queue,
                               &wake, 10u);
     } else if (progressed && h2_lua_now_ms(host) - sweep_started_ms >=
@@ -123,6 +129,7 @@ static void release_job(h2_lua_job_t *job) {
     (void)h2_pal_touch_close(job->host->config.runtime->touch);
   }
   h2_lua_job_close_audio_tracks(job);
+  h2_lua_task_atomics_destroy(job);
   h2_pal_mem_free(mem, job->tasks);
   h2_pal_mem_free(mem, job->callbacks);
   h2_pal_mem_free(mem, job->events);
@@ -346,15 +353,20 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
   }
   memset(host, 0, host_size);
   host->config = normalized;
-  atomic_init(&host->started, 0);
-  atomic_init(&host->stopping, 0);
-  atomic_init(&host->joined, 0);
+  if (h2_atomic_init(&host->started, 0) != H2_ATOMIC_OK ||
+      h2_atomic_init(&host->stopping, 0) != H2_ATOMIC_OK ||
+      h2_atomic_init(&host->joined, 0) != H2_ATOMIC_OK) {
+    destroy_host_atomics(host);
+    h2_pal_mem_free(normalized.allocator, host);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
   host->next_job_id = 1u;
   host->next_job_generation = 1u;
   host->next_capability_request_id = 1u;
   host->jobs = h2_pal_mem_alloc(normalized.allocator,
                                 normalized.max_jobs * sizeof(*host->jobs));
   if (host->jobs == NULL) {
+    destroy_host_atomics(host);
     h2_pal_mem_free(normalized.allocator, host);
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -364,6 +376,7 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
                        normalized.worker_count * sizeof(*host->workers));
   if (host->workers == NULL) {
     h2_pal_mem_free(normalized.allocator, host->jobs);
+    destroy_host_atomics(host);
     h2_pal_mem_free(normalized.allocator, host);
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -374,6 +387,7 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
   if (host->capability_requests == NULL) {
     h2_pal_mem_free(normalized.allocator, host->workers);
     h2_pal_mem_free(normalized.allocator, host->jobs);
+    destroy_host_atomics(host);
     h2_pal_mem_free(normalized.allocator, host);
     return H2_PAL_ERR_NO_MEMORY;
   }
@@ -392,7 +406,8 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
       h2_pal_mem_free(normalized.allocator, host->capability_requests);
       h2_pal_mem_free(normalized.allocator, host->workers);
       h2_pal_mem_free(normalized.allocator, host->jobs);
-      h2_pal_mem_free(normalized.allocator, host);
+    destroy_host_atomics(host);
+    h2_pal_mem_free(normalized.allocator, host);
       return mutex_result;
     }
     mutex_result = h2_pal_mutex_create(normalized.runtime->sync,
@@ -409,7 +424,8 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
       h2_pal_mem_free(normalized.allocator, host->capability_requests);
       h2_pal_mem_free(normalized.allocator, host->workers);
       h2_pal_mem_free(normalized.allocator, host->jobs);
-      h2_pal_mem_free(normalized.allocator, host);
+    destroy_host_atomics(host);
+    h2_pal_mem_free(normalized.allocator, host);
       return mutex_result;
     }
     mutex_result = h2_pal_mutex_create(normalized.runtime->sync,
@@ -427,7 +443,8 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
       h2_pal_mem_free(normalized.allocator, host->capability_requests);
       h2_pal_mem_free(normalized.allocator, host->workers);
       h2_pal_mem_free(normalized.allocator, host->jobs);
-      h2_pal_mem_free(normalized.allocator, host);
+    destroy_host_atomics(host);
+    h2_pal_mem_free(normalized.allocator, host);
       return mutex_result;
     }
     for (size_t job_index = 0u; job_index < normalized.max_jobs; ++job_index) {
@@ -453,7 +470,8 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
         h2_pal_mem_free(normalized.allocator, host->capability_requests);
         h2_pal_mem_free(normalized.allocator, host->workers);
         h2_pal_mem_free(normalized.allocator, host->jobs);
-        h2_pal_mem_free(normalized.allocator, host);
+    destroy_host_atomics(host);
+    h2_pal_mem_free(normalized.allocator, host);
         return mutex_result;
       }
     }
@@ -461,6 +479,7 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
     h2_pal_mem_free(normalized.allocator, host->capability_requests);
     h2_pal_mem_free(normalized.allocator, host->workers);
     h2_pal_mem_free(normalized.allocator, host->jobs);
+    destroy_host_atomics(host);
     h2_pal_mem_free(normalized.allocator, host);
     return H2_PAL_ERR_UNSUPPORTED;
   }
@@ -486,10 +505,10 @@ h2_pal_result_t h2_lua_host_start(h2_lua_host_t *host) {
   if (host == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  if (atomic_load(&host->started) != 0) {
+  if (h2_atomic_load(&host->started) != 0) {
     return H2_PAL_ERR_INVALID_STATE;
   }
-  if (atomic_load(&host->stopping) != 0) {
+  if (h2_atomic_load(&host->stopping) != 0) {
     return H2_PAL_ERR_INVALID_STATE;
   }
   for (size_t i = 0u; i < host->config.worker_count; ++i) {
@@ -506,7 +525,7 @@ h2_pal_result_t h2_lua_host_start(h2_lua_host_t *host) {
         },
         &host->workers[i].wake_queue);
     if (result != H2_PAL_OK) {
-      atomic_store(&host->stopping, 1);
+      h2_atomic_store(&host->stopping, 1);
       (void)h2_lua_host_join(host);
       return result;
     }
@@ -518,12 +537,12 @@ h2_pal_result_t h2_lua_host_start(h2_lua_host_t *host) {
         },
         worker_entry, &host->workers[i], &host->workers[i].task);
     if (result != H2_PAL_OK) {
-      atomic_store(&host->stopping, 1);
+      h2_atomic_store(&host->stopping, 1);
       (void)h2_lua_host_join(host);
       return result;
     }
   }
-  atomic_store(&host->started, 1);
+  h2_atomic_store(&host->started, 1);
   return H2_PAL_OK;
 }
 
@@ -532,7 +551,7 @@ h2_pal_result_t h2_lua_host_stop(h2_lua_host_t *host) {
   if (host == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  atomic_store(&host->stopping, 1);
+  h2_atomic_store(&host->stopping, 1);
   for (i = 0u; i < host->config.max_jobs; ++i) {
     h2_lua_job_id_t job_id = H2_LUA_JOB_ID_NONE;
     uint32_t job_generation = 0u;
@@ -568,7 +587,7 @@ h2_pal_result_t h2_lua_host_join(h2_lua_host_t *host) {
   if (host == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  if (atomic_load(&host->joined) != 0) {
+  if (h2_atomic_load(&host->joined) != 0) {
     return H2_PAL_OK;
   }
   for (size_t i = 0u; i < host->config.worker_count; ++i) {
@@ -588,7 +607,7 @@ h2_pal_result_t h2_lua_host_join(h2_lua_host_t *host) {
     }
   }
   if (result == H2_PAL_OK) {
-    atomic_store(&host->joined, 1);
+    h2_atomic_store(&host->joined, 1);
   }
   return result;
 }
@@ -633,6 +652,7 @@ void h2_lua_host_destroy(h2_lua_host_t *host) {
   h2_pal_mem_free(mem, host->jobs);
   h2_pal_mem_free(mem, host->workers);
   h2_pal_mem_free(mem, host->capability_requests);
+  destroy_host_atomics(host);
   h2_pal_mem_free(mem, host);
 }
 
@@ -644,7 +664,7 @@ h2_pal_result_t h2_lua_register_module(h2_lua_host_t *host, const char *name,
       strlen(name) >= H2_LUA_NAME_MAX) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  if (atomic_load(&host->started) != 0) {
+  if (h2_atomic_load(&host->started) != 0) {
     return H2_PAL_ERR_INVALID_STATE;
   }
   if (module_name_is_reserved(name)) {
@@ -675,7 +695,7 @@ h2_pal_result_t h2_lua_register_capability(h2_lua_host_t *host,
       strlen(name) >= H2_LUA_NAME_MAX) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  if (atomic_load(&host->started) != 0) {
+  if (h2_atomic_load(&host->started) != 0) {
     return H2_PAL_ERR_INVALID_STATE;
   }
   for (size_t i = 0u; i < host->capability_count; ++i) {
