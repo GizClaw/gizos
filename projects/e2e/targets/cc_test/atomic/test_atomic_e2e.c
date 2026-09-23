@@ -14,7 +14,8 @@ int main(void) {
       int rc = h2_atomic_e2e_run(
           h2_desktop_platform_default_allocator(),
           h2_desktop_platform_task_api(), h2_desktop_platform_time_api(),
-          backends[(sample + i) % 2u], 100000u, true, NULL, NULL, &result);
+          backends[(sample + i) % 2u], 100000u, true, false,
+          NULL, NULL, NULL, NULL, &result);
       printf("ATOMIC_E2E backend=%s sample=%u concurrent=%u expected=%u "
              "incremented=%u compared=%u elapsed_us=%" PRIu64 " rc=%d\n",
              backends[(sample + i) % 2u]->name, sample,

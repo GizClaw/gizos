@@ -8,6 +8,7 @@
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "esp_memory_utils.h"
 
 #include <inttypes.h>
 #include <stdio.h>
@@ -20,6 +21,11 @@ static void fail(const char *stage, int rc) {
   printf("H2_ATOMIC_E2E_FAIL stage=%s rc=%d\n", stage, rc);
   fflush(stdout);
   hold();
+}
+
+static int current_core(void *user) {
+  (void)user;
+  return (int)xPortGetCoreID();
 }
 
 void app_main(void) {
@@ -39,26 +45,50 @@ void app_main(void) {
 
   const h2_atomic_e2e_backend_t *backends[] = {
       h2_atomic_e2e_h2_backend(), h2_atomic_e2e_c11_backend()};
-  for (unsigned sample = 0u; sample < 3u; ++sample) {
-    for (unsigned i = 0u; i < 2u; ++i) {
-      const h2_atomic_e2e_backend_t *backend = backends[(sample + i) % 2u];
-      h2_atomic_e2e_result_t result;
-      rc = h2_atomic_e2e_run(h2_esp_platform_internal_allocator(),
-                             h2_esp_platform_task_api(),
-                             h2_esp_platform_time_api(), backend,
-                             100000u, true, NULL, NULL, &result);
-      printf("H2_ATOMIC_E2E backend=%s sample=%u concurrent=%u expected=%u "
-             "incremented=%u compared=%u elapsed_us=%" PRIu64 " rc=%d\n",
-             backend->name, sample, (unsigned)result.concurrent,
-             result.expected, result.incremented, result.compared,
-             result.elapsed_us, rc);
-      fflush(stdout);
-      if (rc != H2_PAL_OK) fail("workload", rc);
+  unsigned failures = 0u;
+  for (unsigned placement = 0u; placement < 2u; ++placement) {
+    const bool psram = placement == 1u;
+    const h2_pal_mem_api_t *mem = psram
+        ? h2_esp_platform_psram_allocator()
+        : h2_esp_platform_internal_allocator();
+    for (unsigned sample = 0u; sample < 3u; ++sample) {
+      for (unsigned i = 0u; i < 2u; ++i) {
+        const h2_atomic_e2e_backend_t *backend = backends[(sample + i) % 2u];
+        h2_atomic_e2e_result_t result;
+        rc = h2_atomic_e2e_run(mem, h2_esp_platform_task_api(),
+                               h2_esp_platform_time_api(), backend,
+                               psram ? 20000u : 100000u, true, psram,
+                               current_core, NULL, NULL, NULL, &result);
+        bool wrapper_ok = psram
+            ? esp_ptr_external_ram((const void *)result.wrapper_address)
+            : esp_ptr_internal((const void *)result.wrapper_address);
+        bool storage_ok = psram && backend == backends[1]
+            ? esp_ptr_external_ram((const void *)result.storage_address)
+            : esp_ptr_internal((const void *)result.storage_address);
+        if (result.wrapper_address == 0u || result.storage_address == 0u) {
+          wrapper_ok = false;
+          storage_ok = false;
+        }
+        const bool passed = rc == H2_PAL_OK && wrapper_ok && storage_ok;
+        printf("H2_ATOMIC_E2E backend=%s placement=%s sample=%u "
+               "core0=%d core1=%d expected=%u incremented=%u compared=%u "
+               "cas_failures=%u wrapper=%p storage=%p wrapper_ok=%u "
+               "storage_ok=%u elapsed_us=%" PRIu64 " verdict=%s rc=%d\n",
+               backend->name, psram ? "psram" : "internal", sample,
+               result.worker_core[0], result.worker_core[1],
+               result.expected, result.incremented, result.compared,
+               result.cas_failures, (void *)result.wrapper_address,
+               (void *)result.storage_address, (unsigned)wrapper_ok,
+               (unsigned)storage_ok, result.elapsed_us,
+               passed ? "PASS" : "FAIL", rc);
+        fflush(stdout);
+        if (!passed) ++failures;
+      }
     }
   }
   rc = h2_esp_h2loader_app_confirm(runtime);
   if (rc != H2_PAL_OK) fail("confirm", rc);
-  printf("H2_ATOMIC_E2E_READY rc=0\n");
+  printf("H2_ATOMIC_E2E_READY aggregate_failures=%u rc=0\n", failures);
   fflush(stdout);
   hold();
 }

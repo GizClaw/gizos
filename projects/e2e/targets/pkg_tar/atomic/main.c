@@ -44,7 +44,8 @@ int main(void) {
     h2_atomic_e2e_result_t result;
     const int rc = h2_atomic_e2e_run(
         h2_web_platform_mem_api(), h2_web_platform_task_api(platform),
-        &time_api, backends[i], 10000u, false, pump, platform, &result);
+        &time_api, backends[i], 10000u, false, false,
+        NULL, NULL, pump, platform, &result);
     printf("ATOMIC_E2E backend=%s concurrent=SKIP expected=%u incremented=%u "
            "compared=%u elapsed_us=%" PRIu64 " rc=%d\n",
            backends[i]->name, result.expected, result.incremented,
