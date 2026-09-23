@@ -44,6 +44,7 @@ firmware_native_component(
         "manual",
     ],
     deps = [
+        "//libs/atomic:locked_template",
         "//libs/pal:unsupported",
         "//libs/wifi_sta",
         "//libs/pal/providers/corehttp",

@@ -44,6 +44,7 @@ firmware_native_component(
         "manual",
     ],
     deps = [
+        "//libs/atomic:locked_template",
         "//libs/mem_arena",
         "//libs/pal:unsupported",
         "//libs/pal/providers/corehttp",

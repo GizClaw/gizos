@@ -112,6 +112,7 @@ add_library(bk3633_h2_pal_core STATIC
   src/h2_bk3633_platform_log.c
   src/h2_bk3633_platform_libco.c
   src/h2_bk3633_platform_mem.c
+  src/h2_bk3633_atomic.c
   src/h2_bk3633_platform_power.c
   src/h2_bk3633_platform_system_event.c
   src/h2_bk3633_platform_time.c
@@ -122,6 +123,8 @@ target_include_directories(bk3633_h2_pal_core
     "${CMAKE_CURRENT_LIST_DIR}/include"
     "${FIRMWARES_ROOT}/libs/drivers/rtc/bm8563/include"
     "${FIRMWARES_ROOT}/libs/pal/include"
+    "${FIRMWARES_ROOT}/libs/atomic/include"
+    "${FIRMWARES_ROOT}/libs/atomic/providers/locked"
   PRIVATE
     "${BK3633_CONFIG_INCLUDE_DIR}"
     ${BK3633_SDK_INCLUDE_DIRS}

@@ -18,7 +18,7 @@
 #include "sdkconfig.h"
 
 #include <string.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 
 #include "h2_wifi_sta.h"
 
@@ -1382,30 +1382,30 @@ static int h2_esp_wifi_ap_get_mac(h2_pal_wifi_ap_t *ap, uint8_t out_mac[6]) {
 #endif
 
 /* One admission gate covers the entire authentication/IP/save transaction. */
-static atomic_flag s_h2_esp_wifi_connect_busy = ATOMIC_FLAG_INIT;
+static h2_atomic_flag_t s_h2_esp_wifi_connect_busy = {0};
 
 static int h2_esp_wifi_connect(void *user,
                              const h2_pal_wifi_sta_config_t *config,
                              uint32_t timeout_ms) {
-    if (atomic_flag_test_and_set(&s_h2_esp_wifi_connect_busy))
+    if (h2_atomic_flag_test_and_set(&s_h2_esp_wifi_connect_busy, H2_ATOMIC_SEQ_CST))
         return H2_PAL_ERR_BUSY;
     int rc = h2_esp_wifi_sta_connect(user, config, timeout_ms);
-    atomic_flag_clear(&s_h2_esp_wifi_connect_busy);
+    h2_atomic_flag_clear(&s_h2_esp_wifi_connect_busy, H2_ATOMIC_SEQ_CST);
     return rc;
 }
 
 static int h2_esp_wifi_disconnect(void *user) {
-    if (atomic_flag_test_and_set(&s_h2_esp_wifi_connect_busy))
+    if (h2_atomic_flag_test_and_set(&s_h2_esp_wifi_connect_busy, H2_ATOMIC_SEQ_CST))
         return H2_PAL_ERR_BUSY;
     int rc = h2_esp_wifi_sta_disconnect(user);
-    atomic_flag_clear(&s_h2_esp_wifi_connect_busy);
+    h2_atomic_flag_clear(&s_h2_esp_wifi_connect_busy, H2_ATOMIC_SEQ_CST);
     return rc;
 }
 
 static int h2_esp_wifi_connect_and_save(void *user,
                                       const h2_pal_wifi_sta_config_t *config,
                                       uint32_t timeout_ms) {
-    if (atomic_flag_test_and_set(&s_h2_esp_wifi_connect_busy))
+    if (h2_atomic_flag_test_and_set(&s_h2_esp_wifi_connect_busy, H2_ATOMIC_SEQ_CST))
         return H2_PAL_ERR_BUSY;
     static const h2_pal_wifi_sta_vtable_t raw_vtable = {
         .get_status = (h2_pal_wifi_sta_get_status_fn)h2_esp_wifi_sta_get_status,
@@ -1419,7 +1419,7 @@ static int h2_esp_wifi_connect_and_save(void *user,
         .time = h2_esp_platform_time_api(),
     };
     int rc = h2_wifi_sta_connect_and_save(&deps, config, timeout_ms);
-    atomic_flag_clear(&s_h2_esp_wifi_connect_busy);
+    h2_atomic_flag_clear(&s_h2_esp_wifi_connect_busy, H2_ATOMIC_SEQ_CST);
     return rc;
 }
 

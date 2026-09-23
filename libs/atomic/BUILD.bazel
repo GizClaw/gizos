@@ -7,3 +7,10 @@ cc_library(
     hdrs = ["include/h2_atomic.h"],
     includes = ["include"],
 )
+
+cc_library(
+    name = "locked_template",
+    hdrs = ["providers/locked/h2_atomic_locked_impl.h"],
+    includes = ["providers/locked"],
+    deps = [":atomic"],
+)
