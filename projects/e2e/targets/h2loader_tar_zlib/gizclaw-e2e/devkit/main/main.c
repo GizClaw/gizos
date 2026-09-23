@@ -15,6 +15,7 @@
 #include "h2_runtime_event.h"
 
 #include "esp_system.h"
+#include "esp_memory_utils.h"
 #include "esp_netif_sntp.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -115,6 +116,18 @@ static void emit_summary(const h2_gizclaw_e2e_devkit_runner_t *runner,
 
 static void run_e2e(void *raw) {
   h2_gizclaw_e2e_devkit_runner_t *runner = raw;
+  volatile uint8_t stack_probe = 0u;
+  const bool stack_in_psram = esp_ptr_external_ram((const void *)&stack_probe);
+  printf("H2_GIZCLAW_E2E_DEVKIT stage=runner_stack region=%s "
+         "status=%s\n",
+         stack_in_psram ? "psram" : "other",
+         stack_in_psram ? "PASS" : "ERROR");
+  fflush(stdout);
+  if (!stack_in_psram) {
+    runner->exit_code = H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+    h2_atomic_store_explicit(&runner->exited, true, H2_ATOMIC_RELEASE);
+    return;
+  }
   const h2_gizclaw_e2e_devkit_config_t *launcher_config =
       h2_gizclaw_e2e_devkit_config();
   const h2_gizclaw_e2e_config_t app_config = {

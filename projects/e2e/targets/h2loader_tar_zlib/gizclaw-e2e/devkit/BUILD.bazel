@@ -29,10 +29,10 @@ esp_target_task_policy(
         "$gizclaw/audio/downlink  default",
         "$runtime/input           default",
         "$runtime/nfc             default",
-        "gizclaw/e2e/runner       default",
+        "gizclaw/e2e/runner       4 any 4096 psram",
         "gizclaw/e2e/wifi         default",
-        "gizclaw/e2e/launcher     default",
-        "gizclaw/e2e/job          default",
+        "gizclaw/e2e/launcher     4 any 4096 psram",
+        "gizclaw/e2e/job          4 any 4096 psram",
         "$h2loader/uartcmd        default",
     ],
 )
