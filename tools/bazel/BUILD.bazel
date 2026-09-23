@@ -412,6 +412,7 @@ py_test(
     srcs = ["tests/test_jieli_target_runtime_lifetime.py"],
     data = [
         "//libs/atomic:include/h2_atomic.h",
+        "//libs/atomic/providers/c11:h2_atomic_c11_impl.h",
         "//libs/atomic/providers/c11:src/h2_atomic_c11.c",
         "tests/fixtures/jieli_target_runtime_lifetime.c",
         "//projects/e2e/targets/h2loader_tar_zlib/pal/jieli_ac791n_devkit:src/pal_e2e_main.c",
@@ -1584,6 +1585,8 @@ py_test(
     name = "jieli_task_identity_test",
     srcs = ["tests/test_jieli_task_identity.py"],
     data = [
+        "//libs/atomic:include/h2_atomic.h",
+        "//libs/atomic/providers/c11:src/h2_atomic_c11.c",
         "//libs/pal:pal_header_files",
         "//native_component_src/jieli/wl82/h2_pal_core:include/h2_jieli_wl82_platform_core.h",
         "//native_component_src/jieli/wl82/h2_pal_core:include/h2_jieli_wl82_sdk_port.h",
