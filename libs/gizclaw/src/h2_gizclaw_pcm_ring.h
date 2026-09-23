@@ -3,8 +3,8 @@
 
 #include "h2/pal/core/h2_pal_errors.h"
 #include "h2/pal/os/h2_pal_mem.h"
+#include "h2_atomic.h"
 
-#include <stdatomic.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -13,9 +13,9 @@ typedef struct h2_gizclaw_pcm_ring {
   const h2_pal_mem_api_t *allocator;
   uint8_t *bytes;
   size_t capacity;
-  atomic_size_t write_index;
-  atomic_size_t read_index;
-  atomic_bool closed;
+  h2_atomic_size_t write_index;
+  h2_atomic_size_t read_index;
+  h2_atomic_bool_t closed;
 } h2_gizclaw_pcm_ring_t;
 
 h2_pal_result_t h2_gizclaw_pcm_ring_init(h2_gizclaw_pcm_ring_t *ring,

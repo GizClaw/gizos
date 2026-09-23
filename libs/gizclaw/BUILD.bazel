@@ -141,6 +141,7 @@ cc_library(
     ],
     deps = [
         ":tasks",
+        "//libs/atomic",
         "//libs/pal",
         "//tools/bazel:vendor_third_party_yyjson",
         "//libs/runtime",
@@ -272,7 +273,7 @@ cc_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":gizclaw"],
+    deps = [":gizclaw", "//libs/atomic/providers/c11"],
 )
 
 cc_test(
