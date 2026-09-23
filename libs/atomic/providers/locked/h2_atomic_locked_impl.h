@@ -144,54 +144,30 @@ H2_ATOMIC_DEFINE_SCALAR(bool, bool)
 H2_ATOMIC_DEFINE_SCALAR(ptr, void *)
 #undef H2_ATOMIC_DEFINE_SCALAR
 
-struct h2_atomic_flag_storage { bool value; };
-static h2_atomic_flag_storage_t *h2_atomic_flag_storage(h2_atomic_flag_t *object) {
-    h2_atomic_platform_lock_state_t state = h2_atomic_platform_lock();
-    h2_atomic_flag_storage_t *storage = object->storage;
-    h2_atomic_platform_unlock(state);
-    if (storage != NULL) return storage;
-    h2_atomic_flag_storage_t *candidate = H2_ATOMIC_PLATFORM_ALLOC(sizeof(*candidate));
-    if (candidate == NULL) __builtin_trap();
-    candidate->value = false;
-    state = h2_atomic_platform_lock();
-    if (object->storage == NULL) {
-        object->storage = candidate;
-        storage = candidate;
-        candidate = NULL;
-    } else {
-        storage = object->storage;
-    }
-    h2_atomic_platform_unlock(state);
-    if (candidate != NULL) H2_ATOMIC_PLATFORM_FREE(candidate);
-    return storage;
-}
 h2_atomic_result_t h2_atomic_flag_init(h2_atomic_flag_t *object) {
     if (object == NULL) return H2_ATOMIC_INVALID_ARG;
     h2_atomic_platform_lock_state_t state = h2_atomic_platform_lock();
-    bool initialized = object->storage != NULL;
+    object->_state = 0u;
     h2_atomic_platform_unlock(state);
-    if (initialized) return H2_ATOMIC_INVALID_STATE;
-    h2_atomic_flag_storage(object);
     return H2_ATOMIC_OK;
 }
 void h2_atomic_flag_destroy(h2_atomic_flag_t *object) {
     if (object == NULL) return;
-    if (object->storage != NULL) H2_ATOMIC_PLATFORM_FREE(object->storage);
-    object->storage = NULL;
+    h2_atomic_platform_lock_state_t state = h2_atomic_platform_lock();
+    object->_state = 0u;
+    h2_atomic_platform_unlock(state);
 }
 bool h2_atomic_flag_test_and_set(h2_atomic_flag_t *object, h2_atomic_order_t order) {
     (void)order;
-    h2_atomic_flag_storage_t *storage = h2_atomic_flag_storage(object);
     h2_atomic_platform_lock_state_t state = h2_atomic_platform_lock();
-    bool previous = storage->value;
-    storage->value = true;
+    bool previous = object->_state != 0u;
+    object->_state = 1u;
     h2_atomic_platform_unlock(state);
     return previous;
 }
 void h2_atomic_flag_clear(h2_atomic_flag_t *object, h2_atomic_order_t order) {
     (void)order;
-    h2_atomic_flag_storage_t *storage = h2_atomic_flag_storage(object);
     h2_atomic_platform_lock_state_t state = h2_atomic_platform_lock();
-    storage->value = false;
+    object->_state = 0u;
     h2_atomic_platform_unlock(state);
 }

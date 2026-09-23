@@ -9,9 +9,10 @@
 extern "C" {
 #endif
 
-/* The wrapper may live anywhere. Its storage is allocated by the linked
+/* Value wrappers may live anywhere. Non-flag storage is allocated by the linked
  * platform implementation. Initialize once, do not copy after initialization,
- * and destroy only after all concurrent users have stopped. */
+ * and destroy only after all concurrent users have stopped. Flags support
+ * static zero initialization and never allocate storage. */
 typedef struct h2_atomic_int_storage h2_atomic_int_storage_t;
 typedef struct h2_atomic_uint_storage h2_atomic_uint_storage_t;
 typedef struct h2_atomic_u8_storage h2_atomic_u8_storage_t;
@@ -20,7 +21,6 @@ typedef struct h2_atomic_u32_storage h2_atomic_u32_storage_t;
 typedef struct h2_atomic_bool_storage h2_atomic_bool_storage_t;
 typedef struct h2_atomic_size_storage h2_atomic_size_storage_t;
 typedef struct h2_atomic_ptr_storage h2_atomic_ptr_storage_t;
-typedef struct h2_atomic_flag_storage h2_atomic_flag_storage_t;
 
 typedef struct { h2_atomic_int_storage_t *storage; } h2_atomic_int_t;
 typedef struct { h2_atomic_uint_storage_t *storage; } h2_atomic_uint_t;
@@ -30,7 +30,9 @@ typedef struct { h2_atomic_u32_storage_t *storage; } h2_atomic_u32_t;
 typedef struct { h2_atomic_bool_storage_t *storage; } h2_atomic_bool_t;
 typedef struct { h2_atomic_size_storage_t *storage; } h2_atomic_size_t;
 typedef struct { h2_atomic_ptr_storage_t *storage; } h2_atomic_ptr_t;
-typedef struct { h2_atomic_flag_storage_t *storage; } h2_atomic_flag_t;
+/* Zero initialization is valid for flags, including process-wide static flags.
+ * Platform providers guard this byte; callers must never access it directly. */
+typedef struct { uint8_t _state; } h2_atomic_flag_t;
 
 typedef enum h2_atomic_result {
     H2_ATOMIC_OK = 0,
