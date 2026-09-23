@@ -45,6 +45,7 @@ cc_test(
     }),
     deps = [
         ":portaudio",
+        "//libs/atomic/providers/c11",
         "//libs/pal/providers/desktop/pal_core",
     ],
 )
