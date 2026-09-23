@@ -25,6 +25,7 @@ cc_library(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic/providers/c11",
         "//libs/audio_mixer",
         "//libs/pal",
         "@h2_vendor_portaudio//:portaudio",
