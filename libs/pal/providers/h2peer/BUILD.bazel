@@ -137,6 +137,7 @@ cc_test(
     deps = [
         ":portable_protocol_providers",
         ":webrtc_core",
+        "//libs/atomic/providers/c11",
         "//libs/pal/providers/wolfssl:wolfcrypt",
     ],
 )
