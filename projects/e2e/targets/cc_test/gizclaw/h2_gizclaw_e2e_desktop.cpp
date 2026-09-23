@@ -5,35 +5,71 @@
 #include "h2_desktop_app_support.h"
 #include "h2_desktop_platform.h"
 #include "h2_gizclaw_e2e.h"
+#include "h2_atomic.h"
 #ifdef H2_GIZCLAW_E2E_USE_PION
 #include "h2_pion.h"
 #endif
 
 #include <algorithm>
-#include <atomic>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
 #include <fstream>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <vector>
+#ifndef _WIN32
+#include <cerrno>
+#include <fcntl.h>
+#include <unistd.h>
+#else
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#endif
 
 namespace {
 
-// Read by runner tasks and written by a signal handler. Volatile sig_atomic_t
-// alone does not make those cross-thread accesses race-free.
-static_assert(std::atomic<bool>::is_always_lock_free);
-std::atomic<bool> g_stop_requested{false};
-std::atomic_flag g_running = ATOMIC_FLAG_INIT;
+h2_atomic_bool_t g_stop_requested = {};
+h2_atomic_flag_t g_running = {};
+#ifndef _WIN32
+std::mutex g_signal_read_mutex;
+int g_signal_read_fd = -1;
+volatile std::sig_atomic_t g_signal_write_fd = -1;
+#else
+volatile LONG g_signal_seen = 0;
+#endif
 
 void request_stop(int) {
-  g_stop_requested.store(true, std::memory_order_relaxed);
+#ifndef _WIN32
+  const int saved_errno = errno;
+  const int fd = g_signal_write_fd;
+  if (fd >= 0) {
+    const char byte = 1;
+    (void)write(fd, &byte, 1);
+  }
+  errno = saved_errno;
+#else
+  (void)InterlockedExchange(&g_signal_seen, 1);
+#endif
 }
 
 bool should_stop(void *) {
-  return g_stop_requested.load(std::memory_order_relaxed);
+#ifndef _WIN32
+  {
+    std::lock_guard<std::mutex> lock(g_signal_read_mutex);
+    if (g_signal_read_fd >= 0) {
+      char byte;
+      if (read(g_signal_read_fd, &byte, 1) == 1)
+        h2_atomic_bool_store(&g_stop_requested, true, H2_ATOMIC_RELAXED);
+    }
+  }
+#else
+  if (InterlockedCompareExchange(&g_signal_seen, 0, 0) != 0)
+    h2_atomic_bool_store(&g_stop_requested, true, H2_ATOMIC_RELAXED);
+#endif
+  return h2_atomic_bool_load(&g_stop_requested, H2_ATOMIC_RELAXED);
 }
 
 // Own every view the portable runner or a retained Service may borrow. A
@@ -80,20 +116,60 @@ DesktopSession *g_retained_session = nullptr;
 struct RunGuard {
   bool retain = false;
   ~RunGuard() {
-    if (!retain)
-      g_running.clear(std::memory_order_release);
+    if (!retain) {
+      h2_atomic_bool_destroy(&g_stop_requested);
+      h2_atomic_flag_clear(&g_running, H2_ATOMIC_RELEASE);
+    }
   }
 };
 
 struct SignalGuard {
   using Handler = void (*)(int);
-  Handler interrupt = std::signal(SIGINT, request_stop);
-  Handler terminate = std::signal(SIGTERM, request_stop);
+  Handler interrupt = SIG_ERR;
+  Handler terminate = SIG_ERR;
+  bool ready = false;
+#ifndef _WIN32
+  int read_fd = -1;
+  int write_fd = -1;
+#endif
+  SignalGuard() {
+#ifndef _WIN32
+    int fds[2];
+    if (pipe(fds) != 0)
+      return;
+    read_fd = fds[0];
+    write_fd = fds[1];
+    if (fcntl(read_fd, F_SETFL, O_NONBLOCK) == -1 ||
+        fcntl(write_fd, F_SETFL, O_NONBLOCK) == -1)
+      return;
+    {
+      std::lock_guard<std::mutex> lock(g_signal_read_mutex);
+      g_signal_read_fd = read_fd;
+    }
+    g_signal_write_fd = write_fd;
+#else
+    (void)InterlockedExchange(&g_signal_seen, 0);
+#endif
+    interrupt = std::signal(SIGINT, request_stop);
+    terminate = std::signal(SIGTERM, request_stop);
+    ready = interrupt != SIG_ERR && terminate != SIG_ERR;
+  }
   ~SignalGuard() {
     if (interrupt != SIG_ERR)
       (void)std::signal(SIGINT, interrupt);
     if (terminate != SIG_ERR)
       (void)std::signal(SIGTERM, terminate);
+#ifndef _WIN32
+    g_signal_write_fd = -1;
+    {
+      std::lock_guard<std::mutex> lock(g_signal_read_mutex);
+      g_signal_read_fd = -1;
+      if (read_fd >= 0)
+        (void)close(read_fd);
+    }
+    if (write_fd >= 0)
+      (void)close(write_fd);
+#endif
   }
 };
 
@@ -158,9 +234,13 @@ int run_desktop(int argc, char **argv) {
                  reason);
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   }
-  if (g_running.test_and_set(std::memory_order_acquire)) {
+  if (h2_atomic_flag_test_and_set(&g_running, H2_ATOMIC_ACQUIRE)) {
     std::fprintf(stderr, "H2_GIZCLAW_E2E stage=preflight status=ERROR "
                          "reason=active-or-retained-session\n");
+    return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+  }
+  if (h2_atomic_bool_init(&g_stop_requested, false) != H2_ATOMIC_OK) {
+    h2_atomic_flag_clear(&g_running, H2_ATOMIC_RELEASE);
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   }
   RunGuard guard;
@@ -245,8 +325,12 @@ int run_desktop(int argc, char **argv) {
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   }
 
-  g_stop_requested.store(false, std::memory_order_relaxed);
   SignalGuard signals;
+  if (!signals.ready) {
+    std::fprintf(stderr, "H2_GIZCLAW_E2E stage=preflight status=ERROR "
+                         "reason=signal-handler-unavailable\n");
+    return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+  }
   session->app_config = {
       .server_endpoint = {session->endpoint.data(), session->endpoint.size()},
       .registration_token = {session->token.data(), session->token.size()},
