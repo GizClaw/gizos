@@ -1,4 +1,5 @@
 #include "h2/pal/os/h2_pal_atomic.h"
+#include "h2/pal/h2_pal_unsupported.h"
 #include "h2_c11_pal_atomic.h"
 
 #include <assert.h>
@@ -121,6 +122,9 @@ static void test_threads(const h2_pal_atomic_api_t *api) {
 int main(void) {
     const h2_pal_atomic_api_t *api = h2_c11_pal_atomic_api();
     test_dispatch();
+    test_all(api);
+    test_threads(api);
+    api = h2_pal_unsupported_atomic_api();
     test_all(api);
     test_threads(api);
     return 0;

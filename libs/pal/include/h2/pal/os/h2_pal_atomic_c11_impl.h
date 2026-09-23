@@ -21,7 +21,8 @@ static H2_C11_ATOMIC_ATTR memory_order h2_c11_atomic_order(h2_pal_atomic_order_t
 
 static H2_C11_ATOMIC_ATTR h2_pal_result_t h2_c11_u32_load(void * user, const h2_pal_atomic_u32_t * value, uint32_t * out_value, h2_pal_atomic_order_t order) {
     (void)user;
-    *out_value = atomic_load_explicit(&value->storage, h2_c11_atomic_order(order));
+    /* Older embedded Clang requires a mutable _Atomic pointer for a read. */
+    *out_value = atomic_load_explicit((_Atomic(uint32_t) *)&value->storage, h2_c11_atomic_order(order));
     return H2_PAL_OK;
 }
 
@@ -69,7 +70,7 @@ static H2_C11_ATOMIC_ATTR h2_pal_result_t h2_c11_u32_fetch_and(void * user, h2_p
 
 static H2_C11_ATOMIC_ATTR h2_pal_result_t h2_c11_i32_load(void * user, const h2_pal_atomic_i32_t * value, int * out_value, h2_pal_atomic_order_t order) {
     (void)user;
-    *out_value = atomic_load_explicit(&value->storage, h2_c11_atomic_order(order));
+    *out_value = atomic_load_explicit((_Atomic(int) *)&value->storage, h2_c11_atomic_order(order));
     return H2_PAL_OK;
 }
 
@@ -117,7 +118,7 @@ static H2_C11_ATOMIC_ATTR h2_pal_result_t h2_c11_i32_fetch_and(void * user, h2_p
 
 static H2_C11_ATOMIC_ATTR h2_pal_result_t h2_c11_bool_load(void * user, const h2_pal_atomic_bool_t * value, bool * out_value, h2_pal_atomic_order_t order) {
     (void)user;
-    *out_value = atomic_load_explicit(&value->storage, h2_c11_atomic_order(order));
+    *out_value = atomic_load_explicit((_Atomic(bool) *)&value->storage, h2_c11_atomic_order(order));
     return H2_PAL_OK;
 }
 
@@ -141,7 +142,7 @@ static H2_C11_ATOMIC_ATTR h2_pal_result_t h2_c11_bool_compare_exchange(void * us
 
 static H2_C11_ATOMIC_ATTR h2_pal_result_t h2_c11_ptr_load(void * user, const h2_pal_atomic_ptr_t * value, void * * out_value, h2_pal_atomic_order_t order) {
     (void)user;
-    *out_value = atomic_load_explicit(&value->storage, h2_c11_atomic_order(order));
+    *out_value = atomic_load_explicit((_Atomic(void *) *)&value->storage, h2_c11_atomic_order(order));
     return H2_PAL_OK;
 }
 

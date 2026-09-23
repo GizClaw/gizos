@@ -6,7 +6,7 @@ package(default_visibility = ["//visibility:public"])
 cc_library(
     name = "atomic",
     srcs = ["src/h2_c11_pal_atomic.c"],
-    hdrs = ["include/h2_c11_pal_atomic.h", "include/h2_c11_pal_atomic_impl.h"],
+    hdrs = ["include/h2_c11_pal_atomic.h"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["include"],

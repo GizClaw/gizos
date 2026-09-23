@@ -7,7 +7,7 @@
 #include "xtensa/config/core-isa.h"
 #endif
 #define H2_C11_ATOMIC_ATTR IRAM_ATTR
-#include "h2_c11_pal_atomic_impl.h"
+#include "h2/pal/os/h2_pal_atomic_c11_impl.h"
 
 _Static_assert(sizeof(((h2_pal_atomic_u32_t *)0)->storage) == sizeof(uint32_t),
                "u32 atomic storage must have native size");

@@ -87,8 +87,7 @@ h2_pal_result_t h2_pal_atomic_e2e_run_case(
     if (config == NULL || config->atomic == NULL || config->counter == NULL ||
         config->flag == NULL || config->run_pair == NULL || out_actual == NULL ||
         iterations == 0 || iterations > UINT32_MAX / 2 ||
-        test_case < H2_PAL_ATOMIC_E2E_FETCH_ADD ||
-        test_case > H2_PAL_ATOMIC_E2E_FLAG) {
+        (unsigned)test_case > (unsigned)H2_PAL_ATOMIC_E2E_FLAG) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     h2_pal_result_t rc = h2_pal_atomic_u32_store(config->atomic, config->counter,

@@ -107,8 +107,7 @@ typedef struct h2_pal_atomic_api {
 } h2_pal_atomic_api_t;
 
 static inline bool h2_pal_atomic_order_valid(h2_pal_atomic_order_t order) {
-    return order >= H2_PAL_ATOMIC_RELAXED &&
-           order <= H2_PAL_ATOMIC_SEQ_CST;
+    return (unsigned)order <= (unsigned)H2_PAL_ATOMIC_SEQ_CST;
 }
 
 static inline bool h2_pal_atomic_load_order_valid(h2_pal_atomic_order_t order) {
