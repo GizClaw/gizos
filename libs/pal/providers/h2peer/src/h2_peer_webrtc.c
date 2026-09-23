@@ -100,6 +100,17 @@ static void *h2_peer_alloc(const h2_pal_mem_api_t *mem, size_t len) {
   return ptr;
 }
 
+static h2_pal_result_t h2_peer_atomic_init_error(h2_atomic_result_t result) {
+  switch (result) {
+    case H2_ATOMIC_UNSUPPORTED: return H2_PAL_ERR_UNSUPPORTED;
+    case H2_ATOMIC_NO_MEMORY: return H2_PAL_ERR_NO_MEMORY;
+    case H2_ATOMIC_INVALID_ARG: return H2_PAL_ERR_INVALID_ARG;
+    case H2_ATOMIC_INVALID_STATE: return H2_PAL_ERR_INVALID_STATE;
+    case H2_ATOMIC_OK: return H2_PAL_OK;
+  }
+  return H2_PAL_ERR_INVALID_STATE;
+}
+
 static void h2_peer_owner_atomic_destroy(h2_peer_t *owner) {
   h2_atomic_uint_destroy(&owner->refs);
 }
@@ -121,23 +132,24 @@ void h2_peer_connection_atomic_destroy(h2_pal_webrtc_peer_t *object) {
 }
 
 h2_pal_result_t h2_peer_connection_atomic_init(h2_pal_webrtc_peer_t *object) {
-  if (h2_atomic_int_init(&object->state, H2_PAL_WEBRTC_PEER_NEW) != H2_ATOMIC_OK) goto no_memory;
-  if (h2_atomic_int_init(&object->closed, 0) != H2_ATOMIC_OK) goto no_memory;
-  if (h2_atomic_uint_init(&object->refs, 1u) != H2_ATOMIC_OK) goto no_memory;
-  if (h2_atomic_uint_init(&object->network_event_count, 0u) != H2_ATOMIC_OK) goto no_memory;
-  if (h2_atomic_size_init(&object->network_event_bytes, 0u) != H2_ATOMIC_OK) goto no_memory;
-  if (h2_atomic_int_init(&object->network_send_wakeup_queued, 0) != H2_ATOMIC_OK) goto no_memory;
-  if (h2_atomic_int_init(&object->network_stop, 0) != H2_ATOMIC_OK) goto no_memory;
-  if (h2_atomic_int_init(&object->network_stopped, 0) != H2_ATOMIC_OK) goto no_memory;
-  if (h2_atomic_int_init(&object->network_poll_active, 0) != H2_ATOMIC_OK) goto no_memory;
-  if (h2_atomic_int_init(&object->network_transport_result, H2_PAL_OK) != H2_ATOMIC_OK) goto no_memory;
-  if (h2_atomic_int_init(&object->network_error_reported, 0) != H2_ATOMIC_OK) goto no_memory;
-  if (h2_atomic_ptr_init(&object->rtp_pending, NULL) != H2_ATOMIC_OK) goto no_memory;
-  if (h2_atomic_u32_init(&object->channel_ready, 0u) != H2_ATOMIC_OK) goto no_memory;
+  h2_atomic_result_t init_result;
+  if ((init_result = h2_atomic_int_init(&object->state, H2_PAL_WEBRTC_PEER_NEW)) != H2_ATOMIC_OK) goto init_failed;
+  if ((init_result = h2_atomic_int_init(&object->closed, 0)) != H2_ATOMIC_OK) goto init_failed;
+  if ((init_result = h2_atomic_uint_init(&object->refs, 1u)) != H2_ATOMIC_OK) goto init_failed;
+  if ((init_result = h2_atomic_uint_init(&object->network_event_count, 0u)) != H2_ATOMIC_OK) goto init_failed;
+  if ((init_result = h2_atomic_size_init(&object->network_event_bytes, 0u)) != H2_ATOMIC_OK) goto init_failed;
+  if ((init_result = h2_atomic_int_init(&object->network_send_wakeup_queued, 0)) != H2_ATOMIC_OK) goto init_failed;
+  if ((init_result = h2_atomic_int_init(&object->network_stop, 0)) != H2_ATOMIC_OK) goto init_failed;
+  if ((init_result = h2_atomic_int_init(&object->network_stopped, 0)) != H2_ATOMIC_OK) goto init_failed;
+  if ((init_result = h2_atomic_int_init(&object->network_poll_active, 0)) != H2_ATOMIC_OK) goto init_failed;
+  if ((init_result = h2_atomic_int_init(&object->network_transport_result, H2_PAL_OK)) != H2_ATOMIC_OK) goto init_failed;
+  if ((init_result = h2_atomic_int_init(&object->network_error_reported, 0)) != H2_ATOMIC_OK) goto init_failed;
+  if ((init_result = h2_atomic_ptr_init(&object->rtp_pending, NULL)) != H2_ATOMIC_OK) goto init_failed;
+  if ((init_result = h2_atomic_u32_init(&object->channel_ready, 0u)) != H2_ATOMIC_OK) goto init_failed;
   return H2_PAL_OK;
-no_memory:
+init_failed:
   h2_peer_connection_atomic_destroy(object);
-  return H2_PAL_ERR_NO_MEMORY;
+  return h2_peer_atomic_init_error(init_result);
 }
 
 static void h2_peer_channel_atomic_destroy(h2_pal_webrtc_channel_t *object) {
@@ -152,19 +164,20 @@ static void h2_peer_channel_atomic_destroy(h2_pal_webrtc_channel_t *object) {
 }
 
 static h2_pal_result_t h2_peer_channel_atomic_init(h2_pal_webrtc_channel_t *object) {
-  if (h2_atomic_int_init(&object->open, 0) != H2_ATOMIC_OK) goto no_memory;
-  if (h2_atomic_int_init(&object->terminal, 0) != H2_ATOMIC_OK) goto no_memory;
-  if (h2_atomic_uint_init(&object->event_refs, 0u) != H2_ATOMIC_OK) goto no_memory;
-  if (h2_atomic_u8_init(&object->ready_slot, UINT8_MAX) != H2_ATOMIC_OK) goto no_memory;
-  if (h2_atomic_u8_init(&object->tx_head, 0u) != H2_ATOMIC_OK) goto no_memory;
-  if (h2_atomic_u8_init(&object->tx_tail, 0u) != H2_ATOMIC_OK) goto no_memory;
+  h2_atomic_result_t init_result;
+  if ((init_result = h2_atomic_int_init(&object->open, 0)) != H2_ATOMIC_OK) goto init_failed;
+  if ((init_result = h2_atomic_int_init(&object->terminal, 0)) != H2_ATOMIC_OK) goto init_failed;
+  if ((init_result = h2_atomic_uint_init(&object->event_refs, 0u)) != H2_ATOMIC_OK) goto init_failed;
+  if ((init_result = h2_atomic_u8_init(&object->ready_slot, UINT8_MAX)) != H2_ATOMIC_OK) goto init_failed;
+  if ((init_result = h2_atomic_u8_init(&object->tx_head, 0u)) != H2_ATOMIC_OK) goto init_failed;
+  if ((init_result = h2_atomic_u8_init(&object->tx_tail, 0u)) != H2_ATOMIC_OK) goto init_failed;
   for (size_t i = 0; i < H2_PEER_INPUT_SLOT_COUNT; ++i) {
-    if (h2_atomic_u8_init(&object->tx_state[i], 0u) != H2_ATOMIC_OK) goto no_memory;
+    if ((init_result = h2_atomic_u8_init(&object->tx_state[i], 0u)) != H2_ATOMIC_OK) goto init_failed;
   }
   return H2_PAL_OK;
-no_memory:
+init_failed:
   h2_peer_channel_atomic_destroy(object);
-  return H2_PAL_ERR_NO_MEMORY;
+  return h2_peer_atomic_init_error(init_result);
 }
 
 static void h2_peer_free(const h2_pal_mem_api_t *mem, void *ptr) {
@@ -2169,9 +2182,10 @@ h2_pal_result_t h2_peer_create(const h2_peer_config_t *config,
   if (peer == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
   }
-  if (h2_atomic_uint_init(&peer->refs, 1u) != H2_ATOMIC_OK) {
+  h2_atomic_result_t init_result = h2_atomic_uint_init(&peer->refs, 1u);
+  if (init_result != H2_ATOMIC_OK) {
     h2_peer_free(config->mem, peer);
-    return H2_PAL_ERR_NO_MEMORY;
+    return h2_peer_atomic_init_error(init_result);
   }
   peer->config = *config;
   peer->webrtc_api.user = peer;
