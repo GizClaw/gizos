@@ -16,6 +16,7 @@ extern "C" {
  * no device, codec, timer, MIME type, or EOS; pumps own device pacing. */
 typedef struct h2_gizclaw_pcm_track_config {
   const h2_pal_mem_api_t *allocator;
+  const h2_pal_mem_api_t *atomic_allocator;
   size_t uplink_capacity;
   size_t downlink_capacity;
 } h2_gizclaw_pcm_track_config_t;

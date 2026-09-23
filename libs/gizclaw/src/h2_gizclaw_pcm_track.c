@@ -7,6 +7,7 @@
 typedef struct pcm_track {
   h2_gizclaw_track_t base;
   const h2_pal_mem_api_t *allocator;
+  const h2_pal_mem_api_t *control_mem;
   h2_gizclaw_pcm_ring_t uplink;
   h2_gizclaw_pcm_ring_t downlink;
   atomic_bool bound;
@@ -65,11 +66,15 @@ h2_gizclaw_pcm_track_create(const h2_gizclaw_pcm_track_config_t *config,
       (config->uplink_capacity != 0u && !valid_capacity(config->uplink_capacity)) ||
       (config->downlink_capacity != 0u && !valid_capacity(config->downlink_capacity)))
     return H2_PAL_ERR_INVALID_ARG;
-  pcm_track_t *track = h2_pal_mem_alloc(config->allocator, sizeof(*track));
+  const h2_pal_mem_api_t *control_mem = config->atomic_allocator != NULL
+                                            ? config->atomic_allocator
+                                            : config->allocator;
+  pcm_track_t *track = h2_pal_mem_alloc(control_mem, sizeof(*track));
   if (track == NULL)
     return H2_PAL_ERR_NO_MEMORY;
   memset(track, 0, sizeof(*track));
   track->allocator = config->allocator;
+  track->control_mem = control_mem;
   track->base = (h2_gizclaw_track_t){.user = track, .vtable = &pcm_vtable};
   atomic_init(&track->bound, false);
   atomic_init(&track->downlink_discard_until, 0u);
@@ -89,7 +94,7 @@ h2_gizclaw_pcm_track_create(const h2_gizclaw_pcm_track_config_t *config,
   if (rc != H2_PAL_OK) {
     h2_gizclaw_pcm_ring_deinit(&track->downlink);
     h2_gizclaw_pcm_ring_deinit(&track->uplink);
-    h2_pal_mem_free(config->allocator, track);
+    h2_pal_mem_free(control_mem, track);
     return rc;
   }
   *out_track = &track->base;
@@ -106,10 +111,9 @@ h2_pal_result_t h2_gizclaw_pcm_track_destroy(h2_gizclaw_track_t **base) {
     return H2_PAL_ERR_INVALID_ARG;
   if (atomic_load_explicit(&track->bound, memory_order_acquire))
     return H2_PAL_ERR_BUSY;
-  const h2_pal_mem_api_t *allocator = track->allocator;
   h2_gizclaw_pcm_ring_deinit(&track->uplink);
   h2_gizclaw_pcm_ring_deinit(&track->downlink);
-  h2_pal_mem_free(allocator, track);
+  h2_pal_mem_free(track->control_mem, track);
   *base = NULL;
   return H2_PAL_OK;
 }

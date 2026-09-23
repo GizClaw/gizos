@@ -107,7 +107,7 @@ struct h2_gizclaw_conversation_request {
   atomic_bool committed;
   atomic_bool terminal;
   atomic_bool media_uplink_eos;
-  atomic_int audio_result;
+  atomic_int *audio_result;
   atomic_int cancel_source;
   bool media_attached;
   bool transport_committed;
@@ -208,14 +208,20 @@ static h2_pal_result_t audio_ring_init(h2_gizclaw_audio_ring_t *ring,
   ring->capacity = capacity;
   ring->items = h2_pal_mem_alloc(service->config.client_config->allocator,
                                  item_size * capacity);
-  if (ring->items == NULL)
+  if (ring->items == NULL) {
+    h2_gizclaw_nomem_internal(service, capacity == H2_GIZCLAW_CONVERSATION_OPUS_UPLINK_RING_ITEMS
+                                    ? "conversation.uplink_ring" : "conversation.downlink_ring",
+                                item_size * capacity,
+                                H2_PAL_ERR_NO_MEMORY);
     return H2_PAL_ERR_NO_MEMORY;
+  }
   const h2_pal_mutex_config_t lock_config = {
       .name = "$gizclaw/audio-ring",
       .allocator = service->config.client_config->allocator};
   const h2_pal_result_t lock_rc =
       h2_pal_mutex_create(service->config.sync, &lock_config, &ring->lock);
   if (lock_rc != H2_PAL_OK) {
+    h2_gizclaw_nomem_internal(service, "conversation.opus_ring_mutex", 0u, lock_rc);
     h2_pal_mem_free(service->config.client_config->allocator, ring->items);
     ring->items = NULL;
     return lock_rc;
@@ -286,9 +292,9 @@ static h2_pal_result_t audio_ring_recv(h2_gizclaw_audio_ring_t *ring,
 }
 
 static void audio_ring_close(h2_gizclaw_audio_ring_t *ring) {
-  if (ring == NULL || ring->items == NULL ||
-      atomic_exchange_explicit(&ring->closed, true, memory_order_acq_rel))
+  if (ring == NULL || ring->items == NULL)
     return;
+  atomic_store_explicit(&ring->closed, true, memory_order_release);
 }
 
 static void audio_ring_deinit(h2_gizclaw_audio_ring_t *ring) {
@@ -571,8 +577,10 @@ conversation_encode_step(h2_gizclaw_conversation_request_t *request,
   h2_pal_result_t prepare_rc = h2_gizclaw_service_pcm_input_internal(
       request->service, &request->input, H2_GIZCLAW_PCM_INPUT_PREPARE, NULL, 0u,
       NULL);
-  if (prepare_rc != H2_PAL_OK)
+  if (prepare_rc != H2_PAL_OK) {
+    h2_gizclaw_nomem_internal(request->service, "conversation.pcm_prepare", 0u, prepare_rc);
     return prepare_rc;
+  }
   if (!atomic_load_explicit(&request->control_ready, memory_order_acquire) ||
       request->encoder_eos)
     return H2_PAL_OK;
@@ -583,8 +591,11 @@ conversation_encode_step(h2_gizclaw_conversation_request_t *request,
         size > 0 ? h2_pal_mem_alloc(request->service->client_config.allocator,
                                     (size_t)size)
                  : NULL;
-    if (request->encoder == NULL)
+    if (request->encoder == NULL) {
+      h2_gizclaw_nomem_internal(request->service, "conversation.opus_encoder",
+                                  size > 0 ? (size_t)size : 0u, H2_PAL_ERR_NO_MEMORY);
       return H2_PAL_ERR_NO_MEMORY;
+    }
     if (opus_encoder_init(request->encoder, 16000, 1, OPUS_APPLICATION_VOIP) !=
             OPUS_OK ||
         opus_encoder_ctl(request->encoder, OPUS_SET_COMPLEXITY(0)) != OPUS_OK)
@@ -662,8 +673,11 @@ downlink_decode_step(h2_gizclaw_service_t *service,
         size > 0 ? h2_pal_mem_alloc(service->client_config.allocator,
                                     (size_t)size)
                  : NULL;
-    if (downlink->decoder == NULL)
+    if (downlink->decoder == NULL) {
+      h2_gizclaw_nomem_internal(service, "conversation.opus_decoder",
+                                  size > 0 ? (size_t)size : 0u, H2_PAL_ERR_NO_MEMORY);
       return H2_PAL_ERR_NO_MEMORY;
+    }
     if (opus_decoder_init(downlink->decoder, 16000, 1) != OPUS_OK) {
       h2_pal_mem_free(service->client_config.allocator, downlink->decoder);
       downlink->decoder = NULL;
@@ -718,7 +732,7 @@ static void record_audio_result(h2_gizclaw_conversation_request_t *request,
       result == H2_PAL_ERR_TIMEOUT)
     return;
   int expected = H2_PAL_OK;
-  if (!atomic_compare_exchange_strong(&request->audio_result, &expected, result))
+  if (!atomic_compare_exchange_strong(request->audio_result, &expected, result))
     return;
   /* Exactly the first fatal audio result. The caller has released input_mutex;
    * read only immutable identifiers and atomic counters shared with control. */
@@ -744,7 +758,7 @@ void h2_gizclaw_conversation_uplink_step_internal(
   h2_pal_result_t rc =
       h2_pal_mutex_lock(service->config.sync, request->input_mutex);
   if (rc == H2_PAL_OK) {
-    if (atomic_load(&request->audio_result) == H2_PAL_OK)
+    if (atomic_load(request->audio_result) == H2_PAL_OK)
       rc = conversation_encode_step(request, &stage);
     (void)h2_pal_mutex_unlock(service->config.sync, request->input_mutex);
   }
@@ -890,8 +904,11 @@ downlink_create(h2_gizclaw_service_t *service,
   const h2_pal_mem_api_t *allocator = service->config.client_config->allocator;
   h2_gizclaw_conversation_downlink_t *downlink =
       h2_pal_mem_alloc(allocator, sizeof(*downlink));
-  if (downlink == NULL)
+  if (downlink == NULL) {
+    h2_gizclaw_nomem_internal(service, "conversation.downlink", sizeof(*downlink),
+                                H2_PAL_ERR_NO_MEMORY);
     return H2_PAL_ERR_NO_MEMORY;
+  }
   memset(downlink, 0, sizeof(*downlink));
   /* 20 ms at 16 kHz until the first real packet says otherwise. */
   downlink->plc_frame_samples = 320;
@@ -907,6 +924,7 @@ downlink_create(h2_gizclaw_service_t *service,
       .name = "$gizclaw/downlink", .allocator = allocator};
   h2_pal_result_t rc = h2_pal_mutex_create(service->config.sync, &lock_config,
                                            &downlink->decode_lock);
+  h2_gizclaw_nomem_internal(service, "conversation.decode_mutex", 0u, rc);
   if (rc == H2_PAL_OK)
     rc = audio_ring_init(&downlink->opus, service,
                          sizeof(h2_gizclaw_conversation_request_message_t),
@@ -1189,6 +1207,9 @@ static int send_boundary(h2_gizclaw_conversation_t *conversation, bool end,
   if (event_transport_failed(gzc_rc))
     h2_gizclaw_client_event_failure_internal(conversation->client,
                                              conversation);
+  h2_gizclaw_client_nomem_internal(conversation->client,
+      audio ? "conversation.audio_boundary_send" : "conversation.boundary_send",
+      0u, gzc_to_pal(gzc_rc));
   return gzc_to_pal(gzc_rc);
 }
 
@@ -1208,8 +1229,10 @@ int h2_gizclaw_conversation_wire_open_internal(
     return H2_PAL_ERR_INVALID_STATE;
   h2_gizclaw_conversation_t *conversation =
       h2_pal_mem_alloc(allocator, sizeof(*conversation));
-  if (conversation == NULL)
+  if (conversation == NULL) {
+    h2_gizclaw_client_nomem_internal(client, "conversation.wire_route", sizeof(*conversation), H2_PAL_ERR_NO_MEMORY);
     return H2_PAL_ERR_NO_MEMORY;
+  }
   memset(conversation, 0, sizeof(*conversation));
   conversation->client = client;
   conversation->allocator = allocator;
@@ -1502,7 +1525,7 @@ static void log_conversation_state(h2_gizclaw_conversation_request_t *request,
       (unsigned long long)request->generation, (int)rc,
       atomic_load(&request->cancel_source), atomic_load(&request->wire_ready),
       atomic_load(&request->committed), atomic_load(&request->media_uplink_eos),
-      request->transport_committed, atomic_load(&request->audio_result),
+      request->transport_committed, atomic_load(request->audio_result),
       atomic_load(&request->queued_frames), atomic_load(&request->queued_bytes));
   (void)h2_pal_log_write(request->service->client_config.log, level, "gizclaw", message);
 }
@@ -1522,7 +1545,7 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
     return H2_PAL_ERR_CLOSED;
   }
   const h2_pal_result_t audio_rc = (h2_pal_result_t)atomic_load_explicit(
-      &request->audio_result, memory_order_acquire);
+      request->audio_result, memory_order_acquire);
   if (audio_rc != H2_PAL_OK) {
     log_conversation_state(request, "audio_failed", audio_rc, H2_PAL_LOG_ERROR);
     conversation_request_close(request);
@@ -1552,6 +1575,7 @@ conversation_request_poll(void *user, h2_gizclaw_client_t *client,
     if (rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_TIMEOUT)
       return H2_PAL_ERR_WOULD_BLOCK;
     if (rc != H2_PAL_OK) {
+      h2_gizclaw_nomem_internal(request->service, "conversation.wire_bos", 0u, rc);
       log_conversation_state(request, "input_bos_failed", rc, H2_PAL_LOG_ERROR);
       conversation_request_close(request);
       return rc;
@@ -1796,9 +1820,21 @@ static h2_pal_result_t conversation_generation_start(
   const h2_pal_mem_api_t *allocator = service->config.client_config->allocator;
   h2_gizclaw_conversation_request_t *request =
       h2_pal_mem_alloc(allocator, sizeof(*request));
-  if (request == NULL)
+  if (request == NULL) {
+    h2_gizclaw_nomem_internal(service, "conversation.request", sizeof(*request),
+                                H2_PAL_ERR_NO_MEMORY);
     return H2_PAL_ERR_NO_MEMORY;
+  }
   memset(request, 0, sizeof(*request));
+  const h2_pal_mem_api_t *atomic_allocator =
+      service->client_config.atomic_allocator != NULL
+          ? service->client_config.atomic_allocator : allocator;
+  request->audio_result =
+      h2_pal_mem_alloc(atomic_allocator, sizeof(*request->audio_result));
+  if (request->audio_result == NULL) {
+    h2_pal_mem_free(allocator, request);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
   request->service = service;
   request->identity = identity;
   request->on_event = on_event;
@@ -1817,7 +1853,7 @@ static h2_pal_result_t conversation_generation_start(
   atomic_init(&request->notification_suppressed, false);
   atomic_init(&request->terminal, false);
   atomic_init(&request->media_uplink_eos, false);
-  atomic_init(&request->audio_result, H2_PAL_OK);
+  atomic_init(request->audio_result, H2_PAL_OK);
   atomic_init(&request->cancel_source, H2_GIZCLAW_CANCEL_UNSPECIFIED);
   atomic_init(&request->queued_frames, 0u);
   atomic_init(&request->queued_bytes, 0u);
@@ -1826,6 +1862,7 @@ static h2_pal_result_t conversation_generation_start(
   if (text.len != 0u) {
     request->input_text = h2_pal_mem_alloc(allocator, text.len + 1u);
     if (request->input_text == NULL) {
+      h2_pal_mem_free(atomic_allocator, request->audio_result);
       h2_pal_mem_free(allocator, request);
       return H2_PAL_ERR_NO_MEMORY;
     }
@@ -1860,6 +1897,7 @@ static h2_pal_result_t conversation_generation_start(
         &request->operation);
   }
   if (rc != H2_PAL_OK) {
+    h2_gizclaw_nomem_internal(service, failure_stage, 0u, rc);
     record_audio_request(log, failure_stage, identity, rc);
     h2_gizclaw_conversation_media_detach(request);
     audio_ring_close(&request->opus_uplink);
@@ -1868,6 +1906,7 @@ static h2_pal_result_t conversation_generation_start(
     audio_ring_deinit(&request->opus_uplink);
     h2_gizclaw_pcm_input_deinit(&request->input);
     h2_pal_mem_free(allocator, request->input_text);
+    h2_pal_mem_free(atomic_allocator, request->audio_result);
     h2_pal_mem_free(allocator, request);
     return rc;
   }
@@ -1920,6 +1959,11 @@ conversation_generation_destroy(h2_gizclaw_conversation_request_t *request) {
   h2_gizclaw_pcm_input_deinit(&request->input);
   h2_pal_mem_free(request->service->config.client_config->allocator,
                   request->input_text);
+  const h2_pal_mem_api_t *atomic_allocator =
+      request->service->client_config.atomic_allocator != NULL
+          ? request->service->client_config.atomic_allocator
+          : request->service->client_config.allocator;
+  h2_pal_mem_free(atomic_allocator, request->audio_result);
   h2_pal_mem_free(request->service->config.client_config->allocator, request);
 }
 
@@ -2025,6 +2069,8 @@ h2_pal_result_t h2_gizclaw_conversation_create(
   h2_gizclaw_conversation_t *conversation = h2_pal_mem_alloc(
       service->config.client_config->allocator, sizeof(*conversation));
   if (conversation == NULL) {
+    h2_gizclaw_nomem_internal(service, "conversation.route",
+                                sizeof(*conversation), H2_PAL_ERR_NO_MEMORY);
     (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
     return H2_PAL_ERR_NO_MEMORY;
   }

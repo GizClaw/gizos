@@ -235,10 +235,8 @@ static h2_bleikcp_config_t link_bleikcp_config(const h2_lua_link_t *link) {
       .setup_timeout_ms = H2_LUA_LINK_CONNECT_TIMEOUT_MS,
       .output_retry_count = 40u,
       .output_retry_delay_ms = 2u,
-      .worker_task_options = {.min_stack_size = H2_LUA_LINK_TASK_STACK_SIZE,
-                              .stack_allocator = link->allocator},
-      .server_task_options = {.min_stack_size = H2_LUA_LINK_TASK_STACK_SIZE,
-                              .stack_allocator = link->allocator},
+      .worker_task_options = {.min_stack_size = H2_LUA_LINK_TASK_STACK_SIZE},
+      .server_task_options = {.min_stack_size = H2_LUA_LINK_TASK_STACK_SIZE},
       .extra_characteristics = link->role == H2_LUA_LINK_ROLE_HOST
                                    ? &link->datagram_characteristic
                                    : NULL,
@@ -1096,7 +1094,6 @@ static int link_start(lua_State *state, h2_lua_link_role_t role) {
                          &(h2_pal_task_options_t){
                              .name = s_session_task_name,
                              .min_stack_size = H2_LUA_LINK_TASK_STACK_SIZE,
-                             .stack_allocator = link->allocator,
                          },
                          link_session_entry, link, &link->task);
   if (rc != H2_PAL_OK) {

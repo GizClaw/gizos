@@ -118,3 +118,16 @@ cc_test(
     }),
     deps = [":pal_core"],
 )
+
+cc_test(
+    name = "task_test",
+    srcs = ["tests/test_desktop_task.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":core"],
+)

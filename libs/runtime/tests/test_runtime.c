@@ -3326,7 +3326,7 @@ static void test_sequence_wraps_and_skips_zero(void) {
     test_runtime_env_t env;
     test_env_init(&env);
     h2_runtime_t *runtime = test_runtime_create(&env);
-    runtime->private_state->next_sequence = UINT32_MAX;
+    runtime->private_state->atomics->next_sequence = UINT32_MAX;
 
     assert(h2_runtime_next_sequence(runtime) == UINT32_MAX);
     /* 0 means "no sequence", so the wrap lands on 1. */
@@ -3359,7 +3359,7 @@ static void test_high_first_sequence_sets_input_ceiling(void) {
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
 
     assert(runtime->private_state->input_event_sequence_ceiling == 0u);
-    runtime->private_state->next_sequence = UINT32_MAX;
+    runtime->private_state->atomics->next_sequence = UINT32_MAX;
     assert(h2_runtime_test_button_down(control, 1u, 100u) == H2_PAL_OK);
     assert(runtime->private_state->input_event_sequence_ceiling == UINT32_MAX);
 
@@ -3548,7 +3548,7 @@ static void test_control_injects_validated_runtime_events(void) {
                43u,
                &wifi,
                sizeof(wifi) - 1u) == H2_PAL_ERR_INVALID_ARG);
-    assert(runtime->private_state->next_sequence == 2u);
+    assert(runtime->private_state->atomics->next_sequence == 2u);
 
     h2_runtime_test_control_close(control);
     assert(runtime->private_state->test_control == NULL);
@@ -3638,7 +3638,7 @@ static void test_control_button_helpers_share_state_and_event_sequence(void) {
            H2_PAL_ERR_WOULD_BLOCK);
 
     const h2_runtime_sequence_t next_sequence =
-        runtime->private_state->next_sequence;
+        runtime->private_state->atomics->next_sequence;
     state.updated_at_ms = 150u;
     const size_t state_locks_before = env.sync_state.locks;
     const size_t state_unlocks_before = env.sync_state.unlocks;
@@ -3646,7 +3646,7 @@ static void test_control_button_helpers_share_state_and_event_sequence(void) {
                control, 1u, &state, sizeof(state)) == H2_PAL_OK);
     assert(env.sync_state.locks == state_locks_before + 1u);
     assert(env.sync_state.unlocks == state_unlocks_before + 1u);
-    assert(runtime->private_state->next_sequence == next_sequence);
+    assert(runtime->private_state->atomics->next_sequence == next_sequence);
     h2_runtime_button_state_t published_state;
     assert(h2_runtime_component_state_button(
                runtime, 1u, &published_state) == H2_PAL_OK);
@@ -3698,7 +3698,7 @@ static void test_control_preserves_runtime_queue_drop_behavior(void) {
                NULL,
                0u) == H2_PAL_OK);
     assert(runtime->private_state->dropped_event_count == 1u);
-    assert(runtime->private_state->next_sequence == 3u);
+    assert(runtime->private_state->atomics->next_sequence == 3u);
 
     uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
     h2_runtime_event_t event = event_with_payload(payload);

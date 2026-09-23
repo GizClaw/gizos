@@ -529,6 +529,16 @@ static void complete_pending_as_closed(h2_gizclaw_service_t *service) {
   }
 }
 
+void h2_gizclaw_nomem_internal(h2_gizclaw_service_t *service,
+                                const char *stage, size_t bytes,
+                                h2_pal_result_t result) {
+  if (result != H2_PAL_ERR_NO_MEMORY || service == NULL)
+    return;
+  if (service->client_config.on_no_memory != NULL)
+    service->client_config.on_no_memory(service->client_config.no_memory_user,
+                                         stage, bytes);
+}
+
 static h2_pal_result_t
 queue_client_event(void *user, const h2_gizclaw_client_event_t *event) {
   h2_gizclaw_service_t *service = user;
@@ -553,6 +563,8 @@ queue_client_event(void *user, const h2_gizclaw_client_event_t *event) {
     item.event_workspace_name = h2_pal_mem_alloc(
         service->client_config.allocator, event->workspace_name.len + 1);
     if (item.event_workspace_name == NULL) {
+      h2_gizclaw_nomem_internal(service, "service.event_workspace", event->workspace_name.len + 1u,
+                                  H2_PAL_ERR_NO_MEMORY);
       unlock_service(service);
       return H2_PAL_ERR_NO_MEMORY;
     }
@@ -1057,7 +1069,6 @@ h2_pal_result_t h2_gizclaw_service_start(h2_gizclaw_service_t *service) {
   service->started = true;
   unlock_service(service);
   h2_pal_task_options_t net_options = service->config.net_task_options;
-  net_options.stack_allocator = service->client_config.allocator;
   rc =
       h2_pal_task_start(service->config.task, &net_options,
                         net_worker, service, &service->net_task);
@@ -1068,28 +1079,24 @@ h2_pal_result_t h2_gizclaw_service_start(h2_gizclaw_service_t *service) {
     return rc;
   }
   const h2_pal_task_options_t uplink_options = {
-      .name = h2_gizclaw_audio_uplink_task_name, .min_stack_size = 65536u,
-      .stack_allocator = service->client_config.allocator};
+      .name = h2_gizclaw_audio_uplink_task_name, .min_stack_size = 65536u};
   rc = h2_pal_task_start(service->config.task, &uplink_options, uplink_worker,
                          service, &service->uplink_task);
   if (rc == H2_PAL_OK) {
     const h2_pal_task_options_t downlink_options = {
-        .name = h2_gizclaw_audio_downlink_task_name, .min_stack_size = 16384u,
-        .stack_allocator = service->client_config.allocator};
+        .name = h2_gizclaw_audio_downlink_task_name, .min_stack_size = 16384u};
     rc = h2_pal_task_start(service->config.task, &downlink_options,
                            downlink_worker, service, &service->downlink_task);
   }
   if (rc == H2_PAL_OK) {
     const h2_pal_task_options_t options = {.name = "$gizclaw/data-up",
-                                           .min_stack_size = 16384u,
-                                           .stack_allocator = service->client_config.allocator};
+                                           .min_stack_size = 16384u};
     rc = h2_pal_task_start(service->config.task, &options, data_uplink_worker,
                            service, &service->data_uplink_task);
   }
   if (rc == H2_PAL_OK) {
     const h2_pal_task_options_t options = {.name = "$gizclaw/data-down",
-                                           .min_stack_size = 16384u,
-                                           .stack_allocator = service->client_config.allocator};
+                                           .min_stack_size = 16384u};
     rc = h2_pal_task_start(service->config.task, &options, data_downlink_worker,
                            service, &service->data_downlink_task);
   }
@@ -1281,6 +1288,8 @@ static h2_pal_result_t submit_operation(
   h2_gizclaw_operation_t *operation = h2_pal_mem_alloc(
       service->config.client_config->allocator, sizeof(*operation));
   if (operation == NULL) {
+    h2_gizclaw_nomem_internal(service, "service.operation", sizeof(*operation),
+                                  H2_PAL_ERR_NO_MEMORY);
     unlock_service(service);
     return H2_PAL_ERR_NO_MEMORY;
   }

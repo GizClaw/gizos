@@ -2,6 +2,7 @@
 #define TEST_H2_ESP_PLATFORM_CORE_H
 
 #include "h2/pal/core/h2_pal_errors.h"
+#include "h2/pal/os/h2_pal_mem.h"
 
 #include <stdint.h>
 
@@ -29,6 +30,11 @@ typedef h2_pal_result_t (*h2_esp_task_policy_resolver_t)(
 typedef struct h2_esp_task_policy_config {
   h2_esp_task_policy_resolver_t resolver;
   void *resolver_user;
+  /** Borrowed PSRAM stack allocator; NULL keeps the SDK WithCaps path.
+   * Used only when the resolved policy selects PSRAM. Must provide 8-bit
+   * PSRAM storage aligned for StackType_t and live until all tasks join.
+   * TCB storage remains internal RAM; internal-policy stacks ignore this. */
+  const h2_pal_mem_api_t *psram_stack_allocator;
 } h2_esp_task_policy_config_t;
 
 h2_pal_result_t

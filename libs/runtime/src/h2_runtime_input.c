@@ -1462,6 +1462,27 @@ static void input_task_entry(void *ctx) {
     }
 }
 
+h2_pal_result_t h2_runtime_state_debug(
+    h2_runtime_t *runtime,
+    h2_runtime_state_debug_t *out_debug) {
+    if (!h2_runtime_ready(runtime) || out_debug == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    h2_runtime_state_publication_t *publication =
+        &runtime->private_state->state_publication;
+    out_debug->active_index = atomic_load_explicit(
+        &publication->active_index, memory_order_acquire);
+    for (unsigned int i = 0u; i < H2_RUNTIME_STATE_SLOT_COUNT && i < 3u; ++i) {
+        out_debug->reader_count[i] = atomic_load_explicit(
+            &publication->atomics->reader_count[i], memory_order_acquire);
+    }
+    out_debug->deferred_count = publication->deferred_count;
+    out_debug->switch_count = publication->switch_count;
+    out_debug->pending_event_count =
+        (uint32_t)runtime->private_state->input_pending_event_count;
+    return H2_PAL_OK;
+}
+
 h2_pal_result_t h2_runtime_input_status(
     h2_runtime_t *runtime,
     h2_runtime_input_status_t *out_status) {

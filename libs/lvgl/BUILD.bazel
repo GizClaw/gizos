@@ -370,6 +370,7 @@ cc_test(
     deps = [
         ":display",
         ":platform",
+        "//libs/mem_arena",
         "//libs/pal",
         "//libs/pal/providers/desktop/pal_core",
     ],

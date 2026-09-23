@@ -892,6 +892,7 @@ static void h2_gizclaw_log_error(h2_gizclaw_client_t *client, const char *stage,
 
 static void h2_gizclaw_log_webrtc_rc(h2_gizclaw_client_t *client,
                                      const char *stage, int rc) {
+  h2_gizclaw_client_nomem_internal(client, stage, 0u, (h2_pal_result_t)rc);
   if (client == NULL || client->config.log == NULL) {
     return;
   }
@@ -1036,14 +1037,28 @@ void h2_gizclaw_client_log_rpc_error_internal(h2_gizclaw_client_t *client,
                            error_message_len);
 }
 
+void h2_gizclaw_client_nomem_internal(h2_gizclaw_client_t *client,
+                                       const char *stage, size_t bytes,
+                                       h2_pal_result_t result) {
+  if (result == H2_PAL_ERR_NO_MEMORY && client != NULL &&
+      client->config.on_no_memory != NULL)
+    client->config.on_no_memory(client->config.no_memory_user, stage, bytes);
+}
+
 static void *h2_gzc_malloc(void *user, size_t size) {
   h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)user;
-  return h2_pal_mem_alloc(client->config.allocator, size);
+  void *ptr = h2_pal_mem_alloc(client->config.allocator, size);
+  if (ptr == NULL && size != 0u)
+    h2_gizclaw_client_nomem_internal(client, "sdk.alloc", size, H2_PAL_ERR_NO_MEMORY);
+  return ptr;
 }
 
 static void *h2_gzc_realloc(void *user, void *ptr, size_t size) {
   h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)user;
-  return h2_pal_mem_realloc(client->config.allocator, ptr, size);
+  void *next = h2_pal_mem_realloc(client->config.allocator, ptr, size);
+  if (next == NULL && size != 0u)
+    h2_gizclaw_client_nomem_internal(client, "sdk.realloc", size, H2_PAL_ERR_NO_MEMORY);
+  return next;
 }
 
 static void h2_gzc_free(void *user, void *ptr) {
@@ -2087,6 +2102,7 @@ int h2_gizclaw_client_rpc_request_start(
   h2_gizclaw_rpc_request_t *request =
       h2_pal_mem_alloc(client->config.allocator, sizeof(*request));
   if (request == NULL) {
+    h2_gizclaw_client_nomem_internal(client, "client.rpc_request", sizeof(*request), H2_PAL_ERR_NO_MEMORY);
     return H2_PAL_ERR_NO_MEMORY;
   }
   memset(request, 0, sizeof(*request));
@@ -2135,6 +2151,7 @@ int h2_gizclaw_rpc_request_result(h2_gizclaw_rpc_request_t *request,
     out_response->result_payload =
         h2_pal_mem_alloc(request->allocator, response.result_payload.len);
     if (out_response->result_payload == NULL) {
+      h2_gizclaw_client_nomem_internal(request->client, "client.rpc_result_payload", response.result_payload.len, H2_PAL_ERR_NO_MEMORY);
       memset(out_response, 0, sizeof(*out_response));
       return H2_PAL_ERR_NO_MEMORY;
     }
@@ -2145,6 +2162,7 @@ int h2_gizclaw_rpc_request_result(h2_gizclaw_rpc_request_t *request,
     out_response->error_message =
         h2_pal_mem_alloc(request->allocator, response.error.message.len);
     if (out_response->error_message == NULL) {
+      h2_gizclaw_client_nomem_internal(request->client, "client.rpc_error_message", response.error.message.len, H2_PAL_ERR_NO_MEMORY);
       h2_pal_mem_free(request->allocator, out_response->result_payload);
       memset(out_response, 0, sizeof(*out_response));
       return H2_PAL_ERR_NO_MEMORY;

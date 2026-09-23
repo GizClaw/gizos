@@ -19,7 +19,7 @@ h2_pal_result_t h2_runtime_system_state_audio(
     if (!h2_runtime_ready(runtime) || !out_state)
         return H2_PAL_ERR_INVALID_ARG;
     h2_runtime_private_t *state = runtime->private_state;
-    if (atomic_flag_test_and_set(&state->audio_state_busy))
+    if (atomic_flag_test_and_set(&state->atomics->audio_state_busy))
         return H2_PAL_ERR_BUSY;
     uint32_t actual = 0;
     int rc = h2_pal_audio_get_speaker_volume_percent(&state->audio_backend, &actual);
@@ -36,7 +36,7 @@ h2_pal_result_t h2_runtime_system_state_audio(
         }
         *out_state = state->audio_state;
     }
-    atomic_flag_clear(&state->audio_state_busy);
+    atomic_flag_clear(&state->atomics->audio_state_busy);
     return rc;
 }
 
@@ -45,7 +45,7 @@ h2_pal_result_t h2_runtime_audio_set_volume(
     if (!h2_runtime_ready(runtime) || percent > 100u || muted > 1u)
         return H2_PAL_ERR_INVALID_ARG;
     h2_runtime_private_t *state = runtime->private_state;
-    if (atomic_flag_test_and_set(&state->audio_state_busy))
+    if (atomic_flag_test_and_set(&state->atomics->audio_state_busy))
         return H2_PAL_ERR_BUSY;
     int rc = h2_pal_audio_set_speaker_volume_percent(backend(runtime), muted ? 0 : percent);
     if (rc == H2_PAL_OK) {
@@ -53,7 +53,7 @@ h2_pal_result_t h2_runtime_audio_set_volume(
         state->audio_state.muted = muted;
         state->audio_state_valid = true;
     }
-    atomic_flag_clear(&state->audio_state_busy);
+    atomic_flag_clear(&state->atomics->audio_state_busy);
     return rc;
 }
 
@@ -297,7 +297,7 @@ void h2_runtime_audio_bind(h2_runtime_t *runtime) {
     };
     h2_runtime_private_t *state = runtime->private_state;
     state->audio_backend = state->audio_proxy;
-    state->audio_state_busy = (atomic_flag)ATOMIC_FLAG_INIT;
+    state->atomics->audio_state_busy = (atomic_flag)ATOMIC_FLAG_INIT;
 #if H2_RUNTIME_AUDIO_LEVELS
     atomic_init(&state->audio_capture_level, 0u);
     atomic_init(&state->audio_capture_level_ms, 0u);

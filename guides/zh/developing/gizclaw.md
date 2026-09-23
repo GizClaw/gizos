@@ -2,7 +2,7 @@
 
 `libs/gizclaw` 将 GizClaw C SDK 集成为跨平台 client，提供连接、RegistrationToken 注册、轮询、generic RPC、Server 反向 RPC provider、ping 和 speed test 能力，并提供可由多个产品复用的单 client request service。
 
-`h2_gizclaw_config_t.allocator` 继续传给 HTTP 请求，并贯穿 WebRTC peer、设备播放器音轨，以及 Service、时间同步、设备 worker 和音频下载任务的 `stack_allocator`。产品可以让 GizClaw 与 Lua Host 共用一个 arena，但必须等子任务 join、音轨关闭和 owned WebRTC event 全部释放后再销毁 arena；ESP internal 栈策略与 provider 的独立 internal/control/packet 存储不受此配置覆盖。
+`h2_gizclaw_config_t.allocator` 继续传给 HTTP 请求，并贯穿 WebRTC peer 和设备播放器音轨。产品可以让 GizClaw 与 Lua Host 共用一个 arena，但必须等子任务 join、音轨关闭和 owned WebRTC event 全部释放后再销毁 arena。Service、时间同步、设备 worker 和音频下载任务的栈由平台 task provider 配置；ESP internal 栈策略与 provider 的独立 internal/control/packet 存储不受 client allocator 覆盖。
 
 ## API Reference
 
@@ -15,6 +15,12 @@
 GizClaw library 负责 SDK 集成和 client protocol，不创建具体 HTTP、WebRTC 或 crypto backend。Credential 来源、连接策略和 app workflow 由调用方负责。
 
 Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Workflow projection 中复制 driver enum，也不要求调用方根据 driver 构造 Workspace 参数。Workspace 更新统一使用 `h2_gizclaw_*workspace_set_parameters`，对应 SDK 0.15.5 的 `server.workspace.parameters.set`（110）；旧的 `workspace_set_input` 入口已删除。
+
+### Session Workflow 目录流
+
+`h2_gizclaw_session_config_t.catalog_sink` 启用逐页刷新。Session 用固定的 `catalog_bytes` response buffer 依次读取配置的 collection；回调收到 `BEGIN`、零或多次 `PAGE`、最后 `COMMIT`，任何 RPC、格式、超时、取消或 sink 错误则收到 `ABORT`。PAGE 中的字符串和 item 只在回调期间有效；sink 应将新目录暂存，COMMIT 后原子发布，ABORT 丢弃暂存。回调在调用 refresh/register 的任务上执行，不得重入同一个 Session。每页携带 Runtime Profile 名称和 revision；一轮内不一致会失败。目录大小不受 `max_workflows` 限制，Session 不保留全部 item，`catalog_copy` 在此模式返回 `UNSUPPORTED`。调用方可用文件保存目录并按可见窗口读取，是否跳过相同 revision 的重写由 sink 决定。
+
+流式模式下 Workspace selection 以调用方提供的 collection、Workflow name、Workspace name 和可选参数发起服务端请求；Session 不先从内存目录查找。服务端 create/get/reload 与 Runtime Profile revision 仍是最终校验边界。未配置 sink 的旧调用方继续使用有界的保留目录与 `catalog_copy`。
 
 依赖的 GizClaw C SDK 当前固定为 0.18.16。自 0.17.0 起，`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
 
@@ -55,6 +61,14 @@ Encrypted mode 通过显式 X25519 key/public/shared types、HKDF-SHA256 和对�
 AEAD enum 调用 Crypto PAL。GizClaw 的 plaintext mode 在 library 内做经过长度和
 capacity 校验的 bounded copy，不把 plaintext 注册成 Crypto PAL algorithm。
 
+配置 `catalog_sink` 时，Session 用 cursor 分页读取 Workflow，每页借用的结构和字符串只在 PAGE 回调期间有效。首次有效页后发送 BEGIN，全部页验证同一 Profile 名称和 revision 且操作未取消时发送 COMMIT，失败时发送 ABORT；调用方负责临时文件、原子发布及保留旧目录。`catalog_bytes` 只容纳一页或一次 Workspace RPC；`catalog_copy` 返回 `UNSUPPORTED`。流式选择先通过 Workflow get 验证返回的 Workflow name、collection 和 Profile revision，再按原有 Workspace get/create/reload 路径执行，无需完整内存目录。`max_workflows` 不限制流式条目数，流式模式不能同时启用保留缓冲。
+
+`h2_gizclaw_session_config_t.retain_catalog_buffer` 默认为 false，保持按操作分配的行为：刷新分配新 catalog storage，成功后释放旧 catalog，失败时释放新 storage；Workspace preparation 的 scratch 在操作结束时释放。设置为 true 时，create 从 `retained_allocator` 分别预分配两块 `catalog_bytes`（该字段为 NULL 时回退到 `mem`），每块只分配一次；任一分配失败即返回 `H2_PAL_ERR_NO_MEMORY`，释放已取得的资源并保持输出 Session 为 NULL。该模式在 Session 生命周期内保留 `2 × catalog_bytes`（例如容量为 256 KiB 时保留 512 KiB），让长期运行后的堆碎片不再影响这两块大缓冲的取得；其他 RPC、transport 和音频分配仍可能失败。
+
+可选的 `const h2_pal_mem_api_t *retained_allocator` 仅用于保留模式的 catalog 和 scratch，调用方可将这两块长期存活的大缓冲放在独立于碎片敏感 arena 的内存中。Session 本体、同步对象及其他 Session 分配仍使用 `mem`；`retain_catalog_buffer` 为 false 时忽略 `retained_allocator`。两个 allocator 及其上下文由调用方持有，生命周期须覆盖成功的 Session destroy；创建回滚和 destroy 都通过分配时的同一 allocator 释放缓冲。
+
+保留模式下，刷新只写 scratch，成功后在 Session mutex 内交换 catalog 和 scratch；失败不发布部分结果，并沿用 catalog FAILED、不可复制为有效数据的语义。Workspace select、自动刷新和版本不匹配后的重试复用 scratch，每次 response storage 从 used = 0 开始。现有 busy、等待和 deadline 规则继续保证独占使用：register/refresh 遇到 preparation 返回 BUSY，select/conversation 在期限内等待，复制 catalog 仍由 mutex 保护。操作失败、取消或 close 不释放保留缓冲；调用方完成 join、释放 Conversation 并成功 destroy 后，两块缓冲才返回原 allocator。其他缓冲区的容量和生命周期不受此开关影响。
+
 ## Connection transport 生命周期
 
 `h2_gizclaw_client_connect()` 在返回成功前必须注册 Opus 上下行 media，并建立 connection-scoped Direct Packet 和 Peer Event channel。`libs/gizclaw` 在 connect 前注册 PAL WebRTC media extension；调用方不能把 media 当作可选能力，也不能在连接已建立后替换 extension。RPC 和 HTTP service channel 按调用动态创建，不属于这组固定 transport。
@@ -66,6 +80,8 @@ Conversation 上行先发送 BOS，再等待当前 input stream 的 `AUDIO_INPUT
 当前 `MODULE.bazel` 固定的 C SDK 0.18.16 已包含此协议：`generated/events/peer_event.pb.h` 定义 event type 9、payload tag 18 和 `AudioInputReady.stream_id[129]`。
 
 PAL WebRTC 的 `CLOSED` 和 `ERROR` callback 只提供 callback 期间有效的 borrowed DataChannel handle，backend 可以在 callback 返回后释放它。GizClaw C SDK 必须在 callback 返回前清空 matching service、active RPC、Direct Packet 和 inbound alias；Peer Event 继续保留 SDK-owned service state 供普通 client cleanup 使用，但不再保留 DataChannel alias。后续 request completion、cancellation、client close 或 deinit 只能释放 SDK state，不能再次把已消费的 handle 传给 PAL `channel_close`。显式 close 先于终态 callback 时仍只向 PAL 发起一次 close。
+
+
 
 ## RPC provider
 
@@ -410,3 +426,9 @@ completion 后不延长文字订阅。应用无需新增下行音频处理流程
 生命周期顺序必须是 `close` → Service stop → `service_poll` drain → `destroy` → Service deinit。close 可在 Service stop 之前调用，立即停止接收刷新和撤销请求，并将在途请求分离为 orphan；destroy 在任何 completion（包括 orphan revoke）尚未分发时返回 BUSY，调用方继续 drain 后重试，不等待 RPC。destroy 需要排除并发读者，会擦除持有的 secret；快照中的 secret 副本由调用方擦除，不能写日志。超时或 close 后迟到的 create 成功响应会立即触发内部 best-effort revoke：解析 name 后立即擦除 secret，不进入快照；迟到的 revoke 或失败 create 无需后续操作。Service stop 后提交 revoke 可能返回 CLOSED，忽略该错误。无法撤销的情况是 Service 已停止或传输先失败导致 create 响应未到设备，设备从未获知 key 的 name；服务端 owner 的 list API 可返回明文 secret，因此未展示不代表凭证无效。状态对象不做持久化、二维码或 URL 格式化，也不属于 resource store 的 kind。
 
 `h2_gizclaw_api_key_state_request_revoke` 非阻塞：idle 且有有效 key 时提交撤销，期间 busy；OK/NOT_FOUND 后擦除 key 并置 valid=false，失败保留 valid+stale 及 last_error。无 key 返回 OK。刷新 busy 时设置 revoke-after，create 成功后直接撤销新 key 而不展示，最终 valid=false，撤销成功 last_error=OK，失败记录错误且不暴露 secret。busy 期间再次 request_refresh 会清除该标记，表示调用方重新需要刷新结果。closed 返回 CLOSED。
+
+## 内存不足现场诊断
+
+Client config 的可选 `on_no_memory` observer 为 Session 的 catalog/workspace scratch、Conversation 的 route/request/ring/codec、managed RPC 及 SDK allocator/WebRTC glue 提供失败阶段和可知的申请字节数；未配置时没有新增日志副作用。`bytes=0` 表示边界不公开大小。它在失败的执行线程同步调用，可能持有 Session、Service 或 audio 锁，必须不分配内存、不等待 App 锁、不重入 GizClaw，user 的生命周期覆盖所有 worker 和 service teardown。一般 log callback 继续遵循原有锁外派发合同；平台内存快照由 consumer observer 提供，portable GizClaw 不依赖 heap_caps 或 board arena。
+
+分配点 observer 在本层清理前触发；传播边界可以再次标识上层阶段，但此时被调用方可能已完成自己的清理。固定 response storage 耗尽仍返回 `H2_PAL_ERR_NO_SPACE`，不会被改写成 `H2_PAL_ERR_NO_MEMORY`。诊断不改变请求、返回值、分配策略或恢复流程。

@@ -20,12 +20,14 @@ static void reset_publication(h2_runtime_state_publication_t *publication) {
         entries[index] = publication->banks[index].entries;
         entry_capacities[index] = publication->banks[index].entry_capacity;
     }
+    h2_runtime_atomics_t *atomics = publication->atomics;
     memset(publication, 0, sizeof(*publication));
-    atomic_init(&publication->ready, 0);
+    publication->atomics = atomics;
+    atomic_init(&publication->atomics->ready, 0);
     atomic_init(&publication->active_index, 0u);
-    atomic_flag_clear(&publication->reader_lock);
+    atomic_flag_clear(&publication->atomics->reader_lock);
     for (size_t index = 0u; index < H2_RUNTIME_STATE_SLOT_COUNT; ++index) {
-        atomic_init(&publication->reader_count[index], 0u);
+        atomic_init(&publication->atomics->reader_count[index], 0u);
         publication->banks[index].entries = entries[index];
         publication->banks[index].entry_capacity = entry_capacities[index];
     }
@@ -37,11 +39,11 @@ h2_pal_result_t h2_runtime_state_publication_init(h2_runtime_t *runtime) {
     }
     h2_runtime_state_publication_t *publication =
         &runtime->private_state->state_publication;
-    if (atomic_load_explicit(&publication->ready, memory_order_acquire) != 0) {
+    if (atomic_load_explicit(&publication->atomics->ready, memory_order_acquire) != 0) {
         return H2_PAL_OK;
     }
     reset_publication(publication);
-    atomic_store_explicit(&publication->ready, 1, memory_order_release);
+    atomic_store_explicit(&publication->atomics->ready, 1, memory_order_release);
     return H2_PAL_OK;
 }
 
@@ -52,7 +54,7 @@ void h2_runtime_state_publication_deinit(h2_runtime_t *runtime) {
     h2_runtime_state_publication_t *publication =
         &runtime->private_state->state_publication;
     if (atomic_exchange_explicit(
-            &publication->ready, 0, memory_order_acq_rel) == 0) {
+            &publication->atomics->ready, 0, memory_order_acq_rel) == 0) {
         return;
     }
     reset_publication(publication);
@@ -61,7 +63,7 @@ void h2_runtime_state_publication_deinit(h2_runtime_t *runtime) {
 int h2_runtime_state_publication_ready(const h2_runtime_t *runtime) {
     return runtime != NULL && runtime->private_state != NULL &&
            atomic_load_explicit(
-               &runtime->private_state->state_publication.ready,
+               &runtime->private_state->state_publication.atomics->ready,
                memory_order_acquire) != 0;
 }
 
@@ -87,18 +89,18 @@ static unsigned int reader_count_add(
     int delta) {
 #if H2_RUNTIME_ATOMIC_ADD_LOCK_FREE
     return atomic_fetch_add_explicit(
-        &publication->reader_count[slot_index],
+        &publication->atomics->reader_count[slot_index],
         (unsigned int)delta,
         memory_order_acq_rel);
 #else
-    h2_runtime_flag_lock(&publication->reader_lock);
+    h2_runtime_flag_lock(&publication->atomics->reader_lock);
     const unsigned int previous = atomic_load_explicit(
-        &publication->reader_count[slot_index], memory_order_relaxed);
+        &publication->atomics->reader_count[slot_index], memory_order_relaxed);
     atomic_store_explicit(
-        &publication->reader_count[slot_index],
+        &publication->atomics->reader_count[slot_index],
         (unsigned int)((int)previous + delta),
         memory_order_relaxed);
-    h2_runtime_flag_unlock(&publication->reader_lock);
+    h2_runtime_flag_unlock(&publication->atomics->reader_lock);
     return previous;
 #endif
 }
@@ -116,7 +118,7 @@ h2_pal_result_t h2_runtime_state_read_begin(
 
     h2_runtime_state_publication_t *publication =
         &runtime->private_state->state_publication;
-    if (atomic_load_explicit(&publication->ready, memory_order_acquire) == 0) {
+    if (atomic_load_explicit(&publication->atomics->ready, memory_order_acquire) == 0) {
         return H2_PAL_ERR_NOT_FOUND;
     }
     for (;;) {
@@ -126,7 +128,7 @@ h2_pal_result_t h2_runtime_state_read_begin(
             return H2_PAL_ERR_INVALID_STATE;
         }
         (void)reader_count_add(publication, slot_index, 1);
-        if (atomic_load_explicit(&publication->ready,
+        if (atomic_load_explicit(&publication->atomics->ready,
                                  memory_order_acquire) != 0 &&
             slot_index == atomic_load_explicit(
                               &publication->active_index,
@@ -136,7 +138,7 @@ h2_pal_result_t h2_runtime_state_read_begin(
             return H2_PAL_OK;
         }
         (void)reader_count_add(publication, slot_index, -1);
-        if (atomic_load_explicit(&publication->ready,
+        if (atomic_load_explicit(&publication->atomics->ready,
                                  memory_order_acquire) == 0) {
             return H2_PAL_ERR_NOT_FOUND;
         }
@@ -152,7 +154,7 @@ h2_pal_result_t h2_runtime_state_read_end(
     }
     h2_runtime_state_publication_t *publication =
         &runtime->private_state->state_publication;
-    if (atomic_load_explicit(&publication->ready, memory_order_acquire) == 0) {
+    if (atomic_load_explicit(&publication->atomics->ready, memory_order_acquire) == 0) {
         return H2_PAL_ERR_NOT_FOUND;
     }
     unsigned int previous = reader_count_add(publication, slot_index, -1);
@@ -200,7 +202,7 @@ h2_pal_result_t h2_runtime_state_publish(
         const unsigned int candidate =
             (active_index + offset) % H2_RUNTIME_STATE_SLOT_COUNT;
         if (atomic_load_explicit(
-                &publication->reader_count[candidate],
+                &publication->atomics->reader_count[candidate],
                 memory_order_acquire) == 0u) {
             next_index = candidate;
             break;

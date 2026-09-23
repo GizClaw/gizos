@@ -180,6 +180,20 @@ h2_pal_result_t h2_runtime_input_status(
     h2_runtime_t *runtime,
     h2_runtime_input_status_t *out_status);
 
+/** Diagnostic view of the component-state publication slots. */
+typedef struct h2_runtime_state_debug {
+    uint32_t active_index;
+    uint32_t reader_count[3];
+    uint64_t deferred_count;
+    uint64_t switch_count;
+    uint32_t pending_event_count;
+} h2_runtime_state_debug_t;
+
+/** Reads the publication slot counters without taking any lock. */
+h2_pal_result_t h2_runtime_state_debug(
+    h2_runtime_t *runtime,
+    h2_runtime_state_debug_t *out_debug);
+
 /** Stable lowercase name of a stage, for logs. */
 const char *h2_runtime_input_stage_name(h2_runtime_input_stage_t stage);
 

@@ -43,6 +43,12 @@ typedef struct h2_runtime_config {
     const h2_pal_firmware_info_api_t *firmware_info;
 
     const h2_pal_mem_api_t *mem;
+    /*
+     * Optional memory for the Runtime's read-modify-write atomics. Point it at
+     * memory where cross-core compare-and-set is native (internal RAM on
+     * ESP32-S3, whose PSRAM has none). NULL uses `mem`.
+     */
+    const h2_pal_mem_api_t *atomic_mem;
 
     const h2_pal_log_api_t *log;
     const h2_pal_time_api_t *time;

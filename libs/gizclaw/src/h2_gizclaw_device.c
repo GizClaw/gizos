@@ -348,6 +348,14 @@ static int player_rpc(h2_gizclaw_device_t *d, int method,
   return player_reply(d, out);
 }
 
+static void play_source_log(h2_gizclaw_device_t *d, const char *source,
+                            uint32_t index) {
+  char line[96];
+  (void)snprintf(line, sizeof(line), "H2_GIZCLAW_PLAY source=%s index=%u",
+                 source, (unsigned)index);
+  (void)h2_pal_log_write(d->config.log, H2_PAL_LOG_WARN, "gizclaw", line);
+}
+
 static void response_complete(void *user, int result) {
   h2_gizclaw_device_t *d = user;
   lock(d);
@@ -356,6 +364,7 @@ static void response_complete(void *user, int result) {
     if (result == H2_PAL_OK && !atomic_load(&d->stopping) &&
         d->pending_generation == atomic_load(&d->generation)) {
       d->playing = true;
+      play_source_log(d, "rpc", d->status.current_index);
     } else if (d->pending_generation == atomic_load(&d->generation)) {
       cancel_play_locked(d);
     }
@@ -1516,8 +1525,7 @@ static int start_audio_download(h2_gizclaw_device_t *d, const char *url,
   }
   const h2_pal_task_options_t options = {
       .name = H2_GIZCLAW_AUDIO_DOWNLOAD_TASK_NAME_VALUE,
-      .min_stack_size = 32768,
-      .stack_allocator = d->config.allocator};
+      .min_stack_size = 32768};
   return h2_pal_task_start(d->service->config.task, &options,
                            audio_download_worker, download, &download->task);
 }
@@ -2117,8 +2125,10 @@ static void device_worker(void *user) {
         char sound_url[1025] = {0};
         int result = d->config.vtable->resolve_sound_url(
             d->config.user, d->sound, sound_url, sizeof(sound_url));
-        if (result == H2_PAL_OK && sound_url[1024] == 0 && https_url(sound_url))
+        if (result == H2_PAL_OK && sound_url[1024] == 0 && https_url(sound_url)) {
+          play_source_log(d, "sound", 0u);
           (void)play_url(d, sound_url, d->sound_ms, false, 0, 0);
+        }
       } else if (pending == H2_GIZCLAW_RPC_CLIENT_WIFI_CONNECT) {
         int rc = h2_pal_wifi_sta_connect_and_save(d->config.wifi, &d->wifi_config,
                                          io_timeout(d));
@@ -2169,6 +2179,7 @@ static void device_worker(void *user) {
       memset(&d->wifi_config, 0, sizeof(d->wifi_config));
       unlock(d);
     } else if (playing) {
+      play_source_log(d, "worker", d->status.current_index);
       int rc = play_url(d, url, 0, true, start_ms, duration_ms);
       lock(d);
       if (!interrupted(d)) {
@@ -2302,8 +2313,7 @@ h2_pal_result_t h2_gizclaw_device_start_internal(h2_gizclaw_device_t *d) {
   if (!d)
     return H2_PAL_OK;
   const h2_pal_task_options_t options = {
-      .name = H2_GIZCLAW_DEVICE_TASK_NAME_VALUE, .min_stack_size = 32768,
-      .stack_allocator = d->config.allocator};
+      .name = H2_GIZCLAW_DEVICE_TASK_NAME_VALUE, .min_stack_size = 32768};
   return h2_pal_task_start(d->service->config.task, &options, device_worker, d,
                            &d->task);
 }
@@ -2373,6 +2383,7 @@ h2_pal_result_t h2_gizclaw_player_play(h2_gizclaw_service_t *service,
     strcpy(d->status.repeat, "off");
     strcpy(d->status.state, "buffering");
     d->playing = true;
+    play_source_log(d, "local", d->status.current_index);
     changed(d);
   }
   unlock(d);
@@ -2429,6 +2440,7 @@ h2_pal_result_t h2_gizclaw_player_play_index_at(h2_gizclaw_service_t *service,
     d->status.has_error_code = d->status.has_error_message = false;
     strcpy(d->status.state, "buffering");
     d->playing = true;
+    play_source_log(d, "local", d->status.current_index);
     changed(d);
   }
   unlock(d);

@@ -45,7 +45,7 @@ typedef struct h2_gizclaw_managed_request {
   h2_gizclaw_operation_t *operation;
   h2_pal_mutex_t *mutex;
   h2_pal_semaphore_t *completed;
-  atomic_uint refs;
+  atomic_uint *refs;
   atomic_bool terminal;
   bool started;
   bool clock_started;
@@ -512,10 +512,13 @@ static void stream_detach(managed_request_t *request) {
 
 static void managed_unref(void *user) {
   managed_request_t *request = user;
-  if (atomic_fetch_sub_explicit(&request->refs, 1u, memory_order_acq_rel) != 1u)
+  if (atomic_fetch_sub_explicit(request->refs, 1u, memory_order_acq_rel) != 1u)
     return;
   h2_gizclaw_service_t *service = request->service;
   const h2_pal_mem_api_t *allocator = service->client_config.allocator;
+  const h2_pal_mem_api_t *atomic_allocator =
+      service->client_config.atomic_allocator != NULL
+          ? service->client_config.atomic_allocator : allocator;
   h2_gizclaw_operation_release(request->operation);
   if (request->destroy_context != NULL)
     request->destroy_context(request->context);
@@ -526,6 +529,7 @@ static void managed_unref(void *user) {
   h2_pal_mem_free(allocator, request->response.result_payload);
   h2_pal_mem_free(allocator, request->response.error_message);
   h2_pal_mem_free(allocator, request->payload);
+  h2_pal_mem_free(atomic_allocator, request->refs);
   h2_pal_mem_free(allocator, request);
   /* This is the final access to the borrowed service. */
   (void)h2_pal_mutex_lock(service->config.sync, service->mutex);
@@ -721,6 +725,7 @@ managed_poll(void *user, h2_gizclaw_client_t *client,
           (h2_gizclaw_rpc_bytes_t){request->payload, request->payload_len},
           request->timeout_ms - (uint32_t)(now - request->started_ms),
           &request->wire_request);
+      h2_gizclaw_nomem_internal(request->service, "rpc.wire_start", 0u, rc);
       if (rc != H2_PAL_OK)
         return rc;
       if (h2_gizclaw_rpc_set_complete_internal(
@@ -730,6 +735,7 @@ managed_poll(void *user, h2_gizclaw_client_t *client,
     }
     rc = (h2_pal_result_t)h2_gizclaw_rpc_result_internal(request->wire_request,
                                                          &request->response);
+    h2_gizclaw_nomem_internal(request->service, "rpc.wire_result", 0u, rc);
     if (rc == H2_PAL_ERR_WOULD_BLOCK)
       return rc;
   }
@@ -842,7 +848,7 @@ static h2_pal_result_t managed_do(h2_gizclaw_req_t *base, void *user,
   request->on_complete = on_complete;
   /* One execution reference and one for this call: completion may release the
    * execution reference before submit returns. */
-  atomic_fetch_add_explicit(&request->refs, 2u, memory_order_relaxed);
+  atomic_fetch_add_explicit(request->refs, 2u, memory_order_relaxed);
   rc = h2_gizclaw_service_submit_request_internal(
       request->service, request->identity, managed_start,
       request->send != NULL ? NULL : managed_poll, managed_settle,
@@ -856,7 +862,7 @@ static h2_pal_result_t managed_do(h2_gizclaw_req_t *base, void *user,
      * operation queue rejects the request. */
     if (request->stream != NULL || admit != NULL)
       managed_stop(request);
-    atomic_fetch_sub_explicit(&request->refs, 1u, memory_order_relaxed);
+    atomic_fetch_sub_explicit(request->refs, 1u, memory_order_relaxed);
   }
   (void)h2_pal_mutex_unlock(sync, request->mutex);
   managed_unref(request);
@@ -937,10 +943,20 @@ create_request(h2_gizclaw_service_t *service, uint64_t identity,
   const h2_pal_mem_api_t *allocator = service->client_config.allocator;
   managed_request_t *request = h2_pal_mem_alloc(allocator, sizeof(*request));
   if (request == NULL) {
+    h2_gizclaw_nomem_internal(service, "rpc.request", sizeof(*request), H2_PAL_ERR_NO_MEMORY);
     (void)h2_pal_mutex_unlock(sync, service->mutex);
     return H2_PAL_ERR_NO_MEMORY;
   }
   memset(request, 0, sizeof(*request));
+  const h2_pal_mem_api_t *atomic_allocator =
+      service->client_config.atomic_allocator != NULL
+          ? service->client_config.atomic_allocator : allocator;
+  request->refs = h2_pal_mem_alloc(atomic_allocator, sizeof(*request->refs));
+  if (request->refs == NULL) {
+    h2_pal_mem_free(allocator, request);
+    (void)h2_pal_mutex_unlock(sync, service->mutex);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
   request->base.vtable = &managed_vtable;
   request->service = service;
   request->identity = identity;
@@ -949,13 +965,14 @@ create_request(h2_gizclaw_service_t *service, uint64_t identity,
   request->context = context;
   request->timeout_ms = timeout_ms;
   request->clock_result = H2_PAL_ERR_UNAVAILABLE;
-  atomic_init(&request->refs, 1u);
+  atomic_init(request->refs, 1u);
   atomic_init(&request->terminal, false);
   const h2_pal_mutex_config_t mutex_config = {
       .name = "$gizclaw/req",
       .allocator = allocator,
   };
   rc = h2_pal_mutex_create(sync, &mutex_config, &request->mutex);
+  h2_gizclaw_nomem_internal(service, "rpc.mutex", 0u, rc);
   if (rc == H2_PAL_OK) {
     const h2_pal_semaphore_config_t completed_config = {
         .name = "$gizclaw/req-completed",
@@ -964,10 +981,12 @@ create_request(h2_gizclaw_service_t *service, uint64_t identity,
         .max_count = 1u,
     };
     rc = h2_pal_semaphore_create(sync, &completed_config, &request->completed);
+    h2_gizclaw_nomem_internal(service, "rpc.semaphore", 0u, rc);
   }
   if (rc == H2_PAL_OK && payload.len != 0u) {
     request->payload = h2_pal_mem_alloc(allocator, payload.len);
     if (request->payload == NULL) {
+      h2_gizclaw_nomem_internal(service, "rpc.payload", payload.len, H2_PAL_ERR_NO_MEMORY);
       rc = H2_PAL_ERR_NO_MEMORY;
     } else {
       memcpy(request->payload, payload.data, payload.len);
@@ -979,6 +998,7 @@ create_request(h2_gizclaw_service_t *service, uint64_t identity,
       (void)h2_pal_semaphore_destroy(sync, request->completed);
     if (request->mutex != NULL)
       (void)h2_pal_mutex_destroy(sync, request->mutex);
+    h2_pal_mem_free(atomic_allocator, request->refs);
     h2_pal_mem_free(allocator, request);
   } else {
     /* A created request owns the service even before it occupies an active

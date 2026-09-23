@@ -168,6 +168,10 @@ h2_gizclaw_client_allocator_internal(h2_gizclaw_client_t *client);
 int h2_gizclaw_client_monotonic_ms_internal(h2_gizclaw_client_t *client,
                                             uint64_t *out_ms);
 gzc_client_t *h2_gizclaw_client_gzc_internal(h2_gizclaw_client_t *client);
+void h2_gizclaw_client_nomem_internal(h2_gizclaw_client_t *client,
+                                       const char *stage, size_t bytes,
+                                       h2_pal_result_t result);
+
 void h2_gizclaw_client_log_rpc_error_internal(h2_gizclaw_client_t *client,
                                               h2_gizclaw_rpc_method_t method,
                                               int error_code,

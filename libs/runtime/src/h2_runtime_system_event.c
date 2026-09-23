@@ -735,7 +735,7 @@ static int h2_runtime_system_event_handler(void *user, const h2_pal_system_event
         return H2_PAL_ERR_INVALID_ARG;
     }
     if (atomic_load_explicit(
-            &runtime->private_state->system_event_active,
+            &runtime->private_state->atomics->system_event_active,
             memory_order_acquire) == 0) {
         return H2_PAL_ERR_CLOSED;
     }
@@ -782,7 +782,7 @@ h2_pal_result_t h2_runtime_start_system_events(h2_runtime_t *runtime) {
         return rc;
     }
     atomic_store_explicit(
-        &runtime->private_state->system_event_active, 1,
+        &runtime->private_state->atomics->system_event_active, 1,
         memory_order_release);
 
     const size_t count = sizeof(s_system_event_types) / sizeof(s_system_event_types[0]);
@@ -816,7 +816,7 @@ void h2_runtime_stop_system_events(h2_runtime_t *runtime) {
     }
     const h2_pal_system_event_api_t *api = runtime->system_event;
     int was_active = atomic_exchange_explicit(
-        &runtime->private_state->system_event_active, 0,
+        &runtime->private_state->atomics->system_event_active, 0,
         memory_order_acq_rel);
     if (api == NULL) {
         return;

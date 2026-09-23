@@ -180,17 +180,18 @@ static int esp_task_start(void *user, const h2_pal_task_options_t *options,
     ok = xTaskCreatePinnedToCore(
         esp_task_trampoline, esp_task_name(options->name), stack_size, task,
         (UBaseType_t)policy.priority, &task->task, core);
-  } else if (options->stack_allocator != NULL) {
-    task->stack_allocator = options->stack_allocator;
+  } else if (s_task_config.psram_stack_allocator != NULL) {
+    task->stack_allocator = s_task_config.psram_stack_allocator;
     task->stack = h2_pal_mem_alloc(task->stack_allocator, stack_size);
     task->task_storage = heap_caps_malloc(
         sizeof(*task->task_storage), MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (task->stack == NULL || task->task_storage == NULL) {
+      esp_task_fail(options->name, "allocate",
+                    task->stack == NULL ? "psram-stack" : "internal-tcb");
       h2_pal_mem_free(task->stack_allocator, task->stack);
       heap_caps_free(task->task_storage);
       vSemaphoreDelete(task->done);
       free(task);
-      esp_task_fail(options->name, "allocate", "stack-or-tcb");
       return H2_PAL_ERR_NO_MEMORY;
     }
     task->task = xTaskCreateStaticPinnedToCore(

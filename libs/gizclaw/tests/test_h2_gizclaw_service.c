@@ -1575,7 +1575,6 @@ static int stop_join_start(void *user, const h2_pal_task_options_t *options,
                            h2_pal_task_entry_t entry, void *ctx,
                            h2_pal_task_t **out) {
   stop_join_test_t *test = user;
-  assert(options->stack_allocator == test->env->service->client_config.allocator);
   assert(test->starts < 5);
   ++test->start_attempts;
   if (test->fail_start && test->starts == test->start_failure_index) {
@@ -13261,7 +13260,78 @@ static void test_automatic_time_sync(void) {
   }
 }
 
+typedef struct nomem_probe {
+  const h2_pal_mem_api_t *base;
+  size_t fail_at, calls, failed_bytes, frees, frees_at_failure;
+  const char *stage;
+  size_t bytes, notifications;
+} nomem_probe_t;
+
+static void *nomem_probe_alloc(void *user, size_t bytes) {
+  nomem_probe_t *probe = user;
+  if (++probe->calls == probe->fail_at) {
+    probe->failed_bytes = bytes;
+    probe->frees_at_failure = probe->frees;
+    return NULL;
+  }
+  return h2_pal_mem_alloc(probe->base, bytes);
+}
+static void nomem_probe_free(void *user, void *ptr) {
+  nomem_probe_t *probe = user;
+  if (ptr != NULL)
+    ++probe->frees;
+  h2_pal_mem_free(probe->base, ptr);
+}
+static void nomem_probe_observe(void *user, const char *stage, size_t bytes) {
+  nomem_probe_t *probe = user;
+  /* The diagnostic must precede even partial-initialization cleanup. */
+  assert(probe->frees == probe->frees_at_failure);
+  probe->stage = stage;
+  probe->bytes = bytes;
+  ++probe->notifications;
+}
+static void test_nomem_producers(void) {
+  static const h2_pal_mem_vtable_t vtable = {
+      .alloc = nomem_probe_alloc, .free = nomem_probe_free};
+  const char *stages[] = {"conversation.downlink", "conversation.decode_mutex",
+                         "conversation.downlink_ring", "conversation.opus_ring_mutex",
+                         "conversation.route", "rpc.request"};
+  for (size_t i = 0u; i < sizeof(stages) / sizeof(stages[0]); ++i) {
+    test_env_t env;
+    h2_gizclaw_service_t *service = create_service(&env, 4u);
+    nomem_probe_t probe = {.base = service->client_config.allocator,
+                          .fail_at = i < 5u ? i + 1u : 1u};
+    const h2_pal_mem_api_t mem = {.user = &probe, .vtable = &vtable};
+    service->client_config.allocator = &mem;
+    service->client_config.on_no_memory = nomem_probe_observe;
+    service->client_config.no_memory_user = &probe;
+    h2_gizclaw_conversation_t *conversation = NULL;
+    h2_gizclaw_req_t *request = NULL;
+    h2_pal_result_t rc;
+    if (i < 5u)
+      rc = h2_gizclaw_conversation_create(service,
+          (h2_gizclaw_str_t){"test", 4u}, NULL, NULL, NULL, &conversation);
+    else
+      rc = h2_gizclaw_req_create_ping(service, 1u, 1000u, &request);
+    assert(rc == H2_PAL_ERR_NO_MEMORY);
+    assert(conversation == NULL && request == NULL);
+    assert(probe.notifications == 1u && strcmp(probe.stage, stages[i]) == 0);
+    if (i != 1u && i != 3u)
+      assert(probe.bytes == probe.failed_bytes && probe.bytes != 0u);
+    else
+      assert(probe.bytes == 0u); /* PAL synchronization size is opaque. */
+    probe.fail_at = 0u;
+    assert(h2_gizclaw_conversation_create(service,
+        (h2_gizclaw_str_t){"test", 4u}, NULL, NULL, NULL, &conversation) == H2_PAL_OK);
+    assert(probe.notifications == 1u);
+    h2_gizclaw_conversation_release(conversation);
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  }
+}
+
 int main(int argc, char **argv) {
+  test_nomem_producers();
 #ifdef H2_GIZCLAW_PLAYER_LIVE
   if (argc >= 2 && strcmp(argv[1], "--player-live") == 0)
     return player_live(argc, argv);

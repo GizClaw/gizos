@@ -158,9 +158,9 @@ static h2_bleikcp_config_t stream_config(h2_bloomspeaker_engine_t *engine) {
       .output_retry_count = 40u,
       .output_retry_delay_ms = 2u,
       .setup_timeout_ms = H2_BLOOMSPEAKER_SETUP_TIMEOUT_MS,
-      .worker_task_options = {h2_bleikcp_worker_task_name, 12u * 1024u, NULL},
+      .worker_task_options = {h2_bleikcp_worker_task_name, 12u * 1024u},
       .server_task_options = {h2_bleikcp_server_task_name,
-                              H2_BLOOMSPEAKER_CODEC_TASK_STACK_SIZE, NULL},
+                              H2_BLOOMSPEAKER_CODEC_TASK_STACK_SIZE},
       .user = engine,
   };
 }

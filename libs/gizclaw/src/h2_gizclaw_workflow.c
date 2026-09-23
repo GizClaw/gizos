@@ -365,6 +365,7 @@ h2_pal_result_t h2_gizclaw_req_create_workflow_list(
   h2_pal_result_t rc = (h2_pal_result_t)encode_message(
       allocator, gizclaw_rpc_v1_WorkflowListRequest_fields, &message, &payload,
       &payload_len);
+  h2_gizclaw_nomem_internal(service, "workflow.encode_payload", 0u, rc);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_create_rpc_internal(
         service, identity, H2_GIZCLAW_RPC_SERVER_WORKFLOW_LIST,
@@ -393,6 +394,7 @@ h2_pal_result_t h2_gizclaw_req_create_workflow_get(
   h2_pal_result_t rc = (h2_pal_result_t)encode_message(
       allocator, gizclaw_rpc_v1_WorkflowGetRequest_fields, &message, &payload,
       &payload_len);
+  h2_gizclaw_nomem_internal(service, "workflow.encode_payload", 0u, rc);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_create_rpc_internal(
         service, identity, H2_GIZCLAW_RPC_SERVER_WORKFLOW_GET,

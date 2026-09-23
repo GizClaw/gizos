@@ -205,16 +205,28 @@ typedef struct h2_runtime_state_bank {
 
 #define H2_RUNTIME_STATE_SLOT_COUNT 3u
 
-typedef struct h2_runtime_state_publication {
+/*
+ * Every field that a read-modify-write atomic touches. ESP32-S3 has no native
+ * compare-and-set on external RAM (ESP-IDF cpu.c), so an atomic add there can
+ * lose an update when both cores race. The block is allocated from
+ * h2_runtime_config_t.atomic_mem, which a board points at internal RAM.
+ */
+typedef struct h2_runtime_atomics {
     atomic_int ready;
-    atomic_uint active_index;
-    /*
-     * Guards reader_count updates where atomic add is not lock-free (ARMv5):
-     * the counters then use load/store under this test-and-set lock, taken
-     * Unused where fetch_add is lock-free.
-     */
     atomic_flag reader_lock;
     atomic_uint reader_count[H2_RUNTIME_STATE_SLOT_COUNT];
+    atomic_flag audio_state_busy;
+    atomic_flag custom_event_lock;
+    atomic_uint custom_event_in_flight;
+    atomic_int custom_event_closed;
+    atomic_flag sequence_lock;
+    atomic_uint next_sequence;
+    atomic_int system_event_active;
+} h2_runtime_atomics_t;
+
+typedef struct h2_runtime_state_publication {
+    h2_runtime_atomics_t *atomics;
+    atomic_uint active_index;
     h2_runtime_state_bank_t banks[H2_RUNTIME_STATE_SLOT_COUNT];
     uint64_t copy_count;
     uint64_t switch_count;
@@ -262,6 +274,9 @@ typedef struct h2_runtime_component_mapping {
 void h2_runtime_audio_bind(h2_runtime_t *runtime);
 
 struct h2_runtime_private {
+    /* Read-modify-write atomics; see h2_runtime_atomics_t. */
+    h2_runtime_atomics_t *atomics;
+    const h2_pal_mem_api_t *atomic_mem;
     int initialized;
     h2_runtime_system_state_publication_t system_state;
     size_t allocation_size;
@@ -303,7 +318,6 @@ struct h2_runtime_private {
     h2_pal_display_api_t display_proxy;
     /* All Audio proxy volume operations share this Runtime-owned state. */
     h2_pal_audio_api_t audio_backend;
-    atomic_flag audio_state_busy;
     bool audio_state_valid;
     h2_runtime_system_audio_state_t audio_state;
     /*
@@ -354,18 +368,12 @@ struct h2_runtime_private {
      * counter is a plain fetch_add; otherwise (ARMv5) updates run under
      * custom_event_lock.
      */
-    atomic_flag custom_event_lock;
-    atomic_uint custom_event_in_flight;
-    atomic_int custom_event_closed;
 
     /*
      * Same split: fetch_add where it is lock-free, sequence_lock where not.
      */
-    atomic_flag sequence_lock;
-    atomic_uint next_sequence;
     uint32_t dropped_event_count;
 
-    atomic_int system_event_active;
     h2_pal_system_event_subscription_t *
         system_event_subscriptions[H2_RUNTIME_SYSTEM_EVENT_SUBSCRIPTION_MAX];
     size_t system_event_subscription_count;

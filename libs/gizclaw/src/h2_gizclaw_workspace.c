@@ -816,8 +816,10 @@ static h2_pal_result_t workspace_create_request(
     return H2_PAL_ERR_INVALID_ARG;
   const h2_pal_mem_api_t *allocator = service->client_config.allocator;
   workspace_context_t *context = h2_pal_mem_alloc(allocator, sizeof(*context));
-  if (context == NULL)
+  if (context == NULL) {
+    h2_gizclaw_nomem_internal(service, "workspace.context", sizeof(*context), H2_PAL_ERR_NO_MEMORY);
     return H2_PAL_ERR_NO_MEMORY;
+  }
   *context = (workspace_context_t){
       .allocator = allocator,
       .kind = kind,
@@ -833,10 +835,16 @@ static h2_pal_result_t workspace_create_request(
   context->third =
       copy_owned(allocator, third.len == 0u ? "" : third.data, third.len);
   h2_pal_result_t rc = H2_PAL_ERR_NO_MEMORY;
+  if (context->first == NULL || context->second == NULL || context->third == NULL)
+    h2_gizclaw_nomem_internal(service, "workspace.argument_copy",
+        context->first == NULL ? first.len + 1u :
+        context->second == NULL ? second.len + 1u : third.len + 1u, rc);
   if (context->first != NULL && context->second != NULL &&
       context->third != NULL)
     rc = workspace_request_start(
         context); /* Encode only; no transport at create. */
+  if (context->first != NULL && context->second != NULL && context->third != NULL)
+    h2_gizclaw_nomem_internal(service, "workspace.encode_payload", 0u, rc);
   if (rc == H2_PAL_OK) {
     rc = h2_gizclaw_req_create_rpc_context_internal(
         service, identity, context->method, &workspace_tags[kind],

@@ -824,7 +824,7 @@ static void test_restart_keeps_publication_and_reader_pins_valid(void) {
     assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
     for (size_t index = 0u; index < H2_RUNTIME_STATE_SLOT_COUNT; ++index) {
         assert(atomic_load_explicit(
-                   &publication->reader_count[index],
+                   &publication->atomics->reader_count[index],
                    memory_order_relaxed) == 0u);
     }
 
@@ -1217,7 +1217,7 @@ static void test_concurrent_sequences_are_unique_across_wrap(void) {
     h2_runtime_t *runtime = concurrency_runtime_create(&env);
     /* Start just below the wrap so the run crosses UINT32_MAX -> 1. */
     const size_t total = SEQUENCE_TAKER_COUNT * SEQUENCE_TAKES_PER_THREAD;
-    runtime->private_state->next_sequence =
+    runtime->private_state->atomics->next_sequence =
         (h2_runtime_sequence_t)(UINT32_MAX - total / 2u);
 
     static sequence_taker_t takers[SEQUENCE_TAKER_COUNT];
@@ -1241,7 +1241,7 @@ static void test_concurrent_sequences_are_unique_across_wrap(void) {
         assert(i == 0u || all[i] != all[i - 1u]);
     }
     /* Exactly total values were issued, and 0 was skipped once at the wrap. */
-    assert(runtime->private_state->next_sequence ==
+    assert(runtime->private_state->atomics->next_sequence ==
            (h2_runtime_sequence_t)(UINT32_MAX - total / 2u + total + 1u));
 
     h2_runtime_deinit(runtime);

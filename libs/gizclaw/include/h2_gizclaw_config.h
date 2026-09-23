@@ -58,6 +58,8 @@ typedef struct h2_gizclaw_config {
      */
     int write_timeout_ms;
     const h2_pal_mem_api_t *allocator;
+    /** Optional allocator for concurrent atomic control fields. */
+    const h2_pal_mem_api_t *atomic_allocator;
     const h2_pal_http_api_t *http;
     const h2_pal_webrtc_api_t *webrtc;
     /**
@@ -71,6 +73,13 @@ typedef struct h2_gizclaw_config {
     const h2_pal_crypto_api_t *crypto;
     const h2_pal_time_api_t *time;
     const h2_pal_log_api_t *log;
+    /** Optional failure-only observer, invoked synchronously before rollback,
+     * possibly under Session/Service/audio locks on any worker. Must not
+     * allocate, block on application locks, or reenter GizClaw. stage is a
+     * borrowed static label; bytes=0 means unknown. Diagnostic only: cannot
+     * change the result. User storage must outlive Client/Service teardown. */
+    void (*on_no_memory)(void *user, const char *stage, size_t bytes);
+    void *no_memory_user;
     /** Optional built-in device RPC capabilities, owned by the Service.
      * PAL APIs, vtable and strings are borrowed through service_deinit.
      * Set any device field to enable the standard provider. Inject the same

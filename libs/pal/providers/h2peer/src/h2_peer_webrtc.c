@@ -1009,6 +1009,32 @@ h2_peer_webrtc_create_data_channel(h2_pal_webrtc_peer_t *peer,
       }
     }
     if (!found) {
+      /* Name who holds the local streams: live channels by label plus
+       * resets still waiting for the remote side. */
+      size_t live = 0u, resets = 0u;
+      const char *labels[4] = {0};
+      size_t counts[4] = {0};
+      for (h2_pal_webrtc_channel_t *c = peer->channels; c != NULL; c = c->next) {
+        ++live;
+        const char *label = c->label != NULL ? c->label : "-";
+        for (size_t k = 0u; k < 4u; ++k) {
+          if (labels[k] == NULL) { labels[k] = label; counts[k] = 1u; break; }
+          if (strcmp(labels[k], label) == 0) { ++counts[k]; break; }
+        }
+      }
+      for (size_t i = 0u; i < H2_PEER_LOCAL_STREAM_COUNT; ++i) {
+        const uint16_t id = h2_peer_stream_id_for_slot(peer, i);
+        if (peer->stream_resets[id].active) ++resets;
+      }
+      char message[224];
+      (void)snprintf(message, sizeof(message),
+                     "H2_PEER_STREAMS_FULL live=%u resets=%u %s=%u %s=%u %s=%u %s=%u",
+                     (unsigned)live, (unsigned)resets,
+                     labels[0] ? labels[0] : "-", (unsigned)counts[0],
+                     labels[1] ? labels[1] : "-", (unsigned)counts[1],
+                     labels[2] ? labels[2] : "-", (unsigned)counts[2],
+                     labels[3] ? labels[3] : "-", (unsigned)counts[3]);
+      h2_peer_media_log(peer, H2_PAL_LOG_WARN, "h2peer", message);
       return H2_PAL_ERR_NO_SPACE;
     }
   }
@@ -1753,7 +1779,6 @@ static h2_pal_result_t h2_peer_network_init(h2_pal_webrtc_peer_t *peer) {
   const h2_pal_task_options_t task_options = {
       .name = h2_peer_network_task_name,
       .min_stack_size = H2_PEER_NETWORK_STACK_SIZE,
-      .stack_allocator = peer->allocator,
   };
   result = h2_pal_task_start(owner->config.task, &task_options,
                              h2_peer_network_task, peer, &peer->network_task);

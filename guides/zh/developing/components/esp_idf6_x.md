@@ -315,3 +315,17 @@ bazel test //libs/drivers/audio/es8311:volume_test \
 `//projects/example/targets/h2loader_tar_zlib/`。分别使用 `--config=esp32s3` 和
 `--config=esp32p4`。ESP32-C5 的 ES8311 消费路径目前没有可构建的板级 target，
 因此该 codec 路径标记为 SKIP；C5 通用 CI 通过也不证明其 codec 集成或硬件行为。
+
+## PSRAM arena
+
+`h2_pal_core` 的 `h2_esp_platform_arena.h` 为公共 `libs/mem_arena` core 提供 PSRAM reservation、fallback 与 FreeRTOS lock adapter。Core 将调用方提供的一块内存按 `small_pool_bytes` 分成独立的 small/large TLSF；请求大小不超过 `small_request_max` 时使用 small，否则使用 large。某池耗尽只回退到配置的 allocator，不借用另一池；`small_pool_bytes=0` 保留单一 large pool。Board 在 Wi-Fi、UI、音频等 consumer 初始化之前指定预留字节数和诊断名称，持有 opaque instance，向需要降低碎片的 consumer 借出标准 Memory PAL；Runtime 默认 allocator 不被全局替换。Reservation 与 fallback 都从 `MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT` 分配，控制对象和 FreeRTOS 静态 mutex storage 位于 Internal RAM。Mutex 具有优先级继承，所有操作只允许普通 task context，不使用 spin lock。
+
+每块保存原始分配基址和请求字节数，按块头记录的 pool/fallback owner 路由 free/realloc；realloc 可在 TLSF 与 PSRAM heap 间双向迁移，并在底层移动后重新对齐有效数据。失败保留旧块；零字节释放并返回 NULL。创建失败清理部分资源并返回 NULL，由 board 决定是否继续使用默认分配器。销毁前调用方必须停止并 join 所有 borrower；仍有 arena 或 fallback 块时返回 INVALID_STATE，保留实例。
+
+Stats 在 mutex 下分别对 small/large 取一致快照；每池 reserved 包括元数据，live/peak 只统计池内请求 payload，fallback_live 单列，fallback_count/bytes 累计回退尝试（含失败），largest 记录该请求类别的最大有效请求。日志由调用方在 stats 返回后输出，不在 allocator 锁内调用 Log PAL。Host SDK fake tests 验证 owner 路由、alignment、双向迁移、realloc 失败原子性、统计分离和创建失败清理；PSRAM/XIP 压力与调度延迟仍需设备测量。
+
+ESP task provider 从 `h2_esp_task_policy_config_t.psram_stack_allocator` 借用可选 allocator。解析后的 PSRAM policy 使用该 allocator 分配栈、用 internal 8-bit RAM 分配 `StaticTask_t`，并通过 `xTaskCreateStaticPinnedToCore` 创建任务；internal policy 和 NULL allocator 分别保留原有普通 SDK 与 WithCaps 路径。栈或 TCB 分配失败时完整释放、返回 NO_MEMORY 且不发布 task。Join 等待 entry 返回，挂起任务并确认所有 core 均未运行它，再 `vTaskDelete`，最后各释放一次栈与 TCB；allocator 生命周期覆盖所有 task 的成功 join。
+
+生成的 `h2_esp_target_task_policy_install_with_configure()` 同步把目标 resolver 配置交给 board callback，board 可先创建 arena，再复制配置并设置 `psram_stack_allocator`，最后调用 `h2_esp_platform_task_configure()`。无参数 installer 保留默认配置路径；生成器不依赖私有 board。
+
+Arena 的诊断查询与普通 stats 分离：`h2_mem_arena_inspect()` 显式遍历池才计算 free total、largest raw free block 和 consumed；`h2_mem_arena_block_info()` 查询仍存活且由调用方排除并发 free/realloc 的块。它们没有增加 instance/header state，也不增加 ESP alloc/free 的追踪工作。每块 consumed 包含 arena header、alignment 和 TLSF block/header；fallback 值是下界，固定控制元数据不归属某个块。生成的 task policy 额外提供 `*_stack_accounting` filegroup，供 desktop consumer 复用相同的栈尺寸/region 决策；它不参与 ESP firmware 的源码编译或改变其行为。

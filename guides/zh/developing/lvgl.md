@@ -14,7 +14,7 @@
 
 ## PAL 集成
 
-`h2_lvgl_platform_init()` 在调用 `lv_init()` 前绑定 Runtime 提供的 Memory、Task、Sync、Queue 和 Time PAL API。LVGL 的 custom malloc ABI 由 `libs/lvgl` 实现，所有 widget、TinyTTF glyph cache、filesystem cache 和 LVGL internal object 都通过绑定的 Memory PAL 分配；target 不能回退到 libc heap。调用方必须在 `lv_deinit()` 完成后再调用 `h2_lvgl_platform_deinit()`，保证 allocator 的生命周期覆盖全部 LVGL object。
+`h2_lvgl_platform_init()` 在调用 `lv_init()` 前绑定 Runtime 提供的 Memory、Task、Sync、Queue 和 Time PAL API。LVGL 的 custom malloc ABI 由 `libs/lvgl` 实现，所有 widget、TinyTTF glyph cache、filesystem cache 和 LVGL internal object 都通过绑定的 Memory PAL 分配；target 不能回退到 libc heap。调用方必须在 `lv_deinit()` 完成后再调用 `h2_lvgl_platform_deinit()`，保证 allocator 的生命周期覆盖全部 LVGL object。Memory PAL 可以由 `libs/mem_arena` 提供，绑定后不能切换 API 或销毁 backing storage；`lv_mem_deinit()` 在 allocator 仍有效时释放当前 upstream 未清理的 general OS mutex，重复 init/deinit 不遗留 arena 块。
 
 文件资源通过 `h2_lvgl_fs_register()` 注册为 LVGL drive。Adapter 把 `P:/...` 这类 LVGL path 映射到调用方注入的 PAL Filesystem，并在 backend 不支持 seek 时使用有界 scratch buffer 实现 forward seek 或 reopen。字体、图片和其它 consumer 只使用 LVGL path，不能直接依赖 POSIX、ESP-IDF、Armino 或 Desktop 文件 API。
 

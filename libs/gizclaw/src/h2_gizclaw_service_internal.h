@@ -9,6 +9,12 @@
 #include <stdatomic.h>
 #include <stdint.h>
 
+/* Failure-only diagnostic. bytes=0 means the callee does not expose its request.
+ * Uses the opt-in non-reentrant observer, never the general-purpose logger. */
+void h2_gizclaw_nomem_internal(h2_gizclaw_service_t *service,
+                                const char *stage, size_t bytes,
+                                h2_pal_result_t result);
+
 typedef struct h2_gizclaw_conversation_request
     h2_gizclaw_conversation_request_t;
 typedef struct h2_gizclaw_conversation_downlink

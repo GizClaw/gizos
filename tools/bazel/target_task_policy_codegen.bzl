@@ -409,7 +409,14 @@ def render_policy_source(
             "",
         ])
 
-    lines.append("h2_pal_result_t %s(void) {" % flavor.install)
+    if flavor.unit == "esp":
+        lines.extend([
+            "h2_pal_result_t %s_with_configure(" % flavor.install,
+            "    h2_pal_result_t (*configure)(const h2_esp_task_policy_config_t *)) {",
+            "  if (configure == NULL) return H2_PAL_ERR_INVALID_ARG;",
+        ])
+    else:
+        lines.append("h2_pal_result_t %s(void) {" % flavor.install)
     if tasks:
         lines.extend([
             "  h2_pal_result_t rc =",
@@ -435,9 +442,10 @@ def render_policy_source(
         config.append("      .task_allocator = %s," % _ALLOCATORS[allocator])
     lines.extend(config)
     lines.append("  };")
-    lines.append("  %s%s_platform_task_configure(&config);" % (
+    configure = "configure" if flavor.unit == "esp" else flavor.prefix + "_platform_task_configure"
+    lines.append("  %s%s(&config);" % (
         "rc = " if tasks else "h2_pal_result_t rc = ",
-        flavor.prefix,
+        configure,
     ))
     lines.extend([
         "  if (rc == H2_PAL_OK) {",
@@ -449,6 +457,13 @@ def render_policy_source(
         "}",
         "",
     ])
+    if flavor.unit == "esp":
+        lines.extend([
+            "h2_pal_result_t %s(void) {" % flavor.install,
+            "  return %s_with_configure(h2_esp_platform_task_configure);" % flavor.install,
+            "}",
+            "",
+        ])
     return "\n".join(lines)
 
 def render_policy_test(label, unit, tasks, default_policy, allocator):
@@ -531,6 +546,12 @@ def render_policy_test(label, unit, tasks, default_policy, allocator):
         "  %s policy = {0};" % policy_type,
         "  assert(%s() == H2_PAL_OK);" % flavor.install,
     ])
+    if flavor.unit == "esp":
+        lines.extend([
+            "  assert(s_config.psram_stack_allocator == NULL);",
+            "  assert(%s_with_configure(NULL) == H2_PAL_ERR_INVALID_ARG);" % flavor.install,
+            "  assert(%s_with_configure(h2_esp_platform_task_configure) == H2_PAL_OK);" % flavor.install,
+        ])
     if flavor.allocator:
         lines.append("  assert(s_config.task_allocator == &s_allocator);")
     for task in tasks:
@@ -565,6 +586,14 @@ def _render_policy_header(flavor):
         "#endif",
         "",
         "h2_pal_result_t %s(void);" % flavor.install,
+    ] + ([
+        "",
+        "struct h2_esp_task_policy_config;",
+        "/** Calls configure synchronously with a borrowed generated policy config.",
+        " * The callback installs it once and returns the provider result. */",
+        "h2_pal_result_t %s_with_configure(" % flavor.install,
+        "    h2_pal_result_t (*configure)(const struct h2_esp_task_policy_config *));",
+    ] if flavor.unit == "esp" else []) + [
         "",
         "#ifdef __cplusplus",
         "}",
@@ -594,6 +623,39 @@ def _render_policy_cmake(flavor):
         "    REQUIRES %s)" % " ".join(requires),
         "",
     ])
+
+def _render_stack_accounting(tasks, default_policy):
+    """SDK-free ESP stack sizing for desktop accounting, from the same table.
+
+    Include the generated fragment inside a consumer namespace after including
+    <stddef.h> and <string.h>. No scheduling/ESP provider code is emitted.
+
+    Args:
+      tasks: Routed task records carrying their name and complete policy.
+      default_policy: Policy for unrouted task names.
+
+    Returns:
+      SDK-free C fragment defining the placeholder-size resolver.
+    """
+    lines = [
+        "/* Generated from the target policy. Do not edit. */",
+        "static inline size_t h2_target_task_stack_bytes(const char *name, size_t requested) {",
+        "  if (name == NULL || name[0] == '\\0') return 0;",
+    ]
+
+    # Exact matches precede prefixes; longest prefix wins as in the trie.
+    exact = [task for task in tasks if not task.name.endswith("*")]
+    prefixes = sorted([(len(task.name), task.name, task) for task in tasks if task.name.endswith("*")], reverse = True)
+    for task in exact + [item[2] for item in prefixes]:
+        name = task.name[:-1] if task.name.endswith("*") else task.name
+        test = "strncmp(name, %s, %d) == 0" % (_literal(name), len(name)) if task.name.endswith("*") else "strcmp(name, %s) == 0" % _literal(name)
+        floor = max(4096, task.policy["min_stack_size"])
+        value = "requested > %du ? requested : %du" % (floor, floor) if task.policy["stack_region"] == "psram" else "0"
+        lines.append("  if (%s) return %s;" % (test, value))
+    floor = max(4096, default_policy["min_stack_size"])
+    value = "requested > %du ? requested : %du" % (floor, floor) if default_policy["stack_region"] == "psram" else "0"
+    lines.extend(["  return %s;" % value, "}", ""])
+    return "\n".join(lines)
 
 def _task_policy_codegen_impl(ctx):
     label = str(ctx.label)
@@ -626,9 +688,15 @@ def _task_policy_codegen_impl(ctx):
         test_source,
         render_policy_test(label, ctx.attr.unit, tasks, default_policy, ctx.attr.allocator),
     )
+    stack_accounting = []
+    if ctx.attr.unit == "esp":
+        stack_header = ctx.actions.declare_file(directory + "/h2_target_stack_accounting.inc")
+        ctx.actions.write(stack_header, _render_stack_accounting(tasks, default_policy))
+        stack_accounting = [stack_header]
     return [
         DefaultInfo(files = depset([source, header, cmake, test_source])),
         OutputGroupInfo(
+            stack_accounting = depset(stack_accounting),
             source = depset([source]),
             header = depset([header]),
             cmake = depset([cmake]),
