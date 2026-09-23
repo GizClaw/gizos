@@ -11,6 +11,7 @@ esp_target_task_policy(
     default_policy = "4 any 4096 internal",
     graph = [":launcher"],
     policies = [
+        "atomic/e2e default",
         "atomic/e2e/core0 4 0 4096 internal",
         "atomic/e2e/core1 4 1 4096 internal",
         "h2loader/appcmd 8 0 4096 psram",
