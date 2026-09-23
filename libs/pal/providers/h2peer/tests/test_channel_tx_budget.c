@@ -266,9 +266,10 @@ static void tx_uses_peer_allocator(void) {
   assert(push(&f, 0u, 128u) == H2_PAL_OK);
   assert(push(&f, 0u, 256u) == H2_PAL_OK);
   assert(f.allocations == 0u);
-  assert(atomic_load(&arena.live) == 4u); /* two slots + two payloads */
+  assert(h2_atomic_load(&arena.live) == 4u); /* two slots + two payloads */
   cleanup(&f);
-  assert(atomic_load(&arena.live) == 0u);
+  assert(h2_atomic_load(&arena.live) == 0u);
+  h2_test_allocator_destroy(&arena);
 }
 
 int main(void) {

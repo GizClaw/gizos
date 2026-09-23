@@ -508,7 +508,8 @@ int main(void) {
     sctp_destroy_association(&sctp);
     assert(sctp.association == NULL);
     assert(sctp.stream_table == NULL);
-    assert(atomic_load(&arena.calls) > 0u);
-    assert(atomic_load(&arena.live) == 0u);
+    assert(h2_atomic_load(&arena.calls) > 0u);
+    assert(h2_atomic_load(&arena.live) == 0u);
+    h2_test_allocator_destroy(&arena);
     return 0;
 }

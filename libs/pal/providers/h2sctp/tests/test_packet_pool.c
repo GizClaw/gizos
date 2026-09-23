@@ -240,7 +240,7 @@ static void association_allocators(void) {
         unsigned before = ep->allocation_count;
         assert(h2_pal_sctp_association_create(ep->api, &config, &ep->association) == H2_PAL_OK);
         assert(ep->allocation_count == before);
-        assert(atomic_load(&arenas[i].live) == 2u); /* association + rx_assembly */
+        assert(h2_atomic_load(&arenas[i].live) == 2u); /* association + rx_assembly */
         assert(ep->packet_allocation_count == ep->packet_free_count + 1u);
     }
     assert(h2_sctp_test_connect(&pair));
@@ -257,9 +257,10 @@ static void association_allocators(void) {
     assert(memcmp(pair.passive.messages[0].data, payload, sizeof(payload)) == 0);
     h2_sctp_test_pair_deinit(&pair);
     for (size_t i = 0u; i < 2u; ++i) {
-        assert(atomic_load(&arenas[i].calls) > 4u);
-        assert(atomic_load(&arenas[i].live) == 0u);
+        assert(h2_atomic_load(&arenas[i].calls) > 4u);
+        assert(h2_atomic_load(&arenas[i].live) == 0u);
         assert(endpoints[i]->packet_allocation_count == endpoints[i]->packet_free_count);
+        h2_test_allocator_destroy(&arenas[i]);
     }
 }
 

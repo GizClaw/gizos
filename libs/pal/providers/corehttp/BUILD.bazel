@@ -89,6 +89,7 @@ cc_test(
     }),
     deps = [
         ":corehttp",
+        "//libs/atomic/providers/c11",
         "//libs/pal:test_allocator",
     ],
 )

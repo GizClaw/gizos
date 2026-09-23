@@ -163,6 +163,7 @@ cc_test(
     }),
     deps = [
         ":h2sctp",
+        "//libs/atomic/providers/c11",
         "//libs/pal:test_allocator",
     ],
 )

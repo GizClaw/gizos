@@ -215,6 +215,7 @@ cc_test(
     }),
     deps = [
         ":portable_protocol_providers",
+        "//libs/atomic/providers/c11",
         "//libs/pal:test_allocator",
     ],
 )

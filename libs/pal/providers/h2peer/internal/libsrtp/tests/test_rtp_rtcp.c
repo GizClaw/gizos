@@ -385,7 +385,7 @@ static void test_session_allocators(const h2_libsrtp_config_t *init,
             .master_salt = salt, .master_salt_len = H2_LIBSRTP_AES_CM_SALT_SIZE,
         };
         assert(h2_libsrtp_session_create(&config, &sessions[i]) == H2_PAL_OK);
-        assert(atomic_load(&arenas[i].live) > 3u);
+        assert(h2_atomic_load(&arenas[i].live) > 3u);
     }
     uint8_t packet[128] = {0x80, 0x60, 0, 1, 0, 0, 0, 1, 0x11, 0x22, 0x33, 0x44, 42};
     size_t len = 13u;
@@ -398,8 +398,9 @@ static void test_session_allocators(const h2_libsrtp_config_t *init,
         assert(h2_pal_task_start(h2_desktop_platform_task_api(), &options,
             destroy_on_worker, &sessions[i], &worker) == H2_PAL_OK);
         assert(h2_pal_task_join(h2_desktop_platform_task_api(), worker) == H2_PAL_OK);
-        assert(sessions[i] == NULL && atomic_load(&arenas[i].live) == 0u);
+        assert(sessions[i] == NULL && h2_atomic_load(&arenas[i].live) == 0u);
         assert(h2_libsrtp_deinit() == H2_PAL_OK);
+        h2_test_allocator_destroy(&arenas[i]);
     }
 }
 

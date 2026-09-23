@@ -410,5 +410,5 @@ cc_library(
     testonly = True,
     hdrs = ["tests/h2_test_allocator.h"],
     includes = ["tests"],
-    deps = [":pal"],
+    deps = [":pal", "//libs/atomic"],
 )

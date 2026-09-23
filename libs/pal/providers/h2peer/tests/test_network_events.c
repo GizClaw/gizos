@@ -22,11 +22,11 @@ typedef struct fixture {
   h2_pal_queue_vtable_t queue_vtable;
   h2_pal_queue_t *events;
   size_t capacity;
-  atomic_int fail_allocations;
-  atomic_size_t allocations;
-  atomic_size_t frees;
-  atomic_int waiting;
-  atomic_int done;
+  h2_atomic_int_t fail_allocations;
+  h2_atomic_size_t allocations;
+  h2_atomic_size_t frees;
+  h2_atomic_int_t waiting;
+  h2_atomic_int_t done;
   h2_pal_result_t poll_result;
   h2_pal_webrtc_event_t event;
   h2_pal_result_t write_result;
@@ -38,20 +38,20 @@ static fixture_t *active;
 
 static void *allocate(void *user, size_t size) {
   fixture_t *f = user;
-  int left = atomic_load(&f->fail_allocations);
+  int left = h2_atomic_load(&f->fail_allocations);
   while (left > 0) {
-    if (atomic_compare_exchange_weak(&f->fail_allocations, &left, left - 1))
+    if (h2_atomic_compare_exchange_strong(&f->fail_allocations, &left, left - 1))
       return NULL;
   }
   void *p = malloc(size);
   if (p != NULL)
-    atomic_fetch_add(&f->allocations, 1u);
+    h2_atomic_fetch_add(&f->allocations, 1u);
   return p;
 }
 
 static void deallocate(void *user, void *p) {
   if (p != NULL) {
-    atomic_fetch_add(&((fixture_t *)user)->frees, 1u);
+    h2_atomic_fetch_add(&((fixture_t *)user)->frees, 1u);
     free(p);
   }
 }
@@ -69,7 +69,7 @@ static int create_queue(void *user, const h2_pal_queue_config_t *config,
 static int receive(void *user, h2_pal_queue_t *queue, void *out,
                    uint32_t timeout_ms) {
   if (queue == active->events && timeout_ms != H2_PAL_QUEUE_NO_WAIT)
-    atomic_store(&active->waiting, 1);
+    h2_atomic_store(&active->waiting, 1);
   return real_queue->vtable->recv(user, queue, out, timeout_ms);
 }
 
@@ -85,11 +85,11 @@ static void initialize(fixture_t *f) {
   static const h2_pal_mem_vtable_t memory = {.alloc = allocate,
                                              .free = deallocate};
   memset(f, 0, sizeof(*f));
-  atomic_init(&f->fail_allocations, 0);
-  atomic_init(&f->allocations, 0u);
-  atomic_init(&f->frees, 0u);
-  atomic_init(&f->waiting, 0);
-  atomic_init(&f->done, 0);
+  assert(h2_atomic_init(&f->fail_allocations, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_init(&f->allocations, 0u) == H2_ATOMIC_OK);
+  assert(h2_atomic_init(&f->frees, 0u) == H2_ATOMIC_OK);
+  assert(h2_atomic_init(&f->waiting, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_init(&f->done, 0) == H2_ATOMIC_OK);
   f->mem = (h2_pal_mem_api_t){.user = f, .vtable = &memory};
   real_queue = h2_desktop_platform_queue_api();
   f->queue_vtable = *real_queue->vtable;
@@ -115,12 +115,21 @@ static void initialize(fixture_t *f) {
   assert(f->capacity > 0u && f->capacity < 1024u);
 }
 
+static void destroy_fixture_atomics(fixture_t *f) {
+  h2_atomic_destroy(&f->fail_allocations);
+  h2_atomic_destroy(&f->allocations);
+  h2_atomic_destroy(&f->frees);
+  h2_atomic_destroy(&f->waiting);
+  h2_atomic_destroy(&f->done);
+}
+
 static void cleanup(fixture_t *f) {
   h2_pal_webrtc_peer_close(f->api, f->peer);
   h2_peer_destroy(&f->owner);
   assert(f->owner == NULL);
-  assert(atomic_load(&f->allocations) == atomic_load(&f->frees));
+  assert(h2_atomic_load(&f->allocations) == h2_atomic_load(&f->frees));
   active = NULL;
+  destroy_fixture_atomics(f);
 }
 
 static void emit_sdp(fixture_t *f, uint16_t sequence) {
@@ -154,7 +163,7 @@ static void error_fallbacks(void) {
   initialize(&f);
   emit_sdp(&f, 42u);
   // First allocation fails for SDP, the second for its ERROR notification.
-  atomic_store(&f.fail_allocations, 2);
+  h2_atomic_store(&f.fail_allocations, 2);
   emit_sdp(&f, 43u);
   expect_sdp(&f, 42u);
   expect_error(&f, H2_PAL_ERR_NO_MEMORY, 0);
@@ -203,16 +212,16 @@ static void error_fallbacks(void) {
 static void poll_waiter(void *user) {
   fixture_t *f = user;
   f->poll_result = h2_pal_webrtc_peer_poll(f->api, f->peer, 5000, &f->event);
-  atomic_store(&f->done, 1);
+  h2_atomic_store(&f->done, 1);
 }
 
-static void await_flag(atomic_int *flag) {
-  for (unsigned i = 0u; i < 1000u && !atomic_load(flag); ++i)
+static void await_flag(h2_atomic_int_t *flag) {
+  for (unsigned i = 0u; i < 1000u && !h2_atomic_load(flag); ++i)
     assert(h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u) ==
            H2_PAL_OK);
   // A failure aborts this isolated process instead of leaving a task with a
   // dangling stack fixture. Do not wait the full 5-second poll timeout here.
-  assert(atomic_load(flag));
+  assert(h2_atomic_load(flag));
 }
 
 static void wake_and_unset(void) {
@@ -270,8 +279,9 @@ static void wake_and_unset(void) {
   // The owned error remains releasable after peer/provider destruction.
   assert(f.event.error == H2_PAL_ERR_IO);
   h2_pal_webrtc_event_release(&f.event);
-  assert(atomic_load(&f.allocations) == atomic_load(&f.frees));
+  assert(h2_atomic_load(&f.allocations) == h2_atomic_load(&f.frees));
   active = NULL;
+  destroy_fixture_atomics(&f);
 }
 
 static void release_on_worker(void *user) {
@@ -285,7 +295,7 @@ static void peer_allocators(void) {
   h2_test_allocator_t arenas[2];
   h2_pal_webrtc_peer_t *peers[2];
   h2_pal_webrtc_event_t events[2] = {0};
-  size_t default_calls = atomic_load(&f.allocations);
+  size_t default_calls = h2_atomic_load(&f.allocations);
   for (size_t i = 0u; i < 2u; ++i) {
     h2_test_allocator_init(&arenas[i]);
     const h2_pal_webrtc_peer_config_t config = {.allocator = &arenas[i].api};
@@ -302,22 +312,24 @@ static void peer_allocators(void) {
     assert(h2_pal_webrtc_peer_poll(f.api, peers[i], 0, &events[i]) == H2_PAL_OK);
     assert(events[i].kind == H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE);
     assert(events[i].data_len == sizeof(data));
-    assert(atomic_load(&arenas[i].calls) > 4u);
-    assert(atomic_load(&f.allocations) == default_calls);
+    assert(h2_atomic_load(&arenas[i].calls) > 4u);
+    assert(h2_atomic_load(&f.allocations) == default_calls);
   }
   for (size_t i = 0u; i < 2u; ++i) h2_pal_webrtc_peer_close(f.api, peers[i]);
   h2_peer_destroy(&f.owner);
   for (size_t i = 0u; i < 2u; ++i) {
-    assert(atomic_load(&arenas[i].live) > 0u);
+    assert(h2_atomic_load(&arenas[i].live) > 0u);
     h2_pal_task_t *worker = NULL;
     const h2_pal_task_options_t options = {.name = "peer-event-free"};
     assert(h2_pal_task_start(h2_desktop_platform_task_api(), &options,
         release_on_worker, &events[i], &worker) == H2_PAL_OK);
     assert(h2_pal_task_join(h2_desktop_platform_task_api(), worker) == H2_PAL_OK);
-    assert(atomic_load(&arenas[i].live) == 0u);
+    assert(h2_atomic_load(&arenas[i].live) == 0u);
+    h2_test_allocator_destroy(&arenas[i]);
   }
-  assert(atomic_load(&f.allocations) == atomic_load(&f.frees));
+  assert(h2_atomic_load(&f.allocations) == h2_atomic_load(&f.frees));
   active = NULL;
+  destroy_fixture_atomics(&f);
 }
 
 int main(void) {

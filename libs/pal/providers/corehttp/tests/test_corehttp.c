@@ -1009,7 +1009,7 @@ static int test_request_allocator(void) {
         h2_pal_http_api_t api;
         h2_corehttp_t *provider = create_provider(&platform, &api, NULL, 0u);
         CHECK(provider != NULL);
-        size_t before = atomic_load(&provider_mem.calls);
+        size_t before = h2_atomic_load(&provider_mem.calls);
         uint8_t body[8];
         const char url[] = "http://example.test/base/path";
         h2_pal_http_request_t request = {
@@ -1022,13 +1022,15 @@ static int test_request_allocator(void) {
         CHECK(h2_pal_http_request(&api, &request, &response) == H2_PAL_OK);
         CHECK(response.status_code == 200 && response.body_len == 2u);
         CHECK(memcmp(body, "ok", 2u) == 0);
-        CHECK(atomic_load(&request_mem.calls) > 0u || !custom);
-        CHECK(custom ? atomic_load(&provider_mem.calls) == before
-                     : atomic_load(&provider_mem.calls) > before);
-        CHECK(atomic_load(&request_mem.live) == 0u);
+        CHECK(h2_atomic_load(&request_mem.calls) > 0u || !custom);
+        CHECK(custom ? h2_atomic_load(&provider_mem.calls) == before
+                     : h2_atomic_load(&provider_mem.calls) > before);
+        CHECK(h2_atomic_load(&request_mem.live) == 0u);
         h2_pal_http_response_free(&api, &response);
         h2_corehttp_destroy(provider);
-        CHECK(atomic_load(&provider_mem.live) == 0u);
+        CHECK(h2_atomic_load(&provider_mem.live) == 0u);
+        h2_test_allocator_destroy(&request_mem);
+        h2_test_allocator_destroy(&provider_mem);
     }
     return 0;
 }
