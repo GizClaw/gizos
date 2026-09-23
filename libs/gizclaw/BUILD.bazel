@@ -458,6 +458,7 @@ cc_test(
     }),
     deps = [
         ":gizclaw",
+        "//libs/atomic/providers/c11",
         "//libs/pal/providers/desktop/pal_core",
     ],
 )

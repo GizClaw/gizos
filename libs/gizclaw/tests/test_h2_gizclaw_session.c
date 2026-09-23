@@ -7,13 +7,13 @@
 #undef NDEBUG
 #endif
 #include <assert.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <string.h>
 
 /* These fakes sit at the typed RPC boundary. The real Session owns all state,
  * pagination, catalog memory, workspace preparation and callback forwarding. */
 static h2_gizclaw_session_t *session;
-static atomic_uint lists, gets, creates, reloads, conversations;
+static h2_atomic_uint_t lists, gets, creates, reloads, conversations;
 static bool list_failure, bad_revision, missing, close_during_list,
     reload_failure;
 static bool paginated, empty_cycle, get_failure;
@@ -26,7 +26,7 @@ static unsigned terminal_count;
 static unsigned audio_starts, audio_ends;
 static h2_pal_result_t audio_start_result, audio_end_result;
 static char audio_error_log[H2_PAL_LOG_MESSAGE_MAX];
-static atomic_int last_cancel_source;
+static h2_atomic_int_t last_cancel_source;
 static unsigned end_noops;
 static size_t downlink_writes;
 static unsigned flushes;
@@ -73,25 +73,25 @@ h2_pal_result_t h2_gizclaw_service_audio_control_internal(
 h2_pal_result_t h2_gizclaw_conversation_cancel_internal(
     h2_gizclaw_conversation_t *conversation, h2_gizclaw_audio_log_t *log,
     int source) {
-  atomic_store(&last_cancel_source, source);
+  h2_atomic_store(&last_cancel_source, source);
   (void)log;
   return h2_gizclaw_conversation_cancel(conversation);
 }
 
-static atomic_bool cancel_entered;
-static atomic_uint_fast64_t now;
+static h2_atomic_bool_t cancel_entered;
+static h2_atomic_size_t now;
 static uint64_t list_delay;
-static atomic_bool gate_list, list_entered, waiter_entered;
+static h2_atomic_bool_t gate_list, list_entered, waiter_entered;
 static h2_pal_result_t wait_cond(void *user, h2_pal_cond_t *cond,
                                  h2_pal_mutex_t *mutex, uint32_t timeout) {
   (void)user;
-  atomic_store(&waiter_entered, true);
+  h2_atomic_store(&waiter_entered, true);
   const h2_pal_sync_api_t *sync = h2_desktop_platform_sync_api();
   return sync->vtable->wait_cond(sync->user, cond, mutex, timeout);
 }
-static void wait_flag(atomic_bool *flag) {
+static void wait_flag(h2_atomic_bool_t *flag) {
   for (unsigned i = 0; i < 5000u; ++i) {
-    if (atomic_load(flag))
+    if (h2_atomic_load(flag))
       return;
     assert(h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u) ==
            H2_PAL_OK);
@@ -100,7 +100,7 @@ static void wait_flag(atomic_bool *flag) {
 }
 static h2_pal_result_t monotonic(void *user, uint64_t *out) {
   (void)user;
-  *out = now;
+  *out = h2_atomic_load(&now);
   return H2_PAL_OK;
 }
 static const h2_pal_time_vtable_t time_vtable = {.get_monotonic_ms = monotonic};
@@ -129,12 +129,12 @@ h2_pal_result_t h2_gizclaw_rpc_workflow_list(h2_gizclaw_service_t *service,
   (void)service;
   (void)limit;
   assert(timeout > 0u);
-  ++lists;
-  atomic_store(&list_entered, true);
-  while (atomic_load(&gate_list))
+  h2_atomic_fetch_add(&lists, 1u);
+  h2_atomic_store(&list_entered, true);
+  while (h2_atomic_load(&gate_list))
     assert(h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u) ==
            H2_PAL_OK);
-  now += list_delay;
+  h2_atomic_fetch_add(&now, list_delay);
   if (list_failure)
     return H2_PAL_ERR_IO;
   if (close_during_list)
@@ -149,7 +149,7 @@ h2_pal_result_t h2_gizclaw_rpc_workflow_list(h2_gizclaw_service_t *service,
   *out = (h2_gizclaw_workflow_page_t){0};
   out->runtime_profile_name = copy(&arena, "test-profile");
   out->runtime_profile_revision =
-      copy(&arena, bad_revision && lists % 2u == 0u ? "v2" : server_revision);
+      copy(&arena, bad_revision && h2_atomic_load(&lists) % 2u == 0u ? "v2" : server_revision);
   if (empty_cycle) {
     out->has_next = true;
     out->next_cursor = copy(
@@ -176,7 +176,7 @@ h2_gizclaw_rpc_workspace_get(h2_gizclaw_service_t *service,
   (void)service;
   (void)timeout;
   (void)storage;
-  ++gets;
+  h2_atomic_fetch_add(&gets, 1u);
   trace('g');
   if (get_failure)
     return H2_PAL_ERR_IO;
@@ -202,7 +202,7 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_create(
   (void)timeout;
   (void)storage;
   (void)out;
-  ++creates;
+  h2_atomic_fetch_add(&creates, 1u);
   trace('c');
   missing = false;
   /* Server created it but response was lost. Session must reconcile. */
@@ -217,7 +217,7 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_reload_with_options(
   (void)parameters;
   (void)timeout;
   (void)storage;
-  ++reloads;
+  h2_atomic_fetch_add(&reloads, 1u);
   trace('r');
   h2_gizclaw_session_state_t state;
   assert(h2_gizclaw_session_snapshot(session, &state) == H2_PAL_OK);
@@ -252,7 +252,7 @@ h2_gizclaw_conversation_create(h2_gizclaw_service_t *service,
   (void)service;
   (void)workspace;
   on_event = callback;
-  ++conversations;
+  h2_atomic_fetch_add(&conversations, 1u);
   terminal = completion;
   terminal_user = user;
   *out = (h2_gizclaw_conversation_t *)&conversations;
@@ -294,7 +294,12 @@ static void completed(void *user, h2_gizclaw_conversation_t *conversation,
 }
 static void setup(size_t collections) {
   static const char *const names[] = {"alpha", "beta"};
-  lists = gets = creates = reloads = conversations = terminal_count = 0u;
+  h2_atomic_store(&lists, 0u);
+  h2_atomic_store(&gets, 0u);
+  h2_atomic_store(&creates, 0u);
+  h2_atomic_store(&reloads, 0u);
+  h2_atomic_store(&conversations, 0u);
+  terminal_count = 0u;
   audio_starts = audio_ends = 0u;
   releases = text_sends = 0u;
   text_result = H2_PAL_OK;
@@ -305,16 +310,17 @@ static void setup(size_t collections) {
   audio_start_result = audio_end_result = H2_PAL_OK;
   audio_error_log[0] = '\0';
   rpc_trace[0] = '\0';
-  atomic_store(&cancel_entered, false);
+  h2_atomic_store(&cancel_entered, false);
   list_failure = bad_revision = missing = close_during_list = reload_failure =
       false;
   paginated = empty_cycle = get_failure = false;
   server_revision = "v1";
   closed_after_reload = 0u;
-  now = list_delay = 0u;
-  atomic_store(&gate_list, false);
-  atomic_store(&list_entered, false);
-  atomic_store(&waiter_entered, false);
+  h2_atomic_store(&now, 0u);
+  list_delay = 0u;
+  h2_atomic_store(&gate_list, false);
+  h2_atomic_store(&list_entered, false);
+  h2_atomic_store(&waiter_entered, false);
   static h2_pal_sync_vtable_t sync_vtable;
   static h2_pal_sync_api_t sync_api;
   sync_api = *h2_desktop_platform_sync_api();
@@ -357,7 +363,7 @@ static void select_thread(void *out) {
 }
 static void test_waiting_selection(bool cancel) {
   setup(1u);
-  atomic_store(&gate_list, true);
+  h2_atomic_store(&gate_list, true);
   h2_pal_task_t *registration = NULL, *selection_thread = NULL;
   const h2_pal_task_api_t *tasks = h2_desktop_platform_task_api();
   h2_pal_result_t register_result = H2_PAL_ERR_IO,
@@ -371,7 +377,7 @@ static void test_waiting_selection(bool cancel) {
   assert(!snapshot().can_start);
   if (cancel)
     assert(h2_gizclaw_session_cancel_pending(session) == H2_PAL_OK);
-  atomic_store(&gate_list, false);
+  h2_atomic_store(&gate_list, false);
   assert(h2_pal_task_join(tasks, registration) == H2_PAL_OK);
   assert(h2_pal_task_join(tasks, selection_thread) == H2_PAL_OK);
   assert(register_result == (cancel ? H2_PAL_ERR_CLOSED : H2_PAL_OK));
@@ -473,7 +479,7 @@ static void test_control_boundaries(void) {
       assert(h2_pal_task_start(tasks, NULL, switch_thread, &context, &task) ==
              H2_PAL_OK);
       wait_flag(&cancel_entered);
-      assert(atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_WORKSPACE);
+      assert(h2_atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_WORKSPACE);
       assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
       assert(!snapshot().conversation_input_open);
       assert(audio_ends == 1u);
@@ -512,7 +518,7 @@ static void test_control_boundaries(void) {
   assert(h2_pal_task_start(tasks, NULL, start_thread, &result, &task) ==
          H2_PAL_OK);
   wait_flag(&cancel_entered);
-  assert(atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_RESTART);
+  assert(h2_atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_RESTART);
   assert(h2_gizclaw_session_run_stop_begin_internal(session, 1000u) ==
          H2_PAL_ERR_BUSY);
   terminal(terminal_user, conversation, &canceled);
@@ -526,10 +532,10 @@ static void test_control_boundaries(void) {
   audio_end_result = H2_PAL_OK;
   assert(h2_gizclaw_session_audio_end(session) == H2_PAL_OK);
   audio_start_result = H2_PAL_ERR_INVALID_ARG;
-  atomic_store(&cancel_entered, false);
+  h2_atomic_store(&cancel_entered, false);
   assert(h2_pal_task_start(tasks, NULL, start_thread, &result, &task) == H2_PAL_OK);
   wait_flag(&cancel_entered);
-  assert(atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_RESTART);
+  assert(h2_atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_RESTART);
   assert(h2_gizclaw_session_run_stop_begin_internal(session, 1000u) ==
          H2_PAL_ERR_BUSY);
   terminal(terminal_user, conversation, &canceled);
@@ -615,7 +621,7 @@ static void test_run_stop(void) {
   assert(h2_pal_task_start(tasks, NULL, stop_run_thread, &result, &task) ==
          H2_PAL_OK);
   wait_flag(&cancel_entered);
-  assert(atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_WORKSPACE);
+  assert(h2_atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_WORKSPACE);
   assert(rpc_trace[0] == '\0');
   assert(stop_run(H2_PAL_OK, 1000u) == H2_PAL_ERR_BUSY);
   const h2_gizclaw_operation_result_t canceled = {
@@ -744,7 +750,7 @@ static void test_workspace_delete(void) {
   assert(h2_pal_task_start(tasks, NULL, delete_thread, &context, &task) ==
          H2_PAL_OK);
   wait_flag(&cancel_entered);
-  assert(atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_WORKSPACE);
+  assert(h2_atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_WORKSPACE);
   assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
   assert(!snapshot().conversation_input_open && audio_ends == 1u);
   assert(snapshot().workspace == H2_GIZCLAW_SESSION_PREPARING);
@@ -762,7 +768,7 @@ static void test_workspace_delete(void) {
   assert(h2_gizclaw_session_conversation_create(
              session, &sel, 1000u, NULL, completed, NULL, &conversation) ==
          H2_PAL_OK);
-  assert(strcmp(rpc_trace, "dgcgr") == 0 && conversations == 2u);
+  assert(strcmp(rpc_trace, "dgcgr") == 0 && h2_atomic_load(&conversations) == 2u);
   assert(strcmp(snapshot().current_workspace, "my-chat") == 0);
   h2_gizclaw_session_conversation_release(session, conversation);
   teardown();
@@ -868,11 +874,11 @@ static void test_send_text(void) {
   const unsigned starts_before = audio_starts;
   h2_pal_task_t *task = NULL;
   h2_pal_result_t result = H2_PAL_ERR_IO;
-  atomic_store(&cancel_entered, false);
+  h2_atomic_store(&cancel_entered, false);
   assert(h2_pal_task_start(tasks, NULL, start_thread, &result, &task) ==
          H2_PAL_OK);
   wait_flag(&cancel_entered);
-  assert(atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_RESTART);
+  assert(h2_atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_RESTART);
   assert(h2_gizclaw_session_run_stop_begin_internal(session, 1000u) ==
          H2_PAL_ERR_BUSY);
   terminal(terminal_user, conversation, &canceled);
@@ -888,11 +894,11 @@ static void test_send_text(void) {
   switch_context_t context = {.selection = sel};
   context.selection.workspace_name = "switched-chat";
   context.selection.parameters = &realtime;
-  atomic_store(&cancel_entered, false);
+  h2_atomic_store(&cancel_entered, false);
   assert(h2_pal_task_start(tasks, NULL, switch_thread, &context, &task) ==
          H2_PAL_OK);
   wait_flag(&cancel_entered);
-  assert(atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_WORKSPACE);
+  assert(h2_atomic_load(&last_cancel_source) == H2_GIZCLAW_CANCEL_WORKSPACE);
   assert(audio_ends == ends_before); /* No audio input was open. */
   assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
   terminal(terminal_user, conversation, &canceled);
@@ -908,7 +914,7 @@ static void test_send_text(void) {
   assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_WAITING);
   terminal(terminal_user, conversation, &sent);
   assert(audio_starts == starts_realtime && !snapshot().conversation_input_open);
-  now += H2_GIZCLAW_SESSION_WAIT_MS;
+  h2_atomic_fetch_add(&now, H2_GIZCLAW_SESSION_WAIT_MS);
   assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
 
   /* A closed Session admits nothing. */
@@ -990,6 +996,17 @@ static void test_speech_rate_parameter(void) {
 }
 
 int main(void) {
+  assert(h2_atomic_uint_init(&lists, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_uint_init(&gets, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_uint_init(&creates, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_uint_init(&reloads, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_uint_init(&conversations, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&last_cancel_source, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_bool_init(&cancel_entered, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_size_init(&now, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_bool_init(&gate_list, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_bool_init(&list_entered, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_bool_init(&waiter_entered, 0) == H2_ATOMIC_OK);
   test_speech_rate_parameter();
   test_send_text();
   test_control_boundaries();
@@ -1000,7 +1017,7 @@ int main(void) {
   setup(2u);
   assert(!snapshot().can_start);
   assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
-  assert(lists == 2u && snapshot().workflow_count == 2u);
+  assert(h2_atomic_load(&lists) == 2u && snapshot().workflow_count == 2u);
   assert(snapshot().catalog == H2_GIZCLAW_SESSION_READY &&
          !snapshot().can_start);
   uint8_t bytes[4096];
@@ -1015,14 +1032,14 @@ int main(void) {
   assert(strcmp(catalog.items[0].name, "alpha") == 0);
   missing = true;
   assert(h2_gizclaw_session_select(session, &selection, 1000u) == H2_PAL_OK);
-  assert(creates == 1u && gets == 2u && reloads == 1u && snapshot().can_start);
+  assert(h2_atomic_load(&creates) == 1u && h2_atomic_load(&gets) == 2u && h2_atomic_load(&reloads) == 1u && snapshot().can_start);
   assert(h2_gizclaw_session_select(session, &selection, 1000u) == H2_PAL_OK);
-  assert(reloads == 1u);
+  assert(h2_atomic_load(&reloads) == 1u);
   h2_gizclaw_conversation_t *conversation = NULL;
   assert(h2_gizclaw_session_conversation_create(session, &selection, 1000u,
                                                 NULL, completed, NULL,
                                                 &conversation) == H2_PAL_OK);
-  assert(!snapshot().can_start && conversations == 1u);
+  assert(!snapshot().can_start && h2_atomic_load(&conversations) == 1u);
   assert(h2_gizclaw_session_audio_start(session) == H2_PAL_OK);
   assert(snapshot().conversation_input_open);
   h2_gizclaw_session_conversation_release(session, conversation);
@@ -1049,7 +1066,7 @@ int main(void) {
   other.collection = "wrong";
   assert(h2_gizclaw_session_select(session, &other, 1000u) ==
          H2_PAL_ERR_NOT_FOUND);
-  assert(reloads == 1u && !snapshot().can_start);
+  assert(h2_atomic_load(&reloads) == 1u && !snapshot().can_start);
   teardown();
 
   setup(1u);
@@ -1065,9 +1082,9 @@ int main(void) {
   /* Sent: the wait for sound goes on; without sound it ends silently at
    * the deadline. */
   assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_WAITING);
-  now += H2_GIZCLAW_SESSION_WAIT_MS - 1u;
+  h2_atomic_fetch_add(&now, H2_GIZCLAW_SESSION_WAIT_MS - 1u);
   assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_WAITING);
-  now += 1u;
+  h2_atomic_fetch_add(&now, 1u);
   assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
   assert(h2_gizclaw_session_audio_end(session) == H2_PAL_OK);
   assert(snapshot().conversation == H2_GIZCLAW_SESSION_CONVERSATION_IDLE);
@@ -1113,28 +1130,28 @@ int main(void) {
   setup(1u);
   paginated = true;
   assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
-  assert(lists == 2u && snapshot().workflow_count == 2u);
+  assert(h2_atomic_load(&lists) == 2u && snapshot().workflow_count == 2u);
   list_failure = true;
   conversation = (h2_gizclaw_conversation_t *)&conversations;
   assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_ERR_IO);
   assert(h2_gizclaw_session_conversation_create(
              session, &selection, 1000u, NULL, NULL, NULL, &conversation) ==
          H2_PAL_ERR_IO);
-  assert(conversation == NULL && conversations == 0u && !snapshot().can_start);
+  assert(conversation == NULL && h2_atomic_load(&conversations) == 0u && !snapshot().can_start);
   teardown();
 
   setup(1u);
   empty_cycle = true;
   assert(h2_gizclaw_session_register(session, "token", 1000u) ==
          H2_PAL_ERR_FORMAT);
-  assert(lists == 5u);
+  assert(h2_atomic_load(&lists) == 5u);
   teardown();
 
   setup(2u);
   list_delay = 100u;
   assert(h2_gizclaw_session_register(session, "token", 50u) ==
          H2_PAL_ERR_TIMEOUT);
-  assert(lists == 1u);
+  assert(h2_atomic_load(&lists) == 1u);
   teardown();
 
   setup(1u);
@@ -1156,7 +1173,7 @@ int main(void) {
   assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
   server_revision = "v2";
   assert(h2_gizclaw_session_select(session, &selection, 1000u) == H2_PAL_OK);
-  assert(lists == 2u && gets == 2u && reloads == 1u);
+  assert(h2_atomic_load(&lists) == 2u && h2_atomic_load(&gets) == 2u && h2_atomic_load(&reloads) == 1u);
   assert(strcmp(snapshot().profile_revision, "v2") == 0);
   storage.used = 0u;
   storage.capacity = 1u;
@@ -1171,7 +1188,7 @@ int main(void) {
   get_failure = true;
   assert(h2_gizclaw_session_select(session, &selection, 1000u) ==
          H2_PAL_ERR_IO);
-  assert(creates == 0u);
+  assert(h2_atomic_load(&creates) == 0u);
   teardown();
 
   setup(1u);
@@ -1180,6 +1197,17 @@ int main(void) {
          H2_PAL_ERR_TIMEOUT);
   assert(snapshot().workflow_count == 0u);
   teardown();
+  h2_atomic_uint_destroy(&lists);
+  h2_atomic_uint_destroy(&gets);
+  h2_atomic_uint_destroy(&creates);
+  h2_atomic_uint_destroy(&reloads);
+  h2_atomic_uint_destroy(&conversations);
+  h2_atomic_int_destroy(&last_cancel_source);
+  h2_atomic_bool_destroy(&cancel_entered);
+  h2_atomic_size_destroy(&now);
+  h2_atomic_bool_destroy(&gate_list);
+  h2_atomic_bool_destroy(&list_entered);
+  h2_atomic_bool_destroy(&waiter_entered);
   return 0;
 }
 
@@ -1197,7 +1225,7 @@ h2_gizclaw_service_detach_session_internal(h2_gizclaw_service_t *service) {
 }
 h2_pal_result_t h2_gizclaw_conversation_cancel(h2_gizclaw_conversation_t *c) {
   (void)c;
-  atomic_store(&cancel_entered, true);
+  h2_atomic_store(&cancel_entered, true);
   return H2_PAL_OK;
 }
 
