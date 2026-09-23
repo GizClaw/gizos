@@ -3,25 +3,12 @@
 
 #include "h2_quectel_modem.h"
 
-#if defined(_MSC_VER) && !defined(__clang__)
-#include <intrin.h>
-#endif
-
-/* Match modem/common atomics without exposing C-only atomic types to C++. */
 static inline void h2_quectel_cpin_absent_store(h2_quectel_modem_t *modem, uint32_t seen) {
-#if defined(_MSC_VER) && !defined(__clang__)
-    (void)_InterlockedExchange((volatile long *)&modem->cpin_absent_seen, (long)seen);
-#else
-    __atomic_store_n(&modem->cpin_absent_seen, seen, __ATOMIC_RELAXED);
-#endif
+    h2_atomic_u32_store(&modem->cpin_absent_seen, seen, H2_ATOMIC_RELAXED);
 }
 
 static inline uint32_t h2_quectel_cpin_absent_load(const h2_quectel_modem_t *modem) {
-#if defined(_MSC_VER) && !defined(__clang__)
-    return (uint32_t)_InterlockedCompareExchange((volatile long *)&modem->cpin_absent_seen, 0, 0);
-#else
-    return __atomic_load_n(&modem->cpin_absent_seen, __ATOMIC_RELAXED);
-#endif
+    return h2_atomic_u32_load(&modem->cpin_absent_seen, H2_ATOMIC_RELAXED);
 }
 
 static inline int h2_quectel_ascii_digit(unsigned char value) {

@@ -2,24 +2,19 @@
 
 #include <string.h>
 
-#if defined(_MSC_VER) && !defined(__clang__)
-#include <intrin.h>
-#endif
-
-static void counter_increment(uint32_t *counter) {
-#if defined(_MSC_VER) && !defined(__clang__)
-    (void)_InterlockedIncrement((volatile long *)counter);
-#else
-    (void)__atomic_fetch_add(counter, 1u, __ATOMIC_RELAXED);
-#endif
+static void counter_increment(h2_atomic_u32_t *counter) {
+    (void)h2_atomic_u32_fetch_add(counter, 1u, H2_ATOMIC_RELAXED);
 }
 
-static uint32_t counter_load(const uint32_t *counter) {
-#if defined(_MSC_VER) && !defined(__clang__)
-    return (uint32_t)_InterlockedCompareExchange((volatile long *)counter, 0, 0);
-#else
-    return __atomic_load_n(counter, __ATOMIC_RELAXED);
-#endif
+static uint32_t counter_load(const h2_atomic_u32_t *counter) {
+    return h2_atomic_u32_load(counter, H2_ATOMIC_RELAXED);
+}
+
+static void counters_destroy(h2_modem_urc_worker_t *worker) {
+    h2_atomic_u32_destroy(&worker->accepted_atomic);
+    h2_atomic_u32_destroy(&worker->handled_atomic);
+    h2_atomic_u32_destroy(&worker->full_atomic);
+    h2_atomic_u32_destroy(&worker->truncated_atomic);
 }
 
 typedef struct urc_line {
@@ -42,7 +37,7 @@ static void urc_task(void *user) {
             return;
         }
         worker->handler(worker->user, line.text);
-        counter_increment(&worker->stats.handled);
+        counter_increment(&worker->handled_atomic);
     }
 }
 
@@ -77,6 +72,13 @@ h2_pal_result_t h2_modem_urc_start_idle(
         .task_api = task_api, .queue_api = queue_api, .handler = handler, .user = user,
         .idle = idle, .idle_timeout_ms = idle_timeout_ms,
     };
+    if (h2_atomic_u32_init(&worker->accepted_atomic, 0u) != H2_ATOMIC_OK ||
+        h2_atomic_u32_init(&worker->handled_atomic, 0u) != H2_ATOMIC_OK ||
+        h2_atomic_u32_init(&worker->full_atomic, 0u) != H2_ATOMIC_OK ||
+        h2_atomic_u32_init(&worker->truncated_atomic, 0u) != H2_ATOMIC_OK) {
+        counters_destroy(worker);
+        return H2_PAL_ERR_NO_MEMORY;
+    }
     h2_pal_queue_config_t queue_config = {
         .name = H2_MODEM_URC_TASK_NAME,
         .item_size = sizeof(urc_line_t),
@@ -85,6 +87,7 @@ h2_pal_result_t h2_modem_urc_start_idle(
     };
     h2_pal_result_t rc = (h2_pal_result_t)h2_pal_queue_create(queue_api, &queue_config, &worker->queue);
     if (rc != H2_PAL_OK) {
+        counters_destroy(worker);
         return rc;
     }
     h2_pal_task_options_t options = {.name = H2_MODEM_URC_TASK_NAME, .min_stack_size = 4096u};
@@ -92,6 +95,7 @@ h2_pal_result_t h2_modem_urc_start_idle(
     if (rc != H2_PAL_OK) {
         h2_pal_queue_destroy(queue_api, worker->queue);
         worker->queue = NULL;
+        counters_destroy(worker);
     }
     return rc;
 }
@@ -106,7 +110,7 @@ h2_pal_result_t h2_modem_urc_post(h2_modem_urc_worker_t *worker, const char *lin
     size_t len = 0u;
     while (len < H2_MODEM_URC_LINE_MAX && line[len] != '\0') { len++; }
     if (len == H2_MODEM_URC_LINE_MAX) {
-        counter_increment(&worker->stats.truncated);
+        counter_increment(&worker->truncated_atomic);
         return H2_PAL_ERR_TRUNCATED;
     }
     if (len == 0u) {
@@ -117,9 +121,9 @@ h2_pal_result_t h2_modem_urc_post(h2_modem_urc_worker_t *worker, const char *lin
     h2_pal_result_t rc = (h2_pal_result_t)h2_pal_queue_send(
         worker->queue_api, worker->queue, &item, H2_PAL_QUEUE_NO_WAIT);
     if (rc == H2_PAL_OK) {
-        counter_increment(&worker->stats.accepted);
+        counter_increment(&worker->accepted_atomic);
     } else if (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_FULL) {
-        counter_increment(&worker->stats.full);
+        counter_increment(&worker->full_atomic);
         rc = H2_PAL_ERR_FULL;
     }
     return rc;
@@ -146,6 +150,11 @@ h2_pal_result_t h2_modem_urc_stop(h2_modem_urc_worker_t *worker) {
     worker->task = NULL;
     h2_pal_queue_destroy(worker->queue_api, worker->queue);
     worker->queue = NULL;
+    worker->stats.accepted = counter_load(&worker->accepted_atomic);
+    worker->stats.handled = counter_load(&worker->handled_atomic);
+    worker->stats.full = counter_load(&worker->full_atomic);
+    worker->stats.truncated = counter_load(&worker->truncated_atomic);
+    counters_destroy(worker);
     return worker->result;
 }
 
@@ -154,9 +163,13 @@ h2_pal_result_t h2_modem_urc_get_stats(
     if (worker == NULL || out_stats == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    out_stats->accepted = counter_load(&worker->stats.accepted);
-    out_stats->handled = counter_load(&worker->stats.handled);
-    out_stats->full = counter_load(&worker->stats.full);
-    out_stats->truncated = counter_load(&worker->stats.truncated);
+    if (worker->task == NULL) {
+        *out_stats = worker->stats;
+    } else {
+        out_stats->accepted = counter_load(&worker->accepted_atomic);
+        out_stats->handled = counter_load(&worker->handled_atomic);
+        out_stats->full = counter_load(&worker->full_atomic);
+        out_stats->truncated = counter_load(&worker->truncated_atomic);
+    }
     return H2_PAL_OK;
 }
