@@ -14,7 +14,7 @@ static inline h2_pal_result_t h2_pal_atomic_malloc_alloc(
         (alignment & (alignment - 1)) != 0)
         return H2_PAL_ERR_INVALID_ARG;
     *out = NULL;
-    if (alignment > _Alignof(max_align_t)) return H2_PAL_ERR_UNSUPPORTED;
+    if (alignment > _Alignof(void *)) return H2_PAL_ERR_UNSUPPORTED;
     *out = malloc(size);
     return *out == NULL ? H2_PAL_ERR_NO_MEMORY : H2_PAL_OK;
 }
