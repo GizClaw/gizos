@@ -5,14 +5,14 @@
 
 #include "srtp.h"
 
-#include <stdatomic.h>
+#include "h2_atomic.h"
 
 typedef struct h2_libsrtp_state {
     h2_pal_mem_api_t mem;
     h2_pal_crypto_api_t crypto;
     size_t max_packet_size;
     size_t owner_refs;
-    atomic_size_t live_sessions;
+    h2_atomic_size_t live_sessions;
     int ready;
 } h2_libsrtp_state_t;
 

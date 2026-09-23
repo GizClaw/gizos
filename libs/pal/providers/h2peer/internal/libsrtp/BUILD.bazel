@@ -43,6 +43,7 @@ cc_library(
         "//conditions:default": ["H2_LIBSRTP_NO_SYSTEM_NETINET"],
     }),
     deps = [
+        "//libs/atomic",
         "//libs/pal",
         "@h2_vendor_libsrtp//:h2_private_headers",
     ],
@@ -59,7 +60,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":libsrtp"],
+    deps = [":libsrtp", "//libs/atomic/providers/c11"],
 )
 
 cc_test(
@@ -73,7 +74,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":libsrtp"],
+    deps = [":libsrtp", "//libs/atomic/providers/c11"],
 )
 
 cc_test(
@@ -89,6 +90,7 @@ cc_test(
     }),
     deps = [
         ":libsrtp",
+        "//libs/atomic/providers/c11",
         "//libs/pal:test_allocator",
         "//libs/pal/providers/desktop/pal_core",
         "//libs/pal/providers/wolfssl:wolfcrypt",
