@@ -1,6 +1,10 @@
 #include "h2/pal/os/h2_pal_atomic.h"
 #include <stdlib.h>
 
+/* malloc supports the alignment of every fundamental C type. */
+typedef union { void *pointer; long double floating; long long integer; }
+    h2_atomic_malloc_alignment_t;
+
 static h2_pal_result_t atomic_alloc(void *user, size_t size,
                                      size_t alignment, void **out) {
     (void)user;
@@ -8,7 +12,7 @@ static h2_pal_result_t atomic_alloc(void *user, size_t size,
         (alignment & (alignment - 1)) != 0)
         return H2_PAL_ERR_INVALID_ARG;
     *out = NULL;
-    if (alignment > _Alignof(void *)) return H2_PAL_ERR_UNSUPPORTED;
+    if (alignment > _Alignof(h2_atomic_malloc_alignment_t)) return H2_PAL_ERR_UNSUPPORTED;
     *out = malloc(size);
     return *out == NULL ? H2_PAL_ERR_NO_MEMORY : H2_PAL_OK;
 }

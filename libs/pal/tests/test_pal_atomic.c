@@ -54,6 +54,10 @@ int main(void) {
     void *raw = &marker;
     assert(h2_pal_atomic_alloc_raw(api, 4, 3, &raw) == H2_PAL_ERR_INVALID_ARG && raw == NULL);
     assert(h2_pal_atomic_free(NULL, NULL) == H2_PAL_ERR_UNSUPPORTED);
+    void *aligned = NULL;
+    CHECK(h2_pal_atomic_alloc_raw(api, sizeof(long double), _Alignof(long double), &aligned));
+    assert(((uintptr_t)aligned % _Alignof(long double)) == 0);
+    CHECK(h2_pal_atomic_free(api, aligned));
     u = (_Atomic uint32_t *)&marker;
     assert(h2_pal_atomic_alloc_u32(h2_pal_unsupported_atomic_api(), 0, &u) ==
            H2_PAL_ERR_UNSUPPORTED && u == NULL);
