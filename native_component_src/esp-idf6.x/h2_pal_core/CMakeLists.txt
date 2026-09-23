@@ -96,7 +96,7 @@ idf_component_register(
     "include"
     "${REPO_ROOT}/libs/pal/include"
     "${REPO_ROOT}/libs/atomic/include"
-    "${REPO_ROOT}/libs/atomic/providers/locked"
+    "${REPO_ROOT}/libs/atomic/providers/c11"
     "${REPO_ROOT}/libs/mem_arena/include"
     "${REPO_ROOT}/libs/wifi_sta/include"
     "${REPO_ROOT}/libs/pal/providers/corehttp/include"

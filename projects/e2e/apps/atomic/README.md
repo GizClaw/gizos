@@ -49,3 +49,11 @@ for both backends. All three PSRAM `h2_atomic` runs reached the expected
 C11 runs failed with lost counts. For example, one run ended with 28,533 and
 24,679 respectively against the expected 40,000; both workers were observed
 on separate cores and the C11 state address was verified as PSRAM.
+
+After switching the ESP provider to C11 operations on DIRAM-allocated storage,
+the same DevKit again passed all six `h2_atomic` cases and failed all three
+direct-C11-in-PSRAM cases. The PSRAM-wrapper `h2_atomic` cases took 35.6–36.0
+ms per run, down from 86.5–87.0 ms with the earlier global-critical-section
+provider. This is an end-to-end workload comparison, not an isolated atomic
+instruction benchmark; the `h2_atomic` API also incurs out-of-line calls and
+an extra storage-pointer lookup.
