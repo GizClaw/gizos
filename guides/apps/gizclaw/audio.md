@@ -28,6 +28,8 @@ Peer connection 内的上下行 Opus RTP track、双向 Agent Event Stream、BOS
 
 HTTPS 下载由独立 PAL task 写入有界压缩环形缓冲，默认容量 64 KiB、启动与补缓冲阈值 16 KiB。设备 worker 增量读取 Ogg page 和 Opus packet，输出 16 kHz mono S16LE，并组装成 Audio PAL 要求的完整 PCM frame。下载侧缓冲满时等待，播放侧 `WOULD_BLOCK` 重试同一帧；不会把整首文件载入内存，也不会逐帧 drain 插入静音。只有尾帧补零，正常结束时 drain；播放进度扣除排队帧，最终不计补零样本。
 
+播放下载已收到正文后若连接断开或 15 秒无进度，且响应给出完整文件长度并证明支持字节范围（`206` / `Content-Range` 或 `Accept-Ranges: bytes`），下载 task 最多续传三次。每次从已接收的文件绝对偏移请求 `Range: bytes=<offset>-`，要求 `206`、匹配的 `Content-Range` 和剩余长度；数据继续写入同一个环形缓冲，decoder 与 Track 不重启。重试间隔递增，并响应 stop 或 generation 变化。首字节前失败、范围不被支持、响应长度或范围不符、重试耗尽时仍进入原有错误路径；seek 的定位回退和命名音效的播放语义不变。
+
 停止使当前 generation 失效并取消 HTTP，下载 task join 成功后才释放其缓冲；播放器只关闭自己的 Track，不关闭共享扬声器。下载、解码或输出失败进入 error 并上报 telemetry。命名音效由补充 vtable 解析名称为 HTTPS Ogg/Opus URL；名称须适合内部有界存储，非法输入在预留任务前拒绝。
 
 ## 对话流程

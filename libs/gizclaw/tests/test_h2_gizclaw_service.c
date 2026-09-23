@@ -3239,6 +3239,9 @@ typedef struct seek_test_state {
   uint32_t switch_rate;
   uint64_t last_position;
   bool position_regressed;
+  unsigned resume_mode;
+  uint64_t pcm_hash;
+  atomic_bool resume_failed;
 } seek_test_state_t;
 static int seek_audio_info(void *user, h2_audio_info_t *out) {
   (void)user;
@@ -3254,6 +3257,11 @@ static int seek_pcm_write(h2_pal_audio_track_t *track,
   (void)timeout_ms;
   assert(frame->bytes == 320u);
   seek_test_state_t *state = track->user;
+  if (state->resume_mode) {
+    const uint8_t *bytes = frame->data;
+    for (size_t i = 0; i < frame->bytes; ++i)
+      state->pcm_hash = (state->pcm_hash ^ bytes[i]) * UINT64_C(1099511628211);
+  }
   const unsigned writes = atomic_fetch_add(&state->writes, 1u) + 1u;
   if (state->service) {
     if (state->switch_at && writes == state->switch_at)
@@ -3521,6 +3529,106 @@ static void test_device_player_timed_start(void) {
   assert(atomic_load(&state.writes) == seek_frames(&state, 0));
   assert(atomic_load(&state.calls) == 1u && !state.ranges[0][0]);
 
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_gizclaw_test_set_telemetry_send(NULL, NULL);
+}
+
+enum { RESUME_SUCCESS = 1, RESUME_200, RESUME_EXHAUST, RESUME_CANCEL,
+       RESUME_BASELINE, RESUME_BAD_RANGE };
+static int resume_http(void *user, const h2_pal_http_request_t *request,
+                       h2_pal_http_response_t *response) {
+  seek_test_state_t *state = user;
+  const unsigned call = atomic_fetch_add(&state->calls, 1u);
+  assert(call < 5u);
+  const size_t total = state->fixture.len;
+  size_t first = 0;
+  if (call) {
+    assert(request->header_count == 1u);
+    assert(sscanf(request->headers[0].value.data, "bytes=%zu-", &first) == 1);
+    assert(first < total);
+    assert(first == total / 3u + (call - 1u) * 1000u ||
+           (state->resume_mode == RESUME_SUCCESS && first == total / 3u));
+  } else {
+    assert(request->header_count == 0u);
+    assert(h2_pal_http_deliver_response_header(request, "Accept-Ranges", 13,
+                                               "bytes", 5) == H2_PAL_OK);
+  }
+  response->status_code = call && state->resume_mode != RESUME_200 ? 206 : 200;
+  response->content_length = (int64_t)(call && state->resume_mode == RESUME_200
+                                           ? total : total - first);
+  if (call && state->resume_mode != RESUME_200) {
+    char value[64];
+    (void)snprintf(value, sizeof(value), "bytes %zu-%zu/%zu", first,
+                   total - 1u,
+                   total + (state->resume_mode == RESUME_BAD_RANGE ? 1u : 0u));
+    assert(h2_pal_http_deliver_response_header(request, "Content-Range", 13,
+                                               value, strlen(value)) == H2_PAL_OK);
+  }
+  if (call && state->resume_mode == RESUME_200)
+    return seek_body(request, state->fixture.bytes, total);
+  if (call && state->resume_mode == RESUME_SUCCESS)
+    return seek_body(request, state->fixture.bytes + first, total - first);
+  if (state->resume_mode == RESUME_BASELINE)
+    return seek_body(request, state->fixture.bytes, total);
+  const size_t chunk = call ? 1000u : total / 3u;
+  int rc = seek_body(request, state->fixture.bytes + first, chunk);
+  atomic_store(&state->resume_failed, true);
+  return rc == H2_PAL_OK ? H2_PAL_ERR_CLOSED : rc;
+}
+
+static void test_device_player_resume(void) {
+  static seek_test_state_t state;
+  memset(&state, 0, sizeof(state));
+  seek_fixture_build(&state);
+  const h2_pal_audio_vtable_t audio_vtable = {.get_info = seek_audio_info,
+    .start_speaker = seek_speaker, .create_track = seek_track_create};
+  const h2_pal_audio_api_t audio = {.user = &state, .vtable = &audio_vtable};
+  const h2_pal_http_vtable_t http_vtable = {.request = resume_http};
+  const h2_pal_http_api_t http = {.user = &state, .vtable = &http_vtable};
+  test_env_t env;
+  h2_gizclaw_service_t *service = seek_service(&env, &audio, &http);
+  h2_gizclaw_player_playlist_entry_t entry = {
+      .url = device_span("https://example.test/episode.ogg"), .duration_ms = 30000};
+  assert(h2_gizclaw_player_playlist_set(service, &entry, 1) == H2_PAL_OK);
+  state.resume_mode = RESUME_SUCCESS;
+  state.pcm_hash = UINT64_C(1469598103934665603);
+  assert(h2_gizclaw_player_play_index(service, 0) == H2_PAL_OK);
+  speaker_wait_player(service, "ended");
+  const uint64_t resumed_hash = state.pcm_hash;
+  assert(atomic_load(&state.calls) == 2u);
+  assert(atomic_load(&state.writes) == seek_frames(&state, 0));
+
+  /* The complete PCM stream is identical to an uninterrupted response. */
+  atomic_store(&state.calls, 0u);
+  atomic_store(&state.writes, 0u);
+  state.resume_mode = RESUME_BASELINE;
+  state.pcm_hash = UINT64_C(1469598103934665603);
+  assert(h2_gizclaw_player_play_index(service, 0) == H2_PAL_OK);
+  speaker_wait_player(service, "ended");
+  assert(atomic_load(&state.calls) == 1u);
+  assert(state.pcm_hash == resumed_hash);
+
+  const unsigned modes[] = {RESUME_200, RESUME_BAD_RANGE, RESUME_EXHAUST};
+  for (size_t i = 0; i < 3u; ++i) {
+    state.resume_mode = modes[i];
+    atomic_store(&state.calls, 0u);
+    assert(h2_gizclaw_player_play_index(service, 0) == H2_PAL_OK);
+    speaker_wait_player(service, "error");
+    assert(atomic_load(&state.calls) ==
+           (modes[i] == RESUME_EXHAUST ? 4u : 2u));
+  }
+
+  state.resume_mode = RESUME_CANCEL;
+  atomic_store(&state.calls, 0u);
+  atomic_store(&state.resume_failed, false);
+  assert(h2_gizclaw_player_play_index(service, 0) == H2_PAL_OK);
+  for (unsigned i = 0; !atomic_load(&state.resume_failed); ++i) {
+    assert(i < 2000u);
+    h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
+  }
+  assert(h2_gizclaw_player_stop(service) == H2_PAL_OK);
+  assert(atomic_load(&state.calls) == 1u);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
   h2_gizclaw_test_set_telemetry_send(NULL, NULL);
@@ -13408,6 +13516,7 @@ int main(int argc, char **argv) {
   test_device_provider_pal_and_player();
   test_device_playback_speaker_hooks();
   test_device_player_timed_start();
+  test_device_player_resume();
   test_device_player_rate();
   test_device_forwards_find_and_social_ping();
   test_device_configuration_rpcs();

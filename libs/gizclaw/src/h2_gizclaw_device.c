@@ -1205,6 +1205,7 @@ static uint32_t io_timeout(h2_gizclaw_device_t *d) {
  * 1 s pages the estimate drifted up to ~2 s; 5 s landed early for every start
  * at a cost of a few seconds of skipped bytes. */
 #define AUDIO_SEEK_BACKOFF_MS 5000u
+#define AUDIO_RESUME_MAX_ATTEMPTS 3u
 struct audio_download {
   h2_gizclaw_device_t *device;
   char url[1025];
@@ -1223,13 +1224,19 @@ struct audio_download {
   /* Content-Range as delivered; range_total stays 0 unless it was valid. */
   bool range_seen, body_checked;
   uint64_t range_first, range_last, range_total;
+  bool accept_ranges;
+  uint64_t header_length;
+  uint64_t request_received;
+  atomic_bool stalled;
+  bool retrying;
   atomic_bool cancel;
   bool done, ready, music;
   int result;
 };
 static int audio_cancel(void *user) {
   audio_download_t *download = user;
-  return atomic_load(&download->cancel) || interrupted(download->device);
+  return atomic_load(&download->cancel) ||
+         atomic_load(&download->stalled) || interrupted(download->device);
 }
 static bool parse_u64(const char **p, const char *end, uint64_t *out) {
   const char *start = *p;
@@ -1274,6 +1281,19 @@ static int audio_header(void *user, const h2_pal_http_request_t *request,
                         h2_pal_http_str_t name, h2_pal_http_str_t value) {
   (void)request;
   audio_download_t *download = user;
+  if (header_is(name, "accept-ranges")) {
+    if (header_is(value, "bytes"))
+      download->accept_ranges = true;
+    return H2_PAL_OK;
+  }
+  if (header_is(name, "content-length")) {
+    const char *p = value.data;
+    uint64_t length = 0;
+    if (parse_u64(&p, value.data + value.len, &length) &&
+        p == value.data + value.len)
+      download->header_length = length;
+    return H2_PAL_OK;
+  }
   if (!header_is(name, "content-range"))
     return H2_PAL_OK;
   uint64_t first = 0, last = 0, total = 0;
@@ -1318,6 +1338,13 @@ static int audio_read(void *user, const h2_pal_http_request_t *request,
       return H2_PAL_ERR_FORMAT;
     download->body_checked = true;
   }
+  if (download->expected_total &&
+      (download->first >= download->expected_total ||
+       download->request_received >
+           download->expected_total - download->first ||
+       length > download->expected_total - download->first -
+                    download->request_received))
+    return H2_PAL_ERR_FORMAT;
   size_t offset = 0;
   while (offset < length) {
     if (audio_cancel(download))
@@ -1332,6 +1359,7 @@ static int audio_read(void *user, const h2_pal_http_request_t *request,
     memcpy(download->data + tail, chunk + offset, count);
     download->count += count;
     download->length += count;
+    download->request_received += count;
     unlock(d);
     offset += count;
     if (!count)
@@ -1344,20 +1372,13 @@ static void audio_download_worker(void *user) {
   h2_gizclaw_device_t *d = download->device;
   uint8_t chunk[2048];
   char range[48];
-  if (download->last == UINT64_MAX)
-    (void)snprintf(range, sizeof(range), "bytes=%llu-",
-                   (unsigned long long)download->first);
-  else
-    (void)snprintf(range, sizeof(range), "bytes=%llu-%llu",
-                   (unsigned long long)download->first,
-                   (unsigned long long)download->last);
-  const h2_pal_http_header_t header = {{"Range", 5}, {range, strlen(range)}};
+  h2_pal_http_header_t header = {{"Range", 5}, {range, 0}};
   h2_pal_http_request_t request = {
       .method = H2_PAL_HTTP_GET,
       .url = {download->url, strlen(download->url)},
       .headers = download->ranged ? &header : NULL,
       .header_count = download->ranged ? 1u : 0u,
-      .response_header_cb = download->ranged ? audio_header : NULL,
+      .response_header_cb = audio_header,
       .response_header_user = download,
       /* Backpressure can span the whole song. The reader enforces a bounded
        * no-progress timeout and cancels this request on stop or starvation. */
@@ -1372,26 +1393,97 @@ static void audio_download_worker(void *user) {
       .allocator = d->config.allocator,
   };
   h2_pal_http_response_t response = {0};
-  int rc = h2_pal_http_request(d->config.http, &request, &response);
-  lock(d);
-  const uint64_t partial = download->range_total
-                               ? download->range_last - download->range_first + 1
-                               : 0;
-  const bool require_partial = download->expected_total != 0;
-  unlock(d);
-  /* A partial body is held to its own length: status 206 and exactly the
-   * bytes Content-Range promised, so a short slice is never taken as an
-   * early end of the track. */
-  if (rc == H2_PAL_OK &&
-      (partial
-           ? response.status_code != 206 || download->length != partial ||
-                 (response.content_length >= 0 &&
-                  (uint64_t)response.content_length != partial)
-           : require_partial || response.status_code < 200 ||
-                 response.status_code >= 300 || download->length == 0 ||
-                 (response.content_length >= 0 &&
-                  (uint64_t)response.content_length != download->length)))
-    rc = H2_PAL_ERR_FORMAT;
+  int rc = H2_PAL_OK;
+  const uint64_t origin = download->first;
+  uint64_t total = download->expected_total;
+  for (unsigned attempt = 0;; ++attempt) {
+    const uint64_t first = origin + download->length;
+    const bool resume = attempt != 0;
+    if (resume) {
+      request.headers = &header;
+      request.header_count = 1u;
+      download->ranged = true;
+      download->first = first;
+      download->last = UINT64_MAX;
+      download->expected_total = total;
+      download->range_seen = false;
+      download->range_total = 0;
+      download->body_checked = false;
+      download->header_length = 0;
+      download->request_received = 0;
+      atomic_store(&download->stalled, false);
+      lock(d);
+      download->retrying = false;
+      unlock(d);
+    }
+    if (request.header_count) {
+      if (download->last == UINT64_MAX)
+        (void)snprintf(range, sizeof(range), "bytes=%llu-",
+                       (unsigned long long)download->first);
+      else
+        (void)snprintf(range, sizeof(range), "bytes=%llu-%llu",
+                       (unsigned long long)download->first,
+                       (unsigned long long)download->last);
+      header.value = (h2_pal_http_str_t){range, strlen(range)};
+    }
+    const uint64_t before = download->length;
+    response = (h2_pal_http_response_t){0};
+    rc = h2_pal_http_request(d->config.http, &request, &response);
+    if (rc != H2_PAL_OK && atomic_load(&download->stalled) &&
+        !atomic_load(&download->cancel) && !interrupted(d))
+      rc = H2_PAL_ERR_TIMEOUT;
+    const uint64_t received = download->length - before;
+    lock(d);
+    const uint64_t partial = download->range_total
+                                 ? download->range_last - download->range_first + 1
+                                 : 0;
+    const bool valid_range = range_acceptable(download);
+    unlock(d);
+    if (rc == H2_PAL_OK &&
+        (partial
+             ? response.status_code != 206 || received != partial ||
+                   (response.content_length >= 0 &&
+                    (uint64_t)response.content_length != partial)
+             : download->expected_total || response.status_code < 200 ||
+                   response.status_code >= 300 || !received ||
+                   (response.content_length >= 0 &&
+                    (uint64_t)response.content_length != received)))
+      rc = H2_PAL_ERR_FORMAT;
+    if (!total) {
+      if (download->range_total)
+        total = download->range_total;
+      else if (!download->ranged && download->header_length)
+        total = download->header_length;
+      else if (!download->ranged && response.content_length > 0)
+        total = (uint64_t)response.content_length;
+    }
+    const bool can_resume =
+        rc != H2_PAL_OK && rc != H2_PAL_ERR_FORMAT &&
+        !atomic_load(&download->cancel) && !interrupted(d) &&
+        attempt < AUDIO_RESUME_MAX_ATTEMPTS && download->length > 0 &&
+        total > first + received &&
+        (download->range_total || download->accept_ranges) &&
+        (!resume || (response.status_code == 206 && valid_range &&
+                     response.content_length >= 0 &&
+                     (uint64_t)response.content_length == total - first));
+    if (!can_resume)
+      break;
+    h2_pal_http_response_free(d->config.http, &response);
+    response = (h2_pal_http_response_t){0};
+    lock(d);
+    download->retrying = true;
+    unlock(d);
+    /* Sleep in short pieces so stop and generation changes take effect. */
+    for (unsigned waited = 0; waited < attempt * 200u + 200u; waited += 10u) {
+      if (atomic_load(&download->cancel) || interrupted(d))
+        break;
+      (void)h2_pal_time_sleep_ms(d->config.time, 10u);
+    }
+    if (atomic_load(&download->cancel) || interrupted(d)) {
+      rc = H2_PAL_ERR_CLOSED;
+      break;
+    }
+  }
   char message[160];
   (void)snprintf(message, sizeof(message),
                  "audio-download status=%d range=%s bytes=%llu rc=%d",
@@ -1460,10 +1552,13 @@ static h2_pal_result_t audio_stream_read(void *user, uint8_t *out,
       previous = count;
       progress_at = now;
     }
-    if (now - progress_at >= io_timeout(d)) {
-      atomic_store(&download->cancel, true);
-      return H2_PAL_ERR_TIMEOUT;
-    }
+    lock(d);
+    const bool retrying = download->retrying;
+    unlock(d);
+    if (retrying || atomic_load(&download->stalled))
+      progress_at = now;
+    else if (now - progress_at >= io_timeout(d))
+      atomic_store(&download->stalled, true);
     (void)h2_pal_time_sleep_ms(d->config.time, 5);
   }
 }
@@ -1508,6 +1603,7 @@ static int start_audio_download(h2_gizclaw_device_t *d, const char *url,
           ? d->config.audio_prebuffer_bytes
           : (download->capacity < 16384u ? download->capacity : 16384u);
   atomic_init(&download->cancel, false);
+  atomic_init(&download->stalled, false);
   d->download = download;
   download->data = h2_pal_mem_alloc(d->config.allocator, download->capacity);
   if (!download->data) {
