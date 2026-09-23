@@ -958,8 +958,10 @@ int h2_jieli_loader_platform_init(
     return H2_PAL_ERR_INVALID_ARG;
   }
   memset(&state, 0, sizeof(state));
-  if (h2_atomic_bool_init(&state.burn_waiting, false) != H2_ATOMIC_OK) {
-    return H2_PAL_ERR_NO_MEMORY;
+  h2_atomic_result_t atomic_rc = h2_atomic_bool_init(&state.burn_waiting, false);
+  if (atomic_rc != H2_ATOMIC_OK) {
+    return atomic_rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
+                                               : H2_PAL_ERR_NO_MEMORY;
   }
   state.fs = fs;
   state.pref = pref;

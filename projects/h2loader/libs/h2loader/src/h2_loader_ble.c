@@ -749,14 +749,17 @@ int h2_loader_ble_service_open(
         return H2_PAL_ERR_NO_MEMORY;
     }
     memset(service, 0, sizeof(*service));
-    if (h2_atomic_int_init(
-            &service->advertising_pause_request,
-            H2_LOADER_BLE_ADV_PAUSE_REQUEST_NONE) != H2_ATOMIC_OK ||
-        h2_atomic_bool_init(&service->closing_requested, false) != H2_ATOMIC_OK) {
+    h2_atomic_result_t atomic_rc = h2_atomic_int_init(
+        &service->advertising_pause_request,
+        H2_LOADER_BLE_ADV_PAUSE_REQUEST_NONE);
+    if (atomic_rc == H2_ATOMIC_OK)
+        atomic_rc = h2_atomic_bool_init(&service->closing_requested, false);
+    if (atomic_rc != H2_ATOMIC_OK) {
         h2_atomic_int_destroy(&service->advertising_pause_request);
         h2_atomic_bool_destroy(&service->closing_requested);
         h2_pal_mem_free(config->api.allocator, service);
-        return H2_PAL_ERR_NO_MEMORY;
+        return atomic_rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
+                                                   : H2_PAL_ERR_NO_MEMORY;
     }
     service->config = *config;
     service->active_conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;

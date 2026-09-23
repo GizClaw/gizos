@@ -485,8 +485,11 @@ int h2_bk_h2loader_start_loader_iostreamikcp(
   state->command_config = *command_config;
   state->allocator = runtime->mem;
   state->task_api = runtime->task;
-  if (h2_atomic_bool_init(&state->stop_requested, false) != H2_ATOMIC_OK) {
-    return H2_PAL_ERR_NO_MEMORY;
+  h2_atomic_result_t atomic_rc =
+      h2_atomic_bool_init(&state->stop_requested, false);
+  if (atomic_rc != H2_ATOMIC_OK) {
+    return atomic_rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
+                                               : H2_PAL_ERR_NO_MEMORY;
   }
   int rc = transport_init(&state->transport, state->allocator,
                           &state->stop_requested);
@@ -623,8 +626,11 @@ int h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
   }
   h2_bk_app_serial_t *state = &s_app_serial;
   memset(state, 0, sizeof(*state));
-  if (h2_atomic_bool_init(&state->stop_requested, false) != H2_ATOMIC_OK) {
-    return H2_PAL_ERR_NO_MEMORY;
+  h2_atomic_result_t atomic_rc =
+      h2_atomic_bool_init(&state->stop_requested, false);
+  if (atomic_rc != H2_ATOMIC_OK) {
+    return atomic_rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
+                                               : H2_PAL_ERR_NO_MEMORY;
   }
   int rc = arm_pending_app_rollback(runtime->pref);
   if (rc == H2_PAL_OK) {

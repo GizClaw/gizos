@@ -873,16 +873,20 @@ int h2_loader_init(h2_loader_t *loader, const h2_loader_config_t *config) {
   if (loader->config.package.app_partition_id == 0u) {
     loader->config.package.app_partition_id = config->app_partition_id;
   }
-  if (h2_atomic_int_init(&loader->mfg_gate_bypass, 0) != H2_ATOMIC_OK ||
-      h2_atomic_int_init(&loader->implemented_commands,
-                         (int)H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED) != H2_ATOMIC_OK ||
-      h2_atomic_int_init(&loader->command_availability,
-                         (int)(H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED |
-                               H2_LOADER_COMMAND_AVAILABILITY_ALL)) != H2_ATOMIC_OK) {
+  h2_atomic_result_t atomic_rc = h2_atomic_int_init(&loader->mfg_gate_bypass, 0);
+  if (atomic_rc == H2_ATOMIC_OK)
+    atomic_rc = h2_atomic_int_init(&loader->implemented_commands,
+                                  (int)H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED);
+  if (atomic_rc == H2_ATOMIC_OK)
+    atomic_rc = h2_atomic_int_init(&loader->command_availability,
+                                  (int)(H2_LOADER_COMMAND_AVAILABILITY_INITIALIZED |
+                                        H2_LOADER_COMMAND_AVAILABILITY_ALL));
+  if (atomic_rc != H2_ATOMIC_OK) {
     h2_atomic_int_destroy(&loader->mfg_gate_bypass);
     h2_atomic_int_destroy(&loader->implemented_commands);
     h2_atomic_int_destroy(&loader->command_availability);
-    return H2_PAL_ERR_NO_MEMORY;
+    return atomic_rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
+                                               : H2_PAL_ERR_NO_MEMORY;
   }
   rc = h2_loader_package_init(&loader->package, &loader->config.package);
   if (rc != H2_PAL_OK) {

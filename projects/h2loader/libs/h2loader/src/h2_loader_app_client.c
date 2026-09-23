@@ -251,9 +251,12 @@ int h2_loader_app_client_run_return_console(
     console->read_byte = config->read_byte;
     console->write_user = config->write_user;
     console->write = config->write != NULL ? config->write : stdout_write;
-    if (h2_atomic_bool_init(&console->stop_requested, false) != H2_ATOMIC_OK) {
+    h2_atomic_result_t atomic_rc =
+        h2_atomic_bool_init(&console->stop_requested, false);
+    if (atomic_rc != H2_ATOMIC_OK) {
         h2_pal_mem_free(config->client->config.allocator, console);
-        return H2_PAL_ERR_NO_MEMORY;
+        return atomic_rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
+                                                   : H2_PAL_ERR_NO_MEMORY;
     }
     int rc = run_return_console(console);
     h2_atomic_bool_destroy(&console->stop_requested);
@@ -283,9 +286,12 @@ int h2_loader_app_client_start_return_console(
     console->read_byte = config->read_byte;
     console->write_user = config->write_user;
     console->write = config->write != NULL ? config->write : stdout_write;
-    if (h2_atomic_bool_init(&console->stop_requested, false) != H2_ATOMIC_OK) {
+    h2_atomic_result_t atomic_rc =
+        h2_atomic_bool_init(&console->stop_requested, false);
+    if (atomic_rc != H2_ATOMIC_OK) {
         h2_pal_mem_free(config->client->config.allocator, console);
-        return H2_PAL_ERR_NO_MEMORY;
+        return atomic_rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
+                                                   : H2_PAL_ERR_NO_MEMORY;
     }
     options.name = config->task_name != NULL
         ? config->task_name : h2_loader_return_task_name;
