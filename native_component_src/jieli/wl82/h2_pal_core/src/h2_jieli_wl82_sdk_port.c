@@ -8,12 +8,14 @@
  */
 
 #include "h2_jieli_wl82_sdk_port.h"
-#include "h2_jieli_wl82_platform_core.h"
 
 #include "system/includes.h"
 #include "system/timer.h"
 #include "event/event.h"
 #include "asm/cpu.h"
+
+/* The SDK declares bool before the PAL header includes stdbool.h. */
+#include "h2_jieli_wl82_platform_core.h"
 
 #include <string.h>
 

@@ -40,6 +40,7 @@ static H2_C11_ATOMIC_ATTR h2_pal_result_t h2_c11_u32_exchange(void * user, h2_pa
 
 static H2_C11_ATOMIC_ATTR h2_pal_result_t h2_c11_u32_compare_exchange(void * user, h2_pal_atomic_u32_t * value, uint32_t * expected, uint32_t desired, bool * out_exchanged, h2_pal_atomic_order_t order, h2_pal_atomic_order_t failure_order) {
     (void)user;
+    (void)failure_order;
     *out_exchanged = atomic_compare_exchange_strong_explicit(&value->storage, expected, desired, h2_c11_atomic_order(order), h2_c11_atomic_order(failure_order));
     return H2_PAL_OK;
 }
@@ -88,6 +89,7 @@ static H2_C11_ATOMIC_ATTR h2_pal_result_t h2_c11_i32_exchange(void * user, h2_pa
 
 static H2_C11_ATOMIC_ATTR h2_pal_result_t h2_c11_i32_compare_exchange(void * user, h2_pal_atomic_i32_t * value, int * expected, int desired, bool * out_exchanged, h2_pal_atomic_order_t order, h2_pal_atomic_order_t failure_order) {
     (void)user;
+    (void)failure_order;
     *out_exchanged = atomic_compare_exchange_strong_explicit(&value->storage, expected, desired, h2_c11_atomic_order(order), h2_c11_atomic_order(failure_order));
     return H2_PAL_OK;
 }
@@ -136,6 +138,7 @@ static H2_C11_ATOMIC_ATTR h2_pal_result_t h2_c11_bool_exchange(void * user, h2_p
 
 static H2_C11_ATOMIC_ATTR h2_pal_result_t h2_c11_bool_compare_exchange(void * user, h2_pal_atomic_bool_t * value, bool * expected, bool desired, bool * out_exchanged, h2_pal_atomic_order_t order, h2_pal_atomic_order_t failure_order) {
     (void)user;
+    (void)failure_order;
     *out_exchanged = atomic_compare_exchange_strong_explicit(&value->storage, expected, desired, h2_c11_atomic_order(order), h2_c11_atomic_order(failure_order));
     return H2_PAL_OK;
 }
@@ -160,6 +163,7 @@ static H2_C11_ATOMIC_ATTR h2_pal_result_t h2_c11_ptr_exchange(void * user, h2_pa
 
 static H2_C11_ATOMIC_ATTR h2_pal_result_t h2_c11_ptr_compare_exchange(void * user, h2_pal_atomic_ptr_t * value, void * * expected, void * desired, bool * out_exchanged, h2_pal_atomic_order_t order, h2_pal_atomic_order_t failure_order) {
     (void)user;
+    (void)failure_order;
     *out_exchanged = atomic_compare_exchange_strong_explicit(&value->storage, expected, desired, h2_c11_atomic_order(order), h2_c11_atomic_order(failure_order));
     return H2_PAL_OK;
 }
