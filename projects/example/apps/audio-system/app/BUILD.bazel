@@ -29,6 +29,7 @@ cc_library(
     ],
     deps = [
         ":tasks",
+        "//libs/atomic",
         "//libs/pal",
         "//libs/runtime",
         "//tools/bazel:vendor_third_party_opus",
