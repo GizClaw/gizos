@@ -26,6 +26,32 @@ static memory_order c11_order(h2_atomic_order_t order) {
 #define H2_ATOMIC_C11_ORDER(order) c11_order(order)
 #endif
 
+/* C11 forbids release/acq_rel loads, acquire/acq_rel stores, and release or
+ * acq_rel CAS failure orders. Invalid public order combinations are promoted
+ * to valid, conservative orders before reaching the C11 builtins. */
+static h2_atomic_order_t c11_load_order(h2_atomic_order_t order) {
+    return order == H2_ATOMIC_RELAXED || order == H2_ATOMIC_ACQUIRE ||
+                   order == H2_ATOMIC_SEQ_CST ? order : H2_ATOMIC_SEQ_CST;
+}
+static h2_atomic_order_t c11_store_order(h2_atomic_order_t order) {
+    return order == H2_ATOMIC_RELAXED || order == H2_ATOMIC_RELEASE ||
+                   order == H2_ATOMIC_SEQ_CST ? order : H2_ATOMIC_SEQ_CST;
+}
+static h2_atomic_order_t c11_failure_order(h2_atomic_order_t success,
+                                            h2_atomic_order_t failure) {
+    if (failure == H2_ATOMIC_RELAXED) return failure;
+    if (failure == H2_ATOMIC_ACQUIRE &&
+        (success == H2_ATOMIC_ACQUIRE || success == H2_ATOMIC_ACQ_REL ||
+         success == H2_ATOMIC_SEQ_CST)) return failure;
+    if (failure == H2_ATOMIC_SEQ_CST && success == H2_ATOMIC_SEQ_CST)
+        return failure;
+    return H2_ATOMIC_RELAXED;
+}
+#define H2_ATOMIC_C11_LOAD_ORDER(order) H2_ATOMIC_C11_ORDER(c11_load_order(order))
+#define H2_ATOMIC_C11_STORE_ORDER(order) H2_ATOMIC_C11_ORDER(c11_store_order(order))
+#define H2_ATOMIC_C11_FAILURE_ORDER(success, failure) \
+    H2_ATOMIC_C11_ORDER(c11_failure_order(success, failure))
+
 #define H2_ATOMIC_DEFINE_INTEGER(name, type) \
     struct h2_atomic_##name##_storage { _Atomic(type) value; }; \
     h2_atomic_result_t h2_atomic_##name##_init(h2_atomic_##name##_t *object, type initial) { \
@@ -42,17 +68,17 @@ static memory_order c11_order(h2_atomic_order_t order) {
         object->storage = NULL; \
     } \
     type h2_atomic_##name##_load(const h2_atomic_##name##_t *object, h2_atomic_order_t order) { \
-        return atomic_load_explicit(&object->storage->value, H2_ATOMIC_C11_ORDER(order)); \
+        return atomic_load_explicit(&object->storage->value, H2_ATOMIC_C11_LOAD_ORDER(order)); \
     } \
     void h2_atomic_##name##_store(h2_atomic_##name##_t *object, type next, h2_atomic_order_t order) { \
-        atomic_store_explicit(&object->storage->value, next, H2_ATOMIC_C11_ORDER(order)); \
+        atomic_store_explicit(&object->storage->value, next, H2_ATOMIC_C11_STORE_ORDER(order)); \
     } \
     type h2_atomic_##name##_exchange(h2_atomic_##name##_t *object, type next, h2_atomic_order_t order) { \
         return atomic_exchange_explicit(&object->storage->value, next, H2_ATOMIC_C11_ORDER(order)); \
     } \
     bool h2_atomic_##name##_compare_exchange(h2_atomic_##name##_t *object, type *expected, type desired, h2_atomic_order_t success, h2_atomic_order_t failure) { \
         (void)failure; \
-        return atomic_compare_exchange_strong_explicit(&object->storage->value, expected, desired, H2_ATOMIC_C11_ORDER(success), H2_ATOMIC_C11_ORDER(failure)); \
+        return atomic_compare_exchange_strong_explicit(&object->storage->value, expected, desired, H2_ATOMIC_C11_ORDER(success), H2_ATOMIC_C11_FAILURE_ORDER(success, failure)); \
     } \
     type h2_atomic_##name##_fetch_add(h2_atomic_##name##_t *object, type amount, h2_atomic_order_t order) { \
         return atomic_fetch_add_explicit(&object->storage->value, amount, H2_ATOMIC_C11_ORDER(order)); \
@@ -90,10 +116,10 @@ void h2_atomic_bool_destroy(h2_atomic_bool_t *object) {
     object->storage = NULL;
 }
 bool h2_atomic_bool_load(const h2_atomic_bool_t *object, h2_atomic_order_t order) {
-    return atomic_load_explicit(&object->storage->value, H2_ATOMIC_C11_ORDER(order));
+    return atomic_load_explicit(&object->storage->value, H2_ATOMIC_C11_LOAD_ORDER(order));
 }
 void h2_atomic_bool_store(h2_atomic_bool_t *object, bool next, h2_atomic_order_t order) {
-    atomic_store_explicit(&object->storage->value, next, H2_ATOMIC_C11_ORDER(order));
+    atomic_store_explicit(&object->storage->value, next, H2_ATOMIC_C11_STORE_ORDER(order));
 }
 bool h2_atomic_bool_exchange(h2_atomic_bool_t *object, bool next, h2_atomic_order_t order) {
     return atomic_exchange_explicit(&object->storage->value, next, H2_ATOMIC_C11_ORDER(order));
@@ -103,7 +129,7 @@ bool h2_atomic_bool_compare_exchange(h2_atomic_bool_t *object, bool *expected,
                                      h2_atomic_order_t failure) {
     (void)failure;
     return atomic_compare_exchange_strong_explicit(&object->storage->value, expected, desired,
-                                       H2_ATOMIC_C11_ORDER(success), H2_ATOMIC_C11_ORDER(failure));
+                                       H2_ATOMIC_C11_ORDER(success), H2_ATOMIC_C11_FAILURE_ORDER(success, failure));
 }
 
 struct h2_atomic_ptr_storage { _Atomic(void *) value; };
@@ -121,10 +147,10 @@ void h2_atomic_ptr_destroy(h2_atomic_ptr_t *object) {
     object->storage = NULL;
 }
 void *h2_atomic_ptr_load(const h2_atomic_ptr_t *object, h2_atomic_order_t order) {
-    return atomic_load_explicit(&object->storage->value, H2_ATOMIC_C11_ORDER(order));
+    return atomic_load_explicit(&object->storage->value, H2_ATOMIC_C11_LOAD_ORDER(order));
 }
 void h2_atomic_ptr_store(h2_atomic_ptr_t *object, void *next, h2_atomic_order_t order) {
-    atomic_store_explicit(&object->storage->value, next, H2_ATOMIC_C11_ORDER(order));
+    atomic_store_explicit(&object->storage->value, next, H2_ATOMIC_C11_STORE_ORDER(order));
 }
 void *h2_atomic_ptr_exchange(h2_atomic_ptr_t *object, void *next, h2_atomic_order_t order) {
     return atomic_exchange_explicit(&object->storage->value, next, H2_ATOMIC_C11_ORDER(order));
@@ -134,7 +160,7 @@ bool h2_atomic_ptr_compare_exchange(h2_atomic_ptr_t *object, void **expected,
                                     h2_atomic_order_t failure) {
     (void)failure;
     return atomic_compare_exchange_strong_explicit(&object->storage->value, expected, desired,
-                                       H2_ATOMIC_C11_ORDER(success), H2_ATOMIC_C11_ORDER(failure));
+                                       H2_ATOMIC_C11_ORDER(success), H2_ATOMIC_C11_FAILURE_ORDER(success, failure));
 }
 
 static atomic_flag s_flag_lock = ATOMIC_FLAG_INIT;

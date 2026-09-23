@@ -323,14 +323,17 @@ static h2_pal_result_t resolve_start(
     return H2_PAL_ERR_NO_MEMORY;
   }
   memset(resolver, 0, sizeof(*resolver));
-  if (h2_atomic_uint_init(&resolver->references, 2u) != H2_ATOMIC_OK ||
-      h2_atomic_int_init(&resolver->result, H2_PAL_ERR_WOULD_BLOCK) != H2_ATOMIC_OK) {
+  h2_atomic_result_t atomic_rc = h2_atomic_uint_init(&resolver->references, 2u);
+  if (atomic_rc == H2_ATOMIC_OK)
+    atomic_rc = h2_atomic_int_init(&resolver->result, H2_PAL_ERR_WOULD_BLOCK);
+  if (atomic_rc != H2_ATOMIC_OK) {
     h2_atomic_uint_destroy(&resolver->references);
     h2_atomic_int_destroy(&resolver->result);
     free(resolver);
     stack_unlock();
     stack_leave();
-    return H2_PAL_ERR_NO_MEMORY;
+    return atomic_rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
+                                               : H2_PAL_ERR_NO_MEMORY;
   }
   resolver->slot = slot;
   resolver->callback_id = ++resolver_callback_id;

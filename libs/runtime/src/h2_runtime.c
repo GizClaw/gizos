@@ -405,10 +405,11 @@ h2_pal_result_t h2_runtime_init(
     runtime->target = config->target;
     runtime->chip = config->chip;
     runtime->private_state = private_state;
-    if (runtime_atomic_init(private_state) != H2_PAL_OK) {
+    h2_pal_result_t atomic_rc = runtime_atomic_init(private_state);
+    if (atomic_rc != H2_PAL_OK) {
         h2_pal_mem_free(config->mem, private_state);
         h2_pal_mem_free(config->mem, runtime);
-        return H2_PAL_ERR_NO_MEMORY;
+        return atomic_rc;
     }
 
 #define H2_RUNTIME_BIND_PROXY(field)                                                \

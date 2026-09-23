@@ -527,6 +527,8 @@ static void managed_unref(void *user) {
   h2_pal_mem_free(allocator, request->response.result_payload);
   h2_pal_mem_free(allocator, request->response.error_message);
   h2_pal_mem_free(allocator, request->payload);
+  h2_atomic_uint_destroy(&request->refs);
+  h2_atomic_bool_destroy(&request->terminal);
   h2_pal_mem_free(allocator, request);
   /* This is the final access to the borrowed service. */
   (void)h2_pal_mutex_lock(service->config.sync, service->mutex);

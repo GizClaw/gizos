@@ -23,6 +23,15 @@ int main(void) {
     assert(h2_atomic_uint_compare_exchange(&count, &expected, 7u,
                                            H2_ATOMIC_ACQ_REL, H2_ATOMIC_ACQUIRE));
     assert(h2_atomic_uint_exchange(&count, 0u, H2_ATOMIC_SEQ_CST) == 7u);
+    /* Invalid C11 order combinations must be normalized by the provider. */
+    h2_atomic_uint_store(&count, 11u, H2_ATOMIC_ACQUIRE);
+    assert(h2_atomic_uint_load(&count, H2_ATOMIC_RELEASE) == 11u);
+    expected = 11u;
+    assert(h2_atomic_uint_compare_exchange(&count, &expected, 12u,
+                                           H2_ATOMIC_RELEASE, H2_ATOMIC_ACQUIRE));
+    expected = 12u;
+    assert(h2_atomic_uint_compare_exchange(&count, &expected, 13u,
+                                           H2_ATOMIC_RELAXED, H2_ATOMIC_ACQ_REL));
     h2_atomic_uint_destroy(&count);
     assert(count.storage == NULL);
 
