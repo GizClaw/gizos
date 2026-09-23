@@ -3,7 +3,7 @@
 
 #include "h2_loader_app_client.h"
 
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -141,8 +141,8 @@ struct h2_loader_ble_service {
      * pause, or the automatic Wi-Fi coexistence pause. */
     bool advertising_pause_manual;
     bool advertising_pause_auto;
-    atomic_int advertising_pause_request;
-    atomic_bool closing_requested;
+    h2_atomic_int_t advertising_pause_request;
+    h2_atomic_bool_t closing_requested;
     bool closing;
     uint8_t service_data[H2_LOADER_BLE_SERVICE_DATA_FIXED_LEN +
                          H2_LOADER_BLE_BOARD_MAX];
@@ -276,7 +276,7 @@ static void h2_loader_ble_link_task(void *ctx) {
         }
         (void)h2_pal_mutex_unlock(
             service->config.api.sync, service->link_mutex);
-        int advertising_pause_request = atomic_exchange(
+        int advertising_pause_request = h2_atomic_exchange(
             &service->advertising_pause_request,
             H2_LOADER_BLE_ADV_PAUSE_REQUEST_NONE);
         if (advertising_pause_request !=
@@ -545,7 +545,7 @@ static int h2_loader_ble_stop_link_task(h2_loader_ble_service_t *service) {
         (void)h2_pal_mutex_lock(
             service->config.api.sync, service->link_mutex);
         service->closing = true;
-        atomic_store(&service->closing_requested, true);
+        h2_atomic_store(&service->closing_requested, true);
         service->link_pending = false;
         (void)h2_pal_mutex_unlock(
             service->config.api.sync, service->link_mutex);
@@ -749,10 +749,15 @@ int h2_loader_ble_service_open(
         return H2_PAL_ERR_NO_MEMORY;
     }
     memset(service, 0, sizeof(*service));
-    atomic_init(
-        &service->advertising_pause_request,
-        H2_LOADER_BLE_ADV_PAUSE_REQUEST_NONE);
-    atomic_init(&service->closing_requested, false);
+    if (h2_atomic_int_init(
+            &service->advertising_pause_request,
+            H2_LOADER_BLE_ADV_PAUSE_REQUEST_NONE) != H2_ATOMIC_OK ||
+        h2_atomic_bool_init(&service->closing_requested, false) != H2_ATOMIC_OK) {
+        h2_atomic_int_destroy(&service->advertising_pause_request);
+        h2_atomic_bool_destroy(&service->closing_requested);
+        h2_pal_mem_free(config->api.allocator, service);
+        return H2_PAL_ERR_NO_MEMORY;
+    }
     service->config = *config;
     service->active_conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
     service->pending_conn_handle = H2_PAL_BLE_INVALID_CONN_HANDLE;
@@ -877,6 +882,8 @@ fail:
     if (service->server != NULL) {
         (void)h2_bleikcp_server_close(service->server);
     }
+    h2_atomic_int_destroy(&service->advertising_pause_request);
+    h2_atomic_bool_destroy(&service->closing_requested);
     h2_pal_mem_free(config->api.allocator, service);
     return rc;
 }
@@ -915,6 +922,8 @@ int h2_loader_ble_service_close(h2_loader_ble_service_t *service) {
         ? h2_bleikcp_server_close(service->server)
         : H2_PAL_OK;
     const h2_pal_mem_api_t *allocator = service->config.api.allocator;
+    h2_atomic_int_destroy(&service->advertising_pause_request);
+    h2_atomic_bool_destroy(&service->closing_requested);
     h2_pal_mem_free(allocator, service);
     return adv_rc != H2_PAL_OK ? adv_rc : server_rc;
 }
@@ -1059,10 +1068,10 @@ int h2_loader_ble_service_request_advertising_paused(
     if (service == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    if (atomic_load(&service->closing_requested)) {
+    if (h2_atomic_load(&service->closing_requested)) {
         return H2_PAL_ERR_CLOSED;
     }
-    atomic_store(
+    h2_atomic_store(
         &service->advertising_pause_request,
         paused ? H2_LOADER_BLE_ADV_PAUSE_REQUEST_PAUSE
                : H2_LOADER_BLE_ADV_PAUSE_REQUEST_RESUME);
