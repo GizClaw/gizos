@@ -720,8 +720,13 @@ static int text_round(voice_state_t *state) {
     rc = h2_gizclaw_session_snapshot(session, &snapshot);
     if (rc == H2_PAL_OK &&
         (snapshot.conversation_input_open || snapshot.can_start ||
-         snapshot.conversation != H2_GIZCLAW_SESSION_CONVERSATION_WAITING))
+         snapshot.conversation != H2_GIZCLAW_SESSION_CONVERSATION_WAITING)) {
+      printf("H2_GIZCLAW_E2E stage=text-waiting-assert status=FAIL "
+             "input_open=%d can_start=%d conversation=%d\n",
+             snapshot.conversation_input_open, snapshot.can_start,
+             (int)snapshot.conversation);
       rc = H2_PAL_ERR_INVALID_STATE;
+    }
   }
   while (rc == H2_PAL_OK &&
          (h2_atomic_load(&state->active) || h2_atomic_load(&state->rounds) == 0u)) {
@@ -729,18 +734,43 @@ static int text_round(voice_state_t *state) {
     if (rc == H2_PAL_OK)
       rc = step(state);
   }
-  if (rc == H2_PAL_OK)
+  if (rc != H2_PAL_OK) {
+    printf("H2_GIZCLAW_E2E stage=text-progress status=FAIL rc=%d "
+           "hook_error=%d active=%d completions=%u rounds=%u\n",
+           rc, h2_atomic_load(&state->hook_error),
+           h2_atomic_load(&state->active),
+           h2_atomic_load(&state->completions),
+           h2_atomic_load(&state->rounds));
+  }
+  if (rc == H2_PAL_OK) {
     rc = drain_completed_output(state);
+    if (rc != H2_PAL_OK)
+      printf("H2_GIZCLAW_E2E stage=text-drain status=FAIL rc=%d\n", rc);
+  }
   const size_t written = h2_atomic_load(&state->written);
   uint8_t leftover[2];
-  if (rc == H2_PAL_OK &&
-      (h2_atomic_load(&state->completions) != 1u ||
-       h2_atomic_load(&state->terminal_kind) != H2_GIZCLAW_OPERATION_FINISHED ||
-       h2_atomic_load(&state->rounds) != 1u || h2_atomic_load(&state->captured) != 0u ||
-       written == 0u || !h2_atomic_load(&state->non_silent) ||
-       h2_gizclaw_pcm_track_read(state->track, leftover, sizeof(leftover)) !=
-           H2_PAL_ERR_WOULD_BLOCK))
-    rc = H2_PAL_ERR_INVALID_STATE;
+  if (rc == H2_PAL_OK) {
+    const unsigned completions = h2_atomic_load(&state->completions);
+    const int terminal_kind = h2_atomic_load(&state->terminal_kind);
+    const unsigned rounds = h2_atomic_load(&state->rounds);
+    const size_t captured = h2_atomic_load(&state->captured);
+    const bool non_silent = h2_atomic_load(&state->non_silent);
+    const bool counts_valid =
+        completions == 1u && terminal_kind == H2_GIZCLAW_OPERATION_FINISHED &&
+        rounds == 1u && captured == 0u && written != 0u && non_silent;
+    const int leftover_rc =
+        counts_valid
+            ? h2_gizclaw_pcm_track_read(state->track, leftover, sizeof(leftover))
+            : H2_PAL_OK;
+    if (!counts_valid || leftover_rc != H2_PAL_ERR_WOULD_BLOCK) {
+      printf("H2_GIZCLAW_E2E stage=text-completion-assert status=FAIL "
+             "completions=%u terminal_kind=%d rounds=%u captured=%zu "
+             "written=%zu non_silent=%d leftover_checked=%d leftover_rc=%d\n",
+             completions, terminal_kind, rounds, captured, written, non_silent,
+             counts_valid, leftover_rc);
+      rc = H2_PAL_ERR_INVALID_STATE;
+    }
+  }
   if (rc == H2_PAL_OK) {
     const int terminal = h2_atomic_load(&state->terminal_result);
     rc = terminal == H2_PAL_OK ? H2_PAL_OK : terminal;
@@ -749,8 +779,13 @@ static int text_round(voice_state_t *state) {
     rc = h2_gizclaw_session_snapshot(session, &snapshot);
     if (rc == H2_PAL_OK &&
         (snapshot.conversation_input_open || snapshot.can_start ||
-         snapshot.conversation != H2_GIZCLAW_SESSION_CONVERSATION_IDLE))
+         snapshot.conversation != H2_GIZCLAW_SESSION_CONVERSATION_IDLE)) {
+      printf("H2_GIZCLAW_E2E stage=text-idle-assert status=FAIL "
+             "input_open=%d can_start=%d conversation=%d\n",
+             snapshot.conversation_input_open, snapshot.can_start,
+             (int)snapshot.conversation);
       rc = H2_PAL_ERR_INVALID_STATE;
+    }
   }
   evidence("h2_gizclaw_session_send_text", "session_send_text-assert", rc);
   printf("H2_GIZCLAW_E2E stage=voice mode=text result=%s rc=%d "
