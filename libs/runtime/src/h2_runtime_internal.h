@@ -3,7 +3,7 @@
 
 #include "h2_runtime.h"
 
-#include <stdatomic.h>
+#include "h2_atomic.h"
 
 #include "h2_runtime_system_state.h"
 
@@ -206,15 +206,15 @@ typedef struct h2_runtime_state_bank {
 #define H2_RUNTIME_STATE_SLOT_COUNT 3u
 
 typedef struct h2_runtime_state_publication {
-    atomic_int ready;
-    atomic_uint active_index;
+    h2_atomic_int_t ready;
+    h2_atomic_uint_t active_index;
     /*
      * Guards reader_count updates where atomic add is not lock-free (ARMv5):
      * the counters then use load/store under this test-and-set lock, taken
      * Unused where fetch_add is lock-free.
      */
-    atomic_flag reader_lock;
-    atomic_uint reader_count[H2_RUNTIME_STATE_SLOT_COUNT];
+    h2_atomic_flag_t reader_lock;
+    h2_atomic_uint_t reader_count[H2_RUNTIME_STATE_SLOT_COUNT];
     h2_runtime_state_bank_t banks[H2_RUNTIME_STATE_SLOT_COUNT];
     uint64_t copy_count;
     uint64_t switch_count;
@@ -303,7 +303,7 @@ struct h2_runtime_private {
     h2_pal_display_api_t display_proxy;
     /* All Audio proxy volume operations share this Runtime-owned state. */
     h2_pal_audio_api_t audio_backend;
-    atomic_flag audio_state_busy;
+    h2_atomic_flag_t audio_state_busy;
     bool audio_state_valid;
     h2_runtime_system_audio_state_t audio_state;
     /*
@@ -325,10 +325,10 @@ struct h2_runtime_private {
      * zero distinct from "no audio yet".
      */
 #if !defined(H2_RUNTIME_AUDIO_LEVELS) || H2_RUNTIME_AUDIO_LEVELS
-    atomic_uint audio_capture_level;
-    atomic_uint audio_capture_level_ms;
-    atomic_uint audio_playback_level;
-    atomic_uint audio_playback_level_ms;
+    h2_atomic_uint_t audio_capture_level;
+    h2_atomic_uint_t audio_capture_level_ms;
+    h2_atomic_uint_t audio_playback_level;
+    h2_atomic_uint_t audio_playback_level_ms;
 #endif
     h2_pal_audio_api_t audio_proxy;
     h2_pal_audio_decoder_api_t audio_decoder_proxy;
@@ -354,25 +354,25 @@ struct h2_runtime_private {
      * counter is a plain fetch_add; otherwise (ARMv5) updates run under
      * custom_event_lock.
      */
-    atomic_flag custom_event_lock;
-    atomic_uint custom_event_in_flight;
-    atomic_int custom_event_closed;
+    h2_atomic_flag_t custom_event_lock;
+    h2_atomic_uint_t custom_event_in_flight;
+    h2_atomic_int_t custom_event_closed;
 
     /*
      * Same split: fetch_add where it is lock-free, sequence_lock where not.
      */
-    atomic_flag sequence_lock;
-    atomic_uint next_sequence;
+    h2_atomic_flag_t sequence_lock;
+    h2_atomic_uint_t next_sequence;
     uint32_t dropped_event_count;
 
-    atomic_int system_event_active;
+    h2_atomic_int_t system_event_active;
     h2_pal_system_event_subscription_t *
         system_event_subscriptions[H2_RUNTIME_SYSTEM_EVENT_SUBSCRIPTION_MAX];
     size_t system_event_subscription_count;
 
-    atomic_int input_phase;
-    atomic_int input_stop_requested;
-    atomic_int input_worker_result;
+    h2_atomic_int_t input_phase;
+    h2_atomic_int_t input_stop_requested;
+    h2_atomic_int_t input_worker_result;
     uint32_t input_tick_ms;
     uint32_t input_button_poll_interval_ms;
     uint32_t input_nfc_poll_interval_ms;
@@ -445,26 +445,23 @@ h2_runtime_sequence_t h2_runtime_next_sequence(h2_runtime_t *runtime);
  * fetch_add to a library call the SDK does not provide, so those targets keep
  * a short test-and-set critical section instead.
  *
- * A bare spin on an atomic_flag is only safe without preemption: on a
+ * A bare spin on an h2_atomic_flag_t is only safe without preemption: on a
  * preemptive RTOS a waiter that outranks the holder on the holder's core pins
  * that core forever (ESP-IDF sys_evt vs. $runtime/input on core 0, which is
  * why the lock-free path exists). The remaining ARMv5 target schedules its
  * tasks cooperatively on libco coroutines, so a holder is never switched out
  * inside the critical section and the flag is never contended.
  */
-#if defined(ATOMIC_INT_LOCK_FREE) && ATOMIC_INT_LOCK_FREE == 2
-#define H2_RUNTIME_ATOMIC_ADD_LOCK_FREE 1
-#else
-#define H2_RUNTIME_ATOMIC_ADD_LOCK_FREE 0
-#endif
+/* The linked platform implementation provides fetch_add semantics. */
+#define H2_RUNTIME_ATOMIC_FETCH_ADD 1
 
-static inline void h2_runtime_flag_lock(atomic_flag *flag) {
-    while (atomic_flag_test_and_set_explicit(flag, memory_order_acquire)) {
+static inline void h2_runtime_flag_lock(h2_atomic_flag_t *flag) {
+    while (h2_atomic_flag_test_and_set(flag, H2_ATOMIC_ACQUIRE)) {
     }
 }
 
-static inline void h2_runtime_flag_unlock(atomic_flag *flag) {
-    atomic_flag_clear_explicit(flag, memory_order_release);
+static inline void h2_runtime_flag_unlock(h2_atomic_flag_t *flag) {
+    h2_atomic_flag_clear(flag, H2_ATOMIC_RELEASE);
 }
 
 h2_pal_result_t h2_runtime_emit_event(

@@ -54,6 +54,7 @@ RUNTIME_HDRS = [
 
 RUNTIME_DEPS = [
     ":tasks",
+    "//libs/atomic",
     "//libs/pal",
 ]
 
@@ -144,6 +145,7 @@ cc_test(
     }),
     deps = [
         ":runtime",
+        "//libs/atomic/providers/c11",
         "//libs/pal:test_allocator",
         "//libs/pal:unsupported",
     ],
@@ -169,6 +171,7 @@ cc_test(
     }),
     deps = [
         ":runtime",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
     ],
 )
@@ -193,6 +196,7 @@ cc_test(
     }),
     deps = [
         ":runtime",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
     ],
 )
@@ -213,6 +217,7 @@ cc_test(
     target_compatible_with = RUNTIME_HOST_ONLY,
     deps = [
         ":runtime_no_audio_levels",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
     ],
 )

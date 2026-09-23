@@ -772,9 +772,8 @@ static void test_pinned_reader_does_not_block_publication(void) {
                runtime, &bank, &slot_index) ==
            H2_PAL_OK);
     assert(bank != NULL);
-    const unsigned int initial_index = atomic_load_explicit(
-        &runtime->private_state->state_publication.active_index,
-        memory_order_acquire);
+    const unsigned int initial_index = h2_atomic_load_explicit(&runtime->private_state->state_publication.active_index,
+        H2_ATOMIC_ACQUIRE);
     assert(slot_index == initial_index);
 
     env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
@@ -782,9 +781,8 @@ static void test_pinned_reader_does_not_block_publication(void) {
         &env.time_state.now_ms,
         H2_RUNTIME_BUTTON_POLL_INTERVAL_MS);
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(atomic_load_explicit(
-               &runtime->private_state->state_publication.active_index,
-               memory_order_acquire) != initial_index);
+    assert(h2_atomic_load_explicit(&runtime->private_state->state_publication.active_index,
+               H2_ATOMIC_ACQUIRE) != initial_index);
     h2_runtime_button_state_t state;
     assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
            H2_PAL_OK);
@@ -823,25 +821,21 @@ static void test_restart_keeps_publication_and_reader_pins_valid(void) {
 
     assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
     for (size_t index = 0u; index < H2_RUNTIME_STATE_SLOT_COUNT; ++index) {
-        assert(atomic_load_explicit(
-                   &publication->reader_count[index],
-                   memory_order_relaxed) == 0u);
+        assert(h2_atomic_load_explicit(&publication->reader_count[index], H2_ATOMIC_RELAXED) == 0u);
     }
 
     /* The rebuilt publication still rotates slots for a concurrent reader. */
     assert(h2_runtime_state_read_begin(runtime, &bank, &slot_index) ==
            H2_PAL_OK);
     assert(bank != NULL);
-    const unsigned int pinned_index = atomic_load_explicit(
-        &publication->active_index, memory_order_acquire);
+    const unsigned int pinned_index = h2_atomic_load_explicit(&publication->active_index, H2_ATOMIC_ACQUIRE);
     assert(slot_index == pinned_index);
     env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
     atomic_store(
         &env.time_state.now_ms,
         H2_RUNTIME_BUTTON_POLL_INTERVAL_MS * 4u);
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(atomic_load_explicit(
-               &publication->active_index, memory_order_acquire) !=
+    assert(h2_atomic_load_explicit(&publication->active_index, H2_ATOMIC_ACQUIRE) !=
            pinned_index);
     assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
            H2_PAL_OK);
@@ -885,8 +879,7 @@ static void test_publication_defers_when_all_retired_slots_are_pinned(void) {
     assert(h2_runtime_state_read_begin(
                runtime, &bank, &slots[2]) == H2_PAL_OK);
 
-    const unsigned int active_before = atomic_load_explicit(
-        &publication->active_index, memory_order_acquire);
+    const unsigned int active_before = h2_atomic_load_explicit(&publication->active_index, H2_ATOMIC_ACQUIRE);
     const uint64_t deferred_before = publication->deferred_count;
     env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
     atomic_store(
@@ -895,16 +888,14 @@ static void test_publication_defers_when_all_retired_slots_are_pinned(void) {
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
     /* The event pre-publish and the end-of-poll publish both defer. */
     assert(publication->deferred_count == deferred_before + 2u);
-    assert(atomic_load_explicit(
-               &publication->active_index, memory_order_acquire) ==
+    assert(h2_atomic_load_explicit(&publication->active_index, H2_ATOMIC_ACQUIRE) ==
            active_before);
     assert(runtime->private_state->state_dirty != 0);
 
     assert(h2_runtime_state_read_end(runtime, slots[0]) ==
            H2_PAL_OK);
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
-    assert(atomic_load_explicit(
-               &publication->active_index, memory_order_acquire) !=
+    assert(h2_atomic_load_explicit(&publication->active_index, H2_ATOMIC_ACQUIRE) !=
            active_before);
     assert(runtime->private_state->state_dirty == 0);
     assert(h2_runtime_state_read_end(runtime, slots[1]) ==
@@ -926,26 +917,22 @@ static void test_publication_counts_and_event_ceiling(void) {
     uint64_t copies = publication->copy_count;
     uint64_t switches = publication->switch_count;
     env.button_state.group_reads = 0u;
-    unsigned int initial_bank = atomic_load_explicit(
-        &publication->active_index, memory_order_acquire);
+    unsigned int initial_bank = h2_atomic_load_explicit(&publication->active_index, H2_ATOMIC_ACQUIRE);
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
     assert(publication->copy_count == copies);
     assert(publication->switch_count == switches);
-    assert(atomic_load_explicit(
-               &publication->active_index, memory_order_acquire) ==
+    assert(h2_atomic_load_explicit(&publication->active_index, H2_ATOMIC_ACQUIRE) ==
            initial_bank);
     size_t allocations =
         atomic_load(&env.allocator_state.alloc_calls);
-    unsigned int first_poll_bank = atomic_load_explicit(
-        &publication->active_index, memory_order_acquire);
+    unsigned int first_poll_bank = h2_atomic_load_explicit(&publication->active_index, H2_ATOMIC_ACQUIRE);
     copies = publication->copy_count;
     switches = publication->switch_count;
 
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
     assert(publication->copy_count == copies);
     assert(publication->switch_count == switches);
-    assert(atomic_load_explicit(
-               &publication->active_index, memory_order_acquire) ==
+    assert(h2_atomic_load_explicit(&publication->active_index, H2_ATOMIC_ACQUIRE) ==
            first_poll_bank);
     copies = publication->copy_count;
     switches = publication->switch_count;
@@ -957,8 +944,7 @@ static void test_publication_counts_and_event_ceiling(void) {
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
     assert(publication->copy_count == copies + 1u);
     assert(publication->switch_count == switches + 1u);
-    assert(atomic_load_explicit(
-               &publication->active_index, memory_order_acquire) !=
+    assert(h2_atomic_load_explicit(&publication->active_index, H2_ATOMIC_ACQUIRE) !=
            first_poll_bank);
     copies = publication->copy_count;
     switches = publication->switch_count;
@@ -970,8 +956,7 @@ static void test_publication_counts_and_event_ceiling(void) {
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
     assert(publication->copy_count == copies + 1u);
     assert(publication->switch_count == switches + 1u);
-    assert(atomic_load_explicit(
-               &publication->active_index, memory_order_acquire) !=
+    assert(h2_atomic_load_explicit(&publication->active_index, H2_ATOMIC_ACQUIRE) !=
            first_poll_bank);
     assert(atomic_load(&env.allocator_state.alloc_calls) == allocations);
 
@@ -987,8 +972,7 @@ static void test_publication_counts_and_event_ceiling(void) {
         event_count += 1u;
     }
     assert(event_count == 4u);
-    const unsigned int active_index = atomic_load_explicit(
-        &publication->active_index, memory_order_acquire);
+    const unsigned int active_index = h2_atomic_load_explicit(&publication->active_index, H2_ATOMIC_ACQUIRE);
     const h2_runtime_state_bank_t *active =
         &publication->banks[active_index];
     assert(active->event_sequence_ceiling >= last_sequence);
@@ -1217,8 +1201,8 @@ static void test_concurrent_sequences_are_unique_across_wrap(void) {
     h2_runtime_t *runtime = concurrency_runtime_create(&env);
     /* Start just below the wrap so the run crosses UINT32_MAX -> 1. */
     const size_t total = SEQUENCE_TAKER_COUNT * SEQUENCE_TAKES_PER_THREAD;
-    runtime->private_state->next_sequence =
-        (h2_runtime_sequence_t)(UINT32_MAX - total / 2u);
+    h2_atomic_uint_store(&runtime->private_state->next_sequence,
+        (h2_runtime_sequence_t)(UINT32_MAX - total / 2u), H2_ATOMIC_SEQ_CST);
 
     static sequence_taker_t takers[SEQUENCE_TAKER_COUNT];
     pthread_t threads[SEQUENCE_TAKER_COUNT];
@@ -1241,7 +1225,7 @@ static void test_concurrent_sequences_are_unique_across_wrap(void) {
         assert(i == 0u || all[i] != all[i - 1u]);
     }
     /* Exactly total values were issued, and 0 was skipped once at the wrap. */
-    assert(runtime->private_state->next_sequence ==
+    assert(h2_atomic_uint_load(&runtime->private_state->next_sequence, H2_ATOMIC_SEQ_CST) ==
            (h2_runtime_sequence_t)(UINT32_MAX - total / 2u + total + 1u));
 
     h2_runtime_deinit(runtime);
