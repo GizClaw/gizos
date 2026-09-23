@@ -28,6 +28,7 @@ cc_library(
         "include",
     ],
     deps = [
+        "//libs/atomic",
         "//libs/pal",
         "//tools/bazel:vendor_third_party_tinyh264",
     ],
@@ -57,7 +58,7 @@ cc_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal"],
+    deps = ["//libs/atomic/providers/c11", "//libs/pal"],
 )
 
 cc_test(

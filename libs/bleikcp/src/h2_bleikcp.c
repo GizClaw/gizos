@@ -2,7 +2,7 @@
 #include "h2_bleikcp_task_names.h"
 
 #include <limits.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -27,17 +27,17 @@ union h2_bleikcp_kcp_block {
 };
 
 static _Thread_local const h2_pal_mem_api_t *s_kcp_allocator;
-static atomic_flag s_kcp_lock = ATOMIC_FLAG_INIT;
+static h2_atomic_flag_t s_kcp_lock = {0};
 static bool s_kcp_hooks_installed;
 static h2_bleikcp_kcp_block_t *s_kcp_blocks;
 
 static void h2_bleikcp_kcp_lock(void) {
-    while (atomic_flag_test_and_set_explicit(&s_kcp_lock, memory_order_acquire)) {
+    while (h2_atomic_flag_test_and_set(&s_kcp_lock, H2_ATOMIC_ACQUIRE)) {
     }
 }
 
 static void h2_bleikcp_kcp_unlock(void) {
-    atomic_flag_clear_explicit(&s_kcp_lock, memory_order_release);
+    h2_atomic_flag_clear(&s_kcp_lock, H2_ATOMIC_RELEASE);
 }
 
 static void *h2_bleikcp_kcp_alloc(size_t size) {

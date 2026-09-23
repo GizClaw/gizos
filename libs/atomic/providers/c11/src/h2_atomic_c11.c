@@ -125,6 +125,16 @@ bool h2_atomic_ptr_compare_exchange(h2_atomic_ptr_t *object, void **expected,
 }
 
 struct h2_atomic_flag_storage { _Atomic(bool) value; };
+static atomic_flag s_flag_init_lock = ATOMIC_FLAG_INIT;
+static void ensure_flag_storage(h2_atomic_flag_t *object) {
+    while (atomic_flag_test_and_set_explicit(&s_flag_init_lock, memory_order_acquire)) {}
+    if (object->storage == NULL) {
+        object->storage = malloc(sizeof(*object->storage));
+        if (object->storage != NULL)
+            atomic_store_explicit(&object->storage->value, false, memory_order_relaxed);
+    }
+    atomic_flag_clear_explicit(&s_flag_init_lock, memory_order_release);
+}
 h2_atomic_result_t h2_atomic_flag_init(h2_atomic_flag_t *object) {
     if (object == NULL) return H2_ATOMIC_INVALID_ARG;
     if (object->storage != NULL) return H2_ATOMIC_INVALID_STATE;
@@ -139,8 +149,12 @@ void h2_atomic_flag_destroy(h2_atomic_flag_t *object) {
     object->storage = NULL;
 }
 bool h2_atomic_flag_test_and_set(h2_atomic_flag_t *object, h2_atomic_order_t order) {
+    ensure_flag_storage(object);
+    if (object->storage == NULL) abort();
     return atomic_exchange_explicit(&object->storage->value, true, c11_order(order));
 }
 void h2_atomic_flag_clear(h2_atomic_flag_t *object, h2_atomic_order_t order) {
+    ensure_flag_storage(object);
+    if (object->storage == NULL) abort();
     atomic_store_explicit(&object->storage->value, false, c11_order(order));
 }
