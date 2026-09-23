@@ -1462,10 +1462,13 @@ static void audio_download_worker(void *user) {
         !atomic_load(&download->cancel) && !interrupted(d) &&
         attempt < AUDIO_RESUME_MAX_ATTEMPTS && download->length > 0 &&
         total > first + received &&
-        (download->range_total || download->accept_ranges) &&
+        (download->range_total || download->accept_ranges ||
+         (!resume && response.status_code == 200)) &&
+        (resume || response.status_code == 200 ||
+         (response.status_code == 206 && valid_range)) &&
         (!resume || (response.status_code == 206 && valid_range &&
-                     response.content_length >= 0 &&
-                     (uint64_t)response.content_length == total - first));
+                     (response.content_length < 0 ||
+                      (uint64_t)response.content_length == total - first)));
     if (!can_resume)
       break;
     h2_pal_http_response_free(d->config.http, &response);

@@ -253,6 +253,11 @@ HTTP response header 通过 request 的 `response_header_cb + response_header_us
 必须去除协议行结尾和 header value 两侧 OWS，但保留字段内容。Callback 返回非
 `H2_PAL_OK` 时 backend 中止当前请求并透传该结果。Retry 可以重新交付 header，调用方
 必须按一次完整 attempt 处理，不得在 `request()` 返回后保存 callback context。
+若 body 中途失败，HTTP PAL 仍保留最后一次 attempt 已收到的 `response.status_code`
+和 `response.content_length`，已同步交付的 `Content-Length`、`Content-Range`、
+`Accept-Ranges` 等响应头也可用于判断恢复方式；`status_code=0` 表示没有收到最终
+响应头。失败时 response 中已接收的部分有效，调用方仍须调用 `response_free()`；
+provider 内部重试或重定向时，不得把前一次响应误报为最后一次响应。
 
 ### HAL 硬件能力抽象
 

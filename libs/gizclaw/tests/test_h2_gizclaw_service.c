@@ -3535,7 +3535,8 @@ static void test_device_player_timed_start(void) {
 }
 
 enum { RESUME_SUCCESS = 1, RESUME_200, RESUME_EXHAUST, RESUME_CANCEL,
-       RESUME_BASELINE, RESUME_BAD_RANGE };
+       RESUME_BASELINE, RESUME_BAD_RANGE, RESUME_MULTIPLE,
+       RESUME_NO_ACCEPT_SUCCESS, RESUME_NO_ACCEPT_200 };
 static int resume_http(void *user, const h2_pal_http_request_t *request,
                        h2_pal_http_response_t *response) {
   seek_test_state_t *state = user;
@@ -3548,16 +3549,32 @@ static int resume_http(void *user, const h2_pal_http_request_t *request,
     assert(sscanf(request->headers[0].value.data, "bytes=%zu-", &first) == 1);
     assert(first < total);
     assert(first == total / 3u + (call - 1u) * 1000u ||
-           (state->resume_mode == RESUME_SUCCESS && first == total / 3u));
+           ((state->resume_mode == RESUME_SUCCESS ||
+             state->resume_mode == RESUME_NO_ACCEPT_SUCCESS ||
+             state->resume_mode == RESUME_NO_ACCEPT_200) &&
+            first == total / 3u));
   } else {
     assert(request->header_count == 0u);
-    assert(h2_pal_http_deliver_response_header(request, "Accept-Ranges", 13,
-                                               "bytes", 5) == H2_PAL_OK);
+    if (state->resume_mode != RESUME_NO_ACCEPT_SUCCESS &&
+        state->resume_mode != RESUME_NO_ACCEPT_200)
+      assert(h2_pal_http_deliver_response_header(request, "Accept-Ranges", 13,
+                                                 "bytes", 5) == H2_PAL_OK);
   }
-  response->status_code = call && state->resume_mode != RESUME_200 ? 206 : 200;
-  response->content_length = (int64_t)(call && state->resume_mode == RESUME_200
+  response->status_code = call && state->resume_mode != RESUME_200 &&
+                          state->resume_mode != RESUME_NO_ACCEPT_200 ? 206 : 200;
+  response->content_length = (int64_t)(call && response->status_code == 200
                                            ? total : total - first);
-  if (call && state->resume_mode != RESUME_200) {
+  if (state->resume_mode == RESUME_MULTIPLE && call == 1u)
+    response->content_length = -1;
+  if (response->content_length >= 0) {
+    char length_value[32];
+    (void)snprintf(length_value, sizeof(length_value), "%lld",
+                   (long long)response->content_length);
+    assert(h2_pal_http_deliver_response_header(request, "Content-Length", 14,
+                                               length_value,
+                                               strlen(length_value)) == H2_PAL_OK);
+  }
+  if (call && response->status_code == 206) {
     char value[64];
     (void)snprintf(value, sizeof(value), "bytes %zu-%zu/%zu", first,
                    total - 1u,
@@ -3565,9 +3582,11 @@ static int resume_http(void *user, const h2_pal_http_request_t *request,
     assert(h2_pal_http_deliver_response_header(request, "Content-Range", 13,
                                                value, strlen(value)) == H2_PAL_OK);
   }
-  if (call && state->resume_mode == RESUME_200)
+  if (call && response->status_code == 200)
     return seek_body(request, state->fixture.bytes, total);
-  if (call && state->resume_mode == RESUME_SUCCESS)
+  if (call && (state->resume_mode == RESUME_SUCCESS ||
+               state->resume_mode == RESUME_NO_ACCEPT_SUCCESS ||
+               (state->resume_mode == RESUME_MULTIPLE && call == 2u)))
     return seek_body(request, state->fixture.bytes + first, total - first);
   if (state->resume_mode == RESUME_BASELINE)
     return seek_body(request, state->fixture.bytes, total);
@@ -3609,8 +3628,22 @@ static void test_device_player_resume(void) {
   assert(atomic_load(&state.calls) == 1u);
   assert(state.pcm_hash == resumed_hash);
 
-  const unsigned modes[] = {RESUME_200, RESUME_BAD_RANGE, RESUME_EXHAUST};
-  for (size_t i = 0; i < 3u; ++i) {
+  const unsigned successes[] = {RESUME_MULTIPLE, RESUME_NO_ACCEPT_SUCCESS};
+  for (size_t i = 0; i < 2u; ++i) {
+    atomic_store(&state.calls, 0u);
+    atomic_store(&state.writes, 0u);
+    state.resume_mode = successes[i];
+    state.pcm_hash = UINT64_C(1469598103934665603);
+    assert(h2_gizclaw_player_play_index(service, 0) == H2_PAL_OK);
+    speaker_wait_player(service, "ended");
+    assert(atomic_load(&state.calls) == (i == 0u ? 3u : 2u));
+    assert(atomic_load(&state.writes) == seek_frames(&state, 0));
+    assert(state.pcm_hash == resumed_hash);
+  }
+
+  const unsigned modes[] = {RESUME_200, RESUME_NO_ACCEPT_200,
+                            RESUME_BAD_RANGE, RESUME_EXHAUST};
+  for (size_t i = 0; i < 4u; ++i) {
     state.resume_mode = modes[i];
     atomic_store(&state.calls, 0u);
     assert(h2_gizclaw_player_play_index(service, 0) == H2_PAL_OK);

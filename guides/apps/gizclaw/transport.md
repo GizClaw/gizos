@@ -136,7 +136,7 @@ firmware 不添加私有 header、不直接组 RTP，也不使用 DataChannel fa
 
 HTTP 请求只记录 method、scheme 和经过字符验证的 endpoint（host 及显式 port），仅允许固定`/server-info` 路径，其余路径为 `redacted`。不记录 userinfo、query、fragment、header、请求正文或响应正文；过长或不安全的 endpoint 整体脱敏。server-info 返回的信令地址可能不同于初始 endpoint，应以失败 HTTP request 的 endpoint 为准。默认端口未显式出现在URL 时不补写，可按记录的 scheme 判断默认端口。非固定路径的具体信令阶段仍属于外部 SDK边界，不能从 GizOS 日志进一步区分 SDK 内部步骤。
 
-需要给 GizClaw config 和 coreHTTP config 注入可用的 Log PAL，并保留 ESP32 原生 ERROR日志。provider 会在清理 response 前记录已有状态和 body 长度；适配层随后看到的`status=0 body_len=0` 可能是 provider 已清理 response，不证明没有收到网络字节。`service transport_terminal` 的 `detail` 是 active request 数，`frames/bytes` 的零值不是网络流量计数；`TASK_READY` 也不是连接成功证据。没有新设备串口日志时，这些改动不能追溯确定历史故障的根因。
+需要给 GizClaw config 和 coreHTTP config 注入可用的 Log PAL，并保留 ESP32 原生 ERROR日志。provider 在 body 中途失败时仍向调用方保留最后一次响应的状态、长度和已交付响应头；`status=0` 表示未收到最终响应头。`body_len=0` 可表示流式回调已消费 body，不能单凭它判断网络字节数。`service transport_terminal` 的 `detail` 是 active request 数，`frames/bytes` 的零值不是网络流量计数；`TASK_READY` 也不是连接成功证据。没有新设备串口日志时，这些改动不能追溯确定历史故障的根因。
 
 ## 测速失败诊断
 

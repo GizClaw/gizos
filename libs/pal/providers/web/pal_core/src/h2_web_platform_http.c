@@ -493,6 +493,7 @@ h2_web_http_attempt(h2_web_http_exchange_t *exchange,
   const h2_pal_http_request_t *request = exchange->request;
   const uintptr_t platform = (uintptr_t)exchange->platform;
   *out_next = H2_WEB_HTTP_ATTEMPT_DONE;
+  h2_pal_http_response_reset(out_response);
   exchange->id = ++exchange->platform->http_next_id;
   if (exchange->id == 0u)
     exchange->id = ++exchange->platform->http_next_id;
@@ -530,6 +531,9 @@ h2_web_http_attempt(h2_web_http_exchange_t *exchange,
     *out_next = H2_WEB_HTTP_ATTEMPT_RETRY;
     return H2_PAL_OK;
   }
+  out_response->status_code = status;
+  out_response->content_length =
+      content_length >= 0.0 ? (int64_t)content_length : -1;
   uint8_t *headers = malloc(headers_len);
   if (headers == NULL) {
     h2_web_http_close_js(platform, exchange->id);
@@ -547,7 +551,6 @@ h2_web_http_attempt(h2_web_http_exchange_t *exchange,
   if (result != H2_PAL_OK) {
     if (body.owned != NULL)
       h2_pal_mem_free(h2_pal_http_response_allocator(request), body.owned);
-    h2_pal_http_response_reset(out_response);
     return result;
   }
   if (body.owned != NULL) {
@@ -632,7 +635,11 @@ static int h2_web_http_request(void *user,
   --platform->http_requests;
   free(header_fields);
   if (result == H2_PAL_OK && h2_pal_http_request_is_canceled(request)) {
-    h2_web_http_response_free_body(out_response);
+    if (out_response->allocator != NULL && out_response->body != NULL)
+      h2_pal_mem_free(out_response->allocator, out_response->body);
+    out_response->body = NULL;
+    out_response->body_len = 0u;
+    out_response->allocator = NULL;
     result = H2_PAL_ERR_CLOSED;
   }
   return result;

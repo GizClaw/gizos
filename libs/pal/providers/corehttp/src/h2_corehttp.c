@@ -411,6 +411,15 @@ static void free_response_body(h2_pal_http_response_t *response) {
     h2_pal_http_response_reset(response);
 }
 
+static void discard_failed_body(h2_pal_http_response_t *response) {
+    if (response->allocator != NULL && response->body != NULL) {
+        h2_pal_mem_free(response->allocator, response->body);
+    }
+    response->body = NULL;
+    response->body_len = 0u;
+    response->allocator = NULL;
+}
+
 static h2_pal_result_t perform_attempt(
     h2_corehttp_t *provider,
     const h2_pal_http_request_t *request,
@@ -582,7 +591,7 @@ static int corehttp_request(
                 free_response_body(out_response);
                 continue;
             }
-            free_response_body(out_response);
+            discard_failed_body(out_response);
             h2_pal_mem_free(provider->config.allocator, owned_url);
             return rc;
         }

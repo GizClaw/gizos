@@ -210,6 +210,8 @@ typedef struct header_result {
     size_t value_len;
     size_t callbacks;
     int result;
+    int content_length_seen;
+    int accept_ranges_seen;
 } header_result_t;
 
 static int capture_response_header(
@@ -220,6 +222,12 @@ static int capture_response_header(
     (void)request;
     header_result_t *result = (header_result_t *)user;
     result->callbacks += 1u;
+    if (name.len == 14u && memcmp(name.data, "Content-Length", 14u) == 0 &&
+        value.len == 1u && value.data[0] == '4')
+        result->content_length_seen = 1;
+    if (name.len == 13u && memcmp(name.data, "Accept-Ranges", 13u) == 0 &&
+        value.len == 5u && memcmp(value.data, "bytes", 5u) == 0)
+        result->accept_ranges_seen = 1;
     if (name.len == sizeof("X-Total-Count") - 1u &&
         memcmp(name.data, "X-Total-Count", name.len) == 0) {
         if (value.len > sizeof(result->value)) {
@@ -717,13 +725,15 @@ static int test_cancel_deadline_and_malformed_response(void) {
 
     fake_http_platform_init(&platform);
     fake_http_platform_add_response(
-        &platform, "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\nab");
+        &platform, "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n"
+                   "Accept-Ranges: bytes\r\n\r\nab");
     fake_http_platform_add_response(
         &platform, "HTTP/1.1 200 OK\r\nContent-Length: 4\r\n\r\ndone");
     provider = create_provider(&platform, &api, NULL, 0u);
     CHECK(provider != NULL);
     uint8_t chunk[4];
     stream_result_t stream = {0};
+    header_result_t partial_headers = {.result = H2_PAL_OK};
     request = (h2_pal_http_request_t){
         .method = H2_PAL_HTTP_GET,
         .url = {.data = "http://example.test/", .len = 20u},
@@ -731,10 +741,15 @@ static int test_cancel_deadline_and_malformed_response(void) {
         .chunk_buf_cap = sizeof(chunk),
         .read_cb = stream_body_with_length,
         .user = &stream,
+        .response_header_cb = capture_response_header,
+        .response_header_user = &partial_headers,
         .retry_count = 1,
     };
     CHECK(h2_pal_http_request(&api, &request, &response) != H2_PAL_OK);
     CHECK(stream.len == 2u);
+    CHECK(response.status_code == 200 && response.content_length == 4);
+    CHECK(partial_headers.content_length_seen &&
+          partial_headers.accept_ranges_seen);
     CHECK(platform.open_count == 1 && platform.close_count == 1);
     h2_corehttp_destroy(provider);
 

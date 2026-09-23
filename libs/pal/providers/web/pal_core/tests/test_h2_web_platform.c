@@ -912,9 +912,10 @@ static int run_tests(void) {
       return 108;
     const size_t allocated = mallinfo().uordblks;
     for (int attempt = 0; attempt < 3; ++attempt) {
-      if (h2_pal_http_request(h2_web_platform_http_api(platform), &failed_request,
-                             &http_response) != expected ||
-          http_response.body != NULL || http_response.status_code != 0)
+      const int failed_result = h2_pal_http_request(
+          h2_web_platform_http_api(platform), &failed_request, &http_response);
+      if (failed_result != expected || http_response.body != NULL ||
+          http_response.status_code != 200 || http_response.content_length != 0)
         return 109;
     }
     if ((size_t)mallinfo().uordblks > allocated)

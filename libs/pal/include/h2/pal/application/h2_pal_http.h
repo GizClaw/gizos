@@ -144,6 +144,12 @@ static inline int h2_pal_http_deliver_response_header(
 }
 
 typedef struct h2_pal_http_response {
+    /* On request failure, status_code and content_length remain valid if the
+     * final attempt received response headers. A zero status means no final
+     * response headers were received. Headers already delivered through
+     * response_header_cb remain valid to the caller; callback spans are still
+     * borrowed only for the duration of each callback. Any retained body is
+     * owned by this response and must be released with response_free(). */
     int status_code;
     int64_t content_length;
     uint8_t *body;
@@ -152,6 +158,7 @@ typedef struct h2_pal_http_response {
 } h2_pal_http_response_t;
 
 typedef struct h2_pal_http_vtable {
+    /* Failed requests may leave received response metadata in out_response. */
     int (*request)(void *user, const h2_pal_http_request_t *request, h2_pal_http_response_t *out_response);
     void (*response_free)(void *user, h2_pal_http_response_t *response);
 } h2_pal_http_vtable_t;
