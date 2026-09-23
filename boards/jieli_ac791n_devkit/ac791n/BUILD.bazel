@@ -22,6 +22,7 @@ firmware_native_component(
     deps = [
         ":wifi_sta_lib",
         "//boards/ac791n_chip/ac791n",
+        "//libs/atomic",
         "//libs/pal:pal_header_files",
         "//libs/runtime:runtime_header_files",
         "//native_component_src/jieli/wl82/h2_pal_core",

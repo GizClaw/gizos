@@ -21,6 +21,7 @@ class AsyncDnsTest(unittest.TestCase):
                        source.index("static int get_host_addr(")]
         stub = r'''
 #include <assert.h>
+#include "h2_atomic.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -168,7 +169,9 @@ int main(void) {
             binary = Path(directory) / "test"
             subprocess.run([os.environ.get("CC", "cc"), *shlex.split(os.environ.get("JIELI_TEST_CFLAGS", "")), "-std=c11", "-D_POSIX_C_SOURCE=200809L", "-Wall", "-Wextra", "-Werror",
                             "-fsanitize=address,undefined",
-                            str(test), "-o", str(binary)], check=True, timeout=60)
+                            "-I", str(ROOT / "libs/atomic/include"),
+                            str(test), str(ROOT / "libs/atomic/providers/c11/src/h2_atomic_c11.c"),
+                            "-o", str(binary)], check=True, timeout=60)
             result = subprocess.run([str(binary)], capture_output=True,
                                     text=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

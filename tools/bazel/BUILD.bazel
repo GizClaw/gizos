@@ -752,6 +752,8 @@ py_test(
     name = "jieli_async_dns_test",
     srcs = ["tests/test_jieli_async_dns.py"],
     data = [
+        "//libs/atomic:include/h2_atomic.h",
+        "//libs/atomic/providers/c11:src/h2_atomic_c11.c",
         "//boards/jieli_ac791n_devkit/ac791n:src/h2_jieli_ac791n_devkit_net.c",
     ],
     legacy_create_init = 0,
