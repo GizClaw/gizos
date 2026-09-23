@@ -330,6 +330,7 @@ cc_library(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
         "//libs/runtime",
@@ -456,9 +457,11 @@ py_test(
     args = [
         "$(location :runtime_sources)",
         "$(location tests/test_embedder.c)",
+        "$(location //libs/atomic/providers/c11:src/h2_atomic_c11.c)",
     ],
     data = [
         "tests/test_embedder.c",
+        "//libs/atomic/providers/c11:src/h2_atomic_c11.c",
         ":runtime_sources",
     ],
     legacy_create_init = 0,

@@ -8,7 +8,6 @@
 #include <assert.h>
 #include <errno.h>
 #include <pthread.h>
-#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -414,10 +413,32 @@ static h2_runtime_t *create_runtime(void) {
 }
 
 typedef struct pending_call {
-  atomic_uint_fast64_t id;
-  atomic_uint cancels;
+  pthread_mutex_t mutex;
+  uint64_t id;
+  unsigned cancels;
   char input[128];
 } pending_call_t;
+
+static uint64_t pending_id(pending_call_t *pending) {
+  assert(pthread_mutex_lock(&pending->mutex) == 0);
+  const uint64_t id = pending->id;
+  assert(pthread_mutex_unlock(&pending->mutex) == 0);
+  return id;
+}
+
+static unsigned pending_cancels(pending_call_t *pending) {
+  assert(pthread_mutex_lock(&pending->mutex) == 0);
+  const unsigned cancels = pending->cancels;
+  assert(pthread_mutex_unlock(&pending->mutex) == 0);
+  return cancels;
+}
+
+static void pending_set_id(pending_call_t *pending, uint64_t id) {
+  assert(pthread_mutex_lock(&pending->mutex) == 0);
+  pending->id = id;
+  assert(pthread_mutex_unlock(&pending->mutex) == 0);
+}
+
 static h2_pal_result_t capability_call(void *user,
                                        h2_lua_capability_request_id_t id,
                                        const char *input, const char *options,
@@ -429,14 +450,18 @@ static h2_pal_result_t capability_call(void *user,
   (void)capacity;
   (void)error;
   assert(strlen(input) < sizeof(pending->input));
+  assert(pthread_mutex_lock(&pending->mutex) == 0);
   strcpy(pending->input, input);
-  atomic_store(&pending->id, id); /* Release publishes the copied payload. */
+  pending->id = id;
+  assert(pthread_mutex_unlock(&pending->mutex) == 0);
   return H2_PAL_ERR_WOULD_BLOCK;
 }
 static void capability_cancel(void *user, h2_lua_capability_request_id_t id) {
   pending_call_t *pending = user;
-  assert(atomic_load(&pending->id) == id);
-  atomic_fetch_add(&pending->cancels, 1);
+  assert(pthread_mutex_lock(&pending->mutex) == 0);
+  assert(pending->id == id);
+  ++pending->cancels;
+  assert(pthread_mutex_unlock(&pending->mutex) == 0);
 }
 static h2_lua_job_id_t submit(h2_lua_host_t *host, const char *script) {
   h2_lua_job_id_t id;
@@ -466,7 +491,7 @@ static void wait_state(h2_lua_host_t *host, h2_lua_job_id_t id,
 }
 static uint64_t wait_request(pending_call_t *pending) {
   for (unsigned i = 0; i < 5000; ++i) {
-    uint64_t id = atomic_load(&pending->id);
+    uint64_t id = pending_id(pending);
     if (id)
       return id;
     sleep_ms(NULL, 1);
@@ -553,6 +578,8 @@ int main(void) {
   h2_runtime_t *runtime = create_runtime();
   h2_lua_host_t *host = NULL;
   pending_call_t echo = {0}, slow = {0};
+  assert(pthread_mutex_init(&echo.mutex, NULL) == 0);
+  assert(pthread_mutex_init(&slow.mutex, NULL) == 0);
   h2_lua_host_config_t cfg = {.runtime = runtime,
                               .worker_count = 1,
                               .max_jobs = 4,
@@ -670,7 +697,7 @@ int main(void) {
   assert(display.pixels[63 * 240 + 59] == 0);
   assert(h2_lua_job_release(host, job) == H2_PAL_OK);
 
-  atomic_store(&echo.id, 0);
+  pending_set_id(&echo, 0);
   job = submit(
       host,
       "local r=require('runtime');local pressed=false;"
@@ -709,15 +736,17 @@ int main(void) {
          H2_PAL_ERR_INVALID_STATE);
   assert(result_size == 0 && has_result == 0);
   assert(h2_lua_job_release(host, job) == H2_PAL_OK);
-  for (unsigned i = 0; i < 5000 && atomic_load(&slow.cancels) == 0; ++i)
+  for (unsigned i = 0; i < 5000 && pending_cancels(&slow) == 0; ++i)
     sleep_ms(NULL, 1);
-  assert(atomic_load(&slow.cancels) == 1);
+  assert(pending_cancels(&slow) == 1);
   assert(h2_lua_capability_complete(host, request, H2_PAL_OK, "late", NULL) !=
          H2_PAL_OK);
   assert(h2_lua_host_stop(host) == H2_PAL_OK);
   assert(h2_lua_host_join(host) == H2_PAL_OK);
   h2_lua_host_destroy(host);
   h2_runtime_deinit(runtime);
+  assert(pthread_mutex_destroy(&echo.mutex) == 0);
+  assert(pthread_mutex_destroy(&slow.mutex) == 0);
   puts("PASS: PAL embedding, async echo, display, ok/back input, cancellation, "
        "frozen registry, job results");
   return 0;
