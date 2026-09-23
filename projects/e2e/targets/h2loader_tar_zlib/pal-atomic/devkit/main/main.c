@@ -108,6 +108,9 @@ static void h2_atomic_entry(void *user) {
         fflush(stdout);
         h2_atomic_hold();
     }
+    atomic_init(&psram_count->storage, 0);
+    atomic_init(&internal_count->storage, 0);
+    atomic_init(&psram_flag->storage, false);
     atomic_init(raw_count, 0);
     h2_pal_atomic_e2e_config_t config = {
         .atomic = atomic, .counter = psram_count, .flag = psram_flag,

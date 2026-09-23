@@ -5,10 +5,12 @@
 #include <stddef.h>
 #include <stdbool.h>
 #include <stdint.h>
-#ifndef __cplusplus
+#if !defined(__cplusplus) && \
+    !(defined(_MSC_VER) && (!defined(__STDC_VERSION__) || __STDC_VERSION__ < 201112L))
 #include <stdatomic.h>
 #define H2_PAL_ATOMIC_STORAGE(type) _Atomic(type)
 #else
+/* MSVC C translation units without /std:c11 may include the PAL umbrella. */
 #define H2_PAL_ATOMIC_STORAGE(type) type
 #endif
 
