@@ -35,6 +35,12 @@ static void (*s_last_task_entry)(void *ctx);
 static void *s_last_task_ctx;
 static int s_fail_task_create;
 static int s_task_running;
+static int s_fail_task_delete;
+static int s_task_delete_calls;
+/* Simulated SDK task handles. A PAL context is neither unique nor non-NULL,
+ * so each created task gets its own identity from this pool. */
+static int s_task_identities[16];
+static const void *s_last_task_identity;
 
 static void (*s_timer_dispatch_hook)(void);
 static int s_default_task;
@@ -58,6 +64,9 @@ void h2_jieli_fake_reset(void)
     s_last_task_ctx = NULL;
     s_fail_task_create = 0;
     s_task_running = 0;
+    s_fail_task_delete = 0;
+    s_task_delete_calls = 0;
+    s_last_task_identity = NULL;
 }
 
 const char *h2_jieli_fake_log_output(void)
@@ -225,9 +234,21 @@ int h2_jieli_sdk_task_create(void (*entry)(void *ctx), void *ctx, const char *na
         return -1;
     }
     strncpy(s_last_task_name, name, sizeof(s_last_task_name) - 1u);
+    s_last_task_identity = &s_task_identities[(size_t)(s_task_create_calls - 1) %
+        (sizeof(s_task_identities) / sizeof(s_task_identities[0]))];
     s_last_task_stack_bytes = stack_bytes;
     s_last_task_entry = entry;
     s_last_task_ctx = ctx;
+    return 0;
+}
+
+int h2_jieli_sdk_task_delete(const char *name)
+{
+    /* The SDK may only delete a parked task, never a running one. */
+    if (s_fail_task_delete || name == NULL || name[0] == '\0' || s_task_running) {
+        return -1;
+    }
+    s_task_delete_calls++;
     return 0;
 }
 
@@ -255,14 +276,29 @@ size_t h2_jieli_fake_last_task_stack_bytes(void)
 void h2_jieli_fake_run_last_task_once(void)
 {
     if (s_last_task_entry != NULL) {
+        const void *caller = s_current_task;
         s_task_running = 1;
+        /* The entry runs on its own SDK task, under the identity recorded for
+         * it at creation rather than the starting task's handle. */
+        s_current_task = s_last_task_identity;
         s_last_task_entry(s_last_task_ctx);
+        s_current_task = caller;
     }
 }
 
 void h2_jieli_fake_fail_task_create(int fail)
 {
     s_fail_task_create = fail;
+}
+
+void h2_jieli_fake_fail_task_delete(int fail)
+{
+    s_fail_task_delete = fail;
+}
+
+int h2_jieli_fake_task_delete_calls(void)
+{
+    return s_task_delete_calls;
 }
 
 uint16_t h2_jieli_sdk_timer_add(void *ctx, void (*callback)(void *ctx), uint32_t period_ms, int repeat)

@@ -20,6 +20,15 @@
 #define H2_JIELI_BR23_TASK_PRIORITY 2u
 #endif
 
+/* Task identities are generated to fill the SDK name buffer exactly, so a
+ * different SDK configuration must be noticed at build time rather than
+ * silently truncating an identity into a collision. The SDK headers do not
+ * always expose the FreeRTOS configuration to this translation unit. */
+#ifdef configMAX_TASK_NAME_LEN
+typedef char h2_jieli_br23_task_name_max_matches_sdk
+    [(H2_JIELI_BR23_TASK_NAME_MAX == configMAX_TASK_NAME_LEN) ? 1 : -1];
+#endif
+
 #ifndef H2_JIELI_BR23_TICK_MS
 /* br23 FreeRTOSConfig: configTICK_RATE_HZ = 100. */
 #define H2_JIELI_BR23_TICK_MS 10u
@@ -255,6 +264,14 @@ int h2_jieli_sdk_task_create(void (*entry)(void *ctx), void *ctx, const char *na
     /* os_task_create takes the stack size in 32-bit words. */
     stack_words = (u32)((stack_bytes + 3u) / 4u);
     return os_task_create(entry, ctx, H2_JIELI_BR23_TASK_PRIORITY, stack_words, 0, name) == OS_NO_ERR ? 0 : -1;
+}
+
+int h2_jieli_sdk_task_delete(const char *name)
+{
+    if (name == NULL || name[0] == '\0') {
+        return -1;
+    }
+    return os_task_del(name) == OS_NO_ERR ? 0 : -1;
 }
 
 void h2_jieli_sdk_task_park(void)

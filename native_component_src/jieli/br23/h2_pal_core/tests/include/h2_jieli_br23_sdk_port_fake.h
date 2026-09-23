@@ -54,6 +54,10 @@ size_t h2_jieli_fake_last_task_stack_bytes(void);
 void h2_jieli_fake_run_last_task_once(void);
 /** When non-zero, task creation fails. */
 void h2_jieli_fake_fail_task_create(int fail);
+/** When non-zero, task deletion fails. */
+void h2_jieli_fake_fail_task_delete(int fail);
+/** Successful h2_jieli_sdk_task_delete() calls since the last reset. */
+int h2_jieli_fake_task_delete_calls(void);
 
 #ifdef __cplusplus
 }

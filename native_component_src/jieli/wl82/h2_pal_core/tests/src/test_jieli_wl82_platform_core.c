@@ -397,6 +397,40 @@ static void test_task_start_and_join(void)
     CHECK(h2_pal_task_start(api, NULL, task_entry, &flag, &task) == H2_PAL_ERR_TASK);
 }
 
+/* Only the worker publishes completion, so a worker joining itself would wait
+ * for itself forever. Join must recognise the calling task and reject it
+ * before the wait, deleting and releasing nothing. The deterministic fake
+ * cannot block, so only the identity check makes this observable here;
+ * test_jieli_wl82_task_identity runs the same case on real threads. */
+static const h2_pal_task_api_t *s_self_join_api;
+static h2_pal_task_t *s_self_join_task;
+static int s_self_join_result;
+
+static void self_join_entry(void *ctx)
+{
+    (void)ctx;
+    s_self_join_result = h2_pal_task_join(s_self_join_api, s_self_join_task);
+}
+
+static void test_task_join_from_the_worker_is_rejected(void)
+{
+    const h2_pal_task_api_t *api = h2_jieli_wl82_platform_task_api();
+    h2_jieli_fake_reset();
+    s_self_join_api = api;
+    s_self_join_task = NULL;
+    s_self_join_result = H2_PAL_OK;
+    /* A NULL entry context is valid and several workers may share one, so the
+     * worker's identity must not be derived from it. */
+    CHECK(h2_pal_task_start(api, NULL, self_join_entry, NULL, &s_self_join_task) == H2_PAL_OK);
+    h2_jieli_fake_run_last_task_once();
+    CHECK(s_self_join_result == H2_PAL_ERR_INVALID_STATE);
+    CHECK(h2_jieli_fake_live_allocations() == 2);
+    /* The rejection is identity-based, so the same handle still joins from
+     * the task that started the worker. */
+    CHECK(h2_pal_task_join(api, s_self_join_task) == H2_PAL_OK);
+    CHECK(h2_jieli_fake_live_allocations() == 0);
+}
+
 static int system_event_handler(void *user, const h2_pal_system_event_t *event)
 {
     int *calls = (int *)user;
@@ -1026,6 +1060,7 @@ int main(void)
     test_queue_lock_failure_preserves_permits();
     test_queue_wait_relock_failure();
     test_task_start_and_join();
+    test_task_join_from_the_worker_is_rejected();
     test_system_event_lifecycle_and_dispatch();
     test_system_event_copies_and_limits();
     test_system_event_subscription_snapshot();

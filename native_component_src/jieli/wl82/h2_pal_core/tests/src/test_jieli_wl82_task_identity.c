@@ -19,6 +19,9 @@ static struct native_task {
     char name[32];
     int deleted;
 } native_tasks[2];
+/* The task a thread is running, standing in for xTaskGetCurrentTaskHandle().
+ * NULL on the starting thread, which never runs a PAL entry. */
+static _Thread_local struct native_task *current_task;
 static unsigned created;
 static const char *expected_policy;
 static atomic_int release_second, wrong_delete, allocations;
@@ -64,9 +67,11 @@ int h2_jieli_sdk_sem_take(h2_jieli_sdk_sem_t *s, uint32_t timeout) {
 }
 static void *native_entry(void *user) {
     struct native_task *task = user;
+    current_task = task;
     task->entry(task->ctx);
     return NULL;
 }
+const void *h2_jieli_sdk_task_current(void) { return current_task; }
 int h2_jieli_sdk_task_create(void (*entry)(void *), void *ctx,
                            const char *policy_name, const char *name, size_t stack_bytes) {
     assert(strcmp(policy_name, expected_policy) == 0);
@@ -97,6 +102,45 @@ int h2_jieli_sdk_task_delete(const char *name) {
     }
     return -1;
 }
+/* A worker joining itself waits for a completion only it can publish, so
+ * without an identity check this entry never returns and the test times out. */
+static const h2_pal_task_api_t *self_join_api;
+static h2_pal_task_t *self_join_handle;
+static atomic_int self_join_result;
+static void self_join_entry(void *user) {
+    (void)user;
+    assert(pthread_mutex_lock(&gate) == 0);
+    while (self_join_handle == NULL) assert(pthread_cond_wait(&changed, &gate) == 0);
+    h2_pal_task_t *handle = self_join_handle;
+    assert(pthread_mutex_unlock(&gate) == 0);
+    atomic_store(&self_join_result, h2_pal_task_join(self_join_api, handle));
+}
+
+static void check_self_join_is_rejected(const h2_pal_task_api_t *api, const char *label) {
+    expected_policy = label;
+    created = 0;
+    memset(native_tasks, 0, sizeof(native_tasks));
+    atomic_store(&release_second, 0);
+    atomic_store(&wrong_delete, 0);
+    self_join_api = api;
+    self_join_handle = NULL;
+    atomic_store(&self_join_result, H2_PAL_OK);
+    const h2_pal_task_options_t options = {.name = label};
+    h2_pal_task_t *worker = NULL;
+    /* A NULL entry context is valid and several workers may share one, so the
+     * worker's identity must not be derived from it. */
+    assert(h2_pal_task_start(api, &options, self_join_entry, NULL, &worker) == 0);
+    assert(pthread_mutex_lock(&gate) == 0);
+    self_join_handle = worker;
+    assert(pthread_cond_broadcast(&changed) == 0);
+    assert(pthread_mutex_unlock(&gate) == 0);
+    /* The starting thread joins normally, which only returns once the rejected
+     * self-join let the entry finish. */
+    assert(h2_pal_task_join(api, worker) == H2_PAL_OK);
+    assert(atomic_load(&self_join_result) == H2_PAL_ERR_INVALID_STATE);
+    assert(atomic_load(&allocations) == 0);
+}
+
 static void first_entry(void *user) { (void)user; }
 static void second_entry(void *user) {
     (void)user;
@@ -126,6 +170,7 @@ int main(void) {
         assert(pthread_mutex_unlock(&gate) == 0);
         assert(h2_pal_task_join(api, second) == H2_PAL_OK);
         assert(atomic_load(&allocations) == 0);
+        check_self_join_is_rejected(api, labels[i]);
     }
     return 0;
 }
