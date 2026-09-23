@@ -1,4 +1,5 @@
 #include "h2/pal/os/h2_pal_atomic.h"
+#include "h2/pal/h2_pal_unsupported.h"
 #include "h2_c11_pal_atomic.h"
 #include <assert.h>
 #include <pthread.h>
@@ -53,5 +54,8 @@ int main(void) {
     void *raw = &marker;
     assert(h2_pal_atomic_alloc_raw(api, 4, 3, &raw) == H2_PAL_ERR_INVALID_ARG && raw == NULL);
     assert(h2_pal_atomic_free(NULL, NULL) == H2_PAL_ERR_UNSUPPORTED);
+    u = (_Atomic uint32_t *)&marker;
+    assert(h2_pal_atomic_alloc_u32(h2_pal_unsupported_atomic_api(), 0, &u) ==
+           H2_PAL_ERR_UNSUPPORTED && u == NULL);
     return 0;
 }
