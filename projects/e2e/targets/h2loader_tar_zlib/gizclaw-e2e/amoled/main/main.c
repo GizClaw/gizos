@@ -16,6 +16,7 @@
 #include "h2_runtime_event.h"
 
 #include "esp_system.h"
+#include "esp_memory_utils.h"
 #include "esp_netif_sntp.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -134,6 +135,18 @@ static void emit_summary(const h2_gizclaw_e2e_amoled_runner_t *runner,
 
 static void run_e2e(void *raw) {
   h2_gizclaw_e2e_amoled_runner_t *runner = raw;
+  volatile uint8_t stack_probe = 0u;
+  const bool stack_in_psram = esp_ptr_external_ram((const void *)&stack_probe);
+  printf("H2_GIZCLAW_E2E_AMOLED stage=runner_stack region=%s "
+         "status=%s\n",
+         stack_in_psram ? "psram" : "other",
+         stack_in_psram ? "PASS" : "ERROR");
+  fflush(stdout);
+  if (!stack_in_psram) {
+    runner->exit_code = H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+    h2_atomic_store_explicit(&runner->exited, true, H2_ATOMIC_RELEASE);
+    return;
+  }
 #if defined(H2_GIZCLAW_E2E_OTA_ONLY)
   h2_gizclaw_e2e_amoled_ota_run(runner->runtime);
   return;
@@ -410,7 +423,7 @@ void app_main(void) {
   h2_pal_result_t rc = h2_esp_board_start_entry_task(
       "amoled/gizclaw-e2e", image_entry, NULL);
   if (rc != H2_PAL_OK) {
-    printf("H2_BOARD_ENTRY_FAIL board=devkit image=gizclaw-e2e code=%d\n",
+    printf("H2_BOARD_ENTRY_FAIL board=amoled image=gizclaw-e2e code=%d\n",
            rc);
   }
 }

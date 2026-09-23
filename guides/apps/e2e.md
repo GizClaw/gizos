@@ -92,7 +92,11 @@ make bazel-test-gizclaw_h2peer_live_test
 make bazel-test-gizclaw_pion_live_test
 ```
 
-DevKit launcher 位于 `projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/devkit`，固定使用 H2Peer、北京入口和 RuntimeProfile `default` 自己的 `deploy-default` RegistrationToken。通用 RPC/Voice 测试从该 profile 返回的 `assistants` catalog 选择真实 Workflow，不假设 H106 的 `chat` alias。它在首次 Wi-Fi `GOT_IP` 后每次 boot 只运行一次 `all`；断线重连不创建第二个 runner。portable App 继续 non-fail-fast 执行全部独立 case，launcher 在完成后每 10 秒重放 bounded summary。Image confirmation 只证明 Runtime、H2Loader command service、Wi-Fi supervisor 和报告基础设施可用，不以业务 case 全部通过为条件。
+DevKit launcher 位于 `projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/devkit`，固定使用 H2Peer、北京入口和 RuntimeProfile `default` 自己的 `deploy-default` RegistrationToken。通用 RPC/Voice 测试从该 profile 返回的 `assistants` catalog 选择真实 Workflow，不假设 H106 的 `chat` alias。它在首次 Wi-Fi `GOT_IP` 后每次 boot 只运行一次 `all`；构建时设置 `--define=H2_GIZCLAW_E2E_VOICE_ONLY=1` 可只运行 `voice`，用于隔离跨 case 的资源状态。断线重连不创建第二个 runner。portable App 继续 non-fail-fast 执行选中的独立 case，launcher 在完成后每 10 秒重放 bounded summary。Image confirmation 只证明 Runtime、H2Loader command service、Wi-Fi supervisor 和报告基础设施可用，不以业务 case 全部通过为条件。
+
+DevKit 的 E2E runner、launcher 和 job task 显式使用 PSRAM stack；runner 入口以实际栈局部地址检查 PSRAM，失败时报告 harness error。`$gizclaw/net` 也使用 PSRAM，DevKit E2E policy 为它保留 64 KiB：在同一块 DevKit（UID `9888e0115c52`）上，原 32 KiB 实际栈曾在 Voice 的 `session_audio_start` 后溢出并重启。64 KiB 复测越过了该溢出点，`all` 的两轮实机测试分别为 8 项中 4 项通过、4 项失败：第一轮 `cleanup_rc=0`、`retained_resources=0`，第二轮出现 `peer_create_data_channel rc=-13`，`cleanup_rc=-4`、`retained_resources=8`。独立的 `voice` 实机测试中，PTT、文本、实时 VAD、service 重连和清理均通过，`selected=1`、`pass=1`、`cleanup_rc=0`、`retained_resources=0`。DevKit 无音频后端，其测试不作为真实麦克风和扬声器验收。测试没有取得 `$gizclaw/net` 的 stack high-water 数据，因此 64 KiB 不能作为其他固件 target 的容量结论。
+
+AMOLED GizClaw E2E 使用板载 ES8311 的真实音频 delegate，并以局部栈地址检查 runner 确实在 PSRAM；该目标的 `$gizclaw/net` 测试 policy 同样为 64 KiB PSRAM。在 UID `30eda0ae0f86` 的实机 `voice` 测试中，PTT、文本、history-play 和实时 VAD 阶段通过，真实音频 delegate 报告 `mic_starts=1`、`capture_frames=456`、`capture_first_error=0`、`capture_last_error=0`。后续 voice-replace 阶段的 `peer_create_data_channel` 返回 `-13`，清理 workspace 时再次返回 `-13`；最终 `selected=1`、`pass=0`、`fail=1`、`cleanup_rc=-4`、`retained_resources=2`。故此轮只验证了前述音频与 PSRAM 路径，完整 Voice E2E 尚未通过。`-13` 的具体本机通道或传输资源来源尚未定位；保留的远端资源没有可用于安全清理的 ID。64 KiB 仅为此 E2E 目标的测试预算，尚无 stack high-water 证据支持推广到产品目标。
 
 真实 RegistrationToken 由 repository-approved test launcher 固定，或由 CI environment 注入。Token、private key、authorization metadata、Firmware URL、原始音频与 unrestricted response body 不得进入日志或 artifact。
 

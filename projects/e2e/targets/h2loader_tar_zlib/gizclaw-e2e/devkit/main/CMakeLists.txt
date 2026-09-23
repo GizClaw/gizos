@@ -45,3 +45,7 @@ target_add_binary_data(
   RENAME_TO h2_gizclaw_e2e_voice_prompt)
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)
+
+if(H2_GIZCLAW_E2E_VOICE_ONLY)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_GIZCLAW_E2E_VOICE_ONLY=1)
+endif()

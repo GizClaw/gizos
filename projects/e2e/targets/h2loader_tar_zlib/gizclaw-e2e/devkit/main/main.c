@@ -33,6 +33,14 @@
 #define H2_GIZCLAW_E2E_DEVKIT_TIME_RETRY_LOG_INTERVAL 10u
 #define H2_GIZCLAW_E2E_DEVKIT_TIME_SERVER "pool.ntp.org"
 
+#if defined(H2_GIZCLAW_E2E_VOICE_ONLY)
+#define H2_GIZCLAW_E2E_DEVKIT_SUITES H2_GIZCLAW_E2E_SUITE_VOICE
+#define H2_GIZCLAW_E2E_DEVKIT_SUITE_NAME "voice"
+#else
+#define H2_GIZCLAW_E2E_DEVKIT_SUITES H2_GIZCLAW_E2E_SUITE_ALL
+#define H2_GIZCLAW_E2E_DEVKIT_SUITE_NAME "all"
+#endif
+
 extern const uint8_t h2_gizclaw_e2e_voice_prompt_start[]
     asm("_binary_h2_gizclaw_e2e_voice_prompt_start");
 extern const uint8_t h2_gizclaw_e2e_voice_prompt_end[]
@@ -96,11 +104,12 @@ static void emit_progress(void *user,
 static void emit_summary(const h2_gizclaw_e2e_devkit_runner_t *runner,
                          bool replay) {
   const h2_gizclaw_e2e_result_t *result = &runner->result;
-  printf("H2_GIZCLAW_E2E stage=summary entry=bj backend=h2peer suite=all "
+  printf("H2_GIZCLAW_E2E stage=summary entry=bj backend=h2peer suite=%s "
          "profile=%s selected=%zu terminal=%zu pass=%zu fail=%zu error=%zu "
          "blocked=%zu cancelled=%zu first_failure_case=%s "
          "first_failure_rc=%d cleanup_rc=%d retained_resources=%zu "
          "complete=%s exit_code=%d replay=%s\n",
+         H2_GIZCLAW_E2E_DEVKIT_SUITE_NAME,
          result->runtime_profile_name[0] == '\0'
              ? "-"
              : result->runtime_profile_name,
@@ -136,7 +145,7 @@ static void run_e2e(void *raw) {
       .voice_pcm_s16le_16khz_mono = h2_gizclaw_e2e_voice_prompt_start,
       .voice_pcm_len = (size_t)(h2_gizclaw_e2e_voice_prompt_end -
                                h2_gizclaw_e2e_voice_prompt_start),
-      .suites = H2_GIZCLAW_E2E_SUITE_ALL,
+      .suites = H2_GIZCLAW_E2E_DEVKIT_SUITES,
       .case_timeout_ms = H2_GIZCLAW_E2E_DEFAULT_CASE_TIMEOUT_MS,
       .cleanup_timeout_ms = H2_GIZCLAW_E2E_DEFAULT_CLEANUP_TIMEOUT_MS,
       .progress_interval_ms = H2_GIZCLAW_E2E_DEFAULT_PROGRESS_INTERVAL_MS,

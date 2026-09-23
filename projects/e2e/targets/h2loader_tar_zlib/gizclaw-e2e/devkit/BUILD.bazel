@@ -124,6 +124,7 @@ h2loader_esp_idf_firmware(
         "main/main.c",
     ],
     board = "devkit",
+    cmake_variables = ["H2_GIZCLAW_E2E_VOICE_ONLY"],
     console = "usb",
     graph = [":gizclaw_e2e_devkit_launcher"],
     project = "CMakeLists.txt",
