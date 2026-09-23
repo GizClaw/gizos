@@ -1,0 +1,31 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+
+package(default_visibility = ["//visibility:public"])
+
+h2_tasks(
+    name = "tasks",
+    tasks = ["atomic/e2e"],
+)
+
+cc_library(
+    name = "atomic_e2e",
+    srcs = [
+        "src/h2_atomic_e2e.c",
+        "src/h2_atomic_e2e_h2.c",
+    ],
+    hdrs = ["include/h2_atomic_e2e.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [":tasks", "//libs/atomic", "//libs/pal"],
+)
+
+cc_library(
+    name = "c11_comparison",
+    srcs = ["src/h2_atomic_e2e_c11.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    deps = [":atomic_e2e"],
+)
