@@ -29,7 +29,7 @@ cc_test(
         "@platforms//os:macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":app_support"],
+    deps = [":app_support", "//libs/atomic/providers/c11"],
 )
 
 cc_test(
@@ -44,6 +44,7 @@ cc_test(
     }),
     deps = [
         ":app_support",
+        "//libs/atomic/providers/c11",
         "//libs/pal",
         "//libs/pal/providers/h2peer",
         "//libs/pal/providers/h2sctp",
@@ -62,6 +63,7 @@ cc_test(
     }),
     deps = [
         ":app_support",
+        "//libs/atomic/providers/c11",
         "//libs/pal/providers/ffmpeg",
     ],
 )
@@ -81,6 +83,7 @@ cc_test(
     }),
     deps = [
         ":app_support",
+        "//libs/atomic/providers/c11",
         "//libs/pal",
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/wolfssl",
@@ -100,6 +103,7 @@ cc_test(
     }),
     deps = [
         ":app_support",
+        "//libs/atomic/providers/c11",
         "//libs/lvgl:platform",
         "//libs/pal/providers/desktop/pal_core",
         "//libs/pal/providers/sdl3",

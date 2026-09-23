@@ -310,7 +310,6 @@ int open_network_services(bool with_mqtt, bool with_webrtc,
     if (result == H2_PAL_OK) {
       const h2_peer_config_t peer = {
           h2_desktop_platform_default_allocator(),
-          h2_desktop_platform_default_allocator(),
           h2_desktop_platform_log_api(),
           host_net_api(),
           h2_desktop_platform_queue_api(),
