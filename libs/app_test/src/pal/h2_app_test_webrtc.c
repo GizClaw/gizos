@@ -1,11 +1,11 @@
 #include "h2_app_test_webrtc.h"
 #include "h2_atomic.h"
-#include <stdbool.h>
 #include <string.h>
 typedef struct peer peer_t;
 typedef struct channel {
   peer_t *peer;
   h2_pal_webrtc_channel_t *delegate;
+  struct channel *next;
 } channel_t;
 struct h2_app_test_webrtc {
   h2_pal_webrtc_api_t api;
@@ -18,7 +18,7 @@ struct h2_app_test_webrtc {
 struct peer {
   h2_app_test_webrtc_t *owner;
   h2_pal_webrtc_peer_t *delegate;
-  channel_t channels[H2_APP_TEST_WEBRTC_CHANNELS_MAX];
+  channel_t *channels;
 };
 typedef struct event {
   h2_app_test_webrtc_t *owner;
@@ -27,15 +27,15 @@ typedef struct event {
 static channel_t *channel_for(peer_t *p, h2_pal_webrtc_channel_t *delegate) {
   if (!delegate)
     return NULL;
-  for (size_t i = 0; i < H2_APP_TEST_WEBRTC_CHANNELS_MAX; ++i)
-    if (p->channels[i].delegate == delegate)
-      return &p->channels[i];
-  for (size_t i = 0; i < H2_APP_TEST_WEBRTC_CHANNELS_MAX; ++i)
-    if (!p->channels[i].delegate) {
-      p->channels[i] = (channel_t){p, delegate};
-      return &p->channels[i];
-    }
-  return NULL;
+  for (channel_t *channel = p->channels; channel; channel = channel->next)
+    if (channel->delegate == delegate)
+      return channel;
+  channel_t *channel = h2_pal_mem_alloc(p->owner->mem, sizeof(*channel));
+  if (!channel)
+    return NULL;
+  *channel = (channel_t){.peer = p, .delegate = delegate, .next = p->channels};
+  p->channels = channel;
+  return channel;
 }
 static h2_pal_result_t peer_create(void *user, h2_pal_webrtc_peer_t **out) {
   if (!out)
@@ -98,17 +98,17 @@ peer_create_data_channel(h2_pal_webrtc_peer_t *peer,
     return H2_PAL_ERR_INVALID_ARG;
   *out = NULL;
   peer_t *p = (peer_t *)peer;
-  bool room = false;
-  for (size_t i = 0; i < H2_APP_TEST_WEBRTC_CHANNELS_MAX; ++i)
-    if (!p->channels[i].delegate)
-      room = true;
-  if (!room)
-    return H2_PAL_ERR_NO_SPACE;
   h2_pal_webrtc_channel_t *raw = NULL;
   int rc = h2_pal_webrtc_peer_create_data_channel(p->owner->delegate,
                                                   p->delegate, config, &raw);
-  if (!rc)
-    *out = (h2_pal_webrtc_channel_t *)channel_for(p, raw);
+  if (!rc) {
+    channel_t *channel = channel_for(p, raw);
+    if (!channel) {
+      h2_pal_webrtc_channel_close(p->owner->delegate, raw);
+      return H2_PAL_ERR_NO_MEMORY;
+    }
+    *out = (h2_pal_webrtc_channel_t *)channel;
+  }
   return rc;
 }
 static void event_release(h2_pal_webrtc_event_t *event) {
@@ -137,7 +137,7 @@ static h2_pal_result_t peer_poll(h2_pal_webrtc_peer_t *peer, int timeout,
   if (e->original.channel && !c) {
     h2_pal_webrtc_event_release(&e->original);
     h2_pal_mem_free(w->mem, e);
-    return H2_PAL_ERR_NO_SPACE;
+    return H2_PAL_ERR_NO_MEMORY;
   }
   e->owner = w;
   *out = e->original;
@@ -164,6 +164,11 @@ static void peer_close(h2_pal_webrtc_peer_t *peer) {
   peer_t *p = (peer_t *)peer;
   h2_app_test_webrtc_t *w = p->owner;
   h2_pal_webrtc_peer_close(w->delegate, p->delegate);
+  while (p->channels) {
+    channel_t *channel = p->channels;
+    p->channels = channel->next;
+    h2_pal_mem_free(w->mem, channel);
+  }
   h2_pal_mem_free(w->mem, p);
   h2_atomic_fetch_sub(&w->peers, 1u);
 }
