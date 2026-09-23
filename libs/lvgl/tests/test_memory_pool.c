@@ -3,7 +3,6 @@
 #include "lvgl.h"
 
 #include <assert.h>
-#include <stdatomic.h>
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -21,16 +20,16 @@ typedef union allocation_header {
 } allocation_header_t;
 
 typedef struct allocator_state {
-    atomic_size_t calls;
-    atomic_size_t reallocs;
-    atomic_size_t live;
-    atomic_size_t bytes;
-    atomic_size_t fail_call;
+    size_t calls;
+    size_t reallocs;
+    size_t live;
+    size_t bytes;
+    size_t fail_call;
 } allocator_state_t;
 
 static void *test_alloc(void *user, size_t bytes) {
     allocator_state_t *state = user;
-    size_t call = atomic_fetch_add(&state->calls, 1u) + 1u;
+    size_t call = (state->calls++) + 1u;
     if (call == state->fail_call || bytes > SIZE_MAX - sizeof(allocation_header_t))
         return NULL;
     allocation_header_t *header = malloc(sizeof(*header) + bytes);
