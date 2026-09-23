@@ -1452,9 +1452,9 @@ static void audio_download_worker(void *user) {
     if (!total) {
       if (download->range_total)
         total = download->range_total;
-      else if (!download->ranged && download->header_length)
+      else if (response.status_code == 200 && download->header_length)
         total = download->header_length;
-      else if (!download->ranged && response.content_length > 0)
+      else if (response.status_code == 200 && response.content_length > 0)
         total = (uint64_t)response.content_length;
     }
     const bool can_resume =
