@@ -9188,10 +9188,10 @@ static void assert_conversation_route_conflict(h2_gizclaw_service_t *service) {
   const h2_pal_sync_api_t *sync = service->config.sync;
   assert(h2_gizclaw_service_pcm_readable_internal(service));
   assert(h2_pal_mutex_lock(sync, service->mutex) == H2_PAL_OK);
-  void *speech = atomic_load(&service->speech_request);
+  void *speech = h2_atomic_load(&service->speech_request);
   void *play = service->audio_play;
   assert(speech != NULL || play != NULL);
-  assert(atomic_load(&service->media_request) == NULL);
+  assert(h2_atomic_load(&service->media_request) == NULL);
   assert(h2_pal_mutex_unlock(sync, service->mutex) == H2_PAL_OK);
   h2_gizclaw_conversation_t *conversation = NULL;
   assert(h2_gizclaw_conversation_create(service, (h2_gizclaw_str_t){"test", 4},
@@ -9201,9 +9201,9 @@ static void assert_conversation_route_conflict(h2_gizclaw_service_t *service) {
     assert(h2_gizclaw_service_audio_start(service) == H2_PAL_ERR_INVALID_STATE);
     assert(h2_gizclaw_conversation_cancel(conversation) == H2_PAL_OK);
     assert(h2_pal_mutex_lock(sync, service->mutex) == H2_PAL_OK);
-    assert(atomic_load(&service->speech_request) == speech);
+    assert(h2_atomic_load(&service->speech_request) == speech);
     assert(service->audio_play == play);
-    assert(atomic_load(&service->media_request) == NULL);
+    assert(h2_atomic_load(&service->media_request) == NULL);
     assert(h2_pal_mutex_unlock(sync, service->mutex) == H2_PAL_OK);
   }
   h2_gizclaw_conversation_release(conversation);
@@ -9313,7 +9313,7 @@ static void test_speech_managed_requests(void) {
       h2_gizclaw_req_release(request);
       assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
       assert(atomic_load(&test.destroys) == 1u);
-      assert(atomic_load(&service->speech_request) == NULL);
+      assert(h2_atomic_load(&service->speech_request) == NULL);
       assert(h2_gizclaw_service_unset_track(service, &track) == H2_PAL_OK);
       assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
       continue;
@@ -9402,7 +9402,7 @@ static void test_speech_managed_requests(void) {
     assert(h2_gizclaw_req_wait(request, 3000u) == expected);
     if (mode == 16u)
       wait_for_count(&test.pacing_warnings, 2u);
-    assert(atomic_load(&service->speech_request) == NULL);
+    assert(h2_atomic_load(&service->speech_request) == NULL);
     assert(atomic_load(&test.callbacks) == 0u);
     if (mode != 4u)
       assert(atomic_load(&test.destroys) == 1u);
@@ -10350,12 +10350,12 @@ conversation_test_hook(void *user, h2_gizclaw_conversation_t *conversation,
       assert(h2_gizclaw_conversation_cancel(conversation) == H2_PAL_OK);
       conversation_test_probe(test);
       for (unsigned i = 0;
-           i < 1000 && atomic_load(&test->service->media_request) != NULL; ++i)
+           i < 1000 && h2_atomic_load(&test->service->media_request) != NULL; ++i)
         h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
     } else {
       assert(h2_gizclaw_service_stop(test->service) == H2_PAL_OK);
     }
-    assert(atomic_load(&test->service->media_request) == NULL);
+    assert(h2_atomic_load(&test->service->media_request) == NULL);
     /* The network has freed its wire state while this hook is still running. */
     assert(memcmp(event->text, "borrowed-wire-text", event->text_len) == 0);
   }
@@ -10502,7 +10502,7 @@ static void test_conversation_downlink_policy(void) {
     if (owner == 0u)
       service->audio_play = (struct h2_gizclaw_audio_play *)(uintptr_t)1u;
     else
-      atomic_store(&service->speech_request,
+      h2_atomic_store(&service->speech_request,
                    (struct h2_gizclaw_speech_context *)(uintptr_t)1u);
     assert(h2_pal_mutex_unlock(service->config.sync, service->mutex) ==
            H2_PAL_OK);
@@ -10517,7 +10517,7 @@ static void test_conversation_downlink_policy(void) {
     h2_gizclaw_conversation_downlink_bos_internal(service);
     assert(h2_pal_mutex_lock(service->config.sync, service->mutex) == H2_PAL_OK);
     service->audio_play = NULL;
-    atomic_store(&service->speech_request, NULL);
+    h2_atomic_store(&service->speech_request, NULL);
     assert(h2_pal_mutex_unlock(service->config.sync, service->mutex) ==
            H2_PAL_OK);
   }
@@ -10879,7 +10879,7 @@ static void test_conversation_drains_events_between_turns(void) {
 
 static void
 assert_conversation_blocks_rpc_audio(h2_gizclaw_service_t *service) {
-  void *route = atomic_load(&service->media_request);
+  void *route = h2_atomic_load(&service->media_request);
   assert(route != NULL);
   const h2_gizclaw_speech_transcribe_options_t asr = {
       .model_name = {"asr", 3}, .content_type = {"audio/pcm", 9}};
@@ -10904,8 +10904,8 @@ assert_conversation_blocks_rpc_audio(h2_gizclaw_service_t *service) {
     assert(h2_gizclaw_req_wait(request, 0) == H2_PAL_ERR_INVALID_STATE);
     assert(h2_gizclaw_req_cancel(request) == H2_PAL_OK);
     h2_gizclaw_req_release(request);
-    assert(atomic_load(&service->media_request) == route);
-    assert(atomic_load(&service->speech_request) == NULL);
+    assert(h2_atomic_load(&service->media_request) == route);
+    assert(h2_atomic_load(&service->speech_request) == NULL);
     assert(h2_pal_mutex_lock(service->config.sync, service->mutex) ==
            H2_PAL_OK);
     assert(service->audio_play == NULL);
@@ -11169,13 +11169,13 @@ static void test_conversation_public_audio_tasks(void) {
       if (mode == 11) {
         assert(h2_gizclaw_conversation_cancel(conversation) == H2_PAL_OK);
         for (spins = 0;
-             spins < 2000 && atomic_load(&service->media_request) != NULL;
+             spins < 2000 && h2_atomic_load(&service->media_request) != NULL;
              ++spins)
           h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
-        assert(atomic_load(&service->media_request) == NULL);
+        assert(h2_atomic_load(&service->media_request) == NULL);
       } else if (mode == 12) {
         assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
-        assert(atomic_load(&service->media_request) == NULL);
+        assert(h2_atomic_load(&service->media_request) == NULL);
       }
     }
     bool input_ended = false;
@@ -11278,7 +11278,7 @@ static void test_conversation_public_audio_tasks(void) {
       assert(atomic_load(&log_capture.api_cancel_state));
     assert(test.event_close_count == (mode == 12 || mode == 14 ? 1u : 0u));
     assert(service->stopping == (mode == 12 || mode == 14));
-    assert(atomic_load(&service->media_request) == NULL);
+    assert(h2_atomic_load(&service->media_request) == NULL);
     if (mode == 16) {
       assert(atomic_load(&test.canceled));
       conversation_test_probe(&test); /* Hangup leaves the Peer usable. */
@@ -11555,7 +11555,7 @@ static void test_conversation_send_text(void) {
     memset(input, 'z', sizeof(input)); /* Admission owns a copy. */
     assert(conversation_send_text(conversation, hello) == H2_PAL_ERR_BUSY);
     assert(h2_gizclaw_service_audio_start(service) == H2_PAL_ERR_INVALID_STATE);
-    assert(atomic_load(&service->media_request) == NULL);
+    assert(h2_atomic_load(&service->media_request) == NULL);
     assert(!atomic_load(&base->bos) && text_test.completions == 0u);
     if (mode == 5)
       assert(h2_gizclaw_conversation_cancel(conversation) == H2_PAL_OK);
