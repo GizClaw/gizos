@@ -181,6 +181,7 @@ firmware_native_component(
         "//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:warm_boot",
         ":loader_common",
         ":reliable_transport",
+        "//libs/atomic",
         "//boards/ac791n_chip/ac791n",
         "//native_component_src/jieli/wl82/h2_pal_core",
     ],
@@ -298,7 +299,10 @@ firmware_native_component(
     name = "loader_partial_p1_header",
     srcs = ["src/loader_partial_p1_header.c"],
     component_name = "jieli_ac791n_devkit_loader_partial_p1_header",
-    deps = ["//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:warm_boot"],
+    deps = [
+        "//boards/jieli_ac791n_devkit/ac791n/layouts/h2loader:warm_boot",
+        "//libs/atomic",
+    ],
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
 )

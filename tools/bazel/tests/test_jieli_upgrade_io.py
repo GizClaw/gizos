@@ -25,11 +25,12 @@ int norflash_protect_resume(void);
 '''
         program = r'''
 #include <assert.h>
+#include "h2_atomic.h"
 #include <stdlib.h>
 #include <stdio.h>
 #include "h2_jieli_ac791n_devkit_flash_window.h"
 #include "adapter.c"
-static struct { int burn_waiting, update_result, update_sem; } state;
+static struct { h2_atomic_bool_t burn_waiting; int update_result, update_sem; } state;
 #define H2_PAL_OK 0
 #define H2_PAL_ERR_IO -8
 static int posts;
@@ -145,7 +146,7 @@ static int reinstall_cases(void) {
         assert(h2_jieli_upgrade_header_arm()==-1);
         base=H2_JIELI_BANK_2_SFC_BASE;
         assert(h2_jieli_upgrade_header_publish(target)==-1);
-        state.burn_waiting=1;state.update_result=H2_PAL_OK;
+        h2_atomic_bool_store(&state.burn_waiting, true, H2_ATOMIC_RELEASE);state.update_result=H2_PAL_OK;
         update_burn_complete(0);assert(state.update_result==H2_PAL_ERR_IO);
       } else {
         assert(reinstall_erases==2 && erased(p2_sectors));
@@ -184,7 +185,7 @@ int main(int argc,char **argv) {
     base=H2_JIELI_BANK_2_SFC_BASE;
     assert(h2_jieli_upgrade_header_publish(header)==-1);
     assert(physical_writes==0);
-    state.burn_waiting=1;state.update_result=H2_PAL_OK;
+    h2_atomic_bool_store(&state.burn_waiting, true, H2_ATOMIC_RELEASE);state.update_result=H2_PAL_OK;
     assert(update_burn_complete(0)==0);
     assert(state.update_result==H2_PAL_ERR_IO && posts==1);
     return 0;
@@ -283,6 +284,7 @@ int main(int argc,char **argv) {
         platform = (ROOT / "projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit/src/jieli_loader_platform.c").read_text()
         completion = platform[platform.index("static int update_burn_complete("):platform.index("static int image_writer_write(")]
         program = program.replace("/* COMPLETION */", completion)
+        program = program.replace("int main(int argc,char **argv) {", "int main(int argc,char **argv) {\n assert(h2_atomic_bool_init(&state.burn_waiting, false) == H2_ATOMIC_OK);")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             (root / "asm").mkdir()
@@ -298,7 +300,10 @@ int main(int argc,char **argv) {
                        "-I", str(root),
                        "-I", str(SOURCE.parent.parent / "include"),
                        "-I", str(ROOT / "boards/jieli_ac791n_devkit/ac791n/include"),
-                       str(root / "test.c"), "-o", str(root / "test")]
+                       "-I", str(ROOT / "libs/atomic/include"),
+                       str(root / "test.c"),
+                       str(ROOT / "libs/atomic/providers/c11/src/h2_atomic_c11.c"),
+                       "-o", str(root / "test")]
             subprocess.run(command, check=True, timeout=60)
             for fault in (0, 1, 2, 3):
                 with self.subTest(fault=fault):
