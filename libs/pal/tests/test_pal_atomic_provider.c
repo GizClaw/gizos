@@ -19,5 +19,16 @@ int main(void) {
     atomic_flag_clear(flag);
     assert(h2_pal_atomic_free(api, count) == H2_PAL_OK);
     assert(h2_pal_atomic_free(api, flag) == H2_PAL_OK);
+    const size_t alignments[] = {
+        _Alignof(_Atomic uint32_t), _Alignof(_Atomic int32_t),
+        _Alignof(_Atomic bool), _Alignof(_Atomic(void *)), _Alignof(atomic_flag),
+    };
+    size_t maximum_alignment = 1;
+    for (size_t n = 0; n < sizeof(alignments) / sizeof(alignments[0]); ++n)
+        if (alignments[n] > maximum_alignment) maximum_alignment = alignments[n];
+    void *aligned = NULL;
+    assert(h2_pal_atomic_alloc_raw(api, 16, maximum_alignment, &aligned) == H2_PAL_OK);
+    assert(((uintptr_t)aligned & (maximum_alignment - 1)) == 0);
+    assert(h2_pal_atomic_free(api, aligned) == H2_PAL_OK);
     return 0;
 }

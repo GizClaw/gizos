@@ -13,7 +13,10 @@ extern "C" {
 /** Allocation policy for C11 atomics. The borrowed API and vtable remain live.
  * Alloc returns storage aligned to `alignment` and at least `size` bytes.
  * Implementations must place it in memory where native C11 operations are
- * atomic across tasks and cores. The caller owns each successful allocation. */
+ * atomic across tasks and cores. A successful alloc must satisfy the requested
+ * alignment. Only the five typed helpers below are supported PAL allocation
+ * entry points; providers may return UNSUPPORTED for other sizes/alignments.
+ * The caller owns each successful allocation. */
 typedef struct h2_pal_atomic_vtable {
     h2_pal_result_t (*alloc)(void *user, size_t size, size_t alignment, void **out);
     void (*free)(void *user, void *value);
@@ -42,14 +45,8 @@ static inline h2_pal_result_t h2_pal_atomic_free(const h2_pal_atomic_api_t *api,
 #include <stdatomic.h>
 #include <string.h>
 
-/** Allocate initialized, cross-core C11 atomic storage. Standard C11
- * atomic_load/store/exchange/compare_exchange, fetch_add/sub/or/and,
- * and atomic_flag_test_and_set/clear operate directly on
- * returned values, including in ISRs when the operation itself is lock-free.
- * On ESP32-S3, static/global atomics in internal DRAM are usable directly.
- * Atomics shared by tasks must not reside in heap objects or task stacks that
- * may be in PSRAM: obtain them through this PAL. Never free during access.
- * No 64-bit allocation is provided. */
+/** Internal helper for the five typed allocations below. Other alignments
+ * may be rejected; a successful result always has the requested alignment. */
 static inline h2_pal_result_t h2_pal_atomic_alloc_raw(
     const h2_pal_atomic_api_t *api, size_t size, size_t alignment, void **out) {
     if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
@@ -60,6 +57,12 @@ static inline h2_pal_result_t h2_pal_atomic_alloc_raw(
         return H2_PAL_ERR_INVALID_ARG;
     return api->vtable->alloc(api->user, size, alignment, out);
 }
+/** Allocate initialized, cross-core C11 atomic storage. Use standard C11
+ * load/store/exchange/compare_exchange/fetch operations directly on returned
+ * values, including in ISRs when the operation itself is lock-free. On
+ * ESP32-S3, static/global atomics in internal DRAM are usable directly;
+ * atomics shared by tasks must not reside in heap objects or task stacks that
+ * may be in PSRAM. Never free during access. No 64-bit helper is provided. */
 #define H2_PAL_ATOMIC_ALLOC_TYPED(name, type) \
 static inline h2_pal_result_t h2_pal_atomic_alloc_##name( \
     const h2_pal_atomic_api_t *api, type initial, _Atomic(type) **out) { \
