@@ -48,10 +48,10 @@ static h2_lua_host_t *create_host(h2_runtime_t *runtime, int enable_link,
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
   if (enable_link) {
     size_t before = allocator != NULL
-        ? atomic_load(&((h2_test_allocator_t *)allocator->user)->calls) : 0u;
+        ? h2_atomic_load(&((h2_test_allocator_t *)allocator->user)->calls) : 0u;
     assert(h2_lua_link_enable(host, &link_config) == H2_PAL_OK);
     if (allocator != NULL)
-      assert(atomic_load(&((h2_test_allocator_t *)allocator->user)->calls) == before + 3u);
+      assert(h2_atomic_load(&((h2_test_allocator_t *)allocator->user)->calls) == before + 3u);
     assert(h2_lua_link_enable(host, &link_config) == H2_PAL_ERR_INVALID_STATE);
   }
   if (mark != NULL) {
@@ -391,7 +391,8 @@ static void pair_close(pair_t *pair) {
     if (pair->host[i] != NULL) {
       h2_lua_host_destroy(pair->host[i]);
     }
-    assert(atomic_load(&pair->arenas[i].live) == 0u);
+    assert(h2_atomic_load(&pair->arenas[i].live) == 0u);
+    h2_test_allocator_destroy(&pair->arenas[i]);
     assert(fake_is_released(&pair->air.devices[i]));
     h2_runtime_deinit(pair->runtime[i]);
   }
