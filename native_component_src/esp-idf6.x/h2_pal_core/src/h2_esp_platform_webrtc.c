@@ -34,7 +34,6 @@ const h2_pal_webrtc_api_t *h2_esp_platform_webrtc_api(void) {
         };
         const h2_peer_config_t config = {
             .mem = h2_esp_platform_psram_allocator(),
-            .control_mem = h2_esp_platform_internal_allocator(),
             .log = h2_esp_platform_log_api(),
             .net = h2_esp_platform_net_api(),
             .queue = h2_esp_platform_queue_api(),

@@ -99,7 +99,6 @@ static void initialize(fixture_t *f) {
   active = f;
   const h2_peer_config_t config = {
       .mem = &f->mem,
-      .control_mem = h2_desktop_platform_default_allocator(),
       .log = h2_desktop_platform_log_api(),
       .net = h2_pal_unsupported_net_api(),
       .queue = &f->queue,
@@ -172,11 +171,11 @@ static void error_fallbacks(void) {
                                                 &channel) == H2_PAL_OK);
   for (size_t i = 0u; i < f.capacity; ++i)
     emit_sdp(&f, (uint16_t)i);
-  assert(atomic_load(&f.peer->network_transport_result) == H2_PAL_OK);
+  assert(h2_atomic_load(&f.peer->network_transport_result) == H2_PAL_OK);
   const uint8_t message = 0x42;
   assert(h2_peer_webrtc_emit_channel_message(f.peer, channel, &message, 1u,
                                              0) == H2_PAL_ERR_WOULD_BLOCK);
-  assert(atomic_load(&f.peer->network_transport_result) == H2_PAL_OK);
+  assert(h2_atomic_load(&f.peer->network_transport_result) == H2_PAL_OK);
   expect_sdp(&f, 0u);
   assert(h2_peer_webrtc_emit_channel_message(f.peer, channel, &message, 1u,
                                              0) == H2_PAL_OK);
@@ -193,7 +192,7 @@ static void error_fallbacks(void) {
   for (size_t i = 0u; i < f.capacity; ++i)
     emit_sdp(&f, (uint16_t)i);
   emit_sdp(&f, (uint16_t)f.capacity);
-  h2_pal_result_t failure = atomic_load(&f.peer->network_transport_result);
+  h2_pal_result_t failure = h2_atomic_load(&f.peer->network_transport_result);
   assert(failure == H2_PAL_ERR_NO_SPACE);
   for (size_t i = 0u; i < f.capacity; ++i)
     expect_sdp(&f, (uint16_t)i);
@@ -258,8 +257,8 @@ static void wake_and_unset(void) {
          H2_PAL_ERR_IO);
   assert(h2_pal_webrtc_channel_send(f.api, channel, &packet, 1u, 0) ==
          H2_PAL_ERR_IO);
-  assert(atomic_load(&f.peer->rtp_pending) == NULL);
-  assert(atomic_load(&channel->tx_state[0]) == 0u);
+  assert(h2_atomic_load(&f.peer->rtp_pending) == NULL);
+  assert(h2_atomic_load(&channel->tx_state[0]) == 0u);
   // An existing fatal error must not turn a successful detach into failure.
   assert(h2_pal_webrtc_peer_unset_track(f.api, f.peer, &b) == H2_PAL_OK);
   b.vtable = NULL;

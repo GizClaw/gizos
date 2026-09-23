@@ -7,6 +7,7 @@
 #undef NDEBUG
 #endif
 #include <assert.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -211,7 +212,7 @@ h2_peer_portable_channel_open(h2_pal_webrtc_channel_t *channel) {
     };
     h2_peer_webrtc_on_stream_reset(channel->owner, &reset);
   } else if (atomic_load(&f->open_result) == H2_PAL_OK) {
-    channel->open = 1;
+    h2_atomic_int_store(&channel->open, 1, H2_ATOMIC_SEQ_CST);
     h2_peer_webrtc_emit_channel_state(channel, H2_PAL_WEBRTC_CHANNEL_OPEN);
   }
   atomic_fetch_add(&f->opens, 1u);
@@ -410,11 +411,11 @@ static void test_pool_and_event_lease(void) {
   const uint8_t payload[] = {0u, 0x80u, 0xffu};
   assert(h2_pal_webrtc_channel_send(f.api, channels[0], payload,
                                     sizeof(payload), 0) == H2_PAL_OK);
-  uint32_t ready = atomic_load(&f.peer->channel_ready);
+  uint32_t ready = h2_atomic_load(&f.peer->channel_ready);
   assert(ready != 0u);
   // Releasing the old channel lease must not clear the replacement's ready bit.
   h2_pal_webrtc_event_release(&closed);
-  assert(atomic_load(&f.peer->channel_ready) == ready);
+  assert(h2_atomic_load(&f.peer->channel_ready) == ready);
   atomic_store(&f.poll_gate, 0);
   wait_count(&f, &f.sends, 1u);
   h2_pal_webrtc_event_t message =
