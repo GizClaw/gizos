@@ -1638,6 +1638,9 @@ py_test(
     name = "jieli_runtime_events_test",
     srcs = ["tests/test_jieli_runtime_events.py"],
     data = [
+        "//libs/atomic:include/h2_atomic.h",
+        "//libs/atomic/providers/c11:h2_atomic_c11_impl.h",
+        "//libs/atomic/providers/c11:src/h2_atomic_c11.c",
         "//libs/pal:pal_header_files",
         "//libs/pal:unsupported",
         "//libs/runtime",
