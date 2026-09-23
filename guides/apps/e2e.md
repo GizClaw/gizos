@@ -31,7 +31,7 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 | Libco | `//projects/e2e/apps/libco/app:libco_smoke` | Desktop、Browser、DevKit ESP32-S3、BK7258、TapDoki BK3633 |
 | Lua Runtime | `//projects/e2e/apps/lua-runtime/app:lua_runtime_e2e` | Desktop、Browser、AMOLED；九个固定 VM/coroutine/component/event/worker/shutdown case |
 | Lua Link | `//projects/e2e/apps/lua-link/app:lua_link_e2e` | DevKit ESP32-S3 host + AMOLED ESP32-S3 join over BLE Extended Advertising；reliable/datagram/stream/peer-exit per session，final hold session for link loss |
-| PAL | `//projects/e2e/apps/pal/app:pal_e2e` | Linux/macOS/Windows 共同 host OS/Filesystem/Net/TLS/CoreHTTP/CoreMQTT；Desktop core/MQTT/SQLite Preference；Browser core；DevKit 与 Tiga V4.2 H2Loader `pal-pref` |
+| PAL | `//projects/e2e/apps/pal/app:pal_e2e`、`//projects/e2e/apps/pal/app:pal_atomic_e2e` | Linux/macOS/Windows 共同 host OS/Filesystem/Net/TLS/CoreHTTP/CoreMQTT；Desktop core/MQTT/SQLite Preference；Browser core；DevKit 与 Tiga V4.2 H2Loader `pal-pref`；DevKit ESP32-S3 H2Loader `pal-atomic` 跨核 PSRAM/内部 RAM atomic |
 | H2Loader Serial | `//projects/e2e/apps/h2loader-serial/app:h2loader_serial_e2e` | macOS Desktop；desktop Chrome Browser |
 | WebRTC Performance | `//projects/e2e/apps/webrtc-performance/app:webrtc_performance` | Desktop H2Peer + local Pion；DevKit 与 AMOLED ESP32-S3 H2Peer + operator LAN Pion |
 | iperf | `//projects/e2e/apps/iperf/app:iperf_e2e` | Desktop host client + PAL server；AMOLED ESP32-S3 + operator LAN PAL server |
@@ -49,6 +49,8 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 `h2_pal_e2e_run()` 要求 launcher 通过 `suite_mask` 显式选择 suite。`core` 与 MQTT 可以组合执行；Preference 必须单独选择，因为它会返回跨 boot action。Wi-Fi suite 必须单独选择：断开 STA，需要非 Wi-Fi 控制链路，不恢复连接，只验证断开后 STA/Netif 状态一致；`filesystem` suite 只运行 HOST_FILESYSTEM case。worker join 或 timer destroy 失败时资源保留在 `retained_cleanup`，后续 suite（含 MQTT）不再运行，直到 `h2_pal_e2e_cleanup()` 成功。MQTT suite 通过 Runtime 的 MQTT 与 monotonic Time API 执行 connect、subscribe、publish echo、disconnect 和 bounded cleanup。`host` suite 只通过注入的 Runtime/PAL API 运行相同 case ID 和结果 ledger；`//projects/e2e/targets/cc_binary/pal:pal_e2e_test` 以 OS-selected fixture 在 Linux、macOS 和 Windows 使用 ephemeral loopback port、临时 mount 与仓库内测试证书，不访问公网。Preference suite 只使用 `runtime->pref` 和 Memory PAL，在固定 control/data namespace 中执行 `seed -> verify -> clean -> complete`，覆盖全部类型、16 KiB blob、同值写、1,000 次替换、迭代、删除、清空和终态重放；跨 boot action 由结果返回，portable App 不直接重启平台。
 
 Desktop launcher 位于 `projects/e2e/targets/cc_binary/pal`。MQTT public-broker target 从现有 `H2_MQTT_SMOKE_*` environment surface 读取 endpoint policy；loopback target 持有 POSIX broker fixture。`pref_test` 在 `TEST_TMPDIR` 下创建进程独占的 SQLite store，每阶段销毁并重新打开真实 provider，最后只删除自己的临时根。DevKit 与 Tiga adapter 分别位于 `projects/e2e/targets/h2loader_tar_zlib/pal-pref/devkit` 和 `projects/e2e/targets/h2loader_tar_zlib/pal-pref/tiga_esp_v4_2`；两者每次启动运行一个 Preference phase，只在 seed 成功后确认 App，并对两个 transition 使用真实重启；失败和终态都保持 H2Loader command-responsive。
+
+DevKit `projects/e2e/targets/h2loader_tar_zlib/pal-atomic/devkit:package` 通过 H2Loader 安装，使用两个分别固定在 core 0/1 的 task 对 PSRAM 与内部 RAM 各执行每核 1,000,000 次 PAL fetch_add，要求精确得到 2,000,000。PSRAM 上的 CAS、exchange 与 flag 另有并发正确性用例；直接 C11 PSRAM fetch_add 只报告实际值和丢更新数，不能作为通过条件。设备每案输出 `H2_PAL_ATOMIC_E2E_CASE`，最终输出 `H2_PAL_ATOMIC_E2E_SUMMARY`，全部 PAL 案例通过后才确认测试 App。
 
 Public MQTT broker 是 PAL 中唯一个 manual Bazel test，通过独立入口运行：
 

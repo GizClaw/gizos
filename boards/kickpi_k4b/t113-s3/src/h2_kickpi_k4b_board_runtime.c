@@ -2,6 +2,7 @@
 #include "h2_kickpi_k4b_board_private.h"
 
 #include "h2_linux_platform.h"
+#include "h2_c11_pal_atomic.h"
 #include "h2/pal/h2_pal_unsupported.h"
 
 #include <string.h>
@@ -73,4 +74,8 @@ h2_pal_result_t h2_kickpi_k4b_board_runtime_config(
         .event_queue_capacity = H2_RUNTIME_DEFAULT_EVENT_QUEUE_CAPACITY,
     };
     return H2_PAL_OK;
+}
+
+const h2_pal_atomic_api_t *h2_kickpi_k4b_board_atomic_api(void) {
+    return h2_c11_pal_atomic_api();
 }

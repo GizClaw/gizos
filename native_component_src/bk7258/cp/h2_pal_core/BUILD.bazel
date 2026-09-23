@@ -4,6 +4,22 @@ load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
 
+cc_test(
+    name = "atomic_provider_test",
+    srcs = [
+        "src/h2_bk_platform_atomic_pal.c",
+        "//libs/pal:atomic_provider_smoke_src",
+    ],
+    conlyopts = H2_C11_OPTS + ["-DH2_ATOMIC_PROVIDER_GETTER=h2_bk_platform_atomic_api"],
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal", "//libs/pal/providers/c11/atomic"],
+)
+
 firmware_native_component(
     name = "h2_pal_core",
     srcs = glob(
@@ -44,6 +60,8 @@ firmware_native_component(
         "manual",
     ],
     deps = [
+        "//libs/pal/providers/c11/atomic",
+
         "//libs/pal",
     ],
 )

@@ -101,6 +101,7 @@ set(BK3633_SDK_INCLUDE_DIRS
 
 add_library(bk3633_h2_pal_core STATIC
   "${FIRMWARES_ROOT}/libs/drivers/rtc/bm8563/src/h2_bm8563.c"
+  src/h2_bk3633_platform_atomic.c
   src/h2_bk3633_flash_disk.c
   src/h2_bk3633_nvds_pref.c
   src/h2_bk3633_platform_ble.c

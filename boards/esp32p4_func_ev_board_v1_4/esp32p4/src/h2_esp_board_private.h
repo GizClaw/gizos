@@ -2,6 +2,7 @@
 #define H2_ESP_BOARD_PRIVATE_H
 
 #include "h2_runtime.h"
+#include "h2/pal/os/h2_pal_atomic.h"
 
 #include "h2/pal/os/h2_pal_fs.h"
 #include "h2/pal/hal/h2_pal_audio.h"
@@ -25,6 +26,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+const h2_pal_atomic_api_t *h2_esp_board_atomic_api(void);
 
 int h2_esp_board_fs_init(h2_pal_fs_api_t *fs);
 int h2_esp_board_fs_deinit(void);

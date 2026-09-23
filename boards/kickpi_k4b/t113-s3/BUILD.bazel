@@ -63,6 +63,7 @@ cc_library(
     target_compatible_with = LINUX_ARMV7_GNUEABIHF_ARTIFACT_COMPATIBILITY,
     deps = [
         "//libs/pal",
+        "//libs/pal/providers/c11/atomic",
         "//libs/pal/providers/linux/pal_core",
         "//libs/runtime",
     ],

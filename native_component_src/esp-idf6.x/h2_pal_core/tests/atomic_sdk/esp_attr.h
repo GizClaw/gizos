@@ -1,0 +1,5 @@
+#ifndef H2_ATOMIC_TEST_ESP_ATTR_H
+#define H2_ATOMIC_TEST_ESP_ATTR_H
+#define IRAM_ATTR
+#define DRAM_ATTR
+#endif

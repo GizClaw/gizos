@@ -11,6 +11,7 @@
 #include "h2/pal/net/h2_pal_dtls.h"
 #include "h2/pal/net/h2_pal_net.h"
 #include "h2/pal/net/h2_pal_netif.h"
+#include "h2/pal/os/h2_pal_atomic.h"
 #include "h2/pal/os/h2_pal_crypto.h"
 #include "h2/pal/os/h2_pal_disk.h"
 #include "h2/pal/os/h2_pal_firmware_info.h"
@@ -99,6 +100,7 @@ const h2_pal_firmware_info_api_t *h2_esp_platform_firmware_info_api(void);
  */
 h2_pal_result_t h2_esp_platform_data_partition_subtype(const char *label,
                                                        uint8_t *out_subtype);
+const h2_pal_atomic_api_t *h2_esp_platform_atomic_api(void);
 const h2_pal_sync_api_t *h2_esp_platform_sync_api(void);
 const h2_pal_net_api_t *h2_esp_platform_net_api(void);
 const h2_pal_netif_api_t *h2_esp_platform_netif_api(void);

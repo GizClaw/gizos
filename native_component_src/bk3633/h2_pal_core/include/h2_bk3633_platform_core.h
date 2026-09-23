@@ -10,6 +10,7 @@
 #include "h2/pal/os/h2_pal_firmware_info.h"
 #include "h2/pal/hal/h2_pal_input.h"
 #include "h2/pal/os/h2_pal_log.h"
+#include "h2/pal/os/h2_pal_atomic.h"
 #include "h2/pal/os/h2_pal_mem.h"
 #include "h2/pal/hal/h2_pal_power.h"
 #include "h2/pal/os/h2_pal_pref.h"
@@ -24,6 +25,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+const h2_pal_atomic_api_t *h2_bk3633_platform_atomic_api(void);
 
 #define H2_BK3633_SYSTEM_EVENT_PAYLOAD_MAX 32u
 #define H2_BK3633_NVDS_APPLICATION_TAG_MIN 0xa0u

@@ -15,6 +15,7 @@
 #include "h2/pal/application/h2_pal_mqtt.h"
 #include "h2/pal/application/h2_pal_webrtc.h"
 #include "h2/pal/os/h2_pal_mem.h"
+#include "h2/pal/os/h2_pal_atomic.h"
 #include "h2/pal/os/h2_pal_sync.h"
 #include "h2/pal/os/h2_pal_queue.h"
 #include "h2/pal/net/h2_pal_sctp.h"

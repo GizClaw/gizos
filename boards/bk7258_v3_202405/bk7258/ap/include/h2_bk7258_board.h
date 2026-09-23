@@ -3,12 +3,15 @@
 
 #include "h2_runtime.h"
 #include "h2/pal/os/h2_pal_mem.h"
+#include "h2/pal/os/h2_pal_atomic.h"
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 typedef void (*h2_bk7258_board_entry_task_fn)(void *user);
+
+const h2_pal_atomic_api_t *h2_bk7258_board_atomic_api(void);
 
 h2_pal_result_t h2_bk7258_board_runtime_config(h2_runtime_config_t *out_config);
 

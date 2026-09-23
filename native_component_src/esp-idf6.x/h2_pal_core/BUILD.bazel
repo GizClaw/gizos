@@ -44,6 +44,8 @@ firmware_native_component(
         "manual",
     ],
     deps = [
+        "//libs/pal/providers/c11/atomic",
+
         "//libs/mem_arena",
         "//libs/pal:unsupported",
         "//libs/pal/providers/corehttp",
@@ -475,4 +477,42 @@ cc_test(
         ":arena_headers",
         "//libs/mem_arena",
     ],
+)
+
+cc_test(
+    name = "atomic_route_test",
+    srcs = [
+        "include/h2_esp_platform_core.h",
+        "src/h2_esp_platform_atomic.c",
+        "tests/test_h2_esp_platform_atomic.c",
+    ] + glob(["tests/atomic_sdk/**/*.h"]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include", "tests/atomic_sdk"],
+    local_defines = ["__XTENSA__", "CONFIG_SPIRAM=1"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal", "//libs/pal/providers/c11/atomic"],
+)
+
+cc_test(
+    name = "atomic_no_spiram_test",
+    srcs = [
+        "include/h2_esp_platform_core.h",
+        "src/h2_esp_platform_atomic.c",
+        "tests/test_h2_esp_platform_atomic.c",
+    ] + glob(["tests/atomic_sdk/**/*.h"]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include", "tests/atomic_sdk"],
+    local_defines = ["__XTENSA__", "CONFIG_SPIRAM=0"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal", "//libs/pal/providers/c11/atomic"],
 )

@@ -8,6 +8,7 @@
 #include "h2/pal/hal/h2_pal_ble.h"
 #include "h2/pal/hal/h2_pal_display.h"
 #include "h2/pal/hal/h2_pal_touch.h"
+#include "h2/pal/os/h2_pal_atomic.h"
 #include "h2/pal/os/h2_pal_disk.h"
 #include "h2/pal/os/h2_pal_fs.h"
 #include "h2/pal/os/h2_pal_pref.h"
@@ -25,6 +26,7 @@ extern "C" {
 #endif
 
 const char *h2_jieli_ac791n_devkit_board_name(void);
+const h2_pal_atomic_api_t *h2_jieli_ac791n_devkit_atomic_api(void);
 /** Persisted BLE identity address, formatted as 12 lowercase hex digits. */
 const char *h2_jieli_ac791n_devkit_device_uid(void);
 

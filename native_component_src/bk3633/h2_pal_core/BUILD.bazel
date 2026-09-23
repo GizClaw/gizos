@@ -4,6 +4,24 @@ load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
 
+cc_test(
+    name = "atomic_provider_test",
+    srcs = [
+        "include/h2_bk3633_platform_core.h",
+        "src/h2_bk3633_platform_atomic.c",
+        "//libs/pal:atomic_provider_smoke_src",
+    ],
+    conlyopts = H2_C11_OPTS + ["-DH2_ATOMIC_PROVIDER_GETTER=h2_bk3633_platform_atomic_api"],
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":h2_platform_entropy", "//libs/drivers/rtc/bm8563", "//libs/pal"],
+)
+
 cc_library(
     name = "h2_platform_entropy",
     srcs = ["src/h2_bk3633_platform_entropy.c"],
@@ -79,6 +97,7 @@ cc_library(
 firmware_native_component(
     name = "h2_pal_core",
     srcs = [
+        "src/h2_bk3633_platform_atomic.c",
         "src/h2_bk3633_flash_disk.c",
         "src/h2_bk3633_nvds_pref.c",
         "src/h2_bk3633_platform_battery.c",

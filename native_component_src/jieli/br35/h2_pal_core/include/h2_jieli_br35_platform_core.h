@@ -14,6 +14,7 @@
 
 #include "h2/pal/os/h2_pal_firmware_info.h"
 #include "h2/pal/os/h2_pal_log.h"
+#include "h2/pal/os/h2_pal_atomic.h"
 #include "h2/pal/os/h2_pal_mem.h"
 #include "h2/pal/os/h2_pal_queue.h"
 #include "h2/pal/os/h2_pal_sync.h"
@@ -24,6 +25,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+const h2_pal_atomic_api_t *h2_jieli_br35_platform_atomic_api(void);
 
 /** Longest formatted log line, including level/scope prefix and CRLF. */
 #define H2_JIELI_BR35_LOG_LINE_MAX 320u

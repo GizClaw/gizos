@@ -15,6 +15,7 @@
 #include "h2/pal/os/h2_pal_crypto.h"
 #include "h2/pal/os/h2_pal_firmware_info.h"
 #include "h2/pal/os/h2_pal_log.h"
+#include "h2/pal/os/h2_pal_atomic.h"
 #include "h2/pal/os/h2_pal_mem.h"
 #include "h2/pal/os/h2_pal_pref.h"
 #include "h2/pal/os/h2_pal_queue.h"
@@ -29,6 +30,8 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+
+const h2_pal_atomic_api_t *h2_bk_platform_atomic_api(void);
 
 typedef enum h2_bk_task_stack_region {
   H2_BK_TASK_STACK_DEFAULT = 0,

@@ -10,5 +10,6 @@ armino_component_register(
   INCLUDE_DIRS
     "include"
     "${REPO_ROOT}/libs/pal/include"
+    "${REPO_ROOT}/libs/pal/providers/c11/atomic/include"
   PRIV_REQUIRES
     ${H2_BK_PLATFORM_CORE_PRIV_REQUIRES})

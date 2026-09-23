@@ -1,0 +1,6 @@
+#ifndef H2_ATOMIC_TEST_SDKCONFIG_H
+#define H2_ATOMIC_TEST_SDKCONFIG_H
+#ifndef CONFIG_SPIRAM
+#define CONFIG_SPIRAM 1
+#endif
+#endif

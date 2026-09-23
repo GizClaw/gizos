@@ -1,4 +1,5 @@
 #include "h2_jieli_ac791n_devkit.h"
+#include "h2_jieli_wl82_platform_core.h"
 
 #include "usb/usb_common_def.h"
 
@@ -25,4 +26,8 @@ void h2_jieli_usb_debug_delivery_confirmed(void) {
   if (h2_jieli_wl82_exception_log_clear != NULL) {
     (void)h2_jieli_wl82_exception_log_clear();
   }
+}
+
+const h2_pal_atomic_api_t *h2_jieli_ac791n_devkit_atomic_api(void) {
+  return h2_jieli_wl82_platform_atomic_api();
 }

@@ -16,6 +16,11 @@ h2_tasks(
     ],
 )
 
+h2_tasks(
+    name = "atomic_tasks",
+    tasks = ["pal/atomic/0", "pal/atomic/1"],
+)
+
 cc_library(
     name = "pal_e2e",
     srcs = [
@@ -38,6 +43,30 @@ cc_library(
         "//libs/pal",
         "//libs/runtime",
     ],
+)
+
+cc_library(
+    name = "pal_atomic_e2e",
+    srcs = ["src/h2_pal_atomic_e2e.c"],
+    hdrs = ["include/h2_pal_atomic_e2e.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [":atomic_tasks", "//libs/pal"],
+)
+
+cc_test(
+    name = "pal_atomic_e2e_test",
+    srcs = ["tests/test_h2_pal_atomic_e2e.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    linkopts = ["-pthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":pal_atomic_e2e", "//libs/pal/providers/c11/atomic"],
 )
 
 cc_test(

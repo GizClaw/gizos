@@ -70,6 +70,7 @@ h2_pal_mem_api_t *h2_bk7258_board_default_allocator(void);
 h2_pal_mem_api_t *h2_bk7258_board_sram_allocator(void);
 h2_pal_mem_api_t *h2_bk7258_board_psram_allocator(void);
 const h2_pal_log_api_t *h2_bk7258_board_log_api(void);
+const h2_pal_atomic_api_t *h2_bk7258_board_atomic_api(void);
 const h2_pal_sync_api_t *h2_bk7258_board_sync_api(void);
 const h2_pal_task_api_t *h2_bk7258_board_task_api(void);
 const h2_pal_queue_api_t *h2_bk7258_board_queue_api(void);

@@ -93,6 +93,7 @@ h2/pal/core/h2_pal_errors.h
 操作系统抽象为跨平台代码提供内存、日志、时间、并发、同步、存储和系统事件等基础运行能力。它隔离 allocator、RTOS primitive、文件系统和持久化存储的差异。
 
 ```text
+h2/pal/os/h2_pal_atomic.h
 h2/pal/os/h2_pal_crypto.h
 h2/pal/os/h2_pal_disk.h
 h2/pal/os/h2_pal_firmware_info.h

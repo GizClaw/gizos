@@ -117,3 +117,7 @@ h2_pal_wifi_settings_t *h2_esp_board_wifi_settings(void) {
 h2_pal_modem_t *h2_esp_board_modem(void) {
     return h2_esp_platform_modem_unsupported();
 }
+
+const h2_pal_atomic_api_t *h2_esp_board_atomic_api(void) {
+    return h2_esp_platform_atomic_api();
+}

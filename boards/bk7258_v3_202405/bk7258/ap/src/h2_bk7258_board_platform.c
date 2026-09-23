@@ -18,6 +18,10 @@ const h2_pal_log_api_t *h2_bk7258_board_log_api(void) {
     return h2_bk_platform_log_api();
 }
 
+const h2_pal_atomic_api_t *h2_bk7258_board_atomic_api(void) {
+    return h2_bk_platform_atomic_api();
+}
+
 const h2_pal_sync_api_t *h2_bk7258_board_sync_api(void) {
     return h2_bk_platform_sync_api();
 }

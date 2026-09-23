@@ -12,6 +12,7 @@ extern "C" {
 #define H2_PAL_DECLARE_UNSUPPORTED_API(name, type) \
     const type *h2_pal_unsupported_##name##_api(void)
 
+H2_PAL_DECLARE_UNSUPPORTED_API(atomic, h2_pal_atomic_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(audio, h2_pal_audio_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(audio_decoder, h2_pal_audio_decoder_api_t);
 H2_PAL_DECLARE_UNSUPPORTED_API(ble_host, h2_pal_ble_host_api_t);

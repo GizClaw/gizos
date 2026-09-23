@@ -4,11 +4,28 @@ load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
 
+cc_test(
+    name = "atomic_provider_test",
+    srcs = [
+        "src/h2_jieli_wl82_platform_atomic.c",
+        "//libs/pal:atomic_provider_smoke_src",
+    ],
+    conlyopts = H2_C11_OPTS + ["-DH2_ATOMIC_PROVIDER_GETTER=h2_jieli_wl82_platform_atomic_api"],
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal", "//libs/pal/providers/c11/atomic"],
+)
+
 # PAL core providers for the JieLi AC791N (wl82) SDK. The providers only
 # depend on h2_jieli_wl82_sdk_port.h; the SDK binding
 # (src/h2_jieli_wl82_sdk_port.c) is compiled by the native SDK build, while
 # host tests link the deterministic fake below.
 PROVIDER_SRCS = [
+    "src/h2_jieli_wl82_platform_atomic.c",
     "src/h2_jieli_wl82_platform_firmware_info.c",
     "src/h2_jieli_wl82_platform_log.c",
     "src/h2_jieli_wl82_platform_mem.c",
@@ -26,11 +43,12 @@ firmware_native_component(
     hdrs = glob(["include/*.h"]),
     component_name = "h2_pal_core",
     include_roots = [
+        "libs/pal/providers/c11/atomic/include",
         "libs/pal/include",
         "native_component_src/jieli/wl82/h2_pal_core/include",
     ],
     tags = ["manual"],
-    deps = ["//libs/pal:pal_header_files"],
+    deps = ["//libs/pal:pal_header_files", "//libs/pal/providers/c11/atomic"],
 )
 
 cc_library(
@@ -54,7 +72,9 @@ cc_library(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     visibility = ["//visibility:private"],
-    deps = ["//libs/pal"],
+    deps = [
+        "//libs/pal/providers/c11/atomic",
+        "//libs/pal"],
 )
 
 cc_test(
