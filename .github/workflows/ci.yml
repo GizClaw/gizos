@@ -1066,7 +1066,10 @@ jobs:
           fetch-depth: 1
           lfs: false
           persist-credentials: true
-          sparse-checkout: tools/jieli_toolchain
+          # This repo is small. Sparse checkout turns it into a promisor clone;
+          # git lfs pull may then need another Git fetch while scanning trees.
+          # A transient certificate failure in that fetch leaves pointer files
+          # behind even though git lfs pull exits successfully.
           submodules: false
           token: ${{ steps.app-token.outputs.token }}
 
