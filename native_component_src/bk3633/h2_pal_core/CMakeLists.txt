@@ -124,7 +124,7 @@ target_include_directories(bk3633_h2_pal_core
     "${FIRMWARES_ROOT}/libs/drivers/rtc/bm8563/include"
     "${FIRMWARES_ROOT}/libs/pal/include"
     "${FIRMWARES_ROOT}/libs/atomic/include"
-    "${FIRMWARES_ROOT}/libs/atomic/providers/locked"
+    "${FIRMWARES_ROOT}/libs/atomic/providers/unsupported"
   PRIVATE
     "${BK3633_CONFIG_INCLUDE_DIR}"
     ${BK3633_SDK_INCLUDE_DIRS}
