@@ -191,6 +191,7 @@ cc_test(
     }),
     deps = [
         ":h2_pal_core_host",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/runtime",
     ],
