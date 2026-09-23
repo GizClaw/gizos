@@ -43,7 +43,7 @@ class UsbDeadlinesTest(unittest.TestCase):
                 unit.write_text(fixture)
                 subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-pthread',
                     *shlex.split(os.environ.get('JIELI_TEST_CFLAGS', '')),
-                    '-I', str(ROOT / 'libs/pal/include'), str(unit), '-o', str(binary)], check=True)
+                    '-I', str(ROOT / 'libs/pal/include'), str(unit), '-I', str(ROOT / 'libs/atomic/include'), str(ROOT / 'libs/atomic/providers/c11/src/h2_atomic_c11.c'), '-o', str(binary)], check=True)
                 for case in ['overflow', 'zero_lock', 'lock', 'native_busy', 'offline', 'dma_missing', 'native_lock', 'packet', 'short']:
                     with self.subTest(provider=path, case=case):
                         result = subprocess.run([str(binary), case], capture_output=True, text=True, timeout=10)

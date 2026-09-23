@@ -27,13 +27,13 @@ class IdleConsoleTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             unit = Path(directory) / 'test.c'; binary = Path(directory) / 'test'
             unit.write_text(fixture.replace('/* FUNCTIONS */', code))
-            subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', str(unit), '-o', str(binary)], check=True)
+            subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', str(unit), '-I', str(ROOT / 'libs/atomic/include'), str(ROOT / 'libs/atomic/providers/c11/src/h2_atomic_c11.c'), '-o', str(binary)], check=True)
             subprocess.run([str(binary)], check=True, timeout=10)
             # Negative control: reproduce the reviewer's assumed EOF mapping.
             unit.write_text(fixture.replace('/* FUNCTIONS */', code.replace(
                 'if (value == EOF) return H2_PAL_ERR_TIMEOUT;',
                 'if (value == EOF) return H2_PAL_ERR_CLOSED;')))
-            subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', str(unit), '-o', str(binary)], check=True)
+            subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', str(unit), '-I', str(ROOT / 'libs/atomic/include'), str(ROOT / 'libs/atomic/providers/c11/src/h2_atomic_c11.c'), '-o', str(binary)], check=True)
             result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=10)
             self.assertNotEqual(result.returncode, 0, 'The fixture must detect premature idle closure')
 

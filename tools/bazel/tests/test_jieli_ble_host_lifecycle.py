@@ -33,7 +33,7 @@ class HostLifecycleTest(unittest.TestCase):
             test.write_text(fixture.replace('/* REAL_PROVIDER */', code))
             binary = Path(directory) / 'test'
             subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-fsanitize=address',
-                '-I', str(ROOT / 'libs/pal/include'), str(test), '-o', str(binary)], check=True)
+                '-I', str(ROOT / 'libs/pal/include'), str(test), '-I', str(ROOT / 'libs/atomic/include'), str(ROOT / 'libs/atomic/providers/c11/src/h2_atomic_c11.c'), '-o', str(binary)], check=True)
             env = dict(os.environ, ASAN_OPTIONS='detect_stack_use_after_return=1')
             result = subprocess.run([str(binary)], env=env, capture_output=True, text=True, timeout=15)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
@@ -67,7 +67,7 @@ static int h2_att_write_retained(uint16_t c, uint16_t a, uint16_t t, uint16_t o,
             binary = Path(directory) / 'test'
             subprocess.run(['cc', '-std=c11', '-D_POSIX_C_SOURCE=200809L', '-Wall', '-Wextra', '-Werror', '-pthread',
                 *os.environ.get('JIELI_TEST_CFLAGS', '').split(), '-I', str(ROOT / 'libs/pal/include'),
-                str(test), '-o', str(binary)], check=True)
+                str(test), '-I', str(ROOT / 'libs/atomic/include'), str(ROOT / 'libs/atomic/providers/c11/src/h2_atomic_c11.c'), '-o', str(binary)], check=True)
             for case in ['adv_error', 'disconnect_error', 'exit_error', 'retained', 'retained_callback', 'retained_command', 'self_stop', 'pending_init', 'late_init', 'init_dispatcher', 'admitted_start', 'init_error', 'init_publication', 'disconnect_event']:
                 with self.subTest(case=case):
                     result = subprocess.run([str(binary), case], capture_output=True, text=True, timeout=15)

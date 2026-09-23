@@ -69,7 +69,7 @@ class RuntimeLifetimeTest(unittest.TestCase):
                     unit = Path(directory) / 'test.c'; binary = Path(directory) / 'test'
                     unit.write_text(unit_text)
                     subprocess.run([os.environ.get('CC', 'cc'), '-std=c11', '-Wall', '-Wextra', '-Werror', '-pthread',
-                        *shlex.split(os.environ.get('JIELI_TEST_CFLAGS', '')), str(unit), '-o', str(binary)], check=True)
+                        *shlex.split(os.environ.get('JIELI_TEST_CFLAGS', '')), str(unit), '-I', str(ROOT / 'libs/atomic/include'), str(ROOT / 'libs/atomic/providers/c11/src/h2_atomic_c11.c'), '-o', str(binary)], check=True)
                     result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=15)
                     self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
                     if name == 'audio-system':

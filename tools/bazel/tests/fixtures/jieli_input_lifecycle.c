@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <pthread.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
+#include <stdlib.h>
 #include <sched.h>
 #include <stdint.h>
 #include <string.h>
@@ -16,10 +17,10 @@ static int emi_handle, iic_handle, close_error, flush_error, iic_error, gpio_err
 static int closes, stops, dma_pending, rs, check_rs, stale_flush, lost_irq;
 static uint32_t clock_ms;
 static void complete_transfer(void);
-static atomic_int adc_calls, adc_result, pause_adc, pause_draw, pause_touch, entered, release_worker;
+static h2_atomic_int_t adc_calls, adc_result, pause_adc, pause_draw, pause_touch, entered, release_worker;
 static void pause_operation(void) {
-    atomic_store(&entered, 1);
-    while (!atomic_load(&release_worker)) sched_yield();
+    h2_atomic_store(&entered, 1);
+    while (!h2_atomic_load(&release_worker)) sched_yield();
 }
 static void progress_transfer(void) {
     if (stale_flush && !lost_irq && clock_ms >= 5u && dma_pending) {
@@ -56,7 +57,7 @@ static int fake_dev_ioctl(void *device, int command, uintptr_t argument) {
             complete_transfer();
         }
     }
-    if (command == IIC_IOCTL_START && atomic_load(&pause_touch)) pause_operation();
+    if (command == IIC_IOCTL_START && h2_atomic_load(&pause_touch)) pause_operation();
     if (command == IIC_IOCTL_STOP) ++stops;
     if (command == IIC_IOCTL_RX_WITH_STOP_BIT) *(uint8_t *)argument = 0x64;
     return command == iic_error ? -1 : 0;
@@ -66,15 +67,15 @@ static int dev_write(void *device, void *buffer, uint32_t length) {
     assert(device == &emi_handle && buffer != NULL);
     /* Pinned EMI waits for prior DMA and copies <=4 bytes to native storage. */
     dma_pending = 0;
-    if (length == 2u && atomic_load(&pause_draw)) pause_operation();
+    if (length == 2u && h2_atomic_load(&pause_draw)) pause_operation();
     dma_pending = 1;
     return (int)length;
 }
 static uint32_t adc_add_sample_ch(uint32_t channel) {
     assert(channel == AD_CH_PB01);
-    int call = atomic_fetch_add(&adc_calls, 1);
-    if (call == 0 && atomic_load(&pause_adc)) pause_operation();
-    return (uint32_t)atomic_load(&adc_result);
+    int call = h2_atomic_fetch_add(&adc_calls, 1);
+    if (call == 0 && h2_atomic_load(&pause_adc)) pause_operation();
+    return (uint32_t)h2_atomic_load(&adc_result);
 }
 static uint32_t adc_get_value(uint32_t channel) { assert(channel == AD_CH_PB01); return 0; }
 /* PROVIDER */
@@ -100,7 +101,25 @@ static void *button_thread(void *unused) {
     assert(read_single_button(NULL, H2_JIELI_AC791N_ADKEY_POWER_ID, &reading) == H2_PAL_OK);
     return NULL;
 }
+static void h2_fixture_atomic_cleanup(void) {
+    h2_atomic_destroy(&adc_calls);
+    h2_atomic_destroy(&adc_result);
+    h2_atomic_destroy(&pause_adc);
+    h2_atomic_destroy(&pause_draw);
+    h2_atomic_destroy(&pause_touch);
+    h2_atomic_destroy(&entered);
+    h2_atomic_destroy(&release_worker);
+}
 int main(int argc, char **argv) {
+    assert(atexit(h2_fixture_atomic_cleanup) == 0);
+    assert(h2_atomic_init(&adc_calls, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&adc_result, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&pause_adc, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&pause_draw, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&pause_touch, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&entered, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&release_worker, 0) == H2_ATOMIC_OK);
+
     assert(argc == 2);
     display_state.device = &emi_handle;
     display_state.open = 1;
@@ -119,7 +138,7 @@ int main(int argc, char **argv) {
         assert(read_radio_button_group(NULL, H2_JIELI_AC791N_ADKEY_GROUP_ID, NULL) == H2_PAL_ERR_INVALID_ARG);
         assert(read_single_button(NULL, 0, NULL) == H2_PAL_ERR_INVALID_ARG);
         assert(read_radio_button_group(NULL, 0, NULL) == H2_PAL_ERR_INVALID_ARG);
-        assert(atomic_load(&adc_calls) == 0);
+        assert(h2_atomic_load(&adc_calls) == 0);
         h2_display_rect_t rect = {0, 0, 1, 1};
         uint16_t pixel = 0;
         assert(display->vtable->draw_bitmap(display->user, NULL, &pixel, 2, H2_DISPLAY_PIXEL_RGB565) == H2_DISPLAY_ERR_INVALID_ARG);
@@ -186,44 +205,44 @@ int main(int argc, char **argv) {
         assert(stops == 1);
     } else if (strcmp(argv[1], "adc_full") == 0 || strcmp(argv[1], "adc_gpio") == 0) {
         h2_pal_single_button_reading_t reading = {.id = 99};
-        adc_result = strcmp(argv[1], "adc_full") == 0 ? ADC_MAX_CH : 0;
+        h2_atomic_store(&adc_result, strcmp(argv[1], "adc_full") == 0 ? ADC_MAX_CH : 0);
         gpio_error = strcmp(argv[1], "adc_gpio") == 0 ? -1 : 0;
         assert(read_single_button(NULL, H2_JIELI_AC791N_ADKEY_POWER_ID, &reading) == H2_PAL_ERR_IO);
         assert(reading.id == 99);
-        adc_result = 3;
+        h2_atomic_store(&adc_result, 3);
         gpio_error = 0;
         assert(read_single_button(NULL, H2_JIELI_AC791N_ADKEY_POWER_ID, &reading) == H2_PAL_OK);
         assert(reading.state == H2_PAL_BUTTON_STATE_PRESSED);
     } else {
         pthread_t worker;
         if (strcmp(argv[1], "draw_close") == 0) {
-            pause_draw = 1;
+            h2_atomic_store(&pause_draw, 1);
             assert(pthread_create(&worker, NULL, draw_thread, NULL) == 0);
         } else if (strcmp(argv[1], "touch_close") == 0) {
-            pause_touch = 1;
+            h2_atomic_store(&pause_touch, 1);
             assert(pthread_create(&worker, NULL, touch_thread, NULL) == 0);
         } else {
-            pause_adc = 1;
+            h2_atomic_store(&pause_adc, 1);
             assert(pthread_create(&worker, NULL, button_thread, NULL) == 0);
         }
-        while (!atomic_load(&entered)) sched_yield();
-        if (pause_draw) {
+        while (!h2_atomic_load(&entered)) sched_yield();
+        if (h2_atomic_load(&pause_draw)) {
             assert(display->vtable->close(display->user) == H2_PAL_ERR_BUSY);
-        } else if (pause_touch) {
+        } else if (h2_atomic_load(&pause_touch)) {
             assert(touch->vtable->close(touch->user) == H2_PAL_ERR_BUSY);
         } else {
             h2_pal_radio_button_group_reading_t reading;
             assert(read_radio_button_group(NULL, H2_JIELI_AC791N_ADKEY_GROUP_ID, &reading) == H2_PAL_ERR_BUSY);
-            assert(atomic_load(&adc_calls) == 1);
+            assert(h2_atomic_load(&adc_calls) == 1);
         }
-        atomic_store(&release_worker, 1);
+        h2_atomic_store(&release_worker, 1);
         assert(pthread_join(worker, NULL) == 0);
-        if (pause_draw) assert(display->vtable->close(display->user) == H2_PAL_OK);
-        if (pause_touch) assert(touch->vtable->close(touch->user) == H2_PAL_OK);
-        if (pause_adc) {
+        if (h2_atomic_load(&pause_draw)) assert(display->vtable->close(display->user) == H2_PAL_OK);
+        if (h2_atomic_load(&pause_touch)) assert(touch->vtable->close(touch->user) == H2_PAL_OK);
+        if (h2_atomic_load(&pause_adc)) {
             h2_pal_radio_button_group_reading_t reading;
             assert(read_radio_button_group(NULL, H2_JIELI_AC791N_ADKEY_GROUP_ID, &reading) == H2_PAL_OK);
-            assert(atomic_load(&adc_calls) == 1);
+            assert(h2_atomic_load(&adc_calls) == 1);
         }
     }
     return 0;
