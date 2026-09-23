@@ -9881,7 +9881,7 @@ typedef struct conversation_test {
   /* REPLY_AUDIO_STARTED events the hook observed. */
   unsigned audio_started;
   uint8_t output[16000];
-  size_t packets;
+  h2_atomic_size_t packets;
   unsigned event_close_count, mode;
   unsigned bos_attempts, eos_attempts, audio_bos_attempts;
   h2_atomic_bool_t input_ack, audio_bos, audio_eos;
@@ -9927,6 +9927,7 @@ static void conversation_test_atomics_init(conversation_test_t *value) {
   assert(h2_atomic_bool_init(&value->audio_bos, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_bool_init(&value->audio_eos, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_bool_init(&value->small_buffer_rejected, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_size_init(&value->packets, 0u) == H2_ATOMIC_OK);
 }
 
 static conversation_test_t *s_conversation;
@@ -10035,7 +10036,7 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
   (void)timeout;
   assert(stream == (gzc_event_stream_t *)test);
   if (h2_atomic_load(&test->audio_bos) && !h2_atomic_load(&test->input_ack)) {
-    assert(test->packets == 0 && test->pending_len == 0);
+    assert(h2_atomic_load(&test->packets) == 0 && test->pending_len == 0);
     ++test->ack_reads;
     if (test->mode == 5 || test->mode == 21 || (test->mode == 0 && test->ack_reads < 8))
       return GZC_ERR_WOULD_BLOCK;
@@ -10111,8 +10112,8 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
      * after the second burst and the input commit: 4 TEXT_DONE turn-two,
      * 5 EOS turn-two (terminal). */
     unsigned stage = test->reply_events;
-    if (stage >= 6 || test->packets < 12u ||
-        (stage >= 4 && (test->packets < 16u || !h2_atomic_load(&test->eos))))
+    if (stage >= 6 || h2_atomic_load(&test->packets) < 12u ||
+        (stage >= 4 && (h2_atomic_load(&test->packets) < 16u || !h2_atomic_load(&test->eos))))
       return GZC_ERR_WOULD_BLOCK;
     ++test->reply_events;
     memset(event, 0, sizeof(*event));
@@ -10166,7 +10167,7 @@ static int conversation_test_read_event(void *user, gzc_event_stream_t *stream,
     unsigned stage = test->reply_events;
     bool second = stage >= 8;
     bool transcript = stage == 0 || stage == 1 || stage == 8 || stage == 9;
-    if (stage >= 15 || test->packets < (stage >= 11 ? 4u : 2u) ||
+    if (stage >= 15 || h2_atomic_load(&test->packets) < (stage >= 11 ? 4u : 2u) ||
         h2_atomic_load(&test->canceled) ||
         (stage == 14 && test->mode == 15 && !h2_atomic_load(&test->eos)))
       return GZC_ERR_WOULD_BLOCK;
@@ -10340,7 +10341,7 @@ static h2_pal_result_t conversation_test_poll(h2_gizclaw_client_t *client,
   /* Mode 19: after the first echoed packet the transport reports an RTP
    * loss (opus == NULL, len == 0). It must reach the decoder as a PLC frame
    * and the following valid packets must still play. */
-  if (test->mode == 19 && test->packets == 1u && test->loss_markers == 0u) {
+  if (test->mode == 19 && h2_atomic_load(&test->packets) == 1u && test->loss_markers == 0u) {
     h2_pal_result_t rc =
         h2_gizclaw_service_media_write_opus(test->service, NULL, 0u);
     if (rc == H2_PAL_ERR_WOULD_BLOCK)
@@ -10373,7 +10374,7 @@ static h2_pal_result_t conversation_test_poll(h2_gizclaw_client_t *client,
         test->server_packet_len = test->held_len[i];
       }
       ++test->held_next;
-      ++test->packets;
+      h2_atomic_fetch_add(&test->packets, 1u);
     }
     return H2_PAL_ERR_WOULD_BLOCK;
   }
@@ -10382,7 +10383,7 @@ static h2_pal_result_t conversation_test_poll(h2_gizclaw_client_t *client,
     /* The second realtime turn's audio follows the second stream's
      * events (stage 10). */
     if ((test->mode == 15 || test->mode == 16) &&
-        test->packets + test->held_count >= 2u && test->reply_events < 11u)
+        h2_atomic_load(&test->packets) + test->held_count >= 2u && test->reply_events < 11u)
       return H2_PAL_ERR_WOULD_BLOCK;
     if (conversation_test_holds_reply(test)) {
       assert(test->held_count < 32u);
@@ -10402,7 +10403,7 @@ static h2_pal_result_t conversation_test_poll(h2_gizclaw_client_t *client,
         test->server_packet_len = test->pending_len;
       }
       test->pending_len = 0;
-      ++test->packets;
+      h2_atomic_fetch_add(&test->packets, 1u);
     }
   }
   return H2_PAL_ERR_WOULD_BLOCK;
@@ -11159,10 +11160,10 @@ static void conversation_wait_packets(conversation_test_t *test,
                                       size_t expected) {
   for (unsigned spins = 0u;
        spins < 2000u &&
-       __atomic_load_n(&test->packets, __ATOMIC_ACQUIRE) < expected;
+       h2_atomic_size_load(&test->packets, H2_ATOMIC_ACQUIRE) < expected;
        ++spins)
     h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1);
-  assert(__atomic_load_n(&test->packets, __ATOMIC_ACQUIRE) == expected);
+  assert(h2_atomic_size_load(&test->packets, H2_ATOMIC_ACQUIRE) == expected);
 }
 
 static void conversation_read_owned(h2_gizclaw_track_t *track, uint8_t *out,
@@ -11349,7 +11350,7 @@ static void test_conversation_public_audio_tasks(void) {
     for (unsigned spins = 0; spins < 4000 && !h2_atomic_load(&test.done);
          ++spins) {
       if (mode == 21 && h2_atomic_load(&test.bos) && !input_ended) {
-        assert(test.packets == 0 && !h2_atomic_load(&test.input_ack));
+        assert(h2_atomic_load(&test.packets) == 0 && !h2_atomic_load(&test.input_ack));
         assert(h2_gizclaw_conversation_cancel(conversation) == H2_PAL_OK);
         input_ended = true;
       }
@@ -11385,7 +11386,7 @@ static void test_conversation_public_audio_tasks(void) {
                  !input_ended) {
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
         input_ended = true;
-      } else if (mode == 20 && test.packets >= 12u && !input_ended) {
+      } else if (mode == 20 && h2_atomic_load(&test.packets) >= 12u && !input_ended) {
         /* Twelve echoed packets are buffered or queued and nobody played
          * them. Releasing push-to-talk drops all of it. */
         h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 20);
@@ -11426,7 +11427,7 @@ static void test_conversation_public_audio_tasks(void) {
       assert(h2_atomic_load(&test.audio_eos) && h2_atomic_load(&test.eos));
     }
     if (mode == 26 || mode == 28) {
-      assert(test.sent_sequence == 2u && test.packets == 0u);
+      assert(test.sent_sequence == 2u && h2_atomic_load(&test.packets) == 0u);
       assert(h2_atomic_load(&test.eos) && !h2_atomic_load(&test.canceled));
       assert(!h2_atomic_load(&test.audio_bos) && !h2_atomic_load(&test.input_ack));
     }
@@ -11492,7 +11493,7 @@ static void test_conversation_public_audio_tasks(void) {
       assert(test.reply_events == 1u);
     if (mode == 5)
       assert(test.bos_attempts == 1 && test.ack_reads > 0 &&
-             test.packets == 0 && !h2_atomic_load(&test.input_ack) &&
+             h2_atomic_load(&test.packets) == 0 && !h2_atomic_load(&test.input_ack) &&
              h2_atomic_load(&test.bos) && h2_atomic_load(&test.eos));
     if (mode == 0)
       assert(test.bos_attempts == 1 && test.ack_reads == 9);
@@ -11500,9 +11501,9 @@ static void test_conversation_public_audio_tasks(void) {
       assert(test.bos_attempts == 1 && test.ack_reads == 2 && test.reply_text_ends == 1 && h2_atomic_load(&test.input_ack));
     if (mode == 23)
       assert(test.ack_reads == 2 && h2_atomic_load(&test.input_ack) &&
-             test.pending_len == 0 && test.packets == 0);
+             test.pending_len == 0 && h2_atomic_load(&test.packets) == 0);
     if (mode == 21)
-      assert(test.bos_attempts == 1 && test.packets == 0 &&
+      assert(test.bos_attempts == 1 && h2_atomic_load(&test.packets) == 0 &&
              !h2_atomic_load(&test.input_ack) && h2_atomic_load(&test.canceled));
     if (mode == 10)
       assert(test.filler_callbacks == 8);
@@ -11526,7 +11527,7 @@ static void test_conversation_public_audio_tasks(void) {
     if (mode == 20) {
       /* Release dropped the unplayed first burst; the server's audio after
        * the request completed plays, and nothing else is in the Track. */
-      assert(test.result == H2_PAL_OK && test.packets == 12u);
+      assert(test.result == H2_PAL_OK && h2_atomic_load(&test.packets) == 12u);
       conversation_read_owned(owned_track, test.output, 4u * 640u);
       for (unsigned spins = 0u; spins < 2000u && test.server_packets < 4u;
            ++spins)
