@@ -57,6 +57,22 @@ Encrypted mode 通过显式 X25519 key/public/shared types、HKDF-SHA256 和对�
 AEAD enum 调用 Crypto PAL。GizClaw 的 plaintext mode 在 library 内做经过长度和
 capacity 校验的 bounded copy，不把 plaintext 注册成 Crypto PAL algorithm。
 
+## Session catalog 流式合同
+
+配置 `catalog_sink` 时，Session 按 `collections` 顺序用 cursor 和每页最多 8 条分页读取 Workflow，使小型 response storage 也能容纳含多语言 metadata 的页面。`catalog_bytes` 只容纳一页响应或一次 Workspace RPC，和条目总数无关；每页的结构与字符串只在 `H2_GIZCLAW_CATALOG_PAGE` 回调返回前有效。回调在调用 register/refresh 的任务上同步执行，不得重入同一个 Session。首次有效页后发 BEGIN，随后发送 PAGE；全部页和 Profile 名称、revision 一致且未取消时发 COMMIT。RPC、格式、超时、取消或 sink 失败后发 ABORT，调用方须丢弃临时文件并保留旧发布文件。sink 应验证自身文件大小、索引、重复条目和持久化结果；Session 的 `workflow_count` 只在 COMMIT 成功后更新。连续超过 16 个空的续页视为异常。注册仍自动刷新；Catalog 失败不撤销已完成的注册。
+
+流式模式不保存完整 catalog，`catalog_copy` 返回 `UNSUPPORTED`。按 `(collection, workflow_name, workspace_name[, parameters])` 选择时，Session 先用 Workflow get 验证返回的 Workflow name、collection 与 Profile revision，再按原有 Workspace get/create/reload 合同执行；现有 Workspace 也可只按名称选择。产品应从自己的文件读取显示窗口，Session 不负责产品文件路径或持久化。`max_workflows` 在流式模式不用，`retain_catalog_buffer` 必须为 false。
+
+### 兼容的完整 catalog 模式
+
+Session 的 `catalog_bytes` 是完整 catalog 解码和单次 Workspace RPC response storage 各自的容量。刷新成功后，catalog 的条目和字符串仍引用该 storage；Workspace preparation 必须使用另一块 scratch，不能覆盖已发布的 catalog。
+
+`h2_gizclaw_session_config_t.retain_catalog_buffer` 默认为 false，保持按操作分配的行为：刷新分配新 catalog storage，成功后释放旧 catalog，失败时释放新 storage；Workspace preparation 的 scratch 在操作结束时释放。设置为 true 时，create 从 `retained_allocator` 分别预分配两块 `catalog_bytes`（该字段为 NULL 时回退到 `mem`），每块只分配一次；任一分配失败即返回 `H2_PAL_ERR_NO_MEMORY`，释放已取得的资源并保持输出 Session 为 NULL。该模式在 Session 生命周期内保留 `2 × catalog_bytes`（例如容量为 256 KiB 时保留 512 KiB），让长期运行后的堆碎片不再影响这两块大缓冲的取得；其他 RPC、transport 和音频分配仍可能失败。
+
+可选的 `const h2_pal_mem_api_t *retained_allocator` 仅用于保留模式的 catalog 和 scratch，调用方可将这两块长期存活的大缓冲放在独立于碎片敏感 arena 的内存中。Session 本体、同步对象及其他 Session 分配仍使用 `mem`；`retain_catalog_buffer` 为 false 时忽略 `retained_allocator`。两个 allocator 及其上下文由调用方持有，生命周期须覆盖成功的 Session destroy；创建回滚和 destroy 都通过分配时的同一 allocator 释放缓冲。
+
+保留模式下，刷新只写 scratch，成功后在 Session mutex 内交换 catalog 和 scratch；失败不发布部分结果，并沿用 catalog FAILED、不可复制为有效数据的语义。Workspace select、自动刷新和版本不匹配后的重试复用 scratch，每次 response storage 从 used = 0 开始。现有 busy、等待和 deadline 规则继续保证独占使用：register/refresh 遇到 preparation 返回 BUSY，select/conversation 在期限内等待，复制 catalog 仍由 mutex 保护。操作失败、取消或 close 不释放保留缓冲；调用方完成 join、释放 Conversation 并成功 destroy 后，两块缓冲才返回原 allocator。其他缓冲区的容量和生命周期不受此开关影响。
+
 ## Connection transport 生命周期
 
 `h2_gizclaw_client_connect()` 在返回成功前必须注册 Opus 上下行 media，并建立 connection-scoped Direct Packet 和 Peer Event channel。`libs/gizclaw` 在 connect 前注册 PAL WebRTC media extension；调用方不能把 media 当作可选能力，也不能在连接已建立后替换 extension。RPC 和 HTTP service channel 按调用动态创建，不属于这组固定 transport。
