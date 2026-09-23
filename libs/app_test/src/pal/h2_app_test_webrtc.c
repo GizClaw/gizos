@@ -1,5 +1,5 @@
 #include "h2_app_test_webrtc.h"
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdbool.h>
 #include <string.h>
 typedef struct peer peer_t;
@@ -13,7 +13,7 @@ struct h2_app_test_webrtc {
   const h2_pal_webrtc_api_t *delegate;
   h2_app_test_webrtc_observe_fn observe;
   void *user;
-  atomic_uint peers, events;
+  h2_atomic_uint_t peers, events;
 };
 struct peer {
   h2_app_test_webrtc_t *owner;
@@ -52,7 +52,7 @@ static h2_pal_result_t peer_create(void *user, h2_pal_webrtc_peer_t **out) {
     h2_pal_mem_free(w->mem, p);
     return rc;
   }
-  atomic_fetch_add(&w->peers, 1u);
+  h2_atomic_fetch_add(&w->peers, 1u);
   *out = (h2_pal_webrtc_peer_t *)p;
   return H2_PAL_OK;
 }
@@ -116,7 +116,7 @@ static void event_release(h2_pal_webrtc_event_t *event) {
   h2_app_test_webrtc_t *w = e->owner;
   h2_pal_webrtc_event_release(&e->original);
   h2_pal_mem_free(w->mem, e);
-  atomic_fetch_sub(&w->events, 1u);
+  h2_atomic_fetch_sub(&w->events, 1u);
   memset(event, 0, sizeof(*event));
 }
 static h2_pal_result_t peer_poll(h2_pal_webrtc_peer_t *peer, int timeout,
@@ -145,7 +145,7 @@ static h2_pal_result_t peer_poll(h2_pal_webrtc_peer_t *peer, int timeout,
   out->channel = (h2_pal_webrtc_channel_t *)c;
   out->_private = e;
   out->_release = event_release;
-  atomic_fetch_add(&w->events, 1u);
+  h2_atomic_fetch_add(&w->events, 1u);
   if (w->observe)
     w->observe(w->user, out);
   return H2_PAL_OK;
@@ -165,7 +165,7 @@ static void peer_close(h2_pal_webrtc_peer_t *peer) {
   h2_app_test_webrtc_t *w = p->owner;
   h2_pal_webrtc_peer_close(w->delegate, p->delegate);
   h2_pal_mem_free(w->mem, p);
-  atomic_fetch_sub(&w->peers, 1u);
+  h2_atomic_fetch_sub(&w->peers, 1u);
 }
 static const h2_pal_webrtc_vtable_t vtable = {
     .peer_create = peer_create,
@@ -201,8 +201,13 @@ h2_pal_result_t h2_app_test_webrtc_create(const h2_pal_mem_api_t *mem,
   w->observe = observe;
   w->user = user;
   w->api = (h2_pal_webrtc_api_t){w, &vtable};
-  atomic_init(&w->peers, 0u);
-  atomic_init(&w->events, 0u);
+  if (h2_atomic_init(&w->peers, 0u) != H2_ATOMIC_OK ||
+      h2_atomic_init(&w->events, 0u) != H2_ATOMIC_OK) {
+    h2_atomic_destroy(&w->peers);
+    h2_atomic_destroy(&w->events);
+    h2_pal_mem_free(mem, w);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
   *out = w;
   return H2_PAL_OK;
 }
@@ -212,8 +217,10 @@ const h2_pal_webrtc_api_t *h2_app_test_webrtc_api(h2_app_test_webrtc_t *w) {
 h2_pal_result_t h2_app_test_webrtc_destroy(h2_app_test_webrtc_t *w) {
   if (!w)
     return H2_PAL_OK;
-  if (atomic_load(&w->peers) || atomic_load(&w->events))
+  if (h2_atomic_load(&w->peers) || h2_atomic_load(&w->events))
     return H2_PAL_ERR_INVALID_STATE;
+  h2_atomic_destroy(&w->peers);
+  h2_atomic_destroy(&w->events);
   h2_pal_mem_free(w->mem, w);
   return H2_PAL_OK;
 }

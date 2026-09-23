@@ -43,7 +43,7 @@ cc_library(
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
     includes = ["include"],
-    deps = ["//libs/pal", "//libs/wifi_sta"],
+    deps = ["//libs/atomic", "//libs/pal", "//libs/wifi_sta"],
 )
 
 cc_test(
@@ -63,6 +63,7 @@ cc_test(
     deps = [
         ":testing_audio",
         ":testing_pal",
+        "//libs/atomic/providers/c11",
     ],
 )
 
