@@ -41,6 +41,7 @@ static memory_order c11_order(h2_atomic_order_t order) {
         return atomic_exchange_explicit(&object->storage->value, next, c11_order(order)); \
     } \
     bool h2_atomic_##name##_compare_exchange(h2_atomic_##name##_t *object, type *expected, type desired, h2_atomic_order_t success, h2_atomic_order_t failure) { \
+        (void)failure; \
         return atomic_compare_exchange_strong_explicit(&object->storage->value, expected, desired, c11_order(success), c11_order(failure)); \
     } \
     type h2_atomic_##name##_fetch_add(h2_atomic_##name##_t *object, type amount, h2_atomic_order_t order) { \
@@ -90,6 +91,7 @@ bool h2_atomic_bool_exchange(h2_atomic_bool_t *object, bool next, h2_atomic_orde
 bool h2_atomic_bool_compare_exchange(h2_atomic_bool_t *object, bool *expected,
                                      bool desired, h2_atomic_order_t success,
                                      h2_atomic_order_t failure) {
+    (void)failure;
     return atomic_compare_exchange_strong_explicit(&object->storage->value, expected, desired,
                                        c11_order(success), c11_order(failure));
 }
@@ -120,6 +122,7 @@ void *h2_atomic_ptr_exchange(h2_atomic_ptr_t *object, void *next, h2_atomic_orde
 bool h2_atomic_ptr_compare_exchange(h2_atomic_ptr_t *object, void **expected,
                                     void *desired, h2_atomic_order_t success,
                                     h2_atomic_order_t failure) {
+    (void)failure;
     return atomic_compare_exchange_strong_explicit(&object->storage->value, expected, desired,
                                        c11_order(success), c11_order(failure));
 }

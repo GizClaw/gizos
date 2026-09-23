@@ -84,6 +84,7 @@ cc_test(
     deps = [
         ":testing_audio",
         ":testing_pal",
+        "//libs/atomic/providers/c11",
     ],
 )
 
@@ -102,6 +103,7 @@ cc_test(
     }),
     deps = [
         ":testing_pal",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/pal/providers/libco",
         "//libs/runtime",
@@ -197,6 +199,7 @@ cc_test(
     }),
     deps = [
         ":app_test",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
     ],
 )
@@ -216,6 +219,7 @@ cc_library(
     target_compatible_with = LINUX_X86_64_ARTIFACT_COMPATIBILITY,
     deps = [
         ":app_test",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
     ],
 )
