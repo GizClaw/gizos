@@ -462,6 +462,7 @@ py_test(
     data = [
         "tests/test_embedder.c",
         "//libs/atomic/providers/c11:src/h2_atomic_c11.c",
+        "//libs/atomic/providers/c11:h2_atomic_c11_impl.h",
         ":runtime_sources",
     ],
     legacy_create_init = 0,
