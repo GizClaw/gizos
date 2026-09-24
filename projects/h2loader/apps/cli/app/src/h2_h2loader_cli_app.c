@@ -1,4 +1,5 @@
 #include "h2_h2loader_cli_internal.h"
+#include "h2_bleikcp.h"
 
 #include <errno.h>
 #include <stdio.h>
@@ -1207,8 +1208,19 @@ int h2_h2loader_cli_main(h2_runtime_t *runtime, const h2_h2loader_cli_config_t *
         return h2_h2loader_cli_server_command(&context, &options, argc, argv);
     }
     if (strcmp(command, "monitor") == 0) return monitor_command(&context, &options, argc);
-    if (strcmp(command, "bleikcp-speed") == 0)
-        return h2_h2loader_cli_bleikcp_speed_command(&context, argc, argv);
+    if (strcmp(command, "bleikcp-speed") == 0) {
+        int init_rc = h2_h2loader_cli_speed_init();
+        if (init_rc != H2_PAL_OK) return H2_H2LOADER_CLI_EXIT_RUNTIME;
+        init_rc = h2_bleikcp_global_init();
+        if (init_rc != H2_PAL_OK) {
+            (void)h2_h2loader_cli_speed_shutdown();
+            return H2_H2LOADER_CLI_EXIT_RUNTIME;
+        }
+        int result = h2_h2loader_cli_bleikcp_speed_command(&context, argc, argv);
+        (void)h2_bleikcp_global_shutdown();
+        (void)h2_h2loader_cli_speed_shutdown();
+        return result;
+    }
     {
         const char *parts[H2_H2LOADER_CLI_DEVICE_ARGV_CAPACITY] = {command};
         int count = 1;

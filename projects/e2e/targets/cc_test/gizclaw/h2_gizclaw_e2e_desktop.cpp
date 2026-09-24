@@ -33,6 +33,7 @@ namespace {
 
 h2_atomic_bool_t g_stop_requested = {};
 h2_atomic_flag_t g_running = {};
+bool g_running_ready = false;
 #ifndef _WIN32
 std::mutex g_signal_read_mutex;
 int g_signal_read_fd = -1;
@@ -119,6 +120,7 @@ struct RunGuard {
     if (!retain) {
       h2_atomic_bool_destroy(&g_stop_requested);
       h2_atomic_flag_clear(&g_running, H2_ATOMIC_RELEASE);
+      (void)h2_gizclaw_e2e_shutdown();
     }
   }
 };
@@ -234,12 +236,22 @@ int run_desktop(int argc, char **argv) {
                  reason);
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   }
+  if (!g_running_ready) {
+    std::fprintf(stderr, "H2_GIZCLAW_E2E stage=preflight status=ERROR "
+                         "reason=desktop-not-initialized\n");
+    return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+  }
   if (h2_atomic_flag_test_and_set(&g_running, H2_ATOMIC_ACQUIRE)) {
     std::fprintf(stderr, "H2_GIZCLAW_E2E stage=preflight status=ERROR "
                          "reason=active-or-retained-session\n");
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   }
   if (h2_atomic_bool_init(&g_stop_requested, false) != H2_ATOMIC_OK) {
+    h2_atomic_flag_clear(&g_running, H2_ATOMIC_RELEASE);
+    return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+  }
+  if (h2_gizclaw_e2e_init() != H2_PAL_OK) {
+    h2_atomic_bool_destroy(&g_stop_requested);
     h2_atomic_flag_clear(&g_running, H2_ATOMIC_RELEASE);
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   }
@@ -404,6 +416,24 @@ int run_desktop(int argc, char **argv) {
 
 } // namespace
 
+int h2_gizclaw_e2e_desktop_init(void) {
+  if (g_running_ready) return H2_PAL_ERR_INVALID_STATE;
+  const h2_atomic_result_t rc = h2_atomic_flag_init(&g_running);
+  if (rc == H2_ATOMIC_UNSUPPORTED) return H2_PAL_ERR_UNSUPPORTED;
+  if (rc != H2_ATOMIC_OK) return H2_PAL_ERR_NO_MEMORY;
+  g_running_ready = true;
+  return H2_PAL_OK;
+}
+
+int h2_gizclaw_e2e_desktop_shutdown(void) {
+  if (!g_running_ready) return H2_PAL_ERR_INVALID_STATE;
+  if (h2_atomic_flag_test_and_set(&g_running, H2_ATOMIC_ACQUIRE))
+    return H2_PAL_ERR_BUSY;
+  g_running_ready = false;
+  h2_atomic_flag_destroy(&g_running);
+  return H2_PAL_OK;
+}
+
 int h2_gizclaw_e2e_desktop_main(int argc, char **argv) {
   try {
     return run_desktop(argc, argv);
@@ -420,6 +450,10 @@ int main(int argc, char **argv) {
   // Configure stdout before any launcher/provider has performed I/O.
   if (std::setvbuf(stdout, nullptr, _IOLBF, 0) != 0)
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
-  return h2_gizclaw_e2e_desktop_main(argc, argv);
+  if (h2_gizclaw_e2e_desktop_init() != H2_PAL_OK)
+    return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+  const int result = h2_gizclaw_e2e_desktop_main(argc, argv);
+  (void)h2_gizclaw_e2e_desktop_shutdown();
+  return result;
 }
 #endif

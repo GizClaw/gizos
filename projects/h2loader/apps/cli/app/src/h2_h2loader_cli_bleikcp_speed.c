@@ -26,8 +26,33 @@ typedef struct speed_scan {
     int found;
 } speed_scan_t;
 
-static speed_scan_t speed_scan = {.guard = H2_ATOMIC_FLAG_INIT};
-static bool speed_scan_initialized;
+static speed_scan_t speed_scan;
+static bool speed_scan_ready;
+
+h2_pal_result_t h2_h2loader_cli_speed_init(void) {
+    if (speed_scan_ready) return H2_PAL_ERR_INVALID_STATE;
+    const h2_atomic_result_t flag_rc = h2_atomic_flag_init(&speed_scan.guard);
+    if (flag_rc == H2_ATOMIC_UNSUPPORTED) return H2_PAL_ERR_UNSUPPORTED;
+    if (flag_rc != H2_ATOMIC_OK) return H2_PAL_ERR_NO_MEMORY;
+    const h2_atomic_result_t owned_rc = h2_atomic_bool_init(&speed_scan.owned, false);
+    if (owned_rc != H2_ATOMIC_OK) {
+        h2_atomic_flag_destroy(&speed_scan.guard);
+        return owned_rc == H2_ATOMIC_UNSUPPORTED
+            ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_ERR_NO_MEMORY;
+    }
+    speed_scan_ready = true;
+    return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_h2loader_cli_speed_shutdown(void) {
+    if (!speed_scan_ready) return H2_PAL_ERR_INVALID_STATE;
+    if (h2_atomic_bool_load(&speed_scan.owned, H2_ATOMIC_ACQUIRE))
+        return H2_PAL_ERR_BUSY;
+    speed_scan_ready = false;
+    h2_atomic_bool_destroy(&speed_scan.owned);
+    h2_atomic_flag_destroy(&speed_scan.guard);
+    return H2_PAL_OK;
+}
 
 static void speed_scan_lock(speed_scan_t *scan) {
     while (h2_atomic_flag_test_and_set(&scan->guard, H2_ATOMIC_ACQUIRE)) {}
@@ -170,19 +195,11 @@ h2_pal_result_t h2_h2loader_cli_find_ble_peer(
     h2_pal_ble_addr_t *out_address,
     int *out_rssi) {
     speed_scan_t *scan = &speed_scan;
+    if (!speed_scan_ready) return H2_PAL_ERR_INVALID_STATE;
     bool expected = false;
     int scan_started = 0;
     int scan_quiesced = 1;
     h2_pal_result_t rc;
-    speed_scan_lock(scan);
-    if (!speed_scan_initialized) {
-        if (h2_atomic_bool_init(&scan->owned, false) != H2_ATOMIC_OK) {
-            speed_scan_unlock(scan);
-            return H2_PAL_ERR_NO_MEMORY;
-        }
-        speed_scan_initialized = true;
-    }
-    speed_scan_unlock(scan);
     if (!h2_atomic_compare_exchange_strong_explicit(
             &scan->owned,
             &expected,

@@ -7,6 +7,12 @@
 extern "C" {
 #endif
 
+/* The process owner initializes the allocator scope before decoder use and
+ * shuts it down after every decoder and task scope has stopped. Lifecycle
+ * calls must be serialized with decoder operations. */
+h2_pal_result_t h2_tinyh264_global_init(void);
+h2_pal_result_t h2_tinyh264_global_shutdown(void);
+
 /**
  * @brief Return the portable TinyH264 Video Decoder PAL provider.
  *

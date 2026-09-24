@@ -156,6 +156,9 @@ int h2_h2loader_cli_server_command_with_transport(
     const char *const *argv,
     const h2_h2loader_cli_server_transport_api_t *transport);
 
+h2_pal_result_t h2_h2loader_cli_speed_init(void);
+h2_pal_result_t h2_h2loader_cli_speed_shutdown(void);
+
 h2_pal_result_t h2_h2loader_cli_find_ble_peer(
     h2_h2loader_cli_context_t *context,
     uint32_t timeout_ms,

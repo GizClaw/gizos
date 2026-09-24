@@ -2113,8 +2113,10 @@ int main(void) {
   test_install_verified_destination_does_not_abort();
   test_install_hash_mismatch_aborts();
   test_install_hash_read_error_aborts();
+  assert(h2_bleikcp_global_init() == H2_PAL_OK);
   test_ble_identity_capacity();
   test_ble_diagnostics_preserve_failure_and_cleanup();
+  assert(h2_bleikcp_global_shutdown() == H2_PAL_OK);
   test_size_argument_accepts_only_bounded_decimal();
   test_app_client_package_entry_matches_loader();
   test_app_client_validates_target_archive_entry();

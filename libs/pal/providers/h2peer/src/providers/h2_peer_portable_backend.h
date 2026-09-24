@@ -3,6 +3,8 @@
 
 #include "h2_peer.h"
 
+bool h2_peer_portable_global_ready(void);
+
 h2_pal_result_t h2_peer_portable_start_offer(h2_pal_webrtc_peer_t *peer);
 h2_pal_result_t h2_peer_portable_set_remote_sdp(h2_pal_webrtc_peer_t *peer,
                                                 h2_pal_webrtc_sdp_type_t type,

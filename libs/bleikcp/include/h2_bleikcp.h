@@ -9,6 +9,13 @@
 extern "C" {
 #endif
 
+/* Each owner calls init before concurrent client/server open and shutdown
+ * after its streams and callbacks have quiesced. Calls hold references to the
+ * shared KCP hook registry; the final shutdown restores libc hooks. Lifecycle
+ * calls must not race stream operations or each other. */
+int h2_bleikcp_global_init(void);
+int h2_bleikcp_global_shutdown(void);
+
 int h2_bleikcp_close(h2_bleikcp_t *stream);
 int h2_bleikcp_read(
     h2_bleikcp_t *stream,

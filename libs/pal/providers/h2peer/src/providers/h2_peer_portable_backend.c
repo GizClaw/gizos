@@ -12,6 +12,29 @@
 
 static size_t h2_peer_portable_live_connections;
 static h2_atomic_flag_t h2_peer_portable_global_lock = {0};
+static bool h2_peer_portable_lock_ready;
+
+bool h2_peer_portable_global_ready(void) {
+    return h2_peer_portable_lock_ready;
+}
+
+h2_pal_result_t h2_peer_global_init(void) {
+    if (h2_peer_portable_lock_ready) return H2_PAL_ERR_INVALID_STATE;
+    const h2_atomic_result_t rc =
+        h2_atomic_flag_init(&h2_peer_portable_global_lock);
+    if (rc == H2_ATOMIC_UNSUPPORTED) return H2_PAL_ERR_UNSUPPORTED;
+    if (rc != H2_ATOMIC_OK) return H2_PAL_ERR_NO_MEMORY;
+    h2_peer_portable_lock_ready = true;
+    return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_peer_global_shutdown(void) {
+    if (!h2_peer_portable_lock_ready) return H2_PAL_ERR_INVALID_STATE;
+    if (h2_peer_portable_live_connections != 0u) return H2_PAL_ERR_BUSY;
+    h2_peer_portable_lock_ready = false;
+    h2_atomic_flag_destroy(&h2_peer_portable_global_lock);
+    return H2_PAL_OK;
+}
 
 static void h2_peer_portable_lock_globals(void) {
     while (h2_atomic_flag_test_and_set(&h2_peer_portable_global_lock,
@@ -29,6 +52,7 @@ h2_peer_portable_global_acquire(const h2_pal_mem_api_t *mem,
                                 const h2_pal_crypto_api_t *crypto,
                                 const h2_pal_log_api_t *log) {
   (void)log;
+  if (!h2_peer_portable_lock_ready) return H2_PAL_ERR_INVALID_STATE;
   h2_peer_portable_lock_globals();
   h2_pal_result_t result = peer_init(mem, crypto);
   if (result == H2_PAL_OK) {

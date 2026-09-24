@@ -333,8 +333,10 @@ static void peer_allocators(void) {
 }
 
 int main(void) {
+  assert(h2_peer_global_init() == H2_PAL_OK);
   peer_allocators();
   error_fallbacks();
   wake_and_unset();
+  assert(h2_peer_global_shutdown() == H2_PAL_OK);
   return 0;
 }

@@ -183,6 +183,10 @@ void app_main(void) {
   trace("usb-debug", result);
   if (result != 0) return;
 
+  result = h2_tinyh264_global_init();
+  trace("tinyh264-init", result);
+  if (result != H2_PAL_OK) return;
+
   result = task_create(heartbeat, NULL, "h2mp4/heartbeat");
   trace("heartbeat-task", result);
   if (result != OS_NO_ERR) return;

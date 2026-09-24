@@ -103,6 +103,7 @@ static void test_double_stop_failure_retains_process_owner(void) {
 }
 
 int main(void) {
+    assert(h2_h2loader_cli_speed_init() == H2_PAL_OK);
     test_sleep_failure_still_quiesces_scan();
     test_stop_failure_uses_host_quiesce_fallback();
     test_double_stop_failure_retains_process_owner();

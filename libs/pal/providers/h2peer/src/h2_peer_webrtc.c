@@ -2177,6 +2177,9 @@ h2_pal_result_t h2_peer_create(const h2_peer_config_t *config,
   if (!h2_peer_production_config_supported(config)) {
     return H2_PAL_ERR_UNSUPPORTED;
   }
+  if (!h2_peer_portable_global_ready()) {
+    return H2_PAL_ERR_INVALID_STATE;
+  }
   h2_peer_t *peer =
       (h2_peer_t *)h2_peer_alloc(config->mem, sizeof(*peer));
   if (peer == NULL) {

@@ -163,44 +163,27 @@ bool h2_atomic_ptr_compare_exchange(h2_atomic_ptr_t *object, void **expected,
                                        H2_ATOMIC_C11_ORDER(success), H2_ATOMIC_C11_FAILURE_ORDER(success, failure));
 }
 
-#if defined(H2_ATOMIC_C11_FLAG_LOCK) != defined(H2_ATOMIC_C11_FLAG_UNLOCK)
-#error "Flag lock and unlock hooks must be provided together"
-#endif
-#ifndef H2_ATOMIC_C11_FLAG_LOCK
-static atomic_flag s_flag_lock = ATOMIC_FLAG_INIT;
-static void h2_atomic_flag_lock(void) {
-    while (atomic_flag_test_and_set_explicit(&s_flag_lock, memory_order_acquire)) {}
-}
-static void h2_atomic_flag_unlock(void) {
-    atomic_flag_clear_explicit(&s_flag_lock, memory_order_release);
-}
-#define H2_ATOMIC_C11_FLAG_LOCK() h2_atomic_flag_lock()
-#define H2_ATOMIC_C11_FLAG_UNLOCK() h2_atomic_flag_unlock()
-#endif
+/* Use a word-sized value so ESP's internal-RAM flag takes the native atomic
+ * instruction path rather than a byte-width compiler helper. */
+struct h2_atomic_flag_storage { _Atomic(uint32_t) value; };
 h2_atomic_result_t h2_atomic_flag_init(h2_atomic_flag_t *object) {
     if (object == NULL) return H2_ATOMIC_INVALID_ARG;
-    H2_ATOMIC_C11_FLAG_LOCK();
-    object->_state = 0u;
-    H2_ATOMIC_C11_FLAG_UNLOCK();
+    if (object->storage != NULL) return H2_ATOMIC_INVALID_STATE;
+    object->storage = H2_ATOMIC_C11_ALLOC(sizeof(*object->storage));
+    if (object->storage == NULL) return H2_ATOMIC_NO_MEMORY;
+    atomic_store_explicit(&object->storage->value, 0u, memory_order_relaxed);
     return H2_ATOMIC_OK;
 }
 void h2_atomic_flag_destroy(h2_atomic_flag_t *object) {
     if (object == NULL) return;
-    H2_ATOMIC_C11_FLAG_LOCK();
-    object->_state = 0u;
-    H2_ATOMIC_C11_FLAG_UNLOCK();
+    H2_ATOMIC_C11_FREE(object->storage);
+    object->storage = NULL;
 }
 bool h2_atomic_flag_test_and_set(h2_atomic_flag_t *object, h2_atomic_order_t order) {
-    (void)order;
-    H2_ATOMIC_C11_FLAG_LOCK();
-    bool previous = object->_state != 0u;
-    object->_state = 1u;
-    H2_ATOMIC_C11_FLAG_UNLOCK();
-    return previous;
+    return atomic_exchange_explicit(&object->storage->value, 1u,
+                                    H2_ATOMIC_C11_ORDER(order)) != 0u;
 }
 void h2_atomic_flag_clear(h2_atomic_flag_t *object, h2_atomic_order_t order) {
-    (void)order;
-    H2_ATOMIC_C11_FLAG_LOCK();
-    object->_state = 0u;
-    H2_ATOMIC_C11_FLAG_UNLOCK();
+    atomic_store_explicit(&object->storage->value, 0u,
+                          H2_ATOMIC_C11_STORE_ORDER(order));
 }

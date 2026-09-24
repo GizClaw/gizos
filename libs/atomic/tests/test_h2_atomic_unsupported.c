@@ -26,6 +26,7 @@ int main(void) {
     assert(byte.storage == NULL && halfword.storage == NULL);
     assert(word.storage == NULL && count.storage == NULL);
     assert(boolean.storage == NULL && pointer.storage == NULL);
+    assert(flag.storage == NULL);
     h2_atomic_int_destroy(&integer);
     h2_atomic_uint_destroy(&unsigned_integer);
     h2_atomic_u8_destroy(&byte);

@@ -1,5 +1,8 @@
 #include "h2_bk_platform_core.h"
 
+h2_pal_result_t h2_bk_platform_webrtc_atomic_init(void) { return H2_PAL_OK; }
+h2_pal_result_t h2_bk_platform_webrtc_atomic_shutdown(void) { return H2_PAL_OK; }
+
 static h2_pal_result_t h2_bk_platform_webrtc_peer_create(
     void *user, h2_pal_webrtc_peer_t **out_peer) {
     (void)user;

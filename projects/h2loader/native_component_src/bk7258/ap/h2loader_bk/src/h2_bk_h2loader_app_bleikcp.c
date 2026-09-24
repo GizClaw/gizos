@@ -415,9 +415,13 @@ static int h2_bk_h2loader_start_app_ble_with_mode(
         .handler = handle_ble_session,
         .handler_user = &s_ble,
     };
+    rc = h2_bleikcp_global_init();
+    if (rc != H2_PAL_OK) return rc;
     rc = h2_loader_ble_service_open(&service, &s_ble.service);
     if (rc == H2_PAL_OK) {
         s_started = 1;
+    } else {
+        (void)h2_bleikcp_global_shutdown();
     }
     return rc;
 }

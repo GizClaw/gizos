@@ -1,5 +1,9 @@
 #include "h2_esp_platform_core.h"
 
+h2_pal_result_t h2_esp_platform_wifi_atomic_init(void) { return H2_PAL_OK; }
+h2_pal_result_t h2_esp_platform_wifi_atomic_shutdown(void) { return H2_PAL_OK; }
+h2_pal_result_t h2_esp_platform_wifi_atomic_can_shutdown(void) { return H2_PAL_OK; }
+
 #include <string.h>
 
 int h2_esp_platform_wifi_ensure_started(void) {

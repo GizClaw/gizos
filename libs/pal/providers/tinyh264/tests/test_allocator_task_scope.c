@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include "h2_tinyh264_allocator_scope.h"
 #include "h2_tinyh264_allocator_bridge.h"
+#include "h2_tinyh264.h"
 
 #include <pthread.h>
 #include "h2_atomic.h"
@@ -77,6 +78,7 @@ static void *worker(void *user) {
 }
 int main(void) {
     pthread_t first, second;
+    CHECK(h2_tinyh264_global_init() == H2_PAL_OK);
     CHECK(h2_atomic_uint_init(&arrived, 0u) == H2_ATOMIC_OK);
     CHECK(pthread_create(&first, NULL, worker, NULL) == 0);
     CHECK(pthread_create(&second, NULL, worker, NULL) == 0);
@@ -84,5 +86,6 @@ int main(void) {
     CHECK(pthread_join(second, NULL) == 0);
     CHECK(h2_tinyh264_malloc(1u) == NULL);
     h2_atomic_uint_destroy(&arrived);
+    CHECK(h2_tinyh264_global_shutdown() == H2_PAL_OK);
     return 0;
 }

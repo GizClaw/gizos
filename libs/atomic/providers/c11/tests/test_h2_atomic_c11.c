@@ -10,6 +10,21 @@ static void *increment(void *argument) {
     return NULL;
 }
 
+typedef struct flag_counter {
+    h2_atomic_flag_t guard;
+    unsigned value;
+} flag_counter_t;
+
+static void *increment_with_flag(void *argument) {
+    flag_counter_t *counter = argument;
+    for (unsigned i = 0; i < 10000u; ++i) {
+        while (h2_atomic_flag_test_and_set(&counter->guard, H2_ATOMIC_ACQUIRE)) {}
+        counter->value++;
+        h2_atomic_flag_clear(&counter->guard, H2_ATOMIC_RELEASE);
+    }
+    return NULL;
+}
+
 int main(void) {
     h2_atomic_uint_t count = {0};
     assert(h2_atomic_uint_init(&count, 0u) == H2_ATOMIC_OK);
@@ -53,9 +68,28 @@ int main(void) {
     h2_atomic_bool_destroy(&ready);
 
     h2_atomic_flag_t guard = {0};
+    h2_atomic_flag_t other_guard = {0};
     assert(h2_atomic_flag_init(&guard) == H2_ATOMIC_OK);
+    assert(h2_atomic_flag_init(&other_guard) == H2_ATOMIC_OK);
+    assert(guard.storage != other_guard.storage);
+    assert(h2_atomic_flag_init(&guard) == H2_ATOMIC_INVALID_STATE);
     assert(!h2_atomic_flag_test_and_set(&guard, H2_ATOMIC_ACQUIRE));
+    assert(h2_atomic_flag_test_and_set(&guard, H2_ATOMIC_ACQUIRE));
     h2_atomic_flag_clear(&guard, H2_ATOMIC_RELEASE);
+    assert(!h2_atomic_flag_test_and_set(&guard, H2_ATOMIC_ACQUIRE));
+    assert(!h2_atomic_flag_test_and_set(&other_guard, H2_ATOMIC_ACQUIRE));
+    h2_atomic_flag_destroy(&other_guard);
     h2_atomic_flag_destroy(&guard);
+    assert(guard.storage == NULL);
+
+    flag_counter_t guarded_counter = {0};
+    assert(h2_atomic_flag_init(&guarded_counter.guard) == H2_ATOMIC_OK);
+    for (unsigned i = 0; i < 2; ++i)
+        assert(pthread_create(&threads[i], NULL, increment_with_flag,
+                              &guarded_counter) == 0);
+    for (unsigned i = 0; i < 2; ++i)
+        assert(pthread_join(threads[i], NULL) == 0);
+    assert(guarded_counter.value == 20000u);
+    h2_atomic_flag_destroy(&guarded_counter.guard);
     return 0;
 }

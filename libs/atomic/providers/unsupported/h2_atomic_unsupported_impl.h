@@ -74,11 +74,11 @@ H2_ATOMIC_UNSUPPORTED_SCALAR(ptr, void *)
 #undef H2_ATOMIC_UNSUPPORTED_SCALAR
 
 h2_atomic_result_t h2_atomic_flag_init(h2_atomic_flag_t *object) {
-    if (object != NULL) object->_state = 0u;
+    if (object != NULL) object->storage = NULL;
     return H2_ATOMIC_UNSUPPORTED;
 }
 void h2_atomic_flag_destroy(h2_atomic_flag_t *object) {
-    if (object != NULL) object->_state = 0u;
+    if (object != NULL) object->storage = NULL;
 }
 bool h2_atomic_flag_test_and_set(h2_atomic_flag_t *object, h2_atomic_order_t order) {
     (void)object; (void)order; H2_ATOMIC_UNAVAILABLE();

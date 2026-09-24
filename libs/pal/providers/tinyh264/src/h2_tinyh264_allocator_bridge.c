@@ -13,6 +13,26 @@ extern const void *H2_TINYH264_SCOPE_TASK(void);
 extern void H2_TINYH264_SCOPE_YIELD(uint32_t delay_ms);
 static h2_atomic_flag_t g_scope_lock = {0};
 static h2_tinyh264_allocator_scope_t *g_scopes;
+static bool g_scope_ready;
+
+h2_pal_result_t h2_tinyh264_global_init(void) {
+    if (g_scope_ready) return H2_PAL_ERR_INVALID_STATE;
+    const h2_atomic_result_t rc = h2_atomic_flag_init(&g_scope_lock);
+    if (rc == H2_ATOMIC_UNSUPPORTED) return H2_PAL_ERR_UNSUPPORTED;
+    if (rc != H2_ATOMIC_OK) return H2_PAL_ERR_NO_MEMORY;
+    g_scope_ready = true;
+    return H2_PAL_OK;
+}
+
+h2_pal_result_t h2_tinyh264_global_shutdown(void) {
+    if (!g_scope_ready) return H2_PAL_ERR_INVALID_STATE;
+    if (g_scopes != NULL) return H2_PAL_ERR_BUSY;
+    g_scope_ready = false;
+    h2_atomic_flag_destroy(&g_scope_lock);
+    return H2_PAL_OK;
+}
+
+bool h2_tinyh264_global_ready(void) { return g_scope_ready; }
 
 static void scope_lock(void) {
     while (h2_atomic_flag_test_and_set(&g_scope_lock, H2_ATOMIC_ACQUIRE)) {
@@ -39,6 +59,9 @@ static const h2_pal_mem_api_t *current_allocator(void) {
 #else
 static _Thread_local const h2_pal_mem_api_t *g_allocator;
 static const h2_pal_mem_api_t *current_allocator(void) { return g_allocator; }
+h2_pal_result_t h2_tinyh264_global_init(void) { return H2_PAL_OK; }
+h2_pal_result_t h2_tinyh264_global_shutdown(void) { return H2_PAL_OK; }
+bool h2_tinyh264_global_ready(void) { return true; }
 #endif
 
 void h2_tinyh264_allocator_scope_enter(

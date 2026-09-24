@@ -62,7 +62,11 @@ h2_gizclaw_e2e_run(h2_runtime_t *runtime, const h2_gizclaw_e2e_config_t *config,
                       : H2_GIZCLAW_E2E_EXIT_PASS;
 }
 
+extern "C" h2_pal_result_t h2_gizclaw_e2e_init(void) { return H2_PAL_OK; }
+extern "C" h2_pal_result_t h2_gizclaw_e2e_shutdown(void) { return H2_PAL_OK; }
+
 int main() {
+  assert(h2_gizclaw_e2e_desktop_init() == H2_PAL_OK);
   set_env("H2_GIZCLAW_E2E_SUITE", nullptr);
   char program[] = "gizclaw-e2e";
   char pcm[] = "unused.pcm";

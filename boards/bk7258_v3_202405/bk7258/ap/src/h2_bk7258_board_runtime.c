@@ -434,7 +434,9 @@ h2_pal_result_t h2_bk7258_board_runtime_config(h2_runtime_config_t *out_config) 
         *out_config = s_runtime_config;
         return H2_PAL_OK;
     }
-    h2_pal_result_t rc = h2_bk7258_board_fs_init(&s_runtime_fs);
+    h2_pal_result_t rc = h2_bk_platform_atomic_consumers_init();
+    if (rc != H2_PAL_OK) return rc;
+    rc = h2_bk7258_board_fs_init(&s_runtime_fs);
     if (rc == H2_PAL_OK) {
         rc = board_mount_file_point(H2_BK7258_DL_MOUNT_PATH);
     }
@@ -442,6 +444,7 @@ h2_pal_result_t h2_bk7258_board_runtime_config(h2_runtime_config_t *out_config) 
         rc = board_mount_file_point(H2_BK7258_DATA_MOUNT_PATH);
     }
     if (rc != H2_PAL_OK) {
+        (void)h2_bk_platform_atomic_consumers_shutdown();
         return rc;
     }
     const h2_corehttp_config_t http_config = {
@@ -454,6 +457,7 @@ h2_pal_result_t h2_bk7258_board_runtime_config(h2_runtime_config_t *out_config) 
         &http_config, &s_runtime_http, &s_runtime_http_api);
     if (rc != H2_PAL_OK) {
         release_sd_storage();
+        (void)h2_bk_platform_atomic_consumers_shutdown();
         return rc;
     }
     *out_config = (h2_runtime_config_t){
@@ -520,6 +524,8 @@ h2_pal_result_t h2_bk7258_board_runtime_deinit(void) {
         return H2_PAL_OK;
     }
 
+    h2_pal_result_t atomic_rc = h2_bk_platform_atomic_consumers_shutdown();
+    if (atomic_rc != H2_PAL_OK) return atomic_rc;
     h2_corehttp_destroy(s_runtime_http);
     s_runtime_http = NULL;
     memset(&s_runtime_http_api, 0, sizeof(s_runtime_http_api));

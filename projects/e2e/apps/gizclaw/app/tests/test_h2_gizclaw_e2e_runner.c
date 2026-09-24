@@ -120,6 +120,7 @@ int main(int argc, char **argv) {
       .case_timeout_ms = 1000,
       .cleanup_timeout_ms = 1000};
   h2_gizclaw_e2e_result_t result;
+  assert(h2_gizclaw_e2e_init() == H2_PAL_OK);
   if (connectivity_only) {
     const uint32_t unsupported[] = {
         H2_GIZCLAW_E2E_SUITE_ALL, H2_GIZCLAW_E2E_SUITE_SERVICE,

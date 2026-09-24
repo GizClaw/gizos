@@ -72,6 +72,12 @@ typedef struct h2_h2loader_host_esp_flash_config {
     h2_h2loader_host_esp_boot_policy_t boot_policy;
 } h2_h2loader_host_esp_flash_config_t;
 
+/* Call once during serial host startup, before any concurrent flash_open.
+ * Call shutdown after the final driver is closed. Neither lifecycle call may
+ * race flash_open or another lifecycle call. */
+h2_pal_result_t h2_h2loader_host_esp_flash_init(void);
+h2_pal_result_t h2_h2loader_host_esp_flash_shutdown(void);
+
 /**
  * @brief Open the official Espressif C ROM/stub flasher over Host Serial PAL.
  *
