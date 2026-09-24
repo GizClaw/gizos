@@ -83,6 +83,8 @@ DevKit launcher（`projects/e2e/targets/h2loader_tar_zlib/lua-link/devkit`）运
 
 `h2_gizclaw_e2e_run()` 只消费调用方提供的 Runtime/PAL、endpoint、RegistrationToken、suite mask 与确定性 PCM。防止并发 suite 和 retained session 被重复使用的 `s_run_active` 是文件级 static flag，使用 `H2_ATOMIC_DEFINE_STATIC` 定义独立 backing，不需模块级初始化或分配；run 结束且资源全部清理时清除，retained 资源仍在时保持占用。App 不读 environment 或文件，不选择 AP/BJ，不创建 Wi-Fi task，也不拥有 H2Peer/Pion。一个 case 失败后继续执行独立 case，最后输出完整 bounded summary 并完成反向清理。
 
+Desktop C++ launcher 的进程级 run guard 由同 package 的 C 桥接文件定义普通 static backing，C++ 通过 typed accessor 借用 wrapper 后仍调用同一 `h2_atomic_flag_*` API；没有 launcher 专用 global init，也不假设 `std::atomic` 与 C11 `_Atomic` 的内存布局相同。
+
 `service` suite 在 portable GizClaw E2E App 内启动真实 GizClaw service worker，通过 app runner dispatch request callback。它使用 service-owned client 完成 Register 与 Ping，验证 progress、terminal completion、排队 request cancel，以及 stop、drain、deinit；不依赖 H106 App 或 LVGL subject。
 
 Desktop live E2E 位于 `projects/e2e/targets/cc_test/gizclaw`，以两个独立的 `manual` test target 运行：`gizclaw_h2peer_live_test` 默认执行 H2Peer 的完整 suite，`gizclaw_pion_live_test` 默认执行 Pion 的 Firmware 与 Voice suite。它们默认使用自然入口 `ap`，workflow 可以通过 test environment 选择 `ap`/`bj` 和受 backend 支持的 suite；两个 target 从 test environment 继承真实 RegistrationToken。两个 Make 入口都直接运行对应 Bazel test：

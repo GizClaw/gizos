@@ -1,4 +1,5 @@
 #include "h2_gizclaw_e2e_desktop.h"
+#include "h2_gizclaw_e2e_desktop_static.h"
 #include "h2_gizclaw_e2e_desktop_options.h"
 
 #include "h2_corehttp.h"
@@ -31,9 +32,6 @@
 
 namespace {
 
-h2_atomic_bool_t g_stop_requested = {};
-h2_atomic_flag_t g_running = {};
-bool g_running_ready = false;
 #ifndef _WIN32
 std::mutex g_signal_read_mutex;
 int g_signal_read_fd = -1;
@@ -63,14 +61,17 @@ bool should_stop(void *) {
     if (g_signal_read_fd >= 0) {
       char byte;
       if (read(g_signal_read_fd, &byte, 1) == 1)
-        h2_atomic_bool_store(&g_stop_requested, true, H2_ATOMIC_RELAXED);
+        h2_atomic_bool_store(h2_gizclaw_e2e_desktop_stop_requested(), true,
+                             H2_ATOMIC_RELAXED);
     }
   }
 #else
   if (InterlockedCompareExchange(&g_signal_seen, 0, 0) != 0)
-    h2_atomic_bool_store(&g_stop_requested, true, H2_ATOMIC_RELAXED);
+    h2_atomic_bool_store(h2_gizclaw_e2e_desktop_stop_requested(), true,
+                         H2_ATOMIC_RELAXED);
 #endif
-  return h2_atomic_bool_load(&g_stop_requested, H2_ATOMIC_RELAXED);
+  return h2_atomic_bool_load(h2_gizclaw_e2e_desktop_stop_requested(),
+                             H2_ATOMIC_RELAXED);
 }
 
 // Own every view the portable runner or a retained Service may borrow. A
@@ -118,8 +119,8 @@ struct RunGuard {
   bool retain = false;
   ~RunGuard() {
     if (!retain) {
-      h2_atomic_bool_destroy(&g_stop_requested);
-      h2_atomic_flag_clear(&g_running, H2_ATOMIC_RELEASE);
+      h2_atomic_flag_clear(h2_gizclaw_e2e_desktop_running_flag(),
+                           H2_ATOMIC_RELEASE);
     }
   }
 };
@@ -235,20 +236,14 @@ int run_desktop(int argc, char **argv) {
                  reason);
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   }
-  if (!g_running_ready) {
-    std::fprintf(stderr, "H2_GIZCLAW_E2E stage=preflight status=ERROR "
-                         "reason=desktop-not-initialized\n");
-    return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
-  }
-  if (h2_atomic_flag_test_and_set(&g_running, H2_ATOMIC_ACQUIRE)) {
+  if (h2_atomic_flag_test_and_set(h2_gizclaw_e2e_desktop_running_flag(),
+                                  H2_ATOMIC_ACQUIRE)) {
     std::fprintf(stderr, "H2_GIZCLAW_E2E stage=preflight status=ERROR "
                          "reason=active-or-retained-session\n");
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   }
-  if (h2_atomic_bool_init(&g_stop_requested, false) != H2_ATOMIC_OK) {
-    h2_atomic_flag_clear(&g_running, H2_ATOMIC_RELEASE);
-    return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
-  }
+  h2_atomic_bool_store(h2_gizclaw_e2e_desktop_stop_requested(), false,
+                       H2_ATOMIC_RELAXED);
   RunGuard guard;
   auto session = std::make_unique<DesktopSession>();
   session->endpoint = options.endpoint;
@@ -410,24 +405,6 @@ int run_desktop(int argc, char **argv) {
 
 } // namespace
 
-int h2_gizclaw_e2e_desktop_init(void) {
-  if (g_running_ready) return H2_PAL_ERR_INVALID_STATE;
-  const h2_atomic_result_t rc = h2_atomic_flag_init(&g_running);
-  if (rc == H2_ATOMIC_UNSUPPORTED) return H2_PAL_ERR_UNSUPPORTED;
-  if (rc != H2_ATOMIC_OK) return H2_PAL_ERR_NO_MEMORY;
-  g_running_ready = true;
-  return H2_PAL_OK;
-}
-
-int h2_gizclaw_e2e_desktop_shutdown(void) {
-  if (!g_running_ready) return H2_PAL_ERR_INVALID_STATE;
-  if (h2_atomic_flag_test_and_set(&g_running, H2_ATOMIC_ACQUIRE))
-    return H2_PAL_ERR_BUSY;
-  g_running_ready = false;
-  h2_atomic_flag_destroy(&g_running);
-  return H2_PAL_OK;
-}
-
 int h2_gizclaw_e2e_desktop_main(int argc, char **argv) {
   try {
     return run_desktop(argc, argv);
@@ -444,10 +421,6 @@ int main(int argc, char **argv) {
   // Configure stdout before any launcher/provider has performed I/O.
   if (std::setvbuf(stdout, nullptr, _IOLBF, 0) != 0)
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
-  if (h2_gizclaw_e2e_desktop_init() != H2_PAL_OK)
-    return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
-  const int result = h2_gizclaw_e2e_desktop_main(argc, argv);
-  (void)h2_gizclaw_e2e_desktop_shutdown();
-  return result;
+  return h2_gizclaw_e2e_desktop_main(argc, argv);
 }
 #endif

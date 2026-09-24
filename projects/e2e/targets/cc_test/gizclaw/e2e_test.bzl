@@ -12,6 +12,7 @@ def gizclaw_e2e_desktop_deps(backend = "h2peer", app = "//projects/e2e/apps/gizc
         "//libs/pal/providers/desktop/app_support:app_support",
         "//libs/pal/providers/desktop/app_support:bundle_rpath",
         "//projects/e2e/targets/cc_test/gizclaw:desktop_options",
+        "//projects/e2e/targets/cc_test/gizclaw:desktop_static_guard",
         app,
     ]
     if backend == "pion":

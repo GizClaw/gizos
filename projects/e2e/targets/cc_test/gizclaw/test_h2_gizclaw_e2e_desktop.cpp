@@ -1,4 +1,5 @@
 #include "h2_gizclaw_e2e_desktop.h"
+#include "h2_gizclaw_e2e_desktop_static.h"
 
 #include "h2_gizclaw_e2e.h"
 
@@ -64,7 +65,13 @@ h2_gizclaw_e2e_run(h2_runtime_t *runtime, const h2_gizclaw_e2e_config_t *config,
 
 
 int main() {
-  assert(h2_gizclaw_e2e_desktop_init() == H2_PAL_OK);
+  auto *running = h2_gizclaw_e2e_desktop_running_flag();
+  assert(running != nullptr && running->storage != nullptr);
+  assert(h2_atomic_flag_init(running) == H2_ATOMIC_INVALID_STATE);
+  auto *stop_requested = h2_gizclaw_e2e_desktop_stop_requested();
+  assert(stop_requested != nullptr && stop_requested->storage != nullptr);
+  assert(h2_atomic_bool_init(stop_requested, false) == H2_ATOMIC_INVALID_STATE);
+  auto *static_storage = running->storage;
   set_env("H2_GIZCLAW_E2E_SUITE", nullptr);
   char program[] = "gizclaw-e2e";
   char pcm[] = "unused.pcm";
@@ -156,5 +163,6 @@ int main() {
   (void)std::remove(pcm_path.c_str());
   if (old_signal != SIG_ERR)
     (void)std::signal(SIGINT, old_signal);
+  assert(running->storage == static_storage);
   return 0;
 }

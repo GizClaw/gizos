@@ -8,7 +8,17 @@ Platform Abstraction Layer（PAL）定义 GizOS 使用的平台抽象能力。PA
 
 ## 独立 Atomic Contract
 
-并发原子值由 `libs/atomic/include/h2_atomic.h` 定义，不属于 PAL API、PAL vtable 或 Memory PAL capability。调用方持有 typed wrapper 并直接调用 `h2_atomic_*` 符号；最终 target 必须链接一个平台实现，缺失实现会在链接时报错。动态 wrapper（包括 flag）先零初始化、调用 `init` 并检查结果，停止并发访问后销毁；初始化后不得复制。只有确实定义静态 backing 的 C11 翻译单元额外 include `h2_atomic_static.h`，使用统一的 `H2_ATOMIC_DEFINE_STATIC(kind, name, initial)` 定义每对象独立的普通 static backing 与 wrapper；普通 `h2_atomic.h` consumer 不被强制解析 C11 `_Atomic`。静态值定义后可直接使用，不经动态分配，也不在宏中指定平台属性；对它调用 `init` 返回 `INVALID_STATE`，`destroy` 不释放且不废弃 wrapper。C++ 仍使用 opaque wrapper 和显式 init/destroy，不把 `std::atomic` 布局当作 C11 ABI。Desktop/Browser 的 provider 基于 C11，iOS/Android 使用 pthread；ESP 的动态实际存储由 provider 分配在内部 RAM，普通文件级 static backing 则由链接布局放在内部 DRAM，即使 wrapper 所在的动态结构位于 PSRAM，也不会在 PSRAM 直接执行 C11 atomic。flag 的 `test_and_set`/`clear` 对每对象的 word-sized 存储直接执行原子交换/写入，没有 provider 全局 flag 锁。BK/JieLi 的动态初始化返回 `H2_ATOMIC_UNSUPPORTED`，静态对象的操作仍 trap；当前只要求这些 target 编译，不能把静态宏当成可运行的 provider。
+并发原子值由 `libs/atomic/include/h2_atomic.h` 定义，不属于 PAL API、PAL vtable 或 Memory PAL capability。调用方持有 typed wrapper 并直接调用 `h2_atomic_*` 符号；最终 target 必须链接一个平台实现，缺失实现会在链接时报错。动态 wrapper（包括 flag）先零初始化、调用 `init` 并检查结果，停止并发访问后销毁；初始化后不得复制。只有确实定义静态 backing 的 C11 翻译单元额外 include `h2_atomic_static.h`，使用统一的 `H2_ATOMIC_DEFINE_STATIC(kind, name, initial)` 定义每对象独立的普通 static backing 与 wrapper；普通 `h2_atomic.h` consumer 不被强制解析 C11 `_Atomic`。静态值定义后可直接使用，不经动态分配，也不在宏中指定平台属性；对它调用 `init` 返回 `INVALID_STATE`，`destroy` 不释放且不废弃 wrapper。C++ 动态实例仍使用 opaque wrapper 和显式 init/destroy，不把 `std::atomic` 布局当作 C11 ABI。Desktop/Browser 的 provider 基于 C11，iOS/Android 使用 pthread；ESP 的动态实际存储由 provider 分配在内部 RAM，普通文件级 static backing 则由链接布局放在内部 DRAM，即使 wrapper 所在的动态结构位于 PSRAM，也不会在 PSRAM 直接执行 C11 atomic。flag 的 `test_and_set`/`clear` 对每对象的 word-sized 存储直接执行原子交换/写入，没有 provider 全局 flag 锁。BK/JieLi 的动态初始化返回 `H2_ATOMIC_UNSUPPORTED`，静态对象的操作仍 trap；当前只要求这些 target 编译，不能把静态宏当成可运行的 provider。
+
+```c
+#include "h2_atomic_static.h"
+H2_ATOMIC_DEFINE_STATIC(int, s_count, 0);
+H2_ATOMIC_DEFINE_STATIC(bool, s_ready, false);
+H2_ATOMIC_DEFINE_STATIC(ptr, s_owner, NULL);
+H2_ATOMIC_DEFINE_STATIC(flag, s_claim, 0u);
+```
+
+C++ 若需要文件级 static backing，由同 package 的 C 翻译单元使用该宏并导出返回 typed wrapper 指针的 `extern "C"` accessor；C++ 按普通 `h2_atomic_*` API 借用该指针，不转换 `std::atomic` 对象，也不需手写模块 global init。GizClaw Desktop 的 run guard 使用这一桥接方式；C++ 动态实例继续显式 init/destroy。
 
 ## API Reference
 
