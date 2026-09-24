@@ -8,8 +8,8 @@
 #include <assert.h>
 #include <errno.h>
 #include <pthread.h>
-#include <stdatomic.h>
 #include <stdio.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
@@ -417,10 +417,32 @@ static h2_runtime_t *create_runtime(void) {
 }
 
 typedef struct pending_call {
-  atomic_uint_fast64_t id;
-  atomic_uint cancels;
+  pthread_mutex_t mutex;
+  uint64_t id;
+  unsigned cancels;
   char input[128];
 } pending_call_t;
+
+static uint64_t pending_id(pending_call_t *pending) {
+  assert(pthread_mutex_lock(&pending->mutex) == 0);
+  const uint64_t id = pending->id;
+  assert(pthread_mutex_unlock(&pending->mutex) == 0);
+  return id;
+}
+
+static unsigned pending_cancels(pending_call_t *pending) {
+  assert(pthread_mutex_lock(&pending->mutex) == 0);
+  const unsigned cancels = pending->cancels;
+  assert(pthread_mutex_unlock(&pending->mutex) == 0);
+  return cancels;
+}
+
+static void pending_set_id(pending_call_t *pending, uint64_t id) {
+  assert(pthread_mutex_lock(&pending->mutex) == 0);
+  pending->id = id;
+  assert(pthread_mutex_unlock(&pending->mutex) == 0);
+}
+
 static h2_pal_result_t capability_call(void *user,
                                        h2_lua_capability_request_id_t id,
                                        const char *input, const char *options,
@@ -432,8 +454,10 @@ static h2_pal_result_t capability_call(void *user,
   (void)capacity;
   (void)error;
   assert(strlen(input) < sizeof(pending->input));
+  assert(pthread_mutex_lock(&pending->mutex) == 0);
   strcpy(pending->input, input);
-  atomic_store(&pending->id, id); /* Release publishes the copied payload. */
+  pending->id = id;
+  assert(pthread_mutex_unlock(&pending->mutex) == 0);
   return H2_PAL_ERR_WOULD_BLOCK;
 }
 static h2_pal_result_t pending_prefix(void *user,
@@ -474,8 +498,10 @@ static h2_pal_result_t immediate_prefix(void *user,
 
 static void capability_cancel(void *user, h2_lua_capability_request_id_t id) {
   pending_call_t *pending = user;
-  assert(atomic_load(&pending->id) == id);
-  atomic_fetch_add(&pending->cancels, 1);
+  assert(pthread_mutex_lock(&pending->mutex) == 0);
+  assert(pending->id == id);
+  ++pending->cancels;
+  assert(pthread_mutex_unlock(&pending->mutex) == 0);
 }
 static h2_lua_job_id_t submit(h2_lua_host_t *host, const char *script) {
   h2_lua_job_id_t id;
@@ -505,7 +531,7 @@ static void wait_state(h2_lua_host_t *host, h2_lua_job_id_t id,
 }
 static uint64_t wait_request(pending_call_t *pending) {
   for (unsigned i = 0; i < 5000; ++i) {
-    uint64_t id = atomic_load(&pending->id);
+    uint64_t id = pending_id(pending);
     if (id)
       return id;
     sleep_ms(NULL, 1);
@@ -513,13 +539,31 @@ static uint64_t wait_request(pending_call_t *pending) {
   assert(!"capability deadline exceeded");
   return 0;
 }
+/* One Button edge queues BUTTON_DOWN and BUTTON_ACTION, and a held Button
+ * repeats both on every poll. A job whose handler ends it on the first event
+ * is already terminal when the rest arrive, so CLOSED is the contract result
+ * for those, and only for a job that SUCCEEDED. A full delivery queue is
+ * retried so no event is dropped. Anything else fails with its result code. */
 static void dispatch(h2_runtime_t *runtime, h2_lua_host_t *host,
                      h2_lua_job_id_t job) {
   unsigned char payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
   h2_runtime_event_t event = {.payload = payload,
                               .payload_capacity = sizeof(payload)};
-  while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK)
-    assert(h2_lua_dispatch_runtime_event(host, job, &event) == H2_PAL_OK);
+  while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
+    h2_pal_result_t result = h2_lua_dispatch_runtime_event(host, job, &event);
+    for (unsigned i = 0; i < 5000 && result == H2_PAL_ERR_FULL; ++i) {
+      sleep_ms(NULL, 1);
+      result = h2_lua_dispatch_runtime_event(host, job, &event);
+    }
+    h2_lua_job_state_t state = status(host, job).state;
+    if (result == H2_PAL_OK ||
+        (result == H2_PAL_ERR_CLOSED && state == H2_LUA_JOB_SUCCEEDED))
+      continue;
+    fprintf(stderr, "dispatch result %d for event kind %d component %u in job "
+            "state %d\n", (int)result, (int)event.kind,
+            (unsigned)event.component_id, (int)state);
+    abort();
+  }
 }
 static void test_job_results(h2_lua_host_t *host) {
   size_t invalid_size = 99;
@@ -669,6 +713,8 @@ int main(void) {
   test_registry(runtime);
   h2_lua_host_t *host = NULL;
   pending_call_t echo = {0}, slow = {0};
+  assert(pthread_mutex_init(&echo.mutex, NULL) == 0);
+  assert(pthread_mutex_init(&slow.mutex, NULL) == 0);
   h2_lua_host_config_t cfg = {.runtime = runtime,
                               .worker_count = 1,
                               .max_jobs = 4,
@@ -726,7 +772,7 @@ int main(void) {
   assert(h2_lua_job_release(host, job) == H2_PAL_OK);
 
   uint64_t previous_request = request;
-  atomic_store(&echo.id, 0);
+  pending_set_id(&echo, 0);
   job = submit(
       host, "local ok,out,err=require('capability').call('test.echo','error');"
             "assert(ok==false and out==nil and err=='host error')");
@@ -740,7 +786,10 @@ int main(void) {
   assert(h2_lua_job_release(host, job) == H2_PAL_OK);
 
   job = submit(host, "local d=require('display');d.present();"
-                     "d.fill_rect(3,5,7,9,'red');d.present();"
+                     "local a=d.compile_palette({'red'});local b=d.compile_palette({'blue'});"
+                     "d.blend_palette(b,a,b,0);"
+                     "local r=d.compile_rects({{x=3,y=5,width=7,height=9,color_index=1}});"
+                     "d.draw_rects(r,b);d.present();"
                      "local t=require('lcd_touch');t.poll()");
   wait_state(host, job, H2_LUA_JOB_SUCCEEDED);
   assert(display.draws == 2 && display.presents == 2);
@@ -752,7 +801,50 @@ int main(void) {
              ((x >= 3 && x < 10 && y >= 5 && y < 14) ? 0xf800 : 0));
   assert(h2_lua_job_release(host, job) == H2_PAL_OK);
 
-  atomic_store(&echo.id, 0);
+  job = submit(
+      host,
+      "local v,g,d=require('vmath'),require('geometry'),require('display');"
+      "local function b(t) local r=v.buffer(#t);r:load(t);return r end;"
+      "local "
+      "w=v.constraints(2,1);w:load(b{0,0,0,2,0,0},b{0,0,0,2,0,0},b{1,2,1,.0001,"
+      "0,1},2,1,.01);"
+      "w:solve(2,nil,0);local "
+      "p,o,l=v.buffer(6),v.buffer(6),v.buffer(1);w:copy(p,o,l);assert(l:get(1)<"
+      "0);"
+      "w:bind(p,o,b{1,2,1,.0001,0,1},2,1,.01);p:set(4,2);"
+      "assert(w:node(2)==2);w:solve(1,nil,0);assert(w:multipliers(1)<0);"
+      "assert(p:get(4)<2);w:load(p,o,b{1,2,1,.0001,0,1},2,1,.01);"
+      "local delta=v.buffer(6,'f32');w:node(2,999999.001,0,0,999999,0,0);"
+      "w:displacements(delta,2,1);assert(math.abs(delta:get(1)-.001)<1e-9);"
+      "local zero,one=v.buffer(3,'f32'),v.buffer(3,'f32');one:fill(1);"
+      "w:integrate(2,1,b{1},zero,one,b{1,1,1},b{0,0,0},'displacement-f32',nil,0);"
+      "assert(w:node(2)>999999.001);local norm=v.buffer(1);"
+      "v.length3_refined(norm,b{.3,.4,0},1);assert(math.abs(norm:get(1)-.5)<1e-12);"
+      "local "
+      "r=g.rotations(b{1,0,0},b{1},b{0,0,1},1);assert(r:evaluate(p,0,.2,0,0,0,"
+      "0,false,false));"
+      "local "
+      "pose=g.pose(g.batch(b{2,2,8,2,8,8,2,8},b{0,1,4},nil,nil,b{0,0,0,0},4,1))"
+      ";"
+      "pose:evaluate(0,0,0,0,1,0,1,nil);d.clear('black');d.draw_pose(pose,b{"
+      "0xf800},0,0,0,0,1,0,0,0,240,240);"
+      "local line=d.polyline(2);line:load(b{-2,0,1,2,0,1},2);"
+      "local style=d.compile_line_style(b{0x07e0});"
+      "d.draw_polyline(line,b{20,20,2,0,1},1,0,false,style,style,style,0,0,240,"
+      "240);d.stroke_path({buffer=b{30,30,40,30},count=2},{1},'white');"
+      "local mesh=d.compile_mesh({{0,0},{6,0},{6,6},{0,6}},{{0,1,4,'blue'}});"
+      "local opts={transform={x=60.01,y=60,scale=1,angle=0},grid=1,cache=true};"
+      "d.draw_mesh(mesh,opts);d.update_mesh(mesh,{{.01,0},{6,0},{6,6},{0,6}},"
+      "{{0,1,4,'blue'}});d.draw_mesh(mesh,opts);d.present()");
+  wait_state(host, job, H2_LUA_JOB_SUCCEEDED);
+  assert(display.pixels[3 * 240 + 3] == 0xf800);
+  assert(display.pixels[20 * 240 + 16] == 0x07e0);
+  assert(display.pixels[30 * 240 + 35] == 0xffff);
+  assert(display.pixels[63 * 240 + 63] == 0x001f);
+  assert(display.pixels[63 * 240 + 59] == 0);
+  assert(h2_lua_job_release(host, job) == H2_PAL_OK);
+
+  pending_set_id(&echo, 0);
   job = submit(
       host,
       "local r=require('runtime');local pressed=false;"
@@ -791,15 +883,17 @@ int main(void) {
          H2_PAL_ERR_INVALID_STATE);
   assert(result_size == 0 && has_result == 0);
   assert(h2_lua_job_release(host, job) == H2_PAL_OK);
-  for (unsigned i = 0; i < 5000 && atomic_load(&slow.cancels) == 0; ++i)
+  for (unsigned i = 0; i < 5000 && pending_cancels(&slow) == 0; ++i)
     sleep_ms(NULL, 1);
-  assert(atomic_load(&slow.cancels) == 1);
+  assert(pending_cancels(&slow) == 1);
   assert(h2_lua_capability_complete(host, request, H2_PAL_OK, "late", NULL) !=
          H2_PAL_OK);
   assert(h2_lua_host_stop(host) == H2_PAL_OK);
   assert(h2_lua_host_join(host) == H2_PAL_OK);
   h2_lua_host_destroy(host);
   h2_runtime_deinit(runtime);
+  assert(pthread_mutex_destroy(&echo.mutex) == 0);
+  assert(pthread_mutex_destroy(&slow.mutex) == 0);
   puts("PASS: PAL embedding, async echo, display, ok/back input, cancellation, "
        "frozen registry, job results");
   return 0;

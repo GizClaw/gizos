@@ -11,7 +11,7 @@
 #include "h2_loader_status.h"
 #include "os/os.h"
 
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -34,14 +34,14 @@ typedef struct h2_bk_serial_transport {
   uint32_t write_timeout_ms;
   int replacement_pending;
   int close_pending;
-  const atomic_bool *stop_requested;
+  const h2_atomic_bool_t *stop_requested;
 } h2_bk_serial_transport_t;
 
 typedef struct h2_bk_app_serial {
   h2_bk_serial_transport_t transport;
   h2_command_io_api_t io;
   h2_loader_app_client_t client;
-  atomic_bool stop_requested;
+  h2_atomic_bool_t stop_requested;
 } h2_bk_app_serial_t;
 
 typedef struct h2_bk_loader_serial {
@@ -51,7 +51,7 @@ typedef struct h2_bk_loader_serial {
   const h2_pal_mem_api_t *allocator;
   const h2_pal_task_api_t *task_api;
   h2_pal_task_t *task;
-  atomic_bool stop_requested;
+  h2_atomic_bool_t stop_requested;
 } h2_bk_loader_serial_t;
 
 static h2_bk_app_serial_t s_app_serial;
@@ -61,7 +61,7 @@ static int s_loader_serial_started;
 
 static int transport_stop_requested(const h2_bk_serial_transport_t *transport) {
   return transport != NULL && transport->stop_requested != NULL &&
-         atomic_load_explicit(transport->stop_requested, memory_order_acquire);
+         h2_atomic_bool_load(transport->stop_requested, H2_ATOMIC_ACQUIRE);
 }
 
 static uint32_t transport_now_ms(void *user) {
@@ -156,11 +156,10 @@ static h2_pal_result_t poll_physical(h2_bk_serial_transport_t *transport,
       read_rc != H2_PAL_ERR_WOULD_BLOCK) {
     return read_rc;
   }
-  h2_pal_result_t rc = H2_PAL_OK;
-  if (count != 0u) {
-    rc = h2_iostreamikcp_filter_input(&transport->filter, buffer, count,
-                                      on_frame, transport);
-  }
+  /* Resume complete buffered frames after a callback deadline, even when
+   * the physical link supplies no new bytes. */
+  h2_pal_result_t rc = h2_iostreamikcp_filter_input(
+      &transport->filter, buffer, count, on_frame, transport);
   if (rc == H2_PAL_OK && transport->stream != NULL) {
     rc = h2_iostreamikcp_update(transport->stream, transport_now_ms(NULL));
   }
@@ -330,7 +329,7 @@ static const h2_command_io_vtable_t s_command_io_vtable = {
 
 static h2_pal_result_t transport_init(h2_bk_serial_transport_t *transport,
                                       const h2_pal_mem_api_t *allocator,
-                                      const atomic_bool *stop_requested) {
+                                      const h2_atomic_bool_t *stop_requested) {
   if (transport == NULL || allocator == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
@@ -486,10 +485,16 @@ int h2_bk_h2loader_start_loader_iostreamikcp(
   state->command_config = *command_config;
   state->allocator = runtime->mem;
   state->task_api = runtime->task;
-  atomic_init(&state->stop_requested, false);
+  h2_atomic_result_t atomic_rc =
+      h2_atomic_bool_init(&state->stop_requested, false);
+  if (atomic_rc != H2_ATOMIC_OK) {
+    return atomic_rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
+                                               : H2_PAL_ERR_NO_MEMORY;
+  }
   int rc = transport_init(&state->transport, state->allocator,
                           &state->stop_requested);
   if (rc != H2_PAL_OK) {
+    h2_atomic_bool_destroy(&state->stop_requested);
     memset(state, 0, sizeof(*state));
     return rc;
   }
@@ -501,6 +506,7 @@ int h2_bk_h2loader_start_loader_iostreamikcp(
                         &state->task);
   if (rc != H2_PAL_OK) {
     transport_deinit(&state->transport);
+    h2_atomic_bool_destroy(&state->stop_requested);
     memset(state, 0, sizeof(*state));
   } else {
     s_loader_serial_started = 1;
@@ -512,12 +518,13 @@ int h2_bk_h2loader_stop_loader_iostreamikcp(void) {
   if (!s_loader_serial_started) {
     return H2_PAL_OK;
   }
-  atomic_store_explicit(&s_loader_serial.stop_requested, true,
-                        memory_order_release);
+  h2_atomic_bool_store(&s_loader_serial.stop_requested, true,
+                        H2_ATOMIC_RELEASE);
   int rc = h2_pal_task_join(s_loader_serial.task_api, s_loader_serial.task);
   if (rc != H2_PAL_OK) {
     return rc;
   }
+  h2_atomic_bool_destroy(&s_loader_serial.stop_requested);
   memset(&s_loader_serial, 0, sizeof(s_loader_serial));
   s_loader_serial_started = 0;
   return H2_PAL_OK;
@@ -531,7 +538,7 @@ static int app_read_byte(void *user, uint32_t timeout_ms) {
     return EOF;
   }
   for (;;) {
-    if (atomic_load_explicit(&state->stop_requested, memory_order_acquire)) {
+    if (h2_atomic_bool_load(&state->stop_requested, H2_ATOMIC_ACQUIRE)) {
       return H2_LOADER_APP_CLIENT_SESSION_CLOSED;
     }
     if (state->transport.close_pending &&
@@ -619,7 +626,12 @@ int h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
   }
   h2_bk_app_serial_t *state = &s_app_serial;
   memset(state, 0, sizeof(*state));
-  atomic_init(&state->stop_requested, false);
+  h2_atomic_result_t atomic_rc =
+      h2_atomic_bool_init(&state->stop_requested, false);
+  if (atomic_rc != H2_ATOMIC_OK) {
+    return atomic_rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
+                                               : H2_PAL_ERR_NO_MEMORY;
+  }
   int rc = arm_pending_app_rollback(runtime->pref);
   if (rc == H2_PAL_OK) {
     rc = h2_bk_h2loader_init_app_client(
@@ -630,6 +642,7 @@ int h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
         transport_init(&state->transport, runtime->mem, &state->stop_requested);
   }
   if (rc != H2_PAL_OK) {
+    h2_atomic_bool_destroy(&state->stop_requested);
     memset(state, 0, sizeof(*state));
     return rc;
   }
@@ -647,6 +660,7 @@ int h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
   rc = h2_loader_app_client_start_return_console(&console);
   if (rc != H2_PAL_OK) {
     transport_deinit(&state->transport);
+    h2_atomic_bool_destroy(&state->stop_requested);
     memset(state, 0, sizeof(*state));
   } else {
     s_app_serial_started = 1;
@@ -658,13 +672,14 @@ int h2_bk_h2loader_stop_app_iostreamikcp(void) {
   if (!s_app_serial_started) {
     return H2_PAL_OK;
   }
-  atomic_store_explicit(&s_app_serial.stop_requested, true,
-                        memory_order_release);
+  h2_atomic_bool_store(&s_app_serial.stop_requested, true,
+                        H2_ATOMIC_RELEASE);
   int rc = h2_loader_app_client_stop_return_console(&s_app_serial.client);
   if (rc != H2_PAL_OK) {
     return rc;
   }
   transport_deinit(&s_app_serial.transport);
+  h2_atomic_bool_destroy(&s_app_serial.stop_requested);
   memset(&s_app_serial, 0, sizeof(s_app_serial));
   s_app_serial_started = 0;
   return H2_PAL_OK;

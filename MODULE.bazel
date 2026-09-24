@@ -14,6 +14,7 @@ bazel_dep(name = "rules_android_ndk", version = "0.1.5")
 bazel_dep(name = "rules_cc", version = "0.2.17")
 bazel_dep(name = "rules_foreign_cc", version = "0.15.1")
 bazel_dep(name = "gazelle", version = "0.51.3")
+bazel_dep(name = "gizclaw_c_sdk", version = "0.19.0")
 bazel_dep(name = "hermetic_cc_toolchain", version = "4.2.0")
 bazel_dep(name = "toolchains_llvm", version = "1.8.0")
 bazel_dep(name = "rules_go", version = "0.61.1", repo_name = "io_bazel_rules_go")
@@ -44,15 +45,6 @@ use_repo(cc_configure, "local_config_cc")
 http_archive = use_repo_rule(
     "@bazel_tools//tools/build_defs/repo:http.bzl",
     "http_archive",
-)
-
-http_archive(
-    name = "h2_gizclaw_c_sdk",
-    integrity = "sha256-yzYO4soaVD28YP4XK16jgcYdrC/MAxNprl4cFCKOL9Q=",
-    strip_prefix = "gizclaw-c-sdk-0.18.7",
-    urls = [
-        "https://github.com/GizClaw/gizclaw/releases/download/v0.18.7/gizclaw-c-sdk-0.18.7.tar.gz",
-    ],
 )
 
 # Playwright 1.52.0 uses Chromium headless shell revision 1169. Keep the two
@@ -346,6 +338,17 @@ vendor_repositories.repository(
     urls = ["https://codeload.github.com/higan-emu/libco/tar.gz/e18e09d634d612a01781168ad4d76be10a7e3bad"],
 )
 vendor_repositories.repository(
+    name = "h2_vendor_tlsf",
+    build_file = "//third_party:tlsf.BUILD.bazel",
+    overlay_files = {
+        "//third_party/tlsf_patch:h2_tlsf.h": "src/h2_tlsf.h",
+        "//third_party/tlsf_patch:h2_tlsf_embedded_stdio.h": "src/h2_tlsf_embedded_stdio.h",
+    },
+    sha256 = "df67543d45ad5e67d96168b54022a0f4803f8d5ae9770d398e20dd9a0e2934d6",
+    strip_prefix = "tlsf-deff9ab509341f264addbd3c8ada533678591905",
+    urls = ["https://codeload.github.com/mattconte/tlsf/tar.gz/deff9ab509341f264addbd3c8ada533678591905"],
+)
+vendor_repositories.repository(
     name = "h2_vendor_lua",
     build_file = "//third_party:lua.BUILD.bazel",
     overlay_files = {
@@ -440,7 +443,10 @@ vendor_repositories.repository(
 vendor_repositories.repository(
     name = "h2_vendor_tinyh264",
     build_file = "//third_party:tinyh264.BUILD.bazel",
-    patches = ["//tools/bazel/vendor:patches/tinyh264_msvc_inline.patch"],
+    patches = [
+        "//tools/bazel/vendor:patches/tinyh264_msvc_inline.patch",
+        "//tools/bazel/vendor:patches/tinyh264_standard_string_header.patch",
+    ],
     sha256 = "c0499a09b10194aba6380a5d70b235a9eb51098195475593e2f9ff3a9f315171",
     strip_prefix = "tinyh264-524a702b6d98f8b9271238fdda9a064a1e6861e7",
     urls = ["https://codeload.github.com/udevbe/tinyh264/tar.gz/524a702b6d98f8b9271238fdda9a064a1e6861e7"],
@@ -483,6 +489,7 @@ use_repo(
     "h2_vendor_speexdsp",
     "h2_vendor_sqlite",
     "h2_vendor_tinyh264",
+    "h2_vendor_tlsf",
     "h2_vendor_wolfssl",
     "h2_vendor_yyjson",
     "h2_vendor_zlib",

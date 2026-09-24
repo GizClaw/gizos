@@ -73,3 +73,14 @@ does not regain an arbitrary-string escape hatch for this check.
 `reboot upgrade --monitor` cases. Monitor output contains only bytes that the
 Host transport has classified as non-iKCP serial logs. BLE deliberately has no
 monitor case because it does not carry the device's UART log stream.
+
+The optional `on_log` / `log_user` sink is borrowed for the run and called
+synchronously on the runner thread. It receives non-frame UART bytes from every
+connection and BLE connect-failure diagnostics. UART sink errors abort the current
+serial operation; BLE sink errors never replace the connect error. Serial log
+bytes contribute to output/log byte counters only during monitor cases.
+
+`reboot ... --monitor` allows one CLOSED/TIMEOUT reset transition after the ACK.
+Each attempt reconnects to the expected partition, observes a full monitor window
+with output, and reads live status to confirm the partition. A second transition,
+any other error, a wrong partition, or cancellation ends the case.

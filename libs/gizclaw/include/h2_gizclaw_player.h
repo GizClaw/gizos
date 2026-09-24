@@ -19,7 +19,14 @@ typedef struct h2_gizclaw_player_status {
   uint32_t current_index;
   uint32_t playlist_length;
   uint32_t playlist_revision;
+  /* Appended: the playback rate in permille, H2_GIZCLAW_PLAYER_RATE_NORMAL
+   * when unchanged. Positions and durations above stay in media time. */
+  uint32_t rate_permille;
 } h2_gizclaw_player_status_t;
+/** Playback rate bounds in permille; NORMAL is the recorded speed. */
+#define H2_GIZCLAW_PLAYER_RATE_MIN 500u
+#define H2_GIZCLAW_PLAYER_RATE_NORMAL 1000u
+#define H2_GIZCLAW_PLAYER_RATE_MAX 2000u
 /** The library's playlist ceiling, same bound the audio player RPCs enforce. */
 #define H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS 32u
 /** One queued item as a UI needs it. The URL is deliberately absent: it is up
@@ -99,6 +106,19 @@ h2_pal_result_t h2_gizclaw_player_playlist_set(
  * here instead of re-implementing "next track, wrap at the end". */
 h2_pal_result_t h2_gizclaw_player_repeat_set(h2_gizclaw_service_t *service,
                                              h2_gizclaw_str_t repeat);
+/** Play at rate_permille of the recorded speed, keeping pitch (speech tempo
+ * change, not resampling). A property of the player, not of one play: it
+ * applies within one 32 ms step to the item already playing, without a
+ * restart or re-seek, and to every later item, auto-advance, repeat and
+ * remotely started play, until changed. Named sound playback always runs at
+ * the recorded speed. position_ms, duration_ms, play_index_at start_ms and
+ * playlist duration_ms all stay on the media's own timeline. NORMAL is a
+ * passthrough with no extra buffer or work; any other rate uses one fixed
+ * ~5.5 KiB work buffer while an item plays, and if that cannot be allocated
+ * the item plays at NORMAL instead of failing. Outside MIN..MAX is
+ * INVALID_ARG and leaves the rate unchanged. */
+h2_pal_result_t h2_gizclaw_player_rate_set(h2_gizclaw_service_t *service,
+                                           uint32_t rate_permille);
 h2_pal_result_t h2_gizclaw_player_stop(h2_gizclaw_service_t *service);
 h2_pal_result_t h2_gizclaw_player_get_status(h2_gizclaw_service_t *service,
                                              h2_gizclaw_player_status_t *out);

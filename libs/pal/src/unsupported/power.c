@@ -81,6 +81,12 @@ static h2_pal_result_t unsupported_power_deep_sleep(void *p0, uint32_t p1) {
     return H2_PAL_ERR_UNSUPPORTED;
 }
 
+static h2_pal_result_t unsupported_power_set_deep_sleep_wake_timer(void *p0, uint32_t p1) {
+    (void)p0;
+    (void)p1;
+    return H2_PAL_ERR_UNSUPPORTED;
+}
+
 static const h2_pal_power_vtable_t unsupported_power_vtable = {
     .get_capabilities = unsupported_power_get_capabilities,
     .get_boot_info = unsupported_power_get_boot_info,
@@ -95,6 +101,7 @@ static const h2_pal_power_vtable_t unsupported_power_vtable = {
     .reboot = unsupported_power_reboot,
     .sleep = unsupported_power_sleep,
     .deep_sleep = unsupported_power_deep_sleep,
+    .set_deep_sleep_wake_timer = unsupported_power_set_deep_sleep_wake_timer,
 };
 static const h2_pal_power_api_t unsupported_power_api = { .user = NULL, .vtable = &unsupported_power_vtable };
 const h2_pal_power_api_t *h2_pal_unsupported_power_api(void) { return &unsupported_power_api; }

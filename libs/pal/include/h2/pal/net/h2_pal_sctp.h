@@ -2,6 +2,7 @@
 #define H2_PAL_SCTP_H
 
 #include "h2/pal/core/h2_pal_errors.h"
+#include "h2/pal/os/h2_pal_mem.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -161,6 +162,9 @@ typedef struct h2_pal_sctp_association_config {
     uint64_t cookie_lifetime_ms;
     /** Required callbacks and caller-owned context. */
     h2_pal_sctp_callbacks_t callbacks;
+    /** Optional association storage; NULL uses the provider default. The
+     * allocator must outlive the association. Packet RAM may stay separate. */
+    const h2_pal_mem_api_t *allocator;
 } h2_pal_sctp_association_config_t;
 
 /** Provider operations; consumers call the checked wrappers below. */

@@ -30,6 +30,7 @@ H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_RUNTIME_PUT);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_RUN_WORKSPACE_GET);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_RUN_WORKSPACE_SET);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_RUN_WORKSPACE_RELOAD);
+H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_RUN_STOP);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_RUN_WORKSPACE_RELOAD_WITH_OPTIONS);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_FIRMWARE_GET);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_WORKSPACE_LIST);
@@ -99,6 +100,11 @@ H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_FRIEND_GROUP_PING);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_PROFILE_GET);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_DEVICE_FIND);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_SOCIAL_PING);
+H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_DEVICE_SETTINGS_GET);
+H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_DEVICE_SETTINGS_SET);
+H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_DEVICE_FACTORY_RESET);
+H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_RPC_METHODS_GET);
+H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_RUN_WORKSPACE_SET);
 
 #define H2_GIZCLAW_ASSERT_RPC_STATUS_SAME(name)                                \
   _Static_assert((int)(H2_GIZCLAW_RPC_ERROR_##name) ==                         \
@@ -189,6 +195,10 @@ struct h2_gizclaw_client {
   char retired_streams[H2_GIZCLAW_RETIRED_STREAM_COUNT][H2_GIZCLAW_CONVERSATION_STREAM_ID_MAX_BYTES + 1u];
   size_t retired_stream_next;
   bool terminal_closed;
+  /* Channel messages and media frames received on the Peer. A request that
+   * times out while this stays unchanged saw the Peer deliver nothing. */
+  uint32_t inbound_count;
+  bool peer_unresponsive;
 };
 
 struct h2_gizclaw_rpc_request {
@@ -205,6 +215,7 @@ struct h2_gizclaw_rpc_request {
   int sdk_error;
   h2_gizclaw_rpc_complete_fn on_complete;
   void *complete_user;
+  uint32_t inbound_at_start;
 };
 
 static h2_gizclaw_client_t *s_clients;
@@ -223,6 +234,12 @@ static void h2_gizclaw_rpc_complete(void *user, gzc_rpc_request_t *gzc,
     return;
   request->completion_status = status;
   request->completion_notified = true;
+  /* ICE keepalives can keep answering after DTLS/SCTP and media stop, so the
+   * Peer state never changes. A request that used its whole deadline while
+   * nothing at all arrived is the evidence that the transport is dead. */
+  if (status == GZC_ERR_TIMEOUT && request->client != NULL &&
+      request->client->inbound_count == request->inbound_at_start)
+    request->client->peer_unresponsive = true;
   if (request->on_complete != NULL)
     request->on_complete(request->complete_user,
                          h2_gizclaw_result_from_gzc(status));
@@ -1483,7 +1500,17 @@ static int h2_gzc_peer_create(void *user,
   }
   client->gzc_callbacks = *callbacks;
   h2_pal_webrtc_peer_t *peer = NULL;
-  int rc = h2_pal_webrtc_peer_create(client->config.webrtc, &peer);
+  const h2_pal_webrtc_peer_config_t config = {
+      .allocator = client->config.allocator,
+  };
+  int rc = h2_pal_webrtc_peer_create_with_config(
+      client->config.webrtc, &config, &peer);
+  if (rc == H2_PAL_ERR_UNSUPPORTED && config.allocator != NULL) {
+    /* The provider cannot place peer state in the client allocator; keep
+     * the connection working on its default allocator and say so. */
+    h2_gizclaw_log_webrtc_rc(client, "peer_allocator_unsupported", rc);
+    rc = h2_pal_webrtc_peer_create(client->config.webrtc, &peer);
+  }
   h2_gizclaw_log_webrtc_rc(client, "peer_create", rc);
   if (rc != H2_PAL_OK) {
     return GZC_ERR_WEBRTC;
@@ -1721,11 +1748,13 @@ static int h2_gzc_peer_poll(gzc_rtc_peer_t *peer, int timeout_ms) {
                            &event.channel_info, event.channel_state);
       break;
     case H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE:
+      ++client->inbound_count;
       h2_gzc_channel_message(client, event.peer, event.channel,
                              &event.channel_info, event.data, event.data_len,
                              event.is_text);
       break;
     case H2_PAL_WEBRTC_EVENT_OPUS_FRAME:
+      ++client->inbound_count;
       h2_gzc_opus_frame(client, event.peer, event.data, event.data_len);
       break;
     case H2_PAL_WEBRTC_EVENT_WRITABLE:
@@ -2023,6 +2052,14 @@ int h2_gizclaw_client_poll(h2_gizclaw_client_t *client, int timeout_ms) {
   {
     rc = gzc_client_poll(client->gzc, timeout_ms);
   }
+  if ((rc == GZC_OK || rc == GZC_ERR_WOULD_BLOCK || rc == GZC_ERR_TIMEOUT) &&
+      client->peer_unresponsive) {
+    if (client->config.log != NULL)
+      (void)h2_pal_log_write(client->config.log, H2_PAL_LOG_WARN, "gizclaw",
+                             "stage=peer_unresponsive request timed out with "
+                             "nothing received");
+    rc = GZC_ERR_CLOSED;
+  }
   if (rc != GZC_OK) {
     h2_gizclaw_log_error(client, "poll", rc);
     if (rc == GZC_ERR_CLOSED) {
@@ -2055,6 +2092,7 @@ int h2_gizclaw_client_rpc_request_start(
   memset(request, 0, sizeof(*request));
   request->allocator = client->config.allocator;
   request->client = client;
+  request->inbound_at_start = client->inbound_count;
   const gzc_rpc_request_options_t options = {
       .on_complete = h2_gizclaw_rpc_complete,
       .complete_userdata = request,
@@ -2227,6 +2265,17 @@ static int h2_gizclaw_stream_frame(void *user, const gzc_rpc_frame_t *frame) {
 }
 
 #if defined(H2_GIZCLAW_TESTING)
+void h2_gizclaw_test_rpc_complete_on_client(h2_gizclaw_client_t *client,
+                                            int status, bool inbound) {
+  h2_gizclaw_rpc_request_t request = {0};
+  request.gzc = (gzc_rpc_request_t *)&request;
+  request.client = client;
+  request.inbound_at_start = client->inbound_count;
+  if (inbound)
+    ++client->inbound_count;
+  h2_gizclaw_rpc_complete(&request, request.gzc, status);
+}
+
 bool h2_gizclaw_test_rpc_diagnostic(void) {
   h2_gizclaw_rpc_request_t request = {0};
   request.gzc = (gzc_rpc_request_t *)&request;
@@ -2295,6 +2344,7 @@ int h2_gizclaw_client_rpc_request_start_stream(
   memset(request, 0, sizeof(*request));
   request->allocator = client->config.allocator;
   request->client = client;
+  request->inbound_at_start = client->inbound_count;
   request->on_stream_event = on_event;
   request->stream_user = user;
   const gzc_rpc_request_options_t options = {

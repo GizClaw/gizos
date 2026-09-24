@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import hashlib
 import json
 import os
@@ -14,36 +15,42 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
+import zipfile
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from common.bazel import cache_options  # noqa: E402
 
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+from tools.bazel.release_bundle import (  # noqa: E402
+    validate_catalog, validate_index,
+)
 
-VERSION_PATTERN = re.compile(r"^[0-9]+(?:\.[0-9]+){0,2}$")
+
+BATCH_PATTERN = re.compile(r"^[0-9]{8}-[0-9]{6}$")
+RELEASE_TAG = "firmware-release"
+RELEASE_QUERY = (
+    'attr("tags", "firmware-release", '
+    'kind("h2loader_tar_zlib rule", //projects/...))'
+)
 SLICES = (
     "catalog",
+    "npm-packages",
     "esp32s3",
     "esp32p4",
     "bk7258",
     "firmware-bundle",
+    "package",
     "release-bundle",
 )
-PRODUCERS = frozenset({"catalog"})
+PRODUCERS = frozenset({"catalog", "npm-packages"})
 CATALOG_CONFIGS = ("esp32s3", "esp32p4", "bk7258")
 FIRMWARE_SLICES = {
     "esp32s3": ("esp", "esp32s3"),
     "esp32p4": ("esp", "esp32p4"),
     "bk7258": ("bk7258", "bk7258"),
 }
-FIRMWARE_VERSION_PATTERN = re.compile(
-    r"^(0|[1-9][0-9]*)\."
-    r"(0|[1-9][0-9]*)\."
-    r"(0|[1-9][0-9]*)"
-    r"(?:-(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*)"
-    r"(?:\.(?:0|[1-9][0-9]*|[0-9A-Za-z-]*[A-Za-z-][0-9A-Za-z-]*))*)?"
-    r"(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$"
-)
 
 
 class ReleaseError(RuntimeError):
@@ -82,11 +89,22 @@ def sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def validate_version(version: str) -> None:
-    if not VERSION_PATTERN.fullmatch(version):
-        raise ReleaseError(
-            "RELEASE_VERSION must contain one to three numeric components"
-        )
+def validate_batch(batch: str) -> None:
+    if not BATCH_PATTERN.fullmatch(batch):
+        raise ReleaseError("RELEASE_BATCH must use UTC YYYYMMDD-HHMMSS format")
+    try:
+        timestamp = datetime.strptime(batch, "%Y%m%d-%H%M%S")
+    except ValueError as error:
+        raise ReleaseError("RELEASE_BATCH contains an invalid UTC timestamp") from error
+    if not 1980 <= timestamp.year <= 2107:
+        raise ReleaseError("RELEASE_BATCH must fit the ZIP timestamp range 1980..2107")
+
+
+def zip_timestamp(batch: str) -> tuple[int, ...]:
+    """Return the batch timestamp floored to DOS's two-second resolution."""
+    validate_batch(batch)
+    timestamp = datetime.strptime(batch, "%Y%m%d-%H%M%S")
+    return timestamp.replace(second=timestamp.second // 2 * 2).timetuple()[:6]
 
 
 def resolve_output(root: Path, slice_name: str, value: Path | None) -> Path:
@@ -140,15 +158,6 @@ def input_files(path: Path | None) -> list[Path]:
     return files
 
 
-def validate_firmware_version(value: object) -> bool:
-    return (
-        isinstance(value, str)
-        and len(value.encode("ascii", errors="ignore")) == len(value)
-        and len(value) <= 31
-        and FIRMWARE_VERSION_PATTERN.fullmatch(value) is not None
-    )
-
-
 def load_catalog(files: list[Path]) -> list[dict[str, str]]:
     matches = [path for path in files if path.name == "firmware-catalog.json"]
     if len(matches) != 1:
@@ -157,25 +166,10 @@ def load_catalog(files: list[Path]) -> list[dict[str, str]]:
         catalog = json.loads(matches[0].read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as error:
         raise ReleaseError(f"invalid firmware catalog: {error}") from error
-    if not isinstance(catalog, list) or not catalog:
-        raise ReleaseError("firmware catalog must be a non-empty array")
-    entries: set[str] = set()
-    for item in catalog:
-        if (
-            not isinstance(item, dict)
-            or item.get("platform") not in {"esp", "bk7258"}
-            or not isinstance(item.get("entry"), str)
-            or not isinstance(item.get("label"), str)
-            or not item["label"].endswith(":package")
-            or not isinstance(item.get("target"), str)
-            or not validate_firmware_version(item.get("version"))
-        ):
-            raise ReleaseError("firmware catalog contains an invalid entry")
-        entry = item["entry"]
-        if entry in entries:
-            raise ReleaseError(f"duplicate firmware catalog entry: {entry}")
-        entries.add(entry)
-    return catalog
+    try:
+        return validate_catalog(catalog)
+    except ValueError as error:
+        raise ReleaseError(str(error)) from error
 
 
 def copy_unique(files: list[Path], output: Path) -> None:
@@ -187,22 +181,21 @@ def copy_unique(files: list[Path], output: Path) -> None:
         shutil.copyfile(source, output / source.name)
 
 
-def build_catalog(root: Path, bazel: str, version: str, output: Path) -> None:
-    discovery = command(
-        root,
-        [
-            bazel,
-            "query",
-            'kind("h2loader_tar_zlib rule", //projects/...) '
-            'except attr("tags", "no-release", //projects/...)',
-            "--output=label",
-        ],
-    )
-    labels = sorted(
-        line.strip()
-        for line in discovery.stdout.splitlines()
-        if line.strip()
-    )
+def build_catalog(root: Path, bazel: str, output: Path) -> None:
+    discovery = command(root, [bazel, "query", RELEASE_QUERY, "--output=xml"])
+    try:
+        query = ET.fromstring(discovery.stdout)
+    except ET.ParseError as error:
+        raise ReleaseError(f"invalid Bazel query XML: {error}") from error
+    labels = []
+    for rule in query.findall("rule"):
+        label = rule.get("name")
+        tags = [value.get("value") for values in rule.findall("list")
+                if values.get("name") == "tags" for value in values.findall("string")]
+        if not label or tags.count(RELEASE_TAG) != 1:
+            raise ReleaseError(f"firmware target must declare exactly one {RELEASE_TAG} tag: {label}")
+        labels.append(label)
+    labels.sort()
     if not labels:
         raise ReleaseError("Bazel firmware package discovery returned no labels")
     expression = "set(%s)" % " ".join(labels)
@@ -214,7 +207,6 @@ def build_catalog(root: Path, bazel: str, version: str, output: Path) -> None:
                 bazel,
                 "cquery",
                 f"--config={config}",
-                f"--//tools/bazel:firmware_version={version}",
                 expression,
                 "--output=starlark",
                 "--starlark:file=tools/bazel/firmware_catalog.cquery",
@@ -235,20 +227,23 @@ def build_catalog(root: Path, bazel: str, version: str, output: Path) -> None:
             raise ReleaseError(
                 f"invalid Bazel firmware catalog for {config}: {error}"
             ) from error
-    catalog.sort(key=lambda item: item.get("entry", ""))
-    path = output / "firmware-catalog.json"
-    path.write_text(
+    try:
+        validate_catalog(catalog)
+    except ValueError as error:
+        raise ReleaseError(str(error)) from error
+    if {item["label"] for item in catalog} != set(labels):
+        raise ReleaseError("firmware catalog coverage differs from opted-in targets")
+    catalog.sort(key=lambda item: item["entry"])
+    (output / "firmware-catalog.json").write_text(
         json.dumps(catalog, indent=2, sort_keys=True) + "\n",
         encoding="utf-8",
     )
-    load_catalog([path])
 
 
 def build_firmware(
     root: Path,
     bazel: str,
     slice_name: str,
-    version: str,
     files: list[Path],
     output: Path,
 ) -> None:
@@ -294,8 +289,7 @@ def build_firmware(
                 "build",
                 *build_options,
                 *cache_options(),
-                f"--config={target}",
-                f"--//tools/bazel:firmware_version={version}",
+                f"--config={slice_name}",
                 "--output_groups=release",
                 *labels,
             ],
@@ -310,8 +304,7 @@ def build_firmware(
             [
                 bazel,
                 "cquery",
-                f"--config={target}",
-                f"--//tools/bazel:firmware_version={version}",
+                f"--config={slice_name}",
                 label,
                 "--output=starlark",
                 "--starlark:file=tools/bazel/firmware_release_files.cquery",
@@ -327,7 +320,7 @@ def build_firmware(
 def build_firmware_bundle(
     root: Path,
     bazel: str,
-    version: str,
+    batch: str,
     input_dir: Path,
     files: list[Path],
     output: Path,
@@ -337,8 +330,7 @@ def build_firmware_bundle(
     environment["H2_FIRMWARE_RELEASE_INPUT_DIR"] = str(input_dir.resolve())
     options = [
         "--repo_env=H2_FIRMWARE_RELEASE_INPUT_DIR",
-        f"--//tools/bazel:firmware_version={version}",
-        f"--//tools/bazel:release_version={version}",
+        f"--//tools/bazel:release_batch={batch}",
     ]
     label = "//tools/bazel:firmware_release_bundle"
     command(
@@ -358,6 +350,22 @@ def build_firmware_bundle(
         sorted(path for path in paths[0].iterdir() if path.is_file()),
         output,
     )
+
+
+def build_npm_packages(
+    root: Path,
+    bazel: str,
+    batch: str,
+    output: Path,
+) -> None:
+    label = "//tools/bazel:npm_release_bundle"
+    options = [f"--//tools/bazel:release_batch={batch}"]
+    command(root, [bazel, "build", *cache_options(), *options, label])
+    result = command(root, [bazel, "cquery", *options, "--output=files", label])
+    paths = [Path(line) for line in result.stdout.splitlines() if line]
+    if len(paths) != 1 or not paths[0].is_dir():
+        raise ReleaseError("npm bundle target returned an invalid output")
+    copy_unique(input_files(paths[0]), output)
 
 
 def checksum_entries(path: Path) -> dict[str, str]:
@@ -388,70 +396,156 @@ def validate_checksums(
             raise ReleaseError(f"checksum mismatch: {name}")
 
 
+def bundle_assets(index: object, batch: str) -> dict[str, dict[str, object]]:
+    try:
+        return validate_index(index, batch)
+    except ValueError as error:
+        raise ReleaseError(str(error)) from error
+
+
+def package_bundle(files: list[Path], output: Path, batch: str) -> None:
+    timestamp = zip_timestamp(batch)
+    by_name = {path.name: path for path in files}
+    if len(by_name) != len(files):
+        raise ReleaseError("release bundle contains duplicate basenames")
+    if not {"firmware-index.json", "SHA256SUMS"} <= set(by_name):
+        raise ReleaseError("release bundle must contain index and checksums")
+    assets = bundle_assets(json.loads(by_name["firmware-index.json"].read_text()), batch)
+    expected = set(assets) | {"firmware-index.json", "SHA256SUMS"}
+    if set(by_name) != expected:
+        raise ReleaseError("release bundle contains unexpected or missing files")
+    validate_checksums(by_name["SHA256SUMS"], by_name, expected - {"SHA256SUMS"})
+    for name, asset in assets.items():
+        if by_name[name].stat().st_size != asset["size"] or sha256(by_name[name]) != asset["sha256"]:
+            raise ReleaseError(f"firmware asset integrity mismatch: {name}")
+    stem = f"firmware-release-v{batch}"
+    with zipfile.ZipFile(output / f"{stem}.zip", "x", compression=zipfile.ZIP_DEFLATED, compresslevel=9) as archive:
+        for name in sorted(by_name):
+            info = zipfile.ZipInfo(f"{stem}/{name}", date_time=timestamp)
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.create_system = 3
+            info.external_attr = 0o100644 << 16
+            archive.writestr(info, by_name[name].read_bytes(), compresslevel=9)
+
+
+def validate_archive(path: Path, batch: str) -> None:
+    timestamp = zip_timestamp(batch)
+    prefix = f"firmware-release-v{batch}/"
+    try:
+        with zipfile.ZipFile(path) as archive:
+            members = archive.infolist()
+            by_name = {}
+            for info in members:
+                name = info.filename.removeprefix(prefix)
+                if (info.filename != prefix + name or "/" in name or "\\" in name
+                        or name in {"", ".", ".."} or name in by_name
+                        or info.create_system != 3 or info.external_attr != 0o100644 << 16
+                        or info.compress_type != zipfile.ZIP_DEFLATED):
+                    raise ReleaseError(f"invalid firmware ZIP member: {info.filename}")
+                if info.date_time != timestamp:
+                    raise ReleaseError(
+                        f"firmware ZIP member timestamp mismatch: {info.filename}: "
+                        f"expected {timestamp} for batch {batch}, got {info.date_time}"
+                    )
+                by_name[name] = info
+            if not {"firmware-index.json", "SHA256SUMS"} <= set(by_name):
+                raise ReleaseError("firmware ZIP must contain index and checksums")
+            index = json.loads(archive.read(by_name["firmware-index.json"]))
+            assets = bundle_assets(index, batch)
+            expected = set(assets) | {"firmware-index.json"}
+            if set(by_name) != expected | {"SHA256SUMS"}:
+                raise ReleaseError("firmware ZIP contains unexpected or missing files")
+            checksums = {}
+            for line in archive.read(by_name["SHA256SUMS"]).decode("ascii").splitlines():
+                match = re.fullmatch(r"([0-9a-f]{64})  ([^/]+)", line)
+                if match is None or match[2] in checksums:
+                    raise ReleaseError("firmware ZIP contains invalid checksums")
+                checksums[match[2]] = match[1]
+            if set(checksums) != expected:
+                raise ReleaseError("firmware ZIP checksum coverage differs")
+            for name in sorted(expected):
+                digest = hashlib.sha256()
+                with archive.open(by_name[name]) as source:
+                    for block in iter(lambda: source.read(1024 * 1024), b""):
+                        digest.update(block)
+                if digest.hexdigest() != checksums[name]:
+                    raise ReleaseError(f"firmware ZIP checksum mismatch: {name}")
+                if name in assets and (digest.hexdigest() != assets[name]["sha256"]
+                                       or by_name[name].file_size != assets[name]["size"]):
+                    raise ReleaseError(f"firmware ZIP asset integrity mismatch: {name}")
+    except (zipfile.BadZipFile, UnicodeError, json.JSONDecodeError, RuntimeError) as error:
+        raise ReleaseError(f"invalid firmware ZIP: {error}") from error
+
+
 def assemble_final(
     files: list[Path],
     output: Path,
-    version: str,
+    batch: str,
 ) -> None:
+    validate_batch(batch)
     by_name = {path.name: path for path in files}
+    if len(by_name) != len(files):
+        raise ReleaseError("final release input contains duplicate basenames")
     names = set(by_name)
-    required = {"firmware-index.json", "SHA256SUMS"}
+    archive_name = f"firmware-release-v{batch}.zip"
+    required = {archive_name, "npm-index.json"}
     if missing := required - names:
         raise ReleaseError(f"final release input is incomplete: {sorted(missing)}")
+    validate_archive(by_name[archive_name], batch)
     try:
-        index = json.loads(
-            by_name["firmware-index.json"].read_text(encoding="utf-8")
-        )
+        npm_index = json.loads(by_name["npm-index.json"].read_text(encoding="utf-8"))
     except json.JSONDecodeError as error:
-        raise ReleaseError(f"invalid firmware index: {error}") from error
-    if not isinstance(index, dict):
-        raise ReleaseError("firmware index must be an object")
-    firmware = index.get("firmware")
+        raise ReleaseError(f"invalid npm index: {error}") from error
+    if not isinstance(npm_index, dict):
+        raise ReleaseError("npm index must be an object")
+    packages = npm_index.get("packages")
     if (
-        index.get("format") != 1
-        or index.get("version") != version
-        or not isinstance(firmware, list)
-        or index.get("firmware_count") != len(firmware)
-        or not firmware
+        type(npm_index.get("format")) is not int
+        or npm_index["format"] != 1
+        or npm_index.get("version") != batch
+        or not isinstance(packages, list)
+        or type(npm_index.get("package_count")) is not int
+        or npm_index["package_count"] != len(packages)
+        or not packages
     ):
-        raise ReleaseError("firmware index identity is invalid")
-    asset_names: set[str] = set()
-    for item in firmware:
+        raise ReleaseError("npm index identity is invalid")
+    npm_assets: set[str] = set()
+    package_names: list[str] = []
+    for item in packages:
         if (
             not isinstance(item, dict)
-            or item.get("platform") not in {"esp", "bk7258"}
-            or not validate_firmware_version(item.get("version"))
-            or not isinstance(item.get("assets"), list)
+            or any(
+                not isinstance(item.get(key), str) or not item[key].strip()
+                for key in ("name", "version")
+            )
+            or not isinstance(item.get("sha256"), str)
+            or re.fullmatch(r"[0-9a-f]{64}", item["sha256"]) is None
+            or type(item.get("size")) is not int
+            or item["size"] <= 0
         ):
-            raise ReleaseError("firmware index contains an invalid entry")
-        for asset in item["assets"]:
-            name = asset.get("name") if isinstance(asset, dict) else None
-            if (
-                not isinstance(name, str)
-                or Path(name).name != name
-                or name in asset_names
-            ):
-                raise ReleaseError(f"invalid firmware release asset: {name}")
-            asset_names.add(name)
-    expected = {
-        "firmware-index.json",
-        "SHA256SUMS",
-        *asset_names,
-    }
+            raise ReleaseError("npm index contains an invalid entry")
+        name = item.get("tarball")
+        if (
+            not isinstance(name, str)
+            or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]*\.tgz", name) is None
+            or name in npm_assets | required
+        ):
+            raise ReleaseError(f"invalid or duplicate npm release tarball: {name}")
+        npm_assets.add(name)
+        package_names.append(item["name"])
+    if package_names != sorted(set(package_names)):
+        raise ReleaseError("npm index packages must have unique names sorted by name")
+    expected = required | npm_assets
     if names != expected:
         raise ReleaseError(
             f"final release inputs differ: missing={sorted(expected - names)}, "
             f"unexpected={sorted(names - expected)}"
         )
-    validate_checksums(
-        by_name["SHA256SUMS"],
-        by_name,
-        {"firmware-index.json", *asset_names},
-    )
-    copy_unique(
-        [path for path in files if path.name != "SHA256SUMS"],
-        output,
-    )
+    for item in packages:
+        source = by_name[item["tarball"]]
+        if source.stat().st_size != item["size"] or sha256(source) != item["sha256"]:
+            raise ReleaseError(f"npm release tarball integrity mismatch: {source.name}")
+    copy_unique(files, output)
     assets = sorted(path for path in output.iterdir() if path.is_file())
     (output / "SHA256SUMS").write_text(
         "".join(f"{sha256(path)}  {path.name}\n" for path in assets),
@@ -463,11 +557,11 @@ def run_slice(
     root: Path,
     bazel: str,
     slice_name: str,
-    version: str,
+    batch: str,
     input_dir: Path | None,
     output: Path,
 ) -> None:
-    validate_version(version)
+    validate_batch(batch)
     if slice_name not in SLICES:
         raise ReleaseError(f"unknown RELEASE_SLICE: {slice_name}")
     if slice_name in PRODUCERS and input_dir is not None:
@@ -475,22 +569,26 @@ def run_slice(
     files = [] if slice_name in PRODUCERS else input_files(input_dir)
     prepare_output(output)
     if slice_name == "catalog":
-        build_catalog(root, bazel, version, output)
+        build_catalog(root, bazel, output)
+    elif slice_name == "npm-packages":
+        build_npm_packages(root, bazel, batch, output)
     elif slice_name in FIRMWARE_SLICES:
-        build_firmware(root, bazel, slice_name, version, files, output)
+        build_firmware(root, bazel, slice_name, files, output)
     elif slice_name == "firmware-bundle":
         assert input_dir is not None
         build_firmware_bundle(
-            root, bazel, version, input_dir, files, output
+            root, bazel, batch, input_dir, files, output
         )
+    elif slice_name == "package":
+        package_bundle(files, output, batch)
     else:
-        assemble_final(files, output, version)
+        assemble_final(files, output, batch)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--slice", default=os.environ.get("RELEASE_SLICE"))
-    parser.add_argument("--version", default=os.environ.get("RELEASE_VERSION"))
+    parser.add_argument("--batch", default=os.environ.get("RELEASE_BATCH"))
     parser.add_argument("--input", default=os.environ.get("RELEASE_INPUT_DIR"))
     parser.add_argument("--output", default=os.environ.get("RELEASE_STAGING_DIR"))
     parser.add_argument("--bazel", default=os.environ.get("BAZEL_BIN", "bazel"))
@@ -501,8 +599,8 @@ def main() -> int:
             raise ReleaseError("RELEASE_SLICE is required")
         if args.slice not in SLICES:
             raise ReleaseError(f"unsupported RELEASE_SLICE: {args.slice}")
-        if not args.version:
-            raise ReleaseError("RELEASE_VERSION is required")
+        if not args.batch:
+            raise ReleaseError("RELEASE_BATCH is required")
         input_dir = Path(args.input) if args.input else None
         output_value = Path(args.output) if args.output else None
         output = resolve_output(root, args.slice, output_value)
@@ -510,7 +608,7 @@ def main() -> int:
             root,
             args.bazel,
             args.slice,
-            args.version,
+            args.batch,
             input_dir,
             output,
         )

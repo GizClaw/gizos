@@ -16,7 +16,6 @@ cc_library(
     srcs = [
         "src/h2_h2loader_cli_app.c",
         "src/h2_h2loader_cli_bleikcp_speed.c",
-        "src/h2_h2loader_cli_internal.h",
         "src/h2_h2loader_cli_output.c",
         "src/h2_h2loader_cli_package_command.c",
         "src/h2_h2loader_cli_server_command.c",
@@ -26,6 +25,7 @@ cc_library(
     hdrs = [
         "include/h2_h2loader_cli_app.h",
         "include/h2_h2loader_cli_task_names.h",
+        "src/h2_h2loader_cli_internal.h",
     ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -34,6 +34,7 @@ cc_library(
     ],
     deps = [
         ":tasks",
+        "//libs/atomic",
         "//libs/bleikcp",
         "//libs/command",
         "//libs/h2loader_host",
@@ -45,7 +46,6 @@ cc_library(
 cc_test(
     name = "h2loader_cli_app_test",
     srcs = [
-        "src/h2_h2loader_cli_internal.h",
         "tests/test_h2_h2loader_cli_app.c",
     ],
     conlyopts = H2_C11_OPTS,
@@ -59,6 +59,7 @@ cc_test(
     }),
     deps = [
         ":h2loader_cli_app",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/runtime",
     ],
@@ -67,7 +68,6 @@ cc_test(
 cc_test(
     name = "h2loader_cli_server_command_test",
     srcs = [
-        "src/h2_h2loader_cli_internal.h",
         "tests/test_h2_h2loader_cli_server_command.c",
     ],
     conlyopts = H2_C11_OPTS,
@@ -81,6 +81,7 @@ cc_test(
     }),
     deps = [
         ":h2loader_cli_app",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/runtime",
     ],
@@ -89,7 +90,6 @@ cc_test(
 cc_test(
     name = "h2loader_cli_package_command_test",
     srcs = [
-        "src/h2_h2loader_cli_internal.h",
         "tests/test_h2_h2loader_cli_package_command.c",
     ],
     conlyopts = H2_C11_OPTS,
@@ -103,6 +103,7 @@ cc_test(
     }),
     deps = [
         ":h2loader_cli_app",
+        "//libs/atomic/providers/c11",
         "//libs/runtime",
     ],
 )
@@ -110,7 +111,6 @@ cc_test(
 cc_test(
     name = "h2loader_cli_bleikcp_speed_test",
     srcs = [
-        "src/h2_h2loader_cli_internal.h",
         "tests/test_h2_h2loader_cli_bleikcp_speed.c",
     ],
     conlyopts = H2_C11_OPTS,
@@ -124,6 +124,7 @@ cc_test(
     }),
     deps = [
         ":h2loader_cli_app",
+        "//libs/atomic/providers/c11",
         "//libs/runtime",
     ],
 )

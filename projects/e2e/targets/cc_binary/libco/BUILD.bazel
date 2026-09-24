@@ -28,6 +28,7 @@ cc_binary(
     data = ["layout.json"],
     deps = [
         ":layout_config",
+        "//libs/atomic/providers/c11",
         "//libs/pal",
         "//libs/pal/providers/desktop/app_support",
         "//libs/pal/providers/desktop/app_support:bundle_rpath",

@@ -15,12 +15,13 @@
 #include "h2_runtime_event.h"
 
 #include "esp_system.h"
+#include "esp_memory_utils.h"
 #include "esp_netif_sntp.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 #include <stdalign.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -32,6 +33,14 @@
 #define H2_GIZCLAW_E2E_DEVKIT_TIME_RETRY_LOG_INTERVAL 10u
 #define H2_GIZCLAW_E2E_DEVKIT_TIME_SERVER "pool.ntp.org"
 
+#if defined(H2_GIZCLAW_E2E_VOICE_ONLY)
+#define H2_GIZCLAW_E2E_DEVKIT_SUITES H2_GIZCLAW_E2E_SUITE_VOICE
+#define H2_GIZCLAW_E2E_DEVKIT_SUITE_NAME "voice"
+#else
+#define H2_GIZCLAW_E2E_DEVKIT_SUITES H2_GIZCLAW_E2E_SUITE_ALL
+#define H2_GIZCLAW_E2E_DEVKIT_SUITE_NAME "all"
+#endif
+
 extern const uint8_t h2_gizclaw_e2e_voice_prompt_start[]
     asm("_binary_h2_gizclaw_e2e_voice_prompt_start");
 extern const uint8_t h2_gizclaw_e2e_voice_prompt_end[]
@@ -41,7 +50,7 @@ typedef struct h2_gizclaw_e2e_devkit_runner {
   h2_runtime_t *runtime;
   h2_gizclaw_e2e_result_t result;
   h2_gizclaw_e2e_exit_t exit_code;
-  atomic_bool exited;
+  h2_atomic_bool_t exited;
 } h2_gizclaw_e2e_devkit_runner_t;
 
 typedef struct h2_gizclaw_e2e_devkit_wifi_supervisor {
@@ -95,11 +104,12 @@ static void emit_progress(void *user,
 static void emit_summary(const h2_gizclaw_e2e_devkit_runner_t *runner,
                          bool replay) {
   const h2_gizclaw_e2e_result_t *result = &runner->result;
-  printf("H2_GIZCLAW_E2E stage=summary entry=bj backend=h2peer suite=all "
+  printf("H2_GIZCLAW_E2E stage=summary entry=bj backend=h2peer suite=%s "
          "profile=%s selected=%zu terminal=%zu pass=%zu fail=%zu error=%zu "
          "blocked=%zu cancelled=%zu first_failure_case=%s "
          "first_failure_rc=%d cleanup_rc=%d retained_resources=%zu "
          "complete=%s exit_code=%d replay=%s\n",
+         H2_GIZCLAW_E2E_DEVKIT_SUITE_NAME,
          result->runtime_profile_name[0] == '\0'
              ? "-"
              : result->runtime_profile_name,
@@ -115,6 +125,18 @@ static void emit_summary(const h2_gizclaw_e2e_devkit_runner_t *runner,
 
 static void run_e2e(void *raw) {
   h2_gizclaw_e2e_devkit_runner_t *runner = raw;
+  volatile uint8_t stack_probe = 0u;
+  const bool stack_in_psram = esp_ptr_external_ram((const void *)&stack_probe);
+  printf("H2_GIZCLAW_E2E_DEVKIT stage=runner_stack region=%s "
+         "status=%s\n",
+         stack_in_psram ? "psram" : "other",
+         stack_in_psram ? "PASS" : "ERROR");
+  fflush(stdout);
+  if (!stack_in_psram) {
+    runner->exit_code = H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+    h2_atomic_store_explicit(&runner->exited, true, H2_ATOMIC_RELEASE);
+    return;
+  }
   const h2_gizclaw_e2e_devkit_config_t *launcher_config =
       h2_gizclaw_e2e_devkit_config();
   const h2_gizclaw_e2e_config_t app_config = {
@@ -123,7 +145,7 @@ static void run_e2e(void *raw) {
       .voice_pcm_s16le_16khz_mono = h2_gizclaw_e2e_voice_prompt_start,
       .voice_pcm_len = (size_t)(h2_gizclaw_e2e_voice_prompt_end -
                                h2_gizclaw_e2e_voice_prompt_start),
-      .suites = H2_GIZCLAW_E2E_SUITE_ALL,
+      .suites = H2_GIZCLAW_E2E_DEVKIT_SUITES,
       .case_timeout_ms = H2_GIZCLAW_E2E_DEFAULT_CASE_TIMEOUT_MS,
       .cleanup_timeout_ms = H2_GIZCLAW_E2E_DEFAULT_CLEANUP_TIMEOUT_MS,
       .progress_interval_ms = H2_GIZCLAW_E2E_DEFAULT_PROGRESS_INTERVAL_MS,
@@ -131,7 +153,7 @@ static void run_e2e(void *raw) {
   };
   runner->exit_code =
       h2_gizclaw_e2e_run(runner->runtime, &app_config, &runner->result);
-  atomic_store_explicit(&runner->exited, true, memory_order_release);
+  h2_atomic_store_explicit(&runner->exited, true, H2_ATOMIC_RELEASE);
 }
 
 static void supervise_wifi(void *raw) {
@@ -324,7 +346,8 @@ static void image_entry(void *user) {
       s_runner.runtime = runtime;
       s_runner.result = (h2_gizclaw_e2e_result_t){0};
       s_runner.exit_code = H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
-      atomic_init(&s_runner.exited, false);
+      if (h2_atomic_init(&s_runner.exited, false) != H2_ATOMIC_OK)
+        fail_launcher("runner_atomic_init", H2_PAL_ERR_NO_MEMORY, true);
       const h2_pal_task_options_t runner_options = {
           .name = h2_gizclaw_e2e_launcher_task_name,
           .min_stack_size = H2_GIZCLAW_E2E_DEVKIT_RUNNER_STACK_SIZE,
@@ -340,12 +363,13 @@ static void image_entry(void *user) {
 
     uint64_t now_ms = 0u;
     if (runner_task != NULL && !state.runner_complete &&
-        atomic_load_explicit(&s_runner.exited, memory_order_acquire)) {
+        h2_atomic_load_explicit(&s_runner.exited, H2_ATOMIC_ACQUIRE)) {
       rc = h2_pal_task_join(runtime->task, runner_task);
       if (rc != H2_PAL_OK) {
         fail_launcher("runner_join", rc, true);
       }
       runner_task = NULL;
+      h2_atomic_destroy(&s_runner.exited);
       if (h2_pal_time_get_monotonic_ms(runtime->time, &now_ms) != H2_PAL_OK) {
         fail_launcher("summary_clock", H2_PAL_ERR_UNAVAILABLE, true);
       }

@@ -4,13 +4,19 @@ Modem provider 的接收分帧、命令串行与 URC 并发合同见 [Modem URC]
 
 Platform Abstraction Layer（PAL）定义 GizOS 使用的平台抽象能力。PAL 把芯片 SDK、操作系统和具体硬件实现隔离在跨平台代码之外，使 `libs`、runtime 和 app 可以使用稳定的 C contract。
 
+`h2_pal_webrtc_peer_create_with_config()` 接收可选的 `h2_pal_webrtc_peer_config_t.allocator`，NULL 或旧 `peer_create()` 保持原行为；H2Peer 把它用于 peer 私有存储并传给 SCTP/SRTP，H2Peer 的 package allocation 和 atomic provider storage 各按自己的 contract 管理，不再注入 `control_mem`，未实现扩展的旧 provider 只在 NULL/default config 时回退到原创建入口；收到非 NULL allocator 时返回 `H2_PAL_ERR_UNSUPPORTED`，不能静默忽略分配要求。`h2_audio_track_config_t.allocator` 同样可选，Runtime wrapper 和 mixer 的音轨队列、scratch 跟随它，NULL 保持各层原有默认分配器。
+
+## 独立 Atomic Contract
+
+并发原子值由 `libs/atomic/include/h2_atomic.h` 定义，不属于 PAL API、PAL vtable 或 Memory PAL capability。调用方持有 typed wrapper 并直接调用 `h2_atomic_*` 符号；最终 target 必须链接一个平台实现，缺失实现会在链接时报错。非 flag wrapper 初始化后拥有 provider 存储，停止并发访问后销毁，不得初始化后复制；静态 flag 可以用 `H2_ATOMIC_FLAG_INIT` 零初始化而不分配存储。flag 的 `_state` 字节内嵌在 wrapper 中，即使 wrapper 位于 PSRAM，ESP provider 也只通过内部 RAM 中的静态 C11 锁保护该字节；`h2_atomic_flag_init` 仅重置状态，不为 flag 分配存储，静态零初始化的全局锁无需启动时调用它。Desktop/Browser 的 provider 基于 C11，iOS/Android 使用 pthread，ESP 将非 flag 原子的实际存储放在内部 RAM，即使 wrapper 在 PSRAM。BK/JieLi 的初始化明确返回 `H2_ATOMIC_UNSUPPORTED`，flag 操作会 trap；调用方必须传播错误，不能将失败后的 wrapper 当作零值使用。
+
 ## API Reference
 
 [API Reference](/references/pal)
 
 `libs/pal/include` 中实际参与项目构建的头文件是 PAL 的生产 Public API contract。
 
-PAL 包定义 contract，并提供一组可选的 canonical unsupported API object：
+PAL 包定义 contract，并提供可选的 canonical unsupported API object 与可复用的逐项 unsupported stub：
 
 ```text
 libs/pal/include/
@@ -21,7 +27,7 @@ libs/pal/include/
     ├── net/                    # 网络与传输能力
     ├── application/            # 应用协议能力
     ├── hal/                    # 硬件抽象能力
-    └── h2_pal_unsupported.h    # canonical unsupported API accessor
+    └── h2_pal_unsupported.h    # canonical unsupported API accessor 与逐项 stub
 libs/pal/src/unsupported/       # 每个 capability 一个 canonical unsupported translation unit
 └── <capability>.c
 ```
@@ -31,9 +37,15 @@ Bazel package、target、Runtime surface 或 provider ownership。
 
 `src/unsupported/` 是 `libs/pal` 中允许存在的唯一通用 backend source。真实平台实现、dummy backend 和 fake backend 不属于 PAL contract 包。
 
+`h2_pal_unsupported.h` 同时提供整项 capability 的 canonical accessor
+`h2_pal_unsupported_*_api()` 与逐项 vtable stub `h2_pal_unsupported_ble_*`。
+只实现部分 capability 的 provider 必须用对应 unsupported stub 填满其余 vtable
+member，不能留 `NULL`，使未实现的 operation 返回 `H2_PAL_ERR_UNSUPPORTED`，
+避免与 inline wrapper 对空 slot 返回的 `H2_PAL_ERR_INVALID_ARG` 混淆。
+
 `//libs/pal:pal` 是 header-only contract target；只消费 PAL 类型、vtable 或真实
-provider 的 target 只依赖它。直接调用 `h2_pal_unsupported_*_api()` 的 target 显式
-依赖 `//libs/pal:unsupported`。后者按 capability 拆成独立 translation unit，使静态
+provider 的 target 只依赖它。直接调用 `src/unsupported/` 中 accessor 或逐项 stub
+的 target 显式依赖 `//libs/pal:unsupported`。后者按 capability 拆成独立 translation unit，使静态
 链接器只抽取真正引用的 unsupported API object，不使用 `alwayslink` 或 whole-archive。
 
 ESP-IDF、BK7258 和 BK3633 由 Bazel 使用对应 firmware toolchain 将
@@ -147,7 +159,7 @@ task、timer 或 thread。
 
 BK3633 的 Preference provider 使用 BSP 提供的 declarative mapping，把 portable namespace/key 映射到 application-owned NVDS tag。Provider 初始化会拒绝重复 namespace/key、重复 tag、空名称、未知类型、非法最大长度以及 application range 外的 tag；未知 key 不会动态取得 tag。`BLOB` 保存原始 bytes，`STRING` 保存不含 NUL terminator 的 UTF-8 bytes，读取时使用调用方的 Memory PAL 分配并追加 terminator；`U32` 和 `I32` 使用四字节 little-endian，`BOOL` 使用单字节 `0` 或 `1`。NVDS 写入立即持久化，因此 `commit` 是成功 no-op，不承诺 multi-key transaction atomicity。
 
-ESP Preference 使用私有的 256 KiB `pref` LittleFS，不使用系统 NVS 保存新值。每个 key 是独立的 CRC record；set 通过同目录临时文件、sync、close 和 atomic rename 立即持久化，remove 立即 unlink，`commit` 因此是成功 no-op。这个合同只保证单 key replacement，不承诺多 key transaction atomicity。Provider 对 committed record bytes 施加 128 KiB logical budget；删除和替换产生的 LittleFS block 由 filesystem 正常回收，`NO_SPACE` 不触发 format 或清空 live data。
+ESP Preference 使用私有的 256 KiB `pref` LittleFS，不使用系统 NVS 保存新值。每个 key 是独立的 CRC record；set 通过同目录临时文件、sync、close 和 atomic rename 立即持久化，remove 立即 unlink，`commit` 因此是成功 no-op。这个合同只保证单 key replacement，不承诺多 key transaction atomicity。Provider 对 committed record bytes 施加 128 KiB logical budget；总量在缓存无效时由下一次需要写入的 set 遍历计算，之后由成功的 set 和 remove 增量维护；prepare、clear、原子写入失败或 unlink 失败会使缓存失效。safe-call 适配器将总量及其有效位传入 worker，并在返回时写回持久 store，使缓存有效时的 set 不再逐个打开全部已存 record；删除和替换产生的 LittleFS block 由 filesystem 正常回收，`NO_SPACE` 不触发 format 或清空 live data。
 
 BK3633 的 Disk provider 只暴露 BSP 声明的 raw Flash partition，portable caller 使用 partition-relative offset，不能传入 absolute address。Provider 对 partition ID、权限、整数 overflow、边界、erase alignment、write alignment、zero-length operation 和 buffer 做完整校验；firmware、Stack、factory identity、calibration、NVDS 和未声明区域不进入可见 partition inventory。
 
@@ -276,9 +288,17 @@ h2/pal/hal/h2_pal_wifi_csi.h
 h2/pal/hal/h2_pal_wifi_settings.h
 ```
 
+`h2_pal_power.h` 的 `h2_pal_power_set_deep_sleep_wake_timer()` 为下一次 `deep_sleep()` 设置定时唤醒，单位毫秒，从进入 deep sleep 时开始计时；传 0 恢复 provider 的默认唤醒策略。设置值在被改写或设备离开 deep sleep 前一直有效。定时唤醒后 boot info 的 source 为 `H2_PAL_POWER_BOOT_SOURCE_TIMER`。支持该能力的 provider 声明 `H2_PAL_POWER_CAPABILITY_DEEP_SLEEP_WAKE_TIMER`，其余返回 `H2_PAL_ERR_UNSUPPORTED`。释放 power hold 的物理关机不保留定时器。精度取决于 deep sleep 期间的 RTC 时钟源，片内 RC 慢时钟在长时间睡眠下可能有分钟级偏差，需要准点的调用方应自行对时。
+
 `h2_pal_periph.h` 描述 board 实际存在的硬件及其 `periph_id`。具体 GPIO、bus、address、channel 和 wiring 由 BSP 配置。
 
 Single-button periph payload 同时声明输入交付模式。`POLL_STATE` 表示 Runtime 通过 Button PAL 读取稳定的 pressed/released 状态；`PUSH_EDGE` 表示拥有该 periph 的 adapter 主动向 Runtime 推送 raw down/up edge，Runtime 不再调用 Button PAL read。未提供 payload 的既有 single-button periph 按 `POLL_STATE` 处理。交付模式是 periph 能力，不是 App component 类型；launcher 仍通过 component mapping 把相同的 App Button component 映射到不同来源。
+
+### Modem 通话扬声器音量
+
+`h2_pal_modem` 通过 `H2_PAL_MODEM_CAPABILITY_CALL_VOLUME` 声明通话扬声器音量能力，`h2_pal_modem_set_call_volume()` / `h2_pal_modem_get_call_volume()` 统一使用 `0..100` percent，模块原生档位由 provider 映射。Quectel 使用 `AT+CLVL`，每次 open 后首次使用时探测并缓存范围；SIMCom 暂不实现，未提供该能力的 provider 返回 `H2_PAL_ERR_UNSUPPORTED`。该接口不控制麦克风、铃声、音频路由或功放，也不要求已有通话，可在拨号前设置。
+
+两个调用都是 task context 下的阻塞操作，与其它 AT 操作串行，应由处理拨号、接听和挂断的 modem task 调用，不能放在 UI/main loop 或 ISR 中。支持 LOW_POWER 的 Quectel 实例要求 modem 已 open，并在命令前完成唤醒准备；音量操作不改变通话持有的唤醒状态。音量是模块的易失状态，不隐式跨 close/open 保存或恢复，调用方应在需要时重新设置。
 
 ### Touch
 
@@ -371,9 +391,15 @@ Host Serial PAL 不解析 H2Loader response、不推断 board、不合并 BLE id
 
 ## Wi-Fi 连接与持久化
 
+Wi-Fi Settings 始终只保存**一条** STA 凭据，表示“最近一次连上的网络”（由成功的 `connect_and_save` 更新）。`set_saved_sta_config` 原子替换该条，写失败保留旧值；`get_saved_sta_config` 返回该条，空时返回 NOT_FOUND；`clear_saved_sta_config` 清除该条。显式 get/set/clear 不改变当前连接；临时 `connect` 不更新保存值。PAL 不提供网络集合、list/remove 或多网络排序能力，provider 和原有单条格式保持不变。
+
+最多 8 条的网络集合归 Runtime，保存在其专属 pref namespace `h2runtime_wifi` 的 `saved_v1` key 中，与 PAL Wi-Fi Settings 分离。Runtime 使用固定 920 字节小端 blob，整块原子替换；存储位置表示最近连接顺序，UTC 时间戳未校准时为 0。集合 API、格式、淘汰和重连排序详见 [Runtime 的 Wi-Fi 凭据与恢复](./runtime.md#wi-fi-凭据与恢复)。不将已有 PAL 凭据迁移到集合。
+
+Runtime 配网入口先调用 PAL `connect_and_save`，成功后才记录到自己的集合；best-saved 则按扫描 RSSI 和集合顺序尝试 PAL `connect`，成功后只更新 Runtime 集合，不写 PAL 凭据、不等待 IP。原有 `h2_runtime_wifi_connect_saved` 继续只恢复 PAL 单条凭据。
+
 Wi-Fi STA 的 `connect` 与 `connect_and_save` 是两个独立 operation。前者对所有 timeout 都只改变当前连接；后者必须重新验证目标凭据，取得目标 SSID（指定 BSSID 时也匹配 BSSID）的有效非零 IPv4 后才调用 Wi-Fi Settings 保存。后者要求非零关联/DHCP 总预算，零值无副作用地返回 INVALID_ARG。连接、IP 或保存失败均不得伪装为配网成功；旧凭据在连接失败时保留，保存失败由 Settings 原子替换合同保护。get/set/clear/has_saved_sta_config 仍是显式的独立存储能力。
 
-ESP-IDF、BK7258、Desktop simulator 和 testing PAL 共用 `libs/wifi_sta` 的事务算法。Runtime 只转发同一 PAL API；不可在 Runtime、BLE、RPC 或 Loader 中再实现一份等待 IP 与保存的算法。Desktop 与 testing PAL 的 Settings 是进程内模拟，不能据此声称设备断电持久化通过。无 Wi-Fi 的 canonical unsupported 与 ESP32-P4 unsupported provider 对新 operation 明确返回 UNSUPPORTED。
+ESP-IDF、BK7258、Desktop simulator 和 testing PAL 共用 `libs/wifi_sta` 的事务算法。Runtime 的配网入口复用同一 PAL 事务，成功后独立更新自己的集合；不可在 Runtime、BLE、RPC 或 Loader 中重复实现 PAL 的等待 IP 与单条凭据保存算法。Desktop 与 testing PAL 的 Settings 是进程内模拟，不能据此声称设备断电持久化通过。无 Wi-Fi 的 canonical unsupported 与 ESP32-P4 unsupported provider 对新 operation 明确返回 UNSUPPORTED。
 
 ## Contract 形态
 

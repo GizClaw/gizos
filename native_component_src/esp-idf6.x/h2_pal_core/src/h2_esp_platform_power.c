@@ -1,4 +1,5 @@
 #include "h2_esp_platform_core.h"
+#include "h2_esp_platform_power_wake.h"
 #include "h2_esp_platform_pref_migration.h"
 #include "h2_esp_platform_safe_call.h"
 
@@ -14,7 +15,6 @@
 
 #define H2_ESP_POWER_PARTITION_LOADER 1u
 #define H2_ESP_POWER_PARTITION_APP 2u
-#define H2_ESP_POWER_DEEP_SLEEP_WAKE_US (1000ULL * 1000ULL)
 #define H2_ESP_POWER_OTA_TASK_STACK_DEPTH 4096u
 
 typedef enum h2_esp_power_ota_op {
@@ -35,6 +35,7 @@ typedef struct h2_esp_power_ota_call {
 } h2_esp_power_ota_call_t;
 
 static int s_h2_esp_power_hold;
+static volatile uint32_t s_deep_sleep_wake_ms;
 static StaticSemaphore_t s_ota_mutex_storage;
 static SemaphoreHandle_t s_ota_mutex;
 static portMUX_TYPE s_ota_mutex_init_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -58,6 +59,7 @@ static h2_pal_result_t power_set_hold(void *user, int enabled);
 static h2_pal_result_t power_get_hold(void *user, h2_pal_power_hold_state_t *out_state);
 static h2_pal_result_t power_reboot(void *user, uint32_t reason);
 static h2_pal_result_t power_deep_sleep(void *user, uint32_t reason);
+static h2_pal_result_t power_set_deep_sleep_wake_timer(void *user, uint32_t delay_ms);
 
 static const h2_pal_power_vtable_t s_power_vtable = {
     .get_capabilities = power_get_capabilities,
@@ -71,6 +73,7 @@ static const h2_pal_power_vtable_t s_power_vtable = {
     .get_hold = power_get_hold,
     .reboot = power_reboot,
     .deep_sleep = power_deep_sleep,
+    .set_deep_sleep_wake_timer = power_set_deep_sleep_wake_timer,
 };
 
 static const h2_pal_power_api_t s_default_power_api = {
@@ -253,6 +256,7 @@ static h2_pal_result_t power_get_capabilities(void *user, h2_pal_power_capabilit
         H2_PAL_POWER_CAPABILITY_HOLD |
         H2_PAL_POWER_CAPABILITY_REBOOT |
         H2_PAL_POWER_CAPABILITY_DEEP_SLEEP |
+        H2_PAL_POWER_CAPABILITY_DEEP_SLEEP_WAKE_TIMER |
         H2_PAL_POWER_CAPABILITY_BOOT_PARTITIONS |
         H2_PAL_POWER_CAPABILITY_SET_NEXT_BOOT_PARTITION |
         H2_PAL_POWER_CAPABILITY_RESET_REASON;
@@ -295,6 +299,10 @@ static h2_pal_result_t power_get_boot_info(void *user, h2_pal_power_boot_info_t 
         out_info->reset_reason = H2_PAL_POWER_RESET_REASON_UNKNOWN;
         break;
     }
+    out_info->source = h2_esp_power_wake_boot_source(
+        reason == ESP_RST_DEEPSLEEP,
+        (esp_sleep_get_wakeup_causes() &
+         (1u << (unsigned int)ESP_SLEEP_WAKEUP_TIMER)) != 0u);
     return H2_PAL_OK;
 }
 
@@ -463,11 +471,18 @@ static h2_pal_result_t power_deep_sleep(void *user, uint32_t reason) {
 
     (void)user;
     (void)reason;
-    err = esp_sleep_enable_timer_wakeup(H2_ESP_POWER_DEEP_SLEEP_WAKE_US);
+    err = esp_sleep_enable_timer_wakeup(
+        h2_esp_power_deep_sleep_wake_us(s_deep_sleep_wake_ms));
     if (err != ESP_OK) {
         return H2_PAL_ERR_IO;
     }
     esp_deep_sleep_start();
+    return H2_PAL_OK;
+}
+
+static h2_pal_result_t power_set_deep_sleep_wake_timer(void *user, uint32_t delay_ms) {
+    (void)user;
+    s_deep_sleep_wake_ms = delay_ms;
     return H2_PAL_OK;
 }
 

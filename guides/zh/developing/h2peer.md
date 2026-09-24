@@ -2,6 +2,8 @@
 
 H2Peer 是 `libs/pal/providers/h2peer` 中由 GizOS 维护的 portable WebRTC core。它实现 `h2_pal_webrtc_api_t`，但不拥有产品 signaling、codec、音频设备或 target wiring。现有 target 只有在各自 component 显式选择并提供经过验证的安全 provider 后，才会使用 H2Peer。
 
+`h2_pal_webrtc_peer_config_t.allocator` 由 `h2_pal_webrtc_peer_create_with_config()` 传入，可覆盖 PeerConnection、channel/TX slot、事件/payload、stream table、DCEP 及 SCTP/SRTP 会话存储；NULL 保持默认，显式 control/packet allocator 仍用于需要 internal RAM 的对象。私有 `h2_libsrtp_session_config_t.allocator` 按值记录会话分配器（NULL 使用 init 默认），session、scratch、operation arena 和第三方块均保存正确释放归属，允许不同 allocator 共存；arena 必须活到 peer 关闭及最后一个 owned event 释放。
+
 ## Ownership
 
 ```text
@@ -38,7 +40,7 @@ H2Peer 的本地 DataChannel SID pool 固定为 DTLS client parity 的 150 个 o
 
 每个 production WebRTC peer 创建一个名为 `h2peer/net` 的 protocol owner task。只有这个 task 可以读写 ICE、DTLS、SRTP、SCTP、RTP 和 DataChannel connection state；App、Runtime、GizClaw 或测试 task 不能直接驱动 socket 或协议状态。Direct selected UDP path 也由 owner 负责读写，socket 不会跨 task 竞争。Owner 每轮用 timeout 0 逐包读取并立即推进协议，最多连续处理 16 个 datagram；遇到 `WOULD_BLOCK` 后再处理用户侧发送。TCP、TURN 和尚未完成 ICE selection 的连接继续走同一个 owner task。ESP 和 BK target 对 owner 使用 PSRAM stack policy，owner 请求 `32 KiB` stack。
 
-控制面使用一项 command queue、一项 response queue和单一 request mutex。Open、close、offer 和 remote SDP 等 public control call 同步 marshal 到 owner task。DataChannel send 不进入控制 queue：每个 channel 使用一个 slot，调用方把完整 message 复制到空 slot 后返回；slot 被占用时返回 `H2_PAL_ERR_WOULD_BLOCK` 且零字节消费。Opus 使用一个独立 slot，避免音频被 DataChannel upload 排在后面。Owner 用一个 32-bit atomic ready set 调度最多 32 条同时存活的 production channel；创建第 33 条时稳定返回 `H2_PAL_ERR_NO_SPACE`。Owner 只为 DataChannel 查询 SCTP association 整体是否可写；不可写时保留本地 ready snapshot，只推进 UDP、ACK、timer 和独立的 RTP/SRTP slot。RTP 不能被 SCTP congestion gate 暂停，自身的 DTLS/SRTP transmit backpressure 通过该 slot 的 `WOULD_BLOCK` 保留。SCTP 可写时 owner 用 atomic exchange 取得全部新 ready bits，与尚未发送完的本地 snapshot 分轮处理；任一 DataChannel send 返回 `WOULD_BLOCK` 时保留当前及其余 bits，恢复可写后继续。Slot buffer 按该 channel 已提交的最大 message 扩容并复用，到 channel close 才释放。
+控制面使用一项 command queue、一项 response queue和单一 request mutex。Open、close、offer 和 remote SDP 等 public control call 同步 marshal 到 owner task。DataChannel send 不进入控制 queue：每个 channel 使用一个 slot，调用方把完整 message 复制到空 slot 后返回；slot 被占用时返回 `H2_PAL_ERR_WOULD_BLOCK` 且零字节消费。Opus 使用一个独立 slot，避免音频被 DataChannel upload 排在后面。Owner 用一个 `h2_atomic_u32_t` ready set 调度最多 32 条同时存活的 production channel；它由 H2Peer 在创建时初始化、销毁前停止并发访问，初始化失败返回错误。实际 atomic 存储由所链接的平台实现持有，`h2_peer_config_t` 不再接受 `control_mem` 注入；ESP 中 wrapper 即使位于 PSRAM，实际原子存储仍在内部 RAM。创建第 33 条时稳定返回 `H2_PAL_ERR_NO_SPACE`。Owner 只为 DataChannel 查询 SCTP association 整体是否可写；不可写时保留本地 ready snapshot，只推进 UDP、ACK、timer 和独立的 RTP/SRTP slot。RTP 不能被 SCTP congestion gate 暂停，自身的 DTLS/SRTP transmit backpressure 通过该 slot 的 `WOULD_BLOCK` 保留。SCTP 可写时 owner 用 atomic exchange 取得全部新 ready bits，与尚未发送完的本地 snapshot 分轮处理；任一 DataChannel send 返回 `WOULD_BLOCK` 时保留当前及其余 bits，恢复可写后继续。Slot buffer 按该 channel 已提交的最大 message 扩容并复用，到 channel close 才释放。
 
 返回方向只有 owned-event 模式。`peer_poll()` 每次取得一个 peer state、local SDP、DataChannel state/message、Opus frame、writable 或 error event；调用方处理后必须 release。Protocol owner 把 payload 复制到 event-owned storage，不直接运行 App callback，也不要求调用方逐 channel 维护 receive mailbox。
 

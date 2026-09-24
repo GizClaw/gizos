@@ -34,13 +34,15 @@ Firmware 先以 command registration 声明 implemented mask，再由产品 owne
 
 Browser SDK 0.2.0 投影 `deviceUid`、`commandAvailability`、`capabilities`、`active` identity、`runningPartition`、`nextPartition`、`bootIntent`、`stage`、`partition1`、`partition2`、`lastResult` 和 MFG 信息；MFG 的 `steps` 数组长度等于设备 `mfg_steps` 的位数（1..32，由产品步数决定，见 [MFG 进度记录](/apps/h2loader/update/#mfg-进度记录)）。`H2LoaderCapabilities`、`H2LoaderCommands` 与 `commandAvailable()` 是公共解码入口；生命周期没有旧 packed states、installed/staged scalar 或 APP 专用 status fallback。SDK 的 breaking lifecycle API 只有 `stage`、`stageUrl`、`abortStage`、`rebootApp`、`rebootLoader` 和 `rebootUpgrade`。
 
-Reliable serial 与 BLE-iKCP adapter 都消费相同的 request，按 callback 投影 bounded output，并返回 transport result、terminal kind、output byte count、truncated 与 lifecycle-transition 标记。Reliable serial 的 transport log sink 覆盖整个 session 生命周期，而不只是 typed command 的响应：ready-marker 握手期读到的原始字节，以及 `SESSION_OPEN`/`SESSION_CLOSE` control 交换期间被 frame filter 判定为普通日志的字节，都投影到同一个 sink。Log sink 返回错误时立即结束当前阶段并原样上报，不静默丢弃。Cancellation 在写入前、读取后的 bounded boundary 和 Launcher shutdown 上检查；断线不换 transport、不 replay。BLE-iKCP 的无响应写允许在 `WOULD_BLOCK` 后最多重试 40 次、每次间隔 2 ms；Host 与 Loader/App 两端使用相同 bounded backpressure，超过预算仍返回原始 transport error。
+Browser SDK 0.3.0 的 `H2LoaderCommands.WIFI_STATUS` 对应设备 `command_availability` 的 bit 20。`commandAvailable()` 接受 32 位非负整数掩码，拒绝未定义的命令位及超出 32 位的数值。
+
+Reliable serial 与 BLE-iKCP adapter 都消费相同的 request，按 callback 投影 bounded output，并返回 transport result、terminal kind、output byte count、truncated 与 lifecycle-transition 标记。Reliable serial 的 transport log sink 覆盖整个 session 生命周期，而不只是 typed command 的响应：ready-marker 握手期读到的原始字节，以及 `SESSION_OPEN`/`SESSION_CLOSE` control 交换期间被 frame filter 判定为普通日志的字节，都投影到同一个 sink。握手用的临时 frame filter 只解析到匹配的 `SESSION_ACK` 为止；同一次 read 中 ACK 之后的所有 bytes（包括跨 read 拆开的下一个 frame 前缀和紧随 frame 的文本）都在新 stream 创建后原样交给它，不能被临时 parser 吞掉。Session 建立后，若一行从行首开始就是 `H2_LOADER_READY ` banner，说明设备已经复位、旧 KCP conversation 不再存在：整行（直到行尾 `\n`，无论 banner 被拆成多少次 input）都先完整交给 log sink，随后当前 input/poll 返回 `H2_PAL_ERR_CLOSED`，由调用方按既有 bounded reconnect 预算重新建立 session。带时间戳等前缀的历史 READY 日志行和握手期（ACK 之前）的 banner 都不触发该 close。Monitor 期间设备的控制台输出有两条到达路径：没有活动 session 时是裸的 non-frame bytes，由 stream 的 log sink 直接投影；session 建立后设备会把控制台塞进 reliable iKCP DATA frame，解码后的 payload 落在 stream 的 receive buffer 里。Monitor 必须同时排空后者，否则被 tunnel 的控制台行会被静默丢弃：`monitor_logs` 每次 pump 之后都把解码 payload 读干净，并经由同一个 log wrapper 投影，因此调用方 sink 和 `H2_LOADER_READY` session retirement 对两条路径的行为一致。Typed command 与 status 路径不受影响，它们仍通过各自的响应读取消费解码 payload。Log sink 返回错误时立即结束当前阶段并原样上报，不静默丢弃。Cancellation 在写入前、读取后的 bounded boundary 和 Launcher shutdown 上检查；断线不换 transport、不 replay。BLE-iKCP 的无响应写允许在 `WOULD_BLOCK` 后最多重试 40 次、每次间隔 2 ms；Host 与 Loader/App 两端使用相同 bounded backpressure，超过预算仍返回原始 transport error。
 
 Native CLI 在 command parser 之后只创建一个 transport-neutral session。`iostreamikcp` 与 `bleikcp` adapter 分别拥有连接资源，但 `status`、typed command、payload stage 和 disconnect 调用点相同；`send`、`send-url`、Wi-Fi 与 lifecycle command 不注册 transport-specific handler。Serial disconnect 先发送带当前 session ID 的 `SESSION_CLOSE` control frame；Loader/App 收到后只停用该 session，不把它当作 command payload，下一次 open 必须重新握手。`SESSION_CLOSE` 之前的 ACK grace 只在 `waitsnd` 为 0 时执行：那表示最终响应已经发完、只差 peer 的 ACK 过 UART tunnel。仍有待发数据说明这是一个被打断的请求，Host 直接进入 CLOSE，不为失败 session 重传该 payload。BLE endpoint 只负责发现；CLI 从首次 status 锁定 `device_uid`，跨重启的新 connection 必须匹配 UID，缺失或不同都 fail closed。`send` 和 `send-url` 优先在同一 BLE connection 内完成 Stage terminal 与 exact package bytes/SHA-256 status 验证；如果 package 已被完整确认，但同连接的 durable metadata status 暂时不可读，Host 只有在旧 transport disconnect 成功后才能做 bounded reconnect，并按 UID 拒绝替代设备后重新验证。Teardown 失败直接返回其错误，不能同时打开替代 session，也不能按 display name 或 board 选择另一个设备。
 
 Payload stage 在设备端报出 `H2_LOADER_STAGE_RECEIVE result=fail` 或 `H2_LOADER_STAGE result=fail` 时立即以 transport I/O 错误结束。失败的 receive 不会再发送后续 STAGE terminal，因此 Host 按行解析 stage 期间的设备输出并在命中失败行时提前返回，不把它拖成一次完整 command timeout 后的重连。逐行判定跨任意 KCP chunk 边界成立，超长行不参与匹配。
 
-三个 reboot 的 `result=accepted` 只表示设备端接受请求。同步返回时还必须得到 `H2_LOADER_REBOOT_FINAL result=OK`；设备真正重启时，Host 在 accepted 后处理 transport close，并通过 bounded reconnect 读取 live status。只有 board/target、预期 role、running partition、boot intent 和三份 metadata 满足请求后的状态，才能投影 lifecycle success；timeout、同名替代 endpoint 或单独的 accepted 都不是成功。
+三个 reboot 的 `result=accepted` 只表示设备端接受请求。同步返回时还必须得到 `H2_LOADER_REBOOT_FINAL result=OK`；设备真正重启时，Host 在 accepted 后处理 transport close，并通过 bounded reconnect 读取 live status。只有 board/target、预期 role、running partition、boot intent 和三份 metadata 满足请求后的状态，才能投影 lifecycle success。`last_result` 记录的是安装/回滚历史，`reboot app|loader` 会原样保留它，因此这两种 reboot 的验证不检查 `last_result`；只有 `reboot upgrade` 还要求重连后的 `last_result` 为 OK。timeout、同名替代 endpoint 或单独的 accepted 都不是成功。
 
 ## Catalog 与 operation
 
@@ -71,6 +73,10 @@ BK7258 driver 在 Host Core 内用 C 实现 Beken HCI ROM download protocol，�
 
 ## Threading 与 shutdown
 
+Darwin CoreBluetooth 的 provider 构造入口显式借用 Memory 和 Log；首次成功绑定后只接受同一对 API 指针，NULL、不完整或不同的服务会返回 NULL。CLI 和 Desktop 由组装入口传入日志服务，保持 API object 及其 `user` 在 provider 生命周期内有效。连接失败和异常断开在 backend queue 上通过 PAL Log 输出有长度上限的错误详情，不直接写标准流；日志失败不改变 BLE 错误返回值或事件。
+
+BLE connect 的失败阶段诊断通过可选 `on_log`/`log_user` 回调交给 caller，不由 Host Core 直接写 stderr。回调在 connect 调用线程同步收到完整、长度限定的文本行，字节只在回调期间有效；需要异步使用时由 caller 复制。此 sink 仅用于已经失败的 connect、MTU、BLE-iKCP open 和 status 阶段，sink 自身的错误不覆盖原始连接错误；它不是设备日志流，也不改变 reliable serial 日志错误的传播合同。Native CLI 将 BLE connect 诊断写到 CLI 的 stderr command IO（caller-owned），serial 设备日志 sink 保持原样；未提供 sink 的 consumer 不会收到这些诊断输出。
+
 所有 scan、catalog hash、connect、transfer、flash 和 reconnect 在 worker 执行。Worker 只写 caller-owned plain snapshots 与 atomic progress；UI controller 只接收复制后的 structured result。Cancellation 在 bounded I/O 边界协作完成。Shutdown 先拒绝新工作、请求取消、join worker，再关闭 BLE、serial、catalog 和 UI resource。
 
 Scheduler 在 controller thread 上冻结 fixture slot、candidate snapshot 和 asset。`claim()` 最多放出配置的 active 数量；每个 worker 使用独立 transport/operation state，completion 通过 bounded queue 返回 controller 后再写 scheduler。`set_paused()` 只暂停新的 claim，已经运行的 worker 继续到安全终止边界。取消 queued job 不关闭其它 active session；失败或 retry 只改变对应 slot，并继续使用原来冻结的 candidate、asset 和 recovery authorization。
@@ -94,6 +100,8 @@ bazel test //libs/h2loader_host:all
 bazel test //projects/h2loader/libs/web:all
 bazel build //projects/h2loader/targets/npm_package/h2loader:h2loader
 ```
+
+Browser SDK 的 snapshot Release 构建、确定性 tarball 与下游 `npm-index.json` 合同见 [npm Release](/apps/h2loader/npm_release)。该路径与 GitHub Packages 发布并行，共用 package 自身的版本。
 
 Fake、PTY 和 cross-compile 只证明 contract 与 host behavior。最终产品验收仍需在准确 reviewed build 上记录 live discovery、authoritative identity、Stage、reboot、partition copy-back 与最终 checksum/metadata。当前 ESP DevKit 已提供 UART/BLE 实板证据；BK 实板因硬件不可用明确 deferred，不能由 build 结果替代。
 

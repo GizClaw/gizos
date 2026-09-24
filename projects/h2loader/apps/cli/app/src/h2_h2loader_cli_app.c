@@ -239,6 +239,7 @@ static const char help_text[] =
     "wifi:     wifi scan [--limit <1-16>] [--timeout-ms <1-30000>]\n"
     "          wifi connect <ssid> <password>\n"
     "          wifi disconnect\n"
+    "          wifi status\n"
     "coredump: coredump status|erase\n"
     "          coredump dump [--output <file>]\n";
 
@@ -567,6 +568,7 @@ static h2_h2loader_host_command_t command_kind(int argc, const char *const *argv
     if (argc == 2 && strcmp(argv[0], "reboot") == 0 &&
         strcmp(argv[1], "upgrade") == 0) return H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE;
     if (argc == 2 && strcmp(argv[0], "stage") == 0 && strcmp(argv[1], "abort") == 0) return H2_H2LOADER_HOST_COMMAND_STAGE_ABORT;
+    if (argc == 2 && strcmp(argv[0], "wifi") == 0 && strcmp(argv[1], "status") == 0) return H2_H2LOADER_HOST_COMMAND_WIFI_STATUS;
     if (argc == 2 && strcmp(argv[0], "wifi") == 0 && strcmp(argv[1], "disconnect") == 0) return H2_H2LOADER_HOST_COMMAND_WIFI_DISCONNECT;
     if (argc >= 2 && strcmp(argv[0], "wifi") == 0 && strcmp(argv[1], "scan") == 0) return H2_H2LOADER_HOST_COMMAND_WIFI_SCAN;
     if (argc == 2 && strcmp(argv[0], "coredump") == 0 && strcmp(argv[1], "status") == 0) return H2_H2LOADER_HOST_COMMAND_COREDUMP_STATUS;
@@ -733,11 +735,16 @@ h2_pal_result_t h2_h2loader_cli_verify_reboot_status(
     if (after->running_partition != expected_partition ||
         after->next_partition != expected_partition ||
         after->active_role != expected_role ||
-        after->boot_intent != expected_intent || after->last != H2_PAL_OK) {
+        after->boot_intent != expected_intent ||
+        (kind == H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE &&
+         after->last != H2_PAL_OK)) {
         return H2_PAL_ERR_INVALID_STATE;
     }
     if (kind == H2_H2LOADER_HOST_COMMAND_REBOOT_APP ||
         kind == H2_H2LOADER_HOST_COMMAND_REBOOT_LOADER) {
+        /* last_result describes installation/rollback, not this reboot.
+         * set_next_and_reboot preserves it; an old failure must not force
+         * 120 reconnects after the requested role is already responsive. */
         return metadata_equal(&before->stage, &after->stage)
             ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
     }

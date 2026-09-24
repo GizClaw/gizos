@@ -12,7 +12,7 @@
 #include "h2_lua_module.h"
 
 #include <stdio.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 
 #define H2_BLOOMSPEAKER_POWER_HOLD_MS 2000u
 #define H2_BLOOMSPEAKER_PAIR_HOLD_MS 1000u
@@ -73,7 +73,7 @@ h2_pal_result_t h2_bloomspeaker_run(
   h2_bloomspeaker_hold_tracker_t power_hold = {0};
   h2_bloomspeaker_hold_tracker_t pairing_hold = {0};
   h2_bloomspeaker_engine_t *engine = NULL;
-  _Atomic bool shutdown_fade_requested = false;
+  h2_atomic_bool_t shutdown_fade_requested = {0};
   h2_bloomspeaker_lua_context_t lua_context = {
       .runtime = runtime,
       .controller = &controller,
@@ -100,7 +100,13 @@ h2_pal_result_t h2_bloomspeaker_run(
   lua_context.touch_pairing_enabled =
       config->pairing_component_id == H2_RUNTIME_COMPONENT_ID_NONE;
   (void)h2_pal_time_get_monotonic_ms(runtime->time, &started_ms);
-  h2_bloomspeaker_controller_init(&controller, started_ms);
+  if (!h2_bloomspeaker_controller_init(&controller, started_ms)) {
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  if (h2_atomic_init(&shutdown_fade_requested, false) != H2_ATOMIC_OK) {
+    h2_bloomspeaker_controller_destroy(&controller);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
   result = h2_bloomspeaker_engine_start(
       runtime, &controller,
       &(h2_bloomspeaker_engine_config_t){
@@ -113,6 +119,8 @@ h2_pal_result_t h2_bloomspeaker_run(
       },
       &engine);
   if (result != H2_PAL_OK) {
+    h2_atomic_destroy(&shutdown_fade_requested);
+    h2_bloomspeaker_controller_destroy(&controller);
     return result;
   }
   result = h2_lua_host_create(
@@ -133,6 +141,8 @@ h2_pal_result_t h2_bloomspeaker_run(
       &host);
   if (result != H2_PAL_OK) {
     (void)h2_bloomspeaker_engine_stop(engine);
+    h2_atomic_destroy(&shutdown_fade_requested);
+    h2_bloomspeaker_controller_destroy(&controller);
     return result;
   }
   result = h2_lua_register_module(host, "intercom", h2_bloomspeaker_lua_open,
@@ -168,8 +178,8 @@ h2_pal_result_t h2_bloomspeaker_run(
           shutdown_requested = 1;
           shutdown_deadline_ms =
               now_ms + H2_BLOOMSPEAKER_SHUTDOWN_FADE_TIMEOUT_MS;
-          atomic_store_explicit(&shutdown_fade_requested, true,
-                                memory_order_release);
+          h2_atomic_store_explicit(&shutdown_fade_requested, true,
+                                H2_ATOMIC_RELEASE);
           printf("H2_BLOOMSPEAKER_POWER action=fade_requested\n");
         }
       }
@@ -281,5 +291,7 @@ h2_pal_result_t h2_bloomspeaker_run(
       result = shutdown_result;
     }
   }
+  h2_atomic_destroy(&shutdown_fade_requested);
+  h2_bloomspeaker_controller_destroy(&controller);
   return result;
 }

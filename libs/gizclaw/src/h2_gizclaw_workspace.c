@@ -501,6 +501,17 @@ workspace_input_mode_valid(h2_gizclaw_workspace_input_mode_t input_mode) {
          input_mode == H2_GIZCLAW_WORKSPACE_INPUT_REALTIME;
 }
 
+/* Mirrors the server's WorkspaceParametersPatch range: a rate outside
+ * [50, 200] answers INVALID_ARGUMENT, so reject it before any network I/O. */
+static bool workspace_speech_rate_valid(
+    const h2_gizclaw_workspace_parameters_patch_t *parameters) {
+  return !parameters->has_tts_speech_rate_percent ||
+         (parameters->tts_speech_rate_percent >=
+              H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MIN_PERCENT &&
+          parameters->tts_speech_rate_percent <=
+              H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MAX_PERCENT);
+}
+
 static bool protobuf_read_varint(const uint8_t *data, size_t len,
                                  size_t *offset, uint64_t *out_value) {
   uint64_t value = 0u;
@@ -722,6 +733,10 @@ static h2_pal_result_t workspace_request_start(workspace_context_t *request) {
     message.parameters.conversation.agent_initiative_policy =
         (gizclaw_rpc_v1_ConversationParametersAgentInitiativePolicy)
             request->parameters.agent_initiative_policy;
+    message.parameters.has_tts_speech_rate_percent =
+        request->parameters.has_tts_speech_rate_percent;
+    message.parameters.tts_speech_rate_percent =
+        request->parameters.tts_speech_rate_percent;
     return workspace_request_start_message(
         request, H2_GIZCLAW_RPC_SERVER_WORKSPACE_PARAMETERS_SET,
         gizclaw_rpc_v1_WorkspaceParametersSetRequest_fields, &message);
@@ -1085,7 +1100,9 @@ h2_pal_result_t h2_gizclaw_req_create_workspace_set_parameters(
   if (!(valid_token(name, H2_GIZCLAW_WORKSPACE_NAME_MAX_BYTES) &&
         parameters != NULL &&
         (parameters->has_input || parameters->has_initiative ||
-         parameters->has_agent_initiative_policy) &&
+         parameters->has_agent_initiative_policy ||
+         parameters->has_tts_speech_rate_percent) &&
+        workspace_speech_rate_valid(parameters) &&
         (!parameters->has_input ||
          workspace_input_mode_valid(parameters->input)) &&
         (!parameters->has_initiative ||
@@ -1228,6 +1245,38 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_delete(
   return rc;
 }
 
+h2_pal_result_t h2_gizclaw_rpc_run_stop(h2_gizclaw_service_t* service,
+                                        uint32_t timeout_ms,
+                                        h2_gizclaw_resp_storage_t* storage) {
+  if (storage == NULL || storage->used > storage->capacity ||
+      (storage->capacity != 0u && storage->data == NULL))
+    return H2_PAL_ERR_INVALID_ARG;
+  static const char run_stop_tag;
+  h2_gizclaw_req_t* request = NULL;
+  /* ServerStopRunRequest is empty, just like the reload request. */
+  h2_pal_result_t rc = h2_gizclaw_req_create_rpc_internal(
+      service, 0u, H2_GIZCLAW_RPC_SERVER_RUN_STOP, &run_stop_tag,
+      (h2_gizclaw_rpc_bytes_t){0}, timeout_ms, &request);
+  h2_gizclaw_session_t* session = NULL;
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_service_acquire_session_internal(service, &session);
+  bool transition = false;
+  if (rc == H2_PAL_OK) {
+    rc = h2_gizclaw_session_run_stop_begin_internal(session, timeout_ms);
+    transition = rc == H2_PAL_OK && session != NULL;
+  }
+  if (rc == H2_PAL_OK) rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
+  /* The shared RPC layer decodes success/errors; no run status is retained. */
+  if (rc == H2_PAL_OK) h2_gizclaw_conversation_downlink_flush_internal(service);
+  if (transition)
+    rc = h2_gizclaw_session_workspace_delete_finish_internal(session, rc);
+  if (session != NULL) h2_gizclaw_service_release_session_internal(service);
+  h2_gizclaw_req_release(request);
+  return rc;
+}
+
 h2_pal_result_t h2_gizclaw_req_create_workspace_activate(
     h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
     uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
@@ -1278,7 +1327,8 @@ h2_pal_result_t h2_gizclaw_req_create_workspace_reload_with_options(
       timeout_ms > INT32_MAX ||
       (name.len != 0u && !valid_token(name, H2_GIZCLAW_WORKSPACE_NAME_MAX_BYTES)) ||
       (parameters != NULL &&
-       ((parameters->has_input && !workspace_input_mode_valid(parameters->input)) ||
+       (!workspace_speech_rate_valid(parameters) ||
+        (parameters->has_input && !workspace_input_mode_valid(parameters->input)) ||
         (parameters->has_initiative &&
          (parameters->initiative < 1 || parameters->initiative > 2)) ||
         (parameters->has_agent_initiative_policy &&
@@ -1310,6 +1360,10 @@ h2_pal_result_t h2_gizclaw_req_create_workspace_reload_with_options(
     message.parameters.conversation.agent_initiative_policy =
         (gizclaw_rpc_v1_ConversationParametersAgentInitiativePolicy)
             parameters->agent_initiative_policy;
+    message.parameters.has_tts_speech_rate_percent =
+        parameters->has_tts_speech_rate_percent;
+    message.parameters.tts_speech_rate_percent =
+        parameters->tts_speech_rate_percent;
   }
   uint8_t *payload = NULL;
   size_t len = 0u;

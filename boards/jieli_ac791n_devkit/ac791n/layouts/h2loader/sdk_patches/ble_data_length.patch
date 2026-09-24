@@ -1,0 +1,24 @@
+diff --git a/apps/common/config/log_config/lib_btctrler_config.c b/apps/common/config/log_config/lib_btctrler_config.c
+--- a/apps/common/config/log_config/lib_btctrler_config.c
++++ b/apps/common/config/log_config/lib_btctrler_config.c
+@@ -91,7 +91,10 @@
+ /**
+  * @brief Bluetooth LE setting
+  */
+-const uint64_t config_btctler_le_features = (LE_ENCRYPTION);
++/* H2 BLE bulk transfer: DLE lets a 251-byte LL payload carry an ATT
++ * write instead of 27-byte fragments, and 2M PHY halves its air time. */
++const uint64_t config_btctler_le_features =
++    (LE_ENCRYPTION | LE_DATA_PACKET_LENGTH_EXTENSION | LE_2M_PHY);
+ 
+ const int config_btctler_le_roles    = (LE_ADV | LE_SCAN | LE_INIT | LE_SLAVE | LE_MASTER);
+ 
+@@ -126,7 +129,7 @@
+ const int config_btctler_le_hw_nums = 1;
+ #endif
+ const int config_btctler_le_rx_nums = 5 * config_btctler_le_hw_nums;
+-const int config_btctler_le_acl_packet_length = 27;	//251
++const int config_btctler_le_acl_packet_length = 251;
+ const int config_btctler_le_acl_total_nums = 5 * config_btctler_le_hw_nums;
+ 
+ const u32 config_vendor_le_bb = 0;

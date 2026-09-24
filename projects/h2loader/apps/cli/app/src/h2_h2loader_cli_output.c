@@ -102,3 +102,15 @@ h2_pal_result_t h2_h2loader_cli_output_json_string(
     escaped[out++] = '"';
     return write_all(stream_io(context, stream), (const uint8_t *)escaped, out);
 }
+
+h2_pal_result_t h2_h2loader_cli_transport_diagnostic(
+    void *user,
+    const uint8_t *data,
+    size_t len) {
+    h2_h2loader_cli_context_t *context = user;
+    if (context == NULL || (data == NULL && len != 0u)) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    return h2_h2loader_cli_output_bytes(
+        context, H2_H2LOADER_CLI_STREAM_STDERR, data, len);
+}

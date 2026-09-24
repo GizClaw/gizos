@@ -103,6 +103,7 @@ typedef struct h2_esp_es8311_audio_system {
     h2_esp_es8311_audio_system_config_t config;
     h2_esp_es8311_sr_state_t sr;
     int pa_initialized;
+    int codec_shutdown_pending;
     int opened;
     int sr_initialized;
     volatile int mic_started;
@@ -150,6 +151,24 @@ int h2_esp_es8311_audio_system_deinit(
  * microphone or speaker worker tasks.
  */
 int h2_esp_es8311_audio_system_prepare(
+    h2_esp_es8311_audio_system_t *system);
+
+/**
+ * @brief Stop/join workers, disable PA, suspend the codec, and release resources.
+ * @param system Caller-owned, initialized or zero-initialized storage.
+ * @return H2_AUDIO_OK on success; H2_AUDIO_ERR_INVALID_ARG for NULL; otherwise
+ * the first worker, PA or I2C error. Remaining resources are retained for retry.
+ *
+ * Blocking task-context call. Serialize against all Audio PAL/lifecycle calls;
+ * stop consumers first and retain I2C/PA providers until success. Worker waits
+ * use their existing bounded deadlines; each suspend write has a 100 ms timeout.
+ * Success invalidates PAL/tracks. Repeated calls and never-opened storage do no
+ * I/O. Call init then prepare/start to restore audio after success. After an
+ * error, retry shutdown before re-init or sleep; start is rejected meanwhile.
+ * Ordinary deinit does not request suspend, but finishes a pending power-down.
+ * No physical supply switching.
+ */
+int h2_esp_es8311_audio_system_power_down(
     h2_esp_es8311_audio_system_t *system);
 
 h2_pal_audio_t *h2_esp_es8311_audio_system_audio(h2_esp_es8311_audio_system_t *system);

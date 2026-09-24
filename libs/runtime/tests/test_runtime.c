@@ -1,3 +1,4 @@
+#include "h2_test_allocator.h"
 #include "h2_runtime_internal.h"
 #include "h2_runtime_task_names.h"
 #include "h2_runtime_test.h"
@@ -300,8 +301,7 @@ static h2_pal_result_t test_sleep(void *user, uint32_t ms) {
     time->sleep_calls += 1u;
     time->now_ms += ms;
     if (time->stop_after_sleep_runtime != NULL) {
-        atomic_store(
-            &time->stop_after_sleep_runtime->private_state->input_stop_requested,
+        h2_atomic_store(&time->stop_after_sleep_runtime->private_state->input_stop_requested,
             1);
     }
     return time->sleep_rc;
@@ -1328,6 +1328,15 @@ static void assert_system_event_mapping(
     assert(event.kind == kind);
     assert(event.sequence != 0u);
     assert(event.payload_size == runtime_payload_size);
+    if (kind == H2_RUNTIME_SYSTEM_EVENT_MODEM_SIGNAL_CHANGED) {
+        const h2_pal_modem_signal_t *pal = pal_payload;
+        h2_runtime_system_event_modem_signal_t signal;
+        memcpy(&signal, event.payload, sizeof(signal));
+        assert(signal.rssi_dbm == pal->rssi_dbm && signal.rssi_valid == pal->rssi_valid);
+        assert(signal.rsrp_dbm == pal->rsrp_dbm && signal.rsrp_valid == pal->rsrp_valid);
+        assert(signal.ber == pal->ber);
+        assert(signal.rat == (h2_runtime_system_modem_rat_t)pal->rat);
+    }
 }
 
 static h2_pal_wifi_sta_status_t test_wifi_sta_status(void) {
@@ -1572,6 +1581,9 @@ static void test_system_event_projects_all_scope_events(void) {
     h2_pal_modem_status_t modem_status = test_modem_status();
     h2_pal_modem_signal_t modem_signal = {
         .rssi_dbm = -70,
+        .rssi_valid = 1u,
+        .rsrp_dbm = -96,
+        .rsrp_valid = 1u,
         .ber = 1,
         .rat = H2_PAL_MODEM_RAT_LTE,
     };
@@ -1720,6 +1732,14 @@ static void test_system_event_projects_all_scope_events(void) {
         &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_PACKET_CHANGED, &modem_status, sizeof(modem_status),
         H2_RUNTIME_COMPONENT_SYSTEM_MODEM, H2_RUNTIME_SYSTEM_EVENT_MODEM_PACKET_CHANGED,
         sizeof(h2_runtime_system_event_modem_packet_t));
+    assert_system_event_mapping(
+        &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIGNAL_CHANGED, &modem_signal, sizeof(modem_signal),
+        H2_RUNTIME_COMPONENT_SYSTEM_MODEM, H2_RUNTIME_SYSTEM_EVENT_MODEM_SIGNAL_CHANGED,
+        sizeof(h2_runtime_system_event_modem_signal_t));
+    modem_signal.rssi_dbm = 0;
+    modem_signal.rssi_valid = 0u;
+    modem_signal.rsrp_dbm = 0;
+    modem_signal.rsrp_valid = 0u;
     assert_system_event_mapping(
         &env, runtime, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIGNAL_CHANGED, &modem_signal, sizeof(modem_signal),
         H2_RUNTIME_COMPONENT_SYSTEM_MODEM, H2_RUNTIME_SYSTEM_EVENT_MODEM_SIGNAL_CHANGED,
@@ -2431,7 +2451,7 @@ static void run_nfc_task_once(test_runtime_env_t *env,
     env->time_state.stop_after_sleep_runtime = runtime;
     env->task_state.handles[1]->entry(env->task_state.handles[1]->ctx);
     env->time_state.stop_after_sleep_runtime = NULL;
-    atomic_store(&runtime->private_state->input_stop_requested, 0);
+    h2_atomic_store(&runtime->private_state->input_stop_requested, 0);
 }
 
 static void test_nfc_discovery_and_state(void) {
@@ -2496,7 +2516,7 @@ static void test_nfc_background_task_does_not_block_input_task(void) {
     env.time_state.stop_after_sleep_runtime = runtime;
     env.task_state.handles[0]->entry(env.task_state.handles[0]->ctx);
     env.time_state.stop_after_sleep_runtime = NULL;
-    atomic_store(&runtime->private_state->input_stop_requested, 0);
+    h2_atomic_store(&runtime->private_state->input_stop_requested, 0);
 
     uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
     h2_runtime_event_t event = event_with_payload(payload);
@@ -2755,7 +2775,7 @@ static void test_runtime_owns_input_task_lifecycle(void) {
 
     /* Init leaves acquisition stopped; the caller owns the first start. */
     assert(env.task_state.starts == 0u);
-    assert(atomic_load(&runtime->private_state->input_phase) ==
+    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
            H2_RUNTIME_INPUT_PHASE_STOPPED);
     h2_runtime_button_state_t stopped_state;
     assert(h2_runtime_component_state_button(runtime, 1u, &stopped_state) !=
@@ -2800,7 +2820,7 @@ static void test_input_task_start_failure_leaves_input_stopped(void) {
     assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_ERR_TASK);
     assert(env.task_state.current == NULL);
     assert(runtime->private_state->input_task == NULL);
-    assert(atomic_load(&runtime->private_state->input_phase) ==
+    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
            H2_RUNTIME_INPUT_PHASE_STOPPED);
     /* A failed start only leaves the poller off; init-owned state survives. */
     assert(runtime->private_state->input_writer_mutex != NULL);
@@ -2825,15 +2845,183 @@ static void test_input_worker_failure_closes_event_queue(void) {
     assert(env.task_state.current != NULL);
     env.time_state.sleep_rc = H2_PAL_ERR_IO;
     env.task_state.current->entry(env.task_state.current->ctx);
-    assert(atomic_load(&runtime->private_state->input_phase) ==
+    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
            H2_RUNTIME_INPUT_PHASE_FAULTED);
-    assert(atomic_load(&runtime->private_state->input_worker_result) ==
+    assert(h2_atomic_load(&runtime->private_state->input_worker_result) ==
            H2_PAL_ERR_IO);
     uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
     h2_runtime_event_t event = event_with_payload(payload);
     assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_CLOSED);
     h2_runtime_deinit(runtime);
     assert(env.task_state.joins == 1u);
+    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+}
+
+static void run_input_task_once(test_runtime_env_t *env,
+                                h2_runtime_t *runtime) {
+    env->time_state.stop_after_sleep_runtime = runtime;
+    env->task_state.handles[0]->entry(env->task_state.handles[0]->ctx);
+    env->time_state.stop_after_sleep_runtime = NULL;
+    h2_atomic_store(&runtime->private_state->input_stop_requested, 0);
+}
+
+static void test_input_worker_keeps_running_after_poll_error(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+    add_periph(&env, 30u, H2_PAL_PERIPH_TYPE_BATTERY, NULL, 0u);
+    h2_runtime_t *runtime = test_runtime_create(&env);
+
+    /* One failed poll step used to stop the worker and close the queue. */
+    env.time_state.now_rc = H2_PAL_ERR_IO;
+    run_input_task_once(&env, runtime);
+    env.time_state.now_rc = H2_PAL_OK;
+    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
+           H2_RUNTIME_INPUT_PHASE_TASK_RUNNING);
+    h2_runtime_input_status_t status;
+    assert(h2_runtime_input_status(runtime, &status) == H2_PAL_OK);
+    assert(status.phase == H2_RUNTIME_INPUT_PHASE_TASK_RUNNING);
+    assert(status.worker_result == H2_PAL_OK);
+    assert(status.last_error == H2_PAL_ERR_IO);
+    assert(status.last_error_stage == H2_RUNTIME_INPUT_STAGE_TIME);
+    assert(status.error_count == 1u);
+    assert(status.consecutive_error_count == 1u);
+    assert(strcmp(h2_runtime_input_stage_name(status.last_error_stage),
+                  "time") == 0);
+
+    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+    h2_runtime_event_t event = event_with_payload(payload);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_ERR_WOULD_BLOCK);
+
+    /* The next poll reads the Button and the Battery again. */
+    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+    env.input_state.battery.voltage_mv = 4100;
+    env.time_state.now_ms += H2_RUNTIME_BATTERY_POLL_INTERVAL_MS;
+    const uint64_t polled_at_ms = env.time_state.now_ms;
+    run_input_task_once(&env, runtime);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    h2_runtime_battery_state_t battery;
+    assert(h2_runtime_component_state_battery(runtime, 2u, &battery) ==
+           H2_PAL_OK);
+    assert(battery.reading.voltage_mv == 4100);
+    assert(battery.updated_at_ms == polled_at_ms);
+    assert(h2_runtime_input_status(runtime, &status) == H2_PAL_OK);
+    assert(status.consecutive_error_count == 0u);
+    assert(status.error_count == 1u);
+    assert(status.poll_count >= 1u);
+    assert(status.last_poll_ok_at_ms == polled_at_ms);
+
+    h2_runtime_deinit(runtime);
+    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+}
+
+static void test_input_fault_release_never_precedes_its_snapshot(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+    h2_runtime_t *runtime = test_runtime_create(&env);
+    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+    h2_runtime_event_t event = event_with_payload(payload);
+
+    /* Pin two slots across publications so every retired slot is pinned. */
+    const h2_runtime_state_bank_t *bank = NULL;
+    uint8_t pinned[2];
+    assert(h2_runtime_state_read_begin(runtime, &bank, &pinned[0]) ==
+           H2_PAL_OK);
+    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+    env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    assert(h2_runtime_state_read_begin(runtime, &bank, &pinned[1]) ==
+           H2_PAL_OK);
+    env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
+    }
+    const uint32_t dropped_before =
+        runtime->private_state->dropped_event_count;
+
+    env.time_state.sleep_rc = H2_PAL_ERR_IO;
+    env.task_state.current->entry(env.task_state.current->ctx);
+    h2_pal_result_t rc;
+    while ((rc = h2_runtime_poll_event(runtime, &event)) == H2_PAL_OK) {
+        assert(event.kind != H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
+    }
+    assert(rc == H2_PAL_ERR_CLOSED);
+    assert(runtime->private_state->dropped_event_count > dropped_before);
+
+    assert(h2_runtime_state_read_end(runtime, pinned[0]) == H2_PAL_OK);
+    assert(h2_runtime_state_read_end(runtime, pinned[1]) == H2_PAL_OK);
+    env.time_state.sleep_rc = H2_PAL_OK;
+    h2_runtime_deinit(runtime);
+    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+}
+
+static void test_input_fault_releases_held_buttons(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+    h2_runtime_t *runtime = test_runtime_create(&env);
+    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+    env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+    h2_runtime_event_t event = event_with_payload(payload);
+    while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
+    }
+
+    /* A worker that cannot sleep is fatal, but must not freeze the hold. */
+    env.time_state.sleep_rc = H2_PAL_ERR_IO;
+    env.task_state.current->entry(env.task_state.current->ctx);
+    int saw_up = 0;
+    h2_pal_result_t rc;
+    while ((rc = h2_runtime_poll_event(runtime, &event)) == H2_PAL_OK) {
+        if (event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP) {
+            saw_up = 1;
+        }
+    }
+    assert(saw_up);
+    assert(rc == H2_PAL_ERR_CLOSED);
+    h2_runtime_button_state_t state;
+    assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
+           H2_PAL_OK);
+    assert(!state.pressed);
+    h2_runtime_input_status_t status;
+    assert(h2_runtime_input_status(runtime, &status) == H2_PAL_OK);
+    assert(status.phase == H2_RUNTIME_INPUT_PHASE_FAULTED);
+    assert(status.worker_result == H2_PAL_ERR_IO);
+    assert(status.last_error_stage == H2_RUNTIME_INPUT_STAGE_SLEEP);
+
+    env.time_state.sleep_rc = H2_PAL_OK;
+    h2_runtime_deinit(runtime);
+    assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
+}
+
+static void test_input_fault_release_with_full_queue_keeps_state_released(
+    void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    add_periph(&env, 10u, H2_PAL_PERIPH_TYPE_SINGLE_BUTTON, NULL, 0u);
+    h2_runtime_t *runtime = test_runtime_create(&env);
+    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+    env.time_state.now_ms += H2_RUNTIME_BUTTON_POLL_INTERVAL_MS;
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+
+    /* The consumer never drains: the release cannot be queued. */
+    env.queue_state.send_rc = H2_PAL_ERR_FULL;
+    env.time_state.sleep_rc = H2_PAL_ERR_IO;
+    env.task_state.current->entry(env.task_state.current->ctx);
+    h2_runtime_button_state_t state;
+    assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
+           H2_PAL_OK);
+    assert(!state.pressed);
+    h2_runtime_input_status_t status;
+    assert(h2_runtime_input_status(runtime, &status) == H2_PAL_OK);
+    assert(status.phase == H2_RUNTIME_INPUT_PHASE_FAULTED);
+
+    env.queue_state.send_rc = H2_PAL_OK;
+    env.time_state.sleep_rc = H2_PAL_OK;
+    h2_runtime_deinit(runtime);
     assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
@@ -2845,7 +3033,7 @@ static void test_input_join_failure_is_retryable(void) {
     env.task_state.join_rc = H2_PAL_ERR_IO;
     h2_runtime_deinit(runtime);
     assert(runtime->private_state->input_task != NULL);
-    assert(atomic_load(&runtime->private_state->input_stop_requested) != 0);
+    assert(h2_atomic_load(&runtime->private_state->input_stop_requested) != 0);
     assert(env.task_state.joins == 0u);
     env.task_state.join_rc = H2_PAL_OK;
     h2_runtime_deinit(runtime);
@@ -2875,7 +3063,7 @@ static void test_input_stop_then_start_resumes_acquisition(void) {
     assert(h2_runtime_input_stop(runtime) == H2_PAL_OK);
     assert(env.task_state.joins == 1u);
     assert(runtime->private_state->input_task == NULL);
-    assert(atomic_load(&runtime->private_state->input_phase) ==
+    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
            H2_RUNTIME_INPUT_PHASE_STOPPED);
     /*
      * Stopping the poller only stops the task. The writer mutex, the source
@@ -2907,7 +3095,7 @@ static void test_input_stop_then_start_resumes_acquisition(void) {
     assert(runtime->private_state->input_tick_ms == 5u);
     assert(runtime->private_state->input_button_poll_interval_ms == 9u);
     assert(strcmp(env.task_state.options.name, h2_runtime_input_task_name) == 0);
-    assert(atomic_load(&runtime->private_state->input_phase) ==
+    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
            H2_RUNTIME_INPUT_PHASE_TASK_RUNNING);
 
     /* The first frame after a start republishes the current hardware state. */
@@ -2977,7 +3165,7 @@ static void test_input_start_without_mapped_input_is_noop(void) {
     test_env_init(&env);
     h2_runtime_t *runtime = test_runtime_create(&env);
     assert(env.task_state.starts == 0u);
-    assert(atomic_load(&runtime->private_state->input_phase) ==
+    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
            H2_RUNTIME_INPUT_PHASE_STOPPED);
 
     assert(h2_runtime_input_stop(runtime) == H2_PAL_OK);
@@ -2985,7 +3173,7 @@ static void test_input_start_without_mapped_input_is_noop(void) {
     assert(env.task_state.starts == 0u);
     assert(env.task_state.joins == 0u);
     assert(runtime->private_state->input_task == NULL);
-    assert(atomic_load(&runtime->private_state->input_phase) ==
+    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
            H2_RUNTIME_INPUT_PHASE_STOPPED);
 
     h2_runtime_deinit(runtime);
@@ -3003,7 +3191,7 @@ static void test_input_double_start_is_rejected(void) {
     assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_ERR_INVALID_STATE);
     assert(env.task_state.starts == 1u);
     assert(runtime->private_state->input_writer_mutex == mutex);
-    assert(atomic_load(&runtime->private_state->input_phase) ==
+    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
            H2_RUNTIME_INPUT_PHASE_TASK_RUNNING);
 
     h2_runtime_deinit(runtime);
@@ -3020,13 +3208,13 @@ static void test_input_start_after_worker_fault_is_rejected(void) {
 
     env.time_state.sleep_rc = H2_PAL_ERR_IO;
     env.task_state.current->entry(env.task_state.current->ctx);
-    assert(atomic_load(&runtime->private_state->input_phase) ==
+    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
            H2_RUNTIME_INPUT_PHASE_FAULTED);
 
     /* Stop reports the fault; the closed event queue makes it terminal. */
     env.time_state.sleep_rc = H2_PAL_OK;
     assert(h2_runtime_input_stop(runtime) == H2_PAL_ERR_IO);
-    assert(atomic_load(&runtime->private_state->input_phase) ==
+    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
            H2_RUNTIME_INPUT_PHASE_STOPPED);
     assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_ERR_INVALID_STATE);
     assert(env.task_state.starts == 1u);
@@ -3121,15 +3309,15 @@ static void test_input_snapshot_does_not_create_condition(void) {
     assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
     assert(runtime != NULL);
     /*
-     * Two mutexes, the system state lock and the input writer lock, and no
-     * condition variable: the snapshot readers and the input poller both
-     * take a lock, neither waits on one.
+     * Three mutexes, the system state lock, the input writer lock and the
+     * input health lock, and no condition variable: the snapshot readers and
+     * the input poller both take a lock, neither waits on one.
      */
-    assert(env.sync_state.creates == 2u);
+    assert(env.sync_state.creates == 3u);
     assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_OK);
-    assert(env.sync_state.creates == 2u);
+    assert(env.sync_state.creates == 3u);
     h2_runtime_deinit(runtime);
-    assert(env.sync_state.destroys == 2u);
+    assert(env.sync_state.destroys == 3u);
     assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
 }
 
@@ -3137,7 +3325,7 @@ static void test_sequence_wraps_and_skips_zero(void) {
     test_runtime_env_t env;
     test_env_init(&env);
     h2_runtime_t *runtime = test_runtime_create(&env);
-    runtime->private_state->next_sequence = UINT32_MAX;
+    h2_atomic_uint_store(&runtime->private_state->next_sequence, UINT32_MAX, H2_ATOMIC_SEQ_CST);
 
     assert(h2_runtime_next_sequence(runtime) == UINT32_MAX);
     /* 0 means "no sequence", so the wrap lands on 1. */
@@ -3170,7 +3358,7 @@ static void test_high_first_sequence_sets_input_ceiling(void) {
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
 
     assert(runtime->private_state->input_event_sequence_ceiling == 0u);
-    runtime->private_state->next_sequence = UINT32_MAX;
+    h2_atomic_uint_store(&runtime->private_state->next_sequence, UINT32_MAX, H2_ATOMIC_SEQ_CST);
     assert(h2_runtime_test_button_down(control, 1u, 100u) == H2_PAL_OK);
     assert(runtime->private_state->input_event_sequence_ceiling == UINT32_MAX);
 
@@ -3359,7 +3547,7 @@ static void test_control_injects_validated_runtime_events(void) {
                43u,
                &wifi,
                sizeof(wifi) - 1u) == H2_PAL_ERR_INVALID_ARG);
-    assert(runtime->private_state->next_sequence == 2u);
+    assert(h2_atomic_uint_load(&runtime->private_state->next_sequence, H2_ATOMIC_SEQ_CST) == 2u);
 
     h2_runtime_test_control_close(control);
     assert(runtime->private_state->test_control == NULL);
@@ -3411,9 +3599,9 @@ static void test_control_button_helpers_share_state_and_event_sequence(void) {
     assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
     assert(event.sequence ==
            runtime->private_state->input_sources[0].sequence);
-    const unsigned int active_index = atomic_load_explicit(
+    const unsigned int active_index = h2_atomic_load_explicit(
         &runtime->private_state->state_publication.active_index,
-        memory_order_acquire);
+        H2_ATOMIC_ACQUIRE);
     assert(runtime->private_state->state_publication.banks[active_index]
                .event_sequence_ceiling >= event.sequence);
     assert(event.payload_size == sizeof(h2_runtime_button_down_event_t));
@@ -3449,7 +3637,7 @@ static void test_control_button_helpers_share_state_and_event_sequence(void) {
            H2_PAL_ERR_WOULD_BLOCK);
 
     const h2_runtime_sequence_t next_sequence =
-        runtime->private_state->next_sequence;
+        h2_atomic_uint_load(&runtime->private_state->next_sequence, H2_ATOMIC_SEQ_CST);
     state.updated_at_ms = 150u;
     const size_t state_locks_before = env.sync_state.locks;
     const size_t state_unlocks_before = env.sync_state.unlocks;
@@ -3457,7 +3645,7 @@ static void test_control_button_helpers_share_state_and_event_sequence(void) {
                control, 1u, &state, sizeof(state)) == H2_PAL_OK);
     assert(env.sync_state.locks == state_locks_before + 1u);
     assert(env.sync_state.unlocks == state_unlocks_before + 1u);
-    assert(runtime->private_state->next_sequence == next_sequence);
+    assert(h2_atomic_uint_load(&runtime->private_state->next_sequence, H2_ATOMIC_SEQ_CST) == next_sequence);
     h2_runtime_button_state_t published_state;
     assert(h2_runtime_component_state_button(
                runtime, 1u, &published_state) == H2_PAL_OK);
@@ -3509,7 +3697,7 @@ static void test_control_preserves_runtime_queue_drop_behavior(void) {
                NULL,
                0u) == H2_PAL_OK);
     assert(runtime->private_state->dropped_event_count == 1u);
-    assert(runtime->private_state->next_sequence == 3u);
+    assert(h2_atomic_uint_load(&runtime->private_state->next_sequence, H2_ATOMIC_SEQ_CST) == 3u);
 
     uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
     h2_runtime_event_t event = event_with_payload(payload);
@@ -3659,6 +3847,34 @@ static const h2_pal_audio_vtable_t level_audio_vtable = {
     .mic_read = level_mic_read,
     .create_track = level_create_track,
 };
+
+static void test_audio_track_allocator(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    audio_level_fixture_t f = {0};
+    const h2_pal_audio_api_t audio = {&f, &level_audio_vtable};
+    h2_runtime_config_t config = test_runtime_config(&env);
+    config.audio = &audio;
+    h2_runtime_t *runtime = NULL;
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    h2_test_allocator_t arena;
+    h2_test_allocator_init(&arena);
+    size_t baseline = env.allocator_state.live_allocations;
+    for (int custom = 0; custom < 2; ++custom) {
+        h2_audio_track_config_t track_config = {
+            .name = "arena", .allocator = custom ? &arena.api : NULL,
+        };
+        h2_pal_audio_track_t *track = NULL;
+        assert(h2_pal_audio_create_track(runtime->audio, &track_config, &track) == H2_PAL_OK);
+        assert(h2_atomic_load(&arena.live) == (custom ? 1u : 0u));
+        assert(env.allocator_state.live_allocations == baseline + (custom ? 0u : 1u));
+        assert(h2_pal_audio_track_close(track) == H2_PAL_OK);
+        assert(h2_atomic_load(&arena.live) == 0u);
+        assert(env.allocator_state.live_allocations == baseline);
+    }
+    h2_runtime_deinit(runtime);
+    assert(env.allocator_state.live_allocations == 0u);
+}
 
 static void test_audio_levels_follow_measured_frames(void) {
     test_runtime_env_t env;
@@ -3951,6 +4167,380 @@ static void test_wifi_connection_persistence(void) {
     h2_runtime_deinit(runtime);
 }
 
+typedef struct best_saved_fixture {
+    uint8_t blob[920];
+    size_t blob_len;
+    /* Mirror the Preference contract: writes stay pending until commit. */
+    uint8_t pending[920];
+    size_t pending_len;
+    h2_pal_pref_namespace_t ns;
+    int write_rc;
+    h2_pal_wifi_scan_entry_t scan[24];
+    size_t scan_count;
+    h2_pal_wifi_sta_config_t attempts[8];
+    uint32_t budgets[8], scan_budget, scan_ms, connect_ms, list_ms;
+    size_t connects, scans, saves;
+    int results[8], list_rc, scan_rc;
+    test_time_t *time;
+} best_saved_fixture_t;
+
+static int saved_pref_close(h2_pal_pref_namespace_t *ns) {
+    best_saved_fixture_t *f = ns->user;
+    f->pending_len = 0;
+    return H2_PAL_OK;
+}
+
+static int saved_pref_get(h2_pal_pref_namespace_t *ns, const h2_pal_mem_api_t *mem, const char *key,
+                          void **out, size_t *len) {
+    best_saved_fixture_t *f = ns->user;
+    assert(strcmp(key, "saved_v1") == 0);
+    f->time->now_ms += f->list_ms;
+    if (f->list_rc)
+        return f->list_rc;
+    if (!f->blob_len)
+        return H2_PAL_ERR_NOT_FOUND;
+    *out = h2_pal_mem_alloc(mem, f->blob_len);
+    assert(*out);
+    *len = f->blob_len;
+    memcpy(*out, f->blob, *len);
+    return H2_PAL_OK;
+}
+
+static int saved_pref_set(h2_pal_pref_namespace_t *ns, const char *key, const void *data,
+                          size_t len) {
+    best_saved_fixture_t *f = ns->user;
+    assert(strcmp(key, "saved_v1") == 0 && len == sizeof(f->blob));
+    if (f->write_rc)
+        return f->write_rc;
+    memcpy(f->pending, data, len);
+    f->pending_len = len;
+    return H2_PAL_OK;
+}
+
+static int saved_pref_commit(h2_pal_pref_namespace_t *ns) {
+    best_saved_fixture_t *f = ns->user;
+    if (f->pending_len) {
+        memcpy(f->blob, f->pending, f->pending_len);
+        f->blob_len = f->pending_len;
+        f->pending_len = 0;
+    }
+    return H2_PAL_OK;
+}
+
+static int saved_pref_open(void *user, const char *name, h2_pal_pref_open_mode_t mode,
+                           h2_pal_pref_namespace_t **out) {
+    best_saved_fixture_t *f = user;
+    assert(strcmp(name, "h2runtime_wifi") == 0);
+    assert(mode == H2_PAL_PREF_OPEN_READ_ONLY || mode == H2_PAL_PREF_OPEN_READ_WRITE);
+    f->ns = (h2_pal_pref_namespace_t){.user = f,
+                                      .close = saved_pref_close,
+                                      .get_blob = saved_pref_get,
+                                      .set_blob = saved_pref_set,
+                                      .commit = saved_pref_commit};
+    *out = &f->ns;
+    return H2_PAL_OK;
+}
+
+static const h2_pal_pref_vtable_t saved_pref_vtable = {.open = saved_pref_open};
+static h2_pal_result_t test_wall_get(void *user, uint64_t *out);
+static h2_pal_result_t test_wall_status(void *user, h2_pal_time_wall_status_t *out);
+
+static void test_wifi_saved_set(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    h2_pal_time_vtable_t time_vtable = *env.time.vtable;
+    time_vtable.get_wall_ms = test_wall_get;
+    time_vtable.get_wall_status = test_wall_status;
+    env.time.vtable = &time_vtable;
+    best_saved_fixture_t f = {.time = &env.time_state};
+    h2_pal_pref_api_t pref = {&f, &saved_pref_vtable};
+    h2_runtime_config_t config = test_runtime_config(&env);
+    config.pref = &pref;
+    h2_runtime_t *runtime = NULL;
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    h2_runtime_wifi_saved_network_t list[8];
+    size_t count = 99;
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK && !count);
+    h2_pal_wifi_sta_config_t network = {.ssid = "a", .ssid_len = 1};
+    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+    env.time_state.wall_valid = 1;
+    /* The canonical unsupported provider installs a real vtable whose open
+     * returns UNSUPPORTED: reads see an empty set, writes report UNSUPPORTED. */
+    {
+        h2_runtime_config_t no_pref = config;
+        no_pref.pref = h2_pal_unsupported_pref_api();
+        h2_runtime_t *bare = NULL;
+        assert(h2_runtime_init(&no_pref, &bare) == H2_PAL_OK);
+        size_t bare_count = 99;
+        assert(h2_runtime_wifi_saved_list(bare, list, 8, &bare_count) == H2_PAL_OK && !bare_count);
+        assert(h2_runtime_wifi_saved_save(bare, &network) == H2_PAL_ERR_UNSUPPORTED);
+        /* Nothing is stored, so removal answers NOT_FOUND before any write. */
+        assert(h2_runtime_wifi_saved_remove(bare, "a", 1) == H2_PAL_ERR_NOT_FOUND);
+        assert(h2_runtime_wifi_saved_clear(bare) == H2_PAL_ERR_UNSUPPORTED);
+        h2_runtime_deinit(bare);
+    }
+    env.time_state.wall_ms = UINT64_C(1800000000123);
+    network.ssid[0] = 'b';
+    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+    assert(f.blob_len == 920 && memcmp(f.blob, "H2WN\1\0\2\0", 8) == 0);
+    assert(f.blob[8 + 106] == (uint8_t)env.time_state.wall_ms);
+    h2_runtime_deinit(runtime);
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK && count == 2);
+    assert(list[0].config.ssid[0] == 'b' && list[1].config.ssid[0] == 'a');
+    assert(list[0].last_connected_at_ms == env.time_state.wall_ms);
+    assert(list[1].last_connected_at_ms == 0);
+    /* Loss of wall calibration must not undo stored recency. */
+    env.time_state.wall_valid = 0;
+    network.ssid[0] = 'a';
+    memcpy(network.password, "new-pass", 8);
+    network.password_len = 8;
+    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK && count == 2);
+    assert(list[0].config.ssid[0] == 'a' && list[0].last_connected_at_ms == 0);
+    assert(list[0].config.password_len == 8 && !memcmp(list[0].config.password, "new-pass", 8));
+    for (char name = 'c'; name <= 'i'; ++name) {
+        network.ssid[0] = name;
+        assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+    }
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK && count == 8);
+    assert(list[0].config.ssid[0] == 'i' && list[7].config.ssid[0] == 'a');
+    assert(h2_runtime_wifi_saved_remove(runtime, "b", 1) == H2_PAL_ERR_NOT_FOUND);
+    assert(h2_runtime_wifi_saved_remove(runtime, "e", 1) == H2_PAL_OK);
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK && count == 7);
+    const char expected[] = "ihgfdca";
+    for (size_t i = 0; i < count; ++i)
+        assert(list[i].config.ssid[0] == expected[i]);
+    uint8_t previous[920];
+    memcpy(previous, f.blob, sizeof(previous));
+    f.write_rc = H2_PAL_ERR_IO;
+    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_ERR_IO);
+    assert(h2_runtime_wifi_saved_remove(runtime, "a", 1) == H2_PAL_ERR_IO);
+    assert(h2_runtime_wifi_saved_clear(runtime) == H2_PAL_ERR_IO);
+    assert(!memcmp(previous, f.blob, sizeof(previous)));
+    assert(h2_runtime_wifi_saved_list(runtime, list, 1, &count) == H2_PAL_OK && count == 1);
+    assert(h2_runtime_wifi_saved_list(runtime, NULL, 0, &count) == H2_PAL_OK && !count);
+    assert(h2_runtime_wifi_saved_list(runtime, NULL, 1, &count) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_runtime_wifi_saved_save(runtime, NULL) == H2_PAL_ERR_INVALID_ARG);
+    network.ssid_len = 33;
+    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_runtime_wifi_saved_remove(runtime, "", 0) == H2_PAL_ERR_INVALID_ARG);
+    /* Reject malformed and duplicate records without exposing a partial set. */
+    const size_t bad_offsets[] = {0, 4, 6, 7, 8, 9, 16};
+    for (size_t i = 0; i < sizeof(bad_offsets) / sizeof(bad_offsets[0]); ++i) {
+        memcpy(f.blob, previous, sizeof(previous));
+        f.blob[bad_offsets[i]] = 255;
+        assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_ERR_FORMAT && !count);
+    }
+    memcpy(f.blob, previous, sizeof(previous));
+    memcpy(f.blob + 8 + 114, f.blob + 8, 114);
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_ERR_FORMAT && !count);
+    /* Only the canonical encoding decodes: padding past each length and every
+     * slot beyond the count must be zero. */
+    const size_t garbage_offsets[] = {
+        8 + 10 + previous[8],       /* one byte past the first record's SSID */
+        8 + 42 + previous[8 + 1],   /* one byte past its password */
+        8 + 7 * 114,                /* an unused slot */
+    };
+    for (size_t i = 0; i < sizeof(garbage_offsets) / sizeof(garbage_offsets[0]); ++i) {
+        memcpy(f.blob, previous, sizeof(previous));
+        f.blob[garbage_offsets[i]] = 1;
+        assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_ERR_FORMAT && !count);
+    }
+    f.blob_len--;
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_ERR_FORMAT && !count);
+    f.write_rc = 0;
+    assert(h2_runtime_wifi_saved_clear(runtime) == H2_PAL_OK);
+    h2_runtime_deinit(runtime);
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &count) == H2_PAL_OK && !count);
+    h2_runtime_deinit(runtime);
+}
+
+static int best_saved_scan(void *user, const h2_pal_wifi_scan_request_t *request,
+                           h2_pal_wifi_scan_result_fn callback, void *callback_user,
+                           uint32_t timeout) {
+    best_saved_fixture_t *f = user;
+    assert(!request);
+    ++f->scans;
+    f->scan_budget = timeout;
+    f->time->now_ms += f->scan_ms;
+    if (f->scan_rc)
+        return f->scan_rc;
+    for (size_t i = 0; i < f->scan_count; ++i)
+        if (!callback(callback_user, &f->scan[i]))
+            break;
+    return H2_PAL_OK;
+}
+
+static int best_saved_connect(void *user, const h2_pal_wifi_sta_config_t *config,
+                              uint32_t timeout) {
+    best_saved_fixture_t *f = user;
+    assert(f->connects < 8);
+    f->attempts[f->connects] = *config;
+    f->budgets[f->connects] = timeout;
+    f->time->now_ms += f->connect_ms;
+    return f->results[f->connects++];
+}
+
+static int best_saved_provision(void *user, const h2_pal_wifi_sta_config_t *config,
+                                uint32_t timeout) {
+    best_saved_fixture_t *f = user;
+    ++f->saves;
+    return best_saved_connect(user, config, timeout);
+}
+
+static void test_wifi_best_saved(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    h2_pal_time_vtable_t time_vtable = *env.time.vtable;
+    time_vtable.get_wall_ms = test_wall_get;
+    time_vtable.get_wall_status = test_wall_status;
+    env.time.vtable = &time_vtable;
+    env.time_state.wall_valid = 1;
+    env.time_state.wall_ms = UINT64_C(1800000000000);
+    best_saved_fixture_t f = {
+        .time = &env.time_state,
+        .scan_count = 3,
+        .scan_ms = 20,
+        .list_ms = 5,
+        .connect_ms = 10,
+        .scan = {{.ssid = "a", .ssid_len = 1, .rssi = -70, .bssid = {1}, .channel = 1},
+                 {.ssid = "b", .ssid_len = 1, .rssi = -20, .bssid = {2}, .channel = 6},
+                 {.ssid = "a", .ssid_len = 1, .rssi = -40, .bssid = {3}, .channel = 11}}};
+    const h2_pal_wifi_sta_vtable_t sta_vtable = {.scan = best_saved_scan,
+                                                 .connect = best_saved_connect,
+                                                 .connect_and_save = best_saved_provision};
+
+    const h2_pal_wifi_sta_api_t sta = {&f, &sta_vtable};
+    const h2_pal_pref_api_t pref = {&f, &saved_pref_vtable};
+    h2_runtime_config_t config = test_runtime_config(&env);
+    config.wifi_sta = &sta;
+    config.pref = &pref;
+    h2_runtime_t *runtime = NULL;
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    h2_pal_wifi_sta_config_t network = {.ssid = "b", .ssid_len = 1};
+    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+    network.ssid[0] = 'a';
+    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+    h2_pal_wifi_sta_config_t provision = {.ssid = "phone", .ssid_len = 5};
+    f.results[0] = H2_PAL_ERR_IO;
+    assert(h2_runtime_wifi_connect_and_save(runtime, &provision, 100) == H2_PAL_ERR_IO);
+    h2_runtime_wifi_saved_network_t list[8];
+    size_t saved_count = 0;
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &saved_count) == H2_PAL_OK &&
+           saved_count == 2);
+    f.connects = 0;
+    f.results[0] = H2_PAL_OK;
+    assert(h2_runtime_wifi_connect_and_save(runtime, &provision, 100) == H2_PAL_OK);
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &saved_count) == H2_PAL_OK &&
+           saved_count == 3);
+    assert(!memcmp(list[0].config.ssid, "phone", 5));
+    f.connects = 0;
+    assert(h2_runtime_wifi_connect_best_saved(NULL, 100) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
+    assert(f.connects == 1 && f.attempts[0].ssid[0] == 'b');
+    assert(f.attempts[0].bssid_set && f.attempts[0].bssid[0] == 2 && f.attempts[0].channel == 6);
+    assert(f.scan_budget == 95 && f.budgets[0] == 75);
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &saved_count) == H2_PAL_OK);
+    assert(list[0].config.ssid[0] == 'b' && list[0].last_connected_at_ms == env.time_state.wall_ms);
+    env.time_state.wall_ms += 1000;
+    f.connects = 0;
+    f.results[0] = H2_PAL_ERR_IO;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
+    assert(f.connects == 2 && f.attempts[1].ssid[0] == 'a');
+    assert(f.attempts[1].bssid[0] == 3 && f.attempts[1].channel == 11);
+    assert(f.budgets[0] == 75 && f.budgets[1] == 65);
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &saved_count) == H2_PAL_OK);
+    assert(list[0].config.ssid[0] == 'a' && list[0].last_connected_at_ms == env.time_state.wall_ms);
+    uint8_t previous[920];
+    memcpy(previous, f.blob, sizeof(previous));
+    f.connects = 0;
+    f.results[1] = H2_PAL_ERR_UNAVAILABLE;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_UNAVAILABLE);
+    assert(f.connects == 2);
+    assert(!memcmp(previous, f.blob, sizeof(previous)));
+    f.connects = 0;
+    f.connect_ms = 75;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_TIMEOUT);
+    assert(f.connects == 1);
+    f.connects = 0;
+    f.scan_ms = 100;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_TIMEOUT);
+    assert(!f.connects);
+    f.scan_ms = 20;
+    f.connect_ms = 10;
+    f.results[0] = H2_PAL_OK;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 0) == H2_PAL_OK);
+    assert(f.budgets[0] == 14975);
+    f.connects = 0;
+    f.scan[2].rssi = -20;
+    env.time_state.wall_valid = 0;
+    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
+    assert(f.attempts[0].ssid[0] == 'a');
+    /* A matching AP after more than SCAN_MAX_RESULTS must still be seen. */
+    f.connects = 0;
+    for (size_t i = 0; i < 23; ++i)
+        f.scan[i] = (h2_pal_wifi_scan_entry_t){.ssid = "other", .ssid_len = 5};
+    f.scan[23] = (h2_pal_wifi_scan_entry_t){.ssid = "a", .ssid_len = 1, .rssi = -30};
+    f.scan_count = 24;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
+    assert(f.connects == 1 && f.attempts[0].ssid[0] == 'a');
+    f.connects = 0;
+    f.scan_count = 23;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_NOT_FOUND);
+    assert(!f.connects);
+    f.scan_count = 0;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_NOT_FOUND);
+    f.scan_rc = H2_PAL_ERR_IO;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_IO);
+    f.scan_rc = 0;
+    /* Unsupported storage reads as an empty set, so there is nothing to try;
+     * a real storage error still propagates. */
+    f.list_rc = H2_PAL_ERR_UNSUPPORTED;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_NOT_FOUND);
+    f.list_rc = H2_PAL_ERR_IO;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_IO);
+    f.list_rc = 0;
+    /* The stored entry keeps the credential as provisioned: a candidate pinned
+     * to the AP that happened to be strongest must not be written back. */
+    f.scan_count = 1;
+    f.scan[0] = (h2_pal_wifi_scan_entry_t){
+        .ssid = "a", .ssid_len = 1, .rssi = -30, .channel = 11, .bssid = {3}};
+    network.ssid[0] = 'a';
+    network.bssid_set = 0;
+    network.channel = 0;
+    assert(h2_runtime_wifi_saved_save(runtime, &network) == H2_PAL_OK);
+    f.connects = 0;
+    f.results[0] = H2_PAL_OK;
+    f.results[1] = H2_PAL_OK;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
+    assert(f.connects == 1 && f.attempts[0].bssid_set == 1 && f.attempts[0].channel == 11);
+    assert(h2_runtime_wifi_saved_list(runtime, list, 8, &saved_count) == H2_PAL_OK);
+    assert(list[0].config.ssid[0] == 'a' && !list[0].config.bssid_set && !list[0].config.channel);
+    /* A failed bookkeeping write never turns a working connection into an
+     * error, and it leaves the stored set untouched. */
+    memcpy(previous, f.blob, sizeof(previous));
+    f.write_rc = H2_PAL_ERR_IO;
+    f.connects = 0;
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_OK);
+    assert(f.connects == 1 && !memcmp(previous, f.blob, sizeof(previous)));
+    f.connects = 0;
+    size_t provisions = f.saves;
+    assert(h2_runtime_wifi_connect_and_save(runtime, &provision, 100) == H2_PAL_OK);
+    assert(f.saves == provisions + 1 && !memcmp(previous, f.blob, sizeof(previous)));
+    f.write_rc = 0;
+    f.connects = 0;
+    size_t scans = f.scans;
+    assert(h2_runtime_wifi_saved_clear(runtime) == H2_PAL_OK);
+    assert(h2_runtime_wifi_connect_best_saved(runtime, 100) == H2_PAL_ERR_NOT_FOUND);
+    assert(f.scans == scans && !f.connects);
+
+    assert(f.saves == 3); /* Best-saved must never call PAL connect_and_save. */
+    h2_runtime_deinit(runtime);
+}
+
 static h2_pal_result_t test_wall_set(void *user, uint64_t wall_ms) {
     test_time_t *time = user;
     if (time->sleep_rc == H2_PAL_OK) {
@@ -4015,11 +4605,14 @@ static void test_time_adjusted_event(void) {
 
 int main(void) {
     test_audio_shared_state();
+    test_audio_track_allocator();
     test_audio_levels_follow_measured_frames();
     test_audio_track_wrapper_forwards_absent_operations();
     test_audio_level_timestamp_survives_rollover();
     test_audio_level_reads_unaligned_frames();
     test_wifi_connection_persistence();
+    test_wifi_saved_set();
+    test_wifi_best_saved();
     test_time_adjusted_event();
     test_runtime_firmware_info_provider();
     test_runtime_capabilities_are_bound_at_init();
@@ -4074,6 +4667,10 @@ int main(void) {
     test_input_start_without_mapped_input_is_noop();
     test_input_double_start_is_rejected();
     test_input_start_after_worker_fault_is_rejected();
+    test_input_worker_keeps_running_after_poll_error();
+    test_input_fault_releases_held_buttons();
+    test_input_fault_release_never_precedes_its_snapshot();
+    test_input_fault_release_with_full_queue_keeps_state_released();
     test_input_lifecycle_is_closed_during_test_session();
     test_station_snapshot_unavailable_without_mutex();
     test_input_snapshot_does_not_create_condition();

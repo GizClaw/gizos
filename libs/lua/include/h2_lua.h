@@ -33,9 +33,11 @@ typedef struct h2_lua_resource {
 #define H2_LUA_STORAGE_NAME_MAX 32u
 /** Upper bound for h2_lua_storage_config_t.app_max_files. */
 #define H2_LUA_STORAGE_MAX_FILES 64u
+/** Maximum scalar keys in one app KV snapshot. */
+#define H2_LUA_KV_MAX_KEYS 128u
 
 /**
- * Backing for the per-app `storage` Lua module.
+ * Backing for the per-app `storage` and `kv` Lua modules.
  *
  * A job submitted with an app id reads and writes only files directly under
  * `<root>/<app_id>/`. A NULL fs leaves storage unconfigured: `storage` still
@@ -48,15 +50,21 @@ typedef struct h2_lua_storage_config {
   /** Directory in the fs namespace, for example "/data/lua". Created on the
    * first write when missing. Copied at create; no trailing '/'. */
   const char *root;
-  /** Bytes of file content one app may keep. Zero selects 64 KiB. */
+  /** Bytes of file content, including the complete encoded KV snapshot, one app
+   * may keep. Zero selects 64 KiB. */
   size_t app_quota_bytes;
   /** Files one app may keep, at most H2_LUA_STORAGE_MAX_FILES. Zero selects
-   * 16. */
+   * 16. A present KV snapshot consumes one file slot. */
   size_t app_max_files;
 } h2_lua_storage_config_t;
 
 typedef struct h2_lua_host_config {
   h2_runtime_t *runtime;
+  /** Optional allocator for everything the Host allocates: Host and job
+   * state, queues, buffers, the VM heap reservation and, without one, each
+   * VM block. NULL uses Runtime mem. Borrowed, not copied: the api and its
+   * user context must stay valid until h2_lua_host_destroy() returns. */
+  const h2_pal_mem_api_t *allocator;
   size_t worker_count;
   size_t worker_stack_size;
   size_t max_jobs;
@@ -87,6 +95,32 @@ typedef struct h2_lua_host_config {
   /** Exact and prefix registrations combined. Zero selects 16; values above
    * H2_LUA_CAPABILITY_CAPACITY_MAX are invalid. Allocated at host creation. */
   size_t capability_capacity;
+  /** Optional shared VM heap in bytes. Zero (default) allocates each VM block
+   * directly from the Host allocator. Nonzero reserves this many bytes from
+   * the Host allocator at Host creation and serves every job's VM object, Lua state,
+   * userdata, strings and tables from it with TLSF, serialized by a Runtime
+   * Sync mutex. Callbacks, events, tasks and framebuffer still use the Host allocator.
+   *
+   * The reservation is one block when the Host allocator has one; otherwise the Host
+   * shrinks the request by an eighth per refusal and takes up to 16 blocks of
+   * at least 64 KiB (only the final remainder may be smaller), each added to
+   * the same TLSF heap. The largest block is taken first, so the pools that
+   * can serve a big single allocation come first and the smaller blocks only
+   * add capacity; a single VM allocation must still fit inside one block. When the bytes cannot be
+   * reserved within those limits create returns H2_PAL_ERR_NO_MEMORY with no
+   * Host and no leaked allocations.
+   *
+   * Must be at least tlsf_size() + tlsf_pool_overhead() +
+   * 8 * (tlsf_block_size_min() + tlsf_alloc_overhead()), and its usable pool
+   * must not exceed tlsf_block_size_max(); otherwise create returns
+   * H2_PAL_ERR_INVALID_ARG.
+   *
+   * Independent of the unchanged per-VM vm_memory_limit_bytes quota. Pool
+   * exhaustion returns allocation failure to Lua, allowing emergency GC
+   * before OOM. Size for all simultaneously live VMs plus TLSF metadata and
+   * per-block overhead; measure the workload rather than assuming the quota.
+   * Destroy releases every block after all jobs and VMs are released. */
+  size_t vm_heap_bytes;
 } h2_lua_host_config_t;
 
 /** Creates a stopped Host that borrows, but never consumes or destroys,

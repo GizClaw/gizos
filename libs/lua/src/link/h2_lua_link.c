@@ -126,6 +126,7 @@ typedef struct h2_lua_link_reader {
 
 typedef struct h2_lua_link {
   h2_runtime_t *runtime;
+  const h2_pal_mem_api_t *allocator;
   h2_lua_link_config_t config;
   h2_pal_mutex_t *mutex;
   h2_pal_cond_t *cond;
@@ -214,7 +215,7 @@ static h2_bleikcp_api_t link_bleikcp_api(const h2_lua_link_t *link) {
       .time = link->runtime->time,
       .sync = link->runtime->sync,
       .system_event = link->runtime->system_event,
-      .allocator = link->runtime->mem,
+      .allocator = link->allocator,
   };
 }
 
@@ -1507,7 +1508,7 @@ static void link_destroy(void *user) {
   }
   (void)h2_pal_cond_destroy(link->runtime->sync, link->cond);
   (void)h2_pal_mutex_destroy(link->runtime->sync, link->mutex);
-  h2_pal_mem_free(link->runtime->mem, link);
+  h2_pal_mem_free(link->allocator, link);
 }
 
 static const h2_lua_link_hooks_t s_link_hooks = {
@@ -1551,7 +1552,7 @@ h2_pal_result_t h2_lua_link_enable(h2_lua_host_t *host,
        config->scan_type != H2_PAL_BLE_SCAN_TYPE_EXTENDED)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  if (atomic_load(&host->started) != 0 || host->link_hooks != NULL) {
+  if (h2_atomic_load(&host->started) != 0 || host->link_hooks != NULL) {
     return H2_PAL_ERR_INVALID_STATE;
   }
   runtime = host->config.runtime;
@@ -1560,24 +1561,25 @@ h2_pal_result_t h2_lua_link_enable(h2_lua_host_t *host,
       runtime->sync == NULL) {
     return H2_PAL_ERR_UNSUPPORTED;
   }
-  link = h2_pal_mem_alloc(runtime->mem, sizeof(*link));
+  link = h2_pal_mem_alloc(host->config.allocator, sizeof(*link));
   if (link == NULL) {
     return H2_PAL_ERR_NO_MEMORY;
   }
   memset(link, 0, sizeof(*link));
   link->runtime = runtime;
+  link->allocator = host->config.allocator;
   link->config = *config;
   rc = h2_pal_mutex_create(runtime->sync,
                            &(h2_pal_mutex_config_t){
                                .name = s_session_task_name,
-                               .allocator = runtime->mem,
+                               .allocator = link->allocator,
                            },
                            &link->mutex);
   if (rc == H2_PAL_OK) {
     rc = h2_pal_cond_create(runtime->sync,
                             &(h2_pal_cond_config_t){
                                 .name = s_session_task_name,
-                                .allocator = runtime->mem,
+                                .allocator = link->allocator,
                             },
                             &link->cond);
   }
@@ -1585,7 +1587,7 @@ h2_pal_result_t h2_lua_link_enable(h2_lua_host_t *host,
     if (link->mutex != NULL) {
       (void)h2_pal_mutex_destroy(runtime->sync, link->mutex);
     }
-    h2_pal_mem_free(runtime->mem, link);
+    h2_pal_mem_free(link->allocator, link);
     return rc;
   }
   host->link_user = link;

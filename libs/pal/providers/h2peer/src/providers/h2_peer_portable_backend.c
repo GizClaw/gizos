@@ -7,21 +7,21 @@
 #include "utils.h"
 
 #include <errno.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <string.h>
 
 static size_t h2_peer_portable_live_connections;
-static atomic_flag h2_peer_portable_global_lock = ATOMIC_FLAG_INIT;
+static h2_atomic_flag_t h2_peer_portable_global_lock = {0};
 
 static void h2_peer_portable_lock_globals(void) {
-    while (atomic_flag_test_and_set_explicit(&h2_peer_portable_global_lock,
-                                             memory_order_acquire)) {
+    while (h2_atomic_flag_test_and_set(&h2_peer_portable_global_lock,
+                                      H2_ATOMIC_ACQUIRE)) {
     }
 }
 
 static void h2_peer_portable_unlock_globals(void) {
-    atomic_flag_clear_explicit(&h2_peer_portable_global_lock,
-                               memory_order_release);
+    h2_atomic_flag_clear(&h2_peer_portable_global_lock,
+                         H2_ATOMIC_RELEASE);
 }
 
 static h2_pal_result_t
@@ -52,7 +52,7 @@ static void h2_peer_portable_global_release(void) {
 }
 
 static void *h2_peer_portable_alloc(h2_pal_webrtc_peer_t *peer, size_t len) {
-    void *ptr = h2_pal_mem_alloc(peer->owner->config.mem, len);
+    void *ptr = h2_pal_mem_alloc(h2_peer_mem(peer), len);
     if (ptr != NULL) {
         memset(ptr, 0, len);
     }
@@ -60,7 +60,7 @@ static void *h2_peer_portable_alloc(h2_pal_webrtc_peer_t *peer, size_t len) {
 }
 
 static void h2_peer_portable_free(h2_pal_webrtc_peer_t *peer, void *ptr) {
-    h2_pal_mem_free(peer->owner->config.mem, ptr);
+    h2_pal_mem_free(h2_peer_mem(peer), ptr);
 }
 
 static h2_pal_webrtc_channel_t *
@@ -76,7 +76,8 @@ h2_peer_portable_find_channel(h2_pal_webrtc_peer_t *peer, uint16_t stream_id) {
 
 static void h2_peer_portable_emit_peer_state(h2_pal_webrtc_peer_t *peer,
                                              h2_pal_webrtc_peer_state_t state) {
-    if (peer->closed || peer->state == state) {
+    if (h2_atomic_load(&peer->closed) ||
+        (h2_pal_webrtc_peer_state_t)h2_atomic_load(&peer->state) == state) {
         return;
     }
     h2_peer_webrtc_emit_peer_state(peer, state);
@@ -101,7 +102,7 @@ h2_peer_portable_channel_type(const h2_pal_webrtc_channel_t *channel) {
 
 static void h2_peer_portable_on_local_sdp(char *sdp, void *user) {
     h2_pal_webrtc_peer_t *peer = (h2_pal_webrtc_peer_t *)user;
-    if (peer == NULL || peer->closed || sdp == NULL) {
+    if (peer == NULL || h2_atomic_load(&peer->closed) || sdp == NULL) {
         return;
     }
     h2_pal_webrtc_str_t value = {
@@ -113,7 +114,7 @@ static void h2_peer_portable_on_local_sdp(char *sdp, void *user) {
 
 static void h2_peer_portable_on_opus(uint8_t *data, size_t len, void *user) {
     h2_pal_webrtc_peer_t *peer = (h2_pal_webrtc_peer_t *)user;
-    if (peer == NULL || peer->closed || (data == NULL && len != 0u) ||
+    if (peer == NULL || h2_atomic_load(&peer->closed) || (data == NULL && len != 0u) ||
         len > H2_PAL_WEBRTC_OPUS_MAX_PACKET_SIZE) {
         return;
     }
@@ -122,7 +123,7 @@ static void h2_peer_portable_on_opus(uint8_t *data, size_t len, void *user) {
 
 static void h2_peer_portable_on_state(PeerConnectionState state, void *user) {
     h2_pal_webrtc_peer_t *peer = (h2_pal_webrtc_peer_t *)user;
-    if (peer == NULL || peer->closed ||
+    if (peer == NULL || h2_atomic_load(&peer->closed) ||
         peer->stream_reset_failure != H2_PAL_OK) {
         return;
     }
@@ -154,12 +155,12 @@ static void h2_peer_portable_on_state(PeerConnectionState state, void *user) {
 static h2_pal_result_t h2_peer_portable_on_message(
     char *message, size_t len, void *user, uint16_t stream_id, int is_text) {
     h2_pal_webrtc_peer_t *peer = (h2_pal_webrtc_peer_t *)user;
-    if (peer == NULL || peer->closed) {
+    if (peer == NULL || h2_atomic_load(&peer->closed)) {
         return H2_PAL_OK;
     }
     h2_pal_webrtc_channel_t *channel =
         h2_peer_portable_find_channel(peer, stream_id);
-    if (channel == NULL || !channel->open) {
+    if (channel == NULL || !h2_atomic_load(&channel->open)) {
         return H2_PAL_OK;
     }
     return h2_peer_webrtc_emit_channel_message(
@@ -187,16 +188,16 @@ static int h2_peer_portable_on_remote_channel(const SctpRemoteChannel *remote,
 static void h2_peer_portable_on_local_channel_open(uint16_t stream_id,
                                                    void *user) {
     h2_pal_webrtc_peer_t *peer = (h2_pal_webrtc_peer_t *)user;
-    if (peer == NULL || peer->closed) {
+    if (peer == NULL || h2_atomic_load(&peer->closed)) {
         return;
     }
     h2_pal_webrtc_channel_t *channel =
         h2_peer_portable_find_channel(peer, stream_id);
     if (channel == NULL || channel->remote_created || !channel->wire_opened ||
-        channel->open) {
+        h2_atomic_load(&channel->open)) {
         return;
     }
-    channel->open = 1;
+    h2_atomic_store_explicit(&channel->open, 1, H2_ATOMIC_SEQ_CST);
     h2_peer_portable_emit_channel_state(channel, H2_PAL_WEBRTC_CHANNEL_OPEN);
 }
 
@@ -221,7 +222,7 @@ h2_peer_portable_channel_open(h2_pal_webrtc_channel_t *channel) {
 
 static void h2_peer_portable_on_sctp_open(void *user) {
     h2_pal_webrtc_peer_t *peer = (h2_pal_webrtc_peer_t *)user;
-    if (peer == NULL || peer->closed) {
+    if (peer == NULL || h2_atomic_load(&peer->closed)) {
         return;
     }
     peer->production_sctp_open = 1;
@@ -246,7 +247,7 @@ static void h2_peer_portable_on_sctp_open(void *user) {
         }
         h2_pal_webrtc_channel_t *current =
             h2_peer_portable_find_channel(peer, stream_id);
-        if (peer->closed || current != channel ||
+        if (h2_atomic_load(&peer->closed) || current != channel ||
             current->generation != generation) {
             return;
         }
@@ -280,7 +281,8 @@ h2_peer_portable_create_connection(h2_pal_webrtc_peer_t *peer) {
     PeerConfiguration config;
     memset(&config, 0, sizeof(config));
     config.log = peer->owner->config.log;
-    config.mem = peer->owner->config.mem;
+    config.mem = h2_peer_mem(peer);
+    config.allocator = peer->allocator;
     config.net = peer->owner->config.net;
     config.time = peer->owner->config.time;
     config.crypto = peer->owner->config.crypto;
@@ -392,7 +394,7 @@ h2_pal_result_t h2_peer_portable_send_opus(h2_pal_webrtc_peer_t *peer,
                                            const uint8_t *opus,
                                            size_t opus_len) {
     if (peer->production_pc == NULL ||
-        peer->state != H2_PAL_WEBRTC_PEER_CONNECTED) {
+        h2_atomic_load(&peer->state) != H2_PAL_WEBRTC_PEER_CONNECTED) {
         return H2_PAL_ERR_INVALID_STATE;
     }
     int result = peer_connection_send_audio(
@@ -408,7 +410,7 @@ h2_pal_result_t h2_peer_portable_channel_send(h2_pal_webrtc_channel_t *channel,
                                               const uint8_t *data, size_t len,
                                               int is_text) {
     if (channel == NULL || channel->owner == NULL ||
-        channel->owner->production_pc == NULL || !channel->open) {
+        channel->owner->production_pc == NULL || !h2_atomic_load(&channel->open)) {
         return H2_PAL_ERR_INVALID_STATE;
     }
     Sctp *sctp = (Sctp *)peer_connection_get_sctp(

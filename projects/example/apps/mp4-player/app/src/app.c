@@ -2,13 +2,19 @@
 #include "h2_smoke_mp4_player_task_names.h"
 
 #include <inttypes.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdio.h>
 #include <string.h>
 
 #define H2_MP4_PLAYER_MAX_AUDIO_CHANNELS 8u
 #ifndef H2_MP4_PLAYER_VIDEO_BUFFER_COUNT
 #define H2_MP4_PLAYER_VIDEO_BUFFER_COUNT 3u
+#endif
+#ifndef H2_MP4_PLAYER_DECODER_TASK_STACK_BYTES
+#define H2_MP4_PLAYER_DECODER_TASK_STACK_BYTES 32768u
+#endif
+#ifndef H2_MP4_PLAYER_PROGRESS_LOG_INTERVAL
+#define H2_MP4_PLAYER_PROGRESS_LOG_INTERVAL 0u
 #endif
 #define H2_MP4_PLAYER_QUEUE_POLL_MS 50u
 
@@ -26,7 +32,7 @@ typedef struct player_presentation_buffer {
     int64_t pts_us;
     int64_t duration_us;
     uint32_t generation;
-    atomic_int consumers;
+    int consumers;
 } player_presentation_buffer_t;
 
 typedef struct player_pipeline {
@@ -44,10 +50,11 @@ typedef struct player_pipeline {
     h2_pal_queue_t *free_video;
     h2_pal_queue_t *ready_video;
     h2_pal_queue_t *ready_audio;
+    h2_pal_mutex_t *buffer_mutex;
     player_presentation_buffer_t buffers[H2_MP4_PLAYER_VIDEO_BUFFER_COUNT];
-    atomic_int result;
-    atomic_int stop;
-    atomic_size_t frame_count;
+    h2_atomic_int_t result;
+    h2_atomic_int_t stop;
+    h2_atomic_size_t frame_count;
 } player_pipeline_t;
 
 typedef struct player_fs_source {
@@ -205,11 +212,11 @@ static h2_pal_result_t write_audio_block(
 }
 
 static int pipeline_should_stop(player_pipeline_t *pipeline) {
-    return atomic_load(&pipeline->stop) != 0;
+    return h2_atomic_load(&pipeline->stop) != 0;
 }
 
 static void pipeline_stop(player_pipeline_t *pipeline) {
-    atomic_store(&pipeline->stop, 1);
+    h2_atomic_store(&pipeline->stop, 1);
 }
 
 static int pipeline_poll_stop(player_pipeline_t *pipeline) {
@@ -226,7 +233,7 @@ static void pipeline_fail(
     const char *stage,
     h2_pal_result_t result) {
     int expected = H2_PAL_OK;
-    if (atomic_compare_exchange_strong(
+    if (h2_atomic_compare_exchange_strong(
             &pipeline->result,
             &expected,
             result)) {
@@ -290,9 +297,17 @@ static void release_presentation_buffer(
     player_pipeline_t *pipeline,
     size_t index) {
     player_presentation_buffer_t *buffer = &pipeline->buffers[index];
-    if (atomic_fetch_sub(&buffer->consumers, 1) != 1) {
+    const h2_pal_result_t lock_result = h2_pal_mutex_lock(
+        pipeline->runtime->sync, pipeline->buffer_mutex);
+    if (lock_result != H2_PAL_OK) {
+        pipeline_fail(pipeline, "buffer-release-lock", lock_result);
         return;
     }
+    const int remaining = --buffer->consumers;
+    const int recycle = remaining == 0;
+    (void)h2_pal_mutex_unlock(
+        pipeline->runtime->sync, pipeline->buffer_mutex);
+    if (!recycle) return;
     while (h2_pal_queue_send(
                pipeline->runtime->queue,
                pipeline->free_video,
@@ -452,12 +467,14 @@ static void decoder_task(void *context) {
         }
 
         const int consumers = pipeline->track == NULL ? 1 : 2;
-        atomic_store(&pipeline->buffers[index].consumers, consumers);
+        pipeline->buffers[index].consumers = consumers;
         if (pipeline->track != NULL) {
             result = pipeline_queue_send(
                 pipeline,
                 pipeline->ready_audio,
                 &index);
+            /* Audio may need several decoded frames to fill its first block.
+             * Keep producing frames; waiting here would starve that writer. */
         }
         if (result == H2_PAL_OK) {
             result = pipeline_queue_send(
@@ -547,7 +564,7 @@ static void video_writer_task(void *context) {
             pipeline_fail(pipeline, "video-write", result);
         } else {
             const size_t frame_count =
-                atomic_fetch_add(&pipeline->frame_count, 1u) + 1u;
+                h2_atomic_fetch_add(&pipeline->frame_count, 1u) + 1u;
             if (frame_count == 1u) {
                 player_log(
                     pipeline->runtime,
@@ -565,6 +582,20 @@ static void video_writer_task(void *context) {
                     }
                 }
             }
+#if H2_MP4_PLAYER_PROGRESS_LOG_INTERVAL > 0
+            if (frame_count % H2_MP4_PLAYER_PROGRESS_LOG_INTERVAL == 0u) {
+                char message[H2_PAL_LOG_MESSAGE_MAX];
+                (void)snprintf(
+                    message,
+                    sizeof(message),
+                    "H2_MP4_PLAYER_FRAME index=%zu",
+                    frame_count);
+                player_log(
+                    pipeline->runtime,
+                    H2_PAL_LOG_INFO,
+                    message);
+            }
+#endif
             if (pipeline->config->max_frames != 0u &&
                 frame_count >= pipeline->config->max_frames) {
                 pipeline_stop(pipeline);
@@ -639,7 +670,7 @@ static void audio_writer_task(void *context) {
         }
         release_presentation_buffer(pipeline, index);
     }
-    if (atomic_load(&pipeline->result) == H2_PAL_OK &&
+    if (h2_atomic_load(&pipeline->result) == H2_PAL_OK &&
         pipeline->pending_values != 0u) {
         const uint8_t channels = pipeline->audio_channels;
         const size_t flush_values =
@@ -668,7 +699,7 @@ h2_pal_result_t h2_smoke_mp4_player_run(
     if (runtime == NULL || config == NULL || runtime->mem == NULL ||
         runtime->video_decoder == NULL || runtime->display == NULL ||
         runtime->time == NULL || runtime->task == NULL ||
-        runtime->queue == NULL ||
+        runtime->queue == NULL || runtime->sync == NULL ||
         (config->require_audio &&
          (runtime->audio_decoder == NULL || runtime->audio == NULL)) ||
         (config->display_mode != H2_SMOKE_MP4_PLAYER_DISPLAY_EXACT &&
@@ -883,9 +914,23 @@ h2_pal_result_t h2_smoke_mp4_player_run(
         .audio_channels = media.audio_channels,
         .pending_pcm = pending_pcm,
     };
-    atomic_init(&pipeline.result, H2_PAL_OK);
-    atomic_init(&pipeline.stop, 0);
-    atomic_init(&pipeline.frame_count, 0u);
+    if (h2_atomic_init(&pipeline.result, H2_PAL_OK) != H2_ATOMIC_OK ||
+        h2_atomic_init(&pipeline.stop, 0) != H2_ATOMIC_OK ||
+        h2_atomic_init(&pipeline.frame_count, 0u) != H2_ATOMIC_OK) {
+        result = player_fail(runtime, "pipeline-atomic", H2_PAL_ERR_NO_MEMORY);
+        goto close_pipeline;
+    }
+    const h2_pal_mutex_config_t buffer_mutex_config = {
+        .name = "mp4-buffer-ref",
+        .allocator = runtime->mem,
+        .flags = H2_PAL_MUTEX_FLAG_NONE,
+    };
+    result = h2_pal_mutex_create(
+        runtime->sync, &buffer_mutex_config, &pipeline.buffer_mutex);
+    if (result != H2_PAL_OK) {
+        result = player_fail(runtime, "buffer-mutex", result);
+        goto close_pipeline;
+    }
     const size_t video_stride_bytes =
         (size_t)video_rect.width * sizeof(uint16_t);
     if ((size_t)video_rect.height > SIZE_MAX / video_stride_bytes) {
@@ -905,7 +950,7 @@ h2_pal_result_t h2_smoke_mp4_player_run(
         }
         pipeline.buffers[i].video_capacity = video_bytes;
         pipeline.buffers[i].video_stride_bytes = video_stride_bytes;
-        atomic_init(&pipeline.buffers[i].consumers, 0);
+        pipeline.buffers[i].consumers = 0;
     }
     player_log(
         runtime, H2_PAL_LOG_INFO, "H2_MP4_PLAYER_STAGE video-buffers");
@@ -969,7 +1014,7 @@ h2_pal_result_t h2_smoke_mp4_player_run(
     };
     const h2_pal_task_options_t decoder_task_options = {
         .name = h2_smoke_mp4_player_decoder_task_name,
-        .min_stack_size = 32768u,
+        .min_stack_size = H2_MP4_PLAYER_DECODER_TASK_STACK_BYTES,
     };
     player_log(runtime, H2_PAL_LOG_INFO, "H2_MP4_PLAYER_OPEN");
     if (track != NULL) {
@@ -1018,9 +1063,12 @@ h2_pal_result_t h2_smoke_mp4_player_run(
             pipeline_fail(&pipeline, "audio-join", join_result);
         }
     }
-    result = (h2_pal_result_t)atomic_load(&pipeline.result);
+    result = (h2_pal_result_t)h2_atomic_load(&pipeline.result);
 
 close_pipeline:
+    h2_atomic_destroy(&pipeline.result);
+    h2_atomic_destroy(&pipeline.stop);
+    h2_atomic_destroy(&pipeline.frame_count);
     if (pipeline.free_video != NULL) {
         h2_pal_queue_destroy(runtime->queue, pipeline.free_video);
     }
@@ -1033,6 +1081,9 @@ close_pipeline:
     for (size_t i = 0u; i < H2_MP4_PLAYER_VIDEO_BUFFER_COUNT; ++i) {
         h2_pal_mem_free(runtime->mem, pipeline.buffers[i].pcm);
         h2_pal_mem_free(runtime->mem, pipeline.buffers[i].video);
+    }
+    if (pipeline.buffer_mutex != NULL) {
+        (void)h2_pal_mutex_destroy(runtime->sync, pipeline.buffer_mutex);
     }
 close_audio:
     if (track != NULL) {

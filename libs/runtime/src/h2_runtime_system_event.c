@@ -552,6 +552,9 @@ static h2_pal_result_t map_modem_event(
         h2_runtime_system_event_modem_signal_t *runtime =
             &out_payload->modem_signal;
         runtime->rssi_dbm = pal->rssi_dbm;
+        runtime->rssi_valid = pal->rssi_valid;
+        runtime->rsrp_dbm = pal->rsrp_dbm;
+        runtime->rsrp_valid = pal->rsrp_valid;
         runtime->ber = pal->ber;
         runtime->rat = (h2_runtime_system_modem_rat_t)pal->rat;
         *out_payload_size = sizeof(*runtime);
@@ -731,9 +734,9 @@ static int h2_runtime_system_event_handler(void *user, const h2_pal_system_event
     if (!h2_runtime_ready(runtime) || event == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    if (atomic_load_explicit(
+    if (h2_atomic_load_explicit(
             &runtime->private_state->system_event_active,
-            memory_order_acquire) == 0) {
+            H2_ATOMIC_ACQUIRE) == 0) {
         return H2_PAL_ERR_CLOSED;
     }
 
@@ -778,9 +781,9 @@ h2_pal_result_t h2_runtime_start_system_events(h2_runtime_t *runtime) {
     if (rc != H2_PAL_OK) {
         return rc;
     }
-    atomic_store_explicit(
+    h2_atomic_store_explicit(
         &runtime->private_state->system_event_active, 1,
-        memory_order_release);
+        H2_ATOMIC_RELEASE);
 
     const size_t count = sizeof(s_system_event_types) / sizeof(s_system_event_types[0]);
     for (size_t i = 0u; i < count; ++i) {
@@ -812,9 +815,9 @@ void h2_runtime_stop_system_events(h2_runtime_t *runtime) {
         return;
     }
     const h2_pal_system_event_api_t *api = runtime->system_event;
-    int was_active = atomic_exchange_explicit(
+    int was_active = h2_atomic_exchange_explicit(
         &runtime->private_state->system_event_active, 0,
-        memory_order_acq_rel);
+        H2_ATOMIC_ACQ_REL);
     if (api == NULL) {
         return;
     }

@@ -35,6 +35,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic/providers/c11",
         "//libs/pal",
         "//libs/pal/providers/desktop/pal_core",
         "//libs/pal/providers/pion",
@@ -60,6 +61,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic/providers/c11",
         "//libs/pal",
         "//libs/pal/providers/desktop/app_support",
         "//libs/pal/providers/desktop/pal_core:webrtc_test_providers",

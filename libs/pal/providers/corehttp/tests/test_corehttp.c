@@ -1,3 +1,4 @@
+#include "h2_test_allocator.h"
 #include "fake_net.h"
 
 #include <limits.h>
@@ -992,7 +993,50 @@ static int test_failure_diagnostics(void) {
     return 0;
 }
 
+static int test_request_allocator(void) {
+    for (int custom = 0; custom < 2; ++custom) {
+        h2_test_allocator_t provider_mem, request_mem;
+        h2_test_allocator_init(&provider_mem);
+        h2_test_allocator_init(&request_mem);
+        fake_http_platform_t platform;
+        fake_http_platform_init(&platform);
+        platform.mem = provider_mem.api;
+        platform.recv_fragment = 3u;
+        fake_http_platform_add_response(&platform,
+            "HTTP/1.1 302 Found\r\nLocation: ../next?q=1\r\nContent-Length: 0\r\n\r\n");
+        fake_http_platform_add_response(&platform,
+            "HTTP/1.1 200 OK\r\nX-Header: value\r\nContent-Length: 2\r\n\r\nok");
+        h2_pal_http_api_t api;
+        h2_corehttp_t *provider = create_provider(&platform, &api, NULL, 0u);
+        CHECK(provider != NULL);
+        size_t before = h2_atomic_load(&provider_mem.calls);
+        uint8_t body[8];
+        const char url[] = "http://example.test/base/path";
+        h2_pal_http_request_t request = {
+            .method = H2_PAL_HTTP_GET,
+            .url = {url, sizeof(url) - 1u},
+            .response_buf = body, .response_buf_cap = sizeof(body),
+            .allocator = custom ? &request_mem.api : NULL,
+        };
+        h2_pal_http_response_t response;
+        CHECK(h2_pal_http_request(&api, &request, &response) == H2_PAL_OK);
+        CHECK(response.status_code == 200 && response.body_len == 2u);
+        CHECK(memcmp(body, "ok", 2u) == 0);
+        CHECK(h2_atomic_load(&request_mem.calls) > 0u || !custom);
+        CHECK(custom ? h2_atomic_load(&provider_mem.calls) == before
+                     : h2_atomic_load(&provider_mem.calls) > before);
+        CHECK(h2_atomic_load(&request_mem.live) == 0u);
+        h2_pal_http_response_free(&api, &response);
+        h2_corehttp_destroy(provider);
+        CHECK(h2_atomic_load(&provider_mem.live) == 0u);
+        h2_test_allocator_destroy(&request_mem);
+        h2_test_allocator_destroy(&provider_mem);
+    }
+    return 0;
+}
+
 int main(void) {
+    if (test_request_allocator() != 0) return 1;
     if (test_failure_diagnostics() != 0) return 1;
     int rc = test_create_failure_resets_outputs();
     if (rc == 0) {

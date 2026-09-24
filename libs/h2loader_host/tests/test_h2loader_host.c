@@ -125,6 +125,11 @@ static void test_typed_command_role_parity(void) {
                &loader, 1u, H2_H2LOADER_HOST_COMMAND_REBOOT_UPGRADE) == H2_PAL_ERR_INVALID_STATE);
     assert(h2_h2loader_host_command_validate(
                &loader, 0u, H2_H2LOADER_HOST_COMMAND_WIFI_SCAN) == H2_PAL_OK);
+    assert(h2_h2loader_host_command_validate(
+        &loader, 0u, H2_H2LOADER_HOST_COMMAND_WIFI_STATUS) == H2_PAL_ERR_INVALID_STATE);
+    loader.command_availability |= H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_STATUS;
+    assert(h2_h2loader_host_command_validate(
+        &loader, 1u, H2_H2LOADER_HOST_COMMAND_WIFI_STATUS) == H2_PAL_OK);
     loader.command_availability &=
         ~H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_DISCONNECT;
     loader.capabilities |= H2_H2LOADER_HOST_CAPABILITY_WIFI;
@@ -218,6 +223,14 @@ static void test_typed_command_wire_contract(void) {
                "H2_LOADER_REBOOT target=loader result=accepted") == 0);
     assert(contract.lifecycle_transition == 1u);
 
+    request.command = H2_H2LOADER_HOST_COMMAND_WIFI_STATUS;
+    assert(H2_H2LOADER_HOST_COMMAND_WIFI_STATUS == 20);
+    assert(H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_STATUS == (1u << 20));
+    assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_OK);
+    assert(strcmp(contract.line, "h2loader wifi status\n") == 0);
+    assert(strcmp(contract.marker, "H2_LOADER_WIFI_STATUS ") == 0);
+    assert(strcmp(contract.success_token, "result=OK") == 0);
+
     request.command = H2_H2LOADER_HOST_COMMAND_WIFI_SCAN;
     request.wifi_scan_limit = 0u;
     request.wifi_scan_timeout_ms = 0u;
@@ -245,7 +258,15 @@ static void test_typed_command_wire_contract(void) {
     request.password = "secret";
     assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_OK);
     assert(strcmp(contract.line, "h2loader wifi connect factory secret\n") == 0);
-    assert(strcmp(contract.success_token, "result=connecting") == 0);
+    assert(strcmp(contract.success_token, "result=connected") == 0);
+    const char *connected = "H2_LOADER_WIFI result=connected ssid=x\n";
+    const char *connecting = "H2_LOADER_WIFI result=connecting ssid=x\n";
+    assert(h2_h2loader_host_command_parse_terminal(
+        (const uint8_t *)connected, strlen(connected), &contract) ==
+        H2_H2LOADER_HOST_COMMAND_TERMINAL_OK);
+    assert(h2_h2loader_host_command_parse_terminal(
+        (const uint8_t *)connecting, strlen(connecting), &contract) ==
+        H2_H2LOADER_HOST_COMMAND_TERMINAL_NONE);
     request.password = "bad password";
     assert(h2_h2loader_host_command_contract(&request, &contract) == H2_PAL_ERR_INVALID_ARG);
 

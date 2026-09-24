@@ -1,6 +1,6 @@
 #include "h2_game_audio.h"
 
-#include <atomic>
+#include "h2_atomic.h"
 #include <cassert>
 #include <chrono>
 #include <condition_variable>
@@ -24,26 +24,48 @@ struct h2_pal_task {
 };
 
 struct TestTask {
-    std::atomic<bool> fail_next_join{false};
+    h2_atomic_bool_t fail_next_join{};
+    TestTask() { assert(h2_atomic_bool_init(&fail_next_join, false) == H2_ATOMIC_OK); }
+    ~TestTask() { h2_atomic_bool_destroy(&fail_next_join); }
 };
 
 struct TestAudio {
     h2_pal_audio_api_t api{};
     h2_pal_audio_track_t track{};
     h2_audio_pcm_format_t format{H2_GAME_AUDIO_SAMPLE_RATE_HZ, 320, 1, H2_AUDIO_SAMPLE_S16LE};
-    std::atomic<size_t> writes{0};
-    std::atomic<size_t> nonzero_samples{0};
-    std::atomic<size_t> would_blocks{0};
-    std::atomic<bool> fail_next_write{false};
-    std::atomic<bool> retried_blocked_frame{false};
-    std::atomic<bool> speaker_started{false};
-    std::atomic<bool> hold_writes{false};
-    std::atomic<bool> write_entered{false};
+    h2_atomic_size_t writes{};
+    h2_atomic_size_t nonzero_samples{};
+    h2_atomic_size_t would_blocks{};
+    h2_atomic_bool_t fail_next_write{};
+    h2_atomic_bool_t retried_blocked_frame{};
+    h2_atomic_bool_t speaker_started{};
+    h2_atomic_bool_t hold_writes{};
+    h2_atomic_bool_t write_entered{};
     std::mutex write_mutex;
     std::condition_variable write_condition;
     std::mutex frames_mutex;
     std::vector<int16_t> blocked_frame;
     std::vector<std::vector<int16_t>> frames;
+    TestAudio() {
+        assert(h2_atomic_size_init(&writes, 0) == H2_ATOMIC_OK);
+        assert(h2_atomic_size_init(&nonzero_samples, 0) == H2_ATOMIC_OK);
+        assert(h2_atomic_size_init(&would_blocks, 0) == H2_ATOMIC_OK);
+        assert(h2_atomic_bool_init(&fail_next_write, false) == H2_ATOMIC_OK);
+        assert(h2_atomic_bool_init(&retried_blocked_frame, false) == H2_ATOMIC_OK);
+        assert(h2_atomic_bool_init(&speaker_started, false) == H2_ATOMIC_OK);
+        assert(h2_atomic_bool_init(&hold_writes, false) == H2_ATOMIC_OK);
+        assert(h2_atomic_bool_init(&write_entered, false) == H2_ATOMIC_OK);
+    }
+    ~TestAudio() {
+        h2_atomic_size_destroy(&writes);
+        h2_atomic_size_destroy(&nonzero_samples);
+        h2_atomic_size_destroy(&would_blocks);
+        h2_atomic_bool_destroy(&fail_next_write);
+        h2_atomic_bool_destroy(&retried_blocked_frame);
+        h2_atomic_bool_destroy(&speaker_started);
+        h2_atomic_bool_destroy(&hold_writes);
+        h2_atomic_bool_destroy(&write_entered);
+    }
 };
 
 namespace {
@@ -82,18 +104,18 @@ int task_start(void *, const h2_pal_task_options_t *, h2_pal_task_entry_t entry,
 }
 int task_join(void *user, h2_pal_task_t *task) {
     auto *state = static_cast<TestTask *>(user);
-    if (state->fail_next_join.exchange(false)) return H2_PAL_ERR_IO;
+    if (h2_atomic_bool_exchange(&state->fail_next_join, false, H2_ATOMIC_SEQ_CST)) return H2_PAL_ERR_IO;
     task->thread.join();
     delete task;
     return H2_PAL_OK;
 }
 
 int start_speaker(void *user) {
-    static_cast<TestAudio *>(user)->speaker_started.store(true);
+    h2_atomic_bool_store(&static_cast<TestAudio *>(user)->speaker_started, true, H2_ATOMIC_SEQ_CST);
     return H2_AUDIO_OK;
 }
 int stop_speaker(void *user) {
-    static_cast<TestAudio *>(user)->speaker_started.store(false);
+    h2_atomic_bool_store(&static_cast<TestAudio *>(user)->speaker_started, false, H2_ATOMIC_SEQ_CST);
     return H2_AUDIO_OK;
 }
 int get_info(void *user, h2_audio_info_t *info) {
@@ -114,34 +136,34 @@ int track_write(h2_pal_audio_track_t *track, const h2_audio_frame_t *frame, uint
     assert(frame->sample_format == audio->format.sample_format);
     assert(frame->bytes == static_cast<size_t>(audio->format.frame_samples_per_channel) * sizeof(int16_t));
     assert(frame->capacity >= frame->bytes);
-    if (audio->hold_writes.load()) {
-        audio->write_entered.store(true);
+    if (h2_atomic_bool_load(&audio->hold_writes, H2_ATOMIC_SEQ_CST)) {
+        h2_atomic_bool_store(&audio->write_entered, true, H2_ATOMIC_SEQ_CST);
         audio->write_condition.notify_all();
         std::unique_lock<std::mutex> lock(audio->write_mutex);
-        audio->write_condition.wait(lock, [audio]() { return !audio->hold_writes.load(); });
+        audio->write_condition.wait(lock, [audio]() { return !h2_atomic_bool_load(&audio->hold_writes, H2_ATOMIC_SEQ_CST); });
     }
     const auto *samples = static_cast<const int16_t *>(frame->data);
     std::vector<int16_t> copied_samples(
         samples,
         samples + audio->format.frame_samples_per_channel);
-    if (audio->fail_next_write.exchange(false)) {
+    if (h2_atomic_bool_exchange(&audio->fail_next_write, false, H2_ATOMIC_SEQ_CST)) {
         std::lock_guard<std::mutex> lock(audio->frames_mutex);
         audio->blocked_frame = copied_samples;
-        audio->would_blocks.fetch_add(1);
+        h2_atomic_size_fetch_add(&audio->would_blocks, 1, H2_ATOMIC_SEQ_CST);
         return H2_AUDIO_ERR_WOULD_BLOCK;
     }
     {
         std::lock_guard<std::mutex> lock(audio->frames_mutex);
         if (!audio->blocked_frame.empty()) {
-            audio->retried_blocked_frame.store(audio->blocked_frame == copied_samples);
+            h2_atomic_bool_store(&audio->retried_blocked_frame, audio->blocked_frame == copied_samples, H2_ATOMIC_SEQ_CST);
             audio->blocked_frame.clear();
         }
         audio->frames.push_back(copied_samples);
     }
     for (size_t i = 0; i < audio->format.frame_samples_per_channel; ++i) {
-        if (samples[i] != 0) audio->nonzero_samples.fetch_add(1);
+        if (samples[i] != 0) h2_atomic_size_fetch_add(&audio->nonzero_samples, 1, H2_ATOMIC_SEQ_CST);
     }
-    audio->writes.fetch_add(1);
+    h2_atomic_size_fetch_add(&audio->writes, 1, H2_ATOMIC_SEQ_CST);
     std::this_thread::sleep_for(std::chrono::milliseconds(1));
     return H2_AUDIO_OK;
 }
@@ -179,8 +201,8 @@ void run_audio_case(uint16_t frame_samples, bool test_join_retry) {
     h2_game_audio_t *audio = nullptr;
     const h2_game_audio_config_t config = {&output.api, &task, &queue, &mem, 4};
     assert(h2_game_audio_create(&config, &audio) == H2_GAME_AUDIO_OK);
-    assert(audio != nullptr && output.speaker_started.load());
-    output.fail_next_write.store(true);
+    assert(audio != nullptr && h2_atomic_bool_load(&output.speaker_started, H2_ATOMIC_SEQ_CST));
+    h2_atomic_bool_store(&output.fail_next_write, true, H2_ATOMIC_SEQ_CST);
     assert(h2_game_audio_play(audio, nullptr) == H2_GAME_AUDIO_ERR_INVALID_ARG);
 
     static const h2_game_audio_step_t invalid_steps[] = {
@@ -210,22 +232,22 @@ void run_audio_case(uint16_t frame_samples, bool test_join_retry) {
     static const h2_game_audio_recipe_t recipe = {steps, 2, 30};
     assert(h2_game_audio_play(audio, &recipe) == H2_GAME_AUDIO_OK);
     assert(h2_game_audio_play_latest(audio, &recipe) == H2_GAME_AUDIO_OK);
-    for (int i = 0; i < 200 && (output.nonzero_samples.load() == 0 || output.writes.load() < 2); ++i) {
+    for (int i = 0; i < 200 && (h2_atomic_size_load(&output.nonzero_samples, H2_ATOMIC_SEQ_CST) == 0 || h2_atomic_size_load(&output.writes, H2_ATOMIC_SEQ_CST) < 2); ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    assert(output.writes.load() >= 2);
-    assert(output.nonzero_samples.load() > 0);
-    assert(output.would_blocks.load() == 1);
-    assert(output.retried_blocked_frame.load());
+    assert(h2_atomic_size_load(&output.writes, H2_ATOMIC_SEQ_CST) >= 2);
+    assert(h2_atomic_size_load(&output.nonzero_samples, H2_ATOMIC_SEQ_CST) > 0);
+    assert(h2_atomic_size_load(&output.would_blocks, H2_ATOMIC_SEQ_CST) == 1);
+    assert(h2_atomic_bool_load(&output.retried_blocked_frame, H2_ATOMIC_SEQ_CST));
     if (test_join_retry) {
-        task_state.fail_next_join.store(true);
+        h2_atomic_bool_store(&task_state.fail_next_join, true, H2_ATOMIC_SEQ_CST);
         assert(h2_game_audio_destroy(audio) == H2_GAME_AUDIO_ERR_TASK);
-        assert(output.speaker_started.load());
+        assert(h2_atomic_bool_load(&output.speaker_started, H2_ATOMIC_SEQ_CST));
     }
     assert(h2_game_audio_destroy(audio) == H2_GAME_AUDIO_OK);
-    assert(output.speaker_started.load());
+    assert(h2_atomic_bool_load(&output.speaker_started, H2_ATOMIC_SEQ_CST));
     assert(h2_pal_audio_stop_speaker(&output.api) == H2_AUDIO_OK);
-    assert(!output.speaker_started.load());
+    assert(!h2_atomic_bool_load(&output.speaker_started, H2_ATOMIC_SEQ_CST));
 }
 
 std::vector<std::vector<int16_t>> capture_priority_frames(bool queue_regular_recipe) {
@@ -242,7 +264,7 @@ std::vector<std::vector<int16_t>> capture_priority_frames(bool queue_regular_rec
         get_info, nullptr, nullptr, start_speaker, stop_speaker, nullptr, create_track, nullptr, nullptr,
     };
     TestAudio output;
-    output.hold_writes.store(true);
+    h2_atomic_bool_store(&output.hold_writes, true, H2_ATOMIC_SEQ_CST);
     output.api = {&output, &audio_vtable};
     assert(h2_pal_audio_start_speaker(&output.api) == H2_AUDIO_OK);
 
@@ -254,7 +276,7 @@ std::vector<std::vector<int16_t>> capture_priority_frames(bool queue_regular_rec
         assert(output.write_condition.wait_for(
             lock,
             std::chrono::seconds(1),
-            [&output]() { return output.write_entered.load(); }));
+            [&output]() { return h2_atomic_bool_load(&output.write_entered, H2_ATOMIC_SEQ_CST); }));
     }
 
     static const h2_game_audio_step_t regular_steps[] = {
@@ -267,7 +289,7 @@ std::vector<std::vector<int16_t>> capture_priority_frames(bool queue_regular_rec
     static const h2_game_audio_recipe_t priority_recipe = {priority_steps, 1, 70};
     if (queue_regular_recipe) assert(h2_game_audio_play(audio, &regular_recipe) == H2_GAME_AUDIO_OK);
     assert(h2_game_audio_play_latest(audio, &priority_recipe) == H2_GAME_AUDIO_OK);
-    output.hold_writes.store(false);
+    h2_atomic_bool_store(&output.hold_writes, false, H2_ATOMIC_SEQ_CST);
     output.write_condition.notify_all();
 
     for (int i = 0; i < 1000; ++i) {
@@ -317,7 +339,7 @@ void test_priority_recipe_stops_active_effects() {
         get_info, nullptr, nullptr, start_speaker, stop_speaker, nullptr, create_track, nullptr, nullptr,
     };
     TestAudio output;
-    output.hold_writes.store(true);
+    h2_atomic_bool_store(&output.hold_writes, true, H2_ATOMIC_SEQ_CST);
     output.api = {&output, &audio_vtable};
     assert(h2_pal_audio_start_speaker(&output.api) == H2_AUDIO_OK);
 
@@ -329,7 +351,7 @@ void test_priority_recipe_stops_active_effects() {
         assert(output.write_condition.wait_for(
             lock,
             std::chrono::seconds(1),
-            [&output]() { return output.write_entered.load(); }));
+            [&output]() { return h2_atomic_bool_load(&output.write_entered, H2_ATOMIC_SEQ_CST); }));
     }
 
     static const h2_game_audio_step_t active_steps[] = {
@@ -337,21 +359,21 @@ void test_priority_recipe_stops_active_effects() {
     };
     static const h2_game_audio_recipe_t active_recipe = {active_steps, 1, 2000};
     assert(h2_game_audio_play(audio, &active_recipe) == H2_GAME_AUDIO_OK);
-    output.hold_writes.store(false);
+    h2_atomic_bool_store(&output.hold_writes, false, H2_ATOMIC_SEQ_CST);
     output.write_condition.notify_all();
-    for (int i = 0; i < 1000 && output.nonzero_samples.load() == 0; ++i) {
+    for (int i = 0; i < 1000 && h2_atomic_size_load(&output.nonzero_samples, H2_ATOMIC_SEQ_CST) == 0; ++i) {
         std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
-    assert(output.nonzero_samples.load() > 0);
+    assert(h2_atomic_size_load(&output.nonzero_samples, H2_ATOMIC_SEQ_CST) > 0);
 
-    output.write_entered.store(false);
-    output.hold_writes.store(true);
+    h2_atomic_bool_store(&output.write_entered, false, H2_ATOMIC_SEQ_CST);
+    h2_atomic_bool_store(&output.hold_writes, true, H2_ATOMIC_SEQ_CST);
     {
         std::unique_lock<std::mutex> lock(output.write_mutex);
         assert(output.write_condition.wait_for(
             lock,
             std::chrono::seconds(1),
-            [&output]() { return output.write_entered.load(); }));
+            [&output]() { return h2_atomic_bool_load(&output.write_entered, H2_ATOMIC_SEQ_CST); }));
     }
     size_t first_pending_frame = 0;
     {
@@ -363,7 +385,7 @@ void test_priority_recipe_stops_active_effects() {
     };
     static const h2_game_audio_recipe_t priority_recipe = {priority_steps, 1, 100};
     assert(h2_game_audio_play_latest(audio, &priority_recipe) == H2_GAME_AUDIO_OK);
-    output.hold_writes.store(false);
+    h2_atomic_bool_store(&output.hold_writes, false, H2_ATOMIC_SEQ_CST);
     output.write_condition.notify_all();
 
     for (int i = 0; i < 1000; ++i) {

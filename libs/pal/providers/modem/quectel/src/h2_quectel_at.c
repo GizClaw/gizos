@@ -19,6 +19,13 @@ static void trim_line(char *line) {
 }
 
 static h2_pal_result_t write_all(h2_quectel_modem_t *modem, const char *data, uint32_t timeout_ms) {
+    if (modem->call_poll_running) {
+        if (timeout_ms > modem->call_poll_io_budget) { timeout_ms = modem->call_poll_io_budget; }
+        if (timeout_ms == 0u) { return H2_PAL_ERR_TIMEOUT; }
+        /* Leave most of the budget for the response. */
+        if (timeout_ms > 10u) { timeout_ms = 10u; }
+        modem->call_poll_io_budget -= timeout_ms;
+    }
     size_t len = strlen(data);
     size_t written = 0u;
     h2_quectel_state_unlock(modem);
@@ -34,12 +41,22 @@ static h2_pal_result_t read_line(h2_quectel_modem_t *modem, char *line, size_t c
     size_t len = 0u;
     h2_pal_result_t framing_result = H2_PAL_OK;
     line[0] = '\0';
-    for (;;) {
+    for (size_t received = 0u; received < cap * 2u; ++received) {
         uint8_t ch = 0u;
         size_t got = 0u;
+        uint32_t wait_ms = timeout_ms;
+        if (modem->call_poll_running) {
+            if (modem->call_poll_io_budget == 0u) { return H2_PAL_ERR_TIMEOUT; }
+            wait_ms = 1u;
+            modem->call_poll_io_budget--;
+        }
         h2_quectel_state_unlock(modem);
-        h2_pal_result_t rc = modem->config.read(modem->config.transport_user, &ch, 1u, timeout_ms, &got);
+        h2_pal_result_t rc = modem->config.read(modem->config.transport_user, &ch, 1u, wait_ms, &got);
         (void)h2_quectel_state_lock(modem);
+        if (modem->call_poll_running &&
+            (rc == H2_PAL_ERR_TIMEOUT || (rc == H2_PAL_OK && got == 0u))) {
+            continue; /* The total reserved wait budget still decreases. */
+        }
         if (rc != H2_PAL_OK) {
             return rc;
         }
@@ -64,10 +81,13 @@ static h2_pal_result_t read_line(h2_quectel_modem_t *modem, char *line, size_t c
             return H2_PAL_OK;
         }
     }
+    return H2_PAL_ERR_TRUNCATED;
 }
 
 static void response_add_line(h2_quectel_response_t *response, const char *line) {
-    if (response == NULL || line == NULL || line[0] == '\0' || response->count >= H2_QUECTEL_RESPONSE_MAX) {
+    if (response == NULL || line == NULL || line[0] == '\0') { return; }
+    if (response->count >= H2_QUECTEL_RESPONSE_MAX) {
+        response->truncated = 1;
         return;
     }
     strncpy(response->lines[response->count], line, H2_QUECTEL_LINE_MAX - 1u);
@@ -75,7 +95,8 @@ static void response_add_line(h2_quectel_response_t *response, const char *line)
     response->count++;
 }
 
-static void response_add_text(h2_quectel_modem_t *modem, h2_quectel_response_t *response, const char *text, const char *cmd) {
+static void response_add_text(h2_quectel_modem_t *modem, h2_quectel_response_t *response, const char *text, const char *cmd,
+    uint32_t reset_generation, uint32_t sim_generation) {
     if (text == NULL) {
         return;
     }
@@ -100,11 +121,12 @@ static void response_add_text(h2_quectel_modem_t *modem, h2_quectel_response_t *
         cursor += consume;
 
         if (truncated) {
+            if (response != NULL) { response->truncated = 1; }
             continue;
         }
 
         trim_line(line);
-        if (line[0] == '\0' || strcmp(line, "OK") == 0 || strcmp(line, "ERROR") == 0 || (cmd != NULL && strcmp(line, cmd) == 0)) {
+        if (line[0] == '\0' || strcmp(line, "OK") == 0 || (cmd != NULL && strcmp(line, cmd) == 0)) {
             continue;
         }
         if (h2_quectel_is_urc(line, cmd)) {
@@ -113,7 +135,9 @@ static void response_add_text(h2_quectel_modem_t *modem, h2_quectel_response_t *
             }
             continue;
         }
-        if (strcmp(cmd, "AT+CPIN?") == 0 || strncmp(line, "+CME ERROR:", 11u) == 0) {
+        if (strcmp(cmd, "AT+CPIN?") == 0) {
+            h2_quectel_cpin_response_locked(modem, line, reset_generation, sim_generation);
+        } else if (strncmp(line, "+CME ERROR:", 11u) == 0) {
             h2_quectel_handle_urc_locked(modem, line);
         }
         response_add_line(response, line);
@@ -145,7 +169,7 @@ static int response_text_has_connect(const char *text) {
     return 0;
 }
 
-h2_pal_result_t h2_quectel_at_exchange_locked(
+static h2_pal_result_t at_exchange_impl(
     h2_quectel_modem_t *modem,
     const char *cmd,
     h2_quectel_response_t *response,
@@ -158,29 +182,37 @@ h2_pal_result_t h2_quectel_at_exchange_locked(
     }
 
     if (modem->config.command != NULL) {
-        char command_response[H2_QUECTEL_LINE_MAX * H2_QUECTEL_RESPONSE_MAX];
-        memset(command_response, 0, sizeof(command_response));
+        char *command_response = modem->command_response;
+        memset(command_response, 0, sizeof(modem->command_response));
         const uint32_t generation = modem->reset_generation;
+        /* Initial configuration is SIM-independent; insertion/absence URCs
+         * still update state but cannot invalidate these command responses. */
         const uint32_t sim_generation = modem->sim_generation;
         h2_quectel_state_unlock(modem);
         h2_pal_result_t rc = modem->config.command(
             modem->config.transport_user,
             cmd,
             command_response,
-            sizeof(command_response),
+            sizeof(modem->command_response),
             modem->config.command_timeout_ms);
         (void)h2_quectel_state_lock(modem);
-        if (generation != modem->reset_generation || sim_generation != modem->sim_generation) {
+        if (generation != modem->reset_generation ||
+            ((modem->preparing == 0u || strcmp(cmd, "AT+CPIN?") == 0) &&
+             sim_generation != modem->sim_generation)) {
+            memset(command_response, 0, sizeof(modem->command_response));
             return H2_PAL_ERR_INVALID_STATE;
         }
         if (allow_connect != 0 && response_text_has_connect(command_response)) {
             if (response != NULL) {
                 response->connected = 1;
             }
-            response_add_text(modem, response, command_response, cmd);
+            response_add_text(modem, response, command_response, cmd, generation, sim_generation);
+            memset(command_response, 0, sizeof(modem->command_response));
             return H2_PAL_OK;
         }
-        response_add_text(modem, response, command_response, cmd);
+        response_add_text(modem, response, command_response, cmd, generation, sim_generation);
+        /* Transport text may echo credentials; do not retain it in the instance. */
+        memset(command_response, 0, sizeof(modem->command_response));
         return rc;
     }
     if (modem->config.read == NULL || modem->config.write == NULL) {
@@ -205,7 +237,9 @@ h2_pal_result_t h2_quectel_at_exchange_locked(
         if (rc != H2_PAL_OK) {
             return rc;
         }
-        if (reset_generation != modem->reset_generation || sim_generation != modem->sim_generation) {
+        if (reset_generation != modem->reset_generation ||
+            ((modem->preparing == 0u || strcmp(cmd, "AT+CPIN?") == 0) &&
+             sim_generation != modem->sim_generation)) {
             return H2_PAL_ERR_INVALID_STATE;
         }
         if (line[0] == '\0' || strcmp(line, cmd) == 0) {
@@ -234,11 +268,38 @@ h2_pal_result_t h2_quectel_at_exchange_locked(
             continue;
         }
         if (strcmp(cmd, "AT+CPIN?") == 0) {
-            h2_quectel_handle_urc_locked(modem, line);
+            h2_quectel_cpin_response_locked(modem, line, reset_generation, sim_generation);
         }
         response_add_line(response, line);
     }
     return H2_PAL_ERR_TIMEOUT;
+}
+
+/* All CPIN callers share the RX outcome while the operation lock serializes
+ * exchanges. The RX tap never takes the state lock or depends on the worker. */
+h2_pal_result_t h2_quectel_at_exchange_locked(
+    h2_quectel_modem_t *modem,
+    const char *cmd,
+    h2_quectel_response_t *response,
+    int allow_connect) {
+    if (modem == NULL || cmd == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    const int cpin = strcmp(cmd, "AT+CPIN?") == 0;
+    const uint32_t reset_generation = modem->reset_generation;
+    const uint32_t sim_generation = modem->sim_generation;
+    if (cpin) {
+        h2_quectel_cpin_absent_store(modem, 0u);
+    }
+    h2_pal_result_t rc = at_exchange_impl(modem, cmd, response, allow_connect);
+    if (cpin && modem->config.command == NULL && rc != H2_PAL_OK) {
+        modem->raw_cpin_uncertain = 1u;
+    }
+    if (cpin && rc != H2_PAL_OK && h2_quectel_cpin_absent_load(modem) != 0u &&
+        reset_generation == modem->reset_generation && sim_generation == modem->sim_generation) {
+        h2_quectel_sim_update(modem, H2_PAL_MODEM_SIM_STATE_ABSENT);
+    }
+    return rc;
 }
 
 h2_pal_result_t h2_quectel_at_exchange_timeout(
@@ -270,7 +331,8 @@ h2_pal_result_t h2_quectel_at_exchange_timeout(
     /* A terminal CME response (for example GNSS has no fix) is not an
      * uncertain transport failure. Session holds still survive failed stops. */
     int terminal_error = response != NULL &&
-        (h2_quectel_response_find(response, "+CME ERROR:") != NULL ||
+        (h2_quectel_response_find(response, "ERROR") != NULL ||
+         h2_quectel_response_find(response, "+CME ERROR:") != NULL ||
          h2_quectel_response_find(response, "+CMS ERROR:") != NULL);
     if (rc != H2_PAL_OK && !terminal_error &&
         (modem->capabilities & H2_PAL_MODEM_CAPABILITY_LOW_POWER) != 0u) {

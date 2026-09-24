@@ -94,6 +94,9 @@ typedef struct h2_loader_image_writer_vtable {
         const h2_loader_image_identity_t *identity);
     int (*write)(void *user, const void *data, size_t len);
     int (*finish)(void *user, const h2_loader_image_identity_t *identity);
+    /** Cancel the candidate, including after a successful finish when destination
+     * verification fails. Implementations must allow abort after finish and
+     * invalidate any candidate state retained by finish. Called synchronously. */
     void (*abort)(void *user);
 } h2_loader_image_writer_vtable_t;
 

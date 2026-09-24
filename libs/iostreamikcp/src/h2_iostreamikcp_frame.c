@@ -132,10 +132,27 @@ static void filter_drop(h2_iostreamikcp_filter_t *filter, size_t len) {
     filter->len -= len;
 }
 
+static h2_pal_result_t filter_forward_dropped(
+    h2_iostreamikcp_filter_t *filter,
+    h2_iostreamikcp_log_fn on_log,
+    void *log_user) {
+    if (on_log != NULL) {
+        h2_pal_result_t rc = on_log(log_user, filter->buffer, 1u);
+        if (rc != H2_PAL_OK) {
+            return rc;
+        }
+    }
+    filter->log_bytes++;
+    filter_drop_one(filter);
+    return H2_PAL_OK;
+}
+
 static h2_pal_result_t filter_try_emit(
     h2_iostreamikcp_filter_t *filter,
     h2_iostreamikcp_frame_fn on_frame,
-    void *user) {
+    void *user,
+    h2_iostreamikcp_log_fn on_log,
+    void *log_user) {
     h2_iostreamikcp_frame_t frame;
     uint16_t payload_len;
     size_t total_len;
@@ -148,15 +165,13 @@ static h2_pal_result_t filter_try_emit(
     if (filter->buffer[6] != H2_IOSTREAMIKCP_FRAME_VERSION ||
         !frame_flags_valid(filter->buffer[7])) {
         filter->errors++;
-        filter_drop_one(filter);
-        return H2_PAL_OK;
+        return filter_forward_dropped(filter, on_log, log_user);
     }
     payload_len = h2_iostreamikcp_read_le16(filter->buffer + H2_IOSTREAMIKCP_FRAME_LEN_OFFSET);
     if (payload_len > H2_IOSTREAMIKCP_MAX_PAYLOAD_LEN) {
         filter->errors++;
         filter->resyncing = 1;
-        filter_drop_one(filter);
-        return H2_PAL_OK;
+        return filter_forward_dropped(filter, on_log, log_user);
     }
     total_len = H2_IOSTREAMIKCP_FRAME_HEADER_LEN + (size_t)payload_len;
     if (filter->len < total_len) {
@@ -167,8 +182,7 @@ static h2_pal_result_t filter_try_emit(
     if (want_crc != got_crc) {
         filter->crc_errors++;
         filter->resyncing = 1;
-        filter_drop_one(filter);
-        return H2_PAL_OK;
+        return filter_forward_dropped(filter, on_log, log_user);
     }
 
     frame.flags = filter->buffer[7];
@@ -178,8 +192,7 @@ static h2_pal_result_t filter_try_emit(
     if (!frame_control_valid(&frame)) {
         filter->errors++;
         filter->resyncing = 1;
-        filter_drop_one(filter);
-        return H2_PAL_OK;
+        return filter_forward_dropped(filter, on_log, log_user);
     }
     h2_pal_result_t rc = H2_PAL_OK;
     if (on_frame != NULL) {
@@ -199,7 +212,10 @@ static h2_pal_result_t filter_process(
     for (;;) {
         if (filter->resyncing) {
             while (filter->len > 0u && !filter_prefix_matches(filter->buffer, filter->len)) {
-                filter_drop_one(filter);
+                h2_pal_result_t rc = filter_forward_dropped(filter, on_log, log_user);
+                if (rc != H2_PAL_OK) {
+                    return rc;
+                }
             }
             if (filter->len < H2_IOSTREAMIKCP_FRAME_MAGIC_LEN) {
                 break;
@@ -220,7 +236,7 @@ static h2_pal_result_t filter_process(
             break;
         }
         size_t old_len = filter->len;
-        h2_pal_result_t rc = filter_try_emit(filter, on_frame, user);
+        h2_pal_result_t rc = filter_try_emit(filter, on_frame, user, on_log, log_user);
         if (rc != H2_PAL_OK) {
             return rc;
         }
@@ -262,7 +278,10 @@ h2_pal_result_t h2_iostreamikcp_filter_input_with_log(
         }
         if (filter->len == sizeof(filter->buffer)) {
             filter->errors++;
-            filter_drop_one(filter);
+            h2_pal_result_t rc = filter_forward_dropped(filter, on_log, log_user);
+            if (rc != H2_PAL_OK) {
+                return rc;
+            }
         }
         filter->buffer[filter->len++] = data[i];
     }

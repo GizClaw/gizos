@@ -291,6 +291,6 @@ Adopter至少覆盖：
 
 GizClaw E2E 的公共支撑新增 `h2_app_test_mem`、`h2_app_test_task`、`h2_app_test_sync`、`h2_app_test_webrtc`，对应同名 public header 与 `src/pal/` 实现，归属 `testing_pal`。Memory 对每个分配维护对齐头和存活链表；失败的 realloc 保留旧块。Task/Sync 只验证串行生命周期，生产并发继续用真实或 libco PAL。Testing Time 可在单调读之后显式步进，成功 sleep 后可通知借用的场景观察函数；故障 helper 支持跳过指定次数后再注入。
 
-WebRTC decorator 每个实例拥有自己的 peer/channel wrapper，无全局实例。每次成功 poll 返回可释放的包装事件，释放时把原始事件完整交还 delegate；callback 只同步借用事件。每个 peer 最多保留 16 个不同 channel handle，直到 peer close。活动 peer 或未释放 event 阻止 decorator destroy。调用方串行访问同一 peer 及其 channel，释放事件后再关闭 peer；不同 peer 的观察 callback 可并发，需要 consumer 自行同步。
+WebRTC decorator 每个实例拥有自己的 peer/channel wrapper，无全局实例。每次成功 poll 返回可释放的包装事件，释放时把原始事件完整交还 delegate；callback 只同步借用事件。每个 peer 按需分配不同 channel 的稳定包装句柄，直到 peer close 才释放；包装句柄分配失败时关闭刚创建的 delegate channel 并返回 `NO_MEMORY`，不额外限制底层 provider 的 channel 数量。活动 peer 或未释放 event 阻止 decorator destroy。调用方串行访问同一 peer 及其 channel，释放事件后再关闭 peer；不同 peer 的观察 callback 可并发，需要 consumer 自行同步。
 
 Audio decorator 支持 NULL fixture 的仅播放模式：不暴露 mic，直至安装有效 fixture。成功的 S16LE write 记录原子最大幅值（含 -32768），字节数与 digest 保持原语义。Audio fake 可借用 `playback_time`，成功写入按 PCM 时长向上取整等待；失败不记录已播放字节。GizClaw Device 的 PAL 销毁 hook 在所有 actor 停止后执行，保留 stop/close 失败的所有权。

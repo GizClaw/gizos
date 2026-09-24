@@ -6,7 +6,7 @@
 #include "h2_bleikcp.h"
 
 #include <inttypes.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdbool.h>
 #include <stdio.h>
 #include <string.h>
@@ -77,19 +77,19 @@ typedef struct h2_speed_context {
     bool ready_reported;
     volatile uint64_t tx_total;
     volatile uint64_t rx_total;
-    _Atomic int session_stop;
-    _Atomic int session_error;
-    _Atomic int advertising_restart_pending;
-    _Atomic int renderer_stop;
+    h2_atomic_int_t session_stop;
+    h2_atomic_int_t session_error;
+    h2_atomic_int_t advertising_restart_pending;
+    h2_atomic_int_t renderer_stop;
     uint64_t session_id;
     uint16_t conn_handle;
     uint16_t mtu;
     uint16_t interval_ms;
     h2_pal_ble_phy_t phy;
-    _Atomic uint32_t connect_attempts;
-    _Atomic uint32_t connections;
-    _Atomic uint32_t reconnects;
-    _Atomic uint32_t disconnects;
+    h2_atomic_u32_t connect_attempts;
+    h2_atomic_u32_t connections;
+    h2_atomic_u32_t reconnects;
+    h2_atomic_u32_t disconnects;
     const char *last_error_stage;
     int last_error_code;
     h2_speed_sample_t samples[H2_SPEED_SAMPLE_COUNT];
@@ -307,14 +307,14 @@ static void h2_speed_screen_snapshot(
     snapshot->last_error_stage = context->last_error_stage;
     snapshot->last_error_code = context->last_error_code;
     (void)h2_pal_mutex_unlock(context->runtime->sync, context->metrics_mutex);
-    snapshot->connect_attempts = atomic_load_explicit(
-        &context->connect_attempts, memory_order_acquire);
-    snapshot->connections = atomic_load_explicit(
-        &context->connections, memory_order_acquire);
-    snapshot->reconnects = atomic_load_explicit(
-        &context->reconnects, memory_order_acquire);
-    snapshot->disconnects = atomic_load_explicit(
-        &context->disconnects, memory_order_acquire);
+    snapshot->connect_attempts = h2_atomic_load_explicit(
+        &context->connect_attempts, H2_ATOMIC_ACQUIRE);
+    snapshot->connections = h2_atomic_load_explicit(
+        &context->connections, H2_ATOMIC_ACQUIRE);
+    snapshot->reconnects = h2_atomic_load_explicit(
+        &context->reconnects, H2_ATOMIC_ACQUIRE);
+    snapshot->disconnects = h2_atomic_load_explicit(
+        &context->disconnects, H2_ATOMIC_ACQUIRE);
 }
 
 static int h2_speed_present(h2_speed_context_t *context) {
@@ -513,8 +513,8 @@ static int h2_speed_render(h2_speed_context_t *context) {
 
 static void h2_speed_renderer_task(void *user) {
     h2_speed_context_t *context = user;
-    while (atomic_load_explicit(
-               &context->renderer_stop, memory_order_acquire) == 0) {
+    while (h2_atomic_load_explicit(
+               &context->renderer_stop, H2_ATOMIC_ACQUIRE) == 0) {
         int rc = h2_speed_render(context);
         if (rc != H2_PAL_OK) {
             (void)h2_pal_mutex_lock(
@@ -581,7 +581,7 @@ static int h2_speed_start_renderer(h2_speed_context_t *context) {
         .name = h2_bleikcp_speed_ui_task_name,
         .min_stack_size = 8u * 1024u,
     };
-    atomic_store_explicit(&context->renderer_stop, 0, memory_order_release);
+    h2_atomic_store_explicit(&context->renderer_stop, 0, H2_ATOMIC_RELEASE);
     return h2_pal_task_start(
         context->runtime->task, &options, h2_speed_renderer_task,
         context, &context->renderer_task);
@@ -591,7 +591,7 @@ static int h2_speed_stop_renderer(h2_speed_context_t *context) {
     if (context->renderer_task == NULL) {
         return H2_PAL_OK;
     }
-    atomic_store_explicit(&context->renderer_stop, 1, memory_order_release);
+    h2_atomic_store_explicit(&context->renderer_stop, 1, H2_ATOMIC_RELEASE);
     int rc = h2_pal_task_join(
         context->runtime->task, context->renderer_task);
     if (rc != H2_PAL_OK) {
@@ -599,6 +599,17 @@ static int h2_speed_stop_renderer(h2_speed_context_t *context) {
     }
     context->renderer_task = NULL;
     return H2_PAL_OK;
+}
+
+static void h2_speed_destroy_atomics(h2_speed_context_t *context) {
+    h2_atomic_destroy(&context->session_stop);
+    h2_atomic_destroy(&context->session_error);
+    h2_atomic_destroy(&context->advertising_restart_pending);
+    h2_atomic_destroy(&context->renderer_stop);
+    h2_atomic_destroy(&context->connect_attempts);
+    h2_atomic_destroy(&context->connections);
+    h2_atomic_destroy(&context->reconnects);
+    h2_atomic_destroy(&context->disconnects);
 }
 
 static int h2_speed_cleanup_context(h2_speed_context_t *context) {
@@ -645,6 +656,7 @@ static int h2_speed_cleanup_context(h2_speed_context_t *context) {
         (void)h2_pal_mutex_destroy(
             context->runtime->sync, context->metrics_mutex);
     }
+    h2_speed_destroy_atomics(context);
     h2_pal_mem_free(context->runtime->mem, context);
     return rc;
 }
@@ -684,8 +696,8 @@ static void h2_speed_set_error(
     context->last_error_stage = stage;
     context->last_error_code = code;
     (void)h2_pal_mutex_unlock(context->runtime->sync, context->metrics_mutex);
-    atomic_store_explicit(&context->session_error, code, memory_order_release);
-    atomic_store_explicit(&context->session_stop, 1, memory_order_release);
+    h2_atomic_store_explicit(&context->session_error, code, H2_ATOMIC_RELEASE);
+    h2_atomic_store_explicit(&context->session_stop, 1, H2_ATOMIC_RELEASE);
 }
 
 static void h2_speed_set_link_metrics(
@@ -726,14 +738,14 @@ static void h2_speed_log_state(
         "H2_BLEIKCP_SPEED role=%s state=%s stage=%s code=%d "
         "attempts=%u connections=%u reconnects=%u disconnects=%u",
         h2_speed_role_name(context->role), state, stage, code,
-        (unsigned)atomic_load_explicit(
-            &context->connect_attempts, memory_order_acquire),
-        (unsigned)atomic_load_explicit(
-            &context->connections, memory_order_acquire),
-        (unsigned)atomic_load_explicit(
-            &context->reconnects, memory_order_acquire),
-        (unsigned)atomic_load_explicit(
-            &context->disconnects, memory_order_acquire));
+        (unsigned)h2_atomic_load_explicit(
+            &context->connect_attempts, H2_ATOMIC_ACQUIRE),
+        (unsigned)h2_atomic_load_explicit(
+            &context->connections, H2_ATOMIC_ACQUIRE),
+        (unsigned)h2_atomic_load_explicit(
+            &context->reconnects, H2_ATOMIC_ACQUIRE),
+        (unsigned)h2_atomic_load_explicit(
+            &context->disconnects, H2_ATOMIC_ACQUIRE));
     (void)h2_pal_log_write(
         context->runtime->log,
         code == H2_PAL_OK ? H2_PAL_LOG_INFO : H2_PAL_LOG_ERROR,
@@ -760,9 +772,9 @@ static int h2_speed_wait_for_stop(h2_speed_context_t *context) {
         if (rc != H2_PAL_OK && rc != H2_PAL_ERR_CLOSED) {
             return h2_speed_cleanup_error(context, rc);
         }
-        if (atomic_exchange_explicit(
+        if (h2_atomic_exchange_explicit(
                 &context->advertising_restart_pending, 0,
-                memory_order_acq_rel) != 0 &&
+                H2_ATOMIC_ACQ_REL) != 0 &&
             context->advertising_set != NULL) {
             int advertising_rc = h2_pal_ble_adv_set_start(
                 context->runtime->ble_host, context->advertising_set);
@@ -785,8 +797,8 @@ static void h2_speed_writer_task(void *user) {
     uint64_t offset = 0u;
     uint64_t pending = 0u;
 
-    while (atomic_load_explicit(
-               &context->session_stop, memory_order_acquire) == 0 &&
+    while (h2_atomic_load_explicit(
+               &context->session_stop, H2_ATOMIC_ACQUIRE) == 0 &&
            !h2_speed_should_stop(context)) {
         h2_speed_fill_payload(
             payload, sizeof(payload), context->session_id,
@@ -797,12 +809,12 @@ static void h2_speed_writer_task(void *user) {
                 writer->stream, payload, sizeof(payload),
                 H2_SPEED_IO_TIMEOUT_MS);
         } while (h2_speed_io_should_retry(rc) &&
-                 atomic_load_explicit(
-                     &context->session_stop, memory_order_acquire) == 0 &&
+                 h2_atomic_load_explicit(
+                     &context->session_stop, H2_ATOMIC_ACQUIRE) == 0 &&
                  !h2_speed_should_stop(context));
         if (h2_speed_io_should_retry(rc) &&
-            (atomic_load_explicit(
-                 &context->session_stop, memory_order_acquire) != 0 ||
+            (h2_atomic_load_explicit(
+                 &context->session_stop, H2_ATOMIC_ACQUIRE) != 0 ||
              h2_speed_should_stop(context))) {
             break;
         }
@@ -817,12 +829,12 @@ static void h2_speed_writer_task(void *user) {
                 rc = h2_bleikcp_flush(
                     writer->stream, H2_SPEED_IO_TIMEOUT_MS);
             } while (h2_speed_io_should_retry(rc) &&
-                     atomic_load_explicit(
-                         &context->session_stop, memory_order_acquire) == 0 &&
+                     h2_atomic_load_explicit(
+                         &context->session_stop, H2_ATOMIC_ACQUIRE) == 0 &&
                      !h2_speed_should_stop(context));
             if (h2_speed_io_should_retry(rc) &&
-                (atomic_load_explicit(
-                     &context->session_stop, memory_order_acquire) != 0 ||
+                (h2_atomic_load_explicit(
+                     &context->session_stop, H2_ATOMIC_ACQUIRE) != 0 ||
                  h2_speed_should_stop(context))) {
                 break;
             }
@@ -936,17 +948,17 @@ static int h2_speed_transfer(
     uint64_t rx_offset = 0u;
     uint64_t last_report_ms = 0u;
     context->sample_count = 0u;
-    atomic_store_explicit(&context->session_stop, 0, memory_order_release);
-    atomic_store_explicit(
-        &context->session_error, H2_PAL_OK, memory_order_release);
+    h2_atomic_store_explicit(&context->session_stop, 0, H2_ATOMIC_RELEASE);
+    h2_atomic_store_explicit(
+        &context->session_error, H2_PAL_OK, H2_ATOMIC_RELEASE);
     int rc = h2_pal_task_start(
         context->runtime->task, &options, h2_speed_writer_task,
         &writer, &writer_task);
     if (rc != H2_PAL_OK) {
         return rc;
     }
-    while (atomic_load_explicit(
-               &context->session_stop, memory_order_acquire) == 0 &&
+    while (h2_atomic_load_explicit(
+               &context->session_stop, H2_ATOMIC_ACQUIRE) == 0 &&
            !h2_speed_should_stop(context)) {
         size_t read_len = 0u;
         do {
@@ -954,12 +966,12 @@ static int h2_speed_transfer(
                 stream, payload, sizeof(payload), &read_len,
                 H2_SPEED_IO_TIMEOUT_MS);
         } while (h2_speed_io_should_retry(rc) &&
-                 atomic_load_explicit(
-                     &context->session_stop, memory_order_acquire) == 0 &&
+                 h2_atomic_load_explicit(
+                     &context->session_stop, H2_ATOMIC_ACQUIRE) == 0 &&
                  !h2_speed_should_stop(context));
         if (h2_speed_io_should_retry(rc) &&
-            (atomic_load_explicit(
-                 &context->session_stop, memory_order_acquire) != 0 ||
+            (h2_atomic_load_explicit(
+                 &context->session_stop, H2_ATOMIC_ACQUIRE) != 0 ||
              h2_speed_should_stop(context))) {
             rc = H2_PAL_OK;
             break;
@@ -984,13 +996,13 @@ static int h2_speed_transfer(
             last_report_ms = now_ms;
         }
     }
-    atomic_store_explicit(&context->session_stop, 1, memory_order_release);
+    h2_atomic_store_explicit(&context->session_stop, 1, H2_ATOMIC_RELEASE);
     int join_rc = h2_pal_task_join(context->runtime->task, writer_task);
     if (join_rc != H2_PAL_OK) {
         return join_rc;
     }
-    return atomic_load_explicit(
-        &context->session_error, memory_order_acquire);
+    return h2_atomic_load_explicit(
+        &context->session_error, H2_ATOMIC_ACQUIRE);
 }
 
 static int h2_speed_server_handler(
@@ -1001,8 +1013,8 @@ static int h2_speed_server_handler(
     uint8_t header[H2_SPEED_HEADER_SIZE];
     size_t read_len = 0u;
     uint64_t session_id = 0u;
-    (void)atomic_fetch_add_explicit(
-        &context->connect_attempts, 1u, memory_order_acq_rel);
+    (void)h2_atomic_fetch_add_explicit(
+        &context->connect_attempts, 1u, H2_ATOMIC_ACQ_REL);
     context->conn_handle = conn_handle;
     h2_speed_log_state(context, "connected", "accept", H2_PAL_OK);
     int rc = h2_bleikcp_read(
@@ -1037,17 +1049,17 @@ static int h2_speed_server_handler(
         actual_phy = phy.tx_phy;
     }
     h2_speed_set_link_metrics(context, 0u, 0u, actual_phy);
-    if (atomic_load_explicit(
-            &context->connections, memory_order_acquire) > 0u) {
-        (void)atomic_fetch_add_explicit(
-            &context->reconnects, 1u, memory_order_acq_rel);
+    if (h2_atomic_load_explicit(
+            &context->connections, H2_ATOMIC_ACQUIRE) > 0u) {
+        (void)h2_atomic_fetch_add_explicit(
+            &context->reconnects, 1u, H2_ATOMIC_ACQ_REL);
     }
-    (void)atomic_fetch_add_explicit(
-        &context->connections, 1u, memory_order_acq_rel);
+    (void)h2_atomic_fetch_add_explicit(
+        &context->connections, 1u, H2_ATOMIC_ACQ_REL);
     h2_speed_log_state(context, "running", "handshake", H2_PAL_OK);
     rc = h2_speed_transfer(context, stream, 1u);
-    (void)atomic_fetch_add_explicit(
-        &context->disconnects, 1u, memory_order_acq_rel);
+    (void)h2_atomic_fetch_add_explicit(
+        &context->disconnects, 1u, H2_ATOMIC_ACQ_REL);
     h2_speed_log_state(context, "disconnected", "transfer", rc);
     return rc;
 }
@@ -1090,8 +1102,8 @@ static int h2_speed_server_system_event(
     }
     if (event->type == H2_PAL_SYSTEM_EVENT_TYPE_BLE_DISCONNECTED &&
         context->advertising_set != NULL) {
-        atomic_store_explicit(
-            &context->advertising_restart_pending, 1, memory_order_release);
+        h2_atomic_store_explicit(
+            &context->advertising_restart_pending, 1, H2_ATOMIC_RELEASE);
     }
     return H2_PAL_OK;
 }
@@ -1276,8 +1288,8 @@ static int h2_speed_run_client(h2_speed_context_t *context) {
             continue;
         }
         h2_speed_log_state(context, "found", "scan", H2_PAL_OK);
-        (void)atomic_fetch_add_explicit(
-            &context->connect_attempts, 1u, memory_order_acq_rel);
+        (void)h2_atomic_fetch_add_explicit(
+            &context->connect_attempts, 1u, H2_ATOMIC_ACQ_REL);
         h2_pal_ble_connect_params_t connect_params = {
             .timeout_ms = H2_SPEED_SETUP_TIMEOUT_MS,
             .interval_min_ms = 15u,
@@ -1383,13 +1395,13 @@ static int h2_speed_run_client(h2_speed_context_t *context) {
             rc = H2_PAL_ERR_FORMAT;
         }
         if (rc == H2_PAL_OK) {
-            if (atomic_load_explicit(
-                    &context->connections, memory_order_acquire) > 0u) {
-                (void)atomic_fetch_add_explicit(
-                    &context->reconnects, 1u, memory_order_acq_rel);
+            if (h2_atomic_load_explicit(
+                    &context->connections, H2_ATOMIC_ACQUIRE) > 0u) {
+                (void)h2_atomic_fetch_add_explicit(
+                    &context->reconnects, 1u, H2_ATOMIC_ACQ_REL);
             }
-            (void)atomic_fetch_add_explicit(
-                &context->connections, 1u, memory_order_acq_rel);
+            (void)h2_atomic_fetch_add_explicit(
+                &context->connections, 1u, H2_ATOMIC_ACQ_REL);
             backoff_ms = 250u;
             h2_speed_log_state(context, "running", "handshake", H2_PAL_OK);
             rc = h2_speed_transfer(context, stream, 0u);
@@ -1409,8 +1421,8 @@ static int h2_speed_run_client(h2_speed_context_t *context) {
                     context, "warning", "advertising", resume_rc);
             }
         }
-        (void)atomic_fetch_add_explicit(
-            &context->disconnects, 1u, memory_order_acq_rel);
+        (void)h2_atomic_fetch_add_explicit(
+            &context->disconnects, 1u, H2_ATOMIC_ACQ_REL);
         h2_speed_log_state(context, "disconnected", "transfer", rc);
         (void)h2_speed_sleep_interruptible(context, backoff_ms);
     }
@@ -1442,6 +1454,46 @@ int h2_bleikcp_speed_run(
     }
     memset(context, 0, sizeof(*context));
     context->runtime = runtime;
+    if (h2_atomic_init(&context->session_stop, 0) != H2_ATOMIC_OK) {
+        h2_speed_destroy_atomics(context);
+        h2_pal_mem_free(runtime->mem, context);
+        return H2_PAL_ERR_NO_MEMORY;
+    }
+    if (h2_atomic_init(&context->session_error, 0) != H2_ATOMIC_OK) {
+        h2_speed_destroy_atomics(context);
+        h2_pal_mem_free(runtime->mem, context);
+        return H2_PAL_ERR_NO_MEMORY;
+    }
+    if (h2_atomic_init(&context->advertising_restart_pending, 0) != H2_ATOMIC_OK) {
+        h2_speed_destroy_atomics(context);
+        h2_pal_mem_free(runtime->mem, context);
+        return H2_PAL_ERR_NO_MEMORY;
+    }
+    if (h2_atomic_init(&context->renderer_stop, 0) != H2_ATOMIC_OK) {
+        h2_speed_destroy_atomics(context);
+        h2_pal_mem_free(runtime->mem, context);
+        return H2_PAL_ERR_NO_MEMORY;
+    }
+    if (h2_atomic_init(&context->connect_attempts, 0) != H2_ATOMIC_OK) {
+        h2_speed_destroy_atomics(context);
+        h2_pal_mem_free(runtime->mem, context);
+        return H2_PAL_ERR_NO_MEMORY;
+    }
+    if (h2_atomic_init(&context->connections, 0) != H2_ATOMIC_OK) {
+        h2_speed_destroy_atomics(context);
+        h2_pal_mem_free(runtime->mem, context);
+        return H2_PAL_ERR_NO_MEMORY;
+    }
+    if (h2_atomic_init(&context->reconnects, 0) != H2_ATOMIC_OK) {
+        h2_speed_destroy_atomics(context);
+        h2_pal_mem_free(runtime->mem, context);
+        return H2_PAL_ERR_NO_MEMORY;
+    }
+    if (h2_atomic_init(&context->disconnects, 0) != H2_ATOMIC_OK) {
+        h2_speed_destroy_atomics(context);
+        h2_pal_mem_free(runtime->mem, context);
+        return H2_PAL_ERR_NO_MEMORY;
+    }
     context->role = config->role;
     context->advertising_type = config->advertising_type;
     context->scan_type = config->scan_type;
@@ -1467,6 +1519,7 @@ int h2_bleikcp_speed_run(
     int rc = h2_pal_mutex_create(
         runtime->sync, &mutex_config, &context->metrics_mutex);
     if (rc != H2_PAL_OK) {
+    h2_speed_destroy_atomics(context);
         h2_pal_mem_free(runtime->mem, context);
         return rc;
     }

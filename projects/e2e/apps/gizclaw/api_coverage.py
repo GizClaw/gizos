@@ -80,6 +80,8 @@ def requirements():
             if not method.startswith("speech_"):
                 rpc = PREFIX + "rpc_" + method
                 rules.append(Rule(rpc, case, (rpc,), rpc, stage))
+    symbol = PREFIX + "rpc_run_stop"
+    rules.append(Rule(symbol, "rpc/catalog-workspace", (symbol,), symbol, "run_stop-assert"))
     for method in "init start set_track unset_track audio_start audio_end poll stop deinit get_time_sync_status".split():
         symbol = PREFIX + "service_" + method
         case = "voice" if method in {"set_track", "unset_track", "audio_start", "audio_end"} else "service"
@@ -97,7 +99,7 @@ def requirements():
     rules.append(Rule(symbol, "voice", (symbol, PREFIX + "req_do", PREFIX + "req_wait"),
                       symbol, "audio_play-assert"))
     for method in ("player_play player_play_index player_play_index_at "
-                   "player_playlist_set player_repeat_set player_stop "
+                   "player_playlist_set player_repeat_set player_rate_set player_stop "
                    "player_get_status player_playlist_snapshot ota_start "
                    "ota_get_status").split():
         symbol = PREFIX + method
@@ -121,11 +123,20 @@ def requirements():
                           method + "-assert"))
     rules.append(Rule(snapshot, "device-api", (snapshot,), snapshot,
                       "debug_snapshot-assert"))
+    # State mutations are only proven by the state observed afterwards.
+    snapshot = PREFIX + "api_key_state_snapshot"
+    for method in "create request_refresh request_revoke snapshot close destroy".split():
+        symbol = PREFIX + "api_key_state_" + method
+        observed = method in {"create", "request_refresh", "request_revoke", "close"}
+        rules.append(Rule(symbol, "rpc/api-key",
+                          (symbol, snapshot) if observed else (symbol,),
+                          snapshot if observed else symbol,
+                          "api_key_state_" + method + "-assert"))
     # Session requirements remain fail-closed until a real run emits both
     # the call and its business assertion. Unit mocks are never live evidence.
     for method in ("create destroy snapshot catalog_copy register refresh select close "
                    "conversation_create conversation_release audio_start audio_end "
-                   "cancel_pending").split():
+                   "send_text cancel_pending").split():
         symbol = PREFIX + "session_" + method
         case = "voice"
         rules.append(Rule(symbol, case, (symbol,), symbol, "session_" + method + "-assert"))
@@ -139,9 +150,9 @@ def validate_inventory(rules, text):
     text = re.sub(r"/\*.*?\*/|//[^\n]*", "", text, flags=re.S)
     inventory = re.findall(r"H2_GIZCLAW_API\((h2_gizclaw_\w+)\)", text)
     names = [rule.symbol for rule in rules]
-    if (len(inventory) != 217 or len(set(inventory)) != 217 or
-            len(names) != 217 or len(set(names)) != 217 or set(names) != set(inventory)):
-        raise ValueError("coverage matrix does not match the approved 217-function inventory")
+    if (len(inventory) != 226 or len(set(inventory)) != 226 or
+            len(names) != 226 or len(set(names)) != 226 or set(names) != set(inventory)):
+        raise ValueError("coverage matrix does not match the approved 226-function inventory")
     if any(rule.case not in CASES for rule in rules):
         raise ValueError("coverage matrix references an unknown case")
 

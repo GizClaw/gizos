@@ -60,6 +60,7 @@ const zhDevelopmentItems = [
       { text: "Bundle", link: "/zh/developing/bundle" },
       { text: "CoreMQTT", link: "/zh/developing/coremqtt" },
       { text: "DNS", link: "/zh/developing/dns" },
+      { text: "Encoding", link: "/zh/developing/encoding" },
       { text: "FFmpeg", link: "/zh/developing/ffmpeg" },
       { text: "Game Runtime", link: "/zh/developing/game_runtime" },
       { text: "GizClaw", link: "/zh/developing/gizclaw" },
@@ -67,6 +68,7 @@ const zhDevelopmentItems = [
       { text: "H2SCTP", link: "/zh/developing/h2sctp" },
       { text: "libSRTP", link: "/zh/developing/libsrtp" },
       { text: "LVGL", link: "/zh/developing/lvgl" },
+      { text: "Memory Arena", link: "/zh/developing/mem_arena" },
       { text: "MP4 Decoder", link: "/zh/developing/mp4_decoder" },
       { text: "iperf", link: "/zh/developing/iperf" },
       { text: "NTP", link: "/zh/developing/ntp" },
@@ -74,6 +76,7 @@ const zhDevelopmentItems = [
       { text: "PortAudio", link: "/zh/developing/portaudio" },
       { text: "QR Code", link: "/zh/developing/qrcode" },
       { text: "SDL3", link: "/zh/developing/sdl3" },
+      { text: "Raster2D", link: "/zh/developing/raster2d" },
       { text: "SemVer", link: "/zh/developing/semver" },
       { text: "SQLite", link: "/zh/developing/sqlite" },
       { text: "TinyH264", link: "/zh/developing/tinyh264" },
@@ -111,6 +114,7 @@ const appItems = [
     collapsed: true,
     items: [
       { text: "总览", link: "/apps/h2loader/" },
+      { text: "npm Release", link: "/apps/h2loader/npm_release" },
       {
         text: "项目结构",
         link: "/apps/h2loader/project_structure",
@@ -166,6 +170,15 @@ const appItems = [
             items: [
               { text: "总览", link: "/apps/h2loader/boards/devkit/" },
               { text: "H2Loader", link: "/apps/h2loader/boards/devkit/h2loader" },
+            ],
+          },
+          {
+            text: "JieLi AC791N DevKit",
+            collapsed: true,
+            items: [
+              { text: "总览", link: "/apps/h2loader/boards/jieli_ac791n_devkit/" },
+              { text: "H2Loader", link: "/apps/h2loader/boards/jieli_ac791n_devkit/h2loader" },
+              { text: "Crash Before Confirm", link: "/apps/h2loader/boards/jieli_ac791n_devkit/crash_before_confirm" },
             ],
           },
           {
@@ -318,6 +331,7 @@ const referenceItems = [
       { text: "Bundle", link: "/references/bundle" },
       { text: "CoreMQTT", link: "/references/coremqtt" },
       { text: "DNS", link: "/references/dns" },
+      { text: "Encoding", link: "/references/encoding" },
       { text: "FFmpeg", link: "/references/ffmpeg" },
       { text: "Drivers", link: "/references/drivers" },
       { text: "Game Runtime", link: "/references/game_runtime" },
@@ -326,7 +340,9 @@ const referenceItems = [
       { text: "H2SCTP", link: "/references/h2sctp" },
       { text: "IO Stream iKCP", link: "/references/iostreamikcp" },
       { text: "libSRTP", link: "/references/libsrtp" },
+      { text: "Lua Display", link: "/references/lua" },
       { text: "LVGL", link: "/references/lvgl" },
+      { text: "Memory Arena", link: "/references/mem_arena" },
       { text: "MP4 Decoder", link: "/references/mp4_decoder" },
       { text: "iperf", link: "/references/iperf" },
       { text: "NTP", link: "/references/ntp" },
@@ -336,6 +352,7 @@ const referenceItems = [
       { text: "QR Code", link: "/references/qrcode" },
       { text: "Runtime", link: "/references/runtime" },
       { text: "SDL3", link: "/references/sdl3" },
+      { text: "Raster2D", link: "/references/raster2d" },
       { text: "SemVer", link: "/references/semver" },
       { text: "SQLite", link: "/references/sqlite" },
       { text: "TinyH264", link: "/references/tinyh264" },

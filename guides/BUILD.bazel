@@ -45,6 +45,7 @@ api_reference(
         "//libs/bundle",
         "//libs/command",
         "//libs/dns",
+        "//libs/encoding",
         "//libs/drivers/motion/qmi8658",
         "//libs/drivers/nfc/fm175xx",
         "//libs/drivers/nfc/type2",
@@ -53,7 +54,9 @@ api_reference(
         "//libs/gizclaw",
         "//libs/iostreamikcp",
         "//libs/iperf",
+        "//libs/lua",
         "//libs/lvgl",
+        "//libs/mem_arena",
         "//libs/mp4_decoder",
         "//libs/ntp",
         "//libs/pal",
@@ -73,6 +76,7 @@ api_reference(
         "//libs/pal/providers/wolfssl",
         "//libs/pixa",
         "//libs/qrcode",
+        "//libs/raster2d",
         "//libs/runtime",
         "//libs/semver",
         "//libs/utils",
@@ -153,4 +157,9 @@ vitepress_bin.vitepress_binary(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+)
+
+filegroup(
+    name = "jieli_evidence_sources",
+    srcs = glob(["apps/h2loader/boards/jieli_ac791n_devkit/evidence/**"]),
 )

@@ -310,7 +310,6 @@ int open_network_services(bool with_mqtt, bool with_webrtc,
     if (result == H2_PAL_OK) {
       const h2_peer_config_t peer = {
           h2_desktop_platform_default_allocator(),
-          h2_desktop_platform_default_allocator(),
           h2_desktop_platform_log_api(),
           host_net_api(),
           h2_desktop_platform_queue_api(),
@@ -509,7 +508,7 @@ const h2_pal_serial_host_api_t *serial_host_api() {
 const h2_pal_ble_host_api_t *corebluetooth_api() {
 #if defined(__APPLE__)
   return h2_darwin_corebluetooth_ble(
-      h2_desktop_platform_default_allocator());
+      h2_desktop_platform_default_allocator(), h2_desktop_platform_log_api());
 #else
   return h2_pal_unsupported_ble_host_api();
 #endif

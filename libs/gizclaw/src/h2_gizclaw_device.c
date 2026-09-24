@@ -7,6 +7,7 @@
 #include "h2_gizclaw_service_internal.h"
 #include "h2_gizclaw_task_names.h"
 #include "h2_gizclaw_telemetry.h"
+#include "h2_gizclaw_time_stretch_internal.h"
 #include "payload/audioplayer.pb.h"
 #include "payload/firmware.pb.h"
 #include "payload/system.pb.h"
@@ -14,7 +15,7 @@
 #include "pb_encode.h"
 
 #include <limits.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -31,8 +32,10 @@ struct h2_gizclaw_device {
   h2_pal_mutex_t *mutex;
   h2_pal_task_t *task;
   audio_download_t *download;
-  atomic_bool stopping;
-  atomic_uint generation;
+  h2_atomic_bool_t stopping;
+  h2_atomic_uint_t generation;
+  /* Playback rate in permille, read by the worker once per stretch step. */
+  h2_atomic_uint_t rate;
   uint32_t worker_generation, sequence;
   bool playing, dirty;
   gizclaw_rpc_v1_AudioPlayerStatus status;
@@ -51,6 +54,9 @@ struct h2_gizclaw_device {
   uint32_t delay_ms;
   char sound[33];
   uint32_t sound_ms;
+  bool keep_network;
+  bool kickoff;
+  char workspace_name[257];
   gizclaw_rpc_v1_ClientFirmwareUpdateRequest update;
   h2_gizclaw_ota_status_t ota_status;
   h2_pal_wifi_sta_config_t wifi_config;
@@ -200,7 +206,7 @@ static int player_reply(h2_gizclaw_device_t *d,
 }
 static void cancel_play_locked(h2_gizclaw_device_t *d) {
   d->playing = false;
-  atomic_fetch_add(&d->generation, 1u);
+  h2_atomic_fetch_add(&d->generation, 1u);
   strcpy(d->status.state, "stopped");
   changed(d);
 }
@@ -311,10 +317,10 @@ static int player_rpc(h2_gizclaw_device_t *d, int method,
       unlock(d);
       return H2_PAL_ERR_BUSY;
     }
-    atomic_fetch_add(&d->generation, 1u);
+    h2_atomic_fetch_add(&d->generation, 1u);
     d->playing = false;
     d->pending = H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAY;
-    d->pending_generation = atomic_load(&d->generation);
+    d->pending_generation = h2_atomic_load(&d->generation);
     out->on_complete = response_complete;
     out->complete_user = d;
     d->status.has_current_index = true;
@@ -347,17 +353,17 @@ static void response_complete(void *user, int result) {
   lock(d);
   trace(d, "response-complete", d->pending, result);
   if (d->pending == H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAY) {
-    if (result == H2_PAL_OK && !atomic_load(&d->stopping) &&
-        d->pending_generation == atomic_load(&d->generation)) {
+    if (result == H2_PAL_OK && !h2_atomic_load(&d->stopping) &&
+        d->pending_generation == h2_atomic_load(&d->generation)) {
       d->playing = true;
-    } else if (d->pending_generation == atomic_load(&d->generation)) {
+    } else if (d->pending_generation == h2_atomic_load(&d->generation)) {
       cancel_play_locked(d);
     }
     d->pending = 0;
     unlock(d);
     return;
   }
-  if (result == H2_PAL_OK && !atomic_load(&d->stopping)) {
+  if (result == H2_PAL_OK && !h2_atomic_load(&d->stopping)) {
     d->pending_ready = true;
     cancel_play_locked(d);
   } else
@@ -585,6 +591,358 @@ static int wifi_rpc(h2_gizclaw_device_t *d, int method,
   return H2_PAL_ERR_NOT_FOUND;
 }
 
+/* Mirrors deviceSettingsLocalePattern in the server's rpcapi: a 2-8 letter
+ * primary subtag then hyphen-separated 1-8 character alphanumeric subtags, so
+ * "zh_CN" and free text are rejected. */
+static bool ascii_alpha(char value) {
+  return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z');
+}
+static bool ascii_alnum(char value) {
+  return ascii_alpha(value) || (value >= '0' && value <= '9');
+}
+/* The array comes straight from a product hook, so its length is measured
+ * inside the buffer instead of with strlen(): a hook that fills all
+ * H2_GIZCLAW_DEVICE_LOCALE_MAX + 1 bytes without a NUL is rejected here rather
+ * than read past the end of h2_gizclaw_device_settings_t. */
+static bool locale_valid(const char locale[H2_GIZCLAW_DEVICE_LOCALE_MAX + 1]) {
+  size_t length = 0;
+  while (length <= H2_GIZCLAW_DEVICE_LOCALE_MAX && locale[length] != '\0')
+    ++length;
+  if (!length || length > H2_GIZCLAW_DEVICE_LOCALE_MAX)
+    return false;
+  size_t index = 0, start = 0;
+  while (index < length && ascii_alpha(locale[index]))
+    ++index;
+  if (index - start < 2 || index - start > 8)
+    return false;
+  while (index < length) {
+    if (locale[index] != '-')
+      return false;
+    start = ++index;
+    while (index < length && ascii_alnum(locale[index]))
+      ++index;
+    if (index - start < 1 || index - start > 8)
+      return false;
+  }
+  return true;
+}
+
+/* Mirrors rpcapi.DeviceSettings.Valid(): brightness in [0, 100], timeouts
+ * non-negative, a well-formed locale, and each enum one of its named values. A
+ * single invalid member rejects the whole value, so a set is refused before any
+ * member is applied. */
+static bool settings_valid(const h2_gizclaw_device_settings_t *s) {
+  return (!s->has_screen_brightness ||
+          (s->screen_brightness >= 0 && s->screen_brightness <= 100)) &&
+         (!s->has_led_brightness ||
+          (s->led_brightness >= 0 && s->led_brightness <= 100)) &&
+         (!s->has_screen_off_timeout_ms || s->screen_off_timeout_ms >= 0) &&
+         (!s->has_auto_sleep_timeout_ms || s->auto_sleep_timeout_ms >= 0) &&
+         (!s->has_locale || locale_valid(s->locale)) &&
+         (!s->has_default_interaction_mode ||
+          s->default_interaction_mode ==
+              H2_GIZCLAW_DEVICE_INTERACTION_PUSH_TO_TALK ||
+          s->default_interaction_mode ==
+              H2_GIZCLAW_DEVICE_INTERACTION_REALTIME) &&
+         (!s->has_key_feedback ||
+          (s->key_feedback >= H2_GIZCLAW_DEVICE_KEY_FEEDBACK_NONE &&
+           s->key_feedback <=
+               H2_GIZCLAW_DEVICE_KEY_FEEDBACK_SOUND_AND_VIBRATE)) &&
+         (!s->has_alert_mode ||
+          (s->alert_mode >= H2_GIZCLAW_DEVICE_ALERT_SILENT &&
+           s->alert_mode <= H2_GIZCLAW_DEVICE_ALERT_RING));
+}
+
+static void settings_from_wire(const gizclaw_rpc_v1_DeviceSettings *wire,
+                               h2_gizclaw_device_settings_t *out) {
+  memset(out, 0, sizeof(*out));
+  out->has_cellular_enabled = wire->has_cellular_enabled;
+  out->cellular_enabled = wire->cellular_enabled;
+  out->has_screen_off_timeout_ms = wire->has_screen_off_timeout_ms;
+  out->screen_off_timeout_ms = wire->screen_off_timeout_ms;
+  out->has_screen_brightness = wire->has_screen_brightness;
+  out->screen_brightness = wire->screen_brightness;
+  out->has_led_brightness = wire->has_led_brightness;
+  out->led_brightness = wire->led_brightness;
+  out->has_locale = wire->has_locale;
+  _Static_assert(sizeof(out->locale) == sizeof(wire->locale),
+                 "DeviceSettings.locale bound drift");
+  memcpy(out->locale, wire->locale, sizeof(out->locale));
+  out->locale[sizeof(out->locale) - 1] = '\0';
+  out->has_default_interaction_mode = wire->has_default_interaction_mode;
+  out->default_interaction_mode =
+      (h2_gizclaw_device_interaction_mode_t)wire->default_interaction_mode;
+  out->has_key_feedback = wire->has_key_feedback;
+  out->key_feedback = (h2_gizclaw_device_key_feedback_t)wire->key_feedback;
+  out->has_alert_mode = wire->has_alert_mode;
+  out->alert_mode = (h2_gizclaw_device_alert_mode_t)wire->alert_mode;
+  out->has_auto_sleep_timeout_ms = wire->has_auto_sleep_timeout_ms;
+  out->auto_sleep_timeout_ms = wire->auto_sleep_timeout_ms;
+  out->has_nfc_enabled = wire->has_nfc_enabled;
+  out->nfc_enabled = wire->nfc_enabled;
+}
+
+static void settings_to_wire(const h2_gizclaw_device_settings_t *settings,
+                             gizclaw_rpc_v1_DeviceSettings *wire) {
+  memset(wire, 0, sizeof(*wire));
+  wire->has_cellular_enabled = settings->has_cellular_enabled;
+  wire->cellular_enabled = settings->cellular_enabled;
+  wire->has_screen_off_timeout_ms = settings->has_screen_off_timeout_ms;
+  wire->screen_off_timeout_ms = settings->screen_off_timeout_ms;
+  wire->has_screen_brightness = settings->has_screen_brightness;
+  wire->screen_brightness = settings->screen_brightness;
+  wire->has_led_brightness = settings->has_led_brightness;
+  wire->led_brightness = settings->led_brightness;
+  wire->has_locale = settings->has_locale;
+  memcpy(wire->locale, settings->locale, sizeof(wire->locale));
+  wire->locale[sizeof(wire->locale) - 1] = '\0';
+  wire->has_default_interaction_mode = settings->has_default_interaction_mode;
+  wire->default_interaction_mode = (gizclaw_rpc_v1_DeviceInteractionMode)
+      settings->default_interaction_mode;
+  wire->has_key_feedback = settings->has_key_feedback;
+  wire->key_feedback =
+      (gizclaw_rpc_v1_DeviceKeyFeedback)settings->key_feedback;
+  wire->has_alert_mode = settings->has_alert_mode;
+  wire->alert_mode = (gizclaw_rpc_v1_DeviceAlertMode)settings->alert_mode;
+  wire->has_auto_sleep_timeout_ms = settings->has_auto_sleep_timeout_ms;
+  wire->auto_sleep_timeout_ms = settings->auto_sleep_timeout_ms;
+  wire->has_nfc_enabled = settings->has_nfc_enabled;
+  wire->nfc_enabled = settings->nfc_enabled;
+}
+
+static int settings_rpc(h2_gizclaw_device_t *d, int method,
+                        h2_gizclaw_rpc_bytes_t bytes,
+                        h2_gizclaw_rpc_provider_response_t *out) {
+  const h2_gizclaw_vtable_t *v = d->config.vtable;
+  const bool get = method == H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_GET;
+  if (!v || (get ? !v->get_device_settings : !v->set_device_settings))
+    return H2_PAL_ERR_UNSUPPORTED;
+  h2_gizclaw_device_settings_t settings = {0};
+  int rc;
+  if (get) {
+    gizclaw_rpc_v1_ClientDeviceSettingsGetRequest empty = {0};
+    if (!decode(bytes, gizclaw_rpc_v1_ClientDeviceSettingsGetRequest_fields,
+                &empty))
+      return H2_PAL_ERR_INVALID_ARG;
+    rc = v->get_device_settings(d->config.user, &settings);
+  } else {
+    gizclaw_rpc_v1_ClientDeviceSettingsSetRequest request = {0};
+    if (!decode(bytes, gizclaw_rpc_v1_ClientDeviceSettingsSetRequest_fields,
+                &request))
+      return H2_PAL_ERR_INVALID_ARG;
+    if (!request.has_value)
+      return H2_PAL_ERR_INVALID_ARG;
+    h2_gizclaw_device_settings_t patch;
+    settings_from_wire(&request.value, &patch);
+    /* Reject the whole patch before the product applies any member, as the
+     * server does, so a caller never gets a partially applied set. */
+    if (!settings_valid(&patch))
+      return H2_PAL_ERR_INVALID_ARG;
+    rc = v->set_device_settings(d->config.user, &patch, &settings);
+  }
+  if (rc != H2_PAL_OK)
+    return rc;
+  /* A product reply is held to the same ranges: a value the server would
+   * reject fails the RPC instead of being sent, like a malformed get_facts. */
+  if (!settings_valid(&settings))
+    return H2_PAL_ERR_FORMAT;
+  gizclaw_rpc_v1_ClientDeviceSettingsGetResponse reply = {.has_value = true};
+  settings_to_wire(&settings, &reply.value);
+  return encode(d,
+                get ? gizclaw_rpc_v1_ClientDeviceSettingsGetResponse_fields
+                    : gizclaw_rpc_v1_ClientDeviceSettingsSetResponse_fields,
+                &reply, out);
+}
+
+/* Registry names of every client method the library can name, so
+ * client.rpc.methods.get answers with registry names and service_init can
+ * reject a product declaration it does not recognise. */
+typedef struct device_method {
+  int method;
+  const char *name;
+  /* Only the built-in provider dispatches these; a product must not declare
+   * them in rpc_provider_methods. */
+  bool built_in;
+} device_method_t;
+
+static const device_method_t device_method_names[] = {
+    {H2_GIZCLAW_RPC_CLIENT_INFO_GET, "client.info.get", true},
+    {H2_GIZCLAW_RPC_CLIENT_IDENTIFIERS_GET, "client.identifiers.get", true},
+    {H2_GIZCLAW_RPC_CLIENT_DEVICE_STATUS_GET, "client.device.status.get", true},
+    {H2_GIZCLAW_RPC_CLIENT_DEVICE_VOLUME_SET, "client.device.volume.set", true},
+    {H2_GIZCLAW_RPC_CLIENT_DEVICE_SOUND_PLAY, "client.device.sound.play", true},
+    {H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT, "client.device.reboot", true},
+    {H2_GIZCLAW_RPC_CLIENT_WIFI_STATUS_GET, "client.wifi.status.get", true},
+    {H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_LIST, "client.wifi.saved.list", true},
+    {H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_FORGET, "client.wifi.saved.forget", true},
+    {H2_GIZCLAW_RPC_CLIENT_WIFI_SCAN, "client.wifi.scan", true},
+    {H2_GIZCLAW_RPC_CLIENT_WIFI_CONNECT, "client.wifi.connect", true},
+    {H2_GIZCLAW_RPC_CLIENT_FIRMWARE_UPDATE, "client.firmware.update", true},
+    {H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_GET,
+     "client.device.audioplayer.get", true},
+    {H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_GET,
+     "client.device.audioplayer.playlist.get", true},
+    {H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_SET,
+     "client.device.audioplayer.playlist.set", true},
+    {H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_APPEND,
+     "client.device.audioplayer.playlist.append", true},
+    {H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAY,
+     "client.device.audioplayer.play", true},
+    {H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_STOP,
+     "client.device.audioplayer.stop", true},
+    {H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_MODE_SET,
+     "client.device.audioplayer.mode.set", true},
+    {H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_GET, "client.device.settings.get",
+     true},
+    {H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_SET, "client.device.settings.set",
+     true},
+    {H2_GIZCLAW_RPC_CLIENT_DEVICE_FACTORY_RESET, "client.device.factory_reset",
+     true},
+    {H2_GIZCLAW_RPC_CLIENT_RPC_METHODS_GET, "client.rpc.methods.get", true},
+    {H2_GIZCLAW_RPC_CLIENT_RUN_WORKSPACE_SET, "client.run.workspace.set", true},
+    {H2_GIZCLAW_RPC_CLIENT_TOOL_INVOKE, "client.tool.invoke", false},
+    {H2_GIZCLAW_RPC_CLIENT_DEVICE_FIND, "client.device.find", false},
+    {H2_GIZCLAW_RPC_CLIENT_SOCIAL_PING, "client.social.ping", false},
+};
+
+/* The capability each built-in method needs, holding exactly the conditions
+ * device_rpc() uses to return UNSUPPORTED. The list client.rpc.methods.get
+ * reports is derived from this, so it cannot advertise a method the device
+ * would only fail; the service test drives both directions. */
+static bool device_supports(const h2_gizclaw_device_t *d, int method) {
+  const h2_gizclaw_vtable_t *v = d->config.vtable;
+  const h2_pal_wifi_sta_api_t *wifi = d->config.wifi;
+  const h2_pal_wifi_settings_api_t *settings = d->config.wifi_settings;
+  switch (method) {
+  case H2_GIZCLAW_RPC_CLIENT_INFO_GET:
+  case H2_GIZCLAW_RPC_CLIENT_IDENTIFIERS_GET:
+  case H2_GIZCLAW_RPC_CLIENT_DEVICE_STATUS_GET:
+  case H2_GIZCLAW_RPC_CLIENT_RPC_METHODS_GET:
+    return true;
+  case H2_GIZCLAW_RPC_CLIENT_DEVICE_VOLUME_SET:
+    return d->config.audio && d->config.audio->vtable &&
+           d->config.audio->vtable->set_speaker_volume_percent;
+  case H2_GIZCLAW_RPC_CLIENT_DEVICE_SOUND_PLAY:
+    return d->config.audio && v && v->resolve_sound_url;
+  case H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT:
+    return (v && v->request_reboot) ||
+           (d->config.power && d->config.power->vtable &&
+            d->config.power->vtable->reboot);
+  case H2_GIZCLAW_RPC_CLIENT_WIFI_STATUS_GET:
+    return wifi && wifi->vtable && wifi->vtable->get_status;
+  case H2_GIZCLAW_RPC_CLIENT_WIFI_SCAN:
+    return wifi && wifi->vtable && wifi->vtable->scan;
+  case H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_LIST:
+    return settings && settings->vtable && settings->vtable->get_saved_sta_config;
+  case H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_FORGET:
+    return settings && settings->vtable &&
+           settings->vtable->get_saved_sta_config &&
+           settings->vtable->clear_saved_sta_config;
+  case H2_GIZCLAW_RPC_CLIENT_WIFI_CONNECT:
+    return wifi && wifi->vtable && wifi->vtable->connect_and_save;
+  case H2_GIZCLAW_RPC_CLIENT_FIRMWARE_UPDATE:
+    return v && v->ota_begin && v->ota_write && v->ota_finish && v->ota_abort &&
+           v->ota_activate && d->config.http;
+  case H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_GET:
+  case H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_GET:
+  case H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_SET:
+  case H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_APPEND:
+  case H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAY:
+  case H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_STOP:
+  case H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_MODE_SET:
+    return d->config.audio != NULL;
+  case H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_GET:
+    return v && v->get_device_settings;
+  case H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_SET:
+    return v && v->set_device_settings;
+  case H2_GIZCLAW_RPC_CLIENT_DEVICE_FACTORY_RESET:
+    return v && v->request_factory_reset;
+  case H2_GIZCLAW_RPC_CLIENT_RUN_WORKSPACE_SET:
+    return v && v->request_run_workspace_set;
+  default:
+    return false;
+  }
+}
+
+static bool device_method_declared(const h2_gizclaw_device_t *d, int method) {
+  for (size_t i = 0; i < d->config.rpc_provider_method_count; ++i) {
+    if (d->config.rpc_provider_methods[i] == method)
+      return true;
+  }
+  return false;
+}
+
+/* gizclaw_rpc_v1_ClientRpcMethodsGetResponse is char methods[160][64], 10 KiB,
+ * which belongs on neither an embedded task stack nor a permanent allocation
+ * for a control call answered a handful of times. The single repeated string
+ * field is therefore written with nanopb's own primitives into the same
+ * heap-managed response buffer encode() owns. */
+static int methods_reply(h2_gizclaw_device_t *d,
+                         h2_gizclaw_rpc_provider_response_t *out) {
+  const size_t count =
+      sizeof(device_method_names) / sizeof(device_method_names[0]);
+  size_t size = 0;
+  for (size_t i = 0; i < count; ++i) {
+    const device_method_t *entry = &device_method_names[i];
+    if (!(entry->built_in ? device_supports(d, entry->method)
+                          : device_method_declared(d, entry->method)))
+      continue;
+    /* Every registry name is under 64 bytes, so tag and length are one byte. */
+    size += 2u + strlen(entry->name);
+  }
+  if (size > d->response_capacity) {
+    uint8_t *buffer = h2_pal_mem_alloc(d->config.allocator, size);
+    if (!buffer)
+      return H2_PAL_ERR_NO_MEMORY;
+    h2_pal_mem_free(d->config.allocator, d->response);
+    d->response = buffer;
+    d->response_capacity = size;
+  }
+  pb_ostream_t output = pb_ostream_from_buffer(d->response, size);
+  for (size_t i = 0; i < count; ++i) {
+    const device_method_t *entry = &device_method_names[i];
+    if (!(entry->built_in ? device_supports(d, entry->method)
+                          : device_method_declared(d, entry->method)))
+      continue;
+    if (!pb_encode_tag(&output, PB_WT_STRING,
+                       gizclaw_rpc_v1_ClientRpcMethodsGetResponse_methods_tag) ||
+        !pb_encode_string(&output, (const pb_byte_t *)entry->name,
+                          strlen(entry->name)))
+      return H2_PAL_ERR_FORMAT;
+  }
+  out->payload = (h2_gizclaw_rpc_bytes_t){d->response, output.bytes_written};
+  return H2_PAL_OK;
+}
+
+static h2_pal_result_t
+validate_provider_methods(const h2_gizclaw_config_t *config) {
+  const size_t count = config->rpc_provider_method_count;
+  if (!count)
+    return H2_PAL_OK;
+  /* Without a provider the declared methods answer UNIMPLEMENTED through the
+   * fallback, so advertising them in client.rpc.methods.get would be a lie. */
+  if (config->rpc_provider_methods == NULL || config->rpc_provider == NULL ||
+      count > H2_GIZCLAW_RPC_PROVIDER_METHODS_MAX)
+    return H2_PAL_ERR_INVALID_ARG;
+  const size_t names =
+      sizeof(device_method_names) / sizeof(device_method_names[0]);
+  for (size_t i = 0; i < count; ++i) {
+    const h2_gizclaw_rpc_method_t method = config->rpc_provider_methods[i];
+    const device_method_t *entry = NULL;
+    for (size_t n = 0; n < names && entry == NULL; ++n) {
+      if (device_method_names[n].method == method)
+        entry = &device_method_names[n];
+    }
+    if (entry == NULL || entry->built_in)
+      return H2_PAL_ERR_INVALID_ARG;
+    for (size_t j = 0; j < i; ++j) {
+      if (config->rpc_provider_methods[j] == method)
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+  }
+  return H2_PAL_OK;
+}
+
 static int device_rpc(h2_gizclaw_device_t *d, int method,
                       h2_gizclaw_rpc_bytes_t bytes,
                       h2_gizclaw_rpc_provider_response_t *out) {
@@ -709,6 +1067,50 @@ static int device_rpc(h2_gizclaw_device_t *d, int method,
     unlock(d);
     return rc;
   }
+  if (method == H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_GET ||
+      method == H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_SET)
+    return settings_rpc(d, method, bytes, out);
+  if (method == H2_GIZCLAW_RPC_CLIENT_RPC_METHODS_GET) {
+    gizclaw_rpc_v1_ClientRpcMethodsGetRequest empty = {0};
+    if (!decode(bytes, gizclaw_rpc_v1_ClientRpcMethodsGetRequest_fields, &empty))
+      return H2_PAL_ERR_INVALID_ARG;
+    return methods_reply(d, out);
+  }
+  if (method == H2_GIZCLAW_RPC_CLIENT_DEVICE_FACTORY_RESET) {
+    if (!d->config.vtable || !d->config.vtable->request_factory_reset)
+      return H2_PAL_ERR_UNSUPPORTED;
+    gizclaw_rpc_v1_ClientDeviceFactoryResetRequest request = {0};
+    if (!decode(bytes, gizclaw_rpc_v1_ClientDeviceFactoryResetRequest_fields,
+                &request))
+      return H2_PAL_ERR_INVALID_ARG;
+    lock(d);
+    int rc = reserve_action(d, method, out);
+    if (rc == H2_PAL_OK)
+      d->keep_network = request.has_keep_network && request.keep_network;
+    unlock(d);
+    return rc;
+  }
+  if (method == H2_GIZCLAW_RPC_CLIENT_RUN_WORKSPACE_SET) {
+    if (!d->config.vtable || !d->config.vtable->request_run_workspace_set)
+      return H2_PAL_ERR_UNSUPPORTED;
+    gizclaw_rpc_v1_ClientRunWorkspaceSetRequest request = {0};
+    _Static_assert(sizeof(d->workspace_name) == sizeof(request.workspace_name),
+                   "ClientRunWorkspaceSetRequest.workspace_name bound drift");
+    if (!decode(bytes, gizclaw_rpc_v1_ClientRunWorkspaceSetRequest_fields,
+                &request) ||
+        !request.workspace_name[0])
+      return H2_PAL_ERR_INVALID_ARG;
+    lock(d);
+    int rc = reserve_action(d, method, out);
+    if (rc == H2_PAL_OK) {
+      memcpy(d->workspace_name, request.workspace_name,
+             sizeof(d->workspace_name));
+      d->workspace_name[sizeof(d->workspace_name) - 1] = '\0';
+      d->kickoff = request.has_kickoff && request.kickoff;
+    }
+    unlock(d);
+    return rc;
+  }
   return H2_PAL_ERR_NOT_FOUND;
 }
 int h2_gizclaw_device_rpc_internal(
@@ -718,7 +1120,7 @@ int h2_gizclaw_device_rpc_internal(
   if (!d || !response || (request.len && !request.data))
     return H2_PAL_ERR_INVALID_ARG;
   memset(response, 0, sizeof(*response));
-  if (atomic_load(&d->stopping))
+  if (h2_atomic_load(&d->stopping))
     return rpc_error(response, H2_GIZCLAW_RPC_ERROR_UNAVAILABLE,
                      "device stopping");
   int rc = device_rpc(d, method, request, response);
@@ -788,8 +1190,8 @@ static void report_player(h2_gizclaw_device_t *d) {
   submit_telemetry(d, &frame);
 }
 static bool interrupted(h2_gizclaw_device_t *d) {
-  return atomic_load(&d->stopping) ||
-         atomic_load(&d->generation) != d->worker_generation;
+  return h2_atomic_load(&d->stopping) ||
+         h2_atomic_load(&d->generation) != d->worker_generation;
 }
 static int download_cancel(void *user) { return interrupted(user); }
 static uint32_t io_timeout(h2_gizclaw_device_t *d) {
@@ -821,13 +1223,13 @@ struct audio_download {
   /* Content-Range as delivered; range_total stays 0 unless it was valid. */
   bool range_seen, body_checked;
   uint64_t range_first, range_last, range_total;
-  atomic_bool cancel;
+  h2_atomic_bool_t cancel;
   bool done, ready, music;
   int result;
 };
 static int audio_cancel(void *user) {
   audio_download_t *download = user;
-  return atomic_load(&download->cancel) || interrupted(download->device);
+  return h2_atomic_load(&download->cancel) || interrupted(download->device);
 }
 static bool parse_u64(const char **p, const char *end, uint64_t *out) {
   const char *start = *p;
@@ -1059,7 +1461,7 @@ static h2_pal_result_t audio_stream_read(void *user, uint8_t *out,
       progress_at = now;
     }
     if (now - progress_at >= io_timeout(d)) {
-      atomic_store(&download->cancel, true);
+      h2_atomic_store(&download->cancel, true);
       return H2_PAL_ERR_TIMEOUT;
     }
     (void)h2_pal_time_sleep_ms(d->config.time, 5);
@@ -1069,13 +1471,14 @@ static int finish_audio_download(h2_gizclaw_device_t *d) {
   audio_download_t *download = d->download;
   if (!download)
     return H2_PAL_OK;
-  atomic_store(&download->cancel, true);
+  h2_atomic_store(&download->cancel, true);
   if (download->task) {
     int rc = h2_pal_task_join(d->service->config.task, download->task);
     if (rc != H2_PAL_OK)
       return rc;
   }
   h2_pal_mem_free(d->config.allocator, download->data);
+  h2_atomic_bool_destroy(&download->cancel);
   h2_pal_mem_free(d->config.allocator, download);
   d->download = NULL;
   return H2_PAL_OK;
@@ -1105,7 +1508,10 @@ static int start_audio_download(h2_gizclaw_device_t *d, const char *url,
       d->config.audio_prebuffer_bytes
           ? d->config.audio_prebuffer_bytes
           : (download->capacity < 16384u ? download->capacity : 16384u);
-  atomic_init(&download->cancel, false);
+  if (h2_atomic_bool_init(&download->cancel, false) != H2_ATOMIC_OK) {
+    h2_pal_mem_free(d->config.allocator, download);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
   d->download = download;
   download->data = h2_pal_mem_alloc(d->config.allocator, download->capacity);
   if (!download->data) {
@@ -1184,6 +1590,178 @@ static int write_player_pcm(h2_gizclaw_device_t *d, h2_pal_audio_track_t *track,
     (void)h2_pal_time_sleep_ms(d->config.time, 5);
   }
 }
+/* Frames of output assumed still queued: the requested track queue plus one
+ * in flight, bounded so the per-frame record below stays a fixed array. */
+#define PLAYER_QUEUED_FRAMES_MAX 32u
+/* Packs PCM into complete PAL frames and keeps the reported position on the
+ * media timeline. source_bytes counts the source PCM the packed output stands
+ * for, and every written frame records how much of it that frame carried, so
+ * the frames still queued are subtracted at the rate they were produced at
+ * even across a rate change. At the recorded speed every frame carries its
+ * own bytes and this is the plain "handed to the track minus what is still
+ * queued". */
+typedef struct player_output {
+  h2_gizclaw_device_t *d;
+  h2_pal_audio_track_t *track;
+  uint8_t *frame;
+  size_t frame_bytes, buffered;
+  uint32_t frame_samples, queued_frames;
+  bool music;
+  uint64_t origin_bytes, submitted_bytes, source_bytes;
+  /* source_bytes when the previous frame was written, and the source each
+   * of the last queued_frames frames carried (a ring) with their sum. */
+  uint64_t framed_source, queued_source;
+  uint64_t frame_source[PLAYER_QUEUED_FRAMES_MAX];
+  uint32_t frame_count;
+  uint64_t reported_ms;
+} player_output_t;
+/* Writes the packed frame, padding it with silence when it is the last. */
+static int output_frame(player_output_t *o) {
+  h2_gizclaw_device_t *d = o->d;
+  memset(o->frame + o->buffered, 0, o->frame_bytes - o->buffered);
+  h2_audio_frame_t frame = {.data = o->frame,
+                            .capacity = o->frame_bytes,
+                            .bytes = o->frame_bytes,
+                            .sample_rate_hz = 16000,
+                            .samples_per_channel = o->frame_samples,
+                            .channels = 1,
+                            .sample_format = H2_AUDIO_SAMPLE_S16LE};
+  int rc = write_player_pcm(d, o->track, &frame);
+  if (rc != H2_PAL_OK)
+    return rc;
+  o->submitted_bytes += o->buffered;
+  o->buffered = 0;
+  /* Keep feeding the PCM queue continuously. A drain barrier on every
+   * frame inserts silence in PAL mixers. During playback, conservatively
+   * subtract the requested queue capacity plus one in-flight frame, each at
+   * the source it carried. */
+  const uint64_t carried = o->source_bytes - o->framed_source;
+  o->framed_source = o->source_bytes;
+  uint64_t *slot = &o->frame_source[o->frame_count % o->queued_frames];
+  if (o->frame_count >= o->queued_frames)
+    o->queued_source -= *slot;
+  *slot = carried;
+  o->queued_source += carried;
+  ++o->frame_count;
+  const uint64_t position_ms =
+      (o->origin_bytes + o->source_bytes - o->queued_source) / 32u;
+  lock(d);
+  if (o->music && !interrupted(d)) {
+    strcpy(d->status.state, "playing");
+    d->status.position_ms = position_ms;
+  }
+  unlock(d);
+  if (o->music && (position_ms - o->reported_ms >= 1000 || o->reported_ms == 0)) {
+    report_player(d);
+    o->reported_ms = position_ms;
+  }
+  return H2_PAL_OK;
+}
+/* Packs len output bytes that stand for source_bytes of source, crediting
+ * the source in proportion as the output is packed. */
+static int output_write(player_output_t *o, const uint8_t *data, size_t len,
+                        uint64_t source_bytes) {
+  if (!len) {
+    o->source_bytes += source_bytes;
+    return H2_PAL_OK;
+  }
+  uint64_t credited = 0;
+  for (size_t offset = 0; offset < len;) {
+    if (interrupted(o->d))
+      return H2_PAL_ERR_CLOSED;
+    size_t count = len - offset;
+    if (count > o->frame_bytes - o->buffered)
+      count = o->frame_bytes - o->buffered;
+    memcpy(o->frame + o->buffered, data + offset, count);
+    o->buffered += count;
+    offset += count;
+    const uint64_t due = source_bytes * offset / len;
+    o->source_bytes += due - credited;
+    credited = due;
+    if (o->buffered == o->frame_bytes) {
+      const int rc = output_frame(o);
+      if (rc != H2_PAL_OK)
+        return rc;
+    }
+  }
+  return H2_PAL_OK;
+}
+/* Per-item stretch state: the work buffer exists only once the rate has left
+ * the recorded speed during this item. */
+typedef struct player_stretch {
+  h2_gizclaw_stretch_t *state;
+  bool active, failed;
+  uint32_t rate;
+  uint64_t audio_bytes, decode_us, stretch_us;
+} player_stretch_t;
+static uint32_t player_rate(const player_output_t *o,
+                            const player_stretch_t *s) {
+  return o->music && !s->failed ? h2_atomic_load(&o->d->rate)
+                                : H2_GIZCLAW_PLAYER_RATE_NORMAL;
+}
+static uint64_t now_us(h2_gizclaw_device_t *d) {
+  uint64_t now = 0;
+  return h2_pal_time_get_monotonic_us(d->config.time, &now) == H2_PAL_OK ? now
+                                                                         : 0u;
+}
+static int stretch_flush(player_output_t *o, player_stretch_t *s) {
+  const int16_t *out = NULL;
+  size_t count = 0;
+  uint64_t source = 0;
+  h2_gizclaw_stretch_flush(s->state, &out, &count, &source);
+  s->active = false;
+  return output_write(o, (const uint8_t *)out, count * 2u, source * 2u);
+}
+/* Decoded source PCM to the track, through the stretcher when the rate is
+ * not the recorded speed. The rate is re-read before every step. */
+static int player_feed(player_output_t *o, player_stretch_t *s,
+                       const int16_t *pcm, size_t samples) {
+  int rc = H2_PAL_OK;
+  for (size_t done = 0; rc == H2_PAL_OK && done < samples;) {
+    const uint32_t rate = player_rate(o, s);
+    if (rate == H2_GIZCLAW_PLAYER_RATE_NORMAL) {
+      if (s->active) {
+        rc = stretch_flush(o, s);
+        continue;
+      }
+      return output_write(o, (const uint8_t *)(pcm + done),
+                          (samples - done) * 2u, (samples - done) * 2u);
+    }
+    if (!s->active) {
+      if (!s->state) {
+        s->state = h2_pal_mem_alloc(o->d->config.allocator, sizeof(*s->state));
+        if (!s->state) {
+          /* Keep playing at the recorded speed rather than fail the item. */
+          s->failed = true;
+          trace(o->d, "player-rate-fallback", (int)rate, H2_PAL_ERR_NO_MEMORY);
+          continue;
+        }
+      }
+      h2_gizclaw_stretch_reset(s->state);
+      s->active = true;
+    }
+    done += h2_gizclaw_stretch_push(s->state, pcm + done, samples - done);
+    for (;;) {
+      const uint32_t step_rate = player_rate(o, s);
+      if (step_rate == H2_GIZCLAW_PLAYER_RATE_NORMAL)
+        break;
+      const int16_t *out = NULL;
+      size_t count = 0;
+      uint64_t source = 0;
+      const uint64_t started = now_us(o->d);
+      const bool stepped =
+          h2_gizclaw_stretch_step(s->state, step_rate, &out, &count, &source);
+      s->stretch_us += now_us(o->d) - started;
+      if (!stepped)
+        break;
+      s->rate = step_rate;
+      rc = output_write(o, (const uint8_t *)out, count * 2u, source * 2u);
+      if (rc != H2_PAL_OK)
+        break;
+    }
+  }
+  return rc;
+}
 /* start_ms > 0 with a known duration_ms seeks: a probe for the headers, a
  * ranged request from about the start, and the decoder resyncing on the next
  * valid page. Anything that goes wrong before the first sample is known
@@ -1205,6 +1783,7 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
     rc = start_decoder(d, &decoder);
   h2_audio_track_config_t audio = {
       .name = "gizclaw-player",
+      .allocator = d->config.allocator,
       .format = {.sample_rate_hz = 16000,
                  .frame_samples_per_channel = 320,
                  .channels = 1,
@@ -1244,19 +1823,37 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
   if (rc == H2_PAL_OK)
     rc = h2_pal_audio_create_track(d->config.audio, &audio, &track);
   trace(d, "player-track", 0, rc);
-  uint8_t pcm[H2_GIZCLAW_OGG_OPUS_PCM_BYTES];
+  /* Samples, not bytes, so the stretcher can read them in place. */
+  int16_t pcm[H2_GIZCLAW_OGG_OPUS_PCM_BYTES / 2u];
   /* 16 kHz mono PCM16 is 32 bytes per millisecond. */
   const uint64_t limit_bytes = (uint64_t)limit_ms * 32u;
-  uint64_t submitted_bytes = 0, reported_ms = 0;
+  player_output_t out = {.d = d,
+                         .track = track,
+                         .frame = output,
+                         .frame_bytes = frame_bytes,
+                         .frame_samples = audio.format.frame_samples_per_channel,
+                         .queued_frames =
+                             audio.buffer_frames + 1u < PLAYER_QUEUED_FRAMES_MAX
+                                 ? audio.buffer_frames + 1u
+                                 : PLAYER_QUEUED_FRAMES_MAX,
+                         .music = music};
+  player_stretch_t stretch = {0};
   /* PCM bytes a start-from-zero playback would have produced before the
-   * first sample of this one; known once `located`. */
-  uint64_t origin_bytes = 0;
+   * first sample of this one (out.origin_bytes); known once `located`. */
   bool located = source == AUDIO_SOURCE_PLAIN, seek_pending = !located;
-  size_t buffered = 0;
   bool finished = false;
   while (rc == H2_PAL_OK && !interrupted(d) && !finished) {
     size_t length = 0;
-    rc = h2_gizclaw_ogg_opus_next(decoder, pcm, sizeof(pcm), &length);
+    /* Decode cost is measured only while stretching, for the CPU trace. */
+    const bool measure = player_rate(&out, &stretch) !=
+                         H2_GIZCLAW_PLAYER_RATE_NORMAL;
+    const uint64_t decode_started = measure ? now_us(d) : 0u;
+    rc = h2_gizclaw_ogg_opus_next(decoder, (uint8_t *)pcm, sizeof(pcm),
+                                  &length);
+    if (measure) {
+      stretch.decode_us += now_us(d) - decode_started;
+      stretch.audio_bytes += length;
+    }
     if (rc == H2_PAL_OK && seek_pending &&
         h2_gizclaw_ogg_opus_headers_done(decoder)) {
       seek_pending = false;
@@ -1281,10 +1878,10 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
         h2_gizclaw_ogg_opus_origin(decoder, &origin)) {
       /* Exact from here on: the granule-derived start, not the estimate. */
       located = true;
-      origin_bytes = origin * 2u;
+      out.origin_bytes = origin * 2u;
       lock(d);
       if (music && !interrupted(d)) {
-        d->status.position_ms = origin_bytes / 32u;
+        d->status.position_ms = out.origin_bytes / 32u;
         changed(d);
       }
       unlock(d);
@@ -1297,8 +1894,10 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
       break;
     if (limit_ms) {
       /* Saturate: the limit must stay in force even if the consumed count
-       * ever reaches it without the cut below having ended the loop. */
-      const uint64_t consumed = submitted_bytes + buffered;
+       * ever reaches it without the cut below having ended the loop. Limited
+       * playback is a named sound, which never stretches, so output bytes
+       * are source bytes. */
+      const uint64_t consumed = out.submitted_bytes + out.buffered;
       const uint64_t remaining =
           consumed < limit_bytes ? limit_bytes - consumed : 0u;
       if ((uint64_t)length >= remaining) {
@@ -1306,54 +1905,27 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
         finished = true;
       }
     }
-    for (size_t offset = 0; (offset < length || (finished && buffered)) &&
-                            rc == H2_PAL_OK && !interrupted(d);) {
-      size_t count = length - offset;
-      if (count > frame_bytes - buffered)
-        count = frame_bytes - buffered;
-      memcpy(output + buffered, pcm + offset, count);
-      buffered += count;
-      offset += count;
-      if (buffered < frame_bytes && !finished)
-        continue;
-      if (buffered < frame_bytes && offset < length)
-        continue;
-      /* PAL tracks require complete hardware frames. Pad only the final one;
-       * playback progress counts source samples, excluding this silence. */
-      memset(output + buffered, 0, frame_bytes - buffered);
-      h2_audio_frame_t frame = {.data = output,
-                                .capacity = frame_bytes,
-                                .bytes = frame_bytes,
-                                .sample_rate_hz = 16000,
-                                .samples_per_channel =
-                                    audio.format.frame_samples_per_channel,
-                                .channels = 1,
-                                .sample_format = H2_AUDIO_SAMPLE_S16LE};
-      rc = write_player_pcm(d, track, &frame);
-      if (rc != H2_PAL_OK)
-        break;
-      submitted_bytes += buffered;
-      buffered = 0;
-      /* Keep feeding the PCM queue continuously. A drain barrier on every
-       * frame inserts silence in PAL mixers. During playback, conservatively
-       * subtract the requested queue capacity plus one in-flight frame. */
-      uint64_t pending_bytes = frame_bytes * (audio.buffer_frames + 1u);
-      uint64_t position_ms =
-          (origin_bytes + (submitted_bytes > pending_bytes
-                               ? submitted_bytes - pending_bytes
-                               : 0u)) /
-          32u;
-      lock(d);
-      if (music && !interrupted(d)) {
-        strcpy(d->status.state, "playing");
-        d->status.position_ms = position_ms;
-      }
-      unlock(d);
-      if (music && (position_ms - reported_ms >= 1000 || reported_ms == 0)) {
-        report_player(d);
-        reported_ms = position_ms;
-      }
-    }
+    rc = player_feed(&out, &stretch, pcm, length / 2u);
+    /* The stretcher's tail and the last partial PAL frame, padded. */
+    if (rc == H2_PAL_OK && finished && stretch.active)
+      rc = stretch_flush(&out, &stretch);
+    if (rc == H2_PAL_OK && finished && out.buffered && !interrupted(d))
+      rc = output_frame(&out);
+  }
+  if (stretch.state) {
+    char message[160];
+    (void)snprintf(message, sizeof(message),
+                   "player-rate rate=%u audio_ms=%llu decode_us=%llu "
+                   "stretch_us=%llu fallback=%d",
+                   (unsigned)stretch.rate,
+                   (unsigned long long)(stretch.audio_bytes / 32u),
+                   (unsigned long long)stretch.decode_us,
+                   (unsigned long long)stretch.stretch_us, stretch.failed);
+    (void)h2_pal_log_write(d->config.log, H2_PAL_LOG_INFO, "gizclaw", message);
+    h2_pal_mem_free(d->config.allocator, stretch.state);
+  } else if (stretch.failed) {
+    (void)h2_pal_log_write(d->config.log, H2_PAL_LOG_WARN, "gizclaw",
+                           "player-rate fallback=1");
   }
   h2_pal_mem_free(d->config.allocator, output);
   if (interrupted(d))
@@ -1364,7 +1936,7 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
       if (rc == H2_PAL_OK && music) {
         lock(d);
         if (!interrupted(d))
-          d->status.position_ms = (origin_bytes + submitted_bytes) / 32u;
+          d->status.position_ms = (out.origin_bytes + out.source_bytes) / 32u;
         unlock(d);
       }
     }
@@ -1519,7 +2091,7 @@ static void update_firmware(h2_gizclaw_device_t *d) {
 
 static void device_worker(void *user) {
   h2_gizclaw_device_t *d = user;
-  while (!atomic_load(&d->stopping)) {
+  while (!h2_atomic_load(&d->stopping)) {
     if (finish_audio_download(d) != H2_PAL_OK) {
       (void)h2_pal_time_sleep_ms(d->config.time, 20);
       continue;
@@ -1536,7 +2108,7 @@ static void device_worker(void *user) {
       start_ms = d->start_ms;
       duration_ms = d->durations[d->status.current_index];
     }
-    d->worker_generation = atomic_load(&d->generation);
+    d->worker_generation = h2_atomic_load(&d->generation);
     unlock(d);
     if (dirty && d->config.audio != NULL)
       report_player(d);
@@ -1559,25 +2131,44 @@ static void device_worker(void *user) {
           /* Non-blocking handoff: the product copies the request and owns
            * the delay, its orderly shutdown and the reboot on its own
            * owner. Nothing here waits for it. */
-          if (!atomic_load(&d->stopping)) {
+          if (!h2_atomic_load(&d->stopping)) {
             const int handoff = d->config.vtable->request_reboot(
                 d->config.user, d->delay_ms);
             trace(d, "reboot_handoff", pending, handoff);
           }
         } else {
           uint32_t remaining = d->delay_ms;
-          while (remaining && !atomic_load(&d->stopping)) {
+          while (remaining && !h2_atomic_load(&d->stopping)) {
             uint32_t step = remaining > 20 ? 20 : remaining;
             (void)h2_pal_time_sleep_ms(d->config.time, step);
             remaining -= step;
           }
-          if (!atomic_load(&d->stopping))
+          if (!h2_atomic_load(&d->stopping))
             (void)h2_pal_power_reboot(d->config.power, 0);
+        }
+      } else if (pending == H2_GIZCLAW_RPC_CLIENT_DEVICE_FACTORY_RESET) {
+        /* Non-blocking handoff, like the reboot path: the product owns the
+         * erase on its own owner and there is no library fallback. */
+        if (!h2_atomic_load(&d->stopping)) {
+          const int handoff = d->config.vtable->request_factory_reset(
+              d->config.user, d->keep_network);
+          trace(d, "factory_reset_handoff", pending, handoff);
+        }
+      } else if (pending == H2_GIZCLAW_RPC_CLIENT_RUN_WORKSPACE_SET) {
+        /* The App owns the Session and its confirmed parameters, so the switch
+         * is posted to the product rather than driven from here. */
+        if (!h2_atomic_load(&d->stopping)) {
+          const int handoff = d->config.vtable->request_run_workspace_set(
+              d->config.user, d->workspace_name, d->kickoff);
+          trace(d, "run_workspace_set_handoff", pending, handoff);
         }
       }
       lock(d);
       d->pending = 0;
       d->pending_ready = false;
+      d->keep_network = false;
+      d->kickoff = false;
+      memset(d->workspace_name, 0, sizeof(d->workspace_name));
       memset(&d->wifi_config, 0, sizeof(d->wifi_config));
       unlock(d);
     } else if (playing) {
@@ -1662,9 +2253,15 @@ h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service) {
   if (!config->audio && !config->wifi && !config->wifi_settings &&
       !config->power && !config->vtable && !config->manufacturer &&
       !config->model && !config->serial && !config->hardware_revision)
-    return H2_PAL_OK;
+    /* Nothing answers client.rpc.methods.get without the built-in provider, so
+     * a declared list would be silently ignored. */
+    return config->rpc_provider_method_count ? H2_PAL_ERR_INVALID_ARG
+                                             : H2_PAL_OK;
   if (!speaker_hooks_paired(config->vtable))
     return H2_PAL_ERR_INVALID_ARG;
+  h2_pal_result_t methods_rc = validate_provider_methods(config);
+  if (methods_rc != H2_PAL_OK)
+    return methods_rc;
   size_t audio_capacity =
       config->audio_buffer_bytes ? config->audio_buffer_bytes : 65536u;
   if (config->audio && config->audio_prebuffer_bytes > audio_capacity)
@@ -1677,14 +2274,24 @@ h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service) {
   memset(d, 0, sizeof(*d));
   d->config = *config;
   d->service = service;
-  atomic_init(&d->stopping, false);
-  atomic_init(&d->generation, 0);
+  if (h2_atomic_bool_init(&d->stopping, false) != H2_ATOMIC_OK ||
+      h2_atomic_uint_init(&d->generation, 0u) != H2_ATOMIC_OK ||
+      h2_atomic_uint_init(&d->rate, H2_GIZCLAW_PLAYER_RATE_NORMAL) != H2_ATOMIC_OK) {
+    h2_atomic_bool_destroy(&d->stopping);
+    h2_atomic_uint_destroy(&d->generation);
+    h2_atomic_uint_destroy(&d->rate);
+    h2_pal_mem_free(config->allocator, d);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
   strcpy(d->status.state, "stopped");
   strcpy(d->status.repeat, "off");
   const h2_pal_mutex_config_t mutex = {.name = "gizclaw-device",
                                        .allocator = config->allocator};
   int rc = h2_pal_mutex_create(service->config.sync, &mutex, &d->mutex);
   if (rc != H2_PAL_OK) {
+    h2_atomic_bool_destroy(&d->stopping);
+    h2_atomic_uint_destroy(&d->generation);
+    h2_atomic_uint_destroy(&d->rate);
     h2_pal_mem_free(config->allocator, d);
     return rc;
   }
@@ -1713,7 +2320,7 @@ h2_pal_result_t h2_gizclaw_device_start_internal(h2_gizclaw_device_t *d) {
 }
 void h2_gizclaw_device_cancel_internal(h2_gizclaw_device_t *d) {
   if (d)
-    atomic_store(&d->stopping, true);
+    h2_atomic_store(&d->stopping, true);
 }
 h2_pal_result_t h2_gizclaw_device_stop_internal(h2_gizclaw_device_t *d) {
   if (!d)
@@ -1735,6 +2342,9 @@ void h2_gizclaw_device_destroy_internal(h2_gizclaw_device_t *d) {
   h2_pal_mem_free(d->config.allocator, d->response);
   h2_pal_mem_free(d->config.allocator, d->incoming);
   h2_pal_mem_free(d->config.allocator, d->playlist);
+  h2_atomic_bool_destroy(&d->stopping);
+  h2_atomic_uint_destroy(&d->generation);
+  h2_atomic_uint_destroy(&d->rate);
   h2_pal_mem_free(d->config.allocator, d);
 }
 
@@ -1755,7 +2365,7 @@ h2_pal_result_t h2_gizclaw_player_play(h2_gizclaw_service_t *service,
     return H2_PAL_ERR_UNSUPPORTED;
   lock(d);
   int rc = H2_PAL_OK;
-  if (!d->task || atomic_load(&d->stopping))
+  if (!d->task || h2_atomic_load(&d->stopping))
     rc = H2_PAL_ERR_CLOSED;
   else if (d->pending)
     rc = H2_PAL_ERR_BUSY;
@@ -1790,7 +2400,7 @@ h2_pal_result_t h2_gizclaw_player_stop(h2_gizclaw_service_t *service) {
     return H2_PAL_ERR_UNSUPPORTED;
   lock(d);
   int rc = H2_PAL_OK;
-  if (atomic_load(&d->stopping))
+  if (h2_atomic_load(&d->stopping))
     rc = H2_PAL_ERR_CLOSED;
   else if (d->pending &&
            d->pending != H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAY)
@@ -1817,7 +2427,7 @@ h2_pal_result_t h2_gizclaw_player_play_index_at(h2_gizclaw_service_t *service,
   if (index >= d->playlist->items_count ||
       (d->durations[index] && start_ms >= d->durations[index]))
     rc = H2_PAL_ERR_INVALID_ARG;
-  else if (!d->task || atomic_load(&d->stopping))
+  else if (!d->task || h2_atomic_load(&d->stopping))
     rc = H2_PAL_ERR_CLOSED;
   else if (d->pending)
     rc = H2_PAL_ERR_BUSY;
@@ -1862,7 +2472,7 @@ h2_pal_result_t h2_gizclaw_player_playlist_set(
     durations[i] = items[i].duration_ms;
   lock(d);
   int rc = H2_PAL_OK;
-  if (!d->task || atomic_load(&d->stopping))
+  if (!d->task || h2_atomic_load(&d->stopping))
     rc = H2_PAL_ERR_CLOSED;
   else {
     memset(d->incoming, 0, sizeof(*d->incoming));
@@ -1900,9 +2510,30 @@ h2_pal_result_t h2_gizclaw_player_repeat_set(h2_gizclaw_service_t *service,
   if (!copy_span(value, sizeof(value), repeat) || !repeat_valid(value))
     return H2_PAL_ERR_INVALID_ARG;
   lock(d);
-  int rc = (!d->task || atomic_load(&d->stopping))
+  int rc = (!d->task || h2_atomic_load(&d->stopping))
                ? H2_PAL_ERR_CLOSED
                : repeat_apply_locked(d, value);
+  unlock(d);
+  return rc;
+}
+/* A player property rather than a play argument, so it reaches auto-advance,
+ * repeat and remote plays, and changes the item already playing in place. */
+h2_pal_result_t h2_gizclaw_player_rate_set(h2_gizclaw_service_t *service,
+                                           uint32_t rate_permille) {
+  if (!service)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_device_t *d = service->device;
+  if (!d || !d->playlist)
+    return H2_PAL_ERR_UNSUPPORTED;
+  if (rate_permille < H2_GIZCLAW_PLAYER_RATE_MIN ||
+      rate_permille > H2_GIZCLAW_PLAYER_RATE_MAX)
+    return H2_PAL_ERR_INVALID_ARG;
+  lock(d);
+  int rc = H2_PAL_OK;
+  if (!d->task || h2_atomic_load(&d->stopping))
+    rc = H2_PAL_ERR_CLOSED;
+  else
+    h2_atomic_store(&d->rate, rate_permille);
   unlock(d);
   return rc;
 }
@@ -1929,6 +2560,7 @@ h2_pal_result_t h2_gizclaw_player_get_status(h2_gizclaw_service_t *service,
   out->current_index = d->status.current_index;
   out->playlist_length = d->status.playlist_length;
   out->playlist_revision = d->status.playlist_revision;
+  out->rate_permille = h2_atomic_load(&d->rate);
   unlock(d);
   return H2_PAL_OK;
 }
@@ -1993,7 +2625,7 @@ h2_pal_result_t h2_gizclaw_ota_start(h2_gizclaw_service_t *service,
   }
   lock(d);
   int rc = H2_PAL_OK;
-  if (!d->task || atomic_load(&d->stopping))
+  if (!d->task || h2_atomic_load(&d->stopping))
     rc = H2_PAL_ERR_CLOSED;
   else if (d->pending)
     rc = H2_PAL_ERR_BUSY;

@@ -1,6 +1,6 @@
 """Extract and compile using only manifest.json, a host C compiler and a harness.
 
-Standalone: python3 test_source_package.py PACKAGE.tar.gz [test_embedder.c]
+Standalone: python3 test_source_package.py PACKAGE.tar.gz [test_embedder.c] [platform_atomic_provider.c]
 No Bazel invocation or repository source discovery occurs in this test.
 """
 
@@ -18,6 +18,7 @@ def main():
     package = Path(sys.argv[1]).resolve()
     harness = Path(sys.argv[2] if len(sys.argv) > 2 else
                    Path(__file__).with_name("test_embedder.c")).resolve()
+    atomic_provider = Path(sys.argv[3]).resolve() if len(sys.argv) > 3 else None
     with tempfile.TemporaryDirectory(dir=os.environ.get("TEST_TMPDIR")) as directory:
         root = Path(directory)
         with tarfile.open(package) as archive:
@@ -35,6 +36,22 @@ def main():
         flags += ["-D" + d for d in manifest["defines"]]
         objects = []
         compiled = []
+        optimized = {
+            "h2_lua_numeric_prepared.c", "h2_lua_geometry_prepared.c",
+            "h2_lua_geometry_batches.c", "h2_lua_vmath.c",
+            "h2_lua_geometry.c", "h2_lua_display.c",
+        }
+        seen = set()
+        for unit in manifest["compilation_units"]:
+            for source in unit["sources"]:
+                name = Path(source).name
+                if name in optimized:
+                    seen.add(name)
+                    for flag in ("-O3", "-fno-fast-math"):
+                        assert flag in unit["cflags"], (source, flag, unit)
+                elif source.startswith("libs/lua/") or source.startswith("libs/raster2d/"):
+                    assert "-O3" not in unit["cflags"], (source, unit)
+        assert seen == optimized, seen
         for unit in manifest["compilation_units"]:
             for source in unit["sources"]:
                 obj = str(root / (str(len(objects)) + ".o"))
@@ -44,6 +61,12 @@ def main():
                 objects.append(obj)
                 compiled.append(source)
         assert sorted(compiled) == sorted(manifest["sources"])
+        if atomic_provider is not None:
+            provider_object = str(root / "atomic_provider.o")
+            subprocess.run(compiler + flags + ["-std=c11", "-c",
+                           str(atomic_provider), "-o", provider_object],
+                           cwd=root, check=True)
+            objects.append(provider_object)
         executable = str(root / "embedder")
         subprocess.run(compiler + flags + ["-std=c11", "-Wall", "-Wextra", "-Werror",
                        "-pthread", str(harness)] + objects +

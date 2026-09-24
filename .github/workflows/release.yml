@@ -1,21 +1,14 @@
 name: Release
 
 on:
-  push:
-    tags: ["v*"]
   workflow_dispatch:
-    inputs:
-      version:
-        description: Version embedded in release artifacts
-        required: true
-        type: string
 
 permissions:
   contents: read
   id-token: write
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: firmware-release
   cancel-in-progress: false
 
 env:
@@ -32,7 +25,8 @@ jobs:
     runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
     timeout-minutes: 60
     outputs:
-      version: ${{ steps.version.outputs.value }}
+      batch: ${{ steps.batch.outputs.value }}
+      tag: ${{ steps.batch.outputs.tag }}
     steps:
       - name: Check out GizOS
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -120,14 +114,14 @@ jobs:
           service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
           create_credentials_file: true
 
-      - name: Resolve version
-        id: version
-        env:
-          DISPATCH_VERSION: ${{ inputs.version }}
+      - name: Generate UTC release batch
+        id: batch
         run: |
-          if [ "$GITHUB_EVENT_NAME" = push ]; then version=${GITHUB_REF_NAME#v}; else version=$DISPATCH_VERSION; fi
-          [[ "$version" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]
-          printf 'value=%s\n' "$version" >> "$GITHUB_OUTPUT"
+          [[ "$GITHUB_REF" == refs/heads/* ]]
+          batch=$(date -u +%Y%m%d-%H%M%S)
+          [[ "$batch" =~ ^[0-9]{8}-[0-9]{6}$ ]]
+          printf 'value=%s\n' "$batch" >> "$GITHUB_OUTPUT"
+          printf 'tag=v%s\n' "$batch" >> "$GITHUB_OUTPUT"
 
       - name: Install Bazel
         run: |
@@ -138,7 +132,7 @@ jobs:
       - name: Build catalog slice
         run: |
           . firmware-devenv/export.sh
-          make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE=catalog RELEASE_VERSION="${{ steps.version.outputs.value }}" RELEASE_STAGING_DIR=build/release/catalog
+          make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE=catalog RELEASE_BATCH="${{ steps.batch.outputs.value }}" RELEASE_STAGING_DIR=build/release/catalog
 
       - name: Save ESP-IDF tool cache seed
         if: steps.esp-idf-cache.outputs.cache-hit != 'true'
@@ -153,6 +147,45 @@ jobs:
         with:
           name: release-catalog
           path: build/release/catalog/
+          if-no-files-found: error
+          retention-days: 14
+
+  npm-packages:
+    name: Release npm packages
+    needs: [catalog]
+    runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
+    timeout-minutes: 30
+    steps:
+      - name: Check out GizOS
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 1
+          submodules: false
+          persist-credentials: false
+
+      - name: Authenticate read-write Bazel remote cache
+        if: vars.BAZEL_REMOTE_CACHE_URL != ''
+        uses: google-github-actions/auth@7c6bc770dae815cd3e89ee6cdf493a5fab2cc093 # v3
+        with:
+          project_id: ${{ vars.BAZEL_CACHE_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
+          create_credentials_file: true
+
+      - name: Install Bazel
+        run: |
+          curl --fail --location --silent --show-error "https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
+          printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
+          chmod +x "$RUNNER_TEMP/bazel"
+
+      - name: Build npm packages slice
+        run: make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE=npm-packages RELEASE_BATCH="${{ needs.catalog.outputs.batch }}" RELEASE_STAGING_DIR=build/release/npm-packages
+
+      - name: Upload npm packages slice
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-npm-bundle
+          path: build/release/npm-packages/
           if-no-files-found: error
           retention-days: 14
 
@@ -284,7 +317,7 @@ jobs:
           . firmware-devenv/export.sh
           credentials="$(python3 -c 'import json, os; print(json.dumps({"ssid":"HAIVIVI-MFG","password":os.environ["WIFI_PASSWORD"]}, separators=(",", ":")))')"
           export H2LOADER_WIFI_CREDENTIALS="$credentials"
-          make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE="${{ matrix.slice }}" RELEASE_VERSION="${{ needs.catalog.outputs.version }}" RELEASE_INPUT_DIR=build/release/input RELEASE_STAGING_DIR="build/release/${{ matrix.slice }}"
+          make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE="${{ matrix.slice }}" RELEASE_BATCH="${{ needs.catalog.outputs.batch }}" RELEASE_INPUT_DIR=build/release/input RELEASE_STAGING_DIR="build/release/${{ matrix.slice }}"
 
       - name: Show native compiler cache statistics
         if: always()
@@ -421,7 +454,7 @@ jobs:
           printf '{"schema":"h2.native-ccache-runtime.v1","ccache":"bin/ccache","cache_root":"cache","remote_base_url":"%s","storage_helper":"bin/ccache-storage-https","token_file":"token"}\n' "$NATIVE_CCACHE_GCS_BASE_URL" > "$H2_NATIVE_CCACHE_RUNTIME_ROOT/runtime.json"
 
       - name: Build BK7258 slice
-        run: make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE=bk7258 RELEASE_VERSION="${{ needs.catalog.outputs.version }}" RELEASE_INPUT_DIR=build/release/input RELEASE_STAGING_DIR=build/release/bk7258
+        run: make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE=bk7258 RELEASE_BATCH="${{ needs.catalog.outputs.batch }}" RELEASE_INPUT_DIR=build/release/input RELEASE_STAGING_DIR=build/release/bk7258
 
       - name: Show native compiler cache statistics
         if: always()
@@ -460,12 +493,31 @@ jobs:
           service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
           create_credentials_file: true
 
-      - name: Download firmware inputs
+      # Download only firmware producers; release-npm-bundle belongs to the final job.
+      # Keep artifact directories separate so duplicate basenames fail validation.
+      - name: Download catalog
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          pattern: release-*
-          path: build/release/input
-          merge-multiple: true
+          name: release-catalog
+          path: build/release/input/catalog
+
+      - name: Download ESP32-S3 inputs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-esp32s3
+          path: build/release/input/esp32s3
+
+      - name: Download ESP32-P4 inputs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-esp32p4
+          path: build/release/input/esp32p4
+
+      - name: Download BK7258 inputs
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-bk7258
+          path: build/release/input/bk7258
 
       - name: Install Bazel
         run: |
@@ -474,7 +526,7 @@ jobs:
           chmod +x "$RUNNER_TEMP/bazel"
 
       - name: Assemble firmware bundle
-        run: make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE=firmware-bundle RELEASE_VERSION="${{ needs.catalog.outputs.version }}" RELEASE_INPUT_DIR=build/release/input RELEASE_STAGING_DIR=build/release/firmware-bundle
+        run: make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE=firmware-bundle RELEASE_BATCH="${{ needs.catalog.outputs.batch }}" RELEASE_INPUT_DIR=build/release/input RELEASE_STAGING_DIR=build/release/firmware-bundle
 
       - name: Upload firmware bundle
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -484,9 +536,37 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  package:
+    name: Package firmware ZIP
+    needs: [catalog, firmware-bundle]
+    runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
+    timeout-minutes: 10
+    steps:
+      - name: Check out GizOS
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+
+      - name: Download verified firmware bundle
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-firmware-bundle
+          path: build/release/input
+
+      - name: Package deterministic firmware ZIP
+        run: make bazel-release RELEASE_SLICE=package RELEASE_BATCH="${{ needs.catalog.outputs.batch }}" RELEASE_INPUT_DIR=build/release/input RELEASE_STAGING_DIR=build/release/package
+
+      - name: Upload packaged firmware
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-firmware-package
+          path: build/release/package/
+          if-no-files-found: error
+          retention-days: 14
+
   release-bundle:
     name: Complete release bundle
-    needs: [catalog, firmware-bundle]
+    needs: [catalog, package, npm-packages]
     runs-on: ${{ vars.FIRMWARE_LINUX_RUNNER }}
     timeout-minutes: 30
     permissions:
@@ -507,61 +587,129 @@ jobs:
           service_account: ${{ vars.BAZEL_CACHE_WRITER_SERVICE_ACCOUNT }}
           create_credentials_file: true
 
-      - name: Download final inputs
+      - name: Download packaged firmware
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
-          pattern: release-*-bundle
-          path: build/release/input
-          merge-multiple: true
+          name: release-firmware-package
+          path: build/release/input/firmware
 
-      - name: Install Bazel
-        run: |
-          curl --fail --location --silent --show-error "https://github.com/bazelbuild/bazel/releases/download/$BAZEL_VERSION/bazel-$BAZEL_VERSION-linux-x86_64" --output "$RUNNER_TEMP/bazel"
-          printf '%s  %s\n' "$BAZEL_LINUX_X86_64_SHA256" "$RUNNER_TEMP/bazel" | sha256sum --check --strict
-          chmod +x "$RUNNER_TEMP/bazel"
+      - name: Download npm bundle
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-npm-bundle
+          path: build/release/input/npm
 
       - name: Assemble final slice
-        run: make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE=release-bundle RELEASE_VERSION="${{ needs.catalog.outputs.version }}" RELEASE_INPUT_DIR=build/release/input RELEASE_STAGING_DIR=build/release/final
+        run: make bazel-release RELEASE_SLICE=release-bundle RELEASE_BATCH="${{ needs.catalog.outputs.batch }}" RELEASE_INPUT_DIR=build/release/input RELEASE_STAGING_DIR=build/release/final
 
       - name: Upload complete release bundle
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
-          name: release-bundle-${{ needs.catalog.outputs.version }}
+          name: release-bundle-${{ needs.catalog.outputs.batch }}
           path: build/release/final/
           if-no-files-found: error
           retention-days: 14
 
       - name: Publish GitHub Release
-        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
+          RELEASE_BATCH: ${{ needs.catalog.outputs.batch }}
+          RELEASE_TAG: ${{ needs.catalog.outputs.tag }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         shell: bash
         run: |
           set -euo pipefail
           release_dir=build/release/final
-          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
-            gh release edit "$GITHUB_REF_NAME" --draft
-          else
-            gh release create "$GITHUB_REF_NAME" \
-              --verify-tag \
-              --generate-notes \
-              --draft \
-              --title "GizOS ${{ needs.catalog.outputs.version }}"
-          fi
-
-          find "$release_dir" -maxdepth 1 -type f -exec basename {} \; | LC_ALL=C sort > "$RUNNER_TEMP/expected-release-assets"
-          while IFS= read -r asset; do
-            if ! grep --fixed-strings --line-regexp --quiet "$asset" "$RUNNER_TEMP/expected-release-assets"; then
-              gh release delete-asset "$GITHUB_REF_NAME" "$asset" --yes
+          release_state() {
+            local result
+            if result=$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG" --jq .draft 2>&1); then
+              printf '%s\n' "$result"
+            elif [[ "$result" == *"HTTP 404"* ]]; then
+              printf 'absent\n'
+            else
+              echo "::error::Unable to verify Release state for $RELEASE_TAG: $result" >&2
+              return 1
             fi
-          done < <(gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name')
-          gh release upload "$GITHUB_REF_NAME" "$release_dir"/* --clobber
-          gh release view "$GITHUB_REF_NAME" --json assets --jq '.assets[].name' | LC_ALL=C sort > "$RUNNER_TEMP/actual-release-assets"
+          }
+
+          tag_state() {
+            local result
+            if result=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '"present"' 2>&1); then
+              printf '%s\n' "$result"
+            elif [[ "$result" == *"HTTP 404"* ]]; then
+              printf 'absent\n'
+            else
+              echo "::error::Unable to verify tag state for $RELEASE_TAG: $result" >&2
+              return 1
+            fi
+          }
+
+          cleanup() {
+            cleanup_failed=0
+            if ! current_release=$(release_state); then
+              return 1
+            fi
+            if [ "$current_release" = false ]; then
+              echo "::error::Release $RELEASE_TAG is already public; refusing destructive cleanup" >&2
+              return 1
+            fi
+            if [ "$current_release" = true ]; then
+              if ! gh release delete "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --cleanup-tag --yes; then
+                echo "::error::Failed to delete draft release $RELEASE_TAG" >&2
+                cleanup_failed=1
+              fi
+            fi
+
+            if ! current_tag=$(tag_state); then
+              return 1
+            fi
+            if [ "$current_tag" = present ]; then
+              if ! gh api --method DELETE "repos/$GITHUB_REPOSITORY/git/refs/tags/$RELEASE_TAG"; then
+                echo "::error::Failed to delete generated tag $RELEASE_TAG" >&2
+                cleanup_failed=1
+              fi
+            fi
+
+            if ! current_release=$(release_state); then
+              cleanup_failed=1
+            elif [ "$current_release" != absent ]; then
+              echo "::error::Release cleanup left $RELEASE_TAG behind" >&2
+              cleanup_failed=1
+            fi
+            if ! current_tag=$(tag_state); then
+              cleanup_failed=1
+            elif [ "$current_tag" != absent ]; then
+              echo "::error::Tag cleanup left $RELEASE_TAG behind" >&2
+              cleanup_failed=1
+            fi
+            return "$cleanup_failed"
+          }
+
+          current_release=$(release_state)
+          current_tag=$(tag_state)
+          if [ "$current_release" != absent ] || [ "$current_tag" != absent ]; then
+            echo "::error::Generated release identity already exists: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          trap cleanup EXIT
+          gh release create "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" --draft --generate-notes \
+            --title "GizOS firmware release $RELEASE_TAG"
+          find "$release_dir" -maxdepth 1 -type f -exec basename {} \; | LC_ALL=C sort > "$RUNNER_TEMP/expected-release-assets"
+          gh release upload "$RELEASE_TAG" "$release_dir"/*
+          gh release view "$RELEASE_TAG" --json assets --jq '.assets[].name' | LC_ALL=C sort > "$RUNNER_TEMP/actual-release-assets"
           cmp "$RUNNER_TEMP/expected-release-assets" "$RUNNER_TEMP/actual-release-assets"
 
           verify_dir=$(mktemp -d "$RUNNER_TEMP/release-verify.XXXXXX")
-          gh release download "$GITHUB_REF_NAME" --dir "$verify_dir"
+          gh release download "$RELEASE_TAG" --dir "$verify_dir"
           while IFS= read -r asset; do
             cmp "$release_dir/$asset" "$verify_dir/$asset"
           done < "$RUNNER_TEMP/expected-release-assets"
-          gh release edit "$GITHUB_REF_NAME" --draft=false
+          publish_options=(--draft=false)
+          if [ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
+            publish_options+=(--prerelease --latest=false)
+          fi
+          if ! gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" "${publish_options[@]}"; then
+            test "$(release_state)" = false
+          fi
+          trap - EXIT

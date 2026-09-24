@@ -8,7 +8,7 @@
 #include "opus.h"
 
 #include <math.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -38,9 +38,9 @@ struct h2_bloomspeaker_audio {
   h2_audio_info_t info;
   h2_pal_mutex_t *stream_mutex;
   h2_pal_task_t *capture_task;
-  _Atomic int stop;
-  _Atomic bool stream_active;
-  _Atomic bool reset_accumulator;
+  h2_atomic_int_t stop;
+  h2_atomic_bool_t stream_active;
+  h2_atomic_bool_t reset_accumulator;
   h2_bleikcp_t *stream;
   OpusEncoder *encoder;
   int16_t *mic_buffer;
@@ -49,8 +49,8 @@ struct h2_bloomspeaker_audio {
   size_t accumulator_capacity;
   size_t accumulator_count;
   uint16_t tx_sequence;
-  _Atomic uint32_t tx_sent;
-  _Atomic uint32_t tx_dropped;
+  h2_atomic_u32_t tx_sent;
+  h2_atomic_u32_t tx_dropped;
 };
 
 static void log_audio_stats(h2_bloomspeaker_audio_t *audio,
@@ -67,9 +67,9 @@ static void log_audio_stats(h2_bloomspeaker_audio_t *audio,
       message, sizeof(message),
       "tx=%u tx_drop=%u rx=%u missing=%u fec=%u plc=%u "
       "speaker=%u%% track=1000",
-      (unsigned)atomic_load_explicit(&audio->tx_sent, memory_order_relaxed),
-      (unsigned)atomic_load_explicit(&audio->tx_dropped,
-                                     memory_order_relaxed),
+      (unsigned)h2_atomic_load_explicit(&audio->tx_sent, H2_ATOMIC_RELAXED),
+      (unsigned)h2_atomic_load_explicit(&audio->tx_dropped,
+                                     H2_ATOMIC_RELAXED),
       (unsigned)rx_frames, (unsigned)missing_frames, (unsigned)fec_frames,
       (unsigned)plc_frames, (unsigned)speaker_percent);
   (void)h2_pal_log_write(audio->runtime->log, H2_PAL_LOG_INFO,
@@ -128,12 +128,12 @@ static int send_pcm(h2_bloomspeaker_audio_t *audio, const int16_t *pcm) {
         H2_BLOOMSPEAKER_AUDIO_TX_TIMEOUT_MS);
     if (result == H2_PAL_ERR_TIMEOUT || result == H2_PAL_ERR_WOULD_BLOCK) {
       /* Real-time audio drops a late capture frame instead of growing delay. */
-      (void)atomic_fetch_add_explicit(&audio->tx_dropped, 1u,
-                                      memory_order_relaxed);
+      (void)h2_atomic_fetch_add_explicit(&audio->tx_dropped, 1u,
+                                      H2_ATOMIC_RELAXED);
       result = H2_PAL_OK;
     } else if (result == H2_PAL_OK) {
-      (void)atomic_fetch_add_explicit(&audio->tx_sent, 1u,
-                                      memory_order_relaxed);
+      (void)h2_atomic_fetch_add_explicit(&audio->tx_sent, 1u,
+                                      H2_ATOMIC_RELAXED);
     }
   }
   (void)h2_pal_mutex_unlock(audio->runtime->sync, audio->stream_mutex);
@@ -147,11 +147,11 @@ static int process_capture(h2_bloomspeaker_audio_t *audio,
   float peak = 0.0f;
   pcm_level(frame->data, samples, &level, &peak);
   h2_bloomspeaker_controller_set_local_levels(audio->controller, level, peak);
-  if (atomic_exchange_explicit(&audio->reset_accumulator, false,
-                               memory_order_acq_rel)) {
+  if (h2_atomic_exchange_explicit(&audio->reset_accumulator, false,
+                               H2_ATOMIC_ACQ_REL)) {
     audio->accumulator_count = 0u;
   }
-  if (!atomic_load_explicit(&audio->stream_active, memory_order_acquire)) {
+  if (!h2_atomic_load_explicit(&audio->stream_active, H2_ATOMIC_ACQUIRE)) {
     /* Never carry pre-session microphone samples into a later conversation. */
     audio->accumulator_count = 0u;
     return H2_PAL_OK;
@@ -165,7 +165,7 @@ static int process_capture(h2_bloomspeaker_audio_t *audio,
   audio->accumulator_count += samples;
   while (audio->accumulator_count >= H2_BLOOMSPEAKER_AUDIO_FRAME_SAMPLES) {
     int result = H2_PAL_OK;
-    if (atomic_load_explicit(&audio->stream_active, memory_order_acquire)) {
+    if (h2_atomic_load_explicit(&audio->stream_active, H2_ATOMIC_ACQUIRE)) {
       result = send_pcm(audio, audio->accumulator);
     }
     if (result != H2_PAL_OK && result != H2_PAL_ERR_CLOSED) {
@@ -181,7 +181,7 @@ static int process_capture(h2_bloomspeaker_audio_t *audio,
 
 static void capture_task(void *context) {
   h2_bloomspeaker_audio_t *audio = context;
-  while (!atomic_load_explicit(&audio->stop, memory_order_acquire)) {
+  while (!h2_atomic_load_explicit(&audio->stop, H2_ATOMIC_ACQUIRE)) {
     h2_audio_frame_t frame = h2_audio_frame_for_buffer(
         audio->mic_buffer, audio->mic_buffer_bytes, audio->info.mic_format);
     int result = h2_pal_audio_mic_read(audio->runtime->audio, &frame, 100u);
@@ -201,13 +201,13 @@ static int set_stream(h2_bloomspeaker_audio_t *audio,
     audio->stream = stream;
     audio->tx_sequence = 0u;
     if (stream != NULL) {
-      atomic_store_explicit(&audio->tx_sent, 0u, memory_order_relaxed);
-      atomic_store_explicit(&audio->tx_dropped, 0u, memory_order_relaxed);
-      atomic_store_explicit(&audio->reset_accumulator, true,
-                            memory_order_release);
+      h2_atomic_store_explicit(&audio->tx_sent, 0u, H2_ATOMIC_RELAXED);
+      h2_atomic_store_explicit(&audio->tx_dropped, 0u, H2_ATOMIC_RELAXED);
+      h2_atomic_store_explicit(&audio->reset_accumulator, true,
+                            H2_ATOMIC_RELEASE);
     }
-    atomic_store_explicit(&audio->stream_active, stream != NULL,
-                          memory_order_release);
+    h2_atomic_store_explicit(&audio->stream_active, stream != NULL,
+                          H2_ATOMIC_RELEASE);
     result = h2_pal_mutex_unlock(audio->runtime->sync, audio->stream_mutex);
   }
   return result;
@@ -485,11 +485,56 @@ int h2_bloomspeaker_audio_start(h2_runtime_t *runtime,
   audio->runtime = runtime;
   audio->controller = controller;
   audio->info = info;
-  atomic_init(&audio->stop, 0);
-  atomic_init(&audio->stream_active, false);
-  atomic_init(&audio->reset_accumulator, false);
-  atomic_init(&audio->tx_sent, 0u);
-  atomic_init(&audio->tx_dropped, 0u);
+  if (h2_atomic_init(&audio->stop, 0) != H2_ATOMIC_OK) {
+    result = H2_PAL_ERR_NO_MEMORY;
+    h2_atomic_destroy(&audio->stop);
+    h2_atomic_destroy(&audio->stream_active);
+    h2_atomic_destroy(&audio->reset_accumulator);
+    h2_atomic_destroy(&audio->tx_sent);
+    h2_atomic_destroy(&audio->tx_dropped);
+    h2_pal_mem_free(runtime->mem, audio);
+    return result;
+  }
+  if (h2_atomic_init(&audio->stream_active, false) != H2_ATOMIC_OK) {
+    result = H2_PAL_ERR_NO_MEMORY;
+    h2_atomic_destroy(&audio->stop);
+    h2_atomic_destroy(&audio->stream_active);
+    h2_atomic_destroy(&audio->reset_accumulator);
+    h2_atomic_destroy(&audio->tx_sent);
+    h2_atomic_destroy(&audio->tx_dropped);
+    h2_pal_mem_free(runtime->mem, audio);
+    return result;
+  }
+  if (h2_atomic_init(&audio->reset_accumulator, false) != H2_ATOMIC_OK) {
+    result = H2_PAL_ERR_NO_MEMORY;
+    h2_atomic_destroy(&audio->stop);
+    h2_atomic_destroy(&audio->stream_active);
+    h2_atomic_destroy(&audio->reset_accumulator);
+    h2_atomic_destroy(&audio->tx_sent);
+    h2_atomic_destroy(&audio->tx_dropped);
+    h2_pal_mem_free(runtime->mem, audio);
+    return result;
+  }
+  if (h2_atomic_init(&audio->tx_sent, 0) != H2_ATOMIC_OK) {
+    result = H2_PAL_ERR_NO_MEMORY;
+    h2_atomic_destroy(&audio->stop);
+    h2_atomic_destroy(&audio->stream_active);
+    h2_atomic_destroy(&audio->reset_accumulator);
+    h2_atomic_destroy(&audio->tx_sent);
+    h2_atomic_destroy(&audio->tx_dropped);
+    h2_pal_mem_free(runtime->mem, audio);
+    return result;
+  }
+  if (h2_atomic_init(&audio->tx_dropped, 0) != H2_ATOMIC_OK) {
+    result = H2_PAL_ERR_NO_MEMORY;
+    h2_atomic_destroy(&audio->stop);
+    h2_atomic_destroy(&audio->stream_active);
+    h2_atomic_destroy(&audio->reset_accumulator);
+    h2_atomic_destroy(&audio->tx_sent);
+    h2_atomic_destroy(&audio->tx_dropped);
+    h2_pal_mem_free(runtime->mem, audio);
+    return result;
+  }
   audio->mic_buffer_bytes =
       (size_t)info.mic_format.frame_samples_per_channel * sizeof(int16_t);
   audio->accumulator_capacity =
@@ -548,6 +593,11 @@ int h2_bloomspeaker_audio_start(h2_runtime_t *runtime,
     h2_pal_mem_free(runtime->mem, audio->encoder);
     h2_pal_mem_free(runtime->mem, audio->accumulator);
     h2_pal_mem_free(runtime->mem, audio->mic_buffer);
+    h2_atomic_destroy(&audio->stop);
+    h2_atomic_destroy(&audio->stream_active);
+    h2_atomic_destroy(&audio->reset_accumulator);
+    h2_atomic_destroy(&audio->tx_sent);
+    h2_atomic_destroy(&audio->tx_dropped);
     h2_pal_mem_free(runtime->mem, audio);
     return result;
   }
@@ -560,7 +610,7 @@ int h2_bloomspeaker_audio_stop(h2_bloomspeaker_audio_t *audio) {
   if (audio == NULL) {
     return H2_PAL_OK;
   }
-  atomic_store_explicit(&audio->stop, 1, memory_order_release);
+  h2_atomic_store_explicit(&audio->stop, 1, H2_ATOMIC_RELEASE);
   int result = h2_pal_task_join(audio->runtime->task, audio->capture_task);
   if (result != H2_PAL_OK) {
     return result;
@@ -571,6 +621,11 @@ int h2_bloomspeaker_audio_stop(h2_bloomspeaker_audio_t *audio) {
   h2_pal_mem_free(audio->runtime->mem, audio->encoder);
   h2_pal_mem_free(audio->runtime->mem, audio->accumulator);
   h2_pal_mem_free(audio->runtime->mem, audio->mic_buffer);
+    h2_atomic_destroy(&audio->stop);
+    h2_atomic_destroy(&audio->stream_active);
+    h2_atomic_destroy(&audio->reset_accumulator);
+    h2_atomic_destroy(&audio->tx_sent);
+    h2_atomic_destroy(&audio->tx_dropped);
   h2_pal_mem_free(audio->runtime->mem, audio);
   return H2_PAL_OK;
 }

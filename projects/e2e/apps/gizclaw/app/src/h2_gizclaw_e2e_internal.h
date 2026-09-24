@@ -7,7 +7,7 @@
 #include "h2_app_test_audio_fake.h"
 #include "h2_gizclaw_e2e.h"
 
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -27,6 +27,7 @@ typedef enum h2_gizclaw_e2e_actor_role {
 
 typedef struct h2_gizclaw_e2e_actor {
   h2_gizclaw_service_t *service;
+  h2_gizclaw_api_key_state_t *api_key_state;
   h2_gizclaw_session_t *session;
   h2_gizclaw_config_t config;
   char private_key[H2_PAL_CRYPTO_X25519_KEY_SIZE * 2u + 1u];
@@ -85,7 +86,7 @@ typedef struct h2_gizclaw_e2e_fixture {
   size_t speech_pending_bytes;
   bool speech_mic_started;
   int (*speech_cleanup)(struct h2_gizclaw_e2e_fixture *fixture);
-  atomic_size_t speech_offset;
+  h2_atomic_size_t speech_offset;
   bool speech_track_bound;
   /* A case may retain borrowed Track/hook state through failed teardown. */
   void *case_state;

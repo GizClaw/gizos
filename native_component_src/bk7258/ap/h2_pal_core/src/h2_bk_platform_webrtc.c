@@ -3,22 +3,22 @@
 #include "h2_peer.h"
 #include "h2_sctp.h"
 
-#include <stdatomic.h>
+#include "h2_atomic.h"
 
 static h2_peer_t *h2_bk_platform_peer;
 static h2_sctp_t *h2_bk_platform_sctp;
-static atomic_flag h2_bk_platform_peer_lock = ATOMIC_FLAG_INIT;
+static h2_atomic_flag_t h2_bk_platform_peer_lock = {0};
 static int h2_bk_platform_peer_initialized;
 
 static void h2_bk_platform_peer_lock_acquire(void) {
-    while (atomic_flag_test_and_set_explicit(
-        &h2_bk_platform_peer_lock, memory_order_acquire)) {
+    while (h2_atomic_flag_test_and_set(
+        &h2_bk_platform_peer_lock, H2_ATOMIC_ACQUIRE)) {
     }
 }
 
 static void h2_bk_platform_peer_lock_release(void) {
-    atomic_flag_clear_explicit(
-        &h2_bk_platform_peer_lock, memory_order_release);
+    h2_atomic_flag_clear(
+        &h2_bk_platform_peer_lock, H2_ATOMIC_RELEASE);
 }
 
 const h2_pal_webrtc_api_t *h2_bk_platform_webrtc_api(void) {

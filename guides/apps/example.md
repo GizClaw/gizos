@@ -12,6 +12,7 @@ Examples 是 target-independent portable App 集合。每个 Example 通过可�
 | `ble-smoke` | Mixed-width GATT、Advertising、Scan、subscription、indication、reconnect 与 Runtime queue round trip |
 | `ble-wifi-config` | 手机通过 BLE 扫描周边 AP 并下发 Wi-Fi 凭据的配网窗口 |
 | `bleikcp-speed` | Server/Client BLE iKCP throughput baseline |
+| `button` | 在 LVGL Display 上显示配置的 Runtime Button component 的 down/up/action 事件与计数 |
 | `crash-before-confirm` | 由 launcher 注入的 deterministic crash |
 | `display` | Raw Display PAL RGB565 color bars |
 | `gizclaw-ping-speed` | GizClaw connect、ping 与 speed RPC flow |
