@@ -58,8 +58,26 @@ def checked_assets(directory: Path, *, expect_index: bool) -> list[Path]:
     return [files[name] for name in sorted(files) if name != "index.json"]
 
 
+def validate_gizos_release(directory: Path, tag: str, commit: str) -> None:
+    path = directory / "gizos-release.json"
+    if not path.exists():
+        return
+    try:
+        metadata = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as error:
+        raise ReleaseWorkflowError(f"invalid GizOS release metadata: {error}") from error
+    if (
+        not isinstance(metadata, dict)
+        or metadata.get("release_id") != tag.removeprefix("v")
+        or metadata.get("release_tag") != tag
+        or metadata.get("commit") != commit
+    ):
+        raise ReleaseWorkflowError("GizOS release metadata differs from trigger identity")
+
+
 def prepare(directory: Path, repository: str, tag: str, commit: str) -> None:
     assets = checked_assets(directory, expect_index=False)
+    validate_gizos_release(directory, tag, commit)
     index = {
         "repository": repository,
         "release_tag": tag,
@@ -71,6 +89,7 @@ def prepare(directory: Path, repository: str, tag: str, commit: str) -> None:
 
 def verify(directory: Path, repository: str, tag: str, commit: str) -> None:
     assets = checked_assets(directory, expect_index=True)
+    validate_gizos_release(directory, tag, commit)
     expected = {
         "repository": repository,
         "release_tag": tag,
