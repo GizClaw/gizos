@@ -12,7 +12,7 @@
         return H2_ATOMIC_UNSUPPORTED; \
     } \
     void h2_atomic_##name##_destroy(h2_atomic_##name##_t *object) { \
-        if (object != NULL) object->storage = NULL; \
+        (void)object; \
     } \
     type h2_atomic_##name##_load(const h2_atomic_##name##_t *object, h2_atomic_order_t order) { \
         (void)object; (void)order; H2_ATOMIC_UNAVAILABLE(); \
@@ -54,7 +54,7 @@ H2_ATOMIC_UNSUPPORTED_INTEGER(size, size_t)
         return H2_ATOMIC_UNSUPPORTED; \
     } \
     void h2_atomic_##name##_destroy(h2_atomic_##name##_t *object) { \
-        if (object != NULL) object->storage = NULL; \
+        (void)object; \
     } \
     type h2_atomic_##name##_load(const h2_atomic_##name##_t *object, h2_atomic_order_t order) { \
         (void)object; (void)order; H2_ATOMIC_UNAVAILABLE(); \
@@ -78,7 +78,7 @@ h2_atomic_result_t h2_atomic_flag_init(h2_atomic_flag_t *object) {
     return H2_ATOMIC_UNSUPPORTED;
 }
 void h2_atomic_flag_destroy(h2_atomic_flag_t *object) {
-    if (object != NULL) object->storage = NULL;
+    (void)object;
 }
 bool h2_atomic_flag_test_and_set(h2_atomic_flag_t *object, h2_atomic_order_t order) {
     (void)object; (void)order; H2_ATOMIC_UNAVAILABLE();

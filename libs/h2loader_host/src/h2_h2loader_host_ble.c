@@ -304,6 +304,7 @@ h2_pal_result_t h2_h2loader_host_ble_connect(
         config->address.type == H2_PAL_BLE_ADDR_TYPE_UNKNOWN) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    if (!h2_bleikcp_global_ready()) return H2_PAL_ERR_INVALID_STATE;
     connection = h2_pal_mem_alloc(
         config->allocator, sizeof(*connection));
     if (connection == NULL) {

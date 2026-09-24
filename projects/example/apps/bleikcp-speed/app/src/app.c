@@ -1448,6 +1448,7 @@ int h2_bleikcp_speed_run(
           config->resume_management_advertising == NULL))) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    if (!h2_bleikcp_global_ready()) return H2_PAL_ERR_INVALID_STATE;
     h2_speed_context_t *context = h2_pal_mem_alloc(runtime->mem, sizeof(*context));
     if (context == NULL) {
         return H2_PAL_ERR_NO_MEMORY;

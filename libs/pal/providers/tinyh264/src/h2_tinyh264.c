@@ -429,5 +429,5 @@ static const h2_pal_video_decoder_api_t g_api = {
 };
 
 const h2_pal_video_decoder_api_t *h2_tinyh264_video_decoder_api(void) {
-    return h2_tinyh264_global_ready() ? &g_api : NULL;
+    return &g_api;
 }

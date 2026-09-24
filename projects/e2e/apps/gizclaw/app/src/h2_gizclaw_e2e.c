@@ -43,26 +43,7 @@ typedef struct run_control {
   h2_atomic_bool_t exited;
 } run_control_t;
 
-static h2_atomic_flag_t s_run_active = {0};
-static bool s_run_active_ready;
-
-h2_pal_result_t h2_gizclaw_e2e_init(void) {
-  if (s_run_active_ready) return H2_PAL_ERR_INVALID_STATE;
-  const h2_atomic_result_t rc = h2_atomic_flag_init(&s_run_active);
-  if (rc == H2_ATOMIC_UNSUPPORTED) return H2_PAL_ERR_UNSUPPORTED;
-  if (rc != H2_ATOMIC_OK) return H2_PAL_ERR_NO_MEMORY;
-  s_run_active_ready = true;
-  return H2_PAL_OK;
-}
-
-h2_pal_result_t h2_gizclaw_e2e_shutdown(void) {
-  if (!s_run_active_ready) return H2_PAL_ERR_INVALID_STATE;
-  if (h2_atomic_flag_test_and_set(&s_run_active, H2_ATOMIC_ACQUIRE))
-    return H2_PAL_ERR_BUSY;
-  s_run_active_ready = false;
-  h2_atomic_flag_destroy(&s_run_active);
-  return H2_PAL_OK;
-}
+H2_ATOMIC_DEFINE_STATIC(flag, s_run_active, 0u);
 
 static uint32_t value_or_default(uint32_t value, uint32_t fallback) {
   return value == 0u ? fallback : value;
@@ -422,7 +403,7 @@ h2_gizclaw_e2e_exit_t h2_gizclaw_e2e_run(h2_runtime_t *runtime,
   if (out_result != NULL) {
     memset(out_result, 0, sizeof(*out_result));
   }
-  if (!s_run_active_ready || !config_valid(runtime, config, out_result) ||
+  if (!config_valid(runtime, config, out_result) ||
       h2_atomic_flag_test_and_set(&s_run_active, H2_ATOMIC_ACQUIRE)) {
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   }

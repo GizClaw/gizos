@@ -1555,6 +1555,7 @@ h2_pal_result_t h2_lua_link_enable(h2_lua_host_t *host,
   if (h2_atomic_load(&host->started) != 0 || host->link_hooks != NULL) {
     return H2_PAL_ERR_INVALID_STATE;
   }
+  if (!h2_bleikcp_global_ready()) return H2_PAL_ERR_INVALID_STATE;
   runtime = host->config.runtime;
   if (!link_ble_is_usable(runtime->ble_host) ||
       !link_system_event_is_usable(runtime->system_event) ||

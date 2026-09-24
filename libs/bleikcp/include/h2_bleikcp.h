@@ -15,6 +15,7 @@ extern "C" {
  * calls must not race stream operations or each other. */
 int h2_bleikcp_global_init(void);
 int h2_bleikcp_global_shutdown(void);
+bool h2_bleikcp_global_ready(void);
 
 int h2_bleikcp_close(h2_bleikcp_t *stream);
 int h2_bleikcp_read(

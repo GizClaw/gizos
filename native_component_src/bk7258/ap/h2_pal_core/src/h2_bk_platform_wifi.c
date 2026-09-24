@@ -1195,48 +1195,11 @@ static int h2_bk_wifi_ap_get_mac(h2_pal_wifi_ap_t *ap, uint8_t out_mac[6]) {
 }
 
 /* One admission gate covers the entire authentication/IP/save transaction. */
-static h2_atomic_flag_t s_h2_bk_wifi_connect_busy = {0};
-static bool s_h2_bk_wifi_connect_busy_ready;
-
-h2_pal_result_t h2_bk_platform_wifi_atomic_init(void) {
-    if (s_h2_bk_wifi_connect_busy_ready) return H2_PAL_ERR_INVALID_STATE;
-    const h2_atomic_result_t rc =
-        h2_atomic_flag_init(&s_h2_bk_wifi_connect_busy);
-    if (rc == H2_ATOMIC_UNSUPPORTED) return H2_PAL_ERR_UNSUPPORTED;
-    if (rc != H2_ATOMIC_OK) return H2_PAL_ERR_NO_MEMORY;
-    s_h2_bk_wifi_connect_busy_ready = true;
-    return H2_PAL_OK;
-}
-
-h2_pal_result_t h2_bk_platform_wifi_atomic_shutdown(void) {
-    if (!s_h2_bk_wifi_connect_busy_ready) return H2_PAL_ERR_INVALID_STATE;
-    if (h2_atomic_flag_test_and_set(&s_h2_bk_wifi_connect_busy,
-                                    H2_ATOMIC_ACQUIRE)) return H2_PAL_ERR_BUSY;
-    s_h2_bk_wifi_connect_busy_ready = false;
-    h2_atomic_flag_destroy(&s_h2_bk_wifi_connect_busy);
-    return H2_PAL_OK;
-}
-
-h2_pal_result_t h2_bk_platform_atomic_consumers_init(void) {
-    h2_pal_result_t rc = h2_bk_platform_wifi_atomic_init();
-    if (rc != H2_PAL_OK) return rc;
-    rc = h2_bk_platform_webrtc_atomic_init();
-    if (rc != H2_PAL_OK) {
-        (void)h2_bk_platform_wifi_atomic_shutdown();
-    }
-    return rc;
-}
-
-h2_pal_result_t h2_bk_platform_atomic_consumers_shutdown(void) {
-    h2_pal_result_t rc = h2_bk_platform_webrtc_atomic_shutdown();
-    if (rc != H2_PAL_OK) return rc;
-    return h2_bk_platform_wifi_atomic_shutdown();
-}
+H2_ATOMIC_DEFINE_STATIC(flag, s_h2_bk_wifi_connect_busy, 0u);
 
 static int h2_bk_wifi_connect(void *user,
                              const h2_pal_wifi_sta_config_t *config,
                              uint32_t timeout_ms) {
-    if (!s_h2_bk_wifi_connect_busy_ready) return H2_PAL_ERR_INVALID_STATE;
     if (h2_atomic_flag_test_and_set(&s_h2_bk_wifi_connect_busy, H2_ATOMIC_SEQ_CST))
         return H2_PAL_ERR_BUSY;
     int rc = h2_bk_wifi_sta_connect(user, config, timeout_ms);
@@ -1245,7 +1208,6 @@ static int h2_bk_wifi_connect(void *user,
 }
 
 static int h2_bk_wifi_disconnect(void *user) {
-    if (!s_h2_bk_wifi_connect_busy_ready) return H2_PAL_ERR_INVALID_STATE;
     if (h2_atomic_flag_test_and_set(&s_h2_bk_wifi_connect_busy, H2_ATOMIC_SEQ_CST))
         return H2_PAL_ERR_BUSY;
     int rc = h2_bk_wifi_sta_disconnect(user);
@@ -1256,7 +1218,6 @@ static int h2_bk_wifi_disconnect(void *user) {
 static int h2_bk_wifi_connect_and_save(void *user,
                                       const h2_pal_wifi_sta_config_t *config,
                                       uint32_t timeout_ms) {
-    if (!s_h2_bk_wifi_connect_busy_ready) return H2_PAL_ERR_INVALID_STATE;
     if (h2_atomic_flag_test_and_set(&s_h2_bk_wifi_connect_busy, H2_ATOMIC_SEQ_CST))
         return H2_PAL_ERR_BUSY;
     static const h2_pal_wifi_sta_vtable_t raw_vtable = {

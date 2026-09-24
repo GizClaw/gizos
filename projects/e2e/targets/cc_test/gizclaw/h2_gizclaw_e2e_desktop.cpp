@@ -120,7 +120,6 @@ struct RunGuard {
     if (!retain) {
       h2_atomic_bool_destroy(&g_stop_requested);
       h2_atomic_flag_clear(&g_running, H2_ATOMIC_RELEASE);
-      (void)h2_gizclaw_e2e_shutdown();
     }
   }
 };
@@ -247,11 +246,6 @@ int run_desktop(int argc, char **argv) {
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   }
   if (h2_atomic_bool_init(&g_stop_requested, false) != H2_ATOMIC_OK) {
-    h2_atomic_flag_clear(&g_running, H2_ATOMIC_RELEASE);
-    return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
-  }
-  if (h2_gizclaw_e2e_init() != H2_PAL_OK) {
-    h2_atomic_bool_destroy(&g_stop_requested);
     h2_atomic_flag_clear(&g_running, H2_ATOMIC_RELEASE);
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   }

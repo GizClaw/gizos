@@ -3,6 +3,7 @@
 #include "h2_peer_internal.h"
 #include "providers/h2_peer_portable_backend.h"
 
+
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
@@ -998,7 +999,6 @@ static void test_remote_reset_during_send(void) {
 }
 
 int main(void) {
-  assert(h2_peer_global_init() == H2_PAL_OK);
   test_close_preserves_accepted_messages();
   test_pool_and_event_lease();
   test_reset_quarantine();
@@ -1015,6 +1015,5 @@ int main(void) {
   test_ice_server_transport_validation();
   test_terminal_while_opening_pending_channel();
   test_remote_reset_during_send();
-  assert(h2_peer_global_shutdown() == H2_PAL_OK);
   return 0;
 }

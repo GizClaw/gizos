@@ -526,9 +526,6 @@ void app_main(void) {
     system_reset();
     return;
   }
-  result = h2_tinyh264_global_init();
-  emit("H2_JIELI_MP4_TINYH264_INIT rc=%d\r\n", result);
-  if (result != H2_PAL_OK) return;
   if (h2_jieli_mp4_is_direct_boot()) {
     report_previous_exception();
     emit("H2_JIELI_MP4_BOOT version=%s mode=direct heap_free=%u\r\n",

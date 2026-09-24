@@ -27,10 +27,12 @@ union h2_bleikcp_kcp_block {
 };
 
 static _Thread_local const h2_pal_mem_api_t *s_kcp_allocator;
-static h2_atomic_flag_t s_kcp_lock = {0};
+H2_ATOMIC_DEFINE_STATIC(flag, s_kcp_lock, 0u);
 static bool s_kcp_global_ready;
 static unsigned s_kcp_global_refs;
 static h2_bleikcp_kcp_block_t *s_kcp_blocks;
+
+bool h2_bleikcp_global_ready(void) { return s_kcp_global_ready; }
 
 static void h2_bleikcp_kcp_lock(void) {
     while (h2_atomic_flag_test_and_set(&s_kcp_lock, H2_ATOMIC_ACQUIRE)) {
@@ -79,9 +81,6 @@ int h2_bleikcp_global_init(void) {
         ++s_kcp_global_refs;
         return H2_PAL_OK;
     }
-    const h2_atomic_result_t rc = h2_atomic_flag_init(&s_kcp_lock);
-    if (rc == H2_ATOMIC_UNSUPPORTED) return H2_PAL_ERR_UNSUPPORTED;
-    if (rc != H2_ATOMIC_OK) return H2_PAL_ERR_NO_MEMORY;
     ikcp_allocator(h2_bleikcp_kcp_alloc, h2_bleikcp_kcp_free);
     s_kcp_global_ready = true;
     s_kcp_global_refs = 1u;
@@ -98,7 +97,6 @@ int h2_bleikcp_global_shutdown(void) {
     ikcp_allocator(malloc, free);
     s_kcp_global_ready = false;
     s_kcp_global_refs = 0u;
-    h2_atomic_flag_destroy(&s_kcp_lock);
     return H2_PAL_OK;
 }
 

@@ -9,9 +9,10 @@
 extern "C" {
 #endif
 
-/* Value wrappers may live anywhere. Storage is allocated by the linked
- * platform implementation. Initialize once, do not copy after initialization,
- * and destroy only after all concurrent users have stopped. */
+/* Value wrappers may live anywhere. Dynamic storage is allocated by the
+ * linked platform implementation. Initialize once, do not copy after
+ * initialization, and destroy only after all concurrent users have stopped.
+ * C file-static values may instead use H2_ATOMIC_DEFINE_STATIC. */
 typedef struct h2_atomic_int_storage h2_atomic_int_storage_t;
 typedef struct h2_atomic_uint_storage h2_atomic_uint_storage_t;
 typedef struct h2_atomic_u8_storage h2_atomic_u8_storage_t;
@@ -32,6 +33,36 @@ typedef struct { h2_atomic_size_storage_t *storage; } h2_atomic_size_t;
 typedef struct { h2_atomic_ptr_storage_t *storage; } h2_atomic_ptr_t;
 /* A zeroed wrapper has no storage and must be initialized before use. */
 typedef struct { h2_atomic_flag_storage_t *storage; } h2_atomic_flag_t;
+
+#ifndef __cplusplus
+#include <stdatomic.h>
+/* These backing layouts are shared by the C providers and C-only static
+ * definitions. C++ only sees the opaque pointer wrappers above; it must use
+ * explicit init/destroy and never assume std::atomic has C11's layout. */
+#define H2_ATOMIC_STORAGE_TYPE(name, type) \
+    struct h2_atomic_##name##_storage { _Atomic(type) value; bool heap_owned; }
+H2_ATOMIC_STORAGE_TYPE(int, int);
+H2_ATOMIC_STORAGE_TYPE(uint, unsigned int);
+H2_ATOMIC_STORAGE_TYPE(u8, uint8_t);
+H2_ATOMIC_STORAGE_TYPE(u16, uint16_t);
+H2_ATOMIC_STORAGE_TYPE(u32, uint32_t);
+H2_ATOMIC_STORAGE_TYPE(bool, bool);
+H2_ATOMIC_STORAGE_TYPE(size, size_t);
+H2_ATOMIC_STORAGE_TYPE(ptr, void *);
+H2_ATOMIC_STORAGE_TYPE(flag, uint32_t);
+#undef H2_ATOMIC_STORAGE_TYPE
+
+/* One ordinary file-static backing per value. Platform linker placement is
+ * the target's normal static-data contract; this macro adds no attributes or
+ * platform selection. A static wrapper is ready without runtime allocation.
+ * Calling init on it returns INVALID_STATE. Destroy is a no-op: static storage
+ * is never freed and the wrapper stays usable for the process lifetime. */
+#define H2_ATOMIC_DEFINE_STATIC(kind, name, initial) \
+    static h2_atomic_##kind##_storage_t name##_h2_storage = { \
+        ATOMIC_VAR_INIT(initial), false \
+    }; \
+    static h2_atomic_##kind##_t name = { &name##_h2_storage }
+#endif
 
 typedef enum h2_atomic_result {
     H2_ATOMIC_OK = 0,

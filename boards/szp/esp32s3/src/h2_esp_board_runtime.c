@@ -29,11 +29,8 @@ h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t *out_config) {
         *out_config = s_runtime_config;
         return H2_PAL_OK;
     }
-    h2_pal_result_t rc = h2_esp_platform_atomic_consumers_init();
-    if (rc != H2_PAL_OK) return rc;
-    rc = h2_esp_board_fs_init(&s_runtime_fs);
+    h2_pal_result_t rc = h2_esp_board_fs_init(&s_runtime_fs);
     if (rc != H2_PAL_OK) {
-        (void)h2_esp_platform_atomic_consumers_shutdown();
         return rc;
     }
     if (rc == H2_PAL_OK && s_runtime_fs.vtable != NULL) {
@@ -51,7 +48,6 @@ h2_pal_result_t h2_esp_board_runtime_config(h2_runtime_config_t *out_config) {
         &http_config, &s_runtime_http, &s_runtime_http_api);
     if (rc != H2_PAL_OK) {
         (void)h2_esp_board_fs_deinit();
-        (void)h2_esp_platform_atomic_consumers_shutdown();
         return rc;
     }
     *out_config = (h2_runtime_config_t){
@@ -114,8 +110,6 @@ h2_pal_result_t h2_esp_board_runtime_deinit(void) {
     if (rc != H2_PAL_OK) {
         return rc;
     }
-    h2_pal_result_t atomic_rc = h2_esp_platform_atomic_consumers_shutdown();
-    if (atomic_rc != H2_PAL_OK) return atomic_rc;
     h2_corehttp_destroy(s_runtime_http);
     s_runtime_http = NULL;
     memset(&s_runtime_http_api, 0, sizeof(s_runtime_http_api));

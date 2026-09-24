@@ -5,6 +5,7 @@
 #include "h2_lua_capability.h"
 #include "h2_lua_job.h"
 #include "h2_lua_link.h"
+#include "h2_bleikcp.h"
 #include "h2_lua_link_fake_ble.h"
 #include "h2_pal.h"
 
@@ -736,6 +737,7 @@ static void test_capability_off(void) {
 }
 
 int main(void) {
+  assert(h2_bleikcp_global_init() == H2_PAL_OK);
   for (int i = 0; i < 2; ++i)
     assert(h2_atomic_int_init(&s_marks[i], 0) == H2_ATOMIC_OK);
   fprintf(stderr, "== test_capability_off\n");
@@ -770,5 +772,6 @@ int main(void) {
   puts("lua link tests passed");
   for (int i = 0; i < 2; ++i)
     h2_atomic_int_destroy(&s_marks[i]);
+  assert(h2_bleikcp_global_shutdown() == H2_PAL_OK);
   return 0;
 }

@@ -83,9 +83,7 @@ int main(int argc, char **argv) {
     }
     CHECK(first_vcl > 0u && second_vcl > first_vcl);
 
-    CHECK(h2_tinyh264_global_init() == H2_PAL_OK);
     const h2_pal_video_decoder_api_t *api = h2_tinyh264_video_decoder_api();
-    CHECK(api != NULL);
     h2_pal_video_decoder_session_t *unsupported_session = NULL;
     const h2_video_decoder_config_t unsupported_open_config = {
         .frame_allocator = &s_mem,
@@ -215,6 +213,5 @@ int main(int argc, char **argv) {
     CHECK(h2_pal_video_decoder_close(api, rgb_session) == H2_PAL_OK);
     free(bytes);
     CHECK(s_allocations == 0u);
-    CHECK(h2_tinyh264_global_shutdown() == H2_PAL_OK);
     return 0;
 }

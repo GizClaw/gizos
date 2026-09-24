@@ -6,7 +6,6 @@ set(H2_ESP_PLATFORM_CORE_SRCS
   "src/h2_esp_lazy_audio.c"
   "src/h2_esp_platform_mem.c"
   "src/h2_esp_atomic.c"
-  "src/h2_esp_platform_atomic_consumers.c"
   "src/h2_esp_platform_arena.c"
   "src/h2_esp_platform_log.c"
   "src/h2_esp_platform_firmware_info.c"

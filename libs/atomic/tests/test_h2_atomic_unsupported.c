@@ -2,7 +2,16 @@
 
 #include <assert.h>
 
+H2_ATOMIC_DEFINE_STATIC(flag, s_unsupported_static_flag, 0u);
+H2_ATOMIC_DEFINE_STATIC(int, s_unsupported_static_int, 0);
+
 int main(void) {
+    assert(s_unsupported_static_flag.storage != NULL);
+    assert(s_unsupported_static_int.storage != NULL);
+    h2_atomic_flag_destroy(&s_unsupported_static_flag);
+    h2_atomic_int_destroy(&s_unsupported_static_int);
+    assert(s_unsupported_static_flag.storage != NULL);
+    assert(s_unsupported_static_int.storage != NULL);
     h2_atomic_int_t integer = {0};
     h2_atomic_uint_t unsigned_integer = {0};
     h2_atomic_u8_t byte = {0};

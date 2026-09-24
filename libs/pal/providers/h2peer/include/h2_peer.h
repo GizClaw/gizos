@@ -20,12 +20,6 @@ extern "C" {
 /** Opaque owner of H2Peer connections and their borrowed WebRTC API view. */
 typedef struct h2_peer h2_peer_t;
 
-/* The process owner initializes the portable backend before concurrent
- * h2_peer_create calls and shuts it down after destroying every owner.
- * Lifecycle calls must be serialized with all owner and connection calls. */
-h2_pal_result_t h2_peer_global_init(void);
-h2_pal_result_t h2_peer_global_shutdown(void);
-
 /**
  * Platform capabilities borrowed by one H2Peer instance.
  *

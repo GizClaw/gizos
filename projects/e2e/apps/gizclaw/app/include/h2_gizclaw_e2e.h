@@ -127,12 +127,6 @@ typedef struct h2_gizclaw_e2e_result {
  * failed-to-stop Service may still borrow config and Runtime views. Concurrent
  * calls are rejected with H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR.
  */
-/* Initialize before any concurrent run call. Shutdown after the last run has
- * fully released its resources; BUSY preserves a retained-session guard.
- * Lifecycle calls themselves must be serialized by the process owner. */
-h2_pal_result_t h2_gizclaw_e2e_init(void);
-h2_pal_result_t h2_gizclaw_e2e_shutdown(void);
-
 h2_gizclaw_e2e_exit_t h2_gizclaw_e2e_run(h2_runtime_t *runtime,
                                          const h2_gizclaw_e2e_config_t *config,
                                          h2_gizclaw_e2e_result_t *out_result);

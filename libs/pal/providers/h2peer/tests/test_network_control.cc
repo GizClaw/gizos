@@ -72,7 +72,6 @@ h2_pal_result_t read_track(void *, uint8_t *, size_t, size_t *) {
 } // namespace
 
 int main() {
-  assert(h2_peer_global_init() == H2_PAL_OK);
   assert(h2_atomic_uint_init(&started, 0u) == H2_ATOMIC_OK);
   assert(h2_atomic_uint_init(&joined, 0u) == H2_ATOMIC_OK);
   real_sync = h2_desktop_platform_sync_api();
@@ -194,6 +193,5 @@ int main() {
   h2_atomic_int_destroy(&blocked_kind);
   h2_atomic_uint_destroy(&started);
   h2_atomic_uint_destroy(&joined);
-  assert(h2_peer_global_shutdown() == H2_PAL_OK);
   return 0;
 }

@@ -10,19 +10,21 @@
 #include "h2_atomic.h"
 
 #define H2_ATOMIC_DEFINE_INTEGER(name, type) \
-    struct h2_atomic_##name##_storage { type value; }; \
     h2_atomic_result_t h2_atomic_##name##_init(h2_atomic_##name##_t *object, type initial) { \
         if (object == NULL) return H2_ATOMIC_INVALID_ARG; \
         if (object->storage != NULL) return H2_ATOMIC_INVALID_STATE; \
         object->storage = H2_ATOMIC_PLATFORM_ALLOC(sizeof(*object->storage)); \
         if (object->storage == NULL) return H2_ATOMIC_NO_MEMORY; \
         object->storage->value = initial; \
+        object->storage->heap_owned = true; \
         return H2_ATOMIC_OK; \
     } \
     void h2_atomic_##name##_destroy(h2_atomic_##name##_t *object) { \
         if (object == NULL) return; \
-        if (object->storage != NULL) H2_ATOMIC_PLATFORM_FREE(object->storage); \
-        object->storage = NULL; \
+        if (object->storage != NULL && object->storage->heap_owned) { \
+            H2_ATOMIC_PLATFORM_FREE(object->storage); \
+            object->storage = NULL; \
+        } \
     } \
     type h2_atomic_##name##_load(const h2_atomic_##name##_t *object, h2_atomic_order_t order) { \
         (void)order; \
@@ -96,19 +98,21 @@ H2_ATOMIC_DEFINE_INTEGER(size, size_t)
 #undef H2_ATOMIC_DEFINE_INTEGER
 
 #define H2_ATOMIC_DEFINE_SCALAR(name, type) \
-    struct h2_atomic_##name##_storage { type value; }; \
     h2_atomic_result_t h2_atomic_##name##_init(h2_atomic_##name##_t *object, type initial) { \
         if (object == NULL) return H2_ATOMIC_INVALID_ARG; \
         if (object->storage != NULL) return H2_ATOMIC_INVALID_STATE; \
         object->storage = H2_ATOMIC_PLATFORM_ALLOC(sizeof(*object->storage)); \
         if (object->storage == NULL) return H2_ATOMIC_NO_MEMORY; \
         object->storage->value = initial; \
+        object->storage->heap_owned = true; \
         return H2_ATOMIC_OK; \
     } \
     void h2_atomic_##name##_destroy(h2_atomic_##name##_t *object) { \
         if (object == NULL) return; \
-        if (object->storage != NULL) H2_ATOMIC_PLATFORM_FREE(object->storage); \
-        object->storage = NULL; \
+        if (object->storage != NULL && object->storage->heap_owned) { \
+            H2_ATOMIC_PLATFORM_FREE(object->storage); \
+            object->storage = NULL; \
+        } \
     } \
     type h2_atomic_##name##_load(const h2_atomic_##name##_t *object, h2_atomic_order_t order) { \
         (void)order; \
@@ -144,31 +148,33 @@ H2_ATOMIC_DEFINE_SCALAR(bool, bool)
 H2_ATOMIC_DEFINE_SCALAR(ptr, void *)
 #undef H2_ATOMIC_DEFINE_SCALAR
 
-struct h2_atomic_flag_storage { bool value; };
 h2_atomic_result_t h2_atomic_flag_init(h2_atomic_flag_t *object) {
     if (object == NULL) return H2_ATOMIC_INVALID_ARG;
     if (object->storage != NULL) return H2_ATOMIC_INVALID_STATE;
     object->storage = H2_ATOMIC_PLATFORM_ALLOC(sizeof(*object->storage));
     if (object->storage == NULL) return H2_ATOMIC_NO_MEMORY;
-    object->storage->value = false;
+    object->storage->value = 0u;
+    object->storage->heap_owned = true;
     return H2_ATOMIC_OK;
 }
 void h2_atomic_flag_destroy(h2_atomic_flag_t *object) {
     if (object == NULL) return;
-    if (object->storage != NULL) H2_ATOMIC_PLATFORM_FREE(object->storage);
-    object->storage = NULL;
+    if (object->storage != NULL && object->storage->heap_owned) {
+        H2_ATOMIC_PLATFORM_FREE(object->storage);
+        object->storage = NULL;
+    }
 }
 bool h2_atomic_flag_test_and_set(h2_atomic_flag_t *object, h2_atomic_order_t order) {
     (void)order;
     h2_atomic_platform_lock_state_t state = h2_atomic_platform_lock();
-    bool previous = object->storage->value;
-    object->storage->value = true;
+    bool previous = object->storage->value != 0u;
+    object->storage->value = 1u;
     h2_atomic_platform_unlock(state);
     return previous;
 }
 void h2_atomic_flag_clear(h2_atomic_flag_t *object, h2_atomic_order_t order) {
     (void)order;
     h2_atomic_platform_lock_state_t state = h2_atomic_platform_lock();
-    object->storage->value = false;
+    object->storage->value = 0u;
     h2_atomic_platform_unlock(state);
 }

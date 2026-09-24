@@ -203,8 +203,6 @@ int main(void) {
   assert(memcmp(&result, &empty, sizeof(result)) == 0);
   config.suites = H2_GIZCLAW_E2E_SUITE_ALL;
 
-  assert(h2_gizclaw_e2e_init() == H2_PAL_OK);
-
   assert(h2_gizclaw_e2e_case_count == 8u);
   assert((config.suites & H2_GIZCLAW_E2E_SUITE_DEVICE) != 0);
   state.task.join.remaining = 1u;

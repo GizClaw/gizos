@@ -26,25 +26,7 @@ typedef struct h2_esp_flash_context {
 } h2_esp_flash_context_t;
 
 static h2_esp_flash_context_t *active_context;
-static h2_atomic_flag_t active_context_claim = {0};
-static bool active_context_claim_ready;
-
-h2_pal_result_t h2_h2loader_host_esp_flash_init(void) {
-    if (active_context_claim_ready) return H2_PAL_ERR_INVALID_STATE;
-    const h2_atomic_result_t rc = h2_atomic_flag_init(&active_context_claim);
-    if (rc == H2_ATOMIC_UNSUPPORTED) return H2_PAL_ERR_UNSUPPORTED;
-    if (rc != H2_ATOMIC_OK) return H2_PAL_ERR_NO_MEMORY;
-    active_context_claim_ready = true;
-    return H2_PAL_OK;
-}
-
-h2_pal_result_t h2_h2loader_host_esp_flash_shutdown(void) {
-    if (!active_context_claim_ready) return H2_PAL_ERR_INVALID_STATE;
-    if (active_context != NULL) return H2_PAL_ERR_BUSY;
-    active_context_claim_ready = false;
-    h2_atomic_flag_destroy(&active_context_claim);
-    return H2_PAL_OK;
-}
+H2_ATOMIC_DEFINE_STATIC(flag, active_context_claim, 0u);
 
 static esp_loader_error_t esp_error(h2_pal_result_t rc) {
     if (rc == H2_PAL_OK) {
@@ -435,7 +417,6 @@ h2_pal_result_t h2_h2loader_host_esp_flash_open(
     if (out_driver != NULL) {
         memset(out_driver, 0, sizeof(*out_driver));
     }
-    if (!active_context_claim_ready) return H2_PAL_ERR_INVALID_STATE;
     if (config == NULL || out_driver == NULL ||
         config->serial == NULL || config->time == NULL ||
         config->allocator == NULL || config->port_id == NULL ||

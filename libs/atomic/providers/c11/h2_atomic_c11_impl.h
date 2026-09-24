@@ -53,19 +53,21 @@ static h2_atomic_order_t c11_failure_order(h2_atomic_order_t success,
     H2_ATOMIC_C11_ORDER(c11_failure_order(success, failure))
 
 #define H2_ATOMIC_DEFINE_INTEGER(name, type) \
-    struct h2_atomic_##name##_storage { _Atomic(type) value; }; \
     h2_atomic_result_t h2_atomic_##name##_init(h2_atomic_##name##_t *object, type initial) { \
         if (object == NULL) return H2_ATOMIC_INVALID_ARG; \
         if (object->storage != NULL) return H2_ATOMIC_INVALID_STATE; \
         object->storage = H2_ATOMIC_C11_ALLOC(sizeof(*object->storage)); \
         if (object->storage == NULL) return H2_ATOMIC_NO_MEMORY; \
         atomic_store_explicit(&object->storage->value, initial, memory_order_relaxed); \
+        object->storage->heap_owned = true; \
         return H2_ATOMIC_OK; \
     } \
     void h2_atomic_##name##_destroy(h2_atomic_##name##_t *object) { \
         if (object == NULL) return; \
-        H2_ATOMIC_C11_FREE(object->storage); \
-        object->storage = NULL; \
+        if (object->storage != NULL && object->storage->heap_owned) { \
+            H2_ATOMIC_C11_FREE(object->storage); \
+            object->storage = NULL; \
+        } \
     } \
     type h2_atomic_##name##_load(const h2_atomic_##name##_t *object, h2_atomic_order_t order) { \
         return atomic_load_explicit(&object->storage->value, H2_ATOMIC_C11_LOAD_ORDER(order)); \
@@ -101,19 +103,21 @@ H2_ATOMIC_DEFINE_INTEGER(u32, uint32_t)
 H2_ATOMIC_DEFINE_INTEGER(size, size_t)
 #undef H2_ATOMIC_DEFINE_INTEGER
 
-struct h2_atomic_bool_storage { _Atomic(bool) value; };
 h2_atomic_result_t h2_atomic_bool_init(h2_atomic_bool_t *object, bool initial) {
     if (object == NULL) return H2_ATOMIC_INVALID_ARG;
     if (object->storage != NULL) return H2_ATOMIC_INVALID_STATE;
     object->storage = H2_ATOMIC_C11_ALLOC(sizeof(*object->storage));
     if (object->storage == NULL) return H2_ATOMIC_NO_MEMORY;
     atomic_store_explicit(&object->storage->value, initial, memory_order_relaxed);
+    object->storage->heap_owned = true;
     return H2_ATOMIC_OK;
 }
 void h2_atomic_bool_destroy(h2_atomic_bool_t *object) {
     if (object == NULL) return;
-    H2_ATOMIC_C11_FREE(object->storage);
-    object->storage = NULL;
+    if (object->storage != NULL && object->storage->heap_owned) {
+        H2_ATOMIC_C11_FREE(object->storage);
+        object->storage = NULL;
+    }
 }
 bool h2_atomic_bool_load(const h2_atomic_bool_t *object, h2_atomic_order_t order) {
     return atomic_load_explicit(&object->storage->value, H2_ATOMIC_C11_LOAD_ORDER(order));
@@ -132,19 +136,21 @@ bool h2_atomic_bool_compare_exchange(h2_atomic_bool_t *object, bool *expected,
                                        H2_ATOMIC_C11_ORDER(success), H2_ATOMIC_C11_FAILURE_ORDER(success, failure));
 }
 
-struct h2_atomic_ptr_storage { _Atomic(void *) value; };
 h2_atomic_result_t h2_atomic_ptr_init(h2_atomic_ptr_t *object, void *initial) {
     if (object == NULL) return H2_ATOMIC_INVALID_ARG;
     if (object->storage != NULL) return H2_ATOMIC_INVALID_STATE;
     object->storage = H2_ATOMIC_C11_ALLOC(sizeof(*object->storage));
     if (object->storage == NULL) return H2_ATOMIC_NO_MEMORY;
     atomic_store_explicit(&object->storage->value, initial, memory_order_relaxed);
+    object->storage->heap_owned = true;
     return H2_ATOMIC_OK;
 }
 void h2_atomic_ptr_destroy(h2_atomic_ptr_t *object) {
     if (object == NULL) return;
-    H2_ATOMIC_C11_FREE(object->storage);
-    object->storage = NULL;
+    if (object->storage != NULL && object->storage->heap_owned) {
+        H2_ATOMIC_C11_FREE(object->storage);
+        object->storage = NULL;
+    }
 }
 void *h2_atomic_ptr_load(const h2_atomic_ptr_t *object, h2_atomic_order_t order) {
     return atomic_load_explicit(&object->storage->value, H2_ATOMIC_C11_LOAD_ORDER(order));
@@ -165,19 +171,21 @@ bool h2_atomic_ptr_compare_exchange(h2_atomic_ptr_t *object, void **expected,
 
 /* Use a word-sized value so ESP's internal-RAM flag takes the native atomic
  * instruction path rather than a byte-width compiler helper. */
-struct h2_atomic_flag_storage { _Atomic(uint32_t) value; };
 h2_atomic_result_t h2_atomic_flag_init(h2_atomic_flag_t *object) {
     if (object == NULL) return H2_ATOMIC_INVALID_ARG;
     if (object->storage != NULL) return H2_ATOMIC_INVALID_STATE;
     object->storage = H2_ATOMIC_C11_ALLOC(sizeof(*object->storage));
     if (object->storage == NULL) return H2_ATOMIC_NO_MEMORY;
     atomic_store_explicit(&object->storage->value, 0u, memory_order_relaxed);
+    object->storage->heap_owned = true;
     return H2_ATOMIC_OK;
 }
 void h2_atomic_flag_destroy(h2_atomic_flag_t *object) {
     if (object == NULL) return;
-    H2_ATOMIC_C11_FREE(object->storage);
-    object->storage = NULL;
+    if (object->storage != NULL && object->storage->heap_owned) {
+        H2_ATOMIC_C11_FREE(object->storage);
+        object->storage = NULL;
+    }
 }
 bool h2_atomic_flag_test_and_set(h2_atomic_flag_t *object, h2_atomic_order_t order) {
     return atomic_exchange_explicit(&object->storage->value, 1u,
