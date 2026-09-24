@@ -305,7 +305,7 @@ Review 必须覆盖所有修改到的 platform config、native runner、workflow
 
 Final slice 的 `SHA256SUMS` 覆盖 firmware ZIP、npm tarball 和 `npm-index.json`。发布工作流先用 `sha256sum --check --strict` 验证，再生成顶层 `index.json`：`repository` 为 GitHub 仓库名，`release_tag` 为 `v<batch>`，`commit` 为完整触发提交，`assets` 按文件名排序列出 ZIP、npm tarball、`npm-index.json` 和 `SHA256SUMS` 的 `name`、`size`（字节）及 `sha256`。`index.json` 不包含自身。它是 GitHub Release 资产，不在 firmware ZIP 中。
 
-工作流把全部资产上传到 draft Release，重新下载后逐文件比较，并再次验证下载的 `SHA256SUMS`，成功后才公开。公开前失败仍清理 draft 与生成的 tag；已公开的 Release 不做破坏性回滚。`actionlint .github/workflows/release.yml` 与 `python3 -m unittest tools.bazel.tests.test_release tools.bazel.tests.test_release_bundle` 验证静态流程和本地组装；真实 dispatch、GitHub 上传和 LiteLink 下载须在首次正式发布后单独核对。
+工作流把全部资产上传到 draft Release，重新下载后逐文件比较，并再次验证下载的 `SHA256SUMS` 与 `index.json`，成功后才公开。公开前失败仍清理 draft 与生成的 tag；已公开的 Release 不做破坏性回滚。`tools/bazel/release_workflow.py` 实现分支/提交门槛与两次资产校验；`bazel test --config=macos_arm64 //tools/bazel:release_workflow_test` 覆盖拒绝路径、所有 checkout 的 SHA 固定、索引生成和损坏/缺失资产。`actionlint .github/workflows/release.yml` 与 `python3 -m unittest tools.bazel.tests.test_release tools.bazel.tests.test_release_bundle` 验证 workflow 语法和本地组装；真实 dispatch、GitHub 上传和 LiteLink 下载须在首次正式发布后单独核对。
 
 ## Lua portable 源码包
 

@@ -39,11 +39,9 @@ jobs:
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         run: |
-          if [ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
-            echo "::error::Release must run from $DEFAULT_BRANCH (got $GITHUB_REF)" >&2
-            exit 1
-          fi
-          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+          python3 tools/bazel/release_workflow.py gate \
+            --ref "$GITHUB_REF" --default-branch "$DEFAULT_BRANCH" \
+            --commit "$GITHUB_SHA"
 
       - id: app-token
         name: Create read-only h2vivi token
@@ -623,39 +621,9 @@ jobs:
         env:
           RELEASE_TAG: ${{ needs.catalog.outputs.tag }}
         run: |
-          set -euo pipefail
-          cd build/release/final
-          sha256sum --check --strict SHA256SUMS
-          python3 - <<'PY'
-          import hashlib
-          import json
-          import os
-          from pathlib import Path
-
-          def sha256(path):
-              digest = hashlib.sha256()
-              with path.open('rb') as stream:
-                  for chunk in iter(lambda: stream.read(1024 * 1024), b''):
-                      digest.update(chunk)
-              return digest.hexdigest()
-
-          files = sorted(path for path in Path('.').iterdir() if path.is_file())
-          assert files and not Path('index.json').exists()
-          index = {
-              'repository': os.environ['GITHUB_REPOSITORY'],
-              'release_tag': os.environ['RELEASE_TAG'],
-              'commit': os.environ['GITHUB_SHA'],
-              'assets': [
-                  {
-                      'name': path.name,
-                      'size': path.stat().st_size,
-                      'sha256': sha256(path),
-                  }
-                  for path in files
-              ],
-          }
-          Path('index.json').write_text(json.dumps(index, indent=2) + '\n')
-          PY
+          python3 tools/bazel/release_workflow.py prepare \
+            --directory build/release/final --repository "$GITHUB_REPOSITORY" \
+            --tag "$RELEASE_TAG" --commit "$GITHUB_SHA"
 
       - name: Upload complete release bundle
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
@@ -759,7 +727,9 @@ jobs:
           while IFS= read -r asset; do
             cmp "$release_dir/$asset" "$verify_dir/$asset"
           done < "$RUNNER_TEMP/expected-release-assets"
-          (cd "$verify_dir" && sha256sum --check --strict SHA256SUMS)
+          python3 tools/bazel/release_workflow.py verify \
+            --directory "$verify_dir" --repository "$GITHUB_REPOSITORY" \
+            --tag "$RELEASE_TAG" --commit "$GITHUB_SHA"
           if ! gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false; then
             test "$(release_state)" = false
           fi
