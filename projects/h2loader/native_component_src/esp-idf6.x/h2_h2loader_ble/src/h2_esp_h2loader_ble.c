@@ -244,6 +244,8 @@ int h2_esp_h2loader_app_commands_start_with_config(
             config->coredump_partition_id) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    int init_rc = h2_bleikcp_global_init();
+    if (init_rc != H2_PAL_OK) return init_rc;
     s_ble.runtime = runtime;
     const h2_loader_ble_service_config_t service = {
         .log = runtime->log,
@@ -278,6 +280,7 @@ int h2_esp_h2loader_app_commands_start_with_config(
                 rc,
                 (unsigned)attempt);
             s_ble.runtime = NULL;
+            (void)h2_bleikcp_global_shutdown();
             return rc;
         }
         printf(
@@ -288,6 +291,7 @@ int h2_esp_h2loader_app_commands_start_with_config(
         rc = h2_pal_time_sleep_ms(runtime->time, retry_ms);
         if (rc != H2_PAL_OK) {
             s_ble.runtime = NULL;
+            (void)h2_bleikcp_global_shutdown();
             return rc;
         }
         if (retry_ms < 5000u) {
@@ -296,6 +300,7 @@ int h2_esp_h2loader_app_commands_start_with_config(
         }
     }
     s_ble.runtime = NULL;
+    (void)h2_bleikcp_global_shutdown();
     return H2_PAL_ERR_UNAVAILABLE;
 }
 

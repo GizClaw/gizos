@@ -48,6 +48,34 @@ void app_main(void) {
   /* Let a USB monitor attach and drain boot logs before the short workload. */
   (void)h2_pal_time_sleep_ms(h2_esp_platform_time_api(), 1500u);
   unsigned failures = 0u;
+  h2_atomic_flag_e2e_result_t flag_result;
+  rc = h2_atomic_flag_e2e_run(h2_esp_platform_psram_allocator(),
+                              h2_esp_platform_task_api(),
+                              h2_esp_platform_time_api(), 20000u,
+                              current_core, NULL, &flag_result);
+  const bool static_ok = flag_result.static_storage[0] !=
+                             flag_result.static_storage[1] &&
+                         esp_ptr_internal((const void *)flag_result.static_storage[0]) &&
+                         esp_ptr_internal((const void *)flag_result.static_storage[1]);
+  const bool dynamic_ok =
+      esp_ptr_external_ram((const void *)flag_result.dynamic_wrapper) &&
+      esp_ptr_internal((const void *)flag_result.dynamic_storage);
+  const bool flag_passed = rc == H2_PAL_OK && static_ok && dynamic_ok &&
+                           flag_result.worker_core[0] == 0 &&
+                           flag_result.worker_core[1] == 0;
+  printf("H2_ATOMIC_FLAG_E2E static_a=%p static_b=%p dynamic_wrapper=%p "
+         "dynamic_storage=%p static_ok=%u dynamic_ok=%u cores=%d,%d "
+         "operations=%u,%u busy=%u,%u verdict=%s rc=%d\n",
+         (void *)flag_result.static_storage[0],
+         (void *)flag_result.static_storage[1],
+         (void *)flag_result.dynamic_wrapper,
+         (void *)flag_result.dynamic_storage, (unsigned)static_ok,
+         (unsigned)dynamic_ok, flag_result.worker_core[0],
+         flag_result.worker_core[1], flag_result.operations[0],
+         flag_result.operations[1], flag_result.busy_observations[0],
+         flag_result.busy_observations[1], flag_passed ? "PASS" : "FAIL", rc);
+  fflush(stdout);
+  if (!flag_passed) ++failures;
   for (unsigned placement = 0u; placement < 2u; ++placement) {
     const bool psram = placement == 1u;
     const h2_pal_mem_api_t *mem = psram

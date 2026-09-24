@@ -28,18 +28,23 @@ static void ignored_free(void *pointer) { (void)pointer; }
 #define H2_ATOMIC_PLATFORM_FREE(pointer) ignored_free(pointer)
 #include "h2_atomic_locked_impl.h"
 
-static h2_atomic_flag_t s_static_flag = {0};
+H2_ATOMIC_DEFINE_STATIC(flag, s_static_flag, 0u);
+H2_ATOMIC_DEFINE_STATIC(int, s_static_int, 4);
 
 int main(void) {
     assert(!h2_atomic_flag_test_and_set(&s_static_flag, H2_ATOMIC_ACQUIRE));
     assert(h2_atomic_flag_test_and_set(&s_static_flag, H2_ATOMIC_ACQUIRE));
     h2_atomic_flag_clear(&s_static_flag, H2_ATOMIC_RELEASE);
-    assert(!h2_atomic_flag_test_and_set(&s_static_flag, H2_ATOMIC_ACQUIRE));
+    assert(h2_atomic_int_load(&s_static_int, H2_ATOMIC_RELAXED) == 4);
+    h2_atomic_int_destroy(&s_static_int);
     h2_atomic_flag_destroy(&s_static_flag);
-    assert(!h2_atomic_flag_test_and_set(&s_static_flag, H2_ATOMIC_ACQUIRE));
     assert(s_allocations == 0u);
+    h2_atomic_flag_t flag = {0};
+    assert(h2_atomic_flag_init(&flag) == H2_ATOMIC_NO_MEMORY);
+    assert(flag.storage == NULL);
+    assert(s_allocations == 1u);
     h2_atomic_int_t unavailable = {0};
     assert(h2_atomic_int_init(&unavailable, 0) == H2_ATOMIC_NO_MEMORY);
-    assert(s_allocations == 1u);
+    assert(s_allocations == 2u);
     return 0;
 }

@@ -5,7 +5,7 @@
 #include "h2_h2loader_host_factory.h"
 #include "h2_h2loader_host_internal.h"
 
-#include "h2_atomic.h"
+#include "h2_atomic_static.h"
 #include <string.h>
 
 #define H2_ESP_FLASH_BAUD 115200u
@@ -26,7 +26,7 @@ typedef struct h2_esp_flash_context {
 } h2_esp_flash_context_t;
 
 static h2_esp_flash_context_t *active_context;
-static h2_atomic_flag_t active_context_claim = {0};
+H2_ATOMIC_DEFINE_STATIC(flag, active_context_claim, 0u);
 
 static esp_loader_error_t esp_error(h2_pal_result_t rc) {
     if (rc == H2_PAL_OK) {

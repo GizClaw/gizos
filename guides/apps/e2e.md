@@ -45,6 +45,8 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 
 DevKit managed package 位于 `//projects/e2e/targets/h2loader_tar_zlib/atomic/devkit:package`。ESP32-S3 将两个 worker 分别固定在 CPU0/CPU1 并同步启动，内部 RAM 与 PSRAM 各执行三轮；PSRAM 对照将直接 C11 atomic value 放在 PSRAM，而 `h2_atomic` wrapper 在 PSRAM、其 provider 存储在内部 RAM。每轮检查地址所属内存、目标计数和观测 core，直接 C11 的失败继续记录而不阻止 H2Loader App confirmation。安装后必须回读 UID、`active_role=app`、version、partition 和 `stage_valid=0`。DevKit UID `9888e0115c52` 的最终实机运行中，六轮 `h2_atomic` 均达到目标计数，三轮直接 C11 PSRAM 对照均丢失计数；耗时只描述该工作量，不能外推为通用原子操作性能。详见 `projects/e2e/apps/atomic/README.md`。
 
+同一 App 另运行 flag 验收：两枚普通 file-static flag 的 backing 必须地址独立且在内部 RAM，动态 flag 的 wrapper 在 PSRAM、provider backing 在内部 RAM。CPU0 上优先级 4/9 的两个 worker 各执行 20,000 次 flag 操作，检查完整操作数、无本对象意外占用、core 和地址位置；`H2_ATOMIC_FLAG_E2E verdict=PASS` 是单独的真机判据。直接 C11 PSRAM 对照的预期失败仍计入 `aggregate_failures`，不能据此把 flag 或 `h2_atomic` 用例判为失败。
+
 ## H106
 
 `projects/e2e/apps/h106/app` 持有跨目标 case registry、bounded terminal ledger、non-fail-fast aggregation、Audio decorator、Main App supervisor 和报告合同。H106 产品组继续拥有 production Main App、产品 policy 与 Desktop/Tiga/Zero artifact entry；各 launcher 只提供 production Runtime/provider assembly、各产品自己的 checked-in RegistrationToken、固定 AP E2E endpoint、目标 memory reader 和 H2Loader lifecycle。
@@ -81,7 +83,9 @@ DevKit launcher（`projects/e2e/targets/h2loader_tar_zlib/lua-link/devkit`）运
 
 ## GizClaw
 
-`h2_gizclaw_e2e_run()` 只消费调用方提供的 Runtime/PAL、endpoint、RegistrationToken、suite mask 与确定性 PCM。App 不读 environment 或文件，不选择 AP/BJ，不创建 Wi-Fi task，也不拥有 H2Peer/Pion。一个 case 失败后继续执行独立 case，最后输出完整 bounded summary 并完成反向清理。
+`h2_gizclaw_e2e_run()` 只消费调用方提供的 Runtime/PAL、endpoint、RegistrationToken、suite mask 与确定性 PCM。防止并发 suite 和 retained session 被重复使用的 `s_run_active` 是文件级 static flag，使用 `H2_ATOMIC_DEFINE_STATIC` 定义独立 backing，不需模块级初始化或分配；run 结束且资源全部清理时清除，retained 资源仍在时保持占用。App 不读 environment 或文件，不选择 AP/BJ，不创建 Wi-Fi task，也不拥有 H2Peer/Pion。一个 case 失败后继续执行独立 case，最后输出完整 bounded summary 并完成反向清理。
+
+Desktop C++ launcher 的进程级 run guard 由同 package 的 C 桥接文件定义普通 static backing，C++ 通过 typed accessor 借用 wrapper 后仍调用同一 `h2_atomic_flag_*` API；没有 launcher 专用 global init，也不假设 `std::atomic` 与 C11 `_Atomic` 的内存布局相同。
 
 `service` suite 在 portable GizClaw E2E App 内启动真实 GizClaw service worker，通过 app runner dispatch request callback。它使用 service-owned client 完成 Register 与 Ping，验证 progress、terminal completion、排队 request cancel，以及 stop、drain、deinit；不依赖 H106 App 或 LVGL subject。
 

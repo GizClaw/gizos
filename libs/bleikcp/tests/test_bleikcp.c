@@ -1172,6 +1172,7 @@ static void test_kcp_allocators(void) {
      * its hooks, and can continue to allocate after installation. */
     ikcpcb *legacy = ikcp_create(1u, NULL);
     CHECK(legacy != NULL);
+    CHECK(h2_bleikcp_global_init() == H2_PAL_OK);
     fake_runtime_t runtime;
     fake_runtime_init(&runtime);
     h2_test_allocator_t arenas[2];
@@ -1357,5 +1358,6 @@ int main(void) {
     fake_runtime_atomics_destroy(&runtime);
     CHECK(pthread_mutex_destroy(&runtime.event_mutex) == 0);
     puts("bleikcp tests passed");
+    CHECK(h2_bleikcp_global_shutdown() == H2_PAL_OK);
     return 0;
 }

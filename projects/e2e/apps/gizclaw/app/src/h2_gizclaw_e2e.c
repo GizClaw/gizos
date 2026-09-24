@@ -9,7 +9,7 @@
 #include "h2_gizclaw_e2e_report.h"
 #include "h2_gizclaw_e2e_task_names.h"
 
-#include "h2_atomic.h"
+#include "h2_atomic_static.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -43,7 +43,7 @@ typedef struct run_control {
   h2_atomic_bool_t exited;
 } run_control_t;
 
-static h2_atomic_flag_t s_run_active = {0};
+H2_ATOMIC_DEFINE_STATIC(flag, s_run_active, 0u);
 
 static uint32_t value_or_default(uint32_t value, uint32_t fallback) {
   return value == 0u ? fallback : value;

@@ -9,10 +9,11 @@
 extern "C" {
 #endif
 
-/* Value wrappers may live anywhere. Non-flag storage is allocated by the linked
- * platform implementation. Initialize once, do not copy after initialization,
- * and destroy only after all concurrent users have stopped. Flags support
- * static zero initialization and never allocate storage. */
+/* Value wrappers may live anywhere. Dynamic storage is allocated by the
+ * linked platform implementation. Initialize once, do not copy after
+ * initialization, and destroy only after all concurrent users have stopped.
+ * C file-static values may instead include h2_atomic_static.h and use
+ * H2_ATOMIC_DEFINE_STATIC. Ordinary consumers do not need C11 syntax. */
 typedef struct h2_atomic_int_storage h2_atomic_int_storage_t;
 typedef struct h2_atomic_uint_storage h2_atomic_uint_storage_t;
 typedef struct h2_atomic_u8_storage h2_atomic_u8_storage_t;
@@ -21,6 +22,7 @@ typedef struct h2_atomic_u32_storage h2_atomic_u32_storage_t;
 typedef struct h2_atomic_bool_storage h2_atomic_bool_storage_t;
 typedef struct h2_atomic_size_storage h2_atomic_size_storage_t;
 typedef struct h2_atomic_ptr_storage h2_atomic_ptr_storage_t;
+typedef struct h2_atomic_flag_storage h2_atomic_flag_storage_t;
 
 typedef struct { h2_atomic_int_storage_t *storage; } h2_atomic_int_t;
 typedef struct { h2_atomic_uint_storage_t *storage; } h2_atomic_uint_t;
@@ -30,13 +32,19 @@ typedef struct { h2_atomic_u32_storage_t *storage; } h2_atomic_u32_t;
 typedef struct { h2_atomic_bool_storage_t *storage; } h2_atomic_bool_t;
 typedef struct { h2_atomic_size_storage_t *storage; } h2_atomic_size_t;
 typedef struct { h2_atomic_ptr_storage_t *storage; } h2_atomic_ptr_t;
-/* Zero initialization is valid for flags, including process-wide static flags.
- * The state byte is inline; flag_init only resets it and allocates nothing.
- * ESP serializes access with a separate static C11 lock in internal RAM, so
- * the flag itself may live in PSRAM without an atomic operation on PSRAM.
- * Unsupported providers trap if a flag operation is attempted. */
-typedef struct { uint8_t _state; } h2_atomic_flag_t;
-#define H2_ATOMIC_FLAG_INIT { 0u }
+/* A zeroed wrapper has no storage and must be initialized before use. */
+typedef struct { h2_atomic_flag_storage_t *storage; } h2_atomic_flag_t;
+
+/* A C translation unit may define a static value and export a typed accessor
+ * using H2_ATOMIC_DEFINE_STATIC_ACCESSOR from h2_atomic_static.h. C++ callers
+ * use this declaration without assuming C11 and C++ atomic object layouts. */
+#ifdef __cplusplus
+#define H2_ATOMIC_STATIC_LINKAGE extern "C"
+#else
+#define H2_ATOMIC_STATIC_LINKAGE extern
+#endif
+#define H2_ATOMIC_DECLARE_STATIC(kind, accessor) \
+    H2_ATOMIC_STATIC_LINKAGE h2_atomic_##kind##_t *accessor(void)
 
 typedef enum h2_atomic_result {
     H2_ATOMIC_OK = 0,

@@ -7,11 +7,11 @@
 #include "utils.h"
 
 #include <errno.h>
-#include "h2_atomic.h"
+#include "h2_atomic_static.h"
 #include <string.h>
 
 static size_t h2_peer_portable_live_connections;
-static h2_atomic_flag_t h2_peer_portable_global_lock = {0};
+H2_ATOMIC_DEFINE_STATIC(flag, h2_peer_portable_global_lock, 0u);
 
 static void h2_peer_portable_lock_globals(void) {
     while (h2_atomic_flag_test_and_set(&h2_peer_portable_global_lock,

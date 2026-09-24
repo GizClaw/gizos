@@ -36,8 +36,8 @@ set(H2_ESP_PLATFORM_CORE_SRCS
   "src/h2_esp_platform_spiffs.c")
 
 # ESP-IDF disables inline S32C1I atomics when PSRAM is enabled. This provider
-# allocates every C11 atomic value in internal RAM, so this one source can use
-# the hardware instructions. Its inline flag lock is also in internal RAM.
+# allocates every C11 atomic value, including flags, in internal RAM, so this
+# one source can use the hardware instructions.
 if(CONFIG_IDF_TARGET_ESP32S3 AND CONFIG_STDATOMIC_S32C1I_SPIRAM_WORKAROUND)
   set_source_files_properties("src/h2_esp_atomic.c"
     PROPERTIES COMPILE_FLAGS "-mno-disable-hardware-atomics")

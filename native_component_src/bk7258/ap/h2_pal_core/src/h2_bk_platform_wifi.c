@@ -8,7 +8,7 @@
 #include <os/os.h>
 
 #include <string.h>
-#include "h2_atomic.h"
+#include "h2_atomic_static.h"
 
 #include "h2_wifi_sta.h"
 
@@ -1195,7 +1195,7 @@ static int h2_bk_wifi_ap_get_mac(h2_pal_wifi_ap_t *ap, uint8_t out_mac[6]) {
 }
 
 /* One admission gate covers the entire authentication/IP/save transaction. */
-static h2_atomic_flag_t s_h2_bk_wifi_connect_busy = {0};
+H2_ATOMIC_DEFINE_STATIC(flag, s_h2_bk_wifi_connect_busy, 0u);
 
 static int h2_bk_wifi_connect(void *user,
                              const h2_pal_wifi_sta_config_t *config,

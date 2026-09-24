@@ -1091,6 +1091,7 @@ int h2_bloomspeaker_engine_start(h2_runtime_t *runtime,
   if (runtime->ble_host == NULL) {
     return H2_PAL_OK;
   }
+  if (!h2_bleikcp_global_ready()) return H2_PAL_ERR_INVALID_STATE;
   if (runtime->task == NULL || runtime->time == NULL || runtime->sync == NULL ||
       runtime->system_event == NULL || runtime->mem == NULL ||
       runtime->crypto == NULL) {

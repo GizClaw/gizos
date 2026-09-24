@@ -24,5 +24,18 @@ int main(void) {
       assert(rc == H2_PAL_OK);
     }
   }
+  h2_atomic_flag_e2e_result_t flags;
+  int flag_rc = h2_atomic_flag_e2e_run(
+      h2_desktop_platform_default_allocator(), h2_desktop_platform_task_api(),
+      h2_desktop_platform_time_api(), 20000u, NULL, NULL, &flags);
+  printf("ATOMIC_FLAG_E2E static_a=%p static_b=%p dynamic=%p "
+         "operations=%u,%u busy=%u,%u rc=%d\n",
+         (void *)flags.static_storage[0], (void *)flags.static_storage[1],
+         (void *)flags.dynamic_wrapper, flags.operations[0],
+         flags.operations[1], flags.busy_observations[0],
+         flags.busy_observations[1], flag_rc);
+  assert(flag_rc == H2_PAL_OK);
+  assert(flags.static_storage[0] != flags.static_storage[1]);
+  assert(flags.dynamic_wrapper != 0u && flags.dynamic_storage != 0u);
   return 0;
 }

@@ -1,5 +1,6 @@
 #include "h2_h2loader_cli_app.h"
 #include "h2_h2loader_cli_internal.h"
+#include "h2_bleikcp.h"
 
 #include "h2/pal/h2_pal_unsupported.h"
 
@@ -787,6 +788,7 @@ static void test_reboot_final_status_is_authoritative(void) {
 }
 
 int main(void) {
+    assert(h2_bleikcp_global_init() == H2_PAL_OK);
     test_ble_connect_diagnostic_uses_stderr();
     test_transport_diagnostic_arguments();
     test_help_and_usage();
@@ -803,5 +805,6 @@ int main(void) {
     test_send_reports_unreadable_file();
     test_reboot_final_status_is_authoritative();
     puts("h2loader cli app tests passed");
+    assert(h2_bleikcp_global_shutdown() == H2_PAL_OK);
     return 0;
 }

@@ -341,3 +341,5 @@ ESP task provider 从 `h2_esp_task_policy_config_t.psram_stack_allocator` 借用
 生成的 `h2_esp_target_task_policy_install_with_configure()` 同步把目标 resolver 配置交给 board callback，board 可先创建 arena，再复制配置并设置 `psram_stack_allocator`，最后调用 `h2_esp_platform_task_configure()`。无参数 installer 保留默认配置路径；生成器不依赖私有 board。
 
 Arena 的诊断查询与普通 stats 分离：`h2_mem_arena_inspect()` 显式遍历池才计算 free total、largest raw free block 和 consumed；`h2_mem_arena_block_info()` 查询仍存活且由调用方排除并发 free/realloc 的块。这些按需 inspection 不增加 instance/header state；ESP spill 追踪由独立的可选诊断表负责。每块 consumed 包含 arena header、alignment 和 TLSF block/header；fallback 值是下界，固定控制元数据不归属某个块。生成的 task policy 额外提供 `*_stack_accounting` filegroup，供 desktop consumer 复用相同的栈尺寸/region 决策；它不参与 ESP firmware 的源码编译或改变其行为。
+
+ESP Wi-Fi admission 与 WebRTC/H2Peer singleton 各使用一个文件级 static flag backing，由统一的 `H2_ATOMIC_DEFINE_STATIC` 定义普通 static 对象；链接布局把 backing 放在内部 DRAM，不需要 `DRAM_ATTR`，也不在宏中判断平台。它们不额外增加 board Runtime init/shutdown。Runtime/connection 等动态 owner 的 atomic wrapper 仍可位于 PSRAM，其实际 C11 值必须由 provider 在实例 init 时分配到内部 RAM，失败后回滚并返回 `NO_MEMORY`；`flag` 与 int/bool/pointer 的生命周期和存储模型一致。所有 flag 直接对各自存储执行 C11 交换/写入，没有 provider 级全局锁或 mux。
