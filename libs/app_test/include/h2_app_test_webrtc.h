@@ -5,6 +5,9 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
+/* Deprecated compatibility value. The observer no longer limits channels to
+ * this count; callers must not use it as a runtime capacity guarantee. */
+#define H2_APP_TEST_WEBRTC_CHANNELS_MAX 16u
 typedef struct h2_app_test_webrtc h2_app_test_webrtc_t;
 /** Called synchronously after a successful poll. Event is borrowed and must not
  * be released or retained by this callback. Callbacks on different peers may
