@@ -28,11 +28,29 @@ jobs:
       batch: ${{ steps.batch.outputs.value }}
       tag: ${{ steps.batch.outputs.tag }}
     steps:
+      - name: Require default branch release ref
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
+            echo "::error::Release must run from $DEFAULT_BRANCH (got $GITHUB_REF)" >&2
+            exit 1
+          fi
+
       - name: Check out GizOS
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ github.sha }}
           submodules: false
           persist-credentials: false
+
+      - name: Require exact release snapshot
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          python3 tools/bazel/release_workflow.py gate \
+            --ref "$GITHUB_REF" --default-branch "$DEFAULT_BRANCH" \
+            --commit "$GITHUB_SHA"
 
       - id: app-token
         name: Create read-only h2vivi token
@@ -159,6 +177,7 @@ jobs:
       - name: Check out GizOS
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 1
           submodules: false
           persist-credentials: false
@@ -209,6 +228,7 @@ jobs:
       - name: Check out GizOS
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 1
           submodules: false
           persist-credentials: false
@@ -352,6 +372,7 @@ jobs:
       - name: Check out GizOS
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ github.sha }}
           fetch-depth: 1
           submodules: false
           persist-credentials: false
@@ -481,6 +502,7 @@ jobs:
       - name: Check out GizOS
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ github.sha }}
           submodules: false
           persist-credentials: false
 
@@ -545,6 +567,7 @@ jobs:
       - name: Check out GizOS
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Download verified firmware bundle
@@ -576,6 +599,7 @@ jobs:
       - name: Check out GizOS
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - name: Authenticate read-write Bazel remote cache
@@ -602,6 +626,14 @@ jobs:
       - name: Assemble final slice
         run: make bazel-release RELEASE_SLICE=release-bundle RELEASE_BATCH="${{ needs.catalog.outputs.batch }}" RELEASE_INPUT_DIR=build/release/input RELEASE_STAGING_DIR=build/release/final
 
+      - name: Verify assets and write release index
+        env:
+          RELEASE_TAG: ${{ needs.catalog.outputs.tag }}
+        run: |
+          python3 tools/bazel/release_workflow.py prepare \
+            --directory build/release/final --repository "$GITHUB_REPOSITORY" \
+            --tag "$RELEASE_TAG" --commit "$GITHUB_SHA"
+
       - name: Upload complete release bundle
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -615,7 +647,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_BATCH: ${{ needs.catalog.outputs.batch }}
           RELEASE_TAG: ${{ needs.catalog.outputs.tag }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
         shell: bash
         run: |
           set -euo pipefail
@@ -705,11 +736,10 @@ jobs:
           while IFS= read -r asset; do
             cmp "$release_dir/$asset" "$verify_dir/$asset"
           done < "$RUNNER_TEMP/expected-release-assets"
-          publish_options=(--draft=false)
-          if [ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
-            publish_options+=(--prerelease --latest=false)
-          fi
-          if ! gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" "${publish_options[@]}"; then
+          python3 tools/bazel/release_workflow.py verify \
+            --directory "$verify_dir" --repository "$GITHUB_REPOSITORY" \
+            --tag "$RELEASE_TAG" --commit "$GITHUB_SHA"
+          if ! gh release edit "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --draft=false; then
             test "$(release_state)" = false
           fi
           trap - EXIT
