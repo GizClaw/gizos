@@ -16,3 +16,4 @@ assert.equal(commandAvailable(0x001f3d3e, H2LoaderCommands.WIFI_STATUS), true);
 
 assert.throws(() => commandAvailable(0, 3), TypeError);
 assert.throws(() => commandAvailable(1 << 6, H2LoaderCommands.STATUS), TypeError);
+assert.throws(() => commandAvailable(0x100000008, H2LoaderCommands.STATUS), TypeError);

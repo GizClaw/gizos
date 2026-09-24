@@ -28,6 +28,7 @@ export const H2LoaderCommands = Object.freeze({
 
 export function commandAvailable(commandAvailability, command) {
   if (!Number.isInteger(commandAvailability) || commandAvailability < 0 ||
+      commandAvailability > 0xffffffff ||
       (commandAvailability & ~H2LoaderCommands.ALL) !== 0 || !Number.isInteger(command) ||
       command <= 0 || (command & (command - 1)) !== 0 ||
       (command & H2LoaderCommands.ALL) === 0) {
