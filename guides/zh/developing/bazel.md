@@ -301,7 +301,7 @@ Review 必须覆盖所有修改到的 platform config、native runner、workflow
 
 ## 手动 Release 快照
 
-`.github/workflows/release.yml` 只接受从仓库默认分支触发的 `workflow_dispatch`。`catalog` 在构建前验证触发 ref 和 `github.sha`；所有 GizOS checkout 都固定到该提交，避免同一批次的多个 job 读取移动中的分支头。非默认分支请求在创建 tag 或 Release 之前失败。UTC 批次继续使用 `YYYYMMDD-HHMMSS` 和 `v<batch>` tag，固件与 npm 产品版本独立于批次。
+`.github/workflows/release.yml` 只接受从仓库默认分支触发的 `workflow_dispatch`。`catalog` 在 checkout 前用 workflow 内联检查拒绝非默认分支，checkout 后验证 `github.sha`；所有 GizOS checkout 都固定到该提交，避免同一批次的多个 job 读取移动中的分支头。非默认分支请求在执行仓库代码、创建 tag 或 Release 之前失败。UTC 批次继续使用 `YYYYMMDD-HHMMSS` 和 `v<batch>` tag，固件与 npm 产品版本独立于批次。
 
 Final slice 的 `SHA256SUMS` 覆盖 firmware ZIP、npm tarball 和 `npm-index.json`。发布工作流先用 `sha256sum --check --strict` 验证，再生成顶层 `index.json`：`repository` 为 GitHub 仓库名，`release_tag` 为 `v<batch>`，`commit` 为完整触发提交，`assets` 按文件名排序列出 ZIP、npm tarball、`npm-index.json` 和 `SHA256SUMS` 的 `name`、`size`（字节）及 `sha256`。`index.json` 不包含自身。它是 GitHub Release 资产，不在 firmware ZIP 中。
 

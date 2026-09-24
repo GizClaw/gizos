@@ -90,7 +90,7 @@ App image 是由 H2Loader 安装和启动的目标固件。Launcher 初始化 BS
 
 ## Firmware Release
 
-`.github/workflows/release.yml` 只由 `workflow_dispatch` 触发，且必须从仓库默认分支运行，不接收 version 输入。所有 GizOS job 都固定 checkout 到触发时的 `github.sha`；`catalog` 在构建前校验分支和 checkout 提交。从 UTC 时钟生成 `RELEASE_BATCH=YYYYMMDD-HHMMSS` 和 `v<batch>` tag；batch 是发布批次，不是产品版本。DAG 为 `catalog → ESP32-S3/ESP32-P4/BK7258 → firmware-bundle → package → release-bundle → publish`，并行的 `npm-packages` producer 直接汇入最终 `release-bundle`。每一步保留 producer 子目录，拒绝重复 basename、symlink、缺失或额外文件。
+`.github/workflows/release.yml` 只由 `workflow_dispatch` 触发，且必须从仓库默认分支运行，不接收 version 输入。`catalog` 在 checkout 前拒绝非默认分支，checkout 后校验触发提交；所有 GizOS job 都固定 checkout 到该 `github.sha`。从 UTC 时钟生成 `RELEASE_BATCH=YYYYMMDD-HHMMSS` 和 `v<batch>` tag；batch 是发布批次，不是产品版本。DAG 为 `catalog → ESP32-S3/ESP32-P4/BK7258 → firmware-bundle → package → release-bundle → publish`，并行的 `npm-packages` producer 直接汇入最终 `release-bundle`。每一步保留 producer 子目录，拒绝重复 basename、symlink、缺失或额外文件。
 
 发布选择为 opt-in：Bazel 查询 `//projects/...` 中带精确 `firmware-release` tag 的 `h2loader_tar_zlib` rule，并要求它是 Loader 目录中的 canonical `:package`，identity 为 `image=loader`、`role=h2loader`。`projects/e2e`、`projects/example`、H2Loader `e2e-app` 以及 alternate package 均为诊断目标，即使误加发布 tag 也会被校验拒绝。现存 `no-release` 仅保留为诊断标记，发布选择不再读取它。
 
