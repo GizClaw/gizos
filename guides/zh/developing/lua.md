@@ -494,6 +494,9 @@ query 和 `rg` 都应为空。E2E 的九个固定 case 见 [E2E 测试 App](/app
 
 单个 Lua 脚本可以用 `//libs/lua/web:lua_web_app.bzl` 的 `h2_lua_web_app()` 直接生成浏览器页面、`:serve` 与
 `:browser_test`，不写 C 入口；见 [Web](/apps/web)。
+页面的脚本需要 `audio.new_input()` 时设置 `microphone = True`。浏览器授权和
+AudioWorklet 初始化可能在 Lua 调用栈内等待，Web 链接因此保留 Lua 函数的
+Asyncify 插桩；不使用麦克风的页面继续去掉该插桩以减小 Wasm。
 
 ## 借用 Display 与 UI 交接
 

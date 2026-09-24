@@ -6,6 +6,8 @@ load(":lua_web_app.bzl", "lua_web_app_argument_error", "lua_web_app_board_argume
 def _argument_errors_impl(ctx):
     env = unittest.begin(ctx)
     asserts.equals(env, "", lua_web_app_argument_error())
+    asserts.equals(env, "", lua_web_app_argument_error(microphone = True))
+    asserts.true(env, "microphone" in lua_web_app_argument_error(microphone = "yes"))
     asserts.equals(env, "", lua_web_app_argument_error(4294967295))
     for run_ms, shown in ((-1, "-1"), (4294967296, "4294967296"), ("1500", '"1500"')):
         asserts.equals(

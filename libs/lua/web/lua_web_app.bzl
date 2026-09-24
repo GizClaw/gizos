@@ -15,10 +15,13 @@ def lua_web_app_argument_error(
         run_ms = 0,
         vm_memory_limit_bytes = _DEFAULT_VM_BYTES,
         source_limit_bytes = _DEFAULT_SOURCE_BYTES,
-        script_args = {}):
+        script_args = {},
+        microphone = False):
     """Returns why h2_lua_web_app() arguments are invalid, or "" when valid."""
     if type(run_ms) != "int" or run_ms < 0 or run_ms > _MAX_RUN_MS:
         return "run_ms %r must be an int in 0..%d" % (run_ms, _MAX_RUN_MS)
+    if type(microphone) != "bool":
+        return "microphone must be a bool"
     for name, value, low, high in (
         ("vm_memory_limit_bytes", vm_memory_limit_bytes, 65536, 16777216),
         ("source_limit_bytes", source_limit_bytes, 1, 1048576),
@@ -79,6 +82,7 @@ def h2_lua_web_app(
         vm_memory_limit_bytes = _DEFAULT_VM_BYTES,
         source_limit_bytes = _DEFAULT_SOURCE_BYTES,
         script_args = {},
+        microphone = False,
         **kwargs):
     """Declares `<name>` (web tar), `serve` and `browser_test` for one script.
 
@@ -108,8 +112,10 @@ def h2_lua_web_app(
       script_args: At most 16 app-owned string arguments. Names use 1..32
         ASCII [a-z0-9_] characters and cannot shadow board Button names;
         values use at most 256 printable ASCII characters (empty allowed).
+      microphone: Keep Lua on the Asyncify stack for audio.new_input(), whose
+        browser permission request may yield while a Lua function is active.
     """
-    error = lua_web_app_argument_error(run_ms, vm_memory_limit_bytes, source_limit_bytes, script_args)
+    error = lua_web_app_argument_error(run_ms, vm_memory_limit_bytes, source_limit_bytes, script_args, microphone)
     if error:
         fail("h2_lua_web_app: " + error)
     for fixed in ("srcs", "app_name"):
@@ -176,7 +182,8 @@ def h2_lua_web_app(
         app_name = name,
         board = board,
         skin = skin,
-        linkopts = ["-sASYNCIFY_REMOVE=['lua*','yyjson*']"] + linkopts,
+        linkopts = (["-sASYNCIFY_REMOVE=['yyjson*']"] if microphone else
+                    ["-sASYNCIFY_REMOVE=['lua*','yyjson*']"]) + linkopts,
         deps = [
             ":" + name + "_config",
             Label("//libs/lua"),
