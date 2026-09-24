@@ -41,7 +41,20 @@ bazel test //libs/iperf:all
 
 - `loopback_test`：PAL client ↔ PAL server，TCP/UDP/SCTP 正向、反向、按字节数结束和限速。
 - `official_server_test`：PAL client ↔ 官方 `iperf3 -s`（`@h2_vendor_iperf//:iperf3`，
-  从 esnet/iperf 3.21 源码用 Bazel 构建），TCP 与 UDP。
+  从 esnet/iperf 3.21 源码用 Bazel 构建），TCP 与 UDP。探测端口要求 TCP 和 UDP 都空闲
+  （iperf3 的 UDP stream listener 绑定同一个端口）。每个 `iperf3 -s` 只绑定 `127.0.0.1`，
+  client 等到 iperf3 输出 `Server listening on` 才连接。探测端口释放后被占用时换新端口
+  重试：`unable to start listener` 重启 iperf3，`unable to start stream listener`
+  重跑整个场景，两者合计最多 5 次。另有先占住 TCP 端口和只占住 UDP 端口的两个场景，
+  分别覆盖这两条重试路径。
+  断言按 iperf3 3.21 的计数方式放宽：
+  - reverse 模式下，iperf3 server 在主线程处理 `TEST_END` 时不停止发送线程，而且
+    `write()` 返回后才累加 `bytes_sent`。所以它报告的 sender 字节数最多比 PAL
+    receiver 少一个 block。
+  - iperf3 server 在 `TEST_END` 时停止计数，并丢弃 socket buffer 中还没读取的数据。
+    按字节数结束的 TCP 场景因此不检查 receiver 下限。官方 `iperf3 -c` 要等下一个
+    报告间隔 timer 才发现字节数已发完，这段延迟碰巧让 server 读完了数据。PAL client
+    在最后一次 `write()` 之后立即发送 `TEST_END`，协议本身允许这样做。
 - `official_client_test`：官方 `iperf3 -c` ↔ PAL server，TCP 与 UDP，含 64-bit UDP
   counter 和被拒绝的多流请求。
 - `official_server_sctp_test`（manual）：PAL SCTP client ↔ 外部 Linux kernel SCTP

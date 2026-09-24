@@ -12,7 +12,7 @@
 #include <errno.h>
 #include <pthread.h>
 #include <signal.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdlib.h>
@@ -111,11 +111,11 @@ static void host_sem_deinit(host_sem_t *sem) {
   assert(pthread_mutex_destroy(&sem->lock) == 0);
 }
 
-static unsigned binary_semaphores_created;
-static unsigned binary_semaphores_destroyed;
+static h2_atomic_uint_t binary_semaphores_created;
+static h2_atomic_uint_t binary_semaphores_destroyed;
 
 SemaphoreHandle_t xSemaphoreCreateBinaryStatic(StaticSemaphore_t *storage) {
-  __atomic_fetch_add(&binary_semaphores_created, 1u, __ATOMIC_RELAXED);
+  h2_atomic_uint_fetch_add(&binary_semaphores_created, 1u, H2_ATOMIC_RELAXED);
   return host_sem_init(storage, 1u, 0u, false);
 }
 SemaphoreHandle_t xSemaphoreCreateMutexStatic(StaticSemaphore_t *storage) {
@@ -167,7 +167,7 @@ int rtos_set_semaphore(beken_semaphore_t *semaphore) {
 }
 int rtos_deinit_semaphore(beken_semaphore_t *semaphore) {
   host_sem_deinit(*semaphore);
-  __atomic_fetch_add(&binary_semaphores_destroyed, 1u, __ATOMIC_RELAXED);
+  h2_atomic_uint_fetch_add(&binary_semaphores_destroyed, 1u, H2_ATOMIC_RELAXED);
   return kNoErr;
 }
 void *os_memset(void *ptr, int value, size_t size) {
@@ -188,16 +188,16 @@ typedef struct fixture {
   const h2_pal_sync_api_t *api;
   h2_pal_mutex_t *mutex;
   h2_pal_cond_t *cond;
-  atomic_bool done;
-  atomic_bool stop;
+  h2_atomic_bool_t done;
+  h2_atomic_bool_t stop;
 } fixture_t;
 
 typedef struct waiter {
   fixture_t *fx;
   uint32_t timeout_ms;
   pthread_t thread;
-  atomic_bool waiting;
-  atomic_bool returned;
+  h2_atomic_bool_t waiting;
+  h2_atomic_bool_t returned;
   h2_pal_result_t result;
   unsigned wakeups;
 } waiter_t;
@@ -207,19 +207,19 @@ static void *forever_waiter(void *user) {
   waiter_t *w = user;
   fixture_t *fx = w->fx;
   assert(h2_pal_mutex_lock(fx->api, fx->mutex) == H2_PAL_OK);
-  while (!fx->done) {
+  while (!h2_atomic_bool_load(&fx->done, H2_ATOMIC_SEQ_CST)) {
     /* Set while holding the mutex: once main sees it and takes the mutex,
      * this thread is registered on the condition (wait registers before it
-     * releases the mutex). The flags are C11 atomics because the pollers in
+     * releases the mutex). The flags are atomic because the pollers in
      * main read them without the fixture mutex. */
-    w->waiting = true;
+    h2_atomic_bool_store(&w->waiting, true, H2_ATOMIC_SEQ_CST);
     w->result = h2_pal_cond_wait(fx->api, fx->cond, fx->mutex, w->timeout_ms);
     assert(w->result == H2_PAL_OK);
     w->wakeups++;
   }
   assert(h2_pal_mutex_try_lock(fx->api, fx->mutex) == H2_PAL_ERR_WOULD_BLOCK);
   assert(h2_pal_mutex_unlock(fx->api, fx->mutex) == H2_PAL_OK);
-  w->returned = true;
+  h2_atomic_bool_store(&w->returned, true, H2_ATOMIC_SEQ_CST);
   return NULL;
 }
 
@@ -229,7 +229,7 @@ static void *polling_waiter(void *user) {
   waiter_t *w = user;
   fixture_t *fx = w->fx;
   assert(h2_pal_mutex_lock(fx->api, fx->mutex) == H2_PAL_OK);
-  while (!fx->stop) {
+  while (!h2_atomic_bool_load(&fx->stop, H2_ATOMIC_SEQ_CST)) {
     h2_pal_result_t rc =
         h2_pal_cond_wait(fx->api, fx->cond, fx->mutex, w->timeout_ms);
     assert(rc == H2_PAL_OK || rc == H2_PAL_ERR_TIMEOUT);
@@ -238,7 +238,7 @@ static void *polling_waiter(void *user) {
     }
   }
   assert(h2_pal_mutex_unlock(fx->api, fx->mutex) == H2_PAL_OK);
-  w->returned = true;
+  h2_atomic_bool_store(&w->returned, true, H2_ATOMIC_SEQ_CST);
   return NULL;
 }
 
@@ -250,7 +250,7 @@ static void *single_waiter(void *user) {
   w->result = h2_pal_cond_wait(fx->api, fx->cond, fx->mutex, w->timeout_ms);
   assert(h2_pal_mutex_try_lock(fx->api, fx->mutex) == H2_PAL_ERR_WOULD_BLOCK);
   assert(h2_pal_mutex_unlock(fx->api, fx->mutex) == H2_PAL_OK);
-  w->returned = true;
+  h2_atomic_bool_store(&w->returned, true, H2_ATOMIC_SEQ_CST);
   return NULL;
 }
 
@@ -269,22 +269,29 @@ static void wait_registered(fixture_t *fx, uint32_t at_least) {
 }
 
 static void wait_waiting(waiter_t *w) {
-  for (unsigned i = 0; i < 5000u && !w->waiting; ++i) {
+  for (unsigned i = 0; i < 5000u && !h2_atomic_bool_load(&w->waiting, H2_ATOMIC_SEQ_CST); ++i) {
     sleep_ms(1u);
   }
-  assert(w->waiting);
+  assert(h2_atomic_bool_load(&w->waiting, H2_ATOMIC_SEQ_CST));
 }
 
 static void wait_returned(waiter_t *w) {
-  for (unsigned i = 0; i < 5000u && !w->returned; ++i) {
+  for (unsigned i = 0; i < 5000u && !h2_atomic_bool_load(&w->returned, H2_ATOMIC_SEQ_CST); ++i) {
     sleep_ms(1u);
   }
-  assert(w->returned);
+  assert(h2_atomic_bool_load(&w->returned, H2_ATOMIC_SEQ_CST));
   assert(pthread_join(w->thread, NULL) == 0);
+}
+
+static void waiter_destroy(waiter_t *w) {
+  h2_atomic_bool_destroy(&w->waiting);
+  h2_atomic_bool_destroy(&w->returned);
 }
 
 static void fixture_open(fixture_t *fx) {
   memset(fx, 0, sizeof(*fx));
+  assert(h2_atomic_bool_init(&fx->done, false) == H2_ATOMIC_OK);
+  assert(h2_atomic_bool_init(&fx->stop, false) == H2_ATOMIC_OK);
   fx->api = h2_bk_platform_sync_api();
   const h2_pal_mutex_config_t mutex_config = {.name = "cond-mutex"};
   const h2_pal_cond_config_t cond_config = {.name = "cond"};
@@ -296,11 +303,15 @@ static void fixture_close(fixture_t *fx) {
   assert(registered_waiters(fx) == 0u);
   assert(h2_pal_cond_destroy(fx->api, fx->cond) == H2_PAL_OK);
   assert(h2_pal_mutex_destroy(fx->api, fx->mutex) == H2_PAL_OK);
+  h2_atomic_bool_destroy(&fx->done);
+  h2_atomic_bool_destroy(&fx->stop);
 }
 
 static void start(waiter_t *w, fixture_t *fx, uint32_t timeout_ms,
                   void *(*body)(void *)) {
   memset(w, 0, sizeof(*w));
+  assert(h2_atomic_bool_init(&w->waiting, false) == H2_ATOMIC_OK);
+  assert(h2_atomic_bool_init(&w->returned, false) == H2_ATOMIC_OK);
   w->fx = fx;
   w->timeout_ms = timeout_ms;
   assert(pthread_create(&w->thread, NULL, body, w) == 0);
@@ -321,13 +332,15 @@ static void test_broadcast_reaches_parked_waiter_despite_poller(void) {
     /* Taking the mutex here guarantees the parked waiter is registered. */
     assert(h2_pal_mutex_lock(fx.api, fx.mutex) == H2_PAL_OK);
     assert(registered_waiters(&fx) >= 1u);
-    fx.done = true;
+    h2_atomic_bool_store(&fx.done, true, H2_ATOMIC_SEQ_CST);
     assert(h2_pal_cond_broadcast(fx.api, fx.cond) == H2_PAL_OK);
     assert(h2_pal_mutex_unlock(fx.api, fx.mutex) == H2_PAL_OK);
     wait_returned(&parked);
     assert(parked.wakeups == 1u);
-    fx.stop = true;
+    h2_atomic_bool_store(&fx.stop, true, H2_ATOMIC_SEQ_CST);
     wait_returned(&poller);
+    waiter_destroy(&parked);
+    waiter_destroy(&poller);
     fixture_close(&fx);
   }
 }
@@ -348,15 +361,17 @@ static void test_signal_wakes_one_broadcast_wakes_all(void) {
   assert(h2_pal_mutex_unlock(fx.api, fx.mutex) == H2_PAL_OK);
   wait_returned(&a);
   assert(registered_waiters(&fx) == 1u);
-  assert(a.returned != b.returned);
+  assert(h2_atomic_bool_load(&a.returned, H2_ATOMIC_SEQ_CST) != h2_atomic_bool_load(&b.returned, H2_ATOMIC_SEQ_CST));
   /* The first waiter in line is the one signalled. */
-  assert(a.returned && a.result == H2_PAL_OK);
+  assert(h2_atomic_bool_load(&a.returned, H2_ATOMIC_SEQ_CST) && a.result == H2_PAL_OK);
 
   assert(h2_pal_mutex_lock(fx.api, fx.mutex) == H2_PAL_OK);
   assert(h2_pal_cond_broadcast(fx.api, fx.cond) == H2_PAL_OK);
   assert(h2_pal_mutex_unlock(fx.api, fx.mutex) == H2_PAL_OK);
   wait_returned(&b);
   assert(b.result == H2_PAL_OK);
+  waiter_destroy(&a);
+  waiter_destroy(&b);
   fixture_close(&fx);
 }
 
@@ -391,6 +406,7 @@ static void test_destroy_refuses_with_waiter(void) {
   assert(h2_pal_mutex_unlock(fx.api, fx.mutex) == H2_PAL_OK);
   wait_returned(&w);
   assert(w.result == H2_PAL_OK);
+  waiter_destroy(&w);
   fixture_close(&fx);
 }
 
@@ -404,10 +420,10 @@ static void test_wait_rejects_recursive_mutex(void) {
                                         .flags = H2_PAL_MUTEX_FLAG_RECURSIVE};
   assert(h2_pal_mutex_create(fx.api, &config, &recursive) == H2_PAL_OK);
   assert(h2_pal_mutex_lock(fx.api, recursive) == H2_PAL_OK);
-  unsigned before = binary_semaphores_created;
+  unsigned before = h2_atomic_uint_load(&binary_semaphores_created, H2_ATOMIC_SEQ_CST);
   assert(h2_pal_cond_wait(fx.api, fx.cond, recursive, 1u) ==
          H2_PAL_ERR_INVALID_ARG);
-  assert(binary_semaphores_created == before);
+  assert(h2_atomic_uint_load(&binary_semaphores_created, H2_ATOMIC_SEQ_CST) == before);
   assert(h2_pal_mutex_unlock(fx.api, recursive) == H2_PAL_OK);
   assert(h2_pal_mutex_destroy(fx.api, recursive) == H2_PAL_OK);
 
@@ -416,7 +432,7 @@ static void test_wait_rejects_recursive_mutex(void) {
          H2_PAL_ERR_TIMEOUT);
   assert(h2_pal_cond_wait(fx.api, fx.cond, fx.mutex, 1u) ==
          H2_PAL_ERR_TIMEOUT);
-  assert(binary_semaphores_created == before + 2u);
+  assert(h2_atomic_uint_load(&binary_semaphores_created, H2_ATOMIC_SEQ_CST) == before + 2u);
   assert(h2_pal_mutex_unlock(fx.api, fx.mutex) == H2_PAL_OK);
   fixture_close(&fx);
 }
@@ -424,11 +440,15 @@ static void test_wait_rejects_recursive_mutex(void) {
 int main(void) {
   /* A lost wakeup shows up as a hang; let SIGALRM turn it into a failure. */
   alarm(120u);
+  assert(h2_atomic_uint_init(&binary_semaphores_created, 0u) == H2_ATOMIC_OK);
+  assert(h2_atomic_uint_init(&binary_semaphores_destroyed, 0u) == H2_ATOMIC_OK);
   test_wake_without_waiters_leaves_no_token();
   test_wait_rejects_recursive_mutex();
   test_destroy_refuses_with_waiter();
   test_signal_wakes_one_broadcast_wakes_all();
   test_broadcast_reaches_parked_waiter_despite_poller();
-  assert(binary_semaphores_created == binary_semaphores_destroyed);
+  assert(h2_atomic_uint_load(&binary_semaphores_created, H2_ATOMIC_SEQ_CST) == h2_atomic_uint_load(&binary_semaphores_destroyed, H2_ATOMIC_SEQ_CST));
+  h2_atomic_uint_destroy(&binary_semaphores_created);
+  h2_atomic_uint_destroy(&binary_semaphores_destroyed);
   return 0;
 }

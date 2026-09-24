@@ -30,7 +30,7 @@ GizOS 使用 Bazel 9.2.0 作为 stable host C/C++ package 以及 ESP-IDF/BK7258/
 
 ESP32-P4、BK7258、BK3633 与 JieLi pi32v2 的 portable archive 使用 `tools/bazel/toolchains/local_embedded_cc/` 共享 repository/toolchain config。ESP compiler 从 `@h2_esp_idf_tools` locator 选择；BK compiler 从 Bazel 下载并校验的 `@h2_bk_arm_toolchain` 选择，不读取 action environment 中的 path。目标 compile flags、compiler exact version、实际 compiler/assembler/cc1、builtin headers 与 archiver分别进入对应 compile/archive action input。所有 embedded archive 都使用与 native firmware 一致的 `-Os` size optimization；locator 未配置时 repository 仍可加载但注册为 incompatible，不能阻塞无关 host/mobile graph。P4 使用 RV32 `ilp32f`，BK7258 使用 Cortex-M33 hard-float/CMSE，BK3633 使用 ARMv5TE Thumb。Linux、macOS、Android 与 iOS 原生就是 Bazel C/C++ target，不需要 native SDK prebuilt handoff。
 
-调用方由 `.env/devenv` 加载同级 `firmware-devenv`。`--config=esp` 仅用 `--repo_env` 把 `IDF_PATH` 与 `IDF_TOOLS_PATH` 交给 repository rules；tools repository 从固定的 `python_env/idf6.0_py*_env` layout 唯一解析 Python environment。Repository 在发布可 scrub 的 locator 前验证两个 target compiler、Ninja、SDK-owned tool check 与 Python dependency constraints，并监听 SDK 与 tools roots。Native action 只接收 `@h2_esp_idf_sdk` 与 `@h2_esp_idf_tools` locator，不继承这些变量、caller `PATH`、`FIRMWARE_DEVENV_ROOT` 或完整 environment。少数需要 operator 明确选择非敏感 build value 的诊断 image 可以在 rule 的 `cmake_variables` 中逐项 allowlist；只有同名 `--define=NAME=value` 会作为显式 `-D NAME=value` 进入 CMake action。Wrapper 自己拥有且调用方不能覆盖的常量使用 `cmake_definitions`，直接作为显式 `-D NAME=value` 进入 action；同一个名称不能同时出现在 `cmake_variables` 与 `cmake_definitions`。DevKit console profile 由 H2Loader wrapper 通过该 target-owned surface 传递，不能被 ambient `--define` 改写。Runner 在 cache miss 执行时再次验证 ESP-IDF commit `662a3be354759d9487bf4b1a629fadb766cb1800` 与相同工具合约，然后将 launcher 复制到独立临时 tree，以内部 `H2_REPO_ROOT` 运行原生 CMake build。
+调用方由 `.env/devenv` 加载同级 `firmware-devenv`。`--config=esp` 仅用 `--repo_env` 把 `IDF_PATH` 与 `IDF_TOOLS_PATH` 交给 repository rules；tools repository 从固定的 `python_env/idf6.0_py*_env` layout 唯一解析 Python environment。Repository 在发布可 scrub 的 locator 前验证两个 target compiler、Ninja、SDK-owned tool check 与 Python dependency constraints，并监听 SDK 与 tools roots。Native action 只接收 `@h2_esp_idf_sdk` 与 `@h2_esp_idf_tools` locator，不继承这些变量、caller `PATH`、`FIRMWARE_DEVENV_ROOT` 或完整 environment。少数需要 operator 明确选择非敏感 build value 的诊断 image 可以在 rule 的 `cmake_variables` 中逐项 allowlist；只有同名 `--define=NAME=value` 会作为显式 `-D NAME=value` 进入 CMake action。Wrapper 自己拥有且调用方不能覆盖的常量使用 `cmake_definitions`，直接作为显式 `-D NAME=value` 进入 action；同一个名称不能同时出现在 `cmake_variables` 与 `cmake_definitions`。DevKit console profile 由 H2Loader wrapper 通过该 target-owned surface 传递，不能被 ambient `--define` 改写。Runner 在 cache miss 执行时再次验证 ESP-IDF commit `76f5dedd9950a3012fee8fb7d5586df21fc67802`（v6.0.3） 与相同工具合约，然后将 launcher 复制到独立临时 tree，以内部 `H2_REPO_ROOT` 运行原生 CMake build。
 
 `FirmwareInfo` 返回 target-owned ELF、map、app、bootloader、partition-table image、由同一次构建的 flash arguments 生成并从 `0x0` 烧录的 `combined_factory_image`、完整 flash-files directory、规范化 `flasher_args.json` 和 firmware version。`esp_idf_firmware` 不知道 H2Loader image、role、archive path 或 recovery policy；它的 `DefaultInfo.files` 只包含标准 native 产物，不返回 release provider。所有 required file 必须非空，combined image 必须由 `idf.py merge-bin` 直接写入声明的 native build directory，metadata offset 和 path 必须有效且仍位于本次 build directory。CMake/Ninja intermediate 和 device-operation executable 不进入 provider；Action 不执行 flash、monitor、erase、reset 或 serial 操作。
 
@@ -41,6 +41,8 @@ ESP32-P4、BK7258、BK3633 与 JieLi pi32v2 的 portable archive 使用 `tools/b
 H2Loader-managed firmware layout 由 `boards/<board>/<target>/layouts/` 拥有并由 wrapper 按 Board 注入。ESP 没有具名 config profile：每块板拥有一套 canonical `sdkconfig.defaults`，layout 只拥有 partition table、rollback defaults 等 layout 专属项；确有真实差异的变体（例如 Tiga 的诊断串口和 E2E 内存保留）注册为该 board 的独立 layout，firmware target 用 `layout` 属性选择，`config_profile`/`config_profiles` 不再是 ESP rule 接口，能力差异只能由 component graph 表达。BK7258 没有具名 config/GPIO/memory profile：每个 `layouts/<layout>/` 自包含一组 AP/CP defaults、GPIO 选择、`ram_regions.csv` 和 partition metadata，firmware target 用 `layout` 属性选择一个注册 layout；`bk7258_firmware` 只接收显式的 `ap_config`/`cp_config`（按序合并、后层覆盖）与 `ap_gpio`/`cp_gpio` 输入，`config_profile`、`config_profiles`、`gpio_profile`、`memory_profile` 和 runner 的 `--config-layer` 都已删除。App、E2E、产品和 Loader target 都不能复制或覆盖这些 layout 输入，也不能保留 project-local SDK config。最终 SDK 配置按 board canonical defaults、layout defaults 的顺序合并，后层覆盖前层。`ram_regions.csv` 只描述 BK image linker RAM/PSRAM 分配，不属于 OTA geometry，并由拥有它的 layout 声明。
 
 Native firmware rules 在 target graph 上接受 task policy：ESP `esp_idf_firmware` 使用可选的 `task_policy`，BK7258 `bk7258_firmware` 使用可选的 `ap_task_policy` 与 `cp_task_policy`；只有实际使用 PAL task policy 的 target 才传入。H2Loader wrapper 对这些参数 fail closed，并且不再从 `layout_files` 派生 policy。Private downstream target 遵循同一 target-owned contract。ESP image graph 只能包含一个 `h2_esp_target_task_policy`；BK graph 对 AP/CP 各包含一个 execution-unit-specific `h2_bk_target_task_policy`，相同 component name 由 native-component execution-unit key 隔离。每个 target 的安装 API header、component `CMakeLists.txt`、policy source 与 host test 由 `//tools/bazel:target_task_policy.bzl` 从 BUILD 里的 policy table 生成，生成物落在 bazel-out 的 `task_policy/`，consumer 不需要创建本地 `task_policy/` 目录。`directory` 只选择 package-relative 生成目录；native component 从已声明的生成 `CMakeLists.txt` 取得真实目录，使头文件、源码和 CMake 一起进入 native action inputs，BK staging 保留 AP/CP execution-unit key。Module 用 `//tools/bazel:tasks.bzl` 的 `h2_tasks` 声明它启动的 runtime task name 并把该声明放进自己的 `deps`，target 用 `graph`（与 firmware rule 相同的依赖图）收集这些声明，用 `policies` 逐条给出 `"<task>  <priority>  <core>  <stack>  <region>"`（BK CP 无 core 列），确有意走默认策略的写成 `"<task>  default"`，前缀路由写成尾部带 `*` 的 task。图里任何一个已声明 task 没有对应行、行里字段不全、或某行指向图中不存在的 task，都在 analysis 阶段失败，因此新增依赖带进来的 task 不会静默落到默认策略上。每个 target 仍然拥有自己的完整 route 表与 resolver，生成器只统一模板，不共享 runtime 状态。
+
+ESP policy 还导出 `h2_esp_target_task_policy_install_with_configure()`，同步把生成配置借给 board callback，以便 board 注入 PSRAM stack allocator 后安装；无参数 installer 保持默认路径。`<name>_stack_accounting` filegroup 提供 SDK-free 的 `h2_target_stack_accounting.inc`，由相同 policy table 生成桌面占位栈尺寸：exact 优先于最长 prefix，internal 返回零，PSRAM 返回请求值、policy minimum 与 4096-byte floor 的最大值。该 fragment 不进入 ESP native source list，也不改变 PAL task options。
 
 `bk7258_firmware` 的 `project` 指向 launcher `CMakeLists.txt`，`project_name` 与 SDK `PROJECT` 一致，`target` 固定为 `bk7258`。`srcs`、`support_files` 与 target-configured `graph` 的语义和 ESP rule 相同；compatible `h2loader_tar_zlib` 的 `:package` target 进入 BK7258 graph，native `:firmware` 由它依赖。launcher 中唯一的 `H2_BK_TARGET` 必须与 rule target 一致。全部 17 个 BK7258 launcher 都是 native external build target。
 
@@ -56,7 +58,7 @@ Action 将选中的 launcher 复制到 invocation-local source tree，以只读 
 
 ## H2Loader package rule
 
-`h2loader_tar_zlib` 按类型消费标准 `FirmwareInfo` 或 `Bk7258FirmwareInfo`，因此 ESP 与 BK7258 使用同一个包装 rule。它把 provider 声明的 app image 写入 target-specific archive path，并把可选 `package_data` 相对 `package_data_root` 安装到 `data/`；未 materialize 的 Git LFS pointer 在生成 archive 前直接失败，不能作为资源内容进入可安装 package。package data 必须由真实 App owner 的具名 target 提供，不能放在 launcher 目录或进入 native firmware 的 `srcs`、`hdrs`、`data`，Loader role 不允许携带 package data。Rule 生成唯一的 `<board>-<image>-<target>.update.tar.zlib` 与 `.firmware.json`；ESP 的 SDK config、partition 和 flash metadata 由选定的 Board layout 固定，BK7258 的 recovery flashing config 同样由 Board layout 固定并通过 native firmware provider 交给 package，最终 package target 不接受 layout config override。Loader role 从标准平台 provider 生成 recovery bundle。ESP Loader 另外把 native provider 的 combined image 复制为 target-owned `<board>-<image>-<target>.combined_factory.bin`，并以 `factory-flash`、`.combined_factory.bin` release suffix 和 offset `0` 写入 release metadata；它不是 managed package。Loader package 独占 `FirmwareReleaseInfo` 和 `release` output group。Release catalog 查询 `//projects/...` 下未标记 `no-release` 的 `h2loader_tar_zlib` rule，并要求每个结果都是唯一 canonical `:package`；仅供硬件验收的 alternate package 使用 `no-release`，不能进入 catalog、release asset 或公开交付。ESP/BK7258 CI tag 和公开交付仍绑定 canonical `:package`，不绑定内部 `:firmware`。
+`h2loader_tar_zlib` 按类型消费标准 `FirmwareInfo` 或 `Bk7258FirmwareInfo`，因此 ESP 与 BK7258 使用同一个包装 rule。它把 provider 声明的 app image 写入 target-specific archive path，并把可选 `package_data` 相对 `package_data_root` 安装到 `data/`；每个条目的归档名取其仓库相对路径（`File.short_path`），字节从其实际位置（`File.path`）读取，因此 package data 既可以是提交进仓库的文件，也可以由 rule 生成，不必在 `package_data_root` 下另存一份副本；生成条目的仓库相对名同样必须位于声明的 root 之内，越界与路径穿越照旧失败。未 materialize 的 Git LFS pointer 在生成 archive 前直接失败，不能作为资源内容进入可安装 package。package data 必须由真实 App owner 的具名 target 提供，不能放在 launcher 目录或进入 native firmware 的 `srcs`、`hdrs`、`data`，Loader role 不允许携带 package data。Rule 生成唯一的 `<board>-<image>-<target>.update.tar.zlib` 与 `.firmware.json`；ESP 的 SDK config、partition 和 flash metadata 由选定的 Board layout 固定，BK7258 的 recovery flashing config 同样由 Board layout 固定并通过 native firmware provider 交给 package，最终 package target 不接受 layout config override。Loader role 从标准平台 provider 生成 recovery bundle。ESP Loader 另外把 native provider 的 combined image 复制为 target-owned `<board>-<image>-<target>.combined_factory.bin`，并以 `factory-flash`、`.combined_factory.bin` release suffix 和 offset `0` 写入 release metadata；它不是 managed package。Loader package 独占 `FirmwareReleaseInfo` 和 `release` output group。Release catalog 只查询 `//projects/...` 下显式标记 `firmware-release` 的 `h2loader_tar_zlib` rule，并要求每个结果都是 Loader 目录的唯一 canonical `:package`；诊断与 example identity、alternate package 即使误加 tag 也会失败。现有 `no-release` 仅为诊断标记。发布组装将原始资产名转换为 `<image>-<board><release_suffix>`，把全部固件、索引及固件校验和封装到 `firmware-release-v<batch>.zip`；npm tarball、npm index 和最终校验和在 ZIP 外。批次由手动触发的工作流按 UTC 自动生成，逐固件版本来自各 BUILD 的 `:version`。ESP/BK7258 CI tag 和公开交付仍绑定 canonical `:package`，不绑定内部 `:firmware`。
 
 包装 action 只读取 provider 和 attrs 声明的文件，不访问 SDK、toolchain 或 invocation-local native build tree，因此保留 Bazel 默认 sandbox、remote execution 与 action cache 语义。它不重新解释平台固件格式，也不执行 install、flash、reset、serial、network 或设备操作。
 
@@ -220,6 +222,14 @@ Repository cache 只保存由 Bazel 按 digest 索引的下载内容，不保存
 
 `kickpi_k4b` config 固定 Linux x86_64 execution platform 与 ARMv7 GNU EABI hard-float target，并固定使用 `-c opt`。Bazel repository rule 从 Arm 官方地址下载 `gcc-arm-8.2-2018.11-x86_64-arm-linux-gnueabihf`，校验 SHA-256 并把完整 compiler/sysroot distribution 注册为 C/C++ toolchain；C 与 C++ builtin include 都来自该 distribution，compile/link action 不读取 `K4B_TOOLCHAIN_ROOT`、ambient `CC` 或 `PATH`。MP4 Player 另外通过 `--repo_env=K4B_CEDARX_INCLUDE_DIR` 与 `--repo_env=K4B_CEDARX_LIB_DIR` 把 `firmwares-devenv` provision 的 CedarX headers 和目标 image shared library closure 映射为 `@h2_k4b_cedarx_sdk`，由 `cc_import` 参与同一 Bazel link graph；AAC-LC decoder 则由 Bazel 使用固定 URL/SHA-256 下载 FDK-AAC 2.0.1 source 并交叉编译 decoder-only source closure。K4B board、launcher 与 CedarX production target 必须声明 Linux/ARMv7 `target_compatible_with`。没有 CedarX env 时真正分析、编译或链接 private CedarX consumer 必须 fail closed。
 
+## GizClaw Bzlmod registry
+
+GizClaw 自有的 Bzlmod module（当前为 `gizclaw_c_sdk`）发布在 `https://static-volc.gizclaw.com/bazel/`，而不是 Bazel Central Registry。`.bazelrc` 用两条 `common --registry` 依次声明 `https://bcr.bazel.build` 和该 registry：`--registry` 会整体替换默认 registry 列表，因此 BCR 必须显式列出并排在前面，只有 BCR 不提供的 module 才落到 GizClaw registry。
+
+这些依赖只通过 `MODULE.bazel` 的 `bazel_dep` 固定版本；archive URL、SRI integrity 和 extracted root 由 registry 的 `modules/<module>/<version>/source.json` 提供，仓库内不再为它们声明 `http_archive`、手写 integrity，也不使用只对 root module 生效的 `archive_override`，因此它们对下游 Bzlmod consumer 仍是正常的传递依赖。两个 registry 的解析结果（包含 not found）由 `MODULE.bazel.lock` 固定，registry 列表或 module 版本变化时必须提交更新后的 lockfile。
+
+Registry 列表属于 root module 配置。使用 GizOS 的下游 root 必须在自己的 `.bazelrc` 中声明同一组 `--registry`；忽略 rc file 的 build（例如 `scripts/bazel/bazel-test-downstream-consumer.sh` 的 fixture root）必须在命令行上传入同一组 `--registry`，不能依赖 GizOS 仓库的 `.bazelrc`。缺少该 registry 时 module resolution 必须直接失败，不允许回退到 archive override 或未校验的下载。
+
 ## CI Cache
 
 Bazel 的 repository cache 固定在 `~/.cache/bazel/repository`，保存带 integrity 的 module、toolchain 和 external repository 下载；disk cache 固定在 `~/.cache/bazel/disk`，保存本机 compile、link、test、foreign C/C++ build 和生成 action 的 content-addressed output。本机默认只使用这两个 cache，不自动探测 CI、hostname 或 GCP credential，也不访问 GCS。
@@ -293,70 +303,19 @@ Review 必须覆盖所有修改到的 platform config、native runner、workflow
 
 `bazel build //libs/lua:runtime_sources` 导出下层 Runtime 的 C/H 源码和机器可读 manifest，供 Flutter native assets、cgo 与 native embedder 使用自己的目标工具链编译。源码 inventory 和编译参数来自 Bazel aspect，不依赖 archive 路径或另一份手写 source list；`//libs/lua:source_package_test` 解包后只用 manifest、普通 C compiler 和自建 PAL harness 验证，runner 不调用 Bazel。分层、schema 与消费流程见 [Lua 嵌入分层与源码包](./lua.md#嵌入分层与源码包)。
 
-## 手动时间戳 Release
+## Lua 源码包进入手动 Release
 
-在 GitHub Actions 的 Release workflow 选择 branch，执行 **Run workflow**（或 `gh workflow run release.yml --ref <branch>`）。唯一 trigger 是 `workflow_dispatch`，没有 version input，也不由人工创建或推送 tag。Catalog job 的第一步只读取一次 UTC 时钟，全部 slices 使用同一个 job output。选择的 commit 由 GitHub 的 dispatched `github.sha` 固定，checkout、metadata 与最终自动 tag 都绑定这个完整 SHA。
+GitHub Actions 的 Release workflow 由 `workflow_dispatch` 手动触发。Catalog job 一次生成 UTC `RELEASE_BATCH=YYYYMMDD-HHMMSS`；发布 tag 为 `v<batch>`。现有固件 ZIP、npm 包和发布安全校验保持不变。Catalog job 增加 host-only `lua-runtime` slice，产出源码 tar、压缩包 SHA-256 sidecar 和 `lua-runtime.json` 中间元数据；最终 `release-bundle` 汇入这些文件、校验身份与完整性，并发布 `gizos-release.json`。
 
-`RELEASE_VERSION` / `release_id` 格式为 `YYYYMMDD.S.0`，其中 `S = hour * 3600 + minute * 60 + second`，范围 `0..86399`，十进制且不补零。例如 `20260913.45296.0` 对应 `2026-09-13T12:34:56Z`。这保留到秒的 UTC 时间，符合 release script 的一至三个数字分段校验，同时是无前导零的三段 SemVer，最多 16 个 ASCII 字节，低于 H2Loader/native firmware 的 31-byte version 限制。不能使用带 `T/Z` 的日期或补零的 `HHMMSS` SemVer 数字段。显式 `FirmwareVersionInfo` 仍决定产品 firmware version；兼容 target 才把该 batch version 嵌入 native firmware/package。无需保留 dispatch version input：全部 artifact 都可使用这个格式，npm 版本继续由自己的 committed package.json 决定。
+最终资产包括 `gizos-lua-runtime-src-<content_id>.tar.gz`、同名 `.sha256`、`gizos-release.json` 和既有固件/npm 资产。`gizos-release.json` 的 `release_id` 为 batch，`release_tag` 为 `v<batch>`，`release_timestamp` 为 UTC ISO 8601 时间，`commit` 为所选源码提交；`packages.lua_runtime` 记录 `file`、`content_id`、压缩包 `sha256` 和 `size`。`packages.npm` 指向 `npm-index.json`，`packages.firmware_bundle` 指向已验证的固件 ZIP。最终 `SHA256SUMS` 覆盖全部发布文件。固件产品版本和 npm 包版本仍分别由各自原有索引定义。
 
-DAG 保留现有 `catalog → esp/bk7258 → firmware-bundle → release-bundle`。Catalog job 另外运行 host-only `lua-runtime` slice，无需 board 或 SDK；其 Actions artifact 名为 `lua-runtime-bundle`，不会被 firmware-bundle 的 `release-*` 下载匹配到。最终 assembly 下载两种 bundle，校验文件清单、版本、SHA-256 和 size，生成 `gizos-release.json`，并重算覆盖所有最终文件（含 Lua tar、`.sha256`、metadata）的 `SHA256SUMS`。
+Lua tar 内只有源码、头文件、manifest 与 LICENSE，没有发布批次、commit、预编译库或设备 PAL provider。LiteLink 可以在 Flutter App 的原生构建环节用自己的工具链编译，并提供自己的 PAL 适配。包的内容标识与安全下载流程见 [Lua 内容标识](./lua.md#内容标识与发布下载)。
 
-Publish 在所有 build/validation 成功后自动创建 `release-<release_id>` tag，指向 dispatched SHA，标题为 `GizOS <release_id>`，先以 draft 上传全部 asset，重新下载并逐字节核对清单与内容，全部一致后才转为正式（非 draft）Release；核对失败时 Release 保持 draft，workflow 失败，不会对外发布不完整的 Release。Tag 冲突直接失败，不移动 tag 或覆盖已有 Release；同秒重复 dispatch 或重复执行 publish 遇到冲突时，应重新 dispatch 生成新 batch。
-
-### Metadata schema
-
-`gizos-release.json` 使用 UTF-8、排序 key、两空格缩进和末尾 LF，由 `scripts/bazel/bazel-release.py` 确定性生成。相同 timestamp、commit、package identities 和 artifact bytes 产生相同 JSON，不在 assembly 时重新读时钟。
-
-| 字段 | 含义 |
-| --- | --- |
-| `schema_version` | 当前为 `1` |
-| `release_id` | `YYYYMMDD.S.0` batch identity |
-| `release_timestamp` | 从 identity 还原的 UTC `YYYY-MM-DDTHH:MM:SSZ` |
-| `commit` | dispatched commit 的完整 40 位 SHA |
-| `packages.h2loader_npm` | `name`、`version`，从该 commit 的 `projects/h2loader/targets/npm_package/h2loader/package.json` 读取；npm 实际发布仍由 `h2loader-npm-publish.yml` 负责，此字段不声称 npm registry 发布成功 |
-| `packages.lua_runtime` | `file`（含完整 `content_id`）、`content_id`、压缩 tar 的 `sha256` 和字节 `size` |
-| `packages.firmware_bundle` | `file` 为 `firmware-index.json`，以及索引的 `sha256`、`size`、`format`、batch `version`、`firmware_count`；各 firmware 的 identity/version/assets 由这个校验过的索引承载 |
-
-例如以下结构（hash/size 仅为示例占位值）：
-
-```json
-{
-  "schema_version": 1,
-  "release_id": "20260913.45296.0",
-  "release_timestamp": "2026-09-13T12:34:56Z",
-  "commit": "529c376b6d600b6ab1e7d31832dbe844bc06a339",
-  "packages": {
-    "h2loader_npm": {"name": "@gizclaw/h2loader", "version": "0.2.2"},
-    "lua_runtime": {
-      "file": "gizos-lua-runtime-src-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.tar.gz",
-      "content_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-      "sha256": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
-      "size": 525920
-    },
-    "firmware_bundle": {
-      "file": "firmware-index.json",
-      "sha256": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-      "size": 4096,
-      "format": 1,
-      "version": "20260913.45296.0",
-      "firmware_count": 1
-    }
-  }
-}
-```
-
-Host slice 中间文件 `lua-runtime.json` 只有前两种 package identity，最终 assembly 用实际 firmware index 补齐 `firmware_bundle`，只发布完整 `gizos-release.json`。Lua tar 内不含发布 metadata；Lua content id 的精确定义与 GizClaw `{url, sha256, size}` pin 合同见 [Lua 内容标识](./lua.md#内容标识与发布下载)。
-
-### 本地验证
+本地验证：
 
 ```sh
 bazel test //libs/lua:all //tools/bazel:release_test //tools/bazel:release_bundle_test
-make bazel-release RELEASE_SLICE=lua-runtime RELEASE_VERSION=20260913.45296.0 RELEASE_STAGING_DIR=build/release/lua-runtime
-mkdir -p build/release-verification
-bazel build //libs/lua:runtime_sources
-cp bazel-bin/libs/lua/runtime_sources.content_id build/release-verification/first.content_id
-bazel --output_base="$PWD/build/release-verification/output-base" build --disk_cache= --remote_cache= //libs/lua:runtime_sources
-cmp build/release-verification/first.content_id bazel-bin/libs/lua/runtime_sources.content_id
+make bazel-release RELEASE_SLICE=lua-runtime RELEASE_BATCH=20260925-120000 RELEASE_STAGING_DIR=build/release/lua-runtime
 ```
 
-双 build 使用第二个全新 output base 并禁用 action cache，以验证真实执行的内容标识一致；无需在 Bazel test 内递归启动 Bazel。首次实现的 macOS arm64 验证，两次得到 `36edf5c7f3c84c276217aa0a54157d670d6a98fae01c50a83028aadb23a02b4a`。这是当时 package inputs 的标识，源码变化后应自然变化。本地 dirty worktree 的 metadata commit 仍为 HEAD，只能作为 assembly 验证，不能代表该 commit 已包含未提交改动。实际 firmware build 和 GitHub tag/upload 必须由完整 Release run 验证。
+真实 GitHub Release 的 tag 创建、上传和下载核验需要在完整的 Release workflow 中验证。

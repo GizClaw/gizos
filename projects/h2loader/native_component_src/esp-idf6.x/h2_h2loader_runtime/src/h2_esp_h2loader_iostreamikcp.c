@@ -170,11 +170,10 @@ static h2_pal_result_t transport_poll_physical(
         read_rc != H2_PAL_ERR_WOULD_BLOCK) {
         return read_rc;
     }
-    h2_pal_result_t rc = H2_PAL_OK;
-    if (count > 0u) {
-        rc = h2_iostreamikcp_filter_input(
-            &transport->filter, buffer, count, transport_on_frame, transport);
-    }
+    /* Resume complete buffered frames after a callback deadline, even when
+     * the physical link supplies no new bytes. */
+    h2_pal_result_t rc = h2_iostreamikcp_filter_input(
+        &transport->filter, buffer, count, transport_on_frame, transport);
     if (rc != H2_PAL_OK) {
         return rc;
     }

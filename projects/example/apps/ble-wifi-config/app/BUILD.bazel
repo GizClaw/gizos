@@ -27,5 +27,9 @@ cc_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":ble_wifi_config"],
+    deps = [
+        ":ble_wifi_config",
+        "//libs/atomic/providers/c11",
+        "//libs/pal:unsupported",
+    ],
 )

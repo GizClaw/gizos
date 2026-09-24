@@ -2,6 +2,8 @@
 
 `libs/bleikcp` 在调用方已经建立的 BLE connection 上提供可靠、有序的 byte stream。它使用 iKCP 处理重传、顺序和流量窗口，但不负责发现设备、选择 peer、建立连接或制定重连策略。
 
+KCP 的控制块、MTU buffer、segment 和 ACK list 也使用 `h2_bleikcp_api_t.allocator`；库只安装一次 ikcp bridge，以调用线程的实例上下文选分配器并逐块记录归属，支持不同 arena 的并发连接及跨线程释放。Bridge 不改 vendored ikcp，其他未指定分配上下文的 KCP 调用仍使用 libc。
+
 ## API Reference
 
 [API Reference](/references/bleikcp)
@@ -85,6 +87,7 @@ Client stream 只属于当前 connection。Disconnect 后新的读写和仍有�
 - `h2_bleikcp_flush()` 等待发送队列清空且 KCP segment 被确认；返回结果按 fatal error、已完成、正常断线的顺序判定，正常断线不能覆盖已经发布的完成结果。
 - `h2_bleikcp_read()` 提供 byte-stream semantics，小 buffer 读取后保留剩余数据。
 - BLE callback 只复制输入并唤醒 worker；KCP state 只能由 worker 操作。
+- 输入 frame queue 已满时，新到的 datagram 被丢弃并计入 `dropped_input`，stream 不结束；对端 KCP 按丢包重传。server 的 RX write callback 对这种丢弃仍返回成功，因为 ATT write 本身已完成。queue 容量只决定 worker 一个 slice 内能缓冲多少帧，不构成 session 存活条件。
 - Event callback 必须快速返回，不能从 callback 中 close 当前 stream。
 
 ## 验证
@@ -95,4 +98,4 @@ Portable build 和 deterministic host test：
 bazel test //libs/bleikcp:all
 ```
 
-测试需要覆盖低 MTU 拒绝、server/client 建立、双向多段传输、小块读取、backpressure、disconnect、重新连接和 close cleanup。
+测试需要覆盖低 MTU 拒绝、server/client 建立、双向多段传输、小块读取、backpressure、输入 frame queue 溢出后 stream 继续工作、disconnect、重新连接和 close cleanup。

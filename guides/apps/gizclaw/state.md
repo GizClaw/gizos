@@ -23,6 +23,8 @@ Session 不内置产品 collection、默认 Workflow、命名规则或文件路�
 
 Conversation 创建在同一个准备操作中完成 Workspace 校验，然后绑定当前 Workspace。后续切换成功时，核心在旧 generation 结束后更新保留 route 的目标，下一次输入使用新 Workspace。 产品显式调用 Session audio start/end 开启或结束输入；回复、取消和完成沿用现有 Conversation callback。Session 先更新自身状态，再转发 callback。产品必须使用 Session 对应的 release 释放该 route，不能在活动对话结束前释放。等待或回复期间调用 audio start 由核心取消旧 generation，等待取消分发后在同一路由开始新输入；不要求产品先判断 UI 状态。重复 start（输入已开）与重复 end（输入已关）幂等，空闲 end 不会复活旧轮次。
 
+`h2_gizclaw_rpc_run_stop(service, timeout_ms, storage)` 停止 Peer 唯一的服务端 run，不删除 Workspace。附有 Session 时总是参与状态管理，即使没有当前 Workspace 也发送 `server.run.stop`（method 20，空参数）。先以 `H2_GIZCLAW_CANCEL_WORKSPACE` 停止本地 Conversation，最多等待 timeout_ms 完成本地取消分发；与其它同步 Workspace RPC 串行，已有 RPC 或输入重启时返回 BUSY，Session 已关闭时返回 CLOSED。成功后 workspace 为 EMPTY，清除当前 Workspace、Workflow 和已确认参数；target 与原 current 相同时也清除。下一次 select 或 conversation_create 从 get、reload 重新准备，同名也重新附着。进入操作后的任何失败（包括取消分发超时和 RPC 超时）都置 FAILED，因为服务端 run 是否停止可能不确定。成功后清空 Service 缓冲的下行 Opus/PCM；没有 Session 时同样清空。返回的 run status 不保留，合法的 response storage 不消耗字节。
+
 ## 交互模式与对话状态
 
 快照中的 `parameters` 复用现有 Workspace 参数类型，`input` 为 Push-to-Talk 或RealTime，`initiative` 保持既有 PEER / AGENT 含义；不引入新的首句发言者字段。只合并成功应用的 patch，省略成员保留原值，失败保留此前已确认参数。
@@ -61,7 +63,7 @@ Session 测试在 typed RPC 边界注入结果，执行真实的库内状态管�
 
 ## 自动系统校时
 
-Service 在首次连接前读取 Time PAL。时间无效或为 0 时，由网络任务先向同一 `server_endpoint` 请求 `GET /server-info`，校时成功后才发起带时间戳的信令连接；失败保持可取消的 30 秒重试，stop 会取消 HTTP 和唤醒等待。已有有效时间时可直接连接，连接成功后启动独立的 `$gizclaw/time` 任务刷新时间，其他通信不等待该 HTTP 请求。首次连接前已成功校时的同一 Service 不重复启动校时任务。请求超时为 5 秒，失败后按单调时间等待 30 秒重试，直到成功或 Service 停止。停止取消在途 HTTP 并等待任务退出。Service 是单次连接生命周期：断线进入 terminal，停止后的实例不能再次 start；重连须新建 Service，新实例按当前时间有效性选择连接前校时或连接后刷新。已完成校时任务的句柄由 stop 回收；普通网络 poll 不重复校时。校时任务创建失败也按 30 秒重试，不触发连接 terminal。Time PAL 的 `set_wall_ms` 返回 UNSUPPORTED 时（例如 Web 宿主时钟），时钟由平台持有，重试也无法校准：校时任务记录一次 `request=time stage=unsupported` 后结束，状态保持 RETRY 并保留该结果，同一 Service 不再重试。
+配置了 HTTP API 和 `server_endpoint` 时，Service 每次连接前都由网络任务向该 `server_endpoint` 请求一次 `GET /server-info`，校时后再发起带时间戳的信令连接；有效时间也可能已漂移（例如深睡期间 RTC 跑在慢速振荡器上），服务器会以 `expired_request` 拒绝过期 offer。时间无效或为 0 时，校时成功前不连接；失败保持可取消的 30 秒重试，stop 会取消 HTTP 和唤醒等待。已有有效时间时只做一次尝试：失败则保留现有时间继续连接，连接后由独立的 `$gizclaw/time` 任务在 30 秒后重试，其他通信不等待该 HTTP 请求。HTTP 返回 CLOSED 而 Service 未在停止时按普通失败重试。连接前已成功校时的同一 Service 不再启动校时任务。请求超时为 5 秒，失败后按单调时间等待 30 秒重试，直到成功或 Service 停止。停止取消在途 HTTP 并等待任务退出。Service 是单次连接生命周期：断线进入 terminal，停止后的实例不能再次 start；重连须新建 Service，新实例同样在连接前校时。已完成校时任务的句柄由 stop 回收；普通网络 poll 不重复校时。校时任务创建失败也按 30 秒重试，不触发连接 terminal。未配置 HTTP API，或 Time PAL 的 `set_wall_ms` 返回 UNSUPPORTED 时（例如 Web 宿主时钟），重试也无法校准：结果记为 UNSUPPORTED，状态保持 RETRY 并保留该结果，同一 Service 不再尝试；已有有效时间时照常连接，时间无效时连接以 `H2_PAL_TIME_ERR_UNCALIBRATED` 结束。
 
 `h2_gizclaw_service_get_time_sync_status()` 返回 WAITING、RUNNING、RETRY 或 SUCCEEDED，以及最近结果和 HTTP 尝试次数；该状态描述本次校准，不代表时钟 是否有效。失败保留此前有效系统时间。响应必须是合法 JSON，顶层 `server_time` 必须为正整数毫秒时间戳，使用十进制整数字面量，不能是字符串、负数、零、分数或指数形式。
 

@@ -1,3 +1,5 @@
+#include "h2_lua_display_internal.h"
+#include "h2_lua_numeric.h"
 #include "../runtime/h2_lua_internal.h"
 
 #include <limits.h>
@@ -49,7 +51,6 @@ static void set_function(lua_State *state, const char *name,
 
 #define H2_LUA_COMPONENT_CACHE_KEY "h2.lua.runtime.components"
 
-static int push_display_proxy(lua_State *state, h2_lua_job_t *job);
 static int push_touch_proxy(lua_State *state, h2_lua_job_t *job);
 static int push_button_proxy(lua_State *state, h2_lua_job_t *job,
                              h2_runtime_component_id_t component_id);
@@ -276,7 +277,7 @@ static void h2_lua_sleep_timer_callback(void *user, h2_pal_timer_t *timer) {
   h2_lua_task_t *task = user;
   (void)timer;
   if (task != NULL) {
-    atomic_store(&task->timer_fired, 1);
+    h2_atomic_store(&task->timer_fired, 1);
     h2_lua_host_wake_job(task->job);
   }
 }
@@ -293,7 +294,7 @@ static int lua_delay_ms(lua_State *state) {
   h2_lua_task_timer_destroy(task);
   task->wake_ms = h2_lua_now_ms(task->job->host) + (uint64_t)delay_ms;
   task->state = H2_LUA_TASK_SLEEPING;
-  atomic_store(&task->timer_fired, 0);
+  h2_atomic_store(&task->timer_fired, 0);
   if (delay_ms > 0) {
     h2_pal_result_t timer_result;
     timer_result =
@@ -968,7 +969,7 @@ static int lua_json_decode(lua_State *state) {
       .malloc = json_malloc,
       .realloc = json_realloc,
       .free = json_free,
-      .ctx = (void *)job->host->config.runtime->mem,
+      .ctx = (void *)job->host->config.allocator,
   };
   yyjson_read_err error;
   yyjson_doc *document;
@@ -1077,7 +1078,7 @@ static int lua_capability_call(lua_State *state) {
   size_t options_size = 0u;
   char output[H2_LUA_CAPABILITY_OUTPUT_MAX];
   const char *error = NULL;
-  size_t i;
+  const h2_lua_capability_entry_t *entry = NULL;
   if (lua_isnoneornil(state, 2)) {
     input = "{}";
   } else if (lua_type(state, 2) == LUA_TSTRING) {
@@ -1096,72 +1097,71 @@ static int lua_capability_call(lua_State *state) {
   }
   (void)input_size;
   (void)options_size;
-  for (i = 0u; i < job->host->capability_count; ++i) {
-    h2_lua_capability_entry_t *entry = &job->host->capabilities[i];
-    if (strcmp(entry->name, name) == 0) {
-      h2_lua_capability_request_t *request;
-      h2_pal_result_t result;
-      int locked = 0;
-      if (job->host->capability_mutex != NULL) {
-        if (h2_pal_mutex_lock(job->host->config.runtime->sync,
-                              job->host->capability_mutex) != H2_PAL_OK) {
-          return push_capability_tuple(state, H2_PAL_ERR_BUSY, NULL,
-                                       "capability registry busy");
-        }
-        locked = 1;
+  if (h2_trie_handle(&job->host->capability_trie, name, &entry) == H2_PAL_OK) {
+    h2_lua_capability_request_t *request;
+    h2_pal_result_t result;
+    int locked = 0;
+    if (job->host->capability_mutex != NULL) {
+      if (h2_pal_mutex_lock(job->host->config.runtime->sync,
+                            job->host->capability_mutex) != H2_PAL_OK) {
+        return push_capability_tuple(state, H2_PAL_ERR_BUSY, NULL,
+                                     "capability registry busy");
       }
-      request = allocate_capability_request(job->host);
-      if (request == NULL || task == NULL) {
-        if (locked) {
-          (void)h2_pal_mutex_unlock(job->host->config.runtime->sync,
-                                    job->host->capability_mutex);
-        }
-        return push_capability_tuple(state, H2_PAL_ERR_FULL, NULL,
-                                     "capability request limit reached");
-      }
-      memset(request, 0, sizeof(*request));
-      request->id = job->host->next_capability_request_id++;
-      if (job->host->next_capability_request_id == 0u) {
-        job->host->next_capability_request_id = 1u;
-      }
-      request->state = H2_LUA_CAPABILITY_REQUEST_PENDING;
-      request->job_id = job->id;
-      request->job_generation = job->generation;
-      request->task_id = task->id;
-      request->capability = entry;
+      locked = 1;
+    }
+    request = allocate_capability_request(job->host);
+    if (request == NULL || task == NULL) {
       if (locked) {
         (void)h2_pal_mutex_unlock(job->host->config.runtime->sync,
                                   job->host->capability_mutex);
       }
-      output[0] = '\0';
-      result = entry->call(entry->user, request->id, input, options, output,
-                           sizeof(output), &error);
-      if (result != H2_PAL_ERR_WOULD_BLOCK) {
-        if (locked) {
-          (void)h2_pal_mutex_lock(job->host->config.runtime->sync,
-                                  job->host->capability_mutex);
-        }
-        memset(request, 0, sizeof(*request));
-        if (locked) {
-          (void)h2_pal_mutex_unlock(job->host->config.runtime->sync,
-                                    job->host->capability_mutex);
-        }
-        return push_capability_tuple(state, result, output, error);
-      }
-      if (job->host->capability_mutex == NULL) {
-        if (entry->cancel != NULL) {
-          entry->cancel(entry->user, request->id);
-        }
-        memset(request, 0, sizeof(*request));
-        return push_capability_tuple(
-            state, H2_PAL_ERR_UNSUPPORTED, NULL,
-            "pending capability requires Runtime Sync");
-      }
-      task->capability_request_id = request->id;
-      task->state = H2_LUA_TASK_CAPABILITY;
-      return lua_yieldk(state, 0, (lua_KContext)request->id,
-                        lua_capability_continue);
+      return push_capability_tuple(state, H2_PAL_ERR_FULL, NULL,
+                                   "capability request limit reached");
     }
+    memset(request, 0, sizeof(*request));
+    request->id = job->host->next_capability_request_id++;
+    if (job->host->next_capability_request_id == 0u) {
+      job->host->next_capability_request_id = 1u;
+    }
+    request->state = H2_LUA_CAPABILITY_REQUEST_PENDING;
+    request->job_id = job->id;
+    request->job_generation = job->generation;
+    request->task_id = task->id;
+    request->capability = entry;
+    if (locked) {
+      (void)h2_pal_mutex_unlock(job->host->config.runtime->sync,
+                                job->host->capability_mutex);
+    }
+    output[0] = '\0';
+    result = entry->prefix_call != NULL
+                 ? entry->prefix_call(entry->user, request->id, name, input,
+                                      options, output, sizeof(output), &error)
+                 : entry->call(entry->user, request->id, input, options, output,
+                               sizeof(output), &error);
+    if (result != H2_PAL_ERR_WOULD_BLOCK) {
+      if (locked) {
+        (void)h2_pal_mutex_lock(job->host->config.runtime->sync,
+                                job->host->capability_mutex);
+      }
+      memset(request, 0, sizeof(*request));
+      if (locked) {
+        (void)h2_pal_mutex_unlock(job->host->config.runtime->sync,
+                                  job->host->capability_mutex);
+      }
+      return push_capability_tuple(state, result, output, error);
+    }
+    if (job->host->capability_mutex == NULL) {
+      if (entry->cancel != NULL) {
+        entry->cancel(entry->user, request->id);
+      }
+      memset(request, 0, sizeof(*request));
+      return push_capability_tuple(state, H2_PAL_ERR_UNSUPPORTED, NULL,
+                                   "pending capability requires Runtime Sync");
+    }
+    task->capability_request_id = request->id;
+    task->state = H2_LUA_TASK_CAPABILITY;
+    return lua_yieldk(state, 0, (lua_KContext)request->id,
+                      lua_capability_continue);
   }
   lua_pushboolean(state, 0);
   lua_pushnil(state);
@@ -1173,984 +1173,6 @@ static int open_capability(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
   lua_createtable(state, 0, 1);
   set_function(state, "call", lua_capability_call, job);
-  return 1;
-}
-
-static uint16_t rgb_to_rgb565(unsigned r, unsigned g, unsigned b) {
-  return (uint16_t)(((r & 0xf8u) << 8u) | ((g & 0xfcu) << 3u) |
-                    ((b & 0xf8u) >> 3u));
-}
-
-static unsigned check_color_component(lua_State *state, int table_index,
-                                      const char *name) {
-  lua_getfield(state, table_index, name);
-  lua_Integer value = luaL_checkinteger(state, -1);
-  lua_pop(state, 1);
-  if (value < 0 || value > 255) {
-    luaL_error(state, "display color component '%s' must be in [0, 255]", name);
-  }
-  return (unsigned)value;
-}
-
-static uint16_t check_color(lua_State *state, int index) {
-  index = lua_absindex(state, index);
-  if (lua_istable(state, index)) {
-    unsigned r = check_color_component(state, index, "r");
-    unsigned g = check_color_component(state, index, "g");
-    unsigned b = check_color_component(state, index, "b");
-    return rgb_to_rgb565(r, g, b);
-  }
-  if (lua_type(state, index) == LUA_TSTRING) {
-    const char *name = lua_tostring(state, index);
-    if (strcmp(name, "white") == 0)
-      return rgb_to_rgb565(255u, 255u, 255u);
-    if (strcmp(name, "black") == 0)
-      return 0u;
-    if (strcmp(name, "red") == 0)
-      return rgb_to_rgb565(255u, 0u, 0u);
-    if (strcmp(name, "green") == 0)
-      return rgb_to_rgb565(0u, 128u, 0u);
-    if (strcmp(name, "blue") == 0)
-      return rgb_to_rgb565(0u, 0u, 255u);
-    (void)luaL_error(state, "unknown display color '%s'", name);
-    return 0u;
-  }
-  (void)luaL_argerror(state, index, "display color must be a string or table");
-  return 0u;
-}
-
-static int check_pixel_number(lua_State *state, int argument) {
-  lua_Number value = luaL_checknumber(state, argument);
-  if (!isfinite((double)value) || value < (lua_Number)INT_MIN ||
-      value > (lua_Number)INT_MAX) {
-    luaL_argerror(state, argument, "pixel value is out of range");
-  }
-  return (int)value;
-}
-
-static h2_pal_result_t display_open(h2_lua_job_t *job) {
-  size_t pixel_count;
-  h2_pal_result_t result;
-  if (job->display_open)
-    return H2_PAL_OK;
-  if (!job->host->config.borrow_display) {
-    result =
-        (h2_pal_result_t)h2_pal_display_open(job->host->config.runtime->display);
-    if (result != H2_PAL_OK)
-      return result;
-  }
-  result = (h2_pal_result_t)h2_pal_display_get_info(
-      job->host->config.runtime->display, &job->display_info);
-  if (result != H2_PAL_OK || job->display_info.width <= 0 ||
-      job->display_info.height <= 0) {
-    if (!job->host->config.borrow_display)
-      (void)h2_pal_display_close(job->host->config.runtime->display);
-    return result == H2_PAL_OK ? H2_PAL_ERR_INVALID_STATE : result;
-  }
-  if ((size_t)job->display_info.width >
-      SIZE_MAX / (size_t)job->display_info.height) {
-    if (!job->host->config.borrow_display)
-      (void)h2_pal_display_close(job->host->config.runtime->display);
-    return H2_PAL_ERR_NO_SPACE;
-  }
-  pixel_count =
-      (size_t)job->display_info.width * (size_t)job->display_info.height;
-  if (pixel_count > SIZE_MAX / sizeof(*job->framebuffer)) {
-    if (!job->host->config.borrow_display)
-      (void)h2_pal_display_close(job->host->config.runtime->display);
-    return H2_PAL_ERR_NO_SPACE;
-  }
-  job->framebuffer = h2_pal_mem_alloc(job->host->config.runtime->mem,
-                                      pixel_count * sizeof(*job->framebuffer));
-  if (job->framebuffer == NULL) {
-    if (!job->host->config.borrow_display)
-      (void)h2_pal_display_close(job->host->config.runtime->display);
-    return H2_PAL_ERR_NO_MEMORY;
-  }
-  memset(job->framebuffer, 0, pixel_count * sizeof(*job->framebuffer));
-  job->display_open = 1;
-  job->dirty_valid = 1;
-  job->dirty_min_x = 0;
-  job->dirty_min_y = 0;
-  job->dirty_max_x = job->display_info.width - 1;
-  job->dirty_max_y = job->display_info.height - 1;
-  return H2_PAL_OK;
-}
-
-static void set_pixel(h2_lua_job_t *job, int x, int y, uint16_t color) {
-  if (x >= 0 && y >= 0 && x < job->display_info.width &&
-      y < job->display_info.height) {
-    job->framebuffer[(size_t)y * (size_t)job->display_info.width + (size_t)x] =
-        color;
-    if (job->dirty_valid && job->dirty_min_x == 0 && job->dirty_min_y == 0 &&
-        job->dirty_max_x == job->display_info.width - 1 &&
-        job->dirty_max_y == job->display_info.height - 1) {
-      return;
-    }
-    if (!job->dirty_valid) {
-      job->dirty_valid = 1;
-      job->dirty_min_x = x;
-      job->dirty_min_y = y;
-      job->dirty_max_x = x;
-      job->dirty_max_y = y;
-    } else {
-      if (x < job->dirty_min_x)
-        job->dirty_min_x = x;
-      if (y < job->dirty_min_y)
-        job->dirty_min_y = y;
-      if (x > job->dirty_max_x)
-        job->dirty_max_x = x;
-      if (y > job->dirty_max_y)
-        job->dirty_max_y = y;
-    }
-  }
-}
-
-static void mark_dirty_rect(h2_lua_job_t *job, int x, int y, int width,
-                            int height) {
-  int min_x = x < 0 ? 0 : x;
-  int min_y = y < 0 ? 0 : y;
-  int max_x = x + width - 1;
-  int max_y = y + height - 1;
-  if (width <= 0 || height <= 0) {
-    return;
-  }
-  if (max_x >= job->display_info.width) {
-    max_x = job->display_info.width - 1;
-  }
-  if (max_y >= job->display_info.height) {
-    max_y = job->display_info.height - 1;
-  }
-  if (min_x > max_x || min_y > max_y) {
-    return;
-  }
-  if (!job->dirty_valid) {
-    job->dirty_valid = 1;
-    job->dirty_min_x = min_x;
-    job->dirty_min_y = min_y;
-    job->dirty_max_x = max_x;
-    job->dirty_max_y = max_y;
-    return;
-  }
-  if (min_x < job->dirty_min_x)
-    job->dirty_min_x = min_x;
-  if (min_y < job->dirty_min_y)
-    job->dirty_min_y = min_y;
-  if (max_x > job->dirty_max_x)
-    job->dirty_max_x = max_x;
-  if (max_y > job->dirty_max_y)
-    job->dirty_max_y = max_y;
-}
-
-static void fill_span(h2_lua_job_t *job, int y, int min_x, int max_x,
-                      uint16_t color) {
-  uint16_t *pixels;
-  size_t count;
-  if (y < 0 || y >= job->display_info.height || max_x < 0 ||
-      min_x >= job->display_info.width || min_x > max_x) {
-    return;
-  }
-  if (min_x < 0)
-    min_x = 0;
-  if (max_x >= job->display_info.width)
-    max_x = job->display_info.width - 1;
-  pixels = job->framebuffer + (size_t)y * (size_t)job->display_info.width +
-           (size_t)min_x;
-  count = (size_t)(max_x - min_x + 1);
-  while (count >= 4u) {
-    pixels[0] = color;
-    pixels[1] = color;
-    pixels[2] = color;
-    pixels[3] = color;
-    pixels += 4;
-    count -= 4u;
-  }
-  while (count != 0u) {
-    *pixels++ = color;
-    --count;
-  }
-}
-
-static void write_pixel(h2_lua_job_t *job, int x, int y, uint16_t color) {
-  if (x >= 0 && y >= 0 && x < job->display_info.width &&
-      y < job->display_info.height) {
-    job->framebuffer[(size_t)y * (size_t)job->display_info.width + (size_t)x] =
-        color;
-  }
-}
-
-static void blend_pixel(h2_lua_job_t *job, int x, int y, uint16_t color,
-                        unsigned alpha) {
-  uint16_t *pixel;
-  uint16_t background;
-  unsigned inverse;
-  unsigned red;
-  unsigned green;
-  unsigned blue;
-  if (alpha == 0u || x < 0 || y < 0 || x >= job->display_info.width ||
-      y >= job->display_info.height) {
-    return;
-  }
-  if (alpha >= 255u) {
-    write_pixel(job, x, y, color);
-    return;
-  }
-  pixel = job->framebuffer + (size_t)y * (size_t)job->display_info.width +
-          (size_t)x;
-  background = *pixel;
-  inverse = 255u - alpha;
-  red = (((color >> 11u) & 0x1fu) * alpha +
-         ((background >> 11u) & 0x1fu) * inverse + 127u) /
-        255u;
-  green = (((color >> 5u) & 0x3fu) * alpha +
-           ((background >> 5u) & 0x3fu) * inverse + 127u) /
-          255u;
-  blue =
-      ((color & 0x1fu) * alpha + (background & 0x1fu) * inverse + 127u) / 255u;
-  *pixel = (uint16_t)((red << 11u) | (green << 5u) | blue);
-}
-
-static int rounded_rect_inset(int height, int radius, int row) {
-  int dy;
-  int extent = 0;
-  int64_t radius_squared;
-  if (radius == 0 || (row >= radius && row < height - radius))
-    return 0;
-  dy = row < radius ? radius - row : row - (height - radius - 1);
-  radius_squared = (int64_t)radius * radius;
-  while (extent < radius &&
-         (int64_t)(extent + 1) * (extent + 1) + (int64_t)dy * dy <=
-             radius_squared)
-    ++extent;
-  return radius - extent;
-}
-
-static int point_is_bounded(const h2_lua_job_t *job, int x, int y) {
-  return (int64_t)x >= -(int64_t)job->display_info.width &&
-         (int64_t)x <= (int64_t)job->display_info.width * 2 &&
-         (int64_t)y >= -(int64_t)job->display_info.height &&
-         (int64_t)y <= (int64_t)job->display_info.height * 2;
-}
-
-static int rect_is_bounded(const h2_lua_job_t *job, int x, int y, int width,
-                           int height) {
-  return width >= 0 && height >= 0 && width <= job->display_info.width &&
-         height <= job->display_info.height && point_is_bounded(job, x, y);
-}
-
-static void display_clear_pixels(h2_lua_job_t *job, uint16_t color) {
-  size_t count;
-  uint16_t *pixels = job->framebuffer;
-  count = (size_t)job->display_info.width * (size_t)job->display_info.height;
-  while (count >= 4u) {
-    pixels[0] = color;
-    pixels[1] = color;
-    pixels[2] = color;
-    pixels[3] = color;
-    pixels += 4;
-    count -= 4u;
-  }
-  while (count != 0u) {
-    *pixels++ = color;
-    --count;
-  }
-  job->dirty_valid = 1;
-  job->dirty_min_x = 0;
-  job->dirty_min_y = 0;
-  job->dirty_max_x = job->display_info.width - 1;
-  job->dirty_max_y = job->display_info.height - 1;
-}
-
-static int display_clear(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  uint16_t color = check_color(state, 1);
-  if (!job->display_open) {
-    return luaL_error(state, "display is not open");
-  }
-  display_clear_pixels(job, color);
-  return 0;
-}
-
-static int display_fill_rect(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  int x = check_pixel_number(state, 1);
-  int y = check_pixel_number(state, 2);
-  int width = check_pixel_number(state, 3);
-  int height = check_pixel_number(state, 4);
-  uint16_t color = check_color(state, 5);
-  int py;
-  if (!job->display_open || !rect_is_bounded(job, x, y, width, height)) {
-    return luaL_error(state, "invalid fill_rect");
-  }
-  mark_dirty_rect(job, x, y, width, height);
-  for (py = y; py < y + height; ++py)
-    fill_span(job, py, x, x + width - 1, color);
-  return 0;
-}
-
-static int display_draw_line(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  int x0 = check_pixel_number(state, 1);
-  int y0 = check_pixel_number(state, 2);
-  int x1 = check_pixel_number(state, 3);
-  int y1 = check_pixel_number(state, 4);
-  uint16_t color = check_color(state, 5);
-  int64_t dx;
-  int64_t dy;
-  int64_t error;
-  int sx;
-  int sy;
-  if (!job->display_open || !point_is_bounded(job, x0, y0) ||
-      !point_is_bounded(job, x1, y1)) {
-    return luaL_error(state, "invalid draw_line");
-  }
-  dx = llabs((int64_t)x1 - x0);
-  sx = x0 < x1 ? 1 : -1;
-  dy = -llabs((int64_t)y1 - y0);
-  sy = y0 < y1 ? 1 : -1;
-  mark_dirty_rect(job, x0 < x1 ? x0 : x1, y0 < y1 ? y0 : y1, (int)dx + 1,
-                  (int)(-dy) + 1);
-  error = dx + dy;
-  for (;;) {
-    int64_t twice;
-    write_pixel(job, x0, y0, color);
-    if (x0 == x1 && y0 == y1) {
-      break;
-    }
-    twice = 2 * error;
-    if (twice >= dy) {
-      error += dy;
-      x0 += sx;
-    }
-    if (twice <= dx) {
-      error += dx;
-      y0 += sy;
-    }
-  }
-  return 0;
-}
-
-static int display_fill_circle(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  int cx = check_pixel_number(state, 1);
-  int cy = check_pixel_number(state, 2);
-  int radius = check_pixel_number(state, 3);
-  uint16_t color = check_color(state, 4);
-  int extent = 0;
-  int y;
-  int64_t radius_squared;
-  if (!job->display_open || radius < 0 || radius > job->display_info.width ||
-      radius > job->display_info.height || !point_is_bounded(job, cx, cy)) {
-    return luaL_error(state, "invalid fill_circle");
-  }
-  mark_dirty_rect(job, cx - radius, cy - radius, radius * 2 + 1,
-                  radius * 2 + 1);
-  radius_squared = (int64_t)radius * radius;
-  for (y = -radius; y <= radius; ++y) {
-    while (extent < radius &&
-           (int64_t)(extent + 1) * (extent + 1) + (int64_t)y * y <=
-               radius_squared)
-      ++extent;
-    while (extent > 0 &&
-           (int64_t)extent * extent + (int64_t)y * y > radius_squared)
-      --extent;
-    fill_span(job, cy + y, cx - extent, cx + extent, color);
-  }
-  return 0;
-}
-
-static int display_draw_circle(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  int cx = check_pixel_number(state, 1);
-  int cy = check_pixel_number(state, 2);
-  int radius = check_pixel_number(state, 3);
-  uint16_t color = check_color(state, 4);
-  int x;
-  int y;
-  int error;
-  if (!job->display_open || radius < 0 || radius > job->display_info.width ||
-      radius > job->display_info.height || !point_is_bounded(job, cx, cy)) {
-    return luaL_error(state, "invalid draw_circle");
-  }
-  mark_dirty_rect(job, cx - radius, cy - radius, radius * 2 + 1,
-                  radius * 2 + 1);
-  x = radius;
-  y = 0;
-  error = 1 - radius;
-  while (x >= y) {
-    write_pixel(job, cx + x, cy + y, color);
-    write_pixel(job, cx + y, cy + x, color);
-    write_pixel(job, cx - y, cy + x, color);
-    write_pixel(job, cx - x, cy + y, color);
-    write_pixel(job, cx - x, cy - y, color);
-    write_pixel(job, cx - y, cy - x, color);
-    write_pixel(job, cx + y, cy - x, color);
-    write_pixel(job, cx + x, cy - y, color);
-    ++y;
-    if (error < 0) {
-      error += 2 * y + 1;
-    } else {
-      --x;
-      error += 2 * (y - x) + 1;
-    }
-  }
-  return 0;
-}
-
-static void draw_circle_aa_pixels(h2_lua_job_t *job, int cx, int cy,
-                                  int radius, uint16_t color) {
-  int radius_q4 = radius * 4 + 2;
-  int radius_squared_q8 = radius_q4 * radius_q4;
-  int extent = radius + 1;
-  int y;
-  for (y = cy - extent; y <= cy + extent; ++y) {
-    int dy0_q4 = (y - cy) * 4 - 1;
-    int dy1_q4 = dy0_q4 + 2;
-    int dy0_squared_q8 = dy0_q4 * dy0_q4;
-    int dy1_squared_q8 = dy1_q4 * dy1_q4;
-    int x;
-    for (x = cx - extent; x <= cx + extent; ++x) {
-      int dx0_q4 = (x - cx) * 4 - 1;
-      int dx1_q4 = dx0_q4 + 2;
-      int dx0_squared_q8 = dx0_q4 * dx0_q4;
-      int dx1_squared_q8 = dx1_q4 * dx1_q4;
-      unsigned coverage =
-          (unsigned)(dx0_squared_q8 + dy0_squared_q8 <= radius_squared_q8) +
-          (unsigned)(dx1_squared_q8 + dy0_squared_q8 <= radius_squared_q8) +
-          (unsigned)(dx0_squared_q8 + dy1_squared_q8 <= radius_squared_q8) +
-          (unsigned)(dx1_squared_q8 + dy1_squared_q8 <= radius_squared_q8);
-      if (coverage != 0u) {
-        blend_pixel(job, x, y, color, coverage * 255u / 4u);
-      }
-    }
-  }
-}
-
-static int display_fill_circle_aa(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  int cx = check_pixel_number(state, 1);
-  int cy = check_pixel_number(state, 2);
-  int radius = check_pixel_number(state, 3);
-  uint16_t color = check_color(state, 4);
-  if (!job->display_open || radius < 0 || radius > 64 ||
-      !point_is_bounded(job, cx, cy)) {
-    return luaL_error(state, "invalid fill_circle_aa");
-  }
-  mark_dirty_rect(job, cx - radius - 1, cy - radius - 1, radius * 2 + 3,
-                  radius * 2 + 3);
-  draw_circle_aa_pixels(job, cx, cy, radius, color);
-  return 0;
-}
-
-static uint16_t fade_rgb565_to_black(uint16_t color,
-                                     const uint16_t red_lut[32],
-                                     const uint16_t green_lut[64],
-                                     const uint16_t blue_lut[32]) {
-  return (uint16_t)(red_lut[(color >> 11u) & 0x1fu] |
-                    green_lut[(color >> 5u) & 0x3fu] |
-                    blue_lut[color & 0x1fu]);
-}
-
-static void fade_region_to_black(h2_lua_job_t *job, int x, int y, int width,
-                                 int height, unsigned amount) {
-  static const unsigned k_fade_quantum = 38u;
-  unsigned inverse;
-  uint16_t red_lut[32];
-  uint16_t green_lut[64];
-  uint16_t blue_lut[32];
-  if (amount == 0u) {
-    return;
-  }
-  if (amount == 255u) {
-    for (int row = 0; row < height; ++row) {
-      uint16_t *pixels =
-          job->framebuffer + (size_t)(y + row) *
-                                 (size_t)job->display_info.width +
-          (size_t)x;
-      memset(pixels, 0, (size_t)width * sizeof(*pixels));
-    }
-    mark_dirty_rect(job, x, y, width, height);
-    return;
-  }
-  /* At very high Desktop frame rates a time-correct alpha can be smaller than
-   * one RGB565 channel step. Applying that amount with integer rounding either
-   * erases trails too quickly or leaves dim pixels stuck forever. Spatially
-   * dither a 15% reference fade instead: every pixel receives the same average
-   * decay over time while each individual update remains representable. */
-  inverse = 255u - (amount < k_fade_quantum ? k_fade_quantum : amount);
-  for (unsigned value = 0u; value < 32u; ++value) {
-    unsigned faded = value * inverse / 255u;
-    red_lut[value] = (uint16_t)(faded << 11u);
-    blue_lut[value] = (uint16_t)faded;
-  }
-  for (unsigned value = 0u; value < 64u; ++value) {
-    green_lut[value] = (uint16_t)((value * inverse / 255u) << 5u);
-  }
-  if (amount < k_fade_quantum) {
-    unsigned selector = job->display_fade_phase;
-    for (int row = 0; row < height; ++row) {
-      uint16_t *pixels =
-          job->framebuffer + (size_t)(y + row) *
-                                 (size_t)job->display_info.width +
-          (size_t)x;
-      for (int column = 0; column < width; ++column) {
-        if (selector < amount) {
-          pixels[column] = fade_rgb565_to_black(
-              pixels[column], red_lut, green_lut, blue_lut);
-        }
-        selector += 17u;
-        if (selector >= k_fade_quantum) {
-          selector -= k_fade_quantum;
-        }
-      }
-    }
-    job->display_fade_phase =
-        (uint8_t)((job->display_fade_phase + amount) % k_fade_quantum);
-  } else {
-    for (int row = 0; row < height; ++row) {
-      uint16_t *pixels =
-          job->framebuffer + (size_t)(y + row) *
-                                 (size_t)job->display_info.width +
-          (size_t)x;
-      size_t count = (size_t)width;
-      while (count >= 4u) {
-        pixels[0] =
-            fade_rgb565_to_black(pixels[0], red_lut, green_lut, blue_lut);
-        pixels[1] =
-            fade_rgb565_to_black(pixels[1], red_lut, green_lut, blue_lut);
-        pixels[2] =
-            fade_rgb565_to_black(pixels[2], red_lut, green_lut, blue_lut);
-        pixels[3] =
-            fade_rgb565_to_black(pixels[3], red_lut, green_lut, blue_lut);
-        pixels += 4;
-        count -= 4u;
-      }
-      while (count != 0u) {
-        *pixels =
-            fade_rgb565_to_black(*pixels, red_lut, green_lut, blue_lut);
-        ++pixels;
-        --count;
-      }
-    }
-  }
-  mark_dirty_rect(job, x, y, width, height);
-}
-
-/* Apply a translucent black overlay to the retained RGB565 framebuffer.
- * This is the embedded equivalent of Canvas2D filling each animation frame
- * with rgba(0, 0, 0, alpha), which produces smooth particle afterimages
- * without allocating or redrawing explicit trail geometry in Lua. */
-static int display_fade_to_black(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  lua_Integer requested_amount = luaL_checkinteger(state, 1);
-  if (!job->display_open || requested_amount < 0 || requested_amount > 255) {
-    return luaL_error(state, "invalid fade_to_black");
-  }
-  fade_region_to_black(job, 0, 0, job->display_info.width,
-                       job->display_info.height, (unsigned)requested_amount);
-  return 0;
-}
-
-static int display_fade_rect_to_black(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  int x = check_pixel_number(state, 1);
-  int y = check_pixel_number(state, 2);
-  int width = check_pixel_number(state, 3);
-  int height = check_pixel_number(state, 4);
-  lua_Integer requested_amount = luaL_checkinteger(state, 5);
-  if (!job->display_open || x < 0 || y < 0 || width <= 0 || height <= 0 ||
-      x > job->display_info.width - width ||
-      y > job->display_info.height - height || requested_amount < 0 ||
-      requested_amount > 255) {
-    return luaL_error(state, "invalid fade_rect_to_black");
-  }
-  fade_region_to_black(job, x, y, width, height,
-                       (unsigned)requested_amount);
-  return 0;
-}
-
-static int display_fill_round_rect(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  int x = check_pixel_number(state, 1);
-  int y = check_pixel_number(state, 2);
-  int width = check_pixel_number(state, 3);
-  int height = check_pixel_number(state, 4);
-  int radius = check_pixel_number(state, 5);
-  uint16_t color = check_color(state, 6);
-  int py;
-  if (!job->display_open || !rect_is_bounded(job, x, y, width, height) ||
-      radius < 0 || radius > width / 2 || radius > height / 2) {
-    return luaL_error(state, "invalid fill_round_rect");
-  }
-  mark_dirty_rect(job, x, y, width, height);
-  for (py = 0; py < height; ++py) {
-    int inset = rounded_rect_inset(height, radius, py);
-    fill_span(job, y + py, x + inset, x + width - inset - 1, color);
-  }
-  return 0;
-}
-
-static int display_draw_round_rect(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  int x = check_pixel_number(state, 1);
-  int y = check_pixel_number(state, 2);
-  int width = check_pixel_number(state, 3);
-  int height = check_pixel_number(state, 4);
-  int radius = check_pixel_number(state, 5);
-  uint16_t color = check_color(state, 6);
-  int py;
-  if (!job->display_open || width <= 0 || height <= 0 ||
-      !rect_is_bounded(job, x, y, width, height) || radius < 0 ||
-      radius > width / 2 || radius > height / 2) {
-    return luaL_error(state, "invalid draw_round_rect");
-  }
-  mark_dirty_rect(job, x, y, width, height);
-  for (py = 0; py < height; ++py) {
-    int outer_inset = rounded_rect_inset(height, radius, py);
-    int inner_width = width - 2;
-    int inner_height = height - 2;
-    int inner_radius = radius > 0 ? radius - 1 : 0;
-    int inner_row = py - 1;
-    if (inner_width <= 0 || inner_height <= 0 || inner_row < 0 ||
-        inner_row >= inner_height) {
-      fill_span(job, y + py, x + outer_inset, x + width - outer_inset - 1,
-                color);
-    } else {
-      int inner_inset =
-          rounded_rect_inset(inner_height, inner_radius, inner_row);
-      int inner_min_x = x + 1 + inner_inset;
-      int inner_max_x = x + width - inner_inset - 2;
-      fill_span(job, y + py, x + outer_inset, inner_min_x - 1, color);
-      fill_span(job, y + py, inner_max_x + 1, x + width - outer_inset - 1,
-                color);
-    }
-  }
-  return 0;
-}
-
-static int64_t triangle_sign(int px, int py, int ax, int ay, int bx, int by) {
-  return ((int64_t)px - bx) * ((int64_t)ay - by) -
-         ((int64_t)ax - bx) * ((int64_t)py - by);
-}
-
-static int display_fill_triangle(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  int x0 = check_pixel_number(state, 1);
-  int y0 = check_pixel_number(state, 2);
-  int x1 = check_pixel_number(state, 3);
-  int y1 = check_pixel_number(state, 4);
-  int x2 = check_pixel_number(state, 5);
-  int y2 = check_pixel_number(state, 6);
-  uint16_t color = check_color(state, 7);
-  int min_x = x0 < x1 ? (x0 < x2 ? x0 : x2) : (x1 < x2 ? x1 : x2);
-  int max_x = x0 > x1 ? (x0 > x2 ? x0 : x2) : (x1 > x2 ? x1 : x2);
-  int min_y = y0 < y1 ? (y0 < y2 ? y0 : y2) : (y1 < y2 ? y1 : y2);
-  int max_y = y0 > y1 ? (y0 > y2 ? y0 : y2) : (y1 > y2 ? y1 : y2);
-  int x;
-  int y;
-  if (!job->display_open || !point_is_bounded(job, x0, y0) ||
-      !point_is_bounded(job, x1, y1) || !point_is_bounded(job, x2, y2)) {
-    return luaL_error(state, "display is not open");
-  }
-  for (y = min_y; y <= max_y; ++y) {
-    for (x = min_x; x <= max_x; ++x) {
-      int64_t d0 = triangle_sign(x, y, x0, y0, x1, y1);
-      int64_t d1 = triangle_sign(x, y, x1, y1, x2, y2);
-      int64_t d2 = triangle_sign(x, y, x2, y2, x0, y0);
-      if ((d0 >= 0 && d1 >= 0 && d2 >= 0) || (d0 <= 0 && d1 <= 0 && d2 <= 0)) {
-        set_pixel(job, x, y, color);
-      }
-    }
-  }
-  return 0;
-}
-
-static const uint8_t *glyph_rows(unsigned char character) {
-  static const uint8_t unknown[7] = {14, 17, 1, 2, 4, 0, 4};
-  static const uint8_t digits[10][7] = {
-      {14, 17, 19, 21, 25, 17, 14}, {4, 12, 4, 4, 4, 4, 14},
-      {14, 17, 1, 2, 4, 8, 31},     {30, 1, 1, 14, 1, 1, 30},
-      {2, 6, 10, 18, 31, 2, 2},     {31, 16, 16, 30, 1, 1, 30},
-      {14, 16, 16, 30, 17, 17, 14}, {31, 1, 2, 4, 8, 8, 8},
-      {14, 17, 17, 14, 17, 17, 14}, {14, 17, 17, 15, 1, 1, 14},
-  };
-  static const uint8_t letters[26][7] = {
-      {14, 17, 17, 31, 17, 17, 17}, {30, 17, 17, 30, 17, 17, 30},
-      {14, 17, 16, 16, 16, 17, 14}, {30, 17, 17, 17, 17, 17, 30},
-      {31, 16, 16, 30, 16, 16, 31}, {31, 16, 16, 30, 16, 16, 16},
-      {14, 17, 16, 23, 17, 17, 15}, {17, 17, 17, 31, 17, 17, 17},
-      {14, 4, 4, 4, 4, 4, 14},      {7, 2, 2, 2, 18, 18, 12},
-      {17, 18, 20, 24, 20, 18, 17}, {16, 16, 16, 16, 16, 16, 31},
-      {17, 27, 21, 21, 17, 17, 17}, {17, 25, 21, 19, 17, 17, 17},
-      {14, 17, 17, 17, 17, 17, 14}, {30, 17, 17, 30, 16, 16, 16},
-      {14, 17, 17, 17, 21, 18, 13}, {30, 17, 17, 30, 20, 18, 17},
-      {15, 16, 16, 14, 1, 1, 30},   {31, 4, 4, 4, 4, 4, 4},
-      {17, 17, 17, 17, 17, 17, 14}, {17, 17, 17, 17, 17, 10, 4},
-      {17, 17, 17, 21, 21, 21, 10}, {17, 17, 10, 4, 10, 17, 17},
-      {17, 17, 10, 4, 4, 4, 4},     {31, 1, 2, 4, 8, 16, 31},
-  };
-  if (character >= '0' && character <= '9')
-    return digits[character - '0'];
-  if (character >= 'a' && character <= 'z')
-    character -= 'a' - 'A';
-  if (character >= 'A' && character <= 'Z')
-    return letters[character - 'A'];
-  return unknown;
-}
-
-static void draw_glyph(h2_lua_job_t *job, int x, int y, unsigned char character,
-                       int scale, uint16_t color) {
-  const uint8_t *rows = glyph_rows(character);
-  int row;
-  int column;
-  int sx;
-  int sy;
-  if (character == ' ')
-    return;
-  for (row = 0; row < 7; ++row) {
-    for (column = 0; column < 5; ++column) {
-      if ((rows[row] & (1u << (4 - column))) == 0u)
-        continue;
-      for (sy = 0; sy < scale; ++sy) {
-        for (sx = 0; sx < scale; ++sx) {
-          set_pixel(job, x + column * scale + sx, y + row * scale + sy, color);
-        }
-      }
-    }
-  }
-}
-
-static int draw_text_at(lua_State *state, h2_lua_job_t *job, int x, int y,
-                        const char *text, size_t length, uint16_t color,
-                        int scale) {
-  size_t i;
-  if (!job->display_open || scale < 1 || scale > 8 ||
-      length > job->host->config.output_limit_bytes ||
-      length > (size_t)INT_MAX / (6u * (size_t)scale) ||
-      !point_is_bounded(job, x, y)) {
-    return luaL_error(state, "invalid draw_text");
-  }
-  for (i = 0u; i < length; ++i) {
-    draw_glyph(job, x + (int)i * 6 * scale, y, (unsigned char)text[i], scale,
-               color);
-  }
-  return 0;
-}
-
-static int display_draw_text(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  int x = check_pixel_number(state, 1);
-  int y = check_pixel_number(state, 2);
-  size_t length;
-  const char *text = luaL_checklstring(state, 3, &length);
-  uint16_t color = rgb_to_rgb565(255u, 255u, 255u);
-  int font_size = 24;
-  int scale;
-  if (!lua_isnoneornil(state, 4)) {
-    luaL_checktype(state, 4, LUA_TTABLE);
-    lua_getfield(state, 4, "color");
-    if (!lua_isnil(state, -1))
-      color = check_color(state, -1);
-    lua_pop(state, 1);
-    lua_getfield(state, 4, "font_size");
-    if (!lua_isnil(state, -1))
-      font_size = (int)luaL_checkinteger(state, -1);
-    lua_pop(state, 1);
-  }
-  if (font_size < 1 || font_size > 64)
-    return luaL_error(state, "display font_size must be between 1 and 64");
-  scale = (font_size + 6) / 7;
-  return draw_text_at(state, job, x, y, text, length, color, scale);
-}
-
-static int display_draw_text_aligned(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  int x = check_pixel_number(state, 1);
-  int y = check_pixel_number(state, 2);
-  int width = check_pixel_number(state, 3);
-  int height = check_pixel_number(state, 4);
-  size_t length;
-  const char *text = luaL_checklstring(state, 5, &length);
-  uint16_t color = rgb_to_rgb565(255u, 255u, 255u);
-  int font_size = 24;
-  int align = 0;
-  int valign = 0;
-  int scale;
-  int text_width;
-  int text_height;
-  int64_t aligned_x;
-  int64_t aligned_y;
-  if (!lua_isnoneornil(state, 6)) {
-    const char *value;
-    luaL_checktype(state, 6, LUA_TTABLE);
-    lua_getfield(state, 6, "color");
-    if (!lua_isnil(state, -1))
-      color = check_color(state, -1);
-    lua_pop(state, 1);
-    lua_getfield(state, 6, "font_size");
-    if (!lua_isnil(state, -1))
-      font_size = (int)luaL_checkinteger(state, -1);
-    lua_pop(state, 1);
-    lua_getfield(state, 6, "align");
-    value = lua_tostring(state, -1);
-    if (value != NULL) {
-      if (strcmp(value, "center") == 0 || strcmp(value, "centre") == 0)
-        align = 1;
-      else if (strcmp(value, "right") == 0)
-        align = 2;
-      else if (strcmp(value, "left") != 0)
-        return luaL_error(state,
-                          "display align must be left, center, or right");
-    }
-    lua_pop(state, 1);
-    lua_getfield(state, 6, "valign");
-    value = lua_tostring(state, -1);
-    if (value != NULL) {
-      if (strcmp(value, "middle") == 0 || strcmp(value, "center") == 0)
-        valign = 1;
-      else if (strcmp(value, "bottom") == 0)
-        valign = 2;
-      else if (strcmp(value, "top") != 0)
-        return luaL_error(state,
-                          "display valign must be top, middle, or bottom");
-    }
-    lua_pop(state, 1);
-  }
-  if (font_size < 1 || font_size > 64)
-    return luaL_error(state, "display font_size must be between 1 and 64");
-  scale = (font_size + 6) / 7;
-  if (width < 0 || height < 0 || align < 0 || align > 2 || scale < 1 ||
-      scale > 10 || length > (size_t)INT_MAX / (6u * (size_t)scale)) {
-    return luaL_error(state, "invalid draw_text_aligned");
-  }
-  text_width = (int)(length * 6u * (size_t)scale);
-  text_height = 7 * scale;
-  aligned_x = x;
-  aligned_y = y;
-  if (align == 1)
-    aligned_x += ((int64_t)width - text_width) / 2;
-  if (align == 2)
-    aligned_x += (int64_t)width - text_width;
-  if (valign == 1)
-    aligned_y += ((int64_t)height - text_height) / 2;
-  if (valign == 2)
-    aligned_y += (int64_t)height - text_height;
-  if (aligned_x < INT_MIN || aligned_x > INT_MAX || aligned_y < INT_MIN ||
-      aligned_y > INT_MAX) {
-    return luaL_error(state, "invalid draw_text_aligned");
-  }
-  return draw_text_at(state, job, (int)aligned_x, (int)aligned_y, text, length,
-                      color, scale);
-}
-
-static int display_begin_frame(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  if (!job->display_open || job->frame_open) {
-    return luaL_error(state, "invalid begin_frame");
-  }
-  job->frame_open = 1;
-  if (!lua_isnoneornil(state, 1)) {
-    int clear;
-    luaL_checktype(state, 1, LUA_TTABLE);
-    lua_getfield(state, 1, "clear");
-    clear = lua_toboolean(state, -1);
-    lua_pop(state, 1);
-    if (clear) {
-      uint16_t color = 0u;
-      lua_getfield(state, 1, "color");
-      if (!lua_isnil(state, -1))
-        color = check_color(state, -1);
-      lua_pop(state, 1);
-      display_clear_pixels(job, color);
-    }
-  }
-  return 0;
-}
-
-static int display_present(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  h2_display_rect_t rect;
-  h2_pal_result_t result;
-  if (!job->display_open) {
-    return luaL_error(state, "display is not open");
-  }
-  result = H2_PAL_OK;
-  if (job->dirty_valid) {
-    rect = (h2_display_rect_t){job->dirty_min_x, job->dirty_min_y,
-                               job->dirty_max_x - job->dirty_min_x + 1,
-                               job->dirty_max_y - job->dirty_min_y + 1};
-    result = (h2_pal_result_t)h2_pal_display_draw_bitmap(
-        job->host->config.runtime->display, &rect,
-        job->framebuffer +
-            (size_t)job->dirty_min_y * (size_t)job->display_info.width +
-            (size_t)job->dirty_min_x,
-        (size_t)job->display_info.width * sizeof(*job->framebuffer),
-        H2_DISPLAY_PIXEL_RGB565);
-  }
-  if (result == H2_PAL_OK) {
-    result = (h2_pal_result_t)h2_pal_display_present(
-        job->host->config.runtime->display);
-  }
-  if (result != H2_PAL_OK) {
-    return luaL_error(state, "display present failed: %d", result);
-  }
-  job->dirty_valid = 0;
-  return 0;
-}
-
-static int display_end_frame(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  if (!job->frame_open) {
-    return luaL_error(state, "invalid end_frame");
-  }
-  job->frame_open = 0;
-  return display_present(state);
-}
-
-static int display_close(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  if (job->display_open) {
-    if (!job->host->config.borrow_display)
-      (void)h2_pal_display_close(job->host->config.runtime->display);
-    h2_pal_mem_free(job->host->config.runtime->mem, job->framebuffer);
-    job->framebuffer = NULL;
-    job->display_open = 0;
-    job->frame_open = 0;
-    job->dirty_valid = 0;
-  }
-  return 0;
-}
-
-static int push_display_proxy(lua_State *state, h2_lua_job_t *job) {
-  h2_pal_result_t result;
-  result = display_open(job);
-  if (result != H2_PAL_OK) {
-    lua_pushnil(state);
-    lua_pushfstring(state, "display open failed: %d", result);
-    return 2;
-  }
-  lua_createtable(state, 0, 19);
-  set_function(state, "clear", display_clear, job);
-  set_function(state, "fill_rect", display_fill_rect, job);
-  set_function(state, "draw_line", display_draw_line, job);
-  set_function(state, "fill_circle", display_fill_circle, job);
-  set_function(state, "draw_circle", display_draw_circle, job);
-  set_function(state, "fill_circle_aa", display_fill_circle_aa, job);
-  set_function(state, "fade_to_black", display_fade_to_black, job);
-  set_function(state, "fade_rect_to_black", display_fade_rect_to_black, job);
-  set_function(state, "fill_round_rect", display_fill_round_rect, job);
-  set_function(state, "draw_round_rect", display_draw_round_rect, job);
-  set_function(state, "fill_triangle", display_fill_triangle, job);
-  set_function(state, "draw_text", display_draw_text, job);
-  set_function(state, "draw_text_aligned", display_draw_text_aligned, job);
-  set_function(state, "begin_frame", display_begin_frame, job);
-  set_function(state, "end_frame", display_end_frame, job);
-  set_function(state, "present", display_present, job);
-  set_function(state, "deinit", display_close, job);
-  lua_pushinteger(state, job->display_info.width);
-  lua_setfield(state, -2, "width");
-  lua_pushinteger(state, job->display_info.height);
-  lua_setfield(state, -2, "height");
   return 1;
 }
 
@@ -2380,7 +1402,7 @@ static int audio_output_write(lua_State *state) {
   chunk_bytes = audio_slot_chunk_bytes(slot);
   if (slot->carry == NULL) {
     slot->carry =
-        h2_pal_mem_alloc(slot->job->host->config.runtime->mem, chunk_bytes);
+        h2_pal_mem_alloc(slot->job->host->config.allocator, chunk_bytes);
     if (slot->carry == NULL) {
       return audio_write_result(state, H2_PAL_ERR_NO_MEMORY, 0u);
     }
@@ -2452,7 +1474,7 @@ static int audio_output_close(lua_State *state) {
     h2_lua_job_t *job = slot->job;
     int result;
     h2_lua_audio_track_slot_flush_carry(slot);
-    h2_lua_audio_track_slot_release_carry(slot, job->host->config.runtime->mem);
+    h2_lua_audio_track_slot_release_carry(slot, job->host->config.allocator);
     result = h2_pal_audio_track_close(slot->track);
     slot->track = NULL;
     if (job->active_audio_track_count != 0u) {
@@ -2525,7 +1547,7 @@ static int audio_input_read_frame(lua_State *state, h2_lua_job_t *job,
     if (result != H2_PAL_ERR_WOULD_BLOCK && result != H2_PAL_ERR_TIMEOUT) {
       break;
     }
-    if (job->cancel_requested || atomic_load(&job->host->stopping) != 0) {
+    if (job->cancel_requested || h2_atomic_load(&job->host->stopping) != 0) {
       lua_pushnil(state);
       lua_pushliteral(state, "audio input: cancelled");
       return 2;
@@ -2661,7 +1683,7 @@ static int audio_input_close(lua_State *state) {
   h2_lua_job_t *job = audio_input_job(state);
   if (job != NULL) {
     h2_lua_job_release_audio_mic(job);
-    h2_pal_mem_free(job->host->config.runtime->mem, job->audio_mic_buffer);
+    h2_pal_mem_free(job->host->config.allocator, job->audio_mic_buffer);
     job->audio_mic_buffer = NULL;
     job->audio_mic_buffer_capacity = 0u;
     memset(&job->audio_mic_format, 0, sizeof(job->audio_mic_format));
@@ -2704,7 +1726,7 @@ static int audio_new_input(lua_State *state) {
   }
   job->audio_mic_buffer_capacity =
       (size_t)info.mic_format.frame_samples_per_channel * frame_bytes;
-  job->audio_mic_buffer = h2_pal_mem_alloc(job->host->config.runtime->mem,
+  job->audio_mic_buffer = h2_pal_mem_alloc(job->host->config.allocator,
                                            job->audio_mic_buffer_capacity);
   if (job->audio_mic_buffer == NULL) {
     job->audio_mic_buffer_capacity = 0u;
@@ -2715,7 +1737,7 @@ static int audio_new_input(lua_State *state) {
   job->audio_mic_format = info.mic_format;
   result = h2_lua_job_acquire_audio_mic(job);
   if (result != H2_PAL_OK) {
-    h2_pal_mem_free(job->host->config.runtime->mem, job->audio_mic_buffer);
+    h2_pal_mem_free(job->host->config.allocator, job->audio_mic_buffer);
     job->audio_mic_buffer = NULL;
     job->audio_mic_buffer_capacity = 0u;
     memset(&job->audio_mic_format, 0, sizeof(job->audio_mic_format));
@@ -2769,7 +1791,7 @@ static int audio_new_output(lua_State *state) {
     return 2;
   }
   slot->job = job;
-  h2_lua_audio_track_slot_release_carry(slot, job->host->config.runtime->mem);
+  h2_lua_audio_track_slot_release_carry(slot, job->host->config.allocator);
   slot->format = (h2_audio_pcm_format_t){
       .sample_rate_hz = (uint32_t)sample_rate,
       .frame_samples_per_channel = 0u,
@@ -2786,6 +1808,7 @@ static int audio_new_output(lua_State *state) {
   }
   config = (h2_audio_track_config_t){
       .name = "lua-output",
+      .allocator = job->host->config.allocator,
       .format = slot->format,
       .volume_factor_milli = (uint32_t)volume * 10u,
       .buffer_frames = 8u,
@@ -2839,7 +1862,7 @@ static int require_proxy_result(lua_State *state, int result) {
 
 static int open_display(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  return require_proxy_result(state, push_display_proxy(state, job));
+  return require_proxy_result(state, h2_lua_push_display_proxy(state, job));
 }
 
 static int open_lcd_touch(lua_State *state) {
@@ -2941,7 +1964,7 @@ static int load_local_module(lua_State *state) {
       return luaL_error(state, "local module source limit reached");
     }
     if (result == H2_PAL_OK && !stat.is_dir) {
-      owned_source = h2_pal_mem_alloc(job->host->config.runtime->mem,
+      owned_source = h2_pal_mem_alloc(job->host->config.allocator,
                                       (size_t)stat.size + 1u);
       if (owned_source == NULL) {
         return luaL_error(state, "local module allocation failed");
@@ -2972,18 +1995,18 @@ static int load_local_module(lua_State *state) {
     }
   }
   if (source == NULL) {
-    h2_pal_mem_free(job->host->config.runtime->mem, owned_source);
+    h2_pal_mem_free(job->host->config.allocator, owned_source);
     lua_pushfstring(state, "\n\tno confined module '%s'", path);
     return 1;
   }
   if (memchr(source, '\0', source_size) != NULL) {
-    h2_pal_mem_free(job->host->config.runtime->mem, owned_source);
+    h2_pal_mem_free(job->host->config.allocator, owned_source);
     return luaL_error(state, "local module contains embedded NUL");
   }
   (void)snprintf(chunk_name, sizeof(chunk_name), "@%s", path);
   load_result = luaL_loadbufferx(state, (const char *)source, source_size,
                                  chunk_name, "t");
-  h2_pal_mem_free(job->host->config.runtime->mem, owned_source);
+  h2_pal_mem_free(job->host->config.allocator, owned_source);
   if (load_result != LUA_OK) {
     return lua_error(state);
   }
@@ -3073,6 +2096,8 @@ h2_pal_result_t h2_lua_register_builtin_modules(h2_lua_job_t *job) {
   add_preload(state, "runtime", open_runtime, job);
   add_preload(state, "delay", open_delay, job);
   add_preload(state, "system", open_system, job);
+  add_preload(state, "vmath", h2_lua_open_vmath, job);
+  add_preload(state, "geometry", h2_lua_open_geometry, job);
   add_preload(state, "display", open_display, job);
   add_preload(state, "lcd_touch", open_lcd_touch, job);
   add_preload(state, "audio", open_audio, job);
@@ -3080,6 +2105,7 @@ h2_pal_result_t h2_lua_register_builtin_modules(h2_lua_job_t *job) {
   add_preload(state, "capability", open_capability, job);
   add_preload(state, "link", open_link, job);
   add_preload(state, "storage", h2_lua_open_storage, job);
+  add_preload(state, "kv", h2_lua_open_kv, job);
   lua_getglobal(state, "package");
   lua_getfield(state, -1, "searchers");
   lua_pushlightuserdata(state, job);

@@ -459,6 +459,79 @@ static int configure(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
   proof(req, RELOAD_OPTIONS, rc);
   return rc == H2_PAL_OK ? history(f, s, role, req, id) : rc;
 }
+/* Attach a Session only after the independent req/resp and RPC exercises. */
+static int stop_run(h2_gizclaw_e2e_fixture_t *f,
+                    h2_gizclaw_resp_storage_t *s) {
+  h2_gizclaw_e2e_actor_t *actor = &f->actors[H2_GIZCLAW_E2E_OWNER];
+  static const char *const collections[] = {"assistants"};
+  const h2_gizclaw_session_config_t config = {
+      .service = actor->service, .mem = f->allocator,
+      .sync = f->runtime->sync, .time = f->time, .runtime = f->runtime,
+      .collections = collections, .collection_count = 1u,
+      .max_workflows = 128u, .catalog_bytes = 65536u};
+  const h2_gizclaw_session_selection_t selection = {
+      .workspace_name = f->workspace_name};
+  int rc = evidence("h2_gizclaw_session_create", "run-stop-prepare",
+                    h2_gizclaw_session_create(&config, &actor->session));
+  if (rc == H2_PAL_OK) {
+    rc = h2_gizclaw_e2e_fixture_has_time(f, TIMEOUT_MS)
+             ? h2_gizclaw_session_register(actor->session, f->registration_token,
+                                           TIMEOUT_MS)
+             : H2_PAL_ERR_TIMEOUT;
+    evidence("h2_gizclaw_session_register", "run-stop-prepare", rc);
+  }
+  h2_gizclaw_session_state_t before = {0}, after = {0};
+  if (rc == H2_PAL_OK) {
+    rc = h2_gizclaw_e2e_fixture_has_time(f, TIMEOUT_MS)
+             ? h2_gizclaw_session_select(actor->session, &selection, TIMEOUT_MS)
+             : H2_PAL_ERR_TIMEOUT;
+    evidence("h2_gizclaw_session_select", "run-stop-prepare", rc);
+  }
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_session_snapshot(actor->session, &before);
+  if (rc == H2_PAL_OK &&
+      (before.workspace != H2_GIZCLAW_SESSION_READY ||
+       strcmp(before.current_workspace, f->workspace_name) != 0))
+    rc = H2_PAL_ERR_INVALID_STATE;
+  if (rc == H2_PAL_OK) {
+    s->used = 0u;
+    rc = h2_gizclaw_e2e_fixture_has_time(f, TIMEOUT_MS)
+             ? h2_gizclaw_rpc_run_stop(actor->service, TIMEOUT_MS, s)
+             : H2_PAL_ERR_TIMEOUT;
+    evidence("h2_gizclaw_rpc_run_stop", "workspace-rpc", rc);
+  }
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_session_snapshot(actor->session, &after);
+  if (rc == H2_PAL_OK &&
+      (s->used != 0u || after.workspace != H2_GIZCLAW_SESSION_EMPTY ||
+       after.current_workspace[0] || after.workflow_name[0] ||
+       after.target_workspace[0] || after.parameters.has_input))
+    rc = H2_PAL_ERR_INVALID_STATE;
+  if (rc == H2_PAL_OK) {
+    rc = h2_gizclaw_e2e_fixture_has_time(f, TIMEOUT_MS)
+             ? h2_gizclaw_session_select(actor->session, &selection, TIMEOUT_MS)
+             : H2_PAL_ERR_TIMEOUT;
+    evidence("h2_gizclaw_session_select", "run-stop-reselect", rc);
+  }
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_session_snapshot(actor->session, &after);
+  /* READY after EMPTY requires server-confirmed get/reload preparation. */
+  if (rc == H2_PAL_OK &&
+      (after.workspace != H2_GIZCLAW_SESSION_READY ||
+       strcmp(after.current_workspace, f->workspace_name) != 0 ||
+       strcmp(after.workflow_name, f->workflow_name) != 0 ||
+       after.revision <= before.revision))
+    rc = H2_PAL_ERR_INVALID_STATE;
+  evidence("h2_gizclaw_rpc_run_stop", "run_stop-assert", rc);
+  if (actor->session != NULL) {
+    int cleanup = evidence("h2_gizclaw_session_destroy", "run-stop-cleanup",
+                          h2_gizclaw_session_destroy(&actor->session));
+    if (rc == H2_PAL_OK)
+      rc = cleanup;
+  }
+  return rc;
+}
+
 static bool fixed_text(const char *value, size_t capacity) {
   return value[0] != '\0' && memchr(value, '\0', capacity) != NULL;
 }
@@ -513,6 +586,8 @@ int h2_gizclaw_e2e_run_workspace(h2_gizclaw_e2e_fixture_t *f,
   int rc = create(f, s, H2_GIZCLAW_E2E_OWNER, false, &id);
   if (rc == H2_PAL_OK)
     rc = configure(f, s, H2_GIZCLAW_E2E_OWNER, false, &id);
+  if (rc == H2_PAL_OK && exercise)
+    rc = stop_run(f, s);
   s->used = 0u;
   return rc;
 }

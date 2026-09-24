@@ -7,13 +7,20 @@ static int command_is(const char *command, const char *expected) {
     return command != NULL && strcmp(command, expected) == 0;
 }
 
+int h2_quectel_is_sim_absent_line(const char *line) {
+    return line != NULL && (strcmp(line, "+CME ERROR: 10") == 0 ||
+        strcmp(line, "+CME ERROR: SIM not inserted") == 0);
+}
+
 int h2_quectel_is_urc(const char *line, const char *command) {
     if (line == NULL || line[0] == '\0') {
         return 0;
     }
     if (strcmp(line, "RING") == 0 || strcmp(line, "NO CARRIER") == 0 ||
         strcmp(line, "BUSY") == 0 || strcmp(line, "NO ANSWER") == 0 ||
-        strcmp(line, "RDY") == 0 || strcmp(line, "APP RDY") == 0 ||
+        strcmp(line, "+QIND: SMS DONE") == 0 || strcmp(line, "+QIND: PB DONE") == 0 ||
+        strcmp(line, "Call Ready") == 0 || strcmp(line, "RDY") == 0 || strcmp(line, "APP RDY") == 0 ||
+        strncmp(line, "^DSCI:", 6u) == 0 ||
         strncmp(line, "+CRING:", 7u) == 0 || strncmp(line, "+CLIP:", 6u) == 0) {
         return 1;
     }
@@ -59,6 +66,9 @@ typedef struct rx_context {
 
 static h2_pal_result_t receive_line(void *user, const char *line) {
     rx_context_t *context = user;
+    if (command_is(context->command, "AT+CPIN?") && h2_quectel_is_sim_absent_line(line)) {
+        h2_quectel_cpin_absent_store(context->modem, 1u);
+    }
     return h2_quectel_is_urc(line, context->command)
         ? h2_quectel_post_urc_line(context->modem, line) : H2_PAL_OK;
 }

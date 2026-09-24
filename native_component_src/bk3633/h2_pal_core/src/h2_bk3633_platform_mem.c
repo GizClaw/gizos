@@ -241,3 +241,14 @@ h2_pal_result_t h2_bk3633_platform_mem_get_stats(
     }
     return H2_PAL_OK;
 }
+
+/* Atomic storage uses this platform's SRAM heap without a PAL API object. */
+void *h2_bk3633_atomic_alloc(size_t length)
+{
+    return mem_alloc(NULL, length);
+}
+
+void h2_bk3633_atomic_free(void *ptr)
+{
+    mem_free(NULL, ptr);
+}

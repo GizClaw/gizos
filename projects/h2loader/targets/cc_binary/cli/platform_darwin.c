@@ -33,7 +33,7 @@ void h2_h2loader_cli_target_stop(void) {
 }
 
 const h2_pal_serial_host_api_t *h2_h2loader_cli_target_serial(void) { return h2_darwin_serial_host_api(); }
-const h2_pal_ble_host_api_t *h2_h2loader_cli_target_ble(const h2_pal_mem_api_t *mem) { return h2_darwin_corebluetooth_ble(mem); }
+const h2_pal_ble_host_api_t *h2_h2loader_cli_target_ble(const h2_pal_mem_api_t *mem) { return h2_darwin_corebluetooth_ble(mem, h2_h2loader_cli_target_log()); }
 const h2_pal_system_event_api_t *h2_h2loader_cli_target_system_event(void) { return h2_darwin_system_event_api(); }
 const h2_pal_mem_api_t *h2_h2loader_cli_target_mem(void) { return h2_desktop_platform_default_allocator(); }
 const h2_pal_time_api_t *h2_h2loader_cli_target_time(void) { return h2_desktop_platform_time_api(); }

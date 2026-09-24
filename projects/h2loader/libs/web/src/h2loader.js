@@ -7,7 +7,7 @@ export {
 } from "./h2loader_protocol.js";
 
 const WOULD_BLOCK = -9;
-export const H2LOADER_SDK_VERSION = "0.2.2";
+export const H2LOADER_SDK_VERSION = "0.3.0";
 const ERROR_NAMES = new Map([
   [-1, "invalid-argument"],
   [-2, "unavailable"],

@@ -22,12 +22,14 @@ export const H2LoaderCommands = Object.freeze({
   WIFI_CONNECT: 1 << 17,
   WIFI_DISCONNECT: 1 << 18,
   REBOOT_UPGRADE: 1 << 19,
-  ALL: 0x000f3f3f,
+  WIFI_STATUS: 1 << 20,
+  ALL: 0x001f3f3f,
 });
 
 export function commandAvailable(commandAvailability, command) {
   if (!Number.isInteger(commandAvailability) || commandAvailability < 0 ||
-      commandAvailability > H2LoaderCommands.ALL || !Number.isInteger(command) ||
+      commandAvailability > 0xffffffff ||
+      (commandAvailability & ~H2LoaderCommands.ALL) !== 0 || !Number.isInteger(command) ||
       command <= 0 || (command & (command - 1)) !== 0 ||
       (command & H2LoaderCommands.ALL) === 0) {
     throw new TypeError("command availability and command bit are invalid");

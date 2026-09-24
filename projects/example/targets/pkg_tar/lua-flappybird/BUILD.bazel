@@ -32,6 +32,7 @@ cc_binary(
     ],
     target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
     deps = [
+        "//libs/atomic/providers/c11",
         "//libs/pal/providers/web/pal_core",
         "//libs/runtime",
         "//projects/example/apps/lua-flappybird/app:lua_flappybird",

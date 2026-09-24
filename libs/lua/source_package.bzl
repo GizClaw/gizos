@@ -14,7 +14,11 @@ def _path(path):
         relative = path[3:] if path.startswith("../") else path[len("external/"):]
         parts = relative.split("/")
         repository = parts[0].split("+")[-1]
-        vendors = {"h2_vendor_lua": "lua", "h2_vendor_yyjson": "yyjson"}
+        vendors = {
+            "h2_vendor_lua": "lua",
+            "h2_vendor_tlsf": "tlsf",
+            "h2_vendor_yyjson": "yyjson",
+        }
         if repository not in vendors:
             fail("Unknown portable source repository: %s" % repository)
         return "/".join(["third_party", vendors[repository]] + parts[1:])

@@ -1,4 +1,4 @@
-load("@rules_cc//cc:defs.bzl", "cc_test")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS", "h2_gnu_only_copts")
 load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
@@ -44,12 +44,14 @@ firmware_native_component(
         "manual",
     ],
     deps = [
+        "//libs/atomic/providers/c11:c11_template",
+        "//libs/mem_arena",
         "//libs/pal:unsupported",
-        "//libs/wifi_sta",
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/h2peer",
         "//libs/pal/providers/h2sctp",
         "//libs/pal/providers/libco",
+        "//libs/wifi_sta",
     ],
 )
 
@@ -66,6 +68,28 @@ cc_test(
         "include",
         "tests/sdk",
     ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/atomic/providers/c11",
+        "//libs/pal",
+        "//libs/pal:test_allocator",
+    ],
+)
+
+cc_test(
+    name = "power_wake_test",
+    srcs = [
+        "include/h2_esp_platform_power_wake.h",
+        "tests/test_h2_esp_platform_power_wake.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
@@ -282,6 +306,33 @@ cc_test(
 )
 
 cc_test(
+    name = "pref_io_test",
+    srcs = [
+        "include/h2_esp_platform_safe_call.h",
+        "src/h2_esp_platform_littlefs_io.c",
+        "src/h2_esp_platform_littlefs_io.h",
+        "src/h2_esp_platform_pref_store.c",
+        "src/h2_esp_platform_pref_store.h",
+        "tests/test_h2_esp_platform_littlefs_io.c",
+    ] + glob(["tests/sdk/**/*.h"]),
+    conlyopts = H2_C11_OPTS + h2_gnu_only_copts([
+        "-D_POSIX_C_SOURCE=200809L",
+    ]),
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "src",
+        "tests/sdk",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
     name = "net_socket_test",
     srcs = [
         "src/h2_esp_platform_net_socket.c",
@@ -336,4 +387,94 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = ["//libs/pal"],
+)
+
+cc_library(
+    name = "arena_headers",
+    hdrs = ["include/h2_esp_platform_arena.h"],
+    includes = ["include"],
+    deps = ["//libs/mem_arena"],
+)
+
+cc_test(
+    name = "arena_test",
+    srcs = [
+        "src/h2_esp_platform_arena.c",
+        "tests/test_h2_esp_platform_arena.c",
+    ] + glob(["tests/sdk/**/*.h"]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests/sdk"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":arena_headers",
+        "//libs/mem_arena",
+    ],
+)
+
+cc_test(
+    name = "arena_spill_test",
+    srcs = [
+        "src/h2_esp_platform_arena.c",
+        "tests/test_h2_esp_platform_arena.c",
+        "tests/arena_sdk/esp_cpu_utils.h",
+        "tests/arena_sdk/esp_debug_helpers.h",
+        "tests/arena_sdk/esp_log.h",
+    ] + glob(["tests/sdk/**/*.h"]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "tests/arena_sdk",
+        "tests/sdk",
+    ],
+    local_defines = [
+        "ESP_PLATFORM",
+        "CONFIG_IDF_TARGET_ARCH_XTENSA=1",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":arena_headers",
+        "//libs/mem_arena",
+    ],
+)
+
+cc_test(
+    name = "arena_spill_riscv_test",
+    srcs = [
+        "src/h2_esp_platform_arena.c",
+        "tests/test_h2_esp_platform_arena.c",
+        "tests/arena_sdk/esp_cpu_utils.h",
+        "tests/arena_sdk/esp_debug_helpers.h",
+        "tests/arena_sdk/esp_log.h",
+    ] + glob(["tests/sdk/**/*.h"]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "tests/arena_sdk",
+        "tests/sdk",
+    ],
+    local_defines = [
+        "ESP_PLATFORM",
+        "CONFIG_IDF_TARGET_ARCH_XTENSA=0",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":arena_headers",
+        "//libs/mem_arena",
+    ],
 )

@@ -192,6 +192,104 @@ static int run_peer_name_isolation(h2_gizclaw_e2e_fixture_t *fixture,
   return result;
 }
 
+/* Keep failed/undrained state on the actor for stop -> drain -> destroy. */
+static int run_api_key_state(h2_gizclaw_e2e_fixture_t *fixture) {
+  h2_gizclaw_e2e_actor_t *actor = &fixture->actors[H2_GIZCLAW_E2E_OWNER];
+  h2_gizclaw_api_key_state_config_t config = {
+      .service = actor->service, .mem = fixture->allocator,
+      .sync = fixture->runtime->sync, .time = fixture->time,
+      .display_name = h2_gizclaw_e2e_str("e2e async temporary"),
+      .timeout_ms = 30000u};
+  h2_gizclaw_api_key_snapshot_t initial = {0}, ready = {0}, closed = {0};
+  int rc = h2_gizclaw_api_key_state_create(&config, &actor->api_key_state);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_create", "api-key-state", rc);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_gizclaw_api_key_state_snapshot(actor->api_key_state, &initial);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api-key-state", rc);
+  if (rc == H2_PAL_OK && (initial.valid || !initial.stale || initial.busy ||
+      initial.closed || initial.key.name[0] || initial.key.secret[0]))
+    rc = H2_PAL_ERR_INVALID_STATE;
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api_key_state_create-assert", rc);
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_gizclaw_api_key_state_request_refresh(actor->api_key_state, false);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_request_refresh", "api-key-state", rc);
+  if (rc != H2_PAL_OK) return rc;
+  uint64_t start = 0u, now = 0u;
+  rc = h2_pal_time_get_monotonic_ms(fixture->time, &start);
+  while (rc == H2_PAL_OK) {
+    size_t dispatched = 0u;
+    rc = h2_gizclaw_service_poll(actor->service, 8u, &dispatched);
+    if (rc != H2_PAL_OK) break;
+    rc = h2_gizclaw_api_key_state_snapshot(actor->api_key_state, &ready);
+    if (rc != H2_PAL_OK || !ready.busy) break;
+    rc = h2_pal_time_get_monotonic_ms(fixture->time, &now);
+    if (rc == H2_PAL_OK && (now - start >= 30000u ||
+        !h2_gizclaw_e2e_fixture_has_time(fixture, 1u)))
+      rc = H2_PAL_ERR_TIMEOUT;
+    if (rc == H2_PAL_OK) rc = h2_pal_time_sleep_ms(fixture->time, 1u);
+  }
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api-key-state", rc);
+  if (rc == H2_PAL_OK && (!ready.valid || ready.stale || ready.busy ||
+      ready.closed || ready.last_error != H2_PAL_OK ||
+      ready.revision <= initial.revision || !ready.key.name[0] || !ready.key.secret[0]))
+    rc = H2_PAL_ERR_INVALID_STATE;
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api_key_state_request_refresh-assert", rc);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api_key_state_snapshot-assert", rc);
+  if (rc != H2_PAL_OK) return rc;
+  uint64_t ready_revision = ready.revision;
+  rc = h2_gizclaw_api_key_state_request_revoke(actor->api_key_state);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_request_revoke", "api-key-state", rc);
+  if (rc != H2_PAL_OK) return rc;
+  start = now = 0u;
+  rc = h2_pal_time_get_monotonic_ms(fixture->time, &start);
+  while (rc == H2_PAL_OK) {
+    size_t dispatched = 0u;
+    rc = h2_gizclaw_service_poll(actor->service, 8u, &dispatched);
+    if (rc != H2_PAL_OK) break;
+    rc = h2_gizclaw_api_key_state_snapshot(actor->api_key_state, &ready);
+    if (rc != H2_PAL_OK || !ready.busy) break;
+    rc = h2_pal_time_get_monotonic_ms(fixture->time, &now);
+    if (rc == H2_PAL_OK && (now - start >= 30000u ||
+        !h2_gizclaw_e2e_fixture_has_time(fixture, 1u)))
+      rc = H2_PAL_ERR_TIMEOUT;
+    if (rc == H2_PAL_OK) rc = h2_pal_time_sleep_ms(fixture->time, 1u);
+  }
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api-key-state", rc);
+  if (rc == H2_PAL_OK && (ready.valid || ready.busy || ready.stale ||
+      ready.last_error != H2_PAL_OK || ready.revision <= ready_revision ||
+      ready.key.name[0] || ready.key.secret[0]))
+    rc = H2_PAL_ERR_INVALID_STATE;
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api_key_state_request_revoke-assert", rc);
+  if (rc == H2_PAL_OK) {
+    rc = h2_gizclaw_api_key_state_close(actor->api_key_state);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_close", "api-key-state", rc);
+    if (rc == H2_PAL_OK) {
+      rc = h2_gizclaw_api_key_state_snapshot(actor->api_key_state, &closed);
+      h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api-key-state", rc);
+    }
+    if (rc == H2_PAL_OK && (!closed.closed || closed.busy || closed.valid ||
+        !closed.stale || closed.last_error != H2_PAL_ERR_CLOSED ||
+        closed.revision <= ready.revision ||
+        memcmp(&closed.key, &ready.key, sizeof(ready.key)) != 0 ||
+        h2_gizclaw_api_key_state_request_refresh(actor->api_key_state, false) != H2_PAL_ERR_CLOSED))
+      rc = H2_PAL_ERR_INVALID_STATE;
+    h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_snapshot", "api_key_state_close-assert", rc);
+  }
+  /* Close does not revoke remotely. Peer deletion covers uncertain creates. */
+  if (ready.key.name[0])
+    keep_first_failure(h2_gizclaw_rpc_api_key_revoke(actor->service,
+        h2_gizclaw_e2e_str(ready.key.name), 30000u), &rc);
+  memset(&ready, 0, sizeof(ready));
+  memset(&closed, 0, sizeof(closed));
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_gizclaw_api_key_state_destroy(&actor->api_key_state);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_destroy", "api-key-state", rc);
+  if (rc == H2_PAL_OK && actor->api_key_state != NULL)
+    rc = H2_PAL_ERR_INVALID_STATE;
+  h2_gizclaw_e2e_evidence("h2_gizclaw_api_key_state_destroy", "api_key_state_destroy-assert", rc);
+  return rc;
+}
+
 /* Each key belongs to the fixture peer; fixture deletion also revokes keys if
  * a create reply is lost before the test can learn its name. */
 static int run_api_key(h2_gizclaw_e2e_fixture_t *fixture,
@@ -261,7 +359,7 @@ static int run_api_key(h2_gizclaw_e2e_fixture_t *fixture,
       return rc;
     }
   }
-  return H2_PAL_OK;
+  return run_api_key_state(fixture);
 }
 
 int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t *fixture) {

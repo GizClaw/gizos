@@ -65,6 +65,13 @@ static h2_pal_result_t deep_sleep(void *u, uint32_t reason) {
     p->state = H2_PAL_POWER_STATE_DEEP_SLEEPING;
   return rc;
 }
+static h2_pal_result_t wake_timer(void *u, uint32_t delay_ms) {
+  h2_app_test_power_t *p = u;
+  if (!(p->capabilities.flags & H2_PAL_POWER_CAPABILITY_DEEP_SLEEP_WAKE_TIMER))
+    return H2_PAL_ERR_UNSUPPORTED;
+  p->deep_sleep_wake_timer_ms = delay_ms;
+  return 0;
+}
 static const h2_pal_power_vtable_t vtable = {.get_capabilities = caps,
                                              .get_boot_info = boot,
                                              .get_state = state,
@@ -73,7 +80,9 @@ static const h2_pal_power_vtable_t vtable = {.get_capabilities = caps,
                                              .reboot = reboot,
                                              .shutdown = shutdown,
                                              .sleep = sleep,
-                                             .deep_sleep = deep_sleep};
+                                             .deep_sleep = deep_sleep,
+                                             .set_deep_sleep_wake_timer =
+                                                 wake_timer};
 void h2_app_test_power_init(h2_app_test_power_t *p) {
   if (!p)
     return;
@@ -83,5 +92,6 @@ void h2_app_test_power_init(h2_app_test_power_t *p) {
   p->capabilities.flags =
       H2_PAL_POWER_CAPABILITY_HOLD | H2_PAL_POWER_CAPABILITY_REBOOT |
       H2_PAL_POWER_CAPABILITY_SHUTDOWN | H2_PAL_POWER_CAPABILITY_SLEEP |
-      H2_PAL_POWER_CAPABILITY_DEEP_SLEEP;
+      H2_PAL_POWER_CAPABILITY_DEEP_SLEEP |
+      H2_PAL_POWER_CAPABILITY_DEEP_SLEEP_WAKE_TIMER;
 }

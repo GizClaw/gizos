@@ -49,6 +49,7 @@ extern "C" {
 #define H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_CONNECT (UINT32_C(1) << 17)
 #define H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_DISCONNECT (UINT32_C(1) << 18)
 #define H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_UPGRADE (UINT32_C(1) << 19)
+#define H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_STATUS (UINT32_C(1) << 20)
 #define H2_H2LOADER_HOST_COMMAND_AVAILABILITY_ALL \
     (H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_APP | \
      H2_H2LOADER_HOST_COMMAND_AVAILABLE_REBOOT_LOADER | \
@@ -65,7 +66,8 @@ extern "C" {
      H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_URL | \
      H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_SCAN | \
      H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_CONNECT | \
-     H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_DISCONNECT)
+     H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_DISCONNECT | \
+     H2_H2LOADER_HOST_COMMAND_AVAILABLE_WIFI_STATUS)
 
 typedef enum h2_h2loader_host_transport {
     H2_H2LOADER_HOST_TRANSPORT_SERIAL = 1,
@@ -276,6 +278,7 @@ typedef enum h2_h2loader_host_command {
     H2_H2LOADER_HOST_COMMAND_COREDUMP_ERASE = 17,
     H2_H2LOADER_HOST_COMMAND_STAGE_URL = 18,
     H2_H2LOADER_HOST_COMMAND_WIFI_SCAN = 19,
+    H2_H2LOADER_HOST_COMMAND_WIFI_STATUS = 20,
 } h2_h2loader_host_command_t;
 
 /**
@@ -430,6 +433,13 @@ typedef struct h2_h2loader_host_ble_connection_config {
     const char *advertised_board;
     uint32_t connect_timeout_ms;
     uint32_t command_timeout_ms;
+    /** Optional connection-failure diagnostic sink. Called synchronously on
+     * the connect caller's thread with a borrowed complete text line (no NUL
+     * included); copy bytes before returning if needed. Not retained after
+     * connect returns. A sink error never replaces the original connect error.
+     * NULL disables these diagnostics; the library does not write stderr. */
+    h2_h2loader_host_transport_log_fn on_log;
+    void *log_user;
 } h2_h2loader_host_ble_connection_config_t;
 
 /**

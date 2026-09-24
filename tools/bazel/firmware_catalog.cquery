@@ -19,6 +19,7 @@ def format(target):
         "image": info.image,
         "label": label,
         "platform": info.platform,
+        "release_name": "%s-%s" % (info.image, info.board),
         "role": info.role,
         "target": info.target,
         "version": info.version,

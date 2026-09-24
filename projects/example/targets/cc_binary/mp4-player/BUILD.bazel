@@ -32,6 +32,7 @@ cc_library(
         "//libs/pal/providers/desktop/pal_core",
         "//libs/pal/providers/ffmpeg",
         "//libs/pal/providers/portaudio",
+        "//libs/atomic/providers/c11",
         "//libs/runtime",
         "//projects/example/apps/mp4-player/app:mp4_player",
     ],

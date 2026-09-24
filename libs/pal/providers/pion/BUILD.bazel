@@ -83,6 +83,7 @@ cc_library(
     }),
     deps = [
         ":pion_archive",
+        "//libs/atomic/providers/c11",
         "//libs/pal",
     ],
 )
@@ -110,6 +111,7 @@ cc_library(
     visibility = ["//visibility:private"],
     deps = [
         ":pion_archive",
+        "//libs/atomic/providers/c11",
         "//libs/pal",
     ],
 )
@@ -142,6 +144,7 @@ cc_test(
     }),
     deps = [
         ":pion_testable",
+        "//libs/atomic/providers/c11",
         "//libs/pal/providers/desktop/pal_core",
     ],
 )

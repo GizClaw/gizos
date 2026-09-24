@@ -1,21 +1,32 @@
+#include "../src/modules/h2_lua_display_internal.h"
 #include "h2_desktop_platform.h"
 #include "h2_lua.h"
 #include "h2_lua_capability.h"
+#include "h2_lua_display.h"
+#include "h2_lua_module.h"
 #include "h2_lua_esp_claw.h"
 #include "h2_lua_event.h"
 #include "h2_lua_job.h"
 #include "h2_pal.h"
 
 #include <assert.h>
-#include <stdatomic.h>
+#include <float.h>
+#include <math.h>
+#include "h2_atomic.h"
+#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include "lua.h"
+#include "lauxlib.h"
 
 typedef struct test_fs_file {
   const uint8_t *source;
   size_t source_size;
   size_t offset;
+  size_t close_count;
+  int is_open;
 } test_fs_file_t;
 
 typedef struct test_fs_entry {
@@ -30,12 +41,27 @@ static const uint8_t s_file_main[] =
 static const uint8_t s_file_helper[] = "return 'file'";
 static const uint8_t s_file_bytecode[] = {0x1bu, 'L', 'u', 'a'};
 static const uint8_t s_file_malformed[] = "return function(";
+static const uint8_t s_file_absolute[] = "return 'path:ok'";
+static const uint8_t s_file_waiting[] =
+    "require('source_effect');require('delay').delay_ms(10000);return 'done'";
+static uint8_t s_file_streamed[8192u];
+static uint8_t s_file_early_malformed[8192u];
+static int s_fs_fail_read_after = -1;
+static h2_pal_result_t s_fs_close_result = H2_PAL_OK;
+static const h2_lua_job_id_t *s_fs_close_job_id;
+static h2_atomic_int_t s_source_effect_count;
 static const test_fs_entry_t s_fs_entries[] = {
+    {"/data/lua/app.lua", s_file_absolute, sizeof(s_file_absolute) - 1u, 0u},
     {"scripts/main.lua", s_file_main, sizeof(s_file_main) - 1u, 0u},
     {"scripts/helper.lua", s_file_helper, sizeof(s_file_helper) - 1u, 0u},
     {"scripts/bytecode.lua", s_file_bytecode, sizeof(s_file_bytecode), 0u},
     {"scripts/malformed.lua", s_file_malformed, sizeof(s_file_malformed) - 1u,
      0u},
+    {"scripts/waiting.lua", s_file_waiting, sizeof(s_file_waiting) - 1u, 0u},
+    {"scripts/streamed.lua", s_file_streamed, sizeof(s_file_streamed), 0u},
+    {"scripts/early_malformed.lua", s_file_early_malformed,
+     sizeof(s_file_early_malformed), 0u},
+    {"scripts/empty.lua", (const uint8_t *)"", 0u, 0u},
     {"scripts/oversize.lua", NULL, 4097u, 0u},
     {"scripts/invalid_size.lua", NULL, 0u, UINT64_MAX},
 };
@@ -60,6 +86,8 @@ static int test_fs_open(void *user, const char *path,
   if (entry == NULL) {
     return H2_PAL_ERR_NOT_FOUND;
   }
+  assert(!file->is_open);
+  file->is_open = 1;
   file->source = entry->source;
   file->source_size = entry->source_size;
   file->offset = 0u;
@@ -77,8 +105,17 @@ static int test_fs_read(void *user, h2_pal_fs_file_t *file_handle, void *data,
       file->source == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  if (s_fs_fail_read_after >= 0 &&
+      file->offset >= (size_t)s_fs_fail_read_after) {
+    return H2_PAL_ERR_IO;
+  }
+  assert(file->is_open);
   remaining = file->source_size - file->offset;
   copied = length < remaining ? length : remaining;
+  if (s_fs_fail_read_after >= 0 &&
+      copied > (size_t)s_fs_fail_read_after - file->offset) {
+    copied = (size_t)s_fs_fail_read_after - file->offset;
+  }
   if (copied != 0u) {
     memcpy(data, file->source + file->offset, copied);
   }
@@ -88,8 +125,20 @@ static int test_fs_read(void *user, h2_pal_fs_file_t *file_handle, void *data,
 }
 
 static int test_fs_close(void *user, h2_pal_fs_file_t *file) {
+  test_fs_file_t *source = (test_fs_file_t *)file;
   (void)user;
-  return file == NULL ? H2_PAL_ERR_INVALID_ARG : H2_PAL_OK;
+  if (source == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  assert(source->is_open);
+  source->is_open = 0;
+  source->close_count++;
+  if (s_fs_close_job_id != NULL) {
+    /* Observe publication on the submitting thread without reentering Host. */
+    assert(*s_fs_close_job_id == H2_LUA_JOB_ID_NONE);
+    assert(h2_atomic_load(&s_source_effect_count) == 0);
+  }
+  return s_fs_close_result;
 }
 
 static int test_fs_stat(void *user, const char *path,
@@ -123,19 +172,24 @@ static const h2_pal_fs_api_t s_test_fs = {
 };
 
 typedef struct test_display_fixture {
-  uint16_t pixels[8u * 8u];
-  h2_display_rect_t draw_rects[8u];
+  uint16_t pixels[240u * 240u];
+  h2_display_rect_t draw_rects[4096u];
+  int width, height;
   size_t draw_count;
   size_t present_count;
   size_t open_count;
   size_t close_count;
   int fail_info;
+  size_t fail_draw;
+  int fail_present;
+  size_t finalizer_count;
 } test_display_fixture_t;
 
 static test_display_fixture_t s_test_display_fixture;
 
 static void test_display_reset(void) {
   memset(&s_test_display_fixture, 0, sizeof(s_test_display_fixture));
+  s_test_display_fixture.width = s_test_display_fixture.height = 8;
 }
 
 static int test_display_open(void *user) {
@@ -151,8 +205,8 @@ static int test_display_get_info(void *user, h2_display_info_t *info) {
   if (info == NULL)
     return H2_DISPLAY_ERR_INVALID_ARG;
   *info = (h2_display_info_t){
-      .width = 8,
-      .height = 8,
+      .width = s_test_display_fixture.width,
+      .height = s_test_display_fixture.height,
       .native_format = H2_DISPLAY_PIXEL_RGB565,
   };
   return H2_DISPLAY_OK;
@@ -167,13 +221,15 @@ static int test_display_draw_bitmap(void *user, const h2_display_rect_t *rect,
   assert(fixture != NULL && rect != NULL && pixels != NULL);
   assert(format == H2_DISPLAY_PIXEL_RGB565);
   assert(rect->x >= 0 && rect->y >= 0 && rect->width > 0 && rect->height > 0 &&
-         rect->x + rect->width <= 8 && rect->y + rect->height <= 8);
+         rect->x + rect->width <= fixture->width &&
+         rect->y + rect->height <= fixture->height);
   assert(stride_bytes >= (size_t)rect->width * sizeof(uint16_t));
   assert(fixture->draw_count <
          sizeof(fixture->draw_rects) / sizeof(fixture->draw_rects[0]));
   fixture->draw_rects[fixture->draw_count++] = *rect;
+  if (fixture->fail_draw == fixture->draw_count) return H2_PAL_ERR_IO;
   for (row = 0; row < rect->height; ++row) {
-    memcpy(fixture->pixels + (size_t)(rect->y + row) * 8u + (size_t)rect->x,
+    memcpy(fixture->pixels + (size_t)(rect->y + row) * fixture->width + (size_t)rect->x,
            source + (size_t)row * stride_bytes,
            (size_t)rect->width * sizeof(uint16_t));
   }
@@ -184,6 +240,10 @@ static int test_display_present(void *user) {
   test_display_fixture_t *fixture = user;
   assert(fixture != NULL);
   fixture->present_count++;
+  if (fixture->fail_present) {
+    fixture->fail_present = 0;
+    return H2_PAL_ERR_IO;
+  }
   return H2_DISPLAY_OK;
 }
 
@@ -274,16 +334,16 @@ static int test_audio_track_write(h2_pal_audio_track_t *track,
   return H2_PAL_OK;
 }
 
-static atomic_int s_test_audio_close_count;
-static atomic_int s_test_audio_start_count;
-static atomic_int s_test_audio_stop_count;
-static atomic_int s_test_audio_mic_start_count;
-static atomic_int s_test_audio_mic_stop_count;
-static atomic_int s_test_audio_mic_block;
+static h2_atomic_int_t s_test_audio_close_count;
+static h2_atomic_int_t s_test_audio_start_count;
+static h2_atomic_int_t s_test_audio_stop_count;
+static h2_atomic_int_t s_test_audio_mic_start_count;
+static h2_atomic_int_t s_test_audio_mic_stop_count;
+static h2_atomic_int_t s_test_audio_mic_block;
 
 static int test_audio_track_close(h2_pal_audio_track_t *track) {
   (void)track;
-  (void)atomic_fetch_add(&s_test_audio_close_count, 1);
+  (void)h2_atomic_fetch_add(&s_test_audio_close_count, 1);
   return H2_PAL_OK;
 }
 
@@ -294,25 +354,25 @@ static h2_pal_audio_track_t s_test_audio_track = {
 
 static int test_audio_start_speaker(void *user) {
   (void)user;
-  (void)atomic_fetch_add(&s_test_audio_start_count, 1);
+  (void)h2_atomic_fetch_add(&s_test_audio_start_count, 1);
   return H2_PAL_OK;
 }
 
 static int test_audio_stop_speaker(void *user) {
   (void)user;
-  (void)atomic_fetch_add(&s_test_audio_stop_count, 1);
+  (void)h2_atomic_fetch_add(&s_test_audio_stop_count, 1);
   return H2_PAL_OK;
 }
 
 static int test_audio_start_mic(void *user) {
   (void)user;
-  (void)atomic_fetch_add(&s_test_audio_mic_start_count, 1);
+  (void)h2_atomic_fetch_add(&s_test_audio_mic_start_count, 1);
   return H2_PAL_OK;
 }
 
 static int test_audio_stop_mic(void *user) {
   (void)user;
-  (void)atomic_fetch_add(&s_test_audio_mic_stop_count, 1);
+  (void)h2_atomic_fetch_add(&s_test_audio_mic_stop_count, 1);
   return H2_PAL_OK;
 }
 
@@ -323,7 +383,7 @@ static int test_audio_mic_read(void *user, h2_audio_frame_t *frame,
   if (frame == NULL || frame->capacity < sizeof(samples)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  if (atomic_load(&s_test_audio_mic_block) != 0) {
+  if (h2_atomic_load(&s_test_audio_mic_block) != 0) {
     /* Simulates a microphone that never produces a frame, so callers polling
      * with a long or unbounded timeout stay blocked here until cancelled. */
     return H2_PAL_ERR_WOULD_BLOCK;
@@ -342,6 +402,7 @@ static int test_audio_create_track(void *user,
   if (config == NULL || out_track == NULL ||
       config->format.sample_format != H2_AUDIO_SAMPLE_S16LE)
     return H2_PAL_ERR_INVALID_ARG;
+  assert(config->allocator != NULL);
   /* Mixer-backed devices reject Tracks whose frame size differs from the
    * playback frame size reported by get_info. */
   if (config->format.frame_samples_per_channel != 2u)
@@ -391,14 +452,17 @@ static const h2_pal_audio_api_t s_test_audio = {
 };
 
 typedef struct test_clock {
-  atomic_uint_fast64_t now_ms;
+  pthread_mutex_t mutex;
+  uint64_t now_ms;
 } test_clock_t;
 
 static h2_pal_result_t test_clock_monotonic_ms(void *user, uint64_t *out_ms) {
   test_clock_t *clock = user;
   if (clock == NULL || out_ms == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  *out_ms = atomic_fetch_add(&clock->now_ms, 1u);
+  assert(pthread_mutex_lock(&clock->mutex) == 0);
+  *out_ms = clock->now_ms++;
+  assert(pthread_mutex_unlock(&clock->mutex) == 0);
   return H2_PAL_OK;
 }
 
@@ -406,7 +470,9 @@ static h2_pal_result_t test_clock_monotonic_us(void *user, uint64_t *out_us) {
   test_clock_t *clock = user;
   if (clock == NULL || out_us == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  *out_us = atomic_load(&clock->now_ms) * 1000u;
+  assert(pthread_mutex_lock(&clock->mutex) == 0);
+  *out_us = clock->now_ms * 1000u;
+  assert(pthread_mutex_unlock(&clock->mutex) == 0);
   return H2_PAL_OK;
 }
 
@@ -414,7 +480,9 @@ static h2_pal_result_t test_clock_sleep_ms(void *user, uint32_t duration_ms) {
   test_clock_t *clock = user;
   if (clock == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  (void)atomic_fetch_add(&clock->now_ms, duration_ms);
+  assert(pthread_mutex_lock(&clock->mutex) == 0);
+  clock->now_ms += duration_ms;
+  assert(pthread_mutex_unlock(&clock->mutex) == 0);
   return H2_PAL_OK;
 }
 
@@ -687,6 +755,15 @@ static h2_pal_result_t completed_before_return_capability(
   return H2_PAL_ERR_WOULD_BLOCK;
 }
 
+static h2_pal_result_t completed_before_return_prefix(
+    void *user, h2_lua_capability_request_id_t request_id, const char *name,
+    const char *input, const char *options, char *output,
+    size_t output_capacity, const char **out_error) {
+  assert(strcmp(name, "early") == 0);
+  return completed_before_return_capability(user, request_id, input, options,
+                                            output, output_capacity, out_error);
+}
+
 static void cancel_capability(void *user,
                               h2_lua_capability_request_id_t request_id) {
   capability_fixture_t *fixture = user;
@@ -724,20 +801,35 @@ typedef struct expected_pixel {
   int y;
 } expected_pixel_t;
 
+static h2_lua_job_status_t run_display_script_size(h2_lua_host_t *host,
+                                              const char *name,
+                                              const uint8_t *script,
+                                              size_t script_size,
+                                              int width, int height) {
+  h2_lua_job_id_t job_id;
+  h2_lua_job_status_t job_status;
+  test_display_reset();
+  s_test_display_fixture.width = width;
+  s_test_display_fixture.height = height;
+  assert(h2_lua_job_submit_text(host, NULL, name, script, script_size, NULL, 0u,
+                                &job_id) == H2_PAL_OK);
+  /* Pixel oracles run on an independent worker with up to a five-second job
+   * deadline. Allow that deadline to report failure instead of imposing a
+   * 64 ms scheduler-speed requirement on loaded CI hosts. */
+  run_until_terminal(host, job_id, 6000u);
+  job_status = status(host, job_id);
+  if (job_status.state != H2_LUA_JOB_SUCCEEDED)
+    fprintf(stderr, "%s: %s\n", name, job_status.message);
+  assert(job_status.state == H2_LUA_JOB_SUCCEEDED);
+  assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+  return job_status;
+}
+
 static h2_lua_job_status_t run_display_script(h2_lua_host_t *host,
                                               const char *name,
                                               const uint8_t *script,
                                               size_t script_size) {
-  h2_lua_job_id_t job_id;
-  h2_lua_job_status_t job_status;
-  test_display_reset();
-  assert(h2_lua_job_submit_text(host, NULL, name, script, script_size, NULL, 0u,
-                                &job_id) == H2_PAL_OK);
-  run_until_terminal(host, job_id, 64u);
-  job_status = status(host, job_id);
-  assert(job_status.state == H2_LUA_JOB_SUCCEEDED);
-  assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
-  return job_status;
+  return run_display_script_size(host, name, script, script_size, 8, 8);
 }
 
 static void assert_draw_rect(size_t index, int x, int y, int width,
@@ -815,6 +907,1397 @@ static void test_borrowed_display(void) {
   h2_runtime_deinit(runtime);
 }
 
+typedef struct mesh_allocator_probe {
+  lua_Alloc allocate;
+  void *user;
+  size_t calls;
+} mesh_allocator_probe_t;
+
+static void *mesh_probe_allocate(void *user, void *ptr, size_t old_size,
+                                 size_t new_size) {
+  mesh_allocator_probe_t *probe = user;
+  ++probe->calls;
+  return probe->allocate(probe->user, ptr, old_size, new_size);
+}
+
+static int test_mesh_new(lua_State *state) {
+  h2_lua_display_vertex_t vertices[] = {{1,1},{4,1},{4,4},{1,4}};
+  h2_lua_display_primitive_t primitive = {H2_LUA_DISPLAY_POLYGON,0,4,0xf800};
+  h2_lua_display_mesh_config_t config = {6,2,{vertices,4,&primitive,1}};
+  int top = lua_gettop(state);
+  assert(h2_lua_display_mesh_push(NULL, &config) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_display_mesh_push(state, NULL) == H2_PAL_ERR_INVALID_ARG);
+  config.vertex_capacity = H2_LUA_DISPLAY_VERTEX_LIMIT + 1u;
+  assert(h2_lua_display_mesh_push(state, &config) == H2_PAL_ERR_INVALID_ARG);
+  config = (h2_lua_display_mesh_config_t){H2_LUA_DISPLAY_VERTEX_LIMIT,0,{0}};
+  assert(h2_lua_display_mesh_push(state, &config) == H2_PAL_ERR_NO_MEMORY);
+  assert(lua_gettop(state) == top);
+  config = (h2_lua_display_mesh_config_t){0};
+  assert(h2_lua_display_mesh_push(state, &config) == H2_PAL_OK);
+  lua_pop(state, 1);
+  config = (h2_lua_display_mesh_config_t){6,2,{vertices,4,&primitive,1}};
+  assert(h2_lua_display_mesh_push(state, &config) == H2_PAL_OK);
+  assert(lua_gettop(state) == top + 1);
+  vertices[0].x = 1000; /* Public push copied stack-owned data. */
+  primitive.color = 0;
+  return 1;
+}
+
+static int test_mesh_update(lua_State *state) {
+  int mode = (int)luaL_checkinteger(state, 2);
+  assert(lua_checkstack(state, 4));
+  if (mode == 0) (void)lua_newuserdatauv(state, 8u, 0);
+  int top = lua_gettop(state);
+  h2_lua_display_vertex_t vertices[] = {{1,6},{6,6}};
+  h2_lua_display_primitive_t primitive = {H2_LUA_DISPLAY_LINE,0,2,0x001f};
+  h2_lua_display_mesh_data_t data = {vertices,2,&primitive,1};
+  mesh_allocator_probe_t probe = {0};
+  probe.allocate = lua_getallocf(state, &probe.user);
+  lua_setallocf(state, mesh_probe_allocate, &probe);
+  if (mode == 0) {
+    assert(h2_lua_display_mesh_update(state, -1, &data) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_lua_display_mesh_update(NULL, 1, &data) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_lua_display_mesh_update(state, 1, NULL) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_lua_display_mesh_update(state, 0, &data) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_lua_display_mesh_update(state, 2, &data) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_lua_display_mesh_update(state, 99, &data) == H2_PAL_ERR_INVALID_ARG);
+    assert(h2_lua_display_mesh_update(state, LUA_REGISTRYINDEX, &data) ==
+           H2_PAL_ERR_INVALID_ARG);
+    vertices[1].x = NAN;
+    assert(h2_lua_display_mesh_update(state, 1, &data) == H2_PAL_ERR_INVALID_ARG);
+    vertices[1].x = 6;
+    primitive.first = SIZE_MAX;
+    assert(h2_lua_display_mesh_update(state, 1, &data) == H2_PAL_ERR_INVALID_ARG);
+    primitive.first = 0; primitive.count = SIZE_MAX;
+    assert(h2_lua_display_mesh_update(state, 1, &data) == H2_PAL_ERR_INVALID_ARG);
+    primitive.count = 2; primitive.kind = (h2_lua_display_primitive_kind_t)9;
+    assert(h2_lua_display_mesh_update(state, 1, &data) == H2_PAL_ERR_INVALID_ARG);
+    data.vertex_count = 7;
+    assert(h2_lua_display_mesh_update(state, 1, &data) == H2_PAL_ERR_INVALID_ARG);
+  } else if (mode == 1) {
+    assert(h2_lua_display_mesh_update(state, -2, &data) == H2_PAL_OK);
+  } else {
+    data = (h2_lua_display_mesh_data_t){0};
+    assert(h2_lua_display_mesh_update(state, 1, &data) == H2_PAL_OK);
+  }
+  lua_setallocf(state, probe.allocate, probe.user);
+  assert(probe.calls == 0u);
+  assert(lua_gettop(state) == top);
+  return 0;
+}
+
+static int test_mesh_open(void *lua_state, void *user) {
+  lua_State *state = lua_state;
+  (void)user;
+  lua_newtable(state);
+  lua_pushcfunction(state, test_mesh_new); lua_setfield(state, -2, "new");
+  lua_pushcfunction(state, test_mesh_update); lua_setfield(state, -2, "update");
+  return 1;
+}
+
+static int test_raster_noalloc(lua_State *state) {
+  luaL_checktype(state, 1, LUA_TFUNCTION);
+  assert(lua_checkstack(state, 128));
+  lua_pushvalue(state, 1);
+  assert(lua_pcall(state, 0, 0, 0) == LUA_OK);
+  lua_gc(state, LUA_GCSTOP);
+  mesh_allocator_probe_t probe = {0};
+  probe.allocate = lua_getallocf(state, &probe.user);
+  lua_setallocf(state, mesh_probe_allocate, &probe);
+  lua_pushvalue(state, 1);
+  int result = lua_pcall(state, 0, 0, 0);
+  lua_setallocf(state, probe.allocate, probe.user);
+  lua_gc(state, LUA_GCRESTART);
+  assert(result == LUA_OK && probe.calls == 0u);
+  return 0;
+}
+
+static void *test_raster_fail_allocate(void *user, void *ptr, size_t old_size,
+                                       size_t new_size) {
+  mesh_allocator_probe_t *probe = user;
+  if (new_size != 0u && (ptr == NULL || new_size > old_size))
+    return NULL;
+  return probe->allocate(probe->user, ptr, old_size, new_size);
+}
+
+static int test_raster_oom(lua_State *state) {
+  luaL_checktype(state, 1, LUA_TFUNCTION);
+  assert(lua_checkstack(state, 128));
+  mesh_allocator_probe_t probe = {0};
+  probe.allocate = lua_getallocf(state, &probe.user);
+  lua_pushvalue(state, 1);
+  lua_setallocf(state, test_raster_fail_allocate, &probe);
+  int result = lua_pcall(state, 0, 1, 0);
+  lua_setallocf(state, probe.allocate, probe.user);
+  assert(result == LUA_ERRMEM);
+  lua_pop(state, 1);
+  return 0;
+}
+
+typedef struct raster_measure_probe {
+  lua_Alloc allocate;
+  void *user;
+  size_t calls, current, peak;
+} raster_measure_probe_t;
+
+static void *raster_measure_allocate(void *user, void *ptr, size_t old_size,
+                                     size_t new_size) {
+  raster_measure_probe_t *probe = user;
+  size_t old = ptr == NULL ? 0 : old_size;
+  void *result = probe->allocate(probe->user, ptr, old_size, new_size);
+  if (new_size == 0 || result != NULL) {
+    probe->current = probe->current - old + new_size;
+    if (probe->current > probe->peak)
+      probe->peak = probe->current;
+  }
+  if (new_size != 0)
+    ++probe->calls;
+  return result;
+}
+
+static int test_raster_measure(lua_State *state) {
+  const char *name = luaL_checkstring(state, 1);
+  luaL_checktype(state, 2, LUA_TFUNCTION);
+  lua_Integer boundaries = luaL_checkinteger(state, 3);
+  int once = lua_toboolean(state, 4);
+  uint64_t samples[32];
+  size_t calls = 0, peak = 0;
+  assert(lua_checkstack(state, 128));
+  unsigned count = once ? 1u : 32u;
+  lua_gc(state, LUA_GCCOLLECT);
+  lua_gc(state, LUA_GCSTOP);
+  for (unsigned i = 0; i < count + (once ? 0u : 4u); ++i) {
+    raster_measure_probe_t probe = {0};
+    probe.allocate = lua_getallocf(state, &probe.user);
+    probe.current = (size_t)lua_gc(state, LUA_GCCOUNT) * 1024u +
+                    (size_t)lua_gc(state, LUA_GCCOUNTB);
+    probe.peak = probe.current;
+    uint64_t start = 0, end = 0;
+    const h2_pal_time_api_t *time = h2_desktop_platform_time_api();
+    assert(h2_pal_time_get_monotonic_us(time, &start) == H2_PAL_OK);
+    lua_setallocf(state, raster_measure_allocate, &probe);
+    lua_pushvalue(state, 2);
+    lua_pushinteger(state, i);
+    int result = lua_pcall(state, 1, 0, 0);
+    lua_setallocf(state, probe.allocate, probe.user);
+    assert(h2_pal_time_get_monotonic_us(time, &end) == H2_PAL_OK);
+    if (result != LUA_OK)
+      fprintf(stderr, "raster benchmark %s: %s\n", name,
+              lua_tostring(state, -1));
+    assert(result == LUA_OK);
+    if (once || i >= 4u) {
+      samples[once ? 0 : i - 4u] = end - start;
+      calls += probe.calls;
+      if (probe.peak > peak)
+        peak = probe.peak;
+    }
+  }
+  lua_gc(state, LUA_GCRESTART);
+  for (unsigned i = 1; i < count; ++i) {
+    uint64_t value = samples[i];
+    unsigned j = i;
+    while (j > 0 && samples[j - 1] > value) {
+      samples[j] = samples[j - 1];
+      --j;
+    }
+    samples[j] = value;
+  }
+  printf(
+      "raster_lua phase=%s samples=%u warmup=%u p50_us=%llu p95_us=%llu "
+      "peak_vm_bytes=%zu allocation_calls=%zu boundary_calls_per_sample=%lld\n",
+      name, count, once ? 0u : 4u, (unsigned long long)samples[count / 2],
+      (unsigned long long)samples[(count * 95u) / 100u], peak, calls,
+      (long long)boundaries);
+  return 0;
+}
+
+static int test_region_failure(lua_State *state);
+
+/* Independent extraction-source oracle; no production transform helper. */
+static int test_mesh_source(lua_State *s) {
+  double x = luaL_checknumber(s, 2), y = luaL_checknumber(s, 3);
+  double scale = luaL_checknumber(s, 4), angle = luaL_checknumber(s, 5);
+  double grid = luaL_checknumber(s, 6), ca = cos(angle), sa = sin(angle);
+  size_t n = lua_rawlen(s, 1);
+  lua_settop(s, 7);
+  lua_createtable(s, (int)n, 0);
+  for (size_t i = 0; i < n; ++i) {
+    lua_rawgeti(s, 1, (lua_Integer)i + 1);
+    lua_rawgeti(s, -1, 1); double vx = lua_tonumber(s, -1); lua_pop(s, 1);
+    lua_rawgeti(s, -1, 2); double vy = lua_tonumber(s, -1); lua_pop(s, 2);
+    float fx=((float)x+((float)vx*(float)ca-(float)vy*(float)sa)*(float)scale)/(float)grid;
+    float fy=((float)y+((float)vx*(float)sa+(float)vy*(float)ca)*(float)scale)/(float)grid;
+    float error=64*FLT_EPSILON*(fabsf((float)x)+fabsf((float)y)+(fabsf((float)vx)+fabsf((float)vy))*(float)scale+1);
+    double px,py;
+    if(fabs(vx)<=100000 && fabs(vy)<=100000 && error<.25f && fabsf(fx-floorf(fx)-.5f)>error)
+      px=floorf(fx+.5f)*(float)grid;
+    else px=floor((x+(vx*ca-vy*sa)*scale)/grid+.5)*grid;
+    if(fabs(vx)<=100000 && fabs(vy)<=100000 && error<.25f && fabsf(fy-floorf(fy)-.5f)>error)
+      py=floorf(fy+.5f)*(float)grid;
+    else py=floor((y+(vx*sa+vy*ca)*scale)/grid+.5)*grid;
+    if (!lua_isnoneornil(s, 7)) {
+      h2_lua_display_mesh_t *mesh = lua_touserdata(s, 7);
+      assert(mesh->positions_valid && mesh->source_transform);
+      h2_lua_display_vertex_t *positions =
+          (h2_lua_display_vertex_t *)(mesh + 1) + mesh->vertex_capacity;
+      assert(positions[i].x == px && positions[i].y == py);
+    }
+    lua_createtable(s,2,0);
+    lua_pushnumber(s,px);lua_rawseti(s,-2,1);
+    lua_pushnumber(s,py);lua_rawseti(s,-2,2);
+    lua_rawseti(s,-2,(lua_Integer)i+1);
+  }
+  return 1;
+}
+
+/* Poison one private replay record. A reraster overwrites the marker even
+ * when pixels/present would otherwise be identical. No production counter. */
+static int test_mesh_marker(lua_State *s) {
+  assert(lua_getiuservalue(s, 1, 1) == LUA_TUSERDATA);
+  display_span_cache_t *cache = lua_touserdata(s, -1);
+  assert(cache->valid && cache->count > 0);
+  if (lua_toboolean(s, 2)) cache->spans[0].color = 0xabcd;
+  lua_pushboolean(s, cache->spans[0].color == 0xabcd);
+  return 1;
+}
+
+/* Construct the full public vertex range without a large Lua-table fixture. */
+static int test_mesh_capacity(lua_State *s) {
+  lua_Integer count = luaL_checkinteger(s, 1);
+  assert(count > 0 && count <= H2_LUA_DISPLAY_VERTEX_LIMIT);
+  size_t n = (size_t)count;
+  h2_lua_display_vertex_t *vertices = malloc(n * sizeof(*vertices));
+  assert(vertices != NULL);
+  for (size_t i = 0; i < n; ++i)
+    vertices[i] = (h2_lua_display_vertex_t){(double)(i % 7), (double)(i % 5)};
+  h2_lua_display_mesh_config_t config = {n, 0, {vertices, n, NULL, 0}};
+  h2_pal_result_t result = h2_lua_display_mesh_push(s, &config);
+  free(vertices);
+  assert(result == H2_PAL_OK);
+  return 1;
+}
+
+static int test_mesh_shifted(lua_State *s) {
+  h2_lua_display_mesh_t *mesh = lua_touserdata(s, 1);
+  double shift = luaL_checknumber(s, 2);
+  assert(mesh && mesh->positions_valid);
+  const h2_lua_display_vertex_t *source = (const void *)(mesh + 1);
+  const h2_lua_display_vertex_t *positions = source + mesh->vertex_capacity;
+  for (size_t i = 0; i < mesh->vertex_count; ++i) {
+    assert(positions[i].x == source[i].x + shift);
+    assert(positions[i].y == source[i].y);
+  }
+  return 0;
+}
+
+static int test_mesh_snapshot(lua_State *s) {
+  assert(lua_isuserdata(s, 1));
+  lua_pushlstring(s, lua_touserdata(s, 1), lua_rawlen(s, 1));
+  return 1;
+}
+
+/* Ensure allocation-driven finalizers really run inside the draw binding. */
+static int test_in_call(lua_State *s) {
+  lua_Debug frame;
+  for (int i = 1; lua_getstack(s, i, &frame); ++i) {
+    assert(lua_getinfo(s, "f", &frame));
+    int same = lua_rawequal(s, 1, -1);
+    lua_pop(s, 1);
+    if (same) { lua_pushboolean(s, 1); return 1; }
+  }
+  lua_pushboolean(s, 0);
+  return 1;
+}
+
+static int test_raster_open(void *lua_state, void *user) {
+  lua_State *state = lua_state;
+  (void)user;
+  lua_newtable(state);
+  lua_pushcfunction(state, test_mesh_capacity);
+  lua_setfield(state, -2, "mesh_capacity");
+  lua_pushcfunction(state, test_mesh_shifted);
+  lua_setfield(state, -2, "mesh_shifted");
+  lua_pushcfunction(state, test_mesh_snapshot);
+  lua_setfield(state, -2, "mesh_snapshot");
+  lua_pushcfunction(state, test_in_call);
+  lua_setfield(state, -2, "in_call");
+  lua_pushcfunction(state, test_mesh_source);
+  lua_setfield(state, -2, "mesh_source");
+  lua_pushcfunction(state, test_mesh_marker);
+  lua_setfield(state, -2, "mesh_marker");
+  lua_pushcfunction(state, test_raster_noalloc);
+  lua_setfield(state, -2, "noalloc");
+  lua_pushcfunction(state, test_raster_measure);
+  lua_setfield(state, -2, "measure");
+  lua_pushcfunction(state, test_region_failure);
+  lua_setfield(state, -2, "fail");
+  lua_pushcfunction(state, test_raster_oom);
+  lua_setfield(state, -2, "oom");
+  return 1;
+}
+
+static void test_display_raster2d(int benchmark, const char *path) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_lua_host_t *host = NULL;
+  h2_lua_host_config_t config = {
+      .runtime = runtime,
+      .worker_count = 1,
+      .max_jobs = 1,
+      .instruction_quantum = 1000000000,
+      .execution_timeout_ms = 20000,
+      .source_limit_bytes = 16384,
+      .vm_memory_limit_bytes = benchmark ? 8u * 1024u * 1024u : 256u * 1024u};
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(h2_lua_register_module(host, "raster_test", test_raster_open, NULL) ==
+         H2_PAL_OK);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  FILE *file = fopen(path, "rb");
+  assert(file != NULL);
+  uint8_t script[16384];
+  size_t size = fread(script, 1, sizeof(script), file);
+  assert(!ferror(file) && size < sizeof(script));
+  assert(fclose(file) == 0);
+  (void)run_display_script_size(host, path, script, size, benchmark ? 240 : 8,
+                                benchmark ? 240 : 8);
+  h2_lua_host_destroy(host);
+  h2_runtime_deinit(runtime);
+}
+
+static void test_display_meshes(void) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_lua_host_t *host = create_unstarted_host(runtime);
+  assert(h2_lua_register_module(host, "kv", test_mesh_open, NULL) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_register_module(host, "vmath", test_mesh_open, NULL) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_register_module(host, "geometry", test_mesh_open, NULL) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_register_module(host, "mesh_test", test_mesh_open, NULL) == H2_PAL_OK);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  static const struct { const char *draw; const char *pixels; } cases[] = {
+      {"local m=n.new();n.update(m,0);collectgarbage('collect');d.draw_mesh(m)",
+       "........" ".####..." ".####..." ".####..."
+       "........" "........" "........" "........"},
+      {"local m=n.new();d.draw_mesh(m);d.clear('black');"
+       "n.update(m,0);d.draw_mesh(m)",
+       "........" ".####..." ".####..." ".####..."
+       "........" "........" "........" "........"},
+      {"local m=n.new();n.update(m,1);d.draw_mesh(m,{color='red'})",
+       "........" "........" "........" "........"
+       "........" "........" ".######." "........"},
+      {"local m=n.new();d.draw_mesh(m);d.clear('black');"
+       "n.update(m,2);d.draw_mesh(m)",
+       "........" "........" "........" "........"
+       "........" "........" "........" "........"},
+      {"local m=n.new();d.draw_mesh(m);d.clear('black');"
+       "n.update(m,1);d.draw_mesh(m,{color='red',left=2,right=5})",
+       "........" "........" "........" "........"
+       "........" "........" "..###..." "........"},
+      {"local m=n.new();d.draw_mesh(m);d.clear('black');"
+       "d.draw_mesh(m,{matrix={1,0,0,1,.5,0},offset_x=.5,left=3,right=5,top=2,bottom=4})",
+       "........" "........" "...##..." "...##..."
+       "........" "........" "........" "........"},
+      {"local m=n.new();d.draw_mesh(m,{grid=2})",
+       "........" "........" "..###..." "..###..."
+       "........" "........" "........" "........"},
+      {"local m=n.new();d.draw_mesh(m,{grid=2});d.clear('black');d.draw_mesh(m)",
+       "........" ".####..." ".####..." ".####..."
+       "........" "........" "........" "........"},
+      {"local m=n.new();d.draw_mesh(m,{matrix={-1,0,0,1,6,0}})",
+       "........" "..####.." "..####.." "..####.."
+       "........" "........" "........" "........"},
+      {"local v={{1,1},{4,1},{4,4},{1,4}};"
+       "local p={{0,1,4,'red'}};local m=d.compile_mesh(v,p,6,2);"
+       "v[1][1]=1000;p[1][4]='blue';d.draw_mesh(m)",
+       "........" ".####..." ".####..." ".####..."
+       "........" "........" "........" "........"},
+      {"local m=n.new();d.draw_mesh(m);d.clear('black');"
+       "d.update_mesh(m,{{1,6},{6,6}},{{1,1,2,'red'}});d.draw_mesh(m)",
+       "........" "........" "........" "........"
+       "........" "........" ".######." "........"},
+      {"local m=d.compile_mesh({}, {},6,2);n.update(m,1);"
+       "d.draw_mesh(m,{color='red'})",
+       "........" "........" "........" "........"
+       "........" "........" ".######." "........"},
+      {"local m=n.new();assert(not pcall(d.update_mesh,m,{{1,6},{6,6}},"
+       "{{1,1,2,'blue'},{0,1,3,'blue'}}));d.draw_mesh(m)",
+       "........" ".####..." ".####..." ".####..."
+       "........" "........" "........" "........"},
+  };
+  for (size_t i = 0; i < sizeof(cases)/sizeof(cases[0]); ++i) {
+    char script[2048];
+    int size = snprintf(script, sizeof(script),
+        "local d=require('display');local n=require('mesh_test');%s;d.present()",
+        cases[i].draw);
+    assert(size > 0 && (size_t)size < sizeof(script));
+    (void)run_display_script(host, "@mesh-pixels.lua", (const uint8_t *)script,
+                             (size_t)size);
+    assert(strlen(cases[i].pixels) == 64u);
+    for (size_t pixel = 0; pixel < 64u; ++pixel) {
+      uint16_t expected = cases[i].pixels[pixel] == '#' ? 0xf800u : 0u;
+      if (s_test_display_fixture.pixels[pixel] != expected)
+        fprintf(stderr, "mesh case=%zu pixel=%zu actual=%04x expected=%04x\n",
+                i, pixel, s_test_display_fixture.pixels[pixel], expected);
+      assert(s_test_display_fixture.pixels[pixel] == expected);
+    }
+  }
+  static const uint8_t invalid[] =
+      "local d=require('display');local n=require('mesh_test');local m=n.new();"
+      "local function bad(f,...) assert(not pcall(f,...)) end;d.present();"
+      "bad(d.compile_mesh,{}, {},-1,0);bad(d.compile_mesh,{}, {},65537,0);"
+      "bad(d.compile_mesh,{{0/0,0}},{});bad(d.compile_mesh,{},{{1,1,2,'red'}});"
+      "bad(d.draw_mesh,{});bad(d.draw_mesh,m,{grid=-1});"
+      "bad(d.draw_mesh,m,{grid=17});bad(d.draw_mesh,m,{grid=.5});"
+      "bad(d.draw_mesh,m,{right=9});bad(d.draw_mesh,m,{left=4294967296});"
+      "bad(d.draw_mesh,m,{matrix={1000000,0,0,1000000,0,0},offset_x=100001});"
+      "bad(d.draw_mesh,m,{matrix={0/0,0,0,1,0,0}});"
+      "bad(d.draw_mesh,m,{color='unknown'});"
+      "d.draw_mesh(m,{left=2,right=2});d.draw_mesh(d.compile_mesh({},{}));"
+      "local huge=d.compile_mesh({{1000000,0}},{});"
+      "bad(d.draw_mesh,huge,{matrix={1000000,0,0,1,0,0}});d.present();"
+      "local weak=setmetatable({m},{__mode='v'});m=nil;collectgarbage('collect');"
+      "assert(weak[1]==nil);m=n.new();"
+      "local color=setmetatable({},{__index=function()d.deinit();return 255 end});"
+      "bad(d.draw_mesh,m,{color=color});bad(d.draw_mesh,m)";
+  (void)run_display_script(host, "@mesh-invalid.lua", invalid, sizeof(invalid)-1u);
+  assert_only_pixels(0u,NULL,0u);
+  assert(s_test_display_fixture.draw_count == 1u);
+  assert(s_test_display_fixture.close_count == 1u);
+  h2_lua_host_destroy(host);
+  h2_runtime_deinit(runtime);
+}
+
+static void test_display_vectors(void) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_lua_host_t *host = create_host(runtime);
+  static const struct {
+    const char *draw;
+    const char *pixels;
+  } cases[] = {
+      {"d.fill_polygon({{1,1},{4,1},{4,4},{1,4}},'red')",
+       "........" ".####..." ".####..." ".####..."
+       "........" "........" "........" "........"},
+      {"d.fill_polygon({{1,1},{5,1},{5,3},{3,3},{3,5},{1,5}},'red')",
+       "........" ".#####.." ".#####.." ".###...."
+       ".###...." "........" "........" "........"},
+      {"d.fill_polygon({{1,1},{5,5},{1,5},{5,1}},'red')",
+       "........" ".#####.." "..###..." "...#...."
+       "..###..." "........" "........" "........"},
+      {"d.fill_polygon({{0,0},{4,0},{4,4},{0,4}},'red',.5,1,3,.5)",
+       "........" ".###...." "........" "........"
+       "........" "........" "........" "........"},
+      {"d.fill_polygon({{-100000,-100000},{100000,-100000},"
+       "{100000,100000},{-100000,100000}},'red',0,2,5,16)",
+       "........" "........" "########" "########"
+       "########" "........" "........" "........"},
+      {"d.fill_polygon({{1,1},{1,1},{1,1}},'red');"
+       "d.fill_polygon({{1,1},{5,1},{3,1}},'red')",
+       "........" "........" "........" "........"
+       "........" "........" "........" "........"},
+      {"d.fill_ellipse(3,3,2,2,'red')",
+       "........" "...#...." ".####..." ".#####.."
+       ".####..." "...#...." "........" "........"},
+      {"d.fill_ellipse(3.25,3.25,1.5,1.5,'red')",
+       "........" "........" "...#...." "..####.."
+       "..####.." "...#...." "........" "........"},
+      {"d.fill_ellipse(3,3,0,1,'red',0,3,5)",
+       "........" "........" "........" "...#...."
+       "...#...." "........" "........" "........"},
+      {"d.draw_commands(d.compile_commands({{1,1,1,5,5,'red'}}))",
+       "........" ".#......" "..#....." "...#...."
+       "....#..." ".....#.." "........" "........"},
+      {"d.draw_commands(d.compile_commands({{1,5,5,1,1,'red'}}))",
+       "........" ".#......" "..#....." "...#...."
+       "....#..." ".....#.." "........" "........"},
+      {"d.draw_commands(d.compile_commands({{0,1,1,2,2,'blue'}}),"
+       "0,8,0,0,1,1,'red')",
+       "........" ".##....." ".##....." "........"
+       "........" "........" "........" "........"},
+  };
+  for (size_t i = 0u; i < sizeof(cases) / sizeof(cases[0]); ++i) {
+    char script[1024];
+    int size = snprintf(script, sizeof(script),
+                        "local d=require('display');%s;d.present()", cases[i].draw);
+    assert(size > 0 && (size_t)size < sizeof(script));
+    (void)run_display_script(host, "@vector-pixels.lua", (const uint8_t *)script,
+                             (size_t)size);
+    assert(strlen(cases[i].pixels) == 64u);
+    for (size_t pixel = 0u; pixel < 64u; ++pixel) {
+      uint16_t expected = cases[i].pixels[pixel] == '#' ? 0xf800u : 0u;
+      if (s_test_display_fixture.pixels[pixel] != expected)
+        fprintf(stderr, "vector case=%zu pixel=%zu actual=%04x expected=%04x\n",
+                i, pixel, s_test_display_fixture.pixels[pixel], expected);
+      assert(s_test_display_fixture.pixels[pixel] == expected);
+    }
+    assert(s_test_display_fixture.open_count == 1u);
+    assert(s_test_display_fixture.close_count == 1u);
+  }
+  static const uint8_t commands[] =
+      "local d=require('display');local src={{0,1,1,2,2,'red'},"
+      "{1,-100000,4,100000,4,'blue'}};"
+      "local c=d.compile_commands(src);src[1][2]=7;src[1][6]='white';"
+      "src=nil;collectgarbage('collect');d.draw_commands(c);d.present()";
+  (void)run_display_script(host, "@commands-copy.lua", commands, sizeof(commands)-1u);
+  for (size_t y = 0u; y < 8u; ++y) {
+    for (size_t x = 0u; x < 8u; ++x) {
+      uint16_t expected = y == 4u ? 0x001fu :
+          ((x == 1u || x == 2u) && (y == 1u || y == 2u) ? 0xf800u : 0u);
+      assert(s_test_display_fixture.pixels[y * 8u + x] == expected);
+    }
+  }
+  static const uint8_t transformed[] =
+      "local d=require('display');local c=d.compile_commands({"
+      "{0,1,1,2,2,'red'},{1,-100000,4,100000,4,'blue'}});"
+      "d.draw_commands(c,2,6,.5,1,2,1,'green');d.present();"
+      "d.deinit();assert(not pcall(d.draw_commands,c));"
+      "assert(not pcall(d.fill_ellipse,3,3,2,2,'red'));"
+      "assert(not pcall(d.fill_polygon,{{0,0},{1,0},{1,1}},'red'))";
+  (void)run_display_script(host, "@commands-transform.lua", transformed,
+                           sizeof(transformed)-1u);
+  for (size_t y = 0u; y < 8u; ++y) {
+    for (size_t x = 0u; x < 8u; ++x) {
+      uint16_t expected = y == 5u || ((y == 2u || y == 3u) && x >= 3u && x < 7u)
+                              ? 0x0400u : 0u;
+      if (s_test_display_fixture.pixels[y * 8u + x] != expected)
+        fprintf(stderr, "transform pixel=%zu,%zu actual=%04x expected=%04x\n",
+                x, y, s_test_display_fixture.pixels[y * 8u + x], expected);
+      assert(s_test_display_fixture.pixels[y * 8u + x] == expected);
+    }
+  }
+  static const uint8_t invalid[] =
+      "local d=require('display');d.present();"
+      "local p={{0,0},{4,0},{4,4}};"
+      "local c=d.compile_commands({{0,0,0,8,8,'red'}});"
+      "local function bad(f,...) assert(not pcall(f,...)) end;"
+      "bad(d.fill_polygon,{},'red');bad(d.fill_polygon,{{0,0},{4,0},false},'red');"
+      "bad(d.fill_polygon,{{0,0},{4,0},{0/0,1}},'red');"
+      "bad(d.fill_polygon,p,'red',0,0,8,0);"
+      "bad(d.fill_polygon,p,'red',0,0,8,17);"
+      "bad(d.fill_polygon,p,'red',0,4294967296,4294967304);"
+      "bad(d.fill_ellipse,1,1,-1,2,'red');bad(d.fill_ellipse,1,1,2,0,'red');"
+      "bad(d.fill_ellipse,1,1,2,2049,'red');"
+      "bad(d.fill_ellipse,math.huge,1,2,2,'red');"
+      "bad(d.compile_commands,{{9,0,0,1,1,'red'}});"
+      "bad(d.compile_commands,{{0,0,0,-.1,1,'red'}});"
+      "bad(d.compile_commands,{{1,0,0,math.huge,1,'red'}});"
+      "bad(d.compile_commands,{{0,0,0,1,1,'bad-color'}});"
+      "bad(d.draw_commands,{});bad(d.draw_commands,c,0,8,0,0,0);"
+      "bad(d.draw_commands,c,0,8,0,0,1001);"
+      "bad(d.draw_commands,c,0,8,0,0,1,1,'bad-color');"
+      "bad(d.draw_commands,c,4294967296,4294967304);"
+      "d.draw_commands(c,3,3);d.draw_commands(d.compile_commands({}));"
+      "d.draw_commands(d.compile_commands({{0,0,0,0,8,'red'}}));"
+      "d.fill_polygon(p,'red',0,2,2);d.fill_ellipse(3,3,2,2,'red',0,2,2);"
+      "d.present()";
+  (void)run_display_script(host, "@vector-invalid.lua", invalid, sizeof(invalid)-1u);
+  assert_only_pixels(0u, NULL, 0u);
+  assert(s_test_display_fixture.draw_count == 1u);
+  assert(s_test_display_fixture.present_count == 2u);
+  static const uint8_t memory[] =
+      "local d=require('display');local cmd={0,1,1,2,2,'red'};"
+      "local t={};for i=1,4096 do t[i]=cmd end;"
+      "collectgarbage('collect');local baseline=collectgarbage('count');"
+      "local c=d.compile_commands(t);collectgarbage('collect');"
+      "assert(collectgarbage('count')>baseline+80);"
+      "local weak=setmetatable({c},{__mode='v'});c=nil;"
+      "collectgarbage('collect');assert(weak[1]==nil);"
+      "assert(collectgarbage('count')<baseline+4);"
+      "for i=4097,8192 do t[i]=cmd end;collectgarbage('collect');"
+      "baseline=collectgarbage('count');"
+      "local ok,err=pcall(d.compile_commands,t);"
+      "assert(not ok and err=='not enough memory');err=nil;"
+      "collectgarbage('collect');assert(collectgarbage('count')<baseline+4);"
+      "t=nil;collectgarbage('collect');"
+      "d.draw_commands(d.compile_commands({cmd}));d.present()";
+  (void)run_display_script(host, "@commands-memory.lua", memory, sizeof(memory)-1u);
+  static const expected_pixel_t square[] = {{1,1},{2,1},{1,2},{2,2}};
+  assert_only_pixels(0xf800u, square, sizeof(square)/sizeof(square[0]));
+  static const uint8_t reentrant_color[] =
+      "local d=require('display');local c=d.compile_commands({{0,0,0,8,8,'red'}});"
+      "d.present();local color=setmetatable({}, {__index=function() "
+      "d.deinit();return 255 end});"
+      "assert(not pcall(d.draw_commands,c,0,8,0,0,1,1,color))";
+  (void)run_display_script(host, "@commands-color-close.lua", reentrant_color,
+                           sizeof(reentrant_color)-1u);
+  assert_only_pixels(0u, NULL, 0u);
+  assert(s_test_display_fixture.close_count == 1u);
+  h2_lua_host_destroy(host);
+
+  const h2_lua_host_config_t config = {
+      .runtime = runtime, .worker_count = 1u, .max_jobs = 1u,
+      .vm_memory_limit_bytes = 2u * 1024u * 1024u,
+      .execution_timeout_ms = 1000u,
+  };
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  static const uint8_t capacity[] =
+      "local d=require('display');local t={};local cmd={0,1,1,1,1,'red'};"
+      "for i=1,16384 do t[i]=cmd end;local c=d.compile_commands(t);"
+      "t[16385]=cmd;local ok,err=pcall(d.compile_commands,t);"
+      "assert(not ok and err:find('too many pixel commands',1,true));"
+      "d.draw_commands(c);d.present();"
+      "t={};for i=1,128 do t[i]={1,1} end;d.fill_polygon(t,'red');"
+      "t[129]={1,1};assert(not pcall(d.fill_polygon,t,'red'))";
+  (void)run_display_script(host, "@commands-capacity.lua", capacity,
+                           sizeof(capacity)-1u);
+  static const expected_pixel_t pixel[] = {{1,1}};
+  assert_only_pixels(0xf800u, pixel, 1u);
+  h2_lua_host_destroy(host);
+  h2_runtime_deinit(runtime);
+}
+
+static int test_region_failure(lua_State *state) {
+  int draw = (int)luaL_checkinteger(state, 1);
+  s_test_display_fixture.fail_draw = draw > 0 ?
+      s_test_display_fixture.draw_count + (size_t)draw : 0;
+  s_test_display_fixture.fail_present = lua_toboolean(state, 2);
+  return 0;
+}
+
+static int test_region_finalizer(lua_State *state) {
+  assert(lua_toboolean(state, 1));
+  assert(s_test_display_fixture.close_count == 1u);
+  ++s_test_display_fixture.finalizer_count;
+  return 0;
+}
+
+/* Independent per-pixel damage oracle, observing the private framebuffer and
+ * region's trailing tile bytes before present can hide extra dirty coverage. */
+static int test_background_restore(lua_State *state) {
+  luaL_checktype(state, 1, LUA_TFUNCTION);
+  void *region = luaL_checkudata(state, 2, "h2.display.region");
+  assert(lua_getupvalue(state, 1, 1) != NULL);
+  h2_lua_job_t *job = lua_touserdata(state, -1);
+  lua_pop(state, 1);
+  assert(job != NULL && job->display_open);
+  int width = job->display_info.width, height = job->display_info.height;
+  size_t count = (size_t)width * height, columns = (size_t)(width + 15) / 16;
+  size_t tiles = columns * (size_t)((height + 15) / 16);
+  /* Opaque full-screen captures end with contiguous pixels then damage bytes;
+   * no duplicated production header layout or public test API is required. */
+  size_t bytes = lua_rawlen(state, 2);
+  assert(bytes >= tiles + count * sizeof(uint16_t));
+  const uint8_t *damage = (const uint8_t *)region + bytes - tiles;
+  const uint16_t *source = (const uint16_t *)(damage - count * sizeof(uint16_t));
+  uint16_t *expected = malloc(count * sizeof(*expected));
+  assert(expected != NULL);
+  int valid = job->dirty_valid, left = job->dirty_min_x, top = job->dirty_min_y;
+  int right = job->dirty_max_x, bottom = job->dirty_max_y;
+  int full = job->display_background != region || !job->display_background_valid;
+  for (int y = 0; y < height; ++y) {
+    for (int x = 0; x < width; ++x) {
+      size_t at = (size_t)y * width + x;
+      int restore = full || damage[(size_t)(y / 16) * columns + (size_t)x / 16];
+      expected[at] = restore ? source[at] : job->framebuffer[at];
+      if (!restore) continue;
+      if (!valid) { left = right = x; top = bottom = y; valid = 1; }
+      if (x < left) left = x;
+      if (x > right) right = x;
+      if (y < top) top = y;
+      if (y > bottom) bottom = y;
+    }
+  }
+  lua_pushvalue(state, 1);
+  lua_pushvalue(state, 2);
+  assert(lua_pcall(state, 1, 0, 0) == LUA_OK);
+  assert(memcmp(expected, job->framebuffer, count * sizeof(*expected)) == 0);
+  assert(job->dirty_valid == valid);
+  if (valid) {
+    assert(job->dirty_min_x == left && job->dirty_max_x == right);
+    assert(job->dirty_min_y == top && job->dirty_max_y == bottom);
+  }
+  for (size_t i = 0; i < tiles; ++i) assert(damage[i] == 0);
+  assert(job->display_background == region && job->display_background_valid);
+  free(expected);
+  return 0;
+}
+
+/* Source colors are supplied independently of the packed region layout.
+ * Observe dirty bounds and background bytes before present can hide excess. */
+static int test_region_draw(lua_State *state) {
+  luaL_checktype(state, 1, LUA_TFUNCTION);
+  luaL_checktype(state, 4, LUA_TTABLE);
+  assert(lua_getupvalue(state, 1, 1) != NULL);
+  h2_lua_job_t *job = lua_touserdata(state, -1);
+  lua_pop(state, 1);
+  assert(job && job->display_open);
+  int width = job->display_info.width, height = job->display_info.height;
+  size_t count = (size_t)width * height, columns = (size_t)(width + 15) / 16;
+  size_t tiles = columns * (size_t)((height + 15) / 16);
+  void *background = luaL_checkudata(state, 2, "h2.display.region");
+  assert(background == job->display_background);
+  size_t bytes = lua_rawlen(state, 2);
+  assert(bytes >= tiles + count * sizeof(uint16_t));
+  const uint8_t *damage = (const uint8_t *)background + bytes - tiles;
+  uint8_t *expected_damage = malloc(tiles);
+  uint16_t *expected = malloc(count * sizeof(*expected));
+  assert(expected && expected_damage);
+  memcpy(expected_damage, damage, tiles);
+  memcpy(expected, job->framebuffer, count * sizeof(*expected));
+  int sw = (int)luaL_checkinteger(state, 5), sh = (int)luaL_checkinteger(state, 6);
+  int x = (int)luaL_checkinteger(state, 7), y = (int)luaL_checkinteger(state, 8);
+  int clip_top = (int)luaL_checkinteger(state, 9);
+  int clip_bottom = (int)luaL_checkinteger(state, 10);
+  int keyed = !lua_isnil(state, 11);
+  uint16_t key = 0;
+  if (keyed) {
+    const char *name = luaL_checkstring(state, 11);
+    assert(strcmp(name, "black") == 0 || strcmp(name, "blue") == 0);
+    key = strcmp(name, "blue") == 0 ? 31 : 0;
+  }
+  int clip_left = (int)luaL_checkinteger(state, 12);
+  int clip_right = (int)luaL_checkinteger(state, 13);
+  int valid = job->dirty_valid, left = job->dirty_min_x, top = job->dirty_min_y;
+  int right = job->dirty_max_x, bottom = job->dirty_max_y;
+  for (int py = 0; py < height; ++py)
+    for (int px = 0; px < width; ++px) {
+      int sx = px - x, sy = py - y;
+      if (px < clip_left || px >= clip_right || py < clip_top ||
+          py >= clip_bottom || sx < 0 || sx >= sw || sy < 0 || sy >= sh)
+        continue;
+      lua_rawgeti(state, 4, (lua_Integer)sy * sw + sx + 1);
+      uint16_t color = (uint16_t)luaL_checkinteger(state, -1);
+      lua_pop(state, 1);
+      if (keyed && color == key) continue;
+      expected[(size_t)py * width + px] = color;
+      expected_damage[(size_t)(py / 16) * columns + (size_t)px / 16] = 1;
+      if (!valid) { left = right = px; top = bottom = py; valid = 1; }
+      if (px < left) left = px;
+      if (px > right) right = px;
+      if (py < top) top = py;
+      if (py > bottom) bottom = py;
+    }
+  lua_pushvalue(state, 1);
+  lua_pushvalue(state, 3);
+  for (int i = 7; i <= 13; ++i) lua_pushvalue(state, i);
+  assert(lua_pcall(state, 8, 0, 0) == LUA_OK);
+  assert(memcmp(expected, job->framebuffer, count * sizeof(*expected)) == 0);
+  assert(memcmp(expected_damage, damage, tiles) == 0);
+  assert(job->dirty_valid == valid);
+  if (valid) {
+    assert(job->dirty_min_x == left && job->dirty_max_x == right);
+    assert(job->dirty_min_y == top && job->dirty_max_y == bottom);
+  }
+  free(expected);
+  free(expected_damage);
+  lua_pushinteger(state, valid ? (lua_Integer)(right - left + 1) * (bottom - top + 1) : 0);
+  return 1;
+}
+
+static int test_region_open(void *lua_state, void *user) {
+  (void)user;
+  lua_State *state = lua_state;
+  lua_newtable(state);
+  lua_pushcfunction(state, test_region_failure);
+  lua_setfield(state, -2, "fail");
+  lua_pushcfunction(state, test_region_finalizer);
+  lua_setfield(state, -2, "finalizer");
+  lua_pushcfunction(state, test_region_draw);
+  lua_setfield(state, -2, "draw");
+  lua_pushcfunction(state, test_background_restore);
+  lua_setfield(state, -2, "restore");
+  lua_pushcfunction(state, test_raster_noalloc);
+  lua_setfield(state, -2, "noalloc");
+  return 1;
+}
+
+
+static void test_display_string_regions(void) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_lua_host_t *host = create_unstarted_host(runtime);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  /* Base85 fixtures encode small, independently specified LZ4 byte sequences:
+   * primary colors; malformed lengths/offsets; offset-1 overlap and extensions. */
+  static const uint8_t script[] =
+      "local d=require('display');"
+      "local f=d.region_from_string;"
+      "local enc='rgb565be-lz4-b85';"
+      "local raw=string.char(248,0,7,224,0,31,255,255);"
+      "local function bad(w,h,s,e) assert(not pcall(f,w,h,s,e)) end;"
+      "for _,n in ipairs({0,-1,4097,4294967296,1.5}) do bad(n,1,raw);"
+      "bad(1,n,raw) end;"
+      "bad(2,2,12);"
+      "bad(2,2,raw,'unknown');"
+      "bad(2,2,raw,'rgb565be\\0extra');"
+      "bad(2,2,raw..'x');"
+      "bad(2,2,raw:sub(2));"
+      "local encoded=\"00000009fcO9h-~b>0{{R30\";"
+      "for i=0,#encoded-1 do bad(2,2,encoded:sub(1,i),enc) end;"
+      "bad(2,2,\"00000000\",enc);"
+      "bad(2,2,\"00000001@Bjb+\",enc);"
+      "bad(2,2,\"00000002@c#e+\",enc);"
+      "bad(2,2,\"00000009koW)x-~b>0{{R30\",enc);"
+      "bad(2,2,\"0000000afcO9h-~b>0{{R30\",enc);"
+      "bad(2,2,\"0000000bfcO9h-~b>0{{R30\",enc);"
+      "bad(2,2,\"000000045C8xG\",enc);"
+      "bad(2,2,\"000000045C8%I\",enc);"
+      "bad(2,2,\"000000059{>RW{{R30\",enc);"
+      "bad(2,2,\"00000008aQFZR-~b>0\",enc);"
+      "bad(2,2,\"00000009f%pIi-~b>0{{R30\",enc);"
+      "bad(2,2,\"000000045C8!H\",enc);"
+      "bad(2,2,\"zzzzzzzz00000\",enc);"
+      "bad(2,2,\"ffffffff00000\",enc);"
+      "bad(2,2,\"00000001~~~~~\",enc);"
+      "bad(2,2,\"0000000100001\",enc);"
+      "bad(2,2,\"00000001     \",enc);"
+      "bad(2,2,\"000000010000\\000\",enc);"
+      "bad(2,2,\"00000009fcO9h-~b>0{{R3000000\",enc);"
+      "local repeat_region=f(150,1,\"0000000c9})oo{}fOX5)u*;\",enc);"
+      "local extended=f(16,1,\"00000022@DTt30s{mE1_uZU3JVMk4i69!5)%{^78e*98XFuP9v=Vz\",enc);"
+      "local weak=setmetatable({extended,repeat_region},{__mode='v'});"
+      "extended=nil;"
+      "repeat_region=nil;"
+      "collectgarbage('collect');"
+      "assert(not weak[1] and not weak[2]);"
+      "collectgarbage('collect');"
+      "local before=collectgarbage('count');"
+      "for i=1,100 do bad(2,2,'000000045C8xG',enc) end;"
+      "collectgarbage('collect');"
+      "assert(collectgarbage('count')<before+1);"
+      "local held={};"
+      "local payload=string.rep(raw,512);"
+      "local oom=false;"
+      "for i=1,100 do local ok,r=pcall(f,64,32,payload);"
+      "if not ok then assert(r=='not enough memory');"
+      "oom=true;"
+      "break end;"
+      "held[i]=r end;"
+      "assert(oom);"
+      "held=nil;"
+      "collectgarbage('collect');"
+      "assert(f(64,32,payload));"
+      "local a=f(2,2,raw);"
+      "local b=f(2,2,encoded,enc);"
+      "d.clear('black');"
+      "d.draw_region(a,0,0);"
+      "d.draw_region(b,2,0);"
+      "d.draw_region(f(150,1,'0000000c9})oo{}fOX5)u*;',enc),0,2);"
+      "d.draw_region(f(16,1,'00000022@DTt30s{mE1_uZU3JVMk4i69!5)%{^78e*98XFuP9v=Vz',enc),0,3);"
+      "d.present();"
+      "d.deinit();"
+      "local closed_raw=f(2,2,raw);local closed_lz4=f(2,2,encoded,enc);"
+      "assert(require('display')==d);"
+      "assert(not pcall(d.draw_region,closed_raw,0,0));"
+      "assert(not pcall(d.draw_region,closed_lz4,0,0));"
+      "assert(not pcall(d.capture_region,0,0,2,2));"
+      "assert(not pcall(d.present));d.deinit();";
+  (void)run_display_script(host, "@string-regions.lua", script, sizeof(script)-1);
+  assert(s_test_display_fixture.open_count == 1);
+  assert(s_test_display_fixture.close_count == 1);
+  const uint16_t expected[] = {0xf800,0x07e0,0xf800,0x07e0,0,0,0,0,0x001f,0xffff,0x001f,0xffff};
+  for (size_t i=0;i<sizeof(expected)/sizeof(expected[0]);++i)
+    assert(s_test_display_fixture.pixels[i] == expected[i]);
+  for (int i = 0; i < 8; ++i) {
+    assert(s_test_display_fixture.pixels[16+i] == 0x1212);
+    assert(s_test_display_fixture.pixels[24+i] == (uint16_t)((2*i << 8) | (2*i+1)));
+  }
+  /* A full 240x240 fixture, independent of any application asset. */
+  static const uint8_t full[] =
+      "local d=require('display');local enc='rgb565be-lz4-b85';local data='000001ce9})oo|NsC0|NsC0|NsC0|NsC"
+      "0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC"
+      "0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC"
+      "0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC"
+      "0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC"
+      "0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC"
+      "0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsB0P!bXn5)uFa';collectgarbage('collect');local before=col"
+      "lectgarbage('count');local r=d.region_from_string(240,240,data,enc);assert(collectgarbage('count')-b"
+      "efore>=112.5);d.restore_background(r);d.present();d.release_background();r=nil;collectgarbage('colle"
+      "ct');assert(collectgarbage('count')<before+1);local ok,e=pcall(d.region_from_string,4096,4096,data,e"
+      "nc);assert(not ok and e=='not enough memory');collectgarbage('collect');assert(d.region_from_string("
+      "240,240,data,enc));";
+  (void)run_display_script_size(host, "@string-region-full.lua", full, sizeof(full)-1, 240, 240);
+  for (size_t i = 0; i < 240u * 240u; ++i)
+    assert(s_test_display_fixture.pixels[i] == 0x1212);
+  /* Independently encoded literal block covers every one of the 85 digits. */
+  static const uint8_t alphabet_script[] =
+      "local d=require('display');local enc='rgb565be-lz4-b85';local data="
+      "\"00000203@c;4vNs`+nZMG6yr0q6;$RusH|45PAHh;(wTBGbpk=i3{wf<V8>@|MJ5Nx&nN08Yfe#a15qU$t}*&=JS{YIkeG=0VoSh"
+      "W2{kJuq<#t&Gb>N9-UA!@VyMULt-e8mn|p!`LS*C1)K4p*S*GJC`zX|nr7jn*=I#0^%T=tPayA84`qR-foGdczE8vHC-d)gF4o3{"
+      "{@zFpSk6XR!G~p64)m!V6Te`9h1-9cID{RGsE8c+?$culPZV<}Y}`3R9f;L5kBHWv&WSoaHWez#L_+_dto#E_c8QQk&#JiP9Tnt@"
+      "cuz<Sll;2xP7HKZwy9cE1Qwn&T{p(Hdi{^*);8EOovIP^|SnhtL^fz6Vg5;wyB}8DgvSJ%-{dbiD>onDjk{&lq8<22YsbDs#LTVX"
+      "E^yh0ZE-yai5|;5>!S7htLKPM6>*a=Qdzsq#C7%@%UI1WlITD1^-xU#Rgqmft9Gx&ut8@j8Rd6<)dnOqJdzaLg56r|>y~-Y0Om0!"
+      "x(eIfBa+U8Vv{l-(w8xD;Kc?>K?VCU3X_N|W3;fyxtHrS3|T+$C<e09>W+H-O0!ZnpqQlG`MJ$r4+n?KYCzByG0;NTlsHf5;J9w*"
+      "N?x+9Pbp5n7|{HGbM7Y_<MJknA;n#}HYf{zs76B5Sk|S)%JSea0dH\";"
+      "local r=d.region_from_string(16,16,data,enc);d.draw_region(r,0,0);d.present();"
+      "local alphabet='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+-;<=>?@^_`{|}~';for c=0,255 do local ch=string.char(c);if not alphabet:find(ch,1,true) then local bad=data:sub(1,8)..ch..data:sub(10);assert(not pcall(d.region_from_string,16,16,bad,enc)) end end;";
+  (void)run_display_script_size(host, "@base85-alphabet.lua", alphabet_script,
+                                sizeof(alphabet_script)-1, 16, 16);
+  for (size_t i = 0; i < 256; ++i) {
+    unsigned high = ((2*i)*73+((2*i)/7)*19)%256;
+    unsigned low = ((2*i+1)*73+((2*i+1)/7)*19)%256;
+    assert(s_test_display_fixture.pixels[i] == (uint16_t)(high << 8 | low));
+  }
+  h2_lua_host_destroy(host);
+  h2_runtime_deinit(runtime);
+}
+
+static void test_display_regions(void) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_lua_host_t *host = create_unstarted_host(runtime);
+  assert(h2_lua_register_module(host, "region_test", test_region_open, NULL) == H2_PAL_OK);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  static const struct { const char *draw; const char *pixels; } cases[] = {
+      {"d.draw_region(r,0,0)",
+       "........" ".##....." "....#..." "........"
+       "........" "........" "........" "........"},
+      {"d.draw_region(r,1,2,0,8,'black')",
+       "BBBBBBBB" "BBBBBBBB" "BBBBBBBB" "BB##BBBB"
+       "BBBBB#BB" "BBBBBBBB" "BBBBBBBB" "BBBBBBBB"},
+      {"d.draw_region(r,0,0,0,8,'red')",
+       "........" ".BB....." "....B..." "........"
+       "........" "........" "........" "........"},
+      {"d.draw_region(r,-1,-1,0,2,'black',1,3)",
+       "B#BBBBBB" "BBBBBBBB" "BBBBBBBB" "BBBBBBBB"
+       "BBBBBBBB" "BBBBBBBB" "BBBBBBBB" "BBBBBBBB"},
+      {"d.draw_region(r,100000,-100000);d.draw_region(r,0,0,4,4)",
+       "BBBBBBBB" "BBBBBBBB" "BBBBBBBB" "BBBBBBBB"
+       "BBBBBBBB" "BBBBBBBB" "BBBBBBBB" "BBBBBBBB"},
+  };
+  for (int masked = 0; masked <= 1; ++masked) {
+    for (size_t i = 0; i < sizeof(cases)/sizeof(cases[0]); ++i) {
+      char script[2048];
+      int length = snprintf(script, sizeof(script),
+          "local d=require('display');d.clear('black');"
+          "d.fill_rect(1,1,2,1,'red');d.fill_rect(4,2,1,1,'red');"
+          "local r=d.capture_region(0,0,8,8,%s);"
+          "collectgarbage('collect');d.clear('blue');%s;d.present()",
+          masked ? "'black'" : "nil", cases[i].draw);
+      assert(length > 0 && (size_t)length < sizeof(script));
+      (void)run_display_script(host, "@region-pixels.lua", (const uint8_t *)script,
+                               (size_t)length);
+      for (size_t p = 0; p < 64; ++p) {
+        uint16_t expected = cases[i].pixels[p] == '#' ? 0xf800u :
+                            cases[i].pixels[p] == 'B' ? 0x001fu : 0;
+        if (s_test_display_fixture.pixels[p] != expected)
+          fprintf(stderr, "region masked=%d case=%zu pixel=%zu got=%x expected=%x\n",
+                  masked, i, p, s_test_display_fixture.pixels[p], expected);
+        assert(s_test_display_fixture.pixels[p] == expected);
+      }
+    }
+  }
+  static const uint8_t invalid[] =
+      "local d=require('display');d.present();local r=d.capture_region(0,0,8,8);"
+      "local function bad(f,...) assert(not pcall(f,...)) end;"
+      "bad(d.capture_region,-1,0,1,1);bad(d.capture_region,0,0,0,1);"
+      "bad(d.capture_region,0,0,4097,1);bad(d.capture_region,0,0,9,1);"
+      "bad(d.capture_region,4294967296,0,1,1);"
+      "bad(d.capture_region,0,0,1,1,nil,r);bad(d.capture_region,0,0,8,8,'black',r);"
+      "bad(d.draw_region,{});bad(d.draw_region,r,.5,0);"
+      "bad(d.draw_region,r,0,0,-1,8);bad(d.draw_region,r,0,0,0,4294967296);"
+      "bad(d.draw_region,r,0,0,0,8,nil,9,8);"
+      "bad(d.restore_background,d.capture_region(0,0,1,1));"
+      "bad(d.restore_background,d.capture_region(0,0,8,8,'black'));"
+      "bad(d.present,{retained=1});bad(d.present,{bounds=0});"
+      "bad(d.present,{merge_gap=9});bad(d.present,{merge_gap=4294967296});"
+      "d.release_background();d.release_background();assert(d.present()==0)";
+  (void)run_display_script(host, "@region-invalid.lua", invalid, sizeof(invalid)-1);
+  assert(s_test_display_fixture.draw_count == 1);
+  static const uint8_t retained[] =
+      "local d=require('display');local n=require('region_test');"
+      "local w,h=d.width,d.height;local function p(px,nr,opts) "
+      "local a,b=d.present(opts);assert(a==px and b==nr, a..'/'..b..' expected '..px..'/'..nr) end;"
+      "d.clear('blue');local bg=d.capture_region(0,0,w,h);"
+      "d.restore_background(bg);p(w*h,1,{retained=true});p(0,0);"
+      "d.fill_rect(1,1,1,1,'red');p(256,1);"
+      "d.restore_background(bg);p(256,1);d.restore_background(bg);p(0,0);"
+      "d.fill_rect(1,1,1,1,'blue');p(0,0);"
+      "d.fill_rect(w-1,h-1,1,1,'red');p((w-16)*(h-32),1);"
+      "d.restore_background(bg);p((w-16)*(h-32),1);"
+      "d.clear('red');assert(d.capture_region(0,0,w,h,nil,bg)==bg);"
+      "d.clear('black');d.restore_background(bg);p(w*h,1,{bounds=true});"
+      "local weak=setmetatable({bg},{__mode='v'});bg=nil;collectgarbage('collect');"
+      "assert(weak[1]);d.release_background();collectgarbage('collect');assert(not weak[1]);"
+      "p(w*h,1,{retained=false});p(0,0);p(w*h,1,{retained=true});"
+      "n.fail(0,true);assert(not pcall(d.present));p(w*h,1);p(0,0);"
+      "d.fill_rect(0,0,1,1,'blue');d.fill_rect(w-1,h-1,1,1,'blue');"
+      "n.fail(2,false);assert(not pcall(d.present));p(w*h,1);p(0,0);"
+      "d.fill_rect(0,0,1,1,'red');d.fill_rect(w-1,h-1,1,1,'red');"
+      "p(w*h,1,{bounds=true});p(0,0);"
+      "d.deinit();d.deinit();assert(not pcall(d.present));"
+      "assert(not pcall(d.draw_region,weak[1],0,0))";
+  (void)run_display_script_size(host, "@retained-regions.lua", retained,
+                                sizeof(retained)-1, 31, 35);
+  for (size_t i = 0; i < 31u*35u; ++i)
+    assert(s_test_display_fixture.pixels[i] == 0xf800u);
+  assert(s_test_display_fixture.close_count == 1);
+  static const uint8_t merge[] =
+      "local d=require('display');d.present({retained=true});"
+      "d.fill_rect(0,0,1,1,'red');d.fill_rect(32,0,1,1,'red');"
+      "local p,n=d.present();assert(p==512 and n==2);"
+      "d.clear('black');p,n=d.present({merge_gap=1});assert(p==768 and n==1);"
+      "d.fill_rect(0,0,1,1,'red');d.fill_rect(0,32,1,1,'red');"
+      "p,n=d.present();assert(p==512 and n==2);"
+      "d.clear('black');p,n=d.present({merge_gap=1});assert(p==768 and n==1);"
+      "d.clear('black');assert(d.present()==0)";
+  (void)run_display_script_size(host, "@retained-merge.lua", merge, sizeof(merge)-1, 48, 48);
+  static const uint8_t memory[] =
+      "local d=require('display');local w,h=d.width,d.height;"
+      "local r=d.capture_region(0,0,w,h);local weak=setmetatable({r},{__mode='v'});"
+      "collectgarbage('collect');local before=collectgarbage('count');"
+      "for i=1,100 do assert(d.capture_region(0,0,w,h,nil,r)==r) end;"
+      "collectgarbage('collect');assert(collectgarbage('count')<before+1,'reuse allocation');"
+      "d.restore_background(r);r=nil;collectgarbage('collect');assert(weak[1]);"
+      "d.present({retained=true});d.release_background();collectgarbage('collect');"
+      "assert(not weak[1]);"
+      "d.clear('red');local held={};for i=1,100 do held[i]=false end;local oom=false;"
+      "for i=1,100 do local ok,value=pcall(d.capture_region,0,0,w,h,'black');"
+      "if not ok then assert(value=='not enough memory');oom=true;break end;held[i]=value end;"
+      "assert(oom,'capture did not exhaust VM');held=nil;collectgarbage('collect');d.clear('black');"
+      "r=d.capture_region(0,0,w,h,'black');d.draw_region(r,0,0);assert(d.present()==0);"
+      "local color=setmetatable({}, {__index=function() d.deinit();return 255 end});"
+      "assert(not pcall(d.draw_region,r,0,0,0,h,color));"
+      "assert(not pcall(d.begin_frame,{clear=true,color='red'}))";
+  (void)run_display_script_size(host, "@region-memory.lua", memory, sizeof(memory)-1, 64, 64);
+  static const uint8_t drawing_paths[] =
+      "local d=require('display');d.clear('blue');local bg=d.capture_region(0,0,d.width,d.height);"
+      "d.restore_background(bg);d.present({retained=true});"
+      "local cmd=d.compile_commands({{0,1,1,3,3,'red'}});"
+      "local mesh=d.compile_mesh({{1,1},{4,1},{4,4}},{{0,1,3,'red'}});"
+      "local operations={"
+      "function() d.clear('red') end,"
+      "function() d.fill_rect(1,1,3,3,'red') end,"
+      "function() d.draw_line(1,1,4,4,'red') end,"
+      "function() d.fill_polygon({{1,1},{4,1},{4,4}},'red') end,"
+      "function() d.fill_ellipse(4,4,2,2,'red') end,"
+      "function() d.draw_commands(cmd) end,"
+      "function() d.draw_mesh(mesh) end,"
+      "function() d.fill_circle_aa(4,4,2,'red') end,"
+      "function() d.draw_text(1,1,'A',{color='red'}) end,"
+      "function() d.fade_to_black(255) end,"
+      "function() d.fade_rect_to_black(1,1,4,4,128) end,"
+      "function() d.begin_frame({clear=true,color='red'});d.end_frame() end};"
+      "for _,draw in ipairs(operations) do draw();d.present();"
+      "d.restore_background(bg);assert(d.present()>0);"
+      "d.restore_background(bg);assert(d.present()==0) end;"
+      "d.clear('red');local other=d.capture_region(0,0,d.width,d.height);"
+      "d.restore_background(other);d.present();d.restore_background(bg);"
+      "assert(d.present()==d.width*d.height);assert(d.present()==0)";
+  (void)run_display_script_size(host, "@background-drawing-paths.lua", drawing_paths,
+                                sizeof(drawing_paths)-1, 31, 35);
+  for (size_t i = 0; i < 31u*35u; ++i)
+    assert(s_test_display_fixture.pixels[i] == 0x001fu);
+  static const uint8_t restore_width[] =
+      "local d=require('display');local n=require('region_test');"
+      "local w,h=d.width,d.height;d.clear('blue');"
+      "d.fill_rect(0,0,w,math.max(1,h//2),'green');"
+      "local bg=d.capture_region(0,0,w,h);"
+      "n.restore(d.restore_background,bg);d.present({retained=true});"
+      "local draws={"
+      "function() d.fill_rect(0,0,w,1,'red') end,"
+      "function() d.fill_rect(0,0,w,math.min(32,h),'red') end,"
+      "function() d.fill_rect(0,h-1,w,1,'red') end,"
+      "function() d.fill_rect(0,0,1,1,'red') end,"
+      "function() d.fill_rect(w-1,h-1,1,1,'red') end,"
+      "function() d.fill_rect(0,0,1,1,'red');d.fill_rect(w-1,0,1,1,'red') end,"
+      "function() d.fill_rect(0,0,w,1,'red');d.fill_rect(w-1,h-1,1,1,'red') end};"
+      "for _,draw in ipairs(draws) do draw();d.present();"
+      "n.restore(d.restore_background,bg);d.present();"
+      "n.restore(d.restore_background,bg);assert(d.present()==0) end;"
+      /* Preserve an existing dirty rectangle while adding restored tile bounds. */
+      "d.fill_rect(w-1,h-1,1,1,'red');n.restore(d.restore_background,bg);"
+      "assert(d.present()==0);"
+      /* Every measured restore has a full-width damaged tile, not a warm no-op. */
+      "local function warm() d.fill_rect(0,0,w,1,'red');d.restore_background(bg) end;"
+      "n.noalloc(warm);assert(d.present()==0);"
+      /* Failure in either submission stage invalidates the background baseline. */
+      "for _,present_failure in ipairs({false,true}) do "
+      "d.fill_rect(0,0,w,h,'red');d.present();n.restore(d.restore_background,bg);"
+      "n.fail(present_failure and 0 or 1,present_failure);assert(not pcall(d.present));"
+      "n.restore(d.restore_background,bg);local pixels,rects=d.present();"
+      "assert(pixels==w*h and rects==1);n.restore(d.restore_background,bg);"
+      "assert(d.present()==0) end;"
+      /* Full binding, reused capture invalidation and release retain their paths. */
+      "d.clear('red');local other=d.capture_region(0,0,w,h);"
+      "n.restore(d.restore_background,other);d.present();"
+      "n.restore(d.restore_background,bg);d.present();"
+      "d.clear('green');d.capture_region(0,0,w,h,nil,bg);d.clear('red');"
+      "n.restore(d.restore_background,bg);d.present();"
+      "d.release_background();d.release_background();"
+      "n.restore(d.restore_background,bg);d.present();"
+      "local weak=setmetatable({bg},{__mode='v'});bg=nil;draws=nil;warm=nil;"
+      "collectgarbage('collect');assert(weak[1]);d.release_background();"
+      "collectgarbage('collect');assert(not weak[1]);"
+      "d.deinit();assert(not pcall(d.restore_background,other))";
+  static const uint8_t region_damage[] =
+      "local d=require('display');local n=require('region_test');"
+      "local w,h=d.width,d.height;local sw,sh=math.min(w,49),math.min(h,35);"
+      "for pattern=1,3 do local colors={};d.clear('black');"
+      "for y=0,sh-1 do for x=0,sw-1 do local c=0;"
+      "if pattern==1 then c=(x+y)%3==0 and 31 or 63488 "
+      "elseif pattern==2 and ((x==1 and y==1) or (x==33 and y==17)) then c=63488 end;"
+      "colors[#colors+1]=c;d.fill_rect(x,y,1,1,c==0 and 'black' or c==31 and 'blue' or 'red') end end;"
+      "local regions={d.capture_region(0,0,sw,sh),d.capture_region(0,0,sw,sh,'black')};"
+      "d.clear('blue');local bg=d.capture_region(0,0,w,h);"
+      "d.restore_background(bg);d.present({retained=false});"
+      "for _,r in ipairs(regions) do for _,key in ipairs({false,'black','blue'}) do "
+      "for _,pos in ipairs({{0,0},{-3,-7},{w-2,h-3},{w,h},{-2*w,-2*h}}) do "
+      "for inset=0,1 do local left=math.min(inset,w);local right=math.max(left,w-inset);"
+      "local top=math.min(inset,h);local bottom=math.max(top,h-inset);"
+      "if inset==1 then d.fill_rect(w-1,h-1,1,1,'green') end;"
+      "local area=n.draw(d.draw_region,bg,r,colors,sw,sh,pos[1],pos[2],"
+      "top,bottom,key or nil,left,right);local p,rects=d.present();"
+      "assert(p==area and rects==(area>0 and 1 or 0),'nonretained dirty union');"
+      "n.restore(d.restore_background,bg);d.present() end end end end;"
+      "local r=regions[1];n.noalloc(function() d.draw_region(r,0,0) end);"
+      "n.restore(d.restore_background,bg);d.present();"
+      "n.noalloc(function() d.fill_rect(w-1,h-1,1,1,'red');d.restore_background(bg) end);"
+      "d.present();d.release_background() end;"
+      "d.deinit()";
+  static const int restore_sizes[][2] = {{1,1}, {17,17}, {31,35}, {48,48}, {240,240}};
+  /* A retained 240x240 frame plus two full captures exceeds the small region
+   * fixture's 256 KiB VM. Use the device-sized budget for this distinct suite. */
+  h2_lua_host_t *restore_host = NULL;
+  const h2_lua_host_config_t restore_config = {
+      .runtime = runtime, .worker_count = 1u, .max_jobs = 1u,
+      .vm_memory_limit_bytes = 4u * 1024u * 1024u, .execution_timeout_ms = 5000u,
+  };
+  assert(h2_lua_host_create(&restore_config, &restore_host) == H2_PAL_OK);
+  assert(h2_lua_register_module(restore_host, "region_test", test_region_open, NULL) == H2_PAL_OK);
+  assert(h2_lua_host_start(restore_host) == H2_PAL_OK);
+  for (size_t i = 0; i < sizeof(restore_sizes)/sizeof(restore_sizes[0]); ++i) {
+    int width = restore_sizes[i][0], height = restore_sizes[i][1];
+    (void)run_display_script_size(restore_host, "@background-full-width.lua", restore_width,
+                                  sizeof(restore_width)-1, width, height);
+    for (int p = 0; p < width * height; ++p)
+      assert(s_test_display_fixture.pixels[p] == 0x0400u);
+    assert(s_test_display_fixture.close_count == 1);
+    (void)run_display_script_size(restore_host, "@region-damage.lua", region_damage,
+                                  sizeof(region_damage)-1, width, height);
+    for (int p = 0; p < width * height; ++p)
+      assert(s_test_display_fixture.pixels[p] == 0x001fu);
+    assert(s_test_display_fixture.close_count == 1);
+  }
+  h2_lua_host_destroy(restore_host);
+  static const uint8_t close[] =
+      "local d=require('display');local n=require('region_test');"
+      "local bg=d.capture_region(0,0,8,8);d.restore_background(bg);d.present({retained=true});"
+      "local r=d.capture_region(0,0,1,1);"
+      "keep_finalizer=setmetatable({}, {__gc=function() "
+      "n.finalizer(not pcall(d.draw_region,r,0,0) and not pcall(d.clear,'red')) end})";
+  (void)run_display_script(host, "@regions-release-finalizer.lua", close, sizeof(close)-1);
+  assert(s_test_display_fixture.finalizer_count == 1);
+  /* Host destruction has a distinct release entry point. */
+  test_display_reset();
+  h2_lua_job_id_t job;
+  assert(h2_lua_job_submit_text(host, NULL, "@regions-host-finalizer.lua", close,
+                               sizeof(close)-1, NULL, 0, &job) == H2_PAL_OK);
+  run_until_terminal(host, job, 64);
+  assert(status(host, job).state == H2_LUA_JOB_SUCCEEDED);
+  h2_lua_host_destroy(host);
+  assert(s_test_display_fixture.finalizer_count == 1);
+  h2_runtime_deinit(runtime);
+}
+
+static void test_display_strokes(void) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_lua_host_t *host = create_unstarted_host_with_scheduler(runtime, 1000, 0, 5000, 8192);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  static const uint8_t reference[] =
+      "local d=require('display');math.randomseed(354);"
+      "local function polygon(p,color,offset,top,bottom) "
+      "for y=top,bottom-1 do local xs={};for i=1,#p do local a,b=p[i],p[i%#p+1];"
+      "if (a[2]<=y and b[2]>y) or (b[2]<=y and a[2]>y) then "
+      "xs[#xs+1]=a[1]+(y-a[2])*(b[1]-a[1])/(b[2]-a[2]) end end;table.sort(xs);"
+      "for i=1,#xs-1,2 do local edge=math.ceil(xs[i]);local x=math.floor(edge+offset+.5);"
+      "local r=x+math.floor(xs[i+1])-edge;local a,b=math.max(0,x),math.min(d.width-1,r);"
+      "if a<=b then d.fill_rect(a,y,b-a+1,1,color) end end end end;"
+      "for k=1,500 do local p={};for i=1,3+k%6 do "
+      "local x,y=math.random()*20-6,math.random()*20-6;"
+      "if k%3==0 then x=math.floor(x)+1e-8;y=math.floor(y)-1e-8 end;p[i]={x,y} end;"
+      "local offset=k%2==0 and .5 or -.4;local top=k%3;"
+      "d.clear('black');polygon(p,'red',offset,top,8);d.present({retained=true});"
+      "d.clear('black');d.fill_polygon(p,'red',offset,top,8);"
+      "assert(d.present()==0,'polygon '..k) end;"
+      "local fast_total=0;"
+      "for k=1,200 do local p={{1+math.random()*5,1+math.random()*5},"
+      "{1+math.random()*5,1+math.random()*5},{1+math.random()*5,1+math.random()*5}};"
+      "local widths={.3+math.random()*3,.3+math.random()*3};local colors={'red','blue'};"
+      "d.clear('black');for i=1,2 do local a,b=p[i],p[i+1];local dx,dy=b[1]-a[1],b[2]-a[2];"
+      "local len=math.sqrt(dx*dx+dy*dy);local w=widths[i];"
+      "if len<.01 then local x,y=math.floor(a[1]-w/2+.5),math.floor(a[2]-w/2+.5);"
+      "local side=math.floor(w+.5);if side>0 then d.fill_rect(x,y,side,side,colors[i]) end "
+      "else local nx,ny=(-dy/len)*w/2,(dx/len)*w/2;"
+      "polygon({{a[1]+nx,a[2]+ny},{b[1]+nx,b[2]+ny},{b[1]-nx,b[2]-ny},{a[1]-nx,a[2]-ny}},colors[i],0,0,8);"
+      "d.draw_line(math.floor(a[1]+.5),math.floor(a[2]+.5),math.floor(b[1]+.5),math.floor(b[2]+.5),colors[i]) end end;"
+      "d.present();d.clear('black');d.stroke_path(p,widths,colors);assert(d.present()==0,'hard '..k);"
+      "d.clear('black');local hit,fast=d.stroke_path(p,widths,colors,0,0,8,true,true);"
+      "assert(not hit);fast_total=fast_total+fast;assert(d.present()==0,'fast '..k);"
+      "d.clear('black');hit=d.stroke_path(p,widths,colors,0,0,8,true,true);"
+      "assert(hit);assert(d.present()==0,'hot '..k) end;assert(fast_total>0)";
+  (void)run_display_script(host, "@stroke-reference.lua", reference, sizeof(reference)-1);
+  static const uint8_t keys[] =
+      "local d=require('display');local p,w={{1,1},{6,6}},{2};"
+      "local function draw(color,off,top,bot,fast,scale) "
+      "return d.stroke_path(p,w,color,off,top,bot,true,fast,false,scale) end;"
+      "assert(not draw('red',0,0,8,false,1));assert(draw('red',0,0,8,false,1));"
+      "assert(not draw('blue',0,0,8,false,1));assert(draw('blue',0,0,8,false,1));"
+      "assert(not draw('blue',.5,0,8,false,1));assert(not draw('blue',.5,1,8,false,1));"
+      "assert(not draw('blue',.5,1,7,false,1));assert(not draw('blue',.5,1,7,true,1));"
+      "assert(not draw('blue',.5,1,7,true,.8));w[1]=3;"
+      "assert(not draw('blue',.5,1,7,true,.8));p[1][1]=2;"
+      "assert(not draw('blue',.5,1,7,true,.8));assert(draw('blue',.5,1,7,true,.8));"
+      "local weak=setmetatable({p,w},{__mode='v'});p=nil;w=nil;collectgarbage('collect');"
+      "assert(not weak[1] and not weak[2]);"
+      "local function bad(...) assert(not pcall(d.stroke_path,...)) end;"
+      "bad({}, {},'red');bad({{0,0},{1,1}},{},'red');bad({{0,0},{1,1}},{-1},'red');"
+      "bad({{0,0},{1,1}},{1001},'red');bad({{0,0},{0/0,1}},{1},'red');"
+      "p={{1,1},{4,4}};w={1};bad(p,w,'red',0,0,4294967296);"
+      "bad(p,w,'red',0,0,8,1);bad(p,w,'red',0,0,8,false,false,false,0);"
+      "bad(p,w,'red',0,0,8,false,false,true,1,.26);"
+      "local color=setmetatable({}, {__index=function() d.deinit();return 255 end});bad(p,w,color)";
+  (void)run_display_script(host, "@stroke-keys.lua", keys, sizeof(keys)-1);
+  static const uint8_t smooth[] =
+      "local d=require('display');local p={{1.5,3.5},{5.5,3.5}};"
+      "d.clear('black');d.stroke_path(p,{1},'red',0,0,8,false,false,true);"
+      "d.present({retained=true});"
+      "d.clear('black');d.stroke_path({p[1],{3.5,3.5},p[2]},{1,1},'red',0,0,8,false,false,true,1,.1);"
+      "assert(d.present()==0);d.clear('black');"
+      "d.stroke_path({p[1],p[2],p[1]},{1,1},{'red','blue'},0,0,8,false,false,true);"
+      "assert(d.present()==0);"
+      "d.clear('black');d.stroke_path({{3,3},{3,3}},{2},'red');d.present();"
+      "d.clear('black');local hit=d.stroke_path({{3,3},{3,3}},{2},'red',0,0,8,true,true);"
+      "assert(not hit);assert(d.present()==0);"
+      "d.clear('black');d.stroke_path(p,{0},'red',0,0,8,false,false,true);d.present();"
+      "d.clear('black');assert(d.present()==0)";
+  (void)run_display_script(host, "@stroke-smooth.lua", smooth, sizeof(smooth)-1);
+  static const uint8_t overflow[] =
+      "local d=require('display');local p,w={},{};"
+      "for i=1,256 do p[i]={i%2==0 and 2 or 5,i%2==0 and 62 or 1};if i<256 then w[i]=2 end end;"
+      "d.stroke_path(p,w,'red',0,0,64,false,true);d.present({retained=true});"
+      "d.clear('black');assert(not d.stroke_path(p,w,'red',0,0,64,true,true));"
+      "assert(d.present()==0);d.clear('black');"
+      "assert(not d.stroke_path(p,w,'red',0,0,64,true,true));assert(d.present()==0);"
+      "p[257]={1,1};w[256]=2;assert(not pcall(d.stroke_path,p,w,'red'));"
+      "local memory=collectgarbage('count');p=nil;w=nil;collectgarbage('collect');"
+      "assert(collectgarbage('count')<memory-30);"
+      "local points={{-100000,4},{100000,4}};d.clear('black');"
+      "d.stroke_path(points,{1},'red',0,0,64,false,false,true);d.present();"
+      "d.clear('black');d.stroke_path({{-1000,4},{1000,4}},{1},'red',0,0,64,false,false,true);"
+      "assert(d.present()==0)";
+  (void)run_display_script_size(host, "@stroke-overflow.lua", overflow, sizeof(overflow)-1, 64, 64);
+  static const uint8_t smooth_memory[] =
+      "local d=require('display');d.clear('blue');d.present({retained=true});"
+      "local held={};for i=1,100 do held[i]=false end;local oom=false;"
+      "for i=1,100 do local ok,value=pcall(d.capture_region,0,0,64,64);"
+      "if not ok then assert(value=='not enough memory');oom=true;break end;held[i]=value end;"
+      "assert(oom);local p,w={{0,0},{63,63}},{100};"
+      "local ok,err=pcall(d.stroke_path,p,w,'red',0,0,64,false,false,true);"
+      "assert(not ok and err=='not enough memory');assert(d.present()==0);"
+      "held=nil;collectgarbage('collect');d.stroke_path(p,w,'red',0,0,64,false,false,true);"
+      "assert(d.present()>0);collectgarbage('collect');local before=collectgarbage('count');"
+      "d.deinit();collectgarbage('collect');assert(collectgarbage('count')<before-18)";
+  (void)run_display_script_size(host, "@stroke-smooth-memory.lua", smooth_memory,
+                                sizeof(smooth_memory)-1, 64, 64);
+  h2_lua_host_destroy(host);
+  h2_runtime_deinit(runtime);
+}
+
+static void test_display_mesh_identity(void) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_lua_host_t *host = create_unstarted_host_with_scheduler(runtime,1000,0,5000,8192);
+  assert(h2_lua_register_module(host,"mesh_test",test_mesh_open,NULL) == H2_PAL_OK);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  /* Reference positions evaluate the original binary64 expression in Lua.
+   * Compare the complete framebuffer, not a few selected sample pixels. */
+  static const uint8_t pixels[] =
+      "local d=require('display');local m=d.compile_mesh({},{},6,2);"
+      "local ref=d.compile_mesh({},{},6,2);local p={{0,1,4,'red'},{1,5,2,'blue'}};"
+      "local matrices={{1.,0.,0.,1.,0.,0.},{1.,-0.,-0.,1.,-0.,-0.},"
+      "{1.+2^-52,0.,0.,1.,0.,0.},{1.-2^-53,0.,0.,1.,0.,0.},"
+      "{1.,0.,2^-52,1.,0.,0.},{1.,2^-52,0.,1.,0.,0.},"
+      "{1.,0.,0.,1.,2^-52,0.},{1.,0.,0.,1.,0.,2^-52},"
+      "{-1.,0.,0.,1.,6.,0.},{1.,0.,0.,1.,0.,0.},"
+      "{1.,0.,0.,1.,0.,0.},{1.,0.,0.,1.,0.,0.}};"
+      "for frame=1,16 do local f=(frame%4)*.25;"
+      "local v={{-.5+f,1.5},{6.5-f,-.5},{7.5,5.5-f},{1.5,7.5},"
+      "{-1.+f,7.-f},{8.-f,0.+f}};"
+      "if frame%8==0 then v[1]={-0.,-0.};v[5]={-0.,2^-1074};"
+      "v[6]={7.,-2^-1074};end;d.update_mesh(m,v,p);"
+      "for k,a in ipairs(matrices) do local grid=(k==9 or k==11) and 2 or 0;local rv={};"
+      "for i,vv in ipairs(v) do local x=(a[1]*vv[1]+a[3]*vv[2])+a[5];"
+      "local y=(a[2]*vv[1]+a[4]*vv[2])+a[6];"
+      "if grid~=0 then x=math.floor(x/grid+.5)*grid;y=math.floor(y/grid+.5)*grid end;"
+      "rv[i]={x,y};end;d.update_mesh(ref,rv,p);"
+      "local opts={offset_x=f-.5,left=frame%2,right=8-frame%3,"
+      "top=frame%3,bottom=8-frame%2,color=frame%2==0 and 'white' or nil};"
+      "d.clear('black');d.draw_mesh(ref,opts);d.present({retained=true});"
+      "opts.matrix=a;opts.grid=grid;"
+      /* Rebuild, capture, replay, uncached coordinate hit, then replay again. */
+      "for pass=1,5 do opts.cache=pass~=1 and pass~=4;"
+      "d.clear('black');d.draw_mesh(m,opts);"
+      "assert(d.present()==0,'identity pixels '..frame..'/'..k..'/'..pass);end;"
+      "end;collectgarbage('collect');end";
+  (void)run_display_script(host,"@mesh-identity-pixels.lua",pixels,sizeof(pixels)-1);
+  static const uint8_t recovery[] =
+      "local d=require('display');local n=require('mesh_test');local m=n.new();"
+      "local v={{1,1},{4,1},{4,4},{1,4},{1000000,-1000000},{-0.,0.}};"
+      "local p={{0,1,4,'red'}};d.update_mesh(m,v,p);"
+      "for _,opts in ipairs({{cache=true},{cache=true,matrix={-1,0,0,1,6,0}}}) do "
+      "d.clear('black');d.draw_mesh(m,opts);d.present({retained=true});"
+      /* A late, unused vertex fails after earlier vertices were transformed. */
+      "assert(not pcall(d.draw_mesh,m,{cache=true,matrix={32,0,0,1,0,0}}));"
+      "assert(d.present()==0);d.clear('black');d.draw_mesh(m,opts);"
+      "assert(d.present()==0);n.update(m,0);d.clear('black');d.draw_mesh(m,opts);"
+      "assert(d.present()==0);end;"
+      "local ref=d.compile_mesh({{1,6},{6,6}},{{1,1,2,'blue'}});"
+      "d.clear('black');d.draw_mesh(ref);d.present();n.update(m,1);"
+      "for i=1,3 do d.clear('black');d.draw_mesh(m,{matrix={1,0,0,1,0,0},"
+      "grid=0,cache=true});assert(d.present()==0);end;"
+      "n.update(m,2);d.clear('black');d.present();d.draw_mesh(m,{cache=true});"
+      "assert(d.present()==0);d.draw_mesh(d.compile_mesh({},{}));"
+      "assert(d.present()==0);collectgarbage('collect');d.deinit();"
+      "assert(not pcall(d.draw_mesh,m,{matrix={1,0,0,1,0,0},cache=true}))";
+  (void)run_display_script(host,"@mesh-identity-recovery.lua",recovery,sizeof(recovery)-1);
+  h2_lua_host_destroy(host);
+  h2_runtime_deinit(runtime);
+}
+
+static void test_display_mesh_cache(void) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_lua_host_t *host = create_unstarted_host_with_scheduler(runtime,1000,0,5000,8192);
+  assert(h2_lua_register_module(host,"mesh_test",test_mesh_open,NULL) == H2_PAL_OK);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  static const uint8_t cache[] =
+      "local d=require('display');local n=require('mesh_test');local m=n.new();"
+      "local options={{},{offset_x=.5},{left=2},{right=3},{top=2},{bottom=2},"
+      "{color='blue'},{matrix={-1,0,0,1,6,0}},{grid=2},{grid=0}};"
+      "for _,opts in ipairs(options) do d.clear('black');d.draw_mesh(m,opts);d.present({retained=true});"
+      "opts.cache=true;d.clear('black');d.draw_mesh(m,opts);assert(d.present()==0);"
+      "collectgarbage('collect');local before=collectgarbage('count');"
+      "d.clear('black');d.draw_mesh(m,opts);assert(d.present()==0);"
+      "collectgarbage('collect');assert(collectgarbage('count')<before+1);end;"
+      "d.clear('black');d.draw_mesh(m,{cache=true});d.present();"
+      "n.update(m,0);d.clear('black');d.draw_mesh(m,{cache=true});assert(d.present()==0);"
+      "n.update(m,1);d.clear('black');d.draw_mesh(m);d.present();"
+      "d.clear('black');d.draw_mesh(m,{cache=true});assert(d.present()==0);"
+      "d.update_mesh(m,{{1,1},{6,6}},{{1,1,2,'red'}});d.clear('black');d.draw_mesh(m);d.present();"
+      "d.clear('black');d.draw_mesh(m,{cache=true});assert(d.present()==0);"
+      "assert(not pcall(d.draw_mesh,m,{cache=true,matrix={0/0,0,0,1,0,0}}));"
+      "d.clear('black');d.draw_mesh(m,{cache=true});assert(d.present()==0);"
+      "n.update(m,2);d.clear('black');d.draw_mesh(m,{cache=true});d.present();"
+      "assert(d.present()==0);assert(not pcall(d.draw_mesh,m,{cache=1}));"
+      "local weak=setmetatable({m},{__mode='v'});m=nil;collectgarbage('collect');assert(not weak[1])";
+  (void)run_display_script(host,"@mesh-cache.lua",cache,sizeof(cache)-1);
+  assert_only_pixels(0,NULL,0);
+  h2_lua_host_destroy(host);
+  const h2_lua_host_config_t config = {.runtime=runtime,.worker_count=1,.max_jobs=1,
+      .vm_memory_limit_bytes=4u*1024u*1024u,.execution_timeout_ms=5000};
+  assert(h2_lua_host_create(&config,&host) == H2_PAL_OK);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  static const uint8_t capacity[] =
+      "local d=require('display');local m=d.compile_mesh({},{},65536,4096);"
+      "d.update_mesh(m,{{1,1},{6,1},{6,7},{1,7}},{{0,1,4,'red'}});"
+      "d.draw_mesh(m,{cache=true});m=nil;collectgarbage('collect');"
+      "local p={};for i=1,2048 do p[i]={0,1,4,i%2==0 and 'red' or 'blue'} end;"
+      "m=d.compile_mesh({{1,1},{6,1},{6,7},{1,7}},p);"
+      "d.clear('black');d.draw_mesh(m);d.present({retained=true});"
+      "d.clear('black');d.draw_mesh(m,{cache=true});assert(d.present()==0);"
+      "d.clear('black');d.draw_mesh(m,{cache=true});assert(d.present()==0);"
+      "d.update_mesh(m,{{2,2},{5,2},{5,4},{2,4}},{{0,1,4,'blue'}});"
+      "d.clear('black');d.draw_mesh(m);d.present();"
+      "d.clear('black');d.draw_mesh(m,{cache=true});assert(d.present()==0)";
+  (void)run_display_script(host,"@mesh-span-capacity.lua",capacity,sizeof(capacity)-1);
+  h2_lua_host_destroy(host);
+  h2_runtime_deinit(runtime);
+}
+
 static void test_job_results(h2_lua_host_t *host) {
   size_t invalid_size = 99;
   int invalid_present = 1;
@@ -864,7 +2347,454 @@ static void test_job_results(h2_lua_host_t *host) {
   }
 }
 
-int main(void) {
+/* Each allocation has a maximally aligned header, so this wrapper preserves
+ * malloc alignment while measuring every byte owned by the Host. */
+typedef union heap_test_header {
+  max_align_t alignment;
+  size_t bytes;
+} heap_test_header_t;
+
+typedef struct heap_test_mem {
+  h2_atomic_size_t bytes;
+  h2_atomic_size_t allocs;
+  h2_atomic_size_t frees;
+  h2_atomic_size_t rejected;
+  h2_atomic_size_t pool_allocs;
+  size_t pool_bytes;
+  size_t max_allocation;
+} heap_test_mem_t;
+
+static void heap_test_mem_init(heap_test_mem_t *mem) {
+  assert(h2_atomic_size_init(&mem->bytes, 0u) == H2_ATOMIC_OK);
+  assert(h2_atomic_size_init(&mem->allocs, 0u) == H2_ATOMIC_OK);
+  assert(h2_atomic_size_init(&mem->frees, 0u) == H2_ATOMIC_OK);
+  assert(h2_atomic_size_init(&mem->rejected, 0u) == H2_ATOMIC_OK);
+  assert(h2_atomic_size_init(&mem->pool_allocs, 0u) == H2_ATOMIC_OK);
+}
+
+static void heap_test_mem_destroy(heap_test_mem_t *mem) {
+  h2_atomic_size_destroy(&mem->bytes);
+  h2_atomic_size_destroy(&mem->allocs);
+  h2_atomic_size_destroy(&mem->frees);
+  h2_atomic_size_destroy(&mem->rejected);
+  h2_atomic_size_destroy(&mem->pool_allocs);
+}
+
+static void *heap_test_alloc(void *user, size_t size) {
+  heap_test_mem_t *mem = user;
+  heap_test_header_t *header;
+  if (mem->max_allocation != 0u && size > mem->max_allocation) {
+    h2_atomic_fetch_add(&mem->rejected, 1u);
+    return NULL;
+  }
+  assert(size <= SIZE_MAX - sizeof(*header));
+  header = malloc(sizeof(*header) + size);
+  assert(header != NULL);
+  header->bytes = size;
+  h2_atomic_fetch_add(&mem->bytes, size);
+  h2_atomic_fetch_add(&mem->allocs, 1u);
+  if (size == mem->pool_bytes) {
+    h2_atomic_fetch_add(&mem->pool_allocs, 1u);
+  }
+  return header + 1;
+}
+
+static void heap_test_free(void *user, void *ptr) {
+  heap_test_mem_t *mem = user;
+  if (ptr != NULL) {
+    heap_test_header_t *header = (heap_test_header_t *)ptr - 1;
+    h2_atomic_fetch_sub(&mem->bytes, header->bytes);
+    h2_atomic_fetch_add(&mem->frees, 1u);
+    free(header);
+  }
+}
+
+static void *heap_test_realloc(void *user, void *ptr, size_t size) {
+  if (size == 0u) {
+    heap_test_free(user, ptr);
+    return NULL;
+  }
+  void *next = heap_test_alloc(user, size);
+  if (next != NULL && ptr != NULL) {
+    size_t old_size = ((heap_test_header_t *)ptr - 1)->bytes;
+    memcpy(next, ptr, old_size < size ? old_size : size);
+    heap_test_free(user, ptr);
+  }
+  return next;
+}
+
+static const h2_pal_mem_vtable_t heap_test_mem_vtable = {
+    .alloc = heap_test_alloc,
+    .realloc = heap_test_realloc,
+    .free = heap_test_free,
+};
+
+static void heap_test_balanced(const heap_test_mem_t *mem) {
+  assert(h2_atomic_load(&mem->bytes) == 0u);
+  assert(h2_atomic_load(&mem->allocs) == h2_atomic_load(&mem->frees));
+}
+
+static void heap_test_run(h2_lua_host_t *host, const char *source,
+                          h2_lua_job_state_t expected) {
+  h2_lua_job_id_t id;
+  assert(h2_lua_job_submit_text(host, NULL, "@heap.lua",
+                                (const uint8_t *)source, strlen(source), NULL,
+                                0u, &id) == H2_PAL_OK);
+  run_until_terminal(host, id, 6000u);
+  h2_lua_job_status_t value = status(host, id);
+  assert(value.state == expected);
+  if (expected == H2_LUA_JOB_FAILED) {
+    assert(strstr(value.message, "not enough memory") != NULL);
+  }
+  assert(h2_lua_job_release(host, id) == H2_PAL_OK);
+}
+
+/* Everything the Host allocates goes through config.allocator, so a caller
+ * can place the Host in its own arena; Runtime mem stays untouched. */
+static void test_host_allocator(void) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_runtime_t probe = *runtime;
+  heap_test_mem_t runtime_mem = {0};
+  heap_test_mem_t host_mem = {0};
+  heap_test_mem_init(&runtime_mem);
+  heap_test_mem_init(&host_mem);
+  h2_pal_mem_api_t runtime_api = {.user = &runtime_mem,
+                                  .vtable = &heap_test_mem_vtable};
+  h2_pal_mem_api_t host_api = {.user = &host_mem,
+                               .vtable = &heap_test_mem_vtable};
+  probe.mem = &runtime_api;
+  h2_lua_host_config_t config = {
+      .runtime = &probe,
+      .allocator = &host_api,
+      .max_jobs = 2u,
+      .worker_count = 1u,
+      .vm_memory_limit_bytes = 1024u * 1024u,
+      .execution_timeout_ms = 5000u,
+  };
+  for (size_t reserved = 0u; reserved < 2u; ++reserved) {
+    h2_lua_host_t *host = NULL;
+    config.vm_heap_bytes = reserved ? 1024u * 1024u : 0u;
+    host_mem.pool_bytes = config.vm_heap_bytes;
+    const size_t host_allocs = h2_atomic_load(&host_mem.allocs);
+    const size_t pool_allocs = h2_atomic_load(&host_mem.pool_allocs);
+    assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+    assert(h2_lua_host_start(host) == H2_PAL_OK);
+    heap_test_run(host, "local t={} for i=1,200 do t[i]=tostring(i) end",
+                  H2_LUA_JOB_SUCCEEDED);
+    h2_lua_host_destroy(host);
+    assert(h2_atomic_load(&host_mem.allocs) > host_allocs);
+    assert(h2_atomic_load(&host_mem.pool_allocs) == pool_allocs + reserved);
+    heap_test_balanced(&host_mem);
+  }
+  assert(h2_atomic_load(&runtime_mem.allocs) == 0u);
+  h2_runtime_deinit(runtime);
+  heap_test_mem_destroy(&runtime_mem);
+  heap_test_mem_destroy(&host_mem);
+
+}
+
+static void test_reserved_vm_heap(void) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_runtime_t probe = *runtime;
+  heap_test_mem_t mem = {0};
+  heap_test_mem_init(&mem);
+  h2_pal_mem_api_t api = {.user = &mem, .vtable = &heap_test_mem_vtable};
+  probe.mem = &api;
+  h2_lua_host_config_t config = {
+      .runtime = &probe,
+      .max_jobs = 4u,
+      .worker_count = 2u,
+      .vm_memory_limit_bytes = 2u * 1024u * 1024u,
+      .execution_timeout_ms = 5000u,
+  };
+  h2_lua_host_t *host = NULL;
+  /* Identical quotas and a fragmented system heap: only the reserved case
+   * can allocate a 120 KiB string. Cap applies to alloc AND realloc. */
+  for (size_t reserved = 0u; reserved < 2u; ++reserved) {
+    config.vm_heap_bytes = reserved ? 3u * 1024u * 1024u : 0u;
+    mem.pool_bytes = config.vm_heap_bytes;
+    mem.max_allocation = 0u;
+    assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+    mem.max_allocation = 64u * 1024u;
+    assert(h2_lua_host_start(host) == H2_PAL_OK);
+    size_t rejected = h2_atomic_load(&mem.rejected);
+    heap_test_run(host, "local s=string.rep('x',120*1024);assert(#s==120*1024)",
+                  reserved ? H2_LUA_JOB_SUCCEEDED : H2_LUA_JOB_FAILED);
+    assert(reserved ? h2_atomic_load(&mem.rejected) == rejected
+                    : h2_atomic_load(&mem.rejected) > rejected);
+    h2_lua_host_destroy(host);
+    heap_test_balanced(&mem);
+  }
+  mem.max_allocation = 0u;
+  /* Quota and physical pool exhaustion are independent OOM paths. */
+  for (size_t small_pool = 0u; small_pool < 2u; ++small_pool) {
+    config.vm_heap_bytes = small_pool ? 256u * 1024u : 4u * 1024u * 1024u;
+    config.vm_memory_limit_bytes =
+        small_pool ? 4u * 1024u * 1024u : 256u * 1024u;
+    mem.pool_bytes = config.vm_heap_bytes;
+    assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+    assert(h2_lua_host_start(host) == H2_PAL_OK);
+    heap_test_run(host, "return string.rep('x',512*1024)", H2_LUA_JOB_FAILED);
+    /* An OOM must leave the allocator and job slot reusable. */
+    heap_test_run(host, "assert(#string.rep('y',4096)==4096)",
+                  H2_LUA_JOB_SUCCEEDED);
+    h2_lua_host_destroy(host);
+    heap_test_balanced(&mem);
+  }
+  config.vm_heap_bytes = 4u * 1024u * 1024u;
+  config.vm_memory_limit_bytes = 512u * 1024u;
+  mem.pool_bytes = config.vm_heap_bytes;
+  for (size_t cycle = 0u; cycle < 5u; ++cycle) {
+    size_t pool_allocs = h2_atomic_load(&mem.pool_allocs);
+    assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+    assert(h2_atomic_load(&mem.pool_allocs) == pool_allocs + 1u);
+    /* A failed grow must preserve the original allocation and its contents. */
+    unsigned char *block = h2_lua_heap_realloc(host, NULL, 99u, 128u);
+    assert(block != NULL);
+    memset(block, 0x5a, 128u);
+    assert(h2_lua_heap_realloc(host, block, 128u, config.vm_heap_bytes) ==
+           NULL);
+    for (size_t i = 0u; i < 128u; ++i) {
+      assert(block[i] == 0x5a);
+    }
+    block = h2_lua_heap_realloc(host, block, 128u, 64u);
+    assert(block != NULL && block[63] == 0x5a);
+    assert(h2_lua_heap_realloc(host, block, 64u, 0u) == NULL);
+    assert(h2_lua_heap_realloc(host, NULL, 0u, 0u) == NULL);
+    assert(h2_lua_host_start(host) == H2_PAL_OK);
+    const char *source =
+        "local runtime=require('runtime');"
+        "for round=1,20 do local t={} for i=1,300 do "
+        "t[i]={i,string.rep(tostring(i),40)} end "
+        "t=nil;collectgarbage('collect');runtime.yield() end";
+    h2_lua_job_id_t ids[4];
+    /* Keep four VMs live across both workers to exercise the shared mutex. */
+    for (size_t i = 0u; i < 4u; ++i) {
+      assert(h2_lua_job_submit_text(host, NULL, "@heap-churn.lua",
+                                    (const uint8_t *)source, strlen(source),
+                                    NULL, 0u, &ids[i]) == H2_PAL_OK);
+    }
+    for (size_t i = 0u; i < 4u; ++i) {
+      run_until_terminal(host, ids[i], 6000u);
+      assert(status(host, ids[i]).state == H2_LUA_JOB_SUCCEEDED);
+    }
+    assert(h2_lua_host_stop(host) == H2_PAL_OK);
+    assert(h2_lua_host_join(host) == H2_PAL_OK);
+    /* Destroy must also close retained terminal VMs. */
+    h2_lua_host_destroy(host);
+    assert(h2_atomic_load(&mem.pool_allocs) == pool_allocs + 1u);
+    heap_test_balanced(&mem);
+  }
+  config.vm_heap_bytes = 1u;
+  size_t allocs = h2_atomic_load(&mem.allocs);
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_INVALID_ARG);
+  assert(host == NULL);
+  assert(h2_atomic_load(&mem.allocs) == allocs);
+  config.vm_heap_bytes = SIZE_MAX;
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_INVALID_ARG);
+  assert(host == NULL);
+  /* No single 3 MiB block: the reservation is split into shrunken blocks that
+   * still serve a 120 KiB allocation and are all returned on destroy. */
+  /* A split reservation still reserves every requested byte, including an
+   * odd tail. */
+  config.vm_heap_bytes = 3u * 1024u * 1024u + 7u;
+  config.vm_memory_limit_bytes = 2u * 1024u * 1024u;
+  mem.pool_bytes = 0u;
+  mem.max_allocation = 1024u * 1024u;
+  allocs = h2_atomic_load(&mem.allocs);
+  size_t rejected = h2_atomic_load(&mem.rejected);
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(h2_atomic_load(&mem.rejected) > rejected);
+  assert(h2_atomic_load(&mem.bytes) >= config.vm_heap_bytes);
+  assert(host->vm_heap_reserved == config.vm_heap_bytes);
+  assert(host->vm_heap_chunk_count > 1u);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  heap_test_run(host, "local s=string.rep('x',120*1024);assert(#s==120*1024)",
+                H2_LUA_JOB_SUCCEEDED);
+  h2_lua_host_destroy(host);
+  assert(h2_atomic_load(&mem.allocs) > allocs + 3u);
+  heap_test_balanced(&mem);
+  /* A heap whose largest blocks are 200 KiB still serves a 1.75 MiB
+   * reservation, which the 256 KiB floor used to refuse outright. */
+  config.vm_heap_bytes = 1792u * 1024u;
+  mem.max_allocation = 200u * 1024u;
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(host->vm_heap_reserved == config.vm_heap_bytes);
+  assert(host->vm_heap_chunk_count > 8u);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  /* A single allocation still has to fit one block: 120 KiB does, and the
+   * quota-sized one does not. */
+  heap_test_run(host, "local s=string.rep('x',120*1024);assert(#s==120*1024)",
+                H2_LUA_JOB_SUCCEEDED);
+  heap_test_run(host, "return string.rep('x',300*1024)", H2_LUA_JOB_FAILED);
+  h2_lua_host_destroy(host);
+  heap_test_balanced(&mem);
+  /* Blocks below the 64 KiB floor are refused as a whole, without leaks. */
+  mem.max_allocation = 32u * 1024u;
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_NO_MEMORY);
+  assert(host == NULL);
+  heap_test_balanced(&mem);
+  /* More than sixteen blocks would be needed: refused, without leaks. */
+  config.vm_heap_bytes = 4608u * 1024u; /* would need 47 blocks */
+  mem.max_allocation = 100u * 1024u;
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_NO_MEMORY);
+  assert(host == NULL);
+  heap_test_balanced(&mem);
+  mem.max_allocation = 0u;
+  h2_runtime_deinit(runtime);
+  heap_test_mem_destroy(&mem);
+
+}
+
+static int test_source_effect_open(void *lua_state, void *user) {
+  (void)user;
+  h2_atomic_fetch_add(&s_source_effect_count, 1);
+  lua_pushboolean((lua_State *)lua_state, 1);
+  return 1;
+}
+
+static void test_streamed_close_failure(void) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_lua_host_t *host = NULL;
+  const h2_lua_host_config_t config = {
+      .runtime = runtime,
+      .worker_count = 1u,
+      .max_jobs = 1u,
+      .execution_timeout_ms = 30000u,
+  };
+  const char *paths[] = {"scripts/waiting.lua", "scripts/streamed.lua",
+                         "scripts/empty.lua", "scripts/malformed.lua",
+                         "scripts/early_malformed.lua"};
+  const char effect_source[] = "require('source_effect');return 'done'";
+  memset(s_file_streamed, ' ', sizeof(s_file_streamed));
+  memcpy(s_file_streamed, effect_source, sizeof(effect_source) - 1u);
+  memset(s_file_early_malformed, ' ', sizeof(s_file_early_malformed));
+  s_file_early_malformed[0] = ')';
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(h2_lua_register_module(host, "source_effect", test_source_effect_open,
+                                 NULL) == H2_PAL_OK);
+  {
+    h2_lua_job_id_t job_id = 12345u;
+    size_t close_count = s_test_fs_file.close_count;
+    s_fs_close_result = H2_PAL_ERR_IO;
+    assert(h2_lua_job_submit_path(host, NULL, "unstarted",
+                                 "scripts/streamed.lua", NULL, 0u,
+                                 &job_id) == H2_PAL_ERR_INVALID_STATE);
+    assert(job_id == H2_LUA_JOB_ID_NONE);
+    assert(!s_test_fs_file.is_open);
+    assert(s_test_fs_file.close_count == close_count + 1u);
+    assert(s_test_fs_file.offset == 0u);
+    s_fs_close_result = H2_PAL_OK;
+  }
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  for (size_t use_file = 0u; use_file < 2u; ++use_file) {
+    for (size_t i = 0u; i < sizeof(paths) / sizeof(paths[0]); ++i) {
+      h2_lua_job_id_t job_id = 12345u;
+      size_t close_count = s_test_fs_file.close_count;
+      h2_atomic_store(&s_source_effect_count, 0);
+      s_fs_close_job_id = &job_id;
+      s_fs_close_result = H2_PAL_ERR_IO;
+      /* Close must precede publication, including empty sources and syntax
+       * errors that stop the compiler before it has drained the source. */
+      if (use_file) {
+        assert(h2_lua_job_submit_file(host, NULL, paths[i], NULL, 0u,
+                                     &job_id) == H2_PAL_ERR_IO);
+      } else {
+        assert(h2_lua_job_submit_path(host, NULL, "close-failure", paths[i],
+                                     NULL, 0u, &job_id) == H2_PAL_ERR_IO);
+      }
+      s_fs_close_job_id = NULL;
+      assert(job_id == H2_LUA_JOB_ID_NONE);
+      assert(h2_atomic_load(&s_source_effect_count) == 0);
+      assert(!s_test_fs_file.is_open);
+      assert(s_test_fs_file.close_count == close_count + 1u);
+      s_fs_close_result = H2_PAL_OK;
+      assert(h2_lua_job_submit_path(host, NULL, "after-close-failure",
+                                   "/data/lua/app.lua", NULL, 0u,
+                                   &job_id) == H2_PAL_OK);
+      run_until_terminal(host, job_id, 1000u);
+      assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
+      assert(strcmp(status(host, job_id).message, "path:ok") == 0);
+      assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+    }
+  }
+  /* The same multi-window chunk does produce its side effect when close
+   * succeeds, and close still happens before publication. */
+  h2_lua_job_id_t job_id = H2_LUA_JOB_ID_NONE;
+  s_fs_close_job_id = &job_id;
+  assert(h2_lua_job_submit_path(host, NULL, "effect", "scripts/streamed.lua",
+                               NULL, 0u, &job_id) == H2_PAL_OK);
+  s_fs_close_job_id = NULL;
+  run_until_terminal(host, job_id, 1000u);
+  assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
+  assert(h2_atomic_load(&s_source_effect_count) == 1);
+  {
+    h2_lua_job_id_t refused_id = 12345u;
+    size_t close_count = s_test_fs_file.close_count;
+    assert(h2_lua_job_submit_path(host, NULL, "full", "scripts/streamed.lua",
+                                 NULL, 0u, &refused_id) == H2_PAL_ERR_FULL);
+    assert(refused_id == H2_LUA_JOB_ID_NONE);
+    assert(!s_test_fs_file.is_open);
+    assert(s_test_fs_file.close_count == close_count + 1u);
+    assert(s_test_fs_file.offset == 0u);
+  }
+  assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+  assert(h2_lua_job_submit_path(host, NULL, "early-syntax-error",
+                               "scripts/early_malformed.lua", NULL, 0u,
+                               &job_id) == H2_PAL_OK);
+  assert(status(host, job_id).state == H2_LUA_JOB_FAILED);
+  assert(!s_test_fs_file.is_open);
+  assert(s_test_fs_file.offset < s_test_fs_file.source_size);
+  assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+  h2_lua_host_destroy(host);
+  h2_runtime_deinit(runtime);
+}
+
+int main(int argc, char **argv) {
+  assert(h2_atomic_int_init(&s_source_effect_count, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&s_test_audio_close_count, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&s_test_audio_start_count, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&s_test_audio_stop_count, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&s_test_audio_mic_start_count, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&s_test_audio_mic_stop_count, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&s_test_audio_mic_block, 0) == H2_ATOMIC_OK);
+  if (argc == 2 && strcmp(argv[1], "--prepared-benchmark") == 0) {
+    test_display_raster2d(1, "libs/lua/tests/geometry_batches.lua");
+  h2_atomic_int_destroy(&s_source_effect_count);
+  h2_atomic_int_destroy(&s_test_audio_close_count);
+  h2_atomic_int_destroy(&s_test_audio_start_count);
+  h2_atomic_int_destroy(&s_test_audio_stop_count);
+  h2_atomic_int_destroy(&s_test_audio_mic_start_count);
+  h2_atomic_int_destroy(&s_test_audio_mic_stop_count);
+  h2_atomic_int_destroy(&s_test_audio_mic_block);
+    return 0;
+  }
+  if (argc == 2 && strcmp(argv[1], "--raster-benchmark") == 0) {
+    test_display_raster2d(1, "libs/lua/tests/raster2d.lua");
+  h2_atomic_int_destroy(&s_source_effect_count);
+  h2_atomic_int_destroy(&s_test_audio_close_count);
+  h2_atomic_int_destroy(&s_test_audio_start_count);
+  h2_atomic_int_destroy(&s_test_audio_stop_count);
+  h2_atomic_int_destroy(&s_test_audio_mic_start_count);
+  h2_atomic_int_destroy(&s_test_audio_mic_stop_count);
+  h2_atomic_int_destroy(&s_test_audio_mic_block);
+    return 0;
+  }
+  test_streamed_close_failure();
+  test_host_allocator();
+  test_reserved_vm_heap();
+  test_display_raster2d(0, "libs/lua/tests/raster2d.lua");
+  test_display_raster2d(0, "libs/lua/tests/geometry_batches.lua");
+  test_display_raster2d(0, "libs/lua/tests/stroke_buffer.lua");
+  test_display_mesh_identity();
+  test_display_mesh_cache();
+  test_display_raster2d(1, "libs/lua/tests/mesh_source_paths.lua");
+  test_display_raster2d(1, "libs/lua/tests/mesh_staging.lua");
+  test_display_strokes();
+  test_display_string_regions();
+  test_display_regions();
+  test_display_meshes();
+  test_display_vectors();
   test_borrowed_display();
   static const char *const esp_claw_ids[] = {
       "adc",
@@ -908,6 +2838,8 @@ int main(void) {
   static const uint8_t embedded_nul_source[] = {'r', 'e', 't', 'u',  'r',
                                                 'n', ' ', '1', '\0', '2'};
   static const uint8_t system_profile_script[] =
+      "local v=require('vmath');local g=require('geometry');"
+      "assert(#v.buffer(3)==3 and type(g.affine3)=='function');"
       "local s=require('system');local d=require('delay');d.delay_us(10);"
       "local delay_ok=pcall(d.delay_us,1000001);local i=s.info();local "
       "ok,e=pcall("
@@ -1015,6 +2947,10 @@ int main(void) {
   run_until_terminal(invalid_size_host, invalid_size_job_id, 16u);
   assert(status(invalid_size_host, invalid_size_job_id).state ==
          H2_LUA_JOB_FAILED);
+  if (strstr(status(invalid_size_host, invalid_size_job_id).message,
+             "source size is invalid") == NULL)
+    fprintf(stderr, "invalid-size actual: %s\n",
+            status(invalid_size_host, invalid_size_job_id).message);
   assert(strstr(status(invalid_size_host, invalid_size_job_id).message,
                 "source size is invalid") != NULL);
   assert(h2_lua_job_release(invalid_size_host, invalid_size_job_id) ==
@@ -1136,6 +3072,39 @@ int main(void) {
   assert(strcmp(status(host, job_id).message, "file:ok") == 0);
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
 
+  /* A path submit reads through Runtime Filesystem with the caller's chunk
+   * name, takes the path as given, and needs no buffer the size of the source.
+   */
+  assert(h2_lua_job_submit_path(host, NULL, "app", "/data/lua/app.lua", NULL,
+                                0u, &job_id) == H2_PAL_OK);
+  run_until_terminal(host, job_id, 16u);
+  assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
+  assert(strcmp(status(host, job_id).message, "path:ok") == 0);
+  assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+  assert(h2_lua_job_submit_path(host, NULL, "app", "", NULL, 0u, &job_id) ==
+         H2_PAL_ERR_INVALID_ARG);
+  job_id = 12345u;
+  assert(h2_lua_job_submit_path(host, NULL, "app", "/data/lua/missing.lua",
+                                NULL, 0u, &job_id) == H2_PAL_ERR_NOT_FOUND);
+  assert(job_id == H2_LUA_JOB_ID_NONE);
+  assert(h2_lua_job_submit_path(host, NULL, "app", "scripts/oversize.lua", NULL,
+                                0u, &job_id) == H2_PAL_ERR_NO_SPACE);
+  assert(h2_lua_job_submit_path(host, NULL, "app", "scripts/bytecode.lua", NULL,
+                                0u, &job_id) == H2_PAL_ERR_FORMAT);
+  /* A read that fails partway is the caller's failure: no job is created and
+   * the slot it used is free again. */
+  s_fs_fail_read_after = 4;
+  job_id = 12345u;
+  assert(h2_lua_job_submit_path(host, NULL, "app", "/data/lua/app.lua", NULL,
+                                0u, &job_id) == H2_PAL_ERR_IO);
+  assert(job_id == H2_LUA_JOB_ID_NONE);
+  s_fs_fail_read_after = -1;
+  assert(h2_lua_job_submit_path(host, NULL, "app", "/data/lua/app.lua", NULL,
+                                0u, &job_id) == H2_PAL_OK);
+  run_until_terminal(host, job_id, 16u);
+  assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
+  assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+
   assert(h2_lua_job_submit_text(host, NULL, "@system-profile.lua",
                                 system_profile_script,
                                 sizeof(system_profile_script) - 1u, NULL, 0u,
@@ -1145,11 +3114,11 @@ int main(void) {
   assert(strcmp(status(host, job_id).message, "system-ok") == 0);
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
 
-  atomic_store(&s_test_audio_close_count, 0);
-  atomic_store(&s_test_audio_start_count, 0);
-  atomic_store(&s_test_audio_stop_count, 0);
-  atomic_store(&s_test_audio_mic_start_count, 0);
-  atomic_store(&s_test_audio_mic_stop_count, 0);
+  h2_atomic_store(&s_test_audio_close_count, 0);
+  h2_atomic_store(&s_test_audio_start_count, 0);
+  h2_atomic_store(&s_test_audio_stop_count, 0);
+  h2_atomic_store(&s_test_audio_mic_start_count, 0);
+  h2_atomic_store(&s_test_audio_mic_stop_count, 0);
   s_test_audio_written_bytes = 0u;
   s_test_audio_frame_count = 0u;
   assert(h2_lua_job_submit_text(host, NULL, "@component-profile.lua",
@@ -1160,11 +3129,11 @@ int main(void) {
   assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
   assert(strcmp(status(host, job_id).message, "components-ok") == 0);
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
-  assert(atomic_load(&s_test_audio_close_count) == 2);
-  assert(atomic_load(&s_test_audio_start_count) == 1);
-  assert(atomic_load(&s_test_audio_stop_count) == 1);
-  assert(atomic_load(&s_test_audio_mic_start_count) == 1);
-  assert(atomic_load(&s_test_audio_mic_stop_count) == 1);
+  assert(h2_atomic_load(&s_test_audio_close_count) == 2);
+  assert(h2_atomic_load(&s_test_audio_start_count) == 1);
+  assert(h2_atomic_load(&s_test_audio_stop_count) == 1);
+  assert(h2_atomic_load(&s_test_audio_mic_start_count) == 1);
+  assert(h2_atomic_load(&s_test_audio_mic_stop_count) == 1);
   /* The script wrote 1..6 then 7..10 to o1 (device frame = 4 bytes), 100..103
    * to o2, then closed both. The sub-frame tail of the first write must be
    * carried into the second one, so o1's bytes reach the device in order with
@@ -1207,9 +3176,9 @@ int main(void) {
       "d.delay_ms(500);return 'done'";
   h2_lua_job_id_t audio_job_1;
   h2_lua_job_id_t audio_job_2;
-  atomic_store(&s_test_audio_close_count, 0);
-  atomic_store(&s_test_audio_start_count, 0);
-  atomic_store(&s_test_audio_stop_count, 0);
+  h2_atomic_store(&s_test_audio_close_count, 0);
+  h2_atomic_store(&s_test_audio_start_count, 0);
+  h2_atomic_store(&s_test_audio_stop_count, 0);
   assert(h2_lua_job_submit_text(host, NULL, "@audio-wait-1.lua",
                                 audio_wait_script,
                                 sizeof(audio_wait_script) - 1u, NULL, 0u,
@@ -1223,25 +3192,25 @@ int main(void) {
     assert(h2_lua_host_step(host) == H2_PAL_OK);
     assert(h2_pal_time_sleep_ms(runtime->time, 1u) == H2_PAL_OK);
   }
-  assert(atomic_load(&s_test_audio_start_count) == 1);
+  assert(h2_atomic_load(&s_test_audio_start_count) == 1);
   assert(h2_lua_job_cancel(host, audio_job_1) == H2_PAL_OK);
   run_until_terminal(host, audio_job_1, 16u);
   assert(h2_lua_job_release(host, audio_job_1) == H2_PAL_OK);
-  assert(atomic_load(&s_test_audio_close_count) == 1);
-  assert(atomic_load(&s_test_audio_stop_count) == 0);
+  assert(h2_atomic_load(&s_test_audio_close_count) == 1);
+  assert(h2_atomic_load(&s_test_audio_stop_count) == 0);
   assert(h2_lua_job_cancel(host, audio_job_2) == H2_PAL_OK);
   run_until_terminal(host, audio_job_2, 16u);
   assert(h2_lua_job_release(host, audio_job_2) == H2_PAL_OK);
-  assert(atomic_load(&s_test_audio_close_count) == 2);
-  assert(atomic_load(&s_test_audio_stop_count) == 1);
+  assert(h2_atomic_load(&s_test_audio_close_count) == 2);
+  assert(h2_atomic_load(&s_test_audio_stop_count) == 1);
 
   static const uint8_t audio_input_wait_script[] =
       "local a=require('audio');local d=require('delay');"
       "assert(a.new_input());d.delay_ms(500);return 'done'";
   h2_lua_job_id_t audio_input_job_1;
   h2_lua_job_id_t audio_input_job_2;
-  atomic_store(&s_test_audio_mic_start_count, 0);
-  atomic_store(&s_test_audio_mic_stop_count, 0);
+  h2_atomic_store(&s_test_audio_mic_start_count, 0);
+  h2_atomic_store(&s_test_audio_mic_stop_count, 0);
   assert(h2_lua_job_submit_text(host, NULL, "@audio-input-wait-1.lua",
                                 audio_input_wait_script,
                                 sizeof(audio_input_wait_script) - 1u, NULL, 0u,
@@ -1255,15 +3224,15 @@ int main(void) {
     assert(h2_lua_host_step(host) == H2_PAL_OK);
     assert(h2_pal_time_sleep_ms(runtime->time, 1u) == H2_PAL_OK);
   }
-  assert(atomic_load(&s_test_audio_mic_start_count) == 1);
+  assert(h2_atomic_load(&s_test_audio_mic_start_count) == 1);
   assert(h2_lua_job_cancel(host, audio_input_job_1) == H2_PAL_OK);
   run_until_terminal(host, audio_input_job_1, 16u);
   assert(h2_lua_job_release(host, audio_input_job_1) == H2_PAL_OK);
-  assert(atomic_load(&s_test_audio_mic_stop_count) == 0);
+  assert(h2_atomic_load(&s_test_audio_mic_stop_count) == 0);
   assert(h2_lua_job_cancel(host, audio_input_job_2) == H2_PAL_OK);
   run_until_terminal(host, audio_input_job_2, 16u);
   assert(h2_lua_job_release(host, audio_input_job_2) == H2_PAL_OK);
-  assert(atomic_load(&s_test_audio_mic_stop_count) == 1);
+  assert(h2_atomic_load(&s_test_audio_mic_stop_count) == 1);
 
   {
     /* A microphone that never produces a frame must not let a script's long
@@ -1281,9 +3250,9 @@ int main(void) {
     uint64_t join_elapsed_ms;
     size_t step;
 
-    atomic_store(&s_test_audio_mic_start_count, 0);
-    atomic_store(&s_test_audio_mic_stop_count, 0);
-    atomic_store(&s_test_audio_mic_block, 1);
+    h2_atomic_store(&s_test_audio_mic_start_count, 0);
+    h2_atomic_store(&s_test_audio_mic_stop_count, 0);
+    h2_atomic_store(&s_test_audio_mic_block, 1);
     assert(h2_lua_job_submit_text(block_host, NULL, "@audio-input-block.lua",
                                   audio_input_block_script,
                                   sizeof(audio_input_block_script) - 1u, NULL,
@@ -1293,13 +3262,13 @@ int main(void) {
      * mutex. Watch the mic-acquired counter instead: it flips before the
      * script's input:read() call, without needing the lock. */
     for (step = 0u; step < 500u; ++step) {
-      if (atomic_load(&s_test_audio_mic_start_count) != 0) {
+      if (h2_atomic_load(&s_test_audio_mic_start_count) != 0) {
         break;
       }
       assert(h2_lua_host_step(block_host) == H2_PAL_OK);
       (void)h2_pal_time_sleep_ms(real_time, 1u);
     }
-    assert(atomic_load(&s_test_audio_mic_start_count) == 1);
+    assert(h2_atomic_load(&s_test_audio_mic_start_count) == 1);
 
     (void)h2_pal_time_get_monotonic_ms(real_time, &stop_started_ms);
     assert(h2_lua_host_stop(block_host) == H2_PAL_OK);
@@ -1316,28 +3285,28 @@ int main(void) {
      * on this machine. */
     assert(join_elapsed_ms < 5000u);
 
-    atomic_store(&s_test_audio_mic_block, 0);
+    h2_atomic_store(&s_test_audio_mic_block, 0);
     h2_lua_host_destroy(block_host);
-    assert(atomic_load(&s_test_audio_mic_stop_count) == 1);
+    assert(h2_atomic_load(&s_test_audio_mic_stop_count) == 1);
   }
 
   static const uint8_t audio_failure_script[] =
       "local a=require('audio');"
       "assert(a.new_output({sample_rate=16000,channels=1,bits_per_sample=16}));"
       "error('forced failure')";
-  atomic_store(&s_test_audio_close_count, 0);
-  atomic_store(&s_test_audio_start_count, 0);
-  atomic_store(&s_test_audio_stop_count, 0);
+  h2_atomic_store(&s_test_audio_close_count, 0);
+  h2_atomic_store(&s_test_audio_start_count, 0);
+  h2_atomic_store(&s_test_audio_stop_count, 0);
   assert(h2_lua_job_submit_text(host, NULL, "@audio-failure.lua",
                                 audio_failure_script,
                                 sizeof(audio_failure_script) - 1u, NULL, 0u,
                                 &job_id) == H2_PAL_OK);
   run_until_terminal(host, job_id, 16u);
   assert(status(host, job_id).state == H2_LUA_JOB_FAILED);
-  assert(atomic_load(&s_test_audio_close_count) == 0);
+  assert(h2_atomic_load(&s_test_audio_close_count) == 0);
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
-  assert(atomic_load(&s_test_audio_close_count) == 1);
-  assert(atomic_load(&s_test_audio_stop_count) == 1);
+  assert(h2_atomic_load(&s_test_audio_close_count) == 1);
+  assert(h2_atomic_load(&s_test_audio_stop_count) == 1);
 
   {
     static const uint8_t draw_circle_script[] =
@@ -1550,7 +3519,8 @@ int main(void) {
   static const uint8_t resume_budget_script[] =
       "local n=0;for i=1,20 do n=n+i end;return tostring(n)";
   test_clock_t clock;
-  atomic_init(&clock.now_ms, 0u);
+  clock.now_ms = 0u;
+  assert(pthread_mutex_init(&clock.mutex, NULL) == 0);
   const h2_pal_time_api_t test_time = {
       .user = &clock,
       .vtable = &s_test_clock_vtable,
@@ -1569,7 +3539,9 @@ int main(void) {
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
   h2_lua_host_destroy(host);
 
-  atomic_store(&clock.now_ms, 0u);
+  assert(pthread_mutex_lock(&clock.mutex) == 0);
+  clock.now_ms = 0u;
+  assert(pthread_mutex_unlock(&clock.mutex) == 0);
   host =
       create_unstarted_host_with_scheduler(runtime, 1u, 1u, UINT32_MAX, 4096u);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
@@ -1758,9 +3730,9 @@ int main(void) {
   capability_fixture_t capability = {.host = host};
   assert(h2_lua_register_capability(host, "immediate", immediate_capability,
                                     NULL, NULL) == H2_PAL_OK);
-  assert(h2_lua_register_capability(host, "early",
-                                    completed_before_return_capability, NULL,
-                                    &capability) == H2_PAL_OK);
+  assert(h2_lua_register_capability_prefix(host, "ear",
+                                           completed_before_return_prefix, NULL,
+                                           &capability) == H2_PAL_OK);
   assert(h2_lua_register_capability(host, "pending", pending_capability,
                                     cancel_capability,
                                     &capability) == H2_PAL_OK);
@@ -1825,5 +3797,13 @@ int main(void) {
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
   h2_lua_host_destroy(host);
   h2_runtime_deinit(runtime);
+  assert(pthread_mutex_destroy(&clock.mutex) == 0);
+  h2_atomic_int_destroy(&s_source_effect_count);
+  h2_atomic_int_destroy(&s_test_audio_close_count);
+  h2_atomic_int_destroy(&s_test_audio_start_count);
+  h2_atomic_int_destroy(&s_test_audio_stop_count);
+  h2_atomic_int_destroy(&s_test_audio_mic_start_count);
+  h2_atomic_int_destroy(&s_test_audio_mic_stop_count);
+  h2_atomic_int_destroy(&s_test_audio_mic_block);
   return 0;
 }

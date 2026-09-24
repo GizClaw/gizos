@@ -31,7 +31,8 @@ struct h2_pal_system_event_subscription {
     void *user;
 };
 
-#define FAKE_SUBSCRIPTION_CAPACITY 8u
+/* Runtime subscriptions plus the provisioning service subscriptions. */
+#define FAKE_SUBSCRIPTION_CAPACITY 64u
 #define FAKE_CONN_HANDLE ((uint16_t)3u)
 #define FAKE_PROVISION_HANDLE ((uint16_t)6u)
 
@@ -56,7 +57,11 @@ typedef struct fake_host {
     h2_pal_sync_api_t sync;
     h2_pal_time_api_t time;
     h2_pal_system_event_api_t system_event;
-    h2_runtime_t runtime;
+    h2_pal_pref_api_t pref;
+    h2_pal_pref_namespace_t pref_ns;
+    uint8_t saved_blob[920];
+    size_t saved_blob_len;
+    h2_runtime_t *runtime;
 } fake_host_t;
 
 static void *fake_alloc(void *user, size_t len) {
@@ -476,6 +481,137 @@ static const h2_pal_wifi_sta_vtable_t s_wifi_vtable = {
     .connect_and_save = fake_wifi_connect,
 };
 
+struct h2_pal_queue {
+    unsigned unused;
+};
+
+static int fake_queue_create(void *user, const h2_pal_queue_config_t *config,
+                             h2_pal_queue_t **out) {
+    (void)user;
+    (void)config;
+    *out = calloc(1, sizeof(**out));
+    return *out ? H2_PAL_OK : H2_PAL_ERR_NO_MEMORY;
+}
+
+static void fake_queue_destroy(void *user, h2_pal_queue_t *queue) {
+    (void)user;
+    free(queue);
+}
+
+static int fake_queue_recv(void *user, h2_pal_queue_t *queue, void *out,
+                           uint32_t timeout) {
+    (void)user;
+    (void)queue;
+    (void)out;
+    (void)timeout;
+    return H2_PAL_ERR_TIMEOUT;
+}
+
+static int fake_pref_close(h2_pal_pref_namespace_t *ns) {
+    (void)ns;
+    return H2_PAL_OK;
+}
+
+static int fake_pref_get(h2_pal_pref_namespace_t *ns,
+                         const h2_pal_mem_api_t *mem, const char *key,
+                         void **out, size_t *len) {
+    fake_host_t *runtime = ns->user;
+    CHECK(strcmp(key, "saved_v1") == 0);
+    if (!runtime->saved_blob_len)
+        return H2_PAL_ERR_NOT_FOUND;
+    *len = runtime->saved_blob_len;
+    *out = h2_pal_mem_alloc(mem, *len);
+    CHECK(*out);
+    memcpy(*out, runtime->saved_blob, *len);
+    return H2_PAL_OK;
+}
+
+static int fake_pref_set(h2_pal_pref_namespace_t *ns, const char *key,
+                         const void *data, size_t len) {
+    fake_host_t *runtime = ns->user;
+    CHECK(strcmp(key, "saved_v1") == 0 && len == sizeof(runtime->saved_blob));
+    memcpy(runtime->saved_blob, data, len);
+    runtime->saved_blob_len = len;
+    return H2_PAL_OK;
+}
+
+static int fake_pref_commit(h2_pal_pref_namespace_t *ns) {
+    (void)ns;
+    return H2_PAL_OK;
+}
+
+static int fake_pref_open(void *user, const char *name,
+                          h2_pal_pref_open_mode_t mode,
+                          h2_pal_pref_namespace_t **out) {
+    fake_host_t *runtime = user;
+    CHECK(strcmp(name, "h2runtime_wifi") == 0);
+    (void)mode;
+    *out = &runtime->pref_ns;
+    return H2_PAL_OK;
+}
+
+static void fake_host_bind(fake_host_t *runtime) {
+    static const h2_pal_queue_vtable_t queue_vtable = {
+        .create = fake_queue_create,
+        .destroy = fake_queue_destroy,
+        .recv = fake_queue_recv};
+    static const h2_pal_queue_api_t queue = {.vtable = &queue_vtable};
+    static const h2_pal_pref_vtable_t pref_vtable = {.open = fake_pref_open};
+    runtime->pref = (h2_pal_pref_api_t){runtime, &pref_vtable};
+    runtime->pref_ns = (h2_pal_pref_namespace_t){.user = runtime,
+                                                 .close = fake_pref_close,
+                                                 .get_blob = fake_pref_get,
+                                                 .set_blob = fake_pref_set,
+                                                 .commit = fake_pref_commit};
+    h2_runtime_config_t config = {
+        .board = "ble-test",
+        .target = "host",
+        .chip = "host",
+        .mem = &runtime->allocator,
+        .task = &runtime->task,
+        .sync = &runtime->sync,
+        .queue = &queue,
+        .pref = &runtime->pref,
+        .wifi_sta = &runtime->wifi_sta,
+        .firmware_info = h2_pal_unsupported_firmware_info_api(),
+        .log = h2_pal_unsupported_log_api(),
+        .time = &runtime->time,
+        .timer = h2_pal_unsupported_timer_api(),
+        .fs = h2_pal_unsupported_fs_api(),
+        .disk = h2_pal_unsupported_disk_api(),
+        .crypto = h2_pal_unsupported_crypto_api(),
+        .http = h2_pal_unsupported_http_api(),
+        .net = h2_pal_unsupported_net_api(),
+        .netif = h2_pal_unsupported_netif_api(),
+        .mqtt = h2_pal_unsupported_mqtt_api(),
+        .webrtc = h2_pal_unsupported_webrtc_api(),
+        .wifi_ap = h2_pal_unsupported_wifi_ap_api(),
+        .wifi_csi = h2_pal_unsupported_wifi_csi_api(),
+        .wifi_settings = h2_pal_unsupported_wifi_settings_api(),
+        .ble_host = &runtime->ble,
+        .modem = h2_pal_unsupported_modem_api(),
+        .power = h2_pal_unsupported_power_api(),
+        .display = h2_pal_unsupported_display_api(),
+        .audio = h2_pal_unsupported_audio_api(),
+        .audio_decoder = h2_pal_unsupported_audio_decoder_api(),
+        .periph = h2_pal_unsupported_periph_api(),
+        .button = h2_pal_unsupported_button_api(),
+        .touch = h2_pal_unsupported_touch_api(),
+        .buzzer = h2_pal_unsupported_buzzer_api(),
+        .nfc = h2_pal_unsupported_nfc_api(),
+        .nfc_card_emulation = h2_pal_unsupported_nfc_card_emulation_api(),
+        .imu = h2_pal_unsupported_imu_api(),
+        .gpio_irq = h2_pal_unsupported_gpio_irq_api(),
+        .led = h2_pal_unsupported_led_api(),
+        .switch_api = h2_pal_unsupported_switch_api(),
+        .pwm_switch = h2_pal_unsupported_pwm_switch_api(),
+        .input = h2_pal_unsupported_input_api(),
+        .system_event = &runtime->system_event,
+        .video_decoder = h2_pal_unsupported_video_decoder_api(),
+    };
+    CHECK(h2_runtime_init(&config, &runtime->runtime) == H2_PAL_OK);
+}
+
 static void fake_host_init(fake_host_t *host) {
     memset(host, 0, sizeof(*host));
     CHECK(pthread_mutex_init(&host->mutex, NULL) == 0);
@@ -497,13 +633,14 @@ static void fake_host_init(fake_host_t *host) {
         .user = host,
         .vtable = &s_event_vtable,
     };
-    host->runtime.ble_host = &host->ble;
-    host->runtime.wifi_sta = &host->wifi_sta;
-    host->runtime.task = &host->task;
-    host->runtime.sync = &host->sync;
-    host->runtime.time = &host->time;
-    host->runtime.system_event = &host->system_event;
-    host->runtime.mem = &host->allocator;
+    fake_host_bind(host);
+}
+
+static void fake_host_deinit(fake_host_t *host) {
+    h2_runtime_deinit(host->runtime);
+    CHECK(host->subscription_count == 0u);
+    CHECK(pthread_cond_destroy(&host->cond) == 0);
+    CHECK(pthread_mutex_destroy(&host->mutex) == 0);
 }
 
 static void test_requires_capabilities(void) {
@@ -511,25 +648,30 @@ static void test_requires_capabilities(void) {
 
     fake_host_t host;
     fake_host_init(&host);
-    host.runtime.wifi_sta = NULL;
-    CHECK(h2_smoke_ble_wifi_config_run(&host.runtime) == H2_PAL_ERR_UNSUPPORTED);
+    /* Remove one capability from a view of the initialized Runtime, keeping
+     * the owned Runtime intact for teardown. */
+    h2_runtime_t missing = *host.runtime;
+    missing.wifi_sta = NULL;
+    CHECK(h2_smoke_ble_wifi_config_run(&missing) == H2_PAL_ERR_UNSUPPORTED);
     CHECK(host.register_calls == 0);
 
-    fake_host_init(&host);
-    host.runtime.ble_host = NULL;
-    CHECK(h2_smoke_ble_wifi_config_run(&host.runtime) == H2_PAL_ERR_UNSUPPORTED);
+    missing = *host.runtime;
+    missing.ble_host = NULL;
+    CHECK(h2_smoke_ble_wifi_config_run(&missing) == H2_PAL_ERR_UNSUPPORTED);
     CHECK(host.register_calls == 0);
+    fake_host_deinit(&host);
 }
 
 static void test_unused_window_closes(void) {
     fake_host_t host;
     fake_host_init(&host);
     /* No phone connects, so the window expires and must clean up after itself. */
-    CHECK(h2_smoke_ble_wifi_config_run(&host.runtime) == H2_PAL_ERR_TIMEOUT);
+    CHECK(h2_smoke_ble_wifi_config_run(host.runtime) == H2_PAL_ERR_TIMEOUT);
     CHECK(host.register_calls == 1);
     CHECK(host.unregister_calls == 1);
     CHECK(host.adv_start_calls == 1);
     CHECK(host.adv_stop_calls == 1);
+    fake_host_deinit(&host);
 }
 
 /*
@@ -598,11 +740,13 @@ static void test_provisioned_window_returns_ok(void) {
     fake_host_init(&host);
     pthread_t thread;
     CHECK(pthread_create(&thread, NULL, provision_thread_main, &host) == 0);
-    CHECK(h2_smoke_ble_wifi_config_run(&host.runtime) == H2_PAL_OK);
+    CHECK(h2_smoke_ble_wifi_config_run(host.runtime) == H2_PAL_OK);
     CHECK(pthread_join(thread, NULL) == 0);
     CHECK(host.wifi_connected == 1);
     CHECK(host.unregister_calls == 1);
     CHECK(host.adv_stop_calls >= 1);
+    CHECK(host.saved_blob_len == sizeof(host.saved_blob));
+    fake_host_deinit(&host);
 }
 
 int main(void) {

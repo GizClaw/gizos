@@ -469,7 +469,7 @@ Testing PAL 目前有两个独立 target，均不依赖 LVGL 或 Memory driver�
 | FS | `h2_app_test_fs.h` | 内存文件读写、seek/stat/remove/rename、短读、close/sync 故障 |
 | Wi-Fi / Settings | `h2_app_test_wifi.h` | scan 列表与过滤、连接请求、显式状态、保存／忘记网络 |
 | Modem | `h2_app_test_modem.h` | 状态输入、dial/answer/hangup 请求与失败 |
-| Power | `h2_app_test_power.h` | capabilities/boot info、hold、reboot/sleep/shutdown 意图 |
+| Power | `h2_app_test_power.h` | capabilities/boot info、hold、reboot/sleep/shutdown 意图、深睡定时唤醒时长 |
 | Display | `h2_app_test_display.h` | open/close、亮度值及失败；不绘制像素 |
 | Periph / Button / Input / PWM | `h2_app_test_periph.h` | 可配置 ID registry、按键状态、电量／温度、振动 duty |
 | Audio fake | `h2_app_test_audio_fake.h` | 无硬件 mic/speaker/track、音量、静音输入、输出字节、失败与 ownership |

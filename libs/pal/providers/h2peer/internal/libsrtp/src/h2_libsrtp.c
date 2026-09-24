@@ -65,9 +65,7 @@ h2_pal_result_t h2_libsrtp_init(const h2_libsrtp_config_t *config) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     if (h2_libsrtp_state.ready) {
-        if (h2_libsrtp_state.mem.user != config->mem.user ||
-            h2_libsrtp_state.mem.vtable != config->mem.vtable ||
-            h2_libsrtp_state.crypto.user != config->crypto.user ||
+        if (h2_libsrtp_state.crypto.user != config->crypto.user ||
             h2_libsrtp_state.crypto.vtable != config->crypto.vtable ||
             h2_libsrtp_state.max_packet_size != config->max_packet_size) {
             return H2_PAL_ERR_INVALID_STATE;
@@ -80,6 +78,8 @@ h2_pal_result_t h2_libsrtp_init(const h2_libsrtp_config_t *config) {
     }
 
     memset(&h2_libsrtp_state, 0, sizeof(h2_libsrtp_state));
+    if (h2_atomic_size_init(&h2_libsrtp_state.live_sessions, 0u) != H2_ATOMIC_OK)
+        return H2_PAL_ERR_NO_MEMORY;
     h2_libsrtp_state.mem = config->mem;
     h2_libsrtp_state.crypto = config->crypto;
     h2_libsrtp_state.max_packet_size = config->max_packet_size;
@@ -92,6 +92,7 @@ h2_pal_result_t h2_libsrtp_init(const h2_libsrtp_config_t *config) {
         return H2_PAL_OK;
     }
     (void)srtp_shutdown();
+    h2_atomic_size_destroy(&h2_libsrtp_state.live_sessions);
     memset(&h2_libsrtp_state, 0, sizeof(h2_libsrtp_state));
     return crypto_result != H2_PAL_OK ? crypto_result : H2_PAL_ERR_IO;
 }
@@ -104,12 +105,13 @@ h2_pal_result_t h2_libsrtp_deinit(void) {
         --h2_libsrtp_state.owner_refs;
         return H2_PAL_OK;
     }
-    if (h2_libsrtp_state.live_sessions != 0u) {
+    if (h2_atomic_size_load(&h2_libsrtp_state.live_sessions, H2_ATOMIC_SEQ_CST) != 0u) {
         return H2_PAL_ERR_INVALID_STATE;
     }
     if (srtp_shutdown() != srtp_err_status_ok) {
         return H2_PAL_ERR_IO;
     }
+    h2_atomic_size_destroy(&h2_libsrtp_state.live_sessions);
     memset(&h2_libsrtp_state, 0, sizeof(h2_libsrtp_state));
     h2_libsrtp_take_crypto_result();
     return H2_PAL_OK;
@@ -189,26 +191,32 @@ h2_pal_result_t h2_libsrtp_session_create(
     if (result != H2_PAL_OK) {
         return result;
     }
-    if (h2_libsrtp_state.live_sessions == SIZE_MAX) {
+    if (h2_atomic_size_load(&h2_libsrtp_state.live_sessions, H2_ATOMIC_SEQ_CST) == SIZE_MAX) {
         return H2_PAL_ERR_FULL;
     }
-    session = h2_pal_mem_alloc(&h2_libsrtp_state.mem, sizeof(*session));
+    const h2_pal_mem_api_t *mem = config->allocator != NULL
+                                      ? config->allocator : &h2_libsrtp_state.mem;
+    if (!h2_libsrtp_mem_complete(mem)) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    session = h2_pal_mem_alloc(mem, sizeof(*session));
     if (session == NULL) {
         return H2_PAL_ERR_NO_MEMORY;
     }
     memset(session, 0, sizeof(*session));
+    session->mem = *mem;
     session->scratch = h2_pal_mem_alloc(
-        &h2_libsrtp_state.mem, h2_libsrtp_state.max_packet_size);
+        mem, h2_libsrtp_state.max_packet_size);
     if (session->scratch == NULL) {
-        h2_pal_mem_free(&h2_libsrtp_state.mem, session);
+        h2_pal_mem_free(mem, session);
         return H2_PAL_ERR_NO_MEMORY;
     }
     if (config->ssrc_policy == H2_LIBSRTP_SSRC_ANY) {
         session->operation_arena = h2_pal_mem_alloc(
-            &h2_libsrtp_state.mem, H2_LIBSRTP_ANY_OPERATION_ARENA_SIZE);
+            mem, H2_LIBSRTP_ANY_OPERATION_ARENA_SIZE);
         if (session->operation_arena == NULL) {
-            h2_pal_mem_free(&h2_libsrtp_state.mem, session->scratch);
-            h2_pal_mem_free(&h2_libsrtp_state.mem, session);
+            h2_pal_mem_free(mem, session->scratch);
+            h2_pal_mem_free(mem, session);
             return H2_PAL_ERR_NO_MEMORY;
         }
         session->operation_arena_capacity =
@@ -224,18 +232,25 @@ h2_pal_result_t h2_libsrtp_session_create(
         config->master_salt, salt_len);
     h2_libsrtp_set_policy(config, session, &policy);
     h2_libsrtp_take_crypto_result();
+    /* Initial stream state lives on the session heap; reserve the bounded
+     * operation arena for SSRC clones made by protect/unprotect. */
+    uint8_t *operation_arena = session->operation_arena;
+    session->operation_arena = NULL;
+    h2_libsrtp_allocator_enter(session);
     status = srtp_create(&session->upstream, &policy);
+    h2_libsrtp_allocator_leave();
+    session->operation_arena = operation_arena;
     result = h2_libsrtp_take_crypto_result();
     if (status != srtp_err_status_ok) {
         h2_libsrtp_secure_zero(
             session->operation_arena, session->operation_arena_capacity);
         h2_pal_mem_free(
-            &h2_libsrtp_state.mem, session->operation_arena);
+            mem, session->operation_arena);
         h2_libsrtp_secure_zero(
             session->scratch, h2_libsrtp_state.max_packet_size);
-        h2_pal_mem_free(&h2_libsrtp_state.mem, session->scratch);
+        h2_pal_mem_free(mem, session->scratch);
         h2_libsrtp_secure_zero(session, sizeof(*session));
-        h2_pal_mem_free(&h2_libsrtp_state.mem, session);
+        h2_pal_mem_free(mem, session);
         if (result != H2_PAL_OK) {
             return result;
         }
@@ -243,7 +258,7 @@ h2_pal_result_t h2_libsrtp_session_create(
                    ? H2_PAL_ERR_NO_MEMORY
                    : H2_PAL_ERR_IO;
     }
-    ++h2_libsrtp_state.live_sessions;
+    h2_atomic_size_fetch_add(&h2_libsrtp_state.live_sessions, 1u, H2_ATOMIC_SEQ_CST);
     *out_session = session;
     return H2_PAL_OK;
 }
@@ -254,6 +269,8 @@ void h2_libsrtp_session_destroy(h2_libsrtp_session_t **session) {
         return;
     }
     owned = *session;
+    h2_pal_mem_api_t allocator = owned->mem;
+    const h2_pal_mem_api_t *mem = &allocator;
     *session = NULL;
     if (owned->upstream != NULL) {
         h2_libsrtp_allocator_enter(owned);
@@ -262,14 +279,14 @@ void h2_libsrtp_session_destroy(h2_libsrtp_session_t **session) {
     }
     h2_libsrtp_secure_zero(
         owned->operation_arena, owned->operation_arena_capacity);
-    h2_pal_mem_free(&h2_libsrtp_state.mem, owned->operation_arena);
+    h2_pal_mem_free(mem, owned->operation_arena);
     h2_libsrtp_secure_zero(
         owned->scratch, h2_libsrtp_state.max_packet_size);
-    h2_pal_mem_free(&h2_libsrtp_state.mem, owned->scratch);
+    h2_pal_mem_free(mem, owned->scratch);
     h2_libsrtp_secure_zero(owned, sizeof(*owned));
-    h2_pal_mem_free(&h2_libsrtp_state.mem, owned);
-    if (h2_libsrtp_state.live_sessions > 0u) {
-        --h2_libsrtp_state.live_sessions;
+    h2_pal_mem_free(mem, owned);
+    if (h2_atomic_size_load(&h2_libsrtp_state.live_sessions, H2_ATOMIC_SEQ_CST) > 0u) {
+        h2_atomic_size_fetch_sub(&h2_libsrtp_state.live_sessions, 1u, H2_ATOMIC_SEQ_CST);
     }
 }
 

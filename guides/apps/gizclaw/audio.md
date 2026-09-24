@@ -16,6 +16,16 @@ Peer connection 内的上下行 Opus RTP track、双向 Agent Event Stream、BOS
 
 `h2_gizclaw_player_repeat_set()` 接受与 `client.device.audioplayer.mode.set` 相同的 `off` / `one` / `all`，其他值返回 `H2_PAL_ERR_INVALID_ARG` 并保持当前模式不变，快照的 `repeat` 字段即为回读入口。末曲推进与循环由 library 的 worker 按该模式负责：`one` 重播当前曲，`all` 到末尾回到第 0 条，`off` 播完即停。产品必须设置模式而不是自己实现“下一首、到末尾回绕”，否则会与库内推进重复触发。
 
+### 变速播放（保持音调）
+
+`h2_gizclaw_player_rate_set(service, rate_permille)` 让本地播放器以录制速度的 `rate_permille`‰ 播放，范围 `H2_GIZCLAW_PLAYER_RATE_MIN`（500）到 `H2_GIZCLAW_PLAYER_RATE_MAX`（2000），`H2_GIZCLAW_PLAYER_RATE_NORMAL`（1000）为原速；越界返回 `H2_PAL_ERR_INVALID_ARG` 且速率不变，`get_status()` 的 `rate_permille` 读回当前值。它面向播客、有声书这类整段下载的语音：变速在设备上做，改的是语速不是音高。实时下行的对话回复不走这里——设备放慢实时流会越积越多，那类语速由服务端合成时决定。
+
+速率是播放器属性而不是单次播放参数：设置后在一个 32 ms 步长内作用于正在播放的条目（不重启下载、不重新定位），并对之后的每一条、自动下一首、单曲循环和服务器发起的 `audioplayer.play` 持续生效，直到再次设置。这样产品在用户改偏好时设一次即可；原速播放的内容（如音乐）在开始前设回 1000。命名音效（`client.device.sound.play`）始终原速。
+
+时间轴一律按媒体本身：`status.position_ms`、结束时的 `duration_ms`、`play_index_at()` 的 `start_ms` 和 `playlist_set()` 的 `duration_ms` 都是原始媒体时间，放慢不会改变续播点或上报的时长；变速中途切换时位置只增不减。
+
+实现是定点 SOLA：40 ms 序列、8 ms 线性交叉淡化、在 15 ms 窗口内按绝对差之和找与上一段尾部最相似的起点，每步输出 32 ms、按速率推进源位置。1000 为直通，不分配缓冲、不增加逐样本计算，输出与不变速时逐字节相同；其他速率在条目播放期间占用一块约 5.5 KiB 的固定工作缓冲，条目结束即释放。下载环形缓冲不变——慢放只是消费更慢，已有背压让下载等待更久，不会多预取或涨内存。工作缓冲分配失败时该条目按原速继续播放并记 WARN `player-rate fallback=1`，不会让播放失败；这也是 CPU 不足时的降级方向。每个变速过的条目结束时记一行 INFO `player-rate rate=… audio_ms=… decode_us=… stretch_us=…`，用于在真实板子上核对解码与变速各占多少 CPU。
+
 HTTPS 下载由独立 PAL task 写入有界压缩环形缓冲，默认容量 64 KiB、启动与补缓冲阈值 16 KiB。设备 worker 增量读取 Ogg page 和 Opus packet，输出 16 kHz mono S16LE，并组装成 Audio PAL 要求的完整 PCM frame。下载侧缓冲满时等待，播放侧 `WOULD_BLOCK` 重试同一帧；不会把整首文件载入内存，也不会逐帧 drain 插入静音。只有尾帧补零，正常结束时 drain；播放进度扣除排队帧，最终不计补零样本。
 
 停止使当前 generation 失效并取消 HTTP，下载 task join 成功后才释放其缓冲；播放器只关闭自己的 Track，不关闭共享扬声器。下载、解码或输出失败进入 error 并上报 telemetry。命名音效由补充 vtable 解析名称为 HTTPS Ogg/Opus URL；名称须适合内部有界存储，非法输入在预留任务前拒绝。
@@ -64,7 +74,7 @@ sequenceDiagram
 | 本轮完成 | 输入结束已发出即完成，不等待服务端 | `h2_gizclaw_service_poll()` 分发的 completion callback |
 | Cancel / 挂断 | 停止 mic、关闭输入、丢弃未播放输出 | `h2_gizclaw_conversation_cancel()`，之后 `h2_gizclaw_conversation_release()` |
 
-Conversation 完成同时满足服务端 response terminal 和本地 playback drained。
+Conversation completion 表示本轮输入已发送，不等待服务端回复或本地播放排空。
 
 ## Audio 格式与背压
 
@@ -75,18 +85,28 @@ Conversation 完成同时满足服务端 response terminal 和本地 playback dr
 - Audio format 和 provider frame size 由 Runtime Audio capability 决定，App 不能写死 board I2S 参数，也不能要求所有 board 按 20 ms 产出 PCM。Portable Audio integration 负责把连续 PCM stream 切成合法的 Opus frame；例如 16 kHz Opus 的 20 ms frame 是每声道 320 samples，而 Tiga provider 仍可每次交付 512 samples。
 - Public request API 固定接受 16 kHz mono S16LE PCM。`$gizclaw/audio/uplink` 在内部按 20 ms 连续切片并编码 Opus；`$gizclaw/audio/downlink` 解码 Opus/PLC，并通过有界 PCM ring 向 App 交付。测试专用的 low-level raw Opus API 不属于产品 App 集成边界。
 - `GZC_PROTOCOL_OPUS_PACKET` 的 payload 是原始 Opus packet，不带 firmware-private timestamp header。C SDK 和 PAL provider 负责 media/RTP 映射；App 不调用底层 `peer_send_opus`，也不使用 DataChannel fallback。
-- 上行 input stream ID 只描述我们自己的输入：BOS、READY、EOS，以及服务端对它的拒绝（该 ID 上带我们 label 或无 label 的 EOS error）。服务端下发的 stream ID、BOS、EOS 设备一概不看：下行音频属于连接，不属于任何一轮输入，服务端发来什么就解码进 Track 播放，下行流结束（有无错误码）都不是错误。文字事件在输入活跃期间转发，不参与状态。
+- 上行 input stream ID 只描述我们自己的输入：BOS、READY、EOS，以及服务端对它的拒绝（该 ID 上带我们 label 或无 label 的 EOS error）。下行音频属于连接，不属于任何一轮输入；下行 stream ID 和 EOS 不参与本轮输入判定，音频 BOS 只用于解除下述 PTT hold。未被 hold 或其他 Track owner 抑制的音频解码进 Track 播放，下行流结束（有无错误码）都不是 conversation 错误。文字事件在输入活跃期间转发，不参与状态。
 - Capture deadline 由实际 `samples_per_channel / sample_rate_hz` 累加，不用固定 sleep；活跃 media poll 的等待上界不得形成 100 ms 音频空洞。
 - PCM uplink/downlink 使用单生产者、单消费者的无锁 byte ring；encoded uplink/downlink 使用无锁 fixed-slot ring。ring 只通过 acquire/release atomic index 发布数据，不持有 service mutex，也不使用 semaphore 唤醒。Audio Task 每 20 ms 尝试消费一帧；`h2_gizclaw_pcm_track_write()` 和内部 slot 写入都不等待。`h2_gizclaw_pcm_track_write()` 成功后调用方可以释放 chunk；`WOULD_BLOCK` 表示本次 chunk 未被接受，实时调用方应丢弃并记录 overrun，不能阻塞 microphone 或积累延迟。`h2_gizclaw_service_audio_end()` 冻结当前已接受的 PCM 前缀并发布 EOS，encoder drain 已接受的 PCM 后补齐最后一个非空残片。
 - 下行解码通道在第一个 Conversation 创建时建立，随 Service 存在到 deinit，不随每轮输入或 Conversation release 销毁：产品每轮创建并释放 Conversation，之后到达的音频照常播放。音频播放或 Speech 占用 Track 下行时，到达的对话音频直接丢弃，之前已排队的也丢弃，Track 空出后不会补播旧音频。下行 Opus ring 为 32 格（约 640 ms），满时拒收并由 provider 丢包，不做 PLC、不报错，扬声器卡住时丢音频而不是累积延迟。下行 PCM 只走 Track，不复制到 callback；App 按 speaker pump 实际播放判断“有声音”。
-- PTT 松手（真正结束输入的那次 `audio_end`，重复调用不算）清空此刻缓冲的下行音频：待解码 Opus、解码器状态和 Track 里未播的 PCM；之后到达的音频照常播放。挂断和 Workspace 切换同样清空；新输入替换旧输入不清空。
-- PTT 按下（`audio_start`，短按打断也算）置位 `waiting_for_bos`：此后到达的下行 Opus 直接丢弃，不进入 ring；按下之后收到的第一个下行音频 BOS（`kind=AUDIO`）清除标志，此后的音频照常播放。文本、转写和我们自己输入的 BOS 不清除标志，EOS 不参与，也不看 stream ID。Service 网络任务每一轮都读空 Event stream（与是否有请求在运行、产品是否订阅事件无关），下行 BOS 与下行音频同步处理，不会积压到下一次输入。
+- PTT 松手（真正结束输入的那次成功 `audio_end`，重复调用不算）先清空此刻缓冲的下行音频：待解码 Opus、解码器状态和 Track 里未播的 PCM，再清除 `waiting_for_bos`；即使没有收到下行音频 BOS，之后到达的音频也照常播放。按下置位和松手清空、解除抑制都在同一个 audio control mutex 内串行完成，旧松手不能清掉后一次按下的新 hold。挂断和 Workspace 切换同样清空缓冲；新输入替换旧输入不清空。这里的清空只覆盖本地已缓冲的数据，不为不同 transport 中仍在途的 packet 增加轮次归属或排序保证。
+- PTT 按下（`audio_start`，短按打断也算）置位 `waiting_for_bos`：此后到达的下行 Opus 直接丢弃，不进入 ring；按下之后收到的第一个下行音频 BOS（`kind=AUDIO`）或真正松手都可以清除标志，后一次按下会重新置位。文本、转写和我们自己输入的 BOS 不清除标志，EOS 不参与，也不看 stream ID；不使用超时解除抑制。Service 网络任务每一轮都读空 Event stream（与是否有请求在运行、产品是否订阅事件无关），下行 BOS 与下行音频同步处理，不会积压到下一次输入。
 - Opus encode/decode 属于 `libs/gizclaw`，不进入 board driver。接收 provider 的有界重排与 loss marker 合同保持不变；downlink decoder 对 loss marker 执行 PLC，不能直接删除缺失时间。
 - GizClaw service network task 不操作 App state 或 LVGL。App main loop dispatch matching-generation callback 后，才把录音电平、等待和播放状态投影到页面 subject；API completion 不是 Runtime event。
 
 ### Conversation 输入边界
 
 开始输入先发送新 StreamID 的纯控制 BOS（kind 未指定，mime_type 为空），因此上游可以立即打断旧回复。第一块 PCM 到达后才发送同一 StreamID 的音频 BOS，并等待 AUDIO_INPUT_READY 后发送 Opus；结束时先发送已打开音频通道的 EOS，再发送纯控制 EOS。没有 PCM 的输入只发送纯控制 BOS/EOS，不等待音频 READY，也不生成静音包或空文本。
+
+### 完整文字输入
+
+`h2_gizclaw_session_send_text()` 在 Session 当前 Workspace 的空闲路由上复制并异步提交
+1–4096 字节 UTF-8 文本，无需启动麦克风。发送纯控制 BOS 后，以同一 stream ID 和
+输入 label 发送 TEXT_DONE；TEXT_DONE 自带输入结束，不额外发送 EOS。
+录音中或上一输入尚未 completion 时返回 BUSY，不打断录音；受理后 Session 进入
+WAITING。完成和错误由原有 poll/completion 分发；完成只表示输入已发送，之后到达的
+下行音频照常播放。详细错误、Session 状态与取消规则见
+[Conversation 文字输入](/zh/developing/gizclaw#conversation-文字输入)。
 
 ### Speech RPC 音频流
 
@@ -156,4 +176,10 @@ Friend 与 Friend Group 语音只通过各自 system Workspace（内置 `system-
 
 ### 下行边界与取消
 
+库内诊断通过 `h2_gizclaw_conversation_downlink_counters_internal(service)` 一次取得 `h2_gizclaw_conversation_downlink_counters_t` 快照：`received` 是 downlink 存在期间收到的合法 Opus 写入次数（包含零长度 PLC 标记），`dropped_no_track` 是 audio play 或 Speech 占用 Track 时的丢弃数，`dropped_waiting_for_bos` 是 hold 尚未解除时的丢弃数，`dropped_ring_full` 是 Opus ring 返回 `WOULD_BLOCK` 时的丢弃数。按现有入口判断顺序归因：Track 占用优先于 hold，一次写入最多增加一种丢弃原因。读取时只获取一次 downlink 引用，Track 被占用时仍可读取；这属于 private internal 诊断接口，不是 App public API。
+
+四个计数随 downlink 创建归零、随 Service deinit 销毁，hold、BOS、flush 和 Conversation release 都不重置；使用 `atomic_uint_least32_t`，按 `uint_least32_t` 的位宽无符号回绕。各字段单独原子读取，并发写入时快照不保证字段间处于同一时刻；诊断可比较同一 downlink 生命周期内相邻快照的增量。对象尚未创建或 service 为 NULL 时读取全零，无对象时的到达和非法参数不计数。计数只观察既有接收路径：no-track 和 waiting-for-bos 仍返回 OK，ring-full 仍返回 `WOULD_BLOCK`，CLOSED 仍映射为 OK 且不计入 ring-full；后续 flush、解码失败及实际扬声器播放量不在这三个丢弃计数内，不能用它们推断已经听到了回复。
+
 下行媒体不看 EOS，除按下后的 `waiting_for_bos` 外收到即解码；标志只由按下后的下一个下行音频 BOS 清除。清空与 decoder 写入 Track 串行化：清空时持有解码锁，丢弃待解码 Opus、重置解码器并标记 Track 下行水位，旧数据不会在清空后再写入。已交给平台输出的音频缓冲不在此清空保证内。不新增 RTP payload 或时间戳格式。
+
+`h2_gizclaw_conversation_cancel` 只关闭本轮输入并清空本地缓冲，不停止服务端 run；SFU 房间下行可继续到达。显式离开当前 run 使用 `h2_gizclaw_rpc_run_stop`，服务端停止 runtime 并断开房间，成功后库再清空 Service 的 Opus 队列、解码器和未播放 PCM（无 Session 时也一样）。下行仍由 Service 共享 Track 承接，不按 stream 或 Workspace 过滤；已交给平台输出的缓冲仍不在清空保证内。

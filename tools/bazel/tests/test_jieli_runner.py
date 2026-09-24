@@ -58,6 +58,16 @@ def git(checkout: Path, *arguments: str) -> str:
     ).stdout.strip()
 
 
+class StandaloneTargetLayoutTest(unittest.TestCase):
+    def test_mp4_firmware_terminal(self):
+        root = Path(__file__).resolve().parents[3]
+        target = root / "projects/example/targets/native_firmware/mp4-player/jieli_ac791n_devkit"
+        build = (target / "BUILD.bazel").read_text()
+        self.assertIn('name = "firmware"', build)
+        self.assertIn('srcs = ["src/main.c"]', build)
+        self.assertFalse((root / "projects/example/targets/jieli_firmware" / "mp4-player").exists())
+
+
 class JieliRunnerFixture:
     """A fake SDK checkout, toolchain tree and post-build script."""
 
@@ -153,6 +163,7 @@ class JieliRunnerFixture:
             native_component_source=[],
             native_include_root=[],
             prebuilt_component=[],
+            sdk_patch=[],
         )
         values.update(overrides)
         return mock.Mock(**values)
@@ -291,6 +302,56 @@ class JieliRunnerTest(unittest.TestCase):
             self.assertEqual(manifest["project_makefile"], "project.mk")
             self.assertEqual(manifest["native_sources"], [])
             # The pinned checkout is never written to.
+            self.assertEqual(git(fixture.checkout, "status", "--porcelain"), "")
+
+    def test_sdk_patch_changes_only_invocation_local_copy(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = JieliRunnerFixture(Path(temporary).resolve())
+            patch = fixture.root / "sdk.patch"
+            patch.write_text("--- a/sdk-source.c\n+++ b/sdk-source.c\n@@ -1 +1 @@\n"
+                             "-int sdk_source;\n+int patched_source;\n")
+            original_make = runner.run_native_make
+            observed = []
+
+            def capture(make, project, environment, variables, targets, stage):
+                observed.append(project)
+                self.assertNotEqual(project, fixture.checkout / fixture.subdirectory)
+                self.assertEqual((project / "sdk-source.c").read_text(),
+                                 "int patched_source;\n")
+                return original_make(make, project, environment, variables, targets, stage)
+
+            with mock.patch.object(runner, "run_native_make", capture):
+                runner.build(fixture.arguments(sdk_patch=["sdk.patch"]))
+            self.assertEqual(len(observed), 1)
+            self.assertEqual((fixture.checkout / fixture.subdirectory / "sdk-source.c").read_text(),
+                             "int sdk_source;\n")
+            self.assertEqual(git(fixture.checkout, "status", "--porcelain"), "")
+
+    def test_invalid_sdk_patch_is_rejected_before_execution(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = JieliRunnerFixture(Path(temporary).resolve())
+            (fixture.root / "wrong.txt").write_text("not a patch")
+            (fixture.root / "directory.patch").mkdir()
+            for patch in ("wrong.txt", "missing.patch", "directory.patch", "../outside.patch"):
+                with self.subTest(patch=patch), \
+                        mock.patch.object(runner.subprocess, "run") as run, \
+                        mock.patch.object(runner, "copy_sdk") as copy:
+                    with self.assertRaisesRegex(runner.RunnerError, "JieLi SDK patch"):
+                        runner.build(fixture.arguments(sdk_patch=[patch]))
+                    run.assert_not_called()
+                    copy.assert_not_called()
+            self.assertFalse(fixture.make_log.exists())
+
+    def test_unapplicable_sdk_patch_names_patch_and_stops_build(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            fixture = JieliRunnerFixture(Path(temporary).resolve())
+            patch = fixture.root / "bad.patch"
+            patch.write_text("--- a/sdk-source.c\n+++ b/sdk-source.c\n@@ -1 +1 @@\n"
+                             "-missing context\n+int patched_source;\n")
+            with self.assertRaisesRegex(runner.RunnerError, "cannot apply JieLi SDK patch .*bad\\.patch"):
+                runner.build(fixture.arguments(sdk_patch=["bad.patch"]))
+            self.assertFalse(fixture.make_log.exists())
+            self.assertFalse(fixture.outputs.exists())
             self.assertEqual(git(fixture.checkout, "status", "--porcelain"), "")
 
     def test_br35_build_uses_sdk_subdirectory_and_preserves_checkout(self):

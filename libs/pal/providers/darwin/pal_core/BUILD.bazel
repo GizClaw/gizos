@@ -85,6 +85,7 @@ objc_library(
     deps = [
         ":corebluetooth_uuid",
         ":netif_system_event",
+        "//libs/atomic",
         "//libs/pal",
     ],
 )
@@ -108,7 +109,11 @@ cc_test(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
-    deps = [":corebluetooth"],
+    deps = [
+        ":corebluetooth",
+        ":corebluetooth_uuid",
+        "//libs/atomic/providers/c11",
+    ],
 )
 
 cc_test(
@@ -140,7 +145,7 @@ cc_test(
     ],
     linkopts = ["-lpthread"],
     target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
-    deps = ["//libs/pal"],
+    deps = ["//libs/atomic/providers/c11", "//libs/pal"],
 )
 
 cc_test(

@@ -3,7 +3,7 @@
 
 #include "h2_peer.h"
 
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -59,23 +59,24 @@ struct h2_pal_webrtc_channel {
   h2_pal_webrtc_channel_info_t info;
   char *label;
   uint32_t generation;
-  atomic_int open;
+  h2_atomic_int_t open;
   int wire_opened;
   int remote_created;
   int close_pending; /* Network owner drains accepted TX before local reset. */
-  atomic_int terminal;
-  atomic_uint event_refs;
-  atomic_uchar ready_slot;
+  h2_atomic_int_t terminal;
+  h2_atomic_uint_t event_refs;
+  h2_atomic_u8_t ready_slot;
   /* Ring of queued messages: producers fill at tx_tail, the network task
    * drains from tx_head. tx_state per slot: 0 free, 1 filling, 2 ready. */
   h2_peer_tx_item_t *tx_storage[H2_PEER_INPUT_SLOT_COUNT];
-  atomic_uchar tx_state[H2_PEER_INPUT_SLOT_COUNT];
-  atomic_uchar tx_head;
-  atomic_uchar tx_tail;
+  h2_atomic_u8_t tx_state[H2_PEER_INPUT_SLOT_COUNT];
+  h2_atomic_u8_t tx_head;
+  h2_atomic_u8_t tx_tail;
 };
 
 struct h2_pal_webrtc_peer {
   h2_peer_t *owner;
+  const h2_pal_mem_api_t *allocator;
   struct h2_pal_webrtc_peer *next;
   h2_pal_webrtc_track_t *media_track;
   uint8_t media_pending_opus[H2_PAL_WEBRTC_OPUS_MAX_PACKET_SIZE];
@@ -86,7 +87,7 @@ struct h2_pal_webrtc_peer {
   h2_pal_webrtc_channel_t *channels;
   h2_peer_ice_server_t ice_servers[H2_PEER_ICE_SERVER_MAX];
   size_t ice_server_count;
-  _Atomic(h2_pal_webrtc_peer_state_t) state;
+  h2_atomic_int_t state;
   h2_peer_stream_reset_t stream_resets[H2_PEER_STREAM_COUNT];
   uint16_t next_stream_id;
   uint16_t local_stream_first;
@@ -95,27 +96,27 @@ struct h2_pal_webrtc_peer {
   int offer_started;
   int remote_answer_set;
   int production_sctp_open;
-  atomic_int closed;
+  h2_atomic_int_t closed;
   /* One live handle/worker reference, plus one per owned event. */
-  atomic_uint refs;
+  h2_atomic_uint_t refs;
   h2_pal_queue_t *network_commands;
   h2_pal_queue_t *network_responses;
   h2_pal_queue_t *network_events;
   h2_pal_mutex_t *network_request_mutex;
   h2_pal_task_t *network_task;
-  atomic_uint network_event_count;
-  atomic_size_t network_event_bytes;
-  atomic_int network_send_wakeup_queued;
-  atomic_int network_stop;
-  atomic_int network_stopped;
+  h2_atomic_uint_t network_event_count;
+  h2_atomic_size_t network_event_bytes;
+  h2_atomic_int_t network_send_wakeup_queued;
+  h2_atomic_int_t network_stop;
+  h2_atomic_int_t network_stopped;
   /* One caller at a time may sit in peer_poll; close waits for it to leave
    * before destroying the queues that poll is receiving from. */
-  atomic_int network_poll_active;
-  atomic_int network_transport_result;
-  atomic_int network_error_reported;
-  _Atomic(h2_peer_tx_item_t *) rtp_pending;
+  h2_atomic_int_t network_poll_active;
+  h2_atomic_int_t network_transport_result;
+  h2_atomic_int_t network_error_reported;
+  h2_atomic_ptr_t rtp_pending;
   h2_peer_tx_item_t *rtp_storage;
-  _Atomic(uint32_t) channel_ready;
+  h2_atomic_u32_t channel_ready;
   uint8_t channel_round_robin;
 };
 
@@ -124,9 +125,17 @@ struct h2_peer {
   h2_pal_webrtc_api_t webrtc_api;
   h2_pal_webrtc_peer_t *peers;
   /* One public owner reference, plus one per allocated peer. */
-  atomic_uint refs;
+  h2_atomic_uint_t refs;
   int destroying;
 };
+
+/* Internal lifecycle helpers also used by direct scheduler fixtures. */
+h2_pal_result_t h2_peer_connection_atomic_init(h2_pal_webrtc_peer_t *peer);
+void h2_peer_connection_atomic_destroy(h2_pal_webrtc_peer_t *peer);
+
+static inline const h2_pal_mem_api_t *h2_peer_mem(const h2_pal_webrtc_peer_t *peer) {
+  return peer->allocator != NULL ? peer->allocator : peer->owner->config.mem;
+}
 
 void h2_peer_webrtc_on_stream_reset(
     h2_pal_webrtc_peer_t *peer, const h2_pal_sctp_stream_reset_event_t *event);

@@ -6,7 +6,8 @@
 #include "h2_gizclaw_service.h"
 #include "h2_gizclaw_speech.h"
 
-#include <stdatomic.h>
+#include "h2_atomic.h"
+#include <stdint.h>
 
 typedef struct h2_gizclaw_conversation_request
     h2_gizclaw_conversation_request_t;
@@ -192,7 +193,7 @@ struct h2_gizclaw_operation {
   void (*finish)(void *user);
   void *user;
   h2_gizclaw_operation_result_t result;
-  atomic_bool terminal;
+  h2_atomic_bool_t terminal;
   h2_gizclaw_operation_state_t state;
   bool cancel_requested;
   bool caller_reference;
@@ -258,20 +259,20 @@ struct h2_gizclaw_service {
    * target slot is empty, so steady-state chunk transport never allocates. */
   h2_gizclaw_stream_ring_t stream_rings[H2_GIZCLAW_STREAM_LANE_COUNT];
   struct h2_gizclaw_audio_play *audio_play; /* Protected by mutex. */
-  _Atomic(h2_gizclaw_conversation_request_t *) media_request;
+  h2_atomic_ptr_t media_request;
   /* Downstream audio of the configured Conversation route; mutex protects
    * publication and downlink_refs counts callers inside it. */
   h2_gizclaw_conversation_downlink_t *conversation_downlink;
   size_t downlink_refs;
-  _Atomic(struct h2_gizclaw_speech_context *) speech_request;
-  _Atomic(h2_gizclaw_track_t *) pcm_track;
+  h2_atomic_ptr_t speech_request;
+  h2_atomic_ptr_t pcm_track;
   /* Protected by mutex. Unset closes admission before waiting for callbacks. */
   size_t pcm_track_refs;
   bool pcm_track_unsetting;
   h2_pal_webrtc_track_vtable_t webrtc_track_vtable;
   h2_pal_webrtc_track_t webrtc_track;
-  atomic_uint media_callback_refs;
-  atomic_int media_holder_tag; /* source line of the last acquirer */
+  h2_atomic_uint_t media_callback_refs;
+  h2_atomic_int_t media_holder_tag; /* source line of the last acquirer */
   h2_gizclaw_client_t *client;
   h2_gizclaw_operation_t *current;
   h2_gizclaw_operation_t *pending;
@@ -280,6 +281,8 @@ struct h2_gizclaw_service {
   size_t request_reference_count;
   size_t queued_event_count;
   size_t dispatch_item_count;
+  /* Hash of the last logged service_deinit refusal, to log each state once. */
+  uint32_t deinit_blocked_signature;
   uint64_t next_trace_sequence;
   bool started;
   bool stopping;
@@ -371,6 +374,29 @@ h2_gizclaw_service_media_write_opus(h2_gizclaw_service_t *service,
 void h2_gizclaw_conversation_downlink_hold_internal(
     h2_gizclaw_service_t *service);
 void h2_gizclaw_conversation_downlink_bos_internal(
+    h2_gizclaw_service_t *service);
+/* Lift a hold without a stream announcement, for when the press that set it
+ * has ended and holding can only mute the reply. */
+void h2_gizclaw_conversation_downlink_resume_internal(
+    h2_gizclaw_service_t *service);
+
+/* Downlink-lifetime ingress counters, wrapping at uint_least32_t's width.
+ * received includes valid zero-length PLC markers, but not invalid arguments
+ * or arrivals without a downlink. Drop reasons follow ingress priority;
+ * CLOSED and later flush/decode losses are not ring-full drops. */
+typedef struct h2_gizclaw_conversation_downlink_counters {
+  uint_least32_t received;
+  uint_least32_t dropped_no_track;
+  uint_least32_t dropped_waiting_for_bos;
+  uint_least32_t dropped_ring_full;
+} h2_gizclaw_conversation_downlink_counters_t;
+
+/* Acquire one downlink reference for all fields, even while its Track is
+ * occupied. NULL/absent downlink returns zeroes. Fields are individually
+ * atomic observations, not a transactional snapshot of concurrent writes.
+ * Hold, BOS, flush and Conversation release do not reset these counters. */
+h2_gizclaw_conversation_downlink_counters_t
+h2_gizclaw_conversation_downlink_counters_internal(
     h2_gizclaw_service_t *service);
 #if defined(H2_GIZCLAW_TESTING)
 /* Opus packets the downlink accepted into its ring so far. */

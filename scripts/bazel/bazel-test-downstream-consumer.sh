@@ -15,6 +15,13 @@ trap cleanup EXIT
 repository_cache=${BAZEL_REPOSITORY_CACHE:-"$HOME/.cache/bazel/repository"}
 mkdir -p "$repository_cache"
 
+# The fixture root ignores every rc file, so it must declare the same registry
+# list a real downstream consumer configures for GizClaw-owned Bzlmod modules.
+registry_options=(
+    --registry=https://bcr.bazel.build
+    --registry=https://static-volc.gizclaw.com/bazel/
+)
+
 cp "$fixture_root/MODULE.bazel.fixture" "$consumer_root/MODULE.bazel"
 cp "$fixture_root/BUILD.bazel.fixture" "$consumer_root/BUILD.bazel"
 cp "$fixture_root/consumer.bzl.fixture" "$consumer_root/consumer.bzl"
@@ -66,6 +73,7 @@ cd "$consumer_root"
     cquery \
     --enable_bzlmod \
     --noenable_workspace \
+    "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
     --override_module="gizos=$repository_root" \
     --define="h2_ci_graph=true" \
@@ -79,6 +87,7 @@ cd "$consumer_root"
     aquery \
     --enable_bzlmod \
     --noenable_workspace \
+    "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
     --override_module="gizos=$repository_root" \
     --define="h2_ci_graph=true" \
@@ -101,6 +110,7 @@ grep -E 'h2_esp_target_task_policy=bazel-out/.*/private_esp_task_policy' font-na
     aquery \
     --enable_bzlmod \
     --noenable_workspace \
+    "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
     --override_module="gizos=$repository_root" \
     --define="h2_ci_graph=true" \
@@ -126,6 +136,7 @@ expect_missing_policy_failure() {
         cquery \
         --enable_bzlmod \
         --noenable_workspace \
+        "${registry_options[@]}" \
         --repository_cache="$repository_cache" \
         --override_module="gizos=$repository_root" \
         --define="h2_ci_graph=true" \
@@ -153,6 +164,7 @@ for target in private_esp_firmware private_bk_firmware; do
         cquery \
         --enable_bzlmod \
         --noenable_workspace \
+        "${registry_options[@]}" \
         --repository_cache="$repository_cache" \
         --override_module="gizos=$repository_root" \
         --define="h2_ci_graph=true" \
@@ -173,6 +185,7 @@ if "${BAZEL_BIN:-bazel}" \
     cquery \
     --enable_bzlmod \
     --noenable_workspace \
+    "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
     --override_module="gizos=$repository_root" \
     --define="h2_host_os=$host_os" \
@@ -191,6 +204,7 @@ if "${BAZEL_BIN:-bazel}" \
     cquery \
     --enable_bzlmod \
     --noenable_workspace \
+    "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
     --override_module="gizos=$repository_root" \
     --define="h2_host_os=$host_os" \
@@ -208,6 +222,7 @@ cp BUILD.bazel.complete BUILD.bazel
     build \
     --enable_bzlmod \
     --noenable_workspace \
+    "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
     --override_module="gizos=$repository_root" \
     --define="h2_host_os=$host_os" \
@@ -241,6 +256,7 @@ test ! -e "$consumer_root/private_bk_task_policy"
     test \
     --enable_bzlmod \
     --noenable_workspace \
+    "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
     --override_module="gizos=$repository_root" \
     --define="h2_host_os=$host_os" \
@@ -258,6 +274,7 @@ test ! -e "$consumer_root/private_bk_task_policy"
     build \
     --enable_bzlmod \
     --noenable_workspace \
+    "${registry_options[@]}" \
     --repository_cache="$repository_cache" \
     --override_module="gizos=$repository_root" \
     --define="h2_firmware_target=bk3633" \

@@ -5,7 +5,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "base64.h"
 #include "h2/pal/net/h2_pal_net.h"
 #include "h2/pal/os/h2_pal_crypto.h"
 #include "h2/pal/os/h2_pal_log.h"

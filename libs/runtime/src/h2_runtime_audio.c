@@ -19,7 +19,7 @@ h2_pal_result_t h2_runtime_system_state_audio(
     if (!h2_runtime_ready(runtime) || !out_state)
         return H2_PAL_ERR_INVALID_ARG;
     h2_runtime_private_t *state = runtime->private_state;
-    if (atomic_flag_test_and_set(&state->audio_state_busy))
+    if (h2_atomic_flag_test_and_set(&state->audio_state_busy, H2_ATOMIC_SEQ_CST))
         return H2_PAL_ERR_BUSY;
     uint32_t actual = 0;
     int rc = h2_pal_audio_get_speaker_volume_percent(&state->audio_backend, &actual);
@@ -36,7 +36,7 @@ h2_pal_result_t h2_runtime_system_state_audio(
         }
         *out_state = state->audio_state;
     }
-    atomic_flag_clear(&state->audio_state_busy);
+    h2_atomic_flag_clear(&state->audio_state_busy, H2_ATOMIC_SEQ_CST);
     return rc;
 }
 
@@ -45,7 +45,7 @@ h2_pal_result_t h2_runtime_audio_set_volume(
     if (!h2_runtime_ready(runtime) || percent > 100u || muted > 1u)
         return H2_PAL_ERR_INVALID_ARG;
     h2_runtime_private_t *state = runtime->private_state;
-    if (atomic_flag_test_and_set(&state->audio_state_busy))
+    if (h2_atomic_flag_test_and_set(&state->audio_state_busy, H2_ATOMIC_SEQ_CST))
         return H2_PAL_ERR_BUSY;
     int rc = h2_pal_audio_set_speaker_volume_percent(backend(runtime), muted ? 0 : percent);
     if (rc == H2_PAL_OK) {
@@ -53,7 +53,7 @@ h2_pal_result_t h2_runtime_audio_set_volume(
         state->audio_state.muted = muted;
         state->audio_state_valid = true;
     }
-    atomic_flag_clear(&state->audio_state_busy);
+    h2_atomic_flag_clear(&state->audio_state_busy, H2_ATOMIC_SEQ_CST);
     return rc;
 }
 
@@ -96,8 +96,8 @@ static uint8_t frame_peak_percent(const h2_audio_frame_t *frame) {
  * sample format, an empty or absent buffer) leave the previous value alone,
  * so a meter keeps showing the last real measurement instead of dropping to
  * zero on a format the Runtime does not read. */
-static void publish_level(h2_runtime_t *runtime, atomic_uint *level,
-                          atomic_uint *level_ms, const h2_audio_frame_t *frame) {
+static void publish_level(h2_runtime_t *runtime, h2_atomic_uint_t *level,
+                          h2_atomic_uint_t *level_ms, const h2_audio_frame_t *frame) {
     if (frame == NULL || frame->data == NULL ||
         frame->sample_format != H2_AUDIO_SAMPLE_S16LE ||
         frame->bytes < sizeof(int16_t))
@@ -108,10 +108,10 @@ static void publish_level(h2_runtime_t *runtime, atomic_uint *level,
      * valid sample that looks like no sample at all. */
     if (h2_pal_time_get_monotonic_ms(runtime->time, &now) != H2_PAL_OK)
         return;
-    atomic_store_explicit(level_ms, (unsigned int)(uint32_t)now, memory_order_relaxed);
-    atomic_store_explicit(
+    h2_atomic_store_explicit(level_ms, (unsigned int)(uint32_t)now, H2_ATOMIC_RELAXED);
+    h2_atomic_store_explicit(
         level, H2_RUNTIME_AUDIO_LEVEL_VALID | frame_peak_percent(frame),
-        memory_order_relaxed);
+        H2_ATOMIC_RELAXED);
 }
 
 #endif /* H2_RUNTIME_AUDIO_LEVELS */
@@ -136,6 +136,7 @@ typedef struct runtime_audio_track {
     h2_pal_audio_track_t track;
     h2_pal_audio_track_t *backend_track;
     h2_runtime_t *runtime;
+    const h2_pal_mem_api_t *allocator;
 } runtime_audio_track_t;
 
 static runtime_audio_track_t *track_of(h2_pal_audio_track_t *track) {
@@ -161,7 +162,7 @@ static int track_close(h2_pal_audio_track_t *track) {
     if (wrapper == NULL)
         return H2_AUDIO_ERR_INVALID_ARG;
     int rc = h2_pal_audio_track_close(wrapper->backend_track);
-    h2_pal_mem_free(wrapper->runtime->mem, wrapper);
+    h2_pal_mem_free(wrapper->allocator, wrapper);
     return rc;
 }
 
@@ -202,14 +203,17 @@ static int create_track(void *user, const h2_audio_track_config_t *config,
         return rc;
     if (backend_track == NULL)
         return H2_AUDIO_ERR_INVALID_ARG;
+    const h2_pal_mem_api_t *allocator =
+        config != NULL && config->allocator != NULL ? config->allocator : runtime->mem;
     runtime_audio_track_t *wrapper =
-        (runtime_audio_track_t *)h2_pal_mem_alloc(runtime->mem, sizeof(*wrapper));
+        (runtime_audio_track_t *)h2_pal_mem_alloc(allocator, sizeof(*wrapper));
     if (wrapper == NULL) {
         (void)h2_pal_audio_track_close(backend_track);
         return H2_PAL_ERR_NO_MEMORY;
     }
     wrapper->backend_track = backend_track;
     wrapper->runtime = runtime;
+    wrapper->allocator = allocator;
     /* An operation the backend track does not provide stays NULL here, so the
      * PAL helpers report it exactly as they would on the backend track. */
     wrapper->track = (h2_pal_audio_track_t){
@@ -259,13 +263,13 @@ h2_pal_result_t h2_runtime_audio_get_levels(
         return H2_PAL_ERR_INVALID_ARG;
     h2_runtime_private_t *state = runtime->private_state;
     unsigned int capture =
-        atomic_load_explicit(&state->audio_capture_level, memory_order_relaxed);
+        h2_atomic_load_explicit(&state->audio_capture_level, H2_ATOMIC_RELAXED);
     unsigned int capture_ms =
-        atomic_load_explicit(&state->audio_capture_level_ms, memory_order_relaxed);
+        h2_atomic_load_explicit(&state->audio_capture_level_ms, H2_ATOMIC_RELAXED);
     unsigned int playback =
-        atomic_load_explicit(&state->audio_playback_level, memory_order_relaxed);
+        h2_atomic_load_explicit(&state->audio_playback_level, H2_ATOMIC_RELAXED);
     unsigned int playback_ms =
-        atomic_load_explicit(&state->audio_playback_level_ms, memory_order_relaxed);
+        h2_atomic_load_explicit(&state->audio_playback_level_ms, H2_ATOMIC_RELAXED);
     out_levels->capture_percent = (uint8_t)(capture & 0xFFu);
     out_levels->playback_percent = (uint8_t)(playback & 0xFFu);
     out_levels->capture_updated_ms = widen_level_ms(runtime, capture, capture_ms);
@@ -293,12 +297,5 @@ void h2_runtime_audio_bind(h2_runtime_t *runtime) {
     };
     h2_runtime_private_t *state = runtime->private_state;
     state->audio_backend = state->audio_proxy;
-    state->audio_state_busy = (atomic_flag)ATOMIC_FLAG_INIT;
-#if H2_RUNTIME_AUDIO_LEVELS
-    atomic_init(&state->audio_capture_level, 0u);
-    atomic_init(&state->audio_capture_level_ms, 0u);
-    atomic_init(&state->audio_playback_level, 0u);
-    atomic_init(&state->audio_playback_level_ms, 0u);
-#endif
     state->audio_proxy = (h2_pal_audio_api_t){runtime, &vtable};
 }

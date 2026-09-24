@@ -382,6 +382,8 @@ def _extension_impl(_module_ctx):
             "-mcpu=r3",
             "-integrated-as",
             "-Oz",
+            "-mllvm",
+            "-pi32v2-large-program=true",
             "-fno-common",
             "-fallow-pointer-null",
             "-fprefer-gnu-section",

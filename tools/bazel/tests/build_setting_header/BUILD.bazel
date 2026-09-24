@@ -1,0 +1,71 @@
+load("@bazel_skylib//rules:common_settings.bzl", "string_flag")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel:build_setting_header.bzl", "build_setting_header")
+load(":analysis_tests.bzl", "header_failure_test", "header_success_test")
+
+HOST_ONLY = select({
+    "//tools/bazel/platforms:host_linux_target_linux": [],
+    "//tools/bazel/platforms:host_macos_target_macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+# Each fixture flag models one override a user could pass on the command line.
+[
+    string_flag(
+        name = "flag_" + name,
+        build_setting_default = value,
+    )
+    for name, value in [
+        ("default", "10"),
+        ("zero", "0"),
+        ("octal", "010"),
+        ("words", "ten"),
+        ("signed", "+5"),
+        ("over", "1001"),
+    ]
+]
+
+[
+    build_setting_header(
+        name = "header_" + name,
+        flag = ":flag_" + name,
+        macro = "H2_FIXTURE_CYCLES",
+        maximum = 1000,
+        minimum = 1,
+        out = name + "/h2_fixture_cycles.h",
+        tags = ["manual"],
+    )
+    for name in ["default", "zero", "octal", "words", "signed", "over"]
+]
+
+header_success_test(
+    name = "default_test",
+    target_under_test = ":header_default",
+    target_compatible_with = HOST_ONLY,
+)
+
+py_test(
+    name = "generated_header_test",
+    srcs = ["test_generated_header.py"],
+    args = ["$(location :header_default)"],
+    data = [":header_default"],
+    legacy_create_init = 0,
+    main = "test_generated_header.py",
+    target_compatible_with = HOST_ONLY,
+)
+
+[
+    header_failure_test(
+        name = name + "_test",
+        expected_message = message,
+        target_under_test = ":header_" + name,
+        target_compatible_with = HOST_ONLY,
+    )
+    for name, message in [
+        ("zero", "must be in [1, 1000], got 0"),
+        ("octal", "must be a canonical decimal without leading zeros, got \"010\""),
+        ("words", "must be a decimal integer in [1, 1000], got \"ten\""),
+        ("signed", "must be a decimal integer in [1, 1000], got \"+5\""),
+        ("over", "must be in [1, 1000], got 1001"),
+    ]
+]

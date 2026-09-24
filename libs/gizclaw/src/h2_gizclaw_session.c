@@ -20,6 +20,7 @@ struct h2_gizclaw_session {
   uint64_t operation_generation;
   uint64_t deadline;
   uint8_t *catalog_data;
+  uint8_t *catalog_scratch;
   h2_gizclaw_workflow_page_t catalog;
   h2_gizclaw_conversation_t *conversation;
   bool conversation_running;
@@ -87,7 +88,12 @@ static h2_gizclaw_str_t str(const char *text) {
 static bool patch_valid(const h2_gizclaw_workspace_parameters_patch_t *p) {
   return p == NULL ||
          ((p->has_input || p->has_initiative ||
-           p->has_agent_initiative_policy) &&
+           p->has_agent_initiative_policy || p->has_tts_speech_rate_percent) &&
+          (!p->has_tts_speech_rate_percent ||
+           (p->tts_speech_rate_percent >=
+                H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MIN_PERCENT &&
+            p->tts_speech_rate_percent <=
+                H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MAX_PERCENT)) &&
           (!p->has_input ||
            p->input == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK ||
            p->input == H2_GIZCLAW_WORKSPACE_INPUT_REALTIME) &&
@@ -107,7 +113,10 @@ static bool patch_same(const h2_gizclaw_workspace_parameters_patch_t *a,
           (a->has_initiative && a->initiative == b->initiative)) &&
          (!b->has_agent_initiative_policy ||
           (a->has_agent_initiative_policy &&
-           a->agent_initiative_policy == b->agent_initiative_policy));
+           a->agent_initiative_policy == b->agent_initiative_policy)) &&
+         (!b->has_tts_speech_rate_percent ||
+          (a->has_tts_speech_rate_percent &&
+           a->tts_speech_rate_percent == b->tts_speech_rate_percent));
 }
 
 h2_pal_result_t
@@ -119,9 +128,11 @@ h2_gizclaw_session_create(const h2_gizclaw_session_config_t *config,
   if (config == NULL || config->service == NULL || config->mem == NULL ||
       config->sync == NULL || config->time == NULL ||
       config->collections == NULL || config->collection_count == 0u ||
-      config->max_workflows == 0u ||
-      config->max_workflows > SIZE_MAX / sizeof(h2_gizclaw_workflow_t) ||
-      config->catalog_bytes == 0u)
+      (config->catalog_sink == NULL && config->max_workflows == 0u) ||
+      (config->catalog_sink == NULL &&
+       config->max_workflows > SIZE_MAX / sizeof(h2_gizclaw_workflow_t)) ||
+      config->catalog_bytes == 0u ||
+      (config->catalog_sink != NULL && config->retain_catalog_buffer))
     return H2_PAL_ERR_INVALID_ARG;
   for (size_t i = 0u; i < config->collection_count; ++i) {
     if (!text_valid(config->collections[i],
@@ -137,6 +148,8 @@ h2_gizclaw_session_create(const h2_gizclaw_session_config_t *config,
     return H2_PAL_ERR_NO_MEMORY;
   memset(session, 0, sizeof(*session));
   session->config = *config;
+  if (!config->retain_catalog_buffer || config->retained_allocator == NULL)
+    session->config.retained_allocator = config->mem;
   const h2_pal_mutex_config_t mutex_config = {.name = "gizclaw-session",
                                               .allocator = config->mem};
   h2_pal_result_t rc =
@@ -153,16 +166,33 @@ h2_gizclaw_session_create(const h2_gizclaw_session_config_t *config,
     h2_pal_mem_free(config->mem, session);
     return rc;
   }
+  if (config->retain_catalog_buffer) {
+    session->catalog_data =
+        h2_pal_mem_alloc(session->config.retained_allocator, config->catalog_bytes);
+    if (session->catalog_data == NULL) {
+      rc = H2_PAL_ERR_NO_MEMORY;
+      goto fail;
+    }
+    session->catalog_scratch =
+        h2_pal_mem_alloc(session->config.retained_allocator, config->catalog_bytes);
+    if (session->catalog_scratch == NULL) {
+      rc = H2_PAL_ERR_NO_MEMORY;
+      goto fail;
+    }
+  }
   session->state.generation = 1u;
   rc = h2_gizclaw_service_attach_session_internal(config->service, session);
-  if (rc != H2_PAL_OK) {
-    (void)h2_pal_cond_destroy(config->sync, session->progress);
-    (void)h2_pal_mutex_destroy(config->sync, session->mutex);
-    h2_pal_mem_free(config->mem, session);
-    return rc;
-  }
+  if (rc != H2_PAL_OK)
+    goto fail;
   *out_session = session;
   return H2_PAL_OK;
+fail:
+  h2_pal_mem_free(session->config.retained_allocator, session->catalog_scratch);
+  h2_pal_mem_free(session->config.retained_allocator, session->catalog_data);
+  (void)h2_pal_cond_destroy(config->sync, session->progress);
+  (void)h2_pal_mutex_destroy(config->sync, session->mutex);
+  h2_pal_mem_free(config->mem, session);
+  return rc;
 }
 
 h2_pal_result_t h2_gizclaw_session_destroy(h2_gizclaw_session_t **ptr) {
@@ -191,7 +221,8 @@ h2_pal_result_t h2_gizclaw_session_destroy(h2_gizclaw_session_t **ptr) {
   rc = h2_pal_mutex_destroy(session->config.sync, session->mutex);
   if (rc != H2_PAL_OK)
     return rc;
-  h2_pal_mem_free(session->config.mem, session->catalog_data);
+  h2_pal_mem_free(session->config.retained_allocator, session->catalog_data);
+  h2_pal_mem_free(session->config.retained_allocator, session->catalog_scratch);
   h2_pal_mem_free(session->config.mem, session);
   *ptr = NULL;
   return H2_PAL_OK;
@@ -265,6 +296,10 @@ h2_gizclaw_session_catalog_copy(h2_gizclaw_session_t *session,
   if (session->closed || session->state.catalog != H2_GIZCLAW_SESSION_READY) {
     unlock(session);
     return H2_PAL_ERR_UNAVAILABLE;
+  }
+  if (session->config.catalog_sink != NULL) {
+    unlock(session);
+    return h2_gizclaw_resp_arena_end(&arena, H2_PAL_ERR_UNSUPPORTED);
   }
   h2_gizclaw_workflow_page_t page = {.count = session->catalog.count};
   const h2_pal_mem_api_t *mem = &arena.allocator;
@@ -401,7 +436,160 @@ static h2_pal_result_t finish(h2_gizclaw_session_t *s, h2_pal_result_t result,
   return result;
 }
 
+/* Only the operation admitted by begin() may use scratch. Published catalog
+ * storage remains separate so copied reads cannot observe RPC writes. */
+static uint8_t *catalog_scratch_acquire(h2_gizclaw_session_t *s) {
+  return s->config.retain_catalog_buffer
+             ? s->catalog_scratch
+             : h2_pal_mem_alloc(s->config.mem, s->config.catalog_bytes);
+}
+
+static void catalog_scratch_release(h2_gizclaw_session_t *s, uint8_t *data) {
+  if (!s->config.retain_catalog_buffer)
+    h2_pal_mem_free(s->config.mem, data);
+}
+
+/* The response arena is reused after every callback. Keep cursor and profile
+ * identity outside it so a large catalog never increases Session storage. */
+static h2_pal_result_t refresh_stream(h2_gizclaw_session_t *s) {
+  h2_pal_result_t rc = lock(s);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (s->closed || s->state.registration != H2_GIZCLAW_SESSION_READY) {
+    unlock(s);
+    return H2_PAL_ERR_UNAVAILABLE;
+  }
+  s->state.catalog = H2_GIZCLAW_SESSION_PREPARING;
+  char profile[H2_GIZCLAW_REGISTRATION_NAME_CAPACITY];
+  char revision[H2_GIZCLAW_REGISTRATION_NAME_CAPACITY] = {0};
+  memcpy(profile, s->state.profile_name, sizeof(profile));
+  changed(s);
+  unlock(s);
+
+  uint8_t *data = h2_pal_mem_alloc(s->config.mem, s->config.catalog_bytes);
+  size_t count = 0u;
+  size_t empty_pages = 0u;
+  bool began = false;
+  if (data == NULL)
+    rc = H2_PAL_ERR_NO_MEMORY;
+  for (size_t c = 0u; data != NULL && c < s->config.collection_count &&
+                       rc == H2_PAL_OK; ++c) {
+    char cursor[4097] = {0};
+    for (;;) {
+      uint32_t timeout = 0u;
+      rc = remaining(s, &timeout);
+      if (rc != H2_PAL_OK)
+        break;
+      h2_gizclaw_resp_storage_t storage = {data, s->config.catalog_bytes, 0u};
+      h2_gizclaw_workflow_page_t page = {0};
+      rc = h2_gizclaw_rpc_workflow_list(
+          s->config.service, str(s->config.collections[c]),
+          str(cursor[0] != '\0' ? cursor : NULL),
+          8u, timeout, &storage, &page);
+      if (rc != H2_PAL_OK)
+        break;
+      if (!same(page.runtime_profile_name, profile) ||
+          !text_valid(page.runtime_profile_revision, sizeof(revision) - 1u) ||
+          (revision[0] != '\0' &&
+           !same(page.runtime_profile_revision, revision))) {
+        rc = H2_PAL_ERR_INVALID_STATE;
+        break;
+      }
+      if (revision[0] == '\0')
+        strcpy(revision, page.runtime_profile_revision);
+      if (SIZE_MAX - count < page.count) {
+        rc = H2_PAL_ERR_NO_SPACE;
+        break;
+      }
+      empty_pages = page.count == 0u ? empty_pages + 1u : 0u;
+      if (empty_pages > 16u) {
+        rc = H2_PAL_ERR_FORMAT;
+        break;
+      }
+      for (size_t i = 0u; i < page.count; ++i) {
+        if (!same(page.items[i].collection, s->config.collections[c]) ||
+            !text_valid(page.items[i].name,
+                        H2_GIZCLAW_WORKFLOW_NAME_MAX_BYTES)) {
+          rc = H2_PAL_ERR_FORMAT;
+          break;
+        }
+      }
+      if (rc != H2_PAL_OK)
+        break;
+      if (page.has_next &&
+          (!text_valid(page.next_cursor, sizeof(cursor) - 1u) ||
+           same(cursor, page.next_cursor))) {
+        rc = H2_PAL_ERR_FORMAT;
+        break;
+      }
+      char next_cursor[sizeof(cursor)];
+      if (page.has_next)
+        strcpy(next_cursor, page.next_cursor);
+      if (!began) {
+        began = true;
+        rc = s->config.catalog_sink(s->config.catalog_sink_user,
+                                    H2_GIZCLAW_CATALOG_BEGIN, NULL,
+                                    profile, revision);
+        if (rc != H2_PAL_OK)
+          break;
+      }
+      rc = s->config.catalog_sink(s->config.catalog_sink_user,
+                                  H2_GIZCLAW_CATALOG_PAGE, &page,
+                                  profile, revision);
+      if (rc != H2_PAL_OK)
+        break;
+      count += page.count;
+      if (!page.has_next)
+        break;
+      strcpy(cursor, next_cursor);
+    }
+  }
+  if (rc == H2_PAL_OK)
+    rc = remaining(s, &(uint32_t){0});
+  if (rc == H2_PAL_OK && !began)
+    rc = H2_PAL_ERR_FORMAT;
+  h2_pal_result_t lock_rc = lock(s);
+  if (lock_rc != H2_PAL_OK) {
+    if (began)
+      (void)s->config.catalog_sink(s->config.catalog_sink_user,
+                                   H2_GIZCLAW_CATALOG_ABORT, NULL,
+                                   profile, revision);
+    h2_pal_mem_free(s->config.mem, data);
+    return lock_rc;
+  }
+  if (s->closed || s->operation_generation != s->state.generation)
+    rc = H2_PAL_ERR_CLOSED;
+  /* Keep close/cancel outside the publication interval. The sink may block on
+   * filesystem I/O, but it may not reenter Session. */
+  if (rc == H2_PAL_OK)
+    rc = s->config.catalog_sink(s->config.catalog_sink_user,
+                                H2_GIZCLAW_CATALOG_COMMIT, NULL,
+                                profile, revision);
+  if (rc == H2_PAL_OK) {
+    if (!same(s->state.profile_revision, revision)) {
+      s->state.workspace = H2_GIZCLAW_SESSION_EMPTY;
+      s->state.current_workspace[0] = '\0';
+      memset(&s->state.parameters, 0, sizeof(s->state.parameters));
+    }
+    strcpy(s->state.profile_revision, revision);
+    s->state.workflow_count = count;
+  }
+  s->state.catalog = s->closed ? H2_GIZCLAW_SESSION_CLOSED
+                     : rc == H2_PAL_OK ? H2_GIZCLAW_SESSION_READY
+                                       : H2_GIZCLAW_SESSION_FAILED;
+  changed(s);
+  unlock(s);
+  if (rc != H2_PAL_OK && began)
+    (void)s->config.catalog_sink(s->config.catalog_sink_user,
+                                 H2_GIZCLAW_CATALOG_ABORT, NULL,
+                                 profile, revision);
+  h2_pal_mem_free(s->config.mem, data);
+  return rc;
+}
+
 static h2_pal_result_t refresh(h2_gizclaw_session_t *s) {
+  if (s->config.catalog_sink != NULL)
+    return refresh_stream(s);
   h2_pal_result_t rc = lock(s);
   if (rc != H2_PAL_OK)
     return rc;
@@ -414,7 +602,7 @@ static h2_pal_result_t refresh(h2_gizclaw_session_t *s) {
   memcpy(expected, s->state.profile_name, sizeof(expected));
   changed(s);
   unlock(s);
-  uint8_t *data = h2_pal_mem_alloc(s->config.mem, s->config.catalog_bytes);
+  uint8_t *data = catalog_scratch_acquire(s);
   h2_gizclaw_resp_storage_t storage = {data, s->config.catalog_bytes, 0u};
   h2_gizclaw_resp_arena_t arena;
   h2_gizclaw_workflow_page_t catalog = {0};
@@ -495,7 +683,7 @@ done:
   {
     h2_pal_result_t lock_rc = lock(s);
     if (lock_rc != H2_PAL_OK) {
-      h2_pal_mem_free(s->config.mem, data);
+      catalog_scratch_release(s, data);
       return lock_rc;
     }
     if (s->closed || s->operation_generation != s->state.generation)
@@ -506,7 +694,10 @@ done:
         s->state.current_workspace[0] = '\0';
         memset(&s->state.parameters, 0, sizeof(s->state.parameters));
       }
-      h2_pal_mem_free(s->config.mem, s->catalog_data);
+      if (s->config.retain_catalog_buffer)
+        s->catalog_scratch = s->catalog_data;
+      else
+        h2_pal_mem_free(s->config.mem, s->catalog_data);
       s->catalog_data = data;
       data = NULL;
       s->catalog = catalog;
@@ -518,7 +709,7 @@ done:
                                          : H2_GIZCLAW_SESSION_FAILED;
     changed(s);
     unlock(s);
-    h2_pal_mem_free(s->config.mem, data);
+    catalog_scratch_release(s, data);
   }
   return rc;
 }
@@ -623,12 +814,35 @@ prepare_workspace(h2_gizclaw_session_t *s,
   rc = h2_gizclaw_session_snapshot(s, &snapshot);
   if (rc != H2_PAL_OK)
     return rc;
-  if (!catalog_contains_selection(s, selection))
+  if (s->config.catalog_sink == NULL &&
+      !catalog_contains_selection(s, selection))
     return H2_PAL_ERR_NOT_FOUND;
-  uint8_t *data = h2_pal_mem_alloc(s->config.mem, s->config.catalog_bytes);
+  uint8_t *data = catalog_scratch_acquire(s);
   if (data == NULL)
     return H2_PAL_ERR_NO_MEMORY;
   h2_gizclaw_resp_storage_t storage = {data, s->config.catalog_bytes, 0u};
+  if (s->config.catalog_sink != NULL && selection->workflow_name != NULL) {
+    h2_gizclaw_workflow_get_result_t workflow = {0};
+    rc = h2_gizclaw_rpc_workflow_get(s->config.service,
+                                     str(selection->workflow_name), timeout,
+                                     &storage, &workflow);
+    if (rc != H2_PAL_OK)
+      goto done;
+    if (!same(workflow.workflow.name, selection->workflow_name) ||
+        !same(workflow.workflow.collection, selection->collection)) {
+      rc = H2_PAL_ERR_NOT_FOUND;
+      goto done;
+    }
+    if (!same(workflow.runtime_profile_name, snapshot.profile_name) ||
+        !same(workflow.runtime_profile_revision, snapshot.profile_revision)) {
+      rc = H2_PAL_ERR_INVALID_STATE;
+      goto done;
+    }
+    rc = remaining(s, &timeout);
+    if (rc != H2_PAL_OK)
+      goto done;
+    storage.used = 0u;
+  }
   h2_gizclaw_workspace_get_result_t workspace = {0};
   rc = h2_gizclaw_rpc_workspace_get(s->config.service,
                                     str(selection->workspace_name), timeout,
@@ -693,7 +907,7 @@ prepare_workspace(h2_gizclaw_session_t *s,
     unlock(s);
   }
 done:
-  h2_pal_mem_free(s->config.mem, data);
+  catalog_scratch_release(s, data);
   return rc;
 }
 
@@ -720,7 +934,10 @@ select_workspace(h2_gizclaw_session_t *s,
     return H2_PAL_ERR_CLOSED;
   }
   bool ready = s->state.catalog == H2_GIZCLAW_SESSION_READY &&
-               catalog_contains_selection(s, selection) &&
+               (s->config.catalog_sink == NULL ||
+                selection->workflow_name == NULL) &&
+               (s->config.catalog_sink != NULL ||
+                catalog_contains_selection(s, selection)) &&
                s->state.workspace == H2_GIZCLAW_SESSION_READY &&
                same(s->state.current_workspace, selection->workspace_name) &&
                (selection->workflow_name == NULL ||
@@ -1072,6 +1289,22 @@ h2_pal_result_t h2_gizclaw_session_workspace_begin_internal(
   return rc;
 }
 
+h2_pal_result_t h2_gizclaw_session_run_stop_begin_internal(
+    h2_gizclaw_session_t* s, uint32_t timeout) {
+  if (s == NULL) return H2_PAL_OK;
+  h2_gizclaw_audio_log_t logs = {0};
+  h2_pal_result_t rc = lock(s);
+  if (rc != H2_PAL_OK) return rc;
+  if (s->closed)
+    rc = H2_PAL_ERR_CLOSED;
+  else if (s->workspace_rpc_active || s->restarting_input)
+    rc = H2_PAL_ERR_BUSY;
+  else
+    rc = enter_workspace_rpc_locked(s, timeout, &logs);
+  unlock_audio(s, &logs);
+  return rc;
+}
+
 h2_pal_result_t h2_gizclaw_session_workspace_delete_begin_internal(
     h2_gizclaw_session_t *s, h2_gizclaw_str_t name, uint32_t timeout,
     bool *out_participating) {
@@ -1111,7 +1344,7 @@ h2_pal_result_t h2_gizclaw_session_workspace_delete_finish_internal(
   if (!s->closed &&
       (!s->busy || s->operation_generation == s->state.generation)) {
     if (result == H2_PAL_OK) {
-      /* The deleted Workspace's identity and confirmed parameters are gone;
+      /* The Workspace's identity and confirmed parameters are gone;
        * the next select must get/create/reload it from scratch. */
       if (same(s->state.target_workspace, s->state.current_workspace))
         s->state.target_workspace[0] = '\0';
@@ -1120,7 +1353,7 @@ h2_pal_result_t h2_gizclaw_session_workspace_delete_finish_internal(
       s->state.workflow_name[0] = '\0';
       memset(&s->state.parameters, 0, sizeof(s->state.parameters));
     } else {
-      /* Deletion may have happened; never keep an uncertain name as READY. */
+      /* The run may be gone; never keep an uncertain name as READY. */
       s->state.workspace = H2_GIZCLAW_SESSION_FAILED;
     }
     s->state.last_error = result;
@@ -1187,6 +1420,11 @@ h2_pal_result_t h2_gizclaw_session_workspace_finish_internal(
           s->state.parameters.has_agent_initiative_policy = true;
           s->state.parameters.agent_initiative_policy =
               p->agent_initiative_policy;
+        }
+        if (p->has_tts_speech_rate_percent) {
+          s->state.parameters.has_tts_speech_rate_percent = true;
+          s->state.parameters.tts_speech_rate_percent =
+              p->tts_speech_rate_percent;
         }
       }
     }
@@ -1300,4 +1538,52 @@ h2_pal_result_t h2_gizclaw_session_audio_start(h2_gizclaw_session_t *s) {
 }
 h2_pal_result_t h2_gizclaw_session_audio_end(h2_gizclaw_session_t *s) {
   return audio_input(s, false);
+}
+
+h2_pal_result_t h2_gizclaw_session_send_text(h2_gizclaw_session_t *s,
+                                             h2_gizclaw_str_t text) {
+  h2_gizclaw_audio_log_t logs = {0};
+  if (s == NULL || text.data == NULL || text.len == 0u ||
+      text.len > H2_GIZCLAW_CONVERSATION_TEXT_MAX_BYTES)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_pal_result_t rc = lock(s);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (s->closed || s->busy || s->workspace_rpc_active ||
+      s->state.workspace != H2_GIZCLAW_SESSION_READY ||
+      s->conversation == NULL) {
+    record_audio(s, "send_text_rejected", &logs, H2_PAL_ERR_INVALID_STATE, 0u, 0);
+    unlock_audio(s, &logs);
+    return H2_PAL_ERR_INVALID_STATE;
+  }
+  /* Text never interrupts: an open input or a pending one must finish. */
+  if (s->state.conversation_input_open || s->conversation_running) {
+    record_audio(s, "send_text_busy", &logs, H2_PAL_ERR_BUSY, 0u, 0);
+    unlock_audio(s, &logs);
+    return H2_PAL_ERR_BUSY;
+  }
+  rc = h2_gizclaw_conversation_send_text_internal(s->conversation, text, &logs);
+  record_audio(s, "send_text", &logs, rc, 0u, (int)text.len);
+  if (rc == H2_PAL_OK) {
+    /* Sent input awaits the server's sound, as after a push-to-talk release. */
+    uint64_t now = 0u;
+    (void)h2_pal_time_get_monotonic_ms(s->config.time, &now);
+    s->wait_mark =
+        h2_gizclaw_conversation_downlink_writes_internal(s->config.service);
+    s->wait_deadline_ms = now + H2_GIZCLAW_SESSION_WAIT_MS;
+    s->state.conversation = H2_GIZCLAW_SESSION_CONVERSATION_WAITING;
+    s->conversation_running = true;
+    s->state.last_error = H2_PAL_OK;
+    s->state.error_stage = H2_GIZCLAW_SESSION_BLOCK_NONE;
+    s->state.error_code[0] = '\0';
+    s->state.retryable = false;
+    changed(s);
+  } else if (rc != H2_PAL_ERR_WOULD_BLOCK && rc != H2_PAL_ERR_BUSY &&
+             rc != H2_PAL_ERR_INVALID_ARG) {
+    s->state.last_error = rc;
+    s->state.error_stage = H2_GIZCLAW_SESSION_BLOCK_CONVERSATION;
+    changed(s);
+  }
+  unlock_audio(s, &logs);
+  return rc;
 }

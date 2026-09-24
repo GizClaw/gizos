@@ -61,7 +61,8 @@ APP 和 Loader 注册同一命令集合；memory、Wi-Fi 和 Coredump 是否可�
 | `h2loader stats` | 输出运行统计。 |
 | `h2loader memory` | 输出 internal RAM、IRAM 和 PSRAM 的容量、空闲量与最小空闲量；没有 memory stats provider 时返回 unsupported。 |
 | `h2loader wifi scan [--limit <1-16>] [--timeout-ms <1-30000>]` | 有界扫描 Wi-Fi AP；每个 callback 立即输出一条安全编码的结果，最后输出独立 terminal summary。serial IO Stream iKCP 与 BLE-iKCP 使用同一 typed command。 |
-| `h2loader wifi connect <ssid> <password>` | 连接 Wi-Fi，等待取得 IP，并在连接成功后保存同一份 STA 配置供 App 重启后使用。 |
+| `h2loader wifi connect <ssid> <password>` | 连接 Wi-Fi，等待取得 IP，并在连接成功后保存同一份 STA 配置供 App 重启后使用；以 `result=connected` 为成功终止标记。 |
+| `h2loader wifi status` | 只读查询 STA 状态、IP、SSID、RSSI、断开原因和已保存的网络。 |
 | `h2loader wifi disconnect` | 断开当前 Wi-Fi。 |
 | `h2loader stage <bytes> <sha256>` | 替换已有 staged candidate，再从当前 command transport 接收指定长度的更新包；完整校验 archive SHA-256 后才发布到 `/dl`。 |
 | `h2loader stage url <url> <bytes> <sha256>` | 替换已有 staged candidate，再通过 HTTP 下载更新包；完整校验长度与 SHA-256 后才发布到 `/dl`。 |

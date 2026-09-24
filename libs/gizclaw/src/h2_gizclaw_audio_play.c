@@ -3,6 +3,7 @@
 #include "h2_gizclaw_workspace.h"
 #include "payload/workspace.pb.h"
 #include "pb_decode.h"
+#include "h2_atomic.h"
 
 #include <string.h>
 
@@ -13,8 +14,8 @@ struct h2_gizclaw_audio_play {
   char history[H2_GIZCLAW_WORKSPACE_HISTORY_ID_MAX_BYTES + 1];
   uint8_t *compressed;
   size_t size, received;
-  atomic_bool ready;
-  atomic_int result;
+  h2_atomic_bool_t ready;
+  h2_atomic_int_t result;
   h2_gizclaw_req_t *request; /* Published by ready; pinned until play_stop. */
   size_t refs; /* Service mutex, pins downlink accesses during stop. */
   h2_gizclaw_ogg_opus_t *decoder;
@@ -31,9 +32,9 @@ static h2_pal_result_t play_admit(void *user) {
   h2_pal_result_t rc = h2_pal_mutex_lock(sync, service->mutex);
   if (rc != H2_PAL_OK)
     return rc;
-  h2_gizclaw_track_t *track = atomic_load(&service->pcm_track);
+  h2_gizclaw_track_t *track = h2_atomic_load(&service->pcm_track);
   if (service->audio_play != NULL ||
-      atomic_load(&service->media_request) != NULL)
+      h2_atomic_load(&service->media_request) != NULL)
     rc = H2_PAL_ERR_BUSY;
   else if (service->pcm_track_unsetting || track == NULL ||
            track->vtable == NULL || track->vtable->write == NULL)
@@ -124,7 +125,7 @@ static void play_received(void *user, h2_gizclaw_req_t *request) {
   /* Publish the immutable compressed body to the decoder task only after the
    * download runner has verified metadata, byte count and protocol EOS. */
   play->request = request;
-  atomic_store_explicit(&play->ready, true, memory_order_release);
+  h2_atomic_store_explicit(&play->ready, true, H2_ATOMIC_RELEASE);
 }
 
 static void play_stop(void *user) {
@@ -142,13 +143,15 @@ static void play_stop(void *user) {
 
 static void play_destroy(void *user) {
   audio_play_t *play = user;
+  h2_atomic_bool_destroy(&play->ready);
+  h2_atomic_int_destroy(&play->result);
   h2_gizclaw_ogg_opus_destroy(play->decoder);
   h2_pal_mem_free(play->allocator, play->compressed);
   h2_pal_mem_free(play->allocator, play);
 }
 
 static h2_pal_result_t play_step(audio_play_t *play) {
-  if (!atomic_load_explicit(&play->ready, memory_order_acquire))
+  if (!h2_atomic_load_explicit(&play->ready, H2_ATOMIC_ACQUIRE))
     return H2_PAL_ERR_WOULD_BLOCK;
   h2_pal_result_t rc;
   if (play->decoder == NULL) {
@@ -191,10 +194,10 @@ void h2_gizclaw_audio_play_downlink_step_internal(
   (void)h2_pal_mutex_unlock(sync, service->mutex);
   if (play == NULL)
     return;
-  if (atomic_load(&play->result) == H2_PAL_ERR_WOULD_BLOCK) {
+  if (h2_atomic_load(&play->result) == H2_PAL_ERR_WOULD_BLOCK) {
     h2_pal_result_t rc = play_step(play);
     if (rc != H2_PAL_ERR_WOULD_BLOCK) {
-      atomic_store_explicit(&play->result, rc, memory_order_release);
+      h2_atomic_store_explicit(&play->result, rc, H2_ATOMIC_RELEASE);
       h2_gizclaw_req_sink_done_internal(play->request, rc);
     }
   }
@@ -218,8 +221,11 @@ h2_pal_result_t h2_gizclaw_audio_play_create_internal(
   play->allocator = allocator;
   memcpy(play->workspace, workspace.data, workspace.len);
   memcpy(play->history, history.data, history.len);
-  atomic_init(&play->ready, false);
-  atomic_init(&play->result, H2_PAL_ERR_WOULD_BLOCK);
+  if (h2_atomic_bool_init(&play->ready, false) != H2_ATOMIC_OK ||
+      h2_atomic_int_init(&play->result, H2_PAL_ERR_WOULD_BLOCK) != H2_ATOMIC_OK) {
+    play_destroy(play);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
   static const h2_gizclaw_download_codec_t codec = {.metadata = play_metadata,
                                                     .write = play_write,
                                                     .destroy = play_destroy,

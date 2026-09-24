@@ -121,8 +121,13 @@ static void test_devices(void) {
   OK(h2_pal_power_reboot(&p.api, 43u));
   assert(p.state == H2_PAL_POWER_STATE_REBOOTING &&
          p.boot_info.boot_count == 0u);
+  OK(h2_pal_power_set_deep_sleep_wake_timer(&p.api, 60000u));
+  assert(p.deep_sleep_wake_timer_ms == 60000u);
   p.capabilities.flags = 0;
   assert(h2_pal_power_deep_sleep(&p.api, 0u) == H2_PAL_ERR_UNSUPPORTED);
+  assert(h2_pal_power_set_deep_sleep_wake_timer(&p.api, 0u) ==
+         H2_PAL_ERR_UNSUPPORTED);
+  assert(p.deep_sleep_wake_timer_ms == 60000u);
   h2_app_test_display_t d;
   h2_app_test_display_init(&d);
   assert(h2_pal_display_set_brightness_percent(&d.api, 10u) ==

@@ -30,9 +30,10 @@ typedef enum h2_gizclaw_session_blocker {
 } h2_gizclaw_session_blocker_t;
 
 /** Local input state only. Downstream audio has no phase: it plays whenever
- * the server sends it. WAITING follows the release of push-to-talk input and
- * ends, back to IDLE, as soon as downstream audio arrives or after
- * H2_GIZCLAW_SESSION_WAIT_MS without any. */
+ * the server sends it. WAITING follows the release of push-to-talk input or an
+ * accepted text input (in either input mode) and ends, back to IDLE, as soon
+ * as downstream audio arrives, after H2_GIZCLAW_SESSION_WAIT_MS without any,
+ * or when the input fails. */
 typedef enum h2_gizclaw_session_conversation_phase {
   H2_GIZCLAW_SESSION_CONVERSATION_IDLE = 0,
   H2_GIZCLAW_SESSION_CONVERSATION_RECORDING,
@@ -72,6 +73,28 @@ typedef struct h2_gizclaw_session_state {
   bool retryable;
 } h2_gizclaw_session_state_t;
 
+/** A streaming catalog transaction. BEGIN is called once after the first
+ * valid page, followed by one PAGE per RPC and one COMMIT on success. BEGIN,
+ * COMMIT and ABORT receive a NULL page. The nonempty Profile name and revision
+ * are identical on every event; all strings and PAGE items are borrowed only
+ * until that callback returns. A non-OK callback result aborts the refresh and
+ * is propagated. After BEGIN, any failure (including BEGIN or COMMIT failure,
+ * timeout and cancellation) calls ABORT once; its result is ignored. No event
+ * is sent if refresh fails before BEGIN. COMMIT runs under the Session mutex
+ * through state publication, so a sink must not reenter any Session API.
+ * The sink keeps its prior publication until COMMIT succeeds and removes its
+ * candidate on ABORT. Callbacks run synchronously on the refresh caller task. */
+typedef enum h2_gizclaw_catalog_event {
+  H2_GIZCLAW_CATALOG_BEGIN,
+  H2_GIZCLAW_CATALOG_PAGE,
+  H2_GIZCLAW_CATALOG_COMMIT,
+  H2_GIZCLAW_CATALOG_ABORT,
+} h2_gizclaw_catalog_event_t;
+typedef h2_pal_result_t (*h2_gizclaw_catalog_sink_fn)(
+    void *user, h2_gizclaw_catalog_event_t event,
+    const h2_gizclaw_workflow_page_t *page, const char *profile_name,
+    const char *profile_revision);
+
 /** Dependencies and collection strings are borrowed until destroy. One Session
  * per Service; use Session operations exclusively for registration, catalog,
  * and conversations on that Service. Existing synchronous workspace RPCs
@@ -91,7 +114,25 @@ typedef struct h2_gizclaw_session_config {
   const char *const *collections;
   size_t collection_count;
   size_t max_workflows;
+  /** Response storage for one page or one Workspace RPC. In streaming mode
+   * this does not scale with the total number of workflows. */
   size_t catalog_bytes;
+  /** If set, refresh sends bounded pages to this transactional sink and does
+   * not retain a whole catalog. max_workflows and retained buffers are unused.
+   * The callback and user context remain valid until destroy. */
+  h2_gizclaw_catalog_sink_fn catalog_sink;
+  void *catalog_sink_user;
+  /** Reserve two catalog_bytes buffers during create: one published
+   * catalog and one scratch buffer shared by serialized refresh/select work.
+   * Each buffer is allocated once and retained until destroy, including after
+   * failed operations or close. Create returns NO_MEMORY if either allocation
+   * fails. False (the default) keeps allocation per operation. */
+  bool retain_catalog_buffer;
+  /** Optional allocator for the two retained buffers only; NULL uses mem.
+   * Ignored when retain_catalog_buffer is false. Borrowed until successful
+   * destroy; create rollback and destroy free through this same allocator.
+   * Session state, synchronization and all other allocations still use mem. */
+  const h2_pal_mem_api_t *retained_allocator;
 } h2_gizclaw_session_config_t;
 
 /** Product-selected names; NULL collection/workflow opens an existing workspace
@@ -103,6 +144,8 @@ typedef struct h2_gizclaw_session_selection {
   const h2_gizclaw_workspace_parameters_patch_t *parameters;
 } h2_gizclaw_session_selection_t;
 
+/** Creates a Session; failure leaves out_session NULL and releases all owned
+ * allocations, including optional retained catalog buffers. */
 h2_pal_result_t
 h2_gizclaw_session_create(const h2_gizclaw_session_config_t *config,
                           h2_gizclaw_session_t **out_session);
@@ -116,6 +159,7 @@ h2_pal_result_t
 h2_gizclaw_session_snapshot(h2_gizclaw_session_t *session,
                             h2_gizclaw_session_state_t *out_state);
 /** Copies the complete valid catalog and Profile identity into caller storage.
+ * Unavailable in streaming mode; the sink owns the published catalog.
  * Failure clears out_catalog. Retained stale data is never returned as valid.
  */
 h2_pal_result_t
@@ -126,14 +170,15 @@ h2_gizclaw_session_catalog_copy(h2_gizclaw_session_t *session,
  * the Service worker. Preparations are serialized. Select/conversation requests
  * wait behind preparation within their deadline; register/refresh return BUSY.
  * timeout_ms is a total monotonic deadline, including every page and RPC.
- * Registration automatically loads the requested catalog. Catalog failure does
+ * Registration automatically refreshes the requested catalog. Catalog failure does
  * not undo successful registration; inspect both phases in the snapshot. */
 h2_pal_result_t h2_gizclaw_session_register(h2_gizclaw_session_t *session,
                                             const char *token,
                                             uint32_t timeout_ms);
 h2_pal_result_t h2_gizclaw_session_refresh(h2_gizclaw_session_t *session,
                                            uint32_t timeout_ms);
-/** Ensures catalog validity and prepares the named Workspace. Current changes
+/** Prepares the named Workspace. Streaming selection uses the supplied names
+ * directly and needs no in-memory catalog. Current changes
  * only after server confirmation; a failed switch cannot publish its target as
  * current. A version mismatch permits one catalog refresh and retry. */
 h2_pal_result_t
@@ -163,6 +208,24 @@ h2_pal_result_t h2_gizclaw_session_conversation_create(
  */
 h2_pal_result_t h2_gizclaw_session_audio_start(h2_gizclaw_session_t *session);
 h2_pal_result_t h2_gizclaw_session_audio_end(h2_gizclaw_session_t *session);
+/** Submit one complete UTF-8 user input (1..H2_GIZCLAW_CONVERSATION_TEXT_MAX_BYTES
+ * bytes, no terminator required) on the Session-owned conversation route of
+ * the current Workspace, without starting the microphone. The span is copied
+ * before returning; no network I/O or application callback runs inline.
+ * Accepted text publishes WAITING with conversation_input_open false. Like
+ * audio_end, OK means admission only: the conversation completion runs once
+ * from service_poll when the text is sent, fails or is canceled, and the Agent
+ * reply plays through the existing downlink.
+ * INVALID_ARG: NULL session/data, empty, oversized, embedded NUL or invalid
+ * UTF-8 text. INVALID_STATE: Session closed or preparing, Workspace not READY,
+ * no conversation route, or Service not started. CLOSED: Service stopping.
+ * BUSY: audio input is open, or a previous input has not completed (never
+ * interrupted). NO_MEMORY / WOULD_BLOCK: admission failed. While the text is
+ * pending, conversation_release leaves the route in place; audio_start, a
+ * Workspace switch or delete cancel it first, as for a previous audio input.
+ */
+h2_pal_result_t h2_gizclaw_session_send_text(h2_gizclaw_session_t *session,
+                                             h2_gizclaw_str_t text);
 /** Discard an in-flight preparation result without closing the connection.
  * The currently executing RPC remains bounded by its deadline; subsequent
  * steps are skipped. Does not cancel an already-created conversation. */

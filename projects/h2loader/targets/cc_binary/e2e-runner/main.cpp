@@ -612,6 +612,8 @@ int main(int argc, char **argv) {
         .case_user = nullptr,
         .on_progress = progress_event,
         .progress_user = nullptr,
+        .on_log = nullptr,
+        .log_user = nullptr,
         .execute_case = nullptr,
         .execute_user = nullptr,
     };
