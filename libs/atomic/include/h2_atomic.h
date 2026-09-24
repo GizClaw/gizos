@@ -59,7 +59,7 @@ H2_ATOMIC_STORAGE_TYPE(flag, uint32_t);
  * is never freed and the wrapper stays usable for the process lifetime. */
 #define H2_ATOMIC_DEFINE_STATIC(kind, name, initial) \
     static h2_atomic_##kind##_storage_t name##_h2_storage = { \
-        ATOMIC_VAR_INIT(initial), false \
+        (initial), false \
     }; \
     static h2_atomic_##kind##_t name = { &name##_h2_storage }
 #endif

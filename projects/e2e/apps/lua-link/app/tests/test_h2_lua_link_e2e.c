@@ -1,4 +1,5 @@
 #include "h2_lua_link_e2e.h"
+#include "h2_bleikcp.h"
 #include "h2_lua_link_fake_ble.h"
 #include "h2/pal/h2_pal_unsupported.h"
 
@@ -99,9 +100,11 @@ static void test_rejected_runs(void) {
 }
 
 int main(void) {
+  assert(h2_bleikcp_global_init() == H2_PAL_OK);
   test_rejected_runs();
   run_pair(0);
   run_pair(1);
   puts("lua link e2e tests passed");
+  assert(h2_bleikcp_global_shutdown() == H2_PAL_OK);
   return 0;
 }
