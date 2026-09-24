@@ -5,7 +5,7 @@
 
 #include <errno.h>
 #include <stdbool.h>
-#include "h2_atomic.h"
+#include "h2_atomic_static.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

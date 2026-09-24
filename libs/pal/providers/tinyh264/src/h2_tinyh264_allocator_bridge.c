@@ -5,7 +5,7 @@
 
 #if defined(H2_TINYH264_SCOPE_TASK)
 #include <stdint.h>
-#include "h2_atomic.h"
+#include "h2_atomic_static.h"
 
 /* Supplied by the target SDK port; no SDK headers enter portable compilation.
  * The task identity remains stable until all of its stack scopes have left. */

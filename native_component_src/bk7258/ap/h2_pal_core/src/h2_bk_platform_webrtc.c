@@ -3,7 +3,7 @@
 #include "h2_peer.h"
 #include "h2_sctp.h"
 
-#include "h2_atomic.h"
+#include "h2_atomic_static.h"
 
 static h2_peer_t *h2_bk_platform_peer;
 static h2_sctp_t *h2_bk_platform_sctp;

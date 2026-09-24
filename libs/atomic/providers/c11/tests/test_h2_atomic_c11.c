@@ -1,4 +1,4 @@
-#include "h2_atomic.h"
+#include "h2_atomic_static.h"
 
 #include <assert.h>
 #include <pthread.h>

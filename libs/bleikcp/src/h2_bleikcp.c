@@ -2,7 +2,7 @@
 #include "h2_bleikcp_task_names.h"
 
 #include <limits.h>
-#include "h2_atomic.h"
+#include "h2_atomic_static.h"
 #include <stdlib.h>
 #include <string.h>
 

@@ -1,4 +1,5 @@
 #include "h2_atomic_unsupported_impl.h"
+#include "h2_atomic_static.h"
 
 #include <assert.h>
 

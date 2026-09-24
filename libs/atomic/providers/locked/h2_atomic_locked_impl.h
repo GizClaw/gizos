@@ -7,7 +7,7 @@
 #error "H2_ATOMIC_PLATFORM_FREE is required"
 #endif
 
-#include "h2_atomic.h"
+#include "h2_atomic_static.h"
 
 #define H2_ATOMIC_DEFINE_INTEGER(name, type) \
     h2_atomic_result_t h2_atomic_##name##_init(h2_atomic_##name##_t *object, type initial) { \

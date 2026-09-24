@@ -5,7 +5,7 @@
 #include "h2_h2loader_host_factory.h"
 #include "h2_h2loader_host_internal.h"
 
-#include "h2_atomic.h"
+#include "h2_atomic_static.h"
 #include <string.h>
 
 #define H2_ESP_FLASH_BAUD 115200u

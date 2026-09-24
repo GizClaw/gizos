@@ -18,7 +18,7 @@
 #include "sdkconfig.h"
 
 #include <string.h>
-#include "h2_atomic.h"
+#include "h2_atomic_static.h"
 
 #include "h2_wifi_sta.h"
 

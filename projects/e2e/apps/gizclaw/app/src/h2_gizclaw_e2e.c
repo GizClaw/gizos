@@ -9,7 +9,7 @@
 #include "h2_gizclaw_e2e_report.h"
 #include "h2_gizclaw_e2e_task_names.h"
 
-#include "h2_atomic.h"
+#include "h2_atomic_static.h"
 #include <stdio.h>
 #include <string.h>
 

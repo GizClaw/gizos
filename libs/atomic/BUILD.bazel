@@ -5,7 +5,10 @@ package(default_visibility = ["//visibility:public"])
 
 cc_library(
     name = "atomic",
-    hdrs = ["include/h2_atomic.h"],
+    hdrs = [
+        "include/h2_atomic.h",
+        "include/h2_atomic_static.h",
+    ],
     includes = ["include"],
 )
 

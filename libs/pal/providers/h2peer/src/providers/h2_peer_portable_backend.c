@@ -7,7 +7,7 @@
 #include "utils.h"
 
 #include <errno.h>
-#include "h2_atomic.h"
+#include "h2_atomic_static.h"
 #include <string.h>
 
 static size_t h2_peer_portable_live_connections;
