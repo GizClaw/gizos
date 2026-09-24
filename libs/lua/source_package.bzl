@@ -70,11 +70,11 @@ def _sources_impl(target, ctx):
 _sources = aspect(implementation = _sources_impl, attr_aspects = ["deps"])
 
 def _package_impl(ctx):
-    roots = [ctx.attr.runtime[_CSourcesInfo], ctx.attr.defaults[_CSourcesInfo]]
+    roots = [ctx.attr.runtime[_CSourcesInfo], ctx.attr.defaults[_CSourcesInfo], ctx.attr.atomic[_CSourcesInfo]]
     closure = _CSourcesInfo(**{field: depset(transitive = [getattr(r, field) for r in roots]) for field in ["files", "units", "includes", "defines"]})
     files = closure.files.to_list()
     for f in files:
-        if "/providers/" in f.short_path or f.short_path.startswith("boards/") or "/bleikcp/" in f.short_path:
+        if "/pal/providers/" in f.short_path or f.short_path.startswith("boards/") or "/bleikcp/" in f.short_path:
             fail("Platform assembly leaked into portable Lua: %s" % f.short_path)
     manifest = ctx.actions.declare_file(ctx.label.name + "/manifest.json")
     ctx.actions.write(manifest, json.encode_indent({
@@ -110,6 +110,7 @@ lua_source_package = rule(
     implementation = _package_impl,
     attrs = {
         "_content_id_tool": attr.label(default = ":source_content_id", executable = True, cfg = "exec"),
+        "atomic": attr.label(default = "//libs/atomic/providers/c11", aspects = [_sources]),
         "license": attr.label(default = "//:LICENSE", allow_single_file = True),
         "defaults": attr.label(default = "//libs/pal:unsupported", aspects = [_sources]),
         "runtime": attr.label(mandatory = True, aspects = [_sources]),

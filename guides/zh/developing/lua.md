@@ -574,7 +574,7 @@ bazel query 'deps(//libs/lua:lua_runtime) union deps(//libs/lua:lua_core)'
 bazel query 'filter("//libs/pal/providers/|//libs/bleikcp|//boards/|//native_component_src/", deps(//libs/lua:lua_runtime))'
 ```
 
-`gizos-lua-runtime-src.tar.gz` 根目录包含 `manifest.json` 和 GizOS `LICENSE`，其余 C/H 文件保持 package-relative 路径；Lua、TLSF 与 yyjson 的 external repository 文件分别放在稳定的 `third_party/lua/`、`third_party/tlsf/`、`third_party/yyjson/` 下，所有 manifest 路径同步重写。文件清单、include dirs、defines 和各 translation unit 的编译参数由 Bazel aspect 从已配置的依赖图生成，不手工复制维护。包使用与 GizOS native build 相同的 Lua source selection 和受限标准库；固件专用 stdio/newlib shim 仍由原 embedded build 配置选择，不把 ESP libc 兼容代码加入 native host。它不包含预编译库、Bazel toolchain、PAL provider 或 board code。 新增的 trie C 源码和头文件也随依赖图自动收录。
+`gizos-lua-runtime-src.tar.gz` 根目录包含 `manifest.json` 和 GizOS `LICENSE`，其余 C/H 文件保持 package-relative 路径；Lua、TLSF 与 yyjson 的 external repository 文件分别放在稳定的 `third_party/lua/`、`third_party/tlsf/`、`third_party/yyjson/` 下，所有 manifest 路径同步重写。文件清单、include dirs、defines 和各 translation unit 的编译参数由 Bazel aspect 从已配置的依赖图生成，不手工复制维护。包使用与 GizOS native build 相同的 Lua source selection 和受限标准库；固件专用 stdio/newlib shim 仍由原 embedded build 配置选择，不把 ESP libc 兼容代码加入 native host。它包含可移植的 C11 atomic provider，不包含预编译库、Bazel toolchain、PAL provider 或 board code。 新增的 trie C 源码和头文件也随依赖图自动收录。
 
 Manifest schema version 1：
 
@@ -608,7 +608,7 @@ LiteLink 从 [手动 Release 的 metadata](./bazel.md#lua-源码包进入手动-
 独立测试可显式传入 sidecar，重算内容标识后继续编译：
 
 ```sh
-python3 libs/lua/tests/test_source_package.py bazel-bin/libs/lua/gizos-lua-runtime-src.tar.gz libs/lua/tests/test_embedder.c bazel-bin/libs/lua/runtime_sources.content_id libs/atomic/providers/c11/src/h2_atomic_c11.c
+python3 libs/lua/tests/test_source_package.py bazel-bin/libs/lua/gizos-lua-runtime-src.tar.gz libs/lua/tests/test_embedder.c bazel-bin/libs/lua/runtime_sources.content_id
 ```
 
 Bazel test 不递归启动 Bazel。跨两次 build 的手工验证命令和结果见 [Bazel 发布验证](./bazel.md#手动时间戳-release)。

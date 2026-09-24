@@ -1,6 +1,6 @@
 """Extract and compile using only manifest.json, a host C compiler and a harness.
 
-Standalone: python3 test_source_package.py PACKAGE.tar.gz [test_embedder.c] [runtime_sources.content_id] [platform_atomic_provider.c]
+Standalone: python3 test_source_package.py PACKAGE.tar.gz [test_embedder.c] [runtime_sources.content_id]
 No Bazel invocation or repository source discovery occurs in this test.
 """
 
@@ -20,7 +20,6 @@ def main():
     harness = Path(sys.argv[2] if len(sys.argv) > 2 else
                    Path(__file__).with_name("test_embedder.c")).resolve()
     content_id = Path(sys.argv[3]).resolve() if len(sys.argv) > 3 else None
-    atomic_provider = Path(sys.argv[4]).resolve() if len(sys.argv) > 4 else None
     with tempfile.TemporaryDirectory(dir=os.environ.get("TEST_TMPDIR")) as directory:
         root = Path(directory)
         with tarfile.open(package) as archive:
@@ -42,7 +41,8 @@ def main():
         assert "libs/trie/src/h2_trie.c" in manifest["sources"]
         assert (root / "libs/trie/include/h2_trie.h").is_file()
         assert len(manifest["sources"]) == len(set(manifest["sources"]))
-        assert all("/providers/" not in p and "/bleikcp/" not in p for p in manifest["sources"])
+        assert all("/pal/providers/" not in p and "/bleikcp/" not in p for p in manifest["sources"])
+        assert "libs/atomic/providers/c11/src/h2_atomic_c11.c" in manifest["sources"]
         compiler = shlex.split(os.environ.get("CC", "cc"))
         flags = manifest["cflags"] + ["-I" + p for p in manifest["include_dirs"]]
         flags += ["-D" + d for d in manifest["defines"]]
@@ -73,12 +73,6 @@ def main():
                 objects.append(obj)
                 compiled.append(source)
         assert sorted(compiled) == sorted(manifest["sources"])
-        if atomic_provider is not None:
-            provider_object = str(root / "atomic_provider.o")
-            subprocess.run(compiler + flags + ["-std=c11", "-c",
-                           str(atomic_provider), "-o", provider_object],
-                           cwd=root, check=True)
-            objects.append(provider_object)
         executable = str(root / "embedder")
         subprocess.run(compiler + flags + ["-std=c11", "-Wall", "-Wextra", "-Werror",
                        "-pthread", str(harness)] + objects +
