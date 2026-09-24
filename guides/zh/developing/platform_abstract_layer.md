@@ -4,7 +4,11 @@ Modem provider 的接收分帧、命令串行与 URC 并发合同见 [Modem URC]
 
 Platform Abstraction Layer（PAL）定义 GizOS 使用的平台抽象能力。PAL 把芯片 SDK、操作系统和具体硬件实现隔离在跨平台代码之外，使 `libs`、runtime 和 app 可以使用稳定的 C contract。
 
-`h2_pal_webrtc_peer_create_with_config()` 接收可选的 `h2_pal_webrtc_peer_config_t.allocator`，NULL 或旧 `peer_create()` 保持原行为；H2Peer 把它用于 peer 私有存储并传给 SCTP/SRTP，独立 internal/control/packet allocator 保留，未实现扩展的旧 provider 只在 NULL/default config 时回退到原创建入口；收到非 NULL allocator 时返回 `H2_PAL_ERR_UNSUPPORTED`，不能静默忽略分配要求。`h2_audio_track_config_t.allocator` 同样可选，Runtime wrapper 和 mixer 的音轨队列、scratch 跟随它，NULL 保持各层原有默认分配器。
+`h2_pal_webrtc_peer_create_with_config()` 接收可选的 `h2_pal_webrtc_peer_config_t.allocator`，NULL 或旧 `peer_create()` 保持原行为；H2Peer 把它用于 peer 私有存储并传给 SCTP/SRTP，H2Peer 的 package allocation 和 atomic provider storage 各按自己的 contract 管理，不再注入 `control_mem`，未实现扩展的旧 provider 只在 NULL/default config 时回退到原创建入口；收到非 NULL allocator 时返回 `H2_PAL_ERR_UNSUPPORTED`，不能静默忽略分配要求。`h2_audio_track_config_t.allocator` 同样可选，Runtime wrapper 和 mixer 的音轨队列、scratch 跟随它，NULL 保持各层原有默认分配器。
+
+## 独立 Atomic Contract
+
+并发原子值由 `libs/atomic/include/h2_atomic.h` 定义，不属于 PAL API、PAL vtable 或 Memory PAL capability。调用方持有 typed wrapper 并直接调用 `h2_atomic_*` 符号；最终 target 必须链接一个平台实现，缺失实现会在链接时报错。非 flag wrapper 初始化后拥有 provider 存储，停止并发访问后销毁，不得初始化后复制；静态 flag 可以用 `H2_ATOMIC_FLAG_INIT` 零初始化而不分配存储。flag 的 `_state` 字节内嵌在 wrapper 中，即使 wrapper 位于 PSRAM，ESP provider 也只通过内部 RAM 中的静态 C11 锁保护该字节；`h2_atomic_flag_init` 仅重置状态，不为 flag 分配存储，静态零初始化的全局锁无需启动时调用它。Desktop/Browser 的 provider 基于 C11，iOS/Android 使用 pthread，ESP 将非 flag 原子的实际存储放在内部 RAM，即使 wrapper 在 PSRAM。BK/JieLi 的初始化明确返回 `H2_ATOMIC_UNSUPPORTED`，flag 操作会 trap；调用方必须传播错误，不能将失败后的 wrapper 当作零值使用。
 
 ## API Reference
 

@@ -10,12 +10,11 @@
 
 #include <assert.h>
 #include <pthread.h>
-#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-static atomic_int s_marks[2];
+static h2_atomic_int_t s_marks[2];
 
 /* capability.call('mark', ...) lets a script tell the test it reached a
  * checkpoint without the test reading Lua state. */
@@ -27,13 +26,13 @@ static h2_pal_result_t mark_call(void *user, h2_lua_capability_request_id_t id,
   (void)input;
   (void)options;
   (void)out_error;
-  atomic_fetch_add((atomic_int *)user, 1);
+  h2_atomic_fetch_add((h2_atomic_int_t *)user, 1);
   (void)snprintf(output, output_capacity, "ok");
   return H2_PAL_OK;
 }
 
 static h2_lua_host_t *create_host(h2_runtime_t *runtime, int enable_link,
-                                  atomic_int *mark, const h2_pal_mem_api_t *allocator) {
+                                  h2_atomic_int_t *mark, const h2_pal_mem_api_t *allocator) {
   const h2_lua_host_config_t config = {
       .runtime = runtime,
       .allocator = allocator,
@@ -49,10 +48,10 @@ static h2_lua_host_t *create_host(h2_runtime_t *runtime, int enable_link,
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
   if (enable_link) {
     size_t before = allocator != NULL
-        ? atomic_load(&((h2_test_allocator_t *)allocator->user)->calls) : 0u;
+        ? h2_atomic_load(&((h2_test_allocator_t *)allocator->user)->calls) : 0u;
     assert(h2_lua_link_enable(host, &link_config) == H2_PAL_OK);
     if (allocator != NULL)
-      assert(atomic_load(&((h2_test_allocator_t *)allocator->user)->calls) == before + 3u);
+      assert(h2_atomic_load(&((h2_test_allocator_t *)allocator->user)->calls) == before + 3u);
     assert(h2_lua_link_enable(host, &link_config) == H2_PAL_ERR_INVALID_STATE);
   }
   if (mark != NULL) {
@@ -116,7 +115,7 @@ static void wait_until(int (*predicate)(void *), void *user) {
 }
 
 static int mark_reached(void *user) {
-  return atomic_load((atomic_int *)user) > 0;
+  return h2_atomic_load((h2_atomic_int_t *)user) > 0;
 }
 
 static int device_advertising(void *user) {
@@ -377,7 +376,7 @@ static int s_count_pair;
 static void pair_open(pair_t *pair) {
   fake_air_init(&pair->air);
   for (int i = 0; i < 2; ++i) {
-    atomic_store(&s_marks[i], 0);
+    h2_atomic_store(&s_marks[i], 0);
     pair->runtime[i] = fake_create_runtime(&pair->air.devices[i].ble,
                                       &pair->air.devices[i].events);
     fake_set_baseline(&pair->air.devices[i]);
@@ -392,7 +391,8 @@ static void pair_close(pair_t *pair) {
     if (pair->host[i] != NULL) {
       h2_lua_host_destroy(pair->host[i]);
     }
-    assert(atomic_load(&pair->arenas[i].live) == 0u);
+    assert(h2_atomic_load(&pair->arenas[i].live) == 0u);
+    h2_test_allocator_destroy(&pair->arenas[i]);
     assert(fake_is_released(&pair->air.devices[i]));
     h2_runtime_deinit(pair->runtime[i]);
   }
@@ -418,6 +418,7 @@ static void test_three_transports(int hold_terminal) {
       .mutex = PTHREAD_MUTEX_INITIALIZER,
       .cond = PTHREAD_COND_INITIALIZER,
   };
+  assert(h2_atomic_int_init(&gate.reached, 0) == H2_ATOMIC_OK);
   pair_open(&pair);
   pair.air.devices[0].terminal_gate = hold_terminal ? &gate : NULL;
   h2_lua_job_id_t host =
@@ -447,6 +448,7 @@ static void test_three_transports(int hold_terminal) {
   pair_close(&pair);
   pthread_cond_destroy(&gate.cond);
   pthread_mutex_destroy(&gate.mutex);
+  h2_atomic_int_destroy(&gate.reached);
 }
 
 static void test_flow_control_keeps_order(void) {
@@ -508,17 +510,17 @@ static void test_sequential_sessions_reuse_service(void) {
   pair_open(&pair);
   for (int round = 0; round < 4; ++round) {
     const int h = round % 2;
-    atomic_store(&s_marks[0], 0);
-    atomic_store(&s_marks[1], 0);
+    h2_atomic_store(&s_marks[0], 0);
+    h2_atomic_store(&s_marks[1], 0);
     h2_lua_job_id_t host =
         submit(pair.host[h], "@peer.lua", s_wait_peer_closed, "host");
     h2_lua_job_id_t join =
         submit(pair.host[1 - h], "@idle.lua", s_connect_then_idle, "join");
-    for (int i = 0; i < 10000 && !(atomic_load(&s_marks[0]) &&
-                                   atomic_load(&s_marks[1])); ++i) {
+    for (int i = 0; i < 10000 && !(h2_atomic_load(&s_marks[0]) &&
+                                   h2_atomic_load(&s_marks[1])); ++i) {
       (void)h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 1u);
     }
-    if (!(atomic_load(&s_marks[0]) && atomic_load(&s_marks[1]))) {
+    if (!(h2_atomic_load(&s_marks[0]) && h2_atomic_load(&s_marks[1]))) {
       h2_lua_job_status_t a;
       h2_lua_job_status_t b;
       assert(h2_lua_job_get_status(pair.host[h], host, &a) == H2_PAL_OK);
@@ -547,8 +549,8 @@ static void test_rehost_from_disconnect_callback(void) {
   pair_t pair;
   pair_open(&pair);
   for (int round = 0; round < 5; ++round) {
-    atomic_store(&s_marks[0], 0);
-    atomic_store(&s_marks[1], 0);
+    h2_atomic_store(&s_marks[0], 0);
+    h2_atomic_store(&s_marks[1], 0);
     h2_lua_job_id_t host = submit(pair.host[0], "@rehost.lua",
                                   s_rehost_from_callback, "host");
     h2_lua_job_id_t join =
@@ -646,8 +648,8 @@ static void test_host_destroy_releases_link(void) {
   /* A connected session is also torn down by destroy, and the peer sees
    * the BYE. */
   pair.host[0] = create_host(pair.runtime[0], 1, &s_marks[0], NULL);
-  atomic_store(&s_marks[0], 0);
-  atomic_store(&s_marks[1], 0);
+  h2_atomic_store(&s_marks[0], 0);
+  h2_atomic_store(&s_marks[1], 0);
   h2_lua_job_id_t host =
       submit(pair.host[0], "@peer.lua", s_wait_peer_closed, "host");
   (void)submit(pair.host[1], "@idle.lua", s_connect_then_idle, "join");
@@ -734,6 +736,8 @@ static void test_capability_off(void) {
 }
 
 int main(void) {
+  for (int i = 0; i < 2; ++i)
+    assert(h2_atomic_int_init(&s_marks[i], 0) == H2_ATOMIC_OK);
   fprintf(stderr, "== test_capability_off\n");
   test_capability_off();
   s_count_pair = 1;
@@ -764,5 +768,7 @@ int main(void) {
   fprintf(stderr, "== test_tag_mismatch_and_timeouts\n");
   test_tag_mismatch_and_timeouts();
   puts("lua link tests passed");
+  for (int i = 0; i < 2; ++i)
+    h2_atomic_int_destroy(&s_marks[i]);
   return 0;
 }

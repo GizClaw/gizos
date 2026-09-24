@@ -2,7 +2,7 @@
 #include "h2_smoke_mp4_player_task_names.h"
 
 #include <inttypes.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -52,9 +52,9 @@ typedef struct player_pipeline {
     h2_pal_queue_t *ready_audio;
     h2_pal_mutex_t *buffer_mutex;
     player_presentation_buffer_t buffers[H2_MP4_PLAYER_VIDEO_BUFFER_COUNT];
-    atomic_int result;
-    atomic_int stop;
-    atomic_size_t frame_count;
+    h2_atomic_int_t result;
+    h2_atomic_int_t stop;
+    h2_atomic_size_t frame_count;
 } player_pipeline_t;
 
 typedef struct player_fs_source {
@@ -212,11 +212,11 @@ static h2_pal_result_t write_audio_block(
 }
 
 static int pipeline_should_stop(player_pipeline_t *pipeline) {
-    return atomic_load(&pipeline->stop) != 0;
+    return h2_atomic_load(&pipeline->stop) != 0;
 }
 
 static void pipeline_stop(player_pipeline_t *pipeline) {
-    atomic_store(&pipeline->stop, 1);
+    h2_atomic_store(&pipeline->stop, 1);
 }
 
 static int pipeline_poll_stop(player_pipeline_t *pipeline) {
@@ -233,7 +233,7 @@ static void pipeline_fail(
     const char *stage,
     h2_pal_result_t result) {
     int expected = H2_PAL_OK;
-    if (atomic_compare_exchange_strong(
+    if (h2_atomic_compare_exchange_strong(
             &pipeline->result,
             &expected,
             result)) {
@@ -564,7 +564,7 @@ static void video_writer_task(void *context) {
             pipeline_fail(pipeline, "video-write", result);
         } else {
             const size_t frame_count =
-                atomic_fetch_add(&pipeline->frame_count, 1u) + 1u;
+                h2_atomic_fetch_add(&pipeline->frame_count, 1u) + 1u;
             if (frame_count == 1u) {
                 player_log(
                     pipeline->runtime,
@@ -670,7 +670,7 @@ static void audio_writer_task(void *context) {
         }
         release_presentation_buffer(pipeline, index);
     }
-    if (atomic_load(&pipeline->result) == H2_PAL_OK &&
+    if (h2_atomic_load(&pipeline->result) == H2_PAL_OK &&
         pipeline->pending_values != 0u) {
         const uint8_t channels = pipeline->audio_channels;
         const size_t flush_values =
@@ -914,9 +914,12 @@ h2_pal_result_t h2_smoke_mp4_player_run(
         .audio_channels = media.audio_channels,
         .pending_pcm = pending_pcm,
     };
-    atomic_init(&pipeline.result, H2_PAL_OK);
-    atomic_init(&pipeline.stop, 0);
-    atomic_init(&pipeline.frame_count, 0u);
+    if (h2_atomic_init(&pipeline.result, H2_PAL_OK) != H2_ATOMIC_OK ||
+        h2_atomic_init(&pipeline.stop, 0) != H2_ATOMIC_OK ||
+        h2_atomic_init(&pipeline.frame_count, 0u) != H2_ATOMIC_OK) {
+        result = player_fail(runtime, "pipeline-atomic", H2_PAL_ERR_NO_MEMORY);
+        goto close_pipeline;
+    }
     const h2_pal_mutex_config_t buffer_mutex_config = {
         .name = "mp4-buffer-ref",
         .allocator = runtime->mem,
@@ -1060,9 +1063,12 @@ h2_pal_result_t h2_smoke_mp4_player_run(
             pipeline_fail(&pipeline, "audio-join", join_result);
         }
     }
-    result = (h2_pal_result_t)atomic_load(&pipeline.result);
+    result = (h2_pal_result_t)h2_atomic_load(&pipeline.result);
 
 close_pipeline:
+    h2_atomic_destroy(&pipeline.result);
+    h2_atomic_destroy(&pipeline.stop);
+    h2_atomic_destroy(&pipeline.frame_count);
     if (pipeline.free_video != NULL) {
         h2_pal_queue_destroy(runtime->queue, pipeline.free_video);
     }

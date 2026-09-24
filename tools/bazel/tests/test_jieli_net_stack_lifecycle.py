@@ -58,10 +58,10 @@ int main(void) {
   if(!ready) break;
   os_time_dly(1);
  }
- assert(!atomic_load(&stopped));
+ assert(!h2_atomic_load(&stopped));
  unavailable(0);
  release_blocked(); pthread_join(reader,NULL); pthread_join(stop,NULL);
- assert(thread_result==1 && atomic_load(&stopped));
+ assert(thread_result==1 && h2_atomic_load(&stopped));
  unavailable(0);
  h2_jieli_net_stack_started(); assert(stack_generation==2);
  unavailable(1);

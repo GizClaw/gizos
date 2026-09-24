@@ -211,23 +211,23 @@ h2_runtime_sequence_t h2_runtime_next_sequence(h2_runtime_t *runtime) {
     }
     h2_runtime_private_t *private_state = runtime->private_state;
     h2_runtime_sequence_t sequence;
-#if H2_RUNTIME_ATOMIC_ADD_LOCK_FREE
-    sequence = atomic_fetch_add_explicit(
-        &private_state->next_sequence, 1u, memory_order_relaxed);
+#if H2_RUNTIME_ATOMIC_FETCH_ADD
+    sequence = h2_atomic_fetch_add_explicit(
+        &private_state->next_sequence, 1u, H2_ATOMIC_RELAXED);
     if (sequence == 0u) {
         /* Wrapped: 0 means "no sequence", take the next one. */
-        sequence = atomic_fetch_add_explicit(
-            &private_state->next_sequence, 1u, memory_order_relaxed);
+        sequence = h2_atomic_fetch_add_explicit(
+            &private_state->next_sequence, 1u, H2_ATOMIC_RELAXED);
     }
 #else
     h2_runtime_flag_lock(&private_state->sequence_lock);
-    sequence = atomic_load_explicit(
-        &private_state->next_sequence, memory_order_relaxed);
+    sequence = h2_atomic_load_explicit(
+        &private_state->next_sequence, H2_ATOMIC_RELAXED);
     if (sequence == 0u) {
         sequence = 1u;
     }
-    atomic_store_explicit(
-        &private_state->next_sequence, sequence + 1u, memory_order_relaxed);
+    h2_atomic_store_explicit(
+        &private_state->next_sequence, sequence + 1u, H2_ATOMIC_RELAXED);
     h2_runtime_flag_unlock(&private_state->sequence_lock);
 #endif
     return sequence;
@@ -269,6 +269,61 @@ static int runtime_config_is_valid(const h2_runtime_config_t *config) {
     return has_complete_surface;
 }
 
+static void runtime_atomic_destroy(h2_runtime_private_t *state) {
+    h2_atomic_int_destroy(&state->state_publication.ready);
+    h2_atomic_uint_destroy(&state->state_publication.active_index);
+    h2_atomic_flag_destroy(&state->state_publication.reader_lock);
+    h2_atomic_flag_destroy(&state->audio_state_busy);
+#if !defined(H2_RUNTIME_AUDIO_LEVELS) || H2_RUNTIME_AUDIO_LEVELS
+    h2_atomic_uint_destroy(&state->audio_capture_level);
+    h2_atomic_uint_destroy(&state->audio_capture_level_ms);
+    h2_atomic_uint_destroy(&state->audio_playback_level);
+    h2_atomic_uint_destroy(&state->audio_playback_level_ms);
+#endif
+    h2_atomic_flag_destroy(&state->custom_event_lock);
+    h2_atomic_uint_destroy(&state->custom_event_in_flight);
+    h2_atomic_int_destroy(&state->custom_event_closed);
+    h2_atomic_flag_destroy(&state->sequence_lock);
+    h2_atomic_uint_destroy(&state->next_sequence);
+    h2_atomic_int_destroy(&state->system_event_active);
+    h2_atomic_int_destroy(&state->input_phase);
+    h2_atomic_int_destroy(&state->input_stop_requested);
+    h2_atomic_int_destroy(&state->input_worker_result);
+    for (size_t i = 0; i < H2_RUNTIME_STATE_SLOT_COUNT; ++i)
+        h2_atomic_uint_destroy(&state->state_publication.reader_count[i]);
+}
+
+static h2_pal_result_t runtime_atomic_init(h2_runtime_private_t *state) {
+    h2_atomic_result_t atomic_rc = H2_ATOMIC_OK;
+    if ((atomic_rc = h2_atomic_int_init(&state->state_publication.ready, 0)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_uint_init(&state->state_publication.active_index, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_flag_init(&state->state_publication.reader_lock)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_flag_init(&state->audio_state_busy)) != H2_ATOMIC_OK) goto atomic_failure;
+#if !defined(H2_RUNTIME_AUDIO_LEVELS) || H2_RUNTIME_AUDIO_LEVELS
+    if ((atomic_rc = h2_atomic_uint_init(&state->audio_capture_level, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_uint_init(&state->audio_capture_level_ms, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_uint_init(&state->audio_playback_level, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_uint_init(&state->audio_playback_level_ms, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
+#endif
+    if ((atomic_rc = h2_atomic_flag_init(&state->custom_event_lock)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_uint_init(&state->custom_event_in_flight, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_int_init(&state->custom_event_closed, 0)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_flag_init(&state->sequence_lock)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_uint_init(&state->next_sequence, 1u)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_int_init(&state->system_event_active, 0)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_int_init(&state->input_phase, H2_RUNTIME_INPUT_PHASE_STOPPED)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_int_init(&state->input_stop_requested, 0)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_int_init(&state->input_worker_result, H2_PAL_OK)) != H2_ATOMIC_OK) goto atomic_failure;
+    for (size_t i = 0; i < H2_RUNTIME_STATE_SLOT_COUNT; ++i) {
+        if ((atomic_rc = h2_atomic_uint_init(&state->state_publication.reader_count[i], 0u)) != H2_ATOMIC_OK) goto atomic_failure;
+    }
+    return H2_PAL_OK;
+atomic_failure:
+    runtime_atomic_destroy(state);
+    return atomic_rc == H2_ATOMIC_UNSUPPORTED
+        ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_ERR_NO_MEMORY;
+}
+
 static h2_pal_result_t runtime_init_release(
     const h2_runtime_config_t *config,
     h2_runtime_t *runtime,
@@ -300,6 +355,7 @@ static h2_pal_result_t runtime_init_release(
                     runtime->queue, private_state->input_nfc_result_queue);
                 private_state->input_nfc_result_queue = NULL;
             }
+            runtime_atomic_destroy(private_state);
             size_t allocation_size = private_state->allocation_size;
             memset(private_state, 0, allocation_size);
             h2_pal_mem_free(config->mem, private_state);
@@ -349,6 +405,12 @@ h2_pal_result_t h2_runtime_init(
     runtime->target = config->target;
     runtime->chip = config->chip;
     runtime->private_state = private_state;
+    h2_pal_result_t atomic_rc = runtime_atomic_init(private_state);
+    if (atomic_rc != H2_PAL_OK) {
+        h2_pal_mem_free(config->mem, private_state);
+        h2_pal_mem_free(config->mem, runtime);
+        return atomic_rc;
+    }
 
 #define H2_RUNTIME_BIND_PROXY(field)                                                \
     do {                                                                            \
@@ -417,14 +479,6 @@ h2_pal_result_t h2_runtime_init(
             return runtime_init_release(config, runtime, state_rc);
         }
     }
-    atomic_flag_clear(&private_state->sequence_lock);
-    atomic_init(&private_state->system_event_active, 0);
-    atomic_init(
-        &private_state->input_phase,
-        H2_RUNTIME_INPUT_PHASE_STOPPED);
-    atomic_init(&private_state->input_stop_requested, 0);
-    atomic_init(&private_state->input_worker_result, H2_PAL_OK);
-    atomic_init(&private_state->next_sequence, 1u);
     private_state->input_sources_ready = 0;
 
     size_t event_queue_capacity = config->event_queue_capacity;
@@ -585,6 +639,7 @@ void h2_runtime_deinit(h2_runtime_t *runtime) {
 
     const h2_pal_mem_api_t mem = *runtime->mem;
     h2_runtime_private_t *private_state = runtime->private_state;
+    runtime_atomic_destroy(private_state);
     size_t allocation_size = private_state->allocation_size;
     memset(private_state, 0, allocation_size);
     h2_pal_mem_free(&mem, private_state);

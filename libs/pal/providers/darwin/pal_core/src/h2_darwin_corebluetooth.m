@@ -3,12 +3,22 @@
 
 #include "h2_darwin_platform.h"
 #include "h2_darwin_corebluetooth_internal.h"
+#include "h2_atomic.h"
 
 #include <string.h>
 #include <stdio.h>
-#include <stdatomic.h>
+static h2_atomic_ptr_t s_diagnostic_log;
+static h2_atomic_size_t s_released_adv_sets;
+static dispatch_once_t s_atomic_once;
 
-static _Atomic(const h2_pal_log_api_t *) s_diagnostic_log;
+static void h2_corebluetooth_init_atomics(void) {
+    dispatch_once(&s_atomic_once, ^{
+        if (h2_atomic_ptr_init(&s_diagnostic_log, NULL) != H2_ATOMIC_OK ||
+            h2_atomic_size_init(&s_released_adv_sets, 0u) != H2_ATOMIC_OK) {
+            abort();
+        }
+    });
+}
 
 static void connection_diagnostic(
     const char *event, CBPeripheral *peripheral, NSError *error) {
@@ -20,7 +30,7 @@ static void connection_diagnostic(
                    error != nil ? (long)error.code : 0L,
                    error != nil ? error.localizedDescription.UTF8String : "none");
     (void)h2_pal_log_write(
-        atomic_load_explicit(&s_diagnostic_log, memory_order_acquire),
+        h2_atomic_ptr_load(&s_diagnostic_log, H2_ATOMIC_ACQUIRE),
         H2_PAL_LOG_ERROR, "ble/corebluetooth", message);
 }
 
@@ -96,7 +106,6 @@ typedef NS_ENUM(NSInteger, H2CoreBluetoothOperation) {
 @end
 
 static char s_corebluetooth_queue_key;
-static _Atomic size_t s_released_adv_sets;
 
 /* Delivers events raised on the backend queue so subscribers can call BLE APIs. */
 static dispatch_queue_t h2_corebluetooth_event_queue(void) {
@@ -118,8 +127,7 @@ static void h2_corebluetooth_release_adv_set(h2_pal_ble_adv_set_t *set) {
     if (set == NULL) return;
     dispatch_async(h2_corebluetooth_event_queue(), ^{
         free(set);
-        atomic_fetch_add_explicit(
-            &s_released_adv_sets, 1u, memory_order_release);
+        h2_atomic_size_fetch_add(&s_released_adv_sets, 1u, H2_ATOMIC_RELEASE);
     });
 }
 
@@ -1668,7 +1676,8 @@ void h2_darwin_corebluetooth_test_post_adv_started_on_backend_queue(void) {
 }
 
 size_t h2_darwin_corebluetooth_test_released_adv_sets(void) {
-    return atomic_load_explicit(&s_released_adv_sets, memory_order_acquire);
+    h2_corebluetooth_init_atomics();
+    return h2_atomic_size_load(&s_released_adv_sets, H2_ATOMIC_ACQUIRE);
 }
 
 static h2_pal_result_t h2_corebluetooth_start(void *user) {
@@ -1996,14 +2005,15 @@ h2_pal_ble_t *h2_darwin_corebluetooth_ble(
         log->vtable == NULL || log->vtable->write == NULL) {
         return NULL;
     }
+    h2_corebluetooth_init_atomics();
     @synchronized ([H2CoreBluetoothBackend class]) {
         if (s_h2_darwin_corebluetooth_api.allocator != NULL) {
             return s_h2_darwin_corebluetooth_api.allocator == allocator &&
-                   atomic_load_explicit(&s_diagnostic_log, memory_order_acquire) == log
+                   h2_atomic_ptr_load(&s_diagnostic_log, H2_ATOMIC_ACQUIRE) == log
                 ? &s_h2_darwin_corebluetooth_api : NULL;
         }
         s_h2_darwin_corebluetooth_api.allocator = allocator;
-        atomic_store_explicit(&s_diagnostic_log, log, memory_order_release);
+        h2_atomic_ptr_store(&s_diagnostic_log, (void *)log, H2_ATOMIC_RELEASE);
     }
     return &s_h2_darwin_corebluetooth_api;
 }

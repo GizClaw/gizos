@@ -19,7 +19,7 @@ class RequestLifetimeTest(unittest.TestCase):
             binary = Path(directory) / 'test'
             subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-pthread',
                 *os.environ.get('JIELI_TEST_CFLAGS', '').split(), '-I', str(ROOT / 'libs/pal/include'),
-                str(test), '-o', str(binary)], check=True)
+                str(test), '-I', str(ROOT / 'libs/atomic/include'), str(ROOT / 'libs/atomic/providers/c11/src/h2_atomic_c11.c'), '-o', str(binary)], check=True)
             for case in ['rearm_threaded', 'rearm_once', 'rearm_persistent', 'early_hook', 'queued', 'submitting', 'registration_error', 'request_error', 'consumer_busy']:
                 with self.subTest(case=case):
                     result = subprocess.run([str(binary), case], capture_output=True, text=True, timeout=15)

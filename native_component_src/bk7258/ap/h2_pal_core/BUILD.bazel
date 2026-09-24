@@ -44,6 +44,7 @@ firmware_native_component(
         "manual",
     ],
     deps = [
+        "//libs/atomic:locked_template",
         "//libs/pal:unsupported",
         "//libs/wifi_sta",
         "//libs/pal/providers/corehttp",
@@ -135,7 +136,7 @@ cc_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal"],
+    deps = ["//libs/pal", "//libs/atomic/providers/c11"],
 )
 
 cc_test(

@@ -4,7 +4,7 @@
 
 #include <jni.h>
 #include <pthread.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdint.h>
 #include <stdlib.h>
 
@@ -13,7 +13,7 @@ typedef struct h2_mobile_android_mp4_context {
   h2_runtime_t *runtime;
   uint8_t *media;
   size_t media_size;
-  atomic_bool stop;
+  h2_atomic_bool_t stop;
   pthread_t thread;
   int thread_started;
 } h2_mobile_android_mp4_context_t;
@@ -25,7 +25,7 @@ static h2_mobile_android_mp4_context_t *context_from_handle(jlong handle) {
 static int android_mp4_should_stop(void *user) {
   h2_mobile_android_mp4_context_t *context = user;
   return context == NULL ||
-         atomic_load_explicit(&context->stop, memory_order_acquire);
+         h2_atomic_load_explicit(&context->stop, H2_ATOMIC_ACQUIRE);
 }
 
 static void *android_mp4_app_thread(void *user) {
@@ -79,7 +79,12 @@ Java_com_haivivi_firmwares_smokeapps_mp4player_MainActivity_nativeCreate(
     free(context);
     return 0;
   }
-  atomic_init(&context->stop, false);
+  if (h2_atomic_init(&context->stop, false) != H2_ATOMIC_OK) {
+    h2_android_platform_destroy(context->host);
+    free(context->media);
+    free(context);
+    return 0;
+  }
   return (jlong)(uintptr_t)context;
 }
 
@@ -134,13 +139,14 @@ Java_com_haivivi_firmwares_smokeapps_mp4player_MainActivity_nativeStop(
     return;
   }
   if (context->thread_started) {
-    atomic_store_explicit(&context->stop, true, memory_order_release);
+    h2_atomic_store_explicit(&context->stop, true, H2_ATOMIC_RELEASE);
     (void)pthread_join(context->thread, NULL);
   }
   if (context->runtime != NULL) {
     h2_runtime_deinit(context->runtime);
   }
   h2_android_platform_destroy(context->host);
+  h2_atomic_destroy(&context->stop);
   free(context->media);
   free(context);
 }

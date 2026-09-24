@@ -49,6 +49,7 @@ target_include_directories(h2peer
   PUBLIC
     "${H2PEER_ROOT}/include"
     "${H2PEER_REPO_ROOT}/libs/pal/include"
+    "${H2PEER_REPO_ROOT}/libs/atomic/include"
   PRIVATE
     "${H2PEER_ROOT}/src"
     "${H2PEER_ROOT}/src/providers/portable")

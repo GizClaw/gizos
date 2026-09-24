@@ -11,7 +11,7 @@
 #include "device/device.h"
 
 #include <stdio.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <string.h>
 
 #include "system/task.h"
@@ -35,7 +35,7 @@ static uint16_t service_handle;
 static uint16_t tx_value_handle;
 static uint16_t tx_cccd_handle;
 static uint16_t rx_value_handle;
-static atomic_uint write_count;
+static h2_atomic_uint_t write_count;
 static int ble_result;
 static h2_loader_app_client_t loader_client;
 static h2_pal_fs_api_t loader_fs;
@@ -109,7 +109,7 @@ static void heartbeat_task(void *user) {
   for (unsigned heartbeat = 1u;; ++heartbeat) {
     os_time_dly(100u);
     printf("H2_JIELI_PAL_BLE_HEARTBEAT count=%u writes=%u result=%d\r\n",
-           heartbeat, atomic_load_explicit(&write_count, memory_order_relaxed),
+           heartbeat, h2_atomic_load_explicit(&write_count, H2_ATOMIC_RELAXED),
            ble_result);
   }
 }
@@ -134,8 +134,8 @@ static h2_pal_result_t on_write(
     void *user, const h2_pal_ble_gatt_access_t *access,
     const uint8_t *data, size_t len) {
   (void)user;
-  unsigned count = atomic_fetch_add_explicit(
-      &write_count, 1u, memory_order_relaxed) + 1u;
+  unsigned count = h2_atomic_fetch_add_explicit(
+      &write_count, 1u, H2_ATOMIC_RELAXED) + 1u;
   printf("H2_JIELI_PAL_BLE_WRITE count=%u conn=%u attr=%u bytes=%u\r\n",
          count, (unsigned)access->conn_handle,
          (unsigned)access->attr_handle, (unsigned)len);
@@ -146,6 +146,10 @@ static h2_pal_result_t on_write(
 }
 
 void app_main(void) {
+  if (h2_atomic_init(&write_count, 0u) != H2_ATOMIC_OK) {
+    return_to_loader(NULL);
+    return;
+  }
   int command_result = start_commands();
   printf("H2_JIELI_PAL_BLE_COMMANDS result=%d build=controlled-central-v1\r\n", command_result);
   if (command_result != H2_PAL_OK) { return_to_loader(NULL); return; }

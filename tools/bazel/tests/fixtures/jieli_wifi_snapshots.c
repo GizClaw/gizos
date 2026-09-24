@@ -1,7 +1,8 @@
 #include <assert.h>
 #include <pthread.h>
 #include <sched.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
+#include <stdlib.h>
 #include <string.h>
 #include "h2/pal/hal/h2_pal_wifi.h"
 #include "h2/pal/net/h2_pal_netif.h"
@@ -18,7 +19,7 @@ enum WIFI_EVENT {
 };
 enum { SCAN_IDLE, SCAN_PENDING, SCAN_ABANDONED };
 static unsigned scan_phase;
-static atomic_int entered, release_payload, readers_ready, reject_got_ip;
+static h2_atomic_int_t entered, release_payload, readers_ready, reject_got_ip;
 /* Pinned SDK MAC table and wifi_get_sta_entry_rssi bound, not the
  * reference application's conservative eight-iteration scan ceiling. */
 enum { SDK_AP_STATION_SLOTS = 5 };
@@ -36,8 +37,8 @@ static int wifi_operation_begin(void);
 static void fake_sdk_refresh(void) {
   assert_sdk_unlocked();
   if (hold_refresh) {
-    atomic_store(&entered, 1);
-    while (!atomic_load(&release_payload)) sched_yield();
+    h2_atomic_store(&entered, 1);
+    while (!h2_atomic_load(&release_payload)) sched_yield();
   }
 }
 static void update_sta_snapshot(void) { fake_sdk_refresh(); }
@@ -45,7 +46,7 @@ static void wifi_rxfilter_cfg(int value) { (void)value; assert_sdk_unlocked(); }
 static void post_system_event(h2_pal_system_event_type_t type, const void *payload, size_t size) {
   assert_sdk_unlocked();
   assert(wifi_operation_begin() == H2_PAL_ERR_BUSY);
-  assert(type != H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP || !atomic_load(&reject_got_ip));
+  assert(type != H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP || !h2_atomic_load(&reject_got_ip));
   if (type == H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_CLIENT_JOINED ||
       type == H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_CLIENT_LEFT) {
     assert(size == sizeof(h2_pal_wifi_ap_client_event_t));
@@ -57,8 +58,8 @@ static void post_system_event(h2_pal_system_event_type_t type, const void *paylo
     assert(size == sizeof(h2_pal_wifi_sta_status_t));
     const h2_pal_wifi_sta_status_t *status = payload;
     assert(status->state == H2_PAL_WIFI_STA_STATE_CONNECTED);
-    atomic_store(&entered, 1);
-    while (!atomic_load(&release_payload)) sched_yield();
+    h2_atomic_store(&entered, 1);
+    while (!h2_atomic_load(&release_payload)) sched_yield();
     assert(status->state == H2_PAL_WIFI_STA_STATE_CONNECTED);
   }
 }
@@ -88,7 +89,7 @@ static void *publish_held(void *unused) {
 }
 static void *publish_many(void *unused) {
   (void)unused;
-  while (!atomic_load(&readers_ready)) sched_yield();
+  while (!h2_atomic_load(&readers_ready)) sched_yield();
   for (int i = 0; i < 10000; ++i) {
     assert(wifi_event(NULL, WIFI_EVENT_STA_CONNECT_SUCC) == 0);
     assert(wifi_event(NULL, WIFI_EVENT_STA_NETWORK_STACK_DHCP_SUCC) == 0);
@@ -101,7 +102,19 @@ static void *publish_many(void *unused) {
   }
   return NULL;
 }
+static void h2_fixture_atomic_cleanup(void) {
+    h2_atomic_destroy(&entered);
+    h2_atomic_destroy(&release_payload);
+    h2_atomic_destroy(&readers_ready);
+    h2_atomic_destroy(&reject_got_ip);
+}
 int main(int argc, char **argv) {
+    assert(atexit(h2_fixture_atomic_cleanup) == 0);
+    assert(h2_atomic_init(&entered, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&release_payload, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&readers_ready, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&reject_got_ip, 0) == H2_ATOMIC_OK);
+
   assert(argc == 2);
   wifi_state.on = 1;
   pthread_t worker;
@@ -197,19 +210,19 @@ int main(int argc, char **argv) {
     return 0;
   } else if (strcmp(argv[1], "payload") == 0) {
     assert(pthread_create(&worker, NULL, publish_held, NULL) == 0);
-    while (!atomic_load(&entered)) sched_yield();
+    while (!h2_atomic_load(&entered)) sched_yield();
     assert(wifi_event(NULL, WIFI_EVENT_STA_DISCONNECT) == 0);
-    atomic_store(&release_payload, 1);
+    h2_atomic_store(&release_payload, 1);
   } else if (strcmp(argv[1], "stale_refresh") == 0) {
     assert(pthread_create(&worker, NULL, refresh_held, NULL) == 0);
-    while (!atomic_load(&entered)) sched_yield();
+    while (!h2_atomic_load(&entered)) sched_yield();
     assert(wifi_event(NULL, WIFI_EVENT_STA_STOP) == 0);
-    atomic_store(&reject_got_ip, 1);
-    atomic_store(&release_payload, 1);
+    h2_atomic_store(&reject_got_ip, 1);
+    h2_atomic_store(&release_payload, 1);
   } else {
     assert(strcmp(argv[1], "readers") == 0);
     assert(pthread_create(&worker, NULL, publish_many, NULL) == 0);
-    atomic_store(&readers_ready, 1);
+    h2_atomic_store(&readers_ready, 1);
     for (int i = 0; i < 10000; ++i) {
       h2_pal_wifi_sta_status_t sta;
       h2_pal_wifi_ap_status_t ap;

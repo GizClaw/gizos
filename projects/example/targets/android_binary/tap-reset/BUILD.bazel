@@ -18,6 +18,8 @@ cc_library(
     copts = H2_WARNING_COPTS,
     target_compatible_with = ANDROID_ARM64_ARTIFACT_COMPATIBILITY,
     deps = [
+        "//libs/atomic",
+        "//libs/atomic/providers/pthread:pthread",
         "//libs/pal/providers/android/pal_core",
         "//projects/example/libs/host_runtime",
         "//projects/example/libs/mobile/tap-reset:app",

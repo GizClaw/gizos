@@ -44,6 +44,7 @@ firmware_native_component(
         "manual",
     ],
     deps = [
+        "//libs/atomic/providers/c11:c11_template",
         "//libs/mem_arena",
         "//libs/pal:unsupported",
         "//libs/pal/providers/corehttp",
@@ -74,6 +75,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic/providers/c11",
         "//libs/pal",
         "//libs/pal:test_allocator",
     ],

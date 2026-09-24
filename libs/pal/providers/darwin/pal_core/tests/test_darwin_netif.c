@@ -5,7 +5,7 @@
 #include <limits.h>
 #include <net/if.h>
 #include <pthread.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdint.h>
 #include <string.h>
 #include <time.h>
@@ -30,8 +30,8 @@ typedef struct reconcile_thread_args {
 
 typedef struct deinit_thread_args {
     const h2_pal_system_event_api_t *events;
-    atomic_int started;
-    atomic_int done;
+    h2_atomic_int_t started;
+    h2_atomic_int_t done;
 } deinit_thread_args_t;
 
 static int observe_change_blocking(
@@ -57,9 +57,9 @@ static void *reconcile_thread(void *user) {
 
 static void *deinit_thread(void *user) {
     deinit_thread_args_t *args = user;
-    atomic_store_explicit(&args->started, 1, memory_order_release);
+    h2_atomic_store_explicit(&args->started, 1, H2_ATOMIC_RELEASE);
     h2_pal_system_event_deinit(args->events);
-    atomic_store_explicit(&args->done, 1, memory_order_release);
+    h2_atomic_store_explicit(&args->done, 1, H2_ATOMIC_RELEASE);
     return NULL;
 }
 
@@ -270,23 +270,25 @@ int main(void) {
     }
     pthread_mutex_unlock(&blocking.mutex);
     deinit_thread_args_t deinit = {.events = events};
-    atomic_init(&deinit.started, 0);
-    atomic_init(&deinit.done, 0);
+    assert(h2_atomic_init(&deinit.started, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&deinit.done, 0) == H2_ATOMIC_OK);
     pthread_t stopping_thread;
     assert(pthread_create(&stopping_thread, NULL, deinit_thread, &deinit) == 0);
-    while (atomic_load_explicit(&deinit.started, memory_order_acquire) == 0) {
+    while (h2_atomic_load_explicit(&deinit.started, H2_ATOMIC_ACQUIRE) == 0) {
     }
     const struct timespec drain_check = {.tv_nsec = 10000000L};
     assert(nanosleep(&drain_check, NULL) == 0);
-    assert(atomic_load_explicit(&deinit.done, memory_order_acquire) == 0);
+    assert(h2_atomic_load_explicit(&deinit.done, H2_ATOMIC_ACQUIRE) == 0);
     pthread_mutex_lock(&blocking.mutex);
     blocking.release = 1;
     pthread_cond_broadcast(&blocking.condition);
     pthread_mutex_unlock(&blocking.mutex);
     assert(pthread_join(posting_thread, NULL) == 0);
     assert(pthread_join(stopping_thread, NULL) == 0);
-    assert(atomic_load_explicit(&deinit.done, memory_order_acquire) == 1);
+    assert(h2_atomic_load_explicit(&deinit.done, H2_ATOMIC_ACQUIRE) == 1);
     assert(reconcile.result == H2_PAL_OK);
+    h2_atomic_destroy(&deinit.started);
+    h2_atomic_destroy(&deinit.done);
     pthread_cond_destroy(&blocking.condition);
     pthread_mutex_destroy(&blocking.mutex);
     return 0;

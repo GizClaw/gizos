@@ -277,7 +277,7 @@ static void h2_lua_sleep_timer_callback(void *user, h2_pal_timer_t *timer) {
   h2_lua_task_t *task = user;
   (void)timer;
   if (task != NULL) {
-    atomic_store(&task->timer_fired, 1);
+    h2_atomic_store(&task->timer_fired, 1);
     h2_lua_host_wake_job(task->job);
   }
 }
@@ -294,7 +294,7 @@ static int lua_delay_ms(lua_State *state) {
   h2_lua_task_timer_destroy(task);
   task->wake_ms = h2_lua_now_ms(task->job->host) + (uint64_t)delay_ms;
   task->state = H2_LUA_TASK_SLEEPING;
-  atomic_store(&task->timer_fired, 0);
+  h2_atomic_store(&task->timer_fired, 0);
   if (delay_ms > 0) {
     h2_pal_result_t timer_result;
     timer_result =
@@ -1548,7 +1548,7 @@ static int audio_input_read_frame(lua_State *state, h2_lua_job_t *job,
     if (result != H2_PAL_ERR_WOULD_BLOCK && result != H2_PAL_ERR_TIMEOUT) {
       break;
     }
-    if (job->cancel_requested || atomic_load(&job->host->stopping) != 0) {
+    if (job->cancel_requested || h2_atomic_load(&job->host->stopping) != 0) {
       lua_pushnil(state);
       lua_pushliteral(state, "audio input: cancelled");
       return 2;

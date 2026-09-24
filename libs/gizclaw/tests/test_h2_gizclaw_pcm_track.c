@@ -173,8 +173,8 @@ static void concurrency(const h2_pal_mem_api_t *allocator) {
 static void counter_wrap(const h2_pal_mem_api_t *allocator) {
   h2_gizclaw_pcm_ring_t ring;
   assert(h2_gizclaw_pcm_ring_init(&ring, allocator, 8u) == H2_PAL_OK);
-  atomic_store(&ring.read_index, SIZE_MAX - 3u);
-  atomic_store(&ring.write_index, SIZE_MAX - 3u);
+  h2_atomic_size_store(&ring.read_index, SIZE_MAX - 3u, H2_ATOMIC_SEQ_CST);
+  h2_atomic_size_store(&ring.write_index, SIZE_MAX - 3u, H2_ATOMIC_SEQ_CST);
   const uint8_t data[8] = {1, 2, 3, 4, 5, 6, 7, 8};
   uint8_t out[8];
   assert(h2_gizclaw_pcm_ring_write(&ring, data, 8u) == H2_PAL_OK);

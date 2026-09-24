@@ -2,20 +2,20 @@
 #define H2_TEST_ALLOCATOR_H
 
 #include "h2/pal/os/h2_pal_mem.h"
+#include "h2_atomic.h"
 
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
 #include <assert.h>
-#include <stdatomic.h>
 #include <stdint.h>
 #include <stdlib.h>
 
 typedef struct h2_test_allocator {
     h2_pal_mem_api_t api;
-    atomic_size_t calls;
-    atomic_size_t live;
-    atomic_size_t fail_on_call;
+    h2_atomic_size_t calls;
+    h2_atomic_size_t live;
+    h2_atomic_size_t fail_on_call;
 } h2_test_allocator_t;
 
 typedef union h2_test_allocation {
@@ -35,14 +35,14 @@ typedef union h2_test_allocation {
 
 static inline void *h2_test_alloc(void *user, size_t size) {
     h2_test_allocator_t *owner = user;
-    size_t call = atomic_fetch_add(&owner->calls, 1u) + 1u;
-    if (call == atomic_load(&owner->fail_on_call) ||
+    size_t call = h2_atomic_fetch_add(&owner->calls, 1u) + 1u;
+    if (call == h2_atomic_load(&owner->fail_on_call) ||
         size > SIZE_MAX - sizeof(h2_test_allocation_t)) return NULL;
     h2_test_allocation_t *block = malloc(sizeof(*block) + size);
     if (block == NULL) return NULL;
     block->info.owner = owner;
     block->info.size = size;
-    atomic_fetch_add(&owner->live, 1u);
+    h2_atomic_fetch_add(&owner->live, 1u);
     return block + 1;
 }
 
@@ -51,7 +51,7 @@ static inline void h2_test_free(void *user, void *ptr) {
     h2_test_allocator_t *owner = user;
     h2_test_allocation_t *block = (h2_test_allocation_t *)ptr - 1;
     assert(block->info.owner == owner);
-    size_t live = atomic_fetch_sub(&owner->live, 1u);
+    size_t live = h2_atomic_fetch_sub(&owner->live, 1u);
     assert(live > 0u);
     (void)live;
     free(block);
@@ -66,8 +66,8 @@ static inline void *h2_test_realloc(void *user, void *ptr, size_t size) {
     h2_test_allocator_t *owner = user;
     h2_test_allocation_t *block = (h2_test_allocation_t *)ptr - 1;
     assert(block->info.owner == owner);
-    size_t call = atomic_fetch_add(&owner->calls, 1u) + 1u;
-    if (call == atomic_load(&owner->fail_on_call) ||
+    size_t call = h2_atomic_fetch_add(&owner->calls, 1u) + 1u;
+    if (call == h2_atomic_load(&owner->fail_on_call) ||
         size > SIZE_MAX - sizeof(*block)) return NULL;
     block = realloc(block, sizeof(*block) + size);
     if (block == NULL) return NULL;
@@ -80,9 +80,19 @@ static inline void h2_test_allocator_init(h2_test_allocator_t *allocator) {
         .alloc = h2_test_alloc, .realloc = h2_test_realloc, .free = h2_test_free,
     };
     allocator->api = (h2_pal_mem_api_t){.user = allocator, .vtable = &vtable};
-    atomic_init(&allocator->calls, 0u);
-    atomic_init(&allocator->live, 0u);
-    atomic_init(&allocator->fail_on_call, 0u);
+    allocator->calls.storage = NULL;
+    allocator->live.storage = NULL;
+    allocator->fail_on_call.storage = NULL;
+    assert(h2_atomic_init(&allocator->calls, 0u) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&allocator->live, 0u) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&allocator->fail_on_call, 0u) == H2_ATOMIC_OK);
+}
+
+static inline void h2_test_allocator_destroy(h2_test_allocator_t *allocator) {
+    assert(h2_atomic_load(&allocator->live) == 0u);
+    h2_atomic_destroy(&allocator->calls);
+    h2_atomic_destroy(&allocator->live);
+    h2_atomic_destroy(&allocator->fail_on_call);
 }
 
 #endif

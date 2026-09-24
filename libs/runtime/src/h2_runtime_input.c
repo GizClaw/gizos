@@ -1410,9 +1410,9 @@ static void input_worker_fault(
                    "lock_rc=%d; input stopped",
                    h2_runtime_input_stage_name(stage), (int)rc, (int)lock_rc);
     }
-    atomic_store(&runtime->private_state->input_worker_result, rc);
-    atomic_store(&runtime->private_state->input_stop_requested, 1);
-    atomic_store(
+    h2_atomic_store(&runtime->private_state->input_worker_result, rc);
+    h2_atomic_store(&runtime->private_state->input_stop_requested, 1);
+    h2_atomic_store(
         &runtime->private_state->input_phase,
         H2_RUNTIME_INPUT_PHASE_FAULTED);
     (void)h2_pal_queue_close(
@@ -1433,7 +1433,7 @@ static uint32_t input_backoff_ms(
 
 static void input_task_entry(void *ctx) {
     h2_runtime_t *runtime = (h2_runtime_t *)ctx;
-    while (atomic_load(&runtime->private_state->input_stop_requested) == 0) {
+    while (h2_atomic_load(&runtime->private_state->input_stop_requested) == 0) {
         /*
          * A failed poll is recorded, logged and retried after a back-off:
          * hardware reads, a full buffer or a busy reader are transient, and
@@ -1447,7 +1447,7 @@ static void input_task_entry(void *ctx) {
                 runtime, poll_rc, H2_RUNTIME_INPUT_STAGE_SOURCES);
             return;
         }
-        if (atomic_load(&runtime->private_state->input_stop_requested) != 0) {
+        if (h2_atomic_load(&runtime->private_state->input_stop_requested) != 0) {
             break;
         }
         /* Without a working sleep the worker cannot pace itself. */
@@ -1474,8 +1474,8 @@ h2_pal_result_t h2_runtime_input_status(
         return rc;
     }
     *out_status = (h2_runtime_input_status_t){
-        .phase = (h2_runtime_input_phase_t)atomic_load(&state->input_phase),
-        .worker_result = atomic_load(&state->input_worker_result),
+        .phase = (h2_runtime_input_phase_t)h2_atomic_load(&state->input_phase),
+        .worker_result = h2_atomic_load(&state->input_worker_result),
         .last_error = state->input_last_error,
         .last_error_stage = state->input_last_error_stage,
         .last_error_at_ms = state->input_last_error_at_ms,
@@ -1504,10 +1504,10 @@ static int has_nfc_source(const h2_runtime_t *runtime) {
 static void input_nfc_task_entry(void *ctx) {
     h2_runtime_t *runtime = (h2_runtime_t *)ctx;
     int nfc_send_failed = 0;
-    while (atomic_load(&runtime->private_state->input_stop_requested) == 0) {
+    while (h2_atomic_load(&runtime->private_state->input_stop_requested) == 0) {
         for (size_t index = 0u;
              index < runtime->private_state->component_mapping_count &&
-             atomic_load(&runtime->private_state->input_stop_requested) == 0;
+             h2_atomic_load(&runtime->private_state->input_stop_requested) == 0;
              ++index) {
             const h2_runtime_component_mapping_t *mapping =
                 &runtime->private_state->component_mappings[index];
@@ -1556,7 +1556,7 @@ static void input_nfc_task_entry(void *ctx) {
                 nfc_send_failed = 0;
             }
         }
-        if (atomic_load(&runtime->private_state->input_stop_requested) == 0) {
+        if (h2_atomic_load(&runtime->private_state->input_stop_requested) == 0) {
             h2_pal_result_t rc = h2_pal_time_sleep_ms(
                 runtime->time,
                 runtime->private_state->input_nfc_poll_interval_ms);
@@ -1667,15 +1667,15 @@ h2_pal_result_t h2_runtime_input_start(
      * is terminal: only deinit plus a fresh init recovers. The latched worker
      * result is the fault record and is never cleared by a start.
      */
-    if (atomic_load(&runtime->private_state->input_worker_result) !=
+    if (h2_atomic_load(&runtime->private_state->input_worker_result) !=
         H2_PAL_OK) {
         return H2_PAL_ERR_INVALID_STATE;
     }
-    if (atomic_load(&runtime->private_state->input_phase) !=
+    if (h2_atomic_load(&runtime->private_state->input_phase) !=
         H2_RUNTIME_INPUT_PHASE_STOPPED) {
         return H2_PAL_ERR_INVALID_STATE;
     }
-    atomic_store(
+    h2_atomic_store(
         &runtime->private_state->input_phase,
         H2_RUNTIME_INPUT_PHASE_STARTING);
 
@@ -1701,7 +1701,7 @@ h2_pal_result_t h2_runtime_input_start(
     runtime->private_state->input_temperature_poll_interval_ms = select_interval(
         selected.temperature_poll_interval_ms,
         H2_RUNTIME_TEMPERATURE_POLL_INTERVAL_MS);
-    atomic_store(&runtime->private_state->input_stop_requested, 0);
+    h2_atomic_store(&runtime->private_state->input_stop_requested, 0);
 
     /*
      * Take one immediate frame so the first publication after a start reflects
@@ -1716,19 +1716,19 @@ h2_pal_result_t h2_runtime_input_start(
      */
     h2_pal_result_t rc = input_poll_once_locked(runtime, 1, 0);
     if (rc != H2_PAL_OK) {
-        atomic_store(
+        h2_atomic_store(
             &runtime->private_state->input_phase,
             H2_RUNTIME_INPUT_PHASE_STOPPED);
         return rc;
     }
     if (runtime->private_state->input_source_count == 0u) {
-        atomic_store(
+        h2_atomic_store(
             &runtime->private_state->input_phase,
             H2_RUNTIME_INPUT_PHASE_STOPPED);
         return H2_PAL_OK;
     }
 
-    atomic_store(
+    h2_atomic_store(
         &runtime->private_state->input_phase,
         H2_RUNTIME_INPUT_PHASE_TASK_RUNNING);
     rc = h2_pal_task_start(
@@ -1739,7 +1739,7 @@ h2_pal_result_t h2_runtime_input_start(
         &runtime->private_state->input_task);
     if (rc != H2_PAL_OK || runtime->private_state->input_task == NULL) {
         runtime->private_state->input_task = NULL;
-        atomic_store(
+        h2_atomic_store(
             &runtime->private_state->input_phase,
             H2_RUNTIME_INPUT_PHASE_STOPPED);
         return rc != H2_PAL_OK ? rc : H2_PAL_ERR_TASK;
@@ -1755,12 +1755,12 @@ h2_pal_result_t h2_runtime_input_start(
             &runtime->private_state->input_nfc_task);
         if (rc != H2_PAL_OK || runtime->private_state->input_nfc_task == NULL) {
             runtime->private_state->input_nfc_task = NULL;
-            atomic_store(&runtime->private_state->input_stop_requested, 1);
+            h2_atomic_store(&runtime->private_state->input_stop_requested, 1);
             (void)h2_pal_task_join(
                 runtime->task, runtime->private_state->input_task);
             runtime->private_state->input_task = NULL;
-            atomic_store(&runtime->private_state->input_stop_requested, 0);
-            atomic_store(&runtime->private_state->input_phase,
+            h2_atomic_store(&runtime->private_state->input_stop_requested, 0);
+            h2_atomic_store(&runtime->private_state->input_phase,
                          H2_RUNTIME_INPUT_PHASE_STOPPED);
             return rc != H2_PAL_OK ? rc : H2_PAL_ERR_TASK;
         }
@@ -1772,7 +1772,7 @@ h2_pal_result_t h2_runtime_input_stop(h2_runtime_t *runtime) {
     if (!h2_runtime_ready(runtime)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    int phase = atomic_load(&runtime->private_state->input_phase);
+    int phase = h2_atomic_load(&runtime->private_state->input_phase);
     if (phase == H2_RUNTIME_INPUT_PHASE_STOPPED) {
         return H2_PAL_OK;
     }
@@ -1780,15 +1780,15 @@ h2_pal_result_t h2_runtime_input_stop(h2_runtime_t *runtime) {
         phase != H2_RUNTIME_INPUT_PHASE_FAULTED) {
         return H2_PAL_ERR_INVALID_STATE;
     }
-    atomic_store(
+    h2_atomic_store(
         &runtime->private_state->input_phase,
         H2_RUNTIME_INPUT_PHASE_STOPPING);
-    atomic_store(&runtime->private_state->input_stop_requested, 1);
+    h2_atomic_store(&runtime->private_state->input_stop_requested, 1);
     if (runtime->private_state->input_nfc_task != NULL) {
         h2_pal_result_t rc = h2_pal_task_join(
             runtime->task, runtime->private_state->input_nfc_task);
         if (rc != H2_PAL_OK) {
-            atomic_store(&runtime->private_state->input_phase, phase);
+            h2_atomic_store(&runtime->private_state->input_phase, phase);
             return rc;
         }
         runtime->private_state->input_nfc_task = NULL;
@@ -1797,7 +1797,7 @@ h2_pal_result_t h2_runtime_input_stop(h2_runtime_t *runtime) {
         h2_pal_result_t rc = h2_pal_task_join(
             runtime->task, runtime->private_state->input_task);
         if (rc != H2_PAL_OK) {
-            atomic_store(&runtime->private_state->input_phase, phase);
+            h2_atomic_store(&runtime->private_state->input_phase, phase);
             return rc;
         }
         runtime->private_state->input_task = NULL;
@@ -1807,11 +1807,11 @@ h2_pal_result_t h2_runtime_input_stop(h2_runtime_t *runtime) {
      * snapshot stays readable with its own updated_at_ms, because it is still
      * the most recent observation the Runtime actually made.
      */
-    atomic_store(&runtime->private_state->input_stop_requested, 0);
-    atomic_store(
+    h2_atomic_store(&runtime->private_state->input_stop_requested, 0);
+    h2_atomic_store(
         &runtime->private_state->input_phase,
         H2_RUNTIME_INPUT_PHASE_STOPPED);
-    return atomic_load(&runtime->private_state->input_worker_result);
+    return h2_atomic_load(&runtime->private_state->input_worker_result);
 }
 
 static h2_pal_result_t button_push_edge_enqueue(

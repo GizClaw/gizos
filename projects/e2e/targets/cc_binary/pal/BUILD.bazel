@@ -86,6 +86,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic/providers/c11",
         "//libs/pal",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/app_support",
@@ -107,6 +108,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic/providers/c11",
         "//libs/pal",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/app_support",

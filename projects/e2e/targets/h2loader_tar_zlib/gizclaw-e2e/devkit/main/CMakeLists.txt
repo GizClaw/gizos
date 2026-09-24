@@ -17,6 +17,7 @@ idf_component_register(
     "${CMAKE_CURRENT_LIST_DIR}"
     "${H2_GIZCLAW_E2E_APP_DIR}/include"
     "${H2_GIZCLAW_E2E_APP_DIR}/src"
+    "${H2_REPO_ROOT}/libs/atomic/include"
     "${H2_REPO_ROOT}/libs/gizclaw/include"
     "${H2_REPO_ROOT}/libs/pal/include"
     "${H2_REPO_ROOT}/libs/runtime/include"
@@ -44,3 +45,7 @@ target_add_binary_data(
   RENAME_TO h2_gizclaw_e2e_voice_prompt)
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)
+
+if(H2_GIZCLAW_E2E_VOICE_ONLY)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_GIZCLAW_E2E_VOICE_ONLY=1)
+endif()

@@ -4,21 +4,21 @@
 #include "h2_peer.h"
 #include "h2_sctp.h"
 
-#include <stdatomic.h>
+#include "h2_atomic.h"
 
-static atomic_flag h2_esp_h2peer_lock = ATOMIC_FLAG_INIT;
+static h2_atomic_flag_t h2_esp_h2peer_lock = {0};
 static h2_peer_t *h2_esp_h2peer;
 static h2_sctp_t *h2_esp_h2sctp;
 static int h2_esp_h2peer_initialized;
 
 static void h2_esp_h2peer_lock_acquire(void) {
-    while (atomic_flag_test_and_set_explicit(
-        &h2_esp_h2peer_lock, memory_order_acquire)) {
+    while (h2_atomic_flag_test_and_set(
+        &h2_esp_h2peer_lock, H2_ATOMIC_ACQUIRE)) {
     }
 }
 
 static void h2_esp_h2peer_lock_release(void) {
-    atomic_flag_clear_explicit(&h2_esp_h2peer_lock, memory_order_release);
+    h2_atomic_flag_clear(&h2_esp_h2peer_lock, H2_ATOMIC_RELEASE);
 }
 
 const h2_pal_webrtc_api_t *h2_esp_platform_webrtc_api(void) {
@@ -34,7 +34,6 @@ const h2_pal_webrtc_api_t *h2_esp_platform_webrtc_api(void) {
         };
         const h2_peer_config_t config = {
             .mem = h2_esp_platform_psram_allocator(),
-            .control_mem = h2_esp_platform_internal_allocator(),
             .log = h2_esp_platform_log_api(),
             .net = h2_esp_platform_net_api(),
             .queue = h2_esp_platform_queue_api(),

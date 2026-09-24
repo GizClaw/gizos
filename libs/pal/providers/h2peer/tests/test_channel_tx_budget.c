@@ -57,27 +57,32 @@ static void initialize(fixture_t *f, size_t channel_count) {
   f->owner.config.mem = &f->mem;
   f->owner.config.time = &f->time;
   f->peer.owner = &f->owner;
-  atomic_init(&f->owner.refs, 1u);
-  atomic_init(&f->peer.refs, 1u);
-  atomic_init(&f->peer.state, H2_PAL_WEBRTC_PEER_CONNECTED);
-  atomic_init(&f->peer.closed, 0);
-  atomic_init(&f->peer.network_transport_result, H2_PAL_OK);
-  atomic_init(&f->peer.network_error_reported, 0);
-  atomic_init(&f->peer.network_send_wakeup_queued, 0);
-  atomic_init(&f->peer.channel_ready, 0u);
-  atomic_init(&f->peer.network_event_count, 0u);
-  atomic_init(&f->peer.network_event_bytes, 0u);
+  assert(h2_atomic_uint_init(&f->owner.refs, 1u) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&f->peer.state, H2_PAL_WEBRTC_PEER_CONNECTED) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&f->peer.closed, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_uint_init(&f->peer.refs, 1u) == H2_ATOMIC_OK);
+  assert(h2_atomic_uint_init(&f->peer.network_event_count, 0u) == H2_ATOMIC_OK);
+  assert(h2_atomic_size_init(&f->peer.network_event_bytes, 0u) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&f->peer.network_send_wakeup_queued, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&f->peer.network_stop, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&f->peer.network_stopped, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&f->peer.network_poll_active, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&f->peer.network_transport_result, H2_PAL_OK) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&f->peer.network_error_reported, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_ptr_init(&f->peer.rtp_pending, NULL) == H2_ATOMIC_OK);
+  assert(h2_atomic_u32_init(&f->peer.channel_ready, 0u) == H2_ATOMIC_OK);
   assert(channel_count <= CHANNEL_MAX);
   for (size_t i = 0u; i < channel_count; ++i) {
     h2_pal_webrtc_channel_t *channel = &f->channels[i];
     channel->owner = &f->peer;
-    atomic_init(&channel->open, 1);
-    atomic_init(&channel->terminal, 0);
-    atomic_init(&channel->ready_slot, (uint8_t)i);
+    assert(h2_atomic_int_init(&channel->open, 1) == H2_ATOMIC_OK);
+    assert(h2_atomic_int_init(&channel->terminal, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_uint_init(&channel->event_refs, 0u) == H2_ATOMIC_OK);
+    assert(h2_atomic_u8_init(&channel->ready_slot, (uint8_t)i) == H2_ATOMIC_OK);
+    assert(h2_atomic_u8_init(&channel->tx_head, 0u) == H2_ATOMIC_OK);
+    assert(h2_atomic_u8_init(&channel->tx_tail, 0u) == H2_ATOMIC_OK);
     for (size_t slot = 0u; slot < H2_PEER_INPUT_SLOT_COUNT; ++slot)
-      atomic_init(&channel->tx_state[slot], 0u);
-    atomic_init(&channel->tx_head, 0u);
-    atomic_init(&channel->tx_tail, 0u);
+      assert(h2_atomic_u8_init(&channel->tx_state[slot], 0u) == H2_ATOMIC_OK);
     channel->next = i + 1u < channel_count ? &f->channels[i + 1u] : NULL;
   }
   f->peer.channels = channel_count != 0u ? &f->channels[0] : NULL;
@@ -93,6 +98,31 @@ static void cleanup(fixture_t *f) {
       }
     }
   }
+  h2_atomic_int_destroy(&f->peer.state);
+  h2_atomic_int_destroy(&f->peer.closed);
+  h2_atomic_uint_destroy(&f->peer.refs);
+  h2_atomic_uint_destroy(&f->peer.network_event_count);
+  h2_atomic_size_destroy(&f->peer.network_event_bytes);
+  h2_atomic_int_destroy(&f->peer.network_send_wakeup_queued);
+  h2_atomic_int_destroy(&f->peer.network_stop);
+  h2_atomic_int_destroy(&f->peer.network_stopped);
+  h2_atomic_int_destroy(&f->peer.network_poll_active);
+  h2_atomic_int_destroy(&f->peer.network_transport_result);
+  h2_atomic_int_destroy(&f->peer.network_error_reported);
+  h2_atomic_ptr_destroy(&f->peer.rtp_pending);
+  h2_atomic_u32_destroy(&f->peer.channel_ready);
+  h2_atomic_uint_destroy(&f->owner.refs);
+  for (size_t i = 0; i < CHANNEL_MAX; ++i) {
+    h2_pal_webrtc_channel_t *channel = &f->channels[i];
+    h2_atomic_int_destroy(&channel->open);
+    h2_atomic_int_destroy(&channel->terminal);
+    h2_atomic_uint_destroy(&channel->event_refs);
+    h2_atomic_u8_destroy(&channel->ready_slot);
+    h2_atomic_u8_destroy(&channel->tx_head);
+    h2_atomic_u8_destroy(&channel->tx_tail);
+    for (size_t slot = 0; slot < H2_PEER_INPUT_SLOT_COUNT; ++slot)
+      h2_atomic_u8_destroy(&channel->tx_state[slot]);
+  }
   assert(f->allocations == f->frees);
 }
 
@@ -106,13 +136,13 @@ static h2_pal_result_t push(fixture_t *f, size_t channel, size_t len) {
 static size_t queued(const fixture_t *f, size_t channel) {
   size_t count = 0u;
   for (size_t slot = 0u; slot < H2_PEER_INPUT_SLOT_COUNT; ++slot)
-    if (atomic_load(&f->channels[channel].tx_state[slot]) == 2u)
+    if (h2_atomic_load(&f->channels[channel].tx_state[slot]) == 2u)
       ++count;
   return count;
 }
 
 static uint32_t take_snapshot(fixture_t *f) {
-  return atomic_exchange(&f->peer.channel_ready, 0u);
+  return h2_atomic_exchange(&f->peer.channel_ready, 0u);
 }
 
 /* The ring accepts exactly H2_PEER_INPUT_SLOT_COUNT messages, drains them in
@@ -131,8 +161,8 @@ static void ring_depth_fifo_and_reuse(void) {
   assert(h2_peer_network_service_channel(&f.peer, &snapshot) == 1);
   assert(snapshot == 0u);
   assert(queued(&f, 0u) == 0u);
-  assert(atomic_load(&f.channels[0].tx_head) == 0u);
-  assert(atomic_load(&f.channels[0].tx_tail) == 0u);
+  assert(h2_atomic_load(&f.channels[0].tx_head) == 0u);
+  assert(h2_atomic_load(&f.channels[0].tx_tail) == 0u);
 
   // Refill past the wrap point: no new allocations for same-sized payloads.
   for (size_t i = 0u; i < H2_PEER_INPUT_SLOT_COUNT; ++i)
@@ -164,7 +194,7 @@ static void byte_budget_bounds_a_round(void) {
   assert(h2_peer_network_service_channel(&f.peer, &snapshot) == 1);
   assert(snapshot == 1u);
   assert(queued(&f, 0u) == 2u);
-  assert(atomic_load(&f.channels[0].tx_head) == 2u);
+  assert(h2_atomic_load(&f.channels[0].tx_head) == 2u);
 
   assert(h2_peer_network_service_channel(&f.peer, &snapshot) == 1);
   assert(snapshot == 0u);
@@ -236,9 +266,10 @@ static void tx_uses_peer_allocator(void) {
   assert(push(&f, 0u, 128u) == H2_PAL_OK);
   assert(push(&f, 0u, 256u) == H2_PAL_OK);
   assert(f.allocations == 0u);
-  assert(atomic_load(&arena.live) == 4u); /* two slots + two payloads */
+  assert(h2_atomic_load(&arena.live) == 4u); /* two slots + two payloads */
   cleanup(&f);
-  assert(atomic_load(&arena.live) == 0u);
+  assert(h2_atomic_load(&arena.live) == 0u);
+  h2_test_allocator_destroy(&arena);
 }
 
 int main(void) {

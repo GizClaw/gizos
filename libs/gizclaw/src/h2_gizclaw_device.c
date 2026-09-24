@@ -15,7 +15,7 @@
 #include "pb_encode.h"
 
 #include <limits.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -32,10 +32,10 @@ struct h2_gizclaw_device {
   h2_pal_mutex_t *mutex;
   h2_pal_task_t *task;
   audio_download_t *download;
-  atomic_bool stopping;
-  atomic_uint generation;
+  h2_atomic_bool_t stopping;
+  h2_atomic_uint_t generation;
   /* Playback rate in permille, read by the worker once per stretch step. */
-  atomic_uint rate;
+  h2_atomic_uint_t rate;
   uint32_t worker_generation, sequence;
   bool playing, dirty;
   gizclaw_rpc_v1_AudioPlayerStatus status;
@@ -206,7 +206,7 @@ static int player_reply(h2_gizclaw_device_t *d,
 }
 static void cancel_play_locked(h2_gizclaw_device_t *d) {
   d->playing = false;
-  atomic_fetch_add(&d->generation, 1u);
+  h2_atomic_fetch_add(&d->generation, 1u);
   strcpy(d->status.state, "stopped");
   changed(d);
 }
@@ -317,10 +317,10 @@ static int player_rpc(h2_gizclaw_device_t *d, int method,
       unlock(d);
       return H2_PAL_ERR_BUSY;
     }
-    atomic_fetch_add(&d->generation, 1u);
+    h2_atomic_fetch_add(&d->generation, 1u);
     d->playing = false;
     d->pending = H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAY;
-    d->pending_generation = atomic_load(&d->generation);
+    d->pending_generation = h2_atomic_load(&d->generation);
     out->on_complete = response_complete;
     out->complete_user = d;
     d->status.has_current_index = true;
@@ -353,17 +353,17 @@ static void response_complete(void *user, int result) {
   lock(d);
   trace(d, "response-complete", d->pending, result);
   if (d->pending == H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAY) {
-    if (result == H2_PAL_OK && !atomic_load(&d->stopping) &&
-        d->pending_generation == atomic_load(&d->generation)) {
+    if (result == H2_PAL_OK && !h2_atomic_load(&d->stopping) &&
+        d->pending_generation == h2_atomic_load(&d->generation)) {
       d->playing = true;
-    } else if (d->pending_generation == atomic_load(&d->generation)) {
+    } else if (d->pending_generation == h2_atomic_load(&d->generation)) {
       cancel_play_locked(d);
     }
     d->pending = 0;
     unlock(d);
     return;
   }
-  if (result == H2_PAL_OK && !atomic_load(&d->stopping)) {
+  if (result == H2_PAL_OK && !h2_atomic_load(&d->stopping)) {
     d->pending_ready = true;
     cancel_play_locked(d);
   } else
@@ -1120,7 +1120,7 @@ int h2_gizclaw_device_rpc_internal(
   if (!d || !response || (request.len && !request.data))
     return H2_PAL_ERR_INVALID_ARG;
   memset(response, 0, sizeof(*response));
-  if (atomic_load(&d->stopping))
+  if (h2_atomic_load(&d->stopping))
     return rpc_error(response, H2_GIZCLAW_RPC_ERROR_UNAVAILABLE,
                      "device stopping");
   int rc = device_rpc(d, method, request, response);
@@ -1190,8 +1190,8 @@ static void report_player(h2_gizclaw_device_t *d) {
   submit_telemetry(d, &frame);
 }
 static bool interrupted(h2_gizclaw_device_t *d) {
-  return atomic_load(&d->stopping) ||
-         atomic_load(&d->generation) != d->worker_generation;
+  return h2_atomic_load(&d->stopping) ||
+         h2_atomic_load(&d->generation) != d->worker_generation;
 }
 static int download_cancel(void *user) { return interrupted(user); }
 static uint32_t io_timeout(h2_gizclaw_device_t *d) {
@@ -1223,13 +1223,13 @@ struct audio_download {
   /* Content-Range as delivered; range_total stays 0 unless it was valid. */
   bool range_seen, body_checked;
   uint64_t range_first, range_last, range_total;
-  atomic_bool cancel;
+  h2_atomic_bool_t cancel;
   bool done, ready, music;
   int result;
 };
 static int audio_cancel(void *user) {
   audio_download_t *download = user;
-  return atomic_load(&download->cancel) || interrupted(download->device);
+  return h2_atomic_load(&download->cancel) || interrupted(download->device);
 }
 static bool parse_u64(const char **p, const char *end, uint64_t *out) {
   const char *start = *p;
@@ -1461,7 +1461,7 @@ static h2_pal_result_t audio_stream_read(void *user, uint8_t *out,
       progress_at = now;
     }
     if (now - progress_at >= io_timeout(d)) {
-      atomic_store(&download->cancel, true);
+      h2_atomic_store(&download->cancel, true);
       return H2_PAL_ERR_TIMEOUT;
     }
     (void)h2_pal_time_sleep_ms(d->config.time, 5);
@@ -1471,13 +1471,14 @@ static int finish_audio_download(h2_gizclaw_device_t *d) {
   audio_download_t *download = d->download;
   if (!download)
     return H2_PAL_OK;
-  atomic_store(&download->cancel, true);
+  h2_atomic_store(&download->cancel, true);
   if (download->task) {
     int rc = h2_pal_task_join(d->service->config.task, download->task);
     if (rc != H2_PAL_OK)
       return rc;
   }
   h2_pal_mem_free(d->config.allocator, download->data);
+  h2_atomic_bool_destroy(&download->cancel);
   h2_pal_mem_free(d->config.allocator, download);
   d->download = NULL;
   return H2_PAL_OK;
@@ -1507,7 +1508,10 @@ static int start_audio_download(h2_gizclaw_device_t *d, const char *url,
       d->config.audio_prebuffer_bytes
           ? d->config.audio_prebuffer_bytes
           : (download->capacity < 16384u ? download->capacity : 16384u);
-  atomic_init(&download->cancel, false);
+  if (h2_atomic_bool_init(&download->cancel, false) != H2_ATOMIC_OK) {
+    h2_pal_mem_free(d->config.allocator, download);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
   d->download = download;
   download->data = h2_pal_mem_alloc(d->config.allocator, download->capacity);
   if (!download->data) {
@@ -1692,7 +1696,7 @@ typedef struct player_stretch {
 } player_stretch_t;
 static uint32_t player_rate(const player_output_t *o,
                             const player_stretch_t *s) {
-  return o->music && !s->failed ? atomic_load(&o->d->rate)
+  return o->music && !s->failed ? h2_atomic_load(&o->d->rate)
                                 : H2_GIZCLAW_PLAYER_RATE_NORMAL;
 }
 static uint64_t now_us(h2_gizclaw_device_t *d) {
@@ -2087,7 +2091,7 @@ static void update_firmware(h2_gizclaw_device_t *d) {
 
 static void device_worker(void *user) {
   h2_gizclaw_device_t *d = user;
-  while (!atomic_load(&d->stopping)) {
+  while (!h2_atomic_load(&d->stopping)) {
     if (finish_audio_download(d) != H2_PAL_OK) {
       (void)h2_pal_time_sleep_ms(d->config.time, 20);
       continue;
@@ -2104,7 +2108,7 @@ static void device_worker(void *user) {
       start_ms = d->start_ms;
       duration_ms = d->durations[d->status.current_index];
     }
-    d->worker_generation = atomic_load(&d->generation);
+    d->worker_generation = h2_atomic_load(&d->generation);
     unlock(d);
     if (dirty && d->config.audio != NULL)
       report_player(d);
@@ -2127,25 +2131,25 @@ static void device_worker(void *user) {
           /* Non-blocking handoff: the product copies the request and owns
            * the delay, its orderly shutdown and the reboot on its own
            * owner. Nothing here waits for it. */
-          if (!atomic_load(&d->stopping)) {
+          if (!h2_atomic_load(&d->stopping)) {
             const int handoff = d->config.vtable->request_reboot(
                 d->config.user, d->delay_ms);
             trace(d, "reboot_handoff", pending, handoff);
           }
         } else {
           uint32_t remaining = d->delay_ms;
-          while (remaining && !atomic_load(&d->stopping)) {
+          while (remaining && !h2_atomic_load(&d->stopping)) {
             uint32_t step = remaining > 20 ? 20 : remaining;
             (void)h2_pal_time_sleep_ms(d->config.time, step);
             remaining -= step;
           }
-          if (!atomic_load(&d->stopping))
+          if (!h2_atomic_load(&d->stopping))
             (void)h2_pal_power_reboot(d->config.power, 0);
         }
       } else if (pending == H2_GIZCLAW_RPC_CLIENT_DEVICE_FACTORY_RESET) {
         /* Non-blocking handoff, like the reboot path: the product owns the
          * erase on its own owner and there is no library fallback. */
-        if (!atomic_load(&d->stopping)) {
+        if (!h2_atomic_load(&d->stopping)) {
           const int handoff = d->config.vtable->request_factory_reset(
               d->config.user, d->keep_network);
           trace(d, "factory_reset_handoff", pending, handoff);
@@ -2153,7 +2157,7 @@ static void device_worker(void *user) {
       } else if (pending == H2_GIZCLAW_RPC_CLIENT_RUN_WORKSPACE_SET) {
         /* The App owns the Session and its confirmed parameters, so the switch
          * is posted to the product rather than driven from here. */
-        if (!atomic_load(&d->stopping)) {
+        if (!h2_atomic_load(&d->stopping)) {
           const int handoff = d->config.vtable->request_run_workspace_set(
               d->config.user, d->workspace_name, d->kickoff);
           trace(d, "run_workspace_set_handoff", pending, handoff);
@@ -2270,15 +2274,24 @@ h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service) {
   memset(d, 0, sizeof(*d));
   d->config = *config;
   d->service = service;
-  atomic_init(&d->stopping, false);
-  atomic_init(&d->generation, 0);
-  atomic_init(&d->rate, H2_GIZCLAW_PLAYER_RATE_NORMAL);
+  if (h2_atomic_bool_init(&d->stopping, false) != H2_ATOMIC_OK ||
+      h2_atomic_uint_init(&d->generation, 0u) != H2_ATOMIC_OK ||
+      h2_atomic_uint_init(&d->rate, H2_GIZCLAW_PLAYER_RATE_NORMAL) != H2_ATOMIC_OK) {
+    h2_atomic_bool_destroy(&d->stopping);
+    h2_atomic_uint_destroy(&d->generation);
+    h2_atomic_uint_destroy(&d->rate);
+    h2_pal_mem_free(config->allocator, d);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
   strcpy(d->status.state, "stopped");
   strcpy(d->status.repeat, "off");
   const h2_pal_mutex_config_t mutex = {.name = "gizclaw-device",
                                        .allocator = config->allocator};
   int rc = h2_pal_mutex_create(service->config.sync, &mutex, &d->mutex);
   if (rc != H2_PAL_OK) {
+    h2_atomic_bool_destroy(&d->stopping);
+    h2_atomic_uint_destroy(&d->generation);
+    h2_atomic_uint_destroy(&d->rate);
     h2_pal_mem_free(config->allocator, d);
     return rc;
   }
@@ -2307,7 +2320,7 @@ h2_pal_result_t h2_gizclaw_device_start_internal(h2_gizclaw_device_t *d) {
 }
 void h2_gizclaw_device_cancel_internal(h2_gizclaw_device_t *d) {
   if (d)
-    atomic_store(&d->stopping, true);
+    h2_atomic_store(&d->stopping, true);
 }
 h2_pal_result_t h2_gizclaw_device_stop_internal(h2_gizclaw_device_t *d) {
   if (!d)
@@ -2329,6 +2342,9 @@ void h2_gizclaw_device_destroy_internal(h2_gizclaw_device_t *d) {
   h2_pal_mem_free(d->config.allocator, d->response);
   h2_pal_mem_free(d->config.allocator, d->incoming);
   h2_pal_mem_free(d->config.allocator, d->playlist);
+  h2_atomic_bool_destroy(&d->stopping);
+  h2_atomic_uint_destroy(&d->generation);
+  h2_atomic_uint_destroy(&d->rate);
   h2_pal_mem_free(d->config.allocator, d);
 }
 
@@ -2349,7 +2365,7 @@ h2_pal_result_t h2_gizclaw_player_play(h2_gizclaw_service_t *service,
     return H2_PAL_ERR_UNSUPPORTED;
   lock(d);
   int rc = H2_PAL_OK;
-  if (!d->task || atomic_load(&d->stopping))
+  if (!d->task || h2_atomic_load(&d->stopping))
     rc = H2_PAL_ERR_CLOSED;
   else if (d->pending)
     rc = H2_PAL_ERR_BUSY;
@@ -2384,7 +2400,7 @@ h2_pal_result_t h2_gizclaw_player_stop(h2_gizclaw_service_t *service) {
     return H2_PAL_ERR_UNSUPPORTED;
   lock(d);
   int rc = H2_PAL_OK;
-  if (atomic_load(&d->stopping))
+  if (h2_atomic_load(&d->stopping))
     rc = H2_PAL_ERR_CLOSED;
   else if (d->pending &&
            d->pending != H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAY)
@@ -2411,7 +2427,7 @@ h2_pal_result_t h2_gizclaw_player_play_index_at(h2_gizclaw_service_t *service,
   if (index >= d->playlist->items_count ||
       (d->durations[index] && start_ms >= d->durations[index]))
     rc = H2_PAL_ERR_INVALID_ARG;
-  else if (!d->task || atomic_load(&d->stopping))
+  else if (!d->task || h2_atomic_load(&d->stopping))
     rc = H2_PAL_ERR_CLOSED;
   else if (d->pending)
     rc = H2_PAL_ERR_BUSY;
@@ -2456,7 +2472,7 @@ h2_pal_result_t h2_gizclaw_player_playlist_set(
     durations[i] = items[i].duration_ms;
   lock(d);
   int rc = H2_PAL_OK;
-  if (!d->task || atomic_load(&d->stopping))
+  if (!d->task || h2_atomic_load(&d->stopping))
     rc = H2_PAL_ERR_CLOSED;
   else {
     memset(d->incoming, 0, sizeof(*d->incoming));
@@ -2494,7 +2510,7 @@ h2_pal_result_t h2_gizclaw_player_repeat_set(h2_gizclaw_service_t *service,
   if (!copy_span(value, sizeof(value), repeat) || !repeat_valid(value))
     return H2_PAL_ERR_INVALID_ARG;
   lock(d);
-  int rc = (!d->task || atomic_load(&d->stopping))
+  int rc = (!d->task || h2_atomic_load(&d->stopping))
                ? H2_PAL_ERR_CLOSED
                : repeat_apply_locked(d, value);
   unlock(d);
@@ -2514,10 +2530,10 @@ h2_pal_result_t h2_gizclaw_player_rate_set(h2_gizclaw_service_t *service,
     return H2_PAL_ERR_INVALID_ARG;
   lock(d);
   int rc = H2_PAL_OK;
-  if (!d->task || atomic_load(&d->stopping))
+  if (!d->task || h2_atomic_load(&d->stopping))
     rc = H2_PAL_ERR_CLOSED;
   else
-    atomic_store(&d->rate, rate_permille);
+    h2_atomic_store(&d->rate, rate_permille);
   unlock(d);
   return rc;
 }
@@ -2544,7 +2560,7 @@ h2_pal_result_t h2_gizclaw_player_get_status(h2_gizclaw_service_t *service,
   out->current_index = d->status.current_index;
   out->playlist_length = d->status.playlist_length;
   out->playlist_revision = d->status.playlist_revision;
-  out->rate_permille = atomic_load(&d->rate);
+  out->rate_permille = h2_atomic_load(&d->rate);
   unlock(d);
   return H2_PAL_OK;
 }
@@ -2609,7 +2625,7 @@ h2_pal_result_t h2_gizclaw_ota_start(h2_gizclaw_service_t *service,
   }
   lock(d);
   int rc = H2_PAL_OK;
-  if (!d->task || atomic_load(&d->stopping))
+  if (!d->task || h2_atomic_load(&d->stopping))
     rc = H2_PAL_ERR_CLOSED;
   else if (d->pending)
     rc = H2_PAL_ERR_BUSY;

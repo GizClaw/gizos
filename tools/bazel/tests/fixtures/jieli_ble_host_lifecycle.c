@@ -1,7 +1,8 @@
 #include <assert.h>
 #include <pthread.h>
 #include <sched.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
+#include <stdlib.h>
 #include <stdint.h>
 #include <stdarg.h>
 #include <string.h>
@@ -24,10 +25,10 @@ const uint64_t config_btctler_le_features = 0;
 static pthread_mutex_t gate = PTHREAD_MUTEX_INITIALIZER;
 void h2_gatt_lock(void) { assert(pthread_mutex_lock(&gate) == 0); }
 void h2_gatt_unlock(void) { assert(pthread_mutex_unlock(&gate) == 0); }
-static atomic_int waiting, stopped, started, exited, unregistered, stop_returned, borrow_active, disconnected;
+static h2_atomic_int_t waiting, stopped, started, exited, unregistered, stop_returned, borrow_active, disconnected;
 enum { ERROR_CODE_CONNECTION_TERMINATED_BY_LOCAL_HOST = 0x16 };
 static int adv_result, disconnect_result, exit_result, disconnect_calls, init_result;
-static atomic_int release_borrow, hold_role, role_entered, release_role;
+static h2_atomic_int_t release_borrow, hold_role, role_entered, release_role;
 static int callback_mode, self_stop_mode;
 static int h2_ble_stop(void *user);
 static _Thread_local int identity;
@@ -36,7 +37,7 @@ const void *h2_jieli_sdk_task_current(void) { return &identity; }
 const char *os_current_task(void) { return task_name; }
 void os_time_dly(int ticks) {
     assert(ticks == 1);
-    atomic_store(&waiting, 1);
+    h2_atomic_store(&waiting, 1);
     sched_yield();
 }
 void h2_ble_log(const char *format, ...) { (void)format; }
@@ -49,9 +50,9 @@ void lib_make_ble_address(uint8_t *out, uint8_t *in) { memcpy(out, in, 6); }
 int le_controller_set_mac(void *address) { (void)address; return 0; }
 int btstack_init(void) { return init_result; }
 u8 get_ble_gatt_role(void) {
-    if (atomic_load(&hold_role)) {
-        atomic_store(&role_entered, 1);
-        while (!atomic_load(&release_role))
+    if (h2_atomic_load(&hold_role)) {
+        h2_atomic_store(&role_entered, 1);
+        while (!h2_atomic_load(&release_role))
             sched_yield();
     }
     return 0;
@@ -77,13 +78,13 @@ int ble_op_disconnect(uint16_t connection) {
 }
 int btstack_exit(void) {
     sdk_reenter_gate();
-    assert(!atomic_load(&borrow_active));
-    atomic_fetch_add(&exited, 1);
+    assert(!h2_atomic_load(&borrow_active));
+    h2_atomic_fetch_add(&exited, 1);
     return exit_result;
 }
 int h2_unregister_gatt(void *user) {
     (void)user;
-    atomic_fetch_add(&unregistered, 1);
+    h2_atomic_fetch_add(&unregistered, 1);
     return 0;
 }
 enum { BLE_CMD_STACK_EXIT = 14 };
@@ -99,13 +100,13 @@ void h2_ble_post(int type, const void *data, size_t length) {
     if (type == H2_PAL_SYSTEM_EVENT_TYPE_BLE_DISCONNECTED) {
         const h2_pal_ble_disconnected_info_t *info = data;
         assert(length == sizeof(*info) && info->conn_handle == 42 && info->reason == 0x16);
-        assert(atomic_load(&exited) != 0);
-        atomic_fetch_add(&disconnected, 1);
+        assert(h2_atomic_load(&exited) != 0);
+        h2_atomic_fetch_add(&disconnected, 1);
     }
     if (type == H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STOPPED)
-        atomic_fetch_add(&stopped, 1);
+        h2_atomic_fetch_add(&stopped, 1);
     if (type == H2_PAL_SYSTEM_EVENT_TYPE_BLE_HOST_STARTED)
-        atomic_fetch_add(&started, 1);
+        h2_atomic_fetch_add(&started, 1);
 }
 int h2_notify(void *user, uint16_t connection, uint16_t attribute, const uint8_t *data, size_t size) {
     (void)user;
@@ -117,11 +118,11 @@ int h2_notify(void *user, uint16_t connection, uint16_t attribute, const uint8_t
         assert(h2_ble_stop(NULL) == H2_PAL_ERR_BUSY);
         return 0;
     }
-    atomic_store(&borrow_active, 1);
-    while (!atomic_load(&release_borrow))
+    h2_atomic_store(&borrow_active, 1);
+    while (!h2_atomic_load(&release_borrow))
         sched_yield();
-    assert(!atomic_load(&exited));
-    atomic_store(&borrow_active, 0);
+    assert(!h2_atomic_load(&exited));
+    h2_atomic_store(&borrow_active, 0);
     return 0;
 }
 int h2_att_write(uint16_t connection, uint16_t handle, uint16_t transaction,
@@ -151,17 +152,45 @@ static void *init_thread(void *unused) {
 static void *stop_thread(void *unused) {
     (void)unused;
     assert(h2_ble_stop(NULL) == H2_PAL_OK);
-    atomic_store(&stop_returned, 1);
+    h2_atomic_store(&stop_returned, 1);
     return NULL;
 }
 static void start_stop_thread(pthread_t *thread) {
     assert(pthread_create(thread, NULL, stop_thread, NULL) == 0);
-    while (!atomic_load(&waiting) && !atomic_load(&stop_returned))
+    while (!h2_atomic_load(&waiting) && !h2_atomic_load(&stop_returned))
         sched_yield();
-    assert(!atomic_load(&stop_returned));
-    assert(!atomic_load(&exited));
+    assert(!h2_atomic_load(&stop_returned));
+    assert(!h2_atomic_load(&exited));
+}
+static void h2_fixture_atomic_cleanup(void) {
+    h2_atomic_destroy(&waiting);
+    h2_atomic_destroy(&stopped);
+    h2_atomic_destroy(&started);
+    h2_atomic_destroy(&exited);
+    h2_atomic_destroy(&unregistered);
+    h2_atomic_destroy(&stop_returned);
+    h2_atomic_destroy(&borrow_active);
+    h2_atomic_destroy(&disconnected);
+    h2_atomic_destroy(&release_borrow);
+    h2_atomic_destroy(&hold_role);
+    h2_atomic_destroy(&role_entered);
+    h2_atomic_destroy(&release_role);
 }
 int main(int argc, char **argv) {
+    assert(atexit(h2_fixture_atomic_cleanup) == 0);
+    assert(h2_atomic_init(&waiting, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&stopped, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&started, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&exited, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&unregistered, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&stop_returned, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&borrow_active, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&disconnected, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&release_borrow, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&hold_role, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&role_entered, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&release_role, 0) == H2_ATOMIC_OK);
+
     assert(argc == 2);
     h2_ble.started = 1;
     h2_ble.adv.used = 1;
@@ -171,7 +200,7 @@ int main(int argc, char **argv) {
         init_result = -1;
         assert(h2_ble_start_retained(NULL) == H2_PAL_ERR_IO);
         assert(h2_ble_stop(NULL) == H2_PAL_ERR_IO);
-        assert(!atomic_load(&exited) && !atomic_load(&unregistered));
+        assert(!h2_atomic_load(&exited) && !h2_atomic_load(&unregistered));
         assert(h2_ble_start_retained(NULL) == H2_PAL_ERR_BUSY);
         return 0;
     }
@@ -187,24 +216,24 @@ int main(int argc, char **argv) {
             exit_result = -1;
         }
         assert(h2_ble_stop(NULL) == H2_PAL_ERR_IO);
-        assert(h2_ble.started && h2_ble.adv.used && !atomic_load(&stopped));
-        assert(!atomic_load(&unregistered));
+        assert(h2_ble.started && h2_ble.adv.used && !h2_atomic_load(&stopped));
+        assert(!h2_atomic_load(&unregistered));
         assert(h2_ble_start_retained(NULL) == H2_PAL_ERR_BUSY);
         adv_result = disconnect_result = exit_result = 0;
         assert(h2_ble_stop(NULL) == H2_PAL_OK);
-        assert(!h2_ble.started && atomic_load(&stopped) == 1 && atomic_load(&unregistered) == 1);
+        assert(!h2_ble.started && h2_atomic_load(&stopped) == 1 && h2_atomic_load(&unregistered) == 1);
         if (strcmp(argv[1], "exit_error") == 0) {
             assert(disconnect_calls == 1);
-            assert(atomic_load(&disconnected) == 1);
+            assert(h2_atomic_load(&disconnected) == 1);
         }
         return 0;
     }
     if (strcmp(argv[1], "disconnect_event") == 0) {
         h2_ble.conn_handle = 42;
         assert(h2_ble_stop(NULL) == 0);
-        assert(atomic_load(&disconnected) == 1 && atomic_load(&stopped) == 1);
+        assert(h2_atomic_load(&disconnected) == 1 && h2_atomic_load(&stopped) == 1);
         assert(h2_ble_stop(NULL) == 0);
-        assert(atomic_load(&disconnected) == 1 && atomic_load(&stopped) == 1);
+        assert(h2_atomic_load(&disconnected) == 1 && h2_atomic_load(&stopped) == 1);
         return 0;
     }
     if (strcmp(argv[1], "retained") == 0 || strcmp(argv[1], "retained_callback") == 0 || strcmp(argv[1], "retained_command") == 0 || strcmp(argv[1], "self_stop") == 0) {
@@ -217,14 +246,14 @@ int main(int argc, char **argv) {
         }
         pthread_t borrower, thread;
         assert(pthread_create(&borrower, NULL, borrow_thread, NULL) == 0);
-        while (!atomic_load(&borrow_active))
+        while (!h2_atomic_load(&borrow_active))
             sched_yield();
         start_stop_thread(&thread);
         assert(h2_ble_start_retained(NULL) == H2_PAL_ERR_BUSY);
-        atomic_store(&release_borrow, 1);
+        h2_atomic_store(&release_borrow, 1);
         assert(pthread_join(borrower, NULL) == 0);
         assert(pthread_join(thread, NULL) == 0);
-        assert(atomic_load(&exited) == 1 && atomic_load(&stopped) == 1);
+        assert(h2_atomic_load(&exited) == 1 && h2_atomic_load(&stopped) == 1);
         return 0;
     }
     if (strcmp(argv[1], "admitted_start") == 0) {
@@ -238,23 +267,23 @@ int main(int argc, char **argv) {
         bt_ble_init();
         h2_ble_call_end(&call);
         assert(pthread_join(thread, NULL) == 0);
-        assert(atomic_load(&exited) == 1 && atomic_load(&stopped) == 1);
-        assert(!atomic_load(&started));
+        assert(h2_atomic_load(&exited) == 1 && h2_atomic_load(&stopped) == 1);
+        assert(!h2_atomic_load(&started));
         return 0;
     }
     if (strcmp(argv[1], "init_publication") == 0) {
         h2_ble.started = 0;
         h2_ble.starting = 1;
-        atomic_store(&hold_role, 1);
+        h2_atomic_store(&hold_role, 1);
         pthread_t initializer, stopper;
         assert(pthread_create(&initializer, NULL, init_thread, NULL) == 0);
-        while (!atomic_load(&role_entered))
+        while (!h2_atomic_load(&role_entered))
             sched_yield();
         start_stop_thread(&stopper);
-        atomic_store(&release_role, 1);
+        h2_atomic_store(&release_role, 1);
         assert(pthread_join(initializer, NULL) == 0);
         assert(pthread_join(stopper, NULL) == 0);
-        assert(!atomic_load(&started) && atomic_load(&stopped) == 1);
+        assert(!h2_atomic_load(&started) && h2_atomic_load(&stopped) == 1);
         return 0;
     }
     if (strcmp(argv[1], "pending_init") == 0) {
@@ -264,7 +293,7 @@ int main(int argc, char **argv) {
         start_stop_thread(&thread);
         bt_ble_init();
         assert(pthread_join(thread, NULL) == 0);
-        assert(!atomic_load(&started) && atomic_load(&stopped) == 1);
+        assert(!h2_atomic_load(&started) && h2_atomic_load(&stopped) == 1);
         return 0;
     }
     if (strcmp(argv[1], "init_dispatcher") == 0) {
@@ -274,13 +303,13 @@ int main(int argc, char **argv) {
         assert(h2_ble_stop(NULL) == H2_PAL_ERR_BUSY);
         assert(!h2_ble.stopping && h2_ble.starting);
         bt_ble_init();
-        assert(atomic_load(&started) == 1);
+        assert(h2_atomic_load(&started) == 1);
         assert(h2_ble_stop(NULL) == 0);
         return 0;
     }
     assert(strcmp(argv[1], "late_init") == 0);
     assert(h2_ble_stop(NULL) == 0);
     bt_ble_init();
-    assert(!h2_ble.started && !atomic_load(&started) && atomic_load(&stopped) == 1);
+    assert(!h2_ble.started && !h2_atomic_load(&started) && h2_atomic_load(&stopped) == 1);
     return 0;
 }

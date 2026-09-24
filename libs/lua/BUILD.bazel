@@ -211,6 +211,7 @@ cc_library(
         ":lua_core",
         ":numeric_prepared",
         ":tasks",
+        "//libs/atomic",
         "//libs/raster2d",
         "//libs/raster2d:span_internal",
         "//libs/runtime",
@@ -306,6 +307,7 @@ cc_test(
     }),
     deps = [
         ":lua_runtime",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
         "//tools/bazel:vendor_third_party_lua",
@@ -328,6 +330,7 @@ cc_library(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
         "//libs/runtime",
@@ -348,6 +351,7 @@ cc_test(
     }),
     deps = [
         ":lua_runtime",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
     ],
@@ -367,6 +371,7 @@ cc_test(
     }),
     deps = [
         ":lua_runtime",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
     ],
@@ -386,6 +391,7 @@ cc_test(
     deps = [
         ":link_fake_ble",
         ":lua_link",
+        "//libs/atomic/providers/c11",
         "//libs/pal:test_allocator",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
@@ -417,6 +423,7 @@ cc_test(
     }),
     deps = [
         ":lua_runtime",
+        "//libs/atomic/providers/c11",
         "//tools/bazel:vendor_third_party_lua",
     ],
 )
@@ -450,9 +457,12 @@ py_test(
     args = [
         "$(location :runtime_sources)",
         "$(location tests/test_embedder.c)",
+        "$(location //libs/atomic/providers/c11:src/h2_atomic_c11.c)",
     ],
     data = [
         "tests/test_embedder.c",
+        "//libs/atomic/providers/c11:src/h2_atomic_c11.c",
+        "//libs/atomic/providers/c11:h2_atomic_c11_impl.h",
         ":runtime_sources",
     ],
     legacy_create_init = 0,

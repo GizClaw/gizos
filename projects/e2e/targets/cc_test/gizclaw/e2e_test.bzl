@@ -3,6 +3,8 @@ load("//tools/bazel:cc_options.bzl", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
 
 def gizclaw_e2e_desktop_deps(backend = "h2peer", app = "//projects/e2e/apps/gizclaw/app:gizclaw_e2e"):
     deps = [
+        "//libs/atomic",
+        "//libs/atomic/providers/c11",
         "//libs/pal/providers/desktop/pal_core",
         "//libs/pal/providers/corehttp",
         "//libs/pal",

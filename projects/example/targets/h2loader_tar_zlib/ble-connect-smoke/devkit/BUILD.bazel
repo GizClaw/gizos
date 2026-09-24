@@ -36,6 +36,7 @@ firmware_native_component(
     deps = [
         ":firmware_lib",
         "//boards/devkit/esp32s3",
+        "//libs/atomic",
         "//libs/pal",
         "//native_component_src/esp-idf6.x/h2_pal_core",
         "//native_component_src/esp-idf6.x/zlib",

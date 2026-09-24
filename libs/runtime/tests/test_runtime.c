@@ -301,8 +301,7 @@ static h2_pal_result_t test_sleep(void *user, uint32_t ms) {
     time->sleep_calls += 1u;
     time->now_ms += ms;
     if (time->stop_after_sleep_runtime != NULL) {
-        atomic_store(
-            &time->stop_after_sleep_runtime->private_state->input_stop_requested,
+        h2_atomic_store(&time->stop_after_sleep_runtime->private_state->input_stop_requested,
             1);
     }
     return time->sleep_rc;
@@ -2452,7 +2451,7 @@ static void run_nfc_task_once(test_runtime_env_t *env,
     env->time_state.stop_after_sleep_runtime = runtime;
     env->task_state.handles[1]->entry(env->task_state.handles[1]->ctx);
     env->time_state.stop_after_sleep_runtime = NULL;
-    atomic_store(&runtime->private_state->input_stop_requested, 0);
+    h2_atomic_store(&runtime->private_state->input_stop_requested, 0);
 }
 
 static void test_nfc_discovery_and_state(void) {
@@ -2517,7 +2516,7 @@ static void test_nfc_background_task_does_not_block_input_task(void) {
     env.time_state.stop_after_sleep_runtime = runtime;
     env.task_state.handles[0]->entry(env.task_state.handles[0]->ctx);
     env.time_state.stop_after_sleep_runtime = NULL;
-    atomic_store(&runtime->private_state->input_stop_requested, 0);
+    h2_atomic_store(&runtime->private_state->input_stop_requested, 0);
 
     uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
     h2_runtime_event_t event = event_with_payload(payload);
@@ -2776,7 +2775,7 @@ static void test_runtime_owns_input_task_lifecycle(void) {
 
     /* Init leaves acquisition stopped; the caller owns the first start. */
     assert(env.task_state.starts == 0u);
-    assert(atomic_load(&runtime->private_state->input_phase) ==
+    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
            H2_RUNTIME_INPUT_PHASE_STOPPED);
     h2_runtime_button_state_t stopped_state;
     assert(h2_runtime_component_state_button(runtime, 1u, &stopped_state) !=
@@ -2821,7 +2820,7 @@ static void test_input_task_start_failure_leaves_input_stopped(void) {
     assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_ERR_TASK);
     assert(env.task_state.current == NULL);
     assert(runtime->private_state->input_task == NULL);
-    assert(atomic_load(&runtime->private_state->input_phase) ==
+    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
            H2_RUNTIME_INPUT_PHASE_STOPPED);
     /* A failed start only leaves the poller off; init-owned state survives. */
     assert(runtime->private_state->input_writer_mutex != NULL);
@@ -2846,9 +2845,9 @@ static void test_input_worker_failure_closes_event_queue(void) {
     assert(env.task_state.current != NULL);
     env.time_state.sleep_rc = H2_PAL_ERR_IO;
     env.task_state.current->entry(env.task_state.current->ctx);
-    assert(atomic_load(&runtime->private_state->input_phase) ==
+    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
            H2_RUNTIME_INPUT_PHASE_FAULTED);
-    assert(atomic_load(&runtime->private_state->input_worker_result) ==
+    assert(h2_atomic_load(&runtime->private_state->input_worker_result) ==
            H2_PAL_ERR_IO);
     uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
     h2_runtime_event_t event = event_with_payload(payload);
@@ -2863,7 +2862,7 @@ static void run_input_task_once(test_runtime_env_t *env,
     env->time_state.stop_after_sleep_runtime = runtime;
     env->task_state.handles[0]->entry(env->task_state.handles[0]->ctx);
     env->time_state.stop_after_sleep_runtime = NULL;
-    atomic_store(&runtime->private_state->input_stop_requested, 0);
+    h2_atomic_store(&runtime->private_state->input_stop_requested, 0);
 }
 
 static void test_input_worker_keeps_running_after_poll_error(void) {
@@ -2877,7 +2876,7 @@ static void test_input_worker_keeps_running_after_poll_error(void) {
     env.time_state.now_rc = H2_PAL_ERR_IO;
     run_input_task_once(&env, runtime);
     env.time_state.now_rc = H2_PAL_OK;
-    assert(atomic_load(&runtime->private_state->input_phase) ==
+    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
            H2_RUNTIME_INPUT_PHASE_TASK_RUNNING);
     h2_runtime_input_status_t status;
     assert(h2_runtime_input_status(runtime, &status) == H2_PAL_OK);
@@ -3034,7 +3033,7 @@ static void test_input_join_failure_is_retryable(void) {
     env.task_state.join_rc = H2_PAL_ERR_IO;
     h2_runtime_deinit(runtime);
     assert(runtime->private_state->input_task != NULL);
-    assert(atomic_load(&runtime->private_state->input_stop_requested) != 0);
+    assert(h2_atomic_load(&runtime->private_state->input_stop_requested) != 0);
     assert(env.task_state.joins == 0u);
     env.task_state.join_rc = H2_PAL_OK;
     h2_runtime_deinit(runtime);
@@ -3064,7 +3063,7 @@ static void test_input_stop_then_start_resumes_acquisition(void) {
     assert(h2_runtime_input_stop(runtime) == H2_PAL_OK);
     assert(env.task_state.joins == 1u);
     assert(runtime->private_state->input_task == NULL);
-    assert(atomic_load(&runtime->private_state->input_phase) ==
+    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
            H2_RUNTIME_INPUT_PHASE_STOPPED);
     /*
      * Stopping the poller only stops the task. The writer mutex, the source
@@ -3096,7 +3095,7 @@ static void test_input_stop_then_start_resumes_acquisition(void) {
     assert(runtime->private_state->input_tick_ms == 5u);
     assert(runtime->private_state->input_button_poll_interval_ms == 9u);
     assert(strcmp(env.task_state.options.name, h2_runtime_input_task_name) == 0);
-    assert(atomic_load(&runtime->private_state->input_phase) ==
+    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
            H2_RUNTIME_INPUT_PHASE_TASK_RUNNING);
 
     /* The first frame after a start republishes the current hardware state. */
@@ -3166,7 +3165,7 @@ static void test_input_start_without_mapped_input_is_noop(void) {
     test_env_init(&env);
     h2_runtime_t *runtime = test_runtime_create(&env);
     assert(env.task_state.starts == 0u);
-    assert(atomic_load(&runtime->private_state->input_phase) ==
+    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
            H2_RUNTIME_INPUT_PHASE_STOPPED);
 
     assert(h2_runtime_input_stop(runtime) == H2_PAL_OK);
@@ -3174,7 +3173,7 @@ static void test_input_start_without_mapped_input_is_noop(void) {
     assert(env.task_state.starts == 0u);
     assert(env.task_state.joins == 0u);
     assert(runtime->private_state->input_task == NULL);
-    assert(atomic_load(&runtime->private_state->input_phase) ==
+    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
            H2_RUNTIME_INPUT_PHASE_STOPPED);
 
     h2_runtime_deinit(runtime);
@@ -3192,7 +3191,7 @@ static void test_input_double_start_is_rejected(void) {
     assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_ERR_INVALID_STATE);
     assert(env.task_state.starts == 1u);
     assert(runtime->private_state->input_writer_mutex == mutex);
-    assert(atomic_load(&runtime->private_state->input_phase) ==
+    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
            H2_RUNTIME_INPUT_PHASE_TASK_RUNNING);
 
     h2_runtime_deinit(runtime);
@@ -3209,13 +3208,13 @@ static void test_input_start_after_worker_fault_is_rejected(void) {
 
     env.time_state.sleep_rc = H2_PAL_ERR_IO;
     env.task_state.current->entry(env.task_state.current->ctx);
-    assert(atomic_load(&runtime->private_state->input_phase) ==
+    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
            H2_RUNTIME_INPUT_PHASE_FAULTED);
 
     /* Stop reports the fault; the closed event queue makes it terminal. */
     env.time_state.sleep_rc = H2_PAL_OK;
     assert(h2_runtime_input_stop(runtime) == H2_PAL_ERR_IO);
-    assert(atomic_load(&runtime->private_state->input_phase) ==
+    assert(h2_atomic_load(&runtime->private_state->input_phase) ==
            H2_RUNTIME_INPUT_PHASE_STOPPED);
     assert(h2_runtime_input_start(runtime, NULL) == H2_PAL_ERR_INVALID_STATE);
     assert(env.task_state.starts == 1u);
@@ -3326,7 +3325,7 @@ static void test_sequence_wraps_and_skips_zero(void) {
     test_runtime_env_t env;
     test_env_init(&env);
     h2_runtime_t *runtime = test_runtime_create(&env);
-    runtime->private_state->next_sequence = UINT32_MAX;
+    h2_atomic_uint_store(&runtime->private_state->next_sequence, UINT32_MAX, H2_ATOMIC_SEQ_CST);
 
     assert(h2_runtime_next_sequence(runtime) == UINT32_MAX);
     /* 0 means "no sequence", so the wrap lands on 1. */
@@ -3359,7 +3358,7 @@ static void test_high_first_sequence_sets_input_ceiling(void) {
     assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
 
     assert(runtime->private_state->input_event_sequence_ceiling == 0u);
-    runtime->private_state->next_sequence = UINT32_MAX;
+    h2_atomic_uint_store(&runtime->private_state->next_sequence, UINT32_MAX, H2_ATOMIC_SEQ_CST);
     assert(h2_runtime_test_button_down(control, 1u, 100u) == H2_PAL_OK);
     assert(runtime->private_state->input_event_sequence_ceiling == UINT32_MAX);
 
@@ -3548,7 +3547,7 @@ static void test_control_injects_validated_runtime_events(void) {
                43u,
                &wifi,
                sizeof(wifi) - 1u) == H2_PAL_ERR_INVALID_ARG);
-    assert(runtime->private_state->next_sequence == 2u);
+    assert(h2_atomic_uint_load(&runtime->private_state->next_sequence, H2_ATOMIC_SEQ_CST) == 2u);
 
     h2_runtime_test_control_close(control);
     assert(runtime->private_state->test_control == NULL);
@@ -3600,9 +3599,9 @@ static void test_control_button_helpers_share_state_and_event_sequence(void) {
     assert(event.kind == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
     assert(event.sequence ==
            runtime->private_state->input_sources[0].sequence);
-    const unsigned int active_index = atomic_load_explicit(
+    const unsigned int active_index = h2_atomic_load_explicit(
         &runtime->private_state->state_publication.active_index,
-        memory_order_acquire);
+        H2_ATOMIC_ACQUIRE);
     assert(runtime->private_state->state_publication.banks[active_index]
                .event_sequence_ceiling >= event.sequence);
     assert(event.payload_size == sizeof(h2_runtime_button_down_event_t));
@@ -3638,7 +3637,7 @@ static void test_control_button_helpers_share_state_and_event_sequence(void) {
            H2_PAL_ERR_WOULD_BLOCK);
 
     const h2_runtime_sequence_t next_sequence =
-        runtime->private_state->next_sequence;
+        h2_atomic_uint_load(&runtime->private_state->next_sequence, H2_ATOMIC_SEQ_CST);
     state.updated_at_ms = 150u;
     const size_t state_locks_before = env.sync_state.locks;
     const size_t state_unlocks_before = env.sync_state.unlocks;
@@ -3646,7 +3645,7 @@ static void test_control_button_helpers_share_state_and_event_sequence(void) {
                control, 1u, &state, sizeof(state)) == H2_PAL_OK);
     assert(env.sync_state.locks == state_locks_before + 1u);
     assert(env.sync_state.unlocks == state_unlocks_before + 1u);
-    assert(runtime->private_state->next_sequence == next_sequence);
+    assert(h2_atomic_uint_load(&runtime->private_state->next_sequence, H2_ATOMIC_SEQ_CST) == next_sequence);
     h2_runtime_button_state_t published_state;
     assert(h2_runtime_component_state_button(
                runtime, 1u, &published_state) == H2_PAL_OK);
@@ -3698,7 +3697,7 @@ static void test_control_preserves_runtime_queue_drop_behavior(void) {
                NULL,
                0u) == H2_PAL_OK);
     assert(runtime->private_state->dropped_event_count == 1u);
-    assert(runtime->private_state->next_sequence == 3u);
+    assert(h2_atomic_uint_load(&runtime->private_state->next_sequence, H2_ATOMIC_SEQ_CST) == 3u);
 
     uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
     h2_runtime_event_t event = event_with_payload(payload);
@@ -3867,10 +3866,10 @@ static void test_audio_track_allocator(void) {
         };
         h2_pal_audio_track_t *track = NULL;
         assert(h2_pal_audio_create_track(runtime->audio, &track_config, &track) == H2_PAL_OK);
-        assert(atomic_load(&arena.live) == (custom ? 1u : 0u));
+        assert(h2_atomic_load(&arena.live) == (custom ? 1u : 0u));
         assert(env.allocator_state.live_allocations == baseline + (custom ? 0u : 1u));
         assert(h2_pal_audio_track_close(track) == H2_PAL_OK);
-        assert(atomic_load(&arena.live) == 0u);
+        assert(h2_atomic_load(&arena.live) == 0u);
         assert(env.allocator_state.live_allocations == baseline);
     }
     h2_runtime_deinit(runtime);

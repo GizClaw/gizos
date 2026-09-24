@@ -3,7 +3,7 @@
 #include "h2_runtime.h"
 #include "h2_smoke_audio_system.h"
 
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdio.h>
 
 #define H2_AUDIO_STOP_RESTART_STREAM_MS 3000u
@@ -17,15 +17,34 @@ extern int os_tasks_num_query(void);
 typedef struct audio_cycle_state {
   h2_runtime_t *runtime;
   h2_pal_task_t *task;
-  atomic_bool started;
-  atomic_bool entry_released;
-  atomic_bool stop_requested;
-  atomic_int startup_result;
+  h2_atomic_bool_t started;
+  h2_atomic_bool_t entry_released;
+  h2_atomic_bool_t stop_requested;
+  h2_atomic_int_t startup_result;
   uint32_t heap_baseline;
   int tasks_baseline;
 } audio_cycle_state_t;
 
 static audio_cycle_state_t audio_cycle;
+
+static void audio_cycle_atomic_destroy(void) {
+  h2_atomic_destroy(&audio_cycle.started);
+  h2_atomic_destroy(&audio_cycle.entry_released);
+  h2_atomic_destroy(&audio_cycle.stop_requested);
+  h2_atomic_destroy(&audio_cycle.startup_result);
+}
+
+static bool audio_cycle_atomic_init(void) {
+  if (h2_atomic_init(&audio_cycle.started, false) != H2_ATOMIC_OK ||
+      h2_atomic_init(&audio_cycle.entry_released, false) != H2_ATOMIC_OK ||
+      h2_atomic_init(&audio_cycle.stop_requested, false) != H2_ATOMIC_OK ||
+      h2_atomic_init(&audio_cycle.startup_result, H2_PAL_ERR_INVALID_STATE) != H2_ATOMIC_OK) {
+    audio_cycle_atomic_destroy();
+    return false;
+  }
+  return true;
+}
+
 
 static int provider_idle(const h2_jieli_ac791n_devkit_audio_idle_t *probe) {
   return probe->open_tracks == 0u && probe->retained_operations == 0u &&
@@ -45,14 +64,14 @@ static void audio_cycle_task(void *user) {
   for (unsigned cycle = 1u; cycle <= H2_AUDIO_STOP_RESTART_CYCLES; ++cycle) {
     int run_result = h2_smoke_audio_system_run(runtime, &config);
     if (cycle == 1u) {
-      atomic_store_explicit(&state->startup_result, run_result, memory_order_release);
-      atomic_store_explicit(&state->started, true, memory_order_release);
+      h2_atomic_store_explicit(&state->startup_result, run_result, H2_ATOMIC_RELEASE);
+      h2_atomic_store_explicit(&state->started, true, H2_ATOMIC_RELEASE);
     }
     h2_smoke_audio_system_stats_t stats = {0};
     h2_jieli_ac791n_devkit_audio_idle_t streaming = {0}, stopped = {0};
     int stream_probe = H2_PAL_ERR_INVALID_STATE;
     if (run_result == H2_AUDIO_OK &&
-        !atomic_load_explicit(&state->stop_requested, memory_order_acquire)) {
+        !h2_atomic_load_explicit(&state->stop_requested, H2_ATOMIC_ACQUIRE)) {
       (void)h2_pal_time_sleep_ms(runtime->time, H2_AUDIO_STOP_RESTART_STREAM_MS);
       h2_smoke_audio_system_get_stats(&stats);
       stream_probe = h2_jieli_ac791n_devkit_audio_idle_probe(&streaming);
@@ -90,7 +109,7 @@ static void audio_cycle_task(void *user) {
            (unsigned long long)(stop_end - stop_start), idle,
            (unsigned long)heap_last, tasks, passed ? "ok" : "fail");
     if (run_result != H2_AUDIO_OK || stop_result != H2_AUDIO_OK ||
-        atomic_load_explicit(&state->stop_requested, memory_order_acquire)) break;
+        h2_atomic_load_explicit(&state->stop_requested, H2_ATOMIC_ACQUIRE)) break;
   }
   if (heap_min == UINT32_MAX) heap_min = heap_last;
   printf("H2_JIELI_AUDIO_CYCLE_SUMMARY cycles=%u ok=%u failed=%u heap_baseline=%lu heap_ref=%lu heap_last=%lu heap_min=%lu tasks_baseline=%d tasks_ref=%d tasks_max=%d result=%s\n",
@@ -100,7 +119,7 @@ static void audio_cycle_task(void *user) {
          state->tasks_baseline, tasks_ref, tasks_max,
          ok == H2_AUDIO_STOP_RESTART_CYCLES && failed == 0u && heap_last >= heap_ref ? "ok" : "fail");
   /* Entry borrows Runtime until it publishes the startup result to the launcher. */
-  while (!atomic_load_explicit(&state->entry_released, memory_order_acquire)) {
+  while (!h2_atomic_load_explicit(&state->entry_released, H2_ATOMIC_ACQUIRE)) {
     (void)h2_pal_time_sleep_ms(runtime->time, 10u);
   }
   if (stop_result == H2_AUDIO_OK) {
@@ -110,20 +129,19 @@ static void audio_cycle_task(void *user) {
     printf("H2_JIELI_AUDIO_SYSTEM cleanup did not complete; Runtime intentionally retained result=%d attempts=100\n",
            stop_result);
   }
+  audio_cycle_atomic_destroy();
 }
 
 int h2_jieli_target_application_run(void) {
   h2_runtime_config_t config;
   h2_runtime_t *runtime = NULL;
-  atomic_init(&audio_cycle.started, false);
-  atomic_init(&audio_cycle.entry_released, false);
-  atomic_init(&audio_cycle.stop_requested, false);
-  atomic_init(&audio_cycle.startup_result, H2_PAL_ERR_INVALID_STATE);
+  if (!audio_cycle_atomic_init()) return H2_PAL_ERR_NO_MEMORY;
   int result = h2_jieli_ac791n_devkit_runtime_config(&config);
   if (result == H2_PAL_OK) result = h2_runtime_init(&config, &runtime);
   if (result != H2_PAL_OK) {
     printf("H2_JIELI_AUDIO_CYCLE stage=runtime-init result=%d\n", result);
     if (runtime != NULL) h2_runtime_deinit(runtime);
+    audio_cycle_atomic_destroy();
     return result;
   }
   audio_cycle.runtime = runtime;
@@ -139,20 +157,21 @@ int h2_jieli_target_application_run(void) {
   if (result != H2_PAL_OK) {
     h2_runtime_deinit(runtime);
     audio_cycle.runtime = NULL;
+    audio_cycle_atomic_destroy();
     return result;
   }
   result = H2_PAL_ERR_TIMEOUT;
   for (unsigned attempt = 0u; attempt < 1000u; ++attempt) {
-    if (atomic_load_explicit(&audio_cycle.started, memory_order_acquire)) {
-      result = atomic_load_explicit(&audio_cycle.startup_result, memory_order_acquire);
+    if (h2_atomic_load_explicit(&audio_cycle.started, H2_ATOMIC_ACQUIRE)) {
+      result = h2_atomic_load_explicit(&audio_cycle.startup_result, H2_ATOMIC_ACQUIRE);
       break;
     }
     (void)h2_pal_time_sleep_ms(runtime->time, 10u);
   }
   if (result == H2_PAL_ERR_TIMEOUT) {
-    atomic_store_explicit(&audio_cycle.stop_requested, true, memory_order_release);
+    h2_atomic_store_explicit(&audio_cycle.stop_requested, true, H2_ATOMIC_RELEASE);
   }
   printf("H2_JIELI_AUDIO_CYCLE_READY cycles=%u result=%d\n", H2_AUDIO_STOP_RESTART_CYCLES, result);
-  atomic_store_explicit(&audio_cycle.entry_released, true, memory_order_release);
+  h2_atomic_store_explicit(&audio_cycle.entry_released, true, H2_ATOMIC_RELEASE);
   return result;
 }

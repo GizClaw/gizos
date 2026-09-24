@@ -45,6 +45,7 @@ cc_test(
     }),
     deps = [
         ":audio_mixer",
+        "//libs/atomic/providers/c11",
         "//libs/pal:test_allocator",
     ],
 )

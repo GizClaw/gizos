@@ -1,7 +1,7 @@
 #include "h2_loader_app_client.h"
 #include "h2_loader_task_names.h"
 
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -14,7 +14,7 @@ typedef struct h2_loader_app_client_return_console {
     int (*read_byte)(void *user, uint32_t timeout_ms);
     void *write_user;
     h2_loader_app_client_write_fn write;
-    atomic_bool stop_requested;
+    h2_atomic_bool_t stop_requested;
     int session_reset;
     int session_closed;
     h2_loader_command_t command;
@@ -215,7 +215,7 @@ static int run_return_console(void *ctx) {
     if (init_rc != H2_PAL_OK) return init_rc;
     static const char ready[] = "H2_LOADER_APP_COMMAND_READY status=ready\n";
     (void)console->write(console->write_user, ready, sizeof(ready) - 1u);
-    while (!atomic_load_explicit(&console->stop_requested, memory_order_acquire)) {
+    while (!h2_atomic_bool_load(&console->stop_requested, H2_ATOMIC_ACQUIRE)) {
         int rc = h2_loader_command_poll(
             &console->command, H2_LOADER_APP_CLIENT_POLL_MS);
         if (console->session_closed || rc == H2_PAL_ERR_CLOSED) break;
@@ -251,8 +251,15 @@ int h2_loader_app_client_run_return_console(
     console->read_byte = config->read_byte;
     console->write_user = config->write_user;
     console->write = config->write != NULL ? config->write : stdout_write;
-    atomic_init(&console->stop_requested, false);
+    h2_atomic_result_t atomic_rc =
+        h2_atomic_bool_init(&console->stop_requested, false);
+    if (atomic_rc != H2_ATOMIC_OK) {
+        h2_pal_mem_free(config->client->config.allocator, console);
+        return atomic_rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
+                                                   : H2_PAL_ERR_NO_MEMORY;
+    }
     int rc = run_return_console(console);
+    h2_atomic_bool_destroy(&console->stop_requested);
     h2_pal_mem_free(config->client->config.allocator, console);
     return rc;
 }
@@ -279,7 +286,13 @@ int h2_loader_app_client_start_return_console(
     console->read_byte = config->read_byte;
     console->write_user = config->write_user;
     console->write = config->write != NULL ? config->write : stdout_write;
-    atomic_init(&console->stop_requested, false);
+    h2_atomic_result_t atomic_rc =
+        h2_atomic_bool_init(&console->stop_requested, false);
+    if (atomic_rc != H2_ATOMIC_OK) {
+        h2_pal_mem_free(config->client->config.allocator, console);
+        return atomic_rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
+                                                   : H2_PAL_ERR_NO_MEMORY;
+    }
     options.name = config->task_name != NULL
         ? config->task_name : h2_loader_return_task_name;
     options.min_stack_size = config->stack_size > H2_LOADER_APP_CLIENT_MIN_STACK_SIZE
@@ -287,6 +300,7 @@ int h2_loader_app_client_start_return_console(
     int rc = h2_pal_task_start(
         config->task, &options, return_console_task, console, &task);
     if (rc != H2_PAL_OK) {
+        h2_atomic_bool_destroy(&console->stop_requested);
         h2_pal_mem_free(config->client->config.allocator, console);
         return rc;
     }
@@ -301,11 +315,12 @@ static int finish_return_console(h2_loader_app_client_t *client, int stop) {
         client->return_console_task_api == NULL ||
         client->return_console_private == NULL) return H2_PAL_ERR_INVALID_STATE;
     h2_loader_app_client_return_console_t *console = client->return_console_private;
-    if (stop) atomic_store_explicit(
-        &console->stop_requested, true, memory_order_release);
+    if (stop) h2_atomic_bool_store(
+        &console->stop_requested, true, H2_ATOMIC_RELEASE);
     int rc = h2_pal_task_join(
         client->return_console_task_api, client->return_console_task);
     if (rc != H2_PAL_OK) return rc;
+    h2_atomic_bool_destroy(&console->stop_requested);
     h2_pal_mem_free(client->config.allocator, console);
     client->return_console_task_api = NULL;
     client->return_console_task = NULL;

@@ -11,7 +11,7 @@ SOURCE = ROOT / 'boards/jieli_ac791n_devkit/ac791n/src/h2_jieli_ac791n_devkit_ne
 STUB = r'''
 #define _DEFAULT_SOURCE 1
 #include <pthread.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <time.h>
 #include <assert.h>
 #include <errno.h>
@@ -140,11 +140,11 @@ static int fake_sendto(int f,const void *p,size_t n,int flags,const struct socka
 HELPERS = r'''
 static h2_pal_net_addr_t address={.family=H2_PAL_NET_FAMILY_IPV4};
 static int thread_result;
-static atomic_int stopped;
+static h2_atomic_int_t stopped;
 static void *receiver(void *p) {(void)p; uint8_t b; thread_result=tcp_recv(NULL,1,&b,1,100); return NULL;}
 static void *connector(void *p) {(void)p; thread_result=tcp_connect(NULL,1,&address,100); return NULL;}
 static void *sender(void *p) {(void)p; uint8_t b=0; thread_result=tcp_send_timeout(NULL,1,&b,1,100); return NULL;}
-static void *stopper(void *p) {(void)p; h2_jieli_net_stack_stopping(); atomic_store(&stopped,1); return NULL;}
+static void *stopper(void *p) {(void)p; h2_jieli_net_stack_stopping(); h2_atomic_store(&stopped,1); return NULL;}
 static void wait_blocked(void) {
  pthread_mutex_lock(&mu); while(!blocked) pthread_cond_wait(&cv,&mu); pthread_mutex_unlock(&mu);
 }
@@ -240,12 +240,13 @@ def run(main, extra='', source=None):
     source = SOURCE.read_text() if source is None else source
     # Reference every extracted entry so -Werror also checks the whole provider slice.
     refs = '(void)resolver_reap; (void)tcp_send; (void)h2_jieli_atomic_cas_u32; (void)h2_jieli_atomic_store_u32; (void)os_time_dly; (void)udp_open; (void)tcp_open_bound; (void)udp_join_multicast; (void)udp_sendto; (void)udp_recvfrom; (void)close_socket; (void)connector; (void)sender; (void)receiver; (void)stopper; (void)wait_blocked; (void)release_blocked;'
-    main = main.replace('int main(void) {', 'int main(void) {' + refs)
+    main = main.replace('int main(void) {', 'int main(void) {' + refs + ' assert(h2_atomic_int_init(&stopped, 0) == H2_ATOMIC_OK);')
+    main = main.replace(' return 0;\n}', ' h2_atomic_int_destroy(&stopped); return 0;\n}')
     with tempfile.TemporaryDirectory(prefix='h2-net-thread-') as directory:
         unit = Path(directory) / 'test.c'
         binary = Path(directory) / 'test'
         unit.write_text(('#define HAS_STACK_GATE 1\n' if 'static uint32_t stack_gate;' in source else '') + STUB + functions(source) + extra + HELPERS + main)
-        subprocess.run([os.environ.get('CC', 'cc'), *shlex.split(os.environ.get('JIELI_TEST_CFLAGS', '')), '-std=c11', '-Wall', '-Wextra', '-Werror', '-pthread', '-I', str(ROOT / 'libs/pal/include'), str(unit), '-o', str(binary)], check=True, timeout=60)
+        subprocess.run([os.environ.get('CC', 'cc'), *shlex.split(os.environ.get('JIELI_TEST_CFLAGS', '')), '-std=c11', '-Wall', '-Wextra', '-Werror', '-pthread', '-I', str(ROOT / 'libs/pal/include'), '-I', str(ROOT / 'libs/atomic/include'), '-I', str(ROOT / 'libs/atomic/providers/locked'), str(unit), str(ROOT / 'libs/atomic/providers/pthread/src/h2_atomic_pthread.c'), '-o', str(binary)], check=True, timeout=60)
         result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=15)
         assert result.returncode == 0, result.stdout + result.stderr
 

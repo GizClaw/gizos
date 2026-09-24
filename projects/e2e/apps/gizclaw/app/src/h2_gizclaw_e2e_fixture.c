@@ -6,7 +6,7 @@
 #include "h2_gizclaw_e2e_task_names.h"
 
 #include <inttypes.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -664,13 +664,13 @@ typedef struct sync_job {
   int (*fn)(void *ctx);
   void *ctx;
   int result;
-  atomic_bool returned;
+  h2_atomic_bool_t returned;
 } sync_job_t;
 
 static void sync_job_entry(void *user) {
   sync_job_t *job = user;
   job->result = job->fn(job->ctx);
-  atomic_store_explicit(&job->returned, true, memory_order_release);
+  h2_atomic_store_explicit(&job->returned, true, H2_ATOMIC_RELEASE);
 }
 
 /* Bounded join window after the job has returned: the task only has to exit. */
@@ -715,7 +715,8 @@ int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t *fixture,
       return rc;
   }
   sync_job_t job = {.fn = fn, .ctx = ctx, .result = H2_PAL_ERR_INVALID_STATE};
-  atomic_init(&job.returned, false);
+  if (h2_atomic_init(&job.returned, false) != H2_ATOMIC_OK)
+    return H2_PAL_ERR_NO_MEMORY;
   const h2_pal_task_options_t options = {
       .name = h2_gizclaw_e2e_job_task_name,
       .min_stack_size = 32768u,
@@ -724,8 +725,10 @@ int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t *fixture,
   int rc = h2_pal_task_start(fixture->runtime->task, &options, sync_job_entry,
                              &job, &task);
   h2_gizclaw_e2e_evidence("h2_pal_task_start", "sync-job", rc);
-  if (rc != H2_PAL_OK)
+  if (rc != H2_PAL_OK) {
+    h2_atomic_destroy(&job.returned);
     return rc;
+  }
   /* This task is the App: keep dispatching until the job task has returned.
    * A poll error is recorded once but never stops dispatch, because the job
    * may still be waiting for its stream to drain through this task. The
@@ -733,7 +736,7 @@ int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t *fixture,
    * the job's request, so the job returns with a terminal result. */
   int first_error = H2_PAL_OK;
   bool stopped = false;
-  while (!atomic_load_explicit(&job.returned, memory_order_acquire)) {
+  while (!h2_atomic_load_explicit(&job.returned, H2_ATOMIC_ACQUIRE)) {
     size_t dispatched = 0u;
     const int poll_rc = h2_gizclaw_service_poll(service, 8u, &dispatched);
     if (poll_rc != H2_PAL_OK && first_error == H2_PAL_OK) {
@@ -758,8 +761,10 @@ int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t *fixture,
      * call or in deinit) can reclaim it; releasing the fixture is blocked
      * until then. */
     fixture->retained_job_task = task;
+    h2_atomic_destroy(&job.returned);
     return rc;
   }
+  h2_atomic_destroy(&job.returned);
   return first_error != H2_PAL_OK ? first_error : job.result;
 }
 
@@ -1333,5 +1338,6 @@ int h2_gizclaw_e2e_fixture_deinit(h2_gizclaw_e2e_fixture_t *fixture) {
   }
   fixture->http = NULL;
   fixture->webrtc = NULL;
+  h2_atomic_destroy(&fixture->speech_offset);
   return observer_deinit();
 }

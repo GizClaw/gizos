@@ -53,7 +53,7 @@ int main(void) {
             test.write_text(fixture.replace('/* REAL_READ */', code))
             binary = Path(directory) / 'read'
             subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror',
-                            str(test), '-o', str(binary)], check=True)
+                            str(test), '-I', str(ROOT / 'libs/atomic/include'), str(ROOT / 'libs/atomic/providers/c11/src/h2_atomic_c11.c'), '-o', str(binary)], check=True)
             subprocess.run([str(binary)], check=True, timeout=10)
 
     def test_lifetime(self):
@@ -71,7 +71,7 @@ int main(void) {
             subprocess.run(['cc', '-std=c11', '-D_POSIX_C_SOURCE=200809L', '-Wall', '-Wextra', '-Werror', '-pthread',
                 *os.environ.get('JIELI_TEST_CFLAGS', '').split(),
                 '-I', str(ROOT / 'libs/pal/include'), '-I', str(ROOT / 'native_component_src/jieli/wl82/h2_pal_core/include'),
-                str(test), '-o', str(binary)], check=True)
+                str(test), '-I', str(ROOT / 'libs/atomic/include'), str(ROOT / 'libs/atomic/providers/c11/src/h2_atomic_c11.c'), '-o', str(binary)], check=True)
             for case in ['unregister', 'self_unregister']:
                 with self.subTest(case=case):
                     result = subprocess.run([str(binary), case], capture_output=True, text=True, timeout=15)

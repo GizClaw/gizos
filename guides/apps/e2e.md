@@ -26,6 +26,7 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 
 | App | Portable target | Current launcher matrix |
 | --- | --- | --- |
+| Atomic | `//projects/e2e/apps/atomic/app:atomic_e2e` | Desktop、Browser/WASM、DevKit ESP32-S3 双核 internal RAM/PSRAM 对照 |
 | GizClaw | `//projects/e2e/apps/gizclaw/app:gizclaw_e2e` | Desktop H2Peer；Desktop Pion 只比较 Firmware 与 Voice；DevKit ESP32-S3 H2Peer |
 | H106 | `//projects/e2e/apps/h106/app:h106_e2e` | Desktop Tiga/Zero、Tiga V4.2 与 Zero BK 1.0；完整 production Main App、Runtime Test Control 与公开 observation |
 | Libco | `//projects/e2e/apps/libco/app:libco_smoke` | Desktop、Browser、DevKit ESP32-S3、BK7258、TapDoki BK3633 |
@@ -37,6 +38,12 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 | iperf | `//projects/e2e/apps/iperf/app:iperf_e2e` | Desktop host client + PAL server；AMOLED ESP32-S3 + operator LAN PAL server |
 
 未来独立的 `corehttp` 与 `coremqtt` 只有在 case 和 platform matrix 已经定义时才创建。PAL App 只验证 PAL API 的跨目标公共行为，不吸收 backend-local unit、fake 或 protocol tests。Provider 名属于 launcher target；不能为了 H2Peer、Pion 或另一 backend 复制 portable case registry。H106 production App、adapter、UI 与业务 policy 继续属于 `projects/h106`；H106 E2E 的 evidence boundary 和运行合同见 产品 E2E。
+
+## Atomic
+
+`projects/e2e/apps/atomic/app` 保持可移植的 increment 与 compare-exchange 工作量，用 `h2_atomic` 和隔离的直接 C11 比较 backend 记录结果、CAS 重试失败、耗时、内存位置与 worker core。Desktop test 是 `//projects/e2e/targets/cc_test/atomic:atomic_e2e_test`；Browser test 是 `//projects/e2e/targets/pkg_tar/atomic:atomic_wasm_test`。当前 Web PAL 协作式调度的输出标记 `concurrent=SKIP`，不能把顺序执行解释为多核并发通过。
+
+DevKit managed package 位于 `//projects/e2e/targets/h2loader_tar_zlib/atomic/devkit:package`。ESP32-S3 将两个 worker 分别固定在 CPU0/CPU1 并同步启动，内部 RAM 与 PSRAM 各执行三轮；PSRAM 对照将直接 C11 atomic value 放在 PSRAM，而 `h2_atomic` wrapper 在 PSRAM、其 provider 存储在内部 RAM。每轮检查地址所属内存、目标计数和观测 core，直接 C11 的失败继续记录而不阻止 H2Loader App confirmation。安装后必须回读 UID、`active_role=app`、version、partition 和 `stage_valid=0`。DevKit UID `9888e0115c52` 的最终实机运行中，六轮 `h2_atomic` 均达到目标计数，三轮直接 C11 PSRAM 对照均丢失计数；耗时只描述该工作量，不能外推为通用原子操作性能。详见 `projects/e2e/apps/atomic/README.md`。
 
 ## H106
 
@@ -85,7 +92,11 @@ make bazel-test-gizclaw_h2peer_live_test
 make bazel-test-gizclaw_pion_live_test
 ```
 
-DevKit launcher 位于 `projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/devkit`，固定使用 H2Peer、北京入口和 RuntimeProfile `default` 自己的 `deploy-default` RegistrationToken。通用 RPC/Voice 测试从该 profile 返回的 `assistants` catalog 选择真实 Workflow，不假设 H106 的 `chat` alias。它在首次 Wi-Fi `GOT_IP` 后每次 boot 只运行一次 `all`；断线重连不创建第二个 runner。portable App 继续 non-fail-fast 执行全部独立 case，launcher 在完成后每 10 秒重放 bounded summary。Image confirmation 只证明 Runtime、H2Loader command service、Wi-Fi supervisor 和报告基础设施可用，不以业务 case 全部通过为条件。
+DevKit launcher 位于 `projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/devkit`，固定使用 H2Peer、北京入口和 RuntimeProfile `default` 自己的 `deploy-default` RegistrationToken。通用 RPC/Voice 测试从该 profile 返回的 `assistants` catalog 选择真实 Workflow，不假设 H106 的 `chat` alias。它在首次 Wi-Fi `GOT_IP` 后每次 boot 只运行一次 `all`；构建时设置 `--define=H2_GIZCLAW_E2E_VOICE_ONLY=1` 可只运行 `voice`，用于隔离跨 case 的资源状态。断线重连不创建第二个 runner。portable App 继续 non-fail-fast 执行选中的独立 case，launcher 在完成后每 10 秒重放 bounded summary。Image confirmation 只证明 Runtime、H2Loader command service、Wi-Fi supervisor 和报告基础设施可用，不以业务 case 全部通过为条件。
+
+DevKit 的 E2E runner、launcher 和 job task 显式使用 PSRAM stack；runner 入口以实际栈局部地址检查 PSRAM，失败时报告 harness error。`$gizclaw/net` 也使用 PSRAM，DevKit E2E policy 为它保留 64 KiB：在同一块 DevKit（UID `9888e0115c52`）上，原 32 KiB 实际栈曾在 Voice 的 `session_audio_start` 后溢出并重启。64 KiB 复测越过了该溢出点，`all` 的两轮实机测试分别为 8 项中 4 项通过、4 项失败：第一轮 `cleanup_rc=0`、`retained_resources=0`，第二轮出现 `peer_create_data_channel rc=-13`，`cleanup_rc=-4`、`retained_resources=8`。独立的 `voice` 实机测试中，PTT、文本、实时 VAD、service 重连和清理均通过，`selected=1`、`pass=1`、`cleanup_rc=0`、`retained_resources=0`。DevKit 无音频后端，其测试不作为真实麦克风和扬声器验收。测试没有取得 `$gizclaw/net` 的 stack high-water 数据，因此 64 KiB 不能作为其他固件 target 的容量结论。
+
+AMOLED GizClaw E2E 使用板载 ES8311 的真实音频 delegate，并以局部栈地址检查 runner 确实在 PSRAM；该目标的 `$gizclaw/net` 测试 policy 同样为 64 KiB PSRAM。初次实机测试在 voice-replace 的 `peer_create_data_channel` 返回 `-13`，随后清理也失败；定位发现 `libs/app_test` 的 WebRTC 观察包装器每个 peer 固定保留 16 个 channel 句柄直到 peer 关闭，第 17 个句柄被包装器拒绝，底层 H2Peer 并未返回该错误。包装器改为按需分配稳定句柄后，UID `30eda0ae0f86` 上的完整 `voice` 测试通过：PTT、文本、history-play、实时 VAD、voice-replace、重连及清理均通过，真实音频 delegate 报告 `mic_starts=1`、`capture_frames=446`、`capture_first_error=0`、`capture_last_error=0`；最终 `selected=1`、`pass=1`、`cleanup_rc=0`、`retained_resources=0`。这只说明本轮创建的资源已清理；先前失败轮次的远端残留没有可用于安全定点删除的 ID。64 KiB 仅为此 E2E 目标的测试预算，尚无 stack high-water 证据支持推广到产品目标。
 
 真实 RegistrationToken 由 repository-approved test launcher 固定，或由 CI environment 注入。Token、private key、authorization metadata、Firmware URL、原始音频与 unrestricted response body 不得进入日志或 artifact。
 

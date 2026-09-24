@@ -6,7 +6,7 @@
 #include "h2_gizclaw_service.h"
 #include "h2_gizclaw_speech.h"
 
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdint.h>
 
 typedef struct h2_gizclaw_conversation_request
@@ -193,7 +193,7 @@ struct h2_gizclaw_operation {
   void (*finish)(void *user);
   void *user;
   h2_gizclaw_operation_result_t result;
-  atomic_bool terminal;
+  h2_atomic_bool_t terminal;
   h2_gizclaw_operation_state_t state;
   bool cancel_requested;
   bool caller_reference;
@@ -259,20 +259,20 @@ struct h2_gizclaw_service {
    * target slot is empty, so steady-state chunk transport never allocates. */
   h2_gizclaw_stream_ring_t stream_rings[H2_GIZCLAW_STREAM_LANE_COUNT];
   struct h2_gizclaw_audio_play *audio_play; /* Protected by mutex. */
-  _Atomic(h2_gizclaw_conversation_request_t *) media_request;
+  h2_atomic_ptr_t media_request;
   /* Downstream audio of the configured Conversation route; mutex protects
    * publication and downlink_refs counts callers inside it. */
   h2_gizclaw_conversation_downlink_t *conversation_downlink;
   size_t downlink_refs;
-  _Atomic(struct h2_gizclaw_speech_context *) speech_request;
-  _Atomic(h2_gizclaw_track_t *) pcm_track;
+  h2_atomic_ptr_t speech_request;
+  h2_atomic_ptr_t pcm_track;
   /* Protected by mutex. Unset closes admission before waiting for callbacks. */
   size_t pcm_track_refs;
   bool pcm_track_unsetting;
   h2_pal_webrtc_track_vtable_t webrtc_track_vtable;
   h2_pal_webrtc_track_t webrtc_track;
-  atomic_uint media_callback_refs;
-  atomic_int media_holder_tag; /* source line of the last acquirer */
+  h2_atomic_uint_t media_callback_refs;
+  h2_atomic_int_t media_holder_tag; /* source line of the last acquirer */
   h2_gizclaw_client_t *client;
   h2_gizclaw_operation_t *current;
   h2_gizclaw_operation_t *pending;

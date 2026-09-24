@@ -4,7 +4,6 @@
 
 #include <assert.h>
 #include <limits.h>
-#include <stdatomic.h>
 #include <stdlib.h>
 
 typedef struct test_state {
@@ -19,15 +18,15 @@ typedef struct test_state {
 } test_state_t;
 
 typedef struct allocator_state {
-    atomic_size_t calls;
+    size_t calls;
     size_t fail_call;
-    atomic_size_t frees;
-    atomic_size_t live_blocks;
+    size_t frees;
+    size_t live_blocks;
 } allocator_state_t;
 
 static void *test_alloc(void *user, size_t len) {
     allocator_state_t *state = user;
-    const size_t call = atomic_fetch_add(&state->calls, 1u) + 1u;
+    const size_t call = (state->calls++) + 1u;
     void *ptr = call == state->fail_call ? NULL : malloc(len);
     if (ptr != NULL) ++state->live_blocks;
     return ptr;

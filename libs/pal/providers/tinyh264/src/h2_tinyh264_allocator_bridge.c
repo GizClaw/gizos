@@ -5,25 +5,22 @@
 
 #if defined(H2_TINYH264_SCOPE_TASK)
 #include <stdint.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 
 /* Supplied by the target SDK port; no SDK headers enter portable compilation.
  * The task identity remains stable until all of its stack scopes have left. */
 extern const void *H2_TINYH264_SCOPE_TASK(void);
 extern void H2_TINYH264_SCOPE_YIELD(uint32_t delay_ms);
-static atomic_uint g_scope_lock;
+static h2_atomic_flag_t g_scope_lock = {0};
 static h2_tinyh264_allocator_scope_t *g_scopes;
 
 static void scope_lock(void) {
-    unsigned expected = 0u;
-    while (!atomic_compare_exchange_weak_explicit(
-        &g_scope_lock, &expected, 1u, memory_order_acquire, memory_order_relaxed)) {
+    while (h2_atomic_flag_test_and_set(&g_scope_lock, H2_ATOMIC_ACQUIRE)) {
         H2_TINYH264_SCOPE_YIELD(1u);
-        expected = 0u;
     }
 }
 static void scope_unlock(void) {
-    atomic_store_explicit(&g_scope_lock, 0u, memory_order_release);
+    h2_atomic_flag_clear(&g_scope_lock, H2_ATOMIC_RELEASE);
 }
 static const h2_pal_mem_api_t *current_allocator(void) {
     const void *task = H2_TINYH264_SCOPE_TASK();
