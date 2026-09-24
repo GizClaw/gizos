@@ -611,11 +611,13 @@ LiteLink 从 [手动 Release 的 metadata](./bazel.md#lua-源码包进入手动-
 python3 libs/lua/tests/test_source_package.py bazel-bin/libs/lua/gizos-lua-runtime-src.tar.gz libs/lua/tests/test_embedder.c bazel-bin/libs/lua/runtime_sources.content_id
 ```
 
-Bazel test 不递归启动 Bazel。跨两次 build 的手工验证命令和结果见 [Bazel 发布验证](./bazel.md#手动时间戳-release)。
+Bazel test 不递归启动 Bazel。本地发布 slice 的验证命令见 [Lua 源码包进入手动 Release](./bazel.md#lua-源码包进入手动-release)。
 
 ### Flutter 与 cgo
 
-Flutter package 将解包后的源码和 manifest 随包分发，由 native assets build hook 读取 manifest，用 Flutter 选择的每个目标 C toolchain 编译各 translation unit 并链接 native asset；不能依赖 GizOS 的 Bazel archive 或预编译 library。通过 `dart:ffi` 调用现有 Host/Runtime API，native bridge 拥有 PAL objects 和所需的同步 OS 服务；UI 操作通过复制后的消息交给 Dart，再由 Dart 渲染。FFI binding 必须匹配随包 header 的 struct layout 与 callback signatures。
+LiteLink 需要新增原生宿主库和 Dart 桥接。构建环节读取解包后的 manifest，分别用 iOS device/simulator 的 Apple Clang 和 Android 各 ABI 的 NDK Clang 编译每个 translation unit，再与 LiteLink 的原生代码链接；manifest 的公共及分组参数必须逐项传给编译器，目标 SDK、架构、PIC、可见性、deployment target 和系统库由 LiteLink 的目标构建配置提供。不能依赖 GizOS 的 Bazel archive 或预编译 library。
+
+LiteLink 的原生宿主库创建并持有 PAL 对象及其生命周期，负责实现 Runtime 所需的 allocator、任务/同步、时间、文件系统、显示与输入等接口，并把平台能力接到 iOS/Android；发布包自带的 C11 atomic provider 不代替 PAL。Dart 侧通过 `dart:ffi` 调用稳定的 Host/Runtime C API，原生桥接负责线程边界、callback 生命周期和消息复制，UI 操作再交给 Dart 渲染。FFI binding 必须匹配随包 header 的 struct layout 与 callback signatures。LiteLink 当前还没有这套原生构建和桥接，macOS/Linux 的源码包编译测试只验证可移植源码与 manifest，**不证明 iOS/Android 目标已编译或 App 已集成**；移动端验收需由 LiteLink 在真实目标工具链、各 ABI 和 App 启动/调用链上完成。
 
 Go/cgo consumer 同样在自己的构建步骤中读取 manifest，用目标 C compiler 编译包内 sources 与自有 PAL bridge，再把 object/archive 接入 cgo linker。cgo 不会递归编译这些子目录中的 C 文件，也不能忽略不同 source group 的 flags。Go 层通过 C bridge 发起 job、推送输入与完成 capability；PAL `user` 可由 C 分配的 context 或受管理的 opaque handle 表示，不能把生命周期不受控的 Go 指针留给 worker。宿主的 pthread、UI framework 等依赖由上层 bridge 自己声明，不属于 portable runtime manifest。
 
