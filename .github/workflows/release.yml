@@ -152,6 +152,17 @@ jobs:
           . firmware-devenv/export.sh
           make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE=catalog RELEASE_BATCH="${{ steps.batch.outputs.value }}" RELEASE_STAGING_DIR=build/release/catalog
 
+      - name: Build Lua runtime source slice
+        run: make bazel-release BAZEL_BIN="$RUNNER_TEMP/bazel" RELEASE_SLICE=lua-runtime RELEASE_BATCH="${{ steps.batch.outputs.value }}" RELEASE_STAGING_DIR=build/release/lua-runtime
+
+      - name: Upload Lua runtime source slice
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-lua-runtime
+          path: build/release/lua-runtime/
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Save ESP-IDF tool cache seed
         if: steps.esp-idf-cache.outputs.cache-hit != 'true'
         continue-on-error: true
@@ -622,6 +633,12 @@ jobs:
         with:
           name: release-npm-bundle
           path: build/release/input/npm
+
+      - name: Download Lua runtime source
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: release-lua-runtime
+          path: build/release/input/lua
 
       - name: Assemble final slice
         run: make bazel-release RELEASE_SLICE=release-bundle RELEASE_BATCH="${{ needs.catalog.outputs.batch }}" RELEASE_INPUT_DIR=build/release/input RELEASE_STAGING_DIR=build/release/final

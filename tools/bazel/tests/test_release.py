@@ -70,6 +70,13 @@ class ReleaseTest(unittest.TestCase):
             format=1, version=BATCH, package_count=1, packages=[dict(
                 name="@scope/example", version="2.3.4", tarball=tarball.name,
                 sha256=release.sha256(tarball), size=tarball.stat().st_size)])))
+        content_id = "a" * 64
+        lua = root / f"gizos-lua-runtime-src-{content_id}.tar.gz"
+        lua.write_bytes(b"lua source fixture")
+        (root / (lua.name + ".sha256")).write_text(f"{release.sha256(lua)}  {lua.name}\n")
+        (root / "lua-runtime.json").write_text(json.dumps(dict(
+            schema_version=1, batch=BATCH, commit="b" * 40,
+            lua_runtime={**release.file_identity(lua), "content_id": content_id})))
         return list(root.iterdir())
 
     def test_batch_validates_format_calendar_and_zip_range(self):
@@ -238,14 +245,28 @@ class ReleaseTest(unittest.TestCase):
                 with self.assertRaises(release.ReleaseError):
                     release.package_bundle(files, root / "output", BATCH)
 
-    def test_final_bundle_has_four_assets_and_three_checksums(self):
+    def test_final_bundle_has_lua_source_and_release_metadata(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory); inputs = root / "input"; inputs.mkdir()
             output = root / "output"; output.mkdir()
             release.assemble_final(self.final_inputs(inputs), output, BATCH)
-            expected = {ARCHIVE, "scope-example-2.3.4.tgz", "npm-index.json"}
+            lua_name = f"gizos-lua-runtime-src-{'a' * 64}.tar.gz"
+            expected = {ARCHIVE, "scope-example-2.3.4.tgz", "npm-index.json",
+                        lua_name, lua_name + ".sha256", "gizos-release.json"}
             self.assertEqual({p.name for p in output.iterdir()}, expected | {"SHA256SUMS"})
             release.validate_checksums(output / "SHA256SUMS", {p.name: p for p in output.iterdir()}, expected)
+            metadata = json.loads((output / "gizos-release.json").read_text())
+            self.assertEqual(metadata["release_tag"], f"v{BATCH}")
+            self.assertEqual(metadata["packages"]["lua_runtime"]["content_id"], "a" * 64)
+
+    def test_final_bundle_rejects_corrupt_lua_source(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            files = self.final_inputs(root)
+            lua = next(path for path in files if path.name.endswith(".tar.gz"))
+            lua.write_bytes(b"tampered")
+            with self.assertRaisesRegex(release.ReleaseError, "Lua runtime asset integrity mismatch"):
+                release.assemble_final(files, root / "output", BATCH)
 
     def test_final_slice_merges_separate_artifacts_and_multiple_packages(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -267,7 +288,9 @@ class ReleaseTest(unittest.TestCase):
             index_path.write_text(json.dumps(index))
             output = root / "output"
             release.run_slice(root, "unused-bazel", "release-bundle", BATCH, inputs, output)
-            expected = {ARCHIVE, "npm-index.json", "scope-example-2.3.4.tgz", second.name}
+            lua_name = f"gizos-lua-runtime-src-{'a' * 64}.tar.gz"
+            expected = {ARCHIVE, "npm-index.json", "scope-example-2.3.4.tgz", second.name,
+                        lua_name, lua_name + ".sha256", "gizos-release.json"}
             self.assertEqual({p.name for p in output.iterdir()}, expected | {"SHA256SUMS"})
             release.validate_checksums(output / "SHA256SUMS", {p.name: p for p in output.iterdir()}, expected)
             # Duplicated artifact names fail before clearing the valid output.

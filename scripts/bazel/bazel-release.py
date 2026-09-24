@@ -36,6 +36,7 @@ RELEASE_QUERY = (
 )
 SLICES = (
     "catalog",
+    "lua-runtime",
     "npm-packages",
     "esp32s3",
     "esp32p4",
@@ -44,7 +45,7 @@ SLICES = (
     "package",
     "release-bundle",
 )
-PRODUCERS = frozenset({"catalog", "npm-packages"})
+PRODUCERS = frozenset({"catalog", "npm-packages", "lua-runtime"})
 CATALOG_CONFIGS = ("esp32s3", "esp32p4", "bk7258")
 FIRMWARE_SLICES = {
     "esp32s3": ("esp", "esp32s3"),
@@ -87,6 +88,40 @@ def sha256(path: Path) -> str:
         for block in iter(lambda: source.read(1024 * 1024), b""):
             digest.update(block)
     return digest.hexdigest()
+
+
+def file_identity(path: Path) -> dict[str, object]:
+    return {"file": path.name, "sha256": sha256(path), "size": path.stat().st_size}
+
+
+def build_lua_runtime(root: Path, bazel: str, batch: str, output: Path) -> None:
+    labels = ["//libs/lua:runtime_sources", "//libs/lua:runtime_sources_content_id"]
+    command(root, [bazel, "build", *cache_options(), *labels])
+    result = command(root, [bazel, "cquery", "--output=files", "set(%s)" % " ".join(labels)])
+    paths = [root / line for line in result.stdout.splitlines() if line]
+    archives = [path for path in paths if path.name.endswith(".tar.gz")]
+    ids = [path for path in paths if path.name.endswith(".content_id")]
+    if len(archives) != 1 or len(ids) != 1 or any(not path.is_file() for path in paths):
+        raise ReleaseError("Lua package target returned invalid outputs")
+    content_id = ids[0].read_text(encoding="ascii").strip()
+    if not re.fullmatch(r"[0-9a-f]{64}", content_id):
+        raise ReleaseError("invalid Lua content id")
+    asset = output / f"gizos-lua-runtime-src-{content_id}.tar.gz"
+    shutil.copyfile(archives[0], asset)
+    checksum = output / (asset.name + ".sha256")
+    checksum.write_text(f"{sha256(asset)}  {asset.name}\n", encoding="ascii")
+    commit = command(root, ["git", "rev-parse", "HEAD"]).stdout.strip()
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise ReleaseError("invalid Lua source commit")
+    metadata = {
+        "schema_version": 1,
+        "batch": batch,
+        "commit": commit,
+        "lua_runtime": {**file_identity(asset), "content_id": content_id},
+    }
+    (output / "lua-runtime.json").write_text(
+        json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
 
 
 def validate_batch(batch: str) -> None:
@@ -535,7 +570,35 @@ def assemble_final(
         package_names.append(item["name"])
     if package_names != sorted(set(package_names)):
         raise ReleaseError("npm index packages must have unique names sorted by name")
-    expected = required | npm_assets
+    lua_metadata_path = by_name.get("lua-runtime.json")
+    if lua_metadata_path is None:
+        raise ReleaseError("final release input is missing lua-runtime.json")
+    try:
+        lua_metadata = json.loads(lua_metadata_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as error:
+        raise ReleaseError(f"invalid Lua release metadata: {error}") from error
+    if (
+        not isinstance(lua_metadata, dict)
+        or lua_metadata.get("schema_version") != 1
+        or lua_metadata.get("batch") != batch
+        or not isinstance(lua_metadata.get("commit"), str)
+        or re.fullmatch(r"[0-9a-f]{40}", lua_metadata["commit"]) is None
+    ):
+        raise ReleaseError("Lua release identity is invalid")
+    lua = lua_metadata.get("lua_runtime")
+    if not isinstance(lua, dict):
+        raise ReleaseError("invalid Lua runtime identity")
+    content_id = lua.get("content_id")
+    if not isinstance(content_id, str) or re.fullmatch(r"[0-9a-f]{64}", content_id) is None:
+        raise ReleaseError("invalid Lua content id")
+    lua_name = f"gizos-lua-runtime-src-{content_id}.tar.gz"
+    checksum_name = lua_name + ".sha256"
+    if lua.get("file") != lua_name or lua_name not in by_name or checksum_name not in by_name:
+        raise ReleaseError("missing Lua runtime asset or checksum")
+    if lua != {**file_identity(by_name[lua_name]), "content_id": content_id}:
+        raise ReleaseError("Lua runtime asset integrity mismatch")
+    validate_checksums(by_name[checksum_name], by_name, {lua_name})
+    expected = required | npm_assets | {"lua-runtime.json", lua_name, checksum_name}
     if names != expected:
         raise ReleaseError(
             f"final release inputs differ: missing={sorted(expected - names)}, "
@@ -545,7 +608,22 @@ def assemble_final(
         source = by_name[item["tarball"]]
         if source.stat().st_size != item["size"] or sha256(source) != item["sha256"]:
             raise ReleaseError(f"npm release tarball integrity mismatch: {source.name}")
-    copy_unique(files, output)
+    copy_unique([path for path in files if path.name != "lua-runtime.json"], output)
+    release_metadata = {
+        "schema_version": 1,
+        "release_id": batch,
+        "release_tag": f"v{batch}",
+        "release_timestamp": datetime.strptime(batch, "%Y%m%d-%H%M%S").strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "commit": lua_metadata["commit"],
+        "packages": {
+            "lua_runtime": lua,
+            "npm": {"file": "npm-index.json", **file_identity(by_name["npm-index.json"])},
+            "firmware_bundle": file_identity(by_name[archive_name]),
+        },
+    }
+    (output / "gizos-release.json").write_text(
+        json.dumps(release_metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     assets = sorted(path for path in output.iterdir() if path.is_file())
     (output / "SHA256SUMS").write_text(
         "".join(f"{sha256(path)}  {path.name}\n" for path in assets),
@@ -570,6 +648,8 @@ def run_slice(
     prepare_output(output)
     if slice_name == "catalog":
         build_catalog(root, bazel, output)
+    elif slice_name == "lua-runtime":
+        build_lua_runtime(root, bazel, batch, output)
     elif slice_name == "npm-packages":
         build_npm_packages(root, bazel, batch, output)
     elif slice_name in FIRMWARE_SLICES:

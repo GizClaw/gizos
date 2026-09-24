@@ -90,7 +90,7 @@ App image 是由 H2Loader 安装和启动的目标固件。Launcher 初始化 BS
 
 ## Firmware Release
 
-`.github/workflows/release.yml` 只由 `workflow_dispatch` 触发，且必须从仓库默认分支运行，不接收 version 输入。`catalog` 在 checkout 前拒绝非默认分支，checkout 后校验触发提交；所有 GizOS job 都固定 checkout 到该 `github.sha`。从 UTC 时钟生成 `RELEASE_BATCH=YYYYMMDD-HHMMSS` 和 `v<batch>` tag；batch 是发布批次，不是产品版本。DAG 为 `catalog → ESP32-S3/ESP32-P4/BK7258 → firmware-bundle → package → release-bundle → publish`，并行的 `npm-packages` producer 直接汇入最终 `release-bundle`。每一步保留 producer 子目录，拒绝重复 basename、symlink、缺失或额外文件。
+`.github/workflows/release.yml` 只由 `workflow_dispatch` 触发，且必须从仓库默认分支运行，不接收 version 输入。`catalog` 在 checkout 前拒绝非默认分支，checkout 后校验触发提交；所有 GizOS job 都固定 checkout 到该 `github.sha`。从 UTC 时钟生成 `RELEASE_BATCH=YYYYMMDD-HHMMSS` 和 `v<batch>` tag；batch 是发布批次，不是产品版本。DAG 为 `catalog → ESP32-S3/ESP32-P4/BK7258 → firmware-bundle → package → release-bundle → publish`，并行的 `npm-packages` producer 直接汇入最终 `release-bundle`。每一步保留 producer 子目录，拒绝重复 basename、symlink、缺失或额外文件。 Catalog 还构建供 LiteLink 使用的 Lua Runtime 源码包，由 LiteLink 在 Flutter App 原生层实现 PAL。
 
 发布选择为 opt-in：Bazel 查询 `//projects/...` 中带精确 `firmware-release` tag 的 `h2loader_tar_zlib` rule，并要求它是 Loader 目录中的 canonical `:package`，identity 为 `image=loader`、`role=h2loader`。`projects/e2e`、`projects/example`、H2Loader `e2e-app` 以及 alternate package 均为诊断目标，即使误加发布 tag 也会被校验拒绝。现存 `no-release` 仅保留为诊断标记，发布选择不再读取它。
 
@@ -104,13 +104,15 @@ App image 是由 H2Loader 安装和启动的目标固件。Launcher 初始化 BS
 
 每个 BUILD 声明 `firmware_version(name = "version", value = "0.1.0")`，native firmware 的 `version = ":version"` 经 `FirmwareVersionInfo` 传递到 package。Release 不再注入全局 `//tools/bazel:firmware_version`；该 compatibility flag 仍供没有独立版本的诊断 target 使用。每项固件版本必须是 31 字节以内的 ASCII SemVer，catalog、native metadata 和 package manifest 必须一致，允许同一批次包含不同固件版本。
 
-GitHub Release 当前恰好包含五个资产：
+GitHub Release 包含以下资产：
 
 - `firmware-release-v<batch>.zip`
 - `gizclaw-h2loader-<package version>.tgz`
 - `npm-index.json`
-- `SHA256SUMS`：覆盖前述三个文件，不包含自身。
-- `index.json`：记录 repository、release tag、触发提交，以及前述四个文件各自的文件名、字节数和 SHA-256；不自引用。
+- `gizos-lua-runtime-src-<content_id>.tar.gz` 和同名 `.sha256`
+- `gizos-release.json`：记录 batch、tag、提交与包身份。
+- `SHA256SUMS`：覆盖前述全部资产，不包含自身。
+- `index.json`：记录 repository、release tag、触发提交及前述资产（含 `SHA256SUMS`）的文件名、字节数和 SHA-256；不自引用。
 
 ZIP 内只有 `firmware-release-v<batch>/` 前缀下的文件：
 
@@ -131,7 +133,7 @@ make bazel-release RELEASE_SLICE=firmware-bundle RELEASE_BATCH=20260920-120000 R
 make bazel-release RELEASE_SLICE=package RELEASE_BATCH=20260920-120000 RELEASE_INPUT_DIR=build/release/firmware-bundle
 ```
 
-最终组装重新验证 ZIP 内部 identity、checksum coverage 和每项资产的 SHA-256/size，同时验证 npm index identity、全部 tarball 和完整顶层集合，再生成顶层 `SHA256SUMS`。工作流先验证该校验和，再生成 `index.json`。生成的 tag 和 Release 必须均不存在；publish 在触发提交创建 tag 与 draft Release，上传资产，重新下载并逐文件 `cmp`、复核下载的 `SHA256SUMS` 后公开。公开前失败时删除 draft（`gh release delete --cleanup-tag`）并清理残留 tag ref，确认两者均已删除；已公开的 Release 不做破坏性回滚。
+最终组装重新验证 ZIP 内部 identity、checksum coverage 和每项资产的 SHA-256/size，同时验证 npm index、全部 tarball、Lua 源码包及其 sidecar 和完整顶层集合，再生成顶层 `SHA256SUMS`。工作流先验证校验和，再生成 `index.json`。生成的 tag 和 Release 必须均不存在；publish 在触发提交创建 tag 与 draft Release，上传资产，重新下载并逐文件 `cmp`、复核下载的 `SHA256SUMS` 与 `index.json` 后公开。公开前失败时删除 draft（`gh release delete --cleanup-tag`）并清理残留 tag ref，确认两者均已删除；已公开的 Release 不做破坏性回滚。
 
 npm 的资产格式、索引兼容合同与本地组装命令见 [npm Release](./npm_release)。GitHub Packages 的 `h2loader-npm-publish.yml` 保持独立。
 

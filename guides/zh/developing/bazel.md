@@ -310,3 +310,20 @@ Final slice 的 `SHA256SUMS` 覆盖 firmware ZIP、npm tarball 和 `npm-index.js
 ## Lua portable 源码包
 
 `bazel build //libs/lua:runtime_sources` 导出下层 Runtime 的 C/H 源码和机器可读 manifest，供 Flutter native assets、cgo 与 native embedder 使用自己的目标工具链编译。源码 inventory 和编译参数来自 Bazel aspect，不依赖 archive 路径或另一份手写 source list；`//libs/lua:source_package_test` 解包后只用 manifest、普通 C compiler 和自建 PAL harness 验证，runner 不调用 Bazel。分层、schema 与消费流程见 [Lua 嵌入分层与源码包](./lua.md#嵌入分层与源码包)。
+
+## Lua 源码包进入手动 Release
+
+GitHub Actions 的 Release workflow 只能从默认分支通过 `workflow_dispatch` 手动触发；所有 job 固定 checkout 到触发时的 `github.sha`。Catalog job 一次生成 UTC `RELEASE_BATCH=YYYYMMDD-HHMMSS`；发布 tag 为 `v<batch>`。现有固件 ZIP、npm 包和发布安全校验保持不变。Catalog job 增加 host-only `lua-runtime` slice，产出源码 tar、压缩包 SHA-256 sidecar 和 `lua-runtime.json` 中间元数据；最终 `release-bundle` 汇入这些文件、校验身份与完整性，并发布 `gizos-release.json`。
+
+最终资产包括 `gizos-lua-runtime-src-<content_id>.tar.gz`、同名 `.sha256`、`gizos-release.json` 和既有固件/npm 资产。`gizos-release.json` 的 `release_id` 为 batch，`release_tag` 为 `v<batch>`，`release_timestamp` 为 UTC ISO 8601 时间，`commit` 为固定的触发提交；`packages.lua_runtime` 记录 `file`、`content_id`、压缩包 `sha256` 和 `size`。`packages.npm` 指向 `npm-index.json`，`packages.firmware_bundle` 指向已验证的固件 ZIP。最终 `SHA256SUMS` 覆盖上述全部文件；随后 `release_workflow.py` 生成顶层 `index.json`，其中按文件名列出所有资产（含 `SHA256SUMS`，不含 index 自身）的大小与 SHA-256。固件产品版本和 npm 包版本仍分别由各自原有索引定义。
+
+Lua tar 内只有源码、头文件、manifest 与 LICENSE，没有发布批次、commit、预编译库或设备 PAL provider。LiteLink 可以在 Flutter App 的原生构建环节用自己的工具链编译，并提供自己的 PAL 适配。包的内容标识与安全下载流程见 [Lua 内容标识](./lua.md#内容标识与发布下载)。
+
+本地验证：
+
+```sh
+bazel test //libs/lua:all //tools/bazel:release_test //tools/bazel:release_bundle_test
+make bazel-release RELEASE_SLICE=lua-runtime RELEASE_BATCH=20260925-120000 RELEASE_STAGING_DIR=build/release/lua-runtime
+```
+
+真实 GitHub Release 的 tag 创建、上传和下载核验需要在完整的 Release workflow 中验证。

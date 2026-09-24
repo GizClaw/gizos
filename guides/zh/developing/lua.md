@@ -574,14 +574,13 @@ bazel query 'deps(//libs/lua:lua_runtime) union deps(//libs/lua:lua_core)'
 bazel query 'filter("//libs/pal/providers/|//libs/bleikcp|//boards/|//native_component_src/", deps(//libs/lua:lua_runtime))'
 ```
 
-`gizos-lua-runtime-src.tar.gz` 根目录包含 `manifest.json` 和 GizOS `LICENSE`，其余 C/H 文件保持 package-relative 路径；external repository 文件放在 `external/<repository>/` 下。新增的 trie C source/header 也随依赖图自动收录。文件清单、include dirs、defines 和各 translation unit 的编译参数由 Bazel aspect 从已配置的依赖图生成，不手工复制维护。包使用与 GizOS native build 相同的 Lua source selection 和受限标准库；固件专用 stdio/newlib shim 仍由原 embedded build 配置选择，不把 ESP libc 兼容代码加入 native host。它不包含预编译库、Bazel toolchain、PAL provider 或 board code。
+`gizos-lua-runtime-src.tar.gz` 根目录包含 `manifest.json` 和 GizOS `LICENSE`，其余 C/H 文件保持 package-relative 路径；Lua、TLSF 与 yyjson 的 external repository 文件分别放在稳定的 `third_party/lua/`、`third_party/tlsf/`、`third_party/yyjson/` 下，所有 manifest 路径同步重写。文件清单、include dirs、defines 和各 translation unit 的编译参数由 Bazel aspect 从已配置的依赖图生成，不手工复制维护。包使用与 GizOS native build 相同的 Lua source selection 和受限标准库；固件专用 stdio/newlib shim 仍由原 embedded build 配置选择，不把 ESP libc 兼容代码加入 native host。它包含可移植的 C11 atomic provider，不包含预编译库、Bazel toolchain、PAL provider 或 board code。 新增的 trie C 源码和头文件也随依赖图自动收录。
 
 Manifest schema version 1：
 
 | 字段 | 合同 |
 | --- | --- |
 | `schema_version` | 整数 `1`；consumer 拒绝未知版本 |
-| `gizos_commit` | 源码 revision；开发包为 `@GIZOS_COMMIT@`，发布方必须替换为实际打包源码的 commit |
 | `runtime_profile_id` | 固定为 `runtime.lua.gizos` |
 | `sources` | 所有需编译一次的 `.c`，相对解包根目录 |
 | `include_dirs` | 相对解包根目录的 include search paths |
@@ -590,15 +589,35 @@ Manifest schema version 1：
 | `compilation_units` | 分组的 `sources`、附加 `cflags`、附加 `defines`；各 source 恰好属于一个分组 |
 | `per_os` | OS 名到附加 `link_flags` 的映射；`linux`、`darwin`、`android`、`ios` 的数学库为 `-lm` |
 
-Consumer 对每个 source 应用公共参数及所属分组参数，按自身目标工具链追加 architecture、sysroot、PIC、visibility 和 deployment target，再链接所有 object 与该 OS 的 extras。参数必须逐项传给 compiler，不通过 shell 拼接解析。当前包表达 GCC/Clang C11 编译合同；Windows/MSVC 和 WebAssembly 工具链需单独适配，不由该 manifest 声明支持。Profile ID 标识 Lua surface，不替代 commit pin；不同 revision 的源码、header 和 binding 不应混用。
+Consumer 对每个 source 应用公共参数及所属分组参数，按自身目标工具链追加 architecture、sysroot、PIC、visibility 和 deployment target，再链接所有 object 与该 OS 的 extras。参数必须逐项传给 compiler，不通过 shell 拼接解析。当前包表达 GCC/Clang C11 编译合同；Windows/MSVC 和 WebAssembly 工具链需单独适配，不由该 manifest 声明支持。Profile ID 标识 Lua surface，不替代 content id pin；不同内容的源码、header 和 binding 不应混用。Manifest 不包含 commit、发布版本或 timestamp；`schema_version` 只标识 manifest 格式。
 
 独立测试只依赖 Python 3.11.8+（支持 tar extraction filter）、`cc`/Clang 和 pthread。它在临时目录解包，根据 manifest 编译全部 C sources，链接测试自己填写的 OS、240×240 Display、Touch、`ok`/`back` Button vtables。测试验证 async echo、显示 dirty rect 与全部像素、Runtime push edge 到 Lua callback、pending job cancellation、默认/配置容量、exact/prefix 优先级、完整名称传递、重复和 start 后注册拒绝、节点分配失败及重试。Python runner 不调用 Bazel，也不从 checkout 查找 runtime source；`CC` 可指定兼容 compiler。Bazel test 只是把源码包和 harness 作为测试输入交给同一个 runner。
 
 Embedder 执行 App method 时，让主 chunk `return app[method](...)`，等待 job 成功后查询长度、分配宿主 buffer、调用 `h2_lua_job_get_result()` 复制结果，最后 release。Flutter/cgo 都通过同一公开 accessor 读取，不需要私有 native module 转存返回值；复杂值应由 App 显式编码为 JSON 等稳定格式。
 
+### 内容标识与发布下载
+
+Bazel action 为源码包生成 `bazel-bin/libs/lua/runtime_sources.content_id`，内容为完整小写十六进制 SHA-256 加一个 LF。可单独构建 `//libs/lua:runtime_sources_content_id`；构建 `//libs/lua:runtime_sources` 也会生成它。
+
+算法精确定义：枚举包内全部普通文件（包含 `LICENSE` 和 `manifest.json`，不包含目录 entry、tar header、content id sidecar）；路径为相对 archive root 的 POSIX 路径，无 `./` 前缀。按路径的 UTF-8 字节字典序排序，每个文件拼接 `UTF8(path) + 0x00 + ASCII(lowercase_hex(SHA256(file_bytes))) + 0x0a`，再对全部拼接字节计算 SHA-256。路径来自受控 C source graph，不能包含换行、NUL 或绝对路径。哈希输入只包含路径和文件 bytes，故不依赖 mtime、机器、绝对路径、Bazel canonical repository name、commit、timestamp 或 gzip/zlib/rules_pkg 版本；任一文件内容、路径或清单变化都会改变 id。Manifest 自身也是内容，编译参数变化同样改变 id。
+
+本地 archive 名保持 `gizos-lua-runtime-src.tar.gz`，发布 slice 将它复制为 `gizos-lua-runtime-src-<content_id>.tar.gz`，不改写包内任何 bytes，并生成 `.sha256`。这里的 `.sha256` 是压缩 tar 的下载校验值，与未压缩内容的 `content_id` 含义不同；换压缩器可以保持 content id 不变但改变下载 SHA-256/size。
+
+LiteLink 从 [手动 Release 的 metadata](./bazel.md#lua-源码包进入手动-release) 读取 `packages.lua_runtime`，固定 `{url, sha256, size}` 和 `content_id`。URL 使用 `https://github.com/GizClaw/gizos/releases/download/v<release_id>/<file>`，不使用 latest。先检查下载长度和压缩文件 SHA-256，再安全解包并重算 content id；binding 必须匹配包内 headers。Release metadata 的 commit 只用于追溯，不能注入 Lua manifest。LiteLink 在 Flutter App 的原生层提供自己的 PAL 实现。
+
+独立测试可显式传入 sidecar，重算内容标识后继续编译：
+
+```sh
+python3 libs/lua/tests/test_source_package.py bazel-bin/libs/lua/gizos-lua-runtime-src.tar.gz libs/lua/tests/test_embedder.c bazel-bin/libs/lua/runtime_sources.content_id
+```
+
+Bazel test 不递归启动 Bazel。本地发布 slice 的验证命令见 [Lua 源码包进入手动 Release](./bazel.md#lua-源码包进入手动-release)。
+
 ### Flutter 与 cgo
 
-Flutter package 将解包后的源码和 manifest 随包分发，由 native assets build hook 读取 manifest，用 Flutter 选择的每个目标 C toolchain 编译各 translation unit 并链接 native asset；不能依赖 GizOS 的 Bazel archive 或预编译 library。通过 `dart:ffi` 调用现有 Host/Runtime API，native bridge 拥有 PAL objects 和所需的同步 OS 服务；UI 操作通过复制后的消息交给 Dart，再由 Dart 渲染。FFI binding 必须匹配随包 header 的 struct layout 与 callback signatures。
+LiteLink 需要新增原生宿主库和 Dart 桥接。构建环节读取解包后的 manifest，分别用 iOS device/simulator 的 Apple Clang 和 Android 各 ABI 的 NDK Clang 编译每个 translation unit，再与 LiteLink 的原生代码链接；manifest 的公共及分组参数必须逐项传给编译器，目标 SDK、架构、PIC、可见性、deployment target 和系统库由 LiteLink 的目标构建配置提供。不能依赖 GizOS 的 Bazel archive 或预编译 library。
+
+LiteLink 的原生宿主库创建并持有 PAL 对象及其生命周期，负责实现 Runtime 所需的 allocator、任务/同步、时间、文件系统、显示与输入等接口，并把平台能力接到 iOS/Android；发布包自带的 C11 atomic provider 不代替 PAL。Dart 侧通过 `dart:ffi` 调用稳定的 Host/Runtime C API，原生桥接负责线程边界、callback 生命周期和消息复制，UI 操作再交给 Dart 渲染。FFI binding 必须匹配随包 header 的 struct layout 与 callback signatures。LiteLink 当前还没有这套原生构建和桥接，macOS/Linux 的源码包编译测试只验证可移植源码与 manifest，**不证明 iOS/Android 目标已编译或 App 已集成**；移动端验收需由 LiteLink 在真实目标工具链、各 ABI 和 App 启动/调用链上完成。
 
 Go/cgo consumer 同样在自己的构建步骤中读取 manifest，用目标 C compiler 编译包内 sources 与自有 PAL bridge，再把 object/archive 接入 cgo linker。cgo 不会递归编译这些子目录中的 C 文件，也不能忽略不同 source group 的 flags。Go 层通过 C bridge 发起 job、推送输入与完成 capability；PAL `user` 可由 C 分配的 context 或受管理的 opaque handle 表示，不能把生命周期不受控的 Go 指针留给 worker。宿主的 pthread、UI framework 等依赖由上层 bridge 自己声明，不属于 portable runtime manifest。
 

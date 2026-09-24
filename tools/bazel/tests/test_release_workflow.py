@@ -83,6 +83,25 @@ class ReleaseWorkflowTest(unittest.TestCase):
                     release_workflow.prepare(directory, "GizClaw/gizos", "v20260920-120000", COMMIT)
                 self.assertFalse((directory / "index.json").exists())
 
+    def test_gizos_release_metadata_must_match_trigger_identity(self):
+        with tempfile.TemporaryDirectory() as temp:
+            directory = Path(temp)
+            self.make_assets(directory)
+            metadata = directory / "gizos-release.json"
+            metadata.write_text(json.dumps({
+                "release_id": "20260920-120000",
+                "release_tag": "v20260920-120000",
+                "commit": COMMIT,
+            }))
+            names = ("firmware.zip", "gizos-release.json", "package.tgz")
+            (directory / "SHA256SUMS").write_text(
+                "".join(f"{hashlib.sha256((directory / name).read_bytes()).hexdigest()}  {name}\n"
+                        for name in names), encoding="ascii")
+            release_workflow.prepare(directory, "GizClaw/gizos", "v20260920-120000", COMMIT)
+            release_workflow.verify(directory, "GizClaw/gizos", "v20260920-120000", COMMIT)
+            with self.assertRaisesRegex(release_workflow.ReleaseWorkflowError, "trigger identity"):
+                release_workflow.verify(directory, "GizClaw/gizos", "v20260920-120000", "b" * 40)
+
 
 if __name__ == "__main__":
     unittest.main()
