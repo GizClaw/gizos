@@ -13,7 +13,7 @@ make bazel-release RELEASE_SLICE=npm-packages RELEASE_BATCH=20260920-120000 RELE
 bazel test //tools/bazel:npm_release_test //tools/bazel:release_test //tools/bazel:release_bundle_test //projects/h2loader/targets/npm_package/h2loader:release_tarball_test
 ```
 
-`npm-packages` 是不接受 `RELEASE_INPUT_DIR` 的 source producer。`//tools/bazel:npm_release_bundle` 构建当前声明的 package 列表，staging 目录只包含每个 package 的 `.tgz` 和一个 `npm-index.json`，不生成 `SHA256SUMS`。当前 H2Loader package version 为 `0.2.2`，对应文件是 `gizclaw-h2loader-0.2.2.tgz` 与 `npm-index.json`。
+`npm-packages` 是不接受 `RELEASE_INPUT_DIR` 的 source producer。`//tools/bazel:npm_release_bundle` 构建当前声明的 package 列表，staging 目录只包含每个 package 的 `.tgz` 和一个 `npm-index.json`，不生成 `SHA256SUMS`。当前 H2Loader package version 为 `0.3.0`，对应文件是 `gizclaw-h2loader-0.3.0.tgz` 与 `npm-index.json`。
 
 合并已下载的两个 bundle 时，保留各自子目录即可；最终输入扫描拒绝 symlink 和重复 basename：
 
@@ -24,13 +24,13 @@ cp -R build/release/npm-packages build/release/input/npm
 make bazel-release RELEASE_SLICE=release-bundle RELEASE_BATCH=20260920-120000 RELEASE_INPUT_DIR=build/release/input RELEASE_STAGING_DIR=build/release/final
 ```
 
-`release-bundle` 要求 `firmware-release-v<batch>.zip`、`npm-index.json` 与索引声明的全部 npm tarball。它重新校验 ZIP 内固件 identity、checksum coverage、SHA-256/size 和 exact-set，并校验 npm identity 与每个 tarball 的 SHA-256、字节数；多余或缺少任一 asset 都失败。当前恰好四个顶层资产：`firmware-release-v<batch>.zip`、`gizclaw-h2loader-0.2.2.tgz`、`npm-index.json`、重新计算的 `SHA256SUMS`。顶层校验和仅覆盖前三个文件；`firmware-index.json` 与固件自身的 `SHA256SUMS` 位于 ZIP 内。固件 ZIP 的布局和本地 `package` 命令见 [Firmware Release](./index#firmware-release)。
+`release-bundle` 要求 `firmware-release-v<batch>.zip`、`npm-index.json` 与索引声明的全部 npm tarball。它重新校验 ZIP 内固件 identity、checksum coverage、SHA-256/size 和 exact-set，并校验 npm identity 与每个 tarball 的 SHA-256、字节数；多余或缺少任一 asset 都失败。当前恰好四个顶层资产：`firmware-release-v<batch>.zip`、`gizclaw-h2loader-0.3.0.tgz`、`npm-index.json`、重新计算的 `SHA256SUMS`。顶层校验和仅覆盖前三个文件；`firmware-index.json` 与固件自身的 `SHA256SUMS` 位于 ZIP 内。固件 ZIP 的布局和本地 `package` 命令见 [Firmware Release](./index#firmware-release)。
 
 ## Tarball 合同
 
 `npm_release_tarball` 消费 `npm_package` tree artifact 与该 package 的 `package.json`。Bazel 在分析阶段声明一个只含单个 `.tgz` 的 tree artifact；实际 basename 在构建动作中读取 manifest 后确定，不在 `.bzl` 或 release script 中硬编码 package name/version。
 
-命名遵循 npm pack：去掉 scoped name 的开头 `@`，把 scope/name 中的 `/` 改为 `-`，再加 `-<package version>.tgz`。例如 `@gizclaw/h2loader` 的 `0.2.2` 生成 `gizclaw-h2loader-0.2.2.tgz`；unscoped package 保留原名。缺少或非法的 name/version 导致构建失败。
+命名遵循 npm pack：去掉 scoped name 的开头 `@`，把 scope/name 中的 `/` 改为 `-`，再加 `-<package version>.tgz`。例如 `@gizclaw/h2loader` 的 `0.3.0` 生成 `gizclaw-h2loader-0.3.0.tgz`；unscoped package 保留原名。缺少或非法的 name/version 导致构建失败。
 
 解包后只有 `package/` 根目录，文件集合严格等于 manifest 的 `files` 加 `package.json`，可直接 `npm install <tgz>`。这里的 `files` 使用显式相对文件路径，可包含子目录内的文件；不使用 glob、目录简写、忽略规则或 lifecycle script。tree 中多出或缺少文件、tree 内 manifest 与输入 manifest 不一致时，构建失败。README 和 LICENSE 同样由 `files` 显式声明。Bazel sandbox 暴露的文件 symlink 按内容写为普通文件，tar 内不保存 symlink；目录 symlink 与特殊文件被拒绝。
 
@@ -49,8 +49,8 @@ make bazel-release RELEASE_SLICE=release-bundle RELEASE_BATCH=20260920-120000 RE
       "name": "@gizclaw/h2loader",
       "sha256": "0000000000000000000000000000000000000000000000000000000000000000",
       "size": 123,
-      "tarball": "gizclaw-h2loader-0.2.2.tgz",
-      "version": "0.2.2"
+      "tarball": "gizclaw-h2loader-0.3.0.tgz",
+      "version": "0.3.0"
     }
   ],
   "version": "20260920-120000"
