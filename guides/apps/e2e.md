@@ -45,6 +45,8 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 
 DevKit managed package 位于 `//projects/e2e/targets/h2loader_tar_zlib/atomic/devkit:package`。ESP32-S3 将两个 worker 分别固定在 CPU0/CPU1 并同步启动，内部 RAM 与 PSRAM 各执行三轮；PSRAM 对照将直接 C11 atomic value 放在 PSRAM，而 `h2_atomic` wrapper 在 PSRAM、其 provider 存储在内部 RAM。每轮检查地址所属内存、目标计数和观测 core，直接 C11 的失败继续记录而不阻止 H2Loader App confirmation。安装后必须回读 UID、`active_role=app`、version、partition 和 `stage_valid=0`。DevKit UID `9888e0115c52` 的最终实机运行中，六轮 `h2_atomic` 均达到目标计数，三轮直接 C11 PSRAM 对照均丢失计数；耗时只描述该工作量，不能外推为通用原子操作性能。详见 `projects/e2e/apps/atomic/README.md`。
 
+同一 App 另运行 flag 验收：两枚普通 file-static flag 的 backing 必须地址独立且在内部 RAM，动态 flag 的 wrapper 在 PSRAM、provider backing 在内部 RAM。CPU0 上优先级 4/9 的两个 worker 各执行 20,000 次 flag 操作，检查完整操作数、无本对象意外占用、core 和地址位置；`H2_ATOMIC_FLAG_E2E verdict=PASS` 是单独的真机判据。直接 C11 PSRAM 对照的预期失败仍计入 `aggregate_failures`，不能据此把 flag 或 `h2_atomic` 用例判为失败。
+
 ## H106
 
 `projects/e2e/apps/h106/app` 持有跨目标 case registry、bounded terminal ledger、non-fail-fast aggregation、Audio decorator、Main App supervisor 和报告合同。H106 产品组继续拥有 production Main App、产品 policy 与 Desktop/Tiga/Zero artifact entry；各 launcher 只提供 production Runtime/provider assembly、各产品自己的 checked-in RegistrationToken、固定 AP E2E endpoint、目标 memory reader 和 H2Loader lifecycle。

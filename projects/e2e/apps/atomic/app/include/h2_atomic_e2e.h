@@ -35,6 +35,36 @@ typedef struct h2_atomic_e2e_result {
   uintptr_t storage_address;
 } h2_atomic_e2e_result_t;
 
+typedef struct h2_atomic_flag_e2e_result {
+  uintptr_t static_wrapper[2];
+  uintptr_t static_storage[2];
+  uintptr_t dynamic_wrapper;
+  uintptr_t dynamic_storage;
+  unsigned operations[2];
+  unsigned busy_observations[2];
+  int worker_core[2];
+} h2_atomic_flag_e2e_result_t;
+
+/**
+ * @brief Exercise two independent static flags and a dynamic flag.
+ *
+ * The allocator, task and time APIs are borrowed for this call. The dynamic
+ * wrapper uses @p mem; its backing is owned by the linked atomic provider.
+ * Calls are serialized because the two static flags live for the process.
+ * @p out_result is cleared first and may contain partial observations on
+ * error. A task join failure deliberately retains heap worker state so a
+ * still-running task cannot use freed memory.
+ *
+ * @return H2_PAL_OK when both workers finish every operation without an
+ * unexpected claim; otherwise a PAL argument, allocation, task or state error.
+ */
+int h2_atomic_flag_e2e_run(const h2_pal_mem_api_t *mem,
+                           const h2_pal_task_api_t *task,
+                           const h2_pal_time_api_t *time,
+                           unsigned iterations, int (*current_core)(void *),
+                           void *core_user,
+                           h2_atomic_flag_e2e_result_t *out_result);
+
 const h2_atomic_e2e_backend_t *h2_atomic_e2e_h2_backend(void);
 /* Deliberate test-only direct C11 comparison, linked separately. */
 const h2_atomic_e2e_backend_t *h2_atomic_e2e_c11_backend(void);
