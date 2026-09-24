@@ -4,9 +4,9 @@
 #include "h2_peer.h"
 #include "h2_sctp.h"
 
-#include "h2_atomic.h"
+#include "h2_atomic_static.h"
 
-static h2_atomic_flag_t h2_esp_h2peer_lock = {0};
+H2_ATOMIC_DEFINE_STATIC(flag, h2_esp_h2peer_lock, 0u);
 static h2_peer_t *h2_esp_h2peer;
 static h2_sctp_t *h2_esp_h2sctp;
 static int h2_esp_h2peer_initialized;

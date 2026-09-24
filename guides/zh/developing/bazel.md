@@ -299,15 +299,23 @@ make bazel-test BAZEL_CONFIG=linux_x86_64
 
 Review 必须覆盖所有修改到的 platform config、native runner、workflow、cache contract 和 public Make command；证据必须对应最终 head。
 
+## 手动 Release 快照
+
+`.github/workflows/release.yml` 只接受从仓库默认分支触发的 `workflow_dispatch`。`catalog` 在 checkout 前用 workflow 内联检查拒绝非默认分支，checkout 后验证 `github.sha`；所有 GizOS checkout 都固定到该提交，避免同一批次的多个 job 读取移动中的分支头。非默认分支请求在执行仓库代码、创建 tag 或 Release 之前失败。UTC 批次继续使用 `YYYYMMDD-HHMMSS` 和 `v<batch>` tag，固件与 npm 产品版本独立于批次。
+
+Final slice 的 `SHA256SUMS` 覆盖 firmware ZIP、npm tarball 和 `npm-index.json`。发布工作流先用 `sha256sum --check --strict` 验证，再生成顶层 `index.json`：`repository` 为 GitHub 仓库名，`release_tag` 为 `v<batch>`，`commit` 为完整触发提交，`assets` 按文件名排序列出 ZIP、npm tarball、`npm-index.json` 和 `SHA256SUMS` 的 `name`、`size`（字节）及 `sha256`。`index.json` 不包含自身。它是 GitHub Release 资产，不在 firmware ZIP 中。
+
+工作流把全部资产上传到 draft Release，重新下载后逐文件比较，并再次验证下载的 `SHA256SUMS` 与 `index.json`，成功后才公开。公开前失败仍清理 draft 与生成的 tag；已公开的 Release 不做破坏性回滚。`tools/bazel/release_workflow.py` 实现分支/提交门槛与两次资产校验；`bazel test --config=macos_arm64 //tools/bazel:release_workflow_test` 覆盖拒绝路径、所有 checkout 的 SHA 固定、索引生成和损坏/缺失资产。`actionlint .github/workflows/release.yml` 与 `python3 -m unittest tools.bazel.tests.test_release tools.bazel.tests.test_release_bundle` 验证 workflow 语法和本地组装；真实 dispatch、GitHub 上传和 LiteLink 下载须在首次正式发布后单独核对。
+
 ## Lua portable 源码包
 
 `bazel build //libs/lua:runtime_sources` 导出下层 Runtime 的 C/H 源码和机器可读 manifest，供 Flutter native assets、cgo 与 native embedder 使用自己的目标工具链编译。源码 inventory 和编译参数来自 Bazel aspect，不依赖 archive 路径或另一份手写 source list；`//libs/lua:source_package_test` 解包后只用 manifest、普通 C compiler 和自建 PAL harness 验证，runner 不调用 Bazel。分层、schema 与消费流程见 [Lua 嵌入分层与源码包](./lua.md#嵌入分层与源码包)。
 
 ## Lua 源码包进入手动 Release
 
-GitHub Actions 的 Release workflow 由 `workflow_dispatch` 手动触发。Catalog job 一次生成 UTC `RELEASE_BATCH=YYYYMMDD-HHMMSS`；发布 tag 为 `v<batch>`。现有固件 ZIP、npm 包和发布安全校验保持不变。Catalog job 增加 host-only `lua-runtime` slice，产出源码 tar、压缩包 SHA-256 sidecar 和 `lua-runtime.json` 中间元数据；最终 `release-bundle` 汇入这些文件、校验身份与完整性，并发布 `gizos-release.json`。
+GitHub Actions 的 Release workflow 只能从默认分支通过 `workflow_dispatch` 手动触发；所有 job 固定 checkout 到触发时的 `github.sha`。Catalog job 一次生成 UTC `RELEASE_BATCH=YYYYMMDD-HHMMSS`；发布 tag 为 `v<batch>`。现有固件 ZIP、npm 包和发布安全校验保持不变。Catalog job 增加 host-only `lua-runtime` slice，产出源码 tar、压缩包 SHA-256 sidecar 和 `lua-runtime.json` 中间元数据；最终 `release-bundle` 汇入这些文件、校验身份与完整性，并发布 `gizos-release.json`。
 
-最终资产包括 `gizos-lua-runtime-src-<content_id>.tar.gz`、同名 `.sha256`、`gizos-release.json` 和既有固件/npm 资产。`gizos-release.json` 的 `release_id` 为 batch，`release_tag` 为 `v<batch>`，`release_timestamp` 为 UTC ISO 8601 时间，`commit` 为所选源码提交；`packages.lua_runtime` 记录 `file`、`content_id`、压缩包 `sha256` 和 `size`。`packages.npm` 指向 `npm-index.json`，`packages.firmware_bundle` 指向已验证的固件 ZIP。最终 `SHA256SUMS` 覆盖全部发布文件。固件产品版本和 npm 包版本仍分别由各自原有索引定义。
+最终资产包括 `gizos-lua-runtime-src-<content_id>.tar.gz`、同名 `.sha256`、`gizos-release.json` 和既有固件/npm 资产。`gizos-release.json` 的 `release_id` 为 batch，`release_tag` 为 `v<batch>`，`release_timestamp` 为 UTC ISO 8601 时间，`commit` 为固定的触发提交；`packages.lua_runtime` 记录 `file`、`content_id`、压缩包 `sha256` 和 `size`。`packages.npm` 指向 `npm-index.json`，`packages.firmware_bundle` 指向已验证的固件 ZIP。最终 `SHA256SUMS` 覆盖上述全部文件；随后 `release_workflow.py` 生成顶层 `index.json`，其中按文件名列出所有资产（含 `SHA256SUMS`，不含 index 自身）的大小与 SHA-256。固件产品版本和 npm 包版本仍分别由各自原有索引定义。
 
 Lua tar 内只有源码、头文件、manifest 与 LICENSE，没有发布批次、commit、预编译库或设备 PAL provider。LiteLink 可以在 Flutter App 的原生构建环节用自己的工具链编译，并提供自己的 PAL 适配。包的内容标识与安全下载流程见 [Lua 内容标识](./lua.md#内容标识与发布下载)。
 

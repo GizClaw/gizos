@@ -5,6 +5,21 @@ an explicit C11 comparison backend. Each worker performs `fetch_add` and
 compare-exchange increments. The test checks both final counters and prints
 elapsed microseconds. The C11 backend exists only in this test app.
 
+The same app also exercises two independent file-static `h2_atomic` flags and
+one dynamically initialized flag whose wrapper is allocated with the supplied
+allocator. On DevKit the wrapper uses PSRAM while its provider storage and
+both ordinary file-static backings must be in internal RAM. Two workers pinned
+to CPU0 run at priorities 4 and 9, exercising preemption and bounded joins.
+`H2_ATOMIC_FLAG_E2E` reports addresses, operations, observed cores and a
+canonical verdict. A failed flag verdict contributes to `aggregate_failures`.
+
+On 2026-09-25, DevKit UID `9888e0115c52` reported `verdict=PASS`: the two
+static backings were independent internal addresses, the dynamic wrapper was
+in PSRAM with internal provider storage, and both CPU0 workers completed
+20,000 operations with zero unexpected busy observations. All six `h2_atomic`
+counter cases passed. `H2_ATOMIC_E2E_READY aggregate_failures=3` reflected
+only the three intentionally failing direct-C11 PSRAM comparisons.
+
 Run on Desktop:
 
 ```sh

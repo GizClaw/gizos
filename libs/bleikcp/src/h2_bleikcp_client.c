@@ -105,6 +105,7 @@ int h2_bleikcp_client_open(
     h2_bleikcp_t **out_stream) {
     if (out_stream == NULL) return H2_PAL_ERR_INVALID_ARG;
     *out_stream = NULL;
+    if (!h2_bleikcp_global_ready()) return H2_PAL_ERR_INVALID_STATE;
     if (api == NULL || api->ble == NULL ||
         conn_handle == H2_PAL_BLE_INVALID_CONN_HANDLE) {
         return H2_PAL_ERR_UNSUPPORTED;

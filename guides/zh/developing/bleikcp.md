@@ -2,7 +2,7 @@
 
 `libs/bleikcp` 在调用方已经建立的 BLE connection 上提供可靠、有序的 byte stream。它使用 iKCP 处理重传、顺序和流量窗口，但不负责发现设备、选择 peer、建立连接或制定重连策略。
 
-KCP 的控制块、MTU buffer、segment 和 ACK list 也使用 `h2_bleikcp_api_t.allocator`；库只安装一次 ikcp bridge，以调用线程的实例上下文选分配器并逐块记录归属，支持不同 arena 的并发连接及跨线程释放。Bridge 不改 vendored ikcp，其他未指定分配上下文的 KCP 调用仍使用 libc。
+KCP 的控制块、MTU buffer、segment 和 ACK list 也使用 `h2_bleikcp_api_t.allocator`。ikcp allocator hooks 与块归属 registry 确实是进程级资源，因此最终 binary 的串行启动路径调用 `h2_bleikcp_global_init()` 安装 hooks，之后才并发打开 client/server；未安装时 open 返回 `INVALID_STATE`。Registry 的业务 flag 由 `H2_ATOMIC_DEFINE_STATIC` 定义自己的文件级 static backing，不因该 hooks 生命周期额外分配。Bridge 以调用线程的实例上下文选分配器并逐块记录归属，支持不同 arena 的并发连接及跨线程释放。多个 owner 可在串行启动/销毁路径各持一份引用，最后一份 `h2_bleikcp_global_shutdown()` 在全部 stream 和 callback 停止、registry 无 live block 后恢复 libc hooks；仍有 live block 返回 `BUSY` 并保留 hooks 供重试。生命周期调用本身不得与 stream 操作并发。Bridge 不改 vendored ikcp，其他未指定分配上下文的 KCP 调用仍使用 libc。
 
 ## API Reference
 

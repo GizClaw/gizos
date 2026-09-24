@@ -265,6 +265,7 @@ int h2_bleikcp_server_open(
     h2_bleikcp_server_t **out_server) {
     if (api == NULL || out_server == NULL || handler == NULL) return H2_PAL_ERR_INVALID_ARG;
     *out_server = NULL;
+    if (!h2_bleikcp_global_ready()) return H2_PAL_ERR_INVALID_STATE;
     if (api->ble == NULL) {
         return H2_PAL_ERR_UNSUPPORTED;
     }

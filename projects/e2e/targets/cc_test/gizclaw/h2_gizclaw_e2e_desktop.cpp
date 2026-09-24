@@ -1,4 +1,5 @@
 #include "h2_gizclaw_e2e_desktop.h"
+#include "h2_gizclaw_e2e_desktop_static.h"
 #include "h2_gizclaw_e2e_desktop_options.h"
 
 #include "h2_corehttp.h"
@@ -31,8 +32,6 @@
 
 namespace {
 
-h2_atomic_bool_t g_stop_requested = {};
-h2_atomic_flag_t g_running = {};
 #ifndef _WIN32
 std::mutex g_signal_read_mutex;
 int g_signal_read_fd = -1;
@@ -62,14 +61,17 @@ bool should_stop(void *) {
     if (g_signal_read_fd >= 0) {
       char byte;
       if (read(g_signal_read_fd, &byte, 1) == 1)
-        h2_atomic_bool_store(&g_stop_requested, true, H2_ATOMIC_RELAXED);
+        h2_atomic_bool_store(h2_gizclaw_e2e_desktop_stop_requested(), true,
+                             H2_ATOMIC_RELAXED);
     }
   }
 #else
   if (InterlockedCompareExchange(&g_signal_seen, 0, 0) != 0)
-    h2_atomic_bool_store(&g_stop_requested, true, H2_ATOMIC_RELAXED);
+    h2_atomic_bool_store(h2_gizclaw_e2e_desktop_stop_requested(), true,
+                         H2_ATOMIC_RELAXED);
 #endif
-  return h2_atomic_bool_load(&g_stop_requested, H2_ATOMIC_RELAXED);
+  return h2_atomic_bool_load(h2_gizclaw_e2e_desktop_stop_requested(),
+                             H2_ATOMIC_RELAXED);
 }
 
 // Own every view the portable runner or a retained Service may borrow. A
@@ -117,8 +119,8 @@ struct RunGuard {
   bool retain = false;
   ~RunGuard() {
     if (!retain) {
-      h2_atomic_bool_destroy(&g_stop_requested);
-      h2_atomic_flag_clear(&g_running, H2_ATOMIC_RELEASE);
+      h2_atomic_flag_clear(h2_gizclaw_e2e_desktop_running_flag(),
+                           H2_ATOMIC_RELEASE);
     }
   }
 };
@@ -234,15 +236,14 @@ int run_desktop(int argc, char **argv) {
                  reason);
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   }
-  if (h2_atomic_flag_test_and_set(&g_running, H2_ATOMIC_ACQUIRE)) {
+  if (h2_atomic_flag_test_and_set(h2_gizclaw_e2e_desktop_running_flag(),
+                                  H2_ATOMIC_ACQUIRE)) {
     std::fprintf(stderr, "H2_GIZCLAW_E2E stage=preflight status=ERROR "
                          "reason=active-or-retained-session\n");
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   }
-  if (h2_atomic_bool_init(&g_stop_requested, false) != H2_ATOMIC_OK) {
-    h2_atomic_flag_clear(&g_running, H2_ATOMIC_RELEASE);
-    return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
-  }
+  h2_atomic_bool_store(h2_gizclaw_e2e_desktop_stop_requested(), false,
+                       H2_ATOMIC_RELAXED);
   RunGuard guard;
   auto session = std::make_unique<DesktopSession>();
   session->endpoint = options.endpoint;

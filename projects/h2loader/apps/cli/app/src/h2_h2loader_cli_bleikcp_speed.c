@@ -5,7 +5,7 @@
 
 #include <errno.h>
 #include <stdbool.h>
-#include "h2_atomic.h"
+#include "h2_atomic_static.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -20,21 +20,23 @@ static const uint8_t speed_rx_uuid[] = {0xe2u, 0xfeu};
 
 typedef struct speed_scan {
     h2_atomic_bool_t owned;
-    h2_atomic_flag_t guard;
     h2_pal_ble_addr_t address;
     int rssi;
     int found;
 } speed_scan_t;
 
-static speed_scan_t speed_scan = {.guard = H2_ATOMIC_FLAG_INIT};
+static speed_scan_t speed_scan;
+H2_ATOMIC_DEFINE_STATIC(flag, speed_scan_guard, 0u);
 static bool speed_scan_initialized;
 
 static void speed_scan_lock(speed_scan_t *scan) {
-    while (h2_atomic_flag_test_and_set(&scan->guard, H2_ATOMIC_ACQUIRE)) {}
+    (void)scan;
+    while (h2_atomic_flag_test_and_set(&speed_scan_guard, H2_ATOMIC_ACQUIRE)) {}
 }
 
 static void speed_scan_unlock(speed_scan_t *scan) {
-    h2_atomic_flag_clear(&scan->guard, H2_ATOMIC_RELEASE);
+    (void)scan;
+    h2_atomic_flag_clear(&speed_scan_guard, H2_ATOMIC_RELEASE);
 }
 
 typedef struct speed_result {

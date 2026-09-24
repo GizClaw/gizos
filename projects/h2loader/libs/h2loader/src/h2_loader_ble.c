@@ -744,6 +744,7 @@ int h2_loader_ble_service_open(
         return H2_PAL_ERR_INVALID_ARG;
     }
     *out_service = NULL;
+    if (!h2_bleikcp_global_ready()) return H2_PAL_ERR_INVALID_STATE;
     service = h2_pal_mem_alloc(config->api.allocator, sizeof(*service));
     if (service == NULL) {
         return H2_PAL_ERR_NO_MEMORY;

@@ -4,6 +4,8 @@
 
 ## 构建
 
+Portable E2E 的并发 run guard 由每对象普通 static backing 提供，launcher 无需额外的模块级 init/shutdown；retained session 仍保持 guard 占用，阻止同一 image 再运行一轮。
+
 ```sh
 bazel build --config=esp32s3 \
   --define=H2_GIZCLAW_E2E_VOICE_ONLY=1 \

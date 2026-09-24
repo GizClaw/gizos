@@ -2,7 +2,7 @@
 #include "h2_bleikcp_task_names.h"
 
 #include <limits.h>
-#include "h2_atomic.h"
+#include "h2_atomic_static.h"
 #include <stdlib.h>
 #include <string.h>
 
@@ -27,9 +27,12 @@ union h2_bleikcp_kcp_block {
 };
 
 static _Thread_local const h2_pal_mem_api_t *s_kcp_allocator;
-static h2_atomic_flag_t s_kcp_lock = {0};
-static bool s_kcp_hooks_installed;
+H2_ATOMIC_DEFINE_STATIC(flag, s_kcp_lock, 0u);
+static bool s_kcp_global_ready;
+static unsigned s_kcp_global_refs;
 static h2_bleikcp_kcp_block_t *s_kcp_blocks;
+
+bool h2_bleikcp_global_ready(void) { return s_kcp_global_ready; }
 
 static void h2_bleikcp_kcp_lock(void) {
     while (h2_atomic_flag_test_and_set(&s_kcp_lock, H2_ATOMIC_ACQUIRE)) {
@@ -72,13 +75,29 @@ static void h2_bleikcp_kcp_free(void *ptr) {
     }
 }
 
-static void h2_bleikcp_kcp_install(void) {
-    h2_bleikcp_kcp_lock();
-    if (!s_kcp_hooks_installed) {
-        ikcp_allocator(h2_bleikcp_kcp_alloc, h2_bleikcp_kcp_free);
-        s_kcp_hooks_installed = true;
+int h2_bleikcp_global_init(void) {
+    if (s_kcp_global_ready) {
+        if (s_kcp_global_refs == UINT_MAX) return H2_PAL_ERR_INVALID_STATE;
+        ++s_kcp_global_refs;
+        return H2_PAL_OK;
     }
-    h2_bleikcp_kcp_unlock();
+    ikcp_allocator(h2_bleikcp_kcp_alloc, h2_bleikcp_kcp_free);
+    s_kcp_global_ready = true;
+    s_kcp_global_refs = 1u;
+    return H2_PAL_OK;
+}
+
+int h2_bleikcp_global_shutdown(void) {
+    if (!s_kcp_global_ready) return H2_PAL_ERR_INVALID_STATE;
+    if (s_kcp_global_refs > 1u) {
+        --s_kcp_global_refs;
+        return H2_PAL_OK;
+    }
+    if (s_kcp_blocks != NULL) return H2_PAL_ERR_BUSY;
+    ikcp_allocator(malloc, free);
+    s_kcp_global_ready = false;
+    s_kcp_global_refs = 0u;
+    return H2_PAL_OK;
 }
 
 static const uint8_t s_service_uuid[] = { 0xe0u, 0xfeu };
@@ -456,6 +475,7 @@ int h2_bleikcp_stream_create(
     uint16_t att_mtu,
     bool borrowed,
     h2_bleikcp_t **out_stream) {
+    if (!s_kcp_global_ready) return H2_PAL_ERR_INVALID_STATE;
     if (api == NULL || config == NULL || out_stream == NULL ||
         conn_handle == H2_PAL_BLE_INVALID_CONN_HANDLE || att_mtu < H2_BLEIKCP_MIN_ATT_MTU) {
         return att_mtu < H2_BLEIKCP_MIN_ATT_MTU ? H2_PAL_ERR_UNSUPPORTED : H2_PAL_ERR_INVALID_ARG;
@@ -502,7 +522,6 @@ int h2_bleikcp_stream_create(
     if (rc != H2_PAL_OK) goto fail;
     rc = h2_bleikcp_alloc_storage(stream);
     if (rc != H2_PAL_OK) goto fail;
-    h2_bleikcp_kcp_install();
     const h2_pal_mem_api_t *previous = s_kcp_allocator;
     s_kcp_allocator = api->allocator;
     stream->kcp = ikcp_create(config->value.conv, stream);

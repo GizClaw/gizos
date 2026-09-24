@@ -1429,7 +1429,7 @@ static int h2_speed_run_client(h2_speed_context_t *context) {
     return H2_PAL_OK;
 }
 
-int h2_bleikcp_speed_run(
+static int h2_speed_run_with_hooks(
     h2_runtime_t *runtime,
     const h2_bleikcp_speed_config_t *config) {
     if (runtime == NULL || runtime->ble_host == NULL || runtime->task == NULL ||
@@ -1572,4 +1572,17 @@ int h2_bleikcp_speed_run(
     }
     h2_speed_log_state(context, "advertising", "advertising", H2_PAL_OK);
     return h2_speed_wait_for_stop(context);
+}
+
+int h2_bleikcp_speed_run(
+    h2_runtime_t *runtime,
+    const h2_bleikcp_speed_config_t *config) {
+    /* This app owns one reference to the process-wide ikcp allocator hooks
+     * across the complete client/server run. Launcher-specific H2Loader BLE
+     * services may hold another reference. */
+    const int init_rc = h2_bleikcp_global_init();
+    if (init_rc != H2_PAL_OK) return init_rc;
+    const int rc = h2_speed_run_with_hooks(runtime, config);
+    const int shutdown_rc = h2_bleikcp_global_shutdown();
+    return rc == H2_PAL_OK ? shutdown_rc : rc;
 }
