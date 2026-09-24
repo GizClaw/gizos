@@ -18,7 +18,7 @@ H2_ATOMIC_DEFINE_STATIC(ptr, s_owner, NULL);
 H2_ATOMIC_DEFINE_STATIC(flag, s_claim, 0u);
 ```
 
-C++ 若需要文件级 static backing，由同 package 的 C 翻译单元使用该宏并导出返回 typed wrapper 指针的 `extern "C"` accessor；C++ 按普通 `h2_atomic_*` API 借用该指针，不转换 `std::atomic` 对象，也不需手写模块 global init。GizClaw Desktop 的 run guard 使用这一桥接方式；C++ 动态实例继续显式 init/destroy。
+C++ 若需要文件级 static backing，在共用头文件用类型通用的 `H2_ATOMIC_DECLARE_STATIC(kind, accessor)` 声明 C ABI typed accessor，在同 package 的 C11 翻译单元用 `H2_ATOMIC_DEFINE_STATIC_ACCESSOR(kind, accessor, initial)` 定义编译/链接期 backing 和 accessor。例如共用头文件写 `H2_ATOMIC_DECLARE_STATIC(flag, desktop_running);`，对应 C 文件写 `H2_ATOMIC_DEFINE_STATIC_ACCESSOR(flag, desktop_running, 0u);`。C++ 通过 `desktop_running()` 取得 typed wrapper 指针，按普通 `h2_atomic_*` API 使用；不转换 `std::atomic` 对象、不分配运行时存储，也不手写模块 global init。宏对同样适用于 int/bool/ptr 等 kind。GizClaw Desktop 的 run guard 和 stop bool 使用这一方式；C++ 动态实例继续显式 init/destroy。
 
 ## API Reference
 

@@ -35,6 +35,17 @@ typedef struct { h2_atomic_ptr_storage_t *storage; } h2_atomic_ptr_t;
 /* A zeroed wrapper has no storage and must be initialized before use. */
 typedef struct { h2_atomic_flag_storage_t *storage; } h2_atomic_flag_t;
 
+/* A C translation unit may define a static value and export a typed accessor
+ * using H2_ATOMIC_DEFINE_STATIC_ACCESSOR from h2_atomic_static.h. C++ callers
+ * use this declaration without assuming C11 and C++ atomic object layouts. */
+#ifdef __cplusplus
+#define H2_ATOMIC_STATIC_LINKAGE extern "C"
+#else
+#define H2_ATOMIC_STATIC_LINKAGE extern
+#endif
+#define H2_ATOMIC_DECLARE_STATIC(kind, accessor) \
+    H2_ATOMIC_STATIC_LINKAGE h2_atomic_##kind##_t *accessor(void)
+
 typedef enum h2_atomic_result {
     H2_ATOMIC_OK = 0,
     H2_ATOMIC_INVALID_ARG,

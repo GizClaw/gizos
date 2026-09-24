@@ -35,4 +35,15 @@ H2_ATOMIC_STORAGE_TYPE(flag, uint32_t);
     }; \
     static h2_atomic_##kind##_t name = { &name##_h2_storage }
 
+/* C++ clients declare this accessor with H2_ATOMIC_DECLARE_STATIC in a shared
+ * header. Its C definition still uses ordinary file-static backing. */
+#define H2_ATOMIC_DEFINE_STATIC_ACCESSOR(kind, accessor, initial) \
+    static h2_atomic_##kind##_storage_t accessor##_h2_storage = { \
+        (initial), false \
+    }; \
+    static h2_atomic_##kind##_t accessor##_h2_object = { \
+        &accessor##_h2_storage \
+    }; \
+    h2_atomic_##kind##_t *accessor(void) { return &accessor##_h2_object; }
+
 #endif
