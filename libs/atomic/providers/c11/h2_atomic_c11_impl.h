@@ -163,6 +163,10 @@ bool h2_atomic_ptr_compare_exchange(h2_atomic_ptr_t *object, void **expected,
                                        H2_ATOMIC_C11_ORDER(success), H2_ATOMIC_C11_FAILURE_ORDER(success, failure));
 }
 
+#if defined(H2_ATOMIC_C11_FLAG_LOCK) != defined(H2_ATOMIC_C11_FLAG_UNLOCK)
+#error "Flag lock and unlock hooks must be provided together"
+#endif
+#ifndef H2_ATOMIC_C11_FLAG_LOCK
 static atomic_flag s_flag_lock = ATOMIC_FLAG_INIT;
 static void h2_atomic_flag_lock(void) {
     while (atomic_flag_test_and_set_explicit(&s_flag_lock, memory_order_acquire)) {}
@@ -170,30 +174,33 @@ static void h2_atomic_flag_lock(void) {
 static void h2_atomic_flag_unlock(void) {
     atomic_flag_clear_explicit(&s_flag_lock, memory_order_release);
 }
+#define H2_ATOMIC_C11_FLAG_LOCK() h2_atomic_flag_lock()
+#define H2_ATOMIC_C11_FLAG_UNLOCK() h2_atomic_flag_unlock()
+#endif
 h2_atomic_result_t h2_atomic_flag_init(h2_atomic_flag_t *object) {
     if (object == NULL) return H2_ATOMIC_INVALID_ARG;
-    h2_atomic_flag_lock();
+    H2_ATOMIC_C11_FLAG_LOCK();
     object->_state = 0u;
-    h2_atomic_flag_unlock();
+    H2_ATOMIC_C11_FLAG_UNLOCK();
     return H2_ATOMIC_OK;
 }
 void h2_atomic_flag_destroy(h2_atomic_flag_t *object) {
     if (object == NULL) return;
-    h2_atomic_flag_lock();
+    H2_ATOMIC_C11_FLAG_LOCK();
     object->_state = 0u;
-    h2_atomic_flag_unlock();
+    H2_ATOMIC_C11_FLAG_UNLOCK();
 }
 bool h2_atomic_flag_test_and_set(h2_atomic_flag_t *object, h2_atomic_order_t order) {
     (void)order;
-    h2_atomic_flag_lock();
+    H2_ATOMIC_C11_FLAG_LOCK();
     bool previous = object->_state != 0u;
     object->_state = 1u;
-    h2_atomic_flag_unlock();
+    H2_ATOMIC_C11_FLAG_UNLOCK();
     return previous;
 }
 void h2_atomic_flag_clear(h2_atomic_flag_t *object, h2_atomic_order_t order) {
     (void)order;
-    h2_atomic_flag_lock();
+    H2_ATOMIC_C11_FLAG_LOCK();
     object->_state = 0u;
-    h2_atomic_flag_unlock();
+    H2_ATOMIC_C11_FLAG_UNLOCK();
 }

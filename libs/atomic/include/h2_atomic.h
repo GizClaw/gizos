@@ -32,8 +32,8 @@ typedef struct { h2_atomic_size_storage_t *storage; } h2_atomic_size_t;
 typedef struct { h2_atomic_ptr_storage_t *storage; } h2_atomic_ptr_t;
 /* Zero initialization is valid for flags, including process-wide static flags.
  * The state byte is inline; flag_init only resets it and allocates nothing.
- * ESP serializes access with a separate static C11 lock in internal RAM, so
- * the flag itself may live in PSRAM without an atomic operation on PSRAM.
+ * Providers serialize access to a flag stored in external memory without
+ * requiring atomic operations on that memory.
  * Unsupported providers trap if a flag operation is attempted. */
 typedef struct { uint8_t _state; } h2_atomic_flag_t;
 #define H2_ATOMIC_FLAG_INIT { 0u }

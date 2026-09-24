@@ -8,7 +8,7 @@ Platform Abstraction Layer（PAL）定义 GizOS 使用的平台抽象能力。PA
 
 ## 独立 Atomic Contract
 
-并发原子值由 `libs/atomic/include/h2_atomic.h` 定义，不属于 PAL API、PAL vtable 或 Memory PAL capability。调用方持有 typed wrapper 并直接调用 `h2_atomic_*` 符号；最终 target 必须链接一个平台实现，缺失实现会在链接时报错。非 flag wrapper 初始化后拥有 provider 存储，停止并发访问后销毁，不得初始化后复制；静态 flag 可以用 `H2_ATOMIC_FLAG_INIT` 零初始化而不分配存储。flag 的 `_state` 字节内嵌在 wrapper 中，即使 wrapper 位于 PSRAM，ESP provider 也只通过内部 RAM 中的静态 C11 锁保护该字节；`h2_atomic_flag_init` 仅重置状态，不为 flag 分配存储，静态零初始化的全局锁无需启动时调用它。Desktop/Browser 的 provider 基于 C11，iOS/Android 使用 pthread，ESP 将非 flag 原子的实际存储放在内部 RAM，即使 wrapper 在 PSRAM。BK/JieLi 的初始化明确返回 `H2_ATOMIC_UNSUPPORTED`，flag 操作会 trap；调用方必须传播错误，不能将失败后的 wrapper 当作零值使用。
+并发原子值由 `libs/atomic/include/h2_atomic.h` 定义，不属于 PAL API、PAL vtable 或 Memory PAL capability。调用方持有 typed wrapper 并直接调用 `h2_atomic_*` 符号；最终 target 必须链接一个平台实现，缺失实现会在链接时报错。非 flag wrapper 初始化后拥有 provider 存储，停止并发访问后销毁，不得初始化后复制；静态 flag 可以用 `H2_ATOMIC_FLAG_INIT` 零初始化而不分配存储。flag 的 `_state` 字节内嵌在 wrapper 中，即使 wrapper 位于 PSRAM，ESP provider 也使用内部 RAM 中的静态 portMUX 短临界区保护该字节；持有临界区的任务不能被同核更高优先级任务抢占，避免全局忙等锁造成优先级反转和看门狗超时。`h2_atomic_flag_init` 仅重置状态，不为 flag 分配存储，静态零初始化的 portMUX 无需启动时调用它。Desktop/Browser 的 provider 基于 C11，iOS/Android 使用 pthread，ESP 将非 flag 原子的实际存储放在内部 RAM，即使 wrapper 在 PSRAM。BK/JieLi 的初始化明确返回 `H2_ATOMIC_UNSUPPORTED`，flag 操作会 trap；调用方必须传播错误，不能将失败后的 wrapper 当作零值使用。
 
 ## API Reference
 
