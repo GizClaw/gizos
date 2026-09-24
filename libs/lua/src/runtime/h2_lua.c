@@ -5,6 +5,10 @@
 #include <stdio.h>
 #include <string.h>
 
+_Static_assert(1u + H2_LUA_CAPABILITY_CAPACITY_MAX * (H2_LUA_NAME_MAX - 1u) <
+                   UINT16_MAX,
+               "capability nodes must fit trie indices");
+
 static int is_terminal(h2_lua_job_state_t state) {
   return state == H2_LUA_JOB_SUCCEEDED || state == H2_LUA_JOB_FAILED ||
          state == H2_LUA_JOB_CANCELLED || state == H2_LUA_JOB_TIMED_OUT ||
@@ -253,6 +257,9 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
     return H2_PAL_ERR_INVALID_ARG;
   }
   normalized = *config;
+  normalized.capability_capacity = normalized.capability_capacity == 0u
+                                       ? 16u
+                                       : normalized.capability_capacity;
   if (normalized.allocator == NULL)
     normalized.allocator = config->runtime->mem;
   normalized.worker_count =
@@ -303,7 +310,8 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
   normalized.execution_timeout_ms = normalized.execution_timeout_ms == 0u
                                         ? 30000u
                                         : normalized.execution_timeout_ms;
-  if (normalized.worker_count > normalized.max_jobs ||
+  if (normalized.capability_capacity > H2_LUA_CAPABILITY_CAPACITY_MAX ||
+      normalized.worker_count > normalized.max_jobs ||
       normalized.ready_queue_capacity < normalized.max_coroutines_per_vm ||
       normalized.waiter_capacity < normalized.max_coroutines_per_vm ||
       normalized.max_jobs > SIZE_MAX / sizeof(h2_lua_job_t) ||
@@ -490,6 +498,18 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
       return storage_result;
     }
   }
+  host->capabilities = h2_pal_mem_alloc(normalized.allocator,
+                                        normalized.capability_capacity *
+                                            sizeof(*host->capabilities));
+  host->capability_routes = h2_pal_mem_alloc(
+      normalized.allocator,
+      normalized.capability_capacity * sizeof(*host->capability_routes));
+  if (host->capabilities == NULL || host->capability_routes == NULL) {
+    h2_lua_host_destroy(host);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  memset(host->capabilities, 0,
+         normalized.capability_capacity * sizeof(*host->capabilities));
   {
     h2_pal_result_t heap_result = h2_lua_heap_init(host);
     if (heap_result != H2_PAL_OK) {
@@ -498,6 +518,15 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
     }
   }
   *out_host = host;
+  return H2_PAL_OK;
+}
+
+/* Trie dispatch only selects the entry; Lua owns request/callback lifecycle. */
+static h2_pal_result_t select_capability(const void *user,
+                                         const h2_trie_match_t *match,
+                                         void *response) {
+  (void)match;
+  *(const h2_lua_capability_entry_t **)response = user;
   return H2_PAL_OK;
 }
 
@@ -510,6 +539,33 @@ h2_pal_result_t h2_lua_host_start(h2_lua_host_t *host) {
   }
   if (h2_atomic_load(&host->stopping) != 0) {
     return H2_PAL_ERR_INVALID_STATE;
+  }
+  size_t node_capacity =
+      1u; /* Root plus an upper bound before prefix sharing. */
+  for (size_t i = 0u; i < host->capability_count; ++i) {
+    h2_lua_capability_entry_t *entry = &host->capabilities[i];
+    node_capacity += strlen(entry->name);
+    host->capability_routes[i] = (h2_trie_route_t){
+        .path = entry->name,
+        .mode = entry->prefix_call != NULL ? H2_TRIE_ROUTE_PREFIX
+                                           : H2_TRIE_ROUTE_EXACT,
+        .handler = select_capability,
+        .user = entry,
+    };
+  }
+  host->capability_nodes =
+      h2_pal_mem_alloc(host->config.allocator,
+                       node_capacity * sizeof(*host->capability_nodes));
+  if (host->capability_nodes == NULL) {
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  h2_pal_result_t build_result = h2_trie_build(
+      &host->capability_trie, host->capability_nodes, node_capacity,
+      host->capability_routes, host->capability_count);
+  if (build_result != H2_PAL_OK) {
+    h2_pal_mem_free(host->config.allocator, host->capability_nodes);
+    host->capability_nodes = NULL;
+    return build_result;
   }
   for (size_t i = 0u; i < host->config.worker_count; ++i) {
     h2_pal_result_t result;
@@ -651,6 +707,9 @@ void h2_lua_host_destroy(h2_lua_host_t *host) {
   }
   h2_pal_mem_free(mem, host->jobs);
   h2_pal_mem_free(mem, host->workers);
+  h2_pal_mem_free(mem, host->capability_nodes);
+  h2_pal_mem_free(mem, host->capability_routes);
+  h2_pal_mem_free(mem, host->capabilities);
   h2_pal_mem_free(mem, host->capability_requests);
   destroy_host_atomics(host);
   h2_pal_mem_free(mem, host);
@@ -685,40 +744,52 @@ h2_pal_result_t h2_lua_register_module(h2_lua_host_t *host, const char *name,
   return H2_PAL_OK;
 }
 
-h2_pal_result_t h2_lua_register_capability(h2_lua_host_t *host,
-                                           const char *name,
-                                           h2_lua_capability_call_fn call,
-                                           h2_lua_capability_cancel_fn cancel,
-                                           void *user) {
+static h2_pal_result_t
+register_capability(h2_lua_host_t *host, const char *name,
+                    h2_lua_capability_call_fn call,
+                    h2_lua_capability_prefix_call_fn prefix_call,
+                    h2_lua_capability_cancel_fn cancel, void *user) {
   h2_lua_capability_entry_t *entry;
-  if (host == NULL || name == NULL || call == NULL || name[0] == '\0' ||
-      strlen(name) >= H2_LUA_NAME_MAX) {
+  if (host == NULL || name == NULL || (call == NULL && prefix_call == NULL) ||
+      name[0] == '\0' || strlen(name) >= H2_LUA_NAME_MAX) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  if (h2_atomic_load(&host->started) != 0) {
+  if (h2_atomic_load(&host->started) != 0 ||
+      h2_atomic_load(&host->stopping) != 0) {
     return H2_PAL_ERR_INVALID_STATE;
   }
   for (size_t i = 0u; i < host->capability_count; ++i) {
-    if (strcmp(host->capabilities[i].name, name) == 0) {
+    if ((host->capabilities[i].prefix_call != NULL) == (prefix_call != NULL) &&
+        strcmp(host->capabilities[i].name, name) == 0) {
       return H2_PAL_ERR_INVALID_STATE;
     }
   }
-  if (host->capability_count ==
-      sizeof(host->capabilities) / sizeof(host->capabilities[0])) {
+  if (host->capability_count == host->config.capability_capacity) {
     return H2_PAL_ERR_FULL;
   }
   entry = &host->capabilities[host->capability_count++];
   (void)strcpy(entry->name, name);
   entry->call = call;
+  entry->prefix_call = prefix_call;
   entry->cancel = cancel;
   entry->user = user;
   return H2_PAL_OK;
 }
 
-const char *h2_lua_capability_name_at(const h2_lua_host_t *host, size_t index) {
-  return host != NULL && index < host->capability_count
-             ? host->capabilities[index].name
-             : NULL;
+h2_pal_result_t h2_lua_register_capability(h2_lua_host_t *host,
+                                           const char *name,
+                                           h2_lua_capability_call_fn call,
+                                           h2_lua_capability_cancel_fn cancel,
+                                           void *user) {
+  return register_capability(host, name, call, NULL, cancel, user);
+}
+
+h2_pal_result_t
+h2_lua_register_capability_prefix(h2_lua_host_t *host, const char *prefix,
+                                  h2_lua_capability_prefix_call_fn call,
+                                  h2_lua_capability_cancel_fn cancel,
+                                  void *user) {
+  return register_capability(host, prefix, NULL, call, cancel, user);
 }
 
 h2_lua_capability_request_t *
