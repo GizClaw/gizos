@@ -7,8 +7,9 @@
 #ifdef NDEBUG
 #undef NDEBUG
 #endif
-#include <assert.h>
 #include "h2_atomic.h"
+#include <assert.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -20,6 +21,7 @@
 typedef struct fixture {
   h2_peer_config_t config;
   h2_pal_mem_api_t mem;
+  h2_pal_log_api_t log;
   h2_pal_task_api_t task;
   h2_peer_t *owner;
   h2_pal_webrtc_peer_t *peer;
@@ -38,9 +40,22 @@ typedef struct fixture {
   h2_atomic_int_t fail_joins;
   h2_atomic_int_t sent_since_poll, async_receive;
   h2_atomic_uint_t post_send_polls, post_send_waits, idle_waits;
+  char no_space_log[224];
+  unsigned no_space_log_count;
 } fixture_t;
 
 static _Thread_local int in_protocol_task;
+
+static int capture_log(void *user, h2_pal_log_level_t level, const char *scope,
+                       const char *message) {
+  fixture_t *f = user;
+  if (level == H2_PAL_LOG_WARN && strcmp(scope, "h2peer") == 0 &&
+      strncmp(message, "no_space ", 9u) == 0) {
+    (void)snprintf(f->no_space_log, sizeof(f->no_space_log), "%s", message);
+    ++f->no_space_log_count;
+  }
+  return H2_PAL_OK;
+}
 
 typedef struct task_entry {
   h2_pal_task_entry_t entry;
@@ -319,13 +334,15 @@ static void initialize(fixture_t *f) {
   assert(h2_atomic_int_init(&f->async_receive, 0) == H2_ATOMIC_OK);
   static const h2_pal_mem_vtable_t memory = {.alloc = allocate,
                                              .free = deallocate};
+  static const h2_pal_log_vtable_t logs = {.write = capture_log};
   static const h2_pal_task_vtable_t tasks = {.start = start_task,
                                              .join = join_task};
   f->mem = (h2_pal_mem_api_t){f, &memory};
+  f->log = (h2_pal_log_api_t){f, &logs};
   f->task = (h2_pal_task_api_t){f, &tasks};
   f->config = (h2_peer_config_t){
       .mem = &f->mem,
-      .log = h2_desktop_platform_log_api(),
+      .log = &f->log,
       .net = h2_pal_unsupported_net_api(),
       .queue = h2_desktop_platform_queue_api(),
       .sync = h2_desktop_platform_sync_api(),
@@ -472,6 +489,10 @@ static void test_pool_and_event_lease(void) {
     assert(open_sid(&f, (uint16_t)(i * 2u + 1u), &channels[i]) == H2_PAL_OK);
   h2_pal_webrtc_channel_t *extra = NULL;
   assert(open_sid(&f, 299u, &extra) == H2_PAL_ERR_NO_SPACE && extra == NULL);
+  assert(f.no_space_log_count == 1u);
+  assert(strstr(f.no_space_log, "reason=ready_slots live=32 ready_used=32 ") !=
+         NULL);
+  assert(strstr(f.no_space_log, "reset_active=0 ") != NULL);
   assert(open_sid(&f, 0u, &extra) == H2_PAL_ERR_INVALID_ARG);
   h2_pal_webrtc_channel_close(f.api, channels[0]);
   h2_pal_webrtc_event_t closed =
@@ -502,6 +523,60 @@ static void test_pool_and_event_lease(void) {
   assert(message.data_len == sizeof(payload) &&
          memcmp(message.data, payload, sizeof(payload)) == 0);
   h2_pal_webrtc_event_release(&message);
+  cleanup(&f);
+}
+
+static void test_auto_sid_pool_diagnostic(void) {
+  fixture_t f;
+  create(&f);
+  connect(&f, 0u);
+  const h2_pal_webrtc_channel_config_t config = {
+      .label = {"service", 7u}, .ordered = 1, .reliable = 1};
+  for (size_t i = 0u; i < H2_PEER_LOCAL_STREAM_COUNT; ++i) {
+    h2_pal_webrtc_channel_t *channel = NULL;
+    assert(h2_pal_webrtc_peer_create_data_channel(f.api, f.peer, &config,
+                                                  &channel) == H2_PAL_OK);
+    assert(channel != NULL);
+    h2_pal_webrtc_channel_close(f.api, channel);
+    drain(&f);
+  }
+  h2_pal_webrtc_channel_t *extra = NULL;
+  assert(h2_pal_webrtc_peer_create_data_channel(f.api, f.peer, &config,
+                                                &extra) == H2_PAL_ERR_NO_SPACE);
+  assert(extra == NULL);
+  assert(f.no_space_log_count == 1u);
+  assert(strstr(f.no_space_log, "reason=sid_pool live=0 ready_used=0 ") !=
+         NULL);
+  assert(strstr(f.no_space_log, "reset_active=150 reset_none=150 ") != NULL);
+  inject_reset(&f, 1u, H2_PAL_SCTP_STREAM_RESET_OUTGOING_COMPLETED);
+  wait_count(&f, &f.submitted, 2u);
+  inject_reset(&f, 3u, H2_PAL_SCTP_STREAM_RESET_INCOMING_RESET);
+  assert(h2_pal_webrtc_peer_create_data_channel(f.api, f.peer, &config,
+                                                &extra) == H2_PAL_ERR_NO_SPACE);
+  assert(f.no_space_log_count == 2u);
+  assert(strstr(f.no_space_log, "reset_active=150 reset_none=148 ") != NULL);
+  assert(strstr(f.no_space_log,
+                "reset_out_only=1 reset_in_only=1 reset_both=0") != NULL);
+  inject_reset(&f, 1u, H2_PAL_SCTP_STREAM_RESET_INCOMING_RESET);
+  assert(h2_pal_webrtc_peer_create_data_channel(f.api, f.peer, &config,
+                                                &extra) == H2_PAL_OK);
+  assert(extra != NULL);
+  cleanup(&f);
+}
+
+static void test_label_length_diagnostic(void) {
+  fixture_t f;
+  create(&f);
+  char label[H2_PEER_CHANNEL_LABEL_MAX + 1u] = {0};
+  const h2_pal_webrtc_channel_config_t config = {
+      .label = {label, sizeof(label)}};
+  h2_pal_webrtc_channel_t *channel = NULL;
+  assert(h2_pal_webrtc_peer_create_data_channel(
+             f.api, f.peer, &config, &channel) == H2_PAL_ERR_NO_SPACE);
+  assert(channel == NULL);
+  assert(f.no_space_log_count == 1u);
+  assert(strstr(f.no_space_log, "reason=label_length live=0 ready_used=0 ") !=
+         NULL);
   cleanup(&f);
 }
 
@@ -1001,6 +1076,8 @@ static void test_remote_reset_during_send(void) {
 int main(void) {
   test_close_preserves_accepted_messages();
   test_pool_and_event_lease();
+  test_auto_sid_pool_diagnostic();
+  test_label_length_diagnostic();
   test_reset_quarantine();
   test_reset_busy_then_failure();
   test_terminal_during_open();

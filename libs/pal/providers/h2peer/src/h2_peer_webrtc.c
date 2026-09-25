@@ -239,6 +239,49 @@ static void h2_peer_network_notify_send_ready(h2_pal_webrtc_peer_t *peer) {
 
 static void h2_peer_channel_ready_set(h2_pal_webrtc_channel_t *channel);
 
+static void h2_peer_log_no_space(h2_pal_webrtc_peer_t *peer,
+                                 const char *reason) {
+  size_t live = 0u;
+  size_t ready_used = 0u;
+  for (h2_pal_webrtc_channel_t *channel = peer->channels; channel != NULL;
+       channel = channel->next) {
+    ++live;
+    if (h2_atomic_load(&channel->ready_slot) < H2_PEER_READY_CHANNEL_COUNT) {
+      ++ready_used;
+    }
+  }
+  size_t reset_active = 0u;
+  size_t reset_none = 0u;
+  size_t reset_out_only = 0u;
+  size_t reset_in_only = 0u;
+  size_t reset_both = 0u;
+  for (size_t slot = 0u; slot < H2_PEER_LOCAL_STREAM_COUNT; ++slot) {
+    const size_t sid = peer->local_stream_first + slot * 2u;
+    const h2_peer_stream_reset_t *reset = &peer->stream_resets[sid];
+    if (!reset->active) {
+      continue;
+    }
+    ++reset_active;
+    if (reset->outgoing_completed && reset->incoming_reset) {
+      ++reset_both;
+    } else if (reset->outgoing_completed) {
+      ++reset_out_only;
+    } else if (reset->incoming_reset) {
+      ++reset_in_only;
+    } else {
+      ++reset_none;
+    }
+  }
+  char message[224];
+  (void)snprintf(message, sizeof(message),
+                 "no_space reason=%s live=%zu ready_used=%zu "
+                 "reset_active=%zu reset_none=%zu reset_out_only=%zu "
+                 "reset_in_only=%zu reset_both=%zu",
+                 reason, live, ready_used, reset_active, reset_none,
+                 reset_out_only, reset_in_only, reset_both);
+  h2_peer_media_log(peer, H2_PAL_LOG_WARN, "h2peer", message);
+}
+
 h2_pal_result_t h2_peer_channel_tx_push(h2_pal_webrtc_channel_t *channel,
                                         const uint8_t *data, size_t len,
                                         int is_text) {
@@ -284,6 +327,7 @@ h2_peer_channel_ready_slot_allocate(h2_pal_webrtc_channel_t *channel) {
       return H2_PAL_OK;
     }
   }
+  h2_peer_log_no_space(peer, "ready_slots");
   return H2_PAL_ERR_NO_SPACE;
 }
 
@@ -1026,6 +1070,7 @@ h2_peer_webrtc_create_data_channel(h2_pal_webrtc_peer_t *peer,
     return H2_PAL_ERR_INVALID_STATE;
   }
   if (config->label.len > H2_PEER_CHANNEL_LABEL_MAX) {
+    h2_peer_log_no_space(peer, "label_length");
     return H2_PAL_ERR_NO_SPACE;
   }
   uint16_t stream_id = config->stream_id;
@@ -1054,6 +1099,7 @@ h2_peer_webrtc_create_data_channel(h2_pal_webrtc_peer_t *peer,
       }
     }
     if (!found) {
+      h2_peer_log_no_space(peer, "sid_pool");
       return H2_PAL_ERR_NO_SPACE;
     }
   }
