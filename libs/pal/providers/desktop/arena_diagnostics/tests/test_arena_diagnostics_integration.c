@@ -1,6 +1,7 @@
 #include "h2_mem_arena_diagnostics.h"
 #include "h2_desktop_platform.h"
 
+#undef NDEBUG
 #include <assert.h>
 #include <pthread.h>
 #include <stdlib.h>

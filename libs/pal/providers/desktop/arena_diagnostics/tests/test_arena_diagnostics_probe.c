@@ -1,5 +1,6 @@
 #include "h2_desktop_arena_diagnostics_probe.h"
 
+#undef NDEBUG
 #include <assert.h>
 #include <string.h>
 
