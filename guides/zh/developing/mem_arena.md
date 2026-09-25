@@ -6,7 +6,7 @@ TLSF 的 build adapter 强制包含 `h2_tlsf.h`，把内部依赖的公共符号
 
 ## API Reference
 
-[API Reference](/references/mem_arena) 由生产 Public Header `libs/mem_arena/include/h2_mem_arena.h` 生成，参数、统计字段和返回值以该头文件为准。
+[API Reference](/references/mem_arena) 由生产 Public Header `libs/mem_arena/include/h2_mem_arena.h` 和可选 census 的 `h2_mem_arena_census.h` 生成，参数、统计字段和返回值以头文件为准。
 
 ## 分配与生命周期
 
@@ -21,6 +21,12 @@ TLSF 的 build adapter 强制包含 `h2_tlsf.h`，把内部依赖的公共符号
 ## 统计和诊断
 
 轻量 stats 区分各池的 reserved、payload live/peak、最大请求和累计 fallback 尝试；fallback live 单独记录，不与池内 payload 混算。Live/peak 归属实际提供块的池；`borrowed_count` 累计本池替另一请求类别成功服务的 alloc/realloc 次数，原地 realloc 也计数，free 不递减，计数饱和于 `UINT64_MAX`。最大请求涵盖本请求类别及本池成功接收的借用；只有两池都未满足请求时才按原请求类别累计 fallback_count/bytes，失败不改变旧块的 live 记账。诊断 inspection 只在显式请求时遍历 TLSF，提供 raw free total、largest free block 与 consumed。Live block 查询要求调用方排除其并发 free/realloc；fallback consumed 是请求字节数加 arena overhead 的下界，无法包含底层系统 allocator 的隐藏开销。
+
+### 可选分配 census
+
+`//libs/mem_arena:census` 是独立可选 target；不链接它的 firmware 不增加 core 的分配路径工作。调用方提供 arena、同一 arena 的 Memory PAL（可经过 board wrapper）、arena 外 metadata allocator、支持优先级继承的 Sync PAL、唯一标签表，以及固定的块/调用点容量和探测上界。`tag_mem(census, tag_index)` 借出每个标签的 Memory PAL；同一 view 负责分配、realloc 和释放。创建时一次性申请元数据和两个 mutex，分配路径不再申请诊断元数据、不格式化或输出日志。表满仍转发业务分配，标签继续准确记账，无法归属的调用点计入 site 0 与累计 overflow；内存不足沿用底层 arena 结果。销毁前停止并 join 全部 borrower，仍有 live block 时拒绝销毁。
+
+`snapshot` 在短分配锁内复制标签、调用点和 overflow/失败计数，在锁外把借用的结构化快照交给调用方；另一个 mutex 串行化快照访问，visitor 不得递归 snapshot。GizOS 不规定标签名、采样周期、top-N 排序、平台日志格式或 `NO_MEMORY` 策略，这些由产品 owner 持有。调用点地址是 best-effort：Xtensa windowed ABI 可附加 outer 返回地址，其他工具链可只有直接 caller；内存占用和标签计数不依赖符号化。
 
 ## 平台集成
 
