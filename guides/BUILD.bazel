@@ -57,6 +57,7 @@ api_reference(
         "//libs/lua",
         "//libs/lvgl",
         "//libs/mem_arena",
+        "//libs/mem_arena:census",
         "//libs/mp4_decoder",
         "//libs/ntp",
         "//libs/pal",
