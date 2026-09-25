@@ -74,6 +74,9 @@ typedef struct h2_mem_arena_census_snapshot {
     size_t site_capacity;
     size_t site_overflow;
     size_t block_overflow;
+    /** Live blocks whose owner could not fit the bounded block table. Their
+     * aggregate remains exact even when another tag view frees/reallocs one. */
+    h2_mem_arena_census_counts_t unattributed_overflow;
     size_t allocation_failures;
     /** Provider-owned tables and handle; excludes opaque Sync PAL mutexes. */
     size_t metadata_bytes;
@@ -104,13 +107,17 @@ const h2_pal_mem_api_t *h2_mem_arena_census_tag_mem(
 /** @brief Copy counters under a short allocation mutex and visit outside it.
  * A separate snapshot mutex serializes visitors. The callback may use a tag
  * allocator but must not recursively request a snapshot or destroy the census.
+ * On block-table overflow, per-tag attribution degrades into
+ * unattributed_overflow; aggregate counts and business allocation semantics
+ * remain intact even when a different tag view frees/reallocs that block.
  * This function does not format output, rank sites or schedule sampling.
  */
 h2_pal_result_t h2_mem_arena_census_snapshot(
     h2_mem_arena_census_t *census, h2_mem_arena_census_visit_fn visit,
     void *user);
 
-/** @brief Refuse live blocks with INVALID_STATE, retaining the census.
+/** @brief Refuse live blocks, including unattributed overflow blocks, with
+ * INVALID_STATE, retaining the census.
  * NULL succeeds. A successful destroy invalidates the borrowed tag views,
  * but never destroys the arena or other borrowed dependencies.
  */

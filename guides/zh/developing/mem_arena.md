@@ -26,7 +26,13 @@ TLSF 的 build adapter 强制包含 `h2_tlsf.h`，把内部依赖的公共符号
 
 `//libs/mem_arena:census` 是独立可选 target；不链接它的 firmware 不增加 core 的分配路径工作。调用方提供 arena、同一 arena 的 Memory PAL（可经过 board wrapper）、arena 外 metadata allocator、支持优先级继承的 Sync PAL、唯一标签表，以及固定的块/调用点容量和探测上界。`tag_mem(census, tag_index)` 借出每个标签的 Memory PAL；同一 view 负责分配、realloc 和释放。创建时一次性申请元数据和两个 mutex，分配路径不再申请诊断元数据、不格式化或输出日志。表满仍转发业务分配，标签继续准确记账，无法归属的调用点计入 site 0 与累计 overflow；内存不足沿用底层 arena 结果。销毁前停止并 join 全部 borrower，仍有 live block 时拒绝销毁。
 
-`snapshot` 在短分配锁内复制标签、调用点和 overflow/失败计数，在锁外把借用的结构化快照交给调用方；另一个 mutex 串行化快照访问，visitor 不得递归 snapshot。GizOS 不规定标签名、采样周期、top-N 排序、平台日志格式或 `NO_MEMORY` 策略，这些由产品 owner 持有。调用点地址是 best-effort：Xtensa windowed ABI 可附加 outer 返回地址，其他工具链可只有直接 caller；内存占用和标签计数不依赖符号化。
+`snapshot` 在短分配锁内复制标签、调用点和 overflow/失败计数，在锁外把借用的结构化快照交给调用方；另一个 mutex 串行化快照访问，visitor 不得递归 snapshot。块表溢出时业务分配仍完成；无法记录 owner 的块计入独立 `unattributed_overflow` 和 site 0，任何 tag view 都可安全 free/realloc，aggregate live 保持准确，但该部分不再宣称 per-tag 精确。GizOS 不规定标签名、采样周期、top-N 排序、平台日志格式或 `NO_MEMORY` 策略，这些由产品 owner 持有。调用点地址是 best-effort：Xtensa windowed ABI 可附加 outer 返回地址，其他工具链可只有直接 caller；内存占用和标签计数不依赖符号化。
+
+### 可选 Desktop 内容诊断
+
+`//libs/mem_arena:desktop_diagnostics` 仅用于 macOS/Linux Host，不进入固件或 Windows graph。调用方提供保留块大小、small pool 阈值/容量、标签名与 stack 标签索引、trace 开关、报告路径及容量预算；公共实现创建 `mem_arena`，通过上述 census 的标签 Memory PAL 转发分配，并可在独立 reporter 线程输出调用点、同时峰值、allocator overhead、未触及尾部估计与内容 hash 重复候选。标签名、phase、命令行汇总和日志前缀仍由产品持有。
+
+所有业务分配无论诊断表是否满都继续走 arena/fallback，free/realloc 可从任意 tag view 安全转发。公共诊断的 block/site/peak/duplicate 表分别受配置容量限制；report queue 满时在 case/report 边界等待 worker，而不是无限积压快照。`OVERFLOW` 记录诊断丢失及 census unattributed live；溢出后的 per-tag 内容/峰值只能视为下界，census aggregate 仍准确。Trace 开启时，非 stack block 以 `0xd3` 初始化，并在释放/采样时估算未触及尾部；这会改变诊断模式的初始化内容与运行开销，不能把尾部模式或 hash 相等当作泄漏/重复对象证明。当前 Host kernel copy 对并发内容修改只给 best-effort 片段，分配锁只防止同一块同时被 free/realloc。所有 borrower 停止并 join 后再销毁实例；arena 或 census 尚有 live allocation 时明确报错并拒绝静默清理。
 
 ## 平台集成
 

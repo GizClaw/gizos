@@ -52,6 +52,7 @@ struct h2_mem_arena_census {
     size_t probe_limit;
     size_t site_overflow;
     size_t block_overflow;
+    h2_mem_arena_census_counts_t unattributed_overflow;
     size_t allocation_failures;
     size_t metadata_bytes;
 };
@@ -145,15 +146,18 @@ static void record(h2_mem_arena_census_t *c, size_t tag, void *ptr,
     size_t site = 0u;
     if (c->tag_config[tag].track_sites && b != NULL)
         site = find_site(c, tag, caller, outer);
-    if (b != NULL)
+    if (b != NULL) {
         *b = (census_block_t){.ptr = ptr, .tag = tag, .site = site};
-    else
+        add_counts(&c->live_tags[tag].counts, info);
+        if (c->tag_config[tag].track_sites)
+            add_counts(&c->live_sites[site].counts, info);
+    } else {
         ++c->block_overflow;
-    add_counts(&c->live_tags[tag].counts, info);
-    /* An overflowed block still contributes to unattributed site zero so a
-     * later free through the same tag view cannot underflow site counters. */
-    if (c->tag_config[tag].track_sites)
-        add_counts(&c->live_sites[site].counts, info);
+        add_counts(&c->unattributed_overflow, info);
+        /* The view that later frees this block need not be its original tag.
+         * Charge site zero unconditionally so both counters remain balanced. */
+        add_counts(&c->live_sites[0].counts, info);
+    }
 }
 
 static void *alloc_at(census_view_t *view, size_t bytes, uintptr_t caller,
@@ -177,19 +181,24 @@ static void census_free(void *user, void *ptr) {
     h2_mem_arena_census_t *c = view->census;
     if (ptr == NULL)
         return;
-    const h2_mem_arena_block_info_t info = block_info(c, ptr);
     census_lock(c, c->lock);
+    const h2_mem_arena_block_info_t info = block_info(c, ptr);
     census_block_t *b = find_block(c, ptr, false);
-    const size_t tag = b != NULL ? b->tag : view->tag;
-    const size_t site = b != NULL ? b->site : 0u;
-    if (b != NULL)
+    if (b != NULL) {
+        const size_t tag = b->tag;
+        const size_t site = b->site;
         b->ptr = NULL;
-    remove_counts(&c->live_tags[tag].counts, &info);
-    if (c->tag_config[tag].track_sites)
-        remove_counts(&c->live_sites[site].counts, &info);
-    census_unlock(c, c->lock);
-    /* Another task may reuse this address as soon as inner frees it. */
+        remove_counts(&c->live_tags[tag].counts, &info);
+        if (c->tag_config[tag].track_sites)
+            remove_counts(&c->live_sites[site].counts, &info);
+    } else {
+        remove_counts(&c->unattributed_overflow, &info);
+        remove_counts(&c->live_sites[0].counts, &info);
+    }
+    /* Keep pointer retirement and the underlying free in one transaction so
+     * a snapshot cannot see an unowned block that is still reusable. */
     h2_pal_mem_free(c->inner, ptr);
+    census_unlock(c, c->lock);
 }
 
 static void *realloc_at(census_view_t *view, void *ptr, size_t bytes,
@@ -201,30 +210,28 @@ static void *realloc_at(census_view_t *view, void *ptr, size_t bytes,
         census_free(view, ptr);
         return NULL;
     }
-    const h2_mem_arena_block_info_t old_info = block_info(c, ptr);
     census_lock(c, c->lock);
+    const h2_mem_arena_block_info_t old_info = block_info(c, ptr);
     census_block_t *b = find_block(c, ptr, false);
     const size_t tag = b != NULL ? b->tag : view->tag;
     const size_t site = b != NULL ? b->site : 0u;
-    /* Reserve this slot while inner realloc can move/free the old address. */
-    if (b != NULL)
-        b->ptr = c;
-    census_unlock(c, c->lock);
     void *next = h2_pal_mem_realloc(c->inner, ptr, bytes);
     h2_mem_arena_block_info_t new_info = {0};
     if (next != NULL)
         new_info = block_info(c, next);
-    census_lock(c, c->lock);
     if (next == NULL) {
-        if (b != NULL)
-            b->ptr = ptr;
         ++c->allocation_failures;
     } else {
         if (b != NULL)
             b->ptr = NULL;
-        remove_counts(&c->live_tags[tag].counts, &old_info);
-        if (c->tag_config[tag].track_sites)
-            remove_counts(&c->live_sites[site].counts, &old_info);
+        if (b != NULL) {
+            remove_counts(&c->live_tags[tag].counts, &old_info);
+            if (c->tag_config[tag].track_sites)
+                remove_counts(&c->live_sites[site].counts, &old_info);
+        } else {
+            remove_counts(&c->unattributed_overflow, &old_info);
+            remove_counts(&c->live_sites[0].counts, &old_info);
+        }
         record(c, tag, next, &new_info, caller, outer);
     }
     census_unlock(c, c->lock);
@@ -393,6 +400,7 @@ h2_pal_result_t h2_mem_arena_census_snapshot(
         .site_capacity = census->site_capacity,
         .site_overflow = census->site_overflow,
         .block_overflow = census->block_overflow,
+        .unattributed_overflow = census->unattributed_overflow,
         .allocation_failures = census->allocation_failures,
         .metadata_bytes = census->metadata_bytes,
     };
@@ -410,11 +418,23 @@ h2_pal_result_t h2_mem_arena_census_destroy(h2_mem_arena_census_t *census) {
     for (size_t i = 0u; i < census->tag_count; ++i)
         if (census->live_tags[i].counts.blocks != 0u)
             return H2_PAL_ERR_INVALID_STATE;
+    if (census->unattributed_overflow.blocks != 0u)
+        return H2_PAL_ERR_INVALID_STATE;
     release_metadata(census);
     return H2_PAL_OK;
 }
 
 #if defined(H2_MEM_ARENA_CENSUS_TESTING)
+bool h2_mem_arena_census_test_is_tracked(h2_mem_arena_census_t *c,
+                                          const void *ptr) {
+    if (c == NULL || ptr == NULL)
+        return false;
+    census_lock(c, c->lock);
+    const bool tracked = find_block(c, ptr, false) != NULL;
+    census_unlock(c, c->lock);
+    return tracked;
+}
+
 void *h2_mem_arena_census_test_alloc(h2_mem_arena_census_t *c, size_t tag,
                                       size_t bytes, uintptr_t caller,
                                       uintptr_t outer) {

@@ -7,6 +7,8 @@
 
 extern void *h2_mem_arena_census_test_alloc(h2_mem_arena_census_t *, size_t,
                                               size_t, uintptr_t, uintptr_t);
+extern bool h2_mem_arena_census_test_is_tracked(h2_mem_arena_census_t *,
+                                                 const void *);
 
 struct h2_pal_mutex { pthread_mutex_t native; };
 
@@ -89,6 +91,7 @@ typedef struct fixture {
     h2_mem_arena_census_config_t config;
     h2_mem_arena_census_counts_t service;
     h2_mem_arena_census_counts_t unattributed;
+    h2_mem_arena_census_counts_t overflow;
     size_t failures, block_overflow, site_overflow, metadata_bytes;
     size_t snapshots;
     bool reenter;
@@ -105,6 +108,7 @@ static void observe(void *user, const h2_mem_arena_census_snapshot_t *s) {
     assert(strcmp(s->tags[1].name, "service") == 0);
     f->service = s->tags[1].counts;
     f->unattributed = s->sites[0].counts;
+    f->overflow = s->unattributed_overflow;
     f->failures = s->allocation_failures;
     f->block_overflow = s->block_overflow;
     f->site_overflow = s->site_overflow;
@@ -214,6 +218,8 @@ static void test_overflow(void) {
     create(&f);
     const h2_pal_mem_api_t *service =
         h2_mem_arena_census_tag_mem(f.census, 1u);
+    const h2_pal_mem_api_t *audio =
+        h2_mem_arena_census_tag_mem(f.census, 2u);
     void *blocks[32];
     for (size_t i = 0u; i < 32u; ++i) {
         blocks[i] = h2_mem_arena_census_test_alloc(f.census, 1u, 64u,
@@ -221,19 +227,40 @@ static void test_overflow(void) {
         assert(blocks[i] != NULL);
     }
     snapshot(&f);
-    assert(f.service.live_bytes == 32u * 64u && f.service.blocks == 32u);
+    assert(f.service.live_bytes + f.overflow.live_bytes == 32u * 64u);
+    assert(f.service.blocks + f.overflow.blocks == 32u);
     assert(f.site_overflow > 0u && f.block_overflow > 0u);
-    assert(f.unattributed.live_bytes > 0u);
+    /* Site zero also includes tracked blocks whose caller site overflowed. */
+    assert(f.unattributed.live_bytes >= f.overflow.live_bytes);
+    assert(f.overflow.blocks > 0u);
+    assert(h2_mem_arena_census_destroy(f.census) == H2_PAL_ERR_INVALID_STATE);
+    size_t overflow_index = 0u;
+    while (overflow_index < 32u &&
+           h2_mem_arena_census_test_is_tracked(f.census, blocks[overflow_index]))
+        ++overflow_index;
+    assert(overflow_index < 32u);
+    memset(blocks[overflow_index], 0x6d, 64u);
+    assert(h2_pal_mem_realloc(audio, blocks[overflow_index], SIZE_MAX) == NULL);
+    snapshot(&f);
+    assert(f.service.live_bytes + f.overflow.live_bytes == 32u * 64u);
+    assert(f.overflow.blocks > 0u);
+    for (size_t j = 0u; j < 64u; ++j)
+        assert(((unsigned char *)blocks[overflow_index])[j] == 0x6d);
     for (size_t i = 0u; i < 32u; ++i) {
         if (i % 2u == 0u) {
-            void *next = h2_pal_mem_realloc(service, blocks[i], 128u);
+            memset(blocks[i], 0xa5, 64u);
+            /* Deliberately use another view, including for overflowed blocks. */
+            void *next = h2_pal_mem_realloc(audio, blocks[i], 128u);
             assert(next != NULL);
+            for (size_t j = 0u; j < 64u; ++j)
+                assert(((unsigned char *)next)[j] == 0xa5);
             blocks[i] = next;
         }
-        h2_pal_mem_free(service, blocks[i]);
+        h2_pal_mem_free(i % 2u == 0u ? service : audio, blocks[i]);
     }
     snapshot(&f);
-    assert(f.service.live_bytes == 0u && f.unattributed.live_bytes == 0u);
+    assert(f.service.live_bytes == 0u && f.overflow.live_bytes == 0u &&
+           f.unattributed.live_bytes == 0u);
     finish(&f);
 }
 
