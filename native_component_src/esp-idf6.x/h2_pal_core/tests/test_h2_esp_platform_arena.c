@@ -31,6 +31,7 @@ static bool locked;
 static unsigned takes;
 static unsigned heap_calls;
 #if defined(ESP_PLATFORM)
+static bool capturing_census;
 static bool fail_registry;
 #define BASE_BLOCKS 3u
 #else
@@ -356,7 +357,7 @@ size_t heap_caps_get_free_size(unsigned caps) { (void)caps; return 4096u; }
 size_t heap_caps_get_largest_free_block(unsigned caps) { (void)caps; return 2048u; }
 
 void esp_backtrace_get_start(uint32_t *pc, uint32_t *sp, uint32_t *next_pc) {
-    assert(locked);
+    assert(locked || capturing_census);
     ++captures;
     assert(pc != sp && pc != next_pc && sp != next_pc);
     *pc = caller_pc;
@@ -512,6 +513,25 @@ static void test_spill_short_backtrace(void) {
     finish(arena);
 }
 
+static void test_census_site_probe(void) {
+    uintptr_t caller = 1u, outer = 1u;
+    assert(h2_esp_platform_arena_capture_site(NULL, NULL, &outer) ==
+           H2_PAL_ERR_INVALID_ARG);
+    caller_pc = 0x40005000u;
+    trace_frames = 6u;
+    capturing_census = true;
+    const h2_pal_result_t rc = h2_esp_platform_arena_capture_site(
+        NULL, &caller, &outer);
+    capturing_census = false;
+#if CONFIG_IDF_TARGET_ARCH_XTENSA
+    assert(rc == H2_PAL_OK);
+    assert(caller == 0x40005010u && outer == 0x40005014u);
+#else
+    assert(rc == H2_PAL_ERR_UNSUPPORTED);
+    assert(caller == 0u && outer == 0u);
+#endif
+}
+
 static void test_spill_capacity(void) {
     h2_esp_platform_arena_t *arena = create(true);
     const h2_pal_mem_api_t *mem = h2_esp_platform_arena_mem(arena);
@@ -652,6 +672,7 @@ int main(void) {
 #if defined(ESP_PLATFORM)
     test_spill_lifecycle();
     test_spill_short_backtrace();
+    test_census_site_probe();
     test_spill_capacity();
     test_spill_isolation_and_throttle();
     test_spill_registry_allocation_failure();

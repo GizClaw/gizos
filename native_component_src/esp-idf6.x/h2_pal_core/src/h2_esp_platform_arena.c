@@ -83,7 +83,8 @@ static void log_spill_failure(h2_esp_platform_arena_t *arena,
 
 /* Runtime frame walking is an Xtensa SDK facility. Other architectures still
  * track sizes and lifetimes, but report zero PCs instead of guessing frames. */
-static void spill_capture(uint32_t pc[H2_ESP_ARENA_SPILL_FRAMES]) {
+static __attribute__((noinline)) void
+spill_capture(uint32_t pc[H2_ESP_ARENA_SPILL_FRAMES]) {
     memset(pc, 0, H2_ESP_ARENA_SPILL_FRAMES * sizeof(pc[0]));
 #if CONFIG_IDF_TARGET_ARCH_XTENSA
     esp_backtrace_frame_t frame = {0};
@@ -95,6 +96,26 @@ static void spill_capture(uint32_t pc[H2_ESP_ARENA_SPILL_FRAMES]) {
         if (frame.next_pc == 0u || !esp_backtrace_get_next_frame(&frame))
             break;
     }
+#endif
+}
+
+__attribute__((noinline)) h2_pal_result_t h2_esp_platform_arena_capture_site(
+    void *user, uintptr_t *out_caller, uintptr_t *out_outer) {
+    (void)user;
+    if (out_caller == NULL || out_outer == NULL)
+        return H2_PAL_ERR_INVALID_ARG;
+    *out_caller = 0u;
+    *out_outer = 0u;
+#if CONFIG_IDF_TARGET_ARCH_XTENSA
+    uint32_t pc[H2_ESP_ARENA_SPILL_FRAMES];
+    spill_capture(pc);
+    /* The walker, provider, census probe and census adapter occupy the first
+     * four frames. Retain the following two for application attribution. */
+    *out_caller = (uintptr_t)pc[4];
+    *out_outer = (uintptr_t)pc[5];
+    return *out_caller != 0u ? H2_PAL_OK : H2_PAL_ERR_UNSUPPORTED;
+#else
+    return H2_PAL_ERR_UNSUPPORTED;
 #endif
 }
 

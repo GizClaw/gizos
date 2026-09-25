@@ -1,0 +1,53 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "probe",
+    srcs = select({
+        "@platforms//os:macos": ["src/h2_darwin_arena_diagnostics_probe.c"],
+        "@platforms//os:linux": ["src/h2_linux_arena_diagnostics_probe.c"],
+        "//conditions:default": [],
+    }),
+    hdrs = ["include/h2_desktop_arena_diagnostics_probe.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = select({
+        "@platforms//os:macos": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/mem_arena:diagnostics"],
+)
+
+cc_test(
+    name = "probe_test",
+    srcs = ["tests/test_arena_diagnostics_probe.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "@platforms//os:macos": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":probe"],
+)
+
+cc_test(
+    name = "diagnostics_integration_test",
+    srcs = ["tests/test_arena_diagnostics_integration.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    linkopts = ["-pthread"],
+    target_compatible_with = select({
+        "@platforms//os:macos": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/mem_arena:diagnostics",
+        "//libs/pal/providers/desktop/pal_core",
+    ],
+)

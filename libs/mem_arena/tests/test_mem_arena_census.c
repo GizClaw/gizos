@@ -15,7 +15,21 @@ struct h2_pal_mutex { pthread_mutex_t native; };
 static size_t metadata_live;
 static size_t allocation_calls, fail_allocation;
 static size_t mutex_calls, fail_mutex;
+static size_t site_capture_calls;
+static bool site_capture_unsupported;
+static bool site_capture_absent;
 static pthread_mutex_t arena_mutex = PTHREAD_MUTEX_INITIALIZER;
+
+static h2_pal_result_t capture_site(void *user, uintptr_t *caller,
+                                    uintptr_t *outer) {
+    assert(user == &site_capture_calls);
+    ++site_capture_calls;
+    if (site_capture_unsupported)
+        return H2_PAL_ERR_UNSUPPORTED;
+    *caller = 0x1234u;
+    *outer = 0x5678u;
+    return H2_PAL_OK;
+}
 
 static void *meta_alloc(void *user, size_t bytes) {
     (void)user;
@@ -143,6 +157,8 @@ static void create(fixture_t *f) {
         .arena = f->arena, .metadata = &k_metadata, .sync = &k_sync,
         .tags = k_tags, .tag_count = 3u, .block_capacity = 8u,
         .site_capacity = 4u, .probe_limit = 2u,
+        .capture_site = site_capture_absent ? NULL : capture_site,
+        .capture_site_user = &site_capture_calls,
     };
     h2_mem_arena_census_t *out = (void *)1;
     h2_mem_arena_census_config_t invalid = f->config;
@@ -211,6 +227,38 @@ static void test_accounting(void) {
     h2_pal_mem_free(service, ptr);
     assert(h2_pal_mem_alloc(service, 0u) == NULL);
     finish(&f);
+}
+
+static void test_optional_site_capture(void) {
+    fixture_t f;
+    site_capture_calls = 0u;
+    site_capture_unsupported = false;
+    create(&f);
+    const h2_pal_mem_api_t *service =
+        h2_mem_arena_census_tag_mem(f.census, 1u);
+    void *first = h2_pal_mem_alloc(service, 64u);
+    assert(first != NULL && site_capture_calls == 1u);
+    site_capture_unsupported = true;
+    void *second = h2_pal_mem_alloc(service, 64u);
+    assert(second != NULL && site_capture_calls == 2u);
+    snapshot(&f);
+    assert(f.service.live_bytes == 128u && f.unattributed.live_bytes == 64u);
+    h2_pal_mem_free(service, second);
+    h2_pal_mem_free(service, first);
+    snapshot(&f);
+    assert(f.service.live_bytes == 0u && f.unattributed.live_bytes == 0u);
+    finish(&f);
+    site_capture_unsupported = false;
+    site_capture_absent = true;
+    create(&f);
+    service = h2_mem_arena_census_tag_mem(f.census, 1u);
+    first = h2_pal_mem_alloc(service, 64u);
+    assert(first != NULL);
+    snapshot(&f);
+    assert(f.service.live_bytes == 64u && f.unattributed.live_bytes == 64u);
+    h2_pal_mem_free(service, first);
+    finish(&f);
+    site_capture_absent = false;
 }
 
 static void test_overflow(void) {
@@ -308,6 +356,7 @@ static void test_concurrent_snapshot(void) {
 
 int main(void) {
     test_accounting();
+    test_optional_site_capture();
     test_overflow();
     test_concurrent_snapshot();
     return 0;

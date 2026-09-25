@@ -3,23 +3,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#if defined(_MSC_VER)
-#include <intrin.h>
-#define H2_CENSUS_NOINLINE __declspec(noinline)
-#define H2_CENSUS_CALLER() ((uintptr_t)_ReturnAddress())
-#else
-#define H2_CENSUS_NOINLINE __attribute__((noinline))
-#define H2_CENSUS_CALLER() ((uintptr_t)__builtin_return_address(0))
-#endif
-
-#if defined(__XTENSA__) && defined(__XTENSA_WINDOWED_ABI__)
-#define H2_CENSUS_OUTER() ((uintptr_t)__builtin_return_address(1))
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wframe-address"
-#else
-#define H2_CENSUS_OUTER() ((uintptr_t)0u)
-#endif
-
 typedef struct census_block {
     void *ptr;
     size_t tag;
@@ -38,6 +21,8 @@ struct h2_mem_arena_census {
     const h2_pal_mem_api_t *metadata;
     const h2_pal_sync_api_t *sync;
     const h2_mem_arena_census_tag_config_t *tag_config;
+    h2_mem_arena_census_capture_site_fn capture_site;
+    void *capture_site_user;
     h2_pal_mutex_t *lock;
     h2_pal_mutex_t *snapshot_lock;
     census_view_t *views;
@@ -87,6 +72,8 @@ static census_block_t *find_block(h2_mem_arena_census_t *c, const void *ptr,
 
 static size_t find_site(h2_mem_arena_census_t *c, size_t tag,
                         uintptr_t caller, uintptr_t outer) {
+    if (caller == 0u && outer == 0u)
+        return 0u;
     const size_t start = hash_address(caller ^ (outer << 1u) ^ (uintptr_t)tag);
     for (size_t i = 0u; i < c->probe_limit; ++i) {
         const size_t index = 1u + (start + i) % (c->site_capacity - 1u);
@@ -238,26 +225,32 @@ static void *realloc_at(census_view_t *view, void *ptr, size_t bytes,
     return next;
 }
 
-static H2_CENSUS_NOINLINE void *census_alloc(void *user, size_t bytes) {
+static void capture_site(h2_mem_arena_census_t *c, size_t tag,
+                         uintptr_t *caller, uintptr_t *outer) {
+    *caller = 0u;
+    *outer = 0u;
+    if (!c->tag_config[tag].track_sites || c->capture_site == NULL)
+        return;
+    if (c->capture_site(c->capture_site_user, caller, outer) != H2_PAL_OK) {
+        *caller = 0u;
+        *outer = 0u;
+    }
+}
+
+static void *census_alloc(void *user, size_t bytes) {
     census_view_t *view = user;
-    const bool sites = view->census->tag_config[view->tag].track_sites;
-    const uintptr_t caller = sites ? H2_CENSUS_CALLER() : 0u;
-    const uintptr_t outer = sites ? H2_CENSUS_OUTER() : 0u;
+    uintptr_t caller = 0u, outer = 0u;
+    capture_site(view->census, view->tag, &caller, &outer);
     return alloc_at(view, bytes, caller, outer);
 }
 
-static H2_CENSUS_NOINLINE void *census_realloc(void *user, void *ptr,
+static void *census_realloc(void *user, void *ptr,
                                                 size_t bytes) {
     census_view_t *view = user;
-    const bool sites = view->census->tag_config[view->tag].track_sites;
-    const uintptr_t caller = sites ? H2_CENSUS_CALLER() : 0u;
-    const uintptr_t outer = sites ? H2_CENSUS_OUTER() : 0u;
+    uintptr_t caller = 0u, outer = 0u;
+    capture_site(view->census, view->tag, &caller, &outer);
     return realloc_at(view, ptr, bytes, caller, outer);
 }
-
-#if defined(__XTENSA__) && defined(__XTENSA_WINDOWED_ABI__)
-#pragma GCC diagnostic pop
-#endif
 
 static const h2_pal_mem_vtable_t k_vtable = {
     .alloc = census_alloc, .realloc = census_realloc, .free = census_free};
@@ -336,6 +329,8 @@ h2_pal_result_t h2_mem_arena_census_create(
     c->metadata = config->metadata;
     c->sync = config->sync;
     c->tag_config = config->tags;
+    c->capture_site = config->capture_site;
+    c->capture_site_user = config->capture_site_user;
     c->tag_count = config->tag_count;
     c->block_capacity = config->block_capacity;
     c->site_capacity = config->site_capacity;

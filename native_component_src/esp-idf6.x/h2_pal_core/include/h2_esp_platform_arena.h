@@ -4,12 +4,19 @@
 #include "h2_mem_arena.h"
 
 #include <stdbool.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
 typedef struct h2_esp_platform_arena h2_esp_platform_arena_t;
+
+/** Optional census callsite probe. Xtensa walks the IDF task stack to the
+ * application allocation frame; other ESP architectures return UNSUPPORTED.
+ * Failure only loses site evidence and never affects an allocation. */
+h2_pal_result_t h2_esp_platform_arena_capture_site(
+    void *user, uintptr_t *out_caller, uintptr_t *out_outer);
 
 typedef struct h2_esp_platform_arena_config {
     size_t reserved_bytes;
