@@ -62,11 +62,30 @@ static h2_pal_result_t bk_task_policy_resolve(const char *name,
   return H2_PAL_ERR_NOT_FOUND;
 }
 
+/* rtos_delete_thread(NULL) only queues the stack and TCB on the kernel's
+ * termination list, which the idle task drains. A finished worker therefore
+ * stays allocated for as long as the product starves idle, which is the whole
+ * failure being fixed, so no worker self-deletes any more: it publishes
+ * completion and parks until join reclaims it. The loop matters because
+ * vTaskSuspend() returns if anything resumes the task. */
 static void bk_task_trampoline(void *raw) {
   h2_pal_task_t *task = (h2_pal_task_t *)raw;
   task->entry(task->ctx);
+  /* Join may free the PAL handle as soon as this signal is consumed. Do not
+   * access task or the entry context after setting the semaphore. */
   (void)rtos_set_semaphore(&task->done);
-  rtos_delete_thread(NULL);
+  for (;;) {
+    rtos_suspend_thread(NULL);
+  }
+}
+
+/* CP runs a single-core FreeRTOS, so a worker that is not the caller cannot be
+ * running and rtos_delete_thread() frees its stack and TCB here rather than
+ * queueing them for idle. Suspending first keeps the worker off the ready list
+ * for the whole sequence. */
+static void bk_task_reclaim(h2_pal_task_t *task) {
+  rtos_suspend_thread(&task->thread);
+  rtos_delete_thread(&task->thread);
 }
 
 static int bk_task_start(void *user, const h2_pal_task_options_t *options,
@@ -151,6 +170,7 @@ static int bk_task_join(void *user, h2_pal_task_t *task) {
   if (ret != kNoErr) {
     return H2_PAL_ERR_TASK;
   }
+  bk_task_reclaim(task);
   rtos_deinit_semaphore(&task->done);
   os_free(task);
   return H2_PAL_OK;
