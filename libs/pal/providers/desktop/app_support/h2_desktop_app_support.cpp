@@ -303,7 +303,8 @@ int open_network_services(bool with_mqtt, bool with_webrtc,
     const h2_sctp_config_t sctp = {
         h2_desktop_platform_default_allocator(), services->crypto(),
         /* packet_mem: pooled packets use the default allocator. */ nullptr,
-        /* packet_pool_size: H2_SCTP_DEFAULT_PACKET_POOL_SIZE. */ 0u};
+        /* packet_pool_size: H2_SCTP_DEFAULT_PACKET_POOL_SIZE. */ 0u,
+        h2_desktop_platform_log_api()};
     h2_sctp_t *provider = nullptr;
     result = h2_sctp_create(&sctp, &provider);
     services->sctp_handle = provider;

@@ -7,6 +7,7 @@
 #include "utils.h"
 
 #include <errno.h>
+#include <stdio.h>
 #include "h2_atomic_static.h"
 #include <string.h>
 
@@ -226,6 +227,11 @@ static void h2_peer_portable_on_sctp_open(void *user) {
         return;
     }
     peer->production_sctp_open = 1;
+    Sctp *diagnostic_sctp = (Sctp *)peer_connection_get_sctp((PeerConnection *)peer->production_pc);
+    char trace[128];
+    (void)snprintf(trace, sizeof(trace), "SID_RESET_TRACE stage=peer_association peer=%p assoc=%p",
+        (void *)peer, diagnostic_sctp != NULL ? (void *)diagnostic_sctp->association : NULL);
+    (void)h2_pal_log_write(peer->owner->config.log, H2_PAL_LOG_WARN, "h2peer", trace);
     for (;;) {
         h2_pal_webrtc_channel_t *channel = peer->channels;
         while (channel != NULL &&

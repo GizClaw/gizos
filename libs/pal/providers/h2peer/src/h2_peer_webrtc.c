@@ -280,6 +280,19 @@ static void h2_peer_log_no_space(h2_pal_webrtc_peer_t *peer,
                  reason, live, ready_used, reset_active, reset_none,
                  reset_out_only, reset_in_only, reset_both);
   h2_peer_media_log(peer, H2_PAL_LOG_WARN, "h2peer", message);
+  // Failure-only snapshot bypasses the normal trace budget.
+  for (size_t sid = 0; sid < H2_PEER_STREAM_COUNT; ++sid) {
+    const h2_peer_stream_reset_t *reset = &peer->stream_resets[sid];
+    if (reset->active && reset->outgoing_submitted && !reset->outgoing_completed) {
+      (void)snprintf(message, sizeof(message),
+          "SID_RESET_TRACE stage=blocked_head peer=%p sid=%zu generation=%lu submitted=%d completed=%d incoming=%d",
+          (void *)peer, sid, (unsigned long)reset->generation,
+          reset->outgoing_submitted, reset->outgoing_completed, reset->incoming_reset);
+      h2_peer_media_log(peer, H2_PAL_LOG_WARN, "h2peer", message);
+      break;
+    }
+  }
+
 }
 
 h2_pal_result_t h2_peer_channel_tx_push(h2_pal_webrtc_channel_t *channel,
@@ -832,6 +845,12 @@ h2_peer_service_stream_resets(h2_pal_webrtc_peer_t *peer) {
     h2_pal_result_t result = h2_peer_submit_stream_reset(peer, (uint16_t)i);
     if (result == H2_PAL_OK) {
       reset->outgoing_submitted = 1;
+      if (peer->diagnostic_reset_records++ < 1024u) {
+      char trace[160];
+      (void)snprintf(trace, sizeof(trace), "SID_RESET_TRACE stage=peer_submitted peer=%p sid=%u generation=%lu submitted=%d completed=%d incoming=%d",
+          (void *)peer, (unsigned)i, (unsigned long)reset->generation, reset->outgoing_submitted, reset->outgoing_completed, reset->incoming_reset);
+      (void)h2_pal_log_write(peer->owner->config.log, H2_PAL_LOG_WARN, "h2peer", trace);
+      }
       return H2_PAL_OK;
     }
     if (result == H2_PAL_ERR_BUSY || result == H2_PAL_ERR_WOULD_BLOCK) {
@@ -874,6 +893,12 @@ void h2_peer_webrtc_on_stream_reset(
       return;
     }
     reset->outgoing_completed = 1;
+    if (peer->diagnostic_reset_records++ < 1024u) {
+    char trace[144];
+    (void)snprintf(trace, sizeof(trace), "SID_RESET_TRACE stage=peer_completed peer=%p sid=%u generation=%lu submitted=%d incoming=%d",
+        (void *)peer, event->stream_id, (unsigned long)reset->generation, reset->outgoing_submitted, reset->incoming_reset);
+    (void)h2_pal_log_write(peer->owner->config.log, H2_PAL_LOG_WARN, "h2peer", trace);
+    }
   } else if (event->direction == H2_PAL_SCTP_STREAM_RESET_INCOMING_RESET) {
     reset->incoming_reset = 1;
     if (channel != NULL && channel->generation == reset->generation) {

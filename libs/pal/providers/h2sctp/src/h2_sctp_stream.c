@@ -887,6 +887,7 @@ static void h2_sctp_stream_reset_incoming(
         h2_sctp_stream_assembly_reset(association);
     }
     h2_sctp_stream_refresh_rx_tail(association);
+    h2_sctp_trace_reset(association, "incoming", stream_id, association->expected_reset_sequence, H2_PAL_OK);
     h2_sctp_notify_stream_reset(
         association,
         stream_id,
@@ -991,6 +992,7 @@ h2_pal_result_t h2_sctp_stream_handle_reconfig(
                     stream->reset_request_sequence != sequence) {
                     continue;
                 }
+                h2_sctp_trace_reset(association, "response", stream->id, sequence, (int)result_code);
                 if (association->control_kind != H2_SCTP_CONTROL_RESET ||
                     association->control_packet == NULL) {
                   break;
@@ -1010,6 +1012,7 @@ h2_pal_result_t h2_sctp_stream_handle_reconfig(
                     stream->next_out_ssn = 0u;
                     stream->next_out_mid_ordered = 0u;
                     stream->next_out_mid_unordered = 0u;
+                    h2_sctp_trace_reset(association, "completed", stream->id, sequence, H2_PAL_OK);
                     h2_sctp_notify_stream_reset(
                         association,
                         stream->id,

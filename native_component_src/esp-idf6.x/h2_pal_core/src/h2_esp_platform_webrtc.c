@@ -28,6 +28,7 @@ const h2_pal_webrtc_api_t *h2_esp_platform_webrtc_api(void) {
          * association packet pool goes to internal (DMA-capable) RAM so
          * every outbound packet handed to DTLS is built there. */
         const h2_sctp_config_t sctp_config = {
+            .diagnostic_log = h2_esp_platform_log_api(),
             .mem = h2_esp_platform_psram_allocator(),
             .crypto = h2_esp_platform_crypto_api(),
             .packet_mem = h2_esp_platform_internal_allocator(),

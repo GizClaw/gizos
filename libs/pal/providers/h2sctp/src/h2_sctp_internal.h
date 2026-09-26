@@ -116,6 +116,7 @@ typedef struct h2_sctp_rx_fragment {
 } h2_sctp_rx_fragment_t;
 
 struct h2_sctp {
+    const h2_pal_log_api_t *diagnostic_log;
     const h2_pal_mem_api_t *mem;
     const h2_pal_mem_api_t *packet_mem;
     size_t packet_pool_size;
@@ -135,6 +136,7 @@ struct h2_pal_sctp_association {
     bool in_callback;
     bool delivery_pending;
     uint64_t last_now_ms;
+    unsigned diagnostic_reset_records;
 
     uint32_t local_verification_tag;
     uint32_t peer_verification_tag;
@@ -263,5 +265,8 @@ h2_pal_result_t h2_sctp_emit_chunks(
 h2_pal_result_t h2_sctp_retry_pending_emit(
     h2_pal_sctp_association_t *association);
 void h2_sctp_clear_control(h2_pal_sctp_association_t *association);
+
+void h2_sctp_trace_reset(h2_pal_sctp_association_t *association, const char *stage,
+                         uint16_t sid, uint32_t sequence, int result);
 
 #endif

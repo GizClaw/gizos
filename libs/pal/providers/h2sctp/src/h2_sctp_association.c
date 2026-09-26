@@ -738,6 +738,7 @@ h2_pal_result_t h2_sctp_association_reset_stream_impl(
         return H2_PAL_ERR_BUSY;
     }
     const uint32_t sequence = association->next_reset_sequence;
+    h2_sctp_trace_reset(association, "request", stream_id, sequence, H2_PAL_OK);
     uint8_t chunk[24] = {0};
     chunk[0] = H2_SCTP_CHUNK_RE_CONFIG;
     h2_sctp_wire_write_u16(chunk + 2u, 22u);
@@ -761,6 +762,10 @@ h2_pal_result_t h2_sctp_association_reset_stream_impl(
         stream->reset_pending = false;
         return result;
     }
+    h2_sctp_trace_reset(association,
+        association->control_packet == NULL || association->control_kind != H2_SCTP_CONTROL_RESET
+            ? "accept_missing_control" : "accepted",
+        stream_id, sequence, result);
     association->next_reset_sequence++;
     return H2_PAL_OK;
 }

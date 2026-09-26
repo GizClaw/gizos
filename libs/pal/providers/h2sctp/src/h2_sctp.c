@@ -8,7 +8,34 @@
 #include "h2_sctp_wire.h"
 
 #include <limits.h>
+#include <stdio.h>
 #include <string.h>
+
+void h2_sctp_trace_reset(h2_pal_sctp_association_t *a, const char *stage,
+                         uint16_t sid, uint32_t sequence, int result) {
+    if (a->owner->diagnostic_log == NULL)
+        return;
+    const bool anomaly = strcmp(stage, "accept_missing_control") == 0;
+    if (a->diagnostic_reset_records >= 1024u && !anomaly)
+        return;
+    a->diagnostic_reset_records++;
+    uint32_t saved_sequence = 0;
+    if (a->control_kind == H2_SCTP_CONTROL_RESET && a->control_packet_len >= 24u)
+        saved_sequence = h2_sctp_wire_read_u32(a->control_packet + 20u);
+    char line[384];
+    (void)snprintf(line, sizeof(line),
+        "SID_RESET_TRACE stage=%s assoc=%p sid=%u rsn=%lu result=%d "
+        "pending=%u pending_type=%u control=%u kind=%u control_rsn=%lu deadline=%llu "
+        "next_tsn=%lu peer_cum=%lu in_progress=%u retries=%u deferred_retries=%u record=%u",
+        stage, (void *)a, sid, (unsigned long)sequence, result,
+        a->pending_emit != NULL, a->pending_emit_len > 12u ? a->pending_emit[12] : 255u,
+        a->control_packet != NULL, (unsigned)a->control_kind,
+        (unsigned long)saved_sequence, (unsigned long long)a->control_deadline_ms,
+        (unsigned long)a->next_tsn, (unsigned long)a->peer_cumulative_tsn,
+        a->control_reset_in_progress, a->control_retries, a->control_reset_retries,
+        a->diagnostic_reset_records);
+    (void)h2_pal_log_write(a->owner->diagnostic_log, H2_PAL_LOG_WARN, "h2sctp", line);
+}
 
 void *h2_sctp_alloc(const h2_pal_mem_api_t *mem, size_t size) {
     if (mem == NULL || size == 0u) {
@@ -561,6 +588,7 @@ h2_pal_result_t h2_sctp_create(
                    ? H2_SCTP_MAX_PACKET_POOL_SIZE
                    : config->packet_pool_size);
     provider->crypto = config->crypto;
+    provider->diagnostic_log = config->diagnostic_log;
     provider->api.user = provider;
     provider->api.vtable = &h2_sctp_vtable;
     *out_provider = provider;

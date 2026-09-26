@@ -92,6 +92,7 @@ struct h2_pal_webrtc_peer {
   uint16_t next_stream_id;
   uint16_t local_stream_first;
   h2_pal_result_t stream_reset_failure;
+  unsigned diagnostic_reset_records;
   void *production_pc;
   int offer_started;
   int remote_answer_set;

@@ -3,6 +3,7 @@
 
 #include "h2/pal/os/h2_pal_crypto.h"
 #include "h2/pal/os/h2_pal_mem.h"
+#include "h2/pal/os/h2_pal_log.h"
 #include "h2/pal/net/h2_pal_sctp.h"
 
 #ifdef __cplusplus
@@ -36,6 +37,8 @@ typedef struct h2_sctp_config {
      * allocation failure.
      */
     size_t packet_pool_size;
+    /** Diagnostic branch only: borrowed reset trace sink. */
+    const h2_pal_log_api_t *diagnostic_log;
 } h2_sctp_config_t;
 
 #define H2_SCTP_DEFAULT_PACKET_POOL_SIZE 2u
