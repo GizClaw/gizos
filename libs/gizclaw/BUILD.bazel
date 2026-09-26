@@ -241,6 +241,7 @@ cc_library(
     ],
     local_defines = ["H2_GIZCLAW_TESTING"],
     deps = [
+        "//libs/atomic",
         "//libs/pal",
         "//tools/bazel:vendor_third_party_yyjson",
         "//libs/runtime",
