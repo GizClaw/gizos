@@ -1,0 +1,6 @@
+# Google C++ style, pinned to clang-format 22.1.5.
+# Include order is significant in some sources, so includes are never sorted.
+---
+BasedOnStyle: Google
+SortIncludes: Never
+...

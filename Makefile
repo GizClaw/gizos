@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help cfg-doctor bazel-build bazel-test bazel-test-downstream-consumer bazel-test-mqtt_public_broker_smoke bazel-test-gizclaw_h2peer_live_test bazel-test-gizclaw_pion_live_test bazel-coverage-report bazel-release h2loader-bin test-web guides-build guides-watch guides-preview
+.PHONY: help cfg-doctor format format-check bazel-build bazel-test bazel-test-downstream-consumer bazel-test-mqtt_public_broker_smoke bazel-test-gizclaw_h2peer_live_test bazel-test-gizclaw_pion_live_test bazel-coverage-report bazel-release h2loader-bin test-web guides-build guides-watch guides-preview
 
 BAZEL_BIN ?= bazel
 GUIDES_WATCH_HOST ?= 127.0.0.1
@@ -20,6 +20,12 @@ help:
 
 cfg-doctor:
 	@scripts/config/cfg-doctor.sh
+
+format:
+	@scripts/format.sh --fix
+
+format-check:
+	@scripts/format.sh
 
 bazel-build:
 	@scripts/bazel/bazel-build.py
