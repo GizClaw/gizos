@@ -77,6 +77,10 @@ Session 的 `catalog_bytes` 是完整 catalog 解码和单次 Workspace RPC resp
 
 `h2_gizclaw_client_connect()` 在返回成功前必须注册 Opus 上下行 media，并建立 connection-scoped Direct Packet 和 Peer Event channel。`libs/gizclaw` 在 connect 前注册 PAL WebRTC media extension；调用方不能把 media 当作可选能力，也不能在连接已建立后替换 extension。RPC 和 HTTP service channel 按调用动态创建，不属于这组固定 transport。
 
+本地 DataChannel 的 owner 登记与 outbound 实际并发量一起增长，不使用 SDK 的 inbound RPC 数量限制。适配层在调用 PAL 创建 channel 前预留登记空间；分配失败时返回错误，不创建无法发送或关闭的孤立 handle。每项保留 channel identity、发送背压和本地关闭状态：显式 close 立即撤销 send/close 权限，但保留来源身份直到 owned terminal event 被派发，已排队的 OPEN 因而不会把关闭中的本地 channel 误认成 Server 反向 RPC。空项复用，整个登记表在 peer close 时释放。
+
+`//libs/gizclaw:h2_gizclaw_channel_lifecycle_test` 经过真实 GizClaw WebRTC 适配层、H2Peer、H2SCTP 与本地 Pion，在同一 Peer 上保留六条 channel，再交替执行 180 次收发关闭与 OPEN 派发前取消，验证 SID 实际复用、关闭后远端 channel 数回到基线、没有误报 remote channel，以及登记分配失败和最终 allocator 清理。该 Host 互通回归不替代 ESP 设备长时业务测试。
+
 Peer Event 的物理 service channel 由 SDK connection 持有，唯一 access handle 由 `h2_gizclaw_client` 从 connect 成功一直保留到连接关闭。Conversation 只取得该 handle 的逻辑 lease；同一 client 同时只能有一个 conversation。每次 lease 使用 connection 内单调递增且唯一的 input stream ID，只用于我们自己的输入（BOS、READY、EOS 与服务端对它的拒绝）。服务端下发的 stream ID、BOS、EOS 设备不看：下行音频由 Service 级下行通道收到即解码写入绑定的 Track，不属于任何一轮输入，也不经 event 复制；下行流结束（包括 `STREAM_INTERRUPTED` 等错误码）都不是 conversation 错误。conversation event 只有输入活跃期间转发的文本和服务端拒绝本轮输入的 `ERROR`；push-to-talk 一轮在输入结束发出后完成，realtime 持续到挂断。Conversation deinit 只释放逻辑 lease，不释放 client access handle，也不关闭物理 channel；所有 conversation handle 必须先于 client deinit 释放。Direct Packet、Peer Event 或 Opus transport 意外关闭时，`h2_gizclaw_client_poll()` 返回 `H2_PAL_ERR_CLOSED`，调用方必须 close、deinit 并重建完整 client，不能只重开单条 transport。Peer 仍显示 connected 但已不送达任何内容时同样按关闭处理：一个 RPC 以超时结束且期间没有收到任何 DataChannel message 或 Opus frame，下一次 poll 记录 WARN `stage=peer_unresponsive` 并返回 `H2_PAL_ERR_CLOSED`，恢复方式相同（判定规则见 [GizClaw transport](/apps/gizclaw/transport#peer-无响应判定)）。
 
 Conversation 上行先发送 BOS，再等待当前 input stream 的 `AUDIO_INPUT_READY`；发送成功不代表服务端已完成授权。确认前不采集或编码 PCM、不发送 Opus，但事件队列和下行处理继续推进，避免业务事件占住队列后阻塞 READY。READY 前只有显式关联当前 input stream 的事件能够绑定回复 route，允许服务端提前拒绝当前输入；取消的旧输入或独立旧 reply 的迟到事件不得污染新会话。READY 后允许服务端生成的独立 response ID。等待沿用有界超时，取消仍清理已发送的 BOS；错误 stream、已取消或已提交输入的确认不能重新放行。READY 不参与下行 response-local route 绑定。
@@ -354,11 +358,7 @@ Firmware 与 Voice 还由独立的 Pion `manual` test 将完全相同的 public 
 `peer_poll()` 线程分发，C ABI 只交换整数 handle 和同步 borrowed buffer。它是归因工具，
 不是 `libs/gizclaw` dependency，也不替换 Desktop production H2Peer accessor。
 
-live suite 还必须验证 pinned GizClaw C SDK 的 single-client 并发能力。当前
-`v0.3.1` 提供 request-owned unary handle；concurrency suite 必须在一个 active client
-上依次启动三个 Ping handle，由唯一 serialized poll owner 推进，记录三个不同 stream ID
-的 request DataChannel、三个 terminal result、零残留 channel 和恢复
-Ping。不得用三个线程调用共享 client，也不得用三个 client/Peer 或三个串行请求伪造支持。
+live suite 还必须验证 pinned GizClaw C SDK 的 single-client 并发与长期 channel 回收。concurrency suite 在同一个 active client 上执行 32 批请求，每批先启动六个 Ping handle，再等待各自终态；唯一 serialized poll owner 推进协议。每批记录六个不同 stream ID、六个成功 result、零残留 channel 和恢复 Ping，并等待恢复 Ping 的关闭事件后再开始下一批。最终必须完成 192 个批内请求及 32 个恢复 Ping，不通过重建 client 或 Peer 规避复用；应用线程不直接并发调用共享 client 的协议 poll。
 社交 fixture 的 helper Peer 只用于 Friend/FriendGroup 建模。除此之外，测试还必须验证两个 Peer 可各自使用相同 Workspace、Contact 和 FriendGroup
 name 且互不可见，同一 Peer reconnect 后可恢复原 Workspace/history，并覆盖 method
 95 的 metadata、stream byte count 与清理失败路径。Linux x86_64 与 macOS arm64 都是

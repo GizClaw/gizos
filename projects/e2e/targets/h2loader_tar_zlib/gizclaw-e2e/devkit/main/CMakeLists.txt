@@ -49,3 +49,10 @@ target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror
 if(H2_GIZCLAW_E2E_VOICE_ONLY)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_GIZCLAW_E2E_VOICE_ONLY=1)
 endif()
+
+if(H2_GIZCLAW_E2E_CONCURRENCY_ONLY)
+  if(H2_GIZCLAW_E2E_VOICE_ONLY)
+    message(FATAL_ERROR "Select only one GizClaw E2E suite")
+  endif()
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_GIZCLAW_E2E_CONCURRENCY_ONLY=1)
+endif()

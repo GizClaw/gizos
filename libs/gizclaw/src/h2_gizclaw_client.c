@@ -158,6 +158,12 @@ typedef struct h2_gizclaw_provider_completion {
   size_t payload_remaining;
 } h2_gizclaw_provider_completion_t;
 
+typedef struct h2_gizclaw_local_channel {
+  gzc_rtc_channel_t *channel;
+  bool write_blocked;
+  bool close_requested;
+} h2_gizclaw_local_channel_t;
+
 struct h2_gizclaw_client {
   struct h2_gizclaw_client *next_client;
   h2_gizclaw_config_t config;
@@ -170,8 +176,8 @@ struct h2_gizclaw_client {
   gzc_rtc_opus_frame_cb opus_frame_callback;
   void *opus_frame_callback_user;
   gzc_rtc_peer_t *opus_frame_peer;
-  gzc_rtc_channel_t *local_channels[GZC_RPC_MAX_INBOUND_CHANNELS + 2u];
-  bool local_channel_write_blocked[GZC_RPC_MAX_INBOUND_CHANNELS + 2u];
+  h2_gizclaw_local_channel_t *local_channels;
+  size_t local_channel_capacity;
   gzc_rtc_channel_t *remote_service_channels[GZC_RPC_MAX_INBOUND_CHANNELS];
   bool remote_channel_write_blocked[GZC_RPC_MAX_INBOUND_CHANNELS];
   h2_pal_webrtc_peer_t *webrtc_peer;
@@ -712,40 +718,46 @@ static int h2_gizclaw_remote_service_index(h2_gizclaw_client_t *client,
   return -1;
 }
 
-static int h2_gizclaw_local_channel_index(h2_gizclaw_client_t *client,
-                                          gzc_rtc_channel_t *channel) {
-  if (client == NULL || channel == NULL) {
-    return -1;
-  }
-  for (size_t i = 0u; i < GZC_RPC_MAX_INBOUND_CHANNELS + 2u; ++i) {
-    if (client->local_channels[i] == channel) {
-      return (int)i;
+static size_t h2_gizclaw_local_channel_index(h2_gizclaw_client_t *client,
+                                             gzc_rtc_channel_t *channel) {
+  for (size_t i = 0u; i < client->local_channel_capacity; ++i) {
+    if (client->local_channels[i].channel == channel) {
+      return i;
     }
   }
-  return -1;
+  return client->local_channel_capacity;
 }
 
-static void h2_gizclaw_mark_local_channel(h2_gizclaw_client_t *client,
-                                          gzc_rtc_channel_t *channel) {
-  if (client == NULL || channel == NULL ||
-      h2_gizclaw_local_channel_index(client, channel) >= 0) {
-    return;
+/* Reserve ownership before PAL can create a handle. Outbound concurrency is
+ * limited by the provider; the SDK's inbound RPC limit is unrelated. */
+static int h2_gizclaw_reserve_local_channel(h2_gizclaw_client_t *client,
+                                           size_t *out_index) {
+  size_t index = h2_gizclaw_local_channel_index(client, NULL);
+  if (index == client->local_channel_capacity) {
+    size_t capacity = client->local_channel_capacity;
+    if (capacity > SIZE_MAX / 2u / sizeof(*client->local_channels))
+      return GZC_ERR_NO_MEMORY;
+    size_t next = capacity == 0u ? 4u : capacity * 2u;
+    h2_gizclaw_local_channel_t *channels = h2_pal_mem_realloc(
+        client->config.allocator, client->local_channels,
+        next * sizeof(*channels));
+    if (channels == NULL)
+      return GZC_ERR_NO_MEMORY;
+    memset(channels + capacity, 0, (next - capacity) * sizeof(*channels));
+    client->local_channels = channels;
+    client->local_channel_capacity = next;
   }
-  for (size_t i = 0u; i < GZC_RPC_MAX_INBOUND_CHANNELS + 2u; ++i) {
-    if (client->local_channels[i] == NULL) {
-      client->local_channels[i] = channel;
-      return;
-    }
-  }
+  *out_index = index;
+  return GZC_OK;
 }
 
 static void h2_gizclaw_unmark_local_channel(h2_gizclaw_client_t *client,
                                             gzc_rtc_channel_t *channel) {
-  int index = h2_gizclaw_local_channel_index(client, channel);
-  if (index >= 0) {
-    client->local_channels[index] = NULL;
-    client->local_channel_write_blocked[index] = false;
-  }
+  if (client == NULL || channel == NULL)
+    return;
+  size_t index = h2_gizclaw_local_channel_index(client, channel);
+  if (index < client->local_channel_capacity)
+    client->local_channels[index] = (h2_gizclaw_local_channel_t){0};
 }
 
 static bool h2_gizclaw_mark_remote_service(h2_gizclaw_client_t *client,
@@ -776,10 +788,10 @@ static void h2_gizclaw_unmark_remote_service(h2_gizclaw_client_t *client,
 
 static bool *h2_gizclaw_channel_write_blocked(h2_gizclaw_client_t *client,
                                               gzc_rtc_channel_t *channel) {
-  int index = h2_gizclaw_local_channel_index(client, channel);
-  if (index >= 0)
-    return &client->local_channel_write_blocked[index];
-  index = h2_gizclaw_remote_service_index(client, channel);
+  size_t local_index = h2_gizclaw_local_channel_index(client, channel);
+  if (local_index < client->local_channel_capacity)
+    return &client->local_channels[local_index].write_blocked;
+  int index = h2_gizclaw_remote_service_index(client, channel);
   return index >= 0 ? &client->remote_channel_write_blocked[index] : NULL;
 }
 
@@ -787,11 +799,13 @@ static void h2_gzc_writable(h2_gizclaw_client_t *client,
                             h2_pal_webrtc_peer_t *peer) {
   if (client == NULL)
     return;
-  for (size_t i = 0u; i < GZC_RPC_MAX_INBOUND_CHANNELS + 2u; ++i) {
-    gzc_rtc_channel_t *channel = client->local_channels[i];
-    if (channel == NULL || !client->local_channel_write_blocked[i])
+  const size_t capacity = client->local_channel_capacity;
+  for (size_t i = 0u; i < capacity && i < client->local_channel_capacity; ++i) {
+    gzc_rtc_channel_t *channel = client->local_channels[i].channel;
+    if (channel == NULL || client->local_channels[i].close_requested ||
+        !client->local_channels[i].write_blocked)
       continue;
-    client->local_channel_write_blocked[i] = false;
+    client->local_channels[i].write_blocked = false;
     if (client->gzc_callbacks.on_channel_buffered_amount_low != NULL)
       client->gzc_callbacks.on_channel_buffered_amount_low(
           client->gzc_callbacks.userdata, (gzc_rtc_peer_t *)peer, channel);
@@ -809,9 +823,12 @@ static void h2_gzc_writable(h2_gizclaw_client_t *client,
 
 static bool h2_gizclaw_channel_is_live(h2_gizclaw_client_t *client,
                                        gzc_rtc_channel_t *channel) {
-  return client != NULL && channel != NULL &&
-         (h2_gizclaw_local_channel_index(client, channel) >= 0 ||
-          h2_gizclaw_remote_service_index(client, channel) >= 0);
+  if (client == NULL || channel == NULL)
+    return false;
+  const size_t index = h2_gizclaw_local_channel_index(client, channel);
+  return (index < client->local_channel_capacity &&
+          !client->local_channels[index].close_requested) ||
+         h2_gizclaw_remote_service_index(client, channel) >= 0;
 }
 
 static h2_gizclaw_client_t *
@@ -1399,8 +1416,8 @@ static void h2_gizclaw_dispatch_channel_state(
         h2_gizclaw_gzc_str_has_prefix_cstr(gzc_info.label,
                                            "giznet/v1/service/") &&
         gzc_info.ordered && gzc_info.reliable &&
-        h2_gizclaw_local_channel_index(client, (gzc_rtc_channel_t *)channel) <
-            0 &&
+        h2_gizclaw_local_channel_index(client, (gzc_rtc_channel_t *)channel) ==
+            client->local_channel_capacity &&
         h2_gizclaw_mark_remote_service(client, (gzc_rtc_channel_t *)channel) &&
         client->gzc_callbacks.on_remote_channel != NULL) {
       client->gzc_callbacks.on_remote_channel(
@@ -1424,6 +1441,14 @@ static void h2_gzc_channel_state(void *user, h2_pal_webrtc_peer_t *peer,
                                  h2_pal_webrtc_channel_state_t state) {
   h2_gizclaw_client_t *client = (h2_gizclaw_client_t *)user;
   if (client == NULL) {
+    return;
+  }
+  const size_t index = h2_gizclaw_local_channel_index(
+      client, (gzc_rtc_channel_t *)channel);
+  if (state == H2_PAL_WEBRTC_CHANNEL_OPEN &&
+      index < client->local_channel_capacity &&
+      client->local_channels[index].close_requested) {
+    /* An owned OPEN may already be queued when close consumes the alias. */
     return;
   }
   if (state == H2_PAL_WEBRTC_CHANNEL_CLOSED ||
@@ -1685,6 +1710,10 @@ h2_gzc_peer_create_data_channel(gzc_rtc_peer_t *peer,
   if (pending->create_in_progress || pending->ready) {
     return GZC_ERR_WEBRTC;
   }
+  size_t local_index = 0u;
+  int reserve_result = h2_gizclaw_reserve_local_channel(client, &local_index);
+  if (reserve_result != GZC_OK)
+    return reserve_result;
   h2_pal_webrtc_channel_config_t h2_config = {
       .label = {.data = config->label.data, .len = config->label.len},
       .ordered = config->ordered ? 1 : 0,
@@ -1710,7 +1739,7 @@ h2_gzc_peer_create_data_channel(gzc_rtc_peer_t *peer,
   if (pending->ready && pending->channel != channel) {
     h2_gizclaw_dispatch_retained_local_channel_state(client, pending->peer);
   }
-  h2_gizclaw_mark_local_channel(client, (gzc_rtc_channel_t *)channel);
+  client->local_channels[local_index].channel = (gzc_rtc_channel_t *)channel;
   *out_channel = (gzc_rtc_channel_t *)channel;
   return GZC_OK;
 }
@@ -1840,7 +1869,13 @@ static void h2_gzc_channel_close(gzc_rtc_channel_t *channel) {
         (h2_pal_webrtc_channel_t *)channel) {
       h2_gizclaw_reset_local_channel_state(client);
     }
-    h2_gizclaw_unmark_local_channel(client, channel);
+    const size_t index = h2_gizclaw_local_channel_index(client, channel);
+    if (index < client->local_channel_capacity) {
+      /* Keep origin identity until the terminal event retires queued OPENs;
+       * close/send lookup must no longer expose the consumed PAL handle. */
+      client->local_channels[index].close_requested = true;
+      client->local_channels[index].write_blocked = false;
+    }
     h2_pal_webrtc_channel_close(client->config.webrtc,
                                 (h2_pal_webrtc_channel_t *)channel);
   }
@@ -1896,6 +1931,13 @@ static void h2_gzc_peer_close(gzc_rtc_peer_t *peer) {
     if (client->webrtc_peer == (h2_pal_webrtc_peer_t *)peer) {
       client->webrtc_peer = NULL;
     }
+    h2_pal_mem_free(client->config.allocator, client->local_channels);
+    client->local_channels = NULL;
+    client->local_channel_capacity = 0u;
+    memset(client->remote_service_channels, 0,
+           sizeof(client->remote_service_channels));
+    memset(client->remote_channel_write_blocked, 0,
+           sizeof(client->remote_channel_write_blocked));
   }
 }
 
@@ -2415,10 +2457,16 @@ void h2_gizclaw_client_deinit(h2_gizclaw_client_t *client) {
     s_test_webrtc_client = NULL;
   }
 #endif
+  h2_pal_mem_free(allocator, client->local_channels);
   h2_pal_mem_free(allocator, client);
 }
 
 #if defined(H2_GIZCLAW_TESTING)
+const gzc_webrtc_vtable_t *
+h2_gizclaw_test_webrtc_api(h2_gizclaw_client_t *client) {
+  return &client->webrtc;
+}
+
 bool h2_gizclaw_test_media_registered(h2_gizclaw_client_t *client) {
   return client != NULL && client->media.struct_size == sizeof(client->media) &&
          client->media.peer_set_opus_frame_callback != NULL &&
@@ -2486,8 +2534,12 @@ int h2_gizclaw_test_try_write_bytes(h2_gizclaw_client_t *client,
   }
   s_test_webrtc_client = client;
   client->webrtc_peer = (h2_pal_webrtc_peer_t *)(uintptr_t)1u;
-  h2_gizclaw_mark_local_channel(client, (gzc_rtc_channel_t *)channel);
-  int rc = gzc_client_try_write_bytes_internal(client->gzc,
+  size_t local_index = 0u;
+  int rc = h2_gizclaw_reserve_local_channel(client, &local_index);
+  if (rc != GZC_OK)
+    return rc;
+  client->local_channels[local_index].channel = (gzc_rtc_channel_t *)channel;
+  rc = gzc_client_try_write_bytes_internal(client->gzc,
                                                (gzc_rtc_channel_t *)channel,
                                                data, len, offset, blocked, 1u);
   h2_gizclaw_unmark_local_channel(client, (gzc_rtc_channel_t *)channel);
