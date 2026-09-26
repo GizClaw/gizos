@@ -729,6 +729,15 @@ h2_pal_result_t h2_sctp_association_reset_stream_impl(
     if (stream_id >= association->negotiated_outbound_streams) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    /* WOULD_BLOCK from emit_chunks only transfers ownership when it retained
+     * this request. An older packet must drain before a reset can be accepted;
+     * another control request must keep its packet and retransmission timer. */
+    if (association->pending_emit != NULL) {
+        return H2_PAL_ERR_WOULD_BLOCK;
+    }
+    if (association->control_kind != H2_SCTP_CONTROL_NONE) {
+        return H2_PAL_ERR_BUSY;
+    }
     h2_sctp_stream_t *stream = h2_sctp_stream_get_or_create(
         association, stream_id);
     if (stream == NULL) {

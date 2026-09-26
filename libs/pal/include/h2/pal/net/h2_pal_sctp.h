@@ -380,7 +380,14 @@ static inline h2_pal_result_t h2_pal_sctp_association_is_writable(
         api->user, association, out_writable);
 }
 
-/** Requests RFC 6525 reset of one negotiated outbound stream. */
+/**
+ * Requests RFC 6525 reset of one negotiated outbound stream.
+ *
+ * OK accepts the request; completion is reported through on_stream_reset.
+ * BUSY or WOULD_BLOCK does not accept the request: retry after servicing the
+ * association. An accepted request retains its retransmission state even if
+ * the transport cannot immediately emit its packet.
+ */
 static inline h2_pal_result_t h2_pal_sctp_association_reset_stream(
     const h2_pal_sctp_api_t *api,
     h2_pal_sctp_association_t *association,
