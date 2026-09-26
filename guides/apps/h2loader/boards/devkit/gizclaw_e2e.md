@@ -26,6 +26,8 @@ bazel build --config=esp32s3 \
   //projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/devkit:package
 ```
 
+定位长寿命 Peer 的 channel 生命周期时，可给同一 package build 添加 `--define=H2_GIZCLAW_E2E_CONCURRENCY_ONLY=1`，只运行 concurrency suite。它保持单个 client/Peer，执行 32 批六个并发 Ping 和每批一次恢复 Ping；每批必须回收全部 RPC channel，最终输出 `stage=channel-soak batches=32/32 requests=192 result=PASS rc=0`，随后仍执行资源 cleanup。该选项不能与 `H2_GIZCLAW_E2E_VOICE_ONLY` 同时启用。
+
 Package 输出为：
 
 ```text

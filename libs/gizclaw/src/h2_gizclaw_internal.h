@@ -310,6 +310,8 @@ int h2_gizclaw_test_provider_response(h2_gizclaw_client_t *client,
 void h2_gizclaw_test_provider_channel_close(h2_gizclaw_client_t *client,
     h2_pal_webrtc_channel_t *channel, bool remote);
 bool h2_gizclaw_test_media_registered(h2_gizclaw_client_t *client);
+const gzc_webrtc_vtable_t *
+h2_gizclaw_test_webrtc_api(h2_gizclaw_client_t *client);
 int h2_gizclaw_test_peer_create(h2_gizclaw_client_t *client,
                                 h2_pal_webrtc_peer_t **out_peer);
 int h2_gizclaw_test_peer_poll(h2_gizclaw_client_t *client,

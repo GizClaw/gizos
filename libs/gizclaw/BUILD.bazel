@@ -241,6 +241,7 @@ cc_library(
     ],
     local_defines = ["H2_GIZCLAW_TESTING"],
     deps = [
+        "//libs/atomic",
         "//libs/pal",
         "//tools/bazel:vendor_third_party_yyjson",
         "//libs/runtime",
@@ -315,6 +316,32 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+)
+
+cc_test(
+    name = "h2_gizclaw_channel_lifecycle_test",
+    timeout = "moderate",
+    srcs = [
+        "src/h2_gizclaw_internal.h",
+        "tests/test_h2_gizclaw_channel_lifecycle.c",
+    ],
+    args = ["$(rootpath //tools/webrtc-test-server:webrtc_test_server)"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    data = ["//tools/webrtc-test-server:webrtc_test_server"],
+    includes = ["src"],
+    local_defines = ["H2_GIZCLAW_TESTING"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gizclaw_test_support",
+        "//libs/atomic/providers/c11",
+        "//libs/pal/providers/desktop:webrtc_h2peer_test_support",
+        "//libs/pal/providers/desktop/pal_core",
+    ],
 )
 
 cc_test(
