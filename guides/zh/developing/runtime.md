@@ -277,7 +277,7 @@ while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
 drain_library_dispatch_queues();
 ```
 
-`h2_runtime_poll_event()` 不等待。每次 wait 之后必须把 queue 完全拉空再 wait：wake 按入队给出并合并，只拉了一半的 queue 里剩下的 event 没有对应的 pending wake。被一个没有对应 event 的 wake 叫醒（Library 的 `notify`，或者更早的 poll 已经拉空 queue）是正常情况，App 照常走 drain 路径。Event queue 满时丢弃新事件并增加 internal dropped-event counter，不阻塞 producer，也不给出 wake；该 counter 是 Runtime private state，不属于 Public API。
+`h2_runtime_poll_event()` 不等待。每次 wait 之后必须把 queue 完全拉空再 wait：wake 按入队给出并合并，只拉了一半的 queue 里剩下的 event 没有对应的 pending wake。被一个没有对应 event 的 wake 叫醒（Library 的 `notify`，或者更早的 poll 已经拉空 queue）是正常情况，App 照常走 drain 路径。Event queue 满时 Runtime 自己的 producer（input、system event、time adjusted、Test Control）丢弃新事件并计数，不阻塞 producer，也不给出 wake；Button 边沿例外，见 [Button 边沿保留](#button-边沿保留)。`h2_runtime_dropped_event_count()` 返回自 `h2_runtime_init()` 以来的累计丢弃数（32 位，回绕后按无符号差值比较，任何 task 可读）；custom event 满队列时直接把 `H2_PAL_ERR_FULL` 返回投递方，不计入。丢弃还会经 Runtime 的 PAL log 输出 scope 为 `runtime/event` 的 WARN，内容包括本次报告新增数、累计总数和最后一个被丢事件的 kind/component/component_id；两行 WARN 至少间隔 `H2_RUNTIME_DROPPED_EVENT_WARN_INTERVAL_MS`（1000 ms），第一次丢弃立即输出，窗口内的后续丢弃只计数，由窗口过后的下一次丢弃或下一个 input tick 补报。
 
 ## Event Type
 
@@ -474,7 +474,7 @@ source table 与 publication。`start` 则必须拒绝，否则 poller 会和 te
 
 单步采集失败不会停掉 input worker：读 PAL 出错、事件放不进 pending 缓冲、时间读取失败等都只记入健康状态，按 stage 打日志（`H2_RUNTIME_INPUT_ERROR stage=... rc=...`，同一错误连续出现时每 100 次再打一行，恢复时打 `H2_RUNTIME_INPUT_RECOVERED`），退避后继续下一轮（最长 500 ms 一次）。其余 source 在同一轮照常采集，已产生的事件照常发布。`h2_runtime_input_status()` 返回 phase、latch 的 worker result、最近一次错误及其 stage 和时间、累计与连续错误数、成功轮数与最近成功时间，以及 snapshot 延迟发布计数，任何 phase 都可以调用。健康字段由独立的 health mutex 保护（不是 input writer mutex），因此拿不到 writer mutex 本身也会以 stage `lock` 记录；`h2_runtime_input_status()` 拿不到 health mutex 时返回该 Sync 结果、不读字段。bk3633 以 `H2_RUNTIME_INPUT_LOG_ENABLED=0` 构建（OAD 镜像预算），不输出以上 input 日志，健康字段、status 与 `h2_runtime_input_stage_name()` 不受影响（没有日志引用时，不调用该函数的镜像不链接这些字符串）。
 
-只有 worker 无法再自我节拍（sleep 失败）或 Runtime 已不可用才是致命的。致命时 worker 在 writer mutex 下把每个仍按住的 Button 走正常松开路径（state 读作松开），发布 snapshot，并按普通 producer 规则把 `BUTTON_UP` 与 released `BUTTON_ACTION` 排在关闭之前（队列满时丢弃并计数，与其它事件一致；事件不会先于其 snapshot 可取，读者持续占住所有退役槽位、三次短重试仍发布不了时同样丢弃并计数），日志为 `H2_RUNTIME_INPUT_FAULT ... released=<n>`。拿不到 writer mutex 时不改 source table，日志写 `release=skipped lock_rc=<rc>`。随后保存 worker result、把 input phase 置为 faulted 并关闭 Runtime event queue，使阻塞的 App consumer 被唤醒；consumer 先拉到已入队的释放事件，再看到 `H2_PAL_ERR_CLOSED`。Queue close 是终态：PAL queue contract 没有 reopen，重启采集只会得到一个仍在采样却无法投递事件的 Runtime。因此 worker result 同时作为 fault latch，fault 之后 `stop` 返回该 result 并报告失败原因，随后的 `start` 返回 `H2_PAL_ERR_INVALID_STATE`；唯一的恢复路径是 `h2_runtime_deinit()` 后重新 `h2_runtime_init()`。NFC task 投递扫描结果失败只丢这一轮结果，不 fault。
+只有 worker 无法再自我节拍（sleep 失败）或 Runtime 已不可用才是致命的。致命时 worker 在 writer mutex 下把每个仍按住的 Button 走正常松开路径（state 读作松开），发布 snapshot，并按普通 producer 规则把 `BUTTON_UP` 与 released `BUTTON_ACTION` 排在关闭之前（fault 是终态，已有保留边沿与此次释放先尝试投递一次，队列满时未投递事件全部丢弃并计数；事件不会先于其 snapshot 可取，读者持续占住所有退役槽位、三次短重试仍发布不了时同样丢弃并计数），日志为 `H2_RUNTIME_INPUT_FAULT ... released=<n>`。拿不到 writer mutex 时不改 source table，日志写 `release=skipped lock_rc=<rc>`。随后保存 worker result、把 input phase 置为 faulted 并关闭 Runtime event queue，使阻塞的 App consumer 被唤醒；consumer 先拉到已入队的释放事件，再看到 `H2_PAL_ERR_CLOSED`。Queue close 是终态：PAL queue contract 没有 reopen，重启采集只会得到一个仍在采样却无法投递事件的 Runtime。因此 worker result 同时作为 fault latch，fault 之后 `stop` 返回该 result 并报告失败原因，随后的 `start` 返回 `H2_PAL_ERR_INVALID_STATE`；唯一的恢复路径是 `h2_runtime_deinit()` 后重新 `h2_runtime_init()`。NFC task 投递扫描结果失败只丢这一轮结果，不 fault。
 
 Test Control session 在打开期间独占 source table。它在 open 时作废 production source table，并在 close 之后留待下一次采集惰性重新发现，因此 close 之后的第一次 `start` 或 poll 会重建 production source。这是 init 之外唯一一次重新发现的路径。
 
@@ -492,7 +492,25 @@ App 读取的 component state 来自 `h2_runtime_state.c` 拥有的 state public
 
 Input task 的一次 tick 按各 source deadline 处理到期的 mapped input。相同 radio group 只执行一次 PAL read，再把结果投影到各 child。没有 public state update 时不 copy、不 switch；该路径在 source discovery 完成后不做 per-tick allocation。
 
-Event payload 表达发生时的历史事实，snapshot 表达最近一次完成的 publication。Queue full 或 timeout 继续使用 drop-newest policy；已经更新的 working state 与后续 publication 不回滚。
+Event payload 表达发生时的历史事实，snapshot 表达最近一次完成的 publication。Queue full 或 timeout 继续使用 drop-newest policy（Button 边沿按下节保留）；已经更新的 working state 与后续 publication 不回滚。
+
+### Button 边沿保留
+
+按住期间每个 poll 的 `BUTTON_DOWN`/`BUTTON_ACTION` 是 sample，consumer 停顿时会迅速填满 event queue。Sample 仍然可以丢弃，但 consumer 靠 DOWN/UP 跟踪按住状态，丢掉 `BUTTON_UP` 会让它永远停在按下。因此 input 路径区分两类事件：
+
+- **边沿**：开始一次按下的 `BUTTON_DOWN`（从松开到按下的那次，包括首帧就是按下），以及松开时的 `BUTTON_UP` 和最后一个 `BUTTON_ACTION`（`released_at_ms != 0`）。
+- **Sample**：仍在按住时重复的 `BUTTON_DOWN`/`BUTTON_ACTION`（包括按下那一帧的 action），以及 NFC、IMU 和 error 事件。
+
+规则：
+
+1. Input writer 按顺序投递一次 poll 的事件。第一次遇到 `H2_PAL_ERR_FULL`（provider 报告的 no-wait timeout/would-block 也按 FULL 处理）后，本轮不再尝试入队：之后的边沿保留在所属 Button source 上，sample 丢弃并计数。Queue closed 等其它错误仍交给现有 input health/error 和退避重试路径；只有 sleep 失败或 Runtime 不可用才触发终态 fault。
+2. 保留的边沿在下一次 input poll 开始时（默认每 20 ms，先于该 poll 的任何新采样）按原顺序重新入队。重新入队的事件保留原 payload 和原 `timestamp_ms`（按下边沿仍满足 `timestamp_ms == pressed_at_ms`），但领取新的 sequence，并照常先发布 snapshot 再入队。
+3. Source 持有保留边沿期间，它的新边沿直接排在保留边沿之后，它的新 sample 丢弃并计数，保证同一 source 的事件不会越过更早的边沿。不同 source 之间不保证相对顺序。
+4. 每个 source 最多保留 2 个边沿（`H2_RUNTIME_BUTTON_RETAINED_EDGE_MAX`）。同一 source 的边沿必然按下/松开交替，第 3 个到来时最早的两个一定是一对互补边沿，丢弃这一对并计入丢弃数，consumer 最终看到的按下/松开状态仍然正确，只少了一次完整点击。
+5. 保留边沿只存在 source 上，不占 pending event list；重新入队时一个 source 的全部保留事件放不进 pending list 就整体等下一次 poll。Pending list 本身只在全部 retired snapshot slot 都被 pin 住时跨 poll 存活，此时再耗尽也不会让 input worker fault：sample 丢弃计数，边沿把该 source 已在 pending list 里的事件按顺序挪到保留区后保留。
+6. Test Control 打开或关闭时 source table 被替换，未投递的保留边沿丢弃，不计数。Open 清空 event queue，close 保留已排队的注入事件。`h2_runtime_input_stop()` 不清除它们，下一次 start 的首帧重新入队。
+
+Test Control 直接注入的事件、custom event 和 system event 不参与保留。
 
 State getter 返回 caller-owned copy，不承诺反映仍在进行的 input tick。Slow PAL operation 期间 reader 得到 previous completed publication；`updated_at_ms` 表达对应 source 最近完成的更新时间。每次 start 的 successful first pass 发布完整 snapshot；state 保留到下一次发布、Test Control 切换或 Runtime deinit，`h2_runtime_input_stop()` 不清除它。已经排队的 event 独立于当前 snapshot，consumer 使用 event payload 解释历史事件。
 

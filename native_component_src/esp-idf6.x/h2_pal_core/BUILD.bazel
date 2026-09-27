@@ -350,6 +350,111 @@ cc_test(
 )
 
 cc_test(
+    name = "netif_dns_test",
+    srcs = [
+        "include/h2_esp_platform_core.h",
+        "src/h2_esp_platform_netif.c",
+        "tests/netif_sdk/esp_event.h",
+        "tests/netif_sdk/esp_log.h",
+        "tests/netif_sdk/esp_netif.h",
+        "tests/netif_sdk/lwip/def.h",
+        "tests/netif_sdk/lwip/dns.h",
+        "tests/netif_sdk/lwip/ip_addr.h",
+        "tests/sdk/freertos/FreeRTOS.h",
+        "tests/sdk/freertos/semphr.h",
+        "tests/test_h2_esp_platform_netif_dns.c",
+    ],
+    conlyopts = H2_C11_OPTS + ["-D_POSIX_C_SOURCE=200809L"],
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "tests/netif_sdk",
+        "tests/sdk",
+    ],
+    local_defines = [
+        "CONFIG_ESP_NETIF_SET_DNS_PER_DEFAULT_NETIF=1",
+        "LWIP_IPV4=1",
+        "LWIP_IPV6=1",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "netif_dns_ipv4_test",
+    srcs = [
+        "include/h2_esp_platform_core.h",
+        "src/h2_esp_platform_netif.c",
+        "tests/netif_sdk/esp_event.h",
+        "tests/netif_sdk/esp_log.h",
+        "tests/netif_sdk/esp_netif.h",
+        "tests/netif_sdk/lwip/def.h",
+        "tests/netif_sdk/lwip/dns.h",
+        "tests/netif_sdk/lwip/ip_addr.h",
+        "tests/sdk/freertos/FreeRTOS.h",
+        "tests/sdk/freertos/semphr.h",
+        "tests/test_h2_esp_platform_netif_dns.c",
+    ],
+    conlyopts = H2_C11_OPTS + ["-D_POSIX_C_SOURCE=200809L"],
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "tests/netif_sdk",
+        "tests/sdk",
+    ],
+    local_defines = [
+        "CONFIG_ESP_NETIF_SET_DNS_PER_DEFAULT_NETIF=1",
+        "LWIP_IPV4=1",
+        "LWIP_IPV6=0",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "netif_dns_global_test",
+    srcs = [
+        "include/h2_esp_platform_core.h",
+        "src/h2_esp_platform_netif.c",
+        "tests/netif_sdk/esp_event.h",
+        "tests/netif_sdk/esp_log.h",
+        "tests/netif_sdk/esp_netif.h",
+        "tests/netif_sdk/lwip/def.h",
+        "tests/netif_sdk/lwip/dns.h",
+        "tests/netif_sdk/lwip/ip_addr.h",
+        "tests/sdk/freertos/FreeRTOS.h",
+        "tests/sdk/freertos/semphr.h",
+        "tests/test_h2_esp_platform_netif_dns.c",
+    ],
+    conlyopts = H2_C11_OPTS + ["-D_POSIX_C_SOURCE=200809L"],
+    copts = H2_WARNING_COPTS,
+    includes = [
+        "include",
+        "tests/netif_sdk",
+        "tests/sdk",
+    ],
+    local_defines = [
+        "CONFIG_ESP_NETIF_SET_DNS_PER_DEFAULT_NETIF=0",
+        "LWIP_IPV4=1",
+        "LWIP_IPV6=1",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
     name = "net_socket_test",
     srcs = [
         "src/h2_esp_platform_net_socket.c",
