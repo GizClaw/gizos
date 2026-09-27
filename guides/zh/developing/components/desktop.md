@@ -88,7 +88,7 @@ Display brightness 通过 framebuffer presentation 的 color modulation 模拟�
 
 ## 同步音视频录像
 
-公共 `app_support:recording` C lifecycle 组合 SDL3 呈现采集、PortAudio speaker 采集与 FFmpeg 编码。实现、共同时间轴、有界缓冲、透明合成和停止尾帧/尾音合同见 [Desktop 音视频录像](../media_capture.md)。产品 E2E launcher 只启动/停止它并组织 MP4 artifact。
+公共 `libs/desktop_recording` 提供 Desktop 专用的直接 C lifecycle，组合 SDL3 frame callback、PortAudio speaker callback 与 FFmpeg 编码，不定义 PAL capability 或 vtable。实现、共同时间轴、有界缓冲、透明合成和停止尾帧/尾音合同见 [Desktop 音视频录像](../desktop_recording.md)。产品 E2E launcher 只启动/停止它并组织 MP4 artifact。
 
 ## Video Decoder
 

@@ -1,11 +1,11 @@
-#include "h2_desktop_recording.h"
+#include "h2_desktop_recording_internal.h"
 
 #include <new>
 
 struct h2_desktop_recording {
   h2_sdl3_t *display = nullptr;
   h2_portaudio_t *audio = nullptr;
-  h2_ffmpeg_recording_t *encoder = nullptr;
+  h2_desktop_recording_encoder_t *encoder = nullptr;
   bool display_attached = false;
   bool audio_attached = false;
 };
@@ -13,7 +13,7 @@ struct h2_desktop_recording {
 extern "C" {
 h2_pal_result_t
 h2_desktop_recording_start(h2_sdl3_t *display, h2_portaudio_t *audio,
-                           const h2_pal_time_api_t *time, const char *path,
+                           const char *path,
                            h2_desktop_recording_t **out_recording) {
   if (out_recording == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
@@ -34,17 +34,17 @@ h2_desktop_recording_start(h2_sdl3_t *display, h2_portaudio_t *audio,
   }
   state->display = display;
   state->audio = audio;
-  const h2_ffmpeg_recording_config_t config = {
-      path, time, static_cast<uint32_t>(info.width),
-      static_cast<uint32_t>(info.height)};
-  result = h2_ffmpeg_recording_create(&config, &state->encoder);
+  const h2_desktop_recording_encoder_config_t config = {
+      path, static_cast<uint32_t>(info.width),
+      static_cast<uint32_t>(info.height), h2_desktop_recording_now_us()};
+  result = h2_desktop_recording_encoder_create(&config, &state->encoder);
   if (result == H2_PAL_OK) {
-    const h2_media_capture_api_t *capture =
-        h2_ffmpeg_recording_capture(state->encoder);
-    result = h2_sdl3_set_capture(display, capture);
+    result = h2_sdl3_set_frame_capture(
+        display, h2_desktop_recording_encoder_video, state->encoder);
     state->display_attached = result == H2_PAL_OK;
     if (result == H2_PAL_OK) {
-      result = h2_portaudio_set_capture(audio, capture);
+      result = h2_portaudio_set_output_capture(
+          audio, h2_desktop_recording_encoder_audio, state->encoder);
       state->audio_attached = result == H2_PAL_OK;
     }
   }
@@ -58,7 +58,7 @@ h2_desktop_recording_start(h2_sdl3_t *display, h2_portaudio_t *audio,
 
 h2_pal_result_t
 h2_desktop_recording_stop(h2_desktop_recording_t *state,
-                          h2_ffmpeg_recording_stats_t *out_stats) {
+                          h2_desktop_recording_stats_t *out_stats) {
   if (out_stats != nullptr) {
     *out_stats = {};
   }
@@ -66,20 +66,21 @@ h2_desktop_recording_stop(h2_desktop_recording_t *state,
     return H2_PAL_ERR_INVALID_ARG;
   }
   if (state->display_attached) {
-    (void)h2_sdl3_set_capture(state->display, nullptr);
+    (void)h2_sdl3_set_frame_capture(state->display, nullptr, nullptr);
     state->display_attached = false;
   }
   if (state->audio_attached) {
-    (void)h2_portaudio_set_capture(state->audio, nullptr);
+    (void)h2_portaudio_set_output_capture(state->audio, nullptr, nullptr);
     state->audio_attached = false;
   }
-  return h2_ffmpeg_recording_finish(state->encoder, out_stats);
+  return h2_desktop_recording_encoder_finish(
+      state->encoder, h2_desktop_recording_now_us(), out_stats);
 }
 
 void h2_desktop_recording_destroy(h2_desktop_recording_t *state) {
   if (state != nullptr) {
     (void)h2_desktop_recording_stop(state, nullptr);
-    h2_ffmpeg_recording_destroy(state->encoder);
+    h2_desktop_recording_encoder_destroy(state->encoder);
     delete state;
   }
 }

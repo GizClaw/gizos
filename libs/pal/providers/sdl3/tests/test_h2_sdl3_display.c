@@ -24,15 +24,10 @@ typedef struct capture_display {
   uint8_t brightness;
 } capture_display_t;
 
-static h2_pal_result_t capture_time(void *user, uint64_t *out) {
-  (void)user;
-  *out = 123456u;
-  return H2_PAL_OK;
-}
-static void capture_video(void *user, const h2_media_capture_video_t *frame) {
+static void capture_video(void *user, const h2_sdl3_capture_frame_t *frame) {
   capture_display_t *state = user;
   assert(frame->width == 32u && frame->height == 24u);
-  assert(frame->stride_bytes == 64u && frame->timestamp_us == 123456u);
+  assert(frame->stride_bytes == 64u && frame->timestamp_us > 0u);
   ++state->count;
   state->first_pixel = frame->pixels[0];
   state->brightness = frame->brightness;
@@ -57,12 +52,8 @@ static void test_lifecycle_and_events(void) {
   assert(info.width == 32 && info.height == 24);
 
   capture_display_t captured = {0};
-  const h2_pal_time_vtable_t time_vtable = {.get_monotonic_us = capture_time};
-  const h2_pal_time_api_t time = {NULL, &time_vtable};
-  const h2_media_capture_vtable_t capture_vtable = {capture_video, NULL, NULL};
-  const h2_media_capture_api_t capture = {&captured, &capture_vtable, &time};
-  assert(h2_sdl3_set_capture(provider, &capture) == H2_PAL_OK);
-  assert(h2_sdl3_set_capture(provider, &capture) == H2_PAL_ERR_BUSY);
+  assert(h2_sdl3_set_frame_capture(provider, capture_video, &captured) == H2_PAL_OK);
+  assert(h2_sdl3_set_frame_capture(provider, capture_video, &captured) == H2_PAL_ERR_BUSY);
   uint16_t pixels[8] = {0xffffu, 0xf800u, 0x07e0u, 0x001fu,
                         0u,      1u,      2u,      3u};
   const h2_display_rect_t rect = {.x = -1, .y = 0, .width = 4, .height = 2};
@@ -76,7 +67,7 @@ static void test_lifecycle_and_events(void) {
   assert(h2_pal_display_set_brightness_percent(display, 50u) == H2_PAL_OK);
   drain_host_events(provider);
   assert(captured.brightness == 128u);
-  assert(h2_sdl3_set_capture(provider, NULL) == H2_PAL_OK);
+  assert(h2_sdl3_set_frame_capture(provider, NULL, NULL) == H2_PAL_OK);
   const unsigned count = captured.count;
   assert(h2_pal_display_present(display) == H2_PAL_OK);
   drain_host_events(provider);

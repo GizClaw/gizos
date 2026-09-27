@@ -1,8 +1,6 @@
 #ifndef H2_SDL3_H
 #define H2_SDL3_H
 
-#include "h2_media_capture.h"
-
 #include "h2/pal/hal/h2_pal_display.h"
 #include "h2/pal/hal/h2_pal_touch.h"
 
@@ -111,13 +109,30 @@ h2_pal_result_t h2_sdl3_read_pointer(h2_sdl3_t *provider,
                                      h2_sdl3_pointer_state_t *out_state);
 void h2_sdl3_set_window_title(h2_sdl3_t *provider, const char *title);
 
-/** Register a borrowed capture sink, or NULL to synchronously unregister.
- * At most one sink; replacement returns BUSY. Call only from a control task,
- * never from a capture callback. The provider must outlive registration.
- * Successful unregister waits for callbacks already in flight.
+/** Borrowed actual presentation after LVGL composition; RGB565 is host-endian.
+ * Timestamp is steady-clock microseconds, shared with Desktop speaker capture.
+ * Pixel storage is valid only during the callback; brightness is 0..255.
  */
-h2_pal_result_t h2_sdl3_set_capture(h2_sdl3_t *provider,
-                                      const h2_media_capture_api_t *capture);
+typedef struct h2_sdl3_capture_frame {
+  const uint16_t *pixels;
+  uint32_t width;
+  uint32_t height;
+  size_t stride_bytes;
+  uint8_t brightness;
+  uint64_t timestamp_us;
+} h2_sdl3_capture_frame_t;
+typedef void (*h2_sdl3_frame_capture_fn)(void *user,
+                                       const h2_sdl3_capture_frame_t *frame);
+
+/** Register one direct Desktop presentation callback; NULL unregisters.
+ * Callback must copy into bounded storage, must not encode or perform I/O,
+ * and must not reenter SDL3. Registration while occupied returns BUSY.
+ * Provider and user storage must outlive registration. Unregister waits for
+ * in-flight callbacks. Call from a control task, never from the callback.
+ */
+h2_pal_result_t h2_sdl3_set_frame_capture(h2_sdl3_t *provider,
+                                        h2_sdl3_frame_capture_fn callback,
+                                        void *user);
 
 #ifdef __cplusplus
 }

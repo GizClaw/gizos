@@ -27,7 +27,6 @@ cc_library(
     deps = [
         "//libs/atomic/providers/c11",
         "//libs/audio_mixer",
-        "//libs/media_capture",
         "//libs/pal",
         "@h2_vendor_portaudio//:portaudio",
         "@h2_vendor_speexdsp//:speexdsp",

@@ -9,8 +9,8 @@ cc_binary(
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
     deps = [
+        "//libs/desktop_recording",
         "//libs/lvgl:platform",
         "//libs/pal/providers/desktop/app_support",
-        "//libs/pal/providers/desktop/app_support:recording",
     ],
 )

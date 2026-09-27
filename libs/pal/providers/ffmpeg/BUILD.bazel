@@ -1,5 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS", "h2_gnu_only_copts")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS", "h2_gnu_only_copts")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -50,34 +50,4 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [":ffmpeg"],
-)
-
-cc_library(
-    name = "recording",
-    srcs = ["src/h2_ffmpeg_recording.cpp"],
-    hdrs = ["include/h2_ffmpeg_recording.h"],
-    copts = H2_WARNING_COPTS + ["-Wno-thread-safety-analysis"],
-    cxxopts = H2_CXX17_OPTS,
-    includes = ["include"],
-    linkopts = ["-lpthread"],
-    target_compatible_with = select({
-        "//tools/bazel/platforms:host_linux_target_linux": [],
-        "//tools/bazel/platforms:host_macos_target_macos": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
-    deps = [
-        "//libs/media_capture",
-        "@h2_vendor_ffmpeg//:ffmpeg",
-    ],
-)
-
-cc_test(
-    name = "recording_test",
-    srcs = ["tests/test_h2_ffmpeg_recording.cpp"],
-    copts = H2_WARNING_COPTS,
-    cxxopts = H2_CXX17_OPTS,
-    deps = [
-        ":recording",
-        "@h2_vendor_ffmpeg//:ffmpeg",
-    ],
 )

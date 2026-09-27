@@ -54,8 +54,8 @@ int main(int argc, char **argv) {
       return 1;
     }
     h2_desktop_recording_t *recording = nullptr;
-    result = h2_desktop_recording_start(display.handle, audio.handle, time,
-                                        argv[1], &recording);
+    result = h2_desktop_recording_start(display.handle, audio.handle, argv[1],
+                                        &recording);
     if (result != H2_PAL_OK) {
       return 1;
     }
@@ -135,7 +135,7 @@ int main(int argc, char **argv) {
     }
     const int speaker_stop = h2_pal_audio_stop_speaker(audio.api());
     (void)h2::desktop::poll_events(&display, &lvgl);
-    h2_ffmpeg_recording_stats_t stats = {};
+    h2_desktop_recording_stats_t stats = {};
     const int recorded = h2_desktop_recording_stop(recording, &stats);
     h2_desktop_recording_destroy(recording);
     std::printf("H2_RECORDING result=%d speaker_stop=%d duration_us=%llu "

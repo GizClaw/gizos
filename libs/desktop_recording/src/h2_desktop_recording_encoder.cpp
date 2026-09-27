@@ -1,4 +1,4 @@
-#include "h2_ffmpeg_recording.h"
+#include "h2_desktop_recording_internal.h"
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -34,8 +34,7 @@ struct VideoSnapshot {
 };
 } // namespace
 
-struct h2_ffmpeg_recording {
-  const h2_pal_time_api_t *time = nullptr;
+struct h2_desktop_recording_encoder {
   uint64_t start_us = 0u;
   uint64_t end_us = 0u;
   uint32_t width = 0u;
@@ -46,8 +45,7 @@ struct h2_ffmpeg_recording {
   bool finished = false;
   std::thread worker;
   h2_pal_result_t result = H2_PAL_OK;
-  h2_ffmpeg_recording_stats_t stats = {};
-  h2_media_capture_api_t capture = {};
+  h2_desktop_recording_stats_t stats = {};
   std::array<VideoSnapshot, kVideoCapacity> video_queue;
   size_t video_head = 0u;
   size_t video_count = 0u;
@@ -71,14 +69,17 @@ struct h2_ffmpeg_recording {
 };
 
 namespace {
-void latch(h2_ffmpeg_recording_t *state, h2_pal_result_t result) {
+void latch(h2_desktop_recording_encoder_t *state, h2_pal_result_t result) {
   if (state->result == H2_PAL_OK) {
     state->result = result;
   }
 }
 
-void capture_video(void *user, const h2_media_capture_video_t *frame) {
-  auto *state = static_cast<h2_ffmpeg_recording_t *>(user);
+} // namespace
+
+void h2_desktop_recording_encoder_video(void *user,
+                                        const h2_sdl3_capture_frame_t *frame) {
+  auto *state = static_cast<h2_desktop_recording_encoder_t *>(user);
   std::lock_guard<std::mutex> lock(state->mutex);
   if (state->stopping || state->result != H2_PAL_OK) {
     return;
@@ -109,8 +110,9 @@ void capture_video(void *user, const h2_media_capture_video_t *frame) {
   state->wake.notify_one();
 }
 
-void capture_audio(void *user, const h2_media_capture_audio_t *frame) {
-  auto *state = static_cast<h2_ffmpeg_recording_t *>(user);
+void h2_desktop_recording_encoder_audio(
+    void *user, const h2_portaudio_capture_frame_t *frame) {
+  auto *state = static_cast<h2_desktop_recording_encoder_t *>(user);
   std::lock_guard<std::mutex> lock(state->mutex);
   if (state->stopping || state->result != H2_PAL_OK) {
     return;
@@ -144,18 +146,9 @@ void capture_audio(void *user, const h2_media_capture_audio_t *frame) {
   state->stats.captured_audio_frames += frame->frames - skip;
   state->wake.notify_one();
 }
-void capture_error(void *user, h2_pal_result_t result) {
-  auto *state = static_cast<h2_ffmpeg_recording_t *>(user);
-  std::lock_guard<std::mutex> lock(state->mutex);
-  if (!state->stopping) {
-    latch(state, result);
-  }
-}
-const h2_media_capture_vtable_t kCapture = {capture_video, capture_audio,
-                                            capture_error};
-
+namespace {
 int write_bytes(void *user, const uint8_t *data, int size) {
-  auto *state = static_cast<h2_ffmpeg_recording_t *>(user);
+  auto *state = static_cast<h2_desktop_recording_encoder_t *>(user);
   int offset = 0;
   while (offset < size) {
     const ssize_t result =
@@ -171,7 +164,7 @@ int write_bytes(void *user, const uint8_t *data, int size) {
   return size;
 }
 int64_t seek_bytes(void *user, int64_t offset, int whence) {
-  auto *state = static_cast<h2_ffmpeg_recording_t *>(user);
+  auto *state = static_cast<h2_desktop_recording_encoder_t *>(user);
   if (whence == AVSEEK_SIZE) {
     return AVERROR(ENOSYS);
   }
@@ -179,7 +172,7 @@ int64_t seek_bytes(void *user, int64_t offset, int whence) {
   return result < 0 ? AVERROR(errno) : static_cast<int64_t>(result);
 }
 
-bool setup_codec(h2_ffmpeg_recording_t *state, bool is_video) {
+bool setup_codec(h2_desktop_recording_encoder_t *state, bool is_video) {
   const AVCodec *codec =
       avcodec_find_encoder(is_video ? AV_CODEC_ID_MPEG4 : AV_CODEC_ID_AAC);
   if (codec == nullptr) {
@@ -222,7 +215,7 @@ bool setup_codec(h2_ffmpeg_recording_t *state, bool is_video) {
   return true;
 }
 
-bool setup(h2_ffmpeg_recording_t *state, const char *path) {
+bool setup(h2_desktop_recording_encoder_t *state, const char *path) {
   state->fd = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
   if (state->fd < 0) {
     return false;
@@ -288,7 +281,7 @@ bool setup(h2_ffmpeg_recording_t *state, const char *path) {
   return true;
 }
 
-bool encode(h2_ffmpeg_recording_t *state, bool video, AVFrame *frame) {
+bool encode(h2_desktop_recording_encoder_t *state, bool video, AVFrame *frame) {
   AVCodecContext *context = video ? state->video : state->audio;
   AVStream *stream = video ? state->video_stream : state->audio_stream;
   if (avcodec_send_frame(context, frame) < 0) {
@@ -317,7 +310,7 @@ bool encode(h2_ffmpeg_recording_t *state, bool video, AVFrame *frame) {
   }
 }
 
-bool video_step(h2_ffmpeg_recording_t *state) {
+bool video_step(h2_desktop_recording_encoder_t *state) {
   if (av_frame_make_writable(state->video_frame) < 0) {
     return false;
   }
@@ -367,7 +360,7 @@ bool video_step(h2_ffmpeg_recording_t *state) {
   return encode(state, true, state->video_frame);
 }
 
-bool audio_step(h2_ffmpeg_recording_t *state) {
+bool audio_step(h2_desktop_recording_encoder_t *state) {
   if (av_frame_make_writable(state->audio_frame) < 0) {
     return false;
   }
@@ -384,16 +377,15 @@ bool audio_step(h2_ffmpeg_recording_t *state) {
   return encode(state, false, state->audio_frame);
 }
 
-void run(h2_ffmpeg_recording_t *state) {
+void run(h2_desktop_recording_encoder_t *state) {
   bool failed = false;
   while (!failed) {
     uint64_t target_us = 0u;
     bool stopping = false;
     {
       std::unique_lock<std::mutex> lock(state->mutex);
-      uint64_t now = 0u;
-      if (h2_pal_time_get_monotonic_us(state->time, &now) != H2_PAL_OK ||
-          now < state->start_us) {
+      const uint64_t now = h2_desktop_recording_now_us();
+      if (now < state->start_us) {
         latch(state, H2_PAL_ERR_IO);
         break;
       }
@@ -440,7 +432,7 @@ void run(h2_ffmpeg_recording_t *state) {
   state->stats.video_frames = state->video_cursor;
 }
 
-void release(h2_ffmpeg_recording_t *state) {
+void release(h2_desktop_recording_encoder_t *state) {
   sws_freeContext(state->scaler);
   av_packet_free(&state->packet);
   av_frame_free(&state->video_frame);
@@ -461,33 +453,33 @@ void release(h2_ffmpeg_recording_t *state) {
 }
 } // namespace
 
-extern "C" {
-h2_pal_result_t
-h2_ffmpeg_recording_create(const h2_ffmpeg_recording_config_t *config,
-                           h2_ffmpeg_recording_t **out_recording) {
+uint64_t h2_desktop_recording_now_us() {
+  return static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          std::chrono::steady_clock::now().time_since_epoch())
+          .count());
+}
+
+h2_pal_result_t h2_desktop_recording_encoder_create(
+    const h2_desktop_recording_encoder_config_t *config,
+    h2_desktop_recording_encoder_t **out_recording) {
   if (out_recording == nullptr) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_recording = nullptr;
   if (config == nullptr || config->path == nullptr || config->path[0] == '\0' ||
-      config->time == nullptr || config->width == 0u || config->height == 0u ||
-      config->width > 4096u || config->height > 4096u ||
-      config->width % 2u != 0u || config->height % 2u != 0u) {
+      config->width == 0u || config->height == 0u || config->width > 4096u ||
+      config->height > 4096u || config->width % 2u != 0u ||
+      config->height % 2u != 0u) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  auto *state = new (std::nothrow) h2_ffmpeg_recording_t();
+  auto *state = new (std::nothrow) h2_desktop_recording_encoder_t();
   if (state == nullptr) {
     return H2_PAL_ERR_NO_MEMORY;
   }
-  state->time = config->time;
   state->width = config->width;
   state->height = config->height;
-  state->capture = {state, &kCapture, state->time};
-  if (h2_pal_time_get_monotonic_us(state->time, &state->start_us) !=
-      H2_PAL_OK) {
-    release(state);
-    return H2_PAL_ERR_UNAVAILABLE;
-  }
+  state->start_us = config->start_us;
   try {
     state->current_pixels.resize(state->width * state->height);
     for (VideoSnapshot &snapshot : state->video_queue) {
@@ -509,14 +501,10 @@ h2_ffmpeg_recording_create(const h2_ffmpeg_recording_config_t *config,
   return H2_PAL_OK;
 }
 
-const h2_media_capture_api_t *
-h2_ffmpeg_recording_capture(h2_ffmpeg_recording_t *recording) {
-  return recording == nullptr ? nullptr : &recording->capture;
-}
-
 h2_pal_result_t
-h2_ffmpeg_recording_finish(h2_ffmpeg_recording_t *state,
-                           h2_ffmpeg_recording_stats_t *out_stats) {
+h2_desktop_recording_encoder_finish(h2_desktop_recording_encoder_t *state,
+                                    uint64_t stop_us,
+                                    h2_desktop_recording_stats_t *out_stats) {
   if (out_stats != nullptr) {
     *out_stats = {};
   }
@@ -526,9 +514,8 @@ h2_ffmpeg_recording_finish(h2_ffmpeg_recording_t *state,
   if (!state->finished) {
     {
       std::lock_guard<std::mutex> lock(state->mutex);
-      uint64_t now = state->start_us;
-      if (h2_pal_time_get_monotonic_us(state->time, &now) != H2_PAL_OK ||
-          now < state->start_us) {
+      uint64_t now = stop_us;
+      if (now < state->start_us) {
         latch(state, H2_PAL_ERR_IO);
         now = state->start_us;
       }
@@ -565,10 +552,11 @@ h2_ffmpeg_recording_finish(h2_ffmpeg_recording_t *state,
   return state->result;
 }
 
-void h2_ffmpeg_recording_destroy(h2_ffmpeg_recording_t *state) {
+void h2_desktop_recording_encoder_destroy(
+    h2_desktop_recording_encoder_t *state) {
   if (state != nullptr) {
-    (void)h2_ffmpeg_recording_finish(state, nullptr);
+    (void)h2_desktop_recording_encoder_finish(
+        state, h2_desktop_recording_now_us(), nullptr);
     release(state);
   }
 }
-} // extern "C"

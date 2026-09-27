@@ -26,7 +26,6 @@ cc_library(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        "//libs/media_capture",
         "//libs/pal",
         "@h2_vendor_sdl3//:sdl3",
     ],

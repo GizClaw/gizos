@@ -1,8 +1,6 @@
 #ifndef H2_PORTAUDIO_H
 #define H2_PORTAUDIO_H
 
-#include "h2_media_capture.h"
-
 #include "h2/pal/hal/h2_pal_audio.h"
 #include "h2/pal/os/h2_pal_mem.h"
 #include "h2/pal/os/h2_pal_queue.h"
@@ -31,13 +29,28 @@ int h2_portaudio_create(const h2_portaudio_config_t *config,
 void h2_portaudio_destroy(h2_portaudio_t *provider);
 h2_pal_audio_t *h2_portaudio_audio(h2_portaudio_t *provider);
 
-/** Register a borrowed capture sink, or NULL to synchronously unregister.
- * At most one sink; replacement returns BUSY. Call only from a control task,
- * never from a capture callback. The provider must outlive registration.
- * Successful unregister waits for callbacks already in flight.
+/** Borrowed S16 PCM after mixer/volume and successful output-device write.
+ * Timestamp estimates first-sample DAC time in steady-clock microseconds,
+ * including the reported output latency. Storage lasts only for the callback.
  */
-h2_pal_result_t h2_portaudio_set_capture(h2_portaudio_t *provider,
-                                      const h2_media_capture_api_t *capture);
+typedef struct h2_portaudio_capture_frame {
+  const int16_t *samples;
+  size_t frames;
+  uint32_t sample_rate;
+  uint8_t channels;
+  uint64_t timestamp_us;
+} h2_portaudio_capture_frame_t;
+typedef void (*h2_portaudio_output_capture_fn)(
+    void *user, const h2_portaudio_capture_frame_t *frame);
+
+/** Register one direct Desktop speaker callback; NULL unregisters.
+ * Callback must copy into bounded storage, must not encode or perform I/O,
+ * and must not reenter PortAudio. Registration while occupied returns BUSY.
+ * Provider and user storage must outlive registration. Unregister waits for
+ * in-flight callbacks. Call from a control task, never from the callback.
+ */
+h2_pal_result_t h2_portaudio_set_output_capture(
+    h2_portaudio_t *provider, h2_portaudio_output_capture_fn callback, void *user);
 
 #ifdef __cplusplus
 }

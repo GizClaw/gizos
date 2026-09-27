@@ -25,4 +25,4 @@ Unit test 使用 provider test seam 覆盖参数、初始化失败、Audio API w
 
 ## Speaker 录像采集
 
-Provider 可借用平台无关的 Media Capture sink，在成功的 speaker 写入之后复制实际混音与音量处理后的 PCM。注销等待 callback 退出；设备输出延迟与同一 Time PAL 决定 presentation timestamp。合同与验证见 [Desktop 音视频录像](./media_capture.md)。
+Desktop recorder 可注册直接 output callback，在成功的 speaker 写入之后复制实际混音与音量处理后的 PCM。注销等待 callback 退出；设备输出延迟与 native steady clock 决定 presentation timestamp。这里不提供新的 PAL capability 或 capture vtable。合同与验证见 [Desktop 音视频录像](./desktop_recording.md)。
