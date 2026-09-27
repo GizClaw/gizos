@@ -1,8 +1,6 @@
-# 标准设备 RPC 与 API 验收
+# 设备 MHS 与 tool/v0 验收
 
-独立的 `gizclaw_h2peer_device_live_test` 使用与其余 GizClaw E2E 相同的
-fixture、注册和清理流程，连接一个测试设备，使用设备身份创建 API key，
-通过 HTTPS HTTP API 反向调用库内置的设备 provider。同一 case 也包含在完整 GizClaw E2E 中；独立 lane 不替代完整验收。
+独立的 `gizclaw_h2peer_device_live_test` 使用与其余 GizClaw E2E 相同的 fixture、注册和清理流程，连接测试 Peer，用设备身份创建 API key，通过 HTTPS 调用库内置的 MHS/tool-v0 provider。同一 case 也包含在完整 GizClaw E2E 中；独立 lane 不替代完整验收。Server 必须支持 SDK 0.22.0 协议，绑定的 RuntimeProfile manifest 必须声明可写的 `speaker.main/volume`（int，0–100）与 `speaker.main/muted`（bool）；注册本地 state 不会发布 manifest。
 
 ```sh
 export H2_GIZCLAW_E2E_REGISTRATION_TOKEN='<E2E registration token>'
@@ -12,13 +10,11 @@ bazel test //projects/e2e/targets/cc_test/gizclaw:gizclaw_h2peer_device_live_tes
   --test_arg=--endpoint=ap.e2e.gizclaw.com:9821 --test_output=errors
 ```
 
-API URL 与音频 URL 显式传入；API key 只保存在测试内存，不输出 secret。
-设备通过 PAL HTTP 实际下载音频，库按文件字节识别并实际解码（Ogg/Opus、MP3 或 WAV），再写入按 PCM 时长消费的
-虚拟 PAL Audio sink。测试先调用本地 player/OTA 入口，其中设备侧 `playlist_set` / `repeat_set` 写入后立即用 `playlist_snapshot` 回读条目数、标题与 revision，并检查越界写入和非法模式被拒绝后 playlist 与模式都保持原样；再检查远程音量、非法列表、播放列表、循环模式、播放进度和停止。
-播放器进度和 OTA 结果均读取服务端 `/device/status`，不以 RPC 返回代替 telemetry 验收。
-OTA 使用部署环境的 firmware metadata 和 HTTPS package URL，写入计数 Stage sink，
-在 finish 时故意拒绝校验，检查服务端可读的 failed telemetry，绝不写物理分区或重启。
-结束后撤销 API key，fixture 删除测试 Peer 并关闭所有 Service task。
+API URL 与音频 URL 显式传入；API key 只保存在测试内存，不输出 secret。设备通过 PAL HTTP 下载音频，Library 按文件字节识别并解码 Ogg/Opus、MP3 或 WAV，再写入按 PCM 时长消费的虚拟 PAL Audio sink。先运行本地 player/OTA 入口：playlist_set/repeat_set 后立即用 playlist_snapshot 回读条目数、标题与 revision，并确认拒绝越界写入和非法模式后状态不变。
+
+远程音量通过 `PATCH /gizclaw/v1/device/mhs/v0/states` 一批写入 volume/muted，随后读取 Audio PAL 确认实际音量。播放列表、循环、播放、停止与 OTA 通过 `POST /gizclaw/v1/device/tool/v0/invoke`，body 包含 numeric registry 对应的工具名称与 typed args（例如 `{"tool":"audioplayer.play","args":{"index":0}}`）。成功结果位于 `result`：playlist.set 的 playlist_length 为 `result.playlist_length`，stop 的状态为 `result.state`。非法 playlist URL 必须在 Server 上被拒绝。
+
+播放进度和 OTA 结果仍读取 `/device/status` 的 authoritative telemetry snapshot，不把工具接受回复当作执行完成。OTA 下载真实配置的 package 到计数 Stage sink，在 finish 故意拒绝校验，再检查 failed telemetry；该 sink 不写物理分区或重启。结束时撤销 API key、删除测试 Peer 并关闭 Service task。
 
 本地 Service 测试覆盖 PAL 音量映射、增量 Ogg/Opus 解码、MP3 与 WAV 的播放和定时起播、非音频内容的拒绝、32 字节环形缓冲回绕、
 HTTP 未结束时已输出 PCM、320→512 采样拼帧和末帧补零、失败列表原子性、在途下载
@@ -62,34 +58,15 @@ bazel build --config=esp32s3 --define=H2_GIZCLAW_E2E_DEVICE_ONLY=ON \
 
 真实下载、H2Loader 安装、重启及新镜像确认使用显式选择的 [AMOLED OTA hardware acceptance](/apps/h2loader/boards/amoled/gizclaw_ota_e2e) 入口；普通 device suite 的计数 Stage sink 不能作为真机升级通过的证据。
 
-## 设备配置 RPC
+## 状态、工具与发现验收
 
-除播放器、Wi-Fi、音量、重启和 OTA 之外，库还回答五个设备配置反向 RPC。protobuf
-解码、编码和全部范围校验都在 `libs/gizclaw` 内，产品只实现 `h2_gizclaw_vtable_t` 的
-一个 typed hook；hook 未设置时回复 `UNIMPLEMENTED`，不会伪装成功。
+SDK 通过 `client.tool.v0.list`（136）返回实际注册的 ClientTool 数字，并通过 `client.rpc.methods.list`（137）返回支持的 RPC family/version 数字。HTTP 控制端先用 `GET /device/tool/v0/tools` 发现工具，再调用 tool/v0/invoke。GizOS 根据 PAL 和产品 hooks 注册内置工具；DEVICE_FIND 与 SOCIAL_PING 由产品的静态 tool_handlers 表提供。旧的独立设备 RPC、字符串方法列表与 DeviceSettings hooks 已移除。
 
-| Method | 库负责 | 产品 hook |
-| --- | --- | --- |
-| `client.device.settings.get`（128） | 解码、编码、校验回包 | `get_device_settings` |
-| `client.device.settings.set`（129） | 解码、整体范围校验 | `set_device_settings` |
-| `client.device.factory_reset`（130） | 解码、先回复再交接 | `request_factory_reset` |
-| `client.rpc.methods.get`（131） | 全部，按已配置能力派生 | 无 |
-| `client.run.workspace.set`（132） | 校验名字、先回复再交接 | `request_run_workspace_set` |
+MHS state 表在初始化时借用到 Service deinit，产品用 read/check/write callback 提供亮度、locale 等状态。一次请求必须有 1–32 个唯一 key；写入先验证完整批次和全部 check，再执行 write。预检拒绝时硬件不变；应用中途出错不回滚，调用方重新 read。未知 key 返回 NOT_FOUND，写只读项或非法值返回 INVALID_ARGUMENT，失败的前置条件返回 FAILED_PRECONDITION。输出使用 callback 报告的实际值。详细合同见 [GizClaw 开发指南](/zh/developing/gizclaw#设备-provider)。
 
-`h2_gizclaw_device_settings_t` 的每个成员在两个方向上都是可选的：set 请求里缺席表示
-“不改动”，回包里缺席表示“设备不支持”。库按服务端同一套规则校验（亮度 `[0, 100]`、
-超时 `>= 0`、`locale` 为 well-formed BCP 47、枚举取具名值），任一成员越界整份 patch
-被拒且产品 hook 不被调用；产品回包越界时 RPC 失败而不是发出非法值。`locale` 的长度在
-内联缓冲区内扫描，产品 hook 填满全部字节而不留 NUL 时按非法值拒绝。亮度、`locale` 等
-值不在库内落到 PAL —— `h2_pal_display` / `h2_pal_led` 只能写不能读，库若自己写入就无法
-如实回答 get。恢复出厂与切 Workspace 复用 `client.device.reboot` 的“回复之后交接”时序，
-切换本身由产品在 App 线程上调用 `h2_gizclaw_session_select()` 完成，库不越过 Session。
+Factory reset 与 run.workspace.set 作为 tool/v0 过程保留 typed 产品 hook。Library 校验 keep_network/name/kickoff，回复完成后才交接到产品 owner；响应失败或停止会取消待执行动作。Workspace 切换由产品在 App owner 上调用 h2_gizclaw_session_select，Library 不越过 Session。
 
-本地 Service 测试覆盖五个方法的分发、每一条非法 `DeviceSettings` 成员的单独拒绝、
-回复之后才触发 hook，以及 `client.rpc.methods.get` 与实际可答方法的双向一致性
-（每个上报的方法必须不回 `UNIMPLEMENTED`，每个已知但未上报的方法必须回
-`UNIMPLEMENTED`）。E2E app 尚未注册这些 hook，因此 live device suite 暂不覆盖它们；
-这五个方法的实机验收随产品实现一起进行。
+本地 `h2_gizclaw_protocol_test` 在 fake PAL 上向真实 SDK 输入 RPC frame，验证 SDK 工具列表、数字方法列表、已注册内置/产品工具调用、未安装工具与退休方法的 UNIMPLEMENTED，以及 MHS read/write 和 wire 错误映射。它保留 SDK 的完整 decode/dispatch/response encode 路径，不用本地数组查询代替发现。`h2_gizclaw_mhs_test` 验证表和 wire 校验、precheck 零写入、实际生效值、partial apply 与分配失败清理。Service 测试继续覆盖播放器、OTA 和回复后的产品交接。协议测试不等于真实网络、manifest 配置、设备音质或恢复出厂验收；live suite 未配置的产品 hooks 需随产品另行验收。
 
 ## Activity telemetry
 
