@@ -178,7 +178,11 @@ def h2_web_app(
             "--oformat=html",
         ] + preload_opts + linkopts,
         target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
-        deps = deps + [":" + name + "_board", Label("//libs/app_host")],
+        deps = deps + [
+            ":" + name + "_board",
+            Label("//libs/app_host"),
+            Label("//libs/atomic/providers/c11"),
+        ],
     )
     outputs = ["index.html", "index.js", "index.wasm"]
     if preload:

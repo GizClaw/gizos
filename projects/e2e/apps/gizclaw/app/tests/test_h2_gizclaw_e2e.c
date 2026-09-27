@@ -160,26 +160,26 @@ int main(void) {
                                                   "workspace-1"));
 
   assert(h2_gizclaw_e2e_concurrency_classify(H2_PAL_OK, H2_PAL_OK, H2_PAL_OK,
-                                             3u, 3u, 3u, 3u, 0u) == H2_PAL_OK);
+                                             6u, 6u, 6u, 6u, 0u) == H2_PAL_OK);
   assert(h2_gizclaw_e2e_concurrency_classify(H2_PAL_ERR_TIMEOUT, H2_PAL_OK,
                                              H2_PAL_OK, 2u, 0u, 2u, 2u,
                                              0u) == H2_PAL_ERR_TIMEOUT);
   assert(h2_gizclaw_e2e_concurrency_classify(H2_PAL_OK, H2_PAL_ERR_IO,
-                                             H2_PAL_OK, 3u, 3u, 3u, 3u,
+                                             H2_PAL_OK, 6u, 6u, 6u, 6u,
                                              0u) == H2_PAL_ERR_IO);
   assert(h2_gizclaw_e2e_concurrency_classify(H2_PAL_OK, H2_PAL_OK, H2_PAL_OK,
-                                             3u, 3u, 2u, 3u, 0u) == H2_PAL_OK);
+                                             6u, 6u, 2u, 6u, 0u) == H2_PAL_OK);
   assert(h2_gizclaw_e2e_concurrency_classify(H2_PAL_OK, H2_PAL_OK, H2_PAL_OK,
-                                             3u, 3u, 4u, 3u,
+                                             6u, 6u, 7u, 6u,
                                              0u) == H2_PAL_ERR_INVALID_STATE);
   assert(h2_gizclaw_e2e_concurrency_classify(H2_PAL_OK, H2_PAL_OK, H2_PAL_OK,
-                                             3u, 3u, 0u, 3u,
+                                             6u, 6u, 0u, 6u,
                                              0u) == H2_PAL_ERR_INVALID_STATE);
   assert(h2_gizclaw_e2e_concurrency_classify(H2_PAL_OK, H2_PAL_OK, H2_PAL_OK,
-                                             3u, 3u, 3u, 2u,
+                                             6u, 6u, 6u, 2u,
                                              0u) == H2_PAL_ERR_INVALID_STATE);
   assert(h2_gizclaw_e2e_concurrency_classify(H2_PAL_OK, H2_PAL_OK, H2_PAL_OK,
-                                             3u, 3u, 3u, 3u,
+                                             6u, 6u, 6u, 6u,
                                              1u) == H2_PAL_ERR_INVALID_STATE);
 
   h2_gizclaw_e2e_result_t result;

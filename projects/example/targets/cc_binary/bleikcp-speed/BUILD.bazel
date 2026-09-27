@@ -12,6 +12,7 @@ cc_library(
     cxxopts = H2_CXX17_OPTS,
     includes = ["."],
     deps = [
+        "//libs/atomic/providers/c11",
         "//libs/pal",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/app_support",

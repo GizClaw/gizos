@@ -125,6 +125,11 @@ def esp_target_task_policy(
         policies = policies,
         default_policy = default_policy,
     )
+    native.filegroup(
+        name = name + "_stack_accounting",
+        srcs = [":" + name + "_codegen"],
+        output_group = "stack_accounting",
+    )
     firmware_native_component(
         name = name,
         hdrs = [header],

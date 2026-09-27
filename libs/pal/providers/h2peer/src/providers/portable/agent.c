@@ -3,7 +3,6 @@
 #include <string.h>
 
 #include "agent.h"
-#include "base64.h"
 #include "config.h"
 #include "ice.h"
 #include "ports.h"

@@ -16,6 +16,8 @@
 
 `h2_lvgl_platform_init()` 在调用 `lv_init()` 前绑定 Runtime 提供的 Memory、Task、Sync、Queue 和 Time PAL API。LVGL 的 custom malloc ABI 由 `libs/lvgl` 实现，所有 widget、TinyTTF glyph cache、filesystem cache 和 LVGL internal object 都通过绑定的 Memory PAL 分配；target 不能回退到 libc heap。调用方必须在 `lv_deinit()` 完成后再调用 `h2_lvgl_platform_deinit()`，保证 allocator 的生命周期覆盖全部 LVGL object。
 
+当前固定的 upstream revision 在 `lv_os_init()` 中创建 general OS mutex，但 `lv_deinit()` 没有对应的删除操作。Custom OSAL 的 `lv_mem_deinit()` 在最终内存清理阶段释放该 mutex 及其 wrapper，并清空 handle，保证重复 init/deinit 不累积这些分配。Memory PAL 与 Sync PAL 必须在整个 `lv_deinit()` 期间保持有效，随后才能解除 platform 绑定。
+
 文件资源通过 `h2_lvgl_fs_register()` 注册为 LVGL drive。Adapter 把 `P:/...` 这类 LVGL path 映射到调用方注入的 PAL Filesystem，并在 backend 不支持 seek 时使用有界 scratch buffer 实现 forward seek 或 reopen。字体、图片和其它 consumer 只使用 LVGL path，不能直接依赖 POSIX、ESP-IDF、Armino 或 Desktop 文件 API。
 
 `h2_lvgl_touch_create()` 把一个已校准到 display viewport 的 Touch PAL 注册成 LVGL pointer indev，不知道 evdev、GPIO、controller 或 board identity。`h2_lvgl_button_bind()` 解析 App Button component 到 mapped `PUSH_EDGE` periph，再把 widget 的 pressed/released edge 写入 Runtime；它不在 LVGL callback 中自行识别 click 或 long press。Adapter 对同一 Runtime/periph ID 强制唯一 live producer，重复 bind 返回 `H2_PAL_ERR_BUSY`；widget delete 释放 ownership 后才允许 rebind。
@@ -32,14 +34,30 @@ ESP-IDF、BK7258 和 Desktop build adapter 都编译同一份 `h2_lvgl_osal.c` �
 
 `//libs/lvgl:display` 只借用 Display PAL 与 Memory PAL：它打开 display、创建 LVGL display 和 RGB565 partial draw buffer，并把 flush 转换为 `draw_bitmap()` 与 `present()`。它不依赖 SDL3、不创建原生窗口，也不拥有 Desktop policy。Desktop 的 SDL3 Touch PAL 继续通过 `h2_lvgl_touch_create()` 接到 LVGL pointer；键盘与滚轮没有公共 PAL contract，因此其 bridge 留在 `//libs/pal/providers/desktop/app_support:app_support` 私有实现中。销毁时调用方先删除 LVGL consumer，再销毁 SDL3 provider，最后执行 `lv_deinit()` 与 `h2_lvgl_platform_deinit()`。
 
+## 可选内存池
+
+调用方可以设置 `h2_lvgl_platform_config_t.pool_initial_bytes` 启用 plain TLSF 子分配，`pool_grow_bytes` 指定后续 chunk 的存储大小；growth 为 0 时复用 initial。Initial 为 0 时完全保留原来的 Memory PAL 直通行为，并忽略 growth。已有 C designated initializer 未指定的新字段自动置零；positional initializer 显式补两个零值以满足完整字段的 warning policy。两个有效 chunk size 均至少为 256 B，最多为固定 TLSF 最大 block size 的一半；非法设置、缺少所需 PAL operation 或初始资源分配失败使 platform init 返回负值，已取得的资源全部回收。当前或新配置启用 pool 时，重复 platform init 必须先解除绑定，不能覆盖 live pool owner。Native direct-to-direct 配置重绑保留原有行为，调用方在更换 API 前必须释放原来的 live allocation；Web 继续拒绝重复绑定。Chunk size 不包含每个 chunk 的描述符及对齐 padding、单个 TLSF control allocation 和 native Sync PAL mutex。
+
+不超过 growth chunk size 一半的请求使用池；当前空闲块不足时，从 caller allocator 取得一个 growth chunk 并重试。小块只使用 TLSF 自身元数据，没有额外 owner header；返回地址满足 `max_align_t` alignment（MSVC C 使用覆盖 `long double`、`long long` 和 pointer 的对齐类型）：每个 chunk 的首块起点和 block 的物理步长保持对齐，避免逐次 `tlsf_memalign()` 的额外空间搜索妨碍小块复用。超过阈值的请求直接使用 caller allocator，仅这些大块带有对齐的链表头，用于 realloc/free 路由及最终回收。池块通过所属 chunk 地址范围识别；大块 realloc 缩小后仍保留 direct 路径。池内 realloc 扩大时可以移动到另一 chunk 或 direct allocation，失败保留原指针及内容；缩小保留对齐。Pool mode 的 core hook 对零长度 allocation 返回 NULL，realloc 到零释放原块；LVGL 公共 allocator 自己的零长度语义不变。
+
+固定 upstream 的 custom memory hook 调用没有持有 general LVGL lock 的保证，OSAL 自身也会在 general mutex 建立前分配 wrapper。Native bridge 因此使用独立的 Sync PAL mutex 串行化池、chunk/direct 列表及统计读取，该 mutex 直接从 caller allocator 分配。Web bridge 复用同一内存实现并保留单线程约束；Mobile 的 libc allocator variant 不受影响。Hook 和统计函数只允许在 task context 调用，不能在 ISR 中使用；caller allocator callback 不能重入这些 hook。Init/deinit 必须由调用方在 consumer 和 worker 停止后串行执行。
+
+`lv_mem_deinit()` 在释放 general mutex 后销毁 TLSF control，回收所有 chunk、未释放的 direct allocation 以及独立 memory mutex；所有旧指针随后失效。`h2_lvgl_platform_deinit()` 在丢弃 borrowed API 前重复执行幂等清理。平台保持绑定时再次 `lv_init()` 会重新准备池，也支持每轮重新绑定 platform；如果重建失败，后续 allocation 返回 NULL，因为 upstream `lv_init()` 没有可返回错误的接口。调用方仍需先完成对象和 worker teardown，不能用直接解除 platform 绑定代替 `lv_deinit()`。
+
+`h2_lvgl_platform_get_memory_stats()` 在 caller-provided storage 中返回 chunk 数、包含 chunk 描述符和对齐 padding 的 caller bytes、TLSF control bytes、已用 TLSF block bytes、最大空闲 block，以及 direct block 数和 requested bytes。已用量包含 TLSF 的 size rounding，不包含 caller allocator 的 block overhead、PAL mutex storage 或 direct header；最大空闲 block 是未扣 alignment 成本的原始块大小，不能作为同等大小 allocation 必定成功的承诺。统计在请求时持锁遍历 block，复杂度为 O(blocks)，适合低频日志。未绑定、direct mode 或 `lv_mem_deinit()` 后返回全零；NULL 输出或 lock 失败返回负值。Pool chunk 保留至 teardown，不在普通 free 时归还或收缩。
+
 ## 构建与测试
 
 ```sh
-bazel test //libs/lvgl:all
+bazel test //libs/lvgl/... --test_output=errors
 ```
 
-Bazel package 编译 LVGL portable source，并排除 target-specific driver 和未启用 backend。测试验证 PAL allocator bridge、filesystem seek，以及 Display PAL 的尺寸、partial flush、stride、present 与重复 lifecycle。
+Bazel package 编译 LVGL portable source，并排除 target-specific driver 和未启用 backend。测试验证默认 PAL allocator bridge、pool alignment/增长/失败回滚/并发、大块路由、native 与 Web 重复 lifecycle、filesystem seek，以及 Display PAL 的尺寸、partial flush、stride 和 present。
 
 固件 `firmware` variant 与 Desktop 一样启用公共 LodePNG decoder，固件 source group 同时包含 decoder 和 LodePNG codec。Consumer 可以使用 RAW/RAW_ALPHA PNG image descriptor；下载、尺寸和体积限制、缓存生命周期仍由 consumer 管理。Feature define 由公共 library 传播，不能仅在最终 SDK 配置中启用而遗漏 Bazel archive 中的 codec。
 
 `@h2_vendor_lvgl//:firmware_sources` 是放入 `//libs/lvgl:firmware.srcs` 的 `filegroup`，不是独立编译的 `cc_library` dependency。因此 `firmware.defines` 中的 `LV_USE_LODEPNG=1` 直接参与 `lv_lodepng.c` 和 `lodepng.c` 的编译，并传播给 consumer；验证时应检查这两个源码的 compile action 和 archive 中的 decoder/codec 定义。
+
+## Arena allocator
+
+Platform allocator 可使用 `libs/mem_arena` 借出的 Memory PAL；LVGL allocation、OSAL object 和 display adapter buffer 的生命周期均须结束后才能销毁 arena。先删除 display adapter，再完成 `lv_deinit()` 和 `h2_lvgl_platform_deinit()`，最后检查逐池 live 与 fallback live 归零。`//libs/lvgl:arena_test` 覆盖 small/large/fallback 之间的 realloc 数据保留及多轮初始化、退出后的完整释放。

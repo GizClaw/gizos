@@ -15,6 +15,7 @@ typedef struct h2_app_test_power {
   h2_pal_power_state_t state;
   int hold_enabled;
   uint32_t last_reason;
+  uint32_t deep_sleep_wake_timer_ms;
   h2_app_test_fault_t hold, reboot, shutdown, sleep, deep_sleep;
 } h2_app_test_power_t;
 /** Initialize stopped-test storage with RUNNING state and supported

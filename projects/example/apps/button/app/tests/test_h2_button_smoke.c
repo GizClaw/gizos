@@ -1,4 +1,5 @@
 #include "h2_button_smoke.h"
+#include "h2_atomic.h"
 #include "h2_desktop_platform.h"
 #include "h2_runtime_test.h"
 #include "h2_smoke_host_runtime.h"
@@ -6,11 +7,10 @@
 #include <assert.h>
 #include <limits.h>
 #include <stdlib.h>
-#include <stdatomic.h>
 #include <string.h>
 
 typedef struct fixture {
-  atomic_size_t allocations;
+  h2_atomic_size_t allocations;
   unsigned opened, closed, drawn, presented, started, logs, polls;
   h2_pal_result_t started_result;
   int draw_result, close_result;
@@ -19,15 +19,20 @@ typedef struct fixture {
 
 static void *allocate(void *user, size_t size) {
   void *ptr = malloc(size);
-  if (ptr != NULL) ++((fixture_t *)user)->allocations;
+  if (ptr != NULL) (void)h2_atomic_size_fetch_add(
+      &((fixture_t *)user)->allocations, 1u, H2_ATOMIC_RELAXED);
   return ptr;
 }
 static void release(void *user, void *ptr) {
   if (ptr != NULL) {
-    assert(((fixture_t *)user)->allocations > 0u);
-    --((fixture_t *)user)->allocations;
+    const size_t previous = h2_atomic_size_fetch_sub(
+        &((fixture_t *)user)->allocations, 1u, H2_ATOMIC_RELAXED);
+    assert(previous > 0u);
     free(ptr);
   }
+}
+static size_t allocation_count(const fixture_t *f) {
+  return h2_atomic_size_load(&f->allocations, H2_ATOMIC_RELAXED);
 }
 static void *resize(void *user, void *ptr, size_t size) {
   if (ptr == NULL) return allocate(user, size);
@@ -114,6 +119,7 @@ static h2_pal_result_t mapper_list(void *user, h2_runtime_component_t filter,
 
 int main(void) {
   fixture_t f = {.width = 640, .height = 480};
+  assert(h2_atomic_size_init(&f.allocations, 0u) == H2_ATOMIC_OK);
   const h2_pal_mem_vtable_t mem_vtable = {
       .alloc = allocate, .realloc = resize, .free = release};
   const h2_pal_mem_api_t mem = {&f, &mem_vtable};
@@ -142,7 +148,7 @@ int main(void) {
   assert(h2_runtime_init(&rc, &runtime) == H2_PAL_OK);
   h2_runtime_test_control_t *control = NULL;
   assert(h2_runtime_test_control_open(runtime, &control) == H2_PAL_OK);
-  const size_t baseline_allocations = f.allocations;
+  const size_t baseline_allocations = allocation_count(&f);
   const h2_button_smoke_button_t button = {1u, "Action"};
   const h2_button_smoke_config_t config = {
       .width = 640u, .height = 480u, .buttons = &button, .button_count = 1u,
@@ -165,7 +171,7 @@ int main(void) {
   invalid = config; invalid.width = 65536u; invalid.height = 65536u;
   assert(h2_button_smoke_run(runtime, &invalid) == H2_PAL_ERR_INVALID_ARG);
   assert(f.opened == 0u && f.started == 0u);
-  assert(f.allocations == baseline_allocations);
+  assert(allocation_count(&f) == baseline_allocations);
   const uint32_t invalid_dimensions[][2] = {
       {0u, 480u},
       {640u, 0u},
@@ -179,7 +185,7 @@ int main(void) {
     invalid.height = invalid_dimensions[i][1];
     assert(h2_button_smoke_run(runtime, &invalid) == H2_PAL_ERR_INVALID_ARG);
     assert(f.opened == 0u && f.started == 0u);
-    assert(f.allocations == baseline_allocations);
+    assert(allocation_count(&f) == baseline_allocations);
   }
   for (unsigned api = 0u; api < 7u; ++api) {
     h2_runtime_t copy = *runtime;
@@ -194,7 +200,7 @@ int main(void) {
     }
     assert(h2_button_smoke_run(&copy, &config) == H2_PAL_ERR_INVALID_ARG);
     assert(f.opened == 0u && f.started == 0u);
-    assert(f.allocations == baseline_allocations);
+    assert(allocation_count(&f) == baseline_allocations);
   }
   for (unsigned axis = 0u; axis < 2u; ++axis) {
     invalid = config;
@@ -202,7 +208,7 @@ int main(void) {
     assert(h2_button_smoke_run(runtime, &invalid) == H2_PAL_ERR_INVALID_ARG);
     assert(f.opened == axis + 1u && f.closed == f.opened);
     assert(f.started == axis + 1u && f.started_result == H2_PAL_ERR_INVALID_ARG);
-    assert(f.allocations == baseline_allocations);
+    assert(allocation_count(&f) == baseline_allocations);
   }
   f.opened = f.closed = f.started = 0u;
   h2_runtime_component_info_t info;
@@ -217,16 +223,17 @@ int main(void) {
   assert(f.opened == 1u && f.closed == 1u);
   /* libs/lvgl's lv_deinit keeps its global OS mutex (2 allocations per init). */
   const size_t retained_per_init = 2u;
-  assert(f.allocations <= baseline_allocations + retained_per_init);
+  assert(allocation_count(&f) <= baseline_allocations + retained_per_init);
   /* A flush error wins over a later close error. */
   f.logs = f.polls = f.presented = 0u;
   f.draw_result = H2_PAL_ERR_IO;
   f.close_result = H2_PAL_ERR_UNAVAILABLE;
   assert(h2_button_smoke_run(runtime, &config) == H2_PAL_ERR_IO);
   assert(f.closed == 2u);
-  assert(f.allocations <= baseline_allocations + 2u * retained_per_init);
+  assert(allocation_count(&f) <= baseline_allocations + 2u * retained_per_init);
   h2_runtime_test_control_close(control);
   h2_runtime_deinit(runtime);
-  assert(f.allocations <= 2u * retained_per_init);
+  assert(allocation_count(&f) <= 2u * retained_per_init);
+  h2_atomic_size_destroy(&f.allocations);
   return 0;
 }

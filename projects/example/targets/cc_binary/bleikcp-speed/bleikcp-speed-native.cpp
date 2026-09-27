@@ -3,7 +3,7 @@
 #include "h2_bleikcp_speed.h"
 #include "h2/pal/h2_pal_unsupported.h"
 
-#include <atomic>
+#include "h2_atomic.h"
 #include <chrono>
 #include <csignal>
 #include <cstdio>
@@ -19,9 +19,9 @@ void request_stop_from_signal(int) {
 }
 
 struct RunState {
-  std::atomic<bool> stop = false;
-  std::atomic<bool> done = false;
-  std::atomic<int> result = H2_PAL_ERR_INVALID_STATE;
+  h2_atomic_bool_t stop = {};
+  h2_atomic_bool_t done = {};
+  h2_atomic_int_t result = {};
 };
 
 int ready(void *) {
@@ -34,7 +34,7 @@ int advertising_noop(void *) {
 
 bool should_stop(void *user) {
   const auto *state = static_cast<RunState *>(user);
-  return state == nullptr || state->stop.load(std::memory_order_acquire);
+  return state == nullptr || h2_atomic_bool_load(&state->stop, H2_ATOMIC_ACQUIRE);
 }
 
 void worker_main(h2_runtime_t *runtime, bool client, RunState *state) {
@@ -50,9 +50,9 @@ void worker_main(h2_runtime_t *runtime, bool client, RunState *state) {
   config.ready = ready;
   config.should_stop = should_stop;
   config.stop_user = state;
-  state->result.store(h2_bleikcp_speed_run(runtime, &config),
-                      std::memory_order_release);
-  state->done.store(true, std::memory_order_release);
+  h2_atomic_int_store(&state->result, h2_bleikcp_speed_run(runtime, &config),
+                      H2_ATOMIC_RELEASE);
+  h2_atomic_bool_store(&state->done, true, H2_ATOMIC_RELEASE);
 }
 
 } // namespace
@@ -89,6 +89,21 @@ int run_bleikcp_speed(const Layout &layout, bool client) {
   }
 
   RunState state;
+  if (h2_atomic_bool_init(&state.stop, false) != H2_ATOMIC_OK ||
+      h2_atomic_bool_init(&state.done, false) != H2_ATOMIC_OK ||
+      h2_atomic_int_init(&state.result, H2_PAL_ERR_INVALID_STATE) != H2_ATOMIC_OK) {
+    h2_atomic_bool_destroy(&state.stop);
+    h2_atomic_bool_destroy(&state.done);
+    h2_atomic_int_destroy(&state.result);
+    h2_runtime_deinit(runtime);
+    (void)h2_pal_display_close(display);
+    return 1;
+  }
+  auto destroy_state = [&state]() {
+    h2_atomic_bool_destroy(&state.stop);
+    h2_atomic_bool_destroy(&state.done);
+    h2_atomic_int_destroy(&state.result);
+  };
   std::thread worker;
   try {
     worker = std::thread(worker_main, runtime, client, &state);
@@ -97,19 +112,20 @@ int run_bleikcp_speed(const Layout &layout, bool client) {
                  layout.app_name);
     h2_runtime_deinit(runtime);
     (void)h2_pal_display_close(display);
+    destroy_state();
     return 1;
   }
-  while (!state.done.load(std::memory_order_acquire)) {
+  while (!h2_atomic_bool_load(&state.done, H2_ATOMIC_ACQUIRE)) {
     if (signal_stop_requested != 0 ||
         poll_events(&display_provider) != 0) {
-      state.stop.store(true, std::memory_order_release);
+      h2_atomic_bool_store(&state.stop, true, H2_ATOMIC_RELEASE);
       break;
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(16));
   }
-  state.stop.store(true, std::memory_order_release);
+  h2_atomic_bool_store(&state.stop, true, H2_ATOMIC_RELEASE);
   worker.join();
-  const int result = state.result.load(std::memory_order_acquire);
+  const int result = h2_atomic_int_load(&state.result, H2_ATOMIC_ACQUIRE);
   const int stop_result = h2_pal_ble_stop(runtime->ble_host);
   if (result != H2_PAL_OK) {
     std::fprintf(stderr, "desktop %s: app failed (%d)\n",
@@ -121,6 +137,7 @@ int run_bleikcp_speed(const Layout &layout, bool client) {
   }
   h2_runtime_deinit(runtime);
   (void)h2_pal_display_close(display);
+  destroy_state();
   return result == H2_PAL_OK && stop_result == H2_PAL_OK ? 0 : 1;
 }
 

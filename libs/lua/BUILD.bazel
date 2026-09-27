@@ -71,8 +71,8 @@ h2_lua_resource(
 
 h2_lua_resource(
     name = "compact_fixture",
-    compact = True,
     src = "tests/compact_resource.lua",
+    compact = True,
     symbol = "compact_fixture",
     visibility = ["//visibility:private"],
 )
@@ -161,9 +161,11 @@ cc_library(
     deps = [
         ":lua_core",
         ":numeric_prepared",
+        "//libs/encoding",
         "//libs/raster2d",
         "//libs/raster2d:span_internal",
         "//libs/runtime",
+        "//libs/trie",
         "//libs/utils",
         "//tools/bazel:vendor_third_party_lua",
     ],
@@ -173,17 +175,17 @@ cc_library(
     name = "lua_runtime",
     srcs = [
         "src/core/h2_lua_internal.h",
+        "src/modules/h2_lua_display_internal.h",
         "src/modules/h2_lua_esp_claw.c",
         "src/modules/h2_lua_geometry_batches_internal.h",
         "src/modules/h2_lua_kv.c",
         "src/modules/h2_lua_modules.c",
-        "src/modules/h2_lua_display_internal.h",
         "src/modules/h2_lua_numeric_internal.h",
         "src/modules/h2_lua_storage.c",
         "src/modules/h2_lua_storage_internal.h",
         "src/runtime/h2_lua.c",
-        "src/runtime/h2_lua_heap.c",
         "src/runtime/h2_lua_event.c",
+        "src/runtime/h2_lua_heap.c",
         "src/runtime/h2_lua_internal.h",
         "src/runtime/h2_lua_job.c",
         "src/runtime/h2_lua_task_names.c",
@@ -210,9 +212,11 @@ cc_library(
         ":lua_core",
         ":numeric_prepared",
         ":tasks",
+        "//libs/atomic",
         "//libs/raster2d",
         "//libs/raster2d:span_internal",
         "//libs/runtime",
+        "//libs/trie",
         "//libs/utils",
         "//tools/bazel:vendor_third_party_lua",
         "//tools/bazel:vendor_third_party_tlsf",
@@ -287,16 +291,16 @@ cc_test(
 cc_test(
     name = "lua_test",
     srcs = ["tests/test_h2_lua.c"],
-    data = [
-        "tests/geometry_batches.lua",
-        "tests/stroke_buffer.lua",
-        "tests/mesh_source_paths.lua",
-        "tests/mesh_staging.lua",
-        "tests/raster2d.lua",
-    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
+    data = [
+        "tests/geometry_batches.lua",
+        "tests/mesh_source_paths.lua",
+        "tests/mesh_staging.lua",
+        "tests/raster2d.lua",
+        "tests/stroke_buffer.lua",
+    ],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
@@ -305,6 +309,7 @@ cc_test(
     }),
     deps = [
         ":lua_runtime",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
         "//tools/bazel:vendor_third_party_lua",
@@ -327,6 +332,7 @@ cc_library(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
         "//libs/runtime",
@@ -347,6 +353,7 @@ cc_test(
     }),
     deps = [
         ":lua_runtime",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
     ],
@@ -366,6 +373,7 @@ cc_test(
     }),
     deps = [
         ":lua_runtime",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
     ],
@@ -385,9 +393,29 @@ cc_test(
     deps = [
         ":link_fake_ble",
         ":lua_link",
+        "//libs/atomic/providers/c11",
+        "//libs/pal:test_allocator",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
     ],
+)
+
+py_binary(
+    name = "source_content_id",
+    srcs = ["source_content_id.py"],
+    legacy_create_init = 0,
+    main = "source_content_id.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+filegroup(
+    name = "runtime_sources_content_id",
+    srcs = [":runtime_source_files"],
+    output_group = "content_id",
 )
 
 cc_test(
@@ -415,6 +443,7 @@ cc_test(
     }),
     deps = [
         ":lua_runtime",
+        "//libs/atomic/providers/c11",
         "//tools/bazel:vendor_third_party_lua",
     ],
 )
@@ -448,10 +477,12 @@ py_test(
     args = [
         "$(location :runtime_sources)",
         "$(location tests/test_embedder.c)",
+        "$(location :runtime_sources_content_id)",
     ],
     data = [
         "tests/test_embedder.c",
         ":runtime_sources",
+        ":runtime_sources_content_id",
     ],
     legacy_create_init = 0,
     main = "tests/test_source_package.py",

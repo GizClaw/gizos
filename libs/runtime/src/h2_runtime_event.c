@@ -76,22 +76,10 @@ void h2_runtime_notify_internal(h2_runtime_t *runtime) {
 }
 
 static uint32_t add_dropped_event(h2_runtime_private_t *private_state) {
-#if H2_RUNTIME_ATOMIC_ADD_LOCK_FREE
-    return atomic_fetch_add_explicit(
+    return h2_atomic_fetch_add_explicit(
                &private_state->dropped_event_count, 1u,
-               memory_order_relaxed) +
+               H2_ATOMIC_RELAXED) +
            1u;
-#else
-    h2_runtime_flag_lock(&private_state->dropped_event_lock);
-    const uint32_t total =
-        atomic_load_explicit(
-            &private_state->dropped_event_count, memory_order_relaxed) +
-        1u;
-    atomic_store_explicit(
-        &private_state->dropped_event_count, total, memory_order_relaxed);
-    h2_runtime_flag_unlock(&private_state->dropped_event_lock);
-    return total;
-#endif
 }
 
 void h2_runtime_record_dropped_event(
@@ -103,14 +91,14 @@ void h2_runtime_record_dropped_event(
         return;
     }
     h2_runtime_private_t *private_state = runtime->private_state;
-    atomic_store_explicit(
-        &private_state->last_dropped_kind, (int)kind, memory_order_relaxed);
-    atomic_store_explicit(
+    h2_atomic_store_explicit(
+        &private_state->last_dropped_kind, (int)kind, H2_ATOMIC_RELAXED);
+    h2_atomic_store_explicit(
         &private_state->last_dropped_component, (int)component,
-        memory_order_relaxed);
-    atomic_store_explicit(
+        H2_ATOMIC_RELAXED);
+    h2_atomic_store_explicit(
         &private_state->last_dropped_component_id, component_id,
-        memory_order_relaxed);
+        H2_ATOMIC_RELAXED);
     (void)add_dropped_event(private_state);
     h2_runtime_report_dropped_events(runtime);
 }
@@ -146,18 +134,23 @@ void h2_runtime_report_dropped_events(h2_runtime_t *runtime) {
         return;
     }
     h2_runtime_private_t *private_state = runtime->private_state;
-    if (atomic_flag_test_and_set_explicit(
-            &private_state->drop_report_lock, memory_order_acquire)) {
+    if (h2_atomic_flag_test_and_set(
+            &private_state->drop_report_lock, H2_ATOMIC_ACQUIRE)) {
         return;
     }
-    const uint32_t total = atomic_load_explicit(
-        &private_state->dropped_event_count, memory_order_relaxed);
+    const uint32_t total = h2_atomic_load_explicit(
+        &private_state->dropped_event_count, H2_ATOMIC_RELAXED);
     if (total != private_state->drop_reported_count) {
-        const h2_runtime_timestamp_ms_t now_ms =
-            h2_runtime_now_ms(runtime->time);
+        uint64_t now_ms = 0u;
+        if (h2_pal_time_get_monotonic_ms(runtime->time, &now_ms) != H2_PAL_OK) {
+            h2_atomic_flag_clear(
+                &private_state->drop_report_lock, H2_ATOMIC_RELEASE);
+            return;
+        }
         if (private_state->drop_reported_once == 0 ||
-            now_ms - private_state->drop_reported_at_ms >=
-                H2_RUNTIME_DROPPED_EVENT_WARN_INTERVAL_MS) {
+            (now_ms >= private_state->drop_reported_at_ms &&
+             now_ms - private_state->drop_reported_at_ms >=
+                 H2_RUNTIME_DROPPED_EVENT_WARN_INTERVAL_MS)) {
             char message[128];
             size_t length = 0u;
             message[0] = '\0';
@@ -174,22 +167,22 @@ void h2_runtime_report_dropped_events(h2_runtime_t *runtime) {
                 message, length, sizeof(message), "; last kind ");
             length = append_decimal(
                 message, length, sizeof(message),
-                (uint32_t)atomic_load_explicit(
+                (uint32_t)h2_atomic_load_explicit(
                     &private_state->last_dropped_kind,
-                    memory_order_relaxed));
+                    H2_ATOMIC_RELAXED));
             length = append_text(
                 message, length, sizeof(message), " component ");
             length = append_decimal(
                 message, length, sizeof(message),
-                (uint32_t)atomic_load_explicit(
+                (uint32_t)h2_atomic_load_explicit(
                     &private_state->last_dropped_component,
-                    memory_order_relaxed));
+                    H2_ATOMIC_RELAXED));
             length = append_text(message, length, sizeof(message), " id ");
             (void)append_decimal(
                 message, length, sizeof(message),
-                atomic_load_explicit(
+                h2_atomic_load_explicit(
                     &private_state->last_dropped_component_id,
-                    memory_order_relaxed));
+                    H2_ATOMIC_RELAXED));
             (void)h2_pal_log_write(
                 runtime->log, H2_PAL_LOG_WARN, "runtime/event", message);
             private_state->drop_reported_once = 1;
@@ -197,18 +190,21 @@ void h2_runtime_report_dropped_events(h2_runtime_t *runtime) {
             private_state->drop_reported_at_ms = now_ms;
         }
     }
-    atomic_flag_clear_explicit(
-        &private_state->drop_report_lock, memory_order_release);
+    h2_atomic_flag_clear(
+        &private_state->drop_report_lock, H2_ATOMIC_RELEASE);
 }
 
 h2_pal_result_t h2_runtime_dropped_event_count(
     const h2_runtime_t *runtime,
     uint32_t *out_count) {
+    if (out_count != NULL) {
+        *out_count = 0u;
+    }
     if (!h2_runtime_ready(runtime) || out_count == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    *out_count = atomic_load_explicit(
-        &runtime->private_state->dropped_event_count, memory_order_relaxed);
+    *out_count = h2_atomic_load_explicit(
+        &runtime->private_state->dropped_event_count, H2_ATOMIC_RELAXED);
     return H2_PAL_OK;
 }
 

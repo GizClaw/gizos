@@ -5,6 +5,8 @@ H2SCTP 是 GizOS 自有的 portable SCTP provider。它实现
 DTLS record transport 上组装；它不打开 socket，不启动线程或 task，也不拥有 DTLS、
 DCEP、WebRTC PPID 映射或 target selector。
 
+`h2_pal_sctp_association_config_t.allocator` 可选地指定 association、rx_assembly、stream、TX/RX fragment 及重组缓冲的分配器，NULL 保持 provider mem。显式 `packet_mem` 仍独立管理 packet pool，否则 pool 跟随 association allocator；allocator 必须活到 association close 完成。
+
 ## API Reference
 
 [H2SCTP API Reference](/references/h2sctp)
@@ -55,6 +57,8 @@ validation target 都不得依赖、include、link、load 或执行 vendor usrsc
 没有消费输入，调用方必须以相同 packet/message 重试。`emit_packet` 返回
 `WOULD_BLOCK` 时 provider 保留 exact packet、停止继续发送，并把 next deadline 设为
 当前 `now_ms`；fatal callback error 只触发一次 `FAILED` transition。
+
+Reset request 只有在 provider 已拥有其 wire packet 和重传状态后才返回 `OK`；完成通过 `on_stream_reset` 报告。已有 retained output 时返回 `WOULD_BLOCK`，已有 control request 时返回 `BUSY`，两者都不消费 request、不推进 reset sequence，也不设置新 stream 的 pending 状态，调用方在 service 后重试。Reset 自己的 emit callback 返回 `WOULD_BLOCK` 时，provider 已保存该 packet，因此 request 仍被接受并由 service 重发；后续 reset 不能覆盖它的 packet 或 timer。
 
 stream reset callback 是 RFC 6525 request/response transition 的 exactly-once 投影，
 不是每个 wire packet 的投影。重复或延迟的 outgoing-reset request 只重发既有 response，

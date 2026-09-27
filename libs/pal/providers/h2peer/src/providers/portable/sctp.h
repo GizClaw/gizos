@@ -53,6 +53,7 @@ typedef struct SctpRemoteChannel {
 typedef struct Sctp {
   const h2_pal_log_api_t *log;
   const h2_pal_mem_api_t *mem;
+  const h2_pal_mem_api_t *allocator;
   const h2_pal_sctp_api_t *api;
   const h2_pal_time_api_t *time;
   h2_pal_sctp_association_t* association;

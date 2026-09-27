@@ -11,6 +11,7 @@ idf_component_register(
   INCLUDE_DIRS
     "${H2_REPO_ROOT}/projects/h2loader/libs/h2loader/include"
     "${H2_REPO_ROOT}/libs/pal/include"
+    "${H2_REPO_ROOT}/libs/atomic/include"
   REQUIRES
     h2_esp_target_task_policy
     app_update

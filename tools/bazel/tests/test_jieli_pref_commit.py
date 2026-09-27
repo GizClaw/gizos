@@ -90,13 +90,13 @@ int main(void) {
 #define _POSIX_C_SOURCE 200809L
 #include <assert.h>
 #include <pthread.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <time.h>
 #include <errno.h>
 enum { OS_NO_ERR=0, H2_PAL_OK=0, H2_PAL_ERR_IO=-1 };
 static pthread_mutex_t pref_mutex;
 static int pref_mutex_ready;
-static atomic_int started, go, creates, inside;
+static h2_atomic_int_t started, go, creates, inside;
 static int protected_count;
 static void pref_trace(const char *text) { (void)text; }
 static void os_time_dly(unsigned ticks) {
@@ -104,7 +104,7 @@ static void os_time_dly(unsigned ticks) {
   while (nanosleep(&delay,&delay)!=0) assert(errno==EINTR);
 }
 static int os_mutex_create(pthread_mutex_t *mutex) {
-  int attempt=atomic_fetch_add(&creates,1);
+  int attempt=h2_atomic_fetch_add(&creates,1);
   os_time_dly(5);
   if (attempt==0) return -1;
   /* Any attempt beyond this is a duplicate initialization of a live mutex. */
@@ -119,26 +119,34 @@ static int os_mutex_post(pthread_mutex_t *mutex) { return pthread_mutex_unlock(m
         main = r'''
 static void *worker(void *unused) {
   (void)unused;
-  atomic_fetch_add(&started,1);
-  while (!atomic_load(&go)) os_time_dly(1);
+  h2_atomic_fetch_add(&started,1);
+  while (!h2_atomic_load(&go)) os_time_dly(1);
   for (int i=0;i<100;++i) {
     int rc;
     do { rc=pref_lock(); } while (rc==H2_PAL_ERR_IO);
-    assert(rc==0 && atomic_fetch_add(&inside,1)==0);
+    assert(rc==0 && h2_atomic_fetch_add(&inside,1)==0);
     ++protected_count;
-    assert(atomic_fetch_sub(&inside,1)==1);
+    assert(h2_atomic_fetch_sub(&inside,1)==1);
     pref_unlock();
   }
   return NULL;
 }
 int main(void) {
   pthread_t threads[8];
+  assert(h2_atomic_int_init(&started, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&go, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&creates, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&inside, 0) == H2_ATOMIC_OK);
   for (int i=0;i<8;++i) assert(pthread_create(&threads[i],NULL,worker,NULL)==0);
-  while (atomic_load(&started)!=8) os_time_dly(1);
-  atomic_store(&go,1);
+  while (h2_atomic_load(&started)!=8) os_time_dly(1);
+  h2_atomic_store(&go,1);
   for (int i=0;i<8;++i) assert(pthread_join(threads[i],NULL)==0);
-  assert(atomic_load(&creates)==2 && protected_count==800);
+  assert(h2_atomic_load(&creates)==2 && protected_count==800);
   assert(pthread_mutex_destroy(&pref_mutex)==0);
+  h2_atomic_int_destroy(&started);
+  h2_atomic_int_destroy(&go);
+  h2_atomic_int_destroy(&creates);
+  h2_atomic_int_destroy(&inside);
   return 0;
 }
 '''
@@ -147,7 +155,10 @@ int main(void) {
             binary = Path(directory) / "test"
             test.write_text(stub + functions + main)
             subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
-                            "-pthread", str(test), "-o", str(binary)],
+                            "-pthread", "-I", str(ROOT / "libs/atomic/include"),
+                            "-I", str(ROOT / "libs/atomic/providers/locked"),
+                            str(test), str(ROOT / "libs/atomic/providers/pthread/src/h2_atomic_pthread.c"),
+                            "-o", str(binary)],
                            check=True, timeout=60)
             subprocess.run([str(binary)], check=True, timeout=60)
 

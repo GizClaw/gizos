@@ -10,7 +10,7 @@
 #include "arch.h"
 #include "icu.h"
 #else
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #endif
 
 #include "flash.h"
@@ -48,8 +48,8 @@ static uint8_t s_standby_wait_key;
 static volatile uint32_t s_pending_events;
 static volatile int s_wake_fault;
 #else
-static atomic_uint_fast32_t s_pending_events;
-static atomic_int s_wake_fault;
+static h2_atomic_u32_t s_pending_events;
+static h2_atomic_int_t s_wake_fault;
 #endif
 
 static uint32_t sdk_runtime_critical_enter(void)
@@ -87,8 +87,8 @@ static void sdk_runtime_pending_reset(void)
     s_wake_fault = 0;
     sdk_runtime_critical_exit(state);
 #else
-    atomic_store_explicit(&s_pending_events, 0u, memory_order_relaxed);
-    atomic_store_explicit(&s_wake_fault, 0, memory_order_relaxed);
+    h2_atomic_store_explicit(&s_pending_events, 0u, H2_ATOMIC_RELAXED);
+    h2_atomic_store_explicit(&s_wake_fault, 0, H2_ATOMIC_RELAXED);
 #endif
 }
 
@@ -101,8 +101,8 @@ static uint32_t sdk_runtime_pending_take(void)
     sdk_runtime_critical_exit(state);
     return pending;
 #else
-    return (uint32_t)atomic_exchange_explicit(
-        &s_pending_events, 0u, memory_order_acq_rel);
+    return (uint32_t)h2_atomic_exchange_explicit(
+        &s_pending_events, 0u, H2_ATOMIC_ACQ_REL);
 #endif
 }
 
@@ -111,7 +111,7 @@ static bool sdk_runtime_wake_failed(void)
 #if defined(BK3633)
     return s_wake_fault != 0;
 #else
-    return atomic_load_explicit(&s_wake_fault, memory_order_acquire) != 0;
+    return h2_atomic_load_explicit(&s_wake_fault, H2_ATOMIC_ACQUIRE) != 0;
 #endif
 }
 
@@ -135,7 +135,7 @@ static void sdk_runtime_standby_complete(uint32_t wake_reason)
 #if defined(BK3633)
         s_wake_fault = 1;
 #else
-        atomic_store_explicit(&s_wake_fault, 1, memory_order_release);
+        h2_atomic_store_explicit(&s_wake_fault, 1, H2_ATOMIC_RELEASE);
 #endif
     }
 }
@@ -234,6 +234,14 @@ h2_pal_result_t h2_bk3633_sdk_runtime_platform_init(
         return H2_PAL_ERR_INVALID_STATE;
     }
 
+#if !defined(BK3633)
+    if (h2_atomic_u32_init(&s_pending_events, 0u) != H2_ATOMIC_OK ||
+        h2_atomic_int_init(&s_wake_fault, 0) != H2_ATOMIC_OK) {
+        h2_atomic_u32_destroy(&s_pending_events);
+        h2_atomic_int_destroy(&s_wake_fault);
+        return H2_PAL_ERR_NO_MEMORY;
+    }
+#endif
     s_runtime_config = *config;
     s_application_init_result = H2_PAL_ERR_INVALID_STATE;
     sdk_runtime_pending_reset();
@@ -281,8 +289,8 @@ void h2_bk3633_sdk_runtime_set_event(uint32_t event)
     uint32_t previous = s_pending_events;
     s_pending_events |= event == 0u ? 1u : event;
 #else
-    uint_fast32_t previous = atomic_fetch_or_explicit(
-        &s_pending_events, event == 0u ? 1u : event, memory_order_release);
+    uint32_t previous = h2_atomic_fetch_or_explicit(
+        &s_pending_events, event == 0u ? 1u : event, H2_ATOMIC_RELEASE);
 #endif
     sdk_runtime_critical_exit(critical_state);
     if (previous == 0u &&
@@ -292,7 +300,7 @@ void h2_bk3633_sdk_runtime_set_event(uint32_t event)
 #if defined(BK3633)
         s_wake_fault = 1;
 #else
-        atomic_store_explicit(&s_wake_fault, 1, memory_order_release);
+        h2_atomic_store_explicit(&s_wake_fault, 1, H2_ATOMIC_RELEASE);
 #endif
     }
 }
@@ -309,11 +317,11 @@ void h2_bk3633_sdk_runtime_clear_event(uint32_t event)
     sdk_runtime_critical_exit(critical_state);
 #else
     if (event == 0u) {
-        atomic_store_explicit(&s_pending_events, 0u, memory_order_release);
+        h2_atomic_store_explicit(&s_pending_events, 0u, H2_ATOMIC_RELEASE);
         return;
     }
-    (void)atomic_fetch_and_explicit(
-        &s_pending_events, (uint_fast32_t)~event, memory_order_release);
+    (void)h2_atomic_fetch_and_explicit(
+        &s_pending_events, (uint32_t)~event, H2_ATOMIC_RELEASE);
 #endif
 }
 
@@ -323,9 +331,9 @@ bool h2_bk3633_sdk_runtime_has_pending_work(void)
     return s_pending_events != 0u || s_wake_fault != 0 ||
            s_standby_state == H2_BK3633_SDK_STANDBY_REQUESTED;
 #else
-    return atomic_load_explicit(
-               &s_pending_events, memory_order_acquire) != 0u ||
-           atomic_load_explicit(&s_wake_fault, memory_order_acquire) != 0 ||
+    return h2_atomic_load_explicit(
+               &s_pending_events, H2_ATOMIC_ACQUIRE) != 0u ||
+           h2_atomic_load_explicit(&s_wake_fault, H2_ATOMIC_ACQUIRE) != 0 ||
            s_standby_state == H2_BK3633_SDK_STANDBY_REQUESTED;
 #endif
 }

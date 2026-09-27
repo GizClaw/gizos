@@ -26,7 +26,6 @@ cc_library(
     srcs = [
         "src/providers/portable/address.c",
         "src/providers/portable/agent.c",
-        "src/providers/portable/base64.c",
         "src/providers/portable/dtls_srtp.c",
         "src/providers/portable/ice.c",
         "src/providers/portable/ice_transport.c",
@@ -90,7 +89,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":portable_protocol_providers"],
+    deps = [":portable_protocol_providers", "//libs/atomic/providers/c11"],
 )
 
 cc_test(
@@ -105,7 +104,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":portable_protocol_providers"],
+    deps = [":portable_protocol_providers", "//libs/atomic/providers/c11"],
 )
 
 cc_test(
@@ -120,7 +119,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":portable_protocol_providers"],
+    deps = [":portable_protocol_providers", "//libs/atomic/providers/c11"],
 )
 
 cc_test(
@@ -138,6 +137,7 @@ cc_test(
     deps = [
         ":portable_protocol_providers",
         ":webrtc_core",
+        "//libs/atomic/providers/c11",
         "//libs/pal/providers/wolfssl:wolfcrypt",
     ],
 )
@@ -154,7 +154,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":portable_protocol_providers"],
+    deps = [":portable_protocol_providers", "//libs/atomic/providers/c11"],
 )
 
 cc_test(
@@ -169,7 +169,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":portable_protocol_providers"],
+    deps = [":portable_protocol_providers", "//libs/atomic/providers/c11"],
 )
 
 cc_test(
@@ -184,7 +184,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":portable_protocol_providers"],
+    deps = [":portable_protocol_providers", "//libs/atomic/providers/c11"],
 )
 
 cc_test(
@@ -199,7 +199,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":portable_protocol_providers"],
+    deps = [":portable_protocol_providers", "//libs/atomic/providers/c11"],
 )
 
 cc_test(
@@ -214,7 +214,11 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":portable_protocol_providers"],
+    deps = [
+        ":portable_protocol_providers",
+        "//libs/atomic/providers/c11",
+        "//libs/pal:test_allocator",
+    ],
 )
 
 cc_test(
@@ -229,7 +233,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":portable_protocol_providers"],
+    deps = [":portable_protocol_providers", "//libs/atomic/providers/c11"],
 )
 
 cc_test(
@@ -244,7 +248,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":portable_protocol_providers"],
+    deps = [":portable_protocol_providers", "//libs/atomic/providers/c11"],
 )
 
 cc_library(
@@ -269,6 +273,7 @@ cc_library(
     ],
     visibility = ["//visibility:private"],
     deps = [
+        "//libs/atomic",
         "//libs/pal",
     ],
 )
@@ -300,6 +305,7 @@ cc_library(
         "src/providers/portable",
     ],
     deps = [
+        "//libs/atomic",
         "//libs/pal",
         ":portable_protocol_providers",
         ":tasks",
@@ -323,6 +329,7 @@ cc_test(
     }),
     deps = [
         ":webrtc_core",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
     ],
@@ -341,6 +348,7 @@ cc_test(
     }),
     deps = [
         ":h2peer",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
     ],
@@ -361,7 +369,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":h2peer"],
+    deps = [":h2peer", "//libs/atomic/providers/c11"],
 )
 
 cc_test(
@@ -379,7 +387,11 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":h2peer"],
+    deps = [
+        ":h2peer",
+        "//libs/atomic/providers/c11",
+        "//libs/pal:test_allocator",
+    ],
 )
 
 cc_test(
@@ -399,6 +411,8 @@ cc_test(
     }),
     deps = [
         ":h2peer",
+        "//libs/atomic/providers/c11",
+        "//libs/pal:test_allocator",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
     ],
@@ -422,7 +436,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":h2peer"],
+    deps = [":h2peer", "//libs/atomic/providers/c11"],
 )
 
 cc_test(
@@ -436,7 +450,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":h2peer"],
+    deps = [":h2peer", "//libs/atomic/providers/c11"],
 )
 
 cc_test(
@@ -450,7 +464,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":h2peer"],
+    deps = [":h2peer", "//libs/atomic/providers/c11"],
 )
 
 cc_test(
@@ -471,5 +485,5 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":h2peer"],
+    deps = [":h2peer", "//libs/atomic/providers/c11"],
 )

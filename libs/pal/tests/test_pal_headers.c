@@ -163,6 +163,39 @@ static void test_call_volume_wrappers(void) {
     assert(volume_calls == 2u && percent == 50u);
 }
 
+static unsigned legacy_peer_creates;
+static h2_pal_result_t legacy_peer_create(void *user,
+                                          h2_pal_webrtc_peer_t **out_peer) {
+    (void)user;
+    ++legacy_peer_creates;
+    *out_peer = (h2_pal_webrtc_peer_t *)(uintptr_t)1u;
+    return H2_PAL_OK;
+}
+
+/* A provider without peer_create_with_config must not silently drop a
+ * requested allocator; a default config still reaches peer_create. */
+static void test_webrtc_peer_allocator_contract(void) {
+    static const h2_pal_webrtc_vtable_t vtable = {
+        .peer_create = legacy_peer_create,
+    };
+    const h2_pal_webrtc_api_t api = {.vtable = &vtable};
+    const h2_pal_mem_api_t mem = {0};
+    h2_pal_webrtc_peer_t *peer = NULL;
+    const h2_pal_webrtc_peer_config_t with_allocator = {.allocator = &mem};
+    const h2_pal_webrtc_peer_config_t defaults = {0};
+    assert(h2_pal_webrtc_peer_create_with_config(&api, &with_allocator,
+                                                 &peer) ==
+           H2_PAL_ERR_UNSUPPORTED);
+    assert(peer == NULL && legacy_peer_creates == 0u);
+    assert(h2_pal_webrtc_peer_create_with_config(&api, &defaults, &peer) ==
+           H2_PAL_OK);
+    assert(peer != NULL && legacy_peer_creates == 1u);
+    peer = NULL;
+    assert(h2_pal_webrtc_peer_create_with_config(&api, NULL, &peer) ==
+           H2_PAL_OK);
+    assert(legacy_peer_creates == 2u);
+}
+
 int main(void) {
     test_call_volume_wrappers();
     test_valid_wall();
@@ -175,6 +208,7 @@ int main(void) {
     use_crypto();
     use_dtls();
     use_webrtc_opus();
+    test_webrtc_peer_allocator_contract();
     use_sctp();
     use_json();
     return 0;

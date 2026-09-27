@@ -33,6 +33,7 @@ cc_binary(
     ],
     deps = [
         ":layout_config",
+        "//libs/atomic/providers/c11",
         "//libs/pal",
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/desktop/app_support",

@@ -3,18 +3,20 @@ BUILD_DIR ?= build/probes
 HOST_CC ?= cc
 HOST_CFLAGS := -std=c11 -Wall -Wextra -Werror -Dthread_local=_Thread_local
 BAZEL ?= bazel
-BAZEL_EXECUTION_ROOT = $(shell cd $(REPO_ROOT) && $(BAZEL) info execution_root 2>/dev/null)
+BAZEL_OUTPUT_BASE = $(shell cd $(REPO_ROOT) && $(BAZEL) info output_base 2>/dev/null)
 LIBCO_SOURCE = $(firstword $(shell cd $(REPO_ROOT) && $(BAZEL) cquery --output=files @h2_vendor_libco//:implementation_sources 2>/dev/null))
-LIBCO_ROOT = $(abspath $(BAZEL_EXECUTION_ROOT)/$(dir $(LIBCO_SOURCE)))
+LIBCO_ROOT = $(abspath $(BAZEL_OUTPUT_BASE)/$(dir $(LIBCO_SOURCE)))
 INCLUDES := \
 	-Iinclude \
 	-Isrc \
 	-Iprobe/stubs \
 	-I$(REPO_ROOT)/libs/pal/include \
+	-I$(REPO_ROOT)/libs/atomic/include \
 	-I$(REPO_ROOT)/libs/pal/providers/libco/include \
 	-I$(REPO_ROOT)/libs/pal/providers/libco/src \
 	-I$(LIBCO_ROOT)
 LIBCO_SOURCES := \
+	$(REPO_ROOT)/libs/atomic/providers/c11/src/h2_atomic_c11.c \
 	$(REPO_ROOT)/libs/pal/providers/libco/src/h2_libco.c \
 	$(REPO_ROOT)/libs/pal/providers/libco/src/h2_libco_pal_task.c \
 	$(REPO_ROOT)/libs/pal/providers/libco/src/h2_libco_pal_time.c \

@@ -2,6 +2,7 @@
 #define H2_PAL_AUDIO_H
 
 #include "h2/pal/core/h2_pal_errors.h"
+#include "h2/pal/os/h2_pal_mem.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -47,6 +48,9 @@ typedef struct h2_audio_track_config {
     h2_audio_pcm_format_t format;
     uint32_t volume_factor_milli;
     size_t buffer_frames;
+    /* Optional per-track storage; NULL uses the audio provider default.
+     * Must remain valid until track close completes. */
+    const h2_pal_mem_api_t *allocator;
 } h2_audio_track_config_t;
 
 typedef struct h2_pal_audio_api h2_pal_audio_api_t;

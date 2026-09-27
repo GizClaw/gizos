@@ -12,7 +12,8 @@
 #include <assert.h>
 #include <float.h>
 #include <math.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
+#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -24,6 +25,8 @@ typedef struct test_fs_file {
   const uint8_t *source;
   size_t source_size;
   size_t offset;
+  size_t close_count;
+  int is_open;
 } test_fs_file_t;
 
 typedef struct test_fs_entry {
@@ -38,12 +41,27 @@ static const uint8_t s_file_main[] =
 static const uint8_t s_file_helper[] = "return 'file'";
 static const uint8_t s_file_bytecode[] = {0x1bu, 'L', 'u', 'a'};
 static const uint8_t s_file_malformed[] = "return function(";
+static const uint8_t s_file_absolute[] = "return 'path:ok'";
+static const uint8_t s_file_waiting[] =
+    "require('source_effect');require('delay').delay_ms(10000);return 'done'";
+static uint8_t s_file_streamed[8192u];
+static uint8_t s_file_early_malformed[8192u];
+static int s_fs_fail_read_after = -1;
+static h2_pal_result_t s_fs_close_result = H2_PAL_OK;
+static const h2_lua_job_id_t *s_fs_close_job_id;
+static h2_atomic_int_t s_source_effect_count;
 static const test_fs_entry_t s_fs_entries[] = {
+    {"/data/lua/app.lua", s_file_absolute, sizeof(s_file_absolute) - 1u, 0u},
     {"scripts/main.lua", s_file_main, sizeof(s_file_main) - 1u, 0u},
     {"scripts/helper.lua", s_file_helper, sizeof(s_file_helper) - 1u, 0u},
     {"scripts/bytecode.lua", s_file_bytecode, sizeof(s_file_bytecode), 0u},
     {"scripts/malformed.lua", s_file_malformed, sizeof(s_file_malformed) - 1u,
      0u},
+    {"scripts/waiting.lua", s_file_waiting, sizeof(s_file_waiting) - 1u, 0u},
+    {"scripts/streamed.lua", s_file_streamed, sizeof(s_file_streamed), 0u},
+    {"scripts/early_malformed.lua", s_file_early_malformed,
+     sizeof(s_file_early_malformed), 0u},
+    {"scripts/empty.lua", (const uint8_t *)"", 0u, 0u},
     {"scripts/oversize.lua", NULL, 4097u, 0u},
     {"scripts/invalid_size.lua", NULL, 0u, UINT64_MAX},
 };
@@ -68,6 +86,8 @@ static int test_fs_open(void *user, const char *path,
   if (entry == NULL) {
     return H2_PAL_ERR_NOT_FOUND;
   }
+  assert(!file->is_open);
+  file->is_open = 1;
   file->source = entry->source;
   file->source_size = entry->source_size;
   file->offset = 0u;
@@ -85,8 +105,17 @@ static int test_fs_read(void *user, h2_pal_fs_file_t *file_handle, void *data,
       file->source == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  if (s_fs_fail_read_after >= 0 &&
+      file->offset >= (size_t)s_fs_fail_read_after) {
+    return H2_PAL_ERR_IO;
+  }
+  assert(file->is_open);
   remaining = file->source_size - file->offset;
   copied = length < remaining ? length : remaining;
+  if (s_fs_fail_read_after >= 0 &&
+      copied > (size_t)s_fs_fail_read_after - file->offset) {
+    copied = (size_t)s_fs_fail_read_after - file->offset;
+  }
   if (copied != 0u) {
     memcpy(data, file->source + file->offset, copied);
   }
@@ -96,8 +125,20 @@ static int test_fs_read(void *user, h2_pal_fs_file_t *file_handle, void *data,
 }
 
 static int test_fs_close(void *user, h2_pal_fs_file_t *file) {
+  test_fs_file_t *source = (test_fs_file_t *)file;
   (void)user;
-  return file == NULL ? H2_PAL_ERR_INVALID_ARG : H2_PAL_OK;
+  if (source == NULL) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  assert(source->is_open);
+  source->is_open = 0;
+  source->close_count++;
+  if (s_fs_close_job_id != NULL) {
+    /* Observe publication on the submitting thread without reentering Host. */
+    assert(*s_fs_close_job_id == H2_LUA_JOB_ID_NONE);
+    assert(h2_atomic_load(&s_source_effect_count) == 0);
+  }
+  return s_fs_close_result;
 }
 
 static int test_fs_stat(void *user, const char *path,
@@ -293,16 +334,16 @@ static int test_audio_track_write(h2_pal_audio_track_t *track,
   return H2_PAL_OK;
 }
 
-static atomic_int s_test_audio_close_count;
-static atomic_int s_test_audio_start_count;
-static atomic_int s_test_audio_stop_count;
-static atomic_int s_test_audio_mic_start_count;
-static atomic_int s_test_audio_mic_stop_count;
-static atomic_int s_test_audio_mic_block;
+static h2_atomic_int_t s_test_audio_close_count;
+static h2_atomic_int_t s_test_audio_start_count;
+static h2_atomic_int_t s_test_audio_stop_count;
+static h2_atomic_int_t s_test_audio_mic_start_count;
+static h2_atomic_int_t s_test_audio_mic_stop_count;
+static h2_atomic_int_t s_test_audio_mic_block;
 
 static int test_audio_track_close(h2_pal_audio_track_t *track) {
   (void)track;
-  (void)atomic_fetch_add(&s_test_audio_close_count, 1);
+  (void)h2_atomic_fetch_add(&s_test_audio_close_count, 1);
   return H2_PAL_OK;
 }
 
@@ -313,25 +354,25 @@ static h2_pal_audio_track_t s_test_audio_track = {
 
 static int test_audio_start_speaker(void *user) {
   (void)user;
-  (void)atomic_fetch_add(&s_test_audio_start_count, 1);
+  (void)h2_atomic_fetch_add(&s_test_audio_start_count, 1);
   return H2_PAL_OK;
 }
 
 static int test_audio_stop_speaker(void *user) {
   (void)user;
-  (void)atomic_fetch_add(&s_test_audio_stop_count, 1);
+  (void)h2_atomic_fetch_add(&s_test_audio_stop_count, 1);
   return H2_PAL_OK;
 }
 
 static int test_audio_start_mic(void *user) {
   (void)user;
-  (void)atomic_fetch_add(&s_test_audio_mic_start_count, 1);
+  (void)h2_atomic_fetch_add(&s_test_audio_mic_start_count, 1);
   return H2_PAL_OK;
 }
 
 static int test_audio_stop_mic(void *user) {
   (void)user;
-  (void)atomic_fetch_add(&s_test_audio_mic_stop_count, 1);
+  (void)h2_atomic_fetch_add(&s_test_audio_mic_stop_count, 1);
   return H2_PAL_OK;
 }
 
@@ -342,7 +383,7 @@ static int test_audio_mic_read(void *user, h2_audio_frame_t *frame,
   if (frame == NULL || frame->capacity < sizeof(samples)) {
     return H2_PAL_ERR_INVALID_ARG;
   }
-  if (atomic_load(&s_test_audio_mic_block) != 0) {
+  if (h2_atomic_load(&s_test_audio_mic_block) != 0) {
     /* Simulates a microphone that never produces a frame, so callers polling
      * with a long or unbounded timeout stay blocked here until cancelled. */
     return H2_PAL_ERR_WOULD_BLOCK;
@@ -361,6 +402,7 @@ static int test_audio_create_track(void *user,
   if (config == NULL || out_track == NULL ||
       config->format.sample_format != H2_AUDIO_SAMPLE_S16LE)
     return H2_PAL_ERR_INVALID_ARG;
+  assert(config->allocator != NULL);
   /* Mixer-backed devices reject Tracks whose frame size differs from the
    * playback frame size reported by get_info. */
   if (config->format.frame_samples_per_channel != 2u)
@@ -410,14 +452,17 @@ static const h2_pal_audio_api_t s_test_audio = {
 };
 
 typedef struct test_clock {
-  atomic_uint_fast64_t now_ms;
+  pthread_mutex_t mutex;
+  uint64_t now_ms;
 } test_clock_t;
 
 static h2_pal_result_t test_clock_monotonic_ms(void *user, uint64_t *out_ms) {
   test_clock_t *clock = user;
   if (clock == NULL || out_ms == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  *out_ms = atomic_fetch_add(&clock->now_ms, 1u);
+  assert(pthread_mutex_lock(&clock->mutex) == 0);
+  *out_ms = clock->now_ms++;
+  assert(pthread_mutex_unlock(&clock->mutex) == 0);
   return H2_PAL_OK;
 }
 
@@ -425,7 +470,9 @@ static h2_pal_result_t test_clock_monotonic_us(void *user, uint64_t *out_us) {
   test_clock_t *clock = user;
   if (clock == NULL || out_us == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  *out_us = atomic_load(&clock->now_ms) * 1000u;
+  assert(pthread_mutex_lock(&clock->mutex) == 0);
+  *out_us = clock->now_ms * 1000u;
+  assert(pthread_mutex_unlock(&clock->mutex) == 0);
   return H2_PAL_OK;
 }
 
@@ -433,7 +480,9 @@ static h2_pal_result_t test_clock_sleep_ms(void *user, uint32_t duration_ms) {
   test_clock_t *clock = user;
   if (clock == NULL)
     return H2_PAL_ERR_INVALID_ARG;
-  (void)atomic_fetch_add(&clock->now_ms, duration_ms);
+  assert(pthread_mutex_lock(&clock->mutex) == 0);
+  clock->now_ms += duration_ms;
+  assert(pthread_mutex_unlock(&clock->mutex) == 0);
   return H2_PAL_OK;
 }
 
@@ -704,6 +753,15 @@ static h2_pal_result_t completed_before_return_capability(
   assert(h2_lua_capability_complete(fixture->host, request_id, H2_PAL_OK,
                                     "async", NULL) == H2_PAL_OK);
   return H2_PAL_ERR_WOULD_BLOCK;
+}
+
+static h2_pal_result_t completed_before_return_prefix(
+    void *user, h2_lua_capability_request_id_t request_id, const char *name,
+    const char *input, const char *options, char *output,
+    size_t output_capacity, const char **out_error) {
+  assert(strcmp(name, "early") == 0);
+  return completed_before_return_capability(user, request_id, input, options,
+                                            output, output_capacity, out_error);
 }
 
 static void cancel_capability(void *user,
@@ -1640,6 +1698,136 @@ static int test_region_open(void *lua_state, void *user) {
   return 1;
 }
 
+
+static void test_display_string_regions(void) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_lua_host_t *host = create_unstarted_host(runtime);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  /* Base85 fixtures encode small, independently specified LZ4 byte sequences:
+   * primary colors; malformed lengths/offsets; offset-1 overlap and extensions. */
+  static const uint8_t script[] =
+      "local d=require('display');"
+      "local f=d.region_from_string;"
+      "local enc='rgb565be-lz4-b85';"
+      "local raw=string.char(248,0,7,224,0,31,255,255);"
+      "local function bad(w,h,s,e) assert(not pcall(f,w,h,s,e)) end;"
+      "for _,n in ipairs({0,-1,4097,4294967296,1.5}) do bad(n,1,raw);"
+      "bad(1,n,raw) end;"
+      "bad(2,2,12);"
+      "bad(2,2,raw,'unknown');"
+      "bad(2,2,raw,'rgb565be\\0extra');"
+      "bad(2,2,raw..'x');"
+      "bad(2,2,raw:sub(2));"
+      "local encoded=\"00000009fcO9h-~b>0{{R30\";"
+      "for i=0,#encoded-1 do bad(2,2,encoded:sub(1,i),enc) end;"
+      "bad(2,2,\"00000000\",enc);"
+      "bad(2,2,\"00000001@Bjb+\",enc);"
+      "bad(2,2,\"00000002@c#e+\",enc);"
+      "bad(2,2,\"00000009koW)x-~b>0{{R30\",enc);"
+      "bad(2,2,\"0000000afcO9h-~b>0{{R30\",enc);"
+      "bad(2,2,\"0000000bfcO9h-~b>0{{R30\",enc);"
+      "bad(2,2,\"000000045C8xG\",enc);"
+      "bad(2,2,\"000000045C8%I\",enc);"
+      "bad(2,2,\"000000059{>RW{{R30\",enc);"
+      "bad(2,2,\"00000008aQFZR-~b>0\",enc);"
+      "bad(2,2,\"00000009f%pIi-~b>0{{R30\",enc);"
+      "bad(2,2,\"000000045C8!H\",enc);"
+      "bad(2,2,\"zzzzzzzz00000\",enc);"
+      "bad(2,2,\"ffffffff00000\",enc);"
+      "bad(2,2,\"00000001~~~~~\",enc);"
+      "bad(2,2,\"0000000100001\",enc);"
+      "bad(2,2,\"00000001     \",enc);"
+      "bad(2,2,\"000000010000\\000\",enc);"
+      "bad(2,2,\"00000009fcO9h-~b>0{{R3000000\",enc);"
+      "local repeat_region=f(150,1,\"0000000c9})oo{}fOX5)u*;\",enc);"
+      "local extended=f(16,1,\"00000022@DTt30s{mE1_uZU3JVMk4i69!5)%{^78e*98XFuP9v=Vz\",enc);"
+      "local weak=setmetatable({extended,repeat_region},{__mode='v'});"
+      "extended=nil;"
+      "repeat_region=nil;"
+      "collectgarbage('collect');"
+      "assert(not weak[1] and not weak[2]);"
+      "collectgarbage('collect');"
+      "local before=collectgarbage('count');"
+      "for i=1,100 do bad(2,2,'000000045C8xG',enc) end;"
+      "collectgarbage('collect');"
+      "assert(collectgarbage('count')<before+1);"
+      "local held={};"
+      "local payload=string.rep(raw,512);"
+      "local oom=false;"
+      "for i=1,100 do local ok,r=pcall(f,64,32,payload);"
+      "if not ok then assert(r=='not enough memory');"
+      "oom=true;"
+      "break end;"
+      "held[i]=r end;"
+      "assert(oom);"
+      "held=nil;"
+      "collectgarbage('collect');"
+      "assert(f(64,32,payload));"
+      "local a=f(2,2,raw);"
+      "local b=f(2,2,encoded,enc);"
+      "d.clear('black');"
+      "d.draw_region(a,0,0);"
+      "d.draw_region(b,2,0);"
+      "d.draw_region(f(150,1,'0000000c9})oo{}fOX5)u*;',enc),0,2);"
+      "d.draw_region(f(16,1,'00000022@DTt30s{mE1_uZU3JVMk4i69!5)%{^78e*98XFuP9v=Vz',enc),0,3);"
+      "d.present();"
+      "d.deinit();"
+      "local closed_raw=f(2,2,raw);local closed_lz4=f(2,2,encoded,enc);"
+      "assert(require('display')==d);"
+      "assert(not pcall(d.draw_region,closed_raw,0,0));"
+      "assert(not pcall(d.draw_region,closed_lz4,0,0));"
+      "assert(not pcall(d.capture_region,0,0,2,2));"
+      "assert(not pcall(d.present));d.deinit();";
+  (void)run_display_script(host, "@string-regions.lua", script, sizeof(script)-1);
+  assert(s_test_display_fixture.open_count == 1);
+  assert(s_test_display_fixture.close_count == 1);
+  const uint16_t expected[] = {0xf800,0x07e0,0xf800,0x07e0,0,0,0,0,0x001f,0xffff,0x001f,0xffff};
+  for (size_t i=0;i<sizeof(expected)/sizeof(expected[0]);++i)
+    assert(s_test_display_fixture.pixels[i] == expected[i]);
+  for (int i = 0; i < 8; ++i) {
+    assert(s_test_display_fixture.pixels[16+i] == 0x1212);
+    assert(s_test_display_fixture.pixels[24+i] == (uint16_t)((2*i << 8) | (2*i+1)));
+  }
+  /* A full 240x240 fixture, independent of any application asset. */
+  static const uint8_t full[] =
+      "local d=require('display');local enc='rgb565be-lz4-b85';local data='000001ce9})oo|NsC0|NsC0|NsC0|NsC"
+      "0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC"
+      "0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC"
+      "0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC"
+      "0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC"
+      "0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC"
+      "0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsC0|NsB0P!bXn5)uFa';collectgarbage('collect');local before=col"
+      "lectgarbage('count');local r=d.region_from_string(240,240,data,enc);assert(collectgarbage('count')-b"
+      "efore>=112.5);d.restore_background(r);d.present();d.release_background();r=nil;collectgarbage('colle"
+      "ct');assert(collectgarbage('count')<before+1);local ok,e=pcall(d.region_from_string,4096,4096,data,e"
+      "nc);assert(not ok and e=='not enough memory');collectgarbage('collect');assert(d.region_from_string("
+      "240,240,data,enc));";
+  (void)run_display_script_size(host, "@string-region-full.lua", full, sizeof(full)-1, 240, 240);
+  for (size_t i = 0; i < 240u * 240u; ++i)
+    assert(s_test_display_fixture.pixels[i] == 0x1212);
+  /* Independently encoded literal block covers every one of the 85 digits. */
+  static const uint8_t alphabet_script[] =
+      "local d=require('display');local enc='rgb565be-lz4-b85';local data="
+      "\"00000203@c;4vNs`+nZMG6yr0q6;$RusH|45PAHh;(wTBGbpk=i3{wf<V8>@|MJ5Nx&nN08Yfe#a15qU$t}*&=JS{YIkeG=0VoSh"
+      "W2{kJuq<#t&Gb>N9-UA!@VyMULt-e8mn|p!`LS*C1)K4p*S*GJC`zX|nr7jn*=I#0^%T=tPayA84`qR-foGdczE8vHC-d)gF4o3{"
+      "{@zFpSk6XR!G~p64)m!V6Te`9h1-9cID{RGsE8c+?$culPZV<}Y}`3R9f;L5kBHWv&WSoaHWez#L_+_dto#E_c8QQk&#JiP9Tnt@"
+      "cuz<Sll;2xP7HKZwy9cE1Qwn&T{p(Hdi{^*);8EOovIP^|SnhtL^fz6Vg5;wyB}8DgvSJ%-{dbiD>onDjk{&lq8<22YsbDs#LTVX"
+      "E^yh0ZE-yai5|;5>!S7htLKPM6>*a=Qdzsq#C7%@%UI1WlITD1^-xU#Rgqmft9Gx&ut8@j8Rd6<)dnOqJdzaLg56r|>y~-Y0Om0!"
+      "x(eIfBa+U8Vv{l-(w8xD;Kc?>K?VCU3X_N|W3;fyxtHrS3|T+$C<e09>W+H-O0!ZnpqQlG`MJ$r4+n?KYCzByG0;NTlsHf5;J9w*"
+      "N?x+9Pbp5n7|{HGbM7Y_<MJknA;n#}HYf{zs76B5Sk|S)%JSea0dH\";"
+      "local r=d.region_from_string(16,16,data,enc);d.draw_region(r,0,0);d.present();"
+      "local alphabet='0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz!#$%&()*+-;<=>?@^_`{|}~';for c=0,255 do local ch=string.char(c);if not alphabet:find(ch,1,true) then local bad=data:sub(1,8)..ch..data:sub(10);assert(not pcall(d.region_from_string,16,16,bad,enc)) end end;";
+  (void)run_display_script_size(host, "@base85-alphabet.lua", alphabet_script,
+                                sizeof(alphabet_script)-1, 16, 16);
+  for (size_t i = 0; i < 256; ++i) {
+    unsigned high = ((2*i)*73+((2*i)/7)*19)%256;
+    unsigned low = ((2*i+1)*73+((2*i+1)/7)*19)%256;
+    assert(s_test_display_fixture.pixels[i] == (uint16_t)(high << 8 | low));
+  }
+  h2_lua_host_destroy(host);
+  h2_runtime_deinit(runtime);
+}
+
 static void test_display_regions(void) {
   h2_runtime_t *runtime = create_runtime();
   h2_lua_host_t *host = create_unstarted_host(runtime);
@@ -2167,30 +2355,46 @@ typedef union heap_test_header {
 } heap_test_header_t;
 
 typedef struct heap_test_mem {
-  atomic_size_t bytes;
-  atomic_size_t allocs;
-  atomic_size_t frees;
-  atomic_size_t rejected;
-  atomic_size_t pool_allocs;
+  h2_atomic_size_t bytes;
+  h2_atomic_size_t allocs;
+  h2_atomic_size_t frees;
+  h2_atomic_size_t rejected;
+  h2_atomic_size_t pool_allocs;
   size_t pool_bytes;
   size_t max_allocation;
 } heap_test_mem_t;
+
+static void heap_test_mem_init(heap_test_mem_t *mem) {
+  assert(h2_atomic_size_init(&mem->bytes, 0u) == H2_ATOMIC_OK);
+  assert(h2_atomic_size_init(&mem->allocs, 0u) == H2_ATOMIC_OK);
+  assert(h2_atomic_size_init(&mem->frees, 0u) == H2_ATOMIC_OK);
+  assert(h2_atomic_size_init(&mem->rejected, 0u) == H2_ATOMIC_OK);
+  assert(h2_atomic_size_init(&mem->pool_allocs, 0u) == H2_ATOMIC_OK);
+}
+
+static void heap_test_mem_destroy(heap_test_mem_t *mem) {
+  h2_atomic_size_destroy(&mem->bytes);
+  h2_atomic_size_destroy(&mem->allocs);
+  h2_atomic_size_destroy(&mem->frees);
+  h2_atomic_size_destroy(&mem->rejected);
+  h2_atomic_size_destroy(&mem->pool_allocs);
+}
 
 static void *heap_test_alloc(void *user, size_t size) {
   heap_test_mem_t *mem = user;
   heap_test_header_t *header;
   if (mem->max_allocation != 0u && size > mem->max_allocation) {
-    atomic_fetch_add(&mem->rejected, 1u);
+    h2_atomic_fetch_add(&mem->rejected, 1u);
     return NULL;
   }
   assert(size <= SIZE_MAX - sizeof(*header));
   header = malloc(sizeof(*header) + size);
   assert(header != NULL);
   header->bytes = size;
-  atomic_fetch_add(&mem->bytes, size);
-  atomic_fetch_add(&mem->allocs, 1u);
+  h2_atomic_fetch_add(&mem->bytes, size);
+  h2_atomic_fetch_add(&mem->allocs, 1u);
   if (size == mem->pool_bytes) {
-    atomic_fetch_add(&mem->pool_allocs, 1u);
+    h2_atomic_fetch_add(&mem->pool_allocs, 1u);
   }
   return header + 1;
 }
@@ -2199,8 +2403,8 @@ static void heap_test_free(void *user, void *ptr) {
   heap_test_mem_t *mem = user;
   if (ptr != NULL) {
     heap_test_header_t *header = (heap_test_header_t *)ptr - 1;
-    atomic_fetch_sub(&mem->bytes, header->bytes);
-    atomic_fetch_add(&mem->frees, 1u);
+    h2_atomic_fetch_sub(&mem->bytes, header->bytes);
+    h2_atomic_fetch_add(&mem->frees, 1u);
     free(header);
   }
 }
@@ -2226,8 +2430,8 @@ static const h2_pal_mem_vtable_t heap_test_mem_vtable = {
 };
 
 static void heap_test_balanced(const heap_test_mem_t *mem) {
-  assert(atomic_load(&mem->bytes) == 0u);
-  assert(atomic_load(&mem->allocs) == atomic_load(&mem->frees));
+  assert(h2_atomic_load(&mem->bytes) == 0u);
+  assert(h2_atomic_load(&mem->allocs) == h2_atomic_load(&mem->frees));
 }
 
 static void heap_test_run(h2_lua_host_t *host, const char *source,
@@ -2245,10 +2449,55 @@ static void heap_test_run(h2_lua_host_t *host, const char *source,
   assert(h2_lua_job_release(host, id) == H2_PAL_OK);
 }
 
+/* Everything the Host allocates goes through config.allocator, so a caller
+ * can place the Host in its own arena; Runtime mem stays untouched. */
+static void test_host_allocator(void) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_runtime_t probe = *runtime;
+  heap_test_mem_t runtime_mem = {0};
+  heap_test_mem_t host_mem = {0};
+  heap_test_mem_init(&runtime_mem);
+  heap_test_mem_init(&host_mem);
+  h2_pal_mem_api_t runtime_api = {.user = &runtime_mem,
+                                  .vtable = &heap_test_mem_vtable};
+  h2_pal_mem_api_t host_api = {.user = &host_mem,
+                               .vtable = &heap_test_mem_vtable};
+  probe.mem = &runtime_api;
+  h2_lua_host_config_t config = {
+      .runtime = &probe,
+      .allocator = &host_api,
+      .max_jobs = 2u,
+      .worker_count = 1u,
+      .vm_memory_limit_bytes = 1024u * 1024u,
+      .execution_timeout_ms = 5000u,
+  };
+  for (size_t reserved = 0u; reserved < 2u; ++reserved) {
+    h2_lua_host_t *host = NULL;
+    config.vm_heap_bytes = reserved ? 1024u * 1024u : 0u;
+    host_mem.pool_bytes = config.vm_heap_bytes;
+    const size_t host_allocs = h2_atomic_load(&host_mem.allocs);
+    const size_t pool_allocs = h2_atomic_load(&host_mem.pool_allocs);
+    assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+    assert(h2_lua_host_start(host) == H2_PAL_OK);
+    heap_test_run(host, "local t={} for i=1,200 do t[i]=tostring(i) end",
+                  H2_LUA_JOB_SUCCEEDED);
+    h2_lua_host_destroy(host);
+    assert(h2_atomic_load(&host_mem.allocs) > host_allocs);
+    assert(h2_atomic_load(&host_mem.pool_allocs) == pool_allocs + reserved);
+    heap_test_balanced(&host_mem);
+  }
+  assert(h2_atomic_load(&runtime_mem.allocs) == 0u);
+  h2_runtime_deinit(runtime);
+  heap_test_mem_destroy(&runtime_mem);
+  heap_test_mem_destroy(&host_mem);
+
+}
+
 static void test_reserved_vm_heap(void) {
   h2_runtime_t *runtime = create_runtime();
   h2_runtime_t probe = *runtime;
   heap_test_mem_t mem = {0};
+  heap_test_mem_init(&mem);
   h2_pal_mem_api_t api = {.user = &mem, .vtable = &heap_test_mem_vtable};
   probe.mem = &api;
   h2_lua_host_config_t config = {
@@ -2268,11 +2517,11 @@ static void test_reserved_vm_heap(void) {
     assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
     mem.max_allocation = 64u * 1024u;
     assert(h2_lua_host_start(host) == H2_PAL_OK);
-    size_t rejected = atomic_load(&mem.rejected);
+    size_t rejected = h2_atomic_load(&mem.rejected);
     heap_test_run(host, "local s=string.rep('x',120*1024);assert(#s==120*1024)",
                   reserved ? H2_LUA_JOB_SUCCEEDED : H2_LUA_JOB_FAILED);
-    assert(reserved ? atomic_load(&mem.rejected) == rejected
-                    : atomic_load(&mem.rejected) > rejected);
+    assert(reserved ? h2_atomic_load(&mem.rejected) == rejected
+                    : h2_atomic_load(&mem.rejected) > rejected);
     h2_lua_host_destroy(host);
     heap_test_balanced(&mem);
   }
@@ -2296,9 +2545,9 @@ static void test_reserved_vm_heap(void) {
   config.vm_memory_limit_bytes = 512u * 1024u;
   mem.pool_bytes = config.vm_heap_bytes;
   for (size_t cycle = 0u; cycle < 5u; ++cycle) {
-    size_t pool_allocs = atomic_load(&mem.pool_allocs);
+    size_t pool_allocs = h2_atomic_load(&mem.pool_allocs);
     assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
-    assert(atomic_load(&mem.pool_allocs) == pool_allocs + 1u);
+    assert(h2_atomic_load(&mem.pool_allocs) == pool_allocs + 1u);
     /* A failed grow must preserve the original allocation and its contents. */
     unsigned char *block = h2_lua_heap_realloc(host, NULL, 99u, 128u);
     assert(block != NULL);
@@ -2333,14 +2582,14 @@ static void test_reserved_vm_heap(void) {
     assert(h2_lua_host_join(host) == H2_PAL_OK);
     /* Destroy must also close retained terminal VMs. */
     h2_lua_host_destroy(host);
-    assert(atomic_load(&mem.pool_allocs) == pool_allocs + 1u);
+    assert(h2_atomic_load(&mem.pool_allocs) == pool_allocs + 1u);
     heap_test_balanced(&mem);
   }
   config.vm_heap_bytes = 1u;
-  size_t allocs = atomic_load(&mem.allocs);
+  size_t allocs = h2_atomic_load(&mem.allocs);
   assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_INVALID_ARG);
   assert(host == NULL);
-  assert(atomic_load(&mem.allocs) == allocs);
+  assert(h2_atomic_load(&mem.allocs) == allocs);
   config.vm_heap_bytes = SIZE_MAX;
   assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_INVALID_ARG);
   assert(host == NULL);
@@ -2352,43 +2601,187 @@ static void test_reserved_vm_heap(void) {
   config.vm_memory_limit_bytes = 2u * 1024u * 1024u;
   mem.pool_bytes = 0u;
   mem.max_allocation = 1024u * 1024u;
-  allocs = atomic_load(&mem.allocs);
-  size_t rejected = atomic_load(&mem.rejected);
+  allocs = h2_atomic_load(&mem.allocs);
+  size_t rejected = h2_atomic_load(&mem.rejected);
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
-  assert(atomic_load(&mem.rejected) > rejected);
-  assert(atomic_load(&mem.bytes) >= config.vm_heap_bytes);
+  assert(h2_atomic_load(&mem.rejected) > rejected);
+  assert(h2_atomic_load(&mem.bytes) >= config.vm_heap_bytes);
   assert(host->vm_heap_reserved == config.vm_heap_bytes);
   assert(host->vm_heap_chunk_count > 1u);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   heap_test_run(host, "local s=string.rep('x',120*1024);assert(#s==120*1024)",
                 H2_LUA_JOB_SUCCEEDED);
   h2_lua_host_destroy(host);
-  assert(atomic_load(&mem.allocs) > allocs + 3u);
+  assert(h2_atomic_load(&mem.allocs) > allocs + 3u);
   heap_test_balanced(&mem);
-  /* Blocks below the 256 KiB floor are refused as a whole, without leaks. */
+  /* A heap whose largest blocks are 200 KiB still serves a 1.75 MiB
+   * reservation, which the 256 KiB floor used to refuse outright. */
+  config.vm_heap_bytes = 1792u * 1024u;
   mem.max_allocation = 200u * 1024u;
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(host->vm_heap_reserved == config.vm_heap_bytes);
+  assert(host->vm_heap_chunk_count > 8u);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  /* A single allocation still has to fit one block: 120 KiB does, and the
+   * quota-sized one does not. */
+  heap_test_run(host, "local s=string.rep('x',120*1024);assert(#s==120*1024)",
+                H2_LUA_JOB_SUCCEEDED);
+  heap_test_run(host, "return string.rep('x',300*1024)", H2_LUA_JOB_FAILED);
+  h2_lua_host_destroy(host);
+  heap_test_balanced(&mem);
+  /* Blocks below the 64 KiB floor are refused as a whole, without leaks. */
+  mem.max_allocation = 32u * 1024u;
   assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_NO_MEMORY);
   assert(host == NULL);
   heap_test_balanced(&mem);
-  /* More than eight blocks would be needed: refused, without leaks. */
-  config.vm_heap_bytes = 4608u * 1024u; /* would need 13 blocks */
-  mem.max_allocation = 400u * 1024u;
+  /* More than sixteen blocks would be needed: refused, without leaks. */
+  config.vm_heap_bytes = 4608u * 1024u; /* would need 47 blocks */
+  mem.max_allocation = 100u * 1024u;
   assert(h2_lua_host_create(&config, &host) == H2_PAL_ERR_NO_MEMORY);
   assert(host == NULL);
   heap_test_balanced(&mem);
   mem.max_allocation = 0u;
   h2_runtime_deinit(runtime);
+  heap_test_mem_destroy(&mem);
+
+}
+
+static int test_source_effect_open(void *lua_state, void *user) {
+  (void)user;
+  h2_atomic_fetch_add(&s_source_effect_count, 1);
+  lua_pushboolean((lua_State *)lua_state, 1);
+  return 1;
+}
+
+static void test_streamed_close_failure(void) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_lua_host_t *host = NULL;
+  const h2_lua_host_config_t config = {
+      .runtime = runtime,
+      .worker_count = 1u,
+      .max_jobs = 1u,
+      .execution_timeout_ms = 30000u,
+  };
+  const char *paths[] = {"scripts/waiting.lua", "scripts/streamed.lua",
+                         "scripts/empty.lua", "scripts/malformed.lua",
+                         "scripts/early_malformed.lua"};
+  const char effect_source[] = "require('source_effect');return 'done'";
+  memset(s_file_streamed, ' ', sizeof(s_file_streamed));
+  memcpy(s_file_streamed, effect_source, sizeof(effect_source) - 1u);
+  memset(s_file_early_malformed, ' ', sizeof(s_file_early_malformed));
+  s_file_early_malformed[0] = ')';
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(h2_lua_register_module(host, "source_effect", test_source_effect_open,
+                                 NULL) == H2_PAL_OK);
+  {
+    h2_lua_job_id_t job_id = 12345u;
+    size_t close_count = s_test_fs_file.close_count;
+    s_fs_close_result = H2_PAL_ERR_IO;
+    assert(h2_lua_job_submit_path(host, NULL, "unstarted",
+                                 "scripts/streamed.lua", NULL, 0u,
+                                 &job_id) == H2_PAL_ERR_INVALID_STATE);
+    assert(job_id == H2_LUA_JOB_ID_NONE);
+    assert(!s_test_fs_file.is_open);
+    assert(s_test_fs_file.close_count == close_count + 1u);
+    assert(s_test_fs_file.offset == 0u);
+    s_fs_close_result = H2_PAL_OK;
+  }
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  for (size_t use_file = 0u; use_file < 2u; ++use_file) {
+    for (size_t i = 0u; i < sizeof(paths) / sizeof(paths[0]); ++i) {
+      h2_lua_job_id_t job_id = 12345u;
+      size_t close_count = s_test_fs_file.close_count;
+      h2_atomic_store(&s_source_effect_count, 0);
+      s_fs_close_job_id = &job_id;
+      s_fs_close_result = H2_PAL_ERR_IO;
+      /* Close must precede publication, including empty sources and syntax
+       * errors that stop the compiler before it has drained the source. */
+      if (use_file) {
+        assert(h2_lua_job_submit_file(host, NULL, paths[i], NULL, 0u,
+                                     &job_id) == H2_PAL_ERR_IO);
+      } else {
+        assert(h2_lua_job_submit_path(host, NULL, "close-failure", paths[i],
+                                     NULL, 0u, &job_id) == H2_PAL_ERR_IO);
+      }
+      s_fs_close_job_id = NULL;
+      assert(job_id == H2_LUA_JOB_ID_NONE);
+      assert(h2_atomic_load(&s_source_effect_count) == 0);
+      assert(!s_test_fs_file.is_open);
+      assert(s_test_fs_file.close_count == close_count + 1u);
+      s_fs_close_result = H2_PAL_OK;
+      assert(h2_lua_job_submit_path(host, NULL, "after-close-failure",
+                                   "/data/lua/app.lua", NULL, 0u,
+                                   &job_id) == H2_PAL_OK);
+      run_until_terminal(host, job_id, 1000u);
+      assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
+      assert(strcmp(status(host, job_id).message, "path:ok") == 0);
+      assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+    }
+  }
+  /* The same multi-window chunk does produce its side effect when close
+   * succeeds, and close still happens before publication. */
+  h2_lua_job_id_t job_id = H2_LUA_JOB_ID_NONE;
+  s_fs_close_job_id = &job_id;
+  assert(h2_lua_job_submit_path(host, NULL, "effect", "scripts/streamed.lua",
+                               NULL, 0u, &job_id) == H2_PAL_OK);
+  s_fs_close_job_id = NULL;
+  run_until_terminal(host, job_id, 1000u);
+  assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
+  assert(h2_atomic_load(&s_source_effect_count) == 1);
+  {
+    h2_lua_job_id_t refused_id = 12345u;
+    size_t close_count = s_test_fs_file.close_count;
+    assert(h2_lua_job_submit_path(host, NULL, "full", "scripts/streamed.lua",
+                                 NULL, 0u, &refused_id) == H2_PAL_ERR_FULL);
+    assert(refused_id == H2_LUA_JOB_ID_NONE);
+    assert(!s_test_fs_file.is_open);
+    assert(s_test_fs_file.close_count == close_count + 1u);
+    assert(s_test_fs_file.offset == 0u);
+  }
+  assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+  assert(h2_lua_job_submit_path(host, NULL, "early-syntax-error",
+                               "scripts/early_malformed.lua", NULL, 0u,
+                               &job_id) == H2_PAL_OK);
+  assert(status(host, job_id).state == H2_LUA_JOB_FAILED);
+  assert(!s_test_fs_file.is_open);
+  assert(s_test_fs_file.offset < s_test_fs_file.source_size);
+  assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+  h2_lua_host_destroy(host);
+  h2_runtime_deinit(runtime);
 }
 
 int main(int argc, char **argv) {
+  assert(h2_atomic_int_init(&s_source_effect_count, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&s_test_audio_close_count, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&s_test_audio_start_count, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&s_test_audio_stop_count, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&s_test_audio_mic_start_count, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&s_test_audio_mic_stop_count, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&s_test_audio_mic_block, 0) == H2_ATOMIC_OK);
   if (argc == 2 && strcmp(argv[1], "--prepared-benchmark") == 0) {
     test_display_raster2d(1, "libs/lua/tests/geometry_batches.lua");
+  h2_atomic_int_destroy(&s_source_effect_count);
+  h2_atomic_int_destroy(&s_test_audio_close_count);
+  h2_atomic_int_destroy(&s_test_audio_start_count);
+  h2_atomic_int_destroy(&s_test_audio_stop_count);
+  h2_atomic_int_destroy(&s_test_audio_mic_start_count);
+  h2_atomic_int_destroy(&s_test_audio_mic_stop_count);
+  h2_atomic_int_destroy(&s_test_audio_mic_block);
     return 0;
   }
   if (argc == 2 && strcmp(argv[1], "--raster-benchmark") == 0) {
     test_display_raster2d(1, "libs/lua/tests/raster2d.lua");
+  h2_atomic_int_destroy(&s_source_effect_count);
+  h2_atomic_int_destroy(&s_test_audio_close_count);
+  h2_atomic_int_destroy(&s_test_audio_start_count);
+  h2_atomic_int_destroy(&s_test_audio_stop_count);
+  h2_atomic_int_destroy(&s_test_audio_mic_start_count);
+  h2_atomic_int_destroy(&s_test_audio_mic_stop_count);
+  h2_atomic_int_destroy(&s_test_audio_mic_block);
     return 0;
   }
+  test_streamed_close_failure();
+  test_host_allocator();
   test_reserved_vm_heap();
   test_display_raster2d(0, "libs/lua/tests/raster2d.lua");
   test_display_raster2d(0, "libs/lua/tests/geometry_batches.lua");
@@ -2398,6 +2791,7 @@ int main(int argc, char **argv) {
   test_display_raster2d(1, "libs/lua/tests/mesh_source_paths.lua");
   test_display_raster2d(1, "libs/lua/tests/mesh_staging.lua");
   test_display_strokes();
+  test_display_string_regions();
   test_display_regions();
   test_display_meshes();
   test_display_vectors();
@@ -2678,6 +3072,39 @@ int main(int argc, char **argv) {
   assert(strcmp(status(host, job_id).message, "file:ok") == 0);
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
 
+  /* A path submit reads through Runtime Filesystem with the caller's chunk
+   * name, takes the path as given, and needs no buffer the size of the source.
+   */
+  assert(h2_lua_job_submit_path(host, NULL, "app", "/data/lua/app.lua", NULL,
+                                0u, &job_id) == H2_PAL_OK);
+  run_until_terminal(host, job_id, 16u);
+  assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
+  assert(strcmp(status(host, job_id).message, "path:ok") == 0);
+  assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+  assert(h2_lua_job_submit_path(host, NULL, "app", "", NULL, 0u, &job_id) ==
+         H2_PAL_ERR_INVALID_ARG);
+  job_id = 12345u;
+  assert(h2_lua_job_submit_path(host, NULL, "app", "/data/lua/missing.lua",
+                                NULL, 0u, &job_id) == H2_PAL_ERR_NOT_FOUND);
+  assert(job_id == H2_LUA_JOB_ID_NONE);
+  assert(h2_lua_job_submit_path(host, NULL, "app", "scripts/oversize.lua", NULL,
+                                0u, &job_id) == H2_PAL_ERR_NO_SPACE);
+  assert(h2_lua_job_submit_path(host, NULL, "app", "scripts/bytecode.lua", NULL,
+                                0u, &job_id) == H2_PAL_ERR_FORMAT);
+  /* A read that fails partway is the caller's failure: no job is created and
+   * the slot it used is free again. */
+  s_fs_fail_read_after = 4;
+  job_id = 12345u;
+  assert(h2_lua_job_submit_path(host, NULL, "app", "/data/lua/app.lua", NULL,
+                                0u, &job_id) == H2_PAL_ERR_IO);
+  assert(job_id == H2_LUA_JOB_ID_NONE);
+  s_fs_fail_read_after = -1;
+  assert(h2_lua_job_submit_path(host, NULL, "app", "/data/lua/app.lua", NULL,
+                                0u, &job_id) == H2_PAL_OK);
+  run_until_terminal(host, job_id, 16u);
+  assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
+  assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
+
   assert(h2_lua_job_submit_text(host, NULL, "@system-profile.lua",
                                 system_profile_script,
                                 sizeof(system_profile_script) - 1u, NULL, 0u,
@@ -2687,11 +3114,11 @@ int main(int argc, char **argv) {
   assert(strcmp(status(host, job_id).message, "system-ok") == 0);
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
 
-  atomic_store(&s_test_audio_close_count, 0);
-  atomic_store(&s_test_audio_start_count, 0);
-  atomic_store(&s_test_audio_stop_count, 0);
-  atomic_store(&s_test_audio_mic_start_count, 0);
-  atomic_store(&s_test_audio_mic_stop_count, 0);
+  h2_atomic_store(&s_test_audio_close_count, 0);
+  h2_atomic_store(&s_test_audio_start_count, 0);
+  h2_atomic_store(&s_test_audio_stop_count, 0);
+  h2_atomic_store(&s_test_audio_mic_start_count, 0);
+  h2_atomic_store(&s_test_audio_mic_stop_count, 0);
   s_test_audio_written_bytes = 0u;
   s_test_audio_frame_count = 0u;
   assert(h2_lua_job_submit_text(host, NULL, "@component-profile.lua",
@@ -2702,11 +3129,11 @@ int main(int argc, char **argv) {
   assert(status(host, job_id).state == H2_LUA_JOB_SUCCEEDED);
   assert(strcmp(status(host, job_id).message, "components-ok") == 0);
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
-  assert(atomic_load(&s_test_audio_close_count) == 2);
-  assert(atomic_load(&s_test_audio_start_count) == 1);
-  assert(atomic_load(&s_test_audio_stop_count) == 1);
-  assert(atomic_load(&s_test_audio_mic_start_count) == 1);
-  assert(atomic_load(&s_test_audio_mic_stop_count) == 1);
+  assert(h2_atomic_load(&s_test_audio_close_count) == 2);
+  assert(h2_atomic_load(&s_test_audio_start_count) == 1);
+  assert(h2_atomic_load(&s_test_audio_stop_count) == 1);
+  assert(h2_atomic_load(&s_test_audio_mic_start_count) == 1);
+  assert(h2_atomic_load(&s_test_audio_mic_stop_count) == 1);
   /* The script wrote 1..6 then 7..10 to o1 (device frame = 4 bytes), 100..103
    * to o2, then closed both. The sub-frame tail of the first write must be
    * carried into the second one, so o1's bytes reach the device in order with
@@ -2749,9 +3176,9 @@ int main(int argc, char **argv) {
       "d.delay_ms(500);return 'done'";
   h2_lua_job_id_t audio_job_1;
   h2_lua_job_id_t audio_job_2;
-  atomic_store(&s_test_audio_close_count, 0);
-  atomic_store(&s_test_audio_start_count, 0);
-  atomic_store(&s_test_audio_stop_count, 0);
+  h2_atomic_store(&s_test_audio_close_count, 0);
+  h2_atomic_store(&s_test_audio_start_count, 0);
+  h2_atomic_store(&s_test_audio_stop_count, 0);
   assert(h2_lua_job_submit_text(host, NULL, "@audio-wait-1.lua",
                                 audio_wait_script,
                                 sizeof(audio_wait_script) - 1u, NULL, 0u,
@@ -2765,25 +3192,25 @@ int main(int argc, char **argv) {
     assert(h2_lua_host_step(host) == H2_PAL_OK);
     assert(h2_pal_time_sleep_ms(runtime->time, 1u) == H2_PAL_OK);
   }
-  assert(atomic_load(&s_test_audio_start_count) == 1);
+  assert(h2_atomic_load(&s_test_audio_start_count) == 1);
   assert(h2_lua_job_cancel(host, audio_job_1) == H2_PAL_OK);
   run_until_terminal(host, audio_job_1, 16u);
   assert(h2_lua_job_release(host, audio_job_1) == H2_PAL_OK);
-  assert(atomic_load(&s_test_audio_close_count) == 1);
-  assert(atomic_load(&s_test_audio_stop_count) == 0);
+  assert(h2_atomic_load(&s_test_audio_close_count) == 1);
+  assert(h2_atomic_load(&s_test_audio_stop_count) == 0);
   assert(h2_lua_job_cancel(host, audio_job_2) == H2_PAL_OK);
   run_until_terminal(host, audio_job_2, 16u);
   assert(h2_lua_job_release(host, audio_job_2) == H2_PAL_OK);
-  assert(atomic_load(&s_test_audio_close_count) == 2);
-  assert(atomic_load(&s_test_audio_stop_count) == 1);
+  assert(h2_atomic_load(&s_test_audio_close_count) == 2);
+  assert(h2_atomic_load(&s_test_audio_stop_count) == 1);
 
   static const uint8_t audio_input_wait_script[] =
       "local a=require('audio');local d=require('delay');"
       "assert(a.new_input());d.delay_ms(500);return 'done'";
   h2_lua_job_id_t audio_input_job_1;
   h2_lua_job_id_t audio_input_job_2;
-  atomic_store(&s_test_audio_mic_start_count, 0);
-  atomic_store(&s_test_audio_mic_stop_count, 0);
+  h2_atomic_store(&s_test_audio_mic_start_count, 0);
+  h2_atomic_store(&s_test_audio_mic_stop_count, 0);
   assert(h2_lua_job_submit_text(host, NULL, "@audio-input-wait-1.lua",
                                 audio_input_wait_script,
                                 sizeof(audio_input_wait_script) - 1u, NULL, 0u,
@@ -2797,15 +3224,15 @@ int main(int argc, char **argv) {
     assert(h2_lua_host_step(host) == H2_PAL_OK);
     assert(h2_pal_time_sleep_ms(runtime->time, 1u) == H2_PAL_OK);
   }
-  assert(atomic_load(&s_test_audio_mic_start_count) == 1);
+  assert(h2_atomic_load(&s_test_audio_mic_start_count) == 1);
   assert(h2_lua_job_cancel(host, audio_input_job_1) == H2_PAL_OK);
   run_until_terminal(host, audio_input_job_1, 16u);
   assert(h2_lua_job_release(host, audio_input_job_1) == H2_PAL_OK);
-  assert(atomic_load(&s_test_audio_mic_stop_count) == 0);
+  assert(h2_atomic_load(&s_test_audio_mic_stop_count) == 0);
   assert(h2_lua_job_cancel(host, audio_input_job_2) == H2_PAL_OK);
   run_until_terminal(host, audio_input_job_2, 16u);
   assert(h2_lua_job_release(host, audio_input_job_2) == H2_PAL_OK);
-  assert(atomic_load(&s_test_audio_mic_stop_count) == 1);
+  assert(h2_atomic_load(&s_test_audio_mic_stop_count) == 1);
 
   {
     /* A microphone that never produces a frame must not let a script's long
@@ -2823,9 +3250,9 @@ int main(int argc, char **argv) {
     uint64_t join_elapsed_ms;
     size_t step;
 
-    atomic_store(&s_test_audio_mic_start_count, 0);
-    atomic_store(&s_test_audio_mic_stop_count, 0);
-    atomic_store(&s_test_audio_mic_block, 1);
+    h2_atomic_store(&s_test_audio_mic_start_count, 0);
+    h2_atomic_store(&s_test_audio_mic_stop_count, 0);
+    h2_atomic_store(&s_test_audio_mic_block, 1);
     assert(h2_lua_job_submit_text(block_host, NULL, "@audio-input-block.lua",
                                   audio_input_block_script,
                                   sizeof(audio_input_block_script) - 1u, NULL,
@@ -2835,13 +3262,13 @@ int main(int argc, char **argv) {
      * mutex. Watch the mic-acquired counter instead: it flips before the
      * script's input:read() call, without needing the lock. */
     for (step = 0u; step < 500u; ++step) {
-      if (atomic_load(&s_test_audio_mic_start_count) != 0) {
+      if (h2_atomic_load(&s_test_audio_mic_start_count) != 0) {
         break;
       }
       assert(h2_lua_host_step(block_host) == H2_PAL_OK);
       (void)h2_pal_time_sleep_ms(real_time, 1u);
     }
-    assert(atomic_load(&s_test_audio_mic_start_count) == 1);
+    assert(h2_atomic_load(&s_test_audio_mic_start_count) == 1);
 
     (void)h2_pal_time_get_monotonic_ms(real_time, &stop_started_ms);
     assert(h2_lua_host_stop(block_host) == H2_PAL_OK);
@@ -2858,28 +3285,28 @@ int main(int argc, char **argv) {
      * on this machine. */
     assert(join_elapsed_ms < 5000u);
 
-    atomic_store(&s_test_audio_mic_block, 0);
+    h2_atomic_store(&s_test_audio_mic_block, 0);
     h2_lua_host_destroy(block_host);
-    assert(atomic_load(&s_test_audio_mic_stop_count) == 1);
+    assert(h2_atomic_load(&s_test_audio_mic_stop_count) == 1);
   }
 
   static const uint8_t audio_failure_script[] =
       "local a=require('audio');"
       "assert(a.new_output({sample_rate=16000,channels=1,bits_per_sample=16}));"
       "error('forced failure')";
-  atomic_store(&s_test_audio_close_count, 0);
-  atomic_store(&s_test_audio_start_count, 0);
-  atomic_store(&s_test_audio_stop_count, 0);
+  h2_atomic_store(&s_test_audio_close_count, 0);
+  h2_atomic_store(&s_test_audio_start_count, 0);
+  h2_atomic_store(&s_test_audio_stop_count, 0);
   assert(h2_lua_job_submit_text(host, NULL, "@audio-failure.lua",
                                 audio_failure_script,
                                 sizeof(audio_failure_script) - 1u, NULL, 0u,
                                 &job_id) == H2_PAL_OK);
   run_until_terminal(host, job_id, 16u);
   assert(status(host, job_id).state == H2_LUA_JOB_FAILED);
-  assert(atomic_load(&s_test_audio_close_count) == 0);
+  assert(h2_atomic_load(&s_test_audio_close_count) == 0);
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
-  assert(atomic_load(&s_test_audio_close_count) == 1);
-  assert(atomic_load(&s_test_audio_stop_count) == 1);
+  assert(h2_atomic_load(&s_test_audio_close_count) == 1);
+  assert(h2_atomic_load(&s_test_audio_stop_count) == 1);
 
   {
     static const uint8_t draw_circle_script[] =
@@ -3092,7 +3519,8 @@ int main(int argc, char **argv) {
   static const uint8_t resume_budget_script[] =
       "local n=0;for i=1,20 do n=n+i end;return tostring(n)";
   test_clock_t clock;
-  atomic_init(&clock.now_ms, 0u);
+  clock.now_ms = 0u;
+  assert(pthread_mutex_init(&clock.mutex, NULL) == 0);
   const h2_pal_time_api_t test_time = {
       .user = &clock,
       .vtable = &s_test_clock_vtable,
@@ -3111,7 +3539,9 @@ int main(int argc, char **argv) {
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
   h2_lua_host_destroy(host);
 
-  atomic_store(&clock.now_ms, 0u);
+  assert(pthread_mutex_lock(&clock.mutex) == 0);
+  clock.now_ms = 0u;
+  assert(pthread_mutex_unlock(&clock.mutex) == 0);
   host =
       create_unstarted_host_with_scheduler(runtime, 1u, 1u, UINT32_MAX, 4096u);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
@@ -3300,9 +3730,9 @@ int main(int argc, char **argv) {
   capability_fixture_t capability = {.host = host};
   assert(h2_lua_register_capability(host, "immediate", immediate_capability,
                                     NULL, NULL) == H2_PAL_OK);
-  assert(h2_lua_register_capability(host, "early",
-                                    completed_before_return_capability, NULL,
-                                    &capability) == H2_PAL_OK);
+  assert(h2_lua_register_capability_prefix(host, "ear",
+                                           completed_before_return_prefix, NULL,
+                                           &capability) == H2_PAL_OK);
   assert(h2_lua_register_capability(host, "pending", pending_capability,
                                     cancel_capability,
                                     &capability) == H2_PAL_OK);
@@ -3367,5 +3797,13 @@ int main(int argc, char **argv) {
   assert(h2_lua_job_release(host, job_id) == H2_PAL_OK);
   h2_lua_host_destroy(host);
   h2_runtime_deinit(runtime);
+  assert(pthread_mutex_destroy(&clock.mutex) == 0);
+  h2_atomic_int_destroy(&s_source_effect_count);
+  h2_atomic_int_destroy(&s_test_audio_close_count);
+  h2_atomic_int_destroy(&s_test_audio_start_count);
+  h2_atomic_int_destroy(&s_test_audio_stop_count);
+  h2_atomic_int_destroy(&s_test_audio_mic_start_count);
+  h2_atomic_int_destroy(&s_test_audio_mic_stop_count);
+  h2_atomic_int_destroy(&s_test_audio_mic_block);
   return 0;
 }

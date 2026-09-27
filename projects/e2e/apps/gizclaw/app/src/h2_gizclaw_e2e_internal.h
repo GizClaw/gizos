@@ -7,7 +7,7 @@
 #include "h2_app_test_audio_fake.h"
 #include "h2_gizclaw_e2e.h"
 
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -86,7 +86,7 @@ typedef struct h2_gizclaw_e2e_fixture {
   size_t speech_pending_bytes;
   bool speech_mic_started;
   int (*speech_cleanup)(struct h2_gizclaw_e2e_fixture *fixture);
-  atomic_size_t speech_offset;
+  h2_atomic_size_t speech_offset;
   bool speech_track_bound;
   /* A case may retain borrowed Track/hook state through failed teardown. */
   void *case_state;

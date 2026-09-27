@@ -4,10 +4,10 @@ load(":firmware.bzl", "FirmwareVersionInfo")
 
 def _impl(ctx):
     output = ctx.actions.declare_directory(ctx.label.name)
-    version = ctx.attr._release_version[FirmwareVersionInfo].value
+    batch = ctx.attr._release_batch[FirmwareVersionInfo].value
     args = ctx.actions.args()
     args.add("--output", output.path)
-    args.add("--version", version)
+    args.add("--batch", batch)
     args.add_all(ctx.files.srcs, before_each = "--input")
     ctx.actions.run(
         executable = ctx.executable._assembler,
@@ -28,7 +28,7 @@ firmware_release_bundle = rule(
             cfg = "exec",
             executable = True,
         ),
-        "_release_version": attr.label(default = "//tools/bazel:release_version"),
+        "_release_batch": attr.label(default = "//tools/bazel:release_batch"),
         "srcs": attr.label_list(allow_files = True),
     },
 )

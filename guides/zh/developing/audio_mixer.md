@@ -2,6 +2,8 @@
 
 `libs/audio_mixer` 提供跨平台 PCM 音频混合能力。它管理多个输入 track，将音频帧混合为统一输出，并记录 master factor 和 clipping 统计。
 
+`h2_audio_track_config_t.allocator` 可选地覆盖该音轨的 PCM/drain queue 和 write/drain scratch，NULL 保持 mixer 默认分配器；共享 mixer、slot 表和混音缓冲仍由 mixer config 决定。Runtime 音轨 wrapper 也遵守该字段（NULL 时用 Runtime mem），调用方须让 allocator 存活到音轨关闭完成。
+
 ## API Reference
 
 [API Reference](/references/audio_mixer)

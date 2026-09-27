@@ -39,7 +39,7 @@ class AdvertisingLifetimeTest(unittest.TestCase):
             binary = Path(directory) / 'test'
             flags = os.environ.get('JIELI_TEST_CFLAGS', '-fsanitize=address').split()
             subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-pthread', *flags,
-                '-I', str(ROOT / 'libs/pal/include'), str(test), '-o', str(binary)], check=True)
+                '-I', str(ROOT / 'libs/pal/include'), str(test), '-I', str(ROOT / 'libs/atomic/include'), str(ROOT / 'libs/atomic/providers/c11/src/h2_atomic_c11.c'), '-o', str(binary)], check=True)
             for case in ['shutdown_adv', 'shutdown_conn', 'rearm_natural', 'rearm_inline', 'rearm_apply_once', 'rearm_apply_persistent', 'rearm_stop_once', 'rearm_stop_persistent', 'rearm_restart_once', 'rearm_restart_persistent', 'early_hook', 'early_restart', 'stop_hook', 'extended', 'legacy_borrow', 'failed_update', 'null_uuids', 'submitting', 'state_race', 'registration_error', 'fence_error', 'stop_error', 'deferred', 'pending_init']:
                 with self.subTest(case=case):
                     result = subprocess.run([str(binary), case], capture_output=True, text=True, timeout=15,

@@ -1,6 +1,7 @@
 #include "asm/includes.h"
 
 #include "h2_jieli_ac791n_devkit.h"
+#include "h2_atomic.h"
 #include "h2/pal/net/h2_pal_net.h"
 
 #ifdef H2_JIELI_NETWORK_ENABLE
@@ -21,10 +22,10 @@
 #include <string.h>
 
 struct h2_pal_net_resolver {
-  unsigned references;
+  h2_atomic_uint_t references;
   unsigned slot;
   uintptr_t callback_id;
-  h2_pal_result_t result;
+  h2_atomic_int_t result;
   h2_pal_net_addr_t address;
   char host[DNS_MAX_NAME_LENGTH];
 };
@@ -206,7 +207,9 @@ static int resolve_addr(
 }
 
 static void resolver_release(h2_pal_net_resolver_t *resolver) {
-  if (__atomic_sub_fetch(&resolver->references, 1u, __ATOMIC_ACQ_REL) == 0u) {
+  if (h2_atomic_uint_fetch_sub(&resolver->references, 1u, H2_ATOMIC_ACQ_REL) == 1u) {
+    h2_atomic_uint_destroy(&resolver->references);
+    h2_atomic_int_destroy(&resolver->result);
     free(resolver);
   }
 }
@@ -224,7 +227,7 @@ void h2_jieli_net_stack_stopped(void) {
   stack_lock();
   for (unsigned i = 0; i < H2_JIELI_DNS_CAPACITY; ++i) {
     if (resolvers[i] != NULL) {
-      __atomic_store_n(&resolvers[i]->result, H2_PAL_ERR_UNAVAILABLE, __ATOMIC_RELEASE);
+      h2_atomic_int_store(&resolvers[i]->result, H2_PAL_ERR_UNAVAILABLE, H2_ATOMIC_RELEASE);
       resolver_graveyard[i] = resolvers[i];
       resolvers[i] = NULL;
     }
@@ -249,7 +252,7 @@ static void resolver_complete(
       memcpy(resolver->address.ip, &ip_2_ip4(address)->addr, 4u);
       result = H2_PAL_OK;
     }
-    __atomic_store_n(&resolver->result, result, __ATOMIC_RELEASE);
+    h2_atomic_int_store(&resolver->result, result, H2_ATOMIC_RELEASE);
   }
   stack_unlock();
   if (resolver != NULL) resolver_release(resolver);
@@ -320,10 +323,20 @@ static h2_pal_result_t resolve_start(
     return H2_PAL_ERR_NO_MEMORY;
   }
   memset(resolver, 0, sizeof(*resolver));
-  resolver->references = 2u;
+  h2_atomic_result_t atomic_rc = h2_atomic_uint_init(&resolver->references, 2u);
+  if (atomic_rc == H2_ATOMIC_OK)
+    atomic_rc = h2_atomic_int_init(&resolver->result, H2_PAL_ERR_WOULD_BLOCK);
+  if (atomic_rc != H2_ATOMIC_OK) {
+    h2_atomic_uint_destroy(&resolver->references);
+    h2_atomic_int_destroy(&resolver->result);
+    free(resolver);
+    stack_unlock();
+    stack_leave();
+    return atomic_rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
+                                               : H2_PAL_ERR_NO_MEMORY;
+  }
   resolver->slot = slot;
   resolver->callback_id = ++resolver_callback_id;
-  resolver->result = H2_PAL_ERR_WOULD_BLOCK;
   memcpy(resolver->host, host, length + 1u);
   resolvers[slot] = resolver;
   stack_unlock();
@@ -347,7 +360,7 @@ static h2_pal_result_t resolve_poll(
   const uint32_t start = timer_get_ms();
   for (;;) {
     const h2_pal_result_t result =
-        __atomic_load_n(&resolver->result, __ATOMIC_ACQUIRE);
+        h2_atomic_int_load(&resolver->result, H2_ATOMIC_ACQUIRE);
     if (result != H2_PAL_ERR_WOULD_BLOCK) {
       if (result == H2_PAL_OK) *out_addr = resolver->address;
       return result;

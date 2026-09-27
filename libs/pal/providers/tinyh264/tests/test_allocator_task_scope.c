@@ -3,7 +3,7 @@
 #include "h2_tinyh264_allocator_bridge.h"
 
 #include <pthread.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -17,7 +17,7 @@
 const void *test_scope_task(void);
 void test_scope_yield(uint32_t delay_ms);
 
-static atomic_uint arrived;
+static h2_atomic_uint_t arrived;
 typedef struct allocator { unsigned live; } allocator_t;
 typedef struct allocation { allocator_t *owner; } allocation_t;
 
@@ -47,8 +47,8 @@ static void release(void *user, void *ptr) {
 }
 static const h2_pal_mem_vtable_t memory = {.alloc = allocate, .free = release};
 static void barrier(unsigned epoch) {
-    atomic_fetch_add(&arrived, 1u);
-    while (atomic_load(&arrived) < epoch * 2u) test_scope_yield(1u);
+    h2_atomic_fetch_add(&arrived, 1u);
+    while (h2_atomic_load(&arrived) < epoch * 2u) test_scope_yield(1u);
 }
 static void *worker(void *user) {
     (void)user;
@@ -77,10 +77,12 @@ static void *worker(void *user) {
 }
 int main(void) {
     pthread_t first, second;
+    CHECK(h2_atomic_uint_init(&arrived, 0u) == H2_ATOMIC_OK);
     CHECK(pthread_create(&first, NULL, worker, NULL) == 0);
     CHECK(pthread_create(&second, NULL, worker, NULL) == 0);
     CHECK(pthread_join(first, NULL) == 0);
     CHECK(pthread_join(second, NULL) == 0);
     CHECK(h2_tinyh264_malloc(1u) == NULL);
+    h2_atomic_uint_destroy(&arrived);
     return 0;
 }

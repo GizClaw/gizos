@@ -93,7 +93,7 @@ Runtime 只发布原始的“最近一帧峰值”，**不做衰减**。Runtime 
 
 这些电平只用于观测。UI 可以据此画 level meter，但任何音频路径都不得由它决定：不得用来开关 mic/speaker、判定 VAD、门控发送或改变对话状态。
 
-发布电平不加锁，写入在音频热路径上只有原子 store。level 和 timestamp 是两个独立的 32 位原子（64 位原子在 ARMv5 target 上会退化成 SDK 没有提供的 libatomic 调用），因此与某一帧竞争的读者可能把新的 level 和上一帧的 timestamp 配在一起；两帧相差一个 frame period，level meter 看不出来，消费者也不得依赖这对值的严格配对。
+发布电平使用独立的 `libs/atomic` typed wrapper：每个方向各有一个 level 和一个 monotonic 毫秒低 32 位字段。Runtime 初始化这些 provider-owned 字段并在并发访问结束后销毁；初始化失败向创建调用方返回错误。Atomic 不通过 PAL 注入，ESP 的实际存储由平台实现置于内部 RAM，wrapper 可以位于 PSRAM。发布电平不加锁，写入在音频热路径上只有原子 store。level 和 timestamp 是两个独立的 32 位原子（64 位原子在 ARMv5 target 上会退化成 SDK 没有提供的 libatomic 调用），因此与某一帧竞争的读者可能把新的 level 和上一帧的 timestamp 配在一起；两帧相差一个 frame period，level meter 看不出来，消费者也不得依赖这对值的严格配对。
 
 存储的 timestamp 只保留 monotonic 毫秒的低 32 位，读取时用当前时钟补回高位，因此跨 `UINT32_MAX` 毫秒（约 49.7 天）回绕的帧仍然落在正确的 epoch 上，回绕边界上低位为 0 的帧也不会被当成“从未测量”。这个补位对任何比约 24 天更新的帧都成立。
 
@@ -472,7 +472,9 @@ Lifecycle 的合法调用如下，其余情况一律 fail closed：
 source table 与 publication。`start` 则必须拒绝，否则 poller 会和 test source table
 竞争。两者刻意不对称。
 
-后台采集失败会保存 worker result、把 input phase 置为 faulted，并关闭 Runtime event queue，使阻塞的 App consumer 被唤醒。Queue close 是终态：PAL queue contract 没有 reopen，重启采集只会得到一个仍在采样却无法投递事件的 Runtime。因此 worker result 同时作为 fault latch，fault 之后 `stop` 返回该 result 并报告失败原因，随后的 `start` 返回 `H2_PAL_ERR_INVALID_STATE`；唯一的恢复路径是 `h2_runtime_deinit()` 后重新 `h2_runtime_init()`。
+单步采集失败不会停掉 input worker：读 PAL 出错、事件放不进 pending 缓冲、时间读取失败等都只记入健康状态，按 stage 打日志（`H2_RUNTIME_INPUT_ERROR stage=... rc=...`，同一错误连续出现时每 100 次再打一行，恢复时打 `H2_RUNTIME_INPUT_RECOVERED`），退避后继续下一轮（最长 500 ms 一次）。其余 source 在同一轮照常采集，已产生的事件照常发布。`h2_runtime_input_status()` 返回 phase、latch 的 worker result、最近一次错误及其 stage 和时间、累计与连续错误数、成功轮数与最近成功时间，以及 snapshot 延迟发布计数，任何 phase 都可以调用。健康字段由独立的 health mutex 保护（不是 input writer mutex），因此拿不到 writer mutex 本身也会以 stage `lock` 记录；`h2_runtime_input_status()` 拿不到 health mutex 时返回该 Sync 结果、不读字段。bk3633 以 `H2_RUNTIME_INPUT_LOG_ENABLED=0` 构建（OAD 镜像预算），不输出以上 input 日志，健康字段、status 与 `h2_runtime_input_stage_name()` 不受影响（没有日志引用时，不调用该函数的镜像不链接这些字符串）。
+
+只有 worker 无法再自我节拍（sleep 失败）或 Runtime 已不可用才是致命的。致命时 worker 在 writer mutex 下把每个仍按住的 Button 走正常松开路径（state 读作松开），发布 snapshot，并按普通 producer 规则把 `BUTTON_UP` 与 released `BUTTON_ACTION` 排在关闭之前（fault 是终态，已有保留边沿与此次释放先尝试投递一次，队列满时未投递事件全部丢弃并计数；事件不会先于其 snapshot 可取，读者持续占住所有退役槽位、三次短重试仍发布不了时同样丢弃并计数），日志为 `H2_RUNTIME_INPUT_FAULT ... released=<n>`。拿不到 writer mutex 时不改 source table，日志写 `release=skipped lock_rc=<rc>`。随后保存 worker result、把 input phase 置为 faulted 并关闭 Runtime event queue，使阻塞的 App consumer 被唤醒；consumer 先拉到已入队的释放事件，再看到 `H2_PAL_ERR_CLOSED`。Queue close 是终态：PAL queue contract 没有 reopen，重启采集只会得到一个仍在采样却无法投递事件的 Runtime。因此 worker result 同时作为 fault latch，fault 之后 `stop` 返回该 result 并报告失败原因，随后的 `start` 返回 `H2_PAL_ERR_INVALID_STATE`；唯一的恢复路径是 `h2_runtime_deinit()` 后重新 `h2_runtime_init()`。NFC task 投递扫描结果失败只丢这一轮结果，不 fault。
 
 Test Control session 在打开期间独占 source table。它在 open 时作废 production source table，并在 close 之后留待下一次采集惰性重新发现，因此 close 之后的第一次 `start` 或 poll 会重建 production source。这是 init 之外唯一一次重新发现的路径。
 
@@ -501,12 +503,12 @@ Event payload 表达发生时的历史事实，snapshot 表达最近一次完成
 
 规则：
 
-1. Input writer 按顺序投递一次 poll 的事件。第一次遇到 `H2_PAL_ERR_FULL`（provider 报告的 no-wait timeout/would-block 也按 FULL 处理）后，本轮不再尝试入队：之后的边沿保留在所属 Button source 上，sample 丢弃并计数。Queue closed 等其它错误仍按原样让 input worker fault。
+1. Input writer 按顺序投递一次 poll 的事件。第一次遇到 `H2_PAL_ERR_FULL`（provider 报告的 no-wait timeout/would-block 也按 FULL 处理）后，本轮不再尝试入队：之后的边沿保留在所属 Button source 上，sample 丢弃并计数。Queue closed 等其它错误仍交给现有 input health/error 和退避重试路径；只有 sleep 失败或 Runtime 不可用才触发终态 fault。
 2. 保留的边沿在下一次 input poll 开始时（默认每 20 ms，先于该 poll 的任何新采样）按原顺序重新入队。重新入队的事件保留原 payload 和原 `timestamp_ms`（按下边沿仍满足 `timestamp_ms == pressed_at_ms`），但领取新的 sequence，并照常先发布 snapshot 再入队。
 3. Source 持有保留边沿期间，它的新边沿直接排在保留边沿之后，它的新 sample 丢弃并计数，保证同一 source 的事件不会越过更早的边沿。不同 source 之间不保证相对顺序。
 4. 每个 source 最多保留 2 个边沿（`H2_RUNTIME_BUTTON_RETAINED_EDGE_MAX`）。同一 source 的边沿必然按下/松开交替，第 3 个到来时最早的两个一定是一对互补边沿，丢弃这一对并计入丢弃数，consumer 最终看到的按下/松开状态仍然正确，只少了一次完整点击。
 5. 保留边沿只存在 source 上，不占 pending event list；重新入队时一个 source 的全部保留事件放不进 pending list 就整体等下一次 poll。Pending list 本身只在全部 retired snapshot slot 都被 pin 住时跨 poll 存活，此时再耗尽也不会让 input worker fault：sample 丢弃计数，边沿把该 source 已在 pending list 里的事件按顺序挪到保留区后保留。
-6. Test Control 打开或关闭时 source table 被替换，未投递的保留边沿与已排队事件一起丢弃，不计数。`h2_runtime_input_stop()` 不清除它们，下一次 start 的首帧重新入队。
+6. Test Control 打开或关闭时 source table 被替换，未投递的保留边沿丢弃，不计数。Open 清空 event queue，close 保留已排队的注入事件。`h2_runtime_input_stop()` 不清除它们，下一次 start 的首帧重新入队。
 
 Test Control 直接注入的事件、custom event 和 system event 不参与保留。
 

@@ -9,7 +9,7 @@ _Static_assert(offsetof(h2_runtime_custom_event_payload_t, data) ==
                    H2_RUNTIME_CUSTOM_EVENT_HEADER_SIZE,
                "custom event header size must match the delivered layout");
 
-#if !H2_RUNTIME_ATOMIC_ADD_LOCK_FREE
+#if !H2_RUNTIME_ATOMIC_FETCH_ADD
 static void custom_event_lock(h2_runtime_t *runtime) {
     h2_runtime_flag_lock(&runtime->private_state->custom_event_lock);
 }
@@ -22,31 +22,31 @@ static void custom_event_unlock(h2_runtime_t *runtime) {
 /* Claims a posting slot unless deinit already closed the door. */
 static int custom_event_enter(h2_runtime_t *runtime) {
     h2_runtime_private_t *private_state = runtime->private_state;
-#if H2_RUNTIME_ATOMIC_ADD_LOCK_FREE
+#if H2_RUNTIME_ATOMIC_FETCH_ADD
     /*
      * Claim first, then check the door: deinit closes the door and then reads
      * in_flight, so a claim it does not see was made after it read, and that
      * poster sees the closed door and backs out.
      */
-    atomic_fetch_add_explicit(
-        &private_state->custom_event_in_flight, 1u, memory_order_seq_cst);
-    if (atomic_load_explicit(
-            &private_state->custom_event_closed, memory_order_seq_cst) != 0) {
-        atomic_fetch_sub_explicit(
-            &private_state->custom_event_in_flight, 1u, memory_order_seq_cst);
+    h2_atomic_fetch_add_explicit(
+        &private_state->custom_event_in_flight, 1u, H2_ATOMIC_SEQ_CST);
+    if (h2_atomic_load_explicit(
+            &private_state->custom_event_closed, H2_ATOMIC_SEQ_CST) != 0) {
+        h2_atomic_fetch_sub_explicit(
+            &private_state->custom_event_in_flight, 1u, H2_ATOMIC_SEQ_CST);
         return 0;
     }
     return 1;
 #else
     custom_event_lock(runtime);
-    int entered = atomic_load_explicit(
-        &private_state->custom_event_closed, memory_order_relaxed) == 0;
+    int entered = h2_atomic_load_explicit(
+        &private_state->custom_event_closed, H2_ATOMIC_RELAXED) == 0;
     if (entered) {
-        atomic_store_explicit(
+        h2_atomic_store_explicit(
             &private_state->custom_event_in_flight,
-            atomic_load_explicit(
-                &private_state->custom_event_in_flight, memory_order_relaxed) + 1u,
-            memory_order_relaxed);
+            h2_atomic_load_explicit(
+                &private_state->custom_event_in_flight, H2_ATOMIC_RELAXED) + 1u,
+            H2_ATOMIC_RELAXED);
     }
     custom_event_unlock(runtime);
     return entered;
@@ -55,17 +55,17 @@ static int custom_event_enter(h2_runtime_t *runtime) {
 
 static void custom_event_leave(h2_runtime_t *runtime) {
     h2_runtime_private_t *private_state = runtime->private_state;
-#if H2_RUNTIME_ATOMIC_ADD_LOCK_FREE
-    atomic_fetch_sub_explicit(
-        &private_state->custom_event_in_flight, 1u, memory_order_seq_cst);
+#if H2_RUNTIME_ATOMIC_FETCH_ADD
+    h2_atomic_fetch_sub_explicit(
+        &private_state->custom_event_in_flight, 1u, H2_ATOMIC_SEQ_CST);
 #else
     custom_event_lock(runtime);
-    unsigned int in_flight = atomic_load_explicit(
-        &private_state->custom_event_in_flight, memory_order_relaxed);
+    unsigned int in_flight = h2_atomic_load_explicit(
+        &private_state->custom_event_in_flight, H2_ATOMIC_RELAXED);
     if (in_flight > 0u) {
-        atomic_store_explicit(
+        h2_atomic_store_explicit(
             &private_state->custom_event_in_flight, in_flight - 1u,
-            memory_order_relaxed);
+            H2_ATOMIC_RELAXED);
     }
     custom_event_unlock(runtime);
 #endif
@@ -183,17 +183,17 @@ void h2_runtime_custom_event_close(h2_runtime_t *runtime) {
      */
     for (;;) {
         unsigned int in_flight;
-#if H2_RUNTIME_ATOMIC_ADD_LOCK_FREE
-        atomic_store_explicit(
-            &private_state->custom_event_closed, 1, memory_order_seq_cst);
-        in_flight = atomic_load_explicit(
-            &private_state->custom_event_in_flight, memory_order_seq_cst);
+#if H2_RUNTIME_ATOMIC_FETCH_ADD
+        h2_atomic_store_explicit(
+            &private_state->custom_event_closed, 1, H2_ATOMIC_SEQ_CST);
+        in_flight = h2_atomic_load_explicit(
+            &private_state->custom_event_in_flight, H2_ATOMIC_SEQ_CST);
 #else
         custom_event_lock(runtime);
-        atomic_store_explicit(
-            &private_state->custom_event_closed, 1, memory_order_relaxed);
-        in_flight = atomic_load_explicit(
-            &private_state->custom_event_in_flight, memory_order_relaxed);
+        h2_atomic_store_explicit(
+            &private_state->custom_event_closed, 1, H2_ATOMIC_RELAXED);
+        in_flight = h2_atomic_load_explicit(
+            &private_state->custom_event_in_flight, H2_ATOMIC_RELAXED);
         custom_event_unlock(runtime);
 #endif
         if (in_flight == 0u) {

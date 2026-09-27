@@ -511,6 +511,17 @@ void h2_jieli_sdk_unlock_byte(volatile uint8_t *lock) {
  * ------------------------------------------------------------------------- */
 
 static spinlock_t h2_jieli_atomic_lock = {.rwlock = 0};
+static spinlock_t h2_jieli_value_lock = {.rwlock = 0};
+
+void h2_jieli_sdk_atomic_lock(void)
+{
+    spin_lock(&h2_jieli_value_lock);
+}
+
+void h2_jieli_sdk_atomic_unlock(void)
+{
+    spin_unlock(&h2_jieli_value_lock);
+}
 
 /* clang reserves the __sync_*_N spellings as builtins; define ordinary
  * functions and bind them to the libcall symbols with asm labels. */

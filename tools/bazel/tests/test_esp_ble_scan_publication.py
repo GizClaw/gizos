@@ -13,16 +13,16 @@ FIXTURE = r'''
 #include <assert.h>
 #include <pthread.h>
 #include <sched.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdio.h>
 #include <string.h>
 /* SOURCE */
 static scan_state_t scan;
-static atomic_uint requested, completed;
+static h2_atomic_uint_t requested, completed;
 static void *producer(void *unused) {
     (void)unused;
     for (unsigned round = 1; round <= 2000; ++round) {
-        while (atomic_load_explicit(&requested, memory_order_acquire) != round) sched_yield();
+        while (h2_atomic_load_explicit(&requested, H2_ATOMIC_ACQUIRE) != round) sched_yield();
         h2_pal_ble_scan_result_t result = {0};
         result.local_name = "H2PAL";
         result.local_name_len = 5;
@@ -36,22 +36,22 @@ static void *producer(void *unused) {
         memset(result.addr.value, 0xee, sizeof(result.addr.value));
         result.rssi = -999;
         assert(on_scan_result(&scan, &result));
-        atomic_store_explicit(&completed, round, memory_order_release);
+        h2_atomic_store_explicit(&completed, round, H2_ATOMIC_RELEASE);
     }
     return NULL;
 }
 static void *consumer(void *unused) {
     (void)unused;
     for (unsigned round = 1; round <= 2000; ++round) {
-        atomic_store_explicit(&requested, round, memory_order_release);
+        h2_atomic_store_explicit(&requested, round, H2_ATOMIC_RELEASE);
         while (/* WAIT */) sched_yield();
         /* SNAPSHOT */
         for (unsigned i = 0; i < 6; ++i) assert(peer_addr.value[i] == (uint8_t)(round + i));
         assert((unsigned)peer_addr.type == round % 2);
         assert(peer_rssi == -(int)(round % 100 + 1));
-        while (atomic_load_explicit(&completed, memory_order_acquire) != round) sched_yield();
+        while (h2_atomic_load_explicit(&completed, H2_ATOMIC_ACQUIRE) != round) sched_yield();
         /* Models a new scan only after the previous callback has quiesced. */
-        scan.found = false;
+        h2_atomic_store(&scan.found, false);
         memset(&scan.addr, 0, sizeof(scan.addr));
         scan.rssi = 0;
     }
@@ -59,10 +59,16 @@ static void *consumer(void *unused) {
 }
 int main(void) {
     pthread_t host, entry;
+    assert(h2_atomic_bool_init(&scan.found, false) == H2_ATOMIC_OK);
+    assert(h2_atomic_uint_init(&requested, 0u) == H2_ATOMIC_OK);
+    assert(h2_atomic_uint_init(&completed, 0u) == H2_ATOMIC_OK);
     assert(pthread_create(&host, NULL, producer, NULL) == 0);
     assert(pthread_create(&entry, NULL, consumer, NULL) == 0);
     assert(pthread_join(host, NULL) == 0);
     assert(pthread_join(entry, NULL) == 0);
+    h2_atomic_bool_destroy(&scan.found);
+    h2_atomic_uint_destroy(&requested);
+    h2_atomic_uint_destroy(&completed);
     return 0;
 }
 '''
@@ -88,6 +94,15 @@ class PublicationTest(unittest.TestCase):
                     addr = re.search(r'runtime->ble_host, &(scan.addr),', source).group(1)
                     rssi = re.search(r'attempt, (scan.rssi)\);', source).group(1)
                     snapshot = f'const h2_pal_ble_addr_t peer_addr = {addr}; const int peer_rssi = {rssi};'
+                callback = (callback.replace('atomic_bool', 'h2_atomic_bool_t')
+                            .replace('atomic_load_explicit(', 'h2_atomic_load_explicit(')
+                            .replace('atomic_store_explicit(', 'h2_atomic_store_explicit(')
+                            .replace('memory_order_acquire', 'H2_ATOMIC_ACQUIRE')
+                            .replace('memory_order_release', 'H2_ATOMIC_RELEASE'))
+                wait = (wait.replace('atomic_load_explicit(', 'h2_atomic_load_explicit(')
+                        .replace('memory_order_acquire', 'H2_ATOMIC_ACQUIRE'))
+                callback = callback.replace('h2_h2_atomic_', 'h2_atomic_').replace('h2_atomic_bool_t_t', 'h2_atomic_bool_t')
+                wait = wait.replace('h2_h2_atomic_', 'h2_atomic_')
                 unit_text = FIXTURE.replace('/* SOURCE */', callback).replace('/* WAIT */', wait).replace('/* SNAPSHOT */', snapshot)
                 with tempfile.TemporaryDirectory() as directory:
                     unit = Path(directory) / 'test.c'
@@ -95,8 +110,10 @@ class PublicationTest(unittest.TestCase):
                     unit.write_text(unit_text)
                     subprocess.run(['cc', '-std=c11', '-Wall', '-Wextra', '-Werror', '-pthread',
                                     '-I', str(ROOT / 'libs/pal/include'),
+                                    '-I', str(ROOT / 'libs/atomic/include'),
+                                    '-I', str(ROOT / 'libs/atomic/providers/locked'),
                                     *shlex.split(os.environ.get('ESP_SCAN_CFLAGS', '')),
-                                    str(unit), '-o', str(binary)], check=True)
+                                    str(unit), str(ROOT / 'libs/atomic/providers/pthread/src/h2_atomic_pthread.c'), '-o', str(binary)], check=True)
                     result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=30)
                     self.assertEqual(result.returncode, 0, result.stderr)
 

@@ -88,6 +88,7 @@ endif()
 
 set(H2_BK_PLATFORM_CORE_SRCS
   "src/h2_bk_platform_atomic.c"
+  "src/h2_bk_atomic.c"
   "src/h2_bk_platform_mem.c"
   "src/h2_bk_platform_log.c"
   "src/h2_bk_platform_firmware_info.c"
@@ -131,6 +132,8 @@ armino_component_register(
   INCLUDE_DIRS
     "include"
     "${REPO_ROOT}/libs/pal/include"
+    "${REPO_ROOT}/libs/atomic/include"
+    "${REPO_ROOT}/libs/atomic/providers/unsupported"
     "${REPO_ROOT}/libs/wifi_sta/include"
     "${REPO_ROOT}/libs/pal/providers/corehttp/include"
     "${REPO_ROOT}/libs/pal/providers/h2peer/include"

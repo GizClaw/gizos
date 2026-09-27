@@ -352,7 +352,7 @@ static void h2_sctp_reliability_prune(
             if (association->tx_fragments_tail == fragment) {
                 association->tx_fragments_tail = previous;
             }
-            h2_sctp_free(association->owner, fragment);
+            h2_sctp_free(association->mem, fragment);
             continue;
         }
         previous = fragment;
@@ -874,7 +874,7 @@ void h2_sctp_reliability_release_all(
     h2_sctp_tx_fragment_t *fragment = association->tx_fragments;
     while (fragment != NULL) {
         h2_sctp_tx_fragment_t *next = fragment->next;
-        h2_sctp_free(association->owner, fragment);
+        h2_sctp_free(association->mem, fragment);
         fragment = next;
     }
     association->tx_fragments = NULL;

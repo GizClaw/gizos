@@ -193,7 +193,7 @@ struct h2_quectel_modem {
     uint8_t preparing;
     uint32_t sim_generation;
     /* RX-written CPIN outcome; access atomically as in modem/common counters. */
-    uint32_t cpin_absent_seen;
+    h2_atomic_u32_t cpin_absent_seen;
     uint8_t raw_cpin_uncertain; /* Interrupted raw CPIN lacks response ownership. */
     /* Deferred insertion recovery; protected by the provider state lock. */
     uint8_t sim_poll_remaining;

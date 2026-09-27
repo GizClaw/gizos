@@ -42,6 +42,7 @@ cc_library(
     deps = [
         ":tasks",
         ":protocol",
+        "//libs/atomic",
         "//libs/bleikcp",
         "//libs/pal",
         "//libs/runtime",

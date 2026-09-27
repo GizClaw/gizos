@@ -471,11 +471,25 @@ h2_pal_result_t condition_broadcast(void *, h2_pal_cond_t *raw_condition) {
 h2_pal_sync_vtable_t sync_vtable = {};
 h2_pal_sync_api_t sync_api = {};
 
+std::mutex task_stack_mutex;
+h2_desktop_task_stack_config_t task_stack_config = {};
+size_t task_stack_borrowers = 0;
+
 struct DesktopTask {
   std::thread thread;
+  const h2_pal_mem_api_t *stack_allocator = nullptr;
+  void *stack = nullptr;
 };
 
-int task_start(void *, const h2_pal_task_options_t *,
+void release_task_stack(DesktopTask *task) {
+  if (task->stack_allocator == nullptr)
+    return;
+  h2_pal_mem_free(task->stack_allocator, task->stack);
+  std::lock_guard<std::mutex> guard(task_stack_mutex);
+  --task_stack_borrowers;
+}
+
+int task_start(void *, const h2_pal_task_options_t *options,
                h2_pal_task_entry_t entry, void *context,
                h2_pal_task_t **out_task) {
   if (entry == nullptr || out_task == nullptr) {
@@ -486,9 +500,30 @@ int task_start(void *, const h2_pal_task_options_t *,
   if (task == nullptr) {
     return H2_PAL_ERR_NO_MEMORY;
   }
+  h2_desktop_task_stack_config_t config = {};
+  {
+    std::lock_guard<std::mutex> guard(task_stack_mutex);
+    config = task_stack_config;
+    if (config.allocator != nullptr) {
+      ++task_stack_borrowers;
+      task->stack_allocator = config.allocator;
+    }
+  }
+  if (config.allocator != nullptr) {
+    size_t bytes = 0;
+    const auto rc = config.resolve(config.user, options, &bytes);
+    if (rc == H2_PAL_OK && bytes != 0)
+      task->stack = h2_pal_mem_alloc(config.allocator, bytes);
+    if (rc != H2_PAL_OK || (bytes != 0 && task->stack == nullptr)) {
+      release_task_stack(task);
+      delete task;
+      return rc != H2_PAL_OK ? rc : H2_PAL_ERR_NO_MEMORY;
+    }
+  }
   try {
     task->thread = std::thread([entry, context] { entry(context); });
   } catch (...) {
+    release_task_stack(task);
     delete task;
     return H2_PAL_ERR_UNAVAILABLE;
   }
@@ -501,9 +536,16 @@ int task_join(void *, h2_pal_task_t *raw_task) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   DesktopTask *task = reinterpret_cast<DesktopTask *>(raw_task);
-  if (task->thread.joinable()) {
-    task->thread.join();
+  if (task->thread.get_id() == std::this_thread::get_id())
+    return H2_PAL_ERR_INVALID_STATE;
+  try {
+    if (task->thread.joinable())
+      task->thread.join();
+  } catch (...) {
+    // The caller retains the handle and placeholder for a retry.
+    return H2_PAL_ERR_IO;
   }
+  release_task_stack(task);
   delete task;
   return H2_PAL_OK;
 }
@@ -700,3 +742,17 @@ const h2_pal_time_api_t *h2_desktop_platform_time_api(void) {
 }
 
 } // extern "C"
+
+h2_pal_result_t h2_desktop_platform_configure_task_stacks(
+    const h2_desktop_task_stack_config_t *config) {
+  if (config != nullptr &&
+      (config->allocator == nullptr || config->allocator->vtable == nullptr ||
+       config->allocator->vtable->alloc == nullptr ||
+       config->allocator->vtable->free == nullptr || config->resolve == nullptr))
+    return H2_PAL_ERR_INVALID_ARG;
+  std::lock_guard<std::mutex> guard(task_stack_mutex);
+  if (task_stack_borrowers != 0)
+    return H2_PAL_ERR_BUSY;
+  task_stack_config = config != nullptr ? *config : h2_desktop_task_stack_config_t{};
+  return H2_PAL_OK;
+}

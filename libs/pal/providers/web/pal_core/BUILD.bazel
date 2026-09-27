@@ -321,6 +321,7 @@ cc_binary(
     target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
     deps = [
         ":pal_core",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/runtime",
     ],

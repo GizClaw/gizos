@@ -99,6 +99,7 @@ objc_library(
     deps = [
         ":corebluetooth_uuid",
         ":pal_core",
+        "//libs/atomic/providers/pthread",
     ],
 )
 

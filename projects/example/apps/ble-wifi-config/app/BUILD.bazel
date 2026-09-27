@@ -29,6 +29,7 @@ cc_test(
     }),
     deps = [
         ":ble_wifi_config",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
     ],
 )

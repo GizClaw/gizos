@@ -347,6 +347,8 @@ PeerConnection* peer_connection_create(
   memset(&pc->sctp, 0, sizeof(pc->sctp));
   pc->sctp.log = config->log;
   pc->sctp.mem = config->mem;
+  pc->sctp.allocator = config->allocator;
+  pc->dtls_srtp.allocator = config->allocator;
   pc->sctp.api = config->sctp;
   pc->sctp.time = config->time;
   pc->sctp.userdata = config->user_data;

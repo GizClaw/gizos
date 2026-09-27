@@ -18,6 +18,9 @@ typedef uint32_t h2_lua_job_id_t;
 
 #define H2_LUA_JOB_ID_NONE 0u
 
+/** Maximum shared exact/prefix registry capacity; bounds trie memory. */
+#define H2_LUA_CAPABILITY_CAPACITY_MAX 256u
+
 typedef struct h2_lua_resource {
   const char *name;
   const uint8_t *source;
@@ -57,6 +60,11 @@ typedef struct h2_lua_storage_config {
 
 typedef struct h2_lua_host_config {
   h2_runtime_t *runtime;
+  /** Optional allocator for everything the Host allocates: Host and job
+   * state, queues, buffers, the VM heap reservation and, without one, each
+   * VM block. NULL uses Runtime mem. Borrowed, not copied: the api and its
+   * user context must stay valid until h2_lua_host_destroy() returns. */
+  const h2_pal_mem_api_t *allocator;
   size_t worker_count;
   size_t worker_stack_size;
   size_t max_jobs;
@@ -84,17 +92,21 @@ typedef struct h2_lua_host_config {
   int borrow_display;
   /** Per-app persistent storage; zero-initialized leaves it unconfigured. */
   h2_lua_storage_config_t storage;
+  /** Exact and prefix registrations combined. Zero selects 16; values above
+   * H2_LUA_CAPABILITY_CAPACITY_MAX are invalid. Allocated at host creation. */
+  size_t capability_capacity;
   /** Optional shared VM heap in bytes. Zero (default) allocates each VM block
-   * directly from Runtime mem. Nonzero reserves this many bytes from Runtime
-   * mem at Host creation and serves every job's VM object, Lua state,
+   * directly from the Host allocator. Nonzero reserves this many bytes from
+   * the Host allocator at Host creation and serves every job's VM object, Lua state,
    * userdata, strings and tables from it with TLSF, serialized by a Runtime
-   * Sync mutex. Callbacks, events, tasks and framebuffer still use Runtime mem.
+   * Sync mutex. Callbacks, events, tasks and framebuffer still use the Host allocator.
    *
-   * The reservation is one block when Runtime mem has one; otherwise the Host
-   * shrinks the request by an eighth per refusal and takes up to 8 blocks of
-   * at least 256 KiB (only the final remainder may be smaller), each added to
-   * the same TLSF heap. A
-   * single VM allocation must fit inside one block. When the bytes cannot be
+   * The reservation is one block when the Host allocator has one; otherwise the Host
+   * shrinks the request by an eighth per refusal and takes up to 16 blocks of
+   * at least 64 KiB (only the final remainder may be smaller), each added to
+   * the same TLSF heap. The largest block is taken first, so the pools that
+   * can serve a big single allocation come first and the smaller blocks only
+   * add capacity; a single VM allocation must still fit inside one block. When the bytes cannot be
    * reserved within those limits create returns H2_PAL_ERR_NO_MEMORY with no
    * Host and no leaked allocations.
    *

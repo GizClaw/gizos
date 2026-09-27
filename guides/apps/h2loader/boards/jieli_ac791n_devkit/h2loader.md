@@ -1,5 +1,7 @@
 # JieLi AC791N DevKit H2Loader <Badge type="warning" text="WIP" />
 
+本板不在固件发布集合中，canonical `:package` 不标记 `firmware-release`，Release 工作流不提供 AC791N slice。普通 Bazel 构建与 JieLi CI 继续保留。
+
 ## 构建
 
 Linux x86_64（或 macOS 上的 Linux x86_64 dev container）：
@@ -15,7 +17,7 @@ Managed package 内的 `app/jieli/update.ufw` 是 native updater 消费的 image
 
 ### App watchdog 诊断
 
-`//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:app_watchdog_package` 是手动诊断 App，不属于任何发布镜像：`:app_watchdog_trial` 带 `manual`，package 带 `no-release` 与 `manual`，`scripts/bazel/bazel-release.py` 的发布目录查询排除 `no-release`，因此它不会进入 release packaging。
+`//projects/h2loader/targets/h2loader_tar_zlib/loader/jieli_ac791n_devkit:app_watchdog_package` 是手动诊断 App，不属于任何发布镜像：`:app_watchdog_trial` 带 `manual`，package 带 `no-release` 与 `manual`，`scripts/bazel/bazel-release.py` 只选择带 `firmware-release` 的 canonical Loader `:package`，并拒绝 alternate package；`no-release` 仅作诊断标记。
 
 该镜像从共享 color-bar launcher 启动；launcher 在确认 trial 前调用强符号 `h2_jieli_target_application_run()` hook，输出一行 `H2_WDT_TRIAL role=app core=<id> control=0x<wdt_con> action=hang`，随后关闭当前核中断并永久执行 `idle`，使该核停止喂狗。它不修改 watchdog 超时或复位模式，也不调用 `wdt_close()`，用于验证双核喂狗策略在任一核停喂时会复位整板。该镜像始终不确认 trial，因此复位回到 P1 后，`jieli_trial_attempt` 仍匹配 P2 App 的 image checksum，PAL 将该 App 判为不可启动，公共 Loader 留在命令模式。
 

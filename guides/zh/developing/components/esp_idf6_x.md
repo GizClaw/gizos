@@ -45,6 +45,12 @@ Runtime-capable launcher 必须在 board Runtime configuration、`h2_runtime_ini
 
 Maintained Runtime scope 是使用 ESP32-S3 与 ESP32-P4 五种 public board layouts 的 H2Loader firmware targets。特定 App 的 route 只进入实际构建它的 target：`bleikcp-speed/*` 只属于 BLEIKCP speed client/server，modem routes 只属于 modem smoke。`standard` 与 ESP32-C5 `compile_only` images 不初始化 Runtime，因此不安装 task policy，也不属于此 contract 的 firmware validation scope。
 
+PSRAM-stack PAL task 的 entry 返回后先发出 completion semaphore，再 suspend 等待 join。默认 `esp_task_join()` 消费 completion 后调用 `vTaskDeleteWithCaps(handle)`；配置 `psram_stack_allocator` 时则挂起并等待 worker 离开所有 core，调用 `vTaskDelete` 后分别释放 caller stack 和 internal TCB。两条路径均由 joiner 同步回收 worker storage，再销毁 semaphore 和 PAL handle，不为每个结束的 worker 创建临时清理 task。仓库锁定的 ESP-IDF 实现会先 suspend 目标并等待它退出 running 状态，再执行删除和释放，因此 join 可以发生在 completion signal 与 worker 自行 suspend 之间，包括跨 core 的情形。Worker 发出 completion 后不再访问 PAL handle 或 entry context。
+
+Internal-stack task 仍在 completion 后调用 `vTaskDelete(NULL)`，由 idle task 回收原生 stack 和 TCB，避免 delayed join 长时间保留启动所需的 Internal RAM。两种 placement 都要求 caller 最终成功 join；失败的 join 保留 handle 供重试。没有 detached task contract：永不 join 原本就会泄漏 PAL handle 和 semaphore，PSRAM task 现在还会保留 suspended worker 的 stack 和 TCB，不能把它当成受支持的 fire-and-forget 用法。
+
+`//native_component_src/esp-idf6.x/h2_pal_core:task_policy_test` 在 host 上执行真实 trampoline 和 join，覆盖先 join 后完成、先完成后 join、completion 发布时立即 join、Internal self-delete、PSRAM join-delete、清理顺序和失败重试。SDK mock 只验证 PAL ownership；跨 core 的停止与释放依赖锁定的 IDF 实现，持续负载下的 task count、PSRAM 回收和启动资源仍需 target bench 验证。
+
 Netif provider 枚举现有 `esp_netif`，以 implementation index 优先、if-key 兜底
 建立稳定 identity，并映射 IPv4、MAC、DNS 与当前 default。没有 active netif
 时返回空 list/`NOT_FOUND`，不是 `UNSUPPORTED`。Portable `set_default` 只接受
@@ -60,6 +66,20 @@ reconcile。一个 provider-owned mutex 把 default read、baseline compare/upda
 event post 串行化，避免 ESP event-loop 与 modem task 的旧快照反向覆盖；Netif
 不接管 IDF route priority。Board/modem 在 interface 存活期通过 registration hook
 补充 PPP 等不能仅凭 if-key 可靠判断的 kind。
+
+同一次 TCPIP context reconcile 还负责 lwIP resolver 与当前 default 一致：在
+`CONFIG_ESP_NETIF_SET_DNS_PER_DEFAULT_NETIF` 下，把 default `esp_netif` 自己的
+DNS server 逐项写回全局 resolver（该接口没有 fallback server 时保留已配置的
+fallback）；default 接口换了或任一 server 被改写时调用 `dns_clear_cache()`，并打一行
+`H2_ESP_NETIF_DNS` WARN 日志，写出 default if-key、是否换接口、是否改写 server 和
+当前 dns0/dns1。这覆盖 IDF 自身不会补回的两条路径：任一接口启动 DHCP client 会清空
+全局 server，而调用过 `esp_netif_set_default_netif()` 后 IDF 不再在 GOT_IP 时重新应用
+default；同时避免经旧 default 的 DNS 解析出的地址在切换后继续命中缓存（lwIP 缓存最长
+保留 `DNS_MAX_TTL`）。清缓存会让当时仍在等待的解析立即失败，调用方按自己的重试策略
+重新解析。Wi-Fi provider 在 `esp_netif_create_default_wifi_sta()` 之后另外注册一个
+`WIFI_EVENT_STA_CONNECTED` 专用 handler 调用 reconcile：esp_event 先执行 `ANY_ID`
+observer、再按注册顺序执行专用 handler，只有排在 ESP-NETIF 默认 handler 之后，才能在
+其启动 DHCP client 清空全局 server 之后补回（例如 STA 重新关联时 PPP 仍是 default）。
 
 ESP SIMCOM 的数据会话关闭与整机关闭是两个独立生命周期。`data_close` 让 modem 保持供电，通过 COMMAND/PPP 交互有界地退出数据模式；失败时保留非 `CLOSED` 状态供调用方重试。整机 `close` 不复用该交互路径：transport 先驱动配置的 modem power GPIO 到关闭电平，再只依赖 ESP 本机状态恢复 default netif、同步注销 PPP/IP event handler、销毁 DCE、PPP netif 和 event group。default netif 恢复失败会在销毁 PPP netif 前返回并保留 route ownership state，供下一次 close 重试。
 
@@ -295,3 +315,31 @@ bazel test //libs/drivers/audio/es8311:volume_test \
 `//projects/example/targets/h2loader_tar_zlib/`。分别使用 `--config=esp32s3` 和
 `--config=esp32p4`。ESP32-C5 的 ES8311 消费路径目前没有可构建的板级 target，
 因此该 codec 路径标记为 SKIP；C5 通用 CI 通过也不证明其 codec 集成或硬件行为。
+
+## PSRAM arena
+
+`h2_pal_core` 的 `h2_esp_platform_arena.h` 为公共 `libs/mem_arena` core 提供 PSRAM reservation、fallback 与 FreeRTOS lock adapter。Core 将调用方提供的一块内存按 `small_pool_bytes` 分成独立的 small/large TLSF；请求大小不超过 `small_request_max` 时使用 small，否则使用 large。某池无法满足请求时先尝试另一池，只有两池都无法服务时才考虑可选 system spill；`small_pool_bytes=0` 保留单一 large pool。Board 在 Wi-Fi、UI、音频等 consumer 初始化之前指定预留字节数和诊断名称，持有 opaque instance，向需要降低碎片的 consumer 借出标准 Memory PAL；Runtime 默认 allocator 不被全局替换。`spill_to_system` 默认 `false`：不设置 fallback，耗尽返回 NULL，由提供 result code 的 consumer 传播 NO_MEMORY，避免污染 Wi-Fi/lwIP/IDF 共享的系统 PSRAM heap；只有显式设为 `true` 才允许 system spill。Reservation 与启用后的 spill 都从 `MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT` 分配，控制对象和 FreeRTOS 静态 mutex storage 位于 Internal RAM。Mutex 具有优先级继承，所有操作只允许普通 task context，不使用 spin lock。
+
+每块保存原始分配基址和请求字节数，按块头记录的 pool/fallback owner 路由 free/realloc；realloc 可在 TLSF 与 PSRAM heap 间双向迁移，并在底层移动后重新对齐有效数据。失败保留旧块；零字节释放并返回 NULL。创建失败清理部分资源并返回 NULL，由 board 决定是否继续使用默认分配器。销毁前调用方必须停止并 join 所有 borrower；仍有 arena 或 fallback 块时返回 INVALID_STATE，保留实例。
+
+Stats 在 mutex 下分别对 small/large 取一致快照；每池 reserved 包括元数据，live/peak 只统计实际由本池服务的请求 payload，`borrowed_count` 累计替另一请求类别成功服务的 alloc/realloc 次数，free 不递减。Fallback_live 单列，fallback_count/bytes 按原请求类别累计两池都未满足后的回退尝试（含失败或未配置 fallback），largest 记录本请求类别以及本池成功接收的借用的最大请求。普通 stats 日志由调用方在查询返回后输出，不在 allocator 锁内调用 Log PAL。`h2_esp_platform_arena_mem()` 返回的 Memory PAL 由 ESP arena 包装，`user` 指向 ESP arena 而非 portable core；需要块检查时使用 `h2_esp_platform_arena_core()` 借用 core，NULL arena 返回 NULL，借用不得超过 destroy。
+
+非零 alloc/realloc 请求最终返回 NULL 时，ESP 包装层在 core 操作解锁后输出 `H2_ARENA_REFUSED` WARN，字段包含 `op`、`bytes`、`count`、small/large 的 live/free/largest、PSRAM free/largest 和 Internal free。计数按 arena 实例独立，前 24 次及其后每 64 次输出；零字节释放和 free 不输出，host 构建不编译日志。该日志也覆盖默认禁止 spill 的池耗尽以及显式 spill 仍失败的情形。
+
+启用 spill 的 ESP arena 在创建时尝试从 PSRAM 分配每实例 512 项的有界诊断表，记录 live spill 的系统基址、含 arena header/padding 的申请字节数和至多六帧调用栈；reservation 不进入表。表分配失败或表满只丢弃追踪，分配行为不受影响；`untracked` 是累计丢弃的追踪事件数，不是 live block 数。成功 realloc 保留原始调用帧并更新地址、字节数；失败保持原条目，free 和迁回池内删除条目。表及计数受该 arena mutex 保护，销毁和创建失败均释放表，不共享跨实例状态。Xtensa 使用 SDK frame walking，其他 ESP 架构保留块统计并报告零 PC；host 普通构建编译掉诊断表、回溯和日志。
+
+`h2_esp_platform_arena_log_spills()` 在 mutex 下抓取快照，释放锁后输出 `H2_ARENA_SPILL_LIVE` 和按字节数降序排列的 `H2_ARENA_SPILL_SITE`。分组使用完整的已捕获调用帧，至多输出 24 组；其余已追踪条目的字节数归入 `other`，不从总量中扣除。快照和分组使用固定栈空间，不在查询时分配堆内存；每实例每分钟最多一次，`force=true` 可立即输出，NULL arena 是 no-op。调用方必须保证 arena 在整个调用中存活。Spill allocator 失败在当前 arena 锁内通过 SDK `ESP_LOGW` 输出 `H2_ARENA_SPILL_FAILED`，包含操作、请求大小、失败次数和 PSRAM/Internal free/largest；每实例前 16 次及其后每 64 次输出。未启用 spill 的正常耗尽只输出上述 `H2_ARENA_REFUSED`。
+
+Host SDK fake tests 验证默认耗尽不调用系统 heap、显式 spill、owner 路由、alignment、双向迁移、realloc 失败原子性、统计分离和创建失败清理。`arena_spill_test` 以 Xtensa SDK stubs 编译并执行 ESP 诊断路径，`arena_spill_riscv_test` 验证无 Xtensa 回溯时的路径；覆盖 realloc/free 追踪、表满与重用、表分配失败、多实例独立统计、限频及回溯提前结束或损坏时的尾部清零。PSRAM/XIP 压力、实际调用帧质量与调度延迟仍需设备测量。
+
+```sh
+bazel test //libs/mem_arena/... //native_component_src/esp-idf6.x/h2_pal_core:all //libs/lvgl:arena_test --test_output=errors
+```
+
+ESP task provider 从 `h2_esp_task_policy_config_t.psram_stack_allocator` 借用可选 allocator。解析后的 PSRAM policy 使用该 allocator 分配栈、用 internal 8-bit RAM 分配 `StaticTask_t`，并通过 `xTaskCreateStaticPinnedToCore` 创建任务；internal policy 和 NULL allocator 分别保留原有普通 SDK 与 WithCaps 路径。栈或 TCB 分配失败时完整释放、返回 NO_MEMORY 且不发布 task。Join 等待 entry 返回，挂起任务并确认所有 core 均未运行它，再 `vTaskDelete`，最后各释放一次栈与 TCB；allocator 生命周期覆盖所有 task 的成功 join。
+
+生成的 `h2_esp_target_task_policy_install_with_configure()` 同步把目标 resolver 配置交给 board callback，board 可先创建 arena，再复制配置并设置 `psram_stack_allocator`，最后调用 `h2_esp_platform_task_configure()`。无参数 installer 保留默认配置路径；生成器不依赖私有 board。
+
+Arena 的诊断查询与普通 stats 分离：`h2_mem_arena_inspect()` 显式遍历池才计算 free total、largest raw free block 和 consumed；`h2_mem_arena_block_info()` 查询仍存活且由调用方排除并发 free/realloc 的块。这些按需 inspection 不增加 instance/header state；ESP spill 追踪由独立的可选诊断表负责。每块 consumed 包含 arena header、alignment 和 TLSF block/header；fallback 值是下界，固定控制元数据不归属某个块。生成的 task policy 额外提供 `*_stack_accounting` filegroup，供 desktop consumer 复用相同的栈尺寸/region 决策；它不参与 ESP firmware 的源码编译或改变其行为。
+
+ESP Wi-Fi admission 与 WebRTC/H2Peer singleton 各使用一个文件级 static flag backing，由统一的 `H2_ATOMIC_DEFINE_STATIC` 定义普通 static 对象；链接布局把 backing 放在内部 DRAM，不需要 `DRAM_ATTR`，也不在宏中判断平台。它们不额外增加 board Runtime init/shutdown。Runtime/connection 等动态 owner 的 atomic wrapper 仍可位于 PSRAM，其实际 C11 值必须由 provider 在实例 init 时分配到内部 RAM，失败后回滚并返回 `NO_MEMORY`；`flag` 与 int/bool/pointer 的生命周期和存储模型一致。所有 flag 直接对各自存储执行 C11 交换/写入，没有 provider 级全局锁或 mux。

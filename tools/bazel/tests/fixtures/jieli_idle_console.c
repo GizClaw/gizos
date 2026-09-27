@@ -1,5 +1,5 @@
 #include <assert.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdbool.h>
 #include <stdint.h>
 #include <stddef.h>
@@ -29,7 +29,7 @@ typedef h2_loader_command_t h2_loader_command_config_t;
 typedef struct {
  void *client, *read_user; int (*read_byte)(void *, uint32_t);
  void *write_user; int (*write)(void *, const char *, size_t);
- atomic_bool stop_requested; int session_reset, session_closed; h2_loader_command_t command;
+ h2_atomic_bool_t stop_requested; int session_reset, session_closed; h2_loader_command_t command;
 } h2_loader_app_client_return_console_t;
 static unsigned physical_polls, command_polls, resets, bytes_read;
 static int on_frame;
@@ -46,7 +46,7 @@ static int h2_loader_command_poll(h2_loader_command_t *command, uint32_t timeout
  uint8_t byte = 0; size_t count = 0; ++command_polls;
  assert(command_polls < 10);
  int rc = command->io.vtable->read(command->io.user, &byte, 1, &count, timeout);
- if (count) { assert(byte == 's'); ++bytes_read; atomic_store(&console->stop_requested, true); }
+ if (count) { assert(byte == 's'); ++bytes_read; h2_atomic_store(&console->stop_requested, true); }
  return rc;
 }
 static uint32_t timer_get_ms(void) { return 1; }
@@ -79,16 +79,17 @@ int main(void) {
      .io.vtable = &stream_vtable, .started = 1};
  h2_loader_app_client_return_console_t console = {.client = &app, .read_user = &app,
      .read_byte = app_read_byte, .write = output};
- atomic_init(&console.stop_requested, false);
+ assert(h2_atomic_init(&console.stop_requested, false) == H2_ATOMIC_OK);
  assert(run_return_console(&console) == 0);
  assert(physical_polls == 4 && command_polls == 5 && bytes_read == 1);
  assert(resets == 2 && !console.session_closed && app.started);
  /* The distinct closed sentinel still terminates the shared loop. */
- command_polls = 0; console.read_byte = closed_read; atomic_store(&console.stop_requested, false);
+ command_polls = 0; console.read_byte = closed_read; h2_atomic_store(&console.stop_requested, false);
  assert(run_return_console(&console) == 0);
  assert(command_polls == 1 && console.session_closed);
  /* A stop request exits without another transport poll. */
- command_polls = 0; atomic_store(&console.stop_requested, true);
+ command_polls = 0; h2_atomic_store(&console.stop_requested, true);
  assert(run_return_console(&console) == 0 && command_polls == 0);
+ h2_atomic_destroy(&console.stop_requested);
  return 0;
 }

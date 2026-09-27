@@ -1,7 +1,8 @@
 #include <assert.h>
 #include <pthread.h>
 #include <sched.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
+#include <stdlib.h>
 #include <stdint.h>
 #include <stdarg.h>
 #include <string.h>
@@ -62,10 +63,10 @@ static void disconnect_event(uint16_t handle) {
     uint8_t packet[6] = {5, 4, 0, (uint8_t)handle, (uint8_t)(handle >> 8), 0x13};
     event(HCI_EVENT_DISCONNECTION_COMPLETE, packet, 5);
 }
-static atomic_int go;
+static h2_atomic_int_t go;
 static void *connections(void *unused) {
     (void)unused;
-    while (!atomic_load(&go))
+    while (!h2_atomic_load(&go))
         sched_yield();
     for (unsigned i = 0; i < 10000; ++i) {
         connected(42);
@@ -75,7 +76,7 @@ static void *connections(void *unused) {
 }
 static void *snapshots(void *unused) {
     (void)unused;
-    while (!atomic_load(&go))
+    while (!h2_atomic_load(&go))
         sched_yield();
     for (unsigned i = 0; i < 10000; ++i) {
         uint16_t mtu = 0xffff;
@@ -86,7 +87,7 @@ static void *snapshots(void *unused) {
 }
 static void *trace_writer(void *unused) {
     (void)unused;
-    while (!atomic_load(&go))
+    while (!h2_atomic_load(&go))
         sched_yield();
     for (unsigned i = 0; i < 10000; ++i)
         h2_att_trace_record(0, (uint16_t)i, (uint16_t)i, NULL, (uint16_t)i);
@@ -94,13 +95,19 @@ static void *trace_writer(void *unused) {
 }
 static void *trace_reader(void *unused) {
     (void)unused;
-    while (!atomic_load(&go))
+    while (!h2_atomic_load(&go))
         sched_yield();
     for (unsigned i = 0; i < 10000; ++i)
         h2_att_trace_dump();
     return NULL;
 }
+static void h2_fixture_atomic_cleanup(void) {
+    h2_atomic_destroy(&go);
+}
 int main(int argc, char **argv) {
+    assert(atexit(h2_fixture_atomic_cleanup) == 0);
+    assert(h2_atomic_init(&go, 0) == H2_ATOMIC_OK);
+
     assert(argc == 2);
     connected(42);
     if (strcmp(argv[1], "failed_disconnect") == 0) {
@@ -140,7 +147,7 @@ int main(int argc, char **argv) {
         assert(trace || strcmp(argv[1], "snapshots") == 0);
         assert(pthread_create(&writer, NULL, trace ? trace_writer : connections, NULL) == 0);
         assert(pthread_create(&reader, NULL, trace ? trace_reader : snapshots, NULL) == 0);
-        atomic_store(&go, 1);
+        h2_atomic_store(&go, 1);
         assert(pthread_join(writer, NULL) == 0);
         assert(pthread_join(reader, NULL) == 0);
     }

@@ -69,6 +69,7 @@ firmware_native_component(
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
+        "//libs/atomic",
         ":button_tasks",
         "//projects/example/native_component_src/jieli/wl82/devkit_app:ui_libs",
         "//boards/jieli_ac791n_devkit/ac791n",

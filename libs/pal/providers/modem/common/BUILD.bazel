@@ -24,6 +24,7 @@ cc_library(
     includes = ["include"],
     deps = [
         ":tasks",
+        "//libs/atomic",
         "//libs/pal",
     ],
 )
@@ -39,7 +40,10 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":urc"],
+    deps = [
+        ":urc",
+        "//libs/atomic/providers/c11",
+    ],
 )
 
 cc_test(
@@ -54,6 +58,7 @@ cc_test(
     }),
     deps = [
         ":urc",
+        "//libs/atomic/providers/c11",
         "//libs/pal/providers/modem/quectel:quectel_modem",
         "//libs/pal/providers/modem/simcom:simcom_modem",
     ],

@@ -133,8 +133,21 @@ typedef enum h2_gizclaw_agent_initiative_policy {
   H2_GIZCLAW_AGENT_INITIATIVE_ON_RELOAD = 2,
 } h2_gizclaw_agent_initiative_policy_t;
 
+#define H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MIN_PERCENT 50
+#define H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MAX_PERCENT 200
+
 /** Parameter patch. Unset fields preserve the server's stored values.
- * Values are copied at request creation; no patch storage is borrowed. */
+ * Values are copied at request creation; no patch storage is borrowed.
+ * tts_speech_rate_percent scales the speech the server synthesizes for agent
+ * replies, from H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MIN_PERCENT to
+ * H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MAX_PERCENT percent of the provider's
+ * normal rate (100 = normal); leaving it unset keeps the Workflow
+ * configuration. The rate applies from the next reload and a value out of range
+ * is rejected at request creation with H2_PAL_ERR_INVALID_ARG. The rate has to
+ * apply where speech is synthesized: downlink audio arrives in real time, so
+ * slowing playback on the device would only grow its buffer and latency. A
+ * system (SFU) Workspace accepts a valid value as a no-op, so one patch serves
+ * every Workspace. */
 typedef struct h2_gizclaw_workspace_parameters_patch {
   bool has_input;
   h2_gizclaw_workspace_input_mode_t input;
@@ -142,6 +155,8 @@ typedef struct h2_gizclaw_workspace_parameters_patch {
   h2_gizclaw_conversation_initiative_t initiative;
   bool has_agent_initiative_policy;
   h2_gizclaw_agent_initiative_policy_t agent_initiative_policy;
+  bool has_tts_speech_rate_percent;
+  int32_t tts_speech_rate_percent;
 } h2_gizclaw_workspace_parameters_patch_t;
 
 h2_pal_result_t h2_gizclaw_req_create_workspace_set_parameters(

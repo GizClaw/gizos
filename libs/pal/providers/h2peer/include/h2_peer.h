@@ -24,19 +24,13 @@ typedef struct h2_peer h2_peer_t;
  * Platform capabilities borrowed by one H2Peer instance.
  *
  * Every API object and its backend state must remain valid until
- * h2_peer_destroy() clears the owner pointer. The Memory and control Memory
- * APIs must additionally outlive every owned event, including events released
+ * h2_peer_destroy() clears the owner pointer. The Memory API must additionally
+ * outlive every owned event, including events released
  * after destruction. H2Peer never closes or frees these providers.
  */
 typedef struct h2_peer_config {
   /** Required borrowed allocator used for every package-owned allocation. */
   const h2_pal_mem_api_t *mem;
-  /**
-   * Optional borrowed allocator for state containing cross-task atomics.
-   * When NULL, `mem` is used. Platforms whose atomic instructions cannot
-   * target external memory must provide an internal-memory allocator here.
-   */
-  const h2_pal_mem_api_t *control_mem;
   /**
    * Required borrowed logger used for all bounded H2Peer diagnostics. Its
    * API object and backend state must remain valid for the owner lifetime.

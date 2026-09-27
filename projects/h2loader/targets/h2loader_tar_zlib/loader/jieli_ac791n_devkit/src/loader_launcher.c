@@ -2,6 +2,7 @@
 #include "asm/includes.h"
 #include "asm/system_reset_reason.h"
 #include "h2_iostreamikcp.h"
+#include "h2_atomic.h"
 #include "h2_jieli_ac791n_devkit.h"
 #include "h2_jieli_ac791n_devkit_partitions.h"
 #include "h2_loader_boot.h"
@@ -61,7 +62,7 @@ typedef struct h2_jieli_digest {
 
 static OS_MUTEX usb_tx_mutex;
 static volatile int usb_tx_ready;
-static int usb_debug_locked;
+static h2_atomic_bool_t usb_debug_locked;
 static volatile int crash_recovery_active;
 static h2_jieli_transport_t transport;
 static h2_jieli_digest_t digest;
@@ -96,19 +97,19 @@ static uint32_t ms_to_ticks(uint32_t ms) {
  * patch) so an entire drained printf batch cannot split an iKCP frame. */
 int h2_jieli_usb_debug_try_lock(void) {
   if (!usb_tx_ready || os_mutex_accept(&usb_tx_mutex) != OS_NO_ERR) return 0;
-  __atomic_store_n(&usb_debug_locked, 1, __ATOMIC_RELEASE);
+  h2_atomic_bool_store(&usb_debug_locked, true, H2_ATOMIC_RELEASE);
   return 1;
 }
 
 void h2_jieli_usb_debug_unlock(void) {
   /* Only the successful caller enters unlock; contenders never change the
    * drain marker. Clear it before releasing the serialized CDC writer. */
-  __atomic_store_n(&usb_debug_locked, 0, __ATOMIC_RELEASE);
+  h2_atomic_bool_store(&usb_debug_locked, false, H2_ATOMIC_RELEASE);
   (void)os_mutex_post(&usb_tx_mutex);
 }
 
 int h2_jieli_usb_debug_is_draining(void) {
-  return __atomic_load_n(&usb_debug_locked, __ATOMIC_ACQUIRE);
+  return h2_atomic_bool_load(&usb_debug_locked, H2_ATOMIC_ACQUIRE);
 }
 
 static void usb_diag_write(const char *text) {
@@ -1035,7 +1036,10 @@ static void loader_task(void *private_data) {
 
 void app_main(void) {
   usb_tx_ready = 0;
-  __atomic_store_n(&usb_debug_locked, 0, __ATOMIC_RELEASE);
+  if (h2_atomic_bool_init(&usb_debug_locked, false) != H2_ATOMIC_OK) {
+    puts("H2_JIELI_LOADER_ERROR step=usb_atomic_init");
+    return;
+  }
   /* The early retained record identifies the previous image, including a
    * watchdog reset that crossed an App-to-Loader rollback boundary. */
   crash_recovery_active = h2_jieli_wl82_take_loader_crash_pending();

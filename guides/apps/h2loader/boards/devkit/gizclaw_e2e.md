@@ -4,6 +4,8 @@
 
 ## Runtime Lifecycle
 
+Portable E2E 的并发 run guard 由每对象普通 static backing 提供，launcher 无需为它增加启动和退出调用；仍在资源全部清理后解除 guard，retained session 保持占用直到 image 退出。
+
 Launcher 先初始化 Runtime 和 H2Loader App command service，再启动独立 Wi-Fi supervisor。Supervisor 从 Runtime `wifi_settings` 读取 Loader 已确认并保存的 STA 配置；没有 saved config 时每 10 秒报告一次 `NO_SAVED_WIFI`，连接失败或断开后同样等待 10 秒重试。日志不输出 SSID、Wi-Fi password、RegistrationToken、Firmware URL、原始音频或 unrestricted response body。
 
 `deploy-default` 是只绑定 RuntimeProfile `default` 的公开测试 identity，仍由 launcher-private config 固定进 image。Wi-Fi SSID 和 password 不编进 package；安装或重启后使用 ESP Wi-Fi settings PAL 持久化的配置。修改 endpoint 或 token 必须重新构建并通过 H2Loader 安装新 package；修改 Wi-Fi 只需执行 `reboot loader` 返回 Loader，成功执行 `wifi connect`，再执行 `reboot app` 启动 App。
@@ -23,6 +25,8 @@ bazel test --config=macos_arm64 \
 bazel build --config=esp32s3 \
   //projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/devkit:package
 ```
+
+定位长寿命 Peer 的 channel 生命周期时，可给同一 package build 添加 `--define=H2_GIZCLAW_E2E_CONCURRENCY_ONLY=1`，只运行 concurrency suite。它保持单个 client/Peer，执行 32 批六个并发 Ping 和每批一次恢复 Ping；每批必须回收全部 RPC channel，最终输出 `stage=channel-soak batches=32/32 requests=192 result=PASS rc=0`，随后仍执行资源 cleanup。该选项不能与 `H2_GIZCLAW_E2E_VOICE_ONLY` 同时启用。
 
 Package 输出为：
 

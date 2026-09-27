@@ -4,7 +4,8 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
+#include <stdlib.h>
 #include <stdarg.h>
 #undef snprintf
 /* Model the SDK formatter symbol using the host formatter, without treating
@@ -39,15 +40,15 @@ static int sdfile_reserve_zone_read(void *p, unsigned a, size_t n, int f) { (voi
 void put_buf(const uint8_t *b, int n) { (void)b; (void)n; }
 static uint32_t h2_jieli_atomic_load_u32(volatile uint32_t *p) { return __atomic_load_n(p,__ATOMIC_ACQUIRE); }
 static void h2_jieli_atomic_store_u32(volatile uint32_t *p,uint32_t v) { __atomic_store_n(p,v,__ATOMIC_RELEASE); }
-static _Atomic int hold_writer, writer_entered, release_writer, writer_finished;
+static h2_atomic_int_t hold_writer, writer_entered, release_writer, writer_finished;
 static _Thread_local int writer_thread;
 int h2_jieli_sdk_try_lock_byte(volatile uint8_t *p) { return !__atomic_exchange_n(p,1,__ATOMIC_ACQUIRE); }
 void h2_jieli_sdk_unlock_byte(volatile uint8_t *p) { __atomic_store_n(p,0,__ATOMIC_RELEASE); }
 void h2_jieli_sdk_capture_barrier(void) {
-  atomic_thread_fence(memory_order_seq_cst);
-  if (writer_thread && atomic_load(&hold_writer)) {
-    atomic_store(&writer_entered,1);
-    while (!atomic_load(&release_writer)) {}
+  __sync_synchronize();
+  if (writer_thread && h2_atomic_load(&hold_writer)) {
+    h2_atomic_store(&writer_entered,1);
+    while (!h2_atomic_load(&release_writer)) {}
   }
 }
 /* PROVIDER */
@@ -62,7 +63,7 @@ static void *writer(void *p) {
   (void)p;
   writer_thread=1;
   for (unsigned i=0;i<10000;++i) h2_jieli_wl82_log_byte('a');
-  atomic_store(&writer_finished,1);
+  h2_atomic_store(&writer_finished,1);
   return NULL;
 }
 static void *capture(void *p) {
@@ -74,7 +75,19 @@ static void *capture(void *p) {
 static int warm_lines;
 static void warm_emit(const char *line) { if (strstr(line,"H2_JIELI_WARM_LOG")) ++warm_lines; }
 /* RECOVERY_POLICY */
+static void h2_fixture_atomic_cleanup(void) {
+    h2_atomic_destroy(&hold_writer);
+    h2_atomic_destroy(&writer_entered);
+    h2_atomic_destroy(&release_writer);
+    h2_atomic_destroy(&writer_finished);
+}
 int main(int argc,char **argv) {
+    assert(atexit(h2_fixture_atomic_cleanup) == 0);
+    assert(h2_atomic_init(&hold_writer, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&writer_entered, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&release_writer, 0) == H2_ATOMIC_OK);
+    assert(h2_atomic_init(&writer_finished, 0) == H2_ATOMIC_OK);
+
   assert(argc==2);
   h2_jieli_wl82_reset_recovery_hook(0);
   if (!strcmp(argv[1],"watchdog_loader") || !strcmp(argv[1],"watchdog_app")) {
@@ -162,13 +175,13 @@ int main(int argc,char **argv) {
     assert(h2_jieli_record_valid(&pending_record));
   } else if (!strcmp(argv[1],"torn")) {
     pthread_t a;
-    atomic_store(&hold_writer,1);
+    h2_atomic_store(&hold_writer,1);
     assert(!pthread_create(&a,NULL,writer,NULL));
     /* WAIT_WRITER */
     h2_jieli_wl82_assert_reset_hook(NULL);
     assert(h2_jieli_record_valid(&pending_record));
     assert(pending_record.log_bytes==0);
-    atomic_store(&release_writer,1);
+    h2_atomic_store(&release_writer,1);
     assert(!pthread_join(a,NULL));
   } else return 2;
   return 0;

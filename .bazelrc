@@ -6,6 +6,12 @@ common --enable_platform_specific_config
 common --announce_rc
 common --repository_cache=~/.cache/bazel/repository
 
+# GizClaw modules (gizclaw_c_sdk) are served from our own Bazel registry.
+# --registry replaces the default list, so BCR has to be named explicitly.
+# BCR stays first: only modules BCR does not have fall through to ours.
+common --registry=https://bcr.bazel.build
+common --registry=https://static-volc.gizclaw.com/bazel/
+
 common:ci-graph --enable_bzlmod
 common:ci-graph --noenable_platform_specific_config
 common:ci-graph --define=h2_ci_graph=true

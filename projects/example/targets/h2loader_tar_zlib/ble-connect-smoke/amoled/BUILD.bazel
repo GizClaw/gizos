@@ -14,6 +14,7 @@ firmware_native_component(
     deps = [
         "//projects/example/targets/h2loader_tar_zlib/bleikcp-speed-client/amoled:firmware_lib",
         "//boards/amoled/esp32s3",
+        "//libs/atomic",
         "//libs/pal",
         "//native_component_src/esp-idf6.x/h2_es8311_audio_system",
         "//native_component_src/esp-idf6.x/h2_pal_core",

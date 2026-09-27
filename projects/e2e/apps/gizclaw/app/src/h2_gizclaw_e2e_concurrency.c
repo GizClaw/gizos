@@ -2,7 +2,8 @@
 
 #include <stdio.h>
 
-enum { H2_GIZCLAW_E2E_CONCURRENT_REQUESTS = 3 };
+enum { H2_GIZCLAW_E2E_CONCURRENT_REQUESTS = 6,
+       H2_GIZCLAW_E2E_CONCURRENT_BATCHES = 32 };
 
 int h2_gizclaw_e2e_concurrency_classify(
     int requests_result, int recovery_result, int observation_result,
@@ -25,7 +26,7 @@ int h2_gizclaw_e2e_concurrency_classify(
   return H2_PAL_OK;
 }
 
-int h2_gizclaw_e2e_run_concurrency(h2_gizclaw_e2e_fixture_t *fixture) {
+static int run_batch(h2_gizclaw_e2e_fixture_t *fixture, unsigned batch) {
   if (fixture == NULL || fixture->actors[H2_GIZCLAW_E2E_OWNER].service == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   h2_gizclaw_service_t *service = fixture->actors[H2_GIZCLAW_E2E_OWNER].service;
@@ -35,7 +36,9 @@ int h2_gizclaw_e2e_run_concurrency(h2_gizclaw_e2e_fixture_t *fixture) {
   h2_gizclaw_e2e_fixture_reset_rpc_channel_observation();
   /* All requests are admitted before waiting for any of them. */
   for (size_t i = 0u; i < H2_GIZCLAW_E2E_CONCURRENT_REQUESTS; ++i) {
-    int rc = h2_gizclaw_req_create_ping(service, i + 1u, 30000u, &requests[i]);
+    int rc = h2_gizclaw_req_create_ping(
+        service, batch * H2_GIZCLAW_E2E_CONCURRENT_REQUESTS + i + 1u,
+        30000u, &requests[i]);
     if (rc == H2_PAL_OK)
       rc = h2_gizclaw_req_do(requests[i], NULL, NULL, NULL, NULL);
     if (rc != H2_PAL_OK) {
@@ -86,15 +89,45 @@ int h2_gizclaw_e2e_run_concurrency(h2_gizclaw_e2e_fixture_t *fixture) {
       h2_gizclaw_e2e_fixture_has_time(fixture, 1u)
           ? h2_gizclaw_rpc_ping(service, 30000u, &recovery)
           : H2_PAL_ERR_TIMEOUT;
-  const int result = h2_gizclaw_e2e_concurrency_classify(
+  int result = h2_gizclaw_e2e_concurrency_classify(
       requests_result, recovery_result, observation_result, started, completed,
       maximum, unique, open);
-  printf("H2_GIZCLAW_E2E stage=concurrency services=1 requested_requests=%u "
+  /* Include the recovery request's terminal event before resetting the
+   * observer for the next batch on this same connection. */
+  size_t after_recovery = 0u;
+  while (result == H2_PAL_OK) {
+    size_t ignored_maximum = 0u, ignored_unique = 0u;
+    result = h2_gizclaw_e2e_fixture_rpc_channel_observation(
+        &ignored_maximum, &ignored_unique, &after_recovery);
+    if (result != H2_PAL_OK || after_recovery == 0u)
+      break;
+    result = h2_gizclaw_e2e_fixture_has_time(fixture, 1u)
+                 ? h2_pal_time_sleep_ms(fixture->time, 1u)
+                 : H2_PAL_ERR_TIMEOUT;
+  }
+  printf("H2_GIZCLAW_E2E stage=concurrency services=1 batch=%u requested_requests=%u "
          "started_requests=%zu completed_requests=%zu max_open_channels=%zu "
          "unique_stream_ids=%zu open_channels=%zu observation_rc=%d "
          "requests_rc=%d recovery_rc=%d result=%s rc=%d\n",
-         H2_GIZCLAW_E2E_CONCURRENT_REQUESTS, started, completed, maximum,
+         batch + 1u, H2_GIZCLAW_E2E_CONCURRENT_REQUESTS, started, completed, maximum,
          unique, open, observation_result, requests_result, recovery_result,
+         result == H2_PAL_OK ? "PASS" : "FAIL", result);
+  return result;
+}
+
+int h2_gizclaw_e2e_run_concurrency(h2_gizclaw_e2e_fixture_t *fixture) {
+  unsigned completed_batches = 0u;
+  int result = H2_PAL_OK;
+  for (; completed_batches < H2_GIZCLAW_E2E_CONCURRENT_BATCHES;
+       ++completed_batches) {
+    result = run_batch(fixture, completed_batches);
+    if (result != H2_PAL_OK)
+      break;
+  }
+  printf("H2_GIZCLAW_E2E stage=channel-soak batches=%u/%u requests=%u "
+         "result=%s rc=%d\n", completed_batches,
+         H2_GIZCLAW_E2E_CONCURRENT_BATCHES,
+         completed_batches * H2_GIZCLAW_E2E_CONCURRENT_REQUESTS,
          result == H2_PAL_OK ? "PASS" : "FAIL", result);
   return result;
 }

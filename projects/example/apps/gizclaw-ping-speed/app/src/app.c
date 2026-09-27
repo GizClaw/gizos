@@ -5,7 +5,6 @@
 #include "h2_gizclaw_service.h"
 
 #include <inttypes.h>
-#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 

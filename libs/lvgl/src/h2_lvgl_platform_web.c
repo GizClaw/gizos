@@ -1,4 +1,5 @@
 #include "h2_lvgl_platform.h"
+#include "h2_lvgl_memory.h"
 
 #include "lvgl.h"
 
@@ -31,6 +32,8 @@ int h2_lvgl_platform_init(const h2_lvgl_platform_config_t *config) {
       config->time_api == NULL || h2_lvgl_web_platform.initialized) {
     return H2_PAL_ERR_INVALID_ARG;
   }
+  int rc = h2_lvgl_memory_init(config, 0);
+  if (rc != H2_PAL_OK) return rc;
   h2_lvgl_web_platform = (h2_lvgl_web_platform_state_t){
       .allocator = config->allocator,
       .task_api = config->task_api,
@@ -43,12 +46,13 @@ int h2_lvgl_platform_init(const h2_lvgl_platform_config_t *config) {
 }
 
 void h2_lvgl_platform_deinit(void) {
+  h2_lvgl_memory_deinit();
   memset(&h2_lvgl_web_platform, 0, sizeof(h2_lvgl_web_platform));
 }
 
-void lv_mem_init(void) {}
+void lv_mem_init(void) { (void)h2_lvgl_memory_prepare(); }
 
-void lv_mem_deinit(void) {}
+void lv_mem_deinit(void) { h2_lvgl_memory_release(); }
 
 lv_mem_pool_t lv_mem_add_pool(void *memory, size_t bytes) {
   (void)memory;
@@ -60,7 +64,7 @@ void lv_mem_remove_pool(lv_mem_pool_t pool) { (void)pool; }
 
 void *lv_malloc_core(size_t size) {
   return h2_lvgl_web_platform_ready()
-             ? h2_pal_mem_alloc(h2_lvgl_web_platform.allocator, size)
+             ? h2_lvgl_memory_alloc(size)
              : NULL;
 }
 
@@ -69,14 +73,14 @@ void *lv_realloc_core(void *memory, size_t new_size) {
     return NULL;
   }
   if (memory == NULL) {
-    return h2_pal_mem_alloc(h2_lvgl_web_platform.allocator, new_size);
+    return h2_lvgl_memory_alloc(new_size);
   }
-  return h2_pal_mem_realloc(h2_lvgl_web_platform.allocator, memory, new_size);
+  return h2_lvgl_memory_realloc(memory, new_size);
 }
 
 void lv_free_core(void *memory) {
   if (h2_lvgl_web_platform_ready() && memory != NULL) {
-    h2_pal_mem_free(h2_lvgl_web_platform.allocator, memory);
+    h2_lvgl_memory_free(memory);
   }
 }
 

@@ -167,6 +167,7 @@ firmware_native_component(
     tags = ["manual"],
     target_compatible_with = AC791N_COMPATIBILITY,
     deps = [
+        "//libs/atomic",
         ":audio_stop_restart_tasks",
         "//projects/example/apps/audio-system/app:tasks",
         ":audio_system_libs",

@@ -2,12 +2,12 @@
 #include "h2_gizclaw_e2e_catalog.h"
 #include "h2_gizclaw_telemetry.h"
 #include "h2_yyjson_json.h"
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdio.h>
 #include <string.h>
 
 /* OTA rejection is a GizClaw case policy; Audio support belongs to app_test. */
-static atomic_ullong stage_bytes;
+static h2_atomic_size_t stage_bytes;
 static h2_app_test_audio_evidence_t device_evidence(h2_gizclaw_e2e_fixture_t *fixture) {
   h2_app_test_audio_evidence_t evidence = {0};
   (void)h2_app_test_audio_copy_evidence(fixture->device_audio_wrapper, &evidence);
@@ -25,7 +25,10 @@ static int dispose_device_audio(h2_gizclaw_e2e_fixture_t *fixture) {
     fixture->device_audio = NULL;
   }
   int rc = h2_app_test_audio_fake_deinit(&fixture->device_audio_fake);
-  if (rc == H2_PAL_OK) fixture->device_cleanup = NULL;
+  if (rc == H2_PAL_OK) {
+    h2_atomic_destroy(&stage_bytes);
+    fixture->device_cleanup = NULL;
+  }
   return rc;
 }
 static h2_pal_result_t stage_begin(void *user,
@@ -34,14 +37,14 @@ static h2_pal_result_t stage_begin(void *user,
   (void)user;
   (void)firmware;
   (void)update_id;
-  atomic_store(&stage_bytes, 0);
+  h2_atomic_store(&stage_bytes, 0u);
   return H2_PAL_OK;
 }
 static h2_pal_result_t stage_write(void *user, const uint8_t *data,
                                    size_t length) {
   (void)user;
   (void)data;
-  atomic_fetch_add(&stage_bytes, length);
+  h2_atomic_fetch_add(&stage_bytes, length);
   return H2_PAL_OK;
 }
 static h2_pal_result_t stage_finish(void *user) {
@@ -344,7 +347,7 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
       break;
     }
   }
-  ASSERT(local_failed && atomic_load(&stage_bytes) > 0 &&
+  ASSERT(local_failed && h2_atomic_load(&stage_bytes) > 0 &&
          ota_status.result != H2_PAL_OK);
   h2_gizclaw_e2e_evidence("h2_gizclaw_ota_get_status", "ota_get_status-assert", rc);
   h2_gizclaw_e2e_evidence("h2_gizclaw_ota_start", "ota_start-assert", rc);
@@ -411,14 +414,14 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
       break;
     }
   }
-  ASSERT(failed && atomic_load(&stage_bytes) > 0);
+  ASSERT(failed && h2_atomic_load(&stage_bytes) > 0);
   if (first_failure == H2_PAL_OK)
     first_failure = rc;
   rc = first_failure;
   printf("H2_GIZCLAW_E2E stage=device-api-assert pcm_bytes=%llu "
          "stage_bytes=%llu result=%s rc=%d\n",
          (unsigned long long)device_evidence(fixture).playback_bytes,
-         (unsigned long long)atomic_load(&stage_bytes),
+         (unsigned long long)h2_atomic_load(&stage_bytes),
          rc == H2_PAL_OK ? "PASS" : "FAIL", rc);
   if (test.key.name[0]) {
     (void)h2_gizclaw_player_stop(service);
@@ -453,7 +456,8 @@ int h2_gizclaw_e2e_prepare_device(h2_gizclaw_e2e_fixture_t *fixture) {
   rc = h2_pal_audio_set_speaker_volume_percent(fixture->device_audio,
       fixture->config->device_real_audio ? 100u : 50u);
   if (rc != H2_PAL_OK) return rc;
-  atomic_store(&stage_bytes, 0);
+  if (h2_atomic_init(&stage_bytes, 0u) != H2_ATOMIC_OK)
+    return H2_PAL_ERR_NO_MEMORY;
   fixture->device_vtable = &device_vtable;
   return H2_PAL_OK;
 }

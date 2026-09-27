@@ -21,6 +21,7 @@ class AsyncDnsTest(unittest.TestCase):
                        source.index("static int get_host_addr(")]
         stub = r'''
 #include <assert.h>
+#include "h2_atomic.h"
 #include <stdint.h>
 #include <stdlib.h>
 #include <string.h>
@@ -29,7 +30,7 @@ typedef int err_t;
 enum { H2_PAL_OK=0,H2_PAL_ERR_NOT_FOUND=-1,H2_PAL_ERR_NO_SPACE=-2,
  H2_PAL_ERR_IO=-3,H2_PAL_ERR_INVALID_ARG=-4,H2_PAL_ERR_NO_MEMORY=-5,
  H2_PAL_ERR_WOULD_BLOCK=-6,H2_PAL_ERR_TIMEOUT=-7,
- H2_PAL_ERR_UNAVAILABLE=-8,H2_PAL_ERR_BUSY=-9,
+ H2_PAL_ERR_UNAVAILABLE=-8,H2_PAL_ERR_BUSY=-9,H2_PAL_ERR_UNSUPPORTED=-10,
  H2_PAL_NET_FAMILY_IPV4=4,ERR_OK=0,ERR_INPROGRESS=-1,ERR_MEM=-2,
  LWIP_DNS_ADDRTYPE_IPV4=0,DNS_MAX_NAME_LENGTH=256 };
 typedef struct { int family; unsigned port; uint8_t ip[4]; } h2_pal_net_addr_t;
@@ -168,7 +169,9 @@ int main(void) {
             binary = Path(directory) / "test"
             subprocess.run([os.environ.get("CC", "cc"), *shlex.split(os.environ.get("JIELI_TEST_CFLAGS", "")), "-std=c11", "-D_POSIX_C_SOURCE=200809L", "-Wall", "-Wextra", "-Werror",
                             "-fsanitize=address,undefined",
-                            str(test), "-o", str(binary)], check=True, timeout=60)
+                            "-I", str(ROOT / "libs/atomic/include"),
+                            str(test), str(ROOT / "libs/atomic/providers/c11/src/h2_atomic_c11.c"),
+                            "-o", str(binary)], check=True, timeout=60)
             result = subprocess.run([str(binary)], capture_output=True,
                                     text=True, timeout=10)
             self.assertEqual(result.returncode, 0, result.stdout + result.stderr)

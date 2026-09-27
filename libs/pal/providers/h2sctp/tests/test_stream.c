@@ -206,7 +206,68 @@ static void test_reset_in_progress_is_bounded(void) {
   h2_sctp_test_pair_deinit(&pair);
 }
 
+static void test_reset_waits_for_pending_output(void) {
+  h2_sctp_test_pair_t pair;
+  assert(h2_sctp_test_pair_init(&pair, 256u, 4096u) == H2_PAL_OK);
+  assert(h2_sctp_test_connect(&pair));
+  h2_pal_sctp_association_t *association = pair.active.association;
+  const uint8_t payload[] = {0x12u, 0x34u};
+  pair.active.emit_would_block_count = 1u;
+  send_message(&pair, 2u, 53u, false, payload, sizeof(payload));
+  assert(association->pending_emit != NULL);
+  const uint32_t sequence = association->next_reset_sequence;
+  assert(h2_pal_sctp_association_reset_stream(pair.active.api, association, 2u,
+                                             ++pair.now_ms) ==
+         H2_PAL_ERR_WOULD_BLOCK);
+  assert(association->next_reset_sequence == sequence);
+  assert(!find_stream(association, 2u)->reset_pending);
+  (void)h2_sctp_test_pump(&pair, 32u);
+  assert(pair.passive.message_count == 1u);
+  assert(h2_pal_sctp_association_reset_stream(pair.active.api, association, 2u,
+                                             ++pair.now_ms) == H2_PAL_OK);
+  (void)h2_sctp_test_pump(&pair, 32u);
+  assert(pair.active.outgoing_reset_events == 1u);
+  assert(pair.passive.incoming_reset_events == 1u);
+  h2_sctp_test_pair_deinit(&pair);
+}
+
+static void test_reset_retains_control_ownership(void) {
+  h2_sctp_test_pair_t pair;
+  assert(h2_sctp_test_pair_init(&pair, 256u, 4096u) == H2_PAL_OK);
+  assert(h2_sctp_test_connect(&pair));
+  h2_pal_sctp_association_t *association = pair.active.association;
+  pair.active.emit_would_block_count = 1u;
+  assert(h2_pal_sctp_association_reset_stream(pair.active.api, association, 2u,
+                                             ++pair.now_ms) == H2_PAL_OK);
+  assert(association->pending_emit != NULL);
+  assert(association->control_packet != NULL);
+  const uint32_t sequence = association->next_reset_sequence;
+  assert(h2_pal_sctp_association_reset_stream(pair.active.api, association, 3u,
+                                             ++pair.now_ms) ==
+         H2_PAL_ERR_WOULD_BLOCK);
+  assert(association->next_reset_sequence == sequence);
+  assert(h2_sctp_retry_pending_emit(association) == H2_PAL_OK);
+  const uint8_t *control = association->control_packet;
+  const uint64_t deadline = association->control_deadline_ms;
+  assert(h2_pal_sctp_association_reset_stream(pair.active.api, association, 3u,
+                                             ++pair.now_ms) == H2_PAL_ERR_BUSY);
+  assert(association->next_reset_sequence == sequence);
+  assert(association->control_packet == control);
+  assert(association->control_deadline_ms == deadline);
+  (void)h2_sctp_test_pump(&pair, 32u);
+  assert(pair.active.outgoing_reset_events == 1u);
+  assert(pair.passive.incoming_reset_events == 1u);
+  assert(h2_pal_sctp_association_reset_stream(pair.active.api, association, 3u,
+                                             ++pair.now_ms) == H2_PAL_OK);
+  (void)h2_sctp_test_pump(&pair, 32u);
+  assert(pair.active.outgoing_reset_events == 2u);
+  assert(pair.passive.incoming_reset_events == 2u);
+  h2_sctp_test_pair_deinit(&pair);
+}
+
 int main(void) {
+  test_reset_waits_for_pending_output();
+  test_reset_retains_control_ownership();
   test_reset_in_progress(0u);
   test_reset_in_progress(1u);
   test_reset_in_progress_is_bounded();

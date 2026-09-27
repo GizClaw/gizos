@@ -172,7 +172,7 @@ h2_pal_result_t h2_gizclaw_req_wait(h2_gizclaw_req_t *request,
                                        : H2_PAL_ERR_INVALID_STATE;
   }
   if (s_concurrency)
-    assert(s_accepted == (s_mode == SECOND_DO_ERROR ? 1u : 3u));
+    assert(s_accepted == (s_mode == SECOND_DO_ERROR ? 1u : (s_recovery + 1u) * 6u));
   ++s_waits;
   if (!s_concurrency && s_mode == REPEAT_WAIT_ERROR && s_waits == 2u)
     return H2_PAL_ERR_TIMEOUT;
@@ -377,10 +377,10 @@ int main(int argc, char **argv) {
     reset(modes[i], true);
     assert(h2_gizclaw_e2e_run_concurrency(&fixture) == results[i]);
     assert(allocator.live_blocks == 0u && s_polls == 0u && s_open == 0u);
-    assert(s_recovery == 1u);
+    assert(s_recovery == (modes[i] == NORMAL ? 32u : 1u));
     if (modes[i] == NORMAL)
-      assert(s_accepted == 3u && s_waits == 3u && s_maximum == 3u &&
-             s_unique == 3u);
+      assert(s_accepted == 192u && s_waits == 192u && s_maximum == 6u &&
+             s_unique == 6u);
   }
   return 0;
 }

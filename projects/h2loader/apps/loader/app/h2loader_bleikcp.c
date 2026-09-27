@@ -73,6 +73,8 @@ static int open_command_service(
         return H2_PAL_ERR_INVALID_ARG;
     }
     *out_service = NULL;
+    int init_rc = h2_bleikcp_global_init();
+    if (init_rc != H2_PAL_OK) return init_rc;
     static h2loader_ble_session_t base;
     base = (h2loader_ble_session_t){
         .task_api = runtime->task,
@@ -98,6 +100,8 @@ static int open_command_service(
     int rc = h2_loader_ble_service_open(&service_config, &service);
     if (rc == H2_PAL_OK) {
         *out_service = service;
+    } else {
+        (void)h2_bleikcp_global_shutdown();
     }
     return rc;
 }
@@ -107,7 +111,9 @@ static int close_command_service(void *user, void *service) {
     if (service == NULL) {
         return H2_PAL_OK;
     }
-    return h2_loader_ble_service_close(service);
+    int rc = h2_loader_ble_service_close(service);
+    if (rc == H2_PAL_OK) (void)h2_bleikcp_global_shutdown();
+    return rc;
 }
 
 const h2loader_app_command_service_api_t *

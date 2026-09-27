@@ -13,6 +13,12 @@ typedef struct command_io_fixture {
   size_t flushes;
 } command_io_fixture_t;
 
+static void init_loader_flags(h2_loader_t *loader) {
+  assert(h2_atomic_int_init(&loader->mfg_gate_bypass, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&loader->implemented_commands, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_int_init(&loader->command_availability, 0) == H2_ATOMIC_OK);
+}
+
 static h2_pal_result_t command_read(void *user, void *buffer, size_t len,
                                     size_t *out_read, uint32_t timeout_ms) {
   command_io_fixture_t *fixture = user;
@@ -82,6 +88,7 @@ static h2_pal_result_t memory_read(void *user,
 static h2_pal_result_t command_init(h2_loader_command_t *command,
                                     h2_loader_t *loader,
                                     command_io_fixture_t *fixture) {
+  init_loader_flags(loader);
   static const h2_command_io_vtable_t io_vtable = {
       .read = command_read,
       .write = command_write,
@@ -183,6 +190,7 @@ static void test_removed_commands_are_unroutable(void) {
 
 static void test_command_availability_is_runtime_and_capability_bounded(void) {
   h2_loader_t loader = {0};
+  init_loader_flags(&loader);
   h2_loader_status_t status = {
       .capabilities = H2_LOADER_CAPABILITIES_ALL,
   };

@@ -108,6 +108,7 @@ firmware_native_component(
         "manual",
     ],
     deps = [
+        "//libs/atomic",
         "//libs/bundle",
         "//libs/command",
         "//libs/iostreamikcp",

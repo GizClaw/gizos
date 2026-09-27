@@ -44,7 +44,7 @@ class WifiSnapshotsTest(unittest.TestCase):
                 *shlex.split(os.environ.get('JIELI_TEST_CFLAGS', '')),
                 '-I', str(ROOT / 'libs/pal/include'),
                 '-I', str(ROOT / 'native_component_src/jieli/wl82/h2_pal_core/include'),
-                str(unit), '-o', str(binary)], check=True)
+                str(unit), '-I', str(ROOT / 'libs/atomic/include'), str(ROOT / 'libs/atomic/providers/c11/src/h2_atomic_c11.c'), '-o', str(binary)], check=True)
             for case in ['payload', 'readers', 'stale_refresh', 'ip_failure', 'ap_clients', 'ap_capacity']:
                 with self.subTest(case=case):
                     result = subprocess.run([str(binary), case], capture_output=True, text=True, timeout=15)

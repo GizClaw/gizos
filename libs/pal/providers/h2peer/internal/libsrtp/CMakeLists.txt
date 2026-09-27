@@ -50,6 +50,7 @@ target_include_directories(h2libsrtp
   PUBLIC
     "${H2_LIBSRTP_ROOT}/include"
     "${H2_LIBSRTP_REPO_ROOT}/libs/pal/include"
+    "${H2_LIBSRTP_REPO_ROOT}/libs/atomic/include"
   PRIVATE
     "${H2_LIBSRTP_ROOT}/src"
     "${H2_LIBSRTP_UPSTREAM_ROOT}/crypto/cipher"

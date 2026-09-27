@@ -1,4 +1,5 @@
 #include "h2_h2loader_cli_target.h"
+#include "h2_bleikcp.h"
 
 #include <signal.h>
 #include <stdio.h>
@@ -92,8 +93,16 @@ int main(int argc, char **argv) {
     h2_command_io_api_t stdout_io = {.user = stdout, .vtable = &stdio_vtable};
     h2_command_io_api_t stderr_io = {.user = stderr, .vtable = &stdio_vtable};
     if (h2_h2loader_cli_target_start() != H2_PAL_OK) return 3;
+    if (h2_bleikcp_global_init() != H2_PAL_OK) {
+        h2_h2loader_cli_target_stop();
+        return 3;
+    }
     const char *const *args = resolve_path_arguments(argc, argv);
-    if (args == NULL) return 3;
+    if (args == NULL) {
+        (void)h2_bleikcp_global_shutdown();
+        h2_h2loader_cli_target_stop();
+        return 3;
+    }
     const h2_pal_mem_api_t *mem = h2_h2loader_cli_target_mem();
     const h2_pal_ble_host_api_t *ble = h2_h2loader_cli_target_ble(mem);
     h2_runtime_t runtime = {
@@ -126,6 +135,7 @@ int main(int argc, char **argv) {
     (void)signal(SIGTERM, handle_signal);
     result = h2_h2loader_cli_main(&runtime, &config);
     if (started_ble != NULL) (void)h2_pal_ble_stop(started_ble);
+    (void)h2_bleikcp_global_shutdown();
     h2_h2loader_cli_target_stop();
     return cancelled ? 130 : result;
 }

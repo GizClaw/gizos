@@ -6,17 +6,18 @@
 #include "h2_lua_event.h"
 #include "h2_lua_job.h"
 #include "h2_lua_module.h"
+#include "h2_trie.h"
 
 #include "lauxlib.h"
 
-#include <stdatomic.h>
+#include "h2_atomic.h"
 
 #define H2_LUA_NAME_MAX 48u
 #define H2_LUA_MESSAGE_MAX 192u
 #define H2_LUA_CAPABILITY_OUTPUT_MAX 512u
 #define H2_LUA_PATH_MAX 192u
 /* Most Runtime mem blocks one reserved VM heap may be split across. */
-#define H2_LUA_HEAP_MAX_CHUNKS 8u
+#define H2_LUA_HEAP_MAX_CHUNKS 16u
 
 typedef enum h2_lua_task_state {
   H2_LUA_TASK_UNUSED = 0,
@@ -45,7 +46,7 @@ typedef struct h2_lua_task {
   uint64_t resume_started_ms;
   uint64_t wake_ms;
   h2_pal_timer_t *timer;
-  atomic_int timer_fired;
+  h2_atomic_int_t timer_fired;
   uint32_t join_task_id;
   h2_lua_capability_request_id_t capability_request_id;
   int cancel_requested;
@@ -87,6 +88,7 @@ typedef struct h2_lua_module_entry {
 typedef struct h2_lua_capability_entry {
   char name[H2_LUA_NAME_MAX];
   h2_lua_capability_call_fn call;
+  h2_lua_capability_prefix_call_fn prefix_call;
   h2_lua_capability_cancel_fn cancel;
   void *user;
 } h2_lua_capability_entry_t;
@@ -107,7 +109,7 @@ typedef struct h2_lua_capability_request {
   h2_pal_result_t result;
   char output[H2_LUA_CAPABILITY_OUTPUT_MAX];
   char error[H2_LUA_MESSAGE_MAX];
-  h2_lua_capability_entry_t *capability;
+  const h2_lua_capability_entry_t *capability;
 } h2_lua_capability_request_t;
 
 typedef struct h2_lua_audio_track_slot {
@@ -218,9 +220,9 @@ struct h2_lua_host {
   h2_lua_job_t *jobs;
   h2_lua_job_id_t next_job_id;
   uint32_t next_job_generation;
-  atomic_int started;
-  atomic_int stopping;
-  atomic_int joined;
+  h2_atomic_int_t started;
+  h2_atomic_int_t stopping;
+  h2_atomic_int_t joined;
   h2_lua_worker_t *workers;
   h2_pal_mutex_t *jobs_mutex;
   void *vm_heap;
@@ -230,7 +232,10 @@ struct h2_lua_host {
   h2_pal_mutex_t *vm_heap_mutex;
   h2_lua_module_entry_t modules[16];
   size_t module_count;
-  h2_lua_capability_entry_t capabilities[16];
+  h2_lua_capability_entry_t *capabilities;
+  h2_trie_route_t *capability_routes;
+  h2_trie_node_t *capability_nodes;
+  h2_trie_t capability_trie;
   size_t capability_count;
   h2_lua_capability_request_t *capability_requests;
   h2_lua_capability_request_id_t next_capability_request_id;
@@ -309,6 +314,7 @@ void h2_lua_release_job_capabilities(h2_lua_host_t *host,
                                      h2_lua_job_id_t job_id,
                                      uint32_t job_generation);
 void h2_lua_task_timer_destroy(h2_lua_task_t *task);
+void h2_lua_task_atomics_destroy(h2_lua_job_t *job);
 void h2_lua_host_wake_job(h2_lua_job_t *job);
 h2_pal_result_t h2_lua_step_job(h2_lua_job_t *job);
 

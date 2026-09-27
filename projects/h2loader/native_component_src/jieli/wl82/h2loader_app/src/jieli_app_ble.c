@@ -50,5 +50,9 @@ int h2_jieli_app_loader_ble_start(
       .handler = handle_session,
       .handler_user = &ble_client_config,
   };
-  return h2_loader_ble_service_open(&service, &ble_service);
+  int rc = h2_bleikcp_global_init();
+  if (rc != H2_PAL_OK) return rc;
+  rc = h2_loader_ble_service_open(&service, &ble_service);
+  if (rc != H2_PAL_OK) (void)h2_bleikcp_global_shutdown();
+  return rc;
 }

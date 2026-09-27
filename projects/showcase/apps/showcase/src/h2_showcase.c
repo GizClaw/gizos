@@ -3,6 +3,7 @@
 
 #include "h2_gizclaw.h"
 #include "h2_gizclaw_task_names.h"
+#include "h2_atomic.h"
 #include "h2_lvgl_platform.h"
 #include "h2_lvgl_touch.h"
 #include "h2_mp4_decoder.h"
@@ -11,7 +12,6 @@
 #include "lvgl.h"
 
 #include <limits.h>
-#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -42,8 +42,8 @@ typedef struct h2_showcase_gizclaw_state {
   h2_gizclaw_service_t *service;
   /* Borrowed by the service until deinit, so it must outlive gizclaw_init. */
   h2_gizclaw_config_t client_config;
-  atomic_bool stop;
-  atomic_int status;
+  h2_atomic_bool_t stop;
+  h2_atomic_int_t status;
 } h2_showcase_gizclaw_state_t;
 
 typedef struct h2_showcase_audio_state {
@@ -55,8 +55,8 @@ typedef struct h2_showcase_audio_state {
   uint8_t *frame_buffer;
   size_t frame_bytes;
   size_t offset;
-  atomic_bool stop;
-  atomic_bool failed;
+  h2_atomic_bool_t stop;
+  h2_atomic_bool_t failed;
   int speaker_started;
 } h2_showcase_audio_state_t;
 
@@ -106,7 +106,7 @@ typedef struct h2_showcase_app {
 static bool gizclaw_cancel_requested(void *user) {
   h2_showcase_gizclaw_state_t *state = user;
   return state == NULL ||
-         atomic_load_explicit(&state->stop, memory_order_acquire);
+         h2_atomic_load_explicit(&state->stop, H2_ATOMIC_ACQUIRE);
 }
 
 static void gizclaw_log(h2_showcase_app_t *app, h2_pal_log_level_t level,
@@ -128,15 +128,15 @@ gizclaw_finish_registration(h2_showcase_gizclaw_state_t *state,
   if (result == H2_PAL_OK &&
       strcmp(registration.runtime_profile_name,
              app->config->gizclaw_runtime_profile_name) == 0) {
-    atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_CONNECTED,
-                          memory_order_release);
+    h2_atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_CONNECTED,
+                          H2_ATOMIC_RELEASE);
     gizclaw_log(app, H2_PAL_LOG_INFO,
                 "H2_SHOWCASE_GIZCLAW connected profile=showcase");
   } else {
-    atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_FAILED,
-                          memory_order_release);
+    h2_atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_FAILED,
+                          H2_ATOMIC_RELEASE);
     gizclaw_log(app, H2_PAL_LOG_ERROR, "H2_SHOWCASE_GIZCLAW failed");
-    atomic_store_explicit(&state->stop, true, memory_order_release);
+    h2_atomic_store_explicit(&state->stop, true, H2_ATOMIC_RELEASE);
   }
   h2_gizclaw_req_release(request);
   return result;
@@ -146,10 +146,10 @@ static void gizclaw_terminal(void *user, h2_pal_result_t result) {
   (void)result;
   h2_showcase_gizclaw_state_t *state = user;
   if (!gizclaw_cancel_requested(state)) {
-    atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_FAILED,
-                          memory_order_release);
+    h2_atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_FAILED,
+                          H2_ATOMIC_RELEASE);
     gizclaw_log(state->app, H2_PAL_LOG_ERROR, "H2_SHOWCASE_GIZCLAW failed");
-    atomic_store_explicit(&state->stop, true, memory_order_release);
+    h2_atomic_store_explicit(&state->stop, true, H2_ATOMIC_RELEASE);
   }
 }
 
@@ -172,8 +172,8 @@ static void gizclaw_task_entry(void *context) {
     }
   }
   if (!gizclaw_cancel_requested(state) && result != H2_PAL_OK) {
-    atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_FAILED,
-                          memory_order_release);
+    h2_atomic_store_explicit(&state->status, H2_SHOWCASE_GIZCLAW_FAILED,
+                          H2_ATOMIC_RELEASE);
     gizclaw_log(app, H2_PAL_LOG_ERROR, "H2_SHOWCASE_GIZCLAW failed");
   }
 }
@@ -205,8 +205,15 @@ static h2_pal_result_t gizclaw_init(h2_showcase_app_t *app) {
   }
   memset(app->gizclaw, 0, sizeof(*app->gizclaw));
   app->gizclaw->app = app;
-  atomic_init(&app->gizclaw->stop, false);
-  atomic_init(&app->gizclaw->status, H2_SHOWCASE_GIZCLAW_CONNECTING);
+  if (h2_atomic_init(&app->gizclaw->stop, false) != H2_ATOMIC_OK ||
+      h2_atomic_init(&app->gizclaw->status, H2_SHOWCASE_GIZCLAW_CONNECTING) !=
+          H2_ATOMIC_OK) {
+    h2_atomic_destroy(&app->gizclaw->stop);
+    h2_atomic_destroy(&app->gizclaw->status);
+    h2_pal_mem_free(app->runtime->mem, app->gizclaw);
+    app->gizclaw = NULL;
+    return H2_PAL_ERR_NO_MEMORY;
+  }
   const int connect_timeout_ms =
       config->gizclaw_connect_timeout_ms == 0u
           ? H2_SHOWCASE_GIZCLAW_DEFAULT_CONNECT_TIMEOUT_MS
@@ -250,6 +257,8 @@ static h2_pal_result_t gizclaw_init(h2_showcase_app_t *app) {
       (void)h2_gizclaw_service_stop(app->gizclaw->service);
       (void)h2_gizclaw_service_deinit(app->gizclaw->service);
     }
+    h2_atomic_destroy(&app->gizclaw->stop);
+    h2_atomic_destroy(&app->gizclaw->status);
     h2_pal_mem_free(app->runtime->mem, app->gizclaw);
     app->gizclaw = NULL;
     return result;
@@ -263,6 +272,8 @@ static h2_pal_result_t gizclaw_init(h2_showcase_app_t *app) {
   if (result != H2_PAL_OK) {
     (void)h2_gizclaw_service_stop(app->gizclaw->service);
     (void)h2_gizclaw_service_deinit(app->gizclaw->service);
+    h2_atomic_destroy(&app->gizclaw->stop);
+    h2_atomic_destroy(&app->gizclaw->status);
     h2_pal_mem_free(app->runtime->mem, app->gizclaw);
     app->gizclaw = NULL;
   }
@@ -273,7 +284,7 @@ static h2_pal_result_t gizclaw_deinit(h2_showcase_app_t *app) {
   if (app->gizclaw == NULL) {
     return H2_PAL_OK;
   }
-  atomic_store_explicit(&app->gizclaw->stop, true, memory_order_release);
+  h2_atomic_store_explicit(&app->gizclaw->stop, true, H2_ATOMIC_RELEASE);
   h2_pal_result_t result = H2_PAL_OK;
   if (app->gizclaw->task != NULL) {
     result = h2_pal_task_join(app->runtime->task, app->gizclaw->task);
@@ -298,6 +309,8 @@ static h2_pal_result_t gizclaw_deinit(h2_showcase_app_t *app) {
       return result;
     app->gizclaw->service = NULL;
   }
+  h2_atomic_destroy(&app->gizclaw->stop);
+  h2_atomic_destroy(&app->gizclaw->status);
   h2_pal_mem_free(app->runtime->mem, app->gizclaw);
   app->gizclaw = NULL;
   return result;
@@ -825,7 +838,7 @@ static void ui_deinit(h2_showcase_app_t *app) {
 
 static void audio_task_entry(void *context) {
   h2_showcase_audio_state_t *audio = context;
-  while (!atomic_load_explicit(&audio->stop, memory_order_acquire)) {
+  while (!h2_atomic_load_explicit(&audio->stop, H2_ATOMIC_ACQUIRE)) {
     size_t copied = 0u;
     while (copied < audio->frame_bytes) {
       const size_t available = audio->pcm_size - audio->offset;
@@ -848,11 +861,11 @@ static void audio_task_entry(void *context) {
       if (result == H2_AUDIO_OK) {
         break;
       }
-      if (atomic_load_explicit(&audio->stop, memory_order_acquire)) {
+      if (h2_atomic_load_explicit(&audio->stop, H2_ATOMIC_ACQUIRE)) {
         return;
       }
       if (result != H2_AUDIO_ERR_WOULD_BLOCK && result != H2_PAL_ERR_TIMEOUT) {
-        atomic_store_explicit(&audio->failed, true, memory_order_release);
+        h2_atomic_store_explicit(&audio->failed, true, H2_ATOMIC_RELEASE);
         return;
       }
     }
@@ -874,8 +887,14 @@ static h2_pal_result_t audio_init(h2_showcase_app_t *app) {
   memset(app->audio, 0, sizeof(*app->audio));
   app->audio->pcm_data = video->audio_pcm_data;
   app->audio->pcm_size = video->audio_pcm_size;
-  atomic_init(&app->audio->stop, false);
-  atomic_init(&app->audio->failed, false);
+  if (h2_atomic_init(&app->audio->stop, false) != H2_ATOMIC_OK ||
+      h2_atomic_init(&app->audio->failed, false) != H2_ATOMIC_OK) {
+    h2_atomic_destroy(&app->audio->stop);
+    h2_atomic_destroy(&app->audio->failed);
+    h2_pal_mem_free(app->runtime->mem, app->audio);
+    app->audio = NULL;
+    return H2_PAL_ERR_NO_MEMORY;
+  }
   int result = h2_pal_audio_get_info(app->runtime->audio, &app->audio->info);
   const h2_audio_pcm_format_t *format = &app->audio->info.playback_format;
   if (result != H2_AUDIO_OK || !app->audio->info.available ||
@@ -929,7 +948,7 @@ static h2_pal_result_t audio_deinit(h2_showcase_app_t *app) {
   }
   h2_showcase_audio_state_t *audio = app->audio;
   h2_pal_result_t result = H2_PAL_OK;
-  atomic_store_explicit(&audio->stop, true, memory_order_release);
+  h2_atomic_store_explicit(&audio->stop, true, H2_ATOMIC_RELEASE);
   if (audio->task != NULL) {
     result = h2_pal_task_join(app->runtime->task, audio->task);
     if (result != H2_PAL_OK) {
@@ -956,6 +975,8 @@ static h2_pal_result_t audio_deinit(h2_showcase_app_t *app) {
   if (audio->frame_buffer != NULL) {
     h2_pal_mem_free(app->runtime->mem, audio->frame_buffer);
   }
+  h2_atomic_destroy(&audio->stop);
+  h2_atomic_destroy(&audio->failed);
   h2_pal_mem_free(app->runtime->mem, audio);
   app->audio = NULL;
   return result;
@@ -1210,8 +1231,8 @@ static void process_runtime_events(h2_showcase_app_t *app) {
     const h2_pal_result_t rc =
         h2_gizclaw_service_poll(app->gizclaw->service, 8u, NULL);
     if (rc != H2_PAL_OK) {
-      atomic_store_explicit(&app->gizclaw->status, H2_SHOWCASE_GIZCLAW_FAILED,
-                            memory_order_release);
+      h2_atomic_store_explicit(&app->gizclaw->status, H2_SHOWCASE_GIZCLAW_FAILED,
+                            H2_ATOMIC_RELEASE);
       gizclaw_log(app, H2_PAL_LOG_ERROR, "H2_SHOWCASE_GIZCLAW dispatch failed");
     }
   }
@@ -1243,9 +1264,9 @@ static void process_runtime_events(h2_showcase_app_t *app) {
     const h2_pal_result_t rc =
         h2_gizclaw_service_poll(app->gizclaw->service, 8u, NULL);
     if (rc != H2_PAL_OK) {
-      atomic_store_explicit(&app->gizclaw->status,
+      h2_atomic_store_explicit(&app->gizclaw->status,
                             H2_SHOWCASE_GIZCLAW_FAILED,
-                            memory_order_release);
+                            H2_ATOMIC_RELEASE);
       gizclaw_log(app, H2_PAL_LOG_ERROR,
                   "H2_SHOWCASE_GIZCLAW fallback dispatch failed");
     }
@@ -1380,7 +1401,7 @@ h2_pal_result_t h2_showcase_run(h2_runtime_t *runtime,
       break;
     }
     if (app.audio != NULL &&
-        atomic_load_explicit(&app.audio->failed, memory_order_acquire)) {
+        h2_atomic_load_explicit(&app.audio->failed, H2_ATOMIC_ACQUIRE)) {
       result = H2_AUDIO_ERR_IO;
       break;
     }

@@ -63,6 +63,7 @@ cc_test(
     }),
     deps = [
         ":dinobounce",
+        "//libs/atomic/providers/c11",
         "//libs/game_runtime:game_test_support",
     ],
 )

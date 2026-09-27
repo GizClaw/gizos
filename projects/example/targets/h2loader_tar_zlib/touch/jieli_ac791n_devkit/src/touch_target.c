@@ -2,7 +2,7 @@
 #include "h2_runtime.h"
 #include "h2_touch_smoke.h"
 
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
@@ -10,13 +10,32 @@
 typedef struct touch_target_state {
   h2_runtime_t *runtime;
   h2_pal_task_t *task;
-  atomic_bool started;
-  atomic_bool entry_released;
-  atomic_bool stop_requested;
-  atomic_int startup_result;
+  h2_atomic_bool_t started;
+  h2_atomic_bool_t entry_released;
+  h2_atomic_bool_t stop_requested;
+  h2_atomic_int_t startup_result;
 } touch_target_state_t;
 
 static touch_target_state_t touch_target;
+
+static void touch_atomic_destroy(void) {
+  h2_atomic_destroy(&touch_target.started);
+  h2_atomic_destroy(&touch_target.entry_released);
+  h2_atomic_destroy(&touch_target.stop_requested);
+  h2_atomic_destroy(&touch_target.startup_result);
+}
+
+static bool touch_atomic_init(void) {
+  if (h2_atomic_init(&touch_target.started, false) != H2_ATOMIC_OK ||
+      h2_atomic_init(&touch_target.entry_released, false) != H2_ATOMIC_OK ||
+      h2_atomic_init(&touch_target.stop_requested, false) != H2_ATOMIC_OK ||
+      h2_atomic_init(&touch_target.startup_result, H2_PAL_ERR_INVALID_STATE) != H2_ATOMIC_OK) {
+    touch_atomic_destroy();
+    return false;
+  }
+  return true;
+}
+
 
 static void emit(const char *format, ...) {
   char line[320];
@@ -113,13 +132,13 @@ static const h2_runtime_component_mapper_t component_mapper = {
 
 static int should_stop(void *user) {
   (void)user;
-  return atomic_load_explicit(&touch_target.stop_requested, memory_order_acquire);
+  return h2_atomic_load_explicit(&touch_target.stop_requested, H2_ATOMIC_ACQUIRE);
 }
 
 static void on_started(void *user, h2_pal_result_t result) {
   touch_target_state_t *state = user;
-  atomic_store_explicit(&state->startup_result, result, memory_order_release);
-  atomic_store_explicit(&state->started, true, memory_order_release);
+  h2_atomic_store_explicit(&state->startup_result, result, H2_ATOMIC_RELEASE);
+  h2_atomic_store_explicit(&state->started, true, H2_ATOMIC_RELEASE);
 }
 
 static void touch_task(void *user) {
@@ -136,11 +155,12 @@ static void touch_task(void *user) {
   emit("H2_JIELI_TOUCH_SMOKE stage=stopped result=%d\r\n", result);
   /* The entry lends the Runtime until its startup handshake is complete.
    * This worker then owns it until the smoke flow has released its users. */
-  while (!atomic_load_explicit(&state->entry_released, memory_order_acquire)) {
+  while (!h2_atomic_load_explicit(&state->entry_released, H2_ATOMIC_ACQUIRE)) {
     (void)h2_pal_time_sleep_ms(state->runtime->time, 10u);
   }
   h2_runtime_deinit(state->runtime);
   state->runtime = NULL;
+  touch_atomic_destroy();
 }
 
 /* The image-owned smoke worker retains Runtime across successful entry return. */
@@ -149,10 +169,7 @@ int h2_jieli_target_application_run(void) {
   h2_runtime_t *runtime = NULL;
   emit("H2_JIELI_TOUCH_SMOKE stage=target-enter\r\n");
   memset(&touch_target, 0, sizeof(touch_target));
-  atomic_init(&touch_target.started, false);
-  atomic_init(&touch_target.entry_released, false);
-  atomic_init(&touch_target.stop_requested, false);
-  atomic_init(&touch_target.startup_result, H2_PAL_ERR_INVALID_STATE);
+  if (!touch_atomic_init()) return H2_PAL_ERR_NO_MEMORY;
 
   emit("H2_JIELI_TOUCH_SMOKE stage=runtime-config-enter\r\n");
   int result = h2_jieli_ac791n_devkit_runtime_config(&config);
@@ -168,6 +185,7 @@ int h2_jieli_target_application_run(void) {
   if (result != H2_PAL_OK) {
     if (runtime != NULL) h2_runtime_deinit(runtime);
     touch_target.runtime = NULL;
+    touch_atomic_destroy();
     return result;
   }
 
@@ -179,23 +197,24 @@ int h2_jieli_target_application_run(void) {
   if (result != H2_PAL_OK) {
     if (runtime != NULL) h2_runtime_deinit(runtime);
     touch_target.runtime = NULL;
+    touch_atomic_destroy();
     return result;
   }
 
   for (unsigned attempt = 0u; attempt < 300u; ++attempt) {
-    if (atomic_load_explicit(&touch_target.started, memory_order_acquire)) {
-      result = atomic_load_explicit(
-          &touch_target.startup_result, memory_order_acquire);
+    if (h2_atomic_load_explicit(&touch_target.started, H2_ATOMIC_ACQUIRE)) {
+      result = h2_atomic_load_explicit(
+          &touch_target.startup_result, H2_ATOMIC_ACQUIRE);
       emit("H2_JIELI_TOUCH_SMOKE_READY touch=ft6236 display=480x320 result=%d\r\n",
            result);
-      atomic_store_explicit(&touch_target.entry_released, true, memory_order_release);
+      h2_atomic_store_explicit(&touch_target.entry_released, true, H2_ATOMIC_RELEASE);
       return result;
     }
     (void)h2_pal_time_sleep_ms(runtime->time, 10u);
   }
   emit("H2_JIELI_TOUCH_SMOKE stage=start-timeout result=%d\r\n",
        H2_PAL_ERR_TIMEOUT);
-  atomic_store_explicit(&touch_target.stop_requested, true, memory_order_release);
-  atomic_store_explicit(&touch_target.entry_released, true, memory_order_release);
+  h2_atomic_store_explicit(&touch_target.stop_requested, true, H2_ATOMIC_RELEASE);
+  h2_atomic_store_explicit(&touch_target.entry_released, true, H2_ATOMIC_RELEASE);
   return H2_PAL_ERR_TIMEOUT;
 }

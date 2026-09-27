@@ -38,6 +38,7 @@ cc_library(
     # The opus vendor build crashes the JieLi pi32v2 clang 4.0.1 backend.
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [
+        "//libs/atomic",
         ":connectivity",
         ":device_case",
         ":fixture",
@@ -85,7 +86,8 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":gizclaw_e2e"],
+    deps = [
+        "//libs/atomic/providers/c11",":gizclaw_e2e"],
 )
 
 cc_test(
@@ -99,7 +101,8 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":fixture"],
+    deps = [
+        "//libs/atomic/providers/c11",":fixture"],
 )
 
 cc_test(
@@ -113,7 +116,8 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":connectivity"],
+    deps = [
+        "//libs/atomic/providers/c11",":connectivity"],
 )
 
 # Actor ownership and cleanup use only the production Service/req/rpc surface.
@@ -137,6 +141,7 @@ cc_library(
     ],
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [
+        "//libs/atomic",
         "//libs/app_test:testing_audio",
         "//libs/app_test:testing_pal",
         "//libs/gizclaw",
@@ -208,7 +213,8 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":group_case"],
+    deps = [
+        "//libs/atomic/providers/c11",":group_case"],
 )
 
 cc_library(
@@ -236,7 +242,8 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":workspace_case"],
+    deps = [
+        "//libs/atomic/providers/c11",":workspace_case"],
 )
 
 cc_library(
@@ -265,6 +272,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic/providers/c11",
         ":friend_case",
         "//libs/pal",
     ],
@@ -296,6 +304,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic/providers/c11",
         ":telemetry_case",
         "//libs/app_test:testing_pal",
         "//libs/pal",
@@ -328,6 +337,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic/providers/c11",
         ":contact_case",
         "//libs/pal",
     ],
@@ -359,6 +369,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic/providers/c11",
         ":workflow_case",
         "//libs/pal",
     ],
@@ -390,6 +401,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic/providers/c11",
         ":profile_case",
         "//libs/pal",
     ],
@@ -403,6 +415,7 @@ cc_library(
     copts = H2_WARNING_COPTS,
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [
+        "//libs/atomic",
         ":fixture",
         "//libs/app_test:testing_audio",
         "//libs/app_test:testing_pal",
@@ -420,6 +433,7 @@ cc_library(
     copts = H2_WARNING_COPTS,
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [
+        "//libs/atomic",
         ":fixture",
         "//libs/app_test:testing_audio",
         "//libs/app_test:testing_pal",
@@ -443,6 +457,8 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic",
+        "//libs/atomic/providers/c11",
         ":voice_case",
         "//libs/app_test:testing_pal",
         "//libs/gizclaw",
@@ -466,6 +482,8 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic",
+        "//libs/atomic/providers/c11",
         ":speech_case",
         "//libs/app_test:testing_pal",
         "//libs/gizclaw",
@@ -528,6 +546,7 @@ cc_library(
     copts = H2_WARNING_COPTS,
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [
+        "//libs/atomic",
         "//libs/pal",
         "//libs/runtime",
         ":fixture",
@@ -566,6 +585,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic/providers/c11",
         ":request_cases",
         "//libs/app_test:testing_pal",
         "//libs/pal",
@@ -585,6 +605,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic/providers/c11",
         ":catalog_connectivity",
         ":runner_core",
         "//libs/pal",
@@ -604,6 +625,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic/providers/c11",
         ":runner",
         "//libs/pal",
         "//libs/runtime",
@@ -622,7 +644,8 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     # Reporting is owned by runner_core; this unit test does not run cases.
-    deps = [":runner_core"],
+    deps = [
+        "//libs/atomic/providers/c11",":runner_core"],
 )
 
 cc_test(
@@ -637,6 +660,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic/providers/c11",
         ":gizclaw_e2e",
         "//libs/app_test:testing_pal",
     ],
@@ -649,6 +673,7 @@ cc_library(
     copts = H2_WARNING_COPTS,
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [
+        "//libs/atomic",
         ":fixture",
         ":runner_core",
         "//libs/app_test:testing_audio",
@@ -696,6 +721,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic/providers/c11",
         ":resource_case",
         "//libs/app_test:testing_pal",
         "//libs/pal",
@@ -715,6 +741,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic/providers/c11",
         ":device_case",
         "//libs/app_test:testing_pal",
         "//libs/pal",

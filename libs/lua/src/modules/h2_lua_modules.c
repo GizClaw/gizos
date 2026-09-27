@@ -277,7 +277,7 @@ static void h2_lua_sleep_timer_callback(void *user, h2_pal_timer_t *timer) {
   h2_lua_task_t *task = user;
   (void)timer;
   if (task != NULL) {
-    atomic_store(&task->timer_fired, 1);
+    h2_atomic_store(&task->timer_fired, 1);
     h2_lua_host_wake_job(task->job);
   }
 }
@@ -294,7 +294,7 @@ static int lua_delay_ms(lua_State *state) {
   h2_lua_task_timer_destroy(task);
   task->wake_ms = h2_lua_now_ms(task->job->host) + (uint64_t)delay_ms;
   task->state = H2_LUA_TASK_SLEEPING;
-  atomic_store(&task->timer_fired, 0);
+  h2_atomic_store(&task->timer_fired, 0);
   if (delay_ms > 0) {
     h2_pal_result_t timer_result;
     timer_result =
@@ -969,7 +969,7 @@ static int lua_json_decode(lua_State *state) {
       .malloc = json_malloc,
       .realloc = json_realloc,
       .free = json_free,
-      .ctx = (void *)job->host->config.runtime->mem,
+      .ctx = (void *)job->host->config.allocator,
   };
   yyjson_read_err error;
   yyjson_doc *document;
@@ -1078,7 +1078,7 @@ static int lua_capability_call(lua_State *state) {
   size_t options_size = 0u;
   char output[H2_LUA_CAPABILITY_OUTPUT_MAX];
   const char *error = NULL;
-  size_t i;
+  const h2_lua_capability_entry_t *entry = NULL;
   if (lua_isnoneornil(state, 2)) {
     input = "{}";
   } else if (lua_type(state, 2) == LUA_TSTRING) {
@@ -1097,72 +1097,71 @@ static int lua_capability_call(lua_State *state) {
   }
   (void)input_size;
   (void)options_size;
-  for (i = 0u; i < job->host->capability_count; ++i) {
-    h2_lua_capability_entry_t *entry = &job->host->capabilities[i];
-    if (strcmp(entry->name, name) == 0) {
-      h2_lua_capability_request_t *request;
-      h2_pal_result_t result;
-      int locked = 0;
-      if (job->host->capability_mutex != NULL) {
-        if (h2_pal_mutex_lock(job->host->config.runtime->sync,
-                              job->host->capability_mutex) != H2_PAL_OK) {
-          return push_capability_tuple(state, H2_PAL_ERR_BUSY, NULL,
-                                       "capability registry busy");
-        }
-        locked = 1;
+  if (h2_trie_handle(&job->host->capability_trie, name, &entry) == H2_PAL_OK) {
+    h2_lua_capability_request_t *request;
+    h2_pal_result_t result;
+    int locked = 0;
+    if (job->host->capability_mutex != NULL) {
+      if (h2_pal_mutex_lock(job->host->config.runtime->sync,
+                            job->host->capability_mutex) != H2_PAL_OK) {
+        return push_capability_tuple(state, H2_PAL_ERR_BUSY, NULL,
+                                     "capability registry busy");
       }
-      request = allocate_capability_request(job->host);
-      if (request == NULL || task == NULL) {
-        if (locked) {
-          (void)h2_pal_mutex_unlock(job->host->config.runtime->sync,
-                                    job->host->capability_mutex);
-        }
-        return push_capability_tuple(state, H2_PAL_ERR_FULL, NULL,
-                                     "capability request limit reached");
-      }
-      memset(request, 0, sizeof(*request));
-      request->id = job->host->next_capability_request_id++;
-      if (job->host->next_capability_request_id == 0u) {
-        job->host->next_capability_request_id = 1u;
-      }
-      request->state = H2_LUA_CAPABILITY_REQUEST_PENDING;
-      request->job_id = job->id;
-      request->job_generation = job->generation;
-      request->task_id = task->id;
-      request->capability = entry;
+      locked = 1;
+    }
+    request = allocate_capability_request(job->host);
+    if (request == NULL || task == NULL) {
       if (locked) {
         (void)h2_pal_mutex_unlock(job->host->config.runtime->sync,
                                   job->host->capability_mutex);
       }
-      output[0] = '\0';
-      result = entry->call(entry->user, request->id, input, options, output,
-                           sizeof(output), &error);
-      if (result != H2_PAL_ERR_WOULD_BLOCK) {
-        if (locked) {
-          (void)h2_pal_mutex_lock(job->host->config.runtime->sync,
-                                  job->host->capability_mutex);
-        }
-        memset(request, 0, sizeof(*request));
-        if (locked) {
-          (void)h2_pal_mutex_unlock(job->host->config.runtime->sync,
-                                    job->host->capability_mutex);
-        }
-        return push_capability_tuple(state, result, output, error);
-      }
-      if (job->host->capability_mutex == NULL) {
-        if (entry->cancel != NULL) {
-          entry->cancel(entry->user, request->id);
-        }
-        memset(request, 0, sizeof(*request));
-        return push_capability_tuple(
-            state, H2_PAL_ERR_UNSUPPORTED, NULL,
-            "pending capability requires Runtime Sync");
-      }
-      task->capability_request_id = request->id;
-      task->state = H2_LUA_TASK_CAPABILITY;
-      return lua_yieldk(state, 0, (lua_KContext)request->id,
-                        lua_capability_continue);
+      return push_capability_tuple(state, H2_PAL_ERR_FULL, NULL,
+                                   "capability request limit reached");
     }
+    memset(request, 0, sizeof(*request));
+    request->id = job->host->next_capability_request_id++;
+    if (job->host->next_capability_request_id == 0u) {
+      job->host->next_capability_request_id = 1u;
+    }
+    request->state = H2_LUA_CAPABILITY_REQUEST_PENDING;
+    request->job_id = job->id;
+    request->job_generation = job->generation;
+    request->task_id = task->id;
+    request->capability = entry;
+    if (locked) {
+      (void)h2_pal_mutex_unlock(job->host->config.runtime->sync,
+                                job->host->capability_mutex);
+    }
+    output[0] = '\0';
+    result = entry->prefix_call != NULL
+                 ? entry->prefix_call(entry->user, request->id, name, input,
+                                      options, output, sizeof(output), &error)
+                 : entry->call(entry->user, request->id, input, options, output,
+                               sizeof(output), &error);
+    if (result != H2_PAL_ERR_WOULD_BLOCK) {
+      if (locked) {
+        (void)h2_pal_mutex_lock(job->host->config.runtime->sync,
+                                job->host->capability_mutex);
+      }
+      memset(request, 0, sizeof(*request));
+      if (locked) {
+        (void)h2_pal_mutex_unlock(job->host->config.runtime->sync,
+                                  job->host->capability_mutex);
+      }
+      return push_capability_tuple(state, result, output, error);
+    }
+    if (job->host->capability_mutex == NULL) {
+      if (entry->cancel != NULL) {
+        entry->cancel(entry->user, request->id);
+      }
+      memset(request, 0, sizeof(*request));
+      return push_capability_tuple(state, H2_PAL_ERR_UNSUPPORTED, NULL,
+                                   "pending capability requires Runtime Sync");
+    }
+    task->capability_request_id = request->id;
+    task->state = H2_LUA_TASK_CAPABILITY;
+    return lua_yieldk(state, 0, (lua_KContext)request->id,
+                      lua_capability_continue);
   }
   lua_pushboolean(state, 0);
   lua_pushnil(state);
@@ -1403,7 +1402,7 @@ static int audio_output_write(lua_State *state) {
   chunk_bytes = audio_slot_chunk_bytes(slot);
   if (slot->carry == NULL) {
     slot->carry =
-        h2_pal_mem_alloc(slot->job->host->config.runtime->mem, chunk_bytes);
+        h2_pal_mem_alloc(slot->job->host->config.allocator, chunk_bytes);
     if (slot->carry == NULL) {
       return audio_write_result(state, H2_PAL_ERR_NO_MEMORY, 0u);
     }
@@ -1475,7 +1474,7 @@ static int audio_output_close(lua_State *state) {
     h2_lua_job_t *job = slot->job;
     int result;
     h2_lua_audio_track_slot_flush_carry(slot);
-    h2_lua_audio_track_slot_release_carry(slot, job->host->config.runtime->mem);
+    h2_lua_audio_track_slot_release_carry(slot, job->host->config.allocator);
     result = h2_pal_audio_track_close(slot->track);
     slot->track = NULL;
     if (job->active_audio_track_count != 0u) {
@@ -1548,7 +1547,7 @@ static int audio_input_read_frame(lua_State *state, h2_lua_job_t *job,
     if (result != H2_PAL_ERR_WOULD_BLOCK && result != H2_PAL_ERR_TIMEOUT) {
       break;
     }
-    if (job->cancel_requested || atomic_load(&job->host->stopping) != 0) {
+    if (job->cancel_requested || h2_atomic_load(&job->host->stopping) != 0) {
       lua_pushnil(state);
       lua_pushliteral(state, "audio input: cancelled");
       return 2;
@@ -1684,7 +1683,7 @@ static int audio_input_close(lua_State *state) {
   h2_lua_job_t *job = audio_input_job(state);
   if (job != NULL) {
     h2_lua_job_release_audio_mic(job);
-    h2_pal_mem_free(job->host->config.runtime->mem, job->audio_mic_buffer);
+    h2_pal_mem_free(job->host->config.allocator, job->audio_mic_buffer);
     job->audio_mic_buffer = NULL;
     job->audio_mic_buffer_capacity = 0u;
     memset(&job->audio_mic_format, 0, sizeof(job->audio_mic_format));
@@ -1727,7 +1726,7 @@ static int audio_new_input(lua_State *state) {
   }
   job->audio_mic_buffer_capacity =
       (size_t)info.mic_format.frame_samples_per_channel * frame_bytes;
-  job->audio_mic_buffer = h2_pal_mem_alloc(job->host->config.runtime->mem,
+  job->audio_mic_buffer = h2_pal_mem_alloc(job->host->config.allocator,
                                            job->audio_mic_buffer_capacity);
   if (job->audio_mic_buffer == NULL) {
     job->audio_mic_buffer_capacity = 0u;
@@ -1738,7 +1737,7 @@ static int audio_new_input(lua_State *state) {
   job->audio_mic_format = info.mic_format;
   result = h2_lua_job_acquire_audio_mic(job);
   if (result != H2_PAL_OK) {
-    h2_pal_mem_free(job->host->config.runtime->mem, job->audio_mic_buffer);
+    h2_pal_mem_free(job->host->config.allocator, job->audio_mic_buffer);
     job->audio_mic_buffer = NULL;
     job->audio_mic_buffer_capacity = 0u;
     memset(&job->audio_mic_format, 0, sizeof(job->audio_mic_format));
@@ -1792,7 +1791,7 @@ static int audio_new_output(lua_State *state) {
     return 2;
   }
   slot->job = job;
-  h2_lua_audio_track_slot_release_carry(slot, job->host->config.runtime->mem);
+  h2_lua_audio_track_slot_release_carry(slot, job->host->config.allocator);
   slot->format = (h2_audio_pcm_format_t){
       .sample_rate_hz = (uint32_t)sample_rate,
       .frame_samples_per_channel = 0u,
@@ -1809,6 +1808,7 @@ static int audio_new_output(lua_State *state) {
   }
   config = (h2_audio_track_config_t){
       .name = "lua-output",
+      .allocator = job->host->config.allocator,
       .format = slot->format,
       .volume_factor_milli = (uint32_t)volume * 10u,
       .buffer_frames = 8u,
@@ -1964,7 +1964,7 @@ static int load_local_module(lua_State *state) {
       return luaL_error(state, "local module source limit reached");
     }
     if (result == H2_PAL_OK && !stat.is_dir) {
-      owned_source = h2_pal_mem_alloc(job->host->config.runtime->mem,
+      owned_source = h2_pal_mem_alloc(job->host->config.allocator,
                                       (size_t)stat.size + 1u);
       if (owned_source == NULL) {
         return luaL_error(state, "local module allocation failed");
@@ -1995,18 +1995,18 @@ static int load_local_module(lua_State *state) {
     }
   }
   if (source == NULL) {
-    h2_pal_mem_free(job->host->config.runtime->mem, owned_source);
+    h2_pal_mem_free(job->host->config.allocator, owned_source);
     lua_pushfstring(state, "\n\tno confined module '%s'", path);
     return 1;
   }
   if (memchr(source, '\0', source_size) != NULL) {
-    h2_pal_mem_free(job->host->config.runtime->mem, owned_source);
+    h2_pal_mem_free(job->host->config.allocator, owned_source);
     return luaL_error(state, "local module contains embedded NUL");
   }
   (void)snprintf(chunk_name, sizeof(chunk_name), "@%s", path);
   load_result = luaL_loadbufferx(state, (const char *)source, source_size,
                                  chunk_name, "t");
-  h2_pal_mem_free(job->host->config.runtime->mem, owned_source);
+  h2_pal_mem_free(job->host->config.allocator, owned_source);
   if (load_result != LUA_OK) {
     return lua_error(state);
   }

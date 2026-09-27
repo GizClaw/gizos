@@ -52,8 +52,8 @@ static int module_shutdown_requested(lua_State *state) {
   h2_bloomspeaker_lua_context_t *context = module_context(state);
   lua_pushboolean(
       state, context != NULL && context->shutdown_requested != NULL &&
-                 atomic_load_explicit(context->shutdown_requested,
-                                      memory_order_acquire));
+                 h2_atomic_load_explicit(context->shutdown_requested,
+                                      H2_ATOMIC_ACQUIRE));
   return 1;
 }
 

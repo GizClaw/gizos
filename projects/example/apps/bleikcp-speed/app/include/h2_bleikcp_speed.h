@@ -46,6 +46,9 @@ typedef struct h2_bleikcp_speed_config {
  *
  * The Runtime and callback user remain borrowed for the complete blocking
  * call. Client launchers must provide both advertising control callbacks;
+ * this app acquires one process-wide ikcp allocator-hooks reference at entry
+ * and releases it after the run stops. Callers serialize runs with the hooks
+ * lifecycle; a launcher does not initialize the app's atomic values.
  * Server launchers may provide advertise_server_service to share the existing
  * H2Loader advertising set. All launchers provide ready so image confirmation
  * happens only after the display and selected BLE role are operational. A null

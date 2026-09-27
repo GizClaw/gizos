@@ -149,6 +149,7 @@ cc_library(
     deps = [
         ":pixelroot32_audio",
         ":pixelroot32_compat",
+        "//libs/atomic",
         "//libs/pal",
     ],
 )
@@ -209,7 +210,10 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":game_audio"],
+    deps = [
+        ":game_audio",
+        "//libs/atomic/providers/c11",
+    ],
 )
 
 cc_test(

@@ -13,6 +13,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic/providers/c11",
         "//libs/drivers/motion/qmi8658",
         "//libs/drivers/nfc/fm175xx",
         "//libs/pal/providers/modem/quectel:quectel_modem",
@@ -31,7 +32,7 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal/providers/modem/simcom:simcom_modem"],
+    deps = ["//libs/atomic/providers/c11", "//libs/pal/providers/modem/simcom:simcom_modem"],
 )
 
 cc_test(
@@ -45,5 +46,5 @@ cc_test(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = ["//libs/pal/providers/modem/quectel:quectel_modem"],
+    deps = ["//libs/atomic/providers/c11", "//libs/pal/providers/modem/quectel:quectel_modem"],
 )

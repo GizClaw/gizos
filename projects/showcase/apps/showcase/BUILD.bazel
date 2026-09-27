@@ -38,6 +38,7 @@ cc_library(
     }),
     deps = [
         ":tasks",
+        "//libs/atomic",
         "//libs/gizclaw",
         "//libs/lvgl",
         "//libs/mp4_decoder",

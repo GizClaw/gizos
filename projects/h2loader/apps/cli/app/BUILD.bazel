@@ -34,6 +34,7 @@ cc_library(
     ],
     deps = [
         ":tasks",
+        "//libs/atomic",
         "//libs/bleikcp",
         "//libs/command",
         "//libs/h2loader_host",
@@ -58,6 +59,7 @@ cc_test(
     }),
     deps = [
         ":h2loader_cli_app",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/runtime",
     ],
@@ -79,6 +81,7 @@ cc_test(
     }),
     deps = [
         ":h2loader_cli_app",
+        "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/runtime",
     ],
@@ -100,6 +103,7 @@ cc_test(
     }),
     deps = [
         ":h2loader_cli_app",
+        "//libs/atomic/providers/c11",
         "//libs/runtime",
     ],
 )
@@ -120,6 +124,7 @@ cc_test(
     }),
     deps = [
         ":h2loader_cli_app",
+        "//libs/atomic/providers/c11",
         "//libs/runtime",
     ],
 )

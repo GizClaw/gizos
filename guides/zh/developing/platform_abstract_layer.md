@@ -4,6 +4,22 @@ Modem provider 的接收分帧、命令串行与 URC 并发合同见 [Modem URC]
 
 Platform Abstraction Layer（PAL）定义 GizOS 使用的平台抽象能力。PAL 把芯片 SDK、操作系统和具体硬件实现隔离在跨平台代码之外，使 `libs`、runtime 和 app 可以使用稳定的 C contract。
 
+`h2_pal_webrtc_peer_create_with_config()` 接收可选的 `h2_pal_webrtc_peer_config_t.allocator`，NULL 或旧 `peer_create()` 保持原行为；H2Peer 把它用于 peer 私有存储并传给 SCTP/SRTP，H2Peer 的 package allocation 和 atomic provider storage 各按自己的 contract 管理，不再注入 `control_mem`，未实现扩展的旧 provider 只在 NULL/default config 时回退到原创建入口；收到非 NULL allocator 时返回 `H2_PAL_ERR_UNSUPPORTED`，不能静默忽略分配要求。`h2_audio_track_config_t.allocator` 同样可选，Runtime wrapper 和 mixer 的音轨队列、scratch 跟随它，NULL 保持各层原有默认分配器。
+
+## 独立 Atomic Contract
+
+并发原子值由 `libs/atomic/include/h2_atomic.h` 定义，不属于 PAL API、PAL vtable 或 Memory PAL capability。调用方持有 typed wrapper 并直接调用 `h2_atomic_*` 符号；最终 target 必须链接一个平台实现，缺失实现会在链接时报错。动态 wrapper（包括 flag）先零初始化、调用 `init` 并检查结果，停止并发访问后销毁；初始化后不得复制。只有确实定义静态 backing 的 C11 翻译单元额外 include `h2_atomic_static.h`，使用统一的 `H2_ATOMIC_DEFINE_STATIC(kind, name, initial)` 定义每对象独立的普通 static backing 与 wrapper；普通 `h2_atomic.h` consumer 不被强制解析 C11 `_Atomic`。静态值定义后可直接使用，不经动态分配，也不在宏中指定平台属性；对它调用 `init` 返回 `INVALID_STATE`，`destroy` 不释放且不废弃 wrapper。C++ 动态实例仍使用 opaque wrapper 和显式 init/destroy，不把 `std::atomic` 布局当作 C11 ABI。Desktop/Browser 的 provider 基于 C11，iOS/Android 使用 pthread；ESP 的动态实际存储由 provider 分配在内部 RAM，普通文件级 static backing 则由链接布局放在内部 DRAM，即使 wrapper 所在的动态结构位于 PSRAM，也不会在 PSRAM 直接执行 C11 atomic。flag 的 `test_and_set`/`clear` 对每对象的 word-sized 存储直接执行原子交换/写入，没有 provider 全局 flag 锁。BK/JieLi 的动态初始化返回 `H2_ATOMIC_UNSUPPORTED`，静态对象的操作仍 trap；当前只要求这些 target 编译，不能把静态宏当成可运行的 provider。
+
+```c
+#include "h2_atomic_static.h"
+H2_ATOMIC_DEFINE_STATIC(int, s_count, 0);
+H2_ATOMIC_DEFINE_STATIC(bool, s_ready, false);
+H2_ATOMIC_DEFINE_STATIC(ptr, s_owner, NULL);
+H2_ATOMIC_DEFINE_STATIC(flag, s_claim, 0u);
+```
+
+C++ 若需要文件级 static backing，在共用头文件用类型通用的 `H2_ATOMIC_DECLARE_STATIC(kind, accessor)` 声明 C ABI typed accessor，在同 package 的 C11 翻译单元用 `H2_ATOMIC_DEFINE_STATIC_ACCESSOR(kind, accessor, initial)` 定义编译/链接期 backing 和 accessor。例如共用头文件写 `H2_ATOMIC_DECLARE_STATIC(flag, desktop_running);`，对应 C 文件写 `H2_ATOMIC_DEFINE_STATIC_ACCESSOR(flag, desktop_running, 0u);`。C++ 通过 `desktop_running()` 取得 typed wrapper 指针，按普通 `h2_atomic_*` API 使用；不转换 `std::atomic` 对象、不分配运行时存储，也不手写模块 global init。宏对同样适用于 int/bool/ptr 等 kind。GizClaw Desktop 的 run guard 和 stop bool 使用这一方式；C++ 动态实例继续显式 init/destroy。
+
 ## API Reference
 
 [API Reference](/references/pal)
@@ -153,7 +169,7 @@ task、timer 或 thread。
 
 BK3633 的 Preference provider 使用 BSP 提供的 declarative mapping，把 portable namespace/key 映射到 application-owned NVDS tag。Provider 初始化会拒绝重复 namespace/key、重复 tag、空名称、未知类型、非法最大长度以及 application range 外的 tag；未知 key 不会动态取得 tag。`BLOB` 保存原始 bytes，`STRING` 保存不含 NUL terminator 的 UTF-8 bytes，读取时使用调用方的 Memory PAL 分配并追加 terminator；`U32` 和 `I32` 使用四字节 little-endian，`BOOL` 使用单字节 `0` 或 `1`。NVDS 写入立即持久化，因此 `commit` 是成功 no-op，不承诺 multi-key transaction atomicity。
 
-ESP Preference 使用私有的 256 KiB `pref` LittleFS，不使用系统 NVS 保存新值。每个 key 是独立的 CRC record；set 通过同目录临时文件、sync、close 和 atomic rename 立即持久化，remove 立即 unlink，`commit` 因此是成功 no-op。这个合同只保证单 key replacement，不承诺多 key transaction atomicity。Provider 对 committed record bytes 施加 128 KiB logical budget；删除和替换产生的 LittleFS block 由 filesystem 正常回收，`NO_SPACE` 不触发 format 或清空 live data。
+ESP Preference 使用私有的 256 KiB `pref` LittleFS，不使用系统 NVS 保存新值。每个 key 是独立的 CRC record；set 通过同目录临时文件、sync、close 和 atomic rename 立即持久化，remove 立即 unlink，`commit` 因此是成功 no-op。这个合同只保证单 key replacement，不承诺多 key transaction atomicity。Provider 对 committed record bytes 施加 128 KiB logical budget；总量在缓存无效时由下一次需要写入的 set 遍历计算，之后由成功的 set 和 remove 增量维护；prepare、clear、原子写入失败或 unlink 失败会使缓存失效。safe-call 适配器将总量及其有效位传入 worker，并在返回时写回持久 store，使缓存有效时的 set 不再逐个打开全部已存 record；删除和替换产生的 LittleFS block 由 filesystem 正常回收，`NO_SPACE` 不触发 format 或清空 live data。
 
 BK3633 的 Disk provider 只暴露 BSP 声明的 raw Flash partition，portable caller 使用 partition-relative offset，不能传入 absolute address。Provider 对 partition ID、权限、整数 overflow、边界、erase alignment、write alignment、zero-length operation 和 buffer 做完整校验；firmware、Stack、factory identity、calibration、NVDS 和未声明区域不进入可见 partition inventory。
 
@@ -281,6 +297,8 @@ h2/pal/hal/h2_pal_wifi.h
 h2/pal/hal/h2_pal_wifi_csi.h
 h2/pal/hal/h2_pal_wifi_settings.h
 ```
+
+`h2_pal_power.h` 的 `h2_pal_power_set_deep_sleep_wake_timer()` 为下一次 `deep_sleep()` 设置定时唤醒，单位毫秒，从进入 deep sleep 时开始计时；传 0 恢复 provider 的默认唤醒策略。设置值在被改写或设备离开 deep sleep 前一直有效。定时唤醒后 boot info 的 source 为 `H2_PAL_POWER_BOOT_SOURCE_TIMER`。支持该能力的 provider 声明 `H2_PAL_POWER_CAPABILITY_DEEP_SLEEP_WAKE_TIMER`，其余返回 `H2_PAL_ERR_UNSUPPORTED`。释放 power hold 的物理关机不保留定时器。精度取决于 deep sleep 期间的 RTC 时钟源，片内 RC 慢时钟在长时间睡眠下可能有分钟级偏差，需要准点的调用方应自行对时。
 
 `h2_pal_periph.h` 描述 board 实际存在的硬件及其 `periph_id`。具体 GPIO、bus、address、channel 和 wiring 由 BSP 配置。
 

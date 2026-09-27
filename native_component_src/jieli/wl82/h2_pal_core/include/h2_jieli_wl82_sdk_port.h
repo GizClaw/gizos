@@ -36,6 +36,10 @@ void *h2_jieli_sdk_malloc(size_t size);
 void *h2_jieli_sdk_realloc(void *ptr, size_t size);
 void h2_jieli_sdk_free(void *ptr);
 
+/* Cross-core testset spinlock for the standalone atomic provider. */
+void h2_jieli_sdk_atomic_lock(void);
+void h2_jieli_sdk_atomic_unlock(void);
+
 /* ---- Layout-selected debug output ---------------------------------------- */
 
 /** Writes length-delimited log text through the SDK buffered debug producer.

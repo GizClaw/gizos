@@ -114,9 +114,10 @@ h2_pal_result_t h2_runtime_wait_notify(
     h2_runtime_t *runtime,
     uint32_t timeout_ms);
 
-/*
- * Reads how many events the Runtime's own producers (input, system events,
- * time adjustment, Test Control) discarded because the event queue was full,
+/**
+ * @brief Reads how many events the Runtime's own producers (input, system events,
+ * time adjustment, Test Control) discarded due to queue/pending capacity
+ * or terminal input publication failure,
  * since h2_runtime_init(). Custom events are not counted: their full queue is
  * returned to the poster instead. Held Button repeats are counted when
  * dropped; Button press/release edges are only counted once they are
@@ -124,8 +125,12 @@ h2_pal_result_t h2_runtime_wait_notify(
  *
  * The count wraps at UINT32_MAX; compare two reads by unsigned difference.
  * Drops are also reported by at most one WARN log line per second. Any task
- * may call this. Returns H2_PAL_ERR_INVALID_ARG for a NULL or uninitialized
- * runtime or a NULL out_count.
+ * may call this before Runtime deinit; callers must stop concurrent access
+ * before deinit. Returns H2_PAL_ERR_INVALID_ARG for a NULL or uninitialized
+ * runtime or a NULL out_count. A non-NULL output is cleared on failure.
+ * @param runtime Borrowed initialized Runtime.
+ * @param out_count Caller-owned output counter.
+ * @return H2_PAL_OK on success; H2_PAL_ERR_INVALID_ARG for invalid arguments.
  */
 h2_pal_result_t h2_runtime_dropped_event_count(
     const h2_runtime_t *runtime,

@@ -13,7 +13,9 @@
 typedef struct backend {
   h2_pal_webrtc_api_t api;
   unsigned creates, closes, polls, releases, observations;
+  unsigned channel_creates, channel_closes;
   int peer_token, channel_token;
+  int channel_tokens[24];
   h2_pal_result_t poll_result, send_result;
 } backend_t;
 static backend_t *active_backend;
@@ -64,6 +66,24 @@ static h2_pal_result_t send_channel(h2_pal_webrtc_channel_t *channel,
   assert(size == 1 && bytes[0] == 42 && !text);
   return b->send_result;
 }
+static h2_pal_result_t create_channel(
+    h2_pal_webrtc_peer_t *peer,
+    const h2_pal_webrtc_channel_config_t *config,
+    h2_pal_webrtc_channel_t **out) {
+  backend_t *b = active_backend;
+  assert(peer == (h2_pal_webrtc_peer_t *)&b->peer_token);
+  assert(config->label.len == 4 && out != NULL);
+  assert(b->channel_creates < 24);
+  *out = (h2_pal_webrtc_channel_t *)&b->channel_tokens[b->channel_creates++];
+  return H2_PAL_OK;
+}
+static void close_channel(h2_pal_webrtc_channel_t *channel) {
+  backend_t *b = active_backend;
+  uintptr_t first = (uintptr_t)&b->channel_tokens[0];
+  uintptr_t end = (uintptr_t)&b->channel_tokens[24];
+  assert((uintptr_t)channel >= first && (uintptr_t)channel < end);
+  ++b->channel_closes;
+}
 static void observe(void *user, const h2_pal_webrtc_event_t *event) {
   backend_t *b = user;
   assert(event->peer != (h2_pal_webrtc_peer_t *)&b->peer_token);
@@ -75,7 +95,9 @@ static const h2_pal_webrtc_vtable_t backend_vtable = {
     .peer_create = create_peer,
     .peer_close = close_peer,
     .peer_poll = poll_peer,
-    .channel_send = send_channel};
+    .peer_create_data_channel = create_channel,
+    .channel_send = send_channel,
+    .channel_close = close_channel};
 static void increment(void *user) { ++*(unsigned *)user; }
 int main(void) {
   h2_app_test_mem_t mem;
@@ -157,6 +179,23 @@ int main(void) {
     b->poll_result = H2_PAL_ERR_TIMEOUT;
     assert(h2_pal_webrtc_peer_poll(api, peers[i], 7, &event) ==
            H2_PAL_ERR_TIMEOUT);
+    const h2_pal_webrtc_channel_config_t channel_config = {
+        .label = {.data = "test", .len = 4}};
+    h2_pal_webrtc_channel_t *created[20] = {0};
+    mem.fail_at = mem.calls + 1;
+    h2_pal_webrtc_channel_t *failed = NULL;
+    assert(h2_pal_webrtc_peer_create_data_channel(
+               api, peers[i], &channel_config, &failed) == H2_PAL_ERR_NO_MEMORY);
+    assert(failed == NULL && b->channel_closes == 1);
+    for (size_t j = 0; j < 20; ++j) {
+      assert(h2_pal_webrtc_peer_create_data_channel(
+                 api, peers[i], &channel_config, &created[j]) == H2_PAL_OK);
+      assert(created[j] != NULL);
+      for (size_t k = 0; k < j; ++k)
+        assert(created[j] != created[k]);
+      h2_pal_webrtc_channel_close(api, created[j]);
+    }
+    assert(b->channel_creates == 21 && b->channel_closes == 21);
   }
   for (unsigned i = 0; i < 2; ++i) {
     active_backend = &backends[i];

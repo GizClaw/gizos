@@ -1,4 +1,5 @@
 #include "sctp.h"
+#include "h2_test_allocator.h"
 
 #ifdef NDEBUG
 #undef NDEBUG
@@ -44,18 +45,15 @@ typedef struct message_capture {
 } message_capture_t;
 
 static void *test_alloc(void *user, size_t len) {
-    (void)user;
-    return malloc(len);
+    return h2_test_alloc(user, len);
 }
 
 static void *test_realloc(void *user, void *ptr, size_t len) {
-    (void)user;
-    return realloc(ptr, len);
+    return h2_test_realloc(user, ptr, len);
 }
 
 static void test_free(void *user, void *ptr) {
-    (void)user;
-    free(ptr);
+    h2_test_free(user, ptr);
 }
 
 static const h2_pal_mem_vtable_t test_mem_vtable = {
@@ -238,8 +236,10 @@ static int capture_remote_channel(const SctpRemoteChannel *channel,
 }
 
 int main(void) {
+    h2_test_allocator_t arena;
+    h2_test_allocator_init(&arena);
     const h2_pal_mem_api_t mem = {
-        .user = NULL,
+        .user = &arena,
         .vtable = &test_mem_vtable,
     };
     uint64_t now_ms = 10u;
@@ -258,6 +258,7 @@ int main(void) {
     Sctp sctp;
     memset(&sctp, 0, sizeof(sctp));
     sctp.mem = &mem;
+    sctp.allocator = &mem;
     sctp.api = &api;
     sctp.time = &time;
     sctp.userdata = &capture;
@@ -270,6 +271,7 @@ int main(void) {
     memset(&dtls, 0, sizeof(dtls));
     dtls.role = DTLS_SRTP_ROLE_SERVER;
     assert(sctp_create_association(&sctp, &dtls) == 0);
+    assert(fake.association.config.allocator == &mem);
     assert(sctp_is_connected(&sctp));
     assert(sctp_service(&sctp) == 0);
     char input_packet[] = {0x13u};
@@ -506,5 +508,8 @@ int main(void) {
     sctp_destroy_association(&sctp);
     assert(sctp.association == NULL);
     assert(sctp.stream_table == NULL);
+    assert(h2_atomic_load(&arena.calls) > 0u);
+    assert(h2_atomic_load(&arena.live) == 0u);
+    h2_test_allocator_destroy(&arena);
     return 0;
 }

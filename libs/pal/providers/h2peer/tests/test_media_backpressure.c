@@ -88,14 +88,10 @@ static void initialize(fixture_t *f) {
   f->track = (h2_pal_webrtc_track_t){.user = f, .vtable = &track};
   f->peer.owner = &f->owner;
   f->peer.media_track = &f->track;
-  atomic_init(&f->owner.refs, 1u);
-  atomic_init(&f->peer.refs, 1u);
-  atomic_init(&f->peer.state, H2_PAL_WEBRTC_PEER_CONNECTED);
-  atomic_init(&f->peer.closed, 0);
-  atomic_init(&f->peer.network_transport_result, H2_PAL_OK);
-  atomic_init(&f->peer.network_error_reported, 0);
-  atomic_init(&f->peer.network_event_count, 0u);
-  atomic_init(&f->peer.network_event_bytes, 0u);
+  assert(h2_atomic_uint_init(&f->owner.refs, 1u) == H2_ATOMIC_OK);
+  assert(h2_peer_connection_atomic_init(&f->peer) == H2_PAL_OK);
+  h2_atomic_int_store(&f->peer.state, H2_PAL_WEBRTC_PEER_CONNECTED,
+                      H2_ATOMIC_SEQ_CST);
   f->write_result = H2_PAL_ERR_WOULD_BLOCK;
 }
 
@@ -107,8 +103,10 @@ static void cleanup(fixture_t *f) {
          f->peer.media_receive_tail == NULL);
   assert(f->peer.media_receive_count == 0u);
   assert(f->allocations == f->frees);
-  assert(atomic_load(&f->owner.refs) == 1u);
-  assert(atomic_load(&f->peer.refs) == 1u);
+  assert(h2_atomic_load(&f->owner.refs) == 1u);
+  assert(h2_atomic_load(&f->peer.refs) == 1u);
+  h2_peer_connection_atomic_destroy(&f->peer);
+  h2_atomic_uint_destroy(&f->owner.refs);
 }
 
 static void fifo_and_packet_loss(void) {
@@ -121,7 +119,7 @@ static void fifo_and_packet_loss(void) {
   h2_peer_webrtc_emit_opus_frame(&f.peer, &packet, 1u);
   packet = 0x56;
   assert(f.calls == 1u && f.peer.media_receive_count == 3u);
-  assert(atomic_load(&f.peer.network_transport_result) == H2_PAL_OK);
+  assert(h2_atomic_load(&f.peer.network_transport_result) == H2_PAL_OK);
   assert(h2_peer_webrtc_service_media(&f.peer) == H2_PAL_OK);
   assert(f.calls == 2u && f.peer.media_receive_count == 3u);
   f.write_result = H2_PAL_OK;
@@ -158,7 +156,7 @@ static void limits_and_cleanup(void) {
     h2_peer_webrtc_emit_opus_frame(&f.peer, &packet, 1u);
   }
   assert(f.peer.media_receive_count == H2_PEER_MEDIA_RECEIVE_LIMIT);
-  assert(atomic_load(&f.peer.network_transport_result) == H2_PAL_OK);
+  assert(h2_atomic_load(&f.peer.network_transport_result) == H2_PAL_OK);
   f.write_result = H2_PAL_OK;
   while (f.peer.media_receive_count != 0u)
     assert(h2_peer_webrtc_service_media(&f.peer) == H2_PAL_OK);
@@ -174,7 +172,7 @@ static void failures(void) {
   const uint8_t packet = 0x42;
   f.fail_next = 1;
   h2_peer_webrtc_emit_opus_frame(&f.peer, &packet, 1u);
-  assert(atomic_load(&f.peer.network_transport_result) == H2_PAL_ERR_NO_MEMORY);
+  assert(h2_atomic_load(&f.peer.network_transport_result) == H2_PAL_ERR_NO_MEMORY);
   assert(f.peer.media_receive_count == 0u);
   cleanup(&f);
 
@@ -190,7 +188,7 @@ static void failures(void) {
   initialize(&f);
   h2_peer_webrtc_emit_opus_frame(&f.peer, &packet,
                                  H2_PAL_WEBRTC_OPUS_MAX_PACKET_SIZE + 1u);
-  assert(atomic_load(&f.peer.network_transport_result) == H2_PAL_ERR_FORMAT &&
+  assert(h2_atomic_load(&f.peer.network_transport_result) == H2_PAL_ERR_FORMAT &&
          f.calls == 0u);
   cleanup(&f);
 

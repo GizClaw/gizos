@@ -531,6 +531,13 @@ static int corehttp_request(
                    ? H2_PAL_ERR_INVALID_ARG
                    : rc;
     }
+    /* Keep scratch ownership local to this request, including redirects and
+     * retries; concurrent requests must not change the shared provider. */
+    h2_corehttp_t request_provider = *provider;
+    if (request->allocator != NULL) {
+        request_provider.config.allocator = request->allocator;
+    }
+    provider = &request_provider;
     h2_pal_http_response_reset(out_response);
     uint64_t start_ms = 0u;
     rc = h2_pal_time_get_monotonic_ms(provider->config.time, &start_ms);

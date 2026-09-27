@@ -1,6 +1,7 @@
 #include <assert.h>
 #include <pthread.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
+#include <stdlib.h>
 #include <stdint.h>
 #include <string.h>
 #include "h2/pal/net/h2_pal_netif.h"
@@ -23,7 +24,7 @@ struct lan_setting {
 };
 struct netif_info { uint32_t ip, gw, netmask; };
 static _Thread_local int tcpip_owner;
-static atomic_int radio_pin;
+static h2_atomic_int_t radio_pin;
 static int offline, dispatch_error, generation_error;
 void wifi_get_mode_cur_info(struct wifi_mode_info *mode) { mode->mode = 1; }
 int wifi_is_on(void) { return !offline; }
@@ -39,7 +40,7 @@ struct lan_setting *net_get_lan_info(int id) {
     return &lan;
 }
 void lwip_get_netif_info(u8_t id, struct netif_info *info) {
-    assert(id == WIFI_NETIF && tcpip_owner && atomic_load(&radio_pin));
+    assert(id == WIFI_NETIF && tcpip_owner && h2_atomic_load(&radio_pin));
     const uint8_t ip[4] = {1, 2, 3, 4};
     const uint8_t mask[4] = {255, 255, 255, 0};
     const uint8_t gateway[4] = {1, 2, 3, 1};
@@ -48,7 +49,7 @@ void lwip_get_netif_info(u8_t id, struct netif_info *info) {
     memcpy(&info->gw, gateway, 4);
 }
 const ip_addr_t *dns_getserver(u8_t index) {
-    assert(tcpip_owner && atomic_load(&radio_pin));
+    assert(tcpip_owner && h2_atomic_load(&radio_pin));
     static const ip_addr_t servers[2] = {{0x08080808}, {0}};
     return &servers[index];
 }
@@ -61,7 +62,7 @@ static void *dispatch_worker(void *arg) {
     return NULL;
 }
 int tcpip_callback_wait(void (*fn)(void *), void *arg) {
-    assert(!tcpip_owner && atomic_load(&radio_pin));
+    assert(!tcpip_owner && h2_atomic_load(&radio_pin));
     if (dispatch_error) return -1;
     struct dispatch dispatch = {fn, arg};
     pthread_t worker;
@@ -70,7 +71,7 @@ int tcpip_callback_wait(void (*fn)(void *), void *arg) {
     return 0;
 }
 int h2_jieli_wifi_netif_begin(h2_pal_netif_status_t *status, uint32_t *generation) {
-    assert(atomic_exchange(&radio_pin, 1) == 0);
+    assert(h2_atomic_exchange(&radio_pin, 1) == 0);
     memset(status, 0, sizeof(*status));
     status->ref.type = H2_PAL_NETIF_REF_NAME;
     status->ref.kind = status->kind = H2_PAL_NETIF_KIND_WIFI_STA;
@@ -81,18 +82,24 @@ int h2_jieli_wifi_netif_begin(h2_pal_netif_status_t *status, uint32_t *generatio
     return H2_PAL_OK;
 }
 int h2_jieli_wifi_netif_end(uint32_t generation) {
-    assert(generation == 1 && atomic_exchange(&radio_pin, 0) == 1);
+    assert(generation == 1 && h2_atomic_exchange(&radio_pin, 0) == 1);
     return generation_error ? H2_PAL_ERR_BUSY : H2_PAL_OK;
 }
 /* REAL_PROVIDER */
 static h2_pal_result_t subscriber(void *user, const h2_pal_netif_ref_t *ref,
     const h2_pal_netif_status_t *status) {
     (void)user;
-    assert(!atomic_load(&radio_pin));
+    assert(!h2_atomic_load(&radio_pin));
     assert(strcmp(ref->name, "wl0") == 0 && status->dns_count == 1);
     return H2_PAL_ERR_IO;
 }
+static void h2_fixture_atomic_cleanup(void) {
+    h2_atomic_destroy(&radio_pin);
+}
 int main(void) {
+    assert(atexit(h2_fixture_atomic_cleanup) == 0);
+    assert(h2_atomic_init(&radio_pin, 0) == H2_ATOMIC_OK);
+
     h2_pal_netif_status_t checked;
     h2_pal_netif_ref_t ref = {.type = H2_PAL_NETIF_REF_NAME};
     memset(ref.name, 'x', sizeof(ref.name));
@@ -108,7 +115,7 @@ int main(void) {
     ref.type = (h2_pal_netif_ref_type_t)99;
     assert(h2_jieli_netif_get_status(NULL, &ref, &checked) == H2_PAL_ERR_INVALID_ARG);
     h2_pal_wifi_sta_status_t sta = {.state = H2_PAL_WIFI_STA_STATE_GOT_IP};
-    atomic_store(&radio_pin, 1);
+    h2_atomic_store(&radio_pin, 1);
     update_sta_snapshot(&sta);
     assert(sta.ip_valid && sta.ip.ip4 == 0x01020304);
     dispatch_error = 1;
@@ -116,27 +123,27 @@ int main(void) {
     update_sta_snapshot(&sta);
     assert(!sta.ip_valid);
     dispatch_error = 0;
-    atomic_store(&radio_pin, 0);
+    h2_atomic_store(&radio_pin, 0);
     h2_pal_netif_status_t status;
     assert(status_for_wifi(&status) == H2_PAL_OK);
     assert(status.ipv4.ip[0] == 1 && status.ipv4.ip[3] == 4);
     assert(status.dns_count == 1 && status.dns[0].addr.ip[0] == 8);
-    assert(!atomic_load(&radio_pin));
+    assert(!h2_atomic_load(&radio_pin));
     assert(h2_jieli_netif_list(NULL, NULL, subscriber, NULL) == H2_PAL_ERR_IO);
     tcpip_owner = 1;
     assert(status_for_wifi(&status) == H2_PAL_OK);
     tcpip_owner = 0;
     dispatch_error = 1;
     assert(status_for_wifi(&status) == H2_PAL_ERR_IO);
-    assert(!atomic_load(&radio_pin));
+    assert(!h2_atomic_load(&radio_pin));
     dispatch_error = 0;
     generation_error = 1;
     assert(status_for_wifi(&status) == H2_PAL_ERR_BUSY);
-    assert(!atomic_load(&radio_pin));
+    assert(!h2_atomic_load(&radio_pin));
     generation_error = 0;
     offline = 1;
     assert(status_for_wifi(&status) == H2_PAL_OK && status.flags == 0);
-    assert(status.dns_count == 0 && !atomic_load(&radio_pin));
+    assert(status.dns_count == 0 && !h2_atomic_load(&radio_pin));
     assert(h2_jieli_netif_get_dns(NULL, NULL, NULL, 0, &(size_t){0}) == H2_PAL_OK);
     return 0;
 }

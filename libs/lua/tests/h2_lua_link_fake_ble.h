@@ -15,7 +15,7 @@
 #include "h2_runtime.h"
 
 #include <pthread.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stddef.h>
 #include <stdint.h>
 
@@ -45,7 +45,7 @@ typedef struct fake_air fake_air_t;
 typedef struct fake_terminal_gate {
   pthread_mutex_t mutex;
   pthread_cond_t cond;
-  atomic_int reached;
+  h2_atomic_int_t reached;
   int released;
 } fake_terminal_gate_t;
 

@@ -440,6 +440,7 @@ int sctp_create_association(Sctp* sctp, DtlsSrtp* dtls_srtp) {
   sctp->remote_stream_first =
       dtls_srtp->role == DTLS_SRTP_ROLE_SERVER ? 0u : 1u;
   const h2_pal_sctp_association_config_t config = {
+      .allocator = sctp->allocator,
       .role = dtls_srtp->role == DTLS_SRTP_ROLE_SERVER
                   ? H2_PAL_SCTP_ROLE_PASSIVE
                   : H2_PAL_SCTP_ROLE_ACTIVE,

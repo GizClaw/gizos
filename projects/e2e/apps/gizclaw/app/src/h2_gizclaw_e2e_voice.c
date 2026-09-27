@@ -3,7 +3,7 @@
 #include "h2_app_test_audio_fake.h"
 
 #include <inttypes.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdio.h>
 #include <string.h>
 
@@ -47,14 +47,14 @@ typedef struct voice_state {
   uint64_t capture_next_restart_ms, delivery_next_ms;
   size_t read_offset;
   unsigned read_round;
-  atomic_uint clips_allowed;
-  atomic_bool capture_enabled, block_playback, active;
-  atomic_size_t captured, written, write_attempts;
-  atomic_size_t read_attempts, replacement_written;
-  atomic_bool replacement_non_silent;
-  atomic_bool non_silent;
-  atomic_int hook_error, terminal_result, terminal_kind;
-  atomic_uint completions, rounds;
+  h2_atomic_uint_t clips_allowed;
+  h2_atomic_bool_t capture_enabled, block_playback, active;
+  h2_atomic_size_t captured, written, write_attempts;
+  h2_atomic_size_t read_attempts, replacement_written;
+  h2_atomic_bool_t replacement_non_silent;
+  h2_atomic_bool_t non_silent;
+  h2_atomic_int_t hook_error, terminal_result, terminal_kind;
+  h2_atomic_uint_t completions, rounds;
   uint64_t generation;
   bool hearing;
   uint64_t heard_ms;
@@ -62,6 +62,48 @@ typedef struct voice_state {
   h2_gizclaw_resp_storage_t storage;
   history_snapshot_t before;
 } voice_state_t;
+
+static void voice_atomics_destroy(voice_state_t *state) {
+  h2_atomic_destroy(&state->clips_allowed);
+  h2_atomic_destroy(&state->capture_enabled);
+  h2_atomic_destroy(&state->block_playback);
+  h2_atomic_destroy(&state->active);
+  h2_atomic_destroy(&state->captured);
+  h2_atomic_destroy(&state->written);
+  h2_atomic_destroy(&state->write_attempts);
+  h2_atomic_destroy(&state->read_attempts);
+  h2_atomic_destroy(&state->replacement_written);
+  h2_atomic_destroy(&state->replacement_non_silent);
+  h2_atomic_destroy(&state->non_silent);
+  h2_atomic_destroy(&state->hook_error);
+  h2_atomic_destroy(&state->terminal_result);
+  h2_atomic_destroy(&state->terminal_kind);
+  h2_atomic_destroy(&state->completions);
+  h2_atomic_destroy(&state->rounds);
+}
+
+static int voice_atomics_init(voice_state_t *state) {
+  if (h2_atomic_init(&state->clips_allowed, 0u) != H2_ATOMIC_OK ||
+      h2_atomic_init(&state->capture_enabled, false) != H2_ATOMIC_OK ||
+      h2_atomic_init(&state->block_playback, false) != H2_ATOMIC_OK ||
+      h2_atomic_init(&state->active, false) != H2_ATOMIC_OK ||
+      h2_atomic_init(&state->captured, 0u) != H2_ATOMIC_OK ||
+      h2_atomic_init(&state->written, 0u) != H2_ATOMIC_OK ||
+      h2_atomic_init(&state->write_attempts, 0u) != H2_ATOMIC_OK ||
+      h2_atomic_init(&state->read_attempts, 0u) != H2_ATOMIC_OK ||
+      h2_atomic_init(&state->replacement_written, 0u) != H2_ATOMIC_OK ||
+      h2_atomic_init(&state->replacement_non_silent, false) != H2_ATOMIC_OK ||
+      h2_atomic_init(&state->non_silent, false) != H2_ATOMIC_OK ||
+      h2_atomic_init(&state->hook_error, H2_PAL_OK) != H2_ATOMIC_OK ||
+      h2_atomic_init(&state->terminal_result, H2_PAL_OK) != H2_ATOMIC_OK ||
+      h2_atomic_init(&state->terminal_kind, H2_GIZCLAW_OPERATION_FINISHED) != H2_ATOMIC_OK ||
+      h2_atomic_init(&state->completions, 0u) != H2_ATOMIC_OK ||
+      h2_atomic_init(&state->rounds, 0u) != H2_ATOMIC_OK) {
+    voice_atomics_destroy(state);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  return H2_PAL_OK;
+}
 
 static _Thread_local voice_state_t *s_polling;
 
@@ -126,20 +168,20 @@ static int step(voice_state_t *state) {
     rc = clock_now(state, &now);
     if (rc == H2_PAL_OK && now - state->heard_ms >= VOICE_QUIET_MS) {
       state->hearing = false;
-      atomic_fetch_add(&state->rounds, 1u);
+      h2_atomic_fetch_add(&state->rounds, 1u);
     }
   }
   if (rc == H2_PAL_OK)
     rc = poll_service(state);
   if (rc == H2_PAL_OK)
-    rc = atomic_load(&state->hook_error);
+    rc = h2_atomic_load(&state->hook_error);
   if (rc == H2_PAL_OK)
     rc = h2_pal_time_sleep_ms(state->fixture->time, 1u);
   return rc;
 }
 
 static void capture_enable(voice_state_t *state, bool enabled) {
-  atomic_store(&state->capture_enabled, enabled);
+  h2_atomic_store(&state->capture_enabled, enabled);
   h2_app_test_audio_set_capture_active(state->audio_wrapper, enabled);
 }
 
@@ -159,8 +201,8 @@ static h2_pal_result_t read_pcm(void *user, uint8_t *out, size_t capacity,
   if (state == NULL || out == NULL || out_len == NULL || capacity < 2u)
     return H2_PAL_ERR_INVALID_ARG;
   *out_len = 0u;
-  atomic_fetch_add(&state->read_attempts, 1u);
-  if (!atomic_load(&state->capture_enabled))
+  h2_atomic_fetch_add(&state->read_attempts, 1u);
+  if (!h2_atomic_load(&state->capture_enabled))
     return H2_PAL_ERR_WOULD_BLOCK;
   const h2_pal_audio_api_t *audio = h2_app_test_audio_api(state->audio_wrapper);
   if (!state->mic_started) {
@@ -171,7 +213,7 @@ static h2_pal_result_t read_pcm(void *user, uint8_t *out, size_t capacity,
   }
   if (state->read_offset == state->fixture->pcm_len &&
       state->capture_offset == state->capture_size &&
-      state->read_round + 1u < atomic_load(&state->clips_allowed)) {
+      state->read_round + 1u < h2_atomic_load(&state->clips_allowed)) {
     uint64_t now;
     int rc = clock_now(state, &now);
     if (rc != H2_PAL_OK)
@@ -234,15 +276,15 @@ static h2_pal_result_t write_pcm(void *user, const uint8_t *pcm, size_t len) {
   voice_state_t *state = user;
   if (state == NULL || pcm == NULL || len == 0u || (len & 1u) != 0u)
     return H2_PAL_ERR_INVALID_ARG;
-  atomic_fetch_add(&state->write_attempts, 1u);
-  if (atomic_load(&state->block_playback))
+  h2_atomic_fetch_add(&state->write_attempts, 1u);
+  if (h2_atomic_load(&state->block_playback))
     return H2_PAL_ERR_WOULD_BLOCK;
   for (size_t i = 0u; i < len; ++i)
     if (pcm[i] != 0u) {
-      atomic_store(&state->non_silent, true);
+      h2_atomic_store(&state->non_silent, true);
       break;
     }
-  atomic_fetch_add(&state->written, len);
+  h2_atomic_fetch_add(&state->written, len);
   return H2_PAL_OK;
 }
 
@@ -253,10 +295,10 @@ static h2_pal_result_t replacement_write(void *user, const uint8_t *pcm,
     return H2_PAL_ERR_INVALID_ARG;
   for (size_t i = 0u; i < len; ++i)
     if (pcm[i] != 0u) {
-      atomic_store(&state->replacement_non_silent, true);
+      h2_atomic_store(&state->replacement_non_silent, true);
       break;
     }
-  atomic_fetch_add(&state->replacement_written, len);
+  h2_atomic_fetch_add(&state->replacement_written, len);
   return H2_PAL_OK;
 }
 
@@ -264,8 +306,8 @@ static h2_pal_result_t replacement_write(void *user, const uint8_t *pcm,
  * produces the other ends independently on its audio tasks. */
 static int pump_pcm(voice_state_t *state) {
   int rc = H2_PAL_OK;
-  if (state->bound && atomic_load(&state->capture_enabled) &&
-      atomic_load(&state->active)) {
+  if (state->bound && h2_atomic_load(&state->capture_enabled) &&
+      h2_atomic_load(&state->active)) {
     if (state->mic_pending_len == 0u)
       rc = read_pcm(state, state->mic_pending, sizeof(state->mic_pending),
                     &state->mic_pending_len);
@@ -277,7 +319,7 @@ static int pump_pcm(voice_state_t *state) {
           evidence("h2_gizclaw_pcm_track_write", "voice-pump", rc);
           state->mic_write_reported = true;
         }
-        atomic_fetch_add(&state->captured, state->mic_voice_len);
+        h2_atomic_fetch_add(&state->captured, state->mic_voice_len);
         state->mic_pending_len = 0u;
       }
     }
@@ -285,7 +327,7 @@ static int pump_pcm(voice_state_t *state) {
       return rc;
   }
   if ((!state->bound && !state->replacement_bound) ||
-      atomic_load(&state->block_playback))
+      h2_atomic_load(&state->block_playback))
     return H2_PAL_OK;
   uint64_t now = 0u;
   rc = clock_now(state, &now);
@@ -388,8 +430,8 @@ static h2_pal_result_t on_event(void *user,
   voice_state_t *state = user;
   if (s_polling != state || conversation != state->conversation ||
       event == NULL || event->generation != state->generation ||
-      !atomic_load(&state->active)) {
-    atomic_store(&state->hook_error, H2_PAL_ERR_INVALID_STATE);
+      !h2_atomic_load(&state->active)) {
+    h2_atomic_store(&state->hook_error, H2_PAL_ERR_INVALID_STATE);
     return H2_PAL_ERR_INVALID_STATE;
   }
   int rc = H2_PAL_OK;
@@ -410,7 +452,7 @@ static h2_pal_result_t on_event(void *user,
     break;
   }
   if (rc != H2_PAL_OK)
-    atomic_store(&state->hook_error, rc);
+    h2_atomic_store(&state->hook_error, rc);
   return rc;
 }
 
@@ -419,14 +461,14 @@ static void on_complete(void *user, h2_gizclaw_conversation_t *conversation,
   voice_state_t *state = user;
   if (s_polling != state || conversation != state->conversation ||
       result == NULL || result->identity != state->generation ||
-      !atomic_load(&state->active))
-    atomic_store(&state->hook_error, H2_PAL_ERR_INVALID_STATE);
+      !h2_atomic_load(&state->active))
+    h2_atomic_store(&state->hook_error, H2_PAL_ERR_INVALID_STATE);
   if (result != NULL) {
-    atomic_store(&state->terminal_result, result->result);
-    atomic_store(&state->terminal_kind, result->terminal_kind);
+    h2_atomic_store(&state->terminal_result, result->result);
+    h2_atomic_store(&state->terminal_kind, result->terminal_kind);
   }
-  atomic_fetch_add(&state->completions, 1u);
-  atomic_store(&state->active, false);
+  h2_atomic_fetch_add(&state->completions, 1u);
+  h2_atomic_store(&state->active, false);
 }
 
 static void reset_capture(voice_state_t *state, bool realtime) {
@@ -437,14 +479,14 @@ static void reset_capture(voice_state_t *state, bool realtime) {
   state->mic_pending_len = state->mic_voice_len = 0u;
   state->hearing = false;
   state->heard_ms = 0u;
-  atomic_store(&state->clips_allowed, 1u);
-  atomic_store(&state->captured, 0u);
-  atomic_store(&state->written, 0u);
-  atomic_store(&state->write_attempts, 0u);
-  atomic_store(&state->non_silent, false);
-  atomic_store(&state->hook_error, H2_PAL_OK);
-  atomic_store(&state->completions, 0u);
-  atomic_store(&state->rounds, 0u);
+  h2_atomic_store(&state->clips_allowed, 1u);
+  h2_atomic_store(&state->captured, 0u);
+  h2_atomic_store(&state->written, 0u);
+  h2_atomic_store(&state->write_attempts, 0u);
+  h2_atomic_store(&state->non_silent, false);
+  h2_atomic_store(&state->hook_error, H2_PAL_OK);
+  h2_atomic_store(&state->completions, 0u);
+  h2_atomic_store(&state->rounds, 0u);
   capture_enable(state, true);
 }
 
@@ -473,14 +515,14 @@ static int begin(voice_state_t *state) {
   if (capture_rc != H2_PAL_OK)
     return capture_rc;
   ++state->generation;
-  atomic_store(&state->active, true);
+  h2_atomic_store(&state->active, true);
   h2_gizclaw_session_t *session = voice_session(state);
   int rc = evidence(session ? "h2_gizclaw_session_audio_start" : "h2_gizclaw_service_audio_start", "voice",
                     session ? h2_gizclaw_session_audio_start(session) : h2_gizclaw_service_audio_start(state->service));
   if (rc == H2_PAL_OK && session != NULL)
     rc = session_input_state(state, true);
   if (rc != H2_PAL_OK)
-    atomic_store(&state->active, false);
+    h2_atomic_store(&state->active, false);
   return rc;
 }
 
@@ -502,7 +544,7 @@ static int end_input(voice_state_t *state) {
 static int configure_mode(voice_state_t *state, bool realtime) {
   h2_gizclaw_session_t *session = voice_session(state);
   if (session != NULL) {
-    if (atomic_load(&state->active))
+    if (h2_atomic_load(&state->active))
       return H2_PAL_ERR_BUSY;
     if (state->conversation != NULL) {
       h2_gizclaw_session_conversation_release(session, state->conversation);
@@ -572,17 +614,17 @@ static int conversation_rounds(voice_state_t *state, bool realtime) {
   /* A push-to-talk generation completes once its input is sent; the reply
    * arrives afterwards as downstream audio, so keep pumping until heard. */
   while (rc == H2_PAL_OK &&
-         (atomic_load(&state->active) ||
-          (!realtime && ended && atomic_load(&state->rounds) == 0u))) {
+         (h2_atomic_load(&state->active) ||
+          (!realtime && ended && h2_atomic_load(&state->rounds) == 0u))) {
     rc = within(state, realtime && ended ? hangup_started : started,
                 realtime && ended ? DISPOSE_TIMEOUT_MS : VOICE_TIMEOUT_MS);
     if (rc != H2_PAL_OK)
       break;
-    if (realtime && atomic_load(&state->rounds) == 1u)
-      atomic_store(&state->clips_allowed, 2u);
+    if (realtime && h2_atomic_load(&state->rounds) == 1u)
+      h2_atomic_store(&state->clips_allowed, 2u);
     const bool ready =
-        realtime ? atomic_load(&state->rounds) == 2u
-                 : atomic_load(&state->captured) == state->fixture->pcm_len;
+        realtime ? h2_atomic_load(&state->rounds) == 2u
+                 : h2_atomic_load(&state->captured) == state->fixture->pcm_len;
     if (!ended && ready) {
       if (realtime) {
         /* Telephone semantics: the caller hangs up after hearing two
@@ -607,27 +649,27 @@ static int conversation_rounds(voice_state_t *state, bool realtime) {
    * Track still queued at cancel. Either way the Track ends empty. */
   if (rc == H2_PAL_OK)
     rc = drain_completed_output(state);
-  const size_t written = atomic_load(&state->written);
+  const size_t written = h2_atomic_load(&state->written);
   uint8_t leftover[2];
   /* Playback evidence comes from the speaker pump: write_pcm() counts every
    * frame it read from the Track and flags any non-zero sample, so an
    * all-zero reply (SILENT_REPLY) fails here even though it drained. */
   const bool playback_matches =
-      rc == H2_PAL_OK && written != 0u && atomic_load(&state->non_silent) &&
+      rc == H2_PAL_OK && written != 0u && h2_atomic_load(&state->non_silent) &&
       h2_gizclaw_pcm_track_read(state->track, leftover, sizeof(leftover)) ==
           H2_PAL_ERR_WOULD_BLOCK;
   if (rc == H2_PAL_OK &&
-      (!ended || atomic_load(&state->completions) != 1u ||
-       atomic_load(&state->terminal_kind) !=
+      (!ended || h2_atomic_load(&state->completions) != 1u ||
+       h2_atomic_load(&state->terminal_kind) !=
            (realtime ? H2_GIZCLAW_OPERATION_CANCELED
                      : H2_GIZCLAW_OPERATION_FINISHED) ||
-       atomic_load(&state->rounds) != (realtime ? 2u : 1u) ||
-       atomic_load(&state->captured) !=
+       h2_atomic_load(&state->rounds) != (realtime ? 2u : 1u) ||
+       h2_atomic_load(&state->captured) !=
            state->fixture->pcm_len * (realtime ? 2u : 1u) ||
-       !playback_matches || !atomic_load(&state->non_silent) || written == 0u))
+       !playback_matches || !h2_atomic_load(&state->non_silent) || written == 0u))
     rc = H2_PAL_ERR_INVALID_STATE;
   if (rc == H2_PAL_OK) {
-    const int terminal = atomic_load(&state->terminal_result);
+    const int terminal = h2_atomic_load(&state->terminal_result);
     const int expected = realtime ? H2_PAL_ERR_CLOSED : H2_PAL_OK;
     rc = terminal == expected    ? H2_PAL_OK
          : terminal == H2_PAL_OK ? H2_PAL_ERR_INVALID_STATE
@@ -650,8 +692,8 @@ static int conversation_rounds(voice_state_t *state, bool realtime) {
   printf("H2_GIZCLAW_E2E stage=voice mode=%s result=%s rc=%d rounds=%u "
          "capture_bytes=%zu playback_bytes=%zu\n",
          realtime ? "realtime-vad" : "ptt", rc == H2_PAL_OK ? "PASS" : "FAIL",
-         rc, atomic_load(&state->rounds), atomic_load(&state->captured),
-         atomic_load(&state->written));
+         rc, h2_atomic_load(&state->rounds), h2_atomic_load(&state->captured),
+         h2_atomic_load(&state->written));
   return rc;
 }
 
@@ -667,48 +709,83 @@ static int text_round(voice_state_t *state) {
   int rc = clock_now(state, &started);
   if (rc == H2_PAL_OK) {
     ++state->generation;
-    atomic_store(&state->active, true);
+    h2_atomic_store(&state->active, true);
     rc = evidence("h2_gizclaw_session_send_text", "voice",
                   h2_gizclaw_session_send_text(session, h2_gizclaw_e2e_str(text)));
     if (rc != H2_PAL_OK)
-      atomic_store(&state->active, false);
+      h2_atomic_store(&state->active, false);
   }
   h2_gizclaw_session_state_t snapshot;
   if (rc == H2_PAL_OK) {
     rc = h2_gizclaw_session_snapshot(session, &snapshot);
     if (rc == H2_PAL_OK &&
         (snapshot.conversation_input_open || snapshot.can_start ||
-         snapshot.conversation != H2_GIZCLAW_SESSION_CONVERSATION_WAITING))
+         snapshot.conversation != H2_GIZCLAW_SESSION_CONVERSATION_WAITING)) {
+      printf("H2_GIZCLAW_E2E stage=text-waiting-assert status=FAIL "
+             "input_open=%d can_start=%d conversation=%d\n",
+             snapshot.conversation_input_open, snapshot.can_start,
+             (int)snapshot.conversation);
       rc = H2_PAL_ERR_INVALID_STATE;
+    }
   }
   while (rc == H2_PAL_OK &&
-         (atomic_load(&state->active) || atomic_load(&state->rounds) == 0u)) {
+         (h2_atomic_load(&state->active) || h2_atomic_load(&state->rounds) == 0u)) {
     rc = within(state, started, VOICE_TIMEOUT_MS);
     if (rc == H2_PAL_OK)
       rc = step(state);
   }
-  if (rc == H2_PAL_OK)
-    rc = drain_completed_output(state);
-  const size_t written = atomic_load(&state->written);
-  uint8_t leftover[2];
-  if (rc == H2_PAL_OK &&
-      (atomic_load(&state->completions) != 1u ||
-       atomic_load(&state->terminal_kind) != H2_GIZCLAW_OPERATION_FINISHED ||
-       atomic_load(&state->rounds) != 1u || atomic_load(&state->captured) != 0u ||
-       written == 0u || !atomic_load(&state->non_silent) ||
-       h2_gizclaw_pcm_track_read(state->track, leftover, sizeof(leftover)) !=
-           H2_PAL_ERR_WOULD_BLOCK))
-    rc = H2_PAL_ERR_INVALID_STATE;
+  if (rc != H2_PAL_OK) {
+    printf("H2_GIZCLAW_E2E stage=text-progress status=FAIL rc=%d "
+           "hook_error=%d active=%d completions=%u rounds=%u\n",
+           rc, h2_atomic_load(&state->hook_error),
+           h2_atomic_load(&state->active),
+           h2_atomic_load(&state->completions),
+           h2_atomic_load(&state->rounds));
+  }
   if (rc == H2_PAL_OK) {
-    const int terminal = atomic_load(&state->terminal_result);
+    rc = drain_completed_output(state);
+    if (rc != H2_PAL_OK)
+      printf("H2_GIZCLAW_E2E stage=text-drain status=FAIL rc=%d\n", rc);
+  }
+  const size_t written = h2_atomic_load(&state->written);
+  uint8_t leftover[2];
+  if (rc == H2_PAL_OK) {
+    const unsigned completions = h2_atomic_load(&state->completions);
+    const int terminal_kind = h2_atomic_load(&state->terminal_kind);
+    const unsigned rounds = h2_atomic_load(&state->rounds);
+    const size_t captured = h2_atomic_load(&state->captured);
+    const bool non_silent = h2_atomic_load(&state->non_silent);
+    const bool counts_valid =
+        completions == 1u && terminal_kind == H2_GIZCLAW_OPERATION_FINISHED &&
+        rounds == 1u && captured == 0u && written != 0u && non_silent;
+    const int leftover_rc =
+        counts_valid
+            ? h2_gizclaw_pcm_track_read(state->track, leftover, sizeof(leftover))
+            : H2_PAL_OK;
+    if (!counts_valid || leftover_rc != H2_PAL_ERR_WOULD_BLOCK) {
+      printf("H2_GIZCLAW_E2E stage=text-completion-assert status=FAIL "
+             "completions=%u terminal_kind=%d rounds=%u captured=%zu "
+             "written=%zu non_silent=%d leftover_checked=%d leftover_rc=%d\n",
+             completions, terminal_kind, rounds, captured, written, non_silent,
+             counts_valid, leftover_rc);
+      rc = H2_PAL_ERR_INVALID_STATE;
+    }
+  }
+  if (rc == H2_PAL_OK) {
+    const int terminal = h2_atomic_load(&state->terminal_result);
     rc = terminal == H2_PAL_OK ? H2_PAL_OK : terminal;
   }
   if (rc == H2_PAL_OK) {
     rc = h2_gizclaw_session_snapshot(session, &snapshot);
     if (rc == H2_PAL_OK &&
         (snapshot.conversation_input_open || snapshot.can_start ||
-         snapshot.conversation != H2_GIZCLAW_SESSION_CONVERSATION_IDLE))
+         snapshot.conversation != H2_GIZCLAW_SESSION_CONVERSATION_IDLE)) {
+      printf("H2_GIZCLAW_E2E stage=text-idle-assert status=FAIL "
+             "input_open=%d can_start=%d conversation=%d\n",
+             snapshot.conversation_input_open, snapshot.can_start,
+             (int)snapshot.conversation);
       rc = H2_PAL_ERR_INVALID_STATE;
+    }
   }
   evidence("h2_gizclaw_session_send_text", "session_send_text-assert", rc);
   printf("H2_GIZCLAW_E2E stage=voice mode=text result=%s rc=%d "
@@ -723,7 +800,7 @@ static int cancel_conversation(voice_state_t *state) {
   uint64_t started = 0u;
   if (rc == H2_PAL_OK)
     rc = clock_now(state, &started);
-  while (rc == H2_PAL_OK && atomic_load(&state->captured) == 0u) {
+  while (rc == H2_PAL_OK && h2_atomic_load(&state->captured) == 0u) {
     rc = within(state, started, DISPOSE_TIMEOUT_MS);
     if (rc == H2_PAL_OK)
       rc = step(state);
@@ -731,15 +808,15 @@ static int cancel_conversation(voice_state_t *state) {
   if (rc == H2_PAL_OK)
     rc = evidence("h2_gizclaw_conversation_cancel", "voice-cancel",
                   h2_gizclaw_conversation_cancel(state->conversation));
-  while (rc == H2_PAL_OK && atomic_load(&state->active)) {
+  while (rc == H2_PAL_OK && h2_atomic_load(&state->active)) {
     rc = within(state, started, DISPOSE_TIMEOUT_MS);
     if (rc == H2_PAL_OK)
       rc = step(state);
   }
   if (rc == H2_PAL_OK &&
-      (atomic_load(&state->completions) != 1u ||
-       atomic_load(&state->terminal_kind) != H2_GIZCLAW_OPERATION_CANCELED ||
-       atomic_load(&state->terminal_result) != H2_PAL_ERR_CLOSED))
+      (h2_atomic_load(&state->completions) != 1u ||
+       h2_atomic_load(&state->terminal_kind) != H2_GIZCLAW_OPERATION_CANCELED ||
+       h2_atomic_load(&state->terminal_result) != H2_PAL_ERR_CLOSED))
     rc = H2_PAL_ERR_INVALID_STATE;
   capture_enable(state, false);
   if (rc == H2_PAL_OK) {
@@ -861,10 +938,10 @@ static int new_history(voice_state_t *state, char *id) {
 }
 
 static int play_history(voice_state_t *state, const char *id, bool cancel) {
-  atomic_store(&state->written, 0u);
-  atomic_store(&state->write_attempts, 0u);
-  atomic_store(&state->non_silent, false);
-  atomic_store(&state->block_playback, cancel);
+  h2_atomic_store(&state->written, 0u);
+  h2_atomic_store(&state->write_attempts, 0u);
+  h2_atomic_store(&state->non_silent, false);
+  h2_atomic_store(&state->block_playback, cancel);
   int rc = evidence("h2_gizclaw_req_create_audio_play", "history-play",
                     h2_gizclaw_req_create_audio_play(
                         state->service, cancel ? 51u : 50u,
@@ -911,11 +988,11 @@ static int play_history(voice_state_t *state, const char *id, bool cancel) {
                : (wait_rc == H2_PAL_OK ? H2_PAL_ERR_INVALID_STATE : wait_rc);
     }
     if (rc == H2_PAL_OK) {
-      const size_t attempts = atomic_load(&state->write_attempts);
-      atomic_store(&state->block_playback, false);
+      const size_t attempts = h2_atomic_load(&state->write_attempts);
+      h2_atomic_store(&state->block_playback, false);
       rc = h2_pal_time_sleep_ms(state->fixture->time, 50u);
-      if (rc == H2_PAL_OK && (atomic_load(&state->written) != 0u ||
-                              attempts != atomic_load(&state->write_attempts)))
+      if (rc == H2_PAL_OK && (h2_atomic_load(&state->written) != 0u ||
+                              attempts != h2_atomic_load(&state->write_attempts)))
         rc = H2_PAL_ERR_INVALID_STATE;
       /* Cancel does not rewind the producer cursor. The speaker owns removal
        * of samples already delivered to the Track. */
@@ -942,15 +1019,15 @@ static int play_history(voice_state_t *state, const char *id, bool cancel) {
     evidence("h2_gizclaw_req_wait", "history-play", rc);
     if (rc == H2_PAL_OK)
       rc = drain_completed_output(state);
-    if (rc == H2_PAL_OK && (atomic_load(&state->written) == 0u ||
-                            !atomic_load(&state->non_silent)))
+    if (rc == H2_PAL_OK && (h2_atomic_load(&state->written) == 0u ||
+                            !h2_atomic_load(&state->non_silent)))
       rc = H2_PAL_ERR_INVALID_STATE;
     evidence("h2_gizclaw_req_create_audio_play", "audio_play-assert", rc);
   }
   printf("H2_GIZCLAW_E2E stage=history-play cancel=%s result=%s rc=%d "
          "pcm_bytes=%zu\n",
          cancel ? "true" : "false", rc == H2_PAL_OK ? "PASS" : "FAIL", rc,
-         atomic_load(&state->written));
+         h2_atomic_load(&state->written));
   if (rc != H2_PAL_OK)
     return rc; /* cleanup retains the request and Track */
   h2_gizclaw_req_release(state->play);
@@ -970,32 +1047,32 @@ static int dispose_voice(h2_gizclaw_e2e_fixture_t *fixture) {
   }
   int rc = H2_PAL_OK;
   int terminal_rc = H2_PAL_OK;
-  if (state->conversation != NULL && atomic_load(&state->active)) {
-    const unsigned completions = atomic_load(&state->completions);
+  if (state->conversation != NULL && h2_atomic_load(&state->active)) {
+    const unsigned completions = h2_atomic_load(&state->completions);
     rc = h2_gizclaw_conversation_cancel(state->conversation);
     uint64_t started = 0u;
     if (rc == H2_PAL_OK)
       rc = clock_now(state, &started);
-    while (rc == H2_PAL_OK && atomic_load(&state->active)) {
+    while (rc == H2_PAL_OK && h2_atomic_load(&state->active)) {
       /* A stopped publisher may already have queued completion, even if the
        * case deadline expired. Drain before deciding whether to keep waiting.
        */
       rc = poll_service(state);
-      if (rc == H2_PAL_OK && atomic_load(&state->active))
+      if (rc == H2_PAL_OK && h2_atomic_load(&state->active))
         rc = within(state, started, DISPOSE_TIMEOUT_MS);
-      if (rc == H2_PAL_OK && atomic_load(&state->active))
+      if (rc == H2_PAL_OK && h2_atomic_load(&state->active))
         rc = h2_pal_time_sleep_ms(fixture->time, 1u);
     }
     if (rc == H2_PAL_OK) {
-      if (atomic_load(&state->completions) != completions + 1u ||
-          atomic_load(&state->terminal_kind) != H2_GIZCLAW_OPERATION_CANCELED)
+      if (h2_atomic_load(&state->completions) != completions + 1u ||
+          h2_atomic_load(&state->terminal_kind) != H2_GIZCLAW_OPERATION_CANCELED)
         terminal_rc = H2_PAL_ERR_INVALID_STATE;
-      else if (atomic_load(&state->terminal_result) != H2_PAL_ERR_CLOSED)
-        terminal_rc = atomic_load(&state->terminal_result) == H2_PAL_OK
+      else if (h2_atomic_load(&state->terminal_result) != H2_PAL_ERR_CLOSED)
+        terminal_rc = h2_atomic_load(&state->terminal_result) == H2_PAL_OK
                           ? H2_PAL_ERR_INVALID_STATE
-                          : atomic_load(&state->terminal_result);
+                          : h2_atomic_load(&state->terminal_result);
       if (terminal_rc == H2_PAL_OK)
-        terminal_rc = atomic_load(&state->hook_error);
+        terminal_rc = h2_atomic_load(&state->hook_error);
     }
   }
   if (rc != H2_PAL_OK)
@@ -1060,6 +1137,7 @@ static int dispose_voice(h2_gizclaw_e2e_fixture_t *fixture) {
   fixture->case_state = NULL;
   fixture->case_cleanup = NULL;
   h2_pal_mem_free(fixture->allocator, state->response);
+  voice_atomics_destroy(state);
   h2_pal_mem_free(fixture->allocator, state);
   return terminal_rc;
 }
@@ -1076,8 +1154,8 @@ static int verify_track_replacement(voice_state_t *state, const char *id) {
   if (rc != H2_PAL_OK)
     return rc;
   state->bound = false;
-  const size_t reads = atomic_load(&state->read_attempts);
-  const size_t writes = atomic_load(&state->write_attempts);
+  const size_t reads = h2_atomic_load(&state->read_attempts);
+  const size_t writes = h2_atomic_load(&state->write_attempts);
   rc = prime_idle_track(state->track);
   if (rc != H2_PAL_OK)
     return rc;
@@ -1127,10 +1205,10 @@ static int verify_track_replacement(voice_state_t *state, const char *id) {
   if (rc != H2_PAL_OK)
     return rc;
   state->replacement_bound = false;
-  if (atomic_load(&state->replacement_written) == 0u ||
-      !atomic_load(&state->replacement_non_silent) ||
-      reads != atomic_load(&state->read_attempts) ||
-      writes != atomic_load(&state->write_attempts))
+  if (h2_atomic_load(&state->replacement_written) == 0u ||
+      !h2_atomic_load(&state->replacement_non_silent) ||
+      reads != h2_atomic_load(&state->read_attempts) ||
+      writes != h2_atomic_load(&state->write_attempts))
     rc = H2_PAL_ERR_INVALID_STATE;
   if (rc == H2_PAL_OK)
     rc = check_idle_track(state->track);
@@ -1156,11 +1234,11 @@ static int talk_group_clip(voice_state_t *state) {
   if (rc == H2_PAL_OK)
     rc = begin(state);
   while (rc == H2_PAL_OK &&
-         atomic_load(&state->captured) < state->fixture->pcm_len) {
+         h2_atomic_load(&state->captured) < state->fixture->pcm_len) {
     rc = within(state, started, VOICE_TIMEOUT_MS);
     if (rc == H2_PAL_OK)
       rc = step(state);
-    if (rc == H2_PAL_OK && !atomic_load(&state->active))
+    if (rc == H2_PAL_OK && !h2_atomic_load(&state->active))
       rc = H2_PAL_ERR_INVALID_STATE;
   }
   if (rc == H2_PAL_OK)
@@ -1176,9 +1254,9 @@ static int talk_group_clip(voice_state_t *state) {
     rc = within(state, started, VOICE_TIMEOUT_MS);
     if (rc == H2_PAL_OK)
       rc = step(state);
-    if (rc == H2_PAL_OK && !atomic_load(&state->active) &&
-        atomic_load(&state->terminal_result) != H2_PAL_OK)
-      rc = atomic_load(&state->terminal_result);
+    if (rc == H2_PAL_OK && !h2_atomic_load(&state->active) &&
+        h2_atomic_load(&state->terminal_result) != H2_PAL_OK)
+      rc = h2_atomic_load(&state->terminal_result);
   }
   /* Half-duplex: the speaker never hears its own utterance back. The paced
    * speaker pump may not have run since the last poll, so probe the Track
@@ -1191,9 +1269,9 @@ static int talk_group_clip(voice_state_t *state) {
                                      : rc;
   }
   if (rc == H2_PAL_OK &&
-      (atomic_load(&state->completions) != 1u ||
-       atomic_load(&state->terminal_kind) != H2_GIZCLAW_OPERATION_FINISHED ||
-       atomic_load(&state->rounds) != 0u || atomic_load(&state->written) != 0u))
+      (h2_atomic_load(&state->completions) != 1u ||
+       h2_atomic_load(&state->terminal_kind) != H2_GIZCLAW_OPERATION_FINISHED ||
+       h2_atomic_load(&state->rounds) != 0u || h2_atomic_load(&state->written) != 0u))
     rc = H2_PAL_ERR_INVALID_STATE;
   return rc;
 }
@@ -1220,22 +1298,11 @@ static int run_voice(h2_gizclaw_e2e_fixture_t *fixture, bool group_talk) {
   state->service = fixture->actors[0].service;
   state->workspace_name = workspace_name;
   state->group_talk = group_talk;
-  atomic_init(&state->clips_allowed, 0u);
-  atomic_init(&state->capture_enabled, false);
-  atomic_init(&state->block_playback, false);
-  atomic_init(&state->active, false);
-  atomic_init(&state->captured, 0u);
-  atomic_init(&state->written, 0u);
-  atomic_init(&state->write_attempts, 0u);
-  atomic_init(&state->read_attempts, 0u);
-  atomic_init(&state->replacement_written, 0u);
-  atomic_init(&state->replacement_non_silent, false);
-  atomic_init(&state->non_silent, false);
-  atomic_init(&state->hook_error, H2_PAL_OK);
-  atomic_init(&state->terminal_result, H2_PAL_OK);
-  atomic_init(&state->terminal_kind, H2_GIZCLAW_OPERATION_FINISHED);
-  atomic_init(&state->completions, 0u);
-  atomic_init(&state->rounds, 0u);
+  const int atomic_rc = voice_atomics_init(state);
+  if (atomic_rc != H2_PAL_OK) {
+    h2_pal_mem_free(fixture->allocator, state);
+    return atomic_rc;
+  }
   fixture->case_state = state;
   fixture->case_cleanup = dispose_voice;
   state->response = h2_pal_mem_alloc(fixture->allocator, RESPONSE_BYTES);
@@ -1291,7 +1358,7 @@ static int run_voice(h2_gizclaw_e2e_fixture_t *fixture, bool group_talk) {
              rc);
   }
   if (group_talk) {
-    const size_t captured = atomic_load(&state->captured);
+    const size_t captured = h2_atomic_load(&state->captured);
     const int cleanup_rc = dispose_voice(fixture);
     if (rc == H2_PAL_OK)
       rc = cleanup_rc;

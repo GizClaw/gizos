@@ -4,6 +4,8 @@
 只负责文本 chunk、Lua stack、GC、coroutine 与受限标准库；Host 负责 allocator、
 worker、Timer、Filesystem、事件投递、原生 module 和每个 Skill 的隔离生命周期。
 
+Host 归一化后的 `allocator` 同时用于 Lua Link 对象、mutex/cond、BLE-KCP 和 Lua 音轨；worker 与 Link 任务的栈由平台 task provider 配置。Host allocator 为 NULL 时仍回退 Runtime mem，共享平台和驱动内部资源保留各自的分配器。
+
 ## Ownership
 
 ```text
@@ -39,19 +41,13 @@ provider 可以让不同 VM 在多个 worker 上并行。
 
 ## Host 和 job
 
-`h2_lua_host_config_t` 的容量均有界：`worker_count`、`worker_stack_size`、`max_jobs`、`max_coroutines_per_vm`、`ready_queue_capacity`、`waiter_capacity`、`event_delivery_capacity`、`callback_capacity_per_job`、`audio_track_capacity_per_job`、`pending_capability_capacity`、`instruction_quantum`、`resume_time_budget_ms`、`source_limit_bytes`、`output_limit_bytes`、`vm_memory_limit_bytes` 和 `vm_heap_bytes`。零使用声明的默认值；ready/waiter 容量不得小于 VM 的 coroutine 上限。`storage` 配置每个 App 的持久化存储，见 [App 存储](#app-存储)；全零表示未配置。
+`h2_lua_host_config_t` 的容量均有界：`worker_count`、`worker_stack_size`、`max_jobs`、`max_coroutines_per_vm`、`ready_queue_capacity`、`waiter_capacity`、`event_delivery_capacity`、`callback_capacity_per_job`、`audio_track_capacity_per_job`、`pending_capability_capacity`、`capability_capacity`、`instruction_quantum`、`resume_time_budget_ms`、`source_limit_bytes`、`output_limit_bytes`、`vm_memory_limit_bytes` 和 `vm_heap_bytes`。零使用声明的默认值；ready/waiter 容量不得小于 VM 的 coroutine 上限。`storage` 配置每个 App 的持久化存储，见 [App 存储](#app-存储)；全零表示未配置。
 
-`vm_heap_bytes` 可选地在 `h2_lua_host_create()` 时从 Runtime mem 预留一段 VM 专用堆，
-供同一 Host 的所有 job/worker 通过带 PAL mutex 保护的 TLSF 共享。默认 `0` 保持
-VM 逐块向 Runtime mem 申请，Web 入口也保持此默认值。适合设备系统堆碎片化、
-大字符串或全屏 `display.capture_region` userdata 等大块分配会与其他模块争抢连续空间的场景。
-VM 本体、Lua 状态、userdata、字符串和表都使用预留堆；callbacks、events、tasks
-和 framebuffer 等仍使用 Runtime mem。
+`allocator` 可选地指定 Host 自身的所有分配（Host/job 状态、队列、缓冲、音频 track、Lua Link、VM 堆预留，以及未预留时的每个 VM 块）使用的 `h2_pal_mem_api_t`，为 NULL 时使用 Runtime mem。Host 只借用这个指针、不复制它，因此它和它的 `user` 上下文必须保持有效，直到 `h2_lua_host_destroy()` 返回；调用方可以借此把 Host 自身的存储放进自己的 arena。下文统称为“Host allocator”。
 
-Runtime mem 有足够大的连续块时预留为一整块；否则 Host 每次被拒后把申请大小缩小 1/8、贴近实际最大空闲块，最多取
-8 块、每块至少 256 KiB（只有最后的余量可以更小），全部加入同一个 TLSF。单次 VM
-分配必须能放进其中一块。在这些限制内凑不够时返回 `H2_PAL_ERR_NO_MEMORY`，不创建
-Host，也不泄漏已取得的块；destroy 在所有 job/VM 释放后归还全部块。
+`vm_heap_bytes` 可选地在 `h2_lua_host_create()` 时从 Host allocator 预留一段 VM 专用堆，供同一 Host 的所有 job/worker 通过带 PAL mutex 保护的 TLSF 共享。默认 `0` 保持 VM 逐块向 Host allocator 申请，Web 入口也保持此默认值。适合设备系统堆碎片化、大字符串或全屏 `display.capture_region` userdata 等大块分配会与其他模块争抢连续空间的场景。VM 本体、Lua 状态、userdata、字符串和表都使用预留堆；callbacks、events、tasks 和 framebuffer 等直接使用 Host allocator。
+
+Host allocator 有足够大的连续块时预留为一整块；否则 Host 每次被拒后把申请大小缩小 1/8、贴近实际最大空闲块，最多取 16 块、每块至少 64 KiB（只有最后的余量可以更小），全部加入同一个 TLSF。因为总是先取最大的块，能服务大块单次分配的池排在前面，下限只决定尾部还能用掉多少：一个还剩 512+384+256+256+192 KiB 和五个 64 KiB 块的堆共有 1.9 MiB 可给，而 256 KiB 的下限只能凑出 1.4 MiB。单次 VM 分配仍必须能放进其中一块。在这些限制内凑不够时返回 `H2_PAL_ERR_NO_MEMORY`，不创建 Host，也不泄漏已取得的块；destroy 在所有 job/VM 释放后归还全部块。
 
 `vm_memory_limit_bytes` 仍是独立的每 VM 配额，预留大小不会改变配额检查。预留堆需
 覆盖所有同时存活的 VM（包括尚未 release 的已完成 job）以及 TLSF 元数据和每块分配
@@ -65,9 +61,14 @@ Host 的正常生命周期是：
 1. `h2_lua_host_create()` 借用 Runtime 并分配固定容量；
 2. 在 start 前注册 native module 和 capability；
 3. `h2_lua_host_start()` 冻结 registry 并创建 worker；
-4. 通过 text、compiled resource 或 Runtime Filesystem 提交 job，同时给出决定 `storage` 作用域的 app id（可为 `NULL`）；
+4. 通过 text、compiled resource 或 Runtime Filesystem 提交 job，同时给出决定 `storage` 作用域的 app id（可为 `NULL`）；`h2_lua_job_submit_path()` 接收调用方给的路径与 chunk 名，`h2_lua_job_submit_file()` 接收受限相对路径并自动生成 `@<path>` chunk 名，两者都由 Host 用自己的 4 KiB 窗口把源码分片喂给编译器，调用方和 Host 都不持有整份源码：在碎片化的堆上，一个 200 KiB 的 app 不再需要一块同样大的连续内存。超出 `source_limit_bytes` 返回 `NO_SPACE`、内嵌 NUL 返回 `INVALID_ARG`、预编译 chunk 返回 `FORMAT`，与 text 提交一致，只是改为随字节到达时判定；reader 在读完最后一个字节时关闭文件，空文件在首次读取时关闭；若编译错误使读取提前结束，也在发布 `FAILED` job 前关闭。只有关闭成功后才发布 job 并唤醒 worker；文件系统失败（包括关闭失败）或读到一半截断中止提交、释放 job 槽位并原样返回该结果，`*out_job_id` 保持 `H2_LUA_JOB_ID_NONE`，不会产生或运行 job。提前拒绝提交也会关闭已打开的文件，已有提交或读取错误优先于清理时的关闭错误；
 5. App 消费 Runtime Event queue，并通过 `h2_lua_dispatch_runtime_event()` 定向
-   投递给一个 live `job_id`；
+   投递给一个 live `job_id`；事件入队返回 `H2_PAL_OK`，事件格式错误或 component
+   kind 与 Runtime component 不符返回 `H2_PAL_ERR_INVALID_ARG`，未知或已 release 的
+   job 返回 `H2_PAL_ERR_NOT_FOUND`，job 已进入终态返回 `H2_PAL_ERR_CLOSED`，job 内
+   未投递事件已达 `event_delivery_capacity` 返回 `H2_PAL_ERR_FULL`，失败时事件不
+   入队。job 可能在同一批 Runtime event 之间进入终态，所以同一 job 上 `CLOSED`
+   可以紧跟在 `OK` 之后出现；
 6. `stop()` 拒绝新 job、取消等待，`join()` 等待 worker 退出，最后 `destroy()`。
 
 `h2_lua_host_step()` 只用于提示 worker 有新工作，不会让调用线程进入 VM。
@@ -154,6 +155,12 @@ smooth 显式启用圆端点连续覆盖，每像素只混合最大 alpha 一次
 通用多边形使用 float edge-slope/integer-boundary 检查，不能确定相同 floor/ceil 时回退原双精度交点表达式。参考像素测试覆盖边界与确定性随机输入，不把有限样本当作数学证明。笔画通过 Utils 公共 `h2_f32_math.h` 消费单份数值辅助；编译器和浮点环境约束见 [Utils](./utils.md)，不要对绘制或物理库启用 fast-math。
 
 ### Display 快照、背景恢复与 retained 提交
+
+`display.region_from_string(width,height,data,encoding="rgb565be")` 直接从 Lua 字符串创建不透明 region，宽高必须为 `1..4096` 的整数。构造函数本身不获取 Display，在已取得的 proxy 上调用 `deinit` 后仍可创建资源，不绘制也不隐式 present。首次 `require('display')` 仍遵循既有 acquisition 契约，获取失败抛错；缓存的 require 不重新打开设备，关闭后的绘制仍然失败。有效绘制会话中的结果可传给 `draw_region`，同屏尺寸的结果还可传给 `restore_background`。像素数据和调用时机由应用拥有，不读取文件或提前加载资源。
+
+默认 `rgb565be` 接受恰好 `width*height*2` 个按行排列的二进制字节，每个 RGB565 像素高字节在前。`rgb565be-lz4-b85` 接受 8 位 ASCII 十六进制压缩长度与 Python `base64.b85encode(block,pad=True)` 文本，block 为标准 raw LZ4，不含 frame 或额外输出尺寸；输出必须恰好匹配宽高。Base85 字符、文本长度、32-bit group 溢出、零 padding、LZ4 截断、offset、输出边界及末尾序列条件均校验，不接受额外尾部数据。完整编码契约与示例见 [Lua Display API](../../references/lua.md#regions-from-strings)。
+
+同步解码在所属 VM worker 中直接写入 region userdata，不构造像素 Lua 表或完整中间解压缓冲区；Base85 分组由 [`libs/encoding`](./encoding.md) 的 `h2_encoding_decode_base85_group()` 按 `h2_encoding_base85_rfc1924` 的只读解码表逐组解码，长度头、完整分组、零 padding 与 LZ4 规则仍由 Display 校验。像素、行元数据与 damage tiles 计入 VM 配额，输入字符串存活时也占自身配额，但 region 不保留输入引用。非法输入抛 Lua error，配额耗尽使用正常 Lua memory error；失败不发布半成品 region，不改变 framebuffer，临时 userdata 可由 GC 回收，释放其他数据后可以重试。普通 region 在最后引用释放后回收，背景持有的 region 沿用 `release_background` 和 teardown 的释放规则。
 
 `display.capture_region(x,y,width,height,key=nil,reuse=nil)` 捕获 framebuffer 中的正尺寸区域，宽高各不超过 4096，位置和尺寸必须为整数且完整位于屏内。它只保存已绘制的 RGB565 像素，不加载贴图或文件。省略 key 保存不透明区域；指定 key 时压缩每行两侧透明边距，并预编译非透明连续段。透明捕获先取得 VM 内完整临时副本，再对不可变副本压缩，防止 allocation-triggered GC 改变两次扫描之间的像素。reuse 仅接受同尺寸的不透明快照，且本次不能指定 key；返回同一 userdata，不重新分配像素存储。重新捕获当前背景会使恢复基线失效，下次完整恢复。
 
@@ -348,7 +355,7 @@ interval、2000 ms supervision timeout 连接；掉电或离开范围在一个 s
 内报告 `"lost"`。Host 可以重新协商连接参数：运行 H2Loader BLE 命令服务的 App image
 会把每个 peripheral 连接改为 15 ms interval、4000 ms supervision timeout，此时
 `"lost"` 约 4 s 后到达。bleikcp 使用 244-byte datagram、16-segment
-window、32 帧输入队列和 4096-byte TX/RX buffer，关闭 congestion window。KCP 上的帧
+window、32 帧输入队列和 4096-byte TX/RX buffer，关闭 congestion window。输入队列在 bleikcp worker 一个 slice 内被一个 window 加其重传塞满时只丢帧、由对端 KCP 重传，不会结束 session。KCP 上的帧
 为 `[type u8][len u16 big-endian][payload]`：`HELLO`（双方先发，5000 ms 内校验）、
 `BYE`（close、job 结束或 Host stop 时发送并最多 flush 400 ms，对端立即报告
 `"peer_closed"`；BYE 是有界的尽力而为，预算内未送达时对端报告 `"lost"`）、`MESSAGE`（一条可靠消息）和 `STREAM`（最多 512 字节流数据）。
@@ -519,7 +526,7 @@ MP4 播放器配置也支持同名选项。启动动画可以借用同一个 Dis
 
 ## 嵌入分层与源码包
 
-`//libs/lua:lua_runtime` 是 portable 下层：包含 Lua Core、Host、modules、`//libs/runtime` 和 PAL headers/inline wrappers，以及 Bazel 固定版本的 Lua 5.5、yyjson。下层的平台访问只依赖 PAL interfaces，不能依赖具体 provider、board、SDK 或 `bleikcp`。`//libs/lua:lua_core` 继续只依赖 upstream Lua。`//libs/lua:lua` 保留现有入口；平台组装由现有 firmware、Desktop、Web launcher 或外部 embedder 完成。可选 `//libs/lua:lua_link` 在上层接入 `bleikcp`，不进入 portable 源码包；未启用时仍遵守既有 `link: unavailable` 合同。
+`//libs/lua:lua_runtime` 是 portable 下层：包含 Lua Core、Host、modules、`//libs/trie`、`//libs/runtime` 和 PAL headers/inline wrappers，以及 Bazel 固定版本的 Lua 5.5、yyjson。下层的平台访问只依赖 PAL interfaces，不能依赖具体 provider、board、SDK 或 `bleikcp`。`//libs/lua:lua_core` 继续只依赖 upstream Lua。`//libs/lua:lua` 保留现有入口；平台组装由现有 firmware、Desktop、Web launcher 或外部 embedder 完成。可选 `//libs/lua:lua_link` 在上层接入 `bleikcp`，不进入 portable 源码包；未启用时仍遵守既有 `link: unavailable` 合同。
 
 **PAL vtables 就是 embedding hooks。** Embedder 构造既有 `h2_pal_*_api_t` 的 `user + vtable`，填入 Runtime config；不需要另一套 callback ABI。Runtime 初始化要求完整 API surface，不支持的能力使用 canonical unsupported API object。源码包因此同时带上 `//libs/pal:unsupported` 的 portable 实现，供 embedder 填充默认值；这不会为 `lua_runtime` 增加 provider 依赖。Display、Button、Touch、Audio 可以来自宿主 UI，Memory、Task、Queue、Sync、Time、Timer、Filesystem 可以来自已有 provider 或宿主自己的 C 实现。
 
@@ -529,7 +536,31 @@ Vtable 函数可能从 Runtime input task、Lua worker 或 PAL 自己的线程�
 
 对于只允许异步通知的 UI bridge，C vtable 应复制像素、rect、音频或其他仅在当前调用期间有效的 buffer 到宿主拥有的有界队列，然后按 PAL 合同及时返回。容量不足时返回对应的错误或 backpressure，不能保留借用指针、等待 UI 回调，或虚报实际未接收的数据。需要同步结果的 Memory、Sync、Queue 等服务必须在 native 层实现；单纯的异步 UI callback 不能满足这些 vtable。原有 PAL 的返回值、timeout、partial-write 和生命周期语义保持不变。
 
-Capability 在 `h2_lua_host_start()` 前注册，start 后 registry 冻结。异步 call callback 复制 input/options 和 request ID 后返回 `H2_PAL_ERR_WOULD_BLOCK`；宿主完成工作时调用 `h2_lua_capability_complete()`，由 owning worker 恢复 Lua。Lua 收到既有的 `ok, output, error` 三元组。宿主必须处理 cancel callback，及时释放其排队工作，并在销毁 Host 前停止所有 completion producer；晚到或重复 completion 会被拒绝。`h2_lua_capability_name_at()` 按注册顺序枚举名字，越界返回 `NULL`；名字借用到 Host 销毁，注册/start/destruction 与枚举之间由调用方串行化。
+Capability 在 `h2_lua_host_start()` 前注册，start 后 registry 冻结。异步 call callback 复制 input/options 和 request ID 后返回 `H2_PAL_ERR_WOULD_BLOCK`；宿主完成工作时调用 `h2_lua_capability_complete()`，由 owning worker 恢复 Lua。Lua 收到既有的 `ok, output, error` 三元组。宿主必须处理 cancel callback，及时释放其排队工作，并在销毁 Host 前停止所有 completion producer；晚到或重复 completion 会被拒绝。
+
+Registry 的 `capability_capacity` 由 exact 与 prefix 共用，0 默认 16，上限
+`H2_LUA_CAPABILITY_CAPACITY_MAX` 为 256，超过上限 create 返回
+`H2_PAL_ERR_INVALID_ARG`，注册满时返回 `H2_PAL_ERR_FULL`。Entry 和 route storage
+在 create 时通过 Runtime Memory 分配。名称和 prefix 都复制保存，长度为 1..47
+字节（小于内部 `H2_LUA_NAME_MAX=48`）。256 条最长名称最多需要 12,033 个
+trie node（含 root，约 118 KiB），既支持数百个宿主能力，又限制内存并保持在
+`h2_trie` 的 16 位索引范围内；默认容量不会预留此最大节点空间。
+
+`h2_lua_host_start()` 按 `1 + sum(strlen(name))` 分配 node storage 并用
+`//libs/trie` 的 `h2_trie_build()` 建立 immutable lookup，再启动 worker。
+节点分配失败返回 `H2_PAL_ERR_NO_MEMORY`，Host 仍可 destroy 或重试 start。
+`capability.call()` 通过 `h2_trie_handle()` 选择 entry，不扫描全部注册名称；
+trie 按字节遍历，每层 sibling 搜索由字节字符集限制，不随注册数线性增长。
+
+`h2_lua_register_capability_prefix()` 可以一次注册 `litelink.` 命名空间。
+沿用 trie 原生语义：完整 exact 优先，否则最长 prefix 优先，与注册顺序无关；
+prefix 后必须有非空 remainder，因此 `litelink.` 本身不会命中同名 prefix。
+同一 exact 或同一 prefix 重复注册返回 `H2_PAL_ERR_INVALID_STATE`，相同文本可以
+各注册一次 exact 和 prefix，两者分别占容量。Start 后拒绝注册；调用方须串行化
+registration/start/destruction。Prefix callback 额外收到完整请求名称，借用期仅为
+本次 call；异步工作须复制名称。它复用 exact 的 request、completion、cancel 和
+Lua tuple 路径，unknown name 仍返回 `false, nil, "unknown capability: <name>"`。
+Registry 不提供名称枚举，因为 namespace 注册不是全部可调用名称的清单。
 
 ### 构建与 manifest
 
@@ -543,14 +574,13 @@ bazel query 'deps(//libs/lua:lua_runtime) union deps(//libs/lua:lua_core)'
 bazel query 'filter("//libs/pal/providers/|//libs/bleikcp|//boards/|//native_component_src/", deps(//libs/lua:lua_runtime))'
 ```
 
-`gizos-lua-runtime-src.tar.gz` 根目录包含 `manifest.json` 和 GizOS `LICENSE`，其余 C/H 文件保持 package-relative 路径；external repository 文件放在 `external/<repository>/` 下。文件清单、include dirs、defines 和各 translation unit 的编译参数由 Bazel aspect 从已配置的依赖图生成，不手工复制维护。包使用与 GizOS native build 相同的 Lua source selection 和受限标准库；固件专用 stdio/newlib shim 仍由原 embedded build 配置选择，不把 ESP libc 兼容代码加入 native host。它不包含预编译库、Bazel toolchain、PAL provider 或 board code。
+`gizos-lua-runtime-src.tar.gz` 根目录包含 `manifest.json` 和 GizOS `LICENSE`，其余 C/H 文件保持 package-relative 路径；Lua、TLSF 与 yyjson 的 external repository 文件分别放在稳定的 `third_party/lua/`、`third_party/tlsf/`、`third_party/yyjson/` 下，所有 manifest 路径同步重写。文件清单、include dirs、defines 和各 translation unit 的编译参数由 Bazel aspect 从已配置的依赖图生成，不手工复制维护。包使用与 GizOS native build 相同的 Lua source selection 和受限标准库；固件专用 stdio/newlib shim 仍由原 embedded build 配置选择，不把 ESP libc 兼容代码加入 native host。它包含可移植的 C11 atomic provider，不包含预编译库、Bazel toolchain、PAL provider 或 board code。 新增的 trie C 源码和头文件也随依赖图自动收录。
 
 Manifest schema version 1：
 
 | 字段 | 合同 |
 | --- | --- |
 | `schema_version` | 整数 `1`；consumer 拒绝未知版本 |
-| `gizos_commit` | 源码 revision；开发包为 `@GIZOS_COMMIT@`，发布方必须替换为实际打包源码的 commit |
 | `runtime_profile_id` | 固定为 `runtime.lua.gizos` |
 | `sources` | 所有需编译一次的 `.c`，相对解包根目录 |
 | `include_dirs` | 相对解包根目录的 include search paths |
@@ -559,15 +589,35 @@ Manifest schema version 1：
 | `compilation_units` | 分组的 `sources`、附加 `cflags`、附加 `defines`；各 source 恰好属于一个分组 |
 | `per_os` | OS 名到附加 `link_flags` 的映射；`linux`、`darwin`、`android`、`ios` 的数学库为 `-lm` |
 
-Consumer 对每个 source 应用公共参数及所属分组参数，按自身目标工具链追加 architecture、sysroot、PIC、visibility 和 deployment target，再链接所有 object 与该 OS 的 extras。参数必须逐项传给 compiler，不通过 shell 拼接解析。当前包表达 GCC/Clang C11 编译合同；Windows/MSVC 和 WebAssembly 工具链需单独适配，不由该 manifest 声明支持。Profile ID 标识 Lua surface，不替代 commit pin；不同 revision 的源码、header 和 binding 不应混用。
+Consumer 对每个 source 应用公共参数及所属分组参数，按自身目标工具链追加 architecture、sysroot、PIC、visibility 和 deployment target，再链接所有 object 与该 OS 的 extras。参数必须逐项传给 compiler，不通过 shell 拼接解析。当前包表达 GCC/Clang C11 编译合同；Windows/MSVC 和 WebAssembly 工具链需单独适配，不由该 manifest 声明支持。Profile ID 标识 Lua surface，不替代 content id pin；不同内容的源码、header 和 binding 不应混用。Manifest 不包含 commit、发布版本或 timestamp；`schema_version` 只标识 manifest 格式。
 
-独立测试只依赖 Python 3.11.8+（支持 tar extraction filter）、`cc`/Clang 和 pthread。它在临时目录解包，根据 manifest 编译全部 C sources，链接测试自己填写的 OS、240×240 Display、Touch、`ok`/`back` Button vtables。测试验证 async echo、显示 dirty rect 与全部像素、Runtime push edge 到 Lua callback、pending job cancellation、start 后拒绝注册和 capability 名称枚举。Python runner 不调用 Bazel，也不从 checkout 查找 runtime source；`CC` 可指定兼容 compiler。Bazel test 只是把源码包和 harness 作为测试输入交给同一个 runner。
+独立测试只依赖 Python 3.11.8+（支持 tar extraction filter）、`cc`/Clang 和 pthread。它在临时目录解包，根据 manifest 编译全部 C sources，链接测试自己填写的 OS、240×240 Display、Touch、`ok`/`back` Button vtables。测试验证 async echo、显示 dirty rect 与全部像素、Runtime push edge 到 Lua callback、pending job cancellation、默认/配置容量、exact/prefix 优先级、完整名称传递、重复和 start 后注册拒绝、节点分配失败及重试。Python runner 不调用 Bazel，也不从 checkout 查找 runtime source；`CC` 可指定兼容 compiler。Bazel test 只是把源码包和 harness 作为测试输入交给同一个 runner。
 
 Embedder 执行 App method 时，让主 chunk `return app[method](...)`，等待 job 成功后查询长度、分配宿主 buffer、调用 `h2_lua_job_get_result()` 复制结果，最后 release。Flutter/cgo 都通过同一公开 accessor 读取，不需要私有 native module 转存返回值；复杂值应由 App 显式编码为 JSON 等稳定格式。
 
+### 内容标识与发布下载
+
+Bazel action 为源码包生成 `bazel-bin/libs/lua/runtime_sources.content_id`，内容为完整小写十六进制 SHA-256 加一个 LF。可单独构建 `//libs/lua:runtime_sources_content_id`；构建 `//libs/lua:runtime_sources` 也会生成它。
+
+算法精确定义：枚举包内全部普通文件（包含 `LICENSE` 和 `manifest.json`，不包含目录 entry、tar header、content id sidecar）；路径为相对 archive root 的 POSIX 路径，无 `./` 前缀。按路径的 UTF-8 字节字典序排序，每个文件拼接 `UTF8(path) + 0x00 + ASCII(lowercase_hex(SHA256(file_bytes))) + 0x0a`，再对全部拼接字节计算 SHA-256。路径来自受控 C source graph，不能包含换行、NUL 或绝对路径。哈希输入只包含路径和文件 bytes，故不依赖 mtime、机器、绝对路径、Bazel canonical repository name、commit、timestamp 或 gzip/zlib/rules_pkg 版本；任一文件内容、路径或清单变化都会改变 id。Manifest 自身也是内容，编译参数变化同样改变 id。
+
+本地 archive 名保持 `gizos-lua-runtime-src.tar.gz`，发布 slice 将它复制为 `gizos-lua-runtime-src-<content_id>.tar.gz`，不改写包内任何 bytes，并生成 `.sha256`。这里的 `.sha256` 是压缩 tar 的下载校验值，与未压缩内容的 `content_id` 含义不同；换压缩器可以保持 content id 不变但改变下载 SHA-256/size。
+
+LiteLink 从 [手动 Release 的 metadata](./bazel.md#lua-源码包进入手动-release) 读取 `packages.lua_runtime`，固定 `{url, sha256, size}` 和 `content_id`。URL 使用 `https://github.com/GizClaw/gizos/releases/download/v<release_id>/<file>`，不使用 latest。先检查下载长度和压缩文件 SHA-256，再安全解包并重算 content id；binding 必须匹配包内 headers。Release metadata 的 commit 只用于追溯，不能注入 Lua manifest。LiteLink 在 Flutter App 的原生层提供自己的 PAL 实现。
+
+独立测试可显式传入 sidecar，重算内容标识后继续编译：
+
+```sh
+python3 libs/lua/tests/test_source_package.py bazel-bin/libs/lua/gizos-lua-runtime-src.tar.gz libs/lua/tests/test_embedder.c bazel-bin/libs/lua/runtime_sources.content_id
+```
+
+Bazel test 不递归启动 Bazel。本地发布 slice 的验证命令见 [Lua 源码包进入手动 Release](./bazel.md#lua-源码包进入手动-release)。
+
 ### Flutter 与 cgo
 
-Flutter package 将解包后的源码和 manifest 随包分发，由 native assets build hook 读取 manifest，用 Flutter 选择的每个目标 C toolchain 编译各 translation unit 并链接 native asset；不能依赖 GizOS 的 Bazel archive 或预编译 library。通过 `dart:ffi` 调用现有 Host/Runtime API，native bridge 拥有 PAL objects 和所需的同步 OS 服务；UI 操作通过复制后的消息交给 Dart，再由 Dart 渲染。FFI binding 必须匹配随包 header 的 struct layout 与 callback signatures。
+LiteLink 需要新增原生宿主库和 Dart 桥接。构建环节读取解包后的 manifest，分别用 iOS device/simulator 的 Apple Clang 和 Android 各 ABI 的 NDK Clang 编译每个 translation unit，再与 LiteLink 的原生代码链接；manifest 的公共及分组参数必须逐项传给编译器，目标 SDK、架构、PIC、可见性、deployment target 和系统库由 LiteLink 的目标构建配置提供。不能依赖 GizOS 的 Bazel archive 或预编译 library。
+
+LiteLink 的原生宿主库创建并持有 PAL 对象及其生命周期，负责实现 Runtime 所需的 allocator、任务/同步、时间、文件系统、显示与输入等接口，并把平台能力接到 iOS/Android；发布包自带的 C11 atomic provider 不代替 PAL。Dart 侧通过 `dart:ffi` 调用稳定的 Host/Runtime C API，原生桥接负责线程边界、callback 生命周期和消息复制，UI 操作再交给 Dart 渲染。FFI binding 必须匹配随包 header 的 struct layout 与 callback signatures。LiteLink 当前还没有这套原生构建和桥接，macOS/Linux 的源码包编译测试只验证可移植源码与 manifest，**不证明 iOS/Android 目标已编译或 App 已集成**；移动端验收需由 LiteLink 在真实目标工具链、各 ABI 和 App 启动/调用链上完成。
 
 Go/cgo consumer 同样在自己的构建步骤中读取 manifest，用目标 C compiler 编译包内 sources 与自有 PAL bridge，再把 object/archive 接入 cgo linker。cgo 不会递归编译这些子目录中的 C 文件，也不能忽略不同 source group 的 flags。Go 层通过 C bridge 发起 job、推送输入与完成 capability；PAL `user` 可由 C 分配的 context 或受管理的 opaque handle 表示，不能把生命周期不受控的 Go 指针留给 worker。宿主的 pthread、UI framework 等依赖由上层 bridge 自己声明，不属于 portable runtime manifest。
 

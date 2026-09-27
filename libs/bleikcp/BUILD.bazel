@@ -36,6 +36,7 @@ cc_library(
     ],
     deps = [
         ":tasks",
+        "//libs/atomic",
         "//libs/pal",
         "//tools/bazel:vendor_third_party_ikcp",
     ],
@@ -59,5 +60,9 @@ cc_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    deps = [":bleikcp"],
+    deps = [
+        ":bleikcp",
+        "//libs/atomic/providers/c11",
+        "//libs/pal:test_allocator",
+    ],
 )

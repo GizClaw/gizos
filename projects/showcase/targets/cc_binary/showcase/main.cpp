@@ -5,7 +5,7 @@
 
 #include "h2_ffmpeg.h"
 
-#include <atomic>
+#include "h2_atomic.h"
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -69,9 +69,8 @@ h2_pal_result_t read_pointer(void *user, h2_showcase_pointer_state_t *out) {
 }
 
 int should_stop(void *user) {
-  const auto *stop = static_cast<std::atomic<bool> *>(user);
-  return stop != nullptr &&
-         stop->load(std::memory_order_acquire);
+  const auto *stop = static_cast<h2_atomic_bool_t *>(user);
+  return stop != nullptr && h2_atomic_bool_load(stop, H2_ATOMIC_ACQUIRE);
 }
 
 struct AppContext {
@@ -79,7 +78,7 @@ struct AppContext {
   const std::vector<std::uint8_t> *font;
   const std::vector<std::uint8_t> *audio;
   h2::desktop::OwnedDisplay *display;
-  std::atomic<bool> *stop;
+  h2_atomic_bool_t *stop;
   h2_pal_result_t result = H2_PAL_OK;
 };
 
@@ -223,13 +222,20 @@ int main() {
     h2_corehttp_destroy(http_provider);
     return 1;
   }
-  std::atomic<bool> stop = false;
+  h2_atomic_bool_t stop = {};
+  if (h2_atomic_bool_init(&stop, false) != H2_ATOMIC_OK) {
+    (void)h2_pal_display_close(display);
+    h2_runtime_deinit(runtime);
+    h2_corehttp_destroy(http_provider);
+    return 1;
+  }
   AppContext context = {runtime, &font, &audio_pcm, &display_provider, &stop,
                         H2_PAL_OK};
   std::thread worker;
   try {
     worker = std::thread(app_main, &context);
   } catch (...) {
+    h2_atomic_bool_destroy(&stop);
     (void)h2_pal_display_close(display);
     h2_runtime_deinit(runtime);
     h2_corehttp_destroy(http_provider);
@@ -238,8 +244,9 @@ int main() {
   while (h2::desktop::poll_events(&display_provider) == 0) {
     std::this_thread::sleep_for(std::chrono::milliseconds(8));
   }
-  stop.store(true, std::memory_order_release);
+  h2_atomic_bool_store(&stop, true, H2_ATOMIC_RELEASE);
   worker.join();
+  h2_atomic_bool_destroy(&stop);
   (void)h2_pal_display_close(display);
   h2_runtime_deinit(runtime);
   h2_corehttp_destroy(http_provider);

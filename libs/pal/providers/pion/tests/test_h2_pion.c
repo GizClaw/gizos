@@ -6,15 +6,15 @@
 #undef NDEBUG
 #endif
 #include <assert.h>
-#include <stdatomic.h>
+#include "h2_atomic.h"
 #include <stdlib.h>
 #include <string.h>
 
 typedef struct test_state {
-  atomic_size_t track_reads;
+  h2_atomic_size_t track_reads;
 } test_state_t;
-static atomic_int s_fail_next_alloc;
-static atomic_size_t s_allocations;
+static h2_atomic_int_t s_fail_next_alloc;
+static h2_atomic_size_t s_allocations;
 static const h2_pal_task_api_t *s_real_task;
 static int s_fail_start, s_fail_join;
 static unsigned s_started, s_joined;
@@ -43,12 +43,12 @@ static int join_task(void *user, h2_pal_task_t *task) {
 
 static void *test_alloc(void *user, size_t len) {
   (void)user;
-  if (atomic_exchange(&s_fail_next_alloc, 0)) {
+  if (h2_atomic_exchange(&s_fail_next_alloc, 0)) {
     return NULL;
   }
   void *ptr = malloc(len);
   if (ptr != NULL)
-    s_allocations++;
+    h2_atomic_fetch_add(&s_allocations, 1u);
   return ptr;
 }
 static void *test_realloc(void *user, void *ptr, size_t len) {
@@ -62,7 +62,7 @@ static void *test_realloc(void *user, void *ptr, size_t len) {
 static void test_free(void *user, void *ptr) {
   (void)user;
   if (ptr != NULL)
-    s_allocations--;
+    h2_atomic_fetch_sub(&s_allocations, 1u);
   free(ptr);
 }
 
@@ -88,13 +88,13 @@ static int contains_bytes(const char *data, size_t len, const char *needle,
 static h2_pal_result_t test_track_read(void *user, uint8_t *opus,
                                        size_t capacity, size_t *out_len) {
   test_state_t *test = user;
-  if (test->track_reads != 0u)
+  if (h2_atomic_load(&test->track_reads) != 0u)
     return H2_PAL_ERR_WOULD_BLOCK;
   assert(capacity >= 2u);
   opus[0] = 0xf8u;
   opus[1] = 0x42u;
   *out_len = 2u;
-  test->track_reads++;
+  h2_atomic_fetch_add(&test->track_reads, 1u);
   return H2_PAL_OK;
 }
 
@@ -123,6 +123,8 @@ int main(void) {
   static const h2_pal_mem_vtable_t mem_vtable = {
       .alloc = test_alloc, .realloc = test_realloc, .free = test_free};
   h2_pal_mem_api_t mem = {.user = NULL, .vtable = &mem_vtable};
+  assert(h2_atomic_int_init(&s_fail_next_alloc, 0) == H2_ATOMIC_OK);
+  assert(h2_atomic_size_init(&s_allocations, 0u) == H2_ATOMIC_OK);
   h2_pion_t *provider = NULL;
   assert(h2_pion_create(NULL, &provider) == H2_PAL_ERR_INVALID_ARG);
   s_real_task = h2_desktop_platform_task_api();
@@ -142,13 +144,14 @@ int main(void) {
   assert(api != NULL);
 
   h2_pal_webrtc_peer_t *peer = NULL;
-  size_t baseline = s_allocations;
+  size_t baseline = h2_atomic_load(&s_allocations);
   s_fail_start = 1;
   assert(h2_pal_webrtc_peer_create(api, &peer) == H2_PAL_ERR_TASK);
-  assert(peer == NULL && s_started == 0u && s_allocations == baseline);
+  assert(peer == NULL && s_started == 0u && h2_atomic_load(&s_allocations) == baseline);
   s_fail_start = 0;
   assert(h2_pal_webrtc_peer_create(api, &peer) == H2_PAL_OK);
   test_state_t test = {0};
+  assert(h2_atomic_size_init(&test.track_reads, 0u) == H2_ATOMIC_OK);
   static const h2_pal_webrtc_track_vtable_t track_vtable = {
       .read = test_track_read};
   h2_pal_webrtc_track_t track = {.user = &test, .vtable = &track_vtable};
@@ -160,7 +163,7 @@ int main(void) {
   for (unsigned n = 0; n < 5000u && h2_pion_test_opus_send_attempts(peer) < 2u;
        ++n)
     assert(h2_pal_time_sleep_ms(config.time, 1u) == H2_PAL_OK);
-  assert(test.track_reads == 1u);
+  assert(h2_atomic_load(&test.track_reads) == 1u);
   assert(h2_pion_test_opus_send_attempts(peer) == 2u);
   assert(h2_pion_test_opus_send_payloads_match(peer));
   h2_pal_webrtc_event_t event = {0};
@@ -171,7 +174,7 @@ int main(void) {
 
   assert(h2_pal_webrtc_peer_unset_track(api, peer, &track) == H2_PAL_OK);
 
-  s_fail_next_alloc = 1;
+  h2_atomic_store(&s_fail_next_alloc, 1);
   assert(h2_pion_test_remote_channel(peer) == H2_PAL_ERR_NO_MEMORY);
   h2_pal_webrtc_channel_config_t channel_config = {
       .label = {.data = "rpc", .len = 3u}, .ordered = 1, .reliable = 1};
@@ -221,7 +224,7 @@ int main(void) {
   assert(event.channel_info.label.len == 3u);
   assert(memcmp(event.channel_info.label.data, "rpc", 3u) == 0);
   h2_pal_webrtc_event_release(&event);
-  assert(s_allocations == 0u);
+  assert(h2_atomic_load(&s_allocations) == 0u);
 
   assert(h2_pion_create(&config, &provider) == H2_PAL_OK);
   api = h2_pion_webrtc_api(provider);
@@ -260,6 +263,9 @@ int main(void) {
   assert(h2_pal_webrtc_peer_poll(api, peer, 0, &event) == H2_PAL_ERR_CLOSED);
   s_fail_join = 0;
   h2_pion_destroy(&provider);
-  assert(provider == NULL && s_started == s_joined && s_allocations == 0u);
+  assert(provider == NULL && s_started == s_joined && h2_atomic_load(&s_allocations) == 0u);
+  h2_atomic_size_destroy(&test.track_reads);
+  h2_atomic_size_destroy(&s_allocations);
+  h2_atomic_int_destroy(&s_fail_next_alloc);
   return 0;
 }

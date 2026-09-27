@@ -34,6 +34,7 @@ cc_library(
     }),
     deps = [
         ":layout_config",
+        "//libs/atomic/providers/c11",
         "//libs/lvgl:platform",
         "//libs/pal",
         "//libs/pal:unsupported",

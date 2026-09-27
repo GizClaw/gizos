@@ -1,5 +1,7 @@
 package(default_visibility = ["//visibility:public"])
 
+exports_files([".github/workflows/release.yml"])
+
 filegroup(
     name = "live_e2e_command_files",
     srcs = ["Makefile", ".github/workflows/e2e.yml", ":make_command_files"],

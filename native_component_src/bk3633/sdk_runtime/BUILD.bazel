@@ -25,6 +25,7 @@ firmware_native_component(
         "manual",
     ],
     deps = [
+        "//libs/atomic",
         "//libs/pal",
         "//libs/pal/providers/libco",
     ],
@@ -54,6 +55,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        "//libs/atomic",
         "//libs/pal",
         "//libs/pal/providers/libco",
     ],

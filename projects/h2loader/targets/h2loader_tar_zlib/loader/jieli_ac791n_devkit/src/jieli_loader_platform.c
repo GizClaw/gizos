@@ -1,4 +1,7 @@
+#include "asm/cpu.h"
+
 #include "jieli_loader_platform.h"
+#include "h2_atomic.h"
 #include "jieli_warm_boot.h"
 #include "jieli_native_image.h"
 #include "jieli_pending_boot.h"
@@ -36,7 +39,7 @@ typedef struct h2_jieli_loader_platform {
   /* Created once per boot and never deleted: a burn callback that outlives
    * its wait can only post this live semaphore, which begin drains. */
   OS_SEM update_sem;
-  volatile int burn_waiting;
+  h2_atomic_bool_t burn_waiting;
   uint8_t update_buffer[H2_JIELI_UPDATE_BLOCK_SIZE];
   size_t update_buffered;
   uint64_t update_native_written;
@@ -570,7 +573,7 @@ static int update_burn_complete(int error) {
   char line[96];
   /* After a timed-out wait the result belongs to nobody; only the post of
    * the process-lifetime semaphore remains, and the next begin drains it. */
-  if (__atomic_load_n(&state.burn_waiting, __ATOMIC_ACQUIRE)) {
+  if (h2_atomic_bool_load(&state.burn_waiting, H2_ATOMIC_ACQUIRE)) {
     state.update_result = error == 0 && !h2_jieli_upgrade_erase_failed()
                               ? H2_PAL_OK : H2_PAL_ERR_IO;
   }
@@ -849,7 +852,7 @@ static int power_set_next(void *user, uint32_t partition_id) {
     h2_jieli_loader_diag_write("H2_JIELI_LOADER_HEADER arm=failed\r\n");
     return H2_PAL_ERR_IO;
   }
-  __atomic_store_n(&state.burn_waiting, 1, __ATOMIC_RELEASE);
+  h2_atomic_bool_store(&state.burn_waiting, true, H2_ATOMIC_RELEASE);
   h2_jieli_loader_diag_write("H2_JIELI_UPDATE_BURN_ENTER\r\n");
   uint32_t burn_rc = dual_bank_update_burn_boot_info(update_burn_complete);
   (void)snprintf(
@@ -865,7 +868,7 @@ static int power_set_next(void *user, uint32_t partition_id) {
     while (h2_jieli_loader_powercut_paused()) os_time_dly(100u);
     rc = H2_PAL_ERR_TIMEOUT;
   }
-  __atomic_store_n(&state.burn_waiting, 0, __ATOMIC_RELEASE);
+  h2_atomic_bool_store(&state.burn_waiting, false, H2_ATOMIC_RELEASE);
   if (rc == H2_PAL_OK) rc = state.update_result;
   if (h2_jieli_upgrade_erase_failed()) rc = H2_PAL_ERR_IO;
   (void)snprintf(
@@ -955,10 +958,16 @@ int h2_jieli_loader_platform_init(
     return H2_PAL_ERR_INVALID_ARG;
   }
   memset(&state, 0, sizeof(state));
+  h2_atomic_result_t atomic_rc = h2_atomic_bool_init(&state.burn_waiting, false);
+  if (atomic_rc != H2_ATOMIC_OK) {
+    return atomic_rc == H2_ATOMIC_UNSUPPORTED ? H2_PAL_ERR_UNSUPPORTED
+                                               : H2_PAL_ERR_NO_MEMORY;
+  }
   state.fs = fs;
   state.pref = pref;
   state.allocator = allocator;
   if (os_sem_create(&state.update_sem, 0) != OS_NO_ERR) {
+    h2_atomic_bool_destroy(&state.burn_waiting);
     return H2_PAL_ERR_NO_MEMORY;
   }
   h2_loader_status_t loader_status;

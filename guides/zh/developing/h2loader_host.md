@@ -15,6 +15,8 @@ Host Core 拥有：
 - destructive recovery authorization、factory bundle parser 和 raw driver contract。
 - frozen factory batch、bounded claim、per-slot result/retry/cancel，以及 JSON/CSV export。
 
+Raw ESP serial-flasher port callback 使用 process-global context，`active_context_claim` 是独立的文件级 static atomic backing，防止两个 raw driver 同时占用该 callback；它不需要单独的模块级 init/shutdown。BLE-iKCP 的 ikcp allocator hooks 是真正进程级资源，CLI 或其他 process owner 在连接前串行调用 `h2_bleikcp_global_init()`，在全部 connection 断开后调用对应 shutdown；该 hooks 生命周期不能与 open/close 交错。
+
 Linux Host Serial 归 `libs/pal/providers/linux/serial_host`，Darwin Host Serial 与 CoreBluetooth 归 `libs/pal/providers/darwin/pal_core`，共同的 termios/session lifecycle 只在 private `libs/pal/providers/posix/serial_host` 中共享。工厂 Batch Loader 通过 Web PAL/Web Serial 消费 Host Core；native CLI 通过 project-owned macOS/Linux target 消费相同 contract。Batch Loader、CLI 和后续 Web SDK 不能依赖彼此的 App、adapter 或 entry source。
 
 ## Discovery 与 identity
@@ -33,6 +35,8 @@ Console 和 Firmware 生命周期动作只能使用
 Firmware 先以 command registration 声明 implemented mask，再由产品 owner 通过 `h2_loader_set_command_availability(loader, flags, available)` 原子 set/clear 运行时 gate。它们只能额外限制 Loader 自身的 MFG、artifact 与 lifecycle 校验。connected status 发布 effective mask，执行路径在所需 operation lock 内重新计算；BLE advertisement 不携带该动态值，serial 与 BLE-iKCP 都以 connected status 为准。
 
 Browser SDK 0.2.0 投影 `deviceUid`、`commandAvailability`、`capabilities`、`active` identity、`runningPartition`、`nextPartition`、`bootIntent`、`stage`、`partition1`、`partition2`、`lastResult` 和 MFG 信息；MFG 的 `steps` 数组长度等于设备 `mfg_steps` 的位数（1..32，由产品步数决定，见 [MFG 进度记录](/apps/h2loader/update/#mfg-进度记录)）。`H2LoaderCapabilities`、`H2LoaderCommands` 与 `commandAvailable()` 是公共解码入口；生命周期没有旧 packed states、installed/staged scalar 或 APP 专用 status fallback。SDK 的 breaking lifecycle API 只有 `stage`、`stageUrl`、`abortStage`、`rebootApp`、`rebootLoader` 和 `rebootUpgrade`。
+
+Browser SDK 0.3.0 的 `H2LoaderCommands.WIFI_STATUS` 对应设备 `command_availability` 的 bit 20。`commandAvailable()` 接受 32 位非负整数掩码，拒绝未定义的命令位及超出 32 位的数值。
 
 Reliable serial 与 BLE-iKCP adapter 都消费相同的 request，按 callback 投影 bounded output，并返回 transport result、terminal kind、output byte count、truncated 与 lifecycle-transition 标记。Reliable serial 的 transport log sink 覆盖整个 session 生命周期，而不只是 typed command 的响应：ready-marker 握手期读到的原始字节，以及 `SESSION_OPEN`/`SESSION_CLOSE` control 交换期间被 frame filter 判定为普通日志的字节，都投影到同一个 sink。握手用的临时 frame filter 只解析到匹配的 `SESSION_ACK` 为止；同一次 read 中 ACK 之后的所有 bytes（包括跨 read 拆开的下一个 frame 前缀和紧随 frame 的文本）都在新 stream 创建后原样交给它，不能被临时 parser 吞掉。Session 建立后，若一行从行首开始就是 `H2_LOADER_READY ` banner，说明设备已经复位、旧 KCP conversation 不再存在：整行（直到行尾 `\n`，无论 banner 被拆成多少次 input）都先完整交给 log sink，随后当前 input/poll 返回 `H2_PAL_ERR_CLOSED`，由调用方按既有 bounded reconnect 预算重新建立 session。带时间戳等前缀的历史 READY 日志行和握手期（ACK 之前）的 banner 都不触发该 close。Monitor 期间设备的控制台输出有两条到达路径：没有活动 session 时是裸的 non-frame bytes，由 stream 的 log sink 直接投影；session 建立后设备会把控制台塞进 reliable iKCP DATA frame，解码后的 payload 落在 stream 的 receive buffer 里。Monitor 必须同时排空后者，否则被 tunnel 的控制台行会被静默丢弃：`monitor_logs` 每次 pump 之后都把解码 payload 读干净，并经由同一个 log wrapper 投影，因此调用方 sink 和 `H2_LOADER_READY` session retirement 对两条路径的行为一致。Typed command 与 status 路径不受影响，它们仍通过各自的响应读取消费解码 payload。Log sink 返回错误时立即结束当前阶段并原样上报，不静默丢弃。Cancellation 在写入前、读取后的 bounded boundary 和 Launcher shutdown 上检查；断线不换 transport、不 replay。BLE-iKCP 的无响应写允许在 `WOULD_BLOCK` 后最多重试 40 次、每次间隔 2 ms；Host 与 Loader/App 两端使用相同 bounded backpressure，超过预算仍返回原始 transport error。
 
@@ -98,6 +102,8 @@ bazel test //libs/h2loader_host:all
 bazel test //projects/h2loader/libs/web:all
 bazel build //projects/h2loader/targets/npm_package/h2loader:h2loader
 ```
+
+Browser SDK 的 snapshot Release 构建、确定性 tarball 与下游 `npm-index.json` 合同见 [npm Release](/apps/h2loader/npm_release)。该路径与 GitHub Packages 发布并行，共用 package 自身的版本。
 
 Fake、PTY 和 cross-compile 只证明 contract 与 host behavior。最终产品验收仍需在准确 reviewed build 上记录 live discovery、authoritative identity、Stage、reboot、partition copy-back 与最终 checksum/metadata。当前 ESP DevKit 已提供 UART/BLE 实板证据；BK 实板因硬件不可用明确 deferred，不能由 build 结果替代。
 

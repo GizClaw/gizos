@@ -80,6 +80,7 @@ typedef struct IceServer {
 typedef struct PeerConfiguration {
   const h2_pal_log_api_t *log;
   const h2_pal_mem_api_t *mem;
+  const h2_pal_mem_api_t *allocator;
   const h2_pal_net_api_t *net;
   const h2_pal_time_api_t *time;
   const h2_pal_crypto_api_t* crypto;

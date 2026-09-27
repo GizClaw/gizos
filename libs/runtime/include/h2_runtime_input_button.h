@@ -9,7 +9,9 @@
  * carries only press/release timestamps; product code derives all semantics.
  * Held samples are dropped when the event queue is full; the press edge and
  * the release edge (BUTTON_UP plus the final action) wait for queue space and
- * keep their timestamps, so DOWN/UP always pair up for a consumer.
+ * keep their timestamps. Retention is bounded per source: overflow discards
+ * the oldest complementary pair; terminal input faults count undelivered
+ * events before closing the queue.
  */
 
 #include "h2/pal/core/h2_pal_errors.h"

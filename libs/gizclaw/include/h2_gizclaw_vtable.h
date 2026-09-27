@@ -36,6 +36,70 @@ typedef struct h2_gizclaw_device_facts {
   h2_gizclaw_device_imei_t imeis[H2_GIZCLAW_DEVICE_IMEI_MAX];
 } h2_gizclaw_device_facts_t;
 
+/** Longest DeviceSettings.locale the wire message accepts, excluding NUL. */
+#define H2_GIZCLAW_DEVICE_LOCALE_MAX 35
+
+/** Default conversation input mode of the device. Mirrors the Workspace input
+ * mode so a device default and a Workspace override share one vocabulary. */
+typedef enum h2_gizclaw_device_interaction_mode {
+  H2_GIZCLAW_DEVICE_INTERACTION_PUSH_TO_TALK = 1,
+  H2_GIZCLAW_DEVICE_INTERACTION_REALTIME = 2,
+} h2_gizclaw_device_interaction_mode_t;
+
+/** Feedback the device gives on a physical key press. */
+typedef enum h2_gizclaw_device_key_feedback {
+  H2_GIZCLAW_DEVICE_KEY_FEEDBACK_NONE = 1,
+  H2_GIZCLAW_DEVICE_KEY_FEEDBACK_SOUND = 2,
+  H2_GIZCLAW_DEVICE_KEY_FEEDBACK_VIBRATE = 3,
+  H2_GIZCLAW_DEVICE_KEY_FEEDBACK_SOUND_AND_VIBRATE = 4,
+} h2_gizclaw_device_key_feedback_t;
+
+/** How the device alerts the user to an incoming event. */
+typedef enum h2_gizclaw_device_alert_mode {
+  H2_GIZCLAW_DEVICE_ALERT_SILENT = 1,
+  H2_GIZCLAW_DEVICE_ALERT_VIBRATE = 2,
+  H2_GIZCLAW_DEVICE_ALERT_RING = 3,
+} h2_gizclaw_device_alert_mode_t;
+
+/**
+ * Device-owned configuration exchanged by client.device.settings.get/set.
+ *
+ * Every member is optional in both directions: on a set an absent member leaves
+ * that option unchanged, and on a response an absent member means the device
+ * does not support that option, which is what lets one message serve products
+ * with different hardware. The numeric members mirror the wire types exactly;
+ * the library rejects a request, and fails a response, whose present members
+ * are out of range: brightness in [0, 100], timeouts >= 0, locale a
+ * well-formed BCP 47 tag of at most H2_GIZCLAW_DEVICE_LOCALE_MAX bytes (a
+ * 2-8 letter primary subtag then hyphen-separated 1-8 character alphanumeric
+ * subtags, so "zh_CN" is rejected), and each enum one of its named values.
+ * locale is an inline buffer, so nothing is borrowed from the product; it must
+ * be NUL-terminated within the buffer, and one that fills every byte without a
+ * NUL is rejected like any other invalid value.
+ */
+typedef struct h2_gizclaw_device_settings {
+  bool has_cellular_enabled;
+  bool cellular_enabled;
+  bool has_screen_off_timeout_ms;
+  int64_t screen_off_timeout_ms;
+  bool has_screen_brightness;
+  int64_t screen_brightness;
+  bool has_led_brightness;
+  int64_t led_brightness;
+  bool has_locale;
+  char locale[H2_GIZCLAW_DEVICE_LOCALE_MAX + 1];
+  bool has_default_interaction_mode;
+  h2_gizclaw_device_interaction_mode_t default_interaction_mode;
+  bool has_key_feedback;
+  h2_gizclaw_device_key_feedback_t key_feedback;
+  bool has_alert_mode;
+  h2_gizclaw_device_alert_mode_t alert_mode;
+  bool has_auto_sleep_timeout_ms;
+  int64_t auto_sleep_timeout_ms;
+  bool has_nfc_enabled;
+  bool nfc_enabled;
+} h2_gizclaw_device_settings_t;
+
 /** Supplement only capabilities absent from PAL. All arguments are borrowed
  * during the call. get_facts runs on the RPC owner and must not block; Stage
  * methods run on the device task. No callback may destroy or stop the Service.
@@ -81,6 +145,44 @@ typedef struct h2_gizclaw_vtable {
    * start_speaker before playback and leaves the speaker on afterwards. */
   h2_pal_result_t (*speaker_acquire)(void *user);
   h2_pal_result_t (*speaker_release)(void *user);
+  /** Optional device configuration for client.device.settings.get/set. Both run
+   * on the RPC owner and must return promptly, like get_facts; the library owns
+   * the protobuf and the range checks. get_device_settings fills out with the
+   * options the product supports and leaves every other member absent.
+   * set_device_settings receives only the members the caller sent, already
+   * validated, applies them and fills out with the device's full settings after
+   * the change, so the caller sees what was accepted. Returning a member out of
+   * range fails the RPC instead of sending it. Either hook unset answers
+   * UNIMPLEMENTED for its method. */
+  h2_pal_result_t (*get_device_settings)(void *user,
+                                        h2_gizclaw_device_settings_t *out);
+  h2_pal_result_t (*set_device_settings)(
+      void *user, const h2_gizclaw_device_settings_t *patch,
+      h2_gizclaw_device_settings_t *out);
+  /** Optional non-blocking handoff for client.device.factory_reset. Called once
+   * on the device worker after the RPC response was sent, like request_reboot:
+   * copy the request, post the erase to a product-owned execution context and
+   * return promptly. It must not sleep, block, or stop or destroy the Service
+   * inline. keep_network asks the product to keep saved Wi-Fi and cellular
+   * configuration so the device can reconnect without being re-provisioned.
+   * There is no library fallback, because what device-local state means is a
+   * product decision; unset answers UNIMPLEMENTED. A product that deletes its
+   * own Peer during the reset invalidates every API key of that Peer, including
+   * the caller's. */
+  h2_pal_result_t (*request_factory_reset)(void *user, bool keep_network);
+  /** Optional non-blocking handoff for client.run.workspace.set. Called once on
+   * the device worker after the RPC response was sent, with a NUL-terminated
+   * name in library storage that is valid only for the call. The library does
+   * not switch the Workspace itself: the App owns the Session, its conversation
+   * and its confirmed parameters. Copy the name, post a
+   * h2_gizclaw_session_select() for it to the App thread and return promptly;
+   * kickoff is best expressed as initiative AGENT with agent_initiative_policy
+   * ON_RELOAD in that selection's parameter patch. The response only means the
+   * request was accepted; the committed Workspace is the one the Server
+   * reports. Unset answers UNIMPLEMENTED. */
+  h2_pal_result_t (*request_run_workspace_set)(void *user,
+                                               const char *workspace_name,
+                                               bool kickoff);
 } h2_gizclaw_vtable_t;
 #ifdef __cplusplus
 }
