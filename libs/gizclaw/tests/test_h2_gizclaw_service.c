@@ -5504,10 +5504,11 @@ static void test_req_workflow_public_paths(void) {
                &request) == H2_PAL_ERR_INVALID_ARG);
     assert(request == NULL && h2_atomic_load(&env.rpc_start_count) == 0u);
     char name[] = "story.aesop";
-    const h2_gizclaw_str_t collection = {"a", 1u};
+    const h2_gizclaw_str_t tag = {"a", 1u};
     const h2_gizclaw_str_t cursor = {"q", 1u};
     assert((list ? h2_gizclaw_req_create_workflow_list(
-                       service, 1u, collection, cursor, 1u, 1234u, &request)
+                       service, 1u, (h2_gizclaw_str_t[]){tag}, 1u, cursor, 1u,
+                       1234u, &request)
                  : h2_gizclaw_req_create_workflow_get(
                        service, 1u, (h2_gizclaw_str_t){name, 11u}, 1234u,
                        &request)) == H2_PAL_OK);
@@ -5527,8 +5528,9 @@ static void test_req_workflow_public_paths(void) {
              strcmp(page.items[0].name, "story.aesop") == 0);
       assert(strcmp(page.runtime_profile_name, "p") == 0 &&
              strcmp(page.runtime_profile_revision, "r") == 0);
-      assert(h2_gizclaw_rpc_workflow_list(service, collection, cursor, 1u,
-                                          1234u, &storage, &page) == H2_PAL_OK);
+      assert(h2_gizclaw_rpc_workflow_list(service, (h2_gizclaw_str_t[]){tag},
+                                          1u, cursor, 1u, 1234u, &storage,
+                                          &page) == H2_PAL_OK);
     } else {
       assert(strcmp(result.workflow.name, "story.aesop") == 0);
       assert(strcmp(result.runtime_profile_name, "p") == 0 &&
@@ -5542,6 +5544,69 @@ static void test_req_workflow_public_paths(void) {
     assert(strcmp(list ? page.items[0].name : result.workflow.name,
                   "story.aesop") == 0);
   }
+}
+
+static void test_workflow_tag_selectors(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  const uint8_t response[] = {0x22, 1, 'p', 0x2a, 1, 'r'};
+  const uint8_t two_tags[] = {0x10, 1,    0x1a, 6,    '6',  '-',
+                              '8',  0xe5, 0xb2, 0x81, 0x1a, 6,
+                              0xe6, 0x95, 0x85, 0xe4, 0xba, 0x8b};
+  const uint8_t no_tags[] = {0x10, 1};
+  env.expected_method = H2_GIZCLAW_RPC_SERVER_WORKFLOW_LIST;
+  env.response_payload = response;
+  env.response_payload_len = sizeof(response);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  h2_gizclaw_req_t *request = NULL;
+  for (unsigned scenario = 0; scenario < 2; ++scenario) {
+    char age[] = "6-8\xe5\xb2\x81", content[] = "\xe6\x95\x85\xe4\xba\x8b";
+    h2_gizclaw_str_t tags[] = {{age, sizeof(age) - 1u},
+                               {content, sizeof(content) - 1u}};
+    env.expected_payload = scenario ? no_tags : two_tags;
+    env.expected_payload_len = scenario ? sizeof(no_tags) : sizeof(two_tags);
+    assert(h2_gizclaw_req_create_workflow_list(
+               service, 1u, scenario ? NULL : tags, scenario ? 0u : 2u,
+               (h2_gizclaw_str_t){0}, 1u, 1234u, &request) == H2_PAL_OK);
+    memset(age, 'x', sizeof(age) - 1u);
+    memset(content, 'y', sizeof(content) - 1u);
+    tags[0].data = NULL;
+    assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
+    assert(h2_gizclaw_req_wait(request, 2000u) == H2_PAL_OK);
+    h2_gizclaw_req_release(request);
+  }
+  unsigned before = h2_atomic_load(&env.rpc_start_count);
+  char boundary[129];
+  memset(boundary, 'x', sizeof(boundary));
+  const char invalid_utf8[] = {(char)0xc0, (char)0x80};
+  const h2_gizclaw_str_t invalid[] = {{NULL, 1u},
+                                      {"", 0u},
+                                      {boundary, 129u},
+                                      {"a\0b", 3u},
+                                      {invalid_utf8, sizeof(invalid_utf8)}};
+  for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
+    request = (h2_gizclaw_req_t *)(uintptr_t)1;
+    assert(h2_gizclaw_req_create_workflow_list(
+               service, 1u, &invalid[i], 1u, (h2_gizclaw_str_t){0}, 1u, 1234u,
+               &request) == H2_PAL_ERR_INVALID_ARG);
+    assert(!request);
+  }
+  h2_gizclaw_str_t repeated[32];
+  for (size_t i = 0; i < 32; ++i)
+    repeated[i] = (h2_gizclaw_str_t){boundary, 128u};
+  assert(h2_gizclaw_req_create_workflow_list(
+             service, 1u, repeated, 33u, (h2_gizclaw_str_t){0}, 1u, 1234u,
+             &request) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_req_create_workflow_list(
+             service, 1u, NULL, 1u, (h2_gizclaw_str_t){0}, 1u, 1234u,
+             &request) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_req_create_workflow_list(service, 1u, repeated, 32u,
+                                             (h2_gizclaw_str_t){0}, 1u, 1234u,
+                                             &request) == H2_PAL_OK);
+  h2_gizclaw_req_release(request);
+  assert(h2_atomic_load(&env.rpc_start_count) == before);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 
 typedef struct test_contact_text {
@@ -5888,8 +5953,8 @@ static void test_workspace_direct_input_update(void) {
         .has_tts_speech_rate_percent = (mask & 8u) != 0u,
         .tts_speech_rate_percent = 70,
         .has_safety_fence_level = (mask & 16u) != 0u,
-        .safety_fence_level = H2_GIZCLAW_SAFETY_FENCE_LEVEL_GENERAL};
-    uint8_t wire[32];
+        .safety_fence_level = "general"};
+    uint8_t wire[64];
     memcpy(wire, workspace_get_request, sizeof(workspace_get_request));
     size_t n = sizeof(workspace_get_request);
     wire[n++] = 0x12;
@@ -5916,8 +5981,10 @@ static void test_workspace_direct_input_update(void) {
       wire[n++] = 70u;
     }
     if (patch.has_safety_fence_level) {
-      wire[n++] = 0x20;
-      wire[n++] = 2u;
+      wire[n++] = 0x2a;
+      wire[n++] = 7u;
+      memcpy(&wire[n], "general", 7u);
+      n += 7u;
     }
     wire[patch_length] = (uint8_t)(n - patch_length - 1u);
     workspace_input_mock.expected_request = wire;
@@ -6028,9 +6095,8 @@ static void test_workspace_request_and_response_paths(void) {
   h2_gizclaw_resp_storage_t storage = {.data = buffer,
                                        .capacity = sizeof(buffer)};
   h2_gizclaw_req_t *request = NULL;
-  char name[] = "ws", collection[] = "a", workflow[] = "story.aesop";
-  const h2_gizclaw_str_t ws = {name, 2u}, col = {collection, 1u},
-                         flow = {workflow, 11u};
+  char name[] = "ws", workflow[] = "story.aesop";
+  const h2_gizclaw_str_t ws = {name, 2u}, flow = {workflow, 11u};
   static const uint8_t get_request[] = {0x0a, 2, 'w', 's'};
   static const uint8_t get_response[] = {0x0a, 10, 0x1a, 2,    'w', 's',
                                          0x32, 4,  'c',  'h',  'a', 't',
@@ -6063,9 +6129,9 @@ static void test_workspace_request_and_response_paths(void) {
          strcmp(get.runtime_profile_name, "p") == 0);
   assert(h2_gizclaw_rpc_workspace_get(service, ws, 1234u, &storage, &get) ==
          H2_PAL_OK);
-  static const uint8_t create_request[] = {
-      0x0a, 20,  0x0a, 2,   'w', 's', 0x1a, 11,  's',  't', 'o',
-      'r',  'y', '.',  'a', 'e', 's', 'o',  'p', 0x2a, 1,   'a'};
+  static const uint8_t create_request[] = {0x0a, 17,  0x0a, 2,   'w', 's', 0x1a,
+                                           11,   's', 't',  'o', 'r', 'y', '.',
+                                           'a',  'e', 's',  'o', 'p'};
   static const uint8_t value_response[] = {0x0a, 10, 0x1a, 2,   'w', 's',
                                            0x32, 4,  'c',  'h', 'a', 't'};
   mock = (test_contact_rpc_t){.expected_method =
@@ -6075,28 +6141,26 @@ static void test_workspace_request_and_response_paths(void) {
                               .response = value_response,
                               .response_len = sizeof(value_response)};
   workspace_test_use_single(&mock);
-  assert(h2_gizclaw_req_create_workspace_create(service, 1u, col, flow, ws,
-                                                1234u, &request) == H2_PAL_OK);
+  assert(h2_gizclaw_req_create_workspace_create(service, 1u, flow, ws, 1234u,
+                                                &request) == H2_PAL_OK);
   memset(workflow, 'x', 11u);
-  collection[0] = 'b';
   assert(mock.calls == 0);
   assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
   assert(h2_gizclaw_req_wait(request, 2000u) == H2_PAL_OK &&
          mock.request_matches);
   assert(h2_gizclaw_resp_parse_workspace_create(request, &storage, &value) ==
          H2_PAL_OK);
-  assert(strcmp(value.collection, "a") == 0);
+  assert(strcmp(value.workflow_name, "chat") == 0);
   h2_gizclaw_req_release(request);
   memcpy(workflow, "story.aesop", 11u);
-  collection[0] = 'a';
-  assert(h2_gizclaw_rpc_workspace_create(service, col, flow, ws, 1234u,
-                                         &storage, &value) == H2_PAL_OK);
+  assert(h2_gizclaw_rpc_workspace_create(service, flow, ws, 1234u, &storage,
+                                         &value) == H2_PAL_OK);
   assert(h2_gizclaw_req_create_workspace_create(
-             service, 1u, col, (h2_gizclaw_str_t){"story..esop", 11u}, ws,
-             1234u, &request) == H2_PAL_ERR_INVALID_ARG &&
+             service, 1u, (h2_gizclaw_str_t){"story..esop", 11u}, ws, 1234u,
+             &request) == H2_PAL_ERR_INVALID_ARG &&
          request == NULL);
 
-  static const uint8_t list_request[] = {0x10, 1, 0x22, 1, 'a'};
+  static const uint8_t list_request[] = {0x10, 1};
   static const uint8_t list_response[] = {0x12, 10, 0x1a, 2,    'w', 's',
                                           0x32, 4,  'c',  'h',  'a', 't',
                                           0x22, 1,  'p',  0x2a, 1,   'r'};
@@ -6107,7 +6171,7 @@ static void test_workspace_request_and_response_paths(void) {
                               .response = list_response,
                               .response_len = sizeof(list_response)};
   h2_gizclaw_workspace_page_t page;
-  assert(h2_gizclaw_req_create_workspace_list(service, 1u, col,
+  assert(h2_gizclaw_req_create_workspace_list(service, 1u,
                                               (h2_gizclaw_str_t){0}, 1u, 1234u,
                                               &request) == H2_PAL_OK);
   assert(h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL) == H2_PAL_OK);
@@ -6119,9 +6183,9 @@ static void test_workspace_request_and_response_paths(void) {
          tiny.used == 0u);
   assert(h2_gizclaw_resp_parse_workspace_list(request, &storage, &page) ==
          H2_PAL_OK);
-  assert(page.count == 1u && strcmp(page.items[0].collection, "a") == 0);
+  assert(page.count == 1u && strcmp(page.items[0].workflow_name, "chat") == 0);
   h2_gizclaw_req_release(request);
-  assert(h2_gizclaw_rpc_workspace_list(service, col, (h2_gizclaw_str_t){0}, 1u,
+  assert(h2_gizclaw_rpc_workspace_list(service, (h2_gizclaw_str_t){0}, 1u,
                                        1234u, &storage, &page) == H2_PAL_OK);
 
   static const uint8_t history_request[] = {0x10, 1, 0x18, 1,
@@ -6198,7 +6262,7 @@ static void test_workspace_request_and_response_paths(void) {
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
   assert(strcmp(get.workspace.name, "ws") == 0 &&
-         strcmp(value.collection, "a") == 0 &&
+         strcmp(value.workflow_name, "chat") == 0 &&
          strcmp(page.items[0].name, "ws") == 0 &&
          strcmp(activation.workspace_name, "ws") == 0);
 }
@@ -6221,14 +6285,14 @@ static void test_run_stop_downlink(void) {
                &conversation) == H2_PAL_OK);
     h2_gizclaw_session_t* session = NULL;
     if (attached) {
-      static const char* const collections[] = {"test"};
+      static const h2_gizclaw_str_t tags[] = {{"test", 4u}};
       const h2_gizclaw_session_config_t config = {
           .service = service,
           .mem = service->client_config.allocator,
           .sync = service->config.sync,
           .time = service->client_config.time,
-          .collections = collections,
-          .collection_count = 1u,
+          .tags = tags,
+          .tag_count = 1u,
           .max_workflows = 1u,
           .catalog_bytes = 4096u};
       assert(h2_gizclaw_session_create(&config, &session) == H2_PAL_OK);
@@ -6306,13 +6370,13 @@ static void test_workspace_safety_fence(void) {
       0x0a, 10, 0x0a, 2, 'w', 's', 0x40, 3, 0x6a, 2, 'w', 's'};
   static const struct {
     bool present;
-    h2_gizclaw_safety_fence_level_t level;
-    uint8_t wire_value;
+    const char *level;
   } cases[] = {
-      {false, 99, 0}, /* An absent invalid value must be ignored. */
-      {true, H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF, 1},
-      {true, H2_GIZCLAW_SAFETY_FENCE_LEVEL_GENERAL, 2},
-      {true, H2_GIZCLAW_SAFETY_FENCE_LEVEL_CHILD, 3},
+      {false, "Invalid"}, /* An absent invalid value must be ignored. */
+      {true, "off"},
+      {true, "general"},
+      {true, "child"},
+      {true, "strict_v2"},
   };
   const h2_gizclaw_str_t name = {"ws", 2u};
   uint8_t buffer[1024];
@@ -6331,16 +6395,25 @@ static void test_workspace_safety_fence(void) {
       h2_gizclaw_workspace_parameters_patch_t patch = {
           .has_input = !cases[i].present,
           .input = H2_GIZCLAW_WORKSPACE_INPUT_REALTIME,
-          .has_safety_fence_level = cases[i].present,
-          .safety_fence_level = cases[i].level};
-      /* Both RPCs carry parameters as field 2. Exact bytes prove field 4 is
-       * absent or has the intended value, independently of SDK descriptors. */
-      const uint8_t payload[] = {
-          0x0a, 2, 'w', 's', 0x12, 2,
-          cases[i].present ? 0x20 : 0x08,
-          cases[i].present ? cases[i].wire_value : 2};
+          .has_safety_fence_level = cases[i].present};
+      strcpy(patch.safety_fence_level, cases[i].level);
+      /* Field 5 carries the Profile identifier as a string. */
+      uint8_t payload[32] = {0x0a, 2, 'w', 's', 0x12};
+      size_t payload_len = 5u;
+      if (cases[i].present) {
+        size_t length = strlen(cases[i].level);
+        payload[payload_len++] = (uint8_t)(length + 2u);
+        payload[payload_len++] = 0x2a;
+        payload[payload_len++] = (uint8_t)length;
+        memcpy(&payload[payload_len], cases[i].level, length);
+        payload_len += length;
+      } else {
+        payload[payload_len++] = 2u;
+        payload[payload_len++] = 0x08;
+        payload[payload_len++] = 2u;
+      }
       mock.expected_request = payload;
-      mock.expected_request_len = sizeof(payload);
+      mock.expected_request_len = payload_len;
       mock.calls = 0;
       h2_gizclaw_req_t *request = NULL;
       assert((reload ? h2_gizclaw_req_create_workspace_reload_with_options(
@@ -6358,7 +6431,7 @@ static void test_workspace_safety_fence(void) {
       patch.has_input = !cases[i].present;
       patch.input = H2_GIZCLAW_WORKSPACE_INPUT_REALTIME;
       patch.has_safety_fence_level = cases[i].present;
-      patch.safety_fence_level = cases[i].level;
+      strcpy(patch.safety_fence_level, cases[i].level);
       storage.used = 0u;
       assert((reload ? h2_gizclaw_rpc_workspace_reload_with_options(
                            service, name, &patch, 1234u, &storage, &activation)
@@ -6368,13 +6441,13 @@ static void test_workspace_safety_fence(void) {
       assert(mock.calls == 2 && mock.request_matches);
     }
 
-    const h2_gizclaw_safety_fence_level_t invalid[] = {0, -1, 4, 99};
+    const char *const invalid[] = {"", "UPPER", "bad.dot", "-bad"};
     for (size_t i = 0u; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
-      const h2_gizclaw_workspace_parameters_patch_t patch = {
+      h2_gizclaw_workspace_parameters_patch_t patch = {
           .has_input = true,
           .input = H2_GIZCLAW_WORKSPACE_INPUT_REALTIME,
-          .has_safety_fence_level = true,
-          .safety_fence_level = invalid[i]};
+          .has_safety_fence_level = true};
+      strcpy(patch.safety_fence_level, invalid[i]);
       mock.calls = 0;
       h2_gizclaw_req_t *request = NULL;
       assert((reload ? h2_gizclaw_req_create_workspace_reload_with_options(
@@ -6397,7 +6470,7 @@ static void test_workspace_safety_fence(void) {
     workspace_test_use_single(&mock);
     const h2_gizclaw_workspace_parameters_patch_t patch = {
         .has_safety_fence_level = true,
-        .safety_fence_level = H2_GIZCLAW_SAFETY_FENCE_LEVEL_CHILD};
+        .safety_fence_level = "child"};
     for (unsigned cancel = 0u; cancel < 2u; ++cancel) {
       h2_gizclaw_req_t *request = NULL;
       assert((reload ? h2_gizclaw_req_create_workspace_reload_with_options(
@@ -6548,14 +6621,14 @@ static void test_workspace_fence_session_flow(void) {
   h2_gizclaw_async_rpc_test_set_ops(&ops);
   assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
   memset(&fence_flow, 0, sizeof(fence_flow));
-  static const char *const collections[] = {"a"};
+  static const h2_gizclaw_str_t tags[] = {{"a", 1u}};
   const h2_gizclaw_session_config_t config = {
       .service = service,
       .mem = service->client_config.allocator,
       .sync = service->config.sync,
       .time = &time,
-      .collections = collections,
-      .collection_count = 1u,
+      .tags = tags,
+      .tag_count = 1u,
       .max_workflows = 1u,
       .catalog_bytes = 4096u};
   assert(h2_gizclaw_session_create(&config, &fence_flow.session) == H2_PAL_OK);
@@ -6565,9 +6638,8 @@ static void test_workspace_fence_session_flow(void) {
       .has_input = true,
       .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
       .has_safety_fence_level = true,
-      .safety_fence_level = H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF};
-  h2_gizclaw_session_selection_t selection = {.collection = "a",
-                                              .workflow_name = "chat",
+      .safety_fence_level = "off"};
+  h2_gizclaw_session_selection_t selection = {.workflow_name = "chat",
                                               .workspace_name = "ws",
                                               .parameters = &patch};
   assert(h2_gizclaw_session_select(fence_flow.session, &selection, 1000u) ==
@@ -6575,8 +6647,7 @@ static void test_workspace_fence_session_flow(void) {
   h2_gizclaw_session_state_t state;
   assert(h2_gizclaw_session_snapshot(fence_flow.session, &state) == H2_PAL_OK);
   assert(state.parameters.has_safety_fence_level &&
-         state.parameters.safety_fence_level ==
-             H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF);
+         strcmp(state.parameters.safety_fence_level, "off") == 0);
   assert(!fence_flow.at_send.parameters.has_safety_fence_level);
   unsigned reloads = fence_flow.reloads;
   assert(h2_gizclaw_session_select(fence_flow.session, &selection, 1000u) ==
@@ -6599,9 +6670,9 @@ static void test_workspace_fence_session_flow(void) {
         .agent_initiative_policy = H2_GIZCLAW_AGENT_INITIATIVE_ON_RELOAD,
         .has_tts_speech_rate_percent = (mask & 8u) != 0u,
         .tts_speech_rate_percent = 70,
-        .has_safety_fence_level = (mask & 16u) != 0u,
-        .safety_fence_level =
-            (h2_gizclaw_safety_fence_level_t)(1u + mask % 3u)};
+        .has_safety_fence_level = (mask & 16u) != 0u};
+    strcpy(patch.safety_fence_level,
+           (const char *const[]){"off", "general", "child"}[mask % 3u]);
     storage.used = 0u;
     assert(h2_gizclaw_rpc_workspace_reload_with_options(
                service, (h2_gizclaw_str_t){"ws", 2u}, &patch, 1000u, &storage,
@@ -6614,24 +6685,24 @@ static void test_workspace_fence_session_flow(void) {
     assert(fence_flow.patch.has_safety_fence_level ==
            patch.has_safety_fence_level);
     assert(!patch.has_safety_fence_level ||
-           (int)fence_flow.patch.safety_fence_level ==
-               (int)patch.safety_fence_level);
+           strcmp(fence_flow.patch.safety_fence_level,
+                  patch.safety_fence_level) == 0);
     assert(memcmp(&fence_flow.at_send.parameters, &before.parameters,
                   sizeof(before.parameters)) == 0);
     assert(h2_gizclaw_session_snapshot(fence_flow.session, &state) ==
            H2_PAL_OK);
     assert(state.workspace == H2_GIZCLAW_SESSION_READY);
-    assert(state.parameters.safety_fence_level ==
-           (patch.has_safety_fence_level
-                ? patch.safety_fence_level
-                : before.parameters.safety_fence_level));
+    assert(strcmp(state.parameters.safety_fence_level,
+                  patch.has_safety_fence_level
+                      ? patch.safety_fence_level
+                      : before.parameters.safety_fence_level) == 0);
   }
 
   /* A storage-only update cannot appear as applied. A subsequent omitted
    * reload cannot preserve a stale confirmation of the previous run. */
   patch = (h2_gizclaw_workspace_parameters_patch_t){
       .has_safety_fence_level = true,
-      .safety_fence_level = H2_GIZCLAW_SAFETY_FENCE_LEVEL_CHILD};
+      .safety_fence_level = "child"};
   h2_gizclaw_workspace_t workspace;
   storage.used = 0u;
   assert(h2_gizclaw_rpc_workspace_set_parameters(
@@ -6664,7 +6735,7 @@ static void test_workspace_fence_session_flow(void) {
                                     H2_PAL_ERR_TIMEOUT};
   for (unsigned i = 0u; i < sizeof(errors) / sizeof(errors[0]); ++i) {
     fence_flow.failure = i + 1u;
-    patch.safety_fence_level = H2_GIZCLAW_SAFETY_FENCE_LEVEL_GENERAL;
+    strcpy(patch.safety_fence_level, "general");
     storage.used = 0u;
     h2_pal_result_t failure_rc = h2_gizclaw_rpc_workspace_reload_with_options(
         service, (h2_gizclaw_str_t){"ws", 2u}, &patch, 1000u, &storage,
@@ -6677,8 +6748,7 @@ static void test_workspace_fence_session_flow(void) {
            H2_PAL_OK);
     assert(state.workspace == H2_GIZCLAW_SESSION_FAILED &&
            state.parameters.has_safety_fence_level);
-    assert(state.parameters.safety_fence_level ==
-           H2_GIZCLAW_SAFETY_FENCE_LEVEL_CHILD);
+    assert(strcmp(state.parameters.safety_fence_level, "child") == 0);
     fence_flow.failure = 0u;
     /* The server may have persisted GENERAL before failure. Omission cannot
      * re-confirm CHILD even though the later reload itself succeeds. */
@@ -6689,7 +6759,7 @@ static void test_workspace_fence_session_flow(void) {
     assert(h2_gizclaw_session_snapshot(fence_flow.session, &state) ==
            H2_PAL_OK);
     assert(!state.parameters.has_safety_fence_level);
-    patch.safety_fence_level = H2_GIZCLAW_SAFETY_FENCE_LEVEL_CHILD;
+    strcpy(patch.safety_fence_level, "child");
     assert(h2_gizclaw_session_select(fence_flow.session, &selection, 1000u) ==
            H2_PAL_OK);
   }
@@ -6706,14 +6776,13 @@ static void test_workspace_fence_session_flow(void) {
          H2_PAL_OK);
   assert(fence_flow.reloads == reloads + 1u);
   fence_flow.failure = 6u;
-  patch.safety_fence_level = H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF;
+  strcpy(patch.safety_fence_level, "off");
   storage.used = 0u;
   assert(h2_gizclaw_rpc_workspace_reload_with_options(
              service, (h2_gizclaw_str_t){"ws", 2u}, &patch, 1000u, &storage,
              &activation) == H2_PAL_ERR_CLOSED);
   assert(h2_gizclaw_session_snapshot(fence_flow.session, &state) == H2_PAL_OK);
-  assert(state.parameters.safety_fence_level ==
-         H2_GIZCLAW_SAFETY_FENCE_LEVEL_CHILD);
+  assert(strcmp(state.parameters.safety_fence_level, "child") == 0);
   const unsigned submitted = fence_flow.started;
   storage.used = 0u;
   assert(h2_gizclaw_rpc_workspace_set_parameters(
@@ -6737,14 +6806,14 @@ static void test_workspace_reload_with_options(void) {
   service->client_config.time = &time;
   h2_gizclaw_async_rpc_test_set_ops(&workspace_test_ops);
   assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
-  static const char *const collections[] = {"test"};
+  static const h2_gizclaw_str_t tags[] = {{"test", 4u}};
   h2_gizclaw_session_config_t config = {
       .service = service,
       .mem = service->client_config.allocator,
       .sync = service->config.sync,
       .time = &time,
-      .collections = collections,
-      .collection_count = 1u,
+      .tags = tags,
+      .tag_count = 1u,
       .max_workflows = 1u,
       .catalog_bytes = 4096u,
   };
@@ -14032,6 +14101,7 @@ int main(int argc, char **argv) {
   test_req_telemetry_activity();
   test_deinit_refusal_names_holders_once();
   test_req_workflow_public_paths();
+  test_workflow_tag_selectors();
   h2_gizclaw_async_rpc_test_set_ops(NULL);
   test_fifo_capacity_and_dispatch();
   test_runtime_dispatch_notifies_runtime();

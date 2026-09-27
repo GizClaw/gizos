@@ -1,6 +1,6 @@
 # 设备 MHS 与 tool/v0 验收
 
-独立的 `gizclaw_h2peer_device_live_test` 使用与其余 GizClaw E2E 相同的 fixture、注册和清理流程，连接测试 Peer，用设备身份创建 API key，通过 HTTPS 调用库内置的 MHS/tool-v0 provider。同一 case 也包含在完整 GizClaw E2E 中；独立 lane 不替代完整验收。Server 必须支持 SDK 0.22.0 协议，绑定的 RuntimeProfile manifest 必须声明可写的 `speaker.main/volume`（int，0–100）与 `speaker.main/muted`（bool）；注册本地 state 不会发布 manifest。
+独立的 `gizclaw_h2peer_device_live_test` 使用与其余 GizClaw E2E 相同的 fixture、注册和清理流程，连接测试 Peer，用设备身份创建 API key，通过 HTTPS 调用库内置的 MHS/tool-v0 provider。同一 case 也包含在完整 GizClaw E2E 中；独立 lane 不替代完整验收。Server 必须支持 SDK 0.23.1 协议，绑定的 RuntimeProfile manifest 必须声明可写的 `speaker.main/volume`（int，0–100）与 `speaker.main/muted`（bool）；注册本地 state 不会发布 manifest。
 
 ```sh
 export H2_GIZCLAW_E2E_REGISTRATION_TOKEN='<E2E registration token>'

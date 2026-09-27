@@ -29,9 +29,6 @@ static struct {
   uint64_t last_id;
 } state;
 static unsigned service_tokens[H2_GIZCLAW_E2E_ACTOR_COUNT];
-static void assert_collection(h2_gizclaw_str_t value) {
-  assert(value.len == 10u && memcmp(value.data, "assistants", 10u) == 0);
-}
 static int step(void) {
   return ++state.stage == state.fail_stage ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
@@ -302,8 +299,6 @@ static void reply(enum method method, const char *name, const char *cursor,
   } else {
     w = out;
     object(s, w, name);
-    if (method == CREATE)
-      w->collection = save(s, "assistants");
   }
   if (w) {
     if (fault == 1)
@@ -351,10 +346,8 @@ static int rpc(enum method method, h2_gizclaw_service_t *svc,
 
 h2_pal_result_t
 h2_gizclaw_req_create_workspace_list(h2_gizclaw_service_t *s, uint64_t id,
-                                     h2_gizclaw_str_t collection,
                                      h2_gizclaw_str_t cursor, size_t limit,
                                      uint32_t timeout, h2_gizclaw_req_t **out) {
-  assert_collection(collection);
   assert(limit == 32u);
   return create_req(LIST, s, id, h2_gizclaw_e2e_str(""), cursor, timeout, out);
 }
@@ -364,11 +357,11 @@ h2_gizclaw_resp_parse_workspace_list(const h2_gizclaw_req_t *r,
                                      h2_gizclaw_workspace_page_t *out) {
   return parse(LIST, r, s, out);
 }
-h2_pal_result_t h2_gizclaw_rpc_workspace_list(
-    h2_gizclaw_service_t *s, h2_gizclaw_str_t collection,
-    h2_gizclaw_str_t cursor, size_t limit, uint32_t timeout,
-    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workspace_page_t *out) {
-  assert_collection(collection);
+h2_pal_result_t
+h2_gizclaw_rpc_workspace_list(h2_gizclaw_service_t *s, h2_gizclaw_str_t cursor,
+                              size_t limit, uint32_t timeout,
+                              h2_gizclaw_resp_storage_t *storage,
+                              h2_gizclaw_workspace_page_t *out) {
   assert(limit == 32u);
   return rpc(LIST, s, h2_gizclaw_e2e_str(""), cursor, timeout, storage, out);
 }
@@ -396,10 +389,8 @@ h2_gizclaw_rpc_workspace_get(h2_gizclaw_service_t *s, h2_gizclaw_str_t name,
 }
 
 h2_pal_result_t h2_gizclaw_req_create_workspace_create(
-    h2_gizclaw_service_t *s, uint64_t id, h2_gizclaw_str_t collection,
-    h2_gizclaw_str_t workflow, h2_gizclaw_str_t name, uint32_t timeout,
-    h2_gizclaw_req_t **out) {
-  assert_collection(collection);
+    h2_gizclaw_service_t *s, uint64_t id, h2_gizclaw_str_t workflow,
+    h2_gizclaw_str_t name, uint32_t timeout, h2_gizclaw_req_t **out) {
   assert(workflow.len == 6u && memcmp(workflow.data, "chosen", 6u) == 0);
   return create_req(CREATE, s, id, name, h2_gizclaw_e2e_str(""), timeout, out);
 }
@@ -410,10 +401,9 @@ h2_gizclaw_resp_parse_workspace_create(const h2_gizclaw_req_t *r,
   return parse(CREATE, r, s, out);
 }
 h2_pal_result_t h2_gizclaw_rpc_workspace_create(
-    h2_gizclaw_service_t *s, h2_gizclaw_str_t collection,
-    h2_gizclaw_str_t workflow, h2_gizclaw_str_t name, uint32_t timeout,
-    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workspace_t *out) {
-  assert_collection(collection);
+    h2_gizclaw_service_t *s, h2_gizclaw_str_t workflow, h2_gizclaw_str_t name,
+    uint32_t timeout, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_workspace_t *out) {
   assert(workflow.len == 6u && memcmp(workflow.data, "chosen", 6u) == 0);
   return rpc(CREATE, s, name, h2_gizclaw_e2e_str(""), timeout, storage, out);
 }
@@ -424,8 +414,11 @@ h2_pal_result_t h2_gizclaw_req_create_workspace_set_parameters(
     h2_gizclaw_req_t **out) {
   assert(parameters && parameters->has_input &&
          parameters->input == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK &&
-         parameters->has_safety_fence_level &&
-         parameters->safety_fence_level == H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF);
+         parameters->has_safety_fence_level ==
+             (state.fixture->safety_fence_level[0] != '\0') &&
+         (!parameters->has_safety_fence_level ||
+          strcmp(parameters->safety_fence_level,
+                 state.fixture->safety_fence_level) == 0));
   return create_req(INPUT, s, id, name, h2_gizclaw_e2e_str(""), timeout, out);
 }
 h2_pal_result_t
@@ -440,8 +433,11 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_set_parameters(
     h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workspace_t *out) {
   assert(parameters && parameters->has_input &&
          parameters->input == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK &&
-         parameters->has_safety_fence_level &&
-         parameters->safety_fence_level == H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF);
+         parameters->has_safety_fence_level ==
+             (state.fixture->safety_fence_level[0] != '\0') &&
+         (!parameters->has_safety_fence_level ||
+          strcmp(parameters->safety_fence_level,
+                 state.fixture->safety_fence_level) == 0));
   return rpc(INPUT, s, name, h2_gizclaw_e2e_str(""), timeout, storage, out);
 }
 
@@ -517,8 +513,11 @@ h2_pal_result_t h2_gizclaw_req_create_workspace_reload_with_options(h2_gizclaw_s
                                                        h2_gizclaw_req_t **out) {
   assert(parameters && parameters->has_input &&
          parameters->input == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK &&
-         parameters->has_safety_fence_level &&
-         parameters->safety_fence_level == H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF);
+         parameters->has_safety_fence_level ==
+             (state.fixture->safety_fence_level[0] != '\0') &&
+         (!parameters->has_safety_fence_level ||
+          strcmp(parameters->safety_fence_level,
+                 state.fixture->safety_fence_level) == 0));
   return create_req(RELOAD_OPTIONS, s, id,
                     name,
                     h2_gizclaw_e2e_str(""), timeout, out);
@@ -536,8 +535,11 @@ h2_gizclaw_rpc_workspace_reload_with_options(h2_gizclaw_service_t *s, h2_gizclaw
                                 h2_gizclaw_workspace_activation_t *out) {
   assert(parameters && parameters->has_input &&
          parameters->input == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK &&
-         parameters->has_safety_fence_level &&
-         parameters->safety_fence_level == H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF);
+         parameters->has_safety_fence_level ==
+             (state.fixture->safety_fence_level[0] != '\0') &&
+         (!parameters->has_safety_fence_level ||
+          strcmp(parameters->safety_fence_level,
+                 state.fixture->safety_fence_level) == 0));
   return rpc(RELOAD_OPTIONS, s, name,
              h2_gizclaw_e2e_str(""), timeout, storage, out);
 }
@@ -656,6 +658,8 @@ static int run(unsigned fail, unsigned budget, unsigned response, unsigned mode,
   strcpy(f->workspace_name, "isolated");
   strcpy(f->workflow_name, "chosen");
   strcpy(f->runtime_profile_name, "default");
+  if (exercise)
+    strcpy(f->safety_fence_level, "safe");
   _Alignas(max_align_t) unsigned char data[8192];
   h2_gizclaw_resp_storage_t s = {.data = data, .capacity = sizeof(data)};
   if (emit)

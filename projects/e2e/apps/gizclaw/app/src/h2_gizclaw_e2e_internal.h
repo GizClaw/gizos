@@ -71,6 +71,8 @@ typedef struct h2_gizclaw_e2e_fixture {
   char runtime_profile_name[H2_GIZCLAW_REGISTRATION_NAME_CAPACITY];
   char run_prefix[H2_GIZCLAW_E2E_NAME_CAPACITY];
   char workflow_name[H2_GIZCLAW_E2E_NAME_CAPACITY];
+  /** First Profile-advertised option, empty when the Profile has no fences. */
+  char safety_fence_level[H2_GIZCLAW_SAFETY_FENCE_NAME_MAX_BYTES + 1u];
   char workspace_name[H2_GIZCLAW_E2E_NAME_CAPACITY];
   char contact_name[H2_GIZCLAW_E2E_NAME_CAPACITY];
   char friend_id[H2_GIZCLAW_E2E_NAME_CAPACITY];

@@ -93,21 +93,6 @@ static bool valid_token(h2_gizclaw_str_t value, size_t max_len) {
   return true;
 }
 
-static bool valid_kebab(h2_gizclaw_str_t value, size_t max_len) {
-  if (!valid_token(value, max_len) || value.data[0] == '-' ||
-      value.data[value.len - 1u] == '-') {
-    return false;
-  }
-  for (size_t index = 0u; index < value.len; ++index) {
-    const char ch = value.data[index];
-    if (!((ch >= 'a' && ch <= 'z') || (ch >= '0' && ch <= '9') ||
-          (ch == '-' && index > 0u && value.data[index - 1u] != '-'))) {
-      return false;
-    }
-  }
-  return true;
-}
-
 static bool valid_optional_text(h2_gizclaw_str_t value, size_t max_len) {
   return value.len <= max_len &&
          (value.len == 0u ||
@@ -201,7 +186,6 @@ static void workspace_clear(const h2_pal_mem_api_t *allocator,
   if (workspace == NULL)
     return;
   h2_pal_mem_free(allocator, workspace->name);
-  h2_pal_mem_free(allocator, workspace->collection);
   h2_pal_mem_free(allocator, workspace->workflow_name);
   memset(workspace, 0, sizeof(*workspace));
 }
@@ -512,26 +496,16 @@ static bool workspace_speech_rate_valid(
               H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MAX_PERCENT);
 }
 
-/* A NULL output validates the value before request allocation or network I/O. */
-static bool workspace_safety_fence_level_map(
-    h2_gizclaw_safety_fence_level_t level,
-    gizclaw_rpc_v1_SafetyFenceLevel *out_level) {
-  gizclaw_rpc_v1_SafetyFenceLevel mapped;
-  switch (level) {
-  case H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF:
-    mapped = gizclaw_rpc_v1_SafetyFenceLevel_SAFETY_FENCE_LEVEL_OFF;
-    break;
-  case H2_GIZCLAW_SAFETY_FENCE_LEVEL_GENERAL:
-    mapped = gizclaw_rpc_v1_SafetyFenceLevel_SAFETY_FENCE_LEVEL_GENERAL;
-    break;
-  case H2_GIZCLAW_SAFETY_FENCE_LEVEL_CHILD:
-    mapped = gizclaw_rpc_v1_SafetyFenceLevel_SAFETY_FENCE_LEVEL_CHILD;
-    break;
-  default:
+static bool workspace_safety_fence_level_valid(
+    const char level[H2_GIZCLAW_SAFETY_FENCE_LEVEL_MAX_BYTES + 1u]) {
+  const char *end = memchr(level, '\0',
+                           H2_GIZCLAW_SAFETY_FENCE_LEVEL_MAX_BYTES + 1u);
+  if (end == NULL || end == level || level[0] < 'a' || level[0] > 'z')
     return false;
-  }
-  if (out_level != NULL)
-    *out_level = mapped;
+  for (const char *p = level + 1; p < end; ++p)
+    if (!((*p >= 'a' && *p <= 'z') || (*p >= '0' && *p <= '9') ||
+          *p == '_' || *p == '-'))
+      return false;
   return true;
 }
 
@@ -708,13 +682,10 @@ static h2_pal_result_t workspace_request_start(workspace_context_t *request) {
   case WS_LIST: {
     gizclaw_rpc_v1_WorkspaceListRequest message =
         gizclaw_rpc_v1_WorkspaceListRequest_init_zero;
-    text_encode_t text[2] = {{.data = first.data, .len = first.len},
-                             {.data = second.data, .len = second.len}};
-    message.collection.funcs.encode = encode_text;
-    message.collection.arg = &text[0];
+    text_encode_t cursor_text = {.data = second.data, .len = second.len};
     if (second.len > 0u) {
       message.cursor.funcs.encode = encode_text;
-      message.cursor.arg = &text[1];
+      message.cursor.arg = &cursor_text;
     }
     message.has_limit = true;
     message.limit = (int64_t)request->limit;
@@ -762,11 +733,9 @@ static h2_pal_result_t workspace_request_start(workspace_context_t *request) {
         request->parameters.tts_speech_rate_percent;
     message.parameters.has_safety_fence_level =
         request->parameters.has_safety_fence_level;
-    if (request->parameters.has_safety_fence_level &&
-        !workspace_safety_fence_level_map(
-            request->parameters.safety_fence_level,
-            &message.parameters.safety_fence_level))
-      return H2_PAL_ERR_INVALID_ARG;
+    if (request->parameters.has_safety_fence_level)
+      strcpy(message.parameters.safety_fence_level,
+             request->parameters.safety_fence_level);
     return workspace_request_start_message(
         request, H2_GIZCLAW_RPC_SERVER_WORKSPACE_PARAMETERS_SET,
         gizclaw_rpc_v1_WorkspaceParametersSetRequest_fields, &message);
@@ -774,16 +743,13 @@ static h2_pal_result_t workspace_request_start(workspace_context_t *request) {
   case WS_CREATE: {
     gizclaw_rpc_v1_WorkspaceCreateRequest message =
         gizclaw_rpc_v1_WorkspaceCreateRequest_init_zero;
-    text_encode_t text[3] = {{.data = third.data, .len = third.len},
-                             {.data = second.data, .len = second.len},
-                             {.data = first.data, .len = first.len}};
+    text_encode_t text[2] = {{.data = third.data, .len = third.len},
+                             {.data = second.data, .len = second.len}};
     message.has_value = true;
     message.value.name.funcs.encode = encode_text;
     message.value.name.arg = &text[0];
     message.value.workflow_name.funcs.encode = encode_text;
     message.value.workflow_name.arg = &text[1];
-    message.value.collection.funcs.encode = encode_text;
-    message.value.collection.arg = &text[2];
     return workspace_request_start_message(
         request, H2_GIZCLAW_RPC_SERVER_WORKSPACE_CREATE,
         gizclaw_rpc_v1_WorkspaceCreateRequest_fields, &message);
@@ -905,17 +871,16 @@ workspace_request_response(const h2_gizclaw_req_t *request,
 }
 
 h2_pal_result_t h2_gizclaw_req_create_workspace_list(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    h2_gizclaw_str_t collection, h2_gizclaw_str_t cursor, size_t limit,
-    uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t cursor,
+    size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t **out_request) {
   if (out_request != NULL)
     *out_request = NULL;
-  if (!(valid_kebab(collection, 63u) && valid_optional_text(cursor, 255u) &&
-        limit > 0u && limit <= H2_GIZCLAW_WORKSPACE_PAGE_MAX_ITEMS))
+  if (!(valid_optional_text(cursor, 255u) && limit > 0u &&
+        limit <= H2_GIZCLAW_WORKSPACE_PAGE_MAX_ITEMS))
     return H2_PAL_ERR_INVALID_ARG;
-  return workspace_create_request(service, identity, WS_LIST, collection,
-                                  cursor, (h2_gizclaw_str_t){0}, limit, 0, 0,
-                                  timeout_ms, out_request);
+  return workspace_create_request(
+      service, identity, WS_LIST, (h2_gizclaw_str_t){0}, cursor,
+      (h2_gizclaw_str_t){0}, limit, 0, 0, timeout_ms, out_request);
 }
 
 h2_pal_result_t
@@ -941,16 +906,6 @@ h2_gizclaw_resp_parse_workspace_list(const h2_gizclaw_req_t *request,
   h2_gizclaw_workspace_page_t result = {0};
   rc = (h2_pal_result_t)decode_workspace_list(allocator, data, len,
                                               context->limit, &result);
-  if (rc == H2_PAL_OK) {
-    for (size_t i = 0; i < result.count; ++i) {
-      result.items[i].collection =
-          copy_owned(allocator, context->first, strlen(context->first));
-      if (result.items[i].collection == NULL) {
-        rc = H2_PAL_ERR_NO_MEMORY;
-        break;
-      }
-    }
-  }
   rc = h2_gizclaw_resp_arena_end(&arena, rc);
   if (rc == H2_PAL_OK)
     *out_result = result;
@@ -958,9 +913,8 @@ h2_gizclaw_resp_parse_workspace_list(const h2_gizclaw_req_t *request,
 }
 
 h2_pal_result_t h2_gizclaw_rpc_workspace_list(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t collection,
-    h2_gizclaw_str_t cursor, size_t limit, uint32_t timeout_ms,
-    h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t cursor, size_t limit,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
     h2_gizclaw_workspace_page_t *out_result) {
   if (out_result == NULL)
     return H2_PAL_ERR_INVALID_ARG;
@@ -970,7 +924,7 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_list(
     return H2_PAL_ERR_INVALID_ARG;
   h2_gizclaw_req_t *request = NULL;
   h2_pal_result_t rc = h2_gizclaw_req_create_workspace_list(
-      service, 0u, collection, cursor, limit, timeout_ms, &request);
+      service, 0u, cursor, limit, timeout_ms, &request);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
   if (rc == H2_PAL_OK)
@@ -1049,18 +1003,16 @@ h2_gizclaw_rpc_workspace_get(h2_gizclaw_service_t *service,
 
 h2_pal_result_t h2_gizclaw_req_create_workspace_create(
     h2_gizclaw_service_t *service, uint64_t identity,
-    h2_gizclaw_str_t collection, h2_gizclaw_str_t workflow_name,
-    h2_gizclaw_str_t name, uint32_t timeout_ms,
+    h2_gizclaw_str_t workflow_name, h2_gizclaw_str_t name, uint32_t timeout_ms,
     h2_gizclaw_req_t **out_request) {
   if (out_request != NULL)
     *out_request = NULL;
-  if (!(valid_kebab(collection, 63u) &&
-        h2_gizclaw_runtime_alias_valid_internal(workflow_name) &&
+  if (!(h2_gizclaw_runtime_alias_valid_internal(workflow_name) &&
         valid_token(name, H2_GIZCLAW_WORKSPACE_NAME_MAX_BYTES)))
     return H2_PAL_ERR_INVALID_ARG;
-  return workspace_create_request(service, identity, WS_CREATE, collection,
-                                  workflow_name, name, 0u, 0, 0, timeout_ms,
-                                  out_request);
+  return workspace_create_request(service, identity, WS_CREATE,
+                                  (h2_gizclaw_str_t){0}, workflow_name, name,
+                                  0u, 0, 0, timeout_ms, out_request);
 }
 
 h2_pal_result_t
@@ -1086,12 +1038,6 @@ h2_gizclaw_resp_parse_workspace_create(const h2_gizclaw_req_t *request,
   h2_gizclaw_workspace_t result = {0};
   rc = (h2_pal_result_t)decode_workspace_create_value(allocator, data, len,
                                                       &result);
-  if (rc == H2_PAL_OK) {
-    result.collection =
-        copy_owned(allocator, context->first, strlen(context->first));
-    if (result.collection == NULL)
-      rc = H2_PAL_ERR_NO_MEMORY;
-  }
   rc = h2_gizclaw_resp_arena_end(&arena, rc);
   if (rc == H2_PAL_OK)
     *out_result = result;
@@ -1099,8 +1045,8 @@ h2_gizclaw_resp_parse_workspace_create(const h2_gizclaw_req_t *request,
 }
 
 h2_pal_result_t h2_gizclaw_rpc_workspace_create(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t collection,
-    h2_gizclaw_str_t workflow_name, h2_gizclaw_str_t name, uint32_t timeout_ms,
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t workflow_name,
+    h2_gizclaw_str_t name, uint32_t timeout_ms,
     h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workspace_t *out_result) {
   if (out_result == NULL)
     return H2_PAL_ERR_INVALID_ARG;
@@ -1110,7 +1056,7 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_create(
     return H2_PAL_ERR_INVALID_ARG;
   h2_gizclaw_req_t *request = NULL;
   h2_pal_result_t rc = h2_gizclaw_req_create_workspace_create(
-      service, 0u, collection, workflow_name, name, timeout_ms, &request);
+      service, 0u, workflow_name, name, timeout_ms, &request);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
   if (rc == H2_PAL_OK)
@@ -1135,8 +1081,7 @@ h2_pal_result_t h2_gizclaw_req_create_workspace_set_parameters(
          parameters->has_safety_fence_level) &&
         workspace_speech_rate_valid(parameters) &&
         (!parameters->has_safety_fence_level ||
-         workspace_safety_fence_level_map(parameters->safety_fence_level,
-                                         NULL)) &&
+         workspace_safety_fence_level_valid(parameters->safety_fence_level)) &&
         (!parameters->has_input ||
          workspace_input_mode_valid(parameters->input)) &&
         (!parameters->has_initiative ||
@@ -1375,8 +1320,7 @@ h2_pal_result_t h2_gizclaw_req_create_workspace_reload_with_options(
       (parameters != NULL &&
        (!workspace_speech_rate_valid(parameters) ||
         (parameters->has_safety_fence_level &&
-         !workspace_safety_fence_level_map(parameters->safety_fence_level,
-                                          NULL)) ||
+         !workspace_safety_fence_level_valid(parameters->safety_fence_level)) ||
         (parameters->has_input && !workspace_input_mode_valid(parameters->input)) ||
         (parameters->has_initiative &&
          (parameters->initiative < 1 || parameters->initiative > 2)) ||
@@ -1414,10 +1358,9 @@ h2_pal_result_t h2_gizclaw_req_create_workspace_reload_with_options(
     message.parameters.tts_speech_rate_percent =
         parameters->tts_speech_rate_percent;
     message.parameters.has_safety_fence_level = parameters->has_safety_fence_level;
-    if (parameters->has_safety_fence_level &&
-        !workspace_safety_fence_level_map(parameters->safety_fence_level,
-                                         &message.parameters.safety_fence_level))
-      return H2_PAL_ERR_INVALID_ARG;
+    if (parameters->has_safety_fence_level)
+      strcpy(message.parameters.safety_fence_level,
+             parameters->safety_fence_level);
   }
   uint8_t *payload = NULL;
   size_t len = 0u;

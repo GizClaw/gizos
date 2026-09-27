@@ -476,12 +476,17 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
    * Retain the identity for cleanup rather than assuming no remote Peer. */
   h2_gizclaw_registration_result_t registration = {0};
   if (fixture->use_session) {
-    static const char *const collections[] = {"assistants"};
+    static const h2_gizclaw_str_t tags[] = {{"assistants", 10u}};
     const h2_gizclaw_session_config_t session_config = {
-        .service = actor->service, .mem = fixture->allocator,
-        .sync = fixture->runtime->sync, .time = fixture->time,
-        .runtime = fixture->runtime, .collections = collections,
-        .collection_count = 1u, .max_workflows = 128u, .catalog_bytes = 65536u};
+        .service = actor->service,
+        .mem = fixture->allocator,
+        .sync = fixture->runtime->sync,
+        .time = fixture->time,
+        .runtime = fixture->runtime,
+        .tags = tags,
+        .tag_count = 1u,
+        .max_workflows = 128u,
+        .catalog_bytes = 65536u};
     rc = h2_gizclaw_session_create(&session_config, &actor->session);
     h2_gizclaw_e2e_evidence("h2_gizclaw_session_create", "session-create", rc);
     if (rc == H2_PAL_OK) {

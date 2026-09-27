@@ -104,15 +104,15 @@ typedef h2_pal_result_t (*h2_gizclaw_catalog_sink_fn)(
     const h2_gizclaw_workflow_page_t *page, const char *profile_name,
     const char *profile_revision);
 
-/** Dependencies and collection strings are borrowed until destroy. One Session
- * per Service; use Session operations exclusively for registration, catalog,
- * and conversations on that Service. Existing synchronous workspace RPCs
- * participate in this Session's lifecycle and publish confirmed parameters.
- * Deleting the current Workspace stops its conversation (the route still needs
- * Session release) and returns the Session workspace to EMPTY; the next select
- * recreates it through normal preparation.
- * Low-level asynchronous workspace requests must not bypass this owner. No
- * product names, defaults or persistence paths are built in.
+/** Dependencies, tag spans and their text are borrowed until destroy. One
+ * Session per Service; use Session operations exclusively for registration,
+ * catalog, and conversations on that Service. Existing synchronous workspace
+ * RPCs participate in this Session's lifecycle and publish confirmed
+ * parameters. Deleting the current Workspace stops its conversation (the route
+ * still needs Session release) and returns the Session workspace to EMPTY; the
+ * next select recreates it through normal preparation. Low-level asynchronous
+ * workspace requests must not bypass this owner. No product names, defaults or
+ * persistence paths are built in.
  */
 typedef struct h2_gizclaw_session_config {
   h2_gizclaw_service_t *service;
@@ -120,8 +120,11 @@ typedef struct h2_gizclaw_session_config {
   const h2_pal_sync_api_t *sync;
   const h2_pal_time_api_t *time;
   h2_runtime_t *runtime;
-  const char *const *collections;
-  size_t collection_count;
+  /** Exact AND selector used for catalog pages. Zero tags lists all workflows.
+   * This controls catalog filtering, not Workspace identity or authorization.
+   */
+  const h2_gizclaw_str_t *tags;
+  size_t tag_count;
   size_t max_workflows;
   /** Response storage for one page or one Workspace RPC. In streaming mode
    * this does not scale with the total number of workflows. */
@@ -144,10 +147,9 @@ typedef struct h2_gizclaw_session_config {
   const h2_pal_mem_api_t *retained_allocator;
 } h2_gizclaw_session_config_t;
 
-/** Product-selected names; NULL collection/workflow opens an existing workspace
+/** Product-selected names; NULL workflow_name opens an existing workspace
  * without creating it. parameters == NULL preserves server input policy. */
 typedef struct h2_gizclaw_session_selection {
-  const char *collection;
   const char *workflow_name;
   const char *workspace_name;
   const h2_gizclaw_workspace_parameters_patch_t *parameters;

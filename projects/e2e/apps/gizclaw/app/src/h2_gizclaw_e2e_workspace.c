@@ -79,8 +79,7 @@ static bool metadata(const h2_gizclaw_e2e_fixture_t *f,
 static bool object_valid(const h2_gizclaw_resp_storage_t *s,
                          const h2_gizclaw_workspace_t *w) {
   return text_valid(s, w->name, true, 255u) &&
-         text_valid(s, w->workflow_name, true, 63u) &&
-         text_valid(s, w->collection, false, 255u);
+         text_valid(s, w->workflow_name, true, 63u);
 }
 static bool matches(const h2_gizclaw_e2e_fixture_t *f,
                     const h2_gizclaw_resp_storage_t *s,
@@ -99,34 +98,34 @@ static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
   h2_gizclaw_service_t *service = f->actors[role].service;
   h2_gizclaw_str_t name = h2_gizclaw_e2e_str(f->workspace_name);
   h2_gizclaw_str_t workflow = h2_gizclaw_e2e_str(f->workflow_name);
-  h2_gizclaw_str_t collection = h2_gizclaw_e2e_str("assistants");
   h2_gizclaw_str_t cursor = h2_gizclaw_e2e_str(next);
+  h2_gizclaw_workspace_parameters_patch_t input_patch = {
+      .has_input = true,
+      .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK};
+  if (f->safety_fence_level[0] != '\0') {
+    input_patch.has_safety_fence_level = true;
+    strcpy(input_patch.safety_fence_level, f->safety_fence_level);
+  }
   int rc = H2_PAL_ERR_INVALID_ARG;
   if (req) {
     h2_gizclaw_req_t *request = NULL;
     uint64_t id = (*identity)++;
     switch (method) {
     case LIST:
-      rc = h2_gizclaw_req_create_workspace_list(service, id, collection, cursor,
-                                                LIMIT, TIMEOUT_MS, &request);
+      rc = h2_gizclaw_req_create_workspace_list(service, id, cursor, LIMIT,
+                                                TIMEOUT_MS, &request);
       break;
     case GET:
       rc = h2_gizclaw_req_create_workspace_get(service, id, name, TIMEOUT_MS,
                                                &request);
       break;
     case CREATE:
-      rc = h2_gizclaw_req_create_workspace_create(
-          service, id, collection, workflow, name, TIMEOUT_MS, &request);
+      rc = h2_gizclaw_req_create_workspace_create(service, id, workflow, name,
+                                                  TIMEOUT_MS, &request);
       break;
     case INPUT:
       rc = h2_gizclaw_req_create_workspace_set_parameters(
-          service, id, name,
-          &(h2_gizclaw_workspace_parameters_patch_t){
-              .has_input = true,
-              .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
-              .has_safety_fence_level = true,
-              .safety_fence_level = H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF},
-          TIMEOUT_MS, &request);
+          service, id, name, &input_patch, TIMEOUT_MS, &request);
       break;
     case DELETE:
       rc = h2_gizclaw_req_create_workspace_delete(service, id, name, TIMEOUT_MS,
@@ -142,13 +141,7 @@ static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
       break;
     case RELOAD_OPTIONS:
       rc = h2_gizclaw_req_create_workspace_reload_with_options(
-          service, id, name,
-          &(h2_gizclaw_workspace_parameters_patch_t){
-              .has_input = true,
-              .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
-              .has_safety_fence_level = true,
-              .safety_fence_level = H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF},
-          TIMEOUT_MS, &request);
+          service, id, name, &input_patch, TIMEOUT_MS, &request);
       break;
     case HISTORY:
       rc = h2_gizclaw_req_create_workspace_history_list(
@@ -217,26 +210,20 @@ static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
     }
     switch (method) {
     case LIST:
-      rc = h2_gizclaw_rpc_workspace_list(service, collection, cursor, LIMIT,
-                                         TIMEOUT_MS, s, &out->page);
+      rc = h2_gizclaw_rpc_workspace_list(service, cursor, LIMIT, TIMEOUT_MS, s,
+                                         &out->page);
       break;
     case GET:
       rc =
           h2_gizclaw_rpc_workspace_get(service, name, TIMEOUT_MS, s, &out->get);
       break;
     case CREATE:
-      rc = h2_gizclaw_rpc_workspace_create(service, collection, workflow, name,
-                                           TIMEOUT_MS, s, &out->object);
+      rc = h2_gizclaw_rpc_workspace_create(service, workflow, name, TIMEOUT_MS,
+                                           s, &out->object);
       break;
     case INPUT:
       rc = h2_gizclaw_rpc_workspace_set_parameters(
-          service, name,
-          &(h2_gizclaw_workspace_parameters_patch_t){
-              .has_input = true,
-              .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
-              .has_safety_fence_level = true,
-              .safety_fence_level = H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF},
-          TIMEOUT_MS, s, &out->object);
+          service, name, &input_patch, TIMEOUT_MS, s, &out->object);
       break;
     case DELETE:
       rc = h2_gizclaw_rpc_workspace_delete(service, name, TIMEOUT_MS, s,
@@ -252,13 +239,7 @@ static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
       break;
     case RELOAD_OPTIONS:
       rc = h2_gizclaw_rpc_workspace_reload_with_options(
-          service, name,
-          &(h2_gizclaw_workspace_parameters_patch_t){
-              .has_input = true,
-              .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
-              .has_safety_fence_level = true,
-              .safety_fence_level = H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF},
-          TIMEOUT_MS, s, &out->activation);
+          service, name, &input_patch, TIMEOUT_MS, s, &out->activation);
       break;
     case HISTORY:
       rc = h2_gizclaw_rpc_workspace_history_list(
@@ -402,9 +383,7 @@ static int create(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
   if (rc != H2_PAL_OK)
     return rc;
   rc = call(f, s, role, req, CREATE, id, "", &r);
-  if (rc == H2_PAL_OK &&
-      (!matches(f, s, &r.object) || r.object.collection == NULL ||
-       strcmp(r.object.collection, "assistants") != 0))
+  if (rc == H2_PAL_OK && !matches(f, s, &r.object))
     rc = H2_PAL_ERR_INVALID_STATE;
   if (rc == H2_PAL_OK)
     rc = get(f, s, role, req, id, false);
@@ -471,12 +450,16 @@ static int configure(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
 static int stop_run(h2_gizclaw_e2e_fixture_t *f,
                     h2_gizclaw_resp_storage_t *s) {
   h2_gizclaw_e2e_actor_t *actor = &f->actors[H2_GIZCLAW_E2E_OWNER];
-  static const char *const collections[] = {"assistants"};
-  const h2_gizclaw_session_config_t config = {
-      .service = actor->service, .mem = f->allocator,
-      .sync = f->runtime->sync, .time = f->time, .runtime = f->runtime,
-      .collections = collections, .collection_count = 1u,
-      .max_workflows = 128u, .catalog_bytes = 65536u};
+  static const h2_gizclaw_str_t tags[] = {{"assistants", 10u}};
+  const h2_gizclaw_session_config_t config = {.service = actor->service,
+                                              .mem = f->allocator,
+                                              .sync = f->runtime->sync,
+                                              .time = f->time,
+                                              .runtime = f->runtime,
+                                              .tags = tags,
+                                              .tag_count = 1u,
+                                              .max_workflows = 128u,
+                                              .catalog_bytes = 65536u};
   const h2_gizclaw_session_selection_t selection = {
       .workspace_name = f->workspace_name};
   int rc = evidence("h2_gizclaw_session_create", "run-stop-prepare",

@@ -16,7 +16,7 @@ GizClaw library 负责 SDK 集成和 client protocol，不创建具体 HTTP、We
 
 Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Workflow projection 中复制 driver enum，也不要求调用方根据 driver 构造 Workspace 参数。Workspace 更新统一使用 `h2_gizclaw_*workspace_set_parameters`，对应 SDK 0.15.5 的 `server.workspace.parameters.set`（110）；旧的 `workspace_set_input` 入口已删除。
 
-依赖的 GizClaw C SDK 固定为 0.22.0。自 0.17.0 起，`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
+依赖的 GizClaw C SDK 固定为 0.23.1。自 0.17.0 起，`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
 
 `h2_gizclaw_workspace_parameters_patch_t` 通过独立 `has_*` 标记选择 input（PTT/Realtime）、conversation initiative（peer/agent）、agent initiative policy（once_when_empty/on_reload）、TTS 语速和安全围栏档位（见 [Workspace 参数补丁](#workspace-参数补丁)）。`workspace_set_parameters` 至少指定一个字段；显式的无效枚举值、空 patch、非法名称在发送前返回 INVALID_ARG。create 编码并持有 patch 数据，调用方随后可释放或修改原对象；同步入口沿用同一 request/parse 流程。
 
@@ -30,7 +30,7 @@ Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Work
 
 0.18.7 相对 0.18.5 只有增量：`FriendGroupMemberObject` 增加仅由 `server.friend_group.members.list` 填写的 `online` / `last_seen_at`；control API 的变化 GizOS 不使用。`h2_gizclaw_friend_group_member_t` 因此在成员列表中带出 `has_online` / `online` / `last_seen_at`：`online` 表示成员设备是否连接到回答请求的 Server，未报告在线状态（包括 presence 读取失败或旧服务端未提供字段）时 `has_online` 为 false；`last_seen_at` 是 UTC RFC 3339 文本，最多 64 字节，Server 从未观察到该成员时为 NULL。超长、含 NUL 或非法 UTF-8 的时间文本使整页返回 `H2_PAL_ERR_FORMAT` 并回滚 storage。member add/put/delete 仍不带 presence（`has_online` 为 false，`last_seen_at` 为 NULL），即使响应携带这些字段也忽略；公开 API 函数数量不变。
 
-设备协议使用 `mhs/v0` 状态读写和 `tool/v0` 预定义操作；GizOS 的公共 enum 在编译期与 SDK registry 校验。Workspace 参数补丁仍提供 input、conversation 与 tts_speech_rate_percent，默认不发送新增的可选 wire 字段。Workflow name/collection 和 Workspace identity 遵守现有合同。
+设备协议使用 `mhs/v0` 状态读写和 `tool/v0` 预定义操作；GizOS 的公共 enum 在编译期与 SDK registry 校验。Workspace 参数补丁仍提供 input、conversation 与 tts_speech_rate_percent，默认不发送新增的可选 wire 字段。Workflow 返回不可变 name 与普通字符串 tags；Workspace 只通过 workflow_name 关联 Workflow。
 
 设备间社交提醒使用三组 typed wrapper，沿用 Social 的 create/parse/sync 生命周期：
 
@@ -57,11 +57,17 @@ Encrypted mode 通过显式 X25519 key/public/shared types、HKDF-SHA256 和对�
 AEAD enum 调用 Crypto PAL。GizClaw 的 plaintext mode 在 library 内做经过长度和
 capacity 校验的 bounded copy，不把 plaintext 注册成 Crypto PAL algorithm。
 
+## Workflow tags 与 Workspace identity
+
+Workflow list 接受最多 32 个 `h2_gizclaw_str_t` tag，每个 1–128 UTF-8 字节且不含 NUL。多个 tag 使用精确 AND 匹配，零 tag 返回全部；重复 selector 保留在请求中并沿用服务端的幂等匹配语义。Library 不 trim、不折叠大小写、不解析年龄或类别，也不把 tags 当作授权条件。请求创建时复制编码后的 bytes；返回的 tags 字符串数组随 response storage 存活，空数组是有效 Workflow。
+
+Workspace list 没有 collection 参数，返回当前 Peer 可访问的 Workspace；create 只需要 workflow_name 和 Workspace name。Workflow 的 tags 改变不会改变其 name，也不会重绑定已有 Workspace。Session 的 tags 只控制 catalog 查询；按 workflow_name 选择时，完整 catalog 的未命中项会通过 Workflow get 验证，流式模式也通过 get 验证，然后继续 Workspace get/create/reload。现有 Workspace 可省略 workflow_name 按名字打开。内容分级策略、显示顺序、权限与筛选条件由产品拥有。
+
 ## Session catalog 流式合同
 
-配置 `catalog_sink` 时，Session 按 `collections` 顺序用 cursor 和每页最多 8 条分页读取 Workflow，使小型 response storage 也能容纳含多语言 metadata 的页面。`catalog_bytes` 只容纳一页响应或一次 Workspace RPC，和条目总数无关；每页的结构与字符串只在 `H2_GIZCLAW_CATALOG_PAGE` 回调返回前有效。回调在调用 register/refresh 的任务上同步执行，不得重入同一个 Session。首次有效页后发 BEGIN，随后发送 PAGE；全部页和 Profile 名称、revision 一致且未取消时发 COMMIT。RPC、格式、超时、取消或 sink 失败后发 ABORT，调用方须丢弃临时文件并保留旧发布文件。sink 应验证自身文件大小、索引、重复条目和持久化结果；Session 的 `workflow_count` 只在 COMMIT 成功后更新。连续超过 16 个空的续页视为异常。注册仍自动刷新；Catalog 失败不撤销已完成的注册。
+配置 `catalog_sink` 时，Session 对配置的 `tags` 做一次 AND 查询，用 cursor 和每页最多 8 条分页读取 Workflow，使小型 response storage 也能容纳含多语言 metadata 的页面。`catalog_bytes` 只容纳一页响应或一次 Workspace RPC，和条目总数无关；每页的结构与字符串只在 `H2_GIZCLAW_CATALOG_PAGE` 回调返回前有效。回调在调用 register/refresh 的任务上同步执行，不得重入同一个 Session。首次有效页后发 BEGIN，随后发送 PAGE；全部页和 Profile 名称、revision 一致且未取消时发 COMMIT。RPC、格式、超时、取消或 sink 失败后发 ABORT，调用方须丢弃临时文件并保留旧发布文件。sink 应验证自身文件大小、索引、重复条目和持久化结果；Session 的 `workflow_count` 只在 COMMIT 成功后更新。连续超过 16 个空的续页视为异常。注册仍自动刷新；Catalog 失败不撤销已完成的注册。
 
-流式模式不保存完整 catalog，`catalog_copy` 返回 `UNSUPPORTED`。按 `(collection, workflow_name, workspace_name[, parameters])` 选择时，Session 先用 Workflow get 验证返回的 Workflow name、collection 与 Profile revision，再按原有 Workspace get/create/reload 合同执行；现有 Workspace 也可只按名称选择。产品应从自己的文件读取显示窗口，Session 不负责产品文件路径或持久化。`max_workflows` 在流式模式不用，`retain_catalog_buffer` 必须为 false。
+流式模式不保存完整 catalog，`catalog_copy` 返回 `UNSUPPORTED`。按 `(workflow_name, workspace_name[, parameters])` 选择时，Session 用 Workflow get 验证返回的 name 与 Profile revision，再按原有 Workspace get/create/reload 合同执行；现有 Workspace 也可只按名称选择。产品应从自己的文件读取显示窗口，Session 不负责产品文件路径或持久化。`max_workflows` 在流式模式不用，`retain_catalog_buffer` 必须为 false。
 
 ### 兼容的完整 catalog 模式
 
@@ -213,17 +219,17 @@ reload，不会被当成“参数没变”跳过，成功后语速出现在
 
 ### 安全围栏
 
-可选 `has_safety_fence_level` / `safety_fence_level` 对应服务端 OFF、GENERAL、CHILD。两条 RPC 都使用 SDK 0.22.0 的 nanopb optional field 4，并通过具名 enum 显式映射；present 的零值、负值和 unknown enum 在创建请求前返回 `H2_PAL_ERR_INVALID_ARG`，不产生 RPC。absent 忽略 enum 存储值并保留服务端已有档位；只包含围栏的 patch 也有效。请求复制 patch，调用方不需要保留原始存储。
+可选 `has_safety_fence_level` / `safety_fence_level` 保存 RuntimeProfile 自定义的档位标识符。设备先从 `server.workflow.list` 响应的 `safety_fences` 发现当前 Profile 支持的 name 与展示名；列表不下发 prompt。标识符匹配 `^[a-z][a-z0-9_-]{0,63}$`，写入时由 Server 保存，reload 时验证它属于当前 Profile。两个写入 RPC 均使用 SDK 0.23.1 的字符串字段（Workspace patch tag 5）；旧 enum wire tag 已保留，不能再发送。显式空值或格式错误在创建请求前返回 `H2_PAL_ERR_INVALID_ARG`，不产生 RPC。absent 忽略数组存储值并保留服务端已有档位；只包含围栏的 patch 也有效。请求复制 patch，调用方不需要保留原始存储。
 
 `parameters.set` 保存档位，下一次 reload 才应用。`reload-with-options` 的保存和 reload 不是同一事务：缺少 Profile 文案等错误可以发生在档位已经保存之后，失败不回滚服务端存储。Session 只在目标 Workspace 的 RUNNING 激活确认后合并 present 档位；失败、错误名称、非 RUNNING、格式错误、超时或关闭后的迟到响应均不能把请求档位发布为 confirmed。FAILED 状态保留此前确认值用于显示，不表示服务端仍存该值。
 
 同一 Workspace 上的普通省略保留 confirmed 档位；成功切换到另一 Workspace 时，旧 Workspace 的 confirmed 档位失效。同步 `parameters.set` 与 Session 的选择、reload 共享串行请求槽，但不停止当前对话，也不提前改变已确认档位。一次可能已发送的围栏 set 或失败的围栏 reload 后，后续省略档位的成功 reload 只能把围栏标为 unknown：本库没有读取服务端 typed Workspace parameters，不能从旧快照推断最新保存值。再次显式设置档位且 reload 成功才恢复确认；Session 不会因为请求恰好等于旧 confirmed 值而跳过必要的 reload。
 
-实际围栏文案属于 RuntimeProfile 的 `spec.safety_fences.general.prompt` / `child.prompt`，各自为 1–4096 个 Unicode 字符，child 不继承 general。Flowcraft 的 Workflow 必须引用 `${board.safety_fence}`，Eino 必须绑定 `input.safety_fence`，Realtime Workflow 必须在 instructions 中引用 `${input.safety_fence}`。缺少所选 Profile 条目时，支持注入的 driver reload 明确失败；没有引用变量的 Workflow 不会注入围栏。ASTTranslate 保存合法值但不注入，SFU 接受合法值但 no-op。RPC 成功和 Session confirmed patch 都不是内容审核效果或产品档位回读的证明，设备不执行替代性的本地关键词过滤。
+实际围栏文案属于 RuntimeProfile 的 `spec.safety_fences.<id>.prompt`，每档为独立完整的 1–4096 字符提示词，不继承其他档位。Flowcraft 的 Workflow 必须引用 `${board.safety_fence}`，Eino 必须绑定 `input.safety_fence`，Realtime Workflow 必须在 instructions 中引用 `${input.safety_fence}`。缺少所选 Profile 条目时，支持注入的 driver reload 明确失败；没有引用变量的 Workflow 不会注入围栏。ASTTranslate 保存合法值但不注入，SFU 接受合法值但 no-op。RPC 成功和 Session confirmed patch 都不是内容审核效果或产品档位回读的证明，设备不执行替代性的本地关键词过滤。
 
-公共三档不定义 H106 的安全、守护、纯净、严格四档，也不定义产品年龄过滤。产品接入还需服务端 capability/readback 合同、完整的 Profile 文案及各 Workflow 注入点，不能把 OFF 当成已有儿童保护底线的“安全”档。
+公共协议不固定档位数量、顺序或文案，也不定义产品年龄过滤。H106 的四档必须在产品 RuntimeProfile 中逐档配置完整文案，并只展示 `safety_fences` 中真正可用的选项；年龄选择另行保存，不映射成围栏 ID。
 
-围栏测试包括两种 RPC 的 31 个非空 patch 组合、三档线字节、复制 ownership、非法值零 RPC，以及生产 Session → request → nanopb → response parse → snapshot 的参数流和错误路径。现有 Workspace E2E consumer 发送 OFF 以覆盖该字段，不要求业务 Profile 配置围栏文案；它不证明 GENERAL/CHILD 的文本注入。真实服务器验收必须另用已配置的隔离测试 Profile，验证档位保存、遗漏保留、缺 child 文案失败且保存未回滚、恢复和 Workflow 注入，记录 endpoint、Profile revision、服务端版本与清理结果。
+围栏测试覆盖两种 RPC 的非空 patch 组合、字符串 wire tag、复制 ownership、非法标识符零 RPC，以及生产 Session → request → nanopb → response parse → snapshot 的参数流和错误路径。Workflow list 解出当前 Profile 的可选档位并拒绝重复或非法 ID。真实服务器验收需使用已配置的隔离测试 Profile，验证档位发现、保存、遗漏保留、移除已选档位后的 reload 失败且保存未回滚、修复后恢复和 Workflow 注入，记录 endpoint、Profile revision、服务端版本与清理结果。
 
 ## 设备 Debug 访问模式
 
@@ -266,12 +272,7 @@ Wire message 使用 `name` / `*_name`。GizOS wrapper 将 Peer-addressable resou
 | Contact | immutable caller-local `name`、mutable `display_name` |
 | Friend / FriendGroup | Friend/member/history public ID 映射 wire name；FriendGroup `name` / `friend_group_name` 与独立 display name 保持 name 语义 |
 
-Runtime Profile alias（包括 Workflow `name` 与 Workspace `workflow_name`）最长
-63 字节，由 `.` 分隔的 lowercase kebab-case segment 组成；完整 alias 是不拆分、
-不归一化的 opaque key。`libs/gizclaw` 在 catalog decode、Workflow get 和
-Workspace create 边界使用该 grammar。Collection、Workspace `name`、history
-public ID 和其它非 Runtime Profile identifier 继续使用各自 contract，不能因为
-alias 支持 `.` 而一并放宽。
+Runtime Profile alias（包括 Workflow `name` 与 Workspace `workflow_name`）最长 63 字节，由 `.` 分隔的 lowercase kebab-case segment 组成；完整 alias 是不拆分、 不归一化的 opaque key。`libs/gizclaw` 在 catalog decode、Workflow get 和 Workspace create 边界使用该 grammar。Workspace `name`、history public ID 和其它非 Runtime Profile identifier 继续使用各自 contract，不能因为 alias 支持 `.` 而一并放宽。
 
 Firmware channel 是原子 breaking update，不保留旧 `firmware_name` alias 或探测
 服务端版本；上述 record/relationship public ID 则是兼容 contract。method 64 不再是
