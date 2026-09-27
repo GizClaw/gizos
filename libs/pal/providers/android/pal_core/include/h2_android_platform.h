@@ -69,6 +69,19 @@ const h2_pal_system_event_api_t *h2_android_system_event_api(void);
 /* Supply the host APK's PackageInfo.versionName before Runtime creation. */
 h2_pal_result_t h2_android_platform_set_image_version(const char *version);
 
+/** Storage owner for one sandbox directory. Paths under portable_root map to
+ * directory/files; Preferences use directory/preferences.sqlite. The caller
+ * owns the directory and must supply an absolute path with an existing parent.
+ * NULL output on failure; config strings are copied. Close every borrowed
+ * file, namespace and cursor before destroy. No existing directory is cleared.
+ */
+typedef struct h2_android_storage h2_android_storage_t;
+h2_pal_result_t h2_android_storage_create(const char *directory,
+    const char *portable_root, h2_android_storage_t **out);
+const h2_pal_fs_api_t *h2_android_storage_fs_api(h2_android_storage_t *storage);
+const h2_pal_pref_api_t *h2_android_storage_pref_api(h2_android_storage_t *storage);
+void h2_android_storage_destroy(h2_android_storage_t *storage);
+
 #ifdef __cplusplus
 }
 #endif

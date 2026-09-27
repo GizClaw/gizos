@@ -142,7 +142,11 @@ int h2_esp_board_fs_clear(const char *path) {
         return H2_PAL_FS_ERR_INVALID_ARG;
     }
     if (strcmp(path, "/data") != 0) {
-        return H2_PAL_FS_ERR_UNSUPPORTED;
+        if (!is_h2loader_path(path) || strchr(path + 1, '/') == NULL)
+            return H2_PAL_FS_ERR_UNSUPPORTED;
+        rc = ensure_board_mount_fs();
+        if (rc != H2_PAL_OK) return rc;
+        return h2_pal_fs_clear(&s_board_mount_fs, path);
     }
     label = path + 1;
     rc = h2_esp_board_fs_unmount(path);

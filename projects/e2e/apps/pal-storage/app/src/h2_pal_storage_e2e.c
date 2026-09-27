@@ -339,8 +339,15 @@ static h2_pal_result_t run_case(owner_t *o, unsigned index) {
     REQUIRE(count == 5 && !memcmp(bytes, o->value, 5));
     h2_pal_mem_free(r->mem, o->value);
     o->value = NULL;
-    REQUIRE(o->a->get_string(o->a, r->mem, "blob", (char **)&o->value) ==
-            H2_PAL_ERR_INVALID_STATE);
+    /* PAL Pref does not prescribe one type-mismatch error code; existing
+     * providers use FORMAT or INVALID_STATE. Rejection must preserve data. */
+    REQUIRE(o->a->get_string(o->a, r->mem, "blob", (char **)&o->value) !=
+            H2_PAL_OK);
+    REQUIRE(o->value == NULL);
+    CALL(o->a->get_blob(o->a, r->mem, "blob", &o->value, &count));
+    REQUIRE(count == 5 && !memcmp(bytes, o->value, 5));
+    h2_pal_mem_free(r->mem, o->value);
+    o->value = NULL;
     CALL(seed_values(o));
     CALL(o->a->commit(o->a));
     break;
