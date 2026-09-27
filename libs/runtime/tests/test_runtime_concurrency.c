@@ -912,6 +912,164 @@ static void test_publication_defers_when_all_retired_slots_are_pinned(void) {
     concurrency_env_deinit(&env);
 }
 
+/*
+ * While every retired slot is pinned the pending list outlives each poll. A
+ * held key then exhausts it: the input worker keeps running, held samples are
+ * dropped and counted, and the press and release edges are kept and delivered
+ * once publication resumes.
+ */
+static void test_pending_exhaustion_drops_samples_and_keeps_edges(void) {
+    concurrency_env_t env;
+    concurrency_env_init(&env);
+    add_single_button(&env);
+    h2_runtime_t *runtime = concurrency_runtime_create(&env);
+    const size_t capacity =
+        runtime->private_state->input_pending_event_capacity;
+
+    const h2_runtime_state_bank_t *bank = NULL;
+    uint8_t slots[H2_RUNTIME_STATE_SLOT_COUNT];
+    assert(h2_runtime_state_read_begin(runtime, &bank, &slots[0]) ==
+           H2_PAL_OK);
+    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+    h2_atomic_store(&env.time_state.now_ms, 20u);
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    assert(h2_runtime_state_read_begin(runtime, &bank, &slots[1]) ==
+           H2_PAL_OK);
+    env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
+    h2_atomic_store(&env.time_state.now_ms, 40u);
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    assert(h2_runtime_state_read_begin(runtime, &bank, &slots[2]) ==
+           H2_PAL_OK);
+
+    /* Press edge + press action, then one DOWN + ACTION repeat per poll. */
+    uint64_t now = 60u;
+    env.button_state.single_state = H2_PAL_BUTTON_STATE_PRESSED;
+    for (size_t polls = 0u; polls < capacity / 2u + 2u; ++polls) {
+        h2_atomic_store(&env.time_state.now_ms, now);
+        assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+        now += 20u;
+    }
+    assert(runtime->private_state->input_pending_event_count == capacity);
+    uint32_t dropped = 0u;
+    assert(h2_runtime_dropped_event_count(runtime, &dropped) == H2_PAL_OK);
+    assert(dropped == 4u);
+
+    /* The release spills the source: its samples drop, its edges stay. */
+    const uint64_t released_at = now;
+    env.button_state.single_state = H2_PAL_BUTTON_STATE_RELEASED;
+    h2_atomic_store(&env.time_state.now_ms, released_at);
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+    assert(runtime->private_state->input_pending_event_count == 0u);
+    assert(runtime->private_state->input_sources[0].button.retained_count ==
+           2u);
+    assert(h2_runtime_dropped_event_count(runtime, &dropped) == H2_PAL_OK);
+    assert(dropped == 4u + (uint32_t)capacity - 1u);
+
+    for (size_t i = 0u; i < H2_RUNTIME_STATE_SLOT_COUNT; ++i) {
+        assert(h2_runtime_state_read_end(runtime, slots[i]) == H2_PAL_OK);
+    }
+    h2_atomic_store(&env.time_state.now_ms, released_at + 20u);
+    assert(h2_runtime_input_poll_once(runtime) == H2_PAL_OK);
+
+    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+    h2_runtime_event_t event = {
+        .payload = payload,
+        .payload_capacity = sizeof(payload),
+    };
+    h2_runtime_event_kind_t kinds[8];
+    h2_runtime_timestamp_ms_t stamps[8];
+    size_t count = 0u;
+    while (h2_runtime_poll_event(runtime, &event) == H2_PAL_OK) {
+        assert(count < 8u);
+        kinds[count] = event.kind;
+        stamps[count] = event.timestamp_ms;
+        count += 1u;
+    }
+    /* 20: DOWN + ACTION, 40: UP + ACTION, then the kept edges. */
+    assert(count == 7u);
+    assert(kinds[4] == H2_RUNTIME_COMPONENT_EVENT_BUTTON_DOWN);
+    assert(stamps[4] == 60u);
+    assert(kinds[5] == H2_RUNTIME_COMPONENT_EVENT_BUTTON_UP);
+    assert(stamps[5] == released_at);
+    assert(kinds[6] == H2_RUNTIME_COMPONENT_EVENT_BUTTON_ACTION);
+    assert(stamps[6] == released_at);
+    h2_runtime_button_state_t state;
+    assert(h2_runtime_component_state_button(runtime, 1u, &state) ==
+           H2_PAL_OK);
+    assert(!state.pressed);
+
+    h2_runtime_deinit(runtime);
+    concurrency_env_deinit(&env);
+}
+
+typedef struct drop_writer {
+    h2_runtime_t *runtime;
+    size_t count;
+} drop_writer_t;
+
+static int concurrent_drop_log(
+    void *user, h2_pal_log_level_t level, const char *scope,
+    const char *message) {
+    (void)scope;
+    (void)message;
+    if (level == H2_PAL_LOG_WARN) {
+        h2_atomic_fetch_add((h2_atomic_size_t *)user, 1u);
+    }
+    return H2_PAL_OK;
+}
+
+static void *drop_writer_entry(void *user) {
+    drop_writer_t *writer = user;
+    for (size_t i = 0u; i < writer->count; ++i) {
+        h2_runtime_record_dropped_event(
+            writer->runtime, H2_RUNTIME_SYSTEM_EVENT_TIME_ADJUSTED,
+            H2_RUNTIME_COMPONENT_SYSTEM_TIME, H2_RUNTIME_COMPONENT_ID_NONE);
+        uint32_t total = 0u;
+        assert(h2_runtime_dropped_event_count(writer->runtime, &total) == H2_PAL_OK);
+    }
+    return NULL;
+}
+
+/* All producer tasks share the counter and one try-only reporting gate. */
+static void test_concurrent_drops_are_counted_and_rate_limited(void) {
+    concurrency_env_t env;
+    concurrency_env_init(&env);
+    h2_atomic_size_t warnings = {0};
+    assert(h2_atomic_size_init(&warnings, 0u) == H2_ATOMIC_OK);
+    static const h2_pal_log_vtable_t vtable = {.write = concurrent_drop_log};
+    const h2_pal_log_api_t log = {.user = &warnings, .vtable = &vtable};
+    h2_runtime_config_t config = concurrency_runtime_config(&env);
+    config.log = &log;
+    h2_runtime_t *runtime = NULL;
+    assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    h2_atomic_store(&env.time_state.now_ms, 100u);
+    drop_writer_t writer = {.runtime = runtime, .count = 2000u};
+    pthread_t threads[4];
+    for (size_t i = 0u; i < 4u; ++i) {
+        assert(pthread_create(&threads[i], NULL, drop_writer_entry, &writer) == 0);
+    }
+    for (size_t i = 0u; i < 4u; ++i) {
+        assert(pthread_join(threads[i], NULL) == 0);
+    }
+    uint32_t total = 0u;
+    assert(h2_runtime_dropped_event_count(runtime, &total) == H2_PAL_OK);
+    assert(total == 8000u);
+    assert(h2_atomic_load(&warnings) == 1u);
+    h2_atomic_store(&env.time_state.now_ms, 1100u);
+    h2_runtime_report_dropped_events(runtime);
+    assert(h2_atomic_load(&warnings) == 2u);
+    /* Unsigned wrap remains readable and is reported by unsigned delta. */
+    h2_atomic_store(&runtime->private_state->dropped_event_count, UINT32_MAX);
+    h2_runtime_record_dropped_event(
+        runtime, H2_RUNTIME_SYSTEM_EVENT_TIME_ADJUSTED,
+        H2_RUNTIME_COMPONENT_SYSTEM_TIME, H2_RUNTIME_COMPONENT_ID_NONE);
+    assert(h2_runtime_dropped_event_count(runtime, &total) == H2_PAL_OK);
+    assert(total == 0u);
+    h2_runtime_deinit(runtime);
+    h2_atomic_destroy(&warnings);
+    concurrency_env_deinit(&env);
+}
+
 static void test_publication_counts_and_event_ceiling(void) {
     concurrency_env_t env;
     concurrency_env_init(&env);
@@ -1247,6 +1405,8 @@ int main(void) {
     test_pinned_reader_does_not_block_publication();
     test_restart_keeps_publication_and_reader_pins_valid();
     test_publication_defers_when_all_retired_slots_are_pinned();
+    test_pending_exhaustion_drops_samples_and_keeps_edges();
+    test_concurrent_drops_are_counted_and_rate_limited();
     test_publication_counts_and_event_ceiling();
     test_radio_error_batch_uses_one_switch();
     test_radio_state_and_transition_batches_use_one_switch();

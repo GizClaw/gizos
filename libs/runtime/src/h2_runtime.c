@@ -270,6 +270,11 @@ static int runtime_config_is_valid(const h2_runtime_config_t *config) {
 }
 
 static void runtime_atomic_destroy(h2_runtime_private_t *state) {
+    h2_atomic_uint_destroy(&state->dropped_event_count);
+    h2_atomic_int_destroy(&state->last_dropped_kind);
+    h2_atomic_int_destroy(&state->last_dropped_component);
+    h2_atomic_uint_destroy(&state->last_dropped_component_id);
+    h2_atomic_flag_destroy(&state->drop_report_lock);
     h2_atomic_int_destroy(&state->state_publication.ready);
     h2_atomic_uint_destroy(&state->state_publication.active_index);
     h2_atomic_flag_destroy(&state->state_publication.reader_lock);
@@ -295,6 +300,11 @@ static void runtime_atomic_destroy(h2_runtime_private_t *state) {
 
 static h2_pal_result_t runtime_atomic_init(h2_runtime_private_t *state) {
     h2_atomic_result_t atomic_rc = H2_ATOMIC_OK;
+    if ((atomic_rc = h2_atomic_uint_init(&state->dropped_event_count, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_int_init(&state->last_dropped_kind, H2_RUNTIME_EVENT_NONE)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_int_init(&state->last_dropped_component, H2_RUNTIME_COMPONENT_NONE)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_uint_init(&state->last_dropped_component_id, H2_RUNTIME_COMPONENT_ID_NONE)) != H2_ATOMIC_OK) goto atomic_failure;
+    if ((atomic_rc = h2_atomic_flag_init(&state->drop_report_lock)) != H2_ATOMIC_OK) goto atomic_failure;
     if ((atomic_rc = h2_atomic_int_init(&state->state_publication.ready, 0)) != H2_ATOMIC_OK) goto atomic_failure;
     if ((atomic_rc = h2_atomic_uint_init(&state->state_publication.active_index, 0u)) != H2_ATOMIC_OK) goto atomic_failure;
     if ((atomic_rc = h2_atomic_flag_init(&state->state_publication.reader_lock)) != H2_ATOMIC_OK) goto atomic_failure;

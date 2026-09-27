@@ -62,6 +62,7 @@ const zhDevelopmentItems = [
       { text: "DNS", link: "/zh/developing/dns" },
       { text: "Encoding", link: "/zh/developing/encoding" },
       { text: "FFmpeg", link: "/zh/developing/ffmpeg" },
+      { text: "Desktop 录像", link: "/zh/developing/desktop_recording" },
       { text: "Game Runtime", link: "/zh/developing/game_runtime" },
       { text: "GizClaw", link: "/zh/developing/gizclaw" },
       { text: "H2Peer", link: "/zh/developing/h2peer" },

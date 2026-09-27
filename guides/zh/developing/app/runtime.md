@@ -209,7 +209,7 @@ while (!app.should_exit) {
 
 Event 的具体类型由 `component + component_id + kind` 共同确定。App 只解释 Runtime-owned event schema，不重新消费 PAL system event，也不依赖 PAL callback payload。
 
-Runtime event queue 是有界队列。App event handler 不能在处理事件时执行无界或长时间阻塞的工作，否则会阻塞 Runtime event loop，并提高 queue overflow 和输入延迟风险。网络、存储、音频处理或其他耗时工作应离开 event handler 执行。
+Runtime event queue 是有界队列。App event handler 不能在处理事件时执行无界或长时间阻塞的工作，否则会阻塞 Runtime event loop，并提高 queue overflow 和输入延迟风险。网络、存储、音频处理或其他耗时工作应离开 event handler 执行。Queue 满时按住期间的 Button sample 会被丢弃，但按下和松开边沿由 Runtime 保留并在有空位后补发，App 仍可用 `BUTTON_DOWN`/`BUTTON_UP` 跟踪按住状态；丢弃总数用 `h2_runtime_dropped_event_count()` 读取，Runtime 也会限速输出 WARN 日志。
 
 ## 接入 Runtime Event Loop
 

@@ -55,13 +55,17 @@ configure_make(
             "--enable-shared",
             "--disable-avdevice",
             "--disable-avfilter",
-            "--disable-avformat",
+            "--enable-avformat",
             "--disable-swresample",
             "--enable-avcodec",
             "--enable-avutil",
             "--enable-swscale",
             "--enable-decoder=h264,aac",
             "--enable-parser=h264,aac",
+            "--enable-encoder=mpeg4,aac",
+            "--enable-muxer=mp4",
+            "--enable-demuxer=mov",
+            "--enable-protocol=file",
         ],
         ":is_linux_x86_64": [
             "--arch=x86_64",
@@ -77,13 +81,17 @@ configure_make(
             "--enable-shared",
             "--disable-avdevice",
             "--disable-avfilter",
-            "--disable-avformat",
+            "--enable-avformat",
             "--disable-swresample",
             "--enable-avcodec",
             "--enable-avutil",
             "--enable-swscale",
             "--enable-decoder=h264,aac",
             "--enable-parser=h264,aac",
+            "--enable-encoder=mpeg4,aac",
+            "--enable-muxer=mp4",
+            "--enable-demuxer=mov",
+            "--enable-protocol=file",
         ],
         ":is_linux_arm64": [
             "--arch=aarch64",
@@ -99,13 +107,17 @@ configure_make(
             "--enable-shared",
             "--disable-avdevice",
             "--disable-avfilter",
-            "--disable-avformat",
+            "--enable-avformat",
             "--disable-swresample",
             "--enable-avcodec",
             "--enable-avutil",
             "--enable-swscale",
             "--enable-decoder=h264,aac",
             "--enable-parser=h264,aac",
+            "--enable-encoder=mpeg4,aac",
+            "--enable-muxer=mp4",
+            "--enable-demuxer=mov",
+            "--enable-protocol=file",
         ],
         "@platforms//os:macos": [
             "--arch=arm64",
@@ -120,13 +132,17 @@ configure_make(
             "--enable-shared",
             "--disable-avdevice",
             "--disable-avfilter",
-            "--disable-avformat",
+            "--enable-avformat",
             "--disable-swresample",
             "--enable-avcodec",
             "--enable-avutil",
             "--enable-swscale",
             "--enable-decoder=h264,aac",
             "--enable-parser=h264,aac",
+            "--enable-encoder=mpeg4,aac",
+            "--enable-muxer=mp4",
+            "--enable-demuxer=mov",
+            "--enable-protocol=file",
             "--install-name-dir=@rpath",
         ],
         "//conditions:default": [],
@@ -142,6 +158,7 @@ configure_make(
     out_binaries = select({
         "@platforms//os:linux": [
             "libavcodec.so.62",
+            "libavformat.so.62",
             "libavutil.so.60",
             "libswscale.so.9",
         ],
@@ -150,11 +167,13 @@ configure_make(
     out_shared_libs = select({
         "@platforms//os:linux": [
             "libavcodec.so",
+            "libavformat.so",
             "libavutil.so",
             "libswscale.so",
         ],
         "@platforms//os:macos": [
             "libavcodec.62.dylib",
+            "libavformat.62.dylib",
             "libavutil.60.dylib",
             "libswscale.9.dylib",
         ],
@@ -162,6 +181,13 @@ configure_make(
     }),
     postfix_script = select({
         "@platforms//os:linux": (
+            "cp -L $$INSTALLDIR/lib/libavformat.so.62 " +
+            "$$INSTALLDIR/lib/libavformat.so.62.h2-real && " +
+            "mv -f $$INSTALLDIR/lib/libavformat.so.62.h2-real " +
+            "$$INSTALLDIR/lib/libavformat.so.62 && " +
+            "rm -f $$INSTALLDIR/lib/libavformat.so && " +
+            "cp -p $$INSTALLDIR/lib/libavformat.so.62 " +
+            "$$INSTALLDIR/lib/libavformat.so && " +
             "cp -L $$INSTALLDIR/lib/libavcodec.so.62 " +
             "$$INSTALLDIR/lib/libavcodec.so.62.h2-real && " +
             "mv -f $$INSTALLDIR/lib/libavcodec.so.62.h2-real " +
@@ -192,6 +218,30 @@ configure_make(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     targets = ["install"],
+)
+
+filegroup(
+    name = "avformat_runtime",
+    srcs = [":ffmpeg_foreign"],
+    output_group = select({
+        "@platforms//os:linux": "libavformat.so.62",
+        "@platforms//os:macos": "libavformat.62.dylib",
+        "//conditions:default": "",
+    }),
+)
+
+filegroup(
+    name = "avformat_link",
+    srcs = [":ffmpeg_foreign"],
+    output_group = "libavformat.so",
+    target_compatible_with = ["@platforms//os:linux"],
+)
+
+cc_import(
+    name = "avformat_import",
+    interface_library = ":avformat_link",
+    shared_library = ":avformat_runtime",
+    target_compatible_with = ["@platforms//os:linux"],
 )
 
 filegroup(
@@ -273,6 +323,7 @@ cc_library(
     deps = select({
         "@platforms//os:linux": [
             ":avcodec_import",
+            ":avformat_import",
             ":avutil_import",
             ":ffmpeg_foreign",
             ":swscale_import",
@@ -286,6 +337,7 @@ filegroup(
     name = "runtime_files",
     srcs = [
         ":avcodec_runtime",
+        ":avformat_runtime",
         ":avutil_runtime",
         ":swscale_runtime",
     ],
