@@ -13,9 +13,26 @@
 namespace {
 volatile std::sig_atomic_t stop_requested = 0;
 void request_stop(int) { stop_requested = 1; }
+struct SmokeCapture {
+  h2_desktop_capture_hooks_t recording = {};
+  uint64_t mic_samples = 0u;
+};
+void capture_display(void *user, const h2_sdl3_capture_frame_t *frame) {
+  auto *sink = static_cast<SmokeCapture *>(user);
+  sink->recording.on_display(sink->recording.user, frame);
+}
+void capture_speaker(void *user, const h2_portaudio_capture_frame_t *frame) {
+  auto *sink = static_cast<SmokeCapture *>(user);
+  sink->recording.on_speaker(sink->recording.user, frame);
+}
+void capture_mic(void *user, const h2_portaudio_capture_frame_t *frame) {
+  // Observe input independently; the movie's soundtrack remains speaker-only.
+  auto *sink = static_cast<SmokeCapture *>(user);
+  sink->mic_samples += frame->frames;
+}
 } // namespace
 
-// Real Desktop render + speaker path; no microphone, service or fake backend.
+// Real Desktop display, mic and speaker hooks; no service or fake backend.
 int main(int argc, char **argv) {
   if (argc != 2) {
     std::fprintf(stderr, "usage: recording-smoke <new-absolute-output.mp4>\n");
@@ -54,9 +71,19 @@ int main(int argc, char **argv) {
       return 1;
     }
     h2_desktop_recording_t *recording = nullptr;
-    result = h2_desktop_recording_start(display.handle, audio.handle, argv[1],
-                                        &recording);
+    result = h2_desktop_recording_create(argv[1], 320u, 240u, &recording);
     if (result != H2_PAL_OK) {
+      return 1;
+    }
+    SmokeCapture sink = {*h2_desktop_recording_hooks(recording), 0u};
+    const h2_desktop_capture_config_t capture_config = {
+        display.handle,
+        audio.handle,
+        {&sink, capture_display, capture_mic, capture_speaker}};
+    h2_desktop_capture_t *capture = nullptr;
+    result = h2_desktop_capture_create(&capture_config, &capture);
+    if (result != H2_PAL_OK) {
+      h2_desktop_recording_destroy(recording);
       return 1;
     }
     lv_obj_t *screen = lv_screen_active();
@@ -79,6 +106,9 @@ int main(int argc, char **argv) {
     result = h2_pal_audio_get_info(audio.api(), &info);
     const h2_audio_track_config_t track_config = {
         "recording-tone", info.playback_format, 1000u, 4u, nullptr};
+    if (result == H2_PAL_OK) {
+      result = h2_pal_audio_start_mic(audio.api());
+    }
     if (result == H2_PAL_OK) {
       result = h2_pal_audio_start_speaker(audio.api());
     }
@@ -133,9 +163,11 @@ int main(int argc, char **argv) {
         result = drain == H2_PAL_OK ? closed : drain;
       }
     }
+    const int mic_stop = h2_pal_audio_stop_mic(audio.api());
     const int speaker_stop = h2_pal_audio_stop_speaker(audio.api());
     (void)h2::desktop::poll_events(&display, &lvgl);
     h2_desktop_recording_stats_t stats = {};
+    h2_desktop_capture_destroy(capture);
     const int recorded = h2_desktop_recording_stop(recording, &stats);
     h2_desktop_recording_destroy(recording);
     std::printf("H2_RECORDING result=%d speaker_stop=%d duration_us=%llu "
@@ -148,7 +180,10 @@ int main(int argc, char **argv) {
                 static_cast<unsigned long long>(stats.captured_audio_frames),
                 static_cast<unsigned long long>(stats.late_audio_frames),
                 stats.buffer_bytes, stop_requested != 0, argv[1]);
+    std::printf("H2_CAPTURE mic_samples=%llu mic_stop=%d\n",
+                static_cast<unsigned long long>(sink.mic_samples), mic_stop);
     if (recorded != H2_PAL_OK || speaker_stop != H2_PAL_OK ||
+        mic_stop != H2_PAL_OK || sink.mic_samples == 0u ||
         stats.captured_video_frames == 0u ||
         stats.captured_audio_frames == 0u) {
       result = H2_PAL_ERR_IO;

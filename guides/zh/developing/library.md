@@ -4,7 +4,7 @@
 
 `libs/pal/providers/<platform-or-sdk>/` 是明确例外：它保存由 Bazel 直接编译的平台实现，或把 Bazel archive 接入 ESP-IDF、BK7258 等原生 build system 的薄 adapter。它仍属于 Bazel library graph，不是原生 SDK source component；需要 SDK config、SDK lifecycle 或 SDK-owned source selection 的源码继续属于 `native_component_src/<sdk-family>/`。
 
-`libs/desktop_recording` 是 Desktop 专用的 native library，显式限定为 Linux/macOS target，提供直接 C lifecycle 并组合已有 SDL3/PortAudio provider 与 FFmpeg。它不声明跨平台 PAL capability 或 vtable；其具体 provider 类型只属于 Desktop launcher integration。
+`libs/desktop_recording` 是 Desktop 专用的 native library，显式限定为 Linux/macOS target，提供直接 C lifecycle 和 Desktop hooks consumer，并通过 FFmpeg 编码。它不声明跨平台 PAL capability 或 vtable；Desktop source registration 属于 `app_support:capture`，由 launcher 持有。
 
 ## 标准结构
 

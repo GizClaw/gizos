@@ -156,3 +156,28 @@ cc_library(
         "//conditions:default": [],
     }),
 )
+
+cc_library(
+    name = "capture",
+    srcs = ["src/h2_desktop_capture.cpp"],
+    hdrs = ["include/h2_desktop_capture.h"],
+    includes = ["include"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    deps = [
+        "//libs/pal/providers/portaudio",
+        "//libs/pal/providers/sdl3",
+    ],
+)
+
+cc_test(
+    name = "capture_test",
+    srcs = ["tests/test_h2_desktop_capture.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    deps = [
+        ":capture",
+        "//libs/pal/providers/desktop/pal_core",
+        "//libs/pal/providers/portaudio",
+    ],
+)

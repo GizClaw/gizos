@@ -125,8 +125,8 @@ typedef void (*h2_sdl3_frame_capture_fn)(void *user,
                                        const h2_sdl3_capture_frame_t *frame);
 
 /** Register one direct Desktop presentation callback; NULL unregisters.
- * Callback must copy into bounded storage, must not encode or perform I/O,
- * and must not reenter SDL3. Registration while occupied returns BUSY.
+ * Callback must return promptly and must not reenter SDL3; copy borrowed data
+ * when retaining it and delegate expensive work to the consumer. Registration while occupied returns BUSY.
  * Provider and user storage must outlive registration. Unregister waits for
  * in-flight callbacks. Call from a control task, never from the callback.
  */

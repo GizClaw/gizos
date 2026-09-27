@@ -86,9 +86,15 @@ Display brightness 通过 framebuffer presentation 的 color modulation 模拟�
 
 帮助框是主 SDL window 的 host-native modal dialog，不创建第二个 firmware display、framebuffer 或 portable App route。测试可以通过 `h2_desktop_platform_copy_help_text()` 取得同一份 UTF-8 snapshot，而不实际打开 dialog。
 
-## 同步音视频录像
+## Display / Mic / Speaker Capture Hooks
 
-公共 `libs/desktop_recording` 提供 Desktop 专用的直接 C lifecycle，组合 SDL3 frame callback、PortAudio speaker callback 与 FFmpeg 编码，不定义 PAL capability 或 vtable。实现、共同时间轴、有界缓冲、透明合成和停止尾帧/尾音合同见 [Desktop 音视频录像](../desktop_recording.md)。产品 E2E launcher 只启动/停止它并组织 MP4 artifact。
+`app_support:capture` 在 Desktop 组合层接受可选的 `h2_desktop_capture_config_t.hooks`，包括 `on_display`、`on_mic`、`on_speaker` 与调用方 `user`。这些是观察回调，不是新的 PAL capability 或 vtable。未配置的回调关闭对应捕获；空配置成功返回 NULL registration。Desktop 只交出数据，不规定 callback 用于录像、统计、分析还是其它用途，也不启动设备或写文件。
+
+Display hook 取得实际 SDL 呈现的完整 RGB565 framebuffer 与 brightness，包含 LVGL 已完成的透明合成。Speaker hook 取得混音、音量处理后成功送出的 PCM；Mic hook 取得真实输入经过 AEC 后、进入 Audio PAL queue 前的 PCM，synthetic fallback 不触发 mic hook。三路使用相同 native steady-clock 微秒时间轴：speaker timestamp 含 PortAudio 报告的输出延迟估计；mic timestamp 是 read 完成时间减去 frame 时长，不代表 ADC 硬件时间戳。Mic hook 位于 Desktop provider，早于 App/E2E fixture decorator 的输入替换。
+
+配置和函数指针在注册时复制，`user` 与 providers 借用到 registration 销毁。Payload 仅在 callback 期间有效；消费者需要保留时复制，并自行安排耗时处理。Display 与 audio callback 可能并发；callback 不得重入 source provider 或 capture 配置。一个 source 只允许一个 owner，冲突返回 BUSY 并回滚本次已完成的注册。Destroy 同步注销并等待在途 callback 退出，调用方随后才能释放 user、recorder 或 providers。
+
+`libs/desktop_recording` 是 hooks 的一个消费者。它提供 display/speaker callbacks 和独立编码生命周期，Desktop capture 不依赖 FFmpeg。产品 E2E launcher 组织产物路径并执行注册、注销和编码器收尾。具体编码、有界缓冲和停止尾帧/尾音合同见 [Desktop 音视频录像](../desktop_recording.md)。
 
 ## Video Decoder
 
