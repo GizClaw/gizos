@@ -39,6 +39,12 @@ h2_desktop_recording_hooks(h2_desktop_recording_t *state) {
 }
 
 h2_pal_result_t
+h2_desktop_recording_result(h2_desktop_recording_t *state) {
+  return state == nullptr ? H2_PAL_ERR_INVALID_ARG
+                         : h2_desktop_recording_encoder_result(state->encoder);
+}
+
+h2_pal_result_t
 h2_desktop_recording_stop(h2_desktop_recording_t *state,
                           h2_desktop_recording_stats_t *out_stats) {
   if (out_stats != nullptr) {

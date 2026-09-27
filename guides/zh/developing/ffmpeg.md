@@ -10,7 +10,7 @@ Session create、push/decode、flush/reset 与 destroy 必须遵守 PAL contract
 
 ## Desktop 录像编码
 
-`libs/desktop_recording` 直接消费同一固定版本的 FFmpeg MPEG-4 Visual/AAC encoder 与 MP4 muxer。录像生命周期属于 Desktop library，不属于 Decoder PAL provider。接线与验证见 [Desktop 音视频录像](./desktop_recording.md)。
+`libs/desktop_recording` 直接消费同一固定版本的 FFmpeg MPEG-4 Visual/AAC encoder 与 MP4 muxer。录像生命周期属于 Desktop library，不属于 Decoder PAL provider。 固定 FFmpeg build 同时包含 MPEG-4 Visual decoder，用于逐帧验证录像输出的实际颜色和尾帧。接线与验证见 [Desktop 音视频录像](./desktop_recording.md)。
 
 ## Validation
 
