@@ -193,7 +193,7 @@ void h2_desktop_firmware_info_destroy(h2_desktop_firmware_info_t *owner);
 
 /** Actual live provider objects, not counts of calls made by a test wrapper.
  * Tasks remain live after entry returns, until successful join. Stack bytes
- * count only configured placeholder allocations, not native OS thread stacks.
+ * count the actual provider-owned storage supplied to native pthreads.
  * A snapshot is synchronized; compare at quiescent ownership boundaries.
  */
 typedef struct h2_desktop_platform_resource_stats {
@@ -209,10 +209,11 @@ typedef struct h2_desktop_platform_resource_stats {
 h2_pal_result_t h2_desktop_platform_get_resource_stats(
     h2_desktop_platform_resource_stats_t *out);
 
-/** Optional task stack accounting, configured before starting its borrowers.
- * resolve returns bytes to reserve (zero skips the task), including any target
- * policy floor. It must not reenter configure. NULL config disables accounting.
- * The thread still uses its OS stack; placeholder memory is held until join.
+/** Optional task-stack allocator/policy, configured before its borrowers start.
+ * resolve returns a minimum byte count (zero adds no policy floor). The native
+ * default and options.min_stack_size are also respected, with page alignment.
+ * It must not reenter configure. NULL restores the default allocator/policy.
+ * The allocated storage is the actual pthread stack and remains owned until join.
  * Allocator/resolver/user are borrowed through all successful joins. Configure
  * returns BUSY while a configured start/join is outstanding. Resolution or
  * allocation failure prevents starting the thread and publishes no handle.
@@ -223,7 +224,7 @@ typedef struct h2_desktop_task_stack_config {
                              size_t *out_bytes);
   void *user;
 } h2_desktop_task_stack_config_t;
-/** @brief Copy or clear the process-wide desktop task accounting configuration.
+/** @brief Copy or clear the process-wide desktop task-stack policy.
  * @param config Copied value, or NULL to disable; referenced objects are borrowed.
  * @return OK, INVALID_ARG for an incomplete config, or BUSY while a configured
  * start/join is outstanding. Does not alter existing OS thread stacks.

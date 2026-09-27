@@ -2,6 +2,7 @@
 #include "h2_web_platform_internal.h"
 
 #include <emscripten.h>
+#include <emscripten/threading.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -369,6 +370,12 @@ h2_web_system_event_unsubscribe(void *user,
   h2_web_platform_t *platform = user;
   if (platform == NULL)
     return;
+  // A synchronous PAL void-returning unsubscribe cannot report WOULD_BLOCK.
+  // Its borrowed API is Worker-only; UI callers use the asynchronous entry.
+  if (emscripten_is_main_runtime_thread()) {
+    emscripten_err("SystemEvent unsubscribe requires a Worker; use unsubscribe_async on the browser main thread");
+    abort();
+  }
   pthread_mutex_lock(&platform->event_mutex);
   h2_pal_system_event_subscription_t **cursor =
       &platform->system_event_subscriptions;
@@ -391,6 +398,100 @@ h2_web_system_event_unsubscribe(void *user,
   --platform->system_event_unsubscribe_waiters;
   h2_web_system_event_reclaim(platform, target);
   pthread_mutex_unlock(&platform->event_mutex);
+}
+
+struct h2_web_event_unsubscribe_request {
+  h2_web_event_unsubscribe_request_t *next;
+  h2_pal_system_event_subscription_t *subscription;
+  void (*completed)(void *);
+  void *user;
+};
+
+h2_pal_result_t h2_web_platform_system_event_unsubscribe_async(
+    h2_web_platform_t *platform, h2_pal_system_event_subscription_t *target,
+    void (*completed)(void *), void *user) {
+  if (platform == NULL || target == NULL || completed == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_web_event_unsubscribe_request_t *request = calloc(1u, sizeof(*request));
+  if (request == NULL) return H2_PAL_ERR_NO_MEMORY;
+  // Neither admission lock may block the browser. Holding both short-lived
+  // locks pins the subscription identity before it can be retired or reused.
+  if (pthread_mutex_trylock(&platform->pump_mutex) != 0) {
+    free(request);
+    return H2_PAL_ERR_BUSY;
+  }
+  if (pthread_mutex_trylock(&platform->event_mutex) != 0) {
+    pthread_mutex_unlock(&platform->pump_mutex);
+    free(request);
+    return H2_PAL_ERR_BUSY;
+  }
+  h2_pal_result_t rc = H2_PAL_OK;
+  h2_pal_system_event_subscription_t *live = platform->system_event_subscriptions;
+  while (live != NULL && live != target) live = live->next;
+  if (platform->shutting_down || platform->pump_stop)
+    rc = H2_PAL_ERR_INVALID_STATE;
+  else if (live == NULL)
+    rc = H2_PAL_ERR_NOT_FOUND;
+  else if (live->waiters != 0u)
+    rc = H2_PAL_ERR_BUSY;
+  if (rc == H2_PAL_OK) {
+    live->active = false;
+    ++live->waiters;
+    ++platform->system_event_unsubscribe_waiters;
+    request->subscription = live;
+    request->completed = completed;
+    request->user = user;
+    if (platform->event_unsubscribe_tail != NULL)
+      platform->event_unsubscribe_tail->next = request;
+    else
+      platform->event_unsubscribe_head = request;
+    platform->event_unsubscribe_tail = request;
+    platform->pump_scheduled = true;
+    pthread_cond_signal(&platform->pump_changed);
+  }
+  pthread_mutex_unlock(&platform->event_mutex);
+  pthread_mutex_unlock(&platform->pump_mutex);
+  if (rc != H2_PAL_OK) free(request);
+  return rc;
+}
+
+void h2_web_platform_event_retire(h2_web_platform_t *platform) {
+  for (;;) {
+    pthread_mutex_lock(&platform->pump_mutex);
+    h2_web_event_unsubscribe_request_t *request = platform->event_unsubscribe_head;
+    if (request != NULL) {
+      platform->event_unsubscribe_head = request->next;
+      if (platform->event_unsubscribe_head == NULL)
+        platform->event_unsubscribe_tail = NULL;
+    }
+    pthread_mutex_unlock(&platform->pump_mutex);
+    if (request == NULL) return;
+    if (h2_web_system_event_self(platform, request->subscription)) {
+      // A caller may pump from inside the callback being retired. Let the
+      // owned Worker process it after this callback unwinds instead of waiting
+      // for ourselves from a nested pump.
+      pthread_mutex_lock(&platform->pump_mutex);
+      request->next = platform->event_unsubscribe_head;
+      platform->event_unsubscribe_head = request;
+      if (platform->event_unsubscribe_tail == NULL)
+        platform->event_unsubscribe_tail = request;
+      platform->pump_scheduled = true;
+      pthread_cond_signal(&platform->pump_changed);
+      pthread_mutex_unlock(&platform->pump_mutex);
+      return;
+    }
+    pthread_mutex_lock(&platform->event_mutex);
+    h2_pal_system_event_subscription_t *target = request->subscription;
+    while (target->in_flight != 0u)
+      pthread_cond_wait(&platform->event_changed, &platform->event_mutex);
+    --target->waiters;
+    --platform->system_event_unsubscribe_waiters;
+    h2_web_system_event_reclaim(platform, target);
+    pthread_mutex_unlock(&platform->event_mutex);
+    // platform->pumping pins the owner through the completion callback.
+    request->completed(request->user);
+    free(request);
+  }
 }
 
 static const h2_pal_system_event_vtable_t h2_web_system_event_vtable = {

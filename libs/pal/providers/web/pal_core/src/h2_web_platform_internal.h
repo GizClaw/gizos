@@ -17,6 +17,7 @@
 
 typedef struct h2_web_audio_track h2_web_audio_track_t;
 typedef struct h2_web_system_event_frame h2_web_system_event_frame_t;
+typedef struct h2_web_event_unsubscribe_request h2_web_event_unsubscribe_request_t;
 
 /* A finished WebRTC media task waiting for the pump to join it. */
 typedef struct h2_web_webrtc_zombie {
@@ -54,6 +55,8 @@ struct h2_web_platform {
   pthread_mutex_t pump_mutex;
   pthread_cond_t pump_changed;
   pthread_t pump_thread;
+  h2_web_event_unsubscribe_request_t *event_unsubscribe_head;
+  h2_web_event_unsubscribe_request_t *event_unsubscribe_tail;
   bool pump_stop;
   h2_pal_mem_api_t task_allocator;
   h2_pal_time_api_t clock_api;
@@ -146,6 +149,7 @@ h2_pal_result_t h2_web_platform_sleep_ms(h2_web_platform_t *platform,
 void h2_web_platform_netif_init(h2_web_platform_t *platform);
 void h2_web_platform_netif_deinit(h2_web_platform_t *platform);
 void h2_web_platform_netif_poll(h2_web_platform_t *platform);
+void h2_web_platform_event_retire(h2_web_platform_t *platform);
 void h2_web_platform_webrtc_init(h2_web_platform_t *platform);
 void h2_web_platform_webrtc_deinit(h2_web_platform_t *platform);
 bool h2_web_platform_webrtc_busy(h2_web_platform_t *platform);

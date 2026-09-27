@@ -18,10 +18,13 @@ struct Done {
   std::mutex mutex;
   std::condition_variable changed;
   bool value = false;
+  uintptr_t stack_address = 0;
 };
 void finish(void *user) {
   auto *done = static_cast<Done *>(user);
   std::lock_guard<std::mutex> lock(done->mutex);
+  int stack_local;
+  done->stack_address = reinterpret_cast<uintptr_t>(&stack_local);
   done->value = true;
   done->changed.notify_all();
 }
@@ -33,12 +36,16 @@ struct Allocator {
   size_t calls = 0u;
   size_t fail_at = 0u;
   size_t live = 0u;
+  uintptr_t last_address = 0;
+  size_t last_size = 0;
 };
 void *allocate(void *user, size_t len) {
   auto *allocator = static_cast<Allocator *>(user);
   if (++allocator->calls == allocator->fail_at)
     return nullptr;
   void *p = std::malloc(len);
+  allocator->last_address = reinterpret_cast<uintptr_t>(p);
+  allocator->last_size = len;
   if (p != nullptr)
     ++allocator->live;
   return p;
@@ -116,7 +123,9 @@ int main() {
   }
   active = snapshot();
   assert(active.live_tasks == baseline.live_tasks + 1u);
-  assert(active.task_stack_bytes == baseline.task_stack_bytes + 4096u);
+  assert(active.task_stack_bytes >= baseline.task_stack_bytes + 4096u);
+  assert(done.stack_address >= allocator.last_address);
+  assert(done.stack_address < allocator.last_address + allocator.last_size);
   assert(h2_pal_task_join(task_api, task) == H2_PAL_OK);
   assert(allocator.live == 0u);
   assert(h2_desktop_platform_configure_task_stacks(nullptr) == H2_PAL_OK);

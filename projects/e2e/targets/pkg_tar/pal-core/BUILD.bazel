@@ -90,6 +90,7 @@ web_archive_browser_test(
         "H2_WEB_CORE_PARALLEL passed=1 distinct_workers=1 no_yield=1",
         "H2_WEB_CORE_TASK_PROBE .*complete=1",
         "H2_WEB_CORE_EVENT_PROBE .*complete=1",
+        "H2_WEB_CORE_UI_UNSUBSCRIBE complete=1 main_responsive=1 quiescent=1",
         "H2_WEB_CORE_TEARDOWN destroy=0",
         "H2_WEB_CORE_PROBE_COMPLETE",
     ],

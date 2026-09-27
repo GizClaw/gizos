@@ -220,13 +220,14 @@ int task_start(void *user, const h2_pal_task_options_t *options,
   size_t bytes = options == nullptr ? 0u : options->min_stack_size;
   if (bytes < default_stack_size)
     bytes = default_stack_size;
-  if (bytes < PTHREAD_STACK_MIN)
-    bytes = PTHREAD_STACK_MIN;
+  const size_t native_minimum = static_cast<size_t>(PTHREAD_STACK_MIN);
+  if (bytes < native_minimum)
+    bytes = native_minimum;
 #if defined(__ANDROID__)
   // Bionic carves pthread_internal_t out of a caller-provided stack and
   // subtracts it from pthread_getattr_np's usable size. Reserve native thread
   // metadata separately so min_stack_size remains a usable-stack guarantee.
-  const size_t native_overhead = PTHREAD_STACK_MIN;
+  const size_t native_overhead = native_minimum;
   if (bytes > SIZE_MAX - native_overhead)
     return H2_PAL_ERR_INVALID_ARG;
   bytes += native_overhead;

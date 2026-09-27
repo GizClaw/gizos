@@ -319,16 +319,28 @@ static h2_pal_webrtc_event_t echo(const uint8_t *data, size_t len, int text) {
   return event;
 }
 
+typedef struct send_batch { unsigned sent; } send_batch_t;
+static void fill_send_buffer(void *context, h2_web_main_result_t *result,
+                             h2_web_main_completion_t *completion) {
+  send_batch_t *batch = context;
+  uint8_t data[16384];
+  h2_pal_result_t rc = H2_PAL_OK;
+  // One browser turn sends through the real PAL/DataChannel without letting
+  // transport drain between each Worker-to-main round trip. This tests the
+  // actual bufferedAmount limit, independent of machine/network speed.
+  for (; batch->sent < 128; ++batch->sent) {
+    memset(data, (int)batch->sent, sizeof(data));
+    rc = h2_pal_webrtc_channel_send(api, channel, data, sizeof(data), 0);
+    if (rc != H2_PAL_OK) break;
+  }
+  result->i32 = rc;
+  h2_web_main_complete(completion);
+}
 static void test_backpressure(void) {
   uint8_t data[16384];
-  unsigned sent = 0;
-  h2_pal_result_t rc = H2_PAL_OK;
-  for (; sent < 128; ++sent) {
-    memset(data, (int)sent, sizeof(data));
-    rc = h2_pal_webrtc_channel_send(api, channel, data, sizeof(data), 0);
-    if (rc != H2_PAL_OK)
-      break;
-  }
+  send_batch_t batch = {0};
+  h2_pal_result_t rc = (h2_pal_result_t)h2_web_main_call(fill_send_buffer, &batch).i32;
+  unsigned sent = batch.sent;
   assert(rc == H2_PAL_ERR_WOULD_BLOCK && sent > 0);
   unsigned received = 0;
   int writable = 0;

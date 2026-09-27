@@ -395,6 +395,7 @@ h2_pal_result_t h2_web_platform_pump(h2_web_platform_t *platform,
   platform->pump_owner = pthread_self();
   pthread_mutex_unlock(&platform->pump_mutex);
   h2_web_platform_webrtc_reap(platform);
+  h2_web_platform_event_retire(platform);
   h2_web_platform_netif_poll(platform);
   pthread_mutex_lock(&platform->pump_mutex);
   platform->pumping = false;
@@ -541,5 +542,6 @@ h2_web_platform_netif_api(h2_web_platform_t *platform) {
 
 const h2_pal_system_event_api_t *
 h2_web_platform_system_event_api(h2_web_platform_t *platform) {
-  return platform == NULL ? NULL : &platform->system_event_api;
+  return platform == NULL || emscripten_is_main_runtime_thread()
+             ? NULL : &platform->system_event_api;
 }

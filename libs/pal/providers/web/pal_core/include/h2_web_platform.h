@@ -216,8 +216,24 @@ h2_web_platform_netif_api(h2_web_platform_t *platform);
  * the subscription without waiting on its own callback.
  * At most 64 subscriptions may be live; more return NO_SPACE.
  */
+/** Borrow the synchronous SystemEvent API on a C Worker; NULL on the browser
+ * main thread. Its unsubscribe may block until other Worker callbacks return.
+ * A borrowed API must not be used from the browser main thread. */
 const h2_pal_system_event_api_t *
 h2_web_platform_system_event_api(h2_web_platform_t *platform);
+
+/** Retire a subscription without blocking the browser event loop.
+ * On OK, admission is stopped immediately and ownership of the subscription
+ * transfers to the platform Worker. completed(user) runs exactly once on that
+ * Worker after all in-flight handlers finish; handler_user must stay alive
+ * until then. Keep platform/user alive through callback return, then platform
+ * destruction is retryable if the pump is still finishing. Do not unsubscribe
+ * the transferred handle again. BUSY takes no ownership and may be retried
+ * after returning to the event loop. Other failures do not invoke completed.
+ */
+h2_pal_result_t h2_web_platform_system_event_unsubscribe_async(
+    h2_web_platform_t *platform, h2_pal_system_event_subscription_t *subscription,
+    void (*completed)(void *user), void *user);
 
 /**
  * Start the Web Serial chooser; call only from a direct user gesture.
