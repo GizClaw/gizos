@@ -265,10 +265,11 @@ bool setup(h2_desktop_recording_encoder_t *state, const char *path) {
   if (state->scaler == nullptr) {
     return false;
   }
-  // Fragment once per GOP, bounding muxer packet tables even for long runs.
+  // Fragment once per GOP and omit the optional mfra/tfra index. Without
+  // skip_trailer FFmpeg retains a growing fragment index until finalization.
   AVDictionary *options = nullptr;
   const int option_result = av_dict_set(
-      &options, "movflags", "frag_keyframe+empty_moov+default_base_moof", 0);
+      &options, "movflags", "frag_keyframe+empty_moov+default_base_moof+skip_trailer", 0);
   state->format->avoid_negative_ts = AVFMT_AVOID_NEG_TS_MAKE_ZERO;
   const int header_result =
       option_result < 0 ? option_result

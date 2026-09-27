@@ -5,10 +5,32 @@ extern "C" {
 #include <cassert>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
 
 namespace {
+void check_fragment_layout(const char *path) {
+  FILE *file = std::fopen(path, "rb");
+  assert(file != nullptr);
+  unsigned fragments = 0u;
+  unsigned char header[8];
+  while (std::fread(header, 1u, sizeof(header), file) == sizeof(header)) {
+    const uint32_t size = (static_cast<uint32_t>(header[0]) << 24u) |
+                          (static_cast<uint32_t>(header[1]) << 16u) |
+                          (static_cast<uint32_t>(header[2]) << 8u) | header[3];
+    assert(size >= sizeof(header));
+    assert(std::memcmp(header + 4u, "mfra", 4u) != 0);
+    if (std::memcmp(header + 4u, "moof", 4u) == 0) {
+      ++fragments;
+    }
+    assert(std::fseek(file, static_cast<long>(size - sizeof(header)),
+                      SEEK_CUR) == 0);
+  }
+  assert(std::feof(file) != 0 && fragments >= 2u);
+  assert(std::fclose(file) == 0);
+}
+
 void inspect(const char *path) {
   AVFormatContext *format = nullptr;
   assert(avformat_open_input(&format, path, nullptr, nullptr) == 0);
@@ -87,6 +109,7 @@ int main() {
          H2_PAL_OK);
   h2_desktop_recording_encoder_destroy(state);
   inspect(path.c_str());
+  check_fragment_layout(path.c_str());
   state = nullptr;
   assert(h2_desktop_recording_encoder_create(&config, &state) == H2_PAL_ERR_IO);
   assert(state == nullptr); // never overwrite an existing artifact

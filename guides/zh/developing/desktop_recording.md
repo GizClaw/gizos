@@ -8,7 +8,7 @@ PortAudio 的直接 output callback 在 mixer、track gain 和 speaker volume �
 
 Recorder 直接使用已有固定版本 FFmpeg 的 MPEG-4 Visual 与 AAC-LC encoder，不启动外部 ffmpeg process。30 fps 视频与 16 kHz mono 音频使用同一 epoch。16 个完整 video snapshot 与两秒 PCM ring 在开始时分配，callback 只在锁内复制；worker 独立编码和写文件。100 ms holdback 等待 producer 时间戳；视频按 30 fps 采样，静止时保持最后画面，未播放的时段保留静音。缓冲容量耗尽、迟到音频与 I/O/编码错误保留非零结果，不能静默丢音并报告成功。
 
-MP4 每个一秒 GOP 分片（`frag_keyframe+empty_moov+default_base_moof`），使封装的 packet metadata 也保持有界。采集 buffer 为 `34 * width * height + 64000` bytes，另有固定 encoder、scaler 和 muxer 工作空间。编码目标码率是视频 2 Mbit/s、音频 64 kbit/s，容量规划约 15.5 MB/min、0.93 GB/h，实际静态 UI 通常更小。
+MP4 每个一秒 GOP 分片（`frag_keyframe+empty_moov+default_base_moof+skip_trailer`），并关闭需要累计整段 fragment index 的可选 mfra/tfra trailer，使封装的 metadata 也保持有界。每个片段自身保留时间戳，正常 stop 仍调用 muxer finalization 刷出最后片段并关闭文件。采集 buffer 为 `34 * width * height + 64000` bytes，另有固定 encoder、scaler 和 muxer 工作空间。编码目标码率是视频 2 Mbit/s、音频 64 kbit/s，容量规划约 15.5 MB/min、0.93 GB/h，实际静态 UI 通常更小。
 
 Desktop launcher 先创建 recorder，再把 `h2_desktop_recording_hooks()` 返回的回调放入 `h2_desktop_capture_config_t.hooks` 并注册。Recorder 的 `on_mic` 为 NULL，MP4 音轨只来自 speaker。停止生产者并呈现最后 pending frame 后，launcher 先 destroy capture registration，等待 callback 退出，再 stop recorder。编码器写到停止时间与最后已接受 DAC sample 结束时间的较大值，保留最后 presentation、保持尾帧、补齐最后 AAC block、flush 两个 encoder 并写 trailer。正常完成、窗口退出和 SIGINT/SIGTERM 的协作取消使用相同收尾；SIGKILL、设备丢失和不可写存储不属于成功停止。
 
