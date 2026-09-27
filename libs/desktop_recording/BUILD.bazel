@@ -9,6 +9,8 @@ cc_library(
         "src/h2_desktop_recording.cpp",
         "src/h2_desktop_recording_encoder.cpp",
         "src/h2_desktop_recording_internal.h",
+        "src/h2_desktop_recording_output.cpp",
+        "src/h2_desktop_recording_output.h",
     ],
     hdrs = ["include/h2_desktop_recording.h"],
     copts = H2_WARNING_COPTS + ["-Wno-thread-safety-analysis"],
