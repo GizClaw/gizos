@@ -77,7 +77,16 @@ void inspect(const char *path) {
   avformat_close_input(&format);
 }
 
-void inspect_audio_gap(const char *path) {
+struct AudioWindow {
+  double start;
+  double end;
+  float minimum_peak;
+  float maximum_peak;
+  float peak = 0.0f;
+  size_t samples = 0u;
+};
+
+void inspect_audio(const char *path, std::vector<AudioWindow> windows) {
   AVFormatContext *format = nullptr;
   assert(avformat_open_input(&format, path, nullptr, nullptr) == 0);
   assert(avformat_find_stream_info(format, nullptr) >= 0);
@@ -93,8 +102,6 @@ void inspect_audio_gap(const char *path) {
   AVPacket *packet = av_packet_alloc();
   AVFrame *frame = av_frame_alloc();
   assert(packet != nullptr && frame != nullptr);
-  float gap_peak = 0.0f, tail_peak = 0.0f;
-  size_t gap_samples = 0u;
   auto drain = [&]() {
     int rc;
     while ((rc = avcodec_receive_frame(decoder, frame)) == 0) {
@@ -103,12 +110,12 @@ void inspect_audio_gap(const char *path) {
       const double start = frame->pts * av_q2d(format->streams[stream]->time_base);
       for (int i = 0; i < frame->nb_samples; ++i) {
         const double at = start + static_cast<double>(i) / frame->sample_rate;
-        if (at >= 1.0 && at < 2.5) {
-          gap_peak = std::max(gap_peak, std::abs(pcm[i]));
-          ++gap_samples;
+        for (auto &window : windows) {
+          if (at >= window.start && at < window.end) {
+            window.peak = std::max(window.peak, std::abs(pcm[i]));
+            ++window.samples;
+          }
         }
-        if (at >= 3.0 && at < 3.2)
-          tail_peak = std::max(tail_peak, std::abs(pcm[i]));
       }
     }
     assert(rc == AVERROR(EAGAIN) || rc == AVERROR_EOF);
@@ -122,8 +129,13 @@ void inspect_audio_gap(const char *path) {
   }
   assert(avcodec_send_packet(decoder, nullptr) == 0);
   drain();
-  assert(gap_samples >= 16000u && gap_peak < 0.001f);
-  assert(tail_peak > 0.1f);
+  for (const auto &window : windows) {
+    const size_t minimum_samples =
+        static_cast<size_t>((window.end - window.start) * 16000.0 * 0.9);
+    assert(window.samples >= minimum_samples);
+    assert(window.peak >= window.minimum_peak &&
+           window.peak < window.maximum_peak);
+  }
   av_frame_free(&frame);
   av_packet_free(&packet);
   avcodec_free_context(&decoder);
@@ -189,7 +201,8 @@ int main() {
   assert(stats.duration_us == 3100000u && stats.late_audio_frames == 0u);
   h2_desktop_recording_encoder_destroy(state);
   inspect(gap_path.c_str());
-  inspect_audio_gap(gap_path.c_str());
+  inspect_audio(gap_path.c_str(), {{1.0, 2.5, 0.0f, 0.001f},
+                                  {3.0, 3.2, 0.1f, 1.0f}});
   config.path = "/nonexistent-directory/h2-recording.mp4";
   assert(h2_desktop_recording_encoder_create(&config, &state) == H2_PAL_ERR_IO);
   const std::string overflow_path = std::string(temporary) + "/overflow.mp4";
@@ -230,6 +243,14 @@ int main() {
   assert(stats.captured_audio_frames == 38400u && stats.late_audio_frames == 0u);
   h2_desktop_recording_encoder_destroy(state);
   inspect(wrap_path.c_str());
+  const double wrap_start =
+      static_cast<double>(future.timestamp_us - config.start_us) / 1000000.0;
+  // Inspect inside each payload window, away from AAC priming/boundary padding.
+  // Counted captures alone cannot detect silence replacing reused queue slots.
+  inspect_audio(wrap_path.c_str(),
+                {{1.2, 2.8, 0.1f, 1.0f},
+                 {3.2, wrap_start, 0.0f, 0.001f},
+                 {wrap_start + 0.1, wrap_start + 0.3, 0.1f, 1.0f}});
   const std::string tail_path = std::string(temporary) + "/tail-frame.mp4";
   config.path = tail_path.c_str();
   config.start_us = h2_desktop_recording_now_us();
