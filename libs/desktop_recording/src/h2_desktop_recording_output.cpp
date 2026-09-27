@@ -2,7 +2,10 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <csignal>
 #include <cstring>
+#include <fcntl.h>
+#include <pthread.h>
 #include <unistd.h>
 
 h2_desktop_recording_output::h2_desktop_recording_output() = default;
@@ -61,7 +64,23 @@ int h2_desktop_recording_output::finish() {
 }
 
 void h2_desktop_recording_output::run() {
-  while (true) {
+  // Darwin sends pipe SIGPIPE to the process, so masking only this thread is
+  // insufficient there. Suppress generation on the owned output instead.
+  // Linux directs it to the writer: block it for this thread's entire lifetime;
+  // pending thread-directed signals disappear on exit. Neither changes sigaction.
+#ifdef __APPLE__
+  const int mask_result = fcntl(fd_, F_SETNOSIGPIPE, 1) < 0 ? errno : 0;
+#else
+  sigset_t blocked;
+  sigemptyset(&blocked);
+  sigaddset(&blocked, SIGPIPE);
+  const int mask_result = pthread_sigmask(SIG_BLOCK, &blocked, nullptr);
+#endif
+  if (mask_result != 0) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    result_ = -mask_result;
+  }
+  while (mask_result == 0) {
     size_t head, size;
     {
       std::unique_lock<std::mutex> lock(mutex_);

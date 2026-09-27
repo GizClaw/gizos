@@ -341,10 +341,13 @@ void failed_output(const char *temporary) {
 int main() {
   const char *temporary = std::getenv("TEST_TMPDIR");
   assert(temporary != nullptr);
-  std::signal(SIGPIPE, SIG_IGN);
+  assert(std::signal(SIGPIPE, SIG_DFL) != SIG_ERR);
   output_boundaries();
   delayed_output(temporary);
   failed_output(temporary);
+  struct sigaction action = {};
+  assert(sigaction(SIGPIPE, nullptr, &action) == 0);
+  assert(action.sa_handler == SIG_DFL);
   const std::string path = std::string(temporary) + "/recording.mp4";
   const uint64_t start = h2_desktop_recording_now_us();
   h2_desktop_recording_encoder_config_t config = {path.c_str(), 64u, 48u,
