@@ -557,15 +557,11 @@ void playback_main(AudioState *state) {
         state->playback_scratch.data() + pending_offset * kChannels;
     // The blocking API has no DAC callback timestamp. Use the reported output
     // latency and one monotonic sample clock, rebased after a real underrun/gap.
-    uint64_t capture_now = 0u;
     uint64_t capture_latency = 0u;
     uint64_t capture_generation = 0u;
     {
       std::lock_guard<std::mutex> lock(state->capture_mutex);
       if (state->capture.on_speaker != nullptr) {
-        capture_now = static_cast<uint64_t>(
-            std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::steady_clock::now().time_since_epoch()).count());
         capture_generation = state->capture_generation;
         if (!state->output_ops_overridden) {
           const PaStreamInfo *info = Pa_GetStreamInfo(stream);
@@ -578,6 +574,11 @@ void playback_main(AudioState *state) {
     const int error =
         state->output_ops.write(state->output_ops.user, stream, samples,
                                 static_cast<unsigned long>(frames_to_write));
+    // A device write can block even after write_available. Anchor the estimate
+    // at its return so a stalled submission cannot keep the pre-write time.
+    const uint64_t capture_now = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
     if (error == paOutputUnderflowed) {
       {
         std::lock_guard<std::mutex> lock(state->output_underflow_mutex);

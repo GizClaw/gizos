@@ -4,7 +4,7 @@
 
 SDL3 的直接 frame callback 在主线程 `SDL_RenderPresent` 成功之后提供 LVGL Display flush 形成的完整 RGB565 framebuffer 与 brightness modulation。透明 widget 已在 LVGL 中合成到不透明 Display；录像保留实际合成结果，不能把窗口透明度当作亮度。不读取浏览器、系统屏幕或截图序列。
 
-PortAudio 的直接 output callback 在 mixer、track gain 和 speaker volume 处理之后，只复制成功写入输出设备的 S16 PCM；麦克风和 synthetic fallback 都不会进入录像。Display、speaker 与 recorder 全部使用 native `std::chrono::steady_clock` 的同一时间轴。Blocking PortAudio API 不提供每个 buffer 的 DAC callback timestamp，因此以写入前时间加 `Pa_GetStreamInfo()->outputLatency` 的设备估计，随后以 sample count 延续该时钟。输出 underrun 或超过 20 ms 的 gap 重新定位，录像在 gap 中写入 silence。该证据是实际 speaker submission 与输出延迟估计，不是麦克风回采或物理扬声器测量。
+PortAudio 的直接 output callback 在 mixer、track gain 和 speaker volume 处理之后，只复制成功写入输出设备的 S16 PCM；麦克风和 synthetic fallback 都不会进入录像。Display、speaker 与 recorder 全部使用 native `std::chrono::steady_clock` 的同一时间轴。Blocking PortAudio API 不提供每个 buffer 的 DAC callback timestamp，因此以写入成功返回后的时间加 `Pa_GetStreamInfo()->outputLatency` 的设备估计，包含等待设备 buffer 空间的阻塞时间，随后以 sample count 延续该时钟。输出 underrun 或超过 20 ms 的 gap 重新定位，录像在 gap 中写入 silence。该证据是实际 speaker submission 与输出延迟估计，不是麦克风回采或物理扬声器测量。
 
 Recorder 直接使用已有固定版本 FFmpeg 的 MPEG-4 Visual 与 AAC-LC encoder，不启动外部 ffmpeg process。30 fps 视频与 16 kHz mono 音频使用同一 epoch。16 个完整 video snapshot 与两秒 PCM ring 在开始时分配，callback 只在锁内复制；worker 独立编码和写文件。100 ms holdback 等待 producer 时间戳；视频按 30 fps 采样，静止时保持最后画面，未播放的时段保留静音。缓冲容量耗尽、迟到音频与 I/O/编码错误保留非零结果，不能静默丢音并报告成功。
 

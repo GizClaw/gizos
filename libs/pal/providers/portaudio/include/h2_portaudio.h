@@ -31,7 +31,8 @@ h2_pal_audio_t *h2_portaudio_audio(h2_portaudio_t *provider);
 
 /** Borrowed interleaved S16 PCM; storage lasts only during the callback.
  * Speaker data follows mixer/volume and successful device writes; timestamp_us
- * estimates its first-sample DAC time, including reported output latency.
+ * estimates its first-sample DAC time from write completion and reported output
+ * latency, continuing by sample count until an underrun or a gap over 20 ms.
  * Mic data is real input after AEC, before delivery to the Audio PAL queue;
  * timestamp_us marks read completion minus the frame duration. It is not an
  * ADC hardware timestamp. Both use native steady-clock microseconds.

@@ -18,6 +18,7 @@
 enum fake_output_mode {
   FAKE_OUTPUT_ZERO_CAPACITY = 0,
   FAKE_OUTPUT_PARTIAL_CAPACITY,
+  FAKE_OUTPUT_DELAYED_PARTIAL_CAPACITY,
   FAKE_OUTPUT_UNDERFLOW,
   FAKE_OUTPUT_SLOW_WRITE,
   FAKE_OUTPUT_AVAILABILITY_ERROR,
@@ -210,6 +211,7 @@ static long fake_output_write_available(void *user, void *stream) {
   case FAKE_OUTPUT_ZERO_CAPACITY:
     return 0;
   case FAKE_OUTPUT_PARTIAL_CAPACITY:
+  case FAKE_OUTPUT_DELAYED_PARTIAL_CAPACITY:
     return h2_atomic_load_explicit(&output->sample_count, H2_ATOMIC_ACQUIRE) <
                    FAKE_OUTPUT_FRAME_SAMPLES
                ? FAKE_OUTPUT_PARTIAL_SAMPLES
@@ -237,7 +239,9 @@ static int fake_output_write(void *user, void *stream, const void *samples,
   h2_atomic_store_explicit(&output->write_active, true, H2_ATOMIC_RELEASE);
   const enum fake_output_mode mode =
       (enum fake_output_mode)h2_atomic_load(&output->mode);
-  if (mode == FAKE_OUTPUT_SLOW_WRITE)
+  if (mode == FAKE_OUTPUT_SLOW_WRITE ||
+      (mode == FAKE_OUTPUT_DELAYED_PARTIAL_CAPACITY &&
+       h2_atomic_load(&output->sample_count) != 0u))
     sleep_ms(50L);
   if (mode == FAKE_OUTPUT_WRITE_ERROR) {
     h2_atomic_store(&output->failure_observed, true);
@@ -593,6 +597,45 @@ static void test_partial_frame(h2_portaudio_t *provider, h2_pal_audio_t *audio,
   assert(!h2_atomic_load(&output->control_during_write));
 }
 
+static void capture_delayed_output_audio(
+    void *user, const h2_portaudio_capture_frame_t *frame) {
+  capture_output_t *capture = user;
+  assert(frame->sample_rate == 16000u && frame->channels == 1u);
+  if (capture->count != 0u) {
+    // Every write after the first waits 50 ms. Neither a pre-write estimate
+    // nor the uninterrupted sample clock accounts for that device stall.
+    assert(frame->timestamp_us >= capture->last_us + 50000u);
+  }
+  assert(capture->count + frame->frames <= FAKE_OUTPUT_FRAME_SAMPLES);
+  memcpy(capture->samples + capture->count, frame->samples,
+         frame->frames * sizeof(int16_t));
+  capture->count += frame->frames;
+  capture->last_us = frame->timestamp_us;
+}
+
+static void test_delayed_write_capture(h2_portaudio_t *provider,
+                                       h2_pal_audio_t *audio,
+                                       fake_output_t *output) {
+  fake_output_reset(output, FAKE_OUTPUT_DELAYED_PARTIAL_CAPACITY);
+  capture_output_t capture = {0};
+  const h2_portaudio_capture_hooks_t hooks = {
+      &capture, NULL, capture_delayed_output_audio};
+  assert(h2_portaudio_set_capture_hooks(provider, &hooks) == H2_PAL_OK);
+  int16_t samples[FAKE_OUTPUT_FRAME_SAMPLES];
+  for (size_t i = 0u; i < FAKE_OUTPUT_FRAME_SAMPLES; ++i)
+    samples[i] = (int16_t)(1000 + i);
+  h2_pal_audio_track_t *track = write_test_frame(audio, samples);
+  assert(h2_pal_audio_start_speaker(audio) == H2_AUDIO_OK);
+  wait_for_size_at_least(&output->sample_count, FAKE_OUTPUT_FRAME_SAMPLES);
+  assert(h2_pal_audio_track_close(track) == H2_AUDIO_OK);
+  assert(h2_pal_audio_stop_speaker(audio) == H2_AUDIO_OK);
+  assert(h2_portaudio_set_capture_hooks(provider, NULL) == H2_PAL_OK);
+  assert(h2_atomic_load(&output->write_count) > 1);
+  assert(capture.count == FAKE_OUTPUT_FRAME_SAMPLES);
+  assert(memcmp(capture.samples, samples, sizeof(samples)) == 0);
+  assert(memcmp(output->samples, samples, sizeof(samples)) == 0);
+}
+
 static void test_stop_waits_for_active_write(h2_pal_audio_t *audio,
                                              fake_output_t *output) {
   fake_output_reset(output, FAKE_OUTPUT_SLOW_WRITE);
@@ -792,6 +835,7 @@ int main(void) {
   test_zero_capacity_stop(audio, &output);
   test_output_open_error_policy(provider, audio, &output);
   test_partial_frame(provider, audio, &output);
+  test_delayed_write_capture(provider, audio, &output);
   test_stop_waits_for_active_write(audio, &output);
   test_output_underflow_is_recoverable(provider, audio, &output);
   test_worker_failure_restart(audio, &output, FAKE_OUTPUT_AVAILABILITY_ERROR);
