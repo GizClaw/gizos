@@ -45,6 +45,16 @@ static int s_default_valid;
 /* Only touched on the TCP/IP thread: the esp_netif whose DNS servers the lwIP
  * resolver last used and whose answers its cache holds. */
 static esp_netif_t *s_dns_netif;
+static ip_addr_t s_dns_servers[DNS_MAX_SERVERS];
+static int s_dns_servers_known;
+
+static esp_err_t reset_dns_in_tcpip(void *ctx) {
+  (void)ctx;
+  s_dns_netif = NULL;
+  s_dns_servers_known = 0;
+  memset(s_dns_servers, 0, sizeof(s_dns_servers));
+  return ESP_OK;
+}
 
 static SemaphoreHandle_t netif_init_mutex(void) {
   portENTER_CRITICAL(&s_netif_init_lock);
@@ -390,6 +400,7 @@ typedef struct h2_esp_dns_sync {
   ip_addr_t servers[DNS_MAX_SERVERS];
   int netif_changed;
   int servers_changed;
+  esp_err_t dns_result;
 } h2_esp_dns_sync_t;
 
 /* With CONFIG_ESP_NETIF_SET_DNS_PER_DEFAULT_NETIF, esp_netif copies an
@@ -404,6 +415,8 @@ typedef struct h2_esp_dns_sync {
 static esp_err_t sync_default_dns_in_tcpip(void *ctx) {
   h2_esp_dns_sync_t *sync = ctx;
   (void)read_default_in_tcpip(&sync->read);
+  if (sync->read.result != H2_PAL_OK)
+    return ESP_OK;
   esp_netif_t *netif = esp_netif_get_default_netif();
   if (netif != NULL) {
     const char *key = esp_netif_get_ifkey(netif);
@@ -411,41 +424,63 @@ static esp_err_t sync_default_dns_in_tcpip(void *ctx) {
       strlcpy(sync->key, key, sizeof(sync->key));
     }
   }
-  if (netif != s_dns_netif) {
-    sync->netif_changed = 1;
-    s_dns_netif = netif;
+  for (u8_t i = 0u; i < DNS_MAX_SERVERS; ++i) {
+    ip_addr_copy(sync->servers[i], *dns_getserver(i));
   }
 #if CONFIG_ESP_NETIF_SET_DNS_PER_DEFAULT_NETIF
+  /* Read the entire configuration before writing or committing a baseline.
+   * A failed slot must not look like a removed server or a valid partial set. */
   for (u8_t i = 0u;
        netif != NULL && i < DNS_MAX_SERVERS && i < ESP_NETIF_DNS_MAX; ++i) {
     esp_netif_dns_info_t dns;
     memset(&dns, 0, sizeof(dns));
-    if (esp_netif_get_dns_info(netif, (esp_netif_dns_type_t)i, &dns) !=
-        ESP_OK) {
-      continue;
-    }
+    sync->dns_result =
+        esp_netif_get_dns_info(netif, (esp_netif_dns_type_t)i, &dns);
+    if (sync->dns_result != ESP_OK)
+      return ESP_OK;
     ip_addr_t wanted;
 #if LWIP_IPV4 && LWIP_IPV6
+    if (dns.ip.type != ESP_IPADDR_TYPE_V4 &&
+        dns.ip.type != ESP_IPADDR_TYPE_V6) {
+      sync->dns_result = ESP_ERR_INVALID_ARG;
+      return ESP_OK;
+    }
     memcpy(&wanted, &dns.ip, sizeof(wanted));
 #else
+    if (dns.ip.type != ESP_IPADDR_TYPE_V4) {
+      sync->dns_result = ESP_ERR_INVALID_ARG;
+      return ESP_OK;
+    }
     memcpy(&wanted, &dns.ip.u_addr.ip4, sizeof(wanted));
 #endif
     /* Keep a configured fallback server when the interface has none. */
     if (i == DNS_FALLBACK_SERVER_INDEX && ip_addr_isany(&wanted)) {
       continue;
     }
-    if (!ip_addr_cmp(dns_getserver(i), &wanted)) {
-      dns_setserver(i, &wanted);
+    ip_addr_copy(sync->servers[i], wanted);
+  }
+#endif
+  sync->netif_changed = netif != s_dns_netif;
+  for (u8_t i = 0u; i < DNS_MAX_SERVERS; ++i) {
+    if (!ip_addr_cmp(dns_getserver(i), &sync->servers[i])) {
+      dns_setserver(i, &sync->servers[i]);
+      sync->servers_changed = 1;
+    }
+    /* The SDK may already have written both views. Compare the effective set
+     * with the last complete snapshot, not only with today's resolver. */
+    if (s_dns_servers_known != 0 &&
+        !ip_addr_cmp(&s_dns_servers[i], &sync->servers[i])) {
       sync->servers_changed = 1;
     }
   }
-#endif
   if (sync->netif_changed != 0 || sync->servers_changed != 0) {
     dns_clear_cache();
   }
   for (u8_t i = 0u; i < DNS_MAX_SERVERS; ++i) {
-    ip_addr_copy(sync->servers[i], *dns_getserver(i));
+    ip_addr_copy(s_dns_servers[i], sync->servers[i]);
   }
+  s_dns_netif = netif;
+  s_dns_servers_known = 1;
   return ESP_OK;
 }
 
@@ -457,6 +492,13 @@ h2_pal_result_t h2_esp_platform_netif_monitor_init(void) {
   }
   if (xSemaphoreTake(s_reconcile_mutex, portMAX_DELAY) != pdTRUE) {
     return H2_PAL_ERR_TIMEOUT;
+  }
+  /* Repeated init preserves the active baseline; a new monitor lifecycle
+   * cannot reuse a pointer or DNS snapshot from the previous one. */
+  if (s_default_known == 0 &&
+      esp_netif_tcpip_exec(reset_dns_in_tcpip, NULL) != ESP_OK) {
+    xSemaphoreGive(s_reconcile_mutex);
+    return H2_PAL_ERR_IO;
   }
   h2_pal_netif_ref_t ref;
   int valid;
@@ -511,6 +553,8 @@ void h2_esp_platform_netif_monitor_deinit(void) {
   memset(&s_default_ref, 0, sizeof(s_default_ref));
   portEXIT_CRITICAL(&s_netif_lock);
   if (locked == pdTRUE) {
+    if (esp_netif_tcpip_exec(reset_dns_in_tcpip, NULL) != ESP_OK)
+      ESP_LOGW(TAG, "DNS baseline reset failed");
     xSemaphoreGive(s_reconcile_mutex);
   }
 }
@@ -531,6 +575,10 @@ h2_pal_result_t h2_esp_platform_netif_reconcile_default(void) {
     ESP_LOGW(TAG, "default route query failed rc=%d", rc);
     xSemaphoreGive(s_reconcile_mutex);
     return rc;
+  }
+  if (sync.dns_result != ESP_OK) {
+    ESP_LOGW(TAG, "DNS snapshot read failed err=%d; retaining cache baseline",
+             sync.dns_result);
   }
   if (sync.netif_changed != 0 || sync.servers_changed != 0) {
     char dns0[IPADDR_STRLEN_MAX];

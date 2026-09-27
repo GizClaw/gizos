@@ -11,6 +11,7 @@ typedef struct { unsigned char storage[64]; } StaticTask_t;
 typedef int portMUX_TYPE;
 #define pdPASS 1
 #define pdTRUE 1
+#define pdFALSE 0
 #define portMAX_DELAY 0xffffffffu
 #define configMAX_PRIORITIES 16u
 #define CONFIG_FREERTOS_NUMBER_OF_CORES 2
