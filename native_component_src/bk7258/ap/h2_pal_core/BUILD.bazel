@@ -60,6 +60,9 @@ cc_test(
     srcs = [
         "include/h2_bk_platform_core.h",
         "src/h2_bk_platform_task.c",
+        "src/h2_bk_resource_stats.c",
+        "src/h2_bk_resource_stats_internal.h",
+        "src/h2_bk_task_lifetime_internal.h",
         "tests/test_h2_bk_platform_task_policy.c",
     ] + glob(["tests/sdk/**/*.h"]),
     conlyopts = H2_C11_OPTS + [
@@ -118,7 +121,7 @@ cc_test(
 
 cc_test(
     name = "sync_cond_test",
-    srcs = ["tests/test_h2_bk_platform_sync_cond.c"] + glob(["tests/sdk/**/*.h"]),
+    srcs = ["tests/test_h2_bk_platform_sync_cond.c", "src/h2_bk_resource_stats.c", "src/h2_bk_resource_stats_internal.h"] + glob(["tests/sdk/**/*.h"]),
     additional_compiler_inputs = [
         "include/h2_bk_platform_core.h",
         "src/h2_bk_platform_sync.c",
@@ -209,6 +212,45 @@ cc_test(
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+# Reuse the public Atomic contract against the actual BK backend, with only
+# its SDK heap/critical-section dependencies supplied by the host fixture.
+cc_test(
+    name = "atomic_provider_test",
+    srcs = [
+        "src/h2_bk_atomic.c",
+        "tests/h2_bk_atomic_test_sdk.c",
+        "//libs/atomic/providers/c11:tests/test_h2_atomic_c11.c",
+    ] + glob(["tests/sdk/**/*.h"]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["tests/sdk"],
+    linkopts = ["-pthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/atomic:locked_template"],
+)
+
+cc_test(
+    name = "time_contract_test",
+    srcs = [
+        "include/h2_bk_platform_core.h",
+        "src/h2_bk_platform_time.c",
+        "tests/test_h2_bk_platform_time.c",
+    ] + glob(["tests/sdk/**/*.h"]),
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include", "tests/sdk"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = ["//libs/pal"],

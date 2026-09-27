@@ -1,6 +1,7 @@
 #include "FreeRTOS.h"
 #include "h2_bk_platform_core.h"
 #include "semphr.h"
+#include "task.h"
 #include <assert.h>
 #include <os/os.h>
 #include <stdlib.h>
@@ -9,6 +10,7 @@
 void h2_bk_platform_task_test_reset(void);
 static struct {
   int fail_alloc, fail_sem, fail_create, fail_join, creates, frees;
+  int sem_created, sem_destroyed, task_deleted, stack_fail;
   uint8_t priority;
   uint32_t stack;
   const char *name;
@@ -29,7 +31,9 @@ void *os_memset(void *p, int v, size_t n) { return memset(p, v, n); }
 void *os_malloc(size_t n) { return malloc(n); }
 void os_free(void *p) { free(p); }
 SemaphoreHandle_t xSemaphoreCreateBinaryStatic(StaticSemaphore_t *st) {
-  return s.fail_sem ? NULL : (SemaphoreHandle_t)st;
+  if (s.fail_sem) return NULL;
+  ++s.sem_created;
+  return (SemaphoreHandle_t)st;
 }
 BaseType_t xSemaphoreGive(SemaphoreHandle_t x) {
   (void)x;
@@ -77,6 +81,26 @@ int rtos_core1_create_psram_thread(beken_thread_t *a, uint8_t b, const char *c,
   return create(a, b, c, d, e, f);
 }
 void rtos_delete_thread(beken_thread_t *x) { assert(x == NULL); }
+int rtos_deinit_semaphore(beken_semaphore_t *sem) {
+  assert(*sem); ++s.sem_destroyed; *sem = NULL; return kNoErr;
+}
+void vTaskSuspend(TaskHandle_t task) { assert(task != NULL); }
+void vTaskDelete(TaskHandle_t task) { assert(task == (void *)1); ++s.task_deleted; }
+TaskHandle_t xTaskGetCurrentTaskHandleForCore(BaseType_t core) { (void)core; return NULL; }
+int rtos_delay_milliseconds(uint32_t ms) { (void)ms; return kNoErr; }
+uint32_t rtos_enter_critical(void) { return 0; }
+void rtos_exit_critical(uint32_t level) { (void)level; }
+TaskHandle_t xTaskCreateStaticPinnedToCore(TaskFunction_t fn, const char *name,
+    uint32_t depth, void *arg, UBaseType_t priority, StackType_t *stack,
+    StaticTask_t *tcb, BaseType_t core) {
+  assert(stack && tcb && core == 0);
+  beken_thread_t task;
+  return create(&task, configMAX_PRIORITIES - 1u - priority, name, fn,
+                depth * sizeof(StackType_t), arg) == kNoErr ? task : NULL;
+}
+static void *stack_alloc(void *u, size_t n) { return s.stack_fail ? NULL : alloc(u,n); }
+static const h2_pal_mem_vtable_t stack_methods = {.alloc=stack_alloc,.free=release};
+static const h2_pal_mem_api_t stack_mem = {.vtable=&stack_methods};
 static h2_pal_result_t resolve(void *u, const char *n,
                                h2_bk_task_policy_t *out) {
   assert(u == &s);
@@ -115,6 +139,7 @@ static h2_bk_task_policy_config_t cfg(void) {
 static void entry(void *u) { (void)u; }
 static void reset(void) {
   h2_bk_platform_task_test_reset();
+  assert(s.sem_created == s.sem_destroyed);
   memset(&s, 0, sizeof(s));
 }
 int main(void) {
@@ -191,5 +216,27 @@ int main(void) {
   assert(api->vtable->start(NULL, &o, entry, NULL, &t) == H2_PAL_ERR_TASK);
   assert(s.creates == 0 && t == NULL);
 #endif
+  reset();
+  c=cfg(); c.psram_stack_allocator=&stack_mem;
+  assert(h2_bk_platform_task_configure(&c)==H2_PAL_OK);
+  o=(h2_pal_task_options_t){.name="known",.min_stack_size=16384};
+  s.stack_fail=1;
+  assert(h2_pal_task_start(api,&o,entry,NULL,&t)==H2_PAL_ERR_NO_MEMORY && t==NULL);
+  assert(s.creates==0 && s.sem_created==s.sem_destroyed);
+  s.stack_fail=0;
+  assert(h2_pal_task_start(api,&o,entry,NULL,&t)==H2_PAL_OK && s.stack==16384);
+  h2_bk_platform_resource_stats_t live;
+  assert(h2_bk_platform_get_resource_stats(&live)==H2_PAL_OK);
+  assert(live.live_tasks==1 && live.task_stack_bytes==16384);
+  assert(h2_pal_task_join(api,t)==H2_PAL_OK);
+  assert(s.sem_created==s.sem_destroyed && s.task_deleted==1);
+  assert(h2_bk_platform_get_resource_stats(&live)==H2_PAL_OK);
+  assert(live.live_tasks==0 && live.task_stack_bytes==0);
+  o.min_stack_size=16385;
+  assert(h2_pal_task_start(api,&o,entry,NULL,&t)==H2_PAL_OK && s.stack==16388);
+  assert(h2_pal_task_join(api,t)==H2_PAL_OK);
+  o.min_stack_size=(size_t)UINT16_MAX*sizeof(StackType_t)+1u;
+  assert(h2_pal_task_start(api,&o,entry,NULL,&t)==H2_PAL_ERR_TASK && t==NULL);
+  assert(s.sem_created==s.sem_destroyed);
   return 0;
 }

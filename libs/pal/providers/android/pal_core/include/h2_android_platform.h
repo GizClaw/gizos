@@ -6,13 +6,15 @@
 #include <android/bitmap.h>
 #include <jni.h>
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
- * Opaque handle for the example-only Android PAL subset.
+ * Opaque handle for the Android PAL provider.
  *
- * This component currently provides Memory, Time, Task, Queue, Display, Audio
- * playback, H.264/AAC-LC decoding, and a native pointer bridge for portable
- * Apps. It is not a complete Android PAL backend; all other Runtime
- * capabilities remain unsupported until implemented and validated explicitly.
+ * Core capabilities use native pthreads and clocks; the existing display,
+ * input and media integrations remain platform-specific.
  */
 typedef struct h2_android_platform h2_android_platform_t;
 
@@ -28,9 +30,7 @@ void h2_android_platform_destroy(h2_android_platform_t *platform);
 
 const h2_pal_mem_api_t *h2_android_platform_mem_api(void);
 const h2_pal_time_api_t *h2_android_platform_time_api(void);
-const h2_pal_task_api_t *h2_android_platform_task_api(void);
 const h2_pal_queue_api_t *h2_android_platform_queue_api(void);
-const h2_pal_log_api_t *h2_android_platform_log_api(void);
 const h2_pal_audio_api_t *
 h2_android_platform_audio_api(h2_android_platform_t *platform);
 const h2_pal_audio_decoder_api_t *
@@ -47,5 +47,30 @@ void h2_android_platform_update_pointer(h2_android_platform_t *platform,
                                         int32_t x, int32_t y, int pressed);
 int h2_android_platform_copy_frame(h2_android_platform_t *platform, JNIEnv *env,
                                    jobject bitmap);
+
+/* Quiescent counters cover PAL-owned resources, not process RSS. */
+typedef struct h2_android_platform_resource_stats {
+    size_t tasks, task_stack_bytes, queues, mutexes, semaphores, conditions, timers;
+    size_t allocations, allocation_bytes;
+} h2_android_platform_resource_stats_t;
+const h2_pal_task_api_t *h2_android_platform_task_api(void);
+const h2_pal_sync_api_t *h2_android_platform_sync_api(void);
+const h2_pal_timer_api_t *h2_android_platform_timer_api(void);
+const h2_pal_log_api_t *h2_android_platform_log_api(void);
+const h2_pal_firmware_info_api_t *h2_android_platform_firmware_info_api(void);
+h2_pal_result_t h2_android_platform_get_resource_stats(h2_android_platform_resource_stats_t *out);
+/* Fault injection applies only to task-stack allocation; -1 disables it.
+ * Configure only from a quiescent diagnostic harness. */
+h2_pal_result_t h2_android_platform_task_allocation_fault(int successful_before_failure);
+/* Process-wide Core teardown: stop all callers and release handles first.
+ * A busy Core is retained and may be retried after its owners have finished. */
+h2_pal_result_t h2_android_platform_core_shutdown(void);
+const h2_pal_system_event_api_t *h2_android_system_event_api(void);
+/* Supply the host APK's PackageInfo.versionName before Runtime creation. */
+h2_pal_result_t h2_android_platform_set_image_version(const char *version);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

@@ -10,6 +10,8 @@
 struct h2_pal_system_event_subscription {
     int active;
     size_t in_flight;
+    size_t unsubscribe_waiters;
+    uint64_t generation;
     h2_pal_system_event_type_t type;
     h2_pal_system_event_handler_t handler;
     void *handler_user;
@@ -17,15 +19,42 @@ struct h2_pal_system_event_subscription {
 
 typedef struct h2_darwin_system_event_dispatch {
     h2_pal_system_event_subscription_t *subscription;
-    h2_pal_system_event_handler_t handler;
-    void *handler_user;
+    uint64_t generation;
 } h2_darwin_system_event_dispatch_t;
+
+typedef struct h2_darwin_system_event_frame {
+    h2_pal_system_event_subscription_t *subscription;
+    struct h2_darwin_system_event_frame *previous;
+} h2_darwin_system_event_frame_t;
+
+static _Thread_local h2_darwin_system_event_frame_t *s_dispatch_frame;
 
 static h2_pal_system_event_subscription_t
     s_subscriptions[H2_DARWIN_SYSTEM_EVENT_MAX_SUBSCRIPTIONS];
 static pthread_mutex_t s_mutex = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t s_idle = PTHREAD_COND_INITIALIZER;
 static int s_initialized;
+static uint64_t s_next_generation;
+
+/* Called with s_mutex held. External waiters still own their slot until they
+ * wake and finish; otherwise a new subscriber could be cleared by an old
+ * unsubscribe returning from its condition wait. */
+static void h2_darwin_system_event_reclaim(
+    h2_pal_system_event_subscription_t *subscription) {
+    if (!subscription->active && subscription->in_flight == 0u &&
+        subscription->unsubscribe_waiters == 0u) {
+        memset(subscription, 0, sizeof(*subscription));
+    }
+}
+
+static int h2_darwin_system_event_is_self(
+    h2_pal_system_event_subscription_t *subscription) {
+    for (h2_darwin_system_event_frame_t *frame = s_dispatch_frame;
+         frame != NULL; frame = frame->previous) {
+        if (frame->subscription == subscription) return 1;
+    }
+    return 0;
+}
 
 static int h2_darwin_system_event_init(void *user) {
     (void)user;
@@ -51,7 +80,8 @@ static void h2_darwin_system_event_deinit(void *user) {
     pthread_mutex_lock(&s_mutex);
     s_initialized = 0;
     for (size_t i = 0u; i < H2_DARWIN_SYSTEM_EVENT_MAX_SUBSCRIPTIONS; ++i) {
-        while (s_subscriptions[i].in_flight != 0u) {
+        while (s_subscriptions[i].in_flight != 0u ||
+               s_subscriptions[i].unsubscribe_waiters != 0u) {
             pthread_cond_wait(&s_idle, &s_mutex);
         }
     }
@@ -81,11 +111,9 @@ static int h2_darwin_system_event_post(
         h2_pal_system_event_subscription_t *subscription = &s_subscriptions[i];
         if (subscription->active != 0 && subscription->type == event->type &&
             subscription->handler != NULL) {
-            ++subscription->in_flight;
             dispatches[count++] = (h2_darwin_system_event_dispatch_t){
                 .subscription = subscription,
-                .handler = subscription->handler,
-                .handler_user = subscription->handler_user,
+                .generation = subscription->generation,
             };
         }
     }
@@ -93,10 +121,29 @@ static int h2_darwin_system_event_post(
 
     int result = H2_PAL_OK;
     for (size_t i = 0u; i < count; ++i) {
-        int handler_rc = dispatches[i].handler(
-            dispatches[i].handler_user, event);
+        h2_pal_system_event_subscription_t *subscription = dispatches[i].subscription;
         pthread_mutex_lock(&s_mutex);
-        --dispatches[i].subscription->in_flight;
+        /* Admit immediately before invocation. A callback can unsubscribe a
+         * later member of this same snapshot without waiting for work that
+         * cannot start until it returns. Slot reuse cannot admit a new owner
+         * to a post made before it subscribed. */
+        if (!s_initialized || !subscription->active ||
+            subscription->generation != dispatches[i].generation) {
+            pthread_mutex_unlock(&s_mutex);
+            continue;
+        }
+        ++subscription->in_flight;
+        h2_pal_system_event_handler_t handler = subscription->handler;
+        void *handler_user = subscription->handler_user;
+        pthread_mutex_unlock(&s_mutex);
+        h2_darwin_system_event_frame_t frame = {
+            .subscription = subscription, .previous = s_dispatch_frame};
+        s_dispatch_frame = &frame;
+        int handler_rc = handler(handler_user, event);
+        s_dispatch_frame = frame.previous;
+        pthread_mutex_lock(&s_mutex);
+        --subscription->in_flight;
+        h2_darwin_system_event_reclaim(subscription);
         pthread_cond_broadcast(&s_idle);
         pthread_mutex_unlock(&s_mutex);
         if (result == H2_PAL_OK && handler_rc != H2_PAL_OK) {
@@ -126,7 +173,10 @@ static int h2_darwin_system_event_subscribe(
     }
     for (size_t i = 0u; i < H2_DARWIN_SYSTEM_EVENT_MAX_SUBSCRIPTIONS; ++i) {
         h2_pal_system_event_subscription_t *subscription = &s_subscriptions[i];
-        if (subscription->active == 0 && subscription->in_flight == 0u) {
+        if (subscription->active == 0 && subscription->in_flight == 0u &&
+            subscription->unsubscribe_waiters == 0u) {
+            if (++s_next_generation == 0u) ++s_next_generation;
+            subscription->generation = s_next_generation;
             subscription->active = 1;
             subscription->type = type;
             subscription->handler = handler;
@@ -149,10 +199,19 @@ static void h2_darwin_system_event_unsubscribe(
     }
     pthread_mutex_lock(&s_mutex);
     subscription->active = 0;
+    if (h2_darwin_system_event_is_self(subscription)) {
+        /* Other threads may already be in this handler too. The caller keeps
+         * its context alive until those calls and its own dispatch finish. */
+        pthread_mutex_unlock(&s_mutex);
+        return;
+    }
+    ++subscription->unsubscribe_waiters;
     while (subscription->in_flight != 0u) {
         pthread_cond_wait(&s_idle, &s_mutex);
     }
-    memset(subscription, 0, sizeof(*subscription));
+    --subscription->unsubscribe_waiters;
+    h2_darwin_system_event_reclaim(subscription);
+    pthread_cond_broadcast(&s_idle);
     pthread_mutex_unlock(&s_mutex);
 }
 

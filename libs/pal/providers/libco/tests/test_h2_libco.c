@@ -1054,7 +1054,60 @@ static void test_fixed_seed_wake_timeout_cancel_storm(void) {
     assert(allocator.live == 0u);
 }
 
+typedef struct cleanup_wait_state {
+    h2_libco_t *core;
+    h2_libco_task_t *self;
+    int cancel_before;
+    int entered;
+    int finished;
+    h2_libco_result_t cleanup_result;
+    h2_libco_result_t next_wait_result;
+} cleanup_wait_state_t;
+
+static int cleanup_wait_entry(void *user) {
+    cleanup_wait_state_t *state = user;
+    assert(h2_libco_current_task(state->core) == state->self);
+    assert(h2_libco_wait_cleanup(state->core, 0u) == H2_LIBCO_ERR_INVALID_ARG);
+    if (state->cancel_before) {
+        assert(h2_libco_task_cancel(state->core, state->self) == H2_LIBCO_OK);
+    }
+    state->entered = 1;
+    state->cleanup_result = h2_libco_wait_cleanup(state->core, (uintptr_t)state);
+    state->next_wait_result = h2_libco_wait(state->core, (uintptr_t)state, 1u);
+    state->finished = 1;
+    return 0;
+}
+
+static void test_cleanup_wait_defers_cancellation(void) {
+    for (int before = 0; before < 2; ++before) {
+        test_allocator_t allocator = {0};
+        h2_libco_t *core = test_core_create(&allocator);
+        cleanup_wait_state_t state = {.core = core, .cancel_before = before};
+        assert(h2_libco_current_task(core) == NULL);
+        assert(h2_libco_current_task(NULL) == NULL);
+        assert(h2_libco_wait_cleanup(core, (uintptr_t)&state) == H2_LIBCO_ERR_INVALID_ARG);
+        assert(h2_libco_task_start(core, NULL, cleanup_wait_entry, &state,
+                                  &state.self) == H2_LIBCO_OK);
+        test_schedule(core, 64u, 1u);
+        assert(state.entered && !state.finished);
+        assert(h2_libco_task_cancel(core, state.self) == H2_LIBCO_OK);
+        test_schedule(core, 64u, before ? 0u : 1u);
+        assert(!state.finished);
+        test_schedule(core, 64u, 0u); /* genuinely suspended, not a cancel spin */
+        size_t woken = 0u;
+        assert(h2_libco_wake(core, (uintptr_t)&state, 1u, &woken) == H2_LIBCO_OK);
+        assert(woken == 1u);
+        test_schedule(core, 64u, 1u);
+        assert(state.finished && state.cleanup_result == H2_LIBCO_WOKEN);
+        assert(state.next_wait_result == H2_LIBCO_ERR_CANCELLED);
+        assert(h2_libco_task_join(core, state.self, NULL) == H2_LIBCO_OK);
+        assert(h2_libco_destroy(&core) == H2_LIBCO_OK);
+        assert(allocator.live == 0u);
+    }
+}
+
 int main(void) {
+    test_cleanup_wait_defers_cancellation();
     test_create_start_return_and_failures();
     test_fifo_yield_and_budget();
     test_new_task_deferred();

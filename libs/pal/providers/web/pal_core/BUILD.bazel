@@ -1,6 +1,6 @@
 load("@aspect_rules_js//js:defs.bzl", "js_test")
 load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
-load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library", "cc_test")
 load("@rules_python//python:defs.bzl", "py_test")
 load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
 
@@ -13,7 +13,8 @@ cc_binary(
     linkopts = [
         "-sALLOW_MEMORY_GROWTH=1",
         "-sASSERTIONS=1",
-        "-sASYNCIFY=1",
+        "-sPROXY_TO_PTHREAD=1",
+        "-sPTHREAD_POOL_SIZE=16",
     ],
     target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
     deps = [":pal_core"],
@@ -33,6 +34,7 @@ wasm_cc_binary(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    threads = "emscripten",
 )
 
 py_test(
@@ -63,6 +65,7 @@ py_test(
 cc_library(
     name = "pal_core",
     srcs = [
+        "src/h2_web_main_thread.c",
         "src/h2_web_platform.c",
         "src/h2_web_platform_async.c",
         "src/h2_web_platform_audio.c",
@@ -76,17 +79,23 @@ cc_library(
         "src/h2_web_platform_netif.c",
         "src/h2_web_platform_pref.c",
         "src/h2_web_platform_serial.c",
-        "src/h2_web_platform_timer.c",
         "src/h2_web_platform_video_decoder.c",
         "src/h2_web_platform_webrtc.c",
+        "src/h2_web_thread_core.h",
     ],
     hdrs = [
         "include/h2_web_fs.h",
+        "include/h2_web_main_thread.h",
         "include/h2_web_platform.h",
     ],
+    additional_linker_inputs = ["src/h2_web_main_thread.js"],
     includes = ["include"],
     linkopts = [
+        "--js-library",
+        "$(location src/h2_web_main_thread.js)",
         "-sEXPORTED_RUNTIME_METHODS=['ccall']",
+        "-Wl,--export=malloc",
+        "-Wl,--export=free",
         # h2_web_fs mounts the persistent root through Emscripten IDBFS.
         "-lidbfs.js",
     ],
@@ -94,8 +103,8 @@ cc_library(
     deps = [
         "//libs/pal",
         "//libs/pal:unsupported",
-        "//libs/pal/providers/libco",
         "//libs/pal/providers/posix/pal_core:host_fs_web",
+        "//libs/pal/providers/posix/pal_core:thread_core",
         "//libs/pal/providers/wolfssl:wolfcrypt",
     ],
 )
@@ -108,7 +117,8 @@ cc_binary(
     linkopts = [
         "-sALLOW_MEMORY_GROWTH=1",
         "-sASSERTIONS=1",
-        "-sASYNCIFY=1",
+        "-sPROXY_TO_PTHREAD=1",
+        "-sPTHREAD_POOL_SIZE=16",
         "--pre-js",
         "$(location tests/web_serial_fake.js)",
     ],
@@ -131,6 +141,7 @@ wasm_cc_binary(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    threads = "emscripten",
 )
 
 js_test(
@@ -167,7 +178,8 @@ cc_binary(
     linkopts = [
         "-sALLOW_MEMORY_GROWTH=1",
         "-sASSERTIONS=1",
-        "-sASYNCIFY=1",
+        "-sPROXY_TO_PTHREAD=1",
+        "-sPTHREAD_POOL_SIZE=16",
         "--pre-js",
         "$(location tests/web_serial_fake.js)",
     ],
@@ -190,6 +202,7 @@ wasm_cc_binary(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    threads = "emscripten",
 )
 
 js_test(
@@ -220,7 +233,8 @@ cc_binary(
     linkopts = [
         "-sALLOW_MEMORY_GROWTH=1",
         "-sASSERTIONS=1",
-        "-sASYNCIFY=1",
+        "-sPROXY_TO_PTHREAD=1",
+        "-sPTHREAD_POOL_SIZE=16",
     ] + [
         "--pre-js",
         "$(location tests/mic_fake.js)",
@@ -243,6 +257,7 @@ wasm_cc_binary(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    threads = "emscripten",
 )
 
 cc_binary(
@@ -252,7 +267,8 @@ cc_binary(
     linkopts = [
         "-sALLOW_MEMORY_GROWTH=1",
         "-sASSERTIONS=1",
-        "-sASYNCIFY=1",
+        "-sPROXY_TO_PTHREAD=1",
+        "-sPTHREAD_POOL_SIZE=16",
     ],
     target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
     deps = [":pal_core"],
@@ -272,6 +288,7 @@ wasm_cc_binary(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    threads = "emscripten",
 )
 
 js_test(
@@ -314,7 +331,8 @@ cc_binary(
     linkopts = [
         "-sALLOW_MEMORY_GROWTH=1",
         "-sASSERTIONS=1",
-        "-sASYNCIFY=1",
+        "-sPROXY_TO_PTHREAD=1",
+        "-sPTHREAD_POOL_SIZE=16",
         "--pre-js",
         "$(location tests/netif_fake.js)",
     ],
@@ -342,6 +360,7 @@ wasm_cc_binary(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    threads = "emscripten",
 )
 
 js_test(
@@ -371,7 +390,8 @@ cc_binary(
     linkopts = [
         "-sALLOW_MEMORY_GROWTH=1",
         "-sASSERTIONS=1",
-        "-sASYNCIFY=1",
+        "-sPROXY_TO_PTHREAD=1",
+        "-sPTHREAD_POOL_SIZE=16",
     ],
     target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
     deps = [
@@ -393,6 +413,7 @@ wasm_cc_binary(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    threads = "emscripten",
 )
 
 py_test(
@@ -420,7 +441,7 @@ py_test(
     }),
 )
 
-# Node: browser Promise waits yield from libco tasks (HTTP, WebRTC, storage).
+# Node: browser Promises wake pthread Workers (HTTP, WebRTC, storage).
 cc_binary(
     name = "_wasm/async_test",
     testonly = True,
@@ -429,7 +450,8 @@ cc_binary(
     linkopts = [
         "-sALLOW_MEMORY_GROWTH=1",
         "-sASSERTIONS=1",
-        "-sASYNCIFY=1",
+        "-sPROXY_TO_PTHREAD=1",
+        "-sPTHREAD_POOL_SIZE=16",
         "--pre-js",
         "$(location tests/web_serial_fake.js)",
     ],
@@ -452,6 +474,7 @@ wasm_cc_binary(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    threads = "emscripten",
 )
 
 js_test(
@@ -479,7 +502,8 @@ cc_binary(
     linkopts = [
         "-sALLOW_MEMORY_GROWTH=1",
         "-sASSERTIONS=1",
-        "-sASYNCIFY=1",
+        "-sPROXY_TO_PTHREAD=1",
+        "-sPTHREAD_POOL_SIZE=16",
     ],
     target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
     deps = [":pal_core"],
@@ -499,6 +523,7 @@ wasm_cc_binary(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    threads = "emscripten",
 )
 
 py_test(
@@ -527,4 +552,75 @@ py_test(
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+)
+
+# Real pthread WASM provider: callback/unsubscribe lifetime and cancellation.
+cc_binary(
+    name = "_wasm/system_event_test",
+    testonly = True,
+    srcs = ["tests/test_h2_web_system_event.c"],
+    additional_linker_inputs = ["tests/netif_fake.js"],
+    linkopts = [
+        "-sALLOW_MEMORY_GROWTH=1",
+        "-sASSERTIONS=1",
+        "-sPROXY_TO_PTHREAD=1",
+        "-sPTHREAD_POOL_SIZE=16",
+        "--pre-js",
+        "$(location tests/netif_fake.js)",
+    ],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [":pal_core"],
+)
+
+wasm_cc_binary(
+    name = "system_event_test_wasm",
+    testonly = True,
+    cc_target = ":_wasm/system_event_test",
+    exit_runtime = True,
+    outputs = [
+        "system_event_test.js",
+        "system_event_test.wasm",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    threads = "emscripten",
+)
+
+js_test(
+    name = "system_event_test",
+    chdir = package_name(),
+    copy_data_to_bin = select({
+        "//tools/bazel/platforms:is_windows_x86_64": True,
+        "//conditions:default": False,
+    }),
+    data = [":system_event_test_wasm"],
+    entry_point = "system_event_test.js",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+# The same pthread core is testable natively, including allocator-backed stacks.
+cc_test(
+    name = "thread_core_test",
+    srcs = [
+        "src/h2_web_thread_core.h",
+        "tests/h2_web_thread_core_test.cpp",
+    ],
+    copts = ["-std=c++17"],
+    includes = ["src"],
+    linkopts = ["-pthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal", "//libs/pal/providers/posix/pal_core:thread_core"],
 )

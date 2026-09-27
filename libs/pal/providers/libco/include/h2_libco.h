@@ -106,6 +106,34 @@ h2_libco_result_t h2_libco_create(const h2_libco_config_t *config,
  */
 h2_libco_result_t h2_libco_destroy(h2_libco_t **core);
 
+/** Live executor/backend resources, measured from actual owned objects.
+ * Native joined tombstones are intentionally excluded; completed but unjoined
+ * tasks remain live. task_stack_bytes counts configured coroutine stack bytes,
+ * not wrapper metadata, alignment guards, or backend context overhead. */
+typedef struct h2_libco_resource_stats {
+    size_t live_tasks;
+    size_t task_stack_bytes;
+    size_t live_queues;
+    size_t live_mutexes;
+    size_t live_semaphores;
+    size_t live_conditions;
+} h2_libco_resource_stats_t;
+
+/** Read a synchronized-by-executor snapshot from its owning root/current task.
+ * Clears output before validation. Returns OK, INVALID_ARG for NULL arguments,
+ * or INVALID_STATE outside the owning executor context. */
+h2_libco_result_t h2_libco_get_resource_stats(
+    h2_libco_t *core, h2_libco_resource_stats_t *out_stats);
+
+/**
+ * Observe the identity of the task currently running on this executor.
+ *
+ * Root, NULL, and contexts not executing a task on this core return NULL. The
+ * returned pointer is for identity comparison only; it grants no join/cancel
+ * ownership and must not be retained beyond the current task's lifetime.
+ */
+const h2_libco_task_t *h2_libco_current_task(h2_libco_t *core);
+
 /**
  * Allocate and enqueue a task without running its entry inline.
  *
@@ -192,6 +220,21 @@ h2_libco_result_t h2_libco_schedule(h2_libco_t *core,
 h2_libco_result_t h2_libco_wait(h2_libco_t *core,
                                 uintptr_t wait_key,
                                 uint32_t timeout_ms);
+
+/**
+ * Wait for backend resource cleanup without abandoning it on task cancellation.
+ *
+ * This integration operation has no timeout: the backend must arrange a wake
+ * when its cleanup predicate changes and recheck that predicate after WOKEN.
+ * Pending or newly requested cancellation stays pending for the next ordinary
+ * wait/yield; it does not let this operation return before an explicit wake.
+ * Use only to drain already-owned resources, not for normal business waits.
+ *
+ * @param core Borrowed executor whose task is currently running.
+ * @param wait_key Nonzero backend-owned completion key.
+ * @return WOKEN after an explicit wake, or INVALID_ARG for key/context errors.
+ */
+h2_libco_result_t h2_libco_wait_cleanup(h2_libco_t *core, uintptr_t wait_key);
 
 /**
  * Make matching waiters ready without switching context.

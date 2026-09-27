@@ -5,6 +5,8 @@ option(H2_ESP_PLATFORM_ENABLE_WEBRTC "Enable ESP WebRTC platform implementation 
 set(H2_ESP_PLATFORM_CORE_SRCS
   "src/h2_esp_lazy_audio.c"
   "src/h2_esp_platform_mem.c"
+  "src/h2_esp_resource_stats.c"
+  "src/h2_esp_platform_timer.c"
   "src/h2_esp_atomic.c"
   "src/h2_esp_platform_arena.c"
   "src/h2_esp_platform_log.c"

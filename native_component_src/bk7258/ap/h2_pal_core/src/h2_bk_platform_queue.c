@@ -8,6 +8,9 @@
 
 #include "FreeRTOS.h"
 #include "queue.h"
+#include "semphr.h"
+#include <driver/aon_rtc.h>
+#include "h2_bk_resource_stats_internal.h"
 
 #define H2_BK_QUEUE_CLOSE_POLL_MS 10u
 
@@ -18,7 +21,9 @@ struct h2_pal_queue {
     size_t item_size;
     uint8_t *storage;
     void *reset_scratch;
-    volatile int closed;
+    int closed;
+    SemaphoreHandle_t lock, changed;
+    StaticSemaphore_t lock_storage, changed_storage;
 };
 
 static void *queue_alloc(const h2_pal_mem_api_t *allocator, size_t len) {
@@ -31,17 +36,6 @@ static void queue_free(const h2_pal_mem_api_t *allocator, void *ptr) {
     } else if (ptr != NULL) {
         os_free(ptr);
     }
-}
-
-static uint32_t bk_timeout_slice(uint32_t timeout_ms, uint32_t waited_ms) {
-    if (timeout_ms == H2_PAL_QUEUE_WAIT_FOREVER) {
-        return H2_BK_QUEUE_CLOSE_POLL_MS;
-    }
-    if (timeout_ms <= waited_ms) {
-        return 0u;
-    }
-    uint32_t remaining = timeout_ms - waited_ms;
-    return remaining < H2_BK_QUEUE_CLOSE_POLL_MS ? remaining : H2_BK_QUEUE_CLOSE_POLL_MS;
 }
 
 static int bk_queue_create(void *user, const h2_pal_queue_config_t *config, h2_pal_queue_t **out_queue) {
@@ -87,6 +81,18 @@ static int bk_queue_create(void *user, const h2_pal_queue_config_t *config, h2_p
         queue_free(config->allocator, queue);
         return H2_PAL_QUEUE_ERR_NO_MEMORY;
     }
+    queue->lock = xSemaphoreCreateMutexStatic(&queue->lock_storage);
+    queue->changed = xSemaphoreCreateBinaryStatic(&queue->changed_storage);
+    if (queue->lock == NULL || queue->changed == NULL) {
+        if (queue->lock != NULL) vSemaphoreDelete(queue->lock);
+        if (queue->changed != NULL) vSemaphoreDelete(queue->changed);
+        (void)rtos_deinit_queue(&queue->handle);
+        queue_free(config->allocator, queue->reset_scratch);
+        queue_free(config->allocator, queue->storage);
+        queue_free(config->allocator, queue);
+        return H2_PAL_ERR_NO_MEMORY;
+    }
+    h2_bk_resource_acquire(H2_BK_RESOURCE_QUEUE, 0u);
     *out_queue = queue;
     return H2_PAL_QUEUE_OK;
 }
@@ -99,92 +105,102 @@ static void bk_queue_destroy(void *user, h2_pal_queue_t *queue) {
     if (queue->handle != NULL) {
         (void)rtos_deinit_queue(&queue->handle);
     }
+    vSemaphoreDelete(queue->lock);
+    vSemaphoreDelete(queue->changed);
     const h2_pal_mem_api_t *allocator = queue->allocator;
     queue_free(allocator, queue->reset_scratch);
     queue_free(allocator, queue->storage);
     queue_free(allocator, queue);
+    h2_bk_resource_release(H2_BK_RESOURCE_QUEUE, 0u);
+}
+
+/* Queue operations use nonblocking kernel access under the admission lock.
+ * Waiting outside it allows close to reject all pending senders without
+ * resetting/discarding buffered data. A change signal gives fast progress;
+ * bounded slices also wake every waiter when signals coalesce. */
+static int queue_wait_changed(h2_pal_queue_t *queue, uint64_t started, uint32_t timeout_ms) {
+    uint32_t slice = H2_BK_QUEUE_CLOSE_POLL_MS;
+    if (timeout_ms != H2_PAL_QUEUE_WAIT_FOREVER) {
+        uint64_t elapsed = (uint64_t)bk_aon_rtc_get_us() / 1000u - started;
+        if (elapsed >= timeout_ms) return H2_PAL_ERR_TIMEOUT;
+        uint32_t remaining = timeout_ms - (uint32_t)elapsed;
+        if (slice > remaining) slice = remaining;
+    }
+    TickType_t ticks = (TickType_t)(((uint64_t)slice * configTICK_RATE_HZ + 999u) / 1000u);
+    if (ticks == 0) ticks = 1;
+    (void)xSemaphoreTake(queue->changed, ticks);
+    return H2_PAL_OK;
 }
 
 static int bk_queue_send(void *user, h2_pal_queue_t *queue, const void *item, uint32_t timeout_ms) {
     (void)user;
-    if (queue == NULL || queue->handle == NULL || item == NULL) {
-        return H2_PAL_QUEUE_ERR_INVALID_ARG;
-    }
-    if (queue->closed) {
-        return H2_PAL_QUEUE_ERR_CLOSED;
-    }
-    uint32_t waited_ms = 0u;
+    if (queue == NULL || item == NULL) return H2_PAL_ERR_INVALID_ARG;
+    uint64_t started = (uint64_t)bk_aon_rtc_get_us() / 1000u;
     for (;;) {
-        uint32_t slice_ms = bk_timeout_slice(timeout_ms, waited_ms);
-        if (rtos_push_to_queue(&queue->handle, (void *)item, slice_ms) == kNoErr) {
-            return H2_PAL_QUEUE_OK;
+        (void)xSemaphoreTake(queue->lock, portMAX_DELAY);
+        int result = queue->closed ? H2_PAL_ERR_CLOSED
+            : xQueueSend(queue->handle, item, 0) == pdTRUE ? H2_PAL_OK : H2_PAL_ERR_TIMEOUT;
+        (void)xSemaphoreGive(queue->lock);
+        if (result != H2_PAL_ERR_TIMEOUT) {
+            if (result == H2_PAL_OK) (void)xSemaphoreGive(queue->changed);
+            return result;
         }
-        if (queue->closed) {
-            return H2_PAL_QUEUE_ERR_CLOSED;
-        }
-        if (timeout_ms == H2_PAL_QUEUE_NO_WAIT || (timeout_ms != H2_PAL_QUEUE_WAIT_FOREVER && slice_ms == 0u)) {
-            return H2_PAL_QUEUE_ERR_TIMEOUT;
-        }
-        waited_ms += slice_ms;
+        result = queue_wait_changed(queue, started, timeout_ms);
+        if (result != H2_PAL_OK) return result;
     }
 }
 
 static int bk_queue_send_latest(void *user, h2_pal_queue_t *queue, const void *item) {
     (void)user;
-    if (queue == NULL || queue->handle == NULL || queue->reset_scratch == NULL || item == NULL) {
-        return H2_PAL_QUEUE_ERR_INVALID_ARG;
+    if (queue == NULL || item == NULL) return H2_PAL_ERR_INVALID_ARG;
+    (void)xSemaphoreTake(queue->lock, portMAX_DELAY);
+    int result = H2_PAL_OK;
+    if (queue->closed) result = H2_PAL_ERR_CLOSED;
+    else if (xQueueSend(queue->handle, item, 0) != pdTRUE) {
+        (void)xQueueReceive(queue->handle, queue->reset_scratch, 0);
+        if (xQueueSend(queue->handle, item, 0) != pdTRUE) result = H2_PAL_ERR_IO;
     }
-    if (queue->closed) {
-        return H2_PAL_QUEUE_ERR_CLOSED;
-    }
-    if (rtos_push_to_queue(&queue->handle, (void *)item, BEKEN_NO_WAIT) == kNoErr) {
-        return H2_PAL_QUEUE_OK;
-    }
-    (void)rtos_pop_from_queue(&queue->handle, queue->reset_scratch, BEKEN_NO_WAIT);
-    return rtos_push_to_queue(&queue->handle, (void *)item, BEKEN_NO_WAIT) == kNoErr
-        ? H2_PAL_QUEUE_OK
-        : H2_PAL_QUEUE_ERR_IO;
+    (void)xSemaphoreGive(queue->lock);
+    if (result == H2_PAL_OK) (void)xSemaphoreGive(queue->changed);
+    return result;
 }
 
 static int bk_queue_recv(void *user, h2_pal_queue_t *queue, void *out_item, uint32_t timeout_ms) {
     (void)user;
-    if (queue == NULL || queue->handle == NULL || out_item == NULL) {
-        return H2_PAL_QUEUE_ERR_INVALID_ARG;
-    }
-    uint32_t waited_ms = 0u;
+    if (queue == NULL || out_item == NULL) return H2_PAL_ERR_INVALID_ARG;
+    uint64_t started = (uint64_t)bk_aon_rtc_get_us() / 1000u;
     for (;;) {
-        uint32_t slice_ms = bk_timeout_slice(timeout_ms, waited_ms);
-        if (rtos_pop_from_queue(&queue->handle, out_item, slice_ms) == kNoErr) {
-            return H2_PAL_QUEUE_OK;
+        (void)xSemaphoreTake(queue->lock, portMAX_DELAY);
+        int result = xQueueReceive(queue->handle, out_item, 0) == pdTRUE ? H2_PAL_OK
+            : queue->closed ? H2_PAL_ERR_CLOSED : H2_PAL_ERR_TIMEOUT;
+        (void)xSemaphoreGive(queue->lock);
+        if (result != H2_PAL_ERR_TIMEOUT) {
+            if (result == H2_PAL_OK) (void)xSemaphoreGive(queue->changed);
+            return result;
         }
-        if (queue->closed) {
-            return H2_PAL_QUEUE_ERR_CLOSED;
-        }
-        if (timeout_ms == H2_PAL_QUEUE_NO_WAIT || (timeout_ms != H2_PAL_QUEUE_WAIT_FOREVER && slice_ms == 0u)) {
-            return H2_PAL_QUEUE_ERR_TIMEOUT;
-        }
-        waited_ms += slice_ms;
+        result = queue_wait_changed(queue, started, timeout_ms);
+        if (result != H2_PAL_OK) return result;
     }
 }
 
 static int bk_queue_reset(void *user, h2_pal_queue_t *queue) {
     (void)user;
-    if (queue == NULL || queue->handle == NULL || queue->reset_scratch == NULL) {
-        return H2_PAL_QUEUE_ERR_INVALID_ARG;
-    }
-    while (rtos_pop_from_queue(&queue->handle, queue->reset_scratch, BEKEN_NO_WAIT) == kNoErr) {
-    }
-    return H2_PAL_QUEUE_OK;
+    if (queue == NULL) return H2_PAL_ERR_INVALID_ARG;
+    (void)xSemaphoreTake(queue->lock, portMAX_DELAY);
+    int result = xQueueReset(queue->handle) == pdTRUE ? H2_PAL_OK : H2_PAL_ERR_IO;
+    (void)xSemaphoreGive(queue->lock);
+    (void)xSemaphoreGive(queue->changed);
+    return result;
 }
 
 static int bk_queue_close(void *user, h2_pal_queue_t *queue) {
     (void)user;
-    if (queue == NULL) {
-        return H2_PAL_QUEUE_ERR_INVALID_ARG;
-    }
+    if (queue == NULL) return H2_PAL_ERR_INVALID_ARG;
+    (void)xSemaphoreTake(queue->lock, portMAX_DELAY);
     queue->closed = 1;
-    (void)bk_queue_reset(NULL, queue);
-    return H2_PAL_QUEUE_OK;
+    (void)xSemaphoreGive(queue->lock);
+    (void)xSemaphoreGive(queue->changed);
+    return H2_PAL_OK;
 }
 
 const h2_pal_queue_api_t *h2_bk_platform_queue_api(void) {

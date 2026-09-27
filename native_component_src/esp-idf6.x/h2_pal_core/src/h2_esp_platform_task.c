@@ -1,4 +1,5 @@
 #include "h2_esp_platform_core.h"
+#include "h2_esp_resource_stats_internal.h"
 
 #include "esp_heap_caps.h"
 #include "freertos/FreeRTOS.h"
@@ -23,6 +24,7 @@
 
 struct h2_pal_task {
   TaskHandle_t task;
+  size_t stack_size;
   SemaphoreHandle_t done;
   h2_pal_task_entry_t entry;
   void *ctx;
@@ -171,6 +173,7 @@ static int esp_task_start(void *user, const h2_pal_task_options_t *options,
     esp_task_fail(options->name, "allocate", "semaphore");
     return H2_PAL_ERR_NO_MEMORY;
   }
+  task->stack_size = stack_size;
   task->entry = entry;
   task->ctx = ctx;
 
@@ -218,6 +221,7 @@ static int esp_task_start(void *user, const h2_pal_task_options_t *options,
          policy.stack_region == H2_ESP_TASK_STACK_INTERNAL ? "internal"
                                                            : "psram",
          (unsigned long)stack_size);
+  h2_esp_resource_acquire(H2_ESP_RESOURCE_TASK, stack_size);
   *out_task = task;
   return H2_PAL_OK;
 }
@@ -256,7 +260,9 @@ static int esp_task_join(void *user, h2_pal_task_t *task) {
     vTaskDeleteWithCaps(task->task);
   }
   vSemaphoreDelete(task->done);
+  size_t stack_size = task->stack_size;
   free(task);
+  h2_esp_resource_release(H2_ESP_RESOURCE_TASK, stack_size);
   return H2_PAL_OK;
 }
 

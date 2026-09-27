@@ -1,3 +1,4 @@
+#include "h2_web_main_thread.h"
 /*
  * Browser Promise waits must yield from libco tasks: while one task waits for
  * fetch, WebRTC or storage, another task keeps running. Node with fakes.
@@ -17,9 +18,11 @@
       emscripten_force_exit(1);                                                \
     }                                                                          \
   } while (0)
-
-// clang-format off
-EM_JS(void, test_install_fetch, (int delay_ms), {
+/* clang-format off */
+EM_JS(void, test_install_fetch,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["i32"], null,
+    (delay_ms) => {
   globalThis.fetch = (url, options) => new Promise((resolve, reject) => {
     const timer = setTimeout(() => resolve(new Response('teapot body', {
       status: 418, headers: {'x-test': 'yes'}})), delay_ms);
@@ -29,23 +32,35 @@ EM_JS(void, test_install_fetch, (int delay_ms), {
     });
   });
 });
+});
+/* clang-format on */
 
-EM_JS(void, test_set_storage, (int indexed_db, int locks), {
+/* clang-format off */
+EM_JS(void, test_set_storage,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["i32", "i32"], null,
+    (indexed_db, locks) => {
   if (indexed_db) globalThis.indexedDB = {};
   else delete globalThis.indexedDB;
   const navigator = globalThis.navigator || {};
   if (locks) navigator.locks = {request() { return new Promise(() => {}); }};
   else delete navigator.locks;
 });
-// clang-format on
-
-EM_JS(void, test_hang_create_offer, (int hang), {
+});
+/* clang-format on */
+/* clang-format off */
+EM_JS(void, test_hang_create_offer,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["i32"], null,
+    (hang) => {
   const prototype = globalThis.RTCPeerConnection.prototype;
   prototype.h2OriginalCreateOffer ||= prototype.createOffer;
   // pc.close() leaves pending WebRTC Promises unsettled.
   prototype.createOffer = hang ? () => new Promise(() => {})
                                : prototype.h2OriginalCreateOffer;
 });
+});
+/* clang-format on */
 
 typedef struct test_state {
   h2_web_platform_t *platform;
@@ -81,7 +96,7 @@ static void run(void *user) {
 
   // Fetch from a task: the ticker advances while the response is pending, and
   // a 4xx status is delivered with its body.
-  test_install_fetch(100);
+  (void)h2_web_main_call(test_install_fetch, (const void *[]){&(int){100}});
   const h2_pal_http_request_t request = {
       .method = H2_PAL_HTTP_GET,
       .url = {.data = "https://example.test/x", .len = 22u},
@@ -100,7 +115,7 @@ static void run(void *user) {
   h2_pal_http_response_free(http, &response);
 
   // A timeout aborts the pending fetch without freezing the ticker.
-  test_install_fetch(10000);
+  (void)h2_web_main_call(test_install_fetch, (const void *[]){&(int){10000}});
   h2_pal_http_request_t slow = request;
   slow.timeout_ms = 50;
   ticks = state->ticks;
@@ -120,7 +135,7 @@ static void run(void *user) {
   h2_pal_webrtc_peer_close(webrtc, peer);
 
   // Closing a peer ends an offer whose browser Promise will never settle.
-  test_hang_create_offer(1);
+  (void)h2_web_main_call(test_hang_create_offer, (const void *[]){&(int){1}});
   CHECK(h2_pal_webrtc_peer_create(webrtc, &state->offer_peer) == H2_PAL_OK);
   h2_pal_task_t *offer = NULL;
   CHECK(h2_pal_task_start(h2_web_platform_task_api(state->platform), NULL,
@@ -131,15 +146,17 @@ static void run(void *user) {
   CHECK(h2_pal_task_join(h2_web_platform_task_api(state->platform), offer) ==
         H2_PAL_OK);
   CHECK(state->offer_done && state->offer_result == H2_PAL_ERR_CLOSED);
-  test_hang_create_offer(0);
+  (void)h2_web_main_call(test_hang_create_offer, (const void *[]){&(int){0}});
 
   // Persistent storage reports why it cannot open instead of pretending.
   h2_web_fs_t *fs = NULL;
   const h2_web_fs_config_t config = {.persistent_root = "/persist"};
-  test_set_storage(0, 1);
+  (void)h2_web_main_call(test_set_storage,
+                         (const void *[]){&(int){0}, &(int){1}});
   CHECK(h2_web_fs_open(state->platform, &config, &fs) ==
         H2_PAL_ERR_UNSUPPORTED);
-  test_set_storage(1, 0);
+  (void)h2_web_main_call(test_set_storage,
+                         (const void *[]){&(int){1}, &(int){0}});
   CHECK(h2_web_fs_open(state->platform, &config, &fs) ==
         H2_PAL_ERR_UNSUPPORTED);
   CHECK(fs == NULL);
@@ -188,13 +205,13 @@ int main(void) {
   CHECK(h2_web_platform_destroy(s_state.platform) == H2_PAL_ERR_BUSY);
   while (!s_state.done) {
     CHECK(h2_web_platform_pump(s_state.platform, 16u, NULL) == H2_PAL_OK);
-    emscripten_sleep(1u);
+    h2_web_worker_sleep(1u);
   }
   h2_pal_task_t *const joined[] = {ticker_task, run_task};
   for (size_t index = 0u; index < 2u; ++index) {
     while (h2_pal_task_join(tasks, joined[index]) == H2_PAL_ERR_BUSY) {
       CHECK(h2_web_platform_pump(s_state.platform, 16u, NULL) == H2_PAL_OK);
-      emscripten_sleep(1u);
+      h2_web_worker_sleep(1u);
     }
   }
   CHECK(h2_web_platform_destroy(s_state.platform) == H2_PAL_OK);

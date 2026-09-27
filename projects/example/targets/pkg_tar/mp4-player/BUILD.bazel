@@ -24,7 +24,8 @@ cc_binary(
     linkopts = [
         "-sALLOW_MEMORY_GROWTH=1",
         "-sASSERTIONS=1",
-        "-sASYNCIFY=1",
+        "-sPROXY_TO_PTHREAD=1",
+        "-sPTHREAD_POOL_SIZE=16",
         "-sINITIAL_MEMORY=67108864",
         "-sNO_EXIT_RUNTIME=1",
         "--embed-file",
@@ -57,11 +58,15 @@ wasm_cc_binary(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    threads = "emscripten",
 )
 
 pkg_tar(
     name = "mp4-player",
-    srcs = [":mp4_player_wasm"],
+    srcs = [
+        "_headers",
+        ":mp4_player_wasm",
+    ],
     out = "mp4-player.web.tar",
     mode = "0644",
     portable_mtime = True,
@@ -129,7 +134,8 @@ cc_binary(
     linkopts = [
         "-sALLOW_MEMORY_GROWTH=1",
         "-sASSERTIONS=1",
-        "-sASYNCIFY=1",
+        "-sPROXY_TO_PTHREAD=1",
+        "-sPTHREAD_POOL_SIZE=16",
         "-sINITIAL_MEMORY=67108864",
         "-sNO_EXIT_RUNTIME=1",
         "--embed-file",
@@ -166,11 +172,15 @@ wasm_cc_binary(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    threads = "emscripten",
 )
 
 pkg_tar(
     name = "mp4-player-large",
-    srcs = [":mp4_player_large_wasm"],
+    srcs = [
+        "_headers",
+        ":mp4_player_large_wasm",
+    ],
     out = "mp4-player-large.web.tar",
     mode = "0644",
     portable_mtime = True,

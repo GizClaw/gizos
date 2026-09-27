@@ -5,22 +5,14 @@
 #include <stdint.h>
 #include <sys/time.h>
 
-static uint32_t s_bk_time_last_ms;
-static uint64_t s_bk_time_high_ms;
-
 static h2_pal_result_t bk_time_get_monotonic_ms(void *user, uint64_t *out_ms) {
     (void)user;
     if (out_ms == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    uint32_t int_level = rtos_enter_critical();
-    uint32_t now_ms = (uint32_t)rtos_get_time();
-    if (now_ms < s_bk_time_last_ms) {
-        s_bk_time_high_ms += UINT64_C(1) << 32;
-    }
-    s_bk_time_last_ms = now_ms;
-    *out_ms = s_bk_time_high_ms + (uint64_t)now_ms;
-    rtos_exit_critical(int_level);
+    /* Match the microsecond domain. Scheduler ticks restart at boot while
+     * the AON counter has a different epoch and may survive a warm reboot. */
+    *out_ms = bk_aon_rtc_get_us() / 1000u;
 
     return H2_PAL_OK;
 }

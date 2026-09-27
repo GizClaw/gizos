@@ -19,7 +19,8 @@ cc_binary(
     linkopts = [
         "-sALLOW_MEMORY_GROWTH=1",
         "-sASSERTIONS=1",
-        "-sASYNCIFY=1",
+        "-sPROXY_TO_PTHREAD=1",
+        "-sPTHREAD_POOL_SIZE=16",
         "--shell-file",
         "$(location shell.html)",
         "--oformat=html",
@@ -38,6 +39,7 @@ cc_binary(
 wasm_cc_binary(
     name = "pal_wasm",
     cc_target = ":_wasm/index",
+    exit_runtime = True,
     outputs = [
         "index.html",
         "index.js",
@@ -49,6 +51,7 @@ wasm_cc_binary(
         "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
+    threads = "emscripten",
 )
 
 js_test(
@@ -71,6 +74,7 @@ js_test(
 pkg_tar(
     name = "pal",
     srcs = [
+        "_headers",
         "pal-host-e2e",
         ":pal_wasm",
     ],

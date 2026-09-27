@@ -1,5 +1,5 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:private"])
@@ -181,4 +181,44 @@ cc_test(
         ":entropy",
         "//libs/pal",
     ],
+)
+
+_CORE_OWNERS = [
+    "//libs/pal/providers/ios/pal_core:__pkg__",
+    "//libs/pal/providers/android/pal_core:__pkg__",
+    "//libs/pal/providers/web/pal_core:__pkg__",
+]
+cc_library(
+    name = "thread_core",
+    target_compatible_with = select({
+        "@platforms//os:ios": [],
+        "@platforms//os:android": [],
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "@platforms//cpu:wasm32": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    srcs = ["src/h2_posix_thread_core.cpp"],
+    hdrs = ["include/h2_posix_thread_core.h"],
+    includes = ["include"],
+    cxxopts = H2_CXX17_OPTS,
+    copts = H2_WARNING_COPTS,
+    visibility = _CORE_OWNERS,
+    deps = ["//libs/pal"],
+)
+cc_library(
+    name = "mobile_core",
+    target_compatible_with = select({
+        "@platforms//os:ios": [],
+        "@platforms//os:android": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    srcs = ["src/h2_posix_core.cpp", "src/h2_posix_system_event.c"],
+    hdrs = ["include/h2_posix_core.h"],
+    includes = ["include"],
+    conlyopts = H2_C11_OPTS,
+    cxxopts = H2_CXX17_OPTS,
+    copts = H2_WARNING_COPTS,
+    visibility = _CORE_OWNERS,
+    deps = [":thread_core", "//libs/pal"],
 )

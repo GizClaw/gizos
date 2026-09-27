@@ -23,6 +23,7 @@
 #include "h2/pal/os/h2_pal_system_event.h"
 #include "h2/pal/os/h2_pal_task.h"
 #include "h2/pal/os/h2_pal_time.h"
+#include "h2/pal/os/h2_pal_timer.h"
 #if defined(CONFIG_ESP_CONSOLE_UART) && CONFIG_ESP_CONSOLE_UART
 #include "h2/pal/hal/h2_pal_uart_io_stream.h"
 #endif
@@ -82,6 +83,19 @@ typedef struct h2_esp_task_policy_config {
    * TCB storage remains internal RAM; internal-policy stacks ignore this. */
   const h2_pal_mem_api_t *psram_stack_allocator;
 } h2_esp_task_policy_config_t;
+
+typedef struct h2_esp_platform_resource_stats {
+  size_t live_tasks, task_stack_bytes;
+  size_t live_queues, live_mutexes, live_semaphores, live_conditions;
+  size_t live_timers, live_firmware_infos;
+  size_t allocations, allocation_bytes;
+} h2_esp_platform_resource_stats_t;
+/** Actual live PAL objects and allocator-reported usable bytes. Stack bytes
+ * account native reservations owned by unjoined PAL Task handles. Completed
+ * internal-policy workers may let IDF reclaim their stack before join; PSRAM
+ * workers retain it until join. Snapshot comparisons require quiescence. */
+h2_pal_result_t h2_esp_platform_get_resource_stats(h2_esp_platform_resource_stats_t *out);
+const h2_pal_timer_api_t *h2_esp_platform_timer_api(void);
 
 h2_pal_mem_api_t *h2_esp_platform_default_allocator(void);
 h2_pal_mem_api_t *h2_esp_platform_psram_allocator(void);

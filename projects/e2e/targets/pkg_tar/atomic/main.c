@@ -1,16 +1,23 @@
 #include "h2_atomic_e2e.h"
+#include "h2_web_main_thread.h"
 #include "h2_web_platform.h"
 #include <emscripten.h>
 #include <inttypes.h>
 #include <stdio.h>
 
-EM_JS(void, atomic_result, (int ok), {
+/* clang-format off */
+EM_JS(void, atomic_result,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["i32"], null,
+    (ok) => {
   if (typeof document !== 'undefined') {
     const element = document.getElementById('result');
-    element.textContent = ok ? 'PASS (cooperative WASM; concurrency skipped)' : 'FAIL';
+    element.textContent = ok ? 'PASS (pthread Workers; concurrent)' : 'FAIL';
     element.dataset.terminal = ok ? 'pass' : 'fail';
   }
 });
+});
+/* clang-format on */
 
 static int monotonic_us(void *user, uint64_t *out) {
   (void)user;
@@ -19,7 +26,7 @@ static int monotonic_us(void *user, uint64_t *out) {
 }
 static int sleep_ms(void *user, uint32_t ms) {
   (void)user;
-  emscripten_sleep(ms);
+  h2_web_worker_sleep(ms);
   return 0;
 }
 static const h2_pal_time_api_t time_api = {
@@ -34,7 +41,7 @@ int main(void) {
                                             .display_height = 1};
   h2_web_platform_t *platform = h2_web_platform_create(&config);
   if (platform == NULL) {
-    atomic_result(0);
+    (void)h2_web_main_call(atomic_result, (const void *[]){&(int){0}});
     return 1;
   }
   const h2_atomic_e2e_backend_t *backends[] = {
@@ -44,15 +51,15 @@ int main(void) {
     h2_atomic_e2e_result_t result;
     const int rc = h2_atomic_e2e_run(
         h2_web_platform_mem_api(), h2_web_platform_task_api(platform),
-        &time_api, backends[i], 10000u, false, false,
+        &time_api, backends[i], 10000u, true, false,
         NULL, NULL, pump, platform, &result);
-    printf("ATOMIC_E2E backend=%s concurrent=SKIP expected=%u incremented=%u "
+    printf("ATOMIC_E2E backend=%s concurrent=PASS expected=%u incremented=%u "
            "compared=%u elapsed_us=%" PRIu64 " rc=%d\n",
            backends[i]->name, result.expected, result.incremented,
            result.compared, result.elapsed_us, rc);
     if (rc != 0) passed = 0;
   }
   h2_web_platform_destroy(platform);
-  atomic_result(passed);
+  (void)h2_web_main_call(atomic_result, (const void *[]){&(int){passed}});
   return passed ? 0 : 1;
 }

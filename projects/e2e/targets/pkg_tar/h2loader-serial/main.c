@@ -1,6 +1,7 @@
 #include "h2_h2loader_serial_e2e.h"
 #include "h2_h2loader_serial_e2e_task_names.h"
 #include "h2_smoke_host_runtime.h"
+#include "h2_web_main_thread.h"
 #include "h2_web_platform.h"
 
 #include <emscripten.h>
@@ -90,8 +91,11 @@ static void h2_web_h2loader_release_resources(void) {
   app.resource_count = 0u;
 }
 
+/* clang-format off */
 EM_JS(void, h2_web_h2loader_present,
-      (int result, size_t passed, size_t failed, size_t ports), {
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["i32", "u32", "u32", "u32"], null,
+    (result, passed, failed, ports) => {
   const element = globalThis.document && document.getElementById('result');
   if (element) {
     element.textContent = result === 0
@@ -100,11 +104,19 @@ EM_JS(void, h2_web_h2loader_present,
     element.dataset.terminal = result === 0 ? 'pass' : 'fail';
   }
 });
+});
+/* clang-format on */
 
-EM_JS(void, h2_web_h2loader_progress, (uint64_t acknowledged, uint64_t total), {
+/* clang-format off */
+EM_JS(void, h2_web_h2loader_progress,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u64", "u64"], null,
+    (acknowledged, total) => {
   const element = globalThis.document && document.getElementById('progress');
   if (element) element.textContent = `${acknowledged}/${total}`;
 });
+});
+/* clang-format on */
 
 static int h2_web_h2loader_cancelled(void *user) {
   return ((h2_web_h2loader_app_t *)user)->cancelled;
@@ -339,9 +351,11 @@ static h2_pal_result_t h2_web_h2loader_finalize(int present_result) {
     app.task = NULL;
     h2_web_h2loader_print_ledger(&app.result);
     if (present_result) {
-      h2_web_h2loader_present(app.run_result, app.result.passed,
-                              app.result.failed,
-                              app.result.enumerated_ports);
+      (void)h2_web_main_call(
+          h2_web_h2loader_present,
+          (const void *[]){&(int){app.run_result}, &(size_t){app.result.passed},
+                           &(size_t){app.result.failed},
+                           &(size_t){app.result.enumerated_ports}});
     }
   }
   if (app.runtime != NULL) {
@@ -360,8 +374,10 @@ static h2_pal_result_t h2_web_h2loader_finalize(int present_result) {
 static h2_pal_result_t h2_web_h2loader_advance(int present_result) {
   if (app.platform == NULL) return H2_PAL_ERR_INVALID_STATE;
   h2_pal_result_t result = h2_web_platform_pump(app.platform, 32u, NULL);
-  h2_web_h2loader_progress(app.result.acknowledged_bytes,
-                            app.result.total_bytes);
+  (void)h2_web_main_call(
+      h2_web_h2loader_progress,
+      (const void *[]){&(uint64_t){app.result.acknowledged_bytes},
+                       &(uint64_t){app.result.total_bytes}});
   if (result != H2_PAL_OK) return result;
   if (!app.complete) {
     if (!app.shutting_down || app.task == NULL) {
@@ -380,8 +396,10 @@ static h2_pal_result_t h2_web_h2loader_advance(int present_result) {
 
 EMSCRIPTEN_KEEPALIVE int h2_web_h2loader_tick(void) {
   if (app.shutting_down) return H2_PAL_ERR_INVALID_STATE;
-  h2_web_h2loader_progress(app.result.acknowledged_bytes,
-                            app.result.total_bytes);
+  (void)h2_web_main_call(
+      h2_web_h2loader_progress,
+      (const void *[]){&(uint64_t){app.result.acknowledged_bytes},
+                       &(uint64_t){app.result.total_bytes}});
   const h2_pal_result_t result = app.complete
                                      ? h2_web_h2loader_finalize(1)
                                      : H2_PAL_ERR_WOULD_BLOCK;
@@ -448,12 +466,13 @@ int main(void) {
     result = h2_web_h2loader_advance(1);
     if (result == H2_PAL_ERR_WOULD_BLOCK) {
       result = H2_PAL_OK;
-      emscripten_sleep(1u);
+      h2_web_worker_sleep(1u);
     } else {
       break;
     }
   }
-  printf("H2_WEB_H2LOADER_SERIAL_E2E result=%s rc=%d passed=%zu failed=%zu skipped=%zu ports=%zu\n",
+  printf("H2_WEB_H2LOADER_SERIAL_E2E result=%s rc=%d passed=%zu failed=%zu "
+         "skipped=%zu ports=%zu\n",
          result == H2_PAL_OK ? "PASS" : "FAIL", result, app.result.passed,
          app.result.failed, app.result.skipped, app.result.enumerated_ports);
   if (app.runtime != NULL) h2_runtime_deinit(app.runtime);

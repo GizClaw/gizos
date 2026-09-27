@@ -109,6 +109,11 @@ addEventListener('unhandledrejection', e => { lines.push(String(e.reason)); repo
 </script><script src='/webrtc_browser_test.js'></script>""".replace("RESULT_TOKEN", token).replace("STUN_URL", json.dumps(endpoints["stun"])).replace("ICE_URL", json.dumps(endpoints["turn" if relay else "stun"])).replace("RELAY_MODE", json.dumps(relay)).replace("PION_MODE", json.dumps(pion)).encode()
 
     class Handler(http.server.BaseHTTPRequestHandler):
+        def end_headers(self):
+            self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+            self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
+            super().end_headers()
+
         def log_message(self, *args):
             pass
 

@@ -9,13 +9,15 @@ typedef struct UIView UIView;
 
 #include "h2_pal.h"
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /**
- * Opaque handle for the example-only iOS PAL subset.
+ * Opaque handle for the iOS PAL provider.
  *
- * This component currently provides Memory, Time, Queue, Display, and a native
- * pointer bridge for smoke Apps. It is not a complete iOS PAL backend; all
- * other Runtime capabilities remain unsupported until implemented and
- * validated explicitly.
+ * Core capabilities use native pthreads and clocks; the existing display,
+ * input and media integrations remain platform-specific.
  */
 typedef struct h2_ios_platform h2_ios_platform_t;
 
@@ -61,5 +63,27 @@ h2_pal_result_t h2_ios_platform_read_pointer(void *user, int32_t *out_x,
 
 const h2_pal_system_event_api_t *h2_ios_system_event_api(void);
 h2_pal_ble_t *h2_ios_corebluetooth_ble(const h2_pal_mem_api_t *allocator);
+
+/* Quiescent counters cover PAL-owned resources, not process RSS. */
+typedef struct h2_ios_platform_resource_stats {
+    size_t tasks, task_stack_bytes, queues, mutexes, semaphores, conditions, timers;
+    size_t allocations, allocation_bytes;
+} h2_ios_platform_resource_stats_t;
+const h2_pal_task_api_t *h2_ios_platform_task_api(void);
+const h2_pal_sync_api_t *h2_ios_platform_sync_api(void);
+const h2_pal_timer_api_t *h2_ios_platform_timer_api(void);
+const h2_pal_log_api_t *h2_ios_platform_log_api(void);
+const h2_pal_firmware_info_api_t *h2_ios_platform_firmware_info_api(void);
+h2_pal_result_t h2_ios_platform_get_resource_stats(h2_ios_platform_resource_stats_t *out);
+/* Fault injection applies only to task-stack allocation; -1 disables it.
+ * Configure only from a quiescent diagnostic harness. */
+h2_pal_result_t h2_ios_platform_task_allocation_fault(int successful_before_failure);
+/* Process-wide Core teardown: stop all callers and release handles first.
+ * A busy Core is retained and may be retried after its owners have finished. */
+h2_pal_result_t h2_ios_platform_core_shutdown(void);
+
+#ifdef __cplusplus
+}
+#endif
 
 #endif

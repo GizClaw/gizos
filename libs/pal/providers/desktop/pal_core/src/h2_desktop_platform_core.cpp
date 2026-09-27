@@ -1,4 +1,5 @@
 #include "h2_desktop_platform.h"
+#include "h2_desktop_resource_stats_internal.h"
 
 #include <chrono>
 #include <condition_variable>
@@ -125,6 +126,7 @@ int queue_create(void *, const h2_pal_queue_config_t *config,
     api_free(config->allocator, queue);
     return H2_PAL_QUEUE_ERR_NO_MEMORY;
   }
+  h2_desktop_resource_acquire(h2_desktop_resource_kind::queue);
   *out_queue = reinterpret_cast<h2_pal_queue_t *>(queue);
   return H2_PAL_QUEUE_OK;
 }
@@ -144,6 +146,7 @@ void queue_destroy(void *, h2_pal_queue_t *raw_queue) {
   api_free(allocator, queue->items);
   queue->~DesktopQueue();
   api_free(allocator, queue);
+  h2_desktop_resource_release(h2_desktop_resource_kind::queue);
 }
 
 int queue_send(void *, h2_pal_queue_t *raw_queue, const void *item,
@@ -281,6 +284,7 @@ h2_pal_result_t mutex_create(void *, const h2_pal_mutex_config_t *config,
   mutex->allocator = config->allocator;
   mutex->is_recursive =
       (config->flags & H2_PAL_MUTEX_FLAG_RECURSIVE) != 0u;
+  h2_desktop_resource_acquire(h2_desktop_resource_kind::mutex);
   *out_mutex = reinterpret_cast<h2_pal_mutex_t *>(mutex);
   return H2_PAL_OK;
 }
@@ -293,6 +297,7 @@ h2_pal_result_t mutex_destroy(void *, h2_pal_mutex_t *raw_mutex) {
   const h2_pal_mem_api_t *allocator = mutex->allocator;
   mutex->~DesktopMutex();
   api_free(allocator, mutex);
+  h2_desktop_resource_release(h2_desktop_resource_kind::mutex);
   return H2_PAL_OK;
 }
 
@@ -348,6 +353,7 @@ h2_pal_result_t semaphore_create(void *,
   semaphore->allocator = config->allocator;
   semaphore->count = config->initial_count;
   semaphore->max_count = config->max_count;
+  h2_desktop_resource_acquire(h2_desktop_resource_kind::semaphore);
   *out_semaphore = reinterpret_cast<h2_pal_semaphore_t *>(semaphore);
   return H2_PAL_OK;
 }
@@ -361,6 +367,7 @@ h2_pal_result_t semaphore_destroy(void *, h2_pal_semaphore_t *raw_semaphore) {
   const h2_pal_mem_api_t *allocator = semaphore->allocator;
   semaphore->~DesktopSemaphore();
   api_free(allocator, semaphore);
+  h2_desktop_resource_release(h2_desktop_resource_kind::semaphore);
   return H2_PAL_OK;
 }
 
@@ -409,6 +416,7 @@ h2_pal_result_t condition_create(void *, const h2_pal_cond_config_t *config,
   }
   DesktopCondition *condition = new (raw) DesktopCondition();
   condition->allocator = config->allocator;
+  h2_desktop_resource_acquire(h2_desktop_resource_kind::condition);
   *out_condition = reinterpret_cast<h2_pal_cond_t *>(condition);
   return H2_PAL_OK;
 }
@@ -422,6 +430,7 @@ h2_pal_result_t condition_destroy(void *, h2_pal_cond_t *raw_condition) {
   const h2_pal_mem_api_t *allocator = condition->allocator;
   condition->~DesktopCondition();
   api_free(allocator, condition);
+  h2_desktop_resource_release(h2_desktop_resource_kind::condition);
   return H2_PAL_OK;
 }
 
@@ -479,12 +488,14 @@ struct DesktopTask {
   std::thread thread;
   const h2_pal_mem_api_t *stack_allocator = nullptr;
   void *stack = nullptr;
+  size_t stack_bytes = 0u;
 };
 
 void release_task_stack(DesktopTask *task) {
   if (task->stack_allocator == nullptr)
     return;
   h2_pal_mem_free(task->stack_allocator, task->stack);
+  h2_desktop_task_stack_release(task->stack_bytes);
   std::lock_guard<std::mutex> guard(task_stack_mutex);
   --task_stack_borrowers;
 }
@@ -512,8 +523,13 @@ int task_start(void *, const h2_pal_task_options_t *options,
   if (config.allocator != nullptr) {
     size_t bytes = 0;
     const auto rc = config.resolve(config.user, options, &bytes);
-    if (rc == H2_PAL_OK && bytes != 0)
+    if (rc == H2_PAL_OK && bytes != 0) {
       task->stack = h2_pal_mem_alloc(config.allocator, bytes);
+      if (task->stack != nullptr) {
+        task->stack_bytes = bytes;
+        h2_desktop_task_stack_acquire(bytes);
+      }
+    }
     if (rc != H2_PAL_OK || (bytes != 0 && task->stack == nullptr)) {
       release_task_stack(task);
       delete task;
@@ -527,6 +543,7 @@ int task_start(void *, const h2_pal_task_options_t *options,
     delete task;
     return H2_PAL_ERR_UNAVAILABLE;
   }
+  h2_desktop_resource_acquire(h2_desktop_resource_kind::task);
   *out_task = reinterpret_cast<h2_pal_task_t *>(task);
   return H2_PAL_OK;
 }
@@ -547,6 +564,7 @@ int task_join(void *, h2_pal_task_t *raw_task) {
   }
   release_task_stack(task);
   delete task;
+  h2_desktop_resource_release(h2_desktop_resource_kind::task);
   return H2_PAL_OK;
 }
 

@@ -2,6 +2,7 @@
 #include "h2_pal_e2e_task_names.h"
 #include "h2_smoke_host_runtime.h"
 #include "h2_web_fs.h"
+#include "h2_web_main_thread.h"
 #include "h2_web_platform.h"
 
 #include <emscripten.h>
@@ -9,10 +10,17 @@
 
 // Node runs the scheduling core; the browser page (?suite=browser) also runs
 // the Web providers: persistent Filesystem, HTTP, netif and System Event.
-EM_JS(int, h2_web_pal_browser_suite, (), {
+
+/* clang-format off */
+EM_JS(void, h2_web_pal_browser_suite,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], "i32",
+    () => {
   return globalThis.location &&
       new URLSearchParams(location.search).get('suite') === 'browser' ? 1 : 0;
 });
+});
+/* clang-format on */
 
 typedef struct h2_web_pal_app {
   h2_runtime_t *runtime;
@@ -31,7 +39,11 @@ static void h2_web_pal_run(void *user) {
   app->run_result = h2_pal_e2e_run(app->runtime, &config, &app->result);
 }
 
-EM_JS(void, h2_web_pal_result, (int result, size_t passed, size_t failed), {
+/* clang-format off */
+EM_JS(void, h2_web_pal_result,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["i32", "u32", "u32"], null,
+    (result, passed, failed) => {
   const element = globalThis.document && document.getElementById('result');
   if (element) {
     element.textContent = result === 0
@@ -40,6 +52,8 @@ EM_JS(void, h2_web_pal_result, (int result, size_t passed, size_t failed), {
     element.dataset.terminal = result === 0 ? 'pass' : 'fail';
   }
 });
+});
+/* clang-format on */
 
 int main(void) {
   const h2_web_platform_config_t platform_config = {
@@ -63,7 +77,8 @@ int main(void) {
   config.webrtc = h2_web_platform_webrtc_api(platform);
   config.netif = h2_web_platform_netif_api(platform);
   config.system_event = h2_web_platform_system_event_api(platform);
-  const int browser = h2_web_pal_browser_suite();
+  const int browser =
+      ((int)h2_web_main_call(h2_web_pal_browser_suite, NULL).i32);
   h2_web_fs_t *fs = NULL;
   h2_pal_result_t result = H2_PAL_OK;
   if (browser) {
@@ -98,7 +113,7 @@ int main(void) {
     if (join_result == H2_PAL_OK) {
       joined = 1;
     } else if (join_result == H2_PAL_ERR_BUSY) {
-      emscripten_sleep(1u);
+      h2_web_worker_sleep(1u);
     } else {
       result = join_result;
       break;
@@ -122,7 +137,7 @@ int main(void) {
       result = cleanup_result;
       break;
     }
-    emscripten_sleep(1u);
+    h2_web_worker_sleep(1u);
   }
   if (app.result.retained_cleanup != NULL) result = H2_PAL_ERR_TIMEOUT;
   for (size_t index = 0u; index < app.result.case_count; ++index) {
@@ -132,7 +147,10 @@ int main(void) {
   printf("H2_WEB_PAL_E2E result=%s rc=%d passed=%zu failed=%zu cleanup=%d\n",
          result == H2_PAL_OK ? "PASS" : "FAIL", result,
          app.result.passed, app.result.failed, app.result.cleanup_result);
-  h2_web_pal_result(result, app.result.passed, app.result.failed);
+  (void)h2_web_main_call(h2_web_pal_result,
+                         (const void *[]){&(int){result},
+                                          &(size_t){app.result.passed},
+                                          &(size_t){app.result.failed}});
   if (runtime != NULL && app.result.retained_cleanup == NULL) {
     h2_runtime_deinit(runtime);
   }

@@ -7,6 +7,8 @@ exec bazel test \
   //projects/e2e/targets/pkg_tar/libco/... \
   //projects/e2e/targets/pkg_tar/lua-runtime/... \
   //projects/e2e/targets/pkg_tar/pal/... \
+  //projects/e2e/targets/pkg_tar/pal-core:browser_test \
+  //projects/e2e/targets/pkg_tar/atomic/... \
   //projects/e2e/targets/pkg_tar/h2loader-serial:archive_test \
   //projects/e2e/targets/pkg_tar/h2loader-serial:h2loader_serial_wasm_test \
   //projects/e2e/targets/pkg_tar/h2loader-serial:run_poller_test \

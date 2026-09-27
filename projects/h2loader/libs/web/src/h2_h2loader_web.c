@@ -1,12 +1,14 @@
 #include "h2_h2loader_web.h"
 #include "h2_h2loader_web_task_names.h"
 #include "h2_h2loader_web_status_json.h"
+#include "h2_web_main_thread.h"
 
 #include "h2_h2loader_host.h"
 #include "h2_h2loader_host_package.h"
 #include "h2_web_platform.h"
 
 #include <emscripten.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -61,14 +63,14 @@ struct h2_web_job {
   h2_h2loader_host_status_t status;
   h2_pal_serial_host_port_info_t *ports;
   size_t port_count;
-  uint64_t acknowledged;
-  uint64_t total;
-  h2_h2loader_host_operation_phase_t phase;
+  _Atomic uint64_t acknowledged;
+  _Atomic uint64_t total;
+  _Atomic h2_h2loader_host_operation_phase_t phase;
   char detail[H2_WEB_ERROR_DETAIL_SIZE];
-  int read_pending;
+  _Atomic int read_pending;
   int started;
-  int cancelled;
-  int complete;
+  _Atomic int cancelled;
+  _Atomic int complete;
 };
 
 struct h2_h2loader_web_client {
@@ -105,10 +107,11 @@ static h2_web_job_t *find_job(h2_h2loader_web_client_t *client,
   return NULL;
 }
 
+/* clang-format off */
 EM_JS(void, h2_web_blob_read_js,
-      (uintptr_t job_address, uint32_t job_handle, uint32_t token,
-       uint32_t blob_handle, uint32_t offset, uintptr_t out,
-       uint32_t out_size), {
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32", "u32", "u32", "u32", "u32", "u32", "u32"], null,
+    (job_address, job_handle, token, blob_handle, offset, out, out_size) => {
         const blobs = Module['h2LoaderWebBlobs'];
         const blob = blobs && blobs.get(blob_handle);
         // The job slot is fixed storage that a later job can reuse, so both
@@ -132,6 +135,8 @@ EM_JS(void, h2_web_blob_read_js,
           finish(0, bytes.byteLength);
         }, () => finish(-4, 0));
       });
+});
+/* clang-format on */
 
 EMSCRIPTEN_KEEPALIVE int h2_h2loader_web_blob_read_valid(
     uintptr_t job_address, uint32_t job_handle, uint32_t token) {
@@ -174,9 +179,13 @@ static h2_pal_result_t blob_read(void *user, uint64_t offset, uint8_t *out,
   job->read_result = H2_PAL_ERR_WOULD_BLOCK;
   job->read_count = 0u;
   job->read_pending = 1;
-  h2_web_blob_read_js((uintptr_t)job, job->handle, job->read_token,
-                      job->blob_handle, (uint32_t)offset, (uintptr_t)out,
-                      (uint32_t)out_size);
+  (void)h2_web_main_call(
+      h2_web_blob_read_js,
+      (const void *[]){
+          &(uintptr_t){(uintptr_t)job}, &(uint32_t){job->handle},
+          &(uint32_t){job->read_token}, &(uint32_t){job->blob_handle},
+          &(uint32_t){(uint32_t)offset}, &(uintptr_t){(uintptr_t)out},
+          &(uint32_t){(uint32_t)out_size}});
   while (job->read_pending && !job->cancelled) {
     h2_pal_result_t wait_result = h2_pal_time_sleep_ms(
         h2_web_platform_time_api(job->client->platform), 1u);
@@ -945,7 +954,9 @@ int h2_h2loader_web_close_step(h2_h2loader_web_client_t *client) {
     return H2_PAL_ERR_WOULD_BLOCK;
   }
   h2_pal_result_t result = client->shutdown_result;
-  h2_web_platform_destroy(client->platform);
+  h2_pal_result_t destroyed = h2_web_platform_destroy(client->platform);
+  if (destroyed != H2_PAL_OK)
+    return destroyed;
   client->platform = NULL;
   free(client->json);
   free(client);

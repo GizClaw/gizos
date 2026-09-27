@@ -1,3 +1,4 @@
+#include "h2_web_main_thread.h"
 #include "h2_web_platform_internal.h"
 
 #include <emscripten.h>
@@ -19,13 +20,11 @@
  * task through h2_web_async_complete(); C then copies what it needs with
  * synchronous calls. The response body streams chunk by chunk.
  */
-
-// clang-format off
-EM_JS(int, h2_web_http_start_js,
-      (uintptr_t platform_address, uint32_t request_id, uint32_t op_id,
-       int method, const char *url, size_t url_len,
-       const uint32_t *header_fields, size_t header_count,
-       const uint8_t *body, size_t body_len, int timeout_ms), {
+/* clang-format off */
+EM_JS(void, h2_web_http_start_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32", "u32", "u32", "i32", "pointer", "u32", "pointer", "u32", "pointer", "u32", "i32"], "i32",
+    (platform_address, request_id, op_id, method, url, url_len, header_fields, header_count, body, body_len, timeout_ms) => {
   const methods = [null, 'GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD',
                    'OPTIONS'];
   if (method < 1 || method >= methods.length) return -1;
@@ -143,10 +142,14 @@ EM_JS(int, h2_web_http_start_js,
   }, (error) => complete(entry.fail(error)));
   return 0;
 });
+});
+/* clang-format on */
 
-EM_JS(int, h2_web_http_status_js,
-      (uintptr_t platform_address, uint32_t request_id, int *out_status,
-       uint32_t *out_headers_len, double *out_content_length), {
+/* clang-format off */
+EM_JS(void, h2_web_http_status_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32", "u32", "pointer", "pointer", "pointer"], "i32",
+    (platform_address, request_id, out_status, out_headers_len, out_content_length) => {
   const entry = Module['h2WebHttp']?.get(platform_address)?.get(request_id);
   if (!entry) return -10;
   if (entry.error) return entry.error;
@@ -159,10 +162,14 @@ EM_JS(int, h2_web_http_status_js,
   HEAPF64[out_content_length >>> 3] = entry.contentLength;
   return 0;
 });
+});
+/* clang-format on */
 
-EM_JS(int, h2_web_http_headers_js,
-      (uintptr_t platform_address, uint32_t request_id, uint8_t *out,
-       size_t out_len), {
+/* clang-format off */
+EM_JS(void, h2_web_http_headers_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32", "u32", "pointer", "u32"], "i32",
+    (platform_address, request_id, out, out_len) => {
   const entry = Module['h2WebHttp']?.get(platform_address)?.get(request_id);
   if (!entry) return -10;
   const view = new DataView(HEAPU8.buffer, out, out_len);
@@ -180,10 +187,16 @@ EM_JS(int, h2_web_http_headers_js,
   }
   return 0;
 });
+});
+/* clang-format on */
 
 // Returns 1 when bytes or EOF are ready now, 0 when op_id will complete.
-EM_JS(int, h2_web_http_read_js,
-      (uintptr_t platform_address, uint32_t request_id, uint32_t op_id), {
+
+/* clang-format off */
+EM_JS(void, h2_web_http_read_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32", "u32", "u32"], "i32",
+    (platform_address, request_id, op_id) => {
   const requests = Module['h2WebHttp']?.get(platform_address);
   const entry = requests?.get(request_id);
   if (!entry) return -10;
@@ -229,11 +242,16 @@ EM_JS(int, h2_web_http_read_js,
   next();
   return 0;
 });
+});
+/* clang-format on */
 
 // Copies up to out_cap buffered body bytes; 0 means end of body.
-EM_JS(int, h2_web_http_take_js,
-      (uintptr_t platform_address, uint32_t request_id, uint8_t *out,
-       size_t out_cap), {
+
+/* clang-format off */
+EM_JS(void, h2_web_http_take_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32", "u32", "pointer", "u32"], "i32",
+    (platform_address, request_id, out, out_cap) => {
   const entry = Module['h2WebHttp']?.get(platform_address)?.get(request_id);
   if (!entry) return -10;
   if (entry.error) return entry.error;
@@ -247,24 +265,39 @@ EM_JS(int, h2_web_http_take_js,
   }
   return length;
 });
+});
+/* clang-format on */
 
-EM_JS(size_t, h2_web_http_pending_js,
-      (uintptr_t platform_address, uint32_t request_id), {
+/* clang-format off */
+EM_JS(void, h2_web_http_pending_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32", "u32"], "u32",
+    (platform_address, request_id) => {
   const entry = Module['h2WebHttp']?.get(platform_address)?.get(request_id);
   return entry?.chunk ? entry.chunk.byteLength - entry.offset : 0;
 });
+});
+/* clang-format on */
 
+/* clang-format off */
 EM_JS(void, h2_web_http_cancel_js,
-      (uintptr_t platform_address, uint32_t request_id), {
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32", "u32"], null,
+    (platform_address, request_id) => {
   const entry = Module['h2WebHttp']?.get(platform_address)?.get(request_id);
   if (!entry || entry.error) return;
   entry.canceled = true;
   entry.error = -10;
   entry.controller.abort();
 });
+});
+/* clang-format on */
 
+/* clang-format off */
 EM_JS(void, h2_web_http_close_js,
-      (uintptr_t platform_address, uint32_t request_id), {
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32", "u32"], null,
+    (platform_address, request_id) => {
   const requests = Module['h2WebHttp']?.get(platform_address);
   const entry = requests?.get(request_id);
   if (!entry) return;
@@ -277,9 +310,10 @@ EM_JS(void, h2_web_http_close_js,
   }
   if (entry.reader) entry.reader.cancel().catch(() => {});
 });
-// clang-format on
-
+});
+/* clang-format on */
 static void h2_web_http_response_free_body(h2_pal_http_response_t *response) {
+  H2_WEB_STATE_GUARD();
   if (response->allocator != NULL && response->body != NULL) {
     h2_pal_mem_free(response->allocator, response->body);
   }
@@ -296,17 +330,24 @@ typedef struct h2_web_http_exchange {
 /* Wait for one browser completion, observing cancel_cb and the deadline. */
 static h2_pal_result_t h2_web_http_wait(h2_web_http_exchange_t *exchange,
                                         h2_web_async_t *op) {
+  H2_WEB_STATE_GUARD();
   h2_pal_result_t result = H2_PAL_ERR_TIMEOUT;
   for (;;) {
     if (h2_pal_http_request_is_canceled(exchange->request)) {
-      h2_web_http_cancel_js((uintptr_t)exchange->platform, exchange->id);
+      (void)h2_web_main_call(
+          h2_web_http_cancel_js,
+          (const void *[]){&(uintptr_t){(uintptr_t)exchange->platform},
+                           &(uint32_t){exchange->id}});
       result = H2_PAL_ERR_CLOSED;
       break;
     }
     const double remaining_ms = exchange->deadline_ms - emscripten_get_now();
     if (remaining_ms < -1000.0) {
       // The JS timer aborts at the deadline; never hang if it cannot report.
-      h2_web_http_cancel_js((uintptr_t)exchange->platform, exchange->id);
+      (void)h2_web_main_call(
+          h2_web_http_cancel_js,
+          (const void *[]){&(uintptr_t){(uintptr_t)exchange->platform},
+                           &(uint32_t){exchange->id}});
       result = H2_PAL_ERR_TIMEOUT;
       break;
     }
@@ -319,7 +360,10 @@ static h2_pal_result_t h2_web_http_wait(h2_web_http_exchange_t *exchange,
       break;
     }
     if (result == H2_PAL_ERR_CLOSED)
-      h2_web_http_cancel_js((uintptr_t)exchange->platform, exchange->id);
+      (void)h2_web_main_call(
+          h2_web_http_cancel_js,
+          (const void *[]){&(uintptr_t){(uintptr_t)exchange->platform},
+                           &(uint32_t){exchange->id}});
     if (result != H2_PAL_ERR_TIMEOUT)
       break;
   }
@@ -328,6 +372,7 @@ static h2_pal_result_t h2_web_http_wait(h2_web_http_exchange_t *exchange,
 }
 
 static uint32_t h2_web_http_read_u32(const uint8_t *data) {
+  H2_WEB_STATE_GUARD();
   uint32_t value = 0u;
   memcpy(&value, data, sizeof(value));
   return value;
@@ -335,6 +380,7 @@ static uint32_t h2_web_http_read_u32(const uint8_t *data) {
 
 static int h2_web_http_deliver_headers(const h2_pal_http_request_t *request,
                                        const uint8_t *data, size_t len) {
+  H2_WEB_STATE_GUARD();
   if (data == NULL || len < sizeof(uint32_t)) {
     return H2_PAL_ERR_IO;
   }
@@ -369,10 +415,15 @@ static int h2_web_http_deliver_headers(const h2_pal_http_request_t *request,
 
 /* Wait until body bytes or EOF are buffered in JS. */
 static h2_pal_result_t h2_web_http_fill(h2_web_http_exchange_t *exchange) {
+  H2_WEB_STATE_GUARD();
   h2_web_async_t op;
   h2_web_async_begin(exchange->platform, &op);
-  const int ready = h2_web_http_read_js((uintptr_t)exchange->platform,
-                                        exchange->id, op.id);
+  const int ready =
+      ((int)h2_web_main_call(
+           h2_web_http_read_js,
+           (const void *[]){&(uintptr_t){(uintptr_t)exchange->platform},
+                            &(uint32_t){exchange->id}, &(uint32_t){op.id}})
+           .i32);
   if (ready != 0) {
     h2_web_async_end(exchange->platform, &op);
     return ready > 0 ? H2_PAL_OK : (h2_pal_result_t)ready;
@@ -390,19 +441,26 @@ static h2_pal_result_t h2_web_http_store(h2_web_http_exchange_t *exchange,
                                          h2_web_http_body_t *body,
                                          double content_length,
                                          h2_pal_http_response_t *response) {
+  H2_WEB_STATE_GUARD();
   const h2_pal_http_request_t *request = exchange->request;
   const uintptr_t platform = (uintptr_t)exchange->platform;
   const h2_pal_mem_api_t *allocator = h2_pal_http_response_allocator(request);
   for (;;) {
     // read_cb may cancel; nothing already buffered is delivered after that.
     if (h2_pal_http_request_is_canceled(request)) {
-      h2_web_http_cancel_js(platform, exchange->id);
+      (void)h2_web_main_call(
+          h2_web_http_cancel_js,
+          (const void *[]){&(uintptr_t){platform}, &(uint32_t){exchange->id}});
       return H2_PAL_ERR_CLOSED;
     }
     h2_pal_result_t result = h2_web_http_fill(exchange);
     if (result != H2_PAL_OK)
       return result;
-    const size_t pending = h2_web_http_pending_js(platform, exchange->id);
+    const size_t pending =
+        ((size_t)h2_web_main_call(h2_web_http_pending_js,
+                                  (const void *[]){&(uintptr_t){platform},
+                                                   &(uint32_t){exchange->id}})
+             .u32);
     if (pending == 0u)
       return H2_PAL_OK;
     if (request->read_cb != NULL) {
@@ -417,7 +475,12 @@ static h2_pal_result_t h2_web_http_store(h2_web_http_exchange_t *exchange,
         capacity = pending;
       }
       const int copied =
-          h2_web_http_take_js(platform, exchange->id, chunk, capacity);
+          ((int)h2_web_main_call(h2_web_http_take_js,
+                                 (const void *[]){&(uintptr_t){platform},
+                                                  &(uint32_t){exchange->id},
+                                                  &(uint8_t *){chunk},
+                                                  &(size_t){capacity}})
+               .i32);
       if (copied < 0) {
         free(scratch);
         return (h2_pal_result_t)copied;
@@ -438,9 +501,14 @@ static h2_pal_result_t h2_web_http_store(h2_web_http_exchange_t *exchange,
     if (request->response_buf != NULL) {
       if (pending > request->response_buf_cap - body->total)
         return H2_PAL_ERR_NO_SPACE;
-      const int copied = h2_web_http_take_js(
-          platform, exchange->id, request->response_buf + body->total,
-          pending);
+      const int copied =
+          ((int)h2_web_main_call(
+               h2_web_http_take_js,
+               (const void *[]){
+                   &(uintptr_t){platform}, &(uint32_t){exchange->id},
+                   &(uint8_t *){request->response_buf + body->total},
+                   &(size_t){pending}})
+               .i32);
       if (copied < 0)
         return (h2_pal_result_t)copied;
       body->total += (size_t)copied;
@@ -452,7 +520,12 @@ static h2_pal_result_t h2_web_http_store(h2_web_http_exchange_t *exchange,
       // Nobody owns the bytes: count and discard them like CoreHTTP.
       uint8_t discard[1024];
       const int copied =
-          h2_web_http_take_js(platform, exchange->id, discard, sizeof(discard));
+          ((int)h2_web_main_call(h2_web_http_take_js,
+                                 (const void *[]){&(uintptr_t){platform},
+                                                  &(uint32_t){exchange->id},
+                                                  &(uint8_t *){discard},
+                                                  &(size_t){sizeof(discard)}})
+               .i32);
       if (copied < 0)
         return (h2_pal_result_t)copied;
       body->total += (size_t)copied;
@@ -472,8 +545,13 @@ static h2_pal_result_t h2_web_http_store(h2_web_http_exchange_t *exchange,
       body->owned = grown;
       body->owned_cap = capacity;
     }
-    const int copied = h2_web_http_take_js(
-        platform, exchange->id, body->owned + body->total, pending);
+    const int copied =
+        ((int)h2_web_main_call(
+             h2_web_http_take_js,
+             (const void *[]){&(uintptr_t){platform}, &(uint32_t){exchange->id},
+                              &(uint8_t *){body->owned + body->total},
+                              &(size_t){pending}})
+             .i32);
     if (copied < 0)
       return (h2_pal_result_t)copied;
     body->total += (size_t)copied;
@@ -490,6 +568,7 @@ h2_web_http_attempt(h2_web_http_exchange_t *exchange,
                     const uint32_t *header_fields, bool may_retry,
                     h2_pal_http_response_t *out_response,
                     h2_web_http_attempt_t *out_next) {
+  H2_WEB_STATE_GUARD();
   const h2_pal_http_request_t *request = exchange->request;
   const uintptr_t platform = (uintptr_t)exchange->platform;
   *out_next = H2_WEB_HTTP_ATTEMPT_DONE;
@@ -501,10 +580,18 @@ h2_web_http_attempt(h2_web_http_exchange_t *exchange,
     return H2_PAL_ERR_TIMEOUT;
   h2_web_async_t op;
   h2_web_async_begin(exchange->platform, &op);
-  int started = h2_web_http_start_js(
-      platform, exchange->id, op.id, (int)request->method, request->url.data,
-      request->url.len, header_fields, request->header_count, request->body,
-      request->body_len, (int)(remaining_ms + 0.5));
+  int started =
+      ((int)h2_web_main_call(
+           h2_web_http_start_js,
+           (const void *[]){
+               &(uintptr_t){platform}, &(uint32_t){exchange->id},
+               &(uint32_t){op.id}, &(int){(int)request->method},
+               &(const char *){request->url.data}, &(size_t){request->url.len},
+               &(const uint32_t *){header_fields},
+               &(size_t){request->header_count},
+               &(const uint8_t *){request->body}, &(size_t){request->body_len},
+               &(int){(int)(remaining_ms + 0.5)}})
+           .i32);
   if (started != 0) {
     h2_web_async_end(exchange->platform, &op);
     return (h2_pal_result_t)started;
@@ -514,11 +601,19 @@ h2_web_http_attempt(h2_web_http_exchange_t *exchange,
   uint32_t headers_len = 0u;
   double content_length = -1.0;
   if (result == H2_PAL_OK) {
-    result = (h2_pal_result_t)h2_web_http_status_js(
-        platform, exchange->id, &status, &headers_len, &content_length);
+    result = (h2_pal_result_t)((int)h2_web_main_call(
+                              h2_web_http_status_js,
+                              (const void *[]){&(uintptr_t){platform},
+                                               &(uint32_t){exchange->id},
+                                               &(int *){&status},
+                                               &(uint32_t *){&headers_len},
+                                               &(double *){&content_length}})
+                              .i32);
   }
   if (result != H2_PAL_OK) {
-    h2_web_http_close_js(platform, exchange->id);
+    (void)h2_web_main_call(
+        h2_web_http_close_js,
+        (const void *[]){&(uintptr_t){platform}, &(uint32_t){exchange->id}});
     // All attempts share one deadline, so a TIMEOUT ends the request.
     if (may_retry && result == H2_PAL_ERR_IO &&
         emscripten_get_now() < exchange->deadline_ms)
@@ -526,24 +621,35 @@ h2_web_http_attempt(h2_web_http_exchange_t *exchange,
     return result;
   }
   if (may_retry && (status == 408 || status == 429 || status >= 500)) {
-    h2_web_http_close_js(platform, exchange->id);
+    (void)h2_web_main_call(
+        h2_web_http_close_js,
+        (const void *[]){&(uintptr_t){platform}, &(uint32_t){exchange->id}});
     *out_next = H2_WEB_HTTP_ATTEMPT_RETRY;
     return H2_PAL_OK;
   }
   uint8_t *headers = malloc(headers_len);
   if (headers == NULL) {
-    h2_web_http_close_js(platform, exchange->id);
+    (void)h2_web_main_call(
+        h2_web_http_close_js,
+        (const void *[]){&(uintptr_t){platform}, &(uint32_t){exchange->id}});
     return H2_PAL_ERR_NO_MEMORY;
   }
-  result = (h2_pal_result_t)h2_web_http_headers_js(platform, exchange->id,
-                                                   headers, headers_len);
+  result = (h2_pal_result_t)((int)h2_web_main_call(
+                                 h2_web_http_headers_js,
+                                 (const void *[]){&(uintptr_t){platform},
+                                                  &(uint32_t){exchange->id},
+                                                  &(uint8_t *){headers},
+                                                  &(size_t){headers_len}})
+                                 .i32);
   if (result == H2_PAL_OK)
     result = h2_web_http_deliver_headers(request, headers, headers_len);
   free(headers);
   h2_web_http_body_t body = {0};
   if (result == H2_PAL_OK)
     result = h2_web_http_store(exchange, &body, content_length, out_response);
-  h2_web_http_close_js(platform, exchange->id);
+  (void)h2_web_main_call(
+      h2_web_http_close_js,
+      (const void *[]){&(uintptr_t){platform}, &(uint32_t){exchange->id}});
   if (result != H2_PAL_OK) {
     if (body.owned != NULL)
       h2_pal_mem_free(h2_pal_http_response_allocator(request), body.owned);
@@ -564,6 +670,7 @@ h2_web_http_attempt(h2_web_http_exchange_t *exchange,
 static int h2_web_http_request(void *user,
                                const h2_pal_http_request_t *request,
                                h2_pal_http_response_t *out_response) {
+  H2_WEB_STATE_GUARD();
   h2_web_platform_t *platform = user;
   h2_pal_http_response_reset(out_response);
   if (platform == NULL || platform->shutting_down || request == NULL ||
@@ -640,6 +747,7 @@ static int h2_web_http_request(void *user,
 
 static void h2_web_http_response_free(void *user,
                                       h2_pal_http_response_t *response) {
+  H2_WEB_STATE_GUARD();
   (void)user;
   if (response == NULL) {
     return;
@@ -653,6 +761,7 @@ static const h2_pal_http_vtable_t h2_web_http_vtable = {
 };
 
 void h2_web_platform_http_init(h2_web_platform_t *platform) {
+  H2_WEB_STATE_GUARD();
   if (platform == NULL) {
     return;
   }
@@ -662,6 +771,7 @@ void h2_web_platform_http_init(h2_web_platform_t *platform) {
 
 const h2_pal_http_api_t *
 h2_web_platform_http_api(h2_web_platform_t *platform) {
+  H2_WEB_STATE_GUARD();
   if (platform == NULL) {
     return h2_pal_unsupported_http_api();
   }

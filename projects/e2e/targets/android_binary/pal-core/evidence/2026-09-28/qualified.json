@@ -1,0 +1,244 @@
+{
+  "platform": "android-emulator",
+  "version": "2.0.0",
+  "contract": 2,
+  "passed": 41,
+  "failed": 0,
+  "blocked": 0,
+  "not_run": 0,
+  "complete": 1,
+  "qualified": 1,
+  "cleanup": 0,
+  "rc": 0,
+  "teardown": 0,
+  "balanced": 1,
+  "cases": [
+    {
+      "id": "pal.core.memory.lifecycle",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.log.output",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.time.monotonic",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.time.wall-read",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.time.wall-set",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.timer.oneshot",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.timer.lifecycle",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.task.lifecycle",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.queue.transfer",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.queue.boundaries",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.mutex.lifecycle",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.semaphore.boundaries",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.condition.signal",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.condition.bounded-wait",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.concurrency.mpmc",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.system-event.lifecycle",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.firmware-info.current",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.queue.close-wake",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.semaphore.wake",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.api.arguments",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.memory.churn-alignment",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.task.once-context",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.task.join-running",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.task.join-completed",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.task.churn",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.task.batch-churn",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.task.stack-bounds",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.task.start-failure",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.task.partial-start",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.queue.copy-buffered-close",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.queue.sender-close",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.queue.reset-wake",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.mutex.contention",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.semaphore.waiters",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.condition.broadcast",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.condition.generations",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.system-event.external-unsubscribe",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.system-event.self-unsubscribe",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.timer.isolation",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.timer.churn",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.core.resources.recovered",
+      "status": "PASS",
+      "rc": 0
+    }
+  ],
+  "before": {
+    "tasks": 0,
+    "stacks": 0,
+    "queues": 4,
+    "mutexes": 1,
+    "semaphores": 0,
+    "conditions": 0,
+    "timers": 0,
+    "allocations": 11,
+    "bytes": 43521
+  },
+  "after": {
+    "tasks": 0,
+    "stacks": 0,
+    "queues": 4,
+    "mutexes": 1,
+    "semaphores": 0,
+    "conditions": 0,
+    "timers": 0,
+    "allocations": 11,
+    "bytes": 43521
+  }
+}

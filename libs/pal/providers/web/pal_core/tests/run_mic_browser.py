@@ -38,6 +38,11 @@ var Module = {print: text => {lines.push(text); console.log(text);},
 </script><script src='/mic_browser_test.js'></script>""".replace("RESULT", token)
 
     class Handler(http.server.BaseHTTPRequestHandler):
+        def end_headers(self):
+            self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+            self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
+            super().end_headers()
+
         def do_GET(self):
             if self.path == "/":
                 payload, mime = page.encode(), "text/html"

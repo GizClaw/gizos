@@ -6,9 +6,15 @@
 
 #include "FreeRTOS.h"
 #include "semphr.h"
+#include "h2_bk_resource_stats_internal.h"
+#include "h2_bk_task_lifetime_internal.h"
 
 struct h2_pal_task {
   beken_thread_t thread;
+  size_t stack_size;
+  StackType_t *stack;
+  StaticTask_t task_storage;
+  const h2_pal_mem_api_t *stack_allocator;
   beken_semaphore_t done;
   StaticSemaphore_t done_storage;
   const h2_pal_mem_api_t *allocator;
@@ -47,7 +53,7 @@ static void bk_task_fail(const char *name, const char *stage,
 
 static bool bk_task_policy_shape_valid(const h2_bk_task_policy_t *policy) {
   return policy != NULL && policy->core <= 1u &&
-         policy->priority <= UINT8_MAX && policy->min_stack_size != 0u &&
+         policy->priority < configMAX_PRIORITIES && policy->min_stack_size != 0u &&
          (policy->stack_region == H2_BK_TASK_STACK_DEFAULT ||
           policy->stack_region == H2_BK_TASK_STACK_PSRAM);
 }
@@ -102,11 +108,13 @@ static void bk_task_trampoline(void *raw) {
   h2_pal_task_t *task = (h2_pal_task_t *)raw;
   task->entry(task->ctx);
   (void)xSemaphoreGive((SemaphoreHandle_t)task->done);
-  rtos_delete_thread(NULL);
+  for (;;) vTaskSuspend(NULL);
 }
 
 static void bk_task_free(h2_pal_task_t *task) {
   if (task != NULL) {
+    if (task->stack != NULL) h2_pal_mem_free(task->stack_allocator, task->stack);
+    if (task->done != NULL) (void)rtos_deinit_semaphore(&task->done);
     h2_pal_mem_free(task->allocator, task);
   }
 }
@@ -155,6 +163,14 @@ static int bk_task_start(void *user, const h2_pal_task_options_t *options,
     stack_size = policy.min_stack_size;
   }
 
+  /* SDK thread constructors narrow stack depth to uint16_t words. Reject
+   * overflow and round up so a non-word-aligned minimum is never shortened. */
+  if (stack_size > UINT16_MAX * sizeof(StackType_t)) {
+    bk_task_fail(options->name, "validate", "stack-depth-overflow");
+    return H2_PAL_ERR_TASK;
+  }
+  stack_size = (stack_size + sizeof(StackType_t) - 1u) / sizeof(StackType_t) * sizeof(StackType_t);
+
   h2_pal_task_t *task = (h2_pal_task_t *)h2_pal_mem_alloc(
       s_task_config.task_allocator, sizeof(*task));
   if (task == NULL) {
@@ -170,13 +186,24 @@ static int bk_task_start(void *user, const h2_pal_task_options_t *options,
     bk_task_fail(options->name, "allocate", "semaphore");
     return H2_PAL_ERR_NO_MEMORY;
   }
+  task->stack_size = stack_size;
   task->entry = entry;
   task->ctx = ctx;
 
   const char *sdk_name = bk_task_sdk_name(options->name, &policy);
-  int ret = bk_task_create(&task->thread, &policy, sdk_name,
-                           (beken_thread_function_t)bk_task_trampoline,
-                           stack_size, task);
+  int ret;
+  if (policy.stack_region == H2_BK_TASK_STACK_PSRAM && s_task_config.psram_stack_allocator != NULL) {
+    task->stack_allocator = s_task_config.psram_stack_allocator;
+    task->stack = h2_pal_mem_alloc(task->stack_allocator, stack_size);
+    if (task->stack == NULL) { bk_task_free(task); return H2_PAL_ERR_NO_MEMORY; }
+    task->thread = xTaskCreateStaticPinnedToCore(bk_task_trampoline, sdk_name,
+        stack_size / sizeof(StackType_t), task, configMAX_PRIORITIES - 1u - policy.priority,
+        task->stack, &task->task_storage, policy.core);
+    ret = task->thread != NULL ? kNoErr : kGeneralErr;
+  } else {
+    ret = bk_task_create(&task->thread, &policy, sdk_name,
+                        (beken_thread_function_t)bk_task_trampoline, stack_size, task);
+  }
   if (ret != kNoErr) {
     bk_task_free(task);
     bk_task_fail(options->name, "create", "sdk");
@@ -188,6 +215,7 @@ static int bk_task_start(void *user, const h2_pal_task_options_t *options,
          (unsigned long)policy.core, (unsigned long)policy.priority,
          policy.stack_region == H2_BK_TASK_STACK_PSRAM ? "psram" : "default",
          (unsigned long)stack_size);
+  h2_bk_resource_acquire(H2_BK_RESOURCE_TASK, stack_size);
   *out_task = task;
   return H2_PAL_OK;
 }
@@ -201,7 +229,10 @@ static int bk_task_join(void *user, h2_pal_task_t *task) {
   if (ret != pdPASS) {
     return H2_PAL_ERR_TASK;
   }
+  h2_bk_delete_stopped_task(task->thread);
+  size_t stack_size = task->stack_size;
   bk_task_free(task);
+  h2_bk_resource_release(H2_BK_RESOURCE_TASK, stack_size);
   return H2_PAL_OK;
 }
 
@@ -211,7 +242,11 @@ h2_bk_platform_task_configure(const h2_bk_task_policy_config_t *config) {
     return H2_PAL_ERR_INVALID_STATE;
   }
   if (config == NULL || config->resolver == NULL ||
-      config->task_allocator == NULL) {
+      config->task_allocator == NULL ||
+      (config->psram_stack_allocator != NULL &&
+       (config->psram_stack_allocator->vtable == NULL ||
+        config->psram_stack_allocator->vtable->alloc == NULL ||
+        config->psram_stack_allocator->vtable->free == NULL))) {
     bk_task_fail(NULL, "configure", "invalid-config");
     return H2_PAL_ERR_INVALID_ARG;
   }

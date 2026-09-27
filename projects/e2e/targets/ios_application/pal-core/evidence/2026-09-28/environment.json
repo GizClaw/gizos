@@ -1,0 +1,17 @@
+{
+  "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+  "device": {
+    "dataPath": "/Users/idy/Library/Developer/CoreSimulator/Devices/A06F78C5-E60A-4061-B627-F72A0578C7A1/data",
+    "dataPathSize": 1618210816,
+    "logPath": "/Users/idy/Library/Logs/CoreSimulator/A06F78C5-E60A-4061-B627-F72A0578C7A1",
+    "udid": "A06F78C5-E60A-4061-B627-F72A0578C7A1",
+    "lastUsedAt": "2026-09-27T21:09:48Z",
+    "isAvailable": true,
+    "logPathSize": 237568,
+    "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
+    "state": "Booted",
+    "name": "GizOS PAL Core E2E"
+  },
+  "app_sha256": "4b50ee33225032778e6f307fc5fa31480bcdc702b2525e3f1e628432ece12b11",
+  "sdk_sha256": "7ca7558b22e0f8967f1871aaf554b936a5f75a8e717537e5145bb37bcb79b9f6"
+}

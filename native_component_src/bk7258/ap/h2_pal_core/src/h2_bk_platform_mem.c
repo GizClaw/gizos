@@ -1,6 +1,9 @@
 #include "h2_bk_platform_core.h"
+#include "h2_bk_resource_stats_internal.h"
 
 #include <os/mem.h>
+
+extern size_t xPortPointerSize(void *ptr);
 
 typedef enum h2_bk_heap_kind {
     H2_BK_HEAP_DEFAULT = 0,
@@ -14,22 +17,25 @@ typedef struct h2_bk_heap_context {
 
 static void *bk_platform_alloc(void *user, size_t len) {
     const h2_bk_heap_context_t *ctx = (const h2_bk_heap_context_t *)user;
-    if (ctx->kind == H2_BK_HEAP_PSRAM) {
-        return psram_malloc(len);
-    }
-    return os_malloc(len);
+    void *ptr = ctx->kind == H2_BK_HEAP_PSRAM ? psram_malloc(len) : os_malloc(len);
+    if (ptr != NULL) h2_bk_memory_acquire(xPortPointerSize(ptr));
+    return ptr;
 }
 
 static void *bk_platform_realloc(void *user, void *ptr, size_t len) {
     const h2_bk_heap_context_t *ctx = (const h2_bk_heap_context_t *)user;
-    if (ctx->kind == H2_BK_HEAP_PSRAM) {
-        return psram_realloc(ptr, len);
+    size_t before = ptr != NULL ? xPortPointerSize(ptr) : 0u;
+    void *next = ctx->kind == H2_BK_HEAP_PSRAM ? psram_realloc(ptr, len) : os_realloc(ptr, len);
+    if (next != NULL || len == 0u) {
+        if (ptr != NULL) h2_bk_memory_release(before);
+        if (next != NULL) h2_bk_memory_acquire(xPortPointerSize(next));
     }
-    return os_realloc(ptr, len);
+    return next;
 }
 
 static void bk_platform_free(void *user, void *ptr) {
     (void)user;
+    if (ptr != NULL) h2_bk_memory_release(xPortPointerSize(ptr));
     os_free(ptr);
 }
 

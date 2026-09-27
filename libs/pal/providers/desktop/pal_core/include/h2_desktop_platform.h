@@ -6,6 +6,8 @@
 #include "h2/pal/hal/h2_pal_imu.h"
 #include "h2/pal/hal/h2_pal_input.h"
 #include "h2/pal/os/h2_pal_log.h"
+#include "h2/pal/os/h2_pal_firmware_info.h"
+#include "h2/pal/os/h2_pal_timer.h"
 #include "h2/pal/os/h2_pal_mem.h"
 #include "h2/pal/hal/h2_pal_modem.h"
 #include "h2/pal/hal/h2_pal_nfc.h"
@@ -165,6 +167,48 @@ const h2_pal_queue_api_t *h2_desktop_platform_queue_api(void);
 const h2_pal_log_api_t *h2_desktop_platform_log_api(void);
 const h2_pal_time_api_t *h2_desktop_platform_time_api(void);
 const h2_pal_task_api_t *h2_desktop_platform_task_api(void);
+/** Real steady-clock timers, each with one serial callback worker.
+ * start rejects an already-running timer. reset starts/restarts from now;
+ * set_period_ms rearms a running timer and leaves a stopped timer stopped.
+ * External stop/destroy wait for in-flight callbacks; do not hold a lock needed
+ * by a callback. A callback may stop itself, or destroy itself with reclamation
+ * deferred until it returns (its user context must survive that return).
+ * A concurrent external stop excludes rearming/self-destroy with BUSY. Owners
+ * must serialize destroy against other external users of the same raw handle.
+ * Callbacks remain short/non-blocking per PAL and must not throw exceptions.
+ */
+const h2_pal_timer_api_t *h2_desktop_platform_timer_api(void);
+
+typedef struct h2_desktop_firmware_info h2_desktop_firmware_info_t;
+/** Copy version metadata embedded in the calling executable's image.
+ * The launcher supplies its build-generated version, not mutable remote state.
+ * Empty input is INVALID_ARG; a version of 96 or more bytes is TRUNCATED.
+ * Destroy only after all borrowed API users (including Runtime) have stopped.
+ */
+h2_pal_result_t h2_desktop_firmware_info_create(
+    const char *embedded_version, h2_desktop_firmware_info_t **out);
+const h2_pal_firmware_info_api_t *h2_desktop_firmware_info_api(
+    h2_desktop_firmware_info_t *owner);
+void h2_desktop_firmware_info_destroy(h2_desktop_firmware_info_t *owner);
+
+/** Actual live provider objects, not counts of calls made by a test wrapper.
+ * Tasks remain live after entry returns, until successful join. Stack bytes
+ * count only configured placeholder allocations, not native OS thread stacks.
+ * A snapshot is synchronized; compare at quiescent ownership boundaries.
+ */
+typedef struct h2_desktop_platform_resource_stats {
+  size_t live_tasks;
+  size_t task_stack_bytes;
+  size_t live_queues;
+  size_t live_mutexes;
+  size_t live_semaphores;
+  size_t live_conditions;
+  size_t live_timers;
+  size_t live_firmware_infos;
+} h2_desktop_platform_resource_stats_t;
+h2_pal_result_t h2_desktop_platform_get_resource_stats(
+    h2_desktop_platform_resource_stats_t *out);
+
 /** Optional task stack accounting, configured before starting its borrowers.
  * resolve returns bytes to reserve (zero skips the task), including any target
  * policy floor. It must not reenter configure. NULL config disables accounting.

@@ -12,7 +12,7 @@ class WebArchiveTest(unittest.TestCase):
         with tarfile.open(self.archive_path) as archive:
             members = archive.getmembers()
             self.assertEqual(
-                ["index.html", "index.js", "index.wasm"],
+                ["_headers", "index.html", "index.js", "index.wasm"],
                 [member.name for member in members],
             )
             for member in members:

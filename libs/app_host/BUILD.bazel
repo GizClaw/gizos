@@ -68,3 +68,46 @@ web_board_argument_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )
+
+cc_library(
+    name = "ios",
+    srcs = ["src/h2_ios_app_host.c"],
+    hdrs = ["include/h2_mobile_app_host.h"],
+    includes = ["include"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = ["@platforms//os:ios"],
+    deps = ["//libs/pal:unsupported", "//libs/pal/providers/ios/pal_core", "//libs/runtime", "//libs/atomic/providers/pthread"],
+)
+cc_library(
+    name = "android",
+    srcs = ["src/h2_android_app_host.c"],
+    hdrs = ["include/h2_mobile_app_host.h"],
+    includes = ["include"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = ["@platforms//os:android"],
+    deps = ["//libs/pal:unsupported", "//libs/pal/providers/android/pal_core", "//libs/runtime", "//libs/atomic/providers/pthread"],
+)
+
+cc_library(
+    name = "ios_packaged",
+    srcs = ["src/h2_ios_app_host.c"],
+    hdrs = ["include/h2_mobile_app_host.h"],
+    includes = ["include"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = ["@platforms//os:ios"],
+    deps = ["//libs/pal:unsupported", "//libs/pal/providers/ios/pal_core:packaged", "//libs/runtime", "//libs/atomic/providers/pthread"],
+)
+
+cc_library(
+    name = "android_packaged",
+    srcs = ["src/h2_android_app_host.c"],
+    hdrs = ["include/h2_mobile_app_host.h"],
+    includes = ["include"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = ["@platforms//os:android"],
+    deps = ["//libs/pal:unsupported", "//libs/pal/providers/android/pal_core:packaged", "//libs/runtime", "//libs/atomic/providers/pthread"],
+)

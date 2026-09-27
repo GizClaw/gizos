@@ -5,7 +5,13 @@ package(default_visibility = ["//visibility:public"])
 
 cc_library(
     name = "core",
-    srcs = ["src/h2_desktop_platform_core.cpp"],
+    srcs = [
+        "src/h2_desktop_firmware_info.cpp",
+        "src/h2_desktop_platform_core.cpp",
+        "src/h2_desktop_platform_timer.cpp",
+        "src/h2_desktop_resource_stats.cpp",
+        "src/h2_desktop_resource_stats_internal.h",
+    ],
     hdrs = ["include/h2_desktop_platform.h"],
     copts = H2_WARNING_COPTS + [
         "-Wno-thread-safety-analysis",
@@ -130,4 +136,43 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [":core", "//libs/atomic/providers/c11"],
+)
+
+cc_test(
+    name = "timer_test",
+    srcs = ["tests/test_desktop_timer.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":core"],
+)
+
+cc_test(
+    name = "firmware_info_test",
+    srcs = ["tests/test_desktop_firmware_info.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":core"],
+)
+
+cc_test(
+    name = "resource_stats_test",
+    srcs = ["tests/test_desktop_resource_stats.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":core"],
 )

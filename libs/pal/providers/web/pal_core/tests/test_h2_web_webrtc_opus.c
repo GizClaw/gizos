@@ -1,3 +1,4 @@
+#include "h2_web_main_thread.h"
 /*
  * An Opus vtable Track (the GizClaw model) over real browser WebRTC: tagged
  * packets leave through the encoded sender transform, the Pion fixture echoes
@@ -13,9 +14,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-
-// clang-format off
-EM_ASYNC_JS(char *, answer_offer, (const char *sdp, size_t len), {
+/* clang-format off */
+EM_JS(void, answer_offer,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["pointer", "u32"], "pointer",
+    async (sdp, len) => {
   const response = await fetch('/pion/offer', {
     method: 'POST', body: UTF8ToString(sdp, len),
     signal: AbortSignal.timeout(15000)});
@@ -26,21 +29,39 @@ EM_ASYNC_JS(char *, answer_offer, (const char *sdp, size_t len), {
   stringToUTF8(text, answer, size);
   return answer;
 });
+});
+/* clang-format on */
 
-EM_JS(char *, ice_url, (), {
+/* clang-format off */
+EM_JS(void, ice_url,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], "pointer",
+    () => {
   const size = lengthBytesUTF8(Module.iceURL) + 1;
   const url = _malloc(size);
   stringToUTF8(Module.iceURL, url, size);
   return url;
 });
+});
+/* clang-format on */
 
-EM_JS(int, transform_kind, (), {
+/* clang-format off */
+EM_JS(void, transform_kind,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], "i32",
+    () => {
   return typeof RTCRtpScriptTransform === 'function' ? 2 : 1;
 });
+});
+/* clang-format on */
 
-EM_JS(int, legacy_mode, (), { return Module.legacy ? 1 : 0; });
-// clang-format on
-
+/* clang-format off */
+EM_JS(void, legacy_mode,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], "i32",
+    () => { return Module.legacy ? 1 : 0; });
+});
+/* clang-format on */
 typedef struct opus_track {
   unsigned sent;
   unsigned echoed;
@@ -98,7 +119,7 @@ static void pump_for(h2_web_platform_t *platform,
         h2_pal_webrtc_event_release(&event);
       }
     }
-    emscripten_sleep(5u);
+    h2_web_worker_sleep(5u);
   }
 }
 
@@ -112,7 +133,7 @@ int main(void) {
   const h2_pal_webrtc_api_t *api = h2_web_platform_webrtc_api(platform);
   h2_pal_webrtc_peer_t *peer = NULL;
   assert(h2_pal_webrtc_peer_create(api, &peer) == H2_PAL_OK);
-  char *url = ice_url();
+  char *url = ((char *)h2_web_main_call(ice_url, NULL).ptr);
   const h2_pal_webrtc_ice_server_t ice = {
       .url = {.data = url, .len = strlen(url)}};
   assert(h2_pal_webrtc_peer_add_ice_server(api, peer, &ice) == H2_PAL_OK);
@@ -134,7 +155,11 @@ int main(void) {
     const h2_pal_result_t rc = h2_pal_webrtc_peer_poll(api, peer, 100, &event);
     assert(rc == H2_PAL_OK || rc == H2_PAL_ERR_TIMEOUT);
   }
-  char *answer = answer_offer(event.sdp.data, event.sdp.len);
+  char *answer =
+      ((char *)h2_web_main_call(
+           answer_offer, (const void *[]){&(const char *){event.sdp.data},
+                                          &(size_t){event.sdp.len}})
+           .ptr);
   h2_pal_webrtc_event_release(&event);
   assert(h2_pal_webrtc_peer_set_remote_sdp(
              api, peer, H2_PAL_WEBRTC_SDP_ANSWER,
@@ -144,11 +169,12 @@ int main(void) {
 
   pump_for(platform, api, peer, 15000.0, echoed_enough);
   printf("WEB_OPUS transform=%s sent=%u echoed=%u foreign=%u\n",
-         transform_kind() == 2 ? "script" : "encoded-streams", s_track.sent,
+         ((int)h2_web_main_call(transform_kind, NULL).i32) == 2 ? "script" : "encoded-streams", s_track.sent,
          s_track.echoed, s_track.foreign);
   assert(s_track.echoed >= 25u);
   // The legacy run hides RTCRtpScriptTransform to force createEncodedStreams.
-  assert(!legacy_mode() || transform_kind() == 1);
+  assert(!((int)h2_web_main_call(legacy_mode, NULL).i32) ||
+         ((int)h2_web_main_call(transform_kind, NULL).i32) == 1);
 
   // After unset the provider never calls the Track again.
   assert(h2_pal_webrtc_peer_unset_track(api, peer, &track) == H2_PAL_OK);
@@ -168,6 +194,8 @@ int main(void) {
   assert(destroyed == H2_PAL_OK);
   puts("WEB_OPUS unset=silent close=released PASS");
   // Report now: browser timers may keep the runtime alive after main.
-  EM_ASM({ report(0); });
+  /* clang-format off */
+MAIN_THREAD_EM_ASM({ report(0); });
+/* clang-format on */
   return 0;
 }

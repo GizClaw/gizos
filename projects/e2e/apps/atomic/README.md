@@ -32,9 +32,7 @@ Run in WebAssembly:
 bazel test --config=macos //projects/e2e/targets/pkg_tar/atomic:atomic_wasm_test
 ```
 
-The current Web PAL schedules tasks cooperatively. Its output marks
-`concurrent=SKIP`; it verifies both implementations' sequential behavior but
-does not claim a browser concurrency result.
+The Web launcher uses pthread Workers and shared Wasm memory. It runs both implementations' concurrent cases and reports `concurrent=PASS`, including 20,000 increments and compare/exchange updates per backend. This remains an independent Atomic App; Atomic is not a PAL capability.
 
 Build the managed ESP32-S3 DevKit App package:
 
