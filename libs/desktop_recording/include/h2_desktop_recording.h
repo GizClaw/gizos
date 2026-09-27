@@ -26,7 +26,8 @@ typedef struct h2_desktop_recording_stats {
  * call only; its parent must exist and the file must not exist. Creation starts
  * the encoder worker but does not open devices or register source hooks.
  * Uses native steady-clock time. Buffers are preallocated (16 RGB565 snapshots
- * and 2 seconds PCM); overflow, late PCM and encoder/I/O errors are latched.
+ * and 2 seconds of timestamped PCM payload); gaps consume no PCM queue storage.
+ * Overflow, late PCM and encoder/I/O errors are latched.
  * LVGL alpha is already composited into display pixels. Speaker gaps are
  * silent; video holds the last frame. Per-GOP MP4 fragments bound muxer
  * metadata.
