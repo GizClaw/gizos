@@ -9,7 +9,7 @@ extern "C" {
 #endif
 struct h2_gizclaw_firmware;
 
-/** Modem identity slots reported in client.identifiers.get. */
+/** Modem identity slots reported in IDENTIFIERS_GET. */
 #define H2_GIZCLAW_DEVICE_IMEI_MAX 2
 #define H2_GIZCLAW_DEVICE_IMEI_NAME_MAX 32
 
@@ -36,70 +36,6 @@ typedef struct h2_gizclaw_device_facts {
   h2_gizclaw_device_imei_t imeis[H2_GIZCLAW_DEVICE_IMEI_MAX];
 } h2_gizclaw_device_facts_t;
 
-/** Longest DeviceSettings.locale the wire message accepts, excluding NUL. */
-#define H2_GIZCLAW_DEVICE_LOCALE_MAX 35
-
-/** Default conversation input mode of the device. Mirrors the Workspace input
- * mode so a device default and a Workspace override share one vocabulary. */
-typedef enum h2_gizclaw_device_interaction_mode {
-  H2_GIZCLAW_DEVICE_INTERACTION_PUSH_TO_TALK = 1,
-  H2_GIZCLAW_DEVICE_INTERACTION_REALTIME = 2,
-} h2_gizclaw_device_interaction_mode_t;
-
-/** Feedback the device gives on a physical key press. */
-typedef enum h2_gizclaw_device_key_feedback {
-  H2_GIZCLAW_DEVICE_KEY_FEEDBACK_NONE = 1,
-  H2_GIZCLAW_DEVICE_KEY_FEEDBACK_SOUND = 2,
-  H2_GIZCLAW_DEVICE_KEY_FEEDBACK_VIBRATE = 3,
-  H2_GIZCLAW_DEVICE_KEY_FEEDBACK_SOUND_AND_VIBRATE = 4,
-} h2_gizclaw_device_key_feedback_t;
-
-/** How the device alerts the user to an incoming event. */
-typedef enum h2_gizclaw_device_alert_mode {
-  H2_GIZCLAW_DEVICE_ALERT_SILENT = 1,
-  H2_GIZCLAW_DEVICE_ALERT_VIBRATE = 2,
-  H2_GIZCLAW_DEVICE_ALERT_RING = 3,
-} h2_gizclaw_device_alert_mode_t;
-
-/**
- * Device-owned configuration exchanged by client.device.settings.get/set.
- *
- * Every member is optional in both directions: on a set an absent member leaves
- * that option unchanged, and on a response an absent member means the device
- * does not support that option, which is what lets one message serve products
- * with different hardware. The numeric members mirror the wire types exactly;
- * the library rejects a request, and fails a response, whose present members
- * are out of range: brightness in [0, 100], timeouts >= 0, locale a
- * well-formed BCP 47 tag of at most H2_GIZCLAW_DEVICE_LOCALE_MAX bytes (a
- * 2-8 letter primary subtag then hyphen-separated 1-8 character alphanumeric
- * subtags, so "zh_CN" is rejected), and each enum one of its named values.
- * locale is an inline buffer, so nothing is borrowed from the product; it must
- * be NUL-terminated within the buffer, and one that fills every byte without a
- * NUL is rejected like any other invalid value.
- */
-typedef struct h2_gizclaw_device_settings {
-  bool has_cellular_enabled;
-  bool cellular_enabled;
-  bool has_screen_off_timeout_ms;
-  int64_t screen_off_timeout_ms;
-  bool has_screen_brightness;
-  int64_t screen_brightness;
-  bool has_led_brightness;
-  int64_t led_brightness;
-  bool has_locale;
-  char locale[H2_GIZCLAW_DEVICE_LOCALE_MAX + 1];
-  bool has_default_interaction_mode;
-  h2_gizclaw_device_interaction_mode_t default_interaction_mode;
-  bool has_key_feedback;
-  h2_gizclaw_device_key_feedback_t key_feedback;
-  bool has_alert_mode;
-  h2_gizclaw_device_alert_mode_t alert_mode;
-  bool has_auto_sleep_timeout_ms;
-  int64_t auto_sleep_timeout_ms;
-  bool has_nfc_enabled;
-  bool nfc_enabled;
-} h2_gizclaw_device_settings_t;
-
 /** Supplement only capabilities absent from PAL. All arguments are borrowed
  * during the call. get_facts runs on the RPC owner and must not block; Stage
  * methods run on the device task. No callback may destroy or stop the Service.
@@ -123,7 +59,7 @@ typedef struct h2_gizclaw_vtable {
    * the next firmware must verify its identity and send SUCCEEDED telemetry
    * using the saved update_id. */
   h2_pal_result_t (*ota_activate)(void *user);
-  /** Optional non-blocking handoff for client.device.reboot. Called once on
+  /** Optional non-blocking handoff for DEVICE_REBOOT. Called once on
    * the device worker after the RPC response was sent, with the requested
    * delay in milliseconds. The callback must only copy the request and post
    * it to a product-owned execution context (for example a Runtime custom
@@ -134,7 +70,7 @@ typedef struct h2_gizclaw_vtable {
    * the library waits `delay_ms` on the worker and calls the power PAL. */
   h2_pal_result_t (*request_reboot)(void *user, uint32_t delay_ms);
   /** Optional shared-speaker ownership for library playback (audio player
-   * and client.device.sound.play). Set both or neither; Service init rejects
+   * and SOUND_PLAY). Set both or neither; Service init rejects
    * a lone hook with H2_PAL_ERR_INVALID_ARG. When set, the device
    * worker calls speaker_acquire before opening its PCM track and exactly one
    * speaker_release after the track is closed, on every exit path including
@@ -145,21 +81,7 @@ typedef struct h2_gizclaw_vtable {
    * start_speaker before playback and leaves the speaker on afterwards. */
   h2_pal_result_t (*speaker_acquire)(void *user);
   h2_pal_result_t (*speaker_release)(void *user);
-  /** Optional device configuration for client.device.settings.get/set. Both run
-   * on the RPC owner and must return promptly, like get_facts; the library owns
-   * the protobuf and the range checks. get_device_settings fills out with the
-   * options the product supports and leaves every other member absent.
-   * set_device_settings receives only the members the caller sent, already
-   * validated, applies them and fills out with the device's full settings after
-   * the change, so the caller sees what was accepted. Returning a member out of
-   * range fails the RPC instead of sending it. Either hook unset answers
-   * UNIMPLEMENTED for its method. */
-  h2_pal_result_t (*get_device_settings)(void *user,
-                                        h2_gizclaw_device_settings_t *out);
-  h2_pal_result_t (*set_device_settings)(
-      void *user, const h2_gizclaw_device_settings_t *patch,
-      h2_gizclaw_device_settings_t *out);
-  /** Optional non-blocking handoff for client.device.factory_reset. Called once
+  /** Optional non-blocking handoff for DEVICE_FACTORY_RESET. Called once
    * on the device worker after the RPC response was sent, like request_reboot:
    * copy the request, post the erase to a product-owned execution context and
    * return promptly. It must not sleep, block, or stop or destroy the Service
@@ -170,7 +92,7 @@ typedef struct h2_gizclaw_vtable {
    * own Peer during the reset invalidates every API key of that Peer, including
    * the caller's. */
   h2_pal_result_t (*request_factory_reset)(void *user, bool keep_network);
-  /** Optional non-blocking handoff for client.run.workspace.set. Called once on
+  /** Optional non-blocking handoff for RUN_WORKSPACE_SET. Called once on
    * the device worker after the RPC response was sent, with a NUL-terminated
    * name in library storage that is valid only for the call. The library does
    * not switch the Workspace itself: the App owns the Session, its conversation

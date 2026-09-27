@@ -1,17 +1,19 @@
 #ifndef H2_GIZCLAW_CONFIG_H
 #define H2_GIZCLAW_CONFIG_H
 
-#include "h2/pal/os/h2_pal_crypto.h"
 #include "h2/pal/application/h2_pal_http.h"
+#include "h2/pal/application/h2_pal_webrtc.h"
+#include "h2/pal/hal/h2_pal_audio.h"
+#include "h2/pal/hal/h2_pal_power.h"
+#include "h2/pal/hal/h2_pal_wifi.h"
+#include "h2/pal/os/h2_pal_crypto.h"
 #include "h2/pal/os/h2_pal_log.h"
 #include "h2/pal/os/h2_pal_mem.h"
 #include "h2/pal/os/h2_pal_time.h"
-#include "h2/pal/application/h2_pal_webrtc.h"
+#include "h2_gizclaw_mhs.h"
 #include "h2_gizclaw_rpc.h"
+#include "h2_gizclaw_tool.h"
 #include "h2_gizclaw_vtable.h"
-#include "h2/pal/hal/h2_pal_audio.h"
-#include "h2/pal/hal/h2_pal_wifi.h"
-#include "h2/pal/hal/h2_pal_power.h"
 
 #include <stdbool.h>
 #include <stddef.h>
@@ -94,26 +96,20 @@ typedef struct h2_gizclaw_config {
     size_t audio_prebuffer_bytes;
     /** Default firmware channel when the caller omits one. */
     int32_t firmware_channel;
-    /** Fallback for application-specific methods, e.g. client tools. */
-    h2_gizclaw_rpc_provider_fn rpc_provider;
-    void *rpc_provider_user;
-    /**
-     * Client methods answered by rpc_provider itself, borrowed through
-     * service_deinit, so client.rpc.methods.get can report them beside the
-     * methods the built-in device provider serves. Declare only what the
-     * provider really answers, for example H2_GIZCLAW_RPC_CLIENT_TOOL_INVOKE,
-     * H2_GIZCLAW_RPC_CLIENT_DEVICE_FIND and H2_GIZCLAW_RPC_CLIENT_SOCIAL_PING.
-     *
-     * Service init returns H2_PAL_ERR_INVALID_ARG for a count above
-     * H2_GIZCLAW_RPC_PROVIDER_METHODS_MAX, a duplicate, a method the built-in
-     * device provider owns, a number that is not a client method of the pinned
-     * registry, a non-empty list without rpc_provider set, or a non-empty list
-     * while no built-in device capability is configured, so a declaration is
-     * never silently ignored and never advertises a method that would only
-     * answer UNIMPLEMENTED.
-     */
-    const h2_gizclaw_rpc_method_t *rpc_provider_methods;
-    size_t rpc_provider_method_count;
+    /** Immutable product tool registrations, borrowed until deinit. The SDK
+     * advertises exactly the installed handlers. Unknown IDs, duplicates or
+     * NULL callbacks are invalid. The Service adds its built-in tools and
+     * rejects product registrations for those owned tools; products may
+     * provide DEVICE_FIND and SOCIAL_PING. A standalone Client may install
+     * any valid ClientTool. */
+    const h2_gizclaw_tool_handler_t *tool_handlers;
+    size_t tool_handler_count;
+    /** Immutable MHS state table, borrowed until deinit. Keys must be unique
+     * and valid and every entry must have a read callback. The Service adds
+     * speaker.main volume/muted and wifi.main read-only status when their PAL
+     * capabilities are present; product entries cannot shadow these keys. */
+    const h2_gizclaw_mhs_state_t *mhs_states;
+    size_t mhs_state_count;
     h2_gizclaw_cancel_fn cancel_requested;
     void *cancel_user;
 } h2_gizclaw_config_t;

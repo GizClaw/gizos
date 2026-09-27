@@ -59,6 +59,8 @@ _FIRMWARE_COMPATIBLE_SRCS = [
     "src/h2_gizclaw_app_config.c",
     "src/h2_gizclaw_debug.c",
     "src/h2_gizclaw_device.c",
+    "src/h2_gizclaw_mhs.c",
+    "src/h2_gizclaw_mhs_internal.h",
     "src/h2_gizclaw_device_internal.h",
     "src/h2_gizclaw_async_rpc.c",
     "src/h2_gizclaw_client.c",
@@ -108,6 +110,8 @@ cc_library(
         "include/h2_gizclaw_app_config.h",
         "include/h2_gizclaw_client.h",
         "include/h2_gizclaw_config.h",
+        "include/h2_gizclaw_mhs.h",
+        "include/h2_gizclaw_tool.h",
         "include/h2_gizclaw_conversation.h",
         "include/h2_gizclaw_debug.h",
         "include/h2_gizclaw_firmware.h",
@@ -169,6 +173,8 @@ cc_library(
         "src/h2_gizclaw_client.c",
         "src/h2_gizclaw_conversation.c",
         "src/h2_gizclaw_device.c",
+        "src/h2_gizclaw_mhs.c",
+        "src/h2_gizclaw_mhs_internal.h",
         "src/h2_gizclaw_device_internal.h",
         "src/h2_gizclaw_diagnostics.c",
         "src/h2_gizclaw_download.c",
@@ -212,6 +218,8 @@ cc_library(
         "include/h2_gizclaw_debug.h",
         "include/h2_gizclaw_client.h",
         "include/h2_gizclaw_config.h",
+        "include/h2_gizclaw_mhs.h",
+        "include/h2_gizclaw_tool.h",
         "include/h2_gizclaw_conversation.h",
         "include/h2_gizclaw_firmware.h",
         "include/h2_gizclaw_ota.h",
@@ -368,6 +376,23 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [":gizclaw_test_support", "//libs/atomic/providers/c11"],
+)
+
+cc_test(
+    name = "h2_gizclaw_mhs_test",
+    srcs = ["tests/test_h2_gizclaw_mhs.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gizclaw_test_support",
+        "//libs/atomic/providers/c11",
+    ],
 )
 
 cc_test(

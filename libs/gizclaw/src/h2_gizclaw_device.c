@@ -1,6 +1,7 @@
 #include "h2_gizclaw_device_internal.h"
-#include "h2_runtime.h"
 #include "h2_gizclaw_firmware.h"
+#include "h2_gizclaw_internal.h"
+#include "h2_gizclaw_mhs_internal.h"
 #include "h2_gizclaw_ogg_opus_internal.h"
 #include "h2_gizclaw_ota.h"
 #include "h2_gizclaw_player.h"
@@ -8,6 +9,7 @@
 #include "h2_gizclaw_task_names.h"
 #include "h2_gizclaw_telemetry.h"
 #include "h2_gizclaw_time_stretch_internal.h"
+#include "h2_runtime.h"
 #include "payload/audioplayer.pb.h"
 #include "payload/firmware.pb.h"
 #include "payload/system.pb.h"
@@ -28,6 +30,9 @@
 typedef struct audio_download audio_download_t;
 struct h2_gizclaw_device {
   h2_gizclaw_config_t config;
+  h2_gizclaw_tool_handler_t tools[H2_GIZCLAW_TOOL_SOCIAL_PING];
+  h2_gizclaw_mhs_state_t *mhs_states;
+  h2_gizclaw_mhs_builtin_t mhs_builtin;
   h2_gizclaw_service_t *service;
   h2_pal_mutex_t *mutex;
   h2_pal_task_t *task;
@@ -211,7 +216,7 @@ static void cancel_play_locked(h2_gizclaw_device_t *d) {
   changed(d);
 }
 static void response_complete(void *user, int result);
-/* Shared by client.device.audioplayer.playlist.set/.append and the local
+/* Shared by audioplayer.playlist.set/.append and the local
  * playlist write, so both get one validation and one revision bump. Called
  * with the lock held: d->incoming is the single staging buffer and the RPC
  * task must not race a product task for it. Everything that can fail is
@@ -226,8 +231,7 @@ static int playlist_apply_locked(h2_gizclaw_device_t *d, bool append,
   if (offset + d->incoming->items_count > H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS)
     return H2_PAL_ERR_BUSY;
   if (!append) {
-    if (d->pending &&
-        d->pending != H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAY)
+    if (d->pending && d->pending != H2_GIZCLAW_TOOL_AUDIOPLAYER_PLAY)
       return H2_PAL_ERR_BUSY;
     cancel_play_locked(d);
     d->status.has_current_index = false;
@@ -247,7 +251,7 @@ static int playlist_apply_locked(h2_gizclaw_device_t *d, bool append,
   return H2_PAL_OK;
 }
 /* The one list of accepted repeat modes, shared by
- * client.device.audioplayer.mode.set and the local setter so it cannot drift.
+ * audioplayer.mode.set and the local setter so it cannot drift.
  * Separate from the write because the local path, like play_index, rejects a
  * bad argument before it looks at whether the Service is still up. */
 static bool repeat_valid(const char *repeat) {
@@ -266,13 +270,14 @@ static int player_rpc(h2_gizclaw_device_t *d, int method,
                       h2_gizclaw_rpc_provider_response_t *out) {
   if (d->config.audio == NULL)
     return H2_PAL_ERR_UNSUPPORTED;
-  const int base = H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_GET;
-  if (method == base || method == base + 1 || method == base + 5) {
+  if (method == H2_GIZCLAW_TOOL_AUDIOPLAYER_GET ||
+      method == H2_GIZCLAW_TOOL_AUDIOPLAYER_PLAYLIST_GET ||
+      method == H2_GIZCLAW_TOOL_AUDIOPLAYER_STOP) {
     gizclaw_rpc_v1_ClientDeviceAudioPlayerGetRequest empty = {0};
     if (!decode(bytes, gizclaw_rpc_v1_ClientDeviceAudioPlayerGetRequest_fields,
                 &empty))
       return H2_PAL_ERR_INVALID_ARG;
-    if (method == base + 1) {
+    if (method == H2_GIZCLAW_TOOL_AUDIOPLAYER_PLAYLIST_GET) {
       lock(d);
       int rc = encode(
           d, gizclaw_rpc_v1_ClientDeviceAudioPlayerPlaylistGetResponse_fields,
@@ -280,13 +285,14 @@ static int player_rpc(h2_gizclaw_device_t *d, int method,
       unlock(d);
       return rc;
     }
-    if (method == base + 5) {
+    if (method == H2_GIZCLAW_TOOL_AUDIOPLAYER_STOP) {
       int rc = h2_gizclaw_player_stop(d->service);
       if (rc != H2_PAL_OK)
         return rc;
     }
-  } else if (method == base + 2 || method == base + 3) {
-    bool append = method == base + 3;
+  } else if (method == H2_GIZCLAW_TOOL_AUDIOPLAYER_PLAYLIST_SET ||
+             method == H2_GIZCLAW_TOOL_AUDIOPLAYER_PLAYLIST_APPEND) {
+    bool append = method == H2_GIZCLAW_TOOL_AUDIOPLAYER_PLAYLIST_APPEND;
     /* The staging buffer is shared with the local playlist write, so decoding
      * into it happens under the same lock as the swap. */
     lock(d);
@@ -302,7 +308,7 @@ static int player_rpc(h2_gizclaw_device_t *d, int method,
     unlock(d);
     if (rc != H2_PAL_OK)
       return rc;
-  } else if (method == base + 4) {
+  } else if (method == H2_GIZCLAW_TOOL_AUDIOPLAYER_PLAY) {
     gizclaw_rpc_v1_ClientDeviceAudioPlayerPlayRequest request = {0};
     if (!decode(bytes, gizclaw_rpc_v1_ClientDeviceAudioPlayerPlayRequest_fields,
                 &request))
@@ -319,7 +325,7 @@ static int player_rpc(h2_gizclaw_device_t *d, int method,
     }
     h2_atomic_fetch_add(&d->generation, 1u);
     d->playing = false;
-    d->pending = H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAY;
+    d->pending = H2_GIZCLAW_TOOL_AUDIOPLAYER_PLAY;
     d->pending_generation = h2_atomic_load(&d->generation);
     out->on_complete = response_complete;
     out->complete_user = d;
@@ -332,7 +338,7 @@ static int player_rpc(h2_gizclaw_device_t *d, int method,
     strcpy(d->status.state, "buffering");
     changed(d);
     unlock(d);
-  } else if (method == base + 6) {
+  } else if (method == H2_GIZCLAW_TOOL_AUDIOPLAYER_MODE_SET) {
     gizclaw_rpc_v1_ClientDeviceAudioPlayerModeSetRequest request = {0};
     if (!decode(bytes,
                 gizclaw_rpc_v1_ClientDeviceAudioPlayerModeSetRequest_fields,
@@ -352,7 +358,7 @@ static void response_complete(void *user, int result) {
   h2_gizclaw_device_t *d = user;
   lock(d);
   trace(d, "response-complete", d->pending, result);
-  if (d->pending == H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAY) {
+  if (d->pending == H2_GIZCLAW_TOOL_AUDIOPLAYER_PLAY) {
     if (result == H2_PAL_OK && !h2_atomic_load(&d->stopping) &&
         d->pending_generation == h2_atomic_load(&d->generation)) {
       d->playing = true;
@@ -475,47 +481,11 @@ static bool scan_result(void *user, const h2_pal_wifi_scan_entry_t *entry) {
 static int wifi_rpc(h2_gizclaw_device_t *d, int method,
                     h2_gizclaw_rpc_bytes_t bytes,
                     h2_gizclaw_rpc_provider_response_t *out) {
-  if ((method == H2_GIZCLAW_RPC_CLIENT_WIFI_STATUS_GET ||
-       method == H2_GIZCLAW_RPC_CLIENT_WIFI_SCAN) &&
-      !d->config.wifi)
-    return H2_PAL_ERR_UNSUPPORTED;
-  if ((method == H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_LIST ||
-       method == H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_FORGET) &&
-      !d->config.wifi_settings)
-    return H2_PAL_ERR_UNSUPPORTED;
-  if (method == H2_GIZCLAW_RPC_CLIENT_WIFI_STATUS_GET) {
-    gizclaw_rpc_v1_ClientWifiStatusGetRequest request = {0};
-    if (!decode(bytes, gizclaw_rpc_v1_ClientWifiStatusGetRequest_fields,
-                &request))
-      return H2_PAL_ERR_INVALID_ARG;
-    h2_pal_wifi_sta_status_t status = {0};
-    int rc = h2_pal_wifi_sta_get_status(d->config.wifi, &status);
-    if (rc != H2_PAL_OK)
-      return rc;
-    if (status.ssid_len > 32)
-      return H2_PAL_ERR_FORMAT;
-    gizclaw_rpc_v1_ClientWifiStatusGetResponse reply = {.has_value = true};
-    reply.value.connected = status.state == H2_PAL_WIFI_STA_STATE_CONNECTED ||
-                            status.state == H2_PAL_WIFI_STA_STATE_GOT_IP;
-    reply.value.has_ssid = status.ssid_len != 0;
-    memcpy(reply.value.ssid, status.ssid, status.ssid_len);
-    reply.value.has_rssi_dbm = reply.value.connected;
-    reply.value.rssi_dbm = status.rssi;
-    reply.value.has_bssid = status.bssid_set;
-    bssid_text(reply.value.bssid, status.bssid);
-    reply.value.has_ip = status.ip_valid;
-    uint8_t ip[4];
-    h2_pal_wifi_ip4_to_bytes(status.ip.ip4, ip);
-    (void)snprintf(reply.value.ip, sizeof(reply.value.ip), "%u.%u.%u.%u", ip[0],
-                   ip[1], ip[2], ip[3]);
-    return encode(d, gizclaw_rpc_v1_ClientWifiStatusGetResponse_fields, &reply,
-                  out);
-  }
-  if (method == H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_LIST ||
-      method == H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_FORGET) {
+  if (method == H2_GIZCLAW_TOOL_WIFI_SAVED_LIST ||
+      method == H2_GIZCLAW_TOOL_WIFI_SAVED_FORGET) {
     gizclaw_rpc_v1_ClientWifiSavedForgetRequest request = {0};
     const pb_msgdesc_t *fields =
-        method == H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_LIST
+        method == H2_GIZCLAW_TOOL_WIFI_SAVED_LIST
             ? gizclaw_rpc_v1_ClientWifiSavedListRequest_fields
             : gizclaw_rpc_v1_ClientWifiSavedForgetRequest_fields;
     if (!decode(bytes, fields, &request))
@@ -527,7 +497,7 @@ static int wifi_rpc(h2_gizclaw_device_t *d, int method,
       return rc;
     if (saved.ssid_len > 32)
       return H2_PAL_ERR_FORMAT;
-    if (method == H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_LIST) {
+    if (method == H2_GIZCLAW_TOOL_WIFI_SAVED_LIST) {
       gizclaw_rpc_v1_ClientWifiSavedListResponse reply = {0};
       if (rc == H2_PAL_OK && saved.ssid_len) {
         reply.networks_count = 1;
@@ -546,7 +516,7 @@ static int wifi_rpc(h2_gizclaw_device_t *d, int method,
                        d->config.wifi_settings)
                  : H2_PAL_ERR_NOT_FOUND;
   }
-  if (method == H2_GIZCLAW_RPC_CLIENT_WIFI_SCAN) {
+  if (method == H2_GIZCLAW_TOOL_WIFI_SCAN) {
     gizclaw_rpc_v1_ClientWifiScanRequest request = {0};
     if (!decode(bytes, gizclaw_rpc_v1_ClientWifiScanRequest_fields, &request) ||
         (request.has_timeout_ms &&
@@ -562,7 +532,7 @@ static int wifi_rpc(h2_gizclaw_device_t *d, int method,
                         out)
                : rc;
   }
-  if (method == H2_GIZCLAW_RPC_CLIENT_WIFI_CONNECT) {
+  if (method == H2_GIZCLAW_TOOL_WIFI_CONNECT) {
     if (!d->config.wifi || !d->config.wifi->vtable ||
         !d->config.wifi->vtable->connect_and_save)
       return H2_PAL_ERR_UNSUPPORTED;
@@ -591,374 +561,69 @@ static int wifi_rpc(h2_gizclaw_device_t *d, int method,
   return H2_PAL_ERR_NOT_FOUND;
 }
 
-/* Mirrors deviceSettingsLocalePattern in the server's rpcapi: a 2-8 letter
- * primary subtag then hyphen-separated 1-8 character alphanumeric subtags, so
- * "zh_CN" and free text are rejected. */
-static bool ascii_alpha(char value) {
-  return (value >= 'a' && value <= 'z') || (value >= 'A' && value <= 'Z');
-}
-static bool ascii_alnum(char value) {
-  return ascii_alpha(value) || (value >= '0' && value <= '9');
-}
-/* The array comes straight from a product hook, so its length is measured
- * inside the buffer instead of with strlen(): a hook that fills all
- * H2_GIZCLAW_DEVICE_LOCALE_MAX + 1 bytes without a NUL is rejected here rather
- * than read past the end of h2_gizclaw_device_settings_t. */
-static bool locale_valid(const char locale[H2_GIZCLAW_DEVICE_LOCALE_MAX + 1]) {
-  size_t length = 0;
-  while (length <= H2_GIZCLAW_DEVICE_LOCALE_MAX && locale[length] != '\0')
-    ++length;
-  if (!length || length > H2_GIZCLAW_DEVICE_LOCALE_MAX)
-    return false;
-  size_t index = 0, start = 0;
-  while (index < length && ascii_alpha(locale[index]))
-    ++index;
-  if (index - start < 2 || index - start > 8)
-    return false;
-  while (index < length) {
-    if (locale[index] != '-')
-      return false;
-    start = ++index;
-    while (index < length && ascii_alnum(locale[index]))
-      ++index;
-    if (index - start < 1 || index - start > 8)
-      return false;
-  }
-  return true;
-}
-
-/* Mirrors rpcapi.DeviceSettings.Valid(): brightness in [0, 100], timeouts
- * non-negative, a well-formed locale, and each enum one of its named values. A
- * single invalid member rejects the whole value, so a set is refused before any
- * member is applied. */
-static bool settings_valid(const h2_gizclaw_device_settings_t *s) {
-  return (!s->has_screen_brightness ||
-          (s->screen_brightness >= 0 && s->screen_brightness <= 100)) &&
-         (!s->has_led_brightness ||
-          (s->led_brightness >= 0 && s->led_brightness <= 100)) &&
-         (!s->has_screen_off_timeout_ms || s->screen_off_timeout_ms >= 0) &&
-         (!s->has_auto_sleep_timeout_ms || s->auto_sleep_timeout_ms >= 0) &&
-         (!s->has_locale || locale_valid(s->locale)) &&
-         (!s->has_default_interaction_mode ||
-          s->default_interaction_mode ==
-              H2_GIZCLAW_DEVICE_INTERACTION_PUSH_TO_TALK ||
-          s->default_interaction_mode ==
-              H2_GIZCLAW_DEVICE_INTERACTION_REALTIME) &&
-         (!s->has_key_feedback ||
-          (s->key_feedback >= H2_GIZCLAW_DEVICE_KEY_FEEDBACK_NONE &&
-           s->key_feedback <=
-               H2_GIZCLAW_DEVICE_KEY_FEEDBACK_SOUND_AND_VIBRATE)) &&
-         (!s->has_alert_mode ||
-          (s->alert_mode >= H2_GIZCLAW_DEVICE_ALERT_SILENT &&
-           s->alert_mode <= H2_GIZCLAW_DEVICE_ALERT_RING));
-}
-
-static void settings_from_wire(const gizclaw_rpc_v1_DeviceSettings *wire,
-                               h2_gizclaw_device_settings_t *out) {
-  memset(out, 0, sizeof(*out));
-  out->has_cellular_enabled = wire->has_cellular_enabled;
-  out->cellular_enabled = wire->cellular_enabled;
-  out->has_screen_off_timeout_ms = wire->has_screen_off_timeout_ms;
-  out->screen_off_timeout_ms = wire->screen_off_timeout_ms;
-  out->has_screen_brightness = wire->has_screen_brightness;
-  out->screen_brightness = wire->screen_brightness;
-  out->has_led_brightness = wire->has_led_brightness;
-  out->led_brightness = wire->led_brightness;
-  out->has_locale = wire->has_locale;
-  _Static_assert(sizeof(out->locale) == sizeof(wire->locale),
-                 "DeviceSettings.locale bound drift");
-  memcpy(out->locale, wire->locale, sizeof(out->locale));
-  out->locale[sizeof(out->locale) - 1] = '\0';
-  out->has_default_interaction_mode = wire->has_default_interaction_mode;
-  out->default_interaction_mode =
-      (h2_gizclaw_device_interaction_mode_t)wire->default_interaction_mode;
-  out->has_key_feedback = wire->has_key_feedback;
-  out->key_feedback = (h2_gizclaw_device_key_feedback_t)wire->key_feedback;
-  out->has_alert_mode = wire->has_alert_mode;
-  out->alert_mode = (h2_gizclaw_device_alert_mode_t)wire->alert_mode;
-  out->has_auto_sleep_timeout_ms = wire->has_auto_sleep_timeout_ms;
-  out->auto_sleep_timeout_ms = wire->auto_sleep_timeout_ms;
-  out->has_nfc_enabled = wire->has_nfc_enabled;
-  out->nfc_enabled = wire->nfc_enabled;
-}
-
-static void settings_to_wire(const h2_gizclaw_device_settings_t *settings,
-                             gizclaw_rpc_v1_DeviceSettings *wire) {
-  memset(wire, 0, sizeof(*wire));
-  wire->has_cellular_enabled = settings->has_cellular_enabled;
-  wire->cellular_enabled = settings->cellular_enabled;
-  wire->has_screen_off_timeout_ms = settings->has_screen_off_timeout_ms;
-  wire->screen_off_timeout_ms = settings->screen_off_timeout_ms;
-  wire->has_screen_brightness = settings->has_screen_brightness;
-  wire->screen_brightness = settings->screen_brightness;
-  wire->has_led_brightness = settings->has_led_brightness;
-  wire->led_brightness = settings->led_brightness;
-  wire->has_locale = settings->has_locale;
-  memcpy(wire->locale, settings->locale, sizeof(wire->locale));
-  wire->locale[sizeof(wire->locale) - 1] = '\0';
-  wire->has_default_interaction_mode = settings->has_default_interaction_mode;
-  wire->default_interaction_mode = (gizclaw_rpc_v1_DeviceInteractionMode)
-      settings->default_interaction_mode;
-  wire->has_key_feedback = settings->has_key_feedback;
-  wire->key_feedback =
-      (gizclaw_rpc_v1_DeviceKeyFeedback)settings->key_feedback;
-  wire->has_alert_mode = settings->has_alert_mode;
-  wire->alert_mode = (gizclaw_rpc_v1_DeviceAlertMode)settings->alert_mode;
-  wire->has_auto_sleep_timeout_ms = settings->has_auto_sleep_timeout_ms;
-  wire->auto_sleep_timeout_ms = settings->auto_sleep_timeout_ms;
-  wire->has_nfc_enabled = settings->has_nfc_enabled;
-  wire->nfc_enabled = settings->nfc_enabled;
-}
-
-static int settings_rpc(h2_gizclaw_device_t *d, int method,
-                        h2_gizclaw_rpc_bytes_t bytes,
-                        h2_gizclaw_rpc_provider_response_t *out) {
-  const h2_gizclaw_vtable_t *v = d->config.vtable;
-  const bool get = method == H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_GET;
-  if (!v || (get ? !v->get_device_settings : !v->set_device_settings))
-    return H2_PAL_ERR_UNSUPPORTED;
-  h2_gizclaw_device_settings_t settings = {0};
-  int rc;
-  if (get) {
-    gizclaw_rpc_v1_ClientDeviceSettingsGetRequest empty = {0};
-    if (!decode(bytes, gizclaw_rpc_v1_ClientDeviceSettingsGetRequest_fields,
-                &empty))
-      return H2_PAL_ERR_INVALID_ARG;
-    rc = v->get_device_settings(d->config.user, &settings);
-  } else {
-    gizclaw_rpc_v1_ClientDeviceSettingsSetRequest request = {0};
-    if (!decode(bytes, gizclaw_rpc_v1_ClientDeviceSettingsSetRequest_fields,
-                &request))
-      return H2_PAL_ERR_INVALID_ARG;
-    if (!request.has_value)
-      return H2_PAL_ERR_INVALID_ARG;
-    h2_gizclaw_device_settings_t patch;
-    settings_from_wire(&request.value, &patch);
-    /* Reject the whole patch before the product applies any member, as the
-     * server does, so a caller never gets a partially applied set. */
-    if (!settings_valid(&patch))
-      return H2_PAL_ERR_INVALID_ARG;
-    rc = v->set_device_settings(d->config.user, &patch, &settings);
-  }
-  if (rc != H2_PAL_OK)
-    return rc;
-  /* A product reply is held to the same ranges: a value the server would
-   * reject fails the RPC instead of being sent, like a malformed get_facts. */
-  if (!settings_valid(&settings))
-    return H2_PAL_ERR_FORMAT;
-  gizclaw_rpc_v1_ClientDeviceSettingsGetResponse reply = {.has_value = true};
-  settings_to_wire(&settings, &reply.value);
-  return encode(d,
-                get ? gizclaw_rpc_v1_ClientDeviceSettingsGetResponse_fields
-                    : gizclaw_rpc_v1_ClientDeviceSettingsSetResponse_fields,
-                &reply, out);
-}
-
-/* Registry names of every client method the library can name, so
- * client.rpc.methods.get answers with registry names and service_init can
- * reject a product declaration it does not recognise. */
-typedef struct device_method {
-  int method;
-  const char *name;
-  /* Only the built-in provider dispatches these; a product must not declare
-   * them in rpc_provider_methods. */
-  bool built_in;
-} device_method_t;
-
-static const device_method_t device_method_names[] = {
-    {H2_GIZCLAW_RPC_CLIENT_INFO_GET, "client.info.get", true},
-    {H2_GIZCLAW_RPC_CLIENT_IDENTIFIERS_GET, "client.identifiers.get", true},
-    {H2_GIZCLAW_RPC_CLIENT_DEVICE_STATUS_GET, "client.device.status.get", true},
-    {H2_GIZCLAW_RPC_CLIENT_DEVICE_VOLUME_SET, "client.device.volume.set", true},
-    {H2_GIZCLAW_RPC_CLIENT_DEVICE_SOUND_PLAY, "client.device.sound.play", true},
-    {H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT, "client.device.reboot", true},
-    {H2_GIZCLAW_RPC_CLIENT_WIFI_STATUS_GET, "client.wifi.status.get", true},
-    {H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_LIST, "client.wifi.saved.list", true},
-    {H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_FORGET, "client.wifi.saved.forget", true},
-    {H2_GIZCLAW_RPC_CLIENT_WIFI_SCAN, "client.wifi.scan", true},
-    {H2_GIZCLAW_RPC_CLIENT_WIFI_CONNECT, "client.wifi.connect", true},
-    {H2_GIZCLAW_RPC_CLIENT_FIRMWARE_UPDATE, "client.firmware.update", true},
-    {H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_GET,
-     "client.device.audioplayer.get", true},
-    {H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_GET,
-     "client.device.audioplayer.playlist.get", true},
-    {H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_SET,
-     "client.device.audioplayer.playlist.set", true},
-    {H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_APPEND,
-     "client.device.audioplayer.playlist.append", true},
-    {H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAY,
-     "client.device.audioplayer.play", true},
-    {H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_STOP,
-     "client.device.audioplayer.stop", true},
-    {H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_MODE_SET,
-     "client.device.audioplayer.mode.set", true},
-    {H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_GET, "client.device.settings.get",
-     true},
-    {H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_SET, "client.device.settings.set",
-     true},
-    {H2_GIZCLAW_RPC_CLIENT_DEVICE_FACTORY_RESET, "client.device.factory_reset",
-     true},
-    {H2_GIZCLAW_RPC_CLIENT_RPC_METHODS_GET, "client.rpc.methods.get", true},
-    {H2_GIZCLAW_RPC_CLIENT_RUN_WORKSPACE_SET, "client.run.workspace.set", true},
-    {H2_GIZCLAW_RPC_CLIENT_TOOL_INVOKE, "client.tool.invoke", false},
-    {H2_GIZCLAW_RPC_CLIENT_DEVICE_FIND, "client.device.find", false},
-    {H2_GIZCLAW_RPC_CLIENT_SOCIAL_PING, "client.social.ping", false},
-};
-
-/* The capability each built-in method needs, holding exactly the conditions
- * device_rpc() uses to return UNSUPPORTED. The list client.rpc.methods.get
- * reports is derived from this, so it cannot advertise a method the device
- * would only fail; the service test drives both directions. */
 static bool device_supports(const h2_gizclaw_device_t *d, int method) {
   const h2_gizclaw_vtable_t *v = d->config.vtable;
   const h2_pal_wifi_sta_api_t *wifi = d->config.wifi;
   const h2_pal_wifi_settings_api_t *settings = d->config.wifi_settings;
   switch (method) {
-  case H2_GIZCLAW_RPC_CLIENT_INFO_GET:
-  case H2_GIZCLAW_RPC_CLIENT_IDENTIFIERS_GET:
-  case H2_GIZCLAW_RPC_CLIENT_DEVICE_STATUS_GET:
-  case H2_GIZCLAW_RPC_CLIENT_RPC_METHODS_GET:
+  case H2_GIZCLAW_TOOL_INFO_GET:
+  case H2_GIZCLAW_TOOL_IDENTIFIERS_GET:
+  case H2_GIZCLAW_TOOL_DEVICE_STATUS_GET:
     return true;
-  case H2_GIZCLAW_RPC_CLIENT_DEVICE_VOLUME_SET:
-    return d->config.audio && d->config.audio->vtable &&
-           d->config.audio->vtable->set_speaker_volume_percent;
-  case H2_GIZCLAW_RPC_CLIENT_DEVICE_SOUND_PLAY:
+  case H2_GIZCLAW_TOOL_SOUND_PLAY:
     return d->config.audio && v && v->resolve_sound_url;
-  case H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT:
+  case H2_GIZCLAW_TOOL_DEVICE_REBOOT:
     return (v && v->request_reboot) ||
            (d->config.power && d->config.power->vtable &&
             d->config.power->vtable->reboot);
-  case H2_GIZCLAW_RPC_CLIENT_WIFI_STATUS_GET:
-    return wifi && wifi->vtable && wifi->vtable->get_status;
-  case H2_GIZCLAW_RPC_CLIENT_WIFI_SCAN:
+  case H2_GIZCLAW_TOOL_WIFI_SCAN:
     return wifi && wifi->vtable && wifi->vtable->scan;
-  case H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_LIST:
+  case H2_GIZCLAW_TOOL_WIFI_SAVED_LIST:
     return settings && settings->vtable && settings->vtable->get_saved_sta_config;
-  case H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_FORGET:
+  case H2_GIZCLAW_TOOL_WIFI_SAVED_FORGET:
     return settings && settings->vtable &&
            settings->vtable->get_saved_sta_config &&
            settings->vtable->clear_saved_sta_config;
-  case H2_GIZCLAW_RPC_CLIENT_WIFI_CONNECT:
+  case H2_GIZCLAW_TOOL_WIFI_CONNECT:
     return wifi && wifi->vtable && wifi->vtable->connect_and_save;
-  case H2_GIZCLAW_RPC_CLIENT_FIRMWARE_UPDATE:
+  case H2_GIZCLAW_TOOL_FIRMWARE_UPDATE:
     return v && v->ota_begin && v->ota_write && v->ota_finish && v->ota_abort &&
            v->ota_activate && d->config.http;
-  case H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_GET:
-  case H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_GET:
-  case H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_SET:
-  case H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_APPEND:
-  case H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAY:
-  case H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_STOP:
-  case H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_MODE_SET:
+  case H2_GIZCLAW_TOOL_AUDIOPLAYER_GET:
+  case H2_GIZCLAW_TOOL_AUDIOPLAYER_PLAYLIST_GET:
+  case H2_GIZCLAW_TOOL_AUDIOPLAYER_PLAYLIST_SET:
+  case H2_GIZCLAW_TOOL_AUDIOPLAYER_PLAYLIST_APPEND:
+  case H2_GIZCLAW_TOOL_AUDIOPLAYER_PLAY:
+  case H2_GIZCLAW_TOOL_AUDIOPLAYER_STOP:
+  case H2_GIZCLAW_TOOL_AUDIOPLAYER_MODE_SET:
     return d->config.audio != NULL;
-  case H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_GET:
-    return v && v->get_device_settings;
-  case H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_SET:
-    return v && v->set_device_settings;
-  case H2_GIZCLAW_RPC_CLIENT_DEVICE_FACTORY_RESET:
+  case H2_GIZCLAW_TOOL_DEVICE_FACTORY_RESET:
     return v && v->request_factory_reset;
-  case H2_GIZCLAW_RPC_CLIENT_RUN_WORKSPACE_SET:
+  case H2_GIZCLAW_TOOL_RUN_WORKSPACE_SET:
     return v && v->request_run_workspace_set;
   default:
     return false;
   }
 }
 
-static bool device_method_declared(const h2_gizclaw_device_t *d, int method) {
-  for (size_t i = 0; i < d->config.rpc_provider_method_count; ++i) {
-    if (d->config.rpc_provider_methods[i] == method)
-      return true;
-  }
-  return false;
-}
-
-/* gizclaw_rpc_v1_ClientRpcMethodsGetResponse is char methods[160][64], 10 KiB,
- * which belongs on neither an embedded task stack nor a permanent allocation
- * for a control call answered a handful of times. The single repeated string
- * field is therefore written with nanopb's own primitives into the same
- * heap-managed response buffer encode() owns. */
-static int methods_reply(h2_gizclaw_device_t *d,
-                         h2_gizclaw_rpc_provider_response_t *out) {
-  const size_t count =
-      sizeof(device_method_names) / sizeof(device_method_names[0]);
-  size_t size = 0;
-  for (size_t i = 0; i < count; ++i) {
-    const device_method_t *entry = &device_method_names[i];
-    if (!(entry->built_in ? device_supports(d, entry->method)
-                          : device_method_declared(d, entry->method)))
-      continue;
-    /* Every registry name is under 64 bytes, so tag and length are one byte. */
-    size += 2u + strlen(entry->name);
-  }
-  if (size > d->response_capacity) {
-    uint8_t *buffer = h2_pal_mem_alloc(d->config.allocator, size);
-    if (!buffer)
-      return H2_PAL_ERR_NO_MEMORY;
-    h2_pal_mem_free(d->config.allocator, d->response);
-    d->response = buffer;
-    d->response_capacity = size;
-  }
-  pb_ostream_t output = pb_ostream_from_buffer(d->response, size);
-  for (size_t i = 0; i < count; ++i) {
-    const device_method_t *entry = &device_method_names[i];
-    if (!(entry->built_in ? device_supports(d, entry->method)
-                          : device_method_declared(d, entry->method)))
-      continue;
-    if (!pb_encode_tag(&output, PB_WT_STRING,
-                       gizclaw_rpc_v1_ClientRpcMethodsGetResponse_methods_tag) ||
-        !pb_encode_string(&output, (const pb_byte_t *)entry->name,
-                          strlen(entry->name)))
-      return H2_PAL_ERR_FORMAT;
-  }
-  out->payload = (h2_gizclaw_rpc_bytes_t){d->response, output.bytes_written};
-  return H2_PAL_OK;
-}
-
-static h2_pal_result_t
-validate_provider_methods(const h2_gizclaw_config_t *config) {
-  const size_t count = config->rpc_provider_method_count;
-  if (!count)
-    return H2_PAL_OK;
-  /* Without a provider the declared methods answer UNIMPLEMENTED through the
-   * fallback, so advertising them in client.rpc.methods.get would be a lie. */
-  if (config->rpc_provider_methods == NULL || config->rpc_provider == NULL ||
-      count > H2_GIZCLAW_RPC_PROVIDER_METHODS_MAX)
-    return H2_PAL_ERR_INVALID_ARG;
-  const size_t names =
-      sizeof(device_method_names) / sizeof(device_method_names[0]);
-  for (size_t i = 0; i < count; ++i) {
-    const h2_gizclaw_rpc_method_t method = config->rpc_provider_methods[i];
-    const device_method_t *entry = NULL;
-    for (size_t n = 0; n < names && entry == NULL; ++n) {
-      if (device_method_names[n].method == method)
-        entry = &device_method_names[n];
-    }
-    if (entry == NULL || entry->built_in)
-      return H2_PAL_ERR_INVALID_ARG;
-    for (size_t j = 0; j < i; ++j) {
-      if (config->rpc_provider_methods[j] == method)
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-  }
-  return H2_PAL_OK;
-}
-
-static int device_rpc(h2_gizclaw_device_t *d, int method,
-                      h2_gizclaw_rpc_bytes_t bytes,
-                      h2_gizclaw_rpc_provider_response_t *out) {
-  if (method >= 113 && method <= 119)
+static int device_tool(h2_gizclaw_device_t *d, int method,
+                       h2_gizclaw_rpc_bytes_t bytes,
+                       h2_gizclaw_rpc_provider_response_t *out) {
+  if (method >= H2_GIZCLAW_TOOL_AUDIOPLAYER_GET &&
+      method <= H2_GIZCLAW_TOOL_AUDIOPLAYER_PLAYLIST_APPEND)
     return player_rpc(d, method, bytes, out);
-  if ((method >= 104 && method <= 106) || method == 108 || method == 109)
+  if (method >= H2_GIZCLAW_TOOL_WIFI_SCAN &&
+      method <= H2_GIZCLAW_TOOL_WIFI_SAVED_FORGET)
     return wifi_rpc(d, method, bytes, out);
-  if (method == H2_GIZCLAW_RPC_CLIENT_INFO_GET ||
-      method == H2_GIZCLAW_RPC_CLIENT_IDENTIFIERS_GET ||
-      method == H2_GIZCLAW_RPC_CLIENT_DEVICE_STATUS_GET) {
+  if (method == H2_GIZCLAW_TOOL_INFO_GET ||
+      method == H2_GIZCLAW_TOOL_IDENTIFIERS_GET ||
+      method == H2_GIZCLAW_TOOL_DEVICE_STATUS_GET) {
     gizclaw_rpc_v1_ClientGetInfoRequest empty = {0};
     if (!decode(bytes, gizclaw_rpc_v1_ClientGetInfoRequest_fields, &empty))
       return H2_PAL_ERR_INVALID_ARG;
-    if (method == H2_GIZCLAW_RPC_CLIENT_DEVICE_STATUS_GET)
+    if (method == H2_GIZCLAW_TOOL_DEVICE_STATUS_GET)
       return status_reply(d, out);
-    if (method == H2_GIZCLAW_RPC_CLIENT_INFO_GET) {
+    if (method == H2_GIZCLAW_TOOL_INFO_GET) {
       gizclaw_rpc_v1_ClientGetInfoResponse reply = {.has_value = true};
       reply.value.manufacturer = string_field(d->config.manufacturer);
       reply.value.model = string_field(d->config.model);
@@ -986,23 +651,7 @@ static int device_rpc(h2_gizclaw_device_t *d, int method,
     return encode(d, gizclaw_rpc_v1_ClientGetIdentifiersResponse_fields, &reply,
                   out);
   }
-  if (method == H2_GIZCLAW_RPC_CLIENT_DEVICE_VOLUME_SET) {
-    if (!d->config.audio || !d->config.audio->vtable ||
-        !d->config.audio->vtable->set_speaker_volume_percent)
-      return H2_PAL_ERR_UNSUPPORTED;
-    gizclaw_rpc_v1_ClientDeviceVolumeSetRequest request = {0};
-    if (!decode(bytes, gizclaw_rpc_v1_ClientDeviceVolumeSetRequest_fields,
-                &request) ||
-        request.level < 0 || request.level > 100)
-      return H2_PAL_ERR_INVALID_ARG;
-    h2_runtime_t *runtime = d->service->config.runtime;
-    int rc = runtime && d->config.audio == runtime->audio
-        ? h2_runtime_audio_set_volume(runtime, (uint32_t)request.level, request.muted)
-        : h2_pal_audio_set_speaker_volume_percent(
-              d->config.audio, request.muted ? 0 : (uint32_t)request.level);
-    return rc == H2_PAL_OK ? status_reply(d, out) : rc;
-  }
-  if (method == H2_GIZCLAW_RPC_CLIENT_DEVICE_SOUND_PLAY) {
+  if (method == H2_GIZCLAW_TOOL_SOUND_PLAY) {
     if (!d->config.audio || !d->config.vtable ||
         !d->config.vtable->resolve_sound_url)
       return H2_PAL_ERR_UNSUPPORTED;
@@ -1022,7 +671,7 @@ static int device_rpc(h2_gizclaw_device_t *d, int method,
     unlock(d);
     return rc;
   }
-  if (method == H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT) {
+  if (method == H2_GIZCLAW_TOOL_DEVICE_REBOOT) {
     const bool product_reboot =
         d->config.vtable && d->config.vtable->request_reboot;
     if (!product_reboot &&
@@ -1042,7 +691,7 @@ static int device_rpc(h2_gizclaw_device_t *d, int method,
     unlock(d);
     return rc;
   }
-  if (method == H2_GIZCLAW_RPC_CLIENT_FIRMWARE_UPDATE) {
+  if (method == H2_GIZCLAW_TOOL_FIRMWARE_UPDATE) {
     const h2_gizclaw_vtable_t *v = d->config.vtable;
     if (!v || !v->ota_begin || !v->ota_write || !v->ota_finish ||
         !v->ota_abort || !v->ota_activate || !d->config.http)
@@ -1067,16 +716,7 @@ static int device_rpc(h2_gizclaw_device_t *d, int method,
     unlock(d);
     return rc;
   }
-  if (method == H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_GET ||
-      method == H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_SET)
-    return settings_rpc(d, method, bytes, out);
-  if (method == H2_GIZCLAW_RPC_CLIENT_RPC_METHODS_GET) {
-    gizclaw_rpc_v1_ClientRpcMethodsGetRequest empty = {0};
-    if (!decode(bytes, gizclaw_rpc_v1_ClientRpcMethodsGetRequest_fields, &empty))
-      return H2_PAL_ERR_INVALID_ARG;
-    return methods_reply(d, out);
-  }
-  if (method == H2_GIZCLAW_RPC_CLIENT_DEVICE_FACTORY_RESET) {
+  if (method == H2_GIZCLAW_TOOL_DEVICE_FACTORY_RESET) {
     if (!d->config.vtable || !d->config.vtable->request_factory_reset)
       return H2_PAL_ERR_UNSUPPORTED;
     gizclaw_rpc_v1_ClientDeviceFactoryResetRequest request = {0};
@@ -1090,7 +730,7 @@ static int device_rpc(h2_gizclaw_device_t *d, int method,
     unlock(d);
     return rc;
   }
-  if (method == H2_GIZCLAW_RPC_CLIENT_RUN_WORKSPACE_SET) {
+  if (method == H2_GIZCLAW_TOOL_RUN_WORKSPACE_SET) {
     if (!d->config.vtable || !d->config.vtable->request_run_workspace_set)
       return H2_PAL_ERR_UNSUPPORTED;
     gizclaw_rpc_v1_ClientRunWorkspaceSetRequest request = {0};
@@ -1113,8 +753,8 @@ static int device_rpc(h2_gizclaw_device_t *d, int method,
   }
   return H2_PAL_ERR_NOT_FOUND;
 }
-int h2_gizclaw_device_rpc_internal(
-    void *user, h2_gizclaw_rpc_method_t method, h2_gizclaw_rpc_bytes_t request,
+int h2_gizclaw_device_tool_internal(
+    void *user, h2_gizclaw_tool_t method, h2_gizclaw_rpc_bytes_t request,
     h2_gizclaw_rpc_provider_response_t *response) {
   h2_gizclaw_device_t *d = user;
   if (!d || !response || (request.len && !request.data))
@@ -1123,13 +763,8 @@ int h2_gizclaw_device_rpc_internal(
   if (h2_atomic_load(&d->stopping))
     return rpc_error(response, H2_GIZCLAW_RPC_ERROR_UNAVAILABLE,
                      "device stopping");
-  int rc = device_rpc(d, method, request, response);
+  int rc = device_tool(d, method, request, response);
   trace(d, "rpc", method, rc);
-  if (rc == H2_PAL_ERR_NOT_FOUND &&
-      method != H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_FORGET &&
-      d->config.rpc_provider)
-    return d->config.rpc_provider(d->config.rpc_provider_user, method, request,
-                                  response);
   if (rc == H2_PAL_OK)
     return rc;
   int code = H2_GIZCLAW_RPC_ERROR_INTERNAL;
@@ -1138,7 +773,7 @@ int h2_gizclaw_device_rpc_internal(
   else if (rc == H2_PAL_ERR_BUSY || rc == H2_PAL_ERR_NO_MEMORY)
     code = H2_GIZCLAW_RPC_ERROR_RESOURCE_EXHAUSTED;
   else if (rc == H2_PAL_ERR_NOT_FOUND &&
-           method == H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_FORGET)
+           method == H2_GIZCLAW_TOOL_WIFI_SAVED_FORGET)
     code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
   else if (rc == H2_PAL_ERR_UNSUPPORTED || rc == H2_PAL_ERR_NOT_FOUND)
     code = H2_GIZCLAW_RPC_ERROR_UNIMPLEMENTED;
@@ -2114,19 +1749,19 @@ static void device_worker(void *user) {
       report_player(d);
     if (pending) {
       trace(d, "action", pending, H2_PAL_OK);
-      if (pending == H2_GIZCLAW_RPC_CLIENT_FIRMWARE_UPDATE)
+      if (pending == H2_GIZCLAW_TOOL_FIRMWARE_UPDATE)
         update_firmware(d);
-      else if (pending == H2_GIZCLAW_RPC_CLIENT_DEVICE_SOUND_PLAY) {
+      else if (pending == H2_GIZCLAW_TOOL_SOUND_PLAY) {
         char sound_url[1025] = {0};
         int result = d->config.vtable->resolve_sound_url(
             d->config.user, d->sound, sound_url, sizeof(sound_url));
         if (result == H2_PAL_OK && sound_url[1024] == 0 && https_url(sound_url))
           (void)play_url(d, sound_url, d->sound_ms, false, 0, 0);
-      } else if (pending == H2_GIZCLAW_RPC_CLIENT_WIFI_CONNECT) {
+      } else if (pending == H2_GIZCLAW_TOOL_WIFI_CONNECT) {
         int rc = h2_pal_wifi_sta_connect_and_save(d->config.wifi, &d->wifi_config,
                                          io_timeout(d));
         trace(d, "wifi_connect", pending, rc);
-      } else if (pending == H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT) {
+      } else if (pending == H2_GIZCLAW_TOOL_DEVICE_REBOOT) {
         if (d->config.vtable && d->config.vtable->request_reboot) {
           /* Non-blocking handoff: the product copies the request and owns
            * the delay, its orderly shutdown and the reboot on its own
@@ -2146,7 +1781,7 @@ static void device_worker(void *user) {
           if (!h2_atomic_load(&d->stopping))
             (void)h2_pal_power_reboot(d->config.power, 0);
         }
-      } else if (pending == H2_GIZCLAW_RPC_CLIENT_DEVICE_FACTORY_RESET) {
+      } else if (pending == H2_GIZCLAW_TOOL_DEVICE_FACTORY_RESET) {
         /* Non-blocking handoff, like the reboot path: the product owns the
          * erase on its own owner and there is no library fallback. */
         if (!h2_atomic_load(&d->stopping)) {
@@ -2154,7 +1789,7 @@ static void device_worker(void *user) {
               d->config.user, d->keep_network);
           trace(d, "factory_reset_handoff", pending, handoff);
         }
-      } else if (pending == H2_GIZCLAW_RPC_CLIENT_RUN_WORKSPACE_SET) {
+      } else if (pending == H2_GIZCLAW_TOOL_RUN_WORKSPACE_SET) {
         /* The App owns the Session and its confirmed parameters, so the switch
          * is posted to the product rather than driven from here. */
         if (!h2_atomic_load(&d->stopping)) {
@@ -2250,18 +1885,23 @@ bool h2_gizclaw_device_action_pending_internal(h2_gizclaw_service_t *service) {
 
 h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service) {
   const h2_gizclaw_config_t *config = &service->client_config;
+  if (h2_gizclaw_tools_validate_internal(
+          config->tool_handlers, config->tool_handler_count) != H2_PAL_OK ||
+      h2_gizclaw_mhs_validate_internal(config->mhs_states,
+                                       config->mhs_state_count) != H2_PAL_OK)
+    return H2_PAL_ERR_INVALID_ARG;
   if (!config->audio && !config->wifi && !config->wifi_settings &&
       !config->power && !config->vtable && !config->manufacturer &&
       !config->model && !config->serial && !config->hardware_revision)
-    /* Nothing answers client.rpc.methods.get without the built-in provider, so
-     * a declared list would be silently ignored. */
-    return config->rpc_provider_method_count ? H2_PAL_ERR_INVALID_ARG
-                                             : H2_PAL_OK;
+    return H2_PAL_OK;
   if (!speaker_hooks_paired(config->vtable))
     return H2_PAL_ERR_INVALID_ARG;
-  h2_pal_result_t methods_rc = validate_provider_methods(config);
-  if (methods_rc != H2_PAL_OK)
-    return methods_rc;
+  for (size_t i = 0; i < config->tool_handler_count; ++i)
+    if (config->tool_handlers[i].tool != H2_GIZCLAW_TOOL_DEVICE_FIND &&
+        config->tool_handlers[i].tool != H2_GIZCLAW_TOOL_SOCIAL_PING)
+      return H2_PAL_ERR_INVALID_ARG;
+  if (config->mhs_state_count > SIZE_MAX / sizeof(h2_gizclaw_mhs_state_t) - 7u)
+    return H2_PAL_ERR_INVALID_ARG;
   size_t audio_capacity =
       config->audio_buffer_bytes ? config->audio_buffer_bytes : 65536u;
   if (config->audio && config->audio_prebuffer_bytes > audio_capacity)
@@ -2305,9 +1945,39 @@ h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service) {
     memset(d->playlist, 0, sizeof(*d->playlist));
     memset(d->incoming, 0, sizeof(*d->incoming));
   }
+  size_t tool_count = 0;
+  for (int tool = H2_GIZCLAW_TOOL_INFO_GET; tool <= H2_GIZCLAW_TOOL_SOCIAL_PING;
+       ++tool)
+    if (device_supports(d, tool))
+      d->tools[tool_count++] = (h2_gizclaw_tool_handler_t){
+          (h2_gizclaw_tool_t)tool, h2_gizclaw_device_tool_internal, d};
+  for (size_t i = 0; i < config->tool_handler_count; ++i)
+    d->tools[tool_count++] = config->tool_handlers[i];
+  d->mhs_builtin = (h2_gizclaw_mhs_builtin_t){config->audio, config->wifi,
+                                              service->config.runtime};
+  d->mhs_states =
+      h2_pal_mem_alloc(config->allocator,
+                       (config->mhs_state_count + 7u) * sizeof(*d->mhs_states));
+  if (!d->mhs_states) {
+    h2_gizclaw_device_destroy_internal(d);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  size_t state_count =
+      h2_gizclaw_mhs_builtins_internal(&d->mhs_builtin, d->mhs_states);
+  if (config->mhs_state_count)
+    memcpy(d->mhs_states + state_count, config->mhs_states,
+           config->mhs_state_count * sizeof(*d->mhs_states));
+  state_count += config->mhs_state_count;
+  rc = h2_gizclaw_mhs_validate_internal(d->mhs_states, state_count);
+  if (rc != H2_PAL_OK) {
+    h2_gizclaw_device_destroy_internal(d);
+    return rc;
+  }
   service->device = d;
-  service->client_config.rpc_provider = h2_gizclaw_device_rpc_internal;
-  service->client_config.rpc_provider_user = d;
+  service->client_config.tool_handlers = d->tools;
+  service->client_config.tool_handler_count = tool_count;
+  service->client_config.mhs_states = d->mhs_states;
+  service->client_config.mhs_state_count = state_count;
   return H2_PAL_OK;
 }
 h2_pal_result_t h2_gizclaw_device_start_internal(h2_gizclaw_device_t *d) {
@@ -2340,6 +2010,7 @@ void h2_gizclaw_device_destroy_internal(h2_gizclaw_device_t *d) {
     return;
   (void)h2_pal_mutex_destroy(d->service->config.sync, d->mutex);
   h2_pal_mem_free(d->config.allocator, d->response);
+  h2_pal_mem_free(d->config.allocator, d->mhs_states);
   h2_pal_mem_free(d->config.allocator, d->incoming);
   h2_pal_mem_free(d->config.allocator, d->playlist);
   h2_atomic_bool_destroy(&d->stopping);
@@ -2402,15 +2073,14 @@ h2_pal_result_t h2_gizclaw_player_stop(h2_gizclaw_service_t *service) {
   int rc = H2_PAL_OK;
   if (h2_atomic_load(&d->stopping))
     rc = H2_PAL_ERR_CLOSED;
-  else if (d->pending &&
-           d->pending != H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAY)
+  else if (d->pending && d->pending != H2_GIZCLAW_TOOL_AUDIOPLAYER_PLAY)
     rc = H2_PAL_ERR_BUSY;
   else
     cancel_play_locked(d);
   unlock(d);
   return rc;
 }
-/* Same selection the client.device.audioplayer.play RPC performs: validate
+/* Same selection the audioplayer.play RPC performs: validate
  * the index against the live playlist under the lock, then hand the worker
  * the new current track. Rejection happens before anything is mutated, so a
  * bad index or start cannot disturb the track already playing. */
@@ -2452,7 +2122,7 @@ h2_pal_result_t h2_gizclaw_player_play_index(h2_gizclaw_service_t *service,
                                              uint32_t index) {
   return h2_gizclaw_player_play_index_at(service, index, 0);
 }
-/* The device-side twin of client.device.audioplayer.playlist.set: the caller's
+/* The device-side twin of audioplayer.playlist.set: the caller's
  * spans are copied into the same staging buffer the RPC decodes into, under
  * the lock that keeps the two paths apart, and the swap is the shared handler.
  * A count that can never fit is INVALID_ARG rather than BUSY, since no later
@@ -2496,7 +2166,7 @@ h2_pal_result_t h2_gizclaw_player_playlist_set(
   unlock(d);
   return rc;
 }
-/* Device-side client.device.audioplayer.mode.set. Kept on the shared handler
+/* Device-side audioplayer.mode.set. Kept on the shared handler
  * so the accepted values cannot drift between the two callers, and so the
  * library keeps owning end-of-track advance for both. */
 h2_pal_result_t h2_gizclaw_player_repeat_set(h2_gizclaw_service_t *service,
@@ -2633,7 +2303,7 @@ h2_pal_result_t h2_gizclaw_ota_start(h2_gizclaw_service_t *service,
     d->update = update;
     d->ota_status = (h2_gizclaw_ota_status_t){H2_GIZCLAW_OTA_RUNNING, H2_PAL_OK};
     cancel_play_locked(d);
-    d->pending = H2_GIZCLAW_RPC_CLIENT_FIRMWARE_UPDATE;
+    d->pending = H2_GIZCLAW_TOOL_FIRMWARE_UPDATE;
     d->pending_ready = true;
   }
   unlock(d);
