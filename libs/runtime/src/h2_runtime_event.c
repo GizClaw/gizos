@@ -75,6 +75,139 @@ void h2_runtime_notify_internal(h2_runtime_t *runtime) {
     (void)h2_pal_queue_send(runtime->queue, wake, &token, H2_PAL_QUEUE_NO_WAIT);
 }
 
+static uint32_t add_dropped_event(h2_runtime_private_t *private_state) {
+    return h2_atomic_fetch_add_explicit(
+               &private_state->dropped_event_count, 1u,
+               H2_ATOMIC_RELAXED) +
+           1u;
+}
+
+void h2_runtime_record_dropped_event(
+    h2_runtime_t *runtime,
+    h2_runtime_event_kind_t kind,
+    h2_runtime_component_t component,
+    h2_runtime_component_id_t component_id) {
+    if (!h2_runtime_ready(runtime)) {
+        return;
+    }
+    h2_runtime_private_t *private_state = runtime->private_state;
+    h2_atomic_store_explicit(
+        &private_state->last_dropped_kind, (int)kind, H2_ATOMIC_RELAXED);
+    h2_atomic_store_explicit(
+        &private_state->last_dropped_component, (int)component,
+        H2_ATOMIC_RELAXED);
+    h2_atomic_store_explicit(
+        &private_state->last_dropped_component_id, component_id,
+        H2_ATOMIC_RELAXED);
+    (void)add_dropped_event(private_state);
+    h2_runtime_report_dropped_events(runtime);
+}
+
+/* Appends `text` and returns the new length; never writes past `capacity`. */
+static size_t append_text(
+    char *buffer, size_t length, size_t capacity, const char *text) {
+    while (*text != '\0' && length + 1u < capacity) {
+        buffer[length++] = *text++;
+    }
+    buffer[length] = '\0';
+    return length;
+}
+
+/* Decimal without printf, which some Runtime targets do not link. */
+static size_t append_decimal(
+    char *buffer, size_t length, size_t capacity, uint32_t value) {
+    char digits[11];
+    size_t count = 0u;
+    do {
+        digits[count++] = (char)('0' + (value % 10u));
+        value /= 10u;
+    } while (value != 0u);
+    while (count > 0u && length + 1u < capacity) {
+        buffer[length++] = digits[--count];
+    }
+    buffer[length] = '\0';
+    return length;
+}
+
+void h2_runtime_report_dropped_events(h2_runtime_t *runtime) {
+    if (!h2_runtime_ready(runtime)) {
+        return;
+    }
+    h2_runtime_private_t *private_state = runtime->private_state;
+    if (h2_atomic_flag_test_and_set(
+            &private_state->drop_report_lock, H2_ATOMIC_ACQUIRE)) {
+        return;
+    }
+    const uint32_t total = h2_atomic_load_explicit(
+        &private_state->dropped_event_count, H2_ATOMIC_RELAXED);
+    if (total != private_state->drop_reported_count) {
+        uint64_t now_ms = 0u;
+        if (h2_pal_time_get_monotonic_ms(runtime->time, &now_ms) != H2_PAL_OK) {
+            h2_atomic_flag_clear(
+                &private_state->drop_report_lock, H2_ATOMIC_RELEASE);
+            return;
+        }
+        if (private_state->drop_reported_once == 0 ||
+            (now_ms >= private_state->drop_reported_at_ms &&
+             now_ms - private_state->drop_reported_at_ms >=
+                 H2_RUNTIME_DROPPED_EVENT_WARN_INTERVAL_MS)) {
+            char message[128];
+            size_t length = 0u;
+            message[0] = '\0';
+            length = append_text(
+                message, length, sizeof(message),
+                "event queue full: dropped ");
+            length = append_decimal(
+                message, length, sizeof(message),
+                total - private_state->drop_reported_count);
+            length = append_text(
+                message, length, sizeof(message), " event(s), total ");
+            length = append_decimal(message, length, sizeof(message), total);
+            length = append_text(
+                message, length, sizeof(message), "; last kind ");
+            length = append_decimal(
+                message, length, sizeof(message),
+                (uint32_t)h2_atomic_load_explicit(
+                    &private_state->last_dropped_kind,
+                    H2_ATOMIC_RELAXED));
+            length = append_text(
+                message, length, sizeof(message), " component ");
+            length = append_decimal(
+                message, length, sizeof(message),
+                (uint32_t)h2_atomic_load_explicit(
+                    &private_state->last_dropped_component,
+                    H2_ATOMIC_RELAXED));
+            length = append_text(message, length, sizeof(message), " id ");
+            (void)append_decimal(
+                message, length, sizeof(message),
+                h2_atomic_load_explicit(
+                    &private_state->last_dropped_component_id,
+                    H2_ATOMIC_RELAXED));
+            (void)h2_pal_log_write(
+                runtime->log, H2_PAL_LOG_WARN, "runtime/event", message);
+            private_state->drop_reported_once = 1;
+            private_state->drop_reported_count = total;
+            private_state->drop_reported_at_ms = now_ms;
+        }
+    }
+    h2_atomic_flag_clear(
+        &private_state->drop_report_lock, H2_ATOMIC_RELEASE);
+}
+
+h2_pal_result_t h2_runtime_dropped_event_count(
+    const h2_runtime_t *runtime,
+    uint32_t *out_count) {
+    if (out_count != NULL) {
+        *out_count = 0u;
+    }
+    if (!h2_runtime_ready(runtime) || out_count == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    *out_count = h2_atomic_load_explicit(
+        &runtime->private_state->dropped_event_count, H2_ATOMIC_RELAXED);
+    return H2_PAL_OK;
+}
+
 h2_pal_result_t h2_runtime_enqueue_event(
     h2_runtime_t *runtime,
     const h2_runtime_queued_event_t *queued) {
@@ -86,7 +219,8 @@ h2_pal_result_t h2_runtime_enqueue_event(
         h2_pal_queue_send(runtime->queue, runtime->private_state->event_queue,
                           queued, H2_PAL_QUEUE_NO_WAIT);
     if (rc == H2_PAL_ERR_FULL || rc == H2_PAL_QUEUE_ERR_TIMEOUT) {
-        runtime->private_state->dropped_event_count += 1u;
+        h2_runtime_record_dropped_event(
+            runtime, queued->kind, queued->component, queued->component_id);
         return H2_PAL_OK;
     }
     if (rc == H2_PAL_OK) {
