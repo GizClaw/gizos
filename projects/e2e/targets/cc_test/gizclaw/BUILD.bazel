@@ -126,6 +126,11 @@ gizclaw_e2e_desktop_live_test(
 )
 
 gizclaw_e2e_desktop_live_test(
+    name = "gizclaw_h2peer_fence_live_test",
+    suite = "fence",
+)
+
+gizclaw_e2e_desktop_live_test(
     name = "gizclaw_pion_device_live_test",
     app = "//projects/e2e/apps/gizclaw/app:device_app",
     backend = "pion",

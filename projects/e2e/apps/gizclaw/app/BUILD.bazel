@@ -41,6 +41,7 @@ cc_library(
         "//libs/atomic",
         ":connectivity",
         ":device_case",
+        ":fence_case",
         ":fixture",
         ":request_cases",
         ":resource_case",
@@ -492,6 +493,37 @@ cc_test(
 )
 
 cc_library(
+    name = "fence_case",
+    srcs = ["src/h2_gizclaw_e2e_fence.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":runner_core",
+        "//libs/gizclaw",
+        "//libs/pal",
+    ],
+)
+
+cc_test(
+    name = "gizclaw_e2e_fence_test",
+    srcs = ["tests/test_h2_gizclaw_e2e_fence.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":fence_case",
+        "//libs/app_test:testing_pal",
+        "//libs/pal",
+    ],
+)
+
+cc_library(
     name = "runner",
     deps = [
         ":catalog_all",
@@ -536,6 +568,7 @@ cc_library(
         "src/h2_gizclaw_e2e_catalog.h",
         "src/h2_gizclaw_e2e_concurrency.h",
         "src/h2_gizclaw_e2e_firmware.h",
+        "src/h2_gizclaw_e2e_fence.h",
         "src/h2_gizclaw_e2e_report.h",
         "src/h2_gizclaw_e2e_resource.h",
         "src/h2_gizclaw_e2e_rpc.h",

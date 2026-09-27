@@ -80,6 +80,9 @@ struct DesktopSession {
   std::string endpoint;
   std::string token;
   std::string suite_name;
+  std::string fence_workflow_name;
+  std::string fence_first_id;
+  std::string fence_second_id;
   std::vector<uint8_t> pcm;
   h2::desktop::OwnedNetworkServices network;
   h2_corehttp_t *http_provider = nullptr;
@@ -249,6 +252,11 @@ int run_desktop(int argc, char **argv) {
   session->endpoint = options.endpoint;
   session->token = options.token;
   session->suite_name = options.suite_name;
+  if (options.suites == H2_GIZCLAW_E2E_SUITE_FENCE) {
+    session->fence_workflow_name = options.fence_workflow_name;
+    session->fence_first_id = options.fence_first_id;
+    session->fence_second_id = options.fence_second_id;
+  }
   const uint32_t suites = options.suites;
   auto &pcm = session->pcm;
   if ((suites & (H2_GIZCLAW_E2E_SUITE_RPC | H2_GIZCLAW_E2E_SUITE_VOICE)) !=
@@ -337,6 +345,9 @@ int run_desktop(int argc, char **argv) {
       .registration_token = {session->token.data(), session->token.size()},
       .device_api_url = std::getenv("H2_GIZCLAW_E2E_DEVICE_API_URL"),
       .device_audio_url = std::getenv("H2_GIZCLAW_E2E_AUDIO_URL"),
+      .fence_workflow_name = session->fence_workflow_name.c_str(),
+      .fence_first_id = session->fence_first_id.c_str(),
+      .fence_second_id = session->fence_second_id.c_str(),
       .device_real_audio = false,
       .voice_audio = nullptr,
       .voice_pcm_s16le_16khz_mono = pcm.empty() ? nullptr : pcm.data(),
