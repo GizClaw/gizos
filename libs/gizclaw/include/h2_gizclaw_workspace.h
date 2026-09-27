@@ -133,6 +133,15 @@ typedef enum h2_gizclaw_agent_initiative_policy {
   H2_GIZCLAW_AGENT_INITIATIVE_ON_RELOAD = 2,
 } h2_gizclaw_agent_initiative_policy_t;
 
+/** Server-side safety fence selection; RuntimeProfile owns complete prompt
+ * text and the Workflow must reference it to enable injection. CHILD does not
+ * inherit GENERAL. This enum does not define product age or protection tiers. */
+typedef enum h2_gizclaw_safety_fence_level {
+  H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF = 1,
+  H2_GIZCLAW_SAFETY_FENCE_LEVEL_GENERAL = 2,
+  H2_GIZCLAW_SAFETY_FENCE_LEVEL_CHILD = 3,
+} h2_gizclaw_safety_fence_level_t;
+
 #define H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MIN_PERCENT 50
 #define H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MAX_PERCENT 200
 
@@ -157,6 +166,15 @@ typedef struct h2_gizclaw_workspace_parameters_patch {
   h2_gizclaw_agent_initiative_policy_t agent_initiative_policy;
   bool has_tts_speech_rate_percent;
   int32_t tts_speech_rate_percent;
+  /** When false, preserve the stored fence and ignore safety_fence_level. */
+  bool has_safety_fence_level;
+  /** Applies on the next reload. When present, only OFF, GENERAL and CHILD
+   * are valid; all other values return H2_PAL_ERR_INVALID_ARG before I/O.
+   * parameters.set only stores the selection. reload-with-options can store
+   * it even when reload fails (for example, a missing RuntimeProfile prompt);
+   * failure does not roll back server storage or confirm an applied fence.
+   * SFU accepts it as a no-op. ASTTranslate stores it without injection. */
+  h2_gizclaw_safety_fence_level_t safety_fence_level;
 } h2_gizclaw_workspace_parameters_patch_t;
 
 h2_pal_result_t h2_gizclaw_req_create_workspace_set_parameters(

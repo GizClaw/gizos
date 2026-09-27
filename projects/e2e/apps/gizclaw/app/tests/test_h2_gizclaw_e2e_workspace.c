@@ -423,7 +423,9 @@ h2_pal_result_t h2_gizclaw_req_create_workspace_set_parameters(
     const h2_gizclaw_workspace_parameters_patch_t *parameters, uint32_t timeout,
     h2_gizclaw_req_t **out) {
   assert(parameters && parameters->has_input &&
-         parameters->input == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK);
+         parameters->input == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK &&
+         parameters->has_safety_fence_level &&
+         parameters->safety_fence_level == H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF);
   return create_req(INPUT, s, id, name, h2_gizclaw_e2e_str(""), timeout, out);
 }
 h2_pal_result_t
@@ -437,7 +439,9 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_set_parameters(
     const h2_gizclaw_workspace_parameters_patch_t *parameters, uint32_t timeout,
     h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workspace_t *out) {
   assert(parameters && parameters->has_input &&
-         parameters->input == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK);
+         parameters->input == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK &&
+         parameters->has_safety_fence_level &&
+         parameters->safety_fence_level == H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF);
   return rpc(INPUT, s, name, h2_gizclaw_e2e_str(""), timeout, storage, out);
 }
 
@@ -512,7 +516,9 @@ h2_pal_result_t h2_gizclaw_req_create_workspace_reload_with_options(h2_gizclaw_s
                                                        uint32_t timeout,
                                                        h2_gizclaw_req_t **out) {
   assert(parameters && parameters->has_input &&
-         parameters->input == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK);
+         parameters->input == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK &&
+         parameters->has_safety_fence_level &&
+         parameters->safety_fence_level == H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF);
   return create_req(RELOAD_OPTIONS, s, id,
                     name,
                     h2_gizclaw_e2e_str(""), timeout, out);
@@ -529,7 +535,9 @@ h2_gizclaw_rpc_workspace_reload_with_options(h2_gizclaw_service_t *s, h2_gizclaw
                                 h2_gizclaw_resp_storage_t *storage,
                                 h2_gizclaw_workspace_activation_t *out) {
   assert(parameters && parameters->has_input &&
-         parameters->input == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK);
+         parameters->input == H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK &&
+         parameters->has_safety_fence_level &&
+         parameters->safety_fence_level == H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF);
   return rpc(RELOAD_OPTIONS, s, name,
              h2_gizclaw_e2e_str(""), timeout, storage, out);
 }

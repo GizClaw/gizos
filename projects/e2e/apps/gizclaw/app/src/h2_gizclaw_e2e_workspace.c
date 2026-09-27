@@ -123,7 +123,9 @@ static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
           service, id, name,
           &(h2_gizclaw_workspace_parameters_patch_t){
               .has_input = true,
-              .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK},
+              .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
+              .has_safety_fence_level = true,
+              .safety_fence_level = H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF},
           TIMEOUT_MS, &request);
       break;
     case DELETE:
@@ -143,7 +145,9 @@ static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
           service, id, name,
           &(h2_gizclaw_workspace_parameters_patch_t){
               .has_input = true,
-              .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK},
+              .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
+              .has_safety_fence_level = true,
+              .safety_fence_level = H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF},
           TIMEOUT_MS, &request);
       break;
     case HISTORY:
@@ -229,7 +233,9 @@ static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
           service, name,
           &(h2_gizclaw_workspace_parameters_patch_t){
               .has_input = true,
-              .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK},
+              .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
+              .has_safety_fence_level = true,
+              .safety_fence_level = H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF},
           TIMEOUT_MS, s, &out->object);
       break;
     case DELETE:
@@ -249,7 +255,9 @@ static int call(h2_gizclaw_e2e_fixture_t *f, h2_gizclaw_resp_storage_t *s,
           service, name,
           &(h2_gizclaw_workspace_parameters_patch_t){
               .has_input = true,
-              .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK},
+              .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK,
+              .has_safety_fence_level = true,
+              .safety_fence_level = H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF},
           TIMEOUT_MS, s, &out->activation);
       break;
     case HISTORY:

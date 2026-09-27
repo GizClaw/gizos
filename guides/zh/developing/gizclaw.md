@@ -18,7 +18,7 @@ Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Work
 
 依赖的 GizClaw C SDK 固定为 0.22.0。自 0.17.0 起，`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
 
-`h2_gizclaw_workspace_parameters_patch_t` 通过独立 `has_*` 标记选择 input（PTT/Realtime）、conversation initiative（peer/agent）、agent initiative policy（once_when_empty/on_reload）和 TTS 语速（见 [Workspace 参数补丁](#workspace-参数补丁)）。`workspace_set_parameters` 至少指定一个字段；显式的无效枚举值、空 patch、非法名称在发送前返回 INVALID_ARG。create 编码并持有 patch 数据，调用方随后可释放或修改原对象；同步入口沿用同一 request/parse 流程。
+`h2_gizclaw_workspace_parameters_patch_t` 通过独立 `has_*` 标记选择 input（PTT/Realtime）、conversation initiative（peer/agent）、agent initiative policy（once_when_empty/on_reload）、TTS 语速和安全围栏档位（见 [Workspace 参数补丁](#workspace-参数补丁)）。`workspace_set_parameters` 至少指定一个字段；显式的无效枚举值、空 patch、非法名称在发送前返回 INVALID_ARG。create 编码并持有 patch 数据，调用方随后可释放或修改原对象；同步入口沿用同一 request/parse 流程。
 
 客户端只发送指定字段，不先 GET typed `WorkspaceParameters`，不解析或重写其 agent_type，也不再依据未知、额外、缺失或重复的服务端 typed 参数字段拒绝更新。服务端根据绑定的 Workflow driver 校验 patch、合并指定字段并保留其他参数；不支持的 driver/字段通过原有远端错误路径返回。公开 patch 是固定的可写字段集合，不是对服务端 metadata 的封闭枚举。SFU input 支持由上游实现，E2E 保留真实配置请求，不能通过跳过它声称完整验收通过。
 
@@ -210,6 +210,20 @@ Provider 在 `h2_gizclaw_client_poll()` 所在线程同步运行。上游 C SDK 
 只改语速的补丁是完整的补丁：`h2_gizclaw_session_select()` 会因为已确认参数不同而重新
 reload，不会被当成“参数没变”跳过，成功后语速出现在
 `h2_gizclaw_session_snapshot().parameters` 里。
+
+### 安全围栏
+
+可选 `has_safety_fence_level` / `safety_fence_level` 对应服务端 OFF、GENERAL、CHILD。两条 RPC 都使用 SDK 0.22.0 的 nanopb optional field 4，并通过具名 enum 显式映射；present 的零值、负值和 unknown enum 在创建请求前返回 `H2_PAL_ERR_INVALID_ARG`，不产生 RPC。absent 忽略 enum 存储值并保留服务端已有档位；只包含围栏的 patch 也有效。请求复制 patch，调用方不需要保留原始存储。
+
+`parameters.set` 保存档位，下一次 reload 才应用。`reload-with-options` 的保存和 reload 不是同一事务：缺少 Profile 文案等错误可以发生在档位已经保存之后，失败不回滚服务端存储。Session 只在目标 Workspace 的 RUNNING 激活确认后合并 present 档位；失败、错误名称、非 RUNNING、格式错误、超时或关闭后的迟到响应均不能把请求档位发布为 confirmed。FAILED 状态保留此前确认值用于显示，不表示服务端仍存该值。
+
+同一 Workspace 上的普通省略保留 confirmed 档位；成功切换到另一 Workspace 时，旧 Workspace 的 confirmed 档位失效。同步 `parameters.set` 与 Session 的选择、reload 共享串行请求槽，但不停止当前对话，也不提前改变已确认档位。一次可能已发送的围栏 set 或失败的围栏 reload 后，后续省略档位的成功 reload 只能把围栏标为 unknown：本库没有读取服务端 typed Workspace parameters，不能从旧快照推断最新保存值。再次显式设置档位且 reload 成功才恢复确认；Session 不会因为请求恰好等于旧 confirmed 值而跳过必要的 reload。
+
+实际围栏文案属于 RuntimeProfile 的 `spec.safety_fences.general.prompt` / `child.prompt`，各自为 1–4096 个 Unicode 字符，child 不继承 general。Flowcraft 的 Workflow 必须引用 `${board.safety_fence}`，Eino 必须绑定 `input.safety_fence`，Realtime Workflow 必须在 instructions 中引用 `${input.safety_fence}`。缺少所选 Profile 条目时，支持注入的 driver reload 明确失败；没有引用变量的 Workflow 不会注入围栏。ASTTranslate 保存合法值但不注入，SFU 接受合法值但 no-op。RPC 成功和 Session confirmed patch 都不是内容审核效果或产品档位回读的证明，设备不执行替代性的本地关键词过滤。
+
+公共三档不定义 H106 的安全、守护、纯净、严格四档，也不定义产品年龄过滤。产品接入还需服务端 capability/readback 合同、完整的 Profile 文案及各 Workflow 注入点，不能把 OFF 当成已有儿童保护底线的“安全”档。
+
+围栏测试包括两种 RPC 的 31 个非空 patch 组合、三档线字节、复制 ownership、非法值零 RPC，以及生产 Session → request → nanopb → response parse → snapshot 的参数流和错误路径。现有 Workspace E2E consumer 发送 OFF 以覆盖该字段，不要求业务 Profile 配置围栏文案；它不证明 GENERAL/CHILD 的文本注入。真实服务器验收必须另用已配置的隔离测试 Profile，验证档位保存、遗漏保留、缺 child 文案失败且保存未回滚、恢复和 Workflow 注入，记录 endpoint、Profile revision、服务端版本与清理结果。
 
 ## 设备 Debug 访问模式
 

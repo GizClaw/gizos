@@ -512,6 +512,29 @@ static bool workspace_speech_rate_valid(
               H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MAX_PERCENT);
 }
 
+/* A NULL output validates the value before request allocation or network I/O. */
+static bool workspace_safety_fence_level_map(
+    h2_gizclaw_safety_fence_level_t level,
+    gizclaw_rpc_v1_SafetyFenceLevel *out_level) {
+  gizclaw_rpc_v1_SafetyFenceLevel mapped;
+  switch (level) {
+  case H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF:
+    mapped = gizclaw_rpc_v1_SafetyFenceLevel_SAFETY_FENCE_LEVEL_OFF;
+    break;
+  case H2_GIZCLAW_SAFETY_FENCE_LEVEL_GENERAL:
+    mapped = gizclaw_rpc_v1_SafetyFenceLevel_SAFETY_FENCE_LEVEL_GENERAL;
+    break;
+  case H2_GIZCLAW_SAFETY_FENCE_LEVEL_CHILD:
+    mapped = gizclaw_rpc_v1_SafetyFenceLevel_SAFETY_FENCE_LEVEL_CHILD;
+    break;
+  default:
+    return false;
+  }
+  if (out_level != NULL)
+    *out_level = mapped;
+  return true;
+}
+
 static bool protobuf_read_varint(const uint8_t *data, size_t len,
                                  size_t *offset, uint64_t *out_value) {
   uint64_t value = 0u;
@@ -737,6 +760,13 @@ static h2_pal_result_t workspace_request_start(workspace_context_t *request) {
         request->parameters.has_tts_speech_rate_percent;
     message.parameters.tts_speech_rate_percent =
         request->parameters.tts_speech_rate_percent;
+    message.parameters.has_safety_fence_level =
+        request->parameters.has_safety_fence_level;
+    if (request->parameters.has_safety_fence_level &&
+        !workspace_safety_fence_level_map(
+            request->parameters.safety_fence_level,
+            &message.parameters.safety_fence_level))
+      return H2_PAL_ERR_INVALID_ARG;
     return workspace_request_start_message(
         request, H2_GIZCLAW_RPC_SERVER_WORKSPACE_PARAMETERS_SET,
         gizclaw_rpc_v1_WorkspaceParametersSetRequest_fields, &message);
@@ -1101,8 +1131,12 @@ h2_pal_result_t h2_gizclaw_req_create_workspace_set_parameters(
         parameters != NULL &&
         (parameters->has_input || parameters->has_initiative ||
          parameters->has_agent_initiative_policy ||
-         parameters->has_tts_speech_rate_percent) &&
+         parameters->has_tts_speech_rate_percent ||
+         parameters->has_safety_fence_level) &&
         workspace_speech_rate_valid(parameters) &&
+        (!parameters->has_safety_fence_level ||
+         workspace_safety_fence_level_map(parameters->safety_fence_level,
+                                         NULL)) &&
         (!parameters->has_input ||
          workspace_input_mode_valid(parameters->input)) &&
         (!parameters->has_initiative ||
@@ -1159,6 +1193,14 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_set_parameters(
   h2_gizclaw_req_t *request = NULL;
   h2_pal_result_t rc = h2_gizclaw_req_create_workspace_set_parameters(
       service, 0u, name, parameters, timeout_ms, &request);
+  h2_gizclaw_session_t *session = NULL;
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_service_acquire_session_internal(service, &session);
+  bool transition = false;
+  if (rc == H2_PAL_OK) {
+    rc = h2_gizclaw_session_parameters_begin_internal(session, name, parameters);
+    transition = rc == H2_PAL_OK && session != NULL;
+  }
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
   if (rc == H2_PAL_OK)
@@ -1166,6 +1208,10 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_set_parameters(
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_resp_parse_workspace_set_parameters(request, storage,
                                                         out_result);
+  if (transition)
+    rc = h2_gizclaw_session_parameters_finish_internal(session, rc);
+  if (session != NULL)
+    h2_gizclaw_service_release_session_internal(service);
   h2_gizclaw_req_release(request);
   return rc;
 }
@@ -1328,6 +1374,9 @@ h2_pal_result_t h2_gizclaw_req_create_workspace_reload_with_options(
       (name.len != 0u && !valid_token(name, H2_GIZCLAW_WORKSPACE_NAME_MAX_BYTES)) ||
       (parameters != NULL &&
        (!workspace_speech_rate_valid(parameters) ||
+        (parameters->has_safety_fence_level &&
+         !workspace_safety_fence_level_map(parameters->safety_fence_level,
+                                          NULL)) ||
         (parameters->has_input && !workspace_input_mode_valid(parameters->input)) ||
         (parameters->has_initiative &&
          (parameters->initiative < 1 || parameters->initiative > 2)) ||
@@ -1364,6 +1413,11 @@ h2_pal_result_t h2_gizclaw_req_create_workspace_reload_with_options(
         parameters->has_tts_speech_rate_percent;
     message.parameters.tts_speech_rate_percent =
         parameters->tts_speech_rate_percent;
+    message.parameters.has_safety_fence_level = parameters->has_safety_fence_level;
+    if (parameters->has_safety_fence_level &&
+        !workspace_safety_fence_level_map(parameters->safety_fence_level,
+                                         &message.parameters.safety_fence_level))
+      return H2_PAL_ERR_INVALID_ARG;
   }
   uint8_t *payload = NULL;
   size_t len = 0u;
@@ -1473,7 +1527,7 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_activate(
     rc = h2_gizclaw_resp_parse_workspace_activate(request, storage, out_result);
   if (transition) {
     rc = h2_gizclaw_session_workspace_finish_internal(session, rc, out_result,
-                                                      NULL);
+                                                      NULL, false);
   }
   if (session != NULL)
     h2_gizclaw_service_release_session_internal(service);
@@ -1516,7 +1570,7 @@ h2_gizclaw_rpc_workspace_reload(h2_gizclaw_service_t *service,
          out_result->active_workspace_name == NULL))
       rc = H2_PAL_ERR_INVALID_STATE;
     rc = h2_gizclaw_session_workspace_finish_internal(session, rc, out_result,
-                                                      NULL);
+                                                      NULL, true);
   }
   if (session != NULL)
     h2_gizclaw_service_release_session_internal(service);
@@ -1560,7 +1614,7 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_reload_with_options(
          out_result->active_workspace_name == NULL))
       rc = H2_PAL_ERR_INVALID_STATE;
     rc = h2_gizclaw_session_workspace_finish_internal(session, rc, out_result,
-                                                      parameters);
+                                                      parameters, true);
   }
   if (session != NULL)
     h2_gizclaw_service_release_session_internal(service);

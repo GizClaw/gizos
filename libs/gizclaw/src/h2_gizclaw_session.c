@@ -15,6 +15,9 @@ struct h2_gizclaw_session {
   h2_gizclaw_session_state_t state;
   bool busy;
   bool workspace_rpc_active;
+  /* parameters.set or an uncertain reload can change storage independently of
+   * the last confirmed run. An omitted fence cannot confirm that stored value. */
+  bool safety_fence_dirty;
   bool restarting_input; /* Owns the route across cancellation dispatch. */
   bool closed;
   uint64_t operation_generation;
@@ -88,7 +91,12 @@ static h2_gizclaw_str_t str(const char *text) {
 static bool patch_valid(const h2_gizclaw_workspace_parameters_patch_t *p) {
   return p == NULL ||
          ((p->has_input || p->has_initiative ||
-           p->has_agent_initiative_policy || p->has_tts_speech_rate_percent) &&
+           p->has_agent_initiative_policy || p->has_tts_speech_rate_percent ||
+           p->has_safety_fence_level) &&
+          (!p->has_safety_fence_level ||
+           p->safety_fence_level == H2_GIZCLAW_SAFETY_FENCE_LEVEL_OFF ||
+           p->safety_fence_level == H2_GIZCLAW_SAFETY_FENCE_LEVEL_GENERAL ||
+           p->safety_fence_level == H2_GIZCLAW_SAFETY_FENCE_LEVEL_CHILD) &&
           (!p->has_tts_speech_rate_percent ||
            (p->tts_speech_rate_percent >=
                 H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MIN_PERCENT &&
@@ -116,7 +124,10 @@ static bool patch_same(const h2_gizclaw_workspace_parameters_patch_t *a,
            a->agent_initiative_policy == b->agent_initiative_policy)) &&
          (!b->has_tts_speech_rate_percent ||
           (a->has_tts_speech_rate_percent &&
-           a->tts_speech_rate_percent == b->tts_speech_rate_percent));
+           a->tts_speech_rate_percent == b->tts_speech_rate_percent)) &&
+         (!b->has_safety_fence_level ||
+          (a->has_safety_fence_level &&
+           a->safety_fence_level == b->safety_fence_level));
 }
 
 h2_pal_result_t
@@ -939,6 +950,7 @@ select_workspace(h2_gizclaw_session_t *s,
                (s->config.catalog_sink != NULL ||
                 catalog_contains_selection(s, selection)) &&
                s->state.workspace == H2_GIZCLAW_SESSION_READY &&
+               !s->safety_fence_dirty &&
                same(s->state.current_workspace, selection->workspace_name) &&
                (selection->workflow_name == NULL ||
                 same(s->state.workflow_name, selection->workflow_name)) &&
@@ -1366,16 +1378,53 @@ h2_pal_result_t h2_gizclaw_session_workspace_delete_finish_internal(
   return result;
 }
 
+h2_pal_result_t h2_gizclaw_session_parameters_begin_internal(
+    h2_gizclaw_session_t *s, h2_gizclaw_str_t name,
+    const h2_gizclaw_workspace_parameters_patch_t *p) {
+  if (s == NULL)
+    return H2_PAL_OK;
+  h2_pal_result_t rc = lock(s);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (s->closed)
+    rc = H2_PAL_ERR_CLOSED;
+  else if (s->busy || s->workspace_rpc_active || s->restarting_input)
+    rc = H2_PAL_ERR_BUSY;
+  else {
+    s->workspace_rpc_active = true;
+    if (p->has_safety_fence_level &&
+        name.len == strlen(s->state.current_workspace) &&
+        memcmp(name.data, s->state.current_workspace, name.len) == 0)
+      s->safety_fence_dirty = true;
+  }
+  unlock(s);
+  return rc;
+}
+
+h2_pal_result_t h2_gizclaw_session_parameters_finish_internal(
+    h2_gizclaw_session_t *s, h2_pal_result_t result) {
+  if (s == NULL)
+    return result;
+  h2_pal_result_t rc = lock(s);
+  if (rc != H2_PAL_OK)
+    return rc;
+  s->workspace_rpc_active = false;
+  unlock(s);
+  return result;
+}
+
 h2_pal_result_t h2_gizclaw_session_workspace_finish_internal(
     h2_gizclaw_session_t *s, h2_pal_result_t result,
     const h2_gizclaw_workspace_activation_t *activation,
-    const h2_gizclaw_workspace_parameters_patch_t *p) {
+    const h2_gizclaw_workspace_parameters_patch_t *p, bool reloaded) {
   if (s == NULL)
     return result;
   h2_pal_result_t lock_rc = lock(s);
   if (lock_rc != H2_PAL_OK)
     return lock_rc;
   s->workspace_rpc_active = false;
+  if (s->closed || (s->busy && s->operation_generation != s->state.generation))
+    result = H2_PAL_ERR_CLOSED;
   if (!s->closed &&
       (!s->busy || s->operation_generation == s->state.generation)) {
     if (result == H2_PAL_OK && activation != NULL &&
@@ -1403,7 +1452,20 @@ h2_pal_result_t h2_gizclaw_session_workspace_finish_internal(
     s->state.workspace = result != H2_PAL_OK ? H2_GIZCLAW_SESSION_FAILED
                          : applied           ? H2_GIZCLAW_SESSION_READY
                                              : H2_GIZCLAW_SESSION_PREPARING;
+    if (!applied && p != NULL && p->has_safety_fence_level)
+      s->safety_fence_dirty = true;
     if (applied) {
+      /* A fence confirmed for one Workspace says nothing about another one's
+       * stored selection. Omission only preserves confirmation on the same
+       * Workspace; a failed switch keeps the old snapshot for display. */
+      if ((reloaded && s->safety_fence_dirty) ||
+          (activation != NULL && activation->active_workspace_name != NULL &&
+           !same(activation->active_workspace_name, s->state.current_workspace))) {
+        s->state.parameters.has_safety_fence_level = false;
+        s->state.parameters.safety_fence_level = 0;
+      }
+      if (reloaded)
+        s->safety_fence_dirty = false;
       if (activation != NULL && activation->active_workspace_name != NULL)
         snprintf(s->state.current_workspace, sizeof(s->state.current_workspace),
                  "%s", activation->active_workspace_name);
@@ -1425,6 +1487,10 @@ h2_pal_result_t h2_gizclaw_session_workspace_finish_internal(
           s->state.parameters.has_tts_speech_rate_percent = true;
           s->state.parameters.tts_speech_rate_percent =
               p->tts_speech_rate_percent;
+        }
+        if (p->has_safety_fence_level) {
+          s->state.parameters.has_safety_fence_level = true;
+          s->state.parameters.safety_fence_level = p->safety_fence_level;
         }
       }
     }

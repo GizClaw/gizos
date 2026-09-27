@@ -55,6 +55,15 @@ typedef struct h2_gizclaw_session_state {
   h2_gizclaw_session_conversation_phase_t conversation;
   bool conversation_input_open;
   /** Confirmed workspace parameters. Unset patch members preserve these values.
+   * Fence confirmation belongs to current_workspace: omission on a different
+   * Workspace leaves the fence unknown. Only a successful RUNNING activation
+   * confirms a fence patch. A failed reload retains the last confirmation for
+   * display, but server storage may already have changed; inspect workspace
+   * and last_error before treating it as current. This is no server parameter
+   * readback or guarantee of Workflow prompt injection.
+   * After parameters.set or an uncertain fence reload, an omitted successful
+   * reload leaves the fence unknown; an explicit successful patch reconfirms
+   * it. Storage-only updates serialize with Session selection and reload.
    * input distinguishes PTT (IDLE/RECORDING/WAITING) from realtime
    * (IDLE/CALLING). Errors are results, never conversation phases. */
   h2_gizclaw_workspace_parameters_patch_t parameters;
