@@ -1,0 +1,16 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("//tools/bazel:cc_options.bzl", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_binary(
+    name = "recording-smoke",
+    srcs = ["main.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    deps = [
+        "//libs/desktop_recording",
+        "//libs/lvgl:platform",
+        "//libs/pal/providers/desktop/app_support",
+    ],
+)

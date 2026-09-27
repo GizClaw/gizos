@@ -19,6 +19,8 @@ struct h2_sdl3 {
   SDL_Renderer *renderer = nullptr;
   SDL_Texture *texture = nullptr;
   uint16_t *framebuffer = nullptr;
+  h2_sdl3_frame_capture_fn capture = nullptr;
+  void *capture_user = nullptr;
   bool active = false;
   bool init_attempted = false;
   int init_result = H2_DISPLAY_ERR_UNAVAILABLE;

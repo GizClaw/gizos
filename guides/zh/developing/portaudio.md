@@ -22,3 +22,9 @@ bazel test --config=linux_x86_64 //libs/pal/providers/portaudio:all
 ```
 
 Unit test 使用 provider test seam 覆盖参数、初始化失败、Audio API wiring、正常 stop 与失败 abort、partial-frame 保留、空 reference queue 的 raw-capture fallback、reference-before-capture 顺序、cleanup 和重复 lifecycle；需要真实默认音频设备的行为由显式 integration test 验证。
+
+## Mic / Speaker Capture Hooks
+
+Provider 接受可选的直接 `on_mic` / `on_speaker` 观察回调。Speaker callback 接收成功设备写入之后的实际混音与音量处理后的 PCM；Mic callback 接收真实输入经过 AEC 后、进入 Audio PAL queue 之前的 PCM，synthetic fallback 不触发回调。两路使用 native steady clock；各 timestamp 的延迟估计与 read-completion 语义由 Public Header 明确。跨注册边界的在途 read/write 不会发给下一任 owner。
+
+Provider 不指定 callback 用途。配置被复制，user 与 payload 的借用关系、串行调用和同步注销合同见 `h2_portaudio.h`。Desktop 组合层统一接线见 [Desktop Capture Hooks](./components/desktop.md#display-mic-speaker-capture-hooks)，MP4 消费者见 [Desktop 音视频录像](./desktop_recording.md)。

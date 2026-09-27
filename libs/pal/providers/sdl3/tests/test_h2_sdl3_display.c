@@ -18,6 +18,21 @@ static void drain_host_events(h2_sdl3_t *provider) {
   }
 }
 
+typedef struct capture_display {
+  unsigned count;
+  uint16_t first_pixel;
+  uint8_t brightness;
+} capture_display_t;
+
+static void capture_video(void *user, const h2_sdl3_capture_frame_t *frame) {
+  capture_display_t *state = user;
+  assert(frame->width == 32u && frame->height == 24u);
+  assert(frame->stride_bytes == 64u && frame->timestamp_us > 0u);
+  ++state->count;
+  state->first_pixel = frame->pixels[0];
+  state->brightness = frame->brightness;
+}
+
 static void test_lifecycle_and_events(void) {
   const h2_sdl3_config_t config = {
       .title = "SDL3 Provider Test",
@@ -36,6 +51,12 @@ static void test_lifecycle_and_events(void) {
   assert(h2_pal_display_get_info(display, &info) == H2_DISPLAY_OK);
   assert(info.width == 32 && info.height == 24);
 
+  drain_host_events(provider);
+  capture_display_t captured = {0};
+  assert(h2_sdl3_set_frame_capture(provider, capture_video, &captured) == H2_PAL_OK);
+  assert(h2_sdl3_set_frame_capture(provider, capture_video, &captured) == H2_PAL_ERR_BUSY);
+  drain_host_events(provider);
+  assert(captured.count == 0u); // registration itself must not present a frame
   uint16_t pixels[8] = {0xffffu, 0xf800u, 0x07e0u, 0x001fu,
                         0u,      1u,      2u,      3u};
   const h2_display_rect_t rect = {.x = -1, .y = 0, .width = 4, .height = 2};
@@ -44,6 +65,16 @@ static void test_lifecycle_and_events(void) {
                                     H2_DISPLAY_PIXEL_RGB565) == H2_DISPLAY_OK);
   assert(h2_pal_display_present(display) == H2_DISPLAY_OK);
   drain_host_events(provider);
+  assert(captured.count != 0u && captured.first_pixel == 0xf800u);
+  assert(captured.brightness == 255u);
+  assert(h2_pal_display_set_brightness_percent(display, 50u) == H2_PAL_OK);
+  drain_host_events(provider);
+  assert(captured.brightness == 128u);
+  assert(h2_sdl3_set_frame_capture(provider, NULL, NULL) == H2_PAL_OK);
+  const unsigned count = captured.count;
+  assert(h2_pal_display_present(display) == H2_PAL_OK);
+  drain_host_events(provider);
+  assert(captured.count == count);
 
   const h2_pal_touch_api_t *touch = h2_sdl3_touch(provider);
   assert(h2_pal_touch_open(touch) == H2_PAL_OK);

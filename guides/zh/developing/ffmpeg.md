@@ -8,6 +8,10 @@
 
 Session create、push/decode、flush/reset 与 destroy 必须遵守 PAL contract：输入 packet 在调用期间借用，输出 frame 的 ownership 由 PAL API 明确表达；error/EOF 不泄漏 FFmpeg object；reset 后可以重新开始一个独立 stream。Provider 不依赖 Linux、Darwin、Desktop、Mobile 或 Web backend。
 
+## Desktop 录像编码
+
+`libs/desktop_recording` 直接消费同一固定版本的 FFmpeg MPEG-4 Visual/AAC encoder 与 MP4 muxer。录像生命周期属于 Desktop library，不属于 Decoder PAL provider。接线与验证见 [Desktop 音视频录像](./desktop_recording.md)。
+
 ## Validation
 
 ```sh

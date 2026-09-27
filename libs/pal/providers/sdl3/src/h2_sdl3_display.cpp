@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -283,10 +284,37 @@ int h2_sdl3_present(h2_sdl3_t *state) {
       !SDL_RenderPresent(state->renderer)) {
     return H2_DISPLAY_ERR_IO;
   }
+  if (state->capture != nullptr) {
+    const uint64_t timestamp = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
+    const h2_sdl3_capture_frame_t frame = {
+        state->framebuffer, static_cast<uint32_t>(state->width),
+        static_cast<uint32_t>(state->height),
+        static_cast<size_t>(state->width) * sizeof(uint16_t),
+        state->brightness_mod, timestamp};
+    state->capture(state->capture_user, &frame);
+  }
   return H2_DISPLAY_OK;
 }
 
 extern "C" {
+
+h2_pal_result_t h2_sdl3_set_frame_capture(h2_sdl3_t *provider,
+                                        h2_sdl3_frame_capture_fn callback,
+                                        void *user) {
+  if (provider == nullptr) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  std::lock_guard<std::mutex> lock(provider->display_mutex);
+  if (callback != nullptr && provider->capture != nullptr) {
+    return H2_PAL_ERR_BUSY;
+  }
+  provider->capture = callback;
+  provider->capture_user = user;
+  return H2_PAL_OK;
+}
+
 
 int h2_sdl3_create(const h2_sdl3_config_t *config,
                    h2_sdl3_t **out_provider) {

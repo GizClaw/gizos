@@ -132,6 +132,9 @@ const h2_portaudio_output_test_ops_t kPortAudioOutputOps = {
 };
 
 struct MicQueueFrame {
+  uint64_t hook_generation = 0u;
+  bool real_device = false;
+  uint64_t timestamp_us = 0u;
   size_t bytes = 0u;
   uint16_t samples_per_channel = 0u;
   std::array<int16_t, kFrameValues> samples = {};
@@ -142,6 +145,11 @@ struct AudioState {
   const h2_pal_queue_api_t *queue = nullptr;
   const h2_pal_sync_api_t *sync = nullptr;
   std::mutex control_mutex;
+  std::mutex capture_mutex;
+  h2_portaudio_capture_hooks_t capture = {};
+  uint64_t capture_next_us = 0u;
+  uint64_t capture_time_remainder = 0u;
+  uint64_t capture_generation = 0u;
   std::mutex echo_mutex;
   std::mutex mic_read_mutex;
   bool mixer_initialized = false;
@@ -547,9 +555,30 @@ void playback_main(AudioState *state) {
                               std::numeric_limits<unsigned long>::max())));
     const int16_t *samples =
         state->playback_scratch.data() + pending_offset * kChannels;
+    // The blocking API has no DAC callback timestamp. Use the reported output
+    // latency and one monotonic sample clock, rebased after a real underrun/gap.
+    uint64_t capture_latency = 0u;
+    uint64_t capture_generation = 0u;
+    {
+      std::lock_guard<std::mutex> lock(state->capture_mutex);
+      if (state->capture.on_speaker != nullptr) {
+        capture_generation = state->capture_generation;
+        if (!state->output_ops_overridden) {
+          const PaStreamInfo *info = Pa_GetStreamInfo(stream);
+          if (info != nullptr && info->outputLatency > 0.0) {
+            capture_latency = static_cast<uint64_t>(info->outputLatency * 1000000.0);
+          }
+        }
+      }
+    }
     const int error =
         state->output_ops.write(state->output_ops.user, stream, samples,
                                 static_cast<unsigned long>(frames_to_write));
+    // A device write can block even after write_available. Anchor the estimate
+    // at its return so a stalled submission cannot keep the pre-write time.
+    const uint64_t capture_now = static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(
+            std::chrono::steady_clock::now().time_since_epoch()).count());
     if (error == paOutputUnderflowed) {
       {
         std::lock_guard<std::mutex> lock(state->output_underflow_mutex);
@@ -561,6 +590,26 @@ void playback_main(AudioState *state) {
                    state->output_ops.error_text(state->output_ops.user, error));
       h2_atomic_int_store(&state->playback_result, H2_AUDIO_ERR_IO, H2_ATOMIC_SEQ_CST);
       break;
+    }
+    {
+      std::lock_guard<std::mutex> lock(state->capture_mutex);
+      if (state->capture.on_speaker != nullptr &&
+          capture_generation == state->capture_generation) {
+        const uint64_t estimated = capture_now + capture_latency;
+        if (state->capture_next_us == 0u || error == paOutputUnderflowed ||
+            estimated > state->capture_next_us + 20000u) {
+          state->capture_next_us = estimated;
+          state->capture_time_remainder = 0u;
+        }
+        const h2_portaudio_capture_frame_t captured = {
+            samples, frames_to_write, kSampleRate, kChannels,
+            state->capture_next_us};
+        state->capture.on_speaker(state->capture.user, &captured);
+        const uint64_t duration = frames_to_write * 1000000u +
+                                  state->capture_time_remainder;
+        state->capture_next_us += duration / kSampleRate;
+        state->capture_time_remainder = duration % kSampleRate;
+      }
     }
     pending_frames -= frames_to_write;
     pending_offset += frames_to_write;
@@ -583,6 +632,10 @@ int reap_stopped_playback_thread(AudioState *state) {
 }
 
 int capture_mic_frame(AudioState *state, MicQueueFrame *item) {
+  {
+    std::lock_guard<std::mutex> lock(state->capture_mutex);
+    item->hook_generation = state->capture_generation;
+  }
   bool used_device = false;
   PaStream *stream = nullptr;
   {
@@ -623,10 +676,30 @@ int capture_mic_frame(AudioState *state, MicQueueFrame *item) {
     }
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
   }
+  const uint64_t now_us = static_cast<uint64_t>(
+      std::chrono::duration_cast<std::chrono::microseconds>(
+          std::chrono::steady_clock::now().time_since_epoch()).count());
+  const uint64_t duration_us = kFrameSamples * 1000000u / kSampleRate;
+  item->real_device = used_device;
+  item->timestamp_us = now_us >= duration_us ? now_us - duration_us : 0u;
   item->bytes = sizeof(state->mic_scratch);
   item->samples_per_channel = kFrameSamples;
   item->samples = state->mic_scratch;
   return 1;
+}
+
+void notify_mic_capture(AudioState *state, const MicQueueFrame *item) {
+  if (!item->real_device) {
+    return;
+  }
+  std::lock_guard<std::mutex> lock(state->capture_mutex);
+  if (state->capture.on_mic != nullptr &&
+      item->hook_generation == state->capture_generation) {
+    const h2_portaudio_capture_frame_t frame = {
+        item->samples.data(), item->samples_per_channel, kSampleRate, kChannels,
+        item->timestamp_us};
+    state->capture.on_mic(state->capture.user, &frame);
+  }
 }
 
 void mic_main(AudioState *state) {
@@ -647,6 +720,7 @@ void mic_main(AudioState *state) {
       continue;
     }
     (void)clean_echo_capture(state, &item);
+    notify_mic_capture(state, &item);
     (void)h2_pal_queue_send_latest(state->queue,
                                    state->mic_queue, &item);
   }
@@ -918,6 +992,46 @@ static void destroy_state_atomics(AudioState *state) {
 } // namespace
 
 extern "C" {
+
+h2_pal_result_t h2_portaudio_set_capture_hooks(
+    h2_portaudio_t *provider, const h2_portaudio_capture_hooks_t *hooks) {
+  if (provider == nullptr) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  auto *state = &provider->state;
+  std::lock_guard<std::mutex> lock(state->capture_mutex);
+  const bool registering = hooks != nullptr &&
+      (hooks->on_mic != nullptr || hooks->on_speaker != nullptr);
+  if (registering && (state->capture.on_mic != nullptr ||
+                      state->capture.on_speaker != nullptr)) {
+    return H2_PAL_ERR_BUSY;
+  }
+  state->capture = registering ? *hooks : h2_portaudio_capture_hooks_t{};
+  state->capture_next_us = 0u;
+  state->capture_time_remainder = 0u;
+  ++state->capture_generation;
+  return H2_PAL_OK;
+}
+
+void h2_portaudio_publish_mic_for_test(h2_portaudio_t *provider,
+                                      const int16_t *samples, size_t frames,
+                                      uint64_t timestamp_us, int real_device) {
+  if (provider == nullptr || samples == nullptr || frames > kFrameSamples) {
+    return;
+  }
+  MicQueueFrame item;
+  {
+    std::lock_guard<std::mutex> lock(provider->state.capture_mutex);
+    item.hook_generation = provider->state.capture_generation;
+  }
+  item.real_device = real_device != 0;
+  item.timestamp_us = timestamp_us;
+  item.samples_per_channel = static_cast<uint16_t>(frames);
+  item.bytes = frames * sizeof(int16_t);
+  std::copy_n(samples, frames, item.samples.begin());
+  notify_mic_capture(&provider->state, &item);
+}
+
 
 int h2_portaudio_create(const h2_portaudio_config_t *config,
                         h2_portaudio_t **out_provider) {
