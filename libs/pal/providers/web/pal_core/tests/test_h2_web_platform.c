@@ -40,6 +40,14 @@ EM_JS(void, h2_web_test_forget_count,
 /* clang-format on */
 
 /* clang-format off */
+EM_JS(void, h2_web_test_forget_release_ready,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], "i32",
+    () => typeof globalThis.h2ReleaseForget === 'function' ? 1 : 0);
+});
+/* clang-format on */
+
+/* clang-format off */
 EM_JS(void, h2_web_test_close_rejected_before_cancel_settled,
       (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
   h2WebMain(context, result, completion, [], "i32",
@@ -1340,6 +1348,12 @@ MAIN_THREAD_EM_ASM({
       h2_web_platform_serial_forget_result(platform) !=
           H2_PAL_ERR_WOULD_BLOCK)
     return 41;
+  const double forget_deadline = emscripten_get_now() + 3000.0;
+  while (!h2_web_main_call(h2_web_test_forget_release_ready, NULL).i32 &&
+         emscripten_get_now() < forget_deadline)
+    h2_web_worker_sleep(1u);
+  if (!h2_web_main_call(h2_web_test_forget_release_ready, NULL).i32)
+    return 42;
   /* clang-format off */
 MAIN_THREAD_EM_ASM({
     h2ReleaseForget();
