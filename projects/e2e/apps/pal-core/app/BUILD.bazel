@@ -2,6 +2,7 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 load("@rules_python//python:defs.bzl", "py_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:tasks.bzl", "h2_tasks")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -61,6 +62,7 @@ cc_library(
 
 py_test(
     name = "interface_coverage_test",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
     srcs = ["tests/test_interface_coverage.py"],
     data = [
         "api_coverage.json",

@@ -3,5 +3,9 @@
   "api": "36",
   "fingerprint": "Android/sdk_slim_arm64/emu64a:16/BE2A.250530.027/13847098:userdebug/test-keys",
   "app_sha256": "368c5455cf92335606528e750f23813354e9517bf0b5bca5427fbec4025ce582",
-  "sdk_sha256": "300fd73779a50f334c35242170002e43b7900da48aa27c20fd8d65ee339926cd"
+  "sdk_sha256": "300fd73779a50f334c35242170002e43b7900da48aa27c20fd8d65ee339926cd",
+  "evidence_timezone": "Asia/Singapore",
+  "report_file_modified_at_utc": "2026-09-27T21:39:03.373721+00:00",
+  "report_file_modified_at_local": "2026-09-28T05:39:03.373721+08:00",
+  "timestamp_source": "mtime of qualified.json from the uncached Bazel simulator test output"
 }

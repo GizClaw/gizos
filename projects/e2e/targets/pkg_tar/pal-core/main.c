@@ -337,6 +337,75 @@ static h2_pal_result_t event_probe(void) {
          (int)app.handler_rc, (int)app.poster_rc);
   return early == H2_PAL_OK || early == H2_PAL_ERR_TIMEOUT ? H2_PAL_OK : early;
 }
+/* A browser-originated retirement must leave the JS event loop free while
+ * the still-running Worker callback makes an asynchronous main-thread call. */
+static _Atomic int ui_entered, ui_release, ui_returned, ui_retired, ui_early;
+/* clang-format off */
+EM_JS(void, ui_event_loop_tick,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], "i32",
+    () => new Promise(resolve => setTimeout(() => resolve(1), 20)));
+});
+/* clang-format on */
+static int ui_waiting_handler(void *user, const h2_pal_system_event_t *event) {
+  (void)user; (void)event;
+  atomic_store(&ui_entered, 1);
+  const double deadline = emscripten_get_now() + 3000.0;
+  while (!atomic_load(&ui_release) && emscripten_get_now() < deadline)
+    h2_web_worker_sleep(1);
+  if (!atomic_load(&ui_release)) return H2_PAL_ERR_TIMEOUT;
+  int tick = h2_web_main_call(ui_event_loop_tick, NULL).i32;
+  atomic_store(&ui_returned, 1);
+  return tick == 1 ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
+}
+static void ui_unsubscribe_completed(void *user) {
+  (void)user;
+  if (!atomic_load(&ui_returned) || emscripten_is_main_runtime_thread())
+    atomic_store(&ui_early, 1);
+  atomic_store(&ui_retired, 1);
+}
+static void ui_request_unsubscribe(void *context, h2_web_main_result_t *result,
+                                   h2_web_main_completion_t *completion) {
+  (void)context;
+  result->i32 = emscripten_is_main_runtime_thread() &&
+      h2_web_platform_system_event_api(app.platform) == NULL
+      ? h2_web_platform_system_event_unsubscribe_async(app.platform,
+          app.subscription, ui_unsubscribe_completed, NULL)
+      : H2_PAL_ERR_INVALID_STATE;
+  h2_web_main_complete(completion);
+}
+static h2_pal_result_t ui_unsubscribe_probe(void) {
+  TRY(h2_pal_system_event_subscribe(app.config.event_fixture, app.event.type,
+                                    ui_waiting_handler, NULL, &app.subscription));
+  const h2_pal_task_options_t options = {.name = h2_pal_core_e2e_core_task_name};
+  TRY(h2_pal_task_start(app.runtime->task, &options, poster, NULL, &app.tasks[0]));
+  double deadline = emscripten_get_now() + 3000.0;
+  while (!atomic_load(&ui_entered) && emscripten_get_now() < deadline)
+    h2_web_worker_sleep(1);
+  if (!atomic_load(&ui_entered)) return H2_PAL_ERR_TIMEOUT;
+  int rc = H2_PAL_ERR_BUSY;
+  while (rc == H2_PAL_ERR_BUSY && emscripten_get_now() < deadline) {
+    rc = h2_web_main_call(ui_request_unsubscribe, NULL).i32;
+    if (rc == H2_PAL_ERR_BUSY) h2_web_worker_sleep(1);
+  }
+  if (rc != H2_PAL_OK) {
+    atomic_store(&ui_release, 1);
+    return (h2_pal_result_t)rc;
+  }
+  app.subscription = NULL; // ownership transferred to the retire queue
+  if (atomic_load(&ui_retired)) atomic_store(&ui_early, 1);
+  atomic_store(&ui_release, 1);
+  deadline = emscripten_get_now() + 3000.0;
+  while (!atomic_load(&ui_retired) && emscripten_get_now() < deadline)
+    h2_web_worker_sleep(1);
+  if (!atomic_load(&ui_retired)) return H2_PAL_ERR_TIMEOUT;
+  TRY(join(0));
+  TRY(h2_web_platform_pump(app.platform, 16u, NULL));
+  if (atomic_load(&ui_early) || app.poster_rc != H2_PAL_OK)
+    return H2_PAL_ERR_INVALID_STATE;
+  puts("H2_WEB_CORE_UI_UNSUBSCRIBE complete=1 main_responsive=1 quiescent=1");
+  return H2_PAL_OK;
+}
 static h2_pal_result_t cleanup_probes(void) {
   if (app.release != NULL)
     (void)h2_pal_semaphore_give(app.runtime->sync, app.release);
@@ -375,6 +444,7 @@ static void run(void *user) {
   if (task_rc == H2_PAL_OK)
     task_rc = task_probe();
   h2_pal_result_t event_rc = event_probe();
+  if (event_rc == H2_PAL_OK) event_rc = ui_unsubscribe_probe();
   h2_pal_result_t cleanup = cleanup_probes();
   if (task_rc != H2_PAL_OK || event_rc != H2_PAL_OK || cleanup != H2_PAL_OK) {
     printf("H2_WEB_CORE_RUNNER_ERROR task=%d event=%d cleanup=%d\n",

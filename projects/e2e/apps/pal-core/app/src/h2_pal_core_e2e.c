@@ -155,7 +155,7 @@ static h2_pal_result_t wall_set_case(owner_t *o) {
   if (!o->config->allow_wall_set)
     return H2_PAL_ERR_UNAVAILABLE;
   h2_pal_result_t rc;
-  uint64_t original, before, after, wall, ext_before, ext_after;
+  uint64_t original = 0, before = 0, after = 0, wall = 0, ext_before = 0, ext_after = 0;
   TRY(h2_pal_time_get_wall_ms(o->runtime->time, &original));
   TRY(observe(o, &ext_before));
   TRY(h2_pal_time_get_monotonic_us(o->runtime->time, &before));

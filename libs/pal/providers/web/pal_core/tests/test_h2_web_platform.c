@@ -1089,9 +1089,10 @@ MAIN_THREAD_EM_ASM({
 MAIN_THREAD_EM_ASM({ globalThis.h2HttpBodyTimeout = !!$0; }, timeout);
 /* clang-format on */
     h2_pal_http_request_t failed_request = http_request;
-    failed_request.timeout_ms = 10;
+    failed_request.timeout_ms = timeout ? 50 : 2000;
     const int expected = timeout ? H2_PAL_ERR_TIMEOUT : H2_PAL_ERR_IO;
-    // Warm Asyncify and allocator bookkeeping before measuring retained memory.
+    // Give an immediate transport error its own budget; a loaded Worker
+    // must not turn the IO assertion into an unrelated 10 ms deadline race.
     if (h2_pal_http_request(h2_web_platform_http_api(platform), &failed_request,
                            &http_response) != expected)
       return 108;

@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Install the packaged App, require all portable Core cases, retain evidence."""
+from datetime import datetime, timezone
 import argparse
 import hashlib
 import json
@@ -117,7 +118,8 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     result, environment = (ios if args.platform == "ios" else android)(args, args.output)
     (args.output / "qualified.json").write_text(json.dumps(result, indent=2) + "\n")
-    environment.update(app_sha256=hashlib.sha256(args.app.read_bytes()).hexdigest(),
+    environment.update(observation_finished_at_utc=datetime.now(timezone.utc).isoformat(),
+                       evidence_timezone="UTC", app_sha256=hashlib.sha256(args.app.read_bytes()).hexdigest(),
                        sdk_sha256=hashlib.sha256(args.sdk.read_bytes()).hexdigest())
     (args.output / "environment.json").write_text(json.dumps(environment, indent=2) + "\n")
     verify(result, args.registry, "ios-simulator" if args.platform == "ios" else "android-emulator")

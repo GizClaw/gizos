@@ -11,6 +11,7 @@
 
 #include <emscripten.h>
 #include <stdio.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -97,9 +98,9 @@ typedef struct test_context {
   h2_web_platform_t *platform;
   const char *scenario;
   int result;
-  int done;
-  int ticks;
-  int stop_ticker;
+  _Atomic int done;
+  _Atomic int ticks;
+  _Atomic int stop_ticker;
 } test_context_t;
 
 static test_context_t s_test;

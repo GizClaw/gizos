@@ -36,7 +36,7 @@ The single-task baseline is supplemented by:
 
 The host fault fixture only changes the allocator used by the real Task provider's existing stack-accounting configuration. It does not replace Task start/join with an always-success or fake implementation. Task names, context, nonzero `min_stack_size` and both start/join operations are exercised.
 
-Desktop's stack accounting reserves real placeholder storage until join; it does not change the OS pthread stack. The separate pthread observation checks the native stack size for the tested bounds. This is not an MCU core-affinity, priority, PSRAM-placement or ISR certificate; those need the relevant board launcher and actual hardware. PAL Task itself has no suspend/cancel API, so the suite does not invent one or reuse handles after successful join.
+Desktop Task uses a provider-owned allocation as its actual pthread stack and retains it until join. The independent observer checks the current native stack size, and the provider regression checks a worker-local address lies inside the configured allocator's allocation. Platform-default size, requested minimum and configured policy floor are respected. This does not certify MCU affinity, priority, PSRAM placement or ISR behavior; those require the board launcher and real hardware. PAL Task itself has no suspend/cancel API.
 
 ## Execution and ownership
 

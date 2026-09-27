@@ -1,6 +1,6 @@
 #include "h2_web_main_thread.h"
 /*
- * Browser Promise waits must yield from libco tasks: while one task waits for
+ * Browser Promise waits must leave other pthread Workers runnable: while one task waits for
  * fetch, WebRTC or storage, another task keeps running. Node with fakes.
  */
 #include "h2_web_fs.h"
@@ -8,6 +8,7 @@
 
 #include <emscripten.h>
 #include <stdio.h>
+#include <stdatomic.h>
 #include <string.h>
 
 #define CHECK(condition)                                                       \
@@ -64,13 +65,13 @@ EM_JS(void, test_hang_create_offer,
 
 typedef struct test_state {
   h2_web_platform_t *platform;
-  int ticks;
-  int stop;
-  int done;
+  _Atomic int ticks;
+  _Atomic int stop;
+  _Atomic int done;
   h2_pal_result_t http_result;
   h2_pal_webrtc_peer_t *offer_peer;
   h2_pal_result_t offer_result;
-  int offer_done;
+  _Atomic int offer_done;
 } test_state_t;
 
 static test_state_t s_state;
@@ -93,6 +94,11 @@ static void ticker(void *user) {
 static void run(void *user) {
   test_state_t *state = user;
   const h2_pal_http_api_t *http = h2_web_platform_http_api(state->platform);
+
+  const double ready_deadline = emscripten_get_now() + 3000.0;
+  while (atomic_load(&state->ticks) < 2 && emscripten_get_now() < ready_deadline)
+    h2_web_worker_sleep(1);
+  CHECK(atomic_load(&state->ticks) >= 2);
 
   // Fetch from a task: the ticker advances while the response is pending, and
   // a 4xx status is delivered with its body.
