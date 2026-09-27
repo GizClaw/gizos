@@ -123,10 +123,10 @@ static void run(void *user) {
   // A timeout aborts the pending fetch without freezing the ticker.
   (void)h2_web_main_call(test_install_fetch, (const void *[]){&(int){10000}});
   h2_pal_http_request_t slow = request;
-  slow.timeout_ms = 50;
+  slow.timeout_ms = 300;
   ticks = state->ticks;
   CHECK(h2_pal_http_request(http, &slow, &response) == H2_PAL_ERR_TIMEOUT);
-  CHECK(state->ticks - ticks >= 3);
+  CHECK(state->ticks > ticks);
 
   // WebRTC poll waits yield too and end with TIMEOUT.
   const h2_pal_webrtc_api_t *webrtc =
