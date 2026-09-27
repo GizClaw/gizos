@@ -1172,10 +1172,11 @@ static void provider_complete(void *user, int result) {
   fixture->result = result;
 }
 
-static int completion_provider(void *user, h2_gizclaw_rpc_method_t method,
-    h2_gizclaw_rpc_bytes_t request, h2_gizclaw_rpc_provider_response_t *out) {
+static int completion_provider(void *user, h2_gizclaw_tool_t method,
+                               h2_gizclaw_rpc_bytes_t request,
+                               h2_gizclaw_rpc_provider_response_t *out) {
   (void)request;
-  assert(method == H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT);
+  assert(method == H2_GIZCLAW_TOOL_DEVICE_REBOOT);
   out->on_complete = provider_complete;
   out->complete_user = user;
   return H2_PAL_OK;
@@ -1186,8 +1187,10 @@ static void test_provider_completions(h2_gizclaw_config_t config) {
   const int saved_block_count = test_send_would_block_count;
   test_send_would_block_count = 0;
   provider_completion_fixture_t fixture = {0};
-  config.rpc_provider = completion_provider;
-  config.rpc_provider_user = &fixture;
+  h2_gizclaw_tool_handler_t handler = {H2_GIZCLAW_TOOL_DEVICE_REBOOT,
+                                       completion_provider, &fixture};
+  config.tool_handlers = &handler;
+  config.tool_handler_count = 1;
   for (int scenario = 0; scenario < 6; ++scenario) {
     h2_gizclaw_client_t *client = NULL;
     assert(h2_gizclaw_client_init(&config, &client) == H2_PAL_OK);
@@ -1239,7 +1242,7 @@ static void test_provider_completions(h2_gizclaw_config_t config) {
   for (int failure = 0; failure < 3; ++failure) {
     h2_gizclaw_client_t *pair = NULL;
     provider_completion_fixture_t a = {0};
-    config.rpc_provider_user = &a;
+    handler.user = &a;
     assert(h2_gizclaw_client_init(&config, &pair) == H2_PAL_OK);
     h2_pal_webrtc_channel_t *ca = (h2_pal_webrtc_channel_t *)0x401;
     h2_pal_webrtc_channel_t *cb = (h2_pal_webrtc_channel_t *)0x402;
@@ -1272,7 +1275,7 @@ static void test_provider_completions(h2_gizclaw_config_t config) {
     h2_gizclaw_client_deinit(pair);
     assert(a.calls == 2);
   }
-  config.rpc_provider_user = &fixture;
+  handler.user = &fixture;
   h2_gizclaw_client_t *client = NULL;
   fixture = (provider_completion_fixture_t){0};
   assert(h2_gizclaw_client_init(&config, &client) == H2_PAL_OK);
@@ -1294,8 +1297,8 @@ static void test_provider_completions(h2_gizclaw_config_t config) {
 
 int main(void) {
   int fails = 0;
-  fails += expect(H2_GIZCLAW_RPC_CLIENT_TOOL_INVOKE == 82,
-                  "tool invoke wire method remains 82");
+  fails += expect(H2_GIZCLAW_RPC_CLIENT_TOOL_V0_INVOKE == 135,
+                  "tool/v0 invoke wire method is 135");
   fails += expect(H2_GIZCLAW_RPC_SERVER_FRIEND_INFO_GET == 89,
                   "friend info wire method remains 89");
   fails += expect(H2_GIZCLAW_RPC_SERVER_REGISTER == 90,
@@ -1306,9 +1309,9 @@ int main(void) {
                       H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_PING == 124 &&
                       H2_GIZCLAW_RPC_SERVER_PROFILE_GET == 125,
                   "social ping and public profile wire methods are 123-125");
-  fails += expect(H2_GIZCLAW_RPC_CLIENT_DEVICE_FIND == 126 &&
-                      H2_GIZCLAW_RPC_CLIENT_SOCIAL_PING == 127,
-                  "device find and social ping reverse methods are 126-127");
+  fails += expect(H2_GIZCLAW_TOOL_DEVICE_FIND == 6 &&
+                      H2_GIZCLAW_TOOL_SOCIAL_PING == 21,
+                  "device find and social ping tools are 6 and 21");
   h2_gizclaw_config_t config;
   memset(&config, 0, sizeof(config));
   config.server_endpoint.data = "127.0.0.1:19820";

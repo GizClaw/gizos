@@ -14,17 +14,11 @@ extern "C" {
 /** Wire method number from gizclaw.rpc.v1.RpcMethod. */
 typedef int32_t h2_gizclaw_rpc_method_t;
 
-/** Most client methods a product may declare for its own rpc_provider in
- * h2_gizclaw_config_t::rpc_provider_methods. */
-#define H2_GIZCLAW_RPC_PROVIDER_METHODS_MAX 16u
-
 enum {
   H2_GIZCLAW_RPC_SERVER_APP_CONFIG_LIST = 121,
   H2_GIZCLAW_RPC_SERVER_APP_CONFIG_GET = 122,
   H2_GIZCLAW_RPC_ALL_PING = 1,
   H2_GIZCLAW_RPC_ALL_SPEED_TEST_RUN = 2,
-  H2_GIZCLAW_RPC_CLIENT_INFO_GET = 3,
-  H2_GIZCLAW_RPC_CLIENT_IDENTIFIERS_GET = 4,
   H2_GIZCLAW_RPC_SERVER_INFO_GET = 5,
   H2_GIZCLAW_RPC_SERVER_INFO_PUT = 6,
   H2_GIZCLAW_RPC_SERVER_RUNTIME_GET = 7,
@@ -68,52 +62,22 @@ enum {
   H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MEMBERS_ADD = 59,
   H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MEMBERS_PUT = 60,
   H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_MEMBERS_DELETE = 61,
-  H2_GIZCLAW_RPC_CLIENT_TOOL_INVOKE = 82,
   H2_GIZCLAW_RPC_SERVER_FRIEND_INFO_GET = 89,
   H2_GIZCLAW_RPC_SERVER_REGISTER = 90,
   H2_GIZCLAW_RPC_SERVER_SPEECH_TRANSCRIBE = 91,
   H2_GIZCLAW_RPC_SERVER_SPEECH_SYNTHESIZE = 92,
   H2_GIZCLAW_RPC_SERVER_PEER_DELETE = 93,
   H2_GIZCLAW_RPC_SERVER_SPEECH_EXTRACT = 94,
-  /** Device-owned reverse RPCs; registering a number does not install a handler. */
-  H2_GIZCLAW_RPC_CLIENT_DEVICE_STATUS_GET = 100,
-  H2_GIZCLAW_RPC_CLIENT_DEVICE_VOLUME_SET = 101,
-  H2_GIZCLAW_RPC_CLIENT_DEVICE_SOUND_PLAY = 102,
-  H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT = 103,
-  H2_GIZCLAW_RPC_CLIENT_WIFI_STATUS_GET = 104,
-  H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_LIST = 105,
-  H2_GIZCLAW_RPC_CLIENT_WIFI_SAVED_FORGET = 106,
-  H2_GIZCLAW_RPC_CLIENT_WIFI_SCAN = 108,
-  H2_GIZCLAW_RPC_CLIENT_WIFI_CONNECT = 109,
   H2_GIZCLAW_RPC_SERVER_WORKSPACE_PARAMETERS_SET = 110,
-  H2_GIZCLAW_RPC_CLIENT_FIRMWARE_UPDATE = 111,
   H2_GIZCLAW_RPC_SERVER_RUNTIME_PUT = 112,
-  H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_GET = 113,
-  H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_GET = 114,
-  H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_SET = 115,
-  H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_APPEND = 116,
-  H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_PLAY = 117,
-  H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_STOP = 118,
-  H2_GIZCLAW_RPC_CLIENT_DEVICE_AUDIOPLAYER_MODE_SET = 119,
   H2_GIZCLAW_RPC_SERVER_FRIEND_PING = 123,
   H2_GIZCLAW_RPC_SERVER_FRIEND_GROUP_PING = 124,
   H2_GIZCLAW_RPC_SERVER_PROFILE_GET = 125,
-  /** Device configuration reverse RPCs. The library owns the protobuf and the
-   * validation of all five; 128, 129, 130 and 132 then call one typed hook in
-   * h2_gizclaw_vtable_t and answer UNIMPLEMENTED when it is unset, while 131 is
-   * answered entirely inside the library from the capabilities that are
-   * configured plus h2_gizclaw_config_t::rpc_provider_methods. None of the five
-   * reaches rpc_provider. */
-  H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_GET = 128,
-  H2_GIZCLAW_RPC_CLIENT_DEVICE_SETTINGS_SET = 129,
-  H2_GIZCLAW_RPC_CLIENT_DEVICE_FACTORY_RESET = 130,
-  H2_GIZCLAW_RPC_CLIENT_RPC_METHODS_GET = 131,
-  H2_GIZCLAW_RPC_CLIENT_RUN_WORKSPACE_SET = 132,
-  /** Product-owned reverse RPCs: the library has no built-in handler and
-   * forwards them to the configured rpc_provider (UNIMPLEMENTED without one).
-   * The Server counts a social ping as delivered only on a success reply. */
-  H2_GIZCLAW_RPC_CLIENT_DEVICE_FIND = 126,
-  H2_GIZCLAW_RPC_CLIENT_SOCIAL_PING = 127,
+  H2_GIZCLAW_RPC_CLIENT_MHS_V0_READ = 133,
+  H2_GIZCLAW_RPC_CLIENT_MHS_V0_WRITE = 134,
+  H2_GIZCLAW_RPC_CLIENT_TOOL_V0_INVOKE = 135,
+  H2_GIZCLAW_RPC_CLIENT_TOOL_V0_LIST = 136,
+  H2_GIZCLAW_RPC_CLIENT_RPC_METHODS_LIST = 137,
 };
 
 /** Canonical gRPC status codes (google.rpc.Code) carried by RpcStatus.code.
@@ -161,20 +125,6 @@ typedef struct h2_gizclaw_rpc_provider_response {
   h2_gizclaw_rpc_response_complete_fn on_complete;
   void *complete_user;
 } h2_gizclaw_rpc_provider_response_t;
-
-/**
- * Handle a server-initiated client.* method.
- *
- * Request and response payloads are protobuf message bytes. Returned views are
- * borrowed and must remain valid until the adapter consumes the returned
- * response (for example, use provider-owned storage). Do not return stack
- * storage. An optional on_complete schedules work after the local response
- * closes, without a second message or acknowledgment from the caller.
- */
-typedef int (*h2_gizclaw_rpc_provider_fn)(
-    void *user, h2_gizclaw_rpc_method_t method,
-    h2_gizclaw_rpc_bytes_t request_payload,
-    h2_gizclaw_rpc_provider_response_t *out_response);
 
 #ifdef __cplusplus
 }

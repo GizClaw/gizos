@@ -17,7 +17,7 @@ bool h2_gizclaw_device_action_pending_internal(h2_gizclaw_service_t *service);
 void h2_gizclaw_device_cancel_internal(h2_gizclaw_device_t *device);
 h2_pal_result_t h2_gizclaw_device_stop_internal(h2_gizclaw_device_t *device);
 void h2_gizclaw_device_destroy_internal(h2_gizclaw_device_t *device);
-int h2_gizclaw_device_rpc_internal(
-    void *user, h2_gizclaw_rpc_method_t method, h2_gizclaw_rpc_bytes_t request,
+int h2_gizclaw_device_tool_internal(
+    void *user, h2_gizclaw_tool_t method, h2_gizclaw_rpc_bytes_t request,
     h2_gizclaw_rpc_provider_response_t *response);
 #endif

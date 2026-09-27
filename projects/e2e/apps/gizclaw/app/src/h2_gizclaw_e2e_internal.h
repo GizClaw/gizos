@@ -30,6 +30,7 @@ typedef struct h2_gizclaw_e2e_actor {
   h2_gizclaw_api_key_state_t *api_key_state;
   h2_gizclaw_session_t *session;
   h2_gizclaw_config_t config;
+  h2_gizclaw_tool_handler_t tool_handlers[2];
   char private_key[H2_PAL_CRYPTO_X25519_KEY_SIZE * 2u + 1u];
   char public_key[H2_PAL_CRYPTO_X25519_KEY_SIZE * 2u + 1u];
   bool registered;

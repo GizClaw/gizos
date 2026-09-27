@@ -76,7 +76,7 @@ typedef struct h2_gizclaw_player_playlist_entry {
 h2_pal_result_t h2_gizclaw_player_play(h2_gizclaw_service_t *service,
                                        h2_gizclaw_str_t url);
 /** Start the already-queued item the user picked, the same way the remote
- * client.device.audioplayer.play RPC selects one. An index at or past the
+ * audioplayer.play RPC selects one. An index at or past the
  * playlist length is INVALID_ARG and leaves playback untouched. Same as
  * play_index_at(service, index, 0). */
 h2_pal_result_t h2_gizclaw_player_play_index(h2_gizclaw_service_t *service,
@@ -103,7 +103,7 @@ h2_pal_result_t h2_gizclaw_player_play_index_at(h2_gizclaw_service_t *service,
                                                 uint32_t index,
                                                 uint64_t start_ms);
 /** Replace the playlist with a caller-owned array, the same way the remote
- * client.device.audioplayer.playlist.set RPC does: everything is validated
+ * audioplayer.playlist.set RPC does: everything is validated
  * before the queue is touched, so a rejection preserves both the previous
  * playlist and playback, and the revision moves only on success. A count of
  * zero clears the playlist; a count above the ceiling is INVALID_ARG, since
@@ -113,7 +113,7 @@ h2_pal_result_t h2_gizclaw_player_play_index_at(h2_gizclaw_service_t *service,
 h2_pal_result_t h2_gizclaw_player_playlist_set(
     h2_gizclaw_service_t *service,
     const h2_gizclaw_player_playlist_entry_t *items, uint32_t count);
-/** Select off, one or all, the values client.device.audioplayer.mode.set
+/** Select off, one or all, the values audioplayer.mode.set
  * accepts; anything else is INVALID_ARG and leaves the mode as it was. The
  * library owns end-of-track advance and looping, so a product picks the mode
  * here instead of re-implementing "next track, wrap at the end". */
