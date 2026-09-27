@@ -312,9 +312,6 @@ h2_pal_result_t h2_sdl3_set_frame_capture(h2_sdl3_t *provider,
   }
   provider->capture = callback;
   provider->capture_user = user;
-  if (callback != nullptr && provider->initialized) {
-    provider->present_pending = true;
-  }
   return H2_PAL_OK;
 }
 
