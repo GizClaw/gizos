@@ -229,6 +229,8 @@ reload，不会被当成“参数没变”跳过，成功后语速出现在
 
 公共协议不固定档位数量、顺序或文案，也不定义产品年龄过滤。H106 的四档必须在产品 RuntimeProfile 中逐档配置完整文案，并只展示 `safety_fences` 中真正可用的选项；年龄选择另行保存，不映射成围栏 ID。
 
+真实服务端的隔离 Profile、执行命令、模型输入和逐条证据见 [Workspace 安全围栏 E2E](/apps/gizclaw/workspace-fence-e2e)。其中 RPC/存储用例与模型效果验收分别记录，不能互相替代。
+
 围栏测试覆盖两种 RPC 的非空 patch 组合、字符串 wire tag、复制 ownership、非法标识符零 RPC，以及生产 Session → request → nanopb → response parse → snapshot 的参数流和错误路径。Workflow list 解出当前 Profile 的可选档位并拒绝重复或非法 ID。真实服务器验收需使用已配置的隔离测试 Profile，验证档位发现、保存、遗漏保留、移除已选档位后的 reload 失败且保存未回滚、修复后恢复和 Workflow 注入，记录 endpoint、Profile revision、服务端版本与清理结果。
 
 ## 设备 Debug 访问模式
