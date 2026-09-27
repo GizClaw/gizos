@@ -158,8 +158,9 @@ static int wifi_read(h2_gizclaw_mhs_builtin_t *b, int field,
   int rc = h2_pal_wifi_sta_get_status(b->wifi, &status);
   if (rc != H2_PAL_OK)
     return rc;
-  if (status.ssid_len > 32 ||
-      !utf8_valid((const uint8_t *)status.ssid, status.ssid_len))
+  if (field == 1 &&
+      (status.ssid_len > 32 ||
+       !utf8_valid((const uint8_t *)status.ssid, status.ssid_len)))
     return H2_PAL_ERR_IO;
   if (field == 0) {
     out->value.b = status.state == H2_PAL_WIFI_STA_STATE_CONNECTED ||

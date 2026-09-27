@@ -136,7 +136,37 @@ static void no_writes(void) {
     assert(!fixtures[i].writes);
 }
 
+static h2_pal_result_t binary_ssid(void *user, h2_pal_wifi_sta_status_t *out) {
+  (void)user;
+  *out = (h2_pal_wifi_sta_status_t){.state = H2_PAL_WIFI_STA_STATE_GOT_IP,
+                                    .ssid = {(char)0xff},
+                                    .ssid_len = 1,
+                                    .rssi = -47};
+  return H2_PAL_OK;
+}
+static void test_independent_wifi_states(void) {
+  const h2_pal_wifi_sta_vtable_t vtable = {.get_status = binary_ssid};
+  const h2_pal_wifi_sta_api_t wifi = {.vtable = &vtable};
+  h2_gizclaw_mhs_builtin_t builtin = {.wifi = &wifi};
+  h2_gizclaw_mhs_state_t registered[7];
+  size_t count = h2_gizclaw_mhs_builtins_internal(&builtin, registered);
+  assert(count == 5);
+  for (size_t i = 0; i < count; ++i) {
+    h2_gizclaw_mhs_value_t value = {.kind = registered[i].kind};
+    int rc = registered[i].read(registered[i].user, &value);
+    if (!strcmp(registered[i].state, "ssid"))
+      assert(rc == H2_PAL_ERR_IO);
+    else
+      assert(rc == H2_PAL_OK);
+    if (!strcmp(registered[i].state, "connected"))
+      assert(value.value.b);
+    if (!strcmp(registered[i].state, "rssi-dbm"))
+      assert(value.value.i == -47);
+  }
+}
+
 int main(void) {
+  test_independent_wifi_states();
   reset();
   assert(h2_gizclaw_mhs_validate_internal(states, 4) == H2_PAL_OK);
   assert(h2_gizclaw_mhs_validate_internal(NULL, 0) == H2_PAL_OK);
