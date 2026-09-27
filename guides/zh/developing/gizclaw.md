@@ -223,7 +223,7 @@ reload，不会被当成“参数没变”跳过，成功后语速出现在
 
 `parameters.set` 保存档位，下一次 reload 才应用。`reload-with-options` 的保存和 reload 不是同一事务：缺少 Profile 文案等错误可以发生在档位已经保存之后，失败不回滚服务端存储。Session 只在目标 Workspace 的 RUNNING 激活确认后合并 present 档位；失败、错误名称、非 RUNNING、格式错误、超时或关闭后的迟到响应均不能把请求档位发布为 confirmed。FAILED 状态保留此前确认值用于显示，不表示服务端仍存该值。
 
-同一 Workspace 上的普通省略保留 confirmed 档位；成功切换到另一 Workspace 时，旧 Workspace 的 confirmed 档位失效。同步 `parameters.set` 与 Session 的选择、reload 共享串行请求槽，但不停止当前对话，也不提前改变已确认档位。一次可能已发送的围栏 set 或失败的围栏 reload 后，后续省略档位的成功 reload 只能把围栏标为 unknown：本库没有读取服务端 typed Workspace parameters，不能从旧快照推断最新保存值。再次显式设置档位且 reload 成功才恢复确认；Session 不会因为请求恰好等于旧 confirmed 值而跳过必要的 reload。
+同一 Workspace 上的普通省略保留 confirmed 档位；成功切换到另一 Workspace 时，旧 Workspace 的 confirmed 档位失效。同步 `parameters.set` 与 Session 的选择、reload 共享串行请求槽，但不停止当前对话，也不提前改变已确认档位。一次可能已发送的围栏 set 或失败的围栏 reload 后，后续省略档位的成功 reload 只能把 Session 的已应用围栏标为 unknown，不能从旧快照推断最新保存值。`h2_gizclaw_rpc_workspace_get` 的结果另行公开服务端已保存的 `has_safety_fence_level` / `safety_fence_level` 与 Profile revision，供产品页面回读；这个存储回读本身不证明当前 run 使用了相应提示词。再次显式设置档位且 reload 成功才恢复 Session 的应用确认；Session 不会因为请求恰好等于旧 confirmed 值而跳过必要的 reload。
 
 实际围栏文案属于 RuntimeProfile 的 `spec.safety_fences.<id>.prompt`，每档为独立完整的 1–4096 字符提示词，不继承其他档位。Flowcraft 的 Workflow 必须引用 `${board.safety_fence}`，Eino 必须绑定 `input.safety_fence`，Realtime Workflow 必须在 instructions 中引用 `${input.safety_fence}`。缺少所选 Profile 条目时，支持注入的 driver reload 明确失败；没有引用变量的 Workflow 不会注入围栏。ASTTranslate 保存合法值但不注入，SFU 接受合法值但 no-op。RPC 成功和 Session confirmed patch 都不是内容审核效果或产品档位回读的证明，设备不执行替代性的本地关键词过滤。
 

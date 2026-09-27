@@ -100,10 +100,16 @@ typedef struct h2_gizclaw_workspace_activation {
   h2_gizclaw_workspace_runtime_state_t runtime_state;
 } h2_gizclaw_workspace_activation_t;
 
+#define H2_GIZCLAW_SAFETY_FENCE_LEVEL_MAX_BYTES 64u
+
 typedef struct h2_gizclaw_workspace_get_result {
   h2_gizclaw_workspace_t workspace;
   char *runtime_profile_name;
   char *runtime_profile_revision;
+  /** Server-stored selection. This does not prove the Workflow injected its
+   * prompt; compare the Profile revision and reload result separately. */
+  bool has_safety_fence_level;
+  char safety_fence_level[H2_GIZCLAW_SAFETY_FENCE_LEVEL_MAX_BYTES + 1u];
 } h2_gizclaw_workspace_get_result_t;
 
 /** List owned Workspaces without a required filter. Cursor and output
@@ -131,8 +137,6 @@ typedef enum h2_gizclaw_agent_initiative_policy {
   H2_GIZCLAW_AGENT_INITIATIVE_ONCE_WHEN_EMPTY = 1,
   H2_GIZCLAW_AGENT_INITIATIVE_ON_RELOAD = 2,
 } h2_gizclaw_agent_initiative_policy_t;
-
-#define H2_GIZCLAW_SAFETY_FENCE_LEVEL_MAX_BYTES 64u
 
 #define H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MIN_PERCENT 50
 #define H2_GIZCLAW_WORKSPACE_TTS_SPEECH_RATE_MAX_PERCENT 200

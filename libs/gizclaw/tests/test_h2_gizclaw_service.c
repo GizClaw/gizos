@@ -6493,6 +6493,75 @@ static void test_workspace_safety_fence(void) {
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
 
+static void test_workspace_fence_server_readback(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  static const h2_pal_time_vtable_t tv = {
+      .get_monotonic_ms = fake_req_clock,
+      .get_wall_ms = fake_valid_wall,
+      .get_wall_status = fake_valid_wall_status};
+  const h2_pal_time_api_t time = {.user = &env, .vtable = &tv};
+  service->client_config.time = &time;
+  h2_gizclaw_async_rpc_test_set_ops(&workspace_test_ops);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  static const uint8_t get_request[] = {0x0a, 2u, 'w', 's'};
+  test_contact_text_t text[] = {{.data = "ws", .len = 2u},
+                                {.data = "chat", .len = 4u},
+                                {.data = "profile", .len = 7u},
+                                {.data = "revision", .len = 8u}};
+  for (unsigned scenario = 0u; scenario < 3u; ++scenario) {
+    gizclaw_rpc_v1_WorkspaceGetResponse response =
+        gizclaw_rpc_v1_WorkspaceGetResponse_init_zero;
+    response.has_value = true;
+    response.value.name = (pb_callback_t){
+        .funcs.encode = test_encode_contact_text, .arg = &text[0]};
+    response.value.workflow_name = (pb_callback_t){
+        .funcs.encode = test_encode_contact_text, .arg = &text[1]};
+    response.value.available = true;
+    response.value.has_parameters = true;
+    response.value.parameters.which_value =
+        gizclaw_rpc_v1_WorkspaceParameters_flowcraft_workspace_parameters_tag;
+    response.value.parameters.value.flowcraft_workspace_parameters
+        .has_safety_fence_level = scenario != 1u;
+    strcpy(response.value.parameters.value.flowcraft_workspace_parameters
+               .safety_fence_level,
+           scenario == 2u ? "Invalid" : "safe");
+    response.runtime_profile_name = (pb_callback_t){
+        .funcs.encode = test_encode_contact_text, .arg = &text[2]};
+    response.runtime_profile_revision = (pb_callback_t){
+        .funcs.encode = test_encode_contact_text, .arg = &text[3]};
+    uint8_t response_bytes[256];
+    pb_ostream_t output = pb_ostream_from_buffer(response_bytes,
+                                                  sizeof(response_bytes));
+    assert(pb_encode(&output, gizclaw_rpc_v1_WorkspaceGetResponse_fields,
+                     &response));
+    test_contact_rpc_t mock = {
+        .expected_method = H2_GIZCLAW_RPC_SERVER_WORKSPACE_GET,
+        .expected_request = get_request,
+        .expected_request_len = sizeof(get_request),
+        .response = response_bytes,
+        .response_len = output.bytes_written};
+    workspace_test_use_single(&mock);
+    uint8_t storage_bytes[1024];
+    h2_gizclaw_resp_storage_t storage = {
+        storage_bytes, sizeof(storage_bytes), 0u};
+    h2_gizclaw_workspace_get_result_t result = {0};
+    const h2_pal_result_t rc = h2_gizclaw_rpc_workspace_get(
+        service, (h2_gizclaw_str_t){"ws", 2u}, 1234u, &storage, &result);
+    assert(rc == (scenario == 2u ? H2_PAL_ERR_FORMAT : H2_PAL_OK));
+    assert(mock.calls == 1u && mock.request_matches);
+    if (rc == H2_PAL_OK) {
+      assert(result.has_safety_fence_level == (scenario == 0u));
+      assert(strcmp(result.safety_fence_level,
+                    scenario == 0u ? "safe" : "") == 0);
+      assert(strcmp(result.runtime_profile_revision, "revision") == 0);
+    }
+  }
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_gizclaw_async_rpc_test_set_ops(NULL);
+}
+
 /* Only the asynchronous transport is substituted here. Production Session,
  * requests, nanopb codecs, response parsing and confirmation all execute. */
 static struct {
@@ -14072,6 +14141,7 @@ int main(int argc, char **argv) {
   test_workspace_request_and_response_paths();
   test_workspace_direct_input_update();
   test_workspace_safety_fence();
+  test_workspace_fence_server_readback();
   test_workspace_fence_session_flow();
   test_req_wait_does_not_require_callback_dispatch();
   test_req_callback_reference_and_independent_wait();

@@ -381,11 +381,16 @@ static int decode_history_list(const h2_pal_mem_api_t *allocator,
   return H2_PAL_OK;
 }
 
+static bool workspace_safety_fence_level_valid(
+    const char level[H2_GIZCLAW_SAFETY_FENCE_LEVEL_MAX_BYTES + 1u]);
+
 static int decode_workspace_get(const h2_pal_mem_api_t *allocator,
                                 const uint8_t *data, size_t len,
                                 h2_gizclaw_workspace_t *out_workspace,
                                 char **out_profile_name,
-                                char **out_profile_revision) {
+                                char **out_profile_revision,
+                                bool *out_has_fence,
+                                char out_fence[H2_GIZCLAW_SAFETY_FENCE_LEVEL_MAX_BYTES + 1u]) {
   gizclaw_rpc_v1_WorkspaceGetResponse decoded =
       gizclaw_rpc_v1_WorkspaceGetResponse_init_zero;
   text_decode_t text[4];
@@ -407,6 +412,45 @@ static int decode_workspace_get(const h2_pal_mem_api_t *allocator,
   }
   out_workspace->system = decoded.value.system;
   out_workspace->available = decoded.value.available;
+  const char *fence = NULL;
+  if (decoded.value.has_parameters) {
+    const gizclaw_rpc_v1_WorkspaceParameters *parameters =
+        &decoded.value.parameters;
+    switch (parameters->which_value) {
+    case gizclaw_rpc_v1_WorkspaceParameters_flowcraft_workspace_parameters_tag:
+      if (parameters->value.flowcraft_workspace_parameters.has_safety_fence_level)
+        fence = parameters->value.flowcraft_workspace_parameters.safety_fence_level;
+      break;
+    case gizclaw_rpc_v1_WorkspaceParameters_doubao_realtime_workspace_parameters_tag:
+      if (parameters->value.doubao_realtime_workspace_parameters.has_safety_fence_level)
+        fence = parameters->value.doubao_realtime_workspace_parameters.safety_fence_level;
+      break;
+    case gizclaw_rpc_v1_WorkspaceParameters_asttranslate_workspace_parameters_tag:
+      if (parameters->value.asttranslate_workspace_parameters.has_safety_fence_level)
+        fence = parameters->value.asttranslate_workspace_parameters.safety_fence_level;
+      break;
+    case gizclaw_rpc_v1_WorkspaceParameters_dash_scope_realtime_workspace_parameters_tag:
+      if (parameters->value.dash_scope_realtime_workspace_parameters.has_safety_fence_level)
+        fence = parameters->value.dash_scope_realtime_workspace_parameters.safety_fence_level;
+      break;
+    case gizclaw_rpc_v1_WorkspaceParameters_doubao_realtime_duplex_workspace_parameters_tag:
+      if (parameters->value.doubao_realtime_duplex_workspace_parameters.has_safety_fence_level)
+        fence = parameters->value.doubao_realtime_duplex_workspace_parameters.safety_fence_level;
+      break;
+    case gizclaw_rpc_v1_WorkspaceParameters_eino_workspace_parameters_tag:
+      if (parameters->value.eino_workspace_parameters.has_safety_fence_level)
+        fence = parameters->value.eino_workspace_parameters.safety_fence_level;
+      break;
+    default:
+      break;
+    }
+  }
+  if (fence != NULL) {
+    if (!workspace_safety_fence_level_valid(fence))
+      return H2_PAL_ERR_FORMAT;
+    strcpy(out_fence, fence);
+    *out_has_fence = true;
+  }
   return H2_PAL_OK;
 }
 
@@ -969,7 +1013,8 @@ h2_pal_result_t h2_gizclaw_resp_parse_workspace_get(
   h2_gizclaw_workspace_get_result_t result = {0};
   rc = (h2_pal_result_t)decode_workspace_get(
       allocator, data, len, &result.workspace, &result.runtime_profile_name,
-      &result.runtime_profile_revision);
+      &result.runtime_profile_revision, &result.has_safety_fence_level,
+      result.safety_fence_level);
 
   rc = h2_gizclaw_resp_arena_end(&arena, rc);
   if (rc == H2_PAL_OK)
