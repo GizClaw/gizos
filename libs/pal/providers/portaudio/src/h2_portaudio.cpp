@@ -148,6 +148,7 @@ struct AudioState {
   std::mutex capture_mutex;
   h2_portaudio_capture_hooks_t capture = {};
   uint64_t capture_next_us = 0u;
+  uint64_t capture_time_remainder = 0u;
   uint64_t capture_generation = 0u;
   std::mutex echo_mutex;
   std::mutex mic_read_mutex;
@@ -597,12 +598,16 @@ void playback_main(AudioState *state) {
         if (state->capture_next_us == 0u || error == paOutputUnderflowed ||
             estimated > state->capture_next_us + 20000u) {
           state->capture_next_us = estimated;
+          state->capture_time_remainder = 0u;
         }
         const h2_portaudio_capture_frame_t captured = {
             samples, frames_to_write, kSampleRate, kChannels,
             state->capture_next_us};
         state->capture.on_speaker(state->capture.user, &captured);
-        state->capture_next_us += frames_to_write * 1000000u / kSampleRate;
+        const uint64_t duration = frames_to_write * 1000000u +
+                                  state->capture_time_remainder;
+        state->capture_next_us += duration / kSampleRate;
+        state->capture_time_remainder = duration % kSampleRate;
       }
     }
     pending_frames -= frames_to_write;
@@ -1002,6 +1007,7 @@ h2_pal_result_t h2_portaudio_set_capture_hooks(
   }
   state->capture = registering ? *hooks : h2_portaudio_capture_hooks_t{};
   state->capture_next_us = 0u;
+  state->capture_time_remainder = 0u;
   ++state->capture_generation;
   return H2_PAL_OK;
 }

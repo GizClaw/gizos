@@ -550,6 +550,7 @@ typedef struct capture_output {
   int16_t samples[FAKE_OUTPUT_FRAME_SAMPLES];
   size_t count;
   uint64_t last_us;
+  uint64_t first_us;
 } capture_output_t;
 
 static void capture_output_audio(void *user,
@@ -557,6 +558,10 @@ static void capture_output_audio(void *user,
   capture_output_t *capture = user;
   assert(frame->sample_rate == 16000u && frame->channels == 1u);
   assert(frame->timestamp_us >= capture->last_us);
+  if (capture->count == 0u)
+    capture->first_us = frame->timestamp_us;
+  assert(frame->timestamp_us - capture->first_us ==
+         capture->count * UINT64_C(1000000) / 16000u);
   assert(capture->count + frame->frames <= FAKE_OUTPUT_FRAME_SAMPLES);
   memcpy(capture->samples + capture->count, frame->samples,
          frame->frames * sizeof(int16_t));
