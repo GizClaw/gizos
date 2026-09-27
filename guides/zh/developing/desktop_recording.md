@@ -12,6 +12,8 @@ MP4 每个一秒 GOP 分片（`frag_keyframe+empty_moov+default_base_moof+skip_t
 
 Desktop launcher 先创建 recorder，再把 `h2_desktop_recording_hooks()` 返回的回调放入 `h2_desktop_capture_config_t.hooks` 并注册。Recorder 的 `on_mic` 为 NULL，MP4 音轨只来自 speaker。停止生产者并呈现最后 pending frame 后，launcher 先 destroy capture registration，等待 callback 退出，再 stop recorder。编码器写到停止时间与最后已接受 DAC sample 结束时间的较大值，保留最后 presentation、保持尾帧、补齐最后 AAC block、flush 两个 encoder 并写 trailer。正常完成、窗口退出和 SIGINT/SIGTERM 的协作取消使用相同收尾；SIGKILL、设备丢失和不可写存储不属于成功停止。
 
+Linux runtime closure 包含由固定 FFmpeg source build 提供的 `libavformat.so.62`；其精确 SONAME 纳入 `tools/bazel/linux_runtime` allowlist，真实 recorder binary 与 Showcase binary 都经过 `ldd` closure 集成检查。
+
 现有文件通过 exclusive create 拒绝覆盖，输出目录必须预先存在。路径与测试产物命名由 consumer 决定，公共 library 不读取产品环境变量或 E2E case policy。
 
 ## 验证

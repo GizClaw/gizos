@@ -41,6 +41,7 @@ py_test(
     ],
     data = [
         "ubuntu_24_04_x86_64_allowlist.json",
+        "//projects/example/targets/cc_binary/recording:recording-smoke",
         "//projects/showcase/targets/cc_binary/showcase",
     ],
     legacy_create_init = 0,
