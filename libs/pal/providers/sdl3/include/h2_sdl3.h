@@ -1,6 +1,8 @@
 #ifndef H2_SDL3_H
 #define H2_SDL3_H
 
+#include "h2_media_capture.h"
+
 #include "h2/pal/hal/h2_pal_display.h"
 #include "h2/pal/hal/h2_pal_touch.h"
 
@@ -108,6 +110,14 @@ h2_pal_result_t h2_sdl3_poll_event(h2_sdl3_t *provider,
 h2_pal_result_t h2_sdl3_read_pointer(h2_sdl3_t *provider,
                                      h2_sdl3_pointer_state_t *out_state);
 void h2_sdl3_set_window_title(h2_sdl3_t *provider, const char *title);
+
+/** Register a borrowed capture sink, or NULL to synchronously unregister.
+ * At most one sink; replacement returns BUSY. Call only from a control task,
+ * never from a capture callback. The provider must outlive registration.
+ * Successful unregister waits for callbacks already in flight.
+ */
+h2_pal_result_t h2_sdl3_set_capture(h2_sdl3_t *provider,
+                                      const h2_media_capture_api_t *capture);
 
 #ifdef __cplusplus
 }

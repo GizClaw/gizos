@@ -22,3 +22,7 @@ bazel test --config=linux_x86_64 //libs/pal/providers/portaudio:all
 ```
 
 Unit test 使用 provider test seam 覆盖参数、初始化失败、Audio API wiring、正常 stop 与失败 abort、partial-frame 保留、空 reference queue 的 raw-capture fallback、reference-before-capture 顺序、cleanup 和重复 lifecycle；需要真实默认音频设备的行为由显式 integration test 验证。
+
+## Speaker 录像采集
+
+Provider 可借用平台无关的 Media Capture sink，在成功的 speaker 写入之后复制实际混音与音量处理后的 PCM。注销等待 callback 退出；设备输出延迟与同一 Time PAL 决定 presentation timestamp。合同与验证见 [Desktop 音视频录像](./media_capture.md)。

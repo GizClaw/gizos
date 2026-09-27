@@ -1,6 +1,6 @@
 # FFmpeg Provider
 
-`//libs/pal/providers/ffmpeg:ffmpeg` 把仓库固定版本的 FFmpeg 适配为 Audio Decoder PAL 与 Video Decoder PAL。它不选择容器 track、不打开文件或 URL，也不拥有 player policy。
+`//libs/pal/providers/ffmpeg:ffmpeg` 把仓库固定版本的 FFmpeg 适配为 Audio Decoder PAL 与 Video Decoder PAL。Decoder 不选择容器 track、不打开文件或 URL，也不拥有 player policy。独立的 `:recording` target 提供 [Desktop 音视频录像](./media_capture.md)，拥有 MPEG-4 Visual/AAC 编码与流式 MP4 封装。
 
 ## Decoder ownership
 

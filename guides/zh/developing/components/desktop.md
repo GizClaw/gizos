@@ -86,6 +86,10 @@ Display brightness 通过 framebuffer presentation 的 color modulation 模拟�
 
 帮助框是主 SDL window 的 host-native modal dialog，不创建第二个 firmware display、framebuffer 或 portable App route。测试可以通过 `h2_desktop_platform_copy_help_text()` 取得同一份 UTF-8 snapshot，而不实际打开 dialog。
 
+## 同步音视频录像
+
+公共 `app_support:recording` C lifecycle 组合 SDL3 呈现采集、PortAudio speaker 采集与 FFmpeg 编码。实现、共同时间轴、有界缓冲、透明合成和停止尾帧/尾音合同见 [Desktop 音视频录像](../media_capture.md)。产品 E2E launcher 只启动/停止它并组织 MP4 artifact。
+
 ## Video Decoder
 
 `//libs/pal/providers/ffmpeg:ffmpeg` 使用 FFmpeg 的 `libavcodec`、`libavutil` 和 `libswscale` 提供 Audio Decoder 与 Video Decoder PAL。Video provider 接收 packet-fed H.264 Annex-B access unit，并把 frame 规范化到调用方 allocator-backed 的 CPU-readable format；Audio provider 解码 raw AAC-LC，并返回 allocator-backed interleaved S16LE。两个 provider 都不打开路径、不选择 MP4 track，也不依赖 `libavformat`；FFmpeg context、packet、frame、sample format 和 scaler 都属于 provider private state。

@@ -1,6 +1,8 @@
 #ifndef H2_PORTAUDIO_H
 #define H2_PORTAUDIO_H
 
+#include "h2_media_capture.h"
+
 #include "h2/pal/hal/h2_pal_audio.h"
 #include "h2/pal/os/h2_pal_mem.h"
 #include "h2/pal/os/h2_pal_queue.h"
@@ -28,6 +30,14 @@ int h2_portaudio_create(const h2_portaudio_config_t *config,
                         h2_portaudio_t **out_provider);
 void h2_portaudio_destroy(h2_portaudio_t *provider);
 h2_pal_audio_t *h2_portaudio_audio(h2_portaudio_t *provider);
+
+/** Register a borrowed capture sink, or NULL to synchronously unregister.
+ * At most one sink; replacement returns BUSY. Call only from a control task,
+ * never from a capture callback. The provider must outlive registration.
+ * Successful unregister waits for callbacks already in flight.
+ */
+h2_pal_result_t h2_portaudio_set_capture(h2_portaudio_t *provider,
+                                      const h2_media_capture_api_t *capture);
 
 #ifdef __cplusplus
 }

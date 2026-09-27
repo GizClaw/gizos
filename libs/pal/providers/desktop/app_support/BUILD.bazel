@@ -156,3 +156,17 @@ cc_library(
         "//conditions:default": [],
     }),
 )
+
+cc_library(
+    name = "recording",
+    srcs = ["h2_desktop_recording.cpp"],
+    hdrs = ["h2_desktop_recording.h"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["."],
+    deps = [
+        "//libs/pal/providers/ffmpeg:recording",
+        "//libs/pal/providers/portaudio",
+        "//libs/pal/providers/sdl3",
+    ],
+)

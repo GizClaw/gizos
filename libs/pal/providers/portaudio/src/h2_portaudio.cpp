@@ -142,6 +142,10 @@ struct AudioState {
   const h2_pal_queue_api_t *queue = nullptr;
   const h2_pal_sync_api_t *sync = nullptr;
   std::mutex control_mutex;
+  std::mutex capture_mutex;
+  const h2_media_capture_api_t *capture = nullptr;
+  uint64_t capture_next_us = 0u;
+  uint64_t capture_generation = 0u;
   std::mutex echo_mutex;
   std::mutex mic_read_mutex;
   bool mixer_initialized = false;
@@ -547,6 +551,30 @@ void playback_main(AudioState *state) {
                               std::numeric_limits<unsigned long>::max())));
     const int16_t *samples =
         state->playback_scratch.data() + pending_offset * kChannels;
+    // The blocking API has no DAC callback timestamp. Use the reported output
+    // latency and one monotonic sample clock, rebased after a real underrun/gap.
+    uint64_t capture_now = 0u;
+    uint64_t capture_latency = 0u;
+    uint64_t capture_generation = 0u;
+    bool capture_clock_ready = false;
+    {
+      std::lock_guard<std::mutex> lock(state->capture_mutex);
+      if (state->capture != nullptr) {
+        const h2_pal_result_t clock_result =
+            h2_pal_time_get_monotonic_us(state->capture->time, &capture_now);
+        capture_clock_ready = clock_result == H2_PAL_OK;
+        capture_generation = state->capture_generation;
+        if (!capture_clock_ready && state->capture->vtable->error != nullptr) {
+          state->capture->vtable->error(state->capture->user, clock_result);
+        }
+        if (!state->output_ops_overridden) {
+          const PaStreamInfo *info = Pa_GetStreamInfo(stream);
+          if (info != nullptr && info->outputLatency > 0.0) {
+            capture_latency = static_cast<uint64_t>(info->outputLatency * 1000000.0);
+          }
+        }
+      }
+    }
     const int error =
         state->output_ops.write(state->output_ops.user, stream, samples,
                                 static_cast<unsigned long>(frames_to_write));
@@ -561,6 +589,22 @@ void playback_main(AudioState *state) {
                    state->output_ops.error_text(state->output_ops.user, error));
       h2_atomic_int_store(&state->playback_result, H2_AUDIO_ERR_IO, H2_ATOMIC_SEQ_CST);
       break;
+    }
+    {
+      std::lock_guard<std::mutex> lock(state->capture_mutex);
+      if (state->capture != nullptr && capture_clock_ready &&
+          capture_generation == state->capture_generation) {
+        const uint64_t estimated = capture_now + capture_latency;
+        if (state->capture_next_us == 0u || error == paOutputUnderflowed ||
+            estimated > state->capture_next_us + 20000u) {
+          state->capture_next_us = estimated;
+        }
+        const h2_media_capture_audio_t captured = {
+            samples, frames_to_write, kSampleRate, kChannels,
+            state->capture_next_us};
+        state->capture->vtable->audio(state->capture->user, &captured);
+        state->capture_next_us += frames_to_write * 1000000u / kSampleRate;
+      }
     }
     pending_frames -= frames_to_write;
     pending_offset += frames_to_write;
@@ -918,6 +962,27 @@ static void destroy_state_atomics(AudioState *state) {
 } // namespace
 
 extern "C" {
+
+h2_pal_result_t h2_portaudio_set_capture(h2_portaudio_t *provider,
+                                        const h2_media_capture_api_t *capture) {
+  if (provider == nullptr ||
+      (capture != nullptr && (capture->vtable == nullptr ||
+       capture->vtable->audio == nullptr || capture->time == nullptr ||
+       capture->time->vtable == nullptr ||
+       capture->time->vtable->get_monotonic_us == nullptr))) {
+    return H2_PAL_ERR_INVALID_ARG;
+  }
+  auto *state = &provider->state;
+  std::lock_guard<std::mutex> lock(state->capture_mutex);
+  if (capture != nullptr && state->capture != nullptr) {
+    return H2_PAL_ERR_BUSY;
+  }
+  state->capture = capture;
+  state->capture_next_us = 0u;
+  ++state->capture_generation;
+  return H2_PAL_OK;
+}
+
 
 int h2_portaudio_create(const h2_portaudio_config_t *config,
                         h2_portaudio_t **out_provider) {

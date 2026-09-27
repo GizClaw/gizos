@@ -546,7 +546,32 @@ static void test_zero_capacity_stop(h2_pal_audio_t *audio,
   assert(h2_atomic_load(&output->close_count) == 1);
 }
 
-static void test_partial_frame(h2_pal_audio_t *audio, fake_output_t *output) {
+typedef struct capture_output {
+  int16_t samples[FAKE_OUTPUT_FRAME_SAMPLES];
+  size_t count;
+  uint64_t last_us;
+} capture_output_t;
+
+static void capture_output_audio(void *user,
+                                 const h2_media_capture_audio_t *frame) {
+  capture_output_t *capture = user;
+  assert(frame->sample_rate == 16000u && frame->channels == 1u);
+  assert(frame->timestamp_us >= capture->last_us);
+  assert(capture->count + frame->frames <= FAKE_OUTPUT_FRAME_SAMPLES);
+  memcpy(capture->samples + capture->count, frame->samples,
+         frame->frames * sizeof(int16_t));
+  capture->count += frame->frames;
+  capture->last_us = frame->timestamp_us;
+}
+
+static void test_partial_frame(h2_portaudio_t *provider, h2_pal_audio_t *audio,
+                               fake_output_t *output) {
+  capture_output_t capture = {0};
+  const h2_media_capture_vtable_t vtable = {NULL, capture_output_audio, NULL};
+  const h2_media_capture_api_t sink = {
+      &capture, &vtable, h2_desktop_platform_time_api()};
+  assert(h2_portaudio_set_capture(provider, &sink) == H2_PAL_OK);
+  assert(h2_portaudio_set_capture(provider, &sink) == H2_PAL_ERR_BUSY);
   fake_output_reset(output, FAKE_OUTPUT_PARTIAL_CAPACITY);
   int16_t samples[FAKE_OUTPUT_FRAME_SAMPLES];
   for (size_t i = 0u; i < FAKE_OUTPUT_FRAME_SAMPLES; ++i)
@@ -559,6 +584,9 @@ static void test_partial_frame(h2_pal_audio_t *audio, fake_output_t *output) {
   assert(h2_atomic_load(&output->write_count) > 1);
   assert(h2_atomic_load(&output->sample_count) == FAKE_OUTPUT_FRAME_SAMPLES);
   assert(memcmp(output->samples, samples, sizeof(samples)) == 0);
+  assert(h2_portaudio_set_capture(provider, NULL) == H2_PAL_OK);
+  assert(capture.count == FAKE_OUTPUT_FRAME_SAMPLES);
+  assert(memcmp(capture.samples, output->samples, sizeof(samples)) == 0);
   assert(!h2_atomic_load(&output->control_during_write));
 }
 
@@ -760,7 +788,7 @@ int main(void) {
 
   test_zero_capacity_stop(audio, &output);
   test_output_open_error_policy(provider, audio, &output);
-  test_partial_frame(audio, &output);
+  test_partial_frame(provider, audio, &output);
   test_stop_waits_for_active_write(audio, &output);
   test_output_underflow_is_recoverable(provider, audio, &output);
   test_worker_failure_restart(audio, &output, FAKE_OUTPUT_AVAILABILITY_ERROR);
