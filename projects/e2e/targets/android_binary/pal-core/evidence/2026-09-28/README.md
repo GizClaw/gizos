@@ -5,7 +5,7 @@
 - `qualified.json`：完整 case 清单和资源基线。
 - `environment.json`：运行环境以及 App/实际使用的 SDK 包 SHA-256。
 - `sdk-metadata.json`：对应包的架构、版本和校验值。
-- `pal-core.stdout`：实际 case 执行日志和 pthread 栈大小观察。
-- `bazel-test.txt`：Bazel 测试完成记录。
 
 复跑方式见 `projects/e2e/libs/pal-core-mobile/README.md`。未宣称物理手机已通过。
+
+原始日志保留为本地诊断产物；仓库保存上述结构化结果和校验信息。
