@@ -64,7 +64,10 @@ pkg_tar(
 
 py_test(
     name = "browser_test",
-    srcs = ["run_browser.py"],
+    srcs = [
+        "browser_evidence.py",
+        "run_browser.py",
+    ],
     args = [
         "--archive",
         "$(location :pal_http)",
@@ -82,8 +85,83 @@ py_test(
         "//tools/bazel/platforms:host_macos_target_macos": ["@h2_playwright_chromium_macos_arm64//:runtime"],
         "//conditions:default": [],
     }),
+    imports = ["."],
     legacy_create_init = 0,
     main = "run_browser.py",
     target_compatible_with = _HOST,
     deps = ["//projects/e2e/libs/pal-http-fixture:fixture"],
+)
+
+py_test(
+    name = "worker_rejection_test",
+    srcs = [
+        "browser_evidence.py",
+        "run_browser.py",
+    ],
+    args = [
+        "--negative-workers",
+        "--archive",
+        "$(location :pal_http)",
+        "--cases",
+        "$(location //projects/e2e/apps/pal-http/app:include/h2_pal_http_cases.inc)",
+    ],
+    data = [
+        ":pal_http",
+        "//projects/e2e/apps/pal-http/app:include/h2_pal_http_cases.inc",
+        "//projects/e2e/targets/cc_binary/pal-http:run_desktop.py",
+        "//tools/bazel:web_archive_browser_test.py",
+        "//tools/bazel:web_archive_server.py",
+    ] + select({
+        "//tools/bazel/platforms:host_linux_target_linux": ["@h2_playwright_chromium_linux_x86_64//:runtime"],
+        "//tools/bazel/platforms:host_macos_target_macos": ["@h2_playwright_chromium_macos_arm64//:runtime"],
+        "//conditions:default": [],
+    }),
+    imports = ["."],
+    legacy_create_init = 0,
+    main = "run_browser.py",
+    target_compatible_with = _HOST,
+    deps = ["//projects/e2e/libs/pal-http-fixture:fixture"],
+)
+
+py_test(
+    name = "endpoint_rejection_test",
+    srcs = [
+        "browser_evidence.py",
+        "run_browser.py",
+    ],
+    args = [
+        "--negative-endpoints",
+        "--archive",
+        "$(location :pal_http)",
+        "--cases",
+        "$(location //projects/e2e/apps/pal-http/app:include/h2_pal_http_cases.inc)",
+    ],
+    data = [
+        ":pal_http",
+        "//projects/e2e/apps/pal-http/app:include/h2_pal_http_cases.inc",
+        "//projects/e2e/targets/cc_binary/pal-http:run_desktop.py",
+        "//tools/bazel:web_archive_browser_test.py",
+        "//tools/bazel:web_archive_server.py",
+    ] + select({
+        "//tools/bazel/platforms:host_linux_target_linux": ["@h2_playwright_chromium_linux_x86_64//:runtime"],
+        "//tools/bazel/platforms:host_macos_target_macos": ["@h2_playwright_chromium_macos_arm64//:runtime"],
+        "//conditions:default": [],
+    }),
+    imports = ["."],
+    legacy_create_init = 0,
+    main = "run_browser.py",
+    target_compatible_with = _HOST,
+    deps = ["//projects/e2e/libs/pal-http-fixture:fixture"],
+)
+
+py_test(
+    name = "browser_evidence_test",
+    srcs = [
+        "browser_evidence.py",
+        "tests/test_browser_evidence.py",
+    ],
+    imports = ["."],
+    legacy_create_init = 0,
+    main = "tests/test_browser_evidence.py",
+    target_compatible_with = _HOST,
 )

@@ -25,9 +25,9 @@ int h2_http_mobile_report(const char *path, const char *platform, const char *ve
         result->blocked, result->retained_allocations, rc, teardown);
     for (unsigned index = 0u; index < H2_PAL_HTTP_E2E_CASE_COUNT; ++index) {
         const h2_pal_http_e2e_case_result_t *item = &result->cases[index];
-        fprintf(file, "%s{\"id\":\"%s\",\"status\":\"%s\",\"detail\":%d,\"line\":%u,\"elapsed_ms\":%llu}",
+        fprintf(file, "%s{\"id\":\"%s\",\"status\":\"%s\",\"detail\":%d,\"line\":%u,\"elapsed_ms\":%llu,\"request_result\":%d}",
             index == 0u ? "" : ",", item->id != NULL ? item->id : "",
-            item->passed ? "PASS" : item->blocked ? "BLOCKED" : "FAIL", item->detail, item->line, (unsigned long long)item->elapsed_ms);
+            item->passed ? "PASS" : item->blocked ? "BLOCKED" : "FAIL", item->detail, item->line, (unsigned long long)item->elapsed_ms, item->request_result);
     }
     fputs("]}\n", file);
     if (ferror(file)) { fclose(file); return H2_PAL_ERR_IO; }

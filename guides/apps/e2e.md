@@ -148,7 +148,7 @@ Portable/desktop tests 证明 case contract、provider assembly、parser、failu
 
 ## PAL HTTP
 
-`pal-http` 独立验收 HTTP request/response_free 和所有 request 字段，包括七种方法、字节 span、三种响应内存模式、流式 byte count、header/read callback 错误传播、取消、整体 deadline/retry、重定向、证书验证与资源释放。App 只借用 Runtime/PAL；`projects/e2e/libs/pal-http-fixture` 提供隔离 session 的可重复 HTTP/HTTPS 服务，host/browser 默认只绑定 loopback。Browser 使用真实 Fetch/CORS，只信任该次 fixture 的指定 SPKI，仍必须拒绝独立的不受信任证书。不存在的网卡必须显式报错；Browser 的绑定拒绝不代表支持物理网卡选择。设备入口只借用已有 Wi-Fi 配置和 Board Net provider，不更改 provisioning。每端必须完整运行同一 registry 并保留对应 artifact SHA 的结构化 receipt，构建成功不能替代实测。
+`pal-http` 独立验收 HTTP request/response_free 和所有 request 字段，包括七种方法、字节 span、三种响应内存模式、流式 byte count、header/read callback 错误传播、取消、整体 deadline/retry、重定向、证书验证与资源释放。App 只借用 Runtime/PAL；`projects/e2e/libs/pal-http-fixture` 提供隔离 session 的可重复 HTTP/HTTPS 服务，host/browser 默认只绑定 loopback。Browser 使用真实 Fetch/CORS，只信任该次 fixture 的指定 SPKI，仍必须拒绝独立的不受信任证书。不存在的网卡必须显式报错；Browser 的绑定拒绝不代表支持物理网卡选择。设备入口只借用已有 Wi-Fi 配置和 Board Net provider，不更改 provisioning。每端必须完整运行同一 registry 并保留对应 artifact SHA 的结构化 receipt，构建成功不能替代实测。 不受信任 HTTPS 必须关联本轮真实 TLS 握手（ClientHello、服务端证书、拒绝且无成功 HTTP）；native 要求 TLS_VERIFY，Browser 还需 exact URL 的 Chromium ERR_CERT_AUTHORITY_INVALID。Browser teardown 后由运行 C 的 pthread 通过生产 bridge 读取实际 HTTP registry 并报告零 pending；缺失或非法计数必须失败，不能从页面全局 Module 猜测。坏 URL、拒绝连接和缺失 registry 均有真实负向运行。
 
 ## PAL Storage
 

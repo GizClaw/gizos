@@ -33,7 +33,7 @@ def main():
                         names = list(fixture.servers[0].runs)
                     for name in names:
                         try:
-                            runs[name] = dict(arrivals=fixture.verify_arrivals(name), arrivals_valid=True)
+                            runs[name] = dict(arrivals=fixture.verify_arrivals(name), arrivals_valid=True, tls_rejection=fixture.verify_tls_rejection(name))
                         except RuntimeError:
                             with fixture.servers[0].lock:
                                 runs[name] = dict(arrivals=fixture.servers[0].runs[name].copy(), arrivals_valid=False)

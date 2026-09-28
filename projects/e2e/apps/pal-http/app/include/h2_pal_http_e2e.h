@@ -22,6 +22,7 @@ typedef struct h2_pal_http_e2e_case_result {
     int detail;
     unsigned line;
     uint64_t elapsed_ms;
+    int request_result;
 } h2_pal_http_e2e_case_result_t;
 
 typedef struct h2_pal_http_e2e_result {
@@ -39,6 +40,9 @@ typedef struct h2_pal_http_e2e_config {
     const char *http_base;
     const char *https_base;
     const char *untrusted_https_base;
+    /** Native default is TLS_VERIFY; only Fetch launchers select IO and must
+     * additionally prove the browser certificate error for the exact URL. */
+    int untrusted_tls_error;
     /** Optional progress callback; invoked synchronously after case cleanup. */
     void (*report)(void *user, const h2_pal_http_e2e_case_result_t *result);
     void *report_user;

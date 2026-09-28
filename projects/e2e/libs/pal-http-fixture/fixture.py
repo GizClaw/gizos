@@ -36,6 +36,114 @@ def certificate(directory, name, advertised):
 
 
 
+class TLSRejectionLedger:
+    """Associate pre-HTTP TLS failures with an explicitly armed peer/run."""
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.next_arm = 0
+        self.by_peer = {}
+        self.by_run = {}
+
+    def arm(self, peer, run_id):
+        with self.lock:
+            self.next_arm += 1
+            record = dict(arm=self.next_arm, run_id=run_id, events=[], http_requests=0)
+            self.by_peer[peer] = record
+            self.by_run[run_id] = record
+
+    def accepted(self, peer):
+        with self.lock:
+            record = self.by_peer.get(peer)
+            if record is None:
+                return None
+            event = dict(client_hello=False, certificate_presented=False,
+                         peer_alerts=[], finished=False, handshake_succeeded=False,
+                         error=None)
+            record['events'].append(event)
+            return event
+
+    def message(self, event, direction, content_type, message_type, data):
+        if event is None:
+            return
+        with self.lock:
+            if direction == 'read' and int(content_type) == 22 and int(message_type) == 1:
+                event['client_hello'] = True
+            if direction == 'write' and int(content_type) == 22 and int(message_type) == 11:
+                event['certificate_presented'] = True
+            if direction == 'read' and int(content_type) == 21 and len(data) == 2:
+                event['peer_alerts'].append(int(data[1]))
+
+    def finished(self, event, succeeded, error=None):
+        if event is None:
+            return
+        with self.lock:
+            if event['finished']:
+                return
+            event['finished'] = True
+            event['handshake_succeeded'] = succeeded
+            event['error'] = error
+
+    def http_request(self, peer):
+        with self.lock:
+            record = self.by_peer.get(peer)
+            if record is not None:
+                record['http_requests'] += 1
+
+    def proof(self, run_id, peer=None):
+        with self.lock:
+            record = self.by_run.get(run_id)
+            if record is None or (peer is not None and self.by_peer.get(peer) is not record):
+                raise RuntimeError('TLS rejection was not armed for this peer/run')
+            value = dict(arm=record['arm'], run_id=record['run_id'],
+                         http_requests=record['http_requests'],
+                         events=[dict(event, peer_alerts=list(event['peer_alerts'])) for event in record['events']])
+        events = value['events']
+        if not events or value['http_requests'] or any(not event['finished'] or event['handshake_succeeded'] for event in events):
+            raise RuntimeError('untrusted TLS endpoint has no completed rejecting handshake')
+        if not any(event['client_hello'] and event['certificate_presented'] for event in events):
+            raise RuntimeError('untrusted TLS peer did not present its certificate')
+        value['verified'] = True
+        return value
+
+
+class ObservedTLSServer(ThreadingHTTPServer):
+    """Keep TLS handshake observation separate from HTTP request arrival."""
+    def __init__(self, address, context, ledger):
+        super().__init__(address, Handler)
+        self.daemon_threads = True
+        self.context = context
+        self.tls_ledger = ledger
+        self.is_untrusted = ledger is not None
+        if ledger is not None:
+            # Pinned CPython/OpenSSL exposes decoded handshake messages here,
+            # including TLS 1.3 Certificate. Missing instrumentation fails closed.
+            if not hasattr(context, '_msg_callback'):
+                raise RuntimeError('TLS fixture requires SSL handshake message observation')
+            context._msg_callback = self.tls_message
+
+    def tls_message(self, connection, direction, version, content_type, message_type, data):
+        del version
+        self.tls_ledger.message(getattr(connection, 'h2_tls_event', None),
+                                direction, content_type, message_type, data)
+
+    def process_request_thread(self, request, client_address):
+        event = self.tls_ledger.accepted(client_address[0]) if self.tls_ledger else None
+        connection = request
+        try:
+            request.settimeout(15)
+            connection = self.context.wrap_socket(request, server_side=True, do_handshake_on_connect=False)
+            connection.h2_tls_event = event
+            connection.do_handshake()
+            if self.tls_ledger:
+                self.tls_ledger.finished(event, True)
+            self.finish_request(connection, client_address)
+        except (ssl.SSLError, OSError) as error:
+            if self.tls_ledger:
+                self.tls_ledger.finished(event, False, getattr(error, 'reason', type(error).__name__))
+        finally:
+            self.shutdown_request(connection)
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = 'HTTP/1.1'
 
@@ -80,6 +188,8 @@ class Handler(BaseHTTPRequestHandler):
 
     def dispatch(self):
         try:
+            if getattr(self.server, 'is_untrusted', False):
+                self.server.tls_ledger.http_request(self.client_address[0])
             if self.command == 'OPTIONS' and self.headers.get('Access-Control-Request-Method'):
                 self.response(204, b'')
                 return
@@ -103,6 +213,17 @@ class Handler(BaseHTTPRequestHandler):
                 counters = self.server.runs.setdefault(run_id, {})
                 attempt = counters.get(route, 0) + 1
                 counters[route] = attempt
+            if route == '/tls-rejection/arm':
+                self.server.rejections.arm(self.client_address[0], run_id)
+                self.response(200, b'armed')
+                return
+            if route == '/tls-rejection/proof':
+                try:
+                    self.server.rejections.proof(run_id, self.client_address[0])
+                    self.response(200, b'certificate-presented-and-rejected')
+                except RuntimeError:
+                    self.response(409, b'TLS rejection not observed')
+                return
             length = int(self.headers.get('Content-Length', '0'))
             if not 0 <= length <= 4096:
                 self.response(413, b'')
@@ -147,20 +268,23 @@ class Fixture:
         self.session = uuid.uuid4().hex
         self.servers = []
         self.threads = []
+        self.rejections = TLSRejectionLedger()
         self.key, trusted_cert, self.ca, self.spki = certificate(directory, 'trusted', advertised)
         bad_key, bad_cert, _, _ = certificate(directory, 'untrusted', advertised)
         endpoints = []
-        for key, cert in ((None, None), (self.key, trusted_cert), (bad_key, bad_cert)):
-            server = ThreadingHTTPServer((bind, 0), Handler)
-            server.daemon_threads = True
-            server.session = self.session
-            server.runs = {}
-            server.lock = threading.Lock()
+        for index, (key, cert) in enumerate(((None, None), (self.key, trusted_cert), (bad_key, bad_cert))):
             if cert:
                 context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
                 context.load_cert_chain(cert, key)
                 context.set_alpn_protocols(['http/1.1'])
-                server.socket = context.wrap_socket(server.socket, server_side=True)
+                server = ObservedTLSServer((bind, 0), context, self.rejections if index == 2 else None)
+            else:
+                server = ThreadingHTTPServer((bind, 0), Handler)
+            server.daemon_threads = True
+            server.session = self.session
+            server.runs = {}
+            server.lock = threading.Lock()
+            server.rejections = self.rejections
             thread = threading.Thread(target=server.serve_forever, daemon=True)
             thread.start()
             self.servers.append(server)
@@ -179,6 +303,9 @@ class Fixture:
         if not 2 <= attempts.get('/retry/deadline', 0) <= 5:
             raise RuntimeError('retry deadline did not exercise multiple real attempts')
         return attempts
+
+    def verify_tls_rejection(self, run_id=''):
+        return self.rejections.proof(run_id)
 
     def close(self):
         for server in self.servers:

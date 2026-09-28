@@ -13,7 +13,7 @@
   };
   var Module = {
     canvas: document.getElementById('canvas'),
-    arguments: ['http', 'https', 'untrusted'].map(key => query.get(key) || ''),
+    arguments: ['http', 'https', 'untrusted', 'workerProbeFault'].map(key => query.get(key) || ''),
     print: append,
     printErr: append,
   };

@@ -130,6 +130,7 @@ def main():
                         ca=fixture.ca.read_text())
         result, environment = (ios if args.platform == "ios" else android)(args, args.output, settings)
         environment["fixture_attempts"] = fixture.verify_arrivals()
+        environment["tls_rejection"] = fixture.verify_tls_rejection()
         environment["tls_verification"] = "required; explicit isolated test CA; separate untrusted certificate rejected"
     (args.output / "qualified.json").write_text(json.dumps(result, indent=2) + "\n")
     environment.update(observation_finished_at_utc=datetime.now(timezone.utc).isoformat(),

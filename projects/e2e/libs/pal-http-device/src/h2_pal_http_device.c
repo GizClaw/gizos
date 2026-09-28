@@ -11,9 +11,9 @@ static char fixture_run[17];
 static void report(void *user, const h2_pal_http_e2e_case_result_t *result) {
     const h2_runtime_t *runtime = user;
     char line[256];
-    (void)snprintf(line, sizeof(line), "H2_PAL_HTTP_CASE {\"id\":\"%s\",\"status\":\"%s\",\"detail\":%d,\"line\":%u,\"elapsed_ms\":%llu}\n",
+    (void)snprintf(line, sizeof(line), "H2_PAL_HTTP_CASE {\"id\":\"%s\",\"status\":\"%s\",\"detail\":%d,\"line\":%u,\"elapsed_ms\":%llu,\"request_result\":%d}\n",
         result->id, result->passed ? "PASS" : result->blocked ? "BLOCKED" : "FAIL",
-        result->detail, result->line, (unsigned long long)result->elapsed_ms);
+        result->detail, result->line, (unsigned long long)result->elapsed_ms, result->request_result);
     (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-http", line);
     if (runtime != NULL) (void)h2_pal_time_sleep_ms(runtime->time, 40u);
 }

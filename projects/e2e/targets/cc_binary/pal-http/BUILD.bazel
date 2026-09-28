@@ -23,7 +23,7 @@ cc_binary(
         "//projects/e2e/apps/pal-http/app:pal_http_e2e",
     ] + select({
         "@platforms//os:macos": ["//libs/pal/providers/darwin/pal_core:host_os"],
-        "//conditions:default": ["//libs/pal/providers/linux/pal_core:host_os"],
+        "//conditions:default": ["//libs/pal/providers/linux/pal_core"],
     }),
 )
 
@@ -47,3 +47,23 @@ py_test(
 )
 
 exports_files(["run_desktop.py"])
+
+py_test(
+    name = "endpoint_rejection_test",
+    srcs = ["run_desktop.py"],
+    args = [
+        "--binary",
+        "$(location :pal_http)",
+        "--cases",
+        "$(location //projects/e2e/apps/pal-http/app:include/h2_pal_http_cases.inc)",
+        "--negative-endpoints",
+    ],
+    data = [
+        ":pal_http",
+        "//projects/e2e/apps/pal-http/app:include/h2_pal_http_cases.inc",
+    ],
+    legacy_create_init = 0,
+    main = "run_desktop.py",
+    target_compatible_with = _HOST,
+    deps = ["//projects/e2e/libs/pal-http-fixture:fixture"],
+)

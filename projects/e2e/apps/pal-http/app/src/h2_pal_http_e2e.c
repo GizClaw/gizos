@@ -170,6 +170,28 @@ static int response_empty(const h2_pal_http_response_t *response) {
         response->content_length == 0;
 }
 
+/* Fixture controls are ordinary HTTP requests using the same borrowed API.
+ * The bounded response binds TLS observation to this run and remote peer. */
+static int fixture_tls_control(const h2_pal_http_e2e_config_t *config,
+                               const char *operation) {
+    char url[HTTP_URL_BYTES];
+    uint8_t bytes[64];
+    int length = snprintf(url, sizeof(url), "%s/tls-rejection/%s", config->http_base, operation);
+    if (length < 0 || (size_t)length >= sizeof(url)) return H2_PAL_ERR_INVALID_ARG;
+    h2_pal_http_request_t request = {
+        .method = H2_PAL_HTTP_GET, .url = {url, (size_t)length},
+        .response_buf = bytes, .response_buf_cap = sizeof(bytes), .timeout_ms = 10000,
+    };
+    h2_pal_http_response_t response = {0};
+    int rc = h2_pal_http_request(config->runtime->http, &request, &response);
+    const char *expected = strcmp(operation, "arm") == 0 ? "armed" : "certificate-presented-and-rejected";
+    if (rc == H2_PAL_OK && (response.status_code != 200 ||
+        response.body_len != strlen(expected) || response.body == NULL ||
+        memcmp(response.body, expected, response.body_len) != 0)) rc = H2_PAL_ERR_INVALID_STATE;
+    h2_pal_http_response_free(config->runtime->http, &response);
+    return rc;
+}
+
 static void execute_case(const h2_pal_http_e2e_config_t *config,
                          h2_pal_http_e2e_case_t id,
                          h2_pal_http_e2e_case_result_t *result,
@@ -370,13 +392,27 @@ static void execute_case(const h2_pal_http_e2e_config_t *config,
     request.url = (h2_pal_http_str_t){url, (size_t)url_len};
     memcpy(url + url_len, "!poison", 8u);
     if (id == H2_PAL_HTTP_E2E_INVALID_URL_SPAN) url[5] = '\0';
+    if (id == H2_PAL_HTTP_E2E_HTTPS_UNTRUSTED) {
+        CHECK(strncmp(base, "https://", 8u) == 0);
+        CHECK(fixture_tls_control(config, "arm") == H2_PAL_OK);
+    }
     CHECK(h2_pal_time_get_monotonic_ms(runtime->time, &started) == H2_PAL_OK);
     rc = h2_pal_http_request(http, &request, &response);
+    result->request_result = rc;
     CHECK(h2_pal_time_get_monotonic_ms(runtime->time, &finished) == H2_PAL_OK);
     result->elapsed_ms = finished - started;
     CHECK(finished >= started && result->elapsed_ms < (uint64_t)request.timeout_ms + 500u);
-    if (id == H2_PAL_HTTP_E2E_HTTPS_UNTRUSTED ||
-        id == H2_PAL_HTTP_E2E_INTERFACE_REJECTED) {
+    if (id == H2_PAL_HTTP_E2E_HTTPS_UNTRUSTED) {
+        int expected_tls = config->untrusted_tls_error == 0 ? H2_PAL_ERR_TLS_VERIFY : config->untrusted_tls_error;
+        CHECK(rc == expected_tls);
+        CHECK(response_empty(&response) && callbacks.headers == 0u && callbacks.reads == 0u);
+        int proof = H2_PAL_ERR_INVALID_STATE;
+        for (unsigned attempt = 0u; attempt < 4u && proof != H2_PAL_OK; ++attempt) {
+            proof = fixture_tls_control(config, "proof");
+            if (proof != H2_PAL_OK) (void)h2_pal_time_sleep_ms(runtime->time, 50u);
+        }
+        CHECK(proof == H2_PAL_OK);
+    } else if (id == H2_PAL_HTTP_E2E_INTERFACE_REJECTED) {
         CHECK(rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT);
         CHECK(response.body == NULL && callbacks.headers == 0u);
     } else {
@@ -459,7 +495,9 @@ int h2_pal_http_e2e_run(const h2_pal_http_e2e_config_t *config,
                       h2_pal_http_e2e_result_t *out_result) {
     if (config == NULL || out_result == NULL || config->runtime == NULL ||
         config->http_base == NULL || config->https_base == NULL ||
-        config->untrusted_https_base == NULL) return H2_PAL_ERR_INVALID_ARG;
+        config->untrusted_https_base == NULL ||
+        (config->untrusted_tls_error != 0 && config->untrusted_tls_error != H2_PAL_ERR_TLS_VERIFY &&
+         config->untrusted_tls_error != H2_PAL_ERR_IO)) return H2_PAL_ERR_INVALID_ARG;
     memset(out_result, 0, sizeof(*out_result));
     const h2_runtime_t *runtime = config->runtime;
     int complete = runtime->http != NULL && runtime->http->vtable != NULL &&

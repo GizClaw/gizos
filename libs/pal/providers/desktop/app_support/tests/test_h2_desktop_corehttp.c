@@ -433,9 +433,11 @@ int main(int argc, char **argv) {
     config.root_ca_pem = ca.data;
     config.root_ca_pem_len = ca.len;
     assert(h2_corehttp_create(&config, &provider, &http) == H2_PAL_OK);
-    run_rejected_tls_request(
-        &http, HTTP_SERVER_TLS_REJECT, "127.0.0.1", argv[3], argv[4],
-        H2_PAL_ERR_TLS_VERIFY);
+    /* The fixture includes 127.0.0.1 as an IP SAN, so this identity is trusted. */
+    port = start_server(
+        &server, &thread, HTTP_SERVER_TLS_SUCCESS, 1u, argv[3], argv[4]);
+    run_request(&http, port, "127.0.0.1", 1);
+    finish_server(&server, thread);
     run_rejected_tls_request(
         &http, HTTP_SERVER_TLS_INTERRUPT, "localhost", argv[3], argv[4],
         H2_PAL_ERR_IO);
