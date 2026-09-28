@@ -37,6 +37,17 @@ class WasmUrlTest(unittest.TestCase):
         for reference in references:
             self.assertTrue((package / reference).is_file(), reference)
 
+    def test_pthread_worker_url_exists_in_the_package(self):
+        package = package_dir()
+        runtime = (package / "h2loader_runtime.js").read_text()
+        references = re.findall(
+            r'new Worker\(new URL\([\'"]([^\'"]+)[\'"], import\.meta\.url\)',
+            runtime,
+        )
+        self.assertTrue(references, "runtime contains no pthread Worker URL")
+        for reference in references:
+            self.assertTrue((package / reference).is_file(), reference)
+
 
 if __name__ == "__main__":
     unittest.main()

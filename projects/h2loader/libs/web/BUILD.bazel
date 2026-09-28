@@ -41,7 +41,7 @@ cc_library(
 )
 
 cc_binary(
-    name = "_wasm/h2loader_runtime",
+    name = "_wasm/h2loader_runtime.js",
     srcs = ["src/h2_h2loader_web_entry.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
@@ -64,7 +64,7 @@ cc_binary(
 
 wasm_cc_binary(
     name = "h2loader_web_runtime",
-    cc_target = ":_wasm/h2loader_runtime",
+    cc_target = ":_wasm/h2loader_runtime.js",
     outputs = [
         "h2loader_runtime.js",
         "h2loader_runtime.wasm",
@@ -86,6 +86,69 @@ filegroup(
         "src/h2loader_protocol.js",
         ":h2loader_web_runtime",
     ],
+)
+
+cc_binary(
+    name = "_wasm/close_busy_test.js",
+    testonly = True,
+    srcs = [
+        "include/h2_h2loader_web.h",
+        "include/h2_h2loader_web_task_names.h",
+        "src/h2_h2loader_web_task_names.c",
+        "tests/close_busy_test.c",
+    ],
+    additional_compiler_inputs = ["src/h2_h2loader_web.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + ["-Iprojects/h2loader/libs/web/include"],
+    linkopts = [
+        "-sALLOW_MEMORY_GROWTH=1",
+        "-sASSERTIONS=1",
+        "-sPROXY_TO_PTHREAD=1",
+        "-sPTHREAD_POOL_SIZE=16",
+    ],
+    target_compatible_with = WEB_WASM32_ARTIFACT_COMPATIBILITY,
+    deps = [
+        ":tasks",
+        "//libs/h2loader_host",
+        "//libs/pal",
+        "//libs/pal/providers/web/pal_core",
+        "//projects/h2loader/libs/web/status_json:h2loader_web_status_json",
+    ],
+)
+
+wasm_cc_binary(
+    name = "close_busy_test_wasm",
+    testonly = True,
+    cc_target = ":_wasm/close_busy_test.js",
+    exit_runtime = True,
+    outputs = [
+        "close_busy_test.js",
+        "close_busy_test.wasm",
+    ],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    threads = "emscripten",
+)
+
+js_test(
+    name = "close_busy_test",
+    chdir = package_name(),
+    copy_data_to_bin = select({
+        "//tools/bazel/platforms:is_windows_x86_64": True,
+        "//conditions:default": False,
+    }),
+    data = [":close_busy_test_wasm"],
+    entry_point = "close_busy_test.js",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )
 
 js_test(

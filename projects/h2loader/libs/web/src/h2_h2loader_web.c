@@ -955,6 +955,8 @@ int h2_h2loader_web_close_step(h2_h2loader_web_client_t *client) {
   }
   h2_pal_result_t result = client->shutdown_result;
   h2_pal_result_t destroyed = h2_web_platform_destroy(client->platform);
+  if (destroyed == H2_PAL_ERR_BUSY)
+    return H2_PAL_ERR_WOULD_BLOCK;
   if (destroyed != H2_PAL_OK)
     return destroyed;
   client->platform = NULL;
