@@ -1278,6 +1278,9 @@ static h2_pal_result_t h2loader_invoke_locked(
     result = h2loader_require_command(self, argc, argv, NULL);
     if (result == H2_PAL_OK) {
         result = handler(self, command, argc, argv);
+    } else if (h2loader_command_bit(argc, argv) ==
+               H2_LOADER_COMMAND_AVAILABLE_STAGE_PAYLOAD) {
+        printf("H2_LOADER_STAGE_RECEIVE result=fail code=%d\n", result);
     }
     if (operation_locked) {
         int unlock_rc = h2_pal_mutex_unlock(

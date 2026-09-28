@@ -1462,6 +1462,8 @@ typedef struct operation_fixture {
     int cancelled;
     int bad_final_checksum;
     int stage_only;
+    int stage_unavailable;
+    int stage_unavailable_after_reconnect;
     int fail_stage_status_once;
     int stage_missing_after_reconnect;
     int stage_mismatch_after_reconnect;
@@ -1494,6 +1496,11 @@ static h2_pal_result_t operation_connect(
     strcpy(out_status->board, fixture->status_board);
     strcpy(out_status->target, fixture->asset.target);
     out_status->active_role = fixture->initial_active_role;
+    out_status->command_availability =
+        (fixture->stage_unavailable ||
+         (fixture->connect_count > 1 &&
+          fixture->stage_unavailable_after_reconnect)) ? 0u :
+        H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_PAYLOAD;
     out_status->boot_intent = H2_H2LOADER_HOST_BOOT_INTENT_AUTO;
     out_status->running_partition = 1u;
     out_status->next_partition = 1u;
@@ -1976,6 +1983,44 @@ static void test_managed_operation(void) {
            H2_H2LOADER_HOST_OPERATION_FINAL_VERIFY);
     assert(fixture.event_result[fixture.event_count - 1u] ==
            H2_PAL_ERR_NOT_FOUND);
+
+    fixture.stage_unavailable = 1;
+    fixture.rediscover_result = H2_PAL_OK;
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.activate_count = 0;
+    fixture.disconnect_count = 0;
+    assert(h2_h2loader_host_managed_operation_run(
+               &config, &final_status) == H2_PAL_ERR_INVALID_STATE);
+    assert(fixture.connect_count == 1);
+    assert(fixture.stage_count == 0);
+    assert(fixture.activate_count == 0);
+    assert(fixture.disconnect_count == 1);
+
+    fixture.stage_only = 1;
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.disconnect_count = 0;
+    assert(h2_h2loader_host_stage_operation_run(
+               &config, &final_status) == H2_PAL_ERR_INVALID_STATE);
+    assert(fixture.connect_count == 1);
+    assert(fixture.stage_count == 0);
+    assert(fixture.disconnect_count == 1);
+
+    fixture.stage_unavailable = 0;
+    fixture.stage_unavailable_after_reconnect = 1;
+    fixture.stage_missing_after_reconnect = 1;
+    fixture.transient_stage_failures = 1;
+    fixture.connect_count = 0;
+    fixture.stage_count = 0;
+    fixture.disconnect_count = 0;
+    fixture.rediscover_count = 0;
+    assert(h2_h2loader_host_stage_operation_run(
+               &config, &final_status) == H2_PAL_ERR_INVALID_STATE);
+    assert(fixture.connect_count == 2);
+    assert(fixture.stage_count == 1);
+    assert(fixture.rediscover_count == 1);
+    assert(fixture.disconnect_count == 2);
 }
 
 typedef struct export_buffer {
