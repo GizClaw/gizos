@@ -68,9 +68,11 @@ typedef struct jieli_audio_state {
   int speaker_started;
   int speaker_stopping;
   uint32_t speaker_volume_percent;
+  uint32_t mic_gain_percent;
   jieli_audio_track_t tracks[H2_AUDIO_MAX_TRACKS];
 } jieli_audio_state_t;
-static jieli_audio_state_t audio_state = {.speaker_volume_percent = 80u};
+static jieli_audio_state_t audio_state = {
+    .speaker_volume_percent = 80u, .mic_gain_percent = 100u};
 
 static void audio_stage(const char *message) {
   (void)h2_jieli_ac791n_devkit_console_write(message, strlen(message), 100u);
@@ -380,6 +382,15 @@ static int audio_mic_read(void *user, h2_audio_frame_t *frame, uint32_t wait_ms)
       if (count > frame->capacity) count = (uint32_t)frame->capacity;
       count &= ~1u;
       ring_read(&audio_state.mic_ring, frame->data, count);
+      /* This board maps 100% to its existing post-AEC PCM level. */
+      uint8_t *pcm = frame->data;
+      for (uint32_t offset = 0u; offset < count; offset += sizeof(int16_t)) {
+        int16_t sample = 0;
+        memcpy(&sample, pcm + offset, sizeof(sample));
+        sample = (int16_t)((int32_t)sample *
+                           (int32_t)audio_state.mic_gain_percent / 100);
+        memcpy(pcm + offset, &sample, sizeof(sample));
+      }
       frame->bytes = count;
       frame->sample_rate_hz = H2_AUDIO_SAMPLE_RATE;
       frame->samples_per_channel = (uint16_t)(count / sizeof(int16_t));
@@ -666,6 +677,25 @@ static int audio_set_volume(void *user, uint32_t percent) {
   return result;
 }
 
+static int audio_get_mic_gain(void *user, uint32_t *out_percent) {
+  (void)user;
+  int rc = audio_lock(0u, UINT32_MAX);
+  if (rc != H2_AUDIO_OK) return rc;
+  *out_percent = audio_state.mic_gain_percent;
+  audio_unlock();
+  return H2_AUDIO_OK;
+}
+
+static int audio_set_mic_gain(void *user, uint32_t percent) {
+  (void)user;
+  if (percent > 100u) return H2_AUDIO_ERR_INVALID_ARG;
+  int rc = audio_lock(0u, UINT32_MAX);
+  if (rc != H2_AUDIO_OK) return rc;
+  audio_state.mic_gain_percent = percent;
+  audio_unlock();
+  return H2_AUDIO_OK;
+}
+
 int h2_jieli_ac791n_devkit_audio_idle_probe(h2_jieli_ac791n_devkit_audio_idle_t *out) {
   if (out == NULL) return H2_AUDIO_ERR_INVALID_ARG;
   int rc = audio_lock(0u, UINT32_MAX);
@@ -698,6 +728,8 @@ const h2_pal_audio_api_t *h2_jieli_ac791n_devkit_audio_api(void) {
       .create_track = audio_create_track,
       .get_speaker_volume_percent = audio_get_volume,
       .set_speaker_volume_percent = audio_set_volume,
+      .get_mic_gain_percent = audio_get_mic_gain,
+      .set_mic_gain_percent = audio_set_mic_gain,
   };
   static const h2_pal_audio_api_t api = {
       .user = &audio_state,

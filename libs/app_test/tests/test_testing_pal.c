@@ -328,6 +328,18 @@ static void test_audio(const h2_pal_mem_api_t *mem) {
   h2_app_test_audio_t *wrapper = NULL;
   OK(h2_app_test_audio_create(mem, &time.api, &a.api, &fixture, &wrapper));
   const h2_pal_audio_api_t *api = h2_app_test_audio_api(wrapper);
+  uint32_t mic_gain = 0u;
+  OK(h2_pal_audio_get_mic_gain_percent(api, &mic_gain));
+  assert(mic_gain == 100u);
+  OK(h2_pal_audio_set_mic_gain_percent(api, 70u));
+  OK(h2_pal_audio_get_mic_gain_percent(api, &mic_gain));
+  assert(mic_gain == 70u);
+  assert(h2_pal_audio_set_mic_gain_percent(api, 101u) ==
+         H2_PAL_ERR_INVALID_ARG);
+  FAIL_ONCE(a.set_mic_gain);
+  assert(h2_pal_audio_set_mic_gain_percent(api, 80u) == H2_PAL_ERR_IO);
+  OK(h2_pal_audio_get_mic_gain_percent(api, &mic_gain));
+  assert(mic_gain == 70u);
   OK(h2_pal_audio_start_mic(api));
   uint8_t output[640];
   h2_audio_frame_t frame =

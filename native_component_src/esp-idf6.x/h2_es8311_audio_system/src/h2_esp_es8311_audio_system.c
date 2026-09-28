@@ -1,4 +1,5 @@
 #include "h2_esp_es8311_audio_system.h"
+#include "h2_esp_es8311_gain.h"
 
 #include <string.h>
 
@@ -66,6 +67,16 @@ int h2_esp_es8311_audio_system_init(
         config->track_queue_frames == 0u ||
         config->mic_queue_frames == 0u ||
         config->mclk_multiple == 0u ||
+        config->mic_gain_db > 30u ||
+        config->mic_gain_min_db % 3u != 0u ||
+        (config->mic_gain_max_db != 0u &&
+         config->mic_gain_max_db % 3u != 0u) ||
+        config->mic_gain_min_db >=
+            (config->mic_gain_max_db == 0u ? 30u : config->mic_gain_max_db) ||
+        (config->mic_gain_max_db != 0u && config->mic_gain_max_db > 30u) ||
+        config->mic_gain_db < config->mic_gain_min_db ||
+        config->mic_gain_db >
+            (config->mic_gain_max_db == 0u ? 30u : config->mic_gain_max_db) ||
         !h2_es8311_volume_is_valid(&config->speaker_volume, config->codec_volume_default) ||
         config->mic_task_stack_size == 0u ||
         config->speaker_task_stack_size == 0u ||
@@ -77,6 +88,13 @@ int h2_esp_es8311_audio_system_init(
     memset(system, 0, sizeof(*system));
     system->config = *config;
     system->speaker_volume_percent = 100u;
+    const uint32_t max_mic_gain_db =
+        config->mic_gain_max_db == 0u ? 30u : config->mic_gain_max_db;
+    const uint32_t applied_mic_gain_db =
+        (uint32_t)h2_esp_es8311_mic_gain_register(config->mic_gain_db) * 3u;
+    system->mic_gain_percent =
+        (applied_mic_gain_db - config->mic_gain_min_db) * 100u /
+        (max_mic_gain_db - config->mic_gain_min_db);
     if (config->enable_aec) {
         int rc = h2_esp_es8311_sr_init(&system->sr, config);
         if (rc != H2_AUDIO_OK) {

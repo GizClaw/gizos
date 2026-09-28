@@ -62,6 +62,12 @@ static int get_info(void *user, h2_audio_info_t *info) {
 }
 static int start_mic(void *user) { return h2_pal_audio_start_mic(backend(user)); }
 static int stop_mic(void *user) { return h2_pal_audio_stop_mic(backend(user)); }
+static int get_mic_gain(void *user, uint32_t *out) {
+    return h2_pal_audio_get_mic_gain_percent(backend(user), out);
+}
+static int set_mic_gain(void *user, uint32_t percent) {
+    return h2_pal_audio_set_mic_gain_percent(backend(user), percent);
+}
 static int start_speaker(void *user) { return h2_pal_audio_start_speaker(backend(user)); }
 static int stop_speaker(void *user) { return h2_pal_audio_stop_speaker(backend(user)); }
 #if H2_RUNTIME_AUDIO_LEVELS
@@ -294,6 +300,8 @@ void h2_runtime_audio_bind(h2_runtime_t *runtime) {
         .mic_read = mic_read, .create_track = create_track,
         .get_speaker_volume_percent = get_volume,
         .set_speaker_volume_percent = set_volume,
+        .get_mic_gain_percent = get_mic_gain,
+        .set_mic_gain_percent = set_mic_gain,
     };
     h2_runtime_private_t *state = runtime->private_state;
     state->audio_backend = state->audio_proxy;

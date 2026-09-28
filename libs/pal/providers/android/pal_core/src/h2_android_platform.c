@@ -374,6 +374,18 @@ static int android_audio_set_speaker_volume(void *user, uint32_t percent) {
   return H2_PAL_OK;
 }
 
+static int android_audio_get_mic_gain(void *user, uint32_t *out_percent) {
+  (void)user;
+  (void)out_percent;
+  return H2_AUDIO_ERR_UNSUPPORTED;
+}
+
+static int android_audio_set_mic_gain(void *user, uint32_t percent) {
+  (void)user;
+  (void)percent;
+  return H2_AUDIO_ERR_UNSUPPORTED;
+}
+
 static const h2_pal_audio_vtable_t s_android_audio_vtable = {
     .get_info = android_audio_get_info,
     .start_mic = android_audio_unsupported,
@@ -384,6 +396,8 @@ static const h2_pal_audio_vtable_t s_android_audio_vtable = {
     .create_track = android_audio_create_track,
     .get_speaker_volume_percent = android_audio_get_speaker_volume,
     .set_speaker_volume_percent = android_audio_set_speaker_volume,
+    .get_mic_gain_percent = android_audio_get_mic_gain,
+    .set_mic_gain_percent = android_audio_set_mic_gain,
 };
 
 static int android_display_open(void *user) {

@@ -104,6 +104,7 @@ struct h2_web_platform {
   bool speaker_started;
   bool speaker_stopped;
   uint32_t speaker_volume_percent;
+  _Atomic uint32_t mic_gain_percent;
   bool pumping;
   pthread_t pump_owner;
   _Atomic bool shutting_down;

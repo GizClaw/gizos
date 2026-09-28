@@ -66,6 +66,9 @@ typedef struct h2_esp_es8311_es7210_audio_system_config {
     /** DAC 0x32 at 100%, 1..255; board maximum gain (0xBF = 0 dB). */
     uint8_t codec_volume_default;
     uint32_t mic_gain_db;
+    /** Board-owned linear PAL percent range in ES7210 PGA dB; max=0 uses 38. */
+    uint8_t mic_gain_min_db;
+    uint8_t mic_gain_max_db;
     uint8_t es7210_input_gain_mask;
     uint8_t es7210_input_gain_db[H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_ES7210_INPUT_COUNT];
     uint8_t max_tracks;
@@ -119,6 +122,8 @@ typedef struct h2_esp_es8311_es7210_audio_system {
     int playback_task_started;
     int playback_task_with_caps;
     uint32_t speaker_volume_percent;
+    uint32_t mic_gain_percent;
+    uint32_t mic_gain_db_current;
     i2c_master_bus_handle_t i2c_bus;
     i2c_master_dev_handle_t es8311;
     i2c_master_dev_handle_t es7210;

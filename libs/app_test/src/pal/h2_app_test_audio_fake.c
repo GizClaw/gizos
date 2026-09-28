@@ -99,6 +99,24 @@ static int set_volume(void *u, uint32_t percent) {
     a->volume_percent = percent;
   return rc;
 }
+static int get_mic_gain(void *u, uint32_t *out_percent) {
+  h2_app_test_audio_fake_t *a = u;
+  if (!a->info.available || !a->info.mic_supported)
+    return H2_PAL_ERR_UNSUPPORTED;
+  *out_percent = a->mic_gain_percent;
+  return H2_PAL_OK;
+}
+static int set_mic_gain(void *u, uint32_t percent) {
+  h2_app_test_audio_fake_t *a = u;
+  if (percent > 100u)
+    return H2_PAL_ERR_INVALID_ARG;
+  if (!a->info.available || !a->info.mic_supported)
+    return H2_PAL_ERR_UNSUPPORTED;
+  int rc = h2_app_test_fault_take(&a->set_mic_gain);
+  if (rc == H2_PAL_OK)
+    a->mic_gain_percent = percent;
+  return rc;
+}
 static int write_track(h2_pal_audio_track_t *api, const h2_audio_frame_t *f,
                        uint32_t timeout) {
   track_t *t = api->user;
@@ -205,7 +223,9 @@ static const h2_pal_audio_vtable_t vtable = {
     .stop_speaker = stop_speaker,
     .create_track = create_track,
     .get_speaker_volume_percent = get_volume,
-    .set_speaker_volume_percent = set_volume};
+    .set_speaker_volume_percent = set_volume,
+    .get_mic_gain_percent = get_mic_gain,
+    .set_mic_gain_percent = set_mic_gain};
 h2_pal_result_t h2_app_test_audio_fake_init(h2_app_test_audio_fake_t *a,
                                             const h2_pal_mem_api_t *m) {
   if (!a)
@@ -219,6 +239,7 @@ h2_pal_result_t h2_app_test_audio_fake_init(h2_app_test_audio_fake_t *a,
   memset(a->implementation, 0, sizeof(store_t));
   a->mem = m;
   a->api = (h2_pal_audio_api_t){a, &vtable};
+  a->mic_gain_percent = 100u;
   a->info = (h2_audio_info_t){
       .available = 1,
       .mic_supported = 1,

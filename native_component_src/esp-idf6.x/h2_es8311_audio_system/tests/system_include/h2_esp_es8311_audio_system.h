@@ -51,6 +51,9 @@ typedef struct h2_esp_es8311_audio_system_config {
   uint8_t ref_channel_index;
   uint16_t mclk_multiple;
   uint8_t codec_volume_default;
+  uint32_t mic_gain_db;
+  uint8_t mic_gain_min_db;
+  uint8_t mic_gain_max_db;
   uint8_t max_tracks;
   uint8_t track_queue_frames;
   uint8_t mic_queue_frames;
@@ -73,6 +76,7 @@ typedef struct h2_esp_es8311_audio_system {
   h2_esp_es8311_sr_state_t sr;
   int sr_initialized;
   uint32_t speaker_volume_percent;
+  uint32_t mic_gain_percent;
 } h2_esp_es8311_audio_system_t;
 
 int h2_esp_es8311_audio_system_init(

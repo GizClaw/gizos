@@ -167,6 +167,7 @@ struct AudioState {
   uint64_t output_underflow_count = 0u;
   std::thread playback_thread;
   h2_atomic_u32_t speaker_volume_percent = {};
+  h2_atomic_u32_t mic_gain_percent = {};
   uint32_t mic_counter = 0u;
   h2_pal_queue_t *mic_queue = nullptr;
   PaStream *input_stream = nullptr;
@@ -932,6 +933,16 @@ int audio_mic_read(void *user, h2_audio_frame_t *out_frame,
     return map_queue_receive(result);
   }
   std::memcpy(out_frame->data, item.samples.data(), item.bytes);
+  const uint32_t gain = h2_atomic_u32_load(
+      &state->mic_gain_percent, H2_ATOMIC_ACQUIRE);
+  auto *samples = static_cast<uint8_t *>(out_frame->data);
+  for (size_t offset = 0u; offset < item.bytes; offset += sizeof(int16_t)) {
+    int16_t sample = 0;
+    std::memcpy(&sample, samples + offset, sizeof(sample));
+    sample = static_cast<int16_t>(
+        static_cast<int32_t>(sample) * static_cast<int32_t>(gain) / 100);
+    std::memcpy(samples + offset, &sample, sizeof(sample));
+  }
   out_frame->bytes = item.bytes;
   out_frame->samples_per_channel = item.samples_per_channel;
   return H2_AUDIO_OK;
@@ -970,16 +981,34 @@ int audio_set_volume(void *user, uint32_t percent) {
   return H2_AUDIO_OK;
 }
 
+int audio_get_mic_gain(void *user, uint32_t *out_percent) {
+  if (user == nullptr || out_percent == nullptr)
+    return H2_AUDIO_ERR_INVALID_ARG;
+  *out_percent = h2_atomic_u32_load(
+      &static_cast<AudioState *>(user)->mic_gain_percent, H2_ATOMIC_ACQUIRE);
+  return H2_AUDIO_OK;
+}
+
+int audio_set_mic_gain(void *user, uint32_t percent) {
+  if (user == nullptr || percent > 100u)
+    return H2_AUDIO_ERR_INVALID_ARG;
+  h2_atomic_u32_store(&static_cast<AudioState *>(user)->mic_gain_percent,
+                      percent, H2_ATOMIC_RELEASE);
+  return H2_AUDIO_OK;
+}
+
 const h2_pal_audio_vtable_t audio_vtable = {
     audio_get_info,      audio_start_mic,    audio_stop_mic,
     audio_start_speaker, audio_stop_speaker, audio_mic_read,
     audio_create_track,  audio_get_volume,   audio_set_volume,
+    audio_get_mic_gain, audio_set_mic_gain,
 };
 static bool init_state_atomics(AudioState *state) {
   return h2_atomic_bool_init(&state->mic_running, false) == H2_ATOMIC_OK &&
          h2_atomic_bool_init(&state->playback_running, false) == H2_ATOMIC_OK &&
          h2_atomic_int_init(&state->playback_result, H2_AUDIO_OK) == H2_ATOMIC_OK &&
-         h2_atomic_u32_init(&state->speaker_volume_percent, 100u) == H2_ATOMIC_OK;
+         h2_atomic_u32_init(&state->speaker_volume_percent, 100u) == H2_ATOMIC_OK &&
+         h2_atomic_u32_init(&state->mic_gain_percent, 100u) == H2_ATOMIC_OK;
 }
 
 static void destroy_state_atomics(AudioState *state) {
@@ -987,6 +1016,7 @@ static void destroy_state_atomics(AudioState *state) {
   h2_atomic_bool_destroy(&state->playback_running);
   h2_atomic_int_destroy(&state->playback_result);
   h2_atomic_u32_destroy(&state->speaker_volume_percent);
+  h2_atomic_u32_destroy(&state->mic_gain_percent);
 }
 
 } // namespace

@@ -9,6 +9,8 @@ const h2_bk7258_audio_config_t h2_bk7258_audio_config = {
     .bits_per_sample = 16u,
     .default_volume = 0x28u,
     .default_mic_gain = 0x2au,
+    .mic_gain_min = 0x00u,
+    .mic_gain_max = 0x3fu,
     .frame_count = 4u,
 };
 

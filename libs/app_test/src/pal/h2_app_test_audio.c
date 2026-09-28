@@ -567,6 +567,16 @@ static int decorated_set_volume(void *user, uint32_t percent) {
   return h2_pal_audio_set_speaker_volume_percent(audio->delegate, percent);
 }
 
+static int decorated_get_mic_gain(void *user, uint32_t *out_percent) {
+  h2_app_test_audio_t *audio = user;
+  return h2_pal_audio_get_mic_gain_percent(audio->delegate, out_percent);
+}
+
+static int decorated_set_mic_gain(void *user, uint32_t percent) {
+  h2_app_test_audio_t *audio = user;
+  return h2_pal_audio_set_mic_gain_percent(audio->delegate, percent);
+}
+
 static const h2_pal_audio_vtable_t s_audio_vtable = {
     .get_info = decorated_get_info,
     .start_mic = decorated_start_mic,
@@ -577,6 +587,8 @@ static const h2_pal_audio_vtable_t s_audio_vtable = {
     .create_track = decorated_create_track,
     .get_speaker_volume_percent = decorated_get_volume,
     .set_speaker_volume_percent = decorated_set_volume,
+    .get_mic_gain_percent = decorated_get_mic_gain,
+    .set_mic_gain_percent = decorated_set_mic_gain,
 };
 
 h2_pal_result_t

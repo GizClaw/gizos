@@ -96,6 +96,8 @@ static h2_pal_audio_t *resolve_audio(void *user) {
             .codec_volume_default = H2_AMOLED_AUDIO_CODEC_VOLUME_DEFAULT,
             .adc_digital_volume = H2_AMOLED_AUDIO_ADC_DIGITAL_VOLUME,
             .mic_gain_db = s_audio_config.mic_gain_db,
+            .mic_gain_min_db = 0u,
+            .mic_gain_max_db = 30u,
             .max_tracks = H2_AMOLED_AUDIO_MAX_TRACKS,
             .track_queue_frames = H2_AMOLED_AUDIO_TRACK_QUEUE_FRAMES,
             .mic_queue_frames = s_audio_config.mic_queue_frames,

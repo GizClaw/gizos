@@ -53,6 +53,8 @@ typedef struct h2_bk7258_audio_config {
     uint8_t bits_per_sample;
     uint8_t default_volume;
     uint8_t default_mic_gain;
+    uint8_t mic_gain_min;
+    uint8_t mic_gain_max;
     uint8_t frame_count;
 } h2_bk7258_audio_config_t;
 

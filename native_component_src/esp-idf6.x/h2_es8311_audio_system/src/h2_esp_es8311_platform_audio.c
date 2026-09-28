@@ -1111,6 +1111,40 @@ static int es8311_audio_set_speaker_volume_percent(void *user, uint32_t percent)
     return H2_AUDIO_OK;
 }
 
+static int es8311_audio_get_mic_gain_percent(void *user, uint32_t *out_percent) {
+    h2_esp_es8311_audio_system_t *state = (h2_esp_es8311_audio_system_t *)user;
+    *out_percent = state->mic_gain_percent;
+    return H2_AUDIO_OK;
+}
+
+static int es8311_audio_set_mic_gain_percent(void *user, uint32_t percent) {
+    h2_esp_es8311_audio_system_t *state = (h2_esp_es8311_audio_system_t *)user;
+    if (percent > 100u)
+        return H2_AUDIO_ERR_INVALID_ARG;
+    if (state->codec_shutdown_pending)
+        return H2_AUDIO_ERR_INVALID_STATE;
+    const uint32_t min_db = state->config.mic_gain_min_db;
+    const uint32_t max_db = state->config.mic_gain_max_db == 0u
+                                ? 30u : state->config.mic_gain_max_db;
+    const uint32_t requested_db = min_db +
+        (percent * (max_db - min_db) + 50u) / 100u;
+    const uint8_t gain_reg = h2_esp_es8311_mic_gain_register(requested_db);
+    const uint32_t applied_db = (uint32_t)gain_reg * 3u;
+    if (state->codec != NULL) {
+        const int rc = map_esp_err(es8311_update_reg(
+            state, ES8311_REG_SYSTEM_14, 0x0fu, gain_reg));
+        if (rc != H2_AUDIO_OK)
+            return rc;
+    }
+    state->config.mic_gain_db = applied_db;
+    state->mic_gain_percent =
+        (applied_db <= min_db ? 0u :
+         (applied_db - min_db) * 100u / (max_db - min_db));
+    if (state->mic_gain_percent > 100u)
+        state->mic_gain_percent = 100u;
+    return H2_AUDIO_OK;
+}
+
 h2_pal_audio_t *h2_esp_es8311_audio_system_audio(h2_esp_es8311_audio_system_t *system) {
     if (system == NULL) {
         return NULL;
@@ -1125,6 +1159,8 @@ h2_pal_audio_t *h2_esp_es8311_audio_system_audio(h2_esp_es8311_audio_system_t *s
         .create_track = es8311_audio_create_track,
         .get_speaker_volume_percent = es8311_audio_get_speaker_volume_percent,
         .set_speaker_volume_percent = es8311_audio_set_speaker_volume_percent,
+        .get_mic_gain_percent = es8311_audio_get_mic_gain_percent,
+        .set_mic_gain_percent = es8311_audio_set_mic_gain_percent,
     };
     system->audio.user = system;
     system->audio.vtable = &vtable;
