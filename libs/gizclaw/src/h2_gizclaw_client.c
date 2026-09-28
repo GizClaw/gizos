@@ -728,34 +728,7 @@ static int h2_gizclaw_mhs_bridge(void *userdata, int method, gzc_str_t payload,
                                         .payload_len = response.payload.len};
   if (rc != H2_PAL_OK) {
     result.has_error = true;
-    switch (rc) {
-    case H2_PAL_ERR_NOT_FOUND:
-      result.error_code = H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
-      break;
-    case H2_PAL_ERR_INVALID_ARG:
-    case H2_PAL_ERR_FORMAT:
-      result.error_code = H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT;
-      break;
-    case H2_PAL_ERR_INVALID_STATE:
-      result.error_code = H2_GIZCLAW_RPC_ERROR_FAILED_PRECONDITION;
-      break;
-    case H2_PAL_ERR_UNSUPPORTED:
-      result.error_code = H2_GIZCLAW_RPC_ERROR_UNIMPLEMENTED;
-      break;
-    case H2_PAL_ERR_NO_MEMORY:
-    case H2_PAL_ERR_BUSY:
-      result.error_code = H2_GIZCLAW_RPC_ERROR_RESOURCE_EXHAUSTED;
-      break;
-    case H2_PAL_ERR_TIMEOUT:
-      result.error_code = H2_GIZCLAW_RPC_ERROR_DEADLINE_EXCEEDED;
-      break;
-    case H2_PAL_ERR_CLOSED:
-      result.error_code = H2_GIZCLAW_RPC_ERROR_UNAVAILABLE;
-      break;
-    default:
-      result.error_code = H2_GIZCLAW_RPC_ERROR_INTERNAL;
-      break;
-    }
+    result.error_code = h2_gizclaw_mhs_error_internal(rc);
   }
   int result_rc = respond(respond_userdata, &result);
   h2_pal_mem_free(client->config.allocator, storage);

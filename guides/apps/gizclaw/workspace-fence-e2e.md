@@ -1,6 +1,6 @@
 # Workspace 安全围栏 E2E
 
-本用例对应 GizClaw C SDK 0.23.1 的 Profile 自定义围栏 ID。`gizclaw_h2peer_fence_live_test` 使用真实 H2Peer 连接、独立 Peer 和 Workspace，验证两档选择的服务端保存、reload、回读、省略保持和本地非法 ID 拒绝。它是 RPC/存储验收；模型实际执行策略还需要下述独立证据，不能仅凭此 target 通过就宣布围栏有效。
+本用例对应 GizClaw C SDK 0.23.2 的 Profile 自定义围栏 ID。`gizclaw_h2peer_fence_live_test` 使用真实 H2Peer 连接、独立 Peer 和 Workspace，验证两档选择的服务端保存、reload、回读、省略保持和本地非法 ID 拒绝。它是 RPC/存储验收；模型实际执行策略还需要下述独立证据，不能仅凭此 target 通过就宣布围栏有效。
 
 ## 隔离 fixture
 

@@ -2604,8 +2604,14 @@ static int device_wifi_connect_and_save(void *user,
   h2_atomic_fetch_add(&state->wifi_persistent_calls, 1);
   return H2_PAL_ERR_IO; /* An accepted RPC is not a successful durable save. */
 }
+static bool s_device_wifi_idle;
 static int device_wifi_status(void *user, h2_pal_wifi_sta_status_t *out) {
   (void)user;
+  if (s_device_wifi_idle) {
+    *out = (h2_pal_wifi_sta_status_t){.state = H2_PAL_WIFI_STA_STATE_IDLE,
+      .rssi = -90};
+    return H2_PAL_OK;
+  }
   *out = (h2_pal_wifi_sta_status_t){.state = H2_PAL_WIFI_STA_STATE_GOT_IP,
     .ssid = "fixture-wifi", .ssid_len = 12, .rssi = -42, .ip_valid = 1,
     .ip = {.ip4 = 0xc0000201}};
@@ -2766,7 +2772,19 @@ static void test_device_provider_pal_and_player(void) {
                     gizclaw_rpc_v1_WifiHwdReadResponse_fields,
                     &wifi_hwd) == H2_PAL_OK);
   assert(wifi_hwd.has_connected && wifi_hwd.connected &&
+         wifi_hwd.has_rssi_dbm && wifi_hwd.rssi_dbm == -42 &&
          wifi_hwd.has_ip && !strcmp(wifi_hwd.ip, "192.0.2.1"));
+  /* Without an association there is no signal to report, only its absence. */
+  s_device_wifi_idle = true;
+  memset(&wifi_hwd, 0, sizeof(wifi_hwd));
+  assert(device_mhs(service, false, "wifi.main",
+                    gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_WIFI,
+                    NULL, NULL,
+                    gizclaw_rpc_v1_WifiHwdReadResponse_fields,
+                    &wifi_hwd) == H2_PAL_OK);
+  assert(wifi_hwd.has_connected && !wifi_hwd.connected &&
+         !wifi_hwd.has_rssi_dbm && !wifi_hwd.has_ip && !wifi_hwd.has_ssid);
+  s_device_wifi_idle = false;
   pb_istream_t wifi_input;
   gizclaw_rpc_v1_ClientWifiSavedListRequest saved_request = {0};
   assert(device_call(service, H2_GIZCLAW_TOOL_WIFI_SAVED_LIST,

@@ -113,8 +113,9 @@ static h2_pal_result_t wifi_read(void *user, h2_gizclaw_mhs_read_t *out) {
     memcpy(value->ssid, status.ssid, status.ssid_len);
     value->ssid[status.ssid_len] = '\0';
   }
-  value->has_rssi_dbm = true;
-  value->rssi_dbm = status.rssi;
+  /* RSSI is a measurement of the current association only. */
+  value->has_rssi_dbm = value->connected;
+  value->rssi_dbm = value->connected ? status.rssi : 0;
   if (status.ip_valid) {
     uint8_t ip[4];
     h2_pal_wifi_ip4_to_bytes(status.ip.ip4, ip);
@@ -444,4 +445,30 @@ int h2_gizclaw_mhs_request_internal(
   response->payload = (h2_gizclaw_rpc_bytes_t){*storage,
                                                  output.bytes_written};
   return H2_PAL_OK;
+}
+
+int h2_gizclaw_mhs_error_internal(int result) {
+  switch (result) {
+  case H2_PAL_ERR_NOT_FOUND:
+    return H2_GIZCLAW_RPC_ERROR_NOT_FOUND;
+  case H2_PAL_ERR_INVALID_ARG:
+  case H2_PAL_ERR_FORMAT:
+    return H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT;
+  case H2_PAL_ERR_INVALID_STATE:
+    return H2_GIZCLAW_RPC_ERROR_FAILED_PRECONDITION;
+  case H2_PAL_ERR_UNSUPPORTED:
+    return H2_GIZCLAW_RPC_ERROR_UNIMPLEMENTED;
+  case H2_PAL_ERR_NO_MEMORY:
+  case H2_PAL_ERR_BUSY:
+    return H2_GIZCLAW_RPC_ERROR_RESOURCE_EXHAUSTED;
+  case H2_PAL_ERR_TIMEOUT:
+    return H2_GIZCLAW_RPC_ERROR_DEADLINE_EXCEEDED;
+  /* A device that has not published its state yet is retryable, like a
+   * closing client; neither is an internal fault. */
+  case H2_PAL_ERR_UNAVAILABLE:
+  case H2_PAL_ERR_CLOSED:
+    return H2_GIZCLAW_RPC_ERROR_UNAVAILABLE;
+  default:
+    return H2_GIZCLAW_RPC_ERROR_INTERNAL;
+  }
 }

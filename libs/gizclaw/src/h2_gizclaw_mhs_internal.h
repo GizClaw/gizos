@@ -19,4 +19,6 @@ int h2_gizclaw_mhs_request_internal(
     const h2_gizclaw_mhs_device_t *devices, size_t count, bool write,
     const h2_pal_mem_api_t *allocator, h2_gizclaw_rpc_bytes_t request,
     h2_gizclaw_rpc_provider_response_t *response, uint8_t **storage);
+/* H2_GIZCLAW_RPC_ERROR_* for a failed h2_gizclaw_mhs_request_internal(). */
+int h2_gizclaw_mhs_error_internal(int result);
 #endif

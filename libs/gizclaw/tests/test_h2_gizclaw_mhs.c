@@ -174,5 +174,21 @@ int main(void) {
   len = request_bytes(bytes, false, "display.main",
                       gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY, NULL);
   assert(invoke(false, bytes, len, NULL, NULL) == H2_PAL_ERR_UNAVAILABLE);
+
+  /* Wire codes: not-yet-published or closing state is retryable. */
+  assert(h2_gizclaw_mhs_error_internal(H2_PAL_ERR_UNAVAILABLE) ==
+         H2_GIZCLAW_RPC_ERROR_UNAVAILABLE);
+  assert(h2_gizclaw_mhs_error_internal(H2_PAL_ERR_CLOSED) ==
+         H2_GIZCLAW_RPC_ERROR_UNAVAILABLE);
+  assert(h2_gizclaw_mhs_error_internal(H2_PAL_ERR_NOT_FOUND) ==
+         H2_GIZCLAW_RPC_ERROR_NOT_FOUND);
+  assert(h2_gizclaw_mhs_error_internal(H2_PAL_ERR_INVALID_ARG) ==
+         H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT);
+  assert(h2_gizclaw_mhs_error_internal(H2_PAL_ERR_INVALID_STATE) ==
+         H2_GIZCLAW_RPC_ERROR_FAILED_PRECONDITION);
+  assert(h2_gizclaw_mhs_error_internal(H2_PAL_ERR_BUSY) ==
+         H2_GIZCLAW_RPC_ERROR_RESOURCE_EXHAUSTED);
+  assert(h2_gizclaw_mhs_error_internal(H2_PAL_ERR_IO) ==
+         H2_GIZCLAW_RPC_ERROR_INTERNAL);
   return 0;
 }
