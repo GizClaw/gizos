@@ -22,6 +22,7 @@ import (
 
 	"github.com/pion/datachannel"
 	"github.com/pion/dtls/v3"
+	"github.com/pion/logging"
 	"github.com/pion/rtp"
 	"github.com/pion/stun/v3"
 	"github.com/pion/turn/v4"
@@ -56,6 +57,8 @@ type session struct {
 	pc        *webrtc.PeerConnection
 	createdAt time.Time
 	channels  channelStats
+	auth      authenticationWitness
+	media     mediaWitness
 }
 
 type iceMode string
@@ -156,6 +159,7 @@ type server struct {
 	nextSession uint64
 	candidateIP net.IP
 	api         *webrtc.API
+	setting     *webrtc.SettingEngine
 	iceMode     iceMode
 	udpDrops    atomic.Uint64
 	turnStats   turnStats
@@ -356,6 +360,7 @@ func main() {
 		setting.SetICETCPMux(tcpMux)
 	}
 	s.api = webrtc.NewAPI(webrtc.WithSettingEngine(setting))
+	s.setting = &setting
 	turnConn, err := net.ListenPacket("udp4", *turnListen)
 	if err != nil {
 		log.Fatalf("listen TURN: %v", err)
@@ -551,7 +556,12 @@ func (s *server) handleOffer(w http.ResponseWriter, r *http.Request) {
 			reverseChannels = 3
 		}
 	}
-	answer, item, err := s.createAnswer(r.Context(), offer, reverseChannels)
+	negotiated, err := parseNegotiatedChannel(r.Header)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+	answer, item, err := s.createAnswer(r.Context(), offer, reverseChannels, negotiated)
 	if err != nil {
 		log.Printf("H2_WEBRTC_TEST_SERVER_OFFER_ERROR remote=%s error=%v", r.RemoteAddr, err)
 		http.Error(w, err.Error(), http.StatusBadRequest)
@@ -600,6 +610,63 @@ func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 	parts := strings.Split(strings.TrimPrefix(r.URL.Path, "/session/"), "/")
 	if len(parts) != 2 || parts[0] == "" {
 		http.NotFound(w, r)
+		return
+	}
+	if parts[1] == "media-stats" || parts[1] == "media-fault" {
+		s.mu.Lock()
+		item := s.sessions[parts[0]]
+		s.mu.Unlock()
+		if item == nil {
+			http.NotFound(w, r)
+			return
+		}
+		if parts[1] == "media-stats" && r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(item.media.snapshot())
+			return
+		}
+		if parts[1] == "media-fault" && r.Method == http.MethodPost {
+			body, err := io.ReadAll(io.LimitReader(r.Body, 32))
+			if err != nil {
+				http.Error(w, "invalid fault", 400)
+				return
+			}
+			switch string(body) {
+			case "drop-one":
+				item.media.dropAt.Store(item.media.received.Load() + 2)
+			case "drop-all":
+				item.media.dropAll.Store(true)
+			default:
+				http.Error(w, "unknown media fault", 400)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	if parts[1] == "authentication-witness" {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		s.mu.Lock()
+		item := s.sessions[parts[0]]
+		s.mu.Unlock()
+		if item == nil {
+			http.NotFound(w, r)
+			return
+		}
+		received := item.auth.received.Load()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]interface{}{
+			"source": "pion-dtls-typed-alert", "direction": "received",
+			"session_id": item.id, "level": received >> 8, "alert": received & 255,
+			"certificate_rejection": item.auth.rejectedCertificate(item.channels.opened.Load()),
+			"channels_opened":       item.channels.opened.Load(),
+		})
 		return
 	}
 	if parts[1] == "channel-stats" {
@@ -723,15 +790,25 @@ func (s *server) createAnswer(
 	ctx context.Context,
 	offerSDP string,
 	reverseChannels int,
+	negotiated *negotiatedChannel,
 ) (string, *session, error) {
 	if s.api == nil {
 		return "", nil, fmt.Errorf("ICE API is not configured")
 	}
-	pc, err := s.api.NewPeerConnection(webrtc.Configuration{})
+	item := &session{}
+	api := s.api
+	if s.setting != nil {
+		setting := *s.setting
+		setting.LoggerFactory = &witnessLoggerFactory{
+			delegate: logging.NewDefaultLoggerFactory(), witness: &item.auth,
+		}
+		api = webrtc.NewAPI(webrtc.WithSettingEngine(setting))
+	}
+	pc, err := api.NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
 		return "", nil, err
 	}
-	item := &session{pc: pc}
+	item.pc = pc
 	var reverseOnce sync.Once
 	startReverseChannels := func() {
 		if reverseChannels == 0 || item.channels.opened.Load() != 3 {
@@ -785,11 +862,27 @@ func (s *server) createAnswer(
 	pc.OnDataChannel(func(dc *webrtc.DataChannel) {
 		attachDataChannel(dc, &item.channels, startReverseChannels)
 	})
+	if negotiated != nil {
+		external := true
+		options := &webrtc.DataChannelInit{
+			ID: &negotiated.ID, Negotiated: &external, Ordered: &negotiated.Ordered,
+		}
+		if !negotiated.Reliable {
+			zero := uint16(0)
+			options.MaxRetransmits = &zero
+		}
+		dc, createErr := pc.CreateDataChannel(negotiated.Label, options)
+		if createErr != nil {
+			_ = pc.Close()
+			return "", nil, fmt.Errorf("create explicitly negotiated channel: %w", createErr)
+		}
+		attachDataChannel(dc, &item.channels, startReverseChannels)
+	}
 	pc.OnTrack(func(remote *webrtc.TrackRemote, _ *webrtc.RTPReceiver) {
 		if remote.Codec().MimeType != webrtc.MimeTypeOpus {
 			return
 		}
-		go echoOpus(remote, audioTrack)
+		go echoOpus(remote, audioTrack, &item.media)
 	})
 
 	offer := webrtc.SessionDescription{
@@ -829,12 +922,21 @@ func (s *server) createAnswer(
 	return local.SDP, item, nil
 }
 
-func echoOpus(remote *webrtc.TrackRemote, local *webrtc.TrackLocalStaticRTP) {
+func echoOpus(remote *webrtc.TrackRemote, local *webrtc.TrackLocalStaticRTP, witness *mediaWitness) {
+	defer witness.log("stopped")
 	var sequence uint16
 	for {
 		packet, _, err := remote.ReadRTP()
 		if err != nil {
+			witness.readErrors.Add(1)
 			return
+		}
+		ordinal := witness.noteInput(packet.SequenceNumber)
+		if witness.shouldDrop(ordinal) {
+			// Consume the egress sequence as a packet dropped on the wire would.
+			sequence++
+			witness.log("injected-drop")
+			continue
 		}
 		payload := append([]byte(nil), packet.Payload...)
 		echo := &rtp.Packet{
@@ -849,7 +951,12 @@ func echoOpus(remote *webrtc.TrackRemote, local *webrtc.TrackLocalStaticRTP) {
 		}
 		sequence++
 		if err := local.WriteRTP(echo); err != nil {
+			witness.writeErrors.Add(1)
 			return
+		}
+		witness.echoed.Add(1)
+		if ordinal == 1 || ordinal%50 == 0 {
+			witness.log("progress")
 		}
 	}
 }
@@ -1153,6 +1260,7 @@ func (s *server) track(item *session) string {
 	s.nextSession++
 	id := strconv.FormatUint(s.nextSession, 10)
 	item.id = id
+	item.media.sessionID.Store(id)
 	item.createdAt = time.Now()
 	s.sessions[id] = item
 	return id

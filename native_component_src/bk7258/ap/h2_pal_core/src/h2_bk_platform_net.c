@@ -1,8 +1,10 @@
 #include "h2_bk_platform_core.h"
 #include "h2_bk_netif_internal.h"
+#include "h2_bk_net_result.h"
 
 #include <errno.h>
 #include <limits.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/time.h>
 
@@ -13,6 +15,7 @@
 #include <mbedtls/ssl.h>
 #include <mbedtls/x509_crt.h>
 #include <os/os.h>
+#include "h2_bk_udp_receive.h"
 
 #define H2_BK_NET_TLS_SOCKET_MAX 8u
 #define H2_BK_NET_TLS_ALPN_MAX 2u
@@ -667,7 +670,18 @@ static int bk_net_udp_sendto(
         return rc;
     }
     int sent = sendto(socket_fd, data, (int)len, 0, (struct sockaddr *)&storage, sock_len);
-    return sent < 0 ? H2_PAL_ERR_IO : sent;
+    if (sent < 0) {
+        int send_error = errno;
+        int result = h2_bk_net_udp_send_result(sent, send_error);
+        if (result == H2_PAL_ERR_WOULD_BLOCK) return result;
+        char message[96];
+        (void)snprintf(message, sizeof(message),
+            "UDP send failed fd=%d bytes=%zu errno=%d", socket_fd, len, send_error);
+        (void)h2_pal_log_write(h2_bk_platform_log_api(), H2_PAL_LOG_ERROR,
+            "pal/net", message);
+        return result;
+    }
+    return sent;
 }
 
 static int bk_net_udp_recvfrom(
@@ -681,12 +695,12 @@ static int bk_net_udp_recvfrom(
     if (socket_fd < 0 || data == NULL || len == 0u) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    set_recv_timeout(socket_fd, timeout_ms);
     struct sockaddr_storage storage;
     socklen_t sock_len = sizeof(storage);
-    int got = recvfrom(socket_fd, data, (int)len, 0, (struct sockaddr *)&storage, &sock_len);
+    int got = h2_bk_udp_receive(socket_fd, data, len,
+        (struct sockaddr *)&storage, &sock_len, timeout_ms);
     if (got < 0) {
-        return errno == EAGAIN || errno == EWOULDBLOCK ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_ERR_IO;
+        return got;
     }
     if (out_addr != NULL) {
         (void)sockaddr_to_addr((const struct sockaddr *)&storage, out_addr);

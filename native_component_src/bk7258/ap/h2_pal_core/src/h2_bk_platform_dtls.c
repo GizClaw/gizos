@@ -2,16 +2,20 @@
 #include "h2/pal/h2_pal_unsupported.h"
 
 #include <limits.h>
+#include <stdio.h>
 #include <string.h>
 
 #include <mbedtls/build_info.h>
 #include <mbedtls/ecp.h>
 #include <mbedtls/pk.h>
+#include <mbedtls/sha256.h>
 #include <mbedtls/ssl.h>
+#include <mbedtls/ssl_cookie.h>
 #include <mbedtls/x509_crt.h>
 
 #if defined(MBEDTLS_SSL_PROTO_DTLS) && defined(MBEDTLS_SSL_DTLS_SRTP) && \
-    defined(MBEDTLS_X509_CRT_WRITE_C)
+    defined(MBEDTLS_X509_CRT_WRITE_C) && defined(MBEDTLS_SSL_COOKIE_C) && \
+    defined(MBEDTLS_SSL_DTLS_HELLO_VERIFY)
 
 #define H2_BK_DTLS_CERT_CAPACITY 1024u
 #define H2_BK_DTLS_MASTER_SECRET_CAPACITY 48u
@@ -21,6 +25,7 @@ struct h2_pal_dtls_session {
     h2_pal_dtls_session_config_t config;
     mbedtls_ssl_context ssl;
     mbedtls_ssl_config ssl_config;
+    mbedtls_ssl_cookie_ctx cookie;
     mbedtls_x509_crt certificate;
     mbedtls_x509write_cert certificate_writer;
     mbedtls_pk_context private_key;
@@ -40,11 +45,20 @@ struct h2_pal_dtls_session {
     mbedtls_tls_prf_types prf;
     int input_consumed;
     int remote_fingerprint_set;
+    int peer_certificate_verified;
     int handshake_started;
     int handshake_complete;
     int close_started;
     int exporter_ready;
 };
+
+static void h2_bk_dtls_log_error(const char *stage, int result) {
+    char message[96];
+    (void)snprintf(message, sizeof(message),
+        "DTLS %s failed result=%d", stage, result);
+    (void)h2_pal_log_write(h2_bk_platform_log_api(), H2_PAL_LOG_ERROR,
+        "pal/dtls", message);
+}
 
 static int h2_bk_dtls_random(void *user, unsigned char *out, size_t len) {
     (void)user;
@@ -116,9 +130,19 @@ static int h2_bk_dtls_timer_get(void *user) {
 
 static int h2_bk_dtls_defer_verify(
     void *user, mbedtls_x509_crt *certificate, int depth, uint32_t *flags) {
-    (void)user;
-    (void)certificate;
-    (void)depth;
+    h2_pal_dtls_session_t *session = user;
+    if (depth == 0) {
+        /* The SDK minimal profile releases the peer certificate at handshake
+         * completion. Authenticate its leaf while the borrowed DER is live;
+         * retain only the result, never the certificate pointer. */
+        uint8_t fingerprint[H2_PAL_DTLS_SHA256_FINGERPRINT_SIZE];
+        session->peer_certificate_verified = session->remote_fingerprint_set &&
+            certificate != NULL &&
+            mbedtls_sha256(certificate->raw.p, certificate->raw.len,
+                fingerprint, 0) == 0 &&
+            memcmp(fingerprint, session->remote_fingerprint,
+                sizeof(fingerprint)) == 0;
+    }
     *flags = 0u;
     return 0;
 }
@@ -215,6 +239,7 @@ static void h2_bk_dtls_destroy_impl(h2_pal_dtls_session_t *session) {
     }
     mbedtls_ssl_free(&session->ssl);
     mbedtls_ssl_config_free(&session->ssl_config);
+    mbedtls_ssl_cookie_free(&session->cookie);
     mbedtls_x509_crt_free(&session->certificate);
     mbedtls_x509write_crt_free(&session->certificate_writer);
     mbedtls_pk_free(&session->private_key);
@@ -231,6 +256,7 @@ static h2_pal_result_t h2_bk_dtls_create(
     h2_pal_dtls_session_t *session = h2_pal_mem_alloc(
         h2_bk_platform_default_allocator(), sizeof(*session));
     if (session == NULL) {
+        h2_bk_dtls_log_error("allocate_session", H2_PAL_ERR_NO_MEMORY);
         return H2_PAL_ERR_NO_MEMORY;
     }
     memset(session, 0, sizeof(*session));
@@ -238,16 +264,19 @@ static h2_pal_result_t h2_bk_dtls_create(
     session->plaintext = h2_pal_mem_alloc(
         h2_bk_platform_default_allocator(), config->max_plaintext_size);
     if (session->plaintext == NULL) {
+        h2_bk_dtls_log_error("allocate_plaintext", H2_PAL_ERR_NO_MEMORY);
         h2_bk_dtls_destroy_impl(session);
         return H2_PAL_ERR_NO_MEMORY;
     }
     mbedtls_ssl_init(&session->ssl);
     mbedtls_ssl_config_init(&session->ssl_config);
+    mbedtls_ssl_cookie_init(&session->cookie);
     mbedtls_x509_crt_init(&session->certificate);
     mbedtls_x509write_crt_init(&session->certificate_writer);
     mbedtls_pk_init(&session->private_key);
 
     h2_pal_result_t identity_result = h2_bk_dtls_generate_identity(session);
+    const char *stage = "identity";
     int endpoint = config->role == H2_PAL_DTLS_ROLE_SERVER
                        ? MBEDTLS_SSL_IS_SERVER
                        : MBEDTLS_SSL_IS_CLIENT;
@@ -262,10 +291,15 @@ static h2_pal_result_t h2_bk_dtls_create(
         MBEDTLS_TLS_SRTP_UNSET,
     };
     if (result == 0) {
+        stage = "own_certificate";
         mbedtls_ssl_conf_rng(
             &session->ssl_config, h2_bk_dtls_random, session);
+        /* WebRTC authenticates a self-signed leaf by its signaled SHA-256
+         * fingerprint, not a CA chain. OPTIONAL still requests the peer cert;
+         * h2_bk_dtls_verify_peer rejects a missing or mismatched cert before
+         * marking the session complete or exposing SRTP/application data. */
         mbedtls_ssl_conf_authmode(
-            &session->ssl_config, MBEDTLS_SSL_VERIFY_REQUIRED);
+            &session->ssl_config, MBEDTLS_SSL_VERIFY_OPTIONAL);
         mbedtls_ssl_conf_verify(
             &session->ssl_config, h2_bk_dtls_defer_verify, session);
         result = mbedtls_ssl_conf_own_cert(
@@ -273,10 +307,22 @@ static h2_pal_result_t h2_bk_dtls_create(
             &session->private_key);
     }
     if (result == 0) {
+        stage = "srtp_profiles";
         result = mbedtls_ssl_conf_dtls_srtp_protection_profiles(
             &session->ssl_config, profiles);
     }
+    if (result == 0 && endpoint == MBEDTLS_SSL_IS_SERVER) {
+        stage = "cookie_setup";
+        result = mbedtls_ssl_cookie_setup(
+            &session->cookie, h2_bk_dtls_random, session);
+        if (result == 0) {
+            mbedtls_ssl_conf_dtls_cookies(
+                &session->ssl_config, mbedtls_ssl_cookie_write,
+                mbedtls_ssl_cookie_check, &session->cookie);
+        }
+    }
     if (result == 0) {
+        stage = "ssl_setup";
         result = mbedtls_ssl_setup(&session->ssl, &session->ssl_config);
     }
     if (result == 0) {
@@ -291,6 +337,8 @@ static h2_pal_result_t h2_bk_dtls_create(
             &session->ssl, h2_bk_dtls_export_keys, session);
     }
     if (result != 0) {
+        h2_bk_dtls_log_error(stage,
+            identity_result != H2_PAL_OK ? identity_result : result);
         h2_bk_dtls_destroy_impl(session);
         return identity_result != H2_PAL_OK ? identity_result : H2_PAL_ERR_IO;
     }
@@ -315,23 +363,23 @@ static h2_pal_result_t h2_bk_dtls_remote_fingerprint(
     if (session->handshake_complete) {
         return H2_PAL_ERR_INVALID_STATE;
     }
+    if (session->config.role == H2_PAL_DTLS_ROLE_SERVER &&
+        mbedtls_ssl_set_client_transport_id(
+            &session->ssl, fingerprint,
+            H2_PAL_DTLS_SHA256_FINGERPRINT_SIZE) != 0) {
+        return H2_PAL_ERR_NO_MEMORY;
+    }
     memcpy(session->remote_fingerprint, fingerprint,
            sizeof(session->remote_fingerprint));
+    session->peer_certificate_verified = 0;
     session->remote_fingerprint_set = 1;
     return H2_PAL_OK;
 }
 
 static h2_pal_result_t h2_bk_dtls_verify_peer(
     h2_pal_dtls_session_t *session) {
-    const mbedtls_x509_crt *certificate =
-        mbedtls_ssl_get_peer_cert(&session->ssl);
-    uint8_t fingerprint[H2_PAL_DTLS_SHA256_FINGERPRINT_SIZE];
-    if (certificate == NULL ||
-        mbedtls_sha256(
-            certificate->raw.p, certificate->raw.len,
-            fingerprint, 0) != 0 ||
-        memcmp(fingerprint, session->remote_fingerprint,
-               sizeof(fingerprint)) != 0) {
+    if (!session->peer_certificate_verified) {
+        h2_bk_dtls_log_error("peer_fingerprint", H2_PAL_ERR_TLS_VERIFY);
         return H2_PAL_ERR_TLS_VERIFY;
     }
     return H2_PAL_OK;
@@ -354,6 +402,7 @@ static h2_pal_result_t h2_bk_dtls_handshake(
         return H2_PAL_OK;
     }
     if (now_ms >= deadline_ms) {
+        h2_bk_dtls_log_error("deadline", H2_PAL_ERR_TIMEOUT);
         return H2_PAL_ERR_TIMEOUT;
     }
     session->now_ms = now_ms;
@@ -361,6 +410,21 @@ static h2_pal_result_t h2_bk_dtls_handshake(
     h2_bk_dtls_set_input(session, datagram, datagram_len);
     int result = mbedtls_ssl_handshake(&session->ssl);
     h2_bk_dtls_clear_input(session);
+    if (result == MBEDTLS_ERR_SSL_HELLO_VERIFY_REQUIRED) {
+        /* PAL supplies an already selected, single-peer datagram transport.
+         * Bind its cookie to the expected peer identity with a per-session
+         * random key. Reset only the handshake after HelloVerifyRequest;
+         * retain that key and reapply the transport ID cleared by mbedTLS. */
+        result = mbedtls_ssl_session_reset(&session->ssl);
+        if (result == 0) {
+            result = mbedtls_ssl_set_client_transport_id(
+                &session->ssl, session->remote_fingerprint,
+                sizeof(session->remote_fingerprint));
+        }
+        if (result == 0) {
+            return H2_PAL_ERR_WOULD_BLOCK;
+        }
+    }
     if (result == 0) {
         h2_pal_result_t verify_result = h2_bk_dtls_verify_peer(session);
         if (verify_result != H2_PAL_OK) {
@@ -370,10 +434,12 @@ static h2_pal_result_t h2_bk_dtls_handshake(
         *out_complete = 1;
         return H2_PAL_OK;
     }
-    return result == MBEDTLS_ERR_SSL_WANT_READ ||
-                   result == MBEDTLS_ERR_SSL_WANT_WRITE
-               ? H2_PAL_ERR_WOULD_BLOCK
-               : H2_PAL_ERR_IO;
+    if (result == MBEDTLS_ERR_SSL_WANT_READ ||
+        result == MBEDTLS_ERR_SSL_WANT_WRITE) {
+        return H2_PAL_ERR_WOULD_BLOCK;
+    }
+    h2_bk_dtls_log_error("handshake", result);
+    return H2_PAL_ERR_IO;
 }
 
 static h2_pal_result_t h2_bk_dtls_next_deadline(

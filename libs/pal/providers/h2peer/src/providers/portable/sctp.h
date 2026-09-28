@@ -36,6 +36,7 @@ typedef struct {
   uint16_t sid;
   bool unordered;
   bool negotiated;
+  bool externally_negotiated;
   bool remote_open_pending;
   h2_pal_sctp_reliability_t reliability;
   uint32_t reliability_value;
@@ -88,6 +89,9 @@ void sctp_parse_data_channel_open(Sctp* sctp, uint16_t sid, char* data,
 int sctp_register_data_channel(Sctp* sctp, const char* label, uint16_t sid,
                                uint8_t channel_type,
                                uint32_t reliability_parameter);
+int sctp_register_negotiated_channel(Sctp* sctp, const char* label, uint16_t sid,
+                                     uint8_t channel_type,
+                                     uint32_t reliability_parameter);
 int sctp_unregister_data_channel(Sctp* sctp, uint16_t sid);
 int sctp_outgoing_data(Sctp* sctp, char* buf, size_t len, SctpDataPpid ppid,
                        uint16_t sid);

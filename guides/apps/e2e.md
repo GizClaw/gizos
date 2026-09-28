@@ -34,6 +34,7 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 | Lua Link | `//projects/e2e/apps/lua-link/app:lua_link_e2e` | DevKit ESP32-S3 host + AMOLED ESP32-S3 join over BLE Extended Advertising；reliable/datagram/stream/peer-exit per session，final hold session for link loss |
 | PAL Core | `//projects/e2e/apps/pal-core/app:pal_core_e2e` | 独立 Core v2：46 个接口、41 个必过用例；macOS、Browser/WASM、DevKit ESP32-S3 USB 串口、BK7258 AP UART1 H2Loader |
 | PAL HTTP | `//projects/e2e/apps/pal-http/app:pal_http_e2e` | 独立 HTTP：45 个必跑 case；macOS、Browser、iOS/Android 实际 SDK 包消费 App 与 DevKit/BK7258 专用入口，逐平台保留真实运行证据 |
+| PAL WebRTC | `//projects/e2e/apps/pal-webrtc/app:pal_webrtc_e2e` | 独立 WebRTC：13 个操作、43 个 mandatory case；六端独立入口及真实 Pion 对端，按各端完整 ledger 授予资格 |
 | PAL | `//projects/e2e/apps/pal/app:pal_e2e` | Linux/macOS/Windows 共同 host OS/Filesystem/Net/TLS/CoreHTTP/CoreMQTT；Desktop core/MQTT/SQLite Preference；Browser core；DevKit 与 Tiga V4.2 H2Loader `pal-pref` |
 | H2Loader Serial | `//projects/e2e/apps/h2loader-serial/app:h2loader_serial_e2e` | macOS Desktop；desktop Chrome Browser |
 | WebRTC Performance | `//projects/e2e/apps/webrtc-performance/app:webrtc_performance` | Desktop H2Peer + local Pion；DevKit 与 AMOLED ESP32-S3 H2Peer + operator LAN Pion |
@@ -123,6 +124,16 @@ AMOLED GizClaw E2E 使用板载 ES8311 的真实音频 delegate，并以局部�
 Desktop 和 AMOLED 配置两个 worker 并报告 `scheduler=multi-worker`；报告只说明 四个隔离 VM 分配到 Runtime worker，不用耗时推断 CPU parallelism。Browser 配置 两个 pthread Worker 并报告 `scheduler=multi-worker`。Runtime Event queue 仍只由 App 消费；event case 使用一个 target-independent synthetic component，由 App 把复制 事件定向投递给显式 job。
 
 Desktop catalog identity 是 `e2e/libco`，Bazel binary 是 `//projects/e2e/targets/cc_binary/libco:e2e-libco`。DevKit 与 BK7258 保留 H2Loader image/package identity `libco-smoke`。TapDoki BK3633 的 standalone full-image target 是 `//projects/e2e/targets/bk3633_firmware/libco-smoke/tapdoki_v2_0:firmware`；它保留 `tapdoki_libco_smoke` native target、merge identity 与 READY/FAIL evidence。
+
+## PAL WebRTC
+
+`projects/e2e/apps/pal-webrtc/app` 是独立接口资格 App，消费 Runtime 和 launcher 提供的 Pion signaling callback。稳定 registry 覆盖 13 个 WebRTC 操作、Track read/write、owned event release、自定义 allocator 和 DataChannel config；完整结果要求所有 mandatory case PASS，缺接口、BLOCKED、SKIP 或仅构建均不算通过。真实 Pion 对端验证 ICE/DTLS/SRTP/SCTP、DataChannel、Opus、背压、关闭及错误 fingerprint 拒绝。合成 Opus packet 只验证协议传输，不宣称真实音频硬件；当前 PAL 没有视频接口。
+
+`fingerprint-rejected` 要求有效 SDP 中的错误 digest 得到具体认证拒绝。PAL 的 `TLS_VERIFY` 是直接证据；浏览器未提供 RTCError 细节时，由同一 Pion session 捕获 typed received fatal `BadCertificate(42)` / `CertificateUnknown(46)` 且该 session 从未打开通道，独立确认认证原因。通用握手错误、连接超时、错误字符串、无效 SDP 都不能计 PASS；Desktop 另有真实 Pion 负回归验证后两种情况。显式 Stream ID 用双方 `negotiated=1` 的同 ID 通道验收，自动带内协商的四种 ordered/reliable 组合继续独立覆盖。
+
+Desktop 和真实 Chromium 有自动测试；移动端通过实际 XCFramework/AAR package consumer 执行，入口为 `make bazel-test-ios_pal_webrtc_simulator_test` 和 `make bazel-test-android_pal_webrtc_simulator_test`。设备 launcher 位于 `targets/h2loader_tar_zlib/pal-webrtc`，借用已保存 STA 配置、读取显式 fixture 构建参数，运行一次后重放不可变 boot ledger。每个平台以自己 artifact 对应的完整结果资格为准，不从另一平台结果推断可用性。BK7258 的测试 allocator 和 H2Peer task stack 使用已有 PSRAM region，命令 Runtime 保持板级 allocator；失败 gate 不 confirm App。DevKit 先在 BSP 的 64 KiB 长期入口 task 初始化 H2Peer、Board Runtime 与命令服务，再启动独立测试 runner。
+
+BK7258 在完整 43 项后额外建立一个真实 Pion 连接，持续 600 秒每秒交换带序号的二进制消息与合成 Opus。RTP 单包丢失时继续发送后续序号，分别记录唯一回传、missing、duplicate 和最长无有效媒体的间隔；至少 500 次 Data 与 Opus 成功回传，连续 10 秒无媒体恢复、Data 中断或 payload 错误均失败。真实 Pion 单包丢失恢复和持续丢媒体负例验证这项边界；Pion 同 session RX/TX/drop/gap counter 保留对端证据。独立 `H2_PAL_WEBRTC_SOAK` ledger 记录 run ID、单调 uptime、回传计数、耗时与结果，完成后关闭连接并检查 allocator 回收。启动输出 SDK reset reason。设备资格要求新镜像安装后和正常 App reboot 后各自通过，保存原 P1 Loader、Stage 空和 coredump 基线。旧镜像的 idle 观察仅说明该窗口内未复现 AP 重启，不能代替新镜像的活动稳定性验收，也不能据此排除 CP-only reset 或断言声音来源。
 
 ## WebRTC Performance
 

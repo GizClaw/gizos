@@ -157,6 +157,9 @@ int peer_connection_create_datachannel(PeerConnection* pc,
 int peer_connection_create_datachannel_sid(
     PeerConnection* pc, DecpChannelType channel_type, uint16_t priority,
     uint32_t reliability_parameter, char* label, char* protocol, uint16_t sid);
+int peer_connection_register_negotiated_channel(
+    PeerConnection* pc, DecpChannelType channel_type,
+    uint32_t reliability_parameter, const char* label, uint16_t sid);
 
 /**
  * @brief send message to data channel

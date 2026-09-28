@@ -202,10 +202,29 @@ static void h2_peer_portable_on_local_channel_open(uint16_t stream_id,
 }
 
 h2_pal_result_t
+h2_peer_portable_channel_prepare(h2_pal_webrtc_channel_t *channel) {
+    if (!channel->info.negotiated || channel->owner->production_pc == NULL)
+        return H2_PAL_OK;
+    return peer_connection_register_negotiated_channel(
+        (PeerConnection *)channel->owner->production_pc,
+        h2_peer_portable_channel_type(channel), 0u, channel->label,
+        channel->info.stream_id) == 0 ? H2_PAL_OK : H2_PAL_ERR_IO;
+}
+
+h2_pal_result_t
 h2_peer_portable_channel_open(h2_pal_webrtc_channel_t *channel) {
     if (channel == NULL || channel->owner == NULL ||
         channel->owner->production_pc == NULL) {
         return H2_PAL_ERR_INVALID_STATE;
+    }
+    if (channel->info.negotiated) {
+        h2_pal_result_t result = h2_peer_portable_channel_prepare(channel);
+        if (result == H2_PAL_OK) {
+            channel->wire_opened = 1;
+            h2_peer_portable_on_local_channel_open(channel->info.stream_id,
+                                                   channel->owner);
+        }
+        return result;
     }
     int result = peer_connection_create_datachannel_sid(
         (PeerConnection *)channel->owner->production_pc,
@@ -315,6 +334,14 @@ h2_peer_portable_create_connection(h2_pal_webrtc_peer_t *peer) {
                                        h2_peer_portable_on_local_channel_open);
     peer_connection_onremotechannel(connection,
                                     h2_peer_portable_on_remote_channel);
+    for (h2_pal_webrtc_channel_t *channel = peer->channels; channel != NULL;
+         channel = channel->next) {
+        h2_pal_result_t prepare_result = h2_peer_portable_channel_prepare(channel);
+        if (prepare_result != H2_PAL_OK) {
+            h2_peer_portable_peer_close(peer);
+            return prepare_result;
+        }
+    }
     return H2_PAL_OK;
 }
 

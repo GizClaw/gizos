@@ -1076,7 +1076,8 @@ h2_peer_webrtc_create_data_channel(h2_pal_webrtc_peer_t *peer,
   uint16_t stream_id = config->stream_id;
   size_t stream_slot = 0u;
   if (config->has_stream_id) {
-    if (!h2_peer_stream_slot(peer, stream_id, &stream_slot) ||
+    if ((config->negotiated ? stream_id >= H2_PEER_STREAM_COUNT
+                           : !h2_peer_stream_slot(peer, stream_id, &stream_slot)) ||
         h2_peer_find_channel(peer, stream_id) != NULL ||
         peer->stream_resets[stream_id].active) {
       return H2_PAL_ERR_INVALID_ARG;
@@ -1134,6 +1135,7 @@ h2_peer_webrtc_create_data_channel(h2_pal_webrtc_peer_t *peer,
   channel->info.has_stream_id = 1;
   channel->info.ordered = config->ordered != 0;
   channel->info.reliable = config->reliable != 0;
+  channel->info.negotiated = config->negotiated != 0;
   uint32_t generation = peer->stream_resets[stream_id].generation + 1u;
   if (generation == 0u) {
     generation = 1u;
@@ -1146,10 +1148,10 @@ h2_peer_webrtc_create_data_channel(h2_pal_webrtc_peer_t *peer,
     size_t next_slot = (stream_slot + 1u) % H2_PEER_LOCAL_STREAM_COUNT;
     peer->next_stream_id = h2_peer_stream_id_for_slot(peer, next_slot);
   }
-  h2_pal_result_t result = H2_PAL_OK;
+  h2_pal_result_t result = h2_peer_portable_channel_prepare(channel);
   const uint32_t channel_generation = channel->generation;
   int attempted_open = 0;
-  if (peer->production_sctp_open) {
+  if (result == H2_PAL_OK && peer->production_sctp_open) {
     attempted_open = 1;
     result = h2_peer_portable_channel_open(channel);
   }

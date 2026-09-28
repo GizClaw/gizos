@@ -262,6 +262,10 @@ WebRTC media 使用 caller-owned `h2_pal_webrtc_track_t`。调用方填充 read/
 
 `h2_pal_webrtc_peer_send_opus()` 只接收长度在 `1..H2_PAL_WEBRTC_OPUS_MAX_PACKET_SIZE` 内的真实 packet，并负责交给底层 audio RTP track；调用方不组装 RTP，也不能退回 DataChannel。成功返回表示 backend 已同步消费输入；`H2_PAL_ERR_WOULD_BLOCK` 表示整帧未消费，调用方必须保留同一帧重试。Unsupported backend 仍提供显式 `H2_PAL_ERR_UNSUPPORTED` 实现，不能静默丢帧。
 
+DataChannel config 的 `negotiated` 默认为 0，保留原有带内 DCEP 行为。设置为非零时，必须同时设置 `has_stream_id`，并由应用信令在双方创建相同 stream ID 的通道后发送；保留值 65535 无效。该模式不发送 DCEP OPEN/ACK，OPEN event 的 `channel_info.negotiated` 会保留模式。H2Peer 与 Browser 都支持显式协商，独立 `explicit-stream-id` mandatory case 用真实 Pion 对端验证同 ID 双向数据。Browser 按 WebRTC 标准在带内模式忽略浏览器的 `id` 参数，因此 PAL 对 `has_stream_id=true, negotiated=0` 显式返回 `H2_PAL_ERR_UNSUPPORTED`，不静默换 ID；原生 H2Peer 原有带内固定 ID 能力继续保留。
+
+Browser WebRTC 的 per-peer allocator 用于 peer、channel、event 和 payload 存储；owned event 自带 allocator view，peer close 后仍可合法释放。原始 Opus transport 在 offer 前配置，`peer_send_opus` 复制输入并在有界发送队列满时返回 WOULD_BLOCK；下一次可写通过 owned WRITABLE event 通知。Track 的 write 返回 WOULD_BLOCK 时保留原包重试；unset 等待正在执行的 callback 结束，后续接收转为 owned OPUS_FRAME，原始发送仍可使用。浏览器编码器的静音源仅提供 packet clock，没有待发送 PAL packet 时不会向网络注入静音载荷。
+
 WebRTC receive 只有一种模式：`h2_pal_webrtc_peer_poll()` 每次返回一个 owned event。DataChannel message、Opus packet、local SDP、状态变化和 writable/error 都走同一队列；payload 与 `channel_info` 保持有效到 `h2_pal_webrtc_event_release()`。零长度 `OPUS_FRAME` 表示一个 loss marker。Timeout 不消费 event；调用方必须释放每一个成功取得的 event，不能并发 poll/close 同一 peer。
 
 HTTP request 可以通过 `cancel_cb + cancel_user` 提供 cooperative cancellation。Backend 必须在开始请求、传输进度和 body callback 边界检查取消信号，并以 `H2_PAL_ERR_CLOSED` 结束；调用方仍然拥有 request 与 callback context，直到同步 `request()` 返回。不能把取消实现为 detached worker，也不能在返回后继续访问 request。底层 transport 无法在阻塞 I/O 中间检查 callback 时，上层必须同时提供有限 I/O timeout，保证 cancel-to-return latency 有明确上界。
@@ -613,3 +617,5 @@ BK7258 Preferences 保留已有原始 value 字节，确保已安装旧 Loader �
 ESP LittleFS 的目录级 clear 在既有 internal-stack safe-call 路径执行，保留目录本身、递归移除子项，并拒绝遍历路径；目录层数过深返回错误。DevKit 原有整 `/data` 格式化接口保持明确的 board policy，Storage E2E 仅调用测试子目录 clear。BK FATFS 提供真实 seek 和目录级 clear，测试不格式化 SD 卡。
 
 移动端 HTTP owner 复用 CoreHTTP + POSIX Net + 完整 WolfSSL，公开独立 create/API/destroy 生命周期并复制可选 root CA；没有提供 root CA 时使用系统 trust。每个 HTTP owner 独立持有完整 WolfSSL 引用，Crypto getter/shutdown 只取得或释放 Crypto 自己的引用，不会提前销毁仍被 HTTP 持有的实现。请求和 response 全部结束后先销毁 HTTP owner，再进行 Core teardown。HTTP SDK API 与已有 Core/Crypto/Storage 一起进入真实 XCFramework/Swift Package、AAR，HTTP App 不直接链接另一份 provider。六端资格以独立 `pal-http` App 的同一 registry 为准；移动端通过真实模拟器运行，使用受控 HTTP/HTTPS fixture，保留 package/hash 和案例结果。
+
+iOS 和 Android 的 WebRTC owner 位于各自 `pal_core/src/h2_*_webrtc.c`，组合 H2Peer、H2SCTP、原生 POSIX Net 和与 Crypto/HTTP 共用的完整 WolfSSL。每个 owner 独立持有 TLS lifecycle 引用，公开 create/API/destroy；API 借用至 destroy，销毁必须先停止使用并释放事件，busy 时保留 owner 供重试。该 owner 不打开物理音频设备，Track 由 caller 提供。真实 SDK archive 包含此实现，独立 `pal-webrtc` qualification App 直接消费 package binary。

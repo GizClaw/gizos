@@ -285,7 +285,7 @@ h2_pal_result_t peer_connection_classify_dtls_handshake_result(
   }
   if (handshake_result < 0) {
     *out_terminal_state = PEER_CONNECTION_FAILED;
-    return H2_PAL_ERR_IO;
+    return (h2_pal_result_t)handshake_result;
   }
   return H2_PAL_OK;
 }
@@ -485,6 +485,13 @@ int peer_connection_encode_datachannel_open(
   return 0;
 }
 
+int peer_connection_register_negotiated_channel(
+    PeerConnection* pc, DecpChannelType channel_type,
+    uint32_t reliability_parameter, const char* label, uint16_t sid) {
+  return pc == NULL ? -1 : sctp_register_negotiated_channel(
+      &pc->sctp, label, sid, (uint8_t)channel_type, reliability_parameter);
+}
+
 int peer_connection_create_datachannel_sid(
     PeerConnection* pc, DecpChannelType channel_type, uint16_t priority,
     uint32_t reliability_parameter, char* label, char* protocol, uint16_t sid) {
@@ -610,6 +617,16 @@ static h2_pal_result_t peer_connection_loop_internal(
       }
       if (handshake_result == 0) {
         H2_PEER_LOGD(pc->config.log, "DTLS-SRTP handshake done");
+
+        /* A verified handshake is fresh peer activity. Local certificate
+         * operations may take longer than the idle interval on embedded
+         * software crypto; do not immediately expire the new association
+         * against the timestamp captured before those operations. */
+        if (h2_pal_time_get_monotonic_ms(
+                pc->agent.time, &pc->agent.ice_activity_time_ms) != H2_PAL_OK) {
+          STATE_CHANGED(pc, PEER_CONNECTION_FAILED);
+          return H2_PAL_ERR_IO;
+        }
 
         if (pc->config.datachannel) {
           H2_PEER_LOGI(pc->config.log, "SCTP create association");

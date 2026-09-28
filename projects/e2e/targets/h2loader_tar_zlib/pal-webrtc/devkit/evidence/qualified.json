@@ -1,0 +1,1008 @@
+{
+  "qualified": true,
+  "platform": "devkit",
+  "source_commit": "93eec8640563f57139f2219af5fbef8cbae83309",
+  "source_sha256": {
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "24bd887884a51a9cb55cdcaf2b136e74d72826db7f1156bddbd39c3b405a9cf0",
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_cases.inc": "725f4d2ca360da9066a855696a30553f49959c6a9ec26dcb168ef4912587528b",
+    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "a4b05391de4360162d4c2e6c81b77977b1aaa1093d414b3b97312fcb1d158e33",
+    "projects/e2e/apps/pal-webrtc/app/api_coverage.json": "658ec12889c79438c11992e61a89c6ecd061905d11e6da1c6e8aaf36515f949e",
+    "libs/pal/include/h2/pal/application/h2_pal_webrtc.h": "a2b7e90b18a063250a590eb5a982843c7c8303a0e4d61d3edabcaa834c0cc793"
+  },
+  "observed_at_utc": "2026-09-28T11:41:31.952906+00:00",
+  "runs": [
+    {
+      "run_id": "19c3450a7d074be2",
+      "version": "pal-webrtc-esp-20260928-r8",
+      "board": "devkit",
+      "uid": "9888e0115c52",
+      "cases": [
+        {
+          "id": "wrapper-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "malformed-sdp",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 4,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "default-lifetime",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 3,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "legacy-create-fallback",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 3,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "allocator-failure",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "allocator-ownership",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 2,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "poll-nonblocking",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "poll-timeout",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 26,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "poll-negative",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "ice-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "ice-borrowed-input",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "track-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "track-bind",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 3,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "channel-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "channel-configurations",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 5,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "send-before-connected",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "offer-owned-sdp",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 889,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "remote-sdp-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "pion-negotiation",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 817,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "channel-metadata",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 412,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "binary-roundtrip",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 9,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "text-roundtrip",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 8,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "empty-binary",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 10,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "empty-text",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 8,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "unordered-roundtrip",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 7,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "ordered-unreliable",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 11,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "unordered-reliable",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 7,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "message-boundaries",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 25,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "send-borrowed-input",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 8,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "opus-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "opus-direct-roundtrip",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 54,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "opus-backpressure",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 533,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "track-read-roundtrip",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 24,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "track-write-retry",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 937,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "track-unset-quiescent",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 207,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "detached-opus-event",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 7,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "channel-close-event",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 2,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "remote-close",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 23,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "owned-event-after-close",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 4,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "event-release-idempotent",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "resource-churn",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 18,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "fingerprint-rejected",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1694,
+          "observed_error": -17,
+          "authentication_evidence": 1
+        },
+        {
+          "id": "explicit-stream-id",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1850,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        }
+      ],
+      "summary": {
+        "passed": 43,
+        "failed": 0,
+        "blocked": 0,
+        "retained_allocations": 0,
+        "cleanup": 0
+      },
+      "rc": 0,
+      "confirm": 0,
+      "soak": null,
+      "final_status": {
+        "board": "devkit",
+        "target": "esp32s3",
+        "chip": "esp32s3",
+        "device_uid": "9888e0115c52",
+        "capabilities": "0x00000007",
+        "command_availability": "0x001f3d3f",
+        "active_role": "app",
+        "active_version": "pal-webrtc-esp-20260928-r8",
+        "active_checksum": "1b5e432b1504f3da3aa9fa7adf749626bb3d28353d6cf7163435d74c4b2f253e",
+        "active_image_size": "1616480",
+        "running_partition": "2",
+        "next_partition": "2",
+        "boot_intent": "auto",
+        "stage_valid": "0",
+        "stage_package_checksum": "-",
+        "stage_package_size": "0",
+        "stage_image_checksum": "-",
+        "stage_image_size": "0",
+        "stage_role": "unknown",
+        "stage_version": "-",
+        "stage_board": "-",
+        "stage_target": "-",
+        "partition_1_valid": "1",
+        "partition_1_package_checksum": "f4fd26deba579fb6b8955e9ea7a83122b25cf6e4c433b3d652090d6958197568",
+        "partition_1_package_size": "975428",
+        "partition_1_image_checksum": "9479960ee19af062cb1a599c4d4b52f948d476efc842aabdfa6ca2ec812befd5",
+        "partition_1_image_size": "1496656",
+        "partition_1_role": "loader",
+        "partition_1_version": "0.2.3-atomic-541",
+        "partition_1_board": "devkit",
+        "partition_1_target": "esp32s3",
+        "partition_2_valid": "1",
+        "partition_2_package_checksum": "253775455427cd34c08ca8342b691bca6e6a2543c8181403c0efd74a2b471273",
+        "partition_2_package_size": "1049141",
+        "partition_2_image_checksum": "1b5e432b1504f3da3aa9fa7adf749626bb3d28353d6cf7163435d74c4b2f253e",
+        "partition_2_image_size": "1616480",
+        "partition_2_role": "app",
+        "partition_2_version": "pal-webrtc-esp-20260928-r8",
+        "partition_2_board": "devkit",
+        "partition_2_target": "esp32s3",
+        "last_result": "0",
+        "mfg_mode": "1",
+        "mfg_steps": "0000000000000000000000"
+      },
+      "build": {
+        "assets": [
+          {
+            "name": "devkit-pal-webrtc-esp32s3.update.tar.zlib",
+            "operation": "managed-install",
+            "release_suffix": ".update.tar.zlib",
+            "sha256": "253775455427cd34c08ca8342b691bca6e6a2543c8181403c0efd74a2b471273",
+            "size": 1049141
+          }
+        ],
+        "board": "devkit",
+        "entry": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/devkit",
+        "image": "pal-webrtc",
+        "native_artifacts": [
+          {
+            "name": "firmware.elf",
+            "operation": "native-debug-or-flash",
+            "sha256": "d3c6f7cb581dc6425e1d913c142809a0569ad11c5180745fd316e3e11a7b43ce",
+            "size": 14333376
+          },
+          {
+            "name": "firmware.map",
+            "operation": "native-debug-or-flash",
+            "sha256": "77b09e071573dab10d505b9138cd76671d9c1b3f77c11c431640a1b8fc68c08c",
+            "size": 14186959
+          },
+          {
+            "name": "app.bin",
+            "operation": "native-debug-or-flash",
+            "sha256": "1b5e432b1504f3da3aa9fa7adf749626bb3d28353d6cf7163435d74c4b2f253e",
+            "size": 1616480
+          },
+          {
+            "name": "bootloader.bin",
+            "operation": "native-debug-or-flash",
+            "sha256": "aea489e80b1445d2dbdeb090188c51ff7238ad92a0cff977f568c31661026b45",
+            "size": 21328
+          },
+          {
+            "name": "combined_factory.bin",
+            "operation": "native-debug-or-flash",
+            "sha256": "7aaa6f6a0b1e7fb5a64981a1f40f59b60d8cb94a38fcd84a6c0104473ae60b35",
+            "size": 1747552
+          },
+          {
+            "name": "partition-table.bin",
+            "operation": "native-debug-or-flash",
+            "sha256": "96f93c5cdeacf9f53990c7d9fb3570220e33c6feedcc73cea05948160cf14d48",
+            "size": 3072
+          },
+          {
+            "name": "flasher_args.json",
+            "operation": "native-debug-or-flash",
+            "sha256": "dd8b8b8a49ccf4ccb5cbb0d0f08f222d5840dcd2d1ae2960954f7eac7d72f20d",
+            "size": 998
+          }
+        ],
+        "package_manifest": {
+          "board": "devkit",
+          "format": 1,
+          "image_sha256": "1b5e432b1504f3da3aa9fa7adf749626bb3d28353d6cf7163435d74c4b2f253e",
+          "image_size": 1616480,
+          "role": "app",
+          "target": "esp32s3",
+          "version": "pal-webrtc-esp-20260928-r8"
+        },
+        "platform": "esp",
+        "role": "app",
+        "target": "esp32s3",
+        "version": "pal-webrtc-esp-20260928-r8"
+      }
+    },
+    {
+      "run_id": "30a18fbb19c4ecd7",
+      "version": "pal-webrtc-esp-20260928-r8",
+      "board": "devkit",
+      "uid": "9888e0115c52",
+      "cases": [
+        {
+          "id": "wrapper-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "malformed-sdp",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 4,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "default-lifetime",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 3,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "legacy-create-fallback",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 3,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "allocator-failure",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "allocator-ownership",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 2,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "poll-nonblocking",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "poll-timeout",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 25,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "poll-negative",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "ice-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "ice-borrowed-input",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "track-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "track-bind",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 3,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "channel-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "channel-configurations",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 5,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "send-before-connected",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "offer-owned-sdp",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 793,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "remote-sdp-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "pion-negotiation",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 24,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "channel-metadata",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 459,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "binary-roundtrip",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 12,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "text-roundtrip",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 10,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "empty-binary",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 12,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "empty-text",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 7,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "unordered-roundtrip",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 9,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "ordered-unreliable",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 10,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "unordered-reliable",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 11,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "message-boundaries",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 32,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "send-borrowed-input",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 7,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "opus-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "opus-direct-roundtrip",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 53,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "opus-backpressure",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 24,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "track-read-roundtrip",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 24,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "track-write-retry",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 625,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "track-unset-quiescent",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 101,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "detached-opus-event",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 7,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "channel-close-event",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 2,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "remote-close",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 23,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "owned-event-after-close",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 5,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "event-release-idempotent",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "resource-churn",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 20,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "fingerprint-rejected",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1464,
+          "observed_error": -17,
+          "authentication_evidence": 1
+        },
+        {
+          "id": "explicit-stream-id",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1527,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        }
+      ],
+      "summary": {
+        "passed": 43,
+        "failed": 0,
+        "blocked": 0,
+        "retained_allocations": 0,
+        "cleanup": 0
+      },
+      "rc": 0,
+      "confirm": 0,
+      "soak": null,
+      "final_status": {
+        "board": "devkit",
+        "target": "esp32s3",
+        "chip": "esp32s3",
+        "device_uid": "9888e0115c52",
+        "capabilities": "0x00000007",
+        "command_availability": "0x001f3d3f",
+        "active_role": "app",
+        "active_version": "pal-webrtc-esp-20260928-r8",
+        "active_checksum": "1b5e432b1504f3da3aa9fa7adf749626bb3d28353d6cf7163435d74c4b2f253e",
+        "active_image_size": "1616480",
+        "running_partition": "2",
+        "next_partition": "2",
+        "boot_intent": "auto",
+        "stage_valid": "0",
+        "stage_package_checksum": "-",
+        "stage_package_size": "0",
+        "stage_image_checksum": "-",
+        "stage_image_size": "0",
+        "stage_role": "unknown",
+        "stage_version": "-",
+        "stage_board": "-",
+        "stage_target": "-",
+        "partition_1_valid": "1",
+        "partition_1_package_checksum": "f4fd26deba579fb6b8955e9ea7a83122b25cf6e4c433b3d652090d6958197568",
+        "partition_1_package_size": "975428",
+        "partition_1_image_checksum": "9479960ee19af062cb1a599c4d4b52f948d476efc842aabdfa6ca2ec812befd5",
+        "partition_1_image_size": "1496656",
+        "partition_1_role": "loader",
+        "partition_1_version": "0.2.3-atomic-541",
+        "partition_1_board": "devkit",
+        "partition_1_target": "esp32s3",
+        "partition_2_valid": "1",
+        "partition_2_package_checksum": "253775455427cd34c08ca8342b691bca6e6a2543c8181403c0efd74a2b471273",
+        "partition_2_package_size": "1049141",
+        "partition_2_image_checksum": "1b5e432b1504f3da3aa9fa7adf749626bb3d28353d6cf7163435d74c4b2f253e",
+        "partition_2_image_size": "1616480",
+        "partition_2_role": "app",
+        "partition_2_version": "pal-webrtc-esp-20260928-r8",
+        "partition_2_board": "devkit",
+        "partition_2_target": "esp32s3",
+        "last_result": "0",
+        "mfg_mode": "1",
+        "mfg_steps": "0000000000000000000000"
+      },
+      "build": {}
+    }
+  ],
+  "loader_preserved": true,
+  "coredump_after": {
+    "stored_bytes": 0,
+    "blank": true
+  },
+  "preservation": {
+    "loader_p1_before_sha256": "9479960ee19af062cb1a599c4d4b52f948d476efc842aabdfa6ca2ec812befd5",
+    "loader_p1_after_sha256": "9479960ee19af062cb1a599c4d4b52f948d476efc842aabdfa6ca2ec812befd5",
+    "stage_valid": false,
+    "app_confirmed": true
+  },
+  "logs": [
+    {
+      "action": "install",
+      "sha256": "ed9bc951718cce227b21c1e40e60a29a798dab201ce6aadd3148391f601355f2"
+    },
+    {
+      "action": "reboot",
+      "sha256": "53a3d921a65b584c0db5b2cbf08f743670798a0c9e205b28e4c0eb7c0eb8eb30"
+    }
+  ]
+}

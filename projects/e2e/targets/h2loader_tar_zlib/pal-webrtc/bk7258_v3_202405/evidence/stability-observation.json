@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "status": "NOT_REPRODUCED",
+  "stability_qualified": false,
+  "reported_issue": "Possible spontaneous reset and audible sound after running",
+  "observation_start_utc": "2026-09-28T09:28:42.495023+00:00",
+  "observation_end_utc": "2026-09-28T09:38:42.795733+00:00",
+  "observation_seconds": 600.352,
+  "uart1_ledger_samples": 89,
+  "app_run_ids": [
+    "4be41df1118e25f2"
+  ],
+  "sdk_uptime_start_ms": 3025700,
+  "sdk_uptime_end_ms": 3617876,
+  "max_ledger_gap_ms": 7535,
+  "new_boot_markers": 0,
+  "uart0_bytes": 0,
+  "reset_reason": {
+    "status": "UNAVAILABLE",
+    "reason": "Current H2Loader status/stats do not expose reset source; read-only SDK starttype on UART0 produced no response."
+  },
+  "actions": {
+    "flashes": 0,
+    "reset_commands": 0,
+    "uart0_rts": false,
+    "uart0_dtr": false,
+    "uart0_query": "starttype"
+  },
+  "coredump": {
+    "bytes": 32,
+    "sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829",
+    "unchanged_from_original": true
+  },
+  "sound": {
+    "test_audio_output_calls": 0,
+    "source": "UNDETERMINED",
+    "evidence": "The portable synthetic Opus Track.write only compares bytes. Board audio creation and Runtime binding only install vtables; the test does not call start_speaker/create_audio_track."
+  },
+  "limits": [
+    "No AP reset was observed in this bounded window. Absence of reproduction is not a proof of indefinite stability.",
+    "UART0 produced no bytes, so CP-only resets and the reported physical sound remain unverified."
+  ],
+  "raw_capture_sha256": {
+    ".uart0.raw": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    ".uart1.raw": "fd82ce13c96be1c61c66954b04199e58f53bdfb9a11cca4ebe5100efd7de44ee",
+    ".timeline.jsonl": "023ae981c3a69755b46dcbd4245cff86c52ee80e0424ab59370c243184b8f54a"
+  }
+}

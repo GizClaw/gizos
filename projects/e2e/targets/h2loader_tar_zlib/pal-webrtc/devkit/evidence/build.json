@@ -1,0 +1,71 @@
+{
+  "assets": [
+    {
+      "name": "devkit-pal-webrtc-esp32s3.update.tar.zlib",
+      "operation": "managed-install",
+      "release_suffix": ".update.tar.zlib",
+      "sha256": "253775455427cd34c08ca8342b691bca6e6a2543c8181403c0efd74a2b471273",
+      "size": 1049141
+    }
+  ],
+  "board": "devkit",
+  "entry": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/devkit",
+  "image": "pal-webrtc",
+  "native_artifacts": [
+    {
+      "name": "firmware.elf",
+      "operation": "native-debug-or-flash",
+      "sha256": "d3c6f7cb581dc6425e1d913c142809a0569ad11c5180745fd316e3e11a7b43ce",
+      "size": 14333376
+    },
+    {
+      "name": "firmware.map",
+      "operation": "native-debug-or-flash",
+      "sha256": "77b09e071573dab10d505b9138cd76671d9c1b3f77c11c431640a1b8fc68c08c",
+      "size": 14186959
+    },
+    {
+      "name": "app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "1b5e432b1504f3da3aa9fa7adf749626bb3d28353d6cf7163435d74c4b2f253e",
+      "size": 1616480
+    },
+    {
+      "name": "bootloader.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "aea489e80b1445d2dbdeb090188c51ff7238ad92a0cff977f568c31661026b45",
+      "size": 21328
+    },
+    {
+      "name": "combined_factory.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "7aaa6f6a0b1e7fb5a64981a1f40f59b60d8cb94a38fcd84a6c0104473ae60b35",
+      "size": 1747552
+    },
+    {
+      "name": "partition-table.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "96f93c5cdeacf9f53990c7d9fb3570220e33c6feedcc73cea05948160cf14d48",
+      "size": 3072
+    },
+    {
+      "name": "flasher_args.json",
+      "operation": "native-debug-or-flash",
+      "sha256": "dd8b8b8a49ccf4ccb5cbb0d0f08f222d5840dcd2d1ae2960954f7eac7d72f20d",
+      "size": 998
+    }
+  ],
+  "package_manifest": {
+    "board": "devkit",
+    "format": 1,
+    "image_sha256": "1b5e432b1504f3da3aa9fa7adf749626bb3d28353d6cf7163435d74c4b2f253e",
+    "image_size": 1616480,
+    "role": "app",
+    "target": "esp32s3",
+    "version": "pal-webrtc-esp-20260928-r8"
+  },
+  "platform": "esp",
+  "role": "app",
+  "target": "esp32s3",
+  "version": "pal-webrtc-esp-20260928-r8"
+}

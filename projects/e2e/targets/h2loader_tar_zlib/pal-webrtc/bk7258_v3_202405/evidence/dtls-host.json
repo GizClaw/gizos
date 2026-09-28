@@ -1,0 +1,36 @@
+{
+  "scope": "BK DTLS provider host regression; not physical-device qualification",
+  "observed_at_utc": "2026-09-28T07:09:15.861641+00:00",
+  "sdk_commit": "aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca",
+  "sdk_mbedtls_version": "3.5.2",
+  "configuration": "SDK upstream default software configuration; DTLS_SRTP enabled; KEEP_PEER_CERTIFICATE and SDK-only upstream self-tests disabled",
+  "tests": [
+    "BK_DTLS_HOST_PASS wrong_fingerprint=0 drop_cookie=0",
+    "BK_DTLS_HOST_PASS wrong_fingerprint=0 drop_cookie=1",
+    "BK_DTLS_HOST_PASS wrong_fingerprint=1 drop_cookie=0",
+    "BK_DTLS_HOST_PASS wrong_fingerprint=2 drop_cookie=0",
+    "BK_DTLS_HOST_PASS missing_peer_certificate"
+  ],
+  "source_sha256": {
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_dtls.c": "fb4dcaf370d5074e662c602c839ecc32ff7f3e97f66d0a0e46e07e73e08184a4",
+    "native_component_src/bk7258/ap/h2_pal_core/tests/dtls_host/CMakeLists.txt": "536cff54a94f4af1a720b227cf61e2659a5f3ff24f262a9ca6b1fff3db6750a7",
+    "native_component_src/bk7258/ap/h2_pal_core/tests/dtls_host/README.md": "7f34ce8e0d764125c3f35c9a8ea0c87bd828999e7bbcf37e3fd53b6abe373337",
+    "native_component_src/bk7258/ap/h2_pal_core/tests/dtls_host/host_config.h": "1b23e0c0dfe16f0234ed0d10cdb497cd2d55aa2f4aa30896063d9c9325e3eb2a",
+    "native_component_src/bk7258/ap/h2_pal_core/tests/dtls_host/host_log.h": "107e0da68a2eab288d36ec7f1c5b07b7abf554e4250510e845064c80887c9986",
+    "native_component_src/bk7258/ap/h2_pal_core/tests/dtls_host/test_dtls.c": "6003645f622558353478c0ae285cef968f94274840c7dadae32a82d0b69f4337",
+    "native_component_src/bk7258/ap/h2_pal_core/CMakeLists.txt": "306296dc95aaa0ddc76eba70669e941e203144d7db0545ad81836b8718a62d1a",
+    "native_component_src/bk7258/ap/h2_pal_core/include/h2_bk_mbedtls_config.h": "45381119c5f4cabb76426edb34aea67352dd32ca0b4c8bec7f3da5bb9ee31069"
+  },
+  "reproduced_before_fix": {
+    "cookie": "mbedtls ssl_cookie_write_dummy returned -28800 (-0x7080), PAL IO at first ClientHello",
+    "certificate": "After fixing cookie, VERIFY_REQUIRED with no CA chain returned -30336, PAL IO",
+    "certificate_lifetime": "Disabling KEEP_PEER_CERTIFICATE reproduced failure of a valid handshake. Verification now captures the leaf fingerprint result while the verification callback owns valid DER."
+  },
+  "physical_board_status": "BK r15 subsequently passed all 43 mandatory cases after managed installation and a normal reboot; qualified.json contains both distinct immutable boot ledgers.",
+  "native_configuration": "The SDK minimal profile does not enable COOKIE_C or HELLO_VERIFY by default. The AP adapter enables the SDK cookie implementation and publishes DTLS layout macros to all SDK consumers; r9 map includes cookie_setup and set_client_transport_id.",
+  "sanitizers": {
+    "address": "PASS",
+    "undefined_behavior": "PASS",
+    "cases": 5
+  }
+}

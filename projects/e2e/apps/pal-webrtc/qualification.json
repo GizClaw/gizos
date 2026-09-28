@@ -1,0 +1,67 @@
+{
+  "schema": 1,
+  "contract": 1,
+  "operations": 13,
+  "cases": 43,
+  "qualified": true,
+  "observed_at_utc": "2026-09-28T11:41:31.952906+00:00",
+  "portable_source_sha256": {
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "24bd887884a51a9cb55cdcaf2b136e74d72826db7f1156bddbd39c3b405a9cf0",
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_cases.inc": "725f4d2ca360da9066a855696a30553f49959c6a9ec26dcb168ef4912587528b",
+    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "a4b05391de4360162d4c2e6c81b77977b1aaa1093d414b3b97312fcb1d158e33",
+    "projects/e2e/apps/pal-webrtc/app/api_coverage.json": "658ec12889c79438c11992e61a89c6ecd061905d11e6da1c6e8aaf36515f949e",
+    "libs/pal/include/h2/pal/application/h2_pal_webrtc.h": "a2b7e90b18a063250a590eb5a982843c7c8303a0e4d61d3edabcaa834c0cc793"
+  },
+  "platforms": [
+    {
+      "platform": "ios-simulator",
+      "status": "PASS",
+      "evidence": "projects/e2e/targets/ios_application/pal-webrtc/evidence/qualified.json",
+      "sha256": "20d5211f3e455345da0e0d80807871cb34021c0bb434a5e1921f47dc452fe50a",
+      "environment": "projects/e2e/targets/ios_application/pal-webrtc/evidence/environment.json",
+      "environment_sha256": "dde0ca2ef5bd617a138d654c92f9b90f380f88038684cb40f492df665adc4c56",
+      "source_matches_current": true
+    },
+    {
+      "platform": "android-emulator",
+      "status": "PASS",
+      "evidence": "projects/e2e/targets/android_binary/pal-webrtc/evidence/qualified.json",
+      "sha256": "250a301fa00a124560261400f601f738b73b0c56e24c25660cd593eca51a0408",
+      "environment": "projects/e2e/targets/android_binary/pal-webrtc/evidence/environment.json",
+      "environment_sha256": "79644dbf4bfc6809e575dfd681ac885e3a8196319a9c31d5a1aa8835c942b4ad",
+      "source_matches_current": true
+    },
+    {
+      "platform": "macos",
+      "status": "PASS",
+      "evidence": "projects/e2e/targets/cc_binary/pal-webrtc/evidence/qualified.json",
+      "sha256": "d9329b6c3d2ae247b09a9183b0255e1ec54671d590b95fda5a39d26efecf2afc",
+      "source_matches_current": true
+    },
+    {
+      "platform": "wasm",
+      "status": "PASS",
+      "evidence": "projects/e2e/targets/pkg_tar/pal-webrtc/evidence/qualified.json",
+      "sha256": "de456dc1e0ba0319f2870b808e03c5826406c2aace2536a86644ac36da3bfa1c",
+      "source_matches_current": true
+    },
+    {
+      "platform": "devkit",
+      "status": "PASS",
+      "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/devkit/evidence/qualified.json",
+      "sha256": "d25e5242e9467a680d3d4edf6f154865cfe55217994d95bf28ebbb1288cfde42",
+      "source_matches_current": true
+    },
+    {
+      "platform": "bk7258",
+      "status": "PASS",
+      "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405/evidence/qualified.json",
+      "sha256": "6f6b0c68794771da69b74c8b555f1806dcdb72d3be4e03dd36b2ecde99b32e96",
+      "source_matches_current": true,
+      "conformance_status": "PASS"
+    }
+  ],
+  "remaining": [],
+  "requires_source_refresh": [],
+  "scope": "13 WebRTC operations, owned events, allocators, Opus transport and DataChannels; no microphone, speaker or video qualification."
+}

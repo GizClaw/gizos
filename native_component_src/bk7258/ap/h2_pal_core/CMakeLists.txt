@@ -152,6 +152,8 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
   MBEDTLS_POLY1305_C
   MBEDTLS_CHACHAPOLY_C
   MBEDTLS_SSL_DTLS_SRTP
+  MBEDTLS_SSL_DTLS_HELLO_VERIFY
+  MBEDTLS_SSL_COOKIE_C
   MBEDTLS_SSL_SRV_C
   MBEDTLS_X509_CREATE_C
   MBEDTLS_X509_CRT_WRITE_C)
@@ -196,8 +198,12 @@ endif()
 armino_component_get_property(
   H2_BK_MBEDTLS_COMPONENT_LIB psa_mbedtls COMPONENT_LIB)
 target_compile_definitions(
-  ${H2_BK_MBEDTLS_COMPONENT_LIB} PRIVATE
+  # DTLS feature flags change public context layouts; all SDK consumers must
+  # see the same definitions as the implementation, including cookie support.
+  ${H2_BK_MBEDTLS_COMPONENT_LIB} PUBLIC
     MBEDTLS_SSL_DTLS_SRTP
+    MBEDTLS_SSL_DTLS_HELLO_VERIFY
+    MBEDTLS_SSL_COOKIE_C
     MBEDTLS_SSL_SRV_C
     MBEDTLS_X509_CREATE_C
     MBEDTLS_X509_CRT_WRITE_C)
@@ -219,6 +225,10 @@ target_compile_definitions(${H2_BK_PSA_MBEDTLS_LIB} PUBLIC
   MBEDTLS_CHACHAPOLY_C)
 
 if(CONFIG_SW_CRYPTO)
+  target_include_directories(${H2_BK_PSA_MBEDTLS_LIB} PUBLIC
+    "${CMAKE_CURRENT_LIST_DIR}/include")
+  target_compile_definitions(${H2_BK_PSA_MBEDTLS_LIB} PUBLIC
+    MBEDTLS_USER_CONFIG_FILE="h2_bk_mbedtls_config.h")
   # The SDK software hook reads libc rand(). Supply the documented entropy
   # hook in h2_bk_platform_crypto.c so PSA's internal DRBG uses the real TRNG.
   get_target_property(H2_BK_PSA_SOURCES ${H2_BK_PSA_MBEDTLS_LIB} SOURCES)

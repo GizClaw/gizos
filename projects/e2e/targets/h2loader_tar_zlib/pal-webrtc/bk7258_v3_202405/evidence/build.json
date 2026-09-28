@@ -1,0 +1,77 @@
+{
+  "assets": [
+    {
+      "name": "bk7258_v3_202405-pal-webrtc-bk7258.update.tar.zlib",
+      "operation": "managed-install",
+      "release_suffix": ".update.tar.zlib",
+      "sha256": "2d6bbd436bd19d0c7974fb1eb304d36c1f921dc7b6e4d9c9ba31e9d4137889fb",
+      "size": 1793968
+    }
+  ],
+  "board": "bk7258_v3_202405",
+  "entry": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405",
+  "image": "pal-webrtc",
+  "native_artifacts": [
+    {
+      "name": "ap/firmware.elf",
+      "operation": "native-debug-or-flash",
+      "sha256": "f1094f2644208e23d5ae1398816d2c835acd885c40f1f57ce232b53f9d917d18",
+      "size": 13243372
+    },
+    {
+      "name": "ap/firmware.map",
+      "operation": "native-debug-or-flash",
+      "sha256": "5f2409e8bb9e924bcecb08f0575307a509796bbf558e28b37e374bf888416f00",
+      "size": 8707348
+    },
+    {
+      "name": "ap/app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "6303c2551bc59586f2f47ce77b343b221b1ec780bb1c998cc44047fac82aebb2",
+      "size": 1395924
+    },
+    {
+      "name": "cp/firmware.elf",
+      "operation": "native-debug-or-flash",
+      "sha256": "12450b9455e290c3719aed867364c8dfaff89ab7d32b15bb843c313b392a5256",
+      "size": 14369960
+    },
+    {
+      "name": "cp/firmware.map",
+      "operation": "native-debug-or-flash",
+      "sha256": "928134d516d697e5bec57238b627cbd53cace8cd5afc5627aae771d9329b9da0",
+      "size": 6809159
+    },
+    {
+      "name": "cp/app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "e045ee2b21b2411e2fbba2991c8f4044168f81464abac2d835ab46d702b09921",
+      "size": 1056268
+    },
+    {
+      "name": "app_ab_crc.rbl",
+      "operation": "native-debug-or-flash",
+      "sha256": "3b58bedb27d64c4c5447ffdae5a58e50feea8b0b0375c85843d642dceca55b30",
+      "size": 5222400
+    },
+    {
+      "name": "all-app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "6f6fef3a14dc1be28491a5881085eb288898a158387e86b189bbfd13702614ab",
+      "size": 5292032
+    }
+  ],
+  "package_manifest": {
+    "board": "bk7258_v3_202405",
+    "format": 1,
+    "image_sha256": "3b58bedb27d64c4c5447ffdae5a58e50feea8b0b0375c85843d642dceca55b30",
+    "image_size": 5222400,
+    "role": "app",
+    "target": "bk7258",
+    "version": "pal-webrtc-bk-20260928-r17"
+  },
+  "platform": "bk7258",
+  "role": "app",
+  "target": "bk7258",
+  "version": "pal-webrtc-bk-20260928-r17"
+}

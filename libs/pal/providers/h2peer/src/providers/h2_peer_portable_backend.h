@@ -24,6 +24,7 @@ h2_pal_result_t h2_peer_portable_send_opus(h2_pal_webrtc_peer_t *peer,
                                            const uint8_t *opus,
                                            size_t opus_len);
 h2_pal_result_t h2_peer_portable_channel_open(h2_pal_webrtc_channel_t *channel);
+h2_pal_result_t h2_peer_portable_channel_prepare(h2_pal_webrtc_channel_t *channel);
 h2_pal_result_t h2_peer_portable_channel_send(h2_pal_webrtc_channel_t *channel,
                                               const uint8_t *data, size_t len,
                                               int is_text);

@@ -50,6 +50,11 @@ typedef struct h2_pal_webrtc_channel_config {
     int has_stream_id;
     int ordered;
     int reliable;
+    /* Zero uses in-band DCEP. Nonzero requires has_stream_id and matching
+     * explicit channel creation on both peers before either side sends data;
+     * it does not send DCEP OPEN/ACK. Existing native in-band fixed IDs remain
+     * supported; browser providers may reject that in-band combination. */
+    int negotiated;
 } h2_pal_webrtc_channel_config_t;
 
 typedef struct h2_pal_webrtc_ice_server {
@@ -64,6 +69,7 @@ typedef struct h2_pal_webrtc_channel_info {
     int has_stream_id;
     int ordered;
     int reliable;
+    int negotiated;
 } h2_pal_webrtc_channel_info_t;
 
 typedef h2_pal_result_t (*h2_pal_webrtc_track_read_fn)(void *user,
@@ -260,7 +266,9 @@ static inline h2_pal_result_t h2_pal_webrtc_peer_create_data_channel(
     if (api == NULL || api->vtable == NULL ||
         api->vtable->peer_create_data_channel == NULL || peer == NULL ||
         config == NULL || out_channel == NULL || config->label.data == NULL ||
-        config->label.len == 0u) {
+        config->label.len == 0u ||
+        (config->negotiated && !config->has_stream_id) ||
+        (config->has_stream_id && config->stream_id == UINT16_MAX)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     return api->vtable->peer_create_data_channel(peer, config, out_channel);
