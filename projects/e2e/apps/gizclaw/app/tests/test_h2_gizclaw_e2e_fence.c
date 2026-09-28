@@ -16,7 +16,7 @@ struct h2_gizclaw_req {
 static struct {
   unsigned list, workflow, create, set, get, reload, invalid, releases;
   unsigned budget, fail_budget, mismatch_get;
-  bool missing_option, wrong_active;
+  bool missing_option, wrong_active, wrong_active_omitted;
   char stored[65];
 } state;
 static h2_app_test_mem_t memory;
@@ -172,7 +172,9 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_reload_with_options(
     strcpy(state.stored, patch->safety_fence_level);
   }
   out->runtime_state = H2_GIZCLAW_WORKSPACE_RUNTIME_RUNNING;
-  out->active_workspace_name = state.wrong_active ? "other" : "test-workspace";
+  out->active_workspace_name =
+      state.wrong_active || (patch == NULL && state.wrong_active_omitted)
+          ? "other" : "test-workspace";
   return H2_PAL_OK;
 }
 static int run(void) {
@@ -208,6 +210,13 @@ int main(void) {
   state.wrong_active = true;
   assert(run() == H2_PAL_ERR_INVALID_STATE);
   assert(state.create == 1u && state.reload == 1u && state.get == 1u);
+
+  /* The omitted-fence reload must also leave this Workspace active; a stored
+   * value read back from it proves nothing about another active one. */
+  memset(&state, 0, sizeof(state));
+  state.wrong_active_omitted = true;
+  assert(run() == H2_PAL_ERR_INVALID_STATE);
+  assert(state.reload == 3u && state.get == 5u && state.invalid == 0u);
 
   memset(&state, 0, sizeof(state));
   state.mismatch_get = 1u;

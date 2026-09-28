@@ -40,6 +40,14 @@ static bool option_present(const h2_gizclaw_workflow_page_t *page,
   return false;
 }
 
+/* A reload proves a selection only when it left this Workspace RUNNING. */
+static bool activated(const h2_gizclaw_workspace_activation_t *activation,
+                      const char *workspace) {
+  return activation->runtime_state == H2_GIZCLAW_WORKSPACE_RUNTIME_RUNNING &&
+         activation->active_workspace_name != NULL &&
+         strcmp(activation->active_workspace_name, workspace) == 0;
+}
+
 static h2_pal_result_t readback(h2_gizclaw_service_t *service,
                                  h2_gizclaw_resp_storage_t *storage,
                                  const char *workspace, const char *revision,
@@ -171,10 +179,7 @@ int h2_gizclaw_e2e_run_fence(h2_gizclaw_e2e_fixture_t *fixture) {
     rc = h2_gizclaw_rpc_workspace_reload_with_options(
         service, span(fixture->workspace_name), &patch, FENCE_TIMEOUT_MS,
         &storage, &activation);
-    if (rc == H2_PAL_OK &&
-        (activation.runtime_state != H2_GIZCLAW_WORKSPACE_RUNTIME_RUNNING ||
-         activation.active_workspace_name == NULL ||
-         strcmp(activation.active_workspace_name, fixture->workspace_name) != 0))
+    if (rc == H2_PAL_OK && !activated(&activation, fixture->workspace_name))
       rc = H2_PAL_ERR_INVALID_STATE;
     if (evidence("reload", rc) != H2_PAL_OK)
       break;
@@ -202,8 +207,7 @@ int h2_gizclaw_e2e_run_fence(h2_gizclaw_e2e_fixture_t *fixture) {
   rc = h2_gizclaw_rpc_workspace_reload_with_options(
       service, span(fixture->workspace_name), NULL, FENCE_TIMEOUT_MS,
       &storage, &activation);
-  if (rc == H2_PAL_OK &&
-      activation.runtime_state != H2_GIZCLAW_WORKSPACE_RUNTIME_RUNNING)
+  if (rc == H2_PAL_OK && !activated(&activation, fixture->workspace_name))
     rc = H2_PAL_ERR_INVALID_STATE;
   if (rc == H2_PAL_OK)
     rc = readback(service, &storage, fixture->workspace_name, revision,

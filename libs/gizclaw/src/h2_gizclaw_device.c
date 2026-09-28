@@ -1886,16 +1886,18 @@ h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service) {
       h2_gizclaw_mhs_validate_internal(config->mhs_devices,
                                        config->mhs_device_count) != H2_PAL_OK)
     return H2_PAL_ERR_INVALID_ARG;
+  /* Built-in procedures belong to the Service even when it has no device
+   * capability to serve them; a product may only add these two. */
+  for (size_t i = 0; i < config->tool_handler_count; ++i)
+    if (config->tool_handlers[i].tool != H2_GIZCLAW_TOOL_DEVICE_FIND &&
+        config->tool_handlers[i].tool != H2_GIZCLAW_TOOL_SOCIAL_PING)
+      return H2_PAL_ERR_INVALID_ARG;
   if (!config->audio && !config->wifi && !config->wifi_settings &&
       !config->power && !config->vtable && !config->manufacturer &&
       !config->model && !config->serial && !config->hardware_revision)
     return H2_PAL_OK;
   if (!speaker_hooks_paired(config->vtable))
     return H2_PAL_ERR_INVALID_ARG;
-  for (size_t i = 0; i < config->tool_handler_count; ++i)
-    if (config->tool_handlers[i].tool != H2_GIZCLAW_TOOL_DEVICE_FIND &&
-        config->tool_handlers[i].tool != H2_GIZCLAW_TOOL_SOCIAL_PING)
-      return H2_PAL_ERR_INVALID_ARG;
   if (config->mhs_device_count > SIZE_MAX / sizeof(h2_gizclaw_mhs_device_t) - 7u)
     return H2_PAL_ERR_INVALID_ARG;
   size_t audio_capacity =
