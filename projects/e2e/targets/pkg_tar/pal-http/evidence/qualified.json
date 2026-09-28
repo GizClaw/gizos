@@ -19,7 +19,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 7
+      "elapsed_ms": 3
     },
     {
       "id": "post",
@@ -33,7 +33,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 2
     },
     {
       "id": "patch",
@@ -54,7 +54,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0
+      "elapsed_ms": 1
     },
     {
       "id": "options",
@@ -89,7 +89,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 0
     },
     {
       "id": "caller-exact",
@@ -103,7 +103,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2
+      "elapsed_ms": 1
     },
     {
       "id": "allocator-owned",
@@ -131,14 +131,14 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 0
     },
     {
       "id": "stream-known",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2
+      "elapsed_ms": 3
     },
     {
       "id": "stream-chunked",
@@ -152,14 +152,14 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 7
+      "elapsed_ms": 1
     },
     {
       "id": "stream-abort",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2
+      "elapsed_ms": 1
     },
     {
       "id": "header-abort",
@@ -180,28 +180,28 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 4
+      "elapsed_ms": 2
     },
     {
       "id": "cancel-wait",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2001
+      "elapsed_ms": 2044
     },
     {
       "id": "timeout-headers",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2003
+      "elapsed_ms": 2001
     },
     {
       "id": "timeout-body",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2002
+      "elapsed_ms": 2003
     },
     {
       "id": "truncated-body",
@@ -229,42 +229,42 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 5004
+      "elapsed_ms": 5001
     },
     {
       "id": "redirect-relative",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 3
+      "elapsed_ms": 8
     },
     {
       "id": "redirect-post-303",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 8
     },
     {
       "id": "redirect-post-307",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 2
     },
     {
       "id": "https-trusted",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 5
+      "elapsed_ms": 3
     },
     {
       "id": "https-untrusted",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 15
+      "elapsed_ms": 16
     },
     {
       "id": "interface-rejected",
@@ -292,7 +292,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 0
     },
     {
       "id": "discard-body",
@@ -306,7 +306,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2
+      "elapsed_ms": 1
     },
     {
       "id": "repeated-cleanup",
@@ -320,7 +320,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2
+      "elapsed_ms": 3
     }
   ],
   "summary": {

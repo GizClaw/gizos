@@ -2,44 +2,47 @@
   "schema": 1,
   "operation_count": 2,
   "case_count": 45,
-  "qualified": false,
+  "qualified": true,
   "platforms": {
     "macos": {
       "status": "PASS",
       "passed": 45,
       "receipt": "projects/e2e/targets/cc_binary/pal-http/evidence/qualified.json",
-      "receipt_sha256": "43f4136b591acfed920f1079d46e880cea0505aa57e451cb20ec8ce68c710942"
+      "receipt_sha256": "3ad88b340eacdfa3a254a1b446d76da439b83b7db04e2612c3ddfaf580b312cc"
     },
     "wasm": {
       "status": "PASS",
       "passed": 45,
       "receipt": "projects/e2e/targets/pkg_tar/pal-http/evidence/qualified.json",
-      "receipt_sha256": "d19d9228e65bb054bb6114ac672d41310c1c3f05838f3b358e857a3775bfde91"
+      "receipt_sha256": "8bd6dd99dc72de3c60a92301d64411b2c25d9dd14072251c211b9e054af3b870"
     },
     "ios": {
       "status": "PASS",
       "passed": 45,
       "receipt": "projects/e2e/targets/ios_application/pal-http/evidence/qualified.json",
-      "receipt_sha256": "aec94057d5eac17311c49b6c78e1685f9ff64a0cd91f02649e6d26f9f8ee5412"
+      "receipt_sha256": "df006bdbfe0cfa07386f9c877449c05d660760970fe7495d8a6f6944c3aec529",
+      "environment_receipt": "projects/e2e/targets/ios_application/pal-http/evidence/environment.json",
+      "environment_sha256": "744058746bf2eadd1508f47fbb5274c963710f5184cdc74825d5bfe4ea35b40c"
     },
     "android": {
       "status": "PASS",
       "passed": 45,
       "receipt": "projects/e2e/targets/android_binary/pal-http/evidence/qualified.json",
-      "receipt_sha256": "a0cc1bc64b868a728fb05a548ee54690f974ea5ce36bca76f2b797fe1cb96269"
+      "receipt_sha256": "6b883974affb4651954e9a66645af00485d1aee2cfd44720f20934c934d93edb",
+      "environment_receipt": "projects/e2e/targets/android_binary/pal-http/evidence/environment.json",
+      "environment_sha256": "f67d0f13f9d50a55fd316b6cff74233adb17ef86ed40fb9e21ee05a20751c47c"
     },
     "devkit": {
       "status": "PASS",
       "passed": 45,
       "receipt": "projects/e2e/targets/h2loader_tar_zlib/pal-http/devkit/evidence/qualified.json",
-      "receipt_sha256": "278c4a471d1ac78b4c17f4dec6e5f3501c500842b418369f3cbd0f9bdbf53890"
+      "receipt_sha256": "ef2457886c6a0ab0777244b51a65b62c340afed2b450353a84333a17184ec1df"
     },
     "bk7258": {
-      "status": "NOT_RUN",
-      "passed": 0,
-      "reason": "App installed and management channel ready; saved STA configuration lookup returned NOT_FOUND before HTTP cases",
-      "pending_receipt": "projects/e2e/targets/h2loader_tar_zlib/pal-http/bk7258_v3_202405/evidence/pending.json",
-      "pending_receipt_sha256": "46c375908a2a3e17f644f380a023924335c5c6a77d243d0c6004c2074a0d677a"
+      "status": "PASS",
+      "passed": 45,
+      "receipt": "projects/e2e/targets/h2loader_tar_zlib/pal-http/bk7258_v3_202405/evidence/qualified.json",
+      "receipt_sha256": "ee86cfe671959a0735994fc9be3773a828fd95ef78d97f3f165f98851057a70b"
     }
   }
 }

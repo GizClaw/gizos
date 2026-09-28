@@ -1,7 +1,7 @@
 {
   "platform": "ios-simulator",
   "version": "2.0.0",
-  "pid": 58490,
+  "pid": 40999,
   "contract": 1,
   "operations": 2,
   "passed": 45,
@@ -23,7 +23,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 2
     },
     {
       "id": "post",
@@ -37,7 +37,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0
+      "elapsed_ms": 1
     },
     {
       "id": "patch",
@@ -72,14 +72,14 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0
+      "elapsed_ms": 1
     },
     {
       "id": "empty-body",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 0
     },
     {
       "id": "status-404",
@@ -93,7 +93,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0
+      "elapsed_ms": 1
     },
     {
       "id": "caller-exact",
@@ -107,7 +107,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 0
     },
     {
       "id": "allocator-owned",
@@ -170,7 +170,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 0
     },
     {
       "id": "cancel-before",
@@ -184,35 +184,35 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2
+      "elapsed_ms": 0
     },
     {
       "id": "cancel-wait",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2019
+      "elapsed_ms": 2005
     },
     {
       "id": "timeout-headers",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2005
+      "elapsed_ms": 2009
     },
     {
       "id": "timeout-body",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2000
+      "elapsed_ms": 2001
     },
     {
       "id": "truncated-body",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 0
     },
     {
       "id": "retry-recover",
@@ -226,14 +226,14 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2
+      "elapsed_ms": 1
     },
     {
       "id": "retry-deadline",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 5002
+      "elapsed_ms": 5000
     },
     {
       "id": "redirect-relative",
@@ -247,21 +247,21 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 0
     },
     {
       "id": "redirect-post-307",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0
+      "elapsed_ms": 1
     },
     {
       "id": "https-trusted",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 14
+      "elapsed_ms": 7
     },
     {
       "id": "https-untrusted",
@@ -303,7 +303,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0
+      "elapsed_ms": 2
     },
     {
       "id": "response-free",
@@ -324,7 +324,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 4
     }
   ]
 }

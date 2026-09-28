@@ -7,16 +7,16 @@
     "name": "devkit-pal-http-esp32s3.update.tar.zlib",
     "operation": "managed-install",
     "release_suffix": ".update.tar.zlib",
-    "sha256": "7f3d8607a461c0710344b135e9a71fa0168e0bab3dbe7fb3afc892d22a76dba1",
-    "size": 979364
+    "sha256": "784932ae1c0b833510fe6fce4e01f2e7b3b41821ad71551780c972de52bcfc52",
+    "size": 979571
   },
   "image": {
     "board": "devkit",
     "format": 1,
-    "image_sha256": "d62763ea6eec04a5b4be599b3b1a9fbb934b47596dba954c0ff4afb99c109fa8",
-    "image_size": 1519776,
+    "image_sha256": "3e8853f9344f7202ef7791f22ff002429e6e5bc01c4a68a2f3849e53b9cf093e",
+    "image_size": 1520224,
     "role": "app",
     "target": "esp32s3",
-    "version": "pal-http-esp-20260928-r1"
+    "version": "pal-http-esp-20260928-r4"
   }
 }

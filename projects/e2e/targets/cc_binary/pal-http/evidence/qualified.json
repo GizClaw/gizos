@@ -19,7 +19,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 2
     },
     {
       "id": "post",
@@ -82,7 +82,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0
+      "elapsed_ms": 1
     },
     {
       "id": "status-503",
@@ -96,28 +96,28 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 0
     },
     {
       "id": "caller-too-small",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0
+      "elapsed_ms": 1
     },
     {
       "id": "allocator-owned",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 0
     },
     {
       "id": "allocator-alias",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0
+      "elapsed_ms": 1
     },
     {
       "id": "allocator-precedence",
@@ -166,7 +166,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0
+      "elapsed_ms": 1
     },
     {
       "id": "cancel-before",
@@ -180,14 +180,14 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 0
     },
     {
       "id": "cancel-wait",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2001
+      "elapsed_ms": 2004
     },
     {
       "id": "timeout-headers",
@@ -215,56 +215,56 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0
+      "elapsed_ms": 1
     },
     {
       "id": "retry-exhausted",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 0
     },
     {
       "id": "retry-deadline",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 5001
+      "elapsed_ms": 5000
     },
     {
       "id": "redirect-relative",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 24
     },
     {
       "id": "redirect-post-303",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 7
     },
     {
       "id": "redirect-post-307",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 9
     },
     {
       "id": "https-trusted",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 5
+      "elapsed_ms": 7
     },
     {
       "id": "https-untrusted",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 3
+      "elapsed_ms": 1
     },
     {
       "id": "interface-rejected",
@@ -299,21 +299,21 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 0
     },
     {
       "id": "response-free",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0
+      "elapsed_ms": 1
     },
     {
       "id": "repeated-cleanup",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 0
     },
     {
       "id": "callback-quiescence",
