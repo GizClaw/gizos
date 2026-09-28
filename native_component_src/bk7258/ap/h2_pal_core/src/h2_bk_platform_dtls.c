@@ -402,6 +402,7 @@ static h2_pal_result_t h2_bk_dtls_handshake(
         return H2_PAL_OK;
     }
     if (now_ms >= deadline_ms) {
+        h2_bk_dtls_log_error("deadline", H2_PAL_ERR_TIMEOUT);
         return H2_PAL_ERR_TIMEOUT;
     }
     session->now_ms = now_ms;

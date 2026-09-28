@@ -12,7 +12,7 @@
     "BK_DTLS_HOST_PASS missing_peer_certificate"
   ],
   "source_sha256": {
-    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_dtls.c": "a8276a0d7359537862631e465d79e8c373a3e7f8a883d07838b7409f9ab6ad6e",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_dtls.c": "fb4dcaf370d5074e662c602c839ecc32ff7f3e97f66d0a0e46e07e73e08184a4",
     "native_component_src/bk7258/ap/h2_pal_core/tests/dtls_host/CMakeLists.txt": "536cff54a94f4af1a720b227cf61e2659a5f3ff24f262a9ca6b1fff3db6750a7",
     "native_component_src/bk7258/ap/h2_pal_core/tests/dtls_host/README.md": "7f34ce8e0d764125c3f35c9a8ea0c87bd828999e7bbcf37e3fd53b6abe373337",
     "native_component_src/bk7258/ap/h2_pal_core/tests/dtls_host/host_config.h": "b5edf27ec94f21769ae42ccb3b44e48c768e446ddf585c5942270cced2bdc8a9",
@@ -25,7 +25,7 @@
     "certificate": "After fixing cookie, VERIFY_REQUIRED with no CA chain returned -30336, PAL IO",
     "certificate_lifetime": "Disabling KEEP_PEER_CERTIFICATE reproduced failure of a valid handshake. Verification now captures the leaf fingerprint result while the verification callback owns valid DER."
   },
-  "physical_board_status": "r10 native build passed; managed installation in progress, runtime result not yet available.",
+  "physical_board_status": "r11 native build passed and managed installation is in progress. BK alone uses a 15-second DTLS handshake deadline; portable channel connection remains bounded at 20 seconds.",
   "native_configuration": "The SDK minimal profile does not enable COOKIE_C or HELLO_VERIFY by default. The AP adapter enables the SDK cookie implementation and publishes DTLS layout macros to all SDK consumers; r9 map includes cookie_setup and set_client_transport_id.",
   "sanitizers": {
     "address": "PASS",

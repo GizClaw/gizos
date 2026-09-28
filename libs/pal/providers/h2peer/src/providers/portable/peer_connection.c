@@ -611,6 +611,16 @@ static h2_pal_result_t peer_connection_loop_internal(
       if (handshake_result == 0) {
         H2_PEER_LOGD(pc->config.log, "DTLS-SRTP handshake done");
 
+        /* A verified handshake is fresh peer activity. Local certificate
+         * operations may take longer than the idle interval on embedded
+         * software crypto; do not immediately expire the new association
+         * against the timestamp captured before those operations. */
+        if (h2_pal_time_get_monotonic_ms(
+                pc->agent.time, &pc->agent.ice_activity_time_ms) != H2_PAL_OK) {
+          STATE_CHANGED(pc, PEER_CONNECTION_FAILED);
+          return H2_PAL_ERR_IO;
+        }
+
         if (pc->config.datachannel) {
           H2_PEER_LOGI(pc->config.log, "SCTP create association");
           if (sctp_create_association(&pc->sctp, &pc->dtls_srtp) != 0) {
