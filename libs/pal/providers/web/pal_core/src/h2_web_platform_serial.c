@@ -368,6 +368,19 @@ EM_JS(void, h2_web_serial_read_js,
 /* clang-format on */
 
 /* clang-format off */
+EM_JS(void, h2_web_serial_write_timeout_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32"], null,
+    (session_address) => {
+      const session = Module['h2WebSerialState']?.sessions.get(session_address);
+      if (!session) return;
+      session.terminal = true;
+      if (session.writer) session.writer.abort().catch(() => {});
+    });
+});
+/* clang-format on */
+
+/* clang-format off */
 EM_JS(void, h2_web_serial_write_js,
       (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
   h2WebMain(context, result, completion, ["u32", "u32", "u64", "u32", "u32", "u32"], null,
@@ -1001,6 +1014,12 @@ static h2_pal_result_t h2_web_serial_stream_write(
                        &(uintptr_t){(uintptr_t)buffer}, &(size_t){length},
                        &(uint32_t){timeout_ms}});
   const h2_pal_result_t result = h2_web_serial_wait(session, timeout_ms);
+  if (result == H2_PAL_ERR_TIMEOUT) {
+    // The native deadline can win before the browser timer callback. Mark the
+    // same terminal state synchronously so a second write cannot race through.
+    (void)h2_web_main_call(h2_web_serial_write_timeout_js,
+                           (const void *[]){&(uintptr_t){(uintptr_t)session}});
+  }
   if (result == H2_PAL_OK) {
     *out_written = session->operation.count;
   }

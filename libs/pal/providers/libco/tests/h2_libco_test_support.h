@@ -15,7 +15,14 @@ typedef struct h2_libco_test_env {
 } h2_libco_test_env_t;
 
 typedef union h2_libco_test_allocation {
+#if defined(_MSC_VER) && !defined(__clang__)
+    /* MSVC C11 omits max_align_t; these cover its fundamental C types. */
+    long double floating_alignment;
+    long long integer_alignment;
+    void *pointer_alignment;
+#else
     max_align_t alignment;
+#endif
     size_t bytes;
 } h2_libco_test_allocation_t;
 

@@ -1,4 +1,5 @@
 #include "h2_desktop_recording_internal.h"
+#include "h2_desktop_recording_output.h"
 
 extern "C" {
 #include <libavcodec/avcodec.h>
@@ -12,6 +13,7 @@ extern "C" {
 #include <array>
 #include <chrono>
 #include <condition_variable>
+#include <cstdio>
 #include <cstring>
 #include <fcntl.h>
 #include <mutex>
@@ -24,7 +26,8 @@ namespace {
 constexpr uint32_t kRate = 16000u;
 constexpr uint32_t kFps = 30u;
 constexpr size_t kPcmCapacity = kRate * 2u;
-constexpr size_t kVideoCapacity = 16u;
+// Two seconds of sampled video plus the normal holdback margin.
+constexpr size_t kVideoCapacity = kFps * 2u + 4u;
 // Holdback allows the source callbacks to deliver timestamps before sampling.
 constexpr uint64_t kHoldbackUs = 100000u;
 struct VideoSnapshot {
@@ -32,6 +35,10 @@ struct VideoSnapshot {
   uint64_t timestamp_us = 0u;
   uint8_t brightness = 255u;
 };
+uint64_t video_sample_index(uint64_t timestamp_us) {
+  return timestamp_us / 1000000u * kFps +
+         (timestamp_us % 1000000u * kFps + 999999u) / 1000000u;
+}
 } // namespace
 
 struct h2_desktop_recording_encoder {
@@ -68,13 +75,53 @@ struct h2_desktop_recording_encoder {
   AVPacket *packet = nullptr;
   SwsContext *scaler = nullptr;
   bool header_written = false;
-  int fd = -1;
+  h2_desktop_recording_output output;
 };
 
 namespace {
-void latch(h2_desktop_recording_encoder_t *state, h2_pal_result_t result) {
+uint64_t capture_end_us(h2_desktop_recording_encoder_t *state,
+                        uint64_t relative_us) {
+  uint64_t end = std::max(relative_us,
+                        (state->audio_end * 1000000u + kRate - 1u) / kRate);
+  if (state->video_count != 0u) {
+    const size_t last =
+        (state->video_head + state->video_count - 1u) % kVideoCapacity;
+    const uint64_t frame =
+        video_sample_index(state->video_queue[last].timestamp_us);
+    end = std::max(end, frame * 1000000u / kFps + 1u);
+  }
+  return std::max<uint64_t>(end, 1u);
+}
+
+void latch(h2_desktop_recording_encoder_t *state, h2_pal_result_t result,
+           const char *source = "encoder", uint64_t incoming_us = 0u,
+           size_t incoming_frames = 0u) {
   if (state->result == H2_PAL_OK) {
     state->result = result;
+    const uint64_t now = h2_desktop_recording_now_us();
+    const uint64_t relative = now >= state->start_us ? now - state->start_us : 0u;
+    std::fprintf(stderr,
+        "H2_DESKTOP_RECORDING_ERROR result=%d source=%s elapsed_us=%llu "
+        "incoming_us=%llu incoming_frames=%zu video_queued=%zu pcm_queued=%zu "
+        "audio_cursor=%llu audio_end=%llu head_sample=%llu video_cursor=%llu "
+        "output_queued=%zu output_error=%d\n",
+        result, source,
+        static_cast<unsigned long long>(relative),
+        static_cast<unsigned long long>(incoming_us), incoming_frames,
+        state->video_count, state->pcm_count,
+        static_cast<unsigned long long>(state->audio_cursor),
+        static_cast<unsigned long long>(state->audio_end),
+        static_cast<unsigned long long>(state->pcm_count != 0u
+            ? state->pcm_timestamps[state->pcm_head] : 0u),
+        static_cast<unsigned long long>(state->video_cursor),
+        state->output.pending(), state->output.result());
+    // A fatal capture error ends the file at this point, not when a potentially
+    // slow application teardown eventually calls finish().
+    if (!state->stopping) {
+      state->end_us = capture_end_us(state, relative);
+      state->stopping = true;
+      state->wake.notify_one();
+    }
   }
 }
 
@@ -94,11 +141,24 @@ void h2_desktop_recording_encoder_video(void *user,
     latch(state, H2_PAL_ERR_INVALID_ARG);
     return;
   }
-  if (state->video_count == kVideoCapacity) {
-    latch(state, H2_PAL_ERR_FULL);
+  const uint64_t relative = frame->timestamp_us - state->start_us;
+  size_t slot = (state->video_head + state->video_count) % kVideoCapacity;
+  bool replace = false;
+  if (state->video_count != 0u) {
+    const size_t last =
+        (state->video_head + state->video_count - 1u) % kVideoCapacity;
+    // video_step would select only the last presentation before this same
+    // output-frame boundary. Retain that presentation without queuing copies
+    // which cannot appear in a 30 fps movie.
+    replace = video_sample_index(state->video_queue[last].timestamp_us) ==
+              video_sample_index(relative);
+    if (replace) slot = last;
+  }
+  if (!replace && state->video_count == kVideoCapacity) {
+    latch(state, H2_PAL_ERR_FULL, "video",
+          frame->timestamp_us - state->start_us, 1u);
     return;
   }
-  const size_t slot = (state->video_head + state->video_count) % kVideoCapacity;
   VideoSnapshot &snapshot = state->video_queue[slot];
   const auto *bytes = reinterpret_cast<const uint8_t *>(frame->pixels);
   for (uint32_t row = 0u; row < state->height; ++row) {
@@ -106,9 +166,9 @@ void h2_desktop_recording_encoder_video(void *user,
                 bytes + row * frame->stride_bytes,
                 state->width * sizeof(uint16_t));
   }
-  snapshot.timestamp_us = frame->timestamp_us - state->start_us;
+  snapshot.timestamp_us = relative;
   snapshot.brightness = frame->brightness;
-  ++state->video_count;
+  if (!replace) ++state->video_count;
   ++state->stats.captured_video_frames;
   state->wake.notify_one();
 }
@@ -142,7 +202,7 @@ void h2_desktop_recording_encoder_audio(
   // the next chunk can be far ahead of the worker even with an empty queue;
   // silence between chunks is generated by the worker and consumes no slots.
   if (frame->frames - skip > kPcmCapacity - state->pcm_count) {
-    latch(state, H2_PAL_ERR_FULL);
+    latch(state, H2_PAL_ERR_FULL, "audio", relative, frame->frames - skip);
     return;
   }
   for (size_t index = skip; index < frame->frames; ++index) {
@@ -158,27 +218,13 @@ void h2_desktop_recording_encoder_audio(
 namespace {
 int write_bytes(void *user, const uint8_t *data, int size) {
   auto *state = static_cast<h2_desktop_recording_encoder_t *>(user);
-  int offset = 0;
-  while (offset < size) {
-    const ssize_t result =
-        write(state->fd, data + offset, static_cast<size_t>(size - offset));
-    if (result < 0 && errno == EINTR) {
-      continue;
-    }
-    if (result <= 0) {
-      return AVERROR(errno == 0 ? EIO : errno);
-    }
-    offset += static_cast<int>(result);
+  const int result = state->output.append(data, static_cast<size_t>(size));
+  if (result < 0) {
+    std::lock_guard<std::mutex> lock(state->mutex);
+    latch(state, result == AVERROR(ENOBUFS) ? H2_PAL_ERR_FULL : H2_PAL_ERR_IO,
+          "output");
   }
-  return size;
-}
-int64_t seek_bytes(void *user, int64_t offset, int whence) {
-  auto *state = static_cast<h2_desktop_recording_encoder_t *>(user);
-  if (whence == AVSEEK_SIZE) {
-    return AVERROR(ENOSYS);
-  }
-  const off_t result = lseek(state->fd, static_cast<off_t>(offset), whence);
-  return result < 0 ? AVERROR(errno) : static_cast<int64_t>(result);
+  return result;
 }
 
 bool setup_codec(h2_desktop_recording_encoder_t *state, bool is_video) {
@@ -224,9 +270,12 @@ bool setup_codec(h2_desktop_recording_encoder_t *state, bool is_video) {
   return true;
 }
 
-bool setup(h2_desktop_recording_encoder_t *state, const char *path) {
-  state->fd = open(path, O_CREAT | O_EXCL | O_WRONLY, 0600);
-  if (state->fd < 0) {
+bool setup(h2_desktop_recording_encoder_t *state,
+           const h2_desktop_recording_encoder_config_t *config) {
+  const int fd = config->output_fd >= 0
+                     ? dup(config->output_fd)
+                     : open(config->path, O_CREAT | O_EXCL | O_WRONLY, 0600);
+  if (fd < 0 || !state->output.start(fd)) {
     return false;
   }
   if (avformat_alloc_output_context2(&state->format, nullptr, "mp4", nullptr) <
@@ -239,11 +288,13 @@ bool setup(h2_desktop_recording_encoder_t *state, const char *path) {
     return false;
   }
   state->format->pb = avio_alloc_context(buffer, 32768, 1, state, nullptr,
-                                         write_bytes, seek_bytes);
+                                         write_bytes, nullptr);
   if (state->format->pb == nullptr) {
     av_free(buffer);
     return false;
   }
+  // empty_moov/default_base_moof fragments are sequential. Seeking would race
+  // the independent writer and is neither required nor supported by this sink.
   state->format->flags |= AVFMT_FLAG_CUSTOM_IO;
   if (!setup_codec(state, true) || !setup_codec(state, false)) {
     return false;
@@ -337,6 +388,7 @@ bool video_step(h2_desktop_recording_encoder_t *state) {
       state->video_head = (state->video_head + 1u) % kVideoCapacity;
       --state->video_count;
     }
+    state->video_frame->pts = static_cast<int64_t>(state->video_cursor++);
   }
   // Match SDL's color modulation on the already composited framebuffer.
   const uint8_t *source[4] = {
@@ -366,7 +418,6 @@ bool video_step(h2_desktop_recording_encoder_t *state) {
       }
     }
   }
-  state->video_frame->pts = static_cast<int64_t>(state->video_cursor++);
   return encode(state, true, state->video_frame);
 }
 
@@ -399,6 +450,11 @@ void run(h2_desktop_recording_encoder_t *state) {
     bool stopping = false;
     {
       std::unique_lock<std::mutex> lock(state->mutex);
+      if (state->output.result() != 0) {
+        latch(state, H2_PAL_ERR_IO, "output");
+        failed = true;
+        break;
+      }
       const uint64_t now = h2_desktop_recording_now_us();
       if (now < state->start_us) {
         latch(state, H2_PAL_ERR_IO);
@@ -420,9 +476,8 @@ void run(h2_desktop_recording_encoder_t *state) {
                              1000000u / kRate <=
                   target_us;
     if (video_due || audio_due) {
-      failed = video_due && (!audio_due || video_us <= audio_us)
-                   ? !video_step(state)
-                   : !audio_step(state);
+      const bool video = video_due && (!audio_due || video_us <= audio_us);
+      failed = video ? !video_step(state) : !audio_step(state);
       continue;
     }
     if (stopping) {
@@ -436,10 +491,9 @@ void run(h2_desktop_recording_encoder_t *state) {
   final_ok = av_write_trailer(state->format) >= 0 && final_ok;
   avio_flush(state->format->pb);
   final_ok = state->format->pb->error >= 0 && final_ok;
-  if (state->fd >= 0) {
-    final_ok = close(state->fd) == 0 && final_ok;
-    state->fd = -1;
-  }
+  // stop succeeds only after every accepted byte has reached the file and
+  // close has succeeded; flushing AVIO alone only drains into the output queue.
+  final_ok = state->output.finish() == 0 && final_ok;
   std::lock_guard<std::mutex> lock(state->mutex);
   if (failed || !final_ok) {
     latch(state, H2_PAL_ERR_IO);
@@ -460,9 +514,6 @@ void release(h2_desktop_recording_encoder_t *state) {
       avio_context_free(&state->format->pb);
     }
     avformat_free_context(state->format);
-  }
-  if (state->fd >= 0) {
-    (void)close(state->fd);
   }
   delete state;
 }
@@ -503,8 +554,9 @@ h2_pal_result_t h2_desktop_recording_encoder_create(
     state->stats.buffer_bytes = (kVideoCapacity + 1u) * state->width *
                                     state->height * sizeof(uint16_t) +
                                 sizeof(state->pcm) +
-                                sizeof(state->pcm_timestamps);
-    if (!setup(state, config->path)) {
+                                sizeof(state->pcm_timestamps) +
+                                h2_desktop_recording_output::capacity;
+    if (!setup(state, config)) {
       release(state);
       return H2_PAL_ERR_IO;
     }
@@ -515,6 +567,13 @@ h2_pal_result_t h2_desktop_recording_encoder_create(
   }
   *out_recording = state;
   return H2_PAL_OK;
+}
+
+h2_pal_result_t
+h2_desktop_recording_encoder_result(h2_desktop_recording_encoder_t *state) {
+  if (state == nullptr) return H2_PAL_ERR_INVALID_ARG;
+  std::lock_guard<std::mutex> lock(state->mutex);
+  return state->result;
 }
 
 h2_pal_result_t
@@ -530,31 +589,17 @@ h2_desktop_recording_encoder_finish(h2_desktop_recording_encoder_t *state,
   if (!state->finished) {
     {
       std::lock_guard<std::mutex> lock(state->mutex);
-      uint64_t now = stop_us;
-      if (now < state->start_us) {
-        latch(state, H2_PAL_ERR_IO);
-        now = state->start_us;
-      }
-      state->end_us =
-          std::max(now - state->start_us,
-                   (state->audio_end * 1000000u + kRate - 1u) / kRate);
-      if (state->video_count != 0u) {
-        const size_t last =
-            (state->video_head + state->video_count - 1u) % kVideoCapacity;
-        const uint64_t timestamp = state->video_queue[last].timestamp_us;
-        // A flush just after the previous sample boundary must still appear
-        // in the final encoded frame, even if the app stops immediately.
-        const uint64_t frame_index =
-            timestamp / 1000000u * kFps +
-            (timestamp % 1000000u * kFps + 999999u) / 1000000u;
-        state->end_us =
-            std::max(state->end_us, frame_index * 1000000u / kFps + 1u);
+      if (!state->stopping) {
+        if (stop_us < state->start_us) {
+          latch(state, H2_PAL_ERR_IO);
+        } else {
+          state->end_us = capture_end_us(state, stop_us - state->start_us);
+          state->stopping = true;
+        }
       }
       if (state->stats.captured_video_frames == 0u) {
         latch(state, H2_PAL_ERR_UNAVAILABLE);
       }
-      state->end_us = std::max<uint64_t>(state->end_us, 1u);
-      state->stopping = true;
       state->wake.notify_one();
     }
     state->worker.join();

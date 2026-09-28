@@ -301,6 +301,21 @@ static h2_pal_result_t arguments(state_t *s) {
         H2_PAL_ERR_INVALID_ARG);
   return H2_PAL_OK;
 }
+static size_t required_memory_alignment(void) {
+#if defined(_MSC_VER) && !defined(__clang__)
+  /* MSVC C11 supports _Alignof but does not declare max_align_t in stddef.h.
+   * The union covers every fundamental type the MSVC C allocator promises. */
+  typedef union h2_pal_core_max_align {
+    long double floating;
+    long long integer;
+    void *pointer;
+  } h2_pal_core_max_align_t;
+  return _Alignof(h2_pal_core_max_align_t);
+#else
+  return _Alignof(max_align_t);
+#endif
+}
+
 static h2_pal_result_t memory_churn(state_t *s) {
   h2_pal_core_resources_t before;
   CALL(resources(s, &before));
@@ -309,14 +324,14 @@ static h2_pal_result_t memory_churn(state_t *s) {
     unsigned char *p = h2_pal_mem_alloc(s->r->mem, len);
     if (p == NULL)
       return H2_PAL_ERR_NO_MEMORY;
-    int valid = (uintptr_t)p % _Alignof(max_align_t) == 0;
+    int valid = (uintptr_t)p % required_memory_alignment() == 0;
     memset(p, (int)(n & 255u), len);
     unsigned char *next = h2_pal_mem_realloc(s->r->mem, p, len + 31u);
     if (next == NULL) {
       h2_pal_mem_free(s->r->mem, p);
       return H2_PAL_ERR_NO_MEMORY;
     }
-    valid = valid && (uintptr_t)next % _Alignof(max_align_t) == 0;
+    valid = valid && (uintptr_t)next % required_memory_alignment() == 0;
     for (size_t k = 0; k < len; ++k)
       if (next[k] != (unsigned char)n)
         valid = 0;
