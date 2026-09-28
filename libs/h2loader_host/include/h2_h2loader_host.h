@@ -231,12 +231,15 @@ typedef struct h2_h2loader_host_serial_connection_config {
     /** Optional borrowed sink for bytes proven not to belong to a frame. */
     h2_h2loader_host_transport_log_fn on_log;
     void *log_user;
+    /** Leave DTR and RTS untouched for the complete connection lifecycle. */
+    int preserve_control_lines;
 } h2_h2loader_host_serial_connection_config_t;
 
 /**
  * @brief Open a reliable serial H2Loader session and complete SESSION_ACK.
  *
- * After open, the Host deasserts DTR/RTS before borrowing the stream. A
+ * Unless preserve_control_lines is set, the Host deasserts DTR/RTS before
+ * borrowing the stream. A
  * canonical unsupported result is accepted for endpoints without control-line
  * support; any other failure aborts the connection. conversation_id must be
  * nonzero or a nonzero value is derived from the monotonic clock. The

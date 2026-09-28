@@ -22,6 +22,9 @@ SDK 支持恢复已授权端口、请求或撤销 Web Serial 授权、校验 for
 
 SDK 要求 secure browser context 和 Web Serial。确定性释放必须在 event loop 仍可推进时 `await loader.close()`；`pagehide` 只适合阻止新工作并发起 best-effort cleanup。
 
+Web SDK 从首次连接到重连都不操作 DTR/RTS。设备重启与角色切换只通过 H2Loader
+协议命令发生，Web Serial open/reconnect 不能附带隐式硬件复位。
+
 ## Build and publish
 
 ```sh

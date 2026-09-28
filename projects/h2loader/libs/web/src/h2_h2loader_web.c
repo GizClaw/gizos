@@ -215,6 +215,9 @@ static h2_pal_result_t job_connect(void *user,
       .time = h2_web_platform_time_api(job->client->platform),
       .allocator = h2_web_platform_mem_api(),
       .port_id = job->port_id,
+      /* Web H2Loader never owns device reset/boot control. On native ESP USB,
+       * even deasserting both lines resets the chip and breaks reconnect. */
+      .preserve_control_lines = 1,
       .handshake_timeout_ms = H2_WEB_HANDSHAKE_TIMEOUT_MS,
       .command_timeout_ms = job->command_timeout_ms != 0u
           ? job->command_timeout_ms
