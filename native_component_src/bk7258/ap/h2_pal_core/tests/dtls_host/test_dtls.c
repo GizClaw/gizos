@@ -191,7 +191,21 @@ typedef struct anonymous_client {
     packet_t *input;
     uint64_t now, timer_start;
     uint32_t intermediate, final;
+    uint8_t expected_fingerprint[32];
+    int server_verified;
 } anonymous_client_t;
+static int anonymous_verify(void *user, mbedtls_x509_crt *certificate,
+                            int depth, uint32_t *flags) {
+    anonymous_client_t *client = user;
+    if (depth == 0) {
+        uint8_t fingerprint[32];
+        client->server_verified = mbedtls_sha256(
+            certificate->raw.p, certificate->raw.len, fingerprint, 0) == 0 &&
+            memcmp(fingerprint, client->expected_fingerprint, sizeof(fingerprint)) == 0;
+    }
+    *flags = 0u;
+    return 0;
+}
 static int anonymous_send(void *user, const unsigned char *bytes, size_t size) {
     anonymous_client_t *client = user;
     return send_packet(&client->output, bytes, size) == H2_PAL_OK ? (int)size : -1;
@@ -230,6 +244,7 @@ static void missing_certificate(void) {
     uint8_t expected[32] = {1u};
     assert(h2_pal_dtls_session_set_remote_fingerprint(api, server, expected) == H2_PAL_OK);
     assert(h2_pal_dtls_session_get_local_fingerprint(api, server, expected) == H2_PAL_OK);
+    memcpy(client.expected_fingerprint, expected, sizeof(expected));
 
     mbedtls_ssl_context ssl;
     mbedtls_ssl_config ssl_config;
@@ -239,6 +254,7 @@ static void missing_certificate(void) {
         MBEDTLS_SSL_TRANSPORT_DATAGRAM, MBEDTLS_SSL_PRESET_DEFAULT) == 0);
     mbedtls_ssl_conf_rng(&ssl_config, host_random, NULL);
     mbedtls_ssl_conf_authmode(&ssl_config, MBEDTLS_SSL_VERIFY_OPTIONAL);
+    mbedtls_ssl_conf_verify(&ssl_config, anonymous_verify, &client);
     static const mbedtls_ssl_srtp_profile profiles[] = {
         MBEDTLS_TLS_SRTP_AES128_CM_HMAC_SHA1_80, MBEDTLS_TLS_SRTP_UNSET};
     assert(mbedtls_ssl_conf_dtls_srtp_protection_profiles(&ssl_config, profiles) == 0);
@@ -272,11 +288,8 @@ static void missing_certificate(void) {
         assert(rc == MBEDTLS_ERR_SSL_WANT_READ || rc == MBEDTLS_ERR_SSL_WANT_WRITE);
     }
     assert(client_complete);
-    const mbedtls_x509_crt *certificate = mbedtls_ssl_get_peer_cert(&ssl);
-    assert(certificate != NULL);
-    uint8_t fingerprint[32], keys[60];
-    assert(mbedtls_sha256(certificate->raw.p, certificate->raw.len, fingerprint, 0) == 0);
-    assert(memcmp(fingerprint, expected, sizeof(expected)) == 0);
+    assert(client.server_verified);
+    uint8_t keys[60];
     assert(h2_pal_dtls_session_export_srtp_keying_material(
         api, server, keys, sizeof(keys)) == H2_PAL_ERR_INVALID_STATE);
     assert(server_output.received_length == 0u);

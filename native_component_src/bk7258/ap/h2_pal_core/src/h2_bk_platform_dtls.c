@@ -45,6 +45,7 @@ struct h2_pal_dtls_session {
     mbedtls_tls_prf_types prf;
     int input_consumed;
     int remote_fingerprint_set;
+    int peer_certificate_verified;
     int handshake_started;
     int handshake_complete;
     int close_started;
@@ -129,9 +130,19 @@ static int h2_bk_dtls_timer_get(void *user) {
 
 static int h2_bk_dtls_defer_verify(
     void *user, mbedtls_x509_crt *certificate, int depth, uint32_t *flags) {
-    (void)user;
-    (void)certificate;
-    (void)depth;
+    h2_pal_dtls_session_t *session = user;
+    if (depth == 0) {
+        /* The SDK minimal profile releases the peer certificate at handshake
+         * completion. Authenticate its leaf while the borrowed DER is live;
+         * retain only the result, never the certificate pointer. */
+        uint8_t fingerprint[H2_PAL_DTLS_SHA256_FINGERPRINT_SIZE];
+        session->peer_certificate_verified = session->remote_fingerprint_set &&
+            certificate != NULL &&
+            mbedtls_sha256(certificate->raw.p, certificate->raw.len,
+                fingerprint, 0) == 0 &&
+            memcmp(fingerprint, session->remote_fingerprint,
+                sizeof(fingerprint)) == 0;
+    }
     *flags = 0u;
     return 0;
 }
@@ -360,21 +371,15 @@ static h2_pal_result_t h2_bk_dtls_remote_fingerprint(
     }
     memcpy(session->remote_fingerprint, fingerprint,
            sizeof(session->remote_fingerprint));
+    session->peer_certificate_verified = 0;
     session->remote_fingerprint_set = 1;
     return H2_PAL_OK;
 }
 
 static h2_pal_result_t h2_bk_dtls_verify_peer(
     h2_pal_dtls_session_t *session) {
-    const mbedtls_x509_crt *certificate =
-        mbedtls_ssl_get_peer_cert(&session->ssl);
-    uint8_t fingerprint[H2_PAL_DTLS_SHA256_FINGERPRINT_SIZE];
-    if (certificate == NULL ||
-        mbedtls_sha256(
-            certificate->raw.p, certificate->raw.len,
-            fingerprint, 0) != 0 ||
-        memcmp(fingerprint, session->remote_fingerprint,
-               sizeof(fingerprint)) != 0) {
+    if (!session->peer_certificate_verified) {
+        h2_bk_dtls_log_error("peer_fingerprint", H2_PAL_ERR_TLS_VERIFY);
         return H2_PAL_ERR_TLS_VERIFY;
     }
     return H2_PAL_OK;

@@ -8,7 +8,8 @@ or a substitute for the independent Pion WebRTC gate.
 
 The SDK omits upstream's top-level generators, so the test directly includes its
 library build. It uses SDK upstream default software crypto, enables the same
-DTLS-SRTP feature as the firmware and disables upstream self-tests that reference
+DTLS-SRTP feature as the firmware, disables peer-certificate retention as in the BK
+minimal profile, and disables upstream self-tests that reference
 SDK-only RNG symbols. Firmware still builds with its own board configuration.
 
 On macOS or Linux, with CMake and ccache available, from the repository root:
