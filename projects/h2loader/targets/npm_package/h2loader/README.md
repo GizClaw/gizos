@@ -30,7 +30,14 @@ try {
 }
 ```
 
-The SDK requires a secure browser context and a browser with Web Serial support. npm is the distribution format for browser applications; this package does not provide a Node.js serial-port runtime.
+The SDK requires a secure browser context and a browser with Web Serial support. Version 0.4.0 runs its C runtime on pthread Workers with shared WebAssembly memory. Serve the application over HTTPS or localhost with these response headers on the page and SDK assets:
+
+```http
+Cross-Origin-Opener-Policy: same-origin
+Cross-Origin-Embedder-Policy: require-corp
+```
+
+The server must send the headers; placing them in a source file alone does not enable `SharedArrayBuffer`. Any cross-origin resources loaded by the page must satisfy the browser's cross-origin isolation policy. npm is the distribution format for browser applications; this package does not provide a Node.js serial-port runtime.
 
 Each returned port exposes its canonical Web PAL `id`, such as `web-serial-1`.
 Use this ID for row identity, selection, and operation routing during the current
