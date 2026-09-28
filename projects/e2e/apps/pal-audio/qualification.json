@@ -1,7 +1,7 @@
 {
   "schema": 1,
-  "base_commit": "e9aad739",
-  "generated_at_utc": "2026-09-28T15:38:23.822900+00:00",
+  "base_commit": "9ecc4661",
+  "generated_at_utc": "2026-09-28T22:26:12.693864+00:00",
   "interface": {
     "header": "libs/pal/include/h2/pal/hal/h2_pal_audio.h",
     "provider_operations": 11,
@@ -16,20 +16,20 @@
         "failed": 0,
         "blocked": 0,
         "mic_frames": 1498,
-        "mic_peak": 238,
-        "mic_energy": 452271666,
+        "mic_peak": 3736,
+        "mic_energy": 6327661863,
         "speaker_frames": 1500,
         "output_peak": 1120,
         "witness_mic_frames": 1498,
-        "witness_speaker_frames": 3026,
-        "witness_mic_peak": 397,
+        "witness_speaker_frames": 3024,
+        "witness_mic_peak": 6227,
         "witness_speaker_peak": 224,
-        "stability_elapsed_ms": 30001
+        "stability_elapsed_ms": 30018
       },
       "observed_case_rows": 24,
       "observed_replay_rows": 0,
       "log": "evidence/desktop.log",
-      "log_sha256": "4b15d667c150fce6c60338504ed0fb1d95005c1e7ac438dffd7ce12af9ab7368"
+      "log_sha256": "f38dc8f828985b701f9058d368604c1a3208f0845da087665a64d2e73b41c957"
     },
     "wasm_chromium": {
       "status": "PASS",
@@ -41,16 +41,16 @@
         "blocked": 0,
         "mic_frames": 508,
         "mic_peak": 19660,
-        "mic_energy": 571480674967,
+        "mic_energy": 574757604275,
         "speaker_frames": 510,
         "output_peak": 1120,
-        "stability_elapsed_ms": 30031,
+        "stability_elapsed_ms": 30036,
         "rc": 0
       },
       "observed_case_rows": 24,
       "observed_replay_rows": 0,
       "log": "evidence/browser.log",
-      "log_sha256": "5848d0cb0098dc2a958376c2f1c33d9773889b504d3802b31e7a77b7e5020bc0"
+      "log_sha256": "66275949c374eb8c62375118e5e86e24b16770a5ddba249c31ea1508113101dd"
     },
     "ios_simulator": {
       "status": "PASS",
@@ -61,20 +61,24 @@
         "failed": 0,
         "blocked": 0,
         "mic_frames": 941,
-        "mic_peak": 157,
-        "mic_energy": 126683134,
+        "mic_peak": 2202,
+        "mic_energy": 36309400568,
         "speaker_frames": 943,
         "output_peak": 1120,
-        "stability_elapsed_ms": 30003,
+        "stability_elapsed_ms": 30005,
+        "allocator_probe_passed": 1,
+        "allocator_failure_rejected": 1,
+        "allocator_allocations": 1,
+        "allocator_frees": 1,
         "run_rc": 0,
         "teardown_rc": 0
       },
       "qualified_report": "evidence/ios/qualified.json",
-      "qualified_report_sha256": "f687478c65f2fb45922c37e41af3b35192fc9e36145aec60a7eab640050d6ce1",
+      "qualified_report_sha256": "33866219c3d05f92f0a670c3963c3ce1b2014fee197b509a39d94581f24da3cb",
       "environment": "evidence/ios/environment.json",
-      "environment_sha256": "1d216c08e7bec1fbee18afef9494347ab5a14ea3568b4e5159e740e64c8b5453",
-      "app_sha256": "44c4b6b125dbfa22478ad461fabc72e2f4f3e64350bef1b0877ea68e1d8e2a79",
-      "sdk_sha256": "018e0e89aac321163d775c4a91eb60612ddc9cc7910fc979916a7ba07877f517"
+      "environment_sha256": "20aeb3790fc9979b60fd9b6e25f7234589bd26fa78d4b7bc3d753dbcc0184f8d",
+      "app_sha256": "3f4568fde65bc161f709ed8772fc470df42f76ba7bf93b375b4273f1d089e5cc",
+      "sdk_sha256": "87225f078d58c3d4be798a6cd992c20382e3e9217c73f25e4e8a2e2daacb7327"
     },
     "android_emulator": {
       "status": "PASS",
@@ -85,20 +89,24 @@
         "failed": 0,
         "blocked": 0,
         "mic_frames": 940,
-        "mic_peak": 5,
-        "mic_energy": 2112233,
+        "mic_peak": 19660,
+        "mic_energy": 58080320768339,
         "speaker_frames": 942,
         "output_peak": 1120,
-        "stability_elapsed_ms": 30020,
+        "stability_elapsed_ms": 30059,
+        "allocator_probe_passed": 1,
+        "allocator_failure_rejected": 1,
+        "allocator_allocations": 3,
+        "allocator_frees": 3,
         "run_rc": 0,
         "teardown_rc": 0
       },
       "qualified_report": "evidence/android/qualified.json",
-      "qualified_report_sha256": "bcbfe3db812dfc6d522becd8fa9d169521c3a8a74c2bbf0ed2822115ddc7f7fd",
+      "qualified_report_sha256": "ecdbe306147850ae9e4b3027982e5e0f92ddd0a845ec8542138b7f6be8a1c7b2",
       "environment": "evidence/android/environment.json",
-      "environment_sha256": "c88484e907a632c489bdcc6fe2c1c7d95e13902eac1c56ac0bed670e8be3311d",
-      "app_sha256": "36985ea61dfe15c83aa6d61d45077f2eb801a57d78b60ad8d3b9b92d07752a3e",
-      "sdk_sha256": "c57847d55d4d135f82c5d296fcdb87ae285de425212ed68226510a324910cb5a"
+      "environment_sha256": "100eaf5db1d24248b6d337be50856a917cd5a4ff43380efd3962f7456dbd2549",
+      "app_sha256": "af129ade678d170b512901b4596518becabca914c52f64f61dc9fd199e5f6868",
+      "sdk_sha256": "b41a364a457c4dbd77c267f998ceeff9eef618809c5c74e50b1599e750a35680"
     },
     "amoled_esp32s3": {
       "status": "PASS",
@@ -107,19 +115,19 @@
         "passed": 24,
         "failed": 0,
         "blocked": 0,
-        "mic_frames": 887,
-        "mic_peak": 77,
-        "mic_energy": 5031591,
-        "speaker_frames": 889,
+        "mic_frames": 866,
+        "mic_peak": 113,
+        "mic_energy": 18036037,
+        "speaker_frames": 868,
         "output_peak": 1120,
-        "stability_elapsed_ms": 30021,
+        "stability_elapsed_ms": 30005,
         "rc": 0,
         "confirm": 0
       },
       "observed_case_rows": 24,
-      "observed_replay_rows": 72,
+      "observed_replay_rows": 151,
       "log": "evidence/amoled/boot.log",
-      "log_sha256": "72c3f1339a9012041d448b442851dc7fb9ca7ab49b465ec0f54c64b3f023fde3",
+      "log_sha256": "ef56ee9fed04dd57b0507284c47a8f2f44296ae6abf3422ef4b0d847033986a1",
       "independent_reboot": {
         "status": "PASS",
         "summary": {
@@ -128,32 +136,82 @@
           "failed": 0,
           "blocked": 0,
           "mic_frames": 940,
-          "mic_peak": 135,
-          "mic_energy": 10241477,
+          "mic_peak": 111,
+          "mic_energy": 23069087,
           "speaker_frames": 942,
           "output_peak": 1120,
-          "stability_elapsed_ms": 30034,
+          "stability_elapsed_ms": 30004,
           "rc": 0,
           "confirm": 0
         },
-        "observed_case_rows": 21,
-        "observed_replay_rows": 193,
+        "observed_case_rows": 23,
+        "observed_replay_rows": 241,
         "log": "evidence/amoled/reboot.log",
-        "log_sha256": "477e0d34a56bc59d869753f7bb9b7e5ed330e8a3fa9289ebf28c1c29ccfe5886"
+        "log_sha256": "6e5cf2197b9829ec5370a9f6e74b3194e22b7cce5473564ede12c0a8f88cc35c"
       },
       "device_uid": "30eda0ae0f86",
-      "package_sha256": "401b48591a16a4ae41f27692faea44a9af91c28dcd0f8d622166937d3ebce9e8",
-      "status_sha256": "8a3a77585cb317130b08b754bce617feb5779ad2bc48f00b5aa5492b3b627323",
+      "package_sha256": "430e3acda8e70d8827e583c942d2fff3c97357dc3338ee58c067059f842d8dac",
+      "status_sha256": "e3d421d24923cc694df8d8d3e1e6d5232f4615c76ff92a2c5e5279246dbbb915",
       "coredump_sha256": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec",
-      "raw_boot_capture_sha256": "8faa17f1fda83090dbbcf5a4a87220ef27a53a479816cc8b50b9fc17136a3b77",
-      "raw_reboot_capture_sha256": "2993868973c7c5e7d6319805c2e77740eff7c8748ddfb5ba1a256020a666d150"
+      "raw_boot_capture_sha256": "75b3aab8c4cd5b452a669650472493377f1448d3698d05751b538e31870f1439",
+      "raw_reboot_capture_sha256": "a38a321c132b5d3b7d1c6f54c9bdec5d054b47cbcecf37753e28e1f1e01d0aec",
+      "package_version": "pal-audio-e2e-20260929-r6",
+      "partition_1_package_sha256": "66e88bf66c3f3322536d50a62227107257ca458e248064c289a19c5e1ced420b"
     },
     "bk7258": {
-      "status": "PENDING_DEVICE_RUN",
-      "package_version": "pal-audio-e2e-20260928-r3",
-      "package_sha256": "5968d937c66ac7c4ec4c5ee0e8591a1f54915aba21a06970318e4c893a206d84",
-      "observed_case_rows": 0,
-      "note": "Build verified; no UART, Loader, reboot, P1, Stage, coredump or runtime PASS claim."
+      "status": "PASS",
+      "summary": {
+        "platform": "bk7258",
+        "passed": 24,
+        "failed": 0,
+        "blocked": 0,
+        "mic_frames": 1498,
+        "mic_peak": 1804,
+        "mic_energy": 10885036,
+        "speaker_frames": 1500,
+        "output_peak": 1120,
+        "stability_elapsed_ms": 30015,
+        "rc": 0,
+        "confirm": 0
+      },
+      "observed_case_rows": 24,
+      "observed_replay_rows": 185,
+      "log": "evidence/bk7258/boot.log",
+      "log_sha256": "9a44979a6206c79040e80610d767aaab923337cb7bd410ae48d9fd51f2e1f8a0",
+      "device_uid": "c8478ca2a87c",
+      "package_version": "pal-audio-e2e-20260929-r5",
+      "package_sha256": "e50a30af34cee93ffd1a3460fc9188cb4bfe3457f0449e860d305ab23aee5f25",
+      "partition_1_package_sha256": "3a3c664340f0d1b45561816e197ffbd25f2d3c447ee248082a3c5ce261cba9bd",
+      "status_sha256": "0cfedc59422475d1973493c33ccf74394ecf497cb00ef4eafd00111c0615dba2",
+      "coredump_sha256": "871dcafc5212b2c5520d923a2e7fc7bd38f5466e77ef0b5c3c951406f41d6621",
+      "baseline_coredump_sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829",
+      "coredump_identity": "evidence/bk7258/coredump_identity.json",
+      "coredump_identity_sha256": "439a829f114bc74fcb9cd6f65f2564466c7f782a324bd5315ac2a43e02ec820f",
+      "raw_install_capture_sha256": "026eb95a35fe9a1dafd36d082994e95c0bcfd40650b4bc2b66f69addbd805792",
+      "raw_finalization_capture_sha256": "8c2aa45baf25bea53984db0a626468fa90f06b2accd198feef2a342966951fce",
+      "raw_reboot_capture_sha256": "922c0c12649cf37939334628c2c005487477cf9679b66fa1b7f02f204e8b07f9",
+      "capture_note": "Initial install capture contains the new App BOOT and all 24 cases. A read-only monitor later retrieved its immutable terminal summary after long identity confirmation; it is the same run. Independent reboot has its own new BOOT, full 24 cases and confirm_end=0.",
+      "independent_reboot": {
+        "status": "PASS",
+        "summary": {
+          "platform": "bk7258",
+          "passed": 24,
+          "failed": 0,
+          "blocked": 0,
+          "mic_frames": 1497,
+          "mic_peak": 2386,
+          "mic_energy": 20857545,
+          "speaker_frames": 1499,
+          "output_peak": 1120,
+          "stability_elapsed_ms": 30008,
+          "rc": 0,
+          "confirm": 0
+        },
+        "observed_case_rows": 24,
+        "observed_replay_rows": 120,
+        "log": "evidence/bk7258/reboot.log",
+        "log_sha256": "739addc623ead7f10bdf2eab540390795b2a733ed215517b7157935bd882a049"
+      }
     }
   },
   "coverage": {
@@ -166,8 +224,8 @@
           32
         ],
         "lines": [
-          411,
-          436
+          410,
+          435
         ],
         "branches": [
           335,
@@ -202,7 +260,9 @@
           402
         ]
       },
-      "profile_sha256": "606453c9dce2f68897d2e12f3dd1c4f0a8622fe3b1b71aee4f97800450bb1870"
+      "report": "evidence/coverage_e2e_only.txt",
+      "report_sha256": "c809a46f865ee9d575535d6aee77fc89c123aee19d6d98f42aab51ceb8943ff2",
+      "profile_sha256": "31f2e68405d9c4427e7782b3918148ac325f49ba4739720a65faf3f8f5dd946b"
     },
     "e2e_plus_focused_provider_tests": {
       "portable_app": {
@@ -211,8 +271,8 @@
           32
         ],
         "lines": [
-          411,
-          436
+          410,
+          435
         ],
         "branches": [
           335,
@@ -247,18 +307,41 @@
           402
         ]
       },
-      "profile_sha256": "cdf0e6df9582f28120f308ae9b024b758020d7d9ed30efd3d6b6ee73cf5ddbf8"
+      "report": "evidence/coverage_e2e_plus_focused_provider_tests.txt",
+      "report_sha256": "920dd02a9652584330f25aff3215705c73a5d18bca70637860202b3d3df20064",
+      "profile_sha256": "5365aa45d6457ec61bdfcf89a9b838c207eebf913ced27a62a6f3cadb3238d60"
     },
     "note": "Provider numbers are measured code execution; mobile and board compilation is not counted as runtime code coverage."
   },
   "separate_capability": "libs/pal/include/h2/pal/hal/h2_pal_audio_decoder.h",
   "limits": [
-    "BK7258 device run pending; overall six-platform qualification is incomplete.",
     "Browser input is Chromium deterministic fake microphone through production PAL, not a physical browser microphone.",
     "iOS and Android observations are simulators, not physical phones.",
     "Board output PCM was accepted and drained by the real codec path; acoustic output was not measured by an external fixture.",
     "BK transient ADC gain I/O failure could not yet be injected on live hardware."
   ],
-  "six_platform_qualified": false,
-  "evidence_format": "Committed logs normalize CR line endings and trailing whitespace; raw board capture hashes retain byte provenance."
+  "six_platform_qualified": true,
+  "evidence_format": "Committed logs normalize CR line endings and trailing whitespace; raw board capture hashes retain byte provenance.",
+  "source_receipts": {
+    "projects/e2e/apps/pal-audio/app/src/h2_pal_audio_e2e.c": "19c349ecaefc88ba3f69cd83226c61dabe75171fcdc797061334dc58e7bd33ae",
+    "projects/e2e/apps/pal-audio/app/include/h2_pal_audio_e2e.h": "c8f04cd471c0bcba83885bcb89f790a32e76a4e8e3aa7020c7e26e1591e099a5",
+    "libs/pal/providers/ios/pal_core/src/h2_ios_audio.m": "a910b0f140c8481bcfef80f6472c061d87cf4cc2809f0269d5aa2adc491991dd",
+    "libs/pal/providers/android/pal_core/src/h2_android_platform.c": "82d140e9f06f9604a210128546990bced7b84a60da2f05ca5c8fdd83b62212a9",
+    "boards/bk7258_v3_202405/bk7258/ap/src/h2_bk7258_board_audio.c": "79e299e4ae267444f7ad8b44d64a08165cf9574a86b733d995011fb731a09ed8",
+    "projects/e2e/targets/h2loader_tar_zlib/pal-audio/bk7258_v3_202405/ap/ap_main.c": "a1f504708def9f124006193dae5ea84ba686b76ebc7a71fed478a6cc381f39a3",
+    "projects/e2e/targets/h2loader_tar_zlib/pal-audio/amoled/main/main.c": "8cbf4edd3382e731137efbc699934d4bebb305c44de19283b47cae51d0464edc",
+    "libs/pal/providers/ios/pal_core/src/h2_ios_audio_wait.c": "351666ed5ccce3cb96e4a780438ed1211b0940543cd9c3165bfe989d0d76620e",
+    "libs/pal/providers/ios/pal_core/src/h2_ios_audio_wait.h": "4aa89ca5019f82cd96a50cfed5778ef7543ff0962f4b1d6b18421d34fe551846",
+    "libs/pal/providers/ios/pal_core/include/h2_ios_platform.h": "74a7ef7fa50ff10c61bb7f836954c0b46a3fcb02adb9c94cb99a7298a993096e"
+  },
+  "case_registry_operations_sha256": "5c5f1adcb2a382a374057bd377f426250e2702e2411538f78b835ee384ceec03",
+  "case_registry_source_note": "Final trailing coverage-map comment preserves the exact 24 operation expansion lines used by the board packages.",
+  "timeout_regression": {
+    "test": "//libs/pal/providers/ios/pal_core:audio_wait_budget_test",
+    "budget_ms": 80,
+    "observed_elapsed_ms": 80,
+    "unrelated_wakes": 35,
+    "log": "evidence/ios/timeout_budget.txt",
+    "log_sha256": "16867dad37e19de9329a25d240e74e0849f4df02f04ccb892f6bf43fdca05cb2"
+  }
 }

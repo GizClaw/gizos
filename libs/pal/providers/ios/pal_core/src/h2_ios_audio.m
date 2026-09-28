@@ -1,4 +1,5 @@
 #import "h2_ios_platform.h"
+#include "h2_ios_audio_wait.h"
 
 #import <AVFoundation/AVFoundation.h>
 #include <AudioToolbox/AudioToolbox.h>
@@ -16,7 +17,15 @@ typedef struct h2_ios_audio_track {
   h2_pal_audio_track_t base;
   struct h2_ios_audio *owner;
   uint32_t volume_factor_milli;
+  h2_pal_mem_api_t allocator;
 } h2_ios_audio_track_t;
+
+static void release_track(h2_ios_audio_track_t *track) {
+  if (track == NULL) return;
+  const h2_pal_mem_api_t allocator = track->allocator;
+  if (allocator.vtable != NULL) h2_pal_mem_free(&allocator, track);
+  else free(track);
+}
 
 struct h2_ios_audio {
   pthread_mutex_t mutex;
@@ -50,23 +59,9 @@ static AudioStreamBasicDescription pcm_format(void) {
   return format;
 }
 
-static int wait_changed(h2_ios_audio_t *owner, uint32_t timeout_ms) {
-  if (timeout_ms == UINT32_MAX)
-    return pthread_cond_wait(&owner->changed, &owner->mutex) == 0
-               ? H2_AUDIO_OK : H2_AUDIO_ERR_IO;
-  if (timeout_ms == 0u) return H2_AUDIO_ERR_WOULD_BLOCK;
-  struct timespec deadline;
-  if (clock_gettime(CLOCK_REALTIME, &deadline) != 0)
-    return H2_AUDIO_ERR_IO;
-  deadline.tv_sec += timeout_ms / 1000u;
-  deadline.tv_nsec += (long)(timeout_ms % 1000u) * 1000000L;
-  if (deadline.tv_nsec >= 1000000000L) {
-    ++deadline.tv_sec;
-    deadline.tv_nsec -= 1000000000L;
-  }
-  const int rc = pthread_cond_timedwait(&owner->changed, &owner->mutex, &deadline);
-  return rc == 0 ? H2_AUDIO_OK : rc == ETIMEDOUT
-      ? H2_AUDIO_ERR_WOULD_BLOCK : H2_AUDIO_ERR_IO;
+static int wait_changed(h2_ios_audio_t *owner,
+                         const h2_ios_audio_wait_budget_t *budget) {
+  return h2_ios_audio_wait_changed(&owner->changed, &owner->mutex, budget);
 }
 
 static void input_callback(void *user, AudioQueueRef queue,
@@ -264,13 +259,16 @@ static int audio_mic_read(void *user, h2_audio_frame_t *frame, uint32_t timeout_
       frame->sample_rate_hz != 16000u || frame->channels != 1u ||
       frame->sample_format != H2_AUDIO_SAMPLE_S16LE)
     return H2_AUDIO_ERR_INVALID_ARG;
+  h2_ios_audio_wait_budget_t budget;
+  const int budget_rc = h2_ios_audio_wait_begin(timeout_ms, &budget);
+  if (budget_rc != H2_AUDIO_OK) return budget_rc;
   pthread_mutex_lock(&owner->mutex);
   if (!owner->mic_started) {
     pthread_mutex_unlock(&owner->mutex);
     return H2_AUDIO_ERR_INVALID_STATE;
   }
   while (owner->mic_count == 0u && owner->mic_started) {
-    const int rc = wait_changed(owner, timeout_ms);
+    const int rc = wait_changed(owner, &budget);
     if (rc != H2_AUDIO_OK) {
       pthread_mutex_unlock(&owner->mutex);
       return rc;
@@ -297,9 +295,12 @@ static int track_drain(h2_pal_audio_track_t *base, uint32_t timeout_ms) {
   h2_ios_audio_track_t *track = (h2_ios_audio_track_t *)base;
   if (track == NULL || track->owner == NULL) return H2_AUDIO_ERR_INVALID_ARG;
   h2_ios_audio_t *owner = track->owner;
+  h2_ios_audio_wait_budget_t budget;
+  const int budget_rc = h2_ios_audio_wait_begin(timeout_ms, &budget);
+  if (budget_rc != H2_AUDIO_OK) return budget_rc;
   pthread_mutex_lock(&owner->mutex);
   while (owner->output_pending != 0u && owner->speaker_started) {
-    const int rc = wait_changed(owner, timeout_ms);
+    const int rc = wait_changed(owner, &budget);
     if (rc != H2_AUDIO_OK) {
       pthread_mutex_unlock(&owner->mutex);
       return rc;
@@ -320,6 +321,9 @@ static int track_write(h2_pal_audio_track_t *base, const h2_audio_frame_t *frame
       frame->bytes != H2_IOS_AUDIO_PLAY_SAMPLES * sizeof(int16_t))
     return H2_AUDIO_ERR_INVALID_ARG;
   h2_ios_audio_t *owner = track->owner;
+  h2_ios_audio_wait_budget_t budget;
+  const int budget_rc = h2_ios_audio_wait_begin(timeout_ms, &budget);
+  if (budget_rc != H2_AUDIO_OK) return budget_rc;
   pthread_mutex_lock(&owner->mutex);
   unsigned index = 0u;
   for (;;) {
@@ -330,7 +334,7 @@ static int track_write(h2_pal_audio_track_t *base, const h2_audio_frame_t *frame
     for (index = 0u; index < H2_IOS_AUDIO_QUEUE_BUFFERS; ++index)
       if (owner->output_free[index]) break;
     if (index < H2_IOS_AUDIO_QUEUE_BUFFERS) break;
-    const int rc = wait_changed(owner, timeout_ms);
+    const int rc = wait_changed(owner, &budget);
     if (rc != H2_AUDIO_OK) {
       pthread_mutex_unlock(&owner->mutex);
       return rc;
@@ -390,7 +394,7 @@ static int track_close(h2_pal_audio_track_t *base) {
   }
   owner->track = NULL;
   pthread_mutex_unlock(&owner->mutex);
-  free(track);
+  release_track(track);
   return H2_AUDIO_OK;
 }
 
@@ -402,18 +406,26 @@ static int audio_create_track(void *user, const h2_audio_track_config_t *config,
       config->format.frame_samples_per_channel != H2_IOS_AUDIO_PLAY_SAMPLES ||
       config->format.channels != 1u ||
       config->format.sample_format != H2_AUDIO_SAMPLE_S16LE ||
-      config->volume_factor_milli > 1000u)
+      config->volume_factor_milli > 1000u ||
+      (config->allocator != NULL &&
+       (config->allocator->vtable == NULL ||
+        config->allocator->vtable->alloc == NULL ||
+        config->allocator->vtable->free == NULL)))
     return H2_AUDIO_ERR_INVALID_ARG;
   pthread_mutex_lock(&owner->mutex);
   if (owner->track != NULL || !owner->speaker_started) {
     pthread_mutex_unlock(&owner->mutex);
     return H2_AUDIO_ERR_INVALID_STATE;
   }
-  h2_ios_audio_track_t *track = calloc(1u, sizeof(*track));
+  h2_ios_audio_track_t *track = config->allocator != NULL
+      ? h2_pal_mem_alloc(config->allocator, sizeof(*track))
+      : malloc(sizeof(*track));
   if (track == NULL) {
     pthread_mutex_unlock(&owner->mutex);
     return H2_AUDIO_ERR_NO_MEMORY;
   }
+  memset(track, 0, sizeof(*track));
+  if (config->allocator != NULL) track->allocator = *config->allocator;
   track->base = (h2_pal_audio_track_t){
       .user = track, .audio = &owner->api,
       .write = track_write, .close = track_close,
@@ -510,7 +522,7 @@ void h2_ios_audio_destroy(h2_ios_audio_t *audio) {
     (void)AudioQueueStop(output, true);
     (void)AudioQueueDispose(output, true);
   }
-  free(track);
+  release_track(track);
   (void)pthread_cond_destroy(&audio->changed);
   (void)pthread_mutex_destroy(&audio->mutex);
   free(audio);

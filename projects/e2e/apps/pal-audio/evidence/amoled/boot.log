@@ -1,12 +1,43 @@
-H2_PAL_AUDIO_SUMMARY {"platform":"amoled","passed":24,"failed":0,"blocked":0,"mic_frames":940,"mic_peak":126,"mic_energy":9390443,"speaker_frames":942,"output_peak":1120,"stability_elapsed_ms":30020,"rc":0,"confirm":0}
-I (225127) esp_image: segment 0: paddr=00020020 vaddr=3c110020 size=46628h (288296) map
-I (225152) esp_image: segment 1: paddr=00066650 vaddr=3fca8f00 size=06fa4h ( 28580)
-I (225155) esp_image: segment 2: paddr=0006d5fc vaddr=40378000 size=02a1ch ( 10780)
-I (225157) esp_image: segment 3: paddr=00070020 vaddr=42000020 size=10d510h (1103120) map
-I (225250) esp_image: segment 4: paddr=0017d538 vaddr=4037aa1c size=1e424h (123940)
-I (225261) esp_image: segment 5: paddr=0019b964 vaddr=50000000 size=00024h (    36)
-I (225262) esp_image: segment 6: paddr=0019b990 vaddr=600fe000 size=00060h (    96)
+H2_PAL_AUDIO_REPLAY {"id":"wrapper-arguments","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"info","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stopped-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-format-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-create","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-drain","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-live","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-close","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"resource-churn","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"stability","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"cleanup","status":"PASS","detail":0}
+H2_PAL_AUDIO_SUMMARY {"platform":"amoled","passed":24,"failed":0,"blocked":0,"mic_frames":940,"mic_peak":135,"mic_energy":10241477,"speaker_frames":942,"output_peak":1120,"stability_elapsed_ms":30034,"rc":0,"confirm":0}
+H2_PAL_AUDIO_REPLAY {"id":"wrapper-arguments","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"info","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stopped-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-roundtrip","status":"PASS","detail":0}
+I (19703008) esp_image: segment 0: paddr=00020020 vaddr=3c110020 size=46628h (288296) map
+I (19703033) esp_image: segment 1: paddr=00066650 vaddr=3fca8f00 size=06fa4h ( 28580)
+I (19703036) esp_image: segment 2: paddr=0006d5fc vaddr=40378000 size=02a1ch ( 10780)
+I (19703038) esp_image: segment 3: paddr=00070020 vaddr=42000020 size=10d510h (1103120) map
+I (19703131) esp_image: segment 4: paddr=0017d538 vaddr=4037aa1c size=1e424h (123940)
+I (19703142) esp_image: segment 5: paddr=0019b964 vaddr=50000000 size=00024h (    36)
+I (19703143) esp_image: segment 6: paddr=0019b990 vaddr=600fe000 size=00060h (    96)
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-bounds","status":"PASS","detail":0}
 H2_LOADER_REBOOT target=upgrade result=accepted
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-roundtrip","status":"PASS","detail":0}
 ESP-ROM:esp32s3-20210327
 Build:Mar 27 2021
 rst:0xc (RTC_SW_CPU_RST),boot:0x2b (SPI_FAST_FLASH_BOOT)
@@ -25,7 +56,7 @@ I (25) boot: efuse block revision: v1.3
 I (25) boot.esp32s3: Boot SPI Speed : 80MHz
 I (25) boot.esp32s3: SPI Mode       : DOUT
 I (25) boot.esp32s3: SPI Flash Size : 16MB
-I (25) boot: Enabling RNG early entropy source...
+I (26) boot: Enabling RNG early entropy source...
 I (26) boot: Partition Table:
 I (26) boot: ## Label            Usage          Type ST Offset   Length
 I (26) boot:  0 nvs              WiFi data        01 02 00009000 00006000
@@ -38,80 +69,80 @@ I (29) boot:  6 data             Unknown data     01 83 00c20000 00200000
 I (29) boot:  7 coredump         Unknown data     01 03 00e20000 00010000
 I (29) boot:  8 pref             Unknown data     01 83 00e30000 00040000
 I (30) boot: End of partition table
-I (78) esp_image: segment 0: paddr=00020020 vaddr=3c110020 size=46628h (288296) map
-I (134) esp_image: segment 1: paddr=00066650 vaddr=3fca8f00 size=06fa4h ( 28580) load
-I (140) esp_image: segment 2: paddr=0006d5fc vaddr=40378000 size=02a1ch ( 10780) load
-I (143) esp_image: segment 3: paddr=00070020 vaddr=42000020 size=10d510h (1103120) map
-I (355) esp_image: segment 4: paddr=0017d538 vaddr=4037aa1c size=1e424h (123940) load
-I (384) esp_image: segment 5: paddr=0019b964 vaddr=50000000 size=00024h (    36) load
-I (385) esp_image: segment 6: paddr=0019b990 vaddr=600fe000 size=00060h (    96) load
-I (399) boot: Loaded app from partition at offset 0x20000
-I (399) boot: Disabling RNG early entropy source...
-I (400) flash HPM: with HPM-DC support
-W (400) flash HPM: High performance mode of this flash model hasn't been supported.
-I (400) MSPI Timing: Enter flash timing tuning
-I (401) octal_psram: vendor id    : 0x0d (AP)
-I (401) octal_psram: dev id       : 0x02 (generation 3)
-I (401) octal_psram: density      : 0x03 (64 Mbit)
-I (402) octal_psram: good-die     : 0x01 (Pass)
-I (402) octal_psram: Latency      : 0x01 (Fixed)
-I (402) octal_psram: VCC          : 0x01 (3V)
-I (402) octal_psram: SRF          : 0x01 (Fast Refresh)
-I (402) octal_psram: BurstType    : 0x01 (Hybrid Wrap)
-I (403) octal_psram: BurstLen     : 0x01 (32 Byte)
-I (403) octal_psram: Readlatency  : 0x02 (10 cycles@Fixed)
-I (403) octal_psram: DriveStrength: 0x00 (1/1)
-I (403) MSPI Timing: Enter psram timing tuning
-I (411) esp_psram: Found 8MB PSRAM device
-I (411) esp_psram: Speed: 120MHz
-I (432) mmu_psram: Read only data copied and mapped to SPIRAM
-I (513) mmu_psram: Instructions copied and mapped to SPIRAM
-I (514) cpu_start: Multicore app
-I (697) esp_psram: SPI SRAM memory test OK
-I (705) cpu_start: Pro cpu start user code
-I (705) cpu_start: cpu freq: 240000000 Hz
-I (706) app_init: Application information:
-I (706) app_init: Project name:     h2loader
-I (706) app_init: App version:      timeout-fix-20260928
-I (706) app_init: Compile time:     Sep 28 2026 07:28:04
-I (706) app_init: ELF file SHA256:  b7aec210e...
-I (707) app_init: ESP-IDF:          76f5dedd
-I (707) efuse_init: Min chip rev:     v0.0
-I (707) efuse_init: Max chip rev:     v0.99
-I (707) efuse_init: Chip rev:         v0.2
-I (707) heap_init: Initializing. RAM available for dynamic allocation:
-I (707) heap_init: At 3FCBADA0 len 0002E970 (186 KiB): RAM
-I (708) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
-I (708) heap_init: At 600FE060 len 00001F88 (7 KiB): RTCRAM
-I (708) esp_psram: Adding pool of 6762K of PSRAM memory to heap allocator
-I (708) esp_psram: Adding pool of 38K of PSRAM memory gap generated due to end address alignment of drom to the heap allocator
-I (709) spi_flash: detected chip: winbond
-I (709) spi_flash: flash io: dio
-I (709) sleep_gpio: Configure to isolate all GPIO pins in sleep state
-I (710) sleep_gpio: Enable automatic switching of GPIO sleep configuration
-I (710) esp_core_dump_flash: Init core dump to flash
-I (710) esp_core_dump_flash: Found partition 'coredump' @ e20000 65536 bytes
-I (711) main_task: Started on CPU0
-I (711) esp_psram: Reserving pool of 32K of internal memory for DMA/internal allocations
-I (712) main_task: Calling app_main()
+I (80) esp_image: segment 0: paddr=00020020 vaddr=3c110020 size=46628h (288296) map
+I (136) esp_image: segment 1: paddr=00066650 vaddr=3fca8f00 size=06fa4h ( 28580) load
+I (142) esp_image: segment 2: paddr=0006d5fc vaddr=40378000 size=02a1ch ( 10780) load
+I (145) esp_image: segment 3: paddr=00070020 vaddr=42000020 size=10d510h (1103120) map
+I (357) esp_image: segment 4: paddr=0017d538 vaddr=4037aa1c size=1e424h (123940) load
+I (386) esp_image: segment 5: paddr=0019b964 vaddr=50000000 size=00024h (    36) load
+I (387) esp_image: segment 6: paddr=0019b990 vaddr=600fe000 size=00060h (    96) load
+I (401) boot: Loaded app from partition at offset 0x20000
+I (401) boot: Disabling RNG early entropy source...
+I (402) flash HPM: with HPM-DC support
+W (402) flash HPM: High performance mode of this flash model hasn't been supported.
+I (402) MSPI Timing: Enter flash timing tuning
+I (403) octal_psram: vendor id    : 0x0d (AP)
+I (403) octal_psram: dev id       : 0x02 (generation 3)
+I (403) octal_psram: density      : 0x03 (64 Mbit)
+I (404) octal_psram: good-die     : 0x01 (Pass)
+I (404) octal_psram: Latency      : 0x01 (Fixed)
+I (404) octal_psram: VCC          : 0x01 (3V)
+I (404) octal_psram: SRF          : 0x01 (Fast Refresh)
+I (404) octal_psram: BurstType    : 0x01 (Hybrid Wrap)
+I (405) octal_psram: BurstLen     : 0x01 (32 Byte)
+I (405) octal_psram: Readlatency  : 0x02 (10 cycles@Fixed)
+I (405) octal_psram: DriveStrength: 0x00 (1/1)
+I (405) MSPI Timing: Enter psram timing tuning
+I (413) esp_psram: Found 8MB PSRAM device
+I (413) esp_psram: Speed: 120MHz
+I (435) mmu_psram: Read only data copied and mapped to SPIRAM
+I (516) mmu_psram: Instructions copied and mapped to SPIRAM
+I (517) cpu_start: Multicore app
+I (700) esp_psram: SPI SRAM memory test OK
+I (708) cpu_start: Pro cpu start user code
+I (709) cpu_start: cpu freq: 240000000 Hz
+I (709) app_init: Application information:
+I (709) app_init: Project name:     h2loader
+I (709) app_init: App version:      timeout-fix-20260928
+I (709) app_init: Compile time:     Sep 28 2026 07:28:04
+I (709) app_init: ELF file SHA256:  b7aec210e...
+I (709) app_init: ESP-IDF:          76f5dedd
+I (710) efuse_init: Min chip rev:     v0.0
+I (710) efuse_init: Max chip rev:     v0.99
+I (710) efuse_init: Chip rev:         v0.2
+I (710) heap_init: Initializing. RAM available for dynamic allocation:
+I (710) heap_init: At 3FCBADA0 len 0002E970 (186 KiB): RAM
+I (710) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+I (711) heap_init: At 600FE060 len 00001F88 (7 KiB): RTCRAM
+I (711) esp_psram: Adding pool of 6762K of PSRAM memory to heap allocator
+I (711) esp_psram: Adding pool of 38K of PSRAM memory gap generated due to end address alignment of drom to the heap allocator
+I (712) spi_flash: detected chip: winbond
+I (712) spi_flash: flash io: dio
+I (712) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+I (712) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+I (713) esp_core_dump_flash: Init core dump to flash
+I (713) esp_core_dump_flash: Found partition 'coredump' @ e20000 65536 bytes
+I (714) main_task: Started on CPU0
+I (714) esp_psram: Reserving pool of 32K of internal memory for DMA/internal allocations
+I (715) main_task: Calling app_main()
 H2_PAL_TASK_POLICY_READY unit=esp target=projects/h2loader/targets/h2loader_tar_zlib/loader/amoled
-I (714) main_task: Returned from app_main()
+I (717) main_task: Returned from app_main()
 H2_LOADER_STARTUP_EVENT event=write_partition_2 code=0
-I (20419) esp_image: segment 0: paddr=00220020 vaddr=3c110020 size=4bd30h (310576) map
-I (20446) esp_image: segment 1: paddr=0026bd58 vaddr=3fca9100 size=042c0h ( 17088)
-I (20448) esp_image: segment 2: paddr=00270020 vaddr=42000020 size=10853ch (1082684) map
-I (20540) esp_image: segment 3: paddr=00378564 vaddr=3fcad3c0 size=02fech ( 12268)
-I (20542) esp_image: segment 4: paddr=0037b558 vaddr=40378000 size=21008h (135176)
-I (20554) esp_image: segment 5: paddr=0039c568 vaddr=50000000 size=00024h (    36)
-I (20555) esp_image: segment 6: paddr=0039c594 vaddr=600fe000 size=00060h (    96)
+I (20549) esp_image: segment 0: paddr=00220020 vaddr=3c110020 size=4bd30h (310576) map
+I (20576) esp_image: segment 1: paddr=0026bd58 vaddr=3fca9100 size=042c0h ( 17088)
+I (20578) esp_image: segment 2: paddr=00270020 vaddr=42000020 size=108524h (1082660) map
+I (20670) esp_image: segment 3: paddr=0037854c vaddr=3fcad3c0 size=02fech ( 12268)
+I (20672) esp_image: segment 4: paddr=0037b540 vaddr=40378000 size=21008h (135176)
+I (20684) esp_image: segment 5: paddr=0039c550 vaddr=50000000 size=00024h (    36)
+I (20685) esp_image: segment 6: paddr=0039c57c vaddr=600fe000 size=00060h (    96)
 H2_LOADER_STARTUP_EVENT event=boot_partition_2 code=0
-I (20929) esp_image: segment 0: paddr=00220020 vaddr=3c110020 size=4bd30h (310576) map
-I (20956) esp_image: segment 1: paddr=0026bd58 vaddr=3fca9100 size=042c0h ( 17088)
-I (20958) esp_image: segment 2: paddr=00270020 vaddr=42000020 size=10853ch (1082684) map
-I (21050) esp_image: segment 3: paddr=00378564 vaddr=3fcad3c0 size=02fech ( 12268)
-I (21052) esp_image: segment 4: paddr=0037b558 vaddr=40378000 size=21008h (135176)
-I (21064) esp_image: segment 5: paddr=0039c568 vaddr=50000000 size=00024h (    36)
-I (21065) esp_image: segment 6: paddr=0039c594 vaddr=600fe000 size=00060h (    96)
+I (20964) esp_image: segment 0: paddr=00220020 vaddr=3c110020 size=4bd30h (310576) map
+I (20992) esp_image: segment 1: paddr=0026bd58 vaddr=3fca9100 size=042c0h ( 17088)
+I (20994) esp_image: segment 2: paddr=00270020 vaddr=42000020 size=108524h (1082660) map
+I (21086) esp_image: segment 3: paddr=0037854c vaddr=3fcad3c0 size=02fech ( 12268)
+I (21087) esp_image: segment 4: paddr=0037b540 vaddr=40378000 size=21008h (135176)
+I (21099) esp_image: segment 5: paddr=0039c550 vaddr=50000000 size=00024h (    36)
+I (21100) esp_image: segment 6: paddr=0039c57c vaddr=600fe000 size=00060h (    96)
 ESP-ROM:esp32s3-20210327
 Build:Mar 27 2021
 rst:0xc (RTC_SW_CPU_RST),boot:0x2b (SPI_FAST_FLASH_BOOT)
@@ -143,43 +174,43 @@ I (29) boot:  6 data             Unknown data     01 83 00c20000 00200000
 I (29) boot:  7 coredump         Unknown data     01 03 00e20000 00010000
 I (29) boot:  8 pref             Unknown data     01 83 00e30000 00040000
 I (30) boot: End of partition table
-I (96) esp_image: segment 0: paddr=00220020 vaddr=3c110020 size=4bd30h (310576) map
-I (156) esp_image: segment 1: paddr=0026bd58 vaddr=3fca9100 size=042c0h ( 17088) load
-I (160) esp_image: segment 2: paddr=00270020 vaddr=42000020 size=10853ch (1082684) map
-I (369) esp_image: segment 3: paddr=00378564 vaddr=3fcad3c0 size=02fech ( 12268) load
-I (372) esp_image: segment 4: paddr=0037b558 vaddr=40378000 size=21008h (135176) load
-I (403) esp_image: segment 5: paddr=0039c568 vaddr=50000000 size=00024h (    36) load
-I (404) esp_image: segment 6: paddr=0039c594 vaddr=600fe000 size=00060h (    96) load
-I (418) boot: Loaded app from partition at offset 0x220000
-I (418) boot: Disabling RNG early entropy source...
-I (419) flash HPM: with HPM-DC support
-W (419) flash HPM: High performance mode of this flash model hasn't been supported.
-I (419) MSPI Timing: Enter flash timing tuning
-I (420) octal_psram: vendor id    : 0x0d (AP)
-I (420) octal_psram: dev id       : 0x02 (generation 3)
-I (421) octal_psram: density      : 0x03 (64 Mbit)
-I (421) octal_psram: good-die     : 0x01 (Pass)
-I (421) octal_psram: Latency      : 0x01 (Fixed)
-I (421) octal_psram: VCC          : 0x01 (3V)
-I (422) octal_psram: SRF          : 0x01 (Fast Refresh)
-I (422) octal_psram: BurstType    : 0x01 (Hybrid Wrap)
-I (422) octal_psram: BurstLen     : 0x01 (32 Byte)
-I (422) octal_psram: Readlatency  : 0x02 (10 cycles@Fixed)
-I (422) octal_psram: DriveStrength: 0x00 (1/1)
-I (423) MSPI Timing: Enter psram timing tuning
+I (95) esp_image: segment 0: paddr=00220020 vaddr=3c110020 size=4bd30h (310576) map
+I (155) esp_image: segment 1: paddr=0026bd58 vaddr=3fca9100 size=042c0h ( 17088) load
+I (159) esp_image: segment 2: paddr=00270020 vaddr=42000020 size=108524h (1082660) map
+I (368) esp_image: segment 3: paddr=0037854c vaddr=3fcad3c0 size=02fech ( 12268) load
+I (371) esp_image: segment 4: paddr=0037b540 vaddr=40378000 size=21008h (135176) load
+I (402) esp_image: segment 5: paddr=0039c550 vaddr=50000000 size=00024h (    36) load
+I (403) esp_image: segment 6: paddr=0039c57c vaddr=600fe000 size=00060h (    96) load
+I (417) boot: Loaded app from partition at offset 0x220000
+I (417) boot: Disabling RNG early entropy source...
+I (418) flash HPM: with HPM-DC support
+W (418) flash HPM: High performance mode of this flash model hasn't been supported.
+I (418) MSPI Timing: Enter flash timing tuning
+I (419) octal_psram: vendor id    : 0x0d (AP)
+I (419) octal_psram: dev id       : 0x02 (generation 3)
+I (420) octal_psram: density      : 0x03 (64 Mbit)
+I (420) octal_psram: good-die     : 0x01 (Pass)
+I (420) octal_psram: Latency      : 0x01 (Fixed)
+I (420) octal_psram: VCC          : 0x01 (3V)
+I (420) octal_psram: SRF          : 0x01 (Fast Refresh)
+I (421) octal_psram: BurstType    : 0x01 (Hybrid Wrap)
+I (421) octal_psram: BurstLen     : 0x01 (32 Byte)
+I (421) octal_psram: Readlatency  : 0x02 (10 cycles@Fixed)
+I (421) octal_psram: DriveStrength: 0x00 (1/1)
+I (422) MSPI Timing: Enter psram timing tuning
 I (430) esp_psram: Found 8MB PSRAM device
 I (430) esp_psram: Speed: 120MHz
 I (451) mmu_psram: Read only data copied and mapped to SPIRAM
-I (533) mmu_psram: Instructions copied and mapped to SPIRAM
-I (533) cpu_start: Multicore app
+I (532) mmu_psram: Instructions copied and mapped to SPIRAM
+I (532) cpu_start: Multicore app
 I (716) esp_psram: SPI SRAM memory test OK
-I (725) cpu_start: Pro cpu start user code
+I (724) cpu_start: Pro cpu start user code
 I (725) cpu_start: cpu freq: 240000000 Hz
 I (725) app_init: Application information:
 I (725) app_init: Project name:     h2_pal_audio_e2e
-I (725) app_init: App version:      pal-audio-e2e-20260928-r5
-I (725) app_init: Compile time:     Sep 28 2026 15:28:07
-I (726) app_init: ELF file SHA256:  8398df569...
+I (725) app_init: App version:      pal-audio-e2e-20260929-r6
+I (725) app_init: Compile time:     Sep 28 2026 20:57:40
+I (725) app_init: ELF file SHA256:  72185fb21...
 I (726) app_init: ESP-IDF:          76f5dedd
 I (726) efuse_init: Min chip rev:     v0.0
 I (726) efuse_init: Max chip rev:     v0.99
@@ -189,13 +220,13 @@ I (727) heap_init: At 3FCBBA20 len 0002DCF0 (183 KiB): RAM
 I (727) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
 I (727) heap_init: At 600FE060 len 00001F88 (7 KiB): RTCRAM
 I (727) esp_psram: Adding pool of 6762K of PSRAM memory to heap allocator
-I (727) esp_psram: Adding pool of 16K of PSRAM memory gap generated due to end address alignment of drom to the heap allocator
+I (728) esp_psram: Adding pool of 16K of PSRAM memory gap generated due to end address alignment of drom to the heap allocator
 I (728) spi_flash: detected chip: winbond
 I (728) spi_flash: flash io: dio
 I (729) sleep_gpio: Configure to isolate all GPIO pins in sleep state
 I (729) sleep_gpio: Enable automatic switching of GPIO sleep configuration
 I (729) esp_core_dump_flash: Init core dump to flash
-I (729) esp_core_dump_flash: Found partition 'coredump' @ e20000 65536 bytes
+I (730) esp_core_dump_flash: Found partition 'coredump' @ e20000 65536 bytes
 D (730) esp_core_dump_flash: Blank core dump partition!
 I (730) main_task: Started on CPU0
 I (730) esp_psram: Reserving pool of 32K of internal memory for DMA/internal allocations
@@ -203,10 +234,10 @@ I (731) main_task: Calling app_main()
 H2_PAL_TASK_POLICY_READY unit=esp target=projects/e2e/targets/h2loader_tar_zlib/pal-audio/amoled
 I (733) main_task: Returned from app_main()
 H2_PAL_TASK_READY name=$h2loader/return priority=8 core=0 stack=psram size=32768
-H2_PAL_AUDIO_BOOT board=amoled version=pal-audio-e2e-20260928-r5
+H2_PAL_AUDIO_BOOT board=amoled version=pal-audio-e2e-20260929-r6
 H2_PAL_TASK_READY name=pal-audio/e2e/runner priority=4 core=0 stack=psram size=32768
 H2_PAL_AUDIO_CASE {"id":"wrapper-arguments","status":"PASS","detail":0,"line":0}
-I (1087) h2_es8311_aec: direct aec ready frame_samples=512 mode=fd_low_cost filter=4 nlp=normal
+I (1114) h2_es8311_aec: direct aec ready frame_samples=512 mode=fd_low_cost filter=4 nlp=normal
 H2_PAL_AUDIO_CASE {"id":"info","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"mic-stopped-read","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"mic-gain-bounds","status":"PASS","detail":0,"line":0}
@@ -214,10 +245,10 @@ H2_PAL_AUDIO_CASE {"id":"mic-gain-roundtrip","status":"PASS","detail":0,"line":0
 H2_PAL_AUDIO_CASE {"id":"speaker-volume-bounds","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"speaker-volume-roundtrip","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"track-format-bounds","status":"PASS","detail":0,"line":0}
-W (1093) i2s_common: the rx channel on I2S0 is switched from master to slave for full-duplex mode
-I (1103) h2_es8311_audio: es8311 chip_id=0x8311
-I (1118) h2_es8311_audio: audio opened i2s=0 i2c=0 addr=0x18
-I (1139) h2_es8311_audio: playback task ready stack=psram size=4096 priority=4 core=2147483647
+W (1120) i2s_common: the rx channel on I2S0 is switched from master to slave for full-duplex mode
+I (1130) h2_es8311_audio: es8311 chip_id=0x8311
+I (1145) h2_es8311_audio: audio opened i2s=0 i2c=0 addr=0x18
+I (1166) h2_es8311_audio: playback task ready stack=psram size=4096 priority=4 core=2147483647
 H2_PAL_AUDIO_CASE {"id":"speaker-start","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"track-create","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"track-volume-bounds","status":"PASS","detail":0,"line":0}
@@ -225,18 +256,18 @@ H2_PAL_AUDIO_CASE {"id":"track-volume-roundtrip","status":"PASS","detail":0,"lin
 H2_PAL_AUDIO_CASE {"id":"track-write-bounds","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"track-write","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"track-drain","status":"PASS","detail":0,"line":0}
-I (1303) h2_es8311_audio: mic task ready stack=psram size=6144 priority=5 core=2147483647
+I (1330) h2_es8311_audio: mic task ready stack=psram size=6144 priority=5 core=2147483647
 H2_PAL_AUDIO_CASE {"id":"mic-start","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"mic-read","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"mic-gain-live","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"mic-stop","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"track-close","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"speaker-stop","status":"PASS","detail":0,"line":0}
-I (1394) h2_es8311_audio: playback task ready stack=psram size=4096 priority=4 core=2147483647
-I (1454) h2_es8311_audio: playback task ready stack=psram size=4096 priority=4 core=2147483647
-I (1514) h2_es8311_audio: playback task ready stack=psram size=4096 priority=4 core=2147483647
+I (1421) h2_es8311_audio: playback task ready stack=psram size=4096 priority=4 core=2147483647
+I (1481) h2_es8311_audio: playback task ready stack=psram size=4096 priority=4 core=2147483647
+I (1541) h2_es8311_audio: playback task ready stack=psram size=4096 priority=4 core=2147483647
 H2_PAL_AUDIO_CASE {"id":"resource-churn","status":"PASS","detail":0,"line":0}
-I (1574) h2_es8311_audio: playback task ready stack=psram size=4096 priority=4 core=2147483647
+I (1601) h2_es8311_audio: playback task ready stack=psram size=4096 priority=4 core=2147483647
 H2_PAL_AUDIO_CASE {"id":"stability","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"cleanup","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_REPLAY {"id":"wrapper-arguments","status":"PASS","detail":0}
@@ -263,7 +294,7 @@ H2_PAL_AUDIO_REPLAY {"id":"speaker-stop","status":"PASS","detail":0}
 H2_PAL_AUDIO_REPLAY {"id":"resource-churn","status":"PASS","detail":0}
 H2_PAL_AUDIO_REPLAY {"id":"stability","status":"PASS","detail":0}
 H2_PAL_AUDIO_REPLAY {"id":"cleanup","status":"PASS","detail":0}
-H2_PAL_AUDIO_SUMMARY {"platform":"amoled","passed":24,"failed":0,"blocked":0,"mic_frames":887,"mic_peak":77,"mic_energy":5031591,"speaker_frames":889,"output_peak":1120,"stability_elapsed_ms":30021,"rc":0,"confirm":0}
+H2_PAL_AUDIO_SUMMARY {"platform":"amoled","passed":24,"failed":0,"blocked":0,"mic_frames":866,"mic_peak":113,"mic_energy":18036037,"speaker_frames":868,"output_peak":1120,"stability_elapsed_ms":30005,"rc":0,"confirm":0}
 H2_PAL_AUDIO_REPLAY {"id":"wrapper-arguments","status":"PASS","detail":0}
 H2_PAL_AUDIO_REPLAY {"id":"info","status":"PASS","detail":0}
 H2_PAL_AUDIO_REPLAY {"id":"mic-stopped-read","status":"PASS","detail":0}
@@ -288,7 +319,7 @@ H2_PAL_AUDIO_REPLAY {"id":"speaker-stop","status":"PASS","detail":0}
 H2_PAL_AUDIO_REPLAY {"id":"resource-churn","status":"PASS","detail":0}
 H2_PAL_AUDIO_REPLAY {"id":"stability","status":"PASS","detail":0}
 H2_PAL_AUDIO_REPLAY {"id":"cleanup","status":"PASS","detail":0}
-H2_PAL_AUDIO_SUMMARY {"platform":"amoled","passed":24,"failed":0,"blocked":0,"mic_frames":887,"mic_peak":77,"mic_energy":5031591,"speaker_frames":889,"output_peak":1120,"stability_elapsed_ms":30021,"rc":0,"confirm":0}
+H2_PAL_AUDIO_SUMMARY {"platform":"amoled","passed":24,"failed":0,"blocked":0,"mic_frames":866,"mic_peak":113,"mic_energy":18036037,"speaker_frames":868,"output_peak":1120,"stability_elapsed_ms":30005,"rc":0,"confirm":0}
 H2_PAL_AUDIO_REPLAY {"id":"wrapper-arguments","status":"PASS","detail":0}
 H2_PAL_AUDIO_REPLAY {"id":"info","status":"PASS","detail":0}
 H2_PAL_AUDIO_REPLAY {"id":"mic-stopped-read","status":"PASS","detail":0}
@@ -313,5 +344,55 @@ H2_PAL_AUDIO_REPLAY {"id":"speaker-stop","status":"PASS","detail":0}
 H2_PAL_AUDIO_REPLAY {"id":"resource-churn","status":"PASS","detail":0}
 H2_PAL_AUDIO_REPLAY {"id":"stability","status":"PASS","detail":0}
 H2_PAL_AUDIO_REPLAY {"id":"cleanup","status":"PASS","detail":0}
-H2_PAL_AUDIO_SUMMARY {"platform":"amoled","passed":24,"failed":0,"blocked":0,"mic_frames":887,"mic_peak":77,"mic_energy":5031591,"speaker_frames":889,"output_peak":1120,"stability_elapsed_ms":30021,"rc":0,"confirm":0}
+H2_PAL_AUDIO_SUMMARY {"platform":"amoled","passed":24,"failed":0,"blocked":0,"mic_frames":866,"mic_peak":113,"mic_energy":18036037,"speaker_frames":868,"output_peak":1120,"stability_elapsed_ms":30005,"rc":0,"confirm":0}
+H2_PAL_AUDIO_REPLAY {"id":"wrapper-arguments","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"info","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stopped-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-format-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-create","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-drain","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-live","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-close","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"resource-churn","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"stability","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"cleanup","status":"PASS","detail":0}
+H2_PAL_AUDIO_SUMMARY {"platform":"amoled","passed":24,"failed":0,"blocked":0,"mic_frames":866,"mic_peak":113,"mic_energy":18036037,"speaker_frames":868,"output_peak":1120,"stability_elapsed_ms":30005,"rc":0,"confirm":0}
+H2_PAL_AUDIO_REPLAY {"id":"wrapper-arguments","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"info","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stopped-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-format-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-create","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-drain","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-live","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-close","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"resource-churn","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"stability","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"cleanup","status":"PASS","detail":0}
+H2_PAL_AUDIO_SUMMARY {"platform":"amoled","passed":24,"failed":0,"blocked":0,"mic_frames":866,"mic_peak":113,"mic_energy":18036037,"speaker_frames":868,"output_peak":1120,"stability_elapsed_ms":30005,"rc":0,"confirm":0}
 ^C

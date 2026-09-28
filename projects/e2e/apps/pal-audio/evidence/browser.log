@@ -1,25 +1,3 @@
-exec ${PAGER:-/usr/bin/less} "$0" || exit 1
-Executing tests from //projects/e2e/targets/pkg_tar/pal-audio:browser_test
------------------------------------------------------------------------------
-127.0.0.1 - - [28/Sep/2026 15:18:38] "GET / HTTP/1.1" 200 -
-127.0.0.1 - - [28/Sep/2026 15:18:38] "GET /index.js HTTP/1.1" 200 -
-127.0.0.1 - - [28/Sep/2026 15:18:38] "GET /index.js HTTP/1.1" 200 -
-127.0.0.1 - - [28/Sep/2026 15:18:38] "GET /index.js HTTP/1.1" 200 -
-127.0.0.1 - - [28/Sep/2026 15:18:38] "GET /index.js HTTP/1.1" 200 -
-127.0.0.1 - - [28/Sep/2026 15:18:38] "GET /index.wasm HTTP/1.1" 200 -
-127.0.0.1 - - [28/Sep/2026 15:18:38] "GET /index.js HTTP/1.1" 200 -
-127.0.0.1 - - [28/Sep/2026 15:18:38] "GET /index.js HTTP/1.1" 200 -
-127.0.0.1 - - [28/Sep/2026 15:18:38] "GET /index.js HTTP/1.1" 200 -
-127.0.0.1 - - [28/Sep/2026 15:18:38] "GET /index.js HTTP/1.1" 200 -
-127.0.0.1 - - [28/Sep/2026 15:18:38] "GET /index.js HTTP/1.1" 200 -
-127.0.0.1 - - [28/Sep/2026 15:18:38] "GET /index.js HTTP/1.1" 200 -
-127.0.0.1 - - [28/Sep/2026 15:18:38] "GET /index.js HTTP/1.1" 200 -
-127.0.0.1 - - [28/Sep/2026 15:18:38] "GET /index.js HTTP/1.1" 200 -
-127.0.0.1 - - [28/Sep/2026 15:18:38] "GET /index.js HTTP/1.1" 200 -
-127.0.0.1 - - [28/Sep/2026 15:18:38] "GET /index.js HTTP/1.1" 200 -
-127.0.0.1 - - [28/Sep/2026 15:18:38] "GET /index.js HTTP/1.1" 200 -
-127.0.0.1 - - [28/Sep/2026 15:18:38] "GET /index.js HTTP/1.1" 200 -
-127.0.0.1 - - [28/Sep/2026 15:18:38] "GET /index.js HTTP/1.1" 200 -
 H2_PAL_AUDIO_CASE {"id":"wrapper-arguments","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"info","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"mic-stopped-read","status":"PASS","detail":0,"line":0}
@@ -35,21 +13,16 @@ H2_PAL_AUDIO_CASE {"id":"track-volume-roundtrip","status":"PASS","detail":0,"lin
 H2_PAL_AUDIO_CASE {"id":"track-write-bounds","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"track-write","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"track-drain","status":"PASS","detail":0,"line":0}
-Web microphone echoCancellation=true
 H2_PAL_AUDIO_CASE {"id":"mic-start","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"mic-read","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"mic-gain-live","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"mic-stop","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"track-close","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"speaker-stop","status":"PASS","detail":0,"line":0}
-Web microphone echoCancellation=true
-Web microphone echoCancellation=true
-Web microphone echoCancellation=true
 H2_PAL_AUDIO_CASE {"id":"resource-churn","status":"PASS","detail":0,"line":0}
-Web microphone echoCancellation=true
 H2_PAL_AUDIO_CASE {"id":"stability","status":"PASS","detail":0,"line":0}
 H2_PAL_AUDIO_CASE {"id":"cleanup","status":"PASS","detail":0,"line":0}
-H2_PAL_AUDIO_SUMMARY {"platform":"wasm-chromium","worker":1,"passed":24,"failed":0,"blocked":0,"mic_frames":508,"mic_peak":19660,"mic_energy":571480674967,"speaker_frames":510,"output_peak":1120,"stability_elapsed_ms":30031,"rc":0}
+H2_PAL_AUDIO_SUMMARY {"platform":"wasm-chromium","worker":1,"passed":24,"failed":0,"blocked":0,"mic_frames":508,"mic_peak":19660,"mic_energy":574757604275,"speaker_frames":510,"output_peak":1120,"stability_elapsed_ms":30036,"rc":0}
 H2_PAL_AUDIO_TEARDOWN rc=0
 H2_PAL_AUDIO_EXIT 0
 PAL_AUDIO_WASM passed=24 failed=0 blocked=0 qualified=1

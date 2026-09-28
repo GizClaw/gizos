@@ -515,7 +515,8 @@ int h2_pal_audio_e2e_run(const h2_pal_audio_e2e_config_t *config,
     if (config->report != NULL)
       config->report(config->report_user, item);
   }
-  (void)restore(&state);
+  /* The final mandatory cleanup case owns the only restore. Repeating hardware
+   * gain/volume writes here would be unreported and may block a stopped codec. */
   return out_result->failed == 0u && out_result->blocked == 0u &&
                  out_result->passed == count
              ? H2_AUDIO_OK : H2_PAL_ERR_INVALID_STATE;

@@ -35,6 +35,7 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 | PAL Core | `//projects/e2e/apps/pal-core/app:pal_core_e2e` | 独立 Core v2：46 个接口、41 个必过用例；macOS、Browser/WASM、DevKit ESP32-S3 USB 串口、BK7258 AP UART1 H2Loader |
 | PAL HTTP | `//projects/e2e/apps/pal-http/app:pal_http_e2e` | 独立 HTTP：45 个必跑 case；macOS、Browser、iOS/Android 实际 SDK 包消费 App 与 DevKit/BK7258 专用入口，逐平台保留真实运行证据 |
 | PAL WebRTC | `//projects/e2e/apps/pal-webrtc/app:pal_webrtc_e2e` | 独立 WebRTC：13 个操作、43 个 mandatory case；六端独立入口及真实 Pion 对端，按各端完整 ledger 授予资格 |
+| PAL Audio | `//projects/e2e/apps/pal-audio/app:pal_audio_e2e` | 独立 Audio：11 个 provider 与 5 个 track 操作、24 个必过 case；macOS、真实 Chromium Worker、iOS/Android SDK 包消费 App、AMOLED ESP32-S3 与 BK7258，逐端验证 30 秒同时采播和完整清理 |
 | PAL | `//projects/e2e/apps/pal/app:pal_e2e` | Linux/macOS/Windows 共同 host OS/Filesystem/Net/TLS/CoreHTTP/CoreMQTT；Desktop core/MQTT/SQLite Preference；Browser core；DevKit 与 Tiga V4.2 H2Loader `pal-pref` |
 | H2Loader Serial | `//projects/e2e/apps/h2loader-serial/app:h2loader_serial_e2e` | macOS Desktop；desktop Chrome Browser |
 | WebRTC Performance | `//projects/e2e/apps/webrtc-performance/app:webrtc_performance` | Desktop H2Peer + local Pion；DevKit 与 AMOLED ESP32-S3 H2Peer + operator LAN Pion |
@@ -134,6 +135,16 @@ Desktop catalog identity 是 `e2e/libco`，Bazel binary 是 `//projects/e2e/targ
 Desktop 和真实 Chromium 有自动测试；移动端通过实际 XCFramework/AAR package consumer 执行，入口为 `make bazel-test-ios_pal_webrtc_simulator_test` 和 `make bazel-test-android_pal_webrtc_simulator_test`。设备 launcher 位于 `targets/h2loader_tar_zlib/pal-webrtc`，借用已保存 STA 配置、读取显式 fixture 构建参数，运行一次后重放不可变 boot ledger。每个平台以自己 artifact 对应的完整结果资格为准，不从另一平台结果推断可用性。BK7258 的测试 allocator 和 H2Peer task stack 使用已有 PSRAM region，命令 Runtime 保持板级 allocator；失败 gate 不 confirm App。DevKit 先在 BSP 的 64 KiB 长期入口 task 初始化 H2Peer、Board Runtime 与命令服务，再启动独立测试 runner。
 
 BK7258 在完整 43 项后额外建立一个真实 Pion 连接，持续 600 秒每秒交换带序号的二进制消息与合成 Opus。RTP 单包丢失时继续发送后续序号，分别记录唯一回传、missing、duplicate 和最长无有效媒体的间隔；至少 500 次 Data 与 Opus 成功回传，连续 10 秒无媒体恢复、Data 中断或 payload 错误均失败。真实 Pion 单包丢失恢复和持续丢媒体负例验证这项边界；Pion 同 session RX/TX/drop/gap counter 保留对端证据。独立 `H2_PAL_WEBRTC_SOAK` ledger 记录 run ID、单调 uptime、回传计数、耗时与结果，完成后关闭连接并检查 allocator 回收。启动输出 SDK reset reason。设备资格要求新镜像安装后和正常 App reboot 后各自通过，保存原 P1 Loader、Stage 空和 coredump 基线。旧镜像的 idle 观察仅说明该窗口内未复现 AP 重启，不能代替新镜像的活动稳定性验收，也不能据此排除 CP-only reset 或断言声音来源。
+
+## PAL Audio
+
+`projects/e2e/apps/pal-audio/app` 直接借用 launcher 提供的真实 Audio PAL 和 Time PAL，固定运行 24 个 mandatory case，覆盖全部 11 个 provider 与 5 个 track 操作。测试检查参数与 PCM format 边界、录音和播放、停止后读取、音量与麦克风增益、track 写入/drain/close、重复启停、至少 30 秒同时采播及唯一的终态 cleanup。缺失能力记为 BLOCKED，不能授予资格；`cleanup_once_test` 防止 terminal cleanup 后再次执行未报告的硬件恢复操作。接口映射与 compiler 实际代码覆盖率分别记录，不从 target 构建成功推断执行覆盖。
+
+Desktop 验证真实 PortAudio callback；Browser C 在 pthread Worker 中通过 production getUserMedia/AudioWorklet provider 运行，输入使用 Chromium deterministic fake microphone。iOS Simulator 和 Android Emulator 分别消费实际 Swift Package/XCFramework 与 AAR；移动端 manual 入口为 `make bazel-test-ios_pal_audio_simulator_test` 和 `make bazel-test-android_pal_audio_simulator_test`。设备使用有真实音频 codec 的 AMOLED ESP32-S3 和 BK7258，要求托管升级与独立正常 App reboot 各自完成 ledger、成功 confirmation、原 P1 Loader 保持、Stage 空且 coredump 不变。
+
+两个移动端另通过注入 tracked per-track allocator 验证 allocation failure 被正确拒绝、单帧 PCM write/drain/close 成功，以及全部 caller-owned 存储回收；Android provider 在 native output startup 前执行静音 priming，不能要求测试 App 写满启动 buffer 来掩盖单帧 drain 失败。桌面 manual 入口为 `make bazel-test-desktop_test`。
+
+报告的 microphone PCM 计数/peak/energy 与输出 PCM frame/peak 说明真实 provider 数据路径已执行；write/drain 返回成功不能代替外部声学测量。Simulator 结果不代表物理手机，Browser fake microphone 不代表物理麦克风。`h2_pal_audio_decoder.h` 是独立 capability，需要另一个 session/packet 生命周期 E2E，不属于此 Audio 资格。
 
 ## WebRTC Performance
 

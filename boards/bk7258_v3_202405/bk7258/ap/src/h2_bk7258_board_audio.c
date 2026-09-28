@@ -649,7 +649,8 @@ static int bk_audio_create_track(
     if (rc != H2_AUDIO_OK) {
         return rc;
     }
-    return h2_audio_mixer_create_track(&state->mixer, NULL, config, out_track);
+    return h2_audio_mixer_create_track(
+        &state->mixer, h2_bk7258_board_audio(), config, out_track);
 }
 
 static int bk_audio_get_speaker_volume_percent(void *user, uint32_t *out_percent) {

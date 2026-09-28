@@ -58,11 +58,22 @@ const h2_pal_queue_api_t *h2_ios_platform_queue_api(void);
 const h2_pal_display_api_t *
 h2_ios_platform_display_api(h2_ios_platform_t *platform);
 
-/** Native AudioQueue input/output owner. The PAL is borrowed until destroy;
- * stop microphone and speaker and close tracks before destruction. */
+/** Native AudioQueue input/output owner. */
 typedef struct h2_ios_audio h2_ios_audio_t;
+/**
+ * @brief Create an owned native AudioQueue provider without starting devices.
+ * @param out_audio Receives the owner; cleared on failure when non-NULL.
+ * @return OK, INVALID_ARG, NO_MEMORY, or IO on synchronization initialization.
+ * The App owns recording permission; start operations activate the session.
+ */
 h2_pal_result_t h2_ios_audio_create(h2_ios_audio_t **out_audio);
+/** @brief Borrow the Audio PAL until owner destruction; NULL owner returns NULL. */
 const h2_pal_audio_api_t *h2_ios_audio_api(h2_ios_audio_t *audio);
+/**
+ * @brief Release the provider and its native queues; NULL is allowed.
+ * Stop microphone/speaker and close tracks first, and quiesce every caller.
+ * Destruction discards any remaining queued output and frees retained tracks.
+ */
 void h2_ios_audio_destroy(h2_ios_audio_t *audio);
 
 h2_pal_result_t h2_ios_platform_read_pointer(void *user, int32_t *out_x,

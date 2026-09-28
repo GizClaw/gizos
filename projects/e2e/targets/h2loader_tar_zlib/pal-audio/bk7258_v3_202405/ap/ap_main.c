@@ -38,9 +38,18 @@ static void run(void *user) {
       .audio = provider_audio, .time = runtime->time,
       .stability_ms = 30000u, .report = report};
   const int rc = h2_pal_audio_e2e_run(&config, &result);
-  const int confirm = rc == H2_AUDIO_OK
-                          ? h2_bk_h2loader_confirm_current_app(runtime)
-                          : H2_PAL_ERR_INVALID_STATE;
+  printf("H2_PAL_AUDIO_STAGE stage=run_done rc=%d\n", rc);
+  fflush(stdout);
+  int confirm = H2_PAL_ERR_INVALID_STATE;
+  if (rc == H2_AUDIO_OK) {
+    printf("H2_PAL_AUDIO_STAGE stage=confirm_begin\n");
+    fflush(stdout);
+    confirm = h2_bk_h2loader_confirm_current_app(runtime);
+    printf("H2_PAL_AUDIO_STAGE stage=confirm_end rc=%d\n", confirm);
+  } else {
+    printf("H2_PAL_AUDIO_STAGE stage=confirm_skipped rc=%d\n", rc);
+  }
+  fflush(stdout);
   for (;;) {
     for (size_t i = 0u; i < H2_PAL_AUDIO_E2E_CASE_COUNT; ++i) {
       const h2_pal_audio_e2e_case_result_t *item = &result.cases[i];

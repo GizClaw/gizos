@@ -20,7 +20,19 @@ typedef struct h2_android_audio_track {
   int16_t *pending_samples;
   uint32_t pending_frame_count;
   uint32_t pending_frame_offset;
+  h2_pal_mem_api_t allocator;
 } h2_android_audio_track_t;
+
+static void *android_track_alloc(h2_android_audio_track_t *track, size_t bytes) {
+  return track->allocator.vtable != NULL
+      ? h2_pal_mem_alloc(&track->allocator, bytes) : malloc(bytes);
+}
+
+static void android_track_free(h2_android_audio_track_t *track, void *ptr) {
+  if (track->allocator.vtable != NULL)
+    h2_pal_mem_free(&track->allocator, ptr);
+  else free(ptr);
+}
 
 struct h2_android_platform {
   pthread_mutex_t mutex;
@@ -211,7 +223,7 @@ static int android_audio_track_flush_pending(h2_android_audio_track_t *track,
     }
     track->pending_frame_offset += (uint32_t)result;
   }
-  free(track->pending_samples);
+  android_track_free(track, track->pending_samples);
   track->pending_samples = NULL;
   track->pending_frame_count = 0u;
   track->pending_frame_offset = 0u;
@@ -239,7 +251,7 @@ static int android_audio_track_write(h2_pal_audio_track_t *base,
     return pending_result;
   }
 
-  int16_t *samples = malloc(frame->bytes);
+  int16_t *samples = android_track_alloc(track, frame->bytes);
   if (samples == NULL) {
     return H2_AUDIO_ERR_NO_MEMORY;
   }
@@ -270,19 +282,19 @@ static int android_audio_track_write(h2_pal_audio_track_t *base,
         track->pending_frame_offset = written;
         return H2_PAL_OK;
       }
-      free(samples);
+      android_track_free(track, samples);
       return result == 0
                  ? H2_AUDIO_ERR_WOULD_BLOCK
                  : h2_android_audio_map_aaudio_write_result(
                        result, AAUDIO_ERROR_TIMEOUT);
     }
     if ((uint32_t)result > frame->samples_per_channel - written) {
-      free(samples);
+      android_track_free(track, samples);
       return H2_AUDIO_ERR_IO;
     }
     written += (uint32_t)result;
   }
-  free(samples);
+  android_track_free(track, samples);
   return H2_PAL_OK;
 }
 
@@ -343,13 +355,13 @@ static int android_audio_track_close(h2_pal_audio_track_t *base) {
   h2_android_platform_t *host = track->host;
   (void)AAudioStream_requestStop(track->stream);
   const aaudio_result_t close_result = AAudioStream_close(track->stream);
-  free(track->pending_samples);
+  android_track_free(track, track->pending_samples);
   pthread_mutex_lock(&host->mutex);
   if (host->audio_track == track) {
     host->audio_track = NULL;
   }
   pthread_mutex_unlock(&host->mutex);
-  free(track);
+  android_track_free(track, track);
   return h2_android_audio_map_aaudio_io_result(close_result);
 }
 
@@ -358,7 +370,11 @@ static int android_audio_create_track(void *user,
                                       h2_pal_audio_track_t **out_track) {
   h2_android_platform_t *host = user;
   if (host == NULL || out_track == NULL ||
-      h2_android_audio_validate_track_config(config) != H2_PAL_OK) {
+      h2_android_audio_validate_track_config(config) != H2_PAL_OK ||
+      (config->allocator != NULL &&
+       (config->allocator->vtable == NULL ||
+        config->allocator->vtable->alloc == NULL ||
+        config->allocator->vtable->free == NULL))) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
   pthread_mutex_lock(&host->mutex);
@@ -405,11 +421,15 @@ static int android_audio_create_track(void *user,
     return mapped_open_result != H2_PAL_OK ? mapped_open_result
                                            : H2_AUDIO_ERR_UNSUPPORTED;
   }
-  h2_android_audio_track_t *track = calloc(1u, sizeof(*track));
+  h2_android_audio_track_t *track = config->allocator != NULL
+      ? h2_pal_mem_alloc(config->allocator, sizeof(*track))
+      : malloc(sizeof(*track));
   if (track == NULL) {
     (void)AAudioStream_close(stream);
     return H2_AUDIO_ERR_NO_MEMORY;
   }
+  memset(track, 0, sizeof(*track));
+  if (config->allocator != NULL) track->allocator = *config->allocator;
   track->base = (h2_pal_audio_track_t){
       .user = track,
       .audio = &host->audio,
@@ -423,11 +443,50 @@ static int android_audio_create_track(void *user,
   track->stream = stream;
   track->format = config->format;
   track->volume_factor_milli = config->volume_factor_milli;
+  /* AAudio requires its output buffer to be primed before starting. Fill it
+   * with silence, so a single caller PCM frame can play and drain without
+   * another caller write. Preserve the requested native buffer capacity. */
+  const int32_t prime_frames = AAudioStream_getBufferSizeInFrames(stream);
+  if (prime_frames <= 0 || (size_t)prime_frames >
+      SIZE_MAX / (sizeof(int16_t) * config->format.channels)) {
+    (void)AAudioStream_close(stream);
+    android_track_free(track, track);
+    return H2_AUDIO_ERR_IO;
+  }
+  const size_t prime_bytes = (size_t)prime_frames *
+      config->format.channels * sizeof(int16_t);
+  int16_t *silence = android_track_alloc(track, prime_bytes);
+  if (silence == NULL) {
+    (void)AAudioStream_close(stream);
+    android_track_free(track, track);
+    return H2_AUDIO_ERR_NO_MEMORY;
+  }
+  memset(silence, 0, prime_bytes);
+  int32_t primed = 0;
+  int prime_result = H2_PAL_OK;
+  while (primed < prime_frames) {
+    const aaudio_result_t written = AAudioStream_write(
+        stream, silence + (size_t)primed * config->format.channels,
+        prime_frames - primed, 0);
+    if (written <= 0 || written > prime_frames - primed) {
+      prime_result = written == 0 ? H2_AUDIO_ERR_WOULD_BLOCK :
+          written < 0 ? h2_android_audio_map_aaudio_write_result(
+              written, AAUDIO_ERROR_TIMEOUT) : H2_AUDIO_ERR_IO;
+      break;
+    }
+    primed += written;
+  }
+  android_track_free(track, silence);
+  if (prime_result != H2_PAL_OK) {
+    (void)AAudioStream_close(stream);
+    android_track_free(track, track);
+    return prime_result;
+  }
   const int start_result = h2_android_audio_map_aaudio_io_result(
       AAudioStream_requestStart(stream));
   if (start_result != H2_PAL_OK) {
     (void)AAudioStream_close(stream);
-    free(track);
+    android_track_free(track, track);
     return start_result;
   }
   pthread_mutex_lock(&host->mutex);

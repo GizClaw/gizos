@@ -22,3 +22,4 @@ H2_PAL_AUDIO_CASE(SPEAKER_STOP, "speaker-stop")
 H2_PAL_AUDIO_CASE(RESOURCE_CHURN, "resource-churn")
 H2_PAL_AUDIO_CASE(STABILITY, "stability")
 H2_PAL_AUDIO_CASE(CLEANUP, "cleanup")
+/* Keep a physical source line after the final expansion for coverage maps. */

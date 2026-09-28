@@ -49,6 +49,9 @@ def verify(report, registry, platform):
     assert report["mic_frames"] >= 2 and report["speaker_frames"] >= 2
     assert report["stability_elapsed_ms"] >= 30000
     assert report["output_peak"] > 0
+    assert report["allocator_probe_passed"] == report["allocator_failure_rejected"] == 1
+    assert report["allocator_allocations"] > 0
+    assert report["allocator_allocations"] == report["allocator_frees"]
 
 
 def ios(args, output):

@@ -30,6 +30,15 @@ cc_test(
     deps = [":pal_audio_e2e"],
 )
 
+cc_test(
+    name = "cleanup_once_test",
+    srcs = ["tests/test_cleanup_once.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":pal_audio_e2e"],
+)
+
 exports_files(["include/h2_pal_audio_cases.inc"])
 
 py_test(
