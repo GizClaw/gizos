@@ -218,6 +218,12 @@ h2_pal_result_t h2_peer_portable_service_datagram(h2_pal_webrtc_peer_t *peer,
 }
 
 h2_pal_result_t
+h2_peer_portable_channel_prepare(h2_pal_webrtc_channel_t *channel) {
+  assert(channel != NULL && channel->owner != NULL);
+  return H2_PAL_OK;
+}
+
+h2_pal_result_t
 h2_peer_portable_channel_open(h2_pal_webrtc_channel_t *channel) {
   fixture_t *f = protocol(channel->owner);
   if (h2_atomic_exchange(&f->terminal_next_open, 0)) {

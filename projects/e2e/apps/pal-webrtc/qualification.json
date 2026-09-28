@@ -49,8 +49,8 @@
       "platform": "devkit",
       "status": "PASS",
       "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/devkit/evidence/qualified.json",
-      "sha256": "748d57baffdb7c8798828be5458f1edc754d79432c2032745f276eb1544fba0e",
-      "source_matches_current": false
+      "sha256": "e8014b0963447876067bfad2203dcfa153559188cbc9ce63d048639fe7e4067d",
+      "source_matches_current": true
     },
     {
       "platform": "bk7258",
@@ -62,11 +62,9 @@
     }
   ],
   "remaining": [
-    "Final DevKit artifact installation and normal App reboot validation.",
     "Final BK7258 artifact installation and normal App reboot, each including 43 cases and a 600-second active Pion liveness run; verify Loader/Stage/coredump invariants."
   ],
   "requires_source_refresh": [
-    "devkit",
     "bk7258"
   ]
 }
