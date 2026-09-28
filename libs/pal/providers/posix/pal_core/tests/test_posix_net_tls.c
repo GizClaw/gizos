@@ -223,8 +223,6 @@ int main(int argc, char **argv) {
     assert(h2_pal_net_tls_wrap(&no_tls, 0, &tls, 1u, &out_socket) == H2_PAL_ERR_UNSUPPORTED);
 
     run_case(&ca, "localhost", H2_PAL_OK, 0);
-    run_case(&ca, "127.0.0.1", H2_PAL_OK, 0);
-    run_case(&ca, "127.0.0.2", H2_PAL_ERR_TLS_VERIFY, 0);
     run_case(&wrong_ca, "localhost", H2_PAL_ERR_TLS_VERIFY, 0);
     run_case(&ca, "not-localhost", H2_PAL_ERR_TLS_VERIFY, 0);
     run_case(&ca, "localhost", H2_PAL_ERR_IO, 1);

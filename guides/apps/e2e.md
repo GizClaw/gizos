@@ -152,10 +152,6 @@ Portable/desktop tests 证明 case contract、provider assembly、parser、failu
 
 设置 `H2_IOS_SIMULATOR_UDID` 或 `H2_ANDROID_SERIAL` 后，使用 `make bazel-test-ios_pal_core_simulator_test` / `make bazel-test-android_pal_core_simulator_test`。 这些入口要求已准备好的测试模拟器，属于 `manual`，每次真实执行并检查完整 case 清单、 清理状态和资源恢复。详情见 `projects/e2e/libs/pal-core-mobile/README.md`。
 
-## PAL HTTP
-
-`pal-http` 独立验收 HTTP request/response_free 和所有 request 字段，包括七种方法、字节 span、三种响应内存模式、流式 byte count、header/read callback 错误传播、取消、整体 deadline/retry、重定向、证书验证与资源释放。App 只借用 Runtime/PAL；`projects/e2e/libs/pal-http-fixture` 提供隔离 session 的可重复 HTTP/HTTPS 服务，host/browser 默认只绑定 loopback。Browser 使用真实 Fetch/CORS，只信任该次 fixture 的指定 SPKI，仍必须拒绝独立的不受信任证书。不存在的网卡必须显式报错；Browser 的绑定拒绝不代表支持物理网卡选择。设备入口只借用已有 Wi-Fi 配置和 Board Net provider，不更改 provisioning。每端必须完整运行同一 registry 并保留对应 artifact SHA 的结构化 receipt，构建成功不能替代实测。
-
 ## PAL Storage
 
 `projects/e2e/apps/pal-storage` 是独立 portable App，覆盖 FileSystem 的 11 个 vtable 操作，以及 Preferences API 的 open 和 namespace 的 16 个方法，共 28 项。稳定 registry 包含 30 个必选 case；28 个操作的完整映射由独立 public-header inventory 测试校验。Disk 的分区擦写属于后续独立资格领域，不计入本 App。

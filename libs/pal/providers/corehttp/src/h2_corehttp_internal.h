@@ -70,7 +70,6 @@ struct h2_corehttp_exchange {
     bool retry_available;
     bool redirect_available;
     bool body_delivered;
-    bool callback_failed;
     size_t total_read;
 };
 

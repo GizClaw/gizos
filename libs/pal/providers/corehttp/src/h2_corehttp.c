@@ -428,12 +428,12 @@ static h2_pal_result_t perform_attempt(
     size_t *out_redirect_len,
     bool *out_cross_origin,
     bool *out_downgrade,
-    bool *out_retry_forbidden) {
+    bool *out_body_delivered) {
     *out_redirect = NULL;
     *out_redirect_len = 0u;
     *out_cross_origin = false;
     *out_downgrade = false;
-    *out_retry_forbidden = false;
+    *out_body_delivered = false;
     if (h2_pal_http_request_is_canceled(request)) {
         return H2_PAL_ERR_CLOSED;
     }
@@ -512,7 +512,7 @@ static h2_pal_result_t perform_attempt(
         (void)h2_pal_log_write(provider->config.log, H2_PAL_LOG_ERROR,
                                "corehttp", message);
     }
-    *out_retry_forbidden = exchange.body_delivered || exchange.callback_failed;
+    *out_body_delivered = exchange.body_delivered;
     h2_pal_mem_free(provider->config.allocator, exchange.header_name);
     h2_pal_mem_free(provider->config.allocator, exchange.header_value);
     h2_pal_mem_free(provider->config.allocator, exchange.location);
@@ -566,16 +566,16 @@ static int corehttp_request(
         size_t redirect_len = 0u;
         bool cross_origin = false;
         bool downgrade = false;
-        bool retry_forbidden = false;
+        bool body_delivered = false;
         rc = perform_attempt(
             provider, request, out_response, url_data, url_len, method, body,
             body_len, deadline_ms, retries_left > 0u,
             redirects < provider->config.max_redirects,
             forward_authorization, &redirect, &redirect_len, &cross_origin,
-            &downgrade, &retry_forbidden);
+            &downgrade, &body_delivered);
         if (rc != H2_PAL_OK) {
             h2_pal_mem_free(provider->config.allocator, redirect);
-            if (retries_left > 0u && !retry_forbidden &&
+            if (retries_left > 0u && !body_delivered &&
                 !h2_pal_http_request_is_canceled(request) &&
                 retryable_result(rc)) {
                 retries_left -= 1u;
@@ -615,7 +615,7 @@ static int corehttp_request(
         }
 
         if (retryable_status(out_response->status_code) &&
-            retries_left > 0u && !retry_forbidden) {
+            retries_left > 0u && !body_delivered) {
             retries_left -= 1u;
             free_response_body(out_response);
             continue;

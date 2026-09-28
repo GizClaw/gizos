@@ -207,7 +207,6 @@ static int parser_header_value_complete(llhttp_t *parser) {
         exchange->request, exchange->header_name,
         exchange->header_name_len, value, value_len);
     if (rc != H2_PAL_OK) {
-        exchange->callback_failed = true;
         return parser_fail(exchange, (h2_pal_result_t)rc);
     }
     if (exchange->capture_location) {
@@ -294,9 +293,6 @@ static int deliver_body(
                 remaining = difference > SIZE_MAX ? SIZE_MAX
                                                   : (size_t)difference;
             }
-            /* Bytes have escaped to the consumer even when it returns an
-             * error. Retrying would deliver duplicate data/callback effects. */
-            exchange->body_delivered = true;
             int rc = request->read_cb(request->user, request, chunk, chunk_len,
                                       total, remaining);
             if (rc != H2_PAL_OK) {
@@ -304,6 +300,7 @@ static int deliver_body(
             }
             exchange->total_read = total;
             response->body_len = total;
+            exchange->body_delivered = true;
             offset += chunk_len;
         }
         return H2_PAL_OK;
