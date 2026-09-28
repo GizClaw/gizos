@@ -51,6 +51,13 @@ typedef struct h2_pal_http_request h2_pal_http_request_t;
 /** Return non-zero to cancel an in-flight request. */
 typedef int (*h2_pal_http_cancel_fn)(void *user);
 
+/**
+ * Consume borrowed body bytes synchronously. total_read includes this chunk;
+ * remaining is zero for an unknown Content-Length, otherwise the bytes left.
+ * Returning any non-OK value aborts the request with that exact result. A
+ * backend never retries after bytes have been delivered to this callback and
+ * never retains the callback or user context after request() returns.
+ */
 typedef int (*h2_pal_http_read_fn)(
     void *user,
     const h2_pal_http_request_t *request,
@@ -73,6 +80,22 @@ typedef int (*h2_pal_http_response_header_fn)(
     h2_pal_http_str_t name,
     h2_pal_http_str_t value);
 
+/**
+ * Borrowed synchronous request inputs; all spans remain valid until return.
+ * URL and header spans do not require NUL termination. A URL containing NUL,
+ * whitespace or control bytes is invalid. Providers must not silently discard
+ * interface_name: unsupported routing returns an error before a request starts.
+ *
+ * A positive timeout_ms bounds the complete call, including redirects and
+ * retries; a non-positive value selects the provider's finite default.
+ * retry_count is the number of additional attempts, not the total attempts.
+ * Cancellation returns CLOSED and stops subsequent callback delivery.
+ *
+ * Response modes in precedence order: read_cb streams bytes; response_buf
+ * receives bytes without transferring ownership; response_allocator (or the
+ * allocator alias) owns an allocated body; no destination counts and discards
+ * bytes. chunk_buf optionally bounds streaming delivery and is borrowed.
+ */
 typedef struct h2_pal_http_request {
     h2_pal_http_method_t method;
     h2_pal_http_str_t url;
@@ -143,6 +166,14 @@ static inline int h2_pal_http_deliver_response_header(
         request->response_header_user, request, header_name, header_value);
 }
 
+/**
+ * Response from a completed synchronous request. HTTP status errors remain
+ * responses (request returns OK); transport and callback errors are PAL errors.
+ * content_length is -1 when unknown. body_len counts delivered body bytes even
+ * in streaming/discard mode, where body is NULL. allocator is non-NULL only
+ * when the response owns body; caller-provided buffers are never freed.
+ * Release every response with response_free, including after a failed request.
+ */
 typedef struct h2_pal_http_response {
     int status_code;
     int64_t content_length;
@@ -153,6 +184,7 @@ typedef struct h2_pal_http_response {
 
 typedef struct h2_pal_http_vtable {
     int (*request)(void *user, const h2_pal_http_request_t *request, h2_pal_http_response_t *out_response);
+    /** Release owned body and reset every field; NULL and repeated calls are safe. */
     void (*response_free)(void *user, h2_pal_http_response_t *response);
 } h2_pal_http_vtable_t;
 

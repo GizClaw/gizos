@@ -1,0 +1,49 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+_HOST = select({
+    "//tools/bazel/platforms:host_linux_target_linux": [],
+    "//tools/bazel/platforms:host_macos_target_macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+cc_binary(
+    name = "pal_http",
+    srcs = ["main.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = _HOST,
+    deps = [
+        "//libs/pal/providers/corehttp",
+        "//libs/pal/providers/desktop/pal_core",
+        "//libs/pal/providers/wolfssl",
+        "//projects/e2e/apps/pal-http/app:pal_http_e2e",
+    ] + select({
+        "@platforms//os:macos": ["//libs/pal/providers/darwin/pal_core:host_os"],
+        "//conditions:default": ["//libs/pal/providers/linux/pal_core:host_os"],
+    }),
+)
+
+py_test(
+    name = "desktop_test",
+    srcs = ["run_desktop.py"],
+    args = [
+        "--binary",
+        "$(location :pal_http)",
+        "--cases",
+        "$(location //projects/e2e/apps/pal-http/app:include/h2_pal_http_cases.inc)",
+    ],
+    data = [
+        ":pal_http",
+        "//projects/e2e/apps/pal-http/app:include/h2_pal_http_cases.inc",
+    ],
+    legacy_create_init = 0,
+    main = "run_desktop.py",
+    target_compatible_with = _HOST,
+    deps = ["//projects/e2e/libs/pal-http-fixture:fixture"],
+)
+
+exports_files(["run_desktop.py"])

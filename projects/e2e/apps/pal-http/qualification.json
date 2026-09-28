@@ -1,0 +1,36 @@
+{
+  "schema": 1,
+  "operation_count": 2,
+  "case_count": 44,
+  "qualified": false,
+  "platforms": {
+    "macos": {
+      "status": "PASS",
+      "passed": 44,
+      "receipt": "projects/e2e/targets/cc_binary/pal-http/evidence/qualified.json",
+      "receipt_sha256": "6bc1aa46f07ee617d4d7bfaeeb33540d217e35fccc1d6d639586bed935d3ccd2"
+    },
+    "wasm": {
+      "status": "PASS",
+      "passed": 44,
+      "receipt": "projects/e2e/targets/pkg_tar/pal-http/evidence/qualified.json",
+      "receipt_sha256": "d81d7095d3878d16de8f4c090d8e3f12aa83b0972e8a13e2dcb5b2cf0bb83904"
+    },
+    "ios": {
+      "status": "NOT_RUN",
+      "passed": 0
+    },
+    "android": {
+      "status": "NOT_RUN",
+      "passed": 0
+    },
+    "devkit": {
+      "status": "NOT_RUN",
+      "passed": 0
+    },
+    "bk7258": {
+      "status": "NOT_RUN",
+      "passed": 0
+    }
+  }
+}

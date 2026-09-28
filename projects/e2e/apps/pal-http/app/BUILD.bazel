@@ -1,0 +1,47 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "pal_http_e2e",
+    srcs = ["src/h2_pal_http_e2e.c"],
+    hdrs = [
+        "include/h2_pal_http_cases.inc",
+        "include/h2_pal_http_e2e.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [
+        "//libs/pal",
+        "//libs/runtime",
+    ],
+)
+
+py_test(
+    name = "interface_coverage_test",
+    srcs = ["tests/test_interface_coverage.py"],
+    data = [
+        "api_coverage.json",
+        "include/h2_pal_http_cases.inc",
+        "src/h2_pal_http_e2e.c",
+        "//libs/pal:pal_header_files",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_interface_coverage.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+exports_files(["include/h2_pal_http_cases.inc"])
+
+cc_test(
+    name = "reject_missing_test",
+    srcs = ["tests/test_reject_missing.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":pal_http_e2e"],
+)

@@ -133,7 +133,8 @@ EM_JS(void, h2_web_http_start_js,
     });
     // With Content-Encoding the header counts compressed bytes while the
     // body is decoded, so the length is unknown.
-    const length = Number(response.headers.get('content-length'));
+    const lengthText = response.headers.get('content-length');
+    const length = lengthText === null ? NaN : Number(lengthText);
     if (!response.headers.has('content-encoding') &&
         Number.isSafeInteger(length) && length >= 0) {
       entry.contentLength = length;
@@ -496,6 +497,7 @@ static h2_pal_result_t h2_web_http_store(h2_web_http_exchange_t *exchange,
       free(scratch);
       if (result != H2_PAL_OK)
         return result;
+      response->body_len = body->total;
       continue;
     }
     if (request->response_buf != NULL) {
@@ -663,7 +665,7 @@ h2_web_http_attempt(h2_web_http_exchange_t *exchange,
   }
   out_response->status_code = status;
   out_response->content_length =
-      content_length >= 0.0 ? (int64_t)content_length : (int64_t)body.total;
+      content_length >= 0.0 ? (int64_t)content_length : -1;
   return H2_PAL_OK;
 }
 
@@ -684,6 +686,13 @@ static int h2_web_http_request(void *user,
       (request->response_buf == NULL && request->response_buf_cap != 0u) ||
       request->url.len > UINT32_MAX || request->body_len > UINT32_MAX) {
     return H2_PAL_ERR_INVALID_ARG;
+  }
+  // The URL is a byte span. Reject embedded controls before UTF8ToString can
+  // truncate it or fetch can reinterpret it relative to the document URL.
+  for (size_t index = 0u; index < request->url.len; ++index) {
+    const unsigned char value = (unsigned char)request->url.data[index];
+    if (value <= 0x20u || value == 0x7fu)
+      return H2_PAL_ERR_INVALID_ARG;
   }
   if (h2_pal_http_request_is_canceled(request)) {
     return H2_PAL_ERR_CLOSED;
