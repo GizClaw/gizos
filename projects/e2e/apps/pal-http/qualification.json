@@ -2,7 +2,7 @@
   "schema": 1,
   "operation_count": 2,
   "case_count": 45,
-  "qualified": false,
+  "qualified": true,
   "platforms": {
     "macos": {
       "status": "PASS",
@@ -32,18 +32,17 @@
       "environment_receipt": "projects/e2e/targets/android_binary/pal-http/evidence/environment.json",
       "environment_sha256": "e2a673fbbc876fa715a6e70ee2f150baa643aeb8cfce946531b94a512ae52936"
     },
+    "devkit": {
+      "status": "PASS",
+      "passed": 45,
+      "receipt": "projects/e2e/targets/h2loader_tar_zlib/pal-http/devkit/evidence/qualified.json",
+      "receipt_sha256": "0136e6f96cd525bf287a3d61c01f9db0e6f8d4a08fb2eea50d953fd09771f12e"
+    },
     "bk7258": {
       "status": "PASS",
       "passed": 45,
       "receipt": "projects/e2e/targets/h2loader_tar_zlib/pal-http/bk7258_v3_202405/evidence/qualified.json",
       "receipt_sha256": "4e901f9dab91258df24bc9ec633c9136803230807110508ce68a7042b7c30f6c"
-    },
-    "devkit": {
-      "status": "PENDING_REVALIDATION",
-      "reason": "r5 built and installed; recovering management connection before complete revised TLS-proof qualification",
-      "previous_receipt": "projects/e2e/targets/h2loader_tar_zlib/pal-http/devkit/evidence/qualified.json",
-      "previous_receipt_sha256": "ef2457886c6a0ab0777244b51a65b62c340afed2b450353a84333a17184ec1df",
-      "previous_evidence_scope": "r4 original assertions only; does not qualify the revised TLS rejection proof"
     }
   }
 }
