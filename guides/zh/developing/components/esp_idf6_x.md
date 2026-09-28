@@ -339,3 +339,7 @@ ESP Wi-Fi admission 与 WebRTC/H2Peer singleton 各使用一个文件级 static 
 ### Storage 资格
 
 DevKit 的 `pal-storage` managed App 使用板载 Flash 上的 LittleFS 与独立 pref store，不需要 SD 卡。LittleFS 的目录 clear 与目录 remove 在既有 internal-stack safe-call 中完成；空长度 read/write 按 public wrapper 允许 NULL buffer。测试只清理 `/data/pal-storage` 子目录，整分区 format 仍属于显式 board policy。真实两次 boot 的资格结果位于 `projects/e2e/targets/h2loader_tar_zlib/pal-storage/devkit/evidence`。
+
+Crypto 的 `random(NULL, 0)` 是成功 no-op；ESP adapter 在零长度时不调用要求非空 buffer 的 `esp_fill_random`，避免合法 PAL 边界触发 SDK assert。`pal-crypto` DevKit E2E 覆盖该边界并验证完整 15 操作 / 22 case，同一 App 还在其他五个平台执行。
+
+X25519 raw key agreement 对格式错误或低阶远端公钥的 PSA INVALID_ARGUMENT 转换为 PAL FORMAT；失败路径清零 shared-secret 输出，成功路径仍校验并拒绝全零 shared secret。

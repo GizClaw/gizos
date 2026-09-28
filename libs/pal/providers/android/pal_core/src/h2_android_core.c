@@ -85,7 +85,9 @@ h2_pal_result_t h2_android_platform_task_allocation_fault(int after) {
   return h2_posix_core_task_allocation_fault(after);
 }
 h2_pal_result_t h2_android_platform_core_shutdown(void) {
-  return h2_posix_core_shutdown();
+  h2_pal_result_t rc = h2_posix_core_shutdown();
+  if (rc == H2_PAL_OK) h2_android_platform_crypto_shutdown();
+  return rc;
 }
 h2_pal_result_t h2_android_platform_get_resource_stats(
     h2_android_platform_resource_stats_t *out) {

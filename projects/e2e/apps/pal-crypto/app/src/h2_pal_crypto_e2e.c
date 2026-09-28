@@ -392,8 +392,8 @@ static int random_bounds(const h2_pal_crypto_api_t *api) {
   CALL(h2_pal_crypto_random(api, data + 1, 257));
   VERIFY(data[0] == 0xa5 && data[258] == 0xa5);
   VERIFY(api->vtable->random(api->user, NULL, 1) == H2_PAL_ERR_INVALID_ARG);
-  VERIFY(api->vtable->random(api->user, data, (size_t)INT_MAX + 1) ==
-         H2_PAL_ERR_INVALID_ARG);
+  /* Random has no portable INT_MAX length limit. Never pass a span larger
+   * than its actual allocation merely to probe a backend-specific limit. */
   return H2_PAL_OK;
 }
 static int random_distinct(const h2_pal_crypto_api_t *api) {
@@ -418,11 +418,11 @@ static int x25519_exchange(const h2_pal_crypto_api_t *api) {
   return H2_PAL_OK;
 }
 static int hkdf_limits(const h2_pal_crypto_api_t *api) {
-  uint8_t byte = 1, out[42];
+  uint8_t byte = 1, out[8161];
   VERIFY(h2_pal_crypto_hkdf_sha256(api, &byte, 1, NULL, 0, NULL, 0, out,
                                    8161) == H2_PAL_ERR_INVALID_ARG);
-  VERIFY(h2_pal_crypto_hkdf_sha256(api, NULL, 1, NULL, 0, NULL, 0, out,
-                                   sizeof(out)) == H2_PAL_ERR_INVALID_ARG);
+  VERIFY(h2_pal_crypto_hkdf_sha256(api, NULL, 1, NULL, 0, NULL, 0, out, 42) ==
+         H2_PAL_ERR_INVALID_ARG);
   CALL(h2_pal_crypto_hkdf_sha256(api, NULL, 0, NULL, 0, NULL, 0, NULL, 0));
   return H2_PAL_OK;
 }
@@ -612,6 +612,8 @@ h2_pal_result_t h2_pal_crypto_e2e_run(h2_runtime_t *runtime,
       ++out->blocked;
       continue;
     }
+    /* A stuck or crashing backend still leaves a last-case diagnostic. */
+    (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-crypto", registry[i].id);
     int rc = registry[i].run(api);
     out->cases[i].result = (h2_pal_result_t)rc;
     if (!rc) {

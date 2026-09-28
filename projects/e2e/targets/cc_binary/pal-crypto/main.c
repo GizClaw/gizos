@@ -14,7 +14,8 @@
 #include <string.h>
 
 int main(void) {
-  const h2_wolfssl_config_t crypto = {.mem = *h2_desktop_platform_default_allocator(), .entropy = host_entropy};
+  const h2_wolfssl_config_t crypto = {
+      .mem = *h2_desktop_platform_default_allocator(), .entropy = host_entropy};
   if (h2_wolfssl_init(&crypto) != H2_PAL_OK)
     return 2;
   h2_runtime_config_t config = h2_smoke_host_runtime_config(

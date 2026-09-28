@@ -56,7 +56,7 @@ def swift_package(args, headers):
         files[framework + "Modules/module.modulemap"] = (f'framework module {args.name} {{\n'
             '  umbrella header "h2_ios_platform.h"\n  export *\n  module * { export * }\n'
             '  link framework "UIKit"\n  link framework "Foundation"\n'
-            '  link framework "CoreGraphics"\n  link framework "CoreBluetooth"\n  link "c++"\n}\n').encode()
+            '  link framework "CoreGraphics"\n  link framework "CoreBluetooth"\n  link framework "Security"\n  link "c++"\n}\n').encode()
     bundle = Path(args.bundle)
     for name, content in files.items():
         target = bundle / name

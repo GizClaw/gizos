@@ -1,0 +1,126 @@
+{
+  "platform": "wasm-chromium",
+  "contract": 1,
+  "operations": 15,
+  "passed": 22,
+  "failed": 0,
+  "blocked": 0,
+  "not_run": 0,
+  "complete": 1,
+  "qualified": 1,
+  "rc": 0,
+  "teardown": 0,
+  "browser_pid": 57387,
+  "cases": [
+    {
+      "id": "pal.crypto.arguments",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.crypto.random.bounds",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.crypto.random.distinct",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.crypto.x25519.known-answer",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.crypto.x25519.exchange",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.crypto.hkdf.known-answer",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.crypto.hkdf.limits",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.crypto.aead.aes128-known-answer",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.crypto.aead.aes256-known-answer",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.crypto.aead.chacha-known-answer",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.crypto.aead.aes128-boundaries",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.crypto.aead.aes256-boundaries",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.crypto.aead.chacha-boundaries",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.crypto.aead.capacity",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.crypto.aes-ctr.known-answer",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.crypto.hashes.known-answer",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.crypto.p256.derive",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.crypto.p256.generate",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.crypto.p256.invalid",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.crypto.p256.sign-verify",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.crypto.p256.known-signature",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "pal.crypto.churn",
+      "status": "PASS",
+      "rc": 0
+    }
+  ]
+}

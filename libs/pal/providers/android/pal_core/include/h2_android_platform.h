@@ -82,6 +82,15 @@ const h2_pal_fs_api_t *h2_android_storage_fs_api(h2_android_storage_t *storage);
 const h2_pal_pref_api_t *h2_android_storage_pref_api(h2_android_storage_t *storage);
 void h2_android_storage_destroy(h2_android_storage_t *storage);
 
+/** Return a borrowed process-wide Crypto provider, initialized on first use
+ * with OS secure entropy. Initialization failure returns the canonical
+ * unsupported API. Concurrent operations are supported; the owner must quiesce
+ * all users before shutdown. The next getter may initialize a new lifetime. */
+const h2_pal_crypto_api_t *h2_android_platform_crypto_api(void);
+/** Retire the provider after every Runtime and Crypto operation has stopped.
+ * Idempotent; also invoked by successful platform_core_shutdown(). */
+void h2_android_platform_crypto_shutdown(void);
+
 #ifdef __cplusplus
 }
 #endif

@@ -43,6 +43,7 @@ cc_library(
         "src/h2_android_audio_decoder.c",
         "src/h2_android_platform.c",
         "src/h2_android_core.c",
+        "src/h2_android_crypto.c",
         "src/h2_android_storage.c",
         "src/h2_android_video_decoder.c",
     ],
@@ -64,6 +65,8 @@ cc_library(
     target_compatible_with = ANDROID_ARM64_ARTIFACT_COMPATIBILITY,
     deps = [
         ":contracts",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/wolfssl:wolfcrypt",
         "//libs/pal",
         "//libs/pal/providers/posix/pal_core:mobile_core", "//libs/pal/providers/posix/pal_core:host_fs", "//libs/pal/providers/sqlite",
     ],

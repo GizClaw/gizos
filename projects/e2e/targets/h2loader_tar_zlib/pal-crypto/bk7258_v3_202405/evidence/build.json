@@ -1,0 +1,77 @@
+{
+  "assets": [
+    {
+      "name": "bk7258_v3_202405-pal-crypto-bk7258.update.tar.zlib",
+      "operation": "managed-install",
+      "release_suffix": ".update.tar.zlib",
+      "sha256": "9683397ccc570a5db1d4c81e989f26f640d1edb2da584b89df3f3f15545e7d31",
+      "size": 1710125
+    }
+  ],
+  "board": "bk7258_v3_202405",
+  "entry": "projects/e2e/targets/h2loader_tar_zlib/pal-crypto/bk7258_v3_202405",
+  "image": "pal-crypto",
+  "native_artifacts": [
+    {
+      "name": "ap/firmware.elf",
+      "operation": "native-debug-or-flash",
+      "sha256": "77920b53afcd493cefece70cdd34dc134cd7c8c451b47a84b209be4d40bf7cf6",
+      "size": 12877564
+    },
+    {
+      "name": "ap/firmware.map",
+      "operation": "native-debug-or-flash",
+      "sha256": "e7984ddc3d8ecf6d9b87967e1e8436e65a60e4a61b7919d58ff8a30976578789",
+      "size": 7850870
+    },
+    {
+      "name": "ap/app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "d335433860aa44edbf233a59aace7afd65fc8604f1c4cc787780f0ce8ddd7dc2",
+      "size": 1294824
+    },
+    {
+      "name": "cp/firmware.elf",
+      "operation": "native-debug-or-flash",
+      "sha256": "964eb8751edeecca3c741d8cef6501d651224edda2b634df4712314a493368d4",
+      "size": 14369960
+    },
+    {
+      "name": "cp/firmware.map",
+      "operation": "native-debug-or-flash",
+      "sha256": "21c25410748c1c0b81ba2bf423323788d08263cb9a0a39bd6009f4052e8b7f10",
+      "size": 6809159
+    },
+    {
+      "name": "cp/app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "ff8caf58357cb41385383e2bf84eed8e3fc6544f23188494d0f80ae8c6e2e2a2",
+      "size": 1056268
+    },
+    {
+      "name": "app_ab_crc.rbl",
+      "operation": "native-debug-or-flash",
+      "sha256": "05ea876a263c1c9471d222bf7fa9b87d9192ebf2eaea3e6b8b161e25b53b4947",
+      "size": 5222400
+    },
+    {
+      "name": "all-app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "8301313c8b50a59cf28ec44fbc099b6777831c0d086977da8e170eeb0321823a",
+      "size": 5292032
+    }
+  ],
+  "package_manifest": {
+    "board": "bk7258_v3_202405",
+    "format": 1,
+    "image_sha256": "05ea876a263c1c9471d222bf7fa9b87d9192ebf2eaea3e6b8b161e25b53b4947",
+    "image_size": 5222400,
+    "role": "app",
+    "target": "bk7258",
+    "version": "pal-crypto-bk-20260928-r4"
+  },
+  "platform": "bk7258",
+  "role": "app",
+  "target": "bk7258",
+  "version": "pal-crypto-bk-20260928-r4"
+}

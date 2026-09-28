@@ -17,7 +17,7 @@ h2_runtime_config_t h2_ios_app_host_config(void) {
   config.fs = h2_pal_unsupported_fs_api();
   config.disk = h2_pal_unsupported_disk_api();
   config.pref = h2_pal_unsupported_pref_api();
-  config.crypto = h2_pal_unsupported_crypto_api();
+  config.crypto = h2_ios_platform_crypto_api();
   config.http = h2_pal_unsupported_http_api();
   config.net = h2_pal_unsupported_net_api();
   config.netif = h2_pal_unsupported_netif_api();

@@ -8,6 +8,8 @@ _WOLFCRYPT_COMPATIBILITY = select({
     "//tools/bazel/platforms:host_macos_target_macos": [],
     "//tools/bazel/platforms:host_windows_target_windows": [],
     "@platforms//cpu:wasm32": [],
+    "@platforms//os:ios": [],
+    "@platforms//os:android": [],
     "//conditions:default": ["@platforms//:incompatible"],
 })
 
