@@ -1,0 +1,32 @@
+H2_PAL_AUDIO_CASE {"id":"wrapper-arguments","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"info","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"mic-stopped-read","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"mic-gain-bounds","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"mic-gain-roundtrip","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"speaker-volume-bounds","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"speaker-volume-roundtrip","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-format-bounds","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"speaker-start","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-create","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-volume-bounds","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-volume-roundtrip","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-write-bounds","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-write","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-drain","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"mic-start","status":"PASS","detail":0,"line":0}
+warning: discarded first playback frame
+H2_PAL_AUDIO_CASE {"id":"mic-read","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"mic-gain-live","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"mic-stop","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-close","status":"PASS","detail":0,"line":0}
+desktop audio: output underflow count=0
+H2_PAL_AUDIO_CASE {"id":"speaker-stop","status":"PASS","detail":0,"line":0}
+desktop audio: output underflow count=0
+desktop audio: output underflow count=0
+desktop audio: output underflow count=0
+H2_PAL_AUDIO_CASE {"id":"resource-churn","status":"PASS","detail":0,"line":0}
+warning: discarded first playback frame
+desktop audio: output underflow count=1
+H2_PAL_AUDIO_CASE {"id":"stability","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"cleanup","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_SUMMARY {"passed":24,"failed":0,"blocked":0,"mic_frames":1498,"mic_peak":238,"mic_energy":452271666,"speaker_frames":1500,"output_peak":1120,"witness_mic_frames":1498,"witness_speaker_frames":3026,"witness_mic_peak":397,"witness_speaker_peak":224,"stability_elapsed_ms":30001}
