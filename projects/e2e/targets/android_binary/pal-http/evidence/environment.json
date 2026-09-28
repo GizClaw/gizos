@@ -18,11 +18,31 @@
     "/retry/deadline": 2,
     "/redirect/relative": 1,
     "/redirect/303": 1,
-    "/redirect/307": 1
+    "/redirect/307": 1,
+    "/tls-rejection/arm": 1,
+    "/tls-rejection/proof": 1
+  },
+  "tls_rejection": {
+    "arm": 1,
+    "run_id": "",
+    "http_requests": 0,
+    "events": [
+      {
+        "client_hello": true,
+        "certificate_presented": true,
+        "peer_alerts": [
+          48
+        ],
+        "finished": true,
+        "handshake_succeeded": false,
+        "error": "TLSV1_ALERT_UNKNOWN_CA"
+      }
+    ],
+    "verified": true
   },
   "tls_verification": "required; explicit isolated test CA; separate untrusted certificate rejected",
-  "observation_finished_at_utc": "2026-09-28T05:00:49.251387+00:00",
+  "observation_finished_at_utc": "2026-09-28T06:21:18.960060+00:00",
   "evidence_timezone": "UTC",
-  "app_sha256": "e7ac2250cd95aa80f847c338ca3bea3b65c1777cd4741bce5fc443e0e2fa3a1f",
+  "app_sha256": "7a7c5a32891e9229216d0ec76291c917f82ac57ff52a6fb9f60b790931151b5b",
   "sdk_sha256": "c1bc5bfda67da9297a76ddf25877110257f710b753e2e6e4a6c35363dceada92"
 }

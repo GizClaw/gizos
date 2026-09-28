@@ -2,47 +2,48 @@
   "schema": 1,
   "operation_count": 2,
   "case_count": 45,
-  "qualified": true,
+  "qualified": false,
   "platforms": {
     "macos": {
       "status": "PASS",
       "passed": 45,
       "receipt": "projects/e2e/targets/cc_binary/pal-http/evidence/qualified.json",
-      "receipt_sha256": "3ad88b340eacdfa3a254a1b446d76da439b83b7db04e2612c3ddfaf580b312cc"
+      "receipt_sha256": "74828c799d557c67a926ad927958cf3fd41328af010d792ba80b3a20a920af7f"
     },
     "wasm": {
       "status": "PASS",
       "passed": 45,
       "receipt": "projects/e2e/targets/pkg_tar/pal-http/evidence/qualified.json",
-      "receipt_sha256": "8bd6dd99dc72de3c60a92301d64411b2c25d9dd14072251c211b9e054af3b870"
+      "receipt_sha256": "c306f98a4af3c3e53f60bf9c807e0ad4ff74983198a3e7efe49e66473b266baa"
     },
     "ios": {
       "status": "PASS",
       "passed": 45,
       "receipt": "projects/e2e/targets/ios_application/pal-http/evidence/qualified.json",
-      "receipt_sha256": "df006bdbfe0cfa07386f9c877449c05d660760970fe7495d8a6f6944c3aec529",
+      "receipt_sha256": "1df0121ea8ebeb0d6efcd40fd8ca3b7a2abe0b2342d8a7a71f14c4e45da41386",
       "environment_receipt": "projects/e2e/targets/ios_application/pal-http/evidence/environment.json",
-      "environment_sha256": "744058746bf2eadd1508f47fbb5274c963710f5184cdc74825d5bfe4ea35b40c"
+      "environment_sha256": "58ca10e41c532c6f8f771102333f7dd237ee4c6fc4609da9e65c234bda30ffe4"
     },
     "android": {
       "status": "PASS",
       "passed": 45,
       "receipt": "projects/e2e/targets/android_binary/pal-http/evidence/qualified.json",
-      "receipt_sha256": "6b883974affb4651954e9a66645af00485d1aee2cfd44720f20934c934d93edb",
+      "receipt_sha256": "4c226c47cfd25b44842689d68e278b352328b476deb2809e65da76108e6840b9",
       "environment_receipt": "projects/e2e/targets/android_binary/pal-http/evidence/environment.json",
-      "environment_sha256": "f67d0f13f9d50a55fd316b6cff74233adb17ef86ed40fb9e21ee05a20751c47c"
-    },
-    "devkit": {
-      "status": "PASS",
-      "passed": 45,
-      "receipt": "projects/e2e/targets/h2loader_tar_zlib/pal-http/devkit/evidence/qualified.json",
-      "receipt_sha256": "ef2457886c6a0ab0777244b51a65b62c340afed2b450353a84333a17184ec1df"
+      "environment_sha256": "e2a673fbbc876fa715a6e70ee2f150baa643aeb8cfce946531b94a512ae52936"
     },
     "bk7258": {
       "status": "PASS",
       "passed": 45,
       "receipt": "projects/e2e/targets/h2loader_tar_zlib/pal-http/bk7258_v3_202405/evidence/qualified.json",
-      "receipt_sha256": "ee86cfe671959a0735994fc9be3773a828fd95ef78d97f3f165f98851057a70b"
+      "receipt_sha256": "4e901f9dab91258df24bc9ec633c9136803230807110508ce68a7042b7c30f6c"
+    },
+    "devkit": {
+      "status": "PENDING_REVALIDATION",
+      "reason": "r5 built and installed; recovering management connection before complete revised TLS-proof qualification",
+      "previous_receipt": "projects/e2e/targets/h2loader_tar_zlib/pal-http/devkit/evidence/qualified.json",
+      "previous_receipt_sha256": "ef2457886c6a0ab0777244b51a65b62c340afed2b450353a84333a17184ec1df",
+      "previous_evidence_scope": "r4 original assertions only; does not qualify the revised TLS rejection proof"
     }
   }
 }

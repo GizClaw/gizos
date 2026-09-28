@@ -7,14 +7,14 @@
   "failed": 0,
   "blocked": 0,
   "qualified": true,
-  "image_sha256": "f034025a4eba185df8001fc0b90354e202003ef862ef2d30303aa962f1cd8f99",
-  "package_sha256": "432fa9cbce75e061408f5b2a724f64e26796ddd014a7d34afb9e972cb6a05140",
-  "image_version": "pal-http-bk-20260928-r4",
-  "source_commit": "42d50285",
+  "image_sha256": "b3c94d30f2262a83f26b5e1f244783b4ce8cf9bf7644941f3f576123d86c3041",
+  "package_sha256": "7e37f3cb02e49bea4a114d1be3c87299199052d6bb2f1aff7f29f6168b7208a5",
+  "image_version": "pal-http-bk-20260928-r5",
+  "source_commit": "1a640293",
   "runs": [
     {
-      "run_id": "e8c644c7c36c7463",
-      "version": "pal-http-bk-20260928-r4",
+      "run_id": "3c9c08f9d691300a",
+      "version": "pal-http-bk-20260928-r5",
       "board": "bk7258_v3_202405",
       "uid": "c8478ca2a87c",
       "cases": [
@@ -23,315 +23,360 @@
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 0
+          "elapsed_ms": 0,
+          "request_result": 0
         },
         {
           "id": "get",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 34
+          "elapsed_ms": 122,
+          "request_result": 0
         },
         {
           "id": "post",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 22
+          "elapsed_ms": 35,
+          "request_result": 0
         },
         {
           "id": "put",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 90
+          "elapsed_ms": 47,
+          "request_result": 0
         },
         {
           "id": "patch",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 1183
+          "elapsed_ms": 35,
+          "request_result": 0
         },
         {
           "id": "delete",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 170
+          "elapsed_ms": 42,
+          "request_result": 0
         },
         {
           "id": "head",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 92
+          "elapsed_ms": 34,
+          "request_result": 0
         },
         {
           "id": "options",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 160
+          "elapsed_ms": 27,
+          "request_result": 0
         },
         {
           "id": "byte-spans",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 147
+          "elapsed_ms": 16,
+          "request_result": 0
         },
         {
           "id": "empty-body",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 211
+          "elapsed_ms": 19,
+          "request_result": 0
         },
         {
           "id": "status-404",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 232
+          "elapsed_ms": 21,
+          "request_result": 0
         },
         {
           "id": "status-503",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 219
+          "elapsed_ms": 17,
+          "request_result": 0
         },
         {
           "id": "caller-exact",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 169
+          "elapsed_ms": 34,
+          "request_result": 0
         },
         {
           "id": "caller-too-small",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 213
+          "elapsed_ms": 16,
+          "request_result": -13
         },
         {
           "id": "allocator-owned",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 154
+          "elapsed_ms": 32,
+          "request_result": 0
         },
         {
           "id": "allocator-alias",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 110
+          "elapsed_ms": 16,
+          "request_result": 0
         },
         {
           "id": "allocator-precedence",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 558
+          "elapsed_ms": 19,
+          "request_result": 0
         },
         {
           "id": "allocator-failure",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 219
+          "elapsed_ms": 90,
+          "request_result": -5
         },
         {
           "id": "stream-known",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 164
+          "elapsed_ms": 107,
+          "request_result": 0
         },
         {
           "id": "stream-chunked",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 214
+          "elapsed_ms": 1163,
+          "request_result": 0
         },
         {
           "id": "stream-no-scratch",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 211
+          "elapsed_ms": 146,
+          "request_result": 0
         },
         {
           "id": "stream-abort",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 545
+          "elapsed_ms": 119,
+          "request_result": -4
         },
         {
           "id": "header-abort",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 55
+          "elapsed_ms": 131,
+          "request_result": -4
         },
         {
           "id": "cancel-before",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 0
+          "elapsed_ms": 5,
+          "request_result": -10
         },
         {
           "id": "cancel-stream",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 26
+          "elapsed_ms": 119,
+          "request_result": -10
         },
         {
           "id": "cancel-wait",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 2015
+          "elapsed_ms": 2035,
+          "request_result": -10
         },
         {
           "id": "timeout-headers",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 2002
+          "elapsed_ms": 2024,
+          "request_result": -6
         },
         {
           "id": "timeout-body",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 2002
+          "elapsed_ms": 2029,
+          "request_result": -6
         },
         {
           "id": "truncated-body",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 25
+          "elapsed_ms": 149,
+          "request_result": -10
         },
         {
           "id": "retry-recover",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 109
+          "elapsed_ms": 226,
+          "request_result": 0
         },
         {
           "id": "retry-exhausted",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 57
+          "elapsed_ms": 240,
+          "request_result": 0
         },
         {
           "id": "retry-deadline",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 5004
+          "elapsed_ms": 5040,
+          "request_result": -6
         },
         {
           "id": "redirect-relative",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 75
+          "elapsed_ms": 146,
+          "request_result": 0
         },
         {
           "id": "redirect-post-303",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 49
+          "elapsed_ms": 75,
+          "request_result": 0
         },
         {
           "id": "redirect-post-307",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 50
+          "elapsed_ms": 424,
+          "request_result": 0
         },
         {
           "id": "https-trusted",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 1112
+          "elapsed_ms": 9816,
+          "request_result": 0
         },
         {
           "id": "https-untrusted",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 43
+          "elapsed_ms": 21,
+          "request_result": -17
         },
         {
           "id": "interface-rejected",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 1
+          "elapsed_ms": 1,
+          "request_result": -8
         },
         {
           "id": "invalid-method",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 0
+          "elapsed_ms": 0,
+          "request_result": -1
         },
         {
           "id": "invalid-url-span",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 0
+          "elapsed_ms": 0,
+          "request_result": -1
         },
         {
           "id": "invalid-header",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 0
+          "elapsed_ms": 0,
+          "request_result": -1
         },
         {
           "id": "discard-body",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 26
+          "elapsed_ms": 115,
+          "request_result": 0
         },
         {
           "id": "response-free",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 19
+          "elapsed_ms": 25,
+          "request_result": 0
         },
         {
           "id": "repeated-cleanup",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 25
+          "elapsed_ms": 47,
+          "request_result": 0
         },
         {
           "id": "callback-quiescence",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 259
+          "elapsed_ms": 30,
+          "request_result": 0
         }
       ],
       "summary": {
@@ -348,8 +393,8 @@
         "target": "bk7258",
         "device_uid": "c8478ca2a87c",
         "active_role": "app",
-        "active_version": "pal-http-bk-20260928-r4",
-        "active_checksum": "f034025a4eba185df8001fc0b90354e202003ef862ef2d30303aa962f1cd8f99",
+        "active_version": "pal-http-bk-20260928-r5",
+        "active_checksum": "b3c94d30f2262a83f26b5e1f244783b4ce8cf9bf7644941f3f576123d86c3041",
         "running_partition": "2",
         "stage_valid": "0",
         "partition_1_image_checksum": "47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb",
@@ -371,17 +416,37 @@
           "/truncated": 1,
           "/retry/recover": 2,
           "/retry/exhausted": 3,
-          "/retry/deadline": 3,
+          "/retry/deadline": 2,
           "/redirect/relative": 1,
           "/redirect/303": 1,
-          "/redirect/307": 1
+          "/redirect/307": 1,
+          "/tls-rejection/arm": 1,
+          "/tls-rejection/proof": 1
         },
-        "arrivals_valid": true
+        "arrivals_valid": true,
+        "tls_rejection": {
+          "arm": 1,
+          "run_id": "3c9c08f9d691300a",
+          "http_requests": 0,
+          "events": [
+            {
+              "client_hello": true,
+              "certificate_presented": true,
+              "peer_alerts": [
+                48
+              ],
+              "finished": true,
+              "handshake_succeeded": false,
+              "error": "TLSV1_ALERT_UNKNOWN_CA"
+            }
+          ],
+          "verified": true
+        }
       }
     },
     {
-      "run_id": "ebc457bccaf275e2",
-      "version": "pal-http-bk-20260928-r4",
+      "run_id": "b060b5af26a55ce2",
+      "version": "pal-http-bk-20260928-r5",
       "board": "bk7258_v3_202405",
       "uid": "c8478ca2a87c",
       "cases": [
@@ -390,315 +455,360 @@
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 0
+          "elapsed_ms": 0,
+          "request_result": 0
         },
         {
           "id": "get",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 164
+          "elapsed_ms": 35,
+          "request_result": 0
         },
         {
           "id": "post",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 89
+          "elapsed_ms": 21,
+          "request_result": 0
         },
         {
           "id": "put",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 1220
+          "elapsed_ms": 32,
+          "request_result": 0
         },
         {
           "id": "patch",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 177
+          "elapsed_ms": 33,
+          "request_result": 0
         },
         {
           "id": "delete",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 1175
+          "elapsed_ms": 21,
+          "request_result": 0
         },
         {
           "id": "head",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 1216
+          "elapsed_ms": 23,
+          "request_result": 0
         },
         {
           "id": "options",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 141
+          "elapsed_ms": 23,
+          "request_result": 0
         },
         {
           "id": "byte-spans",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 138
+          "elapsed_ms": 30,
+          "request_result": 0
         },
         {
           "id": "empty-body",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 128
+          "elapsed_ms": 32,
+          "request_result": 0
         },
         {
           "id": "status-404",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 154
+          "elapsed_ms": 35,
+          "request_result": 0
         },
         {
           "id": "status-503",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 148
+          "elapsed_ms": 34,
+          "request_result": 0
         },
         {
           "id": "caller-exact",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 211
+          "elapsed_ms": 27,
+          "request_result": 0
         },
         {
           "id": "caller-too-small",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 210
+          "elapsed_ms": 32,
+          "request_result": -13
         },
         {
           "id": "allocator-owned",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 233
+          "elapsed_ms": 140,
+          "request_result": 0
         },
         {
           "id": "allocator-alias",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 212
+          "elapsed_ms": 221,
+          "request_result": 0
         },
         {
           "id": "allocator-precedence",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 164
+          "elapsed_ms": 102,
+          "request_result": 0
         },
         {
           "id": "allocator-failure",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 30
+          "elapsed_ms": 106,
+          "request_result": -5
         },
         {
           "id": "stream-known",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 44
+          "elapsed_ms": 105,
+          "request_result": 0
         },
         {
           "id": "stream-chunked",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 54
+          "elapsed_ms": 33,
+          "request_result": 0
         },
         {
           "id": "stream-no-scratch",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 46
+          "elapsed_ms": 28,
+          "request_result": 0
         },
         {
           "id": "stream-abort",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 29
+          "elapsed_ms": 26,
+          "request_result": -4
         },
         {
           "id": "header-abort",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 27
+          "elapsed_ms": 117,
+          "request_result": -4
         },
         {
           "id": "cancel-before",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 7
+          "elapsed_ms": 4,
+          "request_result": -10
         },
         {
           "id": "cancel-stream",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 125
+          "elapsed_ms": 101,
+          "request_result": -10
         },
         {
           "id": "cancel-wait",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 2032
+          "elapsed_ms": 2014,
+          "request_result": -10
         },
         {
           "id": "timeout-headers",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 2049
+          "elapsed_ms": 2042,
+          "request_result": -6
         },
         {
           "id": "timeout-body",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 2081
+          "elapsed_ms": 2028,
+          "request_result": -6
         },
         {
           "id": "truncated-body",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 228
+          "elapsed_ms": 156,
+          "request_result": -10
         },
         {
           "id": "retry-recover",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 1372
+          "elapsed_ms": 247,
+          "request_result": 0
         },
         {
           "id": "retry-exhausted",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 1465
+          "elapsed_ms": 360,
+          "request_result": 0
         },
         {
           "id": "retry-deadline",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 5069
+          "elapsed_ms": 5072,
+          "request_result": -6
         },
         {
           "id": "redirect-relative",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 313
+          "elapsed_ms": 225,
+          "request_result": 0
         },
         {
           "id": "redirect-post-303",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 421
+          "elapsed_ms": 117,
+          "request_result": 0
         },
         {
           "id": "redirect-post-307",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 126
+          "elapsed_ms": 304,
+          "request_result": 0
         },
         {
           "id": "https-trusted",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 1611
+          "elapsed_ms": 6616,
+          "request_result": 0
         },
         {
           "id": "https-untrusted",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 633
+          "elapsed_ms": 22,
+          "request_result": -17
         },
         {
           "id": "interface-rejected",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 25
+          "elapsed_ms": 1,
+          "request_result": -8
         },
         {
           "id": "invalid-method",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 0
+          "elapsed_ms": 0,
+          "request_result": -1
         },
         {
           "id": "invalid-url-span",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 0
+          "elapsed_ms": 2,
+          "request_result": -1
         },
         {
           "id": "invalid-header",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 0
+          "elapsed_ms": 0,
+          "request_result": -1
         },
         {
           "id": "discard-body",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 29
+          "elapsed_ms": 150,
+          "request_result": 0
         },
         {
           "id": "response-free",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 18
+          "elapsed_ms": 63,
+          "request_result": 0
         },
         {
           "id": "repeated-cleanup",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 20
+          "elapsed_ms": 38,
+          "request_result": 0
         },
         {
           "id": "callback-quiescence",
           "status": "PASS",
           "detail": 0,
           "line": 0,
-          "elapsed_ms": 102
+          "elapsed_ms": 34,
+          "request_result": 0
         }
       ],
       "summary": {
@@ -715,8 +825,8 @@
         "target": "bk7258",
         "device_uid": "c8478ca2a87c",
         "active_role": "app",
-        "active_version": "pal-http-bk-20260928-r4",
-        "active_checksum": "f034025a4eba185df8001fc0b90354e202003ef862ef2d30303aa962f1cd8f99",
+        "active_version": "pal-http-bk-20260928-r5",
+        "active_checksum": "b3c94d30f2262a83f26b5e1f244783b4ce8cf9bf7644941f3f576123d86c3041",
         "running_partition": "2",
         "stage_valid": "0",
         "partition_1_image_checksum": "47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb",
@@ -738,12 +848,32 @@
           "/truncated": 1,
           "/retry/recover": 2,
           "/retry/exhausted": 3,
-          "/retry/deadline": 3,
+          "/retry/deadline": 2,
           "/redirect/relative": 1,
           "/redirect/303": 1,
-          "/redirect/307": 1
+          "/redirect/307": 1,
+          "/tls-rejection/arm": 1,
+          "/tls-rejection/proof": 1
         },
-        "arrivals_valid": true
+        "arrivals_valid": true,
+        "tls_rejection": {
+          "arm": 2,
+          "run_id": "b060b5af26a55ce2",
+          "http_requests": 0,
+          "events": [
+            {
+              "client_hello": true,
+              "certificate_presented": true,
+              "peer_alerts": [
+                48
+              ],
+              "finished": true,
+              "handshake_succeeded": false,
+              "error": "TLSV1_ALERT_UNKNOWN_CA"
+            }
+          ],
+          "verified": true
+        }
       }
     }
   ],
@@ -755,5 +885,5 @@
     "unchanged": true
   },
   "loader_unchanged": true,
-  "tls_verification": "required; isolated CA with AKI/SKI; independent untrusted certificate rejected"
+  "tls_verification": "TLS_VERIFY required; armed peer observed ClientHello, certificate presentation and rejection; zero successful untrusted HTTP requests"
 }
