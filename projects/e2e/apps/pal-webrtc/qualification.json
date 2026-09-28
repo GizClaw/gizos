@@ -54,17 +54,15 @@
     },
     {
       "platform": "bk7258",
-      "status": "PENDING_STABILITY",
-      "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405/evidence/qualified.json",
-      "sha256": "329e2cea3b051e683a879dbcd13d2b4bd705d7675188df016e40522fa95444c5",
-      "source_matches_current": false,
+      "status": "FAIL_STABILITY",
+      "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405/evidence/failed-r16.json",
+      "sha256": "69ef01712c88bd265913f1e13f3309ec0623f2b4fe305f9d85a669828fd0531e",
+      "source_matches_current": true,
       "conformance_status": "PASS"
     }
   ],
   "remaining": [
-    "Final BK7258 artifact installation and normal App reboot, each including 43 cases and a 600-second active Pion liveness run; verify Loader/Stage/coredump invariants."
+    "Diagnose BK r16 active liveness failure at 174 seconds (data=162, Opus=161, TIMEOUT); no new AP boot or coredump observed. Preserve unconfirmed App and Stage while diagnosing; then requalify final artifact and independent reboot."
   ],
-  "requires_source_refresh": [
-    "bk7258"
-  ]
+  "requires_source_refresh": []
 }
