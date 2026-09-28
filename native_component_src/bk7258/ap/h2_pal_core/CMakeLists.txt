@@ -152,6 +152,8 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
   MBEDTLS_POLY1305_C
   MBEDTLS_CHACHAPOLY_C
   MBEDTLS_SSL_DTLS_SRTP
+  MBEDTLS_SSL_DTLS_HELLO_VERIFY
+  MBEDTLS_SSL_COOKIE_C
   MBEDTLS_SSL_SRV_C
   MBEDTLS_X509_CREATE_C
   MBEDTLS_X509_CRT_WRITE_C)
@@ -196,8 +198,12 @@ endif()
 armino_component_get_property(
   H2_BK_MBEDTLS_COMPONENT_LIB psa_mbedtls COMPONENT_LIB)
 target_compile_definitions(
-  ${H2_BK_MBEDTLS_COMPONENT_LIB} PRIVATE
+  # DTLS feature flags change public context layouts; all SDK consumers must
+  # see the same definitions as the implementation, including cookie support.
+  ${H2_BK_MBEDTLS_COMPONENT_LIB} PUBLIC
     MBEDTLS_SSL_DTLS_SRTP
+    MBEDTLS_SSL_DTLS_HELLO_VERIFY
+    MBEDTLS_SSL_COOKIE_C
     MBEDTLS_SSL_SRV_C
     MBEDTLS_X509_CREATE_C
     MBEDTLS_X509_CRT_WRITE_C)

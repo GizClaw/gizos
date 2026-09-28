@@ -51,6 +51,14 @@ struct h2_pal_dtls_session {
     int exporter_ready;
 };
 
+static void h2_bk_dtls_log_error(const char *stage, int result) {
+    char message[96];
+    (void)snprintf(message, sizeof(message),
+        "DTLS %s failed result=%d", stage, result);
+    (void)h2_pal_log_write(h2_bk_platform_log_api(), H2_PAL_LOG_ERROR,
+        "pal/dtls", message);
+}
+
 static int h2_bk_dtls_random(void *user, unsigned char *out, size_t len) {
     (void)user;
     return h2_pal_crypto_random(h2_bk_platform_crypto_api(), out, len) ==
@@ -237,6 +245,7 @@ static h2_pal_result_t h2_bk_dtls_create(
     h2_pal_dtls_session_t *session = h2_pal_mem_alloc(
         h2_bk_platform_default_allocator(), sizeof(*session));
     if (session == NULL) {
+        h2_bk_dtls_log_error("allocate_session", H2_PAL_ERR_NO_MEMORY);
         return H2_PAL_ERR_NO_MEMORY;
     }
     memset(session, 0, sizeof(*session));
@@ -244,6 +253,7 @@ static h2_pal_result_t h2_bk_dtls_create(
     session->plaintext = h2_pal_mem_alloc(
         h2_bk_platform_default_allocator(), config->max_plaintext_size);
     if (session->plaintext == NULL) {
+        h2_bk_dtls_log_error("allocate_plaintext", H2_PAL_ERR_NO_MEMORY);
         h2_bk_dtls_destroy_impl(session);
         return H2_PAL_ERR_NO_MEMORY;
     }
@@ -255,6 +265,7 @@ static h2_pal_result_t h2_bk_dtls_create(
     mbedtls_pk_init(&session->private_key);
 
     h2_pal_result_t identity_result = h2_bk_dtls_generate_identity(session);
+    const char *stage = "identity";
     int endpoint = config->role == H2_PAL_DTLS_ROLE_SERVER
                        ? MBEDTLS_SSL_IS_SERVER
                        : MBEDTLS_SSL_IS_CLIENT;
@@ -269,6 +280,7 @@ static h2_pal_result_t h2_bk_dtls_create(
         MBEDTLS_TLS_SRTP_UNSET,
     };
     if (result == 0) {
+        stage = "own_certificate";
         mbedtls_ssl_conf_rng(
             &session->ssl_config, h2_bk_dtls_random, session);
         /* WebRTC authenticates a self-signed leaf by its signaled SHA-256
@@ -284,10 +296,12 @@ static h2_pal_result_t h2_bk_dtls_create(
             &session->private_key);
     }
     if (result == 0) {
+        stage = "srtp_profiles";
         result = mbedtls_ssl_conf_dtls_srtp_protection_profiles(
             &session->ssl_config, profiles);
     }
     if (result == 0 && endpoint == MBEDTLS_SSL_IS_SERVER) {
+        stage = "cookie_setup";
         result = mbedtls_ssl_cookie_setup(
             &session->cookie, h2_bk_dtls_random, session);
         if (result == 0) {
@@ -297,6 +311,7 @@ static h2_pal_result_t h2_bk_dtls_create(
         }
     }
     if (result == 0) {
+        stage = "ssl_setup";
         result = mbedtls_ssl_setup(&session->ssl, &session->ssl_config);
     }
     if (result == 0) {
@@ -311,6 +326,8 @@ static h2_pal_result_t h2_bk_dtls_create(
             &session->ssl, h2_bk_dtls_export_keys, session);
     }
     if (result != 0) {
+        h2_bk_dtls_log_error(stage,
+            identity_result != H2_PAL_OK ? identity_result : result);
         h2_bk_dtls_destroy_impl(session);
         return identity_result != H2_PAL_OK ? identity_result : H2_PAL_ERR_IO;
     }
@@ -415,11 +432,7 @@ static h2_pal_result_t h2_bk_dtls_handshake(
         result == MBEDTLS_ERR_SSL_WANT_WRITE) {
         return H2_PAL_ERR_WOULD_BLOCK;
     }
-    char message[80];
-    (void)snprintf(message, sizeof(message),
-        "DTLS handshake failed result=%d", result);
-    (void)h2_pal_log_write(h2_bk_platform_log_api(), H2_PAL_LOG_ERROR,
-        "pal/dtls", message);
+    h2_bk_dtls_log_error("handshake", result);
     return H2_PAL_ERR_IO;
 }
 

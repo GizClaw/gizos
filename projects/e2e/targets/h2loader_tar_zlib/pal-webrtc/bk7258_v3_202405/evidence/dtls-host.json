@@ -1,6 +1,6 @@
 {
   "scope": "BK DTLS provider host regression; not physical-device qualification",
-  "observed_at_utc": "2026-09-28T06:29:20.636019+00:00",
+  "observed_at_utc": "2026-09-28T06:49:18.240277+00:00",
   "sdk_commit": "aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca",
   "sdk_mbedtls_version": "3.5.2",
   "configuration": "SDK upstream default software configuration; DTLS_SRTP enabled; SDK-only upstream self-tests disabled",
@@ -12,18 +12,20 @@
     "BK_DTLS_HOST_PASS missing_peer_certificate"
   ],
   "source_sha256": {
-    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_dtls.c": "a853981d64cc3d5b24ff7a4319dfe3ec5735bcc7a382f55120f786151effdd84",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_dtls.c": "fa33a1084f9f9ea5798bc28167d6da645f51936a9cafa5065def5849109abea4",
     "native_component_src/bk7258/ap/h2_pal_core/tests/dtls_host/CMakeLists.txt": "536cff54a94f4af1a720b227cf61e2659a5f3ff24f262a9ca6b1fff3db6750a7",
     "native_component_src/bk7258/ap/h2_pal_core/tests/dtls_host/README.md": "9a1ca2faf18eb6199ffc449366646874e20073b377fec5dfcfb7f266fc0d4d8e",
     "native_component_src/bk7258/ap/h2_pal_core/tests/dtls_host/host_config.h": "769959754802676f43e963298258e11322ccc2c8ed81904ad4dc9e12613bd7b1",
     "native_component_src/bk7258/ap/h2_pal_core/tests/dtls_host/host_log.h": "107e0da68a2eab288d36ec7f1c5b07b7abf554e4250510e845064c80887c9986",
-    "native_component_src/bk7258/ap/h2_pal_core/tests/dtls_host/test_dtls.c": "27df87f73af0bf9b37ed9afe8ebb3e72a09de3f2214c20e3414b588104cf5f95"
+    "native_component_src/bk7258/ap/h2_pal_core/tests/dtls_host/test_dtls.c": "27df87f73af0bf9b37ed9afe8ebb3e72a09de3f2214c20e3414b588104cf5f95",
+    "native_component_src/bk7258/ap/h2_pal_core/CMakeLists.txt": "88daca5b2aedceb0e33d5046a2271a61c17e054b5b171502985075f9038e9096"
   },
   "reproduced_before_fix": {
     "cookie": "mbedtls ssl_cookie_write_dummy returned -28800 (-0x7080), PAL IO at first ClientHello",
     "certificate": "After fixing cookie, VERIFY_REQUIRED with no CA chain returned -30336, PAL IO"
   },
-  "physical_board_status": "Not rerun after this DTLS repair; r7 failed receipt remains current.",
+  "physical_board_status": "r9 native build passed with complete DTLS implementation; managed installation in progress, runtime result not yet available.",
+  "native_configuration": "The SDK minimal profile does not enable COOKIE_C or HELLO_VERIFY by default. The AP adapter enables the SDK cookie implementation and publishes DTLS layout macros to all SDK consumers; r9 map includes cookie_setup and set_client_transport_id.",
   "sanitizers": {
     "address": "PASS",
     "undefined_behavior": "PASS",
