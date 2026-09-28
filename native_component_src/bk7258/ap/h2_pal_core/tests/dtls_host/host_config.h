@@ -5,3 +5,4 @@
 /* Match the BK minimal profile: certificate bytes may be released once the
  * handshake completes, so authentication must capture them in its callback. */
 #undef MBEDTLS_SSL_KEEP_PEER_CERTIFICATE
+#include "../../include/h2_bk_mbedtls_config.h"

@@ -225,6 +225,10 @@ target_compile_definitions(${H2_BK_PSA_MBEDTLS_LIB} PUBLIC
   MBEDTLS_CHACHAPOLY_C)
 
 if(CONFIG_SW_CRYPTO)
+  target_include_directories(${H2_BK_PSA_MBEDTLS_LIB} PUBLIC
+    "${CMAKE_CURRENT_LIST_DIR}/include")
+  target_compile_definitions(${H2_BK_PSA_MBEDTLS_LIB} PUBLIC
+    MBEDTLS_USER_CONFIG_FILE="h2_bk_mbedtls_config.h")
   # The SDK software hook reads libc rand(). Supply the documented entropy
   # hook in h2_bk_platform_crypto.c so PSA's internal DRBG uses the real TRNG.
   get_target_property(H2_BK_PSA_SOURCES ${H2_BK_PSA_MBEDTLS_LIB} SOURCES)
