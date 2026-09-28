@@ -1,6 +1,6 @@
 # PAL HTTP E2E
 
-`//projects/e2e/apps/pal-http/app:pal_http_e2e` owns a mandatory 44-case registry for both public HTTP operations and all request fields. It borrows Runtime HTTP/Memory/Time APIs and fixture URLs. Concrete providers, CA trust, browser policy, Wi-Fi, packaging and boot lifecycle belong to launchers. The existing mixed PAL App and Atomic App are unchanged.
+`//projects/e2e/apps/pal-http/app:pal_http_e2e` owns a mandatory 45-case registry for both public HTTP operations and all request fields. It borrows Runtime HTTP/Memory/Time APIs and fixture URLs. Concrete providers, CA trust, browser policy, Wi-Fi, packaging and boot lifecycle belong to launchers. The existing mixed PAL App and Atomic App are unchanged.
 
 ## Contract
 
@@ -22,6 +22,8 @@ Each case emits `H2_PAL_HTTP_CASE` JSON. Qualification requires the exact ordere
 | --- | --- | --- |
 | macOS / Linux | `targets/cc_binary/pal-http` | Production OS Net/TLS + CoreHTTP; real local HTTP/HTTPS peer |
 | WASM | `targets/pkg_tar/pal-http` | C runs in a pthread Worker; real Chromium Fetch; no pending JS requests after teardown |
+| iOS simulator | `targets/ios_application/pal-http` | Real Swift Package archive; CoreHTTP + POSIX Net + full WolfSSL; system SecRandom entropy |
+| Android emulator | `targets/android_binary/pal-http` | Real AAR binary checked against APK; same full provider; system `/dev/urandom` entropy |
 | DevKit ESP32-S3 | `targets/h2loader_tar_zlib/pal-http/devkit` | USB H2Loader command service, saved STA settings, independent CoreHTTP with injected test CA |
 | BK7258 AP | `targets/h2loader_tar_zlib/pal-http/bk7258_v3_202405` | UART1 H2Loader command service, saved STA settings, independent CoreHTTP with injected test CA |
 
@@ -30,4 +32,4 @@ bazel test //projects/e2e/apps/pal-http/app:interface_coverage_test //projects/e
 bazel test //projects/e2e/targets/cc_binary/pal-http:desktop_test //projects/e2e/targets/pkg_tar/pal-http:browser_test
 ```
 
-The six-platform qualification target also includes iOS and Android real package consumers. A firmware build is not device qualification, and host/browser receipts do not stand in for simulators or boards. The aggregate qualification receipt records each platform's current evidence separately.
+iOS/Android exact manual entries are `make bazel-test-ios_pal_http_simulator_test` and `make bazel-test-android_pal_http_simulator_test`, with an explicit `H2_IOS_SIMULATOR_UDID` or `H2_ANDROID_SERIAL`. Run tests sharing one simulator sequentially (`--local_test_jobs=1` when batching), because only one App can own its foreground scene. A firmware build is not device qualification, and host/browser receipts do not stand in for simulators or boards. The aggregate qualification receipt records each platform's current evidence separately.

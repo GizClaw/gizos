@@ -16,9 +16,9 @@
 
 static void report(void *user, const h2_pal_http_e2e_case_result_t *result) {
     (void)user;
-    printf("H2_PAL_HTTP_CASE {\"id\":\"%s\",\"status\":\"%s\",\"detail\":%d,\"line\":%u}\n",
+    printf("H2_PAL_HTTP_CASE {\"id\":\"%s\",\"status\":\"%s\",\"detail\":%d,\"line\":%u,\"elapsed_ms\":%llu}\n",
         result->id, result->passed ? "PASS" : result->blocked ? "BLOCKED" : "FAIL",
-        result->detail, result->line);
+        result->detail, result->line, (unsigned long long)result->elapsed_ms);
     fflush(stdout);
 }
 

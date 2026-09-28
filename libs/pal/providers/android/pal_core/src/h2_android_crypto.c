@@ -1,6 +1,7 @@
 #include "h2/pal/h2_pal_unsupported.h"
 #include "h2_android_platform.h"
-#include "h2_wolfcrypt_crypto.h"
+#include "h2_wolfssl.h"
+#include "h2_android_tls_internal.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <pthread.h>
@@ -34,23 +35,29 @@ static int entropy(void *user, uint8_t *out, size_t len) {
   return rc;
 }
 
+int h2_android_tls_acquire(void) {
+  const h2_wolfssl_config_t config = {
+      .mem = *h2_android_platform_mem_api(), .entropy = entropy,
+  };
+  return h2_wolfssl_init(&config);
+}
+int h2_android_tls_release(void) { return h2_wolfssl_deinit(); }
+
 static pthread_mutex_t lifecycle = PTHREAD_MUTEX_INITIALIZER;
 static int ready;
 const h2_pal_crypto_api_t *h2_android_platform_crypto_api(void) {
   pthread_mutex_lock(&lifecycle);
   if (!ready) {
-    const h2_wolfcrypt_crypto_config_t config = {.entropy = entropy};
-    ready = h2_wolfcrypt_crypto_init(&config) == H2_PAL_OK;
+    ready = h2_android_tls_acquire() == H2_PAL_OK;
   }
   const h2_pal_crypto_api_t *api =
-      ready ? h2_wolfcrypt_crypto_api() : h2_pal_unsupported_crypto_api();
+      ready ? h2_wolfssl_crypto_api() : h2_pal_unsupported_crypto_api();
   pthread_mutex_unlock(&lifecycle);
   return api;
 }
 void h2_android_platform_crypto_shutdown(void) {
   pthread_mutex_lock(&lifecycle);
-  if (ready)
-    h2_wolfcrypt_crypto_deinit();
-  ready = 0;
+  if (ready && h2_android_tls_release() == H2_PAL_OK)
+    ready = 0;
   pthread_mutex_unlock(&lifecycle);
 }

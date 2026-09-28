@@ -124,7 +124,7 @@ static int header_callback(void *user, const h2_pal_http_request_t *request,
     }
     if (name_equal(name, "x-h2-attempt") && value.len == 1u)
         state->attempt = (unsigned)(value.data[0] - '0');
-    return state->header_abort ? H2_PAL_ERR_FORMAT : H2_PAL_OK;
+    return state->header_abort ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
 
 static int read_callback(void *user, const h2_pal_http_request_t *request,
@@ -143,7 +143,7 @@ static int read_callback(void *user, const h2_pal_http_request_t *request,
             state->invalid = 1;
     state->received += len;
     if (state->cancel_after_read) state->cancel = 1;
-    return state->read_abort ? H2_PAL_ERR_FORMAT : H2_PAL_OK;
+    return state->read_abort ? H2_PAL_ERR_IO : H2_PAL_OK;
 }
 
 static int cancel_callback(void *user) {
@@ -191,7 +191,7 @@ static void execute_case(const h2_pal_http_e2e_config_t *config,
         .method = H2_PAL_HTTP_GET,
         .response_buf = output + 1u,
         .response_buf_cap = HTTP_BODY_BYTES,
-        .timeout_ms = 3000,
+        .timeout_ms = 10000,
         .response_header_cb = header_callback,
         .response_header_user = &callbacks,
         .cancel_cb = cancel_callback,
@@ -294,7 +294,7 @@ static void execute_case(const h2_pal_http_e2e_config_t *config,
                 callbacks.chunk_buf = NULL;
             }
             if (id == H2_PAL_HTTP_E2E_STREAM_ABORT) {
-                callbacks.read_abort = 1; expected_rc = H2_PAL_ERR_FORMAT;
+                callbacks.read_abort = 1; expected_rc = H2_PAL_ERR_IO;
                 request.retry_count = 2;
             }
             if (id == H2_PAL_HTTP_E2E_CANCEL_STREAM) {
@@ -303,7 +303,7 @@ static void execute_case(const h2_pal_http_e2e_config_t *config,
             }
             break;
         case H2_PAL_HTTP_E2E_HEADER_ABORT:
-            callbacks.header_abort = 1; expected_rc = H2_PAL_ERR_FORMAT;
+            callbacks.header_abort = 1; expected_rc = H2_PAL_ERR_IO;
             request.retry_count = 2;
             break;
         case H2_PAL_HTTP_E2E_CANCEL_BEFORE:
@@ -311,19 +311,25 @@ static void execute_case(const h2_pal_http_e2e_config_t *config,
         case H2_PAL_HTTP_E2E_CANCEL_WAIT:
             path = "/slow-headers"; expected_rc = H2_PAL_ERR_CLOSED;
             CHECK(h2_pal_time_get_monotonic_ms(runtime->time, &callbacks.cancel_at_ms) == H2_PAL_OK);
-            callbacks.cancel_at_ms += 75u;
+            callbacks.cancel_at_ms += 2000u;
             break;
         case H2_PAL_HTTP_E2E_TIMEOUT_HEADERS:
         case H2_PAL_HTTP_E2E_TIMEOUT_BODY:
             path = id == H2_PAL_HTTP_E2E_TIMEOUT_HEADERS ? "/slow-headers" : "/slow-body";
-            request.timeout_ms = 120; expected_rc = H2_PAL_ERR_TIMEOUT; break;
+            request.timeout_ms = 2000; expected_rc = H2_PAL_ERR_TIMEOUT; break;
+        case H2_PAL_HTTP_E2E_TRUNCATED_BODY:
+            path = "/truncated";
+            request.response_buf = NULL; request.response_buf_cap = 0u;
+            request.response_allocator = &allocator;
+            expected_rc = H2_PAL_ERR_IO;
+            break;
         case H2_PAL_HTTP_E2E_RETRY_RECOVER:
             path = "/retry/recover"; request.retry_count = 1; break;
         case H2_PAL_HTTP_E2E_RETRY_EXHAUSTED:
             path = "/retry/exhausted"; request.retry_count = 2; expected_status = 503; break;
         case H2_PAL_HTTP_E2E_RETRY_DEADLINE:
             path = "/retry/deadline"; request.retry_count = 4;
-            request.timeout_ms = 160; expected_rc = H2_PAL_ERR_TIMEOUT; break;
+            request.timeout_ms = 5000; expected_rc = H2_PAL_ERR_TIMEOUT; break;
         case H2_PAL_HTTP_E2E_REDIRECT_RELATIVE:
             path = "/redirect/relative"; break;
         case H2_PAL_HTTP_E2E_REDIRECT_POST_303:
@@ -367,12 +373,16 @@ static void execute_case(const h2_pal_http_e2e_config_t *config,
     CHECK(h2_pal_time_get_monotonic_ms(runtime->time, &started) == H2_PAL_OK);
     rc = h2_pal_http_request(http, &request, &response);
     CHECK(h2_pal_time_get_monotonic_ms(runtime->time, &finished) == H2_PAL_OK);
+    result->elapsed_ms = finished - started;
+    CHECK(finished >= started && result->elapsed_ms < (uint64_t)request.timeout_ms + 500u);
     if (id == H2_PAL_HTTP_E2E_HTTPS_UNTRUSTED ||
         id == H2_PAL_HTTP_E2E_INTERFACE_REJECTED) {
         CHECK(rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT);
         CHECK(response.body == NULL && callbacks.headers == 0u);
     } else {
-        CHECK(rc == expected_rc);
+        if (id == H2_PAL_HTTP_E2E_TRUNCATED_BODY)
+            CHECK(rc == H2_PAL_ERR_IO || rc == H2_PAL_ERR_FORMAT || rc == H2_PAL_ERR_CLOSED);
+        else CHECK(rc == expected_rc);
         CHECK(!callbacks.invalid);
         if (rc == H2_PAL_OK) {
             CHECK(response.status_code == expected_status);
@@ -411,7 +421,8 @@ static void execute_case(const h2_pal_http_e2e_config_t *config,
     if (id == H2_PAL_HTTP_E2E_ALLOCATOR_FAILURE) CHECK(tracked.allocations != 0u && tracked.live == 0u);
     if (id == H2_PAL_HTTP_E2E_TIMEOUT_HEADERS || id == H2_PAL_HTTP_E2E_TIMEOUT_BODY ||
         id == H2_PAL_HTTP_E2E_RETRY_DEADLINE || id == H2_PAL_HTTP_E2E_CANCEL_WAIT)
-        CHECK(finished >= started && finished - started >= 40u && finished - started < 1000u);
+        CHECK(result->elapsed_ms >= (id == H2_PAL_HTTP_E2E_RETRY_DEADLINE ? 4500u : 1500u) &&
+              result->elapsed_ms < (id == H2_PAL_HTTP_E2E_RETRY_DEADLINE ? 5500u : 2500u));
     if (id == H2_PAL_HTTP_E2E_CALLBACK_QUIESCENCE || expected_rc != H2_PAL_OK) {
         unsigned count = callbacks.reads + callbacks.headers;
         CHECK(h2_pal_time_sleep_ms(runtime->time, 80u) == H2_PAL_OK);

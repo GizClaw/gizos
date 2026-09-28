@@ -42,7 +42,7 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass
 
-    def response(self, status, payload=BODY, extra=(), chunked=False, delay=False):
+    def response(self, status, payload=BODY, extra=(), chunked=False, delay=False, truncated=False):
         self.send_response(status)
         self.send_header('Access-Control-Allow-Origin', '*')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS')
@@ -62,10 +62,12 @@ class Handler(BaseHTTPRequestHandler):
         self.close_connection = True
         if self.command == 'HEAD' or status == 204:
             return
-        if delay:
+        if truncated:
+            self.wfile.write(payload[:67])
+        elif delay:
             self.wfile.write(payload[:17])
             self.wfile.flush()
-            time.sleep(0.5)
+            time.sleep(4.0)
             self.wfile.write(payload[17:])
         elif chunked:
             for offset in range(0, len(payload), 41):
@@ -87,25 +89,38 @@ class Handler(BaseHTTPRequestHandler):
                 self.response(404, b'bad-session')
                 return
             route = '/' + pieces[2]
+            run_id = ''
+            prefix = '/' + self.server.session
+            if route.startswith('/run/'):
+                run_parts = route.split('/', 3)
+                if len(run_parts) != 4 or len(run_parts[2]) != 16 or any(c not in '0123456789abcdef' for c in run_parts[2]):
+                    self.response(400, b'bad-run')
+                    return
+                run_id = run_parts[2]
+                prefix += '/run/' + run_id
+                route = '/' + run_parts[3]
             with self.server.lock:
-                attempt = self.server.attempts.get(route, 0) + 1
-                self.server.attempts[route] = attempt
+                counters = self.server.runs.setdefault(run_id, {})
+                attempt = counters.get(route, 0) + 1
+                counters[route] = attempt
             length = int(self.headers.get('Content-Length', '0'))
             if not 0 <= length <= 4096:
                 self.response(413, b'')
                 return
             body = self.rfile.read(length)
             if route == '/slow-headers':
-                time.sleep(0.5)
+                time.sleep(4.0)
             if route.startswith('/retry/'):
                 if route == '/retry/deadline':
-                    time.sleep(0.1)
+                    time.sleep(2.0)
                 status = 200 if route == '/retry/recover' and attempt > 1 else 503
                 self.response(status, extra=[('X-H2-Attempt', str(attempt))])
             elif route == '/headers':
                 value = self.headers.get('X-H2-Input', '')
                 self.response(200 if value == 'byte-span' else 400,
                               extra=[('X-H2-Marker', value)])
+            elif route == '/truncated':
+                self.response(200, truncated=True)
             elif route == '/empty':
                 self.response(204, b'')
             elif route.startswith('/status/'):
@@ -114,7 +129,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.response(200 if body == BODY else 400, body)
             elif route in ('/redirect/relative', '/redirect/303', '/redirect/307'):
                 code = route.rsplit('/', 1)[1]
-                target = '../bytes' if code == 'relative' else ('/' + self.server.session + ('/echo' if code == '307' else '/bytes'))
+                target = '../bytes' if code == 'relative' else (prefix + ('/echo' if code == '307' else '/bytes'))
                 self.response(302 if code == 'relative' else int(code), b'', [('Location', target)])
             elif route in ('/bytes', '/chunked', '/slow-body', '/slow-headers'):
                 self.response(200 if self.command in ('GET', 'HEAD') else 405,
@@ -139,7 +154,7 @@ class Fixture:
             server = ThreadingHTTPServer((bind, 0), Handler)
             server.daemon_threads = True
             server.session = self.session
-            server.attempts = {}
+            server.runs = {}
             server.lock = threading.Lock()
             if cert:
                 context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
@@ -152,6 +167,18 @@ class Fixture:
             self.threads.append(thread)
             endpoints.append(f'{"https" if cert else "http"}://{advertised}:{server.server_port}/{self.session}')
         self.http, self.https, self.untrusted = endpoints
+
+    def verify_arrivals(self, run_id=''):
+        """A connection timeout must not masquerade as a response/retry test."""
+        with self.servers[0].lock:
+            attempts = self.servers[0].runs.get(run_id, {}).copy()
+        expected = {'/slow-headers': 2, '/slow-body': 1, '/retry/recover': 2, '/retry/exhausted': 3}
+        for path, count in expected.items():
+            if attempts.get(path) != count:
+                raise RuntimeError(f'fixture arrival mismatch for {path}: {attempts.get(path)} != {count}')
+        if not 2 <= attempts.get('/retry/deadline', 0) <= 5:
+            raise RuntimeError('retry deadline did not exercise multiple real attempts')
+        return attempts
 
     def close(self):
         for server in self.servers:

@@ -1,0 +1,28 @@
+{
+  "serial": "emulator-5580",
+  "api": "36",
+  "fingerprint": "Android/sdk_slim_arm64/emu64a:16/BE2A.250530.027/13847098:userdebug/test-keys",
+  "fixture_attempts": {
+    "/bytes": 43,
+    "/echo": 6,
+    "/headers": 1,
+    "/empty": 1,
+    "/status/404": 1,
+    "/status/503": 1,
+    "/chunked": 1,
+    "/slow-headers": 2,
+    "/slow-body": 1,
+    "/truncated": 1,
+    "/retry/recover": 2,
+    "/retry/exhausted": 3,
+    "/retry/deadline": 2,
+    "/redirect/relative": 1,
+    "/redirect/303": 1,
+    "/redirect/307": 1
+  },
+  "tls_verification": "required; explicit isolated test CA; separate untrusted certificate rejected",
+  "observation_finished_at_utc": "2026-09-28T02:09:49.114623+00:00",
+  "evidence_timezone": "UTC",
+  "app_sha256": "e7ac2250cd95aa80f847c338ca3bea3b65c1777cd4741bce5fc443e0e2fa3a1f",
+  "sdk_sha256": "c1bc5bfda67da9297a76ddf25877110257f710b753e2e6e4a6c35363dceada92"
+}

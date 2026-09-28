@@ -5,18 +5,24 @@
 #include <string.h>
 
 const char h2_pal_http_device_runner_task_name[] = "pal-http/e2e/runner";
+static char fixture_run[17];
 
 static void report(void *user, const h2_pal_http_e2e_case_result_t *result) {
     const h2_runtime_t *runtime = user;
     char line[256];
-    (void)snprintf(line, sizeof(line), "H2_PAL_HTTP_CASE {\"id\":\"%s\",\"status\":\"%s\",\"detail\":%d,\"line\":%u}\n",
+    (void)snprintf(line, sizeof(line), "H2_PAL_HTTP_CASE {\"id\":\"%s\",\"status\":\"%s\",\"detail\":%d,\"line\":%u,\"elapsed_ms\":%llu}\n",
         result->id, result->passed ? "PASS" : result->blocked ? "BLOCKED" : "FAIL",
-        result->detail, result->line);
+        result->detail, result->line, (unsigned long long)result->elapsed_ms);
     (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-http", line);
     if (runtime != NULL) (void)h2_pal_time_sleep_ms(runtime->time, 40u);
 }
 
 void h2_pal_http_device_report(const h2_runtime_t *runtime, const h2_pal_http_e2e_result_t *result) {
+    h2_pal_firmware_info_t image = {0};
+    if (h2_pal_firmware_info_get_current(runtime->firmware_info, &image) != H2_PAL_OK) return;
+    char run_line[256];
+    (void)snprintf(run_line, sizeof(run_line), "H2_PAL_HTTP_RUN id=%s version=%s", fixture_run, image.version);
+    (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-http", run_line);
     for (unsigned index = 0u; index < H2_PAL_HTTP_E2E_CASE_COUNT; ++index)
         if (result->cases[index].id != NULL) report((void *)runtime, &result->cases[index]);
     char line[256];
@@ -84,12 +90,29 @@ int h2_pal_http_device_run(h2_runtime_t *runtime, h2_pal_http_e2e_result_t *resu
     if (rc == H2_PAL_OK) rc = h2_corehttp_create(&provider_config, &provider, &api);
     h2_pal_mem_free(runtime->mem, ca);
     if (rc != H2_PAL_OK) return rc;
+    /* A public run nonce isolates retry counters across boards and boots. */
+    uint8_t nonce[8];
+    rc = h2_pal_crypto_random(runtime->crypto, nonce, sizeof(nonce));
+    if (rc != H2_PAL_OK) { h2_corehttp_destroy(provider); return rc; }
+    const char digits[] = "0123456789abcdef";
+    for (size_t index = 0u; index < sizeof(nonce); ++index) {
+        fixture_run[index * 2u] = digits[nonce[index] >> 4];
+        fixture_run[index * 2u + 1u] = digits[nonce[index] & 15u];
+    }
+    char bases[3][512];
+    const char *configured[] = {H2_PAL_HTTP_HTTP_BASE, H2_PAL_HTTP_HTTPS_BASE, H2_PAL_HTTP_UNTRUSTED_HTTPS_BASE};
+    for (unsigned index = 0u; index < 3u; ++index) {
+        int count = snprintf(bases[index], sizeof(bases[index]), "%s/run/%s", configured[index], fixture_run);
+        if (count < 0 || (size_t)count >= sizeof(bases[index])) {
+            h2_corehttp_destroy(provider);
+            return H2_PAL_ERR_INVALID_ARG;
+        }
+    }
     h2_runtime_t test_runtime = *runtime;
     test_runtime.http = &api;
     h2_pal_http_e2e_config_t config = {
-        .runtime = &test_runtime, .http_base = H2_PAL_HTTP_HTTP_BASE,
-        .https_base = H2_PAL_HTTP_HTTPS_BASE,
-        .untrusted_https_base = H2_PAL_HTTP_UNTRUSTED_HTTPS_BASE,
+        .runtime = &test_runtime, .http_base = bases[0],
+        .https_base = bases[1], .untrusted_https_base = bases[2],
         .report = report, .report_user = runtime,
     };
     rc = h2_pal_http_e2e_run(&config, result);

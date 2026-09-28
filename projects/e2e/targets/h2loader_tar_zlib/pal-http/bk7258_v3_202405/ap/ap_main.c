@@ -35,7 +35,7 @@ static void entry(void *user) {
     if (rc != H2_PAL_OK) fail("board", rc);
     rc = h2_runtime_init(&config, &runtime);
     if (rc != H2_PAL_OK) fail("runtime", rc);
-    rc = h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(runtime, "pal-http", H2_LOADER_CAPABILITY_UART);
+    rc = h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(runtime, "pal-http", H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI);
     if (rc != H2_PAL_OK) fail("commands", rc);
     const h2_pal_task_options_t options = {.name = h2_pal_http_device_runner_task_name};
     h2_pal_task_t *runner = NULL;

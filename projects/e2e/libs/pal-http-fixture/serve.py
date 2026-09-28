@@ -12,6 +12,7 @@ def main():
     parser.add_argument('--bind', default='127.0.0.1')
     parser.add_argument('--advertised', default='127.0.0.1')
     parser.add_argument('--bazelrc', required=True, type=Path)
+    parser.add_argument('--receipt', type=Path)
     args = parser.parse_args()
     with tempfile.TemporaryDirectory(prefix='h2-http-device-fixture-') as temp, \
             Fixture(temp, bind=args.bind, advertised=args.advertised) as fixture:
@@ -26,6 +27,17 @@ def main():
                               untrusted=fixture.untrusted)), flush=True)
         try:
             while True:
+                if args.receipt:
+                    runs = {}
+                    with fixture.servers[0].lock:
+                        names = list(fixture.servers[0].runs)
+                    for name in names:
+                        try:
+                            runs[name] = dict(arrivals=fixture.verify_arrivals(name), arrivals_valid=True)
+                        except RuntimeError:
+                            with fixture.servers[0].lock:
+                                runs[name] = dict(arrivals=fixture.servers[0].runs[name].copy(), arrivals_valid=False)
+                    args.receipt.write_text(json.dumps(dict(session=fixture.session, runs=runs), indent=2) + '\n')
                 time.sleep(1)
         except KeyboardInterrupt:
             pass

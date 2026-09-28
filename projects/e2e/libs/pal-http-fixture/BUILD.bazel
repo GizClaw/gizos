@@ -16,3 +16,5 @@ py_binary(
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [":fixture"],
 )
+
+exports_files(["fixture.py"])

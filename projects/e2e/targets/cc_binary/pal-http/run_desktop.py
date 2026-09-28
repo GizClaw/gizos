@@ -34,14 +34,14 @@ def main():
         with Fixture(temp) as fixture:
             completed = subprocess.run([str(Path(args.binary).resolve()), fixture.http, fixture.https,
                                         fixture.untrusted, str(fixture.ca)], text=True,
-                                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=90)
+                                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT, timeout=180)
             print(completed.stdout, end='')
             report = validate(completed.stdout, args.cases)
             if completed.returncode:
                 raise RuntimeError('host runner failed')
             report['artifact_sha256'] = hashlib.sha256(Path(args.binary).read_bytes()).hexdigest()
             report['registry_sha256'] = hashlib.sha256(Path(args.cases).read_bytes()).hexdigest()
-            report['fixture_attempts'] = fixture.servers[0].attempts.copy()
+            report['fixture_attempts'] = fixture.verify_arrivals()
             if args.evidence:
                 Path(args.evidence).write_text(json.dumps(report, indent=2) + '\n')
 

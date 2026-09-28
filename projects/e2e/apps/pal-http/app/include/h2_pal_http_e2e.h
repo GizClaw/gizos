@@ -21,6 +21,7 @@ typedef struct h2_pal_http_e2e_case_result {
     int blocked;
     int detail;
     unsigned line;
+    uint64_t elapsed_ms;
 } h2_pal_http_e2e_case_result_t;
 
 typedef struct h2_pal_http_e2e_result {

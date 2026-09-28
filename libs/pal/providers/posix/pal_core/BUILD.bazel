@@ -60,13 +60,15 @@ cc_library(
         "//conditions:default": [],
     }),
     includes = ["include"],
-    linkopts = ["-lpthread"],
+    linkopts = select({"@platforms//os:android": [], "//conditions:default": ["-lpthread"]}),
     target_compatible_with = select({
         "@platforms//os:linux": [],
         "@platforms//os:macos": [],
+        "@platforms//os:ios": [],
+        "@platforms//os:android": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    visibility = _POSIX_OWNERS,
+    visibility = _POSIX_OWNERS + ["//libs/pal/providers/ios/pal_core:__pkg__", "//libs/pal/providers/android/pal_core:__pkg__"],
     deps = [
         "//libs/pal",
         "//libs/pal/providers/wolfssl",

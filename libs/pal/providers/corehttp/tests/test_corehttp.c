@@ -264,6 +264,7 @@ static int test_response_header_callback(void) {
     provider = create_provider(&platform, &api, NULL, 0u);
     CHECK(provider != NULL);
     headers = (header_result_t){.result = H2_PAL_ERR_CLOSED};
+    request.retry_count = 2;
     request.response_header_user = &headers;
     CHECK(h2_pal_http_request(&api, &request, &response) ==
           H2_PAL_ERR_CLOSED);

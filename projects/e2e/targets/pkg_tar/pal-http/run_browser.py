@@ -53,7 +53,7 @@ def run(args):
             cdp.send('Runtime.enable', session=session)
             cdp.send('Page.enable', session=session)
             cdp.send('Page.navigate', {'url': url}, session=session)
-            deadline = time.monotonic() + 90
+            deadline = time.monotonic() + 180
             while time.monotonic() < deadline:
                 try:
                     event = events.get(timeout=0.2)
@@ -80,7 +80,7 @@ def run(args):
                     evidence['browser_state'] = state
                     evidence['artifact_sha256'] = hashlib.sha256(Path(args.archive).read_bytes()).hexdigest()
                     evidence['registry_sha256'] = hashlib.sha256(Path(args.cases).read_bytes()).hexdigest()
-                    evidence['fixture_attempts'] = fixture.servers[0].attempts.copy()
+                    evidence['fixture_attempts'] = fixture.verify_arrivals()
                     if args.evidence:
                         Path(args.evidence).write_text(json.dumps(evidence, indent=2) + '\n')
                     return
