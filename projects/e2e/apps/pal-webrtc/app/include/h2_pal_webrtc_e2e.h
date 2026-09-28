@@ -23,7 +23,8 @@ typedef struct h2_pal_webrtc_e2e_case_result {
 typedef struct h2_pal_webrtc_e2e_soak_result {
   uint32_t requested_ms;
   uint64_t elapsed_ms;
-  unsigned data_roundtrips, opus_roundtrips;
+  unsigned data_roundtrips, opus_roundtrips, opus_sent, opus_missing, opus_duplicates;
+  uint64_t max_opus_gap_ms;
   int completed, detail;
 } h2_pal_webrtc_e2e_soak_result_t;
 typedef struct h2_pal_webrtc_e2e_result {

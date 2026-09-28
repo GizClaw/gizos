@@ -61,6 +61,7 @@ int h2_webrtc_pion_fixture_exchange_negotiated(
     h2_webrtc_pion_fixture_t *fixture, h2_pal_webrtc_str_t offer,
     const h2_pal_webrtc_channel_config_t *channel,
     char *answer, size_t answer_cap, size_t *answer_len);
+int h2_webrtc_pion_fixture_media_fault(h2_webrtc_pion_fixture_t *fixture, const char *mode);
 int h2_webrtc_pion_fixture_close_session(h2_webrtc_pion_fixture_t *fixture);
 int h2_webrtc_pion_fixture_turn_stats(const h2_webrtc_pion_fixture_t *fixture,
                                       h2_webrtc_turn_stats_t *stats);

@@ -19,6 +19,10 @@ typedef struct track_state {
   uint8_t retry[H2_PAL_WEBRTC_OPUS_MAX_PACKET_SIZE];
   size_t retry_len;
   int retry_mismatch;
+  int soak_mode;
+  h2_atomic_uint_t soak_received, soak_duplicates, soak_invalid;
+  h2_atomic_uint_t soak_seen[113];
+  unsigned soak_initialized;
 } track_state_t;
 typedef struct state {
   const h2_pal_webrtc_e2e_config_t *config;
@@ -101,6 +105,25 @@ static h2_pal_result_t track_write(void *user, const uint8_t *opus,
     h2_atomic_fetch_add(&t->late, 1u);
   if (len == 0u)
     return H2_PAL_OK; /* A loss marker is not an echoed packet. */
+  if (t->soak_mode) {
+    if (len != sizeof(opus_tag) + 4u || memcmp(opus, opus_tag, sizeof(opus_tag))) {
+      h2_atomic_store(&t->soak_invalid, 1u);
+      return H2_PAL_ERR_FORMAT;
+    }
+    unsigned sequence = 0u;
+    for (unsigned i = 0u; i < 4u; ++i)
+      sequence |= (unsigned)opus[sizeof(opus_tag) + i] << (i * 8u);
+    if (sequence >= 113u * 32u) {
+      h2_atomic_store(&t->soak_invalid, 1u);
+      return H2_PAL_ERR_FORMAT;
+    }
+    const unsigned bit = 1u << (sequence % 32u);
+    if (h2_atomic_fetch_or(&t->soak_seen[sequence / 32u], bit) & bit)
+      h2_atomic_fetch_add(&t->soak_duplicates, 1u);
+    else
+      h2_atomic_fetch_add(&t->soak_received, 1u);
+    return H2_PAL_OK;
+  }
   if (len != sizeof(opus_tag) && len != H2_PAL_WEBRTC_OPUS_MAX_PACKET_SIZE)
     return H2_PAL_ERR_FORMAT;
   for (size_t i = 0; i < len; ++i)
@@ -775,6 +798,10 @@ static int run_case(state_t *s, unsigned id) {
 static int run_soak(state_t *s, h2_pal_webrtc_e2e_soak_result_t *result) {
   result->requested_ms = s->config->soak_duration_ms;
   result->detail = H2_PAL_ERR_INVALID_STATE;
+  for (; s->track_state.soak_initialized < 113u; ++s->track_state.soak_initialized)
+    if (h2_atomic_uint_init(&s->track_state.soak_seen[s->track_state.soak_initialized], 0u) != H2_ATOMIC_OK)
+      return H2_PAL_ERR_NO_MEMORY;
+  s->track_state.soak_mode = 1;
   s->opened = 0u;
   s->peer_state = H2_PAL_WEBRTC_PEER_NEW;
   s->track_bound = 0;
@@ -792,7 +819,7 @@ static int run_soak(state_t *s, h2_pal_webrtc_e2e_soak_result_t *result) {
     if (rc != H2_PAL_OK) goto finish;
   }
   const uint64_t start = now(s);
-  uint64_t next_report = start;
+  uint64_t next_report = start, last_media = start;
   do {
     const uint64_t cycle = now(s);
     uint8_t payload[8] = {'H', '2', 'L', 'V'};
@@ -802,17 +829,37 @@ static int run_soak(state_t *s, h2_pal_webrtc_e2e_soak_result_t *result) {
     rc = echo(s, 0u, payload, sizeof(payload), 0, 0, 0);
     if (rc != H2_PAL_OK) break;
     ++result->data_roundtrips;
-    const unsigned writes = h2_atomic_load(&s->track_state.writes);
-    rc = opus_send(s);
-    if (rc == H2_PAL_OK) rc = wait_writes(s, writes + 1u);
+    uint8_t packet[sizeof(opus_tag) + 4u];
+    memcpy(packet, opus_tag, sizeof(opus_tag));
+    for (unsigned i = 0u; i < 4u; ++i)
+      packet[sizeof(opus_tag) + i] = (uint8_t)(result->opus_sent >> (i * 8u));
+    rc = opus_send_packet(s, packet, sizeof(packet));
     if (rc != H2_PAL_OK) break;
-    ++result->opus_roundtrips;
+    ++result->opus_sent;
+    /* RTP does not retransmit a lost packet. Keep sending subsequent sequence
+     * numbers, but fail if media never resumes within the liveness deadline. */
     while (now(s) - cycle < 1000u) {
       h2_pal_webrtc_event_t event = {0};
       rc = poll_event(s, 20, &event);
       h2_pal_webrtc_event_release(&event);
       if (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK)
         rc = H2_PAL_OK;
+      const uint64_t observed = now(s);
+      const unsigned received = h2_atomic_load(&s->track_state.soak_received);
+      if (received > result->opus_roundtrips) {
+        const uint64_t gap = observed - last_media;
+        if (gap > result->max_opus_gap_ms) result->max_opus_gap_ms = gap;
+        last_media = observed;
+      }
+      result->opus_roundtrips = received;
+      result->opus_missing = result->opus_sent - received;
+      result->opus_duplicates = h2_atomic_load(&s->track_state.soak_duplicates);
+      if (h2_atomic_load(&s->track_state.soak_invalid)) rc = H2_PAL_ERR_FORMAT;
+      if (observed - last_media >= 10000u || result->max_opus_gap_ms >= 10000u) {
+        if (observed - last_media > result->max_opus_gap_ms)
+          result->max_opus_gap_ms = observed - last_media;
+        rc = H2_PAL_ERR_TIMEOUT;
+      }
       if (rc != H2_PAL_OK) break;
     }
     result->elapsed_ms = now(s) - start;
@@ -822,8 +869,13 @@ static int run_soak(state_t *s, h2_pal_webrtc_e2e_soak_result_t *result) {
     }
   } while (rc == H2_PAL_OK && result->elapsed_ms < result->requested_ms);
   result->elapsed_ms = now(s) - start;
+  if (now(s) - last_media > result->max_opus_gap_ms)
+    result->max_opus_gap_ms = now(s) - last_media;
+  const unsigned minimum = result->requested_ms / 1200u + (result->requested_ms < 1200u);
   result->completed = rc == H2_PAL_OK && result->elapsed_ms >= result->requested_ms &&
-      result->data_roundtrips != 0u && result->data_roundtrips == result->opus_roundtrips;
+      result->data_roundtrips >= minimum && result->opus_roundtrips >= minimum &&
+      result->max_opus_gap_ms < 10000u;
+  if (!result->completed && rc == H2_PAL_OK) rc = H2_PAL_ERR_TIMEOUT;
 finish:
   result->detail = rc;
   if (s->config->soak_report)
@@ -866,7 +918,8 @@ int h2_pal_webrtc_e2e_run(const h2_pal_webrtc_e2e_config_t *config,
       &s->track_state.reads,    &s->track_state.writes,
       &s->track_state.attempts, &s->track_state.budget,
       &s->track_state.detached, &s->track_state.late,
-      &s->track_state.block};
+      &s->track_state.block, &s->track_state.soak_received,
+      &s->track_state.soak_duplicates, &s->track_state.soak_invalid};
   unsigned initialized = 0u;
   int rc = H2_PAL_ERR_NO_MEMORY;
   for (; initialized < sizeof(counters) / sizeof(counters[0]); ++initialized)
@@ -914,6 +967,8 @@ int h2_pal_webrtc_e2e_run(const h2_pal_webrtc_e2e_config_t *config,
   result->retained_allocations = h2_atomic_load(&s->allocator.live);
   if (result->retained_allocations)
     return H2_PAL_ERR_INVALID_STATE;
+  while (s->track_state.soak_initialized)
+    h2_atomic_uint_destroy(&s->track_state.soak_seen[--s->track_state.soak_initialized]);
   h2_atomic_int_destroy(&s->allocator.fail);
 cleanup_counters:
   while (initialized)

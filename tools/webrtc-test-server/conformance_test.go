@@ -80,3 +80,25 @@ func TestNegotiatedChannelFixtureConfiguration(t *testing.T) {
 		}
 	}
 }
+
+func TestMediaWitnessTracksRealInputAndExplicitFaults(t *testing.T) {
+	var witness mediaWitness
+	witness.sessionID.Store("example")
+	if witness.noteInput(65534) != 1 || witness.shouldDrop(1) {
+		t.Fatal("default fixture injected loss")
+	}
+	witness.dropAt.Store(2)
+	if witness.noteInput(0) != 2 || !witness.shouldDrop(2) || witness.shouldDrop(3) {
+		t.Fatal("single loss control")
+	}
+	if witness.inputGaps.Load() != 1 || witness.dropped.Load() != 1 {
+		t.Fatal("packet gap or drop evidence")
+	}
+	witness.dropAll.Store(true)
+	if !witness.shouldDrop(witness.noteInput(1)) {
+		t.Fatal("persistent media loss not applied")
+	}
+	if witness.snapshot()["session_id"] != "example" {
+		t.Fatal("media evidence lost session attribution")
+	}
+}

@@ -25,6 +25,12 @@ static int exchange(void *user, h2_pal_webrtc_str_t offer,
         return H2_PAL_ERR_IO;
     }
   }
+  if (rc == H2_PAL_OK && exchange_count == 3u && test_mode) {
+    const char *fault = !strcmp(test_mode, "soak-single-loss") ? "drop-one" :
+        !strcmp(test_mode, "soak-permanent-loss") ? "drop-all" : NULL;
+    if (fault && h2_webrtc_pion_fixture_media_fault(user, fault) != 0)
+      return H2_PAL_ERR_IO;
+  }
   return rc;
 }
 static int close_remote(void *user) {
@@ -61,7 +67,10 @@ int main(int argc, char **argv) {
   const h2_pal_webrtc_e2e_config_t config = {.runtime = &runtime,
                                              .stun_url = stun,
                                              .connection_timeout_ms = test_mode ? 1500u : 20000u,
-                                             .soak_duration_ms = test_mode && !strcmp(test_mode, "soak-short") ? 2100u : 0u,
+                                             .soak_duration_ms = !test_mode ? 0u :
+                                                 !strcmp(test_mode, "soak-short") ? 2100u :
+                                                 !strcmp(test_mode, "soak-single-loss") ? 4100u :
+                                                 !strcmp(test_mode, "soak-permanent-loss") ? 12000u : 0u,
                                              .exchange_offer = exchange,
                                              .close_remote = close_remote,
                                              .fixture_user = &fixture,
@@ -80,6 +89,18 @@ int main(int argc, char **argv) {
              auth->detail != H2_PAL_OK && auth->observed_error != H2_PAL_ERR_TLS_VERIFY &&
              auth->authentication_evidence == 0 && result.retained_allocations == 0u
              ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
+  } else if (test_mode && !strcmp(test_mode, "soak-single-loss")) {
+    if (!result.soak.completed || result.soak.elapsed_ms < 4100u ||
+        result.soak.opus_sent < 5u || result.soak.opus_missing != 1u ||
+        result.soak.opus_roundtrips + 1u != result.soak.opus_sent ||
+        result.soak.max_opus_gap_ms < 1500u || result.soak.max_opus_gap_ms >= 10000u)
+      rc = H2_PAL_ERR_INVALID_STATE;
+  } else if (test_mode && !strcmp(test_mode, "soak-permanent-loss")) {
+    rc = rc != H2_PAL_OK && result.passed == H2_PAL_WEBRTC_E2E_CASE_COUNT &&
+        !result.soak.completed && result.soak.detail == H2_PAL_ERR_TIMEOUT &&
+        result.soak.max_opus_gap_ms >= 10000u && result.soak.opus_roundtrips == 0u &&
+        result.soak.data_roundtrips >= 8u && result.retained_allocations == 0u
+        ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
   } else if (test_mode && !strcmp(test_mode, "soak-short")) {
     if (!result.soak.completed || result.soak.elapsed_ms < 2100u ||
         result.soak.data_roundtrips < 3u || result.soak.opus_roundtrips != result.soak.data_roundtrips)

@@ -3,6 +3,7 @@ package main
 import (
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -98,4 +99,45 @@ func (l *witnessLogger) Warnf(format string, args ...interface{}) {
 func (l *witnessLogger) Errorf(format string, args ...interface{}) {
 	l.witness.observe(args...)
 	l.LeveledLogger.Errorf(format, args...)
+}
+
+// Per-session media evidence distinguishes network gaps from a stopped echo
+// loop. Fault controls are fixture-only and remain disabled in hardware runs.
+type mediaWitness struct {
+	sessionID                                                     atomic.Value
+	received, echoed, dropped, inputGaps, readErrors, writeErrors atomic.Uint64
+	lastInputSequence                                             atomic.Uint32
+	dropAt                                                        atomic.Uint64
+	dropAll                                                       atomic.Bool
+}
+
+func (m *mediaWitness) snapshot() map[string]interface{} {
+	id, _ := m.sessionID.Load().(string)
+	return map[string]interface{}{"session_id": id, "received": m.received.Load(),
+		"echoed": m.echoed.Load(), "dropped": m.dropped.Load(), "input_gaps": m.inputGaps.Load(),
+		"last_input_sequence": m.lastInputSequence.Load(), "read_errors": m.readErrors.Load(),
+		"write_errors": m.writeErrors.Load(), "fault_drop_at": m.dropAt.Load(), "fault_drop_all": m.dropAll.Load()}
+}
+func (m *mediaWitness) noteInput(sequence uint16) uint64 {
+	ordinal := m.received.Add(1)
+	prior := m.lastInputSequence.Swap(uint32(sequence))
+	if ordinal > 1 {
+		gap := uint16(sequence - uint16(prior) - 1)
+		if gap < 32768 {
+			m.inputGaps.Add(uint64(gap))
+		}
+	}
+	return ordinal
+}
+func (m *mediaWitness) shouldDrop(ordinal uint64) bool {
+	if m.dropAll.Load() || (m.dropAt.Load() != 0 && ordinal == m.dropAt.Load()) {
+		m.dropped.Add(1)
+		return true
+	}
+	return false
+}
+func (m *mediaWitness) log(phase string) {
+	id, _ := m.sessionID.Load().(string)
+	log.Printf("H2_WEBRTC_TEST_SERVER_MEDIA phase=%s session=%s received=%d echoed=%d dropped=%d input_gaps=%d last_sequence=%d read_errors=%d write_errors=%d",
+		phase, id, m.received.Load(), m.echoed.Load(), m.dropped.Load(), m.inputGaps.Load(), m.lastInputSequence.Load(), m.readErrors.Load(), m.writeErrors.Load())
 }

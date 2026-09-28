@@ -58,6 +58,7 @@ type session struct {
 	createdAt time.Time
 	channels  channelStats
 	auth      authenticationWitness
+	media     mediaWitness
 }
 
 type iceMode string
@@ -611,6 +612,41 @@ func (s *server) handleSession(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r)
 		return
 	}
+	if parts[1] == "media-stats" || parts[1] == "media-fault" {
+		s.mu.Lock()
+		item := s.sessions[parts[0]]
+		s.mu.Unlock()
+		if item == nil {
+			http.NotFound(w, r)
+			return
+		}
+		if parts[1] == "media-stats" && r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_ = json.NewEncoder(w).Encode(item.media.snapshot())
+			return
+		}
+		if parts[1] == "media-fault" && r.Method == http.MethodPost {
+			body, err := io.ReadAll(io.LimitReader(r.Body, 32))
+			if err != nil {
+				http.Error(w, "invalid fault", 400)
+				return
+			}
+			switch string(body) {
+			case "drop-one":
+				item.media.dropAt.Store(item.media.received.Load() + 2)
+			case "drop-all":
+				item.media.dropAll.Store(true)
+			default:
+				http.Error(w, "unknown media fault", 400)
+				return
+			}
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
 	if parts[1] == "authentication-witness" {
 		if r.Method != http.MethodGet {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
@@ -846,7 +882,7 @@ func (s *server) createAnswer(
 		if remote.Codec().MimeType != webrtc.MimeTypeOpus {
 			return
 		}
-		go echoOpus(remote, audioTrack)
+		go echoOpus(remote, audioTrack, &item.media)
 	})
 
 	offer := webrtc.SessionDescription{
@@ -886,12 +922,19 @@ func (s *server) createAnswer(
 	return local.SDP, item, nil
 }
 
-func echoOpus(remote *webrtc.TrackRemote, local *webrtc.TrackLocalStaticRTP) {
+func echoOpus(remote *webrtc.TrackRemote, local *webrtc.TrackLocalStaticRTP, witness *mediaWitness) {
+	defer witness.log("stopped")
 	var sequence uint16
 	for {
 		packet, _, err := remote.ReadRTP()
 		if err != nil {
+			witness.readErrors.Add(1)
 			return
+		}
+		ordinal := witness.noteInput(packet.SequenceNumber)
+		if witness.shouldDrop(ordinal) {
+			witness.log("injected-drop")
+			continue
 		}
 		payload := append([]byte(nil), packet.Payload...)
 		echo := &rtp.Packet{
@@ -906,7 +949,12 @@ func echoOpus(remote *webrtc.TrackRemote, local *webrtc.TrackLocalStaticRTP) {
 		}
 		sequence++
 		if err := local.WriteRTP(echo); err != nil {
+			witness.writeErrors.Add(1)
 			return
+		}
+		witness.echoed.Add(1)
+		if ordinal == 1 || ordinal%50 == 0 {
+			witness.log("progress")
 		}
 	}
 }
@@ -1210,6 +1258,7 @@ func (s *server) track(item *session) string {
 	s.nextSession++
 	id := strconv.FormatUint(s.nextSession, 10)
 	item.id = id
+	item.media.sessionID.Store(id)
 	item.createdAt = time.Now()
 	s.sessions[id] = item
 	return id

@@ -31,14 +31,16 @@ static void report_soak(void *user, const h2_pal_webrtc_e2e_soak_result_t *resul
   const h2_runtime_t *runtime = user;
   uint64_t uptime = 0u;
   (void)h2_pal_time_get_monotonic_ms(runtime->time, &uptime);
-  char line[320];
+  char line[448];
   (void)snprintf(line, sizeof(line), "H2_PAL_WEBRTC_SOAK "
       "{\"run_id\":\"%s\",\"requested_ms\":%u,\"elapsed_ms\":%llu,"
       "\"data_roundtrips\":%u,\"opus_roundtrips\":%u,\"completed\":%d,"
-      "\"detail\":%d,\"uptime_ms\":%llu}", fixture_run, (unsigned)result->requested_ms,
+      "\"detail\":%d,\"uptime_ms\":%llu,\"opus_sent\":%u,\"opus_missing\":%u,"
+      "\"opus_duplicates\":%u,\"max_opus_gap_ms\":%llu}", fixture_run, (unsigned)result->requested_ms,
       (unsigned long long)result->elapsed_ms, result->data_roundtrips,
       result->opus_roundtrips, result->completed, result->detail,
-      (unsigned long long)uptime);
+      (unsigned long long)uptime, result->opus_sent, result->opus_missing,
+      result->opus_duplicates, (unsigned long long)result->max_opus_gap_ms);
   (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-webrtc", line);
 }
 

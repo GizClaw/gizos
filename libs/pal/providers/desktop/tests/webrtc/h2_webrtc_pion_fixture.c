@@ -470,6 +470,17 @@ int h2_webrtc_pion_fixture_channel_stats(
                : -1;
 }
 
+int h2_webrtc_pion_fixture_media_fault(h2_webrtc_pion_fixture_t *fixture,
+                                      const char *mode) {
+    if (!fixture || !mode || !fixture->session_id[0]) return -1;
+    char path[112], response[1024];
+    size_t length = 0u;
+    (void)snprintf(path, sizeof(path), "/session/%s/media-fault", fixture->session_id);
+    return h2_webrtc_fixture_request(fixture->port, "POST", path, mode, strlen(mode),
+                                     NULL, response, sizeof(response), &length) == 0 &&
+                   strstr(response, " 204 ") != NULL ? 0 : -1;
+}
+
 int h2_webrtc_pion_fixture_ice_pair(const h2_webrtc_pion_fixture_t *fixture,
                                     h2_webrtc_ice_pair_t *pair) {
     if (fixture == NULL || pair == NULL || fixture->session_id[0] == '\0') {

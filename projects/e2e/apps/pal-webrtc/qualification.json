@@ -20,7 +20,7 @@
       "sha256": "20f66861a77c86b4806e7985f8e8565e8eb87514bfee9ec11d59f38d46b2e636",
       "environment": "projects/e2e/targets/ios_application/pal-webrtc/evidence/environment.json",
       "environment_sha256": "cfe1caf477f2d66dad9527b841154f639061062687a0942d1e493bff2921533d",
-      "source_matches_current": true
+      "source_matches_current": false
     },
     {
       "platform": "android-emulator",
@@ -29,40 +29,48 @@
       "sha256": "34abb3a9373ae6527587ee1e10210f12f8919b6aa6256b11f6d53819e26cebb7",
       "environment": "projects/e2e/targets/android_binary/pal-webrtc/evidence/environment.json",
       "environment_sha256": "4ac2e7a2c684e12228b16da0617bcc44055931ee055467c11eb9c16ab39dbf5e",
-      "source_matches_current": true
+      "source_matches_current": false
     },
     {
       "platform": "macos",
       "status": "PASS",
       "evidence": "projects/e2e/targets/cc_binary/pal-webrtc/evidence/qualified.json",
       "sha256": "8bb2a15a9673afe79b448e791ecfd07242008957e8d6f39625e7194075f1cd20",
-      "source_matches_current": true
+      "source_matches_current": false
     },
     {
       "platform": "wasm",
       "status": "PASS",
       "evidence": "projects/e2e/targets/pkg_tar/pal-webrtc/evidence/qualified.json",
       "sha256": "9f31f523aa9f3126286365b5b59c7604698870853160127322ba972a0410893e",
-      "source_matches_current": true
+      "source_matches_current": false
     },
     {
       "platform": "devkit",
       "status": "PASS",
       "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/devkit/evidence/qualified.json",
       "sha256": "e8014b0963447876067bfad2203dcfa153559188cbc9ce63d048639fe7e4067d",
-      "source_matches_current": true
+      "source_matches_current": false
     },
     {
       "platform": "bk7258",
       "status": "FAIL_STABILITY",
       "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405/evidence/failed-r16.json",
       "sha256": "69ef01712c88bd265913f1e13f3309ec0623f2b4fe305f9d85a669828fd0531e",
-      "source_matches_current": true,
+      "source_matches_current": false,
       "conformance_status": "PASS"
     }
   ],
   "remaining": [
-    "Diagnose BK r16 active liveness failure at 174 seconds (data=162, Opus=161, TIMEOUT); no new AP boot or coredump observed. Preserve unconfirmed App and Stage while diagnosing; then requalify final artifact and independent reboot."
+    "Validate sequence-tagged continuous RTP liveness with real Pion RX/TX/drop evidence; preserve BK r16 single-packet timeout as a historical failure.",
+    "Refresh all six final artifacts and receipts after the revised stability probe; BK requires two independent 600-second runs, sustained data/media, bounded longest media gap, and preserved Loader/coredump."
   ],
-  "requires_source_refresh": []
+  "requires_source_refresh": [
+    "ios-simulator",
+    "android-emulator",
+    "macos",
+    "wasm",
+    "devkit",
+    "bk7258"
+  ]
 }

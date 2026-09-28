@@ -26,4 +26,6 @@ package(default_visibility = ["//visibility:public"])
     ("reject_malformed_auth_test", ["reject-malformed-auth"]),
     ("reject_timeout_auth_test", ["reject-timeout-auth"]),
     ("soak_test", ["soak-short"]),
+    ("soak_single_loss_test", ["soak-single-loss"]),
+    ("soak_permanent_loss_test", ["soak-permanent-loss"]),
 ]]

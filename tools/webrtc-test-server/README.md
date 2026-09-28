@@ -89,3 +89,13 @@ or 46 and zero opened channels. Timeouts, generic handshake failures, and error
 strings are not authentication evidence. Each session has a distinct witness.
 This endpoint helps browsers that expose DTLS failure state without RTCError
 fingerprint details; it never changes certificate verification behavior.
+
+`/session/<id>/media-stats` reports received and echoed RTP packet counts,
+input sequence gaps, deliberate drops, and echo-loop termination counters.
+Periodic `H2_WEBRTC_TEST_SERVER_MEDIA` lines retain the same session identity.
+The conformance-only `POST /session/<id>/media-fault` accepts `drop-one` (drop
+the second subsequent packet) or `drop-all`. The hardware fixture never enables
+these controls. Host stability regressions use them to prove that an isolated
+RTP loss is reported and can recover, while 10 seconds without successful media
+still fails qualification. Sequence tags in synthetic Opus distinguish unique
+end-to-end echoes from duplicates; this is protocol liveness, not audio output.
