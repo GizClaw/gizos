@@ -1,8 +1,12 @@
 #ifndef H2_WEB_PLATFORM_INTERNAL_H
 #define H2_WEB_PLATFORM_INTERNAL_H
 
+#include "h2_web_main_thread.h"
 #include "h2_web_platform.h"
 
+#include "h2_web_thread_core.h"
+#include <pthread.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 
 #define H2_WEB_TOUCH_EVENT_CAPACITY 32u
@@ -12,6 +16,8 @@
 #define H2_WEB_ASYNC_WAIT_FOREVER UINT32_MAX
 
 typedef struct h2_web_audio_track h2_web_audio_track_t;
+typedef struct h2_web_system_event_frame h2_web_system_event_frame_t;
+typedef struct h2_web_event_unsubscribe_request h2_web_event_unsubscribe_request_t;
 
 /* A finished WebRTC media task waiting for the pump to join it. */
 typedef struct h2_web_webrtc_zombie {
@@ -29,7 +35,6 @@ typedef struct h2_web_async {
   uint32_t id;
   int result;
   bool done;
-  bool woken;
 } h2_web_async_t;
 
 struct h2_web_platform {
@@ -42,9 +47,23 @@ struct h2_web_platform {
   h2_pal_touch_event_t touch_events[H2_WEB_TOUCH_EVENT_CAPACITY];
   size_t touch_head;
   size_t touch_count;
-  h2_libco_t *executor;
-  h2_pal_timer_t *timers;
-  h2_pal_timer_api_t timer_api;
+  h2_web_thread_core_t *executor;
+  pthread_mutex_t async_mutex;
+  pthread_cond_t async_changed;
+  pthread_mutex_t event_mutex;
+  pthread_cond_t event_changed;
+  pthread_mutex_t pump_mutex;
+  pthread_cond_t pump_changed;
+  pthread_t pump_thread;
+  h2_web_event_unsubscribe_request_t *event_unsubscribe_head;
+  h2_web_event_unsubscribe_request_t *event_unsubscribe_tail;
+  bool pump_stop;
+  h2_pal_mem_api_t task_allocator;
+  h2_pal_time_api_t clock_api;
+  _Atomic int64_t wall_offset_ms;
+  _Atomic bool wall_user_calibrated;
+  h2_pal_firmware_info_api_t firmware_info_api;
+  h2_pal_firmware_info_t firmware_info;
   h2_pal_pref_api_t pref_api;
   h2_pal_http_api_t http_api;
   h2_pal_audio_api_t audio_api;
@@ -59,16 +78,18 @@ struct h2_web_platform {
   h2_pal_system_event_subscription_t *system_event_subscriptions;
   size_t system_event_subscription_count;
   unsigned system_event_users;
+  uint64_t system_event_next_generation;
+  unsigned system_event_posts;
+  unsigned system_event_unsubscribe_waiters;
   h2_web_async_t *async_ops;
   uint32_t async_next_id;
   unsigned async_waiters;
-  bool async_wake_pending;
   unsigned open_filesystems;
   uint32_t http_next_id;
   unsigned http_requests;
   bool netif_supported;
   bool netif_online;
-  bool netif_dirty;
+  _Atomic bool netif_dirty;
   void *serial_state;
   h2_pal_webrtc_peer_t *webrtc_peers;
   h2_web_webrtc_zombie_t *webrtc_zombies;
@@ -84,9 +105,9 @@ struct h2_web_platform {
   bool speaker_stopped;
   uint32_t speaker_volume_percent;
   bool pumping;
-  bool shutting_down;
+  pthread_t pump_owner;
+  _Atomic bool shutting_down;
   bool pump_scheduled;
-  uint64_t pump_deadline_ms;
 };
 
 void h2_web_platform_display_init(h2_web_platform_t *platform);
@@ -102,20 +123,15 @@ void h2_web_platform_video_decoder_init(h2_web_platform_t *platform);
 int h2_web_platform_crypto_init(h2_web_platform_t *platform);
 void h2_web_platform_crypto_deinit(h2_web_platform_t *platform);
 void h2_web_platform_http_init(h2_web_platform_t *platform);
-void h2_web_platform_timer_init(h2_web_platform_t *platform);
-void h2_web_platform_timer_deinit(h2_web_platform_t *platform);
-void h2_web_platform_timer_dispatch(h2_web_platform_t *platform);
 void h2_web_platform_pref_init(h2_web_platform_t *platform);
 h2_pal_result_t h2_web_platform_serial_init(h2_web_platform_t *platform);
 void h2_web_platform_serial_deinit(h2_web_platform_t *platform);
-h2_libco_result_t h2_web_platform_serial_poll(h2_web_platform_t *platform,
-                                               h2_libco_t *executor);
 void h2_web_platform_request_pump(h2_web_platform_t *platform,
                                   uint64_t deadline_ms);
 void h2_web_async_begin(h2_web_platform_t *platform, h2_web_async_t *op);
 /**
  * Wait until op completes, timeout_ms passes (TIMEOUT) or the calling task is
- * cancelled (CLOSED). Tasks yield to the executor; the root uses Asyncify.
+ * cancelled (CLOSED). Worker callers sleep on a pthread condition.
  * OK means op->result holds the completion result.
  */
 h2_pal_result_t h2_web_async_wait(h2_web_platform_t *platform,
@@ -127,14 +143,13 @@ int h2_web_async_finish(h2_web_platform_t *platform, h2_web_async_t *op,
 /** Complete a registered op from C, e.g. from a browser event callback. */
 void h2_web_async_signal(h2_web_platform_t *platform, h2_web_async_t *op,
                          int result);
-/** Sleep: tasks yield through libco, the root suspends through Asyncify. */
+/** Interruptible Worker sleep; the browser UI must never block. */
 h2_pal_result_t h2_web_platform_sleep_ms(h2_web_platform_t *platform,
                                          uint32_t duration_ms);
-void h2_web_platform_async_poll(h2_web_platform_t *platform,
-                                h2_libco_t *executor);
 void h2_web_platform_netif_init(h2_web_platform_t *platform);
 void h2_web_platform_netif_deinit(h2_web_platform_t *platform);
 void h2_web_platform_netif_poll(h2_web_platform_t *platform);
+void h2_web_platform_event_retire(h2_web_platform_t *platform);
 void h2_web_platform_webrtc_init(h2_web_platform_t *platform);
 void h2_web_platform_webrtc_deinit(h2_web_platform_t *platform);
 bool h2_web_platform_webrtc_busy(h2_web_platform_t *platform);

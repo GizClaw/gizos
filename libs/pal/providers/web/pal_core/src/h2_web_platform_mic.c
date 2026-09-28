@@ -1,3 +1,4 @@
+#include "h2_web_main_thread.h"
 #include "h2_web_platform_internal.h"
 
 #include <emscripten.h>
@@ -7,14 +8,23 @@
 #define H2_WEB_MIC_START_TIMEOUT_MS 30000u
 
 // Keep browser callbacks in JS. Only the PAL caller touches its Wasm buffer;
-// promises and worklet messages never reenter a running cooperative executor.
-// clang-format off
-EM_JS(int, h2_web_mic_supported_js, (), {
+// Promise and worklet callbacks publish results to waiting Workers.
+/* clang-format off */
+EM_JS(void, h2_web_mic_supported_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], "i32",
+    () => {
   return !!(globalThis.navigator?.mediaDevices?.getUserMedia &&
             globalThis.AudioContext && globalThis.AudioWorkletNode);
 });
+});
+/* clang-format on */
 
-EM_JS(int, h2_web_mic_begin_js, (uintptr_t address), {
+/* clang-format off */
+EM_JS(void, h2_web_mic_begin_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32"], "i32",
+    (address) => {
   const entries = Module['h2WebMicrophones'] ||= new Map();
   const streams = Module['h2WebMicrophoneStreams'] ||= new Map();
   if (entries.has(address)) return -7;
@@ -156,12 +166,24 @@ EM_JS(int, h2_web_mic_begin_js, (uintptr_t address), {
   }
   return entry.status;
 });
+});
+/* clang-format on */
 
-EM_JS(int, h2_web_mic_status_js, (uintptr_t address), {
+/* clang-format off */
+EM_JS(void, h2_web_mic_status_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32"], "i32",
+    (address) => {
   return Module['h2WebMicrophones']?.get(address)?.status ?? -10;
 });
+});
+/* clang-format on */
 
-EM_JS(void, h2_web_mic_stop_js, (uintptr_t address), {
+/* clang-format off */
+EM_JS(void, h2_web_mic_stop_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32"], null,
+    (address) => {
   const entries = Module['h2WebMicrophones'];
   const entry = entries?.get(address);
   if (!entry) return;
@@ -169,8 +191,14 @@ EM_JS(void, h2_web_mic_stop_js, (uintptr_t address), {
   entry.release();
   entries.delete(address);
 });
+});
+/* clang-format on */
 
-EM_JS(int, h2_web_mic_read_js, (uintptr_t address, uint8_t *output), {
+/* clang-format off */
+EM_JS(void, h2_web_mic_read_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32", "pointer"], "i32",
+    (address, output) => {
   const entry = Module['h2WebMicrophones']?.get(address);
   if (!entry) return -10;
   if (entry.status !== 0) return entry.status;
@@ -180,43 +208,47 @@ EM_JS(int, h2_web_mic_read_js, (uintptr_t address, uint8_t *output), {
   entry.node.port.postMessage(buffer, [buffer]);
   return 0;
 });
-// clang-format on
-
+});
+/* clang-format on */
 static int h2_web_mic_pause(h2_web_platform_t *platform) {
+  H2_WEB_STATE_GUARD();
   const int result =
       h2_pal_time_sleep_ms(h2_web_platform_time_api(platform), 1u);
-  if (result == H2_PAL_ERR_INVALID_STATE) {
-    // Root callers use Asyncify; task callers yield through libco instead.
-    emscripten_sleep(1u);
-    return H2_PAL_OK;
-  }
   return result;
 }
 
-int h2_web_platform_mic_supported(void) { return h2_web_mic_supported_js(); }
+int h2_web_platform_mic_supported(void) {
+  H2_WEB_STATE_GUARD();
+  return ((int)h2_web_main_call(h2_web_mic_supported_js, NULL).i32); }
 
 int h2_web_platform_mic_stop(void *user) {
+  H2_WEB_STATE_GUARD();
   h2_web_platform_t *platform = user;
   if (platform == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   ++platform->mic_generation;
-  h2_web_mic_stop_js((uintptr_t)platform);
+  (void)h2_web_main_call(h2_web_mic_stop_js,
+                         (const void *[]){&(uintptr_t){(uintptr_t)platform}});
   return H2_PAL_OK;
 }
 
 int h2_web_platform_mic_start(void *user) {
+  H2_WEB_STATE_GUARD();
   h2_web_platform_t *platform = user;
   if (platform == NULL)
     return H2_PAL_ERR_INVALID_ARG;
   if (platform->shutting_down || platform->mic_starting)
     return H2_PAL_ERR_INVALID_STATE;
-  if (!h2_web_mic_supported_js())
+  if (!((int)h2_web_main_call(h2_web_mic_supported_js, NULL).i32))
     return H2_PAL_ERR_UNSUPPORTED;
   platform->mic_starting = true;
   ++platform->mic_calls;
   const uint64_t generation = platform->mic_generation;
   const double deadline = emscripten_get_now() + H2_WEB_MIC_START_TIMEOUT_MS;
-  int result = h2_web_mic_begin_js((uintptr_t)platform);
+  int result = ((int)h2_web_main_call(
+                    h2_web_mic_begin_js,
+                    (const void *[]){&(uintptr_t){(uintptr_t)platform}})
+                    .i32);
   while (result == H2_PAL_ERR_WOULD_BLOCK) {
     result = h2_web_mic_pause(platform);
     if (result != H2_PAL_OK)
@@ -225,7 +257,10 @@ int h2_web_platform_mic_start(void *user) {
       result = H2_PAL_ERR_CLOSED;
       break;
     }
-    result = h2_web_mic_status_js((uintptr_t)platform);
+    result = ((int)h2_web_main_call(
+                  h2_web_mic_status_js,
+                  (const void *[]){&(uintptr_t){(uintptr_t)platform}})
+                  .i32);
     if (result == H2_PAL_ERR_WOULD_BLOCK && emscripten_get_now() >= deadline) {
       result = H2_PAL_ERR_TIMEOUT;
       break;
@@ -241,6 +276,7 @@ int h2_web_platform_mic_start(void *user) {
 
 int h2_web_platform_mic_read(void *user, h2_audio_frame_t *frame,
                              uint32_t timeout_ms) {
+  H2_WEB_STATE_GUARD();
   h2_web_platform_t *platform = user;
   if (frame != NULL)
     frame->bytes = 0u;
@@ -255,7 +291,11 @@ int h2_web_platform_mic_read(void *user, h2_audio_frame_t *frame,
   const double deadline = emscripten_get_now() + timeout_ms;
   int result;
   for (;;) {
-    result = h2_web_mic_read_js((uintptr_t)platform, frame->data);
+    result = ((int)h2_web_main_call(
+                  h2_web_mic_read_js,
+                  (const void *[]){&(uintptr_t){(uintptr_t)platform},
+                                   &(uint8_t *){frame->data}})
+                  .i32);
     if (result != H2_PAL_ERR_WOULD_BLOCK || timeout_ms == 0u)
       break;
     if (emscripten_get_now() >= deadline) {

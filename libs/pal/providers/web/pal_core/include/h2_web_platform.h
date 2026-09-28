@@ -1,7 +1,6 @@
 #ifndef H2_WEB_PLATFORM_H
 #define H2_WEB_PLATFORM_H
 
-#include "h2_libco.h"
 #include "h2_pal.h"
 
 #include <stddef.h>
@@ -22,7 +21,7 @@ typedef struct h2_web_platform_config {
 } h2_web_platform_config_t;
 
 /**
- * Create one single-threaded Browser provider and cooperative executor.
+ * Create one Browser provider backed by pthread Workers.
  *
  * @param config Borrowed dimensions copied before this call returns.
  * @return An owned platform, or NULL for invalid dimensions/allocation failure.
@@ -30,31 +29,60 @@ typedef struct h2_web_platform_config {
 h2_web_platform_t *
 h2_web_platform_create(const h2_web_platform_config_t *config);
 
+/** Create a Web provider with a borrowed allocator for native Task stacks.
+ * The API is copied; allocator user/vtable must live through platform destroy.
+ * NULL selects the regular Web Memory provider. Other capability allocators
+ * are unchanged. This permits target memory policy and allocation-failure
+ * verification without replacing the real Task implementation. */
+h2_web_platform_t *h2_web_platform_create_with_task_allocator(
+    const h2_web_platform_config_t *config, const h2_pal_mem_api_t *allocator);
+
+typedef struct h2_web_platform_resource_stats {
+  size_t live_tasks, task_stack_bytes;
+  size_t live_queues, live_mutexes, live_semaphores, live_conditions;
+  size_t live_timers, live_firmware_infos, live_event_subscriptions;
+  /** Process-wide Web Memory allocations and allocator-reported usable bytes. */
+  size_t allocations, allocation_bytes;
+} h2_web_platform_resource_stats_t;
+
+/** Read actual provider objects from its owning C main Worker or PAL Task Worker. */
+h2_pal_result_t h2_web_platform_get_resource_stats(
+    h2_web_platform_t *platform, h2_web_platform_resource_stats_t *out);
+
+/** Copy immutable version metadata embedded by the launcher before Runtime
+ * assembly. Empty/oversized versions are rejected; a second configuration
+ * returns INVALID_STATE. This does not fetch mutable remote metadata. */
+h2_pal_result_t h2_web_platform_configure_firmware_info(
+    h2_web_platform_t *platform, const char *embedded_version);
+const h2_pal_firmware_info_api_t *h2_web_platform_firmware_info_api(
+    h2_web_platform_t *platform);
+
 /**
  * Destroy an idle provider after target-owned Runtime/tasks are released.
  *
  * Returns BUSY and leaves the platform intact while a task is alive, a PAL
  * call is suspended on a browser Promise (HTTP, WebRTC, decoder, microphone,
  * filesystem), an h2_web_fs is open or a speaker track is still open;
- * stop/cancel/close them, keep
- * pumping and retry. NULL and success return OK. All borrowed accessor
+ * stop/cancel/close them and retry. NULL and success return OK. All borrowed accessor
  * results become invalid when destruction succeeds.
  */
 h2_pal_result_t h2_web_platform_destroy(h2_web_platform_t *platform);
 
 /**
- * Run one non-reentrant bounded scheduler turn on the browser root.
+ * Import pending browser events and reap finished media Tasks.
+ * PAL Tasks run independently on pthread Workers; this compatibility entry
+ * does not schedule them. An owned Worker also imports requested events.
  *
  * @param platform Borrowed live platform.
- * @param work_budget Maximum ready tasks resumed during this turn.
- * @param out_resumed Optional count, cleared before validation.
+ * @param work_budget Reserved compatibility budget (currently ignored).
+ * @param out_resumed Optional resumed count, always zero with pthread scheduling.
  * @return OK or INVALID_STATE for a dead, reentrant, or shutting-down call.
  */
 h2_pal_result_t h2_web_platform_pump(h2_web_platform_t *platform,
                                      size_t work_budget,
                                      size_t *out_resumed);
 
-/** Schedule an asynchronous bounded pump on the browser event loop. */
+/** Wake the platform Worker to import browser events. */
 void h2_web_platform_schedule(h2_web_platform_t *platform);
 
 /** Request cooperative cancellation for one task owned by this platform. */
@@ -95,8 +123,8 @@ h2_web_platform_display_api(h2_web_platform_t *platform);
  * Zero timeout returns WOULD_BLOCK when empty; finite waits return TIMEOUT.
  * Capture requests echoCancellation=true and logs the actual track setting.
  * This is a preference: unconfirmed AEC warns but does not reject capture.
- * Only one read may be pending (another returns BUSY). Task callers yield
- * cooperatively; root callers require Asyncify.
+ * Only one read may be pending (another returns BUSY). Blocking calls run on
+ * Workers; browser API entries and Promise completion run on the UI thread.
  *
  * Start requires a user gesture, secure context and browser permission; it waits at most
  * 30 seconds. Missing APIs return UNSUPPORTED, denied/unavailable devices return
@@ -123,7 +151,7 @@ const h2_pal_touch_api_t *
 h2_web_platform_touch_api(h2_web_platform_t *platform);
 const h2_pal_serial_host_api_t *
 h2_web_platform_serial_host_api(h2_web_platform_t *platform);
-/** Browser RTCPeerConnection/DataChannel provider, called on the JS thread.
+/** Browser RTCPeerConnection/DataChannel provider, with browser API calls proxied to the UI thread.
  * A Track with native_handle == NULL and a read/write vtable is an Opus
  * Track (the native-provider model): the provider sends a silent browser
  * track, replaces each outgoing encoded 20 ms payload with the next packet
@@ -177,17 +205,35 @@ const h2_pal_netif_api_t *
 h2_web_platform_netif_api(h2_web_platform_t *platform);
 
 /**
- * Single-threaded System Event provider owned by @p platform.
+ * Thread-safe System Event provider owned by @p platform.
  *
  * Browser online/offline notifications are recorded and published from the
  * next platform pump as H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED with
  * the "browser" ref on the valid side; repeated notifications that do not
  * change navigator.onLine are dropped. init only records the baseline and
- * publishes nothing. post dispatches synchronously on the caller's turn.
+ * publishes nothing. post dispatches synchronously on the caller thread.
+ * External unsubscribe drains in-flight callbacks; self-unsubscribe retires
+ * the subscription without waiting on its own callback.
  * At most 64 subscriptions may be live; more return NO_SPACE.
  */
+/** Borrow the synchronous SystemEvent API on a C Worker; NULL on the browser
+ * main thread. Its unsubscribe may block until other Worker callbacks return.
+ * A borrowed API must not be used from the browser main thread. */
 const h2_pal_system_event_api_t *
 h2_web_platform_system_event_api(h2_web_platform_t *platform);
+
+/** Retire a subscription without blocking the browser event loop.
+ * On OK, admission is stopped immediately and ownership of the subscription
+ * transfers to the platform Worker. completed(user) runs exactly once on that
+ * Worker after all in-flight handlers finish; handler_user must stay alive
+ * until then. Keep platform/user alive through callback return, then platform
+ * destruction is retryable if the pump is still finishing. Do not unsubscribe
+ * the transferred handle again. BUSY takes no ownership and may be retried
+ * after returning to the event loop. Other failures do not invoke completed.
+ */
+h2_pal_result_t h2_web_platform_system_event_unsubscribe_async(
+    h2_web_platform_t *platform, h2_pal_system_event_subscription_t *subscription,
+    void (*completed)(void *user), void *user);
 
 /**
  * Start the Web Serial chooser; call only from a direct user gesture.
@@ -226,7 +272,7 @@ h2_pal_result_t h2_web_platform_serial_forget_result(
  *
  * This is the page-lifecycle cancellation boundary. It invalidates late
  * Promise completions and makes blocked PAL calls runnable with CLOSED; the
- * owner must keep pumping until its tasks unwind, then destroy the platform.
+ * owner must join its tasks before destroying the platform.
  * Returns UNSUPPORTED when an active Web Serial session existed because the
  * browser exposes reader/writer cancellation and port close only as Promises;
  * this call initiates that best-effort browser cleanup but cannot claim it

@@ -1,3 +1,4 @@
+#include "h2_web_main_thread.h"
 #include "h2_web_platform.h"
 
 #ifdef NDEBUG
@@ -11,8 +12,11 @@
 #include <string.h>
 
 // Real browser primitives only: no RTCPeerConnection or media API substitutes.
-// clang-format off
-EM_ASYNC_JS(void, prepare_media, (), {
+/* clang-format off */
+EM_JS(void, prepare_media,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], null,
+    async () => {
   const context = new AudioContext();
   await context.resume();
   const oscillator = context.createOscillator();
@@ -47,8 +51,14 @@ EM_ASYNC_JS(void, prepare_media, (), {
   }
   Module.browserFixture = {context, oscillator, source, audio, remote, remoteAudio};
 });
+});
+/* clang-format on */
 
-EM_ASYNC_JS(char *, answer_offer, (const char *sdp, size_t len), {
+/* clang-format off */
+EM_JS(void, answer_offer,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["pointer", "u32"], "pointer",
+    async (sdp, len) => {
   const remote = Module.browserFixture.remote;
   let text;
   if (Module.pion) {
@@ -80,8 +90,14 @@ EM_ASYNC_JS(char *, answer_offer, (const char *sdp, size_t len), {
   stringToUTF8(text, buffer, bytes);
   return buffer;
 });
+});
+/* clang-format on */
 
-EM_ASYNC_JS(int, verify_audio, (uintptr_t address), {
+/* clang-format off */
+EM_JS(void, verify_audio,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32"], "i32",
+    async (address) => {
   const local = Module.h2WebRtcPeers.get(address).pc;
   const {remote, audio, context} = Module.browserFixture;
   const peers = remote ? [local, remote] : [local];
@@ -128,8 +144,14 @@ EM_ASYNC_JS(int, verify_audio, (uintptr_t address), {
   release();
   return 0;
 });
+});
+/* clang-format on */
 
-EM_ASYNC_JS(int, verify_relay, (uintptr_t address), {
+/* clang-format off */
+EM_JS(void, verify_relay,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32"], "i32",
+    async (address) => {
   if (!Module.relay) return 1;
   const local = Module.h2WebRtcPeers.get(address).pc;
   const remote = Module.browserFixture.remote;
@@ -149,8 +171,14 @@ EM_ASYNC_JS(int, verify_relay, (uintptr_t address), {
   return a && b && a.remote === 'relay' && b.local === 'relay' &&
       [a, b].every(p => p.state === 'succeeded' && p.sent > 0 && p.received > 0);
 });
+});
+/* clang-format on */
 
-EM_ASYNC_JS(void, cleanup_browser, (), {
+/* clang-format off */
+EM_JS(void, cleanup_browser,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], null,
+    async () => {
   const {remote, source, oscillator, context, remoteAudio} = Module.browserFixture;
   if (remote) remote.close();
   if (remoteAudio) {
@@ -162,8 +190,14 @@ EM_ASYNC_JS(void, cleanup_browser, (), {
   await context.close();
   Module.h2WebRtcTracks.clear();
 });
+});
+/* clang-format on */
 
-EM_ASYNC_JS(void, connection_diagnostics, (uintptr_t address), {
+/* clang-format off */
+EM_JS(void, connection_diagnostics,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32"], null,
+    async (address) => {
   const local = Module.h2WebRtcPeers.get(address).pc;
   const remote = Module.browserFixture.remote;
   for (const pc of remote ? [local, remote] : [local]) {
@@ -176,8 +210,14 @@ EM_ASYNC_JS(void, connection_diagnostics, (uintptr_t address), {
     }
   }
 });
+});
+/* clang-format on */
 
-EM_ASYNC_JS(void, close_remote, (), {
+/* clang-format off */
+EM_JS(void, close_remote,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], null,
+    async () => {
   if (Module.pion) {
     const response = await fetch('/pion/close', {
       method: 'POST', signal: AbortSignal.timeout(10000)
@@ -187,8 +227,14 @@ EM_ASYNC_JS(void, close_remote, (), {
     Module.remoteChannel.close();
   }
 });
+});
+/* clang-format on */
 
-EM_JS(int, detached, (uintptr_t address), {
+/* clang-format off */
+EM_JS(void, detached,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32"], "i32",
+    (address) => {
   const entry = Module.h2WebRtcPeers.get(address);
   const {source, audio} = Module.browserFixture;
   return !entry.binding && !Module.h2WebRtcTrackOwners.has(7) &&
@@ -196,20 +242,32 @@ EM_JS(int, detached, (uintptr_t address), {
       source.stream.getAudioTracks().every(track => track.readyState === 'live') &&
       audio.srcObject === null && audio.paused;
 });
+});
+/* clang-format on */
 
-EM_JS(char *, copy_ice_url, (), {
+/* clang-format off */
+EM_JS(void, copy_ice_url,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], "pointer",
+    () => {
   const size = lengthBytesUTF8(Module.iceURL) + 1;
   const url = _malloc(size);
   if (url) stringToUTF8(Module.iceURL, url, size);
   return url;
 });
+});
+/* clang-format on */
 
-EM_JS(int, gathered_relay, (const char *sdp, size_t len), {
+/* clang-format off */
+EM_JS(void, gathered_relay,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["pointer", "u32"], "i32",
+    (sdp, len) => {
   return UTF8ToString(sdp, len).split(String.fromCharCode(10)).some(line =>
       line.startsWith('a=candidate:') && / typ relay(?: |$)/.test(line.trim()));
 });
-// clang-format on
-
+});
+/* clang-format on */
 static h2_web_platform_t *platform;
 static const h2_pal_webrtc_api_t *api;
 static h2_pal_webrtc_peer_t *peer;
@@ -245,7 +303,8 @@ static h2_pal_webrtc_event_t next_kind(h2_pal_webrtc_event_kind_t kind) {
       return event;
     h2_pal_webrtc_event_release(&event);
   }
-  connection_diagnostics((uintptr_t)peer);
+  (void)h2_web_main_call(connection_diagnostics,
+                         (const void *[]){&(uintptr_t){(uintptr_t)peer}});
   assert(!"browser event deadline");
   return (h2_pal_webrtc_event_t){0};
 }
@@ -254,22 +313,34 @@ static h2_pal_webrtc_event_t echo(const uint8_t *data, size_t len, int text) {
   assert(h2_pal_webrtc_channel_send(api, channel, data, len, text) ==
          H2_PAL_OK);
   // Let browser transport and provider callbacks run without application poll.
-  emscripten_sleep(100);
+  h2_web_worker_sleep(100);
   h2_pal_webrtc_event_t event = next_kind(H2_PAL_WEBRTC_EVENT_CHANNEL_MESSAGE);
   assert_echo(&event, data, len, text);
   return event;
 }
 
+typedef struct send_batch { unsigned sent; } send_batch_t;
+static void fill_send_buffer(void *context, h2_web_main_result_t *result,
+                             h2_web_main_completion_t *completion) {
+  send_batch_t *batch = context;
+  uint8_t data[16384];
+  h2_pal_result_t rc = H2_PAL_OK;
+  // One browser turn sends through the real PAL/DataChannel without letting
+  // transport drain between each Worker-to-main round trip. This tests the
+  // actual bufferedAmount limit, independent of machine/network speed.
+  for (; batch->sent < 128; ++batch->sent) {
+    memset(data, (int)batch->sent, sizeof(data));
+    rc = h2_pal_webrtc_channel_send(api, channel, data, sizeof(data), 0);
+    if (rc != H2_PAL_OK) break;
+  }
+  result->i32 = rc;
+  h2_web_main_complete(completion);
+}
 static void test_backpressure(void) {
   uint8_t data[16384];
-  unsigned sent = 0;
-  h2_pal_result_t rc = H2_PAL_OK;
-  for (; sent < 128; ++sent) {
-    memset(data, (int)sent, sizeof(data));
-    rc = h2_pal_webrtc_channel_send(api, channel, data, sizeof(data), 0);
-    if (rc != H2_PAL_OK)
-      break;
-  }
+  send_batch_t batch = {0};
+  h2_pal_result_t rc = (h2_pal_result_t)h2_web_main_call(fill_send_buffer, &batch).i32;
+  unsigned sent = batch.sent;
   assert(rc == H2_PAL_ERR_WOULD_BLOCK && sent > 0);
   unsigned received = 0;
   int writable = 0;
@@ -301,18 +372,22 @@ static void test_backpressure(void) {
 }
 
 int main(void) {
-  pion = EM_ASM_INT({ return Module.pion ? 1 : 0; });
+  pion = /* clang-format off */
+MAIN_THREAD_EM_ASM_INT({ return Module.pion ? 1 : 0; });
+/* clang-format on */
   printf("WEB_BROWSER backend=%s\n", pion ? "pion" : "browser");
-  const int relay = EM_ASM_INT({ return Module.relay ? 1 : 0; });
+  const int relay = /* clang-format off */
+MAIN_THREAD_EM_ASM_INT({ return Module.relay ? 1 : 0; });
+/* clang-format on */
   printf("WEB_BROWSER relay=%d\n", relay);
-  prepare_media();
+  (void)h2_web_main_call(prepare_media, NULL);
   const h2_web_platform_config_t config = {.display_width = 1,
                                            .display_height = 1};
   platform = h2_web_platform_create(&config);
   assert(platform != NULL);
   api = h2_web_platform_webrtc_api(platform);
   assert(h2_pal_webrtc_peer_create(api, &peer) == H2_PAL_OK);
-  char *ice_url = copy_ice_url();
+  char *ice_url = ((char *)h2_web_main_call(copy_ice_url, NULL).ptr);
   assert(ice_url != NULL);
   const h2_pal_webrtc_ice_server_t ice = {
       .url = {.data = ice_url, .len = strlen(ice_url)},
@@ -333,8 +408,16 @@ int main(void) {
   assert(h2_pal_webrtc_peer_start_offer(api, peer) == H2_PAL_OK);
   h2_pal_webrtc_event_t event = next_kind(H2_PAL_WEBRTC_EVENT_LOCAL_SDP);
   if (relay)
-    assert(gathered_relay(event.sdp.data, event.sdp.len));
-  char *answer = answer_offer(event.sdp.data, event.sdp.len);
+    assert(
+        ((int)h2_web_main_call(gathered_relay,
+                               (const void *[]){&(const char *){event.sdp.data},
+                                                &(size_t){event.sdp.len}})
+             .i32));
+  char *answer =
+      ((char *)h2_web_main_call(
+           answer_offer, (const void *[]){&(const char *){event.sdp.data},
+                                          &(size_t){event.sdp.len}})
+           .ptr);
   h2_pal_webrtc_event_release(&event);
   assert(answer != NULL);
   assert(h2_pal_webrtc_peer_set_remote_sdp(
@@ -349,7 +432,9 @@ int main(void) {
   const uint8_t text[] = "real browser echo";
   event = echo(text, sizeof(text) - 1, 1);
   h2_pal_webrtc_event_release(&event);
-  assert(verify_audio((uintptr_t)peer));
+  assert(((int)h2_web_main_call(verify_audio,
+                                (const void *[]){&(uintptr_t){(uintptr_t)peer}})
+              .i32));
   puts(pion ? "WEB_BROWSER audio=pion-opus-roundtrip-nonsilent-pcm "
               "datachannel=text PASS"
             : "WEB_BROWSER audio=bidirectional-nonsilent-decoded-pcm "
@@ -360,12 +445,18 @@ int main(void) {
   free(track);
   // Successful unset has awaited native replaceTrack promises; user source
   // stays live.
-  assert(detached((uintptr_t)peer));
+  assert(((int)h2_web_main_call(detached,
+                                (const void *[]){&(uintptr_t){(uintptr_t)peer}})
+              .i32));
   const uint8_t binary[] = {0, 1, 255, 128, 0, 42};
   h2_pal_webrtc_event_t leased = echo(binary, sizeof(binary), 0);
-  assert(detached((uintptr_t)peer));
-  assert(verify_relay((uintptr_t)peer));
-  close_remote();
+  assert(((int)h2_web_main_call(detached,
+                                (const void *[]){&(uintptr_t){(uintptr_t)peer}})
+              .i32));
+  assert(((int)h2_web_main_call(verify_relay,
+                                (const void *[]){&(uintptr_t){(uintptr_t)peer}})
+              .i32));
+  (void)h2_web_main_call(close_remote, NULL);
   event = next_kind(H2_PAL_WEBRTC_EVENT_CHANNEL_STATE);
   // The fixture closes the entire Pion association (SCTP ABORT), whereas the
   // browser peer closes only this DataChannel with a graceful stream reset.
@@ -375,7 +466,7 @@ int main(void) {
   h2_pal_webrtc_event_release(&event);
   assert(h2_pal_webrtc_channel_send(api, channel, binary, sizeof(binary), 0) ==
          H2_PAL_ERR_CLOSED);
-  emscripten_sleep(100);
+  h2_web_worker_sleep(100);
   h2_pal_result_t rc;
   while ((rc = h2_pal_webrtc_peer_poll(api, peer, 0, &event)) == H2_PAL_OK) {
     assert(event.kind != H2_PAL_WEBRTC_EVENT_CHANNEL_STATE);
@@ -390,7 +481,7 @@ int main(void) {
   assert(leased.channel_info.label.len == 7 &&
          memcmp(leased.channel_info.label.data, "browser", 7) == 0);
   h2_pal_webrtc_event_release(&leased);
-  cleanup_browser();
+  (void)h2_web_main_call(cleanup_browser, NULL);
   puts("WEB_BROWSER unset=detached user-track=live post-unset-echo=binary "
        "remote-close=received event-lease=released PASS");
   puts("WEB_BROWSER_COMPLETE");

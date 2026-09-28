@@ -1,4 +1,5 @@
-load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//tools/bazel:mobile_package.bzl", "h2_android_aar", "h2_mobile_archive_import")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test", "cc_shared_library")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel/platforms:compatibility.bzl", "ANDROID_ARM64_ARTIFACT_COMPATIBILITY")
 
@@ -41,6 +42,7 @@ cc_library(
     srcs = [
         "src/h2_android_audio_decoder.c",
         "src/h2_android_platform.c",
+        "src/h2_android_core.c",
         "src/h2_android_video_decoder.c",
     ],
     hdrs = ["include/h2_android_platform.h"],
@@ -62,6 +64,7 @@ cc_library(
     deps = [
         ":contracts",
         "//libs/pal",
+        "//libs/pal/providers/posix/pal_core:mobile_core",
     ],
 )
 
@@ -108,4 +111,30 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [":video_contract"],
+)
+
+
+cc_shared_library(
+    name = "sdk_binary",
+    shared_lib_name = "libh2_pal_core.so",
+    deps = [":pal_core"],
+    target_compatible_with = ANDROID_ARM64_ARTIFACT_COMPATIBILITY,
+)
+h2_android_aar(
+    name = "aar",
+    shared_library = ":sdk_binary",
+    headers = ["include/h2_android_platform.h", "//libs/pal:pal_header_files"],
+    module_name = "h2-pal-core",
+    version = "2.0.0",
+    target_compatible_with = ANDROID_ARM64_ARTIFACT_COMPATIBILITY,
+)
+filegroup(name = "aar_archive", srcs = [":aar"], output_group = "artifact")
+h2_mobile_archive_import(
+    name = "packaged",
+    archive = ":aar_archive",
+    member = "jni/arm64-v8a/libh2_pal_core.so",
+    header_prefix = "prefab/modules/h2_pal_core/include/",
+    binary_name = "libh2_pal_core.so",
+    shared = True,
+    target_compatible_with = ANDROID_ARM64_ARTIFACT_COMPATIBILITY,
 )

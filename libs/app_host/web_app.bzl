@@ -169,7 +169,8 @@ def h2_web_app(
         linkopts = [
             "-sALLOW_MEMORY_GROWTH=1",
             "-sASSERTIONS=1",
-            "-sASYNCIFY=1",
+            "-sPROXY_TO_PTHREAD=1",
+            "-sPTHREAD_POOL_SIZE=16",
             "-sINITIAL_MEMORY=67108864",
             "-sSTACK_SIZE=1048576",
             "-sNO_EXIT_RUNTIME=1",
@@ -189,13 +190,19 @@ def h2_web_app(
         outputs.append("index.data")
     wasm_cc_binary(
         name = name + "_wasm",
+        threads = "emscripten",
         cc_target = ":_wasm/index",
         outputs = outputs,
         target_compatible_with = _HOSTS,
     )
+    native.genrule(
+        name = name + "_isolation_headers",
+        outs = ["_headers"],
+        cmd = "printf '/*\\n  Cross-Origin-Opener-Policy: same-origin\\n  Cross-Origin-Embedder-Policy: require-corp\\n' > $@",
+    )
     pkg_tar(
         name = name,
-        srcs = [":" + name + "_wasm"],
+        srcs = [":" + name + "_wasm", ":" + name + "_isolation_headers"],
         out = name + ".web.tar",
         mode = "0644",
         portable_mtime = True,

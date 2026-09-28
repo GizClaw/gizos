@@ -1,3 +1,4 @@
+#include "h2_web_main_thread.h"
 #include "h2_web_platform_internal.h"
 
 #include <emscripten.h>
@@ -23,7 +24,11 @@ struct h2_web_audio_track {
   uint32_t volume_factor_milli;
 };
 
-EM_JS(void, h2_web_audio_init_js, (uintptr_t platform_address), {
+/* clang-format off */
+EM_JS(void, h2_web_audio_init_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32"], null,
+    (platform_address) => {
   const platforms = Module['h2WebAudioPlatforms'] ||= new Map();
   if (platforms.has(platform_address)) return;
   const state = {
@@ -76,8 +81,14 @@ EM_JS(void, h2_web_audio_init_js, (uintptr_t platform_address), {
   }
   platforms.set(platform_address, state);
 });
+});
+/* clang-format on */
 
-EM_JS(void, h2_web_audio_deinit_js, (uintptr_t platform_address), {
+/* clang-format off */
+EM_JS(void, h2_web_audio_deinit_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32"], null,
+    (platform_address) => {
   const platforms = Module['h2WebAudioPlatforms'];
   const state = platforms && platforms.get(platform_address);
   if (!state) return;
@@ -97,11 +108,18 @@ EM_JS(void, h2_web_audio_deinit_js, (uintptr_t platform_address), {
   }
   platforms.delete(platform_address);
 });
+});
+/* clang-format on */
 
 // Starting the speaker plays what tracks wrote while it was stopped. A
 // buffer leaves the held queue only once it is scheduled, so a failed start
 // keeps every accepted write for the next one.
-EM_JS(int, h2_web_audio_start_js, (uintptr_t platform_address, double lead_s), {
+
+/* clang-format off */
+EM_JS(void, h2_web_audio_start_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32", "double"], "i32",
+    (platform_address, lead_s) => {
   const state = Module['h2WebAudioPlatforms']?.get(platform_address);
   const context = state?.activate();
   if (!context) return -3;
@@ -121,8 +139,14 @@ EM_JS(int, h2_web_audio_start_js, (uintptr_t platform_address, double lead_s), {
   state.speakerStarted = true;
   return 0;
 });
+});
+/* clang-format on */
 
-EM_JS(void, h2_web_audio_stop_js, (uintptr_t platform_address), {
+/* clang-format off */
+EM_JS(void, h2_web_audio_stop_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32"], null,
+    (platform_address) => {
   const state = Module['h2WebAudioPlatforms']?.get(platform_address);
   if (!state) return;
   state.speakerStarted = false;
@@ -134,9 +158,14 @@ EM_JS(void, h2_web_audio_stop_js, (uintptr_t platform_address), {
     track.nextTime = 0;
   }
 });
+});
+/* clang-format on */
 
+/* clang-format off */
 EM_JS(void, h2_web_audio_track_open_js,
-      (uintptr_t platform_address, uintptr_t track_address, double gain), {
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32", "u32", "double"], null,
+    (platform_address, track_address, gain) => {
         const state = Module['h2WebAudioPlatforms']?.get(platform_address);
         if (state) {
           state.tracks.set(track_address, {
@@ -145,23 +174,34 @@ EM_JS(void, h2_web_audio_track_open_js,
           });
         }
       });
+});
+/* clang-format on */
 
 // A persistent GainNode per track applies volume changes to audio that is
 // already scheduled instead of only to later writes.
+
+/* clang-format off */
 EM_JS(void, h2_web_audio_track_gain_js,
-      (uintptr_t platform_address, uintptr_t track_address, double gain), {
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32", "u32", "double"], null,
+    (platform_address, track_address, gain) => {
         const track = Module['h2WebAudioPlatforms']?.get(platform_address)
             ?.tracks.get(track_address);
         if (!track) return;
         track.gain = Math.max(0, Math.min(1, gain));
         if (track.node) track.node.gain.value = track.gain;
       });
+});
+/* clang-format on */
 
 // Seconds of audio scheduled but not yet played; -1 when the track is gone.
 // out_suspended reports a context that is not running (autoplay policy).
-EM_JS(double, h2_web_audio_track_queued_js,
-      (uintptr_t platform_address, uintptr_t track_address,
-       int *out_suspended), {
+
+/* clang-format off */
+EM_JS(void, h2_web_audio_track_queued_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32", "u32", "pointer"], "double",
+    (platform_address, track_address, out_suspended) => {
         const state = Module['h2WebAudioPlatforms']?.get(platform_address);
         const track = state?.tracks.get(track_address);
         HEAP32[out_suspended >>> 2] = 0;
@@ -175,11 +215,14 @@ EM_JS(double, h2_web_audio_track_queued_js,
             ? track.nextTime - context.currentTime + latency
             : 0);
       });
+});
+/* clang-format on */
 
-EM_JS(int, h2_web_audio_track_write_js,
-      (uintptr_t platform_address, uintptr_t track_address,
-       const int16_t *samples, uint32_t samples_per_channel, int channels,
-       uint32_t sample_rate_hz, double lead_s, int hold), {
+/* clang-format off */
+EM_JS(void, h2_web_audio_track_write_js,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32", "u32", "pointer", "u32", "i32", "u32", "double", "i32"], "i32",
+    (platform_address, track_address, samples, samples_per_channel, channels, sample_rate_hz, lead_s, hold) => {
         const state = Module['h2WebAudioPlatforms']?.get(platform_address);
         const track = state?.tracks.get(track_address);
         const context = state?.activate();
@@ -211,9 +254,14 @@ EM_JS(int, h2_web_audio_track_write_js,
           return -4;
         }
       });
+});
+/* clang-format on */
 
+/* clang-format off */
 EM_JS(void, h2_web_audio_track_close_js,
-      (uintptr_t platform_address, uintptr_t track_address), {
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32", "u32"], null,
+    (platform_address, track_address) => {
         const state = Module['h2WebAudioPlatforms']?.get(platform_address);
         const track = state?.tracks.get(track_address);
         if (!track) return;
@@ -223,6 +271,8 @@ EM_JS(void, h2_web_audio_track_close_js,
         try { track.node?.disconnect(); } catch (_) {}
         state.tracks.delete(track_address);
       });
+});
+/* clang-format on */
 
 static double h2_web_audio_track_gain(const h2_web_audio_track_t *track) {
   return (double)track->volume_factor_milli *
@@ -230,6 +280,7 @@ static double h2_web_audio_track_gain(const h2_web_audio_track_t *track) {
 }
 
 static uint32_t h2_web_audio_queue_capacity_ms(const h2_web_audio_track_t *track) {
+  H2_WEB_STATE_GUARD();
   const uint64_t frame_ms =
       (uint64_t)track->format.frame_samples_per_channel * 1000u /
       track->format.sample_rate_hz;
@@ -246,11 +297,17 @@ static uint32_t h2_web_audio_queue_capacity_ms(const h2_web_audio_track_t *track
  */
 static int h2_web_audio_track_wait(h2_web_audio_track_t *track,
                                    double target_ms, uint32_t timeout_ms) {
+  H2_WEB_STATE_GUARD();
   const double deadline_ms = emscripten_get_now() + (double)timeout_ms;
   for (;;) {
     int suspended = 0;
-    const double queued_s = h2_web_audio_track_queued_js(
-        (uintptr_t)track->platform, (uintptr_t)track, &suspended);
+    const double queued_s =
+        ((double)h2_web_main_call(
+             h2_web_audio_track_queued_js,
+             (const void *[]){&(uintptr_t){(uintptr_t)track->platform},
+                              &(uintptr_t){(uintptr_t)track},
+                              &(int *){&suspended}})
+             .f64);
     if (queued_s < 0.0)
       return H2_AUDIO_ERR_INVALID_STATE;
     const double excess_ms = queued_s * 1000.0 - target_ms;
@@ -278,6 +335,7 @@ static int h2_web_audio_track_wait(h2_web_audio_track_t *track,
 }
 
 static int h2_web_audio_get_info(void *user, h2_audio_info_t *out_info) {
+  H2_WEB_STATE_GUARD();
   if (user == NULL || out_info == NULL) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
@@ -301,12 +359,17 @@ static int h2_web_audio_get_info(void *user, h2_audio_info_t *out_info) {
 }
 
 static int h2_web_audio_start_speaker(void *user) {
+  H2_WEB_STATE_GUARD();
   h2_web_platform_t *platform = user;
   if (platform == NULL) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
-  const int result = h2_web_audio_start_js(
-      (uintptr_t)platform, H2_WEB_AUDIO_START_LEAD_MS / 1000.0);
+  const int result =
+      ((int)h2_web_main_call(
+           h2_web_audio_start_js,
+           (const void *[]){&(uintptr_t){(uintptr_t)platform},
+                            &(double){H2_WEB_AUDIO_START_LEAD_MS / 1000.0}})
+           .i32);
   if (result == H2_AUDIO_OK) {
     platform->speaker_started = true;
     platform->speaker_stopped = false;
@@ -315,19 +378,22 @@ static int h2_web_audio_start_speaker(void *user) {
 }
 
 static int h2_web_audio_stop_speaker(void *user) {
+  H2_WEB_STATE_GUARD();
   h2_web_platform_t *platform = user;
   if (platform == NULL) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
   platform->speaker_started = false;
   platform->speaker_stopped = true;
-  h2_web_audio_stop_js((uintptr_t)platform);
+  (void)h2_web_main_call(h2_web_audio_stop_js,
+                         (const void *[]){&(uintptr_t){(uintptr_t)platform}});
   return H2_AUDIO_OK;
 }
 
 static int h2_web_audio_track_write(h2_pal_audio_track_t *base,
                                     const h2_audio_frame_t *frame,
                                     uint32_t timeout_ms) {
+  H2_WEB_STATE_GUARD();
   h2_web_audio_track_t *track = (h2_web_audio_track_t *)base;
   if (track == NULL || frame == NULL || frame->data == NULL ||
       frame->sample_rate_hz != track->format.sample_rate_hz ||
@@ -347,19 +413,29 @@ static int h2_web_audio_track_write(h2_pal_audio_track_t *base,
   const int wait = h2_web_audio_track_wait(track, target_ms, timeout_ms);
   if (wait != H2_AUDIO_OK)
     return wait;
-  return h2_web_audio_track_write_js(
-      (uintptr_t)track->platform, (uintptr_t)track, frame->data,
-      frame->samples_per_channel, frame->channels, frame->sample_rate_hz,
-      H2_WEB_AUDIO_START_LEAD_MS / 1000.0,
-      track->platform->speaker_stopped ? 1 : 0);
+  return (
+      (int)h2_web_main_call(
+          h2_web_audio_track_write_js,
+          (const void *[]){
+              &(uintptr_t){(uintptr_t)track->platform},
+              &(uintptr_t){(uintptr_t)track}, &(const int16_t *){frame->data},
+              &(uint32_t){frame->samples_per_channel}, &(int){frame->channels},
+              &(uint32_t){frame->sample_rate_hz},
+              &(double){H2_WEB_AUDIO_START_LEAD_MS / 1000.0},
+              &(int){track->platform->speaker_stopped ? 1 : 0}})
+          .i32);
 }
 
 static int h2_web_audio_track_close(h2_pal_audio_track_t *base) {
+  H2_WEB_STATE_GUARD();
   h2_web_audio_track_t *track = (h2_web_audio_track_t *)base;
   if (track == NULL) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
-  h2_web_audio_track_close_js((uintptr_t)track->platform, (uintptr_t)track);
+  (void)h2_web_main_call(
+      h2_web_audio_track_close_js,
+      (const void *[]){&(uintptr_t){(uintptr_t)track->platform},
+                       &(uintptr_t){(uintptr_t)track}});
   h2_web_audio_track_t **cursor = &track->platform->audio_tracks;
   while (*cursor != NULL && *cursor != track)
     cursor = &(*cursor)->next;
@@ -371,6 +447,7 @@ static int h2_web_audio_track_close(h2_pal_audio_track_t *base) {
 
 static int h2_web_audio_track_get_volume(h2_pal_audio_track_t *base,
                                          uint32_t *out_factor_milli) {
+  H2_WEB_STATE_GUARD();
   h2_web_audio_track_t *track = (h2_web_audio_track_t *)base;
   if (track == NULL || out_factor_milli == NULL) {
     return H2_AUDIO_ERR_INVALID_ARG;
@@ -381,19 +458,24 @@ static int h2_web_audio_track_get_volume(h2_pal_audio_track_t *base,
 
 static int h2_web_audio_track_set_volume(h2_pal_audio_track_t *base,
                                          uint32_t factor_milli) {
+  H2_WEB_STATE_GUARD();
   h2_web_audio_track_t *track = (h2_web_audio_track_t *)base;
   if (track == NULL || factor_milli > 1000u) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
   track->volume_factor_milli = factor_milli;
-  h2_web_audio_track_gain_js((uintptr_t)track->platform, (uintptr_t)track,
-                             h2_web_audio_track_gain(track));
+  (void)h2_web_main_call(
+      h2_web_audio_track_gain_js,
+      (const void *[]){&(uintptr_t){(uintptr_t)track->platform},
+                       &(uintptr_t){(uintptr_t)track},
+                       &(double){h2_web_audio_track_gain(track)}});
   return H2_AUDIO_OK;
 }
 
 /* Wait until every scheduled sample has played; WOULD_BLOCK on timeout. */
 static int h2_web_audio_track_drain(h2_pal_audio_track_t *base,
                                     uint32_t timeout_ms) {
+  H2_WEB_STATE_GUARD();
   h2_web_audio_track_t *track = (h2_web_audio_track_t *)base;
   if (track == NULL)
     return H2_AUDIO_ERR_INVALID_ARG;
@@ -405,6 +487,7 @@ static int h2_web_audio_track_drain(h2_pal_audio_track_t *base,
 static int h2_web_audio_create_track(void *user,
                                      const h2_audio_track_config_t *config,
                                      h2_pal_audio_track_t **out_track) {
+  H2_WEB_STATE_GUARD();
   h2_web_platform_t *platform = user;
   if (platform == NULL || config == NULL || out_track == NULL ||
       config->format.sample_rate_hz == 0u ||
@@ -430,8 +513,11 @@ static int h2_web_audio_create_track(void *user,
   track->platform = platform;
   track->format = config->format;
   track->volume_factor_milli = config->volume_factor_milli;
-  h2_web_audio_track_open_js((uintptr_t)platform, (uintptr_t)track,
-                             h2_web_audio_track_gain(track));
+  (void)h2_web_main_call(
+      h2_web_audio_track_open_js,
+      (const void *[]){&(uintptr_t){(uintptr_t)platform},
+                       &(uintptr_t){(uintptr_t)track},
+                       &(double){h2_web_audio_track_gain(track)}});
   track->next = platform->audio_tracks;
   platform->audio_tracks = track;
   *out_track = &track->base;
@@ -440,6 +526,7 @@ static int h2_web_audio_create_track(void *user,
 
 static int h2_web_audio_get_speaker_volume(void *user,
                                            uint32_t *out_percent) {
+  H2_WEB_STATE_GUARD();
   h2_web_platform_t *platform = user;
   if (platform == NULL || out_percent == NULL) {
     return H2_AUDIO_ERR_INVALID_ARG;
@@ -449,6 +536,7 @@ static int h2_web_audio_get_speaker_volume(void *user,
 }
 
 static int h2_web_audio_set_speaker_volume(void *user, uint32_t percent) {
+  H2_WEB_STATE_GUARD();
   h2_web_platform_t *platform = user;
   if (platform == NULL || percent > 100u) {
     return H2_AUDIO_ERR_INVALID_ARG;
@@ -456,8 +544,11 @@ static int h2_web_audio_set_speaker_volume(void *user, uint32_t percent) {
   platform->speaker_volume_percent = percent;
   for (h2_web_audio_track_t *track = platform->audio_tracks; track != NULL;
        track = track->next) {
-    h2_web_audio_track_gain_js((uintptr_t)platform, (uintptr_t)track,
-                               h2_web_audio_track_gain(track));
+    (void)h2_web_main_call(
+        h2_web_audio_track_gain_js,
+        (const void *[]){&(uintptr_t){(uintptr_t)platform},
+                         &(uintptr_t){(uintptr_t)track},
+                         &(double){h2_web_audio_track_gain(track)}});
   }
   return H2_AUDIO_OK;
 }
@@ -475,15 +566,19 @@ static const h2_pal_audio_vtable_t h2_web_audio_vtable = {
 };
 
 void h2_web_platform_audio_init(h2_web_platform_t *platform) {
+  H2_WEB_STATE_GUARD();
   platform->audio_api = (h2_pal_audio_api_t){
       .user = platform,
       .vtable = &h2_web_audio_vtable,
   };
   platform->speaker_volume_percent = 100u;
-  h2_web_audio_init_js((uintptr_t)platform);
+  (void)h2_web_main_call(h2_web_audio_init_js,
+                         (const void *[]){&(uintptr_t){(uintptr_t)platform}});
 }
 
 void h2_web_platform_audio_deinit(h2_web_platform_t *platform) {
+  H2_WEB_STATE_GUARD();
   (void)h2_web_platform_mic_stop(platform);
-  h2_web_audio_deinit_js((uintptr_t)platform);
+  (void)h2_web_main_call(h2_web_audio_deinit_js,
+                         (const void *[]){&(uintptr_t){(uintptr_t)platform}});
 }

@@ -113,6 +113,11 @@ var Module = {print: t => console.log(t), printErr: t => console.error(t),
 </script><script src='/browser_platform_test.js'></script>"""
 
     class Handler(http.server.BaseHTTPRequestHandler):
+        def end_headers(self):
+            self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+            self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
+            super().end_headers()
+
         protocol_version = "HTTP/1.1"
         cross_origin = False
 

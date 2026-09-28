@@ -1,0 +1,875 @@
+{
+  "schema_version": 1,
+  "description": "Reviewed static interface inventory; does not establish dynamic execution or behavioral coverage. Public headers define the denominator.",
+  "operation_count": 46,
+  "app_sources": [
+    "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+    "projects/e2e/apps/pal-core/app/src/h2_pal_core_baseline.c",
+    "projects/e2e/apps/pal-core/app/src/h2_pal_core_extended.c"
+  ],
+  "operations": [
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_mem.h",
+      "vtable": "h2_pal_mem_vtable",
+      "operation": "alloc",
+      "signature": "void * ( * alloc ) ( void * user , size_t len )",
+      "owner_case": "pal.core.memory.lifecycle",
+      "additional_cases": [
+        "pal.core.memory.churn-alignment",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_mem_alloc",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "memory_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_mem.h",
+      "vtable": "h2_pal_mem_vtable",
+      "operation": "realloc",
+      "signature": "void * ( * realloc ) ( void * user , void * ptr , size_t len )",
+      "owner_case": "pal.core.memory.lifecycle",
+      "additional_cases": [
+        "pal.core.memory.churn-alignment",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_mem_realloc",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "memory_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_mem.h",
+      "vtable": "h2_pal_mem_vtable",
+      "operation": "free",
+      "signature": "void ( * free ) ( void * user , void * ptr )",
+      "owner_case": "pal.core.memory.lifecycle",
+      "additional_cases": [
+        "pal.core.memory.churn-alignment",
+        "pal.core.resources.recovered",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_mem_free",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "memory_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_log.h",
+      "vtable": "h2_pal_log_vtable",
+      "operation": "write",
+      "signature": "int ( * write ) ( void * user , h2_pal_log_level_t level , const char * scope , const char * message )",
+      "owner_case": "pal.core.log.output",
+      "additional_cases": [
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_log_write",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "log_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_time.h",
+      "vtable": "h2_pal_time_vtable",
+      "operation": "get_monotonic_ms",
+      "signature": "h2_pal_result_t ( * get_monotonic_ms ) ( void * user , uint64_t * out_ms )",
+      "owner_case": "pal.core.time.monotonic",
+      "additional_cases": [
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_time_get_monotonic_ms",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "time_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_time.h",
+      "vtable": "h2_pal_time_vtable",
+      "operation": "get_monotonic_us",
+      "signature": "h2_pal_result_t ( * get_monotonic_us ) ( void * user , uint64_t * out_us )",
+      "owner_case": "pal.core.time.monotonic",
+      "additional_cases": [
+        "pal.core.time.wall-set",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_time_get_monotonic_us",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "time_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_time.h",
+      "vtable": "h2_pal_time_vtable",
+      "operation": "get_wall_ms",
+      "signature": "h2_pal_result_t ( * get_wall_ms ) ( void * user , uint64_t * out_ms )",
+      "owner_case": "pal.core.time.wall-read",
+      "additional_cases": [
+        "pal.core.time.wall-set",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_time_get_wall_ms",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "wall_read_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_time.h",
+      "vtable": "h2_pal_time_vtable",
+      "operation": "set_wall_ms",
+      "signature": "h2_pal_result_t ( * set_wall_ms ) ( void * user , uint64_t wall_ms )",
+      "owner_case": "pal.core.time.wall-set",
+      "additional_cases": [
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_time_set_wall_ms",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "wall_set_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_time.h",
+      "vtable": "h2_pal_time_vtable",
+      "operation": "get_wall_status",
+      "signature": "h2_pal_result_t ( * get_wall_status ) ( void * user , h2_pal_time_wall_status_t * out_status )",
+      "owner_case": "pal.core.time.wall-read",
+      "additional_cases": [
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_time_get_wall_status",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "wall_read_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_time.h",
+      "vtable": "h2_pal_time_vtable",
+      "operation": "sleep_ms",
+      "signature": "h2_pal_result_t ( * sleep_ms ) ( void * user , uint32_t ms )",
+      "owner_case": "pal.core.time.monotonic",
+      "additional_cases": [
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_time_sleep_ms",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "time_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_timer.h",
+      "vtable": "h2_pal_timer_vtable",
+      "operation": "create",
+      "signature": "h2_pal_result_t ( * create ) ( void * user , const h2_pal_timer_config_t * config , h2_pal_timer_t * * out_timer )",
+      "owner_case": "pal.core.timer.oneshot",
+      "additional_cases": [
+        "pal.core.timer.lifecycle",
+        "pal.core.timer.isolation",
+        "pal.core.timer.churn",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_timer_create",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "oneshot_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_timer.h",
+      "vtable": "h2_pal_timer_vtable",
+      "operation": "destroy",
+      "signature": "h2_pal_result_t ( * destroy ) ( void * user , h2_pal_timer_t * timer )",
+      "owner_case": "pal.core.timer.lifecycle",
+      "additional_cases": [
+        "pal.core.timer.oneshot",
+        "pal.core.timer.isolation",
+        "pal.core.timer.churn",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_timer_destroy",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "release"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_timer.h",
+      "vtable": "h2_pal_timer_vtable",
+      "operation": "start",
+      "signature": "h2_pal_result_t ( * start ) ( void * user , h2_pal_timer_t * timer )",
+      "owner_case": "pal.core.timer.oneshot",
+      "additional_cases": [
+        "pal.core.timer.lifecycle",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_timer_start",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "oneshot_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_timer.h",
+      "vtable": "h2_pal_timer_vtable",
+      "operation": "stop",
+      "signature": "h2_pal_result_t ( * stop ) ( void * user , h2_pal_timer_t * timer )",
+      "owner_case": "pal.core.timer.lifecycle",
+      "additional_cases": [
+        "pal.core.timer.isolation",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_timer_stop",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "timer_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_timer.h",
+      "vtable": "h2_pal_timer_vtable",
+      "operation": "reset",
+      "signature": "h2_pal_result_t ( * reset ) ( void * user , h2_pal_timer_t * timer )",
+      "owner_case": "pal.core.timer.lifecycle",
+      "additional_cases": [
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_timer_reset",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "timer_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_timer.h",
+      "vtable": "h2_pal_timer_vtable",
+      "operation": "set_period_ms",
+      "signature": "h2_pal_result_t ( * set_period_ms ) ( void * user , h2_pal_timer_t * timer , uint32_t period_ms )",
+      "owner_case": "pal.core.timer.lifecycle",
+      "additional_cases": [
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_timer_set_period_ms",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "timer_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_timer.h",
+      "vtable": "h2_pal_timer_vtable",
+      "operation": "is_running",
+      "signature": "h2_pal_result_t ( * is_running ) ( void * user , h2_pal_timer_t * timer , int * out_running )",
+      "owner_case": "pal.core.timer.oneshot",
+      "additional_cases": [
+        "pal.core.timer.lifecycle",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_timer_is_running",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "oneshot_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_task.h",
+      "vtable": "h2_pal_task_vtable",
+      "operation": "start",
+      "signature": "int ( * start ) ( void * user , const h2_pal_task_options_t * options , h2_pal_task_entry_t entry , void * ctx , h2_pal_task_t * * out_task )",
+      "owner_case": "pal.core.task.once-context",
+      "additional_cases": [
+        "pal.core.task.lifecycle",
+        "pal.core.task.join-running",
+        "pal.core.task.join-completed",
+        "pal.core.task.churn",
+        "pal.core.task.batch-churn",
+        "pal.core.task.stack-bounds",
+        "pal.core.task.start-failure",
+        "pal.core.task.partial-start",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_task_start",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_extended.c",
+          "function": "start"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_task.h",
+      "vtable": "h2_pal_task_vtable",
+      "operation": "join",
+      "signature": "int ( * join ) ( void * user , h2_pal_task_t * task )",
+      "owner_case": "pal.core.task.join-running",
+      "additional_cases": [
+        "pal.core.task.lifecycle",
+        "pal.core.task.once-context",
+        "pal.core.task.join-completed",
+        "pal.core.task.churn",
+        "pal.core.task.batch-churn",
+        "pal.core.task.stack-bounds",
+        "pal.core.task.start-failure",
+        "pal.core.task.partial-start",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_task_join",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_extended.c",
+          "function": "join_one"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_queue.h",
+      "vtable": "h2_pal_queue_vtable",
+      "operation": "create",
+      "signature": "int ( * create ) ( void * user , const h2_pal_queue_config_t * config , h2_pal_queue_t * * out_queue )",
+      "owner_case": "pal.core.queue.boundaries",
+      "additional_cases": [
+        "pal.core.queue.transfer",
+        "pal.core.queue.copy-buffered-close",
+        "pal.core.queue.sender-close",
+        "pal.core.queue.reset-wake",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_queue_create",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "make_queue"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_queue.h",
+      "vtable": "h2_pal_queue_vtable",
+      "operation": "destroy",
+      "signature": "void ( * destroy ) ( void * user , h2_pal_queue_t * queue )",
+      "owner_case": "pal.core.queue.boundaries",
+      "additional_cases": [
+        "pal.core.resources.recovered",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_queue_destroy",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "release"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_queue.h",
+      "vtable": "h2_pal_queue_vtable",
+      "operation": "send",
+      "signature": "int ( * send ) ( void * user , h2_pal_queue_t * queue , const void * item , uint32_t timeout_ms )",
+      "owner_case": "pal.core.queue.copy-buffered-close",
+      "additional_cases": [
+        "pal.core.queue.transfer",
+        "pal.core.queue.boundaries",
+        "pal.core.queue.sender-close",
+        "pal.core.concurrency.mpmc",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_queue_send",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_extended.c",
+          "function": "queue_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_queue.h",
+      "vtable": "h2_pal_queue_vtable",
+      "operation": "send_latest",
+      "signature": "int ( * send_latest ) ( void * user , h2_pal_queue_t * queue , const void * item )",
+      "owner_case": "pal.core.queue.boundaries",
+      "additional_cases": [
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_queue_send_latest",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "queue_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_queue.h",
+      "vtable": "h2_pal_queue_vtable",
+      "operation": "recv",
+      "signature": "int ( * recv ) ( void * user , h2_pal_queue_t * queue , void * out_item , uint32_t timeout_ms )",
+      "owner_case": "pal.core.queue.boundaries",
+      "additional_cases": [
+        "pal.core.queue.transfer",
+        "pal.core.queue.copy-buffered-close",
+        "pal.core.queue.close-wake",
+        "pal.core.queue.reset-wake",
+        "pal.core.concurrency.mpmc",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_queue_recv",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "queue_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_queue.h",
+      "vtable": "h2_pal_queue_vtable",
+      "operation": "reset",
+      "signature": "int ( * reset ) ( void * user , h2_pal_queue_t * queue )",
+      "owner_case": "pal.core.queue.reset-wake",
+      "additional_cases": [
+        "pal.core.queue.boundaries",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_queue_reset",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_extended.c",
+          "function": "queue_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_queue.h",
+      "vtable": "h2_pal_queue_vtable",
+      "operation": "close",
+      "signature": "int ( * close ) ( void * user , h2_pal_queue_t * queue )",
+      "owner_case": "pal.core.queue.close-wake",
+      "additional_cases": [
+        "pal.core.queue.boundaries",
+        "pal.core.queue.copy-buffered-close",
+        "pal.core.queue.sender-close",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_queue_close",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "wake_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_sync.h",
+      "vtable": "h2_pal_sync_vtable",
+      "operation": "create_mutex",
+      "signature": "h2_pal_result_t ( * create_mutex ) ( void * user , const h2_pal_mutex_config_t * config , h2_pal_mutex_t * * out_mutex )",
+      "owner_case": "pal.core.mutex.lifecycle",
+      "additional_cases": [
+        "pal.core.mutex.contention",
+        "pal.core.concurrency.mpmc",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_mutex_create",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "mutex_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_sync.h",
+      "vtable": "h2_pal_sync_vtable",
+      "operation": "destroy_mutex",
+      "signature": "h2_pal_result_t ( * destroy_mutex ) ( void * user , h2_pal_mutex_t * mutex )",
+      "owner_case": "pal.core.mutex.lifecycle",
+      "additional_cases": [
+        "pal.core.resources.recovered",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_mutex_destroy",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "release"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_sync.h",
+      "vtable": "h2_pal_sync_vtable",
+      "operation": "lock_mutex",
+      "signature": "h2_pal_result_t ( * lock_mutex ) ( void * user , h2_pal_mutex_t * mutex )",
+      "owner_case": "pal.core.mutex.contention",
+      "additional_cases": [
+        "pal.core.mutex.lifecycle",
+        "pal.core.concurrency.mpmc",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_mutex_lock",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_extended.c",
+          "function": "do_work"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_sync.h",
+      "vtable": "h2_pal_sync_vtable",
+      "operation": "try_lock_mutex",
+      "signature": "h2_pal_result_t ( * try_lock_mutex ) ( void * user , h2_pal_mutex_t * mutex )",
+      "owner_case": "pal.core.mutex.lifecycle",
+      "additional_cases": [
+        "pal.core.mutex.contention",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_mutex_try_lock",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "mutex_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_sync.h",
+      "vtable": "h2_pal_sync_vtable",
+      "operation": "unlock_mutex",
+      "signature": "h2_pal_result_t ( * unlock_mutex ) ( void * user , h2_pal_mutex_t * mutex )",
+      "owner_case": "pal.core.mutex.lifecycle",
+      "additional_cases": [
+        "pal.core.mutex.contention",
+        "pal.core.concurrency.mpmc",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_mutex_unlock",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "mutex_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_sync.h",
+      "vtable": "h2_pal_sync_vtable",
+      "operation": "create_semaphore",
+      "signature": "h2_pal_result_t ( * create_semaphore ) ( void * user , const h2_pal_semaphore_config_t * config , h2_pal_semaphore_t * * out_semaphore )",
+      "owner_case": "pal.core.semaphore.boundaries",
+      "additional_cases": [
+        "pal.core.semaphore.wake",
+        "pal.core.semaphore.waiters",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_semaphore_create",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "make_semaphore"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_sync.h",
+      "vtable": "h2_pal_sync_vtable",
+      "operation": "destroy_semaphore",
+      "signature": "h2_pal_result_t ( * destroy_semaphore ) ( void * user , h2_pal_semaphore_t * semaphore )",
+      "owner_case": "pal.core.semaphore.boundaries",
+      "additional_cases": [
+        "pal.core.resources.recovered",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_semaphore_destroy",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "release"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_sync.h",
+      "vtable": "h2_pal_sync_vtable",
+      "operation": "take_semaphore",
+      "signature": "h2_pal_result_t ( * take_semaphore ) ( void * user , h2_pal_semaphore_t * semaphore , uint32_t timeout_ms )",
+      "owner_case": "pal.core.semaphore.boundaries",
+      "additional_cases": [
+        "pal.core.semaphore.wake",
+        "pal.core.semaphore.waiters",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_semaphore_take",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "semaphore_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_sync.h",
+      "vtable": "h2_pal_sync_vtable",
+      "operation": "give_semaphore",
+      "signature": "h2_pal_result_t ( * give_semaphore ) ( void * user , h2_pal_semaphore_t * semaphore )",
+      "owner_case": "pal.core.semaphore.boundaries",
+      "additional_cases": [
+        "pal.core.semaphore.wake",
+        "pal.core.semaphore.waiters",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_semaphore_give",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "semaphore_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_sync.h",
+      "vtable": "h2_pal_sync_vtable",
+      "operation": "create_cond",
+      "signature": "h2_pal_result_t ( * create_cond ) ( void * user , const h2_pal_cond_config_t * config , h2_pal_cond_t * * out_cond )",
+      "owner_case": "pal.core.condition.bounded-wait",
+      "additional_cases": [
+        "pal.core.condition.signal",
+        "pal.core.condition.broadcast",
+        "pal.core.condition.generations",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_cond_create",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "condition_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_sync.h",
+      "vtable": "h2_pal_sync_vtable",
+      "operation": "destroy_cond",
+      "signature": "h2_pal_result_t ( * destroy_cond ) ( void * user , h2_pal_cond_t * cond )",
+      "owner_case": "pal.core.condition.bounded-wait",
+      "additional_cases": [
+        "pal.core.resources.recovered",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_cond_destroy",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "release"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_sync.h",
+      "vtable": "h2_pal_sync_vtable",
+      "operation": "wait_cond",
+      "signature": "h2_pal_result_t ( * wait_cond ) ( void * user , h2_pal_cond_t * cond , h2_pal_mutex_t * mutex , uint32_t timeout_ms )",
+      "owner_case": "pal.core.condition.bounded-wait",
+      "additional_cases": [
+        "pal.core.condition.signal",
+        "pal.core.condition.broadcast",
+        "pal.core.condition.generations",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_cond_wait",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "condition_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_sync.h",
+      "vtable": "h2_pal_sync_vtable",
+      "operation": "signal_cond",
+      "signature": "h2_pal_result_t ( * signal_cond ) ( void * user , h2_pal_cond_t * cond )",
+      "owner_case": "pal.core.condition.signal",
+      "additional_cases": [
+        "pal.core.condition.bounded-wait",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_cond_signal",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_baseline.c",
+          "function": "h2_pal_core_baseline_condition"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_sync.h",
+      "vtable": "h2_pal_sync_vtable",
+      "operation": "broadcast_cond",
+      "signature": "h2_pal_result_t ( * broadcast_cond ) ( void * user , h2_pal_cond_t * cond )",
+      "owner_case": "pal.core.condition.broadcast",
+      "additional_cases": [
+        "pal.core.condition.generations",
+        "pal.core.concurrency.mpmc",
+        "pal.core.condition.bounded-wait",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_cond_broadcast",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_extended.c",
+          "function": "condition_rounds"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_system_event.h",
+      "vtable": "h2_pal_system_event_vtable",
+      "operation": "init",
+      "signature": "int ( * init ) ( void * user )",
+      "owner_case": "pal.core.system-event.lifecycle",
+      "additional_cases": [
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_system_event_init",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "events_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_system_event.h",
+      "vtable": "h2_pal_system_event_vtable",
+      "operation": "deinit",
+      "signature": "void ( * deinit ) ( void * user )",
+      "owner_case": "pal.core.system-event.lifecycle",
+      "additional_cases": [
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_system_event_deinit",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "events_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_system_event.h",
+      "vtable": "h2_pal_system_event_vtable",
+      "operation": "post",
+      "signature": "int ( * post ) ( void * user , const h2_pal_system_event_t * event , uint32_t timeout_ms )",
+      "owner_case": "pal.core.system-event.lifecycle",
+      "additional_cases": [
+        "pal.core.system-event.external-unsubscribe",
+        "pal.core.system-event.self-unsubscribe",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_system_event_post",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "events_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_system_event.h",
+      "vtable": "h2_pal_system_event_vtable",
+      "operation": "subscribe",
+      "signature": "int ( * subscribe ) ( void * user , h2_pal_system_event_type_t type , h2_pal_system_event_handler_t handler , void * handler_user , h2_pal_system_event_subscription_t * * out_subscription )",
+      "owner_case": "pal.core.system-event.lifecycle",
+      "additional_cases": [
+        "pal.core.system-event.external-unsubscribe",
+        "pal.core.system-event.self-unsubscribe",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_system_event_subscribe",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "events_case"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_system_event.h",
+      "vtable": "h2_pal_system_event_vtable",
+      "operation": "unsubscribe",
+      "signature": "void ( * unsubscribe ) ( void * user , h2_pal_system_event_subscription_t * subscription )",
+      "owner_case": "pal.core.system-event.external-unsubscribe",
+      "additional_cases": [
+        "pal.core.system-event.lifecycle",
+        "pal.core.system-event.self-unsubscribe",
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_system_event_unsubscribe",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_extended.c",
+          "function": "do_work"
+        }
+      ]
+    },
+    {
+      "header": "libs/pal/include/h2/pal/os/h2_pal_firmware_info.h",
+      "vtable": "h2_pal_firmware_info_vtable",
+      "operation": "get_current",
+      "signature": "h2_pal_result_t ( * get_current ) ( void * user , h2_pal_firmware_info_t * out_info )",
+      "owner_case": "pal.core.firmware-info.current",
+      "additional_cases": [
+        "pal.core.api.arguments"
+      ],
+      "wrapper": "h2_pal_firmware_info_get_current",
+      "evidence": [
+        {
+          "source": "projects/e2e/apps/pal-core/app/src/h2_pal_core_e2e.c",
+          "function": "firmware_case"
+        }
+      ]
+    }
+  ]
+}

@@ -17,5 +17,4 @@ The App is the sole Runtime event-queue consumer. It copies a selected event to
 one Lua job through `h2_lua_dispatch_runtime_event()`; the Lua Host never polls
 the Runtime event queue independently.
 
-`scheduler=cooperative` means multiple jobs made bounded progress; it does not
-claim that one Lua VM or its coroutines executed in parallel on multiple CPUs.
+The Web launcher uses two pthread Workers and reports `scheduler=multi-worker`. For any cooperative launcher, `scheduler=cooperative` means multiple jobs made bounded progress; it does not claim that one Lua VM or its coroutines executed in parallel on multiple CPUs.

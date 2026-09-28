@@ -87,7 +87,7 @@ flowchart TB
 
 PAL 不负责 app component 与 board periph 的映射。BSP 定义 board 的 `periph_id`，app 定义 `component_id`，两者的映射由 `boards/main` 提供。
 
-Browser 的 reusable provider 位于 `libs/pal/providers/web/pal_core`，暴露真实实现的 Memory、Log、Time、Timer、Task、Queue、Sync、Pref、Crypto、HTTP、Display、Audio playback/capture、Touch、WebRTC 与 Host Serial accessor。Time 读取 browser wall clock，不推断宿主时钟的同步来源；设置 wall clock 返回 unsupported。Audio `stop_speaker` 立即停止已排程的播放；与设备 mixer queue 一致，speaker 停止期间 track 仍接受写入并按 track 容量保留，下一次 `start_speaker` 时开始播放。Crypto 通过 browser cryptographic randomness 初始化唯一的 wolfCrypt integration。HTTP 使用 Fetch，因此直接请求仍受 CORS 约束；artifact 可以通过 `Module.h2WebHttpProxyUrl` 显式选择由受信宿主提供的同源代理，provider 不内建远端 allowlist 或通用绕过。Pref 使用当前 HTTPS origin 的 `localStorage` 保存 namespace-scoped typed entry；private mode、storage policy 或 quota 使存储不可用时，`open` 必须返回 `UNAVAILABLE`，不能伪装成可持久化内存。一个 live platform state 持有单线程 libco executor；Browser event、Promise 与 timeout callback 只记录完成，后续 bounded pump 才能恢复 task，不能 callback 内重入 scheduler。Artifact entry 而不是 provider 负责构造完整 Runtime：真实 accessor 填入已实现字段，其余字段逐项绑定 matching canonical unsupported API object。Host Serial 不在 Runtime 中，由 launcher 单独注入 portable consumer。
+Browser 的 reusable provider 位于 `libs/pal/providers/web/pal_core`，暴露真实实现的 Memory、Log、Time、Timer、Task、Queue、Sync、Pref、Crypto、HTTP、Display、Audio playback/capture、Touch、WebRTC 与 Host Serial accessor。Time 默认读取 browser wall clock，不推断宿主时钟的同步来源；设置 wall clock 保存当前 platform 的本地偏移并标记 USER，不修改宿主系统时间。Firmware Info 由 launcher 在 Runtime 初始化前注入不可变构建版本。Audio `stop_speaker` 立即停止已排程的播放；与设备 mixer queue 一致，speaker 停止期间 track 仍接受写入并按 track 容量保留，下一次 `start_speaker` 时开始播放。Crypto 通过 browser cryptographic randomness 初始化唯一的 wolfCrypt integration。HTTP 使用 Fetch，因此直接请求仍受 CORS 约束；artifact 可以通过 `Module.h2WebHttpProxyUrl` 显式选择由受信宿主提供的同源代理，provider 不内建远端 allowlist 或通用绕过。Pref 使用当前 HTTPS origin 的 `localStorage` 保存 namespace-scoped typed entry；private mode、storage policy 或 quota 使存储不可用时，`open` 必须返回 `UNAVAILABLE`，不能伪装成可持久化内存。一个 live platform state 持有 pthread Core。C main 和 PAL Task 在 Worker 上运行，Task join 回收原生栈与线程对象，Queue/Sync/Timer 支持线程间并行。浏览器 DOM、JS 对象和 API 入口由 `h2_web_main_thread.h` 代理到 UI，异步完成唤醒 Worker 条件变量。Web artifact 全图编译、链接都使用 `-pthread`，C main 使用 `PROXY_TO_PTHREAD`，托管服务发送 COOP/COEP 响应头；Web provider 不再依赖 libco 或 Asyncify。Artifact entry 而不是 provider 负责构造完整 Runtime：真实 accessor 填入已实现字段，其余字段逐项绑定 matching canonical unsupported API object。Host Serial 不在 Runtime 中，由 launcher 单独注入 portable consumer。
 
 ## PAL 分类
 
@@ -593,3 +593,9 @@ Target-specific unavailable adapter、dummy 和 fake backend 放在 `libs/pal` �
 6. 由 BSP 提供 board-specific 配置，并将真实、target-specific unavailable、dummy、fake 或 unsupported component capability 放入 runtime init config。
 7. 如果 app 需要使用该能力，将它接入 runtime public surface。
 8. 验证正常路径、unsupported、初始化失败和生命周期边界。
+
+### 移动端 Core provider
+
+iOS 和 Android 的 Core（Memory、Log、Time、Timer、Task、Queue、Sync、SystemEvent、 FirmwareInfo）使用原生 pthread/系统时钟实现。公共线程核心位于 `libs/pal/providers/posix/pal_core`，由 iOS、Android 和 Web pthread provider 复用； UIKit、Android UI/媒体适配仍留在各自 provider 下。PAL 的 `set_wall_ms` 在移动端维护 进程内时钟偏移，不要求修改系统时钟的权限。
+
+移动端 provider 的本地发布边界为 iOS `:swift_package` 和 Android `:aar`， 打包规则位于 `tools/bazel/mobile_package.bzl`。这些包不包含 Runtime 或 Atomic。 `libs/app_host` 负责组装 Runtime；独立 PAL Core E2E App 消费实际包的二进制， 验证完整 Core v2 合约。测试入口和证据见 `projects/e2e/libs/pal-core-mobile/README.md`。

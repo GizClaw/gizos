@@ -19,7 +19,7 @@ h2_web_app(
         "Enter",
     ]],
     taps = [[
-        "H2_WEB_APP name=touch stage=running",
+        "H2_WEB_TOUCH_READY rc=0",
         100,
         100,
     ]],

@@ -12,7 +12,7 @@ def main() -> int:
             if member.isfile() and member.name.lstrip("./") == "index.html"
         )
         html = bundle.extractfile(html_member).read().decode("utf-8")
-    expected = ["index.html", "index.js", "index.wasm"]
+    expected = ["_headers", "index.html", "index.js", "index.wasm"]
     if names != expected:
         raise AssertionError(f"unexpected archive inventory: {names}")
     if "<button" in html.lower():

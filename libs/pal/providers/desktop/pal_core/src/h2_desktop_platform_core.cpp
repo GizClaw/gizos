@@ -1,6 +1,8 @@
 #include "h2_desktop_platform.h"
+#include "h2_desktop_resource_stats_internal.h"
 
 #include <chrono>
+#include <algorithm>
 #include <condition_variable>
 #include <cstdio>
 #include <cstdlib>
@@ -8,6 +10,9 @@
 #include <deque>
 #include <mutex>
 #include <new>
+#include <pthread.h>
+#include <unistd.h>
+#include <cerrno>
 #include <thread>
 #include <vector>
 
@@ -125,6 +130,7 @@ int queue_create(void *, const h2_pal_queue_config_t *config,
     api_free(config->allocator, queue);
     return H2_PAL_QUEUE_ERR_NO_MEMORY;
   }
+  h2_desktop_resource_acquire(h2_desktop_resource_kind::queue);
   *out_queue = reinterpret_cast<h2_pal_queue_t *>(queue);
   return H2_PAL_QUEUE_OK;
 }
@@ -144,6 +150,7 @@ void queue_destroy(void *, h2_pal_queue_t *raw_queue) {
   api_free(allocator, queue->items);
   queue->~DesktopQueue();
   api_free(allocator, queue);
+  h2_desktop_resource_release(h2_desktop_resource_kind::queue);
 }
 
 int queue_send(void *, h2_pal_queue_t *raw_queue, const void *item,
@@ -281,6 +288,7 @@ h2_pal_result_t mutex_create(void *, const h2_pal_mutex_config_t *config,
   mutex->allocator = config->allocator;
   mutex->is_recursive =
       (config->flags & H2_PAL_MUTEX_FLAG_RECURSIVE) != 0u;
+  h2_desktop_resource_acquire(h2_desktop_resource_kind::mutex);
   *out_mutex = reinterpret_cast<h2_pal_mutex_t *>(mutex);
   return H2_PAL_OK;
 }
@@ -293,6 +301,7 @@ h2_pal_result_t mutex_destroy(void *, h2_pal_mutex_t *raw_mutex) {
   const h2_pal_mem_api_t *allocator = mutex->allocator;
   mutex->~DesktopMutex();
   api_free(allocator, mutex);
+  h2_desktop_resource_release(h2_desktop_resource_kind::mutex);
   return H2_PAL_OK;
 }
 
@@ -348,6 +357,7 @@ h2_pal_result_t semaphore_create(void *,
   semaphore->allocator = config->allocator;
   semaphore->count = config->initial_count;
   semaphore->max_count = config->max_count;
+  h2_desktop_resource_acquire(h2_desktop_resource_kind::semaphore);
   *out_semaphore = reinterpret_cast<h2_pal_semaphore_t *>(semaphore);
   return H2_PAL_OK;
 }
@@ -361,6 +371,7 @@ h2_pal_result_t semaphore_destroy(void *, h2_pal_semaphore_t *raw_semaphore) {
   const h2_pal_mem_api_t *allocator = semaphore->allocator;
   semaphore->~DesktopSemaphore();
   api_free(allocator, semaphore);
+  h2_desktop_resource_release(h2_desktop_resource_kind::semaphore);
   return H2_PAL_OK;
 }
 
@@ -409,6 +420,7 @@ h2_pal_result_t condition_create(void *, const h2_pal_cond_config_t *config,
   }
   DesktopCondition *condition = new (raw) DesktopCondition();
   condition->allocator = config->allocator;
+  h2_desktop_resource_acquire(h2_desktop_resource_kind::condition);
   *out_condition = reinterpret_cast<h2_pal_cond_t *>(condition);
   return H2_PAL_OK;
 }
@@ -422,6 +434,7 @@ h2_pal_result_t condition_destroy(void *, h2_pal_cond_t *raw_condition) {
   const h2_pal_mem_api_t *allocator = condition->allocator;
   condition->~DesktopCondition();
   api_free(allocator, condition);
+  h2_desktop_resource_release(h2_desktop_resource_kind::condition);
   return H2_PAL_OK;
 }
 
@@ -476,77 +489,108 @@ h2_desktop_task_stack_config_t task_stack_config = {};
 size_t task_stack_borrowers = 0;
 
 struct DesktopTask {
-  std::thread thread;
+  pthread_t thread{};
+  h2_pal_task_entry_t entry = nullptr;
+  void *context = nullptr;
   const h2_pal_mem_api_t *stack_allocator = nullptr;
   void *stack = nullptr;
+  size_t stack_bytes = 0u;
+  bool configured = false;
 };
 
 void release_task_stack(DesktopTask *task) {
-  if (task->stack_allocator == nullptr)
-    return;
-  h2_pal_mem_free(task->stack_allocator, task->stack);
-  std::lock_guard<std::mutex> guard(task_stack_mutex);
-  --task_stack_borrowers;
+  api_free(task->stack_allocator, task->stack);
+  h2_desktop_task_stack_release(task->stack_bytes);
+  if (task->configured) {
+    std::lock_guard<std::mutex> guard(task_stack_mutex);
+    --task_stack_borrowers;
+  }
+}
+
+void *desktop_task_entry(void *context) {
+  auto *task = static_cast<DesktopTask *>(context);
+  task->entry(task->context);
+  return nullptr;
 }
 
 int task_start(void *, const h2_pal_task_options_t *options,
                h2_pal_task_entry_t entry, void *context,
                h2_pal_task_t **out_task) {
-  if (entry == nullptr || out_task == nullptr) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  *out_task = nullptr;
-  DesktopTask *task = new (std::nothrow) DesktopTask();
-  if (task == nullptr) {
-    return H2_PAL_ERR_NO_MEMORY;
-  }
+  if (out_task != nullptr) *out_task = nullptr;
+  if (entry == nullptr || out_task == nullptr) return H2_PAL_ERR_INVALID_ARG;
+  auto *task = new (std::nothrow) DesktopTask();
+  if (task == nullptr) return H2_PAL_ERR_NO_MEMORY;
+  task->entry = entry;
+  task->context = context;
   h2_desktop_task_stack_config_t config = {};
   {
     std::lock_guard<std::mutex> guard(task_stack_mutex);
     config = task_stack_config;
     if (config.allocator != nullptr) {
       ++task_stack_borrowers;
+      task->configured = true;
       task->stack_allocator = config.allocator;
     }
   }
-  if (config.allocator != nullptr) {
-    size_t bytes = 0;
-    const auto rc = config.resolve(config.user, options, &bytes);
-    if (rc == H2_PAL_OK && bytes != 0)
-      task->stack = h2_pal_mem_alloc(config.allocator, bytes);
-    if (rc != H2_PAL_OK || (bytes != 0 && task->stack == nullptr)) {
-      release_task_stack(task);
-      delete task;
-      return rc != H2_PAL_OK ? rc : H2_PAL_ERR_NO_MEMORY;
+  size_t resolved = 0;
+  int rc = config.resolve == nullptr ? H2_PAL_OK :
+      config.resolve(config.user, options, &resolved);
+  pthread_attr_t attributes;
+  bool attributes_live = false;
+  if (rc == H2_PAL_OK) {
+    rc = pthread_attr_init(&attributes) == 0 ? H2_PAL_OK : H2_PAL_ERR_UNAVAILABLE;
+    attributes_live = rc == H2_PAL_OK;
+  }
+  size_t bytes = 0;
+  if (rc == H2_PAL_OK && pthread_attr_getstacksize(&attributes, &bytes) != 0)
+    rc = H2_PAL_ERR_UNAVAILABLE;
+  if (rc == H2_PAL_OK) {
+    // Keep the platform's normal pthread default; the requested minimum and
+    // configured memory policy can increase it. This allocation is supplied
+    // to pthread_create, rather than merely mirroring stack bytes in a counter.
+    bytes = std::max(bytes, std::max(resolved, options ? options->min_stack_size : 0u));
+    const long page = sysconf(_SC_PAGESIZE);
+    const size_t alignment = page > 0 ? static_cast<size_t>(page) : 4096u;
+    if (bytes > SIZE_MAX - (alignment - 1u)) rc = H2_PAL_ERR_INVALID_ARG;
+    else {
+      bytes = (bytes + alignment - 1u) / alignment * alignment;
+      if (bytes > SIZE_MAX - (alignment - 1u)) rc = H2_PAL_ERR_INVALID_ARG;
+      else {
+        task->stack = api_alloc(task->stack_allocator, bytes + alignment - 1u);
+        if (task->stack == nullptr) rc = H2_PAL_ERR_NO_MEMORY;
+        else {
+          task->stack_bytes = bytes;
+          h2_desktop_task_stack_acquire(bytes);
+          const uintptr_t address = reinterpret_cast<uintptr_t>(task->stack);
+          void *base = reinterpret_cast<void *>((address + alignment - 1u) / alignment * alignment);
+          if (pthread_attr_setstack(&attributes, base, bytes) != 0)
+            rc = H2_PAL_ERR_INVALID_ARG;
+          else if (pthread_create(&task->thread, &attributes, desktop_task_entry, task) != 0)
+            rc = H2_PAL_ERR_UNAVAILABLE;
+        }
+      }
     }
   }
-  try {
-    task->thread = std::thread([entry, context] { entry(context); });
-  } catch (...) {
+  if (attributes_live) pthread_attr_destroy(&attributes);
+  if (rc != H2_PAL_OK) {
     release_task_stack(task);
     delete task;
-    return H2_PAL_ERR_UNAVAILABLE;
+    return rc;
   }
+  h2_desktop_resource_acquire(h2_desktop_resource_kind::task);
   *out_task = reinterpret_cast<h2_pal_task_t *>(task);
   return H2_PAL_OK;
 }
 
 int task_join(void *, h2_pal_task_t *raw_task) {
-  if (raw_task == nullptr) {
-    return H2_PAL_ERR_INVALID_ARG;
-  }
-  DesktopTask *task = reinterpret_cast<DesktopTask *>(raw_task);
-  if (task->thread.get_id() == std::this_thread::get_id())
-    return H2_PAL_ERR_INVALID_STATE;
-  try {
-    if (task->thread.joinable())
-      task->thread.join();
-  } catch (...) {
-    // The caller retains the handle and placeholder for a retry.
-    return H2_PAL_ERR_IO;
-  }
+  if (raw_task == nullptr) return H2_PAL_ERR_INVALID_ARG;
+  auto *task = reinterpret_cast<DesktopTask *>(raw_task);
+  if (pthread_equal(task->thread, pthread_self())) return H2_PAL_ERR_INVALID_STATE;
+  // A failed native join keeps the handle and its actual work stack for retry.
+  if (pthread_join(task->thread, nullptr) != 0) return H2_PAL_ERR_IO;
   release_task_stack(task);
   delete task;
+  h2_desktop_resource_release(h2_desktop_resource_kind::task);
   return H2_PAL_OK;
 }
 

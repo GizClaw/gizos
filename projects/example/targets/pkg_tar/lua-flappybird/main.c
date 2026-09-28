@@ -1,15 +1,20 @@
 #include "h2_lua_flappybird.h"
 #include "h2_lua_flappybird_task_names.h"
 #include "h2_smoke_host_runtime.h"
+#include "h2_web_main_thread.h"
 #include "h2_web_platform.h"
 
 #include <emscripten.h>
+#include <stdatomic.h>
 #include <stdio.h>
 
 static h2_runtime_t *s_runtime;
 
 /* clang-format off */
-EM_JS(void, web_prepare_headless_canvas, (), {
+EM_JS(void, web_prepare_headless_canvas,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], null,
+    () => {
   if (globalThis.document || Module['canvas'])
     return;
   globalThis.ImageData ||= class {
@@ -28,8 +33,14 @@ EM_JS(void, web_prepare_headless_canvas, (), {
     setPointerCapture: () => {},
   };
 });
+});
+/* clang-format on */
 
-EM_JS(void, web_set_status, (const char *status), {
+/* clang-format off */
+EM_JS(void, web_set_status,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["pointer"], null,
+    (status) => {
   const text = UTF8ToString(status);
   const document = globalThis.document;
   if (!document) {
@@ -40,8 +51,15 @@ EM_JS(void, web_set_status, (const char *status), {
   if (element)
     element.textContent = text;
 });
+});
+/* clang-format on */
 
-EM_JS(int, web_is_headless, (), { return globalThis.document ? 0 : 1; });
+/* clang-format off */
+EM_JS(void, web_is_headless,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], "i32",
+    () => { return globalThis.document ? 0 : 1; });
+});
 /* clang-format on */
 
 static const h2_pal_periph_single_button_payload_t s_back_payload = {
@@ -149,13 +167,13 @@ static int never_stop(void *user) {
 
 static h2_pal_result_t stop_headless_app(void *user) {
   (void)user;
-  return web_is_headless() ? h2_web_flappybird_back() : H2_PAL_OK;
+  return ((int)h2_web_main_call(web_is_headless, NULL).i32) ? h2_web_flappybird_back() : H2_PAL_OK;
 }
 
 typedef struct web_app_context {
   h2_web_platform_t *platform;
   h2_pal_result_t result;
-  volatile int done;
+  _Atomic int done;
 } web_app_context_t;
 
 static void run_app(void *user) {
@@ -177,21 +195,25 @@ static void run_app(void *user) {
   context->result = h2_runtime_init(&config, &runtime);
   if (context->result != H2_PAL_OK) {
     printf("H2_LUA_FLAPPYBIRD runtime_init=%d\n", context->result);
-    web_set_status("Runtime initialization failed");
+    (void)h2_web_main_call(
+        web_set_status,
+        (const void *[]){&(const char *){"Runtime initialization failed"}});
     context->done = 1;
     return;
   }
   context->result = h2_runtime_input_start(runtime, NULL);
   if (context->result != H2_PAL_OK) {
     printf("H2_LUA_FLAPPYBIRD runtime_input=%d\n", context->result);
-    web_set_status("Runtime input start failed");
+    (void)h2_web_main_call(web_set_status, (const void *[]){&(const char *){
+                                               "Runtime input start failed"}});
     h2_runtime_deinit(runtime);
     context->done = 1;
     return;
   }
   h2_web_platform_install_pointer(context->platform);
   s_runtime = runtime;
-  web_set_status("Running Lua Flappy Bird");
+  (void)h2_web_main_call(web_set_status, (const void *[]){&(const char *){
+                                             "Running Lua Flappy Bird"}});
   const h2_lua_flappybird_config_t app_config = {
       .button_component_id = H2_RUNTIME_COMPONENT_ID_NONE,
       .back_component_id = H2_LUA_FLAPPYBIRD_COMPONENT_BACK,
@@ -203,7 +225,10 @@ static void run_app(void *user) {
   context->result = h2_lua_flappybird_run(runtime, &app_config);
   s_runtime = NULL;
   h2_runtime_deinit(runtime);
-  web_set_status(context->result == H2_PAL_OK ? "Stopped" : "Lua App failed");
+  (void)h2_web_main_call(
+      web_set_status,
+      (const void *[]){&(const char *){
+          context->result == H2_PAL_OK ? "Stopped" : "Lua App failed"}});
   context->done = 1;
 }
 
@@ -218,9 +243,10 @@ int main(void) {
   };
   h2_pal_task_t *app_task = NULL;
   h2_pal_result_t result;
-  web_prepare_headless_canvas();
+  (void)h2_web_main_call(web_prepare_headless_canvas, NULL);
   if (platform == NULL) {
-    web_set_status("Host allocation failed");
+    (void)h2_web_main_call(web_set_status, (const void *[]){&(const char *){
+                                               "Host allocation failed"}});
     return 1;
   }
   const h2_pal_task_options_t task_options = {
@@ -231,7 +257,7 @@ int main(void) {
   while (result == H2_PAL_OK && !context.done) {
     result = h2_web_platform_pump(platform, 64u, NULL);
     if (result == H2_PAL_OK)
-      emscripten_sleep(1u);
+      h2_web_worker_sleep(1u);
   }
   if (result == H2_PAL_OK) {
     result = h2_pal_task_join(h2_web_platform_task_api(platform), app_task);
@@ -239,9 +265,10 @@ int main(void) {
   if (result == H2_PAL_OK)
     result = context.result;
   h2_web_platform_destroy(platform);
-  // main resumes through Asyncify: returning nonzero alone may still leave
-  // the Node harness successful. Headless runs must report their real result.
-  if (web_is_headless())
+  // A live browser runtime may retain preloaded Workers: returning alone may
+  // leave the Node harness successful. Headless runs must report their real
+  // result.
+  if (((int)h2_web_main_call(web_is_headless, NULL).i32))
     emscripten_force_exit(result == H2_PAL_OK ? 0 : 1);
   return result == H2_PAL_OK ? 0 : 1;
 }

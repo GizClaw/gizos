@@ -2167,3 +2167,12 @@ cc_library(
     tags = ["manual"],
     deps = ["@h2_vendor_tlsf//:tlsf"],
 )
+
+py_binary(
+    name = "mobile_package_tool",
+    srcs = ["mobile_package.py"],
+    main = "mobile_package.py",
+    legacy_create_init = 0,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+exports_files(["mobile_package.bzl", "mobile_app_sdk.bzl"])

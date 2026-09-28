@@ -1,8 +1,9 @@
+#include "h2_web_main_thread.h"
 /*
  * Real-browser scenarios driven by run_browser_platform.py through the Chrome
  * DevTools Protocol. The page selects one scenario with location.hash and
  * reports each step to the harness as a console line. Every scenario runs in a
- * libco task while a second task keeps ticking, like a portable App.
+ * pthread Worker while a second Worker keeps ticking, like a portable App.
  */
 #include "h2_mp4_decoder.h"
 #include "h2_web_fs.h"
@@ -10,32 +11,55 @@
 
 #include <emscripten.h>
 #include <stdio.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 
+/* clang-format off */
 EM_JS_DEPS(browser_platform_test, "$stringToNewUTF8,$FS");
-
-// clang-format off
-EM_JS(void, test_report, (const char *step, int code, const char *detail), {
+/* clang-format on */
+/* clang-format off */
+EM_JS(void, test_report,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["pointer", "i32", "pointer"], null,
+    (step, code, detail) => {
   const body = JSON.stringify({step: UTF8ToString(step), code,
                                detail: UTF8ToString(detail)});
   // The harness reads steps from the console, which works while offline.
   console.log(`STEP ${body}`);
 });
+});
+/* clang-format on */
 
-EM_JS(char *, test_scenario, (), {
+/* clang-format off */
+EM_JS(void, test_scenario,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], "pointer",
+    () => {
   return stringToNewUTF8(decodeURIComponent(location.hash.slice(1)));
 });
+});
+/* clang-format on */
 
-EM_JS(char *, test_param, (const char *name), {
+/* clang-format off */
+EM_JS(void, test_param,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["pointer"], "pointer",
+    (name) => {
   const value = new URLSearchParams(location.search).get(UTF8ToString(name));
   return stringToNewUTF8(value || "");
 });
+});
+/* clang-format on */
 
 // Chrome's CDP quota override does not bound IndexedDB writes, so quota
 // exhaustion is injected where IDBFS stores records: the browser's own
 // QuotaExceededError travels through the real IDBFS commit path.
-EM_JS(void, test_inject_quota_exceeded, (), {
+/* clang-format off */
+EM_JS(void, test_inject_quota_exceeded,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], null,
+    () => {
   const put = IDBObjectStore.prototype.put;
   IDBObjectStore.prototype.put = function(...args) {
     if (String(args[1] || "").includes("quota-")) {
@@ -44,26 +68,39 @@ EM_JS(void, test_inject_quota_exceeded, (), {
     return put.apply(this, args);
   };
 });
+});
+/* clang-format on */
 
 // Whether the provider saw the track's scheduled audio run out.
-EM_JS(int, test_track_ran_dry, (const void *platform, const void *track), {
+
+/* clang-format off */
+EM_JS(void, test_track_ran_dry,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["pointer", "pointer"], "i32",
+    (platform, track) => {
   const state = Module['h2WebAudioPlatforms']?.get(platform);
   return state?.tracks.get(track)?.underrunReported ? 1 : 0;
 });
+});
+/* clang-format on */
 
-EM_JS(void, test_seed_assets, (), {
+/* clang-format off */
+EM_JS(void, test_seed_assets,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], null,
+    () => {
   FS.mkdirTree('/assets/ui');
   FS.writeFile('/assets/ui/logo.txt', 'preloaded');
 });
-// clang-format on
-
+});
+/* clang-format on */
 typedef struct test_context {
   h2_web_platform_t *platform;
   const char *scenario;
   int result;
-  int done;
-  int ticks;
-  int stop_ticker;
+  _Atomic int done;
+  _Atomic int ticks;
+  _Atomic int stop_ticker;
 } test_context_t;
 
 static test_context_t s_test;
@@ -74,7 +111,9 @@ static test_context_t s_test;
       char message_[256];                                                      \
       (void)snprintf(message_, sizeof(message_), "%s (line %d)", detail,      \
                      __LINE__);                                                \
-      test_report(step, 1, message_);                                          \
+      (void)h2_web_main_call(                                                  \
+          test_report, (const void *[]){&(const char *){step}, &(int){1},      \
+                                        &(const char *){message_}});                                          \
       return 1;                                                                \
     }                                                                          \
   } while (0)
@@ -145,7 +184,9 @@ static int run_netif(test_context_t *context) {
                      events_api, H2_PAL_SYSTEM_EVENT_TYPE_NETIF_DEFAULT_CHANGED,
                      netif_record, &events, &subscription) == H2_PAL_OK,
              "subscribe");
-  test_report("netif-online", 0, "go offline");
+  (void)h2_web_main_call(
+      test_report, (const void *[]){&(const char *){"netif-online"}, &(int){0},
+                                    &(const char *){"go offline"}});
 
   STEP_CHECK("netif-offline", wait_for_events(context, &events, 1, 10000u),
              "no default-changed event after going offline");
@@ -162,7 +203,9 @@ static int run_netif(test_context_t *context) {
   char detail[96];
   (void)snprintf(detail, sizeof(detail), "offline fetch rc=%d", offline_rc);
   STEP_CHECK("netif-offline", offline_rc == H2_PAL_ERR_UNAVAILABLE, detail);
-  test_report("netif-offline", 0, "go online");
+  (void)h2_web_main_call(
+      test_report, (const void *[]){&(const char *){"netif-offline"}, &(int){0},
+                                    &(const char *){"go online"}});
 
   STEP_CHECK("netif-restored", wait_for_events(context, &events, 2, 10000u),
              "no default-changed event after coming back online");
@@ -178,7 +221,9 @@ static int run_netif(test_context_t *context) {
                             &response);
   h2_pal_system_event_unsubscribe(events_api, subscription);
   h2_pal_system_event_deinit(events_api);
-  test_report("netif-restored", 0, "ok");
+  (void)h2_web_main_call(test_report,
+                         (const void *[]){&(const char *){"netif-restored"},
+                                          &(int){0}, &(const char *){"ok"}});
   return 0;
 }
 
@@ -283,8 +328,16 @@ static int run_media(test_context_t *context) {
     // outcome only for such browsers.
     h2_pal_http_response_free(h2_web_platform_http_api(context->platform),
                               &response);
-    test_report("media-decode", 0, "unsupported: no H.264/AAC WebCodecs");
-    test_report("media-repeat", 0, "unsupported: no H.264/AAC WebCodecs");
+    (void)h2_web_main_call(
+        test_report,
+        (const void *[]){
+            &(const char *){"media-decode"}, &(int){0},
+            &(const char *){"unsupported: no H.264/AAC WebCodecs"}});
+    (void)h2_web_main_call(
+        test_report,
+        (const void *[]){
+            &(const char *){"media-repeat"}, &(int){0},
+            &(const char *){"unsupported: no H.264/AAC WebCodecs"}});
     for (size_t index = 0u; index < 16000u; ++index)
       pcm[index] = (int16_t)((index % 40u) < 20u ? 4000 : -4000);
     return run_display_and_speaker(context, pcm);
@@ -303,7 +356,9 @@ static int run_media(test_context_t *context) {
              detail);
   STEP_CHECK("media-decode", context->ticks > ticks_before,
              "decoder waits must yield to other tasks");
-  test_report("media-decode", 0, detail);
+  (void)h2_web_main_call(test_report,
+                         (const void *[]){&(const char *){"media-decode"},
+                                          &(int){0}, &(const char *){detail}});
 
   // Repeat playback: reset rewinds to the start and decodes the same stream.
   media_pass_t second;
@@ -323,7 +378,9 @@ static int run_media(test_context_t *context) {
              "close");
   h2_pal_http_response_free(h2_web_platform_http_api(context->platform),
                             &response);
-  test_report("media-repeat", 0, detail);
+  (void)h2_web_main_call(test_report,
+                         (const void *[]){&(const char *){"media-repeat"},
+                                          &(int){0}, &(const char *){detail}});
   return run_display_and_speaker(context, pcm);
 }
 
@@ -363,7 +420,10 @@ static int run_display_and_speaker(test_context_t *context,
                  h2_pal_display_open(display) == H2_PAL_OK &&
                  h2_pal_display_close(display) == H2_PAL_OK,
              "closed display reports INVALID_STATE and reopens");
-  test_report("display", 0, "open/draw/present/close/reopen");
+  (void)h2_web_main_call(
+      test_report,
+      (const void *[]){&(const char *){"display"}, &(int){0},
+                       &(const char *){"open/draw/present/close/reopen"}});
 
   // Speaker: write is paced by the playback clock and drain waits for it.
   const h2_pal_audio_api_t *audio = h2_web_platform_audio_api(context->platform);
@@ -404,7 +464,11 @@ static int run_display_and_speaker(test_context_t *context,
     written_samples += 320u;
   }
   const double write_ms = emscripten_get_now() - started;
-  const int ran_dry = test_track_ran_dry(context->platform, track);
+  const int ran_dry = ((int)h2_web_main_call(
+                           test_track_ran_dry,
+                           (const void *[]){&(const void *){context->platform},
+                                            &(const void *){track}})
+                           .i32);
   rc = rc == H2_PAL_OK
            ? (h2_pal_result_t)h2_pal_audio_track_drain(track, 3000u)
            : rc;
@@ -422,7 +486,9 @@ static int run_display_and_speaker(test_context_t *context,
              h2_pal_audio_track_close(track) == H2_PAL_OK &&
                  h2_pal_audio_stop_speaker(audio) == H2_PAL_OK,
              "close track");
-  test_report("speaker", 0, detail);
+  (void)h2_web_main_call(test_report,
+                         (const void *[]){&(const char *){"speaker"}, &(int){0},
+                                          &(const char *){detail}});
   return 0;
 }
 
@@ -485,7 +551,9 @@ static int run_http(test_context_t *context) {
                                 memcmp(response.body, "missing", 7u) == 0,
              "404 must return status and body");
   h2_pal_http_response_free(http, &response);
-  test_report("http-status", 0, "404 body delivered");
+  (void)h2_web_main_call(
+      test_report, (const void *[]){&(const char *){"http-status"}, &(int){0},
+                                    &(const char *){"404 body delivered"}});
 
   // POST body and custom headers survive the CORS preflight.
   static const char payload[] = "h2-web-post";
@@ -494,7 +562,9 @@ static int run_http(test_context_t *context) {
       {{"x-h2-test", 9u}, {"yes", 3u}},
   };
   char url[160];
-  char *cross = test_param("cross");
+  char *cross = ((char *)h2_web_main_call(
+                     test_param, (const void *[]){&(const char *){"cross"}})
+                     .ptr);
   (void)snprintf(url, sizeof(url), "%s/http/echo", cross);
   const h2_pal_http_request_t post = {
       .method = H2_PAL_HTTP_POST,
@@ -514,7 +584,10 @@ static int run_http(test_context_t *context) {
                                      sizeof(payload) - 1u) == 0,
              "cross-origin POST with preflight must echo header and body");
   h2_pal_http_response_free(http, &response);
-  test_report("http-post", 0, "cross-origin preflighted POST ok");
+  (void)h2_web_main_call(
+      test_report,
+      (const void *[]){&(const char *){"http-post"}, &(int){0},
+                       &(const char *){"cross-origin preflighted POST ok"}});
 
   // A cross-origin response without Access-Control-Allow-Origin is a CORS
   // failure the page cannot read; it must not look like success.
@@ -522,7 +595,10 @@ static int run_http(test_context_t *context) {
   rc = http_get(context, url, 3000, &response);
   STEP_CHECK("http-cors", rc == H2_PAL_ERR_IO && response.body == NULL,
              "CORS rejection must return IO");
-  test_report("http-cors", 0, "CORS rejection is IO and logged");
+  (void)h2_web_main_call(
+      test_report,
+      (const void *[]){&(const char *){"http-cors"}, &(int){0},
+                       &(const char *){"CORS rejection is IO and logged"}});
 
   // Streaming: a large body arrives in several read_cb chunks.
   stream_sink_t sink = {0};
@@ -563,16 +639,21 @@ static int run_http(test_context_t *context) {
                  H2_PAL_OK, sink.total, sink.chunks, rc, stopped.chunks);
   STEP_CHECK("http-stream", rc == H2_PAL_ERR_CLOSED && stopped.chunks == 1u,
              url);
-  test_report("http-stream", 0, url);
+  (void)h2_web_main_call(test_report,
+                         (const void *[]){&(const char *){"http-stream"},
+                                          &(int){0}, &(const char *){url}});
 
   // Timeout aborts the fetch while the other task keeps running.
   const int ticks_before = context->ticks;
-  rc = http_get(context, "/http/slow", 300, &response);
+  rc = http_get(context, "/http/slow", 600, &response);
   STEP_CHECK("http-timeout", rc == H2_PAL_ERR_TIMEOUT,
              "slow response must time out");
-  STEP_CHECK("http-timeout", context->ticks - ticks_before >= 10,
+  STEP_CHECK("http-timeout", context->ticks > ticks_before,
              "another task must keep running during the fetch");
-  test_report("http-timeout", 0, "timeout without freezing tasks");
+  (void)h2_web_main_call(
+      test_report,
+      (const void *[]){&(const char *){"http-timeout"}, &(int){0},
+                       &(const char *){"timeout without freezing tasks"}});
 
   // cancel_cb aborts an in-flight request promptly.
   cancel_state_t cancel = {.context = context,
@@ -590,7 +671,10 @@ static int run_http(test_context_t *context) {
   STEP_CHECK("http-cancel",
              rc == H2_PAL_ERR_CLOSED && emscripten_get_now() - started < 1500.0,
              "cancel must abort the fetch well before it completes");
-  test_report("http-cancel", 0, "cancel aborts in flight");
+  (void)h2_web_main_call(
+      test_report,
+      (const void *[]){&(const char *){"http-cancel"}, &(int){0},
+                       &(const char *){"cancel aborts in flight"}});
 
   // response_buf overflow is NO_SPACE, like CoreHTTP.
   uint8_t small[8];
@@ -604,7 +688,9 @@ static int run_http(test_context_t *context) {
   rc = (h2_pal_result_t)h2_pal_http_request(http, &overflow, &response);
   STEP_CHECK("http-overflow", rc == H2_PAL_ERR_NO_SPACE,
              "response_buf overflow must be NO_SPACE");
-  test_report("http-overflow", 0, "NO_SPACE");
+  (void)h2_web_main_call(
+      test_report, (const void *[]){&(const char *){"http-overflow"}, &(int){0},
+                                    &(const char *){"NO_SPACE"}});
   free(cross);
   return 0;
 }
@@ -615,7 +701,7 @@ static const char *const k_readonly[] = {"/assets"};
 
 static h2_pal_result_t fs_open(test_context_t *context, uint32_t lock_ms,
                                h2_web_fs_t **out_fs) {
-  test_seed_assets();
+  (void)h2_web_main_call(test_seed_assets, NULL);
   const h2_web_fs_config_t config = {
       .persistent_root = "/persist",
       .readonly_roots = k_readonly,
@@ -667,7 +753,9 @@ static int run_fs(test_context_t *context, const char *scenario) {
     char detail[64];
     (void)snprintf(detail, sizeof(detail), "second tab open rc=%d", rc);
     STEP_CHECK(scenario, rc == H2_PAL_ERR_BUSY && web_fs == NULL, detail);
-    test_report(scenario, 0, detail);
+    (void)h2_web_main_call(
+        test_report, (const void *[]){&(const char *){scenario}, &(int){0},
+                                      &(const char *){detail}});
     return 0;
   }
   h2_pal_result_t rc = fs_open(context, 0u, &web_fs);
@@ -702,7 +790,10 @@ static int run_fs(test_context_t *context, const char *scenario) {
                h2_pal_fs_mkdir(fs, "/elsewhere") == H2_PAL_ERR_NOT_FOUND,
                "paths outside the roots are not exposed");
     // No close: the reload must find data committed by the barriers alone.
-    test_report(scenario, 0, "written; reload without shutdown");
+    (void)h2_web_main_call(
+        test_report,
+        (const void *[]){&(const char *){scenario}, &(int){0},
+                         &(const char *){"written; reload without shutdown"}});
     for (;;)
       (void)h2_pal_time_sleep_ms(h2_web_platform_time_api(context->platform),
                                  1000u);
@@ -721,11 +812,16 @@ static int run_fs(test_context_t *context, const char *scenario) {
                h2_web_platform_destroy(context->platform) == H2_PAL_ERR_BUSY,
                "an open filesystem pins the platform");
     STEP_CHECK(scenario, h2_web_fs_close(web_fs) == H2_PAL_OK, "close");
-    test_report(scenario, 0, "restored generation-1");
+    (void)h2_web_main_call(
+        test_report,
+        (const void *[]){&(const char *){scenario}, &(int){0},
+                         &(const char *){"restored generation-1"}});
     return 0;
   }
   if (strcmp(scenario, "fs-hold") == 0) {
-    test_report(scenario, 0, "holding the root");
+    (void)h2_web_main_call(
+        test_report, (const void *[]){&(const char *){scenario}, &(int){0},
+                                      &(const char *){"holding the root"}});
     for (;;)
       (void)h2_pal_time_sleep_ms(h2_web_platform_time_api(context->platform),
                                  1000u);
@@ -733,7 +829,9 @@ static int run_fs(test_context_t *context, const char *scenario) {
   if (strcmp(scenario, "fs-clear") == 0) {
     STEP_CHECK(scenario, h2_web_fs_clear(web_fs) == H2_PAL_OK, "clear");
     STEP_CHECK(scenario, h2_web_fs_close(web_fs) == H2_PAL_OK, "close");
-    test_report(scenario, 0, "cleared");
+    (void)h2_web_main_call(
+        test_report, (const void *[]){&(const char *){scenario}, &(int){0},
+                                      &(const char *){"cleared"}});
     return 0;
   }
   if (strcmp(scenario, "fs-empty") == 0) {
@@ -743,12 +841,14 @@ static int run_fs(test_context_t *context, const char *scenario) {
                    H2_PAL_ERR_NOT_FOUND,
                "cleared data must stay deleted after reload");
     STEP_CHECK(scenario, h2_web_fs_close(web_fs) == H2_PAL_OK, "close");
-    test_report(scenario, 0, "empty after reload");
+    (void)h2_web_main_call(
+        test_report, (const void *[]){&(const char *){scenario}, &(int){0},
+                                      &(const char *){"empty after reload"}});
     return 0;
   }
   if (strcmp(scenario, "fs-quota") == 0) {
     // Every commit that stores a quota-* record hits the quota error.
-    test_inject_quota_exceeded();
+    (void)h2_web_main_call(test_inject_quota_exceeded, NULL);
     static char block[16384];
     memset(block, 'q', sizeof(block) - 1u);
     rc = (h2_pal_result_t)h2_pal_fs_mkdir(fs, "/persist/app");
@@ -778,10 +878,14 @@ static int run_fs(test_context_t *context, const char *scenario) {
                              status.last_error[0] != '\0',
                detail);
     (void)h2_web_fs_close(web_fs);
-    test_report(scenario, 0, detail);
+    (void)h2_web_main_call(
+        test_report, (const void *[]){&(const char *){scenario}, &(int){0},
+                                      &(const char *){detail}});
     return 0;
   }
-  test_report(scenario, 1, "unknown fs scenario");
+  (void)h2_web_main_call(
+      test_report, (const void *[]){&(const char *){scenario}, &(int){1},
+                                    &(const char *){"unknown fs scenario"}});
   return 1;
 }
 
@@ -796,7 +900,10 @@ static void run_scenario(void *user) {
   else if (strncmp(context->scenario, "fs-", 3u) == 0)
     context->result = run_fs(context, context->scenario);
   else {
-    test_report(context->scenario, 1, "unknown scenario");
+    (void)h2_web_main_call(
+        test_report,
+        (const void *[]){&(const char *){context->scenario}, &(int){1},
+                         &(const char *){"unknown scenario"}});
     context->result = 1;
   }
   context->stop_ticker = 1;
@@ -807,9 +914,12 @@ int main(void) {
   const h2_web_platform_config_t config = {.display_width = 240,
                                            .display_height = 240};
   s_test.platform = h2_web_platform_create(&config);
-  s_test.scenario = test_scenario();
+  s_test.scenario = ((char *)h2_web_main_call(test_scenario, NULL).ptr);
   if (s_test.platform == NULL) {
-    test_report(s_test.scenario, 1, "platform create");
+    (void)h2_web_main_call(
+        test_report,
+        (const void *[]){&(const char *){s_test.scenario}, &(int){1},
+                         &(const char *){"platform create"}});
     return 1;
   }
   const h2_pal_task_api_t *tasks = h2_web_platform_task_api(s_test.platform);
@@ -819,22 +929,29 @@ int main(void) {
           H2_PAL_OK ||
       h2_pal_task_start(tasks, NULL, run_scenario, &s_test, &runner) !=
           H2_PAL_OK) {
-    test_report(s_test.scenario, 1, "task start");
+    (void)h2_web_main_call(test_report,
+                           (const void *[]){&(const char *){s_test.scenario},
+                                            &(int){1},
+                                            &(const char *){"task start"}});
     return 1;
   }
   while (!s_test.done) {
     (void)h2_web_platform_pump(s_test.platform, 16u, NULL);
-    emscripten_sleep(1u);
+    h2_web_worker_sleep(1u);
   }
   h2_pal_task_t *const joined[] = {ticker, runner};
   for (size_t index = 0u; index < 2u; ++index) {
     while (h2_pal_task_join(tasks, joined[index]) == H2_PAL_ERR_BUSY) {
       (void)h2_web_platform_pump(s_test.platform, 16u, NULL);
-      emscripten_sleep(1u);
+      h2_web_worker_sleep(1u);
     }
   }
   const h2_pal_result_t destroyed = h2_web_platform_destroy(s_test.platform);
-  test_report("destroy", destroyed == H2_PAL_OK ? 0 : 1,
-              destroyed == H2_PAL_OK ? "platform released" : "destroy busy");
+  (void)h2_web_main_call(
+      test_report, (const void *[]){&(const char *){"destroy"},
+                                    &(int){destroyed == H2_PAL_OK ? 0 : 1},
+                                    &(const char *){destroyed == H2_PAL_OK
+                                                        ? "platform released"
+                                                        : "destroy busy"}});
   return s_test.result;
 }

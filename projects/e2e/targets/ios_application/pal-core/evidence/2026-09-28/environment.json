@@ -1,0 +1,21 @@
+{
+  "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+  "device": {
+    "dataPath": "/Users/idy/Library/Developer/CoreSimulator/Devices/A06F78C5-E60A-4061-B627-F72A0578C7A1/data",
+    "dataPathSize": 1618210816,
+    "logPath": "/Users/idy/Library/Logs/CoreSimulator/A06F78C5-E60A-4061-B627-F72A0578C7A1",
+    "udid": "A06F78C5-E60A-4061-B627-F72A0578C7A1",
+    "lastUsedAt": "2026-09-27T21:09:48Z",
+    "isAvailable": true,
+    "logPathSize": 237568,
+    "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
+    "state": "Booted",
+    "name": "GizOS PAL Core E2E"
+  },
+  "app_sha256": "4b50ee33225032778e6f307fc5fa31480bcdc702b2525e3f1e628432ece12b11",
+  "sdk_sha256": "7ca7558b22e0f8967f1871aaf554b936a5f75a8e717537e5145bb37bcb79b9f6",
+  "evidence_timezone": "Asia/Singapore",
+  "report_file_modified_at_utc": "2026-09-27T21:38:53.702749+00:00",
+  "report_file_modified_at_local": "2026-09-28T05:38:53.702749+08:00",
+  "timestamp_source": "mtime of qualified.json from the uncached Bazel simulator test output"
+}

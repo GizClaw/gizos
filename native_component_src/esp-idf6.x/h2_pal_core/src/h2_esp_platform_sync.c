@@ -1,4 +1,5 @@
 #include "h2_esp_platform_core.h"
+#include "h2_esp_resource_stats_internal.h"
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -82,6 +83,7 @@ static h2_pal_result_t esp_mutex_create(
         return H2_PAL_ERR_NO_MEMORY;
     }
 
+    h2_esp_resource_acquire(H2_ESP_RESOURCE_MUTEX, 0u);
     *out_mutex = mutex;
     return H2_PAL_OK;
 }
@@ -96,6 +98,7 @@ static h2_pal_result_t esp_mutex_destroy(void *user, h2_pal_mutex_t *mutex) {
     }
     const h2_pal_mem_api_t *allocator = mutex->allocator;
     sync_free(allocator, mutex);
+    h2_esp_resource_release(H2_ESP_RESOURCE_MUTEX, 0u);
     return H2_PAL_OK;
 }
 
@@ -154,6 +157,7 @@ static h2_pal_result_t esp_semaphore_create(
         return H2_PAL_ERR_NO_MEMORY;
     }
 
+    h2_esp_resource_acquire(H2_ESP_RESOURCE_SEMAPHORE, 0u);
     *out_semaphore = semaphore;
     return H2_PAL_OK;
 }
@@ -168,6 +172,7 @@ static h2_pal_result_t esp_semaphore_destroy(void *user, h2_pal_semaphore_t *sem
     }
     const h2_pal_mem_api_t *allocator = semaphore->allocator;
     sync_free(allocator, semaphore);
+    h2_esp_resource_release(H2_ESP_RESOURCE_SEMAPHORE, 0u);
     return H2_PAL_OK;
 }
 
@@ -212,6 +217,7 @@ static h2_pal_result_t esp_cond_create(
         sync_free(config->allocator, cond);
         return H2_PAL_ERR_NO_MEMORY;
     }
+    h2_esp_resource_acquire(H2_ESP_RESOURCE_CONDITION, 0u);
     *out_cond = cond;
     return H2_PAL_OK;
 }
@@ -232,6 +238,7 @@ static h2_pal_result_t esp_cond_destroy(void *user, h2_pal_cond_t *cond) {
     vSemaphoreDelete(cond->lock);
     const h2_pal_mem_api_t *allocator = cond->allocator;
     sync_free(allocator, cond);
+    h2_esp_resource_release(H2_ESP_RESOURCE_CONDITION, 0u);
     return H2_PAL_OK;
 }
 

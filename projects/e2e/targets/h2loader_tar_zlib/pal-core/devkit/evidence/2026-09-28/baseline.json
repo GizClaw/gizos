@@ -1,0 +1,222 @@
+{
+  "device_uid": "9888e0115c52",
+  "port": "/dev/cu.usbmodem201313231",
+  "transport": "USB Serial/JTAG + iostreamikcp",
+  "version": "pal-core-devkit-20260928-r3",
+  "package_sha256": "32f11723811aa43e203044f463a23cea7f5d572aea6024054168fbaf9ce5b4a4",
+  "image_sha256": "cd4334b87ba2da6ea27eddf3d33a6121c7e7538351b57c1b90a5fbabffa6c687",
+  "passed": 27,
+  "failed": 3,
+  "blocked": 11,
+  "not_run": 0,
+  "complete": true,
+  "qualified": false,
+  "cleanup": 0,
+  "cases": [
+    {
+      "id": "pal.core.memory.lifecycle",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.log.output",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.time.monotonic",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.time.wall-read",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.time.wall-set",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.timer.oneshot",
+      "status": "BLOCKED",
+      "result": -3
+    },
+    {
+      "id": "pal.core.timer.lifecycle",
+      "status": "BLOCKED",
+      "result": -3
+    },
+    {
+      "id": "pal.core.task.lifecycle",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.queue.transfer",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.queue.boundaries",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.mutex.lifecycle",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.semaphore.boundaries",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.condition.signal",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.condition.bounded-wait",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.concurrency.mpmc",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.task.join-running",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.task.join-completed",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.task.churn",
+      "status": "BLOCKED",
+      "result": -2
+    },
+    {
+      "id": "pal.core.task.batch-churn",
+      "status": "BLOCKED",
+      "result": -2
+    },
+    {
+      "id": "pal.core.task.stack-bounds",
+      "status": "BLOCKED",
+      "result": -2
+    },
+    {
+      "id": "pal.core.task.start-failure",
+      "status": "BLOCKED",
+      "result": -2
+    },
+    {
+      "id": "pal.core.task.partial-start",
+      "status": "BLOCKED",
+      "result": -2
+    },
+    {
+      "id": "pal.core.queue.copy-buffered-close",
+      "status": "FAIL",
+      "result": -10
+    },
+    {
+      "id": "pal.core.queue.sender-close",
+      "status": "FAIL",
+      "result": -7
+    },
+    {
+      "id": "pal.core.queue.reset-wake",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.mutex.contention",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.system-event.lifecycle",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.firmware-info.current",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.queue.close-wake",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.semaphore.wake",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.api.arguments",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.memory.churn-alignment",
+      "status": "BLOCKED",
+      "result": -2
+    },
+    {
+      "id": "pal.core.task.once-context",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.semaphore.waiters",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.condition.broadcast",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.condition.generations",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.system-event.external-unsubscribe",
+      "status": "FAIL",
+      "result": -7
+    },
+    {
+      "id": "pal.core.system-event.self-unsubscribe",
+      "status": "PASS",
+      "result": 0
+    },
+    {
+      "id": "pal.core.timer.isolation",
+      "status": "BLOCKED",
+      "result": -3
+    },
+    {
+      "id": "pal.core.timer.churn",
+      "status": "BLOCKED",
+      "result": -2
+    },
+    {
+      "id": "pal.core.resources.recovered",
+      "status": "BLOCKED",
+      "result": -2
+    }
+  ]
+}

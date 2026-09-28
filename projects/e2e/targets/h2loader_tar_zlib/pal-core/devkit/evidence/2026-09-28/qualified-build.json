@@ -1,0 +1,71 @@
+{
+  "assets": [
+    {
+      "name": "devkit-pal-core-esp32s3.update.tar.zlib",
+      "operation": "managed-install",
+      "release_suffix": ".update.tar.zlib",
+      "sha256": "11ea559c25ad54303ff62f7ba0b9769682fdab852142077cf848d950d136ee2f",
+      "size": 984923
+    }
+  ],
+  "board": "devkit",
+  "entry": "projects/e2e/targets/h2loader_tar_zlib/pal-core/devkit",
+  "image": "pal-core",
+  "native_artifacts": [
+    {
+      "name": "firmware.elf",
+      "operation": "native-debug-or-flash",
+      "sha256": "058e9be393ff946bda82e14de97baf6fe3e23459a91ed47434a750d86ad0a6eb",
+      "size": 14088676
+    },
+    {
+      "name": "firmware.map",
+      "operation": "native-debug-or-flash",
+      "sha256": "bdafab9baee23abde092ab574bbbf781b9b7ec023ca42a2f05f71566e6b3db30",
+      "size": 13233867
+    },
+    {
+      "name": "app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "2595a4ceed5689bab4fcda586a21fe311c5d9364437bf620ad6443bce7fa9b09",
+      "size": 1530000
+    },
+    {
+      "name": "bootloader.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "c532d0afe6b3841db4811a3b24406acc4a2db2e925eb1631d350c7f555469d58",
+      "size": 21328
+    },
+    {
+      "name": "combined_factory.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "5036ead38951f49084fea73f3c91f9163e936f5a042f8e7e281b467615195eb7",
+      "size": 1661072
+    },
+    {
+      "name": "partition-table.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "96f93c5cdeacf9f53990c7d9fb3570220e33c6feedcc73cea05948160cf14d48",
+      "size": 3072
+    },
+    {
+      "name": "flasher_args.json",
+      "operation": "native-debug-or-flash",
+      "sha256": "593c944cadeaa8491fb028f6dd38ba2511fc347dbda998c3b688209a523dd49f",
+      "size": 994
+    }
+  ],
+  "package_manifest": {
+    "board": "devkit",
+    "format": 1,
+    "image_sha256": "2595a4ceed5689bab4fcda586a21fe311c5d9364437bf620ad6443bce7fa9b09",
+    "image_size": 1530000,
+    "role": "app",
+    "target": "esp32s3",
+    "version": "pal-core-devkit-20260928-r6"
+  },
+  "platform": "esp",
+  "role": "app",
+  "target": "esp32s3",
+  "version": "pal-core-devkit-20260928-r6"
+}

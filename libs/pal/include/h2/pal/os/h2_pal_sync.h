@@ -70,6 +70,8 @@ typedef struct h2_pal_sync_vtable {
         h2_pal_mutex_t **out_mutex);
     h2_pal_result_t (*destroy_mutex)(void *user, h2_pal_mutex_t *mutex);
     h2_pal_result_t (*lock_mutex)(void *user, h2_pal_mutex_t *mutex);
+    /* Return WOULD_BLOCK when a different owner or a reserved handoff prevents
+     * immediate acquisition. Non-recursive self-lock remains caller misuse. */
     h2_pal_result_t (*try_lock_mutex)(void *user, h2_pal_mutex_t *mutex);
     h2_pal_result_t (*unlock_mutex)(void *user, h2_pal_mutex_t *mutex);
 

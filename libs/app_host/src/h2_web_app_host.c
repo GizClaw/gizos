@@ -1,4 +1,6 @@
 #include "h2_web_app_host.h"
+#include "h2_web_main_thread.h"
+#include <stdatomic.h>
 
 #include "h2/pal/h2_pal_unsupported.h"
 #include "h2_lvgl_platform.h"
@@ -15,17 +17,17 @@ struct h2_web_app_host {
   h2_web_app_host_entry_fn entry;
   void *user;
   const h2_pal_fs_api_t *fs;
-  h2_pal_task_t *volatile app_task;
-  double stop_at_ms;
+  _Atomic(h2_pal_task_t *) app_task;
+  _Atomic double stop_at_ms;
   h2_pal_result_t result;
-  volatile int done;
+  _Atomic int done;
 };
 
 // Time an App gets to honour should_stop before its task is cancelled.
 #define H2_WEB_APP_HOST_STOP_GRACE_MS 2000.0
 
-static volatile int s_stop_requested;
-static h2_web_app_host_t *s_host;
+static _Atomic int s_stop_requested;
+static _Atomic(h2_web_app_host_t *) s_host;
 
 static const h2_pal_periph_single_button_payload_t s_button_payload = {
     .delivery = H2_PAL_BUTTON_DELIVERY_PUSH_EDGE,
@@ -161,29 +163,53 @@ EMSCRIPTEN_KEEPALIVE int h2_web_app_host_button(int index, int pressed) {
 }
 
 /* The shell's JavaScript owns keyboard and layout input for each Button. */
-EM_JS(void, h2_web_app_host_bind_button, (int index, const char *key,
-                                          const char *name), {
+
+/* clang-format off */
+EM_JS(void, h2_web_app_host_bind_button,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["i32", "pointer", "pointer"], null,
+    (index, key, name) => {
   const bind = globalThis.h2WebAppHostBindButton;
   if (bind)
     bind(index, key ? UTF8ToString(key) : "", name ? UTF8ToString(name) : "");
 });
+});
+/* clang-format on */
 
-EM_JS(void, h2_web_app_host_unbind_buttons, (), {
+/* clang-format off */
+EM_JS(void, h2_web_app_host_unbind_buttons,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], null,
+    () => {
   globalThis.h2WebAppHostUnbindButtons?.();
 });
+});
+/* clang-format on */
 
-EM_JS(void, h2_web_app_host_status, (const char *text), {
+/* clang-format off */
+EM_JS(void, h2_web_app_host_status,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["pointer"], null,
+    (text) => {
   const status = globalThis.document && document.getElementById('status');
   if (status) status.textContent = UTF8ToString(text);
 });
+});
+/* clang-format on */
 
-EM_JS(void, h2_web_app_host_size_canvas, (int width, int height), {
+/* clang-format off */
+EM_JS(void, h2_web_app_host_size_canvas,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["i32", "i32"], null,
+    (width, height) => {
   const canvas = Module['canvas'];
   if (canvas) {
     canvas.width = width;
     canvas.height = height;
   }
 });
+});
+/* clang-format on */
 
 /* Shells call this from a Stop button; endless Apps end cooperatively. */
 EMSCRIPTEN_KEEPALIVE void h2_web_app_host_request_stop(void) {
@@ -196,7 +222,8 @@ static void h2_web_app_host_mark(const h2_web_app_host_t *host,
   (void)snprintf(line, sizeof(line), "H2_WEB_APP name=%s stage=%s",
                  host->config->name, stage);
   puts(line);
-  h2_web_app_host_status(line);
+  (void)h2_web_main_call(h2_web_app_host_status,
+                         (const void *[]){&(const char *){line}});
 }
 
 int h2_web_app_host_should_stop(void *user) {
@@ -311,9 +338,12 @@ static void h2_web_app_host_task(void *user) {
     result = h2_runtime_input_start(host->runtime, NULL);
     for (size_t index = 0u; result == H2_PAL_OK && index < config->button_count;
          ++index)
-      h2_web_app_host_bind_button(
-          (int)index, h2_web_app_host_button_key(&config->buttons[index]),
-          config->buttons[index].name);
+      (void)h2_web_main_call(
+          h2_web_app_host_bind_button,
+          (const void *[]){&(int){(int)index},
+                           &(const char *){h2_web_app_host_button_key(
+                               &config->buttons[index])},
+                           &(const char *){config->buttons[index].name}});
   }
   if (result == H2_PAL_OK) {
     if (config->run_ms != 0u)
@@ -340,7 +370,7 @@ static void h2_web_app_host_task(void *user) {
          (result == H2_PAL_EXIT || result == H2_PAL_ERR_CLOSED)))
       result = s_stop_requested ? H2_PAL_OK : H2_PAL_EXIT;
   }
-  h2_web_app_host_unbind_buttons();
+  (void)h2_web_main_call(h2_web_app_host_unbind_buttons, NULL);
   if (host->runtime != NULL)
     h2_runtime_deinit(host->runtime);
   host->runtime = NULL;
@@ -370,7 +400,8 @@ int h2_web_app_host_run(const h2_web_app_host_config_t *config,
       .display_width = width,
       .display_height = height,
   };
-  h2_web_app_host_size_canvas(width, height);
+  (void)h2_web_main_call(h2_web_app_host_size_canvas,
+                         (const void *[]){&(int){width}, &(int){height}});
   host.platform = h2_web_platform_create(&platform_config);
   h2_pal_result_t result =
       host.platform != NULL ? H2_PAL_OK : H2_PAL_ERR_NO_MEMORY;
@@ -428,7 +459,7 @@ int h2_web_app_host_run(const h2_web_app_host_config_t *config,
     }
     result = h2_web_platform_pump(host.platform, 64u, NULL);
     if (result == H2_PAL_OK && !host.done)
-      emscripten_sleep(1u);
+      h2_pal_time_sleep_ms(h2_web_platform_time_api(host.platform), 1u);
   }
   while (task != NULL) {
     const h2_pal_result_t joined = h2_pal_task_join(tasks, task);
@@ -438,7 +469,7 @@ int h2_web_app_host_run(const h2_web_app_host_config_t *config,
       break;
     }
     (void)h2_web_platform_pump(host.platform, 64u, NULL);
-    emscripten_sleep(1u);
+    h2_pal_time_sleep_ms(h2_web_platform_time_api(host.platform), 1u);
   }
   if (result == H2_PAL_OK)
     result = host.result;
@@ -455,6 +486,7 @@ int h2_web_app_host_run(const h2_web_app_host_config_t *config,
                  config->name, pass ? "PASS" : "FAIL", result, fs_result,
                  destroy_result);
   puts(line);
-  h2_web_app_host_status(line);
+  (void)h2_web_main_call(h2_web_app_host_status,
+                         (const void *[]){&(const char *){line}});
   return pass ? 0 : 1;
 }

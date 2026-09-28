@@ -1,0 +1,30 @@
+{
+  "date": "2026-09-28",
+  "checks": [
+    {
+      "target": "//libs/pal/providers/ios/pal_core:pal_tests",
+      "result": "PASS",
+      "evidence": "iOS Simulator XCTest"
+    },
+    {
+      "target": "//libs/pal/providers/web/pal_core:thread_core_test",
+      "result": "PASS",
+      "evidence": "Bazel exact-input cache"
+    },
+    {
+      "target": "//projects/e2e/apps/pal-core/app:interface_coverage_test",
+      "result": "PASS",
+      "evidence": "Bazel exact-input cache"
+    },
+    {
+      "target": "//projects/e2e/targets/pkg_tar/pal-core:browser_test",
+      "result": "PASS",
+      "evidence": "Bazel exact-input cache"
+    },
+    {
+      "target": "Swift Package independent consumer",
+      "result": "PASS",
+      "evidence": "xcodebuild arm64 iOS Simulator dynamic-library compile and link; final SDK archive 7ca7558b22e0f8967f1871aaf554b936a5f75a8e717537e5145bb37bcb79b9f6"
+    }
+  ]
+}

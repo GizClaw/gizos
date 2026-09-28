@@ -21,6 +21,9 @@
 #include <unistd.h>
 
 #include "h2_bk_platform_sync.c"
+static pthread_mutex_t resource_lock = PTHREAD_MUTEX_INITIALIZER;
+uint32_t rtos_enter_critical(void) { pthread_mutex_lock(&resource_lock); return 0; }
+void rtos_exit_critical(uint32_t level) { (void)level; pthread_mutex_unlock(&resource_lock); }
 
 /* ---- pthread-backed stand-ins for the SDK primitives ------------------- */
 

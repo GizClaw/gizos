@@ -1,0 +1,22 @@
+#ifndef H2_WEB_THREAD_CORE_H
+#define H2_WEB_THREAD_CORE_H
+
+#include "h2_posix_thread_core.h"
+
+/* Private compatibility names; all providers use the shared pthread core. */
+#define h2_web_thread_core h2_posix_thread_core
+#define h2_web_thread_core_create h2_posix_thread_core_create
+#define h2_web_thread_core_destroy h2_posix_thread_core_destroy
+#define h2_web_thread_core_get_resource_stats h2_posix_thread_core_get_resource_stats
+#define h2_web_thread_core_is_current_task_cancelled h2_posix_thread_core_is_current_task_cancelled
+#define h2_web_thread_core_queue_api h2_posix_thread_core_queue_api
+#define h2_web_thread_core_resource_stats h2_posix_thread_core_resource_stats
+#define h2_web_thread_core_resource_stats_t h2_posix_thread_core_resource_stats_t
+#define h2_web_thread_core_sleep_ms h2_posix_thread_core_sleep_ms
+#define h2_web_thread_core_sync_api h2_posix_thread_core_sync_api
+#define h2_web_thread_core_t h2_posix_thread_core_t
+#define h2_web_thread_core_task_api h2_posix_thread_core_task_api
+#define h2_web_thread_core_task_cancel h2_posix_thread_core_task_cancel
+#define h2_web_thread_core_timer_api h2_posix_thread_core_timer_api
+
+#endif

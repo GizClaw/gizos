@@ -1,6 +1,6 @@
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
-load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel/platforms:compatibility.bzl", "MACOS_ARM64_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
@@ -160,4 +160,13 @@ cc_test(
         "//libs/pal/providers/posix/serial_host:serial_host_internal",
         "//libs/pal/providers/posix/serial_host:serial_host_test_support",
     ],
+)
+
+cc_test(
+    name = "system_event_test",
+    srcs = ["tests/test_darwin_system_event.cpp"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = [":netif_system_event"],
 )

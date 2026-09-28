@@ -43,6 +43,11 @@ var Module = {iceURL: ICE_URL, legacy: LEGACY,
             .replace("ICE_URL", json.dumps(endpoints["stun"])).encode())
 
     class Handler(http.server.BaseHTTPRequestHandler):
+        def end_headers(self):
+            self.send_header("Cross-Origin-Opener-Policy", "same-origin")
+            self.send_header("Cross-Origin-Embedder-Policy", "require-corp")
+            super().end_headers()
+
         def _send(self, status, payload, mime):
             self.send_response(status)
             self.send_header("Content-Type", mime)
