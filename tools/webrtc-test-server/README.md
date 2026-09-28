@@ -75,3 +75,17 @@ Replace the documentation-only `192.0.2.10` address with the operator host
 address and use the same value for
 the DevKit package's allowlisted endpoint and STUN build variables. LAN bind is
 opt-in; the default remains loopback with ephemeral ports.
+
+PAL conformance additionally supports explicit out-of-band DataChannels. Supply
+all four `X-H2-Negotiated-ID`, `X-H2-Negotiated-Label`,
+`X-H2-Negotiated-Ordered`, and `X-H2-Negotiated-Reliable` headers on `/offer`.
+The fixture creates the matching Pion channel before applying the offer; no
+DCEP is used for this channel. Missing headers retain ordinary in-band behavior.
+
+`/session/<id>/authentication-witness` exposes the first fatal alert received by
+that session's Pion DTLS logger as a typed protocol error, including its numeric
+level and description. A certificate-rejection verdict requires fatal alert 42
+or 46 and zero opened channels. Timeouts, generic handshake failures, and error
+strings are not authentication evidence. Each session has a distinct witness.
+This endpoint helps browsers that expose DTLS failure state without RTCError
+fingerprint details; it never changes certificate verification behavior.

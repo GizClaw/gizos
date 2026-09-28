@@ -36,6 +36,8 @@ def verify(report, registry, platform):
         assert report.get(key) == value, f"{key}: expected {value}, got {report.get(key)}"
     assert [case["id"] for case in report["cases"]] == ids, "case ledger differs from registry"
     assert all(case["status"] == "PASS" and case["detail"] == 0 for case in report["cases"])
+    authentication = next(case for case in report["cases"] if case["id"] == "fingerprint-rejected")
+    assert authentication.get("observed_error") == -17 and authentication.get("authentication_evidence") == 1, "missing precise native fingerprint authentication failure"
 
 
 def wait_report(read, timeout):

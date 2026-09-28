@@ -9,10 +9,16 @@
 /* clang-format off */
 EM_JS(void, exchange_js,
     (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
-  h2WebMain(context, result, completion, ["pointer", "u32", "pointer", "u32"], "i32",
-    async (offer, len, answer, capacity) => {
+  h2WebMain(context, result, completion, ["pointer", "u32", "pointer", "u32", "i32", "u16", "pointer", "u32", "i32", "i32"], "i32",
+    async (offer, len, answer, capacity, negotiated, id, label, labelLen, ordered, reliable) => {
+      const headers = {'Content-Type': 'application/sdp'};
+      if (negotiated) Object.assign(headers, {
+        'X-H2-Negotiated-ID': String(id),
+        'X-H2-Negotiated-Label': UTF8ToString(label, labelLen),
+        'X-H2-Negotiated-Ordered': ordered ? '1' : '0',
+        'X-H2-Negotiated-Reliable': reliable ? '1' : '0'});
       const response = await fetch('/pion/offer', {method: 'POST',
-        body: UTF8ToString(offer, len), signal: AbortSignal.timeout(20000)});
+        headers, body: UTF8ToString(offer, len), signal: AbortSignal.timeout(20000)});
       if (!response.ok) return -4;
       const text = await response.text();
       const length = lengthBytesUTF8(text);
@@ -20,6 +26,18 @@ EM_JS(void, exchange_js,
       stringToUTF8(text, answer, capacity);
       return length;
     });
+});
+EM_JS(void, authentication_witness_js,
+    (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], "i32", async () => {
+    const response = await fetch('/pion/authentication-witness', {signal: AbortSignal.timeout(5000)});
+    if (!response.ok) return -4;
+    const witness = await response.json();
+    console.log('H2_PAL_WEBRTC_AUTH_WITNESS ' + JSON.stringify(witness));
+    if (witness.source !== 'pion-dtls-typed-alert' || witness.direction !== 'received') return -4;
+    if (witness.certificate_rejection && witness.channels_opened === 0 && witness.level === 2 && (witness.alert === 42 || witness.alert === 46)) return -17;
+    return witness.level ? -4 : -9;
+  });
 });
 EM_JS(void, close_js,
     (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
@@ -29,15 +47,24 @@ EM_JS(void, close_js,
   });
 });
 /* clang-format on */
-static int exchange(void *user, h2_pal_webrtc_str_t offer, char *answer,
+static int exchange(void *user, h2_pal_webrtc_str_t offer,
+                    const h2_pal_webrtc_channel_config_t *negotiated, char *answer,
                     size_t capacity, size_t *len) {
   (void)user;
+  const h2_pal_webrtc_channel_config_t empty = {0};
+  if (negotiated == NULL) negotiated = &empty;
   int rc =
       h2_web_main_call(exchange_js, (const void *[]){&offer.data, &offer.len,
-                                                     &answer, &capacity})
+          &answer, &capacity, &negotiated->negotiated, &negotiated->stream_id,
+          &negotiated->label.data, &negotiated->label.len, &negotiated->ordered,
+          &negotiated->reliable})
           .i32;
   *len = rc > 0 ? (size_t)rc : 0u;
   return rc > 0 ? H2_PAL_OK : rc;
+}
+static int authentication_witness(void *user) {
+  (void)user;
+  return h2_web_main_call(authentication_witness_js, NULL).i32;
 }
 static int close_remote(void *user) {
   (void)user;
@@ -48,12 +75,13 @@ static void report(void *user, const h2_pal_webrtc_e2e_case_result_t *r) {
   (void)user;
   printf("H2_PAL_WEBRTC_CASE "
          "{\"id\":\"%s\",\"status\":\"%s\",\"detail\":%d,\"line\":%u,\"elapsed_"
-         "ms\":%llu}\n",
+         "ms\":%llu,\"observed_error\":%d,\"authentication_evidence\":%d}\n",
          r->id,
          r->passed    ? "PASS"
          : r->blocked ? "BLOCKED"
                       : "FAIL",
-         r->detail, r->line, (unsigned long long)r->elapsed_ms);
+         r->detail, r->line, (unsigned long long)r->elapsed_ms,
+         r->observed_error, r->authentication_evidence);
 }
 int main(int argc, char **argv) {
   if (argc != 2 || emscripten_is_main_runtime_thread())
@@ -68,6 +96,7 @@ int main(int argc, char **argv) {
   const h2_pal_webrtc_e2e_config_t config = {.runtime = &runtime,
                                              .stun_url = argv[1],
                                              .exchange_offer = exchange,
+                                             .authentication_witness = authentication_witness,
                                              .close_remote = close_remote,
                                              .pump = pump,
                                              .pump_user = platform,

@@ -129,7 +129,11 @@ Desktop catalog identity 是 `e2e/libco`，Bazel binary 是 `//projects/e2e/targ
 
 `projects/e2e/apps/pal-webrtc/app` 是独立接口资格 App，消费 Runtime 和 launcher 提供的 Pion signaling callback。稳定 registry 覆盖 13 个 WebRTC 操作、Track read/write、owned event release、自定义 allocator 和 DataChannel config；完整结果要求所有 mandatory case PASS，缺接口、BLOCKED、SKIP 或仅构建均不算通过。真实 Pion 对端验证 ICE/DTLS/SRTP/SCTP、DataChannel、Opus、背压、关闭及错误 fingerprint 拒绝。合成 Opus packet 只验证协议传输，不宣称真实音频硬件；当前 PAL 没有视频接口。
 
+`fingerprint-rejected` 要求有效 SDP 中的错误 digest 得到具体认证拒绝。PAL 的 `TLS_VERIFY` 是直接证据；浏览器未提供 RTCError 细节时，由同一 Pion session 捕获 typed received fatal `BadCertificate(42)` / `CertificateUnknown(46)` 且该 session 从未打开通道，独立确认认证原因。通用握手错误、连接超时、错误字符串、无效 SDP 都不能计 PASS；Desktop 另有真实 Pion 负回归验证后两种情况。显式 Stream ID 用双方 `negotiated=1` 的同 ID 通道验收，自动带内协商的四种 ordered/reliable 组合继续独立覆盖。
+
 Desktop 和真实 Chromium 有自动测试；移动端通过实际 XCFramework/AAR package consumer 执行，入口为 `make bazel-test-ios_pal_webrtc_simulator_test` 和 `make bazel-test-android_pal_webrtc_simulator_test`。设备 launcher 位于 `targets/h2loader_tar_zlib/pal-webrtc`，借用已保存 STA 配置、读取显式 fixture 构建参数，运行一次后重放不可变 boot ledger。每个平台以自己 artifact 对应的完整结果资格为准，不从另一平台结果推断可用性。BK7258 的测试 allocator 和 H2Peer task stack 使用已有 PSRAM region，命令 Runtime 保持板级 allocator；失败 gate 不 confirm App。DevKit 先在 BSP 的 64 KiB 长期入口 task 初始化 H2Peer、Board Runtime 与命令服务，再启动独立测试 runner。
+
+BK7258 在完整 43 项后额外建立一个真实 Pion 连接，持续 600 秒每秒交换带序号的二进制消息与合成 Opus；独立 `H2_PAL_WEBRTC_SOAK` ledger 记录 run ID、单调 uptime、回传计数、耗时与结果，完成后关闭连接并检查 allocator 回收。启动输出 SDK reset reason。设备资格要求新镜像安装后和正常 App reboot 后各自通过，保存原 P1 Loader、Stage 空和 coredump 基线。旧镜像的 idle 观察仅说明该窗口内未复现 AP 重启，不能代替新镜像的活动稳定性验收，也不能据此排除 CP-only reset 或断言声音来源。
 
 ## WebRTC Performance
 

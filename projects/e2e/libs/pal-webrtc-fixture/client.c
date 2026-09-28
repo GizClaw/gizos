@@ -27,19 +27,40 @@ static int capture_header(void *user, const h2_pal_http_request_t *request,
   return H2_PAL_OK;
 }
 int h2_webrtc_fixture_exchange(void *user, h2_pal_webrtc_str_t offer,
+                               const h2_pal_webrtc_channel_config_t *negotiated,
                                char *answer, size_t capacity, size_t *out_len) {
   h2_webrtc_fixture_client_t *client = user;
   if (!client || !client->offer_url || !answer || capacity < 2u || !out_len)
     return H2_PAL_ERR_INVALID_ARG;
   *out_len = 0u;
+  if (client->session[0]) {
+    int previous = h2_webrtc_fixture_close(client);
+    if (previous != H2_PAL_OK) return previous;
+  }
   client->session[0] = '\0';
-  const h2_pal_http_header_t header = {{"Content-Type", 12u},
-                                       {"application/sdp", 15u}};
+  h2_pal_http_header_t headers[5] = {{{"Content-Type", 12u},
+                                    {"application/sdp", 15u}}};
+  char id[8];
+  size_t header_count = 1u;
+  if (negotiated != NULL) {
+    if (!negotiated->negotiated || !negotiated->has_stream_id ||
+        negotiated->label.len == 0u || negotiated->label.len > 128u)
+      return H2_PAL_ERR_INVALID_ARG;
+    (void)snprintf(id, sizeof(id), "%u", (unsigned)negotiated->stream_id);
+    headers[1] = (h2_pal_http_header_t){{"X-H2-Negotiated-ID", 18u}, {id, strlen(id)}};
+    headers[2] = (h2_pal_http_header_t){{"X-H2-Negotiated-Label", 21u},
+                                      {negotiated->label.data, negotiated->label.len}};
+    headers[3] = (h2_pal_http_header_t){{"X-H2-Negotiated-Ordered", 23u},
+                                      {negotiated->ordered ? "1" : "0", 1u}};
+    headers[4] = (h2_pal_http_header_t){{"X-H2-Negotiated-Reliable", 24u},
+                                      {negotiated->reliable ? "1" : "0", 1u}};
+    header_count = 5u;
+  }
   const h2_pal_http_request_t request = {
       .method = H2_PAL_HTTP_POST,
       .url = {client->offer_url, strlen(client->offer_url)},
-      .headers = &header,
-      .header_count = 1u,
+      .headers = headers,
+      .header_count = header_count,
       .body = (const uint8_t *)offer.data,
       .body_len = offer.len,
       .response_buf = (uint8_t *)answer,
@@ -79,5 +100,6 @@ int h2_webrtc_fixture_close(void *user) {
   if (rc == H2_PAL_OK && response.status_code != 204)
     rc = H2_PAL_ERR_IO;
   h2_pal_http_response_free(client->http, &response);
+  if (rc == H2_PAL_OK) client->session[0] = '\0';
   return rc;
 }

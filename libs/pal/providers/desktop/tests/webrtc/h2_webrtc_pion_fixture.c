@@ -220,7 +220,7 @@ int h2_webrtc_pion_fixture_start(h2_webrtc_pion_fixture_t *fixture,
 static int h2_webrtc_pion_fixture_exchange_impl(
     h2_webrtc_pion_fixture_t *fixture, h2_pal_webrtc_str_t offer,
     char *answer, size_t answer_cap, size_t *answer_len, int relay_only,
-    unsigned reverse_channels) {
+    unsigned reverse_channels, const h2_pal_webrtc_channel_config_t *negotiated) {
     if (fixture == NULL || offer.data == NULL || answer == NULL ||
         answer_cap == 0u || answer_len == NULL) {
         return -1;
@@ -275,11 +275,31 @@ static int h2_webrtc_pion_fixture_exchange_impl(
     }
     char response[32768];
     size_t response_len = 0u;
-    char request_headers[80];
+    char request_headers[512];
     int request_headers_len =
         snprintf(request_headers, sizeof(request_headers),
                  "X-H2-Reverse-Channels: %u\r\n%s", reverse_channels,
                  relay_only ? "X-H2-Relay-Only: 1\r\n" : "");
+    if (request_headers_len <= 0 ||
+        (size_t)request_headers_len >= sizeof(request_headers)) return -1;
+    if (negotiated != NULL) {
+        if (!negotiated->negotiated || !negotiated->has_stream_id ||
+            negotiated->label.len == 0u || negotiated->label.len > 128u)
+            return -1;
+        for (size_t i = 0u; i < negotiated->label.len; ++i) {
+            unsigned char c = (unsigned char)negotiated->label.data[i];
+            if (c < 32u || c == 127u) return -1;
+        }
+        int extra = snprintf(request_headers + request_headers_len,
+            sizeof(request_headers) - (size_t)request_headers_len,
+            "X-H2-Negotiated-ID: %u\r\nX-H2-Negotiated-Label: %.*s\r\n"
+            "X-H2-Negotiated-Ordered: %d\r\nX-H2-Negotiated-Reliable: %d\r\n",
+            (unsigned)negotiated->stream_id, (int)negotiated->label.len,
+            negotiated->label.data, !!negotiated->ordered, !!negotiated->reliable);
+        if (extra < 0 || (size_t)extra >= sizeof(request_headers) - (size_t)request_headers_len)
+            return -1;
+        request_headers_len += extra;
+    }
     if (request_headers_len <= 0 ||
         (size_t)request_headers_len >= sizeof(request_headers) ||
         h2_webrtc_fixture_request(
@@ -321,14 +341,22 @@ int h2_webrtc_pion_fixture_exchange(h2_webrtc_pion_fixture_t *fixture,
                                     size_t answer_cap, size_t *answer_len,
                                     int relay_only) {
     return h2_webrtc_pion_fixture_exchange_impl(
-        fixture, offer, answer, answer_cap, answer_len, relay_only, 3u);
+        fixture, offer, answer, answer_cap, answer_len, relay_only, 3u, NULL);
 }
 
 int h2_webrtc_pion_fixture_exchange_performance(
     h2_webrtc_pion_fixture_t *fixture, h2_pal_webrtc_str_t offer,
     char *answer, size_t answer_cap, size_t *answer_len) {
     return h2_webrtc_pion_fixture_exchange_impl(
-        fixture, offer, answer, answer_cap, answer_len, 0, 0u);
+        fixture, offer, answer, answer_cap, answer_len, 0, 0u, NULL);
+}
+
+int h2_webrtc_pion_fixture_exchange_negotiated(
+    h2_webrtc_pion_fixture_t *fixture, h2_pal_webrtc_str_t offer,
+    const h2_pal_webrtc_channel_config_t *channel,
+    char *answer, size_t answer_cap, size_t *answer_len) {
+    return h2_webrtc_pion_fixture_exchange_impl(
+        fixture, offer, answer, answer_cap, answer_len, 0, 0u, channel);
 }
 
 static int h2_webrtc_fixture_json_uint64(const char *json, const char *name,

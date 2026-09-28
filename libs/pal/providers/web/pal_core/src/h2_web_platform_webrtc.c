@@ -236,9 +236,28 @@ EM_JS(void, h2_web_webrtc_peer_create_js,
       pc,
       iceServers : [],
       binding : null,
-      cancelOffer : null
+      cancelOffer : null,
+      dtlsErrors : new Map()
     };
     peers.set(peer_address, entry);
+    entry.watchDtlsErrors = () => {
+      const transports = [pc.sctp?.transport,
+        ...(pc.getSenders?.() || []).map(sender => sender.transport),
+        ...(pc.getReceivers?.() || []).map(receiver => receiver.transport)];
+      for (const transport of transports) {
+        if (!transport?.addEventListener || entry.dtlsErrors.has(transport))
+          continue;
+        const listener = event => {
+          if (peers.get(peer_address) !== entry) return;
+          const error = event.error;
+          const verifiedFailure = error?.errorDetail === 'fingerprint-failure' ||
+            (error?.errorDetail === 'dtls-failure' && (error.sentAlert === 42 || error.sentAlert === 46));
+          Module['_h2_web_webrtc_fail'](peer_address, verifiedFailure ? -17 : -4);
+        };
+        entry.dtlsErrors.set(transport, listener);
+        transport.addEventListener('error', listener);
+      }
+    };
     const bindChannel = (channelAddress, dc) => {
       const channelEntry = {peerAddress : peer_address, dc};
       channels.set(channelAddress, channelEntry);
@@ -423,6 +442,7 @@ EM_JS(void, h2_web_webrtc_start_offer_js,
       if (Module['h2WebRtcPeers']?.get(peer_address) !== entry)
         return -10;
       await pc.setLocalDescription(offer);
+      entry.watchDtlsErrors();
       if (Module['h2WebRtcPeers']?.get(peer_address) !== entry)
         return -10;
       if (pc.iceGatheringState !== 'complete') {
@@ -584,7 +604,11 @@ EM_JS(void, h2_web_webrtc_set_remote_sdp_js,
     return -7;
   const description = {type : 'answer', sdp : UTF8ToString(sdp, sdp_len)};
   entry.pc.setRemoteDescription(description).then(
-      () => Module['h2WebRtcPeers']?.get(peer_address) === entry ? 0 : -10,
+      () => {
+        if (Module['h2WebRtcPeers']?.get(peer_address) !== entry) return -10;
+        entry.watchDtlsErrors();
+        return 0;
+      },
       () => Module['h2WebRtcPeers']?.get(peer_address) === entry ? -4 : -10)
       .then((result) => Module['_h2_web_async_complete'](
           platform_address, op_id, result));
@@ -785,13 +809,13 @@ EM_JS(void, h2_web_webrtc_opus_tx_push_js,
 /* clang-format off */
 EM_JS(void, h2_web_webrtc_channel_create_js,
       (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
-  h2WebMain(context, result, completion, ["u32", "u32", "pointer", "u32", "i32", "u16", "i32", "i32"], "i32",
-    (peer_address, channel_address, label, label_len, has_stream_id, stream_id, ordered, reliable) => {
+  h2WebMain(context, result, completion, ["u32", "u32", "pointer", "u32", "i32", "u16", "i32", "i32", "i32"], "i32",
+    (peer_address, channel_address, label, label_len, has_stream_id, stream_id, ordered, reliable, negotiated) => {
         const entry = Module['h2WebRtcPeers'] ?.get(peer_address);
         if (!entry)
           return -10;
         try {
-          const options = {ordered : !!ordered};
+          const options = {ordered : !!ordered, negotiated : !!negotiated};
           if (has_stream_id)
             options.id = stream_id;
           if (!reliable)
@@ -881,6 +905,9 @@ EM_JS(void, h2_web_webrtc_peer_close_js,
   }
   entry.pc.onconnectionstatechange = entry.pc.ondatachannel = entry.pc.ontrack =
       null;
+  for (const [transport, listener] of entry.dtlsErrors)
+    transport.removeEventListener('error', listener);
+  entry.dtlsErrors.clear();
   if (entry.cancelOffer)
     entry.cancelOffer();
   entry.opus?.teardown();
@@ -980,7 +1007,8 @@ EMSCRIPTEN_KEEPALIVE void h2_web_webrtc_local_sdp(uintptr_t peer_address,
 static h2_pal_webrtc_channel_t *
 h2_web_webrtc_new_channel(h2_pal_webrtc_peer_t *peer, const char *label,
                           size_t label_len, uint16_t stream_id,
-                          int has_stream_id, int ordered, int reliable) {
+                          int has_stream_id, int ordered, int reliable,
+                          int negotiated) {
   H2_WEB_STATE_GUARD();
   h2_pal_webrtc_channel_t *channel = h2_pal_mem_alloc(&peer->allocator, sizeof(*channel));
   if (channel == NULL)
@@ -998,6 +1026,7 @@ h2_web_webrtc_new_channel(h2_pal_webrtc_peer_t *peer, const char *label,
       .has_stream_id = has_stream_id != 0,
       .ordered = ordered != 0,
       .reliable = reliable != 0,
+      .negotiated = negotiated != 0,
   };
   channel->next = peer->channels;
   peer->channels = channel;
@@ -1014,7 +1043,7 @@ EMSCRIPTEN_KEEPALIVE uintptr_t h2_web_webrtc_remote_channel(
   if (peer->event_error != H2_PAL_OK)
     return 0u;
   h2_pal_webrtc_channel_t *channel = h2_web_webrtc_new_channel(
-      peer, label, label_len, stream_id, has_stream_id, ordered, reliable);
+      peer, label, label_len, stream_id, has_stream_id, ordered, reliable, 0);
   if (channel == NULL)
     h2_web_webrtc_fail(peer_address, H2_PAL_ERR_NO_MEMORY);
   return (uintptr_t)channel;
@@ -1220,15 +1249,14 @@ static h2_pal_result_t h2_web_webrtc_peer_create_data_channel(
   if (peer == NULL || config == NULL || out_channel == NULL || peer->closed)
     return H2_PAL_ERR_CLOSED;
   *out_channel = NULL;
-  // Browser in-band DCEP ignores an explicit id unless negotiated=true,
-  // which requires a different out-of-band signaling contract. Never silently
-  // return a channel on a different stream than the caller requested.
-  if (config->has_stream_id) return H2_PAL_ERR_UNSUPPORTED;
+  // Never silently replace a caller's fixed ID with a browser-assigned one.
+  if (config->has_stream_id && !config->negotiated)
+    return H2_PAL_ERR_UNSUPPORTED;
   if (peer->event_error != H2_PAL_OK)
     return peer->event_error;
   h2_pal_webrtc_channel_t *channel = h2_web_webrtc_new_channel(
       peer, config->label.data, config->label.len, config->stream_id,
-      config->has_stream_id, config->ordered, config->reliable);
+      config->has_stream_id, config->ordered, config->reliable, config->negotiated);
   if (channel == NULL)
     return H2_PAL_ERR_NO_MEMORY;
   const h2_pal_result_t result =
@@ -1242,7 +1270,8 @@ static h2_pal_result_t h2_web_webrtc_peer_create_data_channel(
                                 &(int){config->has_stream_id},
                                 &(uint16_t){config->stream_id},
                                 &(int){config->ordered},
-                                &(int){config->reliable}})
+                                &(int){config->reliable},
+                                &(int){config->negotiated}})
                             .i32);
   if (result != H2_PAL_OK) {
     h2_web_webrtc_unlink_channel(channel);

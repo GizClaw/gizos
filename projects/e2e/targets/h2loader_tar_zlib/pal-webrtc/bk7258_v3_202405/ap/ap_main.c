@@ -4,6 +4,7 @@
 #include "h2_bk_platform_core.h"
 #include "h2_bk_target_task_policy.h"
 #include "h2_pal_webrtc_device.h"
+#include <components/system.h>
 #include <os/os.h>
 #include <stdio.h>
 
@@ -26,7 +27,7 @@ static void run(void *user) {
    * Keep the command service on its original Runtime and allocator. */
   h2_runtime_t test_runtime = *runtime;
   test_runtime.mem = h2_bk_platform_psram_allocator();
-  int rc = h2_pal_webrtc_device_run(&test_runtime, 60000u, &result);
+  int rc = h2_pal_webrtc_device_run(&test_runtime, 60000u, 600000u, &result);
   if (result.passed + result.failed + result.blocked !=
       H2_PAL_WEBRTC_E2E_CASE_COUNT)
     fail("fixture_or_network", rc);
@@ -53,6 +54,9 @@ static void entry(void *user) {
       H2_LOADER_CAPABILITY_UART | H2_LOADER_CAPABILITY_WIFI);
   if (rc != H2_PAL_OK)
     fail("commands", rc);
+  printf("H2_PAL_WEBRTC_BOOT board=bk7258 reset_reason=%u\n",
+         (unsigned)bk_misc_get_reset_reason());
+  fflush(stdout);
   const h2_pal_task_options_t options = {
       .name = h2_pal_webrtc_device_runner_task_name};
   h2_pal_task_t *runner = NULL;

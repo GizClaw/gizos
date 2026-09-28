@@ -40,12 +40,13 @@ int h2_webrtc_mobile_report(const char *path, const char *platform,
     const h2_pal_webrtc_e2e_case_result_t *item = &result->cases[index];
     fprintf(file,
             "%s{\"id\":\"%s\",\"status\":\"%s\",\"detail\":%d,\"line\":%u,"
-            "\"elapsed_ms\":%llu}",
+            "\"elapsed_ms\":%llu,\"observed_error\":%d,\"authentication_evidence\":%d}",
             index == 0u ? "" : ",", item->id != NULL ? item->id : "",
             item->passed    ? "PASS"
             : item->blocked ? "BLOCKED"
                             : "FAIL",
-            item->detail, item->line, (unsigned long long)item->elapsed_ms);
+            item->detail, item->line, (unsigned long long)item->elapsed_ms,
+            item->observed_error, item->authentication_evidence);
   }
   fputs("]}\n", file);
   if (ferror(file)) {

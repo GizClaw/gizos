@@ -17,6 +17,7 @@ class Inventory(unittest.TestCase):
         track = re.search(r'typedef struct h2_pal_webrtc_track_vtable\s*\{(.*?)\}', header, re.S).group(1)
         self.assertEqual(set(re.findall(r'\w+\s+(\w+);', track)), set(inventory['track_operations']))
         config = re.search(r'typedef struct h2_pal_webrtc_channel_config\s*\{(.*?)\}', header, re.S).group(1)
+        config = re.sub(r'/\*.*?\*/|//[^\n]*', '', config, flags=re.S)
         self.assertEqual(re.findall(r'(\w+)\s*;', config), inventory['channel_config_fields'])
         registry = (app / 'include/h2_pal_webrtc_cases.inc').read_text()
         cases = re.findall(r'H2_PAL_WEBRTC_CASE\(\w+, "([^"]+)"\)', registry)

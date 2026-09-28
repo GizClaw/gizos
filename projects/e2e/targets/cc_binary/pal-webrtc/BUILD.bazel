@@ -3,11 +3,11 @@ load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 
 package(default_visibility = ["//visibility:public"])
 
-cc_test(
-    name = "desktop_test",
+[cc_test(
+    name = name,
     size = "medium",
     srcs = ["main.c"],
-    args = ["$(rootpath //tools/webrtc-test-server:webrtc_test_server)"],
+    args = ["$(rootpath //tools/webrtc-test-server:webrtc_test_server)"] + mode,
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     data = ["//tools/webrtc-test-server:webrtc_test_server"],
@@ -21,4 +21,9 @@ cc_test(
         "//libs/pal/providers/desktop:webrtc_h2peer_test_support",
         "//projects/e2e/apps/pal-webrtc/app:pal_webrtc_e2e",
     ],
-)
+) for name, mode in [
+    ("desktop_test", []),
+    ("reject_malformed_auth_test", ["reject-malformed-auth"]),
+    ("reject_timeout_auth_test", ["reject-timeout-auth"]),
+    ("soak_test", ["soak-short"]),
+]]

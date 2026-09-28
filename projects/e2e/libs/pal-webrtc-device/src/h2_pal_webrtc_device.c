@@ -14,16 +14,32 @@ static void report(void *user, const h2_pal_webrtc_e2e_case_result_t *result) {
   (void)snprintf(line, sizeof(line),
                  "H2_PAL_WEBRTC_CASE "
                  "{\"id\":\"%s\",\"status\":\"%s\",\"detail\":%d,\"line\":%u,"
-                 "\"elapsed_ms\":%llu}\n",
+                 "\"elapsed_ms\":%llu,\"observed_error\":%d,\"authentication_evidence\":%d}\n",
                  result->id,
                  result->passed    ? "PASS"
                  : result->blocked ? "BLOCKED"
                                    : "FAIL",
                  result->detail, result->line,
-                 (unsigned long long)result->elapsed_ms);
+                 (unsigned long long)result->elapsed_ms,
+                 result->observed_error, result->authentication_evidence);
   (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-webrtc", line);
   if (runtime != NULL)
     (void)h2_pal_time_sleep_ms(runtime->time, 40u);
+}
+
+static void report_soak(void *user, const h2_pal_webrtc_e2e_soak_result_t *result) {
+  const h2_runtime_t *runtime = user;
+  uint64_t uptime = 0u;
+  (void)h2_pal_time_get_monotonic_ms(runtime->time, &uptime);
+  char line[320];
+  (void)snprintf(line, sizeof(line), "H2_PAL_WEBRTC_SOAK "
+      "{\"run_id\":\"%s\",\"requested_ms\":%u,\"elapsed_ms\":%llu,"
+      "\"data_roundtrips\":%u,\"opus_roundtrips\":%u,\"completed\":%d,"
+      "\"detail\":%d,\"uptime_ms\":%llu}", fixture_run, result->requested_ms,
+      (unsigned long long)result->elapsed_ms, result->data_roundtrips,
+      result->opus_roundtrips, result->completed, result->detail,
+      (unsigned long long)uptime);
+  (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-webrtc", line);
 }
 
 void h2_pal_webrtc_device_report(const h2_runtime_t *runtime,
@@ -40,6 +56,8 @@ void h2_pal_webrtc_device_report(const h2_runtime_t *runtime,
   for (unsigned index = 0u; index < H2_PAL_WEBRTC_E2E_CASE_COUNT; ++index)
     if (result->cases[index].id != NULL)
       report((void *)runtime, &result->cases[index]);
+  if (result->soak.requested_ms)
+    report_soak((void *)runtime, &result->soak);
   char line[256];
   (void)snprintf(line, sizeof(line),
                  "H2_PAL_WEBRTC_SUMMARY "
@@ -79,7 +97,7 @@ static int connect_saved_wifi(h2_runtime_t *runtime) {
 }
 
 int h2_pal_webrtc_device_run(h2_runtime_t *runtime,
-                             uint32_t connection_timeout_ms,
+                             uint32_t connection_timeout_ms, uint32_t soak_duration_ms,
                              h2_pal_webrtc_e2e_result_t *result) {
   if (runtime == NULL || result == NULL)
     return H2_PAL_ERR_INVALID_ARG;
@@ -118,6 +136,8 @@ int h2_pal_webrtc_device_run(h2_runtime_t *runtime,
       .runtime = runtime,
       .stun_url = H2_PAL_WEBRTC_STUN_URL,
       .connection_timeout_ms = connection_timeout_ms,
+      .soak_duration_ms = soak_duration_ms,
+      .soak_report = report_soak,
       .exchange_offer = h2_webrtc_fixture_exchange,
       .close_remote = h2_webrtc_fixture_close,
       .fixture_user = &client,

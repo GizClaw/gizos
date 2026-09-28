@@ -22,7 +22,7 @@ static void fail(const char *stage, int rc) {
 static void run(void *user) {
   (void)user;
   vTaskDelay(pdMS_TO_TICKS(5000u));
-  int rc = h2_pal_webrtc_device_run(runtime, 20000u, &result);
+  int rc = h2_pal_webrtc_device_run(runtime, 20000u, 0u, &result);
   if (result.passed + result.failed + result.blocked !=
       H2_PAL_WEBRTC_E2E_CASE_COUNT)
     fail("fixture_or_network", rc);

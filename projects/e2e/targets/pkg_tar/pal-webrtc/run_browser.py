@@ -22,7 +22,7 @@ from web_archive_browser_test import Cdp, find_browser
 from web_archive_server import prepared_archive, make_handler, read_header_policy
 from run_webrtc_browser import ice_server
 
-def validate(output, registry):
+def validate(output, registry, authentication_session):
     expected = re.findall(r'H2_PAL_WEBRTC_CASE\(\w+, "([^"]+)"\)', Path(registry).read_text())
     cases = [json.loads(line.split(" ", 1)[1]) for line in output.splitlines() if line.startswith("H2_PAL_WEBRTC_CASE ")]
     summary = [json.loads(line.split(" ", 1)[1]) for line in output.splitlines() if line.startswith("H2_PAL_WEBRTC_SUMMARY ")]
@@ -30,7 +30,20 @@ def validate(output, registry):
         raise RuntimeError("incomplete WebRTC case ledger")
     if len(summary) != 1 or summary[0] != dict(passed=len(expected), failed=0, blocked=0, retained_allocations=0, cleanup=0):
         raise RuntimeError("WebRTC qualification failed: " + repr(summary))
-    return dict(cases=cases, summary=summary[0])
+    authentication = next(case for case in cases if case["id"] == "fingerprint-rejected")
+    witnesses = [json.loads(line.split(" ", 1)[1]) for line in output.splitlines()
+                 if line.startswith("H2_PAL_WEBRTC_AUTH_WITNESS ")]
+    if authentication.get("observed_error") != -17 or authentication.get("authentication_evidence") not in (1, 2):
+        raise RuntimeError("missing precise certificate authentication verdict")
+    if authentication["authentication_evidence"] == 2 and not any(
+            witness.get("source") == "pion-dtls-typed-alert" and
+            witness.get("direction") == "received" and
+            witness.get("session_id") == authentication_session and
+            witness.get("level") == 2 and witness.get("alert") in (42, 46) and
+            witness.get("channels_opened") == 0 and witness.get("certificate_rejection") is True
+            for witness in witnesses):
+        raise RuntimeError("fixture authentication verdict lacks its session-bound typed rejection")
+    return dict(cases=cases, summary=summary[0], authentication_witnesses=witnesses)
 
 
 def run(args):
@@ -38,6 +51,27 @@ def run(args):
             prepared_archive(Path(args.archive).resolve()) as archive, ice_server(args.server) as fixture:
         sessions = []
         class Handler(make_handler(archive, read_header_policy(archive))):
+            def do_GET(self):
+                if self.path != '/pion/authentication-witness':
+                    return super().do_GET()
+                if not sessions:
+                    self.send_error(409)
+                    return
+                connection = http.client.HTTPConnection('127.0.0.1', fixture['http_port'], timeout=5)
+                try:
+                    connection.request('GET', '/session/' + sessions[-1] + '/authentication-witness')
+                    response = connection.getresponse()
+                    payload = response.read(8192)
+                    if response.status == 200 and json.loads(payload).get('session_id') != sessions[-1]:
+                        self.send_error(502)
+                        return
+                    self.send_response(response.status)
+                    self.send_header('Content-Type', 'application/json')
+                    self.send_header('Content-Length', str(len(payload)))
+                    self.end_headers()
+                    self.wfile.write(payload)
+                finally:
+                    connection.close()
             def do_POST(self):
                 if self.path not in ('/pion/offer', '/pion/close'):
                     self.send_error(404)
@@ -48,7 +82,12 @@ def run(args):
                     return
                 connection = http.client.HTTPConnection('127.0.0.1', fixture['http_port'], timeout=20)
                 try:
-                    connection.request('POST', '/offer' if self.path == '/pion/offer' else '/session/' + sessions[-1] + '/close', self.rfile.read(size), {'Content-Type': 'application/sdp'})
+                    headers = {'Content-Type': 'application/sdp'}
+                    for name in ('X-H2-Negotiated-ID', 'X-H2-Negotiated-Label',
+                                 'X-H2-Negotiated-Ordered', 'X-H2-Negotiated-Reliable'):
+                        if self.headers.get(name) is not None:
+                            headers[name] = self.headers[name]
+                    connection.request('POST', '/offer' if self.path == '/pion/offer' else '/session/' + sessions[-1] + '/close', self.rfile.read(size), headers)
                     response = connection.getresponse()
                     if response.getheader('X-H2-Session-ID'):
                         sessions.append(response.getheader('X-H2-Session-ID'))
@@ -111,10 +150,13 @@ def run(args):
                         observed = dict(qualified=False, browser=browser_version,
                             cases=[json.loads(line.split(' ', 1)[1]) for line in lines if line.startswith('H2_PAL_WEBRTC_CASE ')],
                             summary=json.loads(text.split(' ', 1)[1]),
+                            authentication_witnesses=[json.loads(line.split(' ', 1)[1]) for line in lines if line.startswith('H2_PAL_WEBRTC_AUTH_WITNESS ')],
+                            fixture_sessions=sessions.copy(),
                             artifact_sha256=hashlib.sha256(Path(args.archive).read_bytes()).hexdigest(),
                             registry_sha256=hashlib.sha256(Path(args.cases).read_bytes()).hexdigest())
                         Path(args.evidence).write_text(json.dumps(observed, indent=2) + '\n')
-                    evidence = validate('\n'.join(lines), args.cases)
+                    evidence = validate('\n'.join(lines), args.cases, sessions[1] if len(sessions) > 1 else None)
+                    evidence['fixture_sessions'] = sessions.copy()
                     evidence['platform'] = 'wasm-chromium'
                     evidence['browser'] = browser_version
                     state = cdp.send('Runtime.evaluate', {'expression': '({isolated:crossOriginIsolated,pending:Module.h2WebRtcPeers?.size||0})', 'returnByValue': True}, session=session)['result']['value']

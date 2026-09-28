@@ -90,10 +90,13 @@ static int clock_ms(void *u, uint64_t *out) {
   *out = ++now;
   return 0;
 }
-static int exchange(void *u, h2_pal_webrtc_str_t s, char *a, size_t n,
+static int exchange(void *u, h2_pal_webrtc_str_t s,
+                    const h2_pal_webrtc_channel_config_t *negotiated,
+                    char *a, size_t n,
                     size_t *o) {
   (void)u;
   (void)s;
+  (void)negotiated;
   (void)a;
   (void)n;
   (void)o;

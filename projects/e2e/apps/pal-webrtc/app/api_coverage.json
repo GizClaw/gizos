@@ -171,6 +171,7 @@
     "stream_id",
     "has_stream_id",
     "ordered",
-    "reliable"
+    "reliable",
+    "negotiated"
   ]
 }

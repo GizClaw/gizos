@@ -14,12 +14,22 @@ typedef enum h2_pal_webrtc_e2e_case {
 typedef struct h2_pal_webrtc_e2e_case_result {
   const char *id;
   int passed, blocked, detail;
+  /** Actual authentication rejection reason and its independently checked
+   * source: 1 = PAL error, 2 = fixture received a typed fatal certificate alert. */
+  int observed_error, authentication_evidence;
   unsigned line;
   uint64_t elapsed_ms;
 } h2_pal_webrtc_e2e_case_result_t;
+typedef struct h2_pal_webrtc_e2e_soak_result {
+  uint32_t requested_ms;
+  uint64_t elapsed_ms;
+  unsigned data_roundtrips, opus_roundtrips;
+  int completed, detail;
+} h2_pal_webrtc_e2e_soak_result_t;
 typedef struct h2_pal_webrtc_e2e_result {
   unsigned passed, failed, blocked;
   size_t retained_allocations;
+  h2_pal_webrtc_e2e_soak_result_t soak;
   h2_pal_webrtc_e2e_case_result_t cases[H2_PAL_WEBRTC_E2E_CASE_COUNT];
 } h2_pal_webrtc_e2e_result_t;
 typedef struct h2_pal_webrtc_e2e_config {
@@ -30,10 +40,21 @@ typedef struct h2_pal_webrtc_e2e_config {
   /** Launcher connection watchdog; zero defaults to 20 seconds. This does
    * not alter the PAL poll timeout cases or data/media delivery deadlines. */
   uint32_t connection_timeout_ms;
+  /** Optional additional active stability run after all 43 cases. A separate
+   * Pion connection echoes sequence-tagged data and synthetic Opus every second.
+   * Zero disables it; requested duration excludes negotiation and cleanup. */
+  uint32_t soak_duration_ms;
+  void (*soak_report)(void *user, const h2_pal_webrtc_e2e_soak_result_t *result);
   /** Synchronously exchange one complete offer with real Pion. Copies answer
    * into caller storage; no SDP or credential is included in the ledger. */
-  int (*exchange_offer)(void *user, h2_pal_webrtc_str_t offer, char *answer,
+  int (*exchange_offer)(void *user, h2_pal_webrtc_str_t offer,
+                        const h2_pal_webrtc_channel_config_t *negotiated,
+                        char *answer,
                         size_t capacity, size_t *out_len);
+  /** Optional independent witness for browsers that omit RTCError details.
+   * Returns TLS_VERIFY only for a typed received fatal certificate alert from
+   * this exact fixture session; WOULD_BLOCK while no such verdict exists. */
+  int (*authentication_witness)(void *user);
   int (*close_remote)(void *user);
   void *fixture_user;
   /** Optional platform event maintenance; never substitutes a provider. */

@@ -33,6 +33,7 @@ typedef struct state {
   track_state_t track_state;
   h2_pal_webrtc_track_t track;
   int track_bound;
+  int observed_error, authentication_evidence;
   unsigned line;
   uint8_t message[2048];
   char answer[16384];
@@ -399,6 +400,13 @@ static int run_case(state_t *s, unsigned id) {
     c.label = (h2_pal_webrtc_str_t){"x", 1};
     REQUIRE(h2_pal_webrtc_peer_create_data_channel(a, s->peer, &c, NULL) ==
             H2_PAL_ERR_INVALID_ARG);
+    c.negotiated = 1;
+    REQUIRE(h2_pal_webrtc_peer_create_data_channel(a, s->peer, &c, &channel) ==
+            H2_PAL_ERR_INVALID_ARG);
+    c.has_stream_id = 1;
+    c.stream_id = UINT16_MAX;
+    REQUIRE(h2_pal_webrtc_peer_create_data_channel(a, s->peer, &c, &channel) ==
+            H2_PAL_ERR_INVALID_ARG);
     return H2_PAL_OK;
   }
   case H2_PAL_WEBRTC_E2E_CHANNEL_CONFIGURATIONS:
@@ -433,7 +441,7 @@ static int run_case(state_t *s, unsigned id) {
     return H2_PAL_OK;
   case H2_PAL_WEBRTC_E2E_PION_NEGOTIATION: {
     size_t len = 0u;
-    CALL(s->config->exchange_offer(s->config->fixture_user, s->held.sdp,
+    CALL(s->config->exchange_offer(s->config->fixture_user, s->held.sdp, NULL,
                                    s->answer, sizeof(s->answer), &len));
     REQUIRE(len && len < sizeof(s->answer));
     h2_pal_webrtc_event_release(&s->held);
@@ -645,7 +653,7 @@ static int run_case(state_t *s, unsigned id) {
     CALL(h2_pal_webrtc_peer_start_offer(a, s->peer));
     CALL(wait_kind(s, H2_PAL_WEBRTC_EVENT_LOCAL_SDP, &s->held));
     size_t len = 0u;
-    CALL(s->config->exchange_offer(s->config->fixture_user, s->held.sdp,
+    CALL(s->config->exchange_offer(s->config->fixture_user, s->held.sdp, NULL,
                                    s->answer, sizeof(s->answer), &len));
     h2_pal_webrtc_event_release(&s->held);
     REQUIRE(len < sizeof(s->answer));
@@ -659,7 +667,11 @@ static int run_case(state_t *s, unsigned id) {
     int rc = h2_pal_webrtc_peer_set_remote_sdp(
         a, s->peer, H2_PAL_WEBRTC_SDP_ANSWER,
         (h2_pal_webrtc_str_t){s->answer, len});
-    int rejected = rc != H2_PAL_OK;
+    /* This is valid signaling with a deliberately wrong digest. Rejecting
+     * malformed SDP or failing to connect is not proof of authentication. */
+    s->observed_error = rc;
+    REQUIRE(rc == H2_PAL_OK);
+    int rejected = 0, terminal = 0;
     uint64_t deadline = now(s) + connection_timeout(s);
     while (!rejected && now(s) < deadline) {
       rc = h2_pal_webrtc_peer_poll(a, s->peer, 50, &event);
@@ -669,20 +681,52 @@ static int run_case(state_t *s, unsigned id) {
                         event.peer_state == H2_PAL_WEBRTC_PEER_CONNECTED) ||
                        (event.kind == H2_PAL_WEBRTC_EVENT_CHANNEL_STATE &&
                         event.channel_state == H2_PAL_WEBRTC_CHANNEL_OPEN));
-      rejected = (rc == H2_PAL_OK &&
-                  (event.kind == H2_PAL_WEBRTC_EVENT_ERROR ||
-                   (event.kind == H2_PAL_WEBRTC_EVENT_PEER_STATE &&
-                    event.peer_state == H2_PAL_WEBRTC_PEER_FAILED)));
+      int error = rc == H2_PAL_OK && event.kind == H2_PAL_WEBRTC_EVENT_ERROR
+                      ? event.error : rc;
+      terminal |= rc == H2_PAL_OK && event.kind == H2_PAL_WEBRTC_EVENT_PEER_STATE &&
+                  event.peer_state == H2_PAL_WEBRTC_PEER_FAILED;
+      if (error == H2_PAL_ERR_TLS_VERIFY) {
+        s->observed_error = error;
+        s->authentication_evidence = 1;
+        rejected = 1;
+      } else if (error == H2_PAL_ERR_IO) {
+        if (!s->config->authentication_witness) {
+          s->observed_error = error;
+          h2_pal_webrtc_event_release(&event);
+          return error;
+        }
+        terminal = 1;
+      } else if (error != H2_PAL_OK && error != H2_PAL_ERR_TIMEOUT &&
+                 error != H2_PAL_ERR_WOULD_BLOCK) {
+        s->observed_error = error;
+        h2_pal_webrtc_event_release(&event);
+        return error;
+      }
+      if (rc == H2_PAL_OK && event.kind == H2_PAL_WEBRTC_EVENT_ERROR &&
+          event.error == H2_PAL_ERR_TIMEOUT) {
+        s->observed_error = event.error;
+        h2_pal_webrtc_event_release(&event);
+        return H2_PAL_ERR_TIMEOUT;
+      }
       h2_pal_webrtc_event_release(&event);
       REQUIRE(!connected);
-      if (rc != H2_PAL_OK && rc != H2_PAL_ERR_TIMEOUT)
-        return rc;
+      if (!rejected && terminal && s->config->authentication_witness) {
+        int witnessed = s->config->authentication_witness(s->config->fixture_user);
+        if (witnessed == H2_PAL_ERR_TLS_VERIFY) {
+          s->observed_error = witnessed;
+          s->authentication_evidence = 2;
+          rejected = 1;
+        } else if (witnessed != H2_PAL_ERR_WOULD_BLOCK) {
+          s->observed_error = witnessed;
+          return witnessed == H2_PAL_OK ? H2_PAL_ERR_INVALID_STATE : witnessed;
+        }
+      }
     }
     h2_pal_webrtc_peer_close(a, s->peer);
     s->peer = NULL;
     memset(s->channels, 0, sizeof(s->channels));
     CALL(wait_released(s));
-    REQUIRE(rejected);
+    if (!rejected) return H2_PAL_ERR_TIMEOUT;
     return H2_PAL_OK;
   }
   case H2_PAL_WEBRTC_E2E_EXPLICIT_STREAM_ID: {
@@ -693,6 +737,7 @@ static int run_case(state_t *s, unsigned id) {
     const h2_pal_webrtc_channel_config_t c = {.label = {"pal/id", 6u},
                                               .stream_id = 7u,
                                               .has_stream_id = 1,
+                                              .negotiated = 1,
                                               .ordered = 1,
                                               .reliable = 1};
     CALL(h2_pal_webrtc_peer_create_data_channel(a, s->peer, &c,
@@ -700,7 +745,7 @@ static int run_case(state_t *s, unsigned id) {
     CALL(h2_pal_webrtc_peer_start_offer(a, s->peer));
     CALL(wait_kind(s, H2_PAL_WEBRTC_EVENT_LOCAL_SDP, &s->held));
     size_t len = 0u;
-    CALL(s->config->exchange_offer(s->config->fixture_user, s->held.sdp,
+    CALL(s->config->exchange_offer(s->config->fixture_user, s->held.sdp, &c,
                                    s->answer, sizeof(s->answer), &len));
     h2_pal_webrtc_event_release(&s->held);
     CALL(h2_pal_webrtc_peer_set_remote_sdp(
@@ -711,9 +756,11 @@ static int run_case(state_t *s, unsigned id) {
     REQUIRE(s->held.channel == s->channels[0] &&
             s->held.channel_state == H2_PAL_WEBRTC_CHANNEL_OPEN &&
             s->held.channel_info.has_stream_id &&
+            s->held.channel_info.negotiated &&
             s->held.channel_info.stream_id == 7u);
     h2_pal_webrtc_event_release(&s->held);
     CALL(echo(s, 0, opus_tag, sizeof(opus_tag), 0, 0, 0));
+    CALL(s->config->close_remote(s->config->fixture_user));
     h2_pal_webrtc_peer_close(a, s->peer);
     s->peer = NULL;
     memset(s->channels, 0, sizeof(s->channels));
@@ -723,6 +770,68 @@ static int run_case(state_t *s, unsigned id) {
     return H2_PAL_ERR_INVALID_ARG;
   }
 }
+/* A separate real connection, after conformance, measures sustained liveness.
+ * It deliberately uses no board speaker/microphone backend. */
+static int run_soak(state_t *s, h2_pal_webrtc_e2e_soak_result_t *result) {
+  result->requested_ms = s->config->soak_duration_ms;
+  result->detail = H2_PAL_ERR_INVALID_STATE;
+  s->opened = 0u;
+  s->peer_state = H2_PAL_WEBRTC_PEER_NEW;
+  s->track_bound = 0;
+  h2_atomic_store(&s->track_state.detached, 0u);
+  h2_atomic_store(&s->track_state.block, 0u);
+  h2_atomic_store(&s->track_state.budget, 0u);
+  const unsigned setup[] = {H2_PAL_WEBRTC_E2E_ALLOCATOR_OWNERSHIP,
+      H2_PAL_WEBRTC_E2E_ICE_BORROWED_INPUT, H2_PAL_WEBRTC_E2E_TRACK_BIND,
+      H2_PAL_WEBRTC_E2E_CHANNEL_CONFIGURATIONS,
+      H2_PAL_WEBRTC_E2E_OFFER_OWNED_SDP, H2_PAL_WEBRTC_E2E_PION_NEGOTIATION,
+      H2_PAL_WEBRTC_E2E_CHANNEL_METADATA};
+  int rc = H2_PAL_OK;
+  for (unsigned i = 0u; i < sizeof(setup) / sizeof(setup[0]); ++i) {
+    rc = run_case(s, setup[i]);
+    if (rc != H2_PAL_OK) goto finish;
+  }
+  const uint64_t start = now(s);
+  uint64_t next_report = start;
+  do {
+    const uint64_t cycle = now(s);
+    uint8_t payload[8] = {'H', '2', 'L', 'V'};
+    const unsigned sequence = result->data_roundtrips;
+    for (unsigned i = 0u; i < 4u; ++i)
+      payload[4u + i] = (uint8_t)(sequence >> (i * 8u));
+    rc = echo(s, 0u, payload, sizeof(payload), 0, 0, 0);
+    if (rc != H2_PAL_OK) break;
+    ++result->data_roundtrips;
+    const unsigned writes = h2_atomic_load(&s->track_state.writes);
+    rc = opus_send(s);
+    if (rc == H2_PAL_OK) rc = wait_writes(s, writes + 1u);
+    if (rc != H2_PAL_OK) break;
+    ++result->opus_roundtrips;
+    while (now(s) - cycle < 1000u) {
+      h2_pal_webrtc_event_t event = {0};
+      rc = poll_event(s, 20, &event);
+      h2_pal_webrtc_event_release(&event);
+      if (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK)
+        rc = H2_PAL_OK;
+      if (rc != H2_PAL_OK) break;
+    }
+    result->elapsed_ms = now(s) - start;
+    if (s->config->soak_report && now(s) >= next_report) {
+      s->config->soak_report(s->config->report_user, result);
+      next_report = now(s) + 10000u;
+    }
+  } while (rc == H2_PAL_OK && result->elapsed_ms < result->requested_ms);
+  result->elapsed_ms = now(s) - start;
+  result->completed = rc == H2_PAL_OK && result->elapsed_ms >= result->requested_ms &&
+      result->data_roundtrips != 0u && result->data_roundtrips == result->opus_roundtrips;
+finish:
+  result->detail = rc;
+  if (s->config->soak_report)
+    s->config->soak_report(s->config->report_user, result);
+  int close_rc = s->config->close_remote(s->config->fixture_user);
+  return rc != H2_PAL_OK ? rc : close_rc;
+}
+
 #undef CALL
 #undef REQUIRE
 
@@ -743,7 +852,7 @@ int h2_pal_webrtc_e2e_run(const h2_pal_webrtc_e2e_config_t *config,
       !config->runtime->time->vtable->get_monotonic_ms ||
       !config->runtime->time->vtable->sleep_ms || !config->stun_url ||
       !config->exchange_offer || !config->close_remote ||
-      config->connection_timeout_ms > 120000u)
+      config->connection_timeout_ms > 120000u || config->soak_duration_ms > 3600000u)
     return H2_PAL_ERR_INVALID_ARG;
   state_t *s = h2_pal_mem_alloc(config->runtime->mem, sizeof(*s));
   if (!s)
@@ -774,10 +883,13 @@ int h2_pal_webrtc_e2e_run(const h2_pal_webrtc_e2e_config_t *config,
     if (rc == H2_PAL_OK) {
       uint64_t start = now(s);
       s->line = 0;
+      s->observed_error = s->authentication_evidence = 0;
       rc = run_case(s, i);
       r->elapsed_ms = now(s) - start;
       r->line = s->line;
       r->detail = rc;
+      r->observed_error = s->observed_error;
+      r->authentication_evidence = s->authentication_evidence;
       r->blocked = 0;
       r->passed = rc == H2_PAL_OK;
       --result->blocked;
@@ -789,6 +901,8 @@ int h2_pal_webrtc_e2e_run(const h2_pal_webrtc_e2e_config_t *config,
     if (config->report)
       config->report(config->report_user, r);
   }
+  if (rc == H2_PAL_OK && config->soak_duration_ms != 0u)
+    rc = run_soak(s, &result->soak);
   h2_atomic_store(&s->track_state.block, 0u);
   if (s->peer) {
     if (s->track_bound)

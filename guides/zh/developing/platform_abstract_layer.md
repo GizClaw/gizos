@@ -262,7 +262,7 @@ WebRTC media 使用 caller-owned `h2_pal_webrtc_track_t`。调用方填充 read/
 
 `h2_pal_webrtc_peer_send_opus()` 只接收长度在 `1..H2_PAL_WEBRTC_OPUS_MAX_PACKET_SIZE` 内的真实 packet，并负责交给底层 audio RTP track；调用方不组装 RTP，也不能退回 DataChannel。成功返回表示 backend 已同步消费输入；`H2_PAL_ERR_WOULD_BLOCK` 表示整帧未消费，调用方必须保留同一帧重试。Unsupported backend 仍提供显式 `H2_PAL_ERR_UNSUPPORTED` 实现，不能静默丢帧。
 
-Browser DataChannel 使用浏览器内置的带内 DCEP 协商；WebRTC 标准在 `negotiated=false` 时忽略指定 `id`，而带外协商需要双方预先创建相同 stream ID，当前 PAL 没有这项 signaling contract。因此 Web provider 对 `has_stream_id=true` 返回 `H2_PAL_ERR_UNSUPPORTED`，不能接受请求后静默使用另一个 ID；原生 H2Peer 支持显式 stream ID。这项差异由独立 `explicit-stream-id` mandatory case 保留为不通过结果。
+DataChannel config 的 `negotiated` 默认为 0，保留原有带内 DCEP 行为。设置为非零时，必须同时设置 `has_stream_id`，并由应用信令在双方创建相同 stream ID 的通道后发送；保留值 65535 无效。该模式不发送 DCEP OPEN/ACK，OPEN event 的 `channel_info.negotiated` 会保留模式。H2Peer 与 Browser 都支持显式协商，独立 `explicit-stream-id` mandatory case 用真实 Pion 对端验证同 ID 双向数据。Browser 按 WebRTC 标准在带内模式忽略浏览器的 `id` 参数，因此 PAL 对 `has_stream_id=true, negotiated=0` 显式返回 `H2_PAL_ERR_UNSUPPORTED`，不静默换 ID；原生 H2Peer 原有带内固定 ID 能力继续保留。
 
 Browser WebRTC 的 per-peer allocator 用于 peer、channel、event 和 payload 存储；owned event 自带 allocator view，peer close 后仍可合法释放。原始 Opus transport 在 offer 前配置，`peer_send_opus` 复制输入并在有界发送队列满时返回 WOULD_BLOCK；下一次可写通过 owned WRITABLE event 通知。Track 的 write 返回 WOULD_BLOCK 时保留原包重试；unset 等待正在执行的 callback 结束，后续接收转为 owned OPUS_FRAME，原始发送仍可使用。浏览器编码器的静音源仅提供 packet clock，没有待发送 PAL packet 时不会向网络注入静音载荷。
 
