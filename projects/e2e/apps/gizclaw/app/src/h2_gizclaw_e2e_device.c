@@ -367,11 +367,16 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
   if (test.key.name[0])
     rc = H2_PAL_OK;
   CHECK(api_call(
-      &test, H2_PAL_HTTP_PATCH, "/device/mhs/v0/states",
-      "{\"states\":[{\"device_id\":\"speaker.main\",\"state\":\"volume\","
-      "\"value\":37},"
-      "{\"device_id\":\"speaker.main\",\"state\":\"muted\",\"value\":false}]}",
+      &test, H2_PAL_HTTP_POST, "/device/mhs/v0/write",
+      "{\"id\":\"speaker.main\",\"hwd\":\"speaker\","
+      "\"value\":{\"volume_percent\":37,\"muted\":false}}",
       200));
+  ASSERT(text_is(&test, "id", "speaker.main") &&
+         text_is(&test, "hwd", "speaker") &&
+         number_is(&test, "value.volume_percent", 37));
+  CHECK(api_call(&test, H2_PAL_HTTP_POST, "/device/mhs/v0/read",
+                 "{\"id\":\"speaker.main\",\"hwd\":\"speaker\"}", 200));
+  ASSERT(number_is(&test, "value.volume_percent", 37));
   uint32_t volume = 0u;
   CHECK(h2_pal_audio_get_speaker_volume_percent(fixture->device_audio, &volume));
   ASSERT(volume == 37u);

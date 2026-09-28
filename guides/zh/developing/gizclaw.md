@@ -8,7 +8,7 @@
 
 [API Reference](/references/gizclaw)
 
-`libs/gizclaw/include` 中实际参与项目构建的头文件是 GizClaw 的生产 Public API contract。Config 提供 server endpoint、private key、cipher mode、timeout 和静态 Tool handler 与 MHS state 表，并注入 PAL mem、HTTP、WebRTC、crypto、time 和 log API。
+`libs/gizclaw/include` 中实际参与项目构建的头文件是 GizClaw 的生产 Public API contract。Config 提供 server endpoint、private key、cipher mode、timeout 和静态 Tool handler 与 MHS HWD 设备表，并注入 PAL mem、HTTP、WebRTC、crypto、time 和 log API。
 
 ## 依赖和边界
 
@@ -16,7 +16,7 @@ GizClaw library 负责 SDK 集成和 client protocol，不创建具体 HTTP、We
 
 Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Workflow projection 中复制 driver enum，也不要求调用方根据 driver 构造 Workspace 参数。Workspace 更新统一使用 `h2_gizclaw_*workspace_set_parameters`，对应 SDK 0.15.5 的 `server.workspace.parameters.set`（110）；旧的 `workspace_set_input` 入口已删除。
 
-依赖的 GizClaw C SDK 固定为 0.23.1。自 0.17.0 起，`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
+依赖的 GizClaw C SDK 固定为 0.23.2。自 0.17.0 起，`h2_gizclaw_*workspace_activate` 保留 SET-only 语义，`h2_gizclaw_*workspace_reload` 保留重载当前选择的行为。新增 `h2_gizclaw_*workspace_reload_with_options`（RPC 120），在一次调用中可选地选择 Workspace、应用参数补丁，然后重载。传入零长度 `name` 保持当前选择，`parameters == NULL` 不修改参数；非空补丁复用 `h2_gizclaw_workspace_parameters_patch_t` 的字段 presence 语义。请求创建时复制参数，响应仍为 `h2_gizclaw_workspace_activation_t`。
 
 `h2_gizclaw_workspace_parameters_patch_t` 通过独立 `has_*` 标记选择 input（PTT/Realtime）、conversation initiative（peer/agent）、agent initiative policy（once_when_empty/on_reload）、TTS 语速和安全围栏档位（见 [Workspace 参数补丁](#workspace-参数补丁)）。`workspace_set_parameters` 至少指定一个字段；显式的无效枚举值、空 patch、非法名称在发送前返回 INVALID_ARG。create 编码并持有 patch 数据，调用方随后可释放或修改原对象；同步入口沿用同一 request/parse 流程。
 
@@ -30,7 +30,7 @@ Runtime Profile 负责选择 Workflow driver，`libs/gizclaw` 不在 public Work
 
 0.18.7 相对 0.18.5 只有增量：`FriendGroupMemberObject` 增加仅由 `server.friend_group.members.list` 填写的 `online` / `last_seen_at`；control API 的变化 GizOS 不使用。`h2_gizclaw_friend_group_member_t` 因此在成员列表中带出 `has_online` / `online` / `last_seen_at`：`online` 表示成员设备是否连接到回答请求的 Server，未报告在线状态（包括 presence 读取失败或旧服务端未提供字段）时 `has_online` 为 false；`last_seen_at` 是 UTC RFC 3339 文本，最多 64 字节，Server 从未观察到该成员时为 NULL。超长、含 NUL 或非法 UTF-8 的时间文本使整页返回 `H2_PAL_ERR_FORMAT` 并回滚 storage。member add/put/delete 仍不带 presence（`has_online` 为 false，`last_seen_at` 为 NULL），即使响应携带这些字段也忽略；公开 API 函数数量不变。
 
-设备协议使用 `mhs/v0` 状态读写和 `tool/v0` 预定义操作；GizOS 的公共 enum 在编译期与 SDK registry 校验。Workspace 参数补丁仍提供 input、conversation 与 tts_speech_rate_percent，默认不发送新增的可选 wire 字段。Workflow 返回不可变 name 与普通字符串 tags；Workspace 只通过 workflow_name 关联 Workflow。
+设备协议使用 `mhs/v0` HWD 单设备读写和 `tool/v0` 预定义操作；GizOS 的公共 enum 在编译期与 SDK registry 校验。Workspace 参数补丁仍提供 input、conversation 与 tts_speech_rate_percent，默认不发送新增的可选 wire 字段。Workflow 返回不可变 name 与普通字符串 tags；Workspace 只通过 workflow_name 关联 Workflow。
 
 设备间社交提醒使用三组 typed wrapper，沿用 Social 的 create/parse/sync 生命周期：
 
@@ -97,7 +97,7 @@ PAL WebRTC 的 `CLOSED` 和 `ERROR` callback 只提供 callback 期间有效的 
 
 ## 设备 provider
 
-SDK 拥有 request-scoped Peer RPC channel、`client.tool.v0.invoke`（135）的封装与内层回复包装、`client.tool.v0.list`（136）的工具发现，以及 `client.rpc.methods.list`（137）的数字协议列表。GizOS 向 SDK 注册有实际 handler 的 `ClientTool`，不维护另一份方法名称表。MHS read/write（133/134）始终安装；未知 key 返回 `NOT_FOUND`。旧的独立设备方法不再是 RPC registry 的成员，不提供别名或版本探测。
+SDK 拥有 request-scoped Peer RPC channel、`client.tool.v0.invoke`（135）的封装与内层回复包装、`client.tool.v0.list`（136）的工具发现，以及 `client.rpc.methods.list`（137）的数字协议列表。GizOS 向 SDK 注册有实际 handler 的 `ClientTool`，不维护另一份方法名称表。MHS read/write（133/134）始终安装；未知设备 ID 返回 `NOT_FOUND`。旧的独立设备方法不再是 RPC registry 的成员，不提供别名或版本探测。
 
 `h2_gizclaw_config_t` 借用 `tool_handlers` 到 Client/Service deinit。每项声明 numeric `h2_gizclaw_tool_t`、同步 invoke callback 与 user。Handler 接收该工具的内层 Protobuf，返回同一工具的内层结果；SDK 负责外层 tool/v0 envelope。空 callback、重复或未知 tool、超过 registry 容量的表使初始化失败。Service 根据 PAL、产品 vtable 和设备信息配置安装内置工具；产品可以注册 `DEVICE_FIND` 和 `SOCIAL_PING`，不能覆盖 Service 拥有的工具。直接使用 standalone Client 的调用方可以注册任一有效 ClientTool。表和 user 必须在整个借用期保持有效，运行中不增删。
 
@@ -117,24 +117,13 @@ SDK 拥有 request-scoped Peer RPC channel、`client.tool.v0.invoke`（135）的
 
 Wi-Fi provisioning 明确调用 PAL `connect_and_save`；Library 不维护第二份网络配置。音频与本地控制使用同一 Runtime proxy。`speaker_acquire`/`speaker_release` 必须成对提供；播放前 acquire，Track 关闭后在每条退出路径 release，失败、取消和停止也遵守此配对。没有 hook 时播放前 start_speaker，结束不主动 stop_speaker。`sound.play` 以 16 kHz mono PCM16 按 duration_ms 截断，短声音只完整播放一次。
 
-### MHS 静态状态表
+### MHS v0 HWD 设备表
 
-`h2_gizclaw_config_t.mhs_states` 是初始化时借用到 deinit 的 `const h2_gizclaw_mhs_state_t[]`。每项拥有唯一 `(device_id, state)`、类型、必需 read、可选 check/write 与 user。Key 使用 `[a-z][a-z0-9]*([.-][a-z0-9]+)*`，最大 64 ASCII 字节；初始化拒绝非法 key、重复、未知类型或缺少 read。没有 write 的项只读。所有 callback 在 RPC owner 上有界执行，不能 sleep、停止或销毁 Service；out_value 的类型与零值由 Library 初始化，callback 返回实际数据。
+GizClaw 0.23.2 的 `client.mhs.v0.read/write`（133/134）以一个设备实例的 `id` 和 `hwd` 为请求入口；write 的 payload 是该 HWD 专属的 protobuf WriteRequest，read 和 write 的 payload 分别是对应的 ReadResponse 与 WriteResponse。字段是否存在由 protobuf `optional` 表达，0 和 false 是有效读数。SDK 发布的 `payload/mhs_v0.pb.h` 是字段形状的唯一来源。
 
-MHS 一批有 1–32 个唯一 key，顺序保持不变；bool、int、double、UTF-8 string/enum 使用独立类型，false、0 和空字符串都是有效值。Int 限于 JSON safe range ±9007199254740991，double 必须有限，string 最大 256 字节且不含 NUL。Library 校验原始 wire 文本，防止 nanopb C string 截断 key/value。空批次、重复、类型不符、写只读项或非法值返回 INVALID_ARGUMENT，未知项返回 NOT_FOUND，check 的 INVALID_STATE 返回 FAILED_PRECONDITION。
+`h2_gizclaw_config_t.mhs_devices` 是借用到 deinit 的 `const h2_gizclaw_mhs_device_t[]`。每项包含唯一实例 ID、官方 ClientHwd、必需的 read、可选的 write 与 user。实例 ID 最多 64 字节，匹配 `^[a-z][a-z0-9]*([.-][a-z0-9]+)*$`；初始化拒绝重复或非法 ID、未知 HWD、只读 HWD 的 write。每次 RPC 只操作一个实例；不存在的实例返回 NOT_FOUND，HWD 不匹配或无效 protobuf 字段返回 INVALID_ARGUMENT，不支持写入的设备返回 UNIMPLEMENTED。产品 callback 运行于 RPC owner，不应在其中停止或销毁 Service。写入不保证事务回滚，超时后需重新读取硬件。
 
-写入先校验整批 key/type/权限，再运行全部 check，最后应用。预检失败不会调用任何 write；write 回报 clamp/round 后实际生效的值。应用中途失败不回滚已改变的硬件，调用方需要重新 read 确定结果。大型 request/reply 使用 allocator，避免占用嵌入式 task stack；返回值只在应答期间借用，随后释放。
-
-| 内置 key | 类型 | 可用条件和行为 |
-| --- | --- | --- |
-| `speaker.main/volume` | int，0–100 | Audio 支持读音量；支持写音量时可写 |
-| `speaker.main/muted` | bool | 与 volume 使用同一能力；同批音量与静音合并成一次硬件应用 |
-| `wifi.main/connected` | bool，只读 | Wi-Fi get_status，CONNECTED/GOT_IP 为 true |
-| `wifi.main/ssid` | string，只读 | 当前 SSID，必须是合法 UTF-8 文本 |
-| `wifi.main/rssi-dbm` | int，只读 | PAL 报告的 RSSI |
-| `wifi.main/ip`、`wifi.main/bssid` | string，只读 | PAL 存在对应值时编码，否则空字符串 |
-
-Service 从可用 PAL 自动安装这些 state，并拒绝产品表的同名 key。只有原始 Audio PAL 时，Library 只能报告有效音量（静音时为 0）；需要逻辑静音与保留音量的产品注入 Runtime Audio，Library 读写同一 Runtime state。产品通过自己的 state callback 扩展 display/LED/其他设置，Library 不复制 DeviceSettings 或为无法读回的 PAL 伪造状态。RuntimeProfile manifest 归产品，必须与实际设备表一致；注册 state 不会修改或发布 manifest。
+Library 在 PAL 能力存在时自动安装 `speaker.main`（speaker HWD）和 `wifi.main`（只读 wifi HWD）。speaker 的 `volume_percent` 与 `muted` 在同一次 HWD write 中应用，回复包含真正回读的 applied 快照；wifi 按 PAL 状态投影 connected、SSID、BSSID、RSSI 和 IP。产品可以注册其它物理实例，例如 display/led。RuntimeProfile 的 `spec.mhs.v0.devices` **只**声明 `id` 和 `hwd`；字段功能和读写 schema 已在 protobuf 定义，Profile 不再复制 states、range、access 或枚举。设备表与 Profile 的实例清单分别管理，Profile 声明不证明物理设备在线。
 
 ### 播放与产品交接
 
@@ -219,7 +208,7 @@ reload，不会被当成“参数没变”跳过，成功后语速出现在
 
 ### 安全围栏
 
-可选 `has_safety_fence_level` / `safety_fence_level` 保存 RuntimeProfile 自定义的档位标识符。设备先从 `server.workflow.list` 响应的 `safety_fences` 发现当前 Profile 支持的 name 与展示名；列表不下发 prompt。标识符匹配 `^[a-z][a-z0-9_-]{0,63}$`，写入时由 Server 保存，reload 时验证它属于当前 Profile。两个写入 RPC 均使用 SDK 0.23.1 的字符串字段（Workspace patch tag 5）；旧 enum wire tag 已保留，不能再发送。显式空值或格式错误在创建请求前返回 `H2_PAL_ERR_INVALID_ARG`，不产生 RPC。absent 忽略数组存储值并保留服务端已有档位；只包含围栏的 patch 也有效。请求复制 patch，调用方不需要保留原始存储。
+可选 `has_safety_fence_level` / `safety_fence_level` 保存 RuntimeProfile 自定义的档位标识符。设备先从 `server.workflow.list` 响应的 `safety_fences` 发现当前 Profile 支持的 name 与展示名；列表不下发 prompt。标识符匹配 `^[a-z][a-z0-9_-]{0,63}$`，写入时由 Server 保存，reload 时验证它属于当前 Profile。两个写入 RPC 均使用 SDK 0.23.2 的字符串字段（Workspace patch tag 5）；旧 enum wire tag 已保留，不能再发送。显式空值或格式错误在创建请求前返回 `H2_PAL_ERR_INVALID_ARG`，不产生 RPC。absent 忽略数组存储值并保留服务端已有档位；只包含围栏的 patch 也有效。请求复制 patch，调用方不需要保留原始存储。
 
 `parameters.set` 保存档位，下一次 reload 才应用。`reload-with-options` 的保存和 reload 不是同一事务：缺少 Profile 文案等错误可以发生在档位已经保存之后，失败不回滚服务端存储。Session 只在目标 Workspace 的 RUNNING 激活确认后合并 present 档位；失败、错误名称、非 RUNNING、格式错误、超时或关闭后的迟到响应均不能把请求档位发布为 confirmed。FAILED 状态保留此前确认值用于显示，不表示服务端仍存该值。
 
@@ -295,7 +284,7 @@ snapshot；client 不消费或缓存 token。单测必须覆盖同一 token 的�
 bazel test //libs/gizclaw:all
 ```
 
-外部设备控制 E2E 使用 `/device/tool/v0/invoke` 与 `/device/mhs/v0/states`，其 RuntimeProfile 必须预先声明可写的 `speaker.main/volume` 和 `speaker.main/muted`。本地模拟测试验证协议与生命周期，真实 Server/设备互通单独记录。
+外部设备控制 E2E 使用 `/device/tool/v0/invoke` 与 `POST /device/mhs/v0/read`、`POST /device/mhs/v0/write`；RuntimeProfile 需预先声明 `{id: speaker.main, hwd: speaker}`。本地模拟测试验证协议与生命周期，真实 Server/设备互通单独记录。
 
 外部 E2E 验收位于 `projects/e2e/targets/cc_test/gizclaw`，使用三个新注册的
 `h106-tiga` Peer，经系统 DNS 连接 E2E 自然入口 `e2e.gizclaw.com:9821`，或在国内

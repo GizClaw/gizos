@@ -106,12 +106,12 @@ typedef struct h2_gizclaw_config {
      * any valid ClientTool. */
     const h2_gizclaw_tool_handler_t *tool_handlers;
     size_t tool_handler_count;
-    /** Immutable MHS state table, borrowed until deinit. Keys must be unique
-     * and valid and every entry must have a read callback. The Service adds
-     * speaker.main volume/muted and wifi.main read-only status when their PAL
-     * capabilities are present; product entries cannot shadow these keys. */
-    const h2_gizclaw_mhs_state_t *mhs_states;
-    size_t mhs_state_count;
+    /** Immutable typed HWD instance table borrowed until deinit. IDs must
+     * be unique. The Service adds speaker.main and wifi.main when the
+     * corresponding PAL capabilities are present. A separate RuntimeProfile
+     * manifest controls which instances the Server exposes remotely. */
+    const h2_gizclaw_mhs_device_t *mhs_devices;
+    size_t mhs_device_count;
     h2_gizclaw_cancel_fn cancel_requested;
     void *cancel_user;
 } h2_gizclaw_config_t;

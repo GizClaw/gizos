@@ -1,5 +1,4 @@
 #include "h2_gizclaw_mhs_internal.h"
-#include "payload/mhs.pb.h"
 #include "pb_decode.h"
 #include "pb_encode.h"
 
@@ -7,304 +6,173 @@
 #undef NDEBUG
 #endif
 #include <assert.h>
-#include <math.h>
 #include <stdlib.h>
 #include <string.h>
 
 typedef struct fixture {
-  h2_gizclaw_mhs_value_t value;
-  unsigned checks, writes;
-  int check_error, write_error;
-  bool clamp;
+  unsigned reads, writes;
+  uint32_t brightness;
+  bool enabled;
+  int failure;
 } fixture_t;
-static int read_value(void *user, h2_gizclaw_mhs_value_t *out) {
-  *out = ((fixture_t *)user)->value;
-  return H2_PAL_OK;
-}
-static int check_value(void *user, const h2_gizclaw_mhs_value_t *value) {
-  (void)value;
-  fixture_t *f = user;
-  ++f->checks;
-  return f->check_error;
-}
-static int write_value(void *user, const h2_gizclaw_mhs_value_t *value,
-                       h2_gizclaw_mhs_value_t *out) {
-  fixture_t *f = user;
-  ++f->writes;
-  if (f->write_error)
-    return f->write_error;
-  f->value = *value;
-  if (f->clamp)
-    f->value.value.i = 42;
-  *out = f->value;
-  return H2_PAL_OK;
-}
+static fixture_t fixture = {.brightness = 50u, .enabled = true};
 static unsigned live_allocations;
-static int fail_after = -1;
 static void *allocate(void *user, size_t size) {
   (void)user;
-  if (fail_after == 0)
-    return NULL;
-  if (fail_after > 0)
-    --fail_after;
-  void *p = malloc(size);
-  if (p)
+  void *result = malloc(size);
+  if (result != NULL)
     ++live_allocations;
-  return p;
+  return result;
 }
-static void release(void *user, void *p) {
+static void release(void *user, void *pointer) {
   (void)user;
-  if (p) {
-    assert(live_allocations);
+  if (pointer != NULL) {
+    assert(live_allocations != 0u);
     --live_allocations;
-    free(p);
+    free(pointer);
   }
 }
-static const h2_pal_mem_vtable_t memory_vtable = {.alloc = allocate,
-                                                  .free = release};
+static const h2_pal_mem_vtable_t memory_vtable = {
+    .alloc = allocate, .free = release};
 static const h2_pal_mem_api_t memory = {.vtable = &memory_vtable};
-static uint8_t encoded[16384];
-static gizclaw_rpc_v1_ClientMhsV0WriteRequest write_request;
-static gizclaw_rpc_v1_ClientMhsV0ReadRequest read_request;
-static gizclaw_rpc_v1_ClientMhsV0WriteResponse reply;
-static fixture_t fixtures[4];
-static h2_gizclaw_mhs_state_t states[4];
 
-static int run_bytes(bool write, const uint8_t *bytes, size_t length) {
+static int read_display(void *user, h2_gizclaw_mhs_read_t *out) {
+  fixture_t *f = user;
+  ++f->reads;
+  if (f->failure != H2_PAL_OK)
+    return f->failure;
+  out->display.has_brightness_percent = true;
+  out->display.brightness_percent = f->brightness;
+  out->display.has_enabled = true;
+  out->display.enabled = f->enabled;
+  return H2_PAL_OK;
+}
+static int write_display(void *user, const h2_gizclaw_mhs_write_t *request,
+                         h2_gizclaw_mhs_read_t *out) {
+  fixture_t *f = user;
+  ++f->writes;
+  if (request->display.has_brightness_percent)
+    f->brightness = request->display.brightness_percent;
+  if (request->display.has_enabled)
+    f->enabled = request->display.enabled;
+  return read_display(user, out);
+}
+static h2_gizclaw_mhs_device_t device = {
+    .id = "display.main",
+    .hwd = gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY,
+    .read = read_display,
+    .write = write_display,
+    .user = &fixture};
+
+static size_t request_bytes(uint8_t *bytes, bool write, const char *id,
+                            gizclaw_rpc_v1_ClientHwd hwd,
+                            const void *payload) {
+  pb_ostream_t out = pb_ostream_from_buffer(bytes, 256u);
+  assert(pb_encode_tag(&out, PB_WT_STRING, 1u));
+  assert(pb_encode_string(&out, (const pb_byte_t *)id, strlen(id)));
+  assert(pb_encode_tag(&out, PB_WT_VARINT, 2u));
+  assert(pb_encode_varint(&out, (uint64_t)hwd));
+  if (write) {
+    uint8_t inner[64];
+    pb_ostream_t payload_out = pb_ostream_from_buffer(inner, sizeof(inner));
+    assert(pb_encode(&payload_out,
+                     gizclaw_rpc_v1_DisplayHwdWriteRequest_fields, payload));
+    assert(pb_encode_tag(&out, PB_WT_STRING, 3u));
+    assert(pb_encode_string(&out, inner, payload_out.bytes_written));
+  }
+  return out.bytes_written;
+}
+static int invoke(bool write, const uint8_t *bytes, size_t len,
+                  const pb_msgdesc_t *reply_fields, void *out) {
   h2_gizclaw_rpc_provider_response_t response = {0};
   uint8_t *storage = NULL;
   int rc = h2_gizclaw_mhs_request_internal(
-      states, 4, write, &memory, (h2_gizclaw_rpc_bytes_t){bytes, length},
-      &response, &storage);
+      &device, 1u, write, &memory,
+      (h2_gizclaw_rpc_bytes_t){bytes, len}, &response, &storage);
   if (rc == H2_PAL_OK) {
-    memset(&reply, 0, sizeof(reply));
     pb_istream_t input =
         pb_istream_from_buffer(response.payload.data, response.payload.len);
-    assert(pb_decode(&input, gizclaw_rpc_v1_ClientMhsV0WriteResponse_fields,
-                     &reply));
-  } else
-    assert(!storage && !response.payload.data && !response.payload.len);
+    pb_wire_type_t wire;
+    uint32_t tag = 0u;
+    bool eof = false;
+    assert(pb_decode_tag(&input, &wire, &tag, &eof));
+    assert(wire == PB_WT_STRING && tag == 1u);
+    pb_istream_t nested;
+    assert(pb_make_string_substream(&input, &nested));
+    assert(pb_decode(&nested, reply_fields, out));
+    assert(pb_close_string_substream(&input, &nested));
+    assert(input.bytes_left == 0u);
+  } else {
+    assert(storage == NULL && response.payload.data == NULL);
+  }
   h2_pal_mem_free(&memory, storage);
-  assert(!live_allocations);
+  assert(live_allocations == 0u);
   return rc;
-}
-static size_t encode_request(bool write) {
-  pb_ostream_t output = pb_ostream_from_buffer(encoded, sizeof(encoded));
-  assert(pb_encode(&output,
-                   write ? gizclaw_rpc_v1_ClientMhsV0WriteRequest_fields
-                         : gizclaw_rpc_v1_ClientMhsV0ReadRequest_fields,
-                   write ? (void *)&write_request : (void *)&read_request));
-  return output.bytes_written;
-}
-static int run(bool write) {
-  size_t n = encode_request(write);
-  return run_bytes(write, encoded, n);
-}
-static void reset(void) {
-  memset(fixtures, 0, sizeof(fixtures));
-  memset(states, 0, sizeof(states));
-  memset(&write_request, 0, sizeof(write_request));
-  memset(&read_request, 0, sizeof(read_request));
-  const char *keys[] = {"volume", "muted", "label", "position"};
-  const h2_gizclaw_mhs_kind_t kinds[] = {
-      H2_GIZCLAW_MHS_INT, H2_GIZCLAW_MHS_BOOL, H2_GIZCLAW_MHS_STRING,
-      H2_GIZCLAW_MHS_DOUBLE};
-  for (size_t i = 0; i < 4; ++i) {
-    fixtures[i].value.kind = kinds[i];
-    states[i] = (h2_gizclaw_mhs_state_t){"test.main", keys[i],     kinds[i],
-                                         read_value,  check_value, write_value,
-                                         &fixtures[i]};
-    strcpy(write_request.states[i].device_id, states[i].device_id);
-    strcpy(write_request.states[i].state, states[i].state);
-    strcpy(read_request.states[i].device_id, states[i].device_id);
-    strcpy(read_request.states[i].state, states[i].state);
-    write_request.states[i].has_value = true;
-  }
-  write_request.states[0].value.which_value =
-      gizclaw_rpc_v1_MhsValue_int_value_tag;
-  write_request.states[1].value.which_value =
-      gizclaw_rpc_v1_MhsValue_bool_value_tag;
-  write_request.states[2].value.which_value =
-      gizclaw_rpc_v1_MhsValue_string_value_tag;
-  write_request.states[3].value.which_value =
-      gizclaw_rpc_v1_MhsValue_double_value_tag;
-  write_request.states_count = read_request.states_count = 4;
-  fail_after = -1;
-}
-static void no_writes(void) {
-  for (size_t i = 0; i < 4; ++i)
-    assert(!fixtures[i].writes);
-}
-
-static h2_pal_result_t binary_ssid(void *user, h2_pal_wifi_sta_status_t *out) {
-  (void)user;
-  *out = (h2_pal_wifi_sta_status_t){.state = H2_PAL_WIFI_STA_STATE_GOT_IP,
-                                    .ssid = {(char)0xff},
-                                    .ssid_len = 1,
-                                    .rssi = -47};
-  return H2_PAL_OK;
-}
-static void test_independent_wifi_states(void) {
-  const h2_pal_wifi_sta_vtable_t vtable = {.get_status = binary_ssid};
-  const h2_pal_wifi_sta_api_t wifi = {.vtable = &vtable};
-  h2_gizclaw_mhs_builtin_t builtin = {.wifi = &wifi};
-  h2_gizclaw_mhs_state_t registered[7];
-  size_t count = h2_gizclaw_mhs_builtins_internal(&builtin, registered);
-  assert(count == 5);
-  for (size_t i = 0; i < count; ++i) {
-    h2_gizclaw_mhs_value_t value = {.kind = registered[i].kind};
-    int rc = registered[i].read(registered[i].user, &value);
-    if (!strcmp(registered[i].state, "ssid"))
-      assert(rc == H2_PAL_ERR_IO);
-    else
-      assert(rc == H2_PAL_OK);
-    if (!strcmp(registered[i].state, "connected"))
-      assert(value.value.b);
-    if (!strcmp(registered[i].state, "rssi-dbm"))
-      assert(value.value.i == -47);
-  }
 }
 
 int main(void) {
-  test_independent_wifi_states();
-  reset();
-  assert(h2_gizclaw_mhs_validate_internal(states, 4) == H2_PAL_OK);
-  assert(h2_gizclaw_mhs_validate_internal(NULL, 0) == H2_PAL_OK);
-  assert(h2_gizclaw_mhs_validate_internal(NULL, 1) == H2_PAL_ERR_INVALID_ARG);
-  const char *invalid[] = {"", "Bad", "a_foo", "a..b", "a-", "1a", NULL};
-  for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
-    reset();
-    states[0].device_id = invalid[i];
-    assert(h2_gizclaw_mhs_validate_internal(states, 4) ==
-           H2_PAL_ERR_INVALID_ARG);
-    reset();
-    states[0].state = invalid[i];
-    assert(h2_gizclaw_mhs_validate_internal(states, 4) ==
-           H2_PAL_ERR_INVALID_ARG);
-  }
-  char long_key[66];
-  memset(long_key, 'a', sizeof(long_key));
-  long_key[65] = 0;
-  reset();
-  states[0].state = long_key;
-  assert(h2_gizclaw_mhs_validate_internal(states, 4) == H2_PAL_ERR_INVALID_ARG);
-  long_key[64] = 0;
-  assert(h2_gizclaw_mhs_validate_internal(states, 4) == H2_PAL_OK);
-  reset();
-  states[1] = states[0];
-  assert(h2_gizclaw_mhs_validate_internal(states, 4) == H2_PAL_ERR_INVALID_ARG);
-  reset();
-  states[0].read = NULL;
-  assert(h2_gizclaw_mhs_validate_internal(states, 4) == H2_PAL_ERR_INVALID_ARG);
-  reset();
-  states[0].kind = (h2_gizclaw_mhs_kind_t)99;
-  assert(h2_gizclaw_mhs_validate_internal(states, 4) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_gizclaw_mhs_validate_internal(&device, 1u) == H2_PAL_OK);
+  assert(h2_gizclaw_mhs_validate_internal(NULL, 0u) == H2_PAL_OK);
+  assert(h2_gizclaw_mhs_validate_internal(NULL, 1u) == H2_PAL_ERR_INVALID_ARG);
+  h2_gizclaw_mhs_device_t duplicate[] = {device, device};
+  assert(h2_gizclaw_mhs_validate_internal(duplicate, 2u) ==
+         H2_PAL_ERR_INVALID_ARG);
+  duplicate[1].id = "display.bad_underscore";
+  assert(h2_gizclaw_mhs_validate_internal(duplicate, 2u) ==
+         H2_PAL_ERR_INVALID_ARG);
+  duplicate[1].id = "battery.main";
+  duplicate[1].hwd = gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_BATTERY;
+  assert(h2_gizclaw_mhs_validate_internal(duplicate, 2u) ==
+         H2_PAL_ERR_INVALID_ARG);
 
-  reset();
-  write_request.states[0].value.value.int_value = 70;
-  fixtures[0].clamp = true;
-  assert(run(true) == H2_PAL_OK);
-  assert(reply.states_count == 4 &&
-         reply.states[0].value.value.int_value == 42);
-  assert(reply.states[1].value.which_value ==
-             gizclaw_rpc_v1_MhsValue_bool_value_tag &&
-         !reply.states[1].value.value.bool_value);
-  assert(reply.states[2].value.which_value ==
-             gizclaw_rpc_v1_MhsValue_string_value_tag &&
-         !reply.states[2].value.value.string_value[0]);
-  assert(reply.states[3].value.which_value ==
-         gizclaw_rpc_v1_MhsValue_double_value_tag);
-  assert(run(false) == H2_PAL_OK &&
-         reply.states[0].value.value.int_value == 42);
-  for (size_t i = 0; i < 4; ++i) {
-    assert(!strcmp(reply.states[i].device_id, states[i].device_id));
-    assert(!strcmp(reply.states[i].state, states[i].state));
-    assert(fixtures[i].checks == 1 && fixtures[i].writes == 1);
-  }
-  reset();
-  write_request.states_count = read_request.states_count = 0;
-  assert(run(true) == H2_PAL_ERR_INVALID_ARG &&
-         run(false) == H2_PAL_ERR_INVALID_ARG);
-  reset();
-  write_request.states[1] = write_request.states[0];
-  read_request.states[1] = read_request.states[0];
-  assert(run(true) == H2_PAL_ERR_INVALID_ARG &&
-         run(false) == H2_PAL_ERR_INVALID_ARG);
-  no_writes();
-  reset();
-  strcpy(write_request.states[3].state, "unknown");
-  strcpy(read_request.states[3].state, "unknown");
-  assert(run(true) == H2_PAL_ERR_NOT_FOUND &&
-         run(false) == H2_PAL_ERR_NOT_FOUND);
-  no_writes();
-  reset();
-  write_request.states[1].value.which_value =
-      gizclaw_rpc_v1_MhsValue_int_value_tag;
-  assert(run(true) == H2_PAL_ERR_INVALID_ARG);
-  no_writes();
-  reset();
-  write_request.states[3].has_value = false;
-  assert(run(true) == H2_PAL_ERR_INVALID_ARG);
-  no_writes();
-  reset();
-  write_request.states[3].value.which_value = 0;
-  assert(run(true) == H2_PAL_ERR_INVALID_ARG);
-  no_writes();
-  reset();
-  states[3].write = NULL;
-  assert(run(true) == H2_PAL_ERR_INVALID_ARG);
-  no_writes();
-  reset();
-  fixtures[3].check_error = H2_PAL_ERR_INVALID_STATE;
-  assert(run(true) == H2_PAL_ERR_INVALID_STATE);
-  no_writes();
-  reset();
-  fixtures[1].write_error = H2_PAL_ERR_IO;
-  write_request.states[0].value.value.int_value = 13;
-  assert(run(true) == H2_PAL_ERR_IO);
-  assert(fixtures[0].writes == 1 && fixtures[0].value.value.i == 13 &&
-         fixtures[1].writes == 1 && !fixtures[2].writes);
-  reset();
-  write_request.states[0].value.value.int_value = INT64_C(9007199254740992);
-  assert(run(true) == H2_PAL_ERR_INVALID_ARG);
-  no_writes();
-  reset();
-  write_request.states[3].value.value.double_value = NAN;
-  assert(run(true) == H2_PAL_ERR_INVALID_ARG);
-  no_writes();
-  reset();
-  write_request.states[2].value.value.string_value[0] = (char)0xc0;
-  write_request.states[2].value.value.string_value[1] = (char)0x80;
-  assert(run(true) == H2_PAL_ERR_INVALID_ARG);
-  no_writes();
-  reset();
-  strcpy(write_request.states[2].value.value.string_value, "END");
-  size_t length = encode_request(true);
-  bool modified = false;
-  for (size_t i = 0; i + 3 <= length; ++i)
-    if (!memcmp(encoded + i, "END", 3)) {
-      encoded[i + 2] = 0;
-      modified = true;
-      break;
-    }
-  assert(modified &&
-         run_bytes(true, encoded, length) == H2_PAL_ERR_INVALID_ARG);
-  no_writes();
-  reset();
-  length = encode_request(true);
-  encoded[0] = 0xff;
-  assert(run_bytes(true, encoded, length) == H2_PAL_ERR_INVALID_ARG);
-  no_writes();
-  reset();
-  fixtures[0].value.kind = H2_GIZCLAW_MHS_BOOL;
-  assert(run(false) == H2_PAL_ERR_IO);
-  reset();
-  memset(fixtures[2].value.value.s, 'x', sizeof(fixtures[2].value.value.s));
-  assert(run(false) == H2_PAL_ERR_IO);
-  for (int i = 0; i < 2; ++i) {
-    reset();
-    fail_after = i;
-    assert(run(false) == H2_PAL_ERR_NO_MEMORY);
-  }
+  uint8_t bytes[256];
+  size_t len = request_bytes(bytes, false, "display.main",
+                             gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY,
+                             NULL);
+  gizclaw_rpc_v1_DisplayHwdReadResponse read = {0};
+  assert(invoke(false, bytes, len,
+                gizclaw_rpc_v1_DisplayHwdReadResponse_fields,
+                &read) == H2_PAL_OK);
+  assert(read.has_brightness_percent && read.brightness_percent == 50u &&
+         read.has_enabled && read.enabled && fixture.reads == 1u);
+
+  gizclaw_rpc_v1_DisplayHwdWriteRequest patch = {
+      .has_brightness_percent = true, .brightness_percent = 42u,
+      .has_enabled = true, .enabled = false};
+  len = request_bytes(bytes, true, "display.main",
+                      gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY, &patch);
+  gizclaw_rpc_v1_DisplayHwdWriteResponse write = {0};
+  assert(invoke(true, bytes, len,
+                gizclaw_rpc_v1_DisplayHwdWriteResponse_fields,
+                &write) == H2_PAL_OK);
+  assert(write.has_applied && write.applied.has_brightness_percent &&
+         write.applied.brightness_percent == 42u &&
+         write.applied.has_enabled && !write.applied.enabled &&
+         fixture.writes == 1u);
+
+  patch = (gizclaw_rpc_v1_DisplayHwdWriteRequest){0};
+  len = request_bytes(bytes, true, "display.main",
+                      gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY, &patch);
+  assert(invoke(true, bytes, len, NULL, NULL) == H2_PAL_ERR_INVALID_ARG);
+  assert(fixture.writes == 1u);
+  patch.has_brightness_percent = true;
+  patch.brightness_percent = 101u;
+  len = request_bytes(bytes, true, "display.main",
+                      gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY, &patch);
+  assert(invoke(true, bytes, len, NULL, NULL) == H2_PAL_ERR_INVALID_ARG);
+  assert(fixture.writes == 1u);
+
+  len = request_bytes(bytes, false, "missing.main",
+                      gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY, NULL);
+  assert(invoke(false, bytes, len, NULL, NULL) == H2_PAL_ERR_NOT_FOUND);
+  len = request_bytes(bytes, false, "display.main",
+                      gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_LED, NULL);
+  assert(invoke(false, bytes, len, NULL, NULL) == H2_PAL_ERR_INVALID_ARG);
+  assert(invoke(false, bytes, len - 1u, NULL, NULL) == H2_PAL_ERR_INVALID_ARG);
+
+  fixture.failure = H2_PAL_ERR_UNAVAILABLE;
+  len = request_bytes(bytes, false, "display.main",
+                      gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY, NULL);
+  assert(invoke(false, bytes, len, NULL, NULL) == H2_PAL_ERR_UNAVAILABLE);
   return 0;
 }

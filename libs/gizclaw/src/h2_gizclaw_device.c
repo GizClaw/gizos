@@ -31,7 +31,7 @@ typedef struct audio_download audio_download_t;
 struct h2_gizclaw_device {
   h2_gizclaw_config_t config;
   h2_gizclaw_tool_handler_t tools[H2_GIZCLAW_TOOL_SOCIAL_PING];
-  h2_gizclaw_mhs_state_t *mhs_states;
+  h2_gizclaw_mhs_device_t *mhs_devices;
   h2_gizclaw_mhs_builtin_t mhs_builtin;
   h2_gizclaw_service_t *service;
   h2_pal_mutex_t *mutex;
@@ -1883,8 +1883,8 @@ h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service) {
   const h2_gizclaw_config_t *config = &service->client_config;
   if (h2_gizclaw_tools_validate_internal(
           config->tool_handlers, config->tool_handler_count) != H2_PAL_OK ||
-      h2_gizclaw_mhs_validate_internal(config->mhs_states,
-                                       config->mhs_state_count) != H2_PAL_OK)
+      h2_gizclaw_mhs_validate_internal(config->mhs_devices,
+                                       config->mhs_device_count) != H2_PAL_OK)
     return H2_PAL_ERR_INVALID_ARG;
   if (!config->audio && !config->wifi && !config->wifi_settings &&
       !config->power && !config->vtable && !config->manufacturer &&
@@ -1896,7 +1896,7 @@ h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service) {
     if (config->tool_handlers[i].tool != H2_GIZCLAW_TOOL_DEVICE_FIND &&
         config->tool_handlers[i].tool != H2_GIZCLAW_TOOL_SOCIAL_PING)
       return H2_PAL_ERR_INVALID_ARG;
-  if (config->mhs_state_count > SIZE_MAX / sizeof(h2_gizclaw_mhs_state_t) - 7u)
+  if (config->mhs_device_count > SIZE_MAX / sizeof(h2_gizclaw_mhs_device_t) - 7u)
     return H2_PAL_ERR_INVALID_ARG;
   size_t audio_capacity =
       config->audio_buffer_bytes ? config->audio_buffer_bytes : 65536u;
@@ -1951,20 +1951,20 @@ h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service) {
     d->tools[tool_count++] = config->tool_handlers[i];
   d->mhs_builtin = (h2_gizclaw_mhs_builtin_t){config->audio, config->wifi,
                                               service->config.runtime};
-  d->mhs_states =
+  d->mhs_devices =
       h2_pal_mem_alloc(config->allocator,
-                       (config->mhs_state_count + 7u) * sizeof(*d->mhs_states));
-  if (!d->mhs_states) {
+                       (config->mhs_device_count + 2u) * sizeof(*d->mhs_devices));
+  if (!d->mhs_devices) {
     h2_gizclaw_device_destroy_internal(d);
     return H2_PAL_ERR_NO_MEMORY;
   }
   size_t state_count =
-      h2_gizclaw_mhs_builtins_internal(&d->mhs_builtin, d->mhs_states);
-  if (config->mhs_state_count)
-    memcpy(d->mhs_states + state_count, config->mhs_states,
-           config->mhs_state_count * sizeof(*d->mhs_states));
-  state_count += config->mhs_state_count;
-  rc = h2_gizclaw_mhs_validate_internal(d->mhs_states, state_count);
+      h2_gizclaw_mhs_builtins_internal(&d->mhs_builtin, d->mhs_devices);
+  if (config->mhs_device_count)
+    memcpy(d->mhs_devices + state_count, config->mhs_devices,
+           config->mhs_device_count * sizeof(*d->mhs_devices));
+  state_count += config->mhs_device_count;
+  rc = h2_gizclaw_mhs_validate_internal(d->mhs_devices, state_count);
   if (rc != H2_PAL_OK) {
     h2_gizclaw_device_destroy_internal(d);
     return rc;
@@ -1972,8 +1972,8 @@ h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service) {
   service->device = d;
   service->client_config.tool_handlers = d->tools;
   service->client_config.tool_handler_count = tool_count;
-  service->client_config.mhs_states = d->mhs_states;
-  service->client_config.mhs_state_count = state_count;
+  service->client_config.mhs_devices = d->mhs_devices;
+  service->client_config.mhs_device_count = state_count;
   return H2_PAL_OK;
 }
 h2_pal_result_t h2_gizclaw_device_start_internal(h2_gizclaw_device_t *d) {
@@ -2006,7 +2006,7 @@ void h2_gizclaw_device_destroy_internal(h2_gizclaw_device_t *d) {
     return;
   (void)h2_pal_mutex_destroy(d->service->config.sync, d->mutex);
   h2_pal_mem_free(d->config.allocator, d->response);
-  h2_pal_mem_free(d->config.allocator, d->mhs_states);
+  h2_pal_mem_free(d->config.allocator, d->mhs_devices);
   h2_pal_mem_free(d->config.allocator, d->incoming);
   h2_pal_mem_free(d->config.allocator, d->playlist);
   h2_atomic_bool_destroy(&d->stopping);

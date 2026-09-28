@@ -190,19 +190,19 @@ static int find_tool(void *user, h2_gizclaw_tool_t tool,
   *out = (h2_gizclaw_rpc_provider_response_t){0};
   return H2_PAL_OK;
 }
-static h2_pal_result_t read_state(void *user, h2_gizclaw_mhs_value_t *out) {
-  out->value.i = ((wire_fixture_t *)user)->value;
+static h2_pal_result_t read_state(void *user, h2_gizclaw_mhs_read_t *out) {
+  out->speaker.has_volume_percent = true;
+  out->speaker.volume_percent = (uint32_t)((wire_fixture_t *)user)->value;
+  out->speaker.has_muted = true;
+  out->speaker.muted = false;
   return H2_PAL_OK;
 }
-static h2_pal_result_t check_state(void *user,
-                                   const h2_gizclaw_mhs_value_t *value) {
-  (void)user;
-  return value->value.i < 0 ? H2_PAL_ERR_INVALID_STATE : H2_PAL_OK;
-}
 static h2_pal_result_t write_state(void *user,
-                                   const h2_gizclaw_mhs_value_t *value,
-                                   h2_gizclaw_mhs_value_t *out) {
-  ((wire_fixture_t *)user)->value = value->value.i + 1;
+                                   const h2_gizclaw_mhs_write_t *request,
+                                   h2_gizclaw_mhs_read_t *out) {
+  wire_fixture_t *fixture = user;
+  if (request->speaker.has_volume_percent)
+    fixture->value = request->speaker.volume_percent + 1u;
   return read_state(user, out);
 }
 static void exercise(wire_fixture_t *f) {
@@ -260,47 +260,57 @@ static void exercise(wire_fixture_t *f) {
     assert(response.has_error &&
            response.error.code == H2_GIZCLAW_RPC_ERROR_UNIMPLEMENTED);
   }
-  static gizclaw_rpc_v1_ClientMhsV0WriteRequest write;
-  write.states_count = 1;
-  strcpy(write.states[0].device_id, "fixture.main");
-  strcpy(write.states[0].state, "volume");
-  write.states[0].has_value = true;
-  write.states[0].value.which_value = gizclaw_rpc_v1_MhsValue_int_value_tag;
+  gizclaw_rpc_v1_SpeakerHwdWriteRequest speaker_patch = {
+      .has_volume_percent = true, .volume_percent = 13u};
+  uint8_t inner_bytes[64];
+  pb_ostream_t inner_out = pb_ostream_from_buffer(inner_bytes,
+                                                   sizeof(inner_bytes));
+  assert(pb_encode(&inner_out,
+                   gizclaw_rpc_v1_SpeakerHwdWriteRequest_fields,
+                   &speaker_patch));
+  gzc_str_t patch_bytes =
+      gzc_str_from_parts((const char *)inner_bytes, inner_out.bytes_written);
+  gizclaw_rpc_v1_ClientMhsV0WriteRequest write = {0};
+  strcpy(write.id, "speaker.fixture");
+  write.hwd = gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_SPEAKER;
+  write.payload.funcs.encode = encode_bytes;
+  write.payload.arg = &patch_bytes;
   uint8_t bytes[512];
-  for (int value = -1; value <= 13; value += 14) {
-    write.states[0].value.value.int_value = value;
-    pb_ostream_t out = pb_ostream_from_buffer(bytes, sizeof(bytes));
-    assert(
-        pb_encode(&out, gizclaw_rpc_v1_ClientMhsV0WriteRequest_fields, &write));
-    response =
-        call(f, H2_GIZCLAW_RPC_CLIENT_MHS_V0_WRITE, bytes, out.bytes_written);
-    if (value < 0)
-      assert(response.has_error &&
-             response.error.code == H2_GIZCLAW_RPC_ERROR_FAILED_PRECONDITION &&
-             f->value == 7);
-    else
-      assert(!response.has_error && f->value == 14);
-  }
-  static gizclaw_rpc_v1_ClientMhsV0ReadRequest read;
-  read.states_count = 1;
-  strcpy(read.states[0].device_id, "fixture.main");
-  strcpy(read.states[0].state, "volume");
   pb_ostream_t out = pb_ostream_from_buffer(bytes, sizeof(bytes));
-  assert(pb_encode(&out, gizclaw_rpc_v1_ClientMhsV0ReadRequest_fields, &read));
-  response =
-      call(f, H2_GIZCLAW_RPC_CLIENT_MHS_V0_READ, bytes, out.bytes_written);
+  assert(pb_encode(&out, gizclaw_rpc_v1_ClientMhsV0WriteRequest_fields,
+                   &write));
+  response = call(f, H2_GIZCLAW_RPC_CLIENT_MHS_V0_WRITE, bytes,
+                  out.bytes_written);
+  assert(!response.has_error && f->value == 14);
+  gizclaw_rpc_v1_ClientMhsV0ReadRequest read = {0};
+  strcpy(read.id, "speaker.fixture");
+  read.hwd = gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_SPEAKER;
+  out = pb_ostream_from_buffer(bytes, sizeof(bytes));
+  assert(pb_encode(&out, gizclaw_rpc_v1_ClientMhsV0ReadRequest_fields,
+                   &read));
+  response = call(f, H2_GIZCLAW_RPC_CLIENT_MHS_V0_READ, bytes,
+                  out.bytes_written);
   assert(!response.has_error);
-  static gizclaw_rpc_v1_ClientMhsV0ReadResponse state;
+  gzc_str_t read_bytes = {0};
+  gizclaw_rpc_v1_ClientMhsV0ReadResponse wrapper_read = {0};
+  wrapper_read.payload.funcs.decode = decode_bytes;
+  wrapper_read.payload.arg = &read_bytes;
   in = pb_istream_from_buffer((const pb_byte_t *)response.result_payload.data,
                               response.result_payload.len);
-  assert(pb_decode(&in, gizclaw_rpc_v1_ClientMhsV0ReadResponse_fields, &state));
-  assert(state.states_count == 1 &&
-         state.states[0].value.value.int_value == 14);
-  strcpy(read.states[0].state, "unknown");
+  assert(pb_decode(&in, gizclaw_rpc_v1_ClientMhsV0ReadResponse_fields,
+                   &wrapper_read));
+  gizclaw_rpc_v1_SpeakerHwdReadResponse speaker = {0};
+  in = pb_istream_from_buffer((const pb_byte_t *)read_bytes.data,
+                              read_bytes.len);
+  assert(pb_decode(&in, gizclaw_rpc_v1_SpeakerHwdReadResponse_fields,
+                   &speaker));
+  assert(speaker.has_volume_percent && speaker.volume_percent == 14u);
+  strcpy(read.id, "speaker.unknown");
   out = pb_ostream_from_buffer(bytes, sizeof(bytes));
-  assert(pb_encode(&out, gizclaw_rpc_v1_ClientMhsV0ReadRequest_fields, &read));
-  response =
-      call(f, H2_GIZCLAW_RPC_CLIENT_MHS_V0_READ, bytes, out.bytes_written);
+  assert(pb_encode(&out, gizclaw_rpc_v1_ClientMhsV0ReadRequest_fields,
+                   &read));
+  response = call(f, H2_GIZCLAW_RPC_CLIENT_MHS_V0_READ, bytes,
+                  out.bytes_written);
   assert(response.has_error &&
          response.error.code == H2_GIZCLAW_RPC_ERROR_NOT_FOUND);
   f->exercised = true;
@@ -331,9 +341,10 @@ int main(void) {
   const h2_pal_crypto_api_t crypto = {0};
   const h2_gizclaw_tool_handler_t tool = {H2_GIZCLAW_TOOL_DEVICE_FIND,
                                           find_tool, &fixture};
-  const h2_gizclaw_mhs_state_t state = {
-      "fixture.main", "volume", H2_GIZCLAW_MHS_INT, read_state, check_state,
-      write_state,    &fixture};
+  const h2_gizclaw_mhs_device_t device = {
+      .id = "speaker.fixture",
+      .hwd = gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_SPEAKER,
+      .read = read_state, .write = write_state, .user = &fixture};
   const h2_gizclaw_config_t config = {.allocator = &memory,
                                       .http = &http,
                                       .crypto = &crypto,
@@ -347,8 +358,8 @@ int main(void) {
                                       .model = "fixture",
                                       .tool_handlers = &tool,
                                       .tool_handler_count = 1,
-                                      .mhs_states = &state,
-                                      .mhs_state_count = 1};
+                                      .mhs_devices = &device,
+                                      .mhs_device_count = 1};
   const h2_gizclaw_service_config_t service_config = {
       .client_config = &config,
       .task = h2_desktop_platform_task_api(),

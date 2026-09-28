@@ -718,7 +718,7 @@ static int h2_gizclaw_mhs_bridge(void *userdata, int method, gzc_str_t payload,
   int rc = h2_gizclaw_is_canceled(client)
                ? H2_PAL_ERR_CLOSED
                : h2_gizclaw_mhs_request_internal(
-                     client->config.mhs_states, client->config.mhs_state_count,
+                     client->config.mhs_devices, client->config.mhs_device_count,
                      method == H2_GIZCLAW_RPC_CLIENT_MHS_V0_WRITE,
                      client->config.allocator,
                      (h2_gizclaw_rpc_bytes_t){(const uint8_t *)payload.data,
@@ -2047,8 +2047,8 @@ int h2_gizclaw_client_init(const h2_gizclaw_config_t *config,
   if (!h2_gizclaw_config_valid(config) || out_client == NULL ||
       h2_gizclaw_tools_validate_internal(
           config->tool_handlers, config->tool_handler_count) != H2_PAL_OK ||
-      h2_gizclaw_mhs_validate_internal(config->mhs_states,
-                                       config->mhs_state_count) != H2_PAL_OK) {
+      h2_gizclaw_mhs_validate_internal(config->mhs_devices,
+                                       config->mhs_device_count) != H2_PAL_OK) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_client = NULL;

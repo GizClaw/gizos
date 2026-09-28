@@ -2,56 +2,50 @@
 #define H2_GIZCLAW_MHS_H
 
 #include "h2/pal/core/h2_pal_errors.h"
-#include <stdbool.h>
-#include <stdint.h>
+#include "payload/mhs_v0.pb.h"
+
+#include <stddef.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-#define H2_GIZCLAW_MHS_KEY_MAX 64u
-#define H2_GIZCLAW_MHS_STRING_MAX 256u
+#define H2_GIZCLAW_MHS_ID_MAX_BYTES 64u
 
-typedef enum h2_gizclaw_mhs_kind {
-  H2_GIZCLAW_MHS_BOOL = 1,
-  H2_GIZCLAW_MHS_INT = 2,
-  H2_GIZCLAW_MHS_DOUBLE = 3,
-  H2_GIZCLAW_MHS_STRING = 4,
-} h2_gizclaw_mhs_kind_t;
+/** One typed HWD snapshot. Use the member selected by hwd. The generated
+ * protobuf types preserve field presence, including measured false and zero. */
+typedef union h2_gizclaw_mhs_read {
+  gizclaw_rpc_v1_WifiHwdReadResponse wifi;
+  gizclaw_rpc_v1_BleHwdReadResponse ble;
+  gizclaw_rpc_v1_ModemHwdReadResponse modem;
+  gizclaw_rpc_v1_BatteryHwdReadResponse battery;
+  gizclaw_rpc_v1_MicHwdReadResponse mic;
+  gizclaw_rpc_v1_DisplayHwdReadResponse display;
+  gizclaw_rpc_v1_LedHwdReadResponse led;
+  gizclaw_rpc_v1_SpeakerHwdReadResponse speaker;
+} h2_gizclaw_mhs_read_t;
 
-/** Owned inline value. Integers use the JSON safe range; doubles must be
- * finite. Strings (including enum values) are NUL-terminated UTF-8, at most
- * 256 bytes without embedded NUL. Empty string, zero and false are values. */
-typedef struct h2_gizclaw_mhs_value {
-  h2_gizclaw_mhs_kind_t kind;
-  union {
-    bool b;
-    int64_t i;
-    double d;
-    char s[H2_GIZCLAW_MHS_STRING_MAX + 1u];
-  } value;
-} h2_gizclaw_mhs_value_t;
+typedef union h2_gizclaw_mhs_write {
+  gizclaw_rpc_v1_DisplayHwdWriteRequest display;
+  gizclaw_rpc_v1_LedHwdWriteRequest led;
+  gizclaw_rpc_v1_SpeakerHwdWriteRequest speaker;
+} h2_gizclaw_mhs_write_t;
 
-/** Immutable state registration borrowed until Client/Service deinit.
- * Keys match [a-z][a-z0-9]*([.-][a-z0-9]+)* and are at most 64 bytes.
- * out_value starts with the registered kind and a zero value. read is required;
- * write == NULL means read-only. Callbacks run synchronously on the RPC owner,
- * return promptly, and must not stop or destroy the Service. All keys, types
- * and check callbacks are validated before any write. check must not mutate
- * state. write returns the actual applied value in out_value. A failed write
- * does not roll back earlier hardware changes; read again to determine the
- * resulting state. Callback values are copied, never retained. Products own
- * alignment with their RuntimeProfile manifest. */
-typedef struct h2_gizclaw_mhs_state {
-  const char *device_id;
-  const char *state;
-  h2_gizclaw_mhs_kind_t kind;
-  h2_pal_result_t (*read)(void *user, h2_gizclaw_mhs_value_t *out_value);
-  h2_pal_result_t (*check)(void *user, const h2_gizclaw_mhs_value_t *value);
-  h2_pal_result_t (*write)(void *user, const h2_gizclaw_mhs_value_t *value,
-                           h2_gizclaw_mhs_value_t *out_value);
+/** Device instance borrowed until Client/Service deinit.
+ * The ID identifies a physical instance; hwd selects its protobuf shape.
+ * read returns the current hardware snapshot. write applies only present
+ * fields, then returns a fresh snapshot of what actually took effect.
+ * Callbacks run on the RPC owner and must return promptly. A failed or timed
+ * out write may already have changed hardware; callers must re-read.
+ * RuntimeProfile manifest ownership is separate from device registration. */
+typedef struct h2_gizclaw_mhs_device {
+  const char *id;
+  gizclaw_rpc_v1_ClientHwd hwd;
+  h2_pal_result_t (*read)(void *user, h2_gizclaw_mhs_read_t *out);
+  h2_pal_result_t (*write)(void *user, const h2_gizclaw_mhs_write_t *request,
+                           h2_gizclaw_mhs_read_t *out_applied);
   void *user;
-} h2_gizclaw_mhs_state_t;
+} h2_gizclaw_mhs_device_t;
 
 #ifdef __cplusplus
 }

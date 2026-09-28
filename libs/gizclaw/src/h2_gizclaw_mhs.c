@@ -1,21 +1,23 @@
 #include "h2_gizclaw_mhs_internal.h"
 
-#include "payload/mhs.pb.h"
 #include "pb_decode.h"
 #include "pb_encode.h"
+
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
 
-static bool key_valid(const char *key) {
-  if (!key || key[0] < 'a' || key[0] > 'z')
+#define HWD_PAYLOAD_MAX 512u
+
+static bool id_valid(const char *id) {
+  if (id == NULL || id[0] < 'a' || id[0] > 'z')
     return false;
   bool separator = false;
-  for (size_t i = 0; i <= H2_GIZCLAW_MHS_KEY_MAX; ++i) {
-    char c = key[i];
-    if (!c)
+  for (size_t i = 0; i <= H2_GIZCLAW_MHS_ID_MAX_BYTES; ++i) {
+    const char c = id[i];
+    if (c == '\0')
       return !separator;
-    if (i == H2_GIZCLAW_MHS_KEY_MAX)
+    if (i == H2_GIZCLAW_MHS_ID_MAX_BYTES)
       return false;
     if ((c >= 'a' && c <= 'z') || (c >= '0' && c <= '9'))
       separator = false;
@@ -27,456 +29,419 @@ static bool key_valid(const char *key) {
   return false;
 }
 
-static bool utf8_valid(const uint8_t *s, size_t n) {
-  for (size_t i = 0; i < n;) {
-    uint32_t c = s[i++], min = 0;
-    size_t rest = 0;
-    if (!c)
-      return false;
-    if (c < 0x80)
-      continue;
-    if (c >= 0xc2 && c <= 0xdf) {
-      c &= 0x1f;
-      rest = 1;
-      min = 0x80;
-    } else if (c >= 0xe0 && c <= 0xef) {
-      c &= 0x0f;
-      rest = 2;
-      min = 0x800;
-    } else if (c >= 0xf0 && c <= 0xf4) {
-      c &= 7;
-      rest = 3;
-      min = 0x10000;
-    } else
-      return false;
-    if (n - i < rest)
-      return false;
-    while (rest--) {
-      if ((s[i] & 0xc0) != 0x80)
-        return false;
-      c = (c << 6) | (s[i++] & 0x3f);
-    }
-    if (c < min || c > 0x10ffff || (c >= 0xd800 && c <= 0xdfff))
-      return false;
-  }
-  return true;
+static bool writable(gizclaw_rpc_v1_ClientHwd hwd) {
+  return hwd == gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY ||
+         hwd == gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_LED ||
+         hwd == gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_SPEAKER;
 }
 
-static bool value_valid(const h2_gizclaw_mhs_value_t *v,
-                        h2_gizclaw_mhs_kind_t kind) {
-  if (v->kind != kind)
-    return false;
-  switch (kind) {
-  case H2_GIZCLAW_MHS_BOOL:
-    return true;
-  case H2_GIZCLAW_MHS_INT:
-    return v->value.i >= -INT64_C(9007199254740991) &&
-           v->value.i <= INT64_C(9007199254740991);
-  case H2_GIZCLAW_MHS_DOUBLE:
-    return isfinite(v->value.d);
-  case H2_GIZCLAW_MHS_STRING: {
-    const char *end = memchr(v->value.s, 0, sizeof(v->value.s));
-    return end &&
-           utf8_valid((const uint8_t *)v->value.s, (size_t)(end - v->value.s));
-  }
-  default:
-    return false;
-  }
-}
-
-int h2_gizclaw_mhs_validate_internal(const h2_gizclaw_mhs_state_t *states,
+int h2_gizclaw_mhs_validate_internal(const h2_gizclaw_mhs_device_t *devices,
                                      size_t count) {
-  if ((count && !states) || count > SIZE_MAX / sizeof(*states))
+  if ((count != 0u && devices == NULL) ||
+      count > SIZE_MAX / sizeof(*devices))
     return H2_PAL_ERR_INVALID_ARG;
-  for (size_t i = 0; i < count; ++i) {
-    const h2_gizclaw_mhs_state_t *s = &states[i];
-    if (!key_valid(s->device_id) || !key_valid(s->state) || !s->read ||
-        s->kind < H2_GIZCLAW_MHS_BOOL || s->kind > H2_GIZCLAW_MHS_STRING)
+  for (size_t i = 0u; i < count; ++i) {
+    const h2_gizclaw_mhs_device_t *device = &devices[i];
+    if (!id_valid(device->id) || device->read == NULL ||
+        device->hwd < gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_WIFI ||
+        device->hwd > gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_SPEAKER ||
+        (device->write != NULL && !writable(device->hwd)))
       return H2_PAL_ERR_INVALID_ARG;
-    for (size_t j = 0; j < i; ++j)
-      if (!strcmp(s->device_id, states[j].device_id) &&
-          !strcmp(s->state, states[j].state))
+    for (size_t j = 0u; j < i; ++j)
+      if (strcmp(device->id, devices[j].id) == 0)
         return H2_PAL_ERR_INVALID_ARG;
   }
   return H2_PAL_OK;
 }
 
-static int speaker_snapshot(h2_gizclaw_mhs_builtin_t *b,
-                            h2_runtime_system_audio_state_t *out) {
-  if (b->runtime && b->audio == b->runtime->audio)
-    return h2_runtime_system_state_audio(b->runtime, out);
-  int rc =
-      h2_pal_audio_get_speaker_volume_percent(b->audio, &out->volume_percent);
-  out->muted = out->volume_percent == 0;
-  return rc;
-}
-static h2_pal_result_t speaker_read(void *user, h2_gizclaw_mhs_value_t *out) {
+static h2_pal_result_t speaker_snapshot(h2_gizclaw_mhs_builtin_t *builtin,
+                                        h2_gizclaw_mhs_read_t *out) {
   h2_runtime_system_audio_state_t snapshot = {0};
-  int rc = speaker_snapshot(user, &snapshot);
-  if (rc == H2_PAL_OK) {
-    if (out->kind == H2_GIZCLAW_MHS_INT)
-      out->value.i = snapshot.volume_percent;
-    else
-      out->value.b = snapshot.muted;
-  }
-  return rc;
-}
-static h2_pal_result_t speaker_check(void *user,
-                                     const h2_gizclaw_mhs_value_t *v) {
-  (void)user;
-  return v->kind == H2_GIZCLAW_MHS_INT && (v->value.i < 0 || v->value.i > 100)
-             ? H2_PAL_ERR_INVALID_ARG
-             : H2_PAL_OK;
-}
-static int speaker_apply(h2_gizclaw_mhs_builtin_t *b, uint32_t volume,
-                         bool muted) {
-  return b->runtime && b->audio == b->runtime->audio
-             ? h2_runtime_audio_set_volume(b->runtime, volume, muted)
-             : h2_pal_audio_set_speaker_volume_percent(b->audio,
-                                                       muted ? 0 : volume);
-}
-static h2_pal_result_t speaker_write(void *user,
-                                     const h2_gizclaw_mhs_value_t *v,
-                                     h2_gizclaw_mhs_value_t *out) {
-  h2_runtime_system_audio_state_t snapshot = {0};
-  int rc = speaker_snapshot(user, &snapshot);
+  h2_pal_result_t rc =
+      builtin->runtime != NULL && builtin->audio == builtin->runtime->audio
+          ? h2_runtime_system_state_audio(builtin->runtime, &snapshot)
+          : h2_pal_audio_get_speaker_volume_percent(
+                builtin->audio, &snapshot.volume_percent);
   if (rc != H2_PAL_OK)
     return rc;
-  if (v->kind == H2_GIZCLAW_MHS_INT)
-    snapshot.volume_percent = (uint32_t)v->value.i;
-  else
-    snapshot.muted = v->value.b;
-  rc = speaker_apply(user, snapshot.volume_percent, snapshot.muted);
-  out->kind = v->kind;
-  return rc == H2_PAL_OK ? speaker_read(user, out) : rc;
+  if (builtin->runtime == NULL || builtin->audio != builtin->runtime->audio)
+    snapshot.muted = snapshot.volume_percent == 0u;
+  out->speaker.has_volume_percent = true;
+  out->speaker.volume_percent = snapshot.volume_percent;
+  out->speaker.has_muted = true;
+  out->speaker.muted = snapshot.muted;
+  return H2_PAL_OK;
 }
 
-/* Separate callbacks keep each Wi-Fi key explicit without a second registry. */
-static int wifi_read(h2_gizclaw_mhs_builtin_t *b, int field,
-                     h2_gizclaw_mhs_value_t *out) {
-  h2_pal_wifi_sta_status_t status = {0};
-  int rc = h2_pal_wifi_sta_get_status(b->wifi, &status);
+static h2_pal_result_t speaker_read(void *user, h2_gizclaw_mhs_read_t *out) {
+  return speaker_snapshot(user, out);
+}
+
+static h2_pal_result_t speaker_write(void *user,
+                                     const h2_gizclaw_mhs_write_t *request,
+                                     h2_gizclaw_mhs_read_t *out) {
+  h2_gizclaw_mhs_builtin_t *builtin = user;
+  h2_gizclaw_mhs_read_t previous = {0};
+  h2_pal_result_t rc = speaker_snapshot(builtin, &previous);
   if (rc != H2_PAL_OK)
     return rc;
-  if (field == 1 &&
-      (status.ssid_len > 32 ||
-       !utf8_valid((const uint8_t *)status.ssid, status.ssid_len)))
-    return H2_PAL_ERR_IO;
-  if (field == 0) {
-    out->value.b = status.state == H2_PAL_WIFI_STA_STATE_CONNECTED ||
-                   status.state == H2_PAL_WIFI_STA_STATE_GOT_IP;
-  } else if (field == 1) {
-    memcpy(out->value.s, status.ssid, status.ssid_len);
-    out->value.s[status.ssid_len] = 0;
-  } else if (field == 2) {
-    out->value.i = status.rssi;
-  } else if (field == 3 && status.ip_valid) {
+  const gizclaw_rpc_v1_SpeakerHwdWriteRequest *patch = &request->speaker;
+  const uint32_t volume = patch->has_volume_percent
+                              ? patch->volume_percent
+                              : previous.speaker.volume_percent;
+  const bool muted = patch->has_muted ? patch->muted : previous.speaker.muted;
+  rc = builtin->runtime != NULL && builtin->audio == builtin->runtime->audio
+           ? h2_runtime_audio_set_volume(builtin->runtime, volume, muted)
+           : h2_pal_audio_set_speaker_volume_percent(
+                 builtin->audio, muted ? 0u : volume);
+  return rc == H2_PAL_OK ? speaker_snapshot(builtin, out) : rc;
+}
+
+static h2_pal_result_t wifi_read(void *user, h2_gizclaw_mhs_read_t *out) {
+  h2_gizclaw_mhs_builtin_t *builtin = user;
+  h2_pal_wifi_sta_status_t status = {0};
+  h2_pal_result_t rc = h2_pal_wifi_sta_get_status(builtin->wifi, &status);
+  if (rc != H2_PAL_OK)
+    return rc;
+  gizclaw_rpc_v1_WifiHwdReadResponse *value = &out->wifi;
+  value->has_connected = true;
+  value->connected = status.state == H2_PAL_WIFI_STA_STATE_CONNECTED ||
+                     status.state == H2_PAL_WIFI_STA_STATE_GOT_IP;
+  if (status.ssid_len != 0u && status.ssid_len <= 32u &&
+      memchr(status.ssid, '\0', status.ssid_len) == NULL) {
+    value->has_ssid = true;
+    memcpy(value->ssid, status.ssid, status.ssid_len);
+    value->ssid[status.ssid_len] = '\0';
+  }
+  value->has_rssi_dbm = true;
+  value->rssi_dbm = status.rssi;
+  if (status.ip_valid) {
     uint8_t ip[4];
     h2_pal_wifi_ip4_to_bytes(status.ip.ip4, ip);
-    (void)snprintf(out->value.s, sizeof(out->value.s), "%u.%u.%u.%u", ip[0],
-                   ip[1], ip[2], ip[3]);
-  } else if (field == 4 && status.bssid_set) {
-    const uint8_t *m = status.bssid;
-    (void)snprintf(out->value.s, sizeof(out->value.s),
-                   "%02x:%02x:%02x:%02x:%02x:%02x", m[0], m[1], m[2], m[3],
-                   m[4], m[5]);
+    value->has_ip = true;
+    (void)snprintf(value->ip, sizeof(value->ip), "%u.%u.%u.%u",
+                   ip[0], ip[1], ip[2], ip[3]);
+  }
+  if (status.bssid_set) {
+    const uint8_t *mac = status.bssid;
+    value->has_bssid = true;
+    (void)snprintf(value->bssid, sizeof(value->bssid),
+                   "%02x:%02x:%02x:%02x:%02x:%02x", mac[0], mac[1],
+                   mac[2], mac[3], mac[4], mac[5]);
   }
   return H2_PAL_OK;
 }
-static h2_pal_result_t wifi_connected(void *u, h2_gizclaw_mhs_value_t *v) {
-  return wifi_read(u, 0, v);
-}
-static h2_pal_result_t wifi_ssid(void *u, h2_gizclaw_mhs_value_t *v) {
-  return wifi_read(u, 1, v);
-}
-static h2_pal_result_t wifi_rssi(void *u, h2_gizclaw_mhs_value_t *v) {
-  return wifi_read(u, 2, v);
-}
-static h2_pal_result_t wifi_ip(void *u, h2_gizclaw_mhs_value_t *v) {
-  return wifi_read(u, 3, v);
-}
-static h2_pal_result_t wifi_bssid(void *u, h2_gizclaw_mhs_value_t *v) {
-  return wifi_read(u, 4, v);
+
+size_t h2_gizclaw_mhs_builtins_internal(h2_gizclaw_mhs_builtin_t *context,
+                                        h2_gizclaw_mhs_device_t *devices) {
+  size_t count = 0u;
+  if (context->audio != NULL && context->audio->vtable != NULL &&
+      context->audio->vtable->get_speaker_volume_percent != NULL) {
+    devices[count++] = (h2_gizclaw_mhs_device_t){
+        .id = "speaker.main",
+        .hwd = gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_SPEAKER,
+        .read = speaker_read,
+        .write = context->audio->vtable->set_speaker_volume_percent != NULL
+                     ? speaker_write
+                     : NULL,
+        .user = context};
+  }
+  if (context->wifi != NULL && context->wifi->vtable != NULL &&
+      context->wifi->vtable->get_status != NULL) {
+    devices[count++] = (h2_gizclaw_mhs_device_t){
+        .id = "wifi.main",
+        .hwd = gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_WIFI,
+        .read = wifi_read,
+        .user = context};
+  }
+  return count;
 }
 
-size_t h2_gizclaw_mhs_builtins_internal(h2_gizclaw_mhs_builtin_t *b,
-                                        h2_gizclaw_mhs_state_t *states) {
-  size_t n = 0;
-  if (b->audio && b->audio->vtable &&
-      b->audio->vtable->get_speaker_volume_percent) {
-    const bool writable = b->audio->vtable->set_speaker_volume_percent != NULL;
-    states[n++] = (h2_gizclaw_mhs_state_t){"speaker.main",
-                                           "volume",
-                                           H2_GIZCLAW_MHS_INT,
-                                           speaker_read,
-                                           speaker_check,
-                                           writable ? speaker_write : NULL,
-                                           b};
-    states[n++] = (h2_gizclaw_mhs_state_t){"speaker.main",
-                                           "muted",
-                                           H2_GIZCLAW_MHS_BOOL,
-                                           speaker_read,
-                                           speaker_check,
-                                           writable ? speaker_write : NULL,
-                                           b};
-  }
-  if (b->wifi && b->wifi->vtable && b->wifi->vtable->get_status) {
-    states[n++] = (h2_gizclaw_mhs_state_t){"wifi.main",
-                                           "connected",
-                                           H2_GIZCLAW_MHS_BOOL,
-                                           wifi_connected,
-                                           NULL,
-                                           NULL,
-                                           b};
-    states[n++] = (h2_gizclaw_mhs_state_t){
-        "wifi.main", "ssid", H2_GIZCLAW_MHS_STRING, wifi_ssid, NULL, NULL, b};
-    states[n++] = (h2_gizclaw_mhs_state_t){
-        "wifi.main", "rssi-dbm", H2_GIZCLAW_MHS_INT, wifi_rssi, NULL, NULL, b};
-    states[n++] = (h2_gizclaw_mhs_state_t){
-        "wifi.main", "ip", H2_GIZCLAW_MHS_STRING, wifi_ip, NULL, NULL, b};
-    states[n++] = (h2_gizclaw_mhs_state_t){
-        "wifi.main", "bssid", H2_GIZCLAW_MHS_STRING, wifi_bssid, NULL, NULL, b};
-  }
-  return n;
-}
+typedef struct mhs_request {
+  char id[H2_GIZCLAW_MHS_ID_MAX_BYTES + 1u];
+  gizclaw_rpc_v1_ClientHwd hwd;
+  uint8_t payload[HWD_PAYLOAD_MAX];
+  size_t payload_len;
+  bool id_seen, hwd_seen, payload_seen;
+} mhs_request_t;
 
-/* nanopb's static strings are C strings after decode. Validate their original
- * spans too, so an embedded/trailing wire NUL cannot truncate a key or value.
- * The levels are request, state, value; unknown fields remain
- * forward-compatible. */
-static bool wire_text_valid(pb_istream_t *in, unsigned level, bool write) {
-  unsigned seen = 0;
-  while (in->bytes_left) {
+static bool decode_request(h2_gizclaw_rpc_bytes_t data, bool write,
+                           mhs_request_t *out) {
+  if (data.data == NULL || data.len == 0u)
+    return false;
+  pb_istream_t input = pb_istream_from_buffer(data.data, data.len);
+  while (input.bytes_left != 0u) {
     pb_wire_type_t wire;
     uint32_t tag;
     bool eof = false;
-    if (!pb_decode_tag(in, &wire, &tag, &eof))
+    if (!pb_decode_tag(&input, &wire, &tag, &eof))
       return false;
-    bool nested = (level == 0 && tag == 1) || (level == 1 && write && tag == 3);
-    bool text =
-        (level == 1 && (tag == 1 || tag == 2)) || (level == 2 && tag == 4);
-    if (level == 2 && tag >= 1 && tag <= 4 && ++seen > 1)
-      return false;
-    if (nested || text) {
+    if (tag == 1u) {
       pb_istream_t sub;
-      if (wire != PB_WT_STRING || !pb_make_string_substream(in, &sub))
+      if (out->id_seen || wire != PB_WT_STRING ||
+          !pb_make_string_substream(&input, &sub) ||
+          sub.bytes_left == 0u || sub.bytes_left > H2_GIZCLAW_MHS_ID_MAX_BYTES)
         return false;
-      if (nested) {
-        if (!wire_text_valid(&sub, level + 1, write))
-          return false;
-      } else {
-        uint8_t bytes[H2_GIZCLAW_MHS_STRING_MAX];
-        size_t n = sub.bytes_left;
-        size_t max = level == 1 ? H2_GIZCLAW_MHS_KEY_MAX : sizeof(bytes);
-        if (n > max || !pb_read(&sub, bytes, n) || !utf8_valid(bytes, n))
-          return false;
-      }
-      if (!pb_close_string_substream(in, &sub))
+      const size_t length = sub.bytes_left;
+      if (!pb_read(&sub, (pb_byte_t *)out->id, length) ||
+          !pb_close_string_substream(&input, &sub))
         return false;
-    } else if (!pb_skip_field(in, wire))
+      out->id[length] = '\0';
+      out->id_seen = true;
+    } else if (tag == 2u) {
+      uint32_t hwd = 0u;
+      if (out->hwd_seen || wire != PB_WT_VARINT ||
+          !pb_decode_varint32(&input, &hwd))
+        return false;
+      out->hwd = (gizclaw_rpc_v1_ClientHwd)hwd;
+      out->hwd_seen = true;
+    } else if (tag == 3u && write) {
+      pb_istream_t sub;
+      if (out->payload_seen || wire != PB_WT_STRING ||
+          !pb_make_string_substream(&input, &sub) ||
+          sub.bytes_left == 0u || sub.bytes_left > sizeof(out->payload))
+        return false;
+      out->payload_len = sub.bytes_left;
+      if (!pb_read(&sub, out->payload, out->payload_len) ||
+          !pb_close_string_substream(&input, &sub))
+        return false;
+      out->payload_seen = true;
+    } else if (!pb_skip_field(&input, wire))
       return false;
   }
-  return true;
+  return out->id_seen && out->hwd_seen && id_valid(out->id) &&
+         out->hwd >= gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_WIFI &&
+         out->hwd <= gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_SPEAKER &&
+         (!write || out->payload_seen);
 }
 
-static void from_wire(const gizclaw_rpc_v1_MhsValue *wire,
-                      h2_gizclaw_mhs_value_t *v) {
-  memset(v, 0, sizeof(*v));
-  switch (wire->which_value) {
-  case gizclaw_rpc_v1_MhsValue_bool_value_tag:
-    v->kind = H2_GIZCLAW_MHS_BOOL;
-    v->value.b = wire->value.bool_value;
-    break;
-  case gizclaw_rpc_v1_MhsValue_int_value_tag:
-    v->kind = H2_GIZCLAW_MHS_INT;
-    v->value.i = wire->value.int_value;
-    break;
-  case gizclaw_rpc_v1_MhsValue_double_value_tag:
-    v->kind = H2_GIZCLAW_MHS_DOUBLE;
-    v->value.d = wire->value.double_value;
-    break;
-  case gizclaw_rpc_v1_MhsValue_string_value_tag:
-    v->kind = H2_GIZCLAW_MHS_STRING;
-    memcpy(v->value.s, wire->value.string_value, sizeof(v->value.s));
-    break;
+static const pb_msgdesc_t *read_fields(gizclaw_rpc_v1_ClientHwd hwd) {
+  switch (hwd) {
+  case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_WIFI:
+    return gizclaw_rpc_v1_WifiHwdReadResponse_fields;
+  case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_BLE:
+    return gizclaw_rpc_v1_BleHwdReadResponse_fields;
+  case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_MODEM:
+    return gizclaw_rpc_v1_ModemHwdReadResponse_fields;
+  case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_BATTERY:
+    return gizclaw_rpc_v1_BatteryHwdReadResponse_fields;
+  case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_MIC:
+    return gizclaw_rpc_v1_MicHwdReadResponse_fields;
+  case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY:
+    return gizclaw_rpc_v1_DisplayHwdReadResponse_fields;
+  case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_LED:
+    return gizclaw_rpc_v1_LedHwdReadResponse_fields;
+  case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_SPEAKER:
+    return gizclaw_rpc_v1_SpeakerHwdReadResponse_fields;
   default:
-    break;
-  }
-}
-static void to_wire(const h2_gizclaw_mhs_value_t *v,
-                    gizclaw_rpc_v1_MhsValue *wire) {
-  memset(wire, 0, sizeof(*wire));
-  switch (v->kind) {
-  case H2_GIZCLAW_MHS_BOOL:
-    wire->which_value = gizclaw_rpc_v1_MhsValue_bool_value_tag;
-    wire->value.bool_value = v->value.b;
-    break;
-  case H2_GIZCLAW_MHS_INT:
-    wire->which_value = gizclaw_rpc_v1_MhsValue_int_value_tag;
-    wire->value.int_value = v->value.i;
-    break;
-  case H2_GIZCLAW_MHS_DOUBLE:
-    wire->which_value = gizclaw_rpc_v1_MhsValue_double_value_tag;
-    wire->value.double_value = v->value.d;
-    break;
-  case H2_GIZCLAW_MHS_STRING:
-    wire->which_value = gizclaw_rpc_v1_MhsValue_string_value_tag;
-    memcpy(wire->value.string_value, v->value.s, sizeof(v->value.s));
-    break;
+    return NULL;
   }
 }
 
-typedef struct mhs_call {
-  union {
-    gizclaw_rpc_v1_ClientMhsV0ReadRequest read;
-    gizclaw_rpc_v1_ClientMhsV0WriteRequest write;
-  } request;
-  gizclaw_rpc_v1_ClientMhsV0WriteResponse reply;
-} mhs_call_t;
+static const pb_msgdesc_t *write_fields(gizclaw_rpc_v1_ClientHwd hwd) {
+  switch (hwd) {
+  case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY:
+    return gizclaw_rpc_v1_DisplayHwdWriteRequest_fields;
+  case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_LED:
+    return gizclaw_rpc_v1_LedHwdWriteRequest_fields;
+  case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_SPEAKER:
+    return gizclaw_rpc_v1_SpeakerHwdWriteRequest_fields;
+  default:
+    return NULL;
+  }
+}
 
-static int execute(const h2_gizclaw_mhs_state_t *states, size_t count,
-                   bool write, mhs_call_t *call) {
-  const h2_gizclaw_mhs_state_t *bound[32] = {0};
-  size_t n = write ? call->request.write.states_count
-                   : call->request.read.states_count;
-  if (!n)
-    return H2_PAL_ERR_INVALID_ARG;
-  call->reply.states_count = (pb_size_t)n;
-  for (size_t i = 0; i < n; ++i) {
-    const char *device = write ? call->request.write.states[i].device_id
-                               : call->request.read.states[i].device_id;
-    const char *key = write ? call->request.write.states[i].state
-                            : call->request.read.states[i].state;
-    if (!key_valid(device) || !key_valid(key))
-      return H2_PAL_ERR_INVALID_ARG;
-    for (size_t j = 0; j < i; ++j)
-      if (!strcmp(device, call->reply.states[j].device_id) &&
-          !strcmp(key, call->reply.states[j].state))
-        return H2_PAL_ERR_INVALID_ARG;
-    for (size_t j = 0; j < count; ++j)
-      if (!strcmp(device, states[j].device_id) &&
-          !strcmp(key, states[j].state)) {
-        bound[i] = &states[j];
-        break;
-      }
-    if (!bound[i])
-      return H2_PAL_ERR_NOT_FOUND;
-    strcpy(call->reply.states[i].device_id, device);
-    strcpy(call->reply.states[i].state, key);
-    call->reply.states[i].has_value = true;
-    if (write) {
-      h2_gizclaw_mhs_value_t value;
-      from_wire(&call->request.write.states[i].value, &value);
-      if (!call->request.write.states[i].has_value || !bound[i]->write ||
-          !value_valid(&value, bound[i]->kind))
-        return H2_PAL_ERR_INVALID_ARG;
-    }
+static bool write_valid(gizclaw_rpc_v1_ClientHwd hwd,
+                        const h2_gizclaw_mhs_write_t *request) {
+  switch (hwd) {
+  case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY:
+    return (request->display.has_brightness_percent ||
+            request->display.has_enabled ||
+            request->display.has_off_timeout_ms) &&
+           (!request->display.has_brightness_percent ||
+            request->display.brightness_percent <= 100u);
+  case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_LED:
+    return (request->led.has_enabled ||
+            request->led.has_brightness_percent) &&
+           (!request->led.has_brightness_percent ||
+            request->led.brightness_percent <= 100u);
+  case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_SPEAKER:
+    return (request->speaker.has_volume_percent ||
+            request->speaker.has_muted) &&
+           (!request->speaker.has_volume_percent ||
+            request->speaker.volume_percent <= 100u);
+  default:
+    return false;
   }
-  /* Check the complete batch before invoking any driver write. */
-  if (write)
-    for (size_t i = 0; i < n; ++i) {
-      h2_gizclaw_mhs_value_t value;
-      from_wire(&call->request.write.states[i].value, &value);
-      if (bound[i]->check) {
-        int rc = bound[i]->check(bound[i]->user, &value);
-        if (rc != H2_PAL_OK)
-          return rc;
-      }
-    }
-  bool done[32] = {0};
-  for (size_t i = 0; i < n; ++i) {
-    if (done[i])
-      continue;
-    const h2_gizclaw_mhs_state_t *s = bound[i];
-    h2_gizclaw_mhs_value_t value = {.kind = s->kind},
-                           applied = {.kind = s->kind};
-    int rc;
-    if (write && s->write == speaker_write) {
-      h2_runtime_system_audio_state_t snapshot = {0};
-      rc = speaker_snapshot(s->user, &snapshot);
-      if (rc != H2_PAL_OK)
-        return rc;
-      for (size_t j = i; j < n; ++j)
-        if (bound[j]->write == speaker_write && bound[j]->user == s->user) {
-          from_wire(&call->request.write.states[j].value, &value);
-          if (value.kind == H2_GIZCLAW_MHS_INT)
-            snapshot.volume_percent = (uint32_t)value.value.i;
-          else
-            snapshot.muted = value.value.b;
-        }
-      rc = speaker_apply(s->user, snapshot.volume_percent, snapshot.muted);
-      if (rc != H2_PAL_OK)
-        return rc;
-      for (size_t j = i; j < n; ++j)
-        if (bound[j]->write == speaker_write && bound[j]->user == s->user) {
-          applied = (h2_gizclaw_mhs_value_t){.kind = bound[j]->kind};
-          rc = speaker_read(s->user, &applied);
-          if (rc != H2_PAL_OK)
-            return rc;
-          if (!value_valid(&applied, bound[j]->kind))
-            return H2_PAL_ERR_IO;
-          to_wire(&applied, &call->reply.states[j].value);
-          done[j] = true;
-        }
-      continue;
-    }
-    if (write) {
-      from_wire(&call->request.write.states[i].value, &value);
-      rc = s->write(s->user, &value, &applied);
-    } else
-      rc = s->read(s->user, &applied);
-    if (rc != H2_PAL_OK)
-      return rc;
-    if (!value_valid(&applied, s->kind))
-      return H2_PAL_ERR_IO;
-    to_wire(&applied, &call->reply.states[i].value);
+}
+
+static bool read_valid(gizclaw_rpc_v1_ClientHwd hwd,
+                       const h2_gizclaw_mhs_read_t *value) {
+  switch (hwd) {
+  case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_WIFI:
+    return (value->wifi.has_connected || value->wifi.has_ssid ||
+            value->wifi.has_bssid || value->wifi.has_rssi_dbm ||
+            value->wifi.has_ip) &&
+           (!value->wifi.has_ssid ||
+            memchr(value->wifi.ssid, '\0', sizeof(value->wifi.ssid)) != NULL) &&
+           (!value->wifi.has_bssid ||
+            memchr(value->wifi.bssid, '\0', sizeof(value->wifi.bssid)) != NULL) &&
+           (!value->wifi.has_ip ||
+            memchr(value->wifi.ip, '\0', sizeof(value->wifi.ip)) != NULL);
+  case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_BLE:
+    return value->ble.has_powered || value->ble.has_advertising ||
+           value->ble.has_scanning || value->ble.has_connection_count;
+  case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_MODEM:
+    return (value->modem.has_sim_present || value->modem.has_registered ||
+            value->modem.has_rat || value->modem.has_rssi_dbm ||
+            value->modem.has_signal_level) &&
+           (!value->modem.has_rat ||
+            memchr(value->modem.rat, '\0', sizeof(value->modem.rat)) != NULL);
+  case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_BATTERY:
+    return (value->battery.has_percent || value->battery.has_charging ||
+            value->battery.has_voltage_mv) &&
+           (!value->battery.has_percent ||
+            (isfinite(value->battery.percent) &&
+             value->battery.percent >= 0.0 &&
+             value->battery.percent <= 100.0)) &&
+           (!value->battery.has_voltage_mv ||
+            (isfinite(value->battery.voltage_mv) &&
+             value->battery.voltage_mv >= 0.0));
+  case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY:
+    return (value->display.has_brightness_percent ||
+            value->display.has_enabled ||
+            value->display.has_off_timeout_ms) &&
+           (!value->display.has_brightness_percent ||
+            value->display.brightness_percent <= 100u);
+  case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_LED:
+    return (value->led.has_enabled || value->led.has_brightness_percent) &&
+           (!value->led.has_brightness_percent ||
+            value->led.brightness_percent <= 100u);
+  case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_SPEAKER:
+    return (value->speaker.has_volume_percent || value->speaker.has_muted) &&
+           (!value->speaker.has_volume_percent ||
+            value->speaker.volume_percent <= 100u);
+  case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_MIC:
+    return value->mic.has_available || value->mic.has_capturing;
+  default:
+    return false;
   }
-  return H2_PAL_OK;
 }
 
 int h2_gizclaw_mhs_request_internal(
-    const h2_gizclaw_mhs_state_t *states, size_t count, bool write,
+    const h2_gizclaw_mhs_device_t *devices, size_t count, bool write,
     const h2_pal_mem_api_t *allocator, h2_gizclaw_rpc_bytes_t request,
     h2_gizclaw_rpc_provider_response_t *response, uint8_t **storage) {
-  if (!response || !storage || !allocator || (request.len && !request.data))
+  if (response == NULL || storage == NULL || allocator == NULL ||
+      (count != 0u && devices == NULL))
     return H2_PAL_ERR_INVALID_ARG;
   *storage = NULL;
   memset(response, 0, sizeof(*response));
-  pb_istream_t input = pb_istream_from_buffer(request.data, request.len);
-  if (!wire_text_valid(&input, 0, write))
+  mhs_request_t decoded = {0};
+  if (!decode_request(request, write, &decoded))
     return H2_PAL_ERR_INVALID_ARG;
-  mhs_call_t *call = h2_pal_mem_alloc(allocator, sizeof(*call));
-  if (!call)
-    return H2_PAL_ERR_NO_MEMORY;
-  memset(call, 0, sizeof(*call));
-  input = pb_istream_from_buffer(request.data, request.len);
-  const pb_msgdesc_t *fields =
-      write ? gizclaw_rpc_v1_ClientMhsV0WriteRequest_fields
-            : gizclaw_rpc_v1_ClientMhsV0ReadRequest_fields;
-  int rc = pb_decode(&input, fields, &call->request)
-               ? execute(states, count, write, call)
-               : H2_PAL_ERR_INVALID_ARG;
-  if (rc == H2_PAL_OK) {
-    size_t size = 0;
-    fields = write ? gizclaw_rpc_v1_ClientMhsV0WriteResponse_fields
-                   : gizclaw_rpc_v1_ClientMhsV0ReadResponse_fields;
-    if (!pb_get_encoded_size(&size, fields, &call->reply))
-      rc = H2_PAL_ERR_IO;
-    else if (!(*storage = h2_pal_mem_alloc(allocator, size)))
-      rc = H2_PAL_ERR_NO_MEMORY;
-    else {
-      pb_ostream_t output = pb_ostream_from_buffer(*storage, size);
-      if (!pb_encode(&output, fields, &call->reply))
-        rc = H2_PAL_ERR_IO;
-      else
-        response->payload =
-            (h2_gizclaw_rpc_bytes_t){*storage, output.bytes_written};
+  const h2_gizclaw_mhs_device_t *device = NULL;
+  for (size_t i = 0u; i < count; ++i)
+    if (strcmp(devices[i].id, decoded.id) == 0) {
+      device = &devices[i];
+      break;
     }
+  if (device == NULL)
+    return H2_PAL_ERR_NOT_FOUND;
+  if (decoded.hwd != device->hwd)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_mhs_read_t applied = {0};
+  if (write) {
+    const pb_msgdesc_t *fields = write_fields(decoded.hwd);
+    if (fields == NULL || device->write == NULL)
+      return H2_PAL_ERR_UNSUPPORTED;
+    h2_gizclaw_mhs_write_t patch = {0};
+    pb_istream_t input = pb_istream_from_buffer(decoded.payload,
+                                                 decoded.payload_len);
+    if (!pb_decode(&input, fields, &patch) ||
+        !write_valid(decoded.hwd, &patch))
+      return H2_PAL_ERR_INVALID_ARG;
+    h2_pal_result_t rc = device->write(device->user, &patch, &applied);
+    if (rc != H2_PAL_OK)
+      return rc;
+  } else {
+    h2_pal_result_t rc = device->read(device->user, &applied);
+    if (rc != H2_PAL_OK)
+      return rc;
   }
-  h2_pal_mem_free(allocator, call);
-  if (rc != H2_PAL_OK) {
+  if (!read_valid(decoded.hwd, &applied))
+    return H2_PAL_ERR_IO;
+  const pb_msgdesc_t *fields = read_fields(decoded.hwd);
+  size_t inner_size = 0u;
+  uint8_t inner[HWD_PAYLOAD_MAX];
+  if (fields == NULL || !pb_get_encoded_size(&inner_size, fields, &applied) ||
+      inner_size > sizeof(inner))
+    return H2_PAL_ERR_IO;
+  pb_ostream_t inner_out = pb_ostream_from_buffer(inner, inner_size);
+  if (!pb_encode(&inner_out, fields, &applied))
+    return H2_PAL_ERR_IO;
+  if (write) {
+    const pb_msgdesc_t *reply_fields = NULL;
+    uint8_t nested[HWD_PAYLOAD_MAX];
+    size_t nested_size = 0u;
+    switch (decoded.hwd) {
+    case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY: {
+      gizclaw_rpc_v1_DisplayHwdWriteResponse reply = {
+          .has_applied = true, .applied = applied.display};
+      reply_fields = gizclaw_rpc_v1_DisplayHwdWriteResponse_fields;
+      if (!pb_get_encoded_size(&nested_size, reply_fields, &reply) ||
+          nested_size > sizeof(nested))
+        return H2_PAL_ERR_IO;
+      pb_ostream_t stream = pb_ostream_from_buffer(nested, nested_size);
+      if (!pb_encode(&stream, reply_fields, &reply))
+        return H2_PAL_ERR_IO;
+      break;
+    }
+    case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_LED: {
+      gizclaw_rpc_v1_LedHwdWriteResponse reply = {
+          .has_applied = true, .applied = applied.led};
+      reply_fields = gizclaw_rpc_v1_LedHwdWriteResponse_fields;
+      if (!pb_get_encoded_size(&nested_size, reply_fields, &reply) ||
+          nested_size > sizeof(nested))
+        return H2_PAL_ERR_IO;
+      pb_ostream_t stream = pb_ostream_from_buffer(nested, nested_size);
+      if (!pb_encode(&stream, reply_fields, &reply))
+        return H2_PAL_ERR_IO;
+      break;
+    }
+    case gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_SPEAKER: {
+      gizclaw_rpc_v1_SpeakerHwdWriteResponse reply = {
+          .has_applied = true, .applied = applied.speaker};
+      reply_fields = gizclaw_rpc_v1_SpeakerHwdWriteResponse_fields;
+      if (!pb_get_encoded_size(&nested_size, reply_fields, &reply) ||
+          nested_size > sizeof(nested))
+        return H2_PAL_ERR_IO;
+      pb_ostream_t stream = pb_ostream_from_buffer(nested, nested_size);
+      if (!pb_encode(&stream, reply_fields, &reply))
+        return H2_PAL_ERR_IO;
+      break;
+    }
+    default:
+      return H2_PAL_ERR_UNSUPPORTED;
+    }
+    memcpy(inner, nested, nested_size);
+    inner_size = nested_size;
+  }
+  pb_ostream_t sizing = PB_OSTREAM_SIZING;
+  if (!pb_encode_tag(&sizing, PB_WT_STRING, 1u) ||
+      !pb_encode_string(&sizing, inner, inner_size))
+    return H2_PAL_ERR_IO;
+  *storage = h2_pal_mem_alloc(allocator, sizing.bytes_written);
+  if (*storage == NULL)
+    return H2_PAL_ERR_NO_MEMORY;
+  pb_ostream_t output = pb_ostream_from_buffer(*storage, sizing.bytes_written);
+  if (!pb_encode_tag(&output, PB_WT_STRING, 1u) ||
+      !pb_encode_string(&output, inner, inner_size)) {
     h2_pal_mem_free(allocator, *storage);
     *storage = NULL;
+    return H2_PAL_ERR_IO;
   }
-  return rc;
+  response->payload = (h2_gizclaw_rpc_bytes_t){*storage,
+                                                 output.bytes_written};
+  return H2_PAL_OK;
 }

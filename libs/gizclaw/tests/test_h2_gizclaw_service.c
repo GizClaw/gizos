@@ -24,7 +24,7 @@
 #include "h2_runtime.h"
 #include "payload/ai.pb.h"
 #include "payload/firmware.pb.h"
-#include "payload/mhs.pb.h"
+#include "payload/mhs_v0.pb.h"
 #include "payload/social.pb.h"
 #include "payload/system.pb.h"
 #include "payload/workspace.pb.h"
@@ -2522,24 +2522,42 @@ static bool tool_listed(h2_gizclaw_service_t *service, h2_gizclaw_tool_t tool) {
   return false;
 }
 static int device_mhs(h2_gizclaw_service_t *service, bool write,
-                      const pb_msgdesc_t *fields, const void *message,
-                      gizclaw_rpc_v1_ClientMhsV0WriteResponse *out) {
-  uint8_t bytes[2048];
+                      const char *id, gizclaw_rpc_v1_ClientHwd hwd,
+                      const pb_msgdesc_t *payload_fields, const void *payload,
+                      const pb_msgdesc_t *reply_fields, void *reply) {
+  uint8_t bytes[256], inner[128];
   pb_ostream_t encoder = pb_ostream_from_buffer(bytes, sizeof(bytes));
-  assert(pb_encode(&encoder, fields, message));
-  h2_gizclaw_rpc_provider_response_t response;
+  assert(pb_encode_tag(&encoder, PB_WT_STRING, 1u));
+  assert(pb_encode_string(&encoder, (const pb_byte_t *)id, strlen(id)));
+  assert(pb_encode_tag(&encoder, PB_WT_VARINT, 2u));
+  assert(pb_encode_varint(&encoder, (uint64_t)hwd));
+  if (write) {
+    pb_ostream_t inner_encoder = pb_ostream_from_buffer(inner, sizeof(inner));
+    assert(payload_fields != NULL && payload != NULL);
+    assert(pb_encode(&inner_encoder, payload_fields, payload));
+    assert(pb_encode_tag(&encoder, PB_WT_STRING, 3u));
+    assert(pb_encode_string(&encoder, inner, inner_encoder.bytes_written));
+  }
+  h2_gizclaw_rpc_provider_response_t response = {0};
   uint8_t *storage = NULL;
   int rc = h2_gizclaw_mhs_request_internal(
-      service->client_config.mhs_states, service->client_config.mhs_state_count,
-      write, service->client_config.allocator,
+      service->client_config.mhs_devices,
+      service->client_config.mhs_device_count, write,
+      service->client_config.allocator,
       (h2_gizclaw_rpc_bytes_t){bytes, encoder.bytes_written}, &response,
       &storage);
   if (rc == H2_PAL_OK) {
-    memset(out, 0, sizeof(*out));
     pb_istream_t decoder =
         pb_istream_from_buffer(response.payload.data, response.payload.len);
-    assert(pb_decode(&decoder, gizclaw_rpc_v1_ClientMhsV0WriteResponse_fields,
-                     out));
+    pb_wire_type_t wire;
+    uint32_t tag = 0u;
+    bool eof = false;
+    assert(pb_decode_tag(&decoder, &wire, &tag, &eof));
+    assert(wire == PB_WT_STRING && tag == 1u);
+    pb_istream_t nested;
+    assert(pb_make_string_substream(&decoder, &nested));
+    assert(pb_decode(&nested, reply_fields, reply));
+    assert(pb_close_string_substream(&decoder, &nested));
   }
   h2_pal_mem_free(service->client_config.allocator, storage);
   return rc;
@@ -2741,18 +2759,14 @@ static void test_device_provider_pal_and_player(void) {
                      &response) == 0);
   assert(response.on_complete != NULL);
   response.on_complete(response.complete_user, H2_PAL_ERR_CLOSED);
-  static gizclaw_rpc_v1_ClientMhsV0ReadRequest wifi_request;
-  wifi_request = (gizclaw_rpc_v1_ClientMhsV0ReadRequest){.states_count = 2};
-  strcpy(wifi_request.states[0].device_id, "wifi.main");
-  strcpy(wifi_request.states[0].state, "connected");
-  strcpy(wifi_request.states[1].device_id, "wifi.main");
-  strcpy(wifi_request.states[1].state, "ip");
-  static gizclaw_rpc_v1_ClientMhsV0WriteResponse mhs_reply;
-  assert(device_mhs(service, false,
-                    gizclaw_rpc_v1_ClientMhsV0ReadRequest_fields, &wifi_request,
-                    &mhs_reply) == H2_PAL_OK);
-  assert(mhs_reply.states[0].value.value.bool_value);
-  assert(!strcmp(mhs_reply.states[1].value.value.string_value, "192.0.2.1"));
+  gizclaw_rpc_v1_WifiHwdReadResponse wifi_hwd = {0};
+  assert(device_mhs(service, false, "wifi.main",
+                    gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_WIFI,
+                    NULL, NULL,
+                    gizclaw_rpc_v1_WifiHwdReadResponse_fields,
+                    &wifi_hwd) == H2_PAL_OK);
+  assert(wifi_hwd.has_connected && wifi_hwd.connected &&
+         wifi_hwd.has_ip && !strcmp(wifi_hwd.ip, "192.0.2.1"));
   pb_istream_t wifi_input;
   gizclaw_rpc_v1_ClientWifiSavedListRequest saved_request = {0};
   assert(device_call(service, H2_GIZCLAW_TOOL_WIFI_SAVED_LIST,
@@ -2777,26 +2791,22 @@ static void test_device_provider_pal_and_player(void) {
   assert(device_call(service, H2_GIZCLAW_TOOL_WIFI_SAVED_FORGET,
                      gizclaw_rpc_v1_ClientWifiSavedForgetRequest_fields,
                      &forget, &response) == H2_GIZCLAW_RPC_ERROR_NOT_FOUND);
-  static gizclaw_rpc_v1_ClientMhsV0WriteRequest volume;
-  volume = (gizclaw_rpc_v1_ClientMhsV0WriteRequest){.states_count = 2};
-  strcpy(volume.states[0].device_id, "speaker.main");
-  strcpy(volume.states[0].state, "volume");
-  volume.states[0].has_value = true;
-  volume.states[0].value.which_value = gizclaw_rpc_v1_MhsValue_int_value_tag;
-  volume.states[0].value.value.int_value = 42;
-  strcpy(volume.states[1].device_id, "speaker.main");
-  strcpy(volume.states[1].state, "muted");
-  volume.states[1].has_value = true;
-  volume.states[1].value.which_value = gizclaw_rpc_v1_MhsValue_bool_value_tag;
-  volume.states[1].value.value.bool_value = true;
+  gizclaw_rpc_v1_SpeakerHwdWriteRequest volume = {
+      .has_volume_percent = true, .volume_percent = 42u,
+      .has_muted = true, .muted = true};
+  gizclaw_rpc_v1_SpeakerHwdWriteResponse speaker_reply = {0};
   unsigned volume_sets_before = state.volume_sets;
-  assert(device_mhs(service, true,
-                    gizclaw_rpc_v1_ClientMhsV0WriteRequest_fields, &volume,
-                    &mhs_reply) == H2_PAL_OK);
+  assert(device_mhs(service, true, "speaker.main",
+                    gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_SPEAKER,
+                    gizclaw_rpc_v1_SpeakerHwdWriteRequest_fields, &volume,
+                    gizclaw_rpc_v1_SpeakerHwdWriteResponse_fields,
+                    &speaker_reply) == H2_PAL_OK);
   assert(state.volume_sets == volume_sets_before + 1u);
   assert(state.volume == 0);
-  assert(mhs_reply.states[0].value.value.int_value == 42 &&
-         mhs_reply.states[1].value.value.bool_value);
+  assert(speaker_reply.has_applied &&
+         speaker_reply.applied.has_volume_percent &&
+         speaker_reply.applied.volume_percent == 42u &&
+         speaker_reply.applied.has_muted && speaker_reply.applied.muted);
   gizclaw_rpc_v1_ClientDeviceStatusGetResponse status = {0};
   pb_istream_t input;
   /* A local Runtime/PAL adjustment must supersede the preceding RPC mute. */
@@ -2809,10 +2819,12 @@ static void test_device_provider_pal_and_player(void) {
   memset(&status, 0, sizeof(status));
   assert(pb_decode(&input, gizclaw_rpc_v1_ClientDeviceStatusGetResponse_fields, &status));
   assert(status.value.has_volume && status.value.volume == 73 && !status.value.muted);
-  volume.states[0].value.value.int_value = 101;
-  assert(device_mhs(service, true,
-                    gizclaw_rpc_v1_ClientMhsV0WriteRequest_fields, &volume,
-                    &mhs_reply) == H2_PAL_ERR_INVALID_ARG);
+  volume.volume_percent = 101u;
+  assert(device_mhs(service, true, "speaker.main",
+                    gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_SPEAKER,
+                    gizclaw_rpc_v1_SpeakerHwdWriteRequest_fields, &volume,
+                    gizclaw_rpc_v1_SpeakerHwdWriteResponse_fields,
+                    &speaker_reply) == H2_PAL_ERR_INVALID_ARG);
   static gizclaw_rpc_v1_ClientDeviceAudioPlayerPlaylistSetRequest playlist;
   memset(&playlist, 0, sizeof(playlist)); playlist.items_count = 1;
   strcpy(playlist.items[0].url, "https://example.test/music.ogg");

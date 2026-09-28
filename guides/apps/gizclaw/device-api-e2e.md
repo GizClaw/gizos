@@ -1,6 +1,6 @@
 # 设备 MHS 与 tool/v0 验收
 
-独立的 `gizclaw_h2peer_device_live_test` 使用与其余 GizClaw E2E 相同的 fixture、注册和清理流程，连接测试 Peer，用设备身份创建 API key，通过 HTTPS 调用库内置的 MHS/tool-v0 provider。同一 case 也包含在完整 GizClaw E2E 中；独立 lane 不替代完整验收。Server 必须支持 SDK 0.23.1 协议，绑定的 RuntimeProfile manifest 必须声明可写的 `speaker.main/volume`（int，0–100）与 `speaker.main/muted`（bool）；注册本地 state 不会发布 manifest。
+独立的 `gizclaw_h2peer_device_live_test` 使用与其余 GizClaw E2E 相同的 fixture、注册和清理流程，连接测试 Peer，用设备身份创建 API key，通过 HTTPS 调用库内置的 MHS/tool-v0 provider。同一 case 也包含在完整 GizClaw E2E 中；独立 lane 不替代完整验收。Server 必须支持 SDK 0.23.2 协议，绑定的 RuntimeProfile manifest 只需声明 `{id: speaker.main, hwd: speaker}`；注册本地 HWD 不会发布 manifest。
 
 ```sh
 export H2_GIZCLAW_E2E_REGISTRATION_TOKEN='<E2E registration token>'
@@ -12,7 +12,7 @@ bazel test //projects/e2e/targets/cc_test/gizclaw:gizclaw_h2peer_device_live_tes
 
 API URL 与音频 URL 显式传入；API key 只保存在测试内存，不输出 secret。设备通过 PAL HTTP 下载音频，Library 按文件字节识别并解码 Ogg/Opus、MP3 或 WAV，再写入按 PCM 时长消费的虚拟 PAL Audio sink。先运行本地 player/OTA 入口：playlist_set/repeat_set 后立即用 playlist_snapshot 回读条目数、标题与 revision，并确认拒绝越界写入和非法模式后状态不变。
 
-远程音量通过 `PATCH /gizclaw/v1/device/mhs/v0/states` 一批写入 volume/muted，随后读取 Audio PAL 确认实际音量。播放列表、循环、播放、停止与 OTA 通过 `POST /gizclaw/v1/device/tool/v0/invoke`，body 包含 numeric registry 对应的工具名称与 typed args（例如 `{"tool":"audioplayer.play","args":{"index":0}}`）。成功结果位于 `result`：playlist.set 的 playlist_length 为 `result.playlist_length`，stop 的状态为 `result.state`。非法 playlist URL 必须在 Server 上被拒绝。
+远程音量通过 `POST /gizclaw/v1/device/mhs/v0/write` 对 `speaker.main` 写入 speaker HWD protobuf 对应的 `volume_percent` 和 `muted`，再通过 `POST /device/mhs/v0/read` 和 Audio PAL 回读实际音量。播放列表、循环、播放、停止与 OTA 通过 `POST /gizclaw/v1/device/tool/v0/invoke`，body 包含 numeric registry 对应的工具名称与 typed args（例如 `{"tool":"audioplayer.play","args":{"index":0}}`）。成功结果位于 `result`：playlist.set 的 playlist_length 为 `result.playlist_length`，stop 的状态为 `result.state`。非法 playlist URL 必须在 Server 上被拒绝。
 
 播放进度和 OTA 结果仍读取 `/device/status` 的 authoritative telemetry snapshot，不把工具接受回复当作执行完成。OTA 下载真实配置的 package 到计数 Stage sink，在 finish 故意拒绝校验，再检查 failed telemetry；该 sink 不写物理分区或重启。结束时撤销 API key、删除测试 Peer 并关闭 Service task。
 
@@ -62,11 +62,11 @@ bazel build --config=esp32s3 --define=H2_GIZCLAW_E2E_DEVICE_ONLY=ON \
 
 SDK 通过 `client.tool.v0.list`（136）返回实际注册的 ClientTool 数字，并通过 `client.rpc.methods.list`（137）返回支持的 RPC family/version 数字。HTTP 控制端先用 `GET /device/tool/v0/tools` 发现工具，再调用 tool/v0/invoke。GizOS 根据 PAL 和产品 hooks 注册内置工具；DEVICE_FIND 与 SOCIAL_PING 由产品的静态 tool_handlers 表提供。旧的独立设备 RPC、字符串方法列表与 DeviceSettings hooks 已移除。
 
-MHS state 表在初始化时借用到 Service deinit，产品用 read/check/write callback 提供亮度、locale 等状态。一次请求必须有 1–32 个唯一 key；写入先验证完整批次和全部 check，再执行 write。预检拒绝时硬件不变；应用中途出错不回滚，调用方重新 read。未知 key 返回 NOT_FOUND，写只读项或非法值返回 INVALID_ARGUMENT，失败的前置条件返回 FAILED_PRECONDITION。输出使用 callback 报告的实际值。详细合同见 [GizClaw 开发指南](/zh/developing/gizclaw#设备-provider)。
+MHS HWD 设备表在初始化时借用到 Service deinit。每个实例只注册唯一的 `id` 和官方 `hwd`，并提供读回调和可选写回调；字段的类型、presence 与读写结构由 0.23.2 的 `mhs_v0.proto` 定义。一次请求只操作一个实例，写入仅修改 protobuf 中 present 的字段，回包包含真实应用后的快照。未知实例返回 NOT_FOUND，HWD 不匹配和非法字段返回 INVALID_ARGUMENT，只读 HWD 的写请求返回 UNIMPLEMENTED。超时后不能假定硬件未变，须重新 read。详细合同见 [GizClaw 开发指南](/zh/developing/gizclaw#设备-provider)。
 
 Factory reset 与 run.workspace.set 作为 tool/v0 过程保留 typed 产品 hook。Library 校验 keep_network/name/kickoff，回复完成后才交接到产品 owner；响应失败或停止会取消待执行动作。Workspace 切换由产品在 App owner 上调用 h2_gizclaw_session_select，Library 不越过 Session。
 
-本地 `h2_gizclaw_protocol_test` 在 fake PAL 上向真实 SDK 输入 RPC frame，验证 SDK 工具列表、数字方法列表、已注册内置/产品工具调用、未安装工具与退休方法的 UNIMPLEMENTED，以及 MHS read/write 和 wire 错误映射。它保留 SDK 的完整 decode/dispatch/response encode 路径，不用本地数组查询代替发现。`h2_gizclaw_mhs_test` 验证表和 wire 校验、precheck 零写入、实际生效值、partial apply 与分配失败清理。Service 测试继续覆盖播放器、OTA 和回复后的产品交接。协议测试不等于真实网络、manifest 配置、设备音质或恢复出厂验收；live suite 未配置的产品 hooks 需随产品另行验收。
+本地 `h2_gizclaw_protocol_test` 在 fake PAL 上向真实 SDK 输入 RPC frame，验证 SDK 工具列表、数字方法列表、已注册内置/产品工具调用、未安装工具与退休方法的 UNIMPLEMENTED，以及 MHS read/write 和 wire 错误映射。它保留 SDK 的完整 decode/dispatch/response encode 路径，不用本地数组查询代替发现。`h2_gizclaw_mhs_test` 验证实例表和 HWD wire 校验、非法值零写入、实际生效值及分配清理。Service 测试继续覆盖播放器、OTA 和回复后的产品交接。协议测试不等于真实网络、manifest 配置、设备音质或恢复出厂验收；live suite 未配置的产品 hooks 需随产品另行验收。
 
 ## Activity telemetry
 
