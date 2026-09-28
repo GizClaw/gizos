@@ -22,9 +22,9 @@ def certificate(directory, name, advertised):
     ca_key, ca = root / (name + '-ca.key'), root / (name + '-ca.pem')
     csr = root / (name + '.csr')
     extensions = root / (name + '.ext')
-    extensions.write_text('subjectAltName=DNS:localhost,IP:127.0.0.1,IP:' + str(ipaddress.ip_address(advertised)) + '\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\n')
+    extensions.write_text('subjectAltName=DNS:localhost,IP:127.0.0.1,IP:' + str(ipaddress.ip_address(advertised)) + '\nbasicConstraints=critical,CA:FALSE\nkeyUsage=critical,digitalSignature,keyEncipherment\nextendedKeyUsage=serverAuth\nsubjectKeyIdentifier=hash\nauthorityKeyIdentifier=keyid,issuer\n')
     commands = [
-        ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', str(ca_key), '-out', str(ca), '-days', '2', '-subj', '/CN=PAL HTTP E2E ' + name, '-addext', 'basicConstraints=critical,CA:TRUE'],
+        ['req', '-x509', '-newkey', 'rsa:2048', '-nodes', '-keyout', str(ca_key), '-out', str(ca), '-days', '2', '-subj', '/CN=PAL HTTP E2E ' + name, '-addext', 'basicConstraints=critical,CA:TRUE', '-addext', 'keyUsage=critical,keyCertSign,cRLSign', '-addext', 'subjectKeyIdentifier=hash', '-addext', 'authorityKeyIdentifier=keyid:always'],
         ['req', '-new', '-newkey', 'rsa:2048', '-nodes', '-keyout', str(key), '-out', str(csr), '-subj', '/CN=localhost'],
         ['x509', '-req', '-in', str(csr), '-CA', str(ca), '-CAkey', str(ca_key), '-CAcreateserial', '-out', str(cert), '-days', '2', '-extfile', str(extensions)],
     ]
