@@ -32,7 +32,7 @@ bazel build --config=bk7258 --lockfile_mode=off \
   //projects/e2e/targets/h2loader_tar_zlib/pal-json/bk7258_v3_202405:package
 ```
 
-2026-09-28 的 [结构化资格记录](qualification.json) 绑定了当前 public header、portable App、provider probe、移动平台包装层的源码 SHA-256，及各端实际 artifact、SDK 包、Bazel test log 和设备串口 log 的摘要。两块板的两个 boot ID 是宿主根据独立 reboot 命令与原始 log 摘要分配的观测 ID，不冒充设备内部随机 run ID。
+本次 [结构化资格记录](qualification.json) 绑定了当前 public header、portable App、provider probe、移动平台包装层的源码 SHA-256，及各端实际 artifact、SDK 包、Bazel test log 和设备串口 log 的摘要。各块板的 boot ID 是宿主根据独立 reboot 命令与原始 log 摘要分配的观测 ID，不冒充设备内部随机 run ID。资格或 provider teardown 失败时，launcher 留下明确失败标记并保持 App 未确认；只有完整通过且 H2Loader 确认成功后才输出 `H2_JSON_READY rc=0 confirm=0`。
 
 | 平台 | 本次实测 |
 | --- | --- |
@@ -41,6 +41,6 @@ bazel build --config=bk7258 --lockfile_mode=off \
 | iOS 26.5 Simulator / Swift Package | 15/15 PASS，XCFramework provider 符号在 IPA 中可见，teardown=0 |
 | Android API 36 arm64 Emulator / AAR | 15/15 PASS，APK 与 AAR 的 `.so` 逐字节相同、工厂和 provider 符号公开，teardown=0 |
 | ESP32-S3 DevKit | 安装 boot 与独立正常 reboot 各 15/15 PASS；P1 保留、Stage empty、coredump blank |
-| BK7258 AP | 两次显式正常 reboot 各 15/15 PASS；P1 保留、Stage empty、原 32-byte coredump 前后相同 |
+| BK7258 AP | 安装 boot 及两次显式正常 reboot 各 15/15 PASS；P1 保留、Stage empty、原 32-byte coredump 前后相同 |
 
 BK7258 的逐点 allocator failure case 在该板上明显慢于其他端，整轮同步测试约需三分钟；这次资格只证明功能与清理，不声明性能。未来修改上述源码或 SDK 后，历史 receipt 不会自动证明新产物通过，必须重跑并更新摘要。

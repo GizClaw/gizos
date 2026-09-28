@@ -12,8 +12,8 @@
     "h2_yyjson_json_api",
     "h2_yyjson_json_destroy"
   ],
-  "observation_finished_at_utc": "2026-09-28T14:32:52.126304+00:00",
+  "observation_finished_at_utc": "2026-09-28T20:53:41.005256+00:00",
   "evidence_timezone": "UTC",
-  "app_sha256": "447216f5a9f76be376dc576aaf1bd7f6de254c25d17ce2bf790d730b5cf9c2a2",
+  "app_sha256": "7e0c63000298473e8114da9a4fa3629508d7ac20f586ebbf93509a593a2d7828",
   "sdk_sha256": "28d430311029f7bacb05b6d3de72b17d834e61a98cd1dad935007b9a093e1936"
 }

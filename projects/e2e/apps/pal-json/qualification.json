@@ -4,17 +4,17 @@
   "operations": 24,
   "cases": 15,
   "qualified": true,
-  "observed_at_utc": "2026-09-28T14:41:40.035224+00:00",
-  "base_main_commit": "e9aad739ae472770716ff0cb924161f2d6f1b45f",
+  "observed_at_utc": "2026-09-28T21:47:59.437008+00:00",
+  "base_main_commit": "9ecc46619fa04a5afddb9557edd11912fa32ca07",
   "source_sha256": {
     "libs/pal/include/h2/pal/os/h2_pal_json.h": "ca25ab951380d3bfeac9c9e3831370eafba1514e761f2f24fb6aa74f0f6e88fb",
     "libs/pal/providers/yyjson/src/h2_yyjson_json.c": "4417d2a0e6925281c57b71688e15c8b55e41b3128ffc10d17d33cae8fe91a372",
     "libs/pal/providers/ios/pal_core/BUILD.bazel": "91ceeb248e7d03c38797f66d333569063400217740c065eb9f4592a192c0dd52",
     "libs/pal/providers/android/pal_core/BUILD.bazel": "9d0912da389bc6252e7048639e11689816eda248d73630bd19383ac41f247bbf",
     "libs/pal/providers/android/pal_core/src/h2_android_json.c": "18b42553c0649437eaef4642bcf504620096a23648fd6a064f4f2fe453887fb1",
-    "projects/e2e/apps/pal-json/app/include/h2_pal_json_cases.inc": "d5a2efa70a7ea3be835e58b60db7d243009ee59542d34a469d0ef6856a9d0e6e",
+    "projects/e2e/apps/pal-json/app/include/h2_pal_json_cases.inc": "6565bdfd451b55bd618202f1d35b89c4af6e8fbee5c37e1dbb0d55dc90469877",
     "projects/e2e/apps/pal-json/app/include/h2_pal_json_e2e.h": "5465dcccd45300041bfef34c3c4df34b9e80bd891e91afb7414d246c58b3dee9",
-    "projects/e2e/apps/pal-json/app/src/h2_pal_json_e2e.c": "250ff7eb8bf9c8f947dd2a92a15f2562e13c11f729ef3e802d810edc29875486",
+    "projects/e2e/apps/pal-json/app/src/h2_pal_json_e2e.c": "e664abcef8a2d186f37b884252128cb4e0374ecbee5e4c502c3eeee61f42fc05",
     "projects/e2e/libs/pal-json-provider-probe/probe.c": "b080f8047ddda04bf3611f91067a51567d9db5e8046b3954a61caa8ed0aa9bae",
     "projects/e2e/libs/pal-json-mobile/mobile_runner.c": "b537936f9129ef0f155f1dd07aa1e45f4b168f01c50fcdc7dc6e1a286cb76a59",
     "projects/e2e/libs/pal-json-mobile/run_mobile.py": "a4b38eedbf8943797e0840851b3d2e75c592786b8bb989ca73cfc6138b7e948b",
@@ -23,8 +23,8 @@
     "projects/e2e/targets/pkg_tar/pal-json/main.c": "135018014837e0fa9b5765e6bd10bdaa06a3b872d5fcffa96da1c58fc587db77",
     "projects/e2e/targets/ios_application/pal-json/main.m": "a6d69a515699195cb6ee16064bddb4773f000863cd23a7a7cf4f837f21b591fd",
     "projects/e2e/targets/android_binary/pal-json/main.c": "329e81b4562f2b890ea0f2c87b7bd0694b6ac4089084576b7505de33cf925df0",
-    "projects/e2e/targets/h2loader_tar_zlib/pal-json/devkit/main/main.c": "2cb77bd5d7661c51a233b33ee35d63d81c49f853d20206f6cabcc85e284c7f97",
-    "projects/e2e/targets/h2loader_tar_zlib/pal-json/bk7258_v3_202405/ap/ap_main.c": "32c4922903511cf7944dc38288609013d74d00a5be60b845b1ec78afd3b4ad3b"
+    "projects/e2e/targets/h2loader_tar_zlib/pal-json/devkit/main/main.c": "4d6a16162656f248697b54e00a415b104f355a0396302fa973b3882fdd8f7ef5",
+    "projects/e2e/targets/h2loader_tar_zlib/pal-json/bk7258_v3_202405/ap/ap_main.c": "c14dfefa7dba17875d00b352f9b08213e7fb497b7633229d8fb9ae35ede26535"
   },
   "platforms": [
     {
@@ -34,43 +34,43 @@
       "evidence_sha256": "38c577343abbb4f381d87655825d181f31d09f33e5368225d63d9a988632ea52",
       "source_matches_current": true,
       "bazel_test_log_sha256": "948c50a09fb56d45e72628e85601c8c960f8ccaef136f4fe35af307c382f6462",
-      "artifact": "bazel-bin/projects/e2e/targets/cc_binary/pal-json/desktop_test",
-      "artifact_sha256": "d07c46345d9c00800eb4127333d6d034aa9418f6246bc009a8a61954ce29023d"
+      "artifact": "bazel-out/darwin_arm64-fastbuild/bin/projects/e2e/targets/cc_binary/pal-json/desktop_test",
+      "artifact_sha256": "b880441d481edc1a31586d2e835e47689936846660f9b0b39fa0d821d5d46085"
     },
     {
       "platform": "wasm",
       "status": "PASS",
       "evidence": "projects/e2e/targets/pkg_tar/pal-json/evidence/qualified.json",
-      "evidence_sha256": "17de7672f63334b6bafd1732dcf3419ede30dd5babb36d786a68d72bff60b446",
+      "evidence_sha256": "60289ce43f5755f8fa1caa6eb202fe14afa80c3b3d957eca56eca8cfdbd40791",
       "source_matches_current": true,
-      "bazel_test_log_sha256": "dbb933694196d06798b492c397c12fb88a7126ccc56e1f511beed14eff859148",
-      "artifact": "bazel-bin/projects/e2e/targets/pkg_tar/pal-json/pal-json.web.tar",
-      "artifact_sha256": "f16354673be4a1a81f00c4222693dd126dcd16a85ad809371b2af3dcd43cbe85"
+      "bazel_test_log_sha256": "4ccedcd5d2648e3d4fc89e785244868344492197e1f7b4d51f80edbab7235171",
+      "artifact": "bazel-out/darwin_arm64-fastbuild/bin/projects/e2e/targets/pkg_tar/pal-json/pal-json.web.tar",
+      "artifact_sha256": "50e4a1ba9c03a3f87cf2eb35d7621fe524189759a2b307178b071403cfd032cd"
     },
     {
       "platform": "ios-simulator",
       "status": "PASS",
       "evidence": "projects/e2e/targets/ios_application/pal-json/evidence/qualified.json",
-      "evidence_sha256": "84d1465568c84f8edeebe2d044d65a33f972e499b74554dfc312eafbe72702a3",
+      "evidence_sha256": "80d63a1a02fe75bda1081cc2cc123f190fa0851cb91b022f8c4271cb8efcfded",
       "source_matches_current": true,
       "bazel_test_log_sha256": "22e944a74d60a649c4c53abad06b74dabf7e4cc6818ff59540400b4c35af7589",
       "environment": "projects/e2e/targets/ios_application/pal-json/evidence/environment.json",
-      "environment_sha256": "f44452a0536bb9c156f999884065c233b6c99334e71afca423b39c7fc66c0868",
-      "app_sha256": "1a9d1987ec35eafca0cd19af0aab41ce7ab7724ac9bfc5067580d14161fe1b10",
+      "environment_sha256": "934d5bd2d2cc89ba7a3f52499a2de761e3f89bdf319daf7903428c7826b18665",
+      "app_sha256": "aadacf0acdbe9091d3061379a370c53d306ad534cc39cec3c44e0b349b46d21f",
       "sdk_sha256": "97242af49b14e484758ac4bcc92e36ca5c32a68db0c4da9f1ab61766628370db",
       "sdk_binary_sha256": "6dcb8a2a644c4b3fe49eca1677894ced8b6ee44b28d85b27505ce99c05dac0bc",
-      "ipa_executable_sha256": "4f82cb250f65ca8d10c9f4f9282cdc982d90ad5f27fb991bf15262f1e6530512"
+      "ipa_executable_sha256": "e262fcc9a511598e0a565065cd096bd77a1a81453161eb188016b89bb43f1977"
     },
     {
       "platform": "android-emulator",
       "status": "PASS",
       "evidence": "projects/e2e/targets/android_binary/pal-json/evidence/qualified.json",
-      "evidence_sha256": "5b63dfc43dbfe25e1fba6ed732854958edf0b64494f0a155097b49cbafb95ac8",
+      "evidence_sha256": "fae913efb9f77145bd485c8379532ab9fb62510eb888686ec1b879685db3530c",
       "source_matches_current": true,
       "bazel_test_log_sha256": "69e8be018f134edf4d432259acaeb376aee15699a283b994aa4d57eca057048c",
       "environment": "projects/e2e/targets/android_binary/pal-json/evidence/environment.json",
-      "environment_sha256": "3738c968ee02e39b19d8fd0036895b3297932fc4b3ddce6625be4923031b3a0f",
-      "app_sha256": "447216f5a9f76be376dc576aaf1bd7f6de254c25d17ce2bf790d730b5cf9c2a2",
+      "environment_sha256": "6b096319a325e8cf2fd690d9cc7c6454cb8cc939f36d537bc1f1d192ed387fa9",
+      "app_sha256": "7e0c63000298473e8114da9a4fa3629508d7ac20f586ebbf93509a593a2d7828",
       "sdk_sha256": "28d430311029f7bacb05b6d3de72b17d834e61a98cd1dad935007b9a093e1936",
       "sdk_binary_sha256": "7f8a2e3ac80ac8a43ce44b132f9171728931ba7088f4c46005aa642ace3b3347",
       "apk_binary_sha256": "7f8a2e3ac80ac8a43ce44b132f9171728931ba7088f4c46005aa642ace3b3347"
@@ -79,15 +79,15 @@
       "platform": "devkit",
       "status": "PASS",
       "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-json/devkit/evidence/qualified.json",
-      "evidence_sha256": "46147f5c7ffb2c061af1b246ab91258c2ede8c1e83ddeeaa985b03a07c40df16",
+      "evidence_sha256": "3ae32eae18e64cc3948262177cec7f2ac1ad0e14ea8a3ac251ac99cab81c9049",
       "source_matches_current": true,
-      "package_sha256": "7279c5aa2ed96cb1287de4d6aa9b6f4b5d8568073440a51beca6931e83e3da7d",
-      "image_sha256": "16bf3142f196d99c9504bf888245b66e83d772832431b6c9318c6f37d29d1580",
+      "package_sha256": "190b5708397f26088cdb13a3d23c0a2e714fb8602e92142201a2bcc155e3b4e3",
+      "image_sha256": "761171c993ddcffc320bc859bb02230eb0a56cc286ca2211f88c2df6e002d975",
       "build_receipt": "projects/e2e/targets/h2loader_tar_zlib/pal-json/devkit/evidence/build.json",
-      "build_receipt_sha256": "88ffdfbaa44176bb6bdf8f48aa60fe24a8872ba7a2e45a85a43fbaa853f5eeb1",
+      "build_receipt_sha256": "d66bb3d3c9a92c6dac5c6b7212ef358252718ce441753b6b5452304ea3e621ab",
       "boot_ids": [
-        "devkit-boot1-035d5cddd517",
-        "devkit-boot2-54eff607d041"
+        "devkit-r4-boot1-63eef74cff8f",
+        "devkit-r4-boot2-de83a7ad0d70"
       ],
       "device_uid": "9888e0115c52"
     },
@@ -95,15 +95,16 @@
       "platform": "bk7258",
       "status": "PASS",
       "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-json/bk7258_v3_202405/evidence/qualified.json",
-      "evidence_sha256": "e18d2fec43163e40c7eaeb2eafcaab35d713c81dd521437f1f21fad9cf107b66",
+      "evidence_sha256": "ca55eeb53e452225a3bd5361f1fcfe3b35ee4842dd6da081ac7aeb950b6bb69f",
       "source_matches_current": true,
-      "package_sha256": "2e417a5810f00179f3e3fa46ab366b8103d80607c780750f4695f166cfb13b4b",
-      "image_sha256": "f93251ab54cf6b27074376b3be569967e3a7c710ac2011bb601d640bd68954e5",
+      "package_sha256": "48c5ed776e4acae0f0e784773c7d8b4228d2deb3828f04bd27479141dbd4d139",
+      "image_sha256": "d04f606e7c55327400c002cf26558491187af7c3cb96478f06666b3704a4d0ee",
       "build_receipt": "projects/e2e/targets/h2loader_tar_zlib/pal-json/bk7258_v3_202405/evidence/build.json",
-      "build_receipt_sha256": "9e9f209cc463280077e25f55cc159af7dcc9f510b89807cc70d178c06c1402c4",
+      "build_receipt_sha256": "4ee6d21536f885c5c921559fe42d1e020a62a5950d6e0284b4de71771aff7c03",
       "boot_ids": [
-        "bk7258-boot1-9acbd75aa0a1",
-        "bk7258-boot2-ec78c280dca1"
+        "bk7258-r4-install-53c901737c54",
+        "bk7258-r4-reboot1-3a16152d26ac",
+        "bk7258-r4-reboot2-bfdc3be3b620"
       ],
       "device_uid": "c8478ca2a87c"
     }

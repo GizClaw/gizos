@@ -28,8 +28,14 @@ static void run(void *unused) {
   rtos_delay_milliseconds(5000);
   int rc = h2_json_device_run(runtime, H2_JSON_VERSION);
   finished = 1;
+  if (rc != H2_PAL_OK) {
+    printf("H2_JSON_QUALIFICATION_FAIL rc=%d confirm=not-attempted\n", rc);
+    fail("qualification", rc);
+  }
   int confirm = h2_bk_h2loader_confirm_current_app(runtime);
-  printf("H2_JSON_READY rc=%d confirm=%d\n", rc, confirm);
+  if (confirm != H2_PAL_OK)
+    fail("confirm", confirm);
+  puts("H2_JSON_READY rc=0 confirm=0");
   for (;;) {
     h2_json_device_replay(runtime);
     rtos_delay_milliseconds(3000);

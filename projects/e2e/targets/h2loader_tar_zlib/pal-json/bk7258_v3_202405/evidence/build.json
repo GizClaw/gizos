@@ -4,8 +4,8 @@
       "name": "bk7258_v3_202405-pal-json-bk7258.update.tar.zlib",
       "operation": "managed-install",
       "release_suffix": ".update.tar.zlib",
-      "sha256": "2e417a5810f00179f3e3fa46ab366b8103d80607c780750f4695f166cfb13b4b",
-      "size": 1766144
+      "sha256": "48c5ed776e4acae0f0e784773c7d8b4228d2deb3828f04bd27479141dbd4d139",
+      "size": 1766197
     }
   ],
   "board": "bk7258_v3_202405",
@@ -15,25 +15,25 @@
     {
       "name": "ap/firmware.elf",
       "operation": "native-debug-or-flash",
-      "sha256": "32726c7730155037176f20eaf324e13ea00cd431dbafc066827ffc4df6e79260",
-      "size": 13109044
+      "sha256": "ad8906be6a07afebbddbdb5ad4ea1e744e486c7c792dd6e449e0d4c54817f98a",
+      "size": 13109400
     },
     {
       "name": "ap/firmware.map",
       "operation": "native-debug-or-flash",
-      "sha256": "6645e4ff3b10c5e8a234027f911b012907d5c3f8188d13397259da76a896be59",
-      "size": 8380137
+      "sha256": "b0b5d8a51e1a84e4db2cb31ead958d5765f8251fabc249fc4d16391ff85940ee",
+      "size": 8380536
     },
     {
       "name": "ap/app.bin",
       "operation": "native-debug-or-flash",
-      "sha256": "20dd83482ab299156ea524ab93f95662c550299ba6a2250c0c3ab48abcc13df1",
-      "size": 1376912
+      "sha256": "814129a1b45a764cf056e96f2e1fad65d3724bd0ea48869b370c5c95da872241",
+      "size": 1377024
     },
     {
       "name": "cp/firmware.elf",
       "operation": "native-debug-or-flash",
-      "sha256": "8f8b3326c9fe588780f7929d6900aae1681a1fdcef7cddf0fe11902d8716c984",
+      "sha256": "6fb36d99e995d7002812807929c4919944f7a87d7e24bd086eea8d8861c05e25",
       "size": 14425392
     },
     {
@@ -45,33 +45,33 @@
     {
       "name": "cp/app.bin",
       "operation": "native-debug-or-flash",
-      "sha256": "a42ab443e89a964d1086d2ff46ac51eef7c8d47144e34df721e36049d09f7695",
+      "sha256": "47b73d33a11ce45c6cd7a88318801b31e2f0ed77d715cabd36308d644e854f98",
       "size": 1056252
     },
     {
       "name": "app_ab_crc.rbl",
       "operation": "native-debug-or-flash",
-      "sha256": "f93251ab54cf6b27074376b3be569967e3a7c710ac2011bb601d640bd68954e5",
+      "sha256": "d04f606e7c55327400c002cf26558491187af7c3cb96478f06666b3704a4d0ee",
       "size": 5222400
     },
     {
       "name": "all-app.bin",
       "operation": "native-debug-or-flash",
-      "sha256": "9278f62e2ab29b8da3a4753a60d572b2eee20f4d9cca0b92b8523d5de8a9f24e",
+      "sha256": "4954267c1f0d7cd5c31db9e6c25c6718cb6711e1c63d5c8e8cfb1648149611cf",
       "size": 5292032
     }
   ],
   "package_manifest": {
     "board": "bk7258_v3_202405",
     "format": 1,
-    "image_sha256": "f93251ab54cf6b27074376b3be569967e3a7c710ac2011bb601d640bd68954e5",
+    "image_sha256": "d04f606e7c55327400c002cf26558491187af7c3cb96478f06666b3704a4d0ee",
     "image_size": 5222400,
     "role": "app",
     "target": "bk7258",
-    "version": "pal-json-bk-20260928-r1"
+    "version": "pal-json-bk-20260929-r4"
   },
   "platform": "bk7258",
   "role": "app",
   "target": "bk7258",
-  "version": "pal-json-bk-20260928-r1"
+  "version": "pal-json-bk-20260929-r4"
 }

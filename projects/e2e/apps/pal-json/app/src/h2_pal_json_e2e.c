@@ -56,7 +56,7 @@ done:
 static h2_pal_result_t test_string_spans(const h2_pal_json_api_t *api, const h2_pal_mem_api_t *unused_mem, h2_pal_json_e2e_probe_fn unused_probe) {
     (void)unused_mem; (void)unused_probe;
     static const uint8_t input[] = {'"', 'x', '\\', 'u', 'D', '8', '3', 'D', '\\', 'u', 'D', 'E', '0', '0', '"'};
-    static const char decoded[] = {'x', (char)0xf0, (char)0x9f, (char)0x98, (char)0x80};
+    static const uint8_t decoded[] = {'x', 0xf0, 0x9f, 0x98, 0x80};
     h2_pal_result_t rc = H2_PAL_OK;
     h2_pal_json_document_t *doc = NULL;
     h2_pal_json_value_t *root = NULL;
@@ -235,9 +235,9 @@ static h2_pal_result_t test_construction_rejection(const h2_pal_json_api_t *api,
     h2_pal_json_document_t *doc = NULL;
     h2_pal_json_value_t *value = (h2_pal_json_value_t *)(uintptr_t)1;
     const char nul[] = {'a', 0, 'b'};
-    const char invalid[] = {(char)0xc0, (char)0x80};
+    static const uint8_t invalid[] = {0xc0, 0x80};
     REQUIRE_RC(h2_pal_json_document_create(api, NULL, &doc), H2_PAL_OK);
-    REQUIRE_RC(h2_pal_json_value_create_string(api, doc, invalid, sizeof(invalid), &value), H2_PAL_ERR_INVALID_ARG);
+    REQUIRE_RC(h2_pal_json_value_create_string(api, doc, (const char *)invalid, sizeof(invalid), &value), H2_PAL_ERR_INVALID_ARG);
     REQUIRE(value == NULL);
     REQUIRE_RC(h2_pal_json_value_create_string(api, doc, nul, sizeof(nul), &value), H2_PAL_ERR_INVALID_ARG);
     REQUIRE(value == NULL);
