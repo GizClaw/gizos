@@ -4,6 +4,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <mbedtls/sha256.h>
+#include <mbedtls/ssl.h>
 
 /* This test replaces only host memory, OS entropy, logging and the datagram
  * transport. Certificates, cookies, handshake, SRTP exporter and records run
@@ -181,10 +183,114 @@ static void run(int wrong_fingerprint, int drop_cookie) {
     printf("BK_DTLS_HOST_PASS wrong_fingerprint=%d drop_cookie=%d\n",
            wrong_fingerprint, drop_cookie);
 }
+
+/* A real mbedTLS client deliberately omits its own certificate. It must not
+ * turn the provider's deferred CA-chain check into anonymous authentication. */
+typedef struct anonymous_client {
+    endpoint_t output;
+    packet_t *input;
+    uint64_t now, timer_start;
+    uint32_t intermediate, final;
+} anonymous_client_t;
+static int anonymous_send(void *user, const unsigned char *bytes, size_t size) {
+    anonymous_client_t *client = user;
+    return send_packet(&client->output, bytes, size) == H2_PAL_OK ? (int)size : -1;
+}
+static int anonymous_recv(void *user, unsigned char *bytes, size_t capacity) {
+    anonymous_client_t *client = user;
+    if (client->input == NULL) return MBEDTLS_ERR_SSL_WANT_READ;
+    assert(client->input->length <= capacity);
+    size_t length = client->input->length;
+    memcpy(bytes, client->input->bytes, length);
+    client->input = NULL;
+    return (int)length;
+}
+static void timer_set(void *user, uint32_t intermediate, uint32_t final) {
+    anonymous_client_t *client = user;
+    client->timer_start = client->now;
+    client->intermediate = intermediate;
+    client->final = final;
+}
+static int timer_get(void *user) {
+    anonymous_client_t *client = user;
+    uint64_t elapsed = client->now - client->timer_start;
+    if (client->final == 0u) return -1;
+    return elapsed >= client->final ? 2 : elapsed >= client->intermediate ? 1 : 0;
+}
+static void missing_certificate(void) {
+    const h2_pal_dtls_api_t *api = h2_bk_platform_dtls_api();
+    anonymous_client_t client = {0};
+    endpoint_t server_output = {0};
+    h2_pal_dtls_session_t *server = NULL;
+    h2_pal_dtls_session_config_t config = {
+        .role = H2_PAL_DTLS_ROLE_SERVER, .max_datagram_size = 1200u,
+        .max_plaintext_size = 1200u, .max_pending_output_bytes = 4800u,
+        .send = send_packet, .plaintext = plaintext, .io_user = &server_output};
+    assert(h2_pal_dtls_session_create(api, &config, &server) == H2_PAL_OK);
+    uint8_t expected[32] = {1u};
+    assert(h2_pal_dtls_session_set_remote_fingerprint(api, server, expected) == H2_PAL_OK);
+    assert(h2_pal_dtls_session_get_local_fingerprint(api, server, expected) == H2_PAL_OK);
+
+    mbedtls_ssl_context ssl;
+    mbedtls_ssl_config ssl_config;
+    mbedtls_ssl_init(&ssl);
+    mbedtls_ssl_config_init(&ssl_config);
+    assert(mbedtls_ssl_config_defaults(&ssl_config, MBEDTLS_SSL_IS_CLIENT,
+        MBEDTLS_SSL_TRANSPORT_DATAGRAM, MBEDTLS_SSL_PRESET_DEFAULT) == 0);
+    mbedtls_ssl_conf_rng(&ssl_config, host_random, NULL);
+    mbedtls_ssl_conf_authmode(&ssl_config, MBEDTLS_SSL_VERIFY_OPTIONAL);
+    static const mbedtls_ssl_srtp_profile profiles[] = {
+        MBEDTLS_TLS_SRTP_AES128_CM_HMAC_SHA1_80, MBEDTLS_TLS_SRTP_UNSET};
+    assert(mbedtls_ssl_conf_dtls_srtp_protection_profiles(&ssl_config, profiles) == 0);
+    assert(mbedtls_ssl_setup(&ssl, &ssl_config) == 0);
+    mbedtls_ssl_set_bio(&ssl, &client, anonymous_send, anonymous_recv, NULL);
+    mbedtls_ssl_set_timer_cb(&ssl, &client, timer_set, timer_get);
+
+    int complete = 0, result = H2_PAL_OK;
+    for (client.now = 0u; client.now < 20000u; client.now += 10u) {
+        client.input = receive(&server_output);
+        int rc = mbedtls_ssl_handshake(&ssl);
+        client.input = NULL;
+        assert(rc == 0 || rc == MBEDTLS_ERR_SSL_WANT_READ || rc == MBEDTLS_ERR_SSL_WANT_WRITE);
+        result = handshake(api, server, &client.output, client.now, &complete);
+        if (result != H2_PAL_OK && result != H2_PAL_ERR_WOULD_BLOCK) break;
+    }
+    assert(server_output.hello_verify > 0u);
+    assert(result == H2_PAL_ERR_TLS_VERIFY && !complete);
+    /* The server rejects its missing peer certificate after emitting the
+     * final flight. Finish only the adversarial client's handshake so its
+     * session exposes the already received server certificate for our check. */
+    int client_complete = 0;
+    for (; client.now < 20000u; client.now += 10u) {
+        client.input = receive(&server_output);
+        int rc = mbedtls_ssl_handshake(&ssl);
+        client.input = NULL;
+        if (rc == 0) {
+            client_complete = 1;
+            break;
+        }
+        assert(rc == MBEDTLS_ERR_SSL_WANT_READ || rc == MBEDTLS_ERR_SSL_WANT_WRITE);
+    }
+    assert(client_complete);
+    const mbedtls_x509_crt *certificate = mbedtls_ssl_get_peer_cert(&ssl);
+    assert(certificate != NULL);
+    uint8_t fingerprint[32], keys[60];
+    assert(mbedtls_sha256(certificate->raw.p, certificate->raw.len, fingerprint, 0) == 0);
+    assert(memcmp(fingerprint, expected, sizeof(expected)) == 0);
+    assert(h2_pal_dtls_session_export_srtp_keying_material(
+        api, server, keys, sizeof(keys)) == H2_PAL_ERR_INVALID_STATE);
+    assert(server_output.received_length == 0u);
+    mbedtls_ssl_free(&ssl);
+    mbedtls_ssl_config_free(&ssl_config);
+    h2_pal_dtls_session_destroy(api, &server);
+    assert(server == NULL && live_allocations == 0u);
+    puts("BK_DTLS_HOST_PASS missing_peer_certificate");
+}
 int main(void) {
     run(0, 0);
     run(0, 1);
     run(1, 0);
     run(2, 0);
+    missing_certificate();
     return 0;
 }

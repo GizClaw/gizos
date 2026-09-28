@@ -26,6 +26,7 @@ The test requires an actual HelloVerifyRequest, repeats the handshake after a
 dropped cookie response, checks matching SRTP exporter output and binary records
 in both directions, and checks retry after output backpressure. Both server-side
 and client-side incorrect fingerprints must reject the session and prevent SRTP
-key export. Repeated session cleanup must release all provider-owned allocations.
+key export. A client that omits its certificate must also be rejected before any
+application data or key export. Repeated session cleanup must release all provider-owned allocations.
 Certificate absence or mismatch remains an authentication failure; no case uses
 `VERIFY_NONE` or a fake DTLS provider.

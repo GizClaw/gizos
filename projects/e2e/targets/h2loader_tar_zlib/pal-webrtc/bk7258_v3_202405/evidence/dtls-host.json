@@ -1,6 +1,6 @@
 {
   "scope": "BK DTLS provider host regression; not physical-device qualification",
-  "observed_at_utc": "2026-09-28T06:20:43.177670+00:00",
+  "observed_at_utc": "2026-09-28T06:29:20.636019+00:00",
   "sdk_commit": "aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca",
   "sdk_mbedtls_version": "3.5.2",
   "configuration": "SDK upstream default software configuration; DTLS_SRTP enabled; SDK-only upstream self-tests disabled",
@@ -8,15 +8,16 @@
     "BK_DTLS_HOST_PASS wrong_fingerprint=0 drop_cookie=0",
     "BK_DTLS_HOST_PASS wrong_fingerprint=0 drop_cookie=1",
     "BK_DTLS_HOST_PASS wrong_fingerprint=1 drop_cookie=0",
-    "BK_DTLS_HOST_PASS wrong_fingerprint=2 drop_cookie=0"
+    "BK_DTLS_HOST_PASS wrong_fingerprint=2 drop_cookie=0",
+    "BK_DTLS_HOST_PASS missing_peer_certificate"
   ],
   "source_sha256": {
     "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_dtls.c": "a853981d64cc3d5b24ff7a4319dfe3ec5735bcc7a382f55120f786151effdd84",
     "native_component_src/bk7258/ap/h2_pal_core/tests/dtls_host/CMakeLists.txt": "536cff54a94f4af1a720b227cf61e2659a5f3ff24f262a9ca6b1fff3db6750a7",
-    "native_component_src/bk7258/ap/h2_pal_core/tests/dtls_host/README.md": "8c7805562c207f8fa0124f12ebd2fd845f5901eb5546abcca6fb7b960d7029a9",
+    "native_component_src/bk7258/ap/h2_pal_core/tests/dtls_host/README.md": "9a1ca2faf18eb6199ffc449366646874e20073b377fec5dfcfb7f266fc0d4d8e",
     "native_component_src/bk7258/ap/h2_pal_core/tests/dtls_host/host_config.h": "769959754802676f43e963298258e11322ccc2c8ed81904ad4dc9e12613bd7b1",
     "native_component_src/bk7258/ap/h2_pal_core/tests/dtls_host/host_log.h": "107e0da68a2eab288d36ec7f1c5b07b7abf554e4250510e845064c80887c9986",
-    "native_component_src/bk7258/ap/h2_pal_core/tests/dtls_host/test_dtls.c": "375d6ab17794c9c65a52b7ab7fe1efe4e9b8486169f03ad83b85f346d6e4dd24"
+    "native_component_src/bk7258/ap/h2_pal_core/tests/dtls_host/test_dtls.c": "27df87f73af0bf9b37ed9afe8ebb3e72a09de3f2214c20e3414b588104cf5f95"
   },
   "reproduced_before_fix": {
     "cookie": "mbedtls ssl_cookie_write_dummy returned -28800 (-0x7080), PAL IO at first ClientHello",
