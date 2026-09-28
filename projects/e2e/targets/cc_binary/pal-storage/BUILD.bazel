@@ -1,0 +1,46 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary")
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel:cc_options.bzl", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+_HOST = select({
+    "//tools/bazel/platforms:host_linux_target_linux": [],
+    "//tools/bazel/platforms:host_macos_target_macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+cc_binary(
+    name = "pal_storage_e2e",
+    srcs = ["main.cpp", "host_config.c", "host_config.h"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    target_compatible_with = _HOST,
+    deps = [
+        "//libs/atomic/providers/c11",
+        "//libs/pal/providers/desktop/pal_core",
+        "//libs/pal/providers/sqlite",
+        "//projects/e2e/apps/pal-storage/app:pal_storage_e2e",
+        "//projects/example/libs/host_runtime",
+    ] + select({
+        "@platforms//os:macos": ["//libs/pal/providers/darwin/pal_core"],
+        "@platforms//os:linux": ["//libs/pal/providers/linux/pal_core"],
+        "//conditions:default": [],
+    }),
+)
+
+py_test(
+    name = "desktop_test",
+    srcs = ["run_desktop.py"],
+    args = [
+        "$(rootpath :pal_storage_e2e)",
+        "$(rootpath //projects/e2e/apps/pal-storage/app:include/h2_pal_storage_cases.inc)",
+    ],
+    data = [
+        ":pal_storage_e2e",
+        "//projects/e2e/apps/pal-storage/app:include/h2_pal_storage_cases.inc",
+    ],
+    legacy_create_init = 0,
+    main = "run_desktop.py",
+    target_compatible_with = _HOST,
+)

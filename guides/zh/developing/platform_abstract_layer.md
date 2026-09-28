@@ -599,3 +599,11 @@ Target-specific unavailable adapter、dummy 和 fake backend 放在 `libs/pal` �
 iOS 和 Android 的 Core（Memory、Log、Time、Timer、Task、Queue、Sync、SystemEvent、 FirmwareInfo）使用原生 pthread/系统时钟实现。公共线程核心位于 `libs/pal/providers/posix/pal_core`，由 iOS、Android 和 Web pthread provider 复用； UIKit、Android UI/媒体适配仍留在各自 provider 下。PAL 的 `set_wall_ms` 在移动端维护 进程内时钟偏移，不要求修改系统时钟的权限。
 
 移动端 provider 的本地发布边界为 iOS `:swift_package` 和 Android `:aar`， 打包规则位于 `tools/bazel/mobile_package.bzl`。这些包不包含 Runtime 或 Atomic。 `libs/app_host` 负责组装 Runtime；独立 PAL Core E2E App 消费实际包的二进制， 验证完整 Core v2 合约。测试入口和证据见 `projects/e2e/libs/pal-core-mobile/README.md`。
+
+### 原生移动端 Storage
+
+iOS/Android provider 的 storage owner 接收宿主 sandbox 内的绝对目录和 portable mount root，公开真实 POSIX FS 与 SQLite Preferences API；目录创建只使用明确给出的路径，不清空已存在数据。宿主关闭所有 file、namespace 和 cursor 后再销毁 owner。Storage 与 Core 都进入对应 Swift Package/XCFramework 或 AAR，Runtime 仍由 App host 单独组装。
+
+BK7258 Preferences 保留已有原始 value 字节，确保已安装旧 Loader 可继续读取 boot/版本等 key。`$h2t` namespace 及其子 namespace 保留给内部类型记录，public open 在读写和只读模式均拒绝，普通 caller 不能枚举或 clear 元数据。Reader 兼容旧 `H2TYPE1`；新 `H2TYPE2` 先以一次 FlashDB 写入暂存新旧两版类型描述，再写原始 value。描述包含原 key、类型、长度、内容摘要及一个差异字节的位置/值，读取时选择与实际 bytes 匹配的一版；差异字节避免等长摘要碰撞产生歧义。字节完全相同的 type-only 更新只提交元数据。元数据或 value 写入失败不需要额外 Flash 写入回滚，后续读取和枚举仍对应实际留下的值；底层在提交之后才报错时，允许观察到完整的新值/类型，不能把错误返回解释为必然未写入。旧固件写入与两版描述都不匹配的值时恢复 UNKNOWN，保持既有读取兼容。FlashDB 迭代采用 namespace-scoped snapshot，返回稳定 key/type/value-size，cursor 必须显式关闭；clear 仅删除该 namespace 的 FlashDB key 及其类型记录，并回收新 key 写入失败留下的孤立暂存元数据，不清空整个数据库；这些暂存记录不会出现在 public iteration 中。旧 EasyFlash key 继续通过既有按 key 读取路径迁移，未迁移 key 不具有枚举类型信息。这不额外承诺断电或 FlashDB 本身损坏时的恢复能力。
+
+ESP LittleFS 的目录级 clear 在既有 internal-stack safe-call 路径执行，保留目录本身、递归移除子项，并拒绝遍历路径；目录层数过深返回错误。DevKit 原有整 `/data` 格式化接口保持明确的 board policy，Storage E2E 仅调用测试子目录 clear。BK FATFS 提供真实 seek 和目录级 clear，测试不格式化 SD 卡。

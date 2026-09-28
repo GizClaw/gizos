@@ -1,0 +1,61 @@
+{
+  "contract": 1,
+  "operation_count": 28,
+  "case_count": 30,
+  "platforms": [
+    {
+      "platform": "macos",
+      "passed": 30,
+      "failed": 0,
+      "blocked": 0,
+      "evidence": "projects/e2e/targets/cc_binary/pal-storage/evidence/desktop-qualified.json",
+      "sha256": "44744b5261da2c0a522b78117a3ca364df3eff39ceedb7d557a4c51d0231cd77"
+    },
+    {
+      "platform": "wasm",
+      "passed": 30,
+      "failed": 0,
+      "blocked": 0,
+      "evidence": "projects/e2e/targets/pkg_tar/pal-storage/evidence/qualified.json",
+      "sha256": "b85d83d0ab0348cfac1014de1f62211581128d77a43dc2796a5c868aaef4cc7a"
+    },
+    {
+      "platform": "ios-simulator",
+      "passed": 30,
+      "failed": 0,
+      "blocked": 0,
+      "evidence": "projects/e2e/targets/ios_application/pal-storage/evidence/qualified.json",
+      "sha256": "85e8fbe2ba144cba0d87368ab233c62b98b4825275f2c8d6b9d0005d0acd3d79"
+    },
+    {
+      "platform": "android-emulator",
+      "passed": 30,
+      "failed": 0,
+      "blocked": 0,
+      "evidence": "projects/e2e/targets/android_binary/pal-storage/evidence/qualified.json",
+      "sha256": "6aea7763afffcec617ac3e463d0e6cef514c3aedf2f5938b8fe7ee8f910941c8"
+    },
+    {
+      "platform": "devkit",
+      "passed": 30,
+      "failed": 0,
+      "blocked": 0,
+      "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-storage/devkit/evidence/qualified.json",
+      "sha256": "1e39dc6d1a204126f3f5a4d0d57e5f2b5e959076672b6877293428fe3136202a"
+    },
+    {
+      "platform": "bk7258",
+      "passed": 30,
+      "failed": 0,
+      "blocked": 0,
+      "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-storage/bk7258_v3_202405/evidence/qualified.json",
+      "sha256": "5340d3ae4dbb4ab8fad962e58eac2422bc00642a780940ccf898e84a360a0e72"
+    }
+  ],
+  "verified_at_utc": "2026-09-28T01:49:51.453083+00:00",
+  "scope": "FileSystem and Preferences; normal restart persistence, not raw Disk or power-loss durability",
+  "notes": [
+    "iOS and Android results are from simulators/emulator, not physical phones.",
+    "BK r3 requalifies the metadata safety fixes with 27 seed and 3 verify cases; same-boot replay was collected after the initial host install monitor deadline. Host fault injection additionally checks returned-error consistency."
+  ]
+}

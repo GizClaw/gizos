@@ -43,6 +43,7 @@ cc_library(
         "src/h2_android_audio_decoder.c",
         "src/h2_android_platform.c",
         "src/h2_android_core.c",
+        "src/h2_android_storage.c",
         "src/h2_android_video_decoder.c",
     ],
     hdrs = ["include/h2_android_platform.h"],
@@ -64,7 +65,7 @@ cc_library(
     deps = [
         ":contracts",
         "//libs/pal",
-        "//libs/pal/providers/posix/pal_core:mobile_core",
+        "//libs/pal/providers/posix/pal_core:mobile_core", "//libs/pal/providers/posix/pal_core:host_fs", "//libs/pal/providers/sqlite",
     ],
 )
 

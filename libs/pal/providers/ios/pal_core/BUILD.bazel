@@ -81,6 +81,7 @@ cc_library(
     deps = [
         ":corebluetooth",
         ":platform",
+        ":storage",
         ":system_event",
     ],
 )
@@ -138,4 +139,15 @@ h2_mobile_archive_import(
     binary_name = "libH2PALCore.a",
     linkopts = ["-framework", "UIKit", "-framework", "Foundation", "-framework", "CoreGraphics", "-framework", "CoreBluetooth", "-lc++"],
     target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
+)
+
+cc_library(
+    name = "storage",
+    srcs = ["src/h2_ios_storage.c"],
+    hdrs = ["include/h2_ios_platform.h"],
+    includes = ["include"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = ["@platforms//os:ios"],
+    deps = ["//libs/pal", "//libs/pal/providers/posix/pal_core:host_fs", "//libs/pal/providers/sqlite"],
 )

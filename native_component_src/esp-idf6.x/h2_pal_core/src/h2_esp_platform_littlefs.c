@@ -7,6 +7,7 @@
 #include "freertos/semphr.h"
 
 #include <errno.h>
+#include <dirent.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -36,6 +37,7 @@ typedef enum h2_esp_littlefs_safe_op {
     H2_ESP_LITTLEFS_MOUNT,
     H2_ESP_LITTLEFS_UNMOUNT,
     H2_ESP_LITTLEFS_FORMAT,
+    H2_ESP_LITTLEFS_CLEAR,
 } h2_esp_littlefs_safe_op_t;
 
 typedef struct h2_esp_littlefs_safe_call {
@@ -53,6 +55,36 @@ typedef struct h2_esp_littlefs_safe_call {
     int error_number;
     int format_if_mount_failed;
 } h2_esp_littlefs_safe_call_t;
+
+/* Runs on the existing internal-stack flash-safe path. Clear affects only
+ * descendants of the requested directory; its own directory remains intact. */
+static int littlefs_clear_directory(const char *path, unsigned depth) {
+    if (depth > 8u) { errno = ELOOP; return -1; }
+    DIR *dir = opendir(path);
+    if (dir == NULL) return -1;
+    int result = 0, saved = 0;
+    struct dirent *entry;
+    errno = 0;
+    while ((entry = readdir(dir)) != NULL) {
+        if (!strcmp(entry->d_name, ".") || !strcmp(entry->d_name, "..")) {
+            errno = 0; continue;
+        }
+        char child[H2_ESP_LITTLEFS_PATH_SIZE];
+        int n = snprintf(child, sizeof(child), "%s/%s", path, entry->d_name);
+        if (n < 0 || (size_t)n >= sizeof(child)) { result = -1; saved = ENAMETOOLONG; break; }
+        struct stat st;
+        if (stat(child, &st) != 0) { result = -1; saved = errno; break; }
+        if (S_ISDIR(st.st_mode)) {
+            result = littlefs_clear_directory(child, depth + 1u);
+            if (result == 0) result = rmdir(child);
+        } else result = unlink(child);
+        if (result != 0) { saved = errno; break; }
+        errno = 0;
+    }
+    if (result == 0 && errno != 0) { result = -1; saved = errno; }
+    if (closedir(dir) != 0 && result == 0) { result = -1; saved = errno; }
+    errno = saved; return result;
+}
 
 static void IRAM_ATTR littlefs_safe_callback(void *context) {
     h2_esp_littlefs_safe_call_t *call =
@@ -83,7 +115,12 @@ static void IRAM_ATTR littlefs_safe_callback(void *context) {
     } else if (call->op == H2_ESP_LITTLEFS_STAT) {
         call->result = stat(call->path, &call->stat_value);
     } else if (call->op == H2_ESP_LITTLEFS_REMOVE) {
-        call->result = unlink(call->path);
+        struct stat st;
+        call->result = stat(call->path, &st);
+        if (call->result == 0)
+            call->result = S_ISDIR(st.st_mode) ? rmdir(call->path) : unlink(call->path);
+    } else if (call->op == H2_ESP_LITTLEFS_CLEAR) {
+        call->result = littlefs_clear_directory(call->path, 0u);
     } else if (call->op == H2_ESP_LITTLEFS_RENAME) {
         call->result = rename(call->path, call->second_path);
     } else if (call->op == H2_ESP_LITTLEFS_MOUNT) {
@@ -155,6 +192,7 @@ static int littlefs_sync(void *user, h2_pal_fs_file_t *raw_file);
 static int littlefs_close(void *user, h2_pal_fs_file_t *raw_file);
 static int littlefs_stat(void *user, const char *path, h2_pal_fs_stat_t *out_stat);
 static int littlefs_remove(void *user, const char *path);
+static int littlefs_clear(void *user, const char *path);
 static int littlefs_rename(void *user, const char *old_path, const char *new_path);
 
 static h2_esp_platform_littlefs_config_t s_littlefs_config;
@@ -172,6 +210,7 @@ static const h2_pal_fs_vtable_t s_littlefs_api_vtable = {
     .close = littlefs_close,
     .stat = littlefs_stat,
     .remove = littlefs_remove,
+    .clear = littlefs_clear,
     .rename = littlefs_rename,
     };
 
@@ -297,7 +336,7 @@ static int littlefs_read(void *user, h2_pal_fs_file_t *raw_file, void *data, siz
     h2_esp_platform_littlefs_file_t *file = (h2_esp_platform_littlefs_file_t *)raw_file;
     (void)user;
 
-    if (file == NULL || file->fp == NULL || data == NULL || out_read == NULL) {
+    if (file == NULL || file->fp == NULL || (data == NULL && len != 0u) || out_read == NULL) {
         return H2_PAL_FS_ERR_INVALID_ARG;
     }
     *out_read = 0u;
@@ -485,6 +524,26 @@ static int littlefs_stat(void *user, const char *path, h2_pal_fs_stat_t *out_sta
     out_stat->size = (uint64_t)st.st_size;
     out_stat->is_dir = S_ISDIR(st.st_mode) ? 1 : 0;
     return H2_PAL_FS_OK;
+}
+
+static int littlefs_clear(void *user, const char *path) {
+    if (path == NULL || path[0] != '/') return H2_PAL_ERR_INVALID_ARG;
+    for (const char *part = path + 1; *part != '\0';) {
+        const char *end = strchr(part, '/');
+        size_t len = end ? (size_t)(end - part) : strlen(part);
+        if (len == 0 || (len == 1 && part[0] == '.') ||
+            (len == 2 && part[0] == '.' && part[1] == '.'))
+            return H2_PAL_ERR_INVALID_ARG;
+        if (!end) break;
+        part = end + 1;
+    }
+
+    h2_esp_platform_littlefs_context_t *ctx = user;
+    h2_esp_littlefs_safe_call_t call = {.op = H2_ESP_LITTLEFS_CLEAR};
+    int rc = translate_path(ctx, path, call.path, sizeof(call.path));
+    if (rc != H2_PAL_OK) return rc;
+    rc = littlefs_run_safe(&call);
+    return rc != H2_PAL_OK || call.result == 0 ? rc : map_errno_value(call.error_number, H2_PAL_ERR_IO);
 }
 
 static int littlefs_remove(void *user, const char *path) {

@@ -144,3 +144,11 @@ Portable/desktop tests 证明 case contract、provider assembly、parser、failu
 移动端 Core 资格测试复用 `projects/e2e/apps/pal-core` 的全部 41 个必选 case， 由两个原生 App 运行：`projects/e2e/targets/ios_application/pal-core` 和 `projects/e2e/targets/android_binary/pal-core`。它们消费 PAL provider 的本地 XCFramework/Swift Package、AAR 产物；Runtime 与 Atomic 仍由 App host 单独组装。 任务栈、资源计数、日志及系统事件均观察真实实现，不能用空 observer 或 blocked 替代通过。
 
 设置 `H2_IOS_SIMULATOR_UDID` 或 `H2_ANDROID_SERIAL` 后，使用 `make bazel-test-ios_pal_core_simulator_test` / `make bazel-test-android_pal_core_simulator_test`。 这些入口要求已准备好的测试模拟器，属于 `manual`，每次真实执行并检查完整 case 清单、 清理状态和资源恢复。详情见 `projects/e2e/libs/pal-core-mobile/README.md`。
+
+## PAL Storage
+
+`projects/e2e/apps/pal-storage` 是独立 portable App，覆盖 FileSystem 的 11 个 vtable 操作，以及 Preferences API 的 open 和 namespace 的 16 个方法，共 28 项。稳定 registry 包含 30 个必选 case；28 个操作的完整映射由独立 public-header inventory 测试校验。Disk 的分区擦写属于后续独立资格领域，不计入本 App。
+
+Storage 必须分两次独立进程或 boot 执行：seed 阶段执行 27 项并提交确定的数据，verify 阶段执行 3 项，读回与 nonce 绑定的文件及全部 Preferences 类型并清理专用数据。宿主只在两阶段 case 清单、nonce、版本、返回值和 cleanup 全部匹配时授予资格。Desktop/macOS 使用真实 OS FS 和 SQLite，Web 使用 IDBFS/localStorage 并重新启动整个浏览器，移动端测试 App 使用 SDK 包内的原生 storage owner，在两次独立 App 进程间保留 sandbox。DevKit 使用板载 Flash LittleFS，BK7258 使用 SD FATFS 和 FlashDB；板级测试数据限定在 `/data/pal-storage` 和 `h2storea`/`h2storeb`，`h2storectl` 只保存本测试版本绑定的阶段元数据。
+
+命令与平台证据见 `projects/e2e/apps/pal-storage/README.md`；iOS/Android 模拟器入口分别为 `make bazel-test-ios_pal_storage_simulator_test` 和 `make bazel-test-android_pal_storage_simulator_test`。外部设备与已启动模拟器的测试是 `manual`，其结果不能由旧缓存代替。正常重启验证不表示断电原子性或物理介质寿命已验证。
