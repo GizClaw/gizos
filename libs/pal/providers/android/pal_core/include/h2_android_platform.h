@@ -91,6 +91,18 @@ const h2_pal_crypto_api_t *h2_android_platform_crypto_api(void);
  * Idempotent; also invoked by successful platform_core_shutdown(). */
 void h2_android_platform_crypto_shutdown(void);
 
+/** HTTP owner over native POSIX networking and the shared full WolfSSL provider.
+ * create copies the optional root CA; NULL/zero selects system trust. Output is
+ * NULL on failure. API remains borrowed until destroy. Close all responses and
+ * let every synchronous request return before destroy or Core shutdown. The
+ * owner holds its own TLS lifecycle reference, independent of Crypto callers.
+ */
+typedef struct h2_android_http h2_android_http_t;
+h2_pal_result_t h2_android_http_create(const uint8_t *root_ca_pem,
+    size_t root_ca_pem_len, h2_android_http_t **out);
+const h2_pal_http_api_t *h2_android_http_api(h2_android_http_t *http);
+void h2_android_http_destroy(h2_android_http_t *http);
+
 #ifdef __cplusplus
 }
 #endif

@@ -264,6 +264,7 @@ static int test_response_header_callback(void) {
     provider = create_provider(&platform, &api, NULL, 0u);
     CHECK(provider != NULL);
     headers = (header_result_t){.result = H2_PAL_ERR_CLOSED};
+    request.retry_count = 2;
     request.response_header_user = &headers;
     CHECK(h2_pal_http_request(&api, &request, &response) ==
           H2_PAL_ERR_CLOSED);
@@ -1022,6 +1023,7 @@ static int test_request_allocator(void) {
         CHECK(h2_pal_http_request(&api, &request, &response) == H2_PAL_OK);
         CHECK(response.status_code == 200 && response.body_len == 2u);
         CHECK(memcmp(body, "ok", 2u) == 0);
+        CHECK(count_bytes(platform.request_bytes, platform.request_len, "GET /next?q=1 HTTP/1.1", 21u) == 1u);
         CHECK(h2_atomic_load(&request_mem.calls) > 0u || !custom);
         CHECK(custom ? h2_atomic_load(&provider_mem.calls) == before
                      : h2_atomic_load(&provider_mem.calls) > before);

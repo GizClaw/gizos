@@ -33,6 +33,7 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 | Lua Runtime | `//projects/e2e/apps/lua-runtime/app:lua_runtime_e2e` | Desktop、Browser、AMOLED；九个固定 VM/coroutine/component/event/worker/shutdown case |
 | Lua Link | `//projects/e2e/apps/lua-link/app:lua_link_e2e` | DevKit ESP32-S3 host + AMOLED ESP32-S3 join over BLE Extended Advertising；reliable/datagram/stream/peer-exit per session，final hold session for link loss |
 | PAL Core | `//projects/e2e/apps/pal-core/app:pal_core_e2e` | 独立 Core v2：46 个接口、41 个必过用例；macOS、Browser/WASM、DevKit ESP32-S3 USB 串口、BK7258 AP UART1 H2Loader |
+| PAL HTTP | `//projects/e2e/apps/pal-http/app:pal_http_e2e` | 独立 HTTP：45 个必跑 case；macOS、Browser、iOS/Android 实际 SDK 包消费 App 与 DevKit/BK7258 专用入口，逐平台保留真实运行证据 |
 | PAL | `//projects/e2e/apps/pal/app:pal_e2e` | Linux/macOS/Windows 共同 host OS/Filesystem/Net/TLS/CoreHTTP/CoreMQTT；Desktop core/MQTT/SQLite Preference；Browser core；DevKit 与 Tiga V4.2 H2Loader `pal-pref` |
 | H2Loader Serial | `//projects/e2e/apps/h2loader-serial/app:h2loader_serial_e2e` | macOS Desktop；desktop Chrome Browser |
 | WebRTC Performance | `//projects/e2e/apps/webrtc-performance/app:webrtc_performance` | Desktop H2Peer + local Pion；DevKit 与 AMOLED ESP32-S3 H2Peer + operator LAN Pion |
@@ -144,6 +145,10 @@ Portable/desktop tests 证明 case contract、provider assembly、parser、failu
 移动端 Core 资格测试复用 `projects/e2e/apps/pal-core` 的全部 41 个必选 case， 由两个原生 App 运行：`projects/e2e/targets/ios_application/pal-core` 和 `projects/e2e/targets/android_binary/pal-core`。它们消费 PAL provider 的本地 XCFramework/Swift Package、AAR 产物；Runtime 与 Atomic 仍由 App host 单独组装。 任务栈、资源计数、日志及系统事件均观察真实实现，不能用空 observer 或 blocked 替代通过。
 
 设置 `H2_IOS_SIMULATOR_UDID` 或 `H2_ANDROID_SERIAL` 后，使用 `make bazel-test-ios_pal_core_simulator_test` / `make bazel-test-android_pal_core_simulator_test`。 这些入口要求已准备好的测试模拟器，属于 `manual`，每次真实执行并检查完整 case 清单、 清理状态和资源恢复。详情见 `projects/e2e/libs/pal-core-mobile/README.md`。
+
+## PAL HTTP
+
+`pal-http` 独立验收 HTTP request/response_free 和所有 request 字段，包括七种方法、字节 span、三种响应内存模式、流式 byte count、header/read callback 错误传播、取消、整体 deadline/retry、重定向、证书验证与资源释放。App 只借用 Runtime/PAL；`projects/e2e/libs/pal-http-fixture` 提供隔离 session 的可重复 HTTP/HTTPS 服务，host/browser 默认只绑定 loopback。Browser 使用真实 Fetch/CORS，只信任该次 fixture 的指定 SPKI，仍必须拒绝独立的不受信任证书。不存在的网卡必须显式报错；Browser 的绑定拒绝不代表支持物理网卡选择。设备入口只借用已有 Wi-Fi 配置和 Board Net provider，不更改 provisioning。每端必须完整运行同一 registry 并保留对应 artifact SHA 的结构化 receipt，构建成功不能替代实测。 不受信任 HTTPS 必须关联本轮真实 TLS 握手（ClientHello、服务端证书、拒绝且无成功 HTTP）；native 要求 TLS_VERIFY，Browser 还需 exact URL 的 Chromium ERR_CERT_AUTHORITY_INVALID。Browser teardown 后由运行 C 的 pthread 通过生产 bridge 读取实际 HTTP registry 并报告零 pending；缺失或非法计数必须失败，不能从页面全局 Module 猜测。坏 URL、拒绝连接和缺失 registry 均有真实负向运行。
 
 ## PAL Storage
 

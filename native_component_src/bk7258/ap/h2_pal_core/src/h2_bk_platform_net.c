@@ -1,4 +1,5 @@
 #include "h2_bk_platform_core.h"
+#include "h2_bk_netif_internal.h"
 
 #include <errno.h>
 #include <limits.h>
@@ -584,9 +585,12 @@ static void bk_net_resolve_close(
 
 static int bk_net_get_host_addr(void *user, const char *iface_prefix, h2_pal_net_addr_t *out_addr) {
     (void)user;
-    (void)iface_prefix;
     if (out_addr == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
+    }
+    memset(out_addr, 0, sizeof(*out_addr));
+    if (iface_prefix != NULL && iface_prefix[0] != '\0') {
+        return h2_bk_netif_address_for_prefix(iface_prefix, out_addr);
     }
 
     netif_ip4_config_t sta_ip;

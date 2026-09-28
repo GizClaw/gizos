@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "validation": "built_and_run",
+  "hardware_run": true,
+  "fixture_configured": true,
+  "package": {
+    "name": "bk7258_v3_202405-pal-http-bk7258.update.tar.zlib",
+    "operation": "managed-install",
+    "release_suffix": ".update.tar.zlib",
+    "sha256": "7e37f3cb02e49bea4a114d1be3c87299199052d6bb2f1aff7f29f6168b7208a5",
+    "size": 1713194
+  },
+  "image": {
+    "board": "bk7258_v3_202405",
+    "format": 1,
+    "image_sha256": "b3c94d30f2262a83f26b5e1f244783b4ce8cf9bf7644941f3f576123d86c3041",
+    "image_size": 5222400,
+    "role": "app",
+    "target": "bk7258",
+    "version": "pal-http-bk-20260928-r5"
+  }
+}

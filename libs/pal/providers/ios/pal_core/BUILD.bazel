@@ -80,6 +80,7 @@ cc_library(
     target_compatible_with = ["@platforms//os:ios"],
     deps = [
         ":corebluetooth",
+        ":http",
         ":platform",
         ":storage",
         ":system_event",
@@ -154,12 +155,30 @@ cc_library(
 
 cc_library(
     name = "crypto",
-    srcs = ["src/h2_ios_crypto.c"],
+    srcs = ["src/h2_ios_crypto.c", "src/h2_ios_tls_internal.h"],
     hdrs = ["include/h2_ios_platform.h"],
     includes = ["include"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     linkopts = ["-framework", "Security"],
     target_compatible_with = ["@platforms//os:ios"],
-    deps = ["//libs/pal", "//libs/pal:unsupported", "//libs/pal/providers/wolfssl:wolfcrypt"],
+    deps = ["//libs/pal", "//libs/pal:unsupported", "//libs/pal/providers/wolfssl"],
+)
+
+cc_library(
+    name = "http",
+    srcs = [
+        "src/h2_ios_http.c",
+        "src/h2_ios_tls_internal.h",
+    ],
+    hdrs = ["include/h2_ios_platform.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = ["@platforms//os:ios"],
+    deps = [
+        ":crypto",
+        "//libs/pal/providers/corehttp",
+        "//libs/pal/providers/posix/pal_core:net",
+    ],
 )

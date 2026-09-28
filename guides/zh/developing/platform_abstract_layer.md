@@ -157,7 +157,7 @@ boundary。裁剪 variant 完整实现 Crypto PAL；完整 variant 额外实现 
 ESP-IDF 与 BK7258 provider 使用 public PSA/MbedTLS surface 实现同一完整 vtable，
 不能通过 private header 或本地复制算法补洞。
 
-iOS 与 Android 的 Crypto owner 位于各自 `pal_core/src/h2_*_crypto.c`，通过唯一的 `wolfssl:wolfcrypt` integration 提供完整 15 项接口。iOS 使用 `SecRandomCopyBytes`，Android 从系统 `/dev/urandom` 读取熵并处理短读和 EINTR；随机源失败返回错误，不退回伪随机。App Host 默认绑定该 process-wide provider，首次 getter 在互斥保护下初始化；返回的 API 由平台持有。调用方必须先停止全部 Crypto 调用并销毁 Runtime，再调用 `h2_*_platform_crypto_shutdown()` 或成功的 `platform_core_shutdown()`；shutdown 幂等，后续 getter 可开启新生命周期。Swift Package 的 module map 和 packaged importer 同时声明 Security framework，Android AAR 包含真实 provider。
+iOS 与 Android 的 Crypto owner 位于各自 `pal_core/src/h2_*_crypto.c`，通过唯一的完整 `wolfssl` integration 提供完整 15 项接口，并与同进程 HTTP owner 共享引用计数保护的 TLS/加密生命周期。iOS 使用 `SecRandomCopyBytes`，Android 从系统 `/dev/urandom` 读取熵并处理短读和 EINTR；随机源失败返回错误，不退回伪随机。App Host 默认绑定该 process-wide provider，首次 getter 在互斥保护下初始化；返回的 API 由平台持有。调用方必须先停止全部 Crypto 调用并销毁 Runtime，再调用 `h2_*_platform_crypto_shutdown()` 或成功的 `platform_core_shutdown()`；shutdown 幂等，后续 getter 可开启新生命周期。Swift Package 的 module map 和 packaged importer 同时声明 Security framework，Android AAR 包含真实 provider。
 
 独立 `projects/e2e/apps/pal-crypto` 以 22 个必选 case 验证全部 Crypto 操作，包括标准向量、无效参数、认证拒绝、重叠/容量边界和重复调用。六端入口使用相同 portable App，缺失接口保持 BLOCKED，不能算通过；随机差异检查不是随机质量或侧信道安全认证。
 
@@ -611,3 +611,5 @@ iOS/Android provider 的 storage owner 接收宿主 sandbox 内的绝对目录�
 BK7258 Preferences 保留已有原始 value 字节，确保已安装旧 Loader 可继续读取 boot/版本等 key。`$h2t` namespace 及其子 namespace 保留给内部类型记录，public open 在读写和只读模式均拒绝，普通 caller 不能枚举或 clear 元数据。Reader 兼容旧 `H2TYPE1`；新 `H2TYPE2` 先以一次 FlashDB 写入暂存新旧两版类型描述，再写原始 value。描述包含原 key、类型、长度、内容摘要及一个差异字节的位置/值，读取时选择与实际 bytes 匹配的一版；差异字节避免等长摘要碰撞产生歧义。字节完全相同的 type-only 更新只提交元数据。元数据或 value 写入失败不需要额外 Flash 写入回滚，后续读取和枚举仍对应实际留下的值；底层在提交之后才报错时，允许观察到完整的新值/类型，不能把错误返回解释为必然未写入。旧固件写入与两版描述都不匹配的值时恢复 UNKNOWN，保持既有读取兼容。FlashDB 迭代采用 namespace-scoped snapshot，返回稳定 key/type/value-size，cursor 必须显式关闭；clear 仅删除该 namespace 的 FlashDB key 及其类型记录，并回收新 key 写入失败留下的孤立暂存元数据，不清空整个数据库；这些暂存记录不会出现在 public iteration 中。旧 EasyFlash key 继续通过既有按 key 读取路径迁移，未迁移 key 不具有枚举类型信息。这不额外承诺断电或 FlashDB 本身损坏时的恢复能力。
 
 ESP LittleFS 的目录级 clear 在既有 internal-stack safe-call 路径执行，保留目录本身、递归移除子项，并拒绝遍历路径；目录层数过深返回错误。DevKit 原有整 `/data` 格式化接口保持明确的 board policy，Storage E2E 仅调用测试子目录 clear。BK FATFS 提供真实 seek 和目录级 clear，测试不格式化 SD 卡。
+
+移动端 HTTP owner 复用 CoreHTTP + POSIX Net + 完整 WolfSSL，公开独立 create/API/destroy 生命周期并复制可选 root CA；没有提供 root CA 时使用系统 trust。每个 HTTP owner 独立持有完整 WolfSSL 引用，Crypto getter/shutdown 只取得或释放 Crypto 自己的引用，不会提前销毁仍被 HTTP 持有的实现。请求和 response 全部结束后先销毁 HTTP owner，再进行 Core teardown。HTTP SDK API 与已有 Core/Crypto/Storage 一起进入真实 XCFramework/Swift Package、AAR，HTTP App 不直接链接另一份 provider。六端资格以独立 `pal-http` App 的同一 registry 为准；移动端通过真实模拟器运行，使用受控 HTTP/HTTPS fixture，保留 package/hash 和案例结果。

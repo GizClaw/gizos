@@ -1,5 +1,6 @@
 #include "h2_posix_pal_core.h"
 
+#include <arpa/inet.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <ifaddrs.h>
@@ -588,6 +589,11 @@ static int desktop_net_get_host_addr(void *user, const char *iface_prefix, h2_pa
             return rc;
         }
         freeifaddrs(ifaddr);
+    }
+    /* A requested route must never silently fall back to another interface. */
+    if (iface_prefix != NULL && iface_prefix[0] != '\0') {
+        memset(out_addr, 0, sizeof(*out_addr));
+        return H2_PAL_ERR_NOT_FOUND;
     }
     out_addr->family = H2_PAL_NET_FAMILY_IPV4;
     out_addr->ip[0] = 127u;
@@ -1200,13 +1206,16 @@ static h2_pal_result_t desktop_net_tls_wrap(
         return H2_PAL_ERR_IO;
     }
     if (config->server_name != NULL && config->server_name[0] != '\0') {
+        uint8_t address[sizeof(struct in6_addr)];
+        int numeric_host = inet_pton(AF_INET, config->server_name, address) == 1 ||
+            inet_pton(AF_INET6, config->server_name, address) == 1;
         size_t server_name_len = strlen(config->server_name);
-        if (server_name_len > (size_t)UINT16_MAX ||
+        if (!numeric_host && (server_name_len > (size_t)UINT16_MAX ||
             wolfSSL_UseSNI(
                 ssl,
                 WOLFSSL_SNI_HOST_NAME,
                 config->server_name,
-                (unsigned short)server_name_len) != WOLFSSL_SUCCESS) {
+                (unsigned short)server_name_len) != WOLFSSL_SUCCESS)) {
             wolfSSL_free(ssl);
             wolfSSL_CTX_free(ctx);
             (void)pthread_mutex_lock(&s_tls_lock);
@@ -1214,8 +1223,12 @@ static h2_pal_result_t desktop_net_tls_wrap(
             (void)pthread_mutex_unlock(&s_tls_lock);
             return H2_PAL_ERR_IO;
         }
-        if (wolfSSL_check_domain_name(ssl, config->server_name) !=
-            WOLFSSL_SUCCESS) {
+        /* Numeric authorities require IP SAN verification; domain matching
+         * cannot validate iPAddress SANs, and IP literals are not SNI names. */
+        int name_rc = numeric_host
+            ? wolfSSL_check_ip_address(ssl, config->server_name)
+            : wolfSSL_check_domain_name(ssl, config->server_name);
+        if (name_rc != WOLFSSL_SUCCESS) {
             wolfSSL_free(ssl);
             wolfSSL_CTX_free(ctx);
             (void)pthread_mutex_lock(&s_tls_lock);
