@@ -14,4 +14,4 @@ seed boot 必须产生 phase=1 的 27 个唯一 PASS case，rc/control/cleanup �
 
 最终核验 active version/checksum、P2 validity、Stage empty 和原 Loader P1 identity；对照安装前 coredump 基线。结构化 build/qualification 证据保存在 `evidence/`；原始串口日志保留为本地诊断产物。
 
-BK 的 100 次真实 FlashDB 写入/重新打开循环需要较长时间，诊断 watchdog 预算为 600 秒。r2 实测使用旧的 120 秒提示，仍完成全部 seed case；实际报告和该提示单独记录，旧提示不伪装成新的运行。
+BK 的 100 次真实 FlashDB 写入/重新打开循环需要较长时间，诊断 watchdog 预算为 600 秒。修复版 `pal-storage-bk-20260928-r3` 已完成 27/3 两阶段实测；首次 install monitor 达到宿主期限后，重新连接取得同一次 boot 的完整 replay。元数据写入失败等 provider-specific 故障注入由 host `pref_flashdb_test` 覆盖，实板验证真实 SDK 和正常重启持久化。

@@ -32,4 +32,6 @@ H2_ANDROID_SERIAL=emulator-5580 make bazel-test-android_pal_storage_simulator_te
 
 2026-09-28（Asia/Singapore）六个平台全部完成：macOS、WASM/Chromium、iOS Simulator、Android Emulator、ESP32-S3 DevKit、BK7258。每端均为 30 PASS、0 FAIL、0 BLOCKED，正常进程/浏览器/设备重启后的文件和 Preferences 持久化、测试数据清理均通过。汇总与逐平台记录链接在 [qualification.json](qualification.json)。iOS/Android 的证据来自模拟器，不声称物理手机已验证。
 
-DevKit 实测镜像为 `pal-storage-esp-20260928-r1`，全部测试写入板载 Flash，无需 SD 卡。BK 为 `pal-storage-bk-20260928-r2`，文件位于 SD 卡、Preferences 位于 FlashDB。BK 的 seed 超过旧 120 秒诊断提示，且 CLI 的 install/reboot 监视先达到宿主期限；重新连接后从同一 boot 的不可变 replay 收齐结果。设备最终两阶段均成功、rc/control/cleanup 均为零。源码把后续运行的诊断预算提高为 600 秒；该预算调整本身不伪装为新的硬件运行，证据仍绑定 r2 的实际镜像 SHA。
+DevKit 实测镜像为 `pal-storage-esp-20260928-r1`，全部测试写入板载 Flash，无需 SD 卡。BK 修复后的实测镜像为 `pal-storage-bk-20260928-r3`，文件位于 SD 卡、Preferences 位于 FlashDB。该镜像实际使用 600 秒诊断预算并完成 seed 27 PASS 与正常重启后的 verify 3 PASS；首个 install monitor 达到宿主期限后，通过重新连接收集同一次 boot 的不可变结果，rc/control/cleanup 均为零。最终 App 已确认，Stage 为空，原 Loader 和 coredump 保留。
+
+FlashDB 的保留 namespace 和写入错误路径另由 `//native_component_src/bk7258/ap/h2_pal_core:pref_flashdb_test` 验证：真实 provider 接入可注入提交前/后错误的 SDK 边界，检查值/类型一致、旧格式读取、分配/读取错误及孤立元数据回收；同一测试通过 ASan/UBSan。实板用例不宣称注入了物理 Flash 故障。
