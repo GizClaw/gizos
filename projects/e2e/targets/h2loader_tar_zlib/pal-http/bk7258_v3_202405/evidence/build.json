@@ -2,21 +2,26 @@
   "schema": 1,
   "validation": "build_only",
   "hardware_run": false,
-  "fixture_configured": false,
+  "fixture_configured": true,
   "package": {
     "name": "bk7258_v3_202405-pal-http-bk7258.update.tar.zlib",
     "operation": "managed-install",
     "release_suffix": ".update.tar.zlib",
-    "sha256": "3e1b90d2229b168c804350df4b9ac007c864496f6c7aaa0277547a542e619259",
-    "size": 1715089
+    "sha256": "f9cdfeacbe8f10f25e1a0c1c9dfe90890d521634b1ff2a656adc76b42c92ca20",
+    "size": 1712297
   },
   "image": {
     "board": "bk7258_v3_202405",
     "format": 1,
-    "image_sha256": "8c4839ce1459a4ddb098482479d4734557e01cd0c316b43bc8d5d67ac32883c7",
+    "image_sha256": "0b4834680a2de02fe56f305add8da7d021fdfe97f14ccb1c4944f20e2d51dbb6",
     "image_size": 5222400,
     "role": "app",
     "target": "bk7258",
-    "version": "pal-http-bk-build1"
+    "version": "pal-http-bk-20260928-r2"
+  },
+  "changed_source_sha256": {
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_net.c": "9c8cbb4e7b0699a12b89206c16b192d5dda99b9ffc89234d8bb1856e5055a7d6",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_netif.c": "0348f5280c254de566df8b27d6568b4dc5c3f3dc9ef86771389b8a4fc40fc5a8",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_netif_internal.h": "5ef7ddc84b2a54f1d6d9a6a7de5bdda05a46c73578c4018ba3d326bcb5553e72"
   }
 }
