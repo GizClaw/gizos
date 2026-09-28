@@ -105,6 +105,25 @@ _FIRMWARE_COMPATIBLE_SRCS = [
     "src/h2_gizclaw_workspace.c",
 ]
 
+# dr_mp3's low-level frame decoder for the player: Layer III only, no stdio,
+# and the portable C path on every target so host tests decode the way
+# firmware does. The decoder keeps its 16 KiB scratch inside the caller-owned
+# drmp3dec, not on the stack.
+cc_library(
+    name = "dr_mp3",
+    srcs = ["src/h2_gizclaw_dr_mp3.c"],
+    copts = select({
+        "//tools/bazel/platforms:is_windows_x86_64": [],
+        "//conditions:default": ["-w"],
+    }),
+    defines = [
+        "DR_MP3_NO_SIMD",
+        "DR_MP3_NO_STDIO",
+        "DR_MP3_ONLY_MP3",
+    ],
+    deps = ["@h2_vendor_dr_libs//:dr_mp3_headers"],
+)
+
 cc_library(
     name = "gizclaw",
     srcs = _FIRMWARE_COMPATIBLE_SRCS + ["src/h2_gizclaw_task_names.c"],
@@ -151,7 +170,7 @@ cc_library(
         "//libs/pal",
         "//tools/bazel:vendor_third_party_yyjson",
         "//libs/runtime",
-        "//tools/bazel:vendor_third_party_dr_mp3",
+        ":dr_mp3",
         "//tools/bazel:vendor_third_party_opus",
     ] + select({
         "@platforms//cpu:wasm32": ["//tools/bazel:vendor_third_party_gizclaw"],
@@ -258,7 +277,7 @@ cc_library(
         "//libs/pal",
         "//tools/bazel:vendor_third_party_yyjson",
         "//libs/runtime",
-        "//tools/bazel:vendor_third_party_dr_mp3",
+        ":dr_mp3",
         "//tools/bazel:vendor_third_party_gizclaw",
         "//tools/bazel:vendor_third_party_opus",
     ],
@@ -355,7 +374,7 @@ cc_test(
     }),
     deps = [
         "//libs/pal",
-        "//tools/bazel:vendor_third_party_dr_mp3",
+        ":dr_mp3",
         "//tools/bazel:vendor_third_party_opus",
     ],
 )
