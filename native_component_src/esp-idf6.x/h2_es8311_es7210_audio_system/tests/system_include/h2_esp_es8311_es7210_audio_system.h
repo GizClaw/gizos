@@ -83,6 +83,7 @@ typedef struct h2_esp_es8311_es7210_audio_system {
   uint32_t speaker_volume_percent;
   uint32_t mic_gain_percent;
   uint32_t mic_gain_db_current;
+  int mic_gain_uncertain;
 } h2_esp_es8311_es7210_audio_system_t;
 
 int h2_esp_es8311_es7210_audio_system_init(

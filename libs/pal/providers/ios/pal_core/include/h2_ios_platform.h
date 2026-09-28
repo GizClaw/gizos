@@ -58,6 +58,13 @@ const h2_pal_queue_api_t *h2_ios_platform_queue_api(void);
 const h2_pal_display_api_t *
 h2_ios_platform_display_api(h2_ios_platform_t *platform);
 
+/** Native AudioQueue input/output owner. The PAL is borrowed until destroy;
+ * stop microphone and speaker and close tracks before destruction. */
+typedef struct h2_ios_audio h2_ios_audio_t;
+h2_pal_result_t h2_ios_audio_create(h2_ios_audio_t **out_audio);
+const h2_pal_audio_api_t *h2_ios_audio_api(h2_ios_audio_t *audio);
+void h2_ios_audio_destroy(h2_ios_audio_t *audio);
+
 h2_pal_result_t h2_ios_platform_read_pointer(void *user, int32_t *out_x,
                                              int32_t *out_y, int *out_pressed);
 

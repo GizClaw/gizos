@@ -35,6 +35,8 @@ struct h2_android_platform {
   int pointer_pressed;
   h2_pal_audio_api_t audio;
   h2_android_audio_track_t *audio_track;
+  AAudioStream *mic_stream;
+  uint32_t mic_gain_percent;
   uint32_t speaker_volume_percent;
   int speaker_started;
   h2_pal_display_api_t display;
@@ -47,7 +49,9 @@ static int android_audio_get_info(void *user, h2_audio_info_t *out_info) {
   }
   *out_info = (h2_audio_info_t){
       .available = 1,
-      .mic_supported = 0,
+      .mic_supported = 1,
+      .mic_format = {16000u, 320u, 1u, H2_AUDIO_SAMPLE_S16LE},
+      .mic_queue_frames = 1u,
       .playback_supported = 1,
       .playback_format =
           {
@@ -62,15 +66,97 @@ static int android_audio_get_info(void *user, h2_audio_info_t *out_info) {
   return H2_PAL_OK;
 }
 
-static int android_audio_unsupported(void *user) {
-  return user == NULL ? H2_AUDIO_ERR_INVALID_ARG : H2_AUDIO_ERR_UNSUPPORTED;
+static int android_audio_start_mic(void *user) {
+  h2_android_platform_t *host = user;
+  if (host == NULL) return H2_AUDIO_ERR_INVALID_ARG;
+  pthread_mutex_lock(&host->mutex);
+  if (host->mic_stream != NULL) {
+    pthread_mutex_unlock(&host->mutex);
+    return H2_AUDIO_ERR_INVALID_STATE;
+  }
+  AAudioStreamBuilder *builder = NULL;
+  aaudio_result_t result = AAudio_createStreamBuilder(&builder);
+  if (result != AAUDIO_OK || builder == NULL) {
+    pthread_mutex_unlock(&host->mutex);
+    return H2_AUDIO_ERR_IO;
+  }
+  AAudioStreamBuilder_setDirection(builder, AAUDIO_DIRECTION_INPUT);
+  AAudioStreamBuilder_setSharingMode(builder, AAUDIO_SHARING_MODE_SHARED);
+  AAudioStreamBuilder_setSampleRate(builder, 16000);
+  AAudioStreamBuilder_setChannelCount(builder, 1);
+  AAudioStreamBuilder_setFormat(builder, AAUDIO_FORMAT_PCM_I16);
+  AAudioStreamBuilder_setPerformanceMode(builder, AAUDIO_PERFORMANCE_MODE_NONE);
+  AAudioStream *stream = NULL;
+  result = AAudioStreamBuilder_openStream(builder, &stream);
+  (void)AAudioStreamBuilder_delete(builder);
+  if (result != AAUDIO_OK || stream == NULL) {
+    pthread_mutex_unlock(&host->mutex);
+    return H2_AUDIO_ERR_UNAVAILABLE;
+  }
+  if (AAudioStream_getSampleRate(stream) != 16000 ||
+      AAudioStream_getChannelCount(stream) != 1 ||
+      AAudioStream_getFormat(stream) != AAUDIO_FORMAT_PCM_I16) {
+    (void)AAudioStream_close(stream);
+    pthread_mutex_unlock(&host->mutex);
+    return H2_AUDIO_ERR_UNSUPPORTED;
+  }
+  result = AAudioStream_requestStart(stream);
+  if (result != AAUDIO_OK) {
+    (void)AAudioStream_close(stream);
+    pthread_mutex_unlock(&host->mutex);
+    return H2_AUDIO_ERR_UNAVAILABLE;
+  }
+  host->mic_stream = stream;
+  pthread_mutex_unlock(&host->mutex);
+  return H2_AUDIO_OK;
+}
+
+static int android_audio_stop_mic(void *user) {
+  h2_android_platform_t *host = user;
+  if (host == NULL) return H2_AUDIO_ERR_INVALID_ARG;
+  pthread_mutex_lock(&host->mutex);
+  AAudioStream *stream = host->mic_stream;
+  host->mic_stream = NULL;
+  int rc = H2_AUDIO_OK;
+  if (stream != NULL) {
+    const aaudio_result_t stop = AAudioStream_requestStop(stream);
+    const aaudio_result_t close = AAudioStream_close(stream);
+    if (stop != AAUDIO_OK || close != AAUDIO_OK) rc = H2_AUDIO_ERR_IO;
+  }
+  pthread_mutex_unlock(&host->mutex);
+  return rc;
 }
 
 static int android_audio_mic_read(void *user, h2_audio_frame_t *out_frame,
                                   uint32_t timeout_ms) {
-  (void)out_frame;
-  (void)timeout_ms;
-  return user == NULL ? H2_AUDIO_ERR_INVALID_ARG : H2_AUDIO_ERR_UNSUPPORTED;
+  h2_android_platform_t *host = user;
+  if (host == NULL || out_frame == NULL || out_frame->data == NULL ||
+      out_frame->capacity < 320u * sizeof(int16_t) ||
+      out_frame->sample_rate_hz != 16000u || out_frame->channels != 1u ||
+      out_frame->sample_format != H2_AUDIO_SAMPLE_S16LE)
+    return H2_AUDIO_ERR_INVALID_ARG;
+  pthread_mutex_lock(&host->mutex);
+  if (host->mic_stream == NULL) {
+    pthread_mutex_unlock(&host->mutex);
+    return H2_AUDIO_ERR_INVALID_STATE;
+  }
+  const int64_t timeout_ns = (int64_t)timeout_ms * 1000000;
+  const aaudio_result_t read = AAudioStream_read(
+      host->mic_stream, out_frame->data, 320, timeout_ns);
+  if (read <= 0) {
+    pthread_mutex_unlock(&host->mutex);
+    return read == 0 ? H2_AUDIO_ERR_WOULD_BLOCK : H2_AUDIO_ERR_IO;
+  }
+  const uint32_t gain = host->mic_gain_percent;
+  int16_t *samples = out_frame->data;
+  for (aaudio_result_t i = 0; i < read; ++i) {
+    const int32_t scaled = (int32_t)samples[i] * (int32_t)gain / 100;
+    samples[i] = (int16_t)scaled;
+  }
+  out_frame->bytes = (size_t)read * sizeof(int16_t);
+  out_frame->samples_per_channel = (uint16_t)read;
+  pthread_mutex_unlock(&host->mutex);
+  return H2_AUDIO_OK;
 }
 
 static int android_audio_start_speaker(void *user) {
@@ -375,21 +461,27 @@ static int android_audio_set_speaker_volume(void *user, uint32_t percent) {
 }
 
 static int android_audio_get_mic_gain(void *user, uint32_t *out_percent) {
-  (void)user;
-  (void)out_percent;
-  return H2_AUDIO_ERR_UNSUPPORTED;
+  h2_android_platform_t *host = user;
+  if (host == NULL || out_percent == NULL) return H2_AUDIO_ERR_INVALID_ARG;
+  pthread_mutex_lock(&host->mutex);
+  *out_percent = host->mic_gain_percent;
+  pthread_mutex_unlock(&host->mutex);
+  return H2_AUDIO_OK;
 }
 
 static int android_audio_set_mic_gain(void *user, uint32_t percent) {
-  (void)user;
-  (void)percent;
-  return H2_AUDIO_ERR_UNSUPPORTED;
+  h2_android_platform_t *host = user;
+  if (host == NULL || percent > 100u) return H2_AUDIO_ERR_INVALID_ARG;
+  pthread_mutex_lock(&host->mutex);
+  host->mic_gain_percent = percent;
+  pthread_mutex_unlock(&host->mutex);
+  return H2_AUDIO_OK;
 }
 
 static const h2_pal_audio_vtable_t s_android_audio_vtable = {
     .get_info = android_audio_get_info,
-    .start_mic = android_audio_unsupported,
-    .stop_mic = android_audio_unsupported,
+    .start_mic = android_audio_start_mic,
+    .stop_mic = android_audio_stop_mic,
     .start_speaker = android_audio_start_speaker,
     .stop_speaker = android_audio_stop_speaker,
     .mic_read = android_audio_mic_read,
@@ -547,6 +639,7 @@ h2_android_platform_create(JNIEnv *env, jobject view,
   host->audio.user = host;
   host->audio.vtable = &s_android_audio_vtable;
   host->speaker_volume_percent = 100u;
+  host->mic_gain_percent = 100u;
   host->width = config->display_width;
   host->height = config->display_height;
   return host;
@@ -559,6 +652,7 @@ void h2_android_platform_destroy(h2_android_platform_t *host) {
   if (host->audio_track != NULL) {
     (void)android_audio_track_close(&host->audio_track->base);
   }
+  (void)android_audio_stop_mic(host);
   (void)android_display_close(host);
   JNIEnv *env = NULL;
   int attached = 0;

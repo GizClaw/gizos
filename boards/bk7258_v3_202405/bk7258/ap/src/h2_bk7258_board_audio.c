@@ -660,6 +660,8 @@ static int bk_audio_get_speaker_volume_percent(void *user, uint32_t *out_percent
 
 static int bk_audio_set_speaker_volume_percent(void *user, uint32_t percent) {
     h2_bk_audio_state_t *state = (h2_bk_audio_state_t *)user;
+    if (percent > 100u)
+        return H2_AUDIO_ERR_INVALID_ARG;
     state->speaker_volume_percent = percent;
     if (state->play == NULL) {
         return H2_AUDIO_OK;

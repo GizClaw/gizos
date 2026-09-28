@@ -1,0 +1,261 @@
+{
+  "schema": 1,
+  "base_commit": "e9aad739",
+  "generated_at_utc": "2026-09-28T15:35:51.549952+00:00",
+  "interface": {
+    "header": "libs/pal/include/h2/pal/hal/h2_pal_audio.h",
+    "provider_operations": 11,
+    "track_operations": 5,
+    "mandatory_cases": 24
+  },
+  "platforms": {
+    "macos": {
+      "status": "PASS",
+      "summary": {
+        "passed": 24,
+        "failed": 0,
+        "blocked": 0,
+        "mic_frames": 1498,
+        "mic_peak": 238,
+        "mic_energy": 452271666,
+        "speaker_frames": 1500,
+        "output_peak": 1120,
+        "witness_mic_frames": 1498,
+        "witness_speaker_frames": 3026,
+        "witness_mic_peak": 397,
+        "witness_speaker_peak": 224,
+        "stability_elapsed_ms": 30001
+      },
+      "observed_case_rows": 24,
+      "observed_replay_rows": 0,
+      "log": "evidence/desktop.log",
+      "log_sha256": "4b15d667c150fce6c60338504ed0fb1d95005c1e7ac438dffd7ce12af9ab7368"
+    },
+    "wasm_chromium": {
+      "status": "PASS",
+      "summary": {
+        "platform": "wasm-chromium",
+        "worker": 1,
+        "passed": 24,
+        "failed": 0,
+        "blocked": 0,
+        "mic_frames": 508,
+        "mic_peak": 19660,
+        "mic_energy": 571480674967,
+        "speaker_frames": 510,
+        "output_peak": 1120,
+        "stability_elapsed_ms": 30031,
+        "rc": 0
+      },
+      "observed_case_rows": 24,
+      "observed_replay_rows": 0,
+      "log": "evidence/browser.log",
+      "log_sha256": "5848d0cb0098dc2a958376c2f1c33d9773889b504d3802b31e7a77b7e5020bc0"
+    },
+    "ios_simulator": {
+      "status": "PASS",
+      "summary": {
+        "platform": "ios-simulator",
+        "image_version": "2.0.0",
+        "passed": 24,
+        "failed": 0,
+        "blocked": 0,
+        "mic_frames": 941,
+        "mic_peak": 157,
+        "mic_energy": 126683134,
+        "speaker_frames": 943,
+        "output_peak": 1120,
+        "stability_elapsed_ms": 30003,
+        "run_rc": 0,
+        "teardown_rc": 0
+      },
+      "qualified_report": "evidence/ios/qualified.json",
+      "qualified_report_sha256": "f687478c65f2fb45922c37e41af3b35192fc9e36145aec60a7eab640050d6ce1",
+      "environment": "evidence/ios/environment.json",
+      "environment_sha256": "1d216c08e7bec1fbee18afef9494347ab5a14ea3568b4e5159e740e64c8b5453",
+      "app_sha256": "44c4b6b125dbfa22478ad461fabc72e2f4f3e64350bef1b0877ea68e1d8e2a79",
+      "sdk_sha256": "018e0e89aac321163d775c4a91eb60612ddc9cc7910fc979916a7ba07877f517"
+    },
+    "android_emulator": {
+      "status": "PASS",
+      "summary": {
+        "platform": "android-emulator",
+        "image_version": "2.0.0",
+        "passed": 24,
+        "failed": 0,
+        "blocked": 0,
+        "mic_frames": 940,
+        "mic_peak": 5,
+        "mic_energy": 2112233,
+        "speaker_frames": 942,
+        "output_peak": 1120,
+        "stability_elapsed_ms": 30020,
+        "run_rc": 0,
+        "teardown_rc": 0
+      },
+      "qualified_report": "evidence/android/qualified.json",
+      "qualified_report_sha256": "bcbfe3db812dfc6d522becd8fa9d169521c3a8a74c2bbf0ed2822115ddc7f7fd",
+      "environment": "evidence/android/environment.json",
+      "environment_sha256": "c88484e907a632c489bdcc6fe2c1c7d95e13902eac1c56ac0bed670e8be3311d",
+      "app_sha256": "36985ea61dfe15c83aa6d61d45077f2eb801a57d78b60ad8d3b9b92d07752a3e",
+      "sdk_sha256": "c57847d55d4d135f82c5d296fcdb87ae285de425212ed68226510a324910cb5a"
+    },
+    "amoled_esp32s3": {
+      "status": "PASS",
+      "summary": {
+        "platform": "amoled",
+        "passed": 24,
+        "failed": 0,
+        "blocked": 0,
+        "mic_frames": 887,
+        "mic_peak": 77,
+        "mic_energy": 5031591,
+        "speaker_frames": 889,
+        "output_peak": 1120,
+        "stability_elapsed_ms": 30021,
+        "rc": 0,
+        "confirm": 0
+      },
+      "observed_case_rows": 24,
+      "observed_replay_rows": 72,
+      "log": "evidence/amoled/boot.log",
+      "log_sha256": "8faa17f1fda83090dbbcf5a4a87220ef27a53a479816cc8b50b9fc17136a3b77",
+      "independent_reboot": {
+        "status": "PASS",
+        "summary": {
+          "platform": "amoled",
+          "passed": 24,
+          "failed": 0,
+          "blocked": 0,
+          "mic_frames": 940,
+          "mic_peak": 135,
+          "mic_energy": 10241477,
+          "speaker_frames": 942,
+          "output_peak": 1120,
+          "stability_elapsed_ms": 30034,
+          "rc": 0,
+          "confirm": 0
+        },
+        "observed_case_rows": 21,
+        "observed_replay_rows": 193,
+        "log": "evidence/amoled/reboot.log",
+        "log_sha256": "2993868973c7c5e7d6319805c2e77740eff7c8748ddfb5ba1a256020a666d150"
+      },
+      "device_uid": "30eda0ae0f86",
+      "package_sha256": "401b48591a16a4ae41f27692faea44a9af91c28dcd0f8d622166937d3ebce9e8",
+      "status_sha256": "8a3a77585cb317130b08b754bce617feb5779ad2bc48f00b5aa5492b3b627323",
+      "coredump_sha256": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec"
+    },
+    "bk7258": {
+      "status": "PENDING_DEVICE_RUN",
+      "package_version": "pal-audio-e2e-20260928-r3",
+      "package_sha256": "5968d937c66ac7c4ec4c5ee0e8591a1f54915aba21a06970318e4c893a206d84",
+      "observed_case_rows": 0,
+      "note": "Build verified; no UART, Loader, reboot, P1, Stage, coredump or runtime PASS claim."
+    }
+  },
+  "coverage": {
+    "compiler": "Apple clang 21.0.0 / Apple LLVM 21.0.0",
+    "measurement": "Clang source-based instrumentation, llvm-profdata + llvm-cov report on macOS arm64",
+    "e2e_only": {
+      "portable_app": {
+        "functions": [
+          31,
+          32
+        ],
+        "lines": [
+          411,
+          436
+        ],
+        "branches": [
+          335,
+          570
+        ]
+      },
+      "portaudio": {
+        "functions": [
+          48,
+          60
+        ],
+        "lines": [
+          668,
+          984
+        ],
+        "branches": [
+          207,
+          434
+        ]
+      },
+      "audio_mixer": {
+        "functions": [
+          23,
+          26
+        ],
+        "lines": [
+          427,
+          665
+        ],
+        "branches": [
+          181,
+          402
+        ]
+      },
+      "profile_sha256": "606453c9dce2f68897d2e12f3dd1c4f0a8622fe3b1b71aee4f97800450bb1870"
+    },
+    "e2e_plus_focused_provider_tests": {
+      "portable_app": {
+        "functions": [
+          31,
+          32
+        ],
+        "lines": [
+          411,
+          436
+        ],
+        "branches": [
+          335,
+          570
+        ]
+      },
+      "portaudio": {
+        "functions": [
+          57,
+          60
+        ],
+        "lines": [
+          764,
+          984
+        ],
+        "branches": [
+          267,
+          434
+        ]
+      },
+      "audio_mixer": {
+        "functions": [
+          24,
+          26
+        ],
+        "lines": [
+          458,
+          665
+        ],
+        "branches": [
+          211,
+          402
+        ]
+      },
+      "profile_sha256": "cdf0e6df9582f28120f308ae9b024b758020d7d9ed30efd3d6b6ee73cf5ddbf8"
+    },
+    "note": "Provider numbers are measured code execution; mobile and board compilation is not counted as runtime code coverage."
+  },
+  "separate_capability": "libs/pal/include/h2/pal/hal/h2_pal_audio_decoder.h",
+  "limits": [
+    "BK7258 device run pending; overall six-platform qualification is incomplete.",
+    "Browser input is Chromium deterministic fake microphone through production PAL, not a physical browser microphone.",
+    "iOS and Android observations are simulators, not physical phones.",
+    "Board output PCM was accepted and drained by the real codec path; acoustic output was not measured by an external fixture.",
+    "BK transient ADC gain I/O failure could not yet be injected on live hardware."
+  ],
+  "six_platform_qualified": false
+}

@@ -124,6 +124,9 @@ typedef struct h2_esp_es8311_es7210_audio_system {
     uint32_t speaker_volume_percent;
     uint32_t mic_gain_percent;
     uint32_t mic_gain_db_current;
+    /* A failed rollback may leave inputs at different gains. Getter reports
+     * IO until a complete setter retry reprograms every active input. */
+    int mic_gain_uncertain;
     i2c_master_bus_handle_t i2c_bus;
     i2c_master_dev_handle_t es8311;
     i2c_master_dev_handle_t es7210;
