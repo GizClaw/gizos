@@ -23,5 +23,10 @@
     "cookie": "mbedtls ssl_cookie_write_dummy returned -28800 (-0x7080), PAL IO at first ClientHello",
     "certificate": "After fixing cookie, VERIFY_REQUIRED with no CA chain returned -30336, PAL IO"
   },
-  "physical_board_status": "Not rerun after this DTLS repair; r7 failed receipt remains current."
+  "physical_board_status": "Not rerun after this DTLS repair; r7 failed receipt remains current.",
+  "sanitizers": {
+    "address": "PASS",
+    "undefined_behavior": "PASS",
+    "cases": 5
+  }
 }
