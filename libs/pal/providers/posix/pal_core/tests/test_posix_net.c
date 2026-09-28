@@ -40,6 +40,10 @@ int main(void) {
     assert(net != NULL && net->vtable != NULL &&
            net->vtable->tcp_send_timeout != NULL);
 
+    h2_pal_net_addr_t missing = {0};
+    assert(h2_pal_net_get_host_addr(net, "h2-e2e-missing-interface", &missing) ==
+           H2_PAL_ERR_NOT_FOUND);
+
     int pair[2];
     make_stream_pair(pair);
     size_t payload_len = 1024u * 1024u;

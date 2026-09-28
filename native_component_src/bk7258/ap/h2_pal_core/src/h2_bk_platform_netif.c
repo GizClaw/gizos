@@ -1,4 +1,5 @@
 #include "h2_bk_platform_core.h"
+#include "h2_bk_netif_internal.h"
 
 #include <components/log.h>
 #include "lwip/dns.h"
@@ -170,6 +171,31 @@ static void h2_bk_netif_name(
         status->kind == H2_PAL_NETIF_KIND_MODEM_DATA ? "ppp" :
         status->kind == H2_PAL_NETIF_KIND_LOOPBACK ? "lo" : "netif",
         (unsigned long)status->ref.id);
+}
+
+h2_pal_result_t h2_bk_netif_address_for_prefix(
+    const char *prefix, h2_pal_net_addr_t *out_addr) {
+    if (prefix == NULL || prefix[0] == '\0' || out_addr == NULL)
+        return H2_PAL_ERR_INVALID_ARG;
+    memset(out_addr, 0, sizeof(*out_addr));
+    h2_bk_netif_snapshot_t snapshot;
+    h2_pal_result_t rc = h2_bk_netif_snapshot(&snapshot);
+    if (rc != H2_PAL_OK) return rc;
+    size_t prefix_len = strlen(prefix);
+    int matched = 0;
+    for (size_t index = 0u; index < snapshot.count; ++index) {
+        const h2_pal_netif_status_t *status = &snapshot.entries[index];
+        char name[H2_PAL_NETIF_NAME_MAX];
+        h2_bk_netif_name(status, name);
+        if (strncmp(name, prefix, prefix_len) != 0) continue;
+        matched = 1;
+        if (!h2_pal_netif_status_is_usable(status) ||
+            status->ipv4.family != H2_PAL_NET_FAMILY_IPV4) continue;
+        *out_addr = status->ipv4;
+        out_addr->port = 0u;
+        return H2_PAL_OK;
+    }
+    return matched ? H2_PAL_ERR_UNAVAILABLE : H2_PAL_ERR_NOT_FOUND;
 }
 
 static int h2_bk_netif_matches_filter(

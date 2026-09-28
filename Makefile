@@ -81,6 +81,13 @@ bazel-test-ios_pal_crypto_simulator_test:
 bazel-test-android_pal_crypto_simulator_test:
 	@scripts/bazel/bazel-test-android_pal_crypto_simulator_test.sh
 
+.PHONY: bazel-test-ios_pal_http_simulator_test bazel-test-android_pal_http_simulator_test
+bazel-test-ios_pal_http_simulator_test:
+	@scripts/bazel/bazel-test-ios_pal_http_simulator_test.sh
+
+bazel-test-android_pal_http_simulator_test:
+	@scripts/bazel/bazel-test-android_pal_http_simulator_test.sh
+
 .PHONY: bazel-test-ios_pal_webrtc_simulator_test bazel-test-android_pal_webrtc_simulator_test
 bazel-test-ios_pal_webrtc_simulator_test:
 	@scripts/bazel/bazel-test-ios_pal_webrtc_simulator_test.sh

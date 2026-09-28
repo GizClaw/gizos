@@ -1,0 +1,22 @@
+{
+  "schema": 1,
+  "validation": "built_and_run",
+  "hardware_run": true,
+  "fixture_configured": true,
+  "package": {
+    "name": "devkit-pal-http-esp32s3.update.tar.zlib",
+    "operation": "managed-install",
+    "release_suffix": ".update.tar.zlib",
+    "sha256": "8bc3e283f4ebb5b0114a691e568895478c324b07121144034a3598693252b915",
+    "size": 979880
+  },
+  "image": {
+    "board": "devkit",
+    "format": 1,
+    "image_sha256": "9544222754a3c46f6d3319696deae4848ac9a0ff330fdca145de997696af2c36",
+    "image_size": 1520720,
+    "role": "app",
+    "target": "esp32s3",
+    "version": "pal-http-esp-20260928-r5"
+  }
+}

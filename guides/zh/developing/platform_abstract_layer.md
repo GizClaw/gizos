@@ -616,5 +616,6 @@ BK7258 Preferences 保留已有原始 value 字节，确保已安装旧 Loader �
 
 ESP LittleFS 的目录级 clear 在既有 internal-stack safe-call 路径执行，保留目录本身、递归移除子项，并拒绝遍历路径；目录层数过深返回错误。DevKit 原有整 `/data` 格式化接口保持明确的 board policy，Storage E2E 仅调用测试子目录 clear。BK FATFS 提供真实 seek 和目录级 clear，测试不格式化 SD 卡。
 
+移动端 HTTP owner 复用 CoreHTTP + POSIX Net + 完整 WolfSSL，公开独立 create/API/destroy 生命周期并复制可选 root CA；没有提供 root CA 时使用系统 trust。每个 HTTP owner 独立持有完整 WolfSSL 引用，Crypto getter/shutdown 只取得或释放 Crypto 自己的引用，不会提前销毁仍被 HTTP 持有的实现。请求和 response 全部结束后先销毁 HTTP owner，再进行 Core teardown。HTTP SDK API 与已有 Core/Crypto/Storage 一起进入真实 XCFramework/Swift Package、AAR，HTTP App 不直接链接另一份 provider。六端资格以独立 `pal-http` App 的同一 registry 为准；移动端通过真实模拟器运行，使用受控 HTTP/HTTPS fixture，保留 package/hash 和案例结果。
 
 iOS 和 Android 的 WebRTC owner 位于各自 `pal_core/src/h2_*_webrtc.c`，组合 H2Peer、H2SCTP、原生 POSIX Net 和与 Crypto/HTTP 共用的完整 WolfSSL。每个 owner 独立持有 TLS lifecycle 引用，公开 create/API/destroy；API 借用至 destroy，销毁必须先停止使用并释放事件，busy 时保留 owner 供重试。该 owner 不打开物理音频设备，Track 由 caller 提供。真实 SDK archive 包含此实现，独立 `pal-webrtc` qualification App 直接消费 package binary。

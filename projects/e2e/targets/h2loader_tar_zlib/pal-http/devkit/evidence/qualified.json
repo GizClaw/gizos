@@ -1,0 +1,888 @@
+{
+  "schema": 1,
+  "platform": "devkit",
+  "operations": 2,
+  "case_count": 45,
+  "passed": 45,
+  "failed": 0,
+  "blocked": 0,
+  "qualified": true,
+  "image_sha256": "9544222754a3c46f6d3319696deae4848ac9a0ff330fdca145de997696af2c36",
+  "package_sha256": "8bc3e283f4ebb5b0114a691e568895478c324b07121144034a3598693252b915",
+  "image_version": "pal-http-esp-20260928-r5",
+  "source_commit": "1a640293",
+  "runs": [
+    {
+      "run_id": "89a45b0940a1399c",
+      "version": "pal-http-esp-20260928-r5",
+      "board": "devkit",
+      "uid": "9888e0115c52",
+      "cases": [
+        {
+          "id": "api-complete",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "request_result": 0
+        },
+        {
+          "id": "get",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 31,
+          "request_result": 0
+        },
+        {
+          "id": "post",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 19,
+          "request_result": 0
+        },
+        {
+          "id": "put",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 18,
+          "request_result": 0
+        },
+        {
+          "id": "patch",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 22,
+          "request_result": 0
+        },
+        {
+          "id": "delete",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 31,
+          "request_result": 0
+        },
+        {
+          "id": "head",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 45,
+          "request_result": 0
+        },
+        {
+          "id": "options",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 26,
+          "request_result": 0
+        },
+        {
+          "id": "byte-spans",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 22,
+          "request_result": 0
+        },
+        {
+          "id": "empty-body",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 21,
+          "request_result": 0
+        },
+        {
+          "id": "status-404",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 28,
+          "request_result": 0
+        },
+        {
+          "id": "status-503",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 17,
+          "request_result": 0
+        },
+        {
+          "id": "caller-exact",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 19,
+          "request_result": 0
+        },
+        {
+          "id": "caller-too-small",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 16,
+          "request_result": -13
+        },
+        {
+          "id": "allocator-owned",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 27,
+          "request_result": 0
+        },
+        {
+          "id": "allocator-alias",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 18,
+          "request_result": 0
+        },
+        {
+          "id": "allocator-precedence",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 18,
+          "request_result": 0
+        },
+        {
+          "id": "allocator-failure",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 16,
+          "request_result": -5
+        },
+        {
+          "id": "stream-known",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 18,
+          "request_result": 0
+        },
+        {
+          "id": "stream-chunked",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 19,
+          "request_result": 0
+        },
+        {
+          "id": "stream-no-scratch",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 16,
+          "request_result": 0
+        },
+        {
+          "id": "stream-abort",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 22,
+          "request_result": -4
+        },
+        {
+          "id": "header-abort",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 16,
+          "request_result": -4
+        },
+        {
+          "id": "cancel-before",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "request_result": -10
+        },
+        {
+          "id": "cancel-stream",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 243,
+          "request_result": -10
+        },
+        {
+          "id": "cancel-wait",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 2007,
+          "request_result": -10
+        },
+        {
+          "id": "timeout-headers",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 2001,
+          "request_result": -6
+        },
+        {
+          "id": "timeout-body",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 2001,
+          "request_result": -6
+        },
+        {
+          "id": "truncated-body",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 19,
+          "request_result": -10
+        },
+        {
+          "id": "retry-recover",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 45,
+          "request_result": 0
+        },
+        {
+          "id": "retry-exhausted",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 59,
+          "request_result": 0
+        },
+        {
+          "id": "retry-deadline",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 5001,
+          "request_result": -6
+        },
+        {
+          "id": "redirect-relative",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 34,
+          "request_result": 0
+        },
+        {
+          "id": "redirect-post-303",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 39,
+          "request_result": 0
+        },
+        {
+          "id": "redirect-post-307",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 40,
+          "request_result": 0
+        },
+        {
+          "id": "https-trusted",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 262,
+          "request_result": 0
+        },
+        {
+          "id": "https-untrusted",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 19,
+          "request_result": -17
+        },
+        {
+          "id": "interface-rejected",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "request_result": -2
+        },
+        {
+          "id": "invalid-method",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "request_result": -1
+        },
+        {
+          "id": "invalid-url-span",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "request_result": -1
+        },
+        {
+          "id": "invalid-header",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "request_result": -1
+        },
+        {
+          "id": "discard-body",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 16,
+          "request_result": 0
+        },
+        {
+          "id": "response-free",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 14,
+          "request_result": 0
+        },
+        {
+          "id": "repeated-cleanup",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 16,
+          "request_result": 0
+        },
+        {
+          "id": "callback-quiescence",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 16,
+          "request_result": 0
+        }
+      ],
+      "summary": {
+        "passed": 45,
+        "failed": 0,
+        "blocked": 0,
+        "retained_allocations": 0,
+        "cleanup": 0
+      },
+      "rc": 0,
+      "confirm": 0,
+      "final_status": {
+        "board": "devkit",
+        "target": "esp32s3",
+        "device_uid": "9888e0115c52",
+        "active_role": "app",
+        "active_version": "pal-http-esp-20260928-r5",
+        "active_checksum": "9544222754a3c46f6d3319696deae4848ac9a0ff330fdca145de997696af2c36",
+        "running_partition": "2",
+        "stage_valid": "0",
+        "partition_1_image_checksum": "9479960ee19af062cb1a599c4d4b52f948d476efc842aabdfa6ca2ec812befd5",
+        "partition_1_version": "0.2.3-atomic-541",
+        "partition_2_valid": "1",
+        "last_result": "0"
+      },
+      "fixture": {
+        "arrivals": {
+          "/bytes": 43,
+          "/echo": 6,
+          "/headers": 1,
+          "/empty": 1,
+          "/status/404": 1,
+          "/status/503": 1,
+          "/chunked": 1,
+          "/slow-headers": 2,
+          "/slow-body": 1,
+          "/truncated": 1,
+          "/retry/recover": 2,
+          "/retry/exhausted": 3,
+          "/retry/deadline": 3,
+          "/redirect/relative": 1,
+          "/redirect/303": 1,
+          "/redirect/307": 1,
+          "/tls-rejection/arm": 1,
+          "/tls-rejection/proof": 1
+        },
+        "arrivals_valid": true,
+        "tls_rejection": {
+          "arm": 3,
+          "run_id": "89a45b0940a1399c",
+          "http_requests": 0,
+          "events": [
+            {
+              "client_hello": true,
+              "certificate_presented": true,
+              "peer_alerts": [
+                48
+              ],
+              "finished": true,
+              "handshake_succeeded": false,
+              "error": "TLSV1_ALERT_UNKNOWN_CA"
+            }
+          ],
+          "verified": true
+        }
+      }
+    },
+    {
+      "run_id": "f674a93a0f54bfb3",
+      "version": "pal-http-esp-20260928-r5",
+      "board": "devkit",
+      "uid": "9888e0115c52",
+      "cases": [
+        {
+          "id": "api-complete",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "request_result": 0
+        },
+        {
+          "id": "get",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 28,
+          "request_result": 0
+        },
+        {
+          "id": "post",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 28,
+          "request_result": 0
+        },
+        {
+          "id": "put",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 29,
+          "request_result": 0
+        },
+        {
+          "id": "patch",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 27,
+          "request_result": 0
+        },
+        {
+          "id": "delete",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1512,
+          "request_result": 0
+        },
+        {
+          "id": "head",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1441,
+          "request_result": 0
+        },
+        {
+          "id": "options",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 29,
+          "request_result": 0
+        },
+        {
+          "id": "byte-spans",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 172,
+          "request_result": 0
+        },
+        {
+          "id": "empty-body",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1184,
+          "request_result": 0
+        },
+        {
+          "id": "status-404",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 23,
+          "request_result": 0
+        },
+        {
+          "id": "status-503",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 17,
+          "request_result": 0
+        },
+        {
+          "id": "caller-exact",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 46,
+          "request_result": 0
+        },
+        {
+          "id": "caller-too-small",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 49,
+          "request_result": -13
+        },
+        {
+          "id": "allocator-owned",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 61,
+          "request_result": 0
+        },
+        {
+          "id": "allocator-alias",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 21,
+          "request_result": 0
+        },
+        {
+          "id": "allocator-precedence",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 20,
+          "request_result": 0
+        },
+        {
+          "id": "allocator-failure",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 35,
+          "request_result": -5
+        },
+        {
+          "id": "stream-known",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 21,
+          "request_result": 0
+        },
+        {
+          "id": "stream-chunked",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 20,
+          "request_result": 0
+        },
+        {
+          "id": "stream-no-scratch",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 210,
+          "request_result": 0
+        },
+        {
+          "id": "stream-abort",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 18,
+          "request_result": -4
+        },
+        {
+          "id": "header-abort",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 32,
+          "request_result": -4
+        },
+        {
+          "id": "cancel-before",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "request_result": -10
+        },
+        {
+          "id": "cancel-stream",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 21,
+          "request_result": -10
+        },
+        {
+          "id": "cancel-wait",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 2011,
+          "request_result": -10
+        },
+        {
+          "id": "timeout-headers",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 2001,
+          "request_result": -6
+        },
+        {
+          "id": "timeout-body",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 2001,
+          "request_result": -6
+        },
+        {
+          "id": "truncated-body",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1503,
+          "request_result": -10
+        },
+        {
+          "id": "retry-recover",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 35,
+          "request_result": 0
+        },
+        {
+          "id": "retry-exhausted",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 259,
+          "request_result": 0
+        },
+        {
+          "id": "retry-deadline",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 5002,
+          "request_result": -6
+        },
+        {
+          "id": "redirect-relative",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 41,
+          "request_result": 0
+        },
+        {
+          "id": "redirect-post-303",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 39,
+          "request_result": 0
+        },
+        {
+          "id": "redirect-post-307",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 210,
+          "request_result": 0
+        },
+        {
+          "id": "https-trusted",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 471,
+          "request_result": 0
+        },
+        {
+          "id": "https-untrusted",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 37,
+          "request_result": -17
+        },
+        {
+          "id": "interface-rejected",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "request_result": -2
+        },
+        {
+          "id": "invalid-method",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "request_result": -1
+        },
+        {
+          "id": "invalid-url-span",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "request_result": -1
+        },
+        {
+          "id": "invalid-header",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "request_result": -1
+        },
+        {
+          "id": "discard-body",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 16,
+          "request_result": 0
+        },
+        {
+          "id": "response-free",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 13,
+          "request_result": 0
+        },
+        {
+          "id": "repeated-cleanup",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 18,
+          "request_result": 0
+        },
+        {
+          "id": "callback-quiescence",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 20,
+          "request_result": 0
+        }
+      ],
+      "summary": {
+        "passed": 45,
+        "failed": 0,
+        "blocked": 0,
+        "retained_allocations": 0,
+        "cleanup": 0
+      },
+      "rc": 0,
+      "confirm": 0,
+      "final_status": {
+        "board": "devkit",
+        "target": "esp32s3",
+        "device_uid": "9888e0115c52",
+        "active_role": "app",
+        "active_version": "pal-http-esp-20260928-r5",
+        "active_checksum": "9544222754a3c46f6d3319696deae4848ac9a0ff330fdca145de997696af2c36",
+        "running_partition": "2",
+        "stage_valid": "0",
+        "partition_1_image_checksum": "9479960ee19af062cb1a599c4d4b52f948d476efc842aabdfa6ca2ec812befd5",
+        "partition_1_version": "0.2.3-atomic-541",
+        "partition_2_valid": "1",
+        "last_result": "0"
+      },
+      "fixture": {
+        "arrivals": {
+          "/bytes": 43,
+          "/echo": 6,
+          "/headers": 1,
+          "/empty": 1,
+          "/status/404": 1,
+          "/status/503": 1,
+          "/chunked": 1,
+          "/slow-headers": 2,
+          "/slow-body": 1,
+          "/truncated": 1,
+          "/retry/recover": 2,
+          "/retry/exhausted": 3,
+          "/retry/deadline": 2,
+          "/redirect/relative": 1,
+          "/redirect/303": 1,
+          "/redirect/307": 1,
+          "/tls-rejection/arm": 1,
+          "/tls-rejection/proof": 1
+        },
+        "arrivals_valid": true,
+        "tls_rejection": {
+          "arm": 4,
+          "run_id": "f674a93a0f54bfb3",
+          "http_requests": 0,
+          "events": [
+            {
+              "client_hello": true,
+              "certificate_presented": true,
+              "peer_alerts": [
+                48
+              ],
+              "finished": true,
+              "handshake_succeeded": false,
+              "error": "TLSV1_ALERT_UNKNOWN_CA"
+            }
+          ],
+          "verified": true
+        }
+      }
+    }
+  ],
+  "restart": "normal H2Loader app reboot; distinct fixture run nonce; old replay rejected",
+  "coredump": {
+    "before_stored_bytes": 0,
+    "after_stored_bytes": 0,
+    "blank": true
+  },
+  "loader_unchanged": true,
+  "tls_verification": "TLS_VERIFY required; armed peer observed ClientHello, certificate presentation and rejection; zero successful untrusted HTTP requests"
+}

@@ -1,0 +1,68 @@
+load("@rules_android//rules:rules.bzl", "android_binary", "android_library")
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:mobile_app_sdk.bzl", "mobile_app_sdk")
+load("//tools/bazel/platforms:compatibility.bzl", "ANDROID_ARM64_ARTIFACT_COMPATIBILITY", "ANDROID_ARM64_PACKAGE_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "launcher",
+    srcs = ["main.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = ANDROID_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = [
+        "//libs/app_host:android_packaged",
+        "//projects/e2e/libs/pal-http-mobile:runner",
+    ],
+)
+
+android_library(
+    name = "app",
+    srcs = ["src/com/haivivi/gizos/e2e/palhttp/MainActivity.java"],
+    custom_package = "com.haivivi.gizos.e2e.palhttp",
+    target_compatible_with = ANDROID_ARM64_PACKAGE_ARTIFACT_COMPATIBILITY,
+    deps = [":launcher"],
+)
+
+android_binary(
+    name = "pal_http_e2e",
+    custom_package = "com.haivivi.gizos.e2e.palhttp",
+    manifest = "AndroidManifest.xml",
+    target_compatible_with = ANDROID_ARM64_PACKAGE_ARTIFACT_COMPATIBILITY,
+    deps = [":app"],
+)
+
+sh_test(
+    name = "android_pal_http_simulator_test",
+    timeout = "moderate",
+    srcs = ["run_simulator.sh"],
+    args = [
+        "android",
+        "$(rootpath :pal_http_e2e.apk)",
+        "$(rootpath :app_sdk)",
+        "$(rootpath //projects/e2e/apps/pal-http/app:include/h2_pal_http_cases.inc)",
+    ],
+    data = [
+        ":app_sdk",
+        ":pal_http_e2e.apk",
+        "//projects/e2e/apps/pal-http/app:include/h2_pal_http_cases.inc",
+        "//projects/e2e/libs/pal-http-mobile:run_mobile.py",
+        "//projects/e2e/libs/pal-http-fixture:fixture.py",
+    ],
+    env_inherit = [
+        "H2_IOS_SIMULATOR_UDID",
+        "H2_ANDROID_SERIAL",
+        "ANDROID_HOME",
+        "DEVELOPER_DIR",
+    ],
+    tags = ["manual"],
+    target_compatible_with = ANDROID_ARM64_PACKAGE_ARTIFACT_COMPATIBILITY,
+)
+
+mobile_app_sdk(
+    name = "app_sdk",
+    app = ":pal_http_e2e",
+)

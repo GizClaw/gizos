@@ -1,0 +1,48 @@
+{
+  "schema": 1,
+  "operation_count": 2,
+  "case_count": 45,
+  "qualified": true,
+  "platforms": {
+    "macos": {
+      "status": "PASS",
+      "passed": 45,
+      "receipt": "projects/e2e/targets/cc_binary/pal-http/evidence/qualified.json",
+      "receipt_sha256": "74828c799d557c67a926ad927958cf3fd41328af010d792ba80b3a20a920af7f"
+    },
+    "wasm": {
+      "status": "PASS",
+      "passed": 45,
+      "receipt": "projects/e2e/targets/pkg_tar/pal-http/evidence/qualified.json",
+      "receipt_sha256": "c306f98a4af3c3e53f60bf9c807e0ad4ff74983198a3e7efe49e66473b266baa"
+    },
+    "ios": {
+      "status": "PASS",
+      "passed": 45,
+      "receipt": "projects/e2e/targets/ios_application/pal-http/evidence/qualified.json",
+      "receipt_sha256": "1df0121ea8ebeb0d6efcd40fd8ca3b7a2abe0b2342d8a7a71f14c4e45da41386",
+      "environment_receipt": "projects/e2e/targets/ios_application/pal-http/evidence/environment.json",
+      "environment_sha256": "58ca10e41c532c6f8f771102333f7dd237ee4c6fc4609da9e65c234bda30ffe4"
+    },
+    "android": {
+      "status": "PASS",
+      "passed": 45,
+      "receipt": "projects/e2e/targets/android_binary/pal-http/evidence/qualified.json",
+      "receipt_sha256": "4c226c47cfd25b44842689d68e278b352328b476deb2809e65da76108e6840b9",
+      "environment_receipt": "projects/e2e/targets/android_binary/pal-http/evidence/environment.json",
+      "environment_sha256": "e2a673fbbc876fa715a6e70ee2f150baa643aeb8cfce946531b94a512ae52936"
+    },
+    "devkit": {
+      "status": "PASS",
+      "passed": 45,
+      "receipt": "projects/e2e/targets/h2loader_tar_zlib/pal-http/devkit/evidence/qualified.json",
+      "receipt_sha256": "0136e6f96cd525bf287a3d61c01f9db0e6f8d4a08fb2eea50d953fd09771f12e"
+    },
+    "bk7258": {
+      "status": "PASS",
+      "passed": 45,
+      "receipt": "projects/e2e/targets/h2loader_tar_zlib/pal-http/bk7258_v3_202405/evidence/qualified.json",
+      "receipt_sha256": "4e901f9dab91258df24bc9ec633c9136803230807110508ce68a7042b7c30f6c"
+    }
+  }
+}
