@@ -327,5 +327,7 @@
     "projects/e2e/apps/pal-webrtc/app/api_coverage.json": "6999c6a17d3b142719edc62b98fcd2cab80b1ca5c3d314f26423f6379861a183"
   },
   "limitation": "Browser in-band DCEP does not honor an explicit stream ID. The provider rejects has_stream_id instead of silently using a different ID.",
-  "specification": "https://www.w3.org/TR/webrtc/#dom-rtcpeerconnection-createdatachannel"
+  "specification": "https://www.w3.org/TR/webrtc/#dom-rtcpeerconnection-createdatachannel",
+  "historical": true,
+  "current_qualification": "qualified.json"
 }

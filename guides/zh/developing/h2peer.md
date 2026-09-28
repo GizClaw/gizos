@@ -30,11 +30,15 @@ Public consumer 只 include `h2_peer.h`。`src/` 中的 provider type、session�
 
 每个 WebRTC peer 独立拥有 ICE server copy、connection state、RTP sequence/timestamp、DataChannel stream identity 和 provider session。开始 offer 后不能继续添加 ICE server。`peer_poll()` 返回 owned event；SDP、Opus、DataChannel payload 与 metadata 保持有效到 caller 显式 release event。
 
-H2Peer 的本地 DataChannel SID pool 固定为 DTLS client parity 的 150 个 odd SID（`1..299`）。自动创建会从该 pool 扫描可用 SID；所有 live channel 或 reset quarantine 都占用对应 entry，全部占满时稳定返回 `H2_PAL_ERR_NO_SPACE`。显式 SID 必须满足本地 parity、范围且当前可用，否则返回 `H2_PAL_ERR_INVALID_ARG`。尚未成功提交 DCEP 的 channel 关闭后立即回收；已经上 wire 的 channel 必须收到 RFC 6525 outgoing-reset completion 和 peer incoming-reset 两个方向的完成证据，删除旧 stream mapping 后才可复用。一次 peer 只提交一个 reset request，其余关闭排队；`BUSY` 和 `WOULD_BLOCK` 在后续 poll 重试，其他 reset failure 使剩余 channel 进入 `ERROR`、peer 进入 `FAILED`。
+H2Peer 的带内 DataChannel SID pool 固定为 DTLS client parity 的 150 个 odd SID（`1..299`）。`negotiated=0` 是默认带内 DCEP 模式：自动创建从该 pool 扫描可用 SID，显式带内 SID 仍须满足本地 parity、范围且当前可用；非法显式 ID 返回 `H2_PAL_ERR_INVALID_ARG`，自动分配耗尽返回 `H2_PAL_ERR_NO_SPACE`。所有 live channel 和 reset quarantine 都阻止对应 SID 再分配。
+
+`negotiated!=0` 是显式协商模式，必须设置 `has_stream_id`，并由应用信令在双方发送前创建相同 SID 的 channel。H2Peer 接受当前 stream table 范围 `0..299` 内任一 parity 的可用 SID；保留值 `65535` 在 public wrapper 即被拒绝。Protocol owner 在 PeerConnection 创建或 channel 创建时预登记 SCTP stream mapping；association 打开后投递本地 `OPEN`，metadata 保留 `negotiated=1`，不发送或等待 DCEP OPEN/ACK。这些 channel 同样占用最多 32 个 ready slot，并遵守 allocator、owned event 和 borrowed input 合同。
+
+尚未在 association 上打开的 channel 关闭后可立即回收；已经上 wire 的带内或显式协商 channel 都须收到 RFC 6525 outgoing-reset completion 和 peer incoming-reset 两个方向的完成证据，删除旧 stream mapping 后才可复用。一次 peer 只提交一个 reset request，其余关闭排队；`BUSY` 和 `WOULD_BLOCK` 在后续 poll 重试，其他 reset failure 使剩余 channel 进入 `ERROR`、peer 进入 `FAILED`。
 
 创建 DataChannel 返回 `H2_PAL_ERR_NO_SPACE` 时，H2Peer 只在该失败点通过注入的 Log PAL 写一条 `h2peer` 诊断。`reason` 区分 `sid_pool`、`ready_slots` 和 `label_length`；`live`、`ready_used` 分别表示仍登记的 channel 和已用调度槽。`reset_active` 只数本地 SID 的隔离 entry，`reset_none`、`reset_out_only`、`reset_in_only`、`reset_both` 按 outgoing completion 与 incoming reset 是否收到分组。该快照不改变分配、reset 或重连行为，也不把远端 SID 计入本地 pool。
 
-远端 DCEP OPEN 与首条应用数据可能在同一次 SCTP input 中到达。远端 channel 登记尚未完成时，H2Peer 返回 `WOULD_BLOCK`，让 SCTP 保留应用数据并在登记完成后重试交付，不能把未交付的数据作为成功消费。
+远端 DCEP OPEN 与首条应用数据可能在同一次 SCTP input 中到达。远端 channel 登记尚未完成时，H2Peer 返回 `WOULD_BLOCK`，让 SCTP 保留应用数据并在登记完成后重试交付，不能把未交付的数据作为成功消费。 显式协商 channel 的首条 DATA 也可能与 COOKIE-ECHO 同包到达；只要 association 的本地 OPEN 通知仍待投递，就同样返回 `WOULD_BLOCK` 保留该 DATA，待 OPEN 完成后重试，不丢弃已被 SCTP 接收的数据。
 
 `h2_pal_webrtc_channel_close()` 消费 channel handle；调用返回后不能再次发送或关闭。`CLOSED`/`ERROR` event 中的 channel 只用于标识来源，event-owned `channel_info` 在 release 前有效。本地关闭会先排空已经接受的 channel TX 消息，再提交 stream reset，避免 RPC 回包和 EOS 被关闭操作丢弃。Peer close 或 transport terminal event 会释放所有仍存活 channel 及其 label storage。
 
@@ -66,7 +70,7 @@ ICE candidate、STUN/TURN attribute、nominated pair、UDP bind/receive/send 和
 
 `libs/pal/providers/h2peer/internal/libsrtp` 使用 top-level `@h2_vendor_libsrtp` v2.8.0 verified archive，并把上游类型、PAL-backed Crypto/allocator bridge 与 wrapper contract 保持在 H2Peer package 内。它的 Bazel target 只对 H2Peer parent package 可见，不是独立 repository library 或 Public API。H2Peer 不链接具体 TLS engine、usrsctp、JSON、HTTP/MQTT signaling 或 target SDK，也没有 pthread/POSIX compatibility shim。保护 portable libSRTP init/refcount 的业务 flag 是文件级 static，每个 flag 用 `H2_ATOMIC_DEFINE_STATIC` 拥有自己的 backing，H2Peer 不增加独立的 `global_init` 合同。Private libSRTP process-global init 在 live connection 间引用计数；并发 H2Peer owner 必须使用相同的 Memory/Crypto backend identity。动态 owner/connection 中的 atomic 值仍在对应 create/init 时分配、失败回滚，销毁前停止并发使用。SCTP provider 由 target composition owner 创建并注入：Desktop、ESP 和 BK 当前都使用 `libs/pal/providers/h2sctp`，并在销毁最后一个 H2Peer association 后才能销毁 provider。
 
-`h2_peer_poll()` 使用调用方给出的 timeout 等待 event queue，不再由 App task 同步驱动 socket。成功返回的 SDP、Opus 和 DataChannel payload 由 event 拥有。`H2_PAL_ERR_WOULD_BLOCK` 是可重试的瞬态结果，不能消费调用方尚未成功提交的完整 message 或 frame。Portable connection 进入 `FAILED` 后，event 排空后的 poll 稳定返回 `H2_PAL_ERR_IO`；进入 `DISCONNECTED` 或 `CLOSED` 后稳定返回 `H2_PAL_ERR_CLOSED`，不能继续用成功 poll 掩盖 terminal transport。
+`h2_peer_poll()` 使用调用方给出的 timeout 等待 event queue，不再由 App task 同步驱动 socket。成功返回的 SDP、Opus 和 DataChannel payload 由 event 拥有。`H2_PAL_ERR_WOULD_BLOCK` 是可重试的瞬态结果，不能消费调用方尚未成功提交的完整 message 或 frame。DTLS handshake 的具体 PAL 错误（例如 `TLS_VERIFY`）先通过 owned ERROR event 保留；发送队列暂时 `WOULD_BLOCK` 不能掩盖已经确定的认证失败。Portable connection 进入 `FAILED` 后，event 排空后的 poll 稳定返回 `H2_PAL_ERR_IO`；进入 `DISCONNECTED` 或 `CLOSED` 后稳定返回 `H2_PAL_ERR_CLOSED`，不能继续用成功 poll 掩盖 terminal transport。
 
 连接完成后的 direct UDP receive 与协议处理都在 owner task：每轮先用 timeout 0 逐包处理，遇到 `WOULD_BLOCK` 或达到 16 包上限后检查 control、RTP 和 DataChannel readiness。用户侧 ready snapshot 处理完后，owner 用最多 `1 ms` 的 UDP receive 代替纯 sleep；若 transport 当前不能等待，才退回 `1 ms` sleep。SCTP 整体拥塞时只保留 DataChannel ready snapshot并优先处理 UDP ACK、timer 和 RTP；恢复可写后继续处理 snapshot，再取得下一批 ready bits。TCP、TURN 和 ICE selection 阶段同样保留单 owner 的 bounded receive 路径。DataChannel 最大 message 仍为 64 KiB；256 KiB 只是 association receive credit，由 target 注入的 Memory PAL 按实际接收量动态分配，不在 association 创建时预留整块内存。
 
@@ -111,7 +115,7 @@ bazel run -c opt --config=macos_arm64 \
   --profile=benchmark --runs=10 --transfer-bytes=10485760
 ```
 
-Package test 使用 deterministic PAL fake 和 package-private provider fake，覆盖 C11/C++17 public header、PAL Log 路由与截断、完整 150-entry SID pool、双向 reset 顺序和 duplicate event、三条同时存在的 DataChannel、RTP backpressure、wire round-trip、malformed input、allocation failure、partial provider initialization、TURN fake-time refresh 和 exactly-once cleanup。Pion gate 只证明 Desktop PAL interoperability；target component build、firmware image、hardware 和 live GizClaw service validation 仍属于后续 backend migration。
+Package test 使用 deterministic PAL fake 和 package-private provider fake，覆盖 C11/C++17 public header、PAL Log 路由与截断、完整 150-entry SID pool、双向 reset 顺序和 duplicate event、三条同时存在的 DataChannel、RTP backpressure、wire round-trip、malformed input、allocation failure、partial provider initialization、TURN fake-time refresh 和 exactly-once cleanup。该 Pion gate 只证明 Desktop PAL interoperability。六端接口资格由独立 `projects/e2e/apps/pal-webrtc` 的 43 项 case 与逐 artifact receipt 给出，包含真实 iOS/Android SDK consumer 和 DevKit/BK 的安装、正常 reboot；BK 另有两轮 600 秒 Data/Opus 活动验证。不能用 Desktop 结果替代 target component、firmware image、硬件或 live GizClaw service 的独立证据。
 
 ESP target 上有两项测量时必须显式控制的平台状态。第一，lwIP 把 `SO_RCVTIMEO=0` 当作永久阻塞，ESP Net PAL 的 `tcp_recv`/`udp_recvfrom` 因此把 PAL timeout `0` 实现为 `MSG_DONTWAIT` 轮询、把有界 timeout 实现为 `SO_RCVTIMEO` 阻塞读；H2Peer owner 用 timeout `0` 轮询 TCP/TURN socket 时依赖这一语义。第二，H2Loader App command service 的 BLE 广播会让 Wi-Fi 共存调度把 station 每秒睡眠约十次，即使 `WIFI_PS_NONE` 也是如此，AMOLED 上实测 UDP 吞吐因此降到三分之一；AMOLED launcher 的 `H2_WEBRTC_PERF_BLE_ADV=0` 在 workload 前暂停广播，产品在语音会话期间应采用同样策略。
 

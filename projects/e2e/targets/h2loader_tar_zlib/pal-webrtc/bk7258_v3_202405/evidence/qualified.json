@@ -1,845 +1,2119 @@
 {
+  "qualified": true,
+  "conformance_passed": true,
   "platform": "bk7258",
-  "qualified": false,
-  "observed_at_utc": "2026-09-28T08:47:06.288194+00:00",
-  "installed": {
-    "run_id": "f81539051938fc8a",
-    "version": "pal-webrtc-bk-20260928-r15",
-    "board": "bk7258_v3_202405",
-    "uid": "c8478ca2a87c",
-    "cases": [
-      {
-        "id": "wrapper-arguments",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 1
-      },
-      {
-        "id": "malformed-sdp",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 133
-      },
-      {
-        "id": "default-lifetime",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 124
-      },
-      {
-        "id": "legacy-create-fallback",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 144
-      },
-      {
-        "id": "allocator-failure",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 87
-      },
-      {
-        "id": "allocator-ownership",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 70
-      },
-      {
-        "id": "poll-nonblocking",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 2
-      },
-      {
-        "id": "poll-timeout",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 33
-      },
-      {
-        "id": "poll-negative",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 1
-      },
-      {
-        "id": "ice-arguments",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 1
-      },
-      {
-        "id": "ice-borrowed-input",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 1
-      },
-      {
-        "id": "track-arguments",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 1
-      },
-      {
-        "id": "track-bind",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 2
-      },
-      {
-        "id": "channel-arguments",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 1
-      },
-      {
-        "id": "channel-configurations",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 4
-      },
-      {
-        "id": "send-before-connected",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 1
-      },
-      {
-        "id": "offer-owned-sdp",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 13892
-      },
-      {
-        "id": "remote-sdp-arguments",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 4
-      },
-      {
-        "id": "pion-negotiation",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 292
-      },
-      {
-        "id": "channel-metadata",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 17054
-      },
-      {
-        "id": "binary-roundtrip",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 8
-      },
-      {
-        "id": "text-roundtrip",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 32
-      },
-      {
-        "id": "empty-binary",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 66
-      },
-      {
-        "id": "empty-text",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 234
-      },
-      {
-        "id": "unordered-roundtrip",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 345
-      },
-      {
-        "id": "ordered-unreliable",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 537
-      },
-      {
-        "id": "unordered-reliable",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 263
-      },
-      {
-        "id": "message-boundaries",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 2125
-      },
-      {
-        "id": "send-borrowed-input",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 535
-      },
-      {
-        "id": "opus-arguments",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 10
-      },
-      {
-        "id": "opus-direct-roundtrip",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 2642
-      },
-      {
-        "id": "opus-backpressure",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 247
-      },
-      {
-        "id": "track-read-roundtrip",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 37
-      },
-      {
-        "id": "track-write-retry",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 42
-      },
-      {
-        "id": "track-unset-quiescent",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 101
-      },
-      {
-        "id": "detached-opus-event",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 14
-      },
-      {
-        "id": "channel-close-event",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 6
-      },
-      {
-        "id": "remote-close",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 67
-      },
-      {
-        "id": "owned-event-after-close",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 3
-      },
-      {
-        "id": "event-release-idempotent",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 1
-      },
-      {
-        "id": "resource-churn",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 160
-      },
-      {
-        "id": "fingerprint-rejected",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 30604
-      },
-      {
-        "id": "explicit-stream-id",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 30989
-      }
-    ],
-    "summary": {
-      "passed": 43,
-      "failed": 0,
-      "blocked": 0,
-      "retained_allocations": 0,
-      "cleanup": 0
-    },
-    "rc": 0,
-    "confirm": 0,
-    "final_status": {
+  "source_commit": "93eec8640563f57139f2219af5fbef8cbae83309",
+  "source_sha256": {
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "24bd887884a51a9cb55cdcaf2b136e74d72826db7f1156bddbd39c3b405a9cf0",
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_cases.inc": "725f4d2ca360da9066a855696a30553f49959c6a9ec26dcb168ef4912587528b",
+    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "a4b05391de4360162d4c2e6c81b77977b1aaa1093d414b3b97312fcb1d158e33",
+    "projects/e2e/apps/pal-webrtc/app/api_coverage.json": "658ec12889c79438c11992e61a89c6ecd061905d11e6da1c6e8aaf36515f949e",
+    "libs/pal/include/h2/pal/application/h2_pal_webrtc.h": "a2b7e90b18a063250a590eb5a982843c7c8303a0e4d61d3edabcaa834c0cc793"
+  },
+  "observed_at_utc": "2026-09-28T11:41:31.952906+00:00",
+  "runs": [
+    {
+      "run_id": "45c5bba0ecc9a2e2",
+      "version": "pal-webrtc-bk-20260928-r17",
       "board": "bk7258_v3_202405",
-      "target": "bk7258",
-      "chip": "bk7258",
-      "device_uid": "c8478ca2a87c",
-      "capabilities": "0x00000003",
-      "command_availability": "0x001f3f1f",
-      "active_role": "app",
-      "active_version": "pal-webrtc-bk-20260928-r15",
-      "active_checksum": "a849efc09debc1c302c2a7c5b2b70a454d7255d1ec7539b3272da78a835c8592",
-      "active_image_size": "5222400",
-      "running_partition": "2",
-      "next_partition": "2",
-      "boot_intent": "auto",
-      "stage_valid": "0",
-      "stage_package_checksum": "-",
-      "stage_package_size": "0",
-      "stage_image_checksum": "-",
-      "stage_image_size": "0",
-      "stage_role": "unknown",
-      "stage_version": "-",
-      "stage_board": "-",
-      "stage_target": "-",
-      "partition_1_valid": "1",
-      "partition_1_package_checksum": "3a3c664340f0d1b45561816e197ffbd25f2d3c447ee248082a3c5ce261cba9bd",
-      "partition_1_package_size": "1573290",
-      "partition_1_image_checksum": "47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb",
-      "partition_1_image_size": "2437120",
-      "partition_1_role": "loader",
-      "partition_1_version": "0.1.65-lu-c",
-      "partition_1_board": "bk7258_v3_202405",
-      "partition_1_target": "bk7258",
-      "partition_2_valid": "1",
-      "partition_2_package_checksum": "5e6814bbfc834d9a33f780644f2ff1847eb5a9a7bc75a03fe28ed0ab2a061386",
-      "partition_2_package_size": "1790683",
-      "partition_2_image_checksum": "a849efc09debc1c302c2a7c5b2b70a454d7255d1ec7539b3272da78a835c8592",
-      "partition_2_image_size": "5222400",
-      "partition_2_role": "app",
-      "partition_2_version": "pal-webrtc-bk-20260928-r15",
-      "partition_2_board": "bk7258_v3_202405",
-      "partition_2_target": "bk7258",
-      "last_result": "0",
-      "mfg_mode": "1",
-      "mfg_steps": "0000000000000000000000"
+      "uid": "c8478ca2a87c",
+      "cases": [
+        {
+          "id": "wrapper-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "malformed-sdp",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 103,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "default-lifetime",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 75,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "legacy-create-fallback",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 69,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "allocator-failure",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 44,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "allocator-ownership",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 48,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "poll-nonblocking",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 6,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "poll-timeout",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 33,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "poll-negative",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "ice-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 2,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "ice-borrowed-input",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "track-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "track-bind",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 38,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "channel-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 4,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "channel-configurations",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 5,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "send-before-connected",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "offer-owned-sdp",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 8579,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "remote-sdp-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "pion-negotiation",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 60,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "channel-metadata",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 16161,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "binary-roundtrip",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 19,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "text-roundtrip",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 256,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "empty-binary",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 153,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "empty-text",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 183,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "unordered-roundtrip",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 314,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "ordered-unreliable",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 108,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "unordered-reliable",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 178,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "message-boundaries",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1735,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "send-borrowed-input",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 170,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "opus-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "opus-direct-roundtrip",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1678,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "opus-backpressure",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 594,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "track-read-roundtrip",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 401,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "track-write-retry",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 182,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "track-unset-quiescent",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 123,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "detached-opus-event",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 159,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "channel-close-event",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 91,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "remote-close",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 640,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "owned-event-after-close",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 11,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "event-release-idempotent",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "resource-churn",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 33,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "fingerprint-rejected",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 32289,
+          "observed_error": -17,
+          "authentication_evidence": 1
+        },
+        {
+          "id": "explicit-stream-id",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 24778,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        }
+      ],
+      "summary": {
+        "passed": 43,
+        "failed": 0,
+        "blocked": 0,
+        "retained_allocations": 0,
+        "cleanup": 0
+      },
+      "rc": 0,
+      "confirm": 0,
+      "soak": {
+        "run_id": "45c5bba0ecc9a2e2",
+        "requested_ms": 600000,
+        "elapsed_ms": 600103,
+        "data_roundtrips": 587,
+        "opus_roundtrips": 586,
+        "completed": 1,
+        "detail": 0,
+        "uptime_ms": 937162,
+        "opus_sent": 587,
+        "opus_missing": 1,
+        "opus_duplicates": 0,
+        "max_opus_gap_ms": 2632
+      },
+      "final_status": {
+        "board": "bk7258_v3_202405",
+        "target": "bk7258",
+        "chip": "bk7258",
+        "device_uid": "c8478ca2a87c",
+        "capabilities": "0x00000003",
+        "command_availability": "0x001f3f1f",
+        "active_role": "app",
+        "active_version": "pal-webrtc-bk-20260928-r17",
+        "active_checksum": "3b58bedb27d64c4c5447ffdae5a58e50feea8b0b0375c85843d642dceca55b30",
+        "active_image_size": "5222400",
+        "running_partition": "2",
+        "next_partition": "2",
+        "boot_intent": "auto",
+        "stage_valid": "0",
+        "stage_package_checksum": "-",
+        "stage_package_size": "0",
+        "stage_image_checksum": "-",
+        "stage_image_size": "0",
+        "stage_role": "unknown",
+        "stage_version": "-",
+        "stage_board": "-",
+        "stage_target": "-",
+        "partition_1_valid": "1",
+        "partition_1_package_checksum": "3a3c664340f0d1b45561816e197ffbd25f2d3c447ee248082a3c5ce261cba9bd",
+        "partition_1_package_size": "1573290",
+        "partition_1_image_checksum": "47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb",
+        "partition_1_image_size": "2437120",
+        "partition_1_role": "loader",
+        "partition_1_version": "0.1.65-lu-c",
+        "partition_1_board": "bk7258_v3_202405",
+        "partition_1_target": "bk7258",
+        "partition_2_valid": "1",
+        "partition_2_package_checksum": "2d6bbd436bd19d0c7974fb1eb304d36c1f921dc7b6e4d9c9ba31e9d4137889fb",
+        "partition_2_package_size": "1793968",
+        "partition_2_image_checksum": "3b58bedb27d64c4c5447ffdae5a58e50feea8b0b0375c85843d642dceca55b30",
+        "partition_2_image_size": "5222400",
+        "partition_2_role": "app",
+        "partition_2_version": "pal-webrtc-bk-20260928-r17",
+        "partition_2_board": "bk7258_v3_202405",
+        "partition_2_target": "bk7258",
+        "last_result": "0",
+        "mfg_mode": "1",
+        "mfg_steps": "0000000000000000000000"
+      },
+      "build": {
+        "assets": [
+          {
+            "name": "bk7258_v3_202405-pal-webrtc-bk7258.update.tar.zlib",
+            "operation": "managed-install",
+            "release_suffix": ".update.tar.zlib",
+            "sha256": "2d6bbd436bd19d0c7974fb1eb304d36c1f921dc7b6e4d9c9ba31e9d4137889fb",
+            "size": 1793968
+          }
+        ],
+        "board": "bk7258_v3_202405",
+        "entry": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405",
+        "image": "pal-webrtc",
+        "native_artifacts": [
+          {
+            "name": "ap/firmware.elf",
+            "operation": "native-debug-or-flash",
+            "sha256": "f1094f2644208e23d5ae1398816d2c835acd885c40f1f57ce232b53f9d917d18",
+            "size": 13243372
+          },
+          {
+            "name": "ap/firmware.map",
+            "operation": "native-debug-or-flash",
+            "sha256": "5f2409e8bb9e924bcecb08f0575307a509796bbf558e28b37e374bf888416f00",
+            "size": 8707348
+          },
+          {
+            "name": "ap/app.bin",
+            "operation": "native-debug-or-flash",
+            "sha256": "6303c2551bc59586f2f47ce77b343b221b1ec780bb1c998cc44047fac82aebb2",
+            "size": 1395924
+          },
+          {
+            "name": "cp/firmware.elf",
+            "operation": "native-debug-or-flash",
+            "sha256": "12450b9455e290c3719aed867364c8dfaff89ab7d32b15bb843c313b392a5256",
+            "size": 14369960
+          },
+          {
+            "name": "cp/firmware.map",
+            "operation": "native-debug-or-flash",
+            "sha256": "928134d516d697e5bec57238b627cbd53cace8cd5afc5627aae771d9329b9da0",
+            "size": 6809159
+          },
+          {
+            "name": "cp/app.bin",
+            "operation": "native-debug-or-flash",
+            "sha256": "e045ee2b21b2411e2fbba2991c8f4044168f81464abac2d835ab46d702b09921",
+            "size": 1056268
+          },
+          {
+            "name": "app_ab_crc.rbl",
+            "operation": "native-debug-or-flash",
+            "sha256": "3b58bedb27d64c4c5447ffdae5a58e50feea8b0b0375c85843d642dceca55b30",
+            "size": 5222400
+          },
+          {
+            "name": "all-app.bin",
+            "operation": "native-debug-or-flash",
+            "sha256": "6f6fef3a14dc1be28491a5881085eb288898a158387e86b189bbfd13702614ab",
+            "size": 5292032
+          }
+        ],
+        "package_manifest": {
+          "board": "bk7258_v3_202405",
+          "format": 1,
+          "image_sha256": "3b58bedb27d64c4c5447ffdae5a58e50feea8b0b0375c85843d642dceca55b30",
+          "image_size": 5222400,
+          "role": "app",
+          "target": "bk7258",
+          "version": "pal-webrtc-bk-20260928-r17"
+        },
+        "platform": "bk7258",
+        "role": "app",
+        "target": "bk7258",
+        "version": "pal-webrtc-bk-20260928-r17"
+      },
+      "reset_reason": 0,
+      "boot_marker_count": 1,
+      "reset_reason_evidence": {
+        "marker": "H2_PAL_WEBRTC_BOOT board=bk7258 reset_reason=0",
+        "log_sha256": "1fad6acdeb3e8a6ce23e335b98223ea77e9a8ae80534bdab6b7c33cd608734d3"
+      },
+      "source_commit": "93eec864",
+      "capture_reconnected": true,
+      "capture_note": "One boot: installation monitor lost console framing near completion; fresh monitor recovered the same immutable run_id without reset.",
+      "log_sha256": {
+        "install": "1fad6acdeb3e8a6ce23e335b98223ea77e9a8ae80534bdab6b7c33cd608734d3",
+        "monitor": "94ce456b6108ffd64d4faf45454498e7e8f07f35577b4487b5b43c2617b68ec1"
+      },
+      "pion_media": {
+        "session_id": "4",
+        "snapshot_count": 124,
+        "missing_before_pion": 1,
+        "missing_after_pion_write": 0,
+        "first_live_snapshot": {
+          "observed_at_utc": "2026-09-28T11:06:00.286196+00:00",
+          "session_id": "4",
+          "media": {
+            "dropped": 0,
+            "echoed": 0,
+            "fault_drop_all": false,
+            "fault_drop_at": 0,
+            "input_gaps": 0,
+            "last_input_sequence": 0,
+            "read_errors": 0,
+            "received": 0,
+            "session_id": "4",
+            "write_errors": 0
+          },
+          "ice_pair": {
+            "mode": "udp",
+            "local_protocol": "udp",
+            "remote_protocol": "udp",
+            "local_type": "host",
+            "remote_type": "prflx",
+            "local_tcp_type": "",
+            "remote_tcp_type": "",
+            "udp_drops": 0
+          }
+        },
+        "last_live_snapshot": {
+          "observed_at_utc": "2026-09-28T11:16:16.164536+00:00",
+          "session_id": "4",
+          "media": {
+            "dropped": 0,
+            "echoed": 584,
+            "fault_drop_all": false,
+            "fault_drop_at": 0,
+            "input_gaps": 1,
+            "last_input_sequence": 584,
+            "read_errors": 0,
+            "received": 584,
+            "session_id": "4",
+            "write_errors": 0
+          },
+          "device": {
+            "run_id": "45c5bba0ecc9a2e2",
+            "requested_ms": 600000,
+            "elapsed_ms": 593939,
+            "data_roundtrips": 581,
+            "opus_roundtrips": 580,
+            "completed": 0,
+            "detail": -7,
+            "uptime_ms": 752484,
+            "opus_sent": 581,
+            "opus_missing": 1,
+            "opus_duplicates": 0,
+            "max_opus_gap_ms": 2632
+          }
+        },
+        "termination": {
+          "phase": "stopped",
+          "session": "4",
+          "received": "586",
+          "echoed": "586",
+          "dropped": "0",
+          "input_gaps": "1",
+          "last_sequence": "586",
+          "read_errors": "1",
+          "write_errors": "0"
+        },
+        "termination_note": "ReadRTP exits on the explicit HTTP session close after the completed measurement. All active snapshots had zero read/write errors and disabled fault controls.",
+        "snapshots_sha256": "db9d0648c54448b7de0308766db0c2116fc4ee4b19434b02d3d86a4fd53b4510"
+      },
+      "coredump_after_sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829",
+      "soak_samples": [
+        {
+          "elapsed_ms": 1000,
+          "uptime_ms": 159543,
+          "data_roundtrips": 1,
+          "opus_roundtrips": 1,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 91
+        },
+        {
+          "elapsed_ms": 11244,
+          "uptime_ms": 169788,
+          "data_roundtrips": 11,
+          "opus_roundtrips": 11,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1316
+        },
+        {
+          "elapsed_ms": 21497,
+          "uptime_ms": 180040,
+          "data_roundtrips": 21,
+          "opus_roundtrips": 21,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 31749,
+          "uptime_ms": 190293,
+          "data_roundtrips": 31,
+          "opus_roundtrips": 31,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 52150,
+          "uptime_ms": 210693,
+          "data_roundtrips": 51,
+          "opus_roundtrips": 51,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 62375,
+          "uptime_ms": 220920,
+          "data_roundtrips": 61,
+          "opus_roundtrips": 61,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 72605,
+          "uptime_ms": 231149,
+          "data_roundtrips": 71,
+          "opus_roundtrips": 71,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 82850,
+          "uptime_ms": 241394,
+          "data_roundtrips": 81,
+          "opus_roundtrips": 81,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 93057,
+          "uptime_ms": 251600,
+          "data_roundtrips": 91,
+          "opus_roundtrips": 91,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 103334,
+          "uptime_ms": 261878,
+          "data_roundtrips": 101,
+          "opus_roundtrips": 101,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 113534,
+          "uptime_ms": 272077,
+          "data_roundtrips": 111,
+          "opus_roundtrips": 111,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 123801,
+          "uptime_ms": 282344,
+          "data_roundtrips": 121,
+          "opus_roundtrips": 121,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 134043,
+          "uptime_ms": 292587,
+          "data_roundtrips": 131,
+          "opus_roundtrips": 131,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 144193,
+          "uptime_ms": 302736,
+          "data_roundtrips": 141,
+          "opus_roundtrips": 141,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 154394,
+          "uptime_ms": 312937,
+          "data_roundtrips": 151,
+          "opus_roundtrips": 151,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 164698,
+          "uptime_ms": 323244,
+          "data_roundtrips": 161,
+          "opus_roundtrips": 161,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 174941,
+          "uptime_ms": 333483,
+          "data_roundtrips": 171,
+          "opus_roundtrips": 171,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 185149,
+          "uptime_ms": 343692,
+          "data_roundtrips": 181,
+          "opus_roundtrips": 181,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 195426,
+          "uptime_ms": 353969,
+          "data_roundtrips": 191,
+          "opus_roundtrips": 191,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 205587,
+          "uptime_ms": 364131,
+          "data_roundtrips": 201,
+          "opus_roundtrips": 201,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 215824,
+          "uptime_ms": 374368,
+          "data_roundtrips": 211,
+          "opus_roundtrips": 211,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 226062,
+          "uptime_ms": 384604,
+          "data_roundtrips": 221,
+          "opus_roundtrips": 221,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 236303,
+          "uptime_ms": 394846,
+          "data_roundtrips": 231,
+          "opus_roundtrips": 231,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 246541,
+          "uptime_ms": 405085,
+          "data_roundtrips": 241,
+          "opus_roundtrips": 241,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 256745,
+          "uptime_ms": 415287,
+          "data_roundtrips": 251,
+          "opus_roundtrips": 251,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 277056,
+          "uptime_ms": 435601,
+          "data_roundtrips": 271,
+          "opus_roundtrips": 271,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 287353,
+          "uptime_ms": 445897,
+          "data_roundtrips": 281,
+          "opus_roundtrips": 281,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 297539,
+          "uptime_ms": 456084,
+          "data_roundtrips": 291,
+          "opus_roundtrips": 291,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 307811,
+          "uptime_ms": 466355,
+          "data_roundtrips": 301,
+          "opus_roundtrips": 301,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 317990,
+          "uptime_ms": 476534,
+          "data_roundtrips": 311,
+          "opus_roundtrips": 311,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 328220,
+          "uptime_ms": 486764,
+          "data_roundtrips": 321,
+          "opus_roundtrips": 321,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 338421,
+          "uptime_ms": 496964,
+          "data_roundtrips": 331,
+          "opus_roundtrips": 331,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 348675,
+          "uptime_ms": 507217,
+          "data_roundtrips": 341,
+          "opus_roundtrips": 341,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 369114,
+          "uptime_ms": 527658,
+          "data_roundtrips": 361,
+          "opus_roundtrips": 361,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2129
+        },
+        {
+          "elapsed_ms": 379401,
+          "uptime_ms": 537945,
+          "data_roundtrips": 371,
+          "opus_roundtrips": 370,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2632
+        },
+        {
+          "elapsed_ms": 389542,
+          "uptime_ms": 548084,
+          "data_roundtrips": 381,
+          "opus_roundtrips": 380,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2632
+        },
+        {
+          "elapsed_ms": 399772,
+          "uptime_ms": 558317,
+          "data_roundtrips": 391,
+          "opus_roundtrips": 390,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2632
+        },
+        {
+          "elapsed_ms": 409942,
+          "uptime_ms": 568485,
+          "data_roundtrips": 401,
+          "opus_roundtrips": 400,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2632
+        },
+        {
+          "elapsed_ms": 420204,
+          "uptime_ms": 578747,
+          "data_roundtrips": 411,
+          "opus_roundtrips": 410,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2632
+        },
+        {
+          "elapsed_ms": 430414,
+          "uptime_ms": 588957,
+          "data_roundtrips": 421,
+          "opus_roundtrips": 420,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2632
+        },
+        {
+          "elapsed_ms": 440601,
+          "uptime_ms": 599143,
+          "data_roundtrips": 431,
+          "opus_roundtrips": 430,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2632
+        },
+        {
+          "elapsed_ms": 450860,
+          "uptime_ms": 609404,
+          "data_roundtrips": 441,
+          "opus_roundtrips": 440,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2632
+        },
+        {
+          "elapsed_ms": 461113,
+          "uptime_ms": 619656,
+          "data_roundtrips": 451,
+          "opus_roundtrips": 450,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2632
+        },
+        {
+          "elapsed_ms": 471353,
+          "uptime_ms": 629897,
+          "data_roundtrips": 461,
+          "opus_roundtrips": 460,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2632
+        },
+        {
+          "elapsed_ms": 481603,
+          "uptime_ms": 640147,
+          "data_roundtrips": 471,
+          "opus_roundtrips": 470,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2632
+        },
+        {
+          "elapsed_ms": 501959,
+          "uptime_ms": 660503,
+          "data_roundtrips": 491,
+          "opus_roundtrips": 490,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2632
+        },
+        {
+          "elapsed_ms": 512203,
+          "uptime_ms": 670745,
+          "data_roundtrips": 501,
+          "opus_roundtrips": 500,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2632
+        },
+        {
+          "elapsed_ms": 522415,
+          "uptime_ms": 680958,
+          "data_roundtrips": 511,
+          "opus_roundtrips": 510,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2632
+        },
+        {
+          "elapsed_ms": 532689,
+          "uptime_ms": 691235,
+          "data_roundtrips": 521,
+          "opus_roundtrips": 520,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2632
+        },
+        {
+          "elapsed_ms": 542878,
+          "uptime_ms": 701420,
+          "data_roundtrips": 531,
+          "opus_roundtrips": 530,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2632
+        },
+        {
+          "elapsed_ms": 553163,
+          "uptime_ms": 711705,
+          "data_roundtrips": 541,
+          "opus_roundtrips": 540,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2632
+        },
+        {
+          "elapsed_ms": 563441,
+          "uptime_ms": 721984,
+          "data_roundtrips": 551,
+          "opus_roundtrips": 550,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2632
+        },
+        {
+          "elapsed_ms": 573596,
+          "uptime_ms": 732139,
+          "data_roundtrips": 561,
+          "opus_roundtrips": 560,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2632
+        },
+        {
+          "elapsed_ms": 593939,
+          "uptime_ms": 752484,
+          "data_roundtrips": 581,
+          "opus_roundtrips": 580,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2632
+        },
+        {
+          "elapsed_ms": 600103,
+          "uptime_ms": 937162,
+          "data_roundtrips": 587,
+          "opus_roundtrips": 586,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2632
+        }
+      ]
     },
-    "collection": {
-      "immutable_same_boot_ledger": true,
-      "uart_monitor_reconnected": true,
-      "reconnect_is_an_additional_run": false
-    }
-  },
-  "normal_reboot": {
-    "run_id": "4be41df1118e25f2",
-    "version": "pal-webrtc-bk-20260928-r15",
-    "board": "bk7258_v3_202405",
-    "uid": "c8478ca2a87c",
-    "cases": [
-      {
-        "id": "wrapper-arguments",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 0
-      },
-      {
-        "id": "malformed-sdp",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 5
-      },
-      {
-        "id": "default-lifetime",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 6
-      },
-      {
-        "id": "legacy-create-fallback",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 4
-      },
-      {
-        "id": "allocator-failure",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 2
-      },
-      {
-        "id": "allocator-ownership",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 3
-      },
-      {
-        "id": "poll-nonblocking",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 0
-      },
-      {
-        "id": "poll-timeout",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 25
-      },
-      {
-        "id": "poll-negative",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 0
-      },
-      {
-        "id": "ice-arguments",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 0
-      },
-      {
-        "id": "ice-borrowed-input",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 1
-      },
-      {
-        "id": "track-arguments",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 0
-      },
-      {
-        "id": "track-bind",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 1
-      },
-      {
-        "id": "channel-arguments",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 0
-      },
-      {
-        "id": "channel-configurations",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 4
-      },
-      {
-        "id": "send-before-connected",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 7
-      },
-      {
-        "id": "offer-owned-sdp",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 13001
-      },
-      {
-        "id": "remote-sdp-arguments",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 0
-      },
-      {
-        "id": "pion-negotiation",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 38
-      },
-      {
-        "id": "channel-metadata",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 13680
-      },
-      {
-        "id": "binary-roundtrip",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 25
-      },
-      {
-        "id": "text-roundtrip",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 152
-      },
-      {
-        "id": "empty-binary",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 356
-      },
-      {
-        "id": "empty-text",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 305
-      },
-      {
-        "id": "unordered-roundtrip",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 177
-      },
-      {
-        "id": "ordered-unreliable",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 308
-      },
-      {
-        "id": "unordered-reliable",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 165
-      },
-      {
-        "id": "message-boundaries",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 1277
-      },
-      {
-        "id": "send-borrowed-input",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 467
-      },
-      {
-        "id": "opus-arguments",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 7
-      },
-      {
-        "id": "opus-direct-roundtrip",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 2493
-      },
-      {
-        "id": "opus-backpressure",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 34
-      },
-      {
-        "id": "track-read-roundtrip",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 115
-      },
-      {
-        "id": "track-write-retry",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 36
-      },
-      {
-        "id": "track-unset-quiescent",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 102
-      },
-      {
-        "id": "detached-opus-event",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 13
-      },
-      {
-        "id": "channel-close-event",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 5
-      },
-      {
-        "id": "remote-close",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 72
-      },
-      {
-        "id": "owned-event-after-close",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 31
-      },
-      {
-        "id": "event-release-idempotent",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 46
-      },
-      {
-        "id": "resource-churn",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 1192
-      },
-      {
-        "id": "fingerprint-rejected",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 31694
-      },
-      {
-        "id": "explicit-stream-id",
-        "status": "PASS",
-        "detail": 0,
-        "line": 0,
-        "elapsed_ms": 26759
-      }
-    ],
-    "summary": {
-      "passed": 43,
-      "failed": 0,
-      "blocked": 0,
-      "retained_allocations": 0,
-      "cleanup": 0
-    },
-    "rc": 0,
-    "confirm": 0,
-    "final_status": {
+    {
+      "run_id": "ca83069f0a55e541",
+      "version": "pal-webrtc-bk-20260928-r17",
       "board": "bk7258_v3_202405",
-      "target": "bk7258",
-      "chip": "bk7258",
-      "device_uid": "c8478ca2a87c",
-      "capabilities": "0x00000003",
-      "command_availability": "0x001f3f1f",
-      "active_role": "app",
-      "active_version": "pal-webrtc-bk-20260928-r15",
-      "active_checksum": "a849efc09debc1c302c2a7c5b2b70a454d7255d1ec7539b3272da78a835c8592",
-      "active_image_size": "5222400",
-      "running_partition": "2",
-      "next_partition": "2",
-      "boot_intent": "auto",
-      "stage_valid": "0",
-      "stage_package_checksum": "-",
-      "stage_package_size": "0",
-      "stage_image_checksum": "-",
-      "stage_image_size": "0",
-      "stage_role": "unknown",
-      "stage_version": "-",
-      "stage_board": "-",
-      "stage_target": "-",
-      "partition_1_valid": "1",
-      "partition_1_package_checksum": "3a3c664340f0d1b45561816e197ffbd25f2d3c447ee248082a3c5ce261cba9bd",
-      "partition_1_package_size": "1573290",
-      "partition_1_image_checksum": "47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb",
-      "partition_1_image_size": "2437120",
-      "partition_1_role": "loader",
-      "partition_1_version": "0.1.65-lu-c",
-      "partition_1_board": "bk7258_v3_202405",
-      "partition_1_target": "bk7258",
-      "partition_2_valid": "1",
-      "partition_2_package_checksum": "5e6814bbfc834d9a33f780644f2ff1847eb5a9a7bc75a03fe28ed0ab2a061386",
-      "partition_2_package_size": "1790683",
-      "partition_2_image_checksum": "a849efc09debc1c302c2a7c5b2b70a454d7255d1ec7539b3272da78a835c8592",
-      "partition_2_image_size": "5222400",
-      "partition_2_role": "app",
-      "partition_2_version": "pal-webrtc-bk-20260928-r15",
-      "partition_2_board": "bk7258_v3_202405",
-      "partition_2_target": "bk7258",
-      "last_result": "0",
-      "mfg_mode": "1",
-      "mfg_steps": "0000000000000000000000"
-    },
-    "collection": {
-      "immutable_same_boot_ledger": true,
-      "uart_monitor_reconnected": true,
-      "reconnect_is_an_additional_run": false
+      "uid": "c8478ca2a87c",
+      "cases": [
+        {
+          "id": "wrapper-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "malformed-sdp",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 69,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "default-lifetime",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 69,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "legacy-create-fallback",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 77,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "allocator-failure",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 25,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "allocator-ownership",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 64,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "poll-nonblocking",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "poll-timeout",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 25,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "poll-negative",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "ice-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "ice-borrowed-input",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "track-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "track-bind",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "channel-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "channel-configurations",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 3,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "send-before-connected",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 0,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "offer-owned-sdp",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 11121,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "remote-sdp-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 2,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "pion-negotiation",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 274,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "channel-metadata",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 20459,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "binary-roundtrip",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 26,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "text-roundtrip",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 10,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "empty-binary",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 198,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "empty-text",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 13,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "unordered-roundtrip",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 14,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "ordered-unreliable",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 12,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "unordered-reliable",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 196,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "message-boundaries",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1070,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "send-borrowed-input",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 237,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "opus-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 3,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "opus-direct-roundtrip",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 1140,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "opus-backpressure",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 321,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "track-read-roundtrip",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 362,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "track-write-retry",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 353,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "track-unset-quiescent",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 155,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "detached-opus-event",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 164,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "channel-close-event",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 37,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "remote-close",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 840,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "owned-event-after-close",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 168,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "event-release-idempotent",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 36,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "resource-churn",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 823,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        },
+        {
+          "id": "fingerprint-rejected",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 25293,
+          "observed_error": -17,
+          "authentication_evidence": 1
+        },
+        {
+          "id": "explicit-stream-id",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0,
+          "elapsed_ms": 32000,
+          "observed_error": 0,
+          "authentication_evidence": 0
+        }
+      ],
+      "summary": {
+        "passed": 43,
+        "failed": 0,
+        "blocked": 0,
+        "retained_allocations": 0,
+        "cleanup": 0
+      },
+      "rc": 0,
+      "confirm": 0,
+      "soak": {
+        "run_id": "ca83069f0a55e541",
+        "requested_ms": 600000,
+        "elapsed_ms": 600045,
+        "data_roundtrips": 587,
+        "opus_roundtrips": 585,
+        "completed": 1,
+        "detail": 0,
+        "uptime_ms": 911947,
+        "opus_sent": 587,
+        "opus_missing": 2,
+        "opus_duplicates": 0,
+        "max_opus_gap_ms": 2133
+      },
+      "final_status": {
+        "board": "bk7258_v3_202405",
+        "target": "bk7258",
+        "chip": "bk7258",
+        "device_uid": "c8478ca2a87c",
+        "capabilities": "0x00000003",
+        "command_availability": "0x001f3f1f",
+        "active_role": "app",
+        "active_version": "pal-webrtc-bk-20260928-r17",
+        "active_checksum": "3b58bedb27d64c4c5447ffdae5a58e50feea8b0b0375c85843d642dceca55b30",
+        "active_image_size": "5222400",
+        "running_partition": "2",
+        "next_partition": "2",
+        "boot_intent": "auto",
+        "stage_valid": "0",
+        "stage_package_checksum": "-",
+        "stage_package_size": "0",
+        "stage_image_checksum": "-",
+        "stage_image_size": "0",
+        "stage_role": "unknown",
+        "stage_version": "-",
+        "stage_board": "-",
+        "stage_target": "-",
+        "partition_1_valid": "1",
+        "partition_1_package_checksum": "3a3c664340f0d1b45561816e197ffbd25f2d3c447ee248082a3c5ce261cba9bd",
+        "partition_1_package_size": "1573290",
+        "partition_1_image_checksum": "47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb",
+        "partition_1_image_size": "2437120",
+        "partition_1_role": "loader",
+        "partition_1_version": "0.1.65-lu-c",
+        "partition_1_board": "bk7258_v3_202405",
+        "partition_1_target": "bk7258",
+        "partition_2_valid": "1",
+        "partition_2_package_checksum": "2d6bbd436bd19d0c7974fb1eb304d36c1f921dc7b6e4d9c9ba31e9d4137889fb",
+        "partition_2_package_size": "1793968",
+        "partition_2_image_checksum": "3b58bedb27d64c4c5447ffdae5a58e50feea8b0b0375c85843d642dceca55b30",
+        "partition_2_image_size": "5222400",
+        "partition_2_role": "app",
+        "partition_2_version": "pal-webrtc-bk-20260928-r17",
+        "partition_2_board": "bk7258_v3_202405",
+        "partition_2_target": "bk7258",
+        "last_result": "0",
+        "mfg_mode": "1",
+        "mfg_steps": "0000000000000000000000"
+      },
+      "build": {},
+      "reset_reason": 0,
+      "boot_marker_count": 1,
+      "source_commit": "93eec8640563f57139f2219af5fbef8cbae83309",
+      "capture_reconnected": true,
+      "capture_note": "Same reboot run recovered by a new monitor after console framing stopped; no additional reset occurred.",
+      "reset_reason_evidence": {
+        "marker": "H2_PAL_WEBRTC_BOOT board=bk7258 reset_reason=0",
+        "log_sha256": "79b50c1c42f92f0d32d17701b0a775674fc9407ab6cbea85c01d532d118a28f3"
+      },
+      "log_sha256": {
+        "reboot": "79b50c1c42f92f0d32d17701b0a775674fc9407ab6cbea85c01d532d118a28f3",
+        "monitor": "81929b2864890c4b62acfaafc450c50e488e96ec1b174f02cf2e39eaff1c07d7"
+      },
+      "soak_samples": [
+        {
+          "elapsed_ms": 1029,
+          "uptime_ms": 158617,
+          "data_roundtrips": 1,
+          "opus_roundtrips": 1,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 38
+        },
+        {
+          "elapsed_ms": 11263,
+          "uptime_ms": 168849,
+          "data_roundtrips": 11,
+          "opus_roundtrips": 11,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1468
+        },
+        {
+          "elapsed_ms": 21525,
+          "uptime_ms": 179110,
+          "data_roundtrips": 21,
+          "opus_roundtrips": 21,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1468
+        },
+        {
+          "elapsed_ms": 31784,
+          "uptime_ms": 189371,
+          "data_roundtrips": 31,
+          "opus_roundtrips": 31,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1996
+        },
+        {
+          "elapsed_ms": 42033,
+          "uptime_ms": 199621,
+          "data_roundtrips": 41,
+          "opus_roundtrips": 41,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1996
+        },
+        {
+          "elapsed_ms": 52302,
+          "uptime_ms": 209888,
+          "data_roundtrips": 51,
+          "opus_roundtrips": 51,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1996
+        },
+        {
+          "elapsed_ms": 62523,
+          "uptime_ms": 220109,
+          "data_roundtrips": 61,
+          "opus_roundtrips": 61,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1996
+        },
+        {
+          "elapsed_ms": 72763,
+          "uptime_ms": 230350,
+          "data_roundtrips": 71,
+          "opus_roundtrips": 71,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1996
+        },
+        {
+          "elapsed_ms": 93215,
+          "uptime_ms": 250802,
+          "data_roundtrips": 91,
+          "opus_roundtrips": 91,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1996
+        },
+        {
+          "elapsed_ms": 103475,
+          "uptime_ms": 261061,
+          "data_roundtrips": 101,
+          "opus_roundtrips": 101,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1996
+        },
+        {
+          "elapsed_ms": 113698,
+          "uptime_ms": 271285,
+          "data_roundtrips": 111,
+          "opus_roundtrips": 111,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1996
+        },
+        {
+          "elapsed_ms": 123911,
+          "uptime_ms": 281497,
+          "data_roundtrips": 121,
+          "opus_roundtrips": 121,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1996
+        },
+        {
+          "elapsed_ms": 134154,
+          "uptime_ms": 291741,
+          "data_roundtrips": 131,
+          "opus_roundtrips": 131,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1996
+        },
+        {
+          "elapsed_ms": 144356,
+          "uptime_ms": 301941,
+          "data_roundtrips": 141,
+          "opus_roundtrips": 141,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1996
+        },
+        {
+          "elapsed_ms": 154528,
+          "uptime_ms": 312115,
+          "data_roundtrips": 151,
+          "opus_roundtrips": 151,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1996
+        },
+        {
+          "elapsed_ms": 164705,
+          "uptime_ms": 322290,
+          "data_roundtrips": 161,
+          "opus_roundtrips": 161,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1996
+        },
+        {
+          "elapsed_ms": 174897,
+          "uptime_ms": 332483,
+          "data_roundtrips": 171,
+          "opus_roundtrips": 171,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1996
+        },
+        {
+          "elapsed_ms": 185115,
+          "uptime_ms": 342704,
+          "data_roundtrips": 181,
+          "opus_roundtrips": 181,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1996
+        },
+        {
+          "elapsed_ms": 195355,
+          "uptime_ms": 352942,
+          "data_roundtrips": 191,
+          "opus_roundtrips": 191,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1996
+        },
+        {
+          "elapsed_ms": 205568,
+          "uptime_ms": 363156,
+          "data_roundtrips": 201,
+          "opus_roundtrips": 201,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1996
+        },
+        {
+          "elapsed_ms": 215764,
+          "uptime_ms": 373349,
+          "data_roundtrips": 211,
+          "opus_roundtrips": 211,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1996
+        },
+        {
+          "elapsed_ms": 225944,
+          "uptime_ms": 383529,
+          "data_roundtrips": 221,
+          "opus_roundtrips": 221,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1996
+        },
+        {
+          "elapsed_ms": 236250,
+          "uptime_ms": 393837,
+          "data_roundtrips": 231,
+          "opus_roundtrips": 231,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1996
+        },
+        {
+          "elapsed_ms": 246409,
+          "uptime_ms": 403994,
+          "data_roundtrips": 241,
+          "opus_roundtrips": 241,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1996
+        },
+        {
+          "elapsed_ms": 266787,
+          "uptime_ms": 424373,
+          "data_roundtrips": 261,
+          "opus_roundtrips": 261,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 1996
+        },
+        {
+          "elapsed_ms": 277066,
+          "uptime_ms": 434652,
+          "data_roundtrips": 271,
+          "opus_roundtrips": 271,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2011
+        },
+        {
+          "elapsed_ms": 287236,
+          "uptime_ms": 444821,
+          "data_roundtrips": 281,
+          "opus_roundtrips": 281,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2011
+        },
+        {
+          "elapsed_ms": 307648,
+          "uptime_ms": 465233,
+          "data_roundtrips": 301,
+          "opus_roundtrips": 301,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2011
+        },
+        {
+          "elapsed_ms": 317867,
+          "uptime_ms": 475452,
+          "data_roundtrips": 311,
+          "opus_roundtrips": 311,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2011
+        },
+        {
+          "elapsed_ms": 328113,
+          "uptime_ms": 485698,
+          "data_roundtrips": 321,
+          "opus_roundtrips": 321,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2011
+        },
+        {
+          "elapsed_ms": 338308,
+          "uptime_ms": 495899,
+          "data_roundtrips": 331,
+          "opus_roundtrips": 331,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2011
+        },
+        {
+          "elapsed_ms": 348517,
+          "uptime_ms": 506103,
+          "data_roundtrips": 341,
+          "opus_roundtrips": 341,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2011
+        },
+        {
+          "elapsed_ms": 358710,
+          "uptime_ms": 516297,
+          "data_roundtrips": 351,
+          "opus_roundtrips": 351,
+          "opus_missing": 0,
+          "max_opus_gap_ms": 2011
+        },
+        {
+          "elapsed_ms": 368931,
+          "uptime_ms": 526517,
+          "data_roundtrips": 361,
+          "opus_roundtrips": 360,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2011
+        },
+        {
+          "elapsed_ms": 379118,
+          "uptime_ms": 536703,
+          "data_roundtrips": 371,
+          "opus_roundtrips": 370,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2133
+        },
+        {
+          "elapsed_ms": 389327,
+          "uptime_ms": 546914,
+          "data_roundtrips": 381,
+          "opus_roundtrips": 380,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2133
+        },
+        {
+          "elapsed_ms": 399596,
+          "uptime_ms": 557182,
+          "data_roundtrips": 391,
+          "opus_roundtrips": 390,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2133
+        },
+        {
+          "elapsed_ms": 409842,
+          "uptime_ms": 567429,
+          "data_roundtrips": 401,
+          "opus_roundtrips": 400,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2133
+        },
+        {
+          "elapsed_ms": 420088,
+          "uptime_ms": 577673,
+          "data_roundtrips": 411,
+          "opus_roundtrips": 410,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2133
+        },
+        {
+          "elapsed_ms": 430287,
+          "uptime_ms": 587874,
+          "data_roundtrips": 421,
+          "opus_roundtrips": 420,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2133
+        },
+        {
+          "elapsed_ms": 440472,
+          "uptime_ms": 598059,
+          "data_roundtrips": 431,
+          "opus_roundtrips": 430,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2133
+        },
+        {
+          "elapsed_ms": 450666,
+          "uptime_ms": 608255,
+          "data_roundtrips": 441,
+          "opus_roundtrips": 440,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2133
+        },
+        {
+          "elapsed_ms": 460890,
+          "uptime_ms": 618478,
+          "data_roundtrips": 451,
+          "opus_roundtrips": 450,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2133
+        },
+        {
+          "elapsed_ms": 471113,
+          "uptime_ms": 628700,
+          "data_roundtrips": 461,
+          "opus_roundtrips": 460,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2133
+        },
+        {
+          "elapsed_ms": 481357,
+          "uptime_ms": 638944,
+          "data_roundtrips": 471,
+          "opus_roundtrips": 470,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2133
+        },
+        {
+          "elapsed_ms": 491635,
+          "uptime_ms": 649222,
+          "data_roundtrips": 481,
+          "opus_roundtrips": 480,
+          "opus_missing": 1,
+          "max_opus_gap_ms": 2133
+        },
+        {
+          "elapsed_ms": 501810,
+          "uptime_ms": 659397,
+          "data_roundtrips": 491,
+          "opus_roundtrips": 489,
+          "opus_missing": 2,
+          "max_opus_gap_ms": 2133
+        },
+        {
+          "elapsed_ms": 512075,
+          "uptime_ms": 669661,
+          "data_roundtrips": 501,
+          "opus_roundtrips": 499,
+          "opus_missing": 2,
+          "max_opus_gap_ms": 2133
+        },
+        {
+          "elapsed_ms": 522320,
+          "uptime_ms": 679908,
+          "data_roundtrips": 511,
+          "opus_roundtrips": 509,
+          "opus_missing": 2,
+          "max_opus_gap_ms": 2133
+        },
+        {
+          "elapsed_ms": 532524,
+          "uptime_ms": 690110,
+          "data_roundtrips": 521,
+          "opus_roundtrips": 519,
+          "opus_missing": 2,
+          "max_opus_gap_ms": 2133
+        },
+        {
+          "elapsed_ms": 542761,
+          "uptime_ms": 700346,
+          "data_roundtrips": 531,
+          "opus_roundtrips": 529,
+          "opus_missing": 2,
+          "max_opus_gap_ms": 2133
+        },
+        {
+          "elapsed_ms": 552964,
+          "uptime_ms": 710551,
+          "data_roundtrips": 541,
+          "opus_roundtrips": 539,
+          "opus_missing": 2,
+          "max_opus_gap_ms": 2133
+        },
+        {
+          "elapsed_ms": 563181,
+          "uptime_ms": 720766,
+          "data_roundtrips": 551,
+          "opus_roundtrips": 549,
+          "opus_missing": 2,
+          "max_opus_gap_ms": 2133
+        },
+        {
+          "elapsed_ms": 573417,
+          "uptime_ms": 731004,
+          "data_roundtrips": 561,
+          "opus_roundtrips": 559,
+          "opus_missing": 2,
+          "max_opus_gap_ms": 2133
+        },
+        {
+          "elapsed_ms": 583627,
+          "uptime_ms": 741214,
+          "data_roundtrips": 571,
+          "opus_roundtrips": 569,
+          "opus_missing": 2,
+          "max_opus_gap_ms": 2133
+        },
+        {
+          "elapsed_ms": 593863,
+          "uptime_ms": 751449,
+          "data_roundtrips": 581,
+          "opus_roundtrips": 579,
+          "opus_missing": 2,
+          "max_opus_gap_ms": 2133
+        },
+        {
+          "elapsed_ms": 600045,
+          "uptime_ms": 757632,
+          "data_roundtrips": 587,
+          "opus_roundtrips": 585,
+          "opus_missing": 2,
+          "max_opus_gap_ms": 2133
+        }
+      ],
+      "pion_media": {
+        "session_id": "8",
+        "snapshot_count": 123,
+        "missing_before_pion": 0,
+        "missing_after_pion_write": 2,
+        "first_live_snapshot": {
+          "observed_at_utc": "2026-09-28T11:23:51.333869+00:00",
+          "session_id": "8",
+          "media": {
+            "dropped": 0,
+            "echoed": 0,
+            "fault_drop_all": false,
+            "fault_drop_at": 0,
+            "input_gaps": 0,
+            "last_input_sequence": 0,
+            "read_errors": 0,
+            "received": 0,
+            "session_id": "8",
+            "write_errors": 0
+          },
+          "ice_pair": {
+            "mode": "udp",
+            "local_protocol": "udp",
+            "remote_protocol": "udp",
+            "local_type": "host",
+            "remote_type": "prflx",
+            "local_tcp_type": "",
+            "remote_tcp_type": "",
+            "udp_drops": 0
+          }
+        },
+        "last_live_snapshot": {
+          "observed_at_utc": "2026-09-28T11:34:02.168996+00:00",
+          "session_id": "8",
+          "media": {
+            "dropped": 0,
+            "echoed": 585,
+            "fault_drop_all": false,
+            "fault_drop_at": 0,
+            "input_gaps": 0,
+            "last_input_sequence": 584,
+            "read_errors": 0,
+            "received": 585,
+            "session_id": "8",
+            "write_errors": 0
+          },
+          "device": {
+            "run_id": "ca83069f0a55e541",
+            "requested_ms": 600000,
+            "elapsed_ms": 593863,
+            "data_roundtrips": 581,
+            "opus_roundtrips": 579,
+            "completed": 0,
+            "detail": -7,
+            "uptime_ms": 751449,
+            "opus_sent": 581,
+            "opus_missing": 2,
+            "opus_duplicates": 0,
+            "max_opus_gap_ms": 2133
+          }
+        },
+        "termination": {
+          "phase": "stopped",
+          "session": "8",
+          "received": "587",
+          "echoed": "587",
+          "dropped": "0",
+          "input_gaps": "0",
+          "last_sequence": "586",
+          "read_errors": "1",
+          "write_errors": "0"
+        },
+        "termination_note": "ReadRTP exits on the explicit HTTP session close after the completed measurement. All active snapshots had zero read/write errors and disabled fault controls.",
+        "snapshots_sha256": "55c79c66299b751f3d9fd24a4ee15c374e74c599a3fc80449ef7d55fe1090f04"
+      },
+      "coredump_after_sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829"
     }
-  },
-  "final_status": {
-    "board": "bk7258_v3_202405",
-    "target": "bk7258",
-    "chip": "bk7258",
-    "device_uid": "c8478ca2a87c",
-    "capabilities": "0x00000003",
-    "command_availability": "0x001f3f1f",
-    "active_role": "app",
-    "active_version": "pal-webrtc-bk-20260928-r15",
-    "active_checksum": "a849efc09debc1c302c2a7c5b2b70a454d7255d1ec7539b3272da78a835c8592",
-    "active_image_size": "5222400",
-    "running_partition": "2",
-    "next_partition": "2",
-    "boot_intent": "auto",
-    "stage_valid": "0",
-    "stage_package_checksum": "-",
-    "stage_package_size": "0",
-    "stage_image_checksum": "-",
-    "stage_image_size": "0",
-    "stage_role": "unknown",
-    "stage_version": "-",
-    "stage_board": "-",
-    "stage_target": "-",
-    "partition_1_valid": "1",
-    "partition_1_package_checksum": "3a3c664340f0d1b45561816e197ffbd25f2d3c447ee248082a3c5ce261cba9bd",
-    "partition_1_package_size": "1573290",
-    "partition_1_image_checksum": "47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb",
-    "partition_1_image_size": "2437120",
-    "partition_1_role": "loader",
-    "partition_1_version": "0.1.65-lu-c",
-    "partition_1_board": "bk7258_v3_202405",
-    "partition_1_target": "bk7258",
-    "partition_2_valid": "1",
-    "partition_2_package_checksum": "5e6814bbfc834d9a33f780644f2ff1847eb5a9a7bc75a03fe28ed0ab2a061386",
-    "partition_2_package_size": "1790683",
-    "partition_2_image_checksum": "a849efc09debc1c302c2a7c5b2b70a454d7255d1ec7539b3272da78a835c8592",
-    "partition_2_image_size": "5222400",
-    "partition_2_role": "app",
-    "partition_2_version": "pal-webrtc-bk-20260928-r15",
-    "partition_2_board": "bk7258_v3_202405",
-    "partition_2_target": "bk7258",
-    "last_result": "0",
-    "mfg_mode": "1",
-    "mfg_steps": "0000000000000000000000"
-  },
-  "connection_timeout_ms": 60000,
-  "dtls_handshake_budget_ms": 15000,
-  "artifact": {
-    "build_evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405/evidence/build.json",
-    "build_evidence_sha256": "b55b0cdf78184dfe081350715cdeb52b7341d7b757776a396fa5a5e4c77d1722",
-    "image_sha256": "a849efc09debc1c302c2a7c5b2b70a454d7255d1ec7539b3272da78a835c8592",
-    "package_sha256": "5e6814bbfc834d9a33f780644f2ff1847eb5a9a7bc75a03fe28ed0ab2a061386",
-    "package_size": 1790683
-  },
+  ],
   "preservation": {
     "loader_p1_before_sha256": "47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb",
     "loader_p1_after_sha256": "47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb",
-    "coredump_before_size": 32,
-    "coredump_after_size": 32,
     "coredump_before_sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829",
     "coredump_after_sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829",
-    "coredump_byte_identical": true,
-    "stage_valid": 0,
+    "coredump_stored_bytes": 32,
+    "stage_valid": false,
     "app_confirmed": true
   },
   "fixture": {
-    "implementation": "Pion",
-    "binary_sha256": "1b29d86d24480c70674cdc6c61c9d3f036ada01f54659ef1da4448ff145e5d82",
-    "signaling": "http://192.168.1.6:49201/offer",
-    "stun": "stun:192.168.1.6:52115",
-    "ice_mode": "udp",
-    "candidate_ip": "192.168.1.6",
-    "synthetic_opus_only": true
+    "source_commit": "93eec8640563f57139f2219af5fbef8cbae83309",
+    "binary_sha256": "0e994e7d152444f011259cf04bfe43c8818902de00a157002091309533a4473b",
+    "log_sha256": "ea6a30254bfaae919b9ecc9c98618988fade5486ea729e1497fe90522692e5fa",
+    "sessions": [
+      "4",
+      "8"
+    ],
+    "fault_injection": false
   },
-  "portable_source_sha256": {
-    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "1abb17eecc5b9c6cfd27cb3a4d9e734f07224dde6a9a117ffdf36cd46809d4a7",
-    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_cases.inc": "725f4d2ca360da9066a855696a30553f49959c6a9ec26dcb168ef4912587528b",
-    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "b8d9ef087e93647d8b69cecf6dda0435d905b1aa9400ecc7876b57561652afc8",
-    "projects/e2e/apps/pal-webrtc/app/api_coverage.json": "6999c6a17d3b142719edc62b98fcd2cab80b1ca5c3d314f26423f6379861a183"
-  },
-  "provider_source_sha256": {
-    "native_component_src/bk7258/ap/h2_pal_core/CMakeLists.txt": "306296dc95aaa0ddc76eba70669e941e203144d7db0545ad81836b8718a62d1a",
-    "native_component_src/bk7258/ap/h2_pal_core/include/h2_bk_mbedtls_config.h": "45381119c5f4cabb76426edb34aea67352dd32ca0b4c8bec7f3da5bb9ee31069",
-    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_dtls.c": "fb4dcaf370d5074e662c602c839ecc32ff7f3e97f66d0a0e46e07e73e08184a4",
-    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_net.c": "9f7c9f184f4608ec1b50e7627a58f8727fd44fe197e7408f76d826621a2d12d0",
-    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_net_result.h": "c6d5259357d283b963e74efd4693d86f6fb11069195ca6007d840e8a3bc35daf",
-    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_udp_receive.h": "80b976449abeedda1884c94fa218cd2a567554d132b55f352c7163205d33a92b",
-    "libs/pal/providers/h2peer/BUILD.bazel": "d135f77556c7a4275c503ea18e122f261ddbf9616fd4e6d3592471da2ef92ed5",
-    "libs/pal/providers/h2peer/src/providers/portable/peer_connection.c": "a6b4be41139d696db305d835d2eca9e5e47263e20f2f89ad651fae582cf1e870",
-    "projects/e2e/libs/pal-webrtc-device/src/h2_pal_webrtc_device.c": "f9ea394add5ea5cce11d06d583fb1aafaaa2bf3db96561da9ddfef4cb8357f80",
-    "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405/BUILD.bazel": "bfb6db9647e9575f7272c8205ecf939b9576e167c91fd43c87624fe468cfb8de",
-    "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405/ap/ap_main.c": "73451f6977ca4765aad9d44e5cd74b0486cb455446054d6ef3cf247488b009b1"
-  },
-  "limitations": [
-    "The portable fingerprint rejection case currently accepts generic terminal failure. Strict TLS_VERIFY rejection of wrong and missing certificates is separately exercised against the actual BK SDK in dtls-host.json; preserving the precise reason in the cross-platform WebRTC event remains a follow-up.",
-    "UART monitor sessions stopped delivering during both executions. Each full result was collected by reconnecting to that same boot; only the two distinct run IDs count as executions."
-  ],
-  "conformance_passed": true,
-  "stability": {
-    "status": "NOT_REPRODUCED",
-    "stability_qualified": false,
-    "observation": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405/evidence/stability-observation.json",
-    "sha256": "8e2d706cb8d25ed5a5d41eb7d2e4da4c8794f1febf9e8a3d920c78413527aa91"
-  }
+  "historical_failure": "failed-r16.json",
+  "stability_scope": "Two separate 600-second active data/Opus runs. No additional AP boot appeared during either observation. CP-only resets and the user-reported sound source remain unconfirmed; this test does not open board audio hardware."
 }

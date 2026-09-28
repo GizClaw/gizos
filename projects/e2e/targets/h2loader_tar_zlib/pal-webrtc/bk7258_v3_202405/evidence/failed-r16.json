@@ -549,5 +549,7 @@
     "/tmp/pal-webrtc-bk-r16-soak-failure.uart1.log": "b768df8c82fd7aba77c60f1a7d00dc24eb36c1b71cde161979497644cd2ec700",
     "/tmp/pal-webrtc-bk-r16-soak-failure.pion.log": "e6a5d07da194c4dc344da7fca74699962202ead5d224e00741914f2362a7989e"
   },
-  "observed_at_utc": "2026-09-28T10:46:23.342833+00:00"
+  "observed_at_utc": "2026-09-28T10:46:23.342833+00:00",
+  "historical": true,
+  "current_qualification": "qualified.json"
 }

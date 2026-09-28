@@ -3,8 +3,8 @@
   "contract": 1,
   "operations": 13,
   "cases": 43,
-  "qualified": false,
-  "observed_at_utc": "2026-09-28T08:47:06.288194+00:00",
+  "qualified": true,
+  "observed_at_utc": "2026-09-28T11:41:31.952906+00:00",
   "portable_source_sha256": {
     "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "24bd887884a51a9cb55cdcaf2b136e74d72826db7f1156bddbd39c3b405a9cf0",
     "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_cases.inc": "725f4d2ca360da9066a855696a30553f49959c6a9ec26dcb168ef4912587528b",
@@ -49,24 +49,19 @@
       "platform": "devkit",
       "status": "PASS",
       "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/devkit/evidence/qualified.json",
-      "sha256": "e8014b0963447876067bfad2203dcfa153559188cbc9ce63d048639fe7e4067d",
-      "source_matches_current": false
+      "sha256": "d25e5242e9467a680d3d4edf6f154865cfe55217994d95bf28ebbb1288cfde42",
+      "source_matches_current": true
     },
     {
       "platform": "bk7258",
-      "status": "FAIL_STABILITY",
-      "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405/evidence/failed-r16.json",
-      "sha256": "69ef01712c88bd265913f1e13f3309ec0623f2b4fe305f9d85a669828fd0531e",
-      "source_matches_current": false,
+      "status": "PASS",
+      "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405/evidence/qualified.json",
+      "sha256": "6f6b0c68794771da69b74c8b555f1806dcdb72d3be4e03dd36b2ecde99b32e96",
+      "source_matches_current": true,
       "conformance_status": "PASS"
     }
   ],
-  "remaining": [
-    "Validate sequence-tagged continuous RTP liveness with real Pion RX/TX/drop evidence; preserve BK r16 single-packet timeout as a historical failure.",
-    "Refresh all six final artifacts and receipts after the revised stability probe; BK requires two independent 600-second runs, sustained data/media, bounded longest media gap, and preserved Loader/coredump."
-  ],
-  "requires_source_refresh": [
-    "devkit",
-    "bk7258"
-  ]
+  "remaining": [],
+  "requires_source_refresh": [],
+  "scope": "13 WebRTC operations, owned events, allocators, Opus transport and DataChannels; no microphone, speaker or video qualification."
 }
