@@ -86,15 +86,15 @@ h2_pal_result_t h2_gizclaw_player_play_index(h2_gizclaw_service_t *service,
  * from 0 and reports 0. With it the player fetches the headers with a
  * Range request, then a Range from the decoder's offset, and continues to
  * the start: Ogg/Opus aims 5 s early by byte rate and lands on the next
- * valid page; WAV ranges to the exact frame; MP3 aims at the exact frame of
- * a CBR stream with a LAME "Info" tag and otherwise 5 s early (Xing TOC,
- * Xing frame/byte counts or the first frame's bitrate), landing on the next
- * pair of consistent frame headers. A server that ignores Range, or any
- * failure before the first sample, falls back to one plain download that
- * skips to the start without decoding. status.position_ms shows start_ms
- * while buffering and then the position the stream itself gives: the Ogg
- * granule, the WAV frame, or the MP3 frame count, which after an MP3
- * landing is that model's estimate (exact for CBR). A start beyond the real
+ * valid page; WAV ranges to the exact frame; MP3 ranges only when a LAME
+ * "Info" tag declares CBR, and every frame from the landing to the start
+ * must then have the declared bitrate on the CBR byte grid. Any other MP3
+ * (VBR, untagged) is not ranged: the probe itself is read on and skipped
+ * through frame by frame. A server that ignores Range, or any failure
+ * before the first sample, falls back to one plain download that skips to
+ * the start without decoding. status.position_ms shows start_ms while
+ * buffering and then the exact position the stream itself gives: the Ogg
+ * granule, the WAV frame, or the MP3 frame count. A start beyond the real
  * end completes the item there. Repeat and end-of-track advance start the
  * next item at 0. INVALID_ARG for a bad index or start_ms at or past a
  * known duration_ms, before anything is touched; otherwise the same results

@@ -8,18 +8,16 @@
  * landing. Lost sync mid-track scans to the end instead: trailing APE tags
  * can hold cover art of any size. */
 #define SCAN_LIMIT 65536u
-/* Frames decoded and dropped before a seek target: the bit reservoir reaches
- * back at most 511 bytes (about five frames at the lowest bitrates) and the
- * synthesis overlap needs one more. */
-#define PRE_ROLL_FRAMES 8u
-/* An offset that is only an estimate aims this far before the target so it
- * lands early, as the Ogg/Opus path does. */
-#define SEEK_BACKOFF_MS 5000u
+/* Frames fully decoded and dropped before a seek target: two granules of
+ * IMDCT overlap and synthesis history make the target frame's output the
+ * one a playback from the start produces. Frames before them are only fed
+ * to the bit reservoir. */
+#define DECODED_PRE_ROLL 2u
 /* LAME counts its delays without the decoder's own 528 + 1 samples. */
 #define DECODER_DELAY 529u
 
 typedef struct frame {
-  uint32_t len, rate, spf, channels, kbps, side;
+  uint32_t len, rate, spf, channels, kbps, side, reservoir;
 } frame_t;
 
 typedef enum mp3_state {
@@ -38,19 +36,21 @@ struct h2_gizclaw_mp3 {
    * layer, sample rate and channel count. */
   uint8_t ref[4];
   uint32_t rate, spf, kbps;
-  /* File offsets of the tag frame (when there is one) and the first audio
-   * frame. */
-  uint64_t tag_offset, first;
-  /* From a Xing/Info/VBRI frame and its LAME extension. total is the track
-   * length in samples, UINT64_MAX when unknown. */
-  bool cbr, vbr, toc_ok;
-  uint32_t frames, bytes;
-  uint8_t toc[100];
+  /* Frames a ranged landing must feed the reservoir before DECODED_PRE_ROLL:
+   * the reservoir span over the smallest main data a CBR frame carries. */
+  uint32_t fill_frames;
+  /* File offset of the first audio frame. */
+  uint64_t first;
+  /* From a Xing/Info/VBRI frame and its LAME extension. cbr is a LAME Info
+   * tag, the only declaration that places frames on a byte grid; total is
+   * the track length in samples, UINT64_MAX when unknown. */
+  bool cbr;
   uint32_t delay;
   uint64_t total;
   /* Playback: frame is the index of the next frame (0 = first audio
-   * frame); frames before skip_until are parsed, not decoded. */
-  uint64_t frame, skip_until;
+   * frame); frames before skip_until only feed the bit reservoir, and after
+   * a landing frames before verify_until are checked against the grid. */
+  uint64_t frame, skip_until, verify_until;
   bool reset, landing;
   drmp3dec dec;
   int16_t pcm[1152u * 2u];
@@ -83,6 +83,8 @@ static bool parse(const uint8_t *h, frame_t *f) {
   f->side = (mpeg1 ? (f->channels == 1u ? 17u : 32u)
                    : (f->channels == 1u ? 9u : 17u)) +
             ((h[1] & 1u) ? 0u : 2u);
+  /* How far main_data_begin can reach back. */
+  f->reservoir = mpeg1 ? 511u : 255u;
   return true;
 }
 
@@ -128,35 +130,22 @@ static h2_pal_result_t scan(h2_gizclaw_mp3_t *m, frame_t *f, uint64_t limit) {
 }
 
 /* The first frame may be metadata: a Xing (VBR) or Info (CBR) frame after
- * the side information, or a VBRI frame 32 bytes in. */
+ * the side information, or a VBRI frame 32 bytes in. Only the frame count
+ * and the LAME delay and padding are used. */
 static bool parse_tag(h2_gizclaw_mp3_t *m, const uint8_t *p, const frame_t *f) {
   size_t at = 4u + f->side;
-  bool have_frames = false;
+  uint32_t frames = 0;
   if (f->len >= at + 8u &&
       (!memcmp(p + at, "Xing", 4) || !memcmp(p + at, "Info", 4))) {
     m->cbr = p[at] == 'I';
-    m->vbr = !m->cbr;
     const uint32_t flags = be32(p + at + 4u);
     at += 8u;
     if ((flags & 1u) && at + 4u <= f->len) {
-      m->frames = be32(p + at);
-      have_frames = true;
+      frames = be32(p + at);
       at += 4u;
     }
-    if ((flags & 2u) && at + 4u <= f->len) {
-      m->bytes = be32(p + at);
-      at += 4u;
-    }
-    if ((flags & 4u) && at + 100u <= f->len) {
-      memcpy(m->toc, p + at, sizeof(m->toc));
-      m->toc_ok = m->vbr;
-      for (size_t i = 1; i < sizeof(m->toc); ++i)
-        if (m->toc[i] < m->toc[i - 1])
-          m->toc_ok = false;
-      at += 100u;
-    }
-    if (flags & 8u)
-      at += 4u;
+    at += ((flags & 2u) ? 4u : 0u) + ((flags & 4u) ? 100u : 0u) +
+          ((flags & 8u) ? 4u : 0u);
     /* LAME extension: 12-bit encoder delay and padding 21 bytes in. */
     uint32_t padding = 0;
     if (at + 24u <= f->len && p[at] != 0) {
@@ -166,22 +155,25 @@ static bool parse_tag(h2_gizclaw_mp3_t *m, const uint8_t *p, const frame_t *f) {
       padding = (((uint32_t)lame[1] & 0xFu) << 8) | (uint32_t)lame[2];
       padding = padding > DECODER_DELAY ? padding - DECODER_DELAY : 0u;
     }
-    const uint64_t raw = (uint64_t)m->frames * f->spf;
-    if (have_frames && m->frames && raw > (uint64_t)m->delay + padding)
+    const uint64_t raw = (uint64_t)frames * f->spf;
+    if (raw > (uint64_t)m->delay + padding)
       m->total = raw - m->delay - padding;
-    if (m->bytes <= f->len)
-      m->toc_ok = false;
     return true;
   }
   if (f->len >= 36u + 18u && !memcmp(p + 36, "VBRI", 4)) {
-    m->vbr = true;
-    m->bytes = be32(p + 36u + 10u);
-    m->frames = be32(p + 36u + 14u);
-    if (m->frames)
-      m->total = (uint64_t)m->frames * f->spf;
+    frames = be32(p + 36u + 14u);
+    if (frames)
+      m->total = (uint64_t)frames * f->spf;
     return true;
   }
   return false;
+}
+
+/* A CBR stream's frames sit on a byte grid: frame `index` starts within a
+ * byte of first + index * spf / 8 * bitrate / rate, the padding bits keeping
+ * the running length on that line. */
+static uint64_t cbr_bytes(const h2_gizclaw_mp3_t *m) {
+  return (uint64_t)(m->spf / 8u) * m->kbps * 1000u;
 }
 
 /* ID3v2 tags (any number, any size), then the first frame. */
@@ -217,7 +209,6 @@ static h2_pal_result_t head(h2_gizclaw_mp3_t *m) {
   m->rate = f.rate;
   m->spf = f.spf;
   m->kbps = f.kbps;
-  m->tag_offset = in->position;
   if (parse_tag(m, head_at(m), &f)) {
     h2_gizclaw_audio_input_consume(in, f.len);
     /* A CBR estimate uses the first audio frame's own bitrate. */
@@ -229,57 +220,27 @@ static h2_pal_result_t head(h2_gizclaw_mp3_t *m) {
         same_stream(m->ref, head_at(m)))
       m->kbps = audio.kbps;
   }
+  /* The least main data a frame carries: unpadded, with a CRC counted even
+   * if it is already in the side information. */
+  const uint32_t unpadded = (uint32_t)(cbr_bytes(m) / m->rate);
+  const uint32_t overhead = 4u + f.side + 2u;
+  const uint32_t main_data = unpadded > overhead ? unpadded - overhead : 1u;
+  m->fill_frames = (f.reservoir + main_data - 1u) / main_data;
   m->first = in->position;
   m->state = MP3_READY;
   return H2_PAL_OK;
 }
 
-/* Byte offset of frame `index` and its inverse, by the best model the
- * stream offers: the Xing TOC, the Xing frame and byte counts, or the
- * constant frame size of the first audio frame's bitrate. The TOC spans the
- * tag frame too, so offsets are kept past it. */
 static uint64_t offset_of(const h2_gizclaw_mp3_t *m, uint64_t index) {
-  if (m->toc_ok && m->frames) {
-    const double percent = (double)index * 100.0 / (double)m->frames;
-    if (percent >= 100.0)
-      return m->tag_offset + m->bytes;
-    const unsigned i = (unsigned)percent;
-    const double a = m->toc[i], b = i < 99u ? m->toc[i + 1u] : 256.0;
-    const double at = a + (b - a) * (percent - (double)i);
-    const uint64_t offset =
-        m->tag_offset + (uint64_t)(at * (double)m->bytes / 256.0);
-    return offset > m->first ? offset : m->first;
-  }
-  const uint64_t tag = m->first - m->tag_offset;
-  if (m->vbr && m->frames && m->bytes > tag)
-    return m->first + index * (m->bytes - tag) / m->frames;
-  return m->first +
-         index * (uint64_t)(m->spf / 8u) * m->kbps * 1000u / m->rate;
+  return m->first + index * cbr_bytes(m) / m->rate;
 }
 
-static uint64_t frame_at(const h2_gizclaw_mp3_t *m, uint64_t offset) {
-  if (offset <= m->first)
-    return 0;
-  if (m->toc_ok && m->frames) {
-    const double at = offset > m->tag_offset
-                          ? (double)(offset - m->tag_offset) * 256.0 /
-                                (double)m->bytes
-                          : 0.0;
-    unsigned i = 99u;
-    while (i > 0u && m->toc[i] > at)
-      --i;
-    const double a = m->toc[i], b = i < 99u ? m->toc[i + 1u] : 256.0;
-    double percent = (double)i + (b > a ? (at - a) / (b - a) : 0.0);
-    if (percent > 100.0)
-      percent = 100.0;
-    return (uint64_t)(percent * (double)m->frames / 100.0 + 0.5);
-  }
-  const uint64_t into = offset > m->first ? offset - m->first : 0u;
-  const uint64_t tag = m->first - m->tag_offset;
-  if (m->vbr && m->frames && m->bytes > tag)
-    return (into * m->frames + (m->bytes - tag) / 2u) / (m->bytes - tag);
-  const uint64_t per = (uint64_t)(m->spf / 8u) * m->kbps * 1000u;
-  return (into * m->rate + per / 2u) / per;
+/* Whether frame `index` found at `offset` is where the declared CBR stream
+ * puts it: the declared bitrate, within a byte of the grid. */
+static bool on_grid(const h2_gizclaw_mp3_t *m, const frame_t *f,
+                    uint64_t offset, uint64_t index) {
+  const uint64_t grid = offset_of(m, index);
+  return f->kbps == m->kbps && offset + 1u >= grid && offset <= grid + 1u;
 }
 
 static h2_pal_result_t finish(h2_gizclaw_mp3_t *m, uint64_t *end) {
@@ -313,7 +274,10 @@ static h2_pal_result_t step(h2_gizclaw_mp3_t *m, h2_gizclaw_audio_chunk_t *chunk
       return H2_PAL_ERR_FORMAT; /* Nothing to land on before the end. */
     if (rc != H2_PAL_OK)
       return rc;
-    m->frame = frame_at(m, in->position);
+    if (in->position < m->first)
+      return H2_PAL_ERR_FORMAT;
+    const uint64_t per = cbr_bytes(m);
+    m->frame = ((in->position - m->first) * m->rate + per / 2u) / per;
     m->landing = false;
     m->reset = true;
   } else {
@@ -338,16 +302,22 @@ static h2_pal_result_t step(h2_gizclaw_mp3_t *m, h2_gizclaw_audio_chunk_t *chunk
   if (rc != H2_PAL_OK)
     return rc;
   const uint64_t index = m->frame++;
-  if (index < m->skip_until) {
-    h2_gizclaw_audio_input_consume(in, f.len);
-    m->reset = true;
-    return H2_PAL_OK;
-  }
+  /* After a landing every frame up to the target must sit where the Info
+   * tag's CBR promise puts it, or nothing can be placed: a mislabelled or
+   * falsely synced stream falls back before its first sample. */
+  if (index < m->verify_until && !on_grid(m, &f, in->position, index))
+    return H2_PAL_ERR_FORMAT;
   if (m->reset) {
     drmp3dec_init(&m->dec);
     m->reset = false;
   }
   drmp3dec_frame_info info = {0};
+  if (index < m->skip_until) {
+    /* Before the pre-roll only the bit reservoir is kept up to date. */
+    (void)drmp3dec_decode_frame(&m->dec, head_at(m), (int)f.len, NULL, &info);
+    h2_gizclaw_audio_input_consume(in, f.len);
+    return H2_PAL_OK;
+  }
   const int decoded =
       drmp3dec_decode_frame(&m->dec, head_at(m), (int)f.len, m->pcm, &info);
   h2_gizclaw_audio_input_consume(in, f.len);
@@ -406,10 +376,10 @@ h2_pal_result_t h2_gizclaw_mp3_seek_offset(const h2_gizclaw_mp3_t *m,
     return H2_PAL_ERR_INVALID_ARG;
   if (!h2_gizclaw_mp3_headers_done(m))
     return H2_PAL_ERR_INVALID_STATE;
-  uint64_t index = (target + m->delay) / m->spf;
-  uint64_t back = PRE_ROLL_FRAMES;
   if (!m->cbr)
-    back += (uint64_t)SEEK_BACKOFF_MS * m->rate / 1000u / m->spf;
+    return H2_PAL_ERR_UNSUPPORTED;
+  uint64_t index = (target + m->delay) / m->spf;
+  const uint64_t back = (uint64_t)m->fill_frames + DECODED_PRE_ROLL;
   index = index > back ? index - back : 0u;
   *offset = offset_of(m, index);
   return *offset < total ? H2_PAL_OK : H2_PAL_ERR_FORMAT;
@@ -421,10 +391,14 @@ h2_pal_result_t h2_gizclaw_mp3_seek(h2_gizclaw_mp3_t *m, uint64_t target,
     return H2_PAL_ERR_INVALID_ARG;
   if (!h2_gizclaw_mp3_headers_done(m))
     return H2_PAL_ERR_INVALID_STATE;
+  if (resync && !m->cbr)
+    return H2_PAL_ERR_UNSUPPORTED;
   const uint64_t index = (target + m->delay) / m->spf;
-  m->skip_until = index > PRE_ROLL_FRAMES ? index - PRE_ROLL_FRAMES : 0u;
+  m->skip_until = index > DECODED_PRE_ROLL ? index - DECODED_PRE_ROLL : 0u;
+  /* Skipping reads on from the first frame, reservoir intact; a landing
+   * starts a new one and is verified up to the target frame. */
   m->landing = resync;
-  m->reset = true;
+  m->verify_until = resync ? index + 1u : 0u;
   return H2_PAL_OK;
 }
 

@@ -1521,13 +1521,16 @@ static int start_audio_download(h2_gizclaw_device_t *d, const char *url,
 typedef enum audio_source {
   AUDIO_SOURCE_PLAIN,    /* From byte 0, no seek. */
   AUDIO_SOURCE_PROBE,    /* Range 0- until the headers parse. */
-  AUDIO_SOURCE_WHOLE,    /* Range ignored: skip through the whole body. */
+  AUDIO_SOURCE_WHOLE,    /* Skip through the whole body: Range ignored, or
+                          * the stream cannot be placed by offset. */
   AUDIO_SOURCE_RANGE,    /* Range offset-: the decoder resyncs there. */
   AUDIO_SOURCE_FALLBACK, /* Plain GET, skip through the whole body. */
 } audio_source_t;
 /* Called once the probe's headers parse. The decoder picks the byte to
- * range from for its format (an estimate for Ogg/Opus and most MP3, exact
- * for WAV) and then reports exactly where it landed. */
+ * range from for its format (an estimate for Ogg/Opus, exact for WAV and
+ * CBR MP3) and then reports exactly where it landed. A stream it cannot
+ * place by offset (VBR or untagged MP3) is skipped through on the probe,
+ * which already delivers the whole file. */
 static int seek_range(h2_gizclaw_device_t *d,
                       h2_gizclaw_audio_decoder_t *decoder, const char *url,
                       bool music, uint64_t start_ms, uint64_t duration_ms,
@@ -1543,6 +1546,10 @@ static int seek_range(h2_gizclaw_device_t *d,
   uint64_t offset = 0;
   int rc = h2_gizclaw_audio_decoder_seek_offset(decoder, start_ms, duration_ms,
                                                 total, &offset);
+  if (rc == H2_PAL_ERR_UNSUPPORTED) {
+    *source = AUDIO_SOURCE_WHOLE;
+    return h2_gizclaw_audio_decoder_seek(decoder, start_ms, false, 0);
+  }
   if (rc == H2_PAL_OK)
     rc = start_audio_download(d, url, music, true, offset, UINT64_MAX, total);
   if (rc == H2_PAL_OK)

@@ -646,21 +646,117 @@ static void test_mp3_cbr(const blob_t *mp3) {
   free(full.samples);
 }
 
+/* Run to the headers and return what seek_offset() says about target_ms;
+ * with `land` also restart at that offset, resync, and return how the first
+ * decode after it ends. */
+static h2_pal_result_t ranged(const uint8_t *data, size_t len,
+                              uint64_t target_ms, bool land) {
+  source_t src = {.data = data, .len = len};
+  h2_gizclaw_audio_decoder_t *d = NULL;
+  assert(h2_gizclaw_audio_decoder_create(&s_mem, source_read, &src, &d) ==
+         H2_PAL_OK);
+  uint8_t pcm[H2_GIZCLAW_AUDIO_PCM_BYTES];
+  size_t n = 0;
+  while (!h2_gizclaw_audio_decoder_headers_done(d))
+    assert(h2_gizclaw_audio_decoder_next(d, pcm, sizeof(pcm), &n) ==
+           H2_PAL_OK);
+  uint64_t offset = 0;
+  h2_pal_result_t rc = h2_gizclaw_audio_decoder_seek_offset(
+      d, target_ms, 0, len, &offset);
+  if (rc == H2_PAL_ERR_UNSUPPORTED)
+    assert(h2_gizclaw_audio_decoder_seek(d, target_ms, true, 0) ==
+           H2_PAL_ERR_UNSUPPORTED);
+  if (rc == H2_PAL_OK && land) {
+    src.pos = (size_t)offset;
+    assert(h2_gizclaw_audio_decoder_seek(d, target_ms, true, offset) ==
+           H2_PAL_OK);
+    uint64_t origin = 0;
+    do
+      rc = h2_gizclaw_audio_decoder_next(d, pcm, sizeof(pcm), &n);
+    while (rc == H2_PAL_OK && !h2_gizclaw_audio_decoder_origin(d, &origin));
+  }
+  h2_gizclaw_audio_decoder_destroy(d);
+  assert(s_live == 0);
+  return rc;
+}
+
+/* A seek by skipping frames from the first one is exact on any stream and
+ * matches a full decode sample for sample. */
+static void assert_skip_exact(const blob_t *mp3, const decoded_t *full,
+                              uint64_t target_ms) {
+  decoded_t part =
+      decode_ex(mp3->data, mp3->len, 4096u, target_ms, false, 0);
+  assert(part.rc == H2_PAL_EXIT && part.located);
+  assert(part.origin == target_ms * 16u);
+  assert(part.count == full->count - part.origin);
+  assert(!memcmp(part.samples, full->samples + part.origin, part.count * 2u));
+  free(part.samples);
+}
+
 static void test_mp3_vbr(const blob_t *mp3) {
   /* 3 s at 22.05 kHz, Xing tag with a TOC: 48000 samples. */
   decoded_t full = decode(mp3->data, mp3->len);
   assert(full.rc == H2_PAL_EXIT && full.count == 48000);
   assert(tone_share(full.samples + 2000, 44000, 1000.0) > 0.98);
-  /* A VBR estimate aims 5 s early, which here is the first frame: the
-   * landing is then exact. */
-  for (int resync = 0; resync < 2; ++resync) {
-    decoded_t part =
-        decode_ex(mp3->data, mp3->len, 4096u, 1500, resync != 0, 3000);
-    assert(part.rc == H2_PAL_EXIT && part.origin == 24000 &&
-           part.count == 24000);
+  /* Variable frame sizes cannot be placed by byte offset: no range, and
+   * skipping is exact. */
+  assert(ranged(mp3->data, mp3->len, 1500, false) == H2_PAL_ERR_UNSUPPORTED);
+  assert_skip_exact(mp3, &full, 1500);
+  assert_skip_exact(mp3, &full, 2345);
+  free(full.samples);
+}
+
+/* Silent MPEG-2 Layer III mono frames at 22.05 kHz, an Info frame first:
+ * every fifth frame is 16 kbit/s when `vary`, the rest 8 kbit/s, each with
+ * the padding bit that keeps a CBR stream on its byte grid. */
+static size_t make_info_stream(uint8_t *out, size_t frames, bool vary) {
+  size_t n = 0;
+  for (size_t i = 0; i <= frames; ++i) {
+    const unsigned kbps = vary && i > 0 && i % 5u == 0 ? 16u : 8u;
+    const uint64_t per = 72u * kbps * 1000u;
+    const size_t base = (size_t)(per / 22050u);
+    const bool pad = (i + 1u) * per / 22050u - i * per / 22050u > base;
+    const size_t len = base + (pad ? 1u : 0u);
+    memset(out + n, 0, len);
+    out[n] = 0xFF;
+    out[n + 1] = 0xF3;
+    out[n + 2] = (uint8_t)((kbps == 8u ? 0x10u : 0x20u) | (pad ? 0x02u : 0u));
+    out[n + 3] = 0xC0;
+    if (i == 0) {
+      memcpy(out + n + 13, "Info", 4);
+      put32(out + n + 17, 0);
+      out[n + 20] = 1; /* Frame count follows. */
+      out[n + 21] = (uint8_t)(frames >> 24);
+      out[n + 22] = (uint8_t)(frames >> 16);
+      out[n + 23] = (uint8_t)(frames >> 8);
+      out[n + 24] = (uint8_t)frames;
+    }
+    n += len;
+  }
+  return n;
+}
+
+static void test_mp3_info_landing(void) {
+  const size_t frames = 400; /* 10.4 s */
+  uint8_t *stream = malloc(frames * 60u + 64u);
+  assert(stream);
+  /* A true CBR stream ranges and lands on the exact frame. */
+  size_t len = make_info_stream(stream, frames, false);
+  const uint64_t targets[] = {800, 3000, 7777, 10000};
+  for (size_t t = 0; t < 4u; ++t) {
+    decoded_t part = decode_ex(stream, len, 4096u, targets[t], true, 0);
+    assert(part.rc == H2_PAL_EXIT && part.located &&
+           part.origin == targets[t] * 16u);
+    assert(part.origin + part.count == frames * 576u * 16000u / 22050u + 1u);
     free(part.samples);
   }
-  free(full.samples);
+  /* An Info tag that claims CBR over variable frames is caught at the
+   * landing, before any sample: the frame found is off the grid or of
+   * another bitrate. */
+  len = make_info_stream(stream, frames, true);
+  for (size_t t = 0; t < 4u; ++t)
+    assert(ranged(stream, len, targets[t], true) == H2_PAL_ERR_FORMAT);
+  free(stream);
 }
 
 static void test_mp3_untagged(const blob_t *mp3) {
@@ -671,13 +767,9 @@ static void test_mp3_untagged(const blob_t *mp3) {
   decoded_t full = decode(mp3->data, mp3->len);
   assert(full.rc == H2_PAL_EXIT && full.count == frames * 576u * 2u);
   assert(tone_share(full.samples + 3000, 12000, 1000.0) > 0.95);
-  for (int resync = 0; resync < 2; ++resync) {
-    decoded_t part =
-        decode_ex(mp3->data, mp3->len, 4096u, 500, resync != 0, 1000);
-    assert(part.rc == H2_PAL_EXIT && part.origin == 8000 &&
-           part.count == full.count - 8000u);
-    free(part.samples);
-  }
+  /* Without an Info tag nothing declares CBR: no range, exact skip. */
+  assert(ranged(mp3->data, mp3->len, 500, false) == H2_PAL_ERR_UNSUPPORTED);
+  assert_skip_exact(mp3, &full, 500);
   /* Junk between frames loses sync for a moment, not the track; junk after
    * a tag but before the first frame is skipped. */
   uint8_t *junk = malloc(mp3->len + 1000u);
@@ -751,6 +843,7 @@ int main(int argc, char **argv) {
   test_mp3_cbr(&cbr);
   test_mp3_vbr(&vbr);
   test_mp3_untagged(&untagged);
+  test_mp3_info_landing();
   test_sniff();
   free(cbr.data);
   free(vbr.data);

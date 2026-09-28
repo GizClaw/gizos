@@ -3624,20 +3624,44 @@ static size_t format_wav_build(uint8_t *out) {
     out[44u + i] = (uint8_t)(128 + (int)(i % 16u) * 4 - 32);
   return 44u + samples;
 }
-/* 417 silent MPEG-2.5 Layer III frames, 8 kbit/s at 8 kHz mono, no tag:
- * each 72 bytes and 576 samples, 480384 samples at 16 kHz. */
-static size_t format_mp3_build(uint8_t *out) {
-  const uint8_t header[4] = {0xFF, 0xE3, 0x18, 0xC4};
-  for (size_t i = 0; i < 417u; ++i) {
-    memset(out + 72u * i, 0, 72);
-    memcpy(out + 72u * i, header, sizeof(header));
+/* 417 silent MPEG-2.5 Layer III mono frames at 8 kHz, 576 samples each:
+ * 480384 samples at 16 kHz. With `info` an Info (CBR) frame declaring them
+ * comes first and every frame is 8 kbit/s (72 bytes); without it there is
+ * no tag and every other frame is 16 kbit/s (144 bytes). */
+static size_t format_mp3_frames(uint8_t *out, bool info) {
+  size_t n = 0;
+  if (info) {
+    memset(out, 0, 72);
+    const uint8_t header[4] = {0xFF, 0xE3, 0x18, 0xC4};
+    memcpy(out, header, sizeof(header));
+    memcpy(out + 13, "Info", 4);
+    put32(out + 17, 0);
+    out[20] = 1; /* Frame count follows. */
+    const uint8_t count[4] = {0, 0, 417u >> 8, 417u & 0xFF};
+    memcpy(out + 21, count, sizeof(count));
+    n = 72;
   }
-  return 72u * 417u;
+  for (size_t i = 0; i < 417u; ++i) {
+    const bool wide = !info && (i & 1u);
+    const size_t len = wide ? 144u : 72u;
+    memset(out + n, 0, len);
+    const uint8_t header[4] = {0xFF, 0xE3, wide ? 0x28 : 0x18, 0xC4};
+    memcpy(out + n, header, sizeof(header));
+    n += len;
+  }
+  return n;
+}
+static size_t format_mp3_cbr_build(uint8_t *out) {
+  return format_mp3_frames(out, true);
+}
+static size_t format_mp3_vbr_build(uint8_t *out) {
+  return format_mp3_frames(out, false);
 }
 
 /* MP3 and WAV go through the same player, timed start and fallbacks as
- * Ogg/Opus; WAV ranges to the exact frame and a tagless CBR MP3 aims 5 s
- * early by its bitrate and still lands on the exact frame. */
+ * Ogg/Opus. WAV and an Info-tagged CBR MP3 range to the exact frame; a VBR
+ * MP3 cannot be placed by byte offset, so the probe itself is skipped
+ * through, still exactly, without a second request. */
 static void test_device_player_formats(void) {
   static seek_test_state_t state;
   static uint8_t body[8000u * 30u + 64u];
@@ -3653,12 +3677,14 @@ static void test_device_player_formats(void) {
   const struct {
     size_t (*build)(uint8_t *out);
     uint64_t plain16;
-    const char *seek_range;
+    const char *seek_range; /* NULL: the probe is skipped through. */
   } formats[] = {
       {format_wav_build, 480000u, "bytes=159980-"},
-      {format_mp3_build, 480384u, "bytes=14400-"},
+      {format_mp3_cbr_build, 480384u, "bytes=19512-"},
+      {format_mp3_vbr_build, 480384u, NULL},
   };
-  for (size_t k = 0; k < 2u; ++k) {
+  for (size_t k = 0; k < 3u; ++k) {
+    const unsigned requests = formats[k].seek_range ? 2u : 1u;
     state.body = body;
     state.body_len = formats[k].build(body);
     state.plain16 = formats[k].plain16;
@@ -3667,9 +3693,10 @@ static void test_device_player_formats(void) {
     assert(h2_atomic_load(&state.calls) == 1u && !state.ranges[0][0]);
     assert(seek_play(service, &state, 30000, 20000, 20000) ==
            seek_frames(&state, 20000u * 16u));
-    assert(h2_atomic_load(&state.calls) == 2u);
+    assert(h2_atomic_load(&state.calls) == requests);
     assert(!strcmp(state.ranges[0], "bytes=0-"));
-    assert(!strcmp(state.ranges[1], formats[k].seek_range));
+    assert(formats[k].seek_range ? !strcmp(state.ranges[1], formats[k].seek_range)
+                                 : !state.ranges[1][0]);
     state.server = SEEK_SERVER_IGNORE;
     assert(seek_play(service, &state, 30000, 20000, 20000) ==
            seek_frames(&state, 20000u * 16u));
@@ -3680,7 +3707,8 @@ static void test_device_player_formats(void) {
       state.server = bad[i];
       assert(seek_play(service, &state, 30000, 20000, 20000) ==
              seek_frames(&state, 20000u * 16u));
-      assert(h2_atomic_load(&state.calls) == 3u);
+      /* Probe, refused seek, plain GET; or the probe alone. */
+      assert(h2_atomic_load(&state.calls) == (formats[k].seek_range ? 3u : 1u));
     }
   }
 

@@ -36,10 +36,12 @@ bool h2_gizclaw_audio_decoder_headers_done(const h2_gizclaw_audio_decoder_t *d);
 /* Where a ranged request should begin, in a file of `total` bytes, to start
  * output at target_ms. duration_ms is the length the product knows; only
  * Ogg/Opus needs it. Ogg/Opus estimates by byte rate 5 s early and lands on
- * the next page; WAV is exact; MP3 is exact for a CBR stream with a LAME
- * "Info" tag and otherwise estimates 5 s early from the Xing TOC, the Xing
- * frame and byte counts or the first frame's bitrate. FORMAT when that lies
- * at or past the end, which the caller treats as "cannot range". */
+ * the next page, whose granule gives the exact position; WAV is exact; MP3
+ * ranges only when a LAME "Info" tag declares CBR, to the exact frame 8
+ * before the target. FORMAT when that lies at or past the end, which the
+ * caller treats as "cannot range". UNSUPPORTED when no byte offset can be
+ * placed exactly (MP3 without an Info tag, whose frame boundaries are not
+ * on a grid): the caller skips through the stream it has instead. */
 h2_pal_result_t h2_gizclaw_audio_decoder_seek_offset(
     h2_gizclaw_audio_decoder_t *d, uint64_t target_ms, uint64_t duration_ms,
     uint64_t total, uint64_t *offset);
@@ -47,17 +49,18 @@ h2_pal_result_t h2_gizclaw_audio_decoder_seek_offset(
  * and skipped through (Ogg pages and MP3 frames are parsed, not decoded).
  * With resync the reader now delivers the file from `offset`, the value
  * seek_offset() returned: Ogg/Opus resynchronises on the next valid page,
- * MP3 on the next pair of consistent frame headers, and WAV continues at the
- * exact frame. Output before the target is decoded as pre-roll and dropped.
- * INVALID_STATE outside headers_done(). */
+ * MP3 on the next pair of consistent frame headers, which must be a frame of
+ * the declared bitrate within a byte of the CBR grid (FORMAT otherwise), and
+ * WAV continues at the exact frame. Output before the target is decoded as
+ * pre-roll and dropped. INVALID_STATE outside headers_done(). */
 h2_pal_result_t h2_gizclaw_audio_decoder_seek(h2_gizclaw_audio_decoder_t *d,
                                               uint64_t target_ms, bool resync,
                                               uint64_t offset);
 /* Output-timeline index (16 kHz samples) of the first sample next() emits
  * after a seek; 0 and true without one, false while a seek has not produced
  * its first sample. A track that ends before the target reports its end.
- * Exact for Ogg/Opus and WAV and for MP3 without resync; after an MP3
- * resync it is the landing frame's estimated position. */
+ * Always exact: the Ogg granule, the WAV frame, or the MP3 frame count from
+ * the first frame or from a verified CBR landing. */
 bool h2_gizclaw_audio_decoder_origin(const h2_gizclaw_audio_decoder_t *d,
                                      uint64_t *samples);
 void h2_gizclaw_audio_decoder_destroy(h2_gizclaw_audio_decoder_t *d);
@@ -111,7 +114,9 @@ bool h2_gizclaw_mp3_header_valid(const uint8_t header[4]);
 h2_pal_result_t h2_gizclaw_mp3_create(const h2_pal_mem_api_t *allocator,
                                       h2_gizclaw_audio_input_t *input,
                                       h2_gizclaw_mp3_t **out);
-/* One frame per call. EXIT at the end, with *end the track length. */
+/* One frame per call. EXIT at the end, with *end the track length. Ranged
+ * seeks need a LAME Info (CBR) tag; seek_offset() and a resync seek are
+ * UNSUPPORTED otherwise. */
 h2_pal_result_t h2_gizclaw_mp3_next(h2_gizclaw_mp3_t *m,
                                     h2_gizclaw_audio_chunk_t *chunk,
                                     uint64_t *end);
