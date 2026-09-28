@@ -130,6 +130,22 @@ int sctp_unregister_data_channel(Sctp* sctp, uint16_t sid) {
   return -1;
 }
 
+int sctp_register_negotiated_channel(Sctp* sctp, const char* label, uint16_t sid,
+                                     uint8_t channel_type,
+                                     uint32_t reliability_parameter) {
+  if (sctp == NULL || label == NULL) return -1;
+  SctpStreamEntry* stream = sctp_find_stream(sctp, sid);
+  if (stream != NULL)
+    return stream->externally_negotiated && !strcmp(stream->label, label)
+               ? 0 : -1;
+  if (sctp_register_data_channel(sctp, label, sid, channel_type,
+                                  reliability_parameter) != 0) return -1;
+  stream = sctp_find_stream(sctp, sid);
+  stream->externally_negotiated = true;
+  stream->negotiated = true;
+  return 0;
+}
+
 static uint16_t sctp_read_be16(const void* data) {
   const uint8_t* bytes = (const uint8_t*)data;
   return (uint16_t)(((uint16_t)bytes[0] << 8u) | bytes[1]);
@@ -375,6 +391,11 @@ int sctp_handle_incoming_data(Sctp* sctp, char* data, size_t len, uint32_t ppid,
     return 0;
   }
   SctpStreamEntry* stream = sctp_find_stream(sctp, sid);
+  if (stream != NULL && stream->externally_negotiated && sctp->open_pending) {
+    /* A COOKIE-ECHO may share a packet with the peer's first DATA. Keep that
+     * DATA until the local OPEN notification has been dispatched. */
+    return H2_PAL_ERR_WOULD_BLOCK;
+  }
   if (stream != NULL && stream->remote_open_pending) {
     /* The DCEP OPEN callback cannot re-enter the SCTP association. Retain
      * application data arriving in the same input batch until the deferred

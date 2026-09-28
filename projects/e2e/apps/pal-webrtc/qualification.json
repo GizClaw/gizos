@@ -35,7 +35,7 @@
       "status": "PASS",
       "evidence": "projects/e2e/targets/cc_binary/pal-webrtc/evidence/qualified.json",
       "sha256": "8701c1876ad2d360bbc1ff49396ba9e91eb94d5dac57f36ff1f30e27ba03308b",
-      "source_matches_current": true
+      "source_matches_current": false
     },
     {
       "platform": "wasm",
@@ -53,10 +53,11 @@
     },
     {
       "platform": "bk7258",
-      "status": "PASS",
+      "status": "PENDING_STABILITY",
       "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405/evidence/qualified.json",
-      "sha256": "8e4cb060c08febe245c73af522aca29b8cb96e731399b28b93ace0ddb8fcc5f6",
-      "source_matches_current": true
+      "sha256": "329e2cea3b051e683a879dbcd13d2b4bd705d7675188df016e40522fa95444c5",
+      "source_matches_current": false,
+      "conformance_status": "PASS"
     }
   ],
   "remaining": [

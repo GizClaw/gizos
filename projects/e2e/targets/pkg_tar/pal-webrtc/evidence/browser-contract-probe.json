@@ -1,0 +1,168 @@
+{
+  "browser": {
+    "protocolVersion": "1.3",
+    "product": "HeadlessChrome/136.0.7103.25",
+    "revision": "@97d495678dc307bfe6d6475901104e262ec7a487",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/136.0.7103.25 Safari/537.36",
+    "jsVersion": "13.6.233.4"
+  },
+  "implementation": "Direct RTCPeerConnection API; no PAL or C/JS bridge; isolated same-browser peers using local Pion STUN",
+  "observed_at_utc": "2026-09-28T09:49:59.926711+00:00",
+  "specification": "https://www.w3.org/TR/webrtc/#dom-rtcpeerconnection-createdatachannel",
+  "scenarios": [
+    {
+      "kind": "in-band",
+      "requestedId": 7,
+      "initialId": null,
+      "id": 1,
+      "negotiated": false,
+      "echo": "native-echo",
+      "events": [
+        {
+          "name": "offerer",
+          "event": "dtls-state",
+          "state": "connecting",
+          "certificates": 0
+        },
+        {
+          "name": "answerer",
+          "event": "dtls-state",
+          "state": "connecting",
+          "certificates": 0
+        },
+        {
+          "name": "offerer",
+          "event": "dtls-state",
+          "state": "connected",
+          "certificates": 1
+        },
+        {
+          "name": "answerer",
+          "event": "dtls-state",
+          "state": "connected",
+          "certificates": 1
+        },
+        {
+          "event": "remote-channel",
+          "id": 1,
+          "negotiated": false
+        },
+        {
+          "name": "offerer",
+          "event": "dtls-state",
+          "state": "closed",
+          "certificates": 1
+        },
+        {
+          "name": "answerer",
+          "event": "dtls-state",
+          "state": "closed",
+          "certificates": 1
+        }
+      ],
+      "stats": []
+    },
+    {
+      "kind": "negotiated",
+      "requestedId": 7,
+      "initialId": 7,
+      "id": 7,
+      "remoteId": 7,
+      "negotiated": true,
+      "remoteNegotiated": true,
+      "echo": "native-echo",
+      "events": [
+        {
+          "name": "offerer",
+          "event": "dtls-state",
+          "state": "connecting",
+          "certificates": 0
+        },
+        {
+          "name": "answerer",
+          "event": "dtls-state",
+          "state": "connecting",
+          "certificates": 0
+        },
+        {
+          "name": "offerer",
+          "event": "dtls-state",
+          "state": "connected",
+          "certificates": 1
+        },
+        {
+          "name": "answerer",
+          "event": "dtls-state",
+          "state": "connected",
+          "certificates": 1
+        },
+        {
+          "name": "offerer",
+          "event": "dtls-state",
+          "state": "closed",
+          "certificates": 1
+        },
+        {
+          "name": "answerer",
+          "event": "dtls-state",
+          "state": "closed",
+          "certificates": 1
+        }
+      ],
+      "stats": []
+    },
+    {
+      "kind": "bad-fingerprint",
+      "initialId": null,
+      "state": "failed",
+      "events": [
+        {
+          "name": "offerer",
+          "event": "dtls-state",
+          "state": "connecting",
+          "certificates": 0
+        },
+        {
+          "name": "answerer",
+          "event": "dtls-state",
+          "state": "connecting",
+          "certificates": 0
+        },
+        {
+          "name": "offerer",
+          "event": "dtls-state",
+          "state": "failed",
+          "certificates": 0
+        },
+        {
+          "name": "answerer",
+          "event": "dtls-state",
+          "state": "failed",
+          "certificates": 0
+        },
+        {
+          "name": "offerer",
+          "event": "dtls-state",
+          "state": "closed",
+          "certificates": 0
+        },
+        {
+          "name": "answerer",
+          "event": "dtls-state",
+          "state": "closed",
+          "certificates": 0
+        }
+      ],
+      "stats": [
+        {
+          "type": "transport",
+          "dtlsState": "failed",
+          "iceState": "connected",
+          "packetsReceived": 2,
+          "packetsSent": 2
+        }
+      ]
+    }
+  ],
+  "conclusion": "The browser ignores id for negotiated=false; negotiated=true preserves the explicitly coordinated id. Chrome136 exposes failed DTLS state but no fingerprint-failure RTCErrorEvent in this probe."
+}

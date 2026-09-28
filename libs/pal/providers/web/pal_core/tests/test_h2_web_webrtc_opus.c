@@ -12,6 +12,7 @@
 #include <assert.h>
 #include <emscripten.h>
 #include <stdio.h>
+#include <stdatomic.h>
 #include <stdlib.h>
 #include <string.h>
 /* clang-format off */
@@ -63,14 +64,47 @@ EM_JS(void, legacy_mode,
 });
 /* clang-format on */
 typedef struct opus_track {
-  unsigned sent;
-  unsigned echoed;
-  unsigned foreign;
-  int calls_after_unset;
-  int unset;
+  _Atomic unsigned sent;
+  _Atomic unsigned echoed;
+  _Atomic unsigned foreign;
+  _Atomic int calls_after_unset;
+  _Atomic int unset;
 } opus_track_t;
 
 static opus_track_t s_track;
+static const h2_pal_webrtc_api_t *s_api;
+static h2_pal_webrtc_peer_t *s_peer;
+static h2_pal_webrtc_track_t *s_binding;
+
+/* Called while the media worker is paused in its main-thread bridge, before
+ * it can borrow the Track again. This makes the detach overlap deterministic. */
+EMSCRIPTEN_KEEPALIVE int web_test_opus_unset_in_bridge(void) {
+  int rc = h2_pal_webrtc_peer_unset_track(s_api, s_peer, s_binding);
+  if (rc == H2_PAL_OK) s_track.unset = 1;
+  return rc;
+}
+
+/* clang-format off */
+EM_JS(void, arm_bridge_unset,
+    (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["u32", "i32"], null, (peer, rx) => {
+    const original = h2WebMain;
+    h2WebMain = (context, result, completion, types, returnType, callback) => {
+      const relevant = returnType === 'i32' && types[0] === 'u32' &&
+        types.length === (rx ? 3 : 1);
+      original(context, result, completion, types, returnType, (...args) => {
+        const value = callback(...args);
+        if (relevant && args[0] === peer && (rx ? value >= 0 : value < 3)) {
+          h2WebMain = original;
+          const rc = Module['_web_test_opus_unset_in_bridge']();
+          if (rc !== 0) throw Error('overlapping Track unset failed: ' + rc);
+        }
+        return value;
+      });
+    };
+  });
+});
+/* clang-format on */
 
 static h2_pal_result_t track_read(void *user, uint8_t *opus, size_t capacity,
                                   size_t *out_len) {
@@ -124,8 +158,11 @@ static void pump_for(h2_web_platform_t *platform,
 }
 
 static int echoed_enough(void) { return s_track.echoed >= 25u; }
+static int unset_done(void) { return s_track.unset; }
 
-int main(void) {
+static int run(int rx_overlap) {
+  s_track.sent = s_track.echoed = s_track.foreign = 0u;
+  s_track.calls_after_unset = s_track.unset = 0;
   const h2_web_platform_config_t config = {.display_width = 1,
                                            .display_height = 1};
   h2_web_platform_t *platform = h2_web_platform_create(&config);
@@ -177,8 +214,13 @@ int main(void) {
          ((int)h2_web_main_call(transform_kind, NULL).i32) == 1);
 
   // After unset the provider never calls the Track again.
-  assert(h2_pal_webrtc_peer_unset_track(api, peer, &track) == H2_PAL_OK);
-  s_track.unset = 1;
+  s_api = api;
+  s_peer = peer;
+  s_binding = &track;
+  (void)h2_web_main_call(arm_bridge_unset,
+      (const void *[]){&(uintptr_t){(uintptr_t)peer}, &rx_overlap});
+  pump_for(platform, api, peer, 5000.0, unset_done);
+  assert(s_track.unset);
   pump_for(platform, api, peer, 300.0, NULL);
   assert(s_track.calls_after_unset == 0);
 
@@ -192,6 +234,14 @@ int main(void) {
     destroyed = h2_web_platform_destroy(platform);
   }
   assert(destroyed == H2_PAL_OK);
+  printf("WEB_OPUS bridge=%s unset=silent close=released PASS\n",
+         rx_overlap ? "rx" : "tx");
+  return 0;
+}
+
+int main(void) {
+  assert(run(0) == 0);
+  assert(run(1) == 0);
   puts("WEB_OPUS unset=silent close=released PASS");
   // Report now: browser timers may keep the runtime alive after main.
   /* clang-format off */

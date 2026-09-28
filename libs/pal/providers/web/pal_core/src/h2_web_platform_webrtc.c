@@ -1282,13 +1282,18 @@ static void h2_web_webrtc_media_entry(void *user) {
   int pending_length = -1;
   while (!peer->media_stop) {
     for (unsigned burst = 0; burst < 8u && !peer->media_stop; ++burst) {
+      if (peer->track_detaching) break;
+      h2_pal_webrtc_track_t *track = peer->media_track;
       if (pending_length < 0) {
         pending_length = (int)h2_web_main_call(h2_web_webrtc_opus_rx_take_js,
             (const void *[]){&(uintptr_t){(uintptr_t)peer},
                              &(uint8_t *){packet}, &(size_t){sizeof(packet)}}).i32;
       }
+      /* The bridge releases the state lock. Close or detach may have finished
+       * while JS ran, so re-check before borrowing any Track context. */
+      if (peer->media_stop || peer->track_detaching ||
+          peer->media_track != track) break;
       if (pending_length < 0) break;
-      h2_pal_webrtc_track_t *track = peer->media_track;
       h2_pal_result_t rc = H2_PAL_OK;
       if (track != NULL) {
         peer->media_in_callback = true;
@@ -1308,12 +1313,15 @@ static void h2_web_webrtc_media_entry(void *user) {
       }
     }
     uint8_t outgoing[H2_WEB_WEBRTC_OPUS_MAX];
-    while (!peer->media_stop && peer->media_track != NULL &&
-        (int)h2_web_main_call(h2_web_webrtc_opus_tx_queued_js,
-            (const void *[]){&(uintptr_t){(uintptr_t)peer}}).i32 <
-            H2_WEB_WEBRTC_OPUS_TX_AHEAD) {
-      size_t length = 0u;
+    while (!peer->media_stop && !peer->track_detaching &&
+           peer->media_track != NULL) {
       h2_pal_webrtc_track_t *track = peer->media_track;
+      int queued = (int)h2_web_main_call(h2_web_webrtc_opus_tx_queued_js,
+            (const void *[]){&(uintptr_t){(uintptr_t)peer}}).i32;
+      if (peer->media_stop || peer->track_detaching ||
+          peer->media_track != track || queued >= H2_WEB_WEBRTC_OPUS_TX_AHEAD)
+        break;
+      size_t length = 0u;
       peer->media_in_callback = true;
       unsigned depth = h2_web_state_pause();
       const h2_pal_result_t rc = track->vtable->read(

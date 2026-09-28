@@ -285,7 +285,7 @@ h2_pal_result_t peer_connection_classify_dtls_handshake_result(
   }
   if (handshake_result < 0) {
     *out_terminal_state = PEER_CONNECTION_FAILED;
-    return H2_PAL_ERR_IO;
+    return (h2_pal_result_t)handshake_result;
   }
   return H2_PAL_OK;
 }
@@ -483,6 +483,13 @@ int peer_connection_encode_datachannel_open(
   memcpy(out + 12 + label_len, protocol, protocol_len);
   *out_len = message_len;
   return 0;
+}
+
+int peer_connection_register_negotiated_channel(
+    PeerConnection* pc, DecpChannelType channel_type,
+    uint32_t reliability_parameter, const char* label, uint16_t sid) {
+  return pc == NULL ? -1 : sctp_register_negotiated_channel(
+      &pc->sctp, label, sid, (uint8_t)channel_type, reliability_parameter);
 }
 
 int peer_connection_create_datachannel_sid(

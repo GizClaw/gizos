@@ -338,7 +338,7 @@ int main(void) {
     test_protected_rtp_backpressure();
     PeerConnectionState terminal_state = PEER_CONNECTION_CONNECTED;
     assert(peer_connection_classify_dtls_handshake_result(
-               -1, &terminal_state) == H2_PAL_ERR_IO);
+               H2_PAL_ERR_TLS_VERIFY, &terminal_state) == H2_PAL_ERR_TLS_VERIFY);
     assert(terminal_state == PEER_CONNECTION_FAILED);
     terminal_state = PEER_CONNECTION_CONNECTED;
     assert(peer_connection_classify_dtls_handshake_result(
@@ -399,7 +399,11 @@ int main(void) {
     assert(dtls_srtp_set_remote_fingerprint(
                &session, session.local_fingerprint) == 0);
     fake.handshake_result = H2_PAL_ERR_TLS_VERIFY;
-    assert(dtls_srtp_handshake(&session, NULL, 0u) == -1);
+    fake.flush_result = H2_PAL_ERR_WOULD_BLOCK;
+    assert(dtls_srtp_handshake(&session, NULL, 0u) == H2_PAL_ERR_TLS_VERIFY);
+    fake.flush_result = H2_PAL_OK;
+    fake.handshake_result = H2_PAL_ERR_TIMEOUT;
+    assert(dtls_srtp_handshake(&session, NULL, 0u) == H2_PAL_ERR_TIMEOUT);
     fake.handshake_result = H2_PAL_OK;
     assert(dtls_srtp_handshake(&session, NULL, 0u) == 1);
     const uint8_t handshake[] = {0x16u};

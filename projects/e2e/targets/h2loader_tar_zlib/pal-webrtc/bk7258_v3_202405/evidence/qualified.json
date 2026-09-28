@@ -1,6 +1,6 @@
 {
   "platform": "bk7258",
-  "qualified": true,
+  "qualified": false,
   "observed_at_utc": "2026-09-28T08:47:06.288194+00:00",
   "installed": {
     "run_id": "f81539051938fc8a",
@@ -834,5 +834,12 @@
   "limitations": [
     "The portable fingerprint rejection case currently accepts generic terminal failure. Strict TLS_VERIFY rejection of wrong and missing certificates is separately exercised against the actual BK SDK in dtls-host.json; preserving the precise reason in the cross-platform WebRTC event remains a follow-up.",
     "UART monitor sessions stopped delivering during both executions. Each full result was collected by reconnecting to that same boot; only the two distinct run IDs count as executions."
-  ]
+  ],
+  "conformance_passed": true,
+  "stability": {
+    "status": "NOT_REPRODUCED",
+    "stability_qualified": false,
+    "observation": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405/evidence/stability-observation.json",
+    "sha256": "8e2d706cb8d25ed5a5d41eb7d2e4da4c8794f1febf9e8a3d920c78413527aa91"
+  }
 }
