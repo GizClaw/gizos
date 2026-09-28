@@ -6,43 +6,44 @@
   "qualified": false,
   "observed_at_utc": "2026-09-28T08:47:06.288194+00:00",
   "portable_source_sha256": {
-    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "1abb17eecc5b9c6cfd27cb3a4d9e734f07224dde6a9a117ffdf36cd46809d4a7",
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "994641807e46f774ba512021db868b1c927d4ad44ddaa81d161fa23135c7edc9",
     "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_cases.inc": "725f4d2ca360da9066a855696a30553f49959c6a9ec26dcb168ef4912587528b",
-    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "b8d9ef087e93647d8b69cecf6dda0435d905b1aa9400ecc7876b57561652afc8",
-    "projects/e2e/apps/pal-webrtc/app/api_coverage.json": "6999c6a17d3b142719edc62b98fcd2cab80b1ca5c3d314f26423f6379861a183"
+    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "3cbca78fa668ae6be2ae8cd74b769fb42ad47b965a5c560ac75429a814e09a17",
+    "projects/e2e/apps/pal-webrtc/app/api_coverage.json": "658ec12889c79438c11992e61a89c6ecd061905d11e6da1c6e8aaf36515f949e",
+    "libs/pal/include/h2/pal/application/h2_pal_webrtc.h": "a2b7e90b18a063250a590eb5a982843c7c8303a0e4d61d3edabcaa834c0cc793"
   },
   "platforms": [
     {
       "platform": "ios-simulator",
       "status": "PASS",
       "evidence": "projects/e2e/targets/ios_application/pal-webrtc/evidence/qualified.json",
-      "sha256": "133cb79d623bc07a01b6594c4b506294b76c4647d2d39daab5f4a81fff4cf08a",
+      "sha256": "20f66861a77c86b4806e7985f8e8565e8eb87514bfee9ec11d59f38d46b2e636",
       "environment": "projects/e2e/targets/ios_application/pal-webrtc/evidence/environment.json",
-      "environment_sha256": "865b2329beaf485a5ae41c6ba0e2fe9d5f4cb9a7b82f881fc32421f468c2745d",
-      "source_matches_current": false
+      "environment_sha256": "cfe1caf477f2d66dad9527b841154f639061062687a0942d1e493bff2921533d",
+      "source_matches_current": true
     },
     {
       "platform": "android-emulator",
       "status": "PASS",
       "evidence": "projects/e2e/targets/android_binary/pal-webrtc/evidence/qualified.json",
-      "sha256": "6d0871bd218cbe66a8365261c37728934130dd423a1bb546573faa160daf1fe4",
+      "sha256": "34abb3a9373ae6527587ee1e10210f12f8919b6aa6256b11f6d53819e26cebb7",
       "environment": "projects/e2e/targets/android_binary/pal-webrtc/evidence/environment.json",
-      "environment_sha256": "0fa6d7b5e81417687ed1f95abb59d37fa89e701d5af41e639aed49948374d715",
-      "source_matches_current": false
+      "environment_sha256": "4ac2e7a2c684e12228b16da0617bcc44055931ee055467c11eb9c16ab39dbf5e",
+      "source_matches_current": true
     },
     {
       "platform": "macos",
       "status": "PASS",
       "evidence": "projects/e2e/targets/cc_binary/pal-webrtc/evidence/qualified.json",
-      "sha256": "8701c1876ad2d360bbc1ff49396ba9e91eb94d5dac57f36ff1f30e27ba03308b",
-      "source_matches_current": false
+      "sha256": "8bb2a15a9673afe79b448e791ecfd07242008957e8d6f39625e7194075f1cd20",
+      "source_matches_current": true
     },
     {
       "platform": "wasm",
-      "status": "FAIL",
-      "evidence": "projects/e2e/targets/pkg_tar/pal-webrtc/evidence/failed.json",
-      "sha256": "e849c18610ef419fb1b8513f3ad018cca773144da4a6135d35d8b3d9b38a54f5",
-      "source_matches_current": false
+      "status": "PASS",
+      "evidence": "projects/e2e/targets/pkg_tar/pal-webrtc/evidence/qualified.json",
+      "sha256": "9f31f523aa9f3126286365b5b59c7604698870853160127322ba972a0410893e",
+      "source_matches_current": true
     },
     {
       "platform": "devkit",
@@ -61,14 +62,11 @@
     }
   ],
   "remaining": [
-    "Browser explicit in-band stream ID remains a failing mandatory case; its public contract has not been changed.",
-    "Refresh iOS Simulator, Android Emulator, DevKit and browser receipts after the configurable connection watchdog and shared H2Peer keepalive change; their existing ledgers describe earlier artifacts.",
-    "Strengthen the portable fingerprint-rejection verdict to preserve or independently verify the authentication failure reason across platforms."
+    "Final DevKit artifact installation and normal App reboot validation.",
+    "Final BK7258 artifact installation and normal App reboot, each including 43 cases and a 600-second active Pion liveness run; verify Loader/Stage/coredump invariants."
   ],
   "requires_source_refresh": [
-    "ios-simulator",
-    "android-emulator",
     "devkit",
-    "wasm"
+    "bk7258"
   ]
 }

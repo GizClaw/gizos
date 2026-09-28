@@ -1,12 +1,11 @@
 {
-  "platform": "macos",
   "cases": [
     {
       "id": "wrapper-arguments",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0,
+      "elapsed_ms": 1,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -15,7 +14,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2,
+      "elapsed_ms": 108,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -24,7 +23,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0,
+      "elapsed_ms": 1,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -42,7 +41,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0,
+      "elapsed_ms": 1,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -69,7 +68,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 25,
+      "elapsed_ms": 28,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -96,7 +95,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1,
+      "elapsed_ms": 2,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -114,7 +113,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2,
+      "elapsed_ms": 196,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -132,7 +131,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 5,
+      "elapsed_ms": 1,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -150,7 +149,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 13,
+      "elapsed_ms": 138,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -168,7 +167,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1,
+      "elapsed_ms": 27,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -177,7 +176,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 9,
+      "elapsed_ms": 4,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -186,7 +185,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1,
+      "elapsed_ms": 0,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -195,7 +194,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0,
+      "elapsed_ms": 1,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -240,7 +239,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0,
+      "elapsed_ms": 1,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -249,7 +248,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2,
+      "elapsed_ms": 0,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -276,7 +275,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 44,
+      "elapsed_ms": 46,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -285,7 +284,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 26,
+      "elapsed_ms": 79,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -294,7 +293,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 24,
+      "elapsed_ms": 66,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -303,7 +302,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 30,
+      "elapsed_ms": 40,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -312,7 +311,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 117,
+      "elapsed_ms": 121,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -330,7 +329,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1,
+      "elapsed_ms": 0,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -339,7 +338,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1,
+      "elapsed_ms": 5915,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -348,7 +347,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1,
+      "elapsed_ms": 6,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -366,7 +365,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1,
+      "elapsed_ms": 2,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -375,16 +374,16 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 29,
+      "elapsed_ms": 186,
       "observed_error": -17,
-      "authentication_evidence": 1
+      "authentication_evidence": 2
     },
     {
       "id": "explicit-stream-id",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 28,
+      "elapsed_ms": 128,
       "observed_error": 0,
       "authentication_evidence": 0
     }
@@ -393,9 +392,39 @@
     "passed": 43,
     "failed": 0,
     "blocked": 0,
-    "retained_allocations": 0
+    "retained_allocations": 0,
+    "cleanup": 0
   },
-  "artifact_sha256": "8c10f1965c13b35c795ec3bfcfa0704f1f7ef26215525921c3db9f5bc3f45e69",
+  "authentication_witnesses": [
+    {
+      "alert": 46,
+      "certificate_rejection": true,
+      "channels_opened": 0,
+      "direction": "received",
+      "level": 2,
+      "session_id": "2",
+      "source": "pion-dtls-typed-alert"
+    }
+  ],
+  "fixture_sessions": [
+    "1",
+    "2",
+    "3"
+  ],
+  "platform": "wasm-chromium",
+  "browser": {
+    "protocolVersion": "1.3",
+    "product": "HeadlessChrome/136.0.7103.25",
+    "revision": "@97d495678dc307bfe6d6475901104e262ec7a487",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/136.0.7103.25 Safari/537.36",
+    "jsVersion": "13.6.233.4"
+  },
+  "browser_state": {
+    "isolated": true,
+    "pending": 0
+  },
+  "artifact_sha256": "85c601e7c4833527f26d8da9096722a22230f42c1b8b3a28cc4690d985be7716",
+  "registry_sha256": "725f4d2ca360da9066a855696a30553f49959c6a9ec26dcb168ef4912587528b",
   "source": {
     "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "994641807e46f774ba512021db868b1c927d4ad44ddaa81d161fa23135c7edc9",
     "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_cases.inc": "725f4d2ca360da9066a855696a30553f49959c6a9ec26dcb168ef4912587528b",
@@ -404,6 +433,6 @@
     "libs/pal/include/h2/pal/application/h2_pal_webrtc.h": "a2b7e90b18a063250a590eb5a982843c7c8303a0e4d61d3edabcaa834c0cc793"
   },
   "source_commit": "248b376fc79e16eae1fb2c29faabc516430986c5",
-  "observed_at_utc": "2026-09-28T10:24:30.624359+00:00",
+  "observed_at_utc": "2026-09-28T10:27:13.856025+00:00",
   "qualified": true
 }

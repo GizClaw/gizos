@@ -3,14 +3,16 @@
   "api": "36",
   "fingerprint": "Android/sdk_slim_arm64/emu64a:16/BE2A.250530.027/13847098:userdebug/test-keys",
   "fixture": "isolated Pion; real UDP ICE/DTLS/SRTP/SCTP",
-  "observation_finished_at_utc": "2026-09-28T04:00:13.723739+00:00",
+  "observation_finished_at_utc": "2026-09-28T10:28:52.104148+00:00",
   "evidence_timezone": "UTC",
-  "app_sha256": "4df04b2e8ce5cfb5b1fc26705ead0231d8556d68ab401306055c1b9197edc4f2",
-  "sdk_sha256": "a340c159be8c012bd44de408cc8982ae03f748033139a6636f8be64cf2a17432",
-  "portable_source_sha256": {
-    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "4b3c6ed95926d9e144fcc03ec85d463d5431e260d77dd4260c92c758888c4362",
+  "app_sha256": "1d417d5ef1b6830ddfc8a30095e5f9336f638ef1c08104935e36ef9a29d2a50f",
+  "sdk_sha256": "466108759951f23ac478503b68b68a21b9fd11a67abbd4646017b6edfddfe252",
+  "source_commit": "248b376fc79e16eae1fb2c29faabc516430986c5",
+  "source_sha256": {
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "994641807e46f774ba512021db868b1c927d4ad44ddaa81d161fa23135c7edc9",
     "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_cases.inc": "725f4d2ca360da9066a855696a30553f49959c6a9ec26dcb168ef4912587528b",
-    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "40870351d2b7b8219e44f2077274fc768a222ce54b1ddc433d9d9c7f7e2a496a",
-    "projects/e2e/apps/pal-webrtc/app/api_coverage.json": "6999c6a17d3b142719edc62b98fcd2cab80b1ca5c3d314f26423f6379861a183"
+    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "3cbca78fa668ae6be2ae8cd74b769fb42ad47b965a5c560ac75429a814e09a17",
+    "projects/e2e/apps/pal-webrtc/app/api_coverage.json": "658ec12889c79438c11992e61a89c6ecd061905d11e6da1c6e8aaf36515f949e",
+    "libs/pal/include/h2/pal/application/h2_pal_webrtc.h": "a2b7e90b18a063250a590eb5a982843c7c8303a0e4d61d3edabcaa834c0cc793"
   }
 }
