@@ -25,7 +25,7 @@ objc_library(
         "UIKit",
     ],
     target_compatible_with = ["@platforms//os:ios"],
-    deps = ["//libs/pal", "//libs/pal/providers/posix/pal_core:mobile_core"],
+    deps = [":crypto", "//libs/pal", "//libs/pal/providers/posix/pal_core:mobile_core"],
 )
 
 cc_library(
@@ -81,6 +81,7 @@ cc_library(
     deps = [
         ":corebluetooth",
         ":platform",
+        ":storage",
         ":system_event",
     ],
 )
@@ -136,6 +137,29 @@ h2_mobile_archive_import(
     member = "H2PALCore.xcframework/ios-arm64-simulator/H2PALCore.framework/H2PALCore",
     header_prefix = "H2PALCore.xcframework/ios-arm64-simulator/H2PALCore.framework/Headers/",
     binary_name = "libH2PALCore.a",
-    linkopts = ["-framework", "UIKit", "-framework", "Foundation", "-framework", "CoreGraphics", "-framework", "CoreBluetooth", "-lc++"],
+    linkopts = ["-framework", "UIKit", "-framework", "Foundation", "-framework", "CoreGraphics", "-framework", "CoreBluetooth", "-framework", "Security", "-lc++"],
     target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
+)
+
+cc_library(
+    name = "storage",
+    srcs = ["src/h2_ios_storage.c"],
+    hdrs = ["include/h2_ios_platform.h"],
+    includes = ["include"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = ["@platforms//os:ios"],
+    deps = ["//libs/pal", "//libs/pal/providers/posix/pal_core:host_fs", "//libs/pal/providers/sqlite"],
+)
+
+cc_library(
+    name = "crypto",
+    srcs = ["src/h2_ios_crypto.c"],
+    hdrs = ["include/h2_ios_platform.h"],
+    includes = ["include"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    linkopts = ["-framework", "Security"],
+    target_compatible_with = ["@platforms//os:ios"],
+    deps = ["//libs/pal", "//libs/pal:unsupported", "//libs/pal/providers/wolfssl:wolfcrypt"],
 )

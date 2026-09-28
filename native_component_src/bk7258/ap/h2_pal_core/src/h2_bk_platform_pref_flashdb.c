@@ -3,6 +3,7 @@
 #include "easyflash.h"
 #include "flashdb.h"
 #include "os/os.h"
+#include "os/mem.h"
 
 #include <stdint.h>
 #include <stdio.h>
@@ -24,6 +25,7 @@ static h2_bk_pref_namespace_t s_pref_namespaces[H2_BK_PREF_OPEN_MAX];
 static struct fdb_kvdb s_pref_database;
 static beken_mutex_t s_pref_database_mutex;
 static beken_mutex_t s_pref_pool_mutex;
+static beken_mutex_t s_pref_operation_mutex;
 static int s_pref_database_ready;
 static int s_pref_pool_mutex_ready;
 
@@ -101,6 +103,11 @@ static int bk_pref_init_database(void) {
         bk_pref_unlock_pool();
         return H2_PAL_ERR_UNAVAILABLE;
     }
+    if (rtos_init_mutex(&s_pref_operation_mutex) != kNoErr) {
+        (void)rtos_deinit_mutex(&s_pref_database_mutex);
+        bk_pref_unlock_pool();
+        return H2_PAL_ERR_UNAVAILABLE;
+    }
     fdb_kvdb_control(
         &s_pref_database,
         FDB_KVDB_CTRL_SET_LOCK,
@@ -118,6 +125,7 @@ static int bk_pref_init_database(void) {
     if (rc == H2_PAL_OK) {
         s_pref_database_ready = 1;
     } else {
+        (void)rtos_deinit_mutex(&s_pref_operation_mutex);
         (void)rtos_deinit_mutex(&s_pref_database_mutex);
     }
     bk_pref_unlock_pool();
@@ -482,6 +490,346 @@ static int bk_pref_commit(h2_pal_pref_namespace_t *base) {
     return H2_PAL_OK;
 }
 
+/* Keep legacy value bytes readable by the installed Loader. Optional type
+ * metadata lives in a separate, reserved FlashDB key. Its key-name and payload
+ * digest reject collisions and stale metadata after writes by older firmware.
+ */
+static uint64_t type_hash(const void *bytes, size_t size) {
+  const uint8_t *p = bytes;
+  uint64_t h = UINT64_C(14695981039346656037);
+  for (size_t i = 0; i < size; ++i)
+    h = (h ^ p[i]) * UINT64_C(1099511628211);
+  return h;
+}
+static void metadata_key(const char *storage_key, char out[32]) {
+  uint64_t hash = type_hash(storage_key, strlen(storage_key));
+  snprintf(out, 32, "$h2t.%08lx%08lx", (unsigned long)(hash >> 32),
+           (unsigned long)(hash & UINT32_MAX));
+}
+static void put_u64(uint8_t *out, uint64_t value) {
+  for (unsigned i = 0; i < 8; ++i)
+    out[i] = (uint8_t)(value >> (8 * i));
+}
+static uint64_t get_u64(const uint8_t *in) {
+  uint64_t out = 0;
+  for (unsigned i = 0; i < 8; ++i)
+    out |= (uint64_t)in[i] << (8 * i);
+  return out;
+}
+static int write_metadata(h2_bk_pref_namespace_t *ns, const char *key,
+                          h2_pal_pref_entry_type_t type, const void *data,
+                          size_t length) {
+  char full[H2_BK_PREF_KEY_MAX], meta_key[32];
+  uint8_t record[24 + H2_BK_PREF_KEY_MAX] = {0};
+  int rc = bk_pref_make_key(ns, key, full);
+  if (rc)
+    return rc;
+  metadata_key(full, meta_key);
+  memcpy(record, "H2TYPE1", 7);
+  record[7] = (uint8_t)type;
+  put_u64(record + 8, length);
+  put_u64(record + 16, type_hash(data, length));
+  memcpy(record + 24, full, strlen(full) + 1);
+  struct fdb_blob blob;
+  return bk_pref_map_flashdb_error(
+      fdb_kv_set_blob(&s_pref_database, meta_key,
+                      fdb_blob_make(&blob, record, sizeof(record))));
+}
+static int value_type(h2_bk_pref_namespace_t *ns, const char *key,
+                      h2_pal_pref_entry_type_t *out_type) {
+  char full[H2_BK_PREF_KEY_MAX], meta_key[32];
+  uint8_t record[24 + H2_BK_PREF_KEY_MAX] = {0};
+  *out_type = H2_PAL_PREF_ENTRY_UNKNOWN;
+  int rc = bk_pref_make_key(ns, key, full);
+  if (rc)
+    return rc;
+  metadata_key(full, meta_key);
+  struct fdb_blob blob;
+  struct fdb_kv item = {0};
+  if (!fdb_kv_get_obj(&s_pref_database, meta_key, &item))
+    return H2_PAL_OK;
+  if (item.value_len != sizeof(record) ||
+      fdb_kv_get_blob(&s_pref_database, meta_key,
+                      fdb_blob_make(&blob, record, sizeof(record))) !=
+          sizeof(record))
+    return H2_PAL_ERR_FORMAT;
+  if (memcmp(record, "H2TYPE1", 7) ||
+      memcmp(record + 24, full, strlen(full) + 1) ||
+      record[7] < H2_PAL_PREF_ENTRY_BLOB || record[7] > H2_PAL_PREF_ENTRY_BOOL)
+    return H2_PAL_ERR_FORMAT;
+  size_t length = 0;
+  rc = bk_pref_find_value_size(full, &length);
+  if (rc)
+    return rc;
+  if (length != get_u64(record + 8))
+    return H2_PAL_OK;
+  uint8_t *value = os_malloc(length ? length : 1u);
+  if (!value)
+    return H2_PAL_ERR_NO_MEMORY;
+  size_t actual = 0;
+  rc = bk_pref_read_value(ns, full, value, length ? length : 1u, &actual);
+  if (!rc && actual == length &&
+      type_hash(value, length) == get_u64(record + 16))
+    *out_type = (h2_pal_pref_entry_type_t)record[7];
+  os_free(value);
+  return rc;
+}
+static int check_type(h2_pal_pref_namespace_t *base, const char *key,
+                      h2_pal_pref_entry_type_t expected) {
+  h2_pal_pref_entry_type_t found;
+  int rc = value_type(bk_pref_to_namespace(base), key, &found);
+  if (rc)
+    return rc;
+  return found == H2_PAL_PREF_ENTRY_UNKNOWN || found == expected
+             ? H2_PAL_OK
+             : H2_PAL_ERR_INVALID_STATE;
+}
+static int storage_lock(void) {
+  return rtos_lock_mutex(&s_pref_operation_mutex) == kNoErr
+             ? H2_PAL_OK
+             : H2_PAL_ERR_UNAVAILABLE;
+}
+static int storage_unlock(int rc) {
+  (void)rtos_unlock_mutex(&s_pref_operation_mutex);
+  return rc;
+}
+static int typed_get_blob(h2_pal_pref_namespace_t *base,
+                          const h2_pal_mem_api_t *allocator, const char *key,
+                          void **out, size_t *length) {
+  if (!out || !length)
+    return H2_PAL_ERR_INVALID_ARG;
+  *out = NULL;
+  *length = 0;
+  int rc = storage_lock();
+  if (rc)
+    return rc;
+  rc = check_type(base, key, H2_PAL_PREF_ENTRY_BLOB);
+  if (!rc)
+    rc = bk_pref_get_blob(base, allocator, key, out, length);
+  return storage_unlock(rc);
+}
+static int typed_set_blob(h2_pal_pref_namespace_t *base, const char *key,
+                          const void *data, size_t size) {
+  int rc = storage_lock();
+  if (rc)
+    return rc;
+  rc = bk_pref_set_blob(base, key, data, size);
+  if (!rc)
+    rc = write_metadata(bk_pref_to_namespace(base), key, H2_PAL_PREF_ENTRY_BLOB,
+                        data, size);
+  return storage_unlock(rc);
+}
+static int typed_get_string(h2_pal_pref_namespace_t *base,
+                            const h2_pal_mem_api_t *allocator, const char *key,
+                            char **out) {
+  if (!out)
+    return H2_PAL_ERR_INVALID_ARG;
+  *out = NULL;
+  int rc = storage_lock();
+  if (rc)
+    return rc;
+  rc = check_type(base, key, H2_PAL_PREF_ENTRY_STRING);
+  if (!rc)
+    rc = bk_pref_get_string(base, allocator, key, out);
+  return storage_unlock(rc);
+}
+static int typed_set_string(h2_pal_pref_namespace_t *base, const char *key,
+                            const char *value) {
+  if (!value)
+    return H2_PAL_ERR_INVALID_ARG;
+  int rc = storage_lock();
+  if (rc)
+    return rc;
+  rc = bk_pref_set_string(base, key, value);
+  if (!rc)
+    rc = write_metadata(bk_pref_to_namespace(base), key,
+                        H2_PAL_PREF_ENTRY_STRING, value, strlen(value));
+  return storage_unlock(rc);
+}
+#define TYPED_NUMBER(suffix, ctype, kind)                                      \
+  static int typed_get_##suffix(h2_pal_pref_namespace_t *base,                 \
+                                const char *key, ctype *out) {                 \
+    if (!out)                                                                  \
+      return H2_PAL_ERR_INVALID_ARG;                                           \
+    *out = 0;                                                                  \
+    int rc = storage_lock();                                                   \
+    if (rc)                                                                    \
+      return rc;                                                               \
+    rc = check_type(base, key, kind);                                          \
+    if (!rc)                                                                   \
+      rc = bk_pref_get_##suffix(base, key, out);                               \
+    return storage_unlock(rc);                                                 \
+  }                                                                            \
+  static int typed_set_##suffix(h2_pal_pref_namespace_t *base,                 \
+                                const char *key, ctype value) {                \
+    int rc = storage_lock();                                                   \
+    if (rc)                                                                    \
+      return rc;                                                               \
+    rc = bk_pref_set_##suffix(base, key, value);                               \
+    if (!rc)                                                                   \
+      rc = write_metadata(bk_pref_to_namespace(base), key, kind, &value,       \
+                          sizeof(value));                                      \
+    return storage_unlock(rc);                                                 \
+  }
+TYPED_NUMBER(u32, uint32_t, H2_PAL_PREF_ENTRY_U32)
+TYPED_NUMBER(i32, int32_t, H2_PAL_PREF_ENTRY_I32)
+static int typed_get_bool(h2_pal_pref_namespace_t *base, const char *key,
+                          int *out) {
+  if (!out)
+    return H2_PAL_ERR_INVALID_ARG;
+  *out = 0;
+  int rc = storage_lock();
+  if (rc)
+    return rc;
+  rc = check_type(base, key, H2_PAL_PREF_ENTRY_BOOL);
+  if (!rc)
+    rc = bk_pref_get_bool(base, key, out);
+  return storage_unlock(rc);
+}
+static int typed_set_bool(h2_pal_pref_namespace_t *base, const char *key,
+                          int value) {
+  uint8_t stored = value ? 1 : 0;
+  int rc = storage_lock();
+  if (rc)
+    return rc;
+  rc = bk_pref_set_bool(base, key, value);
+  if (!rc)
+    rc = write_metadata(bk_pref_to_namespace(base), key, H2_PAL_PREF_ENTRY_BOOL,
+                        &stored, 1);
+  return storage_unlock(rc);
+}
+static int remove_value(h2_pal_pref_namespace_t *base, const char *key) {
+  int rc = bk_pref_remove(base, key);
+  if (rc)
+    return rc;
+  char full[H2_BK_PREF_KEY_MAX], meta_key[32];
+  rc = bk_pref_make_key(bk_pref_to_namespace(base), key, full);
+  if (rc)
+    return rc;
+  metadata_key(full, meta_key);
+  struct fdb_kv item = {0};
+  return fdb_kv_get_obj(&s_pref_database, meta_key, &item)
+             ? bk_pref_map_flashdb_error(fdb_kv_del(&s_pref_database, meta_key))
+             : H2_PAL_OK;
+}
+static int typed_remove(h2_pal_pref_namespace_t *base, const char *key) {
+  int rc = storage_lock();
+  if (rc)
+    return rc;
+  return storage_unlock(remove_value(base, key));
+}
+typedef struct pref_snapshot_entry {
+  char key[H2_BK_PREF_KEY_MAX];
+  h2_pal_pref_entry_type_t type;
+  size_t length;
+} pref_snapshot_entry_t;
+struct h2_pal_pref_cursor {
+  h2_pal_pref_namespace_t *owner;
+  size_t index, count;
+  pref_snapshot_entry_t *entries;
+};
+static int snapshot(h2_pal_pref_namespace_t *base, h2_pal_pref_cursor_t **out) {
+  h2_bk_pref_namespace_t *ns = bk_pref_to_namespace(base);
+  if (!ns || !out)
+    return H2_PAL_ERR_INVALID_ARG;
+  *out = NULL;
+  h2_pal_pref_cursor_t *cursor = os_zalloc(sizeof(*cursor));
+  if (!cursor)
+    return H2_PAL_ERR_NO_MEMORY;
+  cursor->owner = base;
+  char prefix[sizeof(ns->name_space) + 1];
+  snprintf(prefix, sizeof(prefix), "%s.", ns->name_space);
+  size_t len = strlen(prefix);
+  struct fdb_kv_iterator iterator;
+  fdb_kv_iterator_init(&iterator);
+  int rc = H2_PAL_OK;
+  while (fdb_kv_iterate(&s_pref_database, &iterator)) {
+    struct fdb_kv *kv = &iterator.curr_kv;
+    if (strncmp(kv->name, prefix, len))
+      continue;
+    if (cursor->count >= SIZE_MAX / sizeof(*cursor->entries) - 1u) {
+      rc = H2_PAL_ERR_NO_MEMORY;
+      break;
+    }
+    void *entries = os_realloc(cursor->entries,
+                               (cursor->count + 1) * sizeof(*cursor->entries));
+    if (!entries) {
+      rc = H2_PAL_ERR_NO_MEMORY;
+      break;
+    }
+    cursor->entries = entries;
+    pref_snapshot_entry_t *entry = &cursor->entries[cursor->count];
+    snprintf(entry->key, sizeof(entry->key), "%s", kv->name + len);
+    entry->length = kv->value_len;
+    rc = value_type(ns, entry->key, &entry->type);
+    if (rc)
+      break;
+    ++cursor->count;
+  }
+  if (rc) {
+    os_free(cursor->entries);
+    os_free(cursor);
+    return rc;
+  }
+  *out = cursor;
+  return H2_PAL_OK;
+}
+static int pref_iterate_close(h2_pal_pref_namespace_t *base,
+                              h2_pal_pref_cursor_t **cursor) {
+  if (!base || !cursor)
+    return H2_PAL_ERR_INVALID_ARG;
+  if (*cursor && (*cursor)->owner != base)
+    return H2_PAL_ERR_INVALID_ARG;
+  if (*cursor) {
+    os_free((*cursor)->entries);
+    os_free(*cursor);
+    *cursor = NULL;
+  }
+  return H2_PAL_OK;
+}
+static int pref_iterate(h2_pal_pref_namespace_t *base,
+                        h2_pal_pref_cursor_t **cursor,
+                        h2_pal_pref_entry_t *out) {
+  if (!base || !cursor || !out)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out, 0, sizeof(*out));
+  int rc = storage_lock();
+  if (rc)
+    return rc;
+  if (!*cursor)
+    rc = snapshot(base, cursor);
+  if (rc)
+    return storage_unlock(rc);
+  if ((*cursor)->owner != base)
+    return storage_unlock(H2_PAL_ERR_INVALID_ARG);
+  if ((*cursor)->index == (*cursor)->count)
+    return storage_unlock(H2_PAL_ERR_NOT_FOUND);
+  const pref_snapshot_entry_t *entry = &(*cursor)->entries[(*cursor)->index++];
+  out->key = entry->key;
+  out->type = entry->type;
+  out->value_size = entry->length;
+  return storage_unlock(H2_PAL_OK);
+}
+static int pref_clear(h2_pal_pref_namespace_t *base) {
+  int rc = bk_pref_require_writable(bk_pref_to_namespace(base));
+  if (rc)
+    return rc;
+  rc = storage_lock();
+  if (rc)
+    return rc;
+  h2_pal_pref_cursor_t *cursor = NULL;
+  rc = snapshot(base, &cursor);
+  if (!rc)
+    for (size_t i = 0; i < cursor->count; ++i) {
+      rc = remove_value(base, cursor->entries[i].key);
+      if (rc)
+        break;
+    }
+  if (cursor)
+    pref_iterate_close(base, &cursor);
+  return storage_unlock(rc);
+}
+
 static int bk_pref_open(
     void *user,
     const char *name_space,
@@ -525,18 +873,21 @@ static int bk_pref_open(
     memset(&ns->base, 0, sizeof(ns->base));
     ns->mode = mode;
     ns->base.close = bk_pref_close;
-    ns->base.get_blob = bk_pref_get_blob;
-    ns->base.set_blob = bk_pref_set_blob;
-    ns->base.get_string = bk_pref_get_string;
-    ns->base.set_string = bk_pref_set_string;
-    ns->base.get_u32 = bk_pref_get_u32;
-    ns->base.set_u32 = bk_pref_set_u32;
-    ns->base.get_i32 = bk_pref_get_i32;
-    ns->base.set_i32 = bk_pref_set_i32;
-    ns->base.get_bool = bk_pref_get_bool;
-    ns->base.set_bool = bk_pref_set_bool;
-    ns->base.remove = bk_pref_remove;
+    ns->base.get_blob = typed_get_blob;
+    ns->base.set_blob = typed_set_blob;
+    ns->base.get_string = typed_get_string;
+    ns->base.set_string = typed_set_string;
+    ns->base.get_u32 = typed_get_u32;
+    ns->base.set_u32 = typed_set_u32;
+    ns->base.get_i32 = typed_get_i32;
+    ns->base.set_i32 = typed_set_i32;
+    ns->base.get_bool = typed_get_bool;
+    ns->base.set_bool = typed_set_bool;
+    ns->base.remove = typed_remove;
     ns->base.commit = bk_pref_commit;
+    ns->base.clear = pref_clear;
+    ns->base.iterate = pref_iterate;
+    ns->base.iterate_close = pref_iterate_close;
     *out_namespace = &ns->base;
     return H2_PAL_OK;
 }

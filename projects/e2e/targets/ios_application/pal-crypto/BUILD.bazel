@@ -1,0 +1,68 @@
+load("@rules_apple//apple:ios.bzl", "ios_application")
+load("@rules_cc//cc:objc_library.bzl", "objc_library")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
+load("//tools/bazel:cc_options.bzl", "H2_WARNING_COPTS")
+load("//tools/bazel:mobile_app_sdk.bzl", "mobile_app_sdk")
+load("//tools/bazel/platforms:compatibility.bzl", "IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+objc_library(
+    name = "launcher",
+    srcs = ["main.m"],
+    copts = H2_WARNING_COPTS + ["-fobjc-arc"],
+    sdk_frameworks = [
+        "UIKit",
+        "Foundation",
+    ],
+    target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = [
+        "//libs/app_host:ios_packaged",
+        "//projects/e2e/libs/pal-crypto-mobile:runner",
+    ],
+)
+
+ios_application(
+    name = "pal_crypto_e2e",
+    bundle_id = "com.haivivi.gizos.e2e.palcrypto",
+    bundle_name = "GizOSPALCryptoE2E",
+    families = [
+        "iphone",
+        "ipad",
+    ],
+    infoplists = ["Info.plist"],
+    minimum_os_version = "16.0",
+    target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = [":launcher"],
+)
+
+sh_test(
+    name = "ios_pal_crypto_simulator_test",
+    timeout = "moderate",
+    srcs = ["run_simulator.sh"],
+    args = [
+        "ios",
+        "$(rootpath :pal_crypto_e2e.ipa)",
+        "$(rootpath :app_sdk)",
+        "$(rootpath //projects/e2e/apps/pal-crypto/app:include/h2_pal_crypto_cases.inc)",
+    ],
+    data = [
+        ":app_sdk",
+        ":pal_crypto_e2e.ipa",
+        "//projects/e2e/apps/pal-crypto/app:include/h2_pal_crypto_cases.inc",
+        "//projects/e2e/libs/pal-crypto-mobile:run_mobile.py",
+    ],
+    env_inherit = [
+        "H2_IOS_SIMULATOR_UDID",
+        "H2_ANDROID_SERIAL",
+        "ANDROID_HOME",
+        "DEVELOPER_DIR",
+    ],
+    tags = ["manual"],
+    target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
+)
+
+mobile_app_sdk(
+    name = "app_sdk",
+    app = ":pal_crypto_e2e",
+)

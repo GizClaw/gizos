@@ -1,0 +1,84 @@
+{
+  "contract": 1,
+  "operation_count": 15,
+  "case_count": 22,
+  "platforms": [
+    {
+      "platform": "macos",
+      "passed": 22,
+      "failed": 0,
+      "blocked": 0,
+      "evidence": "projects/e2e/targets/cc_binary/pal-crypto/evidence/qualified.json",
+      "sha256": "863eb90387e9caaf81494d206cd58f4ae62c764f975845c6e0c8ca6506a8a567"
+    },
+    {
+      "platform": "wasm",
+      "passed": 22,
+      "failed": 0,
+      "blocked": 0,
+      "evidence": "projects/e2e/targets/pkg_tar/pal-crypto/evidence/qualified.json",
+      "sha256": "da5489fc3f1ce2f6c76df9c3ba1658e63f3b13c4cb90228f4857d95febff57a4"
+    },
+    {
+      "platform": "ios-simulator",
+      "passed": 22,
+      "failed": 0,
+      "blocked": 0,
+      "evidence": "projects/e2e/targets/ios_application/pal-crypto/evidence/qualified.json",
+      "sha256": "1851b49106004b341c522b194b34e98cbb4b1a8aa3210d4cda11fd2c9f0a1f03",
+      "environment": {
+        "evidence": "projects/e2e/targets/ios_application/pal-crypto/evidence/environment.json",
+        "sha256": "9f0e6e416c7e91719fd75061dec649c0979d17592dd12b8b65e8b07339591db3"
+      }
+    },
+    {
+      "platform": "android-emulator",
+      "passed": 22,
+      "failed": 0,
+      "blocked": 0,
+      "evidence": "projects/e2e/targets/android_binary/pal-crypto/evidence/qualified.json",
+      "sha256": "3c200b8a4194635cc62e3512070c3a9197035178e8e33e20bf034f970725a112",
+      "environment": {
+        "evidence": "projects/e2e/targets/android_binary/pal-crypto/evidence/environment.json",
+        "sha256": "e3eb5324b408b537c01bf0d3b796b75e547ff75d62ef9abbb01fbed22da2e5ed"
+      }
+    },
+    {
+      "platform": "devkit",
+      "passed": 22,
+      "failed": 0,
+      "blocked": 0,
+      "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-crypto/devkit/evidence/qualified.json",
+      "sha256": "bf94ea5a1db513dd209bcf2b00cd70316d8c043864410662467c6a724108cc18",
+      "build": {
+        "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-crypto/devkit/evidence/build.json",
+        "sha256": "5bca1aa91a86bf8937917bcfccbe5de97d22fbf94d62a58963b657a00287b73b"
+      }
+    },
+    {
+      "platform": "bk7258",
+      "passed": 22,
+      "failed": 0,
+      "blocked": 0,
+      "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-crypto/bk7258_v3_202405/evidence/qualified.json",
+      "sha256": "8c2a679ae72ff4df29e83227424a16942e1bc6e988f1116b56bc2d3d6e147474",
+      "build": {
+        "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-crypto/bk7258_v3_202405/evidence/build.json",
+        "sha256": "08974810395dc9137536b27188425698fdb15e230b438d9fc752b48aa4a01906"
+      }
+    }
+  ],
+  "verified_at_utc": "2026-09-28T01:32:06.149576+00:00",
+  "scope": "Crypto PAL functional conformance; iOS/Android simulator/emulator, physical DevKit/BK7258, real Chromium WASM",
+  "notes": [
+    "All platforms execute the same portable App and mandatory case registry. BLOCKED, FAIL, and missing cases do not qualify.",
+    "Random-distinctness checks are functional checks, not an entropy-quality, side-channel, or cryptographic certification.",
+    "Native results are tied to the recorded package and image hashes. UART reconnection only retrieves immutable results from the same boot."
+  ],
+  "portable_inputs": {
+    "projects/e2e/apps/pal-crypto/app/src/h2_pal_crypto_e2e.c": "2d2fb00c795633716abe8fe1c1e18aecf55db8a3d6af29867984d5e0551bff44",
+    "projects/e2e/apps/pal-crypto/app/include/h2_pal_crypto_e2e.h": "0301d1167b6db25ddd76135255cf89e514af4c02241f4e2c7f240fddda89ea89",
+    "projects/e2e/apps/pal-crypto/app/include/h2_pal_crypto_cases.inc": "ce2dbea131a6371979d0bb20815fe775203592daa921a4461602f3d640cb8a50",
+    "projects/e2e/apps/pal-crypto/app/api_coverage.json": "a3a734075963b53c9b9415e37f1340e1cf10c70c5b8ac38a53e1b739981b9521"
+  }
+}

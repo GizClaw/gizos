@@ -82,6 +82,28 @@ h2_pal_result_t h2_ios_platform_task_allocation_fault(int successful_before_fail
  * A busy Core is retained and may be retried after its owners have finished. */
 h2_pal_result_t h2_ios_platform_core_shutdown(void);
 
+/** Storage owner for one sandbox directory. Paths under portable_root map to
+ * directory/files; Preferences use directory/preferences.sqlite. The caller
+ * owns the directory and must supply an absolute path with an existing parent.
+ * NULL output on failure; config strings are copied. Close every borrowed
+ * file, namespace and cursor before destroy. No existing directory is cleared.
+ */
+typedef struct h2_ios_storage h2_ios_storage_t;
+h2_pal_result_t h2_ios_storage_create(const char *directory,
+    const char *portable_root, h2_ios_storage_t **out);
+const h2_pal_fs_api_t *h2_ios_storage_fs_api(h2_ios_storage_t *storage);
+const h2_pal_pref_api_t *h2_ios_storage_pref_api(h2_ios_storage_t *storage);
+void h2_ios_storage_destroy(h2_ios_storage_t *storage);
+
+/** Return a borrowed process-wide Crypto provider, initialized on first use
+ * with OS secure entropy. Initialization failure returns the canonical
+ * unsupported API. Concurrent operations are supported; the owner must quiesce
+ * all users before shutdown. The next getter may initialize a new lifetime. */
+const h2_pal_crypto_api_t *h2_ios_platform_crypto_api(void);
+/** Retire the provider after every Runtime and Crypto operation has stopped.
+ * Idempotent; also invoked by successful platform_core_shutdown(). */
+void h2_ios_platform_crypto_shutdown(void);
+
 #ifdef __cplusplus
 }
 #endif

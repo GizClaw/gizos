@@ -157,6 +157,10 @@ boundary。裁剪 variant 完整实现 Crypto PAL；完整 variant 额外实现 
 ESP-IDF 与 BK7258 provider 使用 public PSA/MbedTLS surface 实现同一完整 vtable，
 不能通过 private header 或本地复制算法补洞。
 
+iOS 与 Android 的 Crypto owner 位于各自 `pal_core/src/h2_*_crypto.c`，通过唯一的 `wolfssl:wolfcrypt` integration 提供完整 15 项接口。iOS 使用 `SecRandomCopyBytes`，Android 从系统 `/dev/urandom` 读取熵并处理短读和 EINTR；随机源失败返回错误，不退回伪随机。App Host 默认绑定该 process-wide provider，首次 getter 在互斥保护下初始化；返回的 API 由平台持有。调用方必须先停止全部 Crypto 调用并销毁 Runtime，再调用 `h2_*_platform_crypto_shutdown()` 或成功的 `platform_core_shutdown()`；shutdown 幂等，后续 getter 可开启新生命周期。Swift Package 的 module map 和 packaged importer 同时声明 Security framework，Android AAR 包含真实 provider。
+
+独立 `projects/e2e/apps/pal-crypto` 以 22 个必选 case 验证全部 Crypto 操作，包括标准向量、无效参数、认证拒绝、重叠/容量边界和重复调用。六端入口使用相同 portable App，缺失接口保持 BLOCKED，不能算通过；随机差异检查不是随机质量或侧信道安全认证。
+
 `h2_pal_dtls.h` 以 whole datagram 为 I/O 边界。Session copy config，生成
 临时 ECDSA identity，并用 peer certificate DER 的 raw SHA-256 fingerprint
 认证远端；只协商 `SRTP_AES128_CM_SHA1_80`，exporter 固定为
@@ -599,3 +603,11 @@ Target-specific unavailable adapter、dummy 和 fake backend 放在 `libs/pal` �
 iOS 和 Android 的 Core（Memory、Log、Time、Timer、Task、Queue、Sync、SystemEvent、 FirmwareInfo）使用原生 pthread/系统时钟实现。公共线程核心位于 `libs/pal/providers/posix/pal_core`，由 iOS、Android 和 Web pthread provider 复用； UIKit、Android UI/媒体适配仍留在各自 provider 下。PAL 的 `set_wall_ms` 在移动端维护 进程内时钟偏移，不要求修改系统时钟的权限。
 
 移动端 provider 的本地发布边界为 iOS `:swift_package` 和 Android `:aar`， 打包规则位于 `tools/bazel/mobile_package.bzl`。这些包不包含 Runtime 或 Atomic。 `libs/app_host` 负责组装 Runtime；独立 PAL Core E2E App 消费实际包的二进制， 验证完整 Core v2 合约。测试入口和证据见 `projects/e2e/libs/pal-core-mobile/README.md`。
+
+### 原生移动端 Storage
+
+iOS/Android provider 的 storage owner 接收宿主 sandbox 内的绝对目录和 portable mount root，公开真实 POSIX FS 与 SQLite Preferences API；目录创建只使用明确给出的路径，不清空已存在数据。宿主关闭所有 file、namespace 和 cursor 后再销毁 owner。Storage 与 Core 都进入对应 Swift Package/XCFramework 或 AAR，Runtime 仍由 App host 单独组装。
+
+BK7258 Preferences 保留已有原始 value 字节，确保已安装旧 Loader 可继续读取 boot/版本等 key。新写入的类型记录保存在独立 FlashDB 保留 key 中，包含原 key 身份、类型、长度和内容摘要；类型检查只在元数据匹配当前值时生效，旧固件改写后不沿用过期类型。没有元数据的旧值保持既有读取兼容。FlashDB 迭代采用 namespace-scoped snapshot，返回稳定 key/type/value-size，cursor 必须显式关闭；clear 仅删除该 namespace 的 FlashDB key 及其类型记录，不清空整个数据库。旧 EasyFlash key 继续通过既有按 key 读取路径迁移，未迁移 key 不具有枚举类型信息。
+
+ESP LittleFS 的目录级 clear 在既有 internal-stack safe-call 路径执行，保留目录本身、递归移除子项，并拒绝遍历路径；目录层数过深返回错误。DevKit 原有整 `/data` 格式化接口保持明确的 board policy，Storage E2E 仅调用测试子目录 clear。BK FATFS 提供真实 seek 和目录级 clear，测试不格式化 SD 卡。

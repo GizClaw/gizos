@@ -42,4 +42,3 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
     -Werror
     -Wno-unused-parameter
     -Wno-type-limits)
-

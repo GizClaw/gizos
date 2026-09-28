@@ -149,3 +149,26 @@ Portable/desktop tests 证明 case contract、provider assembly、parser、failu
 ## PAL HTTP
 
 `pal-http` 独立验收 HTTP request/response_free 和所有 request 字段，包括七种方法、字节 span、三种响应内存模式、流式 byte count、header/read callback 错误传播、取消、整体 deadline/retry、重定向、证书验证与资源释放。App 只借用 Runtime/PAL；`projects/e2e/libs/pal-http-fixture` 提供隔离 session 的可重复 HTTP/HTTPS 服务，host/browser 默认只绑定 loopback。Browser 使用真实 Fetch/CORS，只信任该次 fixture 的指定 SPKI，仍必须拒绝独立的不受信任证书。不存在的网卡必须显式报错；Browser 的绑定拒绝不代表支持物理网卡选择。设备入口只借用已有 Wi-Fi 配置和 Board Net provider，不更改 provisioning。每端必须完整运行同一 registry 并保留对应 artifact SHA 的结构化 receipt，构建成功不能替代实测。
+
+## PAL Storage
+
+`projects/e2e/apps/pal-storage` 是独立 portable App，覆盖 FileSystem 的 11 个 vtable 操作，以及 Preferences API 的 open 和 namespace 的 16 个方法，共 28 项。稳定 registry 包含 30 个必选 case；28 个操作的完整映射由独立 public-header inventory 测试校验。Disk 的分区擦写属于后续独立资格领域，不计入本 App。
+
+Storage 必须分两次独立进程或 boot 执行：seed 阶段执行 27 项并提交确定的数据，verify 阶段执行 3 项，读回与 nonce 绑定的文件及全部 Preferences 类型并清理专用数据。宿主只在两阶段 case 清单、nonce、版本、返回值和 cleanup 全部匹配时授予资格。Desktop/macOS 使用真实 OS FS 和 SQLite，Web 使用 IDBFS/localStorage 并重新启动整个浏览器，移动端测试 App 使用 SDK 包内的原生 storage owner，在两次独立 App 进程间保留 sandbox。DevKit 使用板载 Flash LittleFS，BK7258 使用 SD FATFS 和 FlashDB；板级测试数据限定在 `/data/pal-storage` 和 `h2storea`/`h2storeb`，`h2storectl` 只保存本测试版本绑定的阶段元数据。
+
+命令与平台证据见 `projects/e2e/apps/pal-storage/README.md`；iOS/Android 模拟器入口分别为 `make bazel-test-ios_pal_storage_simulator_test` 和 `make bazel-test-android_pal_storage_simulator_test`。外部设备与已启动模拟器的测试是 `manual`，其结果不能由旧缓存代替。正常重启验证不表示断电原子性或物理介质寿命已验证。
+
+## PAL Crypto E2E
+
+`projects/e2e/apps/pal-crypto` 独立覆盖 Crypto PAL 的 15 个操作和 22 个必选 case。macOS、WASM、iOS、Android、DevKit、BK7258 的入口分别位于 `targets/cc_binary/pal-crypto`、`targets/pkg_tar/pal-crypto`、`targets/ios_application/pal-crypto`、`targets/android_binary/pal-crypto` 和 `targets/h2loader_tar_zlib/pal-crypto/{devkit,bk7258_v3_202405}`。结果必须含完整 case ledger，全部 PASS 且 failed/blocked/not_run/rc 为零才 qualified。Host/browser/mobile runner 使用外部超时，设备有独立诊断 watchdog 并保留 H2Loader 串口服务；设备 replay 只重放当前 boot 的不可变结果，不算新执行。
+
+```sh
+bazel test //projects/e2e/apps/pal-crypto/app:interface_coverage_test \
+  //projects/e2e/apps/pal-crypto/app:rejection_test \
+  //projects/e2e/targets/cc_binary/pal-crypto:desktop_test \
+  //projects/e2e/targets/pkg_tar/pal-crypto:browser_test
+H2_IOS_SIMULATOR_UDID=<booted-uuid> make bazel-test-ios_pal_crypto_simulator_test
+H2_ANDROID_SERIAL=emulator-5580 make bazel-test-android_pal_crypto_simulator_test
+```
+
+移动端从实际 Swift Package/AAR 导入 provider，Android 比较 APK/AAR 内 `.so` 字节；iOS/Android 结果来自模拟器。每次硬件安装前查询 UID/Loader/coredump 基线，使用 H2Loader managed serial send 校验 Stage 包/镜像 SHA 后正常升级，最终核对有效 App、空 Stage 和未改变的 Loader/coredump。测试不输出生成的私钥或随机字节，也不把功能验收当成密码认证。
