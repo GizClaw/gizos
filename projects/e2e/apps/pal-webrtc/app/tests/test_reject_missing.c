@@ -84,7 +84,7 @@ static void release(void *u, void *p) {
   (void)u;
   free(p);
 }
-static int clock_ms(void *u, uint64_t *out) {
+static h2_pal_result_t clock_ms(void *u, uint64_t *out) {
   (void)u;
   static uint64_t now;
   *out = ++now;
@@ -108,7 +108,7 @@ static int remote(void *u) {
   ++calls;
   return H2_PAL_ERR_IO;
 }
-static int sleep_ms(void *user, uint32_t milliseconds) {
+static h2_pal_result_t sleep_ms(void *user, uint32_t milliseconds) {
   (void)user;
   (void)milliseconds;
   return H2_PAL_OK;
