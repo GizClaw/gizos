@@ -95,7 +95,7 @@ TaskHandle_t xTaskCreateStaticPinnedToCore(TaskFunction_t fn, const char *name,
     StaticTask_t *tcb, BaseType_t core) {
   assert(stack && tcb && core == 0);
   beken_thread_t task;
-  return create(&task, configMAX_PRIORITIES - 1u - priority, name, fn,
+  return create(&task, (uint8_t)(configMAX_PRIORITIES - 1u - priority), name, fn,
                 depth * sizeof(StackType_t), arg) == kNoErr ? task : NULL;
 }
 static void *stack_alloc(void *u, size_t n) { return s.stack_fail ? NULL : alloc(u,n); }

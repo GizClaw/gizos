@@ -40,6 +40,14 @@ EM_JS(void, h2_web_test_forget_count,
 /* clang-format on */
 
 /* clang-format off */
+EM_JS(void, h2_web_test_forget_release_ready,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, [], "i32",
+    () => typeof globalThis.h2ReleaseForget === 'function' ? 1 : 0);
+});
+/* clang-format on */
+
+/* clang-format off */
 EM_JS(void, h2_web_test_close_rejected_before_cancel_settled,
       (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
   h2WebMain(context, result, completion, [], "i32",
@@ -639,15 +647,25 @@ static void h2_web_test_serial_close_wait(void *user) {
     return;
   }
   state.stream = stream;
+  /* clang-format off */
+MAIN_THREAD_EM_ASM({ globalThis.h2FakePendingReadResolve = null; });
+/* clang-format on */
   (void)h2_web_main_call(h2_web_test_set_serial_mode,
                          (const void *[]){&(int){4}});
   if (h2_pal_task_start(h2_web_platform_task_api(test->platform), NULL,
                         h2_web_test_serial_blocked_read, &state,
-                        &reader) != H2_PAL_OK ||
-      h2_pal_time_sleep_ms(h2_web_platform_time_api(test->platform), 1u) !=
-          H2_PAL_OK) {
+                        &reader) != H2_PAL_OK) {
     return;
   }
+  const double read_deadline = emscripten_get_now() + 3000.0;
+  while (!/* clang-format off */
+MAIN_THREAD_EM_ASM_INT({ return !!globalThis.h2FakePendingReadResolve; })
+/* clang-format on */ && emscripten_get_now() < read_deadline)
+    h2_web_worker_sleep(1u);
+  if (!/* clang-format off */
+MAIN_THREAD_EM_ASM_INT({ return !!globalThis.h2FakePendingReadResolve; })
+/* clang-format on */)
+    return;
   const h2_pal_result_t close_result =
       h2_pal_serial_host_close(serial, &session);
   (void)h2_web_main_call(h2_web_test_set_serial_mode,
@@ -1340,6 +1358,12 @@ MAIN_THREAD_EM_ASM({
       h2_web_platform_serial_forget_result(platform) !=
           H2_PAL_ERR_WOULD_BLOCK)
     return 41;
+  const double forget_deadline = emscripten_get_now() + 3000.0;
+  while (!h2_web_main_call(h2_web_test_forget_release_ready, NULL).i32 &&
+         emscripten_get_now() < forget_deadline)
+    h2_web_worker_sleep(1u);
+  if (!h2_web_main_call(h2_web_test_forget_release_ready, NULL).i32)
+    return 42;
   /* clang-format off */
 MAIN_THREAD_EM_ASM({
     h2ReleaseForget();

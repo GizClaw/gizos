@@ -9,10 +9,16 @@ struct h2_desktop_recording_encoder_config {
   uint32_t width;
   uint32_t height;
   uint64_t start_us;
+  // Private integration-test sink: duplicate a borrowed descriptor to exercise
+  // blocked/broken writes without replacing the real encoder or POSIX I/O.
+  // Public creation always leaves this at -1 and exclusively creates path.
+  int output_fd = -1;
 };
 using h2_desktop_recording_encoder_config_t =
     h2_desktop_recording_encoder_config;
 uint64_t h2_desktop_recording_now_us();
+h2_pal_result_t h2_desktop_recording_encoder_result(
+    h2_desktop_recording_encoder_t *recording);
 h2_pal_result_t h2_desktop_recording_encoder_create(
     const h2_desktop_recording_encoder_config_t *config,
     h2_desktop_recording_encoder_t **out_recording);
