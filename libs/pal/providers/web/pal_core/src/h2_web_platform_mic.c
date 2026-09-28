@@ -3,6 +3,7 @@
 
 #include <emscripten.h>
 #include <stdint.h>
+#include <string.h>
 
 #define H2_WEB_MIC_SAMPLES 320u
 #define H2_WEB_MIC_START_TIMEOUT_MS 30000u
@@ -311,6 +312,16 @@ int h2_web_platform_mic_read(void *user, h2_audio_frame_t *frame,
     }
   }
   if (result == H2_PAL_OK) {
+    uint8_t *pcm = frame->data;
+    const uint32_t gain = atomic_load(&platform->mic_gain_percent);
+    for (size_t offset = 0u;
+         offset < H2_WEB_MIC_SAMPLES * sizeof(int16_t);
+         offset += sizeof(int16_t)) {
+      int16_t sample = 0;
+      memcpy(&sample, pcm + offset, sizeof(sample));
+      sample = (int16_t)((int32_t)sample * (int32_t)gain / 100);
+      memcpy(pcm + offset, &sample, sizeof(sample));
+    }
     frame->bytes = H2_WEB_MIC_SAMPLES * sizeof(int16_t);
     frame->samples_per_channel = H2_WEB_MIC_SAMPLES;
     frame->sample_rate_hz = 16000u;

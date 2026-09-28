@@ -67,6 +67,9 @@ typedef struct h2_esp_es8311_audio_system_config {
     uint8_t codec_volume_default;
     uint8_t adc_digital_volume;
     uint32_t mic_gain_db;
+    /** Board-owned linear PAL percent range in analog PGA dB; max=0 uses 30. */
+    uint8_t mic_gain_min_db;
+    uint8_t mic_gain_max_db;
     uint8_t max_tracks;
     uint8_t track_queue_frames;
     uint8_t mic_queue_frames;
@@ -114,6 +117,7 @@ typedef struct h2_esp_es8311_audio_system {
     int mixer_initialized;
     int playback_task_started;
     uint32_t speaker_volume_percent;
+    uint32_t mic_gain_percent;
     i2c_master_bus_handle_t i2c_bus;
     i2c_master_dev_handle_t codec;
     int owns_i2c_bus;

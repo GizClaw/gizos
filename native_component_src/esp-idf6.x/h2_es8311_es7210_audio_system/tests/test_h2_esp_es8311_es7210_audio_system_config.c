@@ -55,6 +55,15 @@ int main(void) {
   const h2_pal_sync_api_t sync_api = {0};
   config.sync_api = &sync_api;
   assert(h2_esp_es8311_es7210_audio_system_init(&system, &config) == H2_AUDIO_OK);
+  config.mic_gain_db = 24u;
+  config.mic_gain_min_db = 0u;
+  config.mic_gain_max_db = 38u;
+  assert(h2_esp_es8311_es7210_audio_system_init(&system, &config) == H2_AUDIO_OK);
+  assert(system.mic_gain_percent == 63u);
+  config.mic_gain_max_db = 23u;
+  assert(h2_esp_es8311_es7210_audio_system_init(&system, &config) ==
+         H2_AUDIO_ERR_INVALID_ARG);
+  config.mic_gain_max_db = 38u;
   config.codec_volume_default = 0xb0u;
   config.speaker_volume = (h2_es8311_volume_config_t){
       .point_count = 3u, .points = {{1u, 120u}, {50u, 12u}, {100u, 0u}},

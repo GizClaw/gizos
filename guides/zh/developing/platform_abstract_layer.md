@@ -346,6 +346,13 @@ PAL 保证返回 allocator-backed、CPU 可读的 linear plane，使 portable co
 
 Native audio backend 创建的 microphone 与 mixer worker 使用 `h2_pal_audio_task_names.h` 中 header-only 的 `H2_PAL_AUDIO_MIC_TASK_NAME_VALUE`（`$audio/mic`）和 `H2_PAL_AUDIO_MIX_TASK_NAME_VALUE`（`$audio/mix`）。这些宏只统一跨 ESP-IDF 与 BK7258 的 diagnostic name，不增加 PAL storage、backend 或 link dependency；`//libs/pal:pal` 继续保持 header-only。
 
+Audio PAL 的 `get_mic_gain_percent` / `set_mic_gain_percent` 使用 0–100 的
+provider 相对刻度。百分比到模拟 PGA、ADC 原生 gain 或 PCM 缩放的映射由 board
+或 provider 配置，PAL 不规定统一 dB 比例。上电默认百分比必须对应既有录音增益；
+set 成功后影响后续采集帧，不要求重启 microphone。硬件增益档位可离散化，get 返回
+生效后的百分比。没有麦克风的平台明确返回 `UNSUPPORTED`，不能假装设置成功。
+Runtime Audio proxy、ESP lazy audio 和 app-test decorator 都转发这两个接口。
+
 不具备视频解码能力的 Runtime owner 仍绑定完整的 canonical unsupported API。当前 BK7258 和 ESP target 都不因编码能力或 display 能力推导出 H.264 decoder；只有经过 provider 实现和验证的 target 才绑定真实 decoder。
 
 ### BLE Host

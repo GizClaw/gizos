@@ -52,6 +52,18 @@ static int esp_audio_none_set_volume(void *user, uint32_t percent) {
     return H2_AUDIO_ERR_UNAVAILABLE;
 }
 
+static int esp_audio_none_get_mic_gain(void *user, uint32_t *out_percent) {
+    (void)user;
+    (void)out_percent;
+    return H2_AUDIO_ERR_UNSUPPORTED;
+}
+
+static int esp_audio_none_set_mic_gain(void *user, uint32_t percent) {
+    (void)user;
+    (void)percent;
+    return H2_AUDIO_ERR_UNSUPPORTED;
+}
+
 h2_pal_audio_t *h2_esp_board_audio(void) {
     static int warned;
     static const h2_pal_audio_vtable_t vtable = {
@@ -64,6 +76,8 @@ h2_pal_audio_t *h2_esp_board_audio(void) {
         .create_track = esp_audio_none_create_track,
         .get_speaker_volume_percent = esp_audio_none_get_volume,
         .set_speaker_volume_percent = esp_audio_none_set_volume,
+        .get_mic_gain_percent = esp_audio_none_get_mic_gain,
+        .set_mic_gain_percent = esp_audio_none_set_mic_gain,
     };
     static h2_pal_audio_t audio = {
         .user = NULL,

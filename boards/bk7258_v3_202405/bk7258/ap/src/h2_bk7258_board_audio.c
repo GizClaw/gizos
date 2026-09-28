@@ -56,6 +56,9 @@ typedef struct h2_bk_audio_state {
     bool mixer_initialized;
     bool playback_thread_started;
     uint32_t speaker_volume_percent;
+    uint32_t mic_gain_percent;
+    uint8_t mic_gain_raw;
+    bool mic_gain_initialized;
     audio_play_t *play;
     audio_record_t *record;
     AECContext *aec;
@@ -457,7 +460,7 @@ static int bk_audio_ensure_mic(h2_bk_audio_state_t *state) {
     cfg.nChans = h2_bk7258_audio_config.mic_channels;
     cfg.sampRate = h2_bk7258_audio_config.sample_rate;
     cfg.bitsPerSample = h2_bk7258_audio_config.bits_per_sample;
-    cfg.adc_gain = h2_bk7258_audio_config.default_mic_gain;
+    cfg.adc_gain = state->mic_gain_raw;
     cfg.mic_mode = AUDIO_MIC_MODE_DIFFEN;
     cfg.frame_size = frame_size;
     cfg.pool_size = pool_size;
@@ -664,7 +667,44 @@ static int bk_audio_set_speaker_volume_percent(void *user, uint32_t percent) {
     return map_bk_rc(audio_play_set_volume(state->play, bk_volume_from_percent(percent)));
 }
 
+static int bk_audio_get_mic_gain_percent(void *user, uint32_t *out_percent) {
+    h2_bk_audio_state_t *state = (h2_bk_audio_state_t *)user;
+    *out_percent = state->mic_gain_percent;
+    return H2_AUDIO_OK;
+}
+
+static int bk_audio_set_mic_gain_percent(void *user, uint32_t percent) {
+    h2_bk_audio_state_t *state = (h2_bk_audio_state_t *)user;
+    if (percent > 100u)
+        return H2_AUDIO_ERR_INVALID_ARG;
+    const uint32_t min_gain = h2_bk7258_audio_config.mic_gain_min;
+    const uint32_t max_gain = h2_bk7258_audio_config.mic_gain_max;
+    const uint32_t raw = min_gain +
+        (percent * (max_gain - min_gain) + 50u) / 100u;
+    if (state->record != NULL && state->mic_record_opened) {
+        const int rc = map_bk_rc(audio_play_set_adc_gain(state->record, (int)raw));
+        if (rc != H2_AUDIO_OK)
+            return rc;
+    }
+    state->mic_gain_raw = (uint8_t)raw;
+    state->mic_gain_percent = percent;
+    return H2_AUDIO_OK;
+}
+
 h2_pal_audio_t *h2_bk7258_board_audio(void) {
+    if (!s_audio_state.mic_gain_initialized) {
+        const uint32_t min_gain = h2_bk7258_audio_config.mic_gain_min;
+        const uint32_t max_gain = h2_bk7258_audio_config.mic_gain_max;
+        if (max_gain <= min_gain || max_gain > 0x3fu ||
+            h2_bk7258_audio_config.default_mic_gain < min_gain ||
+            h2_bk7258_audio_config.default_mic_gain > max_gain)
+            return NULL;
+        s_audio_state.mic_gain_raw = h2_bk7258_audio_config.default_mic_gain;
+        s_audio_state.mic_gain_percent =
+            ((uint32_t)s_audio_state.mic_gain_raw - min_gain) * 100u /
+            (max_gain - min_gain);
+        s_audio_state.mic_gain_initialized = true;
+    }
     static const h2_pal_audio_vtable_t vtable = {
         .get_info = bk_audio_get_info,
         .start_mic = bk_audio_start_mic,
@@ -675,6 +715,8 @@ h2_pal_audio_t *h2_bk7258_board_audio(void) {
         .create_track = bk_audio_create_track,
         .get_speaker_volume_percent = bk_audio_get_speaker_volume_percent,
         .set_speaker_volume_percent = bk_audio_set_speaker_volume_percent,
+        .get_mic_gain_percent = bk_audio_get_mic_gain_percent,
+        .set_mic_gain_percent = bk_audio_set_mic_gain_percent,
     };
     static h2_pal_audio_t audio = {
         .user = &s_audio_state,

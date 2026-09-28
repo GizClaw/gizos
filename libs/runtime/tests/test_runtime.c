@@ -4084,6 +4084,7 @@ static void test_control_preserves_runtime_queue_drop_behavior(void) {
 
 typedef struct audio_state_fixture {
     uint32_t actual;
+    uint32_t mic_gain_percent;
     int set_result;
 } audio_state_fixture_t;
 
@@ -4099,18 +4100,45 @@ static int state_audio_set(void *user, uint32_t volume) {
     return f->set_result;
 }
 
+static int state_audio_get_mic_gain(void *user, uint32_t *out) {
+    *out = ((audio_state_fixture_t *)user)->mic_gain_percent;
+    return H2_PAL_OK;
+}
+
+static int state_audio_set_mic_gain(void *user, uint32_t percent) {
+    ((audio_state_fixture_t *)user)->mic_gain_percent = percent;
+    return H2_PAL_OK;
+}
+
 static void test_audio_shared_state(void) {
     test_runtime_env_t env;
     test_env_init(&env);
-    audio_state_fixture_t f = {.actual = 60};
+    audio_state_fixture_t f = {.actual = 60, .mic_gain_percent = 70};
     const h2_pal_audio_vtable_t vtable = {
         .get_speaker_volume_percent = state_audio_get,
-        .set_speaker_volume_percent = state_audio_set};
+        .set_speaker_volume_percent = state_audio_set,
+        .get_mic_gain_percent = state_audio_get_mic_gain,
+        .set_mic_gain_percent = state_audio_set_mic_gain};
     const h2_pal_audio_api_t audio = {&f, &vtable};
     h2_runtime_config_t config = test_runtime_config(&env);
     config.audio = &audio;
     h2_runtime_t *runtime = NULL;
     assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+    uint32_t mic_gain = 0u;
+    assert(h2_pal_audio_get_mic_gain_percent(runtime->audio, &mic_gain) == H2_PAL_OK);
+    assert(mic_gain == 70u);
+    assert(h2_pal_audio_set_mic_gain_percent(runtime->audio, 100u) == H2_PAL_OK);
+    assert(f.mic_gain_percent == 100u);
+    assert(h2_pal_audio_get_mic_gain_percent(runtime->audio, &mic_gain) == H2_PAL_OK);
+    assert(mic_gain == 100u);
+    assert(h2_pal_audio_set_mic_gain_percent(runtime->audio, 101u) ==
+           H2_PAL_ERR_INVALID_ARG);
+    f.mic_gain_percent = 101u;
+    mic_gain = 55u;
+    assert(h2_pal_audio_get_mic_gain_percent(runtime->audio, &mic_gain) ==
+           H2_PAL_ERR_IO);
+    assert(mic_gain == 0u);
+    f.mic_gain_percent = 100u;
     h2_runtime_system_audio_state_t snapshot;
     assert(h2_runtime_system_state_audio(runtime, &snapshot) == H2_PAL_OK);
     assert(snapshot.volume_percent == 60 && !snapshot.muted);

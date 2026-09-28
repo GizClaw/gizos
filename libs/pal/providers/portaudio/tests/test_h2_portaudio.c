@@ -814,6 +814,11 @@ int main(void) {
   assert(h2_portaudio_set_output_test_ops(provider, &output_ops) ==
          H2_AUDIO_OK);
   h2_pal_audio_t *audio = h2_portaudio_audio(provider);
+  uint32_t mic_gain = 0u;
+  assert(h2_pal_audio_get_mic_gain_percent(audio, &mic_gain) == H2_AUDIO_OK);
+  assert(mic_gain == 100u);
+  assert(h2_pal_audio_set_mic_gain_percent(audio, 101u) ==
+         H2_AUDIO_ERR_INVALID_ARG);
 
   int16_t samples[320];
   h2_audio_frame_t frame;
@@ -828,8 +833,14 @@ int main(void) {
   assert(observed_stop_wakeup);
 
   assert(h2_pal_audio_start_mic(audio) == H2_AUDIO_OK);
+  assert(h2_pal_audio_set_mic_gain_percent(audio, 0u) == H2_AUDIO_OK);
   frame = mic_frame(samples);
   assert(h2_pal_audio_mic_read(audio, &frame, 1000u) == H2_AUDIO_OK);
+  for (size_t index = 0u; index < 320u; ++index)
+    assert(samples[index] == 0);
+  assert(h2_pal_audio_get_mic_gain_percent(audio, &mic_gain) == H2_AUDIO_OK);
+  assert(mic_gain == 0u);
+  assert(h2_pal_audio_set_mic_gain_percent(audio, 100u) == H2_AUDIO_OK);
   assert(h2_pal_audio_stop_mic(audio) == H2_AUDIO_OK);
 
   test_zero_capacity_stop(audio, &output);

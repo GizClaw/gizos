@@ -122,6 +122,22 @@ int main(void) {
     assert(h2_esp_es8311_audio_system_power_down(&s) == H2_AUDIO_OK);
     assert(write_count == 0);
     open_system(&s);
+    h2_pal_audio_t *audio = h2_esp_es8311_audio_system_audio(&s);
+    uint32_t gain = UINT32_MAX;
+    assert(h2_pal_audio_get_mic_gain_percent(audio, &gain) == H2_AUDIO_OK);
+    assert(gain == 0u);
+    assert(h2_pal_audio_set_mic_gain_percent(audio, 70u) == H2_AUDIO_OK);
+    assert((registers[0][0x14] & 0x0fu) == 7u);
+    assert(h2_pal_audio_get_mic_gain_percent(audio, &gain) == H2_AUDIO_OK);
+    assert(gain == 70u);
+    assert(h2_pal_audio_set_mic_gain_percent(audio, 101u) ==
+           H2_AUDIO_ERR_INVALID_ARG);
+    fail_write = (int)write_count;
+    assert(h2_pal_audio_set_mic_gain_percent(audio, 100u) == H2_AUDIO_ERR_IO);
+    assert(h2_pal_audio_get_mic_gain_percent(audio, &gain) == H2_AUDIO_OK);
+    assert(gain == 70u && (registers[0][0x14] & 0x0fu) == 7u);
+    fail_write = -1;
+    write_count = 0;
     assert(h2_esp_es8311_audio_system_power_down(&s) == H2_AUDIO_OK);
     assert_sequence(); assert(removed == 1 && disabled == 2);
     assert(h2_esp_es8311_audio_system_power_down(&s) == H2_AUDIO_OK);

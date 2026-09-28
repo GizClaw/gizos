@@ -25,10 +25,12 @@ typedef struct h2_app_test_audio_fake {
   h2_audio_info_t info;
   bool mic_active, speaker_active;
   uint32_t volume_percent, last_volume_percent, active_tracks;
+  uint32_t mic_gain_percent;
   uint64_t playback_bytes;
   uint32_t last_timeout_ms;
   h2_app_test_fault_t get_info, start_mic, stop_mic, read_mic;
   h2_app_test_fault_t start_speaker, stop_speaker, set_volume;
+  h2_app_test_fault_t set_mic_gain;
   h2_app_test_fault_t create_track, write_track, drain_track, close_track;
 } h2_app_test_audio_fake_t;
 /** Initialize fresh storage borrowing allocator. Default format is 16 kHz mono

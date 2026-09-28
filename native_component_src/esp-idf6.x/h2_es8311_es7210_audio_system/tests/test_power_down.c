@@ -124,6 +124,28 @@ int main(void) {
     assert(h2_esp_es8311_es7210_audio_system_power_down(&s) == H2_AUDIO_OK);
     assert(write_count == 0);
     open_system(&s);
+    h2_pal_audio_t *audio = h2_esp_es8311_es7210_audio_system_audio(&s);
+    uint32_t gain = UINT32_MAX;
+    assert(h2_pal_audio_get_mic_gain_percent(audio, &gain) == H2_AUDIO_OK);
+    assert(gain == 0u);
+    const uint8_t input0 = registers[1][ES7210_REG_MIC1_GAIN];
+    const uint8_t input1 = registers[1][ES7210_REG_MIC2_GAIN];
+    fail_write = 1;
+    assert(h2_pal_audio_set_mic_gain_percent(audio, 100u) == H2_AUDIO_ERR_IO);
+    assert(registers[1][ES7210_REG_MIC1_GAIN] == input0 &&
+           registers[1][ES7210_REG_MIC2_GAIN] == input1);
+    assert(h2_pal_audio_get_mic_gain_percent(audio, &gain) == H2_AUDIO_OK);
+    assert(gain == 0u);
+    fail_write = -1;
+    write_count = 0;
+    assert(h2_pal_audio_set_mic_gain_percent(audio, 100u) == H2_AUDIO_OK);
+    assert((registers[1][ES7210_REG_MIC1_GAIN] & 0x0fu) == 14u);
+    assert((registers[1][ES7210_REG_MIC2_GAIN] & 0x0fu) == 14u);
+    assert(h2_pal_audio_get_mic_gain_percent(audio, &gain) == H2_AUDIO_OK);
+    assert(gain == 100u);
+    assert(h2_pal_audio_set_mic_gain_percent(audio, 101u) ==
+           H2_AUDIO_ERR_INVALID_ARG);
+    write_count = 0;
     assert(h2_esp_es8311_es7210_audio_system_power_down(&s) == H2_AUDIO_OK);
     assert_sequence(); assert(removed == 2 && disabled == 2);
     assert(h2_esp_es8311_es7210_audio_system_power_down(&s) == H2_AUDIO_OK);

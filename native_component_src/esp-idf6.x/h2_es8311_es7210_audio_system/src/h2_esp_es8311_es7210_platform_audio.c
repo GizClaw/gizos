@@ -292,10 +292,20 @@ static esp_err_t init_es8311(h2_esp_es8311_es7210_audio_system_t *state) {
 static uint8_t es7210_input_gain(
     const h2_esp_es8311_es7210_audio_system_t *state,
     uint8_t input) {
+    uint32_t gain_db = state->config.mic_gain_db;
+    if (input < H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_ES7210_INPUT_COUNT &&
+        (state->config.es7210_input_gain_mask & (1u << input)) != 0u)
+        gain_db = state->config.es7210_input_gain_db[input];
+    if (!(state->config.enable_aec &&
+          input == state->config.es7210_ref_input_index)) {
+        const int32_t adjusted = (int32_t)gain_db +
+            (int32_t)state->mic_gain_db_current -
+            (int32_t)state->config.mic_gain_db;
+        gain_db = adjusted < 0 ? 0u : adjusted > 38 ? 38u :
+                  (uint32_t)adjusted;
+    }
     return h2_esp_es8311_es7210_input_gain_register(
-        state->config.mic_gain_db,
-        state->config.es7210_input_gain_mask,
-        state->config.es7210_input_gain_db,
+        gain_db, 0u, NULL,
         input);
 }
 
@@ -1120,6 +1130,66 @@ static int audio_set_speaker_volume_percent(void *user, uint32_t percent) {
     return H2_AUDIO_OK;
 }
 
+static int audio_get_mic_gain_percent(void *user, uint32_t *out_percent) {
+    h2_esp_es8311_es7210_audio_system_t *state =
+        (h2_esp_es8311_es7210_audio_system_t *)user;
+    *out_percent = state->mic_gain_percent;
+    return H2_AUDIO_OK;
+}
+
+static int audio_set_mic_gain_percent(void *user, uint32_t percent) {
+    h2_esp_es8311_es7210_audio_system_t *state =
+        (h2_esp_es8311_es7210_audio_system_t *)user;
+    if (percent > 100u)
+        return H2_AUDIO_ERR_INVALID_ARG;
+    if (state->codec_shutdown_pending)
+        return H2_AUDIO_ERR_INVALID_STATE;
+    const uint32_t min_db = state->config.mic_gain_min_db;
+    const uint32_t max_db = state->config.mic_gain_max_db == 0u
+                                ? 38u : state->config.mic_gain_max_db;
+    const uint32_t requested_db = min_db +
+        (percent * (max_db - min_db) + 50u) / 100u;
+    /* Keep each input's board trim, and do not boost the AEC reference. */
+    if (state->es7210 != NULL) {
+        uint8_t old[H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_ES7210_INPUT_COUNT] = {0};
+        uint8_t changed = 0u;
+        const uint32_t previous_db = state->mic_gain_db_current;
+        state->mic_gain_db_current = requested_db;
+        for (uint8_t input = 0u;
+             input < H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_ES7210_INPUT_COUNT;
+             ++input) {
+            if ((state->config.es7210_input_mask & (1u << input)) == 0u ||
+                (state->config.enable_aec &&
+                 input == state->config.es7210_ref_input_index))
+                continue;
+            const uint8_t reg = ES7210_REG_MIC1_GAIN + input;
+            if (read_reg(state->es7210, reg, &old[input]) != ESP_OK) {
+                state->mic_gain_db_current = previous_db;
+                for (uint8_t rollback = 0u; rollback < 4u; ++rollback)
+                    if ((changed & (1u << rollback)) != 0u)
+                        (void)write_reg(state->es7210,
+                            ES7210_REG_MIC1_GAIN + rollback, old[rollback]);
+                return H2_AUDIO_ERR_IO;
+            }
+            changed |= (uint8_t)(1u << input);
+            if (write_reg(state->es7210, reg,
+                    (uint8_t)((old[input] & 0xf0u) |
+                              (es7210_input_gain(state, input) & 0x0fu))) != ESP_OK) {
+                state->mic_gain_db_current = previous_db;
+                for (uint8_t rollback = 0u; rollback < 4u; ++rollback)
+                    if ((changed & (1u << rollback)) != 0u)
+                        (void)write_reg(state->es7210,
+                            ES7210_REG_MIC1_GAIN + rollback, old[rollback]);
+                return H2_AUDIO_ERR_IO;
+            }
+        }
+    } else {
+        state->mic_gain_db_current = requested_db;
+    }
+    state->mic_gain_percent = percent;
+    return H2_AUDIO_OK;
+}
+
 h2_pal_audio_t *h2_esp_es8311_es7210_audio_system_audio(h2_esp_es8311_es7210_audio_system_t *system) {
     if (system == NULL) {
         return NULL;
@@ -1134,6 +1204,8 @@ h2_pal_audio_t *h2_esp_es8311_es7210_audio_system_audio(h2_esp_es8311_es7210_aud
         .create_track = audio_create_track,
         .get_speaker_volume_percent = audio_get_speaker_volume_percent,
         .set_speaker_volume_percent = audio_set_speaker_volume_percent,
+        .get_mic_gain_percent = audio_get_mic_gain_percent,
+        .set_mic_gain_percent = audio_set_mic_gain_percent,
     };
     system->audio.user = system;
     system->audio.vtable = &vtable;

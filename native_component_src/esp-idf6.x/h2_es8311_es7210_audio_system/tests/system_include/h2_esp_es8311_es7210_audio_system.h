@@ -56,6 +56,9 @@ typedef struct h2_esp_es8311_es7210_audio_system_config {
   int pa_gpio;
   h2_esp_es8311_es7210_set_pa_fn set_pa;
   uint8_t codec_volume_default;
+  uint32_t mic_gain_db;
+  uint8_t mic_gain_min_db;
+  uint8_t mic_gain_max_db;
   uint8_t es7210_input_gain_mask;
   uint8_t max_tracks;
   uint8_t track_queue_frames;
@@ -78,6 +81,8 @@ typedef struct h2_esp_es8311_es7210_audio_system {
   h2_esp_es8311_es7210_sr_state_t sr;
   int sr_initialized;
   uint32_t speaker_volume_percent;
+  uint32_t mic_gain_percent;
+  uint32_t mic_gain_db_current;
 } h2_esp_es8311_es7210_audio_system_t;
 
 int h2_esp_es8311_es7210_audio_system_init(

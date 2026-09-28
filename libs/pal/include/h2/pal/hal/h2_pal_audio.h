@@ -70,6 +70,8 @@ typedef struct h2_pal_audio_vtable {
         h2_pal_audio_track_t **out_track);
     int (*get_speaker_volume_percent)(void *user, uint32_t *out_percent);
     int (*set_speaker_volume_percent)(void *user, uint32_t percent);
+    int (*get_mic_gain_percent)(void *user, uint32_t *out_percent);
+    int (*set_mic_gain_percent)(void *user, uint32_t percent);
 } h2_pal_audio_vtable_t;
 
 typedef int (*h2_pal_audio_track_write_fn)(
@@ -197,6 +199,47 @@ static inline int h2_pal_audio_set_speaker_volume_percent(const h2_pal_audio_api
         return H2_AUDIO_ERR_INVALID_ARG;
     }
     return audio->vtable->set_speaker_volume_percent(audio->user, percent);
+}
+
+/**
+ * @brief Read the current microphone gain on the provider's 0..100 scale.
+ *
+ * The board or provider owns the mapping to codec gain or PCM scaling. The
+ * result is zeroed on failure. An audio device without adjustable microphone
+ * gain returns H2_AUDIO_ERR_UNSUPPORTED. Hardware may quantize the setting,
+ * so the returned percentage can differ from the last request.
+ */
+static inline int h2_pal_audio_get_mic_gain_percent(
+    const h2_pal_audio_api_t *audio, uint32_t *out_percent) {
+    if (out_percent == NULL) return H2_AUDIO_ERR_INVALID_ARG;
+    *out_percent = 0u;
+    if (audio == NULL || audio->vtable == NULL) return H2_AUDIO_ERR_INVALID_ARG;
+    if (audio->vtable->get_mic_gain_percent == NULL) return H2_AUDIO_ERR_UNSUPPORTED;
+    uint32_t current = 0u;
+    const int rc = audio->vtable->get_mic_gain_percent(audio->user, &current);
+    if (rc != H2_AUDIO_OK) return rc;
+    if (current > 100u) return H2_AUDIO_ERR_IO;
+    *out_percent = current;
+    return H2_AUDIO_OK;
+}
+
+/**
+ * @brief Set microphone gain on the provider's 0..100 scale.
+ *
+ * The mapping and default percentage are board or provider owned. This call
+ * may block for device control I/O; call it from task context and serialize
+ * gain control with other Audio PAL control and lifecycle calls. Success
+ * applies to subsequent captured frames without
+ * restarting the microphone. Unsupported devices return UNSUPPORTED. A device
+ * I/O failure keeps the last reported value; a multi-input codec may require
+ * recovery if a rollback write also fails.
+ */
+static inline int h2_pal_audio_set_mic_gain_percent(
+    const h2_pal_audio_api_t *audio, uint32_t percent) {
+    if (audio == NULL || audio->vtable == NULL || percent > 100u)
+        return H2_AUDIO_ERR_INVALID_ARG;
+    if (audio->vtable->set_mic_gain_percent == NULL) return H2_AUDIO_ERR_UNSUPPORTED;
+    return audio->vtable->set_mic_gain_percent(audio->user, percent);
 }
 
 static inline int h2_pal_audio_track_write(

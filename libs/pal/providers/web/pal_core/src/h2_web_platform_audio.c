@@ -553,6 +553,28 @@ static int h2_web_audio_set_speaker_volume(void *user, uint32_t percent) {
   return H2_AUDIO_OK;
 }
 
+static int h2_web_audio_get_mic_gain(void *user, uint32_t *out_percent) {
+  H2_WEB_STATE_GUARD();
+  h2_web_platform_t *platform = user;
+  if (platform == NULL || out_percent == NULL)
+    return H2_AUDIO_ERR_INVALID_ARG;
+  if (!h2_web_platform_mic_supported())
+    return H2_AUDIO_ERR_UNSUPPORTED;
+  *out_percent = atomic_load(&platform->mic_gain_percent);
+  return H2_AUDIO_OK;
+}
+
+static int h2_web_audio_set_mic_gain(void *user, uint32_t percent) {
+  H2_WEB_STATE_GUARD();
+  h2_web_platform_t *platform = user;
+  if (platform == NULL || percent > 100u)
+    return H2_AUDIO_ERR_INVALID_ARG;
+  if (!h2_web_platform_mic_supported())
+    return H2_AUDIO_ERR_UNSUPPORTED;
+  atomic_store(&platform->mic_gain_percent, percent);
+  return H2_AUDIO_OK;
+}
+
 static const h2_pal_audio_vtable_t h2_web_audio_vtable = {
     .get_info = h2_web_audio_get_info,
     .start_mic = h2_web_platform_mic_start,
@@ -563,6 +585,8 @@ static const h2_pal_audio_vtable_t h2_web_audio_vtable = {
     .create_track = h2_web_audio_create_track,
     .get_speaker_volume_percent = h2_web_audio_get_speaker_volume,
     .set_speaker_volume_percent = h2_web_audio_set_speaker_volume,
+    .get_mic_gain_percent = h2_web_audio_get_mic_gain,
+    .set_mic_gain_percent = h2_web_audio_set_mic_gain,
 };
 
 void h2_web_platform_audio_init(h2_web_platform_t *platform) {
@@ -572,6 +596,7 @@ void h2_web_platform_audio_init(h2_web_platform_t *platform) {
       .vtable = &h2_web_audio_vtable,
   };
   platform->speaker_volume_percent = 100u;
+  atomic_store(&platform->mic_gain_percent, 100u);
   (void)h2_web_main_call(h2_web_audio_init_js,
                          (const void *[]){&(uintptr_t){(uintptr_t)platform}});
 }
