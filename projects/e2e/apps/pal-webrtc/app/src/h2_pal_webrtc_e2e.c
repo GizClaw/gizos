@@ -138,9 +138,13 @@ static int poll_event(state_t *s, int timeout, h2_pal_webrtc_event_t *event) {
     s->peer_state = event->peer_state;
   return rc;
 }
-static int wait_kind(state_t *s, h2_pal_webrtc_event_kind_t kind,
-                     h2_pal_webrtc_event_t *out) {
-  const uint64_t deadline = now(s) + 20000u;
+static uint32_t connection_timeout(state_t *s) {
+  return s->config->connection_timeout_ms != 0u
+             ? s->config->connection_timeout_ms : 20000u;
+}
+static int wait_kind_for(state_t *s, h2_pal_webrtc_event_kind_t kind,
+                         h2_pal_webrtc_event_t *out, uint32_t timeout_ms) {
+  const uint64_t deadline = now(s) + timeout_ms;
   while (now(s) < deadline) {
     int rc = poll_event(s, 50, out);
     if (rc == H2_PAL_OK) {
@@ -151,6 +155,10 @@ static int wait_kind(state_t *s, h2_pal_webrtc_event_kind_t kind,
       return rc;
   }
   return H2_PAL_ERR_TIMEOUT;
+}
+static int wait_kind(state_t *s, h2_pal_webrtc_event_kind_t kind,
+                     h2_pal_webrtc_event_t *out) {
+  return wait_kind_for(s, kind, out, 20000u);
 }
 static int send(state_t *s, unsigned index, const uint8_t *data, size_t len,
                 int text) {
@@ -436,7 +444,7 @@ static int run_case(state_t *s, unsigned id) {
     return H2_PAL_OK;
   }
   case H2_PAL_WEBRTC_E2E_CHANNEL_METADATA: {
-    uint64_t deadline = now(s) + 20000u;
+    uint64_t deadline = now(s) + connection_timeout(s);
     while (
         (s->opened != 15u || s->peer_state != H2_PAL_WEBRTC_PEER_CONNECTED) &&
         now(s) < deadline) {
@@ -652,7 +660,7 @@ static int run_case(state_t *s, unsigned id) {
         a, s->peer, H2_PAL_WEBRTC_SDP_ANSWER,
         (h2_pal_webrtc_str_t){s->answer, len});
     int rejected = rc != H2_PAL_OK;
-    uint64_t deadline = now(s) + 20000u;
+    uint64_t deadline = now(s) + connection_timeout(s);
     while (!rejected && now(s) < deadline) {
       rc = h2_pal_webrtc_peer_poll(a, s->peer, 50, &event);
       pump(s);
@@ -698,7 +706,8 @@ static int run_case(state_t *s, unsigned id) {
     CALL(h2_pal_webrtc_peer_set_remote_sdp(
         a, s->peer, H2_PAL_WEBRTC_SDP_ANSWER,
         (h2_pal_webrtc_str_t){s->answer, len}));
-    CALL(wait_kind(s, H2_PAL_WEBRTC_EVENT_CHANNEL_STATE, &s->held));
+    CALL(wait_kind_for(s, H2_PAL_WEBRTC_EVENT_CHANNEL_STATE, &s->held,
+                       connection_timeout(s)));
     REQUIRE(s->held.channel == s->channels[0] &&
             s->held.channel_state == H2_PAL_WEBRTC_CHANNEL_OPEN &&
             s->held.channel_info.has_stream_id &&
@@ -733,7 +742,8 @@ int h2_pal_webrtc_e2e_run(const h2_pal_webrtc_e2e_config_t *config,
       !config->runtime->time || !config->runtime->time->vtable ||
       !config->runtime->time->vtable->get_monotonic_ms ||
       !config->runtime->time->vtable->sleep_ms || !config->stun_url ||
-      !config->exchange_offer || !config->close_remote)
+      !config->exchange_offer || !config->close_remote ||
+      config->connection_timeout_ms > 120000u)
     return H2_PAL_ERR_INVALID_ARG;
   state_t *s = h2_pal_mem_alloc(config->runtime->mem, sizeof(*s));
   if (!s)

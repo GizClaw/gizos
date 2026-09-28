@@ -1,6 +1,8 @@
 {
   "platform": "macos-arm64",
   "qualified": true,
+  "observed_at_utc": "2026-09-28T08:02:55.366554+00:00",
+  "binary_sha256": "5743a666ec0767395ebfb2690839cb3bb6eb0dd431cc0cdc94dc000f58fecf09",
   "cases": [
     {
       "id": "wrapper-arguments",
@@ -14,7 +16,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2
+      "elapsed_ms": 1
     },
     {
       "id": "default-lifetime",
@@ -105,7 +107,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 4
+      "elapsed_ms": 5
     },
     {
       "id": "send-before-connected",
@@ -119,7 +121,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 15
+      "elapsed_ms": 24
     },
     {
       "id": "remote-sdp-arguments",
@@ -133,42 +135,42 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 26
+      "elapsed_ms": 3
     },
     {
       "id": "channel-metadata",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 24
+      "elapsed_ms": 13
     },
     {
       "id": "binary-roundtrip",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0
+      "elapsed_ms": 1
     },
     {
       "id": "text-roundtrip",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 2
     },
     {
       "id": "empty-binary",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 0
     },
     {
       "id": "empty-text",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 0
     },
     {
       "id": "unordered-roundtrip",
@@ -182,7 +184,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2
+      "elapsed_ms": 0
     },
     {
       "id": "unordered-reliable",
@@ -196,14 +198,14 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2
+      "elapsed_ms": 0
     },
     {
       "id": "send-borrowed-input",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0
+      "elapsed_ms": 1
     },
     {
       "id": "opus-arguments",
@@ -217,14 +219,14 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 43
+      "elapsed_ms": 51
     },
     {
       "id": "opus-backpressure",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 23
+      "elapsed_ms": 25
     },
     {
       "id": "track-read-roundtrip",
@@ -238,14 +240,14 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 30
+      "elapsed_ms": 27
     },
     {
       "id": "track-unset-quiescent",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 118
+      "elapsed_ms": 117
     },
     {
       "id": "detached-opus-event",
@@ -259,21 +261,21 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1
+      "elapsed_ms": 2
     },
     {
       "id": "remote-close",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0
+      "elapsed_ms": 1
     },
     {
       "id": "owned-event-after-close",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2
+      "elapsed_ms": 1
     },
     {
       "id": "event-release-idempotent",
@@ -294,14 +296,14 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 27
+      "elapsed_ms": 43
     },
     {
       "id": "explicit-stream-id",
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 24
+      "elapsed_ms": 27
     }
   ],
   "summary": {
@@ -311,9 +313,10 @@
     "retained_allocations": 0
   },
   "portable_source_sha256": {
-    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "4b3c6ed95926d9e144fcc03ec85d463d5431e260d77dd4260c92c758888c4362",
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "1abb17eecc5b9c6cfd27cb3a4d9e734f07224dde6a9a117ffdf36cd46809d4a7",
     "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_cases.inc": "725f4d2ca360da9066a855696a30553f49959c6a9ec26dcb168ef4912587528b",
-    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "40870351d2b7b8219e44f2077274fc768a222ce54b1ddc433d9d9c7f7e2a496a",
+    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "b8d9ef087e93647d8b69cecf6dda0435d905b1aa9400ecc7876b57561652afc8",
     "projects/e2e/apps/pal-webrtc/app/api_coverage.json": "6999c6a17d3b142719edc62b98fcd2cab80b1ca5c3d314f26423f6379861a183"
-  }
+  },
+  "connection_timeout_ms": 20000
 }

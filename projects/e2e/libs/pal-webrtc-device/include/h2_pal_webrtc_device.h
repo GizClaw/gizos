@@ -14,6 +14,7 @@ extern const char h2_pal_webrtc_device_runner_task_name[];
  * occurs here.
  */
 int h2_pal_webrtc_device_run(h2_runtime_t *runtime,
+                             uint32_t connection_timeout_ms,
                              h2_pal_webrtc_e2e_result_t *result);
 /** Replay an immutable result; never reruns network requests. */
 void h2_pal_webrtc_device_report(const h2_runtime_t *runtime,

@@ -27,6 +27,9 @@ typedef struct h2_pal_webrtc_e2e_config {
   const h2_runtime_t *runtime;
   /** Borrowed STUN URL owned by the launcher's isolated Pion fixture. */
   const char *stun_url;
+  /** Launcher connection watchdog; zero defaults to 20 seconds. This does
+   * not alter the PAL poll timeout cases or data/media delivery deadlines. */
+  uint32_t connection_timeout_ms;
   /** Synchronously exchange one complete offer with real Pion. Copies answer
    * into caller storage; no SDP or credential is included in the ledger. */
   int (*exchange_offer)(void *user, h2_pal_webrtc_str_t offer, char *answer,

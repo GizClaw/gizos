@@ -79,6 +79,7 @@ static int connect_saved_wifi(h2_runtime_t *runtime) {
 }
 
 int h2_pal_webrtc_device_run(h2_runtime_t *runtime,
+                             uint32_t connection_timeout_ms,
                              h2_pal_webrtc_e2e_result_t *result) {
   if (runtime == NULL || result == NULL)
     return H2_PAL_ERR_INVALID_ARG;
@@ -116,6 +117,7 @@ int h2_pal_webrtc_device_run(h2_runtime_t *runtime,
   const h2_pal_webrtc_e2e_config_t config = {
       .runtime = runtime,
       .stun_url = H2_PAL_WEBRTC_STUN_URL,
+      .connection_timeout_ms = connection_timeout_ms,
       .exchange_offer = h2_webrtc_fixture_exchange,
       .close_remote = h2_webrtc_fixture_close,
       .fixture_user = &client,
