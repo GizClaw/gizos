@@ -35,7 +35,7 @@ static void report_soak(void *user, const h2_pal_webrtc_e2e_soak_result_t *resul
   (void)snprintf(line, sizeof(line), "H2_PAL_WEBRTC_SOAK "
       "{\"run_id\":\"%s\",\"requested_ms\":%u,\"elapsed_ms\":%llu,"
       "\"data_roundtrips\":%u,\"opus_roundtrips\":%u,\"completed\":%d,"
-      "\"detail\":%d,\"uptime_ms\":%llu}", fixture_run, result->requested_ms,
+      "\"detail\":%d,\"uptime_ms\":%llu}", fixture_run, (unsigned)result->requested_ms,
       (unsigned long long)result->elapsed_ms, result->data_roundtrips,
       result->opus_roundtrips, result->completed, result->detail,
       (unsigned long long)uptime);
