@@ -22,11 +22,21 @@
 /* clang-format off */
 EM_JS(void, test_install_fetch,
       (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
-  h2WebMain(context, result, completion, ["i32"], null,
-    (delay_ms) => {
+  h2WebMain(context, result, completion, ["i32", "pointer"], null,
+    (delay_ms, ticks_address) => {
   globalThis.fetch = (url, options) => new Promise((resolve, reject) => {
-    const timer = setTimeout(() => resolve(new Response('teapot body', {
-      status: 418, headers: {'x-test': 'yes'}})), delay_ms);
+    const initial_ticks = ticks_address ? Atomics.load(HEAP32, ticks_address >>> 2) : 0;
+    // Complete only after a separate PAL task makes progress during this
+    // request. A stalled task still fails through the request's own timeout.
+    const complete = () => {
+      if (ticks_address && Atomics.load(HEAP32, ticks_address >>> 2) - initial_ticks < 5) {
+        timer = setTimeout(complete, 5);
+        return;
+      }
+      resolve(new Response('teapot body', {
+        status: 418, headers: {'x-test': 'yes'}}));
+    };
+    let timer = setTimeout(complete, delay_ms);
     options.signal.addEventListener('abort', () => {
       clearTimeout(timer);
       reject(new DOMException('aborted', 'AbortError'));
@@ -100,9 +110,11 @@ static void run(void *user) {
     h2_web_worker_sleep(1);
   CHECK(atomic_load(&state->ticks) >= 2);
 
-  // Fetch from a task: the ticker advances while the response is pending, and
-  // a 4xx status is delivered with its body.
-  (void)h2_web_main_call(test_install_fetch, (const void *[]){&(int){100}});
+  // Complete the fetch after observing progress while it is pending. The
+  // request timeout bounds a stalled ticker; a 4xx response keeps its body.
+  (void)h2_web_main_call(test_install_fetch,
+                         (const void *[]){&(int){100},
+                                          &(_Atomic int *){&state->ticks}});
   const h2_pal_http_request_t request = {
       .method = H2_PAL_HTTP_GET,
       .url = {.data = "https://example.test/x", .len = 22u},
@@ -121,7 +133,9 @@ static void run(void *user) {
   h2_pal_http_response_free(http, &response);
 
   // A timeout aborts the pending fetch without freezing the ticker.
-  (void)h2_web_main_call(test_install_fetch, (const void *[]){&(int){10000}});
+  (void)h2_web_main_call(test_install_fetch,
+                         (const void *[]){&(int){10000},
+                                          &(_Atomic int *){NULL}});
   h2_pal_http_request_t slow = request;
   slow.timeout_ms = 300;
   ticks = state->ticks;
