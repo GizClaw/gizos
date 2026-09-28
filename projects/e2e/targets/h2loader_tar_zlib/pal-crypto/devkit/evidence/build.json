@@ -1,0 +1,71 @@
+{
+  "assets": [
+    {
+      "name": "devkit-pal-crypto-esp32s3.update.tar.zlib",
+      "operation": "managed-install",
+      "release_suffix": ".update.tar.zlib",
+      "sha256": "805491d0040931a3c3ab59f7f0c1f934c57faa076ba5c20dbca0cb9d0967d229",
+      "size": 977446
+    }
+  ],
+  "board": "devkit",
+  "entry": "projects/e2e/targets/h2loader_tar_zlib/pal-crypto/devkit",
+  "image": "pal-crypto",
+  "native_artifacts": [
+    {
+      "name": "firmware.elf",
+      "operation": "native-debug-or-flash",
+      "sha256": "114b0a65cb2d323d079c2548575d20af7136c409f1a1123e7fc25e52c9452d29",
+      "size": 14066228
+    },
+    {
+      "name": "firmware.map",
+      "operation": "native-debug-or-flash",
+      "sha256": "ea2719f77fb47eb33d4791b417d0dd1e95b88c9dee74d55530225f94833afff8",
+      "size": 13198022
+    },
+    {
+      "name": "app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "12f45103b71a9c4d9ab024c7ba26e964f1ad54a498b98a9743e49e4c79f25f92",
+      "size": 1517808
+    },
+    {
+      "name": "bootloader.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "6f4df1269a67dcf919cac31c859bf483b02e43b89a3794b1b3e4e2f08b430bff",
+      "size": 21328
+    },
+    {
+      "name": "combined_factory.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "afca6d1987e9dc33dc395130f5e9bf212e0c90fa62364e6f0d54cdc8bc0c9cb0",
+      "size": 1648880
+    },
+    {
+      "name": "partition-table.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "96f93c5cdeacf9f53990c7d9fb3570220e33c6feedcc73cea05948160cf14d48",
+      "size": 3072
+    },
+    {
+      "name": "flasher_args.json",
+      "operation": "native-debug-or-flash",
+      "sha256": "632d8b8740befc860c4f6b9440d972f24cefc9577785972d3fbd9d636854cb25",
+      "size": 998
+    }
+  ],
+  "package_manifest": {
+    "board": "devkit",
+    "format": 1,
+    "image_sha256": "12f45103b71a9c4d9ab024c7ba26e964f1ad54a498b98a9743e49e4c79f25f92",
+    "image_size": 1517808,
+    "role": "app",
+    "target": "esp32s3",
+    "version": "pal-crypto-esp-20260928-r5"
+  },
+  "platform": "esp",
+  "role": "app",
+  "target": "esp32s3",
+  "version": "pal-crypto-esp-20260928-r5"
+}

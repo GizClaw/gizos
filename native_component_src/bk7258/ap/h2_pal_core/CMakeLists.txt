@@ -209,12 +209,27 @@ target_compile_definitions(
 # copying SDK crypto sources into Firmwares.
 armino_component_get_property(
   H2_BK_PSA_MBEDTLS_LIB psa_mbedtls COMPONENT_LIB)
-target_compile_definitions(${H2_BK_PSA_MBEDTLS_LIB} PRIVATE
+# PSA operation structs depend on these macros. Consumers must see the same
+# layout as the SDK implementation (not a smaller client-only placeholder).
+target_compile_definitions(${H2_BK_PSA_MBEDTLS_LIB} PUBLIC
   MBEDTLS_PSA_CRYPTO_C
   MBEDTLS_ECP_DP_CURVE25519_ENABLED
   MBEDTLS_CHACHA20_C
   MBEDTLS_POLY1305_C
   MBEDTLS_CHACHAPOLY_C)
+
+if(CONFIG_SW_CRYPTO)
+  # The SDK software hook reads libc rand(). Supply the documented entropy
+  # hook in h2_bk_platform_crypto.c so PSA's internal DRBG uses the real TRNG.
+  get_target_property(H2_BK_PSA_SOURCES ${H2_BK_PSA_MBEDTLS_LIB} SOURCES)
+  list(FILTER H2_BK_PSA_SOURCES EXCLUDE REGEX "(^|/)mbedtls_port/src/tls_hardware\\.c$")
+  set_property(TARGET ${H2_BK_PSA_MBEDTLS_LIB} PROPERTY SOURCES ${H2_BK_PSA_SOURCES})
+  # The SDK software-only myrand branch calls bk_rand without its public header.
+  set_source_files_properties(
+    "${BK_ARMINO_PATH}/components/psa_mbedtls/mbedtls_port/mbedtls/library/platform.c"
+    TARGET_DIRECTORY ${H2_BK_PSA_MBEDTLS_LIB}
+    PROPERTIES COMPILE_OPTIONS "-include;driver/trng.h")
+endif()
 
 if(CONFIG_BT AND H2_BK_PLATFORM_BT_ALLOCATOR_PSRAM)
   target_link_options(${COMPONENT_LIB} INTERFACE

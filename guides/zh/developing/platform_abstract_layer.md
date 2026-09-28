@@ -157,6 +157,10 @@ boundary。裁剪 variant 完整实现 Crypto PAL；完整 variant 额外实现 
 ESP-IDF 与 BK7258 provider 使用 public PSA/MbedTLS surface 实现同一完整 vtable，
 不能通过 private header 或本地复制算法补洞。
 
+iOS 与 Android 的 Crypto owner 位于各自 `pal_core/src/h2_*_crypto.c`，通过唯一的 `wolfssl:wolfcrypt` integration 提供完整 15 项接口。iOS 使用 `SecRandomCopyBytes`，Android 从系统 `/dev/urandom` 读取熵并处理短读和 EINTR；随机源失败返回错误，不退回伪随机。App Host 默认绑定该 process-wide provider，首次 getter 在互斥保护下初始化；返回的 API 由平台持有。调用方必须先停止全部 Crypto 调用并销毁 Runtime，再调用 `h2_*_platform_crypto_shutdown()` 或成功的 `platform_core_shutdown()`；shutdown 幂等，后续 getter 可开启新生命周期。Swift Package 的 module map 和 packaged importer 同时声明 Security framework，Android AAR 包含真实 provider。
+
+独立 `projects/e2e/apps/pal-crypto` 以 22 个必选 case 验证全部 Crypto 操作，包括标准向量、无效参数、认证拒绝、重叠/容量边界和重复调用。六端入口使用相同 portable App，缺失接口保持 BLOCKED，不能算通过；随机差异检查不是随机质量或侧信道安全认证。
+
 `h2_pal_dtls.h` 以 whole datagram 为 I/O 边界。Session copy config，生成
 临时 ECDSA identity，并用 peer certificate DER 的 raw SHA-256 fingerprint
 认证远端；只协商 `SRTP_AES128_CM_SHA1_80`，exporter 固定为

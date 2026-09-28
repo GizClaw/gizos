@@ -23,7 +23,9 @@ static h2_pal_result_t h2_esp_crypto_random(void *user, uint8_t *out, size_t len
     if (out == NULL && len > 0u) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    esp_fill_random(out, len);
+    if (len != 0u) {
+        esp_fill_random(out, len);
+    }
     return H2_PAL_OK;
 }
 
@@ -228,7 +230,11 @@ static h2_pal_result_t h2_mbedtls_crypto_x25519_shared_secret(
     memset(remote_copy, 0, sizeof(remote_copy));
     psa_destroy_key(key);
     if (status != PSA_SUCCESS) {
-        return h2_psa_to_platform(status);
+        memset(out_shared_secret, 0, sizeof(*out_shared_secret));
+        /* PSA rejects low-order peer points before producing a secret.
+         * The PAL argument shapes are already valid; this is key format. */
+        return status == PSA_ERROR_INVALID_ARGUMENT ? H2_PAL_ERR_FORMAT :
+            h2_psa_to_platform(status);
     }
     if (shared_len != H2_PAL_CRYPTO_X25519_KEY_SIZE) {
         memset(out_shared_secret, 0, sizeof(*out_shared_secret));
