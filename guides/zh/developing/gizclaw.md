@@ -99,7 +99,7 @@ PAL WebRTC 的 `CLOSED` 和 `ERROR` callback 只提供 callback 期间有效的 
 
 SDK 拥有 request-scoped Peer RPC channel、`client.tool.v0.invoke`（135）的封装与内层回复包装、`client.tool.v0.list`（136）的工具发现，以及 `client.rpc.methods.list`（137）的数字协议列表。GizOS 向 SDK 注册有实际 handler 的 `ClientTool`，不维护另一份方法名称表。MHS read/write（133/134）始终安装；未知设备 ID 返回 `NOT_FOUND`。旧的独立设备方法不再是 RPC registry 的成员，不提供别名或版本探测。
 
-`h2_gizclaw_config_t` 借用 `tool_handlers` 到 Client/Service deinit。每项声明 numeric `h2_gizclaw_tool_t`、同步 invoke callback 与 user。Handler 接收该工具的内层 Protobuf，返回同一工具的内层结果；SDK 负责外层 tool/v0 envelope。空 callback、重复或未知 tool、超过 registry 容量的表使初始化失败。Service 根据 PAL、产品 vtable 和设备信息配置安装内置工具；产品可以注册 `DEVICE_FIND` 和 `SOCIAL_PING`，不能覆盖 Service 拥有的工具。直接使用 standalone Client 的调用方可以注册任一有效 ClientTool。表和 user 必须在整个借用期保持有效，运行中不增删。
+`h2_gizclaw_config_t` 借用 `tool_handlers` 到 Client/Service deinit。每项声明 numeric `h2_gizclaw_tool_t`、同步 invoke callback 与 user。Handler 接收该工具的内层 Protobuf，返回同一工具的内层结果；SDK 负责外层 tool/v0 envelope。空 callback、重复或未知 tool、超过 registry 容量的表使初始化失败。有任一设备能力（PAL、产品 vtable 或设备信息）的 Service 按配置安装内置工具，产品只能再注册 `DEVICE_FIND` 和 `SOCIAL_PING`，不能覆盖 Service 拥有的工具。没有任何设备能力的 headless Service 不安装内置工具，调用方与直接使用 standalone Client 一样可以注册任一有效 ClientTool，例如 E2E fixture actor 自己回答 `INFO_GET` 和 `IDENTIFIERS_GET`。表和 user 必须在整个借用期保持有效，运行中不增删。
 
 | 操作 | Library owner | 配置来源 |
 | --- | --- | --- |

@@ -4512,16 +4512,34 @@ static void test_device_provider_methods_validation(void) {
     size_t count;
   } cases[] = {{duplicated, 2},   {&built_in, 1}, {&unknown, 1},
                {&no_callback, 1}, {NULL, 1},      {duplicated, 22}};
-  /* Each case is refused with and without a device capability: the product
-   * tool rule does not depend on what the Service itself can serve. */
-  for (size_t i = 0; i < 2u * (sizeof(cases) / sizeof(cases[0])); ++i) {
+  for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
     test_env_t env;
     h2_gizclaw_service_t *service = create_profile_service(&env);
-    service->client_config.model = i % 2u == 0u ? "fixture" : NULL;
-    service->client_config.tool_handlers = cases[i / 2u].handlers;
-    service->client_config.tool_handler_count = cases[i / 2u].count;
+    service->client_config.model = "fixture";
+    service->client_config.tool_handlers = cases[i].handlers;
+    service->client_config.tool_handler_count = cases[i].count;
     assert(h2_gizclaw_device_init_internal(service) == H2_PAL_ERR_INVALID_ARG);
     assert(service->device == NULL);
+    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  }
+  /* A headless Service installs no built-in tool, so its caller answers the
+   * standard ones itself, as the E2E fixture actors do; a malformed table is
+   * still refused. A device capability makes the same table product-owned. */
+  const h2_gizclaw_tool_handler_t headless[] = {
+      {H2_GIZCLAW_TOOL_INFO_GET, product_rpc, &product},
+      {H2_GIZCLAW_TOOL_IDENTIFIERS_GET, product_rpc, &product}};
+  for (int capable = 0; capable < 2; ++capable) {
+    test_env_t env;
+    h2_gizclaw_service_t *service = create_profile_service(&env);
+    service->client_config.model = capable ? "fixture" : NULL;
+    service->client_config.tool_handlers = headless;
+    service->client_config.tool_handler_count = 2;
+    assert(h2_gizclaw_device_init_internal(service) ==
+           (capable ? H2_PAL_ERR_INVALID_ARG : H2_PAL_OK));
+    assert(service->device == NULL);
+    service->client_config.tool_handlers = duplicated;
+    assert(h2_gizclaw_device_init_internal(service) == H2_PAL_ERR_INVALID_ARG);
     assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
     assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
   }

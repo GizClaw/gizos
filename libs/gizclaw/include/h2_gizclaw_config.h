@@ -100,10 +100,11 @@ typedef struct h2_gizclaw_config {
     int32_t firmware_channel;
     /** Immutable product tool registrations, borrowed until deinit. The SDK
      * advertises exactly the installed handlers. Unknown IDs, duplicates or
-     * NULL callbacks are invalid. The Service adds its built-in tools and
-     * rejects product registrations for those owned tools; products may
-     * provide DEVICE_FIND and SOCIAL_PING. A standalone Client may install
-     * any valid ClientTool. */
+     * NULL callbacks are invalid. A Service with any device capability adds
+     * its built-in tools and accepts only DEVICE_FIND and SOCIAL_PING from
+     * the product. A Service without device capabilities installs no
+     * built-in tool and, like a standalone Client, may install any valid
+     * ClientTool. */
     const h2_gizclaw_tool_handler_t *tool_handlers;
     size_t tool_handler_count;
     /** Immutable typed HWD instance table borrowed until deinit. IDs must
