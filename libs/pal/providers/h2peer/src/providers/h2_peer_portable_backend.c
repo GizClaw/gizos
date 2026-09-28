@@ -336,10 +336,10 @@ h2_peer_portable_create_connection(h2_pal_webrtc_peer_t *peer) {
                                     h2_peer_portable_on_remote_channel);
     for (h2_pal_webrtc_channel_t *channel = peer->channels; channel != NULL;
          channel = channel->next) {
-        h2_pal_result_t result = h2_peer_portable_channel_prepare(channel);
-        if (result != H2_PAL_OK) {
+        h2_pal_result_t prepare_result = h2_peer_portable_channel_prepare(channel);
+        if (prepare_result != H2_PAL_OK) {
             h2_peer_portable_peer_close(peer);
-            return result;
+            return prepare_result;
         }
     }
     return H2_PAL_OK;
