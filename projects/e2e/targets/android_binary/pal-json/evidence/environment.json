@@ -1,0 +1,19 @@
+{
+  "serial": "emulator-5554",
+  "api": "36",
+  "fingerprint": "Android/sdk_slim_arm64/emu64a:16/BE2A.250530.027/13847098:userdebug/test-keys",
+  "aar_binary_sha256": "7f8a2e3ac80ac8a43ce44b132f9171728931ba7088f4c46005aa642ace3b3347",
+  "apk_binary_sha256": "7f8a2e3ac80ac8a43ce44b132f9171728931ba7088f4c46005aa642ace3b3347",
+  "apk_aar_binary_identical": true,
+  "public_provider_symbols": [
+    "h2_android_json_provider_create",
+    "h2_android_json_provider_destroy",
+    "h2_yyjson_json_create",
+    "h2_yyjson_json_api",
+    "h2_yyjson_json_destroy"
+  ],
+  "observation_finished_at_utc": "2026-09-28T14:32:52.126304+00:00",
+  "evidence_timezone": "UTC",
+  "app_sha256": "447216f5a9f76be376dc576aaf1bd7f6de254c25d17ce2bf790d730b5cf9c2a2",
+  "sdk_sha256": "28d430311029f7bacb05b6d3de72b17d834e61a98cd1dad935007b9a093e1936"
+}

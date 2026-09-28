@@ -69,6 +69,7 @@ objc_library(
     deps = [
         ":corebluetooth_uuid",
         ":system_event",
+        "//libs/pal/providers/yyjson:yyjson",
         "//libs/pal",
     ],
 )
@@ -127,7 +128,7 @@ apple_static_xcframework(
 h2_swift_package(
     name = "swift_package",
     xcframework = ":xcframework",
-    headers = ["include/h2_ios_platform.h", "//libs/pal:pal_header_files"],
+    headers = ["include/h2_ios_platform.h", "//libs/pal:pal_header_files", "//libs/pal/providers/yyjson:include/h2_yyjson_json.h"],
     module_name = "H2PALCore",
     version = "2.0.0",
     target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
