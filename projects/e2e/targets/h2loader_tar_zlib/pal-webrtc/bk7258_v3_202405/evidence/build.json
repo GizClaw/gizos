@@ -1,0 +1,89 @@
+{
+  "validation": "build_only",
+  "hardware_run": false,
+  "build": {
+    "assets": [
+      {
+        "name": "bk7258_v3_202405-pal-webrtc-bk7258.update.tar.zlib",
+        "operation": "managed-install",
+        "release_suffix": ".update.tar.zlib",
+        "sha256": "cd87070e6b6eea42cfd35b59a8208673c0f3cf497a754ffe5ba5f7de7d7c6ddb",
+        "size": 1784397
+      }
+    ],
+    "board": "bk7258_v3_202405",
+    "entry": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405",
+    "image": "pal-webrtc",
+    "native_artifacts": [
+      {
+        "name": "ap/firmware.elf",
+        "operation": "native-debug-or-flash",
+        "sha256": "afaa2c0820e3b19608f8cae25daabf4154e836f50acd3f214c7d258f0188cab7",
+        "size": 13202196
+      },
+      {
+        "name": "ap/firmware.map",
+        "operation": "native-debug-or-flash",
+        "sha256": "7673ee3559593927bf5ba5a414f3c2524c0f929da093f0a73820947ffae59977",
+        "size": 8671904
+      },
+      {
+        "name": "ap/app.bin",
+        "operation": "native-debug-or-flash",
+        "sha256": "e00c12441085d9ae4e0b2a1ec934ca5d0d22fd680cd9be1a275537fbba287e1c",
+        "size": 1385028
+      },
+      {
+        "name": "cp/firmware.elf",
+        "operation": "native-debug-or-flash",
+        "sha256": "468da452aaa20521e529f927f3a9fc793ca9a85e4cadb16f7805da9102550a31",
+        "size": 14369960
+      },
+      {
+        "name": "cp/firmware.map",
+        "operation": "native-debug-or-flash",
+        "sha256": "928134d516d697e5bec57238b627cbd53cace8cd5afc5627aae771d9329b9da0",
+        "size": 6809159
+      },
+      {
+        "name": "cp/app.bin",
+        "operation": "native-debug-or-flash",
+        "sha256": "084c69d6aa97d610555723f965c5387141ae7408e68f19520b5cf3c42fae86ac",
+        "size": 1056268
+      },
+      {
+        "name": "app_ab_crc.rbl",
+        "operation": "native-debug-or-flash",
+        "sha256": "0fc84e761f75c6c7332069beff11585cbf73dcb568dd20c7f498457c4fbab0e5",
+        "size": 5222400
+      },
+      {
+        "name": "all-app.bin",
+        "operation": "native-debug-or-flash",
+        "sha256": "c845332356ba67d798441570d7ba4ea6927e662e092576f2a5694c0440071223",
+        "size": 5292032
+      }
+    ],
+    "package_manifest": {
+      "board": "bk7258_v3_202405",
+      "format": 1,
+      "image_sha256": "0fc84e761f75c6c7332069beff11585cbf73dcb568dd20c7f498457c4fbab0e5",
+      "image_size": 5222400,
+      "role": "app",
+      "target": "bk7258",
+      "version": "pal-webrtc-bk-20260928-r3"
+    },
+    "platform": "bk7258",
+    "role": "app",
+    "target": "bk7258",
+    "version": "pal-webrtc-bk-20260928-r3"
+  },
+  "package_sha256": "cd87070e6b6eea42cfd35b59a8208673c0f3cf497a754ffe5ba5f7de7d7c6ddb",
+  "package_size": 1784397,
+  "portable_source_sha256": {
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "4b3c6ed95926d9e144fcc03ec85d463d5431e260d77dd4260c92c758888c4362",
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_cases.inc": "725f4d2ca360da9066a855696a30553f49959c6a9ec26dcb168ef4912587528b",
+    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "40870351d2b7b8219e44f2077274fc768a222ce54b1ddc433d9d9c7f7e2a496a",
+    "projects/e2e/apps/pal-webrtc/app/api_coverage.json": "6999c6a17d3b142719edc62b98fcd2cab80b1ca5c3d314f26423f6379861a183"
+  }
+}

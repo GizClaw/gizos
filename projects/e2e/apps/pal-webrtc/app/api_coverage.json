@@ -1,0 +1,176 @@
+{
+  "header": "libs/pal/include/h2/pal/application/h2_pal_webrtc.h",
+  "operations": {
+    "peer_create": {
+      "wrapper": "h2_pal_webrtc_peer_create",
+      "cases": [
+        "default-lifetime"
+      ]
+    },
+    "peer_create_with_config": {
+      "wrapper": "h2_pal_webrtc_peer_create_with_config",
+      "cases": [
+        "legacy-create-fallback",
+        "allocator-failure",
+        "allocator-ownership"
+      ]
+    },
+    "peer_add_ice_server": {
+      "wrapper": "h2_pal_webrtc_peer_add_ice_server",
+      "cases": [
+        "ice-arguments",
+        "ice-borrowed-input"
+      ]
+    },
+    "peer_start_offer": {
+      "wrapper": "h2_pal_webrtc_peer_start_offer",
+      "cases": [
+        "offer-owned-sdp"
+      ]
+    },
+    "peer_set_remote_sdp": {
+      "wrapper": "h2_pal_webrtc_peer_set_remote_sdp",
+      "cases": [
+        "remote-sdp-arguments",
+        "pion-negotiation",
+        "malformed-sdp",
+        "fingerprint-rejected"
+      ]
+    },
+    "peer_create_data_channel": {
+      "wrapper": "h2_pal_webrtc_peer_create_data_channel",
+      "cases": [
+        "channel-arguments",
+        "channel-configurations",
+        "channel-metadata",
+        "explicit-stream-id"
+      ]
+    },
+    "peer_set_track": {
+      "wrapper": "h2_pal_webrtc_peer_set_track",
+      "cases": [
+        "track-arguments",
+        "track-bind"
+      ]
+    },
+    "peer_unset_track": {
+      "wrapper": "h2_pal_webrtc_peer_unset_track",
+      "cases": [
+        "track-unset-quiescent"
+      ]
+    },
+    "peer_poll": {
+      "wrapper": "h2_pal_webrtc_peer_poll",
+      "cases": [
+        "poll-nonblocking",
+        "poll-timeout",
+        "poll-negative",
+        "remote-close",
+        "fingerprint-rejected"
+      ]
+    },
+    "peer_send_opus": {
+      "wrapper": "h2_pal_webrtc_peer_send_opus",
+      "cases": [
+        "opus-arguments",
+        "opus-direct-roundtrip",
+        "detached-opus-event",
+        "opus-backpressure"
+      ]
+    },
+    "channel_send": {
+      "wrapper": "h2_pal_webrtc_channel_send",
+      "cases": [
+        "binary-roundtrip",
+        "text-roundtrip",
+        "empty-binary",
+        "empty-text",
+        "unordered-roundtrip",
+        "message-boundaries",
+        "send-borrowed-input",
+        "ordered-unreliable",
+        "unordered-reliable"
+      ]
+    },
+    "channel_close": {
+      "wrapper": "h2_pal_webrtc_channel_close",
+      "cases": [
+        "channel-close-event"
+      ]
+    },
+    "peer_close": {
+      "wrapper": "h2_pal_webrtc_peer_close",
+      "cases": [
+        "owned-event-after-close",
+        "resource-churn"
+      ]
+    }
+  },
+  "helpers": {
+    "h2_pal_webrtc_event_release": [
+      "event-release-idempotent",
+      "owned-event-after-close"
+    ]
+  },
+  "cases": [
+    "wrapper-arguments",
+    "malformed-sdp",
+    "default-lifetime",
+    "legacy-create-fallback",
+    "allocator-failure",
+    "allocator-ownership",
+    "poll-nonblocking",
+    "poll-timeout",
+    "poll-negative",
+    "ice-arguments",
+    "ice-borrowed-input",
+    "track-arguments",
+    "track-bind",
+    "channel-arguments",
+    "channel-configurations",
+    "send-before-connected",
+    "offer-owned-sdp",
+    "remote-sdp-arguments",
+    "pion-negotiation",
+    "channel-metadata",
+    "binary-roundtrip",
+    "text-roundtrip",
+    "empty-binary",
+    "empty-text",
+    "unordered-roundtrip",
+    "ordered-unreliable",
+    "unordered-reliable",
+    "message-boundaries",
+    "send-borrowed-input",
+    "opus-arguments",
+    "opus-direct-roundtrip",
+    "opus-backpressure",
+    "track-read-roundtrip",
+    "track-write-retry",
+    "track-unset-quiescent",
+    "detached-opus-event",
+    "channel-close-event",
+    "remote-close",
+    "owned-event-after-close",
+    "event-release-idempotent",
+    "resource-churn",
+    "fingerprint-rejected",
+    "explicit-stream-id"
+  ],
+  "track_operations": {
+    "read": [
+      "track-read-roundtrip"
+    ],
+    "write": [
+      "track-write-retry",
+      "track-unset-quiescent"
+    ]
+  },
+  "channel_config_fields": [
+    "label",
+    "stream_id",
+    "has_stream_id",
+    "ordered",
+    "reliable"
+  ]
+}

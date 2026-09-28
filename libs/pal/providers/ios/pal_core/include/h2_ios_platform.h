@@ -116,6 +116,16 @@ h2_pal_result_t h2_ios_http_create(const uint8_t *root_ca_pem,
 const h2_pal_http_api_t *h2_ios_http_api(h2_ios_http_t *http);
 void h2_ios_http_destroy(h2_ios_http_t *http);
 
+/** Own a native H2Peer/H2SCTP WebRTC provider using OS networking and the
+ * shared full WolfSSL DTLS/Crypto provider. Create clears output on failure.
+ * Keep every borrowed API and owned event within this owner's lifetime; stop
+ * calls and close peers before destroy. Destroy clears output on success and
+ * preserves a busy owner for retry. No physical audio device is opened. */
+typedef struct h2_ios_webrtc h2_ios_webrtc_t;
+h2_pal_result_t h2_ios_webrtc_create(h2_ios_webrtc_t **out);
+const h2_pal_webrtc_api_t *h2_ios_webrtc_api(h2_ios_webrtc_t *owner);
+h2_pal_result_t h2_ios_webrtc_destroy(h2_ios_webrtc_t **owner);
+
 #ifdef __cplusplus
 }
 #endif

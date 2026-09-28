@@ -124,6 +124,12 @@ Desktop 和 AMOLED 配置两个 worker 并报告 `scheduler=multi-worker`；报�
 
 Desktop catalog identity 是 `e2e/libco`，Bazel binary 是 `//projects/e2e/targets/cc_binary/libco:e2e-libco`。DevKit 与 BK7258 保留 H2Loader image/package identity `libco-smoke`。TapDoki BK3633 的 standalone full-image target 是 `//projects/e2e/targets/bk3633_firmware/libco-smoke/tapdoki_v2_0:firmware`；它保留 `tapdoki_libco_smoke` native target、merge identity 与 READY/FAIL evidence。
 
+## PAL WebRTC
+
+`projects/e2e/apps/pal-webrtc/app` 是独立接口资格 App，消费 Runtime 和 launcher 提供的 Pion signaling callback。稳定 registry 覆盖 13 个 WebRTC 操作、Track read/write、owned event release、自定义 allocator 和 DataChannel config；完整结果要求所有 mandatory case PASS，缺接口、BLOCKED、SKIP 或仅构建均不算通过。真实 Pion 对端验证 ICE/DTLS/SRTP/SCTP、DataChannel、Opus、背压、关闭及错误 fingerprint 拒绝。合成 Opus packet 只验证协议传输，不宣称真实音频硬件；当前 PAL 没有视频接口。
+
+Desktop 和真实 Chromium 有自动测试；移动端通过实际 XCFramework/AAR package consumer 执行，入口为 `make bazel-test-ios_pal_webrtc_simulator_test` 和 `make bazel-test-android_pal_webrtc_simulator_test`。设备 launcher 位于 `targets/h2loader_tar_zlib/pal-webrtc`，借用已保存 STA 配置、读取显式 fixture 构建参数，运行一次后重放不可变 boot ledger。每个平台以自己 artifact 对应的完整结果资格为准，不从另一平台结果推断可用性。 DevKit 先在 BSP 的 64 KiB 长期入口 task 初始化 H2Peer、Board Runtime 与命令服务，再启动独立测试 runner。
+
 ## WebRTC Performance
 
 `h2_webrtc_performance_run()` 只消费调用方提供的 Runtime、profile、STUN URL 和 offer exchange callback。portable App 固定执行可比较的 app-shaped workload：三个 request DataChannel、Packet/Event 长连接、先下载 10 MiB 再上传 10 MiB，以及 20 ms Opus RTP 共载。它校验 exact byte count、payload、channel lifecycle 和音频 sequence，并输出逐轮 JSON 与 median；loaded/data-only throughput median 必须不低于 0.80。Desktop `benchmark` 要求每组 100 个 RTP frame 零丢包、零 duplicate、零 reorder、零 deadline miss、零发送侧 `WOULD_BLOCK`，到达间隔 p99 不超过 42 ms；设备 `smoke` 允许最多 5 个网络丢包和 200 ms p99，发送侧 deadline miss 与 `WOULD_BLOCK` 只记录诊断数据，duplicate 和 reorder 仍必须为零。partial transfer、timeout、错误 route 或不完整指标都失败关闭。

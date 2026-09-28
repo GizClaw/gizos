@@ -81,6 +81,7 @@ cc_library(
     deps = [
         ":corebluetooth",
         ":http",
+        ":webrtc",
         ":platform",
         ":storage",
         ":system_event",
@@ -180,5 +181,22 @@ cc_library(
         ":crypto",
         "//libs/pal/providers/corehttp",
         "//libs/pal/providers/posix/pal_core:net",
+    ],
+)
+
+cc_library(
+    name = "webrtc",
+    srcs = ["src/h2_ios_webrtc.c", "src/h2_ios_tls_internal.h"],
+    hdrs = ["include/h2_ios_platform.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = ["@platforms//os:ios"],
+    deps = [
+        ":crypto",
+        "//libs/pal/providers/posix/pal_core:net",
+        "//libs/pal/providers/h2peer",
+        "//libs/pal/providers/h2sctp",
+        "//libs/atomic/providers/pthread",
     ],
 )

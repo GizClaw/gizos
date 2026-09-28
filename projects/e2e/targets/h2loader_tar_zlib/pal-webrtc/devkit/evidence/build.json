@@ -1,0 +1,83 @@
+{
+  "validation": "build_only",
+  "hardware_run": false,
+  "build": {
+    "assets": [
+      {
+        "name": "devkit-pal-webrtc-esp32s3.update.tar.zlib",
+        "operation": "managed-install",
+        "release_suffix": ".update.tar.zlib",
+        "sha256": "f01e6ca97e94071f7edcd71300be12173f40198fd6d2d6391c63938c68e2ddae",
+        "size": 1047115
+      }
+    ],
+    "board": "devkit",
+    "entry": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/devkit",
+    "image": "pal-webrtc",
+    "native_artifacts": [
+      {
+        "name": "firmware.elf",
+        "operation": "native-debug-or-flash",
+        "sha256": "0db919236daaca567a8fba599320ca90fbb184e6dd51f218c0f0305af34fa19e",
+        "size": 14324472
+      },
+      {
+        "name": "firmware.map",
+        "operation": "native-debug-or-flash",
+        "sha256": "0069910b36984caa515b33fd476a6458aae1cc189791e2711d4d98c43fb34f73",
+        "size": 14180936
+      },
+      {
+        "name": "app.bin",
+        "operation": "native-debug-or-flash",
+        "sha256": "6ff28b96d58c4e1867948ca748baf0bcc28fe43156600f69984a20b025d346bd",
+        "size": 1613472
+      },
+      {
+        "name": "bootloader.bin",
+        "operation": "native-debug-or-flash",
+        "sha256": "4bba64548adbe3a175dcd8db6e9a5ea9aaf5db6f724e4e0b005e4370ad9ad0f3",
+        "size": 21328
+      },
+      {
+        "name": "combined_factory.bin",
+        "operation": "native-debug-or-flash",
+        "sha256": "6f820f68a81ea36c2aa74481cf91a9d7576cf56b8e9faeb450efd8e61aefbafd",
+        "size": 1744544
+      },
+      {
+        "name": "partition-table.bin",
+        "operation": "native-debug-or-flash",
+        "sha256": "96f93c5cdeacf9f53990c7d9fb3570220e33c6feedcc73cea05948160cf14d48",
+        "size": 3072
+      },
+      {
+        "name": "flasher_args.json",
+        "operation": "native-debug-or-flash",
+        "sha256": "dd8b8b8a49ccf4ccb5cbb0d0f08f222d5840dcd2d1ae2960954f7eac7d72f20d",
+        "size": 998
+      }
+    ],
+    "package_manifest": {
+      "board": "devkit",
+      "format": 1,
+      "image_sha256": "6ff28b96d58c4e1867948ca748baf0bcc28fe43156600f69984a20b025d346bd",
+      "image_size": 1613472,
+      "role": "app",
+      "target": "esp32s3",
+      "version": "pal-webrtc-esp-20260928-r6"
+    },
+    "platform": "esp",
+    "role": "app",
+    "target": "esp32s3",
+    "version": "pal-webrtc-esp-20260928-r6"
+  },
+  "package_sha256": "f01e6ca97e94071f7edcd71300be12173f40198fd6d2d6391c63938c68e2ddae",
+  "package_size": 1047115,
+  "portable_source_sha256": {
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "4b3c6ed95926d9e144fcc03ec85d463d5431e260d77dd4260c92c758888c4362",
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_cases.inc": "725f4d2ca360da9066a855696a30553f49959c6a9ec26dcb168ef4912587528b",
+    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "40870351d2b7b8219e44f2077274fc768a222ce54b1ddc433d9d9c7f7e2a496a",
+    "projects/e2e/apps/pal-webrtc/app/api_coverage.json": "6999c6a17d3b142719edc62b98fcd2cab80b1ca5c3d314f26423f6379861a183"
+  }
+}

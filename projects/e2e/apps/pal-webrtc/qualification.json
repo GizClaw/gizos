@@ -1,0 +1,60 @@
+{
+  "schema": 1,
+  "contract": 1,
+  "operations": 13,
+  "cases": 43,
+  "qualified": false,
+  "observed_at_utc": "2026-09-28T04:09:26.953275+00:00",
+  "portable_source_sha256": {
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "4b3c6ed95926d9e144fcc03ec85d463d5431e260d77dd4260c92c758888c4362",
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_cases.inc": "725f4d2ca360da9066a855696a30553f49959c6a9ec26dcb168ef4912587528b",
+    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "40870351d2b7b8219e44f2077274fc768a222ce54b1ddc433d9d9c7f7e2a496a",
+    "projects/e2e/apps/pal-webrtc/app/api_coverage.json": "6999c6a17d3b142719edc62b98fcd2cab80b1ca5c3d314f26423f6379861a183"
+  },
+  "platforms": [
+    {
+      "platform": "ios-simulator",
+      "status": "PASS",
+      "evidence": "projects/e2e/targets/ios_application/pal-webrtc/evidence/qualified.json",
+      "sha256": "133cb79d623bc07a01b6594c4b506294b76c4647d2d39daab5f4a81fff4cf08a",
+      "environment": "projects/e2e/targets/ios_application/pal-webrtc/evidence/environment.json",
+      "environment_sha256": "865b2329beaf485a5ae41c6ba0e2fe9d5f4cb9a7b82f881fc32421f468c2745d"
+    },
+    {
+      "platform": "android-emulator",
+      "status": "PASS",
+      "evidence": "projects/e2e/targets/android_binary/pal-webrtc/evidence/qualified.json",
+      "sha256": "6d0871bd218cbe66a8365261c37728934130dd423a1bb546573faa160daf1fe4",
+      "environment": "projects/e2e/targets/android_binary/pal-webrtc/evidence/environment.json",
+      "environment_sha256": "0fa6d7b5e81417687ed1f95abb59d37fa89e701d5af41e639aed49948374d715"
+    },
+    {
+      "platform": "macos",
+      "status": "PASS",
+      "evidence": "projects/e2e/targets/cc_binary/pal-webrtc/evidence/qualified.json",
+      "sha256": "3ab57475cd5f60db485e0a800f4c0de9ff916c43b97d3fb7d7b0ccfd5c37ad8f"
+    },
+    {
+      "platform": "wasm",
+      "status": "FAIL",
+      "evidence": "projects/e2e/targets/pkg_tar/pal-webrtc/evidence/failed.json",
+      "sha256": "e849c18610ef419fb1b8513f3ad018cca773144da4a6135d35d8b3d9b38a54f5"
+    },
+    {
+      "platform": "devkit",
+      "status": "PASS",
+      "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/devkit/evidence/qualified.json",
+      "sha256": "748d57baffdb7c8798828be5458f1edc754d79432c2032745f276eb1544fba0e"
+    },
+    {
+      "platform": "bk7258",
+      "status": "NOT_RUN",
+      "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405/evidence/build.json",
+      "sha256": "fdd10a8faff2a32dbc90306fd2ee5a0c4ae74c3cd88563d4268b8820ada5085d"
+    }
+  ],
+  "remaining": [
+    "Browser explicit in-band stream ID requires a portable capability/negotiation contract decision; it is an actual failing mandatory case.",
+    "BK7258 runtime needs saved reachable Wi-Fi and hardware release from HTTP qualification; a build is not a runtime pass."
+  ]
+}
