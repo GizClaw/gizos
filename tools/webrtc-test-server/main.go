@@ -933,6 +933,8 @@ func echoOpus(remote *webrtc.TrackRemote, local *webrtc.TrackLocalStaticRTP, wit
 		}
 		ordinal := witness.noteInput(packet.SequenceNumber)
 		if witness.shouldDrop(ordinal) {
+			// Consume the egress sequence as a packet dropped on the wire would.
+			sequence++
 			witness.log("injected-drop")
 			continue
 		}

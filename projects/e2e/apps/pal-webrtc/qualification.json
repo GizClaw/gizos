@@ -6,9 +6,9 @@
   "qualified": false,
   "observed_at_utc": "2026-09-28T08:47:06.288194+00:00",
   "portable_source_sha256": {
-    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "994641807e46f774ba512021db868b1c927d4ad44ddaa81d161fa23135c7edc9",
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "24bd887884a51a9cb55cdcaf2b136e74d72826db7f1156bddbd39c3b405a9cf0",
     "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_cases.inc": "725f4d2ca360da9066a855696a30553f49959c6a9ec26dcb168ef4912587528b",
-    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "3cbca78fa668ae6be2ae8cd74b769fb42ad47b965a5c560ac75429a814e09a17",
+    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "a4b05391de4360162d4c2e6c81b77977b1aaa1093d414b3b97312fcb1d158e33",
     "projects/e2e/apps/pal-webrtc/app/api_coverage.json": "658ec12889c79438c11992e61a89c6ecd061905d11e6da1c6e8aaf36515f949e",
     "libs/pal/include/h2/pal/application/h2_pal_webrtc.h": "a2b7e90b18a063250a590eb5a982843c7c8303a0e4d61d3edabcaa834c0cc793"
   },
@@ -17,33 +17,33 @@
       "platform": "ios-simulator",
       "status": "PASS",
       "evidence": "projects/e2e/targets/ios_application/pal-webrtc/evidence/qualified.json",
-      "sha256": "20f66861a77c86b4806e7985f8e8565e8eb87514bfee9ec11d59f38d46b2e636",
+      "sha256": "20d5211f3e455345da0e0d80807871cb34021c0bb434a5e1921f47dc452fe50a",
       "environment": "projects/e2e/targets/ios_application/pal-webrtc/evidence/environment.json",
-      "environment_sha256": "cfe1caf477f2d66dad9527b841154f639061062687a0942d1e493bff2921533d",
-      "source_matches_current": false
+      "environment_sha256": "dde0ca2ef5bd617a138d654c92f9b90f380f88038684cb40f492df665adc4c56",
+      "source_matches_current": true
     },
     {
       "platform": "android-emulator",
       "status": "PASS",
       "evidence": "projects/e2e/targets/android_binary/pal-webrtc/evidence/qualified.json",
-      "sha256": "34abb3a9373ae6527587ee1e10210f12f8919b6aa6256b11f6d53819e26cebb7",
+      "sha256": "250a301fa00a124560261400f601f738b73b0c56e24c25660cd593eca51a0408",
       "environment": "projects/e2e/targets/android_binary/pal-webrtc/evidence/environment.json",
-      "environment_sha256": "4ac2e7a2c684e12228b16da0617bcc44055931ee055467c11eb9c16ab39dbf5e",
-      "source_matches_current": false
+      "environment_sha256": "79644dbf4bfc6809e575dfd681ac885e3a8196319a9c31d5a1aa8835c942b4ad",
+      "source_matches_current": true
     },
     {
       "platform": "macos",
       "status": "PASS",
       "evidence": "projects/e2e/targets/cc_binary/pal-webrtc/evidence/qualified.json",
-      "sha256": "8bb2a15a9673afe79b448e791ecfd07242008957e8d6f39625e7194075f1cd20",
-      "source_matches_current": false
+      "sha256": "d9329b6c3d2ae247b09a9183b0255e1ec54671d590b95fda5a39d26efecf2afc",
+      "source_matches_current": true
     },
     {
       "platform": "wasm",
       "status": "PASS",
       "evidence": "projects/e2e/targets/pkg_tar/pal-webrtc/evidence/qualified.json",
-      "sha256": "9f31f523aa9f3126286365b5b59c7604698870853160127322ba972a0410893e",
-      "source_matches_current": false
+      "sha256": "de456dc1e0ba0319f2870b808e03c5826406c2aace2536a86644ac36da3bfa1c",
+      "source_matches_current": true
     },
     {
       "platform": "devkit",
@@ -66,10 +66,6 @@
     "Refresh all six final artifacts and receipts after the revised stability probe; BK requires two independent 600-second runs, sustained data/media, bounded longest media gap, and preserved Loader/coredump."
   ],
   "requires_source_refresh": [
-    "ios-simulator",
-    "android-emulator",
-    "macos",
-    "wasm",
     "devkit",
     "bk7258"
   ]

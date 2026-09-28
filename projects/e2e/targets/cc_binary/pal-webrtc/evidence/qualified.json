@@ -15,7 +15,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2,
+      "elapsed_ms": 1,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -69,7 +69,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 25,
+      "elapsed_ms": 26,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -96,7 +96,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1,
+      "elapsed_ms": 0,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -114,7 +114,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2,
+      "elapsed_ms": 3,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -132,7 +132,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 5,
+      "elapsed_ms": 6,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -168,7 +168,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1,
+      "elapsed_ms": 2,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -213,7 +213,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0,
+      "elapsed_ms": 2,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -249,7 +249,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 2,
+      "elapsed_ms": 1,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -276,7 +276,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 44,
+      "elapsed_ms": 52,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -285,7 +285,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 26,
+      "elapsed_ms": 21,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -294,7 +294,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 24,
+      "elapsed_ms": 22,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -303,7 +303,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 30,
+      "elapsed_ms": 36,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -312,7 +312,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 117,
+      "elapsed_ms": 123,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -375,7 +375,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 29,
+      "elapsed_ms": 24,
       "observed_error": -17,
       "authentication_evidence": 1
     },
@@ -384,7 +384,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 28,
+      "elapsed_ms": 26,
       "observed_error": 0,
       "authentication_evidence": 0
     }
@@ -395,15 +395,15 @@
     "blocked": 0,
     "retained_allocations": 0
   },
-  "artifact_sha256": "8c10f1965c13b35c795ec3bfcfa0704f1f7ef26215525921c3db9f5bc3f45e69",
+  "artifact_sha256": "569b7c15035028e86bd2887ac521b7a90423a182a62dfc936e45477033c9e900",
   "source": {
-    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "994641807e46f774ba512021db868b1c927d4ad44ddaa81d161fa23135c7edc9",
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "24bd887884a51a9cb55cdcaf2b136e74d72826db7f1156bddbd39c3b405a9cf0",
     "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_cases.inc": "725f4d2ca360da9066a855696a30553f49959c6a9ec26dcb168ef4912587528b",
-    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "3cbca78fa668ae6be2ae8cd74b769fb42ad47b965a5c560ac75429a814e09a17",
+    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "a4b05391de4360162d4c2e6c81b77977b1aaa1093d414b3b97312fcb1d158e33",
     "projects/e2e/apps/pal-webrtc/app/api_coverage.json": "658ec12889c79438c11992e61a89c6ecd061905d11e6da1c6e8aaf36515f949e",
     "libs/pal/include/h2/pal/application/h2_pal_webrtc.h": "a2b7e90b18a063250a590eb5a982843c7c8303a0e4d61d3edabcaa834c0cc793"
   },
-  "source_commit": "248b376fc79e16eae1fb2c29faabc516430986c5",
-  "observed_at_utc": "2026-09-28T10:24:30.624359+00:00",
-  "qualified": true
+  "source_commit": "93eec864",
+  "qualified": true,
+  "observed_at_utc": "2026-09-28T10:53:54.847583+00:00"
 }

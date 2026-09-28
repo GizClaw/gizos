@@ -5,7 +5,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1,
+      "elapsed_ms": 0,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -14,7 +14,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 108,
+      "elapsed_ms": 23,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -23,7 +23,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1,
+      "elapsed_ms": 0,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -32,7 +32,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0,
+      "elapsed_ms": 1,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -68,7 +68,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 28,
+      "elapsed_ms": 25,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -113,7 +113,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 196,
+      "elapsed_ms": 222,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -131,7 +131,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1,
+      "elapsed_ms": 5,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -149,7 +149,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 138,
+      "elapsed_ms": 141,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -167,7 +167,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 27,
+      "elapsed_ms": 7,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -176,7 +176,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 4,
+      "elapsed_ms": 3,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -185,7 +185,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0,
+      "elapsed_ms": 1,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -230,7 +230,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0,
+      "elapsed_ms": 1,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -239,7 +239,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1,
+      "elapsed_ms": 0,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -248,7 +248,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0,
+      "elapsed_ms": 1,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -275,7 +275,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 46,
+      "elapsed_ms": 45,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -284,7 +284,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 79,
+      "elapsed_ms": 71,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -293,7 +293,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 66,
+      "elapsed_ms": 68,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -302,7 +302,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 40,
+      "elapsed_ms": 49,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -311,7 +311,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 121,
+      "elapsed_ms": 122,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -320,7 +320,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 1,
+      "elapsed_ms": 16,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -329,7 +329,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 0,
+      "elapsed_ms": 1,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -338,7 +338,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 5915,
+      "elapsed_ms": 5906,
       "observed_error": 0,
       "authentication_evidence": 0
     },
@@ -374,7 +374,7 @@
       "status": "PASS",
       "detail": 0,
       "line": 0,
-      "elapsed_ms": 186,
+      "elapsed_ms": 179,
       "observed_error": -17,
       "authentication_evidence": 2
     },
@@ -423,16 +423,16 @@
     "isolated": true,
     "pending": 0
   },
-  "artifact_sha256": "85c601e7c4833527f26d8da9096722a22230f42c1b8b3a28cc4690d985be7716",
+  "artifact_sha256": "ff4f0b3a3e6f9c603eb6df71682b643c4eb0bacb7b99c1e8febab8ccda6f7858",
   "registry_sha256": "725f4d2ca360da9066a855696a30553f49959c6a9ec26dcb168ef4912587528b",
   "source": {
-    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "994641807e46f774ba512021db868b1c927d4ad44ddaa81d161fa23135c7edc9",
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "24bd887884a51a9cb55cdcaf2b136e74d72826db7f1156bddbd39c3b405a9cf0",
     "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_cases.inc": "725f4d2ca360da9066a855696a30553f49959c6a9ec26dcb168ef4912587528b",
-    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "3cbca78fa668ae6be2ae8cd74b769fb42ad47b965a5c560ac75429a814e09a17",
+    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "a4b05391de4360162d4c2e6c81b77977b1aaa1093d414b3b97312fcb1d158e33",
     "projects/e2e/apps/pal-webrtc/app/api_coverage.json": "658ec12889c79438c11992e61a89c6ecd061905d11e6da1c6e8aaf36515f949e",
     "libs/pal/include/h2/pal/application/h2_pal_webrtc.h": "a2b7e90b18a063250a590eb5a982843c7c8303a0e4d61d3edabcaa834c0cc793"
   },
-  "source_commit": "248b376fc79e16eae1fb2c29faabc516430986c5",
-  "observed_at_utc": "2026-09-28T10:27:13.856025+00:00",
-  "qualified": true
+  "source_commit": "93eec864",
+  "qualified": true,
+  "observed_at_utc": "2026-09-28T10:54:02.293070+00:00"
 }
