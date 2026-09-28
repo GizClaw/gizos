@@ -108,6 +108,10 @@ static h2_pal_result_t stage_with_recovery(
     for (uint32_t attempt = 0u;
          attempt < H2_H2LOADER_HOST_STAGE_ATTEMPTS;
          ++attempt) {
+        if ((out_status->command_availability &
+             H2_H2LOADER_HOST_COMMAND_AVAILABLE_STAGE_PAYLOAD) == 0u) {
+            return H2_PAL_ERR_INVALID_STATE;
+        }
         h2_pal_result_t rc = config->transport.vtable->stage(
             config->transport.user,
             config->asset,

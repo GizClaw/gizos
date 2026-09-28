@@ -2065,6 +2065,61 @@ static h2_pal_result_t size_test_write(void *user, const void *data, size_t len,
   return H2_PAL_OK;
 }
 
+typedef struct stage_denial_output {
+  char data[128];
+  size_t length;
+} stage_denial_output_t;
+
+static h2_pal_result_t stage_denial_write(void *user, const void *data,
+                                          size_t len, size_t *written,
+                                          uint32_t timeout_ms) {
+  stage_denial_output_t *output = user;
+  (void)timeout_ms;
+  assert(output->length + len <= sizeof(output->data));
+  memcpy(output->data + output->length, data, len);
+  output->length += len;
+  *written = len;
+  return H2_PAL_OK;
+}
+
+static void test_denied_stage_returns_terminal_before_payload(void) {
+  static const char expected[] =
+      "H2_LOADER_STAGE_RECEIVE result=fail code=-7\n";
+  test_fixture_t fixture;
+  fixture_init(&fixture, 1u);
+  assert(h2_loader_init(&fixture.loader, &fixture.config) == H2_PAL_OK);
+  const h2_pal_http_api_t http = {0};
+  const h2_pal_wifi_sta_api_t wifi = {0};
+  const h2_pal_disk_api_t disk = {0};
+  stage_denial_output_t output = {0};
+  const h2_command_io_vtable_t io = {
+      .read = size_test_read,
+      .write = stage_denial_write,
+      .flush = size_test_flush,
+  };
+  const h2_loader_command_config_t config = {
+      .loader = &fixture.loader,
+      .fs = &fixture.fs,
+      .http = &http,
+      .wifi = &wifi,
+      .disk = &disk,
+      .digest = fixture.config.package.digest,
+      .now_ms = app_test_now,
+      .sleep_ms = app_test_sleep,
+      .io = {.user = &output, .vtable = &io},
+  };
+  h2_loader_command_t command;
+  assert(h2_loader_command_init(&command, &config) == H2_PAL_OK);
+  assert(h2_loader_set_command_availability(
+             &fixture.loader, H2_LOADER_COMMAND_AVAILABLE_STAGE_PAYLOAD,
+             false) == H2_PAL_OK);
+  const char *args[] = {"h2loader", "stage", "16", SHA_A};
+  assert(h2_loader_command_execute(&command, 4u, args) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(output.length == sizeof(expected) - 1u);
+  assert(memcmp(output.data, expected, output.length) == 0);
+}
+
 static void check_size_argument(const char *value, int accepted) {
   /* Both stage routes stop at the first metadata write. Seeing that write
    * proves parsing accepted the value without attempting a 4 GiB transfer. */
@@ -2118,6 +2173,7 @@ int main(void) {
   test_ble_diagnostics_preserve_failure_and_cleanup();
   assert(h2_bleikcp_global_shutdown() == H2_PAL_OK);
   test_size_argument_accepts_only_bounded_decimal();
+  test_denied_stage_returns_terminal_before_payload();
   test_app_client_package_entry_matches_loader();
   test_app_client_validates_target_archive_entry();
   test_empty_pref_preserves_default_boot_intent();
