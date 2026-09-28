@@ -29,12 +29,15 @@
       "receipt_sha256": "a0cc1bc64b868a728fb05a548ee54690f974ea5ce36bca76f2b797fe1cb96269"
     },
     "devkit": {
-      "status": "NOT_RUN",
-      "passed": 0
+      "status": "PASS",
+      "passed": 45,
+      "receipt": "projects/e2e/targets/h2loader_tar_zlib/pal-http/devkit/evidence/qualified.json",
+      "receipt_sha256": "278c4a471d1ac78b4c17f4dec6e5f3501c500842b418369f3cbd0f9bdbf53890"
     },
     "bk7258": {
       "status": "NOT_RUN",
-      "passed": 0
+      "passed": 0,
+      "reason": "App installed and management channel ready; saved STA configuration lookup returned NOT_FOUND before HTTP cases"
     }
   }
 }
