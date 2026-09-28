@@ -33,6 +33,7 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 | Lua Runtime | `//projects/e2e/apps/lua-runtime/app:lua_runtime_e2e` | Desktop、Browser、AMOLED；九个固定 VM/coroutine/component/event/worker/shutdown case |
 | Lua Link | `//projects/e2e/apps/lua-link/app:lua_link_e2e` | DevKit ESP32-S3 host + AMOLED ESP32-S3 join over BLE Extended Advertising；reliable/datagram/stream/peer-exit per session，final hold session for link loss |
 | PAL Core | `//projects/e2e/apps/pal-core/app:pal_core_e2e` | 独立 Core v2：46 个接口、41 个必过用例；macOS、Browser/WASM、DevKit ESP32-S3 USB 串口、BK7258 AP UART1 H2Loader |
+| PAL JSON | `//projects/e2e/apps/pal-json/app:pal_json_e2e` | 独立 JSON：24 个接口、15 个必过用例；macOS、Browser/WASM、iOS/Android 实际 SDK 包、DevKit 与 BK7258，记录完整运行与清理证据 |
 | PAL HTTP | `//projects/e2e/apps/pal-http/app:pal_http_e2e` | 独立 HTTP：45 个必跑 case；macOS、Browser、iOS/Android 实际 SDK 包消费 App 与 DevKit/BK7258 专用入口，逐平台保留真实运行证据 |
 | PAL WebRTC | `//projects/e2e/apps/pal-webrtc/app:pal_webrtc_e2e` | 独立 WebRTC：13 个操作、43 个 mandatory case；六端独立入口及真实 Pion 对端，按各端完整 ledger 授予资格 |
 | PAL | `//projects/e2e/apps/pal/app:pal_e2e` | Linux/macOS/Windows 共同 host OS/Filesystem/Net/TLS/CoreHTTP/CoreMQTT；Desktop core/MQTT/SQLite Preference；Browser core；DevKit 与 Tiga V4.2 H2Loader `pal-pref` |
