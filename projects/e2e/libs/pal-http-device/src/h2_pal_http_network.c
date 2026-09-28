@@ -27,4 +27,3 @@ int h2_pal_http_device_prepare_network(h2_runtime_t *runtime) {
     }
     return rc;
 }
-
