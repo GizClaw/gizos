@@ -4,7 +4,7 @@
   "operations": 13,
   "cases": 43,
   "qualified": false,
-  "observed_at_utc": "2026-09-28T06:08:06.129991+00:00",
+  "observed_at_utc": "2026-09-28T08:47:06.288194+00:00",
   "portable_source_sha256": {
     "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "1abb17eecc5b9c6cfd27cb3a4d9e734f07224dde6a9a117ffdf36cd46809d4a7",
     "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_cases.inc": "725f4d2ca360da9066a855696a30553f49959c6a9ec26dcb168ef4912587528b",
@@ -53,15 +53,16 @@
     },
     {
       "platform": "bk7258",
-      "status": "FAIL",
-      "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405/evidence/failed.json",
-      "sha256": "03fbec22cd0a7be0a5196da9de1d1e392894f10643995fe34695842e884e2457",
-      "source_matches_current": false
+      "status": "PASS",
+      "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405/evidence/qualified.json",
+      "sha256": "8e4cb060c08febe245c73af522aca29b8cb96e731399b28b93ace0ddb8fcc5f6",
+      "source_matches_current": true
     }
   ],
   "remaining": [
-    "Browser explicit in-band stream ID requires a portable capability/negotiation contract decision; it is an actual failing mandatory case.",
-    "BK7258 r7 executes on saved Wi-Fi: 19 PASS, channel-metadata FAIL (-4), 23 BLOCKED. DTLS/channel setup and a passing normal-reboot run remain unverified; P1 and the original coredump are preserved."
+    "Browser explicit in-band stream ID remains a failing mandatory case; its public contract has not been changed.",
+    "Refresh iOS Simulator, Android Emulator, DevKit and browser receipts after the configurable connection watchdog and shared H2Peer keepalive change; their existing ledgers describe earlier artifacts.",
+    "Strengthen the portable fingerprint-rejection verdict to preserve or independently verify the authentication failure reason across platforms."
   ],
   "requires_source_refresh": [
     "ios-simulator",

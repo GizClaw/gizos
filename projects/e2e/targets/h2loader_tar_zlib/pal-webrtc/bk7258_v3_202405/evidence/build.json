@@ -1,5 +1,5 @@
 {
-  "validation": "native_build_and_managed_install",
+  "validation": "native_build_and_two_distinct_boots",
   "hardware_run": true,
   "build": {
     "assets": [
@@ -7,8 +7,8 @@
         "name": "bk7258_v3_202405-pal-webrtc-bk7258.update.tar.zlib",
         "operation": "managed-install",
         "release_suffix": ".update.tar.zlib",
-        "sha256": "ecbb6865b9fcaa70dc3885bf266095a203fe03885dbb4f7fa18ff734c9e1dcdf",
-        "size": 1784253
+        "sha256": "5e6814bbfc834d9a33f780644f2ff1847eb5a9a7bc75a03fe28ed0ab2a061386",
+        "size": 1790683
       }
     ],
     "board": "bk7258_v3_202405",
@@ -18,25 +18,25 @@
       {
         "name": "ap/firmware.elf",
         "operation": "native-debug-or-flash",
-        "sha256": "eec5505b323322c9756fb7cb4c5446563541be8b8a00df09fec0039ad6bd1ac5",
-        "size": 13203992
+        "sha256": "3606632460bc6012098206bcc6a783ba783a2993ed7bf5596c0f557329749fea",
+        "size": 13240140
       },
       {
         "name": "ap/firmware.map",
         "operation": "native-debug-or-flash",
-        "sha256": "f7d06bda7cedaf57c2034ac3c4cc6c362778507e53a4f988e0c6a65f202b3a37",
-        "size": 8671726
+        "sha256": "81d574ede81f95192dab9ac7c6d06f9a0a56933b871cc77bd3b6acb4d18533e9",
+        "size": 8700091
       },
       {
         "name": "ap/app.bin",
         "operation": "native-debug-or-flash",
-        "sha256": "92e5d7f3136f7d76783dc0d587503fcd5ec3edf5365a931f04c4b57400563cd4",
-        "size": 1384932
+        "sha256": "386ca06cab8887804c1a7f581f9bdd727325ab853b6be1daaaaeb04141e2f548",
+        "size": 1392708
       },
       {
         "name": "cp/firmware.elf",
         "operation": "native-debug-or-flash",
-        "sha256": "888c8055621503afe96096cca19e8b833e6d02a21426332d55d42b4e6daf7a6a",
+        "sha256": "c1448e93e9e33b24db586e6ffbbd1c712d8c849e581c458ef5d9b01fb9b72ab5",
         "size": 14369960
       },
       {
@@ -48,42 +48,55 @@
       {
         "name": "cp/app.bin",
         "operation": "native-debug-or-flash",
-        "sha256": "72ee6d387f8e8d09c6a07ce43da882258c9a7efe3de7c0797500ef623995c5f8",
+        "sha256": "a254156450ec8d6c176dcd3d84b68d794c924fb0db7ab6619194dbd6eab44393",
         "size": 1056268
       },
       {
         "name": "app_ab_crc.rbl",
         "operation": "native-debug-or-flash",
-        "sha256": "464e2368f292405f6f31a535cf0845abf39719ac42380951a77bf0ebf64c5274",
+        "sha256": "a849efc09debc1c302c2a7c5b2b70a454d7255d1ec7539b3272da78a835c8592",
         "size": 5222400
       },
       {
         "name": "all-app.bin",
         "operation": "native-debug-or-flash",
-        "sha256": "5065532589a9f7729441b691fbe71af5202598fc63c2baffb6949a48ba720ba9",
+        "sha256": "f18c438c8f75a6b7fd850196d74b0b43bc20f6fc826b54ec33455c04a9d09d2c",
         "size": 5292032
       }
     ],
     "package_manifest": {
       "board": "bk7258_v3_202405",
       "format": 1,
-      "image_sha256": "464e2368f292405f6f31a535cf0845abf39719ac42380951a77bf0ebf64c5274",
+      "image_sha256": "a849efc09debc1c302c2a7c5b2b70a454d7255d1ec7539b3272da78a835c8592",
       "image_size": 5222400,
       "role": "app",
       "target": "bk7258",
-      "version": "pal-webrtc-bk-20260928-r7"
+      "version": "pal-webrtc-bk-20260928-r15"
     },
     "platform": "bk7258",
     "role": "app",
     "target": "bk7258",
-    "version": "pal-webrtc-bk-20260928-r7"
+    "version": "pal-webrtc-bk-20260928-r15"
   },
-  "package_sha256": "ecbb6865b9fcaa70dc3885bf266095a203fe03885dbb4f7fa18ff734c9e1dcdf",
-  "package_size": 1784253,
+  "package_sha256": "5e6814bbfc834d9a33f780644f2ff1847eb5a9a7bc75a03fe28ed0ab2a061386",
+  "package_size": 1790683,
   "portable_source_sha256": {
-    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "4b3c6ed95926d9e144fcc03ec85d463d5431e260d77dd4260c92c758888c4362",
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "1abb17eecc5b9c6cfd27cb3a4d9e734f07224dde6a9a117ffdf36cd46809d4a7",
     "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_cases.inc": "725f4d2ca360da9066a855696a30553f49959c6a9ec26dcb168ef4912587528b",
-    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "40870351d2b7b8219e44f2077274fc768a222ce54b1ddc433d9d9c7f7e2a496a",
+    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "b8d9ef087e93647d8b69cecf6dda0435d905b1aa9400ecc7876b57561652afc8",
     "projects/e2e/apps/pal-webrtc/app/api_coverage.json": "6999c6a17d3b142719edc62b98fcd2cab80b1ca5c3d314f26423f6379861a183"
+  },
+  "provider_source_sha256": {
+    "native_component_src/bk7258/ap/h2_pal_core/CMakeLists.txt": "306296dc95aaa0ddc76eba70669e941e203144d7db0545ad81836b8718a62d1a",
+    "native_component_src/bk7258/ap/h2_pal_core/include/h2_bk_mbedtls_config.h": "45381119c5f4cabb76426edb34aea67352dd32ca0b4c8bec7f3da5bb9ee31069",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_dtls.c": "fb4dcaf370d5074e662c602c839ecc32ff7f3e97f66d0a0e46e07e73e08184a4",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_net.c": "9f7c9f184f4608ec1b50e7627a58f8727fd44fe197e7408f76d826621a2d12d0",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_net_result.h": "c6d5259357d283b963e74efd4693d86f6fb11069195ca6007d840e8a3bc35daf",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_udp_receive.h": "80b976449abeedda1884c94fa218cd2a567554d132b55f352c7163205d33a92b",
+    "libs/pal/providers/h2peer/BUILD.bazel": "d135f77556c7a4275c503ea18e122f261ddbf9616fd4e6d3592471da2ef92ed5",
+    "libs/pal/providers/h2peer/src/providers/portable/peer_connection.c": "a6b4be41139d696db305d835d2eca9e5e47263e20f2f89ad651fae582cf1e870",
+    "projects/e2e/libs/pal-webrtc-device/src/h2_pal_webrtc_device.c": "f9ea394add5ea5cce11d06d583fb1aafaaa2bf3db96561da9ddfef4cb8357f80",
+    "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405/BUILD.bazel": "bfb6db9647e9575f7272c8205ecf939b9576e167c91fd43c87624fe468cfb8de",
+    "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405/ap/ap_main.c": "73451f6977ca4765aad9d44e5cd74b0486cb455446054d6ef3cf247488b009b1"
   }
 }

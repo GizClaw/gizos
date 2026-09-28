@@ -26,7 +26,7 @@
     "certificate": "After fixing cookie, VERIFY_REQUIRED with no CA chain returned -30336, PAL IO",
     "certificate_lifetime": "Disabling KEEP_PEER_CERTIFICATE reproduced failure of a valid handshake. Verification now captures the leaf fingerprint result while the verification callback owns valid DER."
   },
-  "physical_board_status": "r15 builds with SDK fixed-base software ECP optimization; managed installation in progress. r14 reached 42 PASS but its final connection did not complete.",
+  "physical_board_status": "BK r15 subsequently passed all 43 mandatory cases after managed installation and a normal reboot; qualified.json contains both distinct immutable boot ledgers.",
   "native_configuration": "The SDK minimal profile does not enable COOKIE_C or HELLO_VERIFY by default. The AP adapter enables the SDK cookie implementation and publishes DTLS layout macros to all SDK consumers; r9 map includes cookie_setup and set_client_transport_id.",
   "sanitizers": {
     "address": "PASS",
