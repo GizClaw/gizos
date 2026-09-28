@@ -4,7 +4,7 @@
   "operations": 13,
   "cases": 43,
   "qualified": false,
-  "observed_at_utc": "2026-09-28T04:09:26.953275+00:00",
+  "observed_at_utc": "2026-09-28T06:08:06.129991+00:00",
   "portable_source_sha256": {
     "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "4b3c6ed95926d9e144fcc03ec85d463d5431e260d77dd4260c92c758888c4362",
     "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_cases.inc": "725f4d2ca360da9066a855696a30553f49959c6a9ec26dcb168ef4912587528b",
@@ -48,13 +48,13 @@
     },
     {
       "platform": "bk7258",
-      "status": "NOT_RUN",
-      "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405/evidence/build.json",
-      "sha256": "fdd10a8faff2a32dbc90306fd2ee5a0c4ae74c3cd88563d4268b8820ada5085d"
+      "status": "FAIL",
+      "evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405/evidence/failed.json",
+      "sha256": "03fbec22cd0a7be0a5196da9de1d1e392894f10643995fe34695842e884e2457"
     }
   ],
   "remaining": [
     "Browser explicit in-band stream ID requires a portable capability/negotiation contract decision; it is an actual failing mandatory case.",
-    "BK7258 runtime needs saved reachable Wi-Fi and hardware release from HTTP qualification; a build is not a runtime pass."
+    "BK7258 r7 executes on saved Wi-Fi: 19 PASS, channel-metadata FAIL (-4), 23 BLOCKED. DTLS/channel setup and a passing normal-reboot run remain unverified; P1 and the original coredump are preserved."
   ]
 }

@@ -274,3 +274,17 @@ cc_test(
     }),
     deps = ["//libs/pal"],
 )
+
+cc_test(
+    name = "net_result_test",
+    srcs = ["src/h2_bk_net_result.h", "tests/test_h2_bk_net_result.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)

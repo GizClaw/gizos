@@ -1,6 +1,7 @@
 #include "bk_private/bk_init.h"
 #include "h2_bk7258_board.h"
 #include "h2_bk_h2loader.h"
+#include "h2_bk_platform_core.h"
 #include "h2_bk_target_task_policy.h"
 #include "h2_pal_webrtc_device.h"
 #include <os/os.h>
@@ -20,7 +21,12 @@ static void fail(const char *stage, int rc) {
 static void run(void *user) {
   (void)user;
   rtos_delay_milliseconds(5000u);
-  int rc = h2_pal_webrtc_device_run(runtime, &result);
+  /* H2Peer's normal peer arena is PSRAM. The conformance allocator must wrap
+   * that region too; the Board's small default SRAM heap is for control state.
+   * Keep the command service on its original Runtime and allocator. */
+  h2_runtime_t test_runtime = *runtime;
+  test_runtime.mem = h2_bk_platform_psram_allocator();
+  int rc = h2_pal_webrtc_device_run(&test_runtime, &result);
   if (result.passed + result.failed + result.blocked !=
       H2_PAL_WEBRTC_E2E_CASE_COUNT)
     fail("fixture_or_network", rc);

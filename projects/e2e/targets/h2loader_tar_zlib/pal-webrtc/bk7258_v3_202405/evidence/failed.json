@@ -1,0 +1,529 @@
+{
+  "platform": "bk7258",
+  "qualified": false,
+  "observed_at_utc": "2026-09-28T06:08:06.129991+00:00",
+  "installed": {
+    "run_id": "9870519d572a4cb8",
+    "version": "pal-webrtc-bk-20260928-r7",
+    "board": "bk7258_v3_202405",
+    "uid": "c8478ca2a87c",
+    "cases": [
+      {
+        "id": "wrapper-arguments",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 1
+      },
+      {
+        "id": "malformed-sdp",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 132
+      },
+      {
+        "id": "default-lifetime",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 81
+      },
+      {
+        "id": "legacy-create-fallback",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 101
+      },
+      {
+        "id": "allocator-failure",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 59
+      },
+      {
+        "id": "allocator-ownership",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 85
+      },
+      {
+        "id": "poll-nonblocking",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 7
+      },
+      {
+        "id": "poll-timeout",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 30
+      },
+      {
+        "id": "poll-negative",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 2
+      },
+      {
+        "id": "ice-arguments",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 3
+      },
+      {
+        "id": "ice-borrowed-input",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 7
+      },
+      {
+        "id": "track-arguments",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "track-bind",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 1
+      },
+      {
+        "id": "channel-arguments",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "channel-configurations",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 3
+      },
+      {
+        "id": "send-before-connected",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 1
+      },
+      {
+        "id": "offer-owned-sdp",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 16619
+      },
+      {
+        "id": "remote-sdp-arguments",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "pion-negotiation",
+        "status": "PASS",
+        "detail": 0,
+        "line": 0,
+        "elapsed_ms": 77
+      },
+      {
+        "id": "channel-metadata",
+        "status": "FAIL",
+        "detail": -4,
+        "line": 0,
+        "elapsed_ms": 8074
+      },
+      {
+        "id": "binary-roundtrip",
+        "status": "BLOCKED",
+        "detail": -3,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "text-roundtrip",
+        "status": "BLOCKED",
+        "detail": -3,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "empty-binary",
+        "status": "BLOCKED",
+        "detail": -3,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "empty-text",
+        "status": "BLOCKED",
+        "detail": -3,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "unordered-roundtrip",
+        "status": "BLOCKED",
+        "detail": -3,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "ordered-unreliable",
+        "status": "BLOCKED",
+        "detail": -3,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "unordered-reliable",
+        "status": "BLOCKED",
+        "detail": -3,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "message-boundaries",
+        "status": "BLOCKED",
+        "detail": -3,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "send-borrowed-input",
+        "status": "BLOCKED",
+        "detail": -3,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "opus-arguments",
+        "status": "BLOCKED",
+        "detail": -3,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "opus-direct-roundtrip",
+        "status": "BLOCKED",
+        "detail": -3,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "opus-backpressure",
+        "status": "BLOCKED",
+        "detail": -3,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "track-read-roundtrip",
+        "status": "BLOCKED",
+        "detail": -3,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "track-write-retry",
+        "status": "BLOCKED",
+        "detail": -3,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "track-unset-quiescent",
+        "status": "BLOCKED",
+        "detail": -3,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "detached-opus-event",
+        "status": "BLOCKED",
+        "detail": -3,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "channel-close-event",
+        "status": "BLOCKED",
+        "detail": -3,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "remote-close",
+        "status": "BLOCKED",
+        "detail": -3,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "owned-event-after-close",
+        "status": "BLOCKED",
+        "detail": -3,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "event-release-idempotent",
+        "status": "BLOCKED",
+        "detail": -3,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "resource-churn",
+        "status": "BLOCKED",
+        "detail": -3,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "fingerprint-rejected",
+        "status": "BLOCKED",
+        "detail": -3,
+        "line": 0,
+        "elapsed_ms": 0
+      },
+      {
+        "id": "explicit-stream-id",
+        "status": "BLOCKED",
+        "detail": -3,
+        "line": 0,
+        "elapsed_ms": 0
+      }
+    ],
+    "summary": {
+      "passed": 19,
+      "failed": 1,
+      "blocked": 23,
+      "retained_allocations": 0,
+      "cleanup": 0
+    },
+    "rc": -7,
+    "confirm": -7,
+    "final_status": {
+      "board": "bk7258_v3_202405",
+      "target": "bk7258",
+      "chip": "bk7258",
+      "device_uid": "c8478ca2a87c",
+      "capabilities": "0x00000003",
+      "command_availability": "0x001f3f1f",
+      "active_role": "app",
+      "active_version": "pal-webrtc-bk-20260928-r7",
+      "active_checksum": "464e2368f292405f6f31a535cf0845abf39719ac42380951a77bf0ebf64c5274",
+      "active_image_size": "5222400",
+      "running_partition": "2",
+      "next_partition": "1",
+      "boot_intent": "auto",
+      "stage_valid": "1",
+      "stage_package_checksum": "ecbb6865b9fcaa70dc3885bf266095a203fe03885dbb4f7fa18ff734c9e1dcdf",
+      "stage_package_size": "1784253",
+      "stage_image_checksum": "464e2368f292405f6f31a535cf0845abf39719ac42380951a77bf0ebf64c5274",
+      "stage_image_size": "5222400",
+      "stage_role": "app",
+      "stage_version": "pal-webrtc-bk-20260928-r7",
+      "stage_board": "bk7258_v3_202405",
+      "stage_target": "bk7258",
+      "partition_1_valid": "1",
+      "partition_1_package_checksum": "3a3c664340f0d1b45561816e197ffbd25f2d3c447ee248082a3c5ce261cba9bd",
+      "partition_1_package_size": "1573290",
+      "partition_1_image_checksum": "47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb",
+      "partition_1_image_size": "2437120",
+      "partition_1_role": "loader",
+      "partition_1_version": "0.1.65-lu-c",
+      "partition_1_board": "bk7258_v3_202405",
+      "partition_1_target": "bk7258",
+      "partition_2_valid": "1",
+      "partition_2_package_checksum": "ecbb6865b9fcaa70dc3885bf266095a203fe03885dbb4f7fa18ff734c9e1dcdf",
+      "partition_2_package_size": "1784253",
+      "partition_2_image_checksum": "464e2368f292405f6f31a535cf0845abf39719ac42380951a77bf0ebf64c5274",
+      "partition_2_image_size": "5222400",
+      "partition_2_role": "app",
+      "partition_2_version": "pal-webrtc-bk-20260928-r7",
+      "partition_2_board": "bk7258_v3_202405",
+      "partition_2_target": "bk7258",
+      "last_result": "0",
+      "mfg_mode": "1",
+      "mfg_steps": "0000000000000000000000"
+    },
+    "build": {
+      "assets": [
+        {
+          "name": "bk7258_v3_202405-pal-webrtc-bk7258.update.tar.zlib",
+          "operation": "managed-install",
+          "release_suffix": ".update.tar.zlib",
+          "sha256": "ecbb6865b9fcaa70dc3885bf266095a203fe03885dbb4f7fa18ff734c9e1dcdf",
+          "size": 1784253
+        }
+      ],
+      "board": "bk7258_v3_202405",
+      "entry": "projects/e2e/targets/h2loader_tar_zlib/pal-webrtc/bk7258_v3_202405",
+      "image": "pal-webrtc",
+      "native_artifacts": [
+        {
+          "name": "ap/firmware.elf",
+          "operation": "native-debug-or-flash",
+          "sha256": "eec5505b323322c9756fb7cb4c5446563541be8b8a00df09fec0039ad6bd1ac5",
+          "size": 13203992
+        },
+        {
+          "name": "ap/firmware.map",
+          "operation": "native-debug-or-flash",
+          "sha256": "f7d06bda7cedaf57c2034ac3c4cc6c362778507e53a4f988e0c6a65f202b3a37",
+          "size": 8671726
+        },
+        {
+          "name": "ap/app.bin",
+          "operation": "native-debug-or-flash",
+          "sha256": "92e5d7f3136f7d76783dc0d587503fcd5ec3edf5365a931f04c4b57400563cd4",
+          "size": 1384932
+        },
+        {
+          "name": "cp/firmware.elf",
+          "operation": "native-debug-or-flash",
+          "sha256": "888c8055621503afe96096cca19e8b833e6d02a21426332d55d42b4e6daf7a6a",
+          "size": 14369960
+        },
+        {
+          "name": "cp/firmware.map",
+          "operation": "native-debug-or-flash",
+          "sha256": "928134d516d697e5bec57238b627cbd53cace8cd5afc5627aae771d9329b9da0",
+          "size": 6809159
+        },
+        {
+          "name": "cp/app.bin",
+          "operation": "native-debug-or-flash",
+          "sha256": "72ee6d387f8e8d09c6a07ce43da882258c9a7efe3de7c0797500ef623995c5f8",
+          "size": 1056268
+        },
+        {
+          "name": "app_ab_crc.rbl",
+          "operation": "native-debug-or-flash",
+          "sha256": "464e2368f292405f6f31a535cf0845abf39719ac42380951a77bf0ebf64c5274",
+          "size": 5222400
+        },
+        {
+          "name": "all-app.bin",
+          "operation": "native-debug-or-flash",
+          "sha256": "5065532589a9f7729441b691fbe71af5202598fc63c2baffb6949a48ba720ba9",
+          "size": 5292032
+        }
+      ],
+      "package_manifest": {
+        "board": "bk7258_v3_202405",
+        "format": 1,
+        "image_sha256": "464e2368f292405f6f31a535cf0845abf39719ac42380951a77bf0ebf64c5274",
+        "image_size": 5222400,
+        "role": "app",
+        "target": "bk7258",
+        "version": "pal-webrtc-bk-20260928-r7"
+      },
+      "platform": "bk7258",
+      "role": "app",
+      "target": "bk7258",
+      "version": "pal-webrtc-bk-20260928-r7"
+    }
+  },
+  "post_run_status": {
+    "board": "bk7258_v3_202405",
+    "target": "bk7258",
+    "chip": "bk7258",
+    "device_uid": "c8478ca2a87c",
+    "capabilities": "0x00000003",
+    "command_availability": "0x001f3f1f",
+    "active_role": "app",
+    "active_version": "pal-webrtc-bk-20260928-r7",
+    "active_checksum": "464e2368f292405f6f31a535cf0845abf39719ac42380951a77bf0ebf64c5274",
+    "active_image_size": "5222400",
+    "running_partition": "2",
+    "next_partition": "1",
+    "boot_intent": "auto",
+    "stage_valid": "1",
+    "stage_package_checksum": "ecbb6865b9fcaa70dc3885bf266095a203fe03885dbb4f7fa18ff734c9e1dcdf",
+    "stage_package_size": "1784253",
+    "stage_image_checksum": "464e2368f292405f6f31a535cf0845abf39719ac42380951a77bf0ebf64c5274",
+    "stage_image_size": "5222400",
+    "stage_role": "app",
+    "stage_version": "pal-webrtc-bk-20260928-r7",
+    "stage_board": "bk7258_v3_202405",
+    "stage_target": "bk7258",
+    "partition_1_valid": "1",
+    "partition_1_package_checksum": "3a3c664340f0d1b45561816e197ffbd25f2d3c447ee248082a3c5ce261cba9bd",
+    "partition_1_package_size": "1573290",
+    "partition_1_image_checksum": "47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb",
+    "partition_1_image_size": "2437120",
+    "partition_1_role": "loader",
+    "partition_1_version": "0.1.65-lu-c",
+    "partition_1_board": "bk7258_v3_202405",
+    "partition_1_target": "bk7258",
+    "partition_2_valid": "1",
+    "partition_2_package_checksum": "ecbb6865b9fcaa70dc3885bf266095a203fe03885dbb4f7fa18ff734c9e1dcdf",
+    "partition_2_package_size": "1784253",
+    "partition_2_image_checksum": "464e2368f292405f6f31a535cf0845abf39719ac42380951a77bf0ebf64c5274",
+    "partition_2_image_size": "5222400",
+    "partition_2_role": "app",
+    "partition_2_version": "pal-webrtc-bk-20260928-r7",
+    "partition_2_board": "bk7258_v3_202405",
+    "partition_2_target": "bk7258",
+    "last_result": "0",
+    "mfg_mode": "1",
+    "mfg_steps": "0000000000000000000000"
+  },
+  "normal_reboot": {
+    "status": "NOT_RUN",
+    "reason": "The mandatory gate failed; the App was not confirmed. The device was released for HTTP qualification before a further firmware iteration."
+  },
+  "preservation": {
+    "loader_p1_before_sha256": "47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb",
+    "loader_p1_after_sha256": "47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb",
+    "coredump_before_size": 32,
+    "coredump_after_size": 32,
+    "coredump_before_sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829",
+    "coredump_after_sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829",
+    "coredump_byte_identical": true,
+    "stage_valid": 1,
+    "app_confirmed": false
+  },
+  "fixture": {
+    "implementation": "Pion",
+    "binary_sha256": "1b29d86d24480c70674cdc6c61c9d3f036ada01f54659ef1da4448ff145e5d82",
+    "signaling": "http://192.168.1.6:49201/offer",
+    "stun": "stun:192.168.1.6:52115",
+    "ice_mode": "udp",
+    "offer_received": true,
+    "answer_returned": true
+  },
+  "diagnosis": {
+    "first_failure": "channel-metadata",
+    "result": -4,
+    "known_fixed_predecessors": [
+      "r4 failed offer-owned-sdp with NO_MEMORY because the test allocator wrapped the default SRAM heap instead of H2Peer PSRAM. The test Runtime now wraps the existing PSRAM allocator.",
+      "r6 observed UDP sendto errno=12 for a 637-byte DTLS datagram. Transient socket and pbuf pressure now returns WOULD_BLOCK so the retained datagram can be retried; H2Peer task stacks use PSRAM."
+    ],
+    "remaining": "r7 still fails while connecting channels after successful Pion signaling. The native DTLS handshake and channel setup remain unqualified; subsequent media, close and fingerprint cases are BLOCKED."
+  },
+  "portable_source_sha256": {
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_e2e.h": "4b3c6ed95926d9e144fcc03ec85d463d5431e260d77dd4260c92c758888c4362",
+    "projects/e2e/apps/pal-webrtc/app/include/h2_pal_webrtc_cases.inc": "725f4d2ca360da9066a855696a30553f49959c6a9ec26dcb168ef4912587528b",
+    "projects/e2e/apps/pal-webrtc/app/src/h2_pal_webrtc_e2e.c": "40870351d2b7b8219e44f2077274fc768a222ce54b1ddc433d9d9c7f7e2a496a",
+    "projects/e2e/apps/pal-webrtc/app/api_coverage.json": "6999c6a17d3b142719edc62b98fcd2cab80b1ca5c3d314f26423f6379861a183"
+  }
+}

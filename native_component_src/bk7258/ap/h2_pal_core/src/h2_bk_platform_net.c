@@ -1,7 +1,9 @@
 #include "h2_bk_platform_core.h"
+#include "h2_bk_net_result.h"
 
 #include <errno.h>
 #include <limits.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/time.h>
 
@@ -663,7 +665,18 @@ static int bk_net_udp_sendto(
         return rc;
     }
     int sent = sendto(socket_fd, data, (int)len, 0, (struct sockaddr *)&storage, sock_len);
-    return sent < 0 ? H2_PAL_ERR_IO : sent;
+    if (sent < 0) {
+        int send_error = errno;
+        int result = h2_bk_net_udp_send_result(sent, send_error);
+        if (result == H2_PAL_ERR_WOULD_BLOCK) return result;
+        char message[96];
+        (void)snprintf(message, sizeof(message),
+            "UDP send failed fd=%d bytes=%zu errno=%d", socket_fd, len, send_error);
+        (void)h2_pal_log_write(h2_bk_platform_log_api(), H2_PAL_LOG_ERROR,
+            "pal/net", message);
+        return result;
+    }
+    return sent;
 }
 
 static int bk_net_udp_recvfrom(
