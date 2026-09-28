@@ -17,7 +17,16 @@ static void fail(const char *stage, int rc) {
 static void run(void *user) {
     (void)user;
     rtos_delay_milliseconds(5000u);
-    int rc = h2_pal_http_device_run(runtime, &result);
+    int rc;
+    for (;;) {
+        rc = h2_pal_http_device_run(runtime, &result);
+        if (result.passed + result.failed + result.blocked != 0u) break;
+        if (rc != H2_PAL_ERR_NOT_FOUND && rc != H2_PAL_ERR_UNAVAILABLE &&
+            rc != H2_PAL_ERR_TIMEOUT && rc != H2_PAL_ERR_BUSY) break;
+        printf("H2_PAL_HTTP_SETUP_WAIT network=not_ready rc=%d cases_started=0\n", rc);
+        fflush(stdout);
+        rtos_delay_milliseconds(3000u);
+    }
     if (result.passed + result.failed + result.blocked != H2_PAL_HTTP_E2E_CASE_COUNT)
         fail("fixture_or_network", rc);
     int confirm = rc == H2_PAL_OK ? h2_bk_h2loader_confirm_current_app(runtime) : H2_PAL_ERR_INVALID_STATE;

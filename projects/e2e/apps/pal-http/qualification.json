@@ -39,7 +39,7 @@
       "passed": 0,
       "reason": "App installed and management channel ready; saved STA configuration lookup returned NOT_FOUND before HTTP cases",
       "pending_receipt": "projects/e2e/targets/h2loader_tar_zlib/pal-http/bk7258_v3_202405/evidence/pending.json",
-      "pending_receipt_sha256": "9ad23774218fec0f1ba377cad28ca11055f1c443a71ebc5e675eac0bfcd1f754"
+      "pending_receipt_sha256": "46c375908a2a3e17f644f380a023924335c5c6a77d243d0c6004c2074a0d677a"
     }
   }
 }

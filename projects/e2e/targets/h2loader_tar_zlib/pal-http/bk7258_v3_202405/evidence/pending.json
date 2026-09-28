@@ -35,5 +35,7 @@
     "unchanged": true
   },
   "management_channel": "UART1 remains responsive; pending App confirmation keeps stage_valid=1",
-  "next_image_built": "pal-http-bk-20260928-r2"
+  "next_image_built": "pal-http-bk-20260928-r3",
+  "configuration_audit": "projects/e2e/targets/h2loader_tar_zlib/pal-http/bk7258_v3_202405/evidence/configuration-audit.json",
+  "configuration_audit_sha256": "5606eaba481e936b61cdf528d564e8fff729238c0a12521bca97ec2cb717fdb9"
 }

@@ -1,0 +1,29 @@
+{
+  "schema": 1,
+  "observed_at_utc": "2026-09-28T03:03:28.476755+00:00",
+  "scope": "Only documented project configuration sources; no keychain access or password guessing",
+  "formal_loader": "scripts/config/h2loader-operation-env.sh",
+  "formal_config_paths": [
+    ".env/devenv",
+    "~/.config/h2loader/env",
+    ".env/users/<operator>.md"
+  ],
+  "source_of_truth": "guides/zh/using/h2loader/cli.md",
+  "repository_supplies_default_wifi_credentials": false,
+  "sources_present": {
+    "repo_operation_env": false,
+    "user_operation_env": false,
+    "operator_context_note": false,
+    "credential_environment_present": false
+  },
+  "live_wifi_status": {
+    "result": "OK",
+    "state": "6",
+    "ip_valid": "0",
+    "ip": "0.0.0.0",
+    "saved": "0",
+    "saved_code": "0"
+  },
+  "wifi_settings_owner": "BK EasyFlash h2.wifi_sta, shared by Runtime and H2Loader command service",
+  "missing_input": "A reachable network profile or an already connected station; no HTTP cases ran on BK"
+}

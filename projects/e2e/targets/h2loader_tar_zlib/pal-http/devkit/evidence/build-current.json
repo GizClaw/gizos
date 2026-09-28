@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "validation": "build_only",
+  "hardware_run": false,
+  "fixture_configured": true,
+  "package": {
+    "name": "devkit-pal-http-esp32s3.update.tar.zlib",
+    "operation": "managed-install",
+    "release_suffix": ".update.tar.zlib",
+    "sha256": "bbf912754dc102d8f61e111d93a94807d8c3d9b3c797592e9b512dd175c27902",
+    "size": 979491
+  },
+  "image": {
+    "board": "devkit",
+    "format": 1,
+    "image_sha256": "fba6412a3ce136cb9d55fc427fb579afacd202d5115a81a430e29351dce032c2",
+    "image_size": 1520000,
+    "role": "app",
+    "target": "esp32s3",
+    "version": "pal-http-esp-20260928-r3"
+  },
+  "change": "Reuse an existing station connection; wait for missing network configuration before any HTTP case"
+}
