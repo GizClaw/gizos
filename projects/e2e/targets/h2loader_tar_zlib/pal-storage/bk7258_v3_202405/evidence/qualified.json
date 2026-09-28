@@ -1,7 +1,7 @@
 {
   "platform": "bk7258",
   "device_uid": "c8478ca2a87c",
-  "image_version": "pal-storage-bk-20260928-r2",
+  "image_version": "pal-storage-bk-20260928-r3",
   "contract": 1,
   "operations": 28,
   "qualified": true,
@@ -14,217 +14,217 @@
       "status": "PASS",
       "rc": 0,
       "phase": 1,
-      "nonce": 2732937025
+      "nonce": 2716159406
     },
     {
       "id": "pal.storage.fs.binary",
       "status": "PASS",
       "rc": 0,
       "phase": 1,
-      "nonce": 2732937025
+      "nonce": 2716159406
     },
     {
       "id": "pal.storage.fs.empty-eof",
       "status": "PASS",
       "rc": 0,
       "phase": 1,
-      "nonce": 2732937025
+      "nonce": 2716159406
     },
     {
       "id": "pal.storage.fs.seek",
       "status": "PASS",
       "rc": 0,
       "phase": 1,
-      "nonce": 2732937025
+      "nonce": 2716159406
     },
     {
       "id": "pal.storage.fs.truncate",
       "status": "PASS",
       "rc": 0,
       "phase": 1,
-      "nonce": 2732937025
+      "nonce": 2716159406
     },
     {
       "id": "pal.storage.fs.rename",
       "status": "PASS",
       "rc": 0,
       "phase": 1,
-      "nonce": 2732937025
+      "nonce": 2716159406
     },
     {
       "id": "pal.storage.fs.remove",
       "status": "PASS",
       "rc": 0,
       "phase": 1,
-      "nonce": 2732937025
+      "nonce": 2716159406
     },
     {
       "id": "pal.storage.fs.clear",
       "status": "PASS",
       "rc": 0,
       "phase": 1,
-      "nonce": 2732937025
+      "nonce": 2716159406
     },
     {
       "id": "pal.storage.fs.path-isolation",
       "status": "PASS",
       "rc": 0,
       "phase": 1,
-      "nonce": 2732937025
+      "nonce": 2716159406
     },
     {
       "id": "pal.storage.fs.arguments",
       "status": "PASS",
       "rc": 0,
       "phase": 1,
-      "nonce": 2732937025
+      "nonce": 2716159406
     },
     {
       "id": "pal.storage.fs.churn",
       "status": "PASS",
       "rc": 0,
       "phase": 1,
-      "nonce": 2732937025
-    },
-    {
-      "id": "pal.storage.pref.blob",
-      "status": "PASS",
-      "rc": 0,
-      "phase": 1,
-      "nonce": 2732937025
-    },
-    {
-      "id": "pal.storage.pref.namespace-isolation",
-      "status": "PASS",
-      "rc": 0,
-      "phase": 1,
-      "nonce": 2732937025
-    },
-    {
-      "id": "pal.storage.pref.read-only",
-      "status": "PASS",
-      "rc": 0,
-      "phase": 1,
-      "nonce": 2732937025
-    },
-    {
-      "id": "pal.storage.pref.iteration",
-      "status": "PASS",
-      "rc": 0,
-      "phase": 1,
-      "nonce": 2732937025
-    },
-    {
-      "id": "pal.storage.pref.cursor-close",
-      "status": "PASS",
-      "rc": 0,
-      "phase": 1,
-      "nonce": 2732937025
-    },
-    {
-      "id": "pal.storage.pref.churn",
-      "status": "PASS",
-      "rc": 0,
-      "phase": 1,
-      "nonce": 2732937025
-    },
-    {
-      "id": "pal.storage.persist.seed",
-      "status": "PASS",
-      "rc": 0,
-      "phase": 1,
-      "nonce": 2732937025
+      "nonce": 2716159406
     },
     {
       "id": "pal.storage.pref.namespace",
       "status": "PASS",
       "rc": 0,
       "phase": 1,
-      "nonce": 2732937025
+      "nonce": 2716159406
+    },
+    {
+      "id": "pal.storage.pref.blob",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2716159406
     },
     {
       "id": "pal.storage.pref.string",
       "status": "PASS",
       "rc": 0,
       "phase": 1,
-      "nonce": 2732937025
+      "nonce": 2716159406
     },
     {
       "id": "pal.storage.pref.u32",
       "status": "PASS",
       "rc": 0,
       "phase": 1,
-      "nonce": 2732937025
+      "nonce": 2716159406
     },
     {
       "id": "pal.storage.pref.i32",
       "status": "PASS",
       "rc": 0,
       "phase": 1,
-      "nonce": 2732937025
+      "nonce": 2716159406
     },
     {
       "id": "pal.storage.pref.bool",
       "status": "PASS",
       "rc": 0,
       "phase": 1,
-      "nonce": 2732937025
+      "nonce": 2716159406
     },
     {
       "id": "pal.storage.pref.overwrite-type",
       "status": "PASS",
       "rc": 0,
       "phase": 1,
-      "nonce": 2732937025
+      "nonce": 2716159406
+    },
+    {
+      "id": "pal.storage.pref.namespace-isolation",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2716159406
+    },
+    {
+      "id": "pal.storage.pref.read-only",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2716159406
+    },
+    {
+      "id": "pal.storage.pref.iteration",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2716159406
+    },
+    {
+      "id": "pal.storage.pref.cursor-close",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2716159406
     },
     {
       "id": "pal.storage.pref.allocation-failure",
       "status": "PASS",
       "rc": 0,
       "phase": 1,
-      "nonce": 2732937025
+      "nonce": 2716159406
     },
     {
       "id": "pal.storage.pref.remove",
       "status": "PASS",
       "rc": 0,
       "phase": 1,
-      "nonce": 2732937025
+      "nonce": 2716159406
     },
     {
       "id": "pal.storage.pref.clear",
       "status": "PASS",
       "rc": 0,
       "phase": 1,
-      "nonce": 2732937025
+      "nonce": 2716159406
+    },
+    {
+      "id": "pal.storage.pref.churn",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2716159406
+    },
+    {
+      "id": "pal.storage.persist.seed",
+      "status": "PASS",
+      "rc": 0,
+      "phase": 1,
+      "nonce": 2716159406
     },
     {
       "id": "pal.storage.persist.fs",
       "status": "PASS",
       "rc": 0,
       "phase": 2,
-      "nonce": 2732937025
+      "nonce": 2716159406
     },
     {
       "id": "pal.storage.persist.pref",
       "status": "PASS",
       "rc": 0,
       "phase": 2,
-      "nonce": 2732937025
+      "nonce": 2716159406
     },
     {
       "id": "pal.storage.cleanup.storage",
       "status": "PASS",
       "rc": 0,
       "phase": 2,
-      "nonce": 2732937025
+      "nonce": 2716159406
     }
   ],
   "phases": [
     {
-      "version": "pal-storage-bk-20260928-r2",
+      "version": "pal-storage-bk-20260928-r3",
       "phase": 1,
-      "nonce": 2732937025,
+      "nonce": 2716159406,
       "passed": 27,
       "failed": 0,
       "blocked": 0,
@@ -233,9 +233,9 @@
       "control": 0
     },
     {
-      "version": "pal-storage-bk-20260928-r2",
+      "version": "pal-storage-bk-20260928-r3",
       "phase": 2,
-      "nonce": 2732937025,
+      "nonce": 2716159406,
       "passed": 3,
       "failed": 0,
       "blocked": 0,
@@ -247,34 +247,35 @@
   "raw_capture_receipts": [
     {
       "phase": 1,
-      "kind": "same-boot-replay-after-monitor-deadline",
-      "sha256": "2e986d1342edef20c26b5fdd505bf42a11de422500b7ec18ad913cd655e0572c",
-      "captured_report_file_mtime_utc": "2026-09-27T23:44:30.273330+00:00"
+      "kind": "same-boot-immutable-replay",
+      "sha256": "6d60ba88cbcdf49b3accdab996e25212b5987dc5cae9e64d7931ce00cc793349",
+      "captured_report_file_mtime_utc": "2026-09-28T01:43:33.960259+00:00"
     },
     {
       "phase": 1,
-      "sha256": "133e6d10cec83720ff09b1782429cb4fb04f20ca1c16f0b3896e3d5085f358f1",
-      "captured_report_file_mtime_utc": "2026-09-27T23:42:38.396786+00:00"
+      "sha256": "5c9399d66661696a34c0398d3d1615f03c4870ca939d2913b5b52c612193b550",
+      "captured_report_file_mtime_utc": "2026-09-28T01:41:31.650985+00:00"
     },
     {
       "phase": 2,
-      "kind": "same-boot-replay-after-monitor-deadline",
-      "sha256": "f04675dce31ed6f2713eebf37f2e966ff1564131e621ef99fa3742793322e20c",
-      "captured_report_file_mtime_utc": "2026-09-27T23:49:46.477240+00:00"
+      "kind": "same-boot-immutable-replay",
+      "sha256": "f6508b7189eb9eefa2072431440510deb9f3d30784b97a119ea634f0d7dbea23",
+      "captured_report_file_mtime_utc": "2026-09-28T01:48:19.207131+00:00"
     },
     {
       "phase": 2,
-      "sha256": "687b3691a971713877574cd9cc48bf13b5c1893653d1d641c030b21f299354f8",
-      "captured_report_file_mtime_utc": "2026-09-27T23:48:44.498040+00:00"
+      "sha256": "397e17fe7b48e6cecc08046b307a71bcb714f7a411806a2866d009e6369ed990",
+      "captured_report_file_mtime_utc": "2026-09-28T01:47:51.960824+00:00"
     }
   ],
-  "final_status": "H2_LOADER_STATUS board=bk7258_v3_202405 target=bk7258 chip=bk7258 device_uid=c8478ca2a87c capabilities=0x00000001 command_availability=0x00081f1f active_role=app active_version=pal-storage-bk-20260928-r2 active_checksum=95119bd2edcbd6f7ffd8d316076162dca9e31ac75367dac6525f288a6cafbc90 active_image_size=5222400 running_partition=2 next_partition=2 boot_intent=auto stage_valid=0 stage_package_checksum=- stage_package_size=0 stage_image_checksum=- stage_image_size=0 stage_role=unknown stage_version=- stage_board=- stage_target=- partition_1_valid=1 partition_1_package_checksum=3a3c664340f0d1b45561816e197ffbd25f2d3c447ee248082a3c5ce261cba9bd partition_1_package_size=1573290 partition_1_image_checksum=47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb partition_1_image_size=2437120 partition_1_role=loader partition_1_version=0.1.65-lu-c partition_1_board=bk7258_v3_202405 partition_1_target=bk7258 partition_2_valid=1 partition_2_package_checksum=9bb2df93f2bf30c78405c61c68987dbf0f7b0ac752cd257527ca47590ad3404b partition_2_package_size=1723366 partition_2_image_checksum=95119bd2edcbd6f7ffd8d316076162dca9e31ac75367dac6525f288a6cafbc90 partition_2_image_size=5222400 partition_2_role=app partition_2_version=pal-storage-bk-20260928-r2 partition_2_board=bk7258_v3_202405 partition_2_target=bk7258 last_result=0 mfg_mode=1 mfg_steps=0000000000000000000000",
+  "final_status": "H2_LOADER_STATUS board=bk7258_v3_202405 target=bk7258 chip=bk7258 device_uid=c8478ca2a87c capabilities=0x00000001 command_availability=0x00081f1f active_role=app active_version=pal-storage-bk-20260928-r3 active_checksum=836a911fdb492ffa2469e14c4f889eb6445e885fc4812e9074d3e6e4dce75a35 active_image_size=5222400 running_partition=2 next_partition=2 boot_intent=auto stage_valid=0 stage_package_checksum=- stage_package_size=0 stage_image_checksum=- stage_image_size=0 stage_role=unknown stage_version=- stage_board=- stage_target=- partition_1_valid=1 partition_1_package_checksum=3a3c664340f0d1b45561816e197ffbd25f2d3c447ee248082a3c5ce261cba9bd partition_1_package_size=1573290 partition_1_image_checksum=47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb partition_1_image_size=2437120 partition_1_role=loader partition_1_version=0.1.65-lu-c partition_1_board=bk7258_v3_202405 partition_1_target=bk7258 partition_2_valid=1 partition_2_package_checksum=e48069a73411ce20bf3bed7353f48fd126060a24b64155718a96afc359ce466d partition_2_package_size=1723944 partition_2_image_checksum=836a911fdb492ffa2469e14c4f889eb6445e885fc4812e9074d3e6e4dce75a35 partition_2_image_size=5222400 partition_2_role=app partition_2_version=pal-storage-bk-20260928-r3 partition_2_board=bk7258_v3_202405 partition_2_target=bk7258 last_result=0 mfg_mode=1 mfg_steps=0000000000000000000000",
   "coredump_status": "H2_LOADER_COREDUMP_STATUS result=OK code=0 partition=coredump bytes=368640 stored_bytes=32 blank=0",
-  "observed_at_utc": "2026-09-27T23:50:31.733397+00:00",
-  "timing_note": "Seed completed successfully after the 120-second diagnostic watchdog message. The install monitor hit its host deadline; the same-boot immutable replay supplies the full qualified seed ledger. The launcher diagnostic budget is raised to 600 seconds for subsequent runs; this receipt describes r2 exactly.",
+  "observed_at_utc": "2026-09-28T01:48:56.447109+00:00",
+  "timing_note": "This r3 run exercises the metadata-first FlashDB implementation with a 600-second diagnostic watchdog. The initial host install monitor ended before seed completed; reconnecting collected the same boot immutable ledger. No additional seed execution is claimed.",
   "coredump_comparison": {
     "unchanged": true,
     "bytes": 32,
     "sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829"
-  }
+  },
+  "review_regression": "Run of the implementation after reserved-namespace, metadata-first update and orphan-cleanup fixes. Provider-specific fault injection and reserved-name rejection are separately verified by pref_flashdb_test."
 }
