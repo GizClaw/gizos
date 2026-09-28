@@ -32,7 +32,11 @@ bazel build --config=bk7258 --lockfile_mode=off \
   //projects/e2e/targets/h2loader_tar_zlib/pal-json/bk7258_v3_202405:package
 ```
 
-本次 [结构化资格记录](qualification.json) 绑定了当前 public header、portable App、provider probe、移动平台包装层的源码 SHA-256，及各端实际 artifact、SDK 包、Bazel test log 和设备串口 log 的摘要。各块板的 boot ID 是宿主根据独立 reboot 命令与原始 log 摘要分配的观测 ID，不冒充设备内部随机 run ID。资格或 provider teardown 失败时，launcher 留下明确失败标记并保持 App 未确认；只有完整通过且 H2Loader 确认成功后才输出 `H2_JSON_READY rc=0 confirm=0`。
+本次 [结构化资格记录](qualification.json) 分别保存当前源码和实际运行快照的 SHA-256，以及各端实际 artifact、SDK 包、Bazel test log 和设备串口 log 的摘要。macOS、WASM、iOS 和 Android 已按当前原始源码重新构建并实际运行。两块板保留 r4 镜像的原始源码摘要、安装和重启记录，不把这些历史摘要改成新源码。各块板的 boot ID 是宿主根据独立 reboot 命令与原始 log 摘要分配的观测 ID，不冒充设备内部随机 run ID。资格或 provider teardown 失败时，launcher 留下明确失败标记并保持 App 未确认；只有完整通过且 H2Loader 确认成功后才输出 `H2_JSON_READY rc=0 confirm=0`。
+
+后续 CI 修复只为 native MSVC 增加 allocator header 对齐分支、重命名 cleanup 局部变量，并把完全相同的静态 case 表移到文件作用域。六端实际使用的 allocator 分支、15 个 ID、callback、顺序、运行和清理逻辑保持一致。`source_equivalence` 明确记录这个边界：非 MSVC probe 的局部变量名归一化后预处理结果相同，probe 机器码相同；App 的 41 个 Clang 函数机器码分别相同，GCC 整个 `.text` 相同。板端验证据此延续功能执行路径资格，不宣称重新安装了新源码镜像。
+
+CI Coverage 实际使用 LLVM covmap。修复前的局部复现生成了 case 清单末尾之外的第 17 行，`genhtml` 失败；文件作用域 case 表消除了该可执行清单记录，`genhtml` 无错误忽略参数通过。GCC/gcov 是补充可移植检查。这个不可用 API 的局部 runner 只验证源码位置映射，不能用其覆盖率百分比代替完整 App 测试或代码覆盖率报告。
 
 | 平台 | 本次实测 |
 | --- | --- |
@@ -43,4 +47,4 @@ bazel build --config=bk7258 --lockfile_mode=off \
 | ESP32-S3 DevKit | 安装 boot 与独立正常 reboot 各 15/15 PASS；P1 保留、Stage empty、coredump blank |
 | BK7258 AP | 安装 boot 及两次显式正常 reboot 各 15/15 PASS；P1 保留、Stage empty、原 32-byte coredump 前后相同 |
 
-BK7258 的逐点 allocator failure case 在该板上明显慢于其他端，整轮同步测试约需三分钟；这次资格只证明功能与清理，不声明性能。未来修改上述源码或 SDK 后，历史 receipt 不会自动证明新产物通过，必须重跑并更新摘要。
+BK7258 的逐点 allocator failure case 在该板上明显慢于其他端，整轮同步测试约需三分钟；这次资格只证明功能与清理，不声明性能。未来修改有效执行代码或 SDK 后，历史 receipt 不会自动证明新产物通过，必须重跑并更新摘要。只影响其他编译器分支或源码映射的修改也须保留真实运行快照，并提供明确的等价性证据。

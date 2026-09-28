@@ -8,7 +8,14 @@
 
 typedef union allocation_header {
     size_t size;
+#if defined(_MSC_VER) && !defined(__clang__)
+    /* MSVC's C headers omit max_align_t; cover its scalar alignments. */
+    long double floating_alignment;
+    long long integer_alignment;
+    void *pointer_alignment;
+#else
     max_align_t alignment;
+#endif
 } allocation_header_t;
 
 typedef struct tracked_mem {
@@ -91,9 +98,9 @@ static h2_pal_result_t check_live_output(const h2_pal_mem_api_t *base) {
     }
 done:
     if (provider) {
-        const h2_pal_json_api_t *api = h2_yyjson_json_api(provider);
-        if (buffer.data) (void)h2_pal_json_buffer_release(api, &buffer);
-        if (document) (void)h2_pal_json_document_destroy(api, &document);
+        const h2_pal_json_api_t *cleanup_api = h2_yyjson_json_api(provider);
+        if (buffer.data) (void)h2_pal_json_buffer_release(cleanup_api, &buffer);
+        if (document) (void)h2_pal_json_document_destroy(cleanup_api, &document);
         if (h2_yyjson_json_destroy(&provider) != H2_PAL_OK) rc = H2_PAL_ERR_INVALID_STATE;
     }
     if (state.live != 0 || state.bytes != 0 || provider) rc = H2_PAL_ERR_INVALID_STATE;

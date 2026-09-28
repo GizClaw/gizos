@@ -13,4 +13,3 @@ H2_PAL_JSON_CASE("serialization-limit", test_serialization_limit)
 H2_PAL_JSON_CASE("empty-cleanup", test_empty_cleanup)
 H2_PAL_JSON_CASE("provider-live-output", test_provider_live_output)
 H2_PAL_JSON_CASE("allocator-failure-cleanup", test_allocator_failure_cleanup)
-/* Keep a source line after the case macros for GCC coverage mapping. */

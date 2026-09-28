@@ -331,18 +331,19 @@ static int complete_api(const h2_pal_json_api_t *api) {
         api->vtable->document_serialize && api->vtable->buffer_release;
 }
 
+typedef h2_pal_result_t (*test_fn)(const h2_pal_json_api_t *, const h2_pal_mem_api_t *, h2_pal_json_e2e_probe_fn);
+static const struct { const char *id; test_fn run; } cases[] = {
+#define H2_PAL_JSON_CASE(id, function) {id, function},
+#include "h2_pal_json_cases.inc"
+#undef H2_PAL_JSON_CASE
+};
+
 h2_pal_result_t h2_pal_json_e2e_run(h2_runtime_t *runtime,
                                     const h2_pal_json_api_t *json,
                                     h2_pal_json_e2e_probe_fn probe,
                                     h2_pal_json_e2e_result_t *result) {
     if (!result) return H2_PAL_ERR_INVALID_ARG;
     memset(result, 0, sizeof(*result));
-    typedef h2_pal_result_t (*test_fn)(const h2_pal_json_api_t *, const h2_pal_mem_api_t *, h2_pal_json_e2e_probe_fn);
-    static const struct { const char *id; test_fn run; } cases[] = {
-#define H2_PAL_JSON_CASE(id, function) {id, function},
-#include "h2_pal_json_cases.inc"
-#undef H2_PAL_JSON_CASE
-    };
     const int available = runtime && runtime->mem && probe && complete_api(json);
     for (size_t i = 0; i < H2_PAL_JSON_E2E_CASE_COUNT; ++i) {
         result->cases[i].id = cases[i].id;
