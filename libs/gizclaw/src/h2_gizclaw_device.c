@@ -1,7 +1,7 @@
 #include "h2_gizclaw_device_internal.h"
 #include "h2_runtime.h"
 #include "h2_gizclaw_firmware.h"
-#include "h2_gizclaw_ogg_opus_internal.h"
+#include "h2_gizclaw_audio_decoder_internal.h"
 #include "h2_gizclaw_ota.h"
 #include "h2_gizclaw_player.h"
 #include "h2_gizclaw_service_internal.h"
@@ -1199,19 +1199,13 @@ static uint32_t io_timeout(h2_gizclaw_device_t *d) {
              ? (uint32_t)d->config.connect_timeout_ms
              : 15000u;
 }
-/* Aim the ranged request this far before the start so the landing page is
- * earlier and the decoder skips to the exact start instead of overshooting it
- * by the error of a byte-rate estimate. On a real 7.5 min VBR speech file with
- * 1 s pages the estimate drifted up to ~2 s; 5 s landed early for every start
- * at a cost of a few seconds of skipped bytes. */
-#define AUDIO_SEEK_BACKOFF_MS 5000u
 struct audio_download {
   h2_gizclaw_device_t *device;
   char url[1025];
   h2_pal_task_t *task;
   uint8_t *data;
   size_t capacity, head, count, prebuffer;
-  uint64_t length, consumed;
+  uint64_t length;
   /* Requested byte range; a plain GET when !ranged. last is inclusive,
    * UINT64_MAX for an open-ended range. A non-zero expected_total refuses
    * a body that is not the 206 slice asked for of a file with exactly that
@@ -1437,7 +1431,6 @@ static h2_pal_result_t audio_stream_read(void *user, uint8_t *out,
       memcpy(out, download->data + download->head, count);
       download->head = (download->head + count) % download->capacity;
       download->count -= count;
-      download->consumed += count;
       unlock(d);
       *out_len = count;
       return H2_PAL_OK;
@@ -1529,44 +1522,39 @@ typedef enum audio_source {
   AUDIO_SOURCE_PLAIN,    /* From byte 0, no seek. */
   AUDIO_SOURCE_PROBE,    /* Range 0- until the headers parse. */
   AUDIO_SOURCE_WHOLE,    /* Range ignored: skip through the whole body. */
-  AUDIO_SOURCE_RANGE,    /* Range offset-: resync on the next page. */
+  AUDIO_SOURCE_RANGE,    /* Range offset-: the decoder resyncs there. */
   AUDIO_SOURCE_FALLBACK, /* Plain GET, skip through the whole body. */
 } audio_source_t;
-/* Called once the probe's headers parse. Byte offsets scale with time
- * between the end of the headers and the end of the file; the estimate only
- * picks where to look, the decoder then reports exactly where it is. */
-static int seek_range(h2_gizclaw_device_t *d, h2_gizclaw_ogg_opus_t *decoder,
-                      const char *url, bool music, uint64_t start_ms,
-                      uint64_t duration_ms, audio_source_t *source) {
+/* Called once the probe's headers parse. The decoder picks the byte to
+ * range from for its format (an estimate for Ogg/Opus and most MP3, exact
+ * for WAV) and then reports exactly where it landed. */
+static int seek_range(h2_gizclaw_device_t *d,
+                      h2_gizclaw_audio_decoder_t *decoder, const char *url,
+                      bool music, uint64_t start_ms, uint64_t duration_ms,
+                      audio_source_t *source) {
   lock(d);
   const uint64_t total = d->download->range_total;
-  const uint64_t header = d->download->consumed;
   unlock(d);
   if (!total) {
     *source = AUDIO_SOURCE_WHOLE;
-    return h2_gizclaw_ogg_opus_seek(decoder, start_ms, false);
+    return h2_gizclaw_audio_decoder_seek(decoder, start_ms, false, 0);
   }
   *source = AUDIO_SOURCE_RANGE;
-  if (header >= total)
-    return H2_PAL_ERR_FORMAT;
-  const uint64_t aim =
-      start_ms > AUDIO_SEEK_BACKOFF_MS ? start_ms - AUDIO_SEEK_BACKOFF_MS : 0;
-  const uint64_t offset =
-      header + (uint64_t)((double)(total - header) * (double)aim /
-                          (double)duration_ms);
-  if (offset >= total)
-    return H2_PAL_ERR_FORMAT;
-  int rc = start_audio_download(d, url, music, true, offset, UINT64_MAX,
-                                total);
+  uint64_t offset = 0;
+  int rc = h2_gizclaw_audio_decoder_seek_offset(decoder, start_ms, duration_ms,
+                                                total, &offset);
   if (rc == H2_PAL_OK)
-    rc = h2_gizclaw_ogg_opus_seek(decoder, start_ms, true);
+    rc = start_audio_download(d, url, music, true, offset, UINT64_MAX, total);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_audio_decoder_seek(decoder, start_ms, true, offset);
   return rc;
 }
-static int start_decoder(h2_gizclaw_device_t *d, h2_gizclaw_ogg_opus_t **out) {
-  h2_gizclaw_ogg_opus_destroy(*out);
+static int start_decoder(h2_gizclaw_device_t *d,
+                         h2_gizclaw_audio_decoder_t **out) {
+  h2_gizclaw_audio_decoder_destroy(*out);
   *out = NULL;
-  return h2_gizclaw_ogg_opus_create_reader(d->config.allocator,
-                                           audio_stream_read, d, out);
+  return h2_gizclaw_audio_decoder_create(d->config.allocator, audio_stream_read,
+                                         d, out);
 }
 static int write_player_pcm(h2_gizclaw_device_t *d, h2_pal_audio_track_t *track,
                             const h2_audio_frame_t *frame) {
@@ -1763,10 +1751,10 @@ static int player_feed(player_output_t *o, player_stretch_t *s,
   return rc;
 }
 /* start_ms > 0 with a known duration_ms seeks: a probe for the headers, a
- * ranged request from about the start, and the decoder resyncing on the next
- * valid page. Anything that goes wrong before the first sample is known
- * restarts once from byte 0 and skips to the start instead. With an unknown
- * duration the item plays from 0. */
+ * ranged request from the decoder's offset, and the decoder resyncing there.
+ * Anything that goes wrong before the first sample is known restarts once
+ * from byte 0 and skips to the start instead. With an unknown duration the
+ * item plays from 0. */
 static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
                     bool music, uint64_t start_ms, uint64_t duration_ms) {
   audio_source_t source = start_ms && duration_ms ? AUDIO_SOURCE_PROBE
@@ -1777,7 +1765,7 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
                 * (large embedded cover art) fit in it. */
                ? start_audio_download(d, url, music, true, 0, UINT64_MAX, 0)
                : start_audio_download(d, url, music, false, 0, 0, 0);
-  h2_gizclaw_ogg_opus_t *decoder = NULL;
+  h2_gizclaw_audio_decoder_t *decoder = NULL;
   h2_pal_audio_track_t *track = NULL;
   if (rc == H2_PAL_OK)
     rc = start_decoder(d, &decoder);
@@ -1824,7 +1812,7 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
     rc = h2_pal_audio_create_track(d->config.audio, &audio, &track);
   trace(d, "player-track", 0, rc);
   /* Samples, not bytes, so the stretcher can read them in place. */
-  int16_t pcm[H2_GIZCLAW_OGG_OPUS_PCM_BYTES / 2u];
+  int16_t pcm[H2_GIZCLAW_AUDIO_PCM_BYTES / 2u];
   /* 16 kHz mono PCM16 is 32 bytes per millisecond. */
   const uint64_t limit_bytes = (uint64_t)limit_ms * 32u;
   player_output_t out = {.d = d,
@@ -1848,19 +1836,19 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
     const bool measure = player_rate(&out, &stretch) !=
                          H2_GIZCLAW_PLAYER_RATE_NORMAL;
     const uint64_t decode_started = measure ? now_us(d) : 0u;
-    rc = h2_gizclaw_ogg_opus_next(decoder, (uint8_t *)pcm, sizeof(pcm),
-                                  &length);
+    rc = h2_gizclaw_audio_decoder_next(decoder, (uint8_t *)pcm, sizeof(pcm),
+                                       &length);
     if (measure) {
       stretch.decode_us += now_us(d) - decode_started;
       stretch.audio_bytes += length;
     }
     if (rc == H2_PAL_OK && seek_pending &&
-        h2_gizclaw_ogg_opus_headers_done(decoder)) {
+        h2_gizclaw_audio_decoder_headers_done(decoder)) {
       seek_pending = false;
       rc = source == AUDIO_SOURCE_PROBE
                ? seek_range(d, decoder, url, music, start_ms, duration_ms,
                             &source)
-               : h2_gizclaw_ogg_opus_seek(decoder, start_ms, false);
+               : h2_gizclaw_audio_decoder_seek(decoder, start_ms, false, 0);
     }
     if (rc != H2_PAL_OK && rc != H2_PAL_EXIT && !located &&
         source != AUDIO_SOURCE_PLAIN && source != AUDIO_SOURCE_FALLBACK &&
@@ -1875,8 +1863,9 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
     }
     uint64_t origin = 0;
     if (!located && !seek_pending &&
-        h2_gizclaw_ogg_opus_origin(decoder, &origin)) {
-      /* Exact from here on: the granule-derived start, not the estimate. */
+        h2_gizclaw_audio_decoder_origin(decoder, &origin)) {
+      /* From here on the decoder's own start (Ogg granule, WAV frame, MP3
+       * frame count or landing estimate), not the byte offset. */
       located = true;
       out.origin_bytes = origin * 2u;
       lock(d);
@@ -1949,7 +1938,7 @@ static int play_url(h2_gizclaw_device_t *d, const char *url, uint32_t limit_ms,
     const h2_pal_result_t released = product->speaker_release(d->config.user);
     trace(d, "player-speaker-release", 0, released);
   }
-  h2_gizclaw_ogg_opus_destroy(decoder);
+  h2_gizclaw_audio_decoder_destroy(decoder);
   int joined = finish_audio_download(d);
   if (rc == H2_PAL_OK)
     rc = joined;

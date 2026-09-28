@@ -6,13 +6,13 @@ Peer connection 内的上下行 Opus RTP track、双向 Agent Event Stream、BOS
 
 ## 本地在线音乐播放器
 
-`libs/gizclaw` 的本地播放器使用库内的 Ogg/Opus decoder，解码后交给 config 注入的 Audio PAL 播放 Track。它不调用 PAL audio-decoder，也不受该独立 capability 当前仅支持 AAC 的限制。播放器与 Conversation RTP 是不同入口；App 可调用 `h2_gizclaw_player_play()`、`play_index()`、`play_index_at()`、`playlist_set()`、`repeat_set()`、`stop()`、`get_status()`、`playlist_snapshot()`，服务器反向 audio player RPC 复用相同 worker、状态与 telemetry。
+`libs/gizclaw` 的本地播放器使用库内的 Ogg/Opus、MP3 和 WAV decoder（见下文“音频格式”），解码后交给 config 注入的 Audio PAL 播放 Track。它不调用 PAL audio-decoder，也不受该独立 capability 当前仅支持 AAC 的限制。播放器与 Conversation RTP 是不同入口；App 可调用 `h2_gizclaw_player_play()`、`play_index()`、`play_index_at()`、`playlist_set()`、`repeat_set()`、`stop()`、`get_status()`、`playlist_snapshot()`，服务器反向 audio player RPC 复用相同 worker、状态与 telemetry。
 
 设备自身持有 playlist，服务器 `playlist.set` / `append` 推送的专辑不经过网络回读即可展示。`h2_gizclaw_player_playlist_snapshot()` 在设备锁下整份拷贝出 caller-owned 快照：最多 `H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS`（32）个条目的 title 与 source_ref、条目数、current index 及其存在标志、playlist revision 和 repeat 模式。快照不含每条最长 1 KB 的 URL，只有库自己需要它下载；UI 靠 revision 判断缓存是否失效，未变化就不重绘。`h2_gizclaw_player_get_status()` 另外附带 `has_current_index` / `current_index` / `playlist_length` / `playlist_revision`，使“第 3/8 首”这类投影不必再取一次快照。用户选中某条时调用 `h2_gizclaw_player_play_index()`，它走 `client.device.audioplayer.play` 的同一条内部路径；索引达到或超过 playlist 长度返回 `H2_PAL_ERR_INVALID_ARG`，在改动任何状态之前拒绝，不打断正在播放的曲目。这两个入口都不发起网络请求。
 
-设备自己也能写 playlist：`h2_gizclaw_player_playlist_set()` 接收 caller-owned 的 `h2_gizclaw_player_playlist_entry_t` 数组（每条一个必填的 HTTPS Ogg/Opus URL span，title 与 source_ref 可选，len 为 0 表示不存在；可选 `duration_ms` 是产品已知的曲目时长，0 表示未知）与条目数，走 `client.device.audioplayer.playlist.set` 的同一条内部路径：同样先校验全部 URL 再整体替换，因此失败时上一份 playlist 与正在播放的曲目都不受影响，revision 只在成功时前进。count 为 0 清空 playlist；超过 `H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS`（32）返回 `H2_PAL_ERR_INVALID_ARG`（不是 `BUSY`，因为再等也放不下），服务停止中返回 `H2_PAL_ERR_CLOSED`。它与 RPC 一样是纯写入，不启动播放，也清掉 current index；要让专辑开始播放，紧接着调用 `h2_gizclaw_player_play_index(service, 0)`。这样“用户选中本地专辑”与“手机推送 playlist”在设备内是同一条路径。
+设备自己也能写 playlist：`h2_gizclaw_player_playlist_set()` 接收 caller-owned 的 `h2_gizclaw_player_playlist_entry_t` 数组（每条一个必填的 HTTPS 音频 URL span，title 与 source_ref 可选，len 为 0 表示不存在；可选 `duration_ms` 是产品已知的曲目时长，0 表示未知）与条目数，走 `client.device.audioplayer.playlist.set` 的同一条内部路径：同样先校验全部 URL 再整体替换，因此失败时上一份 playlist 与正在播放的曲目都不受影响，revision 只在成功时前进。count 为 0 清空 playlist；超过 `H2_GIZCLAW_PLAYER_PLAYLIST_MAX_ITEMS`（32）返回 `H2_PAL_ERR_INVALID_ARG`（不是 `BUSY`，因为再等也放不下），服务停止中返回 `H2_PAL_ERR_CLOSED`。它与 RPC 一样是纯写入，不启动播放，也清掉 current index；要让专辑开始播放，紧接着调用 `h2_gizclaw_player_play_index(service, 0)`。这样“用户选中本地专辑”与“手机推送 playlist”在设备内是同一条路径。
 
-从中途开始播放（例如续播上次听到的长节目）调用 `h2_gizclaw_player_play_index_at(service, index, start_ms)`；`start_ms` 为 0 与 `play_index()` 完全相同。它依赖该条目在 `playlist_set()` 中给出的 `duration_ms`：时长未知（包括服务器推送的条目，wire item 没有时长）时从 0 播放并报告 0；`start_ms` 不小于已知时长返回 `H2_PAL_ERR_INVALID_ARG`，与越界索引一样在改动任何状态前拒绝。时长已知时，库先用 `Range: bytes=0-` 读文件头，解析完 `OpusHead` / `OpusTags` 就取消该请求（文件头多大都行，包括内嵌大封面），再按字节率从起点前约 5 秒处发起 `Range: bytes=<offset>-`，在下一个 CRC 正确的 Ogg page 上重新同步，跳过其余数据直到起点。`status.position_ms` 在缓冲期间显示请求的 `start_ms`，定位后改为由 Ogg granule 精确算出的位置，不是字节估算。服务器忽略 Range（返回 200 全文件）时直接在该响应上跳到起点；`Content-Range` 不符、续传请求不是 206、落点之后没有可用 page 等任何在首个样本前的失败，都会改用一次普通 GET 并跳到起点。起点超过文件实际结尾时，条目在结尾处正常结束并报告真实时长。只有被选中的条目从中途开始，单曲循环和自动下一首都从 0 开始。浏览器构建只有在服务器通过 CORS 暴露 `Content-Range` 时才走 Range 路径，否则走普通 GET 回退。
+从中途开始播放（例如续播上次听到的长节目）调用 `h2_gizclaw_player_play_index_at(service, index, start_ms)`；`start_ms` 为 0 与 `play_index()` 完全相同。它依赖该条目在 `playlist_set()` 中给出的 `duration_ms`：时长未知（包括服务器推送的条目，wire item 没有时长）时从 0 播放并报告 0；`start_ms` 不小于已知时长返回 `H2_PAL_ERR_INVALID_ARG`，与越界索引一样在改动任何状态前拒绝。时长已知时，库先用 `Range: bytes=0-` 读文件头，解析完就取消该请求（Ogg 的 `OpusHead` / `OpusTags`，MP3 的 ID3v2 标签与首帧，WAV 的 `data` 之前的 chunk；文件头多大都行，包括内嵌大封面），再按格式算出的偏移发起 `Range: bytes=<offset>-`：Ogg/Opus 按字节率从起点前约 5 秒处，在下一个 CRC 正确的 Ogg page 上重新同步；WAV 直接落在起点前 64 个采样帧；带 LAME “Info” 标签的 CBR MP3 落在起点前 8 帧，其余 MP3 按 Xing TOC、Xing 帧数与字节数或首帧码率估算并再提前 5 秒，在下一对一致的帧头上重新同步。之后跳过其余数据直到起点。`status.position_ms` 在缓冲期间显示请求的 `start_ms`，定位后改为流自身给出的位置，不是字节估算：Ogg granule、WAV 采样帧或 MP3 帧计数。MP3 的 Range 落点本身来自上述模型，CBR 流上精确，VBR 流上是 TOC 精度的估计；不走 Range 的回退路径逐帧计数，始终精确。服务器忽略 Range（返回 200 全文件）时直接在该响应上跳到起点；`Content-Range` 不符、续传请求不是 206、落点之后没有可用 page 或帧等任何在首个样本前的失败，都会改用一次普通 GET 并跳到起点。起点超过文件实际结尾时，条目在结尾处正常结束并报告真实时长。只有被选中的条目从中途开始，单曲循环和自动下一首都从 0 开始。浏览器构建只有在服务器通过 CORS 暴露 `Content-Range` 时才走 Range 路径，否则走普通 GET 回退。
 
 `h2_gizclaw_player_repeat_set()` 接受与 `client.device.audioplayer.mode.set` 相同的 `off` / `one` / `all`，其他值返回 `H2_PAL_ERR_INVALID_ARG` 并保持当前模式不变，快照的 `repeat` 字段即为回读入口。末曲推进与循环由 library 的 worker 按该模式负责：`one` 重播当前曲，`all` 到末尾回到第 0 条，`off` 播完即停。产品必须设置模式而不是自己实现“下一首、到末尾回绕”，否则会与库内推进重复触发。
 
@@ -26,9 +26,24 @@ Peer connection 内的上下行 Opus RTP track、双向 Agent Event Stream、BOS
 
 实现是定点 SOLA：40 ms 序列、8 ms 线性交叉淡化、在 15 ms 窗口内按绝对差之和找与上一段尾部最相似的起点，每步输出 32 ms、按速率推进源位置。1000 为直通，不分配缓冲、不增加逐样本计算，输出与不变速时逐字节相同；其他速率在条目播放期间占用一块约 5.5 KiB 的固定工作缓冲，条目结束即释放。下载环形缓冲不变——慢放只是消费更慢，已有背压让下载等待更久，不会多预取或涨内存。工作缓冲分配失败时该条目按原速继续播放并记 WARN `player-rate fallback=1`，不会让播放失败；这也是 CPU 不足时的降级方向。每个变速过的条目结束时记一行 INFO `player-rate rate=… audio_ms=… decode_us=… stretch_us=…`，用于在真实板子上核对解码与变速各占多少 CPU。
 
-HTTPS 下载由独立 PAL task 写入有界压缩环形缓冲，默认容量 64 KiB、启动与补缓冲阈值 16 KiB。设备 worker 增量读取 Ogg page 和 Opus packet，输出 16 kHz mono S16LE，并组装成 Audio PAL 要求的完整 PCM frame。下载侧缓冲满时等待，播放侧 `WOULD_BLOCK` 重试同一帧；不会把整首文件载入内存，也不会逐帧 drain 插入静音。只有尾帧补零，正常结束时 drain；播放进度扣除排队帧，最终不计补零样本。
+HTTPS 下载由独立 PAL task 写入有界压缩环形缓冲，默认容量 64 KiB、启动与补缓冲阈值 16 KiB。设备 worker 增量读取 Ogg page / MP3 帧 / WAV 采样，输出 16 kHz mono S16LE，并组装成 Audio PAL 要求的完整 PCM frame。下载侧缓冲满时等待，播放侧 `WOULD_BLOCK` 重试同一帧；不会把整首文件载入内存，也不会逐帧 drain 插入静音。只有尾帧补零，正常结束时 drain；播放进度扣除排队帧，最终不计补零样本。
 
-停止使当前 generation 失效并取消 HTTP，下载 task join 成功后才释放其缓冲；播放器只关闭自己的 Track，不关闭共享扬声器。下载、解码或输出失败进入 error 并上报 telemetry。命名音效由补充 vtable 解析名称为 HTTPS Ogg/Opus URL；名称须适合内部有界存储，非法输入在预留任务前拒绝。
+停止使当前 generation 失效并取消 HTTP，下载 task join 成功后才释放其缓冲；播放器只关闭自己的 Track，不关闭共享扬声器。下载、解码或输出失败进入 error 并上报 telemetry。命名音效由补充 vtable 解析名称为 HTTPS 音频 URL（格式同下）；名称须适合内部有界存储，非法输入在预留任务前拒绝。
+
+### 音频格式
+
+播放器只按文件开头的字节选择解码器，不看 URL 后缀或 `Content-Type`；服务端的 `AudioPlayerItem` 也不带格式字段。
+
+- `OggS`：Ogg/Opus（mapping family 0，单/双声道），库内 libopus 解码。
+- `ID3` 或 MPEG 音频帧头：MP3，只支持 MPEG-1/2/2.5 Layer III，由 dr_mp3 0.7.3（public domain / MIT-0）的底层帧解码器解码；帧的切分、标签和定位都在库内。Layer I/II 与 free-format 码率返回 `UNSUPPORTED`。任意大小、任意个数的 ID3v2 标签（含 footer 与内嵌封面）边读边丢；首帧若是 Xing / Info / VBRI 帧，只当元数据不播放；LAME 标签里的编码器延迟与尾部填充会被裁掉，因此时长与编码前的 PCM 一致。位置在预期处、且版本/层/采样率/声道数与首帧一致的帧直接接受；首帧、失步后和 Range 落点处还要求紧随的一致帧头或文件结尾佐证，最多容忍 64 KiB 无法同步的字节。MP3 没有结束标记，文件被截断时在最后一个完整帧处正常结束；损坏的帧只影响它附近的几帧，边信息无法解析的帧按静音计时。
+- `RIFF....WAVE`：WAV，支持 8/16/24/32 位整数 PCM 和 32 位 float（含 `WAVE_FORMAT_EXTENSIBLE`），1–8 声道，8–48 kHz；ADPCM、µ-law、64 位 float 等返回 `UNSUPPORTED`，`fmt ` 与声道数不一致、`data` 早于 `fmt ` 返回 `FORMAT`。`data` 之前的其它 chunk 流式跳过；`data` 长度为 0 或 `0xFFFFFFFF` 时播到流结束，否则只播声明的长度。
+- 其它内容（例如服务器回的 HTML 错误页）在播放任何音频前失败，状态 `error`、`error_code` 为 `pal:-3`（`H2_PAL_ERR_UNSUPPORTED`）。
+
+MP3 与 WAV 先把各声道取平均混成单声道，再重采样到 16 kHz：Kaiser 窗 sinc（β = 6，约 63 dB 阻带），截止在两侧 Nyquist 中较低者的 7/8，降采样时约 7 kHz；16 kHz 源原样直通。输出位置按整数有理数步进，长曲目不会漂移；WAV 和逐帧计数的 MP3 定位后的样本与从头播放逐位相同。滤波系数是离线生成的常量表，库不依赖 libm。
+
+内存都从 config 的 PAL allocator 分配，条目结束即释放。在 host 上实测一个条目的解码峰值：Ogg/Opus 约 90 KiB（65,307 字节的最大 page 缓冲加约 18 KiB Opus 状态），MP3 约 41 KiB（其中 dr_mp3 解码器状态约 23 KiB，含其 16 KiB scratch），WAV 约 15 KiB。dr_mp3 把 scratch 放在调用方分配的解码器结构里，解码时在 ESP32-S3 上的静态栈用量不到 1 KiB。
+
+压缩环形缓冲按字节计：默认 64 KiB 对 Opus 和 MP3 是若干秒，对 44.1 kHz 立体声 16 位 WAV（约 1.4 Mbit/s）不到 0.4 秒，网络一抖就会断音。WAV 适合 8–16 kHz 单声道的提示音；产品要播放高码率 WAV 时，应相应加大 `audio_buffer_bytes` 与 `audio_prebuffer_bytes`。
 
 ## 对话流程
 

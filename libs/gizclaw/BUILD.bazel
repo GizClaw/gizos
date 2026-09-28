@@ -53,6 +53,8 @@ h2_tasks(
 )
 
 _FIRMWARE_COMPATIBLE_SRCS = [
+    "src/h2_gizclaw_audio_decoder.c",
+    "src/h2_gizclaw_audio_decoder_internal.h",
     "src/h2_gizclaw_audio_pacer.h",
     "src/h2_gizclaw_audio_play.c",
     "src/h2_gizclaw_api_key.c",
@@ -68,6 +70,7 @@ _FIRMWARE_COMPATIBLE_SRCS = [
     "src/h2_gizclaw_firmware.c",
     "src/h2_gizclaw_download_internal.h",
     "src/h2_gizclaw_internal.h",
+    "src/h2_gizclaw_mp3.c",
     "src/h2_gizclaw_ogg_opus.c",
     "src/h2_gizclaw_ogg_opus_internal.h",
     "src/h2_gizclaw_peer_async.c",
@@ -80,6 +83,8 @@ _FIRMWARE_COMPATIBLE_SRCS = [
     "src/h2_gizclaw_registration.c",
     "src/h2_gizclaw_registration_internal.h",
     "src/h2_gizclaw_request.c",
+    "src/h2_gizclaw_resample.c",
+    "src/h2_gizclaw_resample_internal.h",
     "src/h2_gizclaw_response.c",
     "src/h2_gizclaw_response_internal.h",
     "src/h2_gizclaw_service.c",
@@ -95,6 +100,7 @@ _FIRMWARE_COMPATIBLE_SRCS = [
     "src/h2_gizclaw_telemetry.c",
     "src/h2_gizclaw_time_stretch.c",
     "src/h2_gizclaw_time_stretch_internal.h",
+    "src/h2_gizclaw_wav.c",
     "src/h2_gizclaw_workflow.c",
     "src/h2_gizclaw_workspace.c",
 ]
@@ -145,6 +151,7 @@ cc_library(
         "//libs/pal",
         "//tools/bazel:vendor_third_party_yyjson",
         "//libs/runtime",
+        "//tools/bazel:vendor_third_party_dr_mp3",
         "//tools/bazel:vendor_third_party_opus",
     ] + select({
         "@platforms//cpu:wasm32": ["//tools/bazel:vendor_third_party_gizclaw"],
@@ -164,6 +171,8 @@ cc_library(
         "src/h2_gizclaw_app_config.c",
         "src/h2_gizclaw_debug.c",
         "src/h2_gizclaw_async_rpc.c",
+        "src/h2_gizclaw_audio_decoder.c",
+        "src/h2_gizclaw_audio_decoder_internal.h",
         "src/h2_gizclaw_audio_pacer.h",
         "src/h2_gizclaw_audio_play.c",
         "src/h2_gizclaw_client.c",
@@ -175,6 +184,7 @@ cc_library(
         "src/h2_gizclaw_download_internal.h",
         "src/h2_gizclaw_firmware.c",
         "src/h2_gizclaw_internal.h",
+        "src/h2_gizclaw_mp3.c",
         "src/h2_gizclaw_ogg_opus.c",
         "src/h2_gizclaw_ogg_opus_internal.h",
         "src/h2_gizclaw_pcm_ring.c",
@@ -187,6 +197,8 @@ cc_library(
         "src/h2_gizclaw_registration.c",
         "src/h2_gizclaw_registration_internal.h",
         "src/h2_gizclaw_request.c",
+        "src/h2_gizclaw_resample.c",
+        "src/h2_gizclaw_resample_internal.h",
         "src/h2_gizclaw_response.c",
         "src/h2_gizclaw_response_internal.h",
         "src/h2_gizclaw_service.c",
@@ -202,6 +214,7 @@ cc_library(
         "src/h2_gizclaw_telemetry.c",
         "src/h2_gizclaw_time_stretch.c",
         "src/h2_gizclaw_time_stretch_internal.h",
+        "src/h2_gizclaw_wav.c",
         "src/h2_gizclaw_workflow.c",
         "src/h2_gizclaw_workspace.c",
     ],
@@ -245,6 +258,7 @@ cc_library(
         "//libs/pal",
         "//tools/bazel:vendor_third_party_yyjson",
         "//libs/runtime",
+        "//tools/bazel:vendor_third_party_dr_mp3",
         "//tools/bazel:vendor_third_party_gizclaw",
         "//tools/bazel:vendor_third_party_opus",
     ],
@@ -296,6 +310,52 @@ cc_test(
     }),
     deps = [
         "//libs/pal",
+        "//tools/bazel:vendor_third_party_opus",
+    ],
+)
+
+cc_test(
+    name = "h2_gizclaw_audio_decoder_test",
+    srcs = [
+        "src/h2_gizclaw_audio_decoder.c",
+        "src/h2_gizclaw_audio_decoder_internal.h",
+        "src/h2_gizclaw_mp3.c",
+        "src/h2_gizclaw_ogg_opus.c",
+        "src/h2_gizclaw_ogg_opus_internal.h",
+        "src/h2_gizclaw_resample.c",
+        "src/h2_gizclaw_resample_internal.h",
+        "src/h2_gizclaw_wav.c",
+        "tests/ogg_opus_fixture.h",
+        "tests/test_h2_gizclaw_audio_decoder.c",
+    ],
+    args = [
+        "$(rootpath tests/fixtures/tone_1k_44k_stereo_cbr64.mp3)",
+        "$(rootpath tests/fixtures/tone_1k_22k_mono_vbr.mp3)",
+        "$(rootpath tests/fixtures/tone_1k_8k_mono_cbr8_notag.mp3)",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    data = [
+        "tests/fixtures/README.md",
+        "tests/fixtures/SHA256SUMS",
+        "tests/fixtures/tone_1k_22k_mono_vbr.mp3",
+        "tests/fixtures/tone_1k_44k_stereo_cbr64.mp3",
+        "tests/fixtures/tone_1k_8k_mono_cbr8_notag.mp3",
+    ],
+    includes = ["src"],
+    linkopts = select({
+        "//tools/bazel/platforms:is_windows_x86_64": [],
+        "//conditions:default": ["-lm"],
+    }),
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal",
+        "//tools/bazel:vendor_third_party_dr_mp3",
         "//tools/bazel:vendor_third_party_opus",
     ],
 )

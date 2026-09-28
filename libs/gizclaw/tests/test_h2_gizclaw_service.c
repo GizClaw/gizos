@@ -3297,6 +3297,9 @@ enum {
 };
 typedef struct seek_test_state {
   fixture_t fixture;
+  /* Served instead of the Ogg fixture when set. */
+  const uint8_t *body;
+  size_t body_len;
   size_t header_len;
   uint64_t plain16; /* 16 kHz samples a start-from-zero playback emits. */
   unsigned server;
@@ -3380,7 +3383,8 @@ static int seek_http(void *user, const h2_pal_http_request_t *request,
   seek_test_state_t *state = user;
   const unsigned call = h2_atomic_fetch_add(&state->calls, 1u);
   assert(call < 8u);
-  const size_t total = state->fixture.len;
+  const uint8_t *bytes = state->body ? state->body : state->fixture.bytes;
+  const size_t total = state->body ? state->body_len : state->fixture.len;
   unsigned long long first = 0, last = total - 1;
   bool ranged = false;
   for (size_t i = 0; i < request->header_count; ++i) {
@@ -3405,7 +3409,7 @@ static int seek_http(void *user, const h2_pal_http_request_t *request,
   if (!partial) {
     response->status_code = 200;
     response->content_length = (int64_t)total;
-    return seek_body(request, state->fixture.bytes, total);
+    return seek_body(request, bytes, total);
   }
   assert(first <= last);
   char value[64];
@@ -3422,7 +3426,7 @@ static int seek_http(void *user, const h2_pal_http_request_t *request,
     return rc;
   response->status_code = 206;
   response->content_length = (int64_t)(last - first + 1);
-  return seek_body(request, state->fixture.bytes + first, last - first + 1);
+  return seek_body(request, bytes + first, last - first + 1);
 }
 /* 1500 × 20 ms at 6 kbit/s, ten packets per page, pre-skip 312. */
 static void seek_fixture_build(seek_test_state_t *state) {
@@ -3598,6 +3602,105 @@ static void test_device_player_timed_start(void) {
   speaker_wait_player(service, "ended");
   assert(h2_atomic_load(&state.writes) == seek_frames(&state, 0));
   assert(h2_atomic_load(&state.calls) == 1u && !state.ranges[0][0]);
+
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_gizclaw_test_set_telemetry_send(NULL, NULL);
+}
+
+/* 30 s of 8 kHz unsigned 8-bit mono WAV: 480000 samples at 16 kHz. */
+static size_t format_wav_build(uint8_t *out) {
+  const uint32_t samples = 8000u * 30u;
+  memcpy(out, "RIFF", 4);
+  put32(out + 4, 36u + samples);
+  memcpy(out + 8, "WAVEfmt ", 8);
+  put32(out + 16, 16);
+  const uint8_t format[16] = {1, 0, 1, 0, 0x40, 0x1F, 0, 0,
+                              0x40, 0x1F, 0, 0, 1, 0, 8, 0};
+  memcpy(out + 20, format, sizeof(format));
+  memcpy(out + 36, "data", 4);
+  put32(out + 40, samples);
+  for (uint32_t i = 0; i < samples; ++i)
+    out[44u + i] = (uint8_t)(128 + (int)(i % 16u) * 4 - 32);
+  return 44u + samples;
+}
+/* 417 silent MPEG-2.5 Layer III frames, 8 kbit/s at 8 kHz mono, no tag:
+ * each 72 bytes and 576 samples, 480384 samples at 16 kHz. */
+static size_t format_mp3_build(uint8_t *out) {
+  const uint8_t header[4] = {0xFF, 0xE3, 0x18, 0xC4};
+  for (size_t i = 0; i < 417u; ++i) {
+    memset(out + 72u * i, 0, 72);
+    memcpy(out + 72u * i, header, sizeof(header));
+  }
+  return 72u * 417u;
+}
+
+/* MP3 and WAV go through the same player, timed start and fallbacks as
+ * Ogg/Opus; WAV ranges to the exact frame and a tagless CBR MP3 aims 5 s
+ * early by its bitrate and still lands on the exact frame. */
+static void test_device_player_formats(void) {
+  static seek_test_state_t state;
+  static uint8_t body[8000u * 30u + 64u];
+  memset(&state, 0, sizeof(state));
+  seek_test_state_atomics_init(&state);
+  const h2_pal_audio_vtable_t audio_vtable = {.get_info = seek_audio_info,
+    .start_speaker = seek_speaker, .create_track = seek_track_create};
+  const h2_pal_audio_api_t audio = {.user = &state, .vtable = &audio_vtable};
+  const h2_pal_http_vtable_t http_vtable = {.request = seek_http};
+  const h2_pal_http_api_t http = {.user = &state, .vtable = &http_vtable};
+  test_env_t env;
+  h2_gizclaw_service_t *service = seek_service(&env, &audio, &http);
+  const struct {
+    size_t (*build)(uint8_t *out);
+    uint64_t plain16;
+    const char *seek_range;
+  } formats[] = {
+      {format_wav_build, 480000u, "bytes=159980-"},
+      {format_mp3_build, 480384u, "bytes=14400-"},
+  };
+  for (size_t k = 0; k < 2u; ++k) {
+    state.body = body;
+    state.body_len = formats[k].build(body);
+    state.plain16 = formats[k].plain16;
+    state.server = SEEK_SERVER_RANGE;
+    assert(seek_play(service, &state, 30000, 0, 0) == seek_frames(&state, 0));
+    assert(h2_atomic_load(&state.calls) == 1u && !state.ranges[0][0]);
+    assert(seek_play(service, &state, 30000, 20000, 20000) ==
+           seek_frames(&state, 20000u * 16u));
+    assert(h2_atomic_load(&state.calls) == 2u);
+    assert(!strcmp(state.ranges[0], "bytes=0-"));
+    assert(!strcmp(state.ranges[1], formats[k].seek_range));
+    state.server = SEEK_SERVER_IGNORE;
+    assert(seek_play(service, &state, 30000, 20000, 20000) ==
+           seek_frames(&state, 20000u * 16u));
+    assert(h2_atomic_load(&state.calls) == 1u);
+    const unsigned bad[] = {SEEK_SERVER_MISPLACE, SEEK_SERVER_NOT_206,
+                            SEEK_SERVER_RETOTAL};
+    for (size_t i = 0; i < 3u; ++i) {
+      state.server = bad[i];
+      assert(seek_play(service, &state, 30000, 20000, 20000) ==
+             seek_frames(&state, 20000u * 16u));
+      assert(h2_atomic_load(&state.calls) == 3u);
+    }
+  }
+
+  /* Anything else is refused before it plays, with the PAL code. */
+  static const char html[] = "<!DOCTYPE html><title>404</title>";
+  state.body = (const uint8_t *)html;
+  state.body_len = sizeof(html) - 1u;
+  state.server = SEEK_SERVER_RANGE;
+  h2_atomic_store(&state.writes, 0u);
+  h2_gizclaw_player_playlist_entry_t entry = {
+      .url = device_span("https://example.test/missing.mp3")};
+  assert(h2_gizclaw_player_playlist_set(service, &entry, 1) == H2_PAL_OK);
+  assert(h2_gizclaw_player_play_index(service, 0) == H2_PAL_OK);
+  speaker_wait_player(service, "error");
+  h2_gizclaw_player_status_t status;
+  assert(h2_gizclaw_player_get_status(service, &status) == H2_PAL_OK);
+  char code[16];
+  (void)snprintf(code, sizeof(code), "pal:%d", H2_PAL_ERR_UNSUPPORTED);
+  assert(!strcmp(status.error_code, code));
+  assert(h2_atomic_load(&state.writes) == 0u);
 
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
@@ -13637,6 +13740,7 @@ int main(int argc, char **argv) {
   test_device_provider_pal_and_player();
   test_device_playback_speaker_hooks();
   test_device_player_timed_start();
+  test_device_player_formats();
   test_device_player_rate();
   test_device_forwards_find_and_social_ping();
   test_device_configuration_rpcs();

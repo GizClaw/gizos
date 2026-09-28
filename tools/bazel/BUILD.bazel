@@ -489,6 +489,13 @@ cc_library(
 )
 
 cc_library(
+    name = "vendor_third_party_dr_mp3",
+    tags = ["manual"],
+    target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
+    deps = ["@h2_vendor_dr_libs//:dr_mp3"],
+)
+
+cc_library(
     name = "vendor_third_party_ffmpeg",
     data = ["@h2_vendor_ffmpeg//:all_sources"],
     tags = ["manual"],

@@ -87,7 +87,9 @@ typedef struct h2_gizclaw_config {
     const char *hardware_revision;
     const char *serial;
     /** Compressed audio ring capacity; zero selects 64 KiB. Passing audio PAL
-     * enables the Ogg/Opus player. Track length is not limited by this buffer. */
+     * enables the Ogg/Opus, MP3 and WAV player. Track length is not limited
+     * by this buffer, but its playing time is: 64 KiB is seconds of Opus or
+     * MP3 and under half a second of 44.1 kHz stereo WAV. */
     size_t audio_buffer_bytes;
     /** Start/refill threshold <= ring capacity; zero selects min(16 KiB, ring).
      * A completed short response starts with the bytes available. */

@@ -7,20 +7,20 @@ fixture、注册和清理流程，连接一个测试设备，使用设备身份�
 ```sh
 export H2_GIZCLAW_E2E_REGISTRATION_TOKEN='<E2E registration token>'
 export H2_GIZCLAW_E2E_DEVICE_API_URL='https://ap.e2e.gizclaw.com'
-export H2_GIZCLAW_E2E_AUDIO_URL='<public HTTPS Ogg/Opus URL>'
+export H2_GIZCLAW_E2E_AUDIO_URL='<public HTTPS Ogg/Opus, MP3 or WAV URL>'
 bazel test //projects/e2e/targets/cc_test/gizclaw:gizclaw_h2peer_device_live_test \
   --test_arg=--endpoint=ap.e2e.gizclaw.com:9821 --test_output=errors
 ```
 
 API URL 与音频 URL 显式传入；API key 只保存在测试内存，不输出 secret。
-设备通过 PAL HTTP 实际下载音频，库实际解码 Ogg/Opus，再写入按 PCM 时长消费的
+设备通过 PAL HTTP 实际下载音频，库按文件字节识别并实际解码（Ogg/Opus、MP3 或 WAV），再写入按 PCM 时长消费的
 虚拟 PAL Audio sink。测试先调用本地 player/OTA 入口，其中设备侧 `playlist_set` / `repeat_set` 写入后立即用 `playlist_snapshot` 回读条目数、标题与 revision，并检查越界写入和非法模式被拒绝后 playlist 与模式都保持原样；再检查远程音量、非法列表、播放列表、循环模式、播放进度和停止。
 播放器进度和 OTA 结果均读取服务端 `/device/status`，不以 RPC 返回代替 telemetry 验收。
 OTA 使用部署环境的 firmware metadata 和 HTTPS package URL，写入计数 Stage sink，
 在 finish 时故意拒绝校验，检查服务端可读的 failed telemetry，绝不写物理分区或重启。
 结束后撤销 API key，fixture 删除测试 Peer 并关闭所有 Service task。
 
-本地 Service 测试覆盖 PAL 音量映射、增量 Ogg/Opus 解码、32 字节环形缓冲回绕、
+本地 Service 测试覆盖 PAL 音量映射、增量 Ogg/Opus 解码、MP3 与 WAV 的播放和定时起播、非音频内容的拒绝、32 字节环形缓冲回绕、
 HTTP 未结束时已输出 PCM、320→512 采样拼帧和末帧补零、失败列表原子性、在途下载
 取消、response 完成前不重启、失败 response 取消动作，以及 OTA telemetry 的
 借用字符串拷贝、混合 frame 拒绝与 WOULD_BLOCK 结果。实机音质、H2Loader 成功安装和
