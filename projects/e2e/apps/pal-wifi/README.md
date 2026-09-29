@@ -13,6 +13,11 @@ credential backup may confirm the managed App.
 
 The fixture is an AMOLED ESP32-S3 running a temporary WPA2 AP and a real STA
 client. It joins each DUT AP, obtains DHCP, stays for ten seconds, then leaves.
+It is a fixed R15 test tool: its archived package/image and three historical
+source inputs are pinned to the actual Git blobs used to build it. The live
+raw-byte audit verifies those blobs; portable receipt checks validate the
+captured provenance without requiring old commits in a shallow CI checkout.
+The DevKit and BK7258 qualification images remain bound to current source.
 The DUT exercises WPA2, open and hidden AP modes; each requires a real leased
 client and observed join/leave. It also scans the fixture, tests callback early
 stop, tests borrowing and zero-timeout connect, rejects a wrong password while

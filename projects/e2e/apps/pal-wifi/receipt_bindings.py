@@ -4,6 +4,22 @@ import io
 import json
 from pathlib import Path
 import re
+import subprocess
+
+AMOLED_R15_VERSION = "pal-wifi-fixture-20260929-r15"
+AMOLED_R15_PACKAGE = "b753d84fb4ca0ce1bd85bd23d65713523a40c877b8a0ed3831a2bc37a8d7ec2a"
+AMOLED_R15_IMAGE = "ff4ae67691fc4ee8e85a7fed8347c7215baf0041338f0d4792fd85318edfa8f7"
+AMOLED_R15_HISTORICAL_SOURCES = {
+    "native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_wifi.c": {
+        "commit": "2d48858a39a1f96361210651ccb4f76894750709",
+        "sha256": "89798a6ad0ce9ac3a9cc35e4035993ce74e7884f17992ee6c84644fee94e8469"},
+    "projects/e2e/apps/pal-wifi/app/include/h2_pal_wifi_e2e.h": {
+        "commit": "de0afcf5b75966f9b1a3a7a3c1ff7b842d861c3e",
+        "sha256": "cec595ed3b8d6263d889b3e587751284224dc3bacfeda37f60aa49263d9db487"},
+    "projects/e2e/libs/pal-wifi-device/src/h2_pal_wifi_device.c": {
+        "commit": "451afcf1c951d95cf08e3d9b1fbd6324c4742d2f",
+        "sha256": "7e40c3b531541785a73c979204b14d7c725fc8da88f2797395bd351f5576bbbd"},
+}
 import tarfile
 import zlib
 
@@ -33,10 +49,34 @@ def _hash(value):
     assert isinstance(value, str) and re.fullmatch(r"[a-f0-9]{64}", value), "invalid SHA256"
 
 
-def _check_sources(inputs):
+def _historical_source_policy(report):
+    historical = report.get("historical_source_inputs", {})
+    if report.get("platform") == "amoled-fixture":
+        assert report["version"] == AMOLED_R15_VERSION, "historical fixture version changed"
+        assert report["package_sha256"] == AMOLED_R15_PACKAGE, "historical fixture package changed"
+        assert report["image_sha256"] == AMOLED_R15_IMAGE, "historical fixture image changed"
+        assert historical == AMOLED_R15_HISTORICAL_SOURCES, "unexpected historical source exception"
+        for path, identity in historical.items():
+            assert report["source_inputs"][path] == identity["sha256"], "historical source hash changed"
+    else:
+        assert not historical, "DUT or host cannot claim historical fixture source"
+    return historical
+
+
+def _verify_historical_git_blobs(historical):
+    for path, identity in historical.items():
+        raw = subprocess.check_output(["git", "show", identity["commit"] + ":" + path])
+        assert hashlib.sha256(raw).hexdigest() == identity["sha256"], ("historical Git bytes", path)
+
+
+def _check_sources(inputs, historical=None):
     assert inputs, "missing source snapshot"
+    historical = historical or {}
     for path, expected in inputs.items():
         _hash(expected)
+        if path in historical:
+            assert expected == historical[path]["sha256"]
+            continue
         assert sha(path) == expected, ("source drift", path)
 
 
@@ -113,7 +153,9 @@ def _check_snapshot(report, snapshot):
             assert before["size"] == after["size"] == stored, "truncated coredump"
             assert before["sha256"] == after["sha256"], "coredump bytes changed"
     assert snapshot["source_inputs"] == report["source_inputs"], "source receipt changed"
-    _check_sources(snapshot["source_inputs"])
+    historical = _historical_source_policy(report)
+    assert snapshot.get("historical_source_inputs", {}) == historical, "historical source receipt changed"
+    _check_sources(snapshot["source_inputs"], historical)
     return metadata
 
 
@@ -124,6 +166,8 @@ def _file_identity(ref):
 
 def _audit_snapshot(report):
     """Read actual locally retained artifacts and capture their checked facts."""
+    historical = _historical_source_policy(report)
+    _verify_historical_git_blobs(historical)
     metadata = json.loads(bound_ref(report["firmware"]).read_text(encoding="utf-8"))
     package = bound_ref(report["package"])
     with tarfile.open(fileobj=io.BytesIO(zlib.decompress(package.read_bytes())), mode="r:") as archive:
@@ -151,7 +195,8 @@ def _audit_snapshot(report):
                 "baseline_coredump": kv(bound_ref(report["baseline_coredump"]), "H2_LOADER_COREDUMP_STATUS "),
                 "raw_hashes": {field: report[field]["sha256"] for field in
                                ("firmware", "package", "baseline_status", "stage_status", "baseline_coredump")},
-                "source_inputs": report["source_inputs"], "runs": []}
+                "source_inputs": report["source_inputs"],
+                "historical_source_inputs": historical, "runs": []}
     nonblank = snapshot["baseline_coredump"]["blank"] == "0"
     before = bound_ref(report["baseline_coredump_bytes"]) if nonblank else None
     if nonblank:

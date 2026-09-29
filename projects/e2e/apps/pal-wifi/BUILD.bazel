@@ -17,6 +17,13 @@ py_test(
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 py_test(
+    name = "historical_fixture_test",
+    srcs = ["tests/test_historical_fixture.py", "receipt_bindings.py"],
+    main = "tests/test_historical_fixture.py",
+    legacy_create_init = 0,
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+py_test(
     name = "receipt_binding_test",
     srcs = ["tests/test_receipt_bindings.py", "receipt_bindings.py"],
     main = "tests/test_receipt_bindings.py",
