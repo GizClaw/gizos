@@ -21,7 +21,7 @@ SDK = r'''
 #include <stdint.h>
 #include <stddef.h>
 typedef int bk_err_t;
-enum { BK_OK=0, BK_ERR_PARAM=-1, BK_ERR_NOT_FOUND=-2, STA_PM_ENABLE=0x301, STA_STOP=0x312 };
+enum { BK_OK=0, BK_ERR_PARAM=-1, BK_ERR_NOT_FOUND=-2, BK_ERR_BUSY=-12, STA_PM_ENABLE=0x301, STA_STOP=0x312 };
 struct bk_msg_hdr { uint32_t cmd_id; };
 typedef struct __attribute__((packed)) { uint32_t argc; uintptr_t args[4]; } wifi_api_arg_info_t;
 int started=1, connected=1, vif=7, calls=0, associate_calls=0, confirmed=999, failure=0;
@@ -63,10 +63,12 @@ PROBE = r'''
 #include <stdio.h>
 #include "h2_bk_wifi_rpc.h"
 #include "h2_bk_dhcp_ring.h"
+#include "h2_bk_wifi_lease.h"
 struct bk_msg_hdr { uint32_t cmd_id; };
 struct packet { struct bk_msg_hdr hdr; uint32_t argc; uintptr_t args[4]; };
 extern int started,connected,vif,calls,associate_calls,confirmed,failure;
 int cif_handle_wifi_api_cmd(struct bk_msg_hdr *);
+int cif_send_customer_event(uint8_t *data, uint16_t len) { (void)data; (void)len; return 0; }
 #define CHECK(x) do { if(!(x)) {fprintf(stderr,"line%d\n",__LINE__); return 1;} } while(0)
 int main(void) {
     struct packet p={{H2_BK_WIFI_RPC_STA_DISASSOCIATE},0,{0}};
@@ -102,11 +104,25 @@ int main(void) {
     p.args[0]=(uintptr_t)&snapshot;
     CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0 && confirmed==0);
     CHECK(snapshot.version==H2_BK_DHCP_SNAPSHOT_VERSION && snapshot.count==1 && snapshot.entries[0].xid==123);
+    p.hdr.cmd_id=H2_BK_WIFI_RPC_LEASE_SNAPSHOT; p.argc=0;
+    CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0 && confirmed==-1);
+    p.argc=1; p.args[0]=0;
+    CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0 && confirmed==-1);
+    const uint8_t mac[6]={0x30,0xed,0xa0,0xae,0x0f,0x84};
+    h2_bk_wifi_lease_reset();
+    CHECK(h2_bk_wifi_lease_accept(mac,0xc0a8bc64u,567u)==1u);
+    h2_bk_wifi_lease_snapshot_t leases;
+    p.args[0]=(uintptr_t)&leases;
+    CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0 && confirmed==0);
+    CHECK(leases.version==H2_BK_WIFI_LEASE_VERSION && leases.count==1 &&
+          leases.records[0].ip4==0xc0a8bc64u && leases.records[0].xid==567u);
 #else
     CHECK(confirmed==-2 && connected==1 && started==1 && vif==7 && calls==0);
     p.hdr.cmd_id=H2_BK_WIFI_RPC_STA_ASSOCIATE;
     CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0);
     CHECK(confirmed==-2 && connected==1 && started==1 && vif==7 && associate_calls==0);
+    p.hdr.cmd_id=H2_BK_WIFI_RPC_LEASE_SNAPSHOT;
+    CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0 && confirmed==-2);
 #endif
     puts("CP_RPC_CONFIRMED_PAYLOAD_AND_SERVICE_PRESERVATION PASS");
     return 0;
@@ -133,8 +149,11 @@ project(PairedRPC C)
 set(CMAKE_C_STANDARD 11)
 set(REPO_ROOT "$ENV{H2_GIZOS_ROOT}")
 set(H2_BK_CP_PSRAM_SERVICES OFF)
+set(H2_BK_CP_LEASE_HOOK OFF)
 add_library(sdk STATIC sdk/components/controller_if/cif_wifi_api.c
- "${REPO_ROOT}/native_component_src/bk7258/cp/h2_pal_core/src/h2_bk_dhcp_ring.c")
+ "${REPO_ROOT}/native_component_src/bk7258/cp/h2_pal_core/src/h2_bk_dhcp_ring.c"
+ "${REPO_ROOT}/native_component_src/bk7258/cp/h2_pal_core/src/h2_bk_wifi_lease.c")
+target_compile_definitions(sdk PRIVATE H2_BK_WIFI_LEASE_TEST=1)
 target_include_directories(sdk PRIVATE "${REPO_ROOT}/native_component_src/bk7258/shared")
 function(armino_component_get_property out component property)
   set(${out} sdk PARENT_SCOPE)
