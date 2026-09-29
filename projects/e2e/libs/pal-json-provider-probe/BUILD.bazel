@@ -1,0 +1,21 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//projects/e2e:__subpackages__"])
+
+cc_library(
+    name = "probe",
+    srcs = ["probe.c"],
+    hdrs = ["probe.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["."],
+    deps = [
+    ] + select({
+        "@platforms//os:ios": ["//libs/pal/providers/ios/pal_core:packaged"],
+        "@platforms//os:android": ["//libs/pal/providers/android/pal_core:packaged"],
+        "//conditions:default": ["//libs/pal/providers/yyjson:yyjson"],
+    }) + [
+        "//projects/e2e/apps/pal-json/app:pal_json_e2e",
+    ],
+)

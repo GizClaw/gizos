@@ -91,6 +91,14 @@ const h2_pal_crypto_api_t *h2_android_platform_crypto_api(void);
  * Idempotent; also invoked by successful platform_core_shutdown(). */
 void h2_android_platform_crypto_shutdown(void);
 
+/** Create a separately owned JSON PAL provider from the package's yyjson
+ * implementation. The borrowed API and Memory PAL backend must outlive the
+ * provider. Destroy rejects live documents or serialized buffers. */
+h2_pal_result_t h2_android_json_provider_create(
+    const h2_pal_mem_api_t *mem, void **out_provider,
+    const h2_pal_json_api_t **out_api);
+h2_pal_result_t h2_android_json_provider_destroy(void **provider);
+
 /** HTTP owner over native POSIX networking and the shared full WolfSSL provider.
  * create copies the optional root CA; NULL/zero selects system trust. Output is
  * NULL on failure. API remains borrowed until destroy. Close all responses and
