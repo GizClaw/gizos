@@ -857,6 +857,13 @@ static int event_integrity(wifi_test_t *s) {
     return H2_PAL_OK;
 }
 
+static int sta_is_disconnected(const h2_pal_wifi_sta_status_t *status) {
+    return !status->ip_valid &&
+           (status->state == H2_PAL_WIFI_STA_STATE_IDLE ||
+            status->state == H2_PAL_WIFI_STA_STATE_DISCONNECTED ||
+            status->state == H2_PAL_WIFI_STA_STATE_FAILED);
+}
+
 static int restore(wifi_test_t *s) {
     /* Aggregate every restoration error, including after earlier failures.
      * Never return early and strand temporary AP or original credentials. */
@@ -890,8 +897,15 @@ static int restore(wifi_test_t *s) {
         if (!rc)
             rc = next;
         s->result.network_restored = !next;
-    } else
-        s->result.network_restored = 1;
+    } else {
+        h2_pal_wifi_sta_status_t status = {0};
+        next = h2_pal_wifi_sta_get_status(s->rt->wifi_sta, &status);
+        if (!next && !sta_is_disconnected(&status))
+            next = H2_PAL_ERR_IO;
+        if (!rc)
+            rc = next;
+        s->result.network_restored = !next;
+    }
     s->result.cleanup_rc = rc;
     s->result.retained = rc ? 1u : 0u;
     return rc;
@@ -917,6 +931,15 @@ int h2_wifi_e2e_run(h2_runtime_t *rt, const h2_wifi_e2e_config_t *cfg, h2_wifi_e
     int rc = h2_pal_wifi_settings_has_saved_sta_config(rt->wifi_settings, &s.original_saved);
     if (!rc && s.original_saved)
         rc = h2_pal_wifi_settings_get_saved_sta_config(rt->wifi_settings, &s.original);
+    if (!rc && !s.original_saved) {
+        /* Status cannot recover the password of a borrowed connection. Only
+         * begin from a known disconnected state when no configuration can
+         * restore it; reject before any radio or Settings mutation. */
+        h2_pal_wifi_sta_status_t status = {0};
+        rc = h2_pal_wifi_sta_get_status(rt->wifi_sta, &status);
+        if (!rc && !sta_is_disconnected(&status))
+            rc = H2_PAL_ERR_BUSY;
+    }
     h2_pal_wifi_ap_status_t ap = {0};
     if (!rc)
         rc = h2_pal_wifi_ap_get_status(rt->wifi_ap, &ap);

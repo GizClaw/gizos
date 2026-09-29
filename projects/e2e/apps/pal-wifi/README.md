@@ -1,5 +1,9 @@
 # PAL Wi-Fi / Netif qualification
 
+The committed DevKit R34 / BK R33 receipts describe the completed pre-review
+hardware baseline. JOIN-backpressure and unsaved-connection review fixes require
+new device runs; `qualification.json` remains pending until those runs finish.
+
 This independent App preserves the legacy mixed PAL App. Its 38 non-fail-fast
 cases cover all 21 operations: STA 7, AP 5, Settings 4 and Netif 5. Device runner
 adds `settings-restart-persistence`, qualified only on a later independent boot
@@ -11,13 +15,19 @@ separate ordinary App reboot after confirmation.
 Only complete successful runs with Settings/network restoration and removed
 credential backup may confirm the managed App.
 
+Without saved STA credentials, the portable suite accepts only a known
+disconnected starting state. An active or indeterminate connection is rejected
+before changing the radio or Settings, because its password cannot be recovered
+from status. Restoration also reads back the disconnected state before reporting
+`network_restored`.
+
 The fixture is an AMOLED ESP32-S3 running a temporary WPA2 AP and a real STA
 client. It joins each DUT AP, obtains DHCP, stays for ten seconds, then leaves.
 It is a fixed R15 test tool: its archived package/image and three historical
 source inputs are pinned to the actual Git blobs used to build it. The live
 raw-byte audit verifies those blobs; portable receipt checks validate the
 captured provenance without requiring old commits in a shallow CI checkout.
-The DevKit and BK7258 qualification images remain bound to current source.
+Final DevKit and BK7258 qualification images must match their recorded source.
 The DUT exercises WPA2, open and hidden AP modes; each requires a real leased
 client and observed join/leave. It also scans the fixture, tests callback early
 stop, tests borrowing and zero-timeout connect, rejects a wrong password while
@@ -52,6 +62,8 @@ lease, and the fixture receipt must independently show a fresh real client.
 After the first WPA2 client leaves, the App waits for a second accepted lease
 and release while consuming only Runtime events, without calling AP status or
 client APIs; this checks that event-only consumers receive them autonomously.
+BK retains a JOIN that encounters Runtime queue backpressure and retries it
+before GRANTED; a departure or AP stop cancels a JOIN that was never delivered.
 
 BK's pinned AP SDK public `connect`/`disconnect` only change local state.
 The provider uses paired AP/CP RPCs for actual radio association/disassociation,
@@ -103,8 +115,8 @@ cleanup errors or retained recovery backup keep the Wi-Fi gate closed.
 The committed `qualification.json` binds both final packages to their embedded
 images, actual build inputs, two distinct qualified boot ledgers and the
 independent fixture's real client windows. The R15 fixture is pinned as a
-historical test tool; the R34 DevKit and R33 BK7258 images are bound to current
-provider and App source. Both boards retained their original Loader/P1, have an
+historical test tool; the R34 DevKit and R33 BK7258 images are bound to their
+pre-review provider and App source. Both boards retained their original Loader/P1, have an
 empty Stage, and kept their original coredump state. Check the portable receipt
 and, where the original local firmware/status bytes are available, repeat the
 raw artifact audit:

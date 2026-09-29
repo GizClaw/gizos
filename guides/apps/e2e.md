@@ -183,7 +183,9 @@ DevKit/BK7258 qualification needs real WLAN scan/authentication/DHCP and an
 AMOLED AP/STA fixture that joins and leaves each DUT AP. The launcher makes a
 private crash-recovery credential backup before mutations; restores original
 Settings and network; removes the backup; and only confirms a complete qualified
-boot. A first seed boot is pending persistence and is not confirmed; ESP's
+boot. Without saved STA credentials, the portable suite rejects an active or
+indeterminate initial connection before mutation, and verifies disconnected
+status again during restoration. A first seed boot is pending persistence and is not confirmed; ESP's
 unconfirmed-image rollback means that seed can precede a different managed
 image under the fixed v1 record contract. Receipts keep each actual version;
 the final confirmed artifact also passes an ordinary App reboot. macOS uses
@@ -197,11 +199,13 @@ channel. BK uses paired AP/CP actual association/disassociation commands and SDK
 MIN/MAX listen-interval readback; these do not claim measured radio power.
 The source/package/status/coredump audit is separate from portable historical
 receipt consistency. Entrypoints and evidence live with the independent App README.
-Final DevKit R34 and BK7258 R33 images each passed 39/39 on both managed install
+The recorded DevKit R34 and BK7258 R33 baseline images each passed 39/39 on both managed install
 and a separate ordinary App boot, with six fresh fixture clients per qualified
 boot, complete Settings/network restoration, empty Stage and unchanged P1 and
 coredump baselines. macOS, WASM, iOS Simulator and Android Emulator each passed
 21/21 applicable capability checks; they do not qualify physical WLAN.
+The subsequent JOIN-backpressure and initial-connection review fixes require
+new device qualification before the current-source gate reopens.
 
 Portable/desktop tests 证明 case contract、provider assembly、parser、failure aggregation 与 cleanup。Live GizClaw 证明真实 E2E service flow。Firmware build 只证明对应 SDK graph 可以产生 image；DevKit/BK7258 必须继续通过 H2Loader-first install、confirm 与 cold-boot 验收，BK3633 必须按 Board guide 验证完整 `merge-crc.bin` 与两次 cold boot。任何一层不能代替另一层。
 

@@ -9,7 +9,7 @@ static void station(wifi_test_t *s, h2_runtime_event_kind_t kind,
     value.status = status;
     value.ssid_len = s->cfg->fixture.ssid_len;
     memcpy(value.ssid, s->cfg->fixture.ssid, value.ssid_len);
-    value.ip_valid = has_ip;
+    value.ip_valid = (uint8_t)(has_ip != 0);
     if (has_ip) {
         value.ip.ip4 = 0xC0A80402u;
         value.ip.netmask4 = 0xFFFFFF00u;
@@ -29,7 +29,7 @@ static void client(wifi_test_t *s, h2_runtime_event_kind_t kind, int lease,
     h2_runtime_system_event_wifi_ap_client_t value = {0};
     value.mac[0] = 0x02;
     value.mac[5] = 0x01;
-    value.lease_valid = lease;
+    value.lease_valid = (uint8_t)(lease != 0);
     value.lease.ip4 = ip;
     h2_runtime_event_t event = {.kind = kind, .component = H2_RUNTIME_COMPONENT_SYSTEM_WIFI,
                                 .payload = &value, .payload_size = sizeof(value)};
@@ -90,11 +90,11 @@ static int cleanup_ap_clients(void *user, h2_pal_wifi_ap_client_t *out, size_t c
     *count = 0;
     return H2_PAL_OK;
 }
-static int cleanup_time(void *user, uint64_t *out) {
+static h2_pal_result_t cleanup_time(void *user, uint64_t *out) {
     *out = ++((cleanup_fixture_t *)user)->now;
     return H2_PAL_OK;
 }
-static int cleanup_sleep(void *user, uint32_t ms) {
+static h2_pal_result_t cleanup_sleep(void *user, uint32_t ms) {
     ((cleanup_fixture_t *)user)->now += ms;
     return H2_PAL_OK;
 }

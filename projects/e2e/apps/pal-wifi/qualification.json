@@ -1,9 +1,13 @@
 {
   "schema": 1,
-  "qualified": true,
+  "qualified": false,
   "operation_count": 21,
   "case_count": 39,
-  "pending": [],
+  "pending": [
+    "review fixes: current-source DevKit managed and independent reboot qualification",
+    "review fixes: current-source BK7258 managed and independent reboot qualification",
+    "review fixes: refresh four host capability receipts and source closure"
+  ],
   "source_inputs": {
     ".bazelrc": "2afafc454ec12b35d1031042fee573b39473c1b514292739ed2a04d782636fda",
     "MODULE.bazel": "09b2aa2366732b75e84647aa1712ee03a83882a55b28f2de865415a4ac3f58e6",
