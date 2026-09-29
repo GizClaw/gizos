@@ -13,6 +13,9 @@
 #include "net.h"
 #include "wifi_api_ipc.h"
 
+/* Exported by the pinned AP SDK, although omitted from its public header. */
+extern bool wifi_sta_is_started(void);
+
 #include <string.h>
 #include "h2_atomic_static.h"
 
@@ -804,6 +807,7 @@ static void h2_bk_wifi_connect_worker(void *arg) {
                     &s_h2_bk_wifi_connect_generation,
                     __ATOMIC_ACQUIRE) == generation;
                 if (current_generation) {
+                    int was_started = wifi_sta_is_started();
                     start_err = bk_wifi_sta_set_config(&request->sdk_config);
                     if (start_err == BK_OK) {
                         start_err = bk_wifi_sta_start();
@@ -814,7 +818,9 @@ static void h2_bk_wifi_connect_worker(void *arg) {
                          * GOT_IP handler restores the requested steady policy. */
                         start_err = bk_wifi_sta_pm_disable();
                     }
-                    if (start_err == BK_OK) {
+                    /* Fresh CP STA_START already calls connect. Repeating it
+                     * starts a second disconnect/authentication/DHCP sequence. */
+                    if (start_err == BK_OK && was_started) {
                         start_err = bk_wifi_sta_connect();
                     }
                 }
@@ -1021,6 +1027,7 @@ static int h2_bk_wifi_sta_connect(
                 os_free(cp_ap);
             }
         }
+        int was_started = wifi_sta_is_started();
         err = bk_wifi_sta_set_config(&bk_config);
         if (err != BK_OK) {
             return h2_bk_wifi_map_error(err);
@@ -1034,7 +1041,9 @@ static int h2_bk_wifi_sta_connect(
          * must complete awake before reapplying the current/future policy. */
         err = bk_wifi_sta_pm_disable();
         if (err != BK_OK) return h2_bk_wifi_map_error(err);
-        err = bk_wifi_sta_connect();
+        /* Fresh SDK STA_START auto-connects on CP. Explicit CONNECT is only
+         * needed when START was an already-started no-op. */
+        if (was_started) err = bk_wifi_sta_connect();
         if (err != BK_OK) {
             return h2_bk_wifi_map_error(err);
         }
@@ -1104,22 +1113,9 @@ static int h2_bk_wifi_sta_disconnect(h2_pal_wifi_sta_t *sta) {
     /* A fresh authenticated attempt cannot reuse last SSID/IP evidence. */
     __atomic_store_n(&s_h2_bk_wifi_last_config_valid, 0, __ATOMIC_RELEASE);
     h2_bk_wifi_request_unlock();
-    /* Armino's AP public disconnect only clears the local adapter; it does
-     * not send STA_DISCONNECT to the real CP radio. Explicitly disassociate
-     * that radio while preserving its service/VIF, then clear local state. */
-    wifi_link_status_t link;
-    memset(&link, 0, sizeof(link));
-    bk_err_t err = bk_wifi_sta_get_link_status(&link);
-    if (err == BK_OK) {
-        err = wifi_send_com_api_cmd(WLAN_DISCONNECT, 0);
-        if (err == BK_OK) err = bk_wifi_sta_disconnect();
-    } else if (err == BK_FAIL || err == BK_ERR_WIFI_DRIVER ||
-               err == BK_ERR_WIFI_STA_NOT_STARTED || err == BK_ERR_WIFI_STA_NOT_CONFIG) {
-        /* The SDK disconnect dereferences its STA parameter when absent.
-         * STOP is the idempotent safe cleanup for an unstarted service. */
-        err = bk_wifi_sta_stop();
-    }
-
+    /* AP SDK disconnect omits the real CP radio command. STOP performs a
+     * real disassociation; recover and clear the local adapter below. */
+    bk_err_t err = bk_wifi_sta_stop();
     int rc = err == BK_ERR_WIFI_STA_NOT_STARTED || err == BK_ERR_WIFI_STA_NOT_CONFIG
         ? H2_PAL_OK : h2_bk_wifi_map_error(err);
     if (rc == H2_PAL_OK) {
