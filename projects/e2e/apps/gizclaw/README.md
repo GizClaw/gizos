@@ -10,8 +10,8 @@
 | iOS Simulator / 打包 XCFramework | 7/8，通过的调用链覆盖 220 项，PAL teardown=0 | 同一 AppConfig fixture 缺项；完整审计仍失败 |
 | Android Emulator / 打包 AAR | 修复 P-384/RSA-4096 公共证书链后 7/8，220 项调用链，cleanup=0、PAL teardown=0 | 同一 AppConfig fixture 缺项 |
 | WASM / Chromium Worker | 5/8；Voice、Service、Resource、Connectivity 及 32 批并发通过，cleanup=0、teardown=0 | AppConfig fixture；设备 PUT 被 CORS 预检拒绝，TOS firmware 缺少 Allow-Origin |
-| ESP32-S3（音频使用 AMOLED） | 本轮尚未运行 | 等 Wi-Fi、TLS 完成并移交设备 |
-| BK7258 | 独立入口已实现，本轮尚未构建/运行 | 等 Wi-Fi/TLS 完成并移交设备；只在完整成功后确认 App |
+| ESP32-S3（音频使用 AMOLED） | DevKit 与 AMOLED 包均构建通过，本轮尚未运行 | 等 Wi-Fi、TLS 完成并移交设备 |
+| BK7258 | 独立入口及原生包构建通过，本轮尚未运行 | 等 Wi-Fi/TLS 完成并移交设备；只在完整成功后确认 App |
 
 版本、逐 case 终态、未覆盖 API、清理及日志 SHA 保存在 `evidence/*-phase*.json`。macOS/iOS/Android 的上述音频结果验证真实服务上的录音 fixture、回复解码、历史重播及 PCM 消费；输入和扬声器使用确定性测试 delegate，**不构成麦克风或声学验收**。
 
