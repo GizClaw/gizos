@@ -1,0 +1,46 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_test")
+load(":embedded_include_paths.bzl", "embedded_include_paths_check")
+
+HOST_ONLY = select({
+    "//tools/bazel/platforms:host_linux_target_linux": [],
+    "//tools/bazel/platforms:host_macos_target_macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+py_binary(
+    name = "check_include_paths",
+    srcs = ["check_include_paths.py"],
+    legacy_create_init = 0,
+    main = "check_include_paths.py",
+    target_compatible_with = HOST_ONLY,
+)
+
+py_test(
+    name = "check_include_paths_test",
+    srcs = [
+        "check_include_paths.py",
+        "test_check_include_paths.py",
+    ],
+    legacy_create_init = 0,
+    main = "test_check_include_paths.py",
+    target_compatible_with = HOST_ONLY,
+)
+
+# Builds under every platform served by
+# //tools/bazel/toolchains/local_embedded_cc; JieLi compilers only run on
+# Linux x86_64 hosts.
+embedded_include_paths_check(
+    name = "local_embedded_cc",
+    c_src = "probe.c",
+    cxx_src = "probe.cc",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:is_ac695n_linux_host": [],
+        "//tools/bazel/platforms:is_ac707n_linux_host": [],
+        "//tools/bazel/platforms:is_ac791n_linux_host": [],
+        "//tools/bazel/platforms:is_bk3633": [],
+        "//tools/bazel/platforms:is_bk7258": [],
+        "//tools/bazel/platforms:is_esp32c5": [],
+        "//tools/bazel/platforms:is_esp32p4": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
