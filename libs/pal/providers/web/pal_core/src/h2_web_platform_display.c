@@ -291,14 +291,15 @@ static h2_pal_result_t h2_web_display_draw(
   if (platform != NULL && platform->rgba == NULL) {
     return H2_PAL_ERR_INVALID_STATE;
   }
+  if (format != H2_DISPLAY_PIXEL_RGB565) return H2_DISPLAY_ERR_UNSUPPORTED;
   if (platform == NULL || rect == NULL || pixels == NULL ||
-      format != H2_DISPLAY_PIXEL_RGB565 ||
       rect->x < 0 || rect->y < 0 || rect->width <= 0 || rect->height <= 0 ||
       rect->width > platform->width - rect->x ||
       rect->height > platform->height - rect->y ||
       (size_t)rect->width > SIZE_MAX / sizeof(uint16_t) ||
       stride_bytes < (size_t)rect->width * sizeof(uint16_t) ||
-      ((size_t)rect->height - 1u) > SIZE_MAX / stride_bytes) {
+      ((size_t)rect->height - 1u) >
+          (SIZE_MAX - (size_t)rect->width*2u) / stride_bytes) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   for (int32_t y = 0; y < rect->height; ++y) {
@@ -337,7 +338,9 @@ static h2_pal_result_t h2_web_display_present(void *user) {
 static h2_pal_result_t h2_web_display_brightness(void *user,
                                                  uint32_t percent) {
   H2_WEB_STATE_GUARD();
-  if (user == NULL || percent > 100u) return H2_PAL_ERR_INVALID_ARG;
+  if (user == NULL) return H2_PAL_ERR_INVALID_ARG;
+  if (((h2_web_platform_t *)user)->rgba == NULL) return H2_PAL_ERR_INVALID_STATE;
+  if (percent > 100u) return H2_PAL_ERR_INVALID_ARG;
   return ((int)h2_web_main_call(h2_web_set_brightness_js,
                                 (const void *[]){&(uint32_t){percent}})
               .i32) ? H2_PAL_OK

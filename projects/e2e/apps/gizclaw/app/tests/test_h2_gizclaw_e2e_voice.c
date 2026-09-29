@@ -51,7 +51,7 @@ size_t h2_gizclaw_conversation_downlink_writes_internal(
   (void)service;
   return s_downlink_writes;
 }
-void h2_gizclaw_conversation_downlink_flush_internal(
+void h2_gizclaw_conversation_downlink_interrupt_internal(
     h2_gizclaw_service_t *service) {
   (void)service;
 }

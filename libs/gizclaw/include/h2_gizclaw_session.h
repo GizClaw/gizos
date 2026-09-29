@@ -226,6 +226,15 @@ h2_pal_result_t h2_gizclaw_session_audio_end(h2_gizclaw_session_t *session);
  */
 h2_pal_result_t h2_gizclaw_session_send_text(h2_gizclaw_session_t *session,
                                              h2_gizclaw_str_t text);
+/** Stop the downstream audio now: drop what is buffered and every packet
+ * that arrives until the server begins its next downstream audio stream
+ * (BOS). Use it at the moment the user interrupts (pressing Record over a
+ * reply, hanging up, Back) when the matching audio_start, cancel or run stop
+ * can only run later. It does not end input, cancel the conversation or
+ * stop the server's run. Never blocks on network or RPC; safe from any task.
+ * INVALID_ARG: NULL session. */
+h2_pal_result_t
+h2_gizclaw_session_interrupt_playback(h2_gizclaw_session_t *session);
 /** Discard an in-flight preparation result without closing the connection.
  * The currently executing RPC remains bounded by its deadline; subsequent
  * steps are skipped. Does not cancel an already-created conversation. */

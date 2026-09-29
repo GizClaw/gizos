@@ -1,6 +1,7 @@
 #include "h2_esp_board_private.h"
 #include "h2_esp_board_internal.h"
 #include "h2_esp_board.h"
+#include "h2_amoled_display_capture.h"
 
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
@@ -60,6 +61,12 @@ typedef struct h2_esp_amoled_display_state {
 static const char *TAG = "h2_esp_amoled";
 static h2_esp_amoled_display_state_t s_display_state;
 static h2_esp_board_display_config_t s_display_config;
+static h2_amoled_transfer_capture_fn s_transfer_capture;
+static void *s_transfer_user;
+void h2_amoled_display_set_transfer_capture(h2_amoled_transfer_capture_fn capture, void *user) {
+    s_transfer_capture = capture;
+    s_transfer_user = user;
+}
 
 h2_pal_result_t h2_esp_board_display_configure(
     const h2_esp_board_display_config_t *config) {
@@ -95,7 +102,7 @@ static uint16_t rgb444_to_rgb565(uint16_t pixel) {
     uint16_t r = (uint16_t)((pixel >> 8) & 0x0fu);
     uint16_t g = (uint16_t)((pixel >> 4) & 0x0fu);
     uint16_t b = (uint16_t)(pixel & 0x0fu);
-    return (uint16_t)((r << 12) | (r << 8) | (g << 7) | (g << 3) | (b << 1) | (b >> 3));
+    return (uint16_t)((((r << 1) | (r >> 3)) << 11) | (((g << 2) | (g >> 2)) << 5) | (b << 1) | (b >> 3));
 }
 
 static uint16_t rgb565_to_panel(uint16_t pixel) {
@@ -285,10 +292,10 @@ static int init_display(h2_esp_amoled_display_state_t *state) {
 }
 
 static int clip_rect(const h2_display_rect_t *rect, h2_display_rect_t *clipped) {
-    int x1 = rect->x;
-    int y1 = rect->y;
-    int x2 = rect->x + rect->width;
-    int y2 = rect->y + rect->height;
+    int64_t x1 = rect->x;
+    int64_t y1 = rect->y;
+    int64_t x2 = x1 + rect->width;
+    int64_t y2 = y1 + rect->height;
 
     if (x1 < 0) {
         x1 = 0;
@@ -341,7 +348,10 @@ static int validate_source_bitmap(
     if (rc != H2_DISPLAY_OK) {
         return rc;
     }
-    if (stride_bytes < (size_t)src_rect->width * *src_pixel_size) {
+    const size_t row_bytes = (size_t)src_rect->width * *src_pixel_size;
+    if ((size_t)src_rect->width > SIZE_MAX / *src_pixel_size ||
+        stride_bytes < row_bytes ||
+        ((size_t)src_rect->height - 1u) > (SIZE_MAX - row_bytes) / stride_bytes) {
         return H2_DISPLAY_ERR_INVALID_ARG;
     }
     return H2_DISPLAY_OK;
@@ -356,25 +366,27 @@ static void convert_chunk_to_rgb565(
     size_t src_pixel_size,
     uint16_t *out) {
     const uint8_t *src = (const uint8_t *)pixels;
-    src += (size_t)(chunk->y - src_rect->y) * stride_bytes;
-    src += (size_t)(chunk->x - src_rect->x) * src_pixel_size;
+    src += (size_t)((int64_t)chunk->y - src_rect->y) * stride_bytes;
+    src += (size_t)((int64_t)chunk->x - src_rect->x) * src_pixel_size;
 
     for (int row = 0; row < chunk->height; ++row) {
         uint16_t *dst = out + (size_t)row * (size_t)chunk->width;
         const uint8_t *src_row = src + (size_t)row * stride_bytes;
         if (format == H2_DISPLAY_PIXEL_RGB565) {
-            const uint16_t *src16 = (const uint16_t *)src_row;
             for (int col = 0; col < chunk->width; ++col) {
-                dst[col] = rgb565_to_panel(src16[col]);
+                uint16_t pixel;
+                memcpy(&pixel, src_row + (size_t)col * 2u, 2u);
+                dst[col] = rgb565_to_panel(pixel);
             }
         } else if (format == H2_DISPLAY_PIXEL_RGB888) {
             for (int col = 0; col < chunk->width; ++col) {
                 dst[col] = rgb565_to_panel(rgb888_to_rgb565(src_row + (size_t)col * 3u));
             }
         } else {
-            const uint16_t *src16 = (const uint16_t *)src_row;
             for (int col = 0; col < chunk->width; ++col) {
-                dst[col] = rgb565_to_panel(rgb444_to_rgb565(src16[col]));
+                uint16_t pixel;
+                memcpy(&pixel, src_row + (size_t)col * 2u, 2u);
+                dst[col] = rgb565_to_panel(rgb444_to_rgb565(pixel));
             }
         }
     }
@@ -449,6 +461,8 @@ static int amoled_draw_bitmap(
         if (rc != H2_DISPLAY_OK) {
             return rc;
         }
+        if (s_transfer_capture != NULL)
+            s_transfer_capture(s_transfer_user, &chunk, state->dma_buffer);
         y += chunk.height;
     }
     return H2_DISPLAY_OK;
@@ -465,7 +479,7 @@ static int amoled_set_brightness_percent(void *user, uint32_t percent) {
         return H2_DISPLAY_ERR_INVALID_STATE;
     }
     if (percent > 100u) {
-        percent = 100u;
+        return H2_DISPLAY_ERR_INVALID_ARG;
     }
     return set_brightness(state, (uint8_t)((percent * 255u) / 100u));
 }

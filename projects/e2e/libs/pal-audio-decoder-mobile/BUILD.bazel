@@ -1,0 +1,29 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//projects/e2e:__subpackages__"])
+
+cc_library(
+    name = "runner",
+    srcs = ["mobile_runner.c"],
+    hdrs = ["mobile_runner.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["."],
+    target_compatible_with = select({
+        "@platforms//os:ios": [],
+        "@platforms//os:android": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/pal:unsupported",
+        "//libs/runtime",
+        "//projects/e2e/apps/pal-audio-decoder/app:pal_audio_decoder_e2e",
+    ] + select({
+        "@platforms//os:ios": ["//libs/pal/providers/ios/pal_core:packaged"],
+        "@platforms//os:android": ["//libs/pal/providers/android/pal_core:packaged"],
+        "//conditions:default": [],
+    }),
+)
+
+exports_files(["run_mobile.py"])
