@@ -76,6 +76,7 @@ int h2_wifi_fixture_run(h2_runtime_t *rt) {
     uint64_t start = time_ms(rt);
     unsigned joins = 0;
     const char *names[] = {"h2wifi-dut-esp", "h2wifi-dut-bk"};
+    int seen[2] = {0};
     while (time_ms(rt) - start < 600000) {
         for (unsigned i = 0; i < 2 && time_ms(rt) - start < 600000; ++i) {
             drain(rt);
@@ -88,6 +89,11 @@ int h2_wifi_fixture_run(h2_runtime_t *rt) {
             int scan_rc = h2_pal_wifi_sta_scan(rt->wifi_sta, &request, result, &scan, 10000);
             if (scan_rc)
                 continue;
+            if (scan.found) seen[i] = 1;
+            /* A later hidden AP is reachable at its previously witnessed
+             * identity. An absent board that has never advertised must not
+             * consume a full connection timeout on every fixture cycle. */
+            if (!scan.found && !seen[i]) continue;
             h2_pal_wifi_sta_config_t config = {.channel = 6};
             config.ssid_len = strlen(names[i]);
             memcpy(config.ssid, names[i], config.ssid_len);
