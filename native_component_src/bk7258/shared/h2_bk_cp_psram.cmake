@@ -28,7 +28,12 @@ if(H2_BK_CP_PSRAM_SERVICES)
     endif()
     string(REPLACE "${old_text}" "${new_text}" corrected "${content}")
     set(generated "${CMAKE_CURRENT_BINARY_DIR}/h2_bk_cp_${suffix}.c")
-    file(WRITE "${generated}" "${corrected}")
+    if(ARGC GREATER 6)
+      set(prefix "${ARGV6}")
+    else()
+      set(prefix "")
+    endif()
+    file(WRITE "${generated}" "${prefix}${corrected}")
 
     armino_component_get_property(library ${component} COMPONENT_LIB)
     get_target_property(sources ${library} SOURCES)
@@ -65,4 +70,24 @@ if(H2_BK_CP_PSRAM_SERVICES)
   h2_bk_cp_patch_service(
     bk_cli bk_cli/cli_main.c
     "rtos_create_thread(&cli_thread_handle," "rtos_create_psram_thread(&cli_thread_handle," 3 cli_task)
+
+  # Only lwIP's ordinary tcp/ip worker uses PSRAM. Other sys_thread_new
+  # callers keep the SDK's SRAM stack and scheduling behavior.
+  h2_bk_cp_patch_service(
+    lwip_intf_v2_1 lwip_intf_v2_1/lwip-2.1.2/port/sys_arch.c
+    "result = rtos_create_sram_thread(&CreatedTask, prio, name, thread, stacksize * sizeof(uint32_t), arg);"
+    "if (name != NULL && strcmp(name, \"tcp/ip\") == 0) {
+        result = rtos_create_psram_thread(&CreatedTask, prio, name, thread, stacksize * sizeof(uint32_t), arg);
+    } else {
+        result = rtos_create_sram_thread(&CreatedTask, prio, name, thread, stacksize * sizeof(uint32_t), arg);
+    }"
+    1 tcpip_task "#include <string.h>\n")
+
+  # PBKDF/PSK calculation is ordinary control-plane work. Keep the radio
+  # worker and authentication callbacks on their original SRAM stacks.
+  h2_bk_cp_patch_service(
+    wpa_supplicant-2.10 wpa_supplicant-2.10/src/common/wpa_psk_cache.c
+    "rtos_create_thread(&wpa_pskcalc_thread_handle, CONFIG_TASK_WPAS_PRIO,"
+    "rtos_create_psram_thread(&wpa_pskcalc_thread_handle, CONFIG_TASK_WPAS_PRIO,"
+    1 psk_task)
 endif()

@@ -4,7 +4,8 @@ set(H2_BK_PLATFORM_CORE_PRIV_REQUIRES
   bk_rtos
   controller_if
   bk_cli
-  lwip_intf_v2_1)
+  lwip_intf_v2_1
+  wpa_supplicant-2.10)
 include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
 h2_bazel_native_component_sources(H2_COMPONENT_SOURCES h2_pal_core cp)
 

@@ -30,18 +30,41 @@ extern void *psram_malloc(size_t);
 void *dhcp_buffer(void) { return os_mem_alloc(1024); }
 """,
     "lwip_intf_v2_1/dhcpd/dhcp-server-main.c": """
-extern int rtos_create_thread(void *, int);
-extern int rtos_create_psram_thread(void *, int);
+extern int rtos_create_thread(void *, ...);
+extern int rtos_create_psram_thread(void *, ...);
 int dhcpd_thread;
 int dhcp_start(void) { return rtos_create_thread(&dhcpd_thread, 1536); }
 """,
     "bk_cli/cli_main.c": """
-extern int rtos_create_thread(void *, int);
-extern int rtos_create_psram_thread(void *, int);
+extern int rtos_create_thread(void *, ...);
+extern int rtos_create_psram_thread(void *, ...);
 int cli_thread_handle;
 int cli_debug(void) { return rtos_create_thread(&cli_thread_handle, 4096); }
 int cli_normal(void) { return rtos_create_thread(&cli_thread_handle, 3072); }
 int cli_fallback(void) { return rtos_create_thread(&cli_thread_handle, 3072); }
+""",
+    "lwip_intf_v2_1/lwip-2.1.2/port/sys_arch.c": """
+#include <stdint.h>
+extern int rtos_create_sram_thread(void *, ...);
+extern int rtos_create_psram_thread(void *, ...);
+int sys_thread_test(const char *name) {
+    void *CreatedTask = 0;
+    int prio = 3, stacksize = 768;
+    void *thread = 0, *arg = 0;
+    int result;
+    result = rtos_create_sram_thread(&CreatedTask, prio, name, thread, stacksize * sizeof(uint32_t), arg);
+    return result;
+}
+""",
+    "wpa_supplicant-2.10/src/common/wpa_psk_cache.c": """
+extern int rtos_create_thread(void *, ...);
+extern int rtos_create_psram_thread(void *, ...);
+#define CONFIG_TASK_WPAS_PRIO 5
+int wpa_pskcalc_thread_handle;
+int start_psk_test(void) {
+    return rtos_create_thread(&wpa_pskcalc_thread_handle, CONFIG_TASK_WPAS_PRIO,
+                              "pskc", 0, 2048, 0);
+}
 """,
 }
 
@@ -52,16 +75,19 @@ static unsigned sram_buffers, psram_buffers, sram_threads, psram_threads;
 static char sram_space[1024], psram_space[1024];
 void *os_malloc(size_t size) { if (size != 1024) return NULL; ++sram_buffers; return sram_space; }
 void *psram_malloc(size_t size) { if (size != 1024) return NULL; ++psram_buffers; return psram_space; }
-int rtos_create_thread(void *handle, int size) { if (!handle || size < 1536) return -1; ++sram_threads; return 0; }
-int rtos_create_psram_thread(void *handle, int size) { if (!handle || size < 1536) return -1; ++psram_threads; return 0; }
+int rtos_create_thread(void *handle, ...) { if (!handle) return -1; ++sram_threads; return 0; }
+int rtos_create_sram_thread(void *handle, ...) { if (!handle) return -1; ++sram_threads; return 0; }
+int rtos_create_psram_thread(void *handle, ...) { if (!handle) return -1; ++psram_threads; return 0; }
 extern void *dhcp_buffer(void);
 extern int dhcp_start(void), cli_debug(void), cli_normal(void), cli_fallback(void);
+extern int sys_thread_test(const char *), start_psk_test(void);
 int main(void) {
-    if (!dhcp_buffer() || dhcp_start() || cli_debug() || cli_normal() || cli_fallback()) return 1;
+    if (!dhcp_buffer() || dhcp_start() || cli_debug() || cli_normal() || cli_fallback() ||
+        sys_thread_test("tcp/ip") || sys_thread_test("other") || start_psk_test()) return 1;
 #if EXPECT_PSRAM
-    if (sram_buffers || sram_threads || psram_buffers != 1 || psram_threads != 4) return 2;
+    if (sram_buffers || sram_threads != 1 || psram_buffers != 1 || psram_threads != 6) return 2;
 #else
-    if (sram_buffers != 1 || sram_threads != 4 || psram_buffers || psram_threads) return 3;
+    if (sram_buffers != 1 || sram_threads != 7 || psram_buffers || psram_threads) return 3;
 #endif
     puts("BK_CP_PSRAM_SERVICES_PAIRED_AND_SDK_PRISTINE PASS");
     return 0;
@@ -80,9 +106,11 @@ if(NOT DEFINED CONFIG_FREERTOS_SMP)
 endif()
 add_library(lwip_intf_v2_1 STATIC
   sdk/components/lwip_intf_v2_1/dhcpd/dhcp-server.c
-  sdk/components/lwip_intf_v2_1/dhcpd/dhcp-server-main.c)
+  sdk/components/lwip_intf_v2_1/dhcpd/dhcp-server-main.c
+  sdk/components/lwip_intf_v2_1/lwip-2.1.2/port/sys_arch.c)
 target_include_directories(lwip_intf_v2_1 BEFORE PRIVATE public)
 add_library(bk_cli STATIC sdk/components/bk_cli/cli_main.c)
+add_library(wpa_supplicant-2.10 STATIC sdk/components/wpa_supplicant-2.10/src/common/wpa_psk_cache.c)
 function(armino_component_get_property out component property)
   set(${out} ${component} PARENT_SCOPE)
 endfunction()
@@ -91,7 +119,7 @@ if(APPLY)
 endif()
 add_executable(probe probe.c)
 target_compile_definitions(probe PRIVATE EXPECT_PSRAM=$<BOOL:${APPLY}>)
-target_link_libraries(probe PRIVATE lwip_intf_v2_1 bk_cli)
+target_link_libraries(probe PRIVATE lwip_intf_v2_1 bk_cli wpa_supplicant-2.10)
 """
 
 
