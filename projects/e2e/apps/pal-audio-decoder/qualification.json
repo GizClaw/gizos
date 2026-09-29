@@ -1,0 +1,95 @@
+{
+  "schema": 1,
+  "base_commit": "a472fbec3c301e53523fae5ed446879a7c635cc2",
+  "captured_at_utc": "2026-09-29T10:19:09.153350+00:00",
+  "interface": {
+    "operations": 8,
+    "mandatory_cases": 29
+  },
+  "source_receipts": {
+    "libs/pal/providers/android/pal_core/src/h2_android_audio_contract.c": "f10f781b2dccef7597b538ac5cce5acbda48654c62813aab6185d513fc1fbad3",
+    "libs/pal/providers/android/pal_core/src/h2_android_audio_decoder.c": "c9b8a55ef17f256a5c9eda8e702a90e072271ef7505edb950488874c27a6ec73",
+    "libs/pal/providers/android/pal_core/tests/test_android_audio_contract.c": "511c3dc3cc2c496ede8e83f175be218efc0de2041f326e7e9e3765e9006ad3d1",
+    "libs/pal/providers/ffmpeg/src/h2_ffmpeg_audio_decoder.c": "e1605b69e421a92ee3e0d97342b7b7b60766d3b4839cab0cac4fcbfebb3b5a12",
+    "libs/pal/providers/ffmpeg/tests/test_h2_ffmpeg_audio_decoder.c": "74fe09191dadf43f05668576526f48806d72b132cc72bad63f0022649e46da78",
+    "libs/pal/providers/ios/pal_core/include/h2_ios_platform.h": "45b19746e9744193aba579d62d04aea5d79d24000257a8d180f6db99cb677c18",
+    "libs/pal/providers/ios/pal_core/src/h2_ios_audio_decoder.c": "b8e061b7bef12212adc38281ce022d05d62c232b9794402b266bd51df2e8c2c6",
+    "libs/pal/providers/web/pal_core/src/h2_web_platform_audio_decoder.c": "116725e0e46e54a9e9dc24da4d2ce4d76cbb37ffd1f6be6cef9137acb415cefe",
+    "native_component_src/bk7258/ap/h2_bk_audio_decoder/src/h2_bk_audio_decoder.c": "ee2e59fbc5f4a2a9ce09f1e003dc016c7232efe4d61311ec830997f56d430dda",
+    "native_component_src/esp-idf6.x/h2_esp_audio_decoder/src/h2_esp_audio_decoder.c": "27f250b21ad142d5a0ee436bf5e1bc244bfc4725db4831461f8c590117ff2693",
+    "projects/e2e/apps/pal-audio-decoder/app/fixtures/h2_aac_vectors.c": "1c9597bbccb8bfb188ee9489dc77b9e0648ade3fefa7528260c2c1515bf855a3",
+    "projects/e2e/apps/pal-audio-decoder/app/fixtures/h2_aac_vectors.h": "731f4e2305de592a2adf7b646bbbcd45e80ea55155b4cc69c1038e29773e3f68",
+    "projects/e2e/apps/pal-audio-decoder/app/include/h2_pal_audio_decoder_cases.inc": "bb5edbc9ca6bed07f97310dab88959531690569c69478c6f52b07cd765a6f225",
+    "projects/e2e/apps/pal-audio-decoder/app/include/h2_pal_audio_decoder_e2e.h": "25850cf71eec17a412bd9d33661d7782a55e4aae31845c640ad6f817992ce8d6",
+    "projects/e2e/apps/pal-audio-decoder/app/src/h2_pal_audio_decoder_e2e.c": "752a186bccf0b1694ebdcda942258a42594de9f6a9ec32f54348d28181dab7ad",
+    "projects/e2e/apps/pal-audio-decoder/app/tests/test_reject_missing.c": "cb99b6867c6fc2f5ca06db4f99dfd23ed46eabe2e12a2d529d8dd07227c4ad24",
+    "projects/e2e/libs/pal-audio-decoder-device/include/device_runner.h": "ae3f6b2db731a0584b33f01fd87d9e6061d5552ccb883ad5823e45559245794c",
+    "projects/e2e/libs/pal-audio-decoder-device/src/device_runner.c": "c5061a29dd42fc2b0e6be0de8edba597abecae3f81ac1958f63b34209a4a5aa0",
+    "projects/e2e/libs/pal-audio-decoder-mobile/mobile_runner.c": "c283e0b79cc081f5876ca88e4107bbaa583c029a2e731372a6d9542f82f23207",
+    "projects/e2e/libs/pal-audio-decoder-mobile/mobile_runner.h": "eef11c178c1f0f26ee9e622d3e9fcd1b94aabc628cb55c21b058e859d3a8beec",
+    "projects/e2e/targets/android_binary/pal-audio-decoder/main.c": "8133257fccd7e70e0b73fc962468046145434d4184dc74857ef3ebfde704f26a",
+    "projects/e2e/targets/android_binary/pal-audio-decoder/src/com/haivivi/gizos/e2e/palaudiodecoder/MainActivity.java": "b0a9fffd9ba45c795e0bfefe9d568e285ad0ca34357805f5c73c2fcca84338e1",
+    "projects/e2e/targets/cc_binary/pal-audio-decoder/main.c": "9edca2b90662983149107206daf9534fd9db308f2fb164c8726e211bdbfc48fd",
+    "projects/e2e/targets/h2loader_tar_zlib/pal-audio-decoder/bk7258_v3_202405/ap/ap_main.c": "488388aad5105c5216c508854a505a53dc324839e5d03fcc44d1b74e9f628daf",
+    "projects/e2e/targets/h2loader_tar_zlib/pal-audio-decoder/devkit/main/main.c": "e24b9d8e0a2be6a29298351cb1005c4f89eca113ddcb1c35e7d5d2cfc8fa4cb3",
+    "projects/e2e/targets/ios_application/pal-audio-decoder/main.m": "13171b752580220d8cc5f884cc34b3318d7ccb3d3a0338013b197654171681d7",
+    "projects/e2e/targets/pkg_tar/pal-audio-decoder/main.c": "3bcc3a5aa14d7fc51a4f67b69ee04cda26dc83bcdbf2e515e946130923977d48"
+  },
+  "source_aggregate_sha256": "76bc5edca611a516a4c049628e62044999d575499de741a84831c5442e4210cd",
+  "qualified": true,
+  "pending": [],
+  "platforms": {
+    "macos": {
+      "status": "PASS",
+      "receipt": "evidence/macos/qualified.json",
+      "receipt_sha256": "41a20c185cde5433b3531089421728227ae39155710d0733386a09dd33055864"
+    },
+    "wasm_aac_chrome": {
+      "status": "PASS",
+      "receipt": "evidence/wasm/qualified.json",
+      "receipt_sha256": "065153114efbfc964f16864738a7933f51bc6885e7fd704bb32d5bc3b02ffbcd"
+    },
+    "ios_simulator": {
+      "status": "PASS",
+      "receipt": "evidence/ios/qualified.json",
+      "receipt_sha256": "ba1a17403f602a39b2de16043f50ce44b6e3650c44f7a689ef2eecc092bcaf8d"
+    },
+    "android_emulator": {
+      "status": "PASS",
+      "receipt": "evidence/android/qualified.json",
+      "receipt_sha256": "852afc6306671d46bb278af83ba4665da25575ec4104b0303d3008c1431797ff"
+    },
+    "devkit_esp32s3": {
+      "status": "PASS",
+      "receipt": "evidence/devkit/qualified.json",
+      "receipt_sha256": "f5098c1011e7cc859b2b44e8508df303ef229282fc9b5dca1d8232a3e457967f"
+    },
+    "bk7258": {
+      "status": "PASS",
+      "receipt": "evidence/bk7258/qualified.json",
+      "receipt_sha256": "62160804cd44d2709becf9b6c8c42a0d8715c3fe2e6efd692b76cba34dff9a9e"
+    }
+  },
+  "execution_limits": [
+    "Browser qualification applies to the captured AAC-capable Chrome runtime; open-source Chromium without AAC is not qualified.",
+    "Simulator/emulator results do not qualify physical phones.",
+    "Functional PCM/lifecycle qualification does not claim realtime AAC throughput or microphone/speaker measurements."
+  ],
+  "board_retest_history": {
+    "bk_r3": {
+      "passed": 25,
+      "failed": 4,
+      "version": "pal-adec-bk-20260929-r3",
+      "raw_log_sha256": "dfc053b7a680986c8adc47049512fc73fe4f969dd10c9c182b0017dbfed5b78a",
+      "confirmed": false
+    },
+    "bk_r4": {
+      "passed": 28,
+      "failed": 1,
+      "version": "pal-adec-bk-20260929-r4",
+      "raw_log_sha256": "0ab5067744424158d95a252235aa03e6341ffb7650a1bc7ddfc57f8dac56bb6e",
+      "confirmed": false
+    },
+    "resolution": "Single-precision spectrum oracle and exact integer energy, five-second no-frame-progress deadline with finite thirty-second end-to-end stream budget; PCM/PTS/EOS/ownership criteria unchanged."
+  }
+}

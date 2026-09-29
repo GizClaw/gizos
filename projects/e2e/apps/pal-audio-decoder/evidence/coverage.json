@@ -1,0 +1,39 @@
+{
+  "compiler": "Apple Clang 21, LLVM covmap",
+  "scope": "macOS host executions; no native board/Web/MediaCodec coverage claim",
+  "lcov_sha256": "107f50b9f4ef713e93eee76b09985e61a3d10afe3e18a2b2de5b604b0eb71e1f",
+  "files": {
+    "libs/pal/providers/android/pal_core/src/h2_android_audio_contract.c": {
+      "FNF": 11,
+      "FNH": 11,
+      "BRF": 108,
+      "BRH": 70,
+      "LH": 107,
+      "LF": 113
+    },
+    "libs/pal/providers/ffmpeg/src/h2_ffmpeg_audio_decoder.c": {
+      "FNF": 16,
+      "FNH": 15,
+      "BRF": 142,
+      "BRH": 91,
+      "LH": 239,
+      "LF": 281
+    },
+    "libs/pal/providers/ios/pal_core/src/h2_ios_audio_decoder.c": {
+      "FNF": 15,
+      "FNH": 15,
+      "BRF": 166,
+      "BRH": 105,
+      "LH": 245,
+      "LF": 260
+    },
+    "projects/e2e/apps/pal-audio-decoder/app/src/h2_pal_audio_decoder_e2e.c": {
+      "FNF": 47,
+      "FNH": 45,
+      "BRF": 368,
+      "BRH": 222,
+      "LH": 389,
+      "LF": 431
+    }
+  }
+}
