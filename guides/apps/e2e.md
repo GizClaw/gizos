@@ -176,7 +176,10 @@ DevKit/BK7258 qualification needs real WLAN scan/authentication/DHCP and an
 AMOLED AP/STA fixture that joins and leaves each DUT AP. The launcher makes a
 private crash-recovery credential backup before mutations; restores original
 Settings and network; removes the backup; and only confirms a complete qualified
-boot. A first seed boot is pending persistence and is not confirmed. macOS uses
+boot. A first seed boot is pending persistence and is not confirmed; ESP's
+unconfirmed-image rollback means that seed can precede a different managed
+image under the fixed v1 record contract. Receipts keep each actual version;
+the final confirmed artifact also passes an ordinary App reboot. macOS uses
 native Netif read-only; WASM tests HOST Netif offline/online Runtime delivery;
 iOS/Android default SDK assembly explicitly reports unsupported. A host capability
 contract PASS is not physical WLAN qualification. Wi-Fi CSI is separate.

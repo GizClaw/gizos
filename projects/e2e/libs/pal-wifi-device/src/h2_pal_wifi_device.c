@@ -127,7 +127,11 @@ static int prepare(h2_runtime_t *rt, const char *version) {
     length = 0;
     int read = ns->get_string(ns, rt->mem, "version", &previous_version);
     persistence = 0;
-    if (!read && !strcmp(previous_version, version)) {
+    /* The fixed v1 canonical record/salt is the persistence contract. Seed
+     * can precede a different managed image: ESP deliberately rolls back an
+     * unconfirmed same-slot reboot, so no test may confirm before this read. */
+    if (!read && previous_version != NULL &&
+        !strncmp(previous_version, "pal-wifi-", 9) && strlen(previous_version) <= 95) {
         read = ns->get_blob(ns, rt->mem, "expected", &old, &length);
         if (!read && length == 32 && !memcmp(old, actual, 32) && !recovered)
             persistence = 1;
@@ -135,6 +139,8 @@ static int prepare(h2_runtime_t *rt, const char *version) {
             rc = H2_PAL_ERR_IO;
     } else if (read != H2_PAL_OK && read != H2_PAL_ERR_NOT_FOUND)
         rc = read;
+    emit("H2_WIFI_PERSISTENCE_PRIOR prior=%s current=%s matched=%d contract=v1",
+         previous_version ? previous_version : "none", version, persistence);
     h2_pal_mem_free(rt->mem, previous_version);
     h2_pal_mem_free(rt->mem, old);
     uint32_t previous_boot = 0;

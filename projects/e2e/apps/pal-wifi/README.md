@@ -3,7 +3,11 @@
 This independent App preserves the legacy mixed PAL App. Its 38 non-fail-fast
 cases cover all 21 operations: STA 7, AP 5, Settings 4 and Netif 5. Device runner
 adds `settings-restart-persistence`, qualified only on a later independent boot
-of the same image version. A seed boot returns WOULD_BLOCK and is not confirmed.
+that reads the prior fixed v1 canonical Settings record. A seed boot returns
+WOULD_BLOCK and is not confirmed. ESP rolls back unconfirmed same-slot reboots;
+the verified seed may therefore precede a different managed App image. Reports
+retain the actual prior seed version. The final qualified image then passes a
+separate ordinary App reboot after confirmation.
 Only complete successful runs with Settings/network restoration and removed
 credential backup may confirm the managed App.
 
@@ -19,7 +23,9 @@ The public fixture key is deliberately synthetic. Production credentials are
 read from the board's Settings, never logged, never committed. Before mutation,
 launcher writes a private crash-recovery backup in `h2wifictl`; successful
 restoration removes it. A private canonical HKDF digest and image version
-verify that the restored original configuration survives a separate boot.
+verify that the restored original configuration survives a separate boot or
+managed upgrade. Image identity remains exact per receipt, without relabelling
+the prior seed as the final artifact.
 Persistence refers to normal reboot, not power-loss atomicity. There is no PAL
 power-save getter; the terminal test policy is explicitly NONE, without claiming
 the previous radio policy was measured. BK's SDK maps MAX_MODEM to its one DTIM
