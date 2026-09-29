@@ -3,6 +3,7 @@
 #include "h2_gizclaw_e2e_friend.h"
 #include "h2_gizclaw_e2e_group.h"
 #include "h2_gizclaw_e2e_profile.h"
+#include "h2_gizclaw_e2e_metadata.h"
 #include "h2_gizclaw_e2e_report.h"
 #include "h2_gizclaw_e2e_speech.h"
 #include "h2_gizclaw_e2e_telemetry.h"
@@ -362,6 +363,12 @@ static int run_api_key(h2_gizclaw_e2e_fixture_t *fixture,
   return run_api_key_state(fixture);
 }
 
+static int run_profile(h2_gizclaw_e2e_fixture_t *fixture,
+                        h2_gizclaw_resp_storage_t *storage) {
+  int rc = h2_gizclaw_e2e_run_profile(fixture, storage);
+  return rc == H2_PAL_OK ? h2_gizclaw_e2e_run_public_profile(fixture, storage) : rc;
+}
+
 int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t *fixture) {
   if (fixture == NULL || fixture->pcm == NULL || fixture->pcm_len == 0u)
     return H2_PAL_ERR_INVALID_ARG;
@@ -376,6 +383,7 @@ int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t *fixture) {
     RPC_DOMAIN_PEER_NAME_ISOLATION,
     RPC_DOMAIN_TELEMETRY,
     RPC_DOMAIN_API_KEY,
+    RPC_DOMAIN_APP_CONFIG,
     RPC_DOMAIN_COUNT,
   };
   struct rpc_domain {
@@ -385,7 +393,7 @@ int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t *fixture) {
     uint16_t dependencies;
   };
   static const struct rpc_domain domains[] = {
-      [RPC_DOMAIN_PROFILE] = {"profile", h2_gizclaw_e2e_run_profile, 0u},
+      [RPC_DOMAIN_PROFILE] = {"profile", run_profile, 0u},
       [RPC_DOMAIN_CATALOG_WORKSPACE] = {"catalog-workspace",
                                         run_catalog_workspace, 0u},
       [RPC_DOMAIN_SPEECH] = {"speech", h2_gizclaw_e2e_run_speech, 0u},
@@ -402,6 +410,7 @@ int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t *fixture) {
                                               (1u << RPC_DOMAIN_GROUP)},
       [RPC_DOMAIN_TELEMETRY] = {"telemetry", h2_gizclaw_e2e_run_telemetry, 0u},
       [RPC_DOMAIN_API_KEY] = {"api-key", run_api_key, 0u},
+      [RPC_DOMAIN_APP_CONFIG] = {"app-config", h2_gizclaw_e2e_run_app_config, 0u},
   };
   _Static_assert(sizeof(domains) / sizeof(domains[0]) == RPC_DOMAIN_COUNT,
                  "RPC domain table and index must remain synchronized");
