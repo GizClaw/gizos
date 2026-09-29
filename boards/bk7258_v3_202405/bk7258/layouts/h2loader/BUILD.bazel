@@ -51,3 +51,8 @@ filegroup(
     name = "cp_gpio_diagnostic",
     srcs = ["cp/diagnostic/usr_gpio_cfg.h"],
 )
+
+filegroup(
+    name = "ap_gpio_display",
+    srcs = ["ap/display/usr_gpio_cfg.h"],
+)

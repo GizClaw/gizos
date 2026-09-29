@@ -53,6 +53,7 @@ struct h2_android_platform {
   int speaker_started;
   h2_pal_display_api_t display;
   int opened;
+  uint32_t brightness_percent;
 };
 
 static int android_audio_get_info(void *user, h2_audio_info_t *out_info) {
@@ -560,6 +561,7 @@ static int android_display_open(void *user) {
   if (host->rgba == NULL) {
     host->rgba = calloc((size_t)host->width * host->height, sizeof(uint32_t));
   }
+  if (!host->opened) host->brightness_percent = 100u;
   host->opened = host->rgba != NULL;
   pthread_mutex_unlock(&host->mutex);
   return host->opened ? H2_DISPLAY_OK : H2_DISPLAY_ERR_NO_MEMORY;
@@ -569,6 +571,7 @@ static int android_display_get_info(void *user, h2_display_info_t *out_info) {
   if (user == NULL || out_info == NULL) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
+  if (!((h2_android_platform_t *)user)->opened) return H2_DISPLAY_ERR_INVALID_STATE;
   *out_info = (h2_display_info_t){
       .width = ((h2_android_platform_t *)user)->width,
       .height = ((h2_android_platform_t *)user)->height,
@@ -582,22 +585,25 @@ static int android_display_draw_bitmap(void *user,
                                        const void *pixels, size_t stride_bytes,
                                        h2_display_pixel_format_t format) {
   h2_android_platform_t *host = user;
-  if (host == NULL || rect == NULL || pixels == NULL || host->rgba == NULL ||
-      format != H2_DISPLAY_PIXEL_RGB565 || rect->x < 0 || rect->y < 0 ||
+  if (host && !host->opened) return H2_DISPLAY_ERR_INVALID_STATE;
+  if (format != H2_DISPLAY_PIXEL_RGB565) return H2_DISPLAY_ERR_UNSUPPORTED;
+  if (host == NULL || rect == NULL || pixels == NULL || rect->x < 0 || rect->y < 0 ||
       rect->width <= 0 || rect->height <= 0 ||
-      rect->x + rect->width > host->width ||
-      rect->y + rect->height > host->height ||
-      stride_bytes < (size_t)rect->width * sizeof(uint16_t)) {
+      (int64_t)rect->x + rect->width > host->width ||
+      (int64_t)rect->y + rect->height > host->height ||
+      stride_bytes < (size_t)rect->width * sizeof(uint16_t) ||
+      ((size_t)rect->height - 1u) > (SIZE_MAX - (size_t)rect->width*2u) / stride_bytes) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
   pthread_mutex_lock(&host->mutex);
   for (int y = 0; y < rect->height; ++y) {
-    const uint16_t *source =
-        (const uint16_t *)((const uint8_t *)pixels + (size_t)y * stride_bytes);
+    const uint8_t *source =
+        (const uint8_t *)pixels + (size_t)y * stride_bytes;
     uint32_t *destination =
         host->rgba + (size_t)(rect->y + y) * host->width + rect->x;
     for (int x = 0; x < rect->width; ++x) {
-      const uint16_t pixel = source[x];
+      uint16_t pixel;
+      memcpy(&pixel, source + (size_t)x*2u, 2u);
       const uint32_t red = ((pixel >> 11u) & 0x1fu) * 255u / 31u;
       const uint32_t green = ((pixel >> 5u) & 0x3fu) * 255u / 63u;
       const uint32_t blue = (pixel & 0x1fu) * 255u / 31u;
@@ -613,6 +619,7 @@ static int android_display_present(void *user) {
   if (host == NULL || host->view == NULL) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
+  if (!host->opened) return H2_DISPLAY_ERR_INVALID_STATE;
   JNIEnv *env = NULL;
   int attached = 0;
   if ((*host->vm)->GetEnv(host->vm, (void **)&env, JNI_VERSION_1_6) != JNI_OK) {
@@ -633,8 +640,14 @@ static int android_display_present(void *user) {
 }
 
 static int android_display_set_brightness(void *user, uint32_t percent) {
-  return user != NULL && percent <= 100u ? H2_DISPLAY_OK
-                                         : H2_DISPLAY_ERR_INVALID_ARG;
+  h2_android_platform_t *host = user;
+  if (!host) return H2_DISPLAY_ERR_INVALID_ARG;
+  pthread_mutex_lock(&host->mutex);
+  int rc = !host->opened ? H2_DISPLAY_ERR_INVALID_STATE :
+      percent > 100u ? H2_DISPLAY_ERR_INVALID_ARG : H2_DISPLAY_OK;
+  if (!rc) host->brightness_percent = percent;
+  pthread_mutex_unlock(&host->mutex);
+  return rc ? rc : android_display_present(host);
 }
 
 static int android_display_close(void *user) {
@@ -773,9 +786,13 @@ int h2_android_platform_copy_frame(h2_android_platform_t *host, JNIEnv *env,
   pthread_mutex_lock(&host->mutex);
   if (host->rgba != NULL) {
     for (uint32_t y = 0; y < info.height; ++y) {
-      memcpy((uint8_t *)pixels + (size_t)y * info.stride,
-             host->rgba + (size_t)y * host->width,
-             (size_t)host->width * sizeof(uint32_t));
+      uint8_t *row = (uint8_t *)pixels + (size_t)y * info.stride;
+      const uint8_t *source = (const uint8_t *)(host->rgba + (size_t)y*host->width);
+      for (uint32_t x=0; x<info.width; ++x) {
+        for (unsigned c=0; c<3; ++c)
+          row[x*4u+c] = (uint8_t)((uint32_t)source[x*4u+c] * host->brightness_percent / 100u);
+        row[x*4u+3u] = 255u;
+      }
     }
   }
   pthread_mutex_unlock(&host->mutex);

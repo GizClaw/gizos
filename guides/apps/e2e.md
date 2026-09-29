@@ -37,6 +37,7 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 | PAL HTTP | `//projects/e2e/apps/pal-http/app:pal_http_e2e` | 独立 HTTP：45 个必跑 case；macOS、Browser、iOS/Android 实际 SDK 包消费 App 与 DevKit/BK7258 专用入口，逐平台保留真实运行证据 |
 | PAL WebRTC | `//projects/e2e/apps/pal-webrtc/app:pal_webrtc_e2e` | 独立 WebRTC：13 个操作、43 个 mandatory case；六端独立入口及真实 Pion 对端，按各端完整 ledger 授予资格 |
 | PAL Audio | `//projects/e2e/apps/pal-audio/app:pal_audio_e2e` | 独立 Audio：11 个 provider 与 5 个 track 操作、24 个必过 case；macOS、真实 Chromium Worker、iOS/Android SDK 包消费 App、AMOLED ESP32-S3 与 BK7258，逐端验证 30 秒同时采播和完整清理 |
+| PAL Display | `//projects/e2e/apps/pal-display/app:pal_display_e2e` | 独立 Display：6 个操作、24 个必过 case；macOS SDL、Chromium Worker、iOS/Android 实际 SDK 包、AMOLED 与 BK7258，验证实际输出并单独记录物理屏幕观察 |
 | PAL | `//projects/e2e/apps/pal/app:pal_e2e` | Linux/macOS/Windows 共同 host OS/Filesystem/Net/TLS/CoreHTTP/CoreMQTT；Desktop core/MQTT/SQLite Preference；Browser core；DevKit 与 Tiga V4.2 H2Loader `pal-pref` |
 | H2Loader Serial | `//projects/e2e/apps/h2loader-serial/app:h2loader_serial_e2e` | macOS Desktop；desktop Chrome Browser |
 | WebRTC Performance | `//projects/e2e/apps/webrtc-performance/app:webrtc_performance` | Desktop H2Peer + local Pion；DevKit 与 AMOLED ESP32-S3 H2Peer + operator LAN Pion |
@@ -146,6 +147,14 @@ Desktop 验证真实 PortAudio callback；Browser C 在 pthread Worker 中通过
 两个移动端另通过注入 tracked per-track allocator 验证 allocation failure 被正确拒绝、单帧 PCM write/drain/close 成功，以及全部 caller-owned 存储回收；Android provider 在 native output startup 前执行静音 priming，不能要求测试 App 写满启动 buffer 来掩盖单帧 drain 失败。桌面 manual 入口为 `make bazel-test-desktop_test`。
 
 报告的 microphone PCM 计数/peak/energy 与输出 PCM frame/peak 说明真实 provider 数据路径已执行；write/drain 返回成功不能代替外部声学测量。Simulator 结果不代表物理手机，Browser fake microphone 不代表物理麦克风。`h2_pal_audio_decoder.h` 是独立 capability，需要另一个 session/packet 生命周期 E2E，不属于此 Audio 资格。
+
+## PAL Display
+
+`projects/e2e/apps/pal-display/app` 借用真实 Runtime 和 launcher 的输出观察器，覆盖 open/info/draw/present/brightness/close，固定运行 24 个 mandatory case。测试检查 native 格式、borrowed 像素生命周期、全屏及局部更新、padding/unaligned stride、可选格式的明确支持或拒绝、矩形/整数溢出、重复 present、0/50/100 亮度和重复 close/reopen；失败、未运行或清理失败不能授予资格。
+
+Desktop 从 SDL renderer 读回，Browser 比对真实 Chromium composited screenshot，移动端捕获已显示的 UIKit/Android View。移动端分别消费实际 Swift Package/XCFramework 和 AAR，manual 入口为 `make bazel-test-ios_pal_display_simulator_test` 与 `make bazel-test-android_pal_display_simulator_test`。
+
+AMOLED 比对已完成 SPI DMA 的传输数据；BK 比对 LCD controller 当前 DMA source 并检查 refresh counter。两者均不代表光学像素或实际亮度测量。物理图案及稳定性需要相机/readback fixture 或用户明确观察确认；亮度控制使用真实控制器命令/PWM 更新和 mandatory ledger 验证，人工逐档观察及光度测量单独记录。设备必须在 managed 安装启动和独立正常 reboot 后各自完成测试，保留原 Loader/P1 与 coredump，最终 Stage 空且 App confirmed。具体能力 profile 和证据边界见 [PAL Display App](https://github.com/GizClaw/gizos/tree/main/projects/e2e/apps/pal-display)。
 
 ## WebRTC Performance
 

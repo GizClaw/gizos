@@ -33,6 +33,19 @@ static void capture_video(void *user, const h2_sdl3_capture_frame_t *frame) {
   state->brightness = frame->brightness;
 }
 
+static void capture_render(void *user, const h2_sdl3_render_frame_t *frame) {
+  capture_display_t *state = user;
+  assert(frame->rgba != NULL && frame->width == 32u && frame->height == 24u);
+  assert(frame->stride_bytes >= 128u);
+  /* Actual composed renderer must apply texture brightness, not just report
+   * a stored brightness field beside an unmodified input framebuffer. */
+  assert(frame->rgba[1] == 0u && frame->rgba[2] == 0u);
+  const unsigned want = state->brightness;
+  const unsigned got = frame->rgba[0];
+  assert(got + 2u >= want && got <= want + 2u);
+  ++state->count;
+}
+
 static void test_lifecycle_and_events(void) {
   const h2_sdl3_config_t config = {
       .title = "SDL3 Provider Test",
@@ -46,6 +59,8 @@ static void test_lifecycle_and_events(void) {
   assert(h2_sdl3_create(&config, &second) == H2_PAL_ERR_BUSY);
   assert(second == NULL);
   h2_pal_display_t *display = h2_sdl3_display(provider);
+  assert(h2_pal_display_get_info(display, &(h2_display_info_t){0}) == H2_DISPLAY_ERR_INVALID_STATE);
+  assert(h2_pal_display_open(display) == H2_DISPLAY_OK);
   assert(h2_pal_display_open(display) == H2_DISPLAY_OK);
   h2_display_info_t info = {0};
   assert(h2_pal_display_get_info(display, &info) == H2_DISPLAY_OK);
@@ -67,9 +82,20 @@ static void test_lifecycle_and_events(void) {
   drain_host_events(provider);
   assert(captured.count != 0u && captured.first_pixel == 0xf800u);
   assert(captured.brightness == 255u);
+  capture_display_t rendered = {.brightness = 128u};
+  assert(h2_sdl3_set_render_capture(provider, capture_render, &rendered) == H2_PAL_OK);
+  assert(h2_sdl3_set_render_capture(provider, capture_render, &rendered) == H2_PAL_ERR_BUSY);
   assert(h2_pal_display_set_brightness_percent(display, 50u) == H2_PAL_OK);
   drain_host_events(provider);
   assert(captured.brightness == 128u);
+  assert(rendered.count != 0u);
+  assert(h2_sdl3_set_render_capture(provider, NULL, NULL) == H2_PAL_OK);
+  const uint16_t rgb444 = 0x0f00u;
+  const h2_display_rect_t single = {0, 0, 1, 1};
+  assert(h2_pal_display_draw_bitmap(display, &single, &rgb444, 2u, H2_DISPLAY_PIXEL_RGB444) == H2_DISPLAY_OK);
+  assert(h2_pal_display_present(display) == H2_DISPLAY_OK);
+  drain_host_events(provider);
+  assert(captured.first_pixel == 0xf800u);
   assert(h2_sdl3_set_frame_capture(provider, NULL, NULL) == H2_PAL_OK);
   const unsigned count = captured.count;
   assert(h2_pal_display_present(display) == H2_PAL_OK);
@@ -105,6 +131,7 @@ static void test_lifecycle_and_events(void) {
 
   assert(h2_pal_touch_close(touch) == H2_PAL_OK);
   assert(h2_pal_display_close(display) == H2_DISPLAY_OK);
+  assert(h2_pal_display_get_info(display, &info) == H2_DISPLAY_ERR_INVALID_STATE);
   assert(h2_sdl3_poll_event(provider, &projected) == H2_PAL_OK);
   assert(projected.kind == H2_SDL3_EVENT_CLOSE);
   h2_sdl3_destroy(provider);

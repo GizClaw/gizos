@@ -1,0 +1,65 @@
+{
+  "schema": 1,
+  "finding": {
+    "source": "user",
+    "status": "FAIL",
+    "version": "pal-display-e2e-20260929-r6",
+    "observation": "Backlight is visible but the four-color image is absent; the previous Display App worked on the same hardware."
+  },
+  "driver_pass_is_not_panel_pass": true,
+  "baseline": {
+    "target": "projects/example/targets/h2loader_tar_zlib/display/bk7258_v3_202405/BUILD.bazel",
+    "gpio_profile": "boards/bk7258_v3_202405/bk7258/ap/usr_gpio_cfg.h"
+  },
+  "root_cause": {
+    "ordinary_loader_profile": "boards/bk7258_v3_202405/bk7258/layouts/h2loader/ap/h2loader/usr_gpio_cfg.h",
+    "missing_signals": "RGB clock, display enable, data enable, horizontal/vertical sync and all RGB data pins",
+    "sdk_commit": "aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca",
+    "sdk_rgb_gpio_initialization": "ap/middleware/driver/lcd/lcd_driver.c disables lcd_rgb_gpio_init()",
+    "sdk_gpio_profile_requirement": "ap/middleware/driver/bk7258_ap/gpio_driver.c rejects pins absent from GPIO_DEFAULT_DEV_CONFIG",
+    "repair": "Display-specific full board RGB GPIO profile preserving UART1, with explicit RGB mux restoration on open"
+  },
+  "failed_repair_boot": {
+    "version": "pal-display-e2e-20260929-r8",
+    "stage": "media-prepare",
+    "rc": -4,
+    "confirmed": false,
+    "cause": "bk_gpio_set_capacity is declared bool but returns HAL bk_err_t, so success is 0. The redundant drive-capacity check incorrectly rejected success.",
+    "fix": "Use the drive capacity already set by the known working GPIO profile and check only map/unmap bk_err_t results.",
+    "log_sha256": "72e08751c507fa3746c1e729d26fc6aed2f9bcac71ed2e86edef46bb53ff4ae5"
+  },
+  "latest_repair_version": "pal-display-e2e-20260929-r13",
+  "physical_recheck": "PASS",
+  "optical_measurement_automated": false,
+  "r9_driver_replay": {
+    "version": "pal-display-e2e-20260929-r9",
+    "passed": 24,
+    "observations": 23,
+    "phase": "replay-from-same-installed-boot",
+    "received_via": "passive-460800-UART1",
+    "log_sha256": "5ab27fb6025b495641af7c0bba01d01f85970428998fed04f96321998ab56105",
+    "loader_command_probe": "timed out; not qualified as complete managed lifecycle",
+    "p1_and_stage_after_managed_return": "original P1 preserved, Stage empty, R9 installed in P2"
+  },
+  "r10_change": "Validate existing peripheral-function-4 RGB mux before remapping. Leave already correct pins mapped, avoiding unnecessary native GPIO warning bursts.",
+  "r10_failed_boot": {
+    "version": "pal-display-e2e-20260929-r10",
+    "confirmed": false,
+    "reset_observed": true,
+    "fault_address": "0x00000004",
+    "cause": "GPIO LL getter uses a translation-unit static system register pointer; the BSP translation unit omitted gpio_ll_init().",
+    "fix": "Initialize the local LL pointer before read; gpio_ll_init writes no hardware registers.",
+    "log_sha256": "ec6588cae46593cdec9ee5cc08aa2cd0a02affec13680cdac3822ee6f877ec37",
+    "coredump_bytes_after": 32,
+    "coredump_sha256_after": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829",
+    "original_coredump_unchanged": true
+  },
+  "r13_physical_recheck": {
+    "source": "user",
+    "response": "两块都正确且稳定",
+    "pattern": "white border; top-left red, top-right green, bottom-left blue, bottom-right white",
+    "stable_image": true,
+    "brightness_per_level": "NOT_ASSESSED",
+    "evidence": "qualified.json"
+  }
+}

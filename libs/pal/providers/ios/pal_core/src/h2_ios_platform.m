@@ -21,6 +21,7 @@ struct h2_ios_platform {
   H2IOSPlatformView *view;
   h2_pal_display_api_t display;
   int opened;
+  uint32_t brightness_percent;
 };
 
 @interface H2IOSPlatformView : UIView
@@ -74,6 +75,7 @@ static CGRect h2_ios_platform_content_rect(h2_ios_platform_t *host,
   NSData *snapshot = host->rgba == NULL
                          ? nil
                          : [NSData dataWithBytes:host->rgba length:byte_count];
+  const CGFloat brightness = host->brightness_percent / 100.0;
   pthread_mutex_unlock(&host->mutex);
   if (snapshot == nil) {
     return;
@@ -92,6 +94,9 @@ static CGRect h2_ios_platform_content_rect(h2_ios_platform_t *host,
   CGContextRef context = UIGraphicsGetCurrentContext();
   if (context != NULL && image != NULL) {
     CGContextSaveGState(context);
+    CGContextSetRGBFillColor(context, 0, 0, 0, 1);
+    CGContextFillRect(context, self.bounds);
+    CGContextSetAlpha(context, brightness);
     CGContextTranslateCTM(context, 0.0, self.bounds.size.height);
     CGContextScaleCTM(context, 1.0, -1.0);
     CGRect target = h2_ios_platform_content_rect(host, self.bounds);
@@ -159,6 +164,7 @@ static int h2_ios_platform_display_open(void *user) {
   if (host->rgba == NULL) {
     host->rgba = calloc((size_t)host->width * host->height, sizeof(uint32_t));
   }
+  if (!host->opened) host->brightness_percent = 100u;
   host->opened = host->rgba != NULL;
   pthread_mutex_unlock(&host->mutex);
   return host->opened ? H2_DISPLAY_OK : H2_DISPLAY_ERR_NO_MEMORY;
@@ -170,11 +176,17 @@ static int h2_ios_platform_display_get_info(void *user,
   if (host == NULL || out_info == NULL) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
+  pthread_mutex_lock(&host->mutex);
+  if (!host->opened) {
+    pthread_mutex_unlock(&host->mutex);
+    return H2_DISPLAY_ERR_INVALID_STATE;
+  }
   *out_info = (h2_display_info_t){
       .width = host->width,
       .height = host->height,
       .native_format = H2_DISPLAY_PIXEL_RGB565,
   };
+  pthread_mutex_unlock(&host->mutex);
   return H2_DISPLAY_OK;
 }
 
@@ -183,22 +195,25 @@ h2_ios_platform_display_draw_bitmap(void *user, const h2_display_rect_t *rect,
                                     const void *pixels, size_t stride_bytes,
                                     h2_display_pixel_format_t format) {
   h2_ios_platform_t *host = user;
-  if (host == NULL || rect == NULL || pixels == NULL || host->rgba == NULL ||
-      format != H2_DISPLAY_PIXEL_RGB565 || rect->x < 0 || rect->y < 0 ||
+  if (host && !host->opened) return H2_DISPLAY_ERR_INVALID_STATE;
+  if (format != H2_DISPLAY_PIXEL_RGB565) return H2_DISPLAY_ERR_UNSUPPORTED;
+  if (host == NULL || rect == NULL || pixels == NULL || rect->x < 0 || rect->y < 0 ||
       rect->width <= 0 || rect->height <= 0 ||
-      rect->x + rect->width > host->width ||
-      rect->y + rect->height > host->height ||
-      stride_bytes < (size_t)rect->width * sizeof(uint16_t)) {
+      (int64_t)rect->x + rect->width > host->width ||
+      (int64_t)rect->y + rect->height > host->height ||
+      stride_bytes < (size_t)rect->width * sizeof(uint16_t) ||
+      ((size_t)rect->height - 1u) > (SIZE_MAX - (size_t)rect->width*2u) / stride_bytes) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
   pthread_mutex_lock(&host->mutex);
   for (int y = 0; y < rect->height; ++y) {
-    const uint16_t *source =
-        (const uint16_t *)((const uint8_t *)pixels + (size_t)y * stride_bytes);
+    const uint8_t *source =
+        (const uint8_t *)pixels + (size_t)y * stride_bytes;
     uint32_t *destination =
         host->rgba + (size_t)(rect->y + y) * host->width + rect->x;
     for (int x = 0; x < rect->width; ++x) {
-      const uint16_t pixel = source[x];
+      uint16_t pixel;
+      memcpy(&pixel, source + (size_t)x*2u, 2u);
       const uint32_t red = ((pixel >> 11u) & 0x1fu) * 255u / 31u;
       const uint32_t green = ((pixel >> 5u) & 0x3fu) * 255u / 63u;
       const uint32_t blue = (pixel & 0x1fu) * 255u / 31u;
@@ -214,6 +229,7 @@ static int h2_ios_platform_display_present(void *user) {
   if (host == NULL || host->view == nil) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
+  if (!host->opened) return H2_DISPLAY_ERR_INVALID_STATE;
   UIView *view = host->view;
   dispatch_async(dispatch_get_main_queue(), ^{
     [view setNeedsDisplay];
@@ -223,8 +239,14 @@ static int h2_ios_platform_display_present(void *user) {
 
 static int h2_ios_platform_display_set_brightness(void *user,
                                                   uint32_t percent) {
-  return user != NULL && percent <= 100u ? H2_DISPLAY_OK
-                                         : H2_DISPLAY_ERR_INVALID_ARG;
+  h2_ios_platform_t *host = user;
+  if (!host) return H2_DISPLAY_ERR_INVALID_ARG;
+  pthread_mutex_lock(&host->mutex);
+  int rc = !host->opened ? H2_DISPLAY_ERR_INVALID_STATE :
+      percent > 100u ? H2_DISPLAY_ERR_INVALID_ARG : H2_DISPLAY_OK;
+  if (!rc) host->brightness_percent = percent;
+  pthread_mutex_unlock(&host->mutex);
+  return rc ? rc : h2_ios_platform_display_present(host);
 }
 
 static int h2_ios_platform_display_close(void *user) {
