@@ -1,0 +1,119 @@
+{
+  "contract": 1,
+  "profile": "net-tls-core",
+  "full_net_qualification": false,
+  "slots": {
+    "resolve_addr": [
+      "dns-sync"
+    ],
+    "resolve_start": [
+      "dns-async-copy",
+      "dns-cancel",
+      "dns-capacity"
+    ],
+    "resolve_poll": [
+      "dns-async-copy"
+    ],
+    "resolve_close": [
+      "dns-cancel",
+      "dns-capacity"
+    ],
+    "get_host_addr": [
+      "host-address"
+    ],
+    "udp_open": [
+      "udp-echo",
+      "udp-timeout",
+      "udp-nonblocking"
+    ],
+    "udp_sendto": [
+      "udp-echo",
+      "udp-truncation"
+    ],
+    "udp_recvfrom": [
+      "udp-echo",
+      "udp-truncation"
+    ],
+    "udp_open_bound": [
+      "udp-source-bind"
+    ],
+    "udp_join_multicast": [
+      "multicast-membership"
+    ],
+    "tcp_open": [
+      "tcp-echo"
+    ],
+    "tcp_open_bound": [
+      "tcp-source-bind"
+    ],
+    "tcp_connect": [
+      "tcp-connect-retry"
+    ],
+    "tcp_send": [
+      "tcp-echo"
+    ],
+    "tcp_send_timeout": [
+      "tcp-partial-io"
+    ],
+    "tcp_recv": [
+      "tcp-partial-io",
+      "tcp-timeout",
+      "tcp-nonblocking"
+    ],
+    "tls_wrap": [
+      "tls-required",
+      "tls-default",
+      "tls-default-untrusted",
+      "tls-wrong-ca",
+      "tls-wrong-name",
+      "tls-expired",
+      "tls-insecure-test-only",
+      "tls-sni-alpn",
+      "tls-borrowed-config",
+      "tls-handshake-deadline",
+      "tls-failure-recovery",
+      "tls-repeat-wrap",
+      "tls-config-arguments",
+      "tls-invalid-ca",
+      "tls-session-churn"
+    ],
+    "icmp_echo": [
+      "icmp-echo"
+    ],
+    "close": [
+      "cleanup-ledger",
+      "tls-session-churn"
+    ],
+    "tcp_listen": [
+      "tcp-listen-accept"
+    ],
+    "tcp_accept": [
+      "tcp-listen-accept",
+      "tcp-accept-timeout"
+    ]
+  },
+  "optional_capabilities": {
+    "udp_join_multicast": "Join success verifies membership setup only; multicast delivery requires separate LAN fixture.",
+    "icmp_echo": "Platform privilege/implementation dependent; not part of mandatory TLS core."
+  },
+  "fields": {
+    "tls": [
+      "server_name",
+      "alpn",
+      "root_ca_pem",
+      "root_ca_pem_len",
+      "verify"
+    ],
+    "bind": [
+      "type",
+      "source_addr"
+    ],
+    "not_qualified": [
+      "IPv6",
+      "NETIF source bind",
+      "system trust store roots",
+      "DTLS",
+      "multicast delivery"
+    ]
+  }
+}

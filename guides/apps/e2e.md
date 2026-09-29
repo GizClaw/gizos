@@ -195,3 +195,24 @@ H2_ANDROID_SERIAL=emulator-5580 make bazel-test-android_pal_crypto_simulator_tes
 ```
 
 移动端从实际 Swift Package/AAR 导入 provider，Android 比较 APK/AAR 内 `.so` 字节；iOS/Android 结果来自模拟器。每次硬件安装前查询 UID/Loader/coredump 基线，使用 H2Loader managed serial send 校验 Stage 包/镜像 SHA 后正常升级，最终核对有效 App、空 Stage 和未改变的 Loader/coredump。测试不输出生成的私钥或随机字节，也不把功能验收当成密码认证。
+
+## PAL Net/TLS
+
+`projects/e2e/apps/pal-net-tls` independently qualifies the raw `h2_pal_net.h`
+core profile with 36 mandatory cases and two explicit optional capability cases.
+The 21-operation inventory includes bounded asynchronous DNS, UDP/TCP/source
+bind, listen/accept, full byte streams, TLS trust/name/expiry rejection,
+SNI/ALPN peer evidence, deadlines and session recovery. Certificate rejection
+requires typed `TLS_VERIFY` and this run's observed ClientHello, emitted
+Certificate, failed handshake and no application payload; generic IO and bad
+endpoints cannot pass. HTTP/Fetch/WebRTC do not replace raw Net/TLS evidence.
+
+The mobile consumer imports actual native SDK packages and injects the public
+owned Net provider. Device launchers borrow saved Wi-Fi configuration, keep
+H2Loader service, confirm only complete success and require two independent
+boots with Loader/Stage/coredump preservation. Browser executes the actual
+Worker/AppHost unsupported raw Net boundary, reporting core qualification false.
+ICMP, multicast delivery, IPv6, NETIF binding, DTLS, and OS public-root trust are
+separate scopes. Source/artifact-bound receipts and manual entries are described
+in `projects/e2e/apps/pal-net-tls/README.md`. Wi-Fi qualifies before raw Net/TLS
+integration begins; fake/oracle/fixture self-checks are not platform E2E evidence.

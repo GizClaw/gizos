@@ -1,0 +1,54 @@
+{
+  "contract": 1,
+  "profile": "net-tls-core",
+  "operations": 21,
+  "mandatory_cases": 36,
+  "assessment_complete": false,
+  "full_net_qualified": false,
+  "pending": [
+    "macos",
+    "wasm",
+    "ios",
+    "android",
+    "devkit",
+    "bk7258"
+  ],
+  "source_sha256": {},
+  "platforms": {
+    "macos": {
+      "status": "PENDING",
+      "core_qualified": false,
+      "evidence": null
+    },
+    "wasm": {
+      "status": "PENDING",
+      "core_qualified": false,
+      "evidence": null
+    },
+    "ios": {
+      "status": "PENDING",
+      "core_qualified": false,
+      "evidence": null
+    },
+    "android": {
+      "status": "PENDING",
+      "core_qualified": false,
+      "evidence": null
+    },
+    "devkit": {
+      "status": "PENDING",
+      "core_qualified": false,
+      "evidence": null
+    },
+    "bk7258": {
+      "status": "PENDING",
+      "core_qualified": false,
+      "evidence": null
+    }
+  },
+  "gate": {
+    "wifi_qualification_verified": false,
+    "hardware_released": false,
+    "tls_integration_started": false
+  }
+}
