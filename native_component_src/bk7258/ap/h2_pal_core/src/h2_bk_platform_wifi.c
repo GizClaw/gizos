@@ -12,6 +12,7 @@
 #include "lwip/tcpip.h"
 #include "net.h"
 #include "wifi_api_ipc.h"
+#include "h2_bk_wifi_rpc.h"
 
 /* Exported by the pinned AP SDK, although omitted from its public header. */
 extern bool wifi_sta_is_started(void);
@@ -1114,9 +1115,14 @@ static int h2_bk_wifi_sta_disconnect(h2_pal_wifi_sta_t *sta) {
     /* A fresh authenticated attempt cannot reuse last SSID/IP evidence. */
     __atomic_store_n(&s_h2_bk_wifi_last_config_valid, 0, __ATOMIC_RELEASE);
     h2_bk_wifi_request_unlock();
-    /* AP SDK disconnect omits the real CP radio command. STOP performs a
-     * real disassociation; recover and clear the local adapter below. */
-    bk_err_t err = bk_wifi_sta_stop();
+    /* AP SDK public disconnect only clears its local adapter. The paired
+     * private RPC invokes the actual CP disassociate without deleting its
+     * service/VIF. An unpaired/old CP must fail closed, never fake a disconnect. */
+    bk_err_t err = BK_OK;
+    if (wifi_sta_is_started()) {
+        err = wifi_send_com_api_cmd(H2_BK_WIFI_RPC_STA_DISASSOCIATE, 0);
+        if (err == BK_OK) err = bk_wifi_sta_disconnect();
+    } else err = bk_wifi_sta_stop();
     int rc = err == BK_ERR_WIFI_STA_NOT_STARTED || err == BK_ERR_WIFI_STA_NOT_CONFIG
         ? H2_PAL_OK : h2_bk_wifi_map_error(err);
     if (rc == H2_PAL_OK) {

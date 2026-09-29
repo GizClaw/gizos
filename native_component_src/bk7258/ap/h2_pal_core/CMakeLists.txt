@@ -24,7 +24,8 @@ set(H2_BK_PLATFORM_CORE_PRIV_INCLUDE_DIRS
   "${BK_FLASHDB_DIR}/port"
   "${BK_FLASHDB_DIR}/port/fal/inc"
   "${BK_ARMINO_PATH}/components/bk_wifi/include"
-  "${BK_ARMINO_PATH}/components/bk_wifi_driver")
+  "${BK_ARMINO_PATH}/components/bk_wifi_driver"
+  "${REPO_ROOT}/native_component_src/bk7258/shared")
 set(H2_BK_PLATFORM_CORE_COMPILE_DEFINITIONS
   H2_BK_PLATFORM_CORE_ENABLE_MQTT=0
   H2_BK_PLATFORM_WIFI_CSI_SAFE_DISPATCH=0)

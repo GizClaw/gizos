@@ -38,6 +38,7 @@ firmware_native_component(
     ),
     data = [
         "CMakeLists.txt",
+        "//native_component_src/bk7258/shared:h2_bk_wifi_rpc.h",
     ],
     execution_unit = "ap",
     tags = [
