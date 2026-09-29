@@ -1,4 +1,5 @@
 #include "h2_bk7258_board_private.h"
+#include "h2_bk7258_display_backlight.h"
 
 #include "components/bk_display.h"
 #include "components/media_types.h"
@@ -51,7 +52,7 @@ typedef struct h2_bk7258_display_state {
     h2_bk7258_display_bus_t bus;
     bool swap_rgb565_bytes;
     bool first_present_done;
-    bool backlight_pwm_initialized;
+    h2_bk7258_backlight_state_t backlight;
     int initialized;
 } h2_bk7258_display_state_t;
 
@@ -207,17 +208,15 @@ static void lcd_backlight_close(uint8_t bl_io) {
     bk_gpio_set_output_low(bl_io);
 }
 
-static void deinit_display(h2_bk7258_display_state_t *state) {
+static int deinit_display(h2_bk7258_display_state_t *state) {
     if (state == NULL || !state->initialized) {
-        return;
+        return H2_DISPLAY_OK;
     }
 
+    int rc = h2_bk7258_backlight_release(&state->backlight);
+    if (rc) return rc;
     if (state->handle != NULL) {
         (void)bk_display_close(state->handle);
-    }
-    if (state->backlight_pwm_initialized) {
-        (void)bk_pwm_deinit(PWM_CH_1);
-        state->backlight_pwm_initialized = false;
     }
     lcd_backlight_close(LCD_BACKLIGHT_PIN);
     if (state->shadow != NULL) {
@@ -235,6 +234,7 @@ static void deinit_display(h2_bk7258_display_state_t *state) {
     state->swap_rgb565_bytes = false;
     state->first_present_done = false;
     state->initialized = 0;
+    return H2_DISPLAY_OK;
 }
 
 static int init_display(h2_bk7258_display_state_t *state) {
@@ -463,29 +463,12 @@ static int bk_set_brightness_percent(void *user, uint32_t percent) {
     }
     if (percent > 100u) return H2_DISPLAY_ERR_INVALID_ARG;
     if (percent == 0u || percent == 100u) {
-        if (state->backlight_pwm_initialized) {
-            if (bk_pwm_deinit(PWM_CH_1) != BK_OK) return H2_DISPLAY_ERR_IO;
-            state->backlight_pwm_initialized = false;
-        }
+        int rc = h2_bk7258_backlight_release(&state->backlight);
+        if (rc) return rc;
         if (percent == 0u) lcd_backlight_close(LCD_BACKLIGHT_PIN);
         else lcd_backlight_open(LCD_BACKLIGHT_PIN);
     } else {
-        /* 26MHz clock / 26000 = 1kHz PWM. GPIO map is board-owned and
-         * excludes SDK's default GPIO19, which carries LCD red pixels. */
-        const uint32_t period = 26000u;
-        if (!state->backlight_pwm_initialized) {
-            const pwm_init_config_t config = {
-                .period_cycle = period, .duty_cycle = period * percent / 100u};
-            if (bk_pwm_driver_init() != BK_OK ||
-                bk_pwm_init(PWM_CH_1, &config) != BK_OK) return H2_DISPLAY_ERR_IO;
-            state->backlight_pwm_initialized = true;
-            if (bk_pwm_start(PWM_CH_1) != BK_OK) return H2_DISPLAY_ERR_IO;
-        } else {
-            pwm_period_duty_config_t config = {
-                .period_cycle = period, .duty_cycle = period * percent / 100u};
-            if (bk_pwm_set_period_duty(PWM_CH_1, &config) != BK_OK)
-                return H2_DISPLAY_ERR_IO;
-        }
+        return h2_bk7258_backlight_pwm(&state->backlight, percent);
     }
     return H2_DISPLAY_OK;
 }
@@ -497,8 +480,7 @@ static int bk_open(void *user) {
 
 static int bk_close(void *user) {
     h2_bk7258_display_state_t *state = (h2_bk7258_display_state_t *)user;
-    deinit_display(state);
-    return H2_DISPLAY_OK;
+    return deinit_display(state);
 }
 
 int h2_bk7258_board_display_black(void) {

@@ -62,12 +62,12 @@
         "passed": 24,
         "failed": 0,
         "blocked": 0,
-        "mic_frames": 941,
-        "mic_peak": 1566,
-        "mic_energy": 786450014,
-        "speaker_frames": 943,
+        "mic_frames": 942,
+        "mic_peak": 15295,
+        "mic_energy": 58963333359,
+        "speaker_frames": 944,
         "output_peak": 1120,
-        "stability_elapsed_ms": 30005,
+        "stability_elapsed_ms": 30026,
         "allocator_probe_passed": 1,
         "allocator_failure_rejected": 1,
         "allocator_allocations": 1,
@@ -76,11 +76,11 @@
         "teardown_rc": 0
       },
       "qualified_report": "evidence/ios/qualified.json",
-      "qualified_report_sha256": "520d0fe7a0187d108b1912b44f767c4880db9f26f666063d20cd9cb56c621222",
+      "qualified_report_sha256": "472bc9fe095d73ba5cd3c81482e936f0eb968bc97d784f3303a1067b63f1e77e",
       "environment": "evidence/ios/environment.json",
-      "environment_sha256": "40e9cc556c089df8d72700859a8077f1c89f7765231f237824a93e00e9cbc6b9",
-      "app_sha256": "cff799092ff8acc83adc813748996d9c0e3c19fa14e9d34c6a15eec83a5679b6",
-      "sdk_sha256": "87225f078d58c3d4be798a6cd992c20382e3e9217c73f25e4e8a2e2daacb7327",
+      "environment_sha256": "6d9c6d3a42e47174b269e4775b153a270e9265bce06a4420d8b8019136dfd12a",
+      "app_sha256": "e7f7e7c5bce6d508a974f3282953807475e244839b446b1e1a0332f4fbbd7258",
+      "sdk_sha256": "db410dd0d3cf795fcd50313a15d31bd7d746d5852899a9ac2557cb1dc03f3cbe",
       "source_binding": "review_fix_validation.current_source_receipts"
     },
     "android_emulator": {
@@ -93,10 +93,10 @@
         "blocked": 0,
         "mic_frames": 940,
         "mic_peak": 19660,
-        "mic_energy": 58080320768339,
+        "mic_energy": 58049602004598,
         "speaker_frames": 942,
         "output_peak": 1120,
-        "stability_elapsed_ms": 30059,
+        "stability_elapsed_ms": 30057,
         "allocator_probe_passed": 1,
         "allocator_failure_rejected": 1,
         "allocator_allocations": 3,
@@ -105,12 +105,12 @@
         "teardown_rc": 0
       },
       "qualified_report": "evidence/android/qualified.json",
-      "qualified_report_sha256": "ecdbe306147850ae9e4b3027982e5e0f92ddd0a845ec8542138b7f6be8a1c7b2",
+      "qualified_report_sha256": "eab8fb3ee0a1aba3263e54cfa2d2aa44c7567a09ab63e22fc5eb03b71c80e8d0",
       "environment": "evidence/android/environment.json",
-      "environment_sha256": "100eaf5db1d24248b6d337be50856a917cd5a4ff43380efd3962f7456dbd2549",
-      "app_sha256": "af129ade678d170b512901b4596518becabca914c52f64f61dc9fd199e5f6868",
-      "sdk_sha256": "b41a364a457c4dbd77c267f998ceeff9eef618809c5c74e50b1599e750a35680",
-      "source_binding": "source_receipts"
+      "environment_sha256": "7984dafb301513d2b13e9e89d587e31c12de0f863115464184798b97943b0886",
+      "app_sha256": "27e3d7099bbceafcbceb50efbeca0581312362eafd94cde87927c52b9cdb3568",
+      "sdk_sha256": "86b210680422933ebddc9f613bf30b3ca6ffda615e64a922d7426333202b0a1a",
+      "source_binding": "review_fix_validation.current_source_receipts"
     },
     "amoled_esp32s3": {
       "status": "PASS",
@@ -359,7 +359,7 @@
       "projects/e2e/apps/pal-audio/app/src/h2_pal_audio_e2e.c": "ff18254ab92017bce4eb19416d51673d9b0425154e0cae3b27acf1ba4bb25364",
       "projects/e2e/apps/pal-audio/app/include/h2_pal_audio_e2e.h": "e5e9344144aa696d6903bbbd2fe12f477b0748b1fb63d2868627dad20c54ea7f",
       "libs/pal/providers/ios/pal_core/src/h2_ios_audio.m": "a910b0f140c8481bcfef80f6472c061d87cf4cc2809f0269d5aa2adc491991dd",
-      "libs/pal/providers/android/pal_core/src/h2_android_platform.c": "82d140e9f06f9604a210128546990bced7b84a60da2f05ca5c8fdd83b62212a9",
+      "libs/pal/providers/android/pal_core/src/h2_android_platform.c": "694a63b7ff2bc650b3398c81339af9678c721b9260598f168127b1627fb950bb",
       "boards/bk7258_v3_202405/bk7258/ap/src/h2_bk7258_board_audio.c": "79e299e4ae267444f7ad8b44d64a08165cf9574a86b733d995011fb731a09ed8",
       "projects/e2e/targets/h2loader_tar_zlib/pal-audio/bk7258_v3_202405/ap/ap_main.c": "9d7a11f30becbdaabc61a8ee298bba5ba8367ab65ac60635219842dee3babc18",
       "projects/e2e/targets/h2loader_tar_zlib/pal-audio/amoled/main/main.c": "91a671cd5b1b6819f10357e9b7bf8fbbef537b8fcffbd2b493882a3e3797ef93",
@@ -400,9 +400,13 @@
       "ios_simulator": {
         "case_count": 24,
         "source_binding": "review_fix_validation.current_source_receipts"
+      },
+      "android_emulator": {
+        "case_count": 24,
+        "source_binding": "review_fix_validation.current_source_receipts"
       }
     },
-    "scope": "Fresh 24-case runs on macOS, Chromium Worker and actual iOS SDK consumer. Android and both board packages retain their original successful ffec493c qualification snapshots; no reflash or new device-source claim is made. The new incomplete-close failure path is covered by deterministic regression, while all-PASS traces already close their track before terminal restore.",
+    "scope": "Fresh 24-case runs on macOS, Chromium Worker and actual iOS SDK consumer for the Audio review fixes. Both mobile SDK consumers were subsequently rerun 24/24 after Display-only shared-provider changes. Board packages retain their original successful ffec493c snapshots; no reflash or new board-source claim is made. Incomplete-close failure behavior remains covered by its deterministic regression.",
     "ios_build": "Package built with -Werror and deprecation diagnostics on its launcher. No global warning suppression or vendor changes.",
     "board_recovery_regressions": {
       "old_amoled_exit": -6,
@@ -434,6 +438,15 @@
           "build_receipt_sha256": "2e978b41fd045d928b57dc2d8ca5fff8cdf93394f7e7d3c6422e73266f235638",
           "validation": "native build only; not flashed or counted as a device qualification run"
         }
+      }
+    },
+    "display_provider_compatibility": {
+      "scope": "Only shared provider Display functions and private Display brightness state changed; Audio behavior and portable Audio App are unchanged. Actual SDK consumer Audio runs replace both mobile receipts after the Display change; original board and compiler-coverage snapshots are preserved.",
+      "ios_simulator": "24/24; duplex>=30s; actual XCFramework/IPA; allocator probe PASS",
+      "android_emulator": "24/24; duplex>=30s; byte-identical AAR/APK provider; allocator probe PASS",
+      "shared_display_source_sha256": {
+        "libs/pal/providers/ios/pal_core/src/h2_ios_platform.m": "8850bd144d26221ecbfec867e1cfe1b35f17c225b9c987fcc7b6e43f35242ed1",
+        "libs/pal/providers/android/pal_core/src/h2_android_platform.c": "694a63b7ff2bc650b3398c81339af9678c721b9260598f168127b1627fb950bb"
       }
     }
   }

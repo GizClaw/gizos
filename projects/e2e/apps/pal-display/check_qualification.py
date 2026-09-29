@@ -7,7 +7,7 @@ import re
 
 ROOT = Path("projects/e2e/apps/pal-display")
 IDS = re.findall(r'H2_PAL_DISPLAY_CASE\("([^"]+)"',
-                 (ROOT / "app/include/h2_pal_display_cases.inc").read_text())
+                 (ROOT / "app/include/h2_pal_display_cases.inc").read_text(encoding="utf-8"))
 
 
 def report(value, cases):
@@ -86,7 +86,7 @@ def mobile(platform, environment):
 
 def main():
     assert len(IDS) == 24 and len(set(IDS)) == 24
-    value = json.loads((ROOT / "qualification.json").read_text())
+    value = json.loads((ROOT / "qualification.json").read_text(encoding="utf-8"))
     assert value["qualified"], "Display qualification remains incomplete"
     assert value["driver_and_ui_qualified"] and value["human_observation_verified"]
     assert value["optical_measurement_automated"] is False
@@ -94,21 +94,33 @@ def main():
     assert {item["platform"] for item in value["platforms"]} == {
         "macos", "wasm", "ios", "android", "amoled", "bk7258"}
     assert len(value["platforms"]) == 6
-    for path, expected in value["source_sha256"].items():
+    overrides = value.get("review_fix_source_sha256", {})
+    for path, expected in {**value["source_sha256"], **overrides}.items():
         assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == expected, path
+    if overrides:
+        fix = value["review_fix_validation"]
+        assert value["source_snapshot_commit"]
+        assert fix["backlight_failure_regression"] == "PASS"
+        assert fix["sdl_enum_sanitizer_regression"] == "PASS"
+        desktop = json.loads(Path(fix["desktop_run_evidence"]).read_text(encoding="utf-8"))
+        report(desktop, desktop["cases"])
+        assert fix["new_physical_run_claimed"] is False
+        build = json.loads(Path(fix["native_build_evidence"]).read_text(encoding="utf-8"))
+        assert build["package_manifest"]["version"] == fix["native_build_version"]
+        assert build["package_manifest"]["role"] == "app"
     for item in value["platforms"]:
         assert item["status"] == "PASS", item["platform"]
         path = Path(item["evidence"])
-        receipt = json.loads(path.read_text())
+        receipt = json.loads(path.read_text(encoding="utf-8"))
         if item["platform"] in {"amoled", "bk7258"}:
-            board(receipt, json.loads(path.with_name("build.json").read_text()))
+            board(receipt, json.loads(path.with_name("build.json").read_text(encoding="utf-8")))
         else:
             report(receipt, receipt["cases"])
             if item["platform"] in {"ios", "android"}:
                 mobile(item["platform"], json.loads(
-                    path.with_name("environment.json").read_text()))
+                    path.with_name("environment.json").read_text(encoding="utf-8")))
     coverage = json.loads(Path(
-        "projects/e2e/targets/cc_binary/pal-display/evidence/coverage.json").read_text())
+        "projects/e2e/targets/cc_binary/pal-display/evidence/coverage.json").read_text(encoding="utf-8"))
     for path in ["h2_pal_display_e2e.c", "h2_sdl3_display.cpp"]:
         assert coverage[path]["functions"]["percent"] > 50
         assert coverage[path]["lines"]["percent"] > 50

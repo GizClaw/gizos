@@ -8,6 +8,7 @@
 #include <cstring>
 #include <limits>
 #include <new>
+#include <type_traits>
 
 namespace {
 
@@ -148,8 +149,12 @@ int display_draw_bitmap(void *user, const h2_display_rect_t *rect,
   if (!state->initialized || state->open_count == 0u || state->close_pending) {
     return H2_DISPLAY_ERR_INVALID_STATE;
   }
+  // A C caller may supply an unknown integer value. Read its representation
+  // before validation; loading an out-of-range C++ enum itself is undefined.
+  std::underlying_type_t<h2_display_pixel_format_t> format_code;
+  std::memcpy(&format_code, &format, sizeof(format_code));
   size_t pixel_size = 0u;
-  switch (format) {
+  switch (format_code) {
   case H2_DISPLAY_PIXEL_RGB565:
   case H2_DISPLAY_PIXEL_RGB444:
     pixel_size = 2u;
@@ -187,10 +192,10 @@ int display_draw_bitmap(void *user, const h2_display_rect_t *rect,
         static_cast<size_t>(clipped.x);
     const uint8_t *source_row =
         source + static_cast<size_t>(row) * stride_bytes;
-    if (format == H2_DISPLAY_PIXEL_RGB565) {
+    if (format_code == H2_DISPLAY_PIXEL_RGB565) {
       std::memcpy(destination, source_row,
                   static_cast<size_t>(clipped.width) * sizeof(uint16_t));
-    } else if (format == H2_DISPLAY_PIXEL_RGB888) {
+    } else if (format_code == H2_DISPLAY_PIXEL_RGB888) {
       for (int column = 0; column < clipped.width; ++column) {
         destination[column] =
             rgb888_to_rgb565(source_row + static_cast<size_t>(column) * 3u);

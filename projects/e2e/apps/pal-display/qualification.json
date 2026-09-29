@@ -110,5 +110,27 @@
   "optical_measurement_automated": false,
   "driver_and_ui_qualified": true,
   "human_observation_verified": true,
-  "physical_observation_scope": "User-confirmed R13 white-border RGBW patterns and stable output on both boards; brightness control exercised in mandatory ledgers, without human per-level or photometric measurements."
+  "physical_observation_scope": "User-confirmed R13 white-border RGBW patterns and stable output on both boards; brightness control exercised in mandatory ledgers, without human per-level or photometric measurements.",
+  "source_snapshot_commit": "b6d6daa67cd4e52eb92c5bcfa4aa8dab27f9afec",
+  "review_fix_source_sha256": {
+    "boards/bk7258_v3_202405/bk7258/ap/BUILD.bazel": "9b5ad8ce1e5fd9edcbb7443e7486db9eed08424463f63739e18e8844fd9a265a",
+    "boards/bk7258_v3_202405/bk7258/ap/src/h2_bk7258_board_display.c": "ba771cd3351bfb02f95778b1450249ba08de0da5bd0c37c849091b6a8da757a3",
+    "boards/bk7258_v3_202405/bk7258/ap/src/h2_bk7258_display_backlight.h": "225f0a916011caff26dd2e5486dc6064b2419c5e545d4120c6ab73560225aa43",
+    "boards/bk7258_v3_202405/bk7258/ap/tests/h2_bk7258_display_backlight_test_sdk.h": "f5267d7c959ee37ce802dbee9b8a38cc2cf18a7eba7bcdd4bbebcbc208cb03bd",
+    "boards/bk7258_v3_202405/bk7258/ap/tests/test_h2_bk7258_display_backlight.c": "7b036cd70aaca71b9c7568fff9a3e072b73dd07131d80755c6b83189c310cf8c",
+    "projects/e2e/apps/pal-display/BUILD.bazel": "b5b1726a04082aca81287142766888678fedec2d0d7536479d3100d55f176253",
+    "projects/e2e/apps/pal-display/check_qualification.py": "d764dc83c77ef2445f6fc770fa2073420e9a03cd518bfe3808685c4a3c3cb32e",
+    "projects/e2e/apps/pal-display/README.md": "cc1c5b74b3db8c3275f552b6dca89e9597ccd8e8b335d080082f3b4c96207e4e",
+    "guides/apps/h2loader/boards/bk7258_v3_202405/display.md": "20aa6aa7d28e3ce0c2d0448f1ed0af923f463e82e765d9aeba75f17ac84b8b6a",
+    "libs/pal/providers/sdl3/src/h2_sdl3_display.cpp": "c416f27d73cf91a24aab95bf919277ddf649a7e4a2b99b89b858f17fee3d4e5f"
+  },
+  "review_fix_validation": {
+    "scope": "BK PWM failure recovery, SDL C/C++ unknown enum validation, UTF-8 receipt decoding; native build and focused/new renderer validation are separate from R13 physical snapshot",
+    "backlight_failure_regression": "PASS",
+    "native_build_version": "pal-display-e2e-20260929-r14",
+    "native_build_evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-display/bk7258_v3_202405/evidence/review-fix-build.json",
+    "new_physical_run_claimed": false,
+    "sdl_enum_sanitizer_regression": "PASS",
+    "desktop_run_evidence": "projects/e2e/targets/cc_binary/pal-display/evidence/review-fix-qualified.json"
+  }
 }

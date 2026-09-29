@@ -1,19 +1,19 @@
 {
   "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
   "device": {
-    "dataPath": "/Users/idy/Library/Developer/CoreSimulator/Devices/A06F78C5-E60A-4061-B627-F72A0578C7A1/data",
-    "dataPathSize": 1855840256,
-    "logPath": "/Users/idy/Library/Logs/CoreSimulator/A06F78C5-E60A-4061-B627-F72A0578C7A1",
-    "udid": "A06F78C5-E60A-4061-B627-F72A0578C7A1",
-    "lastUsedAt": "2026-09-29T02:01:40Z",
+    "dataPath": "/Users/idy/Library/Developer/CoreSimulator/Devices/7A7C4030-7951-4C10-B8A1-41109D87242B/data",
+    "dataPathSize": 3536351232,
+    "logPath": "/Users/idy/Library/Logs/CoreSimulator/7A7C4030-7951-4C10-B8A1-41109D87242B",
+    "udid": "7A7C4030-7951-4C10-B8A1-41109D87242B",
+    "lastUsedAt": "2026-09-28T22:57:50Z",
     "isAvailable": true,
-    "logPathSize": 667648,
-    "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
+    "logPathSize": 532480,
+    "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPad-Pro-11-inch-M5-12GB",
     "state": "Booted",
-    "name": "GizOS PAL Core E2E"
+    "name": "iPad Pro 11-inch (M5)"
   },
-  "observation_finished_at_utc": "2026-09-29T02:04:17.842080+00:00",
+  "observation_finished_at_utc": "2026-09-29T09:54:59.875363+00:00",
   "evidence_timezone": "UTC",
-  "app_sha256": "cff799092ff8acc83adc813748996d9c0e3c19fa14e9d34c6a15eec83a5679b6",
-  "sdk_sha256": "87225f078d58c3d4be798a6cd992c20382e3e9217c73f25e4e8a2e2daacb7327"
+  "app_sha256": "e7f7e7c5bce6d508a974f3282953807475e244839b446b1e1a0332f4fbbd7258",
+  "sdk_sha256": "db410dd0d3cf795fcd50313a15d31bd7d746d5852899a9ac2557cb1dc03f3cbe"
 }
