@@ -2,7 +2,7 @@
 
 独立 PAL Display qualification App 为 `//projects/e2e/targets/h2loader_tar_zlib/pal-display/bk7258_v3_202405:package`，使用本 board 的原有 H2Loader layout；只安装 App/P2，保留 Loader/P1、Stage 和 coredump 所有权。
 
-launcher 选择独立的 Display GPIO profile，保留已知可工作的 board RGB clock/control/data 共 29 个引脚，GPIO0/1 保留为 H2Loader UART1。SDK 没有启用 RGB GPIO 初始化，且 runtime GPIO mapper 不接受 profile 中缺失的引脚；因此不能使用仅有 UART/SDIO 的普通 H2Loader GPIO profile。board Display 每次 open 恢复 RGB mux；H050IWV 没有 SPI 初始化回调，禁用可选 SPI control bus，避免占用 UART1。
+launcher 选择独立的 Display GPIO profile，保留已知可工作的 board RGB clock/control/data 共 29 个引脚，GPIO0/1 保留为 H2Loader UART1。SDK 没有启用 RGB GPIO 初始化，且 runtime GPIO mapper 不接受 profile 中缺失的引脚；因此不能使用仅有 UART/SDIO 的普通 H2Loader GPIO profile。board Display 每次 open 检查真实 RGB mux，仅恢复不正确的映射；H050IWV 没有 SPI 初始化回调，禁用可选 SPI control bus，避免占用 UART1。
 
 ## 预期表现
 
@@ -14,4 +14,4 @@ H050IWV 800×480 RGB；LCD 活跃 DMA source/refresh 观测证明 controller sca
 
 先检查 UID、当前 port occupancy、P1/P2、Stage 和 coredump 基线。构建 managed package 后 `send --file`，核对 staged identity，再 `reboot upgrade --monitor`。必须看到新 BOOT、run ledger 和 `H2_DISPLAY_READY rc=0 confirm=0`；失败不 confirm。随后独立 `reboot app --monitor` 重跑，不能把 replay ledger 当成新执行。最终 P1 不变、Stage empty、running/next=App、coredump 保持基线。
 
-源文件和实际 package/report hash 写入 compact evidence，raw serial log/dump 保存在本地。物理屏幕图案与亮度需相机/readback fixture 或人工明确确认；没有该证据时只能记录 driver qualification，不能宣称光学验证通过。
+源文件和实际 package/report hash 写入 compact evidence，raw serial log/dump 保存在本地。物理屏幕图案及稳定性需相机/readback fixture 或人工明确确认；没有该证据时只能记录 driver qualification。真实 PWM 更新和 mandatory case ledger 是亮度控制证据，不能宣称测得了物理亮度，也不能把图案确认扩大为每个亮度档都已人工观察。

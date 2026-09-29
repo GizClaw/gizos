@@ -17,14 +17,14 @@ int h2_display_device_run(h2_runtime_t *runtime, const char *version,
                                             .user = user};
   run_rc = h2_pal_display_e2e_run(runtime, &test, &result);
   complete = 1;
-  puts("H2_DISPLAY_PHASE run");
+  printf("H2_DISPLAY_PHASE run rc=%d\n", run_rc);
   h2_pal_display_e2e_print(&result, "board-driver", run_rc, 0);
   return run_rc;
 }
 void h2_display_device_replay(h2_runtime_t *runtime) {
   if (!complete)
     return;
-  puts("H2_DISPLAY_PHASE replay");
+  printf("H2_DISPLAY_PHASE replay rc=%d\n", run_rc);
   printf("H2_DISPLAY_IDENTITY version=%s evidence=driver-transfer "
          "optical_verified=0\n",
          image_version);
@@ -32,7 +32,7 @@ void h2_display_device_replay(h2_runtime_t *runtime) {
   h2_pal_time_sleep_ms(runtime->time, 500);
 }
 
-int h2_display_device_demo(h2_runtime_t *runtime) {
+int h2_display_device_show_pattern(h2_runtime_t *runtime) {
   h2_display_info_t info = {0};
   int rc = h2_pal_display_open(runtime->display);
   if (!rc)
@@ -57,7 +57,16 @@ int h2_display_device_demo(h2_runtime_t *runtime) {
   }
   h2_pal_mem_free(runtime->mem, row);
   if (!rc)
+    rc = h2_pal_display_set_brightness_percent(runtime->display, 100);
+  if (!rc)
     rc = h2_pal_display_present(runtime->display);
+  if (rc)
+    (void)h2_pal_display_close(runtime->display);
+  return rc;
+}
+
+int h2_display_device_demo(h2_runtime_t *runtime) {
+  int rc = h2_display_device_show_pattern(runtime);
   const uint32_t levels[] = {100, 50, 0, 100};
   for (unsigned i = 0; !rc && i < 4; ++i) {
     rc = h2_pal_display_set_brightness_percent(runtime->display, levels[i]);

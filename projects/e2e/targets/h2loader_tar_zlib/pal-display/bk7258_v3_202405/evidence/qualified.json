@@ -1,19 +1,187 @@
 {
   "schema": 1,
   "board": "bk7258_v3_202405",
-  "version": "pal-display-e2e-20260929-r6",
+  "version": "pal-display-e2e-20260929-r13",
   "operations": 6,
   "cases": 24,
   "driver_qualified": true,
   "optical_verified": false,
   "physical_observation": {
-    "status": "FAIL",
+    "status": "PASS",
     "source": "user",
-    "finding": "Backlight is visible, but the expected four-color pattern is absent; the same board displayed the older display App."
+    "question": "两块板现在是否都稳定显示白边、左上红/右上绿/左下蓝/右下白，没有继续闪烁或变黑？",
+    "response": "两块都正确且稳定",
+    "recorded_at_utc": "2026-09-29T09:27:46Z",
+    "pattern_observed": true,
+    "stable_image_observed": true,
+    "brightness_cycle_observed": false,
+    "brightness_cycle_assessment": "NOT_ASSESSED",
+    "image_version": "pal-display-e2e-20260929-r13",
+    "device_uid": "c8478ca2a87c",
+    "image_sha256": "cb3c4317b5c1663e66d3fccd68ec1da4b2442afb6a72b140ea9ea22bd960c274",
+    "limits": "Direct human observation of the R13 white-border RGBW pattern and stability; no photograph, electronic panel readback or per-level luminance measurement.",
+    "previous_failed_observation": "panel-regression.json"
   },
   "install_boot": {
     "fresh_boot": true,
-    "version": "pal-display-e2e-20260929-r6",
+    "version": "pal-display-e2e-20260929-r13",
+    "qualified": {
+      "platform": "board-driver",
+      "contract": 1,
+      "operations": 6,
+      "passed": 24,
+      "failed": 0,
+      "not_run": 0,
+      "observations": 23,
+      "complete": 1,
+      "qualified": 1,
+      "rc": 0,
+      "cleanup": 0,
+      "teardown": 0
+    },
+    "cases": [
+      {
+        "id": "interface_inventory",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "null_arguments",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "closed_state",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "open_idempotent",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "native_info",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "full_frame_borrowed",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "partial_rgb565",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "padded_unaligned_stride",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "rgb888",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "rgb444",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "unknown_format",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "empty_rectangles",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "short_stride",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "outside_rectangles",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "partial_bounds",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "coordinate_overflow",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "span_overflow",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "repeated_present",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_zero",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_half",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_full",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_invalid",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "close_idempotent",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "reopen",
+        "status": "PASS",
+        "rc": 0
+      }
+    ],
+    "real_driver_observations_received": [
+      "case=full_frame_borrowed source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=rgb888 source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=empty_rectangles source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=coordinate_overflow source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=repeated_present source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=repeated_present source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=brightness_full source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=reopen source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=reopen source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0"
+    ],
+    "reported_observations": 23,
+    "received_observations": 9,
+    "ledger_transport": "immediate-run-ledger",
+    "transport_limitation": "Console forwarding omitted some immediate observation lines. Reported and received counts are recorded separately; any replay ledger is the result of this fresh boot, not another execution.",
+    "log_sha256": "a225908ff61d8694c33c4c294335366c77ae0e27f151373c8a4519a47ea1f7a9",
+    "confirmed": true
+  },
+  "independent_normal_reboot": {
+    "fresh_boot": true,
+    "version": "pal-display-e2e-20260929-r13",
     "qualified": {
       "platform": "board-driver",
       "contract": 1,
@@ -153,191 +321,19 @@
     "real_driver_observations_received": [
       "case=full_frame_borrowed source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
       "case=partial_rgb565 source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
-      "case=padded_unaligned_stride source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
-      "case=rgb888 source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
       "case=rgb444 source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
-      "case=unknown_format source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
-      "case=empty_rectangles source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
       "case=short_stride source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
-      "case=outside_rectangles source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
-      "case=partial_bounds source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
       "case=coordinate_overflow source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
       "case=span_overflow source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
       "case=repeated_present source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
-      "case=repeated_present source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
-      "case=repeated_present source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
-      "case=repeated_present source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
-      "case=repeated_present source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
       "case=brightness_zero source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=0 rc=0",
-      "case=brightness_half source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=50 rc=0",
-      "case=brightness_full source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
-      "case=brightness_invalid source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
-      "case=reopen source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
-      "case=reopen source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0"
+      "case=brightness_invalid source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0"
     ],
     "reported_observations": 23,
-    "received_observations": 23,
-    "ledger_transport": "immediate-run-ledger",
-    "transport_limitation": null,
-    "log_sha256": "d04db8147fe5544e81f17e65e4c0cac6bfb171d0bf0238ebf2c83109a20306b8",
-    "confirmed": true
-  },
-  "independent_normal_reboot": {
-    "fresh_boot": true,
-    "version": "pal-display-e2e-20260929-r6",
-    "qualified": {
-      "platform": "board-driver",
-      "contract": 1,
-      "operations": 6,
-      "passed": 24,
-      "failed": 0,
-      "not_run": 0,
-      "observations": 23,
-      "complete": 1,
-      "qualified": 1,
-      "rc": 0,
-      "cleanup": 0,
-      "teardown": 0
-    },
-    "cases": [
-      {
-        "id": "interface_inventory",
-        "status": "PASS",
-        "rc": 0
-      },
-      {
-        "id": "null_arguments",
-        "status": "PASS",
-        "rc": 0
-      },
-      {
-        "id": "closed_state",
-        "status": "PASS",
-        "rc": 0
-      },
-      {
-        "id": "open_idempotent",
-        "status": "PASS",
-        "rc": 0
-      },
-      {
-        "id": "native_info",
-        "status": "PASS",
-        "rc": 0
-      },
-      {
-        "id": "full_frame_borrowed",
-        "status": "PASS",
-        "rc": 0
-      },
-      {
-        "id": "partial_rgb565",
-        "status": "PASS",
-        "rc": 0
-      },
-      {
-        "id": "padded_unaligned_stride",
-        "status": "PASS",
-        "rc": 0
-      },
-      {
-        "id": "rgb888",
-        "status": "PASS",
-        "rc": 0
-      },
-      {
-        "id": "rgb444",
-        "status": "PASS",
-        "rc": 0
-      },
-      {
-        "id": "unknown_format",
-        "status": "PASS",
-        "rc": 0
-      },
-      {
-        "id": "empty_rectangles",
-        "status": "PASS",
-        "rc": 0
-      },
-      {
-        "id": "short_stride",
-        "status": "PASS",
-        "rc": 0
-      },
-      {
-        "id": "outside_rectangles",
-        "status": "PASS",
-        "rc": 0
-      },
-      {
-        "id": "partial_bounds",
-        "status": "PASS",
-        "rc": 0
-      },
-      {
-        "id": "coordinate_overflow",
-        "status": "PASS",
-        "rc": 0
-      },
-      {
-        "id": "span_overflow",
-        "status": "PASS",
-        "rc": 0
-      },
-      {
-        "id": "repeated_present",
-        "status": "PASS",
-        "rc": 0
-      },
-      {
-        "id": "brightness_zero",
-        "status": "PASS",
-        "rc": 0
-      },
-      {
-        "id": "brightness_half",
-        "status": "PASS",
-        "rc": 0
-      },
-      {
-        "id": "brightness_full",
-        "status": "PASS",
-        "rc": 0
-      },
-      {
-        "id": "brightness_invalid",
-        "status": "PASS",
-        "rc": 0
-      },
-      {
-        "id": "close_idempotent",
-        "status": "PASS",
-        "rc": 0
-      },
-      {
-        "id": "reopen",
-        "status": "PASS",
-        "rc": 0
-      }
-    ],
-    "real_driver_observations_received": [
-      "case=full_frame_borrowed source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
-      "case=rgb888 source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
-      "case=rgb444 source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
-      "case=short_stride source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
-      "case=coordinate_overflow source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
-      "case=repeated_present source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
-      "case=repeated_present source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
-      "case=brightness_zero source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=0 rc=0",
-      "case=brightness_invalid source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
-      "case=reopen source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0"
-    ],
-    "reported_observations": 23,
-    "received_observations": 10,
+    "received_observations": 9,
     "ledger_transport": "result-replay-from-this-fresh-boot",
-    "transport_limitation": "UART console forwarding dropped some immediate observation lines; the complete result ledger is replayed from this fresh boot, not counted as another execution.",
-    "log_sha256": "b290aedf2473d3a7e58ef544f34166db9f7fb8dbaae2edcc281a723893166c49",
+    "transport_limitation": "Console forwarding omitted some immediate observation lines. Reported and received counts are recorded separately; any replay ledger is the result of this fresh boot, not another execution.",
+    "log_sha256": "c83f13eb6c481043f8e779d8b9e4d03f06fd6c69c35146b1c20ca1415a49178a",
     "confirmed": true
   },
   "before_status": {
@@ -345,15 +341,15 @@
     "target": "bk7258",
     "chip": "bk7258",
     "device_uid": "c8478ca2a87c",
-    "capabilities": "0x00000001",
+    "capabilities": "0x00000005",
     "command_availability": "0x00081f1f",
-    "active_role": "app",
-    "active_version": "pal-audio-e2e-20260929-r5",
-    "active_checksum": "5d8995f4f4f33ec7a9595ef86b2b249b013754fcb437eb6079143586bbf0795c",
-    "active_image_size": "5222400",
-    "running_partition": "2",
-    "next_partition": "2",
-    "boot_intent": "auto",
+    "active_role": "loader",
+    "active_version": "0.1.65-lu-c",
+    "active_checksum": "47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb",
+    "active_image_size": "2437120",
+    "running_partition": "1",
+    "next_partition": "1",
+    "boot_intent": "loader",
     "stage_valid": "0",
     "stage_package_checksum": "-",
     "stage_package_size": "0",
@@ -373,12 +369,12 @@
     "partition_1_board": "bk7258_v3_202405",
     "partition_1_target": "bk7258",
     "partition_2_valid": "1",
-    "partition_2_package_checksum": "e50a30af34cee93ffd1a3460fc9188cb4bfe3457f0449e860d305ab23aee5f25",
-    "partition_2_package_size": "1716008",
-    "partition_2_image_checksum": "5d8995f4f4f33ec7a9595ef86b2b249b013754fcb437eb6079143586bbf0795c",
+    "partition_2_package_checksum": "62c5a6f995684db4ca908893929b0f39cca8a06d47605d826099711f5e15c6ce",
+    "partition_2_package_size": "1721788",
+    "partition_2_image_checksum": "f9b2d36c12801c346a810cc6f158245f6185cf0638dac4354efefcdba4b0b5a3",
     "partition_2_image_size": "5222400",
     "partition_2_role": "app",
-    "partition_2_version": "pal-audio-e2e-20260929-r5",
+    "partition_2_version": "pal-display-e2e-20260929-r12",
     "partition_2_board": "bk7258_v3_202405",
     "partition_2_target": "bk7258",
     "last_result": "0",
@@ -393,8 +389,8 @@
     "capabilities": "0x00000001",
     "command_availability": "0x00081f1f",
     "active_role": "app",
-    "active_version": "pal-display-e2e-20260929-r6",
-    "active_checksum": "3b8cb08becd0194dd56e160d2bce785c5cf1361c36494c48eadb17b550fb8359",
+    "active_version": "pal-display-e2e-20260929-r13",
+    "active_checksum": "cb3c4317b5c1663e66d3fccd68ec1da4b2442afb6a72b140ea9ea22bd960c274",
     "active_image_size": "5222400",
     "running_partition": "2",
     "next_partition": "2",
@@ -418,12 +414,12 @@
     "partition_1_board": "bk7258_v3_202405",
     "partition_1_target": "bk7258",
     "partition_2_valid": "1",
-    "partition_2_package_checksum": "c38fea570456a73319ebb53c83f1b2ce8a1ca57a865126a04042cf2328bc3220",
-    "partition_2_package_size": "1720885",
-    "partition_2_image_checksum": "3b8cb08becd0194dd56e160d2bce785c5cf1361c36494c48eadb17b550fb8359",
+    "partition_2_package_checksum": "3a1b69e01fd5a9d53b0d06301a00d64c9052704c93d5afaadbd74bac4bb2a308",
+    "partition_2_package_size": "1721840",
+    "partition_2_image_checksum": "cb3c4317b5c1663e66d3fccd68ec1da4b2442afb6a72b140ea9ea22bd960c274",
     "partition_2_image_size": "5222400",
     "partition_2_role": "app",
-    "partition_2_version": "pal-display-e2e-20260929-r6",
+    "partition_2_version": "pal-display-e2e-20260929-r13",
     "partition_2_board": "bk7258_v3_202405",
     "partition_2_target": "bk7258",
     "last_result": "0",
@@ -433,10 +429,30 @@
   "p1_preserved": true,
   "stage_empty": true,
   "running_and_next_app": true,
-  "package_sha256": "c38fea570456a73319ebb53c83f1b2ce8a1ca57a865126a04042cf2328bc3220",
-  "coredump_status": "H2_LOADER_COREDUMP_FILE result=OK path=/tmp/pal-display-bk-r6-final-coredump.bin bytes=32",
-  "final_status_log_sha256": "9210f6f0d60e3e34cf095319057e2ae9f828f96fc759f43ba766d17befc89921",
-  "coredump_sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829",
-  "coredump_preserved": true,
-  "panel_qualified": false
+  "package_sha256": "3a1b69e01fd5a9d53b0d06301a00d64c9052704c93d5afaadbd74bac4bb2a308",
+  "coredump_status": "H2_LOADER_COREDUMP_STATUS result=OK code=0 partition=coredump bytes=368640 stored_bytes=32 blank=0",
+  "final_status_log_sha256": "0c92d5bf97dec2c3584f59b14905434caf10985120b0c8f753466f61649ec620",
+  "panel_qualified": true,
+  "sdk_commit": "aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca",
+  "base_main_commit": "a472fbec",
+  "coredump_before_sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829",
+  "coredump_after_sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829",
+  "steady_inspection_state": {
+    "marker": "H2_DISPLAY_STABLE brightness=100 rc=0 optical_verified=0",
+    "brightness_cycles_per_boot": 1,
+    "pattern": "white border; top-left red, top-right green, bottom-left blue, bottom-right white",
+    "replay_changes_display": false
+  },
+  "brightness_validation": {
+    "mandatory_cases": "PASS",
+    "levels_percent": [
+      0,
+      50,
+      100
+    ],
+    "invalid_input_preserves_state": true,
+    "evidence": "Real PWM1/GPIO7 updates and complete case ledger",
+    "human_per_level_observation": "NOT_ASSESSED",
+    "optical_measurement": "NOT_MEASURED"
+  }
 }

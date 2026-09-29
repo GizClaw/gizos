@@ -10,6 +10,7 @@
 #include "driver/pwm.h"
 #include "frame_buffer.h"
 #include "gpio_driver.h"
+#include "gpio_ll.h"
 #include "lcd_panel_devices.h"
 #include "media_service.h"
 #include "modules/pm.h"
@@ -59,6 +60,8 @@ static bool s_media_initialized;
 static h2_bk7258_display_state_t s_display_state = {
     .bus = H2_BK7258_DISPLAY_BUS_DEFAULT,
 };
+
+
 
 #if H2_BK7258_HAS_QSPI_ST77903
 static bk_display_qspi_ctlr_config_t s_qspi_config = {
@@ -113,14 +116,27 @@ static int init_rgb_pins(void) {
         {GPIO_54, GPIO_DEV_LCD_B1},
         {GPIO_55, GPIO_DEV_LCD_B0},
     };
+    gpio_hw_t *gpio = (gpio_hw_t *)GPIO_LL_REG_BASE;
+    /* gpio_ll keeps its register pointer per translation unit. This only
+     * initializes our local pointer; it does not reset or write the hardware. */
+    gpio_ll_init(gpio);
+    unsigned restored = 0;
     for (size_t i = 0; i < sizeof(pins)/sizeof(pins[0]); ++i) {
-        gpio_dev_unmap(pins[i].pin);
-        if (gpio_dev_map(pins[i].pin, pins[i].function) != BK_OK ||
-            !bk_gpio_set_capacity(pins[i].pin, GPIO_DRIVER_CAPACITY_3))
+        /* This SoC maps every RGB signal above to peripheral function 4.
+         * Keep the known working boot mapping when it is already correct;
+         * unnecessary unmap operations also produce a native warning burst. */
+        if (gpio->gpio_num[pins[i].pin].cfg.gpio_2_func_en &&
+            gpio_ll_get_gpio_perial_mode(gpio, pins[i].pin) == 4u)
+            continue;
+        /* Drive capacity comes from the board profile. This SDK's public
+         * bool capacity setter actually returns a bk_err_t (success is 0). */
+        if (gpio_dev_unmap(pins[i].pin) != BK_OK ||
+            gpio_dev_map(pins[i].pin, pins[i].function) != BK_OK)
             return H2_DISPLAY_ERR_IO;
+        ++restored;
     }
-    printf("H2_BK_DISPLAY_RGB_PINS mapped=%u uart1_preserved=1\n",
-        (unsigned)(sizeof(pins)/sizeof(pins[0])));
+    printf("H2_BK_DISPLAY_RGB_PINS ready=%u restored=%u uart1_preserved=1\n",
+        (unsigned)(sizeof(pins)/sizeof(pins[0])), restored);
     return H2_DISPLAY_OK;
 }
 
@@ -532,5 +548,6 @@ int h2_bk7258_board_display_capture(uint16_t *pixels, size_t capacity) {
     uintptr_t source = lcd_disp_ll_get_mater_rd_base_addr();
     if (!advancing || source == 0u) return H2_DISPLAY_ERR_IO;
     memcpy(pixels, (const void *)source, state->frame_size);
+
     return H2_DISPLAY_OK;
 }

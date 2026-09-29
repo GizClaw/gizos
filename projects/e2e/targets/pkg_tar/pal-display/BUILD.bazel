@@ -8,6 +8,8 @@ load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBI
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(glob(["evidence/*.json"]))
+
 _HOST = select({
     "//tools/bazel/platforms:host_linux_target_linux": [],
     "//tools/bazel/platforms:host_macos_target_macos": [],

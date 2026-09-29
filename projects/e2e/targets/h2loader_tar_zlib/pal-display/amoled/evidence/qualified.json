@@ -1,18 +1,29 @@
 {
   "schema": 1,
   "board": "amoled",
-  "version": "pal-display-e2e-20260929-r5",
+  "version": "pal-display-e2e-20260929-r13",
   "operations": 6,
   "cases": 24,
   "driver_qualified": true,
   "optical_verified": false,
   "physical_observation": {
-    "status": "PENDING",
-    "reason": "No camera/panel optical readback fixture; explicit color/brightness observation still required."
+    "status": "PASS",
+    "source": "user",
+    "question": "两块板现在是否都稳定显示白边、左上红/右上绿/左下蓝/右下白，没有继续闪烁或变黑？",
+    "response": "两块都正确且稳定",
+    "recorded_at_utc": "2026-09-29T09:27:46Z",
+    "pattern_observed": true,
+    "stable_image_observed": true,
+    "brightness_cycle_observed": false,
+    "brightness_cycle_assessment": "NOT_ASSESSED",
+    "image_version": "pal-display-e2e-20260929-r13",
+    "device_uid": "30eda0ae0f86",
+    "image_sha256": "a585a34c11bb34e5221c823dd4c6c4d95d539ff1a3205e348c3741f38ac585ff",
+    "limits": "Direct human observation of the R13 white-border RGBW pattern and stability; no photograph, electronic panel readback or per-level luminance measurement."
   },
   "install_boot": {
     "fresh_boot": true,
-    "version": "pal-display-e2e-20260929-r5",
+    "version": "pal-display-e2e-20260929-r13",
     "qualified": {
       "platform": "board-driver",
       "contract": 1,
@@ -149,7 +160,7 @@
         "rc": 0
       }
     ],
-    "real_driver_observations": [
+    "real_driver_observations_received": [
       "case=full_frame_borrowed source=completed-SPI-DMA chunks=7 optical_verified=0 brightness_command=100 rc=0",
       "case=partial_rgb565 source=completed-SPI-DMA chunks=8 optical_verified=0 brightness_command=100 rc=0",
       "case=padded_unaligned_stride source=completed-SPI-DMA chunks=9 optical_verified=0 brightness_command=100 rc=0",
@@ -166,20 +177,20 @@
       "case=repeated_present source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
       "case=repeated_present source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
       "case=repeated_present source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
-      "case=repeated_present source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
-      "case=brightness_zero source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=0 rc=0",
-      "case=brightness_half source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=50 rc=0",
-      "case=brightness_full source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
       "case=brightness_invalid source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
       "case=reopen source=completed-SPI-DMA chunks=19 optical_verified=0 brightness_command=100 rc=0",
       "case=reopen source=completed-SPI-DMA chunks=26 optical_verified=0 brightness_command=100 rc=0"
     ],
-    "log_sha256": "3d184893a33b509619c3357cf1ef4adf3d2d1d31cc93d5d081e57a05ba0735a8",
+    "reported_observations": 23,
+    "received_observations": 19,
+    "ledger_transport": "immediate-run-ledger",
+    "transport_limitation": "Console forwarding omitted some immediate observation lines. Reported and received counts are recorded separately; any replay ledger is the result of this fresh boot, not another execution.",
+    "log_sha256": "98c5080882dfda810cc755f5787a762a608633d020af7e8230d6e6e990b2d17c",
     "confirmed": true
   },
   "independent_normal_reboot": {
     "fresh_boot": true,
-    "version": "pal-display-e2e-20260929-r5",
+    "version": "pal-display-e2e-20260929-r13",
     "qualified": {
       "platform": "board-driver",
       "contract": 1,
@@ -316,7 +327,7 @@
         "rc": 0
       }
     ],
-    "real_driver_observations": [
+    "real_driver_observations_received": [
       "case=full_frame_borrowed source=completed-SPI-DMA chunks=7 optical_verified=0 brightness_command=100 rc=0",
       "case=partial_rgb565 source=completed-SPI-DMA chunks=8 optical_verified=0 brightness_command=100 rc=0",
       "case=padded_unaligned_stride source=completed-SPI-DMA chunks=9 optical_verified=0 brightness_command=100 rc=0",
@@ -341,7 +352,11 @@
       "case=reopen source=completed-SPI-DMA chunks=19 optical_verified=0 brightness_command=100 rc=0",
       "case=reopen source=completed-SPI-DMA chunks=26 optical_verified=0 brightness_command=100 rc=0"
     ],
-    "log_sha256": "3344e1aff5dcfde418b3e43037d46c01d38919a7451b2aa376ec2f8f71a0bb4d",
+    "reported_observations": 23,
+    "received_observations": 23,
+    "ledger_transport": "immediate-run-ledger",
+    "transport_limitation": null,
+    "log_sha256": "2b6c073547f370c8c5081e09bc9fc731c7063214b89380ad611bb604b16997ca",
     "confirmed": true
   },
   "before_status": {
@@ -349,12 +364,12 @@
     "target": "esp32s3",
     "chip": "esp32s3",
     "device_uid": "30eda0ae0f86",
-    "capabilities": "0x00000007",
-    "command_availability": "0x001f3d3f",
+    "capabilities": "0x00000001",
+    "command_availability": "0x00081d3f",
     "active_role": "app",
-    "active_version": "pal-audio-e2e-20260929-r6",
-    "active_checksum": "eb1aa8cca139261ce22e62539866d267994c03c04316f78526482e5a15299057",
-    "active_image_size": "1558016",
+    "active_version": "pal-display-e2e-20260929-r12",
+    "active_checksum": "e3e4b6c80fd5b49fcedbf7c1a219d10e491c21c67cef5385a28f412beae135c0",
+    "active_image_size": "1556768",
     "running_partition": "2",
     "next_partition": "2",
     "boot_intent": "auto",
@@ -377,12 +392,12 @@
     "partition_1_board": "amoled",
     "partition_1_target": "esp32s3",
     "partition_2_valid": "1",
-    "partition_2_package_checksum": "430e3acda8e70d8827e583c942d2fff3c97357dc3338ee58c067059f842d8dac",
-    "partition_2_package_size": "1042836",
-    "partition_2_image_checksum": "eb1aa8cca139261ce22e62539866d267994c03c04316f78526482e5a15299057",
-    "partition_2_image_size": "1558016",
+    "partition_2_package_checksum": "f74f5b613ebb3a06243f59962c98ec1513a1c2274bb8396bfc1a88c406b225e2",
+    "partition_2_package_size": "1042210",
+    "partition_2_image_checksum": "e3e4b6c80fd5b49fcedbf7c1a219d10e491c21c67cef5385a28f412beae135c0",
+    "partition_2_image_size": "1556768",
     "partition_2_role": "app",
-    "partition_2_version": "pal-audio-e2e-20260929-r6",
+    "partition_2_version": "pal-display-e2e-20260929-r12",
     "partition_2_board": "amoled",
     "partition_2_target": "esp32s3",
     "last_result": "0",
@@ -397,9 +412,9 @@
     "capabilities": "0x00000001",
     "command_availability": "0x00081d3f",
     "active_role": "app",
-    "active_version": "pal-display-e2e-20260929-r5",
-    "active_checksum": "9dfacab05915c3ac7da1650abd9908db43138354bd89db6cfbb07fbdd1ba87ce",
-    "active_image_size": "1556720",
+    "active_version": "pal-display-e2e-20260929-r13",
+    "active_checksum": "a585a34c11bb34e5221c823dd4c6c4d95d539ff1a3205e348c3741f38ac585ff",
+    "active_image_size": "1556928",
     "running_partition": "2",
     "next_partition": "2",
     "boot_intent": "auto",
@@ -422,12 +437,12 @@
     "partition_1_board": "amoled",
     "partition_1_target": "esp32s3",
     "partition_2_valid": "1",
-    "partition_2_package_checksum": "23c662dd3ced6017698c5df44d3869d3b39b3d9815d10fe6354021ceba5a166c",
-    "partition_2_package_size": "1042169",
-    "partition_2_image_checksum": "9dfacab05915c3ac7da1650abd9908db43138354bd89db6cfbb07fbdd1ba87ce",
-    "partition_2_image_size": "1556720",
+    "partition_2_package_checksum": "109f9c93aef8f857f53aace1946a9b2a3d8ebbc8308dc7a3e225ad02b77ce58f",
+    "partition_2_package_size": "1042283",
+    "partition_2_image_checksum": "a585a34c11bb34e5221c823dd4c6c4d95d539ff1a3205e348c3741f38ac585ff",
+    "partition_2_image_size": "1556928",
     "partition_2_role": "app",
-    "partition_2_version": "pal-display-e2e-20260929-r5",
+    "partition_2_version": "pal-display-e2e-20260929-r13",
     "partition_2_board": "amoled",
     "partition_2_target": "esp32s3",
     "last_result": "0",
@@ -437,7 +452,28 @@
   "p1_preserved": true,
   "stage_empty": true,
   "running_and_next_app": true,
-  "package_sha256": "23c662dd3ced6017698c5df44d3869d3b39b3d9815d10fe6354021ceba5a166c",
+  "package_sha256": "109f9c93aef8f857f53aace1946a9b2a3d8ebbc8308dc7a3e225ad02b77ce58f",
   "coredump_status": "H2_LOADER_COREDUMP_STATUS result=OK code=0 partition=coredump bytes=65536 stored_bytes=0 blank=1",
-  "final_status_log_sha256": "e05f2dc58880973b0e065ad2e94505ce6ee7c8a0133e7c105967cc81c786a0da"
+  "final_status_log_sha256": "390a123eb5863c87c95b627faac80d4605cd0e8abdf1ec1061a30d73515f66b3",
+  "panel_qualified": true,
+  "sdk_commit": "76f5dedd9950a3012fee8fb7d5586df21fc67802",
+  "base_main_commit": "a472fbec",
+  "steady_inspection_state": {
+    "marker": "H2_DISPLAY_STABLE brightness=100 rc=0 optical_verified=0",
+    "brightness_cycles_per_boot": 1,
+    "pattern": "white border; top-left red, top-right green, bottom-left blue, bottom-right white",
+    "replay_changes_display": false
+  },
+  "brightness_validation": {
+    "mandatory_cases": "PASS",
+    "levels_percent": [
+      0,
+      50,
+      100
+    ],
+    "invalid_input_preserves_state": true,
+    "evidence": "Real SH8601 command transactions and complete case ledger",
+    "human_per_level_observation": "NOT_ASSESSED",
+    "optical_measurement": "NOT_MEASURED"
+  }
 }

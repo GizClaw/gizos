@@ -2,8 +2,8 @@
   "serial": "emulator-5554",
   "api": "36",
   "fingerprint": "Android/sdk_slim_arm64/emu64a:16/BE2A.250530.027/13847098:userdebug/test-keys",
-  "aar_binary_sha256": "7f92f2ffc697f36c567ae519357bf76fd4713ace3d3ed6869aab0964710f9a69",
-  "apk_binary_sha256": "7f92f2ffc697f36c567ae519357bf76fd4713ace3d3ed6869aab0964710f9a69",
+  "aar_binary_sha256": "c5f3b0f620ff72d67c0577f6a5af33331d227c2da3ba21847862c48e9a6bae2f",
+  "apk_binary_sha256": "c5f3b0f620ff72d67c0577f6a5af33331d227c2da3ba21847862c48e9a6bae2f",
   "apk_aar_binary_identical": true,
   "public_provider_symbols": [
     "h2_android_platform_create",
@@ -11,8 +11,8 @@
     "h2_android_platform_copy_frame",
     "h2_android_platform_destroy"
   ],
-  "observation_finished_at_utc": "2026-09-29T04:59:26.998821+00:00",
+  "observation_finished_at_utc": "2026-09-29T07:26:00.164108+00:00",
   "evidence_timezone": "UTC",
-  "app_sha256": "90b82990934366354ad852d274b9d3c44504b39d791807635dd7ca3412605388",
-  "sdk_sha256": "6bdf88048bf83b9f168f7986f86c9d4cd310078b94161226da160a5f97cf2819"
+  "app_sha256": "f0c8f7cb9fe218586f9b3df00682fb6e1db454acf602f7fb58c05467b1571815",
+  "sdk_sha256": "86b210680422933ebddc9f613bf30b3ca6ffda615e64a922d7426333202b0a1a"
 }

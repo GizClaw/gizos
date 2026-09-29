@@ -6,6 +6,8 @@ load("//tools/bazel:target_task_policy.bzl", "esp_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(glob(["evidence/*.json"]))
+
 esp_target_task_policy(
     name = "task_policy",
     default_policy = "4 any 4096 psram",

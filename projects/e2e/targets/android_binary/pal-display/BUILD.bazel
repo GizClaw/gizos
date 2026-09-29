@@ -7,6 +7,8 @@ load("//tools/bazel/platforms:compatibility.bzl", "ANDROID_ARM64_ARTIFACT_COMPAT
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(glob(["evidence/*.json"]))
+
 cc_library(
     name = "launcher",
     srcs = ["main.c"],

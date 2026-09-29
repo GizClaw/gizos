@@ -4,6 +4,17 @@
 #include "h2_smoke_host_runtime.h"
 #include <stdio.h>
 #include <stdlib.h>
+#ifdef H2_DISPLAY_EXPECT_NOOP_REJECTION
+static int (*real_draw)(void *, const h2_display_rect_t *, const void *, size_t,
+                        h2_display_pixel_format_t);
+static int noop_rgb444(void *user, const h2_display_rect_t *rect,
+                       const void *pixels, size_t stride,
+                       h2_display_pixel_format_t format) {
+  return format == H2_DISPLAY_PIXEL_RGB444
+             ? 0
+             : real_draw(user, rect, pixels, stride, format);
+}
+#endif
 typedef struct observer {
   h2_sdl3_t *provider;
   const uint16_t *expected;
@@ -51,10 +62,21 @@ int main(void) {
     return 2;
   observer_t observer = {.provider = provider};
   rc = h2_sdl3_set_render_capture(provider, captured, &observer);
+  const h2_pal_display_api_t *display = h2_sdl3_display(provider);
+#ifdef H2_DISPLAY_EXPECT_NOOP_REJECTION
+  /* Focused negative test: keep the real SDL renderer, but make one supported
+   * format return success without drawing. This must fail qualification. */
+  h2_pal_display_vtable_t altered_vtable = *display->vtable;
+  real_draw = altered_vtable.draw_bitmap;
+  altered_vtable.draw_bitmap = noop_rgb444;
+  h2_pal_display_api_t altered_display = *display;
+  altered_display.vtable = &altered_vtable;
+  display = &altered_display;
+#endif
   h2_runtime_config_t config = h2_smoke_host_runtime_config(
       "pal-display", "desktop", "host", h2_desktop_platform_default_allocator(),
       h2_desktop_platform_time_api(), h2_desktop_platform_queue_api(),
-      h2_sdl3_display(provider));
+      display);
   h2_runtime_t *runtime = NULL;
   if (!rc)
     rc = h2_runtime_init(&config, &runtime);
@@ -70,5 +92,14 @@ int main(void) {
   int teardown = h2_sdl3_set_render_capture(provider, NULL, NULL);
   h2_sdl3_destroy(provider);
   h2_pal_display_e2e_print(&result, "macos", rc, teardown);
+#ifdef H2_DISPLAY_EXPECT_NOOP_REJECTION
+  return rc == H2_DISPLAY_ERR_IO && result.failed == 1 &&
+                 !result.qualified && !result.cleanup && !teardown &&
+                 result.cases[9].ran &&
+                 result.cases[9].result == H2_DISPLAY_ERR_IO
+             ? 0
+             : 1;
+#else
   return rc || teardown || !result.qualified ? 1 : 0;
+#endif
 }

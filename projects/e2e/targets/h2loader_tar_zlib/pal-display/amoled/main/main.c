@@ -73,12 +73,16 @@ static void run(void *unused) {
   int confirm = h2_esp_h2loader_app_confirm(runtime);
   if (confirm != H2_PAL_OK)
     fail("confirm", confirm);
-  puts("H2_DISPLAY_READY rc=0 confirm=0");
+  printf("H2_DISPLAY_READY rc=%d confirm=%d\n", rc, confirm);
+  int visual = h2_display_device_demo(runtime);
+  if (visual)
+    fail("visual-demo", visual);
+  visual = h2_display_device_show_pattern(runtime);
+  if (visual)
+    fail("stable-pattern", visual);
+  printf("H2_DISPLAY_STABLE brightness=100 rc=%d optical_verified=0\n", visual);
   for (;;) {
     h2_display_device_replay(runtime);
-    int visual = h2_display_device_demo(runtime);
-    if (visual)
-      printf("H2_DISPLAY_VISUAL_FAIL rc=%d\n", visual);
     vTaskDelay(pdMS_TO_TICKS(3000));
   }
 }

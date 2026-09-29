@@ -12,4 +12,4 @@ SH8601 368×448 QSPI；完成 SPI DMA chunk 逐像素验证只证明送入 panel
 
 先检查 UID、当前 port occupancy、P1/P2、Stage 和 coredump 基线。构建 managed package 后 `send --file`，核对 staged identity，再 `reboot upgrade --monitor`。必须看到新 BOOT、run ledger 和 `H2_DISPLAY_READY rc=0 confirm=0`；失败不 confirm。随后独立 `reboot app --monitor` 重跑，不能把 replay ledger 当成新执行。最终 P1 不变、Stage empty、running/next=App、coredump 保持基线。
 
-源文件和实际 package/report hash 写入 compact evidence，raw serial log/dump 保存在本地。物理屏幕图案与亮度需相机/readback fixture 或人工明确确认；没有该证据时只能记录 driver qualification，不能宣称光学验证通过。
+源文件和实际 package/report hash 写入 compact evidence，raw serial log/dump 保存在本地。物理屏幕图案及稳定性需相机/readback fixture 或人工明确确认；没有该证据时只能记录 driver qualification。真实 SH8601 亮度命令和 mandatory case ledger 是亮度控制证据，不能宣称测得了物理亮度，也不能把图案确认扩大为每个亮度档都已人工观察。

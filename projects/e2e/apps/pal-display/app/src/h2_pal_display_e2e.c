@@ -125,21 +125,25 @@ static int patch(state_t *s, h2_display_pixel_format_t format, size_t padding) {
     const h2_display_rect_t rect = {2, 3, 4, 2};
     const size_t pixel_size = format == H2_DISPLAY_PIXEL_RGB888 ? 3 : 2;
     const size_t stride = 4 * pixel_size + padding;
+    /* Each supported draw changes the existing image. A silent no-op cannot
+     * pass by leaving the preceding format/stride case's patch on screen. */
+    const unsigned rotation = ((unsigned)format + (unsigned)padding) % 4u;
     uint8_t storage[64];
     memset(storage, 0xa5, sizeof(storage));
     uint8_t *input = storage + 1; /* explicit unaligned borrowed source */
     for (int y = 0; y < 2; ++y)
         for (int x = 0; x < 4; ++x) {
+            const unsigned index = ((unsigned)x + rotation) % 4u;
             uint8_t *p = input + (size_t)y * stride + (size_t)x * pixel_size;
             if (format == H2_DISPLAY_PIXEL_RGB888) {
-                p[0] = x == 0 || x == 3 ? 255 : 0;
-                p[1] = x == 1 || x == 3 ? 255 : 0;
-                p[2] = x == 2 || x == 3 ? 255 : 0;
+                p[0] = index == 0 || index == 3 ? 255 : 0;
+                p[1] = index == 1 || index == 3 ? 255 : 0;
+                p[2] = index == 2 || index == 3 ? 255 : 0;
             } else {
                 uint16_t pixel =
                     format == H2_DISPLAY_PIXEL_RGB444
-                        ? (uint16_t[]){0x0f00, 0x00f0, 0x000f, 0x0fff}[x]
-                        : palette[x];
+                        ? (uint16_t[]){0x0f00, 0x00f0, 0x000f, 0x0fff}[index]
+                        : palette[index];
                 memcpy(p, &pixel, 2);
             }
         }
@@ -152,7 +156,7 @@ static int patch(state_t *s, h2_display_pixel_format_t format, size_t padding) {
         for (int y = 0; y < 2; ++y)
             for (int x = 0; x < 4; ++x)
                 s->expected[(size_t)(3 + y) * s->info.width + 2 + x] =
-                    palette[x];
+                    palette[((unsigned)x + rotation) % 4u];
     }
     memset(storage, 0, sizeof(storage));
     return observe(s);

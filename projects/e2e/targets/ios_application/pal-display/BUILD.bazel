@@ -7,6 +7,8 @@ load("//tools/bazel/platforms:compatibility.bzl", "IOS_SIM_ARM64_ARTIFACT_COMPAT
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(glob(["evidence/*.json"]))
+
 objc_library(
     name = "launcher",
     srcs = ["main.m"],

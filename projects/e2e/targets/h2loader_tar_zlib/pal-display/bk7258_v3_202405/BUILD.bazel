@@ -6,6 +6,8 @@ load("//tools/bazel:target_task_policy.bzl", "bk7258_target_task_policy")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(glob(["evidence/*.json"]))
+
 bk7258_target_task_policy(
     ap_allocator = "psram",
     ap_default_policy = "7 0 4096 default",

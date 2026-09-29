@@ -1,4 +1,39 @@
 {
+  "h2_pal_display_e2e.c": {
+    "branches": {
+      "count": 279,
+      "covered": 186,
+      "notcovered": 93,
+      "percent": 66.66666666666666
+    },
+    "functions": {
+      "count": 31,
+      "covered": 31,
+      "percent": 100
+    },
+    "instantiations": {
+      "count": 31,
+      "covered": 31,
+      "percent": 100
+    },
+    "lines": {
+      "count": 325,
+      "covered": 309,
+      "percent": 95.07692307692308
+    },
+    "mcdc": {
+      "count": 0,
+      "covered": 0,
+      "notcovered": 0,
+      "percent": 0
+    },
+    "regions": {
+      "count": 546,
+      "covered": 437,
+      "notcovered": 109,
+      "percent": 80.03663003663004
+    }
+  },
   "h2_sdl3_display.cpp": {
     "branches": {
       "count": 176,
@@ -67,41 +102,6 @@
       "covered": 47,
       "notcovered": 118,
       "percent": 28.484848484848484
-    }
-  },
-  "h2_pal_display_e2e.c": {
-    "branches": {
-      "count": 279,
-      "covered": 186,
-      "notcovered": 93,
-      "percent": 66.66666666666666
-    },
-    "functions": {
-      "count": 31,
-      "covered": 31,
-      "percent": 100
-    },
-    "instantiations": {
-      "count": 31,
-      "covered": 31,
-      "percent": 100
-    },
-    "lines": {
-      "count": 323,
-      "covered": 307,
-      "percent": 95.04643962848297
-    },
-    "mcdc": {
-      "count": 0,
-      "covered": 0,
-      "notcovered": 0,
-      "percent": 0
-    },
-    "regions": {
-      "count": 546,
-      "covered": 437,
-      "notcovered": 109,
-      "percent": 80.03663003663004
     }
   }
 }
