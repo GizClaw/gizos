@@ -1,5 +1,6 @@
 #include "h2_gizclaw_api_key.h"
 #include "h2_gizclaw_e2e_catalog.h"
+#include "h2_gizclaw_e2e_debug.h"
 #include "h2_gizclaw_telemetry.h"
 #include "h2_yyjson_json.h"
 #include "h2_atomic.h"
@@ -168,6 +169,7 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
     if (rc == H2_PAL_OK && !(condition))                                       \
       rc = H2_PAL_ERR_INVALID_STATE;                                           \
   } while (0)
+  CHECK(h2_gizclaw_e2e_run_debug(fixture));
   CHECK(h2_gizclaw_player_play(
       service, h2_gizclaw_e2e_str(fixture->config->device_audio_url)));
   h2_gizclaw_e2e_evidence("h2_gizclaw_player_play", "local-player", rc);
@@ -221,8 +223,8 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
       break;
     }
     if (!strcmp(local.state, "error")) {
-      printf("H2_GIZCLAW_E2E stage=local-player-error code=%s message=%s\n",
-             local.error_code, local.error_message);
+      printf("H2_GIZCLAW_E2E stage=local-player-error code=%s\n",
+             local.error_code);
       rc = H2_PAL_ERR_IO;
       break;
     }
@@ -324,6 +326,38 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
                           "player_repeat_set-assert", rc);
   /* Hand the reverse-RPC lane below the mode it expects to start from. */
   CHECK(h2_gizclaw_player_repeat_set(service, h2_gizclaw_e2e_str("off")));
+  for (unsigned selected = 1u; rc == H2_PAL_OK && selected <= 2u; ++selected) {
+    const uint64_t before_bytes = device_evidence(fixture).playback_bytes;
+    const char *symbol = selected == 1u ? "h2_gizclaw_player_play_index"
+                                       : "h2_gizclaw_player_play_index_at";
+    rc = selected == 1u ? h2_gizclaw_player_play_index(service, selected)
+                       : h2_gizclaw_player_play_index_at(service, selected, 1000u);
+    h2_gizclaw_e2e_evidence(symbol, "local-playlist", rc);
+    bool played = false;
+    for (unsigned poll = 0u; rc == H2_PAL_OK && poll < 120u; ++poll) {
+      CHECK(h2_pal_time_sleep_ms(fixture->time, 100u));
+      CHECK(h2_gizclaw_player_get_status(service, &local));
+      if (rc == H2_PAL_OK && local.has_current_index &&
+          local.current_index == selected && !strcmp(local.state, "playing") &&
+          local.position_ms > 0u && device_evidence(fixture).playback_bytes > before_bytes) {
+        played = true;
+        break;
+      }
+      ASSERT(strcmp(local.state, "error") != 0);
+    }
+    ASSERT(played);
+    /* The fixture playlist has unknown durations: play_index_at must use its
+     * documented zero-origin fallback. A known-duration seek is a separate
+     * decoder/HTTP-range assertion, not implied by this playback check. */
+    int bad_index = H2_PAL_OK;
+    if (rc == H2_PAL_OK) bad_index = h2_gizclaw_player_play_index(service, 3u);
+    ASSERT(bad_index == H2_PAL_ERR_INVALID_ARG);
+    CHECK(h2_gizclaw_player_get_status(service, &local));
+    ASSERT(local.has_current_index && local.current_index == selected);
+    h2_gizclaw_e2e_evidence(symbol, selected == 1u ? "player_play_index-assert"
+                                                 : "player_play_index_at-assert", rc);
+    CHECK(h2_gizclaw_player_stop(service));
+  }
   CHECK(h2_gizclaw_ota_start(service, H2_GIZCLAW_FIRMWARE_CHANNEL_DEVELOP,
                              (h2_gizclaw_str_t){0}));
   h2_gizclaw_e2e_evidence("h2_gizclaw_ota_start", "local-ota", rc);
