@@ -50,14 +50,18 @@ case "$(uname -s)-$(uname -m)" in
     Darwin-arm64)
         host_os=macos
         platform=macos_arm64
+        # Resolves the consumer root's host C/C++ toolchain.
+        host_test_targets=(@gizos//tools/bazel/tests/host_cc_toolchain:xcode_sdk_builtin_test)
         ;;
     Linux-x86_64)
         host_os=linux
         platform=linux_x86_64
+        host_test_targets=()
         ;;
     Linux-aarch64 | Linux-arm64)
         host_os=linux
         platform=linux_arm64
+        host_test_targets=()
         ;;
     *)
         printf 'unsupported downstream-consumer host: %s-%s\n' "$(uname -s)" "$(uname -m)" >&2
@@ -266,7 +270,8 @@ test ! -e "$consumer_root/private_bk_task_policy"
     //:font_consumer_test \
     //:private_esp_task_policy_test \
     //:private_bk_ap_task_policy_test \
-    //:private_bk_cp_task_policy_test
+    //:private_bk_cp_task_policy_test \
+    ${host_test_targets[@]+"${host_test_targets[@]}"}
 
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \

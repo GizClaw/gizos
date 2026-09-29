@@ -42,6 +42,21 @@ register_toolchains(
 cc_configure = use_extension("@rules_cc//cc:extensions.bzl", "cc_configure_extension")
 use_repo(cc_configure, "local_config_cc")
 
+# macOS host C/C++ uses the Xcode-aware apple_support toolchain, which declares
+# the Xcode SDK root as builtin. Root registrations precede every dependency
+# module, so rules_cc's generic local_config_cc never serves the macOS host.
+apple_cc_configure = use_extension(
+    "@apple_support//crosstool:setup.bzl",
+    "apple_cc_configure_extension",
+    dev_dependency = True,
+)
+use_repo(apple_cc_configure, "local_config_apple_cc_toolchains")
+
+register_toolchains(
+    "@local_config_apple_cc_toolchains//:all",
+    dev_dependency = True,
+)
+
 http_archive = use_repo_rule(
     "@bazel_tools//tools/build_defs/repo:http.bzl",
     "http_archive",
