@@ -75,7 +75,7 @@ py_test(
     args = ["--archive", "$(rootpath :gizclaw)", "--pcm",
             "$(rootpath //projects/e2e/apps/gizclaw:voice_prompt)", "--profile", "default"],
     data = [":gizclaw", "//projects/e2e/apps/gizclaw:voice_prompt",
-            "//projects/e2e/apps/gizclaw:api_coverage.py",
+            "//projects/e2e/apps/gizclaw:api_coverage.py", "//libs/gizclaw:public_api_inventory",
             "//tools/bazel:web_archive_browser_test.py", "//tools/bazel:web_archive_server.py"] + select({
         "//tools/bazel/platforms:host_linux_target_linux": ["@h2_playwright_chromium_linux_x86_64//:runtime"],
         "//tools/bazel/platforms:host_macos_target_macos": ["@h2_playwright_chromium_macos_arm64//:runtime"],

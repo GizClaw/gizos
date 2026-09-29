@@ -48,7 +48,7 @@ sh_test(
     args = ["ios", "--app", "$(rootpath :gizclaw_e2e.ipa)", "--sdk", "$(rootpath :app_sdk)",
             "--pcm", "$(rootpath //projects/e2e/apps/gizclaw:voice_prompt)", "--profile", "default"],
     data = [":gizclaw_e2e.ipa", ":app_sdk",
-            "//projects/e2e/apps/gizclaw:voice_prompt", "//projects/e2e/apps/gizclaw:api_coverage.py",
+            "//projects/e2e/apps/gizclaw:voice_prompt", "//projects/e2e/apps/gizclaw:api_coverage.py", "//libs/gizclaw:public_api_inventory",
             "//projects/e2e/libs/gizclaw-mobile:run_mobile.py"],
     env_inherit = ["H2_IOS_SIMULATOR_UDID", "H2_ANDROID_SERIAL", "ANDROID_HOME", "DEVELOPER_DIR",
         "H2_GIZCLAW_E2E_ENDPOINT", "H2_GIZCLAW_E2E_REGISTRATION_TOKEN",

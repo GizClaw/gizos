@@ -42,6 +42,8 @@ def main():
     parser.add_argument("--profile", required=True)
     parser.add_argument("--timeout", type=int, default=1800)
     args = parser.parse_args()
+    api_coverage.validate_inventory(api_coverage.requirements(),
+        (api_coverage.repository_root() / "libs/gizclaw/tests/public_api.inc").read_text())
     endpoint = os.environ.get("H2_GIZCLAW_E2E_ENDPOINT", "")
     token = os.environ.get("H2_GIZCLAW_E2E_REGISTRATION_TOKEN", "")
     api = os.environ.get("H2_GIZCLAW_E2E_DEVICE_API_URL", "")
@@ -127,6 +129,7 @@ def main():
         leaked = token.encode() in log
         if leaked:
             log = log.replace(token.encode(), b"[REDACTED]")
+        log = re.sub(rb"https?://[^\s)]+", b"[redacted-url]", log)
         (args.output / "test.log").write_bytes(log)
         if result is None:
             raise TimeoutError("No terminal result; App retained for investigation")

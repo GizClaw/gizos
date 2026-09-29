@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import queue
+import re
 import shutil
 import subprocess
 import sys
@@ -30,6 +31,8 @@ def main():
     parser.add_argument("--profile", required=True)
     parser.add_argument("--timeout", type=int, default=1800)
     args = parser.parse_args()
+    api_coverage.validate_inventory(api_coverage.requirements(),
+        (api_coverage.repository_root() / "libs/gizclaw/tests/public_api.inc").read_text())
     if args.output is None:
         parser.error("--output is required outside Bazel tests")
     fixture = {key: os.environ.get(env, "") for key, env in (
@@ -97,6 +100,7 @@ def main():
                 if event.get("method") != "Runtime.consoleAPICalled": continue
                 text = " ".join(str(arg.get("value", arg.get("description", ""))) for arg in event["params"].get("args", []))
                 text = text.replace(fixture["token"], "[REDACTED]")
+                text = re.sub(r"https?://[^\s)]+", "[redacted-url]", text)
                 lines.append(text)
                 with (args.output / "test.log").open("a") as log:
                     log.write(text + "\n")
@@ -121,8 +125,13 @@ def main():
         finally:
             (args.output / "test.log").write_text("\n".join(lines) + "\n")
             process.terminate()
-            process.wait(timeout=10)
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait(timeout=10)
             server.shutdown()
+            server.server_close()
 
 
 if __name__ == "__main__":
