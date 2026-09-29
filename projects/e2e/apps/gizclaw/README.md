@@ -18,7 +18,7 @@ Fixture 仅在注册 profile 非空、完整终止且与已有 actor 一致后�
 
 Workspace 清理分别记录主/隔离 actor 的有效删除确认。case 删除后若列表验证失败，Fixture 保留确认并在重试时 get 检查目标缺失；确认存在且 get 返回 NOT_FOUND 才退还义务。未确认删除的 NOT_FOUND、错误对象或查询失败不能算完成；仍查到目标时允许下一次重试删除。清理预算耗尽后不再发送 Peer delete，保留身份用于重试。两个 actor 的 36 组边界场景覆盖此状态交接；不能据此声称超时创建永远不会迟到。
 
-当前固定 GizClaw C SDK 0.18.16，公开 API 共 226 个：包括独立的 Workspace reload 和 reload-with-options、统一的 Service audio_start/audio_end 和库内 PCM Track；已删除 req_finish_input 及 Conversation 的旧 begin/end。Firmware case 已接入新的 req/resp/rpc，完整网络验收仍需逐用例记录，不以编译通过代替。Connectivity 在同一注册连接上用 req/resp 和同步 RPC 各做三轮上传、下载，每轮 1 MiB；输出传输耗时和请求总耗时，建连不计入传输。上传计时截止服务器 EOS 确认，不以本地发送完成代替。独立本地测试使用模拟传输，不能作为真实 Mbps 或业务 E2E 结果。
+当前固定 GizClaw C SDK 0.19.0，公开 API 共 226 个：包括独立的 Workspace reload 和 reload-with-options、统一的 Service audio_start/audio_end 和库内 PCM Track；已删除 req_finish_input 及 Conversation 的旧 begin/end。Firmware case 已接入新的 req/resp/rpc，完整网络验收仍需逐用例记录，不以编译通过代替。Connectivity 在同一注册连接上用 req/resp 和同步 RPC 各做三轮上传、下载，每轮 1 MiB；输出传输耗时和请求总耗时，建连不计入传输。上传计时截止服务器 EOS 确认，不以本地发送完成代替。独立本地测试使用模拟传输，不能作为真实 Mbps 或业务 E2E 结果。
 
 Connectivity 使用两个隔离 Peer，以便分别验证 req/resp 和同步 RPC 的 peer_delete；注册复验、ping 与全部测速始终使用同一个主 Service，不在测量间重连。全部测速成功后才删除两个 Peer，有效删除响应清除对应义务，任何失败仍交给 Fixture 收尾。`gizclaw_e2e_connectivity_test` 的本地场景覆盖调用阶段失败、错误响应、取消失败、预算耗尽、时钟读取失败、上传读取、下载写入、块顺序/内容和 poll 失败；`connectivity_coverage_test` 检查 12 个业务函数、12 条测量记录及六条数据搬运记录，缺少实际 dispatch 记录不能认证 req/resp 下载测速。正常场景仍为 `valid=false`，不是实际网络速度或远端清理验收。
 
@@ -77,7 +77,7 @@ Workspace 响应校验 arena、数组边界/对齐、字符串与 profile/revisi
 
 Runner 在 actor 初始化前输出 `coverage-begin`，在清理后输出 `coverage-end`；RPC domain 使用 `rpc/<domain>` 嵌套范围。校验器拒绝缺失、重复、乱序、失败或未关闭的范围，父用例清理失败会使子范围失效。最终只接受指定平台、backend、endpoint 和 profile 的一次 `all` 完整运行，以及全部八个顶层用例和矩阵要求的全部 RPC domain。测试进程真实退出码和日志内 summary 都必须成功；不能把 summary 的 exit_code 当成真实进程退出码。
 
-Service case 的四个通用 req 函数和 `service_poll` 已接入调用/断言记录：验证不依赖 poll 的重复 wait、释放用户引用，以及空闲 poll 的分发数量。取消检查使用尚未 do 的请求，验证幂等、CLOSED 终态、错误输出清零及禁止再次启动；不代表网络中途取消已经验收。`service_coverage_test` 分别检查请求、Fixture 生命周期和 Voice Track 三类本地记录，不能拼接这些日志当成完整运行或真实服务器的覆盖证明。
+Service case 的四个通用 req 函数和 `service_poll` 已接入调用/断言记录：验证不依赖 poll 的重复 wait、释放用户引用，以及实际 poll 的分发数量。注册与取消完成后由 portable case 自己有界排空，拒绝超过批次上限的计数或始终无法排空的队列，测试入口不再额外补造调用证据。取消检查使用尚未 do 的请求，验证幂等、CLOSED 终态、错误输出清零及禁止再次启动；不代表网络中途取消已经验收。`service_coverage_test` 分别检查请求、Fixture 生命周期和 Voice Track 三类本地记录，不能拼接这些日志当成完整运行或真实服务器的覆盖证明。
 
 Track 的 set/unset 覆盖归属于 `voice`：同一 Track 必须实际完成 PTT 上行及非静音回复，才证明绑定可用；完成对话后解绑旧 Track、绑定第二个接收 Track，在同一 Service 重播本次生成的历史音频。新 Track 必须收到非静音 PCM，旧 Track 的读写调用次数必须不变，且第二个 Track 也要成功解绑。观察期间保留两个 Track 的状态；解绑失败时仍由 Fixture 持有供清理重试。这一探针验证替换期间的数据路由，不替代在途回调阻塞测试或无限时间的无迟到访问证明。
 
@@ -107,7 +107,7 @@ Desktop 将 Runtime、provider、配置、endpoint、token 和 PCM 放在同一 
 
 Debug 的 `req_create_debug_set` / `resp_parse_debug_set`、`req_create_debug_get` / `resp_parse_debug_get`，以及 Service 维护快照的 `debug_snapshot` / `debug_refresh` / `debug_set_mode` 纳入 226 项审计要求；`device-api` 必须提供真实调用链和 `debug_set-assert` 才能计为覆盖。当前尚未加入该设备场景，因此完整覆盖审计仍会报告这两项缺失，不能用单元测试替代真实验收。
 
-`h2_gizclaw_service_get_time_sync_status` 纳入 226 项审计要求，属于 `service` 用例；必须提供成功调用和 `service_get_time_sync_status-assert` 的校时状态业务断言。尚未插桩的真实场景继续报告缺失，不能用本地测试替代在线校时验收。
+`h2_gizclaw_service_get_time_sync_status` 纳入 226 项审计要求，属于 `service` 用例；必须提供成功调用和 `service_get_time_sync_status-assert` 的校时状态业务断言。Service 实际读取并验证校时状态与尝试次数；`calibrated=1` 仅在 SUCCEEDED 且 last_rc=0 时记录。RETRY/UNSUPPORTED 可证明状态查询契约，但不能证明成功校时。本地边界测试分别覆盖读取失败、未尝试、错误状态和虚假成功，在线结果仍须单独验收。
 
 Session 的 14 个公开操作纳入同一 fail-closed 审计，归属独立 Voice case。Voice 使用真实 Session 进行注册、完整 catalog 加载与刷新、Workspace 选择、PTT/Realtime 输入与终态观察、完整文字输入、释放和重连。文字输入在 PTT 轮次之后用 `h2_gizclaw_session_send_text` 提交一段文字，`session_send_text-assert` 要求 Session 先进入 WAITING、completion 恰好一次且为 FINISHED/OK、随后从 Track 听到非静音回复并回到 IDLE。准备取消仍缺少 live 场景；底层 API 的独立调用要求也不能用 Session 内部调用补记，因此完整 226 项审计仍按缺失 evidence 拒绝通过。AMOLED 的构建和设备验收见 [Session E2E](/apps/h2loader/boards/amoled/gizclaw_e2e)。
 

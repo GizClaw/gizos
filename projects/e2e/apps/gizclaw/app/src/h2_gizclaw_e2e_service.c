@@ -66,6 +66,51 @@ static int canceled_before_do(h2_gizclaw_e2e_fixture_t *fixture,
   return rc;
 }
 
+/* Registration waits deliberately do not poll. Afterwards, exercise the real
+ * dispatch boundary and require its bounded queue to become empty. */
+static int drain_service(h2_gizclaw_service_t *service) {
+  int rc = H2_PAL_ERR_TIMEOUT;
+  for (unsigned attempt = 0u; attempt < 32u; ++attempt) {
+    size_t dispatched = SIZE_MAX;
+    rc = h2_gizclaw_service_poll(service, 8u, &dispatched);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_service_poll", "service", rc);
+    if (rc != H2_PAL_OK)
+      break;
+    if (dispatched > 8u) {
+      rc = H2_PAL_ERR_INVALID_STATE;
+      break;
+    }
+    if (dispatched == 0u)
+      break;
+    rc = H2_PAL_ERR_TIMEOUT;
+  }
+  return rc;
+}
+
+/* A connected Service has completed at least one calibration attempt. Host
+ * clocks may be unsettable; report that outcome without claiming calibration. */
+static int check_time_sync(h2_gizclaw_service_t *service) {
+  h2_gizclaw_time_sync_status_t status = {0};
+  int rc = h2_gizclaw_service_get_time_sync_status(service, &status);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_service_get_time_sync_status", "service", rc);
+  if (rc == H2_PAL_OK &&
+      (status.attempts == 0u || status.state < H2_GIZCLAW_TIME_SYNC_RUNNING ||
+       status.state > H2_GIZCLAW_TIME_SYNC_SUCCEEDED ||
+       (status.state == H2_GIZCLAW_TIME_SYNC_SUCCEEDED &&
+        status.last_result != H2_PAL_OK) ||
+       (status.state == H2_GIZCLAW_TIME_SYNC_RETRY &&
+        status.last_result == H2_PAL_OK)))
+    rc = H2_PAL_ERR_INVALID_STATE;
+  printf("H2_GIZCLAW_E2E stage=time-sync-state state=%u attempts=%u "
+         "last_rc=%d calibrated=%u result=%s rc=%d\n",
+         (unsigned)status.state, status.attempts, status.last_result,
+         rc == H2_PAL_OK && status.state == H2_GIZCLAW_TIME_SYNC_SUCCEEDED,
+         rc == H2_PAL_OK ? "PASS" : "FAIL", rc);
+  h2_gizclaw_e2e_evidence("h2_gizclaw_service_get_time_sync_status",
+                         "service_get_time_sync_status-assert", rc);
+  return rc;
+}
+
 int h2_gizclaw_e2e_run_service(h2_gizclaw_e2e_fixture_t *fixture) {
   if (fixture == NULL || fixture->allocator == NULL || fixture->time == NULL ||
       fixture->registration_token == NULL ||
@@ -119,8 +164,13 @@ int h2_gizclaw_e2e_run_service(h2_gizclaw_e2e_fixture_t *fixture) {
   h2_gizclaw_e2e_evidence("h2_gizclaw_req_do", "req_do-assert", rc);
   h2_gizclaw_e2e_evidence("h2_gizclaw_req_wait", "req_wait-assert", rc);
   h2_gizclaw_e2e_evidence("h2_gizclaw_req_release", "req_release-assert", rc);
-  h2_gizclaw_e2e_evidence("h2_gizclaw_service_poll", "service_poll-assert", rc);
   if (rc == H2_PAL_OK)
     rc = canceled_before_do(fixture, service);
+  if (rc == H2_PAL_OK) {
+    rc = drain_service(service);
+    h2_gizclaw_e2e_evidence("h2_gizclaw_service_poll", "service_poll-assert", rc);
+  }
+  if (rc == H2_PAL_OK)
+    rc = check_time_sync(service);
   return rc;
 }
