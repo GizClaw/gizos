@@ -319,16 +319,14 @@ static void run_case(state_t *s, h2_net_tls_case_t kind) {
                 memcmp(bound_addr.ip, bind.source_addr.ip,
                        sizeof(bound_addr.ip)) == 0,
             H2_PAL_ERR_FORMAT);
-      bind.source_addr.ip[0] = 192u;
-      bind.source_addr.ip[1] = 0u;
-      bind.source_addr.ip[2] = 2u;
-      bind.source_addr.ip[3] = 9u;
+      bind.type = (h2_pal_net_bind_type_t)99;
       int invalid_socket = -1;
       rc = h2_pal_net_udp_open_bound(net, H2_PAL_NET_FAMILY_IPV4, 0u, &bind,
                                      &invalid_socket, &peer);
       if (invalid_socket >= 0)
         OK(own_socket(s, invalid_socket));
-      CHECK(rc != H2_PAL_OK && rc != H2_PAL_ERR_UNSUPPORTED, H2_PAL_ERR_FORMAT);
+      CHECK(rc == H2_PAL_ERR_UNSUPPORTED || rc == H2_PAL_ERR_INVALID_ARG,
+            H2_PAL_ERR_FORMAT);
     }
     if (kind == H2_NET_TLS_MULTICAST) {
       addr.family = H2_PAL_NET_FAMILY_IPV4;
@@ -410,15 +408,15 @@ static void run_case(state_t *s, h2_net_tls_case_t kind) {
                       kind == H2_NET_TLS_TCP_CONNECT_RETRY, &socket));
     if (kind == H2_NET_TLS_TCP_SOURCE_BIND) {
       h2_pal_net_bind_t invalid = {
-          .type = H2_PAL_NET_BIND_SOURCE_ADDR,
-          .source_addr = {.family = H2_PAL_NET_FAMILY_IPV4,
-                          .ip = {192, 0, 2, 9}}};
+          .type = (h2_pal_net_bind_type_t)99,
+          .source_addr = {.family = H2_PAL_NET_FAMILY_IPV4}};
       int invalid_socket = -1;
       rc = h2_pal_net_tcp_open_bound(net, H2_PAL_NET_FAMILY_IPV4, &invalid,
                                      &invalid_socket);
       if (invalid_socket >= 0)
         OK(own_socket(s, invalid_socket));
-      CHECK(rc != H2_PAL_OK && rc != H2_PAL_ERR_UNSUPPORTED, H2_PAL_ERR_FORMAT);
+      CHECK(rc == H2_PAL_ERR_UNSUPPORTED || rc == H2_PAL_ERR_INVALID_ARG,
+            H2_PAL_ERR_FORMAT);
     }
     if (mode == H2_NET_TLS_FIXTURE_SILENT) {
       uint64_t before = now(s);

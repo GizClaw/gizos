@@ -120,21 +120,23 @@ int h2_pal_net_tls_device_run(h2_runtime_t *runtime,
            H2_PAL_NET_TLS_SESSION, boot_id);
   (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-net-tls",
                          execution);
-  h2_net_tls_config_t config = {.runtime = runtime,
-                                .host = H2_PAL_NET_TLS_HOST,
-                                .session = H2_PAL_NET_TLS_SESSION,
-                                .root_ca = ca,
-                                .root_ca_len = ca_len,
-                                .wrong_ca = wrong,
-                                .wrong_ca_len = wrong_len,
-                                .server_name = "pal-net-tls.test",
-                                .prepare = h2_net_tls_fixture_prepare,
-                                .verify = h2_net_tls_fixture_verify,
-                                .fixture_user = &client,
-                                .report = report,
-                                .report_user = runtime,
-                                .case_timeout_ms = 60000u,
-                                .multicast_supported = 1};
+  h2_net_tls_config_t config = {
+      .runtime = runtime,
+      .host = H2_PAL_NET_TLS_HOST,
+      .session = H2_PAL_NET_TLS_SESSION,
+      .root_ca = ca,
+      .root_ca_len = ca_len,
+      .wrong_ca = wrong,
+      .wrong_ca_len = wrong_len,
+      .server_name = "pal-net-tls.test",
+      .prepare = h2_net_tls_fixture_prepare,
+      .verify = h2_net_tls_fixture_verify,
+      .fixture_user = &client,
+      .report = report,
+      .report_user = runtime,
+      .case_timeout_ms = 60000u,
+      .multicast_supported = runtime->net && runtime->net->vtable &&
+                             runtime->net->vtable->udp_join_multicast != NULL};
   rc = h2_pal_net_tls_e2e_run(&config, result);
   h2_pal_mem_free(runtime->mem, wrong);
   h2_pal_mem_free(runtime->mem, ca);

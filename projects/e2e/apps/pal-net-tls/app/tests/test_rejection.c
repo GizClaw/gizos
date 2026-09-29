@@ -92,9 +92,9 @@ static int open_socket(void *user, h2_pal_net_family_t family, int *out) {
 }
 static int open_bound(void *user, h2_pal_net_family_t family,
                       const h2_pal_net_bind_t *bind, int *out) {
-  if (bind && bind->source_addr.ip[0] == 192u) {
+  if (bind && (int)bind->type == 99) {
     *out = -1;
-    return H2_PAL_ERR_IO;
+    return H2_PAL_ERR_UNSUPPORTED;
   }
   return open_socket(user, family, out);
 }
@@ -108,9 +108,9 @@ static int udp_open(void *user, h2_pal_net_family_t family, uint16_t port,
 static int udp_bound(void *user, h2_pal_net_family_t family, uint16_t port,
                      const h2_pal_net_bind_t *bind, int *out,
                      h2_pal_net_addr_t *addr) {
-  if (bind && bind->source_addr.ip[0] == 192u) {
+  if (bind && (int)bind->type == 99) {
     *out = -1;
-    return H2_PAL_ERR_IO;
+    return H2_PAL_ERR_UNSUPPORTED;
   }
   return udp_open(user, family, port, out, addr);
 }
@@ -225,9 +225,9 @@ static void close_socket(void *user, int socket) {
 static int listen_socket(void *user, h2_pal_net_family_t family, uint16_t port,
                          const h2_pal_net_bind_t *bind, int *out,
                          h2_pal_net_addr_t *addr) {
-  if (bind && bind->source_addr.ip[0] == 192u) {
+  if (bind && (int)bind->type == 99) {
     *out = -1;
-    return H2_PAL_ERR_IO;
+    return H2_PAL_ERR_UNSUPPORTED;
   }
   return udp_open(user, family, port, out, addr);
 }

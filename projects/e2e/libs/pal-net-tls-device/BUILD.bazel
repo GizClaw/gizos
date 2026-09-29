@@ -1,6 +1,8 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_python//python:defs.bzl", "py_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:tasks.bzl", "h2_tasks")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 load(":fixture_config.bzl", "net_tls_fixture_config")
 
 package(default_visibility = ["//visibility:public"])
@@ -29,4 +31,21 @@ cc_library(
         ":tasks",
         "//projects/e2e/libs/pal-net-tls-runner:fixture_client",
     ],
+)
+
+py_test(
+    name = "udp_source_bind_fault_test",
+    srcs = ["tests/test_udp_bound.py"],
+    data = [
+        "//libs/pal:pal_header_files",
+        "//native_component_src/bk7258/ap/h2_pal_core:src/h2_bk_platform_net.c",
+        "//native_component_src/esp-idf6.x/h2_pal_core:src/h2_esp_platform_net.c",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_udp_bound.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )

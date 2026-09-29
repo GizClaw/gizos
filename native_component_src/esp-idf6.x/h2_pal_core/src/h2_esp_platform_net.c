@@ -750,6 +750,59 @@ static int esp_net_udp_open(
     return H2_PAL_OK;
 }
 
+static int esp_net_udp_open_bound(
+    void *user,
+    h2_pal_net_family_t family,
+    uint16_t port,
+    const h2_pal_net_bind_t *bind_config,
+    h2_pal_net_socket_t *out_socket,
+    h2_pal_net_addr_t *out_bind_addr) {
+    if (out_socket == NULL || out_bind_addr == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    *out_socket = -1;
+    memset(out_bind_addr, 0, sizeof(*out_bind_addr));
+    if (bind_config == NULL || bind_config->type == H2_PAL_NET_BIND_DEFAULT) {
+        return esp_net_udp_open(user, family, port, out_socket, out_bind_addr);
+    }
+    if (bind_config->type != H2_PAL_NET_BIND_SOURCE_ADDR) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    if (bind_config->source_addr.family != family) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    int native_family = family_to_lwip(family);
+    if (native_family < 0) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    int fd = socket(native_family, SOCK_DGRAM, 0);
+    if (fd < 0) {
+        return H2_PAL_ERR_IO;
+    }
+    int reuse = 1;
+    (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    h2_pal_net_addr_t source = bind_config->source_addr;
+    source.port = port;
+    struct sockaddr_storage storage;
+    socklen_t size = 0;
+    int rc = addr_to_sockaddr(&source, &storage, &size);
+    if (rc != H2_PAL_OK || bind(fd, (struct sockaddr *)&storage, size) < 0) {
+        close(fd);
+        return rc == H2_PAL_OK ? H2_PAL_ERR_IO : rc;
+    }
+    if (getsockname(fd, (struct sockaddr *)&storage, &size) < 0) {
+        close(fd);
+        return H2_PAL_ERR_IO;
+    }
+    rc = sockaddr_to_addr((const struct sockaddr *)&storage, out_bind_addr);
+    if (rc != H2_PAL_OK) {
+        close(fd);
+        return rc;
+    }
+    *out_socket = fd;
+    return H2_PAL_OK;
+}
+
 static int esp_net_udp_sendto(
     void *user,
     h2_pal_net_socket_t socket_fd,
@@ -1426,6 +1479,7 @@ const h2_pal_net_api_t *h2_esp_platform_net_api(void) {
         .resolve_close = esp_net_resolve_close,
         .get_host_addr = esp_net_get_host_addr,
         .udp_open = esp_net_udp_open,
+        .udp_open_bound = esp_net_udp_open_bound,
         .udp_sendto = esp_net_udp_sendto,
         .udp_recvfrom = esp_net_udp_recvfrom,
         .tcp_open = esp_net_tcp_open,
