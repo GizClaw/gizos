@@ -81,7 +81,6 @@ h2loader_esp_idf_firmware(
         "sdkconfig.pal-wifi.defaults",
     ],
     board = "amoled",
-    console = "usb",
     graph = [":launcher"],
     project = "CMakeLists.txt",
     project_name = "h2_pal_wifi_e2e",
