@@ -11,6 +11,7 @@ armino_component_register(
   INCLUDE_DIRS
     "include"
     "${REPO_ROOT}/libs/pal/include"
+    "${REPO_ROOT}/native_component_src/bk7258/shared"
   PRIV_REQUIRES
     ${H2_BK_PLATFORM_CORE_PRIV_REQUIRES})
 
@@ -37,12 +38,22 @@ set(H2_BK_CP_DISASSOC_CASE "        case H2_BK_WIFI_RPC_STA_DISASSOCIATE:
             ret = arg_info->argc == 0 ? bk_wifi_sta_connect() : BK_ERR_PARAM;
             break;
         }
+        case H2_BK_WIFI_RPC_DHCP_SNAPSHOT:
+        {
+            if (arg_info->argc != 1 || arg_info->args[0] == 0) {
+                ret = BK_ERR_PARAM;
+            } else {
+                h2_bk_dhcp_snapshot((h2_bk_dhcp_snapshot_t *)(uintptr_t)arg_info->args[0]);
+                ret = BK_OK;
+            }
+            break;
+        }
 ${H2_BK_CP_DISASSOC_ANCHOR}")
 string(REPLACE "${H2_BK_CP_DISASSOC_ANCHOR}" "${H2_BK_CP_DISASSOC_CASE}"
   H2_BK_CP_CONTROLLER_CORRECTED "${H2_BK_CP_CONTROLLER_CONTENT}")
 set(H2_BK_CP_CONTROLLER_CORRECTED_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/h2_bk_cp_wifi_api.c")
 file(WRITE "${H2_BK_CP_CONTROLLER_CORRECTED_SOURCE}"
-  "#include \"h2_bk_wifi_rpc.h\"\n${H2_BK_CP_CONTROLLER_CORRECTED}")
+  "#include \"h2_bk_wifi_rpc.h\"\n#include \"h2_bk_dhcp_ring.h\"\n${H2_BK_CP_CONTROLLER_CORRECTED}")
 get_target_property(H2_BK_CP_CONTROLLER_SOURCES ${H2_BK_CP_CONTROLLER_LIB} SOURCES)
 list(FILTER H2_BK_CP_CONTROLLER_SOURCES EXCLUDE REGEX "(^|/)cif_wifi_api\\.c$")
 list(APPEND H2_BK_CP_CONTROLLER_SOURCES "${H2_BK_CP_CONTROLLER_CORRECTED_SOURCE}")

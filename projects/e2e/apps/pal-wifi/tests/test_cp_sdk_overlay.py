@@ -23,7 +23,7 @@ SDK = r'''
 typedef int bk_err_t;
 enum { BK_OK=0, BK_ERR_PARAM=-1, BK_ERR_NOT_FOUND=-2, STA_PM_ENABLE=0x301, STA_STOP=0x312 };
 struct bk_msg_hdr { uint32_t cmd_id; };
-typedef struct { uint32_t argc; } wifi_api_arg_info_t;
+typedef struct __attribute__((packed)) { uint32_t argc; uintptr_t args[4]; } wifi_api_arg_info_t;
 int started=1, connected=1, vif=7, calls=0, associate_calls=0, confirmed=999, failure=0;
 int bk_wifi_sta_disconnect(void) {
     ++calls;
@@ -62,13 +62,14 @@ PROBE = r'''
 #include <stdint.h>
 #include <stdio.h>
 #include "h2_bk_wifi_rpc.h"
+#include "h2_bk_dhcp_ring.h"
 struct bk_msg_hdr { uint32_t cmd_id; };
-struct packet { struct bk_msg_hdr hdr; uint32_t argc; };
+struct packet { struct bk_msg_hdr hdr; uint32_t argc; uintptr_t args[4]; };
 extern int started,connected,vif,calls,associate_calls,confirmed,failure;
 int cif_handle_wifi_api_cmd(struct bk_msg_hdr *);
 #define CHECK(x) do { if(!(x)) {fprintf(stderr,"line%d\n",__LINE__); return 1;} } while(0)
 int main(void) {
-    struct packet p={{H2_BK_WIFI_RPC_STA_DISASSOCIATE},0};
+    struct packet p={{H2_BK_WIFI_RPC_STA_DISASSOCIATE},0,{0}};
     CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0);
 #if EXPECT_RPC
     CHECK(confirmed==0 && !connected && started==1 && vif==7 && calls==1);
@@ -91,6 +92,16 @@ int main(void) {
     p.argc=0; failure=-9;
     CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0);
     CHECK(confirmed==-9 && connected==1 && started==1 && vif==7 && calls==2);
+    p.hdr.cmd_id=H2_BK_WIFI_RPC_DHCP_SNAPSHOT; p.argc=0;
+    CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0 && confirmed==-1);
+    p.argc=1; p.args[0]=0;
+    CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0 && confirmed==-1);
+    h2_bk_dhcp_snapshot_t snapshot;
+    h2_bk_dhcp_entry_t entry={.xid=123,.dir=1,.type=3};
+    h2_bk_dhcp_record(&entry);
+    p.args[0]=(uintptr_t)&snapshot;
+    CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0 && confirmed==0);
+    CHECK(snapshot.version==1 && snapshot.count==1 && snapshot.entries[0].xid==123);
 #else
     CHECK(confirmed==-2 && connected==1 && started==1 && vif==7 && calls==0);
     p.hdr.cmd_id=H2_BK_WIFI_RPC_STA_ASSOCIATE;
@@ -121,7 +132,9 @@ cmake_minimum_required(VERSION 3.16)
 project(PairedRPC C)
 set(CMAKE_C_STANDARD 11)
 set(REPO_ROOT "$ENV{H2_GIZOS_ROOT}")
-add_library(sdk STATIC sdk/components/controller_if/cif_wifi_api.c)
+add_library(sdk STATIC sdk/components/controller_if/cif_wifi_api.c
+ "${REPO_ROOT}/native_component_src/bk7258/cp/h2_pal_core/src/h2_bk_dhcp_ring.c")
+target_include_directories(sdk PRIVATE "${REPO_ROOT}/native_component_src/bk7258/shared")
 function(armino_component_get_property out component property)
   set(${out} sdk PARENT_SCOPE)
 endfunction()

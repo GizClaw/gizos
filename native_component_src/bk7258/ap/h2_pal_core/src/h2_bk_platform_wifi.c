@@ -13,6 +13,7 @@
 #include "net.h"
 #include "wifi_api_ipc.h"
 #include "h2_bk_wifi_rpc.h"
+#include "h2_bk_dhcp_ring.h"
 
 /* Exported by the pinned AP SDK, although omitted from its public header. */
 extern bool wifi_sta_is_started(void);
@@ -152,6 +153,17 @@ static int h2_bk_wifi_map_error(bk_err_t err) {
         BK_LOGW("h2_wifi", "H2_WIFI_SDK_ERROR code=%d\r\n", (int)err);
         return H2_PAL_ERR_IO;
     }
+}
+
+int h2_bk_dhcp_query(h2_bk_dhcp_snapshot_t *out) {
+    if (out == NULL) return H2_PAL_ERR_INVALID_ARG;
+    memset(out, 0, sizeof(*out));
+    bk_err_t err = wifi_send_com_api_cmd(H2_BK_WIFI_RPC_DHCP_SNAPSHOT, 1,
+                                        (uint32_t)(uintptr_t)out);
+    if (err != BK_OK) return h2_bk_wifi_map_error(err);
+    if (out->version != H2_BK_DHCP_SNAPSHOT_VERSION ||
+        out->count > H2_BK_DHCP_RING_CAPACITY) return H2_PAL_ERR_IO;
+    return H2_PAL_OK;
 }
 
 static int h2_bk_wifi_apply_power_save(h2_pal_wifi_power_save_t mode) {

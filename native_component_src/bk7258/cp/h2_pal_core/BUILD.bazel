@@ -4,6 +4,8 @@ load("//tools/bazel:native_component.bzl", "firmware_native_component")
 
 package(default_visibility = ["//visibility:public"])
 
+exports_files(["src/h2_bk_dhcp_ring.c"])
+
 firmware_native_component(
     name = "h2_pal_core",
     srcs = glob(
@@ -39,6 +41,7 @@ firmware_native_component(
     data = [
         "CMakeLists.txt",
         "//native_component_src/bk7258/shared:h2_bk_wifi_rpc.h",
+        "//native_component_src/bk7258/shared:h2_bk_dhcp_ring.h",
         "//native_component_src/bk7258/shared:h2_bk_dhcp_trace.h",
         "//native_component_src/bk7258/shared:h2_bk_dhcp_trace.cmake",
     ],

@@ -2,7 +2,7 @@
 #define H2_BK_DHCP_TRACE_H
 
 #include <stdint.h>
-#include <common/bk_include.h>
+#include "h2_bk_dhcp_ring.h"
 #include <lwip/def.h>
 #include <lwip/netif.h>
 #include <lwip/pbuf.h>
@@ -63,14 +63,21 @@ static void h2_bk_dhcp_trace(const char *direction, const struct pbuf *p,
         }
         cursor += length;
     }
-    BK_LOGI("h2_dhcp", "H2_BK_DHCP dir=%s type=%u src=%u dst=%u xid=%lu "
-            "vif=%d role=%d netif=%u flags=%u ip4=%lu default=%u bytes=%u\r\n",
-            direction, message_type, source_port, destination_port,
-            (unsigned long)h2_bk_dhcp_u32(bootp + 4u), vif_id, vif_type,
-            netif ? (unsigned)netif_get_index(netif) : 0u,
-            netif ? (unsigned)netif->flags : 0u,
-            netif ? (unsigned long)lwip_ntohl(ip4_addr_get_u32(netif_ip4_addr(netif))) : 0ul,
-            (unsigned)(netif != NULL && netif == netif_default), (unsigned)p->tot_len);
+    const h2_bk_dhcp_entry_t entry = {
+        .dir = direction[0] == 'T' ? 1u : 2u,
+        .type = message_type,
+        .src = source_port,
+        .dst = destination_port,
+        .xid = h2_bk_dhcp_u32(bootp + 4u),
+        .vif = (uint32_t)vif_id,
+        .role = (uint32_t)vif_type,
+        .netif = netif ? (uint32_t)netif_get_index(netif) : 0u,
+        .flags = netif ? (uint32_t)netif->flags : 0u,
+        .ip4 = netif ? lwip_ntohl(ip4_addr_get_u32(netif_ip4_addr(netif))) : 0u,
+        .is_default = (uint32_t)(netif != NULL && netif == netif_default),
+        .bytes = p->tot_len,
+    };
+    h2_bk_dhcp_record(&entry);
 }
 
 #endif

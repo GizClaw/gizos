@@ -18,6 +18,7 @@ armino_component_register(
     "${REPO_ROOT}/projects/h2loader/native_component_src/bk7258/ap/h2loader_bk/include"
     "${REPO_ROOT}/boards/bk7258_v3_202405/bk7258/ap/include"
     "${REPO_ROOT}/native_component_src/bk7258/ap/h2_pal_core/include"
+    "${REPO_ROOT}/native_component_src/bk7258/shared"
     "${REPO_ROOT}/native_component_src/bk7258/ap/h2_pal_core/src"
     "${REPO_ROOT}/libs/atomic/include"
     "${REPO_ROOT}/libs/pal/include"
