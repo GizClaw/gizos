@@ -1,6 +1,7 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load("@rules_python//python:defs.bzl", "py_library")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_OR_MOBILE_TOOL_COMPATIBILITY")
 
 package(default_visibility = ["//projects/e2e:__subpackages__"])
 
@@ -29,4 +30,5 @@ py_library(
     name = "fixture",
     srcs = ["fixture.py"],
     imports = ["."],
+    target_compatible_with = HOST_OR_MOBILE_TOOL_COMPATIBILITY,
 )

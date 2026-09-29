@@ -1,7 +1,7 @@
 load("@bk7258_pip//:requirements.bzl", "requirement")
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
-load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY", "PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_OR_MOBILE_TOOL_COMPATIBILITY", "HOST_TOOL_COMPATIBILITY", "PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY")
 load(":firmware.bzl", "firmware_version_flag")
 load(":npm_release.bzl", "npm_release_bundle")
 load(":release_bundle.bzl", "firmware_release_bundle")
@@ -26,6 +26,7 @@ host_python_runtime(name = "mobile_e2e_host_python")
 py_library(
     name = "mobile_e2e_runtime",
     srcs = ["mobile_e2e.py"],
+    target_compatible_with = HOST_OR_MOBILE_TOOL_COMPATIBILITY,
 )
 
 py_test(
@@ -73,7 +74,7 @@ py_test(
     deps = [":coverage_report"],
 )
 
-exports_files(["cc_options.bzl"])
+exports_files(["cc_options.bzl", "mobile_e2e.bzl"])
 
 exports_files([
     "bk7258.bzl",

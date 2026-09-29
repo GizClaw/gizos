@@ -1,6 +1,6 @@
 # Packaged mobile E2E runners
 
-`mobile_e2e_test` declares a direct `py_test`. The App and `app_sdk` stay in `ios_sim_arm64` / `android_arm64` configuration; `mobile_e2e_host_python` selects the repository's hermetic Python runtime in execution configuration. Python libraries contain host source, so they must not require the App's target OS to be a desktop OS. No shell trampoline or undeclared system Python is involved.
+`mobile_e2e_test` declares a direct `py_test`. The App and `app_sdk` stay in `ios_sim_arm64` / `android_arm64` configuration; `mobile_e2e_host_python` selects the repository's hermetic Python runtime in execution configuration. Python libraries use `HOST_OR_MOBILE_TOOL_COMPATIBILITY`: they accept matching host configurations and the supported iOS/Android configurations, while embedded/K4B graphs skip them because those targets have no Python runtime. No shell trampoline or undeclared system Python is involved.
 
 Use the existing Make targets, or invoke the same Bazel labels explicitly:
 
