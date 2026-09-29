@@ -7,6 +7,9 @@
 #include <os/mem.h>
 #include <os/os.h>
 #include "lwip/def.h"
+#include "lwip/netif.h"
+#include "lwip/priv/tcpip_priv.h"
+#include "lwip/tcpip.h"
 #include "net.h"
 
 #include <string.h>
@@ -352,23 +355,28 @@ static bk_err_t h2_bk_wifi_system_event_handler(
         }
 
         if (event_id == EVENT_NETIF_GOT_IP4) {
+            /* CP notifications can arrive after STA_STOP. Require a current
+             * authenticated association and the actual local DHCP address;
+             * an event alone cannot resurrect the stopped connection. */
+            if (__atomic_load_n(&s_h2_bk_wifi_last_config_valid,
+                                __ATOMIC_ACQUIRE) == 0) return BK_OK;
+            wifi_link_status_t link;
+            memset(&link, 0, sizeof(link));
+            if (bk_wifi_sta_get_link_status(&link) != BK_OK ||
+                (link.state != WIFI_LINKSTATE_STA_CONNECTED &&
+                 link.state != WIFI_LINKSTATE_STA_GOT_IP)) return BK_OK;
+            size_t len = h2_bk_wifi_strnlen(link.ssid, H2_PAL_WIFI_SSID_MAX);
+            if (len == 0u || len != s_h2_bk_wifi_last_config.ssid_len ||
+                memcmp(link.ssid, s_h2_bk_wifi_last_config.ssid, len) != 0)
+                return BK_OK;
             h2_pal_wifi_sta_status_t status;
             memset(&status, 0, sizeof(status));
-            if (h2_bk_wifi_sta_get_status(NULL, &status) != H2_PAL_OK) {
-                status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
-                h2_bk_wifi_fill_sta_ip(&status);
-            }
+            h2_bk_wifi_fill_sta_ip(&status);
+            if (status.ip_valid == 0u) return BK_OK;
             status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
-            if (__atomic_load_n(
-                    &s_h2_bk_wifi_last_config_valid,
-                    __ATOMIC_ACQUIRE) != 0) {
-                status.ssid_len = s_h2_bk_wifi_last_config.ssid_len;
-                memcpy(
-                    status.ssid,
-                    s_h2_bk_wifi_last_config.ssid,
-                    status.ssid_len);
-                status.ssid[status.ssid_len] = '\0';
-            }
+            status.ssid_len = len;
+            memcpy(status.ssid, link.ssid, len);
+            status.ssid[len] = '\0';
             h2_bk_wifi_store_sta_status(&status);
             h2_bk_wifi_post_sta_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP, &status);
             (void)h2_bk_platform_netif_reconcile_default_async();
@@ -966,6 +974,23 @@ static int h2_bk_wifi_sta_connect(
     return H2_PAL_ERR_TIMEOUT;
 }
 
+typedef struct h2_bk_wifi_sta_down_call {
+    struct tcpip_api_call_data call;
+    struct netif *sta;
+} h2_bk_wifi_sta_down_call_t;
+
+static err_t h2_bk_wifi_sta_down_api_call(struct tcpip_api_call_data *data) {
+    h2_bk_wifi_sta_down_call_t *request = (h2_bk_wifi_sta_down_call_t *)data;
+    if (request->sta == NULL) return ERR_IF;
+    ip4_addr_t zero;
+    ip4_addr_set_zero(&zero);
+    netif_set_link_down(request->sta);
+    netif_set_down(request->sta);
+    netif_set_addr(request->sta, &zero, &zero, &zero);
+    if (netif_default == request->sta) netif_set_default(NULL);
+    return ERR_OK;
+}
+
 static int h2_bk_wifi_sta_disconnect(h2_pal_wifi_sta_t *sta) {
     (void)sta;
     int lock_rc = h2_bk_wifi_request_lock();
@@ -1003,6 +1028,13 @@ static int h2_bk_wifi_sta_disconnect(h2_pal_wifi_sta_t *sta) {
             if (mac_rc != BK_OK) return h2_bk_wifi_map_error(mac_rc);
             if (host_wlan_add_netif(mac) != 0) return H2_PAL_ERR_IO;
         } else if (netif_rc != H2_PAL_OK) return netif_rc;
+        /* SDK low_level_init marks a newly added adapter LINK_UP by default.
+         * Clear real lwIP link/address/route state on its owning TCP/IP core. */
+        h2_bk_wifi_sta_down_call_t down = {
+            .sta = (struct netif *)net_get_sta_handle()};
+        if (tcpip_api_call(h2_bk_wifi_sta_down_api_call, &down.call) != ERR_OK)
+            return H2_PAL_ERR_IO;
+        (void)h2_bk_platform_netif_reconcile_default();
         h2_pal_wifi_sta_status_t status;
         memset(&status, 0, sizeof(status));
         status.state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
@@ -1112,10 +1144,11 @@ static int h2_bk_wifi_ap_start(
     h2_bk_wifi_copy_ap_config(&bk_config, config);
     /* AP's local lwIP and CP's real DHCP server otherwise start from different
      * SDK defaults (192.168.188.1 versus 192.168.4.1). Configure both owners
-     * through the SDK IPC-aware Netif API before starting the AP. */
+     * through the SDK IPC-aware Netif API before starting the AP. Keep the
+     * AP subnet separate from the upstream STA subnet used by our fixture. */
     const netif_ip4_config_t ip4 = {
-        .ip = "192.168.4.1", .mask = "255.255.255.0",
-        .gateway = "192.168.4.1", .dns = "192.168.4.1"};
+        .ip = "192.168.188.1", .mask = "255.255.255.0",
+        .gateway = "192.168.188.1", .dns = "192.168.188.1"};
     bk_err_t err = bk_netif_set_ip4_config(NETIF_IF_AP, &ip4);
     if (err != BK_OK) return h2_bk_wifi_map_error(err);
     err = bk_wifi_ap_set_config(&bk_config);
