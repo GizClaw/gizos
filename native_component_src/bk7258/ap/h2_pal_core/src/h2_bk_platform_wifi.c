@@ -156,10 +156,14 @@ static int h2_bk_wifi_apply_power_save(h2_pal_wifi_power_save_t mode) {
     /* Zero removes the SDK's dynamic listen override (default DTIM policy).
      * MAX selects its actual ten-beacon interval. This does not measure power. */
     uint8_t interval = mode == H2_PAL_WIFI_POWER_SAVE_MAX_MODEM ? 10u : 0u;
-    bk_err_t err = bk_wifi_send_listen_interval_req(interval);
+    uint8_t before = 0xffu;
+    bk_err_t err = bk_wifi_get_listen_interval(&before);
+    if (err == BK_OK) err = bk_wifi_send_listen_interval_req(interval);
     uint8_t actual = 0xffu;
     if (err == BK_OK) err = bk_wifi_get_listen_interval(&actual);
     if (err != BK_OK) return h2_bk_wifi_map_error(err);
+    BK_LOGI("h2_wifi", "H2_WIFI_POWER_SAVE_READBACK mode=%u before=%u requested=%u actual=%u\r\n",
+            (unsigned)mode, (unsigned)before, (unsigned)interval, (unsigned)actual);
     if (actual != interval) return H2_PAL_ERR_UNSUPPORTED;
     err = bk_wifi_sta_pm_enable();
     if (err != BK_OK) return h2_bk_wifi_map_error(err);
@@ -805,6 +809,11 @@ static void h2_bk_wifi_connect_worker(void *arg) {
                         started = start_err == BK_OK;
                     }
                     if (start_err == BK_OK) {
+                        /* Keep authentication/DHCP awake; the generation-bound
+                         * GOT_IP handler restores the requested steady policy. */
+                        start_err = bk_wifi_sta_pm_disable();
+                    }
+                    if (start_err == BK_OK) {
                         start_err = bk_wifi_sta_connect();
                     }
                 }
@@ -999,6 +1008,18 @@ static int h2_bk_wifi_sta_connect(
               cached_status.state == H2_PAL_WIFI_STA_STATE_DISCONNECTED)) {
             return h2_bk_wifi_map_error(err);
         }
+        if (s_h2_bk_wifi_ap_active) {
+            netif_ip4_config_t *cp_ap = os_malloc(sizeof(*cp_ap));
+            if (cp_ap != NULL) {
+                memset(cp_ap, 0, sizeof(*cp_ap));
+                bk_err_t owner_rc = wifi_send_com_api_cmd(AP_GET_NETIF_IP4_CONFIG, 1, (uint32_t)cp_ap);
+                uint32_t ip = 0u;
+                if (owner_rc == BK_OK) (void)h2_bk_wifi_parse_ip4(cp_ap->ip, &ip);
+                BK_LOGI("h2_wifi", "H2_WIFI_BK_CP_AP_BEFORE ip=%lu rc=%d\r\n",
+                        (unsigned long)ip, (int)owner_rc);
+                os_free(cp_ap);
+            }
+        }
         err = bk_wifi_sta_set_config(&bk_config);
         if (err != BK_OK) {
             return h2_bk_wifi_map_error(err);
@@ -1008,6 +1029,10 @@ static int h2_bk_wifi_sta_connect(
         if (err != BK_OK) {
             return h2_bk_wifi_map_error(err);
         }
+        /* STA_STOP can retain CP power-save state across VIF creation. DHCP
+         * must complete awake before reapplying the current/future policy. */
+        err = bk_wifi_sta_pm_disable();
+        if (err != BK_OK) return h2_bk_wifi_map_error(err);
         err = bk_wifi_sta_connect();
         if (err != BK_OK) {
             return h2_bk_wifi_map_error(err);
