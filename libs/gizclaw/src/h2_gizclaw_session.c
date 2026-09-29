@@ -89,6 +89,22 @@ static bool same(const char *a, const char *b) {
 static h2_gizclaw_str_t str(const char *text) {
   return (h2_gizclaw_str_t){text, text != NULL ? strlen(text) : 0u};
 }
+/* Every page of one catalog must advertise the same Profile fence options. */
+static bool same_fences(const h2_gizclaw_safety_fence_option_t *a,
+                        size_t a_count,
+                        const h2_gizclaw_safety_fence_option_t *b,
+                        size_t b_count) {
+  if (a_count != b_count)
+    return false;
+  for (size_t i = 0u; i < a_count; ++i) {
+    if (strcmp(a[i].name, b[i].name) != 0 ||
+        a[i].has_display_name != b[i].has_display_name ||
+        (a[i].has_display_name &&
+         strcmp(a[i].display_name, b[i].display_name) != 0))
+      return false;
+  }
+  return true;
+}
 static bool safety_fence_level_valid(
     const char value[H2_GIZCLAW_SAFETY_FENCE_LEVEL_MAX_BYTES + 1u]) {
   const char *end = memchr(value, '\0',
@@ -509,6 +525,10 @@ static h2_pal_result_t refresh_stream(h2_gizclaw_session_t *s) {
   size_t count = 0u;
   size_t empty_pages = 0u;
   bool began = false;
+  /* Each page reuses the response storage, so keep the first page's options
+   * to hold later pages to the same Profile fences. */
+  h2_gizclaw_safety_fence_option_t *fences = NULL;
+  size_t fence_count = 0u;
   if (data == NULL)
     rc = H2_PAL_ERR_NO_MEMORY;
   if (data != NULL && rc == H2_PAL_OK) {
@@ -529,6 +549,25 @@ static h2_pal_result_t refresh_stream(h2_gizclaw_session_t *s) {
           !text_valid(page.runtime_profile_revision, sizeof(revision) - 1u) ||
           (revision[0] != '\0' &&
            !same(page.runtime_profile_revision, revision))) {
+        rc = H2_PAL_ERR_INVALID_STATE;
+        break;
+      }
+      if (!began) {
+        fence_count = page.safety_fence_count;
+        if (fence_count > SIZE_MAX / sizeof(*fences)) {
+          rc = H2_PAL_ERR_NO_SPACE;
+          break;
+        }
+        if (fence_count != 0u) {
+          fences = h2_pal_mem_alloc(s->config.mem, fence_count * sizeof(*fences));
+          if (fences == NULL) {
+            rc = H2_PAL_ERR_NO_MEMORY;
+            break;
+          }
+          memcpy(fences, page.safety_fences, fence_count * sizeof(*fences));
+        }
+      } else if (!same_fences(page.safety_fences, page.safety_fence_count,
+                              fences, fence_count)) {
         rc = H2_PAL_ERR_INVALID_STATE;
         break;
       }
@@ -592,6 +631,7 @@ static h2_pal_result_t refresh_stream(h2_gizclaw_session_t *s) {
       (void)s->config.catalog_sink(s->config.catalog_sink_user,
                                    H2_GIZCLAW_CATALOG_ABORT, NULL,
                                    profile, revision);
+    h2_pal_mem_free(s->config.mem, fences);
     h2_pal_mem_free(s->config.mem, data);
     return lock_rc;
   }
@@ -621,6 +661,7 @@ static h2_pal_result_t refresh_stream(h2_gizclaw_session_t *s) {
     (void)s->config.catalog_sink(s->config.catalog_sink_user,
                                  H2_GIZCLAW_CATALOG_ABORT, NULL,
                                  profile, revision);
+  h2_pal_mem_free(s->config.mem, fences);
   h2_pal_mem_free(s->config.mem, data);
   return rc;
 }
@@ -685,25 +726,11 @@ static h2_pal_result_t refresh(h2_gizclaw_session_t *s) {
         break;
       }
       if (!first_page) {
-        if (page.safety_fence_count != catalog.safety_fence_count) {
+        if (!same_fences(page.safety_fences, page.safety_fence_count,
+                         catalog.safety_fences, catalog.safety_fence_count)) {
           rc = H2_PAL_ERR_INVALID_STATE;
           break;
         }
-        for (size_t i = 0u; i < page.safety_fence_count; ++i) {
-          const h2_gizclaw_safety_fence_option_t *a =
-              &page.safety_fences[i];
-          const h2_gizclaw_safety_fence_option_t *b =
-              &catalog.safety_fences[i];
-          if (strcmp(a->name, b->name) != 0 ||
-              a->has_display_name != b->has_display_name ||
-              (a->has_display_name &&
-               strcmp(a->display_name, b->display_name) != 0)) {
-            rc = H2_PAL_ERR_INVALID_STATE;
-            break;
-          }
-        }
-        if (rc != H2_PAL_OK)
-          break;
       } else {
         catalog.safety_fences = page.safety_fences;
         catalog.safety_fence_count = page.safety_fence_count;

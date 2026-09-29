@@ -77,7 +77,7 @@ static const h2_pal_mem_vtable_t catalog_test_mem_vtable = {
 static h2_atomic_uint_t lists, gets, creates, reloads, conversations;
 static size_t list_limit;
 static bool list_failure, bad_revision, missing, close_during_list,
-    reload_failure;
+    reload_failure, divergent_fences;
 static bool paginated, empty_cycle, get_failure;
 static const char *server_revision;
 static unsigned closed_after_reload;
@@ -225,6 +225,8 @@ h2_pal_result_t h2_gizclaw_rpc_workflow_list(
   assert(out->safety_fences != NULL);
   *out->safety_fences = (h2_gizclaw_safety_fence_option_t){
       .name = "safe", .has_display_name = true, .display_name = "Safe"};
+  if (divergent_fences && cursor.len != 0u)
+    strcpy(out->safety_fences->display_name, "Changed");
   out->safety_fence_count = 1u;
   if (empty_cycle) {
     out->has_next = true;
@@ -429,7 +431,7 @@ static h2_gizclaw_session_config_t session_config(size_t tag_count) {
   rpc_trace[0] = '\0';
   h2_atomic_store(&cancel_entered, false);
   list_failure = bad_revision = missing = close_during_list = reload_failure =
-      false;
+      divergent_fences = false;
   paginated = empty_cycle = get_failure = false;
   server_revision = "v1";
   closed_after_reload = 0u;
@@ -609,13 +611,23 @@ static void test_streaming_catalog(void) {
   server_revision = "v2";
   assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_OK);
   assert(sink.commit == 2u && strcmp(sink.revision, "v2") == 0);
+  /* A later page with the same revision but other fence options is not the
+   * same catalog: nothing is committed. */
+  divergent_fences = true;
+  assert(h2_gizclaw_session_refresh(session, 1000u) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(sink.commit == 2u && sink.abort == 1u &&
+         snapshot().catalog == H2_GIZCLAW_SESSION_FAILED);
+  divergent_fences = false;
+  assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_OK);
+  assert(sink.commit == 3u);
   sink.fail_page = true;
   assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_ERR_IO);
-  assert(sink.abort == 1u && snapshot().catalog == H2_GIZCLAW_SESSION_FAILED);
+  assert(sink.abort == 2u && snapshot().catalog == H2_GIZCLAW_SESSION_FAILED);
   sink.fail_page = false;
   sink.fail_commit = true;
   assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_ERR_IO);
-  assert(sink.abort == 2u);
+  assert(sink.abort == 3u);
   teardown();
 
   sink = (streaming_sink_state_t){0};
@@ -679,6 +691,11 @@ static void test_catalog_buffer_lifetime(bool retain, bool separate) {
          H2_PAL_ERR_UNAVAILABLE);
   assert(catalog.items == NULL && catalog.count == 0u);
   bad_revision = false;
+  divergent_fences = true;
+  assert(h2_gizclaw_session_refresh(session, 1000u) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(snapshot().catalog == H2_GIZCLAW_SESSION_FAILED);
+  divergent_fences = false;
   paginated = false;
   assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_OK);
   assert_catalog();
