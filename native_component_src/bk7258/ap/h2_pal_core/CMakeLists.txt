@@ -22,7 +22,11 @@ set(H2_BK_PLATFORM_CORE_PRIV_INCLUDE_DIRS
   "${CMAKE_CURRENT_LIST_DIR}/src/flashdb"
   "${BK_FLASHDB_DIR}/inc"
   "${BK_FLASHDB_DIR}/port"
-  "${BK_FLASHDB_DIR}/port/fal/inc")
+  "${BK_FLASHDB_DIR}/port/fal/inc"
+  "${BK_ARMINO_PATH}/components/bk_wifi/include"
+  "${BK_WIFI_DRIVER_DIR}"
+  "${BK_ARMINO_PATH}/components/bk_wifi_driver"
+  "${REPO_ROOT}/native_component_src/bk7258/shared")
 set(H2_BK_PLATFORM_CORE_COMPILE_DEFINITIONS
   H2_BK_PLATFORM_CORE_ENABLE_MQTT=0
   H2_BK_PLATFORM_WIFI_CSI_SAFE_DISPATCH=0)
@@ -255,3 +259,52 @@ if(H2_BK_PLATFORM_WIFI_CSI_SAFE_DISPATCH)
 endif()
 
 target_include_directories(${COMPONENT_LIB} PRIVATE "${BK_ARMINO_PATH}/components/bk_cli")
+
+# The pinned AP SDK erroneously forwards STA address synchronization through
+# AP_NETIF_IP4_CONFIG, overwriting the CP AP/DHCP address in AP+STA mode.
+# Build a guarded corrected copy inside the build tree; leave the sealed SDK
+# pristine, and cover both its own event callback and external Wi-Fi callers.
+armino_component_get_property(H2_BK_NETIF_LIB bk_netif COMPONENT_LIB)
+set(H2_BK_SDK_NETIF_SOURCE "${BK_ARMINO_PATH}/components/bk_netif/bk_netif.c")
+file(READ "${H2_BK_SDK_NETIF_SOURCE}" H2_BK_SDK_NETIF_CONTENT)
+set(H2_BK_STA_SYNC_SIGNATURE "bk_err_t bk_netif_set_ip4_config(netif_if_t ifx, const netif_ip4_config_t *ip4_config)\n{")
+string(FIND "${H2_BK_SDK_NETIF_CONTENT}" "${H2_BK_STA_SYNC_SIGNATURE}" H2_BK_STA_SYNC_OFFSET)
+if(H2_BK_STA_SYNC_OFFSET EQUAL -1)
+  message(FATAL_ERROR "Pinned BK Netif STA sync signature changed; revalidate the SDK correction")
+endif()
+set(H2_BK_STA_SYNC_REPLACEMENT "${H2_BK_STA_SYNC_SIGNATURE}
+    if (ifx == NETIF_IF_STA) {
+        if (ip4_config == NULL) return BK_ERR_NULL_PARAM;
+        netif_ip4_config_t sta_ip = *ip4_config;
+        ip_address_set(1, 0, sta_ip.ip, sta_ip.mask, sta_ip.gateway, sta_ip.dns);
+        return BK_OK;
+    }")
+string(REPLACE "${H2_BK_STA_SYNC_SIGNATURE}" "${H2_BK_STA_SYNC_REPLACEMENT}"
+  H2_BK_SDK_NETIF_CORRECTED "${H2_BK_SDK_NETIF_CONTENT}")
+set(H2_BK_NETIF_CORRECTED_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/h2_bk_sdk_netif.c")
+file(WRITE "${H2_BK_NETIF_CORRECTED_SOURCE}" "${H2_BK_SDK_NETIF_CORRECTED}")
+get_target_property(H2_BK_NETIF_SOURCES ${H2_BK_NETIF_LIB} SOURCES)
+list(FILTER H2_BK_NETIF_SOURCES EXCLUDE REGEX "(^|/)bk_netif\\.c$")
+list(APPEND H2_BK_NETIF_SOURCES "${H2_BK_NETIF_CORRECTED_SOURCE}")
+set_property(TARGET ${H2_BK_NETIF_LIB} PROPERTY SOURCES ${H2_BK_NETIF_SOURCES})
+
+# The pinned AP SDK swallows a failed CP AP_STOP confirmation, tears down only
+# its local adapter and returns BK_OK. Keep both sides active on failure and
+# let the PAL report it; never claim that the CP/DHCP resources were stopped.
+armino_component_get_property(H2_BK_WIFI_LIB bk_wifi COMPONENT_LIB)
+set(H2_BK_SDK_WIFI_SOURCE "${BK_ARMINO_PATH}/components/bk_wifi/src/wifi_api.c")
+file(READ "${H2_BK_SDK_WIFI_SOURCE}" H2_BK_SDK_WIFI_CONTENT)
+set(H2_BK_AP_STOP_SIGNATURE "    ret = wifi_send_com_api_cmd(AP_STOP, 0);\n    if (ret != BK_OK) {\n        WDRV_LOGW(\"ap stop fail ret %d\\n\", ret);\n    }\n\n    WDRV_LOGI(\"ap stopped\\n\");")
+string(FIND "${H2_BK_SDK_WIFI_CONTENT}" "${H2_BK_AP_STOP_SIGNATURE}" H2_BK_AP_STOP_OFFSET)
+if(H2_BK_AP_STOP_OFFSET EQUAL -1)
+  message(FATAL_ERROR "Pinned BK AP stop RPC signature changed; revalidate the SDK correction")
+endif()
+set(H2_BK_AP_STOP_REPLACEMENT "    ret = wifi_send_com_api_cmd(AP_STOP, 0);\n    if (ret != BK_OK) {\n        WDRV_LOGW(\"ap stop fail ret %d\\n\", ret);\n        return ret;\n    }\n\n    WDRV_LOGI(\"ap stopped\\n\");")
+string(REPLACE "${H2_BK_AP_STOP_SIGNATURE}" "${H2_BK_AP_STOP_REPLACEMENT}"
+  H2_BK_SDK_WIFI_CORRECTED "${H2_BK_SDK_WIFI_CONTENT}")
+set(H2_BK_WIFI_CORRECTED_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/h2_bk_sdk_wifi_api.c")
+file(WRITE "${H2_BK_WIFI_CORRECTED_SOURCE}" "${H2_BK_SDK_WIFI_CORRECTED}")
+get_target_property(H2_BK_WIFI_SOURCES ${H2_BK_WIFI_LIB} SOURCES)
+list(FILTER H2_BK_WIFI_SOURCES EXCLUDE REGEX "(^|/)wifi_api\\.c$")
+list(APPEND H2_BK_WIFI_SOURCES "${H2_BK_WIFI_CORRECTED_SOURCE}")
+set_property(TARGET ${H2_BK_WIFI_LIB} PROPERTY SOURCES ${H2_BK_WIFI_SOURCES})
