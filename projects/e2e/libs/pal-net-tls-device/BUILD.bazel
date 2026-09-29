@@ -87,3 +87,5 @@ py_test(
     main = "tests/test_bk_tcp_recv_timeout.py",
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
+
+exports_files(["assemble_board.py"])

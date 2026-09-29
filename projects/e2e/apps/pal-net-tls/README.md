@@ -49,7 +49,7 @@ This work's integration order is Wi-Fi qualification first, then Net/TLS. The ru
 
 ## Evidence
 
-`qualification.json` begins pending; construction is not execution. Receipt verification must compare the ordered registry, source and actual artifact hashes, typed errors and exact current-peer evidence. Board markers replay an immutable boot ledger and do not execute again. Replaying a previous boot does not satisfy independent boot qualification.
+`qualification.json` begins pending; construction is not execution. Receipt verification must compare the ordered registry, source and actual artifact hashes, typed errors and exact current-peer evidence. Board markers replay an immutable boot ledger and do not execute again. Replaying a previous boot does not satisfy independent boot qualification. `projects/e2e/libs/pal-net-tls-device/assemble_board.py` binds each fresh execution ledger to the same package/image, exact UID, two distinct boot nonces, current fixture peer session, unchanged P1, empty Stage and coredump byte equality (BK) or blank status (DevKit); it rejects any missing or stale field.
 ### Browser raw Net/TLS decision (pending)
 
 A normal webpage cannot satisfy `h2_pal_net.h` with browser APIs alone. Fetch and WebRTC hide their sockets and certificate verification; neither exposes raw TCP/UDP, source or interface bind, listen/accept, ICMP, or an arbitrary custom-root TLS stream. `WebSocket` and `WebTransport` connect only through browser-managed transports. The current 21-operation Worker probe correctly reports `UNSUPPORTED`, so WASM remains pending for the 37 mandatory core cases.
