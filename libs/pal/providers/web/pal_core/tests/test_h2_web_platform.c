@@ -1607,13 +1607,15 @@ MAIN_THREAD_EM_ASM_INT({ return !!globalThis.h2FakePendingReadResolve; })
     return 45;
   (void)h2_web_main_call(h2_web_test_set_serial_mode,
                          (const void *[]){&(int){12}});
-  if (h2_web_platform_pump(platform, 8u, NULL) != H2_PAL_OK ||
-      h2_web_platform_serial_shutdown(platform) != H2_PAL_ERR_UNSUPPORTED ||
-      !((int)h2_web_main_call(h2_web_test_close_rejected_before_cancel_settled,
-                              NULL)
-            .i32)) {
+  /* Separate codes keep a failure here diagnosable from the exit status. */
+  if (h2_web_platform_pump(platform, 8u, NULL) != H2_PAL_OK)
     return 46;
-  }
+  if (h2_web_platform_serial_shutdown(platform) != H2_PAL_ERR_UNSUPPORTED)
+    return 146;
+  if (!((int)h2_web_main_call(h2_web_test_close_rejected_before_cancel_settled,
+                              NULL)
+            .i32))
+    return 246;
   joined = 0;
   for (int iteration = 0; iteration < 8 && !joined; ++iteration) {
     if (h2_web_platform_pump(platform, 8u, NULL) != H2_PAL_OK)

@@ -680,12 +680,46 @@ static void test_filesystem_stat_contract(void) {
 typedef struct timer_lifetime_fixture {
   h2_pal_timer_config_t config;
   int allow_destroy;
+  int fired_count, fired_live;
 } timer_lifetime_fixture_t;
 static h2_pal_result_t timer_test_create(void *user,
     const h2_pal_timer_config_t *config, h2_pal_timer_t **out) {
   timer_lifetime_fixture_t *f = user;
   f->config = *config;
   *out = (h2_pal_timer_t *)f;
+  /* The one-shot expiry arrives at once; the case waits for it. */
+  config->cb(config->cb_user, *out);
+  return H2_PAL_OK;
+}
+static h2_pal_result_t fired_create(void *user,
+    const h2_pal_semaphore_config_t *config, h2_pal_semaphore_t **out) {
+  timer_lifetime_fixture_t *f = user;
+  (void)config;
+  assert(!f->fired_live);
+  f->fired_live = 1;
+  *out = (h2_pal_semaphore_t *)&f->fired_count;
+  return H2_PAL_OK;
+}
+static h2_pal_result_t fired_destroy(void *user, h2_pal_semaphore_t *semaphore) {
+  timer_lifetime_fixture_t *f = user;
+  assert(f->fired_live && semaphore == (h2_pal_semaphore_t *)&f->fired_count);
+  f->fired_live = 0;
+  return H2_PAL_OK;
+}
+static h2_pal_result_t fired_take(void *user, h2_pal_semaphore_t *semaphore,
+                                  uint32_t timeout_ms) {
+  timer_lifetime_fixture_t *f = user;
+  (void)timeout_ms;
+  assert(f->fired_live && semaphore == (h2_pal_semaphore_t *)&f->fired_count);
+  if (f->fired_count == 0) return H2_PAL_ERR_TIMEOUT;
+  --f->fired_count;
+  return H2_PAL_OK;
+}
+static h2_pal_result_t fired_give(void *user, h2_pal_semaphore_t *semaphore) {
+  timer_lifetime_fixture_t *f = user;
+  /* A callback after a failed timer destroy still finds its semaphore. */
+  assert(f->fired_live && semaphore == (h2_pal_semaphore_t *)&f->fired_count);
+  ++f->fired_count;
   return H2_PAL_OK;
 }
 static h2_pal_result_t timer_test_destroy(void *user, h2_pal_timer_t *timer) {
@@ -704,7 +738,11 @@ static void test_timer_failed_destroy_retains_callback(void) {
   const h2_pal_timer_vtable_t timer_v = {
       .create=timer_test_create, .destroy=timer_test_destroy};
   const h2_pal_timer_api_t timer = {.user=&f, .vtable=&timer_v};
-  h2_runtime_t runtime = {.mem=&mem, .time=&time, .timer=&timer};
+  const h2_pal_sync_vtable_t sync_v = {
+      .create_semaphore=fired_create, .destroy_semaphore=fired_destroy,
+      .take_semaphore=fired_take, .give_semaphore=fired_give};
+  const h2_pal_sync_api_t sync = {.user=&f, .vtable=&sync_v};
+  h2_runtime_t runtime = {.mem=&mem, .time=&time, .timer=&timer, .sync=&sync};
   const h2_pal_e2e_config_t config = {.suite_mask=H2_PAL_E2E_SUITE_CORE};
   h2_pal_e2e_result_t result;
   assert(h2_pal_e2e_run(&runtime, &config, &result) == H2_PAL_ERR_BUSY);
@@ -716,6 +754,7 @@ static void test_timer_failed_destroy_retains_callback(void) {
   f.allow_destroy = 1;
   assert(h2_pal_e2e_cleanup(&runtime, &result) == H2_PAL_OK);
   assert(memory.allocations == 0 && result.retained_cleanup == NULL);
+  assert(!f.fired_live);
   assert(h2_pal_e2e_cleanup(&runtime, &result) == H2_PAL_OK);
 }
 

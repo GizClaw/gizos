@@ -63,6 +63,10 @@ typedef struct h2_pal_core_e2e_concurrency_worker {
 struct h2_pal_core_cleanup {
   h2_pal_timer_t *timer;
   int timer_calls;
+  /* Given by the timer callback so the case waits for the expiry instead of
+   * assuming it lands within a fixed sleep on a slow or loaded host. */
+  const h2_pal_sync_api_t *timer_sync;
+  h2_pal_semaphore_t *timer_fired;
   h2_pal_core_e2e_task_state_t task_worker;
   h2_pal_core_e2e_condition_state_t condition_worker;
   h2_pal_core_e2e_queue_state_t queue_worker;
@@ -216,7 +220,9 @@ static h2_pal_result_t h2_pal_core_e2e_concurrency_join(h2_runtime_t *runtime,
 
 static void h2_pal_core_e2e_timer_callback(void *user, h2_pal_timer_t *timer) {
   (void)timer;
-  ++*(int *)user;
+  h2_pal_core_cleanup_t *run = user;
+  ++run->timer_calls;
+  (void)h2_pal_semaphore_give(run->timer_sync, run->timer_fired);
 }
 
 static void
@@ -290,25 +296,45 @@ h2_pal_core_baseline_timer(h2_runtime_t *runtime,
   if (run == NULL)
     return H2_PAL_ERR_NO_MEMORY;
   memset(run, 0, sizeof(*run));
+  run->timer_sync = runtime->sync;
+  const h2_pal_semaphore_config_t fired = {
+      .name = "pal-e2e-timer",
+      .allocator = runtime->mem,
+      .initial_count = 0u,
+      .max_count = 2u,
+  };
   const h2_pal_timer_config_t config = {
       .name = "pal-e2e",
       .period_ms = 1u,
       .flags = H2_PAL_TIMER_FLAG_AUTO_START,
       .cb = h2_pal_core_e2e_timer_callback,
-      .cb_user = &run->timer_calls,
+      .cb_user = run,
   };
   h2_pal_result_t result =
-      h2_pal_timer_create(runtime->timer, &config, &run->timer);
-  if (result == H2_PAL_OK) {
-    result = h2_pal_time_sleep_ms(runtime->time, 2u);
-  }
+      h2_pal_semaphore_create(runtime->sync, &fired, &run->timer_fired);
+  if (result == H2_PAL_OK)
+    result = h2_pal_timer_create(runtime->timer, &config, &run->timer);
+  /* A one-shot expiry must arrive within a generous bound; a short settle
+   * afterwards gives a spurious second expiry the chance to show. */
+  if (result == H2_PAL_OK)
+    result = h2_pal_semaphore_take(runtime->sync, run->timer_fired, 1000u);
+  if (result == H2_PAL_OK)
+    result = h2_pal_time_sleep_ms(runtime->time, 5u);
   h2_pal_result_t cleanup =
       run->timer == NULL ? H2_PAL_OK
                          : h2_pal_timer_destroy(runtime->timer, run->timer);
   h2_pal_core_e2e_record_cleanup(e2e_result, cleanup);
   if (cleanup != H2_PAL_OK) {
+    /* The callback may still run and give the semaphore: keep both. */
     e2e_result->retained_cleanup = run;
     return result == H2_PAL_OK ? cleanup : result;
+  }
+  run->timer = NULL;
+  if (run->timer_fired != NULL) {
+    cleanup = h2_pal_semaphore_destroy(runtime->sync, run->timer_fired);
+    h2_pal_core_e2e_record_cleanup(e2e_result, cleanup);
+    if (result == H2_PAL_OK)
+      result = cleanup;
   }
   const int calls = run->timer_calls;
   h2_pal_mem_free(runtime->mem, run);
@@ -734,6 +760,14 @@ h2_pal_core_baseline_cleanup(h2_runtime_t *runtime,
       return cleanup;
     }
     run->timer = NULL;
+  }
+  if (run->timer_fired != NULL) {
+    cleanup = h2_pal_semaphore_destroy(runtime->sync, run->timer_fired);
+    if (cleanup != H2_PAL_OK) {
+      h2_pal_core_e2e_record_cleanup(result, cleanup);
+      return cleanup;
+    }
+    run->timer_fired = NULL;
   }
   for (size_t index = 0u; index < run->started; ++index) {
     if (run->tasks[index] == NULL)
