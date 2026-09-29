@@ -480,7 +480,6 @@ static int actor_stop(h2_gizclaw_e2e_actor_t *actor) {
 }
 
 static const h2_gizclaw_rpc_method_t e2e_reverse_methods[] = {
-    H2_GIZCLAW_RPC_CLIENT_INFO_GET, H2_GIZCLAW_RPC_CLIENT_IDENTIFIERS_GET,
     H2_GIZCLAW_RPC_CLIENT_SOCIAL_PING};
 
 static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
@@ -506,8 +505,8 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
       .firmware_channel = H2_GIZCLAW_FIRMWARE_CHANNEL_DEVELOP,
       .rpc_provider = provider_call,
       .rpc_provider_user = actor,
-      .rpc_provider_methods = e2e_reverse_methods,
-      .rpc_provider_method_count = sizeof(e2e_reverse_methods) / sizeof(e2e_reverse_methods[0]),
+      .rpc_provider_methods = fixture->device_audio ? e2e_reverse_methods : NULL,
+      .rpc_provider_method_count = fixture->device_audio ? 1u : 0u,
       .cancel_requested = cancel_requested,
       .cancel_user = fixture,
   };
