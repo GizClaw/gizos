@@ -27,7 +27,7 @@ typedef struct h2_wifi_e2e_result {
     int network_restored;
     unsigned retained;
     unsigned last_error_line;
-    unsigned sta_connecting, sta_connected, sta_got_ip, sta_disconnected;
+    unsigned sta_connecting, sta_connected, sta_got_ip, sta_lost_ip, sta_disconnected;
     unsigned ap_started, ap_stopped, client_joined, client_left;
     unsigned lease_granted, lease_released, route_changed, invalid_events;
     uint8_t client_mac[6];

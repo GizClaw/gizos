@@ -1,0 +1,109 @@
+#include "../src/h2_pal_wifi_e2e.c"
+
+#include <assert.h>
+
+static void station(wifi_test_t *s, h2_runtime_event_kind_t kind,
+                    h2_runtime_system_wifi_sta_status_t status, int has_ip) {
+    h2_runtime_system_event_wifi_sta_t value = {0};
+    value.status = status;
+    value.ssid_len = s->cfg->fixture.ssid_len;
+    memcpy(value.ssid, s->cfg->fixture.ssid, value.ssid_len);
+    value.ip_valid = has_ip;
+    if (has_ip) {
+        value.ip.ip4 = 0xC0A80402u;
+        value.ip.netmask4 = 0xFFFFFF00u;
+        value.ip.gateway4 = 0xC0A80401u;
+        value.bssid[0] = 0x02;
+        value.bssid[5] = 0x01;
+        value.bssid_set = 1;
+        value.channel = 6;
+    }
+    h2_runtime_event_t event = {.kind = kind, .component = H2_RUNTIME_COMPONENT_SYSTEM_WIFI,
+                                .payload = &value, .payload_size = sizeof(value)};
+    observe_event(s, &event);
+}
+
+static void client(wifi_test_t *s, h2_runtime_event_kind_t kind, int lease,
+                   uint32_t ip) {
+    h2_runtime_system_event_wifi_ap_client_t value = {0};
+    value.mac[0] = 0x02;
+    value.mac[5] = 0x01;
+    value.lease_valid = lease;
+    value.lease.ip4 = ip;
+    h2_runtime_event_t event = {.kind = kind, .component = H2_RUNTIME_COMPONENT_SYSTEM_WIFI,
+                                .payload = &value, .payload_size = sizeof(value)};
+    observe_event(s, &event);
+}
+
+static void access_point(wifi_test_t *s, h2_runtime_event_kind_t kind,
+                         h2_runtime_system_wifi_ap_status_t status) {
+    h2_runtime_system_event_wifi_ap_t value = {.status = status, .ssid_len = 3};
+    memcpy(value.ssid, "dut", 3);
+    h2_runtime_event_t event = {.kind = kind, .component = H2_RUNTIME_COMPONENT_SYSTEM_WIFI,
+                                .payload = &value, .payload_size = sizeof(value)};
+    observe_event(s, &event);
+}
+
+int main(void) {
+    h2_wifi_e2e_config_t config = {.fixture = {.ssid = "fixture", .ssid_len = 7}};
+    wifi_test_t good = {.cfg = &config};
+    access_point(&good, H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_STARTED,
+                 H2_RUNTIME_SYSTEM_WIFI_AP_STATUS_STARTED);
+    station(&good, H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTING,
+            H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_CONNECTING, 0);
+    station(&good, H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTED,
+            H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_CONNECTED, 0);
+    station(&good, H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_GOT_IP,
+            H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_GOT_IP, 1);
+    station(&good, H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_LOST_IP,
+            H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_DISCONNECTED, 0);
+    station(&good, H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_DISCONNECTED,
+            H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_DISCONNECTED, 0);
+    client(&good, H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_CLIENT_JOINED, 0, 0);
+    client(&good, H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_LEASE_GRANTED, 1, 0xC0A8BC64u);
+    /* ESP reports L2 departure before its cached accepted lease is released. */
+    client(&good, H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_CLIENT_LEFT, 1, 0xC0A8BC64u);
+    client(&good, H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_LEASE_RELEASED, 1, 0xC0A8BC64u);
+    access_point(&good, H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_STOPPED,
+                 H2_RUNTIME_SYSTEM_WIFI_AP_STATUS_STOPPED);
+    h2_runtime_system_event_netif_default_changed_t route = {
+        .current_valid = 1, .current = {.kind = H2_RUNTIME_SYSTEM_NETIF_KIND_WIFI_STA,
+                                        .id_valid = 1, .id = 2}};
+    h2_runtime_event_t route_event = {.kind = H2_RUNTIME_SYSTEM_EVENT_NETIF_DEFAULT_CHANGED,
+                                      .component = H2_RUNTIME_COMPONENT_SYSTEM_NETIF,
+                                      .payload = &route, .payload_size = sizeof(route)};
+    observe_event(&good, &route_event);
+    assert(good.result.invalid_events == 0 && good.result.sta_lost_ip == 1);
+    assert(good.result.lease_granted == 1 && good.result.lease_released == 1);
+    assert(good.result.ap_started == 1 && good.result.ap_stopped == 1 &&
+           good.result.route_changed == 1);
+    assert(good.peers[0].joins == 1 && good.peers[0].lefts == 1 &&
+           !good.peers[0].active && !good.peers[0].leased);
+
+    wifi_test_t no_lease = {.cfg = &config};
+    client(&no_lease, H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_CLIENT_JOINED, 0, 0);
+    client(&no_lease, H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_CLIENT_LEFT, 0, 0);
+    assert(no_lease.result.invalid_events == 0 && !no_lease.result.lease_granted &&
+           !no_lease.result.lease_released);
+
+    wifi_test_t early_grant = {.cfg = &config};
+    client(&early_grant, H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_LEASE_GRANTED, 1, 0xC0A8BC64u);
+    assert(early_grant.result.invalid_events > 0);
+    wifi_test_t offer_only = {.cfg = &config};
+    client(&offer_only, H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_CLIENT_JOINED, 1, 0xC0A8BC64u);
+    assert(offer_only.result.invalid_events > 0);
+    wifi_test_t wrong_release = {.cfg = &config};
+    client(&wrong_release, H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_CLIENT_JOINED, 0, 0);
+    client(&wrong_release, H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_LEASE_GRANTED, 1, 0xC0A8BC64u);
+    client(&wrong_release, H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_LEASE_RELEASED, 1, 0xC0A8BC65u);
+    assert(wrong_release.result.invalid_events > 0);
+    wifi_test_t never_had_ip = {.cfg = &config};
+    station(&never_had_ip, H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_LOST_IP,
+            H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_DISCONNECTED, 0);
+    assert(never_had_ip.result.invalid_events > 0);
+    wifi_test_t bad_ap = {.cfg = &config};
+    access_point(&bad_ap, H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_STARTED,
+                 H2_RUNTIME_SYSTEM_WIFI_AP_STATUS_STOPPED);
+    assert(bad_ap.result.invalid_events > 0);
+    return 0;
+}

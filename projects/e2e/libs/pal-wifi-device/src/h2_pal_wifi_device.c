@@ -254,10 +254,10 @@ void h2_wifi_device_report(void) {
          (unsigned long)boot, nonce, result.cleanup_rc, result.saved_restored,
          result.network_restored, backup_cleared, result.retained);
     emit("H2_WIFI_STA_EVENTS {\"boot\":%lu,\"nonce\":%" PRIu64
-         ",\"connecting\":%u,\"connected\":%u,\"got_ip\":%u,\"disconnected\":%u,\"route_changed\":%"
+         ",\"connecting\":%u,\"connected\":%u,\"got_ip\":%u,\"lost_ip\":%u,\"disconnected\":%u,\"route_changed\":%"
          "u,\"invalid\":%u}",
          (unsigned long)boot, nonce, result.sta_connecting, result.sta_connected, result.sta_got_ip,
-         result.sta_disconnected, result.route_changed, result.invalid_events);
+         result.sta_lost_ip, result.sta_disconnected, result.route_changed, result.invalid_events);
     emit("H2_WIFI_AP_EVENTS {\"boot\":%lu,\"nonce\":%" PRIu64
          ",\"started\":%u,\"stopped\":%u,\"joined\":%u,\"left\":%u,\"lease_granted\":%u,\"lease_"
          "released\":%u}",

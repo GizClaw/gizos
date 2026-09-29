@@ -3,6 +3,13 @@
 #include <string.h>
 #include <stdio.h>
 
+typedef struct wifi_peer_observation {
+    uint8_t mac[6];
+    uint32_t lease_ip4;
+    unsigned joins, grants, releases, lefts;
+    uint8_t active, leased;
+} wifi_peer_observation_t;
+
 typedef struct wifi_test {
     h2_runtime_t *rt;
     const h2_wifi_e2e_config_t *cfg;
@@ -16,6 +23,9 @@ typedef struct wifi_test {
     int clock_error;
     unsigned fixture_connecting, fixture_connected, fixture_got_ip;
     uint8_t joined_mac[6], left_mac[6];
+    uint8_t sta_ip_held;
+    wifi_peer_observation_t peers[H2_PAL_WIFI_AP_MAX_CLIENTS];
+    unsigned peer_count;
 } wifi_test_t;
 
 #define EXPECT(value)                                                                              \
@@ -54,15 +64,26 @@ static int mac_valid(const uint8_t mac[6]) {
     return (mac[0] & 1u) == 0u && memcmp(mac, zero, 6u) != 0;
 }
 
-static void events(wifi_test_t *s) {
-    union {
-        uint64_t alignment;
-        unsigned char bytes[H2_RUNTIME_EVENT_PAYLOAD_MAX];
-    } payload;
-    h2_runtime_event_t e = {.payload = payload.bytes, .payload_capacity = sizeof(payload.bytes)};
-    for (unsigned i = 0; i < 128u && h2_runtime_poll_event(s->rt, &e) == H2_PAL_OK; ++i) {
-        h2_wifi_e2e_result_t *r = &s->result;
-        switch (e.kind) {
+static wifi_peer_observation_t *peer_observation(wifi_test_t *s, const uint8_t mac[6],
+                                                  int create) {
+    for (unsigned i = 0; i < s->peer_count; ++i)
+        if (!memcmp(s->peers[i].mac, mac, 6))
+            return &s->peers[i];
+    if (!create) return NULL;
+    if (s->peer_count == H2_PAL_WIFI_AP_MAX_CLIENTS) {
+        ++s->result.invalid_events;
+        return NULL;
+    }
+    wifi_peer_observation_t *peer = &s->peers[s->peer_count++];
+    memset(peer, 0, sizeof(*peer));
+    memcpy(peer->mac, mac, 6);
+    return peer;
+}
+
+static void observe_event(wifi_test_t *s, const h2_runtime_event_t *event) {
+    const h2_runtime_event_t e = *event;
+    h2_wifi_e2e_result_t *r = &s->result;
+    switch (e.kind) {
         case H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTING:
         case H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTED:
         case H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_GOT_IP:
@@ -79,14 +100,38 @@ static void events(wifi_test_t *s) {
                  (!v->ip_valid || !v->ip.ip4 ||
                   v->status != H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_GOT_IP)))
                 ++r->invalid_events;
-            if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTING)
+            if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTING) {
+                if (v->status != H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_CONNECTING || v->ip_valid)
+                    ++r->invalid_events;
                 ++r->sta_connecting;
-            if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTED)
+            }
+            if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTED) {
+                if (v->status != H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_CONNECTED || v->ip_valid)
+                    ++r->invalid_events;
                 ++r->sta_connected;
-            if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_GOT_IP)
+            }
+            if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_GOT_IP) {
+                if (!v->bssid_set || !mac_valid(v->bssid) || !v->channel ||
+                    v->channel > 14u || !v->ip.netmask4 || !v->ip.gateway4)
+                    ++r->invalid_events;
+                s->sta_ip_held = 1u;
                 ++r->sta_got_ip;
-            if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_DISCONNECTED)
+            }
+            if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_LOST_IP) {
+                if (!s->sta_ip_held || v->ip_valid ||
+                    (v->status != H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_CONNECTED &&
+                     v->status != H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_DISCONNECTED))
+                    ++r->invalid_events;
+                s->sta_ip_held = 0u;
+                ++r->sta_lost_ip;
+            }
+            if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_DISCONNECTED) {
+                if (s->sta_ip_held || v->ip_valid ||
+                    v->status != H2_RUNTIME_SYSTEM_WIFI_STA_STATUS_DISCONNECTED)
+                    ++r->invalid_events;
+                s->sta_ip_held = 0u;
                 ++r->sta_disconnected;
+            }
             if (v->ssid_len == s->cfg->fixture.ssid_len &&
                 !memcmp(v->ssid, s->cfg->fixture.ssid, v->ssid_len)) {
                 if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTING)
@@ -108,10 +153,15 @@ static void events(wifi_test_t *s) {
             const h2_runtime_system_event_wifi_ap_t *v = e.payload;
             if (v->ssid_len > H2_PAL_WIFI_SSID_MAX || v->client_count > H2_PAL_WIFI_AP_MAX_CLIENTS)
                 ++r->invalid_events;
-            if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_STARTED)
+            if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_STARTED) {
+                if (v->status != H2_RUNTIME_SYSTEM_WIFI_AP_STATUS_STARTED || !v->ssid_len)
+                    ++r->invalid_events;
                 ++r->ap_started;
-            else
+            } else {
+                if (v->status != H2_RUNTIME_SYSTEM_WIFI_AP_STATUS_STOPPED || v->client_count)
+                    ++r->invalid_events;
                 ++r->ap_stopped;
+            }
             break;
         }
         case H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_CLIENT_JOINED:
@@ -124,20 +174,52 @@ static void events(wifi_test_t *s) {
                 break;
             }
             const h2_runtime_system_event_wifi_ap_client_t *v = e.payload;
-            if (!mac_valid(v->mac) || v->lease_valid > 1u || (v->lease_valid && !v->lease.ip4))
+            if (!mac_valid(v->mac) || v->lease_valid > 1u || (v->lease_valid && !v->lease.ip4)) {
                 ++r->invalid_events;
+                break;
+            }
+            wifi_peer_observation_t *peer = peer_observation(
+                s, v->mac, e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_CLIENT_JOINED);
+            if (peer == NULL) {
+                ++r->invalid_events;
+                break;
+            }
             if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_CLIENT_JOINED) {
+                /* A DHCP OFFER reserves an IP in some SDKs. JOIN must not
+                 * advertise that provisional address as an accepted lease. */
+                if (peer->active || peer->leased || v->lease_valid)
+                    ++r->invalid_events;
+                peer->active = 1u;
+                peer->lease_ip4 = 0u;
+                ++peer->joins;
                 ++r->client_joined;
                 memcpy(s->joined_mac, v->mac, 6);
             }
             if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_CLIENT_LEFT) {
+                if (!peer->active || (v->lease_valid &&
+                                      (!peer->leased || v->lease.ip4 != peer->lease_ip4)))
+                    ++r->invalid_events;
+                peer->active = 0u;
+                ++peer->lefts;
                 ++r->client_left;
                 memcpy(s->left_mac, v->mac, 6);
             }
-            if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_LEASE_GRANTED)
+            if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_LEASE_GRANTED) {
+                if (!peer->active || !v->lease_valid ||
+                    (peer->leased && peer->lease_ip4 != v->lease.ip4))
+                    ++r->invalid_events;
+                peer->leased = 1u;
+                peer->lease_ip4 = v->lease.ip4;
+                ++peer->grants;
                 ++r->lease_granted;
-            if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_LEASE_RELEASED)
+            }
+            if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_LEASE_RELEASED) {
+                if (!peer->leased || !v->lease_valid || v->lease.ip4 != peer->lease_ip4)
+                    ++r->invalid_events;
+                peer->leased = 0u;
+                ++peer->releases;
                 ++r->lease_released;
+            }
             break;
         }
         case H2_RUNTIME_SYSTEM_EVENT_NETIF_DEFAULT_CHANGED: {
@@ -145,15 +227,26 @@ static void events(wifi_test_t *s) {
             if (e.component != H2_RUNTIME_COMPONENT_SYSTEM_NETIF || e.payload_size != sizeof(*v) ||
                 v->previous_valid > 1u || v->current_valid > 1u ||
                 (v->previous_valid && !v->previous.name_valid && !v->previous.id_valid) ||
-                (v->current_valid && !v->current.name_valid && !v->current.id_valid))
+                (v->current_valid && !v->current.name_valid && !v->current.id_valid) ||
+                (v->previous_valid && v->previous.kind == H2_RUNTIME_SYSTEM_NETIF_KIND_UNKNOWN) ||
+                (v->current_valid && v->current.kind == H2_RUNTIME_SYSTEM_NETIF_KIND_UNKNOWN))
                 ++r->invalid_events;
             ++r->route_changed;
             break;
         }
         default:
             break;
-        }
     }
+}
+
+static void events(wifi_test_t *s) {
+    union {
+        uint64_t alignment;
+        unsigned char bytes[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+    } payload;
+    h2_runtime_event_t e = {.payload = payload.bytes, .payload_capacity = sizeof(payload.bytes)};
+    for (unsigned i = 0; i < 128u && h2_runtime_poll_event(s->rt, &e) == H2_PAL_OK; ++i)
+        observe_event(s, &e);
 }
 
 static void pause_ms(wifi_test_t *s, uint32_t ms) {
@@ -562,6 +655,15 @@ static int ap_client(wifi_test_t *s) {
         EXPECT(count <= 8);
         if (count && clients[0].lease_valid && clients[0].lease.ip4) {
             EXPECT(mac_valid(clients[0].mac));
+            events(s);
+            wifi_peer_observation_t *peer = peer_observation(s, clients[0].mac, 0);
+            /* Some SDKs expose the IP reserved at OFFER time in get_clients.
+             * Only an actual DHCP ACK/ASSIGNED event establishes this lease. */
+            if (peer == NULL || !peer->active || !peer->leased ||
+                peer->lease_ip4 != clients[0].lease.ip4) {
+                pause_ms(s, 100);
+                continue;
+            }
             h2_pal_netif_status_t status = {0};
             CALL(h2_pal_netif_get_status(s->rt->netif, &s->ap_ref, &status));
             const uint8_t *a = status.ipv4.ip, *m = status.netmask4.ip;
@@ -579,7 +681,6 @@ static int ap_client(wifi_test_t *s) {
             s->client = clients[0];
             memcpy(s->result.client_mac, clients[0].mac, 6);
             s->result.client_ip4 = clients[0].lease.ip4;
-            events(s);
             EXPECT(s->result.client_joined > 0 && !memcmp(s->joined_mac, clients[0].mac, 6));
             return H2_PAL_OK;
         }
@@ -601,14 +702,16 @@ static int ap_client_bounds(wifi_test_t *s) {
     return H2_PAL_OK;
 }
 static int ap_client_left(wifi_test_t *s) {
-    unsigned before = s->result.client_left;
     uint64_t start = now(s);
     do {
         h2_pal_wifi_ap_client_t c[8];
         size_t count = 99;
         events(s);
         CALL(h2_pal_wifi_ap_get_clients(s->rt->wifi_ap, c, 8, &count));
-        if (!count && s->result.client_left > before && !memcmp(s->left_mac, s->client.mac, 6))
+        wifi_peer_observation_t *peer = peer_observation(s, s->client.mac, 0);
+        if (!count && peer != NULL && !peer->active && !peer->leased &&
+            peer->lefts && peer->releases && peer->lease_ip4 == s->client.lease.ip4 &&
+            !memcmp(s->left_mac, s->client.mac, 6))
             return H2_PAL_OK;
         pause_ms(s, 100);
     } while (!s->clock_error && now(s) - start < s->cfg->client_timeout_ms);
@@ -705,9 +808,14 @@ static int event_integrity(wifi_test_t *s) {
     events(s);
     EXPECT(!s->result.invalid_events);
     EXPECT(s->result.sta_connecting && s->result.sta_connected && s->result.sta_got_ip &&
-           s->result.sta_disconnected);
+           s->result.sta_lost_ip && s->result.sta_disconnected);
     EXPECT(s->result.ap_started && s->result.ap_stopped && s->result.client_joined &&
            s->result.client_left && s->result.route_changed);
+    EXPECT(s->result.lease_granted >= 3u && s->result.lease_released >= 3u);
+    wifi_peer_observation_t *peer = peer_observation(s, s->result.client_mac, 0);
+    EXPECT(peer != NULL && peer->joins >= 3u && peer->grants >= 3u &&
+           peer->lefts >= 3u && peer->releases >= 3u && !peer->active && !peer->leased &&
+           peer->lease_ip4 == s->result.client_ip4);
     return H2_PAL_OK;
 }
 
@@ -793,6 +901,12 @@ int h2_wifi_e2e_run(h2_runtime_t *rt, const h2_wifi_e2e_config_t *cfg, h2_wifi_e
                  ? H2_PAL_ERR_TIMEOUT
                  : cases[i].run(&s);
         events(&s);
+        /* A restoration transition can itself publish a malformed event.
+         * Include that last drain in the mandatory verdict before confirming. */
+        if (!rc && cases[i].run == restore && s.result.invalid_events) {
+            s.result.last_error_line = __LINE__;
+            rc = H2_PAL_ERR_IO;
+        }
         if (!rc)
             ++s.result.passed;
         else if (rc == H2_PAL_ERR_UNSUPPORTED || rc == H2_PAL_ERR_UNAVAILABLE)

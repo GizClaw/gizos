@@ -20,9 +20,10 @@ class LedgerRejection(unittest.TestCase):
                             blocked=0, persistence=1, qualified=1, rc=0)),
             ("RESTORE", dict(key, cleanup=0, saved_restored=1, network_restored=1,
                              backup_cleared=1, retained=0)),
-            ("STA_EVENTS", dict(key, connecting=1, connected=1, got_ip=1, disconnected=1,
+            ("STA_EVENTS", dict(key, connecting=1, connected=1, got_ip=1, lost_ip=1, disconnected=1,
                                 route_changed=1, invalid=0)),
-            ("AP_EVENTS", dict(key, started=1, stopped=1, joined=1, left=1)),
+            ("AP_EVENTS", dict(key, started=1, stopped=1, joined=3, left=3,
+                               lease_granted=3, lease_released=3)),
             ("CLIENT", dict(key, mac="020000000001", ip4=3232236546)),
         ]
 
@@ -41,7 +42,9 @@ class LedgerRejection(unittest.TestCase):
         variants = [self.rows[:2]+self.rows[3:], self.rows+self.rows[:1]]
         for index, field, value in ((2,"nonce",88),(2,"status","BLOCKED"),
                                     (4,"qualified",0),(5,"network_restored",0),
-                                    (5,"retained",1),(5,"backup_cleared",0)):
+                                    (5,"retained",1),(5,"backup_cleared",0),
+                                    (6,"lost_ip",0),(7,"lease_granted",2),
+                                    (7,"lease_released",0)):
             rows = [(tag,dict(row)) for tag,row in self.rows]
             rows[index][1][field] = value
             variants.append(rows)

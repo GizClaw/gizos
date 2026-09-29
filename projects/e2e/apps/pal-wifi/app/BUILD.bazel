@@ -39,3 +39,25 @@ cc_test(
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
     deps = [":pal_wifi_e2e", "//libs/pal:unsupported", "//libs/atomic/providers/c11"],
 )
+
+cc_library(
+    name = "event_test_source",
+    textual_hdrs = [
+        "src/h2_pal_wifi_e2e.c",
+        "include/h2_pal_wifi_cases.inc",
+        "include/h2_pal_wifi_e2e.h",
+    ],
+    includes = ["include"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = ["//libs/runtime"],
+)
+
+cc_test(
+    name = "event_contract_test",
+    srcs = ["tests/test_event_contract.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    deps = [":event_test_source", "//libs/pal:unsupported", "//libs/atomic/providers/c11"],
+)

@@ -29,8 +29,9 @@ def verify_boot(path,ids,board,version,seed=False):
     assert r['passed']==len(ids)+(not seed) and not r['failed'] and not r['blocked']
     assert r['persistence']==(not seed) and r['qualified']==(not seed) and r['rc']==(-9 if seed else 0)
     r=rows['RESTORE'];assert r['cleanup']==0 and r['saved_restored']==1 and r['network_restored']==1 and r['backup_cleared']==1 and r['retained']==0
-    r=rows['STA_EVENTS'];assert r['invalid']==0 and all(r[x]>0 for x in ('connecting','connected','got_ip','disconnected','route_changed'))
+    r=rows['STA_EVENTS'];assert r['invalid']==0 and all(r[x]>0 for x in ('connecting','connected','got_ip','lost_ip','disconnected','route_changed'))
     r=rows['AP_EVENTS'];assert all(r[x]>0 for x in ('started','stopped','joined','left'))
+    assert r['lease_granted']>=3 and r['lease_released']>=3
     text=Path(path).read_text(errors='replace')
     assert ('H2_WIFI_READY board='+board+' rc='+('-9' if seed else '0')+' confirm='+('-7' if seed else '0')) in text
     assert 'Task watchdog got triggered' not in text and 'panic' not in text.lower()

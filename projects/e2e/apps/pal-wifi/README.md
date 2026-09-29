@@ -38,6 +38,13 @@ beacon, including the next DTIM). The App cycles MAX→MIN→MAX with SDK readba
 reconnect reapplies the selected policy. These checks do not
 measure radio power consumption.
 
+The event auditor validates all 11 Wi-Fi Runtime event kinds plus default
+Netif changes. It requires GOT_IP before LOST_IP, a client JOIN before a
+real lease GRANTED, and a same-MAC/same-IP RELEASED after that grant. A client
+may leave before the release event; leaving without an accepted lease must
+not synthesize one. Each WPA2/open/hidden AP case waits for its own accepted
+lease, and the fixture receipt must independently show a fresh real client.
+
 BK's pinned AP SDK public `connect`/`disconnect` only change local state.
 The provider uses paired AP/CP RPCs for actual radio association/disassociation,
 checks the CP response payload, and preserves the STA service for reconnect.
@@ -51,7 +58,7 @@ actual generated SDK corrections and reject old/failed CP responses.
 
 | Platform | Actual test scope | Physical WLAN qualification |
 | --- | --- | --- |
-| DevKit | Real ESP Wi-Fi, Settings and Netif; final R23 managed and normal boot each 39/39, fresh actual peer leases and complete restoration | Passed current source |
+| DevKit | Real ESP Wi-Fi, Settings and Netif; R23 old source managed and normal boot each 39/39, fresh actual peer leases and complete restoration | New event source needs physical requalification |
 | BK7258 | Real BK Wi-Fi, Settings and Netif; 39 cases | Pending real board test |
 | macOS | Native Darwin Netif read-only; explicit unsupported physical Wi-Fi assembly | Unavailable |
 | WASM | Worker, HOST Netif, actual browser offline/online Runtime events; unsupported Wi-Fi | Unavailable |
@@ -68,6 +75,7 @@ mandatory client inspection and fixture evidence require a real DHCP lease.
 
 ```sh
 bazel test //projects/e2e/apps/pal-wifi/app:interface_coverage_test \
+  //projects/e2e/apps/pal-wifi/app:event_contract_test \
   //projects/e2e/apps/pal-wifi/app:restoration_test \
   //projects/e2e/targets/cc_binary/pal-wifi:desktop_contract_test \
   //projects/e2e/targets/pkg_tar/pal-wifi:browser_test
