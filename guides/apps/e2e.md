@@ -36,6 +36,7 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 | PAL JSON | `//projects/e2e/apps/pal-json/app:pal_json_e2e` | 独立 JSON：24 个接口、15 个必过用例；macOS、Browser/WASM、iOS/Android 实际 SDK 包、DevKit 与 BK7258，记录完整运行与清理证据 |
 | PAL HTTP | `//projects/e2e/apps/pal-http/app:pal_http_e2e` | 独立 HTTP：45 个必跑 case；macOS、Browser、iOS/Android 实际 SDK 包消费 App 与 DevKit/BK7258 专用入口，逐平台保留真实运行证据 |
 | PAL WebRTC | `//projects/e2e/apps/pal-webrtc/app:pal_webrtc_e2e` | 独立 WebRTC：13 个操作、43 个 mandatory case；六端独立入口及真实 Pion 对端，按各端完整 ledger 授予资格 |
+| PAL Audio Decoder | `//projects/e2e/apps/pal-audio-decoder/app:pal_audio_decoder_e2e` | 独立 AAC-LC RAW 解码：8 个操作、29 个必过 case；六端入口已实现，实际资格以各端完整 PCM、生命周期与清理记录为准 |
 | PAL Audio | `//projects/e2e/apps/pal-audio/app:pal_audio_e2e` | 独立 Audio：11 个 provider 与 5 个 track 操作、24 个必过 case；macOS、真实 Chromium Worker、iOS/Android SDK 包消费 App、AMOLED ESP32-S3 与 BK7258，逐端验证 30 秒同时采播和完整清理 |
 | PAL | `//projects/e2e/apps/pal/app:pal_e2e` | Linux/macOS/Windows 共同 host OS/Filesystem/Net/TLS/CoreHTTP/CoreMQTT；Desktop core/MQTT/SQLite Preference；Browser core；DevKit 与 Tiga V4.2 H2Loader `pal-pref` |
 | H2Loader Serial | `//projects/e2e/apps/h2loader-serial/app:h2loader_serial_e2e` | macOS Desktop；desktop Chrome Browser |
@@ -146,6 +147,12 @@ Desktop 验证真实 PortAudio callback；Browser C 在 pthread Worker 中通过
 两个移动端另通过注入 tracked per-track allocator 验证 allocation failure 被正确拒绝、单帧 PCM write/drain/close 成功，以及全部 caller-owned 存储回收；Android provider 在 native output startup 前执行静音 priming，不能要求测试 App 写满启动 buffer 来掩盖单帧 drain 失败。桌面 manual 入口为 `make bazel-test-desktop_test`。
 
 报告的 microphone PCM 计数/peak/energy 与输出 PCM frame/peak 说明真实 provider 数据路径已执行；write/drain 返回成功不能代替外部声学测量。Simulator 结果不代表物理手机，Browser fake microphone 不代表物理麦克风。`h2_pal_audio_decoder.h` 是独立 capability，需要另一个 session/packet 生命周期 E2E，不属于此 Audio 资格。
+
+## PAL Audio Decoder
+
+`projects/e2e/apps/pal-audio-decoder/app` 借用真实 Decoder/Memory/Time/Sync PAL，执行 29 个 mandatory case，覆盖全部 8 个操作。原始 AAC-LC RAW fixture 验证单/双声道实际 PCM 格式、频谱、声道分离、时间戳、借用输入、持有 frame、reset/reconfigure、EOS 和 allocation failure 后完整释放。缺失能力、失败或资源残留均不授予资格；这份资格独立于录音/播放 Audio PAL。
+
+macOS 使用 FFmpeg；WASM C 在 Worker 执行、WebCodecs UI callback 只做有界私有 staging，调用方 PCM allocator 在 Worker acquire 时使用。要求 operator 明确选择具备 AAC codec 的 browser runtime；无 AAC 的开源 Chromium 记为 BLOCKED。三个环境相关入口为 `make bazel-test-wasm_pal_audio_decoder_browser_test`、`make bazel-test-ios_pal_audio_decoder_simulator_test` 与 `make bazel-test-android_pal_audio_decoder_simulator_test`。iOS/Android 消费实际 XCFramework/AAR；DevKit 和 BK7258 使用现有 native AAC decoder。设备只有全通过才 confirm，managed install 与独立正常 reboot 必须分别验收，保存原 P1、Stage 和 coredump 证据。当前六端资格仍在收集，不从构建成功推断通过；详细执行边界见 App README。
 
 ## WebRTC Performance
 
