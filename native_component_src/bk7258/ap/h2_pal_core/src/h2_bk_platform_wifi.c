@@ -15,6 +15,7 @@
 #include "wdrv_cntrl.h"
 #include "h2_bk_wifi_rpc.h"
 #include "h2_bk_wifi_lease.h"
+#include "h2_bk_wifi_lease_slots.h"
 #include "h2_bk_dhcp_ring.h"
 
 /* Exported by the pinned AP SDK, although omitted from its public header. */
@@ -33,12 +34,6 @@ static int s_h2_bk_wifi_events_registered;
 static int s_h2_bk_wifi_ap_active;
 static h2_pal_wifi_ap_status_t s_h2_bk_wifi_ap_status;
 static h2_pal_wifi_ap_config_t s_h2_bk_wifi_ap_config;
-typedef struct h2_bk_wifi_accepted_lease {
-    h2_pal_wifi_ap_client_t client;
-    uint32_t sequence;
-    uint32_t xid;
-    uint8_t used, joined, granted, pending, left_pending, release_pending;
-} h2_bk_wifi_accepted_lease_t;
 static h2_bk_wifi_accepted_lease_t s_h2_bk_wifi_leases[H2_BK_WIFI_LEASE_CAPACITY];
 static uint32_t s_h2_bk_wifi_lease_generation;
 static uint32_t s_h2_bk_wifi_lease_wake_hint;
@@ -323,22 +318,18 @@ static void h2_bk_wifi_lease_mac(uint32_t hi, uint32_t lo, uint8_t out[6]) {
 
 static h2_bk_wifi_accepted_lease_t *h2_bk_wifi_lease_find_locked(
     const uint8_t mac[6], int create) {
-    for (unsigned i = 0u; i < H2_BK_WIFI_LEASE_CAPACITY; ++i)
-        if (s_h2_bk_wifi_leases[i].used &&
-            memcmp(s_h2_bk_wifi_leases[i].client.mac, mac, 6u) == 0)
-            return &s_h2_bk_wifi_leases[i];
-    if (!create) return NULL;
-    for (unsigned i = 0u; i < H2_BK_WIFI_LEASE_CAPACITY; ++i) {
-        h2_bk_wifi_accepted_lease_t *lease = &s_h2_bk_wifi_leases[i];
-        if (!lease->used) {
-            memset(lease, 0, sizeof(*lease));
-            lease->used = 1u;
-            memcpy(lease->client.mac, mac, 6u);
-            return lease;
-        }
+    int index = h2_bk_wifi_lease_slot_index(s_h2_bk_wifi_leases, mac, create);
+    if (index < 0) {
+        if (create) s_h2_bk_wifi_lease_error = H2_PAL_ERR_NO_MEMORY;
+        return NULL;
     }
-    s_h2_bk_wifi_lease_error = H2_PAL_ERR_NO_MEMORY;
-    return NULL;
+    h2_bk_wifi_accepted_lease_t *lease = &s_h2_bk_wifi_leases[index];
+    if (!lease->used || memcmp(lease->client.mac, mac, 6u) != 0) {
+        memset(lease, 0, sizeof(*lease));
+        lease->used = 1u;
+        memcpy(lease->client.mac, mac, 6u);
+    }
+    return lease;
 }
 
 static void h2_bk_wifi_lease_grant_locked(h2_bk_wifi_accepted_lease_t *lease) {
@@ -362,7 +353,10 @@ static void h2_bk_wifi_lease_accept_locked(uint32_t generation, uint32_t sequenc
     uint8_t mac[6];
     h2_bk_wifi_lease_mac(mac_hi, mac_lo, mac);
     if ((mac[0] & 1u) || (mac_hi == 0u && mac_lo == 0u)) return;
-    h2_bk_wifi_accepted_lease_t *lease = h2_bk_wifi_lease_find_locked(mac, 1);
+    /* An ACK may reach CP before WDRV delivers L2 JOIN. Leave it in CP's
+     * authoritative snapshot until JOIN allocates the local slot; never let a
+     * stale departed CP record consume a slot or grant a future association. */
+    h2_bk_wifi_accepted_lease_t *lease = h2_bk_wifi_lease_find_locked(mac, 0);
     if (lease == NULL) return;
     /* Keep the old sequence after LEFT. A delayed ACK from that association
      * must not become a pending grant for its next JOIN. The next accepted

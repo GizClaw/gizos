@@ -59,6 +59,25 @@ firmware_native_component(
 )
 
 cc_test(
+    name = "wifi_lease_slots_test",
+    srcs = [
+        "tests/test_h2_bk_wifi_lease_slots.c",
+        "include/h2_bk_wifi_lease_slots.h",
+        "//native_component_src/bk7258/shared:h2_bk_wifi_lease.h",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + ["-Inative_component_src/bk7258/shared"],
+    includes = ["include"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_test(
     name = "task_policy_test",
     srcs = [
         "include/h2_bk_platform_core.h",
