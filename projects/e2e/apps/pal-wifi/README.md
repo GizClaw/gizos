@@ -28,8 +28,10 @@ managed upgrade. Image identity remains exact per receipt, without relabelling
 the prior seed as the final artifact.
 Persistence refers to normal reboot, not power-loss atomicity. There is no PAL
 power-save getter; the terminal test policy is explicitly NONE, without claiming
-the previous radio policy was measured. BK's SDK maps MAX_MODEM to its one DTIM
-policy; this is not evidence of a distinct listen interval.
+the previous radio policy was measured. BK selects MAX_MODEM using the firmware dynamic listen interval (ten beacons)
+and checks the SDK readback. MIN_MODEM restores its default DTIM policy (zero
+dynamic override); reconnect reapplies the selected policy. These checks do not
+measure radio power consumption.
 
 ## Platform scope
 

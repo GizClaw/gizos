@@ -26,6 +26,9 @@ static int s_h2_bk_wifi_ap_active;
 static h2_pal_wifi_ap_status_t s_h2_bk_wifi_ap_status;
 static h2_pal_wifi_ap_config_t s_h2_bk_wifi_ap_config;
 static int s_h2_bk_wifi_connect_pending;
+static h2_pal_wifi_power_save_t s_h2_bk_wifi_power_save;
+static int s_h2_bk_wifi_power_save_set;
+static int s_h2_bk_wifi_power_save_error;
 static uint32_t s_h2_bk_wifi_connect_generation;
 static h2_pal_wifi_sta_status_t s_h2_bk_wifi_connect_status;
 static int s_h2_bk_wifi_sta_status_valid;
@@ -144,6 +147,24 @@ static int h2_bk_wifi_map_error(bk_err_t err) {
         BK_LOGW("h2_wifi", "H2_WIFI_SDK_ERROR code=%d\r\n", (int)err);
         return H2_PAL_ERR_IO;
     }
+}
+
+static int h2_bk_wifi_apply_power_save(h2_pal_wifi_power_save_t mode) {
+    if (mode == H2_PAL_WIFI_POWER_SAVE_NONE)
+        return h2_bk_wifi_map_error(bk_wifi_sta_pm_disable());
+    /* Zero removes the SDK's dynamic listen override (default DTIM policy).
+     * MAX selects its actual ten-beacon interval. This does not measure power. */
+    uint8_t interval = mode == H2_PAL_WIFI_POWER_SAVE_MAX_MODEM ? 10u : 0u;
+    bk_err_t err = bk_wifi_send_listen_interval_req(interval);
+    uint8_t actual = 0xffu;
+    if (err == BK_OK) err = bk_wifi_get_listen_interval(&actual);
+    if (err != BK_OK) return h2_bk_wifi_map_error(err);
+    if (actual != interval) return H2_PAL_ERR_UNSUPPORTED;
+    err = bk_wifi_sta_pm_enable();
+    if (err != BK_OK) return h2_bk_wifi_map_error(err);
+    BK_LOGI("h2_wifi", "H2_WIFI_POWER_SAVE mode=%u listen_interval=%u verified=1\r\n",
+            (unsigned)mode, (unsigned)actual);
+    return H2_PAL_OK;
 }
 
 static void h2_bk_wifi_post_system_event_payload(
@@ -400,6 +421,11 @@ static bk_err_t h2_bk_wifi_system_event_handler(
             if (tcpip_api_call(h2_bk_wifi_sta_up_api_call, &up.call) != ERR_OK ||
                 __atomic_load_n(&s_h2_bk_wifi_connect_generation, __ATOMIC_ACQUIRE) !=
                     generation) return BK_OK;
+            if (__atomic_load_n(&s_h2_bk_wifi_power_save_set, __ATOMIC_ACQUIRE)) {
+                int power_rc = h2_bk_wifi_apply_power_save(__atomic_load_n(
+                    &s_h2_bk_wifi_power_save, __ATOMIC_ACQUIRE));
+                __atomic_store_n(&s_h2_bk_wifi_power_save_error, power_rc, __ATOMIC_RELEASE);
+            }
             status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
             status.ssid_len = len;
             memcpy(status.ssid, link.ssid, len);
@@ -580,6 +606,8 @@ static int h2_bk_wifi_sta_get_status(
     if (out_status == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
+    int power_rc = __atomic_load_n(&s_h2_bk_wifi_power_save_error, __ATOMIC_ACQUIRE);
+    if (power_rc != H2_PAL_OK) return power_rc;
     if (__atomic_load_n(
             &s_h2_bk_wifi_connect_pending,
             __ATOMIC_ACQUIRE) != 0) {
@@ -1083,18 +1111,25 @@ static int h2_bk_wifi_sta_set_power_save(
     h2_pal_wifi_sta_t *sta,
     h2_pal_wifi_power_save_t mode) {
     (void)sta;
-    switch (mode) {
-    case H2_PAL_WIFI_POWER_SAVE_NONE:
-        return h2_bk_wifi_map_error(bk_wifi_sta_pm_disable());
-    case H2_PAL_WIFI_POWER_SAVE_MIN_MODEM:
-        return h2_bk_wifi_map_error(bk_wifi_sta_pm_enable());
-    case H2_PAL_WIFI_POWER_SAVE_MAX_MODEM:
-        /* Armino exposes one STA power-save policy without a listen-interval
-         * variant; the deeper request maps to the same DTIM sleep. */
-        return h2_bk_wifi_map_error(bk_wifi_sta_pm_enable());
-    default:
-        return H2_PAL_ERR_INVALID_ARG;
-    }
+    if (mode != H2_PAL_WIFI_POWER_SAVE_NONE &&
+        mode != H2_PAL_WIFI_POWER_SAVE_MIN_MODEM &&
+        mode != H2_PAL_WIFI_POWER_SAVE_MAX_MODEM) return H2_PAL_ERR_INVALID_ARG;
+    wifi_link_status_t link;
+    memset(&link, 0, sizeof(link));
+    bk_err_t err = bk_wifi_sta_get_link_status(&link);
+    if (err == BK_OK && (link.state == WIFI_LINKSTATE_STA_CONNECTED ||
+                        link.state == WIFI_LINKSTATE_STA_GOT_IP)) {
+        int rc = h2_bk_wifi_apply_power_save(mode);
+        if (rc != H2_PAL_OK) return rc;
+    } else if (err != BK_OK && err != BK_FAIL && err != BK_ERR_WIFI_DRIVER &&
+               err != BK_ERR_WIFI_STA_NOT_STARTED && err != BK_ERR_WIFI_STA_NOT_CONFIG)
+        return h2_bk_wifi_map_error(err);
+    /* An absent STA has no firmware VIF yet. Apply the saved requested policy
+     * on its next authenticated DHCP association and propagate apply errors. */
+    __atomic_store_n(&s_h2_bk_wifi_power_save, mode, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_h2_bk_wifi_power_save_set, 1, __ATOMIC_RELEASE);
+    __atomic_store_n(&s_h2_bk_wifi_power_save_error, H2_PAL_OK, __ATOMIC_RELEASE);
+    return H2_PAL_OK;
 }
 
 static void h2_bk_wifi_copy_ap_config(

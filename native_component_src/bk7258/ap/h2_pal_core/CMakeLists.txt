@@ -255,3 +255,31 @@ if(H2_BK_PLATFORM_WIFI_CSI_SAFE_DISPATCH)
 endif()
 
 target_include_directories(${COMPONENT_LIB} PRIVATE "${BK_ARMINO_PATH}/components/bk_cli")
+
+# The pinned AP SDK erroneously forwards STA address synchronization through
+# AP_NETIF_IP4_CONFIG, overwriting the CP AP/DHCP address in AP+STA mode.
+# Build a guarded corrected copy inside the build tree; leave the sealed SDK
+# pristine, and cover both its own event callback and external Wi-Fi callers.
+armino_component_get_property(H2_BK_NETIF_LIB bk_netif COMPONENT_LIB)
+set(H2_BK_SDK_NETIF_SOURCE "${BK_ARMINO_PATH}/components/bk_netif/bk_netif.c")
+file(READ "${H2_BK_SDK_NETIF_SOURCE}" H2_BK_SDK_NETIF_CONTENT)
+set(H2_BK_STA_SYNC_SIGNATURE "bk_err_t bk_netif_set_ip4_config(netif_if_t ifx, const netif_ip4_config_t *ip4_config)\n{")
+string(FIND "${H2_BK_SDK_NETIF_CONTENT}" "${H2_BK_STA_SYNC_SIGNATURE}" H2_BK_STA_SYNC_OFFSET)
+if(H2_BK_STA_SYNC_OFFSET EQUAL -1)
+  message(FATAL_ERROR "Pinned BK Netif STA sync signature changed; revalidate the SDK correction")
+endif()
+set(H2_BK_STA_SYNC_REPLACEMENT "${H2_BK_STA_SYNC_SIGNATURE}
+    if (ifx == NETIF_IF_STA) {
+        if (ip4_config == NULL) return BK_ERR_NULL_PARAM;
+        ip_address_set(1, 0, ip4_config->ip, ip4_config->mask,
+                       ip4_config->gateway, ip4_config->dns);
+        return BK_OK;
+    }")
+string(REPLACE "${H2_BK_STA_SYNC_SIGNATURE}" "${H2_BK_STA_SYNC_REPLACEMENT}"
+  H2_BK_SDK_NETIF_CORRECTED "${H2_BK_SDK_NETIF_CONTENT}")
+set(H2_BK_NETIF_CORRECTED_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/h2_bk_sdk_netif.c")
+file(WRITE "${H2_BK_NETIF_CORRECTED_SOURCE}" "${H2_BK_SDK_NETIF_CORRECTED}")
+get_target_property(H2_BK_NETIF_SOURCES ${H2_BK_NETIF_LIB} SOURCES)
+list(FILTER H2_BK_NETIF_SOURCES EXCLUDE REGEX "(^|/)bk_netif\\.c$")
+list(APPEND H2_BK_NETIF_SOURCES "${H2_BK_NETIF_CORRECTED_SOURCE}")
+set_property(TARGET ${H2_BK_NETIF_LIB} PROPERTY SOURCES ${H2_BK_NETIF_SOURCES})
