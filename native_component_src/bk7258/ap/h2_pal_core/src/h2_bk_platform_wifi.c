@@ -12,7 +12,9 @@
 #include "lwip/tcpip.h"
 #include "net.h"
 #include "wifi_api_ipc.h"
+#include "wdrv_cntrl.h"
 #include "h2_bk_wifi_rpc.h"
+#include "h2_bk_wifi_lease.h"
 #include "h2_bk_dhcp_ring.h"
 
 /* Exported by the pinned AP SDK, although omitted from its public header. */
@@ -31,6 +33,15 @@ static int s_h2_bk_wifi_events_registered;
 static int s_h2_bk_wifi_ap_active;
 static h2_pal_wifi_ap_status_t s_h2_bk_wifi_ap_status;
 static h2_pal_wifi_ap_config_t s_h2_bk_wifi_ap_config;
+typedef struct h2_bk_wifi_accepted_lease {
+    h2_pal_wifi_ap_client_t client;
+    uint32_t sequence;
+    uint32_t xid;
+    uint8_t used, joined, granted, pending;
+} h2_bk_wifi_accepted_lease_t;
+static h2_bk_wifi_accepted_lease_t s_h2_bk_wifi_leases[H2_BK_WIFI_LEASE_CAPACITY];
+static uint32_t s_h2_bk_wifi_lease_generation;
+static int s_h2_bk_wifi_lease_error;
 static int s_h2_bk_wifi_connect_pending;
 static h2_pal_wifi_power_save_t s_h2_bk_wifi_power_save;
 static int s_h2_bk_wifi_power_save_set;
@@ -39,12 +50,26 @@ static uint32_t s_h2_bk_wifi_connect_generation;
 static h2_pal_wifi_sta_status_t s_h2_bk_wifi_connect_status;
 static int s_h2_bk_wifi_sta_status_valid;
 static h2_pal_wifi_sta_status_t s_h2_bk_wifi_sta_status;
+static uint32_t s_h2_bk_wifi_had_ip;
 static int s_h2_bk_wifi_last_config_valid;
 static h2_pal_wifi_sta_config_t s_h2_bk_wifi_last_config;
 static StaticSemaphore_t s_h2_bk_wifi_request_mutex_control;
 static beken_mutex_t s_h2_bk_wifi_request_mutex;
 static StaticSemaphore_t s_h2_bk_wifi_status_mutex_control;
 static beken_mutex_t s_h2_bk_wifi_status_mutex;
+static StaticSemaphore_t s_h2_bk_wifi_event_mutex_control;
+static beken_mutex_t s_h2_bk_wifi_event_mutex;
+
+static int h2_bk_wifi_event_lock(void) {
+    return s_h2_bk_wifi_event_mutex != NULL &&
+        rtos_lock_mutex(&s_h2_bk_wifi_event_mutex) == kNoErr
+        ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
+}
+
+static void h2_bk_wifi_event_unlock(void) {
+    if (s_h2_bk_wifi_event_mutex != NULL)
+        (void)rtos_unlock_mutex(&s_h2_bk_wifi_event_mutex);
+}
 
 static int h2_bk_wifi_request_lock(void) {
     return s_h2_bk_wifi_request_mutex != NULL &&
@@ -238,6 +263,26 @@ static int h2_bk_wifi_load_sta_status(
     return 1;
 }
 
+static void h2_bk_wifi_publish_disconnected(int reason) {
+    if (h2_bk_wifi_event_lock() != H2_PAL_OK) return;
+    h2_pal_wifi_sta_status_t status;
+    memset(&status, 0, sizeof(status));
+    (void)h2_bk_wifi_load_sta_status(&status);
+    if (__atomic_exchange_n(&s_h2_bk_wifi_had_ip, 0u, __ATOMIC_ACQ_REL)) {
+        status.state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
+        status.ip_valid = 0u;
+        memset(&status.ip, 0, sizeof(status.ip));
+        status.disconnect_reason = reason;
+        h2_bk_wifi_post_sta_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP, &status);
+    }
+    memset(&status, 0, sizeof(status));
+    status.state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
+    status.disconnect_reason = reason;
+    h2_bk_wifi_store_sta_status(&status);
+    h2_bk_wifi_post_sta_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED, &status);
+    h2_bk_wifi_event_unlock();
+}
+
 static void h2_bk_wifi_post_ap_system_event(
     h2_pal_system_event_type_t type,
     const h2_pal_wifi_ap_status_t *status) {
@@ -258,6 +303,140 @@ static void h2_bk_wifi_post_ap_client_system_event(
         event.client = *client;
     }
     h2_bk_wifi_post_system_event_payload(type, &event, sizeof(event));
+}
+
+static void h2_bk_wifi_lease_mac(uint32_t hi, uint32_t lo, uint8_t out[6]) {
+    out[0] = (uint8_t)(hi >> 8u);
+    out[1] = (uint8_t)hi;
+    out[2] = (uint8_t)(lo >> 24u);
+    out[3] = (uint8_t)(lo >> 16u);
+    out[4] = (uint8_t)(lo >> 8u);
+    out[5] = (uint8_t)lo;
+}
+
+static h2_bk_wifi_accepted_lease_t *h2_bk_wifi_lease_find_locked(
+    const uint8_t mac[6], int create) {
+    for (unsigned i = 0u; i < H2_BK_WIFI_LEASE_CAPACITY; ++i)
+        if (s_h2_bk_wifi_leases[i].used &&
+            memcmp(s_h2_bk_wifi_leases[i].client.mac, mac, 6u) == 0)
+            return &s_h2_bk_wifi_leases[i];
+    if (!create) return NULL;
+    for (unsigned i = 0u; i < H2_BK_WIFI_LEASE_CAPACITY; ++i) {
+        h2_bk_wifi_accepted_lease_t *lease = &s_h2_bk_wifi_leases[i];
+        if (!lease->used) {
+            memset(lease, 0, sizeof(*lease));
+            lease->used = 1u;
+            memcpy(lease->client.mac, mac, 6u);
+            return lease;
+        }
+    }
+    s_h2_bk_wifi_lease_error = H2_PAL_ERR_NO_MEMORY;
+    return NULL;
+}
+
+static void h2_bk_wifi_lease_grant_locked(h2_bk_wifi_accepted_lease_t *lease) {
+    if (lease == NULL || !lease->joined || !lease->pending || !lease->sequence ||
+        !lease->client.lease.ip4) return;
+    lease->client.lease_valid = 1u;
+    lease->granted = 1u;
+    lease->pending = 0u;
+    h2_bk_wifi_post_ap_client_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_LEASE_GRANTED,
+                                           &lease->client);
+}
+
+static void h2_bk_wifi_lease_accept_locked(uint32_t generation, uint32_t sequence,
+                                            uint32_t ip4, uint32_t mac_hi,
+                                            uint32_t mac_lo, uint32_t xid) {
+    if (!s_h2_bk_wifi_ap_active || generation != s_h2_bk_wifi_lease_generation ||
+        !sequence || !ip4 || mac_hi > 0xffffu) return;
+    uint8_t mac[6];
+    h2_bk_wifi_lease_mac(mac_hi, mac_lo, mac);
+    if ((mac[0] & 1u) || (mac_hi == 0u && mac_lo == 0u)) return;
+    h2_bk_wifi_accepted_lease_t *lease = h2_bk_wifi_lease_find_locked(mac, 1);
+    if (lease == NULL || sequence <= lease->sequence) return;
+    if (lease->granted && lease->client.lease.ip4 != ip4) {
+        h2_bk_wifi_post_ap_client_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_LEASE_RELEASED,
+                                               &lease->client);
+        lease->granted = 0u;
+        lease->client.lease_valid = 0u;
+    }
+    lease->sequence = sequence;
+    lease->xid = xid;
+    lease->client.lease.ip4 = ip4;
+    lease->pending = 1u;
+    h2_bk_wifi_lease_grant_locked(lease);
+}
+
+/* WDRV invokes this on its receive path. Do not issue a synchronous CP RPC
+ * here: it would wait on the same IPC worker. The hint is validated locally;
+ * ordinary AP calls also reconcile the authoritative CP snapshot. */
+static void h2_bk_wifi_lease_wake_callback(void *data, uint16_t len) {
+    if (data == NULL || len != sizeof(h2_bk_wifi_lease_wake_t)) return;
+    h2_bk_wifi_lease_wake_t wake;
+    memcpy(&wake, data, sizeof(wake));
+    if (wake.magic != H2_BK_WIFI_LEASE_WAKE_MAGIC ||
+        wake.version != H2_BK_WIFI_LEASE_VERSION ||
+        h2_bk_wifi_event_lock() != H2_PAL_OK) return;
+    h2_bk_wifi_lease_accept_locked(wake.generation, wake.sequence, wake.ip4,
+                                   wake.mac_hi, wake.mac_lo, wake.xid);
+    h2_bk_wifi_event_unlock();
+}
+
+static int h2_bk_wifi_lease_query(h2_bk_wifi_lease_snapshot_t *out) {
+    memset(out, 0, sizeof(*out));
+    bk_err_t err = wifi_send_com_api_cmd(H2_BK_WIFI_RPC_LEASE_SNAPSHOT, 1,
+                                         (uint32_t)(uintptr_t)out);
+    if (err != BK_OK) return h2_bk_wifi_map_error(err);
+    if (out->version != H2_BK_WIFI_LEASE_VERSION ||
+        out->count > H2_BK_WIFI_LEASE_CAPACITY || !out->generation)
+        return H2_PAL_ERR_IO;
+    return H2_PAL_OK;
+}
+
+static int h2_bk_wifi_lease_reconcile(void) {
+    h2_bk_wifi_lease_snapshot_t snapshot;
+    int rc = h2_bk_wifi_lease_query(&snapshot);
+    if (rc != H2_PAL_OK) return rc;
+    if (h2_bk_wifi_event_lock() != H2_PAL_OK) return H2_PAL_ERR_INVALID_STATE;
+    if (snapshot.generation != s_h2_bk_wifi_lease_generation)
+        rc = H2_PAL_ERR_INVALID_STATE;
+    else {
+        for (uint32_t i = 0u; i < snapshot.count; ++i) {
+            const h2_bk_wifi_lease_record_t *record = &snapshot.records[i];
+            h2_bk_wifi_lease_accept_locked(snapshot.generation, record->sequence,
+                                           record->ip4, record->mac_hi,
+                                           record->mac_lo, record->xid);
+        }
+        if (s_h2_bk_wifi_lease_error != H2_PAL_OK) rc = s_h2_bk_wifi_lease_error;
+    }
+    h2_bk_wifi_event_unlock();
+    return rc;
+}
+
+static void h2_bk_wifi_lease_left_locked(const uint8_t mac[6]) {
+    h2_bk_wifi_accepted_lease_t *lease = h2_bk_wifi_lease_find_locked(mac, 0);
+    if (lease == NULL || !lease->joined) return;
+    h2_bk_wifi_post_ap_client_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_CLIENT_LEFT,
+                                           &lease->client);
+    if (lease->granted)
+        h2_bk_wifi_post_ap_client_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_LEASE_RELEASED,
+                                               &lease->client);
+    lease->joined = 0u;
+    lease->granted = 0u;
+    lease->pending = 0u;
+    lease->client.lease_valid = 0u;
+}
+
+static void h2_bk_wifi_lease_stop(void) {
+    if (h2_bk_wifi_event_lock() != H2_PAL_OK) return;
+    s_h2_bk_wifi_ap_active = 0;
+    for (unsigned i = 0u; i < H2_BK_WIFI_LEASE_CAPACITY; ++i)
+        if (s_h2_bk_wifi_leases[i].used && s_h2_bk_wifi_leases[i].joined)
+            h2_bk_wifi_lease_left_locked(s_h2_bk_wifi_leases[i].client.mac);
+    memset(s_h2_bk_wifi_leases, 0, sizeof(s_h2_bk_wifi_leases));
+    s_h2_bk_wifi_lease_generation = 0u;
+    s_h2_bk_wifi_lease_error = H2_PAL_OK;
+    h2_bk_wifi_event_unlock();
 }
 
 static h2_pal_wifi_security_t h2_bk_wifi_security(wifi_security_t security) {
@@ -308,13 +487,9 @@ static void h2_bk_wifi_copy_ap_client(
     memset(out_client, 0, sizeof(*out_client));
     memcpy(out_client->mac, sta->addr, sizeof(out_client->mac));
     out_client->rssi = sta->rssi;
-    if (sta->ipaddr != 0u) {
-        /* SDK AP_GET_STA_LIST carries the lwIP network-order scalar (its own
-         * logger prints the first octet from the least-significant byte).
-         * PAL's IPv4 scalar uses network significance, as STA status does. */
-        out_client->lease.ip4 = lwip_ntohl(sta->ipaddr);
-        out_client->lease_valid = 1u;
-    }
+    /* CP's DHCP server inserts sta->ipaddr in its lookup table on DISCOVER,
+     * before a real client accepts an OFFER. Only the paired successful ACK
+     * signal may mark a PAL lease valid; never expose this provisional IP. */
 }
 
 static int h2_bk_wifi_get_ap_client_by_mac(
@@ -470,18 +645,25 @@ static bk_err_t h2_bk_wifi_system_event_handler(
             status.bssid_set = 1u;
             status.channel = link.channel;
             status.rssi = link.rssi;
+            if (h2_bk_wifi_event_lock() != H2_PAL_OK) return BK_FAIL;
             h2_bk_wifi_store_sta_status(&status);
+            __atomic_store_n(&s_h2_bk_wifi_had_ip, 1u, __ATOMIC_RELEASE);
             h2_bk_wifi_post_sta_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP, &status);
+            h2_bk_wifi_event_unlock();
             (void)h2_bk_platform_netif_reconcile_default_async();
             return BK_OK;
         }
 
         if (event_id == EVENT_NETIF_DHCP_TIMEOUT) {
+            if (h2_bk_wifi_event_lock() != H2_PAL_OK) return BK_FAIL;
             h2_pal_wifi_sta_status_t status;
             memset(&status, 0, sizeof(status));
             status.state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
+            int had_ip = __atomic_exchange_n(&s_h2_bk_wifi_had_ip, 0u, __ATOMIC_ACQ_REL);
             h2_bk_wifi_store_sta_status(&status);
-            h2_bk_wifi_post_sta_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP, &status);
+            if (had_ip)
+                h2_bk_wifi_post_sta_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP, &status);
+            h2_bk_wifi_event_unlock();
             (void)h2_bk_platform_netif_reconcile_default_async();
             return BK_OK;
         }
@@ -509,38 +691,39 @@ static bk_err_t h2_bk_wifi_system_event_handler(
     }
 
     if (event_id == EVENT_WIFI_STA_DISCONNECTED) {
-        h2_pal_wifi_sta_status_t status;
-        memset(&status, 0, sizeof(status));
-        status.state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
-        h2_bk_wifi_store_sta_status(&status);
-        h2_bk_wifi_post_sta_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED, &status);
+        h2_bk_wifi_publish_disconnected(0);
         (void)h2_bk_platform_netif_reconcile_default_async();
         return BK_OK;
     }
 
     if (event_id == EVENT_WIFI_AP_CONNECTED) {
         const wifi_event_ap_connected_t *connected = (const wifi_event_ap_connected_t *)event_data;
+        if (connected == NULL) return BK_FAIL;
         h2_pal_wifi_ap_client_t client;
         memset(&client, 0, sizeof(client));
-        if (connected != NULL) {
-            memcpy(client.mac, connected->mac, sizeof(client.mac));
-            (void)h2_bk_wifi_get_ap_client_by_mac(connected->mac, &client);
+        memcpy(client.mac, connected->mac, sizeof(client.mac));
+        (void)h2_bk_wifi_get_ap_client_by_mac(connected->mac, &client);
+        if (h2_bk_wifi_event_lock() != H2_PAL_OK) return BK_FAIL;
+        h2_bk_wifi_accepted_lease_t *lease = h2_bk_wifi_lease_find_locked(client.mac, 1);
+        if (lease != NULL && !lease->joined) {
+            uint32_t accepted_ip4 = lease->client.lease.ip4;
+            lease->client = client;
+            lease->client.lease.ip4 = accepted_ip4;
+            lease->client.lease_valid = 0u;
+            lease->joined = 1u;
+            h2_bk_wifi_post_ap_client_system_event(
+                H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_CLIENT_JOINED, &client);
+            h2_bk_wifi_lease_grant_locked(lease);
         }
-        h2_bk_wifi_post_ap_client_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_CLIENT_JOINED, &client);
-        if (client.lease_valid != 0u) {
-            h2_bk_wifi_post_ap_client_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_LEASE_GRANTED, &client);
-        }
+        h2_bk_wifi_event_unlock();
         return BK_OK;
     }
 
     if (event_id == EVENT_WIFI_AP_DISCONNECTED) {
         const wifi_event_ap_disconnected_t *disconnected = (const wifi_event_ap_disconnected_t *)event_data;
-        h2_pal_wifi_ap_client_t client;
-        memset(&client, 0, sizeof(client));
-        if (disconnected != NULL) {
-            memcpy(client.mac, disconnected->mac, sizeof(client.mac));
-        }
-        h2_bk_wifi_post_ap_client_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_CLIENT_LEFT, &client);
+        if (disconnected == NULL || h2_bk_wifi_event_lock() != H2_PAL_OK) return BK_FAIL;
+        h2_bk_wifi_lease_left_locked(disconnected->mac);
+        h2_bk_wifi_event_unlock();
         return BK_OK;
     }
 
@@ -551,6 +734,11 @@ static int h2_bk_wifi_ensure_events_registered(void) {
     if (s_h2_bk_wifi_events_registered != 0) {
         return H2_PAL_OK;
     }
+
+    if (s_h2_bk_wifi_event_mutex == NULL)
+        s_h2_bk_wifi_event_mutex = (beken_mutex_t)xSemaphoreCreateMutexStatic(
+            &s_h2_bk_wifi_event_mutex_control);
+    if (s_h2_bk_wifi_event_mutex == NULL) return H2_PAL_ERR_NO_MEMORY;
 
     bk_err_t err = bk_event_register_cb(
         EVENT_MOD_WIFI,
@@ -606,6 +794,7 @@ static int h2_bk_wifi_ensure_events_registered(void) {
         return h2_bk_wifi_map_error(err);
     }
 
+    bk_customer_event_register_callback(h2_bk_wifi_lease_wake_callback);
     s_h2_bk_wifi_events_registered = 1;
     return H2_PAL_OK;
 }
@@ -1162,11 +1351,7 @@ static int h2_bk_wifi_sta_disconnect(h2_pal_wifi_sta_t *sta) {
         if (tcpip_api_call(h2_bk_wifi_sta_down_api_call, &down.call) != ERR_OK)
             return H2_PAL_ERR_IO;
         (void)h2_bk_platform_netif_reconcile_default();
-        h2_pal_wifi_sta_status_t status;
-        memset(&status, 0, sizeof(status));
-        status.state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
-        h2_bk_wifi_store_sta_status(&status);
-        h2_bk_wifi_post_sta_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED, &status);
+        h2_bk_wifi_publish_disconnected(0);
     }
     return rc;
 }
@@ -1268,7 +1453,7 @@ static int h2_bk_wifi_ap_start(
         if (stop_err != BK_OK && stop_err != BK_ERR_WIFI_AP_NOT_STARTED && stop_err != BK_ERR_WIFI_AP_NOT_CONFIG) {
             return h2_bk_wifi_map_error(stop_err);
         }
-        s_h2_bk_wifi_ap_active = 0;
+        h2_bk_wifi_lease_stop();
         s_h2_bk_wifi_ap_status.state = H2_PAL_WIFI_AP_STATE_STOPPED;
         s_h2_bk_wifi_ap_status.client_count = 0u;
         h2_bk_wifi_post_ap_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_STOPPED, &s_h2_bk_wifi_ap_status);
@@ -1294,7 +1479,21 @@ static int h2_bk_wifi_ap_start(
         return h2_bk_wifi_map_error(err);
     }
 
+    h2_bk_wifi_lease_snapshot_t lease_snapshot;
+    rc = h2_bk_wifi_lease_query(&lease_snapshot);
+    if (rc != H2_PAL_OK) {
+        (void)bk_wifi_ap_stop();
+        return rc;
+    }
+    if (h2_bk_wifi_event_lock() != H2_PAL_OK) {
+        (void)bk_wifi_ap_stop();
+        return H2_PAL_ERR_INVALID_STATE;
+    }
+    s_h2_bk_wifi_lease_generation = lease_snapshot.generation;
+    s_h2_bk_wifi_lease_error = H2_PAL_OK;
     s_h2_bk_wifi_ap_active = 1;
+    h2_bk_wifi_event_unlock();
+
     s_h2_bk_wifi_ap_config = *config;
     h2_bk_wifi_set_ap_status_from_config(config);
     h2_bk_wifi_post_ap_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_AP_STARTED, &s_h2_bk_wifi_ap_status);
@@ -1311,7 +1510,7 @@ static int h2_bk_wifi_ap_stop(h2_pal_wifi_ap_t *ap, uint32_t timeout_ms) {
     }
     int rc = h2_bk_wifi_map_error(err);
     if (rc == H2_PAL_OK) {
-        s_h2_bk_wifi_ap_active = 0;
+        h2_bk_wifi_lease_stop();
         s_h2_bk_wifi_ap_status.state = H2_PAL_WIFI_AP_STATE_STOPPED;
         s_h2_bk_wifi_ap_status.client_count = 0u;
         if (was_active != 0) {
@@ -1333,6 +1532,8 @@ static int h2_bk_wifi_ap_get_status(
         out_status->state = H2_PAL_WIFI_AP_STATE_STOPPED;
         return H2_PAL_OK;
     }
+    int lease_rc = h2_bk_wifi_lease_reconcile();
+    if (lease_rc != H2_PAL_OK) return lease_rc;
     *out_status = s_h2_bk_wifi_ap_status;
     wlan_ap_stas_t stas;
     memset(&stas, 0, sizeof(stas));
@@ -1359,6 +1560,8 @@ static int h2_bk_wifi_ap_get_clients(
     if (s_h2_bk_wifi_ap_active == 0) {
         return H2_PAL_OK;
     }
+    int lease_rc = h2_bk_wifi_lease_reconcile();
+    if (lease_rc != H2_PAL_OK) return lease_rc;
 
     wlan_ap_stas_t stas;
     memset(&stas, 0, sizeof(stas));
@@ -1371,9 +1574,20 @@ static int h2_bk_wifi_ap_get_clients(
         copy_count = max_clients;
     }
     if (stas.sta != NULL) {
+        if (h2_bk_wifi_event_lock() != H2_PAL_OK) {
+            os_free(stas.sta);
+            return H2_PAL_ERR_INVALID_STATE;
+        }
         for (size_t i = 0u; i < copy_count; ++i) {
             h2_bk_wifi_copy_ap_client(&out_clients[i], &stas.sta[i]);
+            h2_bk_wifi_accepted_lease_t *lease = h2_bk_wifi_lease_find_locked(
+                out_clients[i].mac, 0);
+            if (lease != NULL && lease->joined && lease->granted) {
+                out_clients[i].lease = lease->client.lease;
+                out_clients[i].lease_valid = 1u;
+            }
         }
+        h2_bk_wifi_event_unlock();
     } else {
         copy_count = 0u;
     }

@@ -24,6 +24,7 @@ set(H2_BK_PLATFORM_CORE_PRIV_INCLUDE_DIRS
   "${BK_FLASHDB_DIR}/port"
   "${BK_FLASHDB_DIR}/port/fal/inc"
   "${BK_ARMINO_PATH}/components/bk_wifi/include"
+  "${BK_WIFI_DRIVER_DIR}"
   "${BK_ARMINO_PATH}/components/bk_wifi_driver"
   "${REPO_ROOT}/native_component_src/bk7258/shared")
 set(H2_BK_PLATFORM_CORE_COMPILE_DEFINITIONS
