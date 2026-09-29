@@ -4591,6 +4591,9 @@ static int telemetry_firmware_send(void *user,
 }
 
 typedef struct activity_log_capture {
+  /* When set, only lines containing it are counted and kept: a started
+   * Service's own workers may log concurrently. Leaks are checked on all. */
+  const char *match;
   unsigned calls;
   bool leaked;
   bool truncated;
@@ -4600,14 +4603,16 @@ typedef struct activity_log_capture {
 static int activity_capture_log(void *user, h2_pal_log_level_t level,
                                 const char *scope, const char *message) {
   activity_log_capture_t *capture = user;
-  capture->level = level;
   (void)scope;
-  ++capture->calls;
-  int written = snprintf(capture->last, sizeof(capture->last), "%s", message);
-  capture->truncated = written < 0 || (size_t)written >= sizeof(capture->last);
   if (strstr(message, TELEMETRY_ACTIVITY_DETAIL) ||
       strstr(message, TELEMETRY_ACTIVITY_ID))
     capture->leaked = true;
+  if (capture->match != NULL && strstr(message, capture->match) == NULL)
+    return H2_PAL_OK;
+  capture->level = level;
+  ++capture->calls;
+  int written = snprintf(capture->last, sizeof(capture->last), "%s", message);
+  capture->truncated = written < 0 || (size_t)written >= sizeof(capture->last);
   return H2_PAL_OK;
 }
 
@@ -4619,7 +4624,7 @@ static void test_req_telemetry_activity(void) {
   test_env_t env;
   h2_gizclaw_service_t *service = create_profile_service(&env);
   const h2_pal_time_api_t time = {.user = &env, .vtable = &vtable};
-  activity_log_capture_t log_capture = {0};
+  activity_log_capture_t log_capture = {.match = "telemetry activity rejected"};
   static const h2_pal_log_vtable_t log_vtable = {.write = activity_capture_log};
   const h2_pal_log_api_t log = {.user = &log_capture, .vtable = &log_vtable};
   service->client_config.time = &time;
