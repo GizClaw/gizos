@@ -24,11 +24,18 @@ typedef int bk_err_t;
 enum { BK_OK=0, BK_ERR_PARAM=-1, BK_ERR_NOT_FOUND=-2, STA_PM_ENABLE=0x301, STA_STOP=0x312 };
 struct bk_msg_hdr { uint32_t cmd_id; };
 typedef struct { uint32_t argc; } wifi_api_arg_info_t;
-int started=1, connected=1, vif=7, calls=0, confirmed=999, failure=0;
+int started=1, connected=1, vif=7, calls=0, associate_calls=0, confirmed=999, failure=0;
 int bk_wifi_sta_disconnect(void) {
     ++calls;
     if (failure) return failure;
     connected=0;
+    return BK_OK;
+}
+int bk_wifi_sta_connect(void) {
+    ++associate_calls;
+    if (failure) return failure;
+    if (!started) return -3;
+    connected=1;
     return BK_OK;
 }
 int cif_bk_cmd_confirm(struct bk_msg_hdr *msg,uint8_t *value,size_t size) {
@@ -57,7 +64,7 @@ PROBE = r'''
 #include "h2_bk_wifi_rpc.h"
 struct bk_msg_hdr { uint32_t cmd_id; };
 struct packet { struct bk_msg_hdr hdr; uint32_t argc; };
-extern int started,connected,vif,calls,confirmed,failure;
+extern int started,connected,vif,calls,associate_calls,confirmed,failure;
 int cif_handle_wifi_api_cmd(struct bk_msg_hdr *);
 #define CHECK(x) do { if(!(x)) {fprintf(stderr,"line%d\n",__LINE__); return 1;} } while(0)
 int main(void) {
@@ -65,6 +72,19 @@ int main(void) {
     CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0);
 #if EXPECT_RPC
     CHECK(confirmed==0 && !connected && started==1 && vif==7 && calls==1);
+    p.hdr.cmd_id=H2_BK_WIFI_RPC_STA_ASSOCIATE;
+    CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0);
+    CHECK(confirmed==0 && connected==1 && started==1 && vif==7 && associate_calls==1);
+    p.argc=1;
+    CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0);
+    CHECK(confirmed==-1 && associate_calls==1 && connected==1);
+    p.argc=0; failure=-9; connected=0;
+    CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0);
+    CHECK(confirmed==-9 && !connected && started==1 && vif==7);
+    failure=0; started=0;
+    CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0);
+    CHECK(confirmed==-3 && !connected);
+    started=1; p.hdr.cmd_id=H2_BK_WIFI_RPC_STA_DISASSOCIATE;
     connected=1; p.argc=1;
     CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0);
     CHECK(confirmed==-1 && connected==1 && started==1 && vif==7 && calls==1);
@@ -73,6 +93,9 @@ int main(void) {
     CHECK(confirmed==-9 && connected==1 && started==1 && vif==7 && calls==2);
 #else
     CHECK(confirmed==-2 && connected==1 && started==1 && vif==7 && calls==0);
+    p.hdr.cmd_id=H2_BK_WIFI_RPC_STA_ASSOCIATE;
+    CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0);
+    CHECK(confirmed==-2 && connected==1 && started==1 && vif==7 && associate_calls==0);
 #endif
     puts("CP_RPC_CONFIRMED_PAYLOAD_AND_SERVICE_PRESERVATION PASS");
     return 0;

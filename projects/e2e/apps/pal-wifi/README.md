@@ -38,6 +38,15 @@ beacon, including the next DTIM). The App cycles MAX→MIN→MAX with SDK readba
 reconnect reapplies the selected policy. These checks do not
 measure radio power consumption.
 
+BK's pinned AP SDK public `connect`/`disconnect` only change local state.
+The provider uses paired AP/CP RPCs for actual radio association/disassociation,
+checks the CP response payload, and preserves the STA service for reconnect.
+Fresh SDK `STA_START` already initiates authentication; it is not started twice.
+Repo-owned CMake builds guarded corrected SDK copies inside the build tree and
+keeps the sealed SDK pristine. The local STA address-sync correction also avoids
+sending a STA lease to the CP AP configuration. Regression probes compile the
+actual generated SDK corrections and reject old/failed CP responses.
+
 ## Platform scope
 
 | Platform | Actual test scope | Physical WLAN qualification |
