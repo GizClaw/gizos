@@ -321,41 +321,47 @@ static h2_pal_result_t esp_net_tls_load_ca(
 /* Some SDK mbedTLS builds omit MBEDTLS_HAVE_TIME_DATE, which otherwise
  * accepts expired certificates even with VERIFY_REQUIRED. Compare the peer
  * chain against calibrated PAL wall time on every verified handshake. */
-static h2_pal_result_t esp_net_tls_check_certificate_time(
-    const esp_net_tls_socket_t *socket) {
+/* Certificate retention and built-in date checks are optional in board SDKs.
+ * Verify calibrated validity while the peer chain is still available during
+ * the handshake; never accept an expired or future peer because those SDK
+ * options were disabled to save RAM. */
+static int esp_net_tls_verify_dates(
+    void *user, mbedtls_x509_crt *cert, int depth, uint32_t *flags) {
+    (void)user;
+    (void)depth;
     uint64_t wall_ms = 0u;
     if (h2_pal_time_get_wall_ms(h2_esp_platform_time_api(), &wall_ms) != H2_PAL_OK) {
-        return H2_PAL_ERR_UNAVAILABLE;
+        *flags |= MBEDTLS_X509_BADCERT_OTHER;
+        ESP_LOGE("h2_net", "stage=tls_cert_time clock_unavailable");
+        return 0;
     }
     time_t seconds = (time_t)(wall_ms / 1000u);
-    if (seconds < 0 || (uint64_t)seconds != wall_ms / 1000u) {
-        return H2_PAL_ERR_UNAVAILABLE;
-    }
     struct tm utc;
-    if (gmtime_r(&seconds, &utc) == NULL) {
-        return H2_PAL_ERR_UNAVAILABLE;
+    if (seconds < 0 || (uint64_t)seconds != wall_ms / 1000u ||
+        gmtime_r(&seconds, &utc) == NULL) {
+        *flags |= MBEDTLS_X509_BADCERT_OTHER;
+        ESP_LOGE("h2_net", "stage=tls_cert_time clock_unavailable");
+        return 0;
     }
     mbedtls_x509_time now = {
         .year = utc.tm_year + 1900, .mon = utc.tm_mon + 1,
         .day = utc.tm_mday, .hour = utc.tm_hour,
         .min = utc.tm_min, .sec = utc.tm_sec,
     };
-    const mbedtls_x509_crt *cert = mbedtls_ssl_get_peer_cert(&socket->ssl);
-    if (cert == NULL) {
-        return H2_PAL_ERR_TLS_VERIFY;
+    if (mbedtls_x509_time_cmp(&cert->valid_from, &now) > 0) {
+        *flags |= MBEDTLS_X509_BADCERT_FUTURE;
     }
-    for (; cert != NULL && cert->version != 0; cert = cert->next) {
-        if (mbedtls_x509_time_cmp(&cert->valid_from, &now) > 0 ||
-            mbedtls_x509_time_cmp(&cert->valid_to, &now) < 0) {
-            ESP_LOGE("h2_net", "stage=tls_cert_time now=%d-%02d-%02d from=%d-%02d-%02d to=%d-%02d-%02d version=%d",
-                now.year, now.mon, now.day,
-                cert->valid_from.year, cert->valid_from.mon, cert->valid_from.day,
-                cert->valid_to.year, cert->valid_to.mon, cert->valid_to.day,
-                cert->version);
-            return H2_PAL_ERR_TLS_VERIFY;
-        }
+    if (mbedtls_x509_time_cmp(&cert->valid_to, &now) < 0) {
+        *flags |= MBEDTLS_X509_BADCERT_EXPIRED;
     }
-    return H2_PAL_OK;
+    if ((*flags & (MBEDTLS_X509_BADCERT_FUTURE |
+                   MBEDTLS_X509_BADCERT_EXPIRED)) != 0u) {
+        ESP_LOGE("h2_net", "stage=tls_cert_time from=%d-%02d-%02d to=%d-%02d-%02d now=%d-%02d-%02d flags=0x%x",
+            cert->valid_from.year, cert->valid_from.mon, cert->valid_from.day,
+            cert->valid_to.year, cert->valid_to.mon, cert->valid_to.day,
+            now.year, now.mon, now.day, (unsigned)*flags);
+    }
+    return 0;
 }
 
 static h2_pal_result_t esp_net_tls_handshake(
@@ -371,7 +377,7 @@ static h2_pal_result_t esp_net_tls_handshake(
             if (mbedtls_ssl_get_verify_result(&socket->ssl) != 0u) {
                 return H2_PAL_ERR_TLS_VERIFY;
             }
-            return esp_net_tls_check_certificate_time(socket);
+            return H2_PAL_OK;
         }
         if (result != MBEDTLS_ERR_SSL_WANT_READ &&
             result != MBEDTLS_ERR_SSL_WANT_WRITE) {
@@ -1376,6 +1382,11 @@ static h2_pal_result_t esp_net_tls_wrap(
     }
     if (result == 0 && rc == H2_PAL_OK) {
         rc = esp_net_tls_load_ca(slot, config);
+        if (rc == H2_PAL_OK &&
+            config->verify != H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
+            mbedtls_ssl_conf_verify(&slot->config,
+                esp_net_tls_verify_dates, NULL);
+        }
     } else if (rc == H2_PAL_OK) {
         rc = H2_PAL_ERR_IO;
     }
