@@ -1,0 +1,379 @@
+H2_PAL_AUDIO_REPLAY {"id":"wrapper-arguments","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"info","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stopped-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-format-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-create","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-drain","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-live","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-close","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"resource-churn","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"stability","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"cleanup","status":"PASS","detail":0}
+H2_PAL_AUDIO_SUMMARY {"platform":"amoled","passed":24,"failed":0,"blocked":0,"mic_frames":866,"mic_peak":113,"mic_energy":18036037,"speaker_frames":868,"output_peak":1120,"stability_elapsed_ms":30005,"rc":0,"confirm":0}
+H2_PAL_AUDIO_REPLAY {"id":"wrapper-arguments","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"infH2_LOADER_REBOOT target=app result=accepted
+ESP-ROM:esp32s3-20210327
+Build:Mar 27 2021
+rst:0xc (RTC_SW_CPU_RST),boot:0x2b (SPI_FAST_FLASH_BOOT)
+Saved PC:0x4038c6b2
+SPIWP:0xee
+mode:DOUT, clock div:1
+load:0x3fce2820,len:0x1544
+load:0x403c8700,len:0xd68
+load:0x403cb700,len:0x2fbc
+entry 0x403c8904
+I (24) boot: ESP-IDF v6.0 2nd stage bootloader
+I (24) boot: compile time Sep  3 2026 17:14:34
+I (24) boot: Multicore bootloader
+I (25) boot: chip revision: v0.2
+I (25) boot: efuse block revision: v1.3
+I (25) boot.esp32s3: Boot SPI Speed : 80MHz
+I (25) boot.esp32s3: SPI Mode       : DOUT
+I (25) boot.esp32s3: SPI Flash Size : 16MB
+I (25) boot: Enabling RNG early entropy source...
+I (26) boot: Partition Table:
+I (26) boot: ## Label            Usage          Type ST Offset   Length
+I (26) boot:  0 nvs              WiFi data        01 02 00009000 00006000
+I (27) boot:  1 otadata          OTA data         01 00 0000f000 00002000
+I (27) boot:  2 phy_init         RF data          01 01 00011000 00001000
+I (27) boot:  3 h2loader         OTA app          00 10 00020000 00200000
+I (28) boot:  4 app              OTA app          00 11 00220000 00800000
+I (28) boot:  5 dl               Unknown data     01 83 00a20000 00200000
+I (28) boot:  6 data             Unknown data     01 83 00c20000 00200000
+I (29) boot:  7 coredump         Unknown data     01 03 00e20000 00010000
+I (29) boot:  8 pref             Unknown data     01 83 00e30000 00040000
+I (30) boot: End of partition table
+I (30) esp_image: segment 0: paddr=00220020 vaddr=3c110020 size=4bd30h (310576) map
+I (90) esp_image: segment 1: paddr=0026bd58 vaddr=3fca9100 size=042c0h ( 17088) load
+I (94) esp_image: segment 2: paddr=00270020 vaddr=42000020 size=108524h (1082660) map
+I (302) esp_image: segment 3: paddr=0037854c vaddr=3fcad3c0 size=02fech ( 12268) load
+I (305) esp_image: segment 4: paddr=0037b540 vaddr=40378000 size=21008h (135176) load
+I (337) esp_image: segment 5: paddr=0039c550 vaddr=50000000 size=00024h (    36) load
+I (337) esp_image: segment 6: paddr=0039c57c vaddr=600fe000 size=00060h (    96) load
+I (351) boot: Loaded app from partition at offset 0x220000
+I (352) boot: Disabling RNG early entropy source...
+I (352) flash HPM: with HPM-DC support
+W (353) flash HPM: High performance mode of this flash model hasn't been supported.
+I (353) MSPI Timing: Enter flash timing tuning
+I (354) octal_psram: vendor id    : 0x0d (AP)
+I (354) octal_psram: dev id       : 0x02 (generation 3)
+I (354) octal_psram: density      : 0x03 (64 Mbit)
+I (354) octal_psram: good-die     : 0x01 (Pass)
+I (354) octal_psram: Latency      : 0x01 (Fixed)
+I (355) octal_psram: VCC          : 0x01 (3V)
+I (355) octal_psram: SRF          : 0x01 (Fast Refresh)
+I (355) octal_psram: BurstType    : 0x01 (Hybrid Wrap)
+I (355) octal_psram: BurstLen     : 0x01 (32 Byte)
+I (356) octal_psram: Readlatency  : 0x02 (10 cycles@Fixed)
+I (356) octal_psram: DriveStrength: 0x00 (1/1)
+I (356) MSPI Timing: Enter psram timing tuning
+I (364) esp_psram: Found 8MB PSRAM device
+I (364) esp_psram: Speed: 120MHz
+I (385) mmu_psram: Read only data copied and mapped to SPIRAM
+I (467) mmu_psram: Instructions copied and mapped to SPIRAM
+I (467) cpu_start: Multicore app
+I (651) esp_psram: SPI SRAM memory test OK
+I (659) cpu_start: Pro cpu start user code
+I (659) cpu_start: cpu freq: 240000000 Hz
+I (659) app_init: Application information:
+I (659) app_init: Project name:     h2_pal_audio_e2e
+I (660) app_init: App version:      pal-audio-e2e-20260929-r6
+I (660) app_init: Compile time:     Sep 28 2026 20:57:40
+I (660) app_init: ELF file SHA256:  72185fb21...
+I (660) app_init: ESP-IDF:          76f5dedd
+I (660) efuse_init: Min chip rev:     v0.0
+I (660) efuse_init: Max chip rev:     v0.99
+I (660) efuse_init: Chip rev:         v0.2
+I (661) heap_init: Initializing. RAM available for dynamic allocation:
+I (661) heap_init: At 3FCBBA20 len 0002DCF0 (183 KiB): RAM
+I (661) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+I (661) heap_init: At 600FE060 len 00001F88 (7 KiB): RTCRAM
+I (661) esp_psram: Adding pool of 6762K of PSRAM memory to heap allocator
+I (662) esp_psram: Adding pool of 16K of PSRAM memory gap generated due to end address alignment of drom to the heap allocator
+I (662) spi_flash: detected chip: winbond
+I (662) spi_flash: flash io: dio
+I (662) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+I (663) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+I (663) esp_core_dump_flash: Init core dump to flash
+I (663) esp_core_dump_flash: Found partition 'coredump' @ e20000 65536 bytes
+D (664) esp_core_dump_flash: Blank core dump partition!
+I (664) main_task: Started on CPU0
+I (664) esp_psram: Reserving pool of 32K of internal memory for DMA/internal allocations
+I (665) main_task: Calling app_main()
+H2_PAL_TASK_POLICY_READY unit=esp target=projects/e2e/targets/h2loader_tar_zlib/pal-audio/amoled
+I (668) main_task: Returned from app_main()
+H2_PAL_TASK_READY name=$h2loader/return priority=8 core=0 stack=psram size=32768
+H2_PAL_AUDIO_BOOT board=amoled version=pal-audio-e2e-20260929-r6
+H2_PAL_TASK_READY name=pal-audio/e2e/runner priority=4 core=0 stack=psram size=32768
+H2_PAL_AUDIO_CASE {"id":"wrapper-arguments","status":"PASS","detail":0,"line":0}
+I (915) h2_es8311_aec: direct aec ready frame_samples=512 mode=fd_low_cost filter=4 nlp=normal
+H2_PAL_AUDIO_CASE {"id":"info","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"mic-stopped-read","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"mic-gain-bounds","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"mic-gain-roundtrip","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"speaker-volume-bounds","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"speaker-volume-roundtrip","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-format-bounds","status":"PASS","detail":0,"line":0}
+W (921) i2s_common: the rx channel on I2S0 is switched from master to slave for full-duplex mode
+I (930) h2_es8311_audio: es8311 chip_id=0x8311
+I (945) h2_es8311_audio: audio opened i2s=0 i2c=0 addr=0x18
+I (967) h2_es8311_audio: playback task ready stack=psram size=4096 priority=4 core=2147483647
+H2_PAL_AUDIO_CASE {"id":"speaker-start","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-create","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-volume-bounds","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-volume-roundtrip","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-write-bounds","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-write","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-drain","status":"PASS","detail":0,"line":0}
+I (1131) h2_es8311_audio: mic task ready stack=psram size=6144 priority=5 core=2147483647
+H2_PAL_AUDIO_CASE {"id":"mic-start","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"mic-read","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"mic-gain-live","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"mic-stop","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"track-close","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_{"id":"sI (1222) h2_es8311_audio: playback task ready stack=psram size=4096 priority=4 core=2147483647
+I (1282) h2_es8311_audio: playback task ready stack=psram size=4096 priority=4 core=2147483647
+I (1342) h2_es8311_audio: playback task ready stack=psram size=4096 priority=4 core=2147483647
+H2_PAL_AUDIO_CASE {"id":"resource-churn","status":"PASS","detail":0,"line":0}
+I (1402) h2_es8311_audio: playback task ready stack=psram size=4096 priority=4 core=2147483647
+H2_PAL_AUDIO_CASE {"id":"stability","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_CASE {"id":"cleanup","status":"PASS","detail":0,"line":0}
+H2_PAL_AUDIO_REPLAY {"id":"wrapper-arguments","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"info","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stopped-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-format-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-create","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-drain","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-live","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-close","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"resource-churn","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"stability","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"cleanup","status":"PASS","detail":0}
+H2_PAL_AUDIO_SUMMARY {"platform":"amoled","passed":24,"failed":0,"blocked":0,"mic_frames":940,"mic_peak":111,"mic_energy":23069087,"speaker_frames":942,"output_peak":1120,"stability_elapsed_ms":30004,"rc":0,"confirm":0}
+H2_PAL_AUDIO_REPLAY {"id":"wrapper-arguments","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"info","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stopped-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-format-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-create","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-drain","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-live","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-close","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"resource-churn","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"stability","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"cleanup","status":"PASS","detail":0}
+H2_PAL_AUDIO_SUMMARY {"platform":"amoled","passed":24,"failed":0,"blocked":0,"mic_frames":940,"mic_peak":111,"mic_energy":23069087,"speaker_frames":942,"output_peak":1120,"stability_elapsed_ms":30004,"rc":0,"confirm":0}
+H2_PAL_AUDIO_REPLAY {"id":"wrapper-arguments","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"info","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stopped-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-format-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-create","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-drain","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-live","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-close","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"resource-churn","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"stability","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"cleanup","status":"PASS","detail":0}
+H2_PAL_AUDIO_SUMMARY {"platform":"amoled","passed":24,"failed":0,"blocked":0,"mic_frames":940,"mic_peak":111,"mic_energy":23069087,"speaker_frames":942,"output_peak":1120,"stability_elapsed_ms":30004,"rc":0,"confirm":0}
+H2_PAL_AUDIO_REPLAY {"id":"wrapper-arguments","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"info","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stopped-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-format-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-create","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-drain","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-live","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-close","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"resource-churn","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"stability","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"cleanup","status":"PASS","detail":0}
+H2_PAL_AUDIO_SUMMARY {"platform":"amoled","passed":24,"failed":0,"blocked":0,"mic_frames":940,"mic_peak":111,"mic_energy":23069087,"speaker_frames":942,"output_peak":1120,"stability_elapsed_ms":30004,"rc":0,"confirm":0}
+H2_PAL_AUDIO_REPLAY {"id":"wrapper-arguments","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"info","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stopped-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-format-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-create","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-drain","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-live","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-close","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"resource-churn","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"stability","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"cleanup","status":"PASS","detail":0}
+H2_PAL_AUDIO_SUMMARY {"platform":"amoled","passed":24,"failed":0,"blocked":0,"mic_frames":940,"mic_peak":111,"mic_energy":23069087,"speaker_frames":942,"output_peak":1120,"stability_elapsed_ms":30004,"rc":0,"confirm":0}
+H2_PAL_AUDIO_REPLAY {"id":"wrapper-arguments","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"info","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stopped-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-format-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-create","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-drain","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-live","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-close","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"resource-churn","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"stability","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"cleanup","status":"PASS","detail":0}
+H2_PAL_AUDIO_SUMMARY {"platform":"amoled","passed":24,"failed":0,"blocked":0,"mic_frames":940,"mic_peak":111,"mic_energy":23069087,"speaker_frames":942,"output_peak":1120,"stability_elapsed_ms":30004,"rc":0,"confirm":0}
+H2_PAL_AUDIO_REPLAY {"id":"wrapper-arguments","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"info","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stopped-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-format-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-create","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-drain","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-live","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-close","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"resource-churn","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"stability","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"cleanup","status":"PASS","detail":0}
+H2_PAL_AUDIO_SUMMARY {"platform":"amoled","passed":24,"failed":0,"blocked":0,"mic_frames":940,"mic_peak":111,"mic_energy":23069087,"speaker_frames":942,"output_peak":1120,"stability_elapsed_ms":30004,"rc":0,"confirm":0}
+H2_PAL_AUDIO_REPLAY {"id":"wrapper-arguments","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"info","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stopped-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-format-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-create","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-drain","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-live","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-close","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"resource-churn","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"stability","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"cleanup","status":"PASS","detail":0}
+H2_PAL_AUDIO_SUMMARY {"platform":"amoled","passed":24,"failed":0,"blocked":0,"mic_frames":940,"mic_peak":111,"mic_energy":23069087,"speaker_frames":942,"output_peak":1120,"stability_elapsed_ms":30004,"rc":0,"confirm":0}
+H2_PAL_AUDIO_REPLAY {"id":"wrapper-arguments","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"info","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stopped-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-format-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-create","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-volume-roundtrip","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write-bounds","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-write","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-drain","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-start","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-read","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-gain-live","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"mic-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"track-close","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"speaker-stop","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"resource-churn","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"stability","status":"PASS","detail":0}
+H2_PAL_AUDIO_REPLAY {"id":"cleanup","status":"PASS","detail":0}
+H2_PAL_AUDIO_SUMMARY {"platform":"amoled","passed":24,"failed":0,"blocked":0,"mic_frames":940,"mic_peak":111,"mic_energy":23069087,"speaker_frames":942,"output_peak":1120,"stability_elapsed_ms":30004,"rc":0,"confirm":0}
+^C

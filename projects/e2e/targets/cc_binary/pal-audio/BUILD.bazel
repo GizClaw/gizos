@@ -1,0 +1,23 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_test")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+[rule(
+    name = name,
+    srcs = ["main.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    tags = ["manual"] if name == "desktop_test" else [],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/atomic/providers/c11",
+        "//libs/pal/providers/desktop/pal_core",
+        "//libs/pal/providers/portaudio",
+        "//projects/e2e/apps/pal-audio/app:pal_audio_e2e",
+    ],
+) for rule, name in [(cc_binary, "pal_audio_e2e"), (cc_test, "desktop_test")]]

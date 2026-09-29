@@ -827,6 +827,8 @@ static int audio_get_info(void *user, h2_audio_info_t *info) {
 
 static int audio_read_mic(void *user, h2_audio_frame_t *out_frame, uint32_t timeout_ms) {
     h2_esp_es8311_es7210_audio_system_t *state = (h2_esp_es8311_es7210_audio_system_t *)user;
+    if (state->mic_gain_uncertain)
+        return H2_AUDIO_ERR_IO;
     if (!state->mic_started || state->mic_queue == NULL) {
         return H2_AUDIO_ERR_INVALID_STATE;
     }
@@ -1133,8 +1135,23 @@ static int audio_set_speaker_volume_percent(void *user, uint32_t percent) {
 static int audio_get_mic_gain_percent(void *user, uint32_t *out_percent) {
     h2_esp_es8311_es7210_audio_system_t *state =
         (h2_esp_es8311_es7210_audio_system_t *)user;
+    if (state->mic_gain_uncertain)
+        return H2_AUDIO_ERR_IO;
     *out_percent = state->mic_gain_percent;
     return H2_AUDIO_OK;
+}
+
+static void rollback_mic_gain(h2_esp_es8311_es7210_audio_system_t *state,
+                              const uint8_t old[H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_ES7210_INPUT_COUNT],
+                              uint8_t changed) {
+    for (uint8_t input = 0u;
+         input < H2_ESP_ES8311_ES7210_AUDIO_SYSTEM_ES7210_INPUT_COUNT;
+         ++input) {
+        if ((changed & (1u << input)) != 0u &&
+            write_reg(state->es7210, ES7210_REG_MIC1_GAIN + input,
+                      old[input]) != ESP_OK)
+            state->mic_gain_uncertain = 1;
+    }
 }
 
 static int audio_set_mic_gain_percent(void *user, uint32_t percent) {
@@ -1165,10 +1182,7 @@ static int audio_set_mic_gain_percent(void *user, uint32_t percent) {
             const uint8_t reg = ES7210_REG_MIC1_GAIN + input;
             if (read_reg(state->es7210, reg, &old[input]) != ESP_OK) {
                 state->mic_gain_db_current = previous_db;
-                for (uint8_t rollback = 0u; rollback < 4u; ++rollback)
-                    if ((changed & (1u << rollback)) != 0u)
-                        (void)write_reg(state->es7210,
-                            ES7210_REG_MIC1_GAIN + rollback, old[rollback]);
+                rollback_mic_gain(state, old, changed);
                 return H2_AUDIO_ERR_IO;
             }
             changed |= (uint8_t)(1u << input);
@@ -1176,10 +1190,7 @@ static int audio_set_mic_gain_percent(void *user, uint32_t percent) {
                     (uint8_t)((old[input] & 0xf0u) |
                               (es7210_input_gain(state, input) & 0x0fu))) != ESP_OK) {
                 state->mic_gain_db_current = previous_db;
-                for (uint8_t rollback = 0u; rollback < 4u; ++rollback)
-                    if ((changed & (1u << rollback)) != 0u)
-                        (void)write_reg(state->es7210,
-                            ES7210_REG_MIC1_GAIN + rollback, old[rollback]);
+                rollback_mic_gain(state, old, changed);
                 return H2_AUDIO_ERR_IO;
             }
         }
@@ -1187,6 +1198,7 @@ static int audio_set_mic_gain_percent(void *user, uint32_t percent) {
         state->mic_gain_db_current = requested_db;
     }
     state->mic_gain_percent = percent;
+    state->mic_gain_uncertain = 0;
     return H2_AUDIO_OK;
 }
 

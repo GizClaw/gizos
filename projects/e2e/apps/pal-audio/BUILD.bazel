@@ -1,0 +1,29 @@
+load("@rules_python//python:defs.bzl", "py_test")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+py_test(
+    name = "qualification_evidence_test",
+    srcs = ["check_qualification.py"],
+    data = [
+        "qualification.json",
+        "//projects/e2e/targets/h2loader_tar_zlib/pal-audio/tests:recovery_test_inputs",
+        "//projects/e2e/apps/pal-audio/app:include/h2_pal_audio_cases.inc",
+        "//projects/e2e/apps/pal-audio/app:include/h2_pal_audio_e2e.h",
+        "//projects/e2e/apps/pal-audio/app:src/h2_pal_audio_e2e.c",
+        "//projects/e2e/apps/pal-audio/app:tests/test_cleanup_once.c",
+        "//projects/e2e/targets/ios_application/pal-audio:main.m",
+        "//libs/pal/providers/ios/pal_core:src/h2_ios_audio.m",
+        "//libs/pal/providers/ios/pal_core:include/h2_ios_platform.h",
+        "//libs/pal/providers/ios/pal_core:src/h2_ios_audio_wait.c",
+        "//libs/pal/providers/ios/pal_core:src/h2_ios_audio_wait.h",
+        "//libs/pal/providers/android/pal_core:src/h2_android_platform.c",
+        "//boards/bk7258_v3_202405/bk7258/ap:src/h2_bk7258_board_audio.c",
+        "//projects/e2e/targets/h2loader_tar_zlib/pal-audio/bk7258_v3_202405:ap/ap_main.c",
+        "//projects/e2e/targets/h2loader_tar_zlib/pal-audio/amoled:main/main.c",
+    ] + glob(["evidence/**/*"]),
+    legacy_create_init = 0,
+    main = "check_qualification.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)

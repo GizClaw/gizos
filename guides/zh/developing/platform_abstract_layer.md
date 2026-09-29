@@ -6,6 +6,10 @@ Platform Abstraction Layer（PAL）定义 GizOS 使用的平台抽象能力。PA
 
 `h2_pal_webrtc_peer_create_with_config()` 接收可选的 `h2_pal_webrtc_peer_config_t.allocator`，NULL 或旧 `peer_create()` 保持原行为；H2Peer 把它用于 peer 私有存储并传给 SCTP/SRTP，H2Peer 的 package allocation 和 atomic provider storage 各按自己的 contract 管理，不再注入 `control_mem`，未实现扩展的旧 provider 只在 NULL/default config 时回退到原创建入口；收到非 NULL allocator 时返回 `H2_PAL_ERR_UNSUPPORTED`，不能静默忽略分配要求。`h2_audio_track_config_t.allocator` 同样可选，Runtime wrapper 和 mixer 的音轨队列、scratch 跟随它，NULL 保持各层原有默认分配器。
 
+iOS AudioQueue 和 Android AAudio provider 使用 `h2_audio_track_config_t.allocator` 分配并释放自身持有的音轨对象；Android 的临时与待写 PCM buffer 使用同一个 allocator。平台框架内部 AudioQueue/AAudio buffer 由平台管理。非 NULL allocator 必须提供 alloc/free，分配失败返回 NO_MEMORY 并关闭已获得的 native resource。Android 在启动 output stream 前通过 nonblocking write 填入静音，满足 AAudio 的 buffer priming 要求；随后单个完整 PAL PCM frame 的 write/drain 不依赖调用方继续填充 native startup buffer。
+
+iOS AudioQueue 的 mic_read、track write 和 drain 为每次公开调用建立一个单调时钟 deadline。共享 condition 的输入、输出 callback 唤醒只触发条件重查，每轮等待使用原 deadline 的剩余预算，不能因为无关 callback 或 spurious wakeup 延长有限 timeout。UINT32_MAX 保持无限等待，零 timeout 保持立即 would-block。
+
 ## 独立 Atomic Contract
 
 并发原子值由 `libs/atomic/include/h2_atomic.h` 定义，不属于 PAL API、PAL vtable 或 Memory PAL capability。调用方持有 typed wrapper 并直接调用 `h2_atomic_*` 符号；最终 target 必须链接一个平台实现，缺失实现会在链接时报错。动态 wrapper（包括 flag）先零初始化、调用 `init` 并检查结果，停止并发访问后销毁；初始化后不得复制。只有确实定义静态 backing 的 C11 翻译单元额外 include `h2_atomic_static.h`，使用统一的 `H2_ATOMIC_DEFINE_STATIC(kind, name, initial)` 定义每对象独立的普通 static backing 与 wrapper；普通 `h2_atomic.h` consumer 不被强制解析 C11 `_Atomic`。静态值定义后可直接使用，不经动态分配，也不在宏中指定平台属性；对它调用 `init` 返回 `INVALID_STATE`，`destroy` 不释放且不废弃 wrapper。C++ 动态实例仍使用 opaque wrapper 和显式 init/destroy，不把 `std::atomic` 布局当作 C11 ABI。Desktop/Browser 的 provider 基于 C11，iOS/Android 使用 pthread；ESP 的动态实际存储由 provider 分配在内部 RAM，普通文件级 static backing 则由链接布局放在内部 DRAM，即使 wrapper 所在的动态结构位于 PSRAM，也不会在 PSRAM 直接执行 C11 atomic。flag 的 `test_and_set`/`clear` 对每对象的 word-sized 存储直接执行原子交换/写入，没有 provider 全局 flag 锁。BK/JieLi 的动态初始化返回 `H2_ATOMIC_UNSUPPORTED`，静态对象的操作仍 trap；当前只要求这些 target 编译，不能把静态宏当成可运行的 provider。

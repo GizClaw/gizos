@@ -1,0 +1,16 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+
+package(default_visibility = ["//visibility:public"])
+
+exports_files(["run_mobile.py"])
+
+cc_library(
+    name = "runner",
+    srcs = ["mobile_runner.c"],
+    hdrs = ["mobile_runner.h"],
+    includes = ["."],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    deps = ["//projects/e2e/apps/pal-audio/app:pal_audio_e2e"],
+)

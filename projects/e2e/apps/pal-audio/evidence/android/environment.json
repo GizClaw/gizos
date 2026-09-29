@@ -1,0 +1,9 @@
+{
+  "serial": "emulator-5554",
+  "api": "36",
+  "fingerprint": "Android/sdk_slim_arm64/emu64a:16/BE2A.250530.027/13847098:userdebug/test-keys",
+  "observation_finished_at_utc": "2026-09-28T22:08:43.106325+00:00",
+  "evidence_timezone": "UTC",
+  "app_sha256": "af129ade678d170b512901b4596518becabca914c52f64f61dc9fd199e5f6868",
+  "sdk_sha256": "b41a364a457c4dbd77c267f998ceeff9eef618809c5c74e50b1599e750a35680"
+}

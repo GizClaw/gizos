@@ -1,0 +1,11 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+package(default_visibility = ["//visibility:public"])
+
+# dr_mp3 (public domain or MIT-0) as a header group; the first-party owner
+# compiles its implementation with the build options it needs.
+cc_library(
+    name = "dr_mp3_headers",
+    hdrs = ["src/dr_mp3.h"],
+    includes = ["src"],
+)

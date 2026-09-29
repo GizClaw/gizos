@@ -30,7 +30,7 @@ try {
 }
 ```
 
-The SDK requires a secure browser context and a browser with Web Serial support. Version 0.4.0 runs its C runtime on pthread Workers with shared WebAssembly memory. Serve the application over HTTPS or localhost with these response headers on the page and SDK assets:
+The SDK requires a secure browser context and a browser with Web Serial support. Version 0.4.1 runs its C runtime on pthread Workers with shared WebAssembly memory. Serve the application over HTTPS or localhost with these response headers on the page and SDK assets:
 
 ```http
 Cross-Origin-Opener-Policy: same-origin
@@ -43,6 +43,10 @@ Each returned port exposes its canonical Web PAL `id`, such as `web-serial-1`.
 Use this ID for row identity, selection, and operation routing during the current
 SDK client lifetime. USB VID/PID are display metadata and must not be used to
 identify a device because multiple authorized devices can share them.
+
+The Web SDK never changes DTR or RTS. Device reboot and boot-role changes are
+H2Loader protocol commands; opening or reconnecting Web Serial must not add an
+implicit hardware reset.
 
 Each operation waits up to 10 s for the device to acknowledge the serial session and up to 10 s for each command response. `rebootUpgrade` uses a 90 s command timeout because the device may install the staged image before acknowledging.
 

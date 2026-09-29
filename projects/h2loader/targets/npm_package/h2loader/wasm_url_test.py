@@ -41,7 +41,7 @@ class WasmUrlTest(unittest.TestCase):
         package = package_dir()
         runtime = (package / "h2loader_runtime.js").read_text()
         references = re.findall(
-            r'new Worker\(new URL\([\'"]([^\'"]+)[\'"], import\.meta\.url\)',
+            r'new Worker\(new URL\([\'"]([^\'"]+)[\'"],\s*import\.meta\.url\)',
             runtime,
         )
         self.assertTrue(references, "runtime contains no pthread Worker URL")

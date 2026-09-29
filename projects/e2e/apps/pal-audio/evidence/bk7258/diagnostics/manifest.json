@@ -1,0 +1,19 @@
+{
+  "observation": "r3 track-create rejected by missing track.audio; r4 first boot later confirmed, but second-boot confirmation was not observed before port handoff. No reboot-loop or new coredump was observed.",
+  "raw_capture_sha256": {
+    "r3-boot": "625c2c4daca5ae4b5c8b3184919db989a37e9b7746a48ddf6cde53dcd51bfd7f",
+    "r4-install-boot": "8650327e8853afe8400e2efeba8f66957c2a4aae1d340fd7cf55236d7115d464",
+    "r4-live": "591ffba7707be6e43d818bd1a69ca669fd430ff58c6bb13fd4f79b6fbebb79b2",
+    "r4-reboot": "ad7d34e7da0cc84f5bf98f70fa97daf9d11e554019cb47580426e8d7a2c08eab"
+  },
+  "normalized_excerpt_sha256": {
+    "r3-boot": "8d3cb01b17493abcc2325c7a9349d4f4331902efea7849667c7b338855a58cd8",
+    "r4-install-boot": "27c8698d5ed9c76b1dbecf802a51b362c3070ef0e38afa84a2c11467aa88db69",
+    "r4-live": "dc1dd88a021bb0b4e460d6a936cfdda8c68f94e113d60fbe64dfb9fd68175367",
+    "r4-reboot": "9c38275b56acb2ea6f4da57a61ccaf4385ee1eb692387e373b933b22a8ecb8ba",
+    "r3-failed-status": "231dc9b57dffcf1220a71f769bdf0998b0911838d19f44b0072149397fffb9c0",
+    "r4-observed-status": "9eaae1c047391c6a39837b8a3f070b4fa3fc10cb27f9a6e7503f7530348cea01",
+    "r4-observed-coredump": "871dcafc5212b2c5520d923a2e7fc7bd38f5466e77ef0b5c3c951406f41d6621"
+  },
+  "baseline_coredump_sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829"
+}

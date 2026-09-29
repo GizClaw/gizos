@@ -1,0 +1,11 @@
+<!doctype html><meta charset="utf-8"><title>PAL Audio E2E</title>
+<pre id="report">PAL Audio E2E</pre><canvas id="canvas" width="1" height="1"></canvas>
+<script>
+var Module = {
+  canvas: document.getElementById('canvas'),
+  print: text => { console.log(text); document.getElementById('report').textContent += '\n' + text; },
+  printErr: text => console.error(text),
+  onExit: code => console.log('H2_PAL_AUDIO_EXIT ' + code)
+};
+</script>
+{{{ SCRIPT }}}
