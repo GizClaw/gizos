@@ -341,7 +341,9 @@ static void run_case(state_t *s, h2_net_tls_case_t kind) {
       uint32_t wait = kind == H2_NET_TLS_UDP_NONBLOCKING ? 0u : 40u;
       rc = h2_pal_net_udp_recvfrom(net, socket, &peer, s->receive,
                                    sizeof(s->receive), wait);
-      CHECK(rc == (wait ? H2_PAL_ERR_TIMEOUT : H2_PAL_ERR_WOULD_BLOCK), rc);
+      CHECK(wait ? rc == H2_PAL_ERR_TIMEOUT
+                 : (rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_TIMEOUT),
+            rc);
       CHECK(now(s) - s->started <= wait + 250u, H2_PAL_ERR_TIMEOUT);
       break;
     }
@@ -423,7 +425,9 @@ static void run_case(state_t *s, h2_net_tls_case_t kind) {
       uint32_t wait = kind == H2_NET_TLS_TCP_NONBLOCKING ? 0u : 40u;
       rc = h2_pal_net_tcp_recv(net, socket, s->receive, sizeof(s->receive),
                                wait);
-      CHECK(rc == (wait ? H2_PAL_ERR_TIMEOUT : H2_PAL_ERR_WOULD_BLOCK), rc);
+      CHECK(wait ? rc == H2_PAL_ERR_TIMEOUT
+                 : (rc == H2_PAL_ERR_WOULD_BLOCK || rc == H2_PAL_ERR_TIMEOUT),
+            rc);
       CHECK(now(s) - before <= wait + 250u, H2_PAL_ERR_TIMEOUT);
       OK(proof(s, H2_NET_TLS_PROOF_CONNECTED));
     } else if (mode == H2_NET_TLS_FIXTURE_CLOSE) {

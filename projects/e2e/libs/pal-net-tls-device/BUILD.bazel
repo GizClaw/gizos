@@ -27,6 +27,6 @@ cc_library(
     includes = ["include"],
     deps = [
         ":tasks",
-        "//projects/e2e/libs/pal-net-tls-runner:runner",
+        "//projects/e2e/libs/pal-net-tls-runner:fixture_client",
     ],
 )
