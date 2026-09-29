@@ -66,12 +66,12 @@ actual generated SDK corrections and reject old/failed CP responses.
 
 | Platform | Actual test scope | Physical WLAN qualification |
 | --- | --- | --- |
-| DevKit | Real ESP Wi-Fi, Settings and Netif; R23 old source managed and normal boot each 39/39, fresh actual peer leases and complete restoration | New event source needs physical requalification |
-| BK7258 | Real BK Wi-Fi, Settings and Netif; 39 cases | Pending real board test |
-| macOS | Native Darwin Netif read-only; explicit unsupported physical Wi-Fi assembly | Unavailable |
-| WASM | Worker, HOST Netif, actual browser offline/online Runtime events; unsupported Wi-Fi | Unavailable |
-| iOS Simulator | Packaged SDK's production default Wi-Fi/Netif unsupported responses | Unavailable |
-| Android Emulator | Packaged SDK's production default Wi-Fi/Netif unsupported responses | Unavailable |
+| DevKit | Real ESP Wi-Fi, Settings and Netif; R34 managed and independent normal boot each 39/39, six fresh fixture client leases per boot and complete restoration | PASS on the actual board |
+| BK7258 | Real BK Wi-Fi, Settings and Netif; R33 managed and independent normal boot each 39/39, six fresh fixture client leases per boot and complete restoration | PASS on the actual board |
+| macOS | Native Darwin Netif read-only; explicit unsupported physical Wi-Fi assembly; 21/21 applicable checks | Physical WLAN unavailable |
+| WASM | Worker, HOST Netif, actual browser offline/online Runtime events; unsupported Wi-Fi; 21/21 applicable checks | Physical WLAN unavailable |
+| iOS Simulator | Packaged SDK's production default Wi-Fi/Netif unsupported responses; 21/21 applicable checks | Physical WLAN unavailable |
+| Android Emulator | Packaged SDK's production default Wi-Fi/Netif unsupported responses; 21/21 applicable checks | Physical WLAN unavailable |
 
 Simulator/browser capability contract PASS never means a physical radio passed
 scan, provisioning or AP tests. Desktop simulated Wi-Fi is not the native radio.
@@ -99,3 +99,17 @@ package/image hashes, full case ledger, fixture MAC/IP corroboration, original
 P1 and coredump baseline, empty Stage, confirmation and an independent normal
 boot. Missing capabilities/fixture/cases, FAIL/BLOCKED, unfinished persistence,
 cleanup errors or retained recovery backup keep the Wi-Fi gate closed.
+
+The committed `qualification.json` binds both final packages to their embedded
+images, actual build inputs, two distinct qualified boot ledgers and the
+independent fixture's real client windows. The R15 fixture is pinned as a
+historical test tool; the R34 DevKit and R33 BK7258 images are bound to current
+provider and App source. Both boards retained their original Loader/P1, have an
+empty Stage, and kept their original coredump state. Check the portable receipt
+and, where the original local firmware/status bytes are available, repeat the
+raw artifact audit:
+
+```sh
+python3 projects/e2e/apps/pal-wifi/check_qualification.py
+python3 projects/e2e/apps/pal-wifi/check_qualification.py --audit-artifacts
+```
