@@ -761,7 +761,7 @@ static int ap_stop(wifi_test_t *s) {
     CALL(h2_pal_wifi_ap_stop(s->rt->wifi_ap, s->cfg->operation_timeout_ms));
     return H2_PAL_OK;
 }
-static int ap_open(wifi_test_t *s) {
+static int ap_open_checks(wifi_test_t *s) {
     /* Coexistence was tested with the independent upstream already. Stop its
      * STA before standalone AP modes so their requested channel is stable. */
     CALL(h2_pal_wifi_sta_disconnect(s->rt->wifi_sta));
@@ -778,9 +778,19 @@ static int ap_open(wifi_test_t *s) {
     CALL(ap_netif(s));
     CALL(ap_client(s));
     CALL(ap_client_left(s));
-    return ap_stop(s);
+    return H2_PAL_OK;
 }
-static int ap_hidden(wifi_test_t *s) {
+static int ap_open(wifi_test_t *s) {
+    int rc = ap_open_checks(s);
+    unsigned first_line = s->result.last_error_line;
+    int stop_rc = ap_stop(s);
+    if (rc != H2_PAL_OK) {
+        s->result.last_error_line = first_line;
+        return rc;
+    }
+    return stop_rc;
+}
+static int ap_hidden_checks(wifi_test_t *s) {
     h2_pal_wifi_ap_config_t c = s->cfg->ap;
     c.hidden = 1;
     CALL(h2_pal_wifi_ap_start(s->rt->wifi_ap, &c, s->cfg->operation_timeout_ms));
@@ -791,7 +801,17 @@ static int ap_hidden(wifi_test_t *s) {
     CALL(ap_netif(s));
     CALL(ap_client(s));
     CALL(ap_client_left(s));
-    return ap_stop(s);
+    return H2_PAL_OK;
+}
+static int ap_hidden(wifi_test_t *s) {
+    int rc = ap_hidden_checks(s);
+    unsigned first_line = s->result.last_error_line;
+    int stop_rc = ap_stop(s);
+    if (rc != H2_PAL_OK) {
+        s->result.last_error_line = first_line;
+        return rc;
+    }
+    return stop_rc;
 }
 static int churn(wifi_test_t *s) {
     for (unsigned i = 0; i < 2; ++i) {

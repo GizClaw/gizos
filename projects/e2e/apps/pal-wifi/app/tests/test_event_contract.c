@@ -1,3 +1,4 @@
+#include "h2/pal/h2_pal_unsupported.h"
 #include "../src/h2_pal_wifi_e2e.c"
 
 #include <assert.h>
@@ -42,6 +43,86 @@ static void access_point(wifi_test_t *s, h2_runtime_event_kind_t kind,
     h2_runtime_event_t event = {.kind = kind, .component = H2_RUNTIME_COMPONENT_SYSTEM_WIFI,
                                 .payload = &value, .payload_size = sizeof(value)};
     observe_event(s, &event);
+}
+
+typedef struct cleanup_fixture {
+    uint64_t now;
+    unsigned starts, stops;
+    int active;
+    h2_pal_wifi_ap_config_t config;
+} cleanup_fixture_t;
+
+static int cleanup_sta_disconnect(void *user) {
+    (void)user;
+    return H2_PAL_OK;
+}
+static int cleanup_ap_start(void *user, const h2_pal_wifi_ap_config_t *config,
+                            uint32_t timeout_ms) {
+    (void)timeout_ms;
+    cleanup_fixture_t *fixture = user;
+    ++fixture->starts;
+    fixture->active = 1;
+    fixture->config = *config;
+    return H2_PAL_OK;
+}
+static int cleanup_ap_stop(void *user, uint32_t timeout_ms) {
+    (void)timeout_ms;
+    cleanup_fixture_t *fixture = user;
+    ++fixture->stops;
+    fixture->active = 0;
+    return H2_PAL_OK;
+}
+static int cleanup_ap_status(void *user, h2_pal_wifi_ap_status_t *out) {
+    cleanup_fixture_t *fixture = user;
+    memset(out, 0, sizeof(*out));
+    out->state = fixture->active ? H2_PAL_WIFI_AP_STATE_STARTED : H2_PAL_WIFI_AP_STATE_STOPPED;
+    out->security = fixture->config.security;
+    out->hidden = fixture->config.hidden;
+    return H2_PAL_OK;
+}
+static int cleanup_ap_clients(void *user, h2_pal_wifi_ap_client_t *out, size_t capacity,
+                              size_t *count) {
+    (void)user;
+    (void)out;
+    (void)capacity;
+    *count = 0;
+    return H2_PAL_OK;
+}
+static int cleanup_time(void *user, uint64_t *out) {
+    *out = ++((cleanup_fixture_t *)user)->now;
+    return H2_PAL_OK;
+}
+static int cleanup_sleep(void *user, uint32_t ms) {
+    ((cleanup_fixture_t *)user)->now += ms;
+    return H2_PAL_OK;
+}
+static void test_failed_ap_mode_still_stops_ap(void) {
+    cleanup_fixture_t fixture = {0};
+    const h2_pal_wifi_sta_vtable_t sta_v = {.disconnect = cleanup_sta_disconnect};
+    const h2_pal_wifi_ap_vtable_t ap_v = {
+        .start = cleanup_ap_start, .stop = cleanup_ap_stop,
+        .get_status = cleanup_ap_status, .get_clients = cleanup_ap_clients};
+    const h2_pal_time_vtable_t time_v = {
+        .get_monotonic_ms = cleanup_time, .sleep_ms = cleanup_sleep};
+    const h2_pal_wifi_sta_api_t sta = {&fixture, &sta_v};
+    const h2_pal_wifi_ap_api_t ap = {&fixture, &ap_v};
+    const h2_pal_time_api_t time = {&fixture, &time_v};
+    h2_runtime_t runtime = {.wifi_sta = &sta, .wifi_ap = &ap,
+                            .netif = h2_pal_unsupported_netif_api(), .time = &time};
+    h2_wifi_e2e_config_t config = {
+        .ap = {.ssid = "dut", .ssid_len = 3, .password = "synthetic",
+               .password_len = 9, .security = H2_PAL_WIFI_SECURITY_WPA2, .channel = 6,
+               .max_clients = 4},
+        .operation_timeout_ms = 50, .client_timeout_ms = 50};
+    wifi_test_t state = {.rt = &runtime, .cfg = &config};
+    assert(ap_open(&state) == H2_PAL_ERR_UNSUPPORTED);
+    assert(fixture.starts == 1 && fixture.stops == 2 && !fixture.active);
+    assert(state.result.last_error_line);
+    fixture.starts = fixture.stops = 0;
+    state.result.last_error_line = 0;
+    assert(ap_hidden(&state) == H2_PAL_ERR_UNSUPPORTED);
+    assert(fixture.starts == 1 && fixture.stops == 2 && !fixture.active);
+    assert(state.result.last_error_line);
 }
 
 int main(void) {
@@ -105,5 +186,6 @@ int main(void) {
     access_point(&bad_ap, H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_STARTED,
                  H2_RUNTIME_SYSTEM_WIFI_AP_STATUS_STOPPED);
     assert(bad_ap.result.invalid_events > 0);
+    test_failed_ap_mode_still_stops_ap();
     return 0;
 }
