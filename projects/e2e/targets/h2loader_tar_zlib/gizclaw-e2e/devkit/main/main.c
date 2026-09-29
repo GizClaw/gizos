@@ -51,6 +51,7 @@ extern const uint8_t h2_gizclaw_e2e_voice_prompt_end[]
 
 typedef struct h2_gizclaw_e2e_devkit_runner {
   h2_runtime_t *runtime;
+  h2_gizclaw_e2e_config_t app_config;
   h2_gizclaw_e2e_result_t result;
   h2_gizclaw_e2e_exit_t exit_code;
   h2_atomic_bool_t exited;
@@ -107,12 +108,15 @@ static void emit_progress(void *user,
 static void emit_summary(const h2_gizclaw_e2e_devkit_runner_t *runner,
                          bool replay) {
   const h2_gizclaw_e2e_result_t *result = &runner->result;
-  printf("H2_GIZCLAW_E2E stage=summary entry=bj backend=h2peer suite=%s "
+  const h2_gizclaw_e2e_devkit_config_t *settings = h2_gizclaw_e2e_devkit_config();
+  printf("H2_GIZCLAW_E2E stage=%s platform=devkit endpoint=%.*s backend=h2peer suite=%s "
          "profile=%s selected=%zu terminal=%zu pass=%zu fail=%zu error=%zu "
          "blocked=%zu cancelled=%zu first_failure_case=%s "
          "first_failure_rc=%d cleanup_rc=%d retained_resources=%zu "
          "complete=%s exit_code=%d replay=%s\n",
          H2_GIZCLAW_E2E_DEVKIT_SUITE_NAME,
+         replay ? "summary-replay" : "summary",
+         (int)settings->server_endpoint.len, settings->server_endpoint.data,
          result->runtime_profile_name[0] == '\0'
              ? "-"
              : result->runtime_profile_name,
@@ -142,20 +146,30 @@ static void run_e2e(void *raw) {
   }
   const h2_gizclaw_e2e_devkit_config_t *launcher_config =
       h2_gizclaw_e2e_devkit_config();
-  const h2_gizclaw_e2e_config_t app_config = {
+  runner->app_config = (h2_gizclaw_e2e_config_t){
       .server_endpoint = launcher_config->server_endpoint,
       .registration_token = launcher_config->registration_token,
       .voice_pcm_s16le_16khz_mono = h2_gizclaw_e2e_voice_prompt_start,
       .voice_pcm_len = (size_t)(h2_gizclaw_e2e_voice_prompt_end -
                                h2_gizclaw_e2e_voice_prompt_start),
       .suites = H2_GIZCLAW_E2E_DEVKIT_SUITES,
+      .device_api_url = "https://ap.e2e.gizclaw.com",
+      .device_audio_url = "https://raw.githubusercontent.com/GizClaw/gizos/cf8dbdeba320984fc57ddba670dcf55237aa39cf/projects/e2e/apps/gizclaw/data/playback_tone_32s_v1.ogg",
       .case_timeout_ms = H2_GIZCLAW_E2E_DEFAULT_CASE_TIMEOUT_MS,
       .cleanup_timeout_ms = H2_GIZCLAW_E2E_DEFAULT_CLEANUP_TIMEOUT_MS,
       .progress_interval_ms = H2_GIZCLAW_E2E_DEFAULT_PROGRESS_INTERVAL_MS,
       .on_progress = emit_progress,
   };
   runner->exit_code =
-      h2_gizclaw_e2e_run(runner->runtime, &app_config, &runner->result);
+      h2_gizclaw_e2e_run(runner->runtime, &runner->app_config, &runner->result);
+  if (runner->exit_code == H2_GIZCLAW_E2E_EXIT_PASS && runner->result.complete &&
+      runner->result.cleanup_rc == H2_PAL_OK && !runner->result.retained_resources) {
+    const int confirm = h2_esp_h2loader_app_confirm(runner->runtime);
+    printf("H2_GIZCLAW_CONFIRM rc=%d\n", confirm);
+    if (confirm != H2_PAL_OK)
+      runner->exit_code = H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+  }
+
   h2_atomic_store_explicit(&runner->exited, true, H2_ATOMIC_RELEASE);
 }
 
@@ -254,10 +268,6 @@ static void image_entry(void *user) {
                          &s_wifi_supervisor, &wifi_task);
   if (rc != H2_PAL_OK) {
     fail_launcher("wifi_supervisor", rc, true);
-  }
-  rc = h2_esp_h2loader_app_confirm(runtime);
-  if (rc != H2_PAL_OK) {
-    fail_launcher("confirm", rc, true);
   }
   printf("H2_GIZCLAW_E2E_DEVKIT stage=launcher status=READY\n");
   fflush(stdout);

@@ -42,6 +42,7 @@ extern const uint8_t h2_gizclaw_e2e_voice_prompt_end[]
 
 typedef struct h2_gizclaw_e2e_amoled_runner {
   h2_runtime_t *runtime;
+  h2_gizclaw_e2e_config_t app_config;
   h2_gizclaw_e2e_result_t result;
   h2_gizclaw_e2e_exit_t exit_code;
   h2_atomic_bool_t exited;
@@ -115,11 +116,14 @@ static void emit_progress(void *user,
 static void emit_summary(const h2_gizclaw_e2e_amoled_runner_t *runner,
                          bool replay) {
   const h2_gizclaw_e2e_result_t *result = &runner->result;
-  printf("H2_GIZCLAW_E2E stage=summary entry=bj backend=h2peer suite=" AMOLED_E2E_SUITE_NAME " "
+  const h2_gizclaw_e2e_amoled_config_t *settings = h2_gizclaw_e2e_amoled_config();
+  printf("H2_GIZCLAW_E2E stage=%s platform=amoled endpoint=%.*s backend=h2peer suite=" AMOLED_E2E_SUITE_NAME " "
          "profile=%s selected=%zu terminal=%zu pass=%zu fail=%zu error=%zu "
          "blocked=%zu cancelled=%zu first_failure_case=%s "
          "first_failure_rc=%d cleanup_rc=%d retained_resources=%zu "
          "complete=%s exit_code=%d replay=%s\n",
+         replay ? "summary-replay" : "summary",
+         (int)settings->server_endpoint.len, settings->server_endpoint.data,
          result->runtime_profile_name[0] == '\0'
              ? "-"
              : result->runtime_profile_name,
@@ -153,7 +157,7 @@ static void run_e2e(void *raw) {
 #endif
   const h2_gizclaw_e2e_amoled_config_t *launcher_config =
       h2_gizclaw_e2e_amoled_config();
-  const h2_gizclaw_e2e_config_t app_config = {
+  runner->app_config = (h2_gizclaw_e2e_config_t){
       .server_endpoint = launcher_config->server_endpoint,
       .registration_token = launcher_config->registration_token,
       .voice_audio = runner->runtime->audio,
@@ -170,7 +174,15 @@ static void run_e2e(void *raw) {
       .on_progress = emit_progress,
   };
   runner->exit_code =
-      h2_gizclaw_e2e_run(runner->runtime, &app_config, &runner->result);
+      h2_gizclaw_e2e_run(runner->runtime, &runner->app_config, &runner->result);
+  if (runner->exit_code == H2_GIZCLAW_E2E_EXIT_PASS && runner->result.complete &&
+      runner->result.cleanup_rc == H2_PAL_OK && !runner->result.retained_resources) {
+    const int confirm = h2_esp_h2loader_app_confirm(runner->runtime);
+    printf("H2_GIZCLAW_CONFIRM rc=%d\n", confirm);
+    if (confirm != H2_PAL_OK)
+      runner->exit_code = H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+  }
+
   h2_atomic_store_explicit(&runner->exited, true, H2_ATOMIC_RELEASE);
 }
 
@@ -270,10 +282,13 @@ static void image_entry(void *user) {
   if (rc != H2_PAL_OK) {
     fail_launcher("wifi_supervisor", rc, true);
   }
+#if defined(H2_GIZCLAW_E2E_OTA_ONLY)
+  /* Dedicated OTA source-image preparation keeps its existing lifecycle. */
   rc = h2_esp_h2loader_app_confirm(runtime);
   if (rc != H2_PAL_OK) {
     fail_launcher("confirm", rc, true);
   }
+#endif
   printf("H2_GIZCLAW_E2E_AMOLED stage=launcher status=READY\n");
   fflush(stdout);
 
