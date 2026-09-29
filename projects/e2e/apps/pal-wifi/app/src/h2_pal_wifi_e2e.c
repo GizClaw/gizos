@@ -1,6 +1,7 @@
 #include "h2_pal_wifi_e2e.h"
 
 #include <string.h>
+#include <stdio.h>
 
 typedef struct wifi_test {
     h2_runtime_t *rt;
@@ -550,6 +551,12 @@ static int ap_client(wifi_test_t *s) {
                 (uint32_t)a[0] << 24 | (uint32_t)a[1] << 16 | (uint32_t)a[2] << 8 | a[3];
             uint32_t mask =
                 (uint32_t)m[0] << 24 | (uint32_t)m[1] << 16 | (uint32_t)m[2] << 8 | m[3];
+            char observation[160];
+            (void)snprintf(observation, sizeof(observation),
+                           "H2_WIFI_ADDRESS lease=%lu ap=%lu mask=%lu",
+                           (unsigned long)clients[0].lease.ip4, (unsigned long)address,
+                           (unsigned long)mask);
+            (void)h2_pal_log_write(s->rt->log, H2_PAL_LOG_INFO, "pal-wifi", observation);
             EXPECT(mask && (clients[0].lease.ip4 & mask) == (address & mask));
             s->client = clients[0];
             memcpy(s->result.client_mac, clients[0].mac, 6);
