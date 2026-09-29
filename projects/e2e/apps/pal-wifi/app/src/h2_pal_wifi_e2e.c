@@ -422,15 +422,16 @@ static int scan_test(wifi_test_t *s, int directed, int early) {
         memcpy(request.ssid, o.target->ssid, request.ssid_len);
         request.channel = o.target->channel;
     }
-    /* A directed scan can miss one beacon window while the independent
-     * AP+STA fixture is itself scanning. Retry absence within a finite budget;
-     * malformed or unfiltered records remain failures. */
+    /* The independent fixture may still be starting, or may miss one beacon
+     * window while acting as a STA itself. Retry only a missing target within
+     * a finite budget; malformed records and callback/filter violations still
+     * fail. Early-stop only qualifies callback polarity, not target discovery. */
     uint64_t started = now(s);
     for (;;) {
         o = (scan_observation_t){.target = &s->cfg->fixture, .early = early};
         CALL(h2_pal_wifi_sta_scan(s->rt->wifi_sta, directed ? &request : NULL, scan_result, &o,
                                   s->cfg->operation_timeout_ms));
-        if (!directed || o.count || s->clock_error ||
+        if (o.bad || (early ? o.count : o.target_count) || s->clock_error ||
             now(s) - started >= s->cfg->operation_timeout_ms)
             break;
         pause_ms(s, 500);

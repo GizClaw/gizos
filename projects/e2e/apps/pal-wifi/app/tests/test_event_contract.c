@@ -48,6 +48,8 @@ static void access_point(wifi_test_t *s, h2_runtime_event_kind_t kind,
 typedef struct cleanup_fixture {
     uint64_t now;
     unsigned starts, stops;
+    unsigned scans;
+    int malformed_scan;
     int active;
     h2_pal_wifi_ap_config_t config;
 } cleanup_fixture_t;
@@ -95,6 +97,43 @@ static int cleanup_time(void *user, uint64_t *out) {
 static int cleanup_sleep(void *user, uint32_t ms) {
     ((cleanup_fixture_t *)user)->now += ms;
     return H2_PAL_OK;
+}
+static int scan_after_fixture_start(void *user, const h2_pal_wifi_scan_request_t *request,
+                                    h2_pal_wifi_scan_result_fn callback, void *callback_user,
+                                    uint32_t timeout_ms) {
+    (void)request;
+    (void)timeout_ms;
+    cleanup_fixture_t *fixture = user;
+    ++fixture->scans;
+    h2_pal_wifi_scan_entry_t entry = {0};
+    const char *ssid = fixture->scans == 1u ? "other" : "fixture";
+    entry.ssid_len = strlen(ssid);
+    memcpy(entry.ssid, ssid, entry.ssid_len);
+    entry.bssid[0] = fixture->malformed_scan ? 0x01u : 0x02u;
+    entry.bssid[5] = 1u;
+    entry.channel = 6u;
+    entry.rssi = -45;
+    (void)callback(callback_user, &entry);
+    return H2_PAL_OK;
+}
+static void test_scan_waits_for_target_without_masking_malformed_records(void) {
+    cleanup_fixture_t fixture = {0};
+    const h2_pal_wifi_sta_vtable_t sta_v = {.scan = scan_after_fixture_start};
+    const h2_pal_time_vtable_t time_v = {
+        .get_monotonic_ms = cleanup_time, .sleep_ms = cleanup_sleep};
+    const h2_pal_wifi_sta_api_t sta = {&fixture, &sta_v};
+    const h2_pal_time_api_t time = {&fixture, &time_v};
+    h2_runtime_t runtime = {.wifi_sta = &sta, .time = &time};
+    h2_wifi_e2e_config_t config = {
+        .fixture = {.ssid = "fixture", .ssid_len = 7, .channel = 6},
+        .operation_timeout_ms = 3000};
+    wifi_test_t state = {.rt = &runtime, .cfg = &config};
+    assert(scan_test(&state, 0, 0) == H2_PAL_OK);
+    assert(fixture.scans == 2u && state.fixture_channel == 6u);
+    fixture.scans = 0u;
+    fixture.malformed_scan = 1;
+    assert(scan_test(&state, 0, 0) == H2_PAL_ERR_IO);
+    assert(fixture.scans == 1u);
 }
 static void test_failed_ap_mode_still_stops_ap(void) {
     cleanup_fixture_t fixture = {0};
@@ -187,5 +226,6 @@ int main(void) {
                  H2_RUNTIME_SYSTEM_WIFI_AP_STATUS_STOPPED);
     assert(bad_ap.result.invalid_events > 0);
     test_failed_ap_mode_still_stops_ap();
+    test_scan_waits_for_target_without_masking_malformed_records();
     return 0;
 }
