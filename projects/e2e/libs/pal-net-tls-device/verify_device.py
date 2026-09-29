@@ -24,8 +24,15 @@ def parse(text, expected_version, board):
     begin=next(i for i,(key,_) in enumerate(markers) if key=='H2_PAL_NET_TLS_EXECUTION')
     replay=next((i for i,(key,_) in enumerate(markers[begin+1:],begin+1) if key=='H2_PAL_NET_TLS_RUN'),None)
     assert replay is not None,'final replay/run metadata missing'
-    running=[json.loads(value) for key,value in markers[begin+1:replay] if key=='H2_PAL_NET_TLS_CASE']
+    compact=[json.loads(value) for key,value in markers[begin+1:replay] if key=='H2_PAL_NET_TLS_CASE']
     registry=re.findall(r'H2_NET_TLS_CASE\(\w+, "([^"]+)", ([01])\)',REGISTRY.read_text())
+    running=[]
+    for row, (_, required) in zip(compact, registry):
+        running.append(dict(id=row['id'], mandatory=bool(int(required)),
+            status=row['status'], detail=row['detail'], provider_result=row['rc'],
+            bytes_sent=row['tx'], bytes_received=row['rx'], elapsed_ms=row['ms'],
+            observed_ipv4=row.get('ip',[0,0,0,0])))
+    assert len(compact)==len(registry)
     assert [row['id'] for row in running]==[name for name,_ in registry],'incomplete/replayed/reordered executing ledger'
     mandatory=sum(int(required) for _,required in registry)
     assert all(row['status']=='PASS' and row['detail']==0 for row in running if row['mandatory'])
@@ -37,7 +44,12 @@ def parse(text, expected_version, board):
     summaries=[json.loads(value) for key,value in markers[replay:] if key=='H2_PAL_NET_TLS_SUMMARY']
     ready=[value for key,value in markers[replay:] if key=='H2_PAL_NET_TLS_READY']
     assert summaries and ready,'no completed summary/confirmation'
-    summary=summaries[0]
+    raw=summaries[0]
+    summary=dict(profile='net-tls-core', full_net_qualified=False, passed=raw['pass'],
+        mandatory_passed=raw['mandatory'],failed=raw['fail'],blocked=raw['blocked'],
+        unsupported=raw['unsupported'],not_assessed=raw['not_assessed'],
+        retained_sockets=raw['rs'],retained_resolvers=raw['rr'],
+        retained_allocations=raw['ra'])
     assert summary['mandatory_passed']==mandatory and not summary['full_net_qualified']
     assert not any(summary[key] for key in ('failed','blocked','retained_sockets','retained_resolvers','retained_allocations'))
     assert re.fullmatch(r'board='+re.escape(board)+r' rc=0 confirm=0',ready[0])

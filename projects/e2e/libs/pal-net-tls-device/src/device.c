@@ -31,22 +31,26 @@ static uint8_t *decode(const h2_pal_mem_api_t *mem, const char *hex,
 static void report(void *user, const h2_net_tls_case_result_t *item) {
   const h2_runtime_t *runtime = user;
   char line[512];
-  snprintf(
-      line, sizeof(line),
-      "H2_PAL_NET_TLS_CASE "
-      "{\"id\":\"%s\",\"mandatory\":%s,\"status\":\"%s\",\"detail\":%d,"
-      "\"line\":%u,\"elapsed_ms\":%llu,\"bytes_sent\":%zu,\"bytes_"
-      "received\":%zu,\"provider_result\":%d,\"observed_ipv4\":[%u,%u,%u,%u]}",
-      item->id, item->mandatory ? "true" : "false",
-      item->passed         ? "PASS"
-      : item->blocked      ? "BLOCKED"
-      : item->unsupported  ? "UNSUPPORTED"
-      : item->not_assessed ? "NOT_ASSESSED"
-                           : "FAIL",
-      item->detail, item->line, (unsigned long long)item->elapsed_ms,
-      item->bytes_sent, item->bytes_received, item->provider_result,
-      (unsigned)item->observed_ipv4[0], (unsigned)item->observed_ipv4[1],
-      (unsigned)item->observed_ipv4[2], (unsigned)item->observed_ipv4[3]);
+  const char *status = item->passed ? "PASS" : item->blocked ? "BLOCKED" :
+      item->unsupported ? "UNSUPPORTED" : item->not_assessed ? "NOT_ASSESSED" : "FAIL";
+  if (item->id != NULL && strcmp(item->id, "dns-hostname") == 0) {
+    (void)snprintf(line, sizeof(line),
+        "H2_PAL_NET_TLS_CASE {\"id\":\"%s\",\"status\":\"%s\","
+        "\"detail\":%d,\"rc\":%d,\"tx\":%zu,\"rx\":%zu,"
+        "\"ms\":%llu,\"ip\":[%u,%u,%u,%u]}",
+        item->id, status, item->detail, item->provider_result,
+        item->bytes_sent, item->bytes_received,
+        (unsigned long long)item->elapsed_ms,
+        (unsigned)item->observed_ipv4[0], (unsigned)item->observed_ipv4[1],
+        (unsigned)item->observed_ipv4[2], (unsigned)item->observed_ipv4[3]);
+  } else {
+    (void)snprintf(line, sizeof(line),
+        "H2_PAL_NET_TLS_CASE {\"id\":\"%s\",\"status\":\"%s\","
+        "\"detail\":%d,\"rc\":%d,\"tx\":%zu,\"rx\":%zu,\"ms\":%llu}",
+        item->id, status, item->detail, item->provider_result,
+        item->bytes_sent, item->bytes_received,
+        (unsigned long long)item->elapsed_ms);
+  }
   (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-net-tls", line);
   (void)h2_pal_time_sleep_ms(runtime->time, 40u);
 }
@@ -66,16 +70,14 @@ void h2_pal_net_tls_device_report(const h2_runtime_t *runtime,
   for (unsigned i = 0u; i < H2_NET_TLS_CASE_COUNT; ++i)
     if (result->cases[i].id)
       report((void *)runtime, &result->cases[i]);
-  snprintf(line, sizeof(line),
-           "H2_PAL_NET_TLS_SUMMARY "
-           "{\"profile\":\"net-tls-core\",\"full_net_qualified\":false,"
-           "\"passed\":%u,\"mandatory_passed\":%u,\"failed\":%u,\"blocked\":%u,"
-           "\"unsupported\":%u,\"not_assessed\":%u,\"retained_sockets\":%zu,"
-           "\"retained_resolvers\":%zu,\"retained_allocations\":%zu}",
-           result->passed, result->mandatory_passed, result->failed,
-           result->blocked, result->unsupported, result->not_assessed,
-           result->retained_sockets, result->retained_resolvers,
-           result->retained_allocations);
+  (void)snprintf(line, sizeof(line),
+      "H2_PAL_NET_TLS_SUMMARY {\"pass\":%u,\"mandatory\":%u,"
+      "\"fail\":%u,\"blocked\":%u,\"unsupported\":%u,"
+      "\"not_assessed\":%u,\"rs\":%zu,\"rr\":%zu,\"ra\":%zu}",
+      result->passed, result->mandatory_passed, result->failed,
+      result->blocked, result->unsupported, result->not_assessed,
+      result->retained_sockets, result->retained_resolvers,
+      result->retained_allocations);
   (void)h2_pal_log_write(runtime->log, H2_PAL_LOG_INFO, "pal-net-tls", line);
 }
 int h2_pal_net_tls_device_run(h2_runtime_t *runtime,

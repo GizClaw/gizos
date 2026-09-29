@@ -25,6 +25,7 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <string.h>
+#include <time.h>
 #include <sys/time.h>
 #include <unistd.h>
 
@@ -317,15 +318,55 @@ static h2_pal_result_t esp_net_tls_load_ca(
     return H2_PAL_OK;
 }
 
+/* Some SDK mbedTLS builds omit MBEDTLS_HAVE_TIME_DATE, which otherwise
+ * accepts expired certificates even with VERIFY_REQUIRED. Compare the peer
+ * chain against calibrated PAL wall time on every verified handshake. */
+static h2_pal_result_t esp_net_tls_check_certificate_time(
+    const esp_net_tls_socket_t *socket) {
+    uint64_t wall_ms = 0u;
+    if (h2_pal_time_get_wall_ms(h2_esp_platform_time_api(), &wall_ms) != H2_PAL_OK) {
+        return H2_PAL_ERR_UNAVAILABLE;
+    }
+    time_t seconds = (time_t)(wall_ms / 1000u);
+    if (seconds < 0 || (uint64_t)seconds != wall_ms / 1000u) {
+        return H2_PAL_ERR_UNAVAILABLE;
+    }
+    struct tm utc;
+    if (gmtime_r(&seconds, &utc) == NULL) {
+        return H2_PAL_ERR_UNAVAILABLE;
+    }
+    mbedtls_x509_time now = {
+        .year = utc.tm_year + 1900, .mon = utc.tm_mon + 1,
+        .day = utc.tm_mday, .hour = utc.tm_hour,
+        .min = utc.tm_min, .sec = utc.tm_sec,
+    };
+    const mbedtls_x509_crt *cert = mbedtls_ssl_get_peer_cert(&socket->ssl);
+    if (cert == NULL) {
+        return H2_PAL_ERR_TLS_VERIFY;
+    }
+    for (; cert != NULL; cert = cert->next) {
+        if (mbedtls_x509_time_cmp(&cert->valid_from, &now) > 0 ||
+            mbedtls_x509_time_cmp(&cert->valid_to, &now) < 0) {
+            return H2_PAL_ERR_TLS_VERIFY;
+        }
+    }
+    return H2_PAL_OK;
+}
+
 static h2_pal_result_t esp_net_tls_handshake(
-    esp_net_tls_socket_t *socket, uint32_t timeout_ms) {
+    esp_net_tls_socket_t *socket, uint32_t timeout_ms,
+    h2_pal_net_tls_verify_t verify_mode) {
     uint64_t deadline = esp_net_now_ms() + timeout_ms;
     for (;;) {
         int result = mbedtls_ssl_handshake(&socket->ssl);
         if (result == 0) {
-            return mbedtls_ssl_get_verify_result(&socket->ssl) == 0u
-                ? H2_PAL_OK
-                : H2_PAL_ERR_TLS_VERIFY;
+            if (verify_mode == H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
+                return H2_PAL_OK;
+            }
+            if (mbedtls_ssl_get_verify_result(&socket->ssl) != 0u) {
+                return H2_PAL_ERR_TLS_VERIFY;
+            }
+            return esp_net_tls_check_certificate_time(socket);
         }
         if (result != MBEDTLS_ERR_SSL_WANT_READ &&
             result != MBEDTLS_ERR_SSL_WANT_WRITE) {
@@ -1277,6 +1318,11 @@ static h2_pal_result_t esp_net_tls_wrap(
         return H2_PAL_ERR_INVALID_ARG;
     }
     *out_socket = -1;
+    if (config->verify != H2_PAL_NET_TLS_VERIFY_DEFAULT &&
+        config->verify != H2_PAL_NET_TLS_VERIFY_REQUIRED &&
+        config->verify != H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
     esp_net_tls_init();
     uint64_t deadline_ms = esp_net_now_ms() + timeout_ms;
     int lock_result = esp_net_tls_take_mutex(
@@ -1345,7 +1391,7 @@ static h2_pal_result_t esp_net_tls_wrap(
         uint32_t remaining_ms = esp_net_timeout_remaining_ms(deadline_ms);
         rc = remaining_ms == 0u
             ? H2_PAL_ERR_TIMEOUT
-            : esp_net_tls_handshake(slot, remaining_ms);
+            : esp_net_tls_handshake(slot, remaining_ms, config->verify);
     }
     if (xSemaphoreTake(
             s_esp_tls_sync->registry_mutex, portMAX_DELAY) == pdTRUE) {

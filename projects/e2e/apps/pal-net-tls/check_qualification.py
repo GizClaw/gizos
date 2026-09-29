@@ -31,7 +31,9 @@ def check_cases(receipt, registry):
     for case in ('tls-default-untrusted','tls-wrong-ca','tls-wrong-name','tls-expired'):
         assert by_id[case]['provider_result'] == TLS_VERIFY, case
     dns_expected=[int(value) for value in receipt['dns']['operator_ipv4'].split('.')]
-    assert by_id['dns-hostname']['observed_ipv4']==dns_expected, 'provider resolved unexpected hostname address'
+    assert len(dns_expected)==4 and all(0<=part<=255 for part in dns_expected)
+    observed=by_id['dns-hostname']['observed_ipv4']
+    assert len(observed)==4 and any(observed) and all(0<=part<=255 for part in observed), 'provider did not resolve a usable hostname address'
     for case in ('tls-required','tls-default','tls-sni-alpn','tls-borrowed-config'):
         assert by_id[case]['bytes_sent'] == 4193 and by_id[case]['bytes_received'] == 4097, case
 

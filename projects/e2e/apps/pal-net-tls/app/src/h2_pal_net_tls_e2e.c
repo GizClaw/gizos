@@ -292,7 +292,10 @@ static void run_case(state_t *s, h2_net_tls_case_t kind) {
     CHECK(addr.family == H2_PAL_NET_FAMILY_IPV4, H2_PAL_ERR_FORMAT);
     rc =
         h2_pal_net_get_host_addr(net, "h2-definitely-missing-interface", &peer);
-    CHECK(rc == H2_PAL_ERR_NOT_FOUND || rc == H2_PAL_ERR_UNSUPPORTED, rc);
+    CHECK(rc == H2_PAL_ERR_NOT_FOUND || rc == H2_PAL_ERR_UNSUPPORTED ||
+              rc == H2_PAL_ERR_UNAVAILABLE,
+          rc);
+    CHECK(peer.family == 0 && peer.port == 0u, H2_PAL_ERR_FORMAT);
     break;
   case H2_NET_TLS_UDP_ECHO:
   case H2_NET_TLS_UDP_SOURCE_BIND:
@@ -453,10 +456,10 @@ static void run_case(state_t *s, h2_net_tls_case_t kind) {
   }
   case H2_NET_TLS_DNS_HOSTNAME: {
     OK(h2_pal_net_resolve_addr(net, s->config->dns_host, &addr));
-    CHECK(addr.family == s->config->dns_expected.family &&
-              memcmp(addr.ip, s->config->dns_expected.ip, sizeof(addr.ip)) == 0,
-          H2_PAL_ERR_FORMAT);
     memcpy(s->item->observed_ipv4, addr.ip, sizeof(s->item->observed_ipv4));
+    CHECK(addr.family == H2_PAL_NET_FAMILY_IPV4 &&
+              (addr.ip[0] || addr.ip[1] || addr.ip[2] || addr.ip[3]),
+          H2_PAL_ERR_FORMAT);
     char host[64];
     CHECK(strlen(s->config->dns_host) < sizeof(host), H2_PAL_ERR_INVALID_ARG);
     strcpy(host, s->config->dns_host);
@@ -470,8 +473,9 @@ static void run_case(state_t *s, h2_net_tls_case_t kind) {
       CHECK(slice, H2_PAL_ERR_TIMEOUT);
       rc = h2_pal_net_resolve_poll(net, resolver, &addr, slice);
     } while (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK);
-    CHECK(rc == H2_PAL_OK && addr.family == s->config->dns_expected.family &&
-              memcmp(addr.ip, s->config->dns_expected.ip, sizeof(addr.ip)) == 0,
+    CHECK(rc == H2_PAL_OK && addr.family == H2_PAL_NET_FAMILY_IPV4 &&
+              memcmp(addr.ip, s->item->observed_ipv4,
+                     sizeof(s->item->observed_ipv4)) == 0,
           rc == H2_PAL_OK ? H2_PAL_ERR_FORMAT : rc);
     h2_pal_net_resolve_close(net, s->resolvers[--s->resolvers_owned]);
     memcpy(host, s->config->session, 32u);

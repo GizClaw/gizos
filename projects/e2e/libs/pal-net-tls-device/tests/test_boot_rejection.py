@@ -14,9 +14,11 @@ REGISTRY=re.findall(r'H2_NET_TLS_CASE\(\w+, "([^"]+)", ([01])\)',(ROOT/'projects
 def log():
     lines=['H2_PAL_NET_TLS_BOOT board=bk7258 version=test-version',
         'H2_PAL_NET_TLS_EXECUTION session='+'a'*32+' boot_id='+'b'*16]
-    lines.extend('H2_PAL_NET_TLS_CASE '+json.dumps(dict(id=name,mandatory=bool(int(required)),status='PASS' if int(required) else 'NOT_ASSESSED',detail=0)) for name,required in REGISTRY)
+    lines.extend('H2_PAL_NET_TLS_CASE '+json.dumps(dict(id=name,status='PASS' if int(required) else 'NOT_ASSESSED',detail=0,rc=0,tx=0,rx=0,ms=0,ip=[150,5,151,236] if name=='dns-hostname' else [0,0,0,0])) for name,required in REGISTRY)
     lines.append('H2_PAL_NET_TLS_RUN session='+'a'*32+' boot_id='+'b'*16+' version=test-version version_rc=0 dns_host=dns.test dns_ipv4=150.5.151.236')
-    lines.append('H2_PAL_NET_TLS_SUMMARY '+json.dumps(dict(mandatory_passed=sum(int(required) for _,required in REGISTRY),full_net_qualified=False,failed=0,blocked=0,retained_sockets=0,retained_resolvers=0,retained_allocations=0)))
+    summary=dict(pass_=38,mandatory=sum(int(required) for _,required in REGISTRY),fail=0,blocked=0,unsupported=0,not_assessed=1,rs=0,rr=0,ra=0)
+    summary['pass']=summary.pop('pass_')
+    lines.append('H2_PAL_NET_TLS_SUMMARY '+json.dumps(summary))
     lines.append('H2_PAL_NET_TLS_READY board=bk7258 rc=0 confirm=0')
     return '\n'.join(lines)
 
