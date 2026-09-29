@@ -59,6 +59,8 @@
 #define WOLFSSL_ASN_TEMPLATE
 
 #define WOLFSSL_SP_MATH_ALL
+/* System trust stores include RSA-4096 roots (for example ISRG Root X1). */
+#define SP_INT_BITS 4096
 #if defined(_MSC_VER)
 #define WOLFSSL_HAVE_MAX
 #define WOLFSSL_HAVE_MIN
