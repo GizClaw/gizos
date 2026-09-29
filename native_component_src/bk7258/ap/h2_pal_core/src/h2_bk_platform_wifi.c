@@ -137,6 +137,7 @@ static int h2_bk_wifi_map_error(bk_err_t err) {
     case BK_ERR_WIFI_AP_NOT_STARTED:
         return H2_PAL_ERR_NOT_FOUND;
     default:
+        BK_LOGW("h2_wifi", "H2_WIFI_SDK_ERROR code=%d\r\n", (int)err);
         return H2_PAL_ERR_IO;
     }
 }
@@ -549,10 +550,12 @@ static int h2_bk_wifi_sta_get_status(
         *out_status = s_h2_bk_wifi_connect_status;
         return H2_PAL_OK;
     }
-    if (h2_bk_wifi_load_sta_status(out_status) != 0 &&
-        out_status->state == H2_PAL_WIFI_STA_STATE_GOT_IP &&
-        out_status->ip_valid != 0u) {
-        return H2_PAL_OK;
+    if (h2_bk_wifi_load_sta_status(out_status) != 0) {
+        if ((out_status->state == H2_PAL_WIFI_STA_STATE_GOT_IP && out_status->ip_valid != 0u) ||
+            (out_status->state == H2_PAL_WIFI_STA_STATE_DISCONNECTED &&
+             __atomic_load_n(&s_h2_bk_wifi_last_config_valid, __ATOMIC_ACQUIRE) == 0)) {
+            return H2_PAL_OK;
+        }
     }
     memset(out_status, 0, sizeof(*out_status));
     out_status->state = H2_PAL_WIFI_STA_STATE_IDLE;
@@ -912,7 +915,8 @@ static int h2_bk_wifi_sta_connect(
         }
         if (err != BK_OK &&
             err != BK_ERR_WIFI_STA_NOT_STARTED &&
-            err != BK_ERR_WIFI_STA_NOT_CONFIG) {
+            err != BK_ERR_WIFI_STA_NOT_CONFIG &&
+            !(err == BK_FAIL && cached_status.state == H2_PAL_WIFI_STA_STATE_DISCONNECTED)) {
             return h2_bk_wifi_map_error(err);
         }
         err = bk_wifi_sta_set_config(&bk_config);
@@ -951,7 +955,7 @@ static int h2_bk_wifi_sta_connect(
         }
         if (err != BK_OK &&
             err != BK_ERR_WIFI_STA_NOT_STARTED &&
-            err != BK_ERR_WIFI_STA_NOT_CONFIG) {
+            err != BK_ERR_WIFI_STA_NOT_CONFIG && err != BK_FAIL) {
             return h2_bk_wifi_map_error(err);
         }
         rtos_delay_milliseconds(100u);
@@ -1091,7 +1095,15 @@ static int h2_bk_wifi_ap_start(
 
     wifi_ap_config_t bk_config;
     h2_bk_wifi_copy_ap_config(&bk_config, config);
-    bk_err_t err = bk_wifi_ap_set_config(&bk_config);
+    /* AP's local lwIP and CP's real DHCP server otherwise start from different
+     * SDK defaults (192.168.188.1 versus 192.168.4.1). Configure both owners
+     * through the SDK IPC-aware Netif API before starting the AP. */
+    const netif_ip4_config_t ip4 = {
+        .ip = "192.168.4.1", .mask = "255.255.255.0",
+        .gateway = "192.168.4.1", .dns = "192.168.4.1"};
+    bk_err_t err = bk_netif_set_ip4_config(NETIF_IF_AP, &ip4);
+    if (err != BK_OK) return h2_bk_wifi_map_error(err);
+    err = bk_wifi_ap_set_config(&bk_config);
     if (err != BK_OK) {
         return h2_bk_wifi_map_error(err);
     }
