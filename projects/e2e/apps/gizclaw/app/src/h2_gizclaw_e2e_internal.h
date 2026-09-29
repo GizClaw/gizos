@@ -131,6 +131,8 @@ int h2_gizclaw_e2e_fixture_social_observation(
 int h2_gizclaw_e2e_decode_social_ping(h2_gizclaw_rpc_bytes_t payload,
                                      h2_gizclaw_e2e_social_observation_t *out);
 
+int h2_gizclaw_e2e_run_session_cancel(h2_gizclaw_e2e_fixture_t *fixture);
+
 int h2_gizclaw_e2e_fixture_init(h2_gizclaw_e2e_fixture_t *fixture,
                                 h2_runtime_t *runtime,
                                 const h2_gizclaw_e2e_config_t *config,

@@ -15,6 +15,8 @@ static int run_voice(h2_gizclaw_e2e_fixture_t *fixture) {
   int rc = h2_gizclaw_e2e_prepare_voice(fixture);
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_e2e_run_voice(fixture);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_e2e_run_session_cancel(fixture);
   /* Session owns its route; raw Conversation and Service audio APIs require
    * their own run after Session teardown. Its internal calls are not evidence
    * that an application can use those public APIs directly. */

@@ -83,6 +83,7 @@ CASE(run_device)
 CASE(prepare_device)
 CASE(run_firmware)
 CASE(prepare_voice)
+CASE(run_session_cancel)
 CASE(run_concurrency)
 CASE(run_service)
 #undef CASE
