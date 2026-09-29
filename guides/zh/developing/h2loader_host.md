@@ -93,7 +93,7 @@ JSON/CSV writer 是 caller 提供的 byte sink，逐字段转义。当前 export
 
 `projects/e2e/targets/pkg_tar/h2loader-serial/` 只验证 Browser Host Serial contract；它不是产品 UI。[H2Loader Web SDK](/apps/h2loader/apps/batch_loader/) 通过本 Core 与 Web PAL 提供 authoritative status、managed operation、progress 与 final verification，但不暴露 destructive recovery。产品 React UI 位于 `GizClaw/www`，只消费发布的 `@gizclaw/h2loader` Promise API。
 
-Web Serial Promise completion 只记录 generation-tagged result，等待任务由后续 bounded platform pump 唤醒。Host reliable serial connection 在 `open()` 后、借出 stream 前 deassert DTR/RTS；Web 边界通过 `setSignals()` 执行相同操作，只有 canonical `UNSUPPORTED` 可继续。重启后的 port 只有在同一授权 registry 中仍能证明为原 `SerialPort` object 时才可重连，不能按 label 或 VID/PID 替换候选。Darwin default-route 查询使用 non-blocking route socket 和一秒 monotonic deadline，保证 Host shutdown/join 不会因为无路由响应永久阻塞。compile/fake/preflight 不能证明真实 status、HELP、install 或 destructive recovery；未执行的 ESP/BK recovery 保持 `SKIP` 并保留风险。
+Web Serial Promise completion 只记录 generation-tagged result，等待任务由后续 bounded platform pump 唤醒。Host reliable serial connection 默认在 `open()` 后、借出 stream 前 deassert DTR/RTS，只有 canonical `UNSUPPORTED` 可继续；native CLI 和其它未显式选择 preservation 的 consumer 保持该合同。连接配置显式选择 `preserve_control_lines` 时，Host 在整个 connection 生命周期都不调用 control-line provider。Web H2Loader 固定选择 preservation，因此首次连接、普通操作、timeout recovery 与 reboot reconnect 都不能调用 `SerialPort.setSignals()`；设备重启与角色切换只通过 H2Loader protocol command 发生。重启后的 port 只有在同一授权 registry 中仍能证明为原 `SerialPort` object 时才可重连，不能按 label 或 VID/PID 替换候选。Darwin default-route 查询使用 non-blocking route socket 和一秒 monotonic deadline，保证 Host shutdown/join 不会因为无路由响应永久阻塞。compile/fake/preflight 不能证明真实 status、HELP、install 或 destructive recovery；未执行的 ESP/BK recovery 保持 `SKIP` 并保留风险。
 
 ## Validation
 
