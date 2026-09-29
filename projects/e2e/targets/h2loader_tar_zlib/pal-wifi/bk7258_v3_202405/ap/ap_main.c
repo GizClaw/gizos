@@ -16,34 +16,55 @@ static h2_pal_task_t *diag_task;
 static void dhcp_diag(void *user) {
     h2_bk_dhcp_snapshot_t *snapshot = user;
     uint32_t seen[H2_BK_DHCP_RING_CAPACITY] = {0};
-    uint32_t last_dropped = 0;
+    uint32_t last_dropped = 0, last_ticket = 0;
     while (!__atomic_load_n(&diag_stop_requested, __ATOMIC_ACQUIRE)) {
         int rc = h2_bk_dhcp_query(snapshot);
         if (rc != H2_PAL_OK) {
             if (__atomic_exchange_n(&diag_error, (uint32_t)rc, __ATOMIC_ACQ_REL) == 0u)
                 printf("H2_BK_DHCP_QUERY_FAIL rc=%d\n", rc);
         } else {
+            if (snapshot->last_ticket != last_ticket) {
+                last_ticket = snapshot->last_ticket;
+                printf("H2_BK_DHCP_SNAPSHOT last_ticket=%lu count=%u dropped=%lu\n",
+                       (unsigned long)last_ticket, (unsigned)snapshot->count,
+                       (unsigned long)snapshot->dropped);
+            }
             for (uint32_t i = 0; i < snapshot->count; ++i) {
                 const h2_bk_dhcp_entry_t *e = &snapshot->entries[i];
                 if (e->ticket == 0u) continue;
                 uint32_t slot = (e->ticket - 1u) % H2_BK_DHCP_RING_CAPACITY;
                 if (seen[slot] == e->ticket) continue;
                 seen[slot] = e->ticket;
-                if (e->dir == 1u && e->src == 68u && e->dst == 67u &&
+                if ((e->dir == 1u || e->dir == 3u) && e->role == 0u &&
+                    e->src == 68u && e->dst == 67u &&
                     (e->type == 1u || e->type == 3u))
                     (void)__atomic_fetch_or(&diag_observed, 1u, __ATOMIC_RELAXED);
-                if (e->dir == 2u && e->src == 67u && e->dst == 68u &&
+                if (e->dir == 2u && e->role == 0u &&
+                    e->src == 67u && e->dst == 68u &&
                     (e->type == 2u || e->type == 5u))
                     (void)__atomic_fetch_or(&diag_observed, 2u, __ATOMIC_RELAXED);
+                const char *direction =
+                    e->dir == 1u ? "CP_TX" : e->dir == 2u ? "CP_RX" :
+                    e->dir == 3u ? "HOST_TX" : "HOST_TX_RESULT";
                 printf("H2_BK_DHCP dir=%s type=%u src=%u dst=%u xid=%lu "
                        "vif=%ld role=%ld netif=%u flags=%u ip4=%lu default=%u "
-                       "bytes=%u ticket=%lu\n",
-                       e->dir == 1u ? "TX" : "RX", (unsigned)e->type,
+                       "bytes=%u ticket=%lu ip_src=%lu ip_dst=%lu yiaddr=%lu "
+                       "server_id=%lu udp_checksum=%u bootp_flags=%u "
+                       "eth_src=%04lx%08lx eth_dst=%04lx%08lx "
+                       "chaddr=%04lx%08lx send_rc=%ld\n",
+                       direction, (unsigned)e->type,
                        (unsigned)e->src, (unsigned)e->dst, (unsigned long)e->xid,
                        (long)(int32_t)e->vif, (long)(int32_t)e->role,
                        (unsigned)e->netif, (unsigned)e->flags,
                        (unsigned long)e->ip4, (unsigned)e->is_default,
-                       (unsigned)e->bytes, (unsigned long)e->ticket);
+                       (unsigned)e->bytes, (unsigned long)e->ticket,
+                       (unsigned long)e->ip_src, (unsigned long)e->ip_dst,
+                       (unsigned long)e->yiaddr, (unsigned long)e->server_id,
+                       (unsigned)e->udp_checksum, (unsigned)e->bootp_flags,
+                       (unsigned long)e->eth_src_hi, (unsigned long)e->eth_src_lo,
+                       (unsigned long)e->eth_dst_hi, (unsigned long)e->eth_dst_lo,
+                       (unsigned long)e->chaddr_hi, (unsigned long)e->chaddr_lo,
+                       (long)(int32_t)e->send_rc);
             }
             if (snapshot->dropped != last_dropped) {
                 last_dropped = snapshot->dropped;

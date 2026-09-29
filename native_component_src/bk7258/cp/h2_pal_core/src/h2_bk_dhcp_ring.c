@@ -1,7 +1,7 @@
 #include "h2_bk_dhcp_ring.h"
 #include <stddef.h>
 
-_Static_assert(sizeof(h2_bk_dhcp_entry_t) == 13u * sizeof(uint32_t), "wire entry layout");
+_Static_assert(sizeof(h2_bk_dhcp_entry_t) == 26u * sizeof(uint32_t), "wire entry layout");
 _Static_assert(__atomic_always_lock_free(sizeof(uint32_t), 0), "32-bit atomics required");
 
 typedef struct h2_bk_dhcp_slot {
@@ -18,7 +18,10 @@ static uint32_t next_ticket, dropped;
 #define LOAD(field) __atomic_load_n(&(field), __ATOMIC_SEQ_CST)
 #define EACH_FIELD(OP) \
     OP(ticket) OP(dir) OP(type) OP(src) OP(dst) OP(xid) OP(vif) OP(role) \
-    OP(netif) OP(flags) OP(ip4) OP(is_default) OP(bytes)
+    OP(netif) OP(flags) OP(ip4) OP(is_default) OP(bytes) \
+    OP(ip_src) OP(ip_dst) OP(yiaddr) OP(server_id) OP(udp_checksum) \
+    OP(bootp_flags) OP(eth_src_hi) OP(eth_src_lo) OP(eth_dst_hi) \
+    OP(eth_dst_lo) OP(chaddr_hi) OP(chaddr_lo) OP(send_rc)
 
 void h2_bk_dhcp_record(const h2_bk_dhcp_entry_t *entry) {
     if (entry == NULL) return;

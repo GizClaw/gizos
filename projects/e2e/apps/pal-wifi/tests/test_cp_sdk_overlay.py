@@ -101,7 +101,7 @@ int main(void) {
     h2_bk_dhcp_record(&entry);
     p.args[0]=(uintptr_t)&snapshot;
     CHECK(cif_handle_wifi_api_cmd(&p.hdr)==0 && confirmed==0);
-    CHECK(snapshot.version==1 && snapshot.count==1 && snapshot.entries[0].xid==123);
+    CHECK(snapshot.version==H2_BK_DHCP_SNAPSHOT_VERSION && snapshot.count==1 && snapshot.entries[0].xid==123);
 #else
     CHECK(confirmed==-2 && connected==1 && started==1 && vif==7 && calls==0);
     p.hdr.cmd_id=H2_BK_WIFI_RPC_STA_ASSOCIATE;

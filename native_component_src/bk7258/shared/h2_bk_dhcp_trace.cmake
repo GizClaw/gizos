@@ -29,31 +29,44 @@ if(H2_BK_DHCP_TRACE)
   target_include_directories(${H2_BK_TRACE_LIB} PRIVATE
     "${REPO_ROOT}/native_component_src/bk7258/shared")
 
-  # Host/AP frames bypass CP's lwIP output and enter the real radio TX queue
-  # through controller_if. Record after ownership/free-return checks, before
-  # cloning or submitting that pbuf. This does not change packet ownership.
+  # Host/AP frames bypass CP's lwIP output. Interpose only the three real
+  # controller sender call sites in a guarded build-tree copy; capture before
+  # ownership transfer, then record the sender's return using saved metadata.
   set(H2_BK_TRACE_DP_SOURCE "${H2_BK_TRACE_SDK_ROOT}/components/controller_if/cif_wifi_dp.c")
   file(READ "${H2_BK_TRACE_DP_SOURCE}" H2_BK_TRACE_DP_CONTENT)
   string(REPLACE "\r\n" "\n" H2_BK_TRACE_DP_CONTENT "${H2_BK_TRACE_DP_CONTENT}")
-  set(H2_BK_TRACE_DP_ANCHOR "    CIF_STATS_INC(buf_in_txdata);")
-  string(FIND "${H2_BK_TRACE_DP_CONTENT}" "${H2_BK_TRACE_DP_ANCHOR}" H2_BK_TRACE_DP_OFFSET)
-  if(H2_BK_TRACE_DP_OFFSET EQUAL -1)
-    message(FATAL_ERROR "Pinned CP host TX anchor changed; revalidate DHCP diagnostics")
+  string(FIND "${H2_BK_TRACE_DP_CONTENT}"
+    "extern int bmsg_tx_sender(struct pbuf *p, uint32_t vif_idx);"
+    H2_BK_TRACE_DP_ANCHOR)
+  string(REGEX MATCHALL "bmsg_tx_sender\\(" H2_BK_TRACE_DP_CALLS "${H2_BK_TRACE_DP_CONTENT}")
+  list(LENGTH H2_BK_TRACE_DP_CALLS H2_BK_TRACE_DP_COUNT)
+  if(H2_BK_TRACE_DP_ANCHOR EQUAL -1 OR NOT H2_BK_TRACE_DP_COUNT EQUAL 4)
+    message(FATAL_ERROR "Pinned CP host TX sender changed; revalidate DHCP diagnostics")
   endif()
-  string(REPLACE "${H2_BK_TRACE_DP_ANCHOR}"
-    "${H2_BK_TRACE_DP_ANCHOR}
-    {
-        int h2_trace_vif_id = (int)vif_id - 0xF;
-        void *h2_trace_vif = wifi_netif_vifid_to_vif(h2_trace_vif_id);
-        struct netif *h2_trace_netif = h2_trace_vif
-            ? (struct netif *)wifi_netif_get_vif_private_data(h2_trace_vif) : NULL;
-        h2_bk_dhcp_trace(\"TX\", pbuf, h2_trace_netif, h2_trace_vif_id,
-            h2_trace_vif ? wifi_netif_vif_to_netif_type(h2_trace_vif) : -1);
-    }"
-    H2_BK_TRACE_DP_CONTENT "${H2_BK_TRACE_DP_CONTENT}")
   set(H2_BK_TRACE_DP_CORRECTED "${CMAKE_CURRENT_BINARY_DIR}/h2_bk_dhcp_wifi_dp.c")
+  set(H2_BK_TRACE_DP_PREFIX "#include \"h2_bk_dhcp_trace.h\"
+#include \"bk_private/bk_wifi.h\"
+extern int bmsg_tx_sender(struct pbuf *p, uint32_t vif_idx);
+static int h2_bk_dhcp_bmsg_tx_sender(struct pbuf *p, uint32_t vif_idx) {
+    int id = (int)vif_idx - 0xF;
+    void *vif = wifi_netif_vifid_to_vif(id);
+    struct netif *netif = vif ? (struct netif *)wifi_netif_get_vif_private_data(vif) : NULL;
+    h2_bk_dhcp_entry_t entry;
+    int captured = h2_bk_dhcp_capture(3u, p, netif, id,
+        vif ? wifi_netif_vif_to_netif_type(vif) : -1, &entry);
+    if (captured) h2_bk_dhcp_record(&entry);
+    int rc = bmsg_tx_sender(p, vif_idx);
+    if (captured) {
+        entry.dir = 4u;
+        entry.send_rc = (uint32_t)rc;
+        h2_bk_dhcp_record(&entry);
+    }
+    return rc;
+}
+#define bmsg_tx_sender h2_bk_dhcp_bmsg_tx_sender
+")
   file(WRITE "${H2_BK_TRACE_DP_CORRECTED}"
-    "#include \"h2_bk_dhcp_trace.h\"\n${H2_BK_TRACE_DP_CONTENT}")
+    "${H2_BK_TRACE_DP_PREFIX}${H2_BK_TRACE_DP_CONTENT}")
   get_target_property(H2_BK_TRACE_DP_SOURCES ${H2_BK_CP_CONTROLLER_LIB} SOURCES)
   list(FILTER H2_BK_TRACE_DP_SOURCES EXCLUDE REGEX "(^|/)cif_wifi_dp\\.c$")
   list(APPEND H2_BK_TRACE_DP_SOURCES "${H2_BK_TRACE_DP_CORRECTED}")
