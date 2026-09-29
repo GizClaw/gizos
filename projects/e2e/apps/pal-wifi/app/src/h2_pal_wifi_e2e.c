@@ -711,8 +711,25 @@ static int ap_client_left(wifi_test_t *s) {
         wifi_peer_observation_t *peer = peer_observation(s, s->client.mac, 0);
         if (!count && peer != NULL && !peer->active && !peer->leased &&
             peer->lefts && peer->releases && peer->lease_ip4 == s->client.lease.ip4 &&
-            !memcmp(s->left_mac, s->client.mac, 6))
-            return H2_PAL_OK;
+            !memcmp(s->left_mac, s->client.mac, 6)) {
+            const unsigned grants = peer->grants, releases = peer->releases;
+            const uint64_t event_only_start = now(s);
+            /* The fixture returns after a bounded cooldown. From here until
+             * its next accepted lease is released, consume only Runtime
+             * events: no AP get_clients/status call may drive reconciliation.
+             * This proves autonomous delivery to an event-only consumer. */
+            do {
+                events(s);
+                peer = peer_observation(s, s->client.mac, 0);
+                if (peer != NULL && peer->grants > grants && peer->releases > releases &&
+                    !peer->active && !peer->leased &&
+                    peer->lease_ip4 == s->client.lease.ip4)
+                    return H2_PAL_OK;
+                pause_ms(s, 100);
+            } while (!s->clock_error && now(s) - event_only_start <
+                                         2ull * s->cfg->client_timeout_ms);
+            return H2_PAL_ERR_TIMEOUT;
+        }
         pause_ms(s, 100);
     } while (!s->clock_error && now(s) - start < s->cfg->client_timeout_ms);
     return H2_PAL_ERR_TIMEOUT;

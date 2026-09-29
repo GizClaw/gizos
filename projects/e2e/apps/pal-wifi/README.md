@@ -44,6 +44,9 @@ real lease GRANTED, and a same-MAC/same-IP RELEASED after that grant. A client
 may leave before the release event; leaving without an accepted lease must
 not synthesize one. Each WPA2/open/hidden AP case waits for its own accepted
 lease, and the fixture receipt must independently show a fresh real client.
+After the first WPA2 client leaves, the App waits for a second accepted lease
+and release while consuming only Runtime events, without calling AP status or
+client APIs; this checks that event-only consumers receive them autonomously.
 
 BK's pinned AP SDK public `connect`/`disconnect` only change local state.
 The provider uses paired AP/CP RPCs for actual radio association/disassociation,
