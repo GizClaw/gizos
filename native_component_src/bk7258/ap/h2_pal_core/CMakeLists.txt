@@ -286,3 +286,24 @@ get_target_property(H2_BK_NETIF_SOURCES ${H2_BK_NETIF_LIB} SOURCES)
 list(FILTER H2_BK_NETIF_SOURCES EXCLUDE REGEX "(^|/)bk_netif\\.c$")
 list(APPEND H2_BK_NETIF_SOURCES "${H2_BK_NETIF_CORRECTED_SOURCE}")
 set_property(TARGET ${H2_BK_NETIF_LIB} PROPERTY SOURCES ${H2_BK_NETIF_SOURCES})
+
+# The pinned AP SDK swallows a failed CP AP_STOP confirmation, tears down only
+# its local adapter and returns BK_OK. Keep both sides active on failure and
+# let the PAL report it; never claim that the CP/DHCP resources were stopped.
+armino_component_get_property(H2_BK_WIFI_LIB bk_wifi COMPONENT_LIB)
+set(H2_BK_SDK_WIFI_SOURCE "${BK_ARMINO_PATH}/components/bk_wifi/src/wifi_api.c")
+file(READ "${H2_BK_SDK_WIFI_SOURCE}" H2_BK_SDK_WIFI_CONTENT)
+set(H2_BK_AP_STOP_SIGNATURE "    ret = wifi_send_com_api_cmd(AP_STOP, 0);\n    if (ret != BK_OK) {\n        WDRV_LOGW(\"ap stop fail ret %d\\n\", ret);\n    }\n\n    WDRV_LOGI(\"ap stopped\\n\");")
+string(FIND "${H2_BK_SDK_WIFI_CONTENT}" "${H2_BK_AP_STOP_SIGNATURE}" H2_BK_AP_STOP_OFFSET)
+if(H2_BK_AP_STOP_OFFSET EQUAL -1)
+  message(FATAL_ERROR "Pinned BK AP stop RPC signature changed; revalidate the SDK correction")
+endif()
+set(H2_BK_AP_STOP_REPLACEMENT "    ret = wifi_send_com_api_cmd(AP_STOP, 0);\n    if (ret != BK_OK) {\n        WDRV_LOGW(\"ap stop fail ret %d\\n\", ret);\n        return ret;\n    }\n\n    WDRV_LOGI(\"ap stopped\\n\");")
+string(REPLACE "${H2_BK_AP_STOP_SIGNATURE}" "${H2_BK_AP_STOP_REPLACEMENT}"
+  H2_BK_SDK_WIFI_CORRECTED "${H2_BK_SDK_WIFI_CONTENT}")
+set(H2_BK_WIFI_CORRECTED_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/h2_bk_sdk_wifi_api.c")
+file(WRITE "${H2_BK_WIFI_CORRECTED_SOURCE}" "${H2_BK_SDK_WIFI_CORRECTED}")
+get_target_property(H2_BK_WIFI_SOURCES ${H2_BK_WIFI_LIB} SOURCES)
+list(FILTER H2_BK_WIFI_SOURCES EXCLUDE REGEX "(^|/)wifi_api\\.c$")
+list(APPEND H2_BK_WIFI_SOURCES "${H2_BK_WIFI_CORRECTED_SOURCE}")
+set_property(TARGET ${H2_BK_WIFI_LIB} PROPERTY SOURCES ${H2_BK_WIFI_SOURCES})

@@ -101,7 +101,8 @@ class SDKCorrection(unittest.TestCase):
         (self.root/'probe.c').write_text(PROBE)
         production=Path('native_component_src/bk7258/ap/h2_pal_core/CMakeLists.txt').read_text()
         start=production.index('# The pinned AP SDK erroneously')
-        (self.root/'correction.cmake').write_text(production[start:])
+        end=production.index('# The pinned AP SDK swallows', start)
+        (self.root/'correction.cmake').write_text(production[start:end])
         (self.root/'CMakeLists.txt').write_text('''
 cmake_minimum_required(VERSION 3.16)
 project(SDKCorrection C)
