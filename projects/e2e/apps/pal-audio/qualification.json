@@ -361,20 +361,24 @@
       "libs/pal/providers/ios/pal_core/src/h2_ios_audio.m": "a910b0f140c8481bcfef80f6472c061d87cf4cc2809f0269d5aa2adc491991dd",
       "libs/pal/providers/android/pal_core/src/h2_android_platform.c": "82d140e9f06f9604a210128546990bced7b84a60da2f05ca5c8fdd83b62212a9",
       "boards/bk7258_v3_202405/bk7258/ap/src/h2_bk7258_board_audio.c": "79e299e4ae267444f7ad8b44d64a08165cf9574a86b733d995011fb731a09ed8",
-      "projects/e2e/targets/h2loader_tar_zlib/pal-audio/bk7258_v3_202405/ap/ap_main.c": "a1f504708def9f124006193dae5ea84ba686b76ebc7a71fed478a6cc381f39a3",
-      "projects/e2e/targets/h2loader_tar_zlib/pal-audio/amoled/main/main.c": "8cbf4edd3382e731137efbc699934d4bebb305c44de19283b47cae51d0464edc",
+      "projects/e2e/targets/h2loader_tar_zlib/pal-audio/bk7258_v3_202405/ap/ap_main.c": "9d7a11f30becbdaabc61a8ee298bba5ba8367ab65ac60635219842dee3babc18",
+      "projects/e2e/targets/h2loader_tar_zlib/pal-audio/amoled/main/main.c": "91a671cd5b1b6819f10357e9b7bf8fbbef537b8fcffbd2b493882a3e3797ef93",
       "libs/pal/providers/ios/pal_core/src/h2_ios_audio_wait.c": "351666ed5ccce3cb96e4a780438ed1211b0940543cd9c3165bfe989d0d76620e",
       "libs/pal/providers/ios/pal_core/src/h2_ios_audio_wait.h": "4aa89ca5019f82cd96a50cfed5778ef7543ff0962f4b1d6b18421d34fe551846",
       "libs/pal/providers/ios/pal_core/include/h2_ios_platform.h": "74a7ef7fa50ff10c61bb7f836954c0b46a3fcb02adb9c94cb99a7298a993096e",
       "projects/e2e/apps/pal-audio/app/tests/test_cleanup_once.c": "48c90535ed595fed67322ed37cb70aac15e844d7a0ad02feada1a59a15c4ec2f",
       "projects/e2e/targets/ios_application/pal-audio/main.m": "ee2ce52e3104c5ffb1c1787529fa17fbdbdd656e1b299742c5d32963ba5b2207",
-      "projects/e2e/apps/pal-audio/check_qualification.py": "aaadd29608d6a5cf83ada92cff3a717ce197a64b9993fbb525a774217d804df9"
+      "projects/e2e/apps/pal-audio/check_qualification.py": "aaadd29608d6a5cf83ada92cff3a717ce197a64b9993fbb525a774217d804df9",
+      "projects/e2e/targets/h2loader_tar_zlib/pal-audio/tests/test_failure_recovery.c": "642e64888f268bd2aee810dab04e594f16029d7d0c5f1f352c24349bf97d35bd",
+      "projects/e2e/targets/h2loader_tar_zlib/pal-audio/tests/h2_pal_audio_board_test_sdk.h": "800025ae1fbcc26bbf83a432e976fc609016db58fe122399e44f22360bab1815"
     },
     "changes": {
       "projects/e2e/apps/pal-audio/app/src/h2_pal_audio_e2e.c": "Keep an incomplete close handle across at most three retries; defer speaker shutdown while it remains. Permanent or non-retryable errors fail cleanup and require provider teardown. The successful all-PASS case path is unchanged.",
       "projects/e2e/apps/pal-audio/app/include/h2_pal_audio_e2e.h": "Document bounded close retry and launcher teardown after failure; declarations and result layout are unchanged.",
       "projects/e2e/targets/ios_application/pal-audio/main.m": "Use AVAudioApplication on iOS 17+ and the locally guarded legacy API only on iOS 16.",
-      "projects/e2e/apps/pal-audio/app/tests/test_cleanup_once.c": "Inject one/two incomplete closes, retry exhaustion and a consuming IO close error; assert one gain/volume restore and no blind IO retry."
+      "projects/e2e/apps/pal-audio/app/tests/test_cleanup_once.c": "Inject one/two incomplete closes, retry exhaustion and a consuming IO close error; assert one gain/volume restore and no blind IO retry.",
+      "projects/e2e/targets/h2loader_tar_zlib/pal-audio/amoled/main/main.c": "On failed qualification or confirmation, request serialized H2Loader recovery to original P1; if that request returns, reset the whole chip instead of entering terminal replay. Success replay is unchanged.",
+      "projects/e2e/targets/h2loader_tar_zlib/pal-audio/bk7258_v3_202405/ap/ap_main.c": "On failed qualification or confirmation, request serialized H2Loader recovery to original P1; if that request returns, reset the whole chip instead of entering terminal replay. Success replay is unchanged."
     },
     "cleanup_regression": {
       "old_source_exit": -6,
@@ -399,6 +403,38 @@
       }
     },
     "scope": "Fresh 24-case runs on macOS, Chromium Worker and actual iOS SDK consumer. Android and both board packages retain their original successful ffec493c qualification snapshots; no reflash or new device-source claim is made. The new incomplete-close failure path is covered by deterministic regression, while all-PASS traces already close their track before terminal restore.",
-    "ios_build": "Package built with -Werror and deprecation diagnostics on its launcher. No global warning suppression or vendor changes."
+    "ios_build": "Package built with -Werror and deprecation diagnostics on its launcher. No global warning suppression or vendor changes.",
+    "board_recovery_regressions": {
+      "old_amoled_exit": -6,
+      "fixed_amoled_exit": 0,
+      "old_bk_exit": -6,
+      "fixed_bk_exit": 0,
+      "targets": [
+        "//projects/e2e/targets/h2loader_tar_zlib/pal-audio/tests:amoled_failure_recovery_test",
+        "//projects/e2e/targets/h2loader_tar_zlib/pal-audio/tests:bk_failure_recovery_test"
+      ],
+      "scenarios": [
+        "unrecovered qualification",
+        "configuration lookup failure",
+        "client initialization failure",
+        "managed reboot failure",
+        "App confirmation failure"
+      ],
+      "scope": "Host execution of the actual board runner functions with SDK reset boundaries; both native firmware packages are separately built. No physical failure or new board run is claimed.",
+      "native_builds": {
+        "amoled": {
+          "package_sha256": "b30229e4f375b8ab50e9f7b8b29bd80888923469cf6a5824db5f35824bb61458",
+          "image_sha256": "332bd69c65013b3c284cc584b14a57ca47050205d257065e578e754871fec0e6",
+          "build_receipt_sha256": "e555d2063100a7626a817709e202c8e298f29062d165a559edf50f99243a3f0f",
+          "validation": "native build only; not flashed or counted as a device qualification run"
+        },
+        "bk7258_v3_202405": {
+          "package_sha256": "c0203013855762d1d8b9f671c9afacbc65633bc0ff0d6548d1120ee67b4ebd4f",
+          "image_sha256": "83627407eca9c0cec7e9148a900adb66805f9c1d0703e1f2be91d6d018ab64bc",
+          "build_receipt_sha256": "2e978b41fd045d928b57dc2d8ca5fff8cdf93394f7e7d3c6422e73266f235638",
+          "validation": "native build only; not flashed or counted as a device qualification run"
+        }
+      }
+    }
   }
 }

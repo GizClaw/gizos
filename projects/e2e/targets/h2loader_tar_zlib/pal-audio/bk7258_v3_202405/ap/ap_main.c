@@ -1,3 +1,6 @@
+#ifdef H2_PAL_AUDIO_BOARD_HOST_TEST
+#include "h2_pal_audio_board_test_sdk.h"
+#else
 #include "bk_private/bk_init.h"
 #include "h2_bk7258_board.h"
 #include "h2_bk_h2loader.h"
@@ -7,6 +10,8 @@
 
 #include <components/system.h>
 #include <os/os.h>
+#endif
+
 #include <stdio.h>
 
 static h2_runtime_t *runtime;
@@ -31,6 +36,37 @@ static void report(void *user, const h2_pal_audio_e2e_case_result_t *item) {
   fflush(stdout);
 }
 
+static void recover_failed_run(int rc, int confirm) {
+  printf("H2_PAL_AUDIO_RECOVERY board=bk7258 rc=%d confirm=%d\n", rc, confirm);
+  fflush(stdout);
+  h2_loader_app_client_config_t recovery_config;
+  h2_loader_app_client_t client;
+  int recovery = h2_bk_h2loader_app_commands_get_config(&recovery_config);
+  int locked = 0;
+  if (recovery == H2_PAL_OK && recovery_config.operation_mutex != NULL) {
+    recovery = h2_pal_mutex_lock(recovery_config.operation_sync,
+                                  recovery_config.operation_mutex);
+    locked = recovery == H2_PAL_OK;
+  }
+  if (recovery == H2_PAL_OK) {
+    recovery = h2_loader_app_client_init(&client, &recovery_config);
+    if (recovery == H2_PAL_OK) {
+      recovery = h2_loader_reboot_h2loader_with_transition(&client.loader,
+                                                            NULL, NULL);
+      h2_loader_deinit(&client.loader);
+    }
+  }
+  if (locked)
+    (void)h2_pal_mutex_unlock(recovery_config.operation_sync,
+                               recovery_config.operation_mutex);
+  printf("H2_PAL_AUDIO_RECOVERY board=bk7258 loader_reboot=%d\n", recovery);
+  fflush(stdout);
+  /* Reboot normally does not return. If it does, reset the whole chip so
+   * failed playback cannot remain active in a terminal reporting loop. */
+  rtos_delay_milliseconds(250u);
+  (void)h2_pal_power_reboot(h2_bk_h2loader_power_api(), 0u);
+}
+
 static void run(void *user) {
   (void)user;
   rtos_delay_milliseconds(5000u);
@@ -50,6 +86,10 @@ static void run(void *user) {
     printf("H2_PAL_AUDIO_STAGE stage=confirm_skipped rc=%d\n", rc);
   }
   fflush(stdout);
+  if (rc != H2_AUDIO_OK || confirm != H2_PAL_OK) {
+    recover_failed_run(rc, confirm);
+    return;
+  }
   for (;;) {
     for (size_t i = 0u; i < H2_PAL_AUDIO_E2E_CASE_COUNT; ++i) {
       const h2_pal_audio_e2e_case_result_t *item = &result.cases[i];

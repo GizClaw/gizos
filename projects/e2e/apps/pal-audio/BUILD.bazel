@@ -8,6 +8,7 @@ py_test(
     srcs = ["check_qualification.py"],
     data = [
         "qualification.json",
+        "//projects/e2e/targets/h2loader_tar_zlib/pal-audio/tests:recovery_test_inputs",
         "//projects/e2e/apps/pal-audio/app:include/h2_pal_audio_cases.inc",
         "//projects/e2e/apps/pal-audio/app:include/h2_pal_audio_e2e.h",
         "//projects/e2e/apps/pal-audio/app:src/h2_pal_audio_e2e.c",
