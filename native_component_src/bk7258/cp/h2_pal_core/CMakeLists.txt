@@ -32,6 +32,11 @@ set(H2_BK_CP_DISASSOC_CASE "        case H2_BK_WIFI_RPC_STA_DISASSOCIATE:
             ret = arg_info->argc == 0 ? bk_wifi_sta_disconnect() : BK_ERR_PARAM;
             break;
         }
+        case H2_BK_WIFI_RPC_STA_ASSOCIATE:
+        {
+            ret = arg_info->argc == 0 ? bk_wifi_sta_connect() : BK_ERR_PARAM;
+            break;
+        }
 ${H2_BK_CP_DISASSOC_ANCHOR}")
 string(REPLACE "${H2_BK_CP_DISASSOC_ANCHOR}" "${H2_BK_CP_DISASSOC_CASE}"
   H2_BK_CP_CONTROLLER_CORRECTED "${H2_BK_CP_CONTROLLER_CONTENT}")

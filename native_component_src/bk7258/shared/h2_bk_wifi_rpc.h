@@ -4,5 +4,6 @@
 /* Private AP/CP extension, unused in the pinned SDK's 0x300..0x5ff API
  * command range. Managed packages always carry the paired AP and CP code. */
 #define H2_BK_WIFI_RPC_STA_DISASSOCIATE 0x5f0u
+#define H2_BK_WIFI_RPC_STA_ASSOCIATE 0x5f1u
 
 #endif

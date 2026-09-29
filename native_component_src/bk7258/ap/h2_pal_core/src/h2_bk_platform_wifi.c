@@ -826,7 +826,8 @@ static void h2_bk_wifi_connect_worker(void *arg) {
                     /* Fresh CP STA_START already calls connect. Repeating it
                      * starts a second disconnect/authentication/DHCP sequence. */
                     if (start_err == BK_OK && was_started) {
-                        start_err = bk_wifi_sta_connect();
+                        start_err = wifi_send_com_api_cmd(H2_BK_WIFI_RPC_STA_ASSOCIATE, 0);
+                        if (start_err == BK_OK) start_err = bk_wifi_sta_connect();
                     }
                 }
                 h2_bk_wifi_request_unlock();
@@ -1045,7 +1046,12 @@ static int h2_bk_wifi_sta_connect(
         if (err != BK_OK) return h2_bk_wifi_map_error(err);
         /* Fresh SDK STA_START auto-connects on CP. Explicit CONNECT is only
          * needed when START was an already-started no-op. */
-        if (was_started) err = bk_wifi_sta_connect();
+        if (was_started) {
+            /* AP's public CONNECT only changes a local flag. The paired CP
+             * request actually starts fresh authentication and DHCP. */
+            err = wifi_send_com_api_cmd(H2_BK_WIFI_RPC_STA_ASSOCIATE, 0);
+            if (err == BK_OK) err = bk_wifi_sta_connect();
+        }
         if (err != BK_OK) {
             return h2_bk_wifi_map_error(err);
         }
