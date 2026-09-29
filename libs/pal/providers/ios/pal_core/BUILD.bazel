@@ -1,16 +1,47 @@
 load("@rules_apple//apple:apple.bzl", "apple_static_xcframework")
 load("//tools/bazel:mobile_package.bzl", "h2_swift_package", "h2_mobile_archive_import")
 load("@rules_apple//apple:ios.bzl", "ios_unit_test")
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel/platforms:compatibility.bzl", "IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
 
+cc_library(
+    name = "audio_wait",
+    srcs = ["src/h2_ios_audio_wait.c"],
+    hdrs = ["src/h2_ios_audio_wait.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src"],
+    target_compatible_with = select({
+        "@platforms//os:ios": [],
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    visibility = ["//visibility:private"],
+    deps = ["//libs/pal"],
+)
+
+cc_test(
+    name = "audio_wait_budget_test",
+    srcs = ["tests/test_ios_audio_wait.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    linkopts = ["-lpthread"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":audio_wait"],
+)
+
 objc_library(
     name = "platform",
-    srcs = ["src/h2_ios_platform.m", "src/h2_ios_core.m"],
+    srcs = ["src/h2_ios_platform.m", "src/h2_ios_core.m", "src/h2_ios_audio.m"],
     hdrs = ["include/h2_ios_platform.h"],
     copts = [
         "-fobjc-arc",
@@ -20,12 +51,14 @@ objc_library(
     ],
     includes = ["include"],
     sdk_frameworks = [
+        "AudioToolbox",
+        "AVFoundation",
         "CoreGraphics",
         "Foundation",
         "UIKit",
     ],
     target_compatible_with = ["@platforms//os:ios"],
-    deps = [":crypto", "//libs/pal", "//libs/pal/providers/posix/pal_core:mobile_core"],
+    deps = [":audio_wait", ":crypto", "//libs/pal", "//libs/pal/providers/posix/pal_core:mobile_core"],
 )
 
 cc_library(
@@ -140,7 +173,7 @@ h2_mobile_archive_import(
     member = "H2PALCore.xcframework/ios-arm64-simulator/H2PALCore.framework/H2PALCore",
     header_prefix = "H2PALCore.xcframework/ios-arm64-simulator/H2PALCore.framework/Headers/",
     binary_name = "libH2PALCore.a",
-    linkopts = ["-framework", "UIKit", "-framework", "Foundation", "-framework", "CoreGraphics", "-framework", "CoreBluetooth", "-framework", "Security", "-lc++"],
+    linkopts = ["-framework", "UIKit", "-framework", "Foundation", "-framework", "CoreGraphics", "-framework", "CoreBluetooth", "-framework", "Security", "-framework", "AudioToolbox", "-framework", "AVFoundation", "-lc++"],
     target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
 )
 

@@ -1095,11 +1095,8 @@ static int es8311_audio_get_speaker_volume_percent(void *user, uint32_t *out_per
 
 static int es8311_audio_set_speaker_volume_percent(void *user, uint32_t percent) {
     h2_esp_es8311_audio_system_t *state = (h2_esp_es8311_audio_system_t *)user;
-    if (state->config.speaker_volume.point_count != 0u && percent > 100u) {
+    if (percent > 100u) {
         return H2_AUDIO_ERR_INVALID_ARG;
-    }
-    if (state->config.speaker_volume.point_count == 0u) {
-        state->speaker_volume_percent = percent;
     }
     if (state->codec != NULL) {
         int rc = map_esp_err(apply_speaker_volume(state, percent));

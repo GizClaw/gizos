@@ -1,0 +1,165 @@
+{
+  "platform": "ios-simulator",
+  "image_version": "2.0.0",
+  "passed": 24,
+  "failed": 0,
+  "blocked": 0,
+  "mic_frames": 941,
+  "mic_peak": 1566,
+  "mic_energy": 786450014,
+  "speaker_frames": 943,
+  "output_peak": 1120,
+  "stability_elapsed_ms": 30005,
+  "allocator_probe_passed": 1,
+  "allocator_failure_rejected": 1,
+  "allocator_allocations": 1,
+  "allocator_frees": 1,
+  "run_rc": 0,
+  "teardown_rc": 0,
+  "cases": [
+    {
+      "id": "wrapper-arguments",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "info",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "mic-stopped-read",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "mic-gain-bounds",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "mic-gain-roundtrip",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "speaker-volume-bounds",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "speaker-volume-roundtrip",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "track-format-bounds",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "speaker-start",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "track-create",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "track-volume-bounds",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "track-volume-roundtrip",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "track-write-bounds",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "track-write",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "track-drain",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "mic-start",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "mic-read",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "mic-gain-live",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "mic-stop",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "track-close",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "speaker-stop",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "resource-churn",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "stability",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "cleanup",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    }
+  ]
+}

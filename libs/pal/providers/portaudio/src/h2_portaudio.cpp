@@ -973,7 +973,7 @@ int audio_get_volume(void *user, uint32_t *out_percent) {
 }
 
 int audio_set_volume(void *user, uint32_t percent) {
-  if (user == nullptr) {
+  if (user == nullptr || percent > 100u) {
     return H2_AUDIO_ERR_INVALID_ARG;
   }
   h2_atomic_u32_store(&static_cast<AudioState *>(user)->speaker_volume_percent,

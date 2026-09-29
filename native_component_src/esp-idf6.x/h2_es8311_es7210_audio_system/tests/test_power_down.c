@@ -11,6 +11,7 @@ static uint8_t registers[2][256];
 static struct { unsigned dev; uint8_t reg, value; } writes[1024];
 static size_t write_count;
 static int fail_write = -1;
+static int fail_rollback_write = -1;
 static int removed, disabled, pa_enabled, pa_fail;
 static TickType_t ticks;
 static h2_esp_es8311_es7210_audio_system_t *running;
@@ -29,7 +30,8 @@ int i2c_master_transmit(i2c_master_dev_handle_t dev, const uint8_t *data, size_t
     writes[write_count].dev = index;
     writes[write_count].reg = data[0];
     writes[write_count].value = data[1];
-    if ((int)write_count++ == fail_write) return ESP_FAIL;
+    const int write_index = (int)write_count++;
+    if (write_index == fail_write || write_index == fail_rollback_write) return ESP_FAIL;
     registers[index][data[0]] = data[1];
     return ESP_OK;
 }
@@ -136,7 +138,27 @@ int main(void) {
            registers[1][ES7210_REG_MIC2_GAIN] == input1);
     assert(h2_pal_audio_get_mic_gain_percent(audio, &gain) == H2_AUDIO_OK);
     assert(gain == 0u);
-    fail_write = -1;
+    /* Failed original write plus failed rollback must expose an uncertain
+     * hardware value, then a full retry must reprogram every active input. */
+    write_count = 0;
+    fail_write = 1;
+    fail_rollback_write = 2;
+    assert(h2_pal_audio_set_mic_gain_percent(audio, 100u) == H2_AUDIO_ERR_IO);
+    assert(s.mic_gain_uncertain);
+    gain = UINT32_MAX;
+    assert(h2_pal_audio_get_mic_gain_percent(audio, &gain) == H2_AUDIO_ERR_IO);
+    assert(gain == 0u);
+    h2_audio_frame_t held_frame = {0};
+    assert(audio_read_mic(&s, &held_frame, 0u) == H2_AUDIO_ERR_IO);
+    assert(registers[1][ES7210_REG_MIC1_GAIN] != input0);
+    fail_write = fail_rollback_write = -1;
+    write_count = 0;
+    assert(h2_pal_audio_set_mic_gain_percent(audio, 100u) == H2_AUDIO_OK);
+    assert(!s.mic_gain_uncertain);
+    assert(h2_pal_audio_get_mic_gain_percent(audio, &gain) == H2_AUDIO_OK);
+    assert(gain == 100u);
+    /* Restore the original value before testing the ordinary retry path. */
+    assert(h2_pal_audio_set_mic_gain_percent(audio, 0u) == H2_AUDIO_OK);
     write_count = 0;
     assert(h2_pal_audio_set_mic_gain_percent(audio, 100u) == H2_AUDIO_OK);
     assert((registers[1][ES7210_REG_MIC1_GAIN] & 0x0fu) == 14u);

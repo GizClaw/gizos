@@ -1,0 +1,24 @@
+{
+  "header": "libs/pal/include/h2/pal/hal/h2_pal_audio.h",
+  "provider_operations": {
+    "get_info": ["info"],
+    "start_mic": ["mic-start", "resource-churn", "stability"],
+    "stop_mic": ["mic-stop", "resource-churn", "stability"],
+    "start_speaker": ["speaker-start", "resource-churn", "stability"],
+    "stop_speaker": ["speaker-stop", "resource-churn", "stability"],
+    "mic_read": ["mic-stopped-read", "mic-read", "stability"],
+    "create_track": ["track-format-bounds", "track-create", "resource-churn"],
+    "get_speaker_volume_percent": ["speaker-volume-bounds", "speaker-volume-roundtrip"],
+    "set_speaker_volume_percent": ["speaker-volume-bounds", "speaker-volume-roundtrip"],
+    "get_mic_gain_percent": ["mic-gain-bounds", "mic-gain-roundtrip", "mic-gain-live"],
+    "set_mic_gain_percent": ["mic-gain-bounds", "mic-gain-roundtrip", "mic-gain-live"]
+  },
+  "track_operations": {
+    "write": ["track-write-bounds", "track-write", "stability"],
+    "close": ["track-close", "resource-churn", "stability"],
+    "get_volume_factor": ["track-volume-bounds", "track-volume-roundtrip"],
+    "set_volume_factor": ["track-volume-bounds", "track-volume-roundtrip"],
+    "drain": ["track-drain", "stability"]
+  },
+  "separate_capability": "h2_pal_audio_decoder.h"
+}
