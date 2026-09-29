@@ -2418,6 +2418,19 @@ static void test_serial_connect_deasserts_dtr_and_rts(void) {
         (H2_PAL_SERIAL_HOST_CONTROL_DTR |
          H2_PAL_SERIAL_HOST_CONTROL_RTS));
     assert(fixture.asserted_lines == 0u);
+
+    memset(&fixture, 0, sizeof(fixture));
+    fixture.set_result = H2_PAL_ERR_TIMEOUT;
+    fixture.stream_result = H2_PAL_ERR_IO;
+    fixture.expected_baud = 460800u;
+    config.preserve_control_lines = 1;
+    assert(h2_h2loader_host_serial_connect(&config, &connection) ==
+        H2_PAL_ERR_IO);
+    assert(connection == NULL);
+    assert(fixture.event_count == 3u);
+    assert(memcmp(fixture.events, "otc", 3u) == 0);
+    assert(fixture.line_mask == 0u);
+    assert(fixture.asserted_lines == 0u);
 }
 
 static void test_ble_stage_receive_failure(void) {
