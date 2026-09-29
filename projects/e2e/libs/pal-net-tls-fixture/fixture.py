@@ -195,7 +195,10 @@ class Fixture:
             if peer[0] != record['peer']:
                 raise RuntimeError("different peer")
             record['accepted'] = True
-            connection.settimeout(5)
+            # Constrained MCU certificate checks can take longer than a host
+            # handshake. Keep the peer alive past the caller's 15 s budget so
+            # the PAL, not this fixture, owns the bounded timeout result.
+            connection.settimeout(20 if record['mode'] in self.contexts else 5)
             if record['mode'] == 5:
                 record['closed'] = True
                 return
