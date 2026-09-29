@@ -11,6 +11,7 @@
 #include "lwip/priv/tcpip_priv.h"
 #include "lwip/tcpip.h"
 #include "net.h"
+#include "wifi_api_ipc.h"
 
 #include <string.h>
 #include "h2_atomic_static.h"
@@ -425,6 +426,20 @@ static bk_err_t h2_bk_wifi_system_event_handler(
                 int power_rc = h2_bk_wifi_apply_power_save(__atomic_load_n(
                     &s_h2_bk_wifi_power_save, __ATOMIC_ACQUIRE));
                 __atomic_store_n(&s_h2_bk_wifi_power_save_error, power_rc, __ATOMIC_RELEASE);
+            }
+            if (s_h2_bk_wifi_ap_active) {
+                netif_ip4_config_t *cp_ap = os_malloc(sizeof(*cp_ap));
+                if (cp_ap != NULL) {
+                    memset(cp_ap, 0, sizeof(*cp_ap));
+                    bk_err_t owner_rc = wifi_send_com_api_cmd(
+                        AP_GET_NETIF_IP4_CONFIG, 1, (uint32_t)cp_ap);
+                    uint32_t cp_ip = 0u;
+                    if (owner_rc == BK_OK)
+                        (void)h2_bk_wifi_parse_ip4(cp_ap->ip, &cp_ip);
+                    BK_LOGI("h2_wifi", "H2_WIFI_BK_CP_AP ip=%lu rc=%d\r\n",
+                            (unsigned long)cp_ip, (int)owner_rc);
+                    os_free(cp_ap);
+                }
             }
             status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
             status.ssid_len = len;
