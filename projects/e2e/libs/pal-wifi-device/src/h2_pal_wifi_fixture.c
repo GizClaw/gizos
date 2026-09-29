@@ -15,6 +15,7 @@ static void emit(const char *format, ...) {
                  : h2_pal_log_write(log_runtime->log, H2_PAL_LOG_INFO, "pal-wifi", message);
     if (rc && !log_error)
         log_error = rc;
+    (void)h2_pal_time_sleep_ms(log_runtime->time, 40u);
 }
 
 static uint64_t time_ms(h2_runtime_t *rt) {
@@ -78,6 +79,8 @@ int h2_wifi_fixture_run(h2_runtime_t *rt) {
     while (time_ms(rt) - start < 600000) {
         for (unsigned i = 0; i < 2 && time_ms(rt) - start < 600000; ++i) {
             drain(rt);
+            /* Error/absent-peer paths must also yield to RTOS idle/watchdog. */
+            (void)h2_pal_time_sleep_ms(rt->time, 200);
             fixture_scan_t scan = {.ssid = names[i]};
             h2_pal_wifi_scan_request_t request = {.channel = 6};
             request.ssid_len = strlen(names[i]);

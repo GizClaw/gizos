@@ -16,6 +16,9 @@ static void emit(const char *format, ...) {
                  : h2_pal_log_write(log_runtime->log, H2_PAL_LOG_INFO, "pal-wifi", message);
     if (rc && !log_error)
         log_error = rc;
+    /* Give the native console/Loader transport and idle task time to drain
+     * each bounded ledger record, as other real-device E2E runners do. */
+    (void)h2_pal_time_sleep_ms(log_runtime->time, 40u);
 }
 
 const char h2_wifi_device_runner_task_name[] = "pal-wifi/e2e/runner";

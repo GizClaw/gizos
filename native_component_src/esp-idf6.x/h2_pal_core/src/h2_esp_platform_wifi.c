@@ -1123,11 +1123,9 @@ static int h2_esp_wifi_sta_disconnect(h2_pal_wifi_sta_t *sta) {
         return h2_esp_wifi_map_error(err);
     }
 
-#if CONFIG_ESP_WIFI_SOFTAP_SUPPORT
-    if (s_h2_esp_wifi_ap_active != 0) {
-        return h2_esp_wifi_map_error(esp_wifi_set_mode(WIFI_MODE_AP));
-    }
-#endif
+    /* Disconnect ends the association; it does not remove the station
+     * interface. Keep AP+STA mode while an AP is active so a later STA scan or
+     * connect remains available, and always clear cached connected/IP bits. */
     if (s_h2_esp_wifi_events != NULL) {
         xEventGroupClearBits(
             s_h2_esp_wifi_events,
