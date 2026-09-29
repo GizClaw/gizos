@@ -4,6 +4,10 @@ GizOS 使用 Bazel 9.2.0 作为 stable host C/C++ package 以及 ESP-IDF/BK7258/
 
 `BUILD.bazel`、`.bzl`、target 命名和 platform variant 同时遵守 [Bazel 代码规范](/zh/coding-styles/bazel)。
 
+## Mobile E2E Python runtime
+
+移动端 E2E 的 `mobile_e2e_test` 宏直接声明 `py_test`。IPA/APK、App SDK、registry 和 fixture 产物通过 `data` 保持目标平台配置；公共 runner 和 fixture Python 源通过 `srcs`/`deps` 进入 runfiles。`mobile_e2e_host_python` 在 exec configuration 中选择已有 hermetic Python runtime，由 `MODULE.bazel` 注册的 iOS/Android runtime toolchain 暴露给 host-side test；不能把主机 Python 库限制为目标平台必须是 macOS/Linux，或改用未声明的系统 Python。设备入口只声明 `manual` tag，并用 `local = True` 保证 simctl/adb 在本机执行。批量设备验证使用 `--local_test_jobs=1`，仍需调用方显式预留设备和禁用测试结果缓存。公共生命周期、失败证据与 suite 边界见 `tools/bazel/mobile_e2e.md`。
+
 ## 边界
 
 - 每个 C/C++ library、portable app、Desktop component、board host test 和 host tool 在所属目录的 `BUILD.bazel` 中声明真实可构建的 `cc_library`、`cc_binary` 或 `cc_test`。

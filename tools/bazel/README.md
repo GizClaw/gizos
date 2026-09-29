@@ -331,3 +331,7 @@ Writer token immediately before firmware compilation. A build that receives
 H2Loader Wi-Fi credentials sets ccache read-only. Cache misses and remote
 storage errors fall back to the real compiler and cannot replace SDK,
 toolchain, checkout-cleanliness, output, package, or Release validation.
+
+## Mobile E2E
+
+[Packaged mobile runners](mobile_e2e.md) share simulator/emulator lifecycle, artifact identity and failure evidence through a direct Python Bazel test. Suite fixtures, phase plans and qualification assertions remain suite-owned.
