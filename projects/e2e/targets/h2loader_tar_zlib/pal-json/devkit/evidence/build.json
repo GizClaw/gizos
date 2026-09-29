@@ -1,0 +1,71 @@
+{
+  "assets": [
+    {
+      "name": "devkit-pal-json-esp32s3.update.tar.zlib",
+      "operation": "managed-install",
+      "release_suffix": ".update.tar.zlib",
+      "sha256": "190b5708397f26088cdb13a3d23c0a2e714fb8602e92142201a2bcc155e3b4e3",
+      "size": 1029614
+    }
+  ],
+  "board": "devkit",
+  "entry": "projects/e2e/targets/h2loader_tar_zlib/pal-json/devkit",
+  "image": "pal-json",
+  "native_artifacts": [
+    {
+      "name": "firmware.elf",
+      "operation": "native-debug-or-flash",
+      "sha256": "deab42ce85a03e1fae39282e67f9f1960cc389b113c59b29b12dd67b305c468c",
+      "size": 14184684
+    },
+    {
+      "name": "firmware.map",
+      "operation": "native-debug-or-flash",
+      "sha256": "21ce2d158d837f329ca900fd325ecbbaad4f13b9b327f34b190a899f9ef60fe2",
+      "size": 13352628
+    },
+    {
+      "name": "app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "761171c993ddcffc320bc859bb02230eb0a56cc286ca2211f88c2df6e002d975",
+      "size": 1611488
+    },
+    {
+      "name": "bootloader.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "a82216144af13f6ce8a01d26864b8688dcfb041c493abd5a965b51ebb95beada",
+      "size": 21328
+    },
+    {
+      "name": "combined_factory.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "a122927cd1511c556d2374180abbf3edbff1523d33b54e1bab4bafa169dd9674",
+      "size": 1742560
+    },
+    {
+      "name": "partition-table.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "96f93c5cdeacf9f53990c7d9fb3570220e33c6feedcc73cea05948160cf14d48",
+      "size": 3072
+    },
+    {
+      "name": "flasher_args.json",
+      "operation": "native-debug-or-flash",
+      "sha256": "bbc2b8a18ffde1ded1b9696ae964afdac22e32764af46090e2016dc19b5fe96f",
+      "size": 994
+    }
+  ],
+  "package_manifest": {
+    "board": "devkit",
+    "format": 1,
+    "image_sha256": "761171c993ddcffc320bc859bb02230eb0a56cc286ca2211f88c2df6e002d975",
+    "image_size": 1611488,
+    "role": "app",
+    "target": "esp32s3",
+    "version": "pal-json-esp-20260929-r4"
+  },
+  "platform": "esp",
+  "role": "app",
+  "target": "esp32s3",
+  "version": "pal-json-esp-20260929-r4"
+}

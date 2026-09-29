@@ -1,0 +1,278 @@
+{
+  "schema": 1,
+  "platform": "devkit",
+  "status": "PASS",
+  "qualified": true,
+  "device_uid": "9888e0115c52",
+  "version": "pal-json-esp-20260929-r4",
+  "sdk_commit": "76f5dedd9950a3012fee8fb7d5586df21fc67802",
+  "source_sha256": {
+    "libs/pal/include/h2/pal/os/h2_pal_json.h": "ca25ab951380d3bfeac9c9e3831370eafba1514e761f2f24fb6aa74f0f6e88fb",
+    "libs/pal/providers/yyjson/src/h2_yyjson_json.c": "4417d2a0e6925281c57b71688e15c8b55e41b3128ffc10d17d33cae8fe91a372",
+    "projects/e2e/apps/pal-json/app/include/h2_pal_json_cases.inc": "6565bdfd451b55bd618202f1d35b89c4af6e8fbee5c37e1dbb0d55dc90469877",
+    "projects/e2e/apps/pal-json/app/include/h2_pal_json_e2e.h": "5465dcccd45300041bfef34c3c4df34b9e80bd891e91afb7414d246c58b3dee9",
+    "projects/e2e/apps/pal-json/app/src/h2_pal_json_e2e.c": "e664abcef8a2d186f37b884252128cb4e0374ecbee5e4c502c3eeee61f42fc05",
+    "projects/e2e/libs/pal-json-provider-probe/probe.c": "b080f8047ddda04bf3611f91067a51567d9db5e8046b3954a61caa8ed0aa9bae"
+  },
+  "artifact": {
+    "build_receipt": "build.json",
+    "build_receipt_sha256": "d66bb3d3c9a92c6dac5c6b7212ef358252718ce441753b6b5452304ea3e621ab",
+    "package_sha256": "190b5708397f26088cdb13a3d23c0a2e714fb8602e92142201a2bcc155e3b4e3",
+    "package_size": 1029614,
+    "image_sha256": "761171c993ddcffc320bc859bb02230eb0a56cc286ca2211f88c2df6e002d975",
+    "image_size": 1611488
+  },
+  "p1_loader_before_and_after": {
+    "version": "0.2.3-atomic-541",
+    "package_sha256": "f4fd26deba579fb6b8955e9ea7a83122b25cf6e4c433b3d652090d6958197568",
+    "image_sha256": "9479960ee19af062cb1a599c4d4b52f948d476efc842aabdfa6ca2ec812befd5",
+    "valid": true
+  },
+  "boots": [
+    {
+      "boot_id": "devkit-r4-boot1-63eef74cff8f",
+      "boot_id_source": "host-assigned from distinct reboot command and raw log digest",
+      "trigger": "reboot upgrade --monitor",
+      "reboot_accepted": true,
+      "boot_marker": "H2_JSON_BOOT version=pal-json-esp-20260929-r4",
+      "ready_marker": "H2_JSON_READY rc=0 confirm=0",
+      "raw_log_path": "/tmp/pal-json-devkit-r4-install.log",
+      "raw_log_sha256": "63eef74cff8f04fee4b5c481f7299447d52f3741fe57ad15f9e03caa206e9fb2",
+      "cases": [
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "parse-values",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "string-spans",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "strict-profile",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "parse-limits",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "construct-roundtrip",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "lookup-absence",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "immutable-document",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "ownership-and-cycles",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "replacement-stale-view",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "construction-rejection",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "mutation-limits",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "serialization-limit",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "empty-cleanup",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "provider-live-output",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "allocator-failure-cleanup",
+          "status": "PASS",
+          "rc": 0
+        }
+      ],
+      "report": {
+        "version": "pal-json-esp-20260929-r4",
+        "contract": 1,
+        "operations": 24,
+        "passed": 15,
+        "failed": 0,
+        "blocked": 0,
+        "not_run": 0,
+        "complete": 1,
+        "qualified": 1,
+        "rc": 0
+      }
+    },
+    {
+      "boot_id": "devkit-r4-boot2-de83a7ad0d70",
+      "boot_id_source": "host-assigned from distinct reboot command and raw log digest",
+      "trigger": "reboot app --monitor",
+      "reboot_accepted": true,
+      "boot_marker": "H2_JSON_BOOT version=pal-json-esp-20260929-r4",
+      "ready_marker": "H2_JSON_READY rc=0 confirm=0",
+      "raw_log_path": "/tmp/pal-json-devkit-r4-reboot.log",
+      "raw_log_sha256": "de83a7ad0d7036ab298cfd0549435c30dc5b04b230efe46415d271c1c869d130",
+      "cases": [
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "parse-values",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "string-spans",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "strict-profile",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "parse-limits",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "construct-roundtrip",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "lookup-absence",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "immutable-document",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "ownership-and-cycles",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "replacement-stale-view",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "construction-rejection",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "mutation-limits",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "serialization-limit",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "empty-cleanup",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "provider-live-output",
+          "status": "PASS",
+          "rc": 0
+        },
+        {
+          "version": "pal-json-esp-20260929-r4",
+          "id": "allocator-failure-cleanup",
+          "status": "PASS",
+          "rc": 0
+        }
+      ],
+      "report": {
+        "version": "pal-json-esp-20260929-r4",
+        "contract": 1,
+        "operations": 24,
+        "passed": 15,
+        "failed": 0,
+        "blocked": 0,
+        "not_run": 0,
+        "complete": 1,
+        "qualified": 1,
+        "rc": 0
+      }
+    }
+  ],
+  "final": {
+    "active_role": "app",
+    "active_version": "pal-json-esp-20260929-r4",
+    "partition_2_valid": true,
+    "partition_2_package_sha256": "190b5708397f26088cdb13a3d23c0a2e714fb8602e92142201a2bcc155e3b4e3",
+    "partition_2_image_sha256": "761171c993ddcffc320bc859bb02230eb0a56cc286ca2211f88c2df6e002d975",
+    "stage_valid": false,
+    "last_result": 0,
+    "coredump_before": {
+      "stored_bytes": 0,
+      "blank": true
+    },
+    "coredump_after": {
+      "stored_bytes": 0,
+      "blank": true
+    }
+  }
+}

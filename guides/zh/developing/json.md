@@ -101,3 +101,12 @@ Firmware compile validation 使用：
 
 ESP32-C5 当前没有 maintained launcher，记录为 `SKIP`。这三项是 build/link
 carrier，不执行 JSON runtime flow，也不替代真实设备验收。
+
+独立的 [`pal-json` E2E App](/apps/e2e) 用同一份
+mandatory registry 在 macOS、Chromium Worker、iOS Simulator、Android Emulator、
+DevKit 和 BK7258 上消费实际 yyjson provider。它通过公开 PAL API 检查 24 个
+vtable 操作，并由 launcher probe 覆盖 provider create/api/destroy、live-output
+销毁拒绝和 allocator 失败清理。移动端 Swift Package/XCFramework 与 AAR 均包含
+provider 符号，安装的 App 必须核对其实际 SDK binary；板端需 H2Loader managed
+安装和独立正常重启各执行一次，保留 P1 Loader 与 coredump 基线。平台资格以该
+App 的结构化 `qualification.json` 和对应构建产物摘要为准。
