@@ -6,50 +6,63 @@
   "assessment_complete": false,
   "full_net_qualified": false,
   "pending": [
-    "macos",
-    "wasm",
-    "ios",
-    "android",
-    "devkit",
-    "bk7258"
+    "wasm"
   ],
-  "source_sha256": {},
+  "source_sha256": {
+    "projects/e2e/apps/pal-net-tls/app/src/h2_pal_net_tls_e2e.c": "9ccbda3a1fc1322fb683f20f93303d41269071e82b30d707d3c2cdf49007175b",
+    "projects/e2e/apps/pal-net-tls/app/include/h2_pal_net_tls_cases.inc": "5ddae599acbe170d91a6da78372dcf6ccfc48cb343228175cbd733741a434535",
+    "projects/e2e/libs/pal-net-tls-fixture/fixture.py": "ad9d013e80f5c5c357aa71252961220e119ef63109e8127b56b22de29486199d",
+    "projects/e2e/libs/pal-net-tls-device/src/device.c": "f89352897127c21797628d731f6880f0c5d5e8f5e0427baaef3a79bc50ad59ad",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_net.c": "8e19f097af4a0e55260e418f9582c0353e82abd9aa0f9e7e7fdafa6fa434816c",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_wifi.c": "2e934634a6a60750012c4ff8944e289b5e5b64e5bf0a24fe4f367e07c51dd30c"
+  },
   "platforms": {
     "macos": {
-      "status": "PENDING",
-      "core_qualified": false,
-      "evidence": null
+      "status": "PASS",
+      "core_qualified": true,
+      "evidence": "evidence/macos/qualified.json",
+      "artifact_sha256": "61bb92ce7be00427274e832fce9c505e8a2fb89962a7672cc11ca23cd98e8c33",
+      "receipt_sha256": "6cf3b4861f527d938757385cd7270994ff888d50398fe52bc07d7f9e27495aae"
     },
     "wasm": {
-      "status": "PENDING",
+      "status": "UNSUPPORTED",
       "core_qualified": false,
-      "evidence": null
+      "evidence": "evidence/wasm/boundary.json",
+      "reason": "Browser AppHost has no raw TCP/UDP/bind/listen/TLS wrap provider; actual pthread Worker exercised all 21 unsupported operations."
     },
     "ios": {
-      "status": "PENDING",
-      "core_qualified": false,
-      "evidence": null
+      "status": "PASS",
+      "core_qualified": true,
+      "evidence": "evidence/ios/qualified.json",
+      "artifact_sha256": "a0768f49a144d8ae318a3418fc0dc7b6248d082d776be8bd35d06a6918409f73",
+      "receipt_sha256": "79751910535e3e8b8d64d9c7fceab5e86c1802f582e032ff5337532eadb5d809"
     },
     "android": {
-      "status": "PENDING",
-      "core_qualified": false,
-      "evidence": null
+      "status": "PASS",
+      "core_qualified": true,
+      "evidence": "evidence/android/qualified.json",
+      "artifact_sha256": "21570e5f1127818ceaed5e13a2c909eaddb7719c17f3096dfe1f96982904e606",
+      "receipt_sha256": "cbc5d571578fab4a7f961efc0b3347bcfdef28384e57af54618c17f742644540"
     },
     "devkit": {
-      "status": "PENDING",
-      "core_qualified": false,
-      "evidence": null
+      "status": "PASS",
+      "core_qualified": true,
+      "evidence": "evidence/devkit/qualified.json",
+      "artifact_sha256": "d9c613189de5ca328e80f2ee3436391c637374ad4d62543f0fafd3593797aff9",
+      "receipt_sha256": "be56a2e46b676cc5e83ed32e4d60266f123df01ad330d90451173e9eab1bae0a"
     },
     "bk7258": {
-      "status": "PENDING",
-      "core_qualified": false,
-      "evidence": null
+      "status": "PASS",
+      "core_qualified": true,
+      "evidence": "evidence/bk7258/qualified.json",
+      "artifact_sha256": "1fa3df738ba870c737b98d3876cca78f56c1ac9d8c8b36356c13c709baa481b1",
+      "receipt_sha256": "f35270409d94e19876840375118a8b2b229c2e5c3ff458d843b1531795efecf2"
     }
   },
   "gate": {
-    "wifi_qualification_verified": false,
-    "wifi_provisional_verified_head": "2e5317d6077b12e4b1951fa2f0de08ee3710bad3",
-    "wifi_review_fix_requalification_pending": true,
+    "wifi_qualification_verified": true,
+    "wifi_final_evidence_head": "3ba4ba52a46211f4926622621dc08fd0511d0a99",
+    "wifi_linked_provider_head": "4d7e4a97eea7ff1e801cb151d2b9299fbd15e87e",
     "hardware_released": true,
     "tls_integration_started": true
   }

@@ -2,11 +2,9 @@
   "scope": "preliminary_provider_integration",
   "six_platforms_qualified": false,
   "pending": [
-    "wasm",
-    "devkit",
-    "bk7258"
+    "wasm"
   ],
-  "tested_source_commit": "53674d799679f0402e4b81a61c60289910f87ef9",
+  "tested_source_commit": "76a01775",
   "platforms": {
     "macos": {
       "status": "PRELIMINARY_PASS",
@@ -28,9 +26,25 @@
       "artifact_sha256": "21570e5f1127818ceaed5e13a2c909eaddb7719c17f3096dfe1f96982904e606",
       "receipt_sha256": "cbc5d571578fab4a7f961efc0b3347bcfdef28384e57af54618c17f742644540",
       "final_six_platform_qualified": false
+    },
+    "devkit": {
+      "status": "PRELIMINARY_PASS",
+      "core_cases": 37,
+      "artifact_sha256": "d9c613189de5ca328e80f2ee3436391c637374ad4d62543f0fafd3593797aff9",
+      "receipt_sha256": "be56a2e46b676cc5e83ed32e4d60266f123df01ad330d90451173e9eab1bae0a",
+      "two_distinct_boots": true,
+      "final_six_platform_qualified": false
+    },
+    "bk7258": {
+      "status": "PRELIMINARY_PASS",
+      "core_cases": 37,
+      "artifact_sha256": "1fa3df738ba870c737b98d3876cca78f56c1ac9d8c8b36356c13c709baa481b1",
+      "receipt_sha256": "f35270409d94e19876840375118a8b2b229c2e5c3ff458d843b1531795efecf2",
+      "two_distinct_boots": true,
+      "final_six_platform_qualified": false
     }
   },
-  "limitations": "WASM current raw Net unsupported; final board firmware must consume requalified Wi-Fi provider fixes and pass two independent boots; host/mobile receipts must be rebound if their source or artifact changes.",
+  "limitations": "Five platforms have functional raw Net/TLS core passes; browser WASM raw Net remains unsupported and six-platform qualification is pending a product network-contract choice.",
   "wasm_boundary": {
     "status": "DIAGNOSTIC_ONLY",
     "core_qualified": false,

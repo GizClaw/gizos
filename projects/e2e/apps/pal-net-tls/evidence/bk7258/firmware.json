@@ -1,0 +1,77 @@
+{
+  "assets": [
+    {
+      "name": "bk7258_v3_202405-pal-net-tls-bk7258.update.tar.zlib",
+      "operation": "managed-install",
+      "release_suffix": ".update.tar.zlib",
+      "sha256": "1fa3df738ba870c737b98d3876cca78f56c1ac9d8c8b36356c13c709baa481b1",
+      "size": 1733495
+    }
+  ],
+  "board": "bk7258_v3_202405",
+  "entry": "projects/e2e/targets/h2loader_tar_zlib/pal-net-tls/bk7258_v3_202405",
+  "image": "pal-net-tls",
+  "native_artifacts": [
+    {
+      "name": "ap/firmware.elf",
+      "operation": "native-debug-or-flash",
+      "sha256": "b8e134af435cd809fea7368273b679841e25324a10149c481a8902123bf5e802",
+      "size": 13275656
+    },
+    {
+      "name": "ap/firmware.map",
+      "operation": "native-debug-or-flash",
+      "sha256": "c9c2937ac8c7463dfaf1a40c4abd81fa12f8596f80afd2a7fb03f97f4f8ef52b",
+      "size": 8094037
+    },
+    {
+      "name": "ap/app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "7e894d62f63221250edbf806aadd787dafd6685c412ce3f24d6bba6242b4c52a",
+      "size": 1322472
+    },
+    {
+      "name": "cp/firmware.elf",
+      "operation": "native-debug-or-flash",
+      "sha256": "22fd506a4fd174cd72be3f953a51b6bba070e1f516be643255acd576add562af",
+      "size": 14399056
+    },
+    {
+      "name": "cp/firmware.map",
+      "operation": "native-debug-or-flash",
+      "sha256": "1040bf68838be46e26a1c8e0101a4b9794212a9cd40c6e26d475526b3c30aed9",
+      "size": 6907030
+    },
+    {
+      "name": "cp/app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "df7cc74d2c1638876cee28d4bb61a410f1d6ea20b606f52695afd850805a400c",
+      "size": 1058724
+    },
+    {
+      "name": "app_ab_crc.rbl",
+      "operation": "native-debug-or-flash",
+      "sha256": "55c8b626074484db34c4461541c2882536aea8c5f7d044bf5b00ff03ffb693f4",
+      "size": 5222400
+    },
+    {
+      "name": "all-app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "980345a7ad05f37ce287e4cd09ae19e84261710bb35df9db619c947d09fe4723",
+      "size": 5292032
+    }
+  ],
+  "package_manifest": {
+    "board": "bk7258_v3_202405",
+    "format": 1,
+    "image_sha256": "55c8b626074484db34c4461541c2882536aea8c5f7d044bf5b00ff03ffb693f4",
+    "image_size": 5222400,
+    "role": "app",
+    "target": "bk7258",
+    "version": "pal-net-tls-bk-20260930-r8"
+  },
+  "platform": "bk7258",
+  "role": "app",
+  "target": "bk7258",
+  "version": "pal-net-tls-bk-20260930-r8"
+}

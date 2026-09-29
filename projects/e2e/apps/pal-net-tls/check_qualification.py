@@ -81,10 +81,12 @@ def check(root=ROOT, allow_pending=False):
     app = root / 'projects/e2e/apps/pal-net-tls'
     data = json.loads((app / 'qualification.json').read_text())
     assert set(data['platforms']) == PLATFORMS and data['full_net_qualified'] is False
-    if allow_pending and not data['assessment_complete']:
-        assert data['pending']
-        return data
-    assert data['assessment_complete'] and not data['pending']
+    pending = set(data['pending'])
+    assert pending <= PLATFORMS and len(data['pending']) == len(pending)
+    if not allow_pending:
+        assert data['assessment_complete'] and not pending
+    else:
+        assert data['assessment_complete'] == (not pending)
     assert data['gate']['wifi_qualification_verified'] and data['gate']['hardware_released']
     assert data['gate']['tls_integration_started']
     assert data['source_sha256']
@@ -95,16 +97,37 @@ def check(root=ROOT, allow_pending=False):
     assert len(registry) == 39 and sum(int(required) for _,required in registry) == 37
     for platform, entry in data['platforms'].items():
         receipt = json.loads((app / entry['evidence']).read_text())
-        assert re.fullmatch('[0-9a-f]{64}', receipt['artifact_sha256'])
+        assert (platform in pending) == (not entry['core_qualified'])
+        if platform in pending:
+            assert platform == 'wasm' and entry['status'] == 'UNSUPPORTED'
+            assert receipt['core_qualified'] is False and len(receipt['capabilities']) == 21
+            continue
         assert entry['status'] == 'PASS' and entry['core_qualified']
+        assert re.fullmatch('[0-9a-f]{64}', receipt['artifact_sha256'])
+        assert entry['artifact_sha256'] == receipt['artifact_sha256']
+        assert entry['receipt_sha256'] == hashlib.sha256((app / entry['evidence']).read_bytes()).hexdigest()
         if platform in ('devkit','bk7258'):
+            board_dir = app / 'evidence' / platform
+            metadata = json.loads((board_dir / 'firmware.json').read_text())
+            assert metadata['assets'][0]['sha256'] == receipt['package_sha256']
+            assert metadata['package_manifest']['image_sha256'] == receipt['image_sha256']
+            assert metadata['package_manifest']['version'] == receipt['version']
             assert len(receipt['boots']) == 2 and {row['kind'] for row in receipt['boots']} == {'install','normal-reboot'}
             assert len({row['boot_id'] for row in receipt['boots']}) == 2
             for boot in receipt['boots']:
+                log = board_dir / (boot['kind'] + '.log')
+                assert boot['log_sha256'] == hashlib.sha256(log.read_bytes()).hexdigest()
+                assert boot['boot_id'] in log.read_text(errors='replace')
                 assert boot['uid'] == receipt['uid'] and boot['image_sha256'] == receipt['image_sha256']
                 assert boot['confirm'] == 0 and boot['loader_p1_preserved'] and boot['stage_empty'] and boot['coredump_unchanged']
                 check_cases(boot, registry)
                 check_peer(boot['peer'], boot['session'], boot['boot_id'])
+            if platform == 'bk7258':
+                dump_hashes = {hashlib.sha256((board_dir / (kind + '-dump.bin')).read_bytes()).hexdigest()
+                               for kind in ('baseline','install','normal')}
+                assert dump_hashes == {receipt['baseline_coredump_sha256']}
+            else:
+                assert receipt['baseline_coredump_sha256'] is None
         else:
             check_cases(receipt, registry)
             check_peer(receipt['peer'], receipt['peer']['session'], receipt['peer']['session'][:16])

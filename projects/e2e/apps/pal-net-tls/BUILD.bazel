@@ -6,12 +6,18 @@ package(default_visibility = ["//visibility:public"])
 py_test(
     name = "qualification_evidence_test",
     srcs = ["check_qualification.py"],
+    args = ["--allow-pending"],
     data = [
         "qualification.json",
         "//libs/pal:pal_header_files",
         "//projects/e2e/apps/pal-net-tls/app:include/h2_pal_net_tls_cases.inc",
+        "//projects/e2e/apps/pal-net-tls/app:src/h2_pal_net_tls_e2e.c",
+        "//projects/e2e/libs/pal-net-tls-device:src/device.c",
+        "//projects/e2e/libs/pal-net-tls-fixture:fixture.py",
+        "//native_component_src/bk7258/ap/h2_pal_core:src/h2_bk_platform_net.c",
+        "//native_component_src/bk7258/ap/h2_pal_core:src/h2_bk_platform_wifi.c",
     ] + glob(
-        ["evidence/**/*.json"],
+        ["evidence/**/*"],
         allow_empty = True,
     ),
     legacy_create_init = 0,
