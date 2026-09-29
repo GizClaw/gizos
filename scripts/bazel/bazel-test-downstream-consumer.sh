@@ -8,17 +8,17 @@ fixture_root="$repository_root/tools/bazel/tests/downstream_consumer"
 # The fixture root ignores every rc file, so Bazel would otherwise fall back to
 # its built-in output root and repository cache. Reuse the locations the
 # caller's own configuration selects for this checkout instead.
+caller_bazel_info() {
+    (cd "$repository_root" && "${BAZEL_BIN:-bazel}" info "$1")
+}
 output_user_root=${BAZEL_OUTPUT_USER_ROOT:-}
+if [ -z "$output_user_root" ]; then
+    caller_output_base=$(caller_bazel_info output_base)
+    output_user_root=${caller_output_base%/*}
+fi
 repository_cache=${BAZEL_REPOSITORY_CACHE:-}
-if [ -z "$output_user_root" ] || [ -z "$repository_cache" ]; then
-    caller_info=$(cd "$repository_root" && "${BAZEL_BIN:-bazel}" info output_base repository_cache)
-    if [ -z "$output_user_root" ]; then
-        caller_output_base=$(printf '%s\n' "$caller_info" | sed -n 's/^output_base: //p')
-        output_user_root=${caller_output_base%/*}
-    fi
-    if [ -z "$repository_cache" ]; then
-        repository_cache=$(printf '%s\n' "$caller_info" | sed -n 's/^repository_cache: //p')
-    fi
+if [ -z "$repository_cache" ]; then
+    repository_cache=$(caller_bazel_info repository_cache)
 fi
 if [ -z "$output_user_root" ] || [ -z "$repository_cache" ]; then
     printf 'cannot resolve the Bazel output root and repository cache\n' >&2
