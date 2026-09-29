@@ -7,8 +7,7 @@
 extern "C" {
 #endif
 
-typedef void (*h2_wifi_case_result_fn)(void *user, const char *id, int rc,
-                                      uint64_t elapsed_ms);
+typedef void (*h2_wifi_case_result_fn)(void *user, const char *id, int rc, uint64_t elapsed_ms);
 
 typedef struct h2_wifi_e2e_config {
     /* Synthetic fixture credentials only. Production credentials are read from
@@ -40,16 +39,13 @@ typedef struct h2_wifi_e2e_result {
  * Every case runs; terminal restoration always runs and is qualification. */
 int h2_wifi_e2e_run(h2_runtime_t *runtime, const h2_wifi_e2e_config_t *config,
                     h2_wifi_e2e_result_t *out_result);
-int h2_wifi_config_equal(const h2_pal_wifi_sta_config_t *a,
-                          const h2_pal_wifi_sta_config_t *b);
+int h2_wifi_config_equal(const h2_pal_wifi_sta_config_t *a, const h2_pal_wifi_sta_config_t *b);
 
 /* Read-only host Netif and explicit unsupported capability qualification.
  * Returns no physical WLAN qualification. */
-int h2_wifi_host_contract(const h2_pal_wifi_sta_api_t *sta,
-                           const h2_pal_wifi_ap_api_t *ap,
-                           const h2_pal_wifi_settings_api_t *settings,
-                           const h2_pal_netif_api_t *netif,
-                           int host_kind, unsigned *out_netifs);
+int h2_wifi_host_contract(const h2_pal_wifi_sta_api_t *sta, const h2_pal_wifi_ap_api_t *ap,
+                          const h2_pal_wifi_settings_api_t *settings,
+                          const h2_pal_netif_api_t *netif, int host_kind, unsigned *out_netifs);
 
 #ifdef __cplusplus
 }
