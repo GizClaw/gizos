@@ -1111,7 +1111,7 @@ static int h2_bk_wifi_sta_disconnect(h2_pal_wifi_sta_t *sta) {
     memset(&link, 0, sizeof(link));
     bk_err_t err = bk_wifi_sta_get_link_status(&link);
     if (err == BK_OK) {
-        err = wifi_send_com_api_cmd(STA_DISCONNECT, 0);
+        err = wifi_send_com_api_cmd(WLAN_DISCONNECT, 0);
         if (err == BK_OK) err = bk_wifi_sta_disconnect();
     } else if (err == BK_FAIL || err == BK_ERR_WIFI_DRIVER ||
                err == BK_ERR_WIFI_STA_NOT_STARTED || err == BK_ERR_WIFI_STA_NOT_CONFIG) {
