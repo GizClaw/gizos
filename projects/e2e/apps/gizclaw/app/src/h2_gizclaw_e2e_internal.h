@@ -25,6 +25,13 @@ typedef enum h2_gizclaw_e2e_actor_role {
   H2_GIZCLAW_E2E_GROUP_MEMBER,
 } h2_gizclaw_e2e_actor_role_t;
 
+typedef struct h2_gizclaw_e2e_social_observation {
+  uint32_t count;
+  bool invalid;
+  char sender[65];
+  char group[256];
+} h2_gizclaw_e2e_social_observation_t;
+
 typedef struct h2_gizclaw_e2e_actor {
   h2_gizclaw_service_t *service;
   h2_gizclaw_api_key_state_t *api_key_state;
@@ -35,6 +42,7 @@ typedef struct h2_gizclaw_e2e_actor {
   bool registered;
   bool peer_delete_required;
   bool peer_delete_requested;
+  h2_gizclaw_e2e_social_observation_t social_ping;
   bool client_info_requested;
   bool client_identifiers_requested;
 } h2_gizclaw_e2e_actor_t;
@@ -114,6 +122,14 @@ typedef struct h2_gizclaw_e2e_fixture {
    * blocks fixture release until a later join reclaims it. */
   h2_pal_task_t *retained_job_task;
 } h2_gizclaw_e2e_fixture_t;
+
+int h2_gizclaw_e2e_fixture_social_observation(
+    h2_gizclaw_e2e_fixture_t *fixture, h2_gizclaw_e2e_actor_role_t role,
+    h2_gizclaw_e2e_social_observation_t *out);
+/* Bounded decoder for the three string fields in the pinned reverse RPC.
+ * It lives in the App fixture, independent of an SDK/platform provider. */
+int h2_gizclaw_e2e_decode_social_ping(h2_gizclaw_rpc_bytes_t payload,
+                                     h2_gizclaw_e2e_social_observation_t *out);
 
 int h2_gizclaw_e2e_fixture_init(h2_gizclaw_e2e_fixture_t *fixture,
                                 h2_runtime_t *runtime,

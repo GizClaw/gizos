@@ -21,7 +21,7 @@ PREFIX = "h2_gizclaw_"
 TOP_CASES = {"resource", "connectivity", "rpc", "firmware", "voice", "concurrency", "service", "device-api"}
 RPC_CASES = {"profile", "catalog-workspace", "speech", "workspace-reconnect",
              "contact", "friend", "group", "peer-name-isolation",
-             "telemetry", "api-key", "app-config", "social-ping"}
+             "telemetry", "api-key", "app-config"}
 CASES = TOP_CASES | {"rpc/" + name for name in RPC_CASES}
 
 
@@ -45,7 +45,6 @@ def requirements():
         "firmware": "firmware_get",
         "rpc/app-config": "app_config_list app_config_get",
         "rpc/profile": "profile_get profile_put_name profile_put_emoji public_profile_get",
-        "rpc/social-ping": "friend_ping friend_group_ping",
         "rpc/catalog-workspace": (
             "workflow_list workflow_get workspace_list workspace_get "
             "workspace_create workspace_set_parameters workspace_delete "
@@ -53,13 +52,13 @@ def requirements():
         "rpc/contact": "contact_list contact_get contact_create contact_put contact_delete",
         "rpc/friend": (
             "friend_list friend_info_get friend_add friend_delete "
-            "friend_invite_token_get friend_invite_token_create friend_invite_token_clear"),
+            "friend_invite_token_get friend_invite_token_create friend_invite_token_clear friend_ping"),
         "rpc/group": (
             "friend_group_list friend_group_get friend_group_create friend_group_put "
             "friend_group_delete friend_group_join friend_group_invite_token_get "
             "friend_group_invite_token_create friend_group_invite_token_clear "
             "friend_group_member_list friend_group_member_add friend_group_member_put "
-            "friend_group_member_delete"),
+            "friend_group_member_delete friend_group_ping"),
         "rpc/telemetry": "telemetry_send",
         "rpc/api-key": "api_key_create api_key_revoke",
         "rpc/speech": "speech_transcribe speech_extract",

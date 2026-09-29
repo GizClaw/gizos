@@ -136,6 +136,7 @@ py_test(
     data = [
         "//libs/gizclaw:public_api_inventory",
         "//projects/e2e/apps/gizclaw/app:gizclaw_e2e_metadata_test",
+        "//projects/e2e/apps/gizclaw/app:gizclaw_e2e_social_ping_test",
     ],
     legacy_create_init = False,
 )

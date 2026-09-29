@@ -674,7 +674,26 @@ h2_pal_result_t h2_gizclaw_api_key_state_destroy(h2_gizclaw_api_key_state_t **st
   return H2_PAL_OK;
 }
 
+static void social_payload_boundaries(void) {
+  const uint8_t good[] = {10, 4, 'p', 'e', 'e', 'r', 18, 1, 'n', 26, 1, 'g'};
+  h2_gizclaw_e2e_social_observation_t value;
+  assert(h2_gizclaw_e2e_decode_social_ping((h2_gizclaw_rpc_bytes_t){good, sizeof(good)}, &value) == 0);
+  assert(!strcmp(value.sender, "peer") && !strcmp(value.group, "g"));
+  assert(h2_gizclaw_e2e_decode_social_ping((h2_gizclaw_rpc_bytes_t){good, 6}, &value) == 0);
+  assert(!strcmp(value.sender, "peer") && !value.group[0]);
+  const uint8_t bad[][8] = {
+      {10, 7, 'p'}, {8, 1}, {10, 0}, {10, 1, 0}, {18, 1, 'x'},
+      {10, 1, 'p', 10, 1, 'q'}, {10, 128, 128, 128, 128, 1}};
+  const size_t lengths[] = {3, 2, 2, 3, 3, 6, 6};
+  for (unsigned i = 0; i < sizeof(lengths) / sizeof(lengths[0]); ++i)
+    assert(h2_gizclaw_e2e_decode_social_ping((h2_gizclaw_rpc_bytes_t){bad[i], lengths[i]}, &value) != 0);
+  uint8_t long_sender[67]; memset(long_sender, 'a', sizeof(long_sender));
+  long_sender[0] = 10; long_sender[1] = 65;
+  assert(h2_gizclaw_e2e_decode_social_ping((h2_gizclaw_rpc_bytes_t){long_sender, sizeof(long_sender)}, &value) != 0);
+}
+
 int main(int argc, char **argv) {
+  social_payload_boundaries();
   const h2_gizclaw_str_t empty = h2_gizclaw_e2e_str(NULL);
   assert(empty.data == NULL && empty.len == 0u);
   const h2_gizclaw_str_t value = h2_gizclaw_e2e_str("portable");

@@ -275,6 +275,48 @@ void h2_gizclaw_e2e_evidence(const char *symbol, const char *stage,
          result == H2_PAL_OK ? "PASS" : "FAIL", result);
 }
 
+int h2_gizclaw_e2e_decode_social_ping(h2_gizclaw_rpc_bytes_t payload,
+                                     h2_gizclaw_e2e_social_observation_t *out) {
+  if (!out || !payload.data || !payload.len || payload.len > 583u)
+    return H2_PAL_ERR_INVALID_ARG;
+  *out = (h2_gizclaw_e2e_social_observation_t){0};
+  unsigned seen = 0u;
+  for (size_t offset = 0u; offset < payload.len;) {
+    const uint8_t tag = payload.data[offset++];
+    if ((tag != 10u && tag != 18u && tag != 26u) || (seen & (1u << (tag >> 3u))))
+      return H2_PAL_ERR_FORMAT;
+    seen |= 1u << (tag >> 3u);
+    size_t length = 0u;
+    unsigned shift = 0u;
+    uint8_t part;
+    do {
+      if (offset == payload.len || shift > 14u) return H2_PAL_ERR_FORMAT;
+      part = payload.data[offset++];
+      length |= (size_t)(part & 127u) << shift;
+      shift += 7u;
+    } while (part & 128u);
+    if (length > payload.len - offset || memchr(payload.data + offset, 0, length))
+      return H2_PAL_ERR_FORMAT;
+    char *dest = tag == 10u ? out->sender : tag == 26u ? out->group : NULL;
+    size_t cap = tag == 10u ? sizeof(out->sender) : tag == 26u ? sizeof(out->group) : 257u;
+    if (length >= cap) return H2_PAL_ERR_FORMAT;
+    if (dest) { memcpy(dest, payload.data + offset, length); dest[length] = '\0'; }
+    offset += length;
+  }
+  return out->sender[0] ? H2_PAL_OK : H2_PAL_ERR_FORMAT;
+}
+
+int h2_gizclaw_e2e_fixture_social_observation(
+    h2_gizclaw_e2e_fixture_t *fixture, h2_gizclaw_e2e_actor_role_t role,
+    h2_gizclaw_e2e_social_observation_t *out) {
+  if (!fixture || !out || (unsigned)role >= H2_GIZCLAW_E2E_ACTOR_COUNT ||
+      !s_webrtc_observer.initialized) return H2_PAL_ERR_INVALID_ARG;
+  int rc = h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
+  if (rc != H2_PAL_OK) return rc;
+  *out = fixture->actors[role].social_ping;
+  return h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
+}
+
 static int provider_call(void *user, h2_gizclaw_rpc_method_t method,
                          h2_gizclaw_rpc_bytes_t request_payload,
                          h2_gizclaw_rpc_provider_response_t *out_response) {
@@ -302,6 +344,24 @@ static int provider_call(void *user, h2_gizclaw_rpc_method_t method,
     };
     h2_gizclaw_e2e_evidence("H2_GIZCLAW_RPC_CLIENT_IDENTIFIERS_GET",
                             "reverse-rpc", H2_PAL_OK);
+    return H2_PAL_OK;
+  }
+  if (method == H2_GIZCLAW_RPC_CLIENT_SOCIAL_PING) {
+    h2_gizclaw_e2e_social_observation_t observed = {0};
+    const int parsed = h2_gizclaw_e2e_decode_social_ping(request_payload, &observed);
+    int rc = h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
+    if (rc != H2_PAL_OK) return rc;
+    observed.count = actor->social_ping.count + 1u;
+    observed.invalid = actor->social_ping.invalid || parsed != H2_PAL_OK;
+    actor->social_ping = observed;
+    rc = h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
+    if (rc != H2_PAL_OK) return rc;
+    if (parsed != H2_PAL_OK) {
+      out_response->has_error = true;
+      out_response->error_code = H2_GIZCLAW_RPC_ERROR_INVALID_ARGUMENT;
+    }
+    /* The successful response is an empty protobuf; receipt is independently
+     * observed by the calling case after the sender's RPC settles. */
     return H2_PAL_OK;
   }
   out_response->has_error = true;
@@ -419,6 +479,10 @@ static int actor_stop(h2_gizclaw_e2e_actor_t *actor) {
   return H2_PAL_ERR_INVALID_STATE;
 }
 
+static const h2_gizclaw_rpc_method_t e2e_reverse_methods[] = {
+    H2_GIZCLAW_RPC_CLIENT_INFO_GET, H2_GIZCLAW_RPC_CLIENT_IDENTIFIERS_GET,
+    H2_GIZCLAW_RPC_CLIENT_SOCIAL_PING};
+
 static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
                          h2_gizclaw_e2e_actor_t *actor, const char *stage) {
   if (actor->service != NULL)
@@ -442,6 +506,8 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
       .firmware_channel = H2_GIZCLAW_FIRMWARE_CHANNEL_DEVELOP,
       .rpc_provider = provider_call,
       .rpc_provider_user = actor,
+      .rpc_provider_methods = e2e_reverse_methods,
+      .rpc_provider_method_count = sizeof(e2e_reverse_methods) / sizeof(e2e_reverse_methods[0]),
       .cancel_requested = cancel_requested,
       .cancel_user = fixture,
   };

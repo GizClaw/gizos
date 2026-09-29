@@ -106,7 +106,8 @@ class CoverageTest(unittest.TestCase):
         self.assertEqual(result["missing"], 6)
 
     def test_social_ping_and_public_profile_require_real_calls_and_assertions(self):
-        expected = {"rpc/social-ping": ("friend_ping", "friend_group_ping"),
+        expected = {"rpc/friend": ("friend_ping",),
+                    "rpc/group": ("friend_group_ping",),
                     "rpc/profile": ("public_profile_get",)}
         for case, methods in expected.items():
             with self.subTest(case=case):
