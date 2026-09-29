@@ -274,7 +274,7 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
   const h2_gizclaw_player_playlist_entry_t album[] = {
       {track, h2_gizclaw_e2e_str("gizos-e2e-track-1"), album_ref, 0u},
       {track, h2_gizclaw_e2e_str("gizos-e2e-track-2"), album_ref, 0u},
-      {track, h2_gizclaw_e2e_str("gizos-e2e-track-3"), album_ref, 0u},
+      {track, h2_gizclaw_e2e_str("gizos-e2e-track-3"), album_ref, 32000u},
   };
   CHECK(h2_gizclaw_player_playlist_set(service, album, 3u));
   h2_gizclaw_e2e_evidence("h2_gizclaw_player_playlist_set", "local-playlist",
@@ -339,16 +339,17 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
       CHECK(h2_gizclaw_player_get_status(service, &local));
       if (rc == H2_PAL_OK && local.has_current_index &&
           local.current_index == selected && !strcmp(local.state, "playing") &&
-          local.position_ms > 0u && device_evidence(fixture).playback_bytes > before_bytes) {
+          local.position_ms >= (selected == 1u ? 1u : 1000u) &&
+          device_evidence(fixture).playback_bytes > before_bytes) {
         played = true;
         break;
       }
       ASSERT(strcmp(local.state, "error") != 0);
     }
     ASSERT(played);
-    /* The fixture playlist has unknown durations: play_index_at must use its
-     * documented zero-origin fallback. A known-duration seek is a separate
-     * decoder/HTTP-range assertion, not implied by this playback check. */
+    /* The pinned device fixture is 32 seconds. The third entry supplies its
+     * duration so play_index_at must actually reach the requested media time.
+     * This does not imply that the HTTP server honored Range. */
     int bad_index = H2_PAL_OK;
     if (rc == H2_PAL_OK) bad_index = h2_gizclaw_player_play_index(service, 3u);
     ASSERT(bad_index == H2_PAL_ERR_INVALID_ARG);
