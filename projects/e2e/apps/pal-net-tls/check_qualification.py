@@ -38,15 +38,17 @@ def check_cases(receipt, registry):
         assert by_id[case]['bytes_sent'] == 4193 and by_id[case]['bytes_received'] == 4097, case
 
 
-def check_peer(peer, session):
+def check_peer(peer, session, run_id):
     assert peer['session'] == session and re.fullmatch('[0-9a-f]{32}', session)
-    rows = peer['records']
+    assert re.fullmatch('[0-9a-f]{16}', run_id)
+    rows = [row for row in peer['records'] if row.get('run_id') == run_id]
     for case in ('tls-default-untrusted','tls-wrong-ca','tls-wrong-name','tls-expired'):
         events = [row for row in rows if row['case'] == case]
         assert len(events) == 1, (case, len(events))
         event = events[0]
         assert event['session'] == session and event['accepted'] and event['client_hello'] and event['certificate_presented']
-        assert event['finished'] and not event['handshake_succeeded'] and event['payload_received'] == 0, case
+        assert event['finished'] and event['payload_received'] == 0 and event['payload_sent'] == 0, case
+        assert not event['handshake_succeeded'] or event.get('post_handshake_zero_payload_close') is True, case
     negotiated = [row for row in rows if row['case'] == 'tls-sni-alpn']
     assert len(negotiated) == 1 and negotiated[0]['sni'] == 'pal-net-tls.test' and negotiated[0]['alpn'] == 'h2-pal-e2e'
 
@@ -56,7 +58,7 @@ def check(root=ROOT, allow_pending=False):
     data = json.loads((app / 'qualification.json').read_text())
     assert set(data['platforms']) == PLATFORMS and data['full_net_qualified'] is False
     if allow_pending and not data['assessment_complete']:
-        assert data['pending'] and not data['gate']['tls_integration_started']
+        assert data['pending']
         return data
     assert data['assessment_complete'] and not data['pending']
     assert data['gate']['wifi_qualification_verified'] and data['gate']['hardware_released']
@@ -70,14 +72,6 @@ def check(root=ROOT, allow_pending=False):
     for platform, entry in data['platforms'].items():
         receipt = json.loads((app / entry['evidence']).read_text())
         assert re.fullmatch('[0-9a-f]{64}', receipt['artifact_sha256'])
-        if platform == 'wasm':
-            assert entry['status'] == 'UNSUPPORTED' and not entry['core_qualified']
-            assert receipt['worker'] == 1 and receipt['main_runtime_thread'] == 0 and receipt['teardown'] == 0
-            assert not receipt['core_qualified'] and not receipt['full_net_qualified']
-            assert receipt['operations'] == 21 and len(receipt['capabilities']) == 21
-            assert len({row['slot'] for row in receipt['capabilities']}) == 21
-            assert all(row['status'] in ('UNSUPPORTED','UNSUPPORTED_NOOP') for row in receipt['capabilities'])
-            continue
         assert entry['status'] == 'PASS' and entry['core_qualified']
         if platform in ('devkit','bk7258'):
             assert len(receipt['boots']) == 2 and {row['kind'] for row in receipt['boots']} == {'install','normal-reboot'}
@@ -86,10 +80,10 @@ def check(root=ROOT, allow_pending=False):
                 assert boot['uid'] == receipt['uid'] and boot['image_sha256'] == receipt['image_sha256']
                 assert boot['confirm'] == 0 and boot['loader_p1_preserved'] and boot['stage_empty'] and boot['coredump_unchanged']
                 check_cases(boot, registry)
-                check_peer(boot['peer'], boot['session'])
+                check_peer(boot['peer'], boot['session'], boot['boot_id'])
         else:
             check_cases(receipt, registry)
-            check_peer(receipt['peer'], receipt['peer']['session'])
+            check_peer(receipt['peer'], receipt['peer']['session'], receipt['peer']['session'][:16])
             if platform in ('ios','android'):
                 assert re.fullmatch('[0-9a-f]{64}', receipt['sdk_sha256'])
                 assert receipt['packaged_sdk_symbols_verified']

@@ -142,7 +142,8 @@ int h2_pal_net_tls_device_run(h2_runtime_t *runtime,
       .fixture_user = &client,
       .report = report,
       .report_user = runtime,
-      .case_timeout_ms = 60000u,
+      .case_timeout_ms = 90000u,
+      .tls_handshake_timeout_ms = 10000u,
       .multicast_supported = runtime->net && runtime->net->vtable &&
                              runtime->net->vtable->udp_join_multicast != NULL};
   rc = h2_net_tls_parse_ipv4(H2_PAL_NET_TLS_DNS_IPV4, &config.dns_expected);

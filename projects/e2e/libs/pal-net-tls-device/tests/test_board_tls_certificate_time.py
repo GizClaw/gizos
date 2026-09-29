@@ -1,0 +1,104 @@
+"""Compile the real board validity helpers against controlled certificate time."""
+from pathlib import Path
+import shutil
+import subprocess
+import tempfile
+import unittest
+
+ROOT = Path(__file__).resolve().parents[5]
+PRELUDE = r'''
+#define _POSIX_C_SOURCE 200809L
+#include <assert.h>
+#include <stdint.h>
+#include <stddef.h>
+#include <stdio.h>
+#include <time.h>
+typedef int h2_pal_result_t;
+#define H2_PAL_OK 0
+#define H2_PAL_ERR_UNAVAILABLE -2
+#define H2_PAL_ERR_TLS_VERIFY -17
+#define H2_PAL_LOG_ERROR 3
+#define ESP_LOGE(...) ((void)0)
+typedef struct mbedtls_x509_time { int year,mon,day,hour,min,sec; } mbedtls_x509_time;
+typedef struct mbedtls_x509_crt {
+    int version;
+    mbedtls_x509_time valid_from,valid_to;
+    struct mbedtls_x509_crt *next;
+} mbedtls_x509_crt;
+typedef struct { int ssl; } SOCKET_TYPE;
+static uint64_t clock_ms;
+static int clock_valid=1, peer_present=1;
+static mbedtls_x509_crt leaf,intermediate,sentinel;
+static const void *TIME_API(void){return &clock_ms;}
+static int h2_pal_time_get_wall_ms(const void *api,uint64_t *out){(void)api;if(!clock_valid)return H2_PAL_ERR_UNAVAILABLE;*out=clock_ms;return H2_PAL_OK;}
+static const mbedtls_x509_crt *mbedtls_ssl_get_peer_cert(const int *ssl){(void)ssl;return peer_present?&leaf:NULL;}
+static int mbedtls_x509_time_cmp(const mbedtls_x509_time *a,const mbedtls_x509_time *b){
+ int aa[]={a->year,a->mon,a->day,a->hour,a->min,a->sec};
+ int bb[]={b->year,b->mon,b->day,b->hour,b->min,b->sec};
+ for(int i=0;i<6;i++){if(aa[i]!=bb[i])return aa[i]<bb[i]?-1:1;}
+ return 0;
+}
+static const void *h2_bk_platform_log_api(void){return NULL;}
+static int h2_pal_log_write(const void *api,int level,const char *scope,const char *message){
+ (void)api;(void)level;(void)scope;(void)message;return H2_PAL_OK;
+}
+'''
+MAIN = r'''
+int main(void){
+ SOCKET_TYPE socket={0};
+ clock_ms=1790776800000ull; /* 2026-09-30 UTC */
+ leaf.version=3;
+ leaf.valid_from=(mbedtls_x509_time){2026,9,29,0,0,0};
+ leaf.valid_to=(mbedtls_x509_time){2026,10,1,0,0,0};
+ assert(CHECK(&socket)==H2_PAL_OK);
+ sentinel.version=0; leaf.next=&sentinel;
+ assert(CHECK(&socket)==H2_PAL_OK);
+ leaf.next=NULL;
+ leaf.valid_to.year=2020;
+ assert(CHECK(&socket)==H2_PAL_ERR_TLS_VERIFY);
+ leaf.valid_to.year=2026;leaf.valid_from.year=2030;
+ assert(CHECK(&socket)==H2_PAL_ERR_TLS_VERIFY);
+ leaf.valid_from.year=2026;
+ intermediate.version=3;
+ intermediate.valid_from=(mbedtls_x509_time){2020,1,1,0,0,0};
+ intermediate.valid_to=(mbedtls_x509_time){2021,1,1,0,0,0};
+ leaf.next=&intermediate;
+ assert(CHECK(&socket)==H2_PAL_ERR_TLS_VERIFY);
+ leaf.next=NULL;peer_present=0;
+ assert(CHECK(&socket)==H2_PAL_ERR_TLS_VERIFY);
+ peer_present=1;clock_valid=0;
+ assert(CHECK(&socket)==H2_PAL_ERR_UNAVAILABLE);
+ return 0;
+}
+'''
+
+
+class CertificateTime(unittest.TestCase):
+    def test_esp_and_bk_production_helpers(self):
+        compiler = shutil.which('cc')
+        self.assertTrue(compiler)
+        for backend, relative in [
+            ('esp', 'native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net.c'),
+            ('bk', 'native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_net.c'),
+        ]:
+            source = (ROOT / relative).read_text()
+            start = source.index('static h2_pal_result_t '+backend+'_net_tls_check_certificate_time(')
+            end = source.index('static h2_pal_result_t '+backend+'_net_tls_handshake(', start)
+            helper = source[start:end]
+            prelude = PRELUDE.replace('SOCKET_TYPE', backend+'_net_tls_socket_t')
+            prelude = prelude.replace('TIME_API', 'h2_'+backend+'_platform_time_api')
+            if backend == 'esp':
+                prelude = prelude[:prelude.index('static const void *h2_bk_platform_log_api')]
+            main = MAIN.replace('SOCKET_TYPE', backend+'_net_tls_socket_t')
+            main = main.replace('CHECK', backend+'_net_tls_check_certificate_time')
+            with tempfile.TemporaryDirectory(prefix='h2-net-tls-cert-time-') as temporary:
+                source_file = Path(temporary) / 'test.c'
+                executable = Path(temporary) / 'test'
+                source_file.write_text(prelude+helper+main)
+                subprocess.run([compiler, '-std=c11', '-Wall', '-Wextra', '-Werror',
+                    str(source_file), '-o', str(executable)], check=True, timeout=30)
+                subprocess.run([str(executable)], check=True, timeout=15)
+
+
+if __name__ == '__main__':
+    unittest.main()

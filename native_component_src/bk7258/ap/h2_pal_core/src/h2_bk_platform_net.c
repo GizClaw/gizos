@@ -311,9 +311,18 @@ static h2_pal_result_t bk_net_tls_check_certificate_time(
     if (cert == NULL) {
         return H2_PAL_ERR_TLS_VERIFY;
     }
-    for (; cert != NULL; cert = cert->next) {
+    for (; cert != NULL && cert->version != 0; cert = cert->next) {
         if (mbedtls_x509_time_cmp(&cert->valid_from, &now) > 0 ||
             mbedtls_x509_time_cmp(&cert->valid_to, &now) < 0) {
+            char diagnostic[180];
+            (void)snprintf(diagnostic, sizeof(diagnostic),
+                "tls_cert_time now=%d-%02d-%02d from=%d-%02d-%02d to=%d-%02d-%02d version=%d",
+                now.year, now.mon, now.day,
+                cert->valid_from.year, cert->valid_from.mon, cert->valid_from.day,
+                cert->valid_to.year, cert->valid_to.mon, cert->valid_to.day,
+                cert->version);
+            (void)h2_pal_log_write(h2_bk_platform_log_api(), H2_PAL_LOG_ERROR,
+                "pal/net", diagnostic);
             return H2_PAL_ERR_TLS_VERIFY;
         }
     }
@@ -1176,12 +1185,22 @@ static int bk_net_tcp_recv(
             }
         }
     }
-    set_recv_timeout(socket_fd, timeout_ms);
-    int got = recv(socket_fd, data, (int)len, 0);
-    if (got < 0) {
-        return errno == EAGAIN || errno == EWOULDBLOCK ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_ERR_IO;
+    /* SO_RCVTIMEO=0 means block forever on lwIP. Poll the plain socket
+     * explicitly, then wait only within the caller's positive budget. */
+    for (;;) {
+        int got = recv(socket_fd, data, (int)len, MSG_DONTWAIT);
+        if (got > 0) return got;
+        if (got == 0) return H2_PAL_ERR_CLOSED;
+        if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+            return bk_net_socket_error();
+        }
+        if (timeout_ms == 0u) return H2_PAL_ERR_WOULD_BLOCK;
+        uint32_t remaining = bk_net_timeout_remaining_ms(deadline_ms);
+        if (remaining == 0u) return H2_PAL_ERR_TIMEOUT;
+        int ready = wait_fd(socket_fd, 0, remaining);
+        if (ready == H2_PAL_ERR_TIMEOUT) return H2_PAL_ERR_TIMEOUT;
+        if (ready != H2_PAL_OK && ready != H2_PAL_ERR_WOULD_BLOCK) return ready;
     }
-    return got == 0 ? H2_PAL_ERR_CLOSED : got;
 }
 
 static void bk_net_close(void *user, h2_pal_net_socket_t socket_fd) {

@@ -591,7 +591,9 @@ static void run_case(state_t *s, h2_net_tls_case_t kind) {
         tls.server_name = name;
       }
       uint64_t before = now(s);
-      uint32_t wait = kind == H2_NET_TLS_TLS_HANDSHAKE_DEADLINE ? 100u : 3000u;
+      uint32_t wait = kind == H2_NET_TLS_TLS_HANDSHAKE_DEADLINE ? 100u :
+          (s->config->tls_handshake_timeout_ms ?
+            s->config->tls_handshake_timeout_ms : 3000u);
       rc = h2_pal_net_tls_wrap(net, socket, &tls, wait, &tls_socket);
       s->item->provider_result = rc;
       CHECK(now(s) - before <= wait + 500u, H2_PAL_ERR_TIMEOUT);

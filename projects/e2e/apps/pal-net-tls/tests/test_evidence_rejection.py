@@ -37,16 +37,17 @@ class Rejection(unittest.TestCase):
 
     def test_peer_missing_certificate_cannot_pass(self):
         session='a'*32
-        rows=[dict(session=session,case=case,accepted=True,client_hello=True,certificate_presented=True,
-            finished=True,handshake_succeeded=False,payload_received=0) for case in ('tls-default-untrusted','tls-wrong-ca','tls-wrong-name','tls-expired')]
-        rows.append(dict(session=session,case='tls-sni-alpn',sni='pal-net-tls.test',alpn='h2-pal-e2e'))
+        run_id=session[:16]
+        rows=[dict(session=session,run_id=run_id,case=case,accepted=True,client_hello=True,certificate_presented=True,
+            finished=True,handshake_succeeded=False,payload_received=0,payload_sent=0) for case in ('tls-default-untrusted','tls-wrong-ca','tls-wrong-name','tls-expired')]
+        rows.append(dict(session=session,run_id=run_id,case='tls-sni-alpn',sni='pal-net-tls.test',alpn='h2-pal-e2e'))
         valid=dict(session=session,records=rows)
-        validation.check_peer(valid,session)
+        validation.check_peer(valid,session,run_id)
         for field,value in [('accepted',False),('client_hello',False),('certificate_presented',False),('finished',False),('handshake_succeeded',True),('payload_received',1),('session','b'*32)]:
             bad=copy.deepcopy(valid);bad['records'][0][field]=value
-            with self.assertRaises(AssertionError):validation.check_peer(bad,session)
+            with self.assertRaises(AssertionError):validation.check_peer(bad,session,run_id)
         bad=copy.deepcopy(valid);bad['records'].append(bad['records'][0])
-        with self.assertRaises(AssertionError):validation.check_peer(bad,session)
+        with self.assertRaises(AssertionError):validation.check_peer(bad,session,run_id)
 
 
 if __name__=='__main__':unittest.main()

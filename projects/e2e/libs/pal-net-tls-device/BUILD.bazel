@@ -63,3 +63,27 @@ py_test(
 )
 
 exports_files(["verify_device.py"])
+
+py_test(
+    name = "board_tls_certificate_time_test",
+    srcs = ["tests/test_board_tls_certificate_time.py"],
+    data = [
+        "//native_component_src/bk7258/ap/h2_pal_core:src/h2_bk_platform_net.c",
+        "//native_component_src/esp-idf6.x/h2_pal_core:src/h2_esp_platform_net.c",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_board_tls_certificate_time.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+py_test(
+    name = "bk_tcp_recv_timeout_test",
+    srcs = ["tests/test_bk_tcp_recv_timeout.py"],
+    data = [
+        "//libs/pal:pal_header_files",
+        "//native_component_src/bk7258/ap/h2_pal_core:src/h2_bk_platform_net.c",
+    ],
+    legacy_create_init = 0,
+    main = "tests/test_bk_tcp_recv_timeout.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)

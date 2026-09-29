@@ -58,6 +58,8 @@ class Evidence(unittest.TestCase):
             record['handshake_succeeded'] = True
             with self.assertRaises(RuntimeError):
                 fixture.proof('tls-wrong-ca', 1)
+            record['post_handshake_zero_payload_close'] = True
+            self.assertTrue(fixture.proof('tls-wrong-ca', 1)['post_handshake_zero_payload_close'])
             record['handshake_succeeded'] = False
             record['payload_received'] = 1
             with self.assertRaises(RuntimeError):

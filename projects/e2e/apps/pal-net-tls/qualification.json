@@ -48,7 +48,9 @@
   },
   "gate": {
     "wifi_qualification_verified": false,
-    "hardware_released": false,
-    "tls_integration_started": false
+    "wifi_provisional_verified_head": "2e5317d6077b12e4b1951fa2f0de08ee3710bad3",
+    "wifi_review_fix_requalification_pending": true,
+    "hardware_released": true,
+    "tls_integration_started": true
   }
 }

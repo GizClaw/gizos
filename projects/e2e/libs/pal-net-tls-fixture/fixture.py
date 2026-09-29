@@ -147,7 +147,7 @@ class Fixture:
             port=0, accepted=False, client_hello=False, certificate_presented=False,
             peer_alerts=[], sni=None, alpn=None, handshake_succeeded=False,
             finished=False, payload_received=0, payload_sent=0, payload_valid=False,
-            error=None, closed=False)
+            error=None, closed=False, post_handshake_zero_payload_close=False)
         with self.lock:
             previous = self.records.get(key)
             if previous:
@@ -233,6 +233,8 @@ class Fixture:
         while len(request) < len(expected):
             part = connection.recv(min(509, len(expected) - len(request)))
             if not part:
+                if record['handshake_succeeded'] and not request:
+                    record['post_handshake_zero_payload_close'] = True
                 break
             request.extend(part)
         record['payload_received'] = len(request)
@@ -292,7 +294,9 @@ class Fixture:
                 if proof == 2:
                     valid = valid and record['sni'] == SERVER_NAME and record['alpn'] == ALPN
             elif proof == 1:
-                valid = valid and record['finished'] and record['client_hello'] and record['certificate_presented'] and not record['handshake_succeeded'] and record['payload_received'] == 0
+                # Expiry can be rejected just after the server's Finished.
+                # The App also requires a typed TLS_VERIFY for this exact case.
+                valid = valid and record['finished'] and record['client_hello'] and record['certificate_presented'] and record['payload_received'] == 0 and record['payload_sent'] == 0 and (not record['handshake_succeeded'] or record['post_handshake_zero_payload_close'])
             elif proof == 3:
                 valid = valid and record['mode'] == 4 and record['client_hello'] and not record['handshake_succeeded']
             elif proof == 4:

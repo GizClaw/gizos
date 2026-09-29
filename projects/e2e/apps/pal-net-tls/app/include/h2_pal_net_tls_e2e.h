@@ -71,6 +71,7 @@ typedef struct h2_net_tls_config {
   void (*report)(void *user, const h2_net_tls_case_result_t *result);
   void *report_user;
   uint32_t case_timeout_ms;
+  uint32_t tls_handshake_timeout_ms;
   int multicast_supported, icmp_supported;
 } h2_net_tls_config_t;
 

@@ -344,9 +344,14 @@ static h2_pal_result_t esp_net_tls_check_certificate_time(
     if (cert == NULL) {
         return H2_PAL_ERR_TLS_VERIFY;
     }
-    for (; cert != NULL; cert = cert->next) {
+    for (; cert != NULL && cert->version != 0; cert = cert->next) {
         if (mbedtls_x509_time_cmp(&cert->valid_from, &now) > 0 ||
             mbedtls_x509_time_cmp(&cert->valid_to, &now) < 0) {
+            ESP_LOGE("h2_net", "stage=tls_cert_time now=%d-%02d-%02d from=%d-%02d-%02d to=%d-%02d-%02d version=%d",
+                now.year, now.mon, now.day,
+                cert->valid_from.year, cert->valid_from.mon, cert->valid_from.day,
+                cert->valid_to.year, cert->valid_to.mon, cert->valid_to.day,
+                cert->version);
             return H2_PAL_ERR_TLS_VERIFY;
         }
     }

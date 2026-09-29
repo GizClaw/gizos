@@ -220,14 +220,16 @@ The 21-operation inventory includes bounded asynchronous DNS, UDP/TCP/source
 bind, listen/accept, full byte streams, TLS trust/name/expiry rejection,
 SNI/ALPN peer evidence, deadlines and session recovery. Certificate rejection
 requires typed `TLS_VERIFY` and this run's observed ClientHello, emitted
-Certificate, failed handshake and no application payload; generic IO and bad
-endpoints cannot pass. HTTP/Fetch/WebRTC do not replace raw Net/TLS evidence.
+Certificate and no application payload; a post-handshake expiry rejection also
+requires a zero-payload close. Generic IO and bad endpoints cannot pass. HTTP/Fetch/WebRTC do not replace raw Net/TLS evidence.
 
 The mobile consumer imports actual native SDK packages and injects the public
 owned Net provider. Device launchers borrow saved Wi-Fi configuration, keep
 H2Loader service, confirm only complete success and require two independent
 boots with Loader/Stage/coredump preservation. Browser executes the actual
-Worker/AppHost unsupported raw Net boundary, reporting core qualification false.
+Worker/AppHost unsupported raw Net diagnostic boundary, reporting core qualification false.
+This is not a WASM Net/TLS PASS: six-platform qualification remains pending until
+a genuine Web Net/TLS provider runs all 37 mandatory cases.
 ICMP, multicast delivery, IPv6, NETIF binding, DTLS, and OS public-root trust are
 separate scopes. Source/artifact-bound receipts and manual entries are described
 in `projects/e2e/apps/pal-net-tls/README.md`. Wi-Fi qualifies before raw Net/TLS
