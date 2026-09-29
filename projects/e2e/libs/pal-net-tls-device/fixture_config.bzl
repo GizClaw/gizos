@@ -2,7 +2,7 @@
 
 def _impl(ctx):
     lines = []
-    for name in ["HOST", "SESSION", "CA_HEX", "WRONG_CA_HEX"]:
+    for name in ["HOST", "SESSION", "CA_HEX", "WRONG_CA_HEX", "DNS_HOST", "DNS_IPV4"]:
         key = "H2_PAL_NET_TLS_" + name
         lines.append("#define %s %s" % (key, json.encode(ctx.var.get(key, ""))))
     for name in ["PORT", "EPOCH_MS"]:

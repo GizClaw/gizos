@@ -43,7 +43,8 @@
             config, [fixture[@"host"] UTF8String],
             (uint16_t)[fixture[@"port"] unsignedIntValue],
             [fixture[@"session"] UTF8String], pem.bytes, pem.length,
-            wrong.bytes, wrong.length, &result);
+            wrong.bytes, wrong.length, [fixture[@"dns_host"] UTF8String],
+            [fixture[@"dns_ip"] UTF8String], &result);
       }
       int teardown = h2_ios_net_destroy(&owner);
       if (teardown == H2_PAL_OK)

@@ -7,12 +7,14 @@
 JNIEXPORT jint JNICALL
 Java_com_haivivi_gizos_e2e_palnettls_MainActivity_nativeRun(
     JNIEnv *env, jclass type, jstring report, jstring version, jstring host,
-    jint port, jstring session, jstring ca, jstring wrong) {
+    jint port, jstring session, jstring ca, jstring wrong, jstring dns_host,
+    jstring dns_ip) {
   (void)type;
-  jstring strings[] = {report, version, host, session, ca, wrong};
-  const char *values[6] = {0};
+  jstring strings[] = {report, version, host,     session,
+                       ca,     wrong,   dns_host, dns_ip};
+  const char *values[8] = {0};
   int rc = H2_PAL_OK;
-  for (unsigned i = 0u; i < 6u; ++i) {
+  for (unsigned i = 0u; i < 8u; ++i) {
     if (!strings[i]) {
       rc = H2_PAL_ERR_INVALID_ARG;
       break;
@@ -35,7 +37,7 @@ Java_com_haivivi_gizos_e2e_palnettls_MainActivity_nativeRun(
       rc = h2_net_tls_mobile_run(config, values[2], (uint16_t)port, values[3],
                                  (const uint8_t *)values[4], strlen(values[4]),
                                  (const uint8_t *)values[5], strlen(values[5]),
-                                 &result);
+                                 values[6], values[7], &result);
     }
     int teardown = h2_android_net_destroy(&owner);
     if (teardown == H2_PAL_OK)
@@ -46,7 +48,7 @@ Java_com_haivivi_gizos_e2e_palnettls_MainActivity_nativeRun(
       rc = written;
   } else if (rc == H2_PAL_OK)
     rc = H2_PAL_ERR_INVALID_ARG;
-  for (unsigned i = 0u; i < 6u; ++i)
+  for (unsigned i = 0u; i < 8u; ++i)
     if (values[i])
       (*env)->ReleaseStringUTFChars(env, strings[i], values[i]);
   return rc;

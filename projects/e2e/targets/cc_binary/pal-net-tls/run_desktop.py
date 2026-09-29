@@ -3,12 +3,16 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import socket
+import os
 from fixture import Fixture
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--binary', required=True)
 parser.add_argument('--negative-endpoints', action='store_true')
 args = parser.parse_args()
+dns_host = os.environ.get('H2_PAL_NET_TLS_DNS_HOST', 'ap.e2e.gizclaw.com')
+dns_ip = socket.getaddrinfo(dns_host, None, socket.AF_INET, socket.SOCK_STREAM)[0][4][0]
 with Fixture() as fixture:
     if args.negative_endpoints:
         original = fixture.arm
@@ -24,7 +28,7 @@ with Fixture() as fixture:
             return port
         fixture.arm = damaged
     run = subprocess.run([str(Path(args.binary).resolve()), fixture.advertise,
-        str(fixture.port), fixture.session, str(fixture.ca), str(fixture.wrong_ca)],
+        str(fixture.port), fixture.session, str(fixture.ca), str(fixture.wrong_ca), dns_host, dns_ip],
         capture_output=True, text=True, timeout=180)
     print(run.stdout, end='')
     print(run.stderr, end='')
@@ -37,15 +41,15 @@ with Fixture() as fixture:
         assert run.returncode != 0 and wrong.get('status') == 'FAIL', wrong
     else:
         assert run.returncode == 0, run.returncode
-        assert len(cases) == 38 and len({item['id'] for item in cases}) == 38
+        assert len(cases) == 39 and len({item['id'] for item in cases}) == 39
         assert len(summaries) == 1 and summaries[0]['core_qualified'] is True
-        assert summaries[0]['mandatory_passed'] == 36
+        assert summaries[0]['mandatory_passed'] == 37
         assert not summaries[0]['full_net_qualified']
         assert all(item['status'] == 'PASS' for item in cases if item['mandatory'])
         assert not any(summaries[0][key] for key in ('failed', 'blocked', 'retained_sockets', 'retained_resolvers', 'retained_allocations', 'rc', 'teardown'))
         receipt = dict(platform='macos' if __import__('sys').platform=='darwin' else 'linux',
             artifact_sha256=hashlib.sha256(Path(args.binary).read_bytes()).hexdigest(),
-            cases=cases, summary=summaries[0], peer=fixture.snapshot())
+            cases=cases, summary=summaries[0], peer=fixture.snapshot(), dns=dict(host=dns_host, operator_ipv4=dns_ip))
         import os
         output = os.environ.get('TEST_UNDECLARED_OUTPUTS_DIR')
         if output:

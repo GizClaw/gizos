@@ -4,19 +4,23 @@
   "full_net_qualification": false,
   "slots": {
     "resolve_addr": [
-      "dns-sync"
+      "dns-sync",
+      "dns-hostname"
     ],
     "resolve_start": [
       "dns-async-copy",
       "dns-cancel",
-      "dns-capacity"
+      "dns-capacity",
+      "dns-hostname"
     ],
     "resolve_poll": [
-      "dns-async-copy"
+      "dns-async-copy",
+      "dns-hostname"
     ],
     "resolve_close": [
       "dns-cancel",
-      "dns-capacity"
+      "dns-capacity",
+      "dns-hostname"
     ],
     "get_host_addr": [
       "host-address"

@@ -49,3 +49,17 @@ py_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )
+
+py_test(
+    name = "fresh_boot_rejection_test",
+    srcs = [
+        "tests/test_boot_rejection.py",
+        "verify_device.py",
+    ],
+    data = ["//projects/e2e/apps/pal-net-tls/app:include/h2_pal_net_tls_cases.inc"],
+    legacy_create_init = 0,
+    main = "tests/test_boot_rejection.py",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+exports_files(["verify_device.py"])

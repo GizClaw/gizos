@@ -12,6 +12,7 @@ import tempfile
 import time
 import zipfile
 import sys
+import socket
 
 sys.path.insert(0, str(Path(__file__).absolute().parents[4] / "projects/e2e/libs/pal-net-tls-fixture"))
 from fixture import Fixture
@@ -29,10 +30,10 @@ def run(argv, check=True, timeout=45, input=None):
 
 def verify(report, registry, platform):
     ids = re.findall(r'H2_NET_TLS_CASE\(\w+, "([^\"]+)", [01]\)', registry.read_text())
-    assert len(ids) == 38 and len(set(ids)) == 38
+    assert len(ids) == 39 and len(set(ids)) == 39
     assert report['platform'] == platform and report['profile'] == 'net-tls-core'
     assert report['core_qualified'] is True and report['full_net_qualified'] is False
-    assert report['operations'] == 21 and report['mandatory_passed'] == 36
+    assert report['operations'] == 21 and report['mandatory_passed'] == 37
     assert [case['id'] for case in report['cases']] == ids
     assert all(case['status'] == 'PASS' and case['detail'] == 0 for case in report['cases'] if case['mandatory'])
     assert not any(report[key] for key in ('failed','blocked','retained_allocations','retained_sockets','retained_resolvers','rc','teardown'))
@@ -114,6 +115,28 @@ def android(args, output, fixture):
                     "fingerprint": run(adb + ["shell", "getprop", "ro.build.fingerprint"]).stdout.strip()}
 
 
+def verify_sdk_symbols(args):
+    with zipfile.ZipFile(args.sdk) as archive, tempfile.TemporaryDirectory(prefix='pal-net-tls-sdk-symbols-') as temporary:
+        header='h2_'+args.platform+'_net.h'
+        assert any(Path(name).name==header for name in archive.namelist()), 'public Net owner header missing'
+        if args.platform=='ios':
+            candidates=[name for name in archive.namelist() if 'simulator' in name and (name.endswith('.a') or name.endswith('/H2PALCore.framework/H2PALCore'))]
+            assert candidates, 'simulator static library missing'
+            library=Path(temporary)/'libH2PALCore.a'
+            library.write_bytes(archive.read(candidates[0]))
+            symbols=run(['nm','-gU',library]).stdout
+        else:
+            library=Path(temporary)/'libh2_pal_core.so'
+            library.write_bytes(archive.read('jni/arm64-v8a/libh2_pal_core.so'))
+            sdk=Path(os.environ.get('ANDROID_HOME',Path.home()/'Library/Android/sdk'))
+            tools=list((sdk/'ndk/28.2.13676358/toolchains/llvm/prebuilt').glob('*/bin/llvm-nm'))
+            assert len(tools)==1, 'pinned NDK llvm-nm unavailable'
+            symbols=run([tools[0],'--dynamic','--defined-only',library]).stdout
+        wanted=['h2_'+args.platform+'_net_'+name for name in ['create','api','destroy']]
+        assert all(re.search(r'(?:_|\b)'+re.escape(name)+r'\b',symbols) for name in wanted), 'packaged native Net owner symbols missing'
+        return wanted
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("platform", choices=["ios", "android"])
@@ -125,19 +148,29 @@ def main():
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
     advertised = "127.0.0.1" if args.platform == "ios" else "10.0.2.2"
+    exported=verify_sdk_symbols(args)
     with Fixture(advertise=advertised) as fixture:
-        settings = dict(host=fixture.advertise, port=fixture.port, session=fixture.session,
+        dns_host = os.environ.get('H2_PAL_NET_TLS_DNS_HOST', 'ap.e2e.gizclaw.com')
+        dns_ip = socket.getaddrinfo(dns_host, None, socket.AF_INET, socket.SOCK_STREAM)[0][4][0]
+        settings = dict(dns_host=dns_host, dns_ip=dns_ip, host=fixture.advertise, port=fixture.port, session=fixture.session,
             ca=fixture.ca.read_text(), wrong_ca=fixture.wrong_ca.read_text())
         result, environment = (ios if args.platform == "ios" else android)(args, args.output, settings)
         environment['peer'] = fixture.snapshot()
+        environment['dns'] = dict(host=dns_host, operator_ipv4=dns_ip)
         environment['tls_verification'] = "required/default explicit isolated test CA; typed verification rejection with per-case peer evidence"
+    result['packaged_sdk_symbols_verified']=True
+    result['sdk_exported_symbols']=exported
+    result['sdk_sha256']=hashlib.sha256(args.sdk.read_bytes()).hexdigest()
+    result['artifact_sha256']=hashlib.sha256(args.app.read_bytes()).hexdigest()
+    result['peer']=environment['peer']
+    result['dns']=environment['dns']
     (args.output / "qualified.json").write_text(json.dumps(result, indent=2) + "\n")
     environment.update(observation_finished_at_utc=datetime.now(timezone.utc).isoformat(),
                        evidence_timezone="UTC", app_sha256=hashlib.sha256(args.app.read_bytes()).hexdigest(),
                        sdk_sha256=hashlib.sha256(args.sdk.read_bytes()).hexdigest())
     (args.output / "environment.json").write_text(json.dumps(environment, indent=2) + "\n")
     verify(result, args.registry, "ios-simulator" if args.platform == "ios" else "android-emulator")
-    print(f"PAL Net/TLS {args.platform}: 36/36 mandatory PASS, blocked=0, teardown=0")
+    print(f"PAL Net/TLS {args.platform}: 37/37 mandatory PASS, blocked=0, teardown=0")
 
 if __name__ == "__main__":
     main()

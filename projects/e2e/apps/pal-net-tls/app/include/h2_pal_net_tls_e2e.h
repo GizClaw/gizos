@@ -21,6 +21,7 @@ typedef struct h2_net_tls_case_result {
   uint64_t elapsed_ms;
   size_t bytes_sent, bytes_received;
   int provider_result;
+  uint8_t observed_ipv4[4];
 } h2_net_tls_case_result_t;
 
 typedef struct h2_net_tls_result {
@@ -50,8 +51,11 @@ typedef enum h2_net_tls_fixture_proof {
 
 typedef struct h2_net_tls_config {
   const h2_runtime_t *runtime;
-  const char *host;    /* Numerical fixture address; not a public service. */
-  const char *session; /* 32 lowercase hexadecimal characters. */
+  const char *host; /* Numerical fixture address; not a public service. */
+  const char
+      *dns_host; /* Explicit real hostname, separate from local TLS peer. */
+  h2_pal_net_addr_t dns_expected; /* Current operator-observed IPv4 A record. */
+  const char *session;            /* 32 lowercase hexadecimal characters. */
   const uint8_t *root_ca, *wrong_ca;
   size_t root_ca_len, wrong_ca_len;
   const char *server_name;
@@ -70,7 +74,7 @@ typedef struct h2_net_tls_config {
   int multicast_supported, icmp_supported;
 } h2_net_tls_config_t;
 
-/* All 36 mandatory core-profile cases must pass. The two optional capabilities
+/* All 37 mandatory core-profile cases must pass. The two optional capabilities
  * remain explicitly assessed/unsupported, never promoted to full-Net support.
  * App borrows dependencies and fixture, owns only sockets/resolvers/scratch. */
 int h2_pal_net_tls_e2e_run(const h2_net_tls_config_t *config,

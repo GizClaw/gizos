@@ -16,8 +16,8 @@ class Interface(unittest.TestCase):
         registry = dict((case, int(required)) for case, required in re.findall(
             r'H2_NET_TLS_CASE\([^,]+, "([^"]+)", ([01])\)',
             (app / 'include/h2_pal_net_tls_cases.inc').read_text()))
-        self.assertEqual(len(registry), 38)
-        self.assertEqual(sum(registry.values()), 36)
+        self.assertEqual(len(registry), 39)
+        self.assertEqual(sum(registry.values()), 37)
         source = (app / 'src/h2_pal_net_tls_e2e.c').read_text()
         for slot, cases in inventory['slots'].items():
             self.assertTrue(cases, slot)

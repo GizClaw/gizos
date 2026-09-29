@@ -5,9 +5,9 @@
 #include <stdio.h>
 
 const h2_web_board_t h2_web_board = {.display_width = 1, .display_height = 1};
-EM_JS(int, worker, (), {
-  return ENVIRONMENT_IS_PTHREAD && typeof window == = 'undefined' ? 1 : 0;
-});
+/* clang-format off */
+EM_JS(int, worker, (), { return ENVIRONMENT_IS_PTHREAD && typeof window === 'undefined' ? 1 : 0; });
+/* clang-format on */
 static unsigned calls, errors;
 static void observed(const char *slot, int rc) {
   ++calls;

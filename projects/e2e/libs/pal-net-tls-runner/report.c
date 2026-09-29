@@ -1,18 +1,21 @@
 #include "runner.h"
 
 static void case_json(FILE *file, const h2_net_tls_case_result_t *item) {
-  fprintf(file,
-          "{\"id\":\"%s\",\"mandatory\":%s,\"status\":\"%s\",\"detail\":%d,"
-          "\"line\":%u,\"elapsed_ms\":%llu,\"bytes_sent\":%zu,\"bytes_"
-          "received\":%zu,\"provider_result\":%d}",
-          item->id ? item->id : "", item->mandatory ? "true" : "false",
-          item->passed         ? "PASS"
-          : item->blocked      ? "BLOCKED"
-          : item->unsupported  ? "UNSUPPORTED"
-          : item->not_assessed ? "NOT_ASSESSED"
-                               : "FAIL",
-          item->detail, item->line, (unsigned long long)item->elapsed_ms,
-          item->bytes_sent, item->bytes_received, item->provider_result);
+  fprintf(
+      file,
+      "{\"id\":\"%s\",\"mandatory\":%s,\"status\":\"%s\",\"detail\":%d,"
+      "\"line\":%u,\"elapsed_ms\":%llu,\"bytes_sent\":%zu,\"bytes_"
+      "received\":%zu,\"provider_result\":%d,\"observed_ipv4\":[%u,%u,%u,%u]}",
+      item->id ? item->id : "", item->mandatory ? "true" : "false",
+      item->passed         ? "PASS"
+      : item->blocked      ? "BLOCKED"
+      : item->unsupported  ? "UNSUPPORTED"
+      : item->not_assessed ? "NOT_ASSESSED"
+                           : "FAIL",
+      item->detail, item->line, (unsigned long long)item->elapsed_ms,
+      item->bytes_sent, item->bytes_received, item->provider_result,
+      (unsigned)item->observed_ipv4[0], (unsigned)item->observed_ipv4[1],
+      (unsigned)item->observed_ipv4[2], (unsigned)item->observed_ipv4[3]);
 }
 void h2_net_tls_report(void *user, const h2_net_tls_case_result_t *item) {
   FILE *file = user ? user : stdout;
@@ -31,7 +34,7 @@ void h2_net_tls_summary(FILE *file, const h2_net_tls_result_t *result, int rc,
       "\"failed\":%u,\"blocked\":%u,\"unsupported\":%u,\"not_assessed\":%u,"
       "\"retained_sockets\":%zu,\"retained_resolvers\":%zu,\"retained_"
       "allocations\":%zu,\"rc\":%d,\"teardown\":%d}\n",
-      rc == H2_PAL_OK && cleanup == H2_PAL_OK && result->mandatory_passed == 36u
+      rc == H2_PAL_OK && cleanup == H2_PAL_OK && result->mandatory_passed == 37u
           ? "true"
           : "false",
       result->passed, result->mandatory_passed, result->failed, result->blocked,
@@ -53,7 +56,7 @@ int h2_net_tls_write_report(const char *path, const char *platform,
       "\"not_assessed\":%u,\"retained_sockets\":%zu,\"retained_resolvers\":%zu,"
       "\"retained_allocations\":%zu,\"rc\":%d,\"teardown\":%d,\"cases\":[",
       platform,
-      rc == H2_PAL_OK && cleanup == H2_PAL_OK && result->mandatory_passed == 36u
+      rc == H2_PAL_OK && cleanup == H2_PAL_OK && result->mandatory_passed == 37u
           ? "true"
           : "false",
       result->passed, result->mandatory_passed, result->failed, result->blocked,

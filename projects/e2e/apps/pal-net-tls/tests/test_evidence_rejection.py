@@ -14,8 +14,8 @@ REGISTRY=re.findall(r'H2_NET_TLS_CASE\(\w+, "([^"]+)", ([01])\)',(APP/'app/inclu
 def receipt():
     rows=[dict(id=name,mandatory=bool(int(required)),status='PASS' if int(required) else 'UNSUPPORTED',
         detail=0,provider_result=validation.TLS_VERIFY if name in ('tls-default-untrusted','tls-wrong-ca','tls-wrong-name','tls-expired') else 0,
-        bytes_sent=4193 if name.startswith('tls-') else 0,bytes_received=4097 if name.startswith('tls-') else 0) for name,required in REGISTRY]
-    return dict(cases=rows,summary=dict(core_qualified=True,full_net_qualified=False,mandatory_passed=36,
+        observed_ipv4=[150,5,151,236] if name=='dns-hostname' else [0,0,0,0],bytes_sent=4193 if name.startswith('tls-') else 0,bytes_received=4097 if name.startswith('tls-') else 0) for name,required in REGISTRY]
+    return dict(dns=dict(host='dns.test',operator_ipv4='150.5.151.236'),cases=rows,summary=dict(core_qualified=True,full_net_qualified=False,mandatory_passed=37,
         failed=0,blocked=0,retained_sockets=0,retained_resolvers=0,retained_allocations=0,rc=0,teardown=0))
 
 

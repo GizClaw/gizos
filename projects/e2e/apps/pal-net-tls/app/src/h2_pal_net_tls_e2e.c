@@ -443,6 +443,43 @@ static void run_case(state_t *s, h2_net_tls_case_t kind) {
     }
     break;
   }
+  case H2_NET_TLS_DNS_HOSTNAME: {
+    OK(h2_pal_net_resolve_addr(net, s->config->dns_host, &addr));
+    CHECK(addr.family == s->config->dns_expected.family &&
+              memcmp(addr.ip, s->config->dns_expected.ip, sizeof(addr.ip)) == 0,
+          H2_PAL_ERR_FORMAT);
+    memcpy(s->item->observed_ipv4, addr.ip, sizeof(s->item->observed_ipv4));
+    char host[64];
+    CHECK(strlen(s->config->dns_host) < sizeof(host), H2_PAL_ERR_INVALID_ARG);
+    strcpy(host, s->config->dns_host);
+    h2_pal_net_resolver_t *resolver = NULL;
+    OK(h2_pal_net_resolve_start(net, host, &resolver));
+    CHECK(resolver != NULL, H2_PAL_ERR_INVALID_STATE);
+    s->resolvers[s->resolvers_owned++] = resolver;
+    memset(host, 'x', strlen(host));
+    do {
+      uint32_t slice = remaining(s);
+      CHECK(slice, H2_PAL_ERR_TIMEOUT);
+      rc = h2_pal_net_resolve_poll(net, resolver, &addr, slice);
+    } while (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK);
+    CHECK(rc == H2_PAL_OK && addr.family == s->config->dns_expected.family &&
+              memcmp(addr.ip, s->config->dns_expected.ip, sizeof(addr.ip)) == 0,
+          rc == H2_PAL_OK ? H2_PAL_ERR_FORMAT : rc);
+    h2_pal_net_resolve_close(net, s->resolvers[--s->resolvers_owned]);
+    memcpy(host, s->config->session, 32u);
+    strcpy(host + 32u, ".invalid");
+    OK(h2_pal_net_resolve_start(net, host, &resolver));
+    CHECK(resolver != NULL, H2_PAL_ERR_INVALID_STATE);
+    s->resolvers[s->resolvers_owned++] = resolver;
+    do {
+      uint32_t slice = remaining(s);
+      CHECK(slice, H2_PAL_ERR_TIMEOUT);
+      rc = h2_pal_net_resolve_poll(net, resolver, &addr, slice);
+    } while (rc == H2_PAL_ERR_TIMEOUT || rc == H2_PAL_ERR_WOULD_BLOCK);
+    CHECK(rc == H2_PAL_ERR_NOT_FOUND, rc);
+    s->item->provider_result = rc;
+    break;
+  }
   case H2_NET_TLS_ICMP: {
     if (!s->config->icmp_supported) {
       if (net->vtable->icmp_echo)
@@ -601,17 +638,20 @@ int h2_pal_net_tls_e2e_run(const h2_net_tls_config_t *config,
   if (!out)
     return H2_PAL_ERR_INVALID_ARG;
   memset(out, 0, sizeof(*out));
-  int ready =
-      config && config->runtime && config->runtime->mem &&
-      config->runtime->mem->vtable && config->runtime->mem->vtable->alloc &&
-      config->runtime->mem->vtable->free && config->runtime->time &&
-      config->runtime->time->vtable &&
-      config->runtime->time->vtable->get_monotonic_us &&
-      config->runtime->time->vtable->sleep_ms &&
-      required_slots(config->runtime->net) && config->host && config->session &&
-      strlen(config->session) == 32u && config->server_name &&
-      config->root_ca && config->root_ca_len && config->wrong_ca &&
-      config->wrong_ca_len && config->prepare && config->verify;
+  int ready = config && config->runtime && config->runtime->mem &&
+              config->runtime->mem->vtable &&
+              config->runtime->mem->vtable->alloc &&
+              config->runtime->mem->vtable->free && config->runtime->time &&
+              config->runtime->time->vtable &&
+              config->runtime->time->vtable->get_monotonic_us &&
+              config->runtime->time->vtable->sleep_ms &&
+              required_slots(config->runtime->net) && config->host &&
+              config->dns_host && config->dns_host[0] &&
+              config->dns_expected.family == H2_PAL_NET_FAMILY_IPV4 &&
+              config->session && strlen(config->session) == 32u &&
+              config->server_name && config->root_ca && config->root_ca_len &&
+              config->wrong_ca && config->wrong_ca_len && config->prepare &&
+              config->verify;
   state_t *s =
       ready ? h2_pal_mem_alloc(config->runtime->mem, sizeof(*s)) : NULL;
   if (s) {

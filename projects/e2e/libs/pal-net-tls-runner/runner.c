@@ -2,6 +2,23 @@
 #include <stdio.h>
 #include <string.h>
 
+int h2_net_tls_parse_ipv4(const char *text, h2_pal_net_addr_t *out) {
+  if (!text || !out)
+    return H2_PAL_ERR_INVALID_ARG;
+  unsigned bytes[4];
+  char extra = 0;
+  if (sscanf(text, "%u.%u.%u.%u%c", &bytes[0], &bytes[1], &bytes[2], &bytes[3],
+             &extra) != 4)
+    return H2_PAL_ERR_INVALID_ARG;
+  memset(out, 0, sizeof(*out));
+  out->family = H2_PAL_NET_FAMILY_IPV4;
+  for (unsigned i = 0u; i < 4u; ++i) {
+    if (bytes[i] > 255u)
+      return H2_PAL_ERR_INVALID_ARG;
+    out->ip[i] = (uint8_t)bytes[i];
+  }
+  return H2_PAL_OK;
+}
 static uint64_t monotonic(const h2_runtime_t *runtime) {
   uint64_t us = 0u;
   return h2_pal_time_get_monotonic_us(runtime->time, &us) == H2_PAL_OK

@@ -45,12 +45,18 @@ static h2_pal_result_t sleep_ms(void *user, uint32_t ms) {
 }
 static int resolve(void *user, const char *host, h2_pal_net_addr_t *out) {
   (void)user;
-  if (strcmp(host, "127.0.0.1"))
+  if (strcmp(host, "127.0.0.1") && strcmp(host, "ap.e2e.gizclaw.com"))
     return H2_PAL_ERR_NOT_FOUND;
   memset(out, 0, sizeof(*out));
   out->family = H2_PAL_NET_FAMILY_IPV4;
   out->ip[0] = 127u;
   out->ip[3] = 1u;
+  if (strcmp(host, "ap.e2e.gizclaw.com") == 0) {
+    out->ip[0] = 150u;
+    out->ip[1] = 5u;
+    out->ip[2] = 151u;
+    out->ip[3] = 236u;
+  }
   return H2_PAL_OK;
 }
 static h2_pal_result_t resolve_start(void *user, const char *host,
@@ -303,19 +309,23 @@ int main(void) {
   h2_pal_time_api_t time = {&f, &time_vtable};
   h2_pal_net_api_t net = {&f, &vtable};
   h2_runtime_t runtime = {.mem = &memory, .time = &time, .net = &net};
-  h2_net_tls_config_t config = {.runtime = &runtime,
-                                .host = "127.0.0.1",
-                                .session = "0123456789abcdef0123456789abcdef",
-                                .root_ca = (const uint8_t *)"root",
-                                .wrong_ca = (const uint8_t *)"wrong",
-                                .root_ca_len = 4,
-                                .wrong_ca_len = 5,
-                                .server_name = "pal-net-tls.test",
-                                .prepare = prepare,
-                                .verify = verify,
-                                .fixture_user = &f,
-                                .report = report,
-                                .report_user = &f};
+  h2_net_tls_config_t config = {
+      .runtime = &runtime,
+      .host = "127.0.0.1",
+      .session = "0123456789abcdef0123456789abcdef",
+      .root_ca = (const uint8_t *)"root",
+      .wrong_ca = (const uint8_t *)"wrong",
+      .root_ca_len = 4,
+      .wrong_ca_len = 5,
+      .dns_host = "ap.e2e.gizclaw.com",
+      .dns_expected = {.family = H2_PAL_NET_FAMILY_IPV4,
+                       .ip = {150, 5, 151, 236}},
+      .server_name = "pal-net-tls.test",
+      .prepare = prepare,
+      .verify = verify,
+      .fixture_user = &f,
+      .report = report,
+      .report_user = &f};
   for (unsigned fault = 0; fault < 6u; ++fault) {
     memset(&f, 0, sizeof(f));
     f.generic_tls_error = fault == 1u;
@@ -327,7 +337,7 @@ int main(void) {
     int rc = h2_pal_net_tls_e2e_run(&config, &result);
     if (f.allocations || f.active_sockets || f.active_resolvers)
       return 1;
-    if (!fault && (rc != H2_PAL_OK || result.mandatory_passed != 36u ||
+    if (!fault && (rc != H2_PAL_OK || result.mandatory_passed != 37u ||
                    result.unsupported != 1u || result.not_assessed != 1u))
       return 2;
     if (fault && (rc == H2_PAL_OK || (!result.failed && !result.blocked)))

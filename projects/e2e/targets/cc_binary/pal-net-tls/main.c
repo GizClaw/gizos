@@ -23,7 +23,7 @@ static size_t read_ca(const char *path, uint8_t *bytes, size_t capacity) {
   return valid ? length : 0u;
 }
 int main(int argc, char **argv) {
-  if (argc != 6)
+  if (argc != 8)
     return 2;
   uint8_t ca[8192], wrong[8192];
   size_t ca_len = read_ca(argv[4], ca, sizeof(ca));
@@ -51,6 +51,7 @@ int main(int argc, char **argv) {
                                 .root_ca_len = ca_len,
                                 .wrong_ca = wrong,
                                 .wrong_ca_len = wrong_len,
+                                .dns_host = argv[6],
                                 .server_name = "pal-net-tls.test",
                                 .prepare = h2_net_tls_fixture_prepare,
                                 .verify = h2_net_tls_fixture_verify,
@@ -58,6 +59,10 @@ int main(int argc, char **argv) {
                                 .report = h2_net_tls_report,
                                 .multicast_supported = 1,
                                 .case_timeout_ms = 30000u};
+  if (h2_net_tls_parse_ipv4(argv[7], &config.dns_expected) != H2_PAL_OK) {
+    (void)h2_wolfssl_deinit();
+    return 2;
+  }
   h2_net_tls_result_t result;
   int rc = h2_pal_net_tls_e2e_run(&config, &result);
   int teardown = h2_wolfssl_deinit();

@@ -12,12 +12,12 @@ import org.json.JSONObject;
 public final class MainActivity extends Activity {
     static { System.loadLibrary("pal_net_tls_e2e"); }
     private static native int nativeRun(String reportPath, String imageVersion,
-        String host, int port, String session, String ca, String wrongCa);
+        String host, int port, String session, String ca, String wrongCa, String dnsHost, String dnsIp);
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
         TextView report = new TextView(this);
-        report.setText("PAL Net/TLS E2E — running 38 cases…");
+        report.setText("PAL Net/TLS E2E — running 39 cases…");
         report.setTextIsSelectable(true);
         setContentView(report);
         new Thread(() -> {
@@ -28,7 +28,7 @@ public final class MainActivity extends Activity {
                     new File(getFilesDir(), "fixture.json").toPath()), StandardCharsets.UTF_8));
                 String version = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
                 int rc = nativeRun(result.getAbsolutePath(), version, fixture.getString("host"), fixture.getInt("port"), fixture.getString("session"),
-                    fixture.getString("ca"), fixture.getString("wrong_ca"));
+                    fixture.getString("ca"), fixture.getString("wrong_ca"), fixture.getString("dns_host"), fixture.getString("dns_ip"));
                 text = "PAL Net/TLS E2E: " + (rc == 0 ? "PASS" : "FAIL (" + rc + ")") + "\n\n"
                     + new String(Files.readAllBytes(result.toPath()), StandardCharsets.UTF_8);
             } catch (Exception error) {

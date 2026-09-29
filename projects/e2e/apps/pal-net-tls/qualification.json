@@ -2,7 +2,7 @@
   "contract": 1,
   "profile": "net-tls-core",
   "operations": 21,
-  "mandatory_cases": 36,
+  "mandatory_cases": 37,
   "assessment_complete": false,
   "full_net_qualified": false,
   "pending": [

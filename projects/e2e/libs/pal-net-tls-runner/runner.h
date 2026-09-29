@@ -9,6 +9,7 @@ typedef struct h2_net_tls_fixture_client {
   const char *run_id; /* 16 hex chars, default session prefix for one-process
                          fixtures */
 } h2_net_tls_fixture_client_t;
+int h2_net_tls_parse_ipv4(const char *, h2_pal_net_addr_t *);
 int h2_net_tls_fixture_prepare(void *, const char *, h2_net_tls_fixture_mode_t,
                                uint16_t, uint16_t *);
 int h2_net_tls_fixture_verify(void *, const char *, h2_net_tls_fixture_proof_t);

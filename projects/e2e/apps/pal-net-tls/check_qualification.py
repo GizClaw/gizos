@@ -30,6 +30,8 @@ def check_cases(receipt, registry):
     by_id = {row['id']: row for row in rows}
     for case in ('tls-default-untrusted','tls-wrong-ca','tls-wrong-name','tls-expired'):
         assert by_id[case]['provider_result'] == TLS_VERIFY, case
+    dns_expected=[int(value) for value in receipt['dns']['operator_ipv4'].split('.')]
+    assert by_id['dns-hostname']['observed_ipv4']==dns_expected, 'provider resolved unexpected hostname address'
     for case in ('tls-required','tls-default','tls-sni-alpn','tls-borrowed-config'):
         assert by_id[case]['bytes_sent'] == 4193 and by_id[case]['bytes_received'] == 4097, case
 
@@ -62,7 +64,7 @@ def check(root=ROOT, allow_pending=False):
         assert hashlib.sha256((root / relative).read_bytes()).hexdigest() == expected, relative
     registry = re.findall(r'H2_NET_TLS_CASE\(\w+, "([^"]+)", ([01])\)',
         (app / 'app/include/h2_pal_net_tls_cases.inc').read_text())
-    assert len(registry) == 38 and sum(int(required) for _,required in registry) == 36
+    assert len(registry) == 39 and sum(int(required) for _,required in registry) == 37
     for platform, entry in data['platforms'].items():
         receipt = json.loads((app / entry['evidence']).read_text())
         assert re.fullmatch('[0-9a-f]{64}', receipt['artifact_sha256'])

@@ -199,7 +199,7 @@ H2_ANDROID_SERIAL=emulator-5580 make bazel-test-android_pal_crypto_simulator_tes
 ## PAL Net/TLS
 
 `projects/e2e/apps/pal-net-tls` independently qualifies the raw `h2_pal_net.h`
-core profile with 36 mandatory cases and two explicit optional capability cases.
+core profile with 37 mandatory cases and two explicit optional capability cases.
 The 21-operation inventory includes bounded asynchronous DNS, UDP/TCP/source
 bind, listen/accept, full byte streams, TLS trust/name/expiry rejection,
 SNI/ALPN peer evidence, deadlines and session recovery. Certificate rejection
