@@ -1,7 +1,7 @@
 {
   "platform": "android-emulator",
   "version": "2.0.0",
-  "pid": 5312,
+  "pid": 11043,
   "contract": 1,
   "operations": 21,
   "capability_contract_pass": 1,

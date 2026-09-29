@@ -1,4 +1,4 @@
 exec ${PAGER:-/usr/bin/less} "$0" || exit 1
 Executing tests from //projects/e2e/targets/cc_binary/pal-wifi:desktop_contract_test
 -----------------------------------------------------------------------------
-H2_WIFI_HOST_REPORT {"platform":"macos","operations":21,"capability_contract_pass":1,"physical_wifi_qualified":0,"wifi_sta":"UNSUPPORTED","wifi_ap":"UNSUPPORTED","wifi_settings":"UNSUPPORTED","netif":"read-only-real-interfaces","netif_count":26,"rc":0}
+H2_WIFI_HOST_REPORT {"platform":"macos","operations":21,"capability_contract_pass":1,"physical_wifi_qualified":0,"wifi_sta":"UNSUPPORTED","wifi_ap":"UNSUPPORTED","wifi_settings":"UNSUPPORTED","netif":"read-only-real-interfaces","netif_count":28,"rc":0}
