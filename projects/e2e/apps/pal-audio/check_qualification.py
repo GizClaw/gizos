@@ -150,8 +150,25 @@ def main():
     assert manifest["interface"]["provider_operations"] == 11
     assert manifest["interface"]["track_operations"] == 5
     assert manifest["interface"]["mandatory_cases"] == 24
-    for path, expected in manifest["source_receipts"].items():
-        assert digest(Path(path)) == expected, ("source receipt", path)
+    # Keep original artifact observations bound to their original source; a
+    # documented review fix has separate current-source and fresh-run evidence.
+    current = manifest.get("review_fix_validation", {}).get(
+        "current_source_receipts", manifest["source_receipts"])
+    assert set(manifest["source_receipts"]).issubset(current)
+    for path, expected in current.items():
+        assert digest(Path(path)) == expected, ("current source receipt", path)
+    if "review_fix_validation" in manifest:
+        followup = manifest["review_fix_validation"]
+        assert followup["baseline_commit"] == manifest["qualification_snapshot_commit"]
+        regression = followup["cleanup_regression"]
+        assert regression["old_source_exit"] != 0 and regression["fixed_source_exit"] == 0
+        assert regression["retry_limit"] == 3
+        path = "projects/e2e/apps/pal-audio/app/src/h2_pal_audio_e2e.c"
+        assert regression["original_source_sha256"] == manifest["source_receipts"][path]
+        assert regression["fixed_source_sha256"] == current[path]
+        for platform in manifest["platforms"].values():
+            assert platform["source_binding"] in (
+                "source_receipts", "review_fix_validation.current_source_receipts")
     operation_lines = [line for line in
                        (ROOT / "app/include/h2_pal_audio_cases.inc").read_text().splitlines()
                        if line.startswith("H2_PAL_AUDIO_CASE(")]

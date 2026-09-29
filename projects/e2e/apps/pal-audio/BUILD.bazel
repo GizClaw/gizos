@@ -11,6 +11,8 @@ py_test(
         "//projects/e2e/apps/pal-audio/app:include/h2_pal_audio_cases.inc",
         "//projects/e2e/apps/pal-audio/app:include/h2_pal_audio_e2e.h",
         "//projects/e2e/apps/pal-audio/app:src/h2_pal_audio_e2e.c",
+        "//projects/e2e/apps/pal-audio/app:tests/test_cleanup_once.c",
+        "//projects/e2e/targets/ios_application/pal-audio:main.m",
         "//libs/pal/providers/ios/pal_core:src/h2_ios_audio.m",
         "//libs/pal/providers/ios/pal_core:include/h2_ios_platform.h",
         "//libs/pal/providers/ios/pal_core:src/h2_ios_audio_wait.c",

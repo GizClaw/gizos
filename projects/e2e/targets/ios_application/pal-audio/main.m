@@ -17,7 +17,7 @@
   NSString *documents = NSSearchPathForDirectoriesInDomains(
       NSDocumentDirectory, NSUserDomainMask, YES).firstObject;
   NSString *path = [documents stringByAppendingPathComponent:@"pal-audio-result.json"];
-  [[AVAudioSession sharedInstance] requestRecordPermission:^(BOOL granted) {
+  void (^permissionResult)(BOOL) = ^(BOOL granted) {
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
       @autoreleasepool {
         NSString *version = NSBundle.mainBundle.infoDictionary[@"CFBundleShortVersionString"];
@@ -39,7 +39,16 @@
         });
       }
     });
-  }];
+  };
+  if (@available(iOS 17.0, *)) {
+    [AVAudioApplication requestRecordPermissionWithCompletionHandler:permissionResult];
+  } else {
+    /* The legacy API is required only for the supported iOS 16 runtime. */
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
+    [[AVAudioSession sharedInstance] requestRecordPermission:permissionResult];
+#pragma clang diagnostic pop
+  }
 }
 @end
 

@@ -49,7 +49,10 @@ typedef struct h2_pal_audio_e2e_config {
 } h2_pal_audio_e2e_config_t;
 
 /** Runs the complete mandatory case registry. Missing provider operations fail.
- * Restores initial gain and speaker volume and closes all owned tracks. */
+ * Restores initial gain and speaker volume. Terminal cleanup retries an
+ * incomplete track close at most three times, retaining its handle between
+ * attempts. A cleanup failure prevents qualification; the launcher must then
+ * tear down the provider, which may still own an attached track. */
 int h2_pal_audio_e2e_run(const h2_pal_audio_e2e_config_t *config,
                          h2_pal_audio_e2e_result_t *out_result);
 

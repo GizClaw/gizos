@@ -15,21 +15,22 @@
         "passed": 24,
         "failed": 0,
         "blocked": 0,
-        "mic_frames": 1498,
-        "mic_peak": 3736,
-        "mic_energy": 6327661863,
-        "speaker_frames": 1500,
+        "mic_frames": 1491,
+        "mic_peak": 4152,
+        "mic_energy": 14285309021,
+        "speaker_frames": 1493,
         "output_peak": 1120,
         "witness_mic_frames": 1498,
-        "witness_speaker_frames": 3024,
-        "witness_mic_peak": 6227,
+        "witness_speaker_frames": 1785,
+        "witness_mic_peak": 6920,
         "witness_speaker_peak": 224,
-        "stability_elapsed_ms": 30018
+        "stability_elapsed_ms": 30019
       },
       "observed_case_rows": 24,
       "observed_replay_rows": 0,
       "log": "evidence/desktop.log",
-      "log_sha256": "f38dc8f828985b701f9058d368604c1a3208f0845da087665a64d2e73b41c957"
+      "log_sha256": "6d7ba89975e267f1b2e1424221c2ed46b1273e11fe9d8211a13a1feeb15ac7a7",
+      "source_binding": "review_fix_validation.current_source_receipts"
     },
     "wasm_chromium": {
       "status": "PASS",
@@ -41,16 +42,17 @@
         "blocked": 0,
         "mic_frames": 508,
         "mic_peak": 19660,
-        "mic_energy": 574757604275,
+        "mic_energy": 555419251023,
         "speaker_frames": 510,
         "output_peak": 1120,
-        "stability_elapsed_ms": 30036,
+        "stability_elapsed_ms": 30035,
         "rc": 0
       },
       "observed_case_rows": 24,
       "observed_replay_rows": 0,
       "log": "evidence/browser.log",
-      "log_sha256": "66275949c374eb8c62375118e5e86e24b16770a5ddba249c31ea1508113101dd"
+      "log_sha256": "1c1768480416184abc181d107d7b971276f1eb47981aabb14a3c993678c33393",
+      "source_binding": "review_fix_validation.current_source_receipts"
     },
     "ios_simulator": {
       "status": "PASS",
@@ -61,8 +63,8 @@
         "failed": 0,
         "blocked": 0,
         "mic_frames": 941,
-        "mic_peak": 2202,
-        "mic_energy": 36309400568,
+        "mic_peak": 1566,
+        "mic_energy": 786450014,
         "speaker_frames": 943,
         "output_peak": 1120,
         "stability_elapsed_ms": 30005,
@@ -74,11 +76,12 @@
         "teardown_rc": 0
       },
       "qualified_report": "evidence/ios/qualified.json",
-      "qualified_report_sha256": "33866219c3d05f92f0a670c3963c3ce1b2014fee197b509a39d94581f24da3cb",
+      "qualified_report_sha256": "520d0fe7a0187d108b1912b44f767c4880db9f26f666063d20cd9cb56c621222",
       "environment": "evidence/ios/environment.json",
-      "environment_sha256": "20aeb3790fc9979b60fd9b6e25f7234589bd26fa78d4b7bc3d753dbcc0184f8d",
-      "app_sha256": "3f4568fde65bc161f709ed8772fc470df42f76ba7bf93b375b4273f1d089e5cc",
-      "sdk_sha256": "87225f078d58c3d4be798a6cd992c20382e3e9217c73f25e4e8a2e2daacb7327"
+      "environment_sha256": "40e9cc556c089df8d72700859a8077f1c89f7765231f237824a93e00e9cbc6b9",
+      "app_sha256": "cff799092ff8acc83adc813748996d9c0e3c19fa14e9d34c6a15eec83a5679b6",
+      "sdk_sha256": "87225f078d58c3d4be798a6cd992c20382e3e9217c73f25e4e8a2e2daacb7327",
+      "source_binding": "review_fix_validation.current_source_receipts"
     },
     "android_emulator": {
       "status": "PASS",
@@ -106,7 +109,8 @@
       "environment": "evidence/android/environment.json",
       "environment_sha256": "100eaf5db1d24248b6d337be50856a917cd5a4ff43380efd3962f7456dbd2549",
       "app_sha256": "af129ade678d170b512901b4596518becabca914c52f64f61dc9fd199e5f6868",
-      "sdk_sha256": "b41a364a457c4dbd77c267f998ceeff9eef618809c5c74e50b1599e750a35680"
+      "sdk_sha256": "b41a364a457c4dbd77c267f998ceeff9eef618809c5c74e50b1599e750a35680",
+      "source_binding": "source_receipts"
     },
     "amoled_esp32s3": {
       "status": "PASS",
@@ -156,7 +160,8 @@
       "raw_boot_capture_sha256": "75b3aab8c4cd5b452a669650472493377f1448d3698d05751b538e31870f1439",
       "raw_reboot_capture_sha256": "a38a321c132b5d3b7d1c6f54c9bdec5d054b47cbcecf37753e28e1f1e01d0aec",
       "package_version": "pal-audio-e2e-20260929-r6",
-      "partition_1_package_sha256": "66e88bf66c3f3322536d50a62227107257ca458e248064c289a19c5e1ced420b"
+      "partition_1_package_sha256": "66e88bf66c3f3322536d50a62227107257ca458e248064c289a19c5e1ced420b",
+      "source_binding": "source_receipts"
     },
     "bk7258": {
       "status": "PASS",
@@ -211,7 +216,8 @@
         "observed_replay_rows": 120,
         "log": "evidence/bk7258/reboot.log",
         "log_sha256": "739addc623ead7f10bdf2eab540390795b2a733ed215517b7157935bd882a049"
-      }
+      },
+      "source_binding": "source_receipts"
     }
   },
   "coverage": {
@@ -343,5 +349,56 @@
     "unrelated_wakes": 35,
     "log": "evidence/ios/timeout_budget.txt",
     "log_sha256": "16867dad37e19de9329a25d240e74e0849f4df02f04ccb892f6bf43fdca05cb2"
+  },
+  "qualification_snapshot_commit": "ffec493c2da01ff5632c200612cecb94de221a21",
+  "coverage_snapshot_commit": "ffec493c2da01ff5632c200612cecb94de221a21",
+  "review_fix_validation": {
+    "baseline_commit": "ffec493c2da01ff5632c200612cecb94de221a21",
+    "validated_at_utc": "2026-09-29T02:09:03.589276+00:00",
+    "current_source_receipts": {
+      "projects/e2e/apps/pal-audio/app/src/h2_pal_audio_e2e.c": "ff18254ab92017bce4eb19416d51673d9b0425154e0cae3b27acf1ba4bb25364",
+      "projects/e2e/apps/pal-audio/app/include/h2_pal_audio_e2e.h": "e5e9344144aa696d6903bbbd2fe12f477b0748b1fb63d2868627dad20c54ea7f",
+      "libs/pal/providers/ios/pal_core/src/h2_ios_audio.m": "a910b0f140c8481bcfef80f6472c061d87cf4cc2809f0269d5aa2adc491991dd",
+      "libs/pal/providers/android/pal_core/src/h2_android_platform.c": "82d140e9f06f9604a210128546990bced7b84a60da2f05ca5c8fdd83b62212a9",
+      "boards/bk7258_v3_202405/bk7258/ap/src/h2_bk7258_board_audio.c": "79e299e4ae267444f7ad8b44d64a08165cf9574a86b733d995011fb731a09ed8",
+      "projects/e2e/targets/h2loader_tar_zlib/pal-audio/bk7258_v3_202405/ap/ap_main.c": "a1f504708def9f124006193dae5ea84ba686b76ebc7a71fed478a6cc381f39a3",
+      "projects/e2e/targets/h2loader_tar_zlib/pal-audio/amoled/main/main.c": "8cbf4edd3382e731137efbc699934d4bebb305c44de19283b47cae51d0464edc",
+      "libs/pal/providers/ios/pal_core/src/h2_ios_audio_wait.c": "351666ed5ccce3cb96e4a780438ed1211b0940543cd9c3165bfe989d0d76620e",
+      "libs/pal/providers/ios/pal_core/src/h2_ios_audio_wait.h": "4aa89ca5019f82cd96a50cfed5778ef7543ff0962f4b1d6b18421d34fe551846",
+      "libs/pal/providers/ios/pal_core/include/h2_ios_platform.h": "74a7ef7fa50ff10c61bb7f836954c0b46a3fcb02adb9c94cb99a7298a993096e",
+      "projects/e2e/apps/pal-audio/app/tests/test_cleanup_once.c": "48c90535ed595fed67322ed37cb70aac15e844d7a0ad02feada1a59a15c4ec2f",
+      "projects/e2e/targets/ios_application/pal-audio/main.m": "ee2ce52e3104c5ffb1c1787529fa17fbdbdd656e1b299742c5d32963ba5b2207",
+      "projects/e2e/apps/pal-audio/check_qualification.py": "aaadd29608d6a5cf83ada92cff3a717ce197a64b9993fbb525a774217d804df9"
+    },
+    "changes": {
+      "projects/e2e/apps/pal-audio/app/src/h2_pal_audio_e2e.c": "Keep an incomplete close handle across at most three retries; defer speaker shutdown while it remains. Permanent or non-retryable errors fail cleanup and require provider teardown. The successful all-PASS case path is unchanged.",
+      "projects/e2e/apps/pal-audio/app/include/h2_pal_audio_e2e.h": "Document bounded close retry and launcher teardown after failure; declarations and result layout are unchanged.",
+      "projects/e2e/targets/ios_application/pal-audio/main.m": "Use AVAudioApplication on iOS 17+ and the locally guarded legacy API only on iOS 16.",
+      "projects/e2e/apps/pal-audio/app/tests/test_cleanup_once.c": "Inject one/two incomplete closes, retry exhaustion and a consuming IO close error; assert one gain/volume restore and no blind IO retry."
+    },
+    "cleanup_regression": {
+      "old_source_exit": -6,
+      "fixed_source_exit": 0,
+      "retry_limit": 3,
+      "target": "//projects/e2e/apps/pal-audio/app:cleanup_once_test",
+      "original_source_sha256": "19c349ecaefc88ba3f69cd83226c61dabe75171fcdc797061334dc58e7bd33ae",
+      "fixed_source_sha256": "ff18254ab92017bce4eb19416d51673d9b0425154e0cae3b27acf1ba4bb25364"
+    },
+    "fresh_runtime_platforms": {
+      "macos": {
+        "case_count": 24,
+        "source_binding": "review_fix_validation.current_source_receipts"
+      },
+      "wasm_chromium": {
+        "case_count": 24,
+        "source_binding": "review_fix_validation.current_source_receipts"
+      },
+      "ios_simulator": {
+        "case_count": 24,
+        "source_binding": "review_fix_validation.current_source_receipts"
+      }
+    },
+    "scope": "Fresh 24-case runs on macOS, Chromium Worker and actual iOS SDK consumer. Android and both board packages retain their original successful ffec493c qualification snapshots; no reflash or new device-source claim is made. The new incomplete-close failure path is covered by deterministic regression, while all-PASS traces already close their track before terminal restore.",
+    "ios_build": "Package built with -Werror and deprecation diagnostics on its launcher. No global warning suppression or vendor changes."
   }
 }

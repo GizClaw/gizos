@@ -432,14 +432,24 @@ static int restore(state_t *state) {
     state->mic_started = 0;
   }
   if (state->track != NULL) {
-    const int rc = h2_pal_audio_track_close(state->track);
+    int rc = H2_AUDIO_OK;
+    for (unsigned attempt = 0u; attempt < 3u; ++attempt) {
+      rc = h2_pal_audio_track_close(state->track);
+      if (rc == H2_AUDIO_OK) {
+        state->track = NULL;
+        break;
+      }
+      /* Only incomplete, non-consuming operations can safely be retried.
+       * Other errors require the launcher's provider teardown. */
+      if (rc != H2_AUDIO_ERR_WOULD_BLOCK && rc != H2_PAL_ERR_TIMEOUT)
+        break;
+    }
     if (rc != H2_AUDIO_OK && failure == H2_AUDIO_OK) failure = rc;
-    state->track = NULL;
   }
-  if (state->speaker_started) {
+  if (state->speaker_started && state->track == NULL) {
     const int rc = h2_pal_audio_stop_speaker(state->config->audio);
     if (rc != H2_AUDIO_OK && failure == H2_AUDIO_OK) failure = rc;
-    state->speaker_started = 0;
+    if (rc == H2_AUDIO_OK) state->speaker_started = 0;
   }
   if (state->saved_gain_valid) {
     const int rc = h2_pal_audio_set_mic_gain_percent(state->config->audio,
