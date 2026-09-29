@@ -280,4 +280,5 @@ test ! -e "$consumer_root/private_bk_task_policy"
     --define="h2_firmware_target=bk3633" \
     --define="h2_host_os=$host_os" \
     --platforms="@gizos//tools/bazel/platforms:bk3633" \
-    //:bk3633_wolfcrypt_consumer
+    //:bk3633_wolfcrypt_consumer \
+    @gizos//tools/bazel/tests/embedded_include_paths:local_embedded_cc
