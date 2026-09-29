@@ -153,7 +153,8 @@ static double tone_power(const int16_t *samples, uint32_t count, uint8_t channel
 
 static h2_pal_result_t inspect_frame(state_t *s, const h2_aac_e2e_vector_t *v,
                                       bool signal, bool timing, size_t *seen,
-                                      size_t *signal_frames, int64_t *last_pts) {
+                                      size_t *signal_frames, uint64_t *decoded_samples,
+                                      int64_t *last_pts) {
     h2_audio_decoder_frame_info_t info = {0};
     OK(s, h2_pal_audio_decoder_frame_get_info(API(s), s->session, s->frame, &info));
     CHECK(s, info.data && info.bytes && info.sample_format == H2_AUDIO_SAMPLE_S16LE);
@@ -162,7 +163,7 @@ static h2_pal_result_t inspect_frame(state_t *s, const h2_aac_e2e_vector_t *v,
     CHECK(s, info.bytes == (size_t)info.samples_per_channel * v->channels * sizeof(int16_t));
     CHECK(s, info.duration_us > 0 && info.duration_us <= 100000);
     if (timing) {
-        CHECK(s, info.pts_us >= 1000000 && info.pts_us >= *last_pts);
+        CHECK(s, info.pts_us >= 1000000 && info.pts_us > *last_pts);
         CHECK(s, info.pts_us <= packet_pts(v, v->packet_count));
         *last_pts = info.pts_us;
     }
@@ -187,6 +188,7 @@ static h2_pal_result_t inspect_frame(state_t *s, const h2_aac_e2e_vector_t *v,
         ++*signal_frames;
     }
     ++*seen;
+    *decoded_samples += info.samples_per_channel;
     ++s->result->frames;
     s->result->pcm_bytes += info.bytes;
     OK(s, h2_pal_audio_decoder_release_frame(API(s), s->session, s->frame));
@@ -199,6 +201,7 @@ static h2_pal_result_t decode_stream(state_t *s, const h2_aac_e2e_vector_t *v,
     uint64_t start = 0u, now = 0u;
     OK(s, clock_ms(s, &start));
     size_t submitted = 0u, seen = 0u, signal_frames = 0u;
+    uint64_t decoded_samples = 0u;
     int64_t last_pts = 0;
     bool eos = false;
     for (unsigned iteration = 0u; iteration < 10000u; ++iteration) {
@@ -214,9 +217,13 @@ static h2_pal_result_t decode_stream(state_t *s, const h2_aac_e2e_vector_t *v,
         }
         h2_pal_result_t acquired = h2_pal_audio_decoder_acquire_frame(API(s), s->session, 0u, &s->frame);
         if (acquired == H2_PAL_OK) {
-            OK(s, inspect_frame(s, v, signal, timing, &seen, &signal_frames, &last_pts));
+            OK(s, inspect_frame(s, v, signal, timing, &seen, &signal_frames,
+                                &decoded_samples, &last_pts));
         } else if (acquired == H2_PAL_EXIT) {
-            CHECK(s, eos && submitted == v->packet_count && seen >= v->packet_count - 2u);
+            CHECK(s, eos && submitted == v->packet_count && seen > 0u);
+            /* RAW AAC-LC ASC has 1024 samples per access unit and carries no
+             * gapless trimming metadata. EOS must not silently drop tail PCM. */
+            CHECK(s, decoded_samples == (uint64_t)v->packet_count * 1024u);
             CHECK(s, !signal || signal_frames >= 3u);
             return H2_PAL_OK;
         } else {

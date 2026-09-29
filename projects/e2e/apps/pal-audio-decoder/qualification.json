@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "base_commit": "a472fbec3c301e53523fae5ed446879a7c635cc2",
-  "captured_at_utc": "2026-09-29T07:24:26.732002+00:00",
+  "captured_at_utc": "2026-09-29T07:51:04.301497+00:00",
   "interface": {
     "operations": 8,
     "mandatory_cases": 29
@@ -21,7 +21,7 @@
     "projects/e2e/apps/pal-audio-decoder/app/fixtures/h2_aac_vectors.h": "731f4e2305de592a2adf7b646bbbcd45e80ea55155b4cc69c1038e29773e3f68",
     "projects/e2e/apps/pal-audio-decoder/app/include/h2_pal_audio_decoder_cases.inc": "bb5edbc9ca6bed07f97310dab88959531690569c69478c6f52b07cd765a6f225",
     "projects/e2e/apps/pal-audio-decoder/app/include/h2_pal_audio_decoder_e2e.h": "25850cf71eec17a412bd9d33661d7782a55e4aae31845c640ad6f817992ce8d6",
-    "projects/e2e/apps/pal-audio-decoder/app/src/h2_pal_audio_decoder_e2e.c": "145ebde96480f287abd26cc2575e7b11abc572f6587939d3d80f4fc18e7e4420",
+    "projects/e2e/apps/pal-audio-decoder/app/src/h2_pal_audio_decoder_e2e.c": "79b94ea41771977d8ba3136807321ba98eb4d48cf79580687563ef4f65f61537",
     "projects/e2e/apps/pal-audio-decoder/app/tests/test_reject_missing.c": "cb99b6867c6fc2f5ca06db4f99dfd23ed46eabe2e12a2d529d8dd07227c4ad24",
     "projects/e2e/libs/pal-audio-decoder-device/include/device_runner.h": "ae3f6b2db731a0584b33f01fd87d9e6061d5552ccb883ad5823e45559245794c",
     "projects/e2e/libs/pal-audio-decoder-device/src/device_runner.c": "71dbd141e00682619a25c34134a46ebfbb5f436dc098fd3597660f6ae5c9db6f",
@@ -35,7 +35,7 @@
     "projects/e2e/targets/ios_application/pal-audio-decoder/main.m": "13171b752580220d8cc5f884cc34b3318d7ccb3d3a0338013b197654171681d7",
     "projects/e2e/targets/pkg_tar/pal-audio-decoder/main.c": "3bcc3a5aa14d7fc51a4f67b69ee04cda26dc83bcdbf2e515e946130923977d48"
   },
-  "source_aggregate_sha256": "50fd5d8ac62ef0cf821ff127783e4c4b246bf902771d60e315047bc83fb33ec9",
+  "source_aggregate_sha256": "583e484ddde9758b84b785bdf1ae78428119215d89c91e5ea00447bae89fdd42",
   "qualified": false,
   "pending": [
     "bk7258"
@@ -44,32 +44,33 @@
     "macos": {
       "status": "PASS",
       "receipt": "evidence/macos/qualified.json",
-      "receipt_sha256": "680ce4ceab6828a9e889cd104249ac95d0793f45f43b140aeea47a513b311dc6"
+      "receipt_sha256": "d6431c20eb9fcecda350ac717253ff77b734e63e4e1bcd78eb890992fcee445f"
     },
     "wasm_aac_chrome": {
       "status": "PASS",
       "receipt": "evidence/wasm/qualified.json",
-      "receipt_sha256": "720aeb39ca2199012c8f8a3c0fd6c2c0189193745e36d032ed6e0e18e67025f5",
+      "receipt_sha256": "481ea26a6080a3a68a81f2c97ae39b9d1490b28f5bb636cadba37c33e60b6dc0",
       "execution": "exact manual Make/Bazel test, isolated actual Chrome profile"
     },
     "ios_simulator": {
       "status": "PASS",
       "receipt": "evidence/ios/qualified.json",
-      "receipt_sha256": "d1362467f83ffa4b16168df6c7fc81527dbb3bd7649252643dd7bc04dd53045f"
+      "receipt_sha256": "fc0a1143db058eaeebeecc90529c62fa5204a721559d40e18d68f335766d89f1"
     },
     "android_emulator": {
       "status": "PASS",
       "receipt": "evidence/android/qualified.json",
-      "receipt_sha256": "b6cfe9ec035065b1ee7ecfe6b0915e88f4490a86eb76bec6922e652fbdf4af9e"
+      "receipt_sha256": "ae8e5729355202828b6e522293e82aa23fce57fec422ad924fcb6ebcaf1a5598"
     },
     "devkit_esp32s3": {
       "status": "PASS",
       "receipt": "evidence/devkit/qualified.json",
-      "receipt_sha256": "d5861eccb179bea1767df8a084d863eeb43bf9094e9dd800d9e470f476178630"
+      "receipt_sha256": "4e082279c5f905ee36ee7fa289f9b8e8c75e9535a290f2938247c6bba985d125"
     },
     "bk7258": {
       "status": "NOT_RUN",
       "reason": "Display qualification currently owns this board; decoder package built and awaiting serial handoff"
     }
-  }
+  },
+  "revalidation_reason": "Require the complete 1024-samples-per-RAW-AAC-LC-packet PCM total at EOS and strictly increasing frame PTS; previous receipts retain their original source hashes."
 }

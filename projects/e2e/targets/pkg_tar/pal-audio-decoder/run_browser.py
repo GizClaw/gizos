@@ -25,8 +25,11 @@ def run_decoder(browser, profile, url):
         reader, writer = os.dup(incoming[0]), os.dup(outgoing[1])
         os.dup2(reader, 3); os.dup2(writer, 4)
     browser_environment = dict(os.environ)
+    browser_environment["TMPDIR"] = str(profile)
     with (profile / "browser.log").open("w") as log:
         proc = subprocess.Popen([str(browser), "--headless", "--no-sandbox", "--remote-debugging-pipe",
+                                 "--no-first-run", "--no-default-browser-check", "--disable-search-engine-choice-screen",
+                                 "--disable-background-networking", "--disable-component-update",
                                  "--autoplay-policy=no-user-gesture-required", f"--user-data-dir={profile}/data", "about:blank"],
                                 preexec_fn=pipes, pass_fds=(3, 4), stdout=log, stderr=log,
                                 env=browser_environment)
@@ -39,13 +42,35 @@ def run_decoder(browser, profile, url):
             session = cdp.send("Target.attachToTarget", {"targetId": target, "flatten": True})["sessionId"]
             cdp.send("Runtime.enable", session=session)
             cdp.send("Page.enable", session=session)
-            cdp.send("Page.navigate", {"url": url}, session=session)
+            cdp.send("Network.enable", session=session)
+            cdp.send("Target.activateTarget", {"targetId": target})
+            cdp.send("Page.bringToFront", session=session)
+            navigation = {}
+            def navigate():
+                try:
+                    navigation["reply"] = cdp.send("Page.navigate", {"url": url}, session=session)
+                except RuntimeError as error:
+                    navigation["error"] = str(error)
+            # Consume startup exceptions/Worker console output while navigation
+            # is pending, rather than hiding them behind the CDP reply wait.
+            threading.Thread(target=navigate, daemon=True).start()
             deadline = time.monotonic() + 90
             while time.monotonic() < deadline:
                 try: message = events.get(timeout=1)
                 except queue.Empty: continue
                 if message.get("method") == "Runtime.exceptionThrown":
                     raise AssertionError(message)
+                if message.get("method") == "Network.loadingFailed":
+                    print("Browser network failure:", json.dumps(message["params"]), flush=True)
+                if message.get("method") == "Network.responseReceived":
+                    response = message["params"]["response"]
+                    if response["url"].startswith(url):
+                        print("Browser response:", response["url"], response["status"], flush=True)
+                if message.get("method") == "Target.detachedFromTarget":
+                    print("Browser target detached:", json.dumps(message["params"]), flush=True)
+                if message.get("method") == "Network.requestWillBeSent":
+                    requested = message["params"]["request"]["url"]
+                    if requested.startswith(url): print("Browser request:", requested, flush=True)
                 if message.get("method") != "Runtime.consoleAPICalled": continue
                 line = " ".join(str(a.get("value", a.get("description", ""))) for a in message["params"]["args"])
                 print(line, flush=True)
@@ -57,6 +82,11 @@ def run_decoder(browser, profile, url):
                     break
             else: raise TimeoutError("Audio Decoder exceeded 90s")
             assert result is not None
+            page = cdp.send("Runtime.evaluate", {"expression":
+                "({url:location.href, isolated:crossOriginIsolated})", "returnByValue": True}, session=session)
+            page = page["result"]["value"]
+            assert page == {"url": url, "isolated": True}, page
+            result["navigation"] = navigation.copy()
             result["browser_pid"] = proc.pid
             result["exit_code"] = exit_code
             result["browser"] = identity
@@ -81,7 +111,7 @@ def main():
     if not os.environ.get("H2_WEB_TEST_BROWSER"):
         raise ValueError("H2_WEB_TEST_BROWSER must select an AAC-capable browser; pinned open-source Chromium has no AAC codec")
     browser = find_browser()
-    with prepared_archive(archive.resolve()) as root, tempfile.TemporaryDirectory(prefix="pal-audio-decoder-browser-") as directory:
+    with prepared_archive(archive.resolve()) as root, tempfile.TemporaryDirectory(prefix="h2adec-", dir="/tmp") as directory:
         server = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(root, read_header_policy(root), frozenset()))
         server.daemon_threads = True
         threading.Thread(target=server.serve_forever, daemon=True).start()

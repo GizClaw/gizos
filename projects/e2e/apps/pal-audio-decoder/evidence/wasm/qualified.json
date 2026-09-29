@@ -188,7 +188,14 @@
   "qualified": 1,
   "rc": 0,
   "teardown": 0,
-  "browser_pid": 68607,
+  "navigation": {
+    "reply": {
+      "frameId": "B9920282ECC60C8F9871C5659FE6BEED",
+      "loaderId": "A852D1F13C6A8A7CEDF80E64367AFD46",
+      "isDownload": false
+    }
+  },
+  "browser_pid": 64281,
   "exit_code": 0,
   "browser": {
     "protocolVersion": "1.3",
@@ -197,7 +204,7 @@
     "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/154.0.0.0 Safari/537.36",
     "jsVersion": "15.4.80.11"
   },
-  "archive_sha256": "08bfc4b1c3aa904d80f0ef5b9921a87c67c2bea77f9b6fd002e287d338734270",
+  "archive_sha256": "47776a3aab1b91c669435ecf0d61f9a4fd99fa54f6cf6eedec9e8d4afd3e2559",
   "browser_executable_sha256": "633aa60f1ee2346804e006071d8f6a2114106e9c17abd601fe61bf9754638740",
-  "observation_finished_at_utc": "2026-09-29T07:24:30.903239+00:00"
+  "observation_finished_at_utc": "2026-09-29T07:59:36.608968+00:00"
 }

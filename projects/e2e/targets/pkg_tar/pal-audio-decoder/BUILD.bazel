@@ -1,7 +1,7 @@
 load("@emsdk//emscripten_toolchain:wasm_rules.bzl", "wasm_cc_binary")
 load("@rules_cc//cc:defs.bzl", "cc_binary")
 load("@rules_pkg//pkg:tar.bzl", "pkg_tar")
-load("@rules_python//python:defs.bzl", "py_test")
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:web_archive.bzl", "web_archive_browser_test", "web_archive_serve")
 load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBILITY")
@@ -67,14 +67,15 @@ pkg_tar(
     target_compatible_with = _HOST,
 )
 
-py_test(
+sh_test(
     name = "wasm_pal_audio_decoder_browser_test",
-    srcs = ["run_browser.py"],
+    srcs = ["run_browser.sh"],
     args = [
         "$(rootpath :pal_audio_decoder)",
         "$(rootpath //projects/e2e/apps/pal-audio-decoder/app:include/h2_pal_audio_decoder_cases.inc)",
     ],
     data = [
+        "run_browser.py",
         ":pal_audio_decoder",
         "//projects/e2e/apps/pal-audio-decoder/app:include/h2_pal_audio_decoder_cases.inc",
         "//tools/bazel:web_archive_browser_test.py",
@@ -84,9 +85,10 @@ py_test(
         "//tools/bazel/platforms:host_macos_target_macos": ["@h2_playwright_chromium_macos_arm64//:runtime"],
         "//conditions:default": [],
     }),
-    env_inherit = ["H2_WEB_TEST_BROWSER"],
-    legacy_create_init = 0,
-    main = "run_browser.py",
+    env_inherit = [
+        "H2_WEB_TEST_BROWSER",
+        "HOME",
+    ],
     tags = ["manual"],
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],

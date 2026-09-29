@@ -1,7 +1,7 @@
 {
   "compiler": "Apple Clang 21, LLVM covmap",
   "scope": "macOS host executions; no native board/Web/MediaCodec coverage claim",
-  "lcov_sha256": "bf9bb7dbe499d7590249b260c575d06c8e0d67eb5deec0e5e0d337af6e11aaa2",
+  "lcov_sha256": "4c42a1d99bcb861447c25fa3efd9f720f591f0e124190a6b07514052e117e41d",
   "files": {
     "libs/pal/providers/android/pal_core/src/h2_android_audio_contract.c": {
       "FNF": 11,
@@ -30,10 +30,10 @@
     "projects/e2e/apps/pal-audio-decoder/app/src/h2_pal_audio_decoder_e2e.c": {
       "FNF": 47,
       "FNH": 45,
-      "BRF": 358,
-      "BRH": 217,
-      "LH": 379,
-      "LF": 415
+      "BRF": 360,
+      "BRH": 218,
+      "LH": 383,
+      "LF": 419
     }
   }
 }
