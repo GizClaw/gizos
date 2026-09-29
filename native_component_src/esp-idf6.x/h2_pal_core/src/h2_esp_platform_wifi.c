@@ -34,6 +34,9 @@ static int s_h2_esp_wifi_events_registered;
  * the current STA netif; cleared with that netif so the next one re-registers. */
 static int s_h2_esp_wifi_sta_dns_handler_registered;
 static int s_h2_esp_wifi_sta_disconnect_reason;
+/* Association identity captured on the serialized ESP event loop, so GOT_IP
+ * can describe its authenticated peer even though IP_EVENT has no SSID. */
+static h2_pal_wifi_sta_status_t s_h2_esp_wifi_association;
 static int s_h2_esp_wifi_sta_reconnect_enabled;
 static uint32_t s_h2_esp_wifi_sta_reconnect_attempts;
 static portMUX_TYPE s_h2_esp_wifi_sta_reconnect_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -485,11 +488,13 @@ static void h2_esp_wifi_event_handler(
             status.channel = connected->channel;
         }
         xEventGroupClearBits(s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_DISCONNECTED);
+        s_h2_esp_wifi_association = status;
         xEventGroupSetBits(s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_CONNECTED);
         h2_esp_wifi_post_sta_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTED, &status);
         return;
     }
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
+        memset(&s_h2_esp_wifi_association, 0, sizeof(s_h2_esp_wifi_association));
         h2_pal_wifi_sta_status_t status;
         memset(&status, 0, sizeof(status));
         status.state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;
@@ -511,7 +516,7 @@ static void h2_esp_wifi_event_handler(
     if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         xEventGroupSetBits(s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_GOT_IP);
         h2_pal_wifi_sta_status_t status;
-        memset(&status, 0, sizeof(status));
+        status = s_h2_esp_wifi_association;
         status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
         const ip_event_got_ip_t *got_ip = (const ip_event_got_ip_t *)event_data;
         if (got_ip != NULL) {

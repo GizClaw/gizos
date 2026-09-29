@@ -1,4 +1,4 @@
-load("@rules_cc//cc:defs.bzl", "cc_test")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel/platforms:compatibility.bzl", "MACOS_ARM64_ARTIFACT_COMPATIBILITY")
 package(default_visibility = ["//visibility:public"])
@@ -9,4 +9,13 @@ cc_test(
     copts = H2_WARNING_COPTS,
     target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
     deps = ["//libs/pal:unsupported", "//libs/pal/providers/darwin/pal_core:netif_system_event", "//projects/e2e/apps/pal-wifi/app:pal_wifi_e2e"],
+)
+
+cc_binary(
+    name = "device_monitor",
+    srcs = ["device_monitor.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = MACOS_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = ["//libs/h2loader_host", "//libs/pal/providers/darwin/pal_core", "//libs/pal/providers/desktop/pal_core"],
 )
