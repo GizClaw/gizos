@@ -453,6 +453,10 @@ static bk_err_t h2_bk_wifi_system_event_handler(
             status.ssid_len = len;
             memcpy(status.ssid, link.ssid, len);
             status.ssid[len] = '\0';
+            memcpy(status.bssid, link.bssid, sizeof(status.bssid));
+            status.bssid_set = 1u;
+            status.channel = link.channel;
+            status.rssi = link.rssi;
             h2_bk_wifi_store_sta_status(&status);
             h2_bk_wifi_post_sta_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP, &status);
             (void)h2_bk_platform_netif_reconcile_default_async();
@@ -922,13 +926,10 @@ static int h2_bk_wifi_sta_connect(
             s_h2_bk_wifi_last_config.ssid,
             config->ssid,
             config->ssid_len) == 0) {
-        h2_bk_wifi_fill_sta_ip(&cached_status);
-        if (cached_status.ip_valid != 0u) {
-            cached_status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
-            cached_status.ssid_len = config->ssid_len;
-            memcpy(cached_status.ssid, config->ssid, config->ssid_len);
-            cached_status.ssid[config->ssid_len] = '\0';
-            h2_bk_wifi_store_sta_status(&cached_status);
+        if (h2_bk_wifi_sta_get_status(NULL, &cached_status) == H2_PAL_OK &&
+            cached_status.state == H2_PAL_WIFI_STA_STATE_GOT_IP &&
+            cached_status.ip_valid != 0u && cached_status.ssid_len == config->ssid_len &&
+            memcmp(cached_status.ssid, config->ssid, config->ssid_len) == 0) {
             h2_bk_wifi_request_unlock();
             return H2_PAL_OK;
         }

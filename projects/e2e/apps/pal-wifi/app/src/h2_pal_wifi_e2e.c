@@ -10,7 +10,7 @@ typedef struct wifi_test {
     h2_pal_wifi_sta_config_t original, sentinel;
     int original_saved;
     h2_pal_netif_ref_t sta_ref, ap_ref;
-    uint8_t sta_mac[6], ap_mac[6];
+    uint8_t sta_mac[6], ap_mac[6], fixture_bssid[6], fixture_channel;
     h2_pal_wifi_ap_client_t client;
     uint64_t overall_start;
     int clock_error;
@@ -306,7 +306,7 @@ typedef struct scan_observation {
     const h2_pal_wifi_sta_config_t *target;
     unsigned count, target_count;
     int bad, early;
-    uint8_t channel;
+    uint8_t channel, bssid[6];
 } scan_observation_t;
 static bool scan_result(void *user, const h2_pal_wifi_scan_entry_t *e) {
     scan_observation_t *o = user;
@@ -317,6 +317,7 @@ static bool scan_result(void *user, const h2_pal_wifi_scan_entry_t *e) {
         memcmp(e->ssid, o->target->ssid, e->ssid_len) == 0) {
         ++o->target_count;
         o->channel = e->channel;
+        memcpy(o->bssid, e->bssid, 6);
     }
     return !o->early;
 }
@@ -348,6 +349,10 @@ static int scan_test(wifi_test_t *s, int directed, int early) {
         EXPECT(o.target_count > 0);
     if (directed)
         EXPECT(o.count == o.target_count && (request.channel == 0 || request.channel == o.channel));
+    if (o.target_count) {
+        memcpy(s->fixture_bssid, o.bssid, 6);
+        s->fixture_channel = o.channel;
+    }
     return H2_PAL_OK;
 }
 static int scan_all(wifi_test_t *s) {
@@ -411,6 +416,11 @@ static int netif_status(wifi_test_t *s) {
     CALL(h2_pal_wifi_sta_get_status(s->rt->wifi_sta, &w));
     EXPECT(h2_pal_netif_status_is_usable(&n) && w.ip_valid && n.kind == H2_PAL_NETIF_KIND_WIFI_STA);
     EXPECT(n.mtu >= 576 && n.mac_valid && memcmp(n.mac, s->sta_mac, 6) == 0);
+    EXPECT(w.bssid_set && mac_valid(w.bssid) && w.channel >= 1 && w.channel <= 14);
+    if (w.ssid_len == s->cfg->fixture.ssid_len &&
+        !memcmp(w.ssid, s->cfg->fixture.ssid, w.ssid_len)) {
+        EXPECT(!memcmp(w.bssid, s->fixture_bssid, 6) && w.channel == s->fixture_channel);
+    }
     h2_pal_wifi_ip4_to_bytes(w.ip.ip4, ip);
     EXPECT(n.ipv4.family == H2_PAL_NET_FAMILY_IPV4 && memcmp(n.ipv4.ip, ip, 4) == 0);
     h2_pal_wifi_ip4_to_bytes(w.ip.netmask4, ip);
@@ -649,6 +659,10 @@ static int ap_stop(wifi_test_t *s) {
     return H2_PAL_OK;
 }
 static int ap_open(wifi_test_t *s) {
+    /* Coexistence was tested with the independent upstream already. Stop its
+     * STA before standalone AP modes so their requested channel is stable. */
+    CALL(h2_pal_wifi_sta_disconnect(s->rt->wifi_sta));
+    pause_ms(s, 300);
     h2_pal_wifi_ap_config_t c = s->cfg->ap;
     c.security = H2_PAL_WIFI_SECURITY_OPEN;
     c.password_len = 0;
