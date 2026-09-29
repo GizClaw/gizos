@@ -1,8 +1,8 @@
 {
-  "source_head": "fe75d058bd060ce98a1bc7e879b9d246e0acbf79",
-  "portable_app_sha256": "8c6a15100347f44d319c86df3b57eb606e34668d345d1bfb50da92dcd1285853",
+  "source_head": "dc962e0c7775bbf415054b3c43b36646f84248e3",
+  "portable_app_sha256": "b3448dcebe3078bd615512080d27cca441ab1265cd978fcf0e13fdd24a5472fb",
   "binary_sha256": "9096580b3c2c81a292a6dd75e1884e7e02b2d6fc018549e8bdfd3de66ae32a48",
-  "test_log_sha256": "b77eb78b7fd0bd5f132605246da573ef9b7587a7b3cb86d665d0aafb674da34c",
+  "test_log_sha256": "0abee5eb189b3216f2b86c9863b66fff0efe857b943f6e04a6382b5afc76f2a1",
   "test_target": "//projects/e2e/targets/pkg_tar/pal-wifi:browser_test",
   "scope": "capability-contract; no physical WLAN"
 }

@@ -1,6 +1,6 @@
 {
-  "source_head": "fe75d058bd060ce98a1bc7e879b9d246e0acbf79",
-  "portable_app_sha256": "8c6a15100347f44d319c86df3b57eb606e34668d345d1bfb50da92dcd1285853",
+  "source_head": "dc962e0c7775bbf415054b3c43b36646f84248e3",
+  "portable_app_sha256": "b3448dcebe3078bd615512080d27cca441ab1265cd978fcf0e13fdd24a5472fb",
   "app_sha256": "af2f97cb836ac33a775186fc7d4a1db9f5b160f663cc9bbacc47ba0d4ab0e563",
   "sdk_sha256": "fcfe809751dc8468e9d8d67f3358d2593bb81589961c6007e19950b5bdd4992e",
   "test_target": "//projects/e2e/targets/android_binary/pal-wifi:android_pal_wifi_simulator_test",

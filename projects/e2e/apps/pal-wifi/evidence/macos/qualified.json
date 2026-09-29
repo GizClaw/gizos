@@ -7,6 +7,6 @@
   "wifi_ap": "UNSUPPORTED",
   "wifi_settings": "UNSUPPORTED",
   "netif": "read-only-real-interfaces",
-  "netif_count": 36,
+  "netif_count": 26,
   "rc": 0
 }

@@ -1,6 +1,6 @@
 {
-  "source_head": "fe75d058bd060ce98a1bc7e879b9d246e0acbf79",
-  "portable_app_sha256": "8c6a15100347f44d319c86df3b57eb606e34668d345d1bfb50da92dcd1285853",
+  "source_head": "dc962e0c7775bbf415054b3c43b36646f84248e3",
+  "portable_app_sha256": "b3448dcebe3078bd615512080d27cca441ab1265cd978fcf0e13fdd24a5472fb",
   "app_sha256": "cd52f1b658a91feb9341224d25b4cb1ab965b77848b47e070c4bd54c6b151f88",
   "sdk_sha256": "3a957acb2bc1ff3f3ce14db1d5f8c8c80a7ffebc0a724ca47d03afefffb927ba",
   "test_target": "//projects/e2e/targets/ios_application/pal-wifi:ios_pal_wifi_simulator_test",
