@@ -116,6 +116,11 @@ static h2_pal_result_t desktop_audio_configure(
         config->bitstream_format != H2_AUDIO_BITSTREAM_AAC_RAW) {
         return H2_PAL_ERR_UNSUPPORTED;
     }
+    /* AudioSpecificConfig needs at least the object type, frequency index
+     * and channel configuration. Reject a truncated cookie before codec init. */
+    if (config->codec_config_size < 2u) {
+        return H2_PAL_ERR_FORMAT;
+    }
     if (config->codec_config_size > (size_t)INT_MAX ||
         config->sample_rate_hz > (uint32_t)INT_MAX) {
         return H2_PAL_ERR_INVALID_ARG;

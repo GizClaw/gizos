@@ -76,6 +76,11 @@ const h2_pal_audio_api_t *h2_ios_audio_api(h2_ios_audio_t *audio);
  */
 void h2_ios_audio_destroy(h2_ios_audio_t *audio);
 
+/** Borrow the native AAC-LC AudioConverter PAL. Each session owns its codec;
+ * release acquired PCM frames before reset/close. PCM and adapter storage use
+ * the allocator supplied to Audio Decoder open(). */
+const h2_pal_audio_decoder_api_t *h2_ios_platform_audio_decoder_api(void);
+
 h2_pal_result_t h2_ios_platform_read_pointer(void *user, int32_t *out_x,
                                              int32_t *out_y, int *out_pressed);
 

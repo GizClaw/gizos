@@ -122,7 +122,9 @@
     "projects/e2e/apps/pal-display/check_qualification.py": "d764dc83c77ef2445f6fc770fa2073420e9a03cd518bfe3808685c4a3c3cb32e",
     "projects/e2e/apps/pal-display/README.md": "cc1c5b74b3db8c3275f552b6dca89e9597ccd8e8b335d080082f3b4c96207e4e",
     "guides/apps/h2loader/boards/bk7258_v3_202405/display.md": "20aa6aa7d28e3ce0c2d0448f1ed0af923f463e82e765d9aeba75f17ac84b8b6a",
-    "libs/pal/providers/sdl3/src/h2_sdl3_display.cpp": "c416f27d73cf91a24aab95bf919277ddf649a7e4a2b99b89b858f17fee3d4e5f"
+    "libs/pal/providers/sdl3/src/h2_sdl3_display.cpp": "c416f27d73cf91a24aab95bf919277ddf649a7e4a2b99b89b858f17fee3d4e5f",
+    "Makefile": "72b5c56793ae6bd71ba1dac9a619c1846fa1b7a76bf7b443ecaf18d69e642406",
+    "guides/apps/e2e.md": "753e9a58a3fef6a76dcc8423f6b9cf6a6c0b431d2a330fd0d0488dda0741776f"
   },
   "review_fix_validation": {
     "scope": "BK PWM failure recovery, SDL C/C++ unknown enum validation, UTF-8 receipt decoding; native build and focused/new renderer validation are separate from R13 physical snapshot",
@@ -131,6 +133,13 @@
     "native_build_evidence": "projects/e2e/targets/h2loader_tar_zlib/pal-display/bk7258_v3_202405/evidence/review-fix-build.json",
     "new_physical_run_claimed": false,
     "sdl_enum_sanitizer_regression": "PASS",
-    "desktop_run_evidence": "projects/e2e/targets/cc_binary/pal-display/evidence/review-fix-qualified.json"
+    "desktop_run_evidence": "projects/e2e/targets/cc_binary/pal-display/evidence/review-fix-qualified.json",
+    "audio_decoder_documentation_compatibility": {
+      "scope": "The shared Makefile and E2E guide retain all Display entries and append independent Audio Decoder entries. Display App, provider, launcher and runtime observations are unchanged; no new Display runtime or physical run is claimed.",
+      "current_source_sha256": {
+        "Makefile": "72b5c56793ae6bd71ba1dac9a619c1846fa1b7a76bf7b443ecaf18d69e642406",
+        "guides/apps/e2e.md": "753e9a58a3fef6a76dcc8423f6b9cf6a6c0b431d2a330fd0d0488dda0741776f"
+      }
+    }
   }
 }

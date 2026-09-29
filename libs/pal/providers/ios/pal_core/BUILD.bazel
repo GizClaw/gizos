@@ -9,6 +9,22 @@ load("//tools/bazel/platforms:compatibility.bzl", "IOS_SIM_ARM64_ARTIFACT_COMPAT
 package(default_visibility = ["//visibility:public"])
 
 cc_library(
+    name = "audio_decoder",
+    srcs = ["src/h2_ios_audio_decoder.c"],
+    hdrs = ["include/h2_ios_platform.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    linkopts = ["-framework", "AudioToolbox"],
+    target_compatible_with = select({
+        "@platforms//os:ios": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
+)
+
+cc_library(
     name = "audio_wait",
     srcs = ["src/h2_ios_audio_wait.c"],
     hdrs = ["src/h2_ios_audio_wait.h"],
@@ -58,7 +74,7 @@ objc_library(
         "UIKit",
     ],
     target_compatible_with = ["@platforms//os:ios"],
-    deps = [":audio_wait", ":crypto", "//libs/pal", "//libs/pal/providers/posix/pal_core:mobile_core"],
+    deps = [":audio_wait", ":audio_decoder", ":crypto", "//libs/pal", "//libs/pal/providers/posix/pal_core:mobile_core"],
 )
 
 cc_library(
