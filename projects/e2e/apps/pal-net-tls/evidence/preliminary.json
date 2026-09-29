@@ -10,21 +10,21 @@
       "status": "PRELIMINARY_PASS",
       "core_cases": 37,
       "artifact_sha256": "61bb92ce7be00427274e832fce9c505e8a2fb89962a7672cc11ca23cd98e8c33",
-      "receipt_sha256": "6cf3b4861f527d938757385cd7270994ff888d50398fe52bc07d7f9e27495aae",
+      "receipt_sha256": "3264eae8e198e7dee808e9649b6017db5f6d0249821b9020ddf77d8fa152be56",
       "final_six_platform_qualified": false
     },
     "ios": {
       "status": "PRELIMINARY_PASS",
       "core_cases": 37,
       "artifact_sha256": "a0768f49a144d8ae318a3418fc0dc7b6248d082d776be8bd35d06a6918409f73",
-      "receipt_sha256": "79751910535e3e8b8d64d9c7fceab5e86c1802f582e032ff5337532eadb5d809",
+      "receipt_sha256": "fde35b69e9f2b35d3fa421e226948b61d76b040f0b74ac459bbe10d79c689884",
       "final_six_platform_qualified": false
     },
     "android": {
       "status": "PRELIMINARY_PASS",
       "core_cases": 37,
       "artifact_sha256": "21570e5f1127818ceaed5e13a2c909eaddb7719c17f3096dfe1f96982904e606",
-      "receipt_sha256": "cbc5d571578fab4a7f961efc0b3347bcfdef28384e57af54618c17f742644540",
+      "receipt_sha256": "0a293a2eae2daadf509ec63a458e82649245c3ff7b63345f4b41b5995eb582b1",
       "final_six_platform_qualified": false
     },
     "devkit": {
