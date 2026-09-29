@@ -90,7 +90,14 @@ static h2_pal_result_t speaker_write(void *user,
                               ? patch->volume_percent
                               : previous.speaker.volume_percent;
   const bool muted = patch->has_muted ? patch->muted : previous.speaker.muted;
-  rc = builtin->runtime != NULL && builtin->audio == builtin->runtime->audio
+  const bool runtime_owned =
+      builtin->runtime != NULL && builtin->audio == builtin->runtime->audio;
+  /* A PAL-only speaker mutes by writing 0 and keeps no pre-mute level, so an
+   * unmute that names no audible level cannot be honoured; refuse it rather
+   * than report an unmute that leaves the speaker silent. */
+  if (!runtime_owned && patch->has_muted && !patch->muted && volume == 0u)
+    return H2_PAL_ERR_INVALID_STATE;
+  rc = runtime_owned
            ? h2_runtime_audio_set_volume(builtin->runtime, volume, muted)
            : h2_pal_audio_set_speaker_volume_percent(
                  builtin->audio, muted ? 0u : volume);

@@ -36,6 +36,59 @@ static const h2_pal_mem_vtable_t memory_vtable = {
     .alloc = allocate, .free = release};
 static const h2_pal_mem_api_t memory = {.vtable = &memory_vtable};
 
+static uint32_t pal_volume = 60u;
+static int pal_get_volume(void *user, uint32_t *out) {
+  (void)user;
+  *out = pal_volume;
+  return H2_PAL_OK;
+}
+static int pal_set_volume(void *user, uint32_t percent) {
+  (void)user;
+  pal_volume = percent;
+  return H2_PAL_OK;
+}
+
+/* Without a Runtime the speaker mutes by writing 0: an unmute naming no
+ * audible level is refused instead of reported as done while still silent. */
+static void test_pal_only_speaker_mute(void) {
+  static const h2_pal_audio_vtable_t audio_vtable = {
+      .get_speaker_volume_percent = pal_get_volume,
+      .set_speaker_volume_percent = pal_set_volume};
+  const h2_pal_audio_api_t audio = {.vtable = &audio_vtable};
+  h2_gizclaw_mhs_builtin_t builtin = {.audio = &audio};
+  h2_gizclaw_mhs_device_t builtins[2];
+  assert(h2_gizclaw_mhs_builtins_internal(&builtin, builtins) == 1u);
+  const h2_gizclaw_mhs_device_t *speaker = &builtins[0];
+  assert(strcmp(speaker->id, "speaker.main") == 0 && speaker->write != NULL);
+  h2_gizclaw_mhs_write_t request;
+  h2_gizclaw_mhs_read_t out;
+
+  memset(&request, 0, sizeof(request));
+  request.speaker.has_muted = true;
+  request.speaker.muted = true;
+  assert(speaker->write(speaker->user, &request, &out) == H2_PAL_OK);
+  assert(pal_volume == 0u && out.speaker.muted);
+
+  request.speaker.muted = false;
+  memset(&out, 0, sizeof(out));
+  assert(speaker->write(speaker->user, &request, &out) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(pal_volume == 0u);
+
+  request.speaker.has_volume_percent = true;
+  request.speaker.volume_percent = 40u;
+  assert(speaker->write(speaker->user, &request, &out) == H2_PAL_OK);
+  assert(pal_volume == 40u && !out.speaker.muted &&
+         out.speaker.volume_percent == 40u);
+
+  /* A plain level change, including to 0, stays allowed. */
+  memset(&request, 0, sizeof(request));
+  request.speaker.has_volume_percent = true;
+  request.speaker.volume_percent = 0u;
+  assert(speaker->write(speaker->user, &request, &out) == H2_PAL_OK);
+  assert(pal_volume == 0u);
+}
+
 static int read_display(void *user, h2_gizclaw_mhs_read_t *out) {
   fixture_t *f = user;
   ++f->reads;
@@ -111,6 +164,7 @@ static int invoke(bool write, const uint8_t *bytes, size_t len,
 }
 
 int main(void) {
+  test_pal_only_speaker_mute();
   assert(h2_gizclaw_mhs_validate_internal(&device, 1u) == H2_PAL_OK);
   assert(h2_gizclaw_mhs_validate_internal(NULL, 0u) == H2_PAL_OK);
   assert(h2_gizclaw_mhs_validate_internal(NULL, 1u) == H2_PAL_ERR_INVALID_ARG);
