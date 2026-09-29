@@ -44,7 +44,8 @@ void run_lifecycle() {
     windows = SDL_GetWindows(&window_count);
     assert(windows != nullptr && window_count == 1);
     SDL_free(windows);
-    assert(h2_pal_display_close(display.display()) == H2_DISPLAY_OK);
+    // Open is idempotent; it does not acquire another lifecycle reference.
+    // Keep the owning Display/LVGL scope open until its input users stop.
 
     SDL_Event event = {};
     event.type = SDL_EVENT_MOUSE_BUTTON_DOWN;

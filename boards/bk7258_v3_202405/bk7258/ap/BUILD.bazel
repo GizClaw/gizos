@@ -15,6 +15,7 @@ filegroup(
         "src/h2_bk7258_board_input.c",
         "src/h2_bk7258_board_platform.c",
         "src/h2_bk7258_board_private.h",
+        "src/h2_bk7258_display_backlight.h",
         "src/h2_bk7258_board_runtime.c",
         "src/h2_bk7258_board_task.c",
         "src/h2_bk7258_board_touch.c",
@@ -40,6 +41,7 @@ filegroup(
     srcs = [
         "include/h2_bk7258_board.h",
         "src/h2_bk7258_board_private.h",
+        "src/h2_bk7258_display_backlight.h",
     ],
 )
 
@@ -92,4 +94,24 @@ cc_test(
         "//libs/pal:unsupported",
         "//libs/runtime",
     ],
+)
+
+cc_test(
+    name = "board_display_backlight_host_test",
+    srcs = [
+        "src/h2_bk7258_display_backlight.h",
+        "tests/h2_bk7258_display_backlight_test_sdk.h",
+        "tests/test_h2_bk7258_display_backlight.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["src", "tests"],
+    local_defines = ["H2_BK7258_DISPLAY_BACKLIGHT_HOST_TEST=1"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = ["//libs/pal"],
 )

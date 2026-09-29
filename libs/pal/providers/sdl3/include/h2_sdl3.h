@@ -124,6 +124,21 @@ typedef struct h2_sdl3_capture_frame {
 typedef void (*h2_sdl3_frame_capture_fn)(void *user,
                                        const h2_sdl3_capture_frame_t *frame);
 
+/** Actual renderer pixels after texture conversion/brightness and before
+ * SDL_RenderPresent. RGBA8888 rows are borrowed only for the callback. This
+ * optional diagnostic callback performs GPU readback, independent of the
+ * composition callback above; no readback occurs while unregistered. */
+typedef struct h2_sdl3_render_frame {
+  const uint8_t *rgba;
+  uint32_t width, height;
+  size_t stride_bytes;
+} h2_sdl3_render_frame_t;
+typedef void (*h2_sdl3_render_capture_fn)(void *user,
+    const h2_sdl3_render_frame_t *frame);
+/* Same registration/owner/reentrancy rules as frame_capture below. */
+h2_pal_result_t h2_sdl3_set_render_capture(h2_sdl3_t *provider,
+    h2_sdl3_render_capture_fn callback, void *user);
+
 /** Register one direct Desktop presentation callback; NULL unregisters.
  * Callback must return promptly and must not reenter SDL3; copy borrowed data
  * when retaining it and delegate expensive work to the consumer. Registration while occupied returns BUSY.
