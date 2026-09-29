@@ -7,6 +7,7 @@ else()
 endif()
 
 set(H2_BK_TARGET "bk7258")
+set(H2_BK_DHCP_TRACE ON CACHE BOOL "PAL Wi-Fi packet metadata diagnostics" FORCE)
 include($ENV{ARMINO_TOOLS_PATH}/build_tools/cmake/project.cmake)
 include("$ENV{H2_BAZEL_COMPONENT_MANIFEST}")
 

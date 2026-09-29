@@ -49,3 +49,5 @@ list(APPEND H2_BK_CP_CONTROLLER_SOURCES "${H2_BK_CP_CONTROLLER_CORRECTED_SOURCE}
 set_property(TARGET ${H2_BK_CP_CONTROLLER_LIB} PROPERTY SOURCES ${H2_BK_CP_CONTROLLER_SOURCES})
 target_include_directories(${H2_BK_CP_CONTROLLER_LIB} PRIVATE
   "${REPO_ROOT}/native_component_src/bk7258/shared")
+
+include("${REPO_ROOT}/native_component_src/bk7258/shared/h2_bk_dhcp_trace.cmake")
