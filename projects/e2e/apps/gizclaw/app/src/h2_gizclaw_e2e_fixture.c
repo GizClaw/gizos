@@ -50,7 +50,8 @@ static void observe_rpc_channel(h2_pal_webrtc_channel_t *channel,
                                 const h2_pal_webrtc_channel_info_t *info,
                                 h2_pal_webrtc_channel_state_t state) {
   if (!s_webrtc_observer.initialized || channel == NULL ||
-      !observed_rpc_service(info)) {
+      !observed_rpc_service(info) ||
+      !h2_app_test_webrtc_channel_created_locally(channel)) {
     return;
   }
   (void)h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);

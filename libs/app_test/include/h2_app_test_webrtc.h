@@ -2,6 +2,7 @@
 #define H2_APP_TEST_WEBRTC_H
 #include "h2/pal/application/h2_pal_webrtc.h"
 #include "h2/pal/os/h2_pal_mem.h"
+#include <stdbool.h>
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -27,6 +28,10 @@ h2_pal_result_t h2_app_test_webrtc_create(const h2_pal_mem_api_t *mem,
                                           h2_app_test_webrtc_t **out);
 const h2_pal_webrtc_api_t *
 h2_app_test_webrtc_api(h2_app_test_webrtc_t *wrapper);
+/** True for a live decorator channel returned by local create_data_channel.
+ * Remote channels first observed in peer_poll return false. Call only with
+ * this decorator's live handles, under the same peer serialization as poll. */
+bool h2_app_test_webrtc_channel_created_locally(const h2_pal_webrtc_channel_t *channel);
 /** Requires quiescent callers. Active peers/events return INVALID_STATE and
  * retain ownership; NULL is OK. */
 h2_pal_result_t h2_app_test_webrtc_destroy(h2_app_test_webrtc_t *wrapper);
