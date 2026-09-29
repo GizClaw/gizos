@@ -51,7 +51,7 @@ actual generated SDK corrections and reject old/failed CP responses.
 
 | Platform | Actual test scope | Physical WLAN qualification |
 | --- | --- | --- |
-| DevKit | Real ESP Wi-Fi, Settings and Netif; 39 cases | Pending real board test |
+| DevKit | Real ESP Wi-Fi, Settings and Netif; final R23 managed and normal boot each 39/39, fresh actual peer leases and complete restoration | Passed current source |
 | BK7258 | Real BK Wi-Fi, Settings and Netif; 39 cases | Pending real board test |
 | macOS | Native Darwin Netif read-only; explicit unsupported physical Wi-Fi assembly | Unavailable |
 | WASM | Worker, HOST Netif, actual browser offline/online Runtime events; unsupported Wi-Fi | Unavailable |

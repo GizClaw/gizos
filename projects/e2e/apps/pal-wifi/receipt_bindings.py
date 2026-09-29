@@ -89,7 +89,7 @@ def _check_snapshot(report, snapshot):
     stored = int(old["stored_bytes"])
     assert 0 <= stored <= int(old["bytes"])
     assert old["blank"] != "1" or stored == 0
-    for run, original in zip(runs, report["runs"][1:]):
+    for run, original in zip(runs, report["runs"][offset:]):
         required = {"final_status", "final_coredump"}
         if old["blank"] == "0":
             required.add("final_coredump_bytes")

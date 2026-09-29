@@ -1,5 +1,6 @@
 """Check recorded qualification; --audit-artifacts also verifies local raw bytes."""
 import argparse
+from collections import Counter
 import hashlib
 import json
 from pathlib import Path
@@ -26,6 +27,7 @@ def check(audit_artifacts=False):
     assert len(ids) == 38 and len(set(ids)) == 38
     platforms = manifest["platforms"]
     assert {p["platform"] for p in platforms} == {"macos", "wasm", "ios", "android", "devkit", "bk7258"}
+    used_fixture_leases = Counter()
     for platform in platforms:
         file = Path(platform["evidence"])
         assert digest(file) == platform["sha256"]
@@ -60,8 +62,17 @@ def check(audit_artifacts=False):
         for row, run in zip(runs, verified):
             c = run["report"]["CLIENT"]
             assert row["fixture_log"] in observed, "missing associated fixture window"
-            assert (report["fixture_target"], c["mac"], c["ip4"]) in observed[row["fixture_log"]], \
-                "DUT lease lacks real-peer corroboration in its associated fixture window"
+            addresses = re.findall(r'H2_WIFI_ADDRESS lease=(\d+) ap=(\d+) mask=(\d+)',
+                                   Path(row["log"]).read_text(encoding="utf-8", errors="replace"))
+            assert len(addresses) == 3, "missing WPA2/open/hidden lease observations"
+            available = Counter(observed[row["fixture_log"]])
+            for ip, ap, mask in addresses:
+                assert int(mask) and (int(ip) & int(mask)) == (int(ap) & int(mask))
+                witness = (report["fixture_target"], c["mac"], int(ip))
+                key = (row["fixture_log"], witness)
+                used_fixture_leases[key] += 1
+                assert available[witness] >= used_fixture_leases[key], \
+                    "missing fresh peer lease; another boot/mode cannot reuse this observation"
     scope = "local raw artifact audit" if audit_artifacts else "historical receipt/source consistency"
     print("PAL_WIFI_GATE_READY: two recorded physical WLAN qualifications and four host capability rows; " + scope)
 
