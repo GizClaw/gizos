@@ -114,9 +114,9 @@ static void emit_summary(const h2_gizclaw_e2e_devkit_runner_t *runner,
          "blocked=%zu cancelled=%zu first_failure_case=%s "
          "first_failure_rc=%d cleanup_rc=%d retained_resources=%zu "
          "complete=%s exit_code=%d replay=%s\n",
-         H2_GIZCLAW_E2E_DEVKIT_SUITE_NAME,
          replay ? "summary-replay" : "summary",
          (int)settings->server_endpoint.len, settings->server_endpoint.data,
+         H2_GIZCLAW_E2E_DEVKIT_SUITE_NAME,
          result->runtime_profile_name[0] == '\0'
              ? "-"
              : result->runtime_profile_name,
