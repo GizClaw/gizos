@@ -105,10 +105,10 @@ int h2_wifi_fixture_run(h2_runtime_t *rt) {
             }
             (void)h2_pal_wifi_sta_disconnect(rt->wifi_sta);
             drain(rt);
-            int connect_rc = h2_pal_wifi_sta_connect(rt->wifi_sta, &config, 15000);
+            int connect_rc = h2_pal_wifi_sta_connect(rt->wifi_sta, &config, 4000);
             uint64_t wait = time_ms(rt);
             h2_pal_wifi_sta_status_t status = {0};
-            while (!connect_rc && time_ms(rt) - wait < 15000) {
+            while (!connect_rc && time_ms(rt) - wait < 4000) {
                 connect_rc = h2_pal_wifi_sta_get_status(rt->wifi_sta, &status);
                 if (status.ip_valid)
                     break;

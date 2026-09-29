@@ -342,6 +342,22 @@ static void h2_bk_wifi_fill_sta_ip(h2_pal_wifi_sta_status_t *status) {
     status->ip_valid = 1u;
 }
 
+typedef struct h2_bk_wifi_sta_up_call {
+    struct tcpip_api_call_data call;
+    struct netif *sta;
+} h2_bk_wifi_sta_up_call_t;
+
+static err_t h2_bk_wifi_sta_up_api_call(struct tcpip_api_call_data *data) {
+    h2_bk_wifi_sta_up_call_t *request = (h2_bk_wifi_sta_up_call_t *)data;
+    if (request->sta == NULL || ip4_addr_isany_val(*netif_ip4_addr(request->sta)))
+        return ERR_IF;
+    /* CP supplied the authenticated association and DHCP address. The AP
+     * SDK synchronizes the address but never restores its local link flag. */
+    netif_set_link_up(request->sta);
+    netif_set_up(request->sta);
+    return ERR_OK;
+}
+
 static bk_err_t h2_bk_wifi_system_event_handler(
     void *arg,
     event_module_t event_module,
@@ -373,6 +389,10 @@ static bk_err_t h2_bk_wifi_system_event_handler(
             memset(&status, 0, sizeof(status));
             h2_bk_wifi_fill_sta_ip(&status);
             if (status.ip_valid == 0u) return BK_OK;
+            h2_bk_wifi_sta_up_call_t up = {
+                .sta = (struct netif *)net_get_sta_handle()};
+            if (tcpip_api_call(h2_bk_wifi_sta_up_api_call, &up.call) != ERR_OK)
+                return BK_OK;
             status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
             status.ssid_len = len;
             memcpy(status.ssid, link.ssid, len);
