@@ -1,0 +1,24 @@
+load("@rules_python//python:defs.bzl", "py_test")
+load(":builtin_include_directories.bzl", "cc_builtin_include_directories")
+
+MACOS_HOST_ONLY = select({
+    "//tools/bazel/platforms:host_macos_target_macos": [],
+    "//conditions:default": ["@platforms//:incompatible"],
+})
+
+cc_builtin_include_directories(
+    name = "builtin_include_directories",
+    target_compatible_with = MACOS_HOST_ONLY,
+)
+
+# Resolves the C/C++ toolchain in the caller's module graph, so the
+# downstream-consumer script runs it as @gizos//... to cover consumer roots.
+py_test(
+    name = "xcode_sdk_builtin_test",
+    srcs = ["test_xcode_sdk_builtin.py"],
+    data = [":builtin_include_directories"],
+    env = {"H2_CC_BUILTIN_INCLUDE_DIRECTORIES": "$(rootpath :builtin_include_directories)"},
+    legacy_create_init = 0,
+    main = "test_xcode_sdk_builtin.py",
+    target_compatible_with = MACOS_HOST_ONLY,
+)
