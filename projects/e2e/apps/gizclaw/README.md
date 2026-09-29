@@ -1,5 +1,36 @@
 # GizClaw E2E
 
+## 当前资格（2026-09-30）
+
+当前 SDK 为 `0.19.0`，公开接口与独立覆盖矩阵均为 **226 项**。完整目标是同一个 portable App 在 macOS、WASM、iOS、Android、ESP32-S3、BK7258 上执行；**目前没有平台取得完整 226 项资格**。平台产物构建、局部用例和累计成功调用均不能替代同一版本的一次完整通过。
+
+| 平台 | 本轮实际结果 | 尚缺条件 |
+| --- | --- | --- |
+| macOS / H2Peer | 8 个顶层 case 中 7 个通过，cleanup=0、retained=0 | E2E `default` RuntimeProfile 没有 AppConfig key，无法验证 list/get 正例 |
+| iOS Simulator / 打包 XCFramework | 7/8，通过的调用链覆盖 220 项，PAL teardown=0 | 同一 AppConfig fixture 缺项；完整审计仍失败 |
+| Android Emulator / 打包 AAR | 修复 P-384/RSA-4096 公共证书链后 7/8，220 项调用链，cleanup=0、PAL teardown=0 | 同一 AppConfig fixture 缺项 |
+| WASM / Chromium Worker | 5/8；Voice、Service、Resource、Connectivity 及 32 批并发通过，cleanup=0、teardown=0 | AppConfig fixture；设备 PUT 被 CORS 预检拒绝，TOS firmware 缺少 Allow-Origin |
+| ESP32-S3（音频使用 AMOLED） | 本轮尚未运行 | 等 Wi-Fi、TLS 完成并移交设备 |
+| BK7258 | 独立入口已实现，本轮尚未构建/运行 | 等 Wi-Fi/TLS 完成并移交设备；只在完整成功后确认 App |
+
+版本、逐 case 终态、未覆盖 API、清理及日志 SHA 保存在 `evidence/*-phase*.json`。macOS/iOS/Android 的上述音频结果验证真实服务上的录音 fixture、回复解码、历史重播及 PCM 消费；输入和扬声器使用确定性测试 delegate，**不构成麦克风或声学验收**。
+
+并发 case 统计六个本地创建的 channel 生命周期、峰值占用及最终零开放；反向 RPC 不计入客户端请求，SID 在关闭后可以复用，但同时打开的 channel 不能共享 SID。
+
+本轮补齐了实际 Service poll/排空和校时状态、AppConfig 两套读取接口、PublicProfile 去重及读回、接收端观测的 Friend/Group ping、Debug durable 设置与异步 snapshot、playlist 索引播放及 1 秒 seek。Voice 分别执行 Session 和直接 Conversation/Service audio 路径；Session 的 `cancel_pending` 在真实 catalog BEGIN 内触发，必须出现 ABORT 且不能 COMMIT，随后同连接重新 refresh 恢复。AppConfig 必须由受控 E2E profile 提供至少一个非敏感 fixture key；空列表保持失败，不通过修改服务器或读取其他账户规避。
+
+新平台入口复用完整 portable App，分别为：
+
+```sh
+make bazel-test-ios_gizclaw_simulator_test
+make bazel-test-android_gizclaw_simulator_test
+make bazel-test-gizclaw_wasm_live_test
+```
+
+三者都要求显式注入 `H2_GIZCLAW_E2E_ENDPOINT`、`H2_GIZCLAW_E2E_REGISTRATION_TOKEN`、`H2_GIZCLAW_E2E_DEVICE_API_URL`、`H2_GIZCLAW_E2E_AUDIO_URL`；移动端还需指定独占的 `H2_IOS_SIMULATOR_UDID` 或 `H2_ANDROID_SERIAL`。测试保留实际包副本和 SHA，删除 sandbox 内的凭据 fixture，并在用例、清理、226 项 API 审计全部通过后才授予资格。Chrome 始终保持 CORS 校验；报告只保存失败类型与主机，不保存 firmware URL 或授权内容。
+
+下面保留原有测试合同与历史问题记录；历史通过结果不转移到本轮版本。
+
 流式数据在 `h2_gizclaw_req_do(request, user, input_read, output_write)` 绑定。data-up task 按需调用 `input_read`，`WOULD_BLOCK` 留到下一轮，`OK + 0` 表示输入结束；data-down 数据只在调用方执行 `service_poll` 时交给 `output_write`，部分写入和 `WOULD_BLOCK` 都保留剩余字节。协议 RESPONSE/EOS/COMPLETE 不暴露为用户事件。每个方向只允许一个 active request，同方向冲突立即返回 BUSY，上下行互不阻塞。真实 BJ 验收尚待补充，不能将本地线程交接测试当成网络覆盖。
 
 后续本地修复已统一业务 404 和流式 PAL 错误，并将 Telemetry 改为单次提交、WOULD_BLOCK 不重试；下面的网络数据来自这些修复之前，未重新验收。既有清理义务仍保持未确认。
