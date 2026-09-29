@@ -1,19 +1,15 @@
 {
   "schema": 1,
-  "qualified": false,
+  "qualified": true,
   "operation_count": 21,
   "case_count": 39,
-  "pending": [
-    "review fixes: current-source DevKit managed and independent reboot qualification",
-    "review fixes: current-source BK7258 managed and independent reboot qualification",
-    "review fixes: refresh four host capability receipts and source closure"
-  ],
+  "pending": [],
   "source_inputs": {
     ".bazelrc": "2afafc454ec12b35d1031042fee573b39473c1b514292739ed2a04d782636fda",
     "MODULE.bazel": "09b2aa2366732b75e84647aa1712ee03a83882a55b28f2de865415a4ac3f58e6",
     "MODULE.bazel.lock": "e7e7bc9561b434e57bdf8036094f3683aa44eef2a10501975b72ef2c80e2e34c",
     "Makefile": "d0e62c140a9321a710145fe0a626df37d823bfd7e3b450b8c6118698d83160d7",
-    "guides/apps/e2e.md": "e939f83ce10aa0e1efefc678e4ec9baa78439bb03727d49c0cf9e3ffdd2bceb6",
+    "guides/apps/e2e.md": "419e13ea08dfe40938e331d74c81cf3b1835fe263881dc22c910ed872216d8ed",
     "libs/atomic/BUILD.bazel": "8b799d6a8baf2879b876e149a64d5a5b7af0bd8330f876462489c6b066e89313",
     "libs/atomic/include/h2_atomic.h": "edb1829a1817d6ff78d0bcf38c104aa1f01efc3b09a43a8490a30f628f36081f",
     "libs/atomic/include/h2_atomic_static.h": "1edefd9e6c1159613d0c6fd5c54157201984edfc03746e49384a1197463d2478",
@@ -719,7 +715,7 @@
     "native_component_src/bk7258/ap/h2_pal_core/CMakeLists.txt": "a50c22867bd08dcbb984b970c26bf0e27fe953863c3e023f8e259fed0bc4bb8d",
     "native_component_src/bk7258/ap/h2_pal_core/include/h2_bk_mbedtls_config.h": "45381119c5f4cabb76426edb34aea67352dd32ca0b4c8bec7f3da5bb9ee31069",
     "native_component_src/bk7258/ap/h2_pal_core/include/h2_bk_platform_core.h": "2aadc6e342603857d2dfcc59b8b3206dc0264d5ad9892bb3fd6f4435e545ef13",
-    "native_component_src/bk7258/ap/h2_pal_core/include/h2_bk_wifi_lease_slots.h": "6ff41ae35730db0e09d47bdbc21d449c5d6b78650ab7c0c0c560bd4be41138e5",
+    "native_component_src/bk7258/ap/h2_pal_core/include/h2_bk_wifi_lease_slots.h": "29f2b1ffd71c315c8bbdba396acf1a935e011027b2b12fc17b18ee97e741b08e",
     "native_component_src/bk7258/ap/h2_pal_core/src/flashdb/fal_cfg.h": "3721680d897f3a60d8f9115677166d33aa9ccdc0b457708a309552d312b4a52b",
     "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_atomic.c": "11de00250d70192865b60b6e5ebf52c045ac8c89c2121abc0c47814d694f0b34",
     "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_ble_exact_adapter.c": "1c73fc7b10a1298ea3f4499270516ab095f23af3978d8847429cc156a69f76b5",
@@ -751,7 +747,7 @@
     "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_uart_io_stream.c": "95e50b10600c9c0a0d8fc292743cd0f5dd70e29c61d586c0bb8b82c310c2d4f1",
     "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_webrtc.c": "80b27516d4982abb35d4ec9b6b187ac75408654e4bfb6c9f9efe9ae435fb389e",
     "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_webrtc_unsupported.c": "ef4cfd62c8a73236f5a2f466f6279867408d5a41eb4451474a77217d33d791d2",
-    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_wifi.c": "de34fe44c5f308bfe8e54f2d023955dc63e9db720d284f204ec2be0ce1ca2b5c",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_wifi.c": "2e934634a6a60750012c4ff8944e289b5e5b64e5bf0a24fe4f367e07c51dd30c",
     "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_wifi_csi.c": "2d804932d94d51e984ff9395a81a3e06257e72d14e2a061b69ddce9fc0dd913a",
     "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_wifi_event_dispatch.c": "5d34630e1dafa9c562a1ff2a07ed83fc9c4d276f23ee7d0ff1e6408134d33268",
     "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_wifi_settings.c": "d7ea6bc9bc866fd1bd892e9f2315aaacdd800b13326bf107e4057dc1b8842f92",
@@ -788,7 +784,7 @@
     "native_component_src/bk7258/ap/h2_pal_core/tests/test_h2_bk_platform_time.c": "c9897ae598b07ece00345e6a47cc763d1a311a8b89c81138a49a2aef0ff35afa",
     "native_component_src/bk7258/ap/h2_pal_core/tests/test_h2_bk_uart_io.c": "7190f8651cc4227d5b7ce8676007999131bdb5bad9929d8ce9b8c650856a31f2",
     "native_component_src/bk7258/ap/h2_pal_core/tests/test_h2_bk_udp_receive.c": "561acc47af20e17147a2b2fd14404cb7f278d75a4d635f1807ddc4e0edf535be",
-    "native_component_src/bk7258/ap/h2_pal_core/tests/test_h2_bk_wifi_lease_slots.c": "9c79420eefac10ae758760860cfd755f5b98e1bc2ce9f14e02f7ac6d209b8931",
+    "native_component_src/bk7258/ap/h2_pal_core/tests/test_h2_bk_wifi_lease_slots.c": "ab855c9173cfe47d6773bcf92c81cfb57fbcf640c949e622fc0aa2f44c005a16",
     "native_component_src/bk7258/cp/h2_pal_core/BUILD.bazel": "be115aa10ab9dbb59935b458e4dca0c25494cdf7f840956200f03e9c3316faf3",
     "native_component_src/bk7258/cp/h2_pal_core/CMakeLists.txt": "ec2984243793c63500968e2d8ed14868b60ebd3ed7ddd4fa9eae1192eed7880e",
     "native_component_src/bk7258/cp/h2_pal_core/include/h2_bk_platform_core.h": "4b9920a35aa3d23fa894868c9a74cc9c32db36818121a840bacd75f977737994",
@@ -1022,17 +1018,17 @@
     "native_component_src/esp-idf6.x/opus_port/CMakeLists.txt": "d4a02df75018669fb8e382a0ca6f3b8dc53ac1a0471b1528c0958d1995451d7d",
     "native_component_src/esp-idf6.x/zlib/BUILD.bazel": "4861580119a8a1475552045a95add6e50e682d2c9651e75dfcd01f176ea01108",
     "native_component_src/esp-idf6.x/zlib/CMakeLists.txt": "6db7b590e073071cc1f313fa21d35b38fe9966db6bd69fc218cca57762faf89f",
-    "projects/e2e/apps/pal-wifi/BUILD.bazel": "489b02f9592976e4c437fde1277f3a91c5b690d770470a156742c1f320dda066",
-    "projects/e2e/apps/pal-wifi/README.md": "f0a0de29335401cfa681fc20d3567a28bec29a5d7381a233bfbb5ade655be8cc",
+    "projects/e2e/apps/pal-wifi/BUILD.bazel": "408ac9e3b74aceebe024bffc605d46ba8dbb5b02ed3304afeca9bfae4ffc1f0d",
+    "projects/e2e/apps/pal-wifi/README.md": "a046e84fd34dddbcd912970144ccf60d28016cd2c3d5afb439fea47b61956db9",
     "projects/e2e/apps/pal-wifi/app/BUILD.bazel": "1037e6ee5ec58d097059fd55ecdd47410911050fb128ebbcb68220134e776cd0",
     "projects/e2e/apps/pal-wifi/app/api_coverage.json": "d50b012a4e804a28e107d7c99af47cf059cc4a2c79cab077fa287fbd17bc0e97",
     "projects/e2e/apps/pal-wifi/app/include/h2_pal_wifi_cases.inc": "c2ef238a281e70a6b1a529bfd4797d923a77b242c434e6eefb55e41f19e873a5",
     "projects/e2e/apps/pal-wifi/app/include/h2_pal_wifi_e2e.h": "8111427be609b6680bf7f02fe7b5ef646a0602f4fc21902320faded84ac82d62",
-    "projects/e2e/apps/pal-wifi/app/src/h2_pal_wifi_e2e.c": "b3448dcebe3078bd615512080d27cca441ab1265cd978fcf0e13fdd24a5472fb",
+    "projects/e2e/apps/pal-wifi/app/src/h2_pal_wifi_e2e.c": "ba70a861d3059f3d2986e333b6c5b648d2ff348a8e49ea7a8dd77019c642a860",
     "projects/e2e/apps/pal-wifi/app/src/h2_pal_wifi_host.c": "ad6926618f725d7ade8d9840c19ec271dd248d68509cb90499436bdc388f93b4",
-    "projects/e2e/apps/pal-wifi/app/tests/test_event_contract.c": "e4a8235cc8a70b9688dda6f4d811dbc9d026a399ce52854d365e84369e27cf29",
+    "projects/e2e/apps/pal-wifi/app/tests/test_event_contract.c": "16a9a7a29435f7b1be4690fb5a347ed1eaa0b80f0110890d49a19880122e2d08",
     "projects/e2e/apps/pal-wifi/app/tests/test_inventory.py": "bdd333dc6719238d1ad655d30f0378276c7c5d9981a3e69cd96c26cd487ddca7",
-    "projects/e2e/apps/pal-wifi/app/tests/test_restoration.c": "175a1ffb61fe86e92f61d844813b39522237add62da42be2b0f56cae6a909e5b",
+    "projects/e2e/apps/pal-wifi/app/tests/test_restoration.c": "7edbaa3473ec63f70b01a790442f60d40066ae2d15087d770e9c56bf103ea7af",
     "projects/e2e/apps/pal-wifi/check_qualification.py": "0dfeb5829f0175963b832d6c5e674867b3ba4448cf92b84b8d7c8f21ac286bee",
     "projects/e2e/apps/pal-wifi/evidence_validator.py": "ce17e6ad74eae950ea1f08aa86e3890c7339fad10c7cb09dd7efefdf30d1c853",
     "projects/e2e/apps/pal-wifi/fixture_validator.py": "dd5473698e66ddd6dc226b249d43146abfa33ec153c2ba2ac8a09790d2c2ad78",
@@ -1558,7 +1554,7 @@
     {
       "platform": "macos",
       "evidence": "projects/e2e/apps/pal-wifi/evidence/macos/qualified.json",
-      "sha256": "224c2fc56764c93aa136cc2ecbfd8f258eb435351bac6e020465d2b19ac7499e"
+      "sha256": "1571f617eee789c133b44bc7c40b56b6cab4ef1e4d5a591d69c2aa80b6c57a3e"
     },
     {
       "platform": "wasm",
@@ -1568,22 +1564,22 @@
     {
       "platform": "ios",
       "evidence": "projects/e2e/apps/pal-wifi/evidence/ios/qualified.json",
-      "sha256": "6f24177c2912142264676ccf5af6f101bdcf6295d55692add0ebb3e44b408655"
+      "sha256": "1cd615be992f785517a48c4c6d3f44981302e6afa403e9a3b8fb1077c51b1d9a"
     },
     {
       "platform": "android",
       "evidence": "projects/e2e/apps/pal-wifi/evidence/android/qualified.json",
-      "sha256": "d85ab68954c29750a3a9260bf8ba12864fdc3df8b90bc4ad9c6664499d7d14f3"
+      "sha256": "7aa55153901223775223d8874eb870005fc5a425d40a480e4a8ad4d862067ea0"
     },
     {
       "platform": "devkit",
       "evidence": "projects/e2e/apps/pal-wifi/evidence/devkit/qualified.json",
-      "sha256": "b0f6fdb15dd917da77653fd8b80fbbbf1e4ce18eddda1421977e41822f7e8323"
+      "sha256": "df6633fa150d259c05ec0cb3275d11f02b588be7c90742dbed2b05e80cc61e77"
     },
     {
       "platform": "bk7258",
       "evidence": "projects/e2e/apps/pal-wifi/evidence/bk7258/qualified.json",
-      "sha256": "e9e902182e11b97e0a404dc1d1e236b314197b436641bd506e7ea1f2d60e8bf7"
+      "sha256": "51c3eaea609bf372046d50629290e089693fa6f7c5d09029bbf8c659840d92de"
     }
   ]
 }

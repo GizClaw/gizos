@@ -2,15 +2,15 @@
   "schema": 1,
   "capture_method": "verified-local-package-and-loader-bytes",
   "uid": "9888e0115c52",
-  "version": "pal-wifi-20260930-r34",
+  "version": "pal-wifi-20260930-r35",
   "metadata": {
     "assets": [
       {
         "name": "devkit-pal-wifi-esp32s3.update.tar.zlib",
         "operation": "managed-install",
         "release_suffix": ".update.tar.zlib",
-        "sha256": "7791f85a9a15587bfcbbe1de493fe0128786983ca74a2344141961607c79308e",
-        "size": 982224
+        "sha256": "ec25cdd82f83fa14e919248ac9bbc356e2198efeed3a54d1e2b199590cb224c7",
+        "size": 982292
       }
     ],
     "board": "devkit",
@@ -20,32 +20,32 @@
       {
         "name": "firmware.elf",
         "operation": "native-debug-or-flash",
-        "sha256": "b5b25194516b6a3e87615ca9559d210d599839f4ef9b26171266317d537fcf31",
-        "size": 14071328
+        "sha256": "a69a6b4a1d82b1f3b307f9ca41577050a36e64c47ef2911c764926286a973e2c",
+        "size": 14075424
       },
       {
         "name": "firmware.map",
         "operation": "native-debug-or-flash",
-        "sha256": "ff6350b7e58d4c45d589d18ea80675a6aac57846dbd6edaf4c3ca1601d6a27b8",
-        "size": 13220743
+        "sha256": "690221c0c056196993268eb099e1ad81bccb825aa2fca7e600863825cb7afe85",
+        "size": 13220682
       },
       {
         "name": "app.bin",
         "operation": "native-debug-or-flash",
-        "sha256": "2dfc7e2f1f19be0e7d6452b800b9b1f7f29e94e51aa4a7561cae563056973c4a",
-        "size": 1525424
+        "sha256": "a5794fc2dfb4a10c39ce03a679929ea7fb040bc0907f37ba3161b720f584e46a",
+        "size": 1525600
       },
       {
         "name": "bootloader.bin",
         "operation": "native-debug-or-flash",
-        "sha256": "5a2b303510fa568d608bf3777b4a9dce8c6bc64516da14d471d9e0cbc88fc0c1",
+        "sha256": "f66633757bdf06917cd906d2ed5357a9f45a65f3d9798a5e3d7443d5d56e7fca",
         "size": 21328
       },
       {
         "name": "combined_factory.bin",
         "operation": "native-debug-or-flash",
-        "sha256": "cf820fa18417ffbf4dfc4f7bc9b64d4178fd477f2ad7099c269e1982ba4c1205",
-        "size": 1656496
+        "sha256": "1f587bfd70a53ea41c5a1511c31031fc9173b851eaafe01e316d2dbd5e799580",
+        "size": 1656672
       },
       {
         "name": "partition-table.bin",
@@ -63,33 +63,33 @@
     "package_manifest": {
       "board": "devkit",
       "format": 1,
-      "image_sha256": "2dfc7e2f1f19be0e7d6452b800b9b1f7f29e94e51aa4a7561cae563056973c4a",
-      "image_size": 1525424,
+      "image_sha256": "a5794fc2dfb4a10c39ce03a679929ea7fb040bc0907f37ba3161b720f584e46a",
+      "image_size": 1525600,
       "role": "app",
       "target": "esp32s3",
-      "version": "pal-wifi-20260930-r34"
+      "version": "pal-wifi-20260930-r35"
     },
     "platform": "esp",
     "role": "app",
     "target": "esp32s3",
-    "version": "pal-wifi-20260930-r34"
+    "version": "pal-wifi-20260930-r35"
   },
   "package": {
-    "sha256": "7791f85a9a15587bfcbbe1de493fe0128786983ca74a2344141961607c79308e",
-    "size": 982224
+    "sha256": "ec25cdd82f83fa14e919248ac9bbc356e2198efeed3a54d1e2b199590cb224c7",
+    "size": 982292
   },
   "image": {
-    "sha256": "2dfc7e2f1f19be0e7d6452b800b9b1f7f29e94e51aa4a7561cae563056973c4a",
-    "size": 1525424
+    "sha256": "a5794fc2dfb4a10c39ce03a679929ea7fb040bc0907f37ba3161b720f584e46a",
+    "size": 1525600
   },
   "archive_manifest": {
     "format": "1",
     "role": "app",
     "board": "devkit",
     "target": "esp32s3",
-    "version": "pal-wifi-20260930-r34",
-    "image_size": "1525424",
-    "image_sha256": "2dfc7e2f1f19be0e7d6452b800b9b1f7f29e94e51aa4a7561cae563056973c4a"
+    "version": "pal-wifi-20260930-r35",
+    "image_size": "1525600",
+    "image_sha256": "a5794fc2dfb4a10c39ce03a679929ea7fb040bc0907f37ba3161b720f584e46a"
   },
   "baseline_status": {
     "board": "devkit",
@@ -144,19 +144,19 @@
     "capabilities": "0x00000007",
     "command_availability": "0x001f3d3f",
     "active_role": "app",
-    "active_version": "pal-wifi-20260930-r33",
-    "active_checksum": "1a19bea2c78b17523dc097ffcc3f1dcd4242702e317d0d57e561ab598516890b",
-    "active_image_size": "1525424",
+    "active_version": "pal-net-tls-esp-20260930-r5",
+    "active_checksum": "0c1017af7c9d04070a2af202fbb08da50f53040106a33d06f57ed61a609fe5b9",
+    "active_image_size": "1532576",
     "running_partition": "2",
     "next_partition": "2",
     "boot_intent": "auto",
     "stage_valid": "1",
-    "stage_package_checksum": "7791f85a9a15587bfcbbe1de493fe0128786983ca74a2344141961607c79308e",
-    "stage_package_size": "982224",
-    "stage_image_checksum": "2dfc7e2f1f19be0e7d6452b800b9b1f7f29e94e51aa4a7561cae563056973c4a",
-    "stage_image_size": "1525424",
+    "stage_package_checksum": "ec25cdd82f83fa14e919248ac9bbc356e2198efeed3a54d1e2b199590cb224c7",
+    "stage_package_size": "982292",
+    "stage_image_checksum": "a5794fc2dfb4a10c39ce03a679929ea7fb040bc0907f37ba3161b720f584e46a",
+    "stage_image_size": "1525600",
     "stage_role": "app",
-    "stage_version": "pal-wifi-20260930-r34",
+    "stage_version": "pal-wifi-20260930-r35",
     "stage_board": "devkit",
     "stage_target": "esp32s3",
     "partition_1_valid": "1",
@@ -169,12 +169,12 @@
     "partition_1_board": "devkit",
     "partition_1_target": "esp32s3",
     "partition_2_valid": "1",
-    "partition_2_package_checksum": "35887f4b6149b2cd0e75888162517691e0f0efe3eca58cb4847e68ffe6564919",
-    "partition_2_package_size": "982227",
-    "partition_2_image_checksum": "1a19bea2c78b17523dc097ffcc3f1dcd4242702e317d0d57e561ab598516890b",
-    "partition_2_image_size": "1525424",
+    "partition_2_package_checksum": "29052ab2c4bbdf0bb0bca419a09e0eb41f8f2c2d91f09daeec7399f56fad8e7a",
+    "partition_2_package_size": "987606",
+    "partition_2_image_checksum": "0c1017af7c9d04070a2af202fbb08da50f53040106a33d06f57ed61a609fe5b9",
+    "partition_2_image_size": "1532576",
     "partition_2_role": "app",
-    "partition_2_version": "pal-wifi-20260930-r33",
+    "partition_2_version": "pal-net-tls-esp-20260930-r5",
     "partition_2_board": "devkit",
     "partition_2_target": "esp32s3",
     "last_result": "0",
@@ -190,10 +190,10 @@
     "blank": "1"
   },
   "raw_hashes": {
-    "firmware": "3a8d523997f1a4580151146e839cb8fb1193749a94fe9fc9d56c0dd1d4bf4f3c",
-    "package": "7791f85a9a15587bfcbbe1de493fe0128786983ca74a2344141961607c79308e",
+    "firmware": "4c6570bdc8b67e08124ec62cbe771db5e4577140935a93220a5329d0430254e5",
+    "package": "ec25cdd82f83fa14e919248ac9bbc356e2198efeed3a54d1e2b199590cb224c7",
     "baseline_status": "34d7dc9f52c68024d24ac4f938d2219ab539e72e34c175a18cfbb18e0001fec5",
-    "stage_status": "9cbbb849a7b6942bd07b48db264f038bded6dd19558a91f9c079b11e15566427",
+    "stage_status": "fd5aa215d036fde72f3e224eebd45369f23dadf8bc9e48bd451692a530263b59",
     "baseline_coredump": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec"
   },
   "source_inputs": {
@@ -1113,7 +1113,7 @@
     "native_component_src/esp-idf6.x/zlib/CMakeLists.txt": "6db7b590e073071cc1f313fa21d35b38fe9966db6bd69fc218cca57762faf89f",
     "projects/e2e/apps/pal-wifi/app/include/h2_pal_wifi_cases.inc": "c2ef238a281e70a6b1a529bfd4797d923a77b242c434e6eefb55e41f19e873a5",
     "projects/e2e/apps/pal-wifi/app/include/h2_pal_wifi_e2e.h": "8111427be609b6680bf7f02fe7b5ef646a0602f4fc21902320faded84ac82d62",
-    "projects/e2e/apps/pal-wifi/app/src/h2_pal_wifi_e2e.c": "b3448dcebe3078bd615512080d27cca441ab1265cd978fcf0e13fdd24a5472fb",
+    "projects/e2e/apps/pal-wifi/app/src/h2_pal_wifi_e2e.c": "ba70a861d3059f3d2986e333b6c5b648d2ff348a8e49ea7a8dd77019c642a860",
     "projects/e2e/libs/pal-wifi-device/BUILD.bazel": "f2ceef77c7f5444534c997f243d5744d0458b7541d377928b87aeee97a17264a",
     "projects/e2e/libs/pal-wifi-device/include/h2_pal_wifi_device.h": "5e3e4b47aa10371a9d2b175e7361a14ba71b35c7780f97c5d7db43cb8544666e",
     "projects/e2e/libs/pal-wifi-device/src/h2_pal_wifi_device.c": "4ce47c619ee065b879906ced09d6acbe3f2776486e096c335ae53d9179f1969d",
@@ -1599,9 +1599,9 @@
         "capabilities": "0x00000007",
         "command_availability": "0x001f3d3f",
         "active_role": "app",
-        "active_version": "pal-wifi-20260930-r34",
-        "active_checksum": "2dfc7e2f1f19be0e7d6452b800b9b1f7f29e94e51aa4a7561cae563056973c4a",
-        "active_image_size": "1525424",
+        "active_version": "pal-wifi-20260930-r35",
+        "active_checksum": "a5794fc2dfb4a10c39ce03a679929ea7fb040bc0907f37ba3161b720f584e46a",
+        "active_image_size": "1525600",
         "running_partition": "2",
         "next_partition": "2",
         "boot_intent": "auto",
@@ -1624,12 +1624,12 @@
         "partition_1_board": "devkit",
         "partition_1_target": "esp32s3",
         "partition_2_valid": "1",
-        "partition_2_package_checksum": "7791f85a9a15587bfcbbe1de493fe0128786983ca74a2344141961607c79308e",
-        "partition_2_package_size": "982224",
-        "partition_2_image_checksum": "2dfc7e2f1f19be0e7d6452b800b9b1f7f29e94e51aa4a7561cae563056973c4a",
-        "partition_2_image_size": "1525424",
+        "partition_2_package_checksum": "ec25cdd82f83fa14e919248ac9bbc356e2198efeed3a54d1e2b199590cb224c7",
+        "partition_2_package_size": "982292",
+        "partition_2_image_checksum": "a5794fc2dfb4a10c39ce03a679929ea7fb040bc0907f37ba3161b720f584e46a",
+        "partition_2_image_size": "1525600",
         "partition_2_role": "app",
-        "partition_2_version": "pal-wifi-20260930-r34",
+        "partition_2_version": "pal-wifi-20260930-r35",
         "partition_2_board": "devkit",
         "partition_2_target": "esp32s3",
         "last_result": "0",
@@ -1645,7 +1645,7 @@
         "blank": "1"
       },
       "raw_hashes": {
-        "final_status": "3ec8321f172c6bd88ce6baa3f52b42aacca0abfe8596be58679e435220a039db",
+        "final_status": "b0b6edf1a60273f648b560b20267a1a292d4a32fb19e6131b27ce0912659c030",
         "final_coredump": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec"
       }
     },
@@ -1658,9 +1658,9 @@
         "capabilities": "0x00000007",
         "command_availability": "0x001f3d3f",
         "active_role": "app",
-        "active_version": "pal-wifi-20260930-r34",
-        "active_checksum": "2dfc7e2f1f19be0e7d6452b800b9b1f7f29e94e51aa4a7561cae563056973c4a",
-        "active_image_size": "1525424",
+        "active_version": "pal-wifi-20260930-r35",
+        "active_checksum": "a5794fc2dfb4a10c39ce03a679929ea7fb040bc0907f37ba3161b720f584e46a",
+        "active_image_size": "1525600",
         "running_partition": "2",
         "next_partition": "2",
         "boot_intent": "auto",
@@ -1683,12 +1683,12 @@
         "partition_1_board": "devkit",
         "partition_1_target": "esp32s3",
         "partition_2_valid": "1",
-        "partition_2_package_checksum": "7791f85a9a15587bfcbbe1de493fe0128786983ca74a2344141961607c79308e",
-        "partition_2_package_size": "982224",
-        "partition_2_image_checksum": "2dfc7e2f1f19be0e7d6452b800b9b1f7f29e94e51aa4a7561cae563056973c4a",
-        "partition_2_image_size": "1525424",
+        "partition_2_package_checksum": "ec25cdd82f83fa14e919248ac9bbc356e2198efeed3a54d1e2b199590cb224c7",
+        "partition_2_package_size": "982292",
+        "partition_2_image_checksum": "a5794fc2dfb4a10c39ce03a679929ea7fb040bc0907f37ba3161b720f584e46a",
+        "partition_2_image_size": "1525600",
         "partition_2_role": "app",
-        "partition_2_version": "pal-wifi-20260930-r34",
+        "partition_2_version": "pal-wifi-20260930-r35",
         "partition_2_board": "devkit",
         "partition_2_target": "esp32s3",
         "last_result": "0",
@@ -1704,7 +1704,7 @@
         "blank": "1"
       },
       "raw_hashes": {
-        "final_status": "3ec8321f172c6bd88ce6baa3f52b42aacca0abfe8596be58679e435220a039db",
+        "final_status": "b0b6edf1a60273f648b560b20267a1a292d4a32fb19e6131b27ce0912659c030",
         "final_coredump": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec"
       }
     }

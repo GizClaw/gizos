@@ -1,9 +1,5 @@
 # PAL Wi-Fi / Netif qualification
 
-The committed DevKit R34 / BK R33 receipts describe the completed pre-review
-hardware baseline. JOIN-backpressure and unsaved-connection review fixes require
-new device runs; `qualification.json` remains pending until those runs finish.
-
 This independent App preserves the legacy mixed PAL App. Its 38 non-fail-fast
 cases cover all 21 operations: STA 7, AP 5, Settings 4 and Netif 5. Device runner
 adds `settings-restart-persistence`, qualified only on a later independent boot
@@ -78,8 +74,8 @@ actual generated SDK corrections and reject old/failed CP responses.
 
 | Platform | Actual test scope | Physical WLAN qualification |
 | --- | --- | --- |
-| DevKit | Real ESP Wi-Fi, Settings and Netif; R34 managed and independent normal boot each 39/39, six fresh fixture client leases per boot and complete restoration | PASS on the actual board |
-| BK7258 | Real BK Wi-Fi, Settings and Netif; R33 managed and independent normal boot each 39/39, six fresh fixture client leases per boot and complete restoration | PASS on the actual board |
+| DevKit | Real ESP Wi-Fi, Settings and Netif; R35 managed and independent normal boot each 39/39, six fresh fixture client leases per boot and complete restoration | PASS on the actual board |
+| BK7258 | Real BK Wi-Fi, Settings and Netif; R34 managed and independent normal boot each 39/39, six fresh fixture client leases per boot and complete restoration | PASS on the actual board |
 | macOS | Native Darwin Netif read-only; explicit unsupported physical Wi-Fi assembly; 21/21 applicable checks | Physical WLAN unavailable |
 | WASM | Worker, HOST Netif, actual browser offline/online Runtime events; unsupported Wi-Fi; 21/21 applicable checks | Physical WLAN unavailable |
 | iOS Simulator | Packaged SDK's production default Wi-Fi/Netif unsupported responses; 21/21 applicable checks | Physical WLAN unavailable |
@@ -115,8 +111,8 @@ cleanup errors or retained recovery backup keep the Wi-Fi gate closed.
 The committed `qualification.json` binds both final packages to their embedded
 images, actual build inputs, two distinct qualified boot ledgers and the
 independent fixture's real client windows. The R15 fixture is pinned as a
-historical test tool; the R34 DevKit and R33 BK7258 images are bound to their
-pre-review provider and App source. Both boards retained their original Loader/P1, have an
+historical test tool; the R35 DevKit and R34 BK7258 images are bound to their
+tested provider and App source. Both boards retained their original Loader/P1, have an
 empty Stage, and kept their original coredump state. Check the portable receipt
 and, where the original local firmware/status bytes are available, repeat the
 raw artifact audit:

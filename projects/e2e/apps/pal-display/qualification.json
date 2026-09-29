@@ -124,7 +124,7 @@
     "guides/apps/h2loader/boards/bk7258_v3_202405/display.md": "20aa6aa7d28e3ce0c2d0448f1ed0af923f463e82e765d9aeba75f17ac84b8b6a",
     "libs/pal/providers/sdl3/src/h2_sdl3_display.cpp": "c416f27d73cf91a24aab95bf919277ddf649a7e4a2b99b89b858f17fee3d4e5f",
     "Makefile": "d0e62c140a9321a710145fe0a626df37d823bfd7e3b450b8c6118698d83160d7",
-    "guides/apps/e2e.md": "2915e2f34e23bd066e2d6bbe78f1e79516486230dc38291bec52d159ebeda365"
+    "guides/apps/e2e.md": "419e13ea08dfe40938e331d74c81cf3b1835fe263881dc22c910ed872216d8ed"
   },
   "review_fix_validation": {
     "scope": "BK PWM failure recovery, SDL C/C++ unknown enum validation, UTF-8 receipt decoding; native build and focused/new renderer validation are separate from R13 physical snapshot",
@@ -147,7 +147,7 @@
       "display_guide_section_sha256": "7796757052686bc404893de30708e7a2f2f4dd9c9860d9364df72fc3db5d7e0c",
       "current_source_sha256": {
         "Makefile": "d0e62c140a9321a710145fe0a626df37d823bfd7e3b450b8c6118698d83160d7",
-        "guides/apps/e2e.md": "2915e2f34e23bd066e2d6bbe78f1e79516486230dc38291bec52d159ebeda365"
+        "guides/apps/e2e.md": "419e13ea08dfe40938e331d74c81cf3b1835fe263881dc22c910ed872216d8ed"
       }
     }
   }

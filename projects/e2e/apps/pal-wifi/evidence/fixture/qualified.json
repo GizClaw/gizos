@@ -1503,6 +1503,54 @@
         "path": "/tmp/pal-wifi-r15/amoled-fixture/window-twenty-two/after-coredump.log",
         "sha256": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec"
       }
+    },
+    {
+      "log": "projects/e2e/apps/pal-wifi/evidence/fixture/window-twenty-three.log",
+      "sha256": "47e3445bdb5da5787182377f029eeeabe73f97c5118ba1dd99d00fef108ccf6e",
+      "final_status": {
+        "path": "/tmp/pal-wifi-r15/amoled-fixture/window-twenty-three/after-status.log",
+        "sha256": "df1b46cb0975995d57896e6bb216b549ed6d53d220d07094e3653535756123da"
+      },
+      "final_coredump": {
+        "path": "/tmp/pal-wifi-r15/amoled-fixture/window-twenty-three/after-coredump.log",
+        "sha256": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec"
+      }
+    },
+    {
+      "log": "projects/e2e/apps/pal-wifi/evidence/fixture/window-twenty-four.log",
+      "sha256": "78d414d6a751d1dc3dea9258ccae6df686e3a300b5619cf37ec1bf96d3d45316",
+      "final_status": {
+        "path": "/tmp/pal-wifi-r15/amoled-fixture/window-twenty-four/after-status.log",
+        "sha256": "df1b46cb0975995d57896e6bb216b549ed6d53d220d07094e3653535756123da"
+      },
+      "final_coredump": {
+        "path": "/tmp/pal-wifi-r15/amoled-fixture/window-twenty-four/after-coredump.log",
+        "sha256": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec"
+      }
+    },
+    {
+      "log": "projects/e2e/apps/pal-wifi/evidence/fixture/window-twenty-five.log",
+      "sha256": "f0971b71693b2d01c605b0c1a6146ea7a88e5d0f72debcfee00e44d08178dea4",
+      "final_status": {
+        "path": "/tmp/pal-wifi-r15/amoled-fixture/window-twenty-five/after-status.log",
+        "sha256": "df1b46cb0975995d57896e6bb216b549ed6d53d220d07094e3653535756123da"
+      },
+      "final_coredump": {
+        "path": "/tmp/pal-wifi-r15/amoled-fixture/window-twenty-five/after-coredump.log",
+        "sha256": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec"
+      }
+    },
+    {
+      "log": "projects/e2e/apps/pal-wifi/evidence/fixture/window-twenty-six.log",
+      "sha256": "e37165cdb77b5f0bbb6f89dcd379f0b3d4efa6ff8767556878fed7ccb467649f",
+      "final_status": {
+        "path": "/tmp/pal-wifi-r15/amoled-fixture/window-twenty-six/after-status.log",
+        "sha256": "df1b46cb0975995d57896e6bb216b549ed6d53d220d07094e3653535756123da"
+      },
+      "final_coredump": {
+        "path": "/tmp/pal-wifi-r15/amoled-fixture/window-twenty-six/after-coredump.log",
+        "sha256": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec"
+      }
     }
   ],
   "cleanup": 0,
@@ -1513,7 +1561,7 @@
   "stage_empty": true,
   "bindings_snapshot": {
     "path": "projects/e2e/apps/pal-wifi/evidence/fixture/bindings.json",
-    "sha256": "1bf0ef8254d51b2828bc6c9a9141c14169e99826f3378299dfb37ced565431c4"
+    "sha256": "c8f7cfc2f9940bc52e140ec573121b2aeccf2c9860f04251a3a23c2181813508"
   },
   "clients": [
     {

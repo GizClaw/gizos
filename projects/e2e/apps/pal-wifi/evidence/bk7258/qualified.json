@@ -3,13 +3,13 @@
   "qualified": true,
   "case_count": 39,
   "uid": "c8478ca2a87c",
-  "version": "pal-wifi-20260930-r33",
-  "source_commit": "daac36998e7a34fa48f050c3e89438e72ec84ff1",
+  "version": "pal-wifi-20260930-r34",
+  "source_commit": "4d7e4a97eea7ff1e801cb151d2b9299fbd15e87e",
   "source_inputs": {
     "native_component_src/bk7258/ap/h2_pal_core/BUILD.bazel": "2edc13f15263966b7de775f4f737f11722c192153dde76c1255264c60dd4f9bf",
     "native_component_src/bk7258/ap/h2_pal_core/CMakeLists.txt": "a50c22867bd08dcbb984b970c26bf0e27fe953863c3e023f8e259fed0bc4bb8d",
-    "native_component_src/bk7258/ap/h2_pal_core/include/h2_bk_wifi_lease_slots.h": "6ff41ae35730db0e09d47bdbc21d449c5d6b78650ab7c0c0c560bd4be41138e5",
-    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_wifi.c": "de34fe44c5f308bfe8e54f2d023955dc63e9db720d284f204ec2be0ce1ca2b5c",
+    "native_component_src/bk7258/ap/h2_pal_core/include/h2_bk_wifi_lease_slots.h": "29f2b1ffd71c315c8bbdba396acf1a935e011027b2b12fc17b18ee97e741b08e",
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_wifi.c": "2e934634a6a60750012c4ff8944e289b5e5b64e5bf0a24fe4f367e07c51dd30c",
     "native_component_src/bk7258/cp/h2_pal_core/BUILD.bazel": "be115aa10ab9dbb59935b458e4dca0c25494cdf7f840956200f03e9c3316faf3",
     "native_component_src/bk7258/cp/h2_pal_core/CMakeLists.txt": "ec2984243793c63500968e2d8ed14868b60ebd3ed7ddd4fa9eae1192eed7880e",
     "native_component_src/bk7258/cp/h2_pal_core/src/h2_bk_dhcp_ring.c": "2cf6c9fdd5f7ae423e8ef8b8967068251857e9a30b3a409233f859191c5cdf93",
@@ -23,21 +23,21 @@
     "native_component_src/bk7258/shared/h2_bk_wifi_rpc.h": "5aab3b949878de3f5a707f01d04c752be9eac214bbc33998cf65939c906433f6",
     "projects/e2e/apps/pal-wifi/app/include/h2_pal_wifi_cases.inc": "c2ef238a281e70a6b1a529bfd4797d923a77b242c434e6eefb55e41f19e873a5",
     "projects/e2e/apps/pal-wifi/app/include/h2_pal_wifi_e2e.h": "8111427be609b6680bf7f02fe7b5ef646a0602f4fc21902320faded84ac82d62",
-    "projects/e2e/apps/pal-wifi/app/src/h2_pal_wifi_e2e.c": "b3448dcebe3078bd615512080d27cca441ab1265cd978fcf0e13fdd24a5472fb",
+    "projects/e2e/apps/pal-wifi/app/src/h2_pal_wifi_e2e.c": "ba70a861d3059f3d2986e333b6c5b648d2ff348a8e49ea7a8dd77019c642a860",
     "projects/e2e/libs/pal-wifi-device/src/h2_pal_wifi_device.c": "4ce47c619ee065b879906ced09d6acbe3f2776486e096c335ae53d9179f1969d",
     "projects/e2e/libs/pal-wifi-device/src/h2_pal_wifi_fixture.c": "3dabf9fcaad50efeffc2498ffcd7582f5c84c33b72b871e1becd40d8a852b272",
     "projects/e2e/targets/h2loader_tar_zlib/pal-wifi/bk7258_v3_202405/ap/ap_main.c": "ad198a2c83b488b17536ebf4f99939446f775ed95fdf7349457929f805e03bde"
   },
   "firmware": {
-    "path": "/tmp/pal-wifi-r33/bk7258/artifact/firmware.json",
-    "sha256": "3e464cba498150b2f81c1a9982c9e86c3760017cfcddd9b5b5c9f8514072d2eb"
+    "path": "/tmp/pal-wifi-r34/bk7258/artifact/firmware.json",
+    "sha256": "4560367a938bd272dfec0b62b390f3a5e5e0af68cc16ac741e5b013dfe3091ab"
   },
   "package": {
-    "path": "/tmp/pal-wifi-r33/bk7258/artifact/bk7258_v3_202405-pal-wifi-bk7258.update.tar.zlib",
-    "sha256": "cf397433506461f639993464a0fb46e460f13250999373a1f7e5ecf26774e0fa"
+    "path": "/tmp/pal-wifi-r34/bk7258/artifact/package.update.tar.zlib",
+    "sha256": "60a7d96ddc4634f1350d104e19678191a7e87838a7eaca4ddb89ff2cb6ba945d"
   },
-  "package_sha256": "cf397433506461f639993464a0fb46e460f13250999373a1f7e5ecf26774e0fa",
-  "image_sha256": "0ff607d7bef7c2bd7609b7e8298ebc282f2a4fd162ac94934022c07b9ec8548c",
+  "package_sha256": "60a7d96ddc4634f1350d104e19678191a7e87838a7eaca4ddb89ff2cb6ba945d",
+  "image_sha256": "5e321a56093634e5396c188104f87527db8f765d321c433dd9de07491ee4c278",
   "baseline_status": {
     "path": "/tmp/pal-wifi-baselines/bk7258/status.log",
     "sha256": "aba3f9e23bf4cc01640dfc160bb2fc725630cd799770c5ddb6970ddd3b5c1860"
@@ -51,8 +51,8 @@
     "sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829"
   },
   "stage_status": {
-    "path": "/tmp/pal-wifi-r33/bk7258/install/stage.log",
-    "sha256": "584c763ee75011bfa8218355221d8f43671f338bc38837488212d3c005cbfab0"
+    "path": "/tmp/pal-wifi-r34/bk7258/run/stage-status.log",
+    "sha256": "2c39fc4e8092c0e8019bb970c1ba039e3fa8988fa4237b585b30556272cacf92"
   },
   "p1_unchanged": true,
   "stage_empty": true,
@@ -69,46 +69,46 @@
     },
     {
       "log": "projects/e2e/apps/pal-wifi/evidence/bk7258/install.log",
-      "sha256": "61d10242392f91cbb18ec14400a2b8434d583a288f515c57bb4b965fb447605f",
-      "version": "pal-wifi-20260930-r33",
-      "fixture_log": "projects/e2e/apps/pal-wifi/evidence/fixture/window-twenty-one.log",
+      "sha256": "44f94a420a5c527017877435f4de8672f7c6668974a3f214ee8faa1c67d19452",
+      "version": "pal-wifi-20260930-r34",
+      "fixture_log": "projects/e2e/apps/pal-wifi/evidence/fixture/window-twenty-three.log",
       "final_status": {
-        "path": "/tmp/pal-wifi-r33/bk7258/install/after-status.log",
-        "sha256": "42576a0f803b32af086e5193c6b6d022290e5547d9e970b8b4d35e60dc89e019"
+        "path": "/tmp/pal-wifi-r34/bk7258/run/after-status.log",
+        "sha256": "17c1859dd04c4490ee4472aa89cd42744e8acb4bcf4faf58bf02e09822bab179"
       },
       "final_coredump": {
-        "path": "/tmp/pal-wifi-r33/bk7258/install/after-coredump.log",
+        "path": "/tmp/pal-wifi-r34/bk7258/run/after-coredump.log",
         "sha256": "871dcafc5212b2c5520d923a2e7fc7bd38f5466e77ef0b5c3c951406f41d6621"
       },
       "final_coredump_bytes": {
-        "path": "/tmp/pal-wifi-r33/bk7258/install/coredump.bin",
+        "path": "/tmp/pal-wifi-r34/bk7258/run/coredump.bin",
         "sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829"
       }
     },
     {
       "log": "projects/e2e/apps/pal-wifi/evidence/bk7258/normal.log",
-      "sha256": "01dbc7a64ccba347a6c56e4ceafbee813e699014ffbb55a21b8e51c6f130a8a4",
-      "version": "pal-wifi-20260930-r33",
-      "fixture_log": "projects/e2e/apps/pal-wifi/evidence/fixture/window-twenty-two.log",
+      "sha256": "8818c6c523361b36ebe935c2a784595d2a0068094791ceccd64d772c88693d20",
+      "version": "pal-wifi-20260930-r34",
+      "fixture_log": "projects/e2e/apps/pal-wifi/evidence/fixture/window-twenty-four.log",
       "final_status": {
-        "path": "/tmp/pal-wifi-r33/bk7258/normal-boot/after-status.log",
-        "sha256": "42576a0f803b32af086e5193c6b6d022290e5547d9e970b8b4d35e60dc89e019"
+        "path": "/tmp/pal-wifi-r34/bk7258/normal-boot/after-status.log",
+        "sha256": "17c1859dd04c4490ee4472aa89cd42744e8acb4bcf4faf58bf02e09822bab179"
       },
       "final_coredump": {
-        "path": "/tmp/pal-wifi-r33/bk7258/normal-boot/after-coredump.log",
+        "path": "/tmp/pal-wifi-r34/bk7258/normal-boot/after-coredump.log",
         "sha256": "871dcafc5212b2c5520d923a2e7fc7bd38f5466e77ef0b5c3c951406f41d6621"
       },
       "final_coredump_bytes": {
-        "path": "/tmp/pal-wifi-r33/bk7258/normal-boot/coredump.bin",
+        "path": "/tmp/pal-wifi-r34/bk7258/normal-boot/coredump.bin",
         "sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829"
       }
     }
   ],
   "fixture": "projects/e2e/apps/pal-wifi/evidence/fixture/qualified.json",
   "fixture_target": "h2wifi-dut-bk",
-  "fixture_sha256": "973e544c8887edb4abcd00d43ad5dd4cd9032af920f730ac2c03dd91a541aee7",
+  "fixture_sha256": "b8f70377ba01e83b72801e32c5342ddb34ee0758194f36d89a1e3cae59781877",
   "bindings_snapshot": {
     "path": "projects/e2e/apps/pal-wifi/evidence/bk7258/bindings.json",
-    "sha256": "42c33566eab50ec9bd8325046c5968f1a88b2c01a663c75919f0c6cb5f05cd57"
+    "sha256": "f9e02b4e7fe0f4ab0d3362ebe98cefd4e14c95d139b60ef655c926738c5e520b"
   }
 }

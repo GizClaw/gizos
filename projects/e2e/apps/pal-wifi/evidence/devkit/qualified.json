@@ -3,8 +3,8 @@
   "qualified": true,
   "case_count": 39,
   "uid": "9888e0115c52",
-  "version": "pal-wifi-20260930-r34",
-  "source_commit": "daac36998e7a34fa48f050c3e89438e72ec84ff1",
+  "version": "pal-wifi-20260930-r35",
+  "source_commit": "4d7e4a97eea7ff1e801cb151d2b9299fbd15e87e",
   "source_inputs": {
     ".bazelrc": "2afafc454ec12b35d1031042fee573b39473c1b514292739ed2a04d782636fda",
     "MODULE.bazel": "09b2aa2366732b75e84647aa1712ee03a83882a55b28f2de865415a4ac3f58e6",
@@ -922,7 +922,7 @@
     "native_component_src/esp-idf6.x/zlib/CMakeLists.txt": "6db7b590e073071cc1f313fa21d35b38fe9966db6bd69fc218cca57762faf89f",
     "projects/e2e/apps/pal-wifi/app/include/h2_pal_wifi_cases.inc": "c2ef238a281e70a6b1a529bfd4797d923a77b242c434e6eefb55e41f19e873a5",
     "projects/e2e/apps/pal-wifi/app/include/h2_pal_wifi_e2e.h": "8111427be609b6680bf7f02fe7b5ef646a0602f4fc21902320faded84ac82d62",
-    "projects/e2e/apps/pal-wifi/app/src/h2_pal_wifi_e2e.c": "b3448dcebe3078bd615512080d27cca441ab1265cd978fcf0e13fdd24a5472fb",
+    "projects/e2e/apps/pal-wifi/app/src/h2_pal_wifi_e2e.c": "ba70a861d3059f3d2986e333b6c5b648d2ff348a8e49ea7a8dd77019c642a860",
     "projects/e2e/libs/pal-wifi-device/BUILD.bazel": "f2ceef77c7f5444534c997f243d5744d0458b7541d377928b87aeee97a17264a",
     "projects/e2e/libs/pal-wifi-device/include/h2_pal_wifi_device.h": "5e3e4b47aa10371a9d2b175e7361a14ba71b35c7780f97c5d7db43cb8544666e",
     "projects/e2e/libs/pal-wifi-device/src/h2_pal_wifi_device.c": "4ce47c619ee065b879906ced09d6acbe3f2776486e096c335ae53d9179f1969d",
@@ -1398,15 +1398,15 @@
     "tools/bazel/web_archive_server.py": "92e7e18399fc6ddd417f8b61a4ead519e55bcbcdc3aeb55a0807954aeef6e6af"
   },
   "firmware": {
-    "path": "/tmp/pal-wifi-r34/devkit/artifact/firmware.json",
-    "sha256": "3a8d523997f1a4580151146e839cb8fb1193749a94fe9fc9d56c0dd1d4bf4f3c"
+    "path": "/tmp/pal-wifi-r35/devkit/artifact/firmware.json",
+    "sha256": "4c6570bdc8b67e08124ec62cbe771db5e4577140935a93220a5329d0430254e5"
   },
   "package": {
-    "path": "/tmp/pal-wifi-r34/devkit/artifact/devkit-pal-wifi-esp32s3.update.tar.zlib",
-    "sha256": "7791f85a9a15587bfcbbe1de493fe0128786983ca74a2344141961607c79308e"
+    "path": "/tmp/pal-wifi-r35/devkit/artifact/package.update.tar.zlib",
+    "sha256": "ec25cdd82f83fa14e919248ac9bbc356e2198efeed3a54d1e2b199590cb224c7"
   },
-  "package_sha256": "7791f85a9a15587bfcbbe1de493fe0128786983ca74a2344141961607c79308e",
-  "image_sha256": "2dfc7e2f1f19be0e7d6452b800b9b1f7f29e94e51aa4a7561cae563056973c4a",
+  "package_sha256": "ec25cdd82f83fa14e919248ac9bbc356e2198efeed3a54d1e2b199590cb224c7",
+  "image_sha256": "a5794fc2dfb4a10c39ce03a679929ea7fb040bc0907f37ba3161b720f584e46a",
   "baseline_status": {
     "path": "/tmp/pal-wifi-baselines/devkit/status.log",
     "sha256": "34d7dc9f52c68024d24ac4f938d2219ab539e72e34c175a18cfbb18e0001fec5"
@@ -1416,8 +1416,8 @@
     "sha256": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec"
   },
   "stage_status": {
-    "path": "/tmp/pal-wifi-r34/devkit/install/stage.log",
-    "sha256": "9cbbb849a7b6942bd07b48db264f038bded6dd19558a91f9c079b11e15566427"
+    "path": "/tmp/pal-wifi-r35/devkit/run/stage-status.log",
+    "sha256": "fd5aa215d036fde72f3e224eebd45369f23dadf8bc9e48bd451692a530263b59"
   },
   "p1_unchanged": true,
   "stage_empty": true,
@@ -1431,38 +1431,38 @@
     },
     {
       "log": "projects/e2e/apps/pal-wifi/evidence/devkit/install.log",
-      "sha256": "93543f7ad3c5b1bd04870a82f7a6eb0b23bbb56c4d00b1f4c2d9c895a1b0a4ac",
-      "version": "pal-wifi-20260930-r34",
-      "fixture_log": "projects/e2e/apps/pal-wifi/evidence/fixture/window-nineteen.log",
+      "sha256": "78d2efb6bb2ec33ba20405f44c6f99e727f2ba6c88f994b3118cd38175fba416",
+      "version": "pal-wifi-20260930-r35",
+      "fixture_log": "projects/e2e/apps/pal-wifi/evidence/fixture/window-twenty-five.log",
       "final_status": {
-        "path": "/tmp/pal-wifi-r34/devkit/install/after-status.log",
-        "sha256": "3ec8321f172c6bd88ce6baa3f52b42aacca0abfe8596be58679e435220a039db"
+        "path": "/tmp/pal-wifi-r35/devkit/run/after-status.log",
+        "sha256": "b0b6edf1a60273f648b560b20267a1a292d4a32fb19e6131b27ce0912659c030"
       },
       "final_coredump": {
-        "path": "/tmp/pal-wifi-r34/devkit/install/after-coredump.log",
+        "path": "/tmp/pal-wifi-r35/devkit/run/after-coredump.log",
         "sha256": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec"
       }
     },
     {
       "log": "projects/e2e/apps/pal-wifi/evidence/devkit/normal.log",
-      "sha256": "1d7e030d28b2a470b3831b24f8f74c952ba4a0276827a24c748ac2579259ddc8",
-      "version": "pal-wifi-20260930-r34",
-      "fixture_log": "projects/e2e/apps/pal-wifi/evidence/fixture/window-twenty.log",
+      "sha256": "7bc9cd01f9f1d6aa4afde0db963fb4a4698a019bc6ff4bede92fd7ae86cea34d",
+      "version": "pal-wifi-20260930-r35",
+      "fixture_log": "projects/e2e/apps/pal-wifi/evidence/fixture/window-twenty-six.log",
       "final_status": {
-        "path": "/tmp/pal-wifi-r34/devkit/normal-boot/after-status.log",
-        "sha256": "3ec8321f172c6bd88ce6baa3f52b42aacca0abfe8596be58679e435220a039db"
+        "path": "/tmp/pal-wifi-r35/devkit/normal-boot/after-status.log",
+        "sha256": "b0b6edf1a60273f648b560b20267a1a292d4a32fb19e6131b27ce0912659c030"
       },
       "final_coredump": {
-        "path": "/tmp/pal-wifi-r34/devkit/normal-boot/after-coredump.log",
+        "path": "/tmp/pal-wifi-r35/devkit/normal-boot/after-coredump.log",
         "sha256": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec"
       }
     }
   ],
   "fixture": "projects/e2e/apps/pal-wifi/evidence/fixture/qualified.json",
   "fixture_target": "h2wifi-dut-esp",
-  "fixture_sha256": "973e544c8887edb4abcd00d43ad5dd4cd9032af920f730ac2c03dd91a541aee7",
+  "fixture_sha256": "b8f70377ba01e83b72801e32c5342ddb34ee0758194f36d89a1e3cae59781877",
   "bindings_snapshot": {
     "path": "projects/e2e/apps/pal-wifi/evidence/devkit/bindings.json",
-    "sha256": "62df483cb63811ac2b376da4557a096dd1db0d6492c087319f8d0466c1a1382e"
+    "sha256": "32692836394c3f1b2f6dcb9ad184260f9ab76eef0b43c8c3d23df7b6febc7365"
   }
 }
