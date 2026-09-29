@@ -1,0 +1,537 @@
+{
+  "status": "PASS",
+  "device_uid": "9888e0115c52",
+  "version": "pal-adec-esp-20260929-r2",
+  "finished_at_utc": "2026-09-29T07:19:50.126895+00:00",
+  "package_sha256": "0ffe11894b5da4edb9e56842e0618001e92fd7dfa1cabd8a9e4848dd0c1e1042",
+  "image_sha256": "e1c051c82b6d934128e9a91ec03b96f089a6eeddf5a3c0865283ef6fa2d43435",
+  "independent_boots": {
+    "install_boot": {
+      "report": {
+        "version": "pal-adec-esp-20260929-r2",
+        "contract": 1,
+        "operations": 8,
+        "passed": 29,
+        "failed": 0,
+        "blocked": 0,
+        "retained": 0,
+        "qualified": 1,
+        "rc": 0,
+        "frames": 169,
+        "pcm_bytes": 505856
+      },
+      "cases": [
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "wrapper-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "open-close",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "preferred-format",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "unconfigured-state",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "configure-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "unsupported-codec",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "invalid-asc",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "configure-repeat",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "empty-nonblocking",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "finite-acquire",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "packet-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "mono-pcm",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "stereo-pcm",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "mono-signal",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "stereo-signal",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "frame-timing",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "borrowed-asc",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "borrowed-packet",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "held-frame-acquire",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "held-frame-reset",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "held-frame-close",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "foreign-frame",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "reset-reconfigure",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "format-change",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "end-of-stream",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "post-eos-state",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "pcm-allocator-use",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "pcm-allocator-failure",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "session-churn",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        }
+      ]
+    },
+    "independent_reboot": {
+      "report": {
+        "version": "pal-adec-esp-20260929-r2",
+        "contract": 1,
+        "operations": 8,
+        "passed": 29,
+        "failed": 0,
+        "blocked": 0,
+        "retained": 0,
+        "qualified": 1,
+        "rc": 0,
+        "frames": 169,
+        "pcm_bytes": 505856
+      },
+      "cases": [
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "wrapper-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "open-close",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "preferred-format",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "unconfigured-state",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "configure-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "unsupported-codec",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "invalid-asc",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "configure-repeat",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "empty-nonblocking",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "finite-acquire",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "packet-arguments",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "mono-pcm",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "stereo-pcm",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "mono-signal",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "stereo-signal",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "frame-timing",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "borrowed-asc",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "borrowed-packet",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "held-frame-acquire",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "held-frame-reset",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "held-frame-close",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "foreign-frame",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "reset-reconfigure",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "format-change",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "end-of-stream",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "post-eos-state",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "pcm-allocator-use",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "pcm-allocator-failure",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        },
+        {
+          "version": "pal-adec-esp-20260929-r2",
+          "id": "session-churn",
+          "status": "PASS",
+          "detail": 0,
+          "line": 0
+        }
+      ]
+    }
+  },
+  "logs": {
+    "before_status": {
+      "retained_local_path": "/tmp/pal-audio-decoder-devkit-before-status.log",
+      "sha256": "0f048fbd2a7e742a9e213ff4b3c997836b1848854e60e83553567d726f89ce1a"
+    },
+    "after_status": {
+      "retained_local_path": "/tmp/pal-audio-decoder-devkit-r2-final-status.log",
+      "sha256": "8742b63e8f02d87e3c3ffd75749e8e23af82a4fa1f01a27676530867bd09f64c"
+    },
+    "before_coredump_status": {
+      "retained_local_path": "/tmp/pal-audio-decoder-devkit-before-coredump.log",
+      "sha256": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec"
+    },
+    "after_coredump_status": {
+      "retained_local_path": "/tmp/pal-audio-decoder-devkit-r2-final-coredump.log",
+      "sha256": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec"
+    },
+    "install_boot": {
+      "retained_local_path": "/tmp/pal-audio-decoder-devkit-r2-install.log",
+      "sha256": "f4139fa0486f984ccf364abfd0eb3e20d91d40844b96868c36222b4705e53e26"
+    },
+    "independent_reboot": {
+      "retained_local_path": "/tmp/pal-audio-decoder-devkit-r2-reboot.log",
+      "sha256": "0690c19695a716c7b9f5ac803b9b0b0193895ede6eae1b9db17838f4422c5ec9"
+    },
+    "staged_status": {
+      "retained_local_path": "/tmp/pal-audio-decoder-devkit-r2-staged-status.log",
+      "sha256": "9e478b37d319d2487f2a0029bbca145d32e362f247ff5e569e78b73f8aaeca34"
+    },
+    "send": {
+      "retained_local_path": "/tmp/pal-audio-decoder-devkit-r2-send.log",
+      "sha256": "fb96b87cd632da9f9f2c930ec379170a0e0776bede494f416a2a16298f5fc726"
+    }
+  },
+  "final_status": {
+    "board": "devkit",
+    "target": "esp32s3",
+    "chip": "esp32s3",
+    "device_uid": "9888e0115c52",
+    "capabilities": "0x00000001",
+    "command_availability": "0x00081d3f",
+    "active_role": "app",
+    "active_version": "pal-adec-esp-20260929-r2",
+    "active_checksum": "e1c051c82b6d934128e9a91ec03b96f089a6eeddf5a3c0865283ef6fa2d43435",
+    "active_image_size": "1648160",
+    "running_partition": "2",
+    "next_partition": "2",
+    "boot_intent": "auto",
+    "stage_valid": "0",
+    "stage_package_checksum": "-",
+    "stage_package_size": "0",
+    "stage_image_checksum": "-",
+    "stage_image_size": "0",
+    "stage_role": "unknown",
+    "stage_version": "-",
+    "stage_board": "-",
+    "stage_target": "-",
+    "partition_1_valid": "1",
+    "partition_1_package_checksum": "f4fd26deba579fb6b8955e9ea7a83122b25cf6e4c433b3d652090d6958197568",
+    "partition_1_package_size": "975428",
+    "partition_1_image_checksum": "9479960ee19af062cb1a599c4d4b52f948d476efc842aabdfa6ca2ec812befd5",
+    "partition_1_image_size": "1496656",
+    "partition_1_role": "loader",
+    "partition_1_version": "0.2.3-atomic-541",
+    "partition_1_board": "devkit",
+    "partition_1_target": "esp32s3",
+    "partition_2_valid": "1",
+    "partition_2_package_checksum": "0ffe11894b5da4edb9e56842e0618001e92fd7dfa1cabd8a9e4848dd0c1e1042",
+    "partition_2_package_size": "1079050",
+    "partition_2_image_checksum": "e1c051c82b6d934128e9a91ec03b96f089a6eeddf5a3c0865283ef6fa2d43435",
+    "partition_2_image_size": "1648160",
+    "partition_2_role": "app",
+    "partition_2_version": "pal-adec-esp-20260929-r2",
+    "partition_2_board": "devkit",
+    "partition_2_target": "esp32s3",
+    "last_result": "0",
+    "mfg_mode": "1",
+    "mfg_steps": "0000000000000000000000"
+  },
+  "coredump_status": {
+    "result": "OK",
+    "code": "0",
+    "partition": "coredump",
+    "bytes": "65536",
+    "stored_bytes": "0",
+    "blank": "1"
+  }
+}

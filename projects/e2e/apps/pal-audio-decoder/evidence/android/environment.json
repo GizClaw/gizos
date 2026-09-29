@@ -1,0 +1,15 @@
+{
+  "serial": "emulator-5554",
+  "api": "36",
+  "fingerprint": "Android/sdk_slim_arm64/emu64a:16/BE2A.250530.027/13847098:userdebug/test-keys",
+  "aar_binary_sha256": "d5980bb92d79809a230cfb003835ad6be0bbea0ccabea298754592d16b501572",
+  "apk_binary_sha256": "d5980bb92d79809a230cfb003835ad6be0bbea0ccabea298754592d16b501572",
+  "apk_aar_binary_identical": true,
+  "public_provider_symbols": [
+    "h2_android_platform_audio_decoder_api"
+  ],
+  "observation_finished_at_utc": "2026-09-29T07:00:10.195864+00:00",
+  "evidence_timezone": "UTC",
+  "app_sha256": "e4bd216de68efbec6dd33e679b700dea1bebdfe294a4177fed0bc826644b13f7",
+  "sdk_sha256": "193319a6af1b23f30498bc479771dd3fb53d4324b6098d0b696ea87c7cdeb72f"
+}

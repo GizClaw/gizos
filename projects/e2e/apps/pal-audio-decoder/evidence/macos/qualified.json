@@ -1,0 +1,190 @@
+{
+  "platform": "macos",
+  "operations": 8,
+  "cases": [
+    {
+      "id": "wrapper-arguments",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "open-close",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "preferred-format",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "unconfigured-state",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "configure-arguments",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "unsupported-codec",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "invalid-asc",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "configure-repeat",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "empty-nonblocking",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "finite-acquire",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "packet-arguments",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "mono-pcm",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "stereo-pcm",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "mono-signal",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "stereo-signal",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "frame-timing",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "borrowed-asc",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "borrowed-packet",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "held-frame-acquire",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "held-frame-reset",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "held-frame-close",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "foreign-frame",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "reset-reconfigure",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "format-change",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "end-of-stream",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "post-eos-state",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "pcm-allocator-use",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "pcm-allocator-failure",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    },
+    {
+      "id": "session-churn",
+      "status": "PASS",
+      "detail": 0,
+      "line": 0
+    }
+  ],
+  "passed": 29,
+  "failed": 0,
+  "blocked": 0,
+  "retained": 0,
+  "frames": 169,
+  "pcm_bytes": 505856,
+  "qualified": 1,
+  "rc": 0,
+  "test_log_sha256": "3db2e2a73294d2dcfc67e19d969784746cba68f7c0596a3085d15a14ba45142f",
+  "retained_local_log": "/Volumes/H002-R02T-APFS/Caches/bazel/output-user-root/0ab44e929cdeb47dd9c11b39f7300490/execroot/_main/bazel-out/darwin_arm64-fastbuild/testlogs/projects/e2e/targets/cc_binary/pal-audio-decoder/desktop_test/test.log"
+}

@@ -1,0 +1,75 @@
+{
+  "schema": 1,
+  "base_commit": "a472fbec3c301e53523fae5ed446879a7c635cc2",
+  "captured_at_utc": "2026-09-29T07:24:26.732002+00:00",
+  "interface": {
+    "operations": 8,
+    "mandatory_cases": 29
+  },
+  "source_receipts": {
+    "libs/pal/providers/android/pal_core/src/h2_android_audio_contract.c": "f10f781b2dccef7597b538ac5cce5acbda48654c62813aab6185d513fc1fbad3",
+    "libs/pal/providers/android/pal_core/src/h2_android_audio_decoder.c": "c9b8a55ef17f256a5c9eda8e702a90e072271ef7505edb950488874c27a6ec73",
+    "libs/pal/providers/android/pal_core/tests/test_android_audio_contract.c": "511c3dc3cc2c496ede8e83f175be218efc0de2041f326e7e9e3765e9006ad3d1",
+    "libs/pal/providers/ffmpeg/src/h2_ffmpeg_audio_decoder.c": "e1605b69e421a92ee3e0d97342b7b7b60766d3b4839cab0cac4fcbfebb3b5a12",
+    "libs/pal/providers/ffmpeg/tests/test_h2_ffmpeg_audio_decoder.c": "74fe09191dadf43f05668576526f48806d72b132cc72bad63f0022649e46da78",
+    "libs/pal/providers/ios/pal_core/include/h2_ios_platform.h": "45b19746e9744193aba579d62d04aea5d79d24000257a8d180f6db99cb677c18",
+    "libs/pal/providers/ios/pal_core/src/h2_ios_audio_decoder.c": "b8e061b7bef12212adc38281ce022d05d62c232b9794402b266bd51df2e8c2c6",
+    "libs/pal/providers/web/pal_core/src/h2_web_platform_audio_decoder.c": "116725e0e46e54a9e9dc24da4d2ce4d76cbb37ffd1f6be6cef9137acb415cefe",
+    "native_component_src/bk7258/ap/h2_bk_audio_decoder/src/h2_bk_audio_decoder.c": "ee2e59fbc5f4a2a9ce09f1e003dc016c7232efe4d61311ec830997f56d430dda",
+    "native_component_src/esp-idf6.x/h2_esp_audio_decoder/src/h2_esp_audio_decoder.c": "27f250b21ad142d5a0ee436bf5e1bc244bfc4725db4831461f8c590117ff2693",
+    "projects/e2e/apps/pal-audio-decoder/app/fixtures/h2_aac_vectors.c": "1c9597bbccb8bfb188ee9489dc77b9e0648ade3fefa7528260c2c1515bf855a3",
+    "projects/e2e/apps/pal-audio-decoder/app/fixtures/h2_aac_vectors.h": "731f4e2305de592a2adf7b646bbbcd45e80ea55155b4cc69c1038e29773e3f68",
+    "projects/e2e/apps/pal-audio-decoder/app/include/h2_pal_audio_decoder_cases.inc": "bb5edbc9ca6bed07f97310dab88959531690569c69478c6f52b07cd765a6f225",
+    "projects/e2e/apps/pal-audio-decoder/app/include/h2_pal_audio_decoder_e2e.h": "25850cf71eec17a412bd9d33661d7782a55e4aae31845c640ad6f817992ce8d6",
+    "projects/e2e/apps/pal-audio-decoder/app/src/h2_pal_audio_decoder_e2e.c": "145ebde96480f287abd26cc2575e7b11abc572f6587939d3d80f4fc18e7e4420",
+    "projects/e2e/apps/pal-audio-decoder/app/tests/test_reject_missing.c": "cb99b6867c6fc2f5ca06db4f99dfd23ed46eabe2e12a2d529d8dd07227c4ad24",
+    "projects/e2e/libs/pal-audio-decoder-device/include/device_runner.h": "ae3f6b2db731a0584b33f01fd87d9e6061d5552ccb883ad5823e45559245794c",
+    "projects/e2e/libs/pal-audio-decoder-device/src/device_runner.c": "71dbd141e00682619a25c34134a46ebfbb5f436dc098fd3597660f6ae5c9db6f",
+    "projects/e2e/libs/pal-audio-decoder-mobile/mobile_runner.c": "c283e0b79cc081f5876ca88e4107bbaa583c029a2e731372a6d9542f82f23207",
+    "projects/e2e/libs/pal-audio-decoder-mobile/mobile_runner.h": "eef11c178c1f0f26ee9e622d3e9fcd1b94aabc628cb55c21b058e859d3a8beec",
+    "projects/e2e/targets/android_binary/pal-audio-decoder/main.c": "8133257fccd7e70e0b73fc962468046145434d4184dc74857ef3ebfde704f26a",
+    "projects/e2e/targets/android_binary/pal-audio-decoder/src/com/haivivi/gizos/e2e/palaudiodecoder/MainActivity.java": "b0a9fffd9ba45c795e0bfefe9d568e285ad0ca34357805f5c73c2fcca84338e1",
+    "projects/e2e/targets/cc_binary/pal-audio-decoder/main.c": "9edca2b90662983149107206daf9534fd9db308f2fb164c8726e211bdbfc48fd",
+    "projects/e2e/targets/h2loader_tar_zlib/pal-audio-decoder/bk7258_v3_202405/ap/ap_main.c": "488388aad5105c5216c508854a505a53dc324839e5d03fcc44d1b74e9f628daf",
+    "projects/e2e/targets/h2loader_tar_zlib/pal-audio-decoder/devkit/main/main.c": "e24b9d8e0a2be6a29298351cb1005c4f89eca113ddcb1c35e7d5d2cfc8fa4cb3",
+    "projects/e2e/targets/ios_application/pal-audio-decoder/main.m": "13171b752580220d8cc5f884cc34b3318d7ccb3d3a0338013b197654171681d7",
+    "projects/e2e/targets/pkg_tar/pal-audio-decoder/main.c": "3bcc3a5aa14d7fc51a4f67b69ee04cda26dc83bcdbf2e515e946130923977d48"
+  },
+  "source_aggregate_sha256": "50fd5d8ac62ef0cf821ff127783e4c4b246bf902771d60e315047bc83fb33ec9",
+  "qualified": false,
+  "pending": [
+    "bk7258"
+  ],
+  "platforms": {
+    "macos": {
+      "status": "PASS",
+      "receipt": "evidence/macos/qualified.json",
+      "receipt_sha256": "680ce4ceab6828a9e889cd104249ac95d0793f45f43b140aeea47a513b311dc6"
+    },
+    "wasm_aac_chrome": {
+      "status": "PASS",
+      "receipt": "evidence/wasm/qualified.json",
+      "receipt_sha256": "720aeb39ca2199012c8f8a3c0fd6c2c0189193745e36d032ed6e0e18e67025f5",
+      "execution": "exact manual Make/Bazel test, isolated actual Chrome profile"
+    },
+    "ios_simulator": {
+      "status": "PASS",
+      "receipt": "evidence/ios/qualified.json",
+      "receipt_sha256": "d1362467f83ffa4b16168df6c7fc81527dbb3bd7649252643dd7bc04dd53045f"
+    },
+    "android_emulator": {
+      "status": "PASS",
+      "receipt": "evidence/android/qualified.json",
+      "receipt_sha256": "b6cfe9ec035065b1ee7ecfe6b0915e88f4490a86eb76bec6922e652fbdf4af9e"
+    },
+    "devkit_esp32s3": {
+      "status": "PASS",
+      "receipt": "evidence/devkit/qualified.json",
+      "receipt_sha256": "d5861eccb179bea1767df8a084d863eeb43bf9094e9dd800d9e470f476178630"
+    },
+    "bk7258": {
+      "status": "NOT_RUN",
+      "reason": "Display qualification currently owns this board; decoder package built and awaiting serial handoff"
+    }
+  }
+}

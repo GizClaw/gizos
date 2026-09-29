@@ -24,10 +24,12 @@ def run_decoder(browser, profile, url):
     def pipes():
         reader, writer = os.dup(incoming[0]), os.dup(outgoing[1])
         os.dup2(reader, 3); os.dup2(writer, 4)
+    browser_environment = dict(os.environ)
     with (profile / "browser.log").open("w") as log:
         proc = subprocess.Popen([str(browser), "--headless", "--no-sandbox", "--remote-debugging-pipe",
                                  "--autoplay-policy=no-user-gesture-required", f"--user-data-dir={profile}/data", "about:blank"],
-                                preexec_fn=pipes, pass_fds=(3, 4), stdout=log, stderr=log)
+                                preexec_fn=pipes, pass_fds=(3, 4), stdout=log, stderr=log,
+                                env=browser_environment)
         os.close(incoming[0]); os.close(outgoing[1])
         cdp = Cdp(incoming[1], outgoing[0], events)
         cases, result = [], None

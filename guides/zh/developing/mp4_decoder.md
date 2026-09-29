@@ -13,3 +13,5 @@ Library 返回一个 borrowed presentation frame：视频 plane 已复制到 dec
 ```sh
 bazel test //libs/mp4_decoder:all
 ```
+
+独立的 [PAL Audio Decoder E2E](/apps/e2e#pal-audio-decoder) 直接提交 AAC-LC RAW packet 和 ASC，验证 PCM 内容、session/frame 生命周期、EOS、reset 与 allocator failure。它不经过 MP4 demuxer；该 PAL 资格和本 library 的 composition/sample-table 测试分别验收，不能互相替代。
