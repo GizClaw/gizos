@@ -20,6 +20,10 @@ class Inventory(unittest.TestCase):
         cases=re.findall(r'H2_WIFI_CASE\("([^\"]+)",\s*(\w+)\)',(BASE/"include/h2_pal_wifi_cases.inc").read_text())
         self.assertEqual(len(cases),m["case_count"])
         self.assertEqual(len({c[0] for c in cases}),len(cases))
+        names={c[0] for c in cases}|{m["restart_case"]}
+        for op in m["operations"]:
+            self.assertTrue(op["cases"])
+            self.assertTrue(set(op["cases"])<=names)
         for _,fn in cases:self.assertRegex(source,r"static int "+fn+r"\(")
         self.assertNotIn("assert(",source)
         self.assertIn('cases[i].run != restore',source)

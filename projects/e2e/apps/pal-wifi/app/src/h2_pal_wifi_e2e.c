@@ -12,6 +12,9 @@ typedef struct wifi_test {
     uint8_t sta_mac[6], ap_mac[6];
     h2_pal_wifi_ap_client_t client;
     uint64_t overall_start;
+    int clock_error;
+    unsigned fixture_connecting, fixture_connected, fixture_got_ip;
+    uint8_t joined_mac[6], left_mac[6];
 } wifi_test_t;
 
 #define EXPECT(value)                                                                              \
@@ -40,7 +43,8 @@ int h2_wifi_config_equal(const h2_pal_wifi_sta_config_t *a, const h2_pal_wifi_st
 
 static uint64_t now(wifi_test_t *s) {
     uint64_t value = 0;
-    (void)h2_pal_time_get_monotonic_ms(s->rt->time, &value);
+    if (h2_pal_time_get_monotonic_ms(s->rt->time, &value) != H2_PAL_OK)
+        s->clock_error = 1;
     return value;
 }
 
@@ -82,6 +86,15 @@ static void events(wifi_test_t *s) {
                 ++r->sta_got_ip;
             if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_DISCONNECTED)
                 ++r->sta_disconnected;
+            if (v->ssid_len == s->cfg->fixture.ssid_len &&
+                !memcmp(v->ssid, s->cfg->fixture.ssid, v->ssid_len)) {
+                if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTING)
+                    ++s->fixture_connecting;
+                if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_CONNECTED)
+                    ++s->fixture_connected;
+                if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_STA_GOT_IP)
+                    ++s->fixture_got_ip;
+            }
             break;
         }
         case H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_STARTED:
@@ -112,10 +125,14 @@ static void events(wifi_test_t *s) {
             const h2_runtime_system_event_wifi_ap_client_t *v = e.payload;
             if (!mac_valid(v->mac) || v->lease_valid > 1u || (v->lease_valid && !v->lease.ip4))
                 ++r->invalid_events;
-            if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_CLIENT_JOINED)
+            if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_CLIENT_JOINED) {
                 ++r->client_joined;
-            if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_CLIENT_LEFT)
+                memcpy(s->joined_mac, v->mac, 6);
+            }
+            if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_CLIENT_LEFT) {
                 ++r->client_left;
+                memcpy(s->left_mac, v->mac, 6);
+            }
             if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_LEASE_GRANTED)
                 ++r->lease_granted;
             if (e.kind == H2_RUNTIME_SYSTEM_EVENT_WIFI_AP_LEASE_RELEASED)
@@ -164,7 +181,7 @@ static int wait_ip(wifi_test_t *s, const h2_pal_wifi_sta_config_t *target) {
             memcmp(status.ssid, target->ssid, target->ssid_len) == 0)
             return H2_PAL_OK;
         pause_ms(s, 100u);
-    } while (now(s) - start < s->cfg->operation_timeout_ms);
+    } while (!s->clock_error && now(s) - start < s->cfg->operation_timeout_ms);
     return H2_PAL_ERR_TIMEOUT;
 }
 
@@ -331,12 +348,14 @@ static int scan_early_stop(wifi_test_t *s) {
     return scan_test(s, 0, 1);
 }
 static int connect_without_save(wifi_test_t *s) {
+    events(s);
+    s->fixture_connecting = s->fixture_connected = s->fixture_got_ip = 0;
     CALL(connect_target(s, &s->cfg->fixture));
     return saved_equal(s, &s->sentinel);
 }
 static int station_events(wifi_test_t *s) {
     pause_ms(s, 300);
-    EXPECT(s->result.sta_connecting && s->result.sta_connected && s->result.sta_got_ip);
+    EXPECT(s->fixture_connecting && s->fixture_connected && s->fixture_got_ip);
     return H2_PAL_OK;
 }
 
@@ -513,15 +532,23 @@ static int ap_client(wifi_test_t *s) {
         EXPECT(count <= 8);
         if (count && clients[0].lease_valid && clients[0].lease.ip4) {
             EXPECT(mac_valid(clients[0].mac));
+            h2_pal_netif_status_t status = {0};
+            CALL(h2_pal_netif_get_status(s->rt->netif, &s->ap_ref, &status));
+            const uint8_t *a = status.ipv4.ip, *m = status.netmask4.ip;
+            uint32_t address =
+                (uint32_t)a[0] << 24 | (uint32_t)a[1] << 16 | (uint32_t)a[2] << 8 | a[3];
+            uint32_t mask =
+                (uint32_t)m[0] << 24 | (uint32_t)m[1] << 16 | (uint32_t)m[2] << 8 | m[3];
+            EXPECT(mask && (clients[0].lease.ip4 & mask) == (address & mask));
             s->client = clients[0];
             memcpy(s->result.client_mac, clients[0].mac, 6);
             s->result.client_ip4 = clients[0].lease.ip4;
             events(s);
-            EXPECT(s->result.client_joined > 0);
+            EXPECT(s->result.client_joined > 0 && !memcmp(s->joined_mac, clients[0].mac, 6));
             return H2_PAL_OK;
         }
         pause_ms(s, 100);
-    } while (now(s) - start < s->cfg->client_timeout_ms);
+    } while (!s->clock_error && now(s) - start < s->cfg->client_timeout_ms);
     return H2_PAL_ERR_TIMEOUT;
 }
 static int ap_client_bounds(wifi_test_t *s) {
@@ -545,10 +572,10 @@ static int ap_client_left(wifi_test_t *s) {
         size_t count = 99;
         events(s);
         CALL(h2_pal_wifi_ap_get_clients(s->rt->wifi_ap, c, 8, &count));
-        if (!count && s->result.client_left > before)
+        if (!count && s->result.client_left > before && !memcmp(s->left_mac, s->client.mac, 6))
             return H2_PAL_OK;
         pause_ms(s, 100);
-    } while (now(s) - start < s->cfg->client_timeout_ms);
+    } while (!s->clock_error && now(s) - start < s->cfg->client_timeout_ms);
     return H2_PAL_ERR_TIMEOUT;
 }
 static int netif_select(wifi_test_t *s) {
@@ -598,6 +625,7 @@ static int ap_open(wifi_test_t *s) {
     h2_pal_wifi_ap_status_t status;
     CALL(h2_pal_wifi_ap_get_status(s->rt->wifi_ap, &status));
     EXPECT(status.security == H2_PAL_WIFI_SECURITY_OPEN);
+    CALL(ap_netif(s));
     CALL(ap_client(s));
     CALL(ap_client_left(s));
     return ap_stop(s);
@@ -610,6 +638,7 @@ static int ap_hidden(wifi_test_t *s) {
     h2_pal_wifi_ap_status_t status;
     CALL(h2_pal_wifi_ap_get_status(s->rt->wifi_ap, &status));
     EXPECT(status.hidden == 1);
+    CALL(ap_netif(s));
     CALL(ap_client(s));
     CALL(ap_client_left(s));
     return ap_stop(s);
@@ -706,11 +735,16 @@ int h2_wifi_e2e_run(h2_runtime_t *rt, const h2_wifi_e2e_config_t *cfg, h2_wifi_e
         return rc;
     }
     s.overall_start = now(&s);
+    if (s.clock_error) {
+        out->blocked = (unsigned)(sizeof(cases) / sizeof(cases[0]));
+        return H2_PAL_ERR_UNAVAILABLE;
+    }
     for (size_t i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
         uint64_t start = now(&s);
         s.result.last_error_line = 0;
-        rc = now(&s) - s.overall_start > 600000u && cases[i].run != restore ? H2_PAL_ERR_TIMEOUT
-                                                                            : cases[i].run(&s);
+        rc = (s.clock_error || now(&s) - s.overall_start > 600000u) && cases[i].run != restore
+                 ? H2_PAL_ERR_TIMEOUT
+                 : cases[i].run(&s);
         events(&s);
         if (!rc)
             ++s.result.passed;

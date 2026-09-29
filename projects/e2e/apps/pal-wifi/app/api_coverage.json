@@ -9,147 +9,301 @@
       "name": "get_status",
       "wrapper": "h2_pal_wifi_sta_get_status",
       "header": "hal/h2_pal_wifi.h",
-      "vtable": "h2_pal_wifi_sta_vtable"
+      "vtable": "h2_pal_wifi_sta_vtable",
+      "cases": [
+        "connect-without-save",
+        "netif-station-status",
+        "scan-while-connected",
+        "power-save-none",
+        "power-save-min",
+        "power-save-max",
+        "connect-and-save-zero",
+        "wrong-password-preserves-saved",
+        "connect-and-save",
+        "disconnect-status",
+        "connect-zero-borrowed-input",
+        "netif-select-default",
+        "station-ap-churn",
+        "restore-original-settings-network"
+      ]
     },
     {
       "domain": "sta",
       "name": "scan",
       "wrapper": "h2_pal_wifi_sta_scan",
       "header": "hal/h2_pal_wifi.h",
-      "vtable": "h2_pal_wifi_sta_vtable"
+      "vtable": "h2_pal_wifi_sta_vtable",
+      "cases": [
+        "scan-all",
+        "scan-directed",
+        "scan-early-stop",
+        "scan-while-connected"
+      ]
     },
     {
       "domain": "sta",
       "name": "connect",
       "wrapper": "h2_pal_wifi_sta_connect",
       "header": "hal/h2_pal_wifi.h",
-      "vtable": "h2_pal_wifi_sta_vtable"
+      "vtable": "h2_pal_wifi_sta_vtable",
+      "cases": [
+        "connect-without-save",
+        "wrong-password-preserves-saved",
+        "connect-zero-borrowed-input",
+        "netif-select-default",
+        "station-ap-churn",
+        "restore-original-settings-network"
+      ]
     },
     {
       "domain": "sta",
       "name": "connect_and_save",
       "wrapper": "h2_pal_wifi_sta_connect_and_save",
       "header": "hal/h2_pal_wifi.h",
-      "vtable": "h2_pal_wifi_sta_vtable"
+      "vtable": "h2_pal_wifi_sta_vtable",
+      "cases": [
+        "connect-and-save-zero",
+        "wrong-password-preserves-saved",
+        "connect-and-save"
+      ]
     },
     {
       "domain": "sta",
       "name": "disconnect",
       "wrapper": "h2_pal_wifi_sta_disconnect",
       "header": "hal/h2_pal_wifi.h",
-      "vtable": "h2_pal_wifi_sta_vtable"
+      "vtable": "h2_pal_wifi_sta_vtable",
+      "cases": [
+        "connect-without-save",
+        "wrong-password-preserves-saved",
+        "disconnect-status",
+        "access-point-wpa2-start",
+        "netif-select-default",
+        "station-ap-churn",
+        "restore-original-settings-network"
+      ]
     },
     {
       "domain": "sta",
       "name": "get_mac",
       "wrapper": "h2_pal_wifi_sta_get_mac",
       "header": "hal/h2_pal_wifi.h",
-      "vtable": "h2_pal_wifi_sta_vtable"
+      "vtable": "h2_pal_wifi_sta_vtable",
+      "cases": [
+        "station-mac"
+      ]
     },
     {
       "domain": "sta",
       "name": "set_power_save",
       "wrapper": "h2_pal_wifi_sta_set_power_save",
       "header": "hal/h2_pal_wifi.h",
-      "vtable": "h2_pal_wifi_sta_vtable"
+      "vtable": "h2_pal_wifi_sta_vtable",
+      "cases": [
+        "power-save-none",
+        "power-save-min",
+        "power-save-max",
+        "restore-original-settings-network"
+      ]
     },
     {
       "domain": "ap",
       "name": "start",
       "wrapper": "h2_pal_wifi_ap_start",
       "header": "hal/h2_pal_wifi.h",
-      "vtable": "h2_pal_wifi_ap_vtable"
+      "vtable": "h2_pal_wifi_ap_vtable",
+      "cases": [
+        "access-point-wpa2-start",
+        "access-point-repeat-start",
+        "access-point-open",
+        "access-point-hidden",
+        "station-ap-churn"
+      ]
     },
     {
       "domain": "ap",
       "name": "stop",
       "wrapper": "h2_pal_wifi_ap_stop",
       "header": "hal/h2_pal_wifi.h",
-      "vtable": "h2_pal_wifi_ap_vtable"
+      "vtable": "h2_pal_wifi_ap_vtable",
+      "cases": [
+        "access-point-stop",
+        "access-point-open",
+        "access-point-hidden",
+        "station-ap-churn",
+        "restore-original-settings-network"
+      ]
     },
     {
       "domain": "ap",
       "name": "get_status",
       "wrapper": "h2_pal_wifi_ap_get_status",
       "header": "hal/h2_pal_wifi.h",
-      "vtable": "h2_pal_wifi_ap_vtable"
+      "vtable": "h2_pal_wifi_ap_vtable",
+      "cases": [
+        "access-point-status",
+        "access-point-repeat-start",
+        "access-point-stop",
+        "access-point-open",
+        "access-point-hidden",
+        "station-ap-churn"
+      ]
     },
     {
       "domain": "ap",
       "name": "get_clients",
       "wrapper": "h2_pal_wifi_ap_get_clients",
       "header": "hal/h2_pal_wifi.h",
-      "vtable": "h2_pal_wifi_ap_vtable"
+      "vtable": "h2_pal_wifi_ap_vtable",
+      "cases": [
+        "access-point-real-client",
+        "access-point-client-bounds",
+        "access-point-client-left",
+        "access-point-stop",
+        "access-point-open",
+        "access-point-hidden",
+        "station-ap-churn"
+      ]
     },
     {
       "domain": "ap",
       "name": "get_mac",
       "wrapper": "h2_pal_wifi_ap_get_mac",
       "header": "hal/h2_pal_wifi.h",
-      "vtable": "h2_pal_wifi_ap_vtable"
+      "vtable": "h2_pal_wifi_ap_vtable",
+      "cases": [
+        "access-point-mac"
+      ]
     },
     {
       "domain": "settings",
       "name": "get_saved_sta_config",
       "wrapper": "h2_pal_wifi_settings_get_saved_sta_config",
       "header": "hal/h2_pal_wifi_settings.h",
-      "vtable": "h2_pal_wifi_settings_vtable"
+      "vtable": "h2_pal_wifi_settings_vtable",
+      "cases": [
+        "settings-clear",
+        "settings-length-boundaries",
+        "settings-reject-invalid",
+        "connect-without-save",
+        "connect-and-save-zero",
+        "wrong-password-preserves-saved",
+        "connect-and-save",
+        "disconnect-status",
+        "connect-zero-borrowed-input",
+        "station-ap-churn",
+        "restore-original-settings-network"
+      ]
     },
     {
       "domain": "settings",
       "name": "set_saved_sta_config",
       "wrapper": "h2_pal_wifi_settings_set_saved_sta_config",
       "header": "hal/h2_pal_wifi_settings.h",
-      "vtable": "h2_pal_wifi_settings_vtable"
+      "vtable": "h2_pal_wifi_settings_vtable",
+      "cases": [
+        "settings-length-boundaries",
+        "settings-reject-invalid",
+        "restore-original-settings-network"
+      ]
     },
     {
       "domain": "settings",
       "name": "clear_saved_sta_config",
       "wrapper": "h2_pal_wifi_settings_clear_saved_sta_config",
       "header": "hal/h2_pal_wifi_settings.h",
-      "vtable": "h2_pal_wifi_settings_vtable"
+      "vtable": "h2_pal_wifi_settings_vtable",
+      "cases": [
+        "settings-clear",
+        "restore-original-settings-network"
+      ]
     },
     {
       "domain": "settings",
       "name": "has_saved_sta_config",
       "wrapper": "h2_pal_wifi_settings_has_saved_sta_config",
       "header": "hal/h2_pal_wifi_settings.h",
-      "vtable": "h2_pal_wifi_settings_vtable"
+      "vtable": "h2_pal_wifi_settings_vtable",
+      "cases": [
+        "settings-clear",
+        "settings-length-boundaries",
+        "settings-reject-invalid",
+        "connect-without-save",
+        "connect-and-save-zero",
+        "wrong-password-preserves-saved",
+        "connect-and-save",
+        "disconnect-status",
+        "connect-zero-borrowed-input",
+        "station-ap-churn",
+        "restore-original-settings-network"
+      ]
     },
     {
       "domain": "netif",
       "name": "list",
       "wrapper": "h2_pal_netif_list",
       "header": "net/h2_pal_netif.h",
-      "vtable": "h2_pal_netif_vtable"
+      "vtable": "h2_pal_netif_vtable",
+      "cases": [
+        "netif-enumerate-find",
+        "netif-missing-interface"
+      ]
     },
     {
       "domain": "netif",
       "name": "find",
       "wrapper": "h2_pal_netif_find",
       "header": "net/h2_pal_netif.h",
-      "vtable": "h2_pal_netif_vtable"
+      "vtable": "h2_pal_netif_vtable",
+      "cases": [
+        "netif-enumerate-find",
+        "netif-missing-interface",
+        "access-point-netif",
+        "access-point-open",
+        "access-point-hidden"
+      ]
     },
     {
       "domain": "netif",
       "name": "get_status",
       "wrapper": "h2_pal_netif_get_status",
       "header": "net/h2_pal_netif.h",
-      "vtable": "h2_pal_netif_vtable"
+      "vtable": "h2_pal_netif_vtable",
+      "cases": [
+        "netif-station-status",
+        "netif-dns-bounds",
+        "netif-missing-interface",
+        "scan-while-connected",
+        "disconnect-status",
+        "access-point-netif",
+        "access-point-real-client",
+        "netif-select-default",
+        "access-point-open",
+        "access-point-hidden"
+      ]
     },
     {
       "domain": "netif",
       "name": "get_dns_servers",
       "wrapper": "h2_pal_netif_get_dns_servers",
       "header": "net/h2_pal_netif.h",
-      "vtable": "h2_pal_netif_vtable"
+      "vtable": "h2_pal_netif_vtable",
+      "cases": [
+        "netif-dns-bounds",
+        "netif-missing-interface",
+        "netif-select-default"
+      ]
     },
     {
       "domain": "netif",
       "name": "set_default",
       "wrapper": "h2_pal_netif_set_default",
       "header": "net/h2_pal_netif.h",
-      "vtable": "h2_pal_netif_vtable"
+      "vtable": "h2_pal_netif_vtable",
+      "cases": [
+        "netif-missing-interface",
+        "netif-select-default"
+      ]
     }
   ]
 }

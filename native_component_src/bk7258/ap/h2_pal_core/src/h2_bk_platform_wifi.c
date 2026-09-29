@@ -6,6 +6,7 @@
 #include <modules/wifi.h>
 #include <os/mem.h>
 #include <os/os.h>
+#include "lwip/def.h"
 
 #include <string.h>
 #include "h2_atomic_static.h"
@@ -260,7 +261,10 @@ static void h2_bk_wifi_copy_ap_client(
     memcpy(out_client->mac, sta->addr, sizeof(out_client->mac));
     out_client->rssi = sta->rssi;
     if (sta->ipaddr != 0u) {
-        out_client->lease.ip4 = sta->ipaddr;
+        /* SDK AP_GET_STA_LIST carries the lwIP network-order scalar (its own
+         * logger prints the first octet from the least-significant byte).
+         * PAL's IPv4 scalar uses network significance, as STA status does. */
+        out_client->lease.ip4 = lwip_ntohl(sta->ipaddr);
         out_client->lease_valid = 1u;
     }
 }

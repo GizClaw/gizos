@@ -54,7 +54,9 @@ int h2_wifi_host_contract(const h2_pal_wifi_sta_api_t *sta, const h2_pal_wifi_ap
     REQUIRE(h2_pal_wifi_ap_get_status(ap, &as) == H2_PAL_ERR_UNSUPPORTED);
     REQUIRE(h2_pal_wifi_ap_get_clients(ap, NULL, 0, &count) == H2_PAL_ERR_UNSUPPORTED);
     REQUIRE(h2_pal_wifi_ap_get_mac(ap, mac) == H2_PAL_ERR_UNSUPPORTED);
-    REQUIRE(h2_pal_wifi_settings_get_saved_sta_config(settings, &cfg) == H2_PAL_ERR_UNSUPPORTED);
+    h2_pal_wifi_sta_config_t output_cfg = {0};
+    REQUIRE(h2_pal_wifi_settings_get_saved_sta_config(settings, &output_cfg) ==
+            H2_PAL_ERR_UNSUPPORTED);
     REQUIRE(h2_pal_wifi_settings_set_saved_sta_config(settings, &cfg) == H2_PAL_ERR_UNSUPPORTED);
     REQUIRE(h2_pal_wifi_settings_clear_saved_sta_config(settings) == H2_PAL_ERR_UNSUPPORTED);
     REQUIRE(h2_pal_wifi_settings_has_saved_sta_config(settings, &has) == H2_PAL_ERR_UNSUPPORTED);
