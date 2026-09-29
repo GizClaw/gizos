@@ -25,13 +25,13 @@ static int audio_active, selected_loader;
 static int mutex_cookie;
 const char h2_pal_audio_e2e_runner_task_name[] = "test-audio";
 
-static int lock_mutex(void *user, h2_pal_mutex_t *mutex) {
+static h2_pal_result_t lock_mutex(void *user, h2_pal_mutex_t *mutex) {
   (void)user;
   assert(mutex == (h2_pal_mutex_t *)&mutex_cookie);
   ++locks;
   return H2_PAL_OK;
 }
-static int unlock_mutex(void *user, h2_pal_mutex_t *mutex) {
+static h2_pal_result_t unlock_mutex(void *user, h2_pal_mutex_t *mutex) {
   (void)user;
   assert(mutex == (h2_pal_mutex_t *)&mutex_cookie);
   ++unlocks;
@@ -45,7 +45,7 @@ static void reset_chip(void) {
   audio_active = 0;
   longjmp(reset_boundary, 1);
 }
-static int fallback_reboot(void *user, uint32_t reason) {
+static h2_pal_result_t fallback_reboot(void *user, uint32_t reason) {
   (void)user; (void)reason;
   reset_chip();
   return H2_PAL_OK;
