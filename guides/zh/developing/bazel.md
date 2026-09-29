@@ -261,7 +261,7 @@ Graph test 对目录、label、rule kind、artifact identity 和依赖边做校�
 
 公开 `.bzl` 中指向 GizOS-owned tool、config setting 或默认输入的 label 必须稳定解析到 `@gizos//...`，不能用只在 root repository 成立的 `@//...`。Consumer-owned `srcs`、`data`、board、App 与 launcher 继续由调用方显式传入，GizOS rule 不能反向取得产品 ownership。
 
-`make bazel-test-downstream-consumer` 在临时 root module 中通过 `--override_module=gizos=<checkout>` 构建 Runtime、native component、firmware library composition 和 H2Loader package fixture。该验证不替代 GizOS 自身的完整 compatible graph，也不把本地 checkout override 当作发布 pin；正式 consumer 必须使用已发布版本或 immutable revision 与完整性校验。
+`make bazel-test-downstream-consumer` 在临时 root module 中通过 `--override_module=gizos=<checkout>` 构建 Runtime、native component、firmware library composition 和 H2Loader package fixture。该验证不替代 GizOS 自身的完整 compatible graph，也不把本地 checkout override 当作发布 pin；正式 consumer 必须使用已发布版本或 immutable revision 与完整性校验。Fixture root 忽略所有 rc file，但 output user root 与 repository cache 沿用调用方为当前 checkout 解析出的位置（在 checkout 中分别执行 `bazel info output_base` 与 `bazel info repository_cache`）；`BAZEL_OUTPUT_USER_ROOT` 与 `BAZEL_REPOSITORY_CACHE` 可以显式覆盖。临时 output base 仍位于 `TMPDIR`，脚本退出时关闭 server 并删除。
 
 `NATIVE_TARGETS` 只接受 `//package:target` exact label，不提供 package path shorthand、recursive pattern 或兼容转换。CI 显式传入 `H2_BAZEL_CONFIG`；本地未传时，Make entry 按当前 macOS arm64、Linux x86_64 或 Linux arm64 host 选择已有 config。
 

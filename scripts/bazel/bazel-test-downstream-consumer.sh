@@ -4,16 +4,36 @@ set -euo pipefail
 
 repository_root=$(git rev-parse --show-toplevel)
 fixture_root="$repository_root/tools/bazel/tests/downstream_consumer"
+
+# The fixture root ignores every rc file, so Bazel would otherwise fall back to
+# its built-in output root and repository cache. Reuse the locations the
+# caller's own configuration selects for this checkout instead.
+caller_bazel_info() {
+    (cd "$repository_root" && "${BAZEL_BIN:-bazel}" info "$1")
+}
+output_user_root=${BAZEL_OUTPUT_USER_ROOT:-}
+if [ -z "$output_user_root" ]; then
+    caller_output_base=$(caller_bazel_info output_base)
+    output_user_root=${caller_output_base%/*}
+fi
+repository_cache=${BAZEL_REPOSITORY_CACHE:-}
+if [ -z "$repository_cache" ]; then
+    repository_cache=$(caller_bazel_info repository_cache)
+fi
+if [ -z "$output_user_root" ] || [ -z "$repository_cache" ]; then
+    printf 'cannot resolve the Bazel output root and repository cache\n' >&2
+    exit 2
+fi
+mkdir -p "$repository_cache"
+
 consumer_root=$(mktemp -d "${TMPDIR:-/tmp}/gizos-downstream-consumer.XXXXXX")
 
 cleanup() {
-    "${BAZEL_BIN:-bazel}" --output_base="$consumer_root/output-base" shutdown >/dev/null 2>&1 || true
+    "${BAZEL_BIN:-bazel}" --output_user_root="$output_user_root" --output_base="$consumer_root/output-base" shutdown >/dev/null 2>&1 || true
     chmod -R u+w "$consumer_root" 2>/dev/null || true
     rm -rf "$consumer_root"
 }
 trap cleanup EXIT
-repository_cache=${BAZEL_REPOSITORY_CACHE:-"$HOME/.cache/bazel/repository"}
-mkdir -p "$repository_cache"
 
 # The fixture root ignores every rc file, so it must declare the same registry
 # list a real downstream consumer configures for GizClaw-owned Bzlmod modules.
@@ -73,6 +93,7 @@ cd "$consumer_root"
 
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
+    --output_user_root="$output_user_root" \
     --output_base="$consumer_root/output-base" \
     cquery \
     --enable_bzlmod \
@@ -87,6 +108,7 @@ cd "$consumer_root"
 
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
+    --output_user_root="$output_user_root" \
     --output_base="$consumer_root/output-base" \
     aquery \
     --enable_bzlmod \
@@ -110,6 +132,7 @@ grep -E 'h2_esp_target_task_policy=bazel-out/.*/private_esp_task_policy' font-na
 
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
+    --output_user_root="$output_user_root" \
     --output_base="$consumer_root/output-base" \
     aquery \
     --enable_bzlmod \
@@ -136,6 +159,7 @@ expect_missing_policy_failure() {
     sed -i.bak "/^[[:space:]]*${field} =/d" BUILD.bazel
     if "${BAZEL_BIN:-bazel}" \
         --ignore_all_rc_files \
+        --output_user_root="$output_user_root" \
         --output_base="$consumer_root/output-base" \
         cquery \
         --enable_bzlmod \
@@ -164,6 +188,7 @@ sed -i.bak 's/tasks = \["private\/consumer"\]/tasks = ["private\/consumer", "pri
 for target in private_esp_firmware private_bk_firmware; do
     if "${BAZEL_BIN:-bazel}" \
         --ignore_all_rc_files \
+        --output_user_root="$output_user_root" \
         --output_base="$consumer_root/output-base" \
         cquery \
         --enable_bzlmod \
@@ -185,6 +210,7 @@ cp BUILD.bazel.complete BUILD.bazel
 sed -i.bak 's/font_name = "downstream_font_16"/font_name = "9invalid"/' BUILD.bazel
 if "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
+    --output_user_root="$output_user_root" \
     --output_base="$consumer_root/output-base" \
     cquery \
     --enable_bzlmod \
@@ -204,6 +230,7 @@ cp BUILD.bazel.complete BUILD.bazel
 sed -i.bak 's/symbol = "embedded_menu_font"/symbol = "9invalid"/' BUILD.bazel
 if "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
+    --output_user_root="$output_user_root" \
     --output_base="$consumer_root/output-base" \
     cquery \
     --enable_bzlmod \
@@ -222,6 +249,7 @@ cp BUILD.bazel.complete BUILD.bazel
 
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
+    --output_user_root="$output_user_root" \
     --output_base="$consumer_root/output-base" \
     build \
     --enable_bzlmod \
@@ -256,6 +284,7 @@ test ! -e "$consumer_root/private_bk_task_policy"
 
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
+    --output_user_root="$output_user_root" \
     --output_base="$consumer_root/output-base" \
     test \
     --enable_bzlmod \
@@ -275,6 +304,7 @@ test ! -e "$consumer_root/private_bk_task_policy"
 
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
+    --output_user_root="$output_user_root" \
     --output_base="$consumer_root/output-base" \
     build \
     --enable_bzlmod \
