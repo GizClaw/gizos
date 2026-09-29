@@ -45,7 +45,8 @@ static void dhcp_diag(void *user) {
                     (void)__atomic_fetch_or(&diag_observed, 2u, __ATOMIC_RELAXED);
                 const char *direction =
                     e->dir == 1u ? "CP_TX" : e->dir == 2u ? "CP_RX" :
-                    e->dir == 3u ? "HOST_TX" : "HOST_TX_RESULT";
+                    e->dir == 3u ? "HOST_TX" : e->dir == 4u ? "HOST_TX_RESULT" :
+                    "CP_TX_RESULT";
                 printf("H2_BK_DHCP dir=%s type=%u src=%u dst=%u xid=%lu "
                        "vif=%ld role=%ld netif=%u flags=%u ip4=%lu default=%u "
                        "bytes=%u ticket=%lu ip_src=%lu ip_dst=%lu yiaddr=%lu "

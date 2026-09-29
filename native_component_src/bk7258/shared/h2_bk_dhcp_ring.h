@@ -20,7 +20,8 @@ typedef struct h2_bk_dhcp_snapshot_data {
 } h2_bk_dhcp_snapshot_t;
 
 /* dir: 1=CP lwIP TX, 2=CP radio RX, 3=AP-host IPC TX attempt,
- * 4=AP-host IPC TX sender returned. send_rc is valid for dir 4 only.
+ * 4=AP-host IPC TX sender returned, 5=CP lwIP TX sender returned.
+ * send_rc is valid for dir 4 or 5 only.
  * Packet path: one CAS attempt, no lock wait, logging, clock, IPC or allocation. */
 void h2_bk_dhcp_record(const h2_bk_dhcp_entry_t *entry);
 /* Ordinary query task: up to three attempts per slot, each record is stable. */

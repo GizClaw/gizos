@@ -19,6 +19,26 @@ if(H2_BK_DHCP_TRACE)
   string(REPLACE "${H2_BK_TRACE_RX_ANCHOR}"
     "${H2_BK_TRACE_RX_ANCHOR}\n    h2_bk_dhcp_trace(\"RX\", p, netif, iface, vif ? wifi_netif_vif_to_netif_type(vif) : -1);"
     H2_BK_TRACE_CONTENT "${H2_BK_TRACE_CONTENT}")
+  # The AP DHCP server uses CP lwIP's low_level_output. Keep the original
+  # pre-send event and add its actual radio-queue sender return using a local
+  # copy of metadata, since bmsg_tx_sender may consume the pbuf.
+  set(H2_BK_TRACE_LOCAL_SEND_ANCHOR "ret = bmsg_tx_sender(p, (uint32_t)vif_idx);")
+  string(FIND "${H2_BK_TRACE_CONTENT}"
+    "${H2_BK_TRACE_LOCAL_SEND_ANCHOR}" H2_BK_TRACE_LOCAL_SEND_OFFSET)
+  if(H2_BK_TRACE_LOCAL_SEND_OFFSET EQUAL -1)
+    message(FATAL_ERROR "Pinned CP local TX sender changed; revalidate DHCP diagnostics")
+  endif()
+  string(REPLACE "${H2_BK_TRACE_LOCAL_SEND_ANCHOR}"
+    "h2_bk_dhcp_entry_t h2_trace_result;
+        int h2_trace_captured = h2_bk_dhcp_capture(5u, p, netif, vif_idx,
+            netif->state ? wifi_netif_vif_to_netif_type(netif->state) : -1,
+            &h2_trace_result);
+        ${H2_BK_TRACE_LOCAL_SEND_ANCHOR}
+        if (h2_trace_captured) {
+            h2_trace_result.send_rc = (uint32_t)ret;
+            h2_bk_dhcp_record(&h2_trace_result);
+        }"
+    H2_BK_TRACE_CONTENT "${H2_BK_TRACE_CONTENT}")
   set(H2_BK_TRACE_CORRECTED "${CMAKE_CURRENT_BINARY_DIR}/h2_bk_dhcp_wlanif.c")
   file(WRITE "${H2_BK_TRACE_CORRECTED}" "#include \"h2_bk_dhcp_trace.h\"\n${H2_BK_TRACE_CONTENT}")
   armino_component_get_property(H2_BK_TRACE_LIB lwip_intf_v2_1 COMPONENT_LIB)
