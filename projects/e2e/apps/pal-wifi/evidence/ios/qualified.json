@@ -1,0 +1,16 @@
+{
+  "platform": "ios-simulator",
+  "version": "2.0.0",
+  "pid": 60955,
+  "contract": 1,
+  "operations": 21,
+  "capability_contract_pass": 1,
+  "physical_wifi_qualified": 0,
+  "netif_available": 0,
+  "wifi_sta": "UNSUPPORTED",
+  "wifi_ap": "UNSUPPORTED",
+  "wifi_settings": "UNSUPPORTED",
+  "netif": "UNSUPPORTED",
+  "rc": 0,
+  "teardown": 0
+}

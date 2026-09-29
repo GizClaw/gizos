@@ -1,0 +1,8 @@
+{
+  "source_head": "450374f22c9314c6a2d8d89d961c6768c7f6130a",
+  "portable_app_sha256": "48a99ab599b38a65e4b450ab304c0b307f903db92ea66320eba04732201e691d",
+  "app_sha256": "cd52f1b658a91feb9341224d25b4cb1ab965b77848b47e070c4bd54c6b151f88",
+  "sdk_sha256": "3a957acb2bc1ff3f3ce14db1d5f8c8c80a7ffebc0a724ca47d03afefffb927ba",
+  "test_target": "//projects/e2e/targets/ios_application/pal-wifi:ios_pal_wifi_simulator_test",
+  "scope": "packaged SDK simulator capability-contract; no physical WLAN"
+}

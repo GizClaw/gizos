@@ -1,0 +1,8 @@
+{
+  "source_head": "450374f22c9314c6a2d8d89d961c6768c7f6130a",
+  "portable_app_sha256": "48a99ab599b38a65e4b450ab304c0b307f903db92ea66320eba04732201e691d",
+  "app_sha256": "af2f97cb836ac33a775186fc7d4a1db9f5b160f663cc9bbacc47ba0d4ab0e563",
+  "sdk_sha256": "fcfe809751dc8468e9d8d67f3358d2593bb81589961c6007e19950b5bdd4992e",
+  "test_target": "//projects/e2e/targets/android_binary/pal-wifi:android_pal_wifi_simulator_test",
+  "scope": "packaged SDK emulator capability-contract; no physical WLAN"
+}
