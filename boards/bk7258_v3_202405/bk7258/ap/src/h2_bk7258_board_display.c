@@ -1,12 +1,17 @@
 #include "h2_bk7258_board_private.h"
+#include "h2_bk7258_display_backlight.h"
 
 #include "components/bk_display.h"
 #include "components/media_types.h"
 #include "driver/gpio.h"
 #include "driver/lcd_types.h"
+#include "driver/lcd.h"
+#include "lcd_disp_ll_macro_def.h"
 #include "driver/pwr_clk.h"
+#include "driver/pwm.h"
 #include "frame_buffer.h"
 #include "gpio_driver.h"
+#include "gpio_ll.h"
 #include "lcd_panel_devices.h"
 #include "media_service.h"
 #include "modules/pm.h"
@@ -47,12 +52,17 @@ typedef struct h2_bk7258_display_state {
     h2_bk7258_display_bus_t bus;
     bool swap_rgb565_bytes;
     bool first_present_done;
+    h2_bk7258_backlight_state_t backlight;
     int initialized;
 } h2_bk7258_display_state_t;
 
+/* Media slab and shared media timer are process-owned, initialized once. */
+static bool s_media_initialized;
 static h2_bk7258_display_state_t s_display_state = {
     .bus = H2_BK7258_DISPLAY_BUS_DEFAULT,
 };
+
+
 
 #if H2_BK7258_HAS_QSPI_ST77903
 static bk_display_qspi_ctlr_config_t s_qspi_config = {
@@ -65,11 +75,71 @@ static bk_display_qspi_ctlr_config_t s_qspi_config = {
 
 static bk_display_rgb_ctlr_config_t s_rgb_config = {
     .lcd_device = &lcd_device_h050iwv,
-    .clk_pin = GPIO_0,
-    .cs_pin = GPIO_12,
-    .sda_pin = GPIO_1,
-    .rst_pin = GPIO_6,
+    /* H050IWV has no SPI init callback. Disable that optional control bus;
+     * GPIO0/1 belong to H2Loader UART1 and must remain mapped to UART. */
+    .clk_pin = GPIO_NUM,
+    .cs_pin = GPIO_NUM,
+    .sda_pin = GPIO_NUM,
+    .rst_pin = GPIO_NUM,
 };
+
+/* The SDK leaves RGB GPIO init disabled; H2Loader's UART-only boot map
+ * must not determine whether this board Display sends physical panel signals. */
+static int init_rgb_pins(void) {
+    static const struct { gpio_id_t pin; gpio_dev_t function; } pins[] = {
+        {GPIO_14, GPIO_DEV_LCD_CLK},
+        {GPIO_15, GPIO_DEV_LCD_DISP},
+        {GPIO_16, GPIO_DEV_LCD_DE},
+        {GPIO_17, GPIO_DEV_LCD_HSYNC},
+        {GPIO_18, GPIO_DEV_LCD_VSYNC},
+        {GPIO_19, GPIO_DEV_LCD_R7},
+        {GPIO_20, GPIO_DEV_LCD_R6},
+        {GPIO_21, GPIO_DEV_LCD_R5},
+        {GPIO_22, GPIO_DEV_LCD_R4},
+        {GPIO_23, GPIO_DEV_LCD_R3},
+        {GPIO_24, GPIO_DEV_LCD_G7},
+        {GPIO_25, GPIO_DEV_LCD_G6},
+        {GPIO_26, GPIO_DEV_LCD_G5},
+        {GPIO_40, GPIO_DEV_LCD_G4},
+        {GPIO_41, GPIO_DEV_LCD_G3},
+        {GPIO_42, GPIO_DEV_LCD_G2},
+        {GPIO_43, GPIO_DEV_LCD_B7},
+        {GPIO_44, GPIO_DEV_LCD_B6},
+        {GPIO_45, GPIO_DEV_LCD_B5},
+        {GPIO_46, GPIO_DEV_LCD_B4},
+        {GPIO_47, GPIO_DEV_LCD_B3},
+        {GPIO_48, GPIO_DEV_LCD_R2},
+        {GPIO_49, GPIO_DEV_LCD_R1},
+        {GPIO_50, GPIO_DEV_LCD_R0},
+        {GPIO_51, GPIO_DEV_LCD_G1},
+        {GPIO_52, GPIO_DEV_LCD_G0},
+        {GPIO_53, GPIO_DEV_LCD_B2},
+        {GPIO_54, GPIO_DEV_LCD_B1},
+        {GPIO_55, GPIO_DEV_LCD_B0},
+    };
+    gpio_hw_t *gpio = (gpio_hw_t *)GPIO_LL_REG_BASE;
+    /* gpio_ll keeps its register pointer per translation unit. This only
+     * initializes our local pointer; it does not reset or write the hardware. */
+    gpio_ll_init(gpio);
+    unsigned restored = 0;
+    for (size_t i = 0; i < sizeof(pins)/sizeof(pins[0]); ++i) {
+        /* This SoC maps every RGB signal above to peripheral function 4.
+         * Keep the known working boot mapping when it is already correct;
+         * unnecessary unmap operations also produce a native warning burst. */
+        if (gpio->gpio_num[pins[i].pin].cfg.gpio_2_func_en &&
+            gpio_ll_get_gpio_perial_mode(gpio, pins[i].pin) == 4u)
+            continue;
+        /* Drive capacity comes from the board profile. This SDK's public
+         * bool capacity setter actually returns a bk_err_t (success is 0). */
+        if (gpio_dev_unmap(pins[i].pin) != BK_OK ||
+            gpio_dev_map(pins[i].pin, pins[i].function) != BK_OK)
+            return H2_DISPLAY_ERR_IO;
+        ++restored;
+    }
+    printf("H2_BK_DISPLAY_RGB_PINS ready=%u restored=%u uart1_preserved=1\n",
+        (unsigned)(sizeof(pins)/sizeof(pins[0])), restored);
+    return H2_DISPLAY_OK;
+}
 
 static uint16_t rgb888_to_rgb565(const uint8_t *pixel) {
     return (uint16_t)((((uint16_t)pixel[0] & 0xf8u) << 8) |
@@ -81,7 +151,7 @@ static uint16_t rgb444_to_rgb565(uint16_t pixel) {
     uint16_t r = (uint16_t)((pixel >> 8) & 0x0fu);
     uint16_t g = (uint16_t)((pixel >> 4) & 0x0fu);
     uint16_t b = (uint16_t)(pixel & 0x0fu);
-    return (uint16_t)((r << 12) | (r << 8) | (g << 7) | (g << 3) | (b << 1) | (b >> 3));
+    return (uint16_t)((((r << 1) | (r >> 3)) << 11) | (((g << 2) | (g >> 2)) << 5) | (b << 1) | (b >> 3));
 }
 
 static uint16_t swap_rgb565(uint16_t pixel) {
@@ -138,11 +208,13 @@ static void lcd_backlight_close(uint8_t bl_io) {
     bk_gpio_set_output_low(bl_io);
 }
 
-static void deinit_display(h2_bk7258_display_state_t *state) {
+static int deinit_display(h2_bk7258_display_state_t *state) {
     if (state == NULL || !state->initialized) {
-        return;
+        return H2_DISPLAY_OK;
     }
 
+    int rc = h2_bk7258_backlight_release(&state->backlight);
+    if (rc) return rc;
     if (state->handle != NULL) {
         (void)bk_display_close(state->handle);
     }
@@ -162,6 +234,7 @@ static void deinit_display(h2_bk7258_display_state_t *state) {
     state->swap_rgb565_bytes = false;
     state->first_present_done = false;
     state->initialized = 0;
+    return H2_DISPLAY_OK;
 }
 
 static int init_display(h2_bk7258_display_state_t *state) {
@@ -170,11 +243,17 @@ static int init_display(h2_bk7258_display_state_t *state) {
     }
 
     avdk_err_t ret = AVDK_ERR_OK;
+    if (!s_media_initialized) {
+        if (media_service_init() != BK_OK ||
+            bk_pm_module_vote_psram_ctrl(PM_POWER_PSRAM_MODULE_NAME_LVGL_CODE_RUN,
+                PM_POWER_MODULE_STATE_ON) != BK_OK)
+            return H2_DISPLAY_ERR_IO;
+        bk_psram_frame_buffer_init();
+        s_media_initialized = true;
+    }
 
 #if H2_BK7258_HAS_QSPI_ST77903
     if (state->bus == H2_BK7258_DISPLAY_BUS_QSPI) {
-        (void)media_service_init();
-        bk_psram_frame_buffer_init();
         ret = bk_display_qspi_new(&state->handle, &s_qspi_config);
         if (ret != AVDK_ERR_OK) {
             BK_LOGE(TAG, "bk_display_qspi_new failed: %d\r\n", ret);
@@ -186,9 +265,8 @@ static int init_display(h2_bk7258_display_state_t *state) {
     } else
 #endif
     {
-        (void)media_service_init();
-        (void)bk_pm_module_vote_psram_ctrl(PM_POWER_PSRAM_MODULE_NAME_LVGL_CODE_RUN, PM_POWER_MODULE_STATE_ON);
-
+        int pin_rc = init_rgb_pins();
+        if (pin_rc != H2_DISPLAY_OK) return pin_rc;
         ret = bk_display_rgb_new(&state->handle, &s_rgb_config);
         if (ret != AVDK_ERR_OK) {
             BK_LOGE(TAG, "bk_display_rgb_new failed: %d\r\n", ret);
@@ -231,10 +309,10 @@ static int clip_rect(
     const h2_bk7258_display_state_t *state,
     const h2_display_rect_t *rect,
     h2_display_rect_t *clipped) {
-    int x1 = rect->x;
-    int y1 = rect->y;
-    int x2 = rect->x + rect->width;
-    int y2 = rect->y + rect->height;
+    int64_t x1 = rect->x;
+    int64_t y1 = rect->y;
+    int64_t x2 = x1 + rect->width;
+    int64_t y2 = y1 + rect->height;
     int width = state->width;
     int height = state->height;
 
@@ -292,7 +370,11 @@ static int bk_draw_bitmap(
     } else {
         return H2_DISPLAY_ERR_UNSUPPORTED;
     }
-    if (stride_bytes < (size_t)rect->width * src_pixel_size) {
+    const size_t row_bytes = (size_t)rect->width * src_pixel_size;
+    if (rect->width <= 0 || rect->height <= 0 ||
+        (size_t)rect->width > SIZE_MAX / src_pixel_size ||
+        stride_bytes < row_bytes ||
+        ((size_t)rect->height - 1u) > (SIZE_MAX - row_bytes) / stride_bytes) {
         return H2_DISPLAY_ERR_INVALID_ARG;
     }
 
@@ -303,8 +385,8 @@ static int bk_draw_bitmap(
     }
 
     const uint8_t *src = (const uint8_t *)pixels;
-    src += (size_t)(clipped.y - rect->y) * stride_bytes;
-    src += (size_t)(clipped.x - rect->x) * src_pixel_size;
+    src += (size_t)((int64_t)clipped.y - rect->y) * stride_bytes;
+    src += (size_t)((int64_t)clipped.x - rect->x) * src_pixel_size;
 
     for (int row = 0; row < clipped.height; ++row) {
         uint16_t *dst = (uint16_t *)state->shadow->frame +
@@ -315,9 +397,10 @@ static int bk_draw_bitmap(
             if (!state->swap_rgb565_bytes) {
                 memcpy(dst, src_row, (size_t)clipped.width * sizeof(uint16_t));
             } else {
-                const uint16_t *src16 = (const uint16_t *)src_row;
                 for (int col = 0; col < clipped.width; ++col) {
-                    dst[col] = encode_rgb565_for_bus(state, src16[col]);
+                    uint16_t pixel;
+                    memcpy(&pixel, src_row + (size_t)col * 2u, 2u);
+                    dst[col] = encode_rgb565_for_bus(state, pixel);
                 }
             }
         } else if (format == H2_DISPLAY_PIXEL_RGB888) {
@@ -325,9 +408,10 @@ static int bk_draw_bitmap(
                 dst[col] = encode_rgb565_for_bus(state, rgb888_to_rgb565(src_row + (size_t)col * 3u));
             }
         } else {
-            const uint16_t *src16 = (const uint16_t *)src_row;
             for (int col = 0; col < clipped.width; ++col) {
-                dst[col] = encode_rgb565_for_bus(state, rgb444_to_rgb565(src16[col]));
+                uint16_t pixel;
+                memcpy(&pixel, src_row + (size_t)col * 2u, 2u);
+                dst[col] = encode_rgb565_for_bus(state, rgb444_to_rgb565(pixel));
             }
         }
     }
@@ -377,10 +461,14 @@ static int bk_set_brightness_percent(void *user, uint32_t percent) {
     if (!state->initialized) {
         return H2_DISPLAY_ERR_INVALID_STATE;
     }
-    if (percent == 0u) {
-        lcd_backlight_close(LCD_BACKLIGHT_PIN);
+    if (percent > 100u) return H2_DISPLAY_ERR_INVALID_ARG;
+    if (percent == 0u || percent == 100u) {
+        int rc = h2_bk7258_backlight_release(&state->backlight);
+        if (rc) return rc;
+        if (percent == 0u) lcd_backlight_close(LCD_BACKLIGHT_PIN);
+        else lcd_backlight_open(LCD_BACKLIGHT_PIN);
     } else {
-        lcd_backlight_open(LCD_BACKLIGHT_PIN);
+        return h2_bk7258_backlight_pwm(&state->backlight, percent);
     }
     return H2_DISPLAY_OK;
 }
@@ -392,8 +480,7 @@ static int bk_open(void *user) {
 
 static int bk_close(void *user) {
     h2_bk7258_display_state_t *state = (h2_bk7258_display_state_t *)user;
-    deinit_display(state);
-    return H2_DISPLAY_OK;
+    return deinit_display(state);
 }
 
 int h2_bk7258_board_display_black(void) {
@@ -405,7 +492,7 @@ int h2_bk7258_board_display_black(void) {
 
     h2_bk7258_display_state_t *state = (h2_bk7258_display_state_t *)display->user;
     os_memset(state->shadow->frame, 0, state->frame_size);
-    return bk_present(display);
+    return h2_pal_display_present(display);
 }
 
 h2_pal_display_t *h2_bk7258_board_display(void) {
@@ -422,4 +509,27 @@ h2_pal_display_t *h2_bk7258_board_display(void) {
         .vtable = &vtable,
     };
     return &display;
+}
+
+int h2_bk7258_board_display_capture(uint16_t *pixels, size_t capacity) {
+    h2_bk7258_display_state_t *state = &s_display_state;
+    if (!state->initialized) return H2_DISPLAY_ERR_INVALID_STATE;
+    if (!pixels || capacity < (size_t)state->width*state->height)
+        return H2_DISPLAY_ERR_INVALID_ARG;
+    if (state->bus != H2_BK7258_DISPLAY_BUS_RGB)
+        return H2_DISPLAY_ERR_UNSUPPORTED;
+    /* Driver queue and one full refresh must complete before taking this
+     * diagnostic copy. No Display calls run concurrently with this capture. */
+    rtos_delay_milliseconds(150);
+    uint32_t before = lcd_disp_ll_get_disp_status_rgb_ver_cnt();
+    bool advancing = false;
+    for (unsigned i=0; i<20; ++i) {
+        rtos_delay_milliseconds(1);
+        if (lcd_disp_ll_get_disp_status_rgb_ver_cnt() != before) { advancing = true; break; }
+    }
+    uintptr_t source = lcd_disp_ll_get_mater_rd_base_addr();
+    if (!advancing || source == 0u) return H2_DISPLAY_ERR_IO;
+    memcpy(pixels, (const void *)source, state->frame_size);
+
+    return H2_DISPLAY_OK;
 }

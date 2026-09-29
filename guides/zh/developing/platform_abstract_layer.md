@@ -93,6 +93,14 @@ PAL 不负责 app component 与 board periph 的映射。BSP 定义 board 的 `p
 
 Browser 的 reusable provider 位于 `libs/pal/providers/web/pal_core`，暴露真实实现的 Memory、Log、Time、Timer、Task、Queue、Sync、Pref、Crypto、HTTP、Display、Audio playback/capture、Touch、WebRTC 与 Host Serial accessor。Time 默认读取 browser wall clock，不推断宿主时钟的同步来源；设置 wall clock 保存当前 platform 的本地偏移并标记 USER，不修改宿主系统时间。Firmware Info 由 launcher 在 Runtime 初始化前注入不可变构建版本。Audio `stop_speaker` 立即停止已排程的播放；与设备 mixer queue 一致，speaker 停止期间 track 仍接受写入并按 track 容量保留，下一次 `start_speaker` 时开始播放。Crypto 通过 browser cryptographic randomness 初始化唯一的 wolfCrypt integration。HTTP 使用 Fetch，因此直接请求仍受 CORS 约束；artifact 可以通过 `Module.h2WebHttpProxyUrl` 显式选择由受信宿主提供的同源代理，provider 不内建远端 allowlist 或通用绕过。Pref 使用当前 HTTPS origin 的 `localStorage` 保存 namespace-scoped typed entry；private mode、storage policy 或 quota 使存储不可用时，`open` 必须返回 `UNAVAILABLE`，不能伪装成可持久化内存。一个 live platform state 持有 pthread Core。C main 和 PAL Task 在 Worker 上运行，Task join 回收原生栈与线程对象，Queue/Sync/Timer 支持线程间并行。浏览器 DOM、JS 对象和 API 入口由 `h2_web_main_thread.h` 代理到 UI，异步完成唤醒 Worker 条件变量。Web artifact 全图编译、链接都使用 `-pthread`，C main 使用 `PROXY_TO_PTHREAD`，托管服务发送 COOP/COEP 响应头；Web provider 不再依赖 libco 或 Asyncify。Artifact entry 而不是 provider 负责构造完整 Runtime：真实 accessor 填入已实现字段，其余字段逐项绑定 matching canonical unsupported API object。Host Serial 不在 Runtime 中，由 launcher 单独注入 portable consumer。
 
+## Display lifecycle 和诊断
+
+Display 的 `open` 幂等；`get_info`、`draw_bitmap`、`present` 和亮度操作必须在成功 open 后调用。重复 open 不增加关闭所需的引用数，close 后调用返回 `INVALID_STATE`。Bitmap 输入只在 draw 调用期间借用，provider 不可把输入指针留给随后 present；stride、source span 和矩形端点必须先做有界计算，再访问像素。native format 必须实现，额外格式和矩形裁剪仍由各 provider 明确支持范围。亮度参数为 0..100，超过范围返回 `INVALID_ARG`，不会静默改变亮度。
+
+Desktop 的 composition frame callback 提供未调亮度的组合 framebuffer；独立、可选的 renderer capture callback 在真正 SDL texture/render/亮度处理后读取 RGBA 像素。未注册时不会执行昂贵 GPU readback，两个 callback 的输入都只在回调期间借用，禁止重入 SDL provider。iOS/Android 的 Display E2E launcher 创建真实 UIKit/Android View 并注入自己的 Runtime；全局 headless App Host 继续使用 unsupported Display。
+
+独立的 [PAL Display E2E](https://github.com/GizClaw/gizos/tree/main/projects/e2e/apps/pal-display) 通过相同 24 个 case 验证六个公开操作。桌面、浏览器和模拟器观察实际 renderer/页面/View 的像素；AMOLED SPI DMA 完成证据、BK LCD 活跃 DMA/refresh 证据与屏幕光学像素、实测亮度是不同验收层。没有物理 readback/相机或人工确认时，不可仅凭 framebuffer hash 或 draw 返回 OK 宣称物理屏幕通过。
+
 ## PAL 分类
 
 PAL 按能力职责分为以下几类。

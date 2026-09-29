@@ -38,6 +38,7 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 | PAL WebRTC | `//projects/e2e/apps/pal-webrtc/app:pal_webrtc_e2e` | 独立 WebRTC：13 个操作、43 个 mandatory case；六端独立入口及真实 Pion 对端，按各端完整 ledger 授予资格 |
 | PAL Audio Decoder | `//projects/e2e/apps/pal-audio-decoder/app:pal_audio_decoder_e2e` | 独立 AAC-LC RAW 解码：8 个操作、29 个必过 case；六端入口已实现，实际资格以各端完整 PCM、生命周期与清理记录为准 |
 | PAL Audio | `//projects/e2e/apps/pal-audio/app:pal_audio_e2e` | 独立 Audio：11 个 provider 与 5 个 track 操作、24 个必过 case；macOS、真实 Chromium Worker、iOS/Android SDK 包消费 App、AMOLED ESP32-S3 与 BK7258，逐端验证 30 秒同时采播和完整清理 |
+| PAL Display | `//projects/e2e/apps/pal-display/app:pal_display_e2e` | 独立 Display：6 个操作、24 个必过 case；macOS SDL、Chromium Worker、iOS/Android 实际 SDK 包、AMOLED 与 BK7258，验证实际输出并单独记录物理屏幕观察 |
 | PAL | `//projects/e2e/apps/pal/app:pal_e2e` | Linux/macOS/Windows 共同 host OS/Filesystem/Net/TLS/CoreHTTP/CoreMQTT；Desktop core/MQTT/SQLite Preference；Browser core；DevKit 与 Tiga V4.2 H2Loader `pal-pref` |
 | H2Loader Serial | `//projects/e2e/apps/h2loader-serial/app:h2loader_serial_e2e` | macOS Desktop；desktop Chrome Browser |
 | WebRTC Performance | `//projects/e2e/apps/webrtc-performance/app:webrtc_performance` | Desktop H2Peer + local Pion；DevKit 与 AMOLED ESP32-S3 H2Peer + operator LAN Pion |
@@ -153,6 +154,14 @@ Desktop 验证真实 PortAudio callback；Browser C 在 pthread Worker 中通过
 `projects/e2e/apps/pal-audio-decoder/app` 借用真实 Decoder/Memory/Time/Sync PAL，执行 29 个 mandatory case，覆盖全部 8 个操作。原始 AAC-LC RAW fixture 验证单/双声道实际 PCM 格式、频谱、声道分离、时间戳、借用输入、持有 frame、reset/reconfigure、EOS 和 allocation failure 后完整释放。缺失能力、失败或资源残留均不授予资格；这份资格独立于录音/播放 Audio PAL。
 
 macOS 使用 FFmpeg；WASM C 在 Worker 执行、WebCodecs UI callback 只做有界私有 staging，调用方 PCM allocator 在 Worker acquire 时使用。要求 operator 明确选择具备 AAC codec 的 browser runtime；无 AAC 的开源 Chromium 记为 BLOCKED。三个环境相关入口为 `make bazel-test-wasm_pal_audio_decoder_browser_test`、`make bazel-test-ios_pal_audio_decoder_simulator_test` 与 `make bazel-test-android_pal_audio_decoder_simulator_test`。iOS/Android 消费实际 XCFramework/AAR；DevKit 和 BK7258 使用现有 native AAC decoder。设备只有全通过才 confirm，managed install 与独立正常 reboot 必须分别验收，保存原 P1、Stage 和 coredump 证据。当前六端资格仍在收集，不从构建成功推断通过；详细执行边界见 App README。
+
+## PAL Display
+
+`projects/e2e/apps/pal-display/app` 借用真实 Runtime 和 launcher 的输出观察器，覆盖 open/info/draw/present/brightness/close，固定运行 24 个 mandatory case。测试检查 native 格式、borrowed 像素生命周期、全屏及局部更新、padding/unaligned stride、可选格式的明确支持或拒绝、矩形/整数溢出、重复 present、0/50/100 亮度和重复 close/reopen；失败、未运行或清理失败不能授予资格。
+
+Desktop 从 SDL renderer 读回，Browser 比对真实 Chromium composited screenshot，移动端捕获已显示的 UIKit/Android View。移动端分别消费实际 Swift Package/XCFramework 和 AAR，manual 入口为 `make bazel-test-ios_pal_display_simulator_test` 与 `make bazel-test-android_pal_display_simulator_test`。
+
+AMOLED 比对已完成 SPI DMA 的传输数据；BK 比对 LCD controller 当前 DMA source 并检查 refresh counter。两者均不代表光学像素或实际亮度测量。物理图案及稳定性需要相机/readback fixture 或用户明确观察确认；亮度控制使用真实控制器命令/PWM 更新和 mandatory ledger 验证，人工逐档观察及光度测量单独记录。设备必须在 managed 安装启动和独立正常 reboot 后各自完成测试，保留原 Loader/P1 与 coredump，最终 Stage 空且 App confirmed。具体能力 profile 和证据边界见 [PAL Display App](https://github.com/GizClaw/gizos/tree/main/projects/e2e/apps/pal-display)。
 
 ## WebRTC Performance
 
