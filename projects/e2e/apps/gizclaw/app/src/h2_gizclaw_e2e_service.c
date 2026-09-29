@@ -1,5 +1,6 @@
 #include "h2_gizclaw_e2e_service.h"
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -101,7 +102,7 @@ static int check_time_sync(h2_gizclaw_service_t *service) {
        (status.state == H2_GIZCLAW_TIME_SYNC_RETRY &&
         status.last_result == H2_PAL_OK)))
     rc = H2_PAL_ERR_INVALID_STATE;
-  printf("H2_GIZCLAW_E2E stage=time-sync-state state=%u attempts=%u "
+  printf("H2_GIZCLAW_E2E stage=time-sync-state state=%u attempts=%" PRIu32 " "
          "last_rc=%d calibrated=%u result=%s rc=%d\n",
          (unsigned)status.state, status.attempts, status.last_result,
          rc == H2_PAL_OK && status.state == H2_GIZCLAW_TIME_SYNC_SUCCEEDED,
