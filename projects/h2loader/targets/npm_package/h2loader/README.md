@@ -30,7 +30,7 @@ try {
 }
 ```
 
-The SDK requires a secure browser context and a browser with Web Serial support. Version 0.4.0 runs its C runtime on pthread Workers with shared WebAssembly memory. Serve the application over HTTPS or localhost with these response headers on the page and SDK assets:
+The SDK requires a secure browser context and a browser with Web Serial support. Version 0.4.1 runs its C runtime on pthread Workers with shared WebAssembly memory. Serve the application over HTTPS or localhost with these response headers on the page and SDK assets:
 
 ```http
 Cross-Origin-Opener-Policy: same-origin
