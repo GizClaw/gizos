@@ -86,7 +86,13 @@ static int drain_speed_hooks(h2_gizclaw_e2e_fixture_t *fixture,
 }
 
 static const char *platform_name(void) {
-#if defined(__APPLE__)
+#if defined(__EMSCRIPTEN__)
+  return "wasm";
+#elif defined(__ANDROID__)
+  return "android";
+#elif defined(__ENVIRONMENT_IPHONE_OS_VERSION_MIN_REQUIRED__)
+  return "ios";
+#elif defined(__APPLE__)
   return "macos";
 #elif defined(_WIN32)
   return "windows";

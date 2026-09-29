@@ -1,4 +1,4 @@
-"""Fail-closed GizClaw API coverage audit for one complete Desktop E2E log.
+"""Fail-closed GizClaw API coverage audit for one complete GizClaw E2E log.
 
 The matrix is a requirement, not evidence. A symbol in a header, a mock test,
 or a successful RPC return without its business assertion is not live coverage.
@@ -225,7 +225,7 @@ def audit(lines, rules, *, endpoint, backend, profile, platform, process_exit_co
     if any(span["terminal"] is not True for span in spans.values()):
         issues.append("a case failed, was skipped, or lacks a unique passing terminal")
     if len(summaries) != 1:
-        issues.append("expected exactly one final Desktop summary")
+        issues.append("expected exactly one final E2E summary")
     else:
         expected = dict(endpoint=endpoint, backend=backend, profile=profile, platform=platform,
                         suite="all", selected=str(len(TOP_CASES)), terminal=str(len(TOP_CASES)),
@@ -234,7 +234,7 @@ def audit(lines, rules, *, endpoint, backend, profile, platform, process_exit_co
                         retained_resources="0", complete="true", exit_code="0",
                         first_failure_case="-", first_failure_rc="0")
         if any(summaries[0].get(key) != value for key, value in expected.items()):
-            issues.append("Desktop summary failed or run identity differs from requested acceptance lane")
+            issues.append("E2E summary failed or run identity differs from requested acceptance lane")
     results = []
     for rule in rules:
         span = spans.get(rule.case, {})
@@ -278,7 +278,7 @@ def main(argv=None):
     parser.add_argument("--endpoint", required=True)
     parser.add_argument("--backend", choices=("h2peer", "pion"), required=True)
     parser.add_argument("--profile", required=True)
-    parser.add_argument("--platform", choices=("macos", "linux", "windows"), required=True)
+    parser.add_argument("--platform", choices=("macos", "linux", "windows", "wasm-chromium", "ios-simulator", "android-emulator", "devkit", "amoled", "bk7258"), required=True)
     parser.add_argument("--process-exit-code", type=int, required=True,
                         help="actual test process status, not the status printed in its log")
     args = parser.parse_args(argv)

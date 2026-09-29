@@ -1,3 +1,4 @@
+load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("@rules_android//rules:rules.bzl", "android_binary", "android_library")
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
@@ -37,4 +38,20 @@ android_binary(
 mobile_app_sdk(
     name = "app_sdk",
     app = ":gizclaw_e2e",
+)
+
+sh_test(
+    name = "android_gizclaw_simulator_test",
+    size = "enormous",
+    srcs = ["run_simulator.sh"],
+    args = ["android", "--app", "$(rootpath :gizclaw_e2e.apk)", "--sdk", "$(rootpath :app_sdk)",
+            "--pcm", "$(rootpath //projects/e2e/apps/gizclaw:voice_prompt)", "--profile", "default"],
+    data = [":gizclaw_e2e.apk", ":app_sdk",
+            "//projects/e2e/apps/gizclaw:voice_prompt", "//projects/e2e/apps/gizclaw:api_coverage.py",
+            "//projects/e2e/libs/gizclaw-mobile:run_mobile.py"],
+    env_inherit = ["H2_IOS_SIMULATOR_UDID", "H2_ANDROID_SERIAL", "ANDROID_HOME", "DEVELOPER_DIR",
+        "H2_GIZCLAW_E2E_ENDPOINT", "H2_GIZCLAW_E2E_REGISTRATION_TOKEN",
+        "H2_GIZCLAW_E2E_DEVICE_API_URL", "H2_GIZCLAW_E2E_AUDIO_URL"],
+    tags = ["manual"],
+    target_compatible_with = ANDROID_ARM64_PACKAGE_ARTIFACT_COMPATIBILITY,
 )

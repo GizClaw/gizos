@@ -140,3 +140,5 @@ py_test(
     ],
     legacy_create_init = False,
 )
+
+exports_files(["api_coverage.py"])

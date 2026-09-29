@@ -10,3 +10,5 @@ cc_library(
     includes = ["."],
     deps = ["//libs/runtime", "//projects/e2e/apps/gizclaw/app:gizclaw_e2e"],
 )
+
+exports_files(["run_mobile.py"])

@@ -121,3 +121,11 @@ bazel-test-ios_pal_display_simulator_test:
 
 bazel-test-android_pal_display_simulator_test:
 	@scripts/bazel/bazel-test-android_pal_display_simulator_test.sh
+
+.PHONY: bazel-test-ios_gizclaw_simulator_test bazel-test-android_gizclaw_simulator_test bazel-test-gizclaw_wasm_live_test
+bazel-test-ios_gizclaw_simulator_test:
+	@scripts/bazel/bazel-test-ios_gizclaw_simulator_test.sh
+bazel-test-android_gizclaw_simulator_test:
+	@scripts/bazel/bazel-test-android_gizclaw_simulator_test.sh
+bazel-test-gizclaw_wasm_live_test:
+	@scripts/bazel/bazel-test-gizclaw_wasm_live_test.sh
