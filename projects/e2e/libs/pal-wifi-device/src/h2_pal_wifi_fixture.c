@@ -1,6 +1,21 @@
 #include "h2_pal_wifi_device.h"
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+static h2_runtime_t *log_runtime;
+static int log_error;
+static void emit(const char *format, ...) {
+    char message[H2_PAL_LOG_MESSAGE_MAX];
+    va_list args;
+    va_start(args, format);
+    int length = vsnprintf(message, sizeof(message), format, args);
+    va_end(args);
+    int rc = length < 0 || (size_t)length >= sizeof(message)
+                 ? H2_PAL_ERR_TRUNCATED
+                 : h2_pal_log_write(log_runtime->log, H2_PAL_LOG_INFO, "pal-wifi", message);
+    if (rc && !log_error)
+        log_error = rc;
+}
 
 static uint64_t time_ms(h2_runtime_t *rt) {
     uint64_t t = 0;
@@ -32,6 +47,8 @@ static bool result(void *user, const h2_pal_wifi_scan_entry_t *e) {
     return true;
 }
 int h2_wifi_fixture_run(h2_runtime_t *rt) {
+    log_runtime = rt;
+    log_error = 0;
     h2_pal_wifi_sta_config_t original = {0};
     int has = 0;
     int rc = h2_pal_wifi_settings_has_saved_sta_config(rt->wifi_settings, &has);
@@ -52,9 +69,9 @@ int h2_wifi_fixture_run(h2_runtime_t *rt) {
         rc = h2_pal_wifi_ap_start(rt->wifi_ap, &ap, 30000);
     if (rc)
         return rc;
-    printf("H2_WIFI_FIXTURE_START window_ms=600000 sta_mac=%02x%02x%02x%02x%02x%02x\n", mac[0],
-           mac[1], mac[2], mac[3], mac[4], mac[5]);
-    fflush(stdout);
+    emit("H2_WIFI_FIXTURE_START window_ms=600000 sta_mac=%02x%02x%02x%02x%02x%02x\n", mac[0],
+         mac[1], mac[2], mac[3], mac[4], mac[5]);
+
     uint64_t start = time_ms(rt);
     unsigned joins = 0;
     const char *names[] = {"h2wifi-dut-esp", "h2wifi-dut-bk"};
@@ -90,16 +107,16 @@ int h2_wifi_fixture_run(h2_runtime_t *rt) {
             }
             if (!connect_rc && status.ip_valid) {
                 ++joins;
-                printf("H2_WIFI_FIXTURE_CLIENT target=%s joined=%u ip4=%lu "
-                       "mac=%02x%02x%02x%02x%02x%02x\n",
-                       names[i], joins, (unsigned long)status.ip.ip4, mac[0], mac[1], mac[2],
-                       mac[3], mac[4], mac[5]);
-                fflush(stdout);
+                emit("H2_WIFI_FIXTURE_CLIENT target=%s joined=%u ip4=%lu "
+                     "mac=%02x%02x%02x%02x%02x%02x\n",
+                     names[i], joins, (unsigned long)status.ip.ip4, mac[0], mac[1], mac[2], mac[3],
+                     mac[4], mac[5]);
+
                 (void)h2_pal_time_sleep_ms(rt->time, 10000);
             }
             (void)h2_pal_wifi_sta_disconnect(rt->wifi_sta);
-            printf("H2_WIFI_FIXTURE_LEFT target=%s rc=%d\n", names[i], connect_rc);
-            fflush(stdout);
+            emit("H2_WIFI_FIXTURE_LEFT target=%s rc=%d\n", names[i], connect_rc);
+
             (void)h2_pal_time_sleep_ms(rt->time, 2500);
         }
     }
@@ -136,10 +153,10 @@ int h2_wifi_fixture_run(h2_runtime_t *rt) {
         if (!network_restored && !cleanup)
             cleanup = H2_PAL_ERR_TIMEOUT;
     }
-    printf("H2_WIFI_FIXTURE_END joins=%u cleanup=%d settings_unchanged=%d network_restored=%d\n",
-           joins, cleanup, settings_unchanged, network_restored);
-    fflush(stdout);
+    emit("H2_WIFI_FIXTURE_END joins=%u cleanup=%d settings_unchanged=%d network_restored=%d\n",
+         joins, cleanup, settings_unchanged, network_restored);
+
     memset(&original, 0, sizeof(original));
     memset(&saved, 0, sizeof(saved));
-    return cleanup;
+    return cleanup ? cleanup : log_error;
 }

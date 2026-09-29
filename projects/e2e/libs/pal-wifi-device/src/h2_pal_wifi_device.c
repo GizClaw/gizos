@@ -1,7 +1,22 @@
 #include "h2_pal_wifi_device.h"
 #include <inttypes.h>
+#include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+static h2_runtime_t *log_runtime;
+static int log_error;
+static void emit(const char *format, ...) {
+    char message[H2_PAL_LOG_MESSAGE_MAX];
+    va_list args;
+    va_start(args, format);
+    int length = vsnprintf(message, sizeof(message), format, args);
+    va_end(args);
+    int rc = length < 0 || (size_t)length >= sizeof(message)
+                 ? H2_PAL_ERR_TRUNCATED
+                 : h2_pal_log_write(log_runtime->log, H2_PAL_LOG_INFO, "pal-wifi", message);
+    if (rc && !log_error)
+        log_error = rc;
+}
 
 const char h2_wifi_device_runner_task_name[] = "pal-wifi/e2e/runner";
 
@@ -135,7 +150,7 @@ static int prepare(h2_runtime_t *rt, const char *version) {
     memset(&current, 0, sizeof(current));
     memset(actual, 0, sizeof(actual));
     memset(encoded, 0, sizeof(encoded));
-    printf("H2_WIFI_RECOVERY recovered=%d rc=%d\n", recovered, rc);
+    emit("H2_WIFI_RECOVERY recovered=%d rc=%d\n", recovered, rc);
     return close_ns(ns, rc);
 }
 static int finish(h2_runtime_t *rt) {
@@ -170,14 +185,15 @@ static void record(void *user, const char *id, int rc, uint64_t elapsed) {
                                                                                         : "FAIL";
     if (rc == H2_PAL_ERR_WOULD_BLOCK && !strcmp(id, "settings-restart-persistence"))
         status = "PENDING";
-    printf("H2_WIFI_CASE {\"id\":\"%s\",\"status\":\"%s\",\"rc\":%d,\"elapsed_ms\":%" PRIu64
-           ",\"line\":%u,\"boot\":%lu,\"nonce\":%" PRIu64 "}\n",
-           id, status, rc, elapsed, result.last_error_line, (unsigned long)boot, nonce);
-    fflush(stdout);
+    emit("H2_WIFI_CASE {\"id\":\"%s\",\"status\":\"%s\",\"rc\":%d,\"elapsed_ms\":%" PRIu64
+         ",\"line\":%u,\"boot\":%lu,\"nonce\":%" PRIu64 "}\n",
+         id, status, rc, elapsed, result.last_error_line, (unsigned long)boot, nonce);
 }
 int h2_wifi_device_run(h2_runtime_t *rt, const char *version, const char *board) {
     if (!rt || !version || !board)
         return H2_PAL_ERR_INVALID_ARG;
+    log_runtime = rt;
+    log_error = 0;
     image_version = version;
     board_name = board;
     backup_cleared = 0;
@@ -186,9 +202,9 @@ int h2_wifi_device_run(h2_runtime_t *rt, const char *version, const char *board)
         rc = prepare(rt, version);
     if (rc)
         return rc;
-    printf("H2_WIFI_BOOT {\"board\":\"%s\",\"version\":\"%s\",\"boot\":%lu,\"nonce\":%" PRIu64
-           ",\"persistence\":%d}\n",
-           board, version, (unsigned long)boot, nonce, persistence);
+    emit("H2_WIFI_BOOT {\"board\":\"%s\",\"version\":\"%s\",\"boot\":%lu,\"nonce\":%" PRIu64
+         ",\"persistence\":%d}\n",
+         board, version, (unsigned long)boot, nonce, persistence);
     record(NULL, "settings-restart-persistence", persistence ? 0 : H2_PAL_ERR_WOULD_BLOCK, 0);
     h2_wifi_e2e_config_t cfg = {
         .operation_timeout_ms = 30000, .client_timeout_ms = 45000, .case_result = record};
@@ -209,28 +225,38 @@ int h2_wifi_device_run(h2_runtime_t *rt, const char *version, const char *board)
     run_rc = h2_wifi_e2e_run(rt, &cfg, &result);
     if (!run_rc)
         run_rc = finish(rt);
+    if (!run_rc && log_error)
+        run_rc = log_error;
     if (!run_rc && !persistence)
         run_rc = H2_PAL_ERR_WOULD_BLOCK;
     h2_wifi_device_report();
     return run_rc;
 }
 void h2_wifi_device_report(void) {
-    printf("H2_WIFI_REPORT {\"board\":\"%s\",\"version\":\"%s\",\"boot\":%lu,\"nonce\":%" PRIu64
-           ",\"operations\":21,\"passed\":%u,\"failed\":%u,\"blocked\":%u,\"persistence\":%d,"
-           "\"cleanup\":%d,\"saved_restored\":%d,\"network_restored\":%d,\"backup_cleared\":%d,"
-           "\"retained\":%u,\"qualified\":%d,\"rc\":%d,\"sta_connecting\":%u,\"sta_connected\":%u,"
-           "\"sta_got_ip\":%u,\"sta_disconnected\":%u,\"ap_started\":%u,\"ap_stopped\":%u,\"client_"
-           "joined\":%u,\"client_left\":%u,\"lease_granted\":%u,\"lease_released\":%u,\"route_"
-           "changed\":%u,\"invalid_events\":%u,\"client_mac\":\"%02x%02x%02x%02x%02x%02x\","
-           "\"client_ip4\":%lu}\n",
-           board_name, image_version, (unsigned long)boot, nonce,
-           result.passed + (unsigned)persistence, result.failed, result.blocked, persistence,
-           result.cleanup_rc, result.saved_restored, result.network_restored, backup_cleared,
-           result.retained, !run_rc && persistence && backup_cleared, run_rc, result.sta_connecting,
-           result.sta_connected, result.sta_got_ip, result.sta_disconnected, result.ap_started,
-           result.ap_stopped, result.client_joined, result.client_left, result.lease_granted,
-           result.lease_released, result.route_changed, result.invalid_events, result.client_mac[0],
-           result.client_mac[1], result.client_mac[2], result.client_mac[3], result.client_mac[4],
-           result.client_mac[5], (unsigned long)result.client_ip4);
-    fflush(stdout);
+    emit("H2_WIFI_REPORT {\"board\":\"%s\",\"version\":\"%s\",\"boot\":%lu,\"nonce\":%" PRIu64
+         ",\"operations\":21,\"passed\":%u,\"failed\":%u,\"blocked\":%u,\"persistence\":%d,"
+         "\"qualified\":%d,\"rc\":%d}",
+         board_name, image_version, (unsigned long)boot, nonce,
+         result.passed + (unsigned)persistence, result.failed, result.blocked, persistence,
+         !run_rc && persistence && backup_cleared, run_rc);
+    emit("H2_WIFI_RESTORE {\"boot\":%lu,\"nonce\":%" PRIu64
+         ",\"cleanup\":%d,\"saved_restored\":%d,\"network_restored\":%d,\"backup_cleared\":%d,"
+         "\"retained\":%u}",
+         (unsigned long)boot, nonce, result.cleanup_rc, result.saved_restored,
+         result.network_restored, backup_cleared, result.retained);
+    emit("H2_WIFI_STA_EVENTS {\"boot\":%lu,\"nonce\":%" PRIu64
+         ",\"connecting\":%u,\"connected\":%u,\"got_ip\":%u,\"disconnected\":%u,\"route_changed\":%"
+         "u,\"invalid\":%u}",
+         (unsigned long)boot, nonce, result.sta_connecting, result.sta_connected, result.sta_got_ip,
+         result.sta_disconnected, result.route_changed, result.invalid_events);
+    emit("H2_WIFI_AP_EVENTS {\"boot\":%lu,\"nonce\":%" PRIu64
+         ",\"started\":%u,\"stopped\":%u,\"joined\":%u,\"left\":%u,\"lease_granted\":%u,\"lease_"
+         "released\":%u}",
+         (unsigned long)boot, nonce, result.ap_started, result.ap_stopped, result.client_joined,
+         result.client_left, result.lease_granted, result.lease_released);
+    emit("H2_WIFI_CLIENT {\"boot\":%lu,\"nonce\":%" PRIu64
+         ",\"mac\":\"%02x%02x%02x%02x%02x%02x\",\"ip4\":%lu}",
+         (unsigned long)boot, nonce, result.client_mac[0], result.client_mac[1],
+         result.client_mac[2], result.client_mac[3], result.client_mac[4], result.client_mac[5],
+         (unsigned long)result.client_ip4);
 }

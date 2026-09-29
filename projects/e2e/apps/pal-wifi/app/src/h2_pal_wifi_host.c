@@ -1,14 +1,11 @@
 #include "h2_pal_wifi_e2e.h"
 
-#include <stdio.h>
 #include <string.h>
 
 #define REQUIRE(x)                                                                                 \
     do {                                                                                           \
-        if (!(x)) {                                                                                \
-            fprintf(stderr, "H2_WIFI_HOST_FAILURE line=%u\n", __LINE__);                           \
+        if (!(x))                                                                                  \
             return H2_PAL_ERR_IO;                                                                  \
-        }                                                                                          \
     } while (0)
 static bool scan(void *user, const h2_pal_wifi_scan_entry_t *entry) {
     (void)user;
