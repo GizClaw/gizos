@@ -94,6 +94,13 @@ PR Agent 阶段完成前，必须逐条确认：
 
 两个 status 使用互不相同且不与 Check Run 重名的 context。每个 trusted publisher 只能写自己的 context，不能 enumerate、rerequest、patch、clone 或 complete 另一个 policy 的 status 或 Check Run。Reusable review 产生的 native comment 和 OpenAI stage Check Run 只保留详细 evidence，不具备 merge eligibility，也不能替代 aggregate status。
 
+`main governance` 必须要求来自 GitHub Actions 的 `CI required`、
+`OpenAI review eligibility` 和 `Ownership eligibility`。不能额外要求
+`OpenAI PR Review`、`OpenAI Issue Review` 或 `OpenAI Code Review` 这些审查明细；
+publisher 会在开始和最终发布时读取 main 的实际规则，发现缺少稳定门禁、
+来源不匹配或混入审查明细时，将自己的资格状态发布为 failure 并报告配置漂移。
+它没有修改规则、补写同名状态或绕过保护的权限，规则修正属于仓库管理操作。
+
 同仓库 PR 的 OpenAI review 只在 Pull Request 评论以 `@codex` 开头时显式启动；fork PR 则只接受 trusted ownership evaluator 在当前-head CODEOWNER approval 后发出的 `workflow_dispatch`，普通 `@codex` 评论不能提前启动。PR open、reopen、ready for review 和 head synchronize 本身不执行 review。启动后必须先为 API 返回的最新 head 发布 `pending`，publisher 在 final publication 前重新读取 live Pull Request API 并核对 PR number、base SHA 和 head SHA。只有 exact current head 的完整 evidence 可以发布 `success`；stale identity、workflow failure、missing 或 malformed evidence、API failure 和 policy blocker 全部 fail closed。旧 head 的 status 可以保留诊断 evidence，但不能满足当前 head 的 ruleset；push 新 head 后，同仓库 PR 必须再次评论 `@codex`，fork PR 必须重新审批当前 head。
 
 Aggregate policy status 与 trusted publisher job conclusion 是两个独立结果。`OpenAI review eligibility` publisher 消费 pinned reusable reviewer 输出的 `READINESS_EVIDENCE`，当前格式由 `schema_version: 2` 标识；repository、PR、base/head、snapshot、trusted policy、workflow source、stage verdict 和 blocker 全部有效且一致时，policy blocker 发布 `failure`，但 publisher job 成功，完整 PASS evidence 则发布 `success` 且 publisher job 成功。Review execution、identity、evidence consistency、generation ownership 或 API/publication 失败时，publisher 在安全可行时发布 `failure`，并让 job 失败。Publisher job 成功只证明可信发布流程正常，不能替代 required aggregate status 的 policy verdict。
