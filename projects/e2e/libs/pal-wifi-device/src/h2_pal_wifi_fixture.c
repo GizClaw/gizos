@@ -114,7 +114,9 @@ int h2_wifi_fixture_run(h2_runtime_t *rt) {
                     break;
                 (void)h2_pal_time_sleep_ms(rt->time, 100);
             }
-            if (!connect_rc && status.ip_valid) {
+            int leased = !connect_rc && status.ip_valid;
+            if (!connect_rc && !leased) connect_rc = H2_PAL_ERR_TIMEOUT;
+            if (leased) {
                 ++joins;
                 emit("H2_WIFI_FIXTURE_CLIENT target=%s joined=%u ip4=%lu "
                      "mac=%02x%02x%02x%02x%02x%02x\n",
@@ -126,7 +128,11 @@ int h2_wifi_fixture_run(h2_runtime_t *rt) {
             (void)h2_pal_wifi_sta_disconnect(rt->wifi_sta);
             emit("H2_WIFI_FIXTURE_LEFT target=%s rc=%d\n", names[i], connect_rc);
 
-            (void)h2_pal_time_sleep_ms(rt->time, 2500);
+            /* Leave a stable upstream AP interval for the DUT's AP+STA
+             * route test. Reciprocal simultaneous STA/AP associations to the
+             * same peer are not needed for either PAL contract. The DUT still
+             * waits for real clients in every subsequent AP mode. */
+            (void)h2_pal_time_sleep_ms(rt->time, leased ? 30000 : 2500);
         }
     }
     int cleanup = h2_pal_wifi_ap_stop(rt->wifi_ap, 30000);
