@@ -29,7 +29,7 @@ static h2_pal_result_t boundary(h2_web_app_host_t *host, h2_runtime_t *runtime,
   (void)host;
   (void)user;
   if (!worker() || emscripten_is_main_runtime_thread() || !runtime->net ||
-      !runtime->net->vtable || runtime->net != h2_pal_unsupported_net_api())
+      !runtime->net->vtable)
     return H2_PAL_ERR_INVALID_STATE;
   const h2_pal_net_vtable_t *v = runtime->net->vtable;
   void *context = runtime->net->user;

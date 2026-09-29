@@ -269,6 +269,14 @@ static void run_case(state_t *s, h2_net_tls_case_t kind) {
     while (s->resolvers_owned < RESOLVER_LIMIT) {
       h2_pal_net_resolver_t *resolver = NULL;
       rc = h2_pal_net_resolve_start(net, s->config->host, &resolver);
+      if (rc == H2_PAL_ERR_NO_SPACE && s->resolvers_owned == 0u) {
+        /* Canceled lookups can become backend-owned until workers finish.
+         * Wait for that *previous* lifetime to release capacity, then test
+         * this case's own bounded capacity. */
+        CHECK(remaining(s), H2_PAL_ERR_TIMEOUT);
+        OK(h2_pal_time_sleep_ms(s->config->runtime->time, 20u));
+        continue;
+      }
       if (rc == H2_PAL_ERR_NO_SPACE) {
         CHECK(resolver == NULL, H2_PAL_ERR_FORMAT);
         break;

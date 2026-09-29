@@ -67,8 +67,10 @@ def mint(directory):
 
 class Fixture:
     """Only explicit binding may expose the peer to physical device Wi-Fi."""
-    def __init__(self, bind="127.0.0.1", advertise=None):
+    def __init__(self, bind="127.0.0.1", advertise=None, callback_bridge=None, callback_cleanup=None):
         self.bind = bind
+        self.callback_bridge = callback_bridge
+        self.callback_cleanup = callback_cleanup
         self.advertise = advertise or bind
         self.session = uuid.uuid4().hex
         self.temp = tempfile.TemporaryDirectory(prefix="h2-net-tls-")
@@ -152,7 +154,9 @@ class Fixture:
                 self.history.append(copy.deepcopy(previous))
             self.records[key] = record
         if mode == 6:
-            self.spawn(self.callback, record, callback)
+            target = self.callback_bridge(callback) if self.callback_bridge else callback
+            record['bridge_port'] = target
+            self.spawn(self.callback, record, target)
             return callback
         sock = self.owned(udp=mode == 1)
         port = sock.getsockname()[1]
@@ -249,6 +253,8 @@ class Fixture:
             record['error'] = type(error).__name__
         finally:
             record['finished'] = True
+            if self.callback_cleanup:
+                self.callback_cleanup(port)
 
     def udp(self, sock, record):
         try:

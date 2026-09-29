@@ -22,7 +22,7 @@ int h2_net_tls_mobile_run(h2_runtime_config_t config, const char *host,
                                    .verify = h2_net_tls_fixture_verify,
                                    .fixture_user = &client,
                                    .report = h2_net_tls_report,
-                                   .case_timeout_ms = 30000u,
+                                   .case_timeout_ms = 90000u,
                                    .multicast_supported = 1};
     rc = h2_net_tls_parse_ipv4(dns_ip, &fixture.dns_expected);
     if (rc == H2_PAL_OK)

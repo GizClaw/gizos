@@ -149,7 +149,20 @@ def main():
     args.output.mkdir(parents=True, exist_ok=True)
     advertised = "127.0.0.1" if args.platform == "ios" else "10.0.2.2"
     exported=verify_sdk_symbols(args)
-    with Fixture(advertise=advertised) as fixture:
+    if args.platform == 'android':
+        serial = os.environ['H2_ANDROID_SERIAL']
+        sdk_root = Path(os.environ.get('ANDROID_HOME', Path.home() / 'Library/Android/sdk'))
+        adb = [str(sdk_root / 'platform-tools/adb'), '-s', serial]
+        def callback_bridge(device_port):
+            host_port = int(run(adb + ['forward', 'tcp:0', 'tcp:' + str(device_port)]).stdout.strip())
+            assert 0 < host_port <= 65535
+            return host_port
+        def callback_cleanup(host_port):
+            run(adb + ['forward', '--remove', 'tcp:' + str(host_port)], check=False)
+    else:
+        callback_bridge = callback_cleanup = None
+    with Fixture(advertise=advertised, callback_bridge=callback_bridge,
+                 callback_cleanup=callback_cleanup) as fixture:
         dns_host = os.environ.get('H2_PAL_NET_TLS_DNS_HOST', 'ap.e2e.gizclaw.com')
         dns_ip = socket.getaddrinfo(dns_host, None, socket.AF_INET, socket.SOCK_STREAM)[0][4][0]
         settings = dict(dns_host=dns_host, dns_ip=dns_ip, host=fixture.advertise, port=fixture.port, session=fixture.session,
