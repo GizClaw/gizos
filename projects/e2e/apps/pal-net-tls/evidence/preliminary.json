@@ -1,0 +1,34 @@
+{
+  "scope": "preliminary_provider_integration",
+  "six_platforms_qualified": false,
+  "pending": [
+    "wasm",
+    "devkit",
+    "bk7258"
+  ],
+  "tested_source_commit": "53674d799679f0402e4b81a61c60289910f87ef9",
+  "platforms": {
+    "macos": {
+      "status": "PRELIMINARY_PASS",
+      "core_cases": 37,
+      "artifact_sha256": "61bb92ce7be00427274e832fce9c505e8a2fb89962a7672cc11ca23cd98e8c33",
+      "receipt_sha256": "6cf3b4861f527d938757385cd7270994ff888d50398fe52bc07d7f9e27495aae",
+      "final_six_platform_qualified": false
+    },
+    "ios": {
+      "status": "PRELIMINARY_PASS",
+      "core_cases": 37,
+      "artifact_sha256": "a0768f49a144d8ae318a3418fc0dc7b6248d082d776be8bd35d06a6918409f73",
+      "receipt_sha256": "79751910535e3e8b8d64d9c7fceab5e86c1802f582e032ff5337532eadb5d809",
+      "final_six_platform_qualified": false
+    },
+    "android": {
+      "status": "PRELIMINARY_PASS",
+      "core_cases": 37,
+      "artifact_sha256": "21570e5f1127818ceaed5e13a2c909eaddb7719c17f3096dfe1f96982904e606",
+      "receipt_sha256": "cbc5d571578fab4a7f961efc0b3347bcfdef28384e57af54618c17f742644540",
+      "final_six_platform_qualified": false
+    }
+  },
+  "limitations": "WASM current raw Net unsupported; final board firmware must consume requalified Wi-Fi provider fixes and pass two independent boots; host/mobile receipts must be rebound if their source or artifact changes."
+}

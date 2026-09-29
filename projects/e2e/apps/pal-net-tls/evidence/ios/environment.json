@@ -1,700 +1,29 @@
 {
-  "platform": "macos",
-  "artifact_sha256": "61bb92ce7be00427274e832fce9c505e8a2fb89962a7672cc11ca23cd98e8c33",
-  "cases": [
-    {
-      "id": "wrapper-arguments",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 0,
-      "bytes_sent": 0,
-      "bytes_received": 0,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "dns-sync",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 3,
-      "bytes_sent": 0,
-      "bytes_received": 0,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "dns-async-copy",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 0,
-      "bytes_sent": 0,
-      "bytes_received": 0,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "dns-cancel",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 7,
-      "bytes_sent": 0,
-      "bytes_received": 0,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "dns-capacity",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 23,
-      "bytes_sent": 0,
-      "bytes_received": 0,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "host-address",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 1,
-      "bytes_sent": 0,
-      "bytes_received": 0,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "udp-echo",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 10,
-      "bytes_sent": 609,
-      "bytes_received": 513,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "udp-source-bind",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 14,
-      "bytes_sent": 609,
-      "bytes_received": 513,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "udp-timeout",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 44,
-      "bytes_sent": 0,
-      "bytes_received": 0,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "udp-nonblocking",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 0,
-      "bytes_sent": 0,
-      "bytes_received": 0,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "udp-truncation",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 2,
-      "bytes_sent": 609,
-      "bytes_received": 17,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "multicast-membership",
-      "mandatory": false,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 1,
-      "bytes_sent": 0,
-      "bytes_received": 0,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tcp-echo",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 3,
-      "bytes_sent": 4193,
-      "bytes_received": 4097,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tcp-source-bind",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 2,
-      "bytes_sent": 4193,
-      "bytes_received": 4097,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tcp-connect-retry",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 2,
-      "bytes_sent": 4193,
-      "bytes_received": 4097,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tcp-timeout",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 44,
-      "bytes_sent": 0,
-      "bytes_received": 0,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tcp-nonblocking",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 1,
-      "bytes_sent": 0,
-      "bytes_received": 0,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tcp-listen-accept",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 2,
-      "bytes_sent": 4193,
-      "bytes_received": 4097,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tcp-accept-timeout",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 44,
-      "bytes_sent": 4193,
-      "bytes_received": 4097,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tcp-peer-close",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 2,
-      "bytes_sent": 0,
-      "bytes_received": 0,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tcp-partial-io",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 2,
-      "bytes_sent": 4193,
-      "bytes_received": 4097,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tls-required",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 5,
-      "bytes_sent": 4193,
-      "bytes_received": 4097,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tls-default",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 6,
-      "bytes_sent": 4193,
-      "bytes_received": 4097,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tls-default-untrusted",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 1,
-      "bytes_sent": 0,
-      "bytes_received": 0,
-      "provider_result": -17,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tls-wrong-ca",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 2,
-      "bytes_sent": 0,
-      "bytes_received": 0,
-      "provider_result": -17,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tls-wrong-name",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 2,
-      "bytes_sent": 0,
-      "bytes_received": 0,
-      "provider_result": -17,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tls-expired",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 3,
-      "bytes_sent": 0,
-      "bytes_received": 0,
-      "provider_result": -17,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tls-insecure-test-only",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 4,
-      "bytes_sent": 4193,
-      "bytes_received": 4097,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tls-sni-alpn",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 6,
-      "bytes_sent": 4193,
-      "bytes_received": 4097,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tls-borrowed-config",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 6,
-      "bytes_sent": 4193,
-      "bytes_received": 4097,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tls-handshake-deadline",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 107,
-      "bytes_sent": 0,
-      "bytes_received": 0,
-      "provider_result": -6,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tls-failure-recovery",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 8,
-      "bytes_sent": 4193,
-      "bytes_received": 4097,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tls-repeat-wrap",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 6,
-      "bytes_sent": 4193,
-      "bytes_received": 4097,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tls-config-arguments",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 0,
-      "bytes_sent": 0,
-      "bytes_received": 0,
-      "provider_result": -1,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tls-invalid-ca",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 1,
-      "bytes_sent": 0,
-      "bytes_received": 0,
-      "provider_result": -15,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "tls-session-churn",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 87,
-      "bytes_sent": 50316,
-      "bytes_received": 49164,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "dns-hostname",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 98,
-      "bytes_sent": 0,
-      "bytes_received": 0,
-      "provider_result": -8,
-      "observed_ipv4": [
-        150,
-        5,
-        151,
-        236
-      ]
-    },
-    {
-      "id": "icmp-echo",
-      "mandatory": false,
-      "status": "UNSUPPORTED",
-      "detail": -3,
-      "line": 0,
-      "elapsed_ms": 0,
-      "bytes_sent": 0,
-      "bytes_received": 0,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    },
-    {
-      "id": "cleanup-ledger",
-      "mandatory": true,
-      "status": "PASS",
-      "detail": 0,
-      "line": 0,
-      "elapsed_ms": 0,
-      "bytes_sent": 0,
-      "bytes_received": 0,
-      "provider_result": 0,
-      "observed_ipv4": [
-        0,
-        0,
-        0,
-        0
-      ]
-    }
-  ],
-  "summary": {
-    "profile": "net-tls-core",
-    "operations": 21,
-    "core_qualified": true,
-    "full_net_qualified": false,
-    "passed": 38,
-    "mandatory_passed": 37,
-    "failed": 0,
-    "blocked": 0,
-    "unsupported": 1,
-    "not_assessed": 0,
-    "retained_sockets": 0,
-    "retained_resolvers": 0,
-    "retained_allocations": 0,
-    "rc": 0,
-    "teardown": 0
+  "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
+  "device": {
+    "dataPath": "/Users/idy/Library/Developer/CoreSimulator/Devices/A06F78C5-E60A-4061-B627-F72A0578C7A1/data",
+    "dataPathSize": 1899905024,
+    "logPath": "/Users/idy/Library/Logs/CoreSimulator/A06F78C5-E60A-4061-B627-F72A0578C7A1",
+    "udid": "A06F78C5-E60A-4061-B627-F72A0578C7A1",
+    "lastUsedAt": "2026-09-29T20:04:00Z",
+    "isAvailable": true,
+    "logPathSize": 536576,
+    "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
+    "state": "Booted",
+    "name": "GizOS PAL Core E2E"
   },
   "peer": {
-    "session": "b08da7800ba74a1db2121444512f31d6",
+    "session": "c15ffae238ae49578af2e8618c42ae94",
     "host": "127.0.0.1",
-    "control_port": 60867,
+    "control_port": 64049,
     "records": [
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-failure-recovery",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 60955,
+        "port": 64139,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -713,12 +42,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-session-churn",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 60973,
+        "port": 64157,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -735,12 +64,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-session-churn",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 60977,
+        "port": 64161,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -757,12 +86,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-session-churn",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 60981,
+        "port": 64165,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -779,12 +108,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-session-churn",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 60985,
+        "port": 64169,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -801,12 +130,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-session-churn",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 60989,
+        "port": 64173,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -823,12 +152,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-session-churn",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 60993,
+        "port": 64177,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -845,12 +174,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-session-churn",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 60997,
+        "port": 64181,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -867,12 +196,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-session-churn",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 61001,
+        "port": 64185,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -889,12 +218,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-session-churn",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 61005,
+        "port": 64189,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -911,12 +240,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-session-churn",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 61009,
+        "port": 64193,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -933,12 +262,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-session-churn",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 61013,
+        "port": 64198,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -955,12 +284,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "udp-echo",
         "mode": 1,
         "peer": "127.0.0.1",
-        "port": 57704,
+        "port": 61589,
         "accepted": true,
         "client_hello": false,
         "certificate_presented": false,
@@ -977,12 +306,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "udp-source-bind",
         "mode": 1,
         "peer": "127.0.0.1",
-        "port": 63982,
+        "port": 63039,
         "accepted": true,
         "client_hello": false,
         "certificate_presented": false,
@@ -999,12 +328,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "udp-truncation",
         "mode": 1,
         "peer": "127.0.0.1",
-        "port": 63419,
+        "port": 60643,
         "accepted": true,
         "client_hello": false,
         "certificate_presented": false,
@@ -1021,12 +350,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tcp-echo",
         "mode": 0,
         "peer": "127.0.0.1",
-        "port": 60879,
+        "port": 64063,
         "accepted": true,
         "client_hello": false,
         "certificate_presented": false,
@@ -1043,12 +372,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tcp-source-bind",
         "mode": 0,
         "peer": "127.0.0.1",
-        "port": 60883,
+        "port": 64067,
         "accepted": true,
         "client_hello": false,
         "certificate_presented": false,
@@ -1065,12 +394,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tcp-connect-retry",
         "mode": 0,
         "peer": "127.0.0.1",
-        "port": 60887,
+        "port": 64071,
         "accepted": true,
         "client_hello": false,
         "certificate_presented": false,
@@ -1087,12 +416,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tcp-timeout",
         "mode": 4,
         "peer": "127.0.0.1",
-        "port": 60891,
+        "port": 64075,
         "accepted": true,
         "client_hello": false,
         "certificate_presented": false,
@@ -1109,12 +438,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tcp-nonblocking",
         "mode": 4,
         "peer": "127.0.0.1",
-        "port": 60895,
+        "port": 64079,
         "accepted": true,
         "client_hello": false,
         "certificate_presented": false,
@@ -1131,8 +460,8 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tcp-listen-accept",
         "mode": 6,
         "peer": "127.0.0.1",
@@ -1151,11 +480,11 @@
         "error": null,
         "closed": false,
         "post_handshake_zero_payload_close": false,
-        "bridge_port": 60898
+        "bridge_port": 64082
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tcp-accept-timeout",
         "mode": 6,
         "peer": "127.0.0.1",
@@ -1174,15 +503,15 @@
         "error": null,
         "closed": false,
         "post_handshake_zero_payload_close": false,
-        "bridge_port": 60902
+        "bridge_port": 64086
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tcp-peer-close",
         "mode": 5,
         "peer": "127.0.0.1",
-        "port": 60907,
+        "port": 64091,
         "accepted": true,
         "client_hello": false,
         "certificate_presented": false,
@@ -1199,12 +528,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tcp-partial-io",
         "mode": 0,
         "peer": "127.0.0.1",
-        "port": 60911,
+        "port": 64095,
         "accepted": true,
         "client_hello": false,
         "certificate_presented": false,
@@ -1221,12 +550,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-required",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 60915,
+        "port": 64099,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -1243,12 +572,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-default",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 60919,
+        "port": 64103,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -1265,12 +594,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-default-untrusted",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 60923,
+        "port": 64107,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -1289,12 +618,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-wrong-ca",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 60927,
+        "port": 64111,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -1313,12 +642,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-wrong-name",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 60931,
+        "port": 64115,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -1337,12 +666,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-expired",
         "mode": 3,
         "peer": "127.0.0.1",
-        "port": 60935,
+        "port": 64119,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -1361,12 +690,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-insecure-test-only",
         "mode": 3,
         "peer": "127.0.0.1",
-        "port": 60939,
+        "port": 64123,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -1383,12 +712,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-sni-alpn",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 60943,
+        "port": 64127,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -1405,12 +734,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-borrowed-config",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 60947,
+        "port": 64131,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -1427,12 +756,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-handshake-deadline",
         "mode": 4,
         "peer": "127.0.0.1",
-        "port": 60951,
+        "port": 64135,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": false,
@@ -1449,12 +778,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-failure-recovery",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 60959,
+        "port": 64143,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -1471,12 +800,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-repeat-wrap",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 60963,
+        "port": 64147,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -1493,12 +822,12 @@
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-config-arguments",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 60967,
+        "port": 64151,
         "accepted": true,
         "client_hello": false,
         "certificate_presented": false,
@@ -1510,17 +839,17 @@
         "payload_received": 0,
         "payload_sent": 0,
         "payload_valid": false,
-        "error": "UNEXPECTED_EOF_WHILE_READING",
+        "error": null,
         "closed": false,
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-invalid-ca",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 60970,
+        "port": 64154,
         "accepted": true,
         "client_hello": false,
         "certificate_presented": false,
@@ -1532,17 +861,17 @@
         "payload_received": 0,
         "payload_sent": 0,
         "payload_valid": false,
-        "error": "UNEXPECTED_EOF_WHILE_READING",
+        "error": null,
         "closed": false,
         "post_handshake_zero_payload_close": false
       },
       {
-        "session": "b08da7800ba74a1db2121444512f31d6",
-        "run_id": "b08da7800ba74a1d",
+        "session": "c15ffae238ae49578af2e8618c42ae94",
+        "run_id": "c15ffae238ae4957",
         "case": "tls-session-churn",
         "mode": 2,
         "peer": "127.0.0.1",
-        "port": 61017,
+        "port": 64207,
         "accepted": true,
         "client_hello": true,
         "certificate_presented": true,
@@ -1563,5 +892,10 @@
   "dns": {
     "host": "ap.e2e.gizclaw.com",
     "operator_ipv4": "150.5.151.236"
-  }
+  },
+  "tls_verification": "required/default explicit isolated test CA; typed verification rejection with per-case peer evidence",
+  "observation_finished_at_utc": "2026-09-29T21:50:55.408330+00:00",
+  "evidence_timezone": "UTC",
+  "app_sha256": "a0768f49a144d8ae318a3418fc0dc7b6248d082d776be8bd35d06a6918409f73",
+  "sdk_sha256": "0f4e6bd5c32e077ec803bd16b16ad838f30788a2ae32bc83a0f53de3c9fb17ee"
 }
