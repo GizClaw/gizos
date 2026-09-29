@@ -107,7 +107,7 @@ HTTP、Time、Crypto、allocator 复用已有字段，Task、Queue、Sync 复用
 - Wi-Fi 状态/扫描/连接使用 PAL Wi-Fi，保存网络使用 PAL Wi-Fi Settings。用户配网显式调用 PAL `connect_and_save`，由 provider 验证目标 GOT_IP 并持久化凭据；注入 Runtime API 或原始 provider 具有相同语义，GizClaw 不维护另一份网络记录。RPC list 如实返回现有 PAL Settings 的 0 或 1 条。RPC response 是动作接受结果，后续连接或保存失败通过设备日志记录，不把接受 ACK 当作连接成功。
 - 普通重启直接使用 PAL Power。重启、切网、OTA 在本地 RPC response 发送完成后
   才交给 `$gizclaw/device` task；回复发送失败或 Service 停止会取消待执行动作。
-- 传入 `audio` PAL 即启用 Ogg/Opus 播放器。`audio_buffer_bytes` 设置压缩数据环形缓冲容量（默认 64 KiB），`audio_prebuffer_bytes` 设置起播和缺数据后的预缓冲量（默认 min(16 KiB, 缓冲容量)）。HTTP task 和播放 task 并行，缓冲满时通过背压暂停读取，边下载边解析 Ogg page、解码 Opus，不限制整首音频长度。短音频在下载结束后使用已有数据起播；持续缺数据超时会取消下载并上报错误。解码器保留一个最大 65,307 字节 Ogg page，跨页 packet 上限 64 KiB，独立于环形缓冲。超过 64 KiB 的 OpusTags（例如内嵌大封面）只校验开头的 `OpusTags` 魔数，其余字节随读随弃，不占额外内存；音频包仍受 64 KiB 上限约束。以 16 kHz mono PCM16LE 写入 PAL Audio track，按 PAL 报告的帧大小拼帧，末帧补零不计入播放进度。不支持 Vorbis、AAC 或 MP3。库只关闭自己的 track，不关闭共享 speaker。
+- 传入 `audio` PAL 即启用 Ogg/Opus、MP3 与 WAV 播放器，格式只按文件开头的字节识别（见 [GizClaw 音频](/apps/gizclaw/audio#音频格式)）。`audio_buffer_bytes` 设置压缩数据环形缓冲容量（默认 64 KiB），`audio_prebuffer_bytes` 设置起播和缺数据后的预缓冲量（默认 min(16 KiB, 缓冲容量)）。HTTP task 和播放 task 并行，缓冲满时通过背压暂停读取，边下载边解析 Ogg page / MP3 帧 / WAV 采样并解码，不限制整首音频长度。短音频在下载结束后使用已有数据起播；持续缺数据超时会取消下载并上报错误。解码器保留一个最大 65,307 字节 Ogg page，跨页 packet 上限 64 KiB，独立于环形缓冲。超过 64 KiB 的 OpusTags（例如内嵌大封面）只校验开头的 `OpusTags` 魔数，其余字节随读随弃，不占额外内存；音频包仍受 64 KiB 上限约束。MP3 解码器（dr_mp3 帧解码器加库内分帧）约 41 KiB，WAV 约 15 KiB，都远小于 Ogg 的 page 缓冲；MP3 与 WAV 混成单声道后重采样到 16 kHz。以 16 kHz mono PCM16LE 写入 PAL Audio track，按 PAL 报告的帧大小拼帧，末帧补零不计入播放进度。不支持 Vorbis、AAC、FLAC、Layer I/II 与 free-format MP3，其它内容以 `UNSUPPORTED` 失败。库只关闭自己的 track，不关闭共享 speaker。
 - 与其他音频共用 speaker/PA 的产品必须在 `h2_gizclaw_vtable_t` 同时提供
   `speaker_acquire` / `speaker_release`（只设一个时 Service init 返回 INVALID_ARG）。
   设置后，播放器和 `client.device.sound.play` 每次播放都在创建 PCM track 前 acquire
@@ -175,14 +175,14 @@ HTTP、Time、Crypto、allocator 复用已有字段，Task、Queue、Sync 复用
   `char methods[160][64]`（10 KiB），不适合放在嵌入式 task 栈上，因此这个只有一个
   repeated 字段的消息用 nanopb 的 `pb_encode_tag` / `pb_encode_string` 直接写进
   `encode()` 已经管理的堆缓冲。
-- 本地 `playlist_set` 条目可带 `duration_ms`（0 为未知），只用于 `h2_gizclaw_player_play_index_at` 定位，不作为状态里的时长上报；RPC 推送与 `player_play` 的条目时长为 0。时长已知且起点非零时，下载 task 先发不限长度的 `Range: bytes=0-` 解析文件头，解码器读完两个头包后取消该请求，因此文件头大小不受限，再按头之后的字节率从起点前 5 秒发 `Range: bytes=<offset>-`。响应头里的 `Content-Range` 在第一个 body 字节处核对：探测请求允许缺失（表示服务器忽略 Range，直接在该 200 响应上跳到起点），续传请求必须精确命名所请求的起始字节和文件末尾，且总长度等于探测时的总长度（中途被替换的文件不会接到旧的文件头上）；结束时 partial 响应必须是 206，字节数等于 `Content-Range` 与 `Content-Length` 声明的长度。解码器从任意字节开始扫描 `OggS`，只接受 CRC 正确、同一 serial、非 BOS 的完整 page；被拒候选里已读的字节原地重扫，超过两个最大 page 仍无可用 page 返回 FORMAT。第一个非 EOS、带 granule 且有 packet 在其上开始的 page 作为锚点，其起点为 granule 减去该 page 上完整 packet 的时长（由 TOC 得出，不解码）；之后预滚 80 ms。结束于起点前 80 ms 之外的 packet 只校验不解码，第一个解码的 packet 前重置 Opus 状态，起点之前的样本丢弃。首个样本的位置与从头播放的计数口径相同，因此 `position_ms` 是 granule 推出的精确值；首个样本前的任何失败（非停止）改用一次普通 GET 顺序跳到起点，文件在起点前结束则该条目在结尾处正常结束。
+- 本地 `playlist_set` 条目可带 `duration_ms`（0 为未知），只用于 `h2_gizclaw_player_play_index_at` 定位，不作为状态里的时长上报；RPC 推送与 `player_play` 的条目时长为 0。时长已知且起点非零时，下载 task 先发不限长度的 `Range: bytes=0-` 解析文件头，解码器读完文件头（Ogg 两个头包、MP3 的 ID3v2 与首帧、WAV 的 `data` 之前）后取消该请求，因此文件头大小不受限，再发 `Range: bytes=<offset>-`：Ogg 按头之后的字节率从起点前 5 秒，WAV 精确到起点前 64 个采样帧，带 LAME “Info” 标签的 CBR MP3 精确到填满 bit reservoir 所需帧数再加 2 帧之前，落点到起点的每一帧都须符合声明的码率和字节网格；VBR 或无标签 MP3 不发 Range，直接在探测请求上逐帧跳过。以下 page、granule 与 packet 的描述针对 Ogg/Opus。响应头里的 `Content-Range` 在第一个 body 字节处核对：探测请求允许缺失（表示服务器忽略 Range，直接在该 200 响应上跳到起点），续传请求必须精确命名所请求的起始字节和文件末尾，且总长度等于探测时的总长度（中途被替换的文件不会接到旧的文件头上）；结束时 partial 响应必须是 206，字节数等于 `Content-Range` 与 `Content-Length` 声明的长度。解码器从任意字节开始扫描 `OggS`，只接受 CRC 正确、同一 serial、非 BOS 的完整 page；被拒候选里已读的字节原地重扫，超过两个最大 page 仍无可用 page 返回 FORMAT。第一个非 EOS、带 granule 且有 packet 在其上开始的 page 作为锚点，其起点为 granule 减去该 page 上完整 packet 的时长（由 TOC 得出，不解码）；之后预滚 80 ms。结束于起点前 80 ms 之外的 packet 只校验不解码，第一个解码的 packet 前重置 Opus 状态，起点之前的样本丢弃。首个样本的位置与从头播放的计数口径相同，因此 `position_ms` 是 granule 推出的精确值；首个样本前的任何失败（非停止）改用一次普通 GET 顺序跳到起点，文件在起点前结束则该条目在结尾处正常结束。
 - `h2_gizclaw_player_rate_set` 的速率存在设备对象的原子变量里，worker 每个变速步长读取一次；只对 music 播放生效，命名音效固定原速。解码后的 PCM 在拼 PAL 帧之前经过 `h2_gizclaw_time_stretch.c`（定点 SOLA，工作缓冲在条目内首次离开 1000 时才分配）。位置按两套计数：拼帧输出字节与其代表的源字节；每写入一帧记录该帧承载的源字节，扣除队列时按最近若干帧各自的源字节扣（队列里可能混有切换前后不同速率产生的帧），因此切换速率时位置不会超前或回退，1000 时与原先的“已提交减队列”相同；结束时位置为 origin 加全部源字节，即真实时长。切回 1000 或条目结束时 flush 先输出携带的重叠段，再原样接续其后的源样本。
 - 播放列表支持最多 32 项、读取/替换/追加、从指定索引播放、停止和 off/one/all
   循环模式。失败的列表校验保留旧列表和播放；停止或替换取消在途下载/播放。
   播放中进度按已写入 PCM 扣除队列容量及一个在途帧保守估算，结束时 drain 后
   校准到全部源采样；不逐帧 drain，避免插入静音。状态变化及约每秒进度通过 telemetry
   异步提交，不阻塞播放等待网络上报。
-- `h2_gizclaw_vtable_t` 只补 PAL 缺少的产品事实、命名提示音到 HTTPS Ogg/Opus URL
+- `h2_gizclaw_vtable_t` 只补 PAL 缺少的产品事实、命名提示音到 HTTPS 音频（Ogg/Opus、MP3 或 WAV）URL
   的解析，以及 H2Loader Stage begin/write/finish/abort/activate。`get_facts` 在
   RPC owner 上运行，必须快速返回；提示音解析和 Stage 操作在设备 task 上运行。
   回调不得直接销毁或停止 Service；activate 应向产品 owner 投递升级动作。

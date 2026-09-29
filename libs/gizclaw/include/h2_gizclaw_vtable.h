@@ -106,7 +106,8 @@ typedef struct h2_gizclaw_device_settings {
  * An absent method means unsupported, not successful execution. */
 typedef struct h2_gizclaw_vtable {
   h2_pal_result_t (*get_facts)(void *user, h2_gizclaw_device_facts_t *out);
-  /** Optional product sound catalog; return a bounded HTTPS Ogg/Opus URL.
+  /** Optional product sound catalog; return a bounded HTTPS URL of an
+   * Ogg/Opus, MP3 or WAV file, the formats the player decodes.
    * Called on the device worker. Download/decode/play remain library-owned. */
   h2_pal_result_t (*resolve_sound_url)(void *user, const char *name,
                                        char *out_url, size_t capacity);

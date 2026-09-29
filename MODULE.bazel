@@ -242,6 +242,14 @@ vendor_repositories = use_extension(
     "//tools/bazel/vendor:repositories.bzl",
     "vendor_repositories",
 )
+# dr_mp3 0.7.3 (tag mp3-0.7.3); only its low-level frame decoder is used.
+vendor_repositories.repository(
+    name = "h2_vendor_dr_libs",
+    build_file = "//third_party:dr_libs.BUILD.bazel",
+    sha256 = "96115bda02a1947e97acff3568863b76f8661b4744507aac4d2817d53bf3d380",
+    strip_prefix = "dr_libs-5690d4671d7ad07ae6021756d7222eb159745f06",
+    urls = ["https://codeload.github.com/mackron/dr_libs/tar.gz/5690d4671d7ad07ae6021756d7222eb159745f06"],
+)
 vendor_repositories.repository(
     name = "h2_vendor_esp_serial_flasher",
     build_file = "//third_party:esp_serial_flasher.BUILD.bazel",
@@ -472,6 +480,7 @@ use_repo(
     "h2_k4b_cedarx_sdk",
     "h2_vendor_corehttp",
     "h2_vendor_coremqtt",
+    "h2_vendor_dr_libs",
     "h2_vendor_esp_serial_flasher",
     "h2_vendor_ffmpeg",
     "h2_vendor_ikcp",
