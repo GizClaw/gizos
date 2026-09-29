@@ -1,0 +1,138 @@
+{
+  "platform": "macos",
+  "contract": 1,
+  "operations": 6,
+  "passed": 24,
+  "failed": 0,
+  "not_run": 0,
+  "observations": 23,
+  "complete": 1,
+  "qualified": 1,
+  "rc": 0,
+  "cleanup": 0,
+  "teardown": 0,
+  "cases": [
+    {
+      "id": "interface_inventory",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "null_arguments",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "closed_state",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "open_idempotent",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "native_info",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "full_frame_borrowed",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "partial_rgb565",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "padded_unaligned_stride",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "rgb888",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "rgb444",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "unknown_format",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "empty_rectangles",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "short_stride",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "outside_rectangles",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "partial_bounds",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "coordinate_overflow",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "span_overflow",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "repeated_present",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "brightness_zero",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "brightness_half",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "brightness_full",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "brightness_invalid",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "close_idempotent",
+      "status": "PASS",
+      "rc": 0
+    },
+    {
+      "id": "reopen",
+      "status": "PASS",
+      "rc": 0
+    }
+  ],
+  "source": "real-SDL-renderer",
+  "log_sha256": "204ce1d79a32e3a3d21d96e1e6919ad83104e8f5736eb1269fb6e59d3288741f"
+}

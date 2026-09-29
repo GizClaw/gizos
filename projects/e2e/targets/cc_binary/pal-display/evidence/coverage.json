@@ -1,0 +1,107 @@
+{
+  "h2_sdl3_display.cpp": {
+    "branches": {
+      "count": 176,
+      "covered": 107,
+      "notcovered": 69,
+      "percent": 60.79545454545454
+    },
+    "functions": {
+      "count": 19,
+      "covered": 16,
+      "percent": 84.21052631578947
+    },
+    "instantiations": {
+      "count": 19,
+      "covered": 16,
+      "percent": 84.21052631578947
+    },
+    "lines": {
+      "count": 362,
+      "covered": 267,
+      "percent": 73.75690607734806
+    },
+    "mcdc": {
+      "count": 0,
+      "covered": 0,
+      "notcovered": 0,
+      "percent": 0
+    },
+    "regions": {
+      "count": 289,
+      "covered": 217,
+      "notcovered": 72,
+      "percent": 75.08650519031141
+    }
+  },
+  "h2_sdl3_events.cpp": {
+    "branches": {
+      "count": 138,
+      "covered": 23,
+      "notcovered": 115,
+      "percent": 16.666666666666664
+    },
+    "functions": {
+      "count": 13,
+      "covered": 3,
+      "percent": 23.076923076923077
+    },
+    "instantiations": {
+      "count": 13,
+      "covered": 3,
+      "percent": 23.076923076923077
+    },
+    "lines": {
+      "count": 271,
+      "covered": 43,
+      "percent": 15.867158671586715
+    },
+    "mcdc": {
+      "count": 0,
+      "covered": 0,
+      "notcovered": 0,
+      "percent": 0
+    },
+    "regions": {
+      "count": 165,
+      "covered": 47,
+      "notcovered": 118,
+      "percent": 28.484848484848484
+    }
+  },
+  "h2_pal_display_e2e.c": {
+    "branches": {
+      "count": 279,
+      "covered": 186,
+      "notcovered": 93,
+      "percent": 66.66666666666666
+    },
+    "functions": {
+      "count": 31,
+      "covered": 31,
+      "percent": 100
+    },
+    "instantiations": {
+      "count": 31,
+      "covered": 31,
+      "percent": 100
+    },
+    "lines": {
+      "count": 323,
+      "covered": 307,
+      "percent": 95.04643962848297
+    },
+    "mcdc": {
+      "count": 0,
+      "covered": 0,
+      "notcovered": 0,
+      "percent": 0
+    },
+    "regions": {
+      "count": 546,
+      "covered": 437,
+      "notcovered": 109,
+      "percent": 80.03663003663004
+    }
+  }
+}

@@ -1,0 +1,442 @@
+{
+  "schema": 1,
+  "board": "bk7258_v3_202405",
+  "version": "pal-display-e2e-20260929-r6",
+  "operations": 6,
+  "cases": 24,
+  "driver_qualified": true,
+  "optical_verified": false,
+  "physical_observation": {
+    "status": "FAIL",
+    "source": "user",
+    "finding": "Backlight is visible, but the expected four-color pattern is absent; the same board displayed the older display App."
+  },
+  "install_boot": {
+    "fresh_boot": true,
+    "version": "pal-display-e2e-20260929-r6",
+    "qualified": {
+      "platform": "board-driver",
+      "contract": 1,
+      "operations": 6,
+      "passed": 24,
+      "failed": 0,
+      "not_run": 0,
+      "observations": 23,
+      "complete": 1,
+      "qualified": 1,
+      "rc": 0,
+      "cleanup": 0,
+      "teardown": 0
+    },
+    "cases": [
+      {
+        "id": "interface_inventory",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "null_arguments",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "closed_state",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "open_idempotent",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "native_info",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "full_frame_borrowed",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "partial_rgb565",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "padded_unaligned_stride",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "rgb888",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "rgb444",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "unknown_format",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "empty_rectangles",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "short_stride",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "outside_rectangles",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "partial_bounds",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "coordinate_overflow",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "span_overflow",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "repeated_present",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_zero",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_half",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_full",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_invalid",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "close_idempotent",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "reopen",
+        "status": "PASS",
+        "rc": 0
+      }
+    ],
+    "real_driver_observations_received": [
+      "case=full_frame_borrowed source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=partial_rgb565 source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=padded_unaligned_stride source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=rgb888 source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=rgb444 source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=unknown_format source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=empty_rectangles source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=short_stride source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=outside_rectangles source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=partial_bounds source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=coordinate_overflow source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=span_overflow source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=repeated_present source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=repeated_present source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=repeated_present source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=repeated_present source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=repeated_present source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=brightness_zero source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=0 rc=0",
+      "case=brightness_half source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=50 rc=0",
+      "case=brightness_full source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=brightness_invalid source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=reopen source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=reopen source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0"
+    ],
+    "reported_observations": 23,
+    "received_observations": 23,
+    "ledger_transport": "immediate-run-ledger",
+    "transport_limitation": null,
+    "log_sha256": "d04db8147fe5544e81f17e65e4c0cac6bfb171d0bf0238ebf2c83109a20306b8",
+    "confirmed": true
+  },
+  "independent_normal_reboot": {
+    "fresh_boot": true,
+    "version": "pal-display-e2e-20260929-r6",
+    "qualified": {
+      "platform": "board-driver",
+      "contract": 1,
+      "operations": 6,
+      "passed": 24,
+      "failed": 0,
+      "not_run": 0,
+      "observations": 23,
+      "complete": 1,
+      "qualified": 1,
+      "rc": 0,
+      "cleanup": 0,
+      "teardown": 0
+    },
+    "cases": [
+      {
+        "id": "interface_inventory",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "null_arguments",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "closed_state",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "open_idempotent",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "native_info",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "full_frame_borrowed",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "partial_rgb565",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "padded_unaligned_stride",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "rgb888",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "rgb444",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "unknown_format",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "empty_rectangles",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "short_stride",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "outside_rectangles",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "partial_bounds",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "coordinate_overflow",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "span_overflow",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "repeated_present",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_zero",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_half",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_full",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_invalid",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "close_idempotent",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "reopen",
+        "status": "PASS",
+        "rc": 0
+      }
+    ],
+    "real_driver_observations_received": [
+      "case=full_frame_borrowed source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=rgb888 source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=rgb444 source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=short_stride source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=coordinate_overflow source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=repeated_present source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=repeated_present source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=brightness_zero source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=0 rc=0",
+      "case=brightness_invalid source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=reopen source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0"
+    ],
+    "reported_observations": 23,
+    "received_observations": 10,
+    "ledger_transport": "result-replay-from-this-fresh-boot",
+    "transport_limitation": "UART console forwarding dropped some immediate observation lines; the complete result ledger is replayed from this fresh boot, not counted as another execution.",
+    "log_sha256": "b290aedf2473d3a7e58ef544f34166db9f7fb8dbaae2edcc281a723893166c49",
+    "confirmed": true
+  },
+  "before_status": {
+    "board": "bk7258_v3_202405",
+    "target": "bk7258",
+    "chip": "bk7258",
+    "device_uid": "c8478ca2a87c",
+    "capabilities": "0x00000001",
+    "command_availability": "0x00081f1f",
+    "active_role": "app",
+    "active_version": "pal-audio-e2e-20260929-r5",
+    "active_checksum": "5d8995f4f4f33ec7a9595ef86b2b249b013754fcb437eb6079143586bbf0795c",
+    "active_image_size": "5222400",
+    "running_partition": "2",
+    "next_partition": "2",
+    "boot_intent": "auto",
+    "stage_valid": "0",
+    "stage_package_checksum": "-",
+    "stage_package_size": "0",
+    "stage_image_checksum": "-",
+    "stage_image_size": "0",
+    "stage_role": "unknown",
+    "stage_version": "-",
+    "stage_board": "-",
+    "stage_target": "-",
+    "partition_1_valid": "1",
+    "partition_1_package_checksum": "3a3c664340f0d1b45561816e197ffbd25f2d3c447ee248082a3c5ce261cba9bd",
+    "partition_1_package_size": "1573290",
+    "partition_1_image_checksum": "47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb",
+    "partition_1_image_size": "2437120",
+    "partition_1_role": "loader",
+    "partition_1_version": "0.1.65-lu-c",
+    "partition_1_board": "bk7258_v3_202405",
+    "partition_1_target": "bk7258",
+    "partition_2_valid": "1",
+    "partition_2_package_checksum": "e50a30af34cee93ffd1a3460fc9188cb4bfe3457f0449e860d305ab23aee5f25",
+    "partition_2_package_size": "1716008",
+    "partition_2_image_checksum": "5d8995f4f4f33ec7a9595ef86b2b249b013754fcb437eb6079143586bbf0795c",
+    "partition_2_image_size": "5222400",
+    "partition_2_role": "app",
+    "partition_2_version": "pal-audio-e2e-20260929-r5",
+    "partition_2_board": "bk7258_v3_202405",
+    "partition_2_target": "bk7258",
+    "last_result": "0",
+    "mfg_mode": "1",
+    "mfg_steps": "0000000000000000000000"
+  },
+  "final_status": {
+    "board": "bk7258_v3_202405",
+    "target": "bk7258",
+    "chip": "bk7258",
+    "device_uid": "c8478ca2a87c",
+    "capabilities": "0x00000001",
+    "command_availability": "0x00081f1f",
+    "active_role": "app",
+    "active_version": "pal-display-e2e-20260929-r6",
+    "active_checksum": "3b8cb08becd0194dd56e160d2bce785c5cf1361c36494c48eadb17b550fb8359",
+    "active_image_size": "5222400",
+    "running_partition": "2",
+    "next_partition": "2",
+    "boot_intent": "auto",
+    "stage_valid": "0",
+    "stage_package_checksum": "-",
+    "stage_package_size": "0",
+    "stage_image_checksum": "-",
+    "stage_image_size": "0",
+    "stage_role": "unknown",
+    "stage_version": "-",
+    "stage_board": "-",
+    "stage_target": "-",
+    "partition_1_valid": "1",
+    "partition_1_package_checksum": "3a3c664340f0d1b45561816e197ffbd25f2d3c447ee248082a3c5ce261cba9bd",
+    "partition_1_package_size": "1573290",
+    "partition_1_image_checksum": "47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb",
+    "partition_1_image_size": "2437120",
+    "partition_1_role": "loader",
+    "partition_1_version": "0.1.65-lu-c",
+    "partition_1_board": "bk7258_v3_202405",
+    "partition_1_target": "bk7258",
+    "partition_2_valid": "1",
+    "partition_2_package_checksum": "c38fea570456a73319ebb53c83f1b2ce8a1ca57a865126a04042cf2328bc3220",
+    "partition_2_package_size": "1720885",
+    "partition_2_image_checksum": "3b8cb08becd0194dd56e160d2bce785c5cf1361c36494c48eadb17b550fb8359",
+    "partition_2_image_size": "5222400",
+    "partition_2_role": "app",
+    "partition_2_version": "pal-display-e2e-20260929-r6",
+    "partition_2_board": "bk7258_v3_202405",
+    "partition_2_target": "bk7258",
+    "last_result": "0",
+    "mfg_mode": "1",
+    "mfg_steps": "0000000000000000000000"
+  },
+  "p1_preserved": true,
+  "stage_empty": true,
+  "running_and_next_app": true,
+  "package_sha256": "c38fea570456a73319ebb53c83f1b2ce8a1ca57a865126a04042cf2328bc3220",
+  "coredump_status": "H2_LOADER_COREDUMP_FILE result=OK path=/tmp/pal-display-bk-r6-final-coredump.bin bytes=32",
+  "final_status_log_sha256": "9210f6f0d60e3e34cf095319057e2ae9f828f96fc759f43ba766d17befc89921",
+  "coredump_sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829",
+  "coredump_preserved": true,
+  "panel_qualified": false
+}

@@ -1,0 +1,7 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+package(default_visibility = ["//projects/e2e:__subpackages__"])
+cc_library(
+    name = "app",
+    deps = ["//projects/e2e/apps/pal-display/app:pal_display_e2e"],
+)
+exports_files(["run_mobile.py"])

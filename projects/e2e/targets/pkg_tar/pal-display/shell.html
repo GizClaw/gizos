@@ -1,0 +1,12 @@
+<!doctype html><meta charset="utf-8"><title>PAL Display E2E</title>
+<style>body{margin:0;background:black}canvas{display:block;width:96px;height:80px}pre{color:white}</style>
+<canvas id="canvas" width="96" height="80"></canvas><pre id="report">PAL Display E2E</pre>
+<script>
+var Module = {
+ canvas: document.getElementById('canvas'),
+ print: text => { console.log(text); document.getElementById('report').textContent += '\n'+text; },
+ printErr: text => console.error(text),
+ onExit: code => console.log('H2_DISPLAY_EXIT '+code)
+};
+</script>
+{{{ SCRIPT }}}

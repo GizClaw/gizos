@@ -1,0 +1,443 @@
+{
+  "schema": 1,
+  "board": "amoled",
+  "version": "pal-display-e2e-20260929-r5",
+  "operations": 6,
+  "cases": 24,
+  "driver_qualified": true,
+  "optical_verified": false,
+  "physical_observation": {
+    "status": "PENDING",
+    "reason": "No camera/panel optical readback fixture; explicit color/brightness observation still required."
+  },
+  "install_boot": {
+    "fresh_boot": true,
+    "version": "pal-display-e2e-20260929-r5",
+    "qualified": {
+      "platform": "board-driver",
+      "contract": 1,
+      "operations": 6,
+      "passed": 24,
+      "failed": 0,
+      "not_run": 0,
+      "observations": 23,
+      "complete": 1,
+      "qualified": 1,
+      "rc": 0,
+      "cleanup": 0,
+      "teardown": 0
+    },
+    "cases": [
+      {
+        "id": "interface_inventory",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "null_arguments",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "closed_state",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "open_idempotent",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "native_info",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "full_frame_borrowed",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "partial_rgb565",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "padded_unaligned_stride",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "rgb888",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "rgb444",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "unknown_format",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "empty_rectangles",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "short_stride",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "outside_rectangles",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "partial_bounds",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "coordinate_overflow",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "span_overflow",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "repeated_present",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_zero",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_half",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_full",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_invalid",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "close_idempotent",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "reopen",
+        "status": "PASS",
+        "rc": 0
+      }
+    ],
+    "real_driver_observations": [
+      "case=full_frame_borrowed source=completed-SPI-DMA chunks=7 optical_verified=0 brightness_command=100 rc=0",
+      "case=partial_rgb565 source=completed-SPI-DMA chunks=8 optical_verified=0 brightness_command=100 rc=0",
+      "case=padded_unaligned_stride source=completed-SPI-DMA chunks=9 optical_verified=0 brightness_command=100 rc=0",
+      "case=rgb888 source=completed-SPI-DMA chunks=10 optical_verified=0 brightness_command=100 rc=0",
+      "case=rgb444 source=completed-SPI-DMA chunks=11 optical_verified=0 brightness_command=100 rc=0",
+      "case=unknown_format source=completed-SPI-DMA chunks=11 optical_verified=0 brightness_command=100 rc=0",
+      "case=empty_rectangles source=completed-SPI-DMA chunks=11 optical_verified=0 brightness_command=100 rc=0",
+      "case=short_stride source=completed-SPI-DMA chunks=11 optical_verified=0 brightness_command=100 rc=0",
+      "case=outside_rectangles source=completed-SPI-DMA chunks=11 optical_verified=0 brightness_command=100 rc=0",
+      "case=partial_bounds source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
+      "case=coordinate_overflow source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
+      "case=span_overflow source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
+      "case=repeated_present source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
+      "case=repeated_present source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
+      "case=repeated_present source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
+      "case=repeated_present source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
+      "case=repeated_present source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
+      "case=brightness_zero source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=0 rc=0",
+      "case=brightness_half source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=50 rc=0",
+      "case=brightness_full source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
+      "case=brightness_invalid source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
+      "case=reopen source=completed-SPI-DMA chunks=19 optical_verified=0 brightness_command=100 rc=0",
+      "case=reopen source=completed-SPI-DMA chunks=26 optical_verified=0 brightness_command=100 rc=0"
+    ],
+    "log_sha256": "3d184893a33b509619c3357cf1ef4adf3d2d1d31cc93d5d081e57a05ba0735a8",
+    "confirmed": true
+  },
+  "independent_normal_reboot": {
+    "fresh_boot": true,
+    "version": "pal-display-e2e-20260929-r5",
+    "qualified": {
+      "platform": "board-driver",
+      "contract": 1,
+      "operations": 6,
+      "passed": 24,
+      "failed": 0,
+      "not_run": 0,
+      "observations": 23,
+      "complete": 1,
+      "qualified": 1,
+      "rc": 0,
+      "cleanup": 0,
+      "teardown": 0
+    },
+    "cases": [
+      {
+        "id": "interface_inventory",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "null_arguments",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "closed_state",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "open_idempotent",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "native_info",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "full_frame_borrowed",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "partial_rgb565",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "padded_unaligned_stride",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "rgb888",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "rgb444",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "unknown_format",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "empty_rectangles",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "short_stride",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "outside_rectangles",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "partial_bounds",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "coordinate_overflow",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "span_overflow",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "repeated_present",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_zero",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_half",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_full",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_invalid",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "close_idempotent",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "reopen",
+        "status": "PASS",
+        "rc": 0
+      }
+    ],
+    "real_driver_observations": [
+      "case=full_frame_borrowed source=completed-SPI-DMA chunks=7 optical_verified=0 brightness_command=100 rc=0",
+      "case=partial_rgb565 source=completed-SPI-DMA chunks=8 optical_verified=0 brightness_command=100 rc=0",
+      "case=padded_unaligned_stride source=completed-SPI-DMA chunks=9 optical_verified=0 brightness_command=100 rc=0",
+      "case=rgb888 source=completed-SPI-DMA chunks=10 optical_verified=0 brightness_command=100 rc=0",
+      "case=rgb444 source=completed-SPI-DMA chunks=11 optical_verified=0 brightness_command=100 rc=0",
+      "case=unknown_format source=completed-SPI-DMA chunks=11 optical_verified=0 brightness_command=100 rc=0",
+      "case=empty_rectangles source=completed-SPI-DMA chunks=11 optical_verified=0 brightness_command=100 rc=0",
+      "case=short_stride source=completed-SPI-DMA chunks=11 optical_verified=0 brightness_command=100 rc=0",
+      "case=outside_rectangles source=completed-SPI-DMA chunks=11 optical_verified=0 brightness_command=100 rc=0",
+      "case=partial_bounds source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
+      "case=coordinate_overflow source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
+      "case=span_overflow source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
+      "case=repeated_present source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
+      "case=repeated_present source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
+      "case=repeated_present source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
+      "case=repeated_present source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
+      "case=repeated_present source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
+      "case=brightness_zero source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=0 rc=0",
+      "case=brightness_half source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=50 rc=0",
+      "case=brightness_full source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
+      "case=brightness_invalid source=completed-SPI-DMA chunks=12 optical_verified=0 brightness_command=100 rc=0",
+      "case=reopen source=completed-SPI-DMA chunks=19 optical_verified=0 brightness_command=100 rc=0",
+      "case=reopen source=completed-SPI-DMA chunks=26 optical_verified=0 brightness_command=100 rc=0"
+    ],
+    "log_sha256": "3344e1aff5dcfde418b3e43037d46c01d38919a7451b2aa376ec2f8f71a0bb4d",
+    "confirmed": true
+  },
+  "before_status": {
+    "board": "amoled",
+    "target": "esp32s3",
+    "chip": "esp32s3",
+    "device_uid": "30eda0ae0f86",
+    "capabilities": "0x00000007",
+    "command_availability": "0x001f3d3f",
+    "active_role": "app",
+    "active_version": "pal-audio-e2e-20260929-r6",
+    "active_checksum": "eb1aa8cca139261ce22e62539866d267994c03c04316f78526482e5a15299057",
+    "active_image_size": "1558016",
+    "running_partition": "2",
+    "next_partition": "2",
+    "boot_intent": "auto",
+    "stage_valid": "0",
+    "stage_package_checksum": "-",
+    "stage_package_size": "0",
+    "stage_image_checksum": "-",
+    "stage_image_size": "0",
+    "stage_role": "unknown",
+    "stage_version": "-",
+    "stage_board": "-",
+    "stage_target": "-",
+    "partition_1_valid": "1",
+    "partition_1_package_checksum": "66e88bf66c3f3322536d50a62227107257ca458e248064c289a19c5e1ced420b",
+    "partition_1_package_size": "1051104",
+    "partition_1_image_checksum": "973bc98e7bd3fe410e0d48d3014c9472c9a903ebc3063a42d424f9242efb9a4f",
+    "partition_1_image_size": "1554976",
+    "partition_1_role": "loader",
+    "partition_1_version": "timeout-fix-20260928",
+    "partition_1_board": "amoled",
+    "partition_1_target": "esp32s3",
+    "partition_2_valid": "1",
+    "partition_2_package_checksum": "430e3acda8e70d8827e583c942d2fff3c97357dc3338ee58c067059f842d8dac",
+    "partition_2_package_size": "1042836",
+    "partition_2_image_checksum": "eb1aa8cca139261ce22e62539866d267994c03c04316f78526482e5a15299057",
+    "partition_2_image_size": "1558016",
+    "partition_2_role": "app",
+    "partition_2_version": "pal-audio-e2e-20260929-r6",
+    "partition_2_board": "amoled",
+    "partition_2_target": "esp32s3",
+    "last_result": "0",
+    "mfg_mode": "1",
+    "mfg_steps": "0000000000000000000000"
+  },
+  "final_status": {
+    "board": "amoled",
+    "target": "esp32s3",
+    "chip": "esp32s3",
+    "device_uid": "30eda0ae0f86",
+    "capabilities": "0x00000001",
+    "command_availability": "0x00081d3f",
+    "active_role": "app",
+    "active_version": "pal-display-e2e-20260929-r5",
+    "active_checksum": "9dfacab05915c3ac7da1650abd9908db43138354bd89db6cfbb07fbdd1ba87ce",
+    "active_image_size": "1556720",
+    "running_partition": "2",
+    "next_partition": "2",
+    "boot_intent": "auto",
+    "stage_valid": "0",
+    "stage_package_checksum": "-",
+    "stage_package_size": "0",
+    "stage_image_checksum": "-",
+    "stage_image_size": "0",
+    "stage_role": "unknown",
+    "stage_version": "-",
+    "stage_board": "-",
+    "stage_target": "-",
+    "partition_1_valid": "1",
+    "partition_1_package_checksum": "66e88bf66c3f3322536d50a62227107257ca458e248064c289a19c5e1ced420b",
+    "partition_1_package_size": "1051104",
+    "partition_1_image_checksum": "973bc98e7bd3fe410e0d48d3014c9472c9a903ebc3063a42d424f9242efb9a4f",
+    "partition_1_image_size": "1554976",
+    "partition_1_role": "loader",
+    "partition_1_version": "timeout-fix-20260928",
+    "partition_1_board": "amoled",
+    "partition_1_target": "esp32s3",
+    "partition_2_valid": "1",
+    "partition_2_package_checksum": "23c662dd3ced6017698c5df44d3869d3b39b3d9815d10fe6354021ceba5a166c",
+    "partition_2_package_size": "1042169",
+    "partition_2_image_checksum": "9dfacab05915c3ac7da1650abd9908db43138354bd89db6cfbb07fbdd1ba87ce",
+    "partition_2_image_size": "1556720",
+    "partition_2_role": "app",
+    "partition_2_version": "pal-display-e2e-20260929-r5",
+    "partition_2_board": "amoled",
+    "partition_2_target": "esp32s3",
+    "last_result": "0",
+    "mfg_mode": "1",
+    "mfg_steps": "0000000000000000000000"
+  },
+  "p1_preserved": true,
+  "stage_empty": true,
+  "running_and_next_app": true,
+  "package_sha256": "23c662dd3ced6017698c5df44d3869d3b39b3d9815d10fe6354021ceba5a166c",
+  "coredump_status": "H2_LOADER_COREDUMP_STATUS result=OK code=0 partition=coredump bytes=65536 stored_bytes=0 blank=1",
+  "final_status_log_sha256": "e05f2dc58880973b0e065ad2e94505ce6ee7c8a0133e7c105967cc81c786a0da"
+}

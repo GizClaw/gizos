@@ -76,9 +76,13 @@ int display_open(void *user) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
   std::lock_guard<std::mutex> lock(state->display_mutex);
+  if (state->close_pending) {
+    h2_sdl3_cleanup_display(state);
+    state->init_attempted = false;
+  }
   const int result = init_display(state);
   if (result == H2_DISPLAY_OK) {
-    ++state->open_count;
+    state->open_count = 1u;
     state->close_pending = false;
   }
   return result;
@@ -90,9 +94,8 @@ int display_get_info(void *user, h2_display_info_t *info) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
   std::lock_guard<std::mutex> lock(state->display_mutex);
-  const int result = init_display(state);
-  if (result != H2_DISPLAY_OK) {
-    return result;
+  if (!state->initialized || state->open_count == 0u || state->close_pending) {
+    return H2_DISPLAY_ERR_INVALID_STATE;
   }
   *info = {state->width, state->height, H2_DISPLAY_PIXEL_RGB565};
   return H2_DISPLAY_OK;
@@ -130,8 +133,8 @@ uint16_t rgb444_to_rgb565(uint16_t pixel) {
   const uint16_t red = (pixel >> 8u) & 0x0fu;
   const uint16_t green = (pixel >> 4u) & 0x0fu;
   const uint16_t blue = pixel & 0x0fu;
-  return static_cast<uint16_t>((red << 12u) | (red << 8u) | (green << 7u) |
-                               (green << 3u) | (blue << 1u) | (blue >> 3u));
+  return static_cast<uint16_t>((((red << 1u) | (red >> 3u)) << 11u) |
+      (((green << 2u) | (green >> 2u)) << 5u) | (blue << 1u) | (blue >> 3u));
 }
 
 int display_draw_bitmap(void *user, const h2_display_rect_t *rect,
@@ -142,7 +145,7 @@ int display_draw_bitmap(void *user, const h2_display_rect_t *rect,
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
   std::lock_guard<std::mutex> lock(state->display_mutex);
-  if (!state->initialized) {
+  if (!state->initialized || state->open_count == 0u || state->close_pending) {
     return H2_DISPLAY_ERR_INVALID_STATE;
   }
   size_t pixel_size = 0u;
@@ -163,7 +166,9 @@ int display_draw_bitmap(void *user, const h2_display_rect_t *rect,
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
   const size_t row_bytes = static_cast<size_t>(rect->width) * pixel_size;
-  if (stride_bytes < row_bytes) {
+  if (stride_bytes < row_bytes ||
+      (static_cast<size_t>(rect->height) - 1u) >
+          (std::numeric_limits<size_t>::max() - row_bytes) / stride_bytes) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
   h2_display_rect_t clipped = {};
@@ -172,8 +177,8 @@ int display_draw_bitmap(void *user, const h2_display_rect_t *rect,
     return clip_result;
   }
   const auto *source = static_cast<const uint8_t *>(pixels);
-  source += static_cast<size_t>(clipped.y - rect->y) * stride_bytes;
-  source += static_cast<size_t>(clipped.x - rect->x) * pixel_size;
+  source += static_cast<size_t>(static_cast<int64_t>(clipped.y) - rect->y) * stride_bytes;
+  source += static_cast<size_t>(static_cast<int64_t>(clipped.x) - rect->x) * pixel_size;
   for (int row = 0; row < clipped.height; ++row) {
     uint16_t *destination =
         state->framebuffer +
@@ -209,7 +214,7 @@ int display_present(void *user) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
   std::lock_guard<std::mutex> lock(state->display_mutex);
-  if (!state->initialized) {
+  if (!state->initialized || state->open_count == 0u || state->close_pending) {
     return H2_DISPLAY_ERR_INVALID_STATE;
   }
   state->present_pending = true;
@@ -222,11 +227,11 @@ int display_set_brightness(void *user, uint32_t percent) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
   std::lock_guard<std::mutex> lock(state->display_mutex);
-  if (!state->initialized) {
+  if (!state->initialized || state->open_count == 0u || state->close_pending) {
     return H2_DISPLAY_ERR_INVALID_STATE;
   }
-  state->brightness_mod = static_cast<uint8_t>(
-      (std::min(percent, 100u) * 255u + 50u) / 100u);
+  if (percent > 100u) return H2_DISPLAY_ERR_INVALID_ARG;
+  state->brightness_mod = static_cast<uint8_t>((percent * 255u + 50u) / 100u);
   state->present_pending = true;
   return H2_DISPLAY_OK;
 }
@@ -237,10 +242,6 @@ int display_close(void *user) {
     return H2_DISPLAY_ERR_INVALID_ARG;
   }
   std::lock_guard<std::mutex> lock(state->display_mutex);
-  if (state->open_count > 1u) {
-    --state->open_count;
-    return H2_DISPLAY_OK;
-  }
   state->open_count = 0u;
   state->close_pending = true;
   return H2_DISPLAY_OK;
@@ -272,7 +273,7 @@ void h2_sdl3_cleanup_display(h2_sdl3_t *state) {
 }
 
 int h2_sdl3_present(h2_sdl3_t *state) {
-  if (!state->initialized) {
+  if (!state->initialized || state->open_count == 0u || state->close_pending) {
     return H2_DISPLAY_ERR_INVALID_STATE;
   }
   if (!SDL_UpdateTexture(state->texture, nullptr, state->framebuffer,
@@ -280,10 +281,23 @@ int h2_sdl3_present(h2_sdl3_t *state) {
       !SDL_SetTextureColorMod(state->texture, state->brightness_mod,
                               state->brightness_mod, state->brightness_mod) ||
       !SDL_RenderClear(state->renderer) ||
-      !SDL_RenderTexture(state->renderer, state->texture, nullptr, nullptr) ||
-      !SDL_RenderPresent(state->renderer)) {
+      !SDL_RenderTexture(state->renderer, state->texture, nullptr, nullptr)) {
     return H2_DISPLAY_ERR_IO;
   }
+  if (state->render_capture != nullptr) {
+    SDL_Surface *raw = SDL_RenderReadPixels(state->renderer, nullptr);
+    if (raw == nullptr) return H2_DISPLAY_ERR_IO;
+    SDL_Surface *rgba = SDL_ConvertSurface(raw, SDL_PIXELFORMAT_RGBA32);
+    SDL_DestroySurface(raw);
+    if (rgba == nullptr) return H2_DISPLAY_ERR_IO;
+    const h2_sdl3_render_frame_t frame = {
+        static_cast<const uint8_t *>(rgba->pixels),
+        static_cast<uint32_t>(rgba->w), static_cast<uint32_t>(rgba->h),
+        static_cast<size_t>(rgba->pitch)};
+    state->render_capture(state->render_capture_user, &frame);
+    SDL_DestroySurface(rgba);
+  }
+  if (!SDL_RenderPresent(state->renderer)) return H2_DISPLAY_ERR_IO;
   if (state->capture != nullptr) {
     const uint64_t timestamp = static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::microseconds>(
@@ -299,6 +313,17 @@ int h2_sdl3_present(h2_sdl3_t *state) {
 }
 
 extern "C" {
+
+h2_pal_result_t h2_sdl3_set_render_capture(h2_sdl3_t *provider,
+    h2_sdl3_render_capture_fn callback, void *user) {
+  if (provider == nullptr) return H2_PAL_ERR_INVALID_ARG;
+  std::lock_guard<std::mutex> lock(provider->display_mutex);
+  if (callback != nullptr && provider->render_capture != nullptr)
+    return H2_PAL_ERR_BUSY;
+  provider->render_capture = callback;
+  provider->render_capture_user = user;
+  return H2_PAL_OK;
+}
 
 h2_pal_result_t h2_sdl3_set_frame_capture(h2_sdl3_t *provider,
                                         h2_sdl3_frame_capture_fn callback,
