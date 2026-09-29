@@ -23,12 +23,14 @@ static void dhcp_diag(void *user) {
             if (__atomic_exchange_n(&diag_error, (uint32_t)rc, __ATOMIC_ACQ_REL) == 0u)
                 printf("H2_BK_DHCP_QUERY_FAIL rc=%d\n", rc);
         } else {
-            printf("H2_BK_DHCP_MEM free=%lu minimum=%lu total=%lu reserve=%lu reserve_rc=%ld\n",
+            printf("H2_BK_DHCP_MEM free=%lu minimum=%lu total=%lu reserve=%lu reserve_rc=%ld psram_free=%lu psram_total=%lu\n",
                    (unsigned long)snapshot->free_heap,
                    (unsigned long)snapshot->minimum_free_heap,
                    (unsigned long)snapshot->total_heap,
                    (unsigned long)snapshot->reserve_heap,
-                   (long)snapshot->reserve_rc);
+                   (long)snapshot->reserve_rc,
+                   (unsigned long)snapshot->psram_free_heap,
+                   (unsigned long)snapshot->psram_total_heap);
             if (snapshot->reserve_rc != 0 &&
                 __atomic_exchange_n(&diag_error, (uint32_t)H2_PAL_ERR_IO,
                                     __ATOMIC_ACQ_REL) == 0u)

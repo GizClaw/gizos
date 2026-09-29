@@ -1,2 +1,2 @@
 package(default_visibility = ["//visibility:public"])
-exports_files(["h2_bk_wifi_rpc.h", "h2_bk_dhcp_ring.h", "h2_bk_dhcp_trace.h", "h2_bk_dhcp_trace.cmake"])
+exports_files(["h2_bk_wifi_rpc.h", "h2_bk_dhcp_ring.h", "h2_bk_dhcp_trace.h", "h2_bk_dhcp_trace.cmake", "h2_bk_cp_psram.cmake"])

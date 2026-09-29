@@ -2,7 +2,9 @@ set(REPO_ROOT "$ENV{H2_GIZOS_ROOT}")
 set(H2_BK_PLATFORM_CORE_PRIV_REQUIRES
   bk_common
   bk_rtos
-  controller_if)
+  controller_if
+  bk_cli
+  lwip_intf_v2_1)
 include("$ENV{H2_GIZOS_ROOT}/tools/bazel/native_component.cmake")
 h2_bazel_native_component_sources(H2_COMPONENT_SOURCES h2_pal_core cp)
 
@@ -62,3 +64,4 @@ target_include_directories(${H2_BK_CP_CONTROLLER_LIB} PRIVATE
   "${REPO_ROOT}/native_component_src/bk7258/shared")
 
 include("${REPO_ROOT}/native_component_src/bk7258/shared/h2_bk_dhcp_trace.cmake")
+include("${REPO_ROOT}/native_component_src/bk7258/shared/h2_bk_cp_psram.cmake")

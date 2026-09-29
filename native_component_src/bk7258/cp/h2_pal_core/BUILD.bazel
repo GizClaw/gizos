@@ -44,6 +44,7 @@ firmware_native_component(
         "//native_component_src/bk7258/shared:h2_bk_dhcp_ring.h",
         "//native_component_src/bk7258/shared:h2_bk_dhcp_trace.h",
         "//native_component_src/bk7258/shared:h2_bk_dhcp_trace.cmake",
+        "//native_component_src/bk7258/shared:h2_bk_cp_psram.cmake",
     ],
     execution_unit = "cp",
     tags = [

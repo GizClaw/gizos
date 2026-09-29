@@ -132,6 +132,7 @@ cmake_minimum_required(VERSION 3.16)
 project(PairedRPC C)
 set(CMAKE_C_STANDARD 11)
 set(REPO_ROOT "$ENV{H2_GIZOS_ROOT}")
+set(H2_BK_CP_PSRAM_SERVICES OFF)
 add_library(sdk STATIC sdk/components/controller_if/cif_wifi_api.c
  "${REPO_ROOT}/native_component_src/bk7258/cp/h2_pal_core/src/h2_bk_dhcp_ring.c")
 target_include_directories(sdk PRIVATE "${REPO_ROOT}/native_component_src/bk7258/shared")

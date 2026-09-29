@@ -76,12 +76,14 @@ void h2_bk_dhcp_snapshot(h2_bk_dhcp_snapshot_t *out) {
     out->free_heap = (uint32_t)rtos_get_free_heap_size();
     out->minimum_free_heap = (uint32_t)rtos_get_minimum_free_heap_size();
     out->total_heap = (uint32_t)rtos_get_total_heap_size();
+    out->psram_free_heap = (uint32_t)rtos_get_psram_free_heap_size();
+    out->psram_total_heap = (uint32_t)rtos_get_psram_total_heap_size();
     uint16_t reserve = 0u;
     out->reserve_rc = bk_wifi_get_min_rsv_mem(&reserve);
     out->reserve_heap = reserve;
 #endif
     /* Consumers should remember the last observed ticket per physical slot,
-     * (ticket-1)%32, rather than advancing a global cursor to last_ticket:
+     * (ticket-1)%capacity, rather than advancing a global cursor to last_ticket:
      * another producer may still be completing an older reserved ticket. */
 }
 

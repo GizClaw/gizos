@@ -43,6 +43,15 @@ py_test(
         "//native_component_src/bk7258/shared:h2_bk_dhcp_ring.h",
         "//native_component_src/bk7258/shared:h2_bk_wifi_rpc.h",
         "//native_component_src/bk7258/shared:h2_bk_dhcp_trace.cmake",
+        "//native_component_src/bk7258/shared:h2_bk_cp_psram.cmake",
     ],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+py_test(
+    name = "cp_psram_overlay_test",
+    srcs = ["tests/test_cp_psram_overlay.py"],
+    main = "tests/test_cp_psram_overlay.py",
+    legacy_create_init = 0,
+    data = ["//native_component_src/bk7258/shared:h2_bk_cp_psram.cmake"],
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
