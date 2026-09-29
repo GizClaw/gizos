@@ -6,6 +6,7 @@ from pathlib import Path
 import re
 
 from evidence_validator import verify_boot
+from fixture_validator import verify_fixture
 from receipt_bindings import check_captured_status, check_status
 
 BASE = Path("projects/e2e/apps/pal-wifi")
@@ -55,10 +56,12 @@ def check(audit_artifacts=False):
         fixture = json.loads(Path(report["fixture"]).read_text(encoding="utf-8"))
         assert fixture["cleanup"] == 0 and fixture["settings_unchanged"] == 1 and fixture["network_restored"] == 1
         assert fixture["p1_unchanged"] is True and fixture["coredump_unchanged"] is True and fixture["stage_empty"] is True
-        actual_pairs = {(entry["mac"], entry["ip4"]) for entry in fixture["clients"] if entry["target"] == report["fixture_target"]}
-        for run in verified:
+        observed = verify_fixture(fixture, audit_artifacts)
+        for row, run in zip(runs, verified):
             c = run["report"]["CLIENT"]
-            assert (c["mac"], c["ip4"]) in actual_pairs, "DUT lease lacks independent real-peer corroboration"
+            assert row["fixture_log"] in observed, "missing associated fixture window"
+            assert (report["fixture_target"], c["mac"], c["ip4"]) in observed[row["fixture_log"]], \
+                "DUT lease lacks real-peer corroboration in its associated fixture window"
     scope = "local raw artifact audit" if audit_artifacts else "historical receipt/source consistency"
     print("PAL_WIFI_GATE_READY: two recorded physical WLAN qualifications and four host capability rows; " + scope)
 

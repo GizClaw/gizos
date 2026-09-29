@@ -17,7 +17,11 @@ The DUT exercises WPA2, open and hidden AP modes; each requires a real leased
 client and observed join/leave. It also scans the fixture, tests callback early
 stop, tests borrowing and zero-timeout connect, rejects a wrong password while
 retaining saved credentials, distinguishes `connect` from `connect_and_save`,
-checks IP/DNS/MAC/route/event consistency and repeats lifecycles.
+checks IP/DNS/MAC/route/event consistency and repeats lifecycles. AP+STA
+route selection uses the independently saved infrastructure AP when available,
+while the fixture is the real DUT AP client; it still requires both interfaces
+usable and actual AP→STA route switches. No saved infrastructure credentials
+means it uses the controlled fixture AP.
 
 The public fixture key is deliberately synthetic. Production credentials are
 read from the board's Settings, never logged, never committed. Before mutation,

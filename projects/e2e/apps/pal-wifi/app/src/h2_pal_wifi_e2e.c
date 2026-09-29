@@ -605,7 +605,12 @@ static int ap_client_left(wifi_test_t *s) {
     return H2_PAL_ERR_TIMEOUT;
 }
 static int netif_select(wifi_test_t *s) {
-    CALL(connect_target(s, &s->cfg->fixture));
+    /* Use the independent infrastructure AP when saved credentials exist.
+     * The fixture STA remains a real client of the DUT AP; reciprocal peer
+     * AP/STA associations are not part of this interface-routing contract. */
+    const h2_pal_wifi_sta_config_t *upstream =
+        s->original_saved ? &s->original : &s->cfg->fixture;
+    CALL(connect_target(s, upstream));
     const h2_pal_netif_filter_t filter = {.kind = H2_PAL_NETIF_KIND_WIFI_STA};
     CALL(h2_pal_netif_find(s->rt->netif, &filter, &s->sta_ref));
     CALL(h2_pal_netif_set_default(s->rt->netif, &s->ap_ref));
