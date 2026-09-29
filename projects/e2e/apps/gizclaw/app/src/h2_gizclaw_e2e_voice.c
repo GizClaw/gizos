@@ -682,6 +682,27 @@ static int conversation_rounds(voice_state_t *state, bool realtime) {
         (snapshot.conversation_input_open || snapshot.can_start ||
          snapshot.conversation != H2_GIZCLAW_SESSION_CONVERSATION_IDLE))
       rc = H2_PAL_ERR_INVALID_STATE;
+    /* Interrupting playback on an idle Session only closes the downlink: it
+     * neither changes the Session nor leaves anything in the Track. */
+    int interrupt_rc = rc;
+    if (rc == H2_PAL_OK) {
+      interrupt_rc =
+          h2_gizclaw_session_interrupt_playback(voice_session(state));
+      h2_gizclaw_session_state_t after;
+      if (interrupt_rc == H2_PAL_OK)
+        interrupt_rc = h2_gizclaw_session_snapshot(voice_session(state), &after);
+      if (interrupt_rc == H2_PAL_OK &&
+          (after.conversation != snapshot.conversation ||
+           after.conversation_input_open != snapshot.conversation_input_open ||
+           h2_gizclaw_pcm_track_read(state->track, leftover,
+                                     sizeof(leftover)) !=
+               H2_PAL_ERR_WOULD_BLOCK))
+        interrupt_rc = H2_PAL_ERR_INVALID_STATE;
+    }
+    evidence("h2_gizclaw_session_interrupt_playback",
+             "session_interrupt_playback-assert", interrupt_rc);
+    if (rc == H2_PAL_OK)
+      rc = interrupt_rc;
   }
   evidence(voice_session(state) ? "h2_gizclaw_session_audio_start" : "h2_gizclaw_service_audio_start",
            voice_session(state) ? "session_audio_start-assert" : "service_audio_start-assert", rc);
