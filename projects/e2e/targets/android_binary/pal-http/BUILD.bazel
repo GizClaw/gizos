@@ -1,8 +1,8 @@
 load("@rules_android//rules:rules.bzl", "android_binary", "android_library")
 load("@rules_cc//cc:defs.bzl", "cc_library")
-load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
 load("//tools/bazel:mobile_app_sdk.bzl", "mobile_app_sdk")
+load("//tools/bazel:mobile_e2e.bzl", "mobile_e2e_test")
 load("//tools/bazel/platforms:compatibility.bzl", "ANDROID_ARM64_ARTIFACT_COMPATIBILITY", "ANDROID_ARM64_PACKAGE_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
@@ -35,10 +35,9 @@ android_binary(
     deps = [":app"],
 )
 
-sh_test(
+mobile_e2e_test(
     name = "android_pal_http_simulator_test",
     timeout = "moderate",
-    srcs = ["run_simulator.sh"],
     args = [
         "android",
         "$(rootpath :pal_http_e2e.apk)",
@@ -49,8 +48,6 @@ sh_test(
         ":app_sdk",
         ":pal_http_e2e.apk",
         "//projects/e2e/apps/pal-http/app:include/h2_pal_http_cases.inc",
-        "//projects/e2e/libs/pal-http-mobile:run_mobile.py",
-        "//projects/e2e/libs/pal-http-fixture:fixture.py",
     ],
     env_inherit = [
         "H2_IOS_SIMULATOR_UDID",
@@ -58,8 +55,9 @@ sh_test(
         "ANDROID_HOME",
         "DEVELOPER_DIR",
     ],
-    tags = ["manual"],
+    runner = "//projects/e2e/libs/pal-http-mobile:run_mobile.py",
     target_compatible_with = ANDROID_ARM64_PACKAGE_ARTIFACT_COMPATIBILITY,
+    deps = ["//projects/e2e/libs/pal-http-fixture:fixture"],
 )
 
 mobile_app_sdk(

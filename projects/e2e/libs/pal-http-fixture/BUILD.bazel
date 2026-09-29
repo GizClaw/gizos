@@ -7,7 +7,6 @@ py_library(
     name = "fixture",
     srcs = ["fixture.py"],
     imports = ["."],
-    target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 
 py_binary(

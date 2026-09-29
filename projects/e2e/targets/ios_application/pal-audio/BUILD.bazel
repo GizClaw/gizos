@@ -1,8 +1,8 @@
 load("@rules_apple//apple:ios.bzl", "ios_application")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
-load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//tools/bazel:cc_options.bzl", "H2_WARNING_COPTS")
 load("//tools/bazel:mobile_app_sdk.bzl", "mobile_app_sdk")
+load("//tools/bazel:mobile_e2e.bzl", "mobile_e2e_test")
 load("//tools/bazel/platforms:compatibility.bzl", "IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
@@ -11,7 +11,11 @@ objc_library(
     name = "launcher",
     srcs = ["main.m"],
     copts = H2_WARNING_COPTS + ["-fobjc-arc"],
-    sdk_frameworks = ["UIKit", "Foundation", "AVFoundation"],
+    sdk_frameworks = [
+        "UIKit",
+        "Foundation",
+        "AVFoundation",
+    ],
     target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
     deps = [
         "//libs/app_host:ios_packaged",
@@ -23,29 +27,40 @@ ios_application(
     name = "pal_audio_e2e",
     bundle_id = "com.haivivi.gizos.e2e.palaudio",
     bundle_name = "GizOSPALAudioE2E",
-    families = ["iphone", "ipad"],
+    families = [
+        "iphone",
+        "ipad",
+    ],
     infoplists = ["Info.plist"],
     minimum_os_version = "16.0",
     target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
     deps = [":launcher"],
 )
 
-mobile_app_sdk(name = "app_sdk", app = ":pal_audio_e2e")
+mobile_app_sdk(
+    name = "app_sdk",
+    app = ":pal_audio_e2e",
+)
 
-sh_test(
+mobile_e2e_test(
     name = "ios_pal_audio_simulator_test",
     timeout = "moderate",
-    srcs = ["run_simulator.sh"],
     args = [
-        "ios", "$(rootpath :pal_audio_e2e.ipa)", "$(rootpath :app_sdk)",
+        "ios",
+        "$(rootpath :pal_audio_e2e.ipa)",
+        "$(rootpath :app_sdk)",
         "$(rootpath //projects/e2e/apps/pal-audio/app:include/h2_pal_audio_cases.inc)",
     ],
     data = [
-        ":app_sdk", ":pal_audio_e2e.ipa",
+        ":app_sdk",
+        ":pal_audio_e2e.ipa",
         "//projects/e2e/apps/pal-audio/app:include/h2_pal_audio_cases.inc",
-        "//projects/e2e/libs/pal-audio-mobile:run_mobile.py",
     ],
-    env_inherit = ["H2_IOS_SIMULATOR_UDID", "ANDROID_HOME", "DEVELOPER_DIR"],
-    tags = ["manual"],
+    env_inherit = [
+        "H2_IOS_SIMULATOR_UDID",
+        "ANDROID_HOME",
+        "DEVELOPER_DIR",
+    ],
+    runner = "//projects/e2e/libs/pal-audio-mobile:run_mobile.py",
     target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
 )

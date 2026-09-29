@@ -1,8 +1,8 @@
 load("@rules_apple//apple:ios.bzl", "ios_application")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
-load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//tools/bazel:cc_options.bzl", "H2_WARNING_COPTS")
 load("//tools/bazel:mobile_app_sdk.bzl", "mobile_app_sdk")
+load("//tools/bazel:mobile_e2e.bzl", "mobile_e2e_test")
 load("//tools/bazel/platforms:compatibility.bzl", "IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
@@ -36,10 +36,9 @@ ios_application(
     deps = [":launcher"],
 )
 
-sh_test(
+mobile_e2e_test(
     name = "ios_pal_core_simulator_test",
     timeout = "moderate",
-    srcs = ["run_simulator.sh"],
     args = [
         "ios",
         "$(rootpath :pal_core_e2e.ipa)",
@@ -50,7 +49,6 @@ sh_test(
         ":app_sdk",
         ":pal_core_e2e.ipa",
         "//projects/e2e/apps/pal-core/app:include/h2_pal_core_cases.inc",
-        "//projects/e2e/libs/pal-core-mobile:run_mobile.py",
     ],
     env_inherit = [
         "H2_IOS_SIMULATOR_UDID",
@@ -58,7 +56,7 @@ sh_test(
         "ANDROID_HOME",
         "DEVELOPER_DIR",
     ],
-    tags = ["manual"],
+    runner = "//projects/e2e/libs/pal-core-mobile:run_mobile.py",
     target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
 )
 

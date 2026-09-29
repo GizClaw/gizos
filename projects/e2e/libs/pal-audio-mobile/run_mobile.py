@@ -1,38 +1,14 @@
 #!/usr/bin/env python3
 """Install the packaged Audio PAL App and verify its mandatory case ledger."""
-
-from datetime import datetime, timezone
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
 import re
-import subprocess
-import tempfile
-import time
-import zipfile
+
+from tools.bazel.mobile_e2e import MobileApp, save_evidence
 
 PACKAGE = "com.haivivi.gizos.e2e.palaudio"
-
-
-def run(argv, check=True, timeout=45):
-    result = subprocess.run([str(arg) for arg in argv], text=True,
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            timeout=timeout)
-    if check and result.returncode:
-        raise RuntimeError(f"{argv}: {result.stdout}")
-    return result
-
-
-def wait_report(read, timeout):
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        try:
-            return json.loads(read())
-        except (ValueError, TypeError):
-            time.sleep(0.25)
-    raise TimeoutError(f"No complete Audio report after {timeout}s")
 
 
 def verify(report, registry, platform):
@@ -54,65 +30,12 @@ def verify(report, registry, platform):
     assert report["allocator_allocations"] == report["allocator_frees"]
 
 
-def ios(args, output):
-    device = os.environ.get("H2_IOS_SIMULATOR_UDID")
-    if not device:
-        raise ValueError("H2_IOS_SIMULATOR_UDID must identify a booted simulator")
-    sim = ["xcrun", "simctl"]
-    with tempfile.TemporaryDirectory(prefix="pal-audio-ios-") as temporary:
-        with zipfile.ZipFile(args.app) as archive:
-            archive.extractall(temporary)
-        apps = list(Path(temporary).glob("Payload/*.app"))
-        assert len(apps) == 1
-        run(sim + ["terminate", device, PACKAGE], check=False)
-        run(sim + ["install", device, apps[0]])
-    container = Path(run(sim + ["get_app_container", device, PACKAGE, "data"]).stdout.strip())
-    result_file = container / "Documents/pal-audio-result.json"
-    result_file.unlink(missing_ok=True)
-    stdout = container / "Documents/pal-audio.stdout"
-    stderr = container / "Documents/pal-audio.stderr"
-    run(sim + ["privacy", device, "grant", "microphone", PACKAGE])
-    run(sim + ["launch", f"--stdout={stdout}", f"--stderr={stderr}", device, PACKAGE])
-    try:
-        report = wait_report(lambda: result_file.read_text()
-                             if result_file.exists() else "", args.timeout)
-    finally:
-        run(sim + ["terminate", device, PACKAGE], check=False)
-        for source in (stdout, stderr):
-            if source.exists():
-                (output / source.name).write_bytes(source.read_bytes())
-    devices = json.loads(run(sim + ["list", "devices", "--json"]).stdout)["devices"]
-    identity = next({"runtime": runtime, "device": value} for runtime, values in devices.items()
-                    for value in values if value["udid"] == device)
-    return report, identity
-
-
-def android(args, output):
-    serial = os.environ.get("H2_ANDROID_SERIAL")
-    if not serial or not serial.startswith("emulator-"):
-        raise ValueError("H2_ANDROID_SERIAL must identify the test emulator")
-    sdk = os.environ.get("ANDROID_HOME")
-    adb = [str(Path(sdk) / "platform-tools/adb") if sdk else "adb", "-s", serial]
-    run(adb + ["shell", "am", "force-stop", PACKAGE], check=False)
-    run(adb + ["install", "-r", args.app])
-    run(adb + ["shell", "pm", "grant", PACKAGE, "android.permission.RECORD_AUDIO"])
-    run(adb + ["shell", "run-as", PACKAGE, "rm", "-f", "files/pal-audio-result.json"])
-    run(adb + ["shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity"])
-    try:
-        report = wait_report(lambda: run(adb + ["shell", "run-as", PACKAGE, "cat",
-                                           "files/pal-audio-result.json"], check=False).stdout,
-                             args.timeout)
-    finally:
-        pid = run(adb + ["shell", "pidof", PACKAGE], check=False).stdout.strip()
-        if pid.isdigit():
-            (output / "logcat.txt").write_text(run(adb + ["logcat", "-d", "--pid=" + pid]).stdout)
-        run(adb + ["shell", "am", "force-stop", PACKAGE], check=False)
-    with zipfile.ZipFile(args.app) as app, zipfile.ZipFile(args.sdk) as aar:
-        assert app.read("lib/arm64-v8a/libh2_pal_core.so") == \
-            aar.read("jni/arm64-v8a/libh2_pal_core.so"), "APK did not use AAR binary"
-    return report, {"serial": serial,
-                    "api": run(adb + ["shell", "getprop", "ro.build.version.sdk"]).stdout.strip(),
-                    "fingerprint": run(adb + ["shell", "getprop", "ro.build.fingerprint"]).stdout.strip()}
+def run_suite(app, args):
+    if app.platform == "ios":
+        app.simctl("privacy", app.device, "grant", "microphone", PACKAGE)
+    else:
+        app.adb_command("shell", "pm", "grant", PACKAGE, "android.permission.RECORD_AUDIO")
+    return app.launch()
 
 
 def main():
@@ -126,15 +49,13 @@ def main():
                                                     "/tmp/pal-audio-mobile-result")))
     parser.add_argument("--timeout", type=int, default=90)
     args = parser.parse_args()
-    args.output.mkdir(parents=True, exist_ok=True)
-    report, environment = (ios if args.platform == "ios" else android)(args, args.output)
-    (args.output / "qualified.json").write_text(json.dumps(report, indent=2) + "\n")
-    environment.update(observation_finished_at_utc=datetime.now(timezone.utc).isoformat(),
-                       evidence_timezone="UTC", app_sha256=hashlib.sha256(args.app.read_bytes()).hexdigest(),
-                       sdk_sha256=hashlib.sha256(args.sdk.read_bytes()).hexdigest())
-    (args.output / "environment.json").write_text(json.dumps(environment, indent=2) + "\n")
-    verify(report, args.registry,
-           "ios-simulator" if args.platform == "ios" else "android-emulator")
+    with MobileApp(args.platform, args.app, args.sdk, PACKAGE,
+                   "pal-audio-result.json", args.output,
+                   timeout=args.timeout) as app:
+        result = run_suite(app, args)
+        verify(result, args.registry,
+               "ios-simulator" if args.platform == "ios" else "android-emulator")
+        save_evidence(args.output, result, app.environment(), args.app, args.sdk)
     print(f"PAL Audio {args.platform}: 24/24 PASS blocked=0")
 
 

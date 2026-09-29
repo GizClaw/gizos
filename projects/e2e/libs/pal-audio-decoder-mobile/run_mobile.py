@@ -1,27 +1,14 @@
 #!/usr/bin/env python3
 """Install the packaged App, require all portable Audio Decoder cases, retain evidence."""
-from datetime import datetime, timezone
 import argparse
-import hashlib
 import json
 import os
 from pathlib import Path
 import re
-import subprocess
-import sys
-import tempfile
-import time
-import zipfile
+
+from tools.bazel.mobile_e2e import MobileApp, save_evidence
 
 PACKAGE = "com.haivivi.gizos.e2e.palaudiodecoder"
-
-
-def run(argv, check=True, timeout=45):
-    result = subprocess.run([str(a) for a in argv], text=True, stdout=subprocess.PIPE,
-                            stderr=subprocess.STDOUT, timeout=timeout)
-    if check and result.returncode:
-        raise RuntimeError(f"{argv}: {result.stdout}")
-    return result
 
 
 def verify(report, registry, platform):
@@ -36,111 +23,19 @@ def verify(report, registry, platform):
     assert all(case["status"] == "PASS" and case["detail"] == 0 for case in report["cases"])
 
 
-def wait_report(read, timeout):
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        raw = read()
-        try:
-            return json.loads(raw)
-        except (ValueError, TypeError):
-            time.sleep(0.25)
-    raise TimeoutError(f"No complete report after {timeout}s")
-
-
-def ios(args, output):
-    device = os.environ.get("H2_IOS_SIMULATOR_UDID")
-    if not device:
-        raise ValueError("H2_IOS_SIMULATOR_UDID must identify a booted test simulator")
-    sim = ["xcrun", "simctl"]
-    required_symbols = ("_h2_ios_platform_audio_decoder_api",)
-    with tempfile.TemporaryDirectory(prefix="pal-audio-decoder-ios-") as temporary:
-        with zipfile.ZipFile(args.app) as archive:
-            archive.extractall(temporary)
-        apps = list(Path(temporary).glob("Payload/*.app"))
-        assert len(apps) == 1
-        executable = apps[0] / "GizOSPALAudioDecoderE2E"
-        with zipfile.ZipFile(args.sdk) as archive:
-            member = "H2PALCore.xcframework/ios-arm64-simulator/H2PALCore.framework/H2PALCore"
-            sdk_bytes = archive.read(member)
-            assert archive.read("H2PALCore.xcframework/ios-arm64-simulator/H2PALCore.framework/Headers/h2_ios_platform.h")
-        sdk_binary = Path(temporary) / "H2PALCore.a"
-        sdk_binary.write_bytes(sdk_bytes)
-        sdk_symbols = run(["xcrun", "nm", "-gU", sdk_binary]).stdout
-        app_symbols = run(["xcrun", "nm", "-gU", executable]).stdout
-        assert all(symbol in sdk_symbols and symbol in app_symbols for symbol in required_symbols), "packaged Audio Decoder symbols are missing"
-        assert "_h2_pal_audio_decoder_e2e_run" in app_symbols, "portable App symbol missing from IPA"
-        binary_identity = {
-            "sdk_binary_member": member,
-            "sdk_binary_sha256": hashlib.sha256(sdk_bytes).hexdigest(),
-            "ipa_executable_sha256": hashlib.sha256(executable.read_bytes()).hexdigest(),
-            "provider_symbols_in_sdk_and_ipa": list(required_symbols),
-        }
-        run(sim + ["terminate", device, PACKAGE], check=False)
-        run(sim + ["install", device, apps[0]])
-    container = Path(run(sim + ["get_app_container", device, PACKAGE, "data"]).stdout.strip())
-    result_file = container / "Documents/pal-audio-decoder-result.json"
-    result_file.unlink(missing_ok=True)
-    # Simulator redirects these files inside its own data directory.
-    stdout = container / "Documents/pal-audio-decoder.stdout"
-    stderr = container / "Documents/pal-audio-decoder.stderr"
-    run(sim + ["launch", f"--stdout={stdout}", f"--stderr={stderr}", device, PACKAGE])
-    try:
-        result = wait_report(lambda: result_file.read_text() if result_file.exists() else "", args.timeout)
-    finally:
-        run(sim + ["terminate", device, PACKAGE], check=False)
-        for source in (stdout, stderr):
-            if source.exists():
-                (output / source.name).write_bytes(source.read_bytes())
-    # Device/runtime identity comes from simctl, not an assumed host OS version.
-    devices = json.loads(run(sim + ["list", "devices", "--json"]).stdout)["devices"]
-    identity = next({"runtime": runtime, "device": value} for runtime, values in devices.items()
-                    for value in values if value["udid"] == device)
-    identity.update(binary_identity)
-    return result, identity
-
-
-def android(args, output):
-    serial = os.environ.get("H2_ANDROID_SERIAL")
-    if not serial or not serial.startswith("emulator-"):
-        raise ValueError("H2_ANDROID_SERIAL must explicitly identify the test emulator")
-    sdk = os.environ.get("ANDROID_HOME")
-    adb = [str(Path(sdk) / "platform-tools/adb") if sdk else "adb", "-s", serial]
-    run(adb + ["shell", "am", "force-stop", PACKAGE])
-    run(adb + ["install", "-r", args.app])
-    run(adb + ["shell", "run-as", PACKAGE, "rm", "-f", "files/pal-audio-decoder-result.json"])
-    run(adb + ["shell", "am", "start", "-W", "-n", PACKAGE + "/.MainActivity"])
-    try:
-        result = wait_report(lambda: run(adb + ["shell", "run-as", PACKAGE, "cat",
-                                                 "files/pal-audio-decoder-result.json"], check=False).stdout, args.timeout)
-    finally:
-        log = run(adb + ["shell", "run-as", PACKAGE, "cat", "files/pal-audio-decoder-result.json.log"], check=False)
-        (output / "pal-audio-decoder.stdout").write_text(log.stdout)
-        pid = run(adb + ["shell", "pidof", PACKAGE], check=False).stdout.strip()
-        if pid.isdigit():
-            (output / "logcat.txt").write_text(run(adb + ["logcat", "-d", "--pid=" + pid]).stdout)
-        run(adb + ["shell", "am", "force-stop", PACKAGE])
-    with zipfile.ZipFile(args.app) as app, zipfile.ZipFile(args.sdk) as sdk_archive:
-        app_binary = app.read("lib/arm64-v8a/libh2_pal_core.so")
-        sdk_binary = sdk_archive.read("jni/arm64-v8a/libh2_pal_core.so")
-        assert app_binary == sdk_binary, "APK did not use AAR binary"
-        assert sdk_archive.read("prefab/modules/h2_pal_core/include/h2_android_platform.h")
-    ndk = os.environ.get("ANDROID_NDK_HOME")
-    assert ndk, "ANDROID_NDK_HOME is required for AAR exported-symbol verification"
-    host = "darwin-x86_64" if sys.platform == "darwin" else "linux-x86_64"
-    llvm_nm = Path(ndk) / "toolchains/llvm/prebuilt" / host / "bin/llvm-nm"
-    with tempfile.TemporaryDirectory(prefix="pal-audio-decoder-aar-symbols-") as temporary:
-        binary = Path(temporary) / "libh2_pal_core.so"
-        binary.write_bytes(sdk_binary)
-        exported = run([llvm_nm, "--dynamic", binary]).stdout
-    symbols = ("h2_android_platform_audio_decoder_api",)
-    for symbol in symbols:
-        assert re.search(r"\bT " + symbol + r"\b", exported), f"AAR symbol is not public: {symbol}"
-    return result, {"serial": serial, "api": run(adb + ["shell", "getprop", "ro.build.version.sdk"]).stdout.strip(),
-                    "fingerprint": run(adb + ["shell", "getprop", "ro.build.fingerprint"]).stdout.strip(),
-                    "aar_binary_sha256": hashlib.sha256(sdk_binary).hexdigest(),
-                    "apk_binary_sha256": hashlib.sha256(app_binary).hexdigest(),
-                    "apk_aar_binary_identical": True,
-                    "public_provider_symbols": list(symbols)}
+def run_suite(app, args):
+    if app.platform == "ios":
+        app.verify_ios_symbols(
+            executable="GizOSPALAudioDecoderE2E",
+            provider_symbols=('_h2_ios_platform_audio_decoder_api',),
+            portable_symbol="_h2_pal_audio_decoder_e2e_run",
+        )
+    else:
+        app.verify_android_sdk(
+            required_header="prefab/modules/h2_pal_core/include/h2_android_platform.h",
+            public_symbols=('h2_android_platform_audio_decoder_api',),
+        )
+    return app.launch()
 
 
 def main():
@@ -152,16 +47,15 @@ def main():
     parser.add_argument("--output", type=Path, default=Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", "/tmp/pal-audio-decoder-mobile-result")))
     parser.add_argument("--timeout", type=int, default=90)
     args = parser.parse_args()
-    args.output.mkdir(parents=True, exist_ok=True)
-    result, environment = (ios if args.platform == "ios" else android)(args, args.output)
-    (args.output / "qualified.json").write_text(json.dumps(result, indent=2) + "\n")
-    environment.update(observation_finished_at_utc=datetime.now(timezone.utc).isoformat(),
-                       evidence_timezone="UTC", app_sha256=hashlib.sha256(args.app.read_bytes()).hexdigest(),
-                       sdk_sha256=hashlib.sha256(args.sdk.read_bytes()).hexdigest())
-    (args.output / "environment.json").write_text(json.dumps(environment, indent=2) + "\n")
-    verify(result, args.registry, "ios-simulator" if args.platform == "ios" else "android-emulator")
+    with MobileApp(args.platform, args.app, args.sdk, PACKAGE,
+                   "pal-audio-decoder-result.json", args.output,
+                   timeout=args.timeout) as app:
+        result = run_suite(app, args)
+        verify(result, args.registry, "ios-simulator" if args.platform == "ios" else "android-emulator")
+        save_evidence(args.output, result, app.environment(), args.app, args.sdk)
     count = len(result["cases"])
     print(f"PAL Audio Decoder {args.platform}: {count}/{count} PASS, blocked=0, teardown=0")
+
 
 if __name__ == "__main__":
     main()

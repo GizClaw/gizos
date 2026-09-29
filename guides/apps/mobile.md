@@ -52,6 +52,14 @@ iOS validator 检查 bundle identity、arm64 Simulator executable 与 bundle con
 
 Mobile 直接 Display PAL consumer 使用 `//libs/lvgl:lvgl_mobile` compile-time variant。它复用 `//libs/lvgl:single_thread_config` 的 `LV_OS_NONE`、libc allocator 和 RGB565 配置；第三方 overlay 只提供 upstream source/header group，配置和可编译 variant 都属于 reusable LVGL library，不能按 App 创建 `lvgl_<app>` target。
 
+## Packaged PAL E2E
+
+Core、Storage、Crypto、HTTP、WebRTC、JSON、Audio、Audio Decoder 和 Display 的 移动端资格测试共用 `tools/bazel/mobile_e2e.py` 与 `mobile_e2e_test` 宏，直接由 `py_test` 执行。原有 `*_simulator_test` target 和 Make 入口保持不变。 Python 在构建主机执行，IPA/APK 和 SDK 仍在对应移动平台配置中构建，并通过 Bazel `data` 进入 runfiles；fixture Python 库通过 `deps` 声明。
+
+公共层负责安装、旧报告清除、启动/等待超时、日志、失败记录、终止和 SDK 产物身份。 Suite 保留完整 registry/PASS oracle：Storage 保留两进程、nonce 与持久化检查； HTTP/WebRTC 保留受控服务、TLS/指纹拒绝与 peer 证据；Audio 保留权限设置； Display/JSON/Audio Decoder 保留报告格式和 provider 符号探针。 完整接入契约见仓库 `tools/bazel/mobile_e2e.md`。
+
+测试需要显式指定专用、已启动的 simulator/emulator。失败的原始报告和 `failure.json` 仅用于诊断；只有全部 suite 断言和清理成功才有有效资格结果。 新运行证据与旧 hardware qualification 分开记录，构建通过不代表实机通过。
+
 ## Production Gap
 
 两个 target 当前都只是 smoke/example backend，不表示 GizOS 已经完成 iOS 或 Android 平台支持：
