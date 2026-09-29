@@ -7,6 +7,7 @@
 #include <os/mem.h>
 #include <os/os.h>
 #include "lwip/def.h"
+#include "net.h"
 
 #include <string.h>
 #include "h2_atomic_static.h"
@@ -916,7 +917,8 @@ static int h2_bk_wifi_sta_connect(
         if (err != BK_OK &&
             err != BK_ERR_WIFI_STA_NOT_STARTED &&
             err != BK_ERR_WIFI_STA_NOT_CONFIG &&
-            !(err == BK_FAIL && cached_status.state == H2_PAL_WIFI_STA_STATE_DISCONNECTED)) {
+            !((err == BK_FAIL || err == BK_ERR_WIFI_DRIVER) &&
+              cached_status.state == H2_PAL_WIFI_STA_STATE_DISCONNECTED)) {
             return h2_bk_wifi_map_error(err);
         }
         err = bk_wifi_sta_set_config(&bk_config);
@@ -955,7 +957,7 @@ static int h2_bk_wifi_sta_connect(
         }
         if (err != BK_OK &&
             err != BK_ERR_WIFI_STA_NOT_STARTED &&
-            err != BK_ERR_WIFI_STA_NOT_CONFIG && err != BK_FAIL) {
+            err != BK_ERR_WIFI_STA_NOT_CONFIG && err != BK_FAIL && err != BK_ERR_WIFI_DRIVER) {
             return h2_bk_wifi_map_error(err);
         }
         rtos_delay_milliseconds(100u);
@@ -988,6 +990,19 @@ static int h2_bk_wifi_sta_disconnect(h2_pal_wifi_sta_t *sta) {
     int rc = err == BK_ERR_WIFI_STA_NOT_STARTED || err == BK_ERR_WIFI_STA_NOT_CONFIG
         ? H2_PAL_OK : h2_bk_wifi_map_error(err);
     if (rc == H2_PAL_OK) {
+        /* Armino removes AP CPU's real STA netif on STA_STOP, but its later
+         * STA_START only recreates the CP radio. Re-add the local adapter in
+         * the down/addressless state so reconnect's DHCP synchronization has
+         * an actual local interface and cannot retain a stale default route. */
+        h2_pal_netif_ref_t ref;
+        const h2_pal_netif_filter_t filter = {.kind = H2_PAL_NETIF_KIND_WIFI_STA};
+        int netif_rc = h2_pal_netif_find(h2_bk_platform_netif_api(), &filter, &ref);
+        if (netif_rc == H2_PAL_ERR_NOT_FOUND) {
+            uint8_t mac[6];
+            bk_err_t mac_rc = bk_wifi_sta_get_mac(mac);
+            if (mac_rc != BK_OK) return h2_bk_wifi_map_error(mac_rc);
+            if (host_wlan_add_netif(mac) != 0) return H2_PAL_ERR_IO;
+        } else if (netif_rc != H2_PAL_OK) return netif_rc;
         h2_pal_wifi_sta_status_t status;
         memset(&status, 0, sizeof(status));
         status.state = H2_PAL_WIFI_STA_STATE_DISCONNECTED;

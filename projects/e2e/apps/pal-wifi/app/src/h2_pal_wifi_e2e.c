@@ -497,6 +497,8 @@ static int disconnect_status(wifi_test_t *s) {
     CALL(h2_pal_wifi_sta_get_status(s->rt->wifi_sta, &w));
     EXPECT(!w.ip_valid && !w.ip.ip4);
     EXPECT(w.state == H2_PAL_WIFI_STA_STATE_DISCONNECTED || w.state == H2_PAL_WIFI_STA_STATE_IDLE);
+    const h2_pal_netif_filter_t filter = {.kind = H2_PAL_NETIF_KIND_WIFI_STA};
+    CALL(h2_pal_netif_find(s->rt->netif, &filter, &s->sta_ref));
     CALL(h2_pal_netif_get_status(s->rt->netif, &s->sta_ref, &n));
     EXPECT((n.flags & (H2_PAL_NETIF_FLAG_LINK_UP | H2_PAL_NETIF_FLAG_HAS_IPV4 |
                        H2_PAL_NETIF_FLAG_DEFAULT_ROUTE)) == 0);
@@ -598,6 +600,8 @@ static int ap_client_left(wifi_test_t *s) {
 }
 static int netif_select(wifi_test_t *s) {
     CALL(connect_target(s, &s->cfg->fixture));
+    const h2_pal_netif_filter_t filter = {.kind = H2_PAL_NETIF_KIND_WIFI_STA};
+    CALL(h2_pal_netif_find(s->rt->netif, &filter, &s->sta_ref));
     CALL(h2_pal_netif_set_default(s->rt->netif, &s->ap_ref));
     pause_ms(s, 300);
     h2_pal_netif_status_t n;
