@@ -272,8 +272,8 @@ endif()
 set(H2_BK_STA_SYNC_REPLACEMENT "${H2_BK_STA_SYNC_SIGNATURE}
     if (ifx == NETIF_IF_STA) {
         if (ip4_config == NULL) return BK_ERR_NULL_PARAM;
-        ip_address_set(1, 0, ip4_config->ip, ip4_config->mask,
-                       ip4_config->gateway, ip4_config->dns);
+        netif_ip4_config_t sta_ip = *ip4_config;
+        ip_address_set(1, 0, sta_ip.ip, sta_ip.mask, sta_ip.gateway, sta_ip.dns);
         return BK_OK;
     }")
 string(REPLACE "${H2_BK_STA_SYNC_SIGNATURE}" "${H2_BK_STA_SYNC_REPLACEMENT}"
