@@ -29,8 +29,9 @@ the prior seed as the final artifact.
 Persistence refers to normal reboot, not power-loss atomicity. There is no PAL
 power-save getter; the terminal test policy is explicitly NONE, without claiming
 the previous radio policy was measured. BK selects MAX_MODEM using the firmware dynamic listen interval (ten beacons)
-and checks the SDK readback. MIN_MODEM restores its default DTIM policy (zero
-dynamic override); reconnect reapplies the selected policy. These checks do not
+and checks the SDK readback. MIN_MODEM uses its minimum recommended listen interval (one
+beacon, including the next DTIM). The App cycles MAX→MIN→MAX with SDK readback;
+reconnect reapplies the selected policy. These checks do not
 measure radio power consumption.
 
 ## Platform scope

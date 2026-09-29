@@ -464,6 +464,12 @@ static int power_min(wifi_test_t *s) {
 }
 static int power_max(wifi_test_t *s) {
     CALL(h2_pal_wifi_sta_set_power_save(s->rt->wifi_sta, H2_PAL_WIFI_POWER_SAVE_MAX_MODEM));
+    CALL(wait_ip(s, &s->cfg->fixture));
+    /* Restoring MIN after MAX must select the smaller policy, then leave
+     * MAX selected so later real reconnects exercise its future-link policy. */
+    CALL(h2_pal_wifi_sta_set_power_save(s->rt->wifi_sta, H2_PAL_WIFI_POWER_SAVE_MIN_MODEM));
+    CALL(wait_ip(s, &s->cfg->fixture));
+    CALL(h2_pal_wifi_sta_set_power_save(s->rt->wifi_sta, H2_PAL_WIFI_POWER_SAVE_MAX_MODEM));
     return wait_ip(s, &s->cfg->fixture);
 }
 static int save_zero(wifi_test_t *s) {

@@ -153,9 +153,10 @@ static int h2_bk_wifi_map_error(bk_err_t err) {
 static int h2_bk_wifi_apply_power_save(h2_pal_wifi_power_save_t mode) {
     if (mode == H2_PAL_WIFI_POWER_SAVE_NONE)
         return h2_bk_wifi_map_error(bk_wifi_sta_pm_disable());
-    /* Zero removes the SDK's dynamic listen override (default DTIM policy).
-     * MAX selects its actual ten-beacon interval. This does not measure power. */
-    uint8_t interval = mode == H2_PAL_WIFI_POWER_SAVE_MAX_MODEM ? 10u : 0u;
+    /* Select the SDK's minimum recommended listen interval for MIN, including
+     * the next DTIM. MAX spans ten beacon intervals. No wake/power measurement
+     * is implied by the firmware configuration readback. */
+    uint8_t interval = mode == H2_PAL_WIFI_POWER_SAVE_MAX_MODEM ? 10u : 1u;
     uint8_t before = 0xffu;
     bk_err_t err = bk_wifi_get_listen_interval(&before);
     if (err == BK_OK) err = bk_wifi_send_listen_interval_req(interval);
@@ -1103,17 +1104,27 @@ static int h2_bk_wifi_sta_disconnect(h2_pal_wifi_sta_t *sta) {
     /* A fresh authenticated attempt cannot reuse last SSID/IP evidence. */
     __atomic_store_n(&s_h2_bk_wifi_last_config_valid, 0, __ATOMIC_RELEASE);
     h2_bk_wifi_request_unlock();
-    /* BK's disconnect leaves the STA service and netif allocated. A later
-     * start is then ignored, which can restore an IP-looking link without a
-     * usable default route. Stop fully so the next connect recreates both. */
-    bk_err_t err = bk_wifi_sta_stop();
+    /* Armino's AP public disconnect only clears the local adapter; it does
+     * not send STA_DISCONNECT to the real CP radio. Explicitly disassociate
+     * that radio while preserving its service/VIF, then clear local state. */
+    wifi_link_status_t link;
+    memset(&link, 0, sizeof(link));
+    bk_err_t err = bk_wifi_sta_get_link_status(&link);
+    if (err == BK_OK) {
+        err = wifi_send_com_api_cmd(STA_DISCONNECT, 0);
+        if (err == BK_OK) err = bk_wifi_sta_disconnect();
+    } else if (err == BK_FAIL || err == BK_ERR_WIFI_DRIVER ||
+               err == BK_ERR_WIFI_STA_NOT_STARTED || err == BK_ERR_WIFI_STA_NOT_CONFIG) {
+        /* The SDK disconnect dereferences its STA parameter when absent.
+         * STOP is the idempotent safe cleanup for an unstarted service. */
+        err = bk_wifi_sta_stop();
+    }
+
     int rc = err == BK_ERR_WIFI_STA_NOT_STARTED || err == BK_ERR_WIFI_STA_NOT_CONFIG
         ? H2_PAL_OK : h2_bk_wifi_map_error(err);
     if (rc == H2_PAL_OK) {
-        /* Armino removes AP CPU's real STA netif on STA_STOP, but its later
-         * STA_START only recreates the CP radio. Re-add the local adapter in
-         * the down/addressless state so reconnect's DHCP synchronization has
-         * an actual local interface and cannot retain a stale default route. */
+        /* Recover an adapter removed by SDK teardown/retry before returning
+         * the actual down/addressless state. Normal disassociate retains it. */
         h2_pal_netif_ref_t ref;
         const h2_pal_netif_filter_t filter = {.kind = H2_PAL_NETIF_KIND_WIFI_STA};
         int netif_rc = h2_pal_netif_find(h2_bk_platform_netif_api(), &filter, &ref);
