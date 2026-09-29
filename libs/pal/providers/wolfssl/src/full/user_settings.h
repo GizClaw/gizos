@@ -47,6 +47,8 @@
 #define HAVE_COMP_KEY
 #define ECC_USER_CURVES
 #undef NO_ECC256
+/* Public CA intermediates can sign a P-256 leaf with a P-384 key. */
+#define HAVE_ECC384
 #define ECC_TIMING_RESISTANT
 #define ECC_SHAMIR
 #define HAVE_CURVE25519
