@@ -36,6 +36,13 @@ class Rejection(unittest.TestCase):
         bad=copy.deepcopy(valid);bad['cases'][21]['bytes_received']=4096
         with self.assertRaises(AssertionError):validation.check_cases(bad,REGISTRY)
 
+    def test_browser_unsupported_boundary_is_not_core_qualification(self):
+        browser=json.loads((APP/'evidence/wasm/boundary.json').read_text())
+        self.assertFalse(browser['core_qualified'])
+        self.assertEqual(len(browser['capabilities']),21)
+        with self.assertRaises((AssertionError, KeyError)):
+            validation.check_cases(browser,REGISTRY)
+
     def test_peer_missing_certificate_or_payload_cannot_pass(self):
         receipt=json.loads((APP/'evidence/macos/qualified.json').read_text())
         peer=receipt['peer']

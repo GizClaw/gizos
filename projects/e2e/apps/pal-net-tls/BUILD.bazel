@@ -32,6 +32,7 @@ py_test(
     ],
     data = [
         "evidence/macos/qualified.json",
+        "evidence/wasm/boundary.json",
         "//libs/pal:pal_header_files",
         "//projects/e2e/apps/pal-net-tls/app:include/h2_pal_net_tls_cases.inc",
     ],

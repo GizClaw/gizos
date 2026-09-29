@@ -1,0 +1,124 @@
+{
+  "platform": "wasm",
+  "worker": 1,
+  "main_runtime_thread": 0,
+  "operations": 21,
+  "unexpected_results": 0,
+  "core_qualified": false,
+  "full_net_qualified": false,
+  "reason": "AppHost raw Net uses canonical unsupported API; browser HOST exposes Fetch/WebRTC",
+  "capabilities": [
+    {
+      "slot": "resolve_addr",
+      "status": "UNSUPPORTED",
+      "result": -3
+    },
+    {
+      "slot": "resolve_start",
+      "status": "UNSUPPORTED",
+      "result": -3
+    },
+    {
+      "slot": "resolve_poll",
+      "status": "UNSUPPORTED",
+      "result": -3
+    },
+    {
+      "slot": "resolve_close",
+      "status": "UNSUPPORTED_NOOP",
+      "result": null,
+      "owned_handle": false
+    },
+    {
+      "slot": "get_host_addr",
+      "status": "UNSUPPORTED",
+      "result": -3
+    },
+    {
+      "slot": "udp_open",
+      "status": "UNSUPPORTED",
+      "result": -3
+    },
+    {
+      "slot": "udp_open_bound",
+      "status": "UNSUPPORTED",
+      "result": -3
+    },
+    {
+      "slot": "udp_sendto",
+      "status": "UNSUPPORTED",
+      "result": -3
+    },
+    {
+      "slot": "udp_recvfrom",
+      "status": "UNSUPPORTED",
+      "result": -3
+    },
+    {
+      "slot": "udp_join_multicast",
+      "status": "UNSUPPORTED",
+      "result": -3
+    },
+    {
+      "slot": "tcp_open",
+      "status": "UNSUPPORTED",
+      "result": -3
+    },
+    {
+      "slot": "tcp_open_bound",
+      "status": "UNSUPPORTED",
+      "result": -3
+    },
+    {
+      "slot": "tcp_connect",
+      "status": "UNSUPPORTED",
+      "result": -3
+    },
+    {
+      "slot": "tcp_send",
+      "status": "UNSUPPORTED",
+      "result": -3
+    },
+    {
+      "slot": "tcp_send_timeout",
+      "status": "UNSUPPORTED",
+      "result": -3
+    },
+    {
+      "slot": "tcp_recv",
+      "status": "UNSUPPORTED",
+      "result": -3
+    },
+    {
+      "slot": "tls_wrap",
+      "status": "UNSUPPORTED",
+      "result": -3
+    },
+    {
+      "slot": "icmp_echo",
+      "status": "UNSUPPORTED",
+      "result": -3
+    },
+    {
+      "slot": "close",
+      "status": "UNSUPPORTED_NOOP",
+      "result": null,
+      "owned_handle": false
+    },
+    {
+      "slot": "tcp_listen",
+      "status": "UNSUPPORTED",
+      "result": -3
+    },
+    {
+      "slot": "tcp_accept",
+      "status": "UNSUPPORTED",
+      "result": -3
+    }
+  ],
+  "artifact_sha256": "c1a3fcf2625dd43514d3cd15cd75d3052fc8ee5acfa1238d9803e8b9f7f9ac0c",
+  "browser_sha256": "d7402bcc74cbb7680dcbc4f08ce56af908c231cddf54b3e228fdda0469d1fb31",
+  "browser": "/Volumes/H002-R02T-APFS/Caches/bazel/output-user-root/cf75f37612a3ebdba61e80d6bd9e73cd/sandbox/darwin-sandbox/1959/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/projects/e2e/targets/pkg_tar/pal-net-tls/wasm_pal_net_tls_boundary_test.runfiles/+http_archive+h2_playwright_chromium_macos_arm64/chrome-mac/headless_shell",
+  "cross_origin_isolated": true,
+  "teardown": 0
+}
