@@ -31,6 +31,7 @@ typedef struct webrtc_observer {
   observed_channel_t channels[H2_GIZCLAW_E2E_OBSERVER_CHANNEL_CAPACITY];
   uint16_t stream_ids[H2_GIZCLAW_E2E_OBSERVER_STREAM_CAPACITY];
   size_t stream_id_count;
+  size_t opened_channels;
   size_t open_channels;
   size_t max_open_channels;
   bool invalid;
@@ -80,6 +81,7 @@ static void observe_rpc_channel(h2_pal_webrtc_channel_t *channel,
       observed->open = true;
       observed->stream_id = info->stream_id;
       s_webrtc_observer.open_channels++;
+      s_webrtc_observer.opened_channels++;
       if (s_webrtc_observer.open_channels >
           s_webrtc_observer.max_open_channels) {
         s_webrtc_observer.max_open_channels = s_webrtc_observer.open_channels;
@@ -89,12 +91,19 @@ static void observe_rpc_channel(h2_pal_webrtc_channel_t *channel,
            ++index) {
         known = known || s_webrtc_observer.stream_ids[index] == info->stream_id;
       }
-      if (known || s_webrtc_observer.stream_id_count ==
-                       H2_GIZCLAW_E2E_OBSERVER_STREAM_CAPACITY) {
-        s_webrtc_observer.invalid = true;
-      } else {
-        s_webrtc_observer.stream_ids[s_webrtc_observer.stream_id_count++] =
-            info->stream_id;
+      /* SCTP may reuse an identifier once its previous channel is closed.
+       * Only simultaneous reuse is a collision; the recovery ping may reuse
+       * one of the six completed requests' identifiers. */
+      for (size_t i = 0u; i < H2_GIZCLAW_E2E_OBSERVER_CHANNEL_CAPACITY; ++i)
+        if (&s_webrtc_observer.channels[i] != observed &&
+            s_webrtc_observer.channels[i].open &&
+            s_webrtc_observer.channels[i].stream_id == info->stream_id)
+          s_webrtc_observer.invalid = true;
+      if (!known) {
+        if (s_webrtc_observer.stream_id_count == H2_GIZCLAW_E2E_OBSERVER_STREAM_CAPACITY)
+          s_webrtc_observer.invalid = true;
+        else
+          s_webrtc_observer.stream_ids[s_webrtc_observer.stream_id_count++] = info->stream_id;
       }
     }
   } else if (state == H2_PAL_WEBRTC_CHANNEL_CLOSED ||
@@ -167,6 +176,7 @@ void h2_gizclaw_e2e_fixture_reset_rpc_channel_observation(void) {
   memset(s_webrtc_observer.channels, 0, sizeof(s_webrtc_observer.channels));
   memset(s_webrtc_observer.stream_ids, 0, sizeof(s_webrtc_observer.stream_ids));
   s_webrtc_observer.stream_id_count = 0u;
+  s_webrtc_observer.opened_channels = 0u;
   s_webrtc_observer.open_channels = 0u;
   s_webrtc_observer.max_open_channels = 0u;
   s_webrtc_observer.invalid = false;
@@ -174,15 +184,15 @@ void h2_gizclaw_e2e_fixture_reset_rpc_channel_observation(void) {
 }
 
 int h2_gizclaw_e2e_fixture_rpc_channel_observation(
-    size_t *out_max_open, size_t *out_unique_stream_ids,
+    size_t *out_max_open, size_t *out_opened_channels,
     size_t *out_open_channels) {
   if (!s_webrtc_observer.initialized || out_max_open == NULL ||
-      out_unique_stream_ids == NULL || out_open_channels == NULL) {
+      out_opened_channels == NULL || out_open_channels == NULL) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   (void)h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
   *out_max_open = s_webrtc_observer.max_open_channels;
-  *out_unique_stream_ids = s_webrtc_observer.stream_id_count;
+  *out_opened_channels = s_webrtc_observer.opened_channels;
   *out_open_channels = s_webrtc_observer.open_channels;
   const int result =
       s_webrtc_observer.invalid ? H2_PAL_ERR_INVALID_STATE : H2_PAL_OK;

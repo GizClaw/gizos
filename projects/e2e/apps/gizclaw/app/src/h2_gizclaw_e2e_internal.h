@@ -161,7 +161,7 @@ int h2_gizclaw_e2e_fixture_set_deadline(h2_gizclaw_e2e_fixture_t *fixture,
                                         uint32_t timeout_ms);
 void h2_gizclaw_e2e_fixture_reset_rpc_channel_observation(void);
 int h2_gizclaw_e2e_fixture_rpc_channel_observation(
-    size_t *out_max_open, size_t *out_unique_stream_ids,
+    size_t *out_max_open, size_t *out_opened_channels,
     size_t *out_open_channels);
 int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t *fixture);
 size_t h2_gizclaw_e2e_fixture_emit_recovery_ledger(

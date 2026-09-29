@@ -674,6 +674,68 @@ h2_pal_result_t h2_gizclaw_api_key_state_destroy(h2_gizclaw_api_key_state_t **st
   return H2_PAL_OK;
 }
 
+static int observer_peer_token, observer_channel_tokens[3];
+static unsigned observer_created, observer_pending;
+static h2_pal_webrtc_channel_state_t observer_state;
+static int observer_peer_create(void *user, h2_pal_webrtc_peer_t **out) {
+  (void)user; *out = (h2_pal_webrtc_peer_t *)&observer_peer_token; return H2_PAL_OK;
+}
+static int observer_channel_create(h2_pal_webrtc_peer_t *p,
+    const h2_pal_webrtc_channel_config_t *cfg, h2_pal_webrtc_channel_t **out) {
+  assert(p && cfg && observer_created < 2u);
+  *out = (h2_pal_webrtc_channel_t *)&observer_channel_tokens[observer_created++]; return H2_PAL_OK;
+}
+static int observer_poll(h2_pal_webrtc_peer_t *p, int timeout, h2_pal_webrtc_event_t *out) {
+  (void)timeout;
+  *out = (h2_pal_webrtc_event_t){.kind=H2_PAL_WEBRTC_EVENT_CHANNEL_STATE,
+      .peer=p,.channel=(h2_pal_webrtc_channel_t *)&observer_channel_tokens[observer_pending],
+      .channel_state=observer_state,
+      .channel_info={.label={"giznet/v1/service/0",sizeof("giznet/v1/service/0")-1u},.stream_id=7,.has_stream_id=1}};
+  return H2_PAL_OK;
+}
+static void observer_close(h2_pal_webrtc_peer_t *p) { assert(p); }
+static void observe_channel_lifetimes(h2_runtime_t *runtime,
+                                     const h2_gizclaw_e2e_config_t *config) {
+  static const h2_pal_webrtc_vtable_t vt = {.peer_create=observer_peer_create,
+      .peer_create_data_channel=observer_channel_create,.peer_poll=observer_poll,.peer_close=observer_close};
+  const h2_pal_webrtc_api_t api = {.vtable=&vt};
+  const h2_pal_webrtc_api_t *saved = runtime->webrtc;
+  runtime->webrtc = &api;
+  for (unsigned mode=0u;mode<3u;++mode) {
+    h2_gizclaw_e2e_fixture_t f;
+    observer_created=0u;
+    assert(h2_gizclaw_e2e_fixture_init(&f,runtime,config,1000u)==H2_PAL_OK);
+    h2_pal_webrtc_peer_t *peer=NULL;
+    assert(h2_pal_webrtc_peer_create(f.webrtc,&peer)==H2_PAL_OK);
+    h2_pal_webrtc_channel_config_t cfg={.label={"giznet/v1/service/0",sizeof("giznet/v1/service/0")-1u}};
+    for(unsigned i=0u;i<2u;++i) {
+      h2_pal_webrtc_channel_t *channel=NULL;
+      assert(h2_pal_webrtc_peer_create_data_channel(f.webrtc,peer,&cfg,&channel)==H2_PAL_OK);
+    }
+    h2_gizclaw_e2e_fixture_reset_rpc_channel_observation();
+    for(unsigned i=0u;i<2u;++i) {
+      observer_pending=mode==2u ? 2u : i;
+      observer_state=H2_PAL_WEBRTC_CHANNEL_OPEN;
+      h2_pal_webrtc_event_t event={0};
+      assert(h2_pal_webrtc_peer_poll(f.webrtc,peer,1,&event)==H2_PAL_OK);
+      h2_pal_webrtc_event_release(&event);
+      if(mode!=1u) {
+        observer_state=H2_PAL_WEBRTC_CHANNEL_CLOSED;
+        assert(h2_pal_webrtc_peer_poll(f.webrtc,peer,1,&event)==H2_PAL_OK);
+        h2_pal_webrtc_event_release(&event);
+      }
+    }
+    size_t maximum=0u,opened=0u,active=0u;
+    int rc=h2_gizclaw_e2e_fixture_rpc_channel_observation(&maximum,&opened,&active);
+    if(mode==0u) assert(rc==H2_PAL_OK && maximum==1u && opened==2u && active==0u);
+    else if(mode==1u) assert(rc==H2_PAL_ERR_INVALID_STATE && active==2u);
+    else assert(rc==H2_PAL_OK && maximum==0u && opened==0u && active==0u);
+    h2_pal_webrtc_peer_close(f.webrtc,peer);
+    assert(h2_gizclaw_e2e_fixture_deinit(&f)==H2_PAL_OK);
+  }
+  runtime->webrtc=saved;
+}
+
 static void social_payload_boundaries(void) {
   const uint8_t good[] = {10, 4, 'p', 'e', 'e', 'r', 18, 1, 'n', 26, 1, 'g'};
   h2_gizclaw_e2e_social_observation_t value;
@@ -800,6 +862,7 @@ int main(int argc, char **argv) {
     assert(s_live_services == 0u);
     return 0;
   }
+  observe_channel_lifetimes(&runtime, &config);
   assert(h2_gizclaw_e2e_fixture_init(&fixture, &runtime, &config, 1000u) ==
          H2_PAL_OK);
   assert(fixture.registration_token != token);
