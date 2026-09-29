@@ -1,6 +1,7 @@
 # Read-only packet diagnostics, disabled for production unless explicitly opted in.
 option(H2_BK_DHCP_TRACE "Trace bounded DHCP metadata on CP's actual packet path" OFF)
 if(H2_BK_DHCP_TRACE)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_BK_DHCP_MEM_DIAG=1)
   set(H2_BK_TRACE_SDK_ROOT "$ENV{ARMINO_PATH}")
   set(H2_BK_TRACE_SOURCE "${H2_BK_TRACE_SDK_ROOT}/components/lwip_intf_v2_1/lwip-2.1.2/port/wlanif.c")
   file(READ "${H2_BK_TRACE_SOURCE}" H2_BK_TRACE_CONTENT)

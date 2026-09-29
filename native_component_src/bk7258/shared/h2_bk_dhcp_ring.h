@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 #define H2_BK_DHCP_RING_CAPACITY 32u
-#define H2_BK_DHCP_SNAPSHOT_VERSION 2u
+#define H2_BK_DHCP_SNAPSHOT_VERSION 3u
 
 typedef struct h2_bk_dhcp_entry {
     uint32_t ticket, dir, type, src, dst, xid, vif, role;
@@ -16,6 +16,8 @@ typedef struct h2_bk_dhcp_entry {
 
 typedef struct h2_bk_dhcp_snapshot_data {
     uint32_t version, count, last_ticket, dropped;
+    uint32_t free_heap, minimum_free_heap, total_heap, reserve_heap;
+    int32_t reserve_rc;
     h2_bk_dhcp_entry_t entries[H2_BK_DHCP_RING_CAPACITY];
 } h2_bk_dhcp_snapshot_t;
 

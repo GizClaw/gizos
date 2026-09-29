@@ -1,5 +1,9 @@
 #include "h2_bk_dhcp_ring.h"
 #include <stddef.h>
+#if defined(H2_BK_DHCP_MEM_DIAG) && H2_BK_DHCP_MEM_DIAG
+#include <modules/wifi.h>
+#include <os/os.h>
+#endif
 
 _Static_assert(sizeof(h2_bk_dhcp_entry_t) == 26u * sizeof(uint32_t), "wire entry layout");
 _Static_assert(__atomic_always_lock_free(sizeof(uint32_t), 0), "32-bit atomics required");
@@ -66,6 +70,16 @@ void h2_bk_dhcp_snapshot(h2_bk_dhcp_snapshot_t *out) {
     }
     out->last_ticket = LOAD(next_ticket);
     out->dropped = LOAD(dropped);
+#if defined(H2_BK_DHCP_MEM_DIAG) && H2_BK_DHCP_MEM_DIAG
+    /* The paired RPC is serviced by an ordinary CP task. Never query the
+     * heap or Wi-Fi configuration from the packet-path record function. */
+    out->free_heap = (uint32_t)rtos_get_free_heap_size();
+    out->minimum_free_heap = (uint32_t)rtos_get_minimum_free_heap_size();
+    out->total_heap = (uint32_t)rtos_get_total_heap_size();
+    uint16_t reserve = 0u;
+    out->reserve_rc = bk_wifi_get_min_rsv_mem(&reserve);
+    out->reserve_heap = reserve;
+#endif
     /* Consumers should remember the last observed ticket per physical slot,
      * (ticket-1)%32, rather than advancing a global cursor to last_ticket:
      * another producer may still be completing an older reserved ticket. */
