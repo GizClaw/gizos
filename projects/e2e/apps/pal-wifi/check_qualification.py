@@ -7,7 +7,7 @@ from pathlib import Path
 import re
 
 from evidence_validator import verify_boot
-from fixture_validator import verify_fixture
+from fixture_validator import verify_fixture, verify_peer_witnesses
 from receipt_bindings import check_captured_status, check_status
 
 BASE = Path("projects/e2e/apps/pal-wifi")
@@ -50,7 +50,15 @@ def check(audit_artifacts=False):
         for index, run in enumerate(runs):
             assert digest(run["log"]) == run["sha256"]
             expected_version = run["version"] if index == 0 else report["version"]
-            verified.append(verify_boot(run["log"], ids, platform["platform"], expected_version, seed=index == 0))
+            legacy_seed = (index == 0 and platform["platform"] == "bk7258" and
+                           run["version"] == "pal-wifi-20260930-r31")
+            if legacy_seed:
+                assert run["package_sha256"] == "6755d9345bc65baa560579b7c031a26ee636e7416c97b444644321f20a5b1150"
+                assert run["image_sha256"] == "a6638de9e3dba322b9be2d7d5d7958cf27745839be9c6265ffaa001914447396"
+                assert run["source_head"] == "450374f22c9314c6a2d8d89d961c6768c7f6130a"
+            verified.append(verify_boot(run["log"], ids, platform["platform"], expected_version,
+                                        seed=index == 0,
+                                        expected_client_events=3 if legacy_seed else 6))
         assert len({(r["boot"]["boot"], r["boot"]["nonce"]) for r in verified}) == len(runs)
         assert report["p1_unchanged"] is True and report["stage_empty"] is True and report["coredump_unchanged"] is True
         assert len(report["package_sha256"]) == 64 and len(report["image_sha256"]) == 64
@@ -59,16 +67,17 @@ def check(audit_artifacts=False):
         assert fixture["cleanup"] == 0 and fixture["settings_unchanged"] == 1 and fixture["network_restored"] == 1
         assert fixture["p1_unchanged"] is True and fixture["coredump_unchanged"] is True and fixture["stage_empty"] is True
         observed = verify_fixture(fixture, audit_artifacts)
-        for row, run in zip(runs, verified):
+        for index, (row, run) in enumerate(zip(runs, verified)):
             c = run["report"]["CLIENT"]
             assert row["fixture_log"] in observed, "missing associated fixture window"
-            addresses = re.findall(r'H2_WIFI_ADDRESS lease=(\d+) ap=(\d+) mask=(\d+)',
-                                   Path(row["log"]).read_text(encoding="utf-8", errors="replace"))
-            assert len(addresses) == 3, "missing WPA2/open/hidden lease observations"
+            legacy_seed = (index == 0 and platform["platform"] == "bk7258" and
+                           row["version"] == "pal-wifi-20260930-r31")
+            witnesses = verify_peer_witnesses(row["log"], row["fixture_log"],
+                                               report["fixture_target"], c["mac"],
+                                               repeats=1 if legacy_seed else 2)
             available = Counter(observed[row["fixture_log"]])
-            for ip, ap, mask in addresses:
-                assert int(mask) and (int(ip) & int(mask)) == (int(ap) & int(mask))
-                witness = (report["fixture_target"], c["mac"], int(ip))
+            for witness in witnesses:
+                assert witness[2] == c["ip4"], "fixture IP differs from DUT accepted client"
                 key = (row["fixture_log"], witness)
                 used_fixture_leases[key] += 1
                 assert available[witness] >= used_fixture_leases[key], \

@@ -11,7 +11,7 @@ def markers(path):
         result.setdefault(match[1],[]).append(value)
     return result
 
-def verify_boot(path,ids,board,version,seed=False):
+def verify_boot(path,ids,board,version,seed=False,expected_client_events=6):
     m=markers(path)
     assert len(m.get('H2_WIFI_BOOT',[]))==1,'missing or repeated boot'
     boot=m['H2_WIFI_BOOT'][0]; key=(boot['boot'],boot['nonce'])
@@ -31,7 +31,8 @@ def verify_boot(path,ids,board,version,seed=False):
     r=rows['RESTORE'];assert r['cleanup']==0 and r['saved_restored']==1 and r['network_restored']==1 and r['backup_cleared']==1 and r['retained']==0
     r=rows['STA_EVENTS'];assert r['invalid']==0 and all(r[x]>0 for x in ('connecting','connected','got_ip','lost_ip','disconnected','route_changed'))
     r=rows['AP_EVENTS'];assert all(r[x]>0 for x in ('started','stopped','joined','left'))
-    assert r['lease_granted']>=3 and r['lease_released']>=3
+    assert expected_client_events in (3,6)
+    assert all(r[x]>=expected_client_events for x in ('joined','left','lease_granted','lease_released'))
     text=Path(path).read_text(errors='replace')
     assert ('H2_WIFI_READY board='+board+' rc='+('-9' if seed else '0')+' confirm='+('-7' if seed else '0')) in text
     assert 'Task watchdog got triggered' not in text and 'panic' not in text.lower()

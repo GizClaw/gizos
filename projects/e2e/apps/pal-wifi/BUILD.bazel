@@ -9,6 +9,14 @@ py_test(
     target_compatible_with = HOST_TOOL_COMPATIBILITY,
 )
 py_test(
+    name = "fixture_witness_test",
+    srcs = ["tests/test_fixture_witnesses.py", "fixture_validator.py", "receipt_bindings.py"],
+    main = "tests/test_fixture_witnesses.py",
+    legacy_create_init = 0,
+    deps = ["//projects/h2loader/tools/bazel:firmware_artifacts"],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+py_test(
     name = "receipt_binding_test",
     srcs = ["tests/test_receipt_bindings.py", "receipt_bindings.py"],
     main = "tests/test_receipt_bindings.py",

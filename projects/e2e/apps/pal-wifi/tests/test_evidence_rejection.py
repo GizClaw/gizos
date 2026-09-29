@@ -22,8 +22,8 @@ class LedgerRejection(unittest.TestCase):
                              backup_cleared=1, retained=0)),
             ("STA_EVENTS", dict(key, connecting=1, connected=1, got_ip=1, lost_ip=1, disconnected=1,
                                 route_changed=1, invalid=0)),
-            ("AP_EVENTS", dict(key, started=1, stopped=1, joined=3, left=3,
-                               lease_granted=3, lease_released=3)),
+            ("AP_EVENTS", dict(key, started=1, stopped=1, joined=6, left=6,
+                               lease_granted=6, lease_released=6)),
             ("CLIENT", dict(key, mac="020000000001", ip4=3232236546)),
         ]
 
