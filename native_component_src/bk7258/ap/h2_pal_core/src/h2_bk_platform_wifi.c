@@ -345,11 +345,15 @@ static void h2_bk_wifi_fill_sta_ip(h2_pal_wifi_sta_status_t *status) {
 typedef struct h2_bk_wifi_sta_up_call {
     struct tcpip_api_call_data call;
     struct netif *sta;
+    uint32_t generation;
 } h2_bk_wifi_sta_up_call_t;
 
 static err_t h2_bk_wifi_sta_up_api_call(struct tcpip_api_call_data *data) {
     h2_bk_wifi_sta_up_call_t *request = (h2_bk_wifi_sta_up_call_t *)data;
-    if (request->sta == NULL || ip4_addr_isany_val(*netif_ip4_addr(request->sta)))
+    if (request->sta == NULL || ip4_addr_isany_val(*netif_ip4_addr(request->sta)) ||
+        __atomic_load_n(&s_h2_bk_wifi_last_config_valid, __ATOMIC_ACQUIRE) == 0 ||
+        __atomic_load_n(&s_h2_bk_wifi_connect_generation, __ATOMIC_ACQUIRE) !=
+            request->generation)
         return ERR_IF;
     /* CP supplied the authenticated association and DHCP address. The AP
      * SDK synchronizes the address but never restores its local link flag. */
@@ -376,6 +380,8 @@ static bk_err_t h2_bk_wifi_system_event_handler(
              * an event alone cannot resurrect the stopped connection. */
             if (__atomic_load_n(&s_h2_bk_wifi_last_config_valid,
                                 __ATOMIC_ACQUIRE) == 0) return BK_OK;
+            uint32_t generation = __atomic_load_n(
+                &s_h2_bk_wifi_connect_generation, __ATOMIC_ACQUIRE);
             wifi_link_status_t link;
             memset(&link, 0, sizeof(link));
             if (bk_wifi_sta_get_link_status(&link) != BK_OK ||
@@ -390,9 +396,10 @@ static bk_err_t h2_bk_wifi_system_event_handler(
             h2_bk_wifi_fill_sta_ip(&status);
             if (status.ip_valid == 0u) return BK_OK;
             h2_bk_wifi_sta_up_call_t up = {
-                .sta = (struct netif *)net_get_sta_handle()};
-            if (tcpip_api_call(h2_bk_wifi_sta_up_api_call, &up.call) != ERR_OK)
-                return BK_OK;
+                .sta = (struct netif *)net_get_sta_handle(), .generation = generation};
+            if (tcpip_api_call(h2_bk_wifi_sta_up_api_call, &up.call) != ERR_OK ||
+                __atomic_load_n(&s_h2_bk_wifi_connect_generation, __ATOMIC_ACQUIRE) !=
+                    generation) return BK_OK;
             status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
             status.ssid_len = len;
             memcpy(status.ssid, link.ssid, len);
