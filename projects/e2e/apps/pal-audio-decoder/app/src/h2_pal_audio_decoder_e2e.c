@@ -139,12 +139,14 @@ static h2_pal_result_t submit(state_t *s, const h2_aac_e2e_vector_t *v, size_t i
 }
 
 /* Score PCM against the original fixture frequencies, independent of codec rounding. */
-static double tone_power(const int16_t *samples, uint32_t count, uint8_t channels,
+static float tone_power(const int16_t *samples, uint32_t count, uint8_t channels,
                           unsigned channel, uint32_t rate, uint32_t frequency) {
-    const double coefficient = 2.0 * cos(6.283185307179586 * frequency / rate);
-    double previous = 0.0, older = 0.0;
+    /* Single precision uses the MCU's FPv5-SP unit; the codec-tolerant ratios
+     * have ample margin and do not need software-emulated double arithmetic. */
+    const float coefficient = 2.0f * cosf(6.283185307179586f * frequency / rate);
+    float previous = 0.0f, older = 0.0f;
     for (uint32_t i = 0u; i < count; ++i) {
-        double current = samples[(size_t)i * channels + channel] + coefficient * previous - older;
+        float current = samples[(size_t)i * channels + channel] + coefficient * previous - older;
         older = previous;
         previous = current;
     }
@@ -169,20 +171,22 @@ static h2_pal_result_t inspect_frame(state_t *s, const h2_aac_e2e_vector_t *v,
     }
     if (signal && *seen >= 2u && info.samples_per_channel >= 512u) {
         const int16_t *samples = info.data;
-        double energy = 0.0;
-        for (size_t i = 0u; i < info.bytes / sizeof(int16_t); ++i)
-            energy += (double)samples[i] * samples[i];
-        CHECK(s, energy > (double)info.samples_per_channel * v->channels * 10000.0);
+        uint64_t energy = 0u;
+        for (size_t i = 0u; i < info.bytes / sizeof(int16_t); ++i) {
+            const int32_t sample = samples[i];
+            energy += (uint32_t)(sample * sample);
+        }
+        CHECK(s, energy > (uint64_t)info.samples_per_channel * v->channels * 10000u);
         for (unsigned ch = 0u; ch < v->channels; ++ch) {
-            double wanted = tone_power(samples, info.samples_per_channel, v->channels, ch,
+            float wanted = tone_power(samples, info.samples_per_channel, v->channels, ch,
                                       v->sample_rate_hz, v->tone_hz[ch]);
-            double off = tone_power(samples, info.samples_per_channel, v->channels, ch,
+            float off = tone_power(samples, info.samples_per_channel, v->channels, ch,
                                    v->sample_rate_hz, 5701u);
-            CHECK(s, wanted > off * 20.0 && wanted > 1e8);
+            CHECK(s, wanted > off * 20.0f && wanted > 1e8f);
             if (v->channels == 2u) {
-                double other = tone_power(samples, info.samples_per_channel, v->channels, ch,
+                float other = tone_power(samples, info.samples_per_channel, v->channels, ch,
                                          v->sample_rate_hz, v->tone_hz[1u - ch]);
-                CHECK(s, wanted > other * 8.0);
+                CHECK(s, wanted > other * 8.0f);
             }
         }
         ++*signal_frames;
@@ -200,6 +204,7 @@ static h2_pal_result_t decode_stream(state_t *s, const h2_aac_e2e_vector_t *v,
                                       bool signal, bool timing, bool poison) {
     uint64_t start = 0u, now = 0u;
     OK(s, clock_ms(s, &start));
+    uint64_t last_progress = start;
     size_t submitted = 0u, seen = 0u, signal_frames = 0u;
     uint64_t decoded_samples = 0u;
     int64_t last_pts = 0;
@@ -216,9 +221,17 @@ static h2_pal_result_t decode_stream(state_t *s, const h2_aac_e2e_vector_t *v,
             else if (rc != H2_PAL_ERR_WOULD_BLOCK) return rc;
         }
         h2_pal_result_t acquired = h2_pal_audio_decoder_acquire_frame(API(s), s->session, 0u, &s->frame);
+        OK(s, clock_ms(s, &now));
+        /* Bound the provider's lack of frame progress separately from the
+         * finite end-to-end budget, which also includes the CPU signal oracle. */
+        if (now - last_progress >= 5000u || now - start >= 30000u) {
+            s->line = __LINE__;
+            return H2_PAL_ERR_TIMEOUT;
+        }
         if (acquired == H2_PAL_OK) {
             OK(s, inspect_frame(s, v, signal, timing, &seen, &signal_frames,
                                 &decoded_samples, &last_pts));
+            OK(s, clock_ms(s, &last_progress));
         } else if (acquired == H2_PAL_EXIT) {
             CHECK(s, eos && submitted == v->packet_count && seen > 0u);
             /* RAW AAC-LC ASC has 1024 samples per access unit and carries no
@@ -231,7 +244,10 @@ static h2_pal_result_t decode_stream(state_t *s, const h2_aac_e2e_vector_t *v,
             pause_poll(s);
         }
         OK(s, clock_ms(s, &now));
-        CHECK(s, now - start < 5000u);
+        if (now - start >= 30000u) {
+            s->line = __LINE__;
+            return H2_PAL_ERR_TIMEOUT;
+        }
     }
     return H2_PAL_ERR_TIMEOUT;
 }

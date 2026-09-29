@@ -1,0 +1,65 @@
+H2_ADEC_BOOT version=pal-adec-esp-20260929-r5
+H2_ADEC_TIMING id=wrapper-arguments elapsed_ms=0 detail=0
+H2_ADEC_TIMING id=open-close elapsed_ms=0 detail=0
+H2_ADEC_TIMING id=preferred-format elapsed_ms=1 detail=0
+H2_ADEC_TIMING id=unconfigured-state elapsed_ms=0 detail=0
+H2_ADEC_TIMING id=configure-arguments elapsed_ms=1 detail=0
+H2_ADEC_TIMING id=unsupported-codec elapsed_ms=0 detail=0
+H2_ADEC_TIMING id=invalid-asc elapsed_ms=1 detail=0
+H2_ADEC_TIMING id=configure-repeat elapsed_ms=2 detail=0
+H2_ADEC_TIMING id=empty-nonblocking elapsed_ms=1 detail=0
+H2_ADEC_TIMING id=finite-acquire elapsed_ms=2 detail=0
+H2_ADEC_TIMING id=packet-arguments elapsed_ms=1 detail=0
+H2_ADEC_TIMING id=mono-pcm elapsed_ms=17 detail=0
+H2_ADEC_TIMING id=stereo-pcm elapsed_ms=26 detail=0
+H2_ADEC_TIMING id=mono-signal elapsed_ms=19 detail=0
+H2_ADEC_TIMING id=stereo-signal elapsed_ms=32 detail=0
+H2_ADEC_TIMING id=frame-timing elapsed_ms=27 detail=0
+H2_ADEC_TIMING id=borrowed-asc elapsed_ms=33 detail=0
+H2_ADEC_TIMING id=borrowed-packet elapsed_ms=33 detail=0
+H2_ADEC_TIMING id=held-frame-acquire elapsed_ms=3 detail=0
+H2_ADEC_TIMING id=held-frame-reset elapsed_ms=4 detail=0
+H2_ADEC_TIMING id=held-frame-close elapsed_ms=3 detail=0
+H2_ADEC_TIMING id=foreign-frame elapsed_ms=4 detail=0
+H2_ADEC_TIMING id=reset-reconfigure elapsed_ms=36 detail=0
+H2_ADEC_TIMING id=format-change elapsed_ms=50 detail=0
+H2_ADEC_TIMING id=end-of-stream elapsed_ms=16 detail=0
+H2_ADEC_TIMING id=post-eos-state elapsed_ms=16 detail=0
+H2_ADEC_TIMING id=pcm-allocator-use elapsed_ms=4 detail=0
+H2_ADEC_TIMING id=pcm-allocator-failure elapsed_ms=29 detail=0
+H2_ADEC_TIMING id=session-churn elapsed_ms=24 detail=0
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"wrapper-arguments","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"open-close","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"preferred-format","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"unconfigured-state","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"configure-arguments","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"unsupported-codec","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"invalid-asc","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"configure-repeat","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"empty-nonblocking","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"finite-acquire","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"packet-arguments","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"mono-pcm","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"stereo-pcm","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"mono-signal","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"stereo-signal","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"frame-timing","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"borrowed-asc","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"borrowed-packet","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"held-frame-acquire","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"held-frame-reset","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"held-frame-close","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"foreign-frame","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"reset-reconfigure","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"format-change","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"end-of-stream","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"post-eos-state","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"pcm-allocator-use","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"pcm-allocator-failure","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"session-churn","status":"PASS","detail":0,"line":0}
+H2_ADEC_REPORT {"version":"pal-adec-esp-20260929-r5","contract":1,"operations":8,"passed":29,"failed":0,"blocked":0,"retained":0,"qualified":1,"rc":0,"frames":169,"pcm_bytes":505856}
+H2_ADEC_READY rc=0 confirm=0
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"wrapper-arguments","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"open-close","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"preferred-format","status":"PASS","detail":0,"line":0}
+H2_ADEC_CASE {"version":"pal-adec-esp-20260929-r5","id":"unconfigured-state","status":"PASS","detail":0,"line":0}

@@ -4,8 +4,8 @@
       "name": "devkit-pal-audio-decoder-esp32s3.update.tar.zlib",
       "operation": "managed-install",
       "release_suffix": ".update.tar.zlib",
-      "sha256": "4b28beebb6bda1c5daba1b4addb54e9542b61fdb60017029621b2e75806c4c45",
-      "size": 1079048
+      "sha256": "9c9866c819f2952f5e178d33fa41de111b643af877ab58c5b81a79ad12658ac7",
+      "size": 1078431
     }
   ],
   "board": "devkit",
@@ -15,32 +15,32 @@
     {
       "name": "firmware.elf",
       "operation": "native-debug-or-flash",
-      "sha256": "b5bccb2d536e40694ac148b829c535f214dabc7dd82a3b44b07ddfc3e79987d3",
-      "size": 14260196
+      "sha256": "290b3df672a7b1c332f6cb387d0e3d8ee89ef387faa0cdc0966bce36d006a6c4",
+      "size": 14250220
     },
     {
       "name": "firmware.map",
       "operation": "native-debug-or-flash",
-      "sha256": "f4082fbbb1025ad74c7e0f7cd15b18f08441b425fe11c87aa515a5b7ac03b950",
-      "size": 14126787
+      "sha256": "d3df3c1455816bded38c813d07847796d570defd7b0a6eaf90d98d9499e0a028",
+      "size": 14117482
     },
     {
       "name": "app.bin",
       "operation": "native-debug-or-flash",
-      "sha256": "fde9e3f7da7a1c757cd992193c77073e242d7f33b485de0b74c9c8540ed4a57e",
-      "size": 1648224
+      "sha256": "8c271b28d297322483a7eeac4868c12b28a95d2123e8871a8e33cfa763748c9c",
+      "size": 1647072
     },
     {
       "name": "bootloader.bin",
       "operation": "native-debug-or-flash",
-      "sha256": "40959f23380a3d2277fc3c5392eee303cd194d3155e4081e5e20232650b1721e",
+      "sha256": "538ac4d12b4575b07317799366cd42c3a756774a394109868f2dd7a2c3c5cbe1",
       "size": 21328
     },
     {
       "name": "combined_factory.bin",
       "operation": "native-debug-or-flash",
-      "sha256": "22b231f42a81cfdf7c33d0ce993cb6fb0e8d097f39d472b7659e7b6382a1dc0e",
-      "size": 1779296
+      "sha256": "93208e06023820edb6db27da22270e940375147ad45e944246691cad6a306720",
+      "size": 1778144
     },
     {
       "name": "partition-table.bin",
@@ -58,14 +58,14 @@
   "package_manifest": {
     "board": "devkit",
     "format": 1,
-    "image_sha256": "fde9e3f7da7a1c757cd992193c77073e242d7f33b485de0b74c9c8540ed4a57e",
-    "image_size": 1648224,
+    "image_sha256": "8c271b28d297322483a7eeac4868c12b28a95d2123e8871a8e33cfa763748c9c",
+    "image_size": 1647072,
     "role": "app",
     "target": "esp32s3",
-    "version": "pal-adec-esp-20260929-r3"
+    "version": "pal-adec-esp-20260929-r5"
   },
   "platform": "esp",
   "role": "app",
   "target": "esp32s3",
-  "version": "pal-adec-esp-20260929-r3"
+  "version": "pal-adec-esp-20260929-r5"
 }

@@ -7,13 +7,26 @@ static h2_pal_adec_result_t result;
 static const char *image_version;
 static int run_rc;
 static int complete;
+static uint64_t previous_case_ms;
+static void report_timing(void *user, const h2_pal_adec_case_result_t *item) {
+    h2_runtime_t *runtime = user;
+    uint64_t now = 0u;
+    int rc = h2_pal_time_get_monotonic_ms(runtime->time, &now);
+    if (rc == H2_PAL_OK) {
+        printf("H2_ADEC_TIMING id=%s elapsed_ms=%" PRIu64 " detail=%d\n",
+               item->id, now - previous_case_ms, item->detail);
+        previous_case_ms = now;
+    }
+}
 int h2_adec_device_run(h2_runtime_t *runtime, const char *version) {
     if (image_version || !runtime || !version) return H2_PAL_ERR_INVALID_STATE;
     image_version = version;
     printf("H2_ADEC_BOOT version=%s\n", version);
+    (void)h2_pal_time_get_monotonic_ms(runtime->time, &previous_case_ms);
     const h2_pal_adec_config_t config = {
         .decoder = runtime->audio_decoder, .mem = runtime->mem,
-        .time = runtime->time, .sync = runtime->sync};
+        .time = runtime->time, .sync = runtime->sync,
+        .report = report_timing, .report_user = runtime};
     run_rc = h2_pal_audio_decoder_e2e_run(&config, &result);
     complete = 1;
     h2_adec_device_replay(runtime);

@@ -62,12 +62,12 @@
         "passed": 24,
         "failed": 0,
         "blocked": 0,
-        "mic_frames": 941,
-        "mic_peak": 1566,
-        "mic_energy": 786450014,
-        "speaker_frames": 943,
+        "mic_frames": 942,
+        "mic_peak": 2355,
+        "mic_energy": 9497357849,
+        "speaker_frames": 944,
         "output_peak": 1120,
-        "stability_elapsed_ms": 30005,
+        "stability_elapsed_ms": 30023,
         "allocator_probe_passed": 1,
         "allocator_failure_rejected": 1,
         "allocator_allocations": 1,
@@ -76,11 +76,11 @@
         "teardown_rc": 0
       },
       "qualified_report": "evidence/ios/qualified.json",
-      "qualified_report_sha256": "520d0fe7a0187d108b1912b44f767c4880db9f26f666063d20cd9cb56c621222",
+      "qualified_report_sha256": "7173902b4da5246c9170ac526d7788c8c896599a6430ade6ba9c4da5848fa930",
       "environment": "evidence/ios/environment.json",
-      "environment_sha256": "40e9cc556c089df8d72700859a8077f1c89f7765231f237824a93e00e9cbc6b9",
+      "environment_sha256": "0edc7bec1d440043394c9c70344d62d41688ffdda6be69faf83c6ece9fc7f707",
       "app_sha256": "cff799092ff8acc83adc813748996d9c0e3c19fa14e9d34c6a15eec83a5679b6",
-      "sdk_sha256": "87225f078d58c3d4be798a6cd992c20382e3e9217c73f25e4e8a2e2daacb7327",
+      "sdk_sha256": "71c6f967cc9aed7f8be94da7d430d37f89994079475f611735b82f3e38003ba7",
       "source_binding": "review_fix_validation.current_source_receipts"
     },
     "android_emulator": {
@@ -365,7 +365,7 @@
       "projects/e2e/targets/h2loader_tar_zlib/pal-audio/amoled/main/main.c": "91a671cd5b1b6819f10357e9b7bf8fbbef537b8fcffbd2b493882a3e3797ef93",
       "libs/pal/providers/ios/pal_core/src/h2_ios_audio_wait.c": "351666ed5ccce3cb96e4a780438ed1211b0940543cd9c3165bfe989d0d76620e",
       "libs/pal/providers/ios/pal_core/src/h2_ios_audio_wait.h": "4aa89ca5019f82cd96a50cfed5778ef7543ff0962f4b1d6b18421d34fe551846",
-      "libs/pal/providers/ios/pal_core/include/h2_ios_platform.h": "74a7ef7fa50ff10c61bb7f836954c0b46a3fcb02adb9c94cb99a7298a993096e",
+      "libs/pal/providers/ios/pal_core/include/h2_ios_platform.h": "45b19746e9744193aba579d62d04aea5d79d24000257a8d180f6db99cb677c18",
       "projects/e2e/apps/pal-audio/app/tests/test_cleanup_once.c": "48c90535ed595fed67322ed37cb70aac15e844d7a0ad02feada1a59a15c4ec2f",
       "projects/e2e/targets/ios_application/pal-audio/main.m": "ee2ce52e3104c5ffb1c1787529fa17fbdbdd656e1b299742c5d32963ba5b2207",
       "projects/e2e/apps/pal-audio/check_qualification.py": "aaadd29608d6a5cf83ada92cff3a717ce197a64b9993fbb525a774217d804df9",
@@ -435,6 +435,14 @@
           "validation": "native build only; not flashed or counted as a device qualification run"
         }
       }
+    },
+    "audio_decoder_sdk_followup": {
+      "change": "The iOS public header adds a borrowed Audio Decoder getter; existing Audio implementation and 24-case registry are unchanged.",
+      "actual_ios_consumer": "24/24, 30023ms duplex and allocator failure/reclaim PASS against the actual newly packaged SDK",
+      "header_sha256": "45b19746e9744193aba579d62d04aea5d79d24000257a8d180f6db99cb677c18",
+      "app_sha256": "cff799092ff8acc83adc813748996d9c0e3c19fa14e9d34c6a15eec83a5679b6",
+      "sdk_sha256": "71c6f967cc9aed7f8be94da7d430d37f89994079475f611735b82f3e38003ba7",
+      "retained_board_evidence": "Original Audio board receipts retain their true source/artifact bindings; no new Audio board run is claimed."
     }
   }
 }

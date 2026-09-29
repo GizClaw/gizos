@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "base_commit": "a472fbec3c301e53523fae5ed446879a7c635cc2",
-  "captured_at_utc": "2026-09-29T07:51:04.301497+00:00",
+  "captured_at_utc": "2026-09-29T10:19:09.153350+00:00",
   "interface": {
     "operations": 8,
     "mandatory_cases": 29
@@ -21,10 +21,10 @@
     "projects/e2e/apps/pal-audio-decoder/app/fixtures/h2_aac_vectors.h": "731f4e2305de592a2adf7b646bbbcd45e80ea55155b4cc69c1038e29773e3f68",
     "projects/e2e/apps/pal-audio-decoder/app/include/h2_pal_audio_decoder_cases.inc": "bb5edbc9ca6bed07f97310dab88959531690569c69478c6f52b07cd765a6f225",
     "projects/e2e/apps/pal-audio-decoder/app/include/h2_pal_audio_decoder_e2e.h": "25850cf71eec17a412bd9d33661d7782a55e4aae31845c640ad6f817992ce8d6",
-    "projects/e2e/apps/pal-audio-decoder/app/src/h2_pal_audio_decoder_e2e.c": "79b94ea41771977d8ba3136807321ba98eb4d48cf79580687563ef4f65f61537",
+    "projects/e2e/apps/pal-audio-decoder/app/src/h2_pal_audio_decoder_e2e.c": "752a186bccf0b1694ebdcda942258a42594de9f6a9ec32f54348d28181dab7ad",
     "projects/e2e/apps/pal-audio-decoder/app/tests/test_reject_missing.c": "cb99b6867c6fc2f5ca06db4f99dfd23ed46eabe2e12a2d529d8dd07227c4ad24",
     "projects/e2e/libs/pal-audio-decoder-device/include/device_runner.h": "ae3f6b2db731a0584b33f01fd87d9e6061d5552ccb883ad5823e45559245794c",
-    "projects/e2e/libs/pal-audio-decoder-device/src/device_runner.c": "71dbd141e00682619a25c34134a46ebfbb5f436dc098fd3597660f6ae5c9db6f",
+    "projects/e2e/libs/pal-audio-decoder-device/src/device_runner.c": "c5061a29dd42fc2b0e6be0de8edba597abecae3f81ac1958f63b34209a4a5aa0",
     "projects/e2e/libs/pal-audio-decoder-mobile/mobile_runner.c": "c283e0b79cc081f5876ca88e4107bbaa583c029a2e731372a6d9542f82f23207",
     "projects/e2e/libs/pal-audio-decoder-mobile/mobile_runner.h": "eef11c178c1f0f26ee9e622d3e9fcd1b94aabc628cb55c21b058e859d3a8beec",
     "projects/e2e/targets/android_binary/pal-audio-decoder/main.c": "8133257fccd7e70e0b73fc962468046145434d4184dc74857ef3ebfde704f26a",
@@ -35,42 +35,61 @@
     "projects/e2e/targets/ios_application/pal-audio-decoder/main.m": "13171b752580220d8cc5f884cc34b3318d7ccb3d3a0338013b197654171681d7",
     "projects/e2e/targets/pkg_tar/pal-audio-decoder/main.c": "3bcc3a5aa14d7fc51a4f67b69ee04cda26dc83bcdbf2e515e946130923977d48"
   },
-  "source_aggregate_sha256": "583e484ddde9758b84b785bdf1ae78428119215d89c91e5ea00447bae89fdd42",
-  "qualified": false,
-  "pending": [
-    "bk7258"
-  ],
+  "source_aggregate_sha256": "76bc5edca611a516a4c049628e62044999d575499de741a84831c5442e4210cd",
+  "qualified": true,
+  "pending": [],
   "platforms": {
     "macos": {
       "status": "PASS",
       "receipt": "evidence/macos/qualified.json",
-      "receipt_sha256": "d6431c20eb9fcecda350ac717253ff77b734e63e4e1bcd78eb890992fcee445f"
+      "receipt_sha256": "41a20c185cde5433b3531089421728227ae39155710d0733386a09dd33055864"
     },
     "wasm_aac_chrome": {
       "status": "PASS",
       "receipt": "evidence/wasm/qualified.json",
-      "receipt_sha256": "481ea26a6080a3a68a81f2c97ae39b9d1490b28f5bb636cadba37c33e60b6dc0",
-      "execution": "exact manual Make/Bazel test, isolated actual Chrome profile"
+      "receipt_sha256": "065153114efbfc964f16864738a7933f51bc6885e7fd704bb32d5bc3b02ffbcd"
     },
     "ios_simulator": {
       "status": "PASS",
       "receipt": "evidence/ios/qualified.json",
-      "receipt_sha256": "fc0a1143db058eaeebeecc90529c62fa5204a721559d40e18d68f335766d89f1"
+      "receipt_sha256": "ba1a17403f602a39b2de16043f50ce44b6e3650c44f7a689ef2eecc092bcaf8d"
     },
     "android_emulator": {
       "status": "PASS",
       "receipt": "evidence/android/qualified.json",
-      "receipt_sha256": "ae8e5729355202828b6e522293e82aa23fce57fec422ad924fcb6ebcaf1a5598"
+      "receipt_sha256": "852afc6306671d46bb278af83ba4665da25575ec4104b0303d3008c1431797ff"
     },
     "devkit_esp32s3": {
       "status": "PASS",
       "receipt": "evidence/devkit/qualified.json",
-      "receipt_sha256": "4e082279c5f905ee36ee7fa289f9b8e8c75e9535a290f2938247c6bba985d125"
+      "receipt_sha256": "f5098c1011e7cc859b2b44e8508df303ef229282fc9b5dca1d8232a3e457967f"
     },
     "bk7258": {
-      "status": "NOT_RUN",
-      "reason": "Display qualification currently owns this board; decoder package built and awaiting serial handoff"
+      "status": "PASS",
+      "receipt": "evidence/bk7258/qualified.json",
+      "receipt_sha256": "62160804cd44d2709becf9b6c8c42a0d8715c3fe2e6efd692b76cba34dff9a9e"
     }
   },
-  "revalidation_reason": "Require the complete 1024-samples-per-RAW-AAC-LC-packet PCM total at EOS and strictly increasing frame PTS; previous receipts retain their original source hashes."
+  "execution_limits": [
+    "Browser qualification applies to the captured AAC-capable Chrome runtime; open-source Chromium without AAC is not qualified.",
+    "Simulator/emulator results do not qualify physical phones.",
+    "Functional PCM/lifecycle qualification does not claim realtime AAC throughput or microphone/speaker measurements."
+  ],
+  "board_retest_history": {
+    "bk_r3": {
+      "passed": 25,
+      "failed": 4,
+      "version": "pal-adec-bk-20260929-r3",
+      "raw_log_sha256": "dfc053b7a680986c8adc47049512fc73fe4f969dd10c9c182b0017dbfed5b78a",
+      "confirmed": false
+    },
+    "bk_r4": {
+      "passed": 28,
+      "failed": 1,
+      "version": "pal-adec-bk-20260929-r4",
+      "raw_log_sha256": "0ab5067744424158d95a252235aa03e6341ffb7650a1bc7ddfc57f8dac56bb6e",
+      "confirmed": false
+    },
+    "resolution": "Single-precision spectrum oracle and exact integer energy, five-second no-frame-progress deadline with finite thirty-second end-to-end stream budget; PCM/PTS/EOS/ownership criteria unchanged."
+  }
 }

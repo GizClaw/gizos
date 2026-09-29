@@ -184,5 +184,6 @@
   "frames": 169,
   "pcm_bytes": 505856,
   "qualified": 1,
-  "rc": 0
+  "rc": 0,
+  "test_log_sha256": "3db2e2a73294d2dcfc67e19d969784746cba68f7c0596a3085d15a14ba45142f"
 }
