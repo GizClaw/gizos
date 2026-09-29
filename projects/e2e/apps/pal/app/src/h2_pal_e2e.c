@@ -338,11 +338,16 @@ static h2_pal_result_t h2_pal_e2e_core_timer(
     e2e_result->retained_cleanup = run;
     return result == H2_PAL_OK ? cleanup : result;
   }
+  run->timer = NULL;
   if (run->timer_fired != NULL) {
     cleanup = h2_pal_semaphore_destroy(runtime->sync, run->timer_fired);
     h2_pal_e2e_record_cleanup(e2e_result, cleanup);
-    if (result == H2_PAL_OK)
-      result = cleanup;
+    if (cleanup != H2_PAL_OK) {
+      /* Keep the handle so h2_pal_e2e_cleanup can retry it. */
+      e2e_result->retained_cleanup = run;
+      return result == H2_PAL_OK ? cleanup : result;
+    }
+    run->timer_fired = NULL;
   }
   const int calls = run->timer_calls;
   h2_pal_mem_free(runtime->mem, run);

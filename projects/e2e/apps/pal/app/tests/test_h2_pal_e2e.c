@@ -680,7 +680,7 @@ static void test_filesystem_stat_contract(void) {
 typedef struct timer_lifetime_fixture {
   h2_pal_timer_config_t config;
   int allow_destroy;
-  int fired_count, fired_live;
+  int fired_count, fired_live, fired_destroy_failures;
 } timer_lifetime_fixture_t;
 static h2_pal_result_t timer_test_create(void *user,
     const h2_pal_timer_config_t *config, h2_pal_timer_t **out) {
@@ -703,6 +703,10 @@ static h2_pal_result_t fired_create(void *user,
 static h2_pal_result_t fired_destroy(void *user, h2_pal_semaphore_t *semaphore) {
   timer_lifetime_fixture_t *f = user;
   assert(f->fired_live && semaphore == (h2_pal_semaphore_t *)&f->fired_count);
+  if (f->fired_destroy_failures > 0) {
+    --f->fired_destroy_failures;
+    return H2_PAL_ERR_BUSY;
+  }
   f->fired_live = 0;
   return H2_PAL_OK;
 }
@@ -756,6 +760,16 @@ static void test_timer_failed_destroy_retains_callback(void) {
   assert(memory.allocations == 0 && result.retained_cleanup == NULL);
   assert(!f.fired_live);
   assert(h2_pal_e2e_cleanup(&runtime, &result) == H2_PAL_OK);
+
+  /* The timer is gone but its semaphore refuses destruction: the handle is
+   * retained and cleanup retries only the semaphore. */
+  f = (timer_lifetime_fixture_t){.allow_destroy = 1, .fired_destroy_failures = 1};
+  assert(h2_pal_e2e_run(&runtime, &config, &result) == H2_PAL_ERR_BUSY);
+  assert(result.case_count == 2 && result.retained_cleanup != NULL);
+  assert(memory.allocations == 1 && f.fired_live);
+  assert(h2_pal_e2e_cleanup(&runtime, &result) == H2_PAL_OK);
+  assert(memory.allocations == 0 && result.retained_cleanup == NULL);
+  assert(!f.fired_live);
 }
 
 int main(void) {
