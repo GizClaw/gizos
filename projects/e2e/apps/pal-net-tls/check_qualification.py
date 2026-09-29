@@ -49,6 +49,30 @@ def check_peer(peer, session, run_id):
         assert event['session'] == session and event['accepted'] and event['client_hello'] and event['certificate_presented']
         assert event['finished'] and event['payload_received'] == 0 and event['payload_sent'] == 0, case
         assert not event['handshake_succeeded'] or event.get('post_handshake_zero_payload_close') is True, case
+    tcp_payload = (
+        'tcp-echo','tcp-source-bind','tcp-connect-retry',
+        'tcp-listen-accept','tcp-accept-timeout','tcp-partial-io',
+        'tls-required','tls-default','tls-insecure-test-only',
+        'tls-sni-alpn','tls-borrowed-config','tls-repeat-wrap',
+    )
+    for case in tcp_payload + ('tls-session-churn',):
+        events = [row for row in rows if row['case'] == case]
+        assert len(events) == (12 if case == 'tls-session-churn' else 1), case
+        for event in events:
+            assert event['accepted'] and event['payload_valid'], case
+            assert event['payload_received'] == 4193 and event['payload_sent'] == 4097, case
+            if case.startswith('tls-'):
+                assert event['client_hello'] and event['certificate_presented'] and event['handshake_succeeded'], case
+    for case in ('udp-echo','udp-source-bind','udp-truncation'):
+        events = [row for row in rows if row['case'] == case]
+        assert len(events) == 1, case
+        event=events[0]
+        assert event['accepted'] and event['payload_valid'], case
+        assert event['payload_received'] == 609 and event['payload_sent'] == 513, case
+    recovery=[row for row in rows if row['case']=='tls-failure-recovery']
+    assert len(recovery)==2 and recovery[0]['client_hello'] and recovery[0]['certificate_presented']
+    assert recovery[0]['payload_received']==0 and not recovery[0]['handshake_succeeded']
+    assert recovery[1]['payload_valid'] and recovery[1]['payload_received']==4193 and recovery[1]['payload_sent']==4097
     negotiated = [row for row in rows if row['case'] == 'tls-sni-alpn']
     assert len(negotiated) == 1 and negotiated[0]['sni'] == 'pal-net-tls.test' and negotiated[0]['alpn'] == 'h2-pal-e2e'
 

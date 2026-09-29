@@ -31,6 +31,7 @@ py_test(
         "tests/test_evidence_rejection.py",
     ],
     data = [
+        "evidence/macos/qualified.json",
         "//libs/pal:pal_header_files",
         "//projects/e2e/apps/pal-net-tls/app:include/h2_pal_net_tls_cases.inc",
     ],

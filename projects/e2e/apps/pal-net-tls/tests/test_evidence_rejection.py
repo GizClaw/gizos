@@ -1,4 +1,5 @@
 import copy
+import json
 import importlib.util
 from pathlib import Path
 import re
@@ -35,19 +36,35 @@ class Rejection(unittest.TestCase):
         bad=copy.deepcopy(valid);bad['cases'][21]['bytes_received']=4096
         with self.assertRaises(AssertionError):validation.check_cases(bad,REGISTRY)
 
-    def test_peer_missing_certificate_cannot_pass(self):
-        session='a'*32
+    def test_peer_missing_certificate_or_payload_cannot_pass(self):
+        receipt=json.loads((APP/'evidence/macos/qualified.json').read_text())
+        peer=receipt['peer']
+        session=peer['session']
         run_id=session[:16]
-        rows=[dict(session=session,run_id=run_id,case=case,accepted=True,client_hello=True,certificate_presented=True,
-            finished=True,handshake_succeeded=False,payload_received=0,payload_sent=0) for case in ('tls-default-untrusted','tls-wrong-ca','tls-wrong-name','tls-expired')]
-        rows.append(dict(session=session,run_id=run_id,case='tls-sni-alpn',sni='pal-net-tls.test',alpn='h2-pal-e2e'))
-        valid=dict(session=session,records=rows)
-        validation.check_peer(valid,session,run_id)
-        for field,value in [('accepted',False),('client_hello',False),('certificate_presented',False),('finished',False),('handshake_succeeded',True),('payload_received',1),('session','b'*32)]:
-            bad=copy.deepcopy(valid);bad['records'][0][field]=value
-            with self.assertRaises(AssertionError):validation.check_peer(bad,session,run_id)
-        bad=copy.deepcopy(valid);bad['records'].append(bad['records'][0])
-        with self.assertRaises(AssertionError):validation.check_peer(bad,session,run_id)
+        validation.check_peer(peer,session,run_id)
+        for field,value in [('accepted',False),('client_hello',False),
+                            ('certificate_presented',False),('finished',False),
+                            ('payload_received',1),('payload_sent',1),
+                            ('session','b'*32)]:
+            bad=copy.deepcopy(peer)
+            target=next(row for row in bad['records'] if row['case']=='tls-wrong-ca')
+            target[field]=value
+            with self.assertRaises(AssertionError):
+                validation.check_peer(bad,session,run_id)
+        for case, field, value in [('tls-required','payload_received',4096),
+                                   ('tcp-echo','payload_valid',False),
+                                   ('udp-echo','payload_sent',512)]:
+            bad=copy.deepcopy(peer)
+            target=next(row for row in bad['records'] if row['case']==case)
+            target[field]=value
+            with self.assertRaises(AssertionError):
+                validation.check_peer(bad,session,run_id)
+        for case in ('tls-wrong-ca','tls-session-churn'):
+            bad=copy.deepcopy(peer)
+            target=next(row for row in bad['records'] if row['case']==case)
+            bad['records'].append(copy.deepcopy(target))
+            with self.assertRaises(AssertionError):
+                validation.check_peer(bad,session,run_id)
 
 
 if __name__=='__main__':unittest.main()
