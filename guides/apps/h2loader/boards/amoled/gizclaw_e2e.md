@@ -13,7 +13,7 @@ bazel build --config=esp32s3 \
   //projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/amoled:package
 ```
 
-未指定 `VOICE_ONLY` 时仍运行完整 `all` suite，其中 Voice 使用同一 Session 路径。Launcher 继续使用已有的北京 E2E endpoint、公开 `deploy-default` fixture 和设备已保存的 Wi-Fi；不把 Wi-Fi 凭据编入固件。Voice 使用确定性的 16 kHz mono PCM，经真实网络上传，并在库的 PCM Track 上核验下行非静音音频；Testing Audio wrapper 同时 drain 真实麦克风并记录采集健康，但上传的仍是 fixture PCM；该用例不验收麦克风音质或扬声器听感。
+未指定 `VOICE_ONLY` 时仍运行完整 `all` suite，其中 Voice 使用同一 Session 路径。Launcher 通过 `gizclaw_e2e_fixture` macro 显式注入E2E endpoint/RegistrationToken、期望RuntimeProfile和AppConfig key/value；没有源码凭据或key默认值，缺输入保持command-responsive并在Wi-Fi/业务变更前失败。设备只借用已保存的Wi-Fi；不把 Wi-Fi 凭据编入固件。Voice 使用确定性的 16 kHz mono PCM，经真实网络上传，并在库的 PCM Track 上核验下行非静音音频；Testing Audio wrapper 同时 drain 真实麦克风并记录采集健康，但上传的仍是 fixture PCM；该用例不验收麦克风音质或扬声器听感。
 
 ## Session 验收
 
@@ -25,7 +25,7 @@ bazel build --config=esp32s3 \
 
 先用 H2Loader `scan` 和 `status` 核验实时 `board=amoled`、`target=esp32s3`、设备 UID、空 Stage 和 coredump baseline。使用 managed `send --file <package>` 与 `reboot upgrade --monitor` 安装，保存剔除协议帧的 UART 日志。不要擦除设备 Wi-Fi 配置。
 
-要求安装后 status 的 APP/Partition 2 identity 与本次 package 一致、Stage 清空、`last_result=0`；日志包含 Session 逐操作业务断言、PTT 和 Realtime 结果、唯一 case terminal 及重复 final summary。只有 `selected=1 terminal=1 pass=1 cleanup_rc=0 retained_resources=0 complete=true exit_code=0` 且没有新 coredump 才能报告 Voice 硬件流程通过；它不是全量 215 项 API 验收。
+要求安装后 status 的 APP/Partition 2 identity 与本次 package 一致、Stage 清空、`last_result=0`；日志包含 Session 逐操作业务断言、PTT 和 Realtime 结果、唯一 case terminal 及重复 final summary。只有 `selected=1 terminal=1 pass=1 cleanup_rc=0 retained_resources=0 complete=true exit_code=0` 且没有新 coredump 才能报告 Voice 硬件流程通过；它不是本轮全量227项API验收；全量还需要8/8独立case和当前版本227项审计。
 
 ## Resource suite
 

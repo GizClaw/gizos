@@ -109,6 +109,9 @@ typedef struct h2_gizclaw_e2e_config {
 const char *h2_gizclaw_e2e_fixture_key(void);
 const char *h2_gizclaw_e2e_fixture_profile(void);
 const char *h2_gizclaw_e2e_fixture_value(void);
+/** Board-only build inputs; host launchers continue to use runtime credentials. */
+const char *h2_gizclaw_e2e_fixture_endpoint(void);
+const char *h2_gizclaw_e2e_fixture_token(void);
 
 typedef struct h2_gizclaw_e2e_result {
   size_t selected;

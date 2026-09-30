@@ -247,23 +247,25 @@ static void image_entry(void *user) {
   if (rc != H2_PAL_OK) {
     fail_launcher("runtime_init", rc, false);
   }
+  rc = h2_esp_h2loader_app_commands_start(runtime, "gizclaw-e2e", 1u, 3u);
+  if (rc != H2_PAL_OK) {
+    fail_launcher("command_start", rc, false);
+  }
+
+  if (!h2_gizclaw_e2e_fixture_endpoint()[0] || !h2_gizclaw_e2e_fixture_token()[0] ||
+      !h2_gizclaw_e2e_fixture_profile()[0] ||
+      ((H2_GIZCLAW_E2E_DEVKIT_SUITES & H2_GIZCLAW_E2E_SUITE_RPC) != 0u &&
+       (!h2_gizclaw_e2e_fixture_key()[0] || !h2_gizclaw_e2e_fixture_value()[0])))
+    fail_launcher("missing_service_fixture", H2_PAL_ERR_INVALID_ARG, true);
+
   rc = h2_pal_wifi_sta_set_power_save(runtime->wifi_sta,
                                       H2_PAL_WIFI_POWER_SAVE_NONE);
   printf("H2_GIZCLAW_E2E_DEVKIT stage=power_save mode=%d rc=%d\n",
          (int)H2_PAL_WIFI_POWER_SAVE_NONE, rc);
   fflush(stdout);
   if (rc != H2_PAL_OK) {
-    fail_launcher("power_save", rc, false);
+    fail_launcher("power_save", rc, true);
   }
-  rc = h2_esp_h2loader_app_commands_start(runtime, "gizclaw-e2e", 1u, 3u);
-  if (rc != H2_PAL_OK) {
-    fail_launcher("command_start", rc, false);
-  }
-
-  if ((H2_GIZCLAW_E2E_DEVKIT_SUITES & H2_GIZCLAW_E2E_SUITE_RPC) != 0u &&
-      (!h2_gizclaw_e2e_fixture_key()[0] ||
-       !h2_gizclaw_e2e_fixture_profile()[0] || !h2_gizclaw_e2e_fixture_value()[0]))
-    fail_launcher("missing_app_config_fixture", H2_PAL_ERR_INVALID_ARG, true);
 
   s_wifi_supervisor = (h2_gizclaw_e2e_devkit_wifi_supervisor_t){
       .runtime = runtime,

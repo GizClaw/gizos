@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 
 import api_coverage
 
@@ -55,6 +56,8 @@ def _log(app):
 
 def run_suite(app, args):
     fixture = args.gizclaw_fixture
+    shutil.copyfile(app.app, args.output / ("app.ipa" if app.platform == "ios" else "app.apk"))
+    shutil.copyfile(app.sdk, args.output / "sdk.archive")
     args.gizclaw_leaked = False
     def redact(log):
         args.gizclaw_leaked |= fixture["token"] in log

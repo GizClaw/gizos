@@ -686,8 +686,8 @@ static int conversation_rounds(voice_state_t *state, bool realtime) {
      * neither changes the Session nor leaves anything in the Track. */
     int interrupt_rc = rc;
     if (rc == H2_PAL_OK) {
-      interrupt_rc =
-          h2_gizclaw_session_interrupt_playback(voice_session(state));
+      interrupt_rc = evidence("h2_gizclaw_session_interrupt_playback", "voice",
+          h2_gizclaw_session_interrupt_playback(voice_session(state)));
       h2_gizclaw_session_state_t after;
       if (interrupt_rc == H2_PAL_OK)
         interrupt_rc = h2_gizclaw_session_snapshot(voice_session(state), &after);

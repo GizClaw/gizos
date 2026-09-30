@@ -52,7 +52,8 @@ static void run(void *user) {
   (void)user;
   int rc;
   if ((!h2_gizclaw_e2e_fixture_key()[0] ||
-       !h2_gizclaw_e2e_fixture_profile()[0] || !h2_gizclaw_e2e_fixture_value()[0])) {
+       !h2_gizclaw_e2e_fixture_profile()[0] || !h2_gizclaw_e2e_fixture_value()[0] ||
+       !h2_gizclaw_e2e_fixture_endpoint()[0] || !h2_gizclaw_e2e_fixture_token()[0])) {
     printf("H2_GIZCLAW_SETUP_FAIL stage=missing_app_config_fixture rc=%d\n",
            H2_PAL_ERR_INVALID_ARG);
     fflush(stdout);

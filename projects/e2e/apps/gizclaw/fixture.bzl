@@ -7,6 +7,8 @@ def _fixture_impl(ctx):
     key = ctx.attr.key[BuildSettingInfo].value
     profile = ctx.attr.profile[BuildSettingInfo].value
     value = ctx.attr.value[BuildSettingInfo].value
+    endpoint = ctx.attr.endpoint[BuildSettingInfo].value
+    token = ctx.attr.token[BuildSettingInfo].value
     allowed = "abcdefghijklmnopqrstuvwxyz0123456789.-"
     if len(key) > 63 or any([c not in allowed for c in key.elems()]) or (key and key[0] not in "abcdefghijklmnopqrstuvwxyz"):
         fail("AppConfig fixture key must be a 1-63 byte lowercase alias, or empty when not configured")
@@ -14,12 +16,16 @@ def _fixture_impl(ctx):
         fail("fixture RuntimeProfile must be a lowercase resource ID")
     if len(value) > 4096:
         fail("AppConfig expected value exceeds the server fixture limit")
+    if len(endpoint) >= 128 or len(token) > 4096:
+        fail("board service input exceeds the portable configuration limit")
     source = ctx.actions.declare_file(ctx.label.name + ".c")
     contract = ctx.actions.declare_file(ctx.label.name + ".json")
     ctx.actions.write(source, "\n".join([
         "const char *h2_gizclaw_e2e_fixture_key(void) { return %s; }" % json.encode(key),
         "const char *h2_gizclaw_e2e_fixture_profile(void) { return %s; }" % json.encode(profile),
         "const char *h2_gizclaw_e2e_fixture_value(void) { return %s; }" % json.encode(value),
+        "const char *h2_gizclaw_e2e_fixture_endpoint(void) { return %s; }" % json.encode(endpoint),
+        "const char *h2_gizclaw_e2e_fixture_token(void) { return %s; }" % json.encode(token),
     ]) + "\n")
     ctx.actions.write(contract, json.encode({"app_config_key": key, "runtime_profile": profile, "app_config_value": value}) + "\n")
     return [
@@ -33,10 +39,12 @@ _fixture = rule(
         "key": attr.label(mandatory = True, providers = [BuildSettingInfo]),
         "profile": attr.label(mandatory = True, providers = [BuildSettingInfo]),
         "value": attr.label(mandatory = True, providers = [BuildSettingInfo]),
+        "endpoint": attr.label(mandatory = True, providers = [BuildSettingInfo]),
+        "token": attr.label(mandatory = True, providers = [BuildSettingInfo]),
     },
 )
 
-def gizclaw_e2e_fixture(name, app_config_key = "", runtime_profile = "", app_config_value = ""):
+def gizclaw_e2e_fixture(name, app_config_key = "", runtime_profile = "", app_config_value = "", server_endpoint = "", registration_token = ""):
     """Empty is buildable but RPC/all launchers reject it before networking.
 
     Supply the public profile key via the macro argument or the generated
@@ -45,7 +53,11 @@ def gizclaw_e2e_fixture(name, app_config_key = "", runtime_profile = "", app_con
     string_flag(name = name + "_key", build_setting_default = app_config_key)
     string_flag(name = name + "_profile", build_setting_default = runtime_profile)
     string_flag(name = name + "_value", build_setting_default = app_config_value)
-    _fixture(name = name + "_generated", key = ":" + name + "_key", profile = ":" + name + "_profile", value = ":" + name + "_value")
+    # Board launchers have no process environment. These explicit build inputs
+    # are omitted from the JSON/audit contract and are never committed defaults.
+    string_flag(name = name + "_endpoint", build_setting_default = server_endpoint)
+    string_flag(name = name + "_token", build_setting_default = registration_token)
+    _fixture(name = name + "_generated", key = ":" + name + "_key", profile = ":" + name + "_profile", value = ":" + name + "_value", endpoint = ":" + name + "_endpoint", token = ":" + name + "_token")
     native.filegroup(name = name + "_contract", srcs = [":" + name + "_generated"], output_group = "contract")
     native.filegroup(name = name + "_source", srcs = [":" + name + "_generated"], output_group = "source")
     cc_library(
