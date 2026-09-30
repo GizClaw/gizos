@@ -23,7 +23,8 @@ static h2_atomic_order_t failure_order(h2_atomic_order_t success) {
 /* Each type exercises every typed operation, every valid RMW order, load/store
  * orders, expected replacement on failed CAS, and C generic dispatch. */
 #define INTEGER_TEST(kind, type)                                               \
-  H2_ATOMIC_DEFINE_STATIC_ACCESSOR(kind, static_##kind, 0);                    \
+  H2_ATOMIC_DECLARE_STATIC(kind, h2_atomic_e2e_static_##kind);                 \
+  H2_ATOMIC_DEFINE_STATIC_ACCESSOR(kind, h2_atomic_e2e_static_##kind, 0);      \
   static int operations_##kind(h2_atomic_##kind##_t *v) {                      \
     const h2_atomic_##kind##_t *cv = v;                                        \
     h2_atomic_store(v, (type)3);                                               \
@@ -107,6 +108,7 @@ static int pointer_targets[2];
 
 static int lifecycle_bool(h2_atomic_bool_t *v, bool is_static,
                           const h2_atomic_qualification_config_t *c) {
+  const h2_atomic_bool_t *cv = v;
   CHECK(h2_atomic_bool_init(NULL, false) == H2_ATOMIC_INVALID_ARG);
   h2_atomic_bool_destroy(NULL);
   if (!is_static)
@@ -127,21 +129,21 @@ static int lifecycle_bool(h2_atomic_bool_t *v, bool is_static,
     CHECK(h2_atomic_compare_exchange_explicit(v, &expected, false, orders[i],
                                               H2_ATOMIC_RELAXED));
     h2_atomic_store_explicit(v, true, H2_ATOMIC_RELEASE);
-    CHECK(h2_atomic_load_explicit(v, H2_ATOMIC_ACQUIRE));
+    CHECK(h2_atomic_load_explicit(cv, H2_ATOMIC_ACQUIRE));
     CHECK(h2_atomic_exchange(v, false));
     expected = false;
     CHECK(h2_atomic_compare_exchange_strong(v, &expected, true));
     h2_atomic_store(v, false);
-    CHECK(!h2_atomic_load(v));
+    CHECK(!h2_atomic_load(cv));
   }
   h2_atomic_destroy(v);
   if (is_static)
-    CHECK(v->storage != NULL && !h2_atomic_load(v));
+    CHECK(v->storage != NULL && !h2_atomic_load(cv));
   else {
     CHECK(v->storage == NULL);
     h2_atomic_bool_destroy(v);
     CHECK(h2_atomic_init_explicit(v, true) == H2_ATOMIC_OK);
-    CHECK(h2_atomic_load(v));
+    CHECK(h2_atomic_load(cv));
     h2_atomic_destroy(v);
     CHECK(v->storage == NULL);
   }
@@ -149,6 +151,7 @@ static int lifecycle_bool(h2_atomic_bool_t *v, bool is_static,
 }
 static int lifecycle_ptr(h2_atomic_ptr_t *v, bool is_static,
                          const h2_atomic_qualification_config_t *c) {
+  const h2_atomic_ptr_t *cv = v;
   CHECK(h2_atomic_ptr_init(NULL, NULL) == H2_ATOMIC_INVALID_ARG);
   h2_atomic_ptr_destroy(NULL);
   if (!is_static)
@@ -169,16 +172,17 @@ static int lifecycle_ptr(h2_atomic_ptr_t *v, bool is_static,
     CHECK(h2_atomic_compare_exchange_explicit(v, &expected, &pointer_targets[1],
                                               orders[i], H2_ATOMIC_RELAXED));
     h2_atomic_store_explicit(v, &pointer_targets[0], H2_ATOMIC_RELEASE);
-    CHECK(h2_atomic_load_explicit(v, H2_ATOMIC_ACQUIRE) == &pointer_targets[0]);
+    CHECK(h2_atomic_load_explicit(cv, H2_ATOMIC_ACQUIRE) ==
+          &pointer_targets[0]);
     CHECK(h2_atomic_exchange(v, NULL) == &pointer_targets[0]);
     expected = NULL;
     CHECK(h2_atomic_compare_exchange_strong(v, &expected, &pointer_targets[0]));
     h2_atomic_store(v, NULL);
-    CHECK(h2_atomic_load(v) == NULL);
+    CHECK(h2_atomic_load(cv) == NULL);
   }
   h2_atomic_destroy(v);
   if (is_static)
-    CHECK(v->storage != NULL && h2_atomic_load(v) == NULL);
+    CHECK(v->storage != NULL && h2_atomic_load(cv) == NULL);
   else {
     CHECK(v->storage == NULL);
     h2_atomic_ptr_destroy(v);
@@ -253,7 +257,7 @@ static bool cancelled(qualification_state_t *s) {
   for (unsigned n = 0; n < (count); ++n) {                                     \
     (void)h2_atomic_##kind##_fetch_add(&s->member, (type)1,                    \
                                        H2_ATOMIC_RELAXED);                     \
-    (void)h2_atomic_##kind##_fetch_add(static_##kind(), (type)1,               \
+    (void)h2_atomic_##kind##_fetch_add(h2_atomic_e2e_static_##kind(), (type)1, \
                                        H2_ATOMIC_RELAXED);                     \
     type e = h2_atomic_##kind##_load(&s->kind##_cas, H2_ATOMIC_RELAXED);       \
     unsigned attempts = 0;                                                     \
@@ -476,12 +480,12 @@ int h2_atomic_e2e_qualify(const h2_atomic_qualification_config_t *c,
     record(r, index + 9, lifecycle_##kind(pointer, true, c));                  \
     ++index;                                                                   \
   } while (0)
-  LIFECYCLE(int, static_int());
-  LIFECYCLE(uint, static_uint());
-  LIFECYCLE(u8, static_u8());
-  LIFECYCLE(u16, static_u16());
-  LIFECYCLE(u32, static_u32());
-  LIFECYCLE(size, static_size());
+  LIFECYCLE(int, h2_atomic_e2e_static_int());
+  LIFECYCLE(uint, h2_atomic_e2e_static_uint());
+  LIFECYCLE(u8, h2_atomic_e2e_static_u8());
+  LIFECYCLE(u16, h2_atomic_e2e_static_u16());
+  LIFECYCLE(u32, h2_atomic_e2e_static_u32());
+  LIFECYCLE(size, h2_atomic_e2e_static_size());
   LIFECYCLE(bool, &static_bool);
   LIFECYCLE(ptr, &static_ptr);
   LIFECYCLE(flag, &static_flag);
@@ -524,19 +528,20 @@ int h2_atomic_e2e_qualify(const h2_atomic_qualification_config_t *c,
     h2_pal_mem_free(c->mem, s);
     return init;
   }
-  h2_atomic_store(static_int(), 0);
-  h2_atomic_store(static_uint(), 0);
-  h2_atomic_store(static_u8(), 0);
-  h2_atomic_store(static_u16(), 0);
-  h2_atomic_store(static_u32(), 0);
-  h2_atomic_store(static_size(), 0);
+  h2_atomic_store(h2_atomic_e2e_static_int(), 0);
+  h2_atomic_store(h2_atomic_e2e_static_uint(), 0);
+  h2_atomic_store(h2_atomic_e2e_static_u8(), 0);
+  h2_atomic_store(h2_atomic_e2e_static_u16(), 0);
+  h2_atomic_store(h2_atomic_e2e_static_u32(), 0);
+  h2_atomic_store(h2_atomic_e2e_static_size(), 0);
   int work = run_workers(s, r);
 #define COUNTER(index, kind, member, expected)                                 \
   record(r, index,                                                             \
          work ? work                                                           \
               : (h2_atomic_load(&s->member) == (expected) &&                   \
                          h2_atomic_load(&s->kind##_cas) == (expected) &&       \
-                         h2_atomic_load(static_##kind()) == (expected)         \
+                         h2_atomic_load(h2_atomic_e2e_static_##kind()) ==      \
+                             (expected)                                        \
                      ? 0                                                       \
                      : H2_PAL_ERR_INVALID_STATE))
   COUNTER(18, int, ints, 10000);
