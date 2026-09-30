@@ -364,7 +364,7 @@
   },
   "audit_source_sha256": {
     "Makefile": "d0e62c140a9321a710145fe0a626df37d823bfd7e3b450b8c6118698d83160d7",
-    "guides/apps/e2e.md": "b9e9ee203d7f6205139292575ffc910dffe5c4834ec9b8a7bf487473baaba405",
+    "guides/apps/e2e.md": "74074dc7412a137903ec523b9cdca2ed1b313891411f80e3ad6a461ee7c4a6e2",
     "guides/zh/developing/platform_abstract_layer.md": "6971e6a264dd24f4d9233d51c9797f71e6bd956623ed4b023dd6c9b648ed5129"
   }
 }

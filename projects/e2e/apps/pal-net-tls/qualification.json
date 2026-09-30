@@ -7,7 +7,7 @@
   "full_net_qualified": false,
   "pending": [],
   "source_sha256": {
-    "projects/e2e/apps/pal-net-tls/app/src/h2_pal_net_tls_e2e.c": "9ccbda3a1fc1322fb683f20f93303d41269071e82b30d707d3c2cdf49007175b",
+    "projects/e2e/apps/pal-net-tls/app/src/h2_pal_net_tls_e2e.c": "ff8e9b0d9908805de76dff820b0ce56fd837896a92e1a186eafaf7d2c24954ac",
     "projects/e2e/apps/pal-net-tls/app/include/h2_pal_net_tls_cases.inc": "5ddae599acbe170d91a6da78372dcf6ccfc48cb343228175cbd733741a434535",
     "projects/e2e/libs/pal-net-tls-fixture/fixture.py": "ad9d013e80f5c5c357aa71252961220e119ef63109e8127b56b22de29486199d",
     "projects/e2e/libs/pal-net-tls-device/src/device.c": "fb43ae368cabb463d01f80ca409ecd1ce62d44fe91e6a58e66e6d7b62bd03592",
@@ -15,19 +15,32 @@
     "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_wifi.c": "2e934634a6a60750012c4ff8944e289b5e5b64e5bf0a24fe4f367e07c51dd30c",
     "projects/e2e/apps/pal-net-tls/app/api_coverage.json": "d51bf29ddc1ec0b08d967687922de7677cd615ea4ef61360d6d7b9d9cab349bf",
     "projects/e2e/targets/pkg_tar/pal-net-tls/main.c": "707f8c09b346456ae360e377aa4ce5ba79c8ff2c39f1b9e233fcad598a6096cf",
-    "projects/e2e/targets/pkg_tar/pal-net-tls/run_browser.py": "baf8ab67c5f35463f6d46d4d882eeba5059add016f51577256c17c8d130a9e7d",
+    "projects/e2e/targets/pkg_tar/pal-net-tls/run_browser.py": "a3bf5212f6dcebe19b07a48ce0be299e31db604825c7815fb5528a1dbe544b40",
     "tools/bazel/mobile_e2e.py": "a00c485f3ef20445b3c60a927d2620d12fe27110bfbec5bbe89d2d9fa89f23c0",
     "tools/bazel/mobile_e2e.bzl": "e453f25024f268a062fbe64c5fa855ccfa868b928695201a6656cc3c9720dbcf",
-    "projects/e2e/libs/pal-net-tls-mobile/run_mobile.py": "fbb2f4b209aff35cf84c119c5ac44c1b221ad0fdd12a2cdaadb02ce1dd7f2a04",
-    "projects/e2e/libs/pal-net-tls-mobile/BUILD.bazel": "730d24f7bfc9d11370b43f7bcc65ab42c859bd5f93de2a45af6071db188c4057"
+    "projects/e2e/libs/pal-net-tls-mobile/run_mobile.py": "fe88637d63ec83861acdbcd48aff8ed5de8605d2a255785c8104f02b42243243",
+    "projects/e2e/libs/pal-net-tls-mobile/BUILD.bazel": "730d24f7bfc9d11370b43f7bcc65ab42c859bd5f93de2a45af6071db188c4057",
+    "libs/pal/include/h2/pal/net/h2_pal_net.h": "54acfaaff601c57c846ec5520a7dac9910f4f7040189fdd795e07bed52ef891e",
+    "projects/e2e/apps/pal-net-tls/app/include/h2_pal_net_tls_e2e.h": "22ef20c909510aef99c1c63bae7efa1f47d791803584fc04bd86f3be4d621f4f",
+    "libs/pal/providers/android/pal_core/BUILD.bazel": "e731c2219d4936877e9f00708bcf85ccdf4a6728caa02b9125716b40aef60c58",
+    "libs/pal/providers/android/pal_core/src/h2_android_net.c": "df6da3135a40359c732d4664438554560778478c8cc9b904dc1e807643b23717",
+    "libs/pal/providers/posix/pal_core/src/h2_posix_net.c": "d8a954bad69dd68cfc2c8c952d2f5f7604e91f73c1a87a78433693c5dc6de5f3",
+    "projects/e2e/libs/pal-net-tls-fixture/serve.py": "0a6e5b356f1ce070f012f5bd02c32f871b15a1ffe94b8c97829599c2d554a312",
+    "native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net.c": "35b8f2ee35d014319de5d40a9e3650a8490c0ad338b0823b778776c8dbe588e4",
+    "libs/pal/providers/ios/pal_core/include/h2_ios_net.h": "6aebe3ac94e2bf79d85d3938bc3d1872c1b19bc10d19a252508d6f1142d2bf68",
+    "libs/pal/providers/ios/pal_core/BUILD.bazel": "d41a9e9287092299b01efbedd85022c14b1ac38c2079f875246321556bb8902c",
+    "libs/pal/providers/android/pal_core/include/h2_android_net.h": "154bc0e9ecb3b83a203bb708afe7cb7485251ca1e76dec7d685cd9f71f80f19a",
+    "projects/e2e/libs/pal-net-tls-device/assemble_board.py": "929836fc074f52d0a31e87d1b3a55501da4cd8eeda3f40e9e267649d28587468",
+    "libs/pal/providers/ios/pal_core/src/h2_ios_net.c": "7637fc2daa7993426dc59a90b13e36c3302444d39a4b9d5b37759cb973643111",
+    "libs/pal/providers/wolfssl/src/full/user_settings.h": "08d9e8697463e7d295c4a56c6c2461f3c3a17a6264ea49d8868d6c6bbd3d8a3b"
   },
   "platforms": {
     "macos": {
       "status": "PASS",
       "core_qualified": true,
       "evidence": "evidence/macos/qualified.json",
-      "artifact_sha256": "1b9da4bddb4afe88c451174e37c72fd82d160556e0006945e12dd8e250c5747d",
-      "receipt_sha256": "a5ebfc217fbab088f947dcc31634e75f7e9e72be97082244f2d774bc98fac2bc",
+      "artifact_sha256": "9bd6c729cae04aaa24cc01e8185e22b1bec0d4cdfcfb3d146ff7858faab94563",
+      "receipt_sha256": "07df450a3fd4280910dafee5ecdaf8815a7bf300abac80897d93adcc470352ec",
       "assessment_complete": true
     },
     "wasm": {
@@ -80,44 +93,44 @@
         "cleanup-ledger"
       ],
       "artifact_sha256": "c1a3fcf2625dd43514d3cd15cd75d3052fc8ee5acfa1238d9803e8b9f7f9ac0c",
-      "receipt_sha256": "7971f04e594d2ae7d7497804e559bf04f08ddba4247bcb24de7ec847dcab61ed"
+      "receipt_sha256": "beb11883ca3fef881a16457862a9d580245091380ea160c32f316541b7ddcc77"
     },
     "ios": {
       "status": "PASS",
       "core_qualified": true,
       "evidence": "evidence/ios/qualified.json",
-      "artifact_sha256": "a0768f49a144d8ae318a3418fc0dc7b6248d082d776be8bd35d06a6918409f73",
-      "receipt_sha256": "f29091fa33ebb10bd56b849a8314f3926933eb1dfa9fb81bbda3efedde39b2d0",
+      "artifact_sha256": "31000d464f1578e7f3689303e3d3cc65dc6423cc56555829c1b7e98046fb3fcc",
+      "receipt_sha256": "e0fb06f8596ed795c59fdfbb7ac4a6971c0fc56884515be53cf07618f2e613b3",
       "assessment_complete": true,
       "environment": "evidence/ios/environment.json",
-      "environment_sha256": "72a8af0de3d92d00eb6e807f575b69f5f1a8c3566f20978bf4240983b334fb6e",
+      "environment_sha256": "cc8bbbdfcc2b83d5612db8508ef8a9f2baee9bb9a23cb3b972c719e607c5a22d",
       "suite_sha256": "a2b653b93566a770c74626f6fb1dd94301f1602306f1ef4808e1ddbda9e60802"
     },
     "android": {
       "status": "PASS",
       "core_qualified": true,
       "evidence": "evidence/android/qualified.json",
-      "artifact_sha256": "58e5edad29bfa8c0a9120b1b75dd0045c8226a482f4b42de327e413efc5204c9",
-      "receipt_sha256": "9033542117889767f79a97aecbc1e2788988aea72796b7a6613575915cb20ec2",
+      "artifact_sha256": "d904088e61b3a1ea288e37bb448760a1e1b9b5c785fe610cb7f4e6de03148f78",
+      "receipt_sha256": "ece2bdbc315bbeb6b812009e4544cf3a3bcd3b22639f93d18ad6151be881e3ff",
       "assessment_complete": true,
       "environment": "evidence/android/environment.json",
-      "environment_sha256": "b885dc85de40baed3b2506b3be4259bb718020e1ff8a4412f05bc4db786fd46d",
+      "environment_sha256": "1d1580b6bb78fb830e72c149658469f268a4a826d05a926c2290c4b67ac51314",
       "suite_sha256": "a2b653b93566a770c74626f6fb1dd94301f1602306f1ef4808e1ddbda9e60802"
     },
     "devkit": {
       "status": "PASS",
       "core_qualified": true,
       "evidence": "evidence/devkit/qualified.json",
-      "artifact_sha256": "017acd5b9543f72cd3bacb56d7d95e1684e32771f348f13822267f57be9c1533",
-      "receipt_sha256": "178e448d8f48b1d03e370185ee072fd9eb989f12bb0dc3aa4bcbfab8238a56d2",
+      "artifact_sha256": "cfd3dd55865f18aff3e2a1bdeaae46344b7d7b54d74fde767989654d5e4bb2d9",
+      "receipt_sha256": "6d703bbeae3b9898028af367a0d5e6e1da920c275305acdfebe8d4c075e51541",
       "assessment_complete": true
     },
     "bk7258": {
       "status": "PASS",
       "core_qualified": true,
       "evidence": "evidence/bk7258/qualified.json",
-      "artifact_sha256": "a1c58273781d82f81ca5a0e30ee2b0eca52fa2672b49e0d39a5a48e4122c4d4d",
-      "receipt_sha256": "2200b0391ab24c823777693a2c136a136e5717cc3105c791ab2250d9da3188b3",
+      "artifact_sha256": "7b490bd65107cd7eaea4b2a824ba32417ec7ace07a089b34835cc28d5f8452e3",
+      "receipt_sha256": "5ce740d8ea2da71a44c8cc5335f7b043361ba4c19c0dd87982dca74773eb405c",
       "assessment_complete": true
     }
   },

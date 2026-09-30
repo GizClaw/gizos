@@ -73,7 +73,11 @@ py_test(
     ],
     legacy_create_init = 0,
     main = "tests/test_board_tls_certificate_time.py",
-    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )
 
 py_test(
@@ -85,7 +89,11 @@ py_test(
     ],
     legacy_create_init = 0,
     main = "tests/test_bk_tcp_recv_timeout.py",
-    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
 )
 
 exports_files(["assemble_board.py"])

@@ -4,8 +4,8 @@
       "name": "devkit-pal-net-tls-esp32s3.update.tar.zlib",
       "operation": "managed-install",
       "release_suffix": ".update.tar.zlib",
-      "sha256": "017acd5b9543f72cd3bacb56d7d95e1684e32771f348f13822267f57be9c1533",
-      "size": 987732
+      "sha256": "cfd3dd55865f18aff3e2a1bdeaae46344b7d7b54d74fde767989654d5e4bb2d9",
+      "size": 987771
     }
   ],
   "board": "devkit",
@@ -15,32 +15,32 @@
     {
       "name": "firmware.elf",
       "operation": "native-debug-or-flash",
-      "sha256": "c398c4d9796503c984f0cfb1edb07bd27c5633b4f1a95740b7ef6ae9e2eb765b",
+      "sha256": "55feb3f17452ed33936d28ddac111a589edd037f136cb35ee45dc4d5412ebadd",
       "size": 14131492
     },
     {
       "name": "firmware.map",
       "operation": "native-debug-or-flash",
-      "sha256": "842bad43bf3b8151bb89a6d9f6726ba80c4ec1e71626cfdf4dae9475cfc7826d",
-      "size": 13206503
+      "sha256": "d54c380d7ca2ce38b37e2d1ad584826637b428991c5235c6439f6c0a8b4c88ae",
+      "size": 13206542
     },
     {
       "name": "app.bin",
       "operation": "native-debug-or-flash",
-      "sha256": "1a2ae7d7e3bd45f168092a5b9193463fe632ab61445992220c666b1864d7b75d",
-      "size": 1532928
+      "sha256": "4858379bc7b917d61c0df707c7af86fc72198d1d80203643214c3abd658d28b1",
+      "size": 1532944
     },
     {
       "name": "bootloader.bin",
       "operation": "native-debug-or-flash",
-      "sha256": "c39421365feb3257bb41083b7d3b533c3a197f37ef98102bc3867909bc7fa63a",
+      "sha256": "263370d8b54cd83379915f730a1d950ee1ffd4db60e981df9f63c80b8a73f8b4",
       "size": 21328
     },
     {
       "name": "combined_factory.bin",
       "operation": "native-debug-or-flash",
-      "sha256": "6a1a84024aee6cc0bc24ee0304718418b3c0997a4d614465e21c1a54d473ee26",
-      "size": 1664000
+      "sha256": "8a46707bd0cd1e26376ec1feca1c35cfaef526b3601b89534e4e4989aa4b3b4e",
+      "size": 1664016
     },
     {
       "name": "partition-table.bin",
@@ -58,14 +58,14 @@
   "package_manifest": {
     "board": "devkit",
     "format": 1,
-    "image_sha256": "1a2ae7d7e3bd45f168092a5b9193463fe632ab61445992220c666b1864d7b75d",
-    "image_size": 1532928,
+    "image_sha256": "4858379bc7b917d61c0df707c7af86fc72198d1d80203643214c3abd658d28b1",
+    "image_size": 1532944,
     "role": "app",
     "target": "esp32s3",
-    "version": "pal-net-tls-esp-20261001-r11"
+    "version": "pal-net-tls-esp-20261001-r12"
   },
   "platform": "esp",
   "role": "app",
   "target": "esp32s3",
-  "version": "pal-net-tls-esp-20261001-r11"
+  "version": "pal-net-tls-esp-20261001-r12"
 }
