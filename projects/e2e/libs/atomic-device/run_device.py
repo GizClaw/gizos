@@ -44,8 +44,13 @@ def main():
     assert len(ids)==28 and len(set(ids))==28
     original=Path(package).read_bytes()
     with tarfile.open(fileobj=io.BytesIO(zlib.decompress(original))) as tar:
-        member=next(m for m in tar.getmembers() if m.name.endswith('manifest.json'))
-        manifest=json.load(tar.extractfile(member))
+        manifest=dict(line.split('=',1) for line in tar.extractfile('manifest').read().decode().splitlines() if line)
+        image_members=[m for m in tar.getmembers() if m.name.startswith('app/') and m.isfile()]
+        assert len(image_members)==1, 'managed App image'
+        image_bytes=tar.extractfile(image_members[0]).read()
+        assert manifest.get('role')=='app' and manifest.get('target')==target
+        assert hashlib.sha256(image_bytes).hexdigest()==manifest['image_sha256']
+        assert len(image_bytes)==int(manifest['image_size'])
     version=manifest['version']
     output=Path(os.environ['TEST_UNDECLARED_OUTPUTS_DIR']);output.mkdir(exist_ok=True,parents=True)
     # Native CLI mounts /tmp and home. Keep readable CLI payloads under /tmp.
