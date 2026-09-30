@@ -18,6 +18,15 @@ class BootLedgerTest(unittest.TestCase):
     def test_new_boot_excludes_old_replay(self):
         text=self.valid()+self.valid().replace('a'*32,'b'*32)
         self.assertEqual(boot_ledger(text,self.ids,'r1','a'*32)['execution'],'b'*32)
+    def test_partial_replay_waits_for_complete_cycle(self):
+        first=self.valid().split('H2_ATOMIC_REPORT')[0]
+        self.assertEqual(boot_ledger(first+self.valid(),self.ids,'r1')['passed'],56)
+    def test_case_rows_cannot_cross_execution_identity(self):
+        first=self.valid().split('H2_ATOMIC_REPORT')[0]
+        final=self.valid().replace('a'*32,'b'*32)
+        final='\n'.join(line for line in final.splitlines()
+                        if 'H2_ATOMIC_CASE' not in line)
+        with self.assertRaises(AssertionError):boot_ledger(first+final,self.ids,'r1')
     def test_failed_case_is_rejected(self):
         with self.assertRaises(AssertionError):boot_ledger(self.valid().replace('"status": "PASS"','"status": "FAIL"',1),self.ids,'r1')
     def test_unjoined_worker_is_rejected(self):

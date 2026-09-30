@@ -123,7 +123,9 @@ def main():
             assert before_coredump.get('blank')=='1', 'inconsistent empty dump'
 
         if not resume:run('send','send','--file',str(image),timeout=300)
-        upgrade=run('upgrade','reboot','upgrade','--monitor',monitor=True)
+        # BK's managed flash installation of the full AP/CP image can take
+        # several minutes. This is a transport/flash bound, not worker timing.
+        upgrade=run('upgrade','reboot','upgrade','--monitor',timeout=600,monitor=True)
         first=boot_ledger(upgrade,ids,version)
         normal=run('normal-boot','reboot','app','--monitor',monitor=True,previous=first['execution'])
         second=boot_ledger(normal,ids,version,first['execution'])
