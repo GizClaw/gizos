@@ -11,6 +11,7 @@ idf_component_register(
   SRCS ${H2_MAIN_SOURCES}
   INCLUDE_DIRS
     "${H2_REPO_ROOT}/projects/e2e/apps/atomic/app/include"
+    "${H2_REPO_ROOT}/projects/e2e/libs/atomic-device/include"
     "${H2_REPO_ROOT}/libs/atomic/include"
     "${H2_REPO_ROOT}/libs/pal/include"
     "${H2_REPO_ROOT}/libs/runtime/include"
@@ -29,3 +30,6 @@ idf_component_register(
     h2_pal_core)
 
 target_compile_options(${COMPONENT_LIB} PRIVATE -std=gnu11 -Wall -Wextra -Werror)
+
+file(STRINGS "$ENV{H2_FIRMWARE_VERSION_FILE}" H2_ATOMIC_IMAGE_VERSION LIMIT_COUNT 1)
+target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_ATOMIC_VERSION="${H2_ATOMIC_IMAGE_VERSION}")

@@ -67,25 +67,34 @@ int h2_atomic_e2e_run(const h2_pal_mem_api_t *mem,
   int rc = backend->create(mem, psram, &state);
   if (rc != H2_PAL_OK)
     return rc;
-  h2_atomic_uint_t ready = {0};
-  h2_atomic_bool_t go = {0};
-  if (concurrent && (h2_atomic_uint_init(&ready, 0u) != H2_ATOMIC_OK ||
-                     h2_atomic_bool_init(&go, false) != H2_ATOMIC_OK)) {
-    h2_atomic_uint_destroy(&ready);
-    h2_atomic_bool_destroy(&go);
+  typedef struct run_lifetime {
+    h2_atomic_uint_t ready;
+    h2_atomic_bool_t go;
+    worker_context_t workers[2];
+  } run_lifetime_t;
+  run_lifetime_t *lifetime = h2_pal_mem_alloc(mem, sizeof(*lifetime));
+  if (lifetime == NULL) {
     backend->destroy(mem, psram, state);
     return H2_PAL_ERR_NO_MEMORY;
   }
-  worker_context_t workers[2] = {
-      {.backend = backend, .state = state, .iterations = iterations_per_worker,
-       .ready = concurrent ? &ready : NULL, .go = concurrent ? &go : NULL,
-       .time = time, .current_core = current_core, .core_user = core_user,
-       .observed_core = -1},
-      {.backend = backend, .state = state, .iterations = iterations_per_worker,
-       .ready = concurrent ? &ready : NULL, .go = concurrent ? &go : NULL,
-       .time = time, .current_core = current_core, .core_user = core_user,
-       .observed_core = -1},
-  };
+  memset(lifetime, 0, sizeof(*lifetime));
+  h2_atomic_uint_t *ready = &lifetime->ready;
+  h2_atomic_bool_t *go = &lifetime->go;
+  if (concurrent && (h2_atomic_uint_init(ready, 0u) != H2_ATOMIC_OK ||
+                     h2_atomic_bool_init(go, false) != H2_ATOMIC_OK)) {
+    h2_atomic_uint_destroy(ready);
+    h2_atomic_bool_destroy(go);
+    backend->destroy(mem, psram, state);
+    h2_pal_mem_free(mem, lifetime);
+    return H2_PAL_ERR_NO_MEMORY;
+  }
+  for (unsigned i = 0; i < 2; ++i)
+    lifetime->workers[i] = (worker_context_t){
+        .backend = backend, .state = state, .iterations = iterations_per_worker,
+        .ready = concurrent ? ready : NULL, .go = concurrent ? go : NULL,
+        .time = time, .current_core = current_core, .core_user = core_user,
+        .observed_core = -1};
+  worker_context_t *workers = lifetime->workers;
   h2_pal_task_t *handles[2] = {NULL, NULL};
   uint64_t start_us = 0u;
   uint64_t end_us = 0u;
@@ -103,18 +112,18 @@ int h2_atomic_e2e_run(const h2_pal_mem_api_t *mem,
   }
   if (concurrent && rc == H2_PAL_OK) {
     for (unsigned retry = 0u; retry < 5000u; ++retry) {
-      if (h2_atomic_uint_load(&ready, H2_ATOMIC_SEQ_CST) == 2u)
+      if (h2_atomic_uint_load(ready, H2_ATOMIC_SEQ_CST) == 2u)
         break;
       if (pump != NULL) pump(pump_user);
       (void)h2_pal_time_sleep_ms(time, 1u);
     }
-    if (h2_atomic_uint_load(&ready, H2_ATOMIC_SEQ_CST) != 2u)
+    if (h2_atomic_uint_load(ready, H2_ATOMIC_SEQ_CST) != 2u)
       rc = H2_PAL_ERR_TIMEOUT;
     if (rc == H2_PAL_OK)
       rc = h2_pal_time_get_monotonic_us(time, &start_us);
   }
   if (concurrent)
-    h2_atomic_bool_store(&go, true, H2_ATOMIC_RELEASE);
+    h2_atomic_bool_store(go, true, H2_ATOMIC_RELEASE);
   for (unsigned i = 0u; i < 2u; ++i) {
     if (handles[i] != NULL) {
       const int join_rc = join_worker(task, time, handles[i], pump, pump_user);
@@ -137,9 +146,10 @@ int h2_atomic_e2e_run(const h2_pal_mem_api_t *mem,
   out_result->worker_core[1] = workers[1].observed_core;
   backend->addresses(state, &out_result->wrapper_address,
                      &out_result->storage_address);
-  h2_atomic_uint_destroy(&ready);
-  h2_atomic_bool_destroy(&go);
+  h2_atomic_uint_destroy(ready);
+  h2_atomic_bool_destroy(go);
   backend->destroy(mem, psram, state);
+  h2_pal_mem_free(mem, lifetime);
   if (rc != H2_PAL_OK)
     return rc;
   return out_result->incremented == out_result->expected &&

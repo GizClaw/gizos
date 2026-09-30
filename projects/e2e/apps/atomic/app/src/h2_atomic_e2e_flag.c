@@ -89,6 +89,7 @@ int h2_atomic_flag_e2e_run(const h2_pal_mem_api_t *mem,
     rc = h2_pal_task_start(task, &options, flag_worker_entry, &workers[i],
                            &handles[i]);
     if (rc != H2_PAL_OK) break;
+    ++out_result->workers_started;
   }
   for (unsigned i = 0u; i < 2u; ++i) {
     if (handles[i] == NULL) continue;
@@ -99,8 +100,11 @@ int h2_atomic_flag_e2e_run(const h2_pal_mem_api_t *mem,
         break;
       (void)h2_pal_time_sleep_ms(time, 1u);
     }
-    if (join_rc != H2_PAL_OK)
+    if (join_rc != H2_PAL_OK) {
+      out_result->teardown = join_rc;
       return join_rc; /* Keep heap worker state and shared flag alive. */
+    }
+    ++out_result->workers_joined;
   }
   for (unsigned i = 0u; i < 2u; ++i) {
     out_result->operations[i] = workers[i].operations;

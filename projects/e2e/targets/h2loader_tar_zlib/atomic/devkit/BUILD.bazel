@@ -1,3 +1,4 @@
+load("//projects/e2e/libs/atomic-device:device_test.bzl", "atomic_device_test")
 load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_esp_idf_firmware")
 load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
 load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
@@ -12,8 +13,9 @@ esp_target_task_policy(
     graph = [":launcher"],
     policies = [
         "atomic/e2e default",
-        "atomic/e2e/core0 4 0 4096 internal",
-        "atomic/e2e/core1 4 1 4096 internal",
+        "atomic/e2e/runner 4 0 65536 psram",
+        "atomic/e2e/core0 4 0 8192 internal",
+        "atomic/e2e/core1 4 1 8192 internal",
         "atomic/flag/high 9 0 4096 internal",
         "atomic/flag/low 4 0 4096 internal",
         "h2loader/appcmd 8 0 4096 psram",
@@ -47,6 +49,7 @@ firmware_lib_component(
         "//libs/pixa",
         "//libs/runtime",
         "//projects/e2e/apps/atomic/app:atomic_e2e",
+        "//projects/e2e/libs/atomic-device:runner",
         "//projects/e2e/apps/atomic/app:c11_comparison",
     ],
 )
@@ -95,3 +98,5 @@ h2loader_tar_zlib(
     role = "app",
     target = "esp32s3",
 )
+
+atomic_device_test(name="device_test", package=":package", target="esp32s3")

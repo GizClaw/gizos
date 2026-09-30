@@ -48,10 +48,10 @@ cc_library(
         "include",
     ],
     target_compatible_with = select({
-        "//tools/bazel/platforms:is_bk3633": ["@platforms//:incompatible"],
-        "//tools/bazel/platforms:is_bk7258": ["@platforms//:incompatible"],
-        "//tools/bazel/platforms:is_esp32p4": ["@platforms//:incompatible"],
-        "//tools/bazel/platforms:is_esp32s3": ["@platforms//:incompatible"],
+        "//tools/bazel/platforms:target_bk3633": ["@platforms//:incompatible"],
+        "//tools/bazel/platforms:target_bk7258": ["@platforms//:incompatible"],
+        "//tools/bazel/platforms:target_esp32p4": ["@platforms//:incompatible"],
+        "//tools/bazel/platforms:target_esp32s3": ["@platforms//:incompatible"],
         "//conditions:default": [],
     }),
     deps = [

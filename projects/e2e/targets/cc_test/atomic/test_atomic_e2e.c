@@ -1,11 +1,18 @@
 #include "h2_atomic_e2e.h"
 #include "h2_desktop_platform.h"
 #include "h2/pal/core/h2_pal_errors.h"
-#include <assert.h>
 #include <inttypes.h>
 #include <stdio.h>
 
 int main(void) {
+  const h2_atomic_qualification_config_t config = {
+      .mem = h2_desktop_platform_default_allocator(),
+      .task = h2_desktop_platform_task_api(),
+      .time = h2_desktop_platform_time_api(), .expected_core = {-1, -1}};
+  h2_atomic_qualification_result_t qualification;
+  int qualification_rc = h2_atomic_e2e_qualify(&config, &qualification);
+  h2_atomic_e2e_print("macos", "native", &qualification);
+  if (qualification_rc) return 1;
   const h2_atomic_e2e_backend_t *backends[] = {
       h2_atomic_e2e_h2_backend(), h2_atomic_e2e_c11_backend()};
   for (unsigned sample = 0; sample < 3u; ++sample) {
@@ -21,7 +28,7 @@ int main(void) {
              backends[(sample + i) % 2u]->name, sample,
              (unsigned)result.concurrent, result.expected, result.incremented,
              result.compared, result.elapsed_us, rc);
-      assert(rc == H2_PAL_OK);
+      if (rc != H2_PAL_OK) return 1;
     }
   }
   h2_atomic_flag_e2e_result_t flags;
@@ -34,8 +41,8 @@ int main(void) {
          (void *)flags.dynamic_wrapper, flags.operations[0],
          flags.operations[1], flags.busy_observations[0],
          flags.busy_observations[1], flag_rc);
-  assert(flag_rc == H2_PAL_OK);
-  assert(flags.static_storage[0] != flags.static_storage[1]);
-  assert(flags.dynamic_wrapper != 0u && flags.dynamic_storage != 0u);
+  if (flag_rc != H2_PAL_OK) return 1;
+  if (flags.static_storage[0] == flags.static_storage[1]) return 1;
+  if (flags.dynamic_wrapper == 0u || flags.dynamic_storage == 0u) return 1;
   return 0;
 }

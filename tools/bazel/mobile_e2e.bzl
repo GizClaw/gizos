@@ -87,7 +87,7 @@ def mobile_e2e_suite(name, package, report, registry, registry_pattern, expected
         target_compatible_with = HOST_OR_MOBILE_TOOL_COMPATIBILITY,
     )
 
-def mobile_e2e_test(name, platform, suite, app, sdk, env_inherit = [], timeout = "moderate"):
+def mobile_e2e_test(name, platform, suite, app, sdk, env_inherit = [], timeout = "moderate", tags = []):
     """Bind a declared suite to a packaged consumer of the same Python main."""
     if platform not in ["ios", "android"]:
         fail("mobile E2E platform must be ios or android")
@@ -104,7 +104,7 @@ def mobile_e2e_test(name, platform, suite, app, sdk, env_inherit = [], timeout =
         deps = [suite],
         env_inherit = (["H2_IOS_SIMULATOR_UDID", "DEVELOPER_DIR"] if platform == "ios" else ["H2_ANDROID_SERIAL", "ANDROID_HOME", "ANDROID_NDK_HOME"]) + env_inherit,
         legacy_create_init = False,
-        tags = ["manual"],
+        tags = ["manual"] + tags,
         local = True,
         timeout = timeout,
         target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY if platform == "ios" else ANDROID_ARM64_PACKAGE_ARTIFACT_COMPATIBILITY,

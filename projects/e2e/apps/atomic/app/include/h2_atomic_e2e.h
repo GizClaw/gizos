@@ -43,6 +43,8 @@ typedef struct h2_atomic_flag_e2e_result {
   unsigned operations[2];
   unsigned busy_observations[2];
   int worker_core[2];
+  unsigned workers_started, workers_joined;
+  int teardown;
 } h2_atomic_flag_e2e_result_t;
 
 /**
@@ -64,6 +66,43 @@ int h2_atomic_flag_e2e_run(const h2_pal_mem_api_t *mem,
                            unsigned iterations, int (*current_core)(void *),
                            void *core_user,
                            h2_atomic_flag_e2e_result_t *out_result);
+
+enum { H2_ATOMIC_QUALIFICATION_CASE_COUNT = 28 };
+typedef struct h2_atomic_qualification_config {
+  const h2_pal_mem_api_t *mem;
+  const h2_pal_task_api_t *task;
+  const h2_pal_time_api_t *time;
+  void (*pump)(void *);
+  void *pump_user;
+  int (*current_core)(void *);
+  void *core_user;
+  /* -1 means no CPU pinning requirement. The callback still records identity. */
+  int expected_core[2];
+  bool require_distinct_workers;
+  /* Board qualification checks every backing while it is still live. */
+  int (*check_placement)(uintptr_t wrapper, uintptr_t storage,
+                         bool static_value, void *user);
+  void *placement_user;
+} h2_atomic_qualification_config_t;
+typedef struct h2_atomic_qualification_case {
+  const char *id;
+  int rc;
+  unsigned status; /* 0 NOT_RUN, 1 PASS, 2 FAIL */
+} h2_atomic_qualification_case_t;
+typedef struct h2_atomic_qualification_result {
+  h2_atomic_qualification_case_t cases[H2_ATOMIC_QUALIFICATION_CASE_COUNT];
+  unsigned passed, failed, not_run;
+  unsigned workers_started, workers_joined;
+  int worker_core[2];
+  int teardown;
+  bool complete, qualified;
+} h2_atomic_qualification_result_t;
+/* Non-copyable atomic storage is retired only after both tasks have joined.
+ * A failed bounded join retains heap state and reports teardown failure. */
+int h2_atomic_e2e_qualify(const h2_atomic_qualification_config_t *config,
+                         h2_atomic_qualification_result_t *result);
+void h2_atomic_e2e_print(const char *platform, const char *placement,
+                         const h2_atomic_qualification_result_t *result);
 
 const h2_atomic_e2e_backend_t *h2_atomic_e2e_h2_backend(void);
 /* Deliberate test-only direct C11 comparison, linked separately. */

@@ -1,78 +1,79 @@
 # Atomic E2E
 
-The portable app runs the same two-worker workload through `h2_atomic` and
-an explicit C11 comparison backend. Each worker performs `fetch_add` and
-compare-exchange increments. The test checks both final counters and prints
-elapsed microseconds. The C11 backend exists only in this test app.
+Atomic is an independent library, outside PAL. The portable App uses PAL Mem,
+Task and Time only to arrange actual concurrent work and collect results.
 
-The same app also exercises two independent file-static `h2_atomic` flags and
-one dynamically initialized flag whose wrapper is allocated with the supplied
-allocator. On DevKit the wrapper uses PSRAM while its provider storage and
-both ordinary file-static backings must be in internal RAM. Two workers pinned
-to CPU0 run at priorities 4 and 9, exercising preemption and bounded joins.
-`H2_ATOMIC_FLAG_E2E` reports addresses, operations, observed cores and a
-canonical verdict. A failed flag verdict contributes to `aggregate_failures`.
+The mandatory registry contains 28 cases and exercises all 76 typed functions
+in `libs/atomic/include/h2_atomic.h`. `api_coverage.json` maps each function to
+its dynamic and file-static cases. Every integer type, bool, pointer and flag
+checks initialization, duplicate initialization, destruction and reuse;
+file-static destruction preserves storage. Integer cases include load, store,
+exchange, successful and failed CAS (including replacement of `expected`),
+add, subtract, OR, AND and the C generic conveniences. All valid load/store,
+RMW and CAS-failure orders are exercised.
 
-On 2026-09-25, DevKit UID `9888e0115c52` reported `verdict=PASS`: the two
-static backings were independent internal addresses, the dynamic wrapper was
-in PSRAM with internal provider storage, and both CPU0 workers completed
-20,000 operations with zero unexpected busy observations. All six `h2_atomic`
-counter cases passed. `H2_ATOMIC_E2E_READY aggregate_failures=3` reflected
-only the three intentionally failing direct-C11 PSRAM comparisons.
+Two real tasks cross a ready/go barrier before contention. They verify dynamic
+and static integer counts, CAS counts, flag exclusion of a plain-data critical
+section, and release/acquire publication of plain payload through bool and
+pointer atomics. Two independent static flags and a dynamically allocated flag
+are also exercised. Ten tasks must start and join during each qualification.
+A failed bounded join retains heap-owned worker state, reports teardown failure,
+and cannot qualify. No failed or unsupported H2Atomic operation counts as PASS.
 
-Run on Desktop:
+ESP32-S3 and BK7258 run every case with internal wrappers and with PSRAM wrappers;
+backings must remain in internal memory. The board callback observes the actual
+wrapper/backing addresses before destruction. CPU0/CPU1 observations and PAL
+resource counts are checked. The DevKit additionally checks independently stored
+static flags with different-priority CPU0 workers and 20,000 operations each.
+
+Direct C11 is a separate comparison, exercised only in supported storage.
+On Xtensa the direct-C11 PSRAM experiment is unsupported and is not executed.
+The old 2026-09-25 DevKit run passed six H2Atomic counter samples but lost direct
+C11 PSRAM counts (`aggregate_failures=3`); its unconditional confirmation was
+not a full qualification. Current board launchers confirm only after every
+mandatory case and cleanup succeeds.
+
+Run the desktop and actual Chromium shared-memory Worker tests directly:
 
 ```sh
-bazel test --config=macos //projects/e2e/targets/cc_test/atomic:atomic_e2e_test
+bazel test --config=macos_arm64 \
+  //projects/e2e/targets/cc_test/atomic:atomic_e2e_test \
+  //projects/e2e/targets/pkg_tar/atomic:atomic_browser_test
 ```
 
-Run in WebAssembly:
+The existing Node `atomic_wasm_test` remains supplementary. Browser qualification
+requires two distinct pthread Worker identities, shared Wasm memory, every
+mandatory case and both supported comparison counters.
+
+The iOS and Android consumers use the shared mobile runner. Their BUILD declaration
+owns package identities, the exact registry and result schema. The report requires
+28/28, 10/10 joined tasks, equal resource snapshots and successful provider shutdown.
+These are simulator/emulator qualification, separate from physical phone evidence:
 
 ```sh
-bazel test --config=macos //projects/e2e/targets/pkg_tar/atomic:atomic_wasm_test
+H2_IOS_SIMULATOR_UDID=<booted-simulator-udid> bazel test --config=ios_sim_arm64 \
+  //projects/e2e/targets/ios_application/atomic:ios_atomic_simulator_test
+ANDROID_HOME=<sdk> ANDROID_NDK_HOME=<ndk> H2_ANDROID_SERIAL=<booted-emulator-serial> \
+  bazel test --config=android_arm64 \
+  //projects/e2e/targets/android_binary/atomic:android_atomic_simulator_test
 ```
 
-The Web launcher uses pthread Workers and shared Wasm memory. It runs both implementations' concurrent cases and reports `concurrent=PASS`, including 20,000 increments and compare/exchange updates per backend. This remains an independent Atomic App; Atomic is not a PAL capability.
-
-Build the managed ESP32-S3 DevKit App package:
+Native fixtures require an explicitly handed-off port and UID. Never globally
+scan while another suite owns a board. After loading the pinned SDK environment,
+run the direct test with host interpreter/test toolchains selected:
 
 ```sh
-bazel build --config=esp32s3 \
-  //projects/e2e/targets/h2loader_tar_zlib/atomic/devkit:package
+H2_ATOMIC_DEVICE_PORT=<port> H2_ATOMIC_DEVICE_UID=<uid> \
+  bazel test --config=esp32s3 \
+  --extra_toolchains=//projects/e2e/libs/atomic-device:host_python_toolchain \
+  --extra_toolchains=//tools/bazel/platforms:macos_arm64_test_toolchain \
+  --//tools/bazel:firmware_version=<unique-version> \
+  //projects/e2e/targets/h2loader_tar_zlib/atomic/devkit:device_test
 ```
 
-Install the `.update.tar.zlib` package through the DevKit's H2Loader command
-transport and run `reboot upgrade --monitor`. The ESP app pins its workers to
-CPU0 and CPU1, synchronizes their start, and runs each backend three times in
-internal RAM (100,000 operations of each kind per worker) and PSRAM (20,000
-operations of each kind per worker). It prints the observed cores, counters,
-CAS retry failures, wrapper and storage addresses, memory placement checks,
-elapsed time, and verdict for every run. The C11 atomic values are in PSRAM
-for PSRAM runs; the `h2_atomic` wrappers are in PSRAM while their provider
-storage is in internal RAM. A failed comparison is logged and included in
-`H2_ATOMIC_E2E_READY aggregate_failures=...`; the app still confirms its
-H2Loader installation. Verify `status` reports the same device UID,
-`active_role=app`, partition 2, the package version, and `stage_valid=0`.
-Timing compares the platform's two implementations under this workload; it is
-not a general atomic performance benchmark.
-
-On DevKit UID `9888e0115c52` with ESP-IDF 6.0.3, the internal RAM runs passed
-for both backends. All three PSRAM `h2_atomic` runs reached the expected
-40,000 increments and 40,000 compare-exchange increments. All three PSRAM
-C11 runs failed with lost counts. For example, one run ended with 28,533 and
-24,679 respectively against the expected 40,000; both workers were observed
-on separate cores and the C11 state address was verified as PSRAM.
-
-After switching the ESP provider to C11 operations on DIRAM-allocated storage
-and enabling hardware atomics for that provider source, the same DevKit again
-passed all six `h2_atomic` cases and failed all three direct-C11-in-PSRAM
-cases. The E2E backends now both allocate through the same placement allocator
-and use strong CAS with the same retry limits. In the final run, internal-RAM
-`h2_atomic` took 69.3–69.8 ms versus 23.0–24.8 ms for direct C11. For the
-PSRAM-wrapper case, `h2_atomic` took 13.9 and 14.2 ms in two samples; one
-sample was a 112.3 ms scheduling outlier. All three returned the expected
-40,000/40,000 counts. The earlier global-critical-section provider took
-86.5–87.0 ms in this smaller workload. Disassembly confirms that the final
-ESP provider uses the S32C1I hardware atomic instruction; its API still adds
-an out-of-line call and storage-pointer lookup per operation. These figures
-describe the full E2E workload, not an isolated instruction benchmark.
+Use `--config=bk7258` and the `atomic/bk7258_v3_202405:device_test` label for BK.
+The test invokes H2Loader, never Bazel: it verifies the starting UID and empty
+Stage, saves P1/coredump identities, transfers the declared package, validates
+56/56 on upgrade and independent App reboot, and checks confirmation, package
+identity, cleanup, P1, Stage and unchanged actual coredump bytes. All live test
+labels use `external`; build caches remain enabled while test execution is fresh.
