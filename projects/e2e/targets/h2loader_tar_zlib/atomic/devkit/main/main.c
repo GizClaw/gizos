@@ -139,13 +139,13 @@ void app_main(void) {
   rc = h2_esp_board_runtime_config(&c);
   if (rc)
     fail("board", rc);
-  rc = h2_esp_h2loader_app_commands_prepare_serial(&c, "atomic-e2e", 1, 4);
+  rc = h2_esp_h2loader_app_commands_prepare_serial(&c, "atomic-e2e", 1, 3);
   if (rc)
     fail("prepare", rc);
   rc = h2_runtime_init(&c, &runtime);
   if (rc)
     fail("runtime", rc);
-  rc = h2_esp_h2loader_app_commands_start(runtime, "atomic-e2e", 1, 4);
+  rc = h2_esp_h2loader_app_commands_start(runtime, "atomic-e2e", 1, 3);
   if (rc)
     fail("commands", rc);
   const h2_pal_task_options_t options = {.name = "atomic/e2e/runner",
