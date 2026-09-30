@@ -11195,7 +11195,7 @@ static void test_conversation_downlink_counters(void) {
   assert(h2_gizclaw_service_media_write_opus(service, NULL, 0u) == H2_PAL_OK);
   assert_downlink_counters(service, 2u, 0u, 0u, 0u);
   assert(h2_gizclaw_test_downlink_frames(service) == 2u);
-  h2_gizclaw_conversation_downlink_flush_internal(service);
+  h2_gizclaw_conversation_downlink_interrupt_internal(service);
   h2_gizclaw_conversation_release(conversation);
   assert_downlink_counters(service, 2u, 0u, 0u, 0u);
   assert(h2_gizclaw_conversation_create(
@@ -11209,7 +11209,8 @@ static void test_conversation_downlink_counters(void) {
 
 /* Downlink policy without a running worker: packets are dropped while
  * another request owns the Track, the 32-slot ring then fills and refuses
- * further packets, and a release flush empties it. */
+ * further packets, and an interrupt empties it and drops what follows until
+ * the next downstream audio BOS. */
 static void test_conversation_downlink_policy(void) {
   test_env_t env;
   h2_gizclaw_service_t *service = create_service(&env, 2u);
@@ -11227,15 +11228,15 @@ static void test_conversation_downlink_policy(void) {
                    (struct h2_gizclaw_speech_context *)(uintptr_t)1u);
     assert(h2_pal_mutex_unlock(service->config.sync, service->mutex) ==
            H2_PAL_OK);
-    /* Even with a hold, Track ownership is the first rejection reason. */
-    h2_gizclaw_conversation_downlink_hold_internal(service);
+    /* Even while closed, Track ownership is the first rejection reason. */
+    h2_gizclaw_conversation_downlink_interrupt_internal(service);
     for (unsigned i = 0u; i < 40u; ++i)
       assert(h2_gizclaw_service_media_write_opus(service, packet,
                                                  sizeof(packet)) == H2_PAL_OK);
     assert_downlink_counters(service, 40u * (owner + 1u),
                              40u * (owner + 1u), 0u, 0u);
     assert(h2_gizclaw_test_downlink_frames(service) == 0u);
-    h2_gizclaw_conversation_downlink_bos_internal(service);
+    h2_gizclaw_conversation_downlink_bos_internal(service, "reply-1");
     assert(h2_pal_mutex_lock(service->config.sync, service->mutex) == H2_PAL_OK);
     service->audio_play = NULL;
     h2_atomic_store(&service->speech_request, NULL);
@@ -11251,11 +11252,17 @@ static void test_conversation_downlink_policy(void) {
          H2_PAL_ERR_WOULD_BLOCK);
   assert_downlink_counters(service, 113u, 80u, 0u, 1u);
   assert(h2_gizclaw_test_downlink_frames(service) == 32u);
-  h2_gizclaw_conversation_downlink_flush_internal(service);
+  h2_gizclaw_conversation_downlink_interrupt_internal(service);
   assert_downlink_counters(service, 113u, 80u, 0u, 1u);
   assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
          H2_PAL_OK);
-  assert_downlink_counters(service, 114u, 80u, 0u, 1u);
+  assert_downlink_counters(service, 114u, 80u, 1u, 1u);
+  h2_gizclaw_conversation_downlink_bos_internal(service, "reply-2");
+  assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
+         H2_PAL_OK);
+  assert_downlink_counters(service, 115u, 80u, 1u, 1u);
+  /* frames counts accepted packets over the downlink's life. */
+  assert(h2_gizclaw_test_downlink_frames(service) == 33u);
   assert(h2_gizclaw_conversation_downlink_writes_internal(service) == 0u);
   h2_gizclaw_conversation_release(conversation);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
@@ -11274,8 +11281,22 @@ static gzc_peer_event_t downstream_bos(int kind, const char *label,
   return event;
 }
 
-/* A press drops downstream audio until the next downstream audio BOS. Text
- * and transcript BOS and our own input's BOS keep it dropped. */
+static gzc_peer_event_t downstream_eos(int kind, const char *label,
+                                       const char *stream_id) {
+  gzc_peer_event_t event = {0};
+  event.type = gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS;
+  event.payload.eos.kind = kind;
+  snprintf(event.payload.eos.label, sizeof(event.payload.eos.label), "%s",
+           label);
+  snprintf(event.payload.eos.stream_id, sizeof(event.payload.eos.stream_id),
+           "%s", stream_id);
+  return event;
+}
+
+/* An interrupt drops downstream audio until a downstream audio BOS; the
+ * active stream's EOS closes the downlink again and an EOS of an earlier
+ * stream does not. Text and transcript boundaries and our own input's are
+ * not downstream audio. */
 static void test_conversation_downlink_waits_for_bos(void) {
   const gzc_peer_event_t audio = downstream_bos(
       gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO, "assistant", "reply-2");
@@ -11286,6 +11307,21 @@ static void test_conversation_downlink_waits_for_bos(void) {
   assert(h2_gizclaw_conversation_downstream_audio_bos_internal(NULL, &audio));
   assert(!h2_gizclaw_conversation_downstream_audio_bos_internal(NULL, &text));
   assert(!h2_gizclaw_conversation_downstream_audio_bos_internal(NULL, &input));
+  const gzc_peer_event_t audio_end = downstream_eos(
+      gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO, "assistant", "reply-2");
+  const gzc_peer_event_t text_end = downstream_eos(
+      gizclaw_events_v1_StreamKind_STREAM_KIND_TEXT, "transcript", "demo-1");
+  const gzc_peer_event_t input_end = downstream_eos(
+      gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO, "demo-home", "demo-2");
+  assert(h2_gizclaw_conversation_downstream_audio_eos_internal(NULL,
+                                                               &audio_end));
+  assert(!h2_gizclaw_conversation_downstream_audio_eos_internal(NULL,
+                                                                &text_end));
+  assert(!h2_gizclaw_conversation_downstream_audio_eos_internal(NULL,
+                                                                &input_end));
+  assert(!h2_gizclaw_conversation_downstream_audio_eos_internal(NULL, &audio));
+  assert(!h2_gizclaw_conversation_downstream_audio_bos_internal(NULL,
+                                                                &audio_end));
 
   test_env_t env;
   h2_gizclaw_service_t *service = create_service(&env, 2u);
@@ -11294,27 +11330,43 @@ static void test_conversation_downlink_waits_for_bos(void) {
              service, (h2_gizclaw_str_t){"workspace", 9u}, NULL, NULL, NULL,
              &conversation) == H2_PAL_OK);
   const uint8_t packet[3] = {0xf8, 0xff, 0xfe};
-  h2_gizclaw_conversation_downlink_hold_internal(service);
+  h2_gizclaw_conversation_downlink_interrupt_internal(service);
   /* Dropped, not queued: the 32-slot ring would refuse the 33rd packet. */
   for (unsigned i = 0u; i < 40u; ++i)
     assert(h2_gizclaw_service_media_write_opus(service, packet,
                                                sizeof(packet)) == H2_PAL_OK);
   assert_downlink_counters(service, 40u, 0u, 40u, 0u);
   assert(h2_gizclaw_test_downlink_frames(service) == 0u);
-  h2_gizclaw_conversation_downlink_bos_internal(service);
-  assert_downlink_counters(service, 40u, 0u, 40u, 0u);
+  h2_gizclaw_conversation_downlink_bos_internal(service, "reply-1");
+  assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
+         H2_PAL_OK);
+  assert_downlink_counters(service, 41u, 0u, 40u, 0u);
+  /* A newer stream cuts the active one off and drops what it queued; the
+   * earlier stream's late EOS is stale. The ring takes 32 again. */
+  h2_gizclaw_conversation_downlink_bos_internal(service, "reply-2");
+  h2_gizclaw_conversation_downlink_eos_internal(service, "reply-1");
   for (unsigned i = 0u; i < 32u; ++i)
     assert(h2_gizclaw_service_media_write_opus(service, packet,
                                                sizeof(packet)) == H2_PAL_OK);
-  assert_downlink_counters(service, 72u, 0u, 40u, 0u);
-  assert(h2_gizclaw_test_downlink_frames(service) == 32u);
+  assert_downlink_counters(service, 73u, 0u, 40u, 0u);
+  assert(h2_gizclaw_test_downlink_frames(service) == 33u);
   assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
          H2_PAL_ERR_WOULD_BLOCK);
-  assert_downlink_counters(service, 73u, 0u, 40u, 1u);
-  h2_gizclaw_conversation_downlink_flush_internal(service);
-  assert_downlink_counters(service, 73u, 0u, 40u, 1u);
+  assert_downlink_counters(service, 74u, 0u, 40u, 1u);
+  /* The active stream's EOS closes the downlink but keeps what is queued:
+   * the ring is still full, so a packet refused now is the gate's doing. */
+  h2_gizclaw_conversation_downlink_eos_internal(service, "reply-2");
+  assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
+         H2_PAL_OK);
+  assert_downlink_counters(service, 75u, 0u, 41u, 1u);
+  h2_gizclaw_conversation_downlink_bos_internal(service, "reply-3");
+  assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
+         H2_PAL_ERR_WOULD_BLOCK);
+  assert_downlink_counters(service, 76u, 0u, 41u, 2u);
+  h2_gizclaw_conversation_downlink_interrupt_internal(service);
+  assert_downlink_counters(service, 76u, 0u, 41u, 2u);
   h2_gizclaw_conversation_release(conversation);
-  assert_downlink_counters(service, 73u, 0u, 40u, 1u);
+  assert_downlink_counters(service, 76u, 0u, 41u, 2u);
   assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
   assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
 }
@@ -11324,7 +11376,6 @@ typedef struct {
   const h2_pal_sync_api_t *sync;
   pthread_t app_thread;
   unsigned completions;
-  bool restart_on_unlock;
 } downlink_release_test_t;
 static downlink_release_test_t *s_downlink_release;
 
@@ -11385,105 +11436,78 @@ static void downlink_release_wait(downlink_release_test_t *test,
   assert(test->completions == completions);
 }
 
-static h2_pal_result_t downlink_release_unlock(void *user,
-                                                h2_pal_mutex_t *mutex) {
-  downlink_release_test_t *test = s_downlink_release;
-  const h2_pal_result_t rc = test->sync->vtable->unlock_mutex(user, mutex);
-  if (rc == H2_PAL_OK && mutex == test->service->audio_mutex &&
-      pthread_equal(pthread_self(), test->app_thread) &&
-      test->restart_on_unlock) {
-    test->restart_on_unlock = false;
-    /* Model a preemption immediately after release gives up audio_mutex:
-     * dispatch the completed input and start the next one before the earlier
-     * audio_end returns. No sleep-based race or production test hook. */
-    downlink_release_wait(test, 1u);
-    assert(h2_gizclaw_service_audio_start(test->service) == H2_PAL_OK);
-  }
-  return rc;
-}
-
-static void test_conversation_downlink_resumes_on_release(void) {
-  for (unsigned interleave = 0u; interleave < 2u; ++interleave) {
-    test_env_t env;
-    h2_gizclaw_service_t *service = create_service(&env, 4u);
-    downlink_release_test_t test = {
-        .service = service, .sync = service->config.sync,
-        .app_thread = pthread_self()};
-    s_downlink_release = &test;
-    h2_pal_sync_vtable_t sync_vtable = *test.sync->vtable;
-    sync_vtable.unlock_mutex = downlink_release_unlock;
-    const h2_pal_sync_api_t sync = {
-        .user = test.sync->user, .vtable = &sync_vtable};
-    service->config.sync = &sync;
-    static const h2_gizclaw_service_client_ops_t ops = {
-        .connect = downlink_release_connect, .poll = downlink_release_poll};
-    h2_gizclaw_service_test_set_client_ops(&ops);
-    h2_gizclaw_test_set_event_ops(downlink_release_send, downlink_release_read,
-                                  downlink_release_close, &test);
-    static const h2_pal_http_api_t http = {0};
-    static const h2_pal_crypto_api_t crypto = {0};
-    static const h2_pal_webrtc_api_t webrtc = {0};
-    service->client_config.http = &http;
-    service->client_config.crypto = &crypto;
-    service->client_config.webrtc = &webrtc;
-    service->client_config.connect_timeout_ms = 1000;
-    service->client_config.server_endpoint = (h2_gizclaw_str_t){"127.0.0.1:1", 11};
-    service->client_config.private_key = (h2_gizclaw_str_t){"test-key", 8};
-    service->config.client_config = &service->client_config;
-    service->config.on_event = NULL;
-    service->config.prepare = NULL;
-    service->config.cleanup = NULL;
-    service->config.terminal = NULL;
-    const h2_gizclaw_pcm_track_config_t config = {
-        .allocator = service->client_config.allocator,
-        .uplink_capacity = 1024u, .downlink_capacity = 1024u};
-    h2_gizclaw_track_t *track = NULL;
-    assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
-    assert(h2_gizclaw_service_set_track(service, track) == H2_PAL_OK);
-    assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
-    h2_gizclaw_conversation_t *conversation = NULL;
-    assert(h2_gizclaw_conversation_create(
-               service, (h2_gizclaw_str_t){"workspace", 9u}, NULL,
-               downlink_release_complete, &test, &conversation) == H2_PAL_OK);
-    const uint8_t packet[3] = {0xf8, 0xff, 0xfe};
-    const uint8_t stale_pcm[2] = {0x12, 0x34};
-    uint8_t pcm[2];
-    assert(h2_gizclaw_service_pcm_write_internal(
-               service, stale_pcm, sizeof(stale_pcm)) == H2_PAL_OK);
-    assert(h2_gizclaw_service_audio_start(service) == H2_PAL_OK);
-    assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
-           H2_PAL_OK);
-    assert(h2_gizclaw_test_downlink_frames(service) == 0u);
-    test.restart_on_unlock = interleave != 0u;
-    assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
-    assert(h2_gizclaw_pcm_track_read(track, pcm, sizeof(pcm)) ==
-           H2_PAL_ERR_WOULD_BLOCK);
-    assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
-           H2_PAL_OK);
-    const size_t accepted = interleave != 0u ? 0u : 1u;
-    assert(h2_gizclaw_test_downlink_frames(service) == accepted);
-    if (interleave == 0u) {
-      downlink_release_wait(&test, 1u);
-      assert(h2_gizclaw_service_audio_start(service) == H2_PAL_OK);
-    }
-    /* A later press must hold even if it ran before the prior end returned. */
-    assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
-           H2_PAL_OK);
-    assert(h2_gizclaw_test_downlink_frames(service) == accepted);
-    assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
-    downlink_release_wait(&test, 2u);
-    h2_gizclaw_conversation_release(conversation);
-    assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
-    assert(h2_gizclaw_service_unset_track(service, track) == H2_PAL_OK);
-    assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
-    assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
-    h2_gizclaw_test_set_event_ops(NULL, NULL, NULL, NULL);
-  }
+/* A press interrupts: the Track's unplayed PCM is dropped and so is every
+ * packet until a downstream audio BOS. Releasing the press ends the input
+ * without reopening the downlink; the reply opens it with its BOS. */
+static void test_conversation_downlink_release_keeps_closed(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_service(&env, 4u);
+  downlink_release_test_t test = {
+      .service = service, .sync = service->config.sync,
+      .app_thread = pthread_self()};
+  s_downlink_release = &test;
+  static const h2_gizclaw_service_client_ops_t ops = {
+      .connect = downlink_release_connect, .poll = downlink_release_poll};
+  h2_gizclaw_service_test_set_client_ops(&ops);
+  h2_gizclaw_test_set_event_ops(downlink_release_send, downlink_release_read,
+                                downlink_release_close, &test);
+  static const h2_pal_http_api_t http = {0};
+  static const h2_pal_crypto_api_t crypto = {0};
+  static const h2_pal_webrtc_api_t webrtc = {0};
+  service->client_config.http = &http;
+  service->client_config.crypto = &crypto;
+  service->client_config.webrtc = &webrtc;
+  service->client_config.connect_timeout_ms = 1000;
+  service->client_config.server_endpoint = (h2_gizclaw_str_t){"127.0.0.1:1", 11};
+  service->client_config.private_key = (h2_gizclaw_str_t){"test-key", 8};
+  service->config.client_config = &service->client_config;
+  service->config.on_event = NULL;
+  service->config.prepare = NULL;
+  service->config.cleanup = NULL;
+  service->config.terminal = NULL;
+  const h2_gizclaw_pcm_track_config_t config = {
+      .allocator = service->client_config.allocator,
+      .uplink_capacity = 1024u, .downlink_capacity = 1024u};
+  h2_gizclaw_track_t *track = NULL;
+  assert(h2_gizclaw_pcm_track_create(&config, &track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_set_track(service, track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  h2_gizclaw_conversation_t *conversation = NULL;
+  assert(h2_gizclaw_conversation_create(
+             service, (h2_gizclaw_str_t){"workspace", 9u}, NULL,
+             downlink_release_complete, &test, &conversation) == H2_PAL_OK);
+  const uint8_t packet[3] = {0xf8, 0xff, 0xfe};
+  const uint8_t stale_pcm[2] = {0x12, 0x34};
+  uint8_t pcm[2];
+  assert(h2_gizclaw_service_pcm_write_internal(
+             service, stale_pcm, sizeof(stale_pcm)) == H2_PAL_OK);
+  assert(h2_gizclaw_service_audio_start(service) == H2_PAL_OK);
+  /* The press already dropped what the Track still held. */
+  assert(h2_gizclaw_pcm_track_read(track, pcm, sizeof(pcm)) ==
+         H2_PAL_ERR_WOULD_BLOCK);
+  assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_test_downlink_frames(service) == 0u);
+  assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_test_downlink_frames(service) == 0u);
+  downlink_release_wait(&test, 1u);
+  h2_gizclaw_conversation_downlink_bos_internal(service, "reply-1");
+  assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_test_downlink_frames(service) == 1u);
+  h2_gizclaw_conversation_release(conversation);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_unset_track(service, track) == H2_PAL_OK);
+  assert(h2_gizclaw_pcm_track_destroy(&track) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_gizclaw_test_set_event_ops(NULL, NULL, NULL, NULL);
 }
 
 /* Between turns, with no request running and no application event sink, the
- * network loop still reads downstream events: a text BOS keeps the hold, the
- * next audio BOS clears it. */
+ * network loop still reads downstream events: after an interrupt a text BOS
+ * keeps the downlink closed, the next audio BOS opens it. */
 typedef struct {
   h2_atomic_int_t stage;
   h2_atomic_uint_t idle_reads;
@@ -11588,7 +11612,7 @@ static void test_conversation_drains_events_between_turns(void) {
              &conversation) == H2_PAL_OK);
   bos_drain_wait_idle(&test);
   const uint8_t packet[3] = {0xf8, 0xff, 0xfe};
-  h2_gizclaw_conversation_downlink_hold_internal(service);
+  h2_gizclaw_conversation_downlink_interrupt_internal(service);
   bos_drain_step(&test, 1);
   assert(h2_gizclaw_service_media_write_opus(service, packet, sizeof(packet)) ==
          H2_PAL_OK);
@@ -11961,7 +11985,7 @@ static void test_conversation_public_audio_tasks(void) {
         input_ended = true;
       } else if (mode == 20 && h2_atomic_load(&test.packets) >= 12u && !input_ended) {
         /* Twelve echoed packets are buffered or queued and nobody played
-         * them. Releasing push-to-talk drops all of it. */
+         * them; the release itself leaves the downlink as it is. */
         h2_pal_time_sleep_ms(h2_desktop_platform_time_api(), 20);
         assert(h2_gizclaw_service_audio_end(service) == H2_PAL_OK);
         input_ended = true;
@@ -12098,8 +12122,9 @@ static void test_conversation_public_audio_tasks(void) {
       assert(test.result == H2_PAL_OK);
     }
     if (mode == 20) {
-      /* Release dropped the unplayed first burst; the server's audio after
-       * the request completed plays, and nothing else is in the Track. */
+      /* Turn two's BOS cut turn one off and dropped its unplayed first
+       * burst; turn one's late EOS is stale; the server's audio after the
+       * request completed plays, and nothing else is in the Track. */
       assert(test.result == H2_PAL_OK && h2_atomic_load(&test.packets) == 12u);
       conversation_read_owned(owned_track, test.output, 4u * 640u);
       for (unsigned spins = 0u; spins < 2000u && test.server_packets < 4u;
@@ -14169,7 +14194,7 @@ int main(int argc, char **argv) {
   test_conversation_downlink_counters();
   test_conversation_downlink_policy();
   test_conversation_downlink_waits_for_bos();
-  test_conversation_downlink_resumes_on_release();
+  test_conversation_downlink_release_keeps_closed();
   test_conversation_drains_events_between_turns();
   test_diagnostics_public_invalid_arguments();
   test_speedtest_managed_requests();

@@ -217,14 +217,19 @@ void h2_gizclaw_conversation_invalidate_internal(
     h2_gizclaw_conversation_t *conversation);
 bool h2_gizclaw_conversation_accepts_peer_event_internal(
     h2_gizclaw_conversation_t *conversation, const gzc_peer_event_t *event);
-/* Whether the event is a downstream audio BOS; text BOS and our input's own
- * BOS are not. */
+/* Whether the event is a downstream audio BOS or EOS; text boundaries and
+ * our input's own are not. */
 bool h2_gizclaw_conversation_downstream_audio_bos_internal(
     const h2_gizclaw_conversation_t *active, const gzc_peer_event_t *event);
-/* Tells the owner that the server announced a downstream audio stream. */
-typedef void (*h2_gizclaw_client_bos_fn)(void *user);
-void h2_gizclaw_client_set_downlink_bos_internal(
-    h2_gizclaw_client_t *client, h2_gizclaw_client_bos_fn on_bos, void *user);
+bool h2_gizclaw_conversation_downstream_audio_eos_internal(
+    const h2_gizclaw_conversation_t *active, const gzc_peer_event_t *event);
+/* Tells the owner that the server began (BOS) or ended (EOS) a downstream
+ * audio stream. stream_id is borrowed for the call. */
+typedef void (*h2_gizclaw_client_downlink_stream_fn)(void *user, bool begin,
+                                                     const char *stream_id);
+void h2_gizclaw_client_set_downlink_stream_internal(
+    h2_gizclaw_client_t *client, h2_gizclaw_client_downlink_stream_fn on_stream,
+    void *user);
 /* Formats a peer event and the input it arrived for, for diagnostics. */
 void h2_gizclaw_conversation_describe_peer_event_internal(
     const h2_gizclaw_conversation_t *conversation,

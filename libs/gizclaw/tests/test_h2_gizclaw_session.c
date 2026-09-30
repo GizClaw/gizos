@@ -91,7 +91,7 @@ static char audio_error_log[H2_PAL_LOG_MESSAGE_MAX];
 static h2_atomic_int_t last_cancel_source;
 static unsigned end_noops;
 static size_t downlink_writes;
-static unsigned flushes;
+static unsigned interrupts;
 /* Typed RPC order: d=delete, g=get, c=create, r=reload. */
 static char rpc_trace[16];
 static void trace(char step) {
@@ -423,7 +423,7 @@ static h2_gizclaw_session_config_t session_config(size_t tag_count) {
   releases = text_sends = 0u;
   text_result = H2_PAL_OK;
   text_seen[0] = '\0';
-  flushes = 0u;
+  interrupts = 0u;
   downlink_writes = 0u;
   audio_input_empty = false;
   audio_start_result = audio_end_result = H2_PAL_OK;
@@ -1032,7 +1032,7 @@ static h2_pal_result_t stop_run(h2_pal_result_t result, uint32_t timeout) {
     return rc;
   trace('s');
   if (result == H2_PAL_OK)
-    h2_gizclaw_conversation_downlink_flush_internal(NULL);
+    h2_gizclaw_conversation_downlink_interrupt_internal(NULL);
   return h2_gizclaw_session_workspace_delete_finish_internal(session, result);
 }
 static void stop_run_thread(void *user) {
@@ -1049,7 +1049,7 @@ static void test_run_stop(void) {
                                                 &conversation) == H2_PAL_OK);
   assert(h2_gizclaw_session_audio_start(session) == H2_PAL_OK);
   rpc_trace[0] = '\0';
-  unsigned before = flushes;
+  unsigned before = interrupts;
   h2_pal_result_t result = H2_PAL_ERR_IO;
   h2_pal_task_t *task = NULL;
   const h2_pal_task_api_t *tasks = h2_desktop_platform_task_api();
@@ -1064,8 +1064,14 @@ static void test_run_stop(void) {
   terminal(terminal_user, conversation, &canceled);
   assert(h2_pal_task_join(tasks, task) == H2_PAL_OK);
   assert(result == H2_PAL_OK && strcmp(rpc_trace, "s") == 0);
-  assert(flushes > before);
+  assert(interrupts > before);
   assert_deleted_empty();
+  /* The app can interrupt playback at once, without RPC or a state change. */
+  before = interrupts;
+  assert(h2_gizclaw_session_interrupt_playback(session) == H2_PAL_OK);
+  assert(interrupts == before + 1u);
+  assert(h2_gizclaw_session_interrupt_playback(NULL) == H2_PAL_ERR_INVALID_ARG);
+  assert(interrupts == before + 1u);
   /* Even the same name must reload after stop. */
   assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
   assert(strcmp(rpc_trace, "sgr") == 0);
@@ -1778,16 +1784,16 @@ h2_pal_result_t h2_gizclaw_conversation_cancel(h2_gizclaw_conversation_t *c) {
 }
 
 /* The downlink lives in the Conversation; the Session only reads how much
- * sound has reached the Track and asks for a flush. */
+ * sound has reached the Track and asks for an interrupt. */
 size_t h2_gizclaw_conversation_downlink_writes_internal(
     h2_gizclaw_service_t *service) {
   (void)service;
   return downlink_writes;
 }
-void h2_gizclaw_conversation_downlink_flush_internal(
+void h2_gizclaw_conversation_downlink_interrupt_internal(
     h2_gizclaw_service_t *service) {
   (void)service;
-  ++flushes;
+  ++interrupts;
 }
 
 h2_pal_result_t h2_gizclaw_conversation_retarget_internal(
