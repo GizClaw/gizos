@@ -19,7 +19,7 @@
     "projects/e2e/targets/pkg_tar/pal-net-tls/main.c": "707f8c09b346456ae360e377aa4ce5ba79c8ff2c39f1b9e233fcad598a6096cf",
     "projects/e2e/targets/pkg_tar/pal-net-tls/run_browser.py": "baf8ab67c5f35463f6d46d4d882eeba5059add016f51577256c17c8d130a9e7d",
     "tools/bazel/mobile_e2e.py": "a00c485f3ef20445b3c60a927d2620d12fe27110bfbec5bbe89d2d9fa89f23c0",
-    "tools/bazel/mobile_e2e.bzl": "3bc566fc3e1f6c5ded381f5aceea77360cda39896361ef3be0148ecdd4cbeb83",
+    "tools/bazel/mobile_e2e.bzl": "e453f25024f268a062fbe64c5fa855ccfa868b928695201a6656cc3c9720dbcf",
     "projects/e2e/libs/pal-net-tls-mobile/run_mobile.py": "fbb2f4b209aff35cf84c119c5ac44c1b221ad0fdd12a2cdaadb02ce1dd7f2a04",
     "projects/e2e/libs/pal-net-tls-mobile/BUILD.bazel": "730d24f7bfc9d11370b43f7bcc65ab42c859bd5f93de2a45af6071db188c4057"
   },
@@ -29,7 +29,7 @@
       "core_qualified": true,
       "evidence": "evidence/macos/qualified.json",
       "artifact_sha256": "1b9da4bddb4afe88c451174e37c72fd82d160556e0006945e12dd8e250c5747d",
-      "receipt_sha256": "8c8bbcca711d469f52a317b6347775270eb4e92c4f0a97b082aae85b8fc225b5",
+      "receipt_sha256": "a5ebfc217fbab088f947dcc31634e75f7e9e72be97082244f2d774bc98fac2bc",
       "assessment_complete": true
     },
     "wasm": {
@@ -82,7 +82,7 @@
         "cleanup-ledger"
       ],
       "artifact_sha256": "c1a3fcf2625dd43514d3cd15cd75d3052fc8ee5acfa1238d9803e8b9f7f9ac0c",
-      "receipt_sha256": "0d95766107531b61742b4af72b7fbdd7d5d72ea194c5aa0cea376bae31331239"
+      "receipt_sha256": "7971f04e594d2ae7d7497804e559bf04f08ddba4247bcb24de7ec847dcab61ed"
     },
     "ios": {
       "status": "PASS",
@@ -129,7 +129,9 @@
     "wifi_final_evidence_head": "3ba4ba52a46211f4926622621dc08fd0511d0a99",
     "wifi_linked_provider_head": "4d7e4a97eea7ff1e801cb151d2b9299fbd15e87e",
     "hardware_released": true,
-    "tls_integration_started": true
+    "tls_integration_started": true,
+    "wifi_pr_merged": 610,
+    "wifi_merge_commit": "127892b1633c810f5a9c0b69af709dba8d61883c"
   },
   "acceptance_policy": "supported-pass-unsupported-skip"
 }
