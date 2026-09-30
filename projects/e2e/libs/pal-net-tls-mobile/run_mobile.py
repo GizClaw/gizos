@@ -1,6 +1,7 @@
 """Own only the raw Net/TLS fixture and exact peer-side qualification proof."""
 import json
 import socket
+from datetime import datetime, timezone
 
 from fixture import Fixture
 from check_qualification import check_cases, check_peer
@@ -22,13 +23,16 @@ def run_suite(app, args):
                  callback_bridge=callback_bridge, callback_cleanup=callback_cleanup) as fixture:
         dns_host = options['dns_host']
         dns_ip = socket.getaddrinfo(dns_host, None, socket.AF_INET, socket.SOCK_STREAM)[0][4][0]
+        observation = dict(hostname=dns_host,ipv4=dns_ip,resolver='operator system resolver',
+            method='host socket.getaddrinfo independent of the PAL',
+            observed_at_utc=datetime.now(timezone.utc).isoformat())
         settings = dict(dns_host=dns_host, dns_ip=dns_ip, host=fixture.advertise,
                         port=fixture.port, session=fixture.session,
                         ca=fixture.ca.read_text(), wrong_ca=fixture.wrong_ca.read_text())
         with app.fixture('fixture.json', json.dumps(settings)):
             result = app.launch(android_log='pal-net-tls-result.json.log')
         result['peer'] = fixture.snapshot()
-        result['dns'] = dict(host=dns_host, operator_ipv4=dns_ip)
+        result['dns'] = dict(host=dns_host, operator_ipv4=dns_ip,observation=observation)
         app.environment()['peer'] = result['peer']
         app.environment()['dns'] = result['dns']
         app.environment()['tls_verification'] = (

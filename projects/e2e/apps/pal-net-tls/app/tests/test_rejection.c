@@ -10,7 +10,7 @@ typedef struct fake {
   unsigned prepare_count, active_sockets, active_resolvers, allocations;
   size_t written, received;
   uint64_t clock_us;
-  int generic_tls_error, bad_proof, corrupt, fail_allocate, fail_prepare;
+  int generic_tls_error, bad_proof, corrupt, fail_allocate, fail_prepare, bad_dns;
   int sockets[128], next_socket, wrapped;
   h2_net_tls_fixture_mode_t mode;
 } fake_t;
@@ -44,7 +44,7 @@ static h2_pal_result_t sleep_ms(void *user, uint32_t ms) {
   return H2_PAL_OK;
 }
 static int resolve(void *user, const char *host, h2_pal_net_addr_t *out) {
-  (void)user;
+  fake_t *f = user;
   if (strcmp(host, "127.0.0.1") && strcmp(host, "ap.e2e.gizclaw.com"))
     return H2_PAL_ERR_NOT_FOUND;
   memset(out, 0, sizeof(*out));
@@ -56,6 +56,8 @@ static int resolve(void *user, const char *host, h2_pal_net_addr_t *out) {
     out->ip[1] = 5u;
     out->ip[2] = 151u;
     out->ip[3] = 236u;
+    if (f->bad_dns)
+      out->ip[3] = 237u;
   }
   return H2_PAL_OK;
 }
@@ -326,13 +328,14 @@ int main(void) {
       .fixture_user = &f,
       .report = report,
       .report_user = &f};
-  for (unsigned fault = 0; fault < 6u; ++fault) {
+  for (unsigned fault = 0; fault < 7u; ++fault) {
     memset(&f, 0, sizeof(f));
     f.generic_tls_error = fault == 1u;
     f.bad_proof = fault == 2u;
     f.corrupt = fault == 3u;
     f.fail_allocate = fault == 4u;
     f.fail_prepare = fault == 5u;
+    f.bad_dns = fault == 6u;
     h2_net_tls_result_t result;
     int rc = h2_pal_net_tls_e2e_run(&config, &result);
     if (f.allocations || f.active_sockets || f.active_resolvers)
@@ -348,6 +351,8 @@ int main(void) {
       return 5;
     if (fault == 3u && result.cases[H2_NET_TLS_TLS_REQUIRED].passed)
       return 6;
+    if (fault == 6u && result.cases[H2_NET_TLS_DNS_HOSTNAME].passed)
+      return 8;
   }
   /* Every mandatory vtable hole must block all cases before opening a socket.
    * Function pointers are removed by name to avoid representation assumptions.

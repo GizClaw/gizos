@@ -458,7 +458,9 @@ static void run_case(state_t *s, h2_net_tls_case_t kind) {
     OK(h2_pal_net_resolve_addr(net, s->config->dns_host, &addr));
     memcpy(s->item->observed_ipv4, addr.ip, sizeof(s->item->observed_ipv4));
     CHECK(addr.family == H2_PAL_NET_FAMILY_IPV4 &&
-              (addr.ip[0] || addr.ip[1] || addr.ip[2] || addr.ip[3]),
+              s->config->dns_expected.family == H2_PAL_NET_FAMILY_IPV4 &&
+              memcmp(addr.ip, s->config->dns_expected.ip,
+                     sizeof(s->item->observed_ipv4)) == 0,
           H2_PAL_ERR_FORMAT);
     char host[64];
     CHECK(strlen(s->config->dns_host) < sizeof(host), H2_PAL_ERR_INVALID_ARG);

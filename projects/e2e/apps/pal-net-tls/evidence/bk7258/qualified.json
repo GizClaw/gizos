@@ -2420,7 +2420,70 @@
           }
         ]
       },
-      "log_sha256": "70181a095f1eb612da02be8d46f230bf3f15eedd4e8abcc1db5c54351ff054d6"
+      "observed_status": {
+        "board": "bk7258_v3_202405",
+        "target": "bk7258",
+        "chip": "bk7258",
+        "device_uid": "c8478ca2a87c",
+        "capabilities": "0x00000003",
+        "command_availability": "0x001f3f1f",
+        "active_role": "app",
+        "active_version": "pal-net-tls-bk-20260930-r9",
+        "active_checksum": "04cfdf1a0382394c51b9fe5265c25a3dad22f2e5006f542954c24e70fe5c98a0",
+        "active_image_size": "5222400",
+        "running_partition": "2",
+        "next_partition": "2",
+        "boot_intent": "auto",
+        "stage_valid": "0",
+        "stage_package_checksum": "-",
+        "stage_package_size": "0",
+        "stage_image_checksum": "-",
+        "stage_image_size": "0",
+        "stage_role": "unknown",
+        "stage_version": "-",
+        "stage_board": "-",
+        "stage_target": "-",
+        "partition_1_valid": "1",
+        "partition_1_package_checksum": "3a3c664340f0d1b45561816e197ffbd25f2d3c447ee248082a3c5ce261cba9bd",
+        "partition_1_package_size": "1573290",
+        "partition_1_image_checksum": "47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb",
+        "partition_1_image_size": "2437120",
+        "partition_1_role": "loader",
+        "partition_1_version": "0.1.65-lu-c",
+        "partition_1_board": "bk7258_v3_202405",
+        "partition_1_target": "bk7258",
+        "partition_2_valid": "1",
+        "partition_2_package_checksum": "a1c58273781d82f81ca5a0e30ee2b0eca52fa2672b49e0d39a5a48e4122c4d4d",
+        "partition_2_package_size": "1733149",
+        "partition_2_image_checksum": "04cfdf1a0382394c51b9fe5265c25a3dad22f2e5006f542954c24e70fe5c98a0",
+        "partition_2_image_size": "5222400",
+        "partition_2_role": "app",
+        "partition_2_version": "pal-net-tls-bk-20260930-r9",
+        "partition_2_board": "bk7258_v3_202405",
+        "partition_2_target": "bk7258",
+        "last_result": "0",
+        "mfg_mode": "1",
+        "mfg_steps": "0000000000000000000000"
+      },
+      "observed_coredump": {
+        "result": "OK",
+        "code": "0",
+        "partition": "coredump",
+        "bytes": "368640",
+        "stored_bytes": "32",
+        "blank": "0"
+      },
+      "observed_boot": {
+        "board": "bk7258",
+        "version": "pal-net-tls-bk-20260930-r9",
+        "session": "7e12163c94294b9f86743fcdc45932b8",
+        "boot_id": "d4f137b00d3bd248"
+      },
+      "local_source_sha256": {
+        "serial": "70181a095f1eb612da02be8d46f230bf3f15eedd4e8abcc1db5c54351ff054d6",
+        "status": "257db6167f2b9d4d3237c190eef2b6e3724e155ccea962053650b6d49a0b74f0",
+        "coredump_status": "871dcafc5212b2c5520d923a2e7fc7bd38f5466e77ef0b5c3c951406f41d6621"
+      }
     },
     {
       "dns": {
@@ -4829,7 +4892,135 @@
           }
         ]
       },
-      "log_sha256": "2e49c4970db175ed11f50fbe9cb65fdd3311774473e1529ce45f331ce53fd3ff"
+      "observed_status": {
+        "board": "bk7258_v3_202405",
+        "target": "bk7258",
+        "chip": "bk7258",
+        "device_uid": "c8478ca2a87c",
+        "capabilities": "0x00000003",
+        "command_availability": "0x001f3f1f",
+        "active_role": "app",
+        "active_version": "pal-net-tls-bk-20260930-r9",
+        "active_checksum": "04cfdf1a0382394c51b9fe5265c25a3dad22f2e5006f542954c24e70fe5c98a0",
+        "active_image_size": "5222400",
+        "running_partition": "2",
+        "next_partition": "2",
+        "boot_intent": "auto",
+        "stage_valid": "0",
+        "stage_package_checksum": "-",
+        "stage_package_size": "0",
+        "stage_image_checksum": "-",
+        "stage_image_size": "0",
+        "stage_role": "unknown",
+        "stage_version": "-",
+        "stage_board": "-",
+        "stage_target": "-",
+        "partition_1_valid": "1",
+        "partition_1_package_checksum": "3a3c664340f0d1b45561816e197ffbd25f2d3c447ee248082a3c5ce261cba9bd",
+        "partition_1_package_size": "1573290",
+        "partition_1_image_checksum": "47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb",
+        "partition_1_image_size": "2437120",
+        "partition_1_role": "loader",
+        "partition_1_version": "0.1.65-lu-c",
+        "partition_1_board": "bk7258_v3_202405",
+        "partition_1_target": "bk7258",
+        "partition_2_valid": "1",
+        "partition_2_package_checksum": "a1c58273781d82f81ca5a0e30ee2b0eca52fa2672b49e0d39a5a48e4122c4d4d",
+        "partition_2_package_size": "1733149",
+        "partition_2_image_checksum": "04cfdf1a0382394c51b9fe5265c25a3dad22f2e5006f542954c24e70fe5c98a0",
+        "partition_2_image_size": "5222400",
+        "partition_2_role": "app",
+        "partition_2_version": "pal-net-tls-bk-20260930-r9",
+        "partition_2_board": "bk7258_v3_202405",
+        "partition_2_target": "bk7258",
+        "last_result": "0",
+        "mfg_mode": "1",
+        "mfg_steps": "0000000000000000000000"
+      },
+      "observed_coredump": {
+        "result": "OK",
+        "code": "0",
+        "partition": "coredump",
+        "bytes": "368640",
+        "stored_bytes": "32",
+        "blank": "0"
+      },
+      "observed_boot": {
+        "board": "bk7258",
+        "version": "pal-net-tls-bk-20260930-r9",
+        "session": "7e12163c94294b9f86743fcdc45932b8",
+        "boot_id": "c1e36e1f7ccfc450"
+      },
+      "local_source_sha256": {
+        "serial": "2e49c4970db175ed11f50fbe9cb65fdd3311774473e1529ce45f331ce53fd3ff",
+        "status": "257db6167f2b9d4d3237c190eef2b6e3724e155ccea962053650b6d49a0b74f0",
+        "coredump_status": "871dcafc5212b2c5520d923a2e7fc7bd38f5466e77ef0b5c3c951406f41d6621"
+      }
     }
-  ]
+  ],
+  "observation_contract": 2,
+  "observed_baseline": {
+    "status": {
+      "board": "bk7258_v3_202405",
+      "target": "bk7258",
+      "chip": "bk7258",
+      "device_uid": "c8478ca2a87c",
+      "capabilities": "0x00000003",
+      "command_availability": "0x001f3f1f",
+      "active_role": "app",
+      "active_version": "pal-net-tls-bk-20260930-r8",
+      "active_checksum": "55c8b626074484db34c4461541c2882536aea8c5f7d044bf5b00ff03ffb693f4",
+      "active_image_size": "5222400",
+      "running_partition": "2",
+      "next_partition": "2",
+      "boot_intent": "auto",
+      "stage_valid": "0",
+      "stage_package_checksum": "-",
+      "stage_package_size": "0",
+      "stage_image_checksum": "-",
+      "stage_image_size": "0",
+      "stage_role": "unknown",
+      "stage_version": "-",
+      "stage_board": "-",
+      "stage_target": "-",
+      "partition_1_valid": "1",
+      "partition_1_package_checksum": "3a3c664340f0d1b45561816e197ffbd25f2d3c447ee248082a3c5ce261cba9bd",
+      "partition_1_package_size": "1573290",
+      "partition_1_image_checksum": "47b7cd2e34fcebb805bb28d1c1901eabd1cff9d4be9a172ba8d012ccb83809bb",
+      "partition_1_image_size": "2437120",
+      "partition_1_role": "loader",
+      "partition_1_version": "0.1.65-lu-c",
+      "partition_1_board": "bk7258_v3_202405",
+      "partition_1_target": "bk7258",
+      "partition_2_valid": "1",
+      "partition_2_package_checksum": "1fa3df738ba870c737b98d3876cca78f56c1ac9d8c8b36356c13c709baa481b1",
+      "partition_2_package_size": "1733495",
+      "partition_2_image_checksum": "55c8b626074484db34c4461541c2882536aea8c5f7d044bf5b00ff03ffb693f4",
+      "partition_2_image_size": "5222400",
+      "partition_2_role": "app",
+      "partition_2_version": "pal-net-tls-bk-20260930-r8",
+      "partition_2_board": "bk7258_v3_202405",
+      "partition_2_target": "bk7258",
+      "last_result": "0",
+      "mfg_mode": "1",
+      "mfg_steps": "0000000000000000000000"
+    },
+    "coredump": {
+      "result": "OK",
+      "code": "0",
+      "partition": "coredump",
+      "bytes": "368640",
+      "stored_bytes": "32",
+      "blank": "0"
+    },
+    "local_source_sha256": {
+      "status": "41368a62919985795797f76984b81587130ea07922bc0364553931d0516ed27f",
+      "coredump_status": "871dcafc5212b2c5520d923a2e7fc7bd38f5466e77ef0b5c3c951406f41d6621"
+    }
+  },
+  "observed_coredump_bytes": {
+    "baseline": "200000004832424b434f524563726173682d6265666f72652d636f6e6669726d",
+    "install": "200000004832424b434f524563726173682d6265666f72652d636f6e6669726d",
+    "normal-reboot": "200000004832424b434f524563726173682d6265666f72652d636f6e6669726d"
+  }
 }

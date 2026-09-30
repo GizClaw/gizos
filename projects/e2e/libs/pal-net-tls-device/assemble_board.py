@@ -68,10 +68,20 @@ def assemble(args):
         entry = parse(log.read_text(errors='replace'), version,
             'devkit' if args.board == 'devkit' else 'bk7258')
         assert entry['session'] == peer['session']
+        observation = json.loads(args.dns_observation.read_text())
+        assert observation['hostname'] == entry['dns']['host']
+        assert observation['ipv4'] == entry['dns']['operator_ipv4']
+        entry['dns']['observation'] = observation
         entry.update(kind=kind, uid=args.uid, image_sha256=image_sha,
             package_sha256=package_sha, confirm=0,
             loader_p1_preserved=True, stage_empty=True, coredump_unchanged=True,
-            peer=peer, log_sha256=digest(log))
+            peer=peer,
+            observed_status=current, observed_coredump=dump_status,
+            observed_boot=dict(board='devkit' if args.board == 'devkit' else 'bk7258',
+                version=entry['version'], session=entry['session'], boot_id=entry['boot_id']),
+            local_source_sha256=dict(serial=digest(log),
+                status=digest(getattr(args, kind.replace('-', '_') + '_status')),
+                coredump_status=digest(getattr(args, kind.replace('-', '_') + '_dump'))))
         check_cases(entry, REGISTRY)
         check_peer(peer, entry['session'], entry['boot_id'])
         boots.append(entry)
@@ -82,16 +92,22 @@ def assemble(args):
         baseline = paths[0].read_bytes()
         assert baseline and all(path.read_bytes() == baseline for path in paths[1:])
         coredump_sha = hashlib.sha256(baseline).hexdigest()
+        coredump_bytes = dict(zip(('baseline','install','normal-reboot'),
+            [path.read_bytes().hex() for path in paths]))
     else:
         assert base_dump['blank'] == '1' and base_dump['stored_bytes'] == '0'
         coredump_sha = None
-    return dict(platform=args.board, status='PASS', core_qualified=True,
+        coredump_bytes = None
+    return dict(observation_contract=2, platform=args.board, status='PASS', core_qualified=True,
         full_net_qualified=False, uid=args.uid, version=version,
         artifact_sha256=package_sha, package_sha256=package_sha,
         image_sha256=image_sha, package_size=args.package.stat().st_size,
         loader_p1_package_sha256=base_status['partition_1_package_checksum'],
         loader_p1_image_sha256=base_status['partition_1_image_checksum'],
-        baseline_coredump_sha256=coredump_sha, boots=boots)
+        baseline_coredump_sha256=coredump_sha, observed_coredump_bytes=coredump_bytes,
+        observed_baseline=dict(status=base_status, coredump=base_dump,
+            local_source_sha256=dict(status=digest(args.baseline_status),
+                coredump_status=digest(args.baseline_dump))), boots=boots)
 
 
 if __name__ == '__main__':
@@ -102,6 +118,7 @@ if __name__ == '__main__':
     parser.add_argument('--package', type=Path, required=True)
     parser.add_argument('--firmware-metadata', type=Path, required=True)
     parser.add_argument('--peer', type=Path, required=True)
+    parser.add_argument('--dns-observation', type=Path, required=True)
     for name in ('baseline-status','baseline-dump','install-log','install-status',
                  'install-dump','normal-reboot-log','normal-reboot-status',
                  'normal-reboot-dump','baseline-dump-bytes','install-dump-bytes',

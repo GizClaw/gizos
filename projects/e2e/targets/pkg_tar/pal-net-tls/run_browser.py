@@ -25,7 +25,7 @@ with prepared_archive(archive.resolve()) as root, tempfile.TemporaryDirectory(pr
         os.dup2(read,3);os.dup2(write,4)
     browser=find_browser()
     process=subprocess.Popen([str(browser),'--headless','--no-sandbox','--remote-debugging-pipe',
-        '--no-first-run','--no-default-browser-check','--disable-background-networking',
+        '--no-first-run','--no-default-browser-check','--disable-background-networking','--use-mock-keychain',
         '--user-data-dir='+temporary+'/profile','about:blank'],preexec_fn=pipes,pass_fds=(3,4),stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     os.close(incoming[0]);os.close(outgoing[1])
     cdp=Cdp(incoming[1],outgoing[0],events)

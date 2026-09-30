@@ -54,7 +54,7 @@ typedef struct h2_net_tls_config {
   const char *host; /* Numerical fixture address; not a public service. */
   const char
       *dns_host; /* Explicit real hostname, separate from local TLS peer. */
-  h2_pal_net_addr_t dns_expected; /* Current operator-observed IPv4 A record. */
+  h2_pal_net_addr_t dns_expected; /* Independent operator-observed IPv4 A record for this resolver view; both PAL resolutions must equal it. */
   const char *session;            /* 32 lowercase hexadecimal characters. */
   const uint8_t *root_ca, *wrong_ca;
   size_t root_ca_len, wrong_ca_len;

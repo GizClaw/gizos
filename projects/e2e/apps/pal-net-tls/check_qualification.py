@@ -4,6 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+from datetime import datetime
 
 ROOT = Path(__file__).resolve().parents[4]
 APP = Path(__file__).resolve().parent
@@ -11,6 +12,64 @@ PLATFORMS = {'macos', 'wasm', 'ios', 'android', 'devkit', 'bk7258'}
 TLS_VERIFY = -int(re.search(r'H2_PAL_ERR_TLS_VERIFY\s*=\s*-(\d+)',
     (ROOT / 'libs/pal/include/h2/pal/core/h2_pal_errors.h').read_text()).group(1))
 UNSUPPORTED = -3
+REQUIRED_PROVIDER_SOURCES = {
+    'native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net.c',
+    'native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_net.c',
+    'libs/pal/providers/posix/pal_core/src/h2_posix_net.c',
+    'libs/pal/providers/ios/pal_core/src/h2_ios_net.c',
+    'libs/pal/providers/ios/pal_core/include/h2_ios_net.h',
+    'libs/pal/providers/ios/pal_core/BUILD.bazel',
+    'libs/pal/providers/android/pal_core/src/h2_android_net.c',
+    'libs/pal/providers/android/pal_core/include/h2_android_net.h',
+    'libs/pal/providers/android/pal_core/BUILD.bazel',
+    'libs/pal/providers/wolfssl/src/full/user_settings.h',
+    'libs/pal/include/h2/pal/net/h2_pal_net.h',
+}
+
+
+def check_sources(root, sources):
+    assert REQUIRED_PROVIDER_SOURCES <= set(sources), 'missing qualified provider/config source receipt'
+    for relative, expected in sources.items():
+        assert hashlib.sha256((root / relative).read_bytes()).hexdigest() == expected, relative
+
+
+def check_board_observation(receipt):
+    """Validate typed observed states; raw serial logs stay local by policy."""
+    assert receipt['observation_contract'] == 2
+    baseline = receipt['observed_baseline']
+    base_status, base_dump = baseline['status'], baseline['coredump']
+    assert base_status['device_uid'] == receipt['uid']
+    for value in baseline['local_source_sha256'].values():
+        assert re.fullmatch('[0-9a-f]{64}', value)
+    for boot in receipt['boots']:
+        status, dump = boot['observed_status'], boot['observed_coredump']
+        assert status['device_uid'] == receipt['uid'] and status['board'] == base_status['board']
+        assert status['active_role'] == 'app' and status['active_version'] == receipt['version']
+        assert status['active_checksum'] == status['partition_2_image_checksum'] == receipt['image_sha256']
+        assert status['partition_2_package_checksum'] == receipt['package_sha256']
+        assert status['running_partition'] == status['next_partition'] == '2'
+        assert status['stage_valid'] == '0' and status['boot_intent'] == 'auto' and status['last_result'] == '0'
+        for field in ('partition_1_valid','partition_1_package_checksum','partition_1_image_checksum'):
+            assert status[field] == base_status[field], field
+        assert status['partition_1_valid'] == '1'
+        assert dump['result'] == base_dump['result'] == 'OK'
+        assert dump['code'] == base_dump['code'] == '0'
+        assert dump['blank'] == base_dump['blank'] and dump['stored_bytes'] == base_dump['stored_bytes']
+        marker = boot['observed_boot']
+        assert marker == dict(board=receipt['platform'],version=receipt['version'],
+            session=boot['session'],boot_id=boot['boot_id'])
+        assert set(boot['local_source_sha256']) == {'serial','status','coredump_status'}
+        for value in boot['local_source_sha256'].values():
+            assert re.fullmatch('[0-9a-f]{64}', value)
+    if receipt['platform'] == 'bk7258':
+        snapshots = receipt['observed_coredump_bytes']
+        assert set(snapshots) == {'baseline','install','normal-reboot'}
+        values = [bytes.fromhex(value) for value in snapshots.values()]
+        assert values[0] and all(value == values[0] for value in values)
+        assert hashlib.sha256(values[0]).hexdigest() == receipt['baseline_coredump_sha256']
+    else:
+        assert base_dump['blank'] == '1' and base_dump['stored_bytes'] == '0'
+        assert receipt['observed_coredump_bytes'] is None and receipt['baseline_coredump_sha256'] is None
 
 
 def check_cases(receipt, registry):
@@ -40,6 +99,12 @@ def check_cases(receipt, registry):
     assert len(dns_expected)==4 and all(0<=part<=255 for part in dns_expected)
     observed=by_id['dns-hostname']['observed_ipv4']
     assert len(observed)==4 and any(observed) and all(0<=part<=255 for part in observed), 'provider did not resolve a usable hostname address'
+    assert observed == dns_expected, 'provider DNS result differs from the independent operator expectation'
+    observation = receipt['dns']['observation']
+    assert observation['hostname'] == receipt['dns']['host']
+    assert observation['ipv4'] == receipt['dns']['operator_ipv4']
+    assert observation['resolver'] and observation['method']
+    assert datetime.fromisoformat(observation['observed_at_utc']).utcoffset().total_seconds() == 0
     for case in ('tls-required','tls-default','tls-sni-alpn','tls-borrowed-config'):
         assert by_id[case]['bytes_sent'] == 4193 and by_id[case]['bytes_received'] == 4097, case
 
@@ -117,8 +182,7 @@ def check(root=ROOT, allow_pending=False, require_all_core=False):
     assert data['gate']['wifi_qualification_verified'] and data['gate']['hardware_released']
     assert data['gate']['tls_integration_started']
     assert data['source_sha256']
-    for relative, expected in data['source_sha256'].items():
-        assert hashlib.sha256((root / relative).read_bytes()).hexdigest() == expected, relative
+    check_sources(root, data['source_sha256'])
     registry = re.findall(r'H2_NET_TLS_CASE\(\w+, "([^"]+)", ([01])\)',
         (app / 'app/include/h2_pal_net_tls_cases.inc').read_text())
     assert len(registry) == 39 and sum(int(required) for _,required in registry) == 37
@@ -154,20 +218,12 @@ def check(root=ROOT, allow_pending=False, require_all_core=False):
             assert metadata['package_manifest']['version'] == receipt['version']
             assert len(receipt['boots']) == 2 and {row['kind'] for row in receipt['boots']} == {'install','normal-reboot'}
             assert len({row['boot_id'] for row in receipt['boots']}) == 2
+            check_board_observation(receipt)
             for boot in receipt['boots']:
-                log = board_dir / (boot['kind'] + '.log')
-                assert boot['log_sha256'] == hashlib.sha256(log.read_bytes()).hexdigest()
-                assert boot['boot_id'] in log.read_text(errors='replace')
                 assert boot['uid'] == receipt['uid'] and boot['image_sha256'] == receipt['image_sha256']
                 assert boot['confirm'] == 0 and boot['loader_p1_preserved'] and boot['stage_empty'] and boot['coredump_unchanged']
                 check_cases(boot, registry)
                 check_peer(boot['peer'], boot['session'], boot['boot_id'])
-            if platform == 'bk7258':
-                dump_hashes = {hashlib.sha256((board_dir / (kind + '-dump.bin')).read_bytes()).hexdigest()
-                               for kind in ('baseline','install','normal')}
-                assert dump_hashes == {receipt['baseline_coredump_sha256']}
-            else:
-                assert receipt['baseline_coredump_sha256'] is None
         else:
             check_cases(receipt, registry)
             check_peer(receipt['peer'], receipt['peer']['session'], receipt['peer']['session'][:16])
