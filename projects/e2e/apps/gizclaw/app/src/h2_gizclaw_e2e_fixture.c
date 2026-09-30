@@ -591,6 +591,13 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
       memchr(registration.runtime_profile_name, '\0',
              sizeof(registration.runtime_profile_name)) == NULL)
     return H2_PAL_ERR_FORMAT;
+  /* Registration succeeded even when the operator expected another profile.
+   * Keep its deletion obligation usable on this connection during cleanup. */
+  actor->registered = true;
+  if (fixture->config->expected_runtime_profile &&
+      strcmp(registration.runtime_profile_name,
+             fixture->config->expected_runtime_profile) != 0)
+    return H2_PAL_ERR_INVALID_STATE;
   if (fixture->runtime_profile_name[0] == '\0') {
     memcpy(fixture->runtime_profile_name, registration.runtime_profile_name,
            sizeof(fixture->runtime_profile_name));

@@ -128,6 +128,11 @@ int h2_gizclaw_e2e_run_app_config(h2_gizclaw_e2e_fixture_t *f,
          !owns(s, value.value.data, value.value.len + 1u) ||
          value.value.data[value.value.len] != '\0'))
       rc = H2_PAL_ERR_FORMAT;
+    if (rc == H2_PAL_OK && f->config->app_config_expected_value.data &&
+        (value.value.len != f->config->app_config_expected_value.len ||
+         memcmp(value.value.data, f->config->app_config_expected_value.data,
+                value.value.len) != 0))
+      rc = H2_PAL_ERR_INVALID_STATE;
     if (rc == H2_PAL_OK && api == 0u) {
       first_length = value.value.len;
       memcpy(first_value, value.value.data, first_length);

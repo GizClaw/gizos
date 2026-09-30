@@ -91,6 +91,12 @@ static bool config_valid(h2_runtime_t *runtime,
        strlen(config->app_config_key) > H2_GIZCLAW_APP_CONFIG_KEY_MAX_BYTES)) {
     return false;
   }
+  if ((config->expected_runtime_profile &&
+       (!config->expected_runtime_profile[0] ||
+        strlen(config->expected_runtime_profile) >= H2_GIZCLAW_REGISTRATION_NAME_CAPACITY)) ||
+      config->app_config_expected_value.len > H2_GIZCLAW_APP_CONFIG_VALUE_MAX_BYTES ||
+      (!config->app_config_expected_value.data && config->app_config_expected_value.len))
+    return false;
   if (needs_voice &&
       (config->voice_pcm_s16le_16khz_mono == NULL ||
        config->voice_pcm_len == 0u || config->voice_pcm_len > 1024u * 1024u ||

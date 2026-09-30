@@ -90,6 +90,8 @@ DevKit launcher（`projects/e2e/targets/h2loader_tar_zlib/lua-link/devkit`）运
 
 ## GizClaw
 
+GizClaw live入口统一直接 `bazel test`；iOS/Android消费共享mobile runner，业务fixture/oracle在`gizclaw-mobile/suite.py`，不再使用Make或shell转发调Bazel。`gizclaw_e2e_fixture` macro生成显式profile/key/已知非敏感value合同，缺输入在注册与业务资源mutation前失败。AppConfig两套list必须包含所选key，两套get必须逐字节等于期望value；注册返回必须匹配所选E2E profile，不能把其他profile的配置算进default资格。旧default/226项记录保留身份，新主线公开inventory为227项。
+
 `h2_gizclaw_e2e_run()` 只消费调用方提供的 Runtime/PAL、endpoint、RegistrationToken、suite mask 与确定性 PCM。防止并发 suite 和 retained session 被重复使用的 `s_run_active` 是文件级 static flag，使用 `H2_ATOMIC_DEFINE_STATIC` 定义独立 backing，不需模块级初始化或分配；run 结束且资源全部清理时清除，retained 资源仍在时保持占用。App 不读 environment 或文件，不选择 AP/BJ，不创建 Wi-Fi task，也不拥有 H2Peer/Pion。一个 case 失败后继续执行独立 case，最后输出完整 bounded summary 并完成反向清理。
 
 Desktop C++ launcher 的进程级 run guard 由同 package 的 C 桥接文件定义普通 static backing，C++ 通过 typed accessor 借用 wrapper 后仍调用同一 `h2_atomic_flag_*` API；没有 launcher 专用 global init，也不假设 `std::atomic` 与 C11 `_Atomic` 的内存布局相同。
@@ -99,8 +101,8 @@ Desktop C++ launcher 的进程级 run guard 由同 package 的 C 桥接文件定
 Desktop live E2E 位于 `projects/e2e/targets/cc_test/gizclaw`，以两个独立的 `manual` test target 运行：`gizclaw_h2peer_live_test` 默认执行 H2Peer 的完整 suite，`gizclaw_pion_live_test` 默认执行 Pion 的 Firmware 与 Voice suite。它们默认使用自然入口 `ap`，workflow 可以通过 test environment 选择 `ap`/`bj` 和受 backend 支持的 suite；两个 target 从 test environment 继承真实 RegistrationToken。两个 Make 入口都直接运行对应 Bazel test：
 
 ```sh
-make bazel-test-gizclaw_h2peer_live_test
-make bazel-test-gizclaw_pion_live_test
+bazel test --config=macos_arm64 //projects/e2e/targets/cc_test/gizclaw:gizclaw_h2peer_live_test --test_arg=--endpoint=<e2e-host:port>
+bazel test --config=macos_arm64 //projects/e2e/targets/cc_test/gizclaw:gizclaw_pion_live_test --test_arg=--endpoint=<e2e-host:port>
 ```
 
 DevKit launcher 位于 `projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/devkit`，固定使用 H2Peer、北京入口和 RuntimeProfile `default` 自己的 `deploy-default` RegistrationToken。通用 RPC/Voice 测试从该 profile 返回的 `assistants` catalog 选择真实 Workflow，不假设 H106 的 `chat` alias。它在首次 Wi-Fi `GOT_IP` 后每次 boot 只运行一次 `all`；构建时设置 `--define=H2_GIZCLAW_E2E_VOICE_ONLY=1` 可只运行 `voice`，用于隔离跨 case 的资源状态。断线重连不创建第二个 runner。portable App 继续 non-fail-fast 执行选中的独立 case，launcher 在完成后每 10 秒重放 bounded summary。普通 GizClaw E2E 仅在本轮选定用例全部通过、结果完整且没有清理失败/保留资源时确认 App。失败镜像保持未确认；AMOLED 显式 OTA-only 的源镜像准备仍遵循独立硬件升级流程。

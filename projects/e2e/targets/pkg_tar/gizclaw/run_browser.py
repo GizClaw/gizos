@@ -21,6 +21,8 @@ from web_archive_browser_test import Cdp, find_browser
 from web_archive_server import prepared_archive, make_handler, read_header_policy
 sys.path.insert(0, str(root / "projects/e2e/apps/gizclaw"))
 import api_coverage
+sys.path.insert(0, str(root / "projects/e2e/libs/gizclaw-mobile"))
+import suite as gizclaw_suite
 
 
 def main():
@@ -28,18 +30,16 @@ def main():
     parser.add_argument("--archive", type=Path, required=True)
     parser.add_argument("--pcm", type=Path, required=True)
     parser.add_argument("--output", type=Path, default=os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR"))
-    parser.add_argument("--profile", required=True)
+    parser.add_argument("--fixture", type=Path, required=True)
     parser.add_argument("--timeout", type=int, default=1800)
     args = parser.parse_args()
     api_coverage.validate_inventory(api_coverage.requirements(),
         (api_coverage.repository_root() / "libs/gizclaw/tests/public_api.inc").read_text())
     if args.output is None:
         parser.error("--output is required outside Bazel tests")
-    fixture = {key: os.environ.get(env, "") for key, env in (
-        ("endpoint", "H2_GIZCLAW_E2E_ENDPOINT"), ("token", "H2_GIZCLAW_E2E_REGISTRATION_TOKEN"),
-        ("api_url", "H2_GIZCLAW_E2E_DEVICE_API_URL"), ("audio_url", "H2_GIZCLAW_E2E_AUDIO_URL"))}
-    if not all(fixture.values()):
-        parser.error("explicit E2E endpoint, token and device API/audio fixtures required")
+    args.fixtures = {"app_config": args.fixture, "pcm": args.pcm}
+    gizclaw_suite.preflight(args)
+    fixture = args.gizclaw_fixture
     args.output.mkdir(parents=True, exist_ok=True)
     archive_copy = args.output / "app.web.tar"
     shutil.copyfile(args.archive, archive_copy)
@@ -111,12 +111,15 @@ def main():
                     raise RuntimeError("WASM fixture/runtime failure")
             state = cdp.send("Runtime.evaluate", {"expression": "({isolated:crossOriginIsolated})", "returnByValue": True}, session=session)["result"]["value"]
             audit = api_coverage.audit([line + "\n" for line in lines], api_coverage.requirements(),
-                endpoint=fixture["endpoint"], backend="h2peer", profile=args.profile,
+                endpoint=fixture["endpoint"], backend="h2peer", profile=fixture["runtime_profile"],
                 platform="wasm-chromium", process_exit_code=exit_code if exit_code is not None else 1)
             (args.output / "coverage.json").write_text(json.dumps(audit, indent=2) + "\n")
             clean = exit_code == 0 and final == "H2_GIZCLAW_PLATFORM_FINAL rc=0 teardown=0 retained=0 worker=1" and state.get("isolated")
             evidence = dict(qualified=bool(clean and audit["valid"]), network_failures=network_failures, browser=cdp.send("Browser.getVersion"), state=state,
                 process_exit_code=exit_code, platform_final=final,
+                runtime_profile=fixture["runtime_profile"], app_config_key=fixture["app_config_key"],
+                app_config_value_sha256=hashlib.sha256(fixture["app_config_value"].encode()).hexdigest(),
+                fixture_contract_sha256=hashlib.sha256(args.fixture.read_bytes()).hexdigest(),
                 archive_sha256=hashlib.sha256(args.archive.read_bytes()).hexdigest(),
                 pcm_sha256=hashlib.sha256(args.pcm.read_bytes()).hexdigest())
             (args.output / "environment.json").write_text(json.dumps(evidence, indent=2) + "\n")

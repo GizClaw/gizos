@@ -2,7 +2,7 @@
 
 ## 当前资格（2026-09-30）
 
-当前 SDK 为 `0.19.0`，合入 main 的 Session playback interrupt 后，公开接口与独立覆盖矩阵为 **227 项**。之前记录的 226 项版本证据保留原身份。完整目标是同一个 portable App 在 macOS、WASM、iOS、Android、ESP32-S3、BK7258 上执行；**目前没有平台取得完整 226 项资格**。平台产物构建、局部用例和累计成功调用均不能替代同一版本的一次完整通过。
+当前 SDK 为 `0.19.0`，合入 main 的 Session playback interrupt 后，公开接口与独立覆盖矩阵为 **227 项**。之前记录的 226 项版本证据保留原身份。完整目标是同一个 portable App 在 macOS、WASM、iOS、Android、ESP32-S3、BK7258 上执行；**目前没有平台取得完整 227 项资格**。平台产物构建、局部用例和累计成功调用均不能替代同一版本的一次完整通过。
 
 | 平台 | 本轮实际结果 | 尚缺条件 |
 | --- | --- | --- |
@@ -22,12 +22,12 @@
 新平台入口复用完整 portable App，分别为：
 
 ```sh
-make bazel-test-ios_gizclaw_simulator_test
-make bazel-test-android_gizclaw_simulator_test
-make bazel-test-gizclaw_wasm_live_test
+bazel test --config=ios_sim_arm64 //projects/e2e/targets/ios_application/gizclaw:ios_gizclaw_simulator_test
+bazel test --config=android_arm64 //projects/e2e/targets/android_binary/gizclaw:android_gizclaw_simulator_test
+bazel test --config=macos_arm64 //projects/e2e/targets/pkg_tar/gizclaw:gizclaw_wasm_live_test
 ```
 
-三者都要求显式注入 `H2_GIZCLAW_E2E_ENDPOINT`、`H2_GIZCLAW_E2E_REGISTRATION_TOKEN`、`H2_GIZCLAW_E2E_DEVICE_API_URL`、`H2_GIZCLAW_E2E_AUDIO_URL`；移动端还需指定独占的 `H2_IOS_SIMULATOR_UDID` 或 `H2_ANDROID_SERIAL`。测试保留实际包副本和 SHA，删除 sandbox 内的凭据 fixture，并在用例、清理、226 项 API 审计全部通过后才授予资格。Chrome 始终保持 CORS 校验；报告只保存失败类型与主机，不保存 firmware URL 或授权内容。
+三者都要求显式注入 `H2_GIZCLAW_E2E_ENDPOINT`、`H2_GIZCLAW_E2E_REGISTRATION_TOKEN`、`H2_GIZCLAW_E2E_DEVICE_API_URL`、`H2_GIZCLAW_E2E_AUDIO_URL`；移动端还需指定独占的 `H2_IOS_SIMULATOR_UDID` 或 `H2_ANDROID_SERIAL`。测试保留实际包副本和 SHA，删除 sandbox 内的凭据 fixture，并在用例、清理、227 项 API 审计全部通过后才授予资格。Chrome 始终保持 CORS 校验；报告只保存失败类型与主机，不保存 firmware URL 或授权内容。
 
 下面保留原有测试合同与历史问题记录；历史通过结果不转移到本轮版本。
 
@@ -80,13 +80,7 @@ bazel test --config=macos_arm64 \
 
 上述命令要求环境中已配置真实 RegistrationToken；`H2_GIZCLAW_E2E_SUITE=connectivity` 可选择独立测速，不得把它当成 `all` 验收。Bazel 默认 args 提供 PCM fixture 与 suite；endpoint 没有默认值。
 
-Make 包装器通过 `H2_GIZCLAW_E2E_ENDPOINT` 显式生成同一个 `--endpoint` 参数；变量缺失或为空时，不启动 Bazel。示例：
 
-```sh
-H2_GIZCLAW_E2E_ENDPOINT=edge-bj-01.e2e.gizclaw.com:9821 \
-H2_GIZCLAW_E2E_SUITE=connectivity \
-make bazel-test-gizclaw_h2peer_live_test BAZEL_CONFIG=macos_arm64
-```
 
 手动 Live E2E workflow 同样要求显式 `endpoint` 输入，不再接收 `entry` 区域别名。H2Peer 支持全部 suite（含 `service`）；Pion 及 `both` 仅接受 `rpc`、`firmware`、`voice`、`firmware-voice`。`both` 会运行两个后端，但任一失败都会使整个步骤失败。`//tools/bazel:gizclaw_live_command_test` 用假 Bazel 检查真实 workflow shell → Make → 包装器的参数和退出状态，不连接任何服务，不能用它证明 live E2E 已通过。
 
@@ -138,7 +132,7 @@ Desktop 将 Runtime、provider、配置、endpoint、token 和 PCM 放在同一 
 
 Debug 的 `req_create_debug_set` / `resp_parse_debug_set`、`req_create_debug_get` / `resp_parse_debug_get`，以及 Service 维护快照的 `debug_snapshot` / `debug_refresh` / `debug_set_mode` 纳入 227 项审计要求；`device-api` 必须提供真实调用链和 `debug_set-assert` 才能计为覆盖。当前尚未加入该设备场景，因此完整覆盖审计仍会报告这两项缺失，不能用单元测试替代真实验收。
 
-`h2_gizclaw_service_get_time_sync_status` 纳入 226 项审计要求，属于 `service` 用例；必须提供成功调用和 `service_get_time_sync_status-assert` 的校时状态业务断言。Service 实际读取并验证校时状态与尝试次数；`calibrated=1` 仅在 SUCCEEDED 且 last_rc=0 时记录。RETRY/UNSUPPORTED 可证明状态查询契约，但不能证明成功校时。本地边界测试分别覆盖读取失败、未尝试、错误状态和虚假成功，在线结果仍须单独验收。
+`h2_gizclaw_service_get_time_sync_status` 纳入 227 项审计要求，属于 `service` 用例；必须提供成功调用和 `service_get_time_sync_status-assert` 的校时状态业务断言。Service 实际读取并验证校时状态与尝试次数；`calibrated=1` 仅在 SUCCEEDED 且 last_rc=0 时记录。RETRY/UNSUPPORTED 可证明状态查询契约，但不能证明成功校时。本地边界测试分别覆盖读取失败、未尝试、错误状态和虚假成功，在线结果仍须单独验收。
 
 Session 的 15 个公开操作纳入同一 fail-closed 审计，归属独立 Voice case。Voice 使用真实 Session 进行注册、完整 catalog 加载与刷新、Workspace 选择、PTT/Realtime 输入与终态观察、完整文字输入、释放和重连。文字输入在 PTT 轮次之后用 `h2_gizclaw_session_send_text` 提交一段文字，`session_send_text-assert` 要求 Session 先进入 WAITING、completion 恰好一次且为 FINISHED/OK、随后从 Track 听到非静音回复并回到 IDLE。一轮语音结束、Session 回到 IDLE 后调用 `h2_gizclaw_session_interrupt_playback`，`session_interrupt_playback-assert` 要求返回成功、Session 状态不变且 Track 仍为空；打断正在播放的回复由产品 E2E 覆盖。准备取消仍缺少 live 场景；底层 API 的独立调用要求也不能用 Session 内部调用补记，因此完整 227 项审计仍按缺失 evidence 拒绝通过。AMOLED 的构建和设备验收见 [Session E2E](/apps/h2loader/boards/amoled/gizclaw_e2e)。
 
@@ -191,6 +185,8 @@ Workspace 覆盖包含 28 个函数。`h2_gizclaw_rpc_run_stop` 在独立 req/re
 
 ## 显式 AppConfig fixture
 
-`gizclaw_e2e_fixture` macro 生成只包含非敏感 key 的 C 配置及 JSON contract。RPC/all 必须通过 `--//projects/e2e/apps/gizclaw:app_config_fixture_key=<key>` 明确传入当前注册 profile 的 key；为空在注册和业务资源 mutation 之前失败，不再从列表任取第一项。两套 list 必须找到该 key，两套 get 验证 profile/revision、storage ownership、长度和逐字节一致性。凭据仍独立注入，key 不进入日志。
+`gizclaw_e2e_fixture` macro 生成只包含非敏感 key 的 C 配置及 JSON contract。RPC/all 必须通过 `--//projects/e2e/apps/gizclaw:app_config_fixture_key=<key>`、`app_config_fixture_profile=<profile>`、`app_config_fixture_value=<known-value>` 明确传入受控 E2E profile 的 key 和期望 bytes；为空在注册和业务资源 mutation 之前失败，不再从列表任取第一项。两套 list 必须找到该 key，两套 get 验证 profile/revision、storage ownership、长度和逐字节一致性。凭据仍独立注入，key 不进入日志。
 
 只读核对 Deploy 的 E2E 资源 checkpoint：`RuntimeProfile/default` 当前没有 `app_config`；`h106-tiga`、`h106-zero` 各有 64 项，例如非敏感的 `media.songs.en-us`。选择这些受控 E2E profile 时必须同时显式使用其注册 fixture 身份并保存全新结果，不能在 default 结果中使用其他 profile 的 key。此源码改动未修改服务器、Terraform、旧设备证据或旧通过记录。
+
+移动端直接由共享 `mobile_e2e.py` 安装/运行/清理，静态合同在 `gizclaw-mobile/BUILD.bazel`。唯一 `suite.py` hook 负责私有服务输入、AppConfig preflight、真实227接口审计与逐case oracle，不再重复模拟器生命周期，也不调用Bazel。全量真实网络资格必须同时通过8个顶层case、227接口审计、profile/value身份、零retained/cleanup/teardown；缺AppConfig输入、CORS故障、资源残留均不能skip。旧Make和shell转发入口已删除，使用直接 `bazel test --nocache_test_results`，磁盘构建缓存保持启用。

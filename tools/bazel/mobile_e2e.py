@@ -417,6 +417,10 @@ def main(argv=None):
                                      contract["output_default"] or f"/tmp/{prefix}-mobile-result")
     args.report_platform = args.platform if contract["plain_platform"] else (
         "ios-simulator" if args.platform == "ios" else "android-emulator")
+    # A live service suite must reject missing operator inputs before install,
+    # fixture writes, permission changes or App/provider initialization.
+    if hasattr(hook, "preflight"):
+        hook.preflight(args)
     with MobileApp(args.platform, args.app, args.sdk, contract["package"], contract["report"],
                    args.output, timeout=args.timeout if args.timeout is not None else contract["timeout"], prefix=prefix) as app:
         app.environment()["suite_sha256"] = hashlib.sha256(args.suite.read_bytes()).hexdigest()

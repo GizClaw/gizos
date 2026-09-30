@@ -1228,6 +1228,25 @@ int main(int argc, char **argv) {
     assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
   }
   test_call_sync(&runtime, &config);
+  /* A real registration under the wrong explicit fixture profile remains a
+   * failure, but cleanup must delete that Peer on the existing connection. */
+  h2_gizclaw_e2e_config_t wrong_profile = config;
+  wrong_profile.registration_token = (h2_gizclaw_str_t){"borrowed-token", 14u};
+  wrong_profile.expected_runtime_profile = "other-profile";
+  s_start_rc = s_register_rc = s_delete_rc = s_stop_rc = s_deinit_rc = 0;
+  s_user_stop = s_unterminated_profile = s_null_service = false;
+  s_profile = "runtime-profile-from-server";
+  s_poll_fault = 0u;
+  const unsigned deletes_before = s_deletes, registers_before = s_registers;
+  assert(h2_gizclaw_e2e_fixture_init(&fixture, &runtime, &wrong_profile,
+                                   600000u) == H2_PAL_OK);
+  assert(h2_gizclaw_e2e_fixture_connect_actors(&fixture, 1u) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(fixture.actors[0].registered && !fixture.runtime_profile_name[0]);
+  assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
+  assert(s_deletes == deletes_before + 1u && s_registers == registers_before + 1u);
+  assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
+  assert(s_live_services == 0u);
   return 0;
 }
 

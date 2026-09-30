@@ -161,6 +161,9 @@ static void run_e2e(void *raw) {
       .server_endpoint = launcher_config->server_endpoint,
       .registration_token = launcher_config->registration_token,
       .app_config_key = h2_gizclaw_e2e_fixture_key(),
+      .expected_runtime_profile = h2_gizclaw_e2e_fixture_profile(),
+      .app_config_expected_value = {h2_gizclaw_e2e_fixture_value(),
+                                   strlen(h2_gizclaw_e2e_fixture_value())},
       .voice_audio = runner->runtime->audio,
       .voice_pcm_s16le_16khz_mono = h2_gizclaw_e2e_voice_prompt_start,
       .voice_pcm_len = (size_t)(h2_gizclaw_e2e_voice_prompt_end -
@@ -271,7 +274,8 @@ static void image_entry(void *user) {
   }
 
   if ((AMOLED_E2E_SUITES & H2_GIZCLAW_E2E_SUITE_RPC) != 0u &&
-      !h2_gizclaw_e2e_fixture_key()[0])
+      (!h2_gizclaw_e2e_fixture_key()[0] ||
+       !h2_gizclaw_e2e_fixture_profile()[0] || !h2_gizclaw_e2e_fixture_value()[0]))
     fail_launcher("missing_app_config_fixture", H2_PAL_ERR_INVALID_ARG, true);
 
   s_wifi_supervisor = (h2_gizclaw_e2e_amoled_wifi_supervisor_t){

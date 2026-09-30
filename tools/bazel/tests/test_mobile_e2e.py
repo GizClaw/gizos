@@ -315,6 +315,18 @@ class MobileRunnerTest(unittest.TestCase):
         self.assertEqual(json.loads((self.root / "out/qualified.json").read_text())["passed"], 1)
         self.assertEqual(json.loads((self.root / "out/environment.json").read_text())["runner_status"], "completed")
 
+    def test_preflight_rejects_missing_live_fixture_before_device_mutation(self):
+        contract = self.declaration()
+        module = self.root / "preflight.py"
+        module.write_text("def preflight(args):\n    raise ValueError('missing live fixture')\n")
+        contract["hook"] = str(module)
+        suite = self.root / "suite.json"
+        suite.write_text(json.dumps(contract))
+        with patch("tools.bazel.mobile_e2e.MobileApp") as owner:
+            with self.assertRaisesRegex(ValueError, "missing live fixture"):
+                main(["--suite", str(suite), "ios", str(self.ipa), str(self.sdk)])
+            owner.assert_not_called()
+
     def test_hook_gets_declared_fixtures_and_cannot_bypass_standard_failure(self):
         hook = ("from pathlib import Path\ndef run_suite(app, args):\n"
                 "    assert args.fixtures['server'] == Path('fixture-server')\n"

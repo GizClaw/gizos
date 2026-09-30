@@ -73,8 +73,11 @@ py_test(
     srcs = ["run_browser.py"],
     main = "run_browser.py",
     args = ["--archive", "$(rootpath :gizclaw)", "--pcm",
-            "$(rootpath //projects/e2e/apps/gizclaw:voice_prompt)", "--profile", "default"],
+            "$(rootpath //projects/e2e/apps/gizclaw:voice_prompt)", "--fixture",
+            "$(rootpath //projects/e2e/apps/gizclaw:app_config_fixture_contract)"],
     data = [":gizclaw", "//projects/e2e/apps/gizclaw:voice_prompt",
+            "//projects/e2e/apps/gizclaw:app_config_fixture_contract",
+            "//projects/e2e/libs/gizclaw-mobile:suite.py",
             "//projects/e2e/apps/gizclaw:api_coverage.py", "//libs/gizclaw:public_api_inventory",
             "//tools/bazel:web_archive_browser_test.py", "//tools/bazel:web_archive_server.py"] + select({
         "//tools/bazel/platforms:host_linux_target_linux": ["@h2_playwright_chromium_linux_x86_64//:runtime"],
