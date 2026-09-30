@@ -8,7 +8,7 @@ cc_library(
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["."],
-    deps = ["//libs/runtime", "//projects/e2e/apps/gizclaw/app:gizclaw_e2e"],
+    deps = ["//projects/e2e/apps/gizclaw:app_config_fixture", "//libs/runtime", "//projects/e2e/apps/gizclaw/app:gizclaw_e2e"],
 )
 
 exports_files(["run_mobile.py"])

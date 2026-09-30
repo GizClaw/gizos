@@ -80,7 +80,7 @@ class ServiceCoverageTest(unittest.TestCase):
         observed = {row["symbol"] for row in result["functions"] if row["status"] == "covered"}
         self.assertEqual(observed, expected)
         self.assertFalse(result["valid"])
-        self.assertEqual(result["missing"], 226 - 6)
+        self.assertEqual(result["missing"], 227 - 6)
 
 
 if __name__ == "__main__":

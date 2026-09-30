@@ -67,8 +67,11 @@ static int config_call(h2_gizclaw_e2e_fixture_t *f,
 
 int h2_gizclaw_e2e_run_app_config(h2_gizclaw_e2e_fixture_t *f,
                                  h2_gizclaw_resp_storage_t *s) {
-  if (!f || !s || !s->data || !f->actors[0].service) return H2_PAL_ERR_INVALID_ARG;
-  char first_key[H2_GIZCLAW_APP_CONFIG_KEY_MAX_BYTES + 1u] = {0};
+  if (!f || !s || !s->data || !f->actors[0].service || !f->config ||
+      !f->config->app_config_key || !f->config->app_config_key[0] ||
+      strlen(f->config->app_config_key) > H2_GIZCLAW_APP_CONFIG_KEY_MAX_BYTES)
+    return H2_PAL_ERR_INVALID_ARG;
+  const char *fixture_key = f->config->app_config_key;
   char profile_revision[256] = {0};
   uint8_t first_value[H2_GIZCLAW_APP_CONFIG_VALUE_MAX_BYTES + 1u];
   size_t first_length = 0u;
@@ -77,6 +80,7 @@ int h2_gizclaw_e2e_run_app_config(h2_gizclaw_e2e_fixture_t *f,
     const bool req = api == 0u;
     char cursor[H2_GIZCLAW_APP_CONFIG_CURSOR_MAX_BYTES + 1u] = {0};
     bool complete = false;
+    bool fixture_found = false;
     size_t keys = 0u;
     for (unsigned n = 0u; n < MAX_PAGES && rc == H2_PAL_OK; ++n) {
       h2_gizclaw_app_config_page_t page = {0};
@@ -103,7 +107,7 @@ int h2_gizclaw_e2e_run_app_config(h2_gizclaw_e2e_fixture_t *f,
         for (size_t j = 0u; j < i; ++j)
           if (strcmp(page.keys[j], page.keys[i]) == 0) rc = H2_PAL_ERR_FORMAT;
         if (rc != H2_PAL_OK) break;
-        if (first_key[0] == '\0') strcpy(first_key, page.keys[i]);
+        if (strcmp(fixture_key, page.keys[i]) == 0) fixture_found = true;
         ++keys;
       }
       if (rc != H2_PAL_OK) break;
@@ -111,12 +115,12 @@ int h2_gizclaw_e2e_run_app_config(h2_gizclaw_e2e_fixture_t *f,
       strcpy(cursor, page.next_cursor);
     }
     if (rc == H2_PAL_OK && !complete) rc = H2_PAL_ERR_NO_SPACE;
-    if (rc == H2_PAL_OK && keys == 0u) rc = H2_PAL_ERR_NOT_FOUND;
+    if (rc == H2_PAL_OK && !fixture_found) rc = H2_PAL_ERR_NOT_FOUND;
     evidence(req ? "h2_gizclaw_resp_parse_app_config_list" : "h2_gizclaw_rpc_app_config_list",
              "app_config_list-assert", rc);
     if (rc != H2_PAL_OK) break;
     h2_gizclaw_app_config_value_t value = {0};
-    rc = config_call(f, s, req, true, first_key, NULL, &value);
+    rc = config_call(f, s, req, true, fixture_key, NULL, &value);
     if (rc == H2_PAL_OK &&
         (!revision(f, s, value.runtime_profile_name, value.runtime_profile_revision) ||
          strcmp(profile_revision, value.runtime_profile_revision) != 0 ||

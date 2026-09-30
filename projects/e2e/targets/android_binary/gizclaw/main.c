@@ -17,7 +17,7 @@ Java_com_haivivi_gizos_e2e_gizclaw_MainActivity_nativeRun(JNIEnv *env, jclass ty
     values[i] = (*env)->GetStringUTFChars(env, strings[i], NULL);
     if (!values[i]) goto done;
   }
-  if (!pcm) goto done;
+  if (!pcm || !h2_gizclaw_e2e_fixture_key()[0]) goto done;
   char log_path[1024], report_path[1024];
   if (snprintf(log_path,sizeof(log_path),"%s/gizclaw.log",values[0]) >= (int)sizeof(log_path) ||
       snprintf(report_path,sizeof(report_path),"%s/gizclaw-result.json",values[0]) >= (int)sizeof(report_path)) goto done;

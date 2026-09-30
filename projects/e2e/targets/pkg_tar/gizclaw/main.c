@@ -6,7 +6,8 @@
 #include <stdlib.h>
 
 int main(int argc, char **argv) {
-  if (argc != 5 || emscripten_is_main_runtime_thread()) return 2;
+  if (argc != 5 || emscripten_is_main_runtime_thread() ||
+      !h2_gizclaw_e2e_fixture_key()[0]) return 2;
   FILE *f = fopen("/voice.pcm", "rb");
   if (!f) return 2;
   if (fseek(f,0,SEEK_END)) { fclose(f); return 2; }

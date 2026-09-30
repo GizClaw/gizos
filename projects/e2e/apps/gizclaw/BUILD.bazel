@@ -1,3 +1,4 @@
+load(":fixture.bzl", "gizclaw_e2e_fixture")
 load("@rules_python//python:defs.bzl", "py_binary", "py_test")
 load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
 
@@ -142,3 +143,6 @@ py_test(
 )
 
 exports_files(["api_coverage.py"])
+
+# No default profile key is invented: live RPC/all requires an explicit flag.
+gizclaw_e2e_fixture(name = "app_config_fixture")

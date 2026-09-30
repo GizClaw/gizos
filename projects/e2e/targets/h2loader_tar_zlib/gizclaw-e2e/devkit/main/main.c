@@ -149,6 +149,7 @@ static void run_e2e(void *raw) {
   runner->app_config = (h2_gizclaw_e2e_config_t){
       .server_endpoint = launcher_config->server_endpoint,
       .registration_token = launcher_config->registration_token,
+      .app_config_key = h2_gizclaw_e2e_fixture_key(),
       .voice_pcm_s16le_16khz_mono = h2_gizclaw_e2e_voice_prompt_start,
       .voice_pcm_len = (size_t)(h2_gizclaw_e2e_voice_prompt_end -
                                h2_gizclaw_e2e_voice_prompt_start),
@@ -255,6 +256,10 @@ static void image_entry(void *user) {
   if (rc != H2_PAL_OK) {
     fail_launcher("command_start", rc, false);
   }
+
+  if ((H2_GIZCLAW_E2E_DEVKIT_SUITES & H2_GIZCLAW_E2E_SUITE_RPC) != 0u &&
+      !h2_gizclaw_e2e_fixture_key()[0])
+    fail_launcher("missing_app_config_fixture", H2_PAL_ERR_INVALID_ARG, true);
 
   s_wifi_supervisor = (h2_gizclaw_e2e_devkit_wifi_supervisor_t){
       .runtime = runtime,

@@ -550,6 +550,7 @@ cc_library(
     copts = H2_WARNING_COPTS,
     target_compatible_with = PI32V2_UNSUPPORTED_ARTIFACT_COMPATIBILITY,
     deps = [
+        "//projects/e2e/apps/gizclaw:app_config_fixture",
         "//libs/atomic",
         "//libs/pal",
         "//libs/runtime",
@@ -848,3 +849,5 @@ cc_test(
     }),
     deps = [":session_cancel_case", "//libs/app_test:testing_pal", "//libs/atomic/providers/c11"],
 )
+
+exports_files(["src/h2_gizclaw_e2e_catalog_all.c"])

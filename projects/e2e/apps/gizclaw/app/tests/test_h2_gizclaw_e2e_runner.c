@@ -151,6 +151,23 @@ int main(int argc, char **argv) {
       .case_timeout_ms = 1000,
       .cleanup_timeout_ms = 1000};
   h2_gizclaw_e2e_result_t result;
+  if (!connectivity_only) {
+    const uint32_t original_suites = config.suites;
+    const uint8_t pcm[] = {1u, 0u};
+    config.suites = H2_GIZCLAW_E2E_SUITE_RPC;
+    config.voice_pcm_s16le_16khz_mono = pcm;
+    config.voice_pcm_len = sizeof(pcm);
+    const char *missing_keys[] = {NULL, ""};
+    for (size_t i = 0u; i < sizeof(missing_keys) / sizeof(*missing_keys); ++i) {
+      config.app_config_key = missing_keys[i];
+      assert(h2_gizclaw_e2e_run(&runtime, &config, &result) ==
+             H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
+      assert(allocator.live_blocks == 0 && s_connected == 0 && s_ran == 0);
+    }
+    config.suites = original_suites;
+    config.voice_pcm_s16le_16khz_mono = NULL;
+    config.voice_pcm_len = 0u;
+  }
   if (connectivity_only) {
     const uint32_t unsupported[] = {
         H2_GIZCLAW_E2E_SUITE_ALL, H2_GIZCLAW_E2E_SUITE_SERVICE,

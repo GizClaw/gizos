@@ -28,7 +28,7 @@
             if (log) setvbuf(stdout, NULL, _IOLBF, 0);
             h2_ios_http_t *http = NULL;
             h2_ios_webrtc_t *owner = NULL;
-            int rc = fixture && pcm && log ? h2_ios_http_create(NULL, 0u, &http) : H2_PAL_ERR_INVALID_ARG;
+            int rc = fixture && pcm && log && h2_gizclaw_e2e_fixture_key()[0] ? h2_ios_http_create(NULL, 0u, &http) : H2_PAL_ERR_INVALID_ARG;
             if (rc == H2_PAL_OK) rc = h2_ios_webrtc_create(&owner);
             if (rc == H2_PAL_OK) {
                 h2_runtime_config_t config = h2_ios_app_host_config();

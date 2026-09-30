@@ -51,6 +51,12 @@ static int network_ready(void) {
 static void run(void *user) {
   (void)user;
   int rc;
+  if (!h2_gizclaw_e2e_fixture_key()[0]) {
+    printf("H2_GIZCLAW_SETUP_FAIL stage=missing_app_config_fixture rc=%d\n",
+           H2_PAL_ERR_INVALID_ARG);
+    fflush(stdout);
+    return;
+  }
   while ((rc = network_ready()) != H2_PAL_OK) {
     printf("H2_GIZCLAW_SETUP_WAIT stage=network rc=%d\n", rc);
     fflush(stdout);
@@ -60,6 +66,7 @@ static void run(void *user) {
   app_config = (h2_gizclaw_e2e_config_t){
       .server_endpoint = settings->server_endpoint,
       .registration_token = settings->registration_token,
+      .app_config_key = h2_gizclaw_e2e_fixture_key(),
       .voice_audio = runtime->audio,
       .voice_pcm_s16le_16khz_mono = h2_gizclaw_e2e_pcm,
       .voice_pcm_len = h2_gizclaw_e2e_pcm_size,

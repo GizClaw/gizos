@@ -86,6 +86,11 @@ static bool config_valid(h2_runtime_t *runtime,
   const bool needs_voice =
       (config->suites &
        (H2_GIZCLAW_E2E_SUITE_RPC | H2_GIZCLAW_E2E_SUITE_VOICE)) != 0u;
+  if ((config->suites & H2_GIZCLAW_E2E_SUITE_RPC) != 0u &&
+      (config->app_config_key == NULL || config->app_config_key[0] == '\0' ||
+       strlen(config->app_config_key) > H2_GIZCLAW_APP_CONFIG_KEY_MAX_BYTES)) {
+    return false;
+  }
   if (needs_voice &&
       (config->voice_pcm_s16le_16khz_mono == NULL ||
        config->voice_pcm_len == 0u || config->voice_pcm_len > 1024u * 1024u ||

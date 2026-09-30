@@ -19,6 +19,7 @@ int h2_gizclaw_mobile_run(h2_runtime_config_t runtime_config,
     const char *platform, const char *endpoint, const char *token,
     const char *api_url, const char *audio_url, const uint8_t *pcm, size_t pcm_len,
     h2_gizclaw_e2e_result_t *result) {
+  if (!h2_gizclaw_e2e_fixture_key()[0]) return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   if (!result || retained || !platform || !pcm || !pcm_len ||
       (pcm_len & 1u) || pcm_len > 1024u * 1024u) return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   *result = (h2_gizclaw_e2e_result_t){0};
@@ -38,6 +39,7 @@ int h2_gizclaw_mobile_run(h2_runtime_config_t runtime_config,
   run->config = (h2_gizclaw_e2e_config_t){
       .server_endpoint={run->endpoint,strlen(run->endpoint)},
       .registration_token={run->token,strlen(run->token)},
+      .app_config_key=h2_gizclaw_e2e_fixture_key(),
       .device_api_url=run->api, .device_audio_url=run->audio,
       .voice_pcm_s16le_16khz_mono=run->pcm, .voice_pcm_len=pcm_len,
       .suites=H2_GIZCLAW_E2E_SUITE_ALL};

@@ -10,7 +10,7 @@ enum { NORMAL, EMPTY, FOREIGN_KEYS, TOO_MANY, BAD_PROFILE, BAD_REVISION,
        DUPLICATE_KEY, BAD_CURSOR, EMPTY_CURSOR, FOREVER_PAGES, FOREIGN_VALUE,
        TOO_LONG_VALUE, CHANGED_VALUE, CHANGED_REVISION, EMPTY_VALUE,
        FOREIGN_ITEMS, BAD_PUBLIC_KEY, BAD_PUBLIC_NAME, BAD_PUBLIC_EMOJI,
-       PUBLIC_DUPLICATE, DEADLINE, CALL_ERROR };
+       PUBLIC_DUPLICATE, DEADLINE, CALL_ERROR, MISSING_FIXTURE, WRONG_FIXTURE };
 static unsigned mode, calls, fail_at, assertions, releases, list_calls, get_calls;
 static bool emit;
 struct h2_gizclaw_req { unsigned kind; bool started, completed; } request;
@@ -140,7 +140,9 @@ h2_pal_result_t h2_gizclaw_rpc_profile_get(h2_gizclaw_service_t *s, uint32_t t,
 }
 static int run(unsigned m, unsigned fail, bool profile) {
   mode = m; fail_at = fail; calls = assertions = releases = list_calls = get_calls = 0u; alive = false;
-  h2_gizclaw_e2e_fixture_t f = {.runtime_profile_name="profile",
+  h2_gizclaw_e2e_config_t config = {.app_config_key =
+      m == MISSING_FIXTURE ? NULL : m == WRONG_FIXTURE ? "absent" : "fixture"};
+  h2_gizclaw_e2e_fixture_t f = {.runtime_profile_name="profile", .config=&config,
       .actors={{.service=(h2_gizclaw_service_t *)&service, .public_key="peer"}}};
   _Alignas(max_align_t) unsigned char data[8192];
   h2_gizclaw_resp_storage_t s = {.data=data, .capacity=sizeof(data)};
@@ -165,6 +167,10 @@ int main(int argc, char **argv) {
   for (unsigned i=1u; i<=profile_count; ++i) assert(run(CALL_ERROR, i, true) == H2_PAL_ERR_IO);
   for (unsigned i=EMPTY; i<=CHANGED_REVISION; ++i) assert(run(i, 0u, false) != H2_PAL_OK);
   assert(run(EMPTY_VALUE, 0u, false) == H2_PAL_OK);
+  assert(run(MISSING_FIXTURE, 0u, false) == H2_PAL_ERR_INVALID_ARG);
+  assert(calls == 0u && list_calls == 0u && get_calls == 0u);
+  assert(run(WRONG_FIXTURE, 0u, false) == H2_PAL_ERR_NOT_FOUND);
+  assert(list_calls == 1u && get_calls == 0u && assertions == 0u);
   for (unsigned i=FOREIGN_ITEMS; i<=PUBLIC_DUPLICATE; ++i) assert(run(i, 0u, true) != H2_PAL_OK);
   assert(run(DEADLINE, 0u, false) == H2_PAL_ERR_TIMEOUT);
   assert(run(DEADLINE, 0u, true) == H2_PAL_ERR_TIMEOUT);
