@@ -113,6 +113,7 @@ const char *h2_gizclaw_e2e_fixture_value(void);
 const char *h2_gizclaw_e2e_fixture_endpoint(void);
 const char *h2_gizclaw_e2e_fixture_token(void);
 const char *h2_gizclaw_e2e_fixture_time_server(void);
+int h2_gizclaw_e2e_fixture_physical_audio(void);
 
 typedef struct h2_gizclaw_e2e_result {
   size_t selected;

@@ -166,14 +166,15 @@ static void run_e2e(void *raw) {
       .expected_runtime_profile = h2_gizclaw_e2e_fixture_profile(),
       .app_config_expected_value = {h2_gizclaw_e2e_fixture_value(),
                                    strlen(h2_gizclaw_e2e_fixture_value())},
-      .voice_audio = runner->runtime->audio,
+      .voice_audio = h2_gizclaw_e2e_fixture_physical_audio()
+                         ? runner->runtime->audio : NULL,
       .voice_pcm_s16le_16khz_mono = h2_gizclaw_e2e_voice_prompt_start,
       .voice_pcm_len = (size_t)(h2_gizclaw_e2e_voice_prompt_end -
                                h2_gizclaw_e2e_voice_prompt_start),
       .suites = AMOLED_E2E_SUITES,
       .device_api_url = "https://ap.e2e.gizclaw.com",
       .device_audio_url = "https://raw.githubusercontent.com/GizClaw/gizos/cf8dbdeba320984fc57ddba670dcf55237aa39cf/projects/e2e/apps/gizclaw/data/playback_tone_32s_v1.ogg",
-      .device_real_audio = true,
+      .device_real_audio = h2_gizclaw_e2e_fixture_physical_audio() != 0,
       .case_timeout_ms = H2_GIZCLAW_E2E_DEFAULT_CASE_TIMEOUT_MS,
       .cleanup_timeout_ms = H2_GIZCLAW_E2E_DEFAULT_CLEANUP_TIMEOUT_MS,
       .progress_interval_ms = H2_GIZCLAW_E2E_DEFAULT_PROGRESS_INTERVAL_MS,

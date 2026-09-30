@@ -72,14 +72,14 @@ static void run(void *user) {
       .expected_runtime_profile = h2_gizclaw_e2e_fixture_profile(),
       .app_config_expected_value = {h2_gizclaw_e2e_fixture_value(),
                                    strlen(h2_gizclaw_e2e_fixture_value())},
-      .voice_audio = runtime->audio,
+      .voice_audio = h2_gizclaw_e2e_fixture_physical_audio() ? runtime->audio : NULL,
       .voice_pcm_s16le_16khz_mono = h2_gizclaw_e2e_pcm,
       .voice_pcm_len = h2_gizclaw_e2e_pcm_size,
       .device_api_url = "https://ap.e2e.gizclaw.com",
       .device_audio_url = "https://raw.githubusercontent.com/GizClaw/gizos/"
                           "cf8dbdeba320984fc57ddba670dcf55237aa39cf/projects/"
                           "e2e/apps/gizclaw/data/playback_tone_32s_v1.ogg",
-      .device_real_audio = true,
+      .device_real_audio = h2_gizclaw_e2e_fixture_physical_audio() != 0,
       .suites = H2_GIZCLAW_E2E_SUITE_ALL};
   rc = h2_gizclaw_e2e_run(runtime, &app_config, &result);
   printf("H2_GIZCLAW_E2E stage=summary platform=bk7258 endpoint=%.*s "

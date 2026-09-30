@@ -1,6 +1,6 @@
 """Bind a non-secret, operator-selected AppConfig fixture to every launcher."""
 
-load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo", "string_flag")
+load("@bazel_skylib//rules:common_settings.bzl", "BuildSettingInfo", "bool_flag", "string_flag")
 load("@rules_cc//cc:defs.bzl", "cc_library")
 
 def _fixture_impl(ctx):
@@ -10,6 +10,7 @@ def _fixture_impl(ctx):
     endpoint = ctx.attr.endpoint[BuildSettingInfo].value
     token = ctx.attr.token[BuildSettingInfo].value
     time_server = ctx.attr.time_server[BuildSettingInfo].value
+    physical_audio = ctx.attr.physical_audio[BuildSettingInfo].value
     allowed = "abcdefghijklmnopqrstuvwxyz0123456789.-"
     if len(key) > 63 or any([c not in allowed for c in key.elems()]) or (key and key[0] not in "abcdefghijklmnopqrstuvwxyz"):
         fail("AppConfig fixture key must be a 1-63 byte lowercase alias, or empty when not configured")
@@ -30,8 +31,9 @@ def _fixture_impl(ctx):
         "const char *h2_gizclaw_e2e_fixture_endpoint(void) { return %s; }" % json.encode(endpoint),
         "const char *h2_gizclaw_e2e_fixture_token(void) { return %s; }" % json.encode(token),
         "const char *h2_gizclaw_e2e_fixture_time_server(void) { return %s; }" % json.encode(time_server),
+        "int h2_gizclaw_e2e_fixture_physical_audio(void) { return %s; }" % ("1" if physical_audio else "0"),
     ]) + "\n")
-    ctx.actions.write(contract, json.encode({"app_config_key": key, "runtime_profile": profile, "app_config_value": value, "time_server": time_server}) + "\n")
+    ctx.actions.write(contract, json.encode({"app_config_key": key, "runtime_profile": profile, "app_config_value": value, "time_server": time_server, "physical_audio": physical_audio}) + "\n")
     return [
         DefaultInfo(files = depset([source, contract])),
         OutputGroupInfo(source = depset([source]), contract = depset([contract])),
@@ -46,10 +48,11 @@ _fixture = rule(
         "endpoint": attr.label(mandatory = True, providers = [BuildSettingInfo]),
         "token": attr.label(mandatory = True, providers = [BuildSettingInfo]),
         "time_server": attr.label(mandatory = True, providers = [BuildSettingInfo]),
+        "physical_audio": attr.label(mandatory = True, providers = [BuildSettingInfo]),
     },
 )
 
-def gizclaw_e2e_fixture(name, app_config_key = "", runtime_profile = "", app_config_value = "", server_endpoint = "", registration_token = "", time_server = ""):
+def gizclaw_e2e_fixture(name, app_config_key = "", runtime_profile = "", app_config_value = "", server_endpoint = "", registration_token = "", time_server = "", physical_audio = False):
     """Empty is buildable but RPC/all launchers reject it before networking.
 
     Supply the public profile key via the macro argument or the generated
@@ -63,7 +66,8 @@ def gizclaw_e2e_fixture(name, app_config_key = "", runtime_profile = "", app_con
     string_flag(name = name + "_endpoint", build_setting_default = server_endpoint)
     string_flag(name = name + "_token", build_setting_default = registration_token)
     string_flag(name = name + "_time_server", build_setting_default = time_server)
-    _fixture(name = name + "_generated", key = ":" + name + "_key", profile = ":" + name + "_profile", value = ":" + name + "_value", endpoint = ":" + name + "_endpoint", token = ":" + name + "_token", time_server = ":" + name + "_time_server")
+    bool_flag(name = name + "_physical_audio", build_setting_default = physical_audio)
+    _fixture(name = name + "_generated", key = ":" + name + "_key", profile = ":" + name + "_profile", value = ":" + name + "_value", endpoint = ":" + name + "_endpoint", token = ":" + name + "_token", time_server = ":" + name + "_time_server", physical_audio = ":" + name + "_physical_audio")
     native.filegroup(name = name + "_contract", srcs = [":" + name + "_generated"], output_group = "contract")
     native.filegroup(name = name + "_source", srcs = [":" + name + "_generated"], output_group = "source")
     cc_library(

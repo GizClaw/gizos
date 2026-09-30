@@ -194,3 +194,5 @@ Workspace 覆盖包含 28 个函数。`h2_gizclaw_rpc_run_stop` 在独立 req/re
 实板没有宿主进程环境，因此还必须在同一macro声明中显式传入 `app_config_fixture_endpoint` 与 `app_config_fixture_token`（只使用受控E2E token，不提供源码默认值）。其生成C配置只作为本次私有构建输入；JSON/audit合同不保存token，运行日志也不打印token。宿主端继续只通过运行环境注入凭据。
 
 ESP32-S3还要求显式 `app_config_fixture_time_server=<DNS-or-IPv4>`，由本次网络fixture提供真实NTP时间，不使用源码固定外网pool。SNTP失败保持pending、不启动业务套件；TLS校验仍使用同步后的真实UTC且不关闭验证。H2Loader CLI upgrade的短验证窗口可能先于长业务套件的最后confirmation结束，必须另接当前boot的日志并最终核对package/P1/Stage/coredump，不能提前确认来绕过该窗口。
+
+业务验收的board音频delegate由 `app_config_fixture_physical_audio` bool macro参数显式选择，默认software（确定性PCM输入和真实回复解码/Track消费）；true才借用实际BSP capture/speaker。software资格不是物理speaker/capture资格，任何physical-only故障单独保留，不伪装成physical PASS。
