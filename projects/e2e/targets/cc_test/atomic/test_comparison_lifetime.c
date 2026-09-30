@@ -75,8 +75,16 @@ static int join(void *user, h2_pal_task_t *handle) {
   worker->joined = 1;
   return 0;
 }
-static int monotonic(void *user, uint64_t *out) { (void)user; *out = 1; return 0; }
-static int sleep_ms(void *user, uint32_t ms) { (void)user; (void)ms; return 0; }
+static h2_pal_result_t monotonic(void *user, uint64_t *out) {
+  (void)user;
+  *out = 1;
+  return H2_PAL_OK;
+}
+static h2_pal_result_t sleep_ms(void *user, uint32_t ms) {
+  (void)user;
+  (void)ms;
+  return H2_PAL_OK;
+}
 static int run_case(unsigned failed_index, unsigned busy) {
   fixture_t f = {.failed_index = failed_index, .busy = busy};
   const h2_pal_mem_vtable_t memory = {.alloc = allocate, .free = release};
