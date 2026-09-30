@@ -1,15 +1,14 @@
 """Run both storage phases in separate native App processes, using one sandbox."""
-import argparse
 import json
-import os
-from pathlib import Path
 import re
 import secrets
 import shutil
 
-from tools.bazel.mobile_e2e import MobileApp, save_evidence
 
 PACKAGE = "com.haivivi.gizos.e2e.palstorage"
+REPORT = "pal-storage-phase.json"
+PREFIX = "pal-storage"
+OUTPUT_DEFAULT = "/tmp/pal-storage-mobile"
 
 
 def verify(phases, registry, platform, nonce):
@@ -29,7 +28,8 @@ def verify(phases, registry, platform, nonce):
     return output
 
 
-def run_suite(app, nonce):
+def run_suite(app, args):
+    nonce = secrets.randbits(32)
     if app.platform == "ios":
         test_root = app.container / "Documents/pal-storage"
         if test_root.exists():
@@ -47,26 +47,5 @@ def run_suite(app, nonce):
     else:
         assert app.adb_command("shell", "run-as", PACKAGE, "test", "-d",
                                "files/pal-storage/files/run", check=False).returncode != 0
-    return phases
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("platform", choices=["ios", "android"])
-    parser.add_argument("app", type=Path); parser.add_argument("sdk", type=Path); parser.add_argument("registry", type=Path)
-    parser.add_argument("--output", type=Path, default=Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", "/tmp/pal-storage-mobile")))
-    parser.add_argument("--timeout", type=int, default=90)
-    args = parser.parse_args()
-    nonce = secrets.randbits(32)
-    with MobileApp(args.platform, args.app, args.sdk, PACKAGE,
-                   "pal-storage-phase.json", args.output,
-                   timeout=args.timeout, prefix="pal-storage") as app:
-        phases = run_suite(app, nonce)
-        (args.output / "phases.json").write_text(json.dumps(phases, indent=2) + "\n")
-        report = verify(phases, args.registry, args.platform, nonce)
-        save_evidence(args.output, report, app.environment(), args.app, args.sdk)
-    print(f"PAL Storage {args.platform}: operations=28, 30/30 PASS, restart=PASS, cleanup=0, qualified=1")
-
-
-if __name__ == "__main__":
-    main()
+    (args.output / "phases.json").write_text(json.dumps(phases, indent=2) + "\n")
+    return verify(phases, args.registry, args.platform, nonce)

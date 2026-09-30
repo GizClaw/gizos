@@ -1,14 +1,10 @@
 #!/usr/bin/env python3
 """Install the packaged App, require all portable Audio Decoder cases, retain evidence."""
-import argparse
-import json
-import os
-from pathlib import Path
 import re
 
-from tools.bazel.mobile_e2e import MobileApp, save_evidence
 
 PACKAGE = "com.haivivi.gizos.e2e.palaudiodecoder"
+REPORT = "pal-audio-decoder-result.json"
 
 
 def verify(report, registry, platform):
@@ -35,27 +31,6 @@ def run_suite(app, args):
             required_header="prefab/modules/h2_pal_core/include/h2_android_platform.h",
             public_symbols=('h2_android_platform_audio_decoder_api',),
         )
-    return app.launch()
-
-
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("platform", choices=["ios", "android"])
-    parser.add_argument("app", type=Path)
-    parser.add_argument("sdk", type=Path)
-    parser.add_argument("registry", type=Path)
-    parser.add_argument("--output", type=Path, default=Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", "/tmp/pal-audio-decoder-mobile-result")))
-    parser.add_argument("--timeout", type=int, default=90)
-    args = parser.parse_args()
-    with MobileApp(args.platform, args.app, args.sdk, PACKAGE,
-                   "pal-audio-decoder-result.json", args.output,
-                   timeout=args.timeout) as app:
-        result = run_suite(app, args)
-        verify(result, args.registry, "ios-simulator" if args.platform == "ios" else "android-emulator")
-        save_evidence(args.output, result, app.environment(), args.app, args.sdk)
-    count = len(result["cases"])
-    print(f"PAL Audio Decoder {args.platform}: {count}/{count} PASS, blocked=0, teardown=0")
-
-
-if __name__ == "__main__":
-    main()
+    result = app.launch()
+    verify(result, args.registry, args.report_platform)
+    return result

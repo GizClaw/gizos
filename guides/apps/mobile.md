@@ -54,7 +54,7 @@ Mobile 直接 Display PAL consumer 使用 `//libs/lvgl:lvgl_mobile` compile-time
 
 ## Packaged PAL E2E
 
-Core、Storage、Crypto、HTTP、WebRTC、JSON、Audio、Audio Decoder 和 Display 的 移动端资格测试共用 `tools/bazel/mobile_e2e.py` 与 `mobile_e2e_test` 宏，直接由 `py_test` 执行。原有 `*_simulator_test` target 和 Make 入口保持不变。 Python 在构建主机执行，IPA/APK 和 SDK 仍在对应移动平台配置中构建，并通过 Bazel `data` 进入 runfiles；fixture Python 库通过 `deps` 声明。
+Core、Storage、Crypto、HTTP、WebRTC、JSON、Audio、Audio Decoder 和 Display 的 移动端资格测试共用 `tools/bazel/mobile_e2e.py` 与 `mobile_e2e_test` 宏，所有 target 的 `py_test.main` 都指向同一个公共 Python 入口，suite 模块只保留专属执行与断言。原有 `*_simulator_test` target 和 Make 入口保持不变。 Python 在构建主机执行，IPA/APK 和 SDK 仍在对应移动平台配置中构建，并由宏的 `app`、`sdk`、`registry` 属性统一接入 Bazel `args` 和 `data`；suite 源码进入 `srcs`，fixture Python 库通过 `deps` 声明。
 
 公共层负责安装、旧报告清除、启动/等待超时、日志、失败记录、终止和 SDK 产物身份。 Suite 保留完整 registry/PASS oracle：Storage 保留两进程、nonce 与持久化检查； HTTP/WebRTC 保留受控服务、TLS/指纹拒绝与 peer 证据；Audio 保留权限设置； Display/JSON/Audio Decoder 保留报告格式和 provider 符号探针。 完整接入契约见仓库 `tools/bazel/mobile_e2e.md`。
 

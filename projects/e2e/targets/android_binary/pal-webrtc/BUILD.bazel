@@ -37,29 +37,14 @@ android_binary(
 
 mobile_e2e_test(
     name = "android_pal_webrtc_simulator_test",
-    timeout = "moderate",
-    args = [
-        "android",
-        "$(rootpath :pal_webrtc_e2e.apk)",
-        "$(rootpath :app_sdk)",
-        "$(rootpath //projects/e2e/apps/pal-webrtc/app:include/h2_pal_webrtc_cases.inc)",
-        "$(rootpath //projects/e2e/libs/pal-webrtc-fixture:server)",
-    ],
-    data = [
-        ":app_sdk",
-        ":pal_webrtc_e2e.apk",
-        "//projects/e2e/apps/pal-webrtc/app:include/h2_pal_webrtc_cases.inc",
-        "//projects/e2e/libs/pal-webrtc-fixture:server",
-    ],
-    env_inherit = [
-        "H2_IOS_SIMULATOR_UDID",
-        "H2_ANDROID_SERIAL",
-        "H2_WEBRTC_FIXTURE_IP",
-        "ANDROID_HOME",
-        "DEVELOPER_DIR",
-    ],
-    runner = "//projects/e2e/libs/pal-webrtc-mobile:run_mobile.py",
-    target_compatible_with = ANDROID_ARM64_PACKAGE_ARTIFACT_COMPATIBILITY,
+    app = ":pal_webrtc_e2e.apk",
+    args = ["$(rootpath //projects/e2e/libs/pal-webrtc-fixture:server)"],
+    data = ["//projects/e2e/libs/pal-webrtc-fixture:server"],
+    env_inherit = ["H2_WEBRTC_FIXTURE_IP"],
+    platform = "android",
+    registry = "//projects/e2e/apps/pal-webrtc/app:include/h2_pal_webrtc_cases.inc",
+    sdk = ":app_sdk",
+    suite = "//projects/e2e/libs/pal-webrtc-mobile:run_mobile.py",
     deps = ["//projects/e2e/libs/pal-webrtc-fixture:fixture"],
 )
 

@@ -4,9 +4,11 @@ Suite runners own their fixtures, phase plans, and report oracles. This module
 owns only the device transaction and artifact identity that every suite needs.
 """
 
+import argparse
 from contextlib import contextmanager
 from datetime import datetime, timezone
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -370,3 +372,34 @@ class MobileApp:
                 "provider_symbols_in_sdk_and_ipa": list(provider_symbols)}
         self.identity.update(details)
         return details
+
+
+def main(argv=None):
+    """One entrypoint; the declared suite module owns execution and assertions."""
+    selector = argparse.ArgumentParser(add_help=False)
+    selector.add_argument("--suite", type=Path, required=True)
+    selected, _ = selector.parse_known_args(argv)
+    spec = importlib.util.spec_from_file_location("mobile_suite", selected.suite)
+    suite = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(suite)
+    prefix = getattr(suite, "PREFIX", Path(suite.REPORT).stem.removesuffix("-result"))
+    parser = argparse.ArgumentParser(description=suite.__doc__, parents=[selector])
+    parser.add_argument("platform", choices=["ios", "android"])
+    for name in ("app", "sdk", "registry"):
+        parser.add_argument(name, type=Path)
+    parser.add_argument("--output", type=Path, default=os.environ.get(
+        "TEST_UNDECLARED_OUTPUTS_DIR", getattr(suite, "OUTPUT_DEFAULT", f"/tmp/{prefix}-mobile-result")))
+    parser.add_argument("--timeout", type=int, default=getattr(suite, "TIMEOUT", 90))
+    if hasattr(suite, "add_arguments"):
+        suite.add_arguments(parser)
+    args = parser.parse_args(argv)
+    args.report_platform = "ios-simulator" if args.platform == "ios" else "android-emulator"
+    with MobileApp(args.platform, args.app, args.sdk, suite.PACKAGE, suite.REPORT,
+                   args.output, timeout=args.timeout, prefix=prefix) as app:
+        report = suite.run_suite(app, args)
+        save_evidence(args.output, report, app.environment(), args.app, args.sdk)
+    print(f"{prefix} {args.platform}: {report['passed']}/{len(report['cases'])} PASS")
+
+
+if __name__ == "__main__":
+    main()

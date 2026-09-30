@@ -11,7 +11,7 @@ from unittest.mock import patch
 import unittest
 import zipfile
 
-from tools.bazel.mobile_e2e import MobileApp, run_command, save_evidence, wait_report
+from tools.bazel.mobile_e2e import MobileApp, main, run_command, save_evidence, wait_report
 
 
 def archive(path, entries):
@@ -276,6 +276,37 @@ class MobileRunnerTest(unittest.TestCase):
             app.command = command
             with self.assertRaisesRegex(AssertionError, "not public"):
                 app.verify_android_sdk(required_header=header, public_symbols=("provider",))
+
+    def run_entrypoint(self, body):
+        suite = self.root / "suite.py"
+        suite.write_text("from pathlib import Path\nPACKAGE = 'com.test'\nREPORT = 'result.json'\nTIMEOUT = 19\n"
+                         "def add_arguments(parser): parser.add_argument('server', type=Path)\n"
+                         "def run_suite(app, args):\n"
+                         "    assert args.server == Path('fixture-server')\n"
+                         "    assert args.report_platform == 'ios-simulator' and app.timeout == 19\n"
+                         "    report = app.launch()\n" + body)
+        fake = FakeDevice(self.container, ['{"passed":1,"cases":[{"status":"PASS"}]}'])
+        def factory(*args, **kwargs):
+            return MobileApp(*args, **kwargs, command=fake,
+                             environ={"H2_IOS_SIMULATOR_UDID": "SIM-1"})
+        with patch("tools.bazel.mobile_e2e.MobileApp", side_effect=factory):
+            main(["--suite", str(suite), "ios", str(self.ipa), str(self.sdk),
+                  "registry.inc", "fixture-server", "--output", str(self.root / "out")])
+        return fake
+
+    def test_shared_entrypoint_loads_suite_arguments_and_publishes(self):
+        self.run_entrypoint("    return report\n")
+        report = json.loads((self.root / "out/qualified.json").read_text())
+        self.assertEqual(report["passed"], 1)
+        environment = json.loads((self.root / "out/environment.json").read_text())
+        self.assertEqual(environment["runner_status"], "completed")
+
+    def test_shared_entrypoint_rejects_suite_failure_and_keeps_raw_report(self):
+        with self.assertRaisesRegex(AssertionError, "suite rejected"):
+            self.run_entrypoint("    raise AssertionError('suite rejected')\n")
+        self.assertFalse((self.root / "out/qualified.json").exists())
+        self.assertTrue((self.root / "out/result.json").exists())
+        self.assertIn("suite rejected", (self.root / "out/failure.json").read_text())
 
     def test_missing_explicit_simulator_is_rejected(self):
         app = MobileApp("ios", self.ipa, self.sdk, "com.test", "result.json",

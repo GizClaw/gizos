@@ -42,22 +42,9 @@ mobile_app_sdk(
 
 mobile_e2e_test(
     name = "android_pal_audio_simulator_test",
-    timeout = "moderate",
-    args = [
-        "android",
-        "$(rootpath :pal_audio_e2e.apk)",
-        "$(rootpath :app_sdk)",
-        "$(rootpath //projects/e2e/apps/pal-audio/app:include/h2_pal_audio_cases.inc)",
-    ],
-    data = [
-        ":app_sdk",
-        ":pal_audio_e2e.apk",
-        "//projects/e2e/apps/pal-audio/app:include/h2_pal_audio_cases.inc",
-    ],
-    env_inherit = [
-        "H2_ANDROID_SERIAL",
-        "ANDROID_HOME",
-    ],
-    runner = "//projects/e2e/libs/pal-audio-mobile:run_mobile.py",
-    target_compatible_with = ANDROID_ARM64_PACKAGE_ARTIFACT_COMPATIBILITY,
+    app = ":pal_audio_e2e.apk",
+    platform = "android",
+    registry = "//projects/e2e/apps/pal-audio/app:include/h2_pal_audio_cases.inc",
+    sdk = ":app_sdk",
+    suite = "//projects/e2e/libs/pal-audio-mobile:run_mobile.py",
 )

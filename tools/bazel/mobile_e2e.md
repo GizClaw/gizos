@@ -1,6 +1,6 @@
 # Packaged mobile E2E runners
 
-`mobile_e2e_test` declares a direct `py_test`. The App and `app_sdk` stay in `ios_sim_arm64` / `android_arm64` configuration; `mobile_e2e_host_python` selects the repository's hermetic Python runtime in execution configuration. Python libraries use `HOST_OR_MOBILE_TOOL_COMPATIBILITY`: they accept matching host configurations and the supported iOS/Android configurations, while embedded/K4B graphs skip them because those targets have no Python runtime. No shell trampoline or undeclared system Python is involved.
+`mobile_e2e_test` declares a direct `py_test`; every target uses the same `tools/bazel/mobile_e2e.py` main. The App and `app_sdk` stay in `ios_sim_arm64` / `android_arm64` configuration; `mobile_e2e_host_python` selects the repository's hermetic Python runtime in execution configuration. Python libraries use `HOST_OR_MOBILE_TOOL_COMPATIBILITY`: they accept matching host configurations and the supported iOS/Android configurations, while embedded/K4B graphs skip them because those targets have no Python runtime. No shell trampoline or undeclared system Python is involved.
 
 Use the existing Make targets, or invoke the same Bazel labels explicitly:
 
@@ -16,33 +16,32 @@ Keep the configured disk cache enabled. Set `H2_IOS_SIMULATOR_UDID` or `H2_ANDRO
 
 ## Adding a suite
 
-Declare the suite Python file as `runner`, imported Python libraries in `deps`, and all runtime inputs in `data`: IPA/APK, SDK, registry, fixture server and any fixture files. Pass artifact locations with `$(rootpath ...)` in `args` and inherit only the environment needed by the suite. Keep the native consumer's existing platform compatibility. `mobile_e2e_test` adds the shared runtime dep.
+Declare the suite Python module as `suite` and its `app`, `sdk` and `registry` once. The macro wires their command arguments and runfiles, selects platform compatibility, and inherits the platform's device/tool environment. Imported Python libraries remain explicit `deps`; extra fixture inputs use `data` and `args`. Suite-only environment, such as WebRTC's LAN address, uses `env_inherit`.
 
 ```starlark
 load("//tools/bazel:mobile_e2e.bzl", "mobile_e2e_test")
 
 mobile_e2e_test(
     name = "ios_example_simulator_test",
-    runner = "//projects/e2e/libs/example-mobile:run_mobile.py",
-    args = ["ios", "$(rootpath :example.ipa)", "$(rootpath :app_sdk)",
-            "$(rootpath :registry)"],
-    data = [":example.ipa", ":app_sdk", ":registry"],
-    env_inherit = ["H2_IOS_SIMULATOR_UDID", "DEVELOPER_DIR"],
-    target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
+    platform = "ios",
+    suite = "//projects/e2e/libs/example-mobile:run_mobile.py",
+    app = ":example.ipa",
+    sdk = ":app_sdk",
+    registry = ":registry",
 )
 ```
 
-The suite owns its CLI, fixture, phase plan, permissions, report parser and PASS oracle. Keep verification **inside** the transaction and publish qualification only after every suite assertion, including fixture-side evidence, succeeds:
+The common entrypoint parses platform/artifact/registry/output/timeout arguments, opens the device transaction, calls the suite, and publishes qualification after successful verification. Suite modules declare `PACKAGE` and `REPORT` and implement `run_suite(app, args)`, returning their verified report. They own fixtures, phase plans, permissions, report parsing and PASS assertions; they have no executable `main`. Optional `TIMEOUT`, `PREFIX` and `OUTPUT_DEFAULT` preserve suite defaults, and `add_arguments(parser)` declares extra fixture arguments. `args.report_platform` supplies the canonical simulator/emulator report identity.
 
 ```python
-from tools.bazel.mobile_e2e import MobileApp, save_evidence
+PACKAGE = "com.example.e2e"
+REPORT = "example-result.json"
 
-with MobileApp(args.platform, args.app, args.sdk, PACKAGE,
-               "example-result.json", args.output, timeout=args.timeout) as app:
+def run_suite(app, args):
     with app.fixture("fixture.json", settings_json):
         report = app.launch()  # parse=custom_parser for non-JSON reports
-    verify(report, args.registry)
-    save_evidence(args.output, report, app.environment(), args.app, args.sdk)
+    verify(report, args.registry, args.report_platform)
+    return report
 ```
 
 `launch` removes the old result, starts a new process, waits under one deadline, collects raw reports/logs, then terminates in `finally`. It is deliberately repeatable: Storage installs once, clears its own sandbox once, and launches phases 1 and 2 with one nonce. Storage itself checks distinct PIDs, every phase/nonce/case, persisted values and final sandbox cleanup. Reports from successive launches use numbered filenames instead of overwriting phase 1. Incomplete parsers raise `ValueError`; suite assertions must not be used to signal an incomplete report.

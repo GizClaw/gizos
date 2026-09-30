@@ -6,7 +6,7 @@ GizOS 使用 Bazel 9.2.0 作为 stable host C/C++ package 以及 ESP-IDF/BK7258/
 
 ## Mobile E2E Python runtime
 
-移动端 E2E 的 `mobile_e2e_test` 宏直接声明 `py_test`。IPA/APK、App SDK、registry 和 fixture 产物通过 `data` 保持目标平台配置；公共 runner 和 fixture Python 源通过 `srcs`/`deps` 进入 runfiles。`mobile_e2e_host_python` 在 exec configuration 中选择已有 hermetic Python runtime，由 `MODULE.bazel` 注册的 iOS/Android runtime toolchain 暴露给 host-side test；共享 Python 库通过 `HOST_OR_MOBILE_TOOL_COMPATIBILITY` 同时允许匹配的 host configuration 和支持的 iOS/Android configuration，排除没有 Python runtime 的 embedded/K4B target；不能改用未声明的系统 Python。设备入口只声明 `manual` tag，并用 `local = True` 保证 simctl/adb 在本机执行。批量设备验证使用 `--local_test_jobs=1`，仍需调用方显式预留设备和禁用测试结果缓存。公共生命周期、失败证据与 suite 边界见 `tools/bazel/mobile_e2e.md`。
+移动端 E2E 的 `mobile_e2e_test` 宏直接声明 `py_test`，所有移动 E2E target 共用 `tools/bazel/mobile_e2e.py` main，suite 只提供专属执行与断言模块。宏统一从 `platform`、`suite`、`app`、`sdk` 和 `registry` 属性生成兼容性、环境、参数及 runfiles 接线。IPA/APK、App SDK、registry 和 fixture 产物通过 `data` 保持目标平台配置；公共 runner 和 fixture Python 源通过 `srcs`/`deps` 进入 runfiles。`mobile_e2e_host_python` 在 exec configuration 中选择已有 hermetic Python runtime，由 `MODULE.bazel` 注册的 iOS/Android runtime toolchain 暴露给 host-side test；共享 Python 库通过 `HOST_OR_MOBILE_TOOL_COMPATIBILITY` 同时允许匹配的 host configuration 和支持的 iOS/Android configuration，排除没有 Python runtime 的 embedded/K4B target；不能改用未声明的系统 Python。设备入口只声明 `manual` tag，并用 `local = True` 保证 simctl/adb 在本机执行。批量设备验证使用 `--local_test_jobs=1`，仍需调用方显式预留设备和禁用测试结果缓存。公共生命周期、失败证据与 suite 边界见 `tools/bazel/mobile_e2e.md`。
 
 ## 边界
 

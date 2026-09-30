@@ -38,26 +38,11 @@ ios_application(
 
 mobile_e2e_test(
     name = "ios_pal_crypto_simulator_test",
-    timeout = "moderate",
-    args = [
-        "ios",
-        "$(rootpath :pal_crypto_e2e.ipa)",
-        "$(rootpath :app_sdk)",
-        "$(rootpath //projects/e2e/apps/pal-crypto/app:include/h2_pal_crypto_cases.inc)",
-    ],
-    data = [
-        ":app_sdk",
-        ":pal_crypto_e2e.ipa",
-        "//projects/e2e/apps/pal-crypto/app:include/h2_pal_crypto_cases.inc",
-    ],
-    env_inherit = [
-        "H2_IOS_SIMULATOR_UDID",
-        "H2_ANDROID_SERIAL",
-        "ANDROID_HOME",
-        "DEVELOPER_DIR",
-    ],
-    runner = "//projects/e2e/libs/pal-crypto-mobile:run_mobile.py",
-    target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
+    app = ":pal_crypto_e2e.ipa",
+    platform = "ios",
+    registry = "//projects/e2e/apps/pal-crypto/app:include/h2_pal_crypto_cases.inc",
+    sdk = ":app_sdk",
+    suite = "//projects/e2e/libs/pal-crypto-mobile:run_mobile.py",
 )
 
 mobile_app_sdk(

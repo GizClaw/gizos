@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 """Install the packaged App, require all portable WebRTC cases, retain evidence."""
-import argparse
 import json
 import os
 from pathlib import Path
@@ -8,9 +7,10 @@ import re
 
 from fixture import fixture
 
-from tools.bazel.mobile_e2e import MobileApp, save_evidence
 
 PACKAGE = "com.haivivi.gizos.e2e.palwebrtc"
+REPORT = "pal-webrtc-result.json"
+TIMEOUT = 180
 
 
 def verify(report, registry, platform):
@@ -34,27 +34,9 @@ def run_suite(app, args):
         with app.fixture("fixture.json", json.dumps(settings)):
             result = app.launch()
         app.environment()["fixture"] = "isolated Pion; real UDP ICE/DTLS/SRTP/SCTP"
+    verify(result, args.registry, args.report_platform)
     return result
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("platform", choices=["ios", "android"])
-    parser.add_argument("app", type=Path)
-    parser.add_argument("sdk", type=Path)
-    parser.add_argument("registry", type=Path)
+def add_arguments(parser):
     parser.add_argument("server", type=Path)
-    parser.add_argument("--output", type=Path, default=Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR", "/tmp/pal-webrtc-mobile-result")))
-    parser.add_argument("--timeout", type=int, default=180)
-    args = parser.parse_args()
-    with MobileApp(args.platform, args.app, args.sdk, PACKAGE,
-                   "pal-webrtc-result.json", args.output,
-                   timeout=args.timeout) as app:
-        result = run_suite(app, args)
-        verify(result, args.registry, "ios-simulator" if args.platform == "ios" else "android-emulator")
-        save_evidence(args.output, result, app.environment(), args.app, args.sdk)
-    print(f"PAL WebRTC {args.platform}: all cases PASS, blocked=0, teardown=0")
-
-
-if __name__ == "__main__":
-    main()
