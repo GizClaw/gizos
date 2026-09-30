@@ -21,6 +21,11 @@ import zlib
 def fields(text):
     return dict(re.findall(r'(\w+)=([^\s]+)', text))
 
+def after_reboot(text, target):
+    marker=f'H2_LOADER_REBOOT target={target} result=accepted'
+    assert text.count(marker)==1, 'requested reboot not accepted exactly once'
+    return text.split(marker,1)[1]
+
 def boot_ledger(text, ids, version, previous=None):
     observations=list(re.finditer(r'H2_ATOMIC_EXECUTION (\{[^\r\n]+\})',text))
     for index,marker in enumerate(observations):
@@ -78,7 +83,7 @@ def main():
                         while time.monotonic()<deadline:
                             text=log_path.read_text(errors='replace')
                             try:
-                                boot_ledger(text,ids,version,previous)
+                                boot_ledger(after_reboot(text,args[1]),ids,version,previous)
                             except (AssertionError,ValueError):
                                 pass
                             else:
@@ -104,6 +109,7 @@ def main():
             return text
         before=fields(run('before-status','status'))
         assert before.get('device_uid')==uid, 'fixture UID mismatch'
+        assert before.get('active_version')!=version, 'use a unique firmware version for a fresh managed boot'
         resume=before.get('stage_valid')=='1'
         if resume:
             expected_stage=dict(stage_package_checksum=hashlib.sha256(original).hexdigest(),stage_version=version,
@@ -126,9 +132,9 @@ def main():
         # BK's managed flash installation of the full AP/CP image can take
         # several minutes. This is a transport/flash bound, not worker timing.
         upgrade=run('upgrade','reboot','upgrade','--monitor',timeout=600,monitor=True)
-        first=boot_ledger(upgrade,ids,version)
+        first=boot_ledger(after_reboot(upgrade,'upgrade'),ids,version)
         normal=run('normal-boot','reboot','app','--monitor',monitor=True,previous=first['execution'])
-        second=boot_ledger(normal,ids,version,first['execution'])
+        second=boot_ledger(after_reboot(normal,'app'),ids,version,first['execution'])
         final=fields(run('after-status','status'))
         assert final.get('device_uid')==uid
         assert all(final.get(k)==v for k,v in p1.items()), 'Loader P1 changed'

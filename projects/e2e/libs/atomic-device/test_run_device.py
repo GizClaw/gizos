@@ -1,6 +1,6 @@
 import json
 import unittest
-from run_device import boot_ledger
+from run_device import after_reboot, boot_ledger
 
 class BootLedgerTest(unittest.TestCase):
     ids = [f'case{i}' for i in range(28)]
@@ -15,6 +15,10 @@ class BootLedgerTest(unittest.TestCase):
         self.assertEqual(boot_ledger(self.valid(),self.ids,'r1')['passed'],56)
     def test_stale_replay_cannot_qualify(self):
         with self.assertRaises(AssertionError):boot_ledger(self.valid(),self.ids,'r1','a'*32)
+    def test_replay_before_accepted_reboot_is_excluded(self):
+        with self.assertRaises(AssertionError):after_reboot(self.valid(),'upgrade')
+        text=self.valid()+'H2_LOADER_REBOOT target=upgrade result=accepted\n'
+        with self.assertRaises(AssertionError):boot_ledger(after_reboot(text,'upgrade'),self.ids,'r1')
     def test_new_boot_excludes_old_replay(self):
         text=self.valid()+self.valid().replace('a'*32,'b'*32)
         self.assertEqual(boot_ledger(text,self.ids,'r1','a'*32)['execution'],'b'*32)
