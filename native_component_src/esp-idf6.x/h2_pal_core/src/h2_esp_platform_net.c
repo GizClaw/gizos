@@ -47,6 +47,8 @@ typedef struct esp_net_tls_socket {
     mbedtls_ssl_context ssl;
     mbedtls_ssl_config config;
     mbedtls_x509_crt ca;
+    int (*verify_chain)(void *, mbedtls_x509_crt *, int, uint32_t *);
+    void *verify_chain_user;
     char alpn_storage[H2_ESP_NET_TLS_ALPN_MAX][H2_ESP_NET_TLS_ALPN_LEN];
     const char *alpn[H2_ESP_NET_TLS_ALPN_MAX + 1u];
 } esp_net_tls_socket_t;
@@ -318,17 +320,28 @@ static h2_pal_result_t esp_net_tls_load_ca(
     return H2_PAL_OK;
 }
 
-/* Some SDK mbedTLS builds omit MBEDTLS_HAVE_TIME_DATE, which otherwise
- * accepts expired certificates even with VERIFY_REQUIRED. Compare the peer
- * chain against calibrated PAL wall time on every verified handshake. */
 /* Certificate retention and built-in date checks are optional in board SDKs.
  * Verify calibrated validity while the peer chain is still available during
  * the handshake; never accept an expired or future peer because those SDK
- * options were disabled to save RAM. */
+ * options were disabled to save RAM. Preserve the ESP bundle's trust callback:
+ * its generated root has only a subject/public key, not a validity window. */
 static int esp_net_tls_verify_dates(
     void *user, mbedtls_x509_crt *cert, int depth, uint32_t *flags) {
-    (void)user;
-    (void)depth;
+    esp_net_tls_socket_t *socket = user;
+    if (socket != NULL && socket->verify_chain != NULL) {
+        int result = socket->verify_chain(
+            socket->verify_chain_user, cert, depth, flags);
+        if (result != 0) {
+            return result;
+        }
+        /* Only the bundle's synthetic parent lacks DER and both dates.
+         * Retain all flags from its verifier, including NOT_TRUSTED. Real
+         * leaf/intermediate certificates always undergo date checks below. */
+        if (depth > 0 && cert->raw.p == NULL && cert->raw.len == 0u &&
+            cert->valid_from.year == 0 && cert->valid_to.year == 0) {
+            return 0;
+        }
+    }
     uint64_t wall_ms = 0u;
     if (h2_pal_time_get_wall_ms(h2_esp_platform_time_api(), &wall_ms) != H2_PAL_OK) {
         *flags |= MBEDTLS_X509_BADCERT_OTHER;
@@ -362,6 +375,13 @@ static int esp_net_tls_verify_dates(
             now.year, now.mon, now.day, (unsigned)*flags);
     }
     return 0;
+}
+
+static void esp_net_tls_install_verify_dates(esp_net_tls_socket_t *socket) {
+    socket->verify_chain = socket->config.MBEDTLS_PRIVATE(f_vrfy);
+    socket->verify_chain_user = socket->config.MBEDTLS_PRIVATE(p_vrfy);
+    mbedtls_ssl_conf_verify(&socket->config,
+        esp_net_tls_verify_dates, socket);
 }
 
 static h2_pal_result_t esp_net_tls_handshake(
@@ -1384,8 +1404,7 @@ static h2_pal_result_t esp_net_tls_wrap(
         rc = esp_net_tls_load_ca(slot, config);
         if (rc == H2_PAL_OK &&
             config->verify != H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
-            mbedtls_ssl_conf_verify(&slot->config,
-                esp_net_tls_verify_dates, NULL);
+            esp_net_tls_install_verify_dates(slot);
         }
     } else if (rc == H2_PAL_OK) {
         rc = H2_PAL_ERR_IO;

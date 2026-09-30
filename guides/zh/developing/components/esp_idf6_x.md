@@ -164,6 +164,8 @@ DevKit `libco-smoke` 从 `projects/e2e/apps/libco` 编译 portable App，并直�
 
 ESP Net 的 UDP source-address bind 使用真实 lwIP `bind` 和 `getsockname`；失败时释放新 socket 并保持输出无有效 handle。Raw TLS 在握手时对每个 peer-chain certificate 使用校准后的 PAL wall time 校验有效期，即使 SDK 未启用内置日期检查或不保留完成后的 chain，`REQUIRED`/`DEFAULT` 也不能接受 expired/future certificate；时钟不可用时 fail closed。显式 `INSECURE_TEST_ONLY` 保持测试专用行为，无效 verify enum 返回 `INVALID_ARG`。独立 Net/TLS E2E 对已有 ICMP callback 执行真实 echo，不能将支持项标成未评估。
 
+使用默认证书包时，日期检查必须组合 `esp_crt_bundle_attach` 已安装的信任/签名回调，不能覆盖它。ESP bundle 的合成父证书只含 subject/public key，没有 DER 和有效期；只有经过原回调且 `depth > 0`、无 DER、两端年份均为零的合成父证书免于重复日期检查，仍保留其信任失败 flags。真实 leaf/intermediate、显式 CA 和所有已有验证失败保持严格校验。
+
 ## Build Validation
 
 ESP-IDF component 变更需要对每个 maintained target 执行 compile validation；尚不可构建的 planned target 必须明确记录 `SKIP` 和 residual risk。Validation 需要确认：
