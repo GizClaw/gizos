@@ -84,6 +84,62 @@ def mobile(platform, environment):
         assert environment["device"]["isAvailable"]
 
 
+# Only host harness/audit files can supersede historical source receipts here.
+# Production provider, App, registry and board receipts remain mandatory.
+RUNNER_SOURCES = {
+    "projects/e2e/apps/pal-display/BUILD.bazel",
+    "projects/e2e/apps/pal-display/check_qualification.py",
+    "projects/e2e/apps/pal-display/README.md",
+    "projects/e2e/libs/pal-display-mobile/run_mobile.py",
+    "projects/e2e/libs/pal-display-mobile/BUILD.bazel",
+    "projects/e2e/targets/android_binary/pal-display/BUILD.bazel",
+    "projects/e2e/targets/ios_application/pal-display/BUILD.bazel",
+    "tools/bazel/mobile_e2e.py",
+    "tools/bazel/mobile_e2e.bzl",
+}
+REMOVED_RUNNERS = {
+    "projects/e2e/targets/android_binary/pal-display/run_simulator.sh",
+    "projects/e2e/targets/ios_application/pal-display/run_simulator.sh",
+}
+
+
+def runner_refactor(historical):
+    """Check new mobile observations without relabeling old board evidence."""
+    followup = json.loads((ROOT / "mobile_runner_refactor.json").read_text(encoding="utf-8"))
+    assert followup["schema"] == 1
+    assert followup["new_physical_run_claimed"] is False
+    assert re.fullmatch(r"[0-9a-f]{40}", followup["mobile_execution_commit"])
+    assert hashlib.sha256((ROOT / "qualification.json").read_bytes()).hexdigest() == followup["historical_qualification_sha256"]
+    current = followup["current_source_sha256"]
+    assert set(current) == RUNNER_SOURCES
+    assert set(followup["removed_source_sha256"]) == REMOVED_RUNNERS
+    for path, expected in followup["removed_source_sha256"].items():
+        assert historical[path] == expected and not Path(path).exists(), path
+    for path, expected in {**historical, **current}.items():
+        if path not in REMOVED_RUNNERS:
+            assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == expected, path
+    # These exact Python sources and consumer declarations executed the stored runs.
+    executed = followup["executed_runner_sha256"]
+    assert set(executed) == {
+        "tools/bazel/mobile_e2e.py",
+        "projects/e2e/libs/pal-display-mobile/run_mobile.py",
+        "projects/e2e/libs/pal-display-mobile/BUILD.bazel",
+        "projects/e2e/targets/android_binary/pal-display/BUILD.bazel",
+        "projects/e2e/targets/ios_application/pal-display/BUILD.bazel",
+        "tools/bazel/mobile_e2e.bzl",
+    }
+    assert all(current[path] == sha for path, sha in executed.items())
+    assert set(followup["mobile_runs"]) == {"ios", "android"}
+    for platform, receipt in followup["mobile_runs"].items():
+        result, environment = receipt["qualified"], receipt["environment"]
+        report(result, result["cases"])
+        assert result["platform"] == ("ios-simulator" if platform == "ios" else "android-emulator")
+        mobile(platform, environment)
+        assert environment["platform"] == platform and environment["runner_status"] == "completed"
+        declaration = Path("projects/e2e/libs/pal-display-mobile/mobile_e2e.json")
+        assert environment["suite_sha256"] == hashlib.sha256(declaration.read_bytes()).hexdigest()
+
+
 def main():
     assert len(IDS) == 24 and len(set(IDS)) == 24
     value = json.loads((ROOT / "qualification.json").read_text(encoding="utf-8"))
@@ -95,8 +151,7 @@ def main():
         "macos", "wasm", "ios", "android", "amoled", "bk7258"}
     assert len(value["platforms"]) == 6
     overrides = value.get("review_fix_source_sha256", {})
-    for path, expected in {**value["source_sha256"], **overrides}.items():
-        assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == expected, path
+    runner_refactor({**value["source_sha256"], **overrides})
     if overrides:
         fix = value["review_fix_validation"]
         assert value["source_snapshot_commit"]
@@ -124,7 +179,7 @@ def main():
     for path in ["h2_pal_display_e2e.c", "h2_sdl3_display.cpp"]:
         assert coverage[path]["functions"]["percent"] > 50
         assert coverage[path]["lines"]["percent"] > 50
-    print("PAL Display: six platforms qualified; manual optical evidence remains distinct")
+    print("PAL Display: historical six-platform qualification and shared mobile runner evidence verified; no new physical run claimed")
 
 
 if __name__ == "__main__":
