@@ -21,21 +21,27 @@ import zlib
 def fields(text):
     return dict(re.findall(r'(\w+)=([^\s]+)', text))
 
-def boot_ledger(text, ids, version):
-    marker = 'H2_ATOMIC_BOOT version=' + version
-    assert text.count(marker) == 1, 'missing/repeated new boot marker'
-    current = text.split(marker, 1)[1]
-    match = re.search(r'H2_ATOMIC_REPORT (\{[^\r\n]+\})', current)
-    assert match, 'missing completed ledger'
-    report = json.loads(match.group(1))
-    rows = [json.loads(row) for row in re.findall(r'H2_ATOMIC_CASE (\{[^\r\n]+\})', current[:match.start()])]
-    assert [(row['placement'], row['id']) for row in rows] == [(p, i) for p in ['internal','psram-wrapper'] for i in ids], 'case ledger'
-    assert all(row['version']==version and row['status']=='PASS' and row['rc']==0 for row in rows), 'failed case'
-    for key, value in dict(version=version,passed=56,failed=0,not_run=0,workers_started=20,workers_joined=20,qualified=1,teardown=0).items():
-        assert report.get(key)==value, (key,report)
-    assert 'H2_ATOMIC_CLEANUP rc=0' in current and 'H2_ATOMIC_READY rc=0 confirm=0' in current
-    assert not re.search(r'panic|hard fault|assert failed|H2_ATOMIC_FAIL|verdict=FAIL',current,re.I), 'boot failure'
-    return report
+def boot_ledger(text, ids, version, previous=None):
+    observations=list(re.finditer(r'H2_ATOMIC_EXECUTION (\{[^\r\n]+\})',text))
+    for index,marker in enumerate(observations):
+        info=json.loads(marker.group(1))
+        if info.get('version')!=version or info.get('execution')==previous:continue
+        assert re.fullmatch('[0-9a-f]{32}',info.get('execution','')), 'invalid execution identity'
+        assert info.get('cleanup')==0 and info.get('confirm')==0, 'not admitted'
+        end=observations[index+1].start() if index+1<len(observations) else len(text)
+        current=text[marker.end():end]
+        match=re.search(r'H2_ATOMIC_REPORT (\{[^\r\n]+\})',current)
+        if not match:continue
+        report=json.loads(match.group(1))
+        rows=[json.loads(row) for row in re.findall(r'H2_ATOMIC_CASE (\{[^\r\n]+\})',current[:match.start()])]
+        assert [(r['placement'],r['id']) for r in rows]==[(p,i) for p in ['internal','psram-wrapper'] for i in ids], 'case ledger'
+        assert all(r['version']==version and r['status']=='PASS' and r['rc']==0 for r in rows), 'failed case'
+        for key,value in dict(version=version,passed=56,failed=0,not_run=0,workers_started=20,workers_joined=20,qualified=1,teardown=0).items():
+            assert report.get(key)==value,(key,report)
+        assert not re.search(r'panic|hard fault|assert failed|H2_ATOMIC_FAIL|verdict=FAIL',current,re.I), 'boot failure'
+        report['execution']=info['execution'];report['cleanup']=info['cleanup'];report['confirm']=info['confirm']
+        return report
+    raise AssertionError('missing complete fresh execution receipt')
 
 def main():
     package, cli, registry, target = map(str,sys.argv[1:])
@@ -59,7 +65,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix='atomic-device-',dir='/tmp') as directory:
         local=Path(directory);image=local/'atomic.update.tar.zlib';image.write_bytes(original)
         index=0
-        def run(label,*args,timeout=180,monitor=False):
+        def run(label,*args,timeout=180,monitor=False,previous=None):
             nonlocal index
             command=[cli,'--no-ble','--port',port,'--transport','iostreamikcp','--wait-timeout','150',*args]
             log_path=output/f'{index:02d}-{label}.log';index+=1
@@ -70,14 +76,17 @@ def main():
                         deadline=time.monotonic()+timeout
                         while time.monotonic()<deadline:
                             text=log_path.read_text()
-                            marker='H2_ATOMIC_BOOT version='+version
-                            if marker in text and 'H2_ATOMIC_READY rc=0 confirm=0' in text.split(marker,1)[1]:
+                            try:
+                                boot_ledger(text,ids,version,previous)
+                            except (AssertionError,ValueError):
+                                pass
+                            else:
                                 process.send_signal(signal.SIGINT)
                                 break
                             if process.poll() is not None:break
                             time.sleep(0.1)
                         else:
-                            raise TimeoutError('fresh Atomic BOOT/READY not observed')
+                            raise TimeoutError('fresh admitted Atomic execution ledger not observed')
                     code=process.wait(timeout=timeout if not monitor else 10)
                 except BaseException:
                     if process.poll() is None:
@@ -111,8 +120,8 @@ def main():
         if not resume:run('send','send','--file',str(image),timeout=300)
         upgrade=run('upgrade','reboot','upgrade','--monitor',monitor=True)
         first=boot_ledger(upgrade,ids,version)
-        normal=run('normal-boot','reboot','app','--monitor',monitor=True)
-        second=boot_ledger(normal,ids,version)
+        normal=run('normal-boot','reboot','app','--monitor',monitor=True,previous=first['execution'])
+        second=boot_ledger(normal,ids,version,first['execution'])
         final=fields(run('after-status','status'))
         assert final.get('device_uid')==uid
         assert all(final.get(k)==v for k,v in p1.items()), 'Loader P1 changed'

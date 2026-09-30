@@ -123,6 +123,7 @@ static void run(void *unused) {
   rc = h2_esp_h2loader_app_confirm(runtime);
   if (rc)
     fail("confirm", rc);
+  h2_atomic_device_admit(cleanup, rc);
   puts("H2_ATOMIC_READY rc=0 confirm=0");
   fflush(stdout);
   for (;;) {

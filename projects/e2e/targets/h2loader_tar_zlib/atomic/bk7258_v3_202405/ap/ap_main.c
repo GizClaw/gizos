@@ -86,6 +86,7 @@ static void run(void *unused) {
   int confirm = h2_bk_h2loader_confirm_current_app(runtime);
   if (confirm)
     fail("confirm", confirm);
+  h2_atomic_device_admit(cleanup, confirm);
   puts("H2_ATOMIC_READY rc=0 confirm=0");
   for (;;) {
     h2_atomic_device_replay();

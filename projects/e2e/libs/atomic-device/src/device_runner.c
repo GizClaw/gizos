@@ -2,13 +2,28 @@
 #include <stdio.h>
 static h2_atomic_qualification_result_t results[2];
 static const char *image;
+static char execution[33];
+static bool admitted;
+static int cleanup_result, confirmation_result;
+static const h2_pal_time_api_t *report_time;
 int h2_atomic_device_run(h2_runtime_t *runtime, const char *version,
                          h2_atomic_qualification_config_t *config,
                          const h2_pal_mem_api_t *external) {
   if (!runtime || !version || !config || !external || image)
     return H2_PAL_ERR_INVALID_ARG;
+  uint8_t nonce[16];
+  int random_rc = h2_pal_crypto_random(runtime->crypto, nonce, sizeof(nonce));
+  if (random_rc)
+    return random_rc;
+  static const char hex[] = "0123456789abcdef";
+  for (unsigned i = 0; i < 16; ++i) {
+    execution[2 * i] = hex[nonce[i] >> 4];
+    execution[2 * i + 1] = hex[nonce[i] & 15];
+  }
+  execution[32] = 0;
+  report_time = runtime->time;
   image = version;
-  printf("H2_ATOMIC_BOOT version=%s\n", version);
+  printf("H2_ATOMIC_BOOT version=%s execution=%s\n", version, execution);
   const h2_pal_mem_api_t *internal = config->mem;
   int aggregate = 0;
   for (unsigned placement = 0; placement < 2; ++placement) {
@@ -31,9 +46,19 @@ int h2_atomic_device_run(h2_runtime_t *runtime, const char *version,
   config->placement_user = NULL;
   return aggregate;
 }
+void h2_atomic_device_admit(int cleanup, int confirmation) {
+  cleanup_result = cleanup;
+  confirmation_result = confirmation;
+  admitted = cleanup == 0 && confirmation == 0 && results[0].qualified &&
+             results[1].qualified;
+}
 void h2_atomic_device_replay(void) {
-  if (!image)
+  if (!image || !admitted)
     return;
+  printf("H2_ATOMIC_EXECUTION "
+         "{\"version\":\"%s\",\"execution\":\"%s\",\"cleanup\":%d,\"confirm\":%"
+         "d}\n",
+         image, execution, cleanup_result, confirmation_result);
   for (unsigned p = 0; p < 2; ++p) {
     for (unsigned i = 0; i < H2_ATOMIC_QUALIFICATION_CASE_COUNT; ++i) {
       const h2_atomic_qualification_case_t *c = &results[p].cases[i];
@@ -45,6 +70,7 @@ void h2_atomic_device_replay(void) {
              : c->status == 2 ? "FAIL"
                               : "NOT_RUN",
              c->rc);
+      (void)h2_pal_time_sleep_ms(report_time, 50);
     }
   }
   printf("H2_ATOMIC_REPORT "
