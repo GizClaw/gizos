@@ -35,6 +35,10 @@ typedef struct h2_atomic_e2e_result {
   uintptr_t storage_address;
 } h2_atomic_e2e_result_t;
 
+typedef int (*h2_atomic_e2e_placement_check_t)(uintptr_t wrapper,
+                                             uintptr_t storage,
+                                             bool static_value, void *user);
+
 typedef struct h2_atomic_flag_e2e_result {
   uintptr_t static_wrapper[2];
   uintptr_t static_storage[2];
@@ -56,7 +60,9 @@ typedef struct h2_atomic_flag_e2e_result {
  * serialized because the two static flags live for the process.
  * @p out_result is cleared first and may contain partial observations on
  * error. A task join failure deliberately retains heap worker state so a
- * still-running task cannot use freed memory.
+ * still-running task cannot use freed memory. Optional placement observation
+ * runs while every backing is live and must not retain or dereference addresses
+ * after this call returns.
  *
  * @return H2_PAL_OK when both workers finish every operation without an
  * unexpected claim; otherwise a PAL argument, allocation, task or state error.
@@ -66,6 +72,8 @@ int h2_atomic_flag_e2e_run(const h2_pal_mem_api_t *mem,
                            const h2_pal_time_api_t *time,
                            unsigned iterations, int (*current_core)(void *),
                            void *core_user,
+                           h2_atomic_e2e_placement_check_t check_placement,
+                           void *placement_user,
                            h2_atomic_flag_e2e_result_t *out_result);
 
 enum { H2_ATOMIC_QUALIFICATION_CASE_COUNT = 28 };
@@ -81,8 +89,7 @@ typedef struct h2_atomic_qualification_config {
   int expected_core[2];
   bool require_distinct_workers;
   /* Board qualification checks every backing while it is still live. */
-  int (*check_placement)(uintptr_t wrapper, uintptr_t storage,
-                         bool static_value, void *user);
+  h2_atomic_e2e_placement_check_t check_placement;
   void *placement_user;
 } h2_atomic_qualification_config_t;
 typedef struct h2_atomic_qualification_case {

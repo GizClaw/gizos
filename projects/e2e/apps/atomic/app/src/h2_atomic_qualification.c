@@ -567,8 +567,23 @@ int h2_atomic_e2e_qualify(const h2_atomic_qualification_config_t *c,
   destroy_state(s);
   h2_pal_mem_free(c->mem, s);
   h2_atomic_flag_e2e_result_t flags;
-  int flag_rc = h2_atomic_flag_e2e_run(c->mem, c->task, c->time, 2000, NULL,
-                                       NULL, &flags);
+  int flag_rc = h2_atomic_flag_e2e_run(
+      c->mem, c->task, c->time, 2000, c->current_core, c->core_user,
+      c->check_placement, c->placement_user, &flags);
+  if (!flag_rc && c->expected_core[0] >= 0 &&
+      (flags.worker_core[0] != c->expected_core[0] ||
+       flags.worker_core[1] != c->expected_core[0]))
+    flag_rc = H2_PAL_ERR_INVALID_STATE;
+  if (!flag_rc && c->require_distinct_workers && c->expected_core[0] < 0 &&
+      flags.worker_core[0] == flags.worker_core[1])
+    flag_rc = H2_PAL_ERR_INVALID_STATE;
+  printf("ATOMIC_FLAG_OBSERVATION static_a=%p static_b=%p dynamic_wrapper=%p "
+         "dynamic_storage=%p cores=%d,%d operations=%u,%u busy=%u,%u rc=%d\n",
+         (void *)flags.static_storage[0], (void *)flags.static_storage[1],
+         (void *)flags.dynamic_wrapper, (void *)flags.dynamic_storage,
+         flags.worker_core[0], flags.worker_core[1], flags.operations[0],
+         flags.operations[1], flags.busy_observations[0],
+         flags.busy_observations[1], flag_rc);
   record(r, 27, flag_rc);
   r->workers_started += flags.workers_started;
   r->workers_joined += flags.workers_joined;

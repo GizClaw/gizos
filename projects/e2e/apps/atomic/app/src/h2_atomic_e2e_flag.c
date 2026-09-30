@@ -58,6 +58,8 @@ int h2_atomic_flag_e2e_run(const h2_pal_mem_api_t *mem,
                            const h2_pal_task_api_t *task,
                            const h2_pal_time_api_t *time, unsigned iterations,
                            int (*current_core)(void *), void *core_user,
+                           h2_atomic_e2e_placement_check_t check_placement,
+                           void *placement_user,
                            h2_atomic_flag_e2e_result_t *out_result) {
   if (out_result == NULL || mem == NULL || task == NULL || time == NULL ||
       iterations == 0u)
@@ -91,6 +93,22 @@ int h2_atomic_flag_e2e_run(const h2_pal_mem_api_t *mem,
   h2_atomic_flag_t *shared = &control->shared;
   out_result->dynamic_wrapper = (uintptr_t)shared;
   out_result->dynamic_storage = (uintptr_t)shared->storage;
+  if (check_placement) {
+    int placement_rc =
+        check_placement((uintptr_t)&s_flag_a, (uintptr_t)s_flag_a.storage, true,
+                        placement_user);
+    if (!placement_rc)
+      placement_rc =
+          check_placement((uintptr_t)&s_flag_b, (uintptr_t)s_flag_b.storage,
+                          true, placement_user);
+    if (!placement_rc)
+      placement_rc = check_placement(
+          (uintptr_t)shared, (uintptr_t)shared->storage, false, placement_user);
+    if (placement_rc) {
+      flag_control_destroy(mem, control);
+      return placement_rc;
+    }
+  }
   flag_worker_t *workers = h2_pal_mem_alloc(mem, 2u * sizeof(*workers));
   if (workers == NULL) {
     flag_control_destroy(mem, control);

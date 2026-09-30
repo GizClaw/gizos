@@ -70,8 +70,10 @@ static void run(void *unused) {
   puts("H2_ATOMIC_C11_COMPARISON placement=psram status=SKIP "
        "reason=unsupported-backing");
   h2_atomic_flag_e2e_result_t flags;
+  bool flag_psram = true;
   rc = h2_atomic_flag_e2e_run(h2_esp_platform_psram_allocator(), runtime->task,
-                              runtime->time, 20000, core, NULL, &flags);
+                              runtime->time, 20000, core, NULL, placement,
+                              &flag_psram, &flags);
   bool valid = !rc && flags.worker_core[0] == 0 && flags.worker_core[1] == 0 &&
                flags.static_storage[0] != flags.static_storage[1] &&
                esp_ptr_internal((void *)flags.static_storage[0]) &&

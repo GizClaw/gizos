@@ -34,7 +34,7 @@ int main(void) {
   h2_atomic_flag_e2e_result_t flags;
   int flag_rc = h2_atomic_flag_e2e_run(
       h2_desktop_platform_default_allocator(), h2_desktop_platform_task_api(),
-      h2_desktop_platform_time_api(), 20000u, NULL, NULL, &flags);
+      h2_desktop_platform_time_api(), 20000u, NULL, NULL, NULL, NULL, &flags);
   printf("ATOMIC_FLAG_E2E static_a=%p static_b=%p dynamic=%p "
          "operations=%u,%u busy=%u,%u rc=%d\n",
          (void *)flags.static_storage[0], (void *)flags.static_storage[1],
