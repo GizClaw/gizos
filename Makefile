@@ -105,25 +105,11 @@ bazel-test-ios_pal_audio_simulator_test:
 bazel-test-android_pal_audio_simulator_test:
 	@scripts/bazel/bazel-test-android_pal_audio_simulator_test.sh
 
-.PHONY: bazel-test-desktop_pal_net_tls_test
-bazel-test-desktop_pal_net_tls_test:
-	@scripts/bazel/bazel-test-desktop_pal_net_tls_test.sh
-
-.PHONY: bazel-test-desktop_pal_net_tls_endpoint_rejection_test
-bazel-test-desktop_pal_net_tls_endpoint_rejection_test:
-	@scripts/bazel/bazel-test-desktop_pal_net_tls_endpoint_rejection_test.sh
-
-.PHONY: bazel-test-ios_pal_net_tls_simulator_test
-bazel-test-ios_pal_net_tls_simulator_test:
-	@scripts/bazel/bazel-test-ios_pal_net_tls_simulator_test.sh
-
-.PHONY: bazel-test-android_pal_net_tls_simulator_test
-bazel-test-android_pal_net_tls_simulator_test:
-	@scripts/bazel/bazel-test-android_pal_net_tls_simulator_test.sh
-
-.PHONY: bazel-test-wasm_pal_net_tls_boundary_test
-bazel-test-wasm_pal_net_tls_boundary_test:
-	@scripts/bazel/bazel-test-wasm_pal_net_tls_boundary_test.sh
+.PHONY: bazel-test-ios_pal_wifi_simulator_test bazel-test-android_pal_wifi_simulator_test
+bazel-test-ios_pal_wifi_simulator_test:
+	@scripts/bazel/bazel-test-ios_pal_wifi_simulator_test.sh
+bazel-test-android_pal_wifi_simulator_test:
+	@scripts/bazel/bazel-test-android_pal_wifi_simulator_test.sh
 .PHONY: bazel-test-ios_pal_audio_decoder_simulator_test bazel-test-android_pal_audio_decoder_simulator_test bazel-test-wasm_pal_audio_decoder_browser_test
 bazel-test-ios_pal_audio_decoder_simulator_test:
 	@scripts/bazel/bazel-test-ios_pal_audio_decoder_simulator_test.sh
