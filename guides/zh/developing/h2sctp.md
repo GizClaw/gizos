@@ -71,13 +71,17 @@ sequence state 都不改变。
 收到 outgoing-reset request 时，provider 按 RFC 6525 5.2.2 比较 request 里的 sender's
 last assigned TSN 与本端 cumulative TSN：last TSN 仍在 cumulative 之后，说明该 stream
 还有数据没收齐，此时只回 `In progress`、保存这条 request，不重置 stream、不释放任何
-rx fragment，也不投影 `INCOMING_RESET`。等 cumulative 到达 last TSN（DATA 或
-FORWARD-TSN 推进，service 也会重试）后，先把已就绪的消息交付完，再执行 reset、主动回
-`Performed` 并投影一次 `INCOMING_RESET`；拿不到保存 request 的内存时不保存，由对端重发
-的 request 完成。reset 只丢弃 TSN 不超过 last TSN 的 fragment，之后的 fragment 属于该
-stream 的下一轮。立即 reset 会丢掉空洞之后、已用 gap block 确认过的 fragment：对端认为
-它们已确认不再重发，本端 cumulative 就永远停在空洞后面。`stream_test` 必须覆盖“丢一个
-chunk、收到后续 chunk、收到 reset request、再收到补发 chunk”的顺序。
+rx fragment，也不投影 `INCOMING_RESET`。cumulative 已到达 last TSN 时，先把已就绪的消息
+交付完再 reset；consumer 暂时收不下（message callback 返回 `WOULD_BLOCK`）同样按
+`In progress` 推迟，重发的 request 也不例外，不能丢掉还在等交付的 fragment。推迟的
+reset 在 DATA 或 FORWARD-TSN 推进 cumulative 后、以及每次 service 里重试：交付完成后
+执行 reset、主动回 `Performed` 并投影一次 `INCOMING_RESET`；拿不到保存 request 的内存时
+不保存，由对端重发的 request 完成。reset 只丢弃 TSN 不超过 last TSN 的 fragment，之后的
+fragment 属于该 stream 的下一轮，reset 把 sequence counter 归零后要立即重新调度它们的
+交付。立即 reset 会丢掉空洞之后、已用 gap block 确认过的 fragment：对端认为它们已确认
+不再重发，本端 cumulative 就永远停在空洞后面。`stream_test` 必须覆盖三种顺序：丢一个
+chunk、收到后续 chunk、收到 reset request、再收到补发 chunk；下一轮的消息先于 reset 完成
+到达；以及交付被 consumer 挡住期间收到重发的 request。
 
 ## Time and failure semantics
 

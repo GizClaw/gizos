@@ -362,8 +362,79 @@ static void test_incoming_reset_waits_for_last_tsn(void) {
   h2_sctp_test_pair_deinit(&pair);
 }
 
+/* A message of the stream's next life can arrive before the reset completes.
+ * It waits on the old sequence counter and must be delivered once the reset
+ * puts the counter back. */
+static void test_incoming_reset_delivers_next_generation(void) {
+  h2_sctp_test_pair_t pair;
+  assert(h2_sctp_test_pair_init(&pair, 256u, 4096u) == H2_PAL_OK);
+  assert(h2_sctp_test_connect(&pair));
+  h2_pal_sctp_association_t *association = pair.passive.association;
+  const uint32_t base = association->cumulative_received_tsn;
+  uint64_t now_ms = pair.now_ms;
+  feed_data(association, base + 1u, 1u, 0u, 0x11u, ++now_ms);
+  feed_data(association, base + 3u, 1u, 2u, 0x33u, ++now_ms);
+  const uint32_t reset_sequence = association->expected_reset_sequence != 0u
+                                      ? association->expected_reset_sequence
+                                      : 7u;
+  feed_outgoing_reset(association, reset_sequence, base + 3u, 1u, ++now_ms);
+  /* Sent after the reset: sequence 0 again, beyond the reset's last TSN. */
+  feed_data(association, base + 4u, 1u, 0u, 0x44u, ++now_ms);
+  assert(pair.passive.message_count == 1u);
+  assert(pair.passive.incoming_reset_events == 0u);
+
+  feed_data(association, base + 2u, 1u, 1u, 0x22u, ++now_ms);
+  assert(association->cumulative_received_tsn == base + 4u);
+  assert(pair.passive.incoming_reset_events == 1u);
+  assert(pair.passive.message_count == 4u);
+  assert(pair.passive.messages[3].len == 4u &&
+         pair.passive.messages[3].data[0] == 0x44u);
+  h2_sctp_test_pair_deinit(&pair);
+}
+
+/* While the consumer cannot take the stream's last messages the reset stays
+ * deferred, also for a retransmitted request, and nothing is discarded. */
+static void test_incoming_reset_waits_for_delivery(void) {
+  h2_sctp_test_pair_t pair;
+  assert(h2_sctp_test_pair_init(&pair, 256u, 4096u) == H2_PAL_OK);
+  assert(h2_sctp_test_connect(&pair));
+  h2_pal_sctp_association_t *association = pair.passive.association;
+  const uint32_t base = association->cumulative_received_tsn;
+  uint64_t now_ms = pair.now_ms;
+  feed_data(association, base + 1u, 1u, 0u, 0x11u, ++now_ms);
+  feed_data(association, base + 3u, 1u, 2u, 0x33u, ++now_ms);
+  const uint32_t reset_sequence = association->expected_reset_sequence != 0u
+                                      ? association->expected_reset_sequence
+                                      : 7u;
+  feed_outgoing_reset(association, reset_sequence, base + 3u, 1u, ++now_ms);
+
+  pair.passive.message_would_block_count = 2u;
+  feed_data(association, base + 2u, 1u, 1u, 0x22u, ++now_ms);
+  assert(association->cumulative_received_tsn == base + 3u);
+  assert(pair.passive.message_would_block_count == 0u);
+  assert(pair.passive.message_count == 1u);
+  assert(association->expected_reset_sequence == reset_sequence);
+
+  pair.passive.message_would_block_count = 1u;
+  feed_outgoing_reset(association, reset_sequence, base + 3u, 1u, ++now_ms);
+  assert(pair.passive.message_would_block_count == 0u);
+  assert(association->expected_reset_sequence == reset_sequence);
+  assert(pair.passive.incoming_reset_events == 0u);
+  assert(has_rx_tsn(association, base + 2u) &&
+         has_rx_tsn(association, base + 3u));
+
+  assert(h2_sctp_stream_service_deferred_reset(association, ++now_ms) ==
+         H2_PAL_OK);
+  assert(pair.passive.message_count == 3u);
+  assert(association->expected_reset_sequence == reset_sequence + 1u);
+  assert(pair.passive.incoming_reset_events == 1u);
+  h2_sctp_test_pair_deinit(&pair);
+}
+
 int main(void) {
   test_incoming_reset_waits_for_last_tsn();
+  test_incoming_reset_delivers_next_generation();
+  test_incoming_reset_waits_for_delivery();
   test_reset_waits_for_pending_output();
   test_reset_retains_control_ownership();
   test_reset_in_progress(0u);

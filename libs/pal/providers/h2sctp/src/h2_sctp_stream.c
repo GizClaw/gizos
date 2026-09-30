@@ -920,6 +920,16 @@ static h2_pal_result_t h2_sctp_stream_send_reset_response(
         now_ms);
 }
 
+/* Fragments kept across a reset belong to the stream's next life and were
+ * waiting on the old sequence counters; with the counters back at zero they
+ * may be deliverable now. A consumer that cannot take them yet gets them from
+ * service. */
+static void h2_sctp_stream_deliver_after_reset(
+    h2_pal_sctp_association_t *association) {
+    association->delivery_pending = true;
+    (void)h2_sctp_stream_service(association);
+}
+
 static void h2_sctp_stream_clear_deferred_reset(
     h2_pal_sctp_association_t *association) {
     h2_sctp_free(association->mem, association->deferred_reset_streams);
@@ -995,6 +1005,7 @@ h2_pal_result_t h2_sctp_stream_service_deferred_reset(
             last_tsn);
     }
     h2_sctp_free(association->mem, streams);
+    h2_sctp_stream_deliver_after_reset(association);
     return H2_PAL_OK;
 }
 
@@ -1040,19 +1051,35 @@ h2_pal_result_t h2_sctp_stream_handle_reconfig(
                         break;
                     }
                 }
-                /* RFC 6525 5.2.2 E2: data the peer sent on these streams is
-                 * still missing. Resetting now would forget fragments above
-                 * the hole that the peer already holds as acknowledged. */
-                if (result_code == 1u &&
-                    h2_sctp_tsn_after(
-                        last_tsn, association->cumulative_received_tsn)) {
-                    result_code = 6u;
-                    h2_sctp_stream_defer_reset(
-                        association,
-                        sequence,
-                        last_tsn,
-                        chunk->data + offset + 16u,
-                        length - 16u);
+                if (result_code == 1u) {
+                    /* RFC 6525 5.2.2 E2: data the peer sent on these streams
+                     * may still be missing. Resetting now would forget
+                     * fragments above the hole that the peer already holds
+                     * as acknowledged. Once it is all here, what is ready is
+                     * handed up first; a consumer that cannot take it yet
+                     * defers the reset as well. */
+                    bool ready = !h2_sctp_tsn_after(
+                        last_tsn, association->cumulative_received_tsn);
+                    if (ready) {
+                        association->delivery_pending = true;
+                        const h2_pal_result_t delivery =
+                            h2_sctp_stream_service(association);
+                        if (delivery == H2_PAL_ERR_NO_MEMORY ||
+                            delivery == H2_PAL_ERR_WOULD_BLOCK) {
+                            ready = false;
+                        } else if (delivery != H2_PAL_OK) {
+                            return delivery;
+                        }
+                    }
+                    if (!ready) {
+                        result_code = 6u;
+                        h2_sctp_stream_defer_reset(
+                            association,
+                            sequence,
+                            last_tsn,
+                            chunk->data + offset + 16u,
+                            length - 16u);
+                    }
                 }
             }
             h2_pal_result_t emit_result = h2_sctp_stream_send_reset_response(
@@ -1076,6 +1103,7 @@ h2_pal_result_t h2_sctp_stream_handle_reconfig(
                         last_tsn);
                 }
                 association->expected_reset_sequence++;
+                h2_sctp_stream_deliver_after_reset(association);
             }
         } else if (type == H2_SCTP_PARAM_RESET_RESPONSE) {
             if (length != 12u && length != 20u) {
