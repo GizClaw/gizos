@@ -33,9 +33,8 @@ py_test(
 )
 py_test(
     name = "bk_sdk_overlay_test",
-    # CMake's MSBuild workers must exit and close the captured output pipes.
-    env = {"MSBUILDDISABLENODEREUSE": "1"},
-    srcs = ["tests/test_bk_sdk_overlay.py"],
+    imports = ["tests"],
+    srcs = ["tests/test_bk_sdk_overlay.py", "tests/cmake_probe.py"],
     main = "tests/test_bk_sdk_overlay.py",
     legacy_create_init = 0,
     data = ["//native_component_src/bk7258/ap/h2_pal_core:CMakeLists.txt"],
@@ -43,8 +42,8 @@ py_test(
 )
 py_test(
     name = "bk_ap_stop_overlay_test",
-    env = {"MSBUILDDISABLENODEREUSE": "1"},
-    srcs = ["tests/test_bk_ap_stop_overlay.py"],
+    imports = ["tests"],
+    srcs = ["tests/test_bk_ap_stop_overlay.py", "tests/cmake_probe.py"],
     main = "tests/test_bk_ap_stop_overlay.py",
     legacy_create_init = 0,
     data = ["//native_component_src/bk7258/ap/h2_pal_core:CMakeLists.txt"],
@@ -76,8 +75,8 @@ py_test(
 )
 py_test(
     name = "cp_psram_overlay_test",
-    env = {"MSBUILDDISABLENODEREUSE": "1"},
-    srcs = ["tests/test_cp_psram_overlay.py"],
+    imports = ["tests"],
+    srcs = ["tests/test_cp_psram_overlay.py", "tests/cmake_probe.py"],
     main = "tests/test_cp_psram_overlay.py",
     legacy_create_init = 0,
     data = ["//native_component_src/bk7258/shared:h2_bk_cp_psram.cmake"],
@@ -85,8 +84,8 @@ py_test(
 )
 py_test(
     name = "cp_lease_overlay_test",
-    env = {"MSBUILDDISABLENODEREUSE": "1"},
-    srcs = ["tests/test_cp_lease_overlay.py"],
+    imports = ["tests"],
+    srcs = ["tests/test_cp_lease_overlay.py", "tests/cmake_probe.py"],
     main = "tests/test_cp_lease_overlay.py",
     legacy_create_init = 0,
     data = ["//native_component_src/bk7258/shared:h2_bk_cp_lease.cmake"],

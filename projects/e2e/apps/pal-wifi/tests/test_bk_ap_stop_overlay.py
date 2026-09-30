@@ -2,7 +2,7 @@
 from pathlib import Path
 import os
 import shutil
-import subprocess
+from cmake_probe import run_command
 import tempfile
 import unittest
 
@@ -108,20 +108,18 @@ target_link_libraries(probe PRIVATE sdk)
 
     def configure(self, name, apply=True):
         build = self.root / name
-        result = subprocess.run([cmake_tool(), "-S", str(self.root), "-B", str(build),
-                                 "-DAPPLY_CORRECTION=" + ("ON" if apply else "OFF")],
-                                capture_output=True, text=True)
+        result = run_command([cmake_tool(), "-S", str(self.root), "-B", str(build),
+                                 "-DAPPLY_CORRECTION=" + ("ON" if apply else "OFF")])
         return build, result
 
     def run_probe(self, name, apply=True):
         build, result = self.configure(name, apply)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        result = subprocess.run([cmake_tool(), "--build", str(build), "--config", "Debug"],
-                                capture_output=True, text=True)
+        result = run_command([cmake_tool(), "--build", str(build), "--config", "Debug"])
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         probe = next(path for path in (build / "probe", build / "probe.exe",
                                      build / "Debug/probe.exe") if path.is_file())
-        return subprocess.run([str(probe)], capture_output=True, text=True)
+        return run_command([str(probe)])
 
     def test_cp_failure_is_returned_without_local_teardown(self):
         old = self.source.read_bytes()

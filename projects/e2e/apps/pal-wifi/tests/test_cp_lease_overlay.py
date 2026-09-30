@@ -3,7 +3,7 @@
 from pathlib import Path
 import os
 import shutil
-import subprocess
+from cmake_probe import run_command
 import tempfile
 import unittest
 
@@ -71,8 +71,8 @@ class BkDhcpAckOverlay(unittest.TestCase):
     def configure(self, name):
         build = self.root / name
         env = dict(os.environ, H2_GIZOS_ROOT=str(Path.cwd()))
-        result = subprocess.run([cmake_tool(), "-S", str(self.root), "-B", str(build)],
-                                env=env, capture_output=True, text=True)
+        result = run_command([cmake_tool(), "-S", str(self.root), "-B", str(build)],
+                                env=env)
         return build, result
 
     def test_ack_hook_is_on_success_only_and_sdk_is_pristine(self):

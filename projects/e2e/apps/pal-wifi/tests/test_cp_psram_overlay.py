@@ -3,7 +3,7 @@
 from pathlib import Path
 import os
 import shutil
-import subprocess
+from cmake_probe import run_command
 import tempfile
 import unittest
 
@@ -147,19 +147,18 @@ class CpPsramServices(unittest.TestCase):
         env = dict(os.environ, H2_GIZOS_ROOT=str(self.repo), ARMINO_PATH=str(self.root / "sdk"))
         command = [cmake_tool(), "-S", str(self.root), "-B", str(build),
                    "-DAPPLY=" + ("ON" if apply else "OFF"), *extra]
-        result = subprocess.run(command, env=env, capture_output=True, text=True)
+        result = run_command(command, env=env)
         return build, result
 
     def check_probe(self, name, apply):
         originals = {key: (self.sdk / key).read_bytes() for key in SOURCES}
         build, result = self.configure(name, apply)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        result = subprocess.run([cmake_tool(), "--build", str(build), "--config", "Debug"],
-                                capture_output=True, text=True)
+        result = run_command([cmake_tool(), "--build", str(build), "--config", "Debug"])
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         binary = next(path for path in (build / "probe", build / "probe.exe", build / "Debug/probe.exe")
                       if path.is_file())
-        result = subprocess.run([str(binary)], capture_output=True, text=True)
+        result = run_command([str(binary)])
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("BK_CP_PSRAM_SERVICES_PAIRED_AND_SDK_PRISTINE PASS", result.stdout)
         self.assertEqual(originals, {key: (self.sdk / key).read_bytes() for key in SOURCES})
