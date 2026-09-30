@@ -51,4 +51,5 @@ mobile_e2e_test(
         "H2_GIZCLAW_E2E_DEVICE_API_URL", "H2_GIZCLAW_E2E_AUDIO_URL",
     ],
     timeout = "eternal",
+    external = True,
 )

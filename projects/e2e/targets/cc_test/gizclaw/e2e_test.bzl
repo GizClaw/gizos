@@ -46,7 +46,7 @@ def gizclaw_e2e_desktop_live_test(name, suite, backend = "h2peer", app = "//proj
         ],
         local_defines = ["H2_GIZCLAW_E2E_USE_PION=1"] if backend == "pion" else [],
         size = "enormous",
-        tags = ["manual"],
+        tags = ["manual", "external"],
         target_compatible_with = select({
             "//tools/bazel/platforms:host_linux_target_linux": [],
             "//tools/bazel/platforms:host_macos_target_macos": [],

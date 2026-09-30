@@ -86,7 +86,7 @@ py_test(
     }),
     env_inherit = ["H2_GIZCLAW_E2E_ENDPOINT", "H2_GIZCLAW_E2E_REGISTRATION_TOKEN",
         "H2_GIZCLAW_E2E_DEVICE_API_URL", "H2_GIZCLAW_E2E_AUDIO_URL"],
-    tags = ["manual"],
+    tags = ["manual", "external"],
     legacy_create_init = False,
     target_compatible_with = _HOST,
 )
