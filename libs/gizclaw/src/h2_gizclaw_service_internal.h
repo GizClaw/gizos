@@ -371,14 +371,13 @@ h2_gizclaw_service_media_read_opus(h2_gizclaw_service_t *service, uint8_t *opus,
 h2_pal_result_t
 h2_gizclaw_service_media_write_opus(h2_gizclaw_service_t *service,
                                     const uint8_t *opus, size_t opus_len);
-void h2_gizclaw_conversation_downlink_hold_internal(
-    h2_gizclaw_service_t *service);
+/* A downstream audio BOS makes its stream the active one and opens the
+ * downlink; an EOS of the active stream closes it again, letting what is
+ * already buffered play out. An EOS of any other stream is stale. */
 void h2_gizclaw_conversation_downlink_bos_internal(
-    h2_gizclaw_service_t *service);
-/* Lift a hold without a stream announcement, for when the press that set it
- * has ended and holding can only mute the reply. */
-void h2_gizclaw_conversation_downlink_resume_internal(
-    h2_gizclaw_service_t *service);
+    h2_gizclaw_service_t *service, const char *stream_id);
+void h2_gizclaw_conversation_downlink_eos_internal(
+    h2_gizclaw_service_t *service, const char *stream_id);
 
 /* Downlink-lifetime ingress counters, wrapping at uint_least32_t's width.
  * received includes valid zero-length PLC markers, but not invalid arguments

@@ -1,0 +1,17 @@
+{
+  "platform": "wasm",
+  "contract": 1,
+  "operations": 21,
+  "capability_contract_pass": 1,
+  "physical_wifi_qualified": 0,
+  "wifi_sta": "UNSUPPORTED",
+  "wifi_ap": "UNSUPPORTED",
+  "wifi_settings": "UNSUPPORTED",
+  "netif": "HOST",
+  "netif_count": 1,
+  "worker": 1,
+  "offline_event": 1,
+  "online_event": 1,
+  "rc": 0,
+  "teardown": 0
+}

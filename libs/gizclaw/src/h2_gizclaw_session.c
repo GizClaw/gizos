@@ -1203,8 +1203,7 @@ static h2_pal_result_t stop_conversation_locked(h2_gizclaw_session_t *s,
                                                 h2_gizclaw_audio_log_t *logs,
                                                 h2_gizclaw_cancel_source_t source) {
   if (!s->conversation_running) {
-    if (source != H2_GIZCLAW_CANCEL_RESTART)
-      h2_gizclaw_conversation_downlink_flush_internal(s->config.service);
+    h2_gizclaw_conversation_downlink_interrupt_internal(s->config.service);
     return H2_PAL_OK;
   }
   if (s->state.conversation_input_open) {
@@ -1436,6 +1435,14 @@ h2_pal_result_t h2_gizclaw_session_workspace_finish_internal(
   }
   unlock(s);
   return result;
+}
+
+h2_pal_result_t
+h2_gizclaw_session_interrupt_playback(h2_gizclaw_session_t *session) {
+  if (session == NULL)
+    return H2_PAL_ERR_INVALID_ARG;
+  h2_gizclaw_conversation_downlink_interrupt_internal(session->config.service);
+  return H2_PAL_OK;
 }
 
 static h2_pal_result_t audio_input(h2_gizclaw_session_t *s, bool start) {

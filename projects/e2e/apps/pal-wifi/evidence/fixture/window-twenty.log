@@ -1,0 +1,61 @@
+H2_WIFI_LAUNCHER version=pal-wifi-fixture-20260929-r15 board=amoled-fixture
+I (3974) pal-wifi: H2_WIFI_FIXTURE_START window_ms=600000 sta_mac=30eda0ae0f84
+I (27196) pal-wifi: H2_WIFI_FIXTURE_CLIENT target=h2wifi-dut-esp joined=1 ip4=3232236546 mac=30eda0ae0f84
+I (37239) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=0
+I (69213) pal-wifi: H2_WIFI_FIXTURE_CLIENT target=h2wifi-dut-esp joined=2 ip4=3232236546 mac=30eda0ae0f84
+I (79256) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=0
+I (111217) pal-wifi: H2_WIFI_FIXTURE_CLIENT target=h2wifi-dut-esp joined=3 ip4=3232236546 mac=30eda0ae0f84
+I (121263) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=0
+I (153220) pal-wifi: H2_WIFI_FIXTURE_CLIENT target=h2wifi-dut-esp joined=4 ip4=3232236546 mac=30eda0ae0f84
+I (163264) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=0
+I (195292) pal-wifi: H2_WIFI_FIXTURE_CLIENT target=h2wifi-dut-esp joined=5 ip4=3232236546 mac=30eda0ae0f84
+I (205336) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=0
+I (237312) pal-wifi: H2_WIFI_FIXTURE_CLIENT target=h2wifi-dut-esp joined=6 ip4=3232236546 mac=30eda0ae0f84
+I (247356) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=0
+I (282201) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (289544) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (296887) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (304230) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (311573) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (318916) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (326259) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (333602) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (340945) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (348288) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (355631) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (362974) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (370317) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (377660) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (385004) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (392346) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (399689) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (407032) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (414375) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (421718) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (429061) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (436404) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (443747) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (451090) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (458433) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (465776) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (473119) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (480462) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (487805) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (495148) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (502491) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (509834) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (517177) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (524520) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (531863) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (539206) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (546549) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (553892) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (561235) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (568578) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (575921) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (583264) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (590607) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (597950) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (605293) pal-wifi: H2_WIFI_FIXTURE_LEFT target=h2wifi-dut-esp rc=-6
+I (609013) pal-wifi: H2_WIFI_FIXTURE_END joins=6 cleanup=0 settings_unchanged=1 network_restored=1
+H2_WIFI_READY board=amoled-fixture rc=0 confirm=0

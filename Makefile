@@ -105,6 +105,11 @@ bazel-test-ios_pal_audio_simulator_test:
 bazel-test-android_pal_audio_simulator_test:
 	@scripts/bazel/bazel-test-android_pal_audio_simulator_test.sh
 
+.PHONY: bazel-test-ios_pal_wifi_simulator_test bazel-test-android_pal_wifi_simulator_test
+bazel-test-ios_pal_wifi_simulator_test:
+	@scripts/bazel/bazel-test-ios_pal_wifi_simulator_test.sh
+bazel-test-android_pal_wifi_simulator_test:
+	@scripts/bazel/bazel-test-android_pal_wifi_simulator_test.sh
 .PHONY: bazel-test-ios_pal_audio_decoder_simulator_test bazel-test-android_pal_audio_decoder_simulator_test bazel-test-wasm_pal_audio_decoder_browser_test
 bazel-test-ios_pal_audio_decoder_simulator_test:
 	@scripts/bazel/bazel-test-ios_pal_audio_decoder_simulator_test.sh

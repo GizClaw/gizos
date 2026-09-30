@@ -34,6 +34,13 @@ static int s_h2_esp_wifi_events_registered;
  * the current STA netif; cleared with that netif so the next one re-registers. */
 static int s_h2_esp_wifi_sta_dns_handler_registered;
 static int s_h2_esp_wifi_sta_disconnect_reason;
+/* Association identity captured on the serialized ESP event loop, so GOT_IP
+ * can describe its authenticated peer even though IP_EVENT has no SSID. */
+static h2_pal_wifi_sta_status_t s_h2_esp_wifi_association;
+/* Written only by the serialized ESP event loop. A direct disconnect clears
+ * the EventGroup bits before its WIFI_EVENT callback, so those bits cannot
+ * tell the callback whether an IP was actually held. */
+static int s_h2_esp_wifi_had_ip;
 static int s_h2_esp_wifi_sta_reconnect_enabled;
 static uint32_t s_h2_esp_wifi_sta_reconnect_attempts;
 static portMUX_TYPE s_h2_esp_wifi_sta_reconnect_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -305,6 +312,21 @@ static void h2_esp_wifi_post_sta_system_event(
     h2_esp_wifi_post_system_event_payload(type, status, status != NULL ? sizeof(*status) : 0u);
 }
 
+static void h2_esp_wifi_post_sta_lost_ip(
+    h2_pal_wifi_sta_state_t next_state,
+    int disconnect_reason) {
+    if (s_h2_esp_wifi_had_ip == 0) {
+        return;
+    }
+    s_h2_esp_wifi_had_ip = 0;
+    h2_pal_wifi_sta_status_t status = s_h2_esp_wifi_association;
+    status.state = next_state;
+    status.ip_valid = 0u;
+    memset(&status.ip, 0, sizeof(status.ip));
+    status.disconnect_reason = disconnect_reason;
+    h2_esp_wifi_post_sta_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_LOST_IP, &status);
+}
+
 #if CONFIG_ESP_WIFI_SOFTAP_SUPPORT
 static void h2_esp_wifi_post_ap_system_event(
     h2_pal_system_event_type_t type,
@@ -470,6 +492,9 @@ static void h2_esp_wifi_event_handler(
         return;
     }
     if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_CONNECTED) {
+        /* A fresh association cannot inherit the old lease, even if a
+         * disconnect callback was skipped by the SDK. */
+        h2_esp_wifi_post_sta_lost_ip(H2_PAL_WIFI_STA_STATE_DISCONNECTED, 0);
         h2_pal_wifi_sta_status_t status;
         memset(&status, 0, sizeof(status));
         status.state = H2_PAL_WIFI_STA_STATE_CONNECTED;
@@ -484,7 +509,10 @@ static void h2_esp_wifi_event_handler(
             status.bssid_set = 1u;
             status.channel = connected->channel;
         }
-        xEventGroupClearBits(s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_DISCONNECTED);
+        xEventGroupClearBits(
+            s_h2_esp_wifi_events,
+            H2_ESP_WIFI_EVENT_DISCONNECTED | H2_ESP_WIFI_EVENT_GOT_IP);
+        s_h2_esp_wifi_association = status;
         xEventGroupSetBits(s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_CONNECTED);
         h2_esp_wifi_post_sta_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_CONNECTED, &status);
         return;
@@ -499,6 +527,9 @@ static void h2_esp_wifi_event_handler(
             status.disconnect_reason = disconnected->reason;
             s_h2_esp_wifi_sta_disconnect_reason = disconnected->reason;
         }
+        h2_esp_wifi_post_sta_lost_ip(
+            H2_PAL_WIFI_STA_STATE_DISCONNECTED, status.disconnect_reason);
+        memset(&s_h2_esp_wifi_association, 0, sizeof(s_h2_esp_wifi_association));
         xEventGroupClearBits(s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_CONNECTED | H2_ESP_WIFI_EVENT_GOT_IP);
         xEventGroupSetBits(s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_DISCONNECTED);
         h2_esp_wifi_post_sta_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_DISCONNECTED, &status);
@@ -511,7 +542,7 @@ static void h2_esp_wifi_event_handler(
     if (event_base == IP_EVENT && event_id == IP_EVENT_STA_GOT_IP) {
         xEventGroupSetBits(s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_GOT_IP);
         h2_pal_wifi_sta_status_t status;
-        memset(&status, 0, sizeof(status));
+        status = s_h2_esp_wifi_association;
         status.state = H2_PAL_WIFI_STA_STATE_GOT_IP;
         const ip_event_got_ip_t *got_ip = (const ip_event_got_ip_t *)event_data;
         if (got_ip != NULL) {
@@ -520,11 +551,24 @@ static void h2_esp_wifi_event_handler(
             status.ip.gateway4 = lwip_ntohl(got_ip->ip_info.gw.addr);
             status.ip_valid = 1u;
         }
+        if (status.ip_valid != 0u) {
+            s_h2_esp_wifi_had_ip = 1;
+        }
         h2_esp_wifi_post_sta_system_event(H2_PAL_SYSTEM_EVENT_TYPE_WIFI_STA_GOT_IP, &status);
         (void)h2_esp_platform_netif_reconcile_default();
         return;
     }
     if (event_base == IP_EVENT && event_id == IP_EVENT_STA_LOST_IP) {
+        /* Ignore a delayed event from a previous association if the current
+         * interface still owns a real address. */
+        esp_netif_ip_info_t current_ip;
+        if (s_h2_esp_wifi_had_ip != 0 &&
+            (s_h2_esp_wifi_sta_netif == NULL ||
+             esp_netif_get_ip_info(s_h2_esp_wifi_sta_netif, &current_ip) != ESP_OK ||
+             current_ip.ip.addr == 0u)) {
+            h2_esp_wifi_post_sta_lost_ip(H2_PAL_WIFI_STA_STATE_CONNECTED, 0);
+            xEventGroupClearBits(s_h2_esp_wifi_events, H2_ESP_WIFI_EVENT_GOT_IP);
+        }
         (void)h2_esp_platform_netif_reconcile_default();
         return;
     }
@@ -1123,11 +1167,9 @@ static int h2_esp_wifi_sta_disconnect(h2_pal_wifi_sta_t *sta) {
         return h2_esp_wifi_map_error(err);
     }
 
-#if CONFIG_ESP_WIFI_SOFTAP_SUPPORT
-    if (s_h2_esp_wifi_ap_active != 0) {
-        return h2_esp_wifi_map_error(esp_wifi_set_mode(WIFI_MODE_AP));
-    }
-#endif
+    /* Disconnect ends the association; it does not remove the station
+     * interface. Keep AP+STA mode while an AP is active so a later STA scan or
+     * connect remains available, and always clear cached connected/IP bits. */
     if (s_h2_esp_wifi_events != NULL) {
         xEventGroupClearBits(
             s_h2_esp_wifi_events,

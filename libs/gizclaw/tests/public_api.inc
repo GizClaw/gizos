@@ -199,6 +199,7 @@ H2_GIZCLAW_API(h2_gizclaw_session_audio_start)
 H2_GIZCLAW_API(h2_gizclaw_session_audio_end)
 H2_GIZCLAW_API(h2_gizclaw_session_send_text)
 H2_GIZCLAW_API(h2_gizclaw_session_cancel_pending)
+H2_GIZCLAW_API(h2_gizclaw_session_interrupt_playback)
 H2_GIZCLAW_API(h2_gizclaw_session_conversation_release)
 
 H2_GIZCLAW_API(h2_gizclaw_resource_create)

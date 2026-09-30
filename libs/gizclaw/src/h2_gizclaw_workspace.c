@@ -1269,7 +1269,8 @@ h2_pal_result_t h2_gizclaw_rpc_run_stop(h2_gizclaw_service_t* service,
   if (rc == H2_PAL_OK)
     rc = h2_gizclaw_req_wait(request, H2_PAL_SYNC_WAIT_FOREVER);
   /* The shared RPC layer decodes success/errors; no run status is retained. */
-  if (rc == H2_PAL_OK) h2_gizclaw_conversation_downlink_flush_internal(service);
+  if (rc == H2_PAL_OK)
+    h2_gizclaw_conversation_downlink_interrupt_internal(service);
   if (transition)
     rc = h2_gizclaw_session_workspace_delete_finish_internal(session, rc);
   if (session != NULL) h2_gizclaw_service_release_session_internal(service);

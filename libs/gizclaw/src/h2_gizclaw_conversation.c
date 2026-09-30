@@ -131,9 +131,16 @@ static void conversation_request_atomics_destroy(h2_gizclaw_conversation_request
 }
 
 /* Downstream audio of the Conversation route. It is not part of any input
- * request: whatever the server sends is decoded into the Track and played,
- * whatever the stream ID, BOS or EOS. The only local rule is that releasing
- * push-to-talk clears what is buffered at that moment. */
+ * request and plays only while a downstream audio stream is open: a BOS
+ * makes its stream the active one and opens the downlink (dropping what a
+ * stream it cuts off left buffered), the active stream's EOS closes it and
+ * lets the buffered audio play out, and an interrupt (a press, hanging up,
+ * cancel, run stop) closes it and drops what is buffered. Audio that arrives
+ * while closed is dropped. Only the active stream's ID is kept, so a stale
+ * EOS of an earlier stream cannot close the current one. */
+#define H2_GIZCLAW_DOWNLINK_STREAM_ID_BYTES                                   \
+  sizeof(((gzc_peer_event_t *)0)->payload.bos.stream_id)
+
 struct h2_gizclaw_conversation_downlink {
   h2_gizclaw_audio_ring_t opus;
   /* Held by the decoder for one step and by flush; flush acts as the ring's
@@ -155,9 +162,11 @@ struct h2_gizclaw_conversation_downlink {
   h2_atomic_u32_t dropped_ring_full;
   /* Chunks written to the Track: the Session's sign that sound arrived. */
   h2_atomic_size_t pcm_writes;
-  /* Set by a push-to-talk press: downstream audio is dropped until the next
-   * downstream audio BOS. */
+  /* Closed: downstream audio is dropped until the next downstream audio
+   * BOS. Read without a lock on ingress; changed under decode_lock. */
   h2_atomic_bool_t waiting_for_bos;
+  /* The open stream; empty while closed. Guarded by decode_lock. */
+  char active_stream[H2_GIZCLAW_DOWNLINK_STREAM_ID_BYTES];
 };
 
 struct h2_gizclaw_conversation {
@@ -484,7 +493,7 @@ static void downlink_release(h2_gizclaw_service_t *service) {
 }
 
 /* Received downstream audio. While audio play or Speech owns the Track, or
- * waiting_for_bos is set by a press, the packet is dropped (OK); a full ring
+ * no downstream audio stream is open, the packet is dropped (OK); a full ring
  * refuses it with WOULD_BLOCK and the provider drops it, so a stalled speaker
  * loses audio instead of delaying it. */
 h2_pal_result_t
@@ -822,21 +831,26 @@ void h2_gizclaw_conversation_downlink_step_internal(
   downlink_release(service);
 }
 
-/* Pressing push-to-talk: drop downstream audio until a downstream audio BOS
- * or the matching input release. */
-void h2_gizclaw_conversation_downlink_hold_internal(
-    h2_gizclaw_service_t *service) {
-  h2_gizclaw_conversation_downlink_t *downlink =
-      downlink_acquire_any(service, NULL);
-  if (downlink == NULL)
-    return;
-  h2_atomic_store_explicit(&downlink->waiting_for_bos, true, H2_ATOMIC_RELEASE);
-  downlink_release(service);
+/* Drop what is buffered, as the owner of the ring's read side: queued Opus,
+ * the half-decoded packet and the Track's unplayed PCM. Hold decode_lock. */
+static void downlink_drop_buffered(h2_gizclaw_service_t *service,
+                                   h2_gizclaw_conversation_downlink_t *downlink,
+                                   bool track) {
+  h2_atomic_store_explicit(
+      &downlink->opus.read_index,
+      h2_atomic_load_explicit(&downlink->opus.write_index, H2_ATOMIC_ACQUIRE),
+      H2_ATOMIC_RELEASE);
+  downlink->decoded_len = 0u;
+  downlink->decoded_offset = 0u;
+  if (downlink->decoder != NULL)
+    (void)opus_decoder_ctl(downlink->decoder, OPUS_RESET_STATE);
+  if (track)
+    h2_gizclaw_service_pcm_discard_downlink_internal(service);
 }
 
-/* Releasing push-to-talk: drop everything buffered so far, queued Opus,
- * the half-decoded packet and the Track's unplayed PCM. */
-void h2_gizclaw_conversation_downlink_flush_internal(
+/* Close first, then drop: a packet racing in after the drop is already
+ * refused at ingress, so nothing of the interrupted reply is played. */
+void h2_gizclaw_conversation_downlink_interrupt_internal(
     h2_gizclaw_service_t *service) {
   bool track = false;
   h2_gizclaw_conversation_downlink_t *downlink =
@@ -845,44 +859,56 @@ void h2_gizclaw_conversation_downlink_flush_internal(
     return;
   if (h2_pal_mutex_lock(service->config.sync, downlink->decode_lock) ==
       H2_PAL_OK) {
-    h2_atomic_store_explicit(
-        &downlink->opus.read_index,
-        h2_atomic_load_explicit(&downlink->opus.write_index, H2_ATOMIC_ACQUIRE),
-        H2_ATOMIC_RELEASE);
-    downlink->decoded_len = 0u;
-    downlink->decoded_offset = 0u;
-    if (downlink->decoder != NULL)
-      (void)opus_decoder_ctl(downlink->decoder, OPUS_RESET_STATE);
-    if (track)
-      h2_gizclaw_service_pcm_discard_downlink_internal(service);
+    h2_atomic_store_explicit(&downlink->waiting_for_bos, true,
+                             H2_ATOMIC_RELEASE);
+    downlink->active_stream[0] = '\0';
+    downlink_drop_buffered(service, downlink, track);
     (void)h2_pal_mutex_unlock(service->config.sync, downlink->decode_lock);
   }
   downlink_release(service);
 }
 
-/* Resume after discarding the release-time backlog. A missing audio BOS must
- * not leave media_write_opus silently dropping every later reply packet.
- * This local gate does not identify the turn of packets still in flight. */
-void h2_gizclaw_conversation_downlink_resume_internal(
-    h2_gizclaw_service_t *service) {
+/* A BOS while another stream is still active means the server cut that
+ * stream off for this one: what the earlier stream left buffered is dropped.
+ * Streams that follow one another end (EOS) before the next begins. */
+void h2_gizclaw_conversation_downlink_bos_internal(
+    h2_gizclaw_service_t *service, const char *stream_id) {
+  bool track = false;
   h2_gizclaw_conversation_downlink_t *downlink =
-      downlink_acquire_any(service, NULL);
+      downlink_acquire_any(service, &track);
   if (downlink == NULL)
     return;
-  h2_atomic_store_explicit(&downlink->waiting_for_bos, false,
-                        H2_ATOMIC_RELEASE);
+  if (h2_pal_mutex_lock(service->config.sync, downlink->decode_lock) ==
+      H2_PAL_OK) {
+    const char *id = stream_id != NULL ? stream_id : "";
+    if (downlink->active_stream[0] != '\0' &&
+        strcmp(downlink->active_stream, id) != 0)
+      downlink_drop_buffered(service, downlink, track);
+    (void)snprintf(downlink->active_stream, sizeof(downlink->active_stream),
+                   "%s", id);
+    h2_atomic_store_explicit(&downlink->waiting_for_bos, false,
+                             H2_ATOMIC_RELEASE);
+    (void)h2_pal_mutex_unlock(service->config.sync, downlink->decode_lock);
+  }
   downlink_release(service);
 }
 
-/* The server announced a downstream audio stream: its audio plays. */
-void h2_gizclaw_conversation_downlink_bos_internal(
-    h2_gizclaw_service_t *service) {
+void h2_gizclaw_conversation_downlink_eos_internal(
+    h2_gizclaw_service_t *service, const char *stream_id) {
   h2_gizclaw_conversation_downlink_t *downlink =
       downlink_acquire_any(service, NULL);
   if (downlink == NULL)
     return;
-  h2_atomic_store_explicit(&downlink->waiting_for_bos, false,
-                        H2_ATOMIC_RELEASE);
+  if (h2_pal_mutex_lock(service->config.sync, downlink->decode_lock) ==
+      H2_PAL_OK) {
+    if (stream_id != NULL && downlink->active_stream[0] != '\0' &&
+        strcmp(downlink->active_stream, stream_id) == 0) {
+      downlink->active_stream[0] = '\0';
+      h2_atomic_store_explicit(&downlink->waiting_for_bos, true,
+                               H2_ATOMIC_RELEASE);
+    }
+    (void)h2_pal_mutex_unlock(service->config.sync, downlink->decode_lock);
+  }
   downlink_release(service);
 }
 
@@ -1122,6 +1148,17 @@ bool h2_gizclaw_conversation_downstream_audio_bos_internal(
          event->payload.bos.kind ==
              gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO &&
          strcmp(event->payload.bos.label,
+                H2_GIZCLAW_CONVERSATION_INPUT_LABEL) != 0 &&
+         !(active != NULL && event_names_our_input(active, event));
+}
+
+bool h2_gizclaw_conversation_downstream_audio_eos_internal(
+    const h2_gizclaw_conversation_t *active, const gzc_peer_event_t *event) {
+  return event != NULL &&
+         event->type == gizclaw_events_v1_PeerEventType_PEER_EVENT_TYPE_EOS &&
+         event->payload.eos.kind ==
+             gizclaw_events_v1_StreamKind_STREAM_KIND_AUDIO &&
+         strcmp(event->payload.eos.label,
                 H2_GIZCLAW_CONVERSATION_INPUT_LABEL) != 0 &&
          !(active != NULL && event_names_our_input(active, event));
 }
@@ -2229,9 +2266,6 @@ h2_pal_result_t h2_gizclaw_service_audio_control_internal(
   bool closed = service->stopping || service->stopped;
   bool started = service->started;
   (void)h2_pal_mutex_unlock(service->config.sync, service->mutex);
-  /* A repeated end is a no-op and must not clear audio that arrived after
-   * the real release. */
-  const bool releasing = !start && !service->audio_ended;
   if (closed)
     rc = H2_PAL_ERR_CLOSED;
   else if (!started)
@@ -2256,19 +2290,11 @@ h2_pal_result_t h2_gizclaw_service_audio_control_internal(
       *out_empty = h2_atomic_load_explicit(
           &conversation->service_request->input_empty, H2_ATOMIC_ACQUIRE);
   }
-  /* Keep hold and release flush/resume inside the control transition. Once
-   * audio_mutex is unlocked, a later press may set a new hold that this
-   * release must never clear. Downlink helpers do not acquire audio_mutex. */
-  if (rc == H2_PAL_OK && speech == NULL && conversation != NULL) {
-    if (start) {
-      h2_gizclaw_conversation_downlink_hold_internal(service);
-    } else if (releasing) {
-      /* Discard what the press buffered before accepting what follows, so
-       * the held-back audio cannot surface as the reply's first frames. */
-      h2_gizclaw_conversation_downlink_flush_internal(service);
-      h2_gizclaw_conversation_downlink_resume_internal(service);
-    }
-  }
+  /* A press interrupts whatever plays: the reply to this input opens the
+   * downlink with its own BOS. A release leaves the downlink as it is.
+   * Downlink helpers do not acquire audio_mutex. */
+  if (rc == H2_PAL_OK && speech == NULL && conversation != NULL && start)
+    h2_gizclaw_conversation_downlink_interrupt_internal(service);
   (void)h2_pal_mutex_unlock(service->config.sync, service->audio_mutex);
   return rc;
 }
@@ -2316,10 +2342,8 @@ h2_gizclaw_conversation_cancel_internal(h2_gizclaw_conversation_t *conversation,
                          H2_PAL_LOG_DEBUG, log);
   }
   (void)h2_pal_mutex_unlock(service->config.sync, service->audio_mutex);
-  /* Hanging up or switching Workspace stops what is playing. A new input
-   * replacing this one does not: releasing it is what clears the buffer. */
-  if (source != H2_GIZCLAW_CANCEL_RESTART)
-    h2_gizclaw_conversation_downlink_flush_internal(service);
+  /* Canceling stops what is playing, whoever asked. */
+  h2_gizclaw_conversation_downlink_interrupt_internal(service);
   return rc;
 }
 

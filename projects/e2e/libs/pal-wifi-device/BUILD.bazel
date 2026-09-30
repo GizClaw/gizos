@@ -1,0 +1,14 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:tasks.bzl", "h2_tasks")
+package(default_visibility = ["//projects/e2e:__subpackages__"])
+h2_tasks(name = "tasks", tasks = ["pal-wifi/e2e/runner"])
+cc_library(
+    name = "runner",
+    srcs = ["src/h2_pal_wifi_device.c", "src/h2_pal_wifi_fixture.c"],
+    hdrs = ["include/h2_pal_wifi_device.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["include"],
+    deps = [":tasks", "//projects/e2e/apps/pal-wifi/app:pal_wifi_e2e"],
+)
