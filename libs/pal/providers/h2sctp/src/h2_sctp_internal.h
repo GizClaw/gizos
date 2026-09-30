@@ -146,6 +146,13 @@ struct h2_pal_sctp_association {
     uint32_t advanced_peer_ack;
     uint32_t next_reset_sequence;
     uint32_t expected_reset_sequence;
+    /* RFC 6525 5.2.2 deferred reset: an incoming reset request whose last
+     * assigned TSN is still beyond the cumulative point. The stream list is a
+     * copy of the request's stream identifiers, two wire bytes each. */
+    uint8_t *deferred_reset_streams;
+    size_t deferred_reset_streams_len;
+    uint32_t deferred_reset_sequence;
+    uint32_t deferred_reset_last_tsn;
     uint16_t negotiated_inbound_streams;
     uint16_t negotiated_outbound_streams;
     bool peer_forward_tsn;
