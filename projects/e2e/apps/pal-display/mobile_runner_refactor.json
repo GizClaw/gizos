@@ -1,28 +1,30 @@
 {
   "schema": 1,
   "historical_qualification_sha256": "aadf693be22215f051766f099f15f405a097c279f2adb49dc5a94a37c5a00c4e",
-  "mobile_execution_commit": "679083ee94eea3461f4f99d5e9ed835e756c0f51",
+  "mobile_execution_commit": "a0895cbfc33146d47484c3c33d04910fbd0222fb",
   "new_physical_run_claimed": false,
   "current_source_sha256": {
-    "projects/e2e/apps/pal-display/BUILD.bazel": "39e8e84d81030ceb434751ff3cd2c4e59739164965ce8d10b9700cd04e4dcc66",
-    "projects/e2e/apps/pal-display/check_qualification.py": "7bde92af9f692fa360f64458addd2f069587d9364fd40c5e83d217090b098b36",
-    "projects/e2e/apps/pal-display/README.md": "02a79020f633806d8ed07443b1d27955b5dc4cf184c596b741bce6c075737aba",
-    "projects/e2e/libs/pal-display-mobile/run_mobile.py": "784ebdddd425e4f15a2463afc3a39af8ceca7814f50635c64cafc59f169dad4a",
-    "projects/e2e/targets/android_binary/pal-display/BUILD.bazel": "e2c07d1b19563ee2a6d4b56c89cad325028e0cc3fa0fd43c101603aaf8416b40",
-    "projects/e2e/targets/ios_application/pal-display/BUILD.bazel": "caa4ce9fe2ff77ebda1d61d254680354fa09cd9889ccae80a1d80236ec52c8fd",
-    "tools/bazel/mobile_e2e.py": "1463d0c1cd92b6d4c94086a7dbcdfbcf901f526f71f626c5c8db71461d7c9f1d",
-    "tools/bazel/mobile_e2e.bzl": "a5b7854954d776e49cf97bb137b1e1b7ec2d07ee5bb183e24e9ce1d2be3d367f"
+    "projects/e2e/apps/pal-display/BUILD.bazel": "8ff7bf62bbc9847688335c61ebcdd25205d384eebc6220fdad9b3f3e6fc876b6",
+    "projects/e2e/apps/pal-display/check_qualification.py": "70e195f683f3ae5070efd8b2dcb75b330ae4181e67c4134cf0be7d19dfa7c112",
+    "projects/e2e/apps/pal-display/README.md": "7a12ef8da6ef2dd4a0346ced2f165f74f76d1120092cd711981a46090211c7c8",
+    "projects/e2e/libs/pal-display-mobile/run_mobile.py": "5dde927dd5189de2ff2193ee9fecef6d7e8b2fc6e635aca4dd71fd912af36256",
+    "projects/e2e/targets/android_binary/pal-display/BUILD.bazel": "1fbd8f323b400b6d07f8a87190351602b4b90c2a3f9cbbd1e206b33c2af45a6b",
+    "projects/e2e/targets/ios_application/pal-display/BUILD.bazel": "132ae3feae3ab06c55e4a020bc702c00a83e6db1283c50ca41583b2fb545a449",
+    "tools/bazel/mobile_e2e.py": "1e458c01416993e0384f1a2876ab8c1d6740f1ae4340cb8893e83291a5e38206",
+    "tools/bazel/mobile_e2e.bzl": "74c06be249cb4a7142a86430e28bf9273431f4e1cf3bf70b6f1d5717f9936d92",
+    "projects/e2e/libs/pal-display-mobile/BUILD.bazel": "013b4084122b3b21ff41ccf07ea5e5b15f1ed6671cc641ea2e1eeddaf80344b5"
   },
   "removed_source_sha256": {
     "projects/e2e/targets/ios_application/pal-display/run_simulator.sh": "763e6d7341d4f7640a9d846b7d8f08156b777852bb7e797b2c33a61516ea1824",
     "projects/e2e/targets/android_binary/pal-display/run_simulator.sh": "763e6d7341d4f7640a9d846b7d8f08156b777852bb7e797b2c33a61516ea1824"
   },
   "executed_runner_sha256": {
-    "tools/bazel/mobile_e2e.py": "1463d0c1cd92b6d4c94086a7dbcdfbcf901f526f71f626c5c8db71461d7c9f1d",
-    "projects/e2e/libs/pal-display-mobile/run_mobile.py": "784ebdddd425e4f15a2463afc3a39af8ceca7814f50635c64cafc59f169dad4a",
-    "projects/e2e/targets/android_binary/pal-display/BUILD.bazel": "e2c07d1b19563ee2a6d4b56c89cad325028e0cc3fa0fd43c101603aaf8416b40",
-    "projects/e2e/targets/ios_application/pal-display/BUILD.bazel": "caa4ce9fe2ff77ebda1d61d254680354fa09cd9889ccae80a1d80236ec52c8fd",
-    "tools/bazel/mobile_e2e.bzl": "a5b7854954d776e49cf97bb137b1e1b7ec2d07ee5bb183e24e9ce1d2be3d367f"
+    "tools/bazel/mobile_e2e.py": "1e458c01416993e0384f1a2876ab8c1d6740f1ae4340cb8893e83291a5e38206",
+    "projects/e2e/libs/pal-display-mobile/run_mobile.py": "5dde927dd5189de2ff2193ee9fecef6d7e8b2fc6e635aca4dd71fd912af36256",
+    "projects/e2e/targets/android_binary/pal-display/BUILD.bazel": "1fbd8f323b400b6d07f8a87190351602b4b90c2a3f9cbbd1e206b33c2af45a6b",
+    "projects/e2e/targets/ios_application/pal-display/BUILD.bazel": "132ae3feae3ab06c55e4a020bc702c00a83e6db1283c50ca41583b2fb545a449",
+    "tools/bazel/mobile_e2e.bzl": "74c06be249cb4a7142a86430e28bf9273431f4e1cf3bf70b6f1d5717f9936d92",
+    "projects/e2e/libs/pal-display-mobile/BUILD.bazel": "013b4084122b3b21ff41ccf07ea5e5b15f1ed6671cc641ea2e1eeddaf80344b5"
   },
   "mobile_runs": {
     "ios": {
@@ -165,23 +167,24 @@
       "environment": {
         "platform": "ios",
         "package": "com.haivivi.gizos.e2e.paldisplay",
-        "observation_started_at_utc": "2026-09-30T04:47:33.689945+00:00",
+        "observation_started_at_utc": "2026-09-30T05:48:48.243381+00:00",
         "app_sha256": "6c7276d7f7c4bc801e424b1ec28470d15cd44ea668e1a84e2a94f73c92e9aff9",
         "sdk_sha256": "08699f45221ec87631ff42ec3d0c662406c63a08617aff4a9fbd0f2129de39c3",
         "simulator_udid": "512464D1-09C4-4EE2-8A44-8DB676233FA6",
         "runtime": "com.apple.CoreSimulator.SimRuntime.iOS-26-5",
         "device": {
           "dataPath": "/Users/idy/Library/Developer/CoreSimulator/Devices/512464D1-09C4-4EE2-8A44-8DB676233FA6/data",
-          "dataPathSize": 1942347776,
+          "dataPathSize": 1950724096,
           "logPath": "/Users/idy/Library/Logs/CoreSimulator/512464D1-09C4-4EE2-8A44-8DB676233FA6",
           "udid": "512464D1-09C4-4EE2-8A44-8DB676233FA6",
-          "lastUsedAt": "2026-09-30T04:45:22Z",
+          "lastUsedAt": "2026-09-30T05:46:53Z",
           "isAvailable": true,
-          "logPathSize": 413696,
+          "logPathSize": 425984,
           "deviceTypeIdentifier": "com.apple.CoreSimulator.SimDeviceType.iPhone-17-Pro",
           "state": "Booted",
           "name": "GizOS Shared Mobile Runner"
         },
+        "suite_sha256": "a1c28fea3f88939a41555c7119382bc27b6f5f793b0fa5cd204b2e5148164452",
         "sdk_binary_member": "H2PALCore.xcframework/ios-arm64-simulator/H2PALCore.framework/H2PALCore",
         "sdk_binary_sha256": "25442ab11b86b7f2d5d704f5ea9fa803127ca56a6f9a482f8618e98374c136aa",
         "ipa_executable_sha256": "df64dda24c046b2f06db559b86f2d4515ee45a5c9b7aa143f9408ab549663f93",
@@ -190,7 +193,7 @@
           "_h2_ios_platform_display_api",
           "_h2_ios_platform_destroy"
         ],
-        "observation_finished_at_utc": "2026-09-30T04:47:35.434607+00:00",
+        "observation_finished_at_utc": "2026-09-30T05:48:49.849138+00:00",
         "evidence_timezone": "UTC",
         "launches": 1,
         "runner_status": "completed"
@@ -336,22 +339,23 @@
       "environment": {
         "platform": "android",
         "package": "com.haivivi.gizos.e2e.paldisplay",
-        "observation_started_at_utc": "2026-09-30T04:48:30.040383+00:00",
-        "app_sha256": "36ada58fc0cccb62874e64e282488f44fe44b7881f8f091a67824a35d7a1b925",
-        "sdk_sha256": "fca9861aca78f4b8cef0647e18a6e95e53f7a86d6123e01f8003b51d552f2486",
+        "observation_started_at_utc": "2026-09-30T05:52:37.048820+00:00",
+        "app_sha256": "39cb88e621a97b41fdb7f61f577c9340ee92f30c9d09b18a133469c8c8934bae",
+        "sdk_sha256": "6b09cb01ab6b3383bed60dd28ce086c62646c947a9512cc5773ab3c3e3373069",
         "serial": "emulator-5580",
-        "aar_binary_sha256": "8b9a6cc00ab2a3d55e518313e9343e3b589278dea7eba3c44ee657a3d10c92f1",
-        "apk_binary_sha256": "8b9a6cc00ab2a3d55e518313e9343e3b589278dea7eba3c44ee657a3d10c92f1",
+        "aar_binary_sha256": "15c0fdcd267993a050b9f5545936224815e08486d4b269613d6f82fe9106e2ac",
+        "apk_binary_sha256": "15c0fdcd267993a050b9f5545936224815e08486d4b269613d6f82fe9106e2ac",
         "apk_aar_binary_identical": true,
         "api": "36",
         "fingerprint": "Android/sdk_slim_arm64/emu64a:16/BE2A.250530.027/13847098:userdebug/test-keys",
+        "suite_sha256": "a1c28fea3f88939a41555c7119382bc27b6f5f793b0fa5cd204b2e5148164452",
         "public_provider_symbols": [
           "h2_android_platform_create",
           "h2_android_platform_display_api",
           "h2_android_platform_copy_frame",
           "h2_android_platform_destroy"
         ],
-        "observation_finished_at_utc": "2026-09-30T04:48:31.914785+00:00",
+        "observation_finished_at_utc": "2026-09-30T05:52:41.134111+00:00",
         "evidence_timezone": "UTC",
         "launches": 1,
         "runner_status": "completed"

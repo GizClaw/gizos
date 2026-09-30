@@ -292,7 +292,7 @@ class MobileRunnerTest(unittest.TestCase):
         return dict(platform="ios-simulator", passed=1, failed=0, version="2.0.0",
                     cases=[dict(id="ok", status="PASS", detail=0)])
 
-    def run_entrypoint(self, hook=None, report=None, **updates):
+    def run_entrypoint(self, hook=None, report=None, failure=None, **updates):
         contract = self.declaration()
         contract.update(updates)
         if hook:
@@ -301,7 +301,7 @@ class MobileRunnerTest(unittest.TestCase):
             contract["hook"] = str(module)
         suite = self.root / "suite.json"
         suite.write_text(json.dumps(contract))
-        fake = FakeDevice(self.container, [json.dumps(report or self.report())])
+        fake = FakeDevice(self.container, [json.dumps(report or self.report())], fail=failure)
         def factory(*args, **kwargs):
             return MobileApp(*args, **kwargs, command=fake,
                              environ={"H2_IOS_SIMULATOR_UDID": "SIM-1"})
@@ -376,6 +376,12 @@ class MobileRunnerTest(unittest.TestCase):
             registry.write_text(text)
             with self.assertRaises(AssertionError):
                 registry_ids(contract, registry)
+
+    def test_declared_permission_failure_prevents_launch(self):
+        with self.assertRaisesRegex(RuntimeError, "privacy"):
+            self.run_entrypoint(permissions={"ios": ["microphone"], "android": []}, failure="privacy")
+        self.assertEqual(json.loads((self.root / "out/environment.json").read_text())["launches"], 0)
+        self.assertFalse((self.root / "out/qualified.json").exists())
 
     def test_declaration_sdk_requirements_are_enforced_before_launch(self):
         member = "H2PALCore.xcframework/ios-arm64-simulator/H2PALCore.framework/"
