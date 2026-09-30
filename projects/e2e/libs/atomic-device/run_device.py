@@ -73,9 +73,17 @@ def main():
         before=fields(run('before-status','status'))
         assert before.get('device_uid')==uid and before.get('stage_valid')=='0', 'fixture UID/Stage mismatch'
         p1={k:v for k,v in before.items() if k.startswith('partition_1_')}
-        run('before-coredump-status','coredump','status')
-        before_dump=local/'before.bin';run('before-coredump','coredump','dump','--output',str(before_dump))
-        shutil.copy2(before_dump,output/'coredump-before.bin')
+        before_coredump=fields(run('before-coredump-status','coredump','status'))
+        assert before_coredump.get('result')=='OK' and before_coredump.get('code')=='0'
+        before_dump=local/'before.bin'
+        has_dump=int(before_coredump['stored_bytes'])>0
+        if has_dump:
+            assert before_coredump.get('blank')=='0'
+            run('before-coredump','coredump','dump','--output',str(before_dump))
+            shutil.copy2(before_dump,output/'coredump-before.bin')
+        else:
+            assert before_coredump.get('blank')=='1', 'inconsistent empty dump'
+
         run('send','send','--file',str(image),timeout=300)
         upgrade=run('upgrade','--ready','H2_ATOMIC_READY rc=0 confirm=0','reboot','upgrade','--monitor')
         first=boot_ledger(upgrade,ids,version)
@@ -88,13 +96,17 @@ def main():
             active_checksum=manifest['image_sha256'],partition_2_version=version,partition_2_image_checksum=manifest['image_sha256'],
             partition_2_package_checksum=hashlib.sha256(original).hexdigest()).items():
             assert final.get(key)==val,(key,final)
-        run('after-coredump-status','coredump','status')
-        after_dump=local/'after.bin';run('after-coredump','coredump','dump','--output',str(after_dump))
-        shutil.copy2(after_dump,output/'coredump-after.bin')
-        assert before_dump.read_bytes()==after_dump.read_bytes(),'coredump changed'
+        after_coredump=fields(run('after-coredump-status','coredump','status'))
+        assert before_coredump==after_coredump,'coredump status changed'
+        after_dump=local/'after.bin'
+        if has_dump:
+            run('after-coredump','coredump','dump','--output',str(after_dump))
+            shutil.copy2(after_dump,output/'coredump-after.bin')
+            assert before_dump.read_bytes()==after_dump.read_bytes(),'coredump changed'
+
         receipt=dict(target=target,port=port,uid=uid,package_sha256=hashlib.sha256(original).hexdigest(),manifest=manifest,
             cli_sha256=hashlib.sha256(Path(cli).read_bytes()).hexdigest(),registry_sha256=hashlib.sha256(Path(registry).read_bytes()).hexdigest(),
-            managed_boot=first,normal_boot=second,final_status=final,coredump_sha256=hashlib.sha256(after_dump.read_bytes()).hexdigest())
+            managed_boot=first,normal_boot=second,final_status=final,coredump_status=after_coredump,coredump_sha256=hashlib.sha256(after_dump.read_bytes()).hexdigest() if has_dump else None,observed_coredump_bytes=len(after_dump.read_bytes()) if has_dump else None)
         (output/'qualification.json').write_text(json.dumps(receipt,indent=2)+'\n')
         print(f'Atomic {target}: 56/56 PASS on managed and independent App boots; cleanup=0, P1/Stage/coredump preserved')
 if __name__=='__main__':main()
