@@ -75,13 +75,15 @@ rx fragment，也不投影 `INCOMING_RESET`。cumulative 已到达 last TSN 时�
 交付完再 reset；consumer 暂时收不下（message callback 返回 `WOULD_BLOCK`）同样按
 `In progress` 推迟，重发的 request 也不例外，不能丢掉还在等交付的 fragment。推迟的
 reset 在 DATA 或 FORWARD-TSN 推进 cumulative 后、以及每次 service 里重试：交付完成后
-执行 reset、主动回 `Performed` 并投影一次 `INCOMING_RESET`；拿不到保存 request 的内存时
-不保存，由对端重发的 request 完成。reset 只丢弃 TSN 不超过 last TSN 的 fragment，之后的
+执行 reset、主动回 `Performed` 并投影一次 `INCOMING_RESET`；reset 只和它的 `Performed`
+一起生效：已有 retained output（例如补上空洞那个 chunk 的 SACK）占着时 response 排不进去，
+要等 service 把它发走再完成。拿不到保存 request 的内存时不保存，由对端重发的 request 完成。reset 只丢弃 TSN 不超过 last TSN 的 fragment，之后的
 fragment 属于该 stream 的下一轮，reset 把 sequence counter 归零后要立即重新调度它们的
 交付。立即 reset 会丢掉空洞之后、已用 gap block 确认过的 fragment：对端认为它们已确认
 不再重发，本端 cumulative 就永远停在空洞后面。`stream_test` 必须覆盖三种顺序：丢一个
 chunk、收到后续 chunk、收到 reset request、再收到补发 chunk；下一轮的消息先于 reset 完成
-到达；以及交付被 consumer 挡住期间收到重发的 request。
+到达；交付被 consumer 挡住期间收到重发的 request；以及空洞补上时 SACK 占住 retained
+output。
 
 ## Time and failure semantics
 

@@ -431,8 +431,44 @@ static void test_incoming_reset_waits_for_delivery(void) {
   h2_sctp_test_pair_deinit(&pair);
 }
 
+/* The SACK that closes the hole can occupy the retained-packet slot. The
+ * reset then waits for it to drain, so Performed is always queued with it. */
+static void test_incoming_reset_waits_for_output(void) {
+  h2_sctp_test_pair_t pair;
+  assert(h2_sctp_test_pair_init(&pair, 256u, 4096u) == H2_PAL_OK);
+  assert(h2_sctp_test_connect(&pair));
+  h2_pal_sctp_association_t *association = pair.passive.association;
+  const uint32_t base = association->cumulative_received_tsn;
+  uint64_t now_ms = pair.now_ms;
+  feed_data(association, base + 1u, 1u, 0u, 0x11u, ++now_ms);
+  feed_data(association, base + 3u, 1u, 2u, 0x33u, ++now_ms);
+  const uint32_t reset_sequence = association->expected_reset_sequence != 0u
+                                      ? association->expected_reset_sequence
+                                      : 7u;
+  feed_outgoing_reset(association, reset_sequence, base + 3u, 1u, ++now_ms);
+  uint64_t deadline = H2_PAL_SCTP_NO_DEADLINE;
+  assert(h2_pal_sctp_association_service(pair.passive.api, association,
+                                         ++now_ms, &deadline) == H2_PAL_OK);
+  assert(association->pending_emit == NULL);
+
+  pair.passive.emit_would_block_count = 1u;
+  feed_data(association, base + 2u, 1u, 1u, 0x22u, ++now_ms);
+  assert(association->cumulative_received_tsn == base + 3u);
+  assert(association->pending_emit != NULL);
+  assert(association->expected_reset_sequence == reset_sequence);
+  assert(pair.passive.incoming_reset_events == 0u);
+
+  assert(h2_pal_sctp_association_service(pair.passive.api, association,
+                                         ++now_ms, &deadline) == H2_PAL_OK);
+  assert(association->expected_reset_sequence == reset_sequence + 1u);
+  assert(pair.passive.incoming_reset_events == 1u);
+  assert(pair.passive.message_count == 3u);
+  h2_sctp_test_pair_deinit(&pair);
+}
+
 int main(void) {
   test_incoming_reset_waits_for_last_tsn();
+  test_incoming_reset_waits_for_output();
   test_incoming_reset_delivers_next_generation();
   test_incoming_reset_waits_for_delivery();
   test_reset_waits_for_pending_output();

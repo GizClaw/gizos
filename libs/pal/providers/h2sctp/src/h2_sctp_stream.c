@@ -983,6 +983,14 @@ h2_pal_result_t h2_sctp_stream_service_deferred_reset(
     if (result != H2_PAL_OK) {
         return result;
     }
+    /* The reset is performed only together with its Performed response.
+     * While an earlier packet is still retained (the SACK that closed the
+     * hole, for one) the response cannot be queued, so wait for service to
+     * drain it. With the slot free, WOULD_BLOCK means the response itself
+     * was retained and will be sent. */
+    if (association->pending_emit != NULL) {
+        return H2_PAL_OK;
+    }
     result = h2_sctp_stream_send_reset_response(
         association, association->deferred_reset_sequence, 1u, now_ms);
     if (result == H2_PAL_ERR_NO_MEMORY) {
