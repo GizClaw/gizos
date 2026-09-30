@@ -1,0 +1,36 @@
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_OR_MOBILE_TOOL_COMPATIBILITY", "HOST_TOOL_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "fixture",
+    srcs = ["fixture.py"],
+    imports = ["."],
+    target_compatible_with = HOST_OR_MOBILE_TOOL_COMPATIBILITY,
+)
+
+py_binary(
+    name = "serve",
+    srcs = ["serve.py"],
+    main = "serve.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":fixture"],
+)
+
+py_test(
+    name = "fixture_evidence_test",
+    srcs = ["tests/test_fixture_evidence.py"],
+    legacy_create_init = 0,
+    main = "tests/test_fixture_evidence.py",
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":fixture"],
+)

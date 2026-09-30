@@ -389,6 +389,35 @@ class MobileRunnerTest(unittest.TestCase):
             with self.assertRaises(AssertionError):
                 registry_ids(contract, registry)
 
+    def test_optional_skip_requires_declaration_and_typed_unsupported(self):
+        contract = self.declaration()
+        report = self.report()
+        report['cases'].append(dict(id='optional', status='UNSUPPORTED', detail=-3))
+        ids = ['ok', 'optional']
+        with self.assertRaises(AssertionError):
+            verify_report(report, contract, ids, 'ios-simulator')
+        contract['optional_cases'] = ['optional']
+        verify_report(report, contract, ids, 'ios-simulator')
+        for status, detail in [('UNSUPPORTED', -6), ('UNSUPPORTED', -1),
+                               ('NOT_ASSESSED', -3), ('PASS', -3)]:
+            bad = copy.deepcopy(report)
+            bad['cases'][1].update(status=status, detail=detail)
+            with self.assertRaises(AssertionError):
+                verify_report(bad, contract, ids, 'ios-simulator')
+        for optional in [['unknown'], ['optional', 'optional']]:
+            contract['optional_cases'] = optional
+            with self.assertRaises(AssertionError):
+                verify_report(report, contract, ids, 'ios-simulator')
+        contract['optional_cases'] = ['optional']
+        contract['expected']['teardown'] = 0
+        report['teardown'] = -1
+        with self.assertRaises(AssertionError):
+            verify_report(report, contract, ids, 'ios-simulator')
+        report['teardown'] = 0
+        report['passed'] = 2
+        with self.assertRaises(AssertionError):
+            verify_report(report, contract, ids, 'ios-simulator')
+
     def test_declared_permission_failure_prevents_launch(self):
         with self.assertRaisesRegex(RuntimeError, "privacy"):
             self.run_entrypoint(permissions={"ios": ["microphone"], "android": []}, failure="privacy")

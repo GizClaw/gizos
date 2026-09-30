@@ -5,6 +5,11 @@ load("//tools/bazel/platforms:compatibility.bzl", "WEB_WASM32_ARTIFACT_COMPATIBI
 package(default_visibility = ["//visibility:private"])
 
 exports_files(
+    ["src/h2_posix_net.c"],
+    visibility = ["//projects/e2e:__subpackages__"],
+)
+
+exports_files(
     glob(["tests/fixtures/*.pem"]),
     visibility = ["//libs/pal/providers/desktop/app_support:__pkg__"],
 )
@@ -34,7 +39,10 @@ cc_library(
         "@platforms//os:android": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    visibility = _POSIX_OWNERS + ["//libs/pal/providers/ios/pal_core:__pkg__", "//libs/pal/providers/android/pal_core:__pkg__"],
+    visibility = _POSIX_OWNERS + [
+        "//libs/pal/providers/android/pal_core:__pkg__",
+        "//libs/pal/providers/ios/pal_core:__pkg__",
+    ],
     deps = ["//libs/pal"],
 )
 
@@ -60,7 +68,10 @@ cc_library(
         "//conditions:default": [],
     }),
     includes = ["include"],
-    linkopts = select({"@platforms//os:android": [], "//conditions:default": ["-lpthread"]}),
+    linkopts = select({
+        "@platforms//os:android": [],
+        "//conditions:default": ["-lpthread"],
+    }),
     target_compatible_with = select({
         "@platforms//os:linux": [],
         "@platforms//os:macos": [],
@@ -68,7 +79,10 @@ cc_library(
         "@platforms//os:android": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    visibility = _POSIX_OWNERS + ["//libs/pal/providers/ios/pal_core:__pkg__", "//libs/pal/providers/android/pal_core:__pkg__"],
+    visibility = _POSIX_OWNERS + [
+        "//libs/pal/providers/android/pal_core:__pkg__",
+        "//libs/pal/providers/ios/pal_core:__pkg__",
+    ],
     deps = [
         "//libs/pal",
         "//libs/pal/providers/wolfssl",
@@ -246,8 +260,14 @@ _CORE_OWNERS = [
     "//libs/pal/providers/android/pal_core:__pkg__",
     "//libs/pal/providers/web/pal_core:__pkg__",
 ]
+
 cc_library(
     name = "thread_core",
+    srcs = ["src/h2_posix_thread_core.cpp"],
+    hdrs = ["include/h2_posix_thread_core.h"],
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["include"],
     target_compatible_with = select({
         "@platforms//os:ios": [],
         "@platforms//os:android": [],
@@ -256,27 +276,29 @@ cc_library(
         "@platforms//cpu:wasm32": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    srcs = ["src/h2_posix_thread_core.cpp"],
-    hdrs = ["include/h2_posix_thread_core.h"],
-    includes = ["include"],
-    cxxopts = H2_CXX17_OPTS,
-    copts = H2_WARNING_COPTS,
     visibility = _CORE_OWNERS,
     deps = ["//libs/pal"],
 )
+
 cc_library(
     name = "mobile_core",
+    srcs = [
+        "src/h2_posix_core.cpp",
+        "src/h2_posix_system_event.c",
+    ],
+    hdrs = ["include/h2_posix_core.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    cxxopts = H2_CXX17_OPTS,
+    includes = ["include"],
     target_compatible_with = select({
         "@platforms//os:ios": [],
         "@platforms//os:android": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
-    srcs = ["src/h2_posix_core.cpp", "src/h2_posix_system_event.c"],
-    hdrs = ["include/h2_posix_core.h"],
-    includes = ["include"],
-    conlyopts = H2_C11_OPTS,
-    cxxopts = H2_CXX17_OPTS,
-    copts = H2_WARNING_COPTS,
     visibility = _CORE_OWNERS,
-    deps = [":thread_core", "//libs/pal"],
+    deps = [
+        ":thread_core",
+        "//libs/pal",
+    ],
 )
