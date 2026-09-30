@@ -65,7 +65,7 @@ int main(void) {
   int passed = !qualification_rc && qualification.worker_core[0] != -1 && qualification.worker_core[1] != -1;
   printf("ATOMIC_WEB_WORKERS shared_memory=1 identities=%d,%d verdict=%s\n",
       qualification.worker_core[0], qualification.worker_core[1], passed ? "PASS" : "FAIL");
-  for (unsigned i = 0; i < 2u; ++i) {
+  for (unsigned i = 0; passed && i < 2u; ++i) {
     h2_atomic_e2e_result_t result;
     const int rc = h2_atomic_e2e_run(
         h2_web_platform_mem_api(), h2_web_platform_task_api(platform),
@@ -77,7 +77,7 @@ int main(void) {
            result.compared, result.elapsed_us, rc);
     if (rc != 0) passed = 0;
   }
-  if (!qualification.teardown) h2_web_platform_destroy(platform);
+  if (passed && !qualification.teardown) h2_web_platform_destroy(platform);
   (void)h2_web_main_call(atomic_result, (const void *[]){&(int){passed}});
   return passed ? 0 : 1;
 }
