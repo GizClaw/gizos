@@ -26,6 +26,16 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
         with self.assertRaises(AssertionError):
             self.verify(changed)
 
+    def test_audit_source_exemption_cannot_hide_a_changed_provider(self):
+        changed = copy.deepcopy(self.followup)
+        changed["audit_source_sha256"]["libs/pal/providers/sdl3/src/h2_sdl3_display.cpp"] = "0" * 64
+        with self.assertRaises(AssertionError):
+            self.verify(changed)
+        changed = copy.deepcopy(self.followup)
+        changed["audit_source_sha256"]["Makefile"] = "0" * 64
+        with self.assertRaises(AssertionError):
+            self.verify(changed)
+
     def test_changed_native_source_still_fails(self):
         self.historical["libs/pal/providers/sdl3/src/h2_sdl3_display.cpp"] = "0" * 64
         with self.assertRaises(AssertionError):
