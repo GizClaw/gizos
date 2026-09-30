@@ -66,6 +66,9 @@ cp "$fixture_root/sdkconfig.h2loader.defaults" "$consumer_root/sdkconfig.h2loade
 test ! -e "$consumer_root/private_esp_task_policy"
 test ! -e "$consumer_root/private_bk_task_policy"
 
+# Native metadata must keep the external owner's execroot path; a public BSP
+# must not be resolved as a private consumer's local boards directory.
+
 case "$(uname -s)-$(uname -m)" in
     Darwin-arm64)
         host_os=macos
@@ -104,7 +107,7 @@ cd "$consumer_root"
     --define="h2_ci_graph=true" \
     --define="h2_host_os=$host_os" \
     --platforms="@gizos//tools/bazel/platforms:$platform" \
-    'set(//:generic_private_bk_firmware //:generic_private_esp_firmware //:private_bk_firmware //:private_esp_firmware //:private_bk_ap_task_policy_test //:private_bk_cp_task_policy_test //:private_esp_task_policy_test)'
+    'set(//:native_component_paths //:generic_private_bk_firmware //:generic_private_esp_firmware //:private_bk_firmware //:private_esp_firmware //:private_bk_ap_task_policy_test //:private_bk_cp_task_policy_test //:private_esp_task_policy_test)'
 
 "${BAZEL_BIN:-bazel}" \
     --ignore_all_rc_files \
