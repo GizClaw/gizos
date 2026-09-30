@@ -10,11 +10,15 @@
 #include <stdio.h>
 #include <string.h>
 static h2_runtime_t *runtime;
+static h2_runtime_config_t runtime_config;
 static bool commands_started;
 static int start_commands(void) {
   if (commands_started)
     return H2_PAL_OK;
-  int rc = h2_esp_h2loader_app_commands_start(runtime, "atomic-e2e", 1, 3);
+  int rc = h2_esp_h2loader_app_commands_prepare_serial(
+      &runtime_config, "atomic-e2e", 1, 3);
+  if (!rc)
+    rc = h2_esp_h2loader_app_commands_start(runtime, "atomic-e2e", 1, 3);
   if (!rc)
     commands_started = true;
   return rc;
@@ -135,14 +139,10 @@ void app_main(void) {
   int rc = h2_esp_target_task_policy_install();
   if (rc)
     fail("policy", rc);
-  h2_runtime_config_t c = {0};
-  rc = h2_esp_board_runtime_config(&c);
+  rc = h2_esp_board_runtime_config(&runtime_config);
   if (rc)
     fail("board", rc);
-  rc = h2_esp_h2loader_app_commands_prepare_serial(&c, "atomic-e2e", 1, 3);
-  if (rc)
-    fail("prepare", rc);
-  rc = h2_runtime_init(&c, &runtime);
+  rc = h2_runtime_init(&runtime_config, &runtime);
   if (rc)
     fail("runtime", rc);
   const h2_pal_task_options_t options = {.name = "atomic/e2e/runner",
