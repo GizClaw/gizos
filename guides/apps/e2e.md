@@ -26,7 +26,7 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 
 | App | Portable target | Current launcher matrix |
 | --- | --- | --- |
-| Atomic | `//projects/e2e/apps/atomic/app:atomic_e2e` | Desktop、Browser/WASM、DevKit ESP32-S3 双核 internal RAM/PSRAM 对照 |
+| Atomic | `//projects/e2e/apps/atomic/app:atomic_e2e` | macOS、真实 Browser/WASM pthread Workers、iOS/Android 模拟器、DevKit ESP32-S3 与 BK7258 的完整 typed 接口资格 |
 | GizClaw | `//projects/e2e/apps/gizclaw/app:gizclaw_e2e` | Desktop H2Peer；Desktop Pion 只比较 Firmware 与 Voice；DevKit ESP32-S3 H2Peer |
 | H106 | `//projects/e2e/apps/h106/app:h106_e2e` | Desktop Tiga/Zero、Tiga V4.2 与 Zero BK 1.0；完整 production Main App、Runtime Test Control 与公开 observation |
 | Libco | `//projects/e2e/apps/libco/app:libco_smoke` | Desktop、Browser、DevKit ESP32-S3、BK7258、TapDoki BK3633 |
@@ -48,11 +48,13 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 
 ## Atomic
 
-`projects/e2e/apps/atomic/app` 保持可移植的 increment 与 compare-exchange 工作量，用 `h2_atomic` 和隔离的直接 C11 比较 backend 记录结果、CAS 重试失败、耗时、内存位置与 worker core。Desktop test 是 `//projects/e2e/targets/cc_test/atomic:atomic_e2e_test`；Browser test 是 `//projects/e2e/targets/pkg_tar/atomic:atomic_wasm_test`。当前 Web PAL 协作式调度的输出标记 `concurrent=SKIP`，不能把顺序执行解释为多核并发通过。
+Atomic 是独立 library，不属于 PAL。`projects/e2e/apps/atomic/app` 的固定 28-case registry 覆盖九种 typed wrapper 的全部 76 个 typed function、静态/动态生命周期、有效 memory order、C generic dispatch、争用、flag exclusion 与 release/acquire publication。每轮实际启动并 join 10 个 task；所有失败、timeout、未执行或 cleanup error 都不能资格 PASS。`api_coverage.json` 保存接口到 case 的映射。
 
-DevKit managed package 位于 `//projects/e2e/targets/h2loader_tar_zlib/atomic/devkit:package`。ESP32-S3 将两个 worker 分别固定在 CPU0/CPU1 并同步启动，内部 RAM 与 PSRAM 各执行三轮；PSRAM 对照将直接 C11 atomic value 放在 PSRAM，而 `h2_atomic` wrapper 在 PSRAM、其 provider 存储在内部 RAM。每轮检查地址所属内存、目标计数和观测 core，直接 C11 的失败继续记录而不阻止 H2Loader App confirmation。安装后必须回读 UID、`active_role=app`、version、partition 和 `stage_valid=0`。DevKit UID `9888e0115c52` 的最终实机运行中，六轮 `h2_atomic` 均达到目标计数，三轮直接 C11 PSRAM 对照均丢失计数；耗时只描述该工作量，不能外推为通用原子操作性能。详见 `projects/e2e/apps/atomic/README.md`。
+六端 entry 都直接使用 Bazel：Desktop 的 `targets/cc_test/atomic:atomic_e2e_test`；真实 Chromium 的 `targets/pkg_tar/atomic:atomic_browser_test`；iOS/Android 的 `targets/ios_application/atomic:ios_atomic_simulator_test` 与 `targets/android_binary/atomic:android_atomic_simulator_test`；两块板的 `targets/h2loader_tar_zlib/atomic/devkit:device_test` 与 `targets/h2loader_tar_zlib/atomic/bk7258_v3_202405:device_test`，以上 prefix 均为 `//projects/e2e/`。Web C 在真实 pthread Workers 使用 shared Wasm memory，验收须观察不同 Worker identity；Node `atomic_wasm_test` 是额外对照。移动端消费真实 XCFramework/AAR 并复用共享 mobile runner，精确检查 28/28、10/10 joins、resource balance 与 provider shutdown；模拟器结果不能冒充实体手机证据。
 
-同一 App 另运行 flag 验收：两枚普通 file-static flag 的 backing 必须地址独立且在内部 RAM，动态 flag 的 wrapper 在 PSRAM、provider backing 在内部 RAM。CPU0 上优先级 4/9 的两个 worker 各执行 20,000 次 flag 操作，检查完整操作数、无本对象意外占用、core 和地址位置；`H2_ATOMIC_FLAG_E2E verdict=PASS` 是单独的真机判据。直接 C11 PSRAM 对照的预期失败仍计入 `aggregate_failures`，不能据此把 flag 或 `h2_atomic` 用例判为失败。
+DevKit 与 BK7258 分别在内部 RAM 和 PSRAM wrapper placement 运行整套资格，每次 boot 要求 56/56 与 20/20 joins。两平台的实际 atomic backing 都必须在内部 RAM，必须观察 CPU0/CPU1 与 live object/allocation 清理；不能从 task policy 名推断实际 core。DevKit 另检查两枚地址独立的 file-static flag、PSRAM 动态 wrapper/internal backing，以及 CPU0 上优先级 4/9 的两名 worker 在 ready/go barrier 后各执行 20,000 次操作。直接 C11 只在受支持的内部 RAM 做独立对照；Xtensa PSRAM backing 不受支持，不执行该实验，也不把它混入 H2Atomic 必测资格。
+
+旧 DevKit UID `9888e0115c52` 的记录中，六轮 H2Atomic counter 达到目标，但三轮 direct-C11 PSRAM 对照丢 count，App 仍无条件 confirm。这是历史实验，不能当完整接口验收。当前 launcher 只有全部必测与 cleanup 成功才确认 App；direct device test 必须核对显式 port/UID、原 P1 与空 Stage，捕获 fresh BOOT 下首份 ledger、升级与独立 App reboot，并回读最终 package/version/image 身份和实际 byte-identical coredump。Live target 声明 `manual`/`external`，artifact build cache 保持启用。完整运行命令和 source/artifact 证据身份见 `projects/e2e/apps/atomic/README.md` 与生成的资格收据。
 
 ## H106
 
