@@ -1,15 +1,29 @@
+#include "h2/pal/core/h2_pal_errors.h"
 #include "h2_atomic_e2e.h"
 #include "h2_atomic_static.h"
-#include "h2/pal/core/h2_pal_errors.h"
 
 #include <string.h>
 
 H2_ATOMIC_DEFINE_STATIC(flag, s_flag_a, 0u);
 H2_ATOMIC_DEFINE_STATIC(flag, s_flag_b, 0u);
 
+typedef struct flag_control {
+  h2_atomic_flag_t shared;
+  h2_atomic_uint_t ready;
+  h2_atomic_bool_t go;
+} flag_control_t;
+static void flag_control_destroy(const h2_pal_mem_api_t *mem,
+                                 flag_control_t *c) {
+  h2_atomic_flag_destroy(&c->shared);
+  h2_atomic_uint_destroy(&c->ready);
+  h2_atomic_bool_destroy(&c->go);
+  h2_pal_mem_free(mem, c);
+}
+
 typedef struct flag_worker {
   h2_atomic_flag_t *own;
   h2_atomic_flag_t *shared;
+  flag_control_t *control;
   unsigned iterations;
   unsigned operations;
   unsigned busy_observations;
@@ -22,7 +36,11 @@ typedef struct flag_worker {
 static void flag_worker_entry(void *user) {
   flag_worker_t *worker = user;
   worker->core = worker->current_core == NULL
-                     ? -1 : worker->current_core(worker->core_user);
+                     ? -1
+                     : worker->current_core(worker->core_user);
+  h2_atomic_uint_fetch_add(&worker->control->ready, 1, H2_ATOMIC_RELEASE);
+  while (!h2_atomic_bool_load(&worker->control->go, H2_ATOMIC_ACQUIRE))
+    (void)h2_pal_time_sleep_ms(worker->time, 1u);
   for (unsigned i = 0u; i < worker->iterations; ++i) {
     /* Separate file-static values must never interfere with one another. */
     if (h2_atomic_flag_test_and_set(worker->own, H2_ATOMIC_ACQUIRE))
@@ -38,9 +56,8 @@ static void flag_worker_entry(void *user) {
 
 int h2_atomic_flag_e2e_run(const h2_pal_mem_api_t *mem,
                            const h2_pal_task_api_t *task,
-                           const h2_pal_time_api_t *time,
-                           unsigned iterations, int (*current_core)(void *),
-                           void *core_user,
+                           const h2_pal_time_api_t *time, unsigned iterations,
+                           int (*current_core)(void *), void *core_user,
                            h2_atomic_flag_e2e_result_t *out_result) {
   if (out_result == NULL || mem == NULL || task == NULL || time == NULL ||
       iterations == 0u)
@@ -54,31 +71,47 @@ int h2_atomic_flag_e2e_run(const h2_pal_mem_api_t *mem,
     return H2_PAL_ERR_INVALID_STATE;
   const bool a_busy = h2_atomic_flag_test_and_set(&s_flag_a, H2_ATOMIC_ACQUIRE);
   const bool b_busy = h2_atomic_flag_test_and_set(&s_flag_b, H2_ATOMIC_ACQUIRE);
-  if (!a_busy) h2_atomic_flag_clear(&s_flag_a, H2_ATOMIC_RELEASE);
-  if (!b_busy) h2_atomic_flag_clear(&s_flag_b, H2_ATOMIC_RELEASE);
-  if (a_busy || b_busy) return H2_PAL_ERR_INVALID_STATE;
+  if (!a_busy)
+    h2_atomic_flag_clear(&s_flag_a, H2_ATOMIC_RELEASE);
+  if (!b_busy)
+    h2_atomic_flag_clear(&s_flag_b, H2_ATOMIC_RELEASE);
+  if (a_busy || b_busy)
+    return H2_PAL_ERR_INVALID_STATE;
 
-  h2_atomic_flag_t *shared = h2_pal_mem_alloc(mem, sizeof(*shared));
-  if (shared == NULL) return H2_PAL_ERR_NO_MEMORY;
-  *shared = (h2_atomic_flag_t){0};
-  if (h2_atomic_flag_init(shared) != H2_ATOMIC_OK) {
-    h2_pal_mem_free(mem, shared);
+  flag_control_t *control = h2_pal_mem_alloc(mem, sizeof(*control));
+  if (!control)
+    return H2_PAL_ERR_NO_MEMORY;
+  memset(control, 0, sizeof(*control));
+  if (h2_atomic_flag_init(&control->shared) != H2_ATOMIC_OK ||
+      h2_atomic_uint_init(&control->ready, 0) != H2_ATOMIC_OK ||
+      h2_atomic_bool_init(&control->go, false) != H2_ATOMIC_OK) {
+    flag_control_destroy(mem, control);
     return H2_PAL_ERR_NO_MEMORY;
   }
+  h2_atomic_flag_t *shared = &control->shared;
   out_result->dynamic_wrapper = (uintptr_t)shared;
   out_result->dynamic_storage = (uintptr_t)shared->storage;
   flag_worker_t *workers = h2_pal_mem_alloc(mem, 2u * sizeof(*workers));
   if (workers == NULL) {
-    h2_atomic_flag_destroy(shared);
-    h2_pal_mem_free(mem, shared);
+    flag_control_destroy(mem, control);
     return H2_PAL_ERR_NO_MEMORY;
   }
-  workers[0] = (flag_worker_t)
-      {.own = &s_flag_a, .shared = shared, .iterations = iterations, .time = time,
-       .current_core = current_core, .core_user = core_user, .core = -1};
-  workers[1] = (flag_worker_t)
-      {.own = &s_flag_b, .shared = shared, .iterations = iterations, .time = time,
-       .current_core = current_core, .core_user = core_user, .core = -1};
+  workers[0] = (flag_worker_t){.own = &s_flag_a,
+                               .shared = shared,
+                               .control = control,
+                               .iterations = iterations,
+                               .time = time,
+                               .current_core = current_core,
+                               .core_user = core_user,
+                               .core = -1};
+  workers[1] = (flag_worker_t){.own = &s_flag_b,
+                               .shared = shared,
+                               .control = control,
+                               .iterations = iterations,
+                               .time = time,
+                               .current_core = current_core,
+                               .core_user = core_user,
+                               .core = -1};
   h2_pal_task_t *handles[2] = {NULL, NULL};
   int rc = H2_PAL_OK;
   for (unsigned i = 0u; i < 2u; ++i) {
@@ -88,11 +121,24 @@ int h2_atomic_flag_e2e_run(const h2_pal_mem_api_t *mem,
     };
     rc = h2_pal_task_start(task, &options, flag_worker_entry, &workers[i],
                            &handles[i]);
-    if (rc != H2_PAL_OK) break;
+    if (rc != H2_PAL_OK)
+      break;
     ++out_result->workers_started;
   }
+  if (rc == H2_PAL_OK) {
+    for (unsigned retry = 0; retry < 5000u; ++retry) {
+      if (h2_atomic_uint_load(&control->ready, H2_ATOMIC_ACQUIRE) == 2u)
+        break;
+      (void)h2_pal_time_sleep_ms(time, 1u);
+    }
+    if (h2_atomic_uint_load(&control->ready, H2_ATOMIC_ACQUIRE) != 2u)
+      rc = H2_PAL_ERR_TIMEOUT;
+  }
+  /* Release a partial startup before joining, keeping controls on the heap. */
+  h2_atomic_bool_store(&control->go, true, H2_ATOMIC_RELEASE);
   for (unsigned i = 0u; i < 2u; ++i) {
-    if (handles[i] == NULL) continue;
+    if (handles[i] == NULL)
+      continue;
     int join_rc = H2_PAL_ERR_WOULD_BLOCK;
     for (unsigned retry = 0u; retry < 20000u; ++retry) {
       join_rc = h2_pal_task_join(task, handles[i]);
@@ -100,6 +146,8 @@ int h2_atomic_flag_e2e_run(const h2_pal_mem_api_t *mem,
         break;
       (void)h2_pal_time_sleep_ms(time, 1u);
     }
+    if (join_rc == H2_PAL_ERR_WOULD_BLOCK || join_rc == H2_PAL_ERR_BUSY)
+      join_rc = H2_PAL_ERR_TIMEOUT;
     if (join_rc != H2_PAL_OK) {
       out_result->teardown = join_rc;
       return join_rc; /* Keep heap worker state and shared flag alive. */
@@ -113,8 +161,7 @@ int h2_atomic_flag_e2e_run(const h2_pal_mem_api_t *mem,
     if (workers[i].operations != iterations || workers[i].busy_observations)
       rc = H2_PAL_ERR_INVALID_STATE;
   }
-  h2_atomic_flag_destroy(shared);
-  h2_pal_mem_free(mem, shared);
+  flag_control_destroy(mem, control);
   h2_pal_mem_free(mem, workers);
   return rc;
 }

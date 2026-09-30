@@ -52,7 +52,8 @@ typedef struct h2_atomic_flag_e2e_result {
  *
  * The allocator, task and time APIs are borrowed for this call. The dynamic
  * wrapper uses @p mem; its backing is owned by the linked atomic provider.
- * Calls are serialized because the two static flags live for the process.
+ * Both workers cross a startup barrier before flag operations. Calls are
+ * serialized because the two static flags live for the process.
  * @p out_result is cleared first and may contain partial observations on
  * error. A task join failure deliberately retains heap worker state so a
  * still-running task cannot use freed memory.
