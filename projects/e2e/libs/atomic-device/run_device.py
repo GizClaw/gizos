@@ -133,7 +133,9 @@ def main():
         # several minutes. This is a transport/flash bound, not worker timing.
         upgrade=run('upgrade','reboot','upgrade','--monitor',timeout=600,monitor=True)
         first=boot_ledger(after_reboot(upgrade,'upgrade'),ids,version)
-        normal=run('normal-boot','reboot','app','--monitor',monitor=True,previous=first['execution'])
+        # Confirmation also verifies the stored native archive on normal boot.
+        # Its flash/metadata I/O has the same bound as managed installation.
+        normal=run('normal-boot','reboot','app','--monitor',timeout=600,monitor=True,previous=first['execution'])
         second=boot_ledger(after_reboot(normal,'app'),ids,version,first['execution'])
         final=fields(run('after-status','status'))
         assert final.get('device_uid')==uid

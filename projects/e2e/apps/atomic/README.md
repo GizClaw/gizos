@@ -79,8 +79,10 @@ start after the suite and exact PAL resource comparison, so command polling cann
 change its allocation baseline. Failure starts the recovery channel without
 confirming the App. Only actual successful cleanup and confirmation enable an
 immutable ledger carrying a cryptographic identity created once per real boot.
-The upgrade and independent App reboot must each provide a complete 56-case
-ledger with different execution identities. Final checks require the expected
+A managed run requires a firmware version different from the currently active
+App. Rows before the CLI accepts the requested reboot are excluded. The upgrade
+and independent App reboot must each provide a complete 56-case ledger with
+different execution identities; no replay can stop a command before acceptance. Final checks require the expected
 package/image/version, unchanged P1 and empty Stage. Stored coredumps are actually
 read and compared byte for byte; an empty dump is checked as unchanged blank
 status, with no invented dump or digest. All live test labels use `external`;

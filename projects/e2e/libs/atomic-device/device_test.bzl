@@ -37,5 +37,5 @@ def atomic_device_test(name, package, target):
         local = True,
         legacy_create_init = False,
         tags = ["manual", "external"],
-        timeout = "long",
+        timeout = "eternal",
     )

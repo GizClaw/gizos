@@ -11,7 +11,13 @@ int main(void) {
       .time = h2_desktop_platform_time_api(), .expected_core = {-1, -1}};
   h2_atomic_qualification_result_t qualification;
   int qualification_rc = h2_atomic_e2e_qualify(&config, &qualification);
+#if defined(__APPLE__)
   h2_atomic_e2e_print("macos", "native", &qualification);
+#elif defined(_WIN32)
+  h2_atomic_e2e_print("windows", "native", &qualification);
+#else
+  h2_atomic_e2e_print("linux", "native", &qualification);
+#endif
   if (qualification_rc) return 1;
   const h2_atomic_e2e_backend_t *backends[] = {
       h2_atomic_e2e_h2_backend(), h2_atomic_e2e_c11_backend()};
