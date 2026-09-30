@@ -160,6 +160,10 @@ python.toolchain(python_version = "3.11")
 use_repo(python, "python_3_11")
 
 register_toolchains("@python_3_11//:all")
+register_toolchains(
+    "//tools/bazel:mobile_e2e_python_ios",
+    "//tools/bazel:mobile_e2e_python_android",
+)
 
 pip = use_extension("@rules_python//python/extensions:pip.bzl", "pip")
 pip.parse(

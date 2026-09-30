@@ -45,7 +45,7 @@ export H2_ANDROID_SERIAL='emulator-5580'
 make bazel-test-android_pal_core_simulator_test
 ```
 
-两个 Make 入口分别调用同名 `manual` Bazel test，并禁用 live test result cache。 每轮先终止旧 App、删除旧结果，再安装/启动当前构建；外部 watchdog 限制等待 90 秒。 超时、缺少 case、FAIL、BLOCKED、NOT_RUN、cleanup/teardown 失败和资源不平衡均失败。 结束后终止测试 App；不关闭其他 App 或模拟器。
+两个 Make 入口分别调用同名 `manual` Bazel `py_test`，并禁用 live test result cache。 共享执行器和接入约定见 [mobile_e2e.md](../../../../tools/bazel/mobile_e2e.md)。 所有 suite 共用 `tools/bazel/mobile_e2e.py` 的执行与校验入口；Core 在本目录 BUILD 的 `mobile_e2e_suite` 中声明 registry、期望字段和资源平衡，无独立 Python runner。 每轮先终止旧 App、安装当前构建、删除旧结果，再启动；公共 runner 限制启动和报告等待共 90 秒。 超时、缺少 case、FAIL、BLOCKED、NOT_RUN、cleanup/teardown 失败和资源不平衡均失败。 结束后终止测试 App；不关闭其他 App 或模拟器。
 
 测试输出目录包含 `qualified.json`、`environment.json` 和原生日志。 环境记录包含模拟器身份、App 与 SDK 包 SHA-256。仓库 evidence 保存实际运行结果。 本轮环境为 iOS 26.5 / iPhone 17 Pro、Android API 36 / arm64 ATD。
 
