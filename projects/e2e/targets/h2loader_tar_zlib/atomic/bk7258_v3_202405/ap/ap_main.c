@@ -8,12 +8,24 @@
 #include <stdio.h>
 #include <string.h>
 static h2_runtime_t *runtime;
+static bool commands_started;
+static int start_commands(void) {
+  if (commands_started)
+    return H2_PAL_OK;
+  int rc = h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
+      runtime, "atomic", H2_LOADER_CAPABILITY_UART);
+  if (!rc)
+    commands_started = true;
+  return rc;
+}
 static void hold(void) {
   for (;;)
     rtos_delay_milliseconds(1000);
 }
 static void fail(const char *stage, int rc) {
   printf("H2_ATOMIC_FAIL stage=%s rc=%d confirm=not-attempted\n", stage, rc);
+  if (runtime && !commands_started)
+    (void)start_commands();
   hold();
 }
 static int core(void *unused) {
@@ -42,21 +54,7 @@ static void run(void *unused) {
   (void)unused;
   rtos_delay_milliseconds(1500);
   h2_bk_platform_resource_stats_t before = {0}, after = {0};
-  /* SDK command/bootstrap resources retire after App startup. Establish an
-   * actually stable baseline before measuring this suite, retaining exact
-   * equality for its own before/after admission check. */
-  h2_pal_time_sleep_ms(runtime->time, 8000);
   int rc = h2_bk_platform_get_resource_stats(&before);
-  unsigned stable = 0;
-  for (unsigned sample = 0; !rc && sample < 30 && stable < 5; ++sample) {
-    h2_pal_time_sleep_ms(runtime->time, 500);
-    h2_bk_platform_resource_stats_t current = {0};
-    rc = h2_bk_platform_get_resource_stats(&current);
-    stable = !memcmp(&before, &current, sizeof(before)) ? stable + 1 : 0;
-    before = current;
-  }
-  if (!rc && stable < 5)
-    rc = H2_PAL_ERR_BUSY;
   if (rc)
     fail("stats_before", rc);
   h2_atomic_qualification_config_t c = {.mem = h2_bk_platform_sram_allocator(),
@@ -83,6 +81,9 @@ static void run(void *unused) {
          after.allocations, before.allocation_bytes, after.allocation_bytes);
   if (rc || cleanup)
     fail("qualification", rc ? rc : cleanup);
+  rc = start_commands();
+  if (rc)
+    fail("commands", rc);
   int confirm = h2_bk_h2loader_confirm_current_app(runtime);
   if (confirm)
     fail("confirm", confirm);
@@ -103,10 +104,6 @@ static void entry(void *unused) {
   rc = h2_runtime_init(&c, &runtime);
   if (rc)
     fail("runtime", rc);
-  rc = h2_bk_h2loader_start_app_iostreamikcp_with_capabilities(
-      runtime, "atomic", H2_LOADER_CAPABILITY_UART);
-  if (rc)
-    fail("commands", rc);
   const h2_pal_task_options_t options = {.name = "atomic/e2e/runner",
                                          .min_stack_size = 65536};
   h2_pal_task_t *task = NULL;

@@ -10,6 +10,15 @@
 #include <stdio.h>
 #include <string.h>
 static h2_runtime_t *runtime;
+static bool commands_started;
+static int start_commands(void) {
+  if (commands_started)
+    return H2_PAL_OK;
+  int rc = h2_esp_h2loader_app_commands_start(runtime, "atomic-e2e", 1, 3);
+  if (!rc)
+    commands_started = true;
+  return rc;
+}
 static void hold(void) {
   for (;;)
     vTaskDelay(pdMS_TO_TICKS(1000));
@@ -17,6 +26,8 @@ static void hold(void) {
 static void fail(const char *stage, int rc) {
   printf("H2_ATOMIC_FAIL stage=%s rc=%d confirm=not-attempted\n", stage, rc);
   fflush(stdout);
+  if (runtime && !commands_started)
+    (void)start_commands();
   hold();
 }
 static int core(void *unused) {
@@ -39,21 +50,7 @@ static void run(void *unused) {
   (void)unused;
   h2_pal_time_sleep_ms(runtime->time, 1500);
   h2_esp_platform_resource_stats_t before = {0}, after = {0};
-  /* SDK command/bootstrap resources retire after App startup. Establish an
-   * actually stable baseline before measuring this suite, retaining exact
-   * equality for its own before/after admission check. */
-  h2_pal_time_sleep_ms(runtime->time, 8000);
   int rc = h2_esp_platform_get_resource_stats(&before);
-  unsigned stable = 0;
-  for (unsigned sample = 0; !rc && sample < 30 && stable < 5; ++sample) {
-    h2_pal_time_sleep_ms(runtime->time, 500);
-    h2_esp_platform_resource_stats_t current = {0};
-    rc = h2_esp_platform_get_resource_stats(&current);
-    stable = !memcmp(&before, &current, sizeof(before)) ? stable + 1 : 0;
-    before = current;
-  }
-  if (!rc && stable < 5)
-    rc = H2_PAL_ERR_BUSY;
   if (rc)
     fail("stats_before", rc);
   h2_atomic_qualification_config_t c = {
@@ -120,6 +117,9 @@ static void run(void *unused) {
          after.allocations, before.allocation_bytes, after.allocation_bytes);
   if (cleanup)
     fail("cleanup", cleanup);
+  rc = start_commands();
+  if (rc)
+    fail("commands", rc);
   rc = h2_esp_h2loader_app_confirm(runtime);
   if (rc)
     fail("confirm", rc);
@@ -145,9 +145,6 @@ void app_main(void) {
   rc = h2_runtime_init(&c, &runtime);
   if (rc)
     fail("runtime", rc);
-  rc = h2_esp_h2loader_app_commands_start(runtime, "atomic-e2e", 1, 3);
-  if (rc)
-    fail("commands", rc);
   const h2_pal_task_options_t options = {.name = "atomic/e2e/runner",
                                          .min_stack_size = 65536};
   h2_pal_task_t *task = NULL;
