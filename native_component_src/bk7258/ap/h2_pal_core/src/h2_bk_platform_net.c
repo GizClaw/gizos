@@ -6,6 +6,7 @@
 #include <limits.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <sys/time.h>
 
 #include <components/netif.h>
@@ -284,15 +285,72 @@ static h2_pal_result_t bk_net_tls_load_ca(
     return H2_PAL_OK;
 }
 
+/* Some SDK mbedTLS builds omit MBEDTLS_HAVE_TIME_DATE, which otherwise
+ * accepts expired certificates even with VERIFY_REQUIRED. Compare the peer
+ * chain against calibrated PAL wall time on every verified handshake. */
+/* Certificate retention and built-in date checks are optional in board SDKs.
+ * Verify calibrated validity while the peer chain is still available during
+ * the handshake; never accept an expired or future peer because those SDK
+ * options were disabled to save RAM. */
+static int bk_net_tls_verify_dates(
+    void *user, mbedtls_x509_crt *cert, int depth, uint32_t *flags) {
+    (void)user;
+    (void)depth;
+    uint64_t wall_ms = 0u;
+    if (h2_pal_time_get_wall_ms(h2_bk_platform_time_api(), &wall_ms) != H2_PAL_OK) {
+        *flags |= MBEDTLS_X509_BADCERT_OTHER;
+        (void)h2_pal_log_write(h2_bk_platform_log_api(), H2_PAL_LOG_ERROR,
+            "pal/net", "tls_cert_time clock_unavailable");
+        return 0;
+    }
+    time_t seconds = (time_t)(wall_ms / 1000u);
+    struct tm utc;
+    if (seconds < 0 || (uint64_t)seconds != wall_ms / 1000u ||
+        gmtime_r(&seconds, &utc) == NULL) {
+        *flags |= MBEDTLS_X509_BADCERT_OTHER;
+        (void)h2_pal_log_write(h2_bk_platform_log_api(), H2_PAL_LOG_ERROR,
+            "pal/net", "tls_cert_time clock_unavailable");
+        return 0;
+    }
+    mbedtls_x509_time now = {
+        .year = utc.tm_year + 1900, .mon = utc.tm_mon + 1,
+        .day = utc.tm_mday, .hour = utc.tm_hour,
+        .min = utc.tm_min, .sec = utc.tm_sec,
+    };
+    if (mbedtls_x509_time_cmp(&cert->valid_from, &now) > 0) {
+        *flags |= MBEDTLS_X509_BADCERT_FUTURE;
+    }
+    if (mbedtls_x509_time_cmp(&cert->valid_to, &now) < 0) {
+        *flags |= MBEDTLS_X509_BADCERT_EXPIRED;
+    }
+    if ((*flags & (MBEDTLS_X509_BADCERT_FUTURE |
+                   MBEDTLS_X509_BADCERT_EXPIRED)) != 0u) {
+        char diagnostic[180];
+        (void)snprintf(diagnostic, sizeof(diagnostic),
+            "tls_cert_time from=%d-%02d-%02d to=%d-%02d-%02d now=%d-%02d-%02d flags=0x%x",
+            cert->valid_from.year, cert->valid_from.mon, cert->valid_from.day,
+            cert->valid_to.year, cert->valid_to.mon, cert->valid_to.day,
+            now.year, now.mon, now.day, (unsigned)*flags);
+        (void)h2_pal_log_write(h2_bk_platform_log_api(), H2_PAL_LOG_ERROR,
+            "pal/net", diagnostic);
+    }
+    return 0;
+}
+
 static h2_pal_result_t bk_net_tls_handshake(
-    bk_net_tls_socket_t *socket, uint32_t timeout_ms) {
+    bk_net_tls_socket_t *socket, uint32_t timeout_ms,
+    h2_pal_net_tls_verify_t verify_mode) {
     uint64_t deadline = bk_net_now_ms() + timeout_ms;
     for (;;) {
         int result = mbedtls_ssl_handshake(&socket->ssl);
         if (result == 0) {
-            return mbedtls_ssl_get_verify_result(&socket->ssl) == 0u
-                ? H2_PAL_OK
-                : H2_PAL_ERR_TLS_VERIFY;
+            if (verify_mode == H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
+                return H2_PAL_OK;
+            }
+            if (mbedtls_ssl_get_verify_result(&socket->ssl) != 0u) {
+                return H2_PAL_ERR_TLS_VERIFY;
+            }
+            return H2_PAL_OK;
         }
         if (result != MBEDTLS_ERR_SSL_WANT_READ &&
             result != MBEDTLS_ERR_SSL_WANT_WRITE) {
@@ -649,6 +707,59 @@ static int bk_net_udp_open(
         return H2_PAL_ERR_IO;
     }
     (void)sockaddr_to_addr((const struct sockaddr *)&storage, out_bind_addr);
+    *out_socket = fd;
+    return H2_PAL_OK;
+}
+
+static int bk_net_udp_open_bound(
+    void *user,
+    h2_pal_net_family_t family,
+    uint16_t port,
+    const h2_pal_net_bind_t *bind_config,
+    h2_pal_net_socket_t *out_socket,
+    h2_pal_net_addr_t *out_bind_addr) {
+    if (out_socket == NULL || out_bind_addr == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    *out_socket = -1;
+    memset(out_bind_addr, 0, sizeof(*out_bind_addr));
+    if (bind_config == NULL || bind_config->type == H2_PAL_NET_BIND_DEFAULT) {
+        return bk_net_udp_open(user, family, port, out_socket, out_bind_addr);
+    }
+    if (bind_config->type != H2_PAL_NET_BIND_SOURCE_ADDR) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    if (bind_config->source_addr.family != family) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    int native_family = family_to_lwip(family);
+    if (native_family < 0) {
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    int fd = socket(native_family, SOCK_DGRAM, 0);
+    if (fd < 0) {
+        return H2_PAL_ERR_IO;
+    }
+    int reuse = 1;
+    (void)setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    h2_pal_net_addr_t source = bind_config->source_addr;
+    source.port = port;
+    struct sockaddr_storage storage;
+    socklen_t size = 0;
+    int rc = addr_to_sockaddr(&source, &storage, &size);
+    if (rc != H2_PAL_OK || bind(fd, (struct sockaddr *)&storage, size) < 0) {
+        closesocket(fd);
+        return rc == H2_PAL_OK ? H2_PAL_ERR_IO : rc;
+    }
+    if (getsockname(fd, (struct sockaddr *)&storage, &size) < 0) {
+        closesocket(fd);
+        return H2_PAL_ERR_IO;
+    }
+    rc = sockaddr_to_addr((const struct sockaddr *)&storage, out_bind_addr);
+    if (rc != H2_PAL_OK) {
+        closesocket(fd);
+        return rc;
+    }
     *out_socket = fd;
     return H2_PAL_OK;
 }
@@ -1082,12 +1193,22 @@ static int bk_net_tcp_recv(
             }
         }
     }
-    set_recv_timeout(socket_fd, timeout_ms);
-    int got = recv(socket_fd, data, (int)len, 0);
-    if (got < 0) {
-        return errno == EAGAIN || errno == EWOULDBLOCK ? H2_PAL_ERR_WOULD_BLOCK : H2_PAL_ERR_IO;
+    /* SO_RCVTIMEO=0 means block forever on lwIP. Poll the plain socket
+     * explicitly, then wait only within the caller's positive budget. */
+    for (;;) {
+        int got = recv(socket_fd, data, (int)len, MSG_DONTWAIT);
+        if (got > 0) return got;
+        if (got == 0) return H2_PAL_ERR_CLOSED;
+        if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) {
+            return bk_net_socket_error();
+        }
+        if (timeout_ms == 0u) return H2_PAL_ERR_WOULD_BLOCK;
+        uint32_t remaining = bk_net_timeout_remaining_ms(deadline_ms);
+        if (remaining == 0u) return H2_PAL_ERR_TIMEOUT;
+        int ready = wait_fd(socket_fd, 0, remaining);
+        if (ready == H2_PAL_ERR_TIMEOUT) return H2_PAL_ERR_TIMEOUT;
+        if (ready != H2_PAL_OK && ready != H2_PAL_ERR_WOULD_BLOCK) return ready;
     }
-    return got == 0 ? H2_PAL_ERR_CLOSED : got;
 }
 
 static void bk_net_close(void *user, h2_pal_net_socket_t socket_fd) {
@@ -1136,6 +1257,11 @@ static h2_pal_result_t bk_net_tls_wrap(
         return H2_PAL_ERR_INVALID_ARG;
     }
     *out_socket = -1;
+    if (config->verify != H2_PAL_NET_TLS_VERIFY_DEFAULT &&
+        config->verify != H2_PAL_NET_TLS_VERIFY_REQUIRED &&
+        config->verify != H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
     bk_net_tls_init();
     uint64_t deadline_ms = bk_net_now_ms() + timeout_ms;
     int lock_result = bk_net_tls_take_mutex(
@@ -1175,6 +1301,11 @@ static h2_pal_result_t bk_net_tls_wrap(
     if (result == 0) {
         mbedtls_ssl_conf_rng(&slot->config, bk_net_tls_random, slot);
         rc = bk_net_tls_load_ca(slot, config);
+        if (rc == H2_PAL_OK &&
+            config->verify != H2_PAL_NET_TLS_VERIFY_INSECURE_TEST_ONLY) {
+            mbedtls_ssl_conf_verify(&slot->config,
+                bk_net_tls_verify_dates, NULL);
+        }
     } else if (rc == H2_PAL_OK) {
         rc = H2_PAL_ERR_IO;
     }
@@ -1195,7 +1326,7 @@ static h2_pal_result_t bk_net_tls_wrap(
         uint32_t remaining_ms = bk_net_timeout_remaining_ms(deadline_ms);
         rc = remaining_ms == 0u
             ? H2_PAL_ERR_TIMEOUT
-            : bk_net_tls_handshake(slot, remaining_ms);
+            : bk_net_tls_handshake(slot, remaining_ms, config->verify);
     }
     if (rtos_lock_mutex(&s_bk_tls_mutex) == kNoErr) {
         if (slot->state == BK_NET_TLS_SOCKET_CONFIGURING &&
@@ -1228,6 +1359,7 @@ const h2_pal_net_api_t *h2_bk_platform_net_api(void) {
         .resolve_close = bk_net_resolve_close,
         .get_host_addr = bk_net_get_host_addr,
         .udp_open = bk_net_udp_open,
+        .udp_open_bound = bk_net_udp_open_bound,
         .udp_sendto = bk_net_udp_sendto,
         .udp_recvfrom = bk_net_udp_recvfrom,
         .udp_join_multicast = bk_net_udp_join_multicast,

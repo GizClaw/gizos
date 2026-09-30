@@ -46,12 +46,13 @@ cc_library(
         "src/h2_android_crypto.c",
         "src/h2_android_json.c",
         "src/h2_android_http.c",
+        "src/h2_android_net.c",
         "src/h2_android_webrtc.c",
         "src/h2_android_tls_internal.h",
         "src/h2_android_storage.c",
         "src/h2_android_video_decoder.c",
     ],
-    hdrs = ["include/h2_android_platform.h"],
+    hdrs = ["include/h2_android_platform.h", "include/h2_android_net.h"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS + [
         "-Wno-deprecated-declarations",
@@ -137,7 +138,7 @@ cc_shared_library(
 h2_android_aar(
     name = "aar",
     shared_library = ":sdk_binary",
-    headers = ["include/h2_android_platform.h", "//libs/pal:pal_header_files", "//libs/pal/providers/yyjson:include/h2_yyjson_json.h"],
+    headers = ["include/h2_android_platform.h", "include/h2_android_net.h", "//libs/pal:pal_header_files", "//libs/pal/providers/yyjson:include/h2_yyjson_json.h"],
     module_name = "h2-pal-core",
     version = "2.0.0",
     target_compatible_with = ANDROID_ARM64_ARTIFACT_COMPATIBILITY,

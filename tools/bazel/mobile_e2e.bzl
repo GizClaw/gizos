@@ -48,7 +48,7 @@ _suite = rule(
     },
 )
 
-def mobile_e2e_suite(name, package, report, registry, registry_pattern, expected, case_result = "rc", case_count = 0, resource_balance = False, timeout_seconds = 90, ios_sdk = {}, android_sdk = {}, ios_permissions = [], android_permissions = [], capture_png = False, android_log = None, prefix = None, output_default = None, plain_platform = False, options = {}, hook = None, fixtures = {}, deps = []):
+def mobile_e2e_suite(name, package, report, registry, registry_pattern, expected, case_result = "rc", case_count = 0, optional_cases = [], resource_balance = False, timeout_seconds = 90, ios_sdk = {}, android_sdk = {}, ios_permissions = [], android_permissions = [], capture_png = False, android_log = None, prefix = None, output_default = None, plain_platform = False, options = {}, hook = None, fixtures = {}, deps = []):
     """Declare one suite's data contract and optional imperative hook once."""
     python = name + "_python"
     py_library(
@@ -59,27 +59,30 @@ def mobile_e2e_suite(name, package, report, registry, registry_pattern, expected
         target_compatible_with = HOST_OR_MOBILE_TOOL_COMPATIBILITY,
         visibility = ["//visibility:private"],
     )
+    config = {
+        "package": package,
+        "report": report,
+        "registry_pattern": registry_pattern,
+        "expected": expected,
+        "case_result": case_result,
+        "case_count": case_count,
+        "resource_balance": resource_balance,
+        "timeout": timeout_seconds,
+        "ios_sdk": ios_sdk,
+        "android_sdk": android_sdk,
+        "permissions": {"ios": ios_permissions, "android": android_permissions},
+        "capture_png": capture_png,
+        "android_log": android_log,
+        "prefix": prefix,
+        "output_default": output_default,
+        "plain_platform": plain_platform,
+        "options": options,
+    }
+    if optional_cases:
+        config["optional_cases"] = optional_cases
     _suite(
         name = name,
-        config = json.encode({
-            "package": package,
-            "report": report,
-            "registry_pattern": registry_pattern,
-            "expected": expected,
-            "case_result": case_result,
-            "case_count": case_count,
-            "resource_balance": resource_balance,
-            "timeout": timeout_seconds,
-            "ios_sdk": ios_sdk,
-            "android_sdk": android_sdk,
-            "permissions": {"ios": ios_permissions, "android": android_permissions},
-            "capture_png": capture_png,
-            "android_log": android_log,
-            "prefix": prefix,
-            "output_default": output_default,
-            "plain_platform": plain_platform,
-            "options": options,
-        }),
+        config = json.encode(config),
         registry = registry,
         hook = hook,
         fixtures = {label: key for key, label in fixtures.items()},
@@ -87,7 +90,7 @@ def mobile_e2e_suite(name, package, report, registry, registry_pattern, expected
         target_compatible_with = HOST_OR_MOBILE_TOOL_COMPATIBILITY,
     )
 
-def mobile_e2e_test(name, platform, suite, app, sdk, env_inherit = [], timeout = "moderate", tags = []):
+def mobile_e2e_test(name, platform, suite, app, sdk, env_inherit = [], timeout = "moderate", external = False):
     """Bind a declared suite to a packaged consumer of the same Python main."""
     if platform not in ["ios", "android"]:
         fail("mobile E2E platform must be ios or android")
@@ -104,7 +107,7 @@ def mobile_e2e_test(name, platform, suite, app, sdk, env_inherit = [], timeout =
         deps = [suite],
         env_inherit = (["H2_IOS_SIMULATOR_UDID", "DEVELOPER_DIR"] if platform == "ios" else ["H2_ANDROID_SERIAL", "ANDROID_HOME", "ANDROID_NDK_HOME"]) + env_inherit,
         legacy_create_init = False,
-        tags = ["manual"] + tags,
+        tags = ["manual"] + (["external"] if external else []),
         local = True,
         timeout = timeout,
         target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY if platform == "ios" else ANDROID_ARM64_PACKAGE_ARTIFACT_COMPATIBILITY,

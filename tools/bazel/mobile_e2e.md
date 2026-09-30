@@ -2,7 +2,7 @@
 
 `mobile_e2e_test` declares a direct `py_test`; every target uses the same `tools/bazel/mobile_e2e.py` main. The App and `app_sdk` stay in `ios_sim_arm64` / `android_arm64` configuration; `mobile_e2e_host_python` selects the repository's hermetic Python runtime in execution configuration. Python libraries use `HOST_OR_MOBILE_TOOL_COMPATIBILITY`: they accept matching host configurations and the supported iOS/Android configurations, while embedded/K4B graphs skip them because those targets have no Python runtime. No shell trampoline or undeclared system Python is involved.
 
-Invoke the suite's exact Bazel label directly. `mobile_e2e_test` accepts optional `tags`; live qualification targets pass `["external"]` so execution is always fresh while artifact build caches remain enabled:
+Invoke the suite's exact Bazel label directly. `mobile_e2e_test` accepts `external = True`; live qualification targets set this option so execution is always fresh while artifact build caches remain enabled:
 
 ```sh
 bazel test --config=ios_sim_arm64 --cache_test_results=no \
@@ -12,7 +12,7 @@ bazel test --config=android_arm64 --cache_test_results=no \
 bazel test --config=macos_arm64 //tools/bazel:mobile_e2e_runtime_test
 ```
 
-Keep the configured disk cache enabled. Set `H2_IOS_SIMULATOR_UDID` or `H2_ANDROID_SERIAL` to an explicitly reserved, booted simulator. Android also uses `ANDROID_HOME`; symbol probes require `ANDROID_NDK_HOME`. These tests are manual and local: simulator side effects are not remote actions. Use `--local_test_jobs=1` when running several live suites on one simulator, and reserve devices across independent Bazel invocations. The runner does not boot, reset or erase devices.
+Keep the configured disk cache enabled. Set `H2_IOS_SIMULATOR_UDID` or `H2_ANDROID_SERIAL` to an explicitly reserved, booted simulator. Android also uses `ANDROID_HOME`; symbol probes require `ANDROID_NDK_HOME`. These tests are manual and local: simulator side effects are not remote actions. A consumer can declare `external = True` on `mobile_e2e_test` to disable cached test results through Bazel's native `external` tag while preserving build caching; the compatibility default leaves existing consumers unchanged. Use `--local_test_jobs=1` when running several live suites on one simulator, and reserve devices across independent Bazel invocations. The runner does not boot, reset or erase devices.
 
 ## Adding a suite
 
@@ -39,7 +39,7 @@ mobile_e2e_test(
 )
 ```
 
-The common Python entrypoint reads the declaration, installs the consumer, checks SDK identity, grants declared permissions and runs the App. Its fixed report contract requires a nonempty unique registry, its declared count when fixed, an exactly ordered case ledger, every case `PASS` with zero `rc`/`detail`, exact expected fields, platform identity and `passed` count. `resource_balance` additionally checks the `before` and `after` resource snapshots. These checks always run, including after custom hooks; no hook can replace or bypass them. Starlark only declares/builds inputs; it does not execute assertions or contain an assertion language.
+The common Python entrypoint reads the declaration, installs the consumer, checks SDK identity, grants declared permissions and runs the App. Its fixed report contract requires a nonempty unique registry, its declared count when fixed, an exactly ordered case ledger, every case `PASS` with zero `rc`/`detail`, exact expected fields, platform identity and actual `passed` count. A suite may declare `optional_cases` as a unique subset of its registry: only those cases may report `UNSUPPORTED` with typed `H2_PAL_ERR_UNSUPPORTED` (`-3`), recorded as skips instead of passes. The default empty list keeps every case mandatory. Timeout, IO, failed cleanup and `NOT_ASSESSED` cannot satisfy a skip; supported optional cases still require PASS. `resource_balance` additionally checks the `before` and `after` resource snapshots. These checks always run, including after custom hooks; no hook can replace or bypass them. Starlark only declares/builds inputs; it does not execute assertions or contain an assertion language.
 
 Use `hook` only for imperative differences. `run_suite(app, args)` may own a multi-process plan or controlled service and return a report; `parse_report(raw)` handles special report syntax; `verify_report(report, args)` adds business assertions after standard validation. `args.contract` contains the declaration and hook-specific `options`; `args.registry` and `args.fixtures` resolve declared inputs. Fixture Python imports belong in `deps`, and fixture executables in `fixtures = {"server": "//owner:server"}`. Extra environment variables are explicit on the consumer test.
 

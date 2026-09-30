@@ -384,11 +384,19 @@ def registry_ids(contract, registry):
 
 def verify_report(report, contract, ids, platform):
     """A small fixed report contract: exact fields, ordered PASS ledger, balance."""
-    expected = dict(contract["expected"], platform=platform, passed=len(ids))
+    rows = report["cases"]
+    optional = contract.get("optional_cases", [])
+    assert len(set(optional)) == len(optional) and set(optional) <= set(ids), "invalid optional registry"
+    passed = sum(case["status"] == "PASS" for case in rows)
+    expected = dict(contract["expected"], platform=platform, passed=passed)
     for key, value in expected.items():
         assert report.get(key) == value, f"{key}: expected {value}, got {report.get(key)}"
-    assert [case["id"] for case in report["cases"]] == ids, "case ledger differs from registry"
-    assert all(case["status"] == "PASS" and case[contract["case_result"]] == 0 for case in report["cases"])
+    assert [case["id"] for case in rows] == ids, "case ledger differs from registry"
+    for case in rows:
+        if case["id"] in optional and case["status"] == "UNSUPPORTED":
+            assert case[contract["case_result"]] == -3, "skip requires H2_PAL_ERR_UNSUPPORTED"
+        else:
+            assert case["status"] == "PASS" and case[contract["case_result"]] == 0
     if contract["resource_balance"]:
         assert report["before"] == report["after"], "resource leak"
 
@@ -437,7 +445,9 @@ def main(argv=None):
         if hasattr(hook, "verify_report"):
             hook.verify_report(report, args)
         save_evidence(args.output, report, app.environment(), args.app, args.sdk)
-    print(f"{prefix} {args.platform}: {report['passed']}/{len(ids)} PASS")
+    skipped = len(ids) - report["passed"]
+    suffix = f", {skipped} SKIP (UNSUPPORTED)" if skipped else ""
+    print(f"{prefix} {args.platform}: {report['passed']}/{len(ids)} PASS{suffix}")
 
 
 if __name__ == "__main__":

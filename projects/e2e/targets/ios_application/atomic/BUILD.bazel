@@ -42,7 +42,7 @@ mobile_e2e_test(
     platform = "ios",
     sdk = ":app_sdk",
     suite = "//projects/e2e/libs/atomic-mobile:mobile_e2e",
-    tags = ["external"],
+    external = True,
 )
 
 mobile_app_sdk(
