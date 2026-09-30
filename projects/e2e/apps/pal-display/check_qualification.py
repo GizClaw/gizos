@@ -101,6 +101,11 @@ REMOVED_RUNNERS = {
     "projects/e2e/targets/android_binary/pal-display/run_simulator.sh",
     "projects/e2e/targets/ios_application/pal-display/run_simulator.sh",
 }
+AUDIT_SOURCES = {
+    "Makefile",
+    "guides/apps/e2e.md",
+    "guides/zh/developing/platform_abstract_layer.md",
+}
 
 
 def runner_refactor(historical):
@@ -112,10 +117,12 @@ def runner_refactor(historical):
     assert hashlib.sha256((ROOT / "qualification.json").read_bytes()).hexdigest() == followup["historical_qualification_sha256"]
     current = followup["current_source_sha256"]
     assert set(current) == RUNNER_SOURCES
+    audit = followup["audit_source_sha256"]
+    assert set(audit) == AUDIT_SOURCES
     assert set(followup["removed_source_sha256"]) == REMOVED_RUNNERS
     for path, expected in followup["removed_source_sha256"].items():
         assert historical[path] == expected and not Path(path).exists(), path
-    for path, expected in {**historical, **current}.items():
+    for path, expected in {**historical, **current, **audit}.items():
         if path not in REMOVED_RUNNERS:
             assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == expected, path
     # These exact Python sources and consumer declarations executed the stored runs.

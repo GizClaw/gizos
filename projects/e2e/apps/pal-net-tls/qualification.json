@@ -1,62 +1,127 @@
 {
-  "contract": 1,
+  "contract": 2,
   "profile": "net-tls-core",
   "operations": 21,
   "mandatory_cases": 37,
   "assessment_complete": false,
   "full_net_qualified": false,
   "pending": [
-    "wasm"
+    "devkit"
   ],
   "source_sha256": {
     "projects/e2e/apps/pal-net-tls/app/src/h2_pal_net_tls_e2e.c": "9ccbda3a1fc1322fb683f20f93303d41269071e82b30d707d3c2cdf49007175b",
     "projects/e2e/apps/pal-net-tls/app/include/h2_pal_net_tls_cases.inc": "5ddae599acbe170d91a6da78372dcf6ccfc48cb343228175cbd733741a434535",
     "projects/e2e/libs/pal-net-tls-fixture/fixture.py": "ad9d013e80f5c5c357aa71252961220e119ef63109e8127b56b22de29486199d",
-    "projects/e2e/libs/pal-net-tls-device/src/device.c": "f89352897127c21797628d731f6880f0c5d5e8f5e0427baaef3a79bc50ad59ad",
+    "projects/e2e/libs/pal-net-tls-device/src/device.c": "fb43ae368cabb463d01f80ca409ecd1ce62d44fe91e6a58e66e6d7b62bd03592",
     "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_net.c": "8e19f097af4a0e55260e418f9582c0353e82abd9aa0f9e7e7fdafa6fa434816c",
-    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_wifi.c": "2e934634a6a60750012c4ff8944e289b5e5b64e5bf0a24fe4f367e07c51dd30c"
+    "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_wifi.c": "2e934634a6a60750012c4ff8944e289b5e5b64e5bf0a24fe4f367e07c51dd30c",
+    "projects/e2e/apps/pal-net-tls/app/api_coverage.json": "d51bf29ddc1ec0b08d967687922de7677cd615ea4ef61360d6d7b9d9cab349bf",
+    "projects/e2e/targets/pkg_tar/pal-net-tls/main.c": "707f8c09b346456ae360e377aa4ce5ba79c8ff2c39f1b9e233fcad598a6096cf",
+    "projects/e2e/targets/pkg_tar/pal-net-tls/run_browser.py": "baf8ab67c5f35463f6d46d4d882eeba5059add016f51577256c17c8d130a9e7d",
+    "tools/bazel/mobile_e2e.py": "a00c485f3ef20445b3c60a927d2620d12fe27110bfbec5bbe89d2d9fa89f23c0",
+    "tools/bazel/mobile_e2e.bzl": "3bc566fc3e1f6c5ded381f5aceea77360cda39896361ef3be0148ecdd4cbeb83",
+    "projects/e2e/libs/pal-net-tls-mobile/run_mobile.py": "fbb2f4b209aff35cf84c119c5ac44c1b221ad0fdd12a2cdaadb02ce1dd7f2a04",
+    "projects/e2e/libs/pal-net-tls-mobile/BUILD.bazel": "730d24f7bfc9d11370b43f7bcc65ab42c859bd5f93de2a45af6071db188c4057"
   },
   "platforms": {
     "macos": {
       "status": "PASS",
       "core_qualified": true,
       "evidence": "evidence/macos/qualified.json",
-      "artifact_sha256": "61bb92ce7be00427274e832fce9c505e8a2fb89962a7672cc11ca23cd98e8c33",
-      "receipt_sha256": "3264eae8e198e7dee808e9649b6017db5f6d0249821b9020ddf77d8fa152be56"
+      "artifact_sha256": "1b9da4bddb4afe88c451174e37c72fd82d160556e0006945e12dd8e250c5747d",
+      "receipt_sha256": "8c8bbcca711d469f52a317b6347775270eb4e92c4f0a97b082aae85b8fc225b5",
+      "assessment_complete": true
     },
     "wasm": {
-      "status": "UNSUPPORTED",
+      "status": "SKIP",
       "core_qualified": false,
       "evidence": "evidence/wasm/boundary.json",
-      "reason": "Browser AppHost has no raw TCP/UDP/bind/listen/TLS wrap provider; actual pthread Worker exercised all 21 unsupported operations."
+      "assessment_complete": true,
+      "skip_reason": "PROVIDER_UNSUPPORTED",
+      "mandatory_passed": 0,
+      "mandatory_skipped": 37,
+      "skipped_case_ids": [
+        "wrapper-arguments",
+        "dns-sync",
+        "dns-async-copy",
+        "dns-cancel",
+        "dns-capacity",
+        "host-address",
+        "udp-echo",
+        "udp-source-bind",
+        "udp-timeout",
+        "udp-nonblocking",
+        "udp-truncation",
+        "multicast-membership",
+        "tcp-echo",
+        "tcp-source-bind",
+        "tcp-connect-retry",
+        "tcp-timeout",
+        "tcp-nonblocking",
+        "tcp-listen-accept",
+        "tcp-accept-timeout",
+        "tcp-peer-close",
+        "tcp-partial-io",
+        "tls-required",
+        "tls-default",
+        "tls-default-untrusted",
+        "tls-wrong-ca",
+        "tls-wrong-name",
+        "tls-expired",
+        "tls-insecure-test-only",
+        "tls-sni-alpn",
+        "tls-borrowed-config",
+        "tls-handshake-deadline",
+        "tls-failure-recovery",
+        "tls-repeat-wrap",
+        "tls-config-arguments",
+        "tls-invalid-ca",
+        "tls-session-churn",
+        "dns-hostname",
+        "icmp-echo",
+        "cleanup-ledger"
+      ],
+      "artifact_sha256": "c1a3fcf2625dd43514d3cd15cd75d3052fc8ee5acfa1238d9803e8b9f7f9ac0c",
+      "receipt_sha256": "0d95766107531b61742b4af72b7fbdd7d5d72ea194c5aa0cea376bae31331239"
     },
     "ios": {
       "status": "PASS",
       "core_qualified": true,
       "evidence": "evidence/ios/qualified.json",
       "artifact_sha256": "a0768f49a144d8ae318a3418fc0dc7b6248d082d776be8bd35d06a6918409f73",
-      "receipt_sha256": "fde35b69e9f2b35d3fa421e226948b61d76b040f0b74ac459bbe10d79c689884"
+      "receipt_sha256": "f29091fa33ebb10bd56b849a8314f3926933eb1dfa9fb81bbda3efedde39b2d0",
+      "assessment_complete": true,
+      "environment": "evidence/ios/environment.json",
+      "environment_sha256": "72a8af0de3d92d00eb6e807f575b69f5f1a8c3566f20978bf4240983b334fb6e",
+      "suite_sha256": "a2b653b93566a770c74626f6fb1dd94301f1602306f1ef4808e1ddbda9e60802"
     },
     "android": {
       "status": "PASS",
       "core_qualified": true,
       "evidence": "evidence/android/qualified.json",
-      "artifact_sha256": "21570e5f1127818ceaed5e13a2c909eaddb7719c17f3096dfe1f96982904e606",
-      "receipt_sha256": "0a293a2eae2daadf509ec63a458e82649245c3ff7b63345f4b41b5995eb582b1"
+      "artifact_sha256": "58e5edad29bfa8c0a9120b1b75dd0045c8226a482f4b42de327e413efc5204c9",
+      "receipt_sha256": "9033542117889767f79a97aecbc1e2788988aea72796b7a6613575915cb20ec2",
+      "assessment_complete": true,
+      "environment": "evidence/android/environment.json",
+      "environment_sha256": "b885dc85de40baed3b2506b3be4259bb718020e1ff8a4412f05bc4db786fd46d",
+      "suite_sha256": "a2b653b93566a770c74626f6fb1dd94301f1602306f1ef4808e1ddbda9e60802"
     },
     "devkit": {
-      "status": "PASS",
-      "core_qualified": true,
+      "status": "PENDING",
+      "core_qualified": false,
       "evidence": "evidence/devkit/qualified.json",
       "artifact_sha256": "d9c613189de5ca328e80f2ee3436391c637374ad4d62543f0fafd3593797aff9",
-      "receipt_sha256": "be56a2e46b676cc5e83ed32e4d60266f123df01ad330d90451173e9eab1bae0a"
+      "receipt_sha256": "be56a2e46b676cc5e83ed32e4d60266f123df01ad330d90451173e9eab1bae0a",
+      "assessment_complete": false,
+      "reason": "R8 core evidence is preserved; implemented ICMP requires a new live run after USB link recovery."
     },
     "bk7258": {
       "status": "PASS",
       "core_qualified": true,
       "evidence": "evidence/bk7258/qualified.json",
-      "artifact_sha256": "1fa3df738ba870c737b98d3876cca78f56c1ac9d8c8b36356c13c709baa481b1",
-      "receipt_sha256": "f35270409d94e19876840375118a8b2b229c2e5c3ff458d843b1531795efecf2"
+      "artifact_sha256": "a1c58273781d82f81ca5a0e30ee2b0eca52fa2672b49e0d39a5a48e4122c4d4d",
+      "receipt_sha256": "2200b0391ab24c823777693a2c136a136e5717cc3105c791ab2250d9da3188b3",
+      "assessment_complete": true
     }
   },
   "gate": {
@@ -65,5 +130,6 @@
     "wifi_linked_provider_head": "4d7e4a97eea7ff1e801cb151d2b9299fbd15e87e",
     "hardware_released": true,
     "tls_integration_started": true
-  }
+  },
+  "acceptance_policy": "supported-pass-unsupported-skip"
 }

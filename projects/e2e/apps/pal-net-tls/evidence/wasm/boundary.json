@@ -118,7 +118,7 @@
   ],
   "artifact_sha256": "c1a3fcf2625dd43514d3cd15cd75d3052fc8ee5acfa1238d9803e8b9f7f9ac0c",
   "browser_sha256": "d7402bcc74cbb7680dcbc4f08ce56af908c231cddf54b3e228fdda0469d1fb31",
-  "browser": "/Volumes/H002-R02T-APFS/Caches/bazel/output-user-root/cf75f37612a3ebdba61e80d6bd9e73cd/sandbox/darwin-sandbox/1959/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/projects/e2e/targets/pkg_tar/pal-net-tls/wasm_pal_net_tls_boundary_test.runfiles/+http_archive+h2_playwright_chromium_macos_arm64/chrome-mac/headless_shell",
+  "browser": "/Volumes/H002-R02T-APFS/Caches/bazel/output-user-root/cf75f37612a3ebdba61e80d6bd9e73cd/sandbox/darwin-sandbox/2125/execroot/_main/bazel-out/darwin_arm64-fastbuild/bin/projects/e2e/targets/pkg_tar/pal-net-tls/wasm_pal_net_tls_boundary_test.runfiles/+http_archive+h2_playwright_chromium_macos_arm64/chrome-mac/headless_shell",
   "cross_origin_isolated": true,
   "teardown": 0
 }

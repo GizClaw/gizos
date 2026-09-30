@@ -1,186 +1,111 @@
-ap0:pal-net-:I(218623):H2_PAL_NET_TLS_RUN session=e062be9f6a394fa5afae6f0c6952e9c6 boot_id=fcadc5a3322ffed6 version=pal-net-tls-bk-20260930-r8 version_rc=0 dns_host=ap.e2e.gizclaw.com dns_ipv4=150.5.151.236
-ap0:pal-net-:I(218624):H2_PAL_NET_TLS_CASE {"id":"wrapper-arguments","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-ap0:pal-net-:I(218664):H2_PAL_NET_TLS_CASE {"id":"dns-sync","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
-ap0:pal-net-:I(218704):H2_PAL_NET_TLS_CASE {"id":"dns-async-copy","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":2}
-ap0:pal-net-:I(218744):H2_PAL_NET_TLS_CASE {"id":"dns-cancel","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":13}
-ap0:pal-net-:I(218784):H2_PAL_NET_TLS_CASE {"id":"dns-capacity","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":7}
-ap0:pal-net-:I(218824):H2_PAL_NET_TLS_CASE {"id":"host-address","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-ap0:pal-net-:I(218864):H2_PAL_NET_TLS_CASE {"id":"udp-echo","status":"PASS","detail":0,"rc":0,"tx":609,"rx":513,"ms":85}
-ap0:pal-net-:I(218904):H2_PAL_NET_TLS_CASE {"id":"udp-source-bind","status":"PASS","detail":0,"rc":0,"tx":609,"rx":513,"ms":63}
-ap0:pal-net-:I(218944):H2_PAL_NET_TLS_CASE {"id":"udp-timeout","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":40}
-ap0:pal-net-:I(218984):H2_PAL_NET_TLS_CASE {"id":"udp-nonblocking","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-ap0:pal-net-:I(219024):H2_PAL_NET_TLS_CASE {"id":"udp-truncation","status":"PASS","detail":0,"rc":0,"tx":609,"rx":17,"ms":134}
-ap0:pal-net-:I(219064):H2_PAL_NET_TLS_CASE {"id":"multicast-membership","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":2}
-ap0:pal-net-:I(219104):H2_PAL_NET_TLS_CASE {"id":"tcp-echo","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":77}
-ap0:pal-net-:I(219144):H2_PAL_NET_TLS_CASE {"id":"tcp-source-bind","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":77}
-ap0:pal-net-:I(219184):H2_PAL_NET_TLS_CASE {"id":"tcp-connect-retry","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":66}
-ap0:pal-net-:I(219224):H2_PAL_NET_TLS_CASE {"id":"tcp-timeout","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":99}
-ap0:pal-net-:I(219264):H2_PAL_NET_TLS_CASE {"id":"tcp-nonblocking","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":37}
-ap0:pal-net-:I(219304):H2_PAL_NET_TLS_CASE {"id":"tcp-listen-accept","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":68}
-ap0:pal-net-:I(219344):H2_PAL_NET_TLS_CASE {"id":"tcp-accept-timeout","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":91}
-ap0:pal-net-:I(219384):H2_PAL_NET_TLS_CASE {"id":"tcp-peer-close","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":39}
-ap0:pal-net-:I(219424):H2_PAL_NET_TLS_CASE {"id":"tcp-partial-io","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":56}
-ap0:pal-net-:I(219464):H2_PAL_NET_TLS_CASE {"id":"tls-required","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":339}
-ap0:pal-net-:I(219504):H2_PAL_NET_TLS_CASE {"id":"tls-default","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":317}
-ap0:pal-net-:I(219544):H2_PAL_NET_TLS_CASE {"id":"tls-default-untrusted","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":60}
-ap0:pal-net-:I(219584):H2_PAL_NET_TLS_CASE {"id":"tls-wrong-ca","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":55}
-ap0:pal-net-:I(219624):H2_PAL_NET_TLS_CASE {"id":"tls-wrong-name","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":74}
-ap0:pal-net-:I(219664):H2_PAL_NET_TLS_CASE {"id":"tls-expired","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":65}
-ap0:pal-net-:I(219704):H2_PAL_NET_TLS_CASE {"id":"tls-insecure-test-only","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":293}
-ap0:pal-net-:I(219744):H2_PAL_NET_TLS_CASE {"id":"tls-sni-alpn","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":353}
-ap0:pal-net-:I(219784):H2_PAL_NET_TLS_CASE {"id":"tls-borrowed-config","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":332}
-ap0:pal-net-:I(219824):H2_PAL_NET_TLS_CASE {"id":"tls-handshake-deadline","status":"PASS","detail":0,"rc":-6,"tx":0,"rx":0,"ms":147}
-ap0:pal-net-:I(219864):H2_PAL_NET_TLS_CASE {"id":"tls-failure-recovery","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":404}
-ap0:pal-net-:I(219904):H2_PAL_NET_TLS_CASE {"id":"tls-repeat-wrap","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":351}
-ap0:pal-net-:I(219944):H2_PAL_NET_TLS_CASE {"id":"tls-config-arguments","status":"PASS","detail":0,"rc":-1,"tx":0,"rx":0,"ms":41}
-ap0:pal-net-:I(219984):H2_PAL_NET_TLS_CASE {"id":"tls-invalid-ca","status":"PASS","detail":0,"rc":-15,"tx":0,"rx":0,"ms":23}
-ap0:pal-net-:I(220024):H2_PAL_NET_TLS_CASE {"id":"tls-session-churn","status":"PASS","detail":0,"rc":0,"tx":50316,"rx":49164,"ms":3934}
-ap0:pal-net-:I(220064):H2_PAL_NET_TLS_CASE {"id":"dns-hostname","status":"PASS","detail":0,"rc":-8,"tx":0,"rx":0,"ms":12,"ip":[124,174,15,239]}
-ap0:pal-net-:I(220104):H2_PAL_NET_TLS_CASE {"id":"icmp-echo","status":"UNSUPPORTED","detail":-3,"rc":0,"tx":0,"rx":0,"ms":0}
-ap0:pal-net-:I(220144):H2_PAL_NET_TLS_CASE {"id":"cleanup-ledger","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-ap0:pal-net-:I(220184):H2_PAL_NET_TLS_SUMMARY {"pass":38,"mandatory":37,"fail":0,"blocked":0,"unsupported":1,"not_assessed":0,"rs":0,"rr":0,"ra":0}
-H2_PAL_NET_TLS_READY board=bk7258 rc=0 confirm=0
-ap0:pal-net-:I(225184):H2_PAL_NET_TLS_RUN session=e062be9f6a394fa5afae6f0c6952e9c6 boot_id=fcadc5a3322ffed6 version=pal-net-tls-bk-20260930-r8 version_rc=0 dns_host=ap.e2e.gizclaw.com dns_ipv4=150.5.151.236
-ap0:pal-net-:I(225185):H2_PAL_NET_TLS_CASE {"id":"wrapper-arguments","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-ap0:pal-net-:I(225225):H2_PAL_NET_TLS_CASE {"id":"dns-sync","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
-ap0:pal-net-:I(225265):H2_PAL_NET_TLS_CASE {"id":"dns-async-copy","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":2}
-ap0:pal-net-:I(225305):H2_PAL_NET_TLS_CASE {"id":"dns-cancel","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":13}
-ap0:pal-net-:I(225345):H2_PAL_NET_TLS_CASE {"id":"dns-capacity","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":7}
-ap0:pal-net-:I(225385):H2_PAL_NET_TLS_CASE {"id":"host-address","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-ap0:pal-net-:I(225425):H2_PAL_NET_TLS_CASE {"id":"udp-echo","status":"PASS","detail":0,"rc":0,"tx":609,"rx":513,"ms":85}
-ap0:pal-net-:I(225465):H2_PAL_NET_TLS_CASE {"id":"udp-source-bind","status":"PASS","detail":0,"rc":0,"tx":609,"rx":513,"ms":63}
-ap0:pal-net-:I(225505):H2_PAL_NET_TLS_CASE {"id":"udp-timeout","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":40}
-ap0:pal-net-:I(225545):H2_PAL_NET_TLS_CASE {"id":"udp-nonblocking","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-ap0:pal-net-:I(225585):H2_PAL_NET_TLS_CASE {"id":"udp-truncation","status":"PASS","detail":0,"rc":0,"tx":609,"rx":17,"ms":134}
-ap0:pal-net-:I(225625):H2_PAL_NET_TLS_CASE {"id":"multicast-membership","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":2}
-ap0:pal-net-:I(225665):H2_PAL_NET_TLS_CASE {"id":"tcp-echo","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":77}
-ap0:pal-net-:I(225705):H2_PAL_NET_TLS_CASE {"id":"tcp-source-bind","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":77}
-ap0:pal-net-:I(225745):H2_PAL_NET_TLS_CASE {"id":"tcp-connect-retry","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":66}
-ap0:pal-net-:I(225785):H2_PAL_NET_TLS_CASE {"id":"tcp-timeout","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":99}
-ap0:pal-net-:I(225825):H2_PAL_NET_TLS_CASE {"id":"tcp-nonblocking","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":37}
-ap0:pal-net-:I(225865):H2_PAL_NET_TLS_CASE {"id":"tcp-listen-accept","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":68}
-ap0:pal-net-:I(225905):H2_PAL_NET_TLS_CASE {"id":"tcp-accept-timeout","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":91}
-ap0:pal-net-:I(225945):H2_PAL_NET_TLS_CASE {"id":"tcp-peer-close","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":39}
-ap0:pal-net-:I(225985):H2_PAL_NET_TLS_CASE {"id":"tcp-partial-io","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":56}
-ap0:pal-net-:I(226025):H2_PAL_NET_TLS_CASE {"id":"tls-required","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":339}
-ap0:pal-net-:I(226065):H2_PAL_NET_TLS_CASE {"id":"tls-default","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":317}
-ap0:pal-net-:I(226105):H2_PAL_NET_TLS_CASE {"id":"tls-default-untrusted","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":60}
-ap0:pal-net-:I(226145):H2_PAL_NET_TLS_CASE {"id":"tls-wrong-ca","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":55}
-ap0:pal-net-:I(226185):H2_PAL_NET_TLS_CASE {"id":"tls-wrong-name","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":74}
-ap0:pal-net-:I(226225):H2_PAL_NET_TLS_CASE {"id":"tls-expired","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":65}
-ap0:pal-net-:I(226265):H2_PAL_NET_TLS_CASE {"id":"tls-insecure-test-only","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":293}
-ap0:pal-net-:I(226305):H2_PAL_NET_TLS_CASE {"id":"tls-sni-alpn","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":353}
-ap0:pal-net-:I(226345):H2_PAL_NET_TLS_CASE {"id":"tls-borrowed-config","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":332}
-ap0:pal-net-:I(226385):H2_PAL_NET_TLS_CASE {"id":"tls-handshake-deadline","status":"PASS","detail":0,"rc":-6,"tx":0,"rx":0,"ms":147}
- ap0:ef:I(253):ENV start address is 0x007FC000, size is 8192 bytes.
-ap0:ef:I(377):EasyFlash V4.1.0 is initialize success.
-ap0:WDRV:W(520):wdrv_tx_cmd_buffer_init, addr[0]=0x28014bfc, pattern_addr=0x28014bf8
-ap0:WDRV:W(521):wdrv_tx_cmd_buffer_init, addr[1]=0x28014f1c, pattern_addr=0x28014f18
-ap0:WDRV:W(521):wdrv_tx_cmd_buffer_init, addr[2]=0x2801523c, pattern_addr=0x28015238
+H2_PAL_NET_TLS_RESET method=UART0_RTS_CEN
+ap0:ef:I(253):ENV start address is 0x007FC000, size is 8192 bytes.
+ap0:ef:I(387):EasyFlash V4.1.0 is initialize success.
+ap0:WDRV:W(565):wdrv_tx_cmd_buffer_init, addr[0]=0x28014bfc, pattern_addr=0x28014bf8
+ap0:WDRV:W(565):wdrv_tx_cmd_buffer_init, addr[1]=0x28014f1c, pattern_addr=0x28014f18
+ap0:WDRV:W(565):wdrv_tx_cmd_buffer_init, addr[2]=0x2801523c, pattern_addr=0x28015238
 wakeup
 
-$ap1:bt:E(536):write_task_start_routine:[WT] EtherMind Write Task - Starting Up!
+$ap1:bt:E(580):write_task_start_routine:[WT] EtherMind Write Task - Starting Up!
 
-ap1:bt:E(605):BT_smp_set_local_identity_addr:[SMP] Received Set Local ID Address :- ADDR: C8:47:8C:A2:A8:7C, TYPE: 00
+ap0:bt:E(651):BT_smp_set_local_identity_addr:[SMP] Received Set Local ID Address :- ADDR: C8:47:8C:A2:A8:7C, TYPE: 00
 
-ap1:bt:E(606):gatt_init:size gatt_ctx 60 count 5
+ap0:bt:E(651):gatt_init:size gatt_ctx 60 count 5
 H2_PAL_TASK_READY name=h2_sys_evt core=0 priority=6 stack=psram size=4096
-ap0:flashdb:I(3881):Flash Abstraction Layer (V0.5.99) initialize success.ap0:flashdb:I(4409):FlashDB V1.1.2 is initialize success.
-ap0:flashdb:I(4410):You can get the latest version on https://github.com/armink/FlashDB .
-ap0:OTA:I(29121):ret_val  :0x0
+ap0:flashdb:I(3932):Flash Abstraction Layer (V0.5.99) initialize success.ap0:flashdb:I(4209):FlashDB V1.1.2 is initialize success.
+ap0:flashdb:I(4209):You can get the latest version on https://github.com/armink/FlashDB .
+ap0:OTA:I(27593):ret_val  :0x0
 H2_FIXED_XIP role=app pc=0237971a cp_phys=00264000 native_slot=0
 H2_PAL_TASK_READY name=$h2loader/uartcmd sdk_name=$h2loader/uartcmd core=0 priority=5 stack=psram size=32768
-H2_PAL_NET_TLS_BOOT board=bk7258 version=pal-net-tls-bk-20260930-r8 version_rc=0
+H2_PAL_NET_TLS_BOOT board=bk7258 version=pal-net-tls-bk-20260930-r9 version_rc=0
 H2_PAL_TASK_READY name=pal-net-tls/e2e/runner sdk_name=pal-net-tls/e2e/runner core=0 priority=7 stack=psram size=65536
-ap1:lwip:I(36074):sta ip start
-ap1:cli:W(36075):BK STA connected [REDACTED_WIFI_SSID]
-ap1:cli:W(36076):BK STA got ip 192.168.4.175
-ap0:pal-net-:I(36355):H2_PAL_NET_TLS_EXECUTION session=e062be9f6a394fa5afae6f0c6952e9c6 boot_id=6deacd2fdaf436f5
-ap0:pal-net-:I(36356):H2_PAL_NET_TLS_CASE {"id":"wrapper-arguments","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-ap0:pal-net-:I(36396):H2_PAL_NET_TLS_CASE {"id":"dns-sync","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-ap0:pal-net-:I(36438):H2_PAL_NET_TLS_CASE {"id":"dns-async-copy","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
-ap0:pal-net-:I(36495):H2_PAL_NET_TLS_CASE {"id":"dns-cancel","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":16}
-ap0:pal-net-:I(36541):H2_PAL_NET_TLS_CASE {"id":"dns-capacity","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":6}
-ap0:pal-net-:I(36581):H2_PAL_NET_TLS_CASE {"id":"host-address","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-ap0:pal-net-:I(36796):H2_PAL_NET_TLS_CASE {"id":"udp-echo","status":"PASS","detail":0,"rc":0,"tx":609,"rx":513,"ms":174}
-ap0:pal-net-:I(36882):H2_PAL_NET_TLS_CASE {"id":"udp-source-bind","status":"PASS","detail":0,"rc":0,"tx":609,"rx":513,"ms":47}
-ap0:pal-net-:I(36963):H2_PAL_NET_TLS_CASE {"id":"udp-timeout","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":40}
-ap0:pal-net-:I(37003):H2_PAL_NET_TLS_CASE {"id":"udp-nonblocking","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-ap0:pal-net-:I(37100):H2_PAL_NET_TLS_CASE {"id":"udp-truncation","status":"PASS","detail":0,"rc":0,"tx":609,"rx":17,"ms":57}
-ap0:pal-net-:I(37142):H2_PAL_NET_TLS_CASE {"id":"multicast-membership","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":2}
-ap0:pal-net-:I(37321):H2_PAL_NET_TLS_CASE {"id":"tcp-echo","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":138}
-ap0:pal-net-:I(37421):H2_PAL_NET_TLS_CASE {"id":"tcp-source-bind","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":60}
-ap0:pal-net-:I(37614):H2_PAL_NET_TLS_CASE {"id":"tcp-connect-retry","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":153}
-ap0:pal-net-:I(37816):H2_PAL_NET_TLS_CASE {"id":"tcp-timeout","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":162}
-ap0:pal-net-:I(38120):H2_PAL_NET_TLS_CASE {"id":"tcp-nonblocking","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":264}
-ap0:pal-net-:I(38331):H2_PAL_NET_TLS_CASE {"id":"tcp-listen-accept","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":172}
-ap0:pal-net-:I(38466):H2_PAL_NET_TLS_CASE {"id":"tcp-accept-timeout","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":94}
-ap0:pal-net-:I(38640):H2_PAL_NET_TLS_CASE {"id":"tcp-peer-close","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":134}
-ap0:pal-net-:I(38830):H2_PAL_NET_TLS_CASE {"id":"tcp-partial-io","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":150}
-ap0:pal-net-:I(39230):H2_PAL_NET_TLS_CASE {"id":"tls-required","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":360}
-ap0:pal-net-:I(39733):H2_PAL_NET_TLS_CASE {"id":"tls-default","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":463}
-ap0:pal-net-:I(39912):H2_PAL_NET_TLS_CASE {"id":"tls-default-untrusted","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":139}
-ap0:pal-net-:I(40006):H2_PAL_NET_TLS_CASE {"id":"tls-wrong-ca","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":54}
-ap0:pal-net-:I(40117):H2_PAL_NET_TLS_CASE {"id":"tls-wrong-name","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":71}
-ap0:pal/net:E(40282):tls_cert_time from=2020-01-01 to=2020-01-02 now=2026-09-29 flags=0x1
-ap0:pal-net-:I(40302):H2_PAL_NET_TLS_CASE {"id":"tls-expired","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":144}
-ap0:pal-net-:I(40812):H2_PAL_NET_TLS_CASE {"id":"tls-insecure-test-only","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":470}
-ap0:pal-net-:I(41324):H2_PAL_NET_TLS_CASE {"id":"tls-sni-alpn","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":471}
-ap0:pal-net-:I(41846):H2_PAL_NET_TLS_CASE {"id":"tls-borrowed-config","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":482}
-ap0:pal-net-:I(42116):H2_PAL_NET_TLS_CASE {"id":"tls-handshake-deadline","status":"PASS","detail":0,"rc":-6,"tx":0,"rx":0,"ms":230}
-ap0:pal-net-:I(42651):H2_PAL_NET_TLS_CASE {"id":"tls-failure-recovery","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":494}
-ap0:pal-net-:I(43079):H2_PAL_NET_TLS_CASE {"id":"tls-repeat-wrap","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":388}
-ap0:pal-net-:I(43139):H2_PAL_NET_TLS_CASE {"id":"tls-config-arguments","status":"PASS","detail":0,"rc":-1,"tx":0,"rx":0,"ms":20}
-ap0:pal-net-:I(43214):H2_PAL_NET_TLS_CASE {"id":"tls-invalid-ca","status":"PASS","detail":0,"rc":-15,"tx":0,"rx":0,"ms":35}
-ap0:pal-net-:I(48155):H2_PAL_NET_TLS_CASE {"id":"tls-session-churn","status":"PASS","detail":0,"rc":0,"tx":50316,"rx":49164,"ms":4901}
-ap0:pal-net-:I(48217):H2_PAL_NET_TLS_CASE {"id":"dns-hostname","status":"PASS","detail":0,"rc":-8,"tx":0,"rx":0,"ms":21,"ip":[124,174,15,239]}
-ap0:pal-net-:I(48257):H2_PAL_NET_TLS_CASE {"id":"icmp-echo","status":"UNSUPPORTED","detail":-3,"rc":0,"tx":0,"rx":0,"ms":0}
-ap0:pal-net-:I(48297):H2_PAL_NET_TLS_CASE {"id":"cleanup-ledger","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-ap0:pal-net-:I(69456):H2_PAL_NET_TLS_RUN session=e062be9f6a394fa5afae6f0c6952e9c6 boot_id=6deacd2fdaf436f5 version=pal-net-tls-bk-20260930-r8 version_rc=0 dns_host=ap.e2e.gizclaw.com dns_ipv4=150.5.151.236
-ap0:pal-net-:I(69457):H2_PAL_NET_TLS_CASE {"id":"wrapper-arguments","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-ap0:pal-net-:I(69497):H2_PAL_NET_TLS_CASE {"id":"dns-sync","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-ap0:pal-net-:I(69537):H2_PAL_NET_TLS_CASE {"id":"dns-async-copy","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
-ap0:pal-net-:I(69577):H2_PAL_NET_TLS_CASE {"id":"dns-cancel","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":16}
-ap0:pal-net-:I(69617):H2_PAL_NET_TLS_CASE {"id":"dns-capacity","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":6}
-ap0:pal-net-:I(69657):H2_PAL_NET_TLS_CASE {"id":"host-address","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-ap0:pal-net-:I(69697):H2_PAL_NET_TLS_CASE {"id":"udp-echo","status":"PASS","detail":0,"rc":0,"tx":609,"rx":513,"ms":174}
-ap0:pal-net-:I(69737):H2_PAL_NET_TLS_CASE {"id":"udp-source-bind","status":"PASS","detail":0,"rc":0,"tx":609,"rx":513,"ms":47}
-ap0:pal-net-:I(69777):H2_PAL_NET_TLS_CASE {"id":"udp-timeout","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":40}
-ap0:pal-net-:I(69817):H2_PAL_NET_TLS_CASE {"id":"udp-nonblocking","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-ap0:pal-net-:I(69857):H2_PAL_NET_TLS_CASE {"id":"udp-truncation","status":"PASS","detail":0,"rc":0,"tx":609,"rx":17,"ms":57}
-ap0:pal-net-:I(69897):H2_PAL_NET_TLS_CASE {"id":"multicast-membership","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":2}
-ap0:pal-net-:I(69937):H2_PAL_NET_TLS_CASE {"id":"tcp-echo","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":138}
-ap0:pal-net-:I(69977):H2_PAL_NET_TLS_CASE {"id":"tcp-source-bind","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":60}
-ap0:pal-net-:I(70017):H2_PAL_NET_TLS_CASE {"id":"tcp-connect-retry","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":153}
-ap0:pal-net-:I(70057):H2_PAL_NET_TLS_CASE {"id":"tcp-timeout","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":162}
-ap0:pal-net-:I(70097):H2_PAL_NET_TLS_CASE {"id":"tcp-nonblocking","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":264}
-ap0:pal-net-:I(70137):H2_PAL_NET_TLS_CASE {"id":"tcp-listen-accept","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":172}
-ap0:pal-net-:I(70177):H2_PAL_NET_TLS_CASE {"id":"tcp-accept-timeout","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":94}
-ap0:pal-net-:I(70217):H2_PAL_NET_TLS_CASE {"id":"tcp-peer-close","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":134}
-ap0:pal-net-:I(70257):H2_PAL_NET_TLS_CASE {"id":"tcp-partial-io","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":150}
-ap0:pal-net-:I(70297):H2_PAL_NET_TLS_CASE {"id":"tls-required","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":360}
-ap0:pal-net-:I(70337):H2_PAL_NET_TLS_CASE {"id":"tls-default","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":463}
-ap0:pal-net-:I(70377):H2_PAL_NET_TLS_CASE {"id":"tls-default-untrusted","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":139}
-ap0:pal-net-:I(70417):H2_PAL_NET_TLS_CASE {"id":"tls-wrong-ca","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":54}
-ap0:pal-net-:I(70457):H2_PAL_NET_TLS_CASE {"id":"tls-wrong-name","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":71}
-ap0:pal-net-:I(70497):H2_PAL_NET_TLS_CASE {"id":"tls-expired","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":144}
-ap0:pal-net-:I(70537):H2_PAL_NET_TLS_CASE {"id":"tls-insecure-test-only","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":470}
-ap0:pal-net-:I(70577):H2_PAL_NET_TLS_CASE {"id":"tls-sni-alpn","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":471}
-ap0:pal-net-:I(70617):H2_PAL_NET_TLS_CASE {"id":"tls-borrowed-config","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":482}
-ap0:pal-net-:I(70657):H2_PAL_NET_TLS_CASE {"id":"tls-handshake-deadline","status":"PASS","detail":0,"rc":-6,"tx":0,"rx":0,"ms":230}
-ap0:pal-net-:I(70697):H2_PAL_NET_TLS_CASE {"id":"tls-failure-recovery","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":494}
-ap0:pal-net-:I(70737):H2_PAL_NET_TLS_CASE {"id":"tls-repeat-wrap","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":388}
-ap0:pal-net-:I(70777):H2_PAL_NET_TLS_CASE {"id":"tls-config-arguments","status":"PASS","detail":0,"rc":-1,"tx":0,"rx":0,"ms":20}
-ap0:pal-net-:I(70817):H2_PAL_NET_TLS_CASE {"id":"tls-invalid-ca","status":"PASS","detail":0,"rc":-15,"tx":0,"rx":0,"ms":35}
-ap0:pal-net-:I(70857):H2_PAL_NET_TLS_CASE {"id":"tls-session-churn","status":"PASS","detail":0,"rc":0,"tx":50316,"rx":49164,"ms":4901}
-ap0:pal-net-:I(70897):H2_PAL_NET_TLS_CASE {"id":"dns-hostname","status":"PASS","detail":0,"rc":-8,"tx":0,"rx":0,"ms":21,"ip":[124,174,15,239]}
-ap0:pal-net-:I(70937):H2_PAL_NET_TLS_CASE {"id":"icmp-echo","status":"UNSUPPORTED","detail":-3,"rc":0,"tx":0,"rx":0,"ms":0}
-ap0:pal-net-:I(70977):H2_PAL_NET_TLS_CASE {"id":"cleanup-ledger","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-ap0:pal-net-:I(71017):H2_PAL_NET_TLS_SUMMARY {"pass":38,"mandatory":37,"fail":0,"blocked":0,"unsupported":1,"not_assessed":0,"rs":0,"rr":0,"ra":0}
+ap1:lwip:I(34521):sta ip start
+ap1:cli:W(34523):BK STA connected [REDACTED_SSID]
+ap1:cli:W(34523):BK STA got ip 192.168.4.175
+ap0:pal-net-:I(34742):H2_PAL_NET_TLS_EXECUTION session=7e12163c94294b9f86743fcdc45932b8 boot_id=c1e36e1f7ccfc450
+ap0:pal-net-:I(34743):H2_PAL_NET_TLS_CASE {"id":"wrapper-arguments","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
+ap0:pal-net-:I(34783):H2_PAL_NET_TLS_CASE {"id":"dns-sync","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
+ap0:pal-net-:I(34825):H2_PAL_NET_TLS_CASE {"id":"dns-async-copy","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":2}
+ap0:pal-net-:I(34882):H2_PAL_NET_TLS_CASE {"id":"dns-cancel","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":16}
+ap0:pal-net-:I(34929):H2_PAL_NET_TLS_CASE {"id":"dns-capacity","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":7}
+ap0:pal-net-:I(34969):H2_PAL_NET_TLS_CASE {"id":"host-address","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
+ap0:pal-net-:I(35092):H2_PAL_NET_TLS_CASE {"id":"udp-echo","status":"PASS","detail":0,"rc":0,"tx":609,"rx":513,"ms":83}
+ap0:pal-net-:I(35186):H2_PAL_NET_TLS_CASE {"id":"udp-source-bind","status":"PASS","detail":0,"rc":0,"tx":609,"rx":513,"ms":54}
+ap0:pal-net-:I(35266):H2_PAL_NET_TLS_CASE {"id":"udp-timeout","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":40}
+ap0:pal-net-:I(35306):H2_PAL_NET_TLS_CASE {"id":"udp-nonblocking","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
+ap0:pal-net-:I(35398):H2_PAL_NET_TLS_CASE {"id":"udp-truncation","status":"PASS","detail":0,"rc":0,"tx":609,"rx":17,"ms":52}
+ap0:pal-net-:I(35439):H2_PAL_NET_TLS_CASE {"id":"multicast-membership","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":2}
+ap0:pal-net-:I(35537):H2_PAL_NET_TLS_CASE {"id":"tcp-echo","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":57}
+ap0:pal-net-:I(35636):H2_PAL_NET_TLS_CASE {"id":"tcp-source-bind","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":60}
+ap0:pal-net-:I(35743):H2_PAL_NET_TLS_CASE {"id":"tcp-connect-retry","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":67}
+ap0:pal-net-:I(35884):H2_PAL_NET_TLS_CASE {"id":"tcp-timeout","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":101}
+ap0:pal-net-:I(35964):H2_PAL_NET_TLS_CASE {"id":"tcp-nonblocking","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":40}
+ap0:pal-net-:I(36062):H2_PAL_NET_TLS_CASE {"id":"tcp-listen-accept","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":58}
+ap0:pal-net-:I(36215):H2_PAL_NET_TLS_CASE {"id":"tcp-accept-timeout","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":114}
+ap0:pal-net-:I(36314):H2_PAL_NET_TLS_CASE {"id":"tcp-peer-close","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":58}
+ap0:pal-net-:I(36429):H2_PAL_NET_TLS_CASE {"id":"tcp-partial-io","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":76}
+ap0:pal-net-:I(36836):H2_PAL_NET_TLS_CASE {"id":"tls-required","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":367}
+ap0:pal-net-:I(37356):H2_PAL_NET_TLS_CASE {"id":"tls-default","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":480}
+ap0:pal-net-:I(37457):H2_PAL_NET_TLS_CASE {"id":"tls-default-untrusted","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":62}
+ap0:pal-net-:I(37566):H2_PAL_NET_TLS_CASE {"id":"tls-wrong-ca","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":68}
+ap0:pal-net-:I(37686):H2_PAL_NET_TLS_CASE {"id":"tls-wrong-name","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":81}
+ap0:pal/net:E(37779):tls_cert_time from=2020-01-01 to=2020-01-02 now=2026-09-30 flags=0x1
+ap0:pal-net-:I(37797):H2_PAL_NET_TLS_CASE {"id":"tls-expired","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":70}
+ap0:pal-net-:I(38138):H2_PAL_NET_TLS_CASE {"id":"tls-insecure-test-only","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":302}
+ap0:pal-net-:I(38498):H2_PAL_NET_TLS_CASE {"id":"tls-sni-alpn","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":320}
+ap0:pal-net-:I(38876):H2_PAL_NET_TLS_CASE {"id":"tls-borrowed-config","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":338}
+ap0:pal-net-:I(39071):H2_PAL_NET_TLS_CASE {"id":"tls-handshake-deadline","status":"PASS","detail":0,"rc":-6,"tx":0,"rx":0,"ms":155}
+ap0:pal-net-:I(39517):H2_PAL_NET_TLS_CASE {"id":"tls-failure-recovery","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":406}
+ap0:pal-net-:I(40023):H2_PAL_NET_TLS_CASE {"id":"tls-repeat-wrap","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":466}
+ap0:pal-net-:I(40098):H2_PAL_NET_TLS_CASE {"id":"tls-config-arguments","status":"PASS","detail":0,"rc":-1,"tx":0,"rx":0,"ms":36}
+ap0:pal-net-:I(40166):H2_PAL_NET_TLS_CASE {"id":"tls-invalid-ca","status":"PASS","detail":0,"rc":-15,"tx":0,"rx":0,"ms":28}
+ap0:pal-net-:I(44413):H2_PAL_NET_TLS_CASE {"id":"tls-session-churn","status":"PASS","detail":0,"rc":0,"tx":50316,"rx":49164,"ms":4207}
+ap0:pal-net-:I(44492):H2_PAL_NET_TLS_CASE {"id":"dns-hostname","status":"PASS","detail":0,"rc":-8,"tx":0,"rx":0,"ms":40,"ip":[124,174,15,239]}
+ap0:pal-net-:I(44532):H2_PAL_NET_TLS_CASE {"id":"icmp-echo","status":"UNSUPPORTED","detail":-3,"rc":0,"tx":0,"rx":0,"ms":0}
+ap0:pal-net-:I(44572):H2_PAL_NET_TLS_CASE {"id":"cleanup-ledger","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
+ap0:pal-net-:I(65338):H2_PAL_NET_TLS_RUN session=7e12163c94294b9f86743fcdc45932b8 boot_id=c1e36e1f7ccfc450 version=pal-net-tls-bk-20260930-r9 version_rc=0 dns_host=ap.e2e.gizclaw.com dns_ipv4=150.5.151.236
+ap0:pal-net-:I(65339):H2_PAL_NET_TLS_CASE {"id":"wrapper-arguments","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
+ap0:pal-net-:I(65379):H2_PAL_NET_TLS_CASE {"id":"dns-sync","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
+ap0:pal-net-:I(65419):H2_PAL_NET_TLS_CASE {"id":"dns-async-copy","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":2}
+ap0:pal-net-:I(65459):H2_PAL_NET_TLS_CASE {"id":"dns-cancel","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":16}
+ap0:pal-net-:I(65499):H2_PAL_NET_TLS_CASE {"id":"dns-capacity","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":7}
+ap0:pal-net-:I(65539):H2_PAL_NET_TLS_CASE {"id":"host-address","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
+ap0:pal-net-:I(65579):H2_PAL_NET_TLS_CASE {"id":"udp-echo","status":"PASS","detail":0,"rc":0,"tx":609,"rx":513,"ms":83}
+ap0:pal-net-:I(65619):H2_PAL_NET_TLS_CASE {"id":"udp-source-bind","status":"PASS","detail":0,"rc":0,"tx":609,"rx":513,"ms":54}
+ap0:pal-net-:I(65659):H2_PAL_NET_TLS_CASE {"id":"udp-timeout","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":40}
+ap0:pal-net-:I(65699):H2_PAL_NET_TLS_CASE {"id":"udp-nonblocking","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
+ap0:pal-net-:I(65739):H2_PAL_NET_TLS_CASE {"id":"udp-truncation","status":"PASS","detail":0,"rc":0,"tx":609,"rx":17,"ms":52}
+ap0:pal-net-:I(65779):H2_PAL_NET_TLS_CASE {"id":"multicast-membership","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":2}
+ap0:pal-net-:I(65819):H2_PAL_NET_TLS_CASE {"id":"tcp-echo","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":57}
+ap0:pal-net-:I(65859):H2_PAL_NET_TLS_CASE {"id":"tcp-source-bind","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":60}
+ap0:pal-net-:I(65899):H2_PAL_NET_TLS_CASE {"id":"tcp-connect-retry","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":67}
+ap0:pal-net-:I(65939):H2_PAL_NET_TLS_CASE {"id":"tcp-timeout","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":101}
+ap0:pal-net-:I(65979):H2_PAL_NET_TLS_CASE {"id":"tcp-nonblocking","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":40}
+ap0:pal-net-:I(66019):H2_PAL_NET_TLS_CASE {"id":"tcp-listen-accept","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":58}
+ap0:pal-net-:I(66059):H2_PAL_NET_TLS_CASE {"id":"tcp-accept-timeout","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":114}
+ap0:pal-net-:I(66099):H2_PAL_NET_TLS_CASE {"id":"tcp-peer-close","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":58}
+ap0:pal-net-:I(66139):H2_PAL_NET_TLS_CASE {"id":"tcp-partial-io","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":76}
+ap0:pal-net-:I(66179):H2_PAL_NET_TLS_CASE {"id":"tls-required","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":367}
+ap0:pal-net-:I(66219):H2_PAL_NET_TLS_CASE {"id":"tls-default","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":480}
+ap0:pal-net-:I(66259):H2_PAL_NET_TLS_CASE {"id":"tls-default-untrusted","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":62}
+ap0:pal-net-:I(66299):H2_PAL_NET_TLS_CASE {"id":"tls-wrong-ca","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":68}
+ap0:pal-net-:I(66339):H2_PAL_NET_TLS_CASE {"id":"tls-wrong-name","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":81}
+ap0:pal-net-:I(66379):H2_PAL_NET_TLS_CASE {"id":"tls-expired","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":70}
+ap0:pal-net-:I(66419):H2_PAL_NET_TLS_CASE {"id":"tls-insecure-test-only","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":302}
+ap0:pal-net-:I(66459):H2_PAL_NET_TLS_CASE {"id":"tls-sni-alpn","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":320}
+ap0:pal-net-:I(66499):H2_PAL_NET_TLS_CASE {"id":"tls-borrowed-config","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":338}
+ap0:pal-net-:I(66539):H2_PAL_NET_TLS_CASE {"id":"tls-handshake-deadline","status":"PASS","detail":0,"rc":-6,"tx":0,"rx":0,"ms":155}
+ap0:pal-net-:I(66579):H2_PAL_NET_TLS_CASE {"id":"tls-failure-recovery","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":406}
+ap0:pal-net-:I(66619):H2_PAL_NET_TLS_CASE {"id":"tls-repeat-wrap","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":466}
+ap0:pal-net-:I(66660):H2_PAL_NET_TLS_CASE {"id":"tls-config-arguments","status":"PASS","detail":0,"rc":-1,"tx":0,"rx":0,"ms":36}
+ap0:pal-net-:I(66700):H2_PAL_NET_TLS_CASE {"id":"tls-invalid-ca","status":"PASS","detail":0,"rc":-15,"tx":0,"rx":0,"ms":28}
+ap0:pal-net-:I(66740):H2_PAL_NET_TLS_CASE {"id":"tls-session-churn","status":"PASS","detail":0,"rc":0,"tx":50316,"rx":49164,"ms":4207}
+ap0:pal-net-:I(66780):H2_PAL_NET_TLS_CASE {"id":"dns-hostname","status":"PASS","detail":0,"rc":-8,"tx":0,"rx":0,"ms":40,"ip":[124,174,15,239]}
+ap0:pal-net-:I(66820):H2_PAL_NET_TLS_CASE {"id":"icmp-echo","status":"UNSUPPORTED","detail":-3,"rc":0,"tx":0,"rx":0,"ms":0}
+ap0:pal-net-:I(66860):H2_PAL_NET_TLS_CASE {"id":"cleanup-ledger","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
+ap0:pal-net-:I(66900):H2_PAL_NET_TLS_SUMMARY {"pass":38,"mandatory":37,"fail":0,"blocked":0,"unsupported":1,"not_assessed":0,"rs":0,"rr":0,"ra":0}
 H2_PAL_NET_TLS_READY board=bk7258 rc=0 confirm=0
-ap0:pal-net-:I(76017):H2_PAL_NET_TLS_RUN session=e062be9f6a394fa5afae6f0c6952e9c6 boot_id=6deacd2fdaf436f5 version=pal-net-tls-bk-20260930-r8 version_rc=0 dns_host=ap.e2e.gizclaw.com dns_ipv4=150.5.151.236
-ap0:pal-net-:I(76018):H2_PAL_NET_TLS_CASE {"id":"wrapper-arguments","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-ap0:pal-net-:I(76058):H2_PAL_NET_TLS_CASE {"id":"dns-sync","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-ap0:pal-net-:I(76098):H2_PAL_NET_TLS_CASE {"id":"dns-async-copy","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
-ap0:pal-net-:I(76138):H2_PAL_NET_TLS_CASE {"id":"dns-cancel","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":16}
-ap0:pal-net-:I(76178):H2_PAL_NET_TLS_CASE {"id":"dns-capacity","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":6}
+ap0:pal-net-:I(71900):H2_PAL_NET_TLS_RUN session=7e12163c94294b9f86743fcdc45932b8 boot_id=c1e36e1f7ccfc450 version=pal-net-tls-bk-20260930-r9 version_rc=0 dns_host=ap.e2e.gizclaw.com dns_ipv4=150.5.151.236
+ap0:pal-net-:I(71901):H2_PAL_NET_TLS_CASE {"id":"wrapper-arguments","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
+ap0:pal-net-:I(71941):H2_PAL_NET_TLS_CASE {"id":"dns-sync","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
+ap0:pal-net-:I(71981):H2_PAL_NET_TLS_CASE {"id":"dns-async-copy","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":2}
