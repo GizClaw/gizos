@@ -320,6 +320,10 @@ static bool decode_request(h2_gizclaw_rpc_bytes_t data, bool write,
       if (!pb_read(&sub, (pb_byte_t *)out->id, length) ||
           !pb_close_string_substream(&input, &sub))
         return false;
+      /* The ID is matched as a C string: an embedded NUL would let
+       * "speaker.main\0x" address speaker.main, so it is malformed. */
+      if (memchr(out->id, '\0', length) != NULL)
+        return false;
       out->id[length] = '\0';
       out->id_seen = true;
     } else if (tag == 2u) {

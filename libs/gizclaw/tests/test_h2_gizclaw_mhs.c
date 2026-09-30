@@ -224,6 +224,32 @@ int main(void) {
   assert(invoke(false, bytes, len, NULL, NULL) == H2_PAL_ERR_INVALID_ARG);
   assert(invoke(false, bytes, len - 1u, NULL, NULL) == H2_PAL_ERR_INVALID_ARG);
 
+  /* An ID with an embedded NUL does not address the instance its prefix
+   * names: the write is refused and the hardware is not touched. */
+  {
+    static const char with_nul[] = "display.main\0other";
+    uint8_t forged[256];
+    pb_ostream_t out = pb_ostream_from_buffer(forged, sizeof(forged));
+    assert(pb_encode_tag(&out, PB_WT_STRING, 1u));
+    assert(pb_encode_string(&out, (const pb_byte_t *)with_nul,
+                            sizeof(with_nul) - 1u));
+    assert(pb_encode_tag(&out, PB_WT_VARINT, 2u));
+    assert(pb_encode_varint(&out,
+                            gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY));
+    gizclaw_rpc_v1_DisplayHwdWriteRequest forged_patch = {
+        .has_brightness_percent = true, .brightness_percent = 10u};
+    uint8_t inner[64];
+    pb_ostream_t payload = pb_ostream_from_buffer(inner, sizeof(inner));
+    assert(pb_encode(&payload, gizclaw_rpc_v1_DisplayHwdWriteRequest_fields,
+                     &forged_patch));
+    assert(pb_encode_tag(&out, PB_WT_STRING, 3u));
+    assert(pb_encode_string(&out, inner, payload.bytes_written));
+    const unsigned writes = fixture.writes;
+    assert(invoke(true, forged, out.bytes_written, NULL, NULL) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(fixture.writes == writes);
+  }
+
   fixture.failure = H2_PAL_ERR_UNAVAILABLE;
   len = request_bytes(bytes, false, "display.main",
                       gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_DISPLAY, NULL);

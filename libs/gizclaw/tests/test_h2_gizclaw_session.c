@@ -1579,6 +1579,18 @@ int main(void) {
   assert(h2_gizclaw_session_catalog_copy(session, &storage, &catalog) ==
          H2_PAL_OK);
   assert(strcmp(catalog.items[0].name, "alpha") == 0);
+  /* Storage that runs out anywhere, including in a later Workflow's tags,
+   * yields NO_SPACE and publishes nothing: no page with a NULL tag entry. */
+  const size_t needed = storage.used;
+  for (size_t capacity = 0u; capacity < needed; ++capacity) {
+    h2_gizclaw_resp_storage_t short_storage = {bytes, capacity, 0u};
+    h2_gizclaw_workflow_page_t failed = {.count = 99u};
+    assert(h2_gizclaw_session_catalog_copy(session, &short_storage, &failed) ==
+           H2_PAL_ERR_NO_SPACE);
+    /* The page is cleared on entry and stays empty on failure. */
+    assert(failed.count == 0u && failed.items == NULL);
+    assert(short_storage.used == 0u);
+  }
   missing = true;
   assert(h2_gizclaw_session_select(session, &selection, 1000u) == H2_PAL_OK);
   assert(h2_atomic_load(&creates) == 1u && h2_atomic_load(&gets) == 2u &&

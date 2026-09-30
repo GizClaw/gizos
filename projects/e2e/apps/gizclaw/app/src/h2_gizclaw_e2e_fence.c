@@ -185,7 +185,8 @@ int h2_gizclaw_e2e_run_fence(h2_gizclaw_e2e_fixture_t *fixture) {
       break;
     rc = readback(service, &storage, fixture->workspace_name, revision,
                    levels[i]);
-    evidence("applied-readback", rc);
+    if (evidence("applied-readback", rc) != H2_PAL_OK)
+      break;
   }
   if (rc != H2_PAL_OK)
     goto done;
