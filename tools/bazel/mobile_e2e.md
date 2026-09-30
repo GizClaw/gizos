@@ -12,7 +12,7 @@ bazel test --config=android_arm64 --cache_test_results=no \
 bazel test --config=macos_arm64 //tools/bazel:mobile_e2e_runtime_test
 ```
 
-Keep the configured disk cache enabled. Set `H2_IOS_SIMULATOR_UDID` or `H2_ANDROID_SERIAL` to an explicitly reserved, booted simulator. Android also uses `ANDROID_HOME`; symbol probes require `ANDROID_NDK_HOME`. These tests are manual and local: simulator side effects are not remote actions. Use `--local_test_jobs=1` when running several live suites on one simulator, and reserve devices across independent Bazel invocations. The runner does not boot, reset or erase devices.
+Keep the configured disk cache enabled. Set `H2_IOS_SIMULATOR_UDID` or `H2_ANDROID_SERIAL` to an explicitly reserved, booted simulator. Android also uses `ANDROID_HOME`; symbol probes require `ANDROID_NDK_HOME`. These tests are manual and local: simulator side effects are not remote actions. A consumer can declare `external = True` on `mobile_e2e_test` to disable cached test results through Bazel's native `external` tag while preserving build caching; the compatibility default leaves existing consumers unchanged. Use `--local_test_jobs=1` when running several live suites on one simulator, and reserve devices across independent Bazel invocations. The runner does not boot, reset or erase devices.
 
 ## Adding a suite
 

@@ -80,6 +80,9 @@ py_test(
     }),
     legacy_create_init = 0,
     main = "run_browser.py",
-    tags = ["manual"],
+    tags = [
+        "external",
+        "manual",
+    ],
     target_compatible_with = _HOST,
 )

@@ -38,6 +38,7 @@ android_binary(
 mobile_e2e_test(
     name = "android_pal_net_tls_simulator_test",
     app = ":pal_net_tls_e2e.apk",
+    external = True,
     platform = "android",
     sdk = ":app_sdk",
     suite = "//projects/e2e/libs/pal-net-tls-mobile:mobile_e2e",

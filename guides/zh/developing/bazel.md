@@ -257,7 +257,7 @@ ESP CI 与 Release 的 `~/.espressif` 使用相同的 OS、ESP-IDF commit 与 ta
 
 Repository cache 或 remote action cache 的 miss、eviction 和生命周期删除只能降低构建速度，不能跳过 Bazel analysis、build、test、package 或 release validation。身份、URL 或部分变量配置错误必须失败，不能无提示地把预期 remote-cache job 当作成功。本地 disk/repository cache、GCS remote cache 和 ESP tool cache 都不能成为 source、release artifact、test result 或设备验收的 source of truth。
 
-Graph test 对目录、label、rule kind、artifact identity 和依赖边做校验，并拒绝 `test_suite`；它只扫描 Git 已跟踪或未跟踪但未忽略的一方 `BUILD.bazel`/`.bzl` 文件，不能递归进入 `bazel-*` convenience link、external repository 或 cache output。Build 命令直接请求完整 compatible graph，Release 从 artifact rule/provider 查询交付目标，不维护第二份聚合名单。普通 test target 不声明 tag；依赖外部服务、真实设备或人工环境准备的 E2E test 只声明 Bazel 特殊 tag `manual`，由 Bazel 的通配 target pattern 语义自动排除。专用 E2E 命令直接请求 exact label，不维护 tag filter。CI 的 `BAZEL_CONFIG` 决定唯一 execution class；Linux、macOS、Android 与 Windows 在一个 job 内依次请求 Build/Test，iOS 保留独立并行的 Build/Test task。
+Graph test 对目录、label、rule kind、artifact identity 和依赖边做校验，并拒绝 `test_suite`；它只扫描 Git 已跟踪或未跟踪但未忽略的一方 `BUILD.bazel`/`.bzl` 文件，不能递归进入 `bazel-*` convenience link、external repository 或 cache output。Build 命令直接请求完整 compatible graph，Release 从 artifact rule/provider 查询交付目标，不维护第二份聚合名单。普通 test target 不声明 tag；依赖外部服务、真实设备或人工环境准备的 E2E test 只声明 Bazel 特殊 tag `manual`，由 Bazel 的通配 target pattern 语义自动排除。专用 E2E 命令直接请求 exact label，不维护 tag filter。需要重新观察外部状态的 live test 在 BUILD 中声明 Bazel 原生 `external` tag，禁用测试结果缓存而保留构建缓存；不通过新的 Make/shell/Python 调度链补这个策略。CI 的 `BAZEL_CONFIG` 决定唯一 execution class；Linux、macOS、Android 与 Windows 在一个 job 内依次请求 Build/Test，iOS 保留独立并行的 Build/Test task。
 
 ## 下游 Bzlmod consumer
 

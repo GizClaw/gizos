@@ -33,17 +33,26 @@ bazel test --lockfile_mode=off \
   //projects/e2e/libs/pal-net-tls-fixture:fixture_evidence_test
 ```
 
-Manual integration targets have exact corresponding Make entries:
+Invoke the exact Bazel integration targets directly; platform configuration belongs to `.bazelrc`, and static suite parameters belong to `BUILD.bazel`. All five live test declarations use Bazel's native `external` tag to disable cached test results while keeping build caching enabled, even when the caller uses the default cache flag. The commands below also make fresh observation explicit. Reserve a booted simulator and replace the device placeholders; Android also needs the configured SDK/NDK paths exported in the caller environment.
 
 ```sh
-make bazel-test-desktop_pal_net_tls_test
-make bazel-test-desktop_pal_net_tls_endpoint_rejection_test
-make bazel-test-wasm_pal_net_tls_boundary_test
-H2_IOS_SIMULATOR_UDID=<booted-uuid> make bazel-test-ios_pal_net_tls_simulator_test
-H2_ANDROID_SERIAL=<emulator-serial> make bazel-test-android_pal_net_tls_simulator_test
+bazel test --config=macos_arm64 --nocache_test_results \
+  //projects/e2e/targets/cc_binary/pal-net-tls:desktop_pal_net_tls_test \
+  //projects/e2e/targets/cc_binary/pal-net-tls:desktop_pal_net_tls_endpoint_rejection_test
+bazel test --config=macos_arm64 --nocache_test_results \
+  //projects/e2e/targets/pkg_tar/pal-net-tls:wasm_pal_net_tls_boundary_test
+bazel test --config=ios_sim_arm64 --nocache_test_results \
+  '--test_env=H2_IOS_SIMULATOR_UDID=<booted-uuid>' \
+  //projects/e2e/targets/ios_application/pal-net-tls:ios_pal_net_tls_simulator_test
+bazel test --config=android_arm64 --nocache_test_results \
+  '--test_env=H2_ANDROID_SERIAL=<emulator-serial>' \
+  --test_env=ANDROID_HOME --test_env=ANDROID_NDK_HOME \
+  //projects/e2e/targets/android_binary/pal-net-tls:android_pal_net_tls_simulator_test
 ```
 
-To expose a fixture to device Wi-Fi, explicitly choose the local bind/advertised LAN address with `//projects/e2e/libs/pal-net-tls-fixture:serve -- --bind 0.0.0.0 --advertise <LAN-IPv4> --output <temporary-dir>`. Generated `config.json` contains public build inputs named `H2_PAL_NET_TLS_HOST`, `PORT`, `SESSION`, `CA_HEX`, `WRONG_CA_HEX`, `DNS_HOST`, `DNS_IPV4`, and `EPOCH_MS`. Device targets are `//projects/e2e/targets/h2loader_tar_zlib/pal-net-tls/{devkit,bk7258_v3_202405}:package`. Fresh independent peer arm ports prevent a stale rejection receipt from satisfying a later run.
+Bazel builds/packages the consumer and calls the shared mobile Python engine directly. Python owns real fixture setup, App installation/launch, peer assertions and cleanup; it does not invoke Bazel. No per-target Make/shell/Python scheduling wrapper is required.
+
+To expose a fixture to device Wi-Fi, explicitly choose the local bind/advertised LAN address with `bazel run --config=macos_arm64 //projects/e2e/libs/pal-net-tls-fixture:serve -- --bind 0.0.0.0 --advertise <LAN-IPv4> --output <temporary-dir>`. Generated `config.json` contains public build inputs named `H2_PAL_NET_TLS_HOST`, `PORT`, `SESSION`, `CA_HEX`, `WRONG_CA_HEX`, `DNS_HOST`, `DNS_IPV4`, and `EPOCH_MS`. Device targets are `//projects/e2e/targets/h2loader_tar_zlib/pal-net-tls/{devkit,bk7258_v3_202405}:package`. Fresh independent peer arm ports prevent a stale rejection receipt from satisfying a later run.
 
 This work's integration order is Wi-Fi qualification first, then Net/TLS. The runner author must verify the Wi-Fi final source/artifact receipts, cleanup/configuration restoration, and hardware release before starting these integration commands. Builds and deterministic fixture/App self-checks may run while Wi-Fi qualification proceeds.
 

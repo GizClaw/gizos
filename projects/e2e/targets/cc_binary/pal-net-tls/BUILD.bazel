@@ -36,7 +36,10 @@ py_test(
     data = [":pal_net_tls"],
     legacy_create_init = 0,
     main = "run_desktop.py",
-    tags = ["manual"],
+    tags = [
+        "external",
+        "manual",
+    ],
     target_compatible_with = _HOST,
     deps = ["//projects/e2e/libs/pal-net-tls-fixture:fixture"],
 )
@@ -52,7 +55,10 @@ py_test(
     data = [":pal_net_tls"],
     legacy_create_init = 0,
     main = "run_desktop.py",
-    tags = ["manual"],
+    tags = [
+        "external",
+        "manual",
+    ],
     target_compatible_with = _HOST,
     deps = ["//projects/e2e/libs/pal-net-tls-fixture:fixture"],
 )
