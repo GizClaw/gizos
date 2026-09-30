@@ -192,3 +192,5 @@ Workspace 覆盖包含 28 个函数。`h2_gizclaw_rpc_run_stop` 在独立 req/re
 移动端直接由共享 `mobile_e2e.py` 安装/运行/清理，静态合同在 `gizclaw-mobile/BUILD.bazel`。唯一 `suite.py` hook 负责私有服务输入、AppConfig preflight、真实227接口审计与逐case oracle，不再重复模拟器生命周期，也不调用Bazel。全量真实网络资格必须同时通过8个顶层case、227接口审计、profile/value身份、零retained/cleanup/teardown；缺AppConfig输入、CORS故障、资源残留均不能skip。旧Make和shell转发入口已删除，使用直接 `bazel test --nocache_test_results`，磁盘构建缓存保持启用。
 
 实板没有宿主进程环境，因此还必须在同一macro声明中显式传入 `app_config_fixture_endpoint` 与 `app_config_fixture_token`（只使用受控E2E token，不提供源码默认值）。其生成C配置只作为本次私有构建输入；JSON/audit合同不保存token，运行日志也不打印token。宿主端继续只通过运行环境注入凭据。
+
+ESP32-S3还要求显式 `app_config_fixture_time_server=<DNS-or-IPv4>`，由本次网络fixture提供真实NTP时间，不使用源码固定外网pool。SNTP失败保持pending、不启动业务套件；TLS校验仍使用同步后的真实UTC且不关闭验证。H2Loader CLI upgrade的短验证窗口可能先于长业务套件的最后confirmation结束，必须另接当前boot的日志并最终核对package/P1/Stage/coredump，不能提前确认来绕过该窗口。

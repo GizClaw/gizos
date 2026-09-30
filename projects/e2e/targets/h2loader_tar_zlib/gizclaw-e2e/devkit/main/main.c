@@ -31,7 +31,6 @@
 #define H2_GIZCLAW_E2E_DEVKIT_WIFI_STACK_SIZE 8192u
 #define H2_GIZCLAW_E2E_DEVKIT_EVENT_WAIT_MS 1000u
 #define H2_GIZCLAW_E2E_DEVKIT_TIME_RETRY_LOG_INTERVAL 10u
-#define H2_GIZCLAW_E2E_DEVKIT_TIME_SERVER "pool.ntp.org"
 
 #if defined(H2_GIZCLAW_E2E_VOICE_ONLY)
 #define H2_GIZCLAW_E2E_DEVKIT_SUITES H2_GIZCLAW_E2E_SUITE_VOICE
@@ -253,7 +252,7 @@ static void image_entry(void *user) {
   }
 
   if (!h2_gizclaw_e2e_fixture_endpoint()[0] || !h2_gizclaw_e2e_fixture_token()[0] ||
-      !h2_gizclaw_e2e_fixture_profile()[0] ||
+      !h2_gizclaw_e2e_fixture_profile()[0] || !h2_gizclaw_e2e_fixture_time_server()[0] ||
       ((H2_GIZCLAW_E2E_DEVKIT_SUITES & H2_GIZCLAW_E2E_SUITE_RPC) != 0u &&
        (!h2_gizclaw_e2e_fixture_key()[0] || !h2_gizclaw_e2e_fixture_value()[0])))
     fail_launcher("missing_service_fixture", H2_PAL_ERR_INVALID_ARG, true);
@@ -339,7 +338,7 @@ static void image_entry(void *user) {
     if (wifi_has_ip && !state.clock_ready) {
       if (!sntp_initialized) {
         const esp_sntp_config_t sntp_config =
-            ESP_NETIF_SNTP_DEFAULT_CONFIG(H2_GIZCLAW_E2E_DEVKIT_TIME_SERVER);
+            ESP_NETIF_SNTP_DEFAULT_CONFIG(h2_gizclaw_e2e_fixture_time_server());
         const esp_err_t time_init_rc = esp_netif_sntp_init(&sntp_config);
         if (time_init_rc != ESP_OK) {
           fail_launcher("time_init", (int)time_init_rc, true);
