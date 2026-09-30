@@ -16,6 +16,9 @@
 #include "h2_runtime_event.h"
 
 #include "esp_system.h"
+#include "esp_debug_helpers.h"
+#include "esp_rom_sys.h"
+#include "esp_timer.h"
 #include "esp_memory_utils.h"
 #include "esp_netif_sntp.h"
 #include "freertos/FreeRTOS.h"
@@ -442,7 +445,22 @@ static void image_entry(void *user) {
   }
 }
 
+static void log_shutdown(void) {
+  /* ROM output survives the command-transport teardown. Addresses identify
+   * the actual orderly reset caller without exposing request or audio data. */
+  esp_rom_printf("H2_GIZCLAW_SHUTDOWN uptime_us=%llu\n",
+                 (unsigned long long)esp_timer_get_time());
+  (void)esp_backtrace_print(8);
+}
+
 void app_main(void) {
+  printf("H2_GIZCLAW_BOOT platform=amoled reset_reason=%d\n",
+         (int)esp_reset_reason());
+  fflush(stdout);
+  if (esp_register_shutdown_handler(log_shutdown) != ESP_OK) {
+    printf("H2_GIZCLAW_SETUP_FAIL stage=shutdown_observer\n");
+    return;
+  }
     if (h2_esp_target_task_policy_install() != H2_PAL_OK) {
         return;
     }
