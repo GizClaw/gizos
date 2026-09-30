@@ -46,7 +46,9 @@ static h2_pal_result_t stage_write(void *user, const uint8_t *data,
   (void)user;
   (void)data;
   h2_atomic_fetch_add(&stage_bytes, length);
-  return H2_PAL_OK;
+  /* Explicit qualification refusal after observing actual streamed bytes.
+   * Never interpret a transport timeout as this controlled delegate result. */
+  return H2_PAL_ERR_FORMAT;
 }
 static h2_pal_result_t stage_finish(void *user) {
   (void)user;
@@ -72,6 +74,18 @@ typedef struct api_test {
   h2_pal_json_document_t *document;
   h2_pal_json_value_t *root;
 } api_test_t;
+
+typedef struct api_http_job {
+  api_test_t *test;
+  const h2_pal_http_request_t *request;
+  h2_pal_http_response_t *response;
+} api_http_job_t;
+
+static int api_http_job_run(void *user) {
+  api_http_job_t *job = user;
+  return h2_pal_http_request(job->test->fixture->http, job->request, job->response);
+}
+
 static int api_call(api_test_t *test, int method, const char *path,
                     const char *body, int expected) {
   (void)h2_pal_json_document_destroy(test->json, &test->document);
@@ -99,7 +113,10 @@ static int api_call(api_test_t *test, int method, const char *path,
                                    .response_buf_cap = sizeof(bytes),
                                    .allocator = test->fixture->allocator};
   h2_pal_http_response_t response = {0};
-  int rc = h2_pal_http_request(test->fixture->http, &request, &response);
+  api_http_job_t job = {.test = test, .request = &request, .response = &response};
+  int rc = h2_gizclaw_e2e_fixture_call_sync(
+      test->fixture, test->fixture->actors[H2_GIZCLAW_E2E_OWNER].service,
+      api_http_job_run, &job);
   h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=device-api path=%s http=%d expected=%d rc=%d\n",
          path, response.status_code, expected, rc);
   if (rc == H2_PAL_OK && response.status_code != expected)
@@ -383,7 +400,7 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
     }
   }
   ASSERT(local_failed && h2_atomic_load(&stage_bytes) > 0 &&
-         ota_status.result != H2_PAL_OK);
+         ota_status.result == H2_PAL_ERR_FORMAT);
   h2_gizclaw_e2e_evidence("h2_gizclaw_ota_get_status", "ota_get_status-assert", rc);
   h2_gizclaw_e2e_evidence("h2_gizclaw_ota_start", "ota_start-assert", rc);
   int first_failure = rc;
@@ -449,7 +466,10 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
       break;
     }
   }
-  ASSERT(failed && h2_atomic_load(&stage_bytes) > 0);
+  char expected_error[32];
+  (void)snprintf(expected_error, sizeof(expected_error), "pal:%d", H2_PAL_ERR_FORMAT);
+  ASSERT(failed && h2_atomic_load(&stage_bytes) > 0 &&
+         text_is(&test, "ota.error_code", expected_error));
   if (first_failure == H2_PAL_OK)
     first_failure = rc;
   rc = first_failure;

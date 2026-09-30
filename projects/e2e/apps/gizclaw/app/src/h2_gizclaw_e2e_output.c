@@ -25,8 +25,12 @@ int h2_gizclaw_e2e_emit(const char *format, ...) {
       s_observer(s_user, NULL, 0u);
     return -1;
   }
-  if (s_observer != NULL)
+  if (s_observer != NULL) {
     s_observer(s_user, record, (size_t)size);
+    /* The physical caller owns bounded capture and replay. Avoid streaming
+     * the same records during transfers and delaying network task progress. */
+    return size;
+  }
   /* Native images borrow their SDK's stdio owner; portable archives must not
    * reference newlib's FILE/reentrancy layout through stdout or vprintf. */
   return printf("%.*s", size, record);

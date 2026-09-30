@@ -152,7 +152,7 @@ Session 的 15 个公开操作纳入同一 fail-closed 审计，归属独立 Voi
 
 `h2_gizclaw_player_rate_set` 纳入 227 项审计要求，属于 `device-api` 用例，该场景已经插桩。`player_rate_set-assert` 在本地播放器条目播放期间（或刚播完）把速率设为 800‰，要求 `get_status` 立即读回 800、非法速率 3000 被 `H2_PAL_ERR_INVALID_ARG` 拒绝且速率不变、条目仍处于 playing / buffering / ended 而非 error，再恢复 1000 并读回；之后的循环与远程播放按原速测节奏。慢放的时长、位置映射与音调由 library 专项测试覆盖，该 E2E 只证明设备侧调用在真实 Service 上生效。
 
-`h2_gizclaw_ota_get_status` 纳入 227 项审计要求。`device-api` 在本地 OTA 的受控失败场景读取状态，必须同时观察本地 `failed`、非零错误及服务端失败记录，才输出 `ota_get_status-assert`；该场景不证明真实 package 安装成功。
+`h2_gizclaw_ota_get_status` 纳入227项审计。Device的受控delegate在观察到实际stream bytes后的首write明确返回FORMAT；本地status必须同时为failed/FORMAT，反向API也必须观察该错误和不同update ID，才承认对应控制接口。API HTTP在有界job内执行，App持续poll本端Service以处理反向RPC。该策略不写Flash、不证明finish/activate或真实package安装；独立Firmware case仍要求完整payload/size/SHA-256，不能以部分流或传输超时代替。
 
 
 AppConfig 的 list/get 六个 typed API 纳入 `rpc/app-config` 的审计要求，分别要求直接异步调用链或同步调用，以及 `app_config_list-assert` / `app_config_get-assert` 业务断言。当前尚无该场景的真实调用与断言证据，完整覆盖审计会报告缺失；新增库单测和合成日志审计测试不代表真实 Server/device E2E 已通过。
