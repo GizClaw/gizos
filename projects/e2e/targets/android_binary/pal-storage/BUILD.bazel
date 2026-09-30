@@ -44,7 +44,6 @@ mobile_e2e_test(
     name = "android_pal_storage_simulator_test",
     app = ":pal_storage_e2e.apk",
     platform = "android",
-    registry = "//projects/e2e/apps/pal-storage/app:include/h2_pal_storage_cases.inc",
     sdk = ":app_sdk",
-    suite = "//projects/e2e/libs/pal-storage-mobile:run_mobile.py",
+    suite = "//projects/e2e/libs/pal-storage-mobile:mobile_e2e",
 )

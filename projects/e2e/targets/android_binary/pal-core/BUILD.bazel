@@ -39,9 +39,8 @@ mobile_e2e_test(
     name = "android_pal_core_simulator_test",
     app = ":pal_core_e2e.apk",
     platform = "android",
-    registry = "//projects/e2e/apps/pal-core/app:include/h2_pal_core_cases.inc",
     sdk = ":app_sdk",
-    suite = "//projects/e2e/libs/pal-core-mobile:run_mobile.py",
+    suite = "//projects/e2e/libs/pal-core-mobile:mobile_e2e",
 )
 
 mobile_app_sdk(

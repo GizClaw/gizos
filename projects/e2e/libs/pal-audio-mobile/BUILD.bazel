@@ -1,5 +1,6 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:mobile_e2e.bzl", "mobile_e2e_suite")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -9,8 +10,34 @@ cc_library(
     name = "runner",
     srcs = ["mobile_runner.c"],
     hdrs = ["mobile_runner.h"],
-    includes = ["."],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
+    includes = ["."],
     deps = ["//projects/e2e/apps/pal-audio/app:pal_audio_e2e"],
+)
+
+mobile_e2e_suite(
+    name = "mobile_e2e",
+    android_permissions = ["android.permission.RECORD_AUDIO"],
+    case_count = 24,
+    case_result = "detail",
+    expected = {
+        "image_version": "2.0.0",
+        "failed": 0,
+        "blocked": 0,
+        "run_rc": 0,
+        "teardown_rc": 0,
+        "allocator_probe_passed": 1,
+        "allocator_failure_rejected": 1,
+    },
+    hook = "run_mobile.py",
+    ios_permissions = ["microphone"],
+    options = {
+        "min_frames": 2,
+        "stability_ms": 30000,
+    },
+    package = "com.haivivi.gizos.e2e.palaudio",
+    registry = "//projects/e2e/apps/pal-audio/app:include/h2_pal_audio_cases.inc",
+    registry_pattern = "H2_PAL_AUDIO_CASE\\(\\w+, \"([^\"]+)\"\\)",
+    report = "pal-audio-result.json",
 )

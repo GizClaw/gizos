@@ -51,6 +51,7 @@ py_test(
         "//projects/e2e/libs/pal-display-device:include/device_runner.h",
         "//projects/e2e/libs/pal-display-device:src/device_runner.c",
         "//projects/e2e/libs/pal-display-mobile:BUILD.bazel",
+        "//projects/e2e/libs/pal-display-mobile:mobile_e2e",
         "//projects/e2e/libs/pal-display-mobile:run_mobile.py",
         "//projects/e2e/targets/android_binary/pal-display:AndroidManifest.xml",
         "//projects/e2e/targets/android_binary/pal-display:BUILD.bazel",

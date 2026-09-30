@@ -16,40 +16,39 @@ Keep the configured disk cache enabled. Set `H2_IOS_SIMULATOR_UDID` or `H2_ANDRO
 
 ## Adding a suite
 
-Declare the suite Python module as `suite` and its `app`, `sdk` and `registry` once. The macro wires their command arguments and runfiles, selects platform compatibility, and inherits the platform's device/tool environment. Imported Python libraries remain explicit `deps`; extra fixture inputs use `data` and `args`. Suite-only environment, such as WebRTC's LAN address, uses `env_inherit`.
+Declare one `mobile_e2e_suite` in the suite owner's `BUILD.bazel`. Package/report names, timeout, registry pattern/count, expected report fields, case result field (`rc` or `detail`), resource balance, permissions and SDK/consumer symbol requirements are data. The rule emits a JSON declaration and carries its registry, optional hook, fixture files and Python dependencies in runfiles. Both platform consumers reuse that declaration; a Python suite file is optional.
 
 ```starlark
-load("//tools/bazel:mobile_e2e.bzl", "mobile_e2e_test")
+load("//tools/bazel:mobile_e2e.bzl", "mobile_e2e_suite", "mobile_e2e_test")
+
+mobile_e2e_suite(
+    name = "mobile_e2e",
+    package = "com.example.e2e",
+    report = "example-result.json",
+    registry = ":cases.inc",
+    registry_pattern = 'EXAMPLE_CASE\\("([^"]+)"',
+    expected = {"failed": 0, "rc": 0},
+)
 
 mobile_e2e_test(
     name = "ios_example_simulator_test",
     platform = "ios",
-    suite = "//projects/e2e/libs/example-mobile:run_mobile.py",
+    suite = ":mobile_e2e",
     app = ":example.ipa",
     sdk = ":app_sdk",
-    registry = ":registry",
 )
 ```
 
-The common entrypoint parses platform/artifact/registry/output/timeout arguments, opens the device transaction, calls the suite, and publishes qualification after successful verification. Suite modules declare `PACKAGE` and `REPORT` and implement `run_suite(app, args)`, returning their verified report. They own fixtures, phase plans, permissions, report parsing and PASS assertions; they have no executable `main`. Optional `TIMEOUT`, `PREFIX` and `OUTPUT_DEFAULT` preserve suite defaults, and `add_arguments(parser)` declares extra fixture arguments. `args.report_platform` supplies the canonical simulator/emulator report identity.
+The common Python entrypoint reads the declaration, installs the consumer, checks SDK identity, grants declared permissions and runs the App. Its fixed report contract requires a nonempty unique registry, its declared count when fixed, an exactly ordered case ledger, every case `PASS` with zero `rc`/`detail`, exact expected fields, platform identity and `passed` count. `resource_balance` additionally checks the `before` and `after` resource snapshots. These checks always run, including after custom hooks; no hook can replace or bypass them. Starlark only declares/builds inputs; it does not execute assertions or contain an assertion language.
 
-```python
-PACKAGE = "com.example.e2e"
-REPORT = "example-result.json"
+Use `hook` only for imperative differences. `run_suite(app, args)` may own a multi-process plan or controlled service and return a report; `parse_report(raw)` handles special report syntax; `verify_report(report, args)` adds business assertions after standard validation. `args.contract` contains the declaration and hook-specific `options`; `args.registry` and `args.fixtures` resolve declared inputs. Fixture Python imports belong in `deps`, and fixture executables in `fixtures = {"server": "//owner:server"}`. Extra environment variables are explicit on the consumer test.
 
-def run_suite(app, args):
-    with app.fixture("fixture.json", settings_json):
-        report = app.launch()  # parse=custom_parser for non-JSON reports
-    verify(report, args.registry, args.report_platform)
-    return report
-```
+Core, Crypto, JSON and Audio Decoder use no Python hook. Core declares resource balance; JSON and Audio Decoder declare platform SDK/consumer probes. Storage retains its two-process persistence protocol; HTTP and WebRTC retain live service/peer evidence; Audio retains frame, stability and allocator assertions; Display retains only its native line-report parser. All their static parameters live in their owning BUILD declarations, not in a central suite table.
 
 `launch` removes the old result, starts a new process, waits under one deadline, collects raw reports/logs, then terminates in `finally`. It is deliberately repeatable: Storage installs once, clears its own sandbox once, and launches phases 1 and 2 with one nonce. Storage itself checks distinct PIDs, every phase/nonce/case, persisted values and final sandbox cleanup. Reports from successive launches use numbered filenames instead of overwriting phase 1. Incomplete parsers raise `ValueError`; suite assertions must not be used to signal an incomplete report.
 
-`MobileApp` also closes after partial installation or initialization failure. Log/fixture cleanup errors do not skip App termination or replace the original failure. `failure.json` records failures and secondary cleanup errors; `environment.json` records package hashes, device/runtime identity, timestamps, launch count and runner status. A failure removes `qualified.json`; raw reports remain diagnostic data. Each subprocess is bounded, and command time during launch/polling is capped by the phase deadline. Fixture context managers remain responsible for terminating their controlled services.
+`MobileApp` also closes after partial installation or initialization failure. Log/fixture cleanup errors do not skip App termination or replace the original failure. `failure.json` records failures and secondary cleanup errors; `environment.json` records package hashes, device/runtime identity, timestamps, launch count and runner status. A failure removes `qualified.json`; raw reports remain diagnostic data. The environment also records the exact generated suite declaration SHA-256. Each subprocess is bounded, and command time during launch/polling is capped by the phase deadline. Fixture context managers remain responsible for terminating their controlled services.
 
 Android checks the actual arm64 `.so` bytes in APK against AAR before install. `verify_android_sdk` additionally checks required headers and exported symbols. `verify_ios_symbols` checks the suite's provider symbols in both the static XCFramework and linked IPA plus the portable App symbol, recording binary hashes. A static iOS link is not a byte-for-byte archive comparison.
-
-Core/Crypto preserve their registry oracles; HTTP retains real HTTP/HTTPS arrivals and rejection of a separate untrusted certificate; WebRTC retains its isolated Pion UDP peer and native fingerprint-authentication evidence; Audio explicitly grants microphone permission; JSON and Audio Decoder keep packaged provider probes; Display keeps its line-oriented parser, provider probes and PNG capture. These are suite code, not entries in a global configuration table.
 
 Other suites can adopt the same interface with their own fixtures and qualification assertions. Historical hardware evidence is not revalidated by a runner refactor. New consumer results must record the new revision, platform and package identities separately from old qualification records.

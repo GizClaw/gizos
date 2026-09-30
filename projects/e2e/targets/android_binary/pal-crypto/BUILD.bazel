@@ -39,9 +39,8 @@ mobile_e2e_test(
     name = "android_pal_crypto_simulator_test",
     app = ":pal_crypto_e2e.apk",
     platform = "android",
-    registry = "//projects/e2e/apps/pal-crypto/app:include/h2_pal_crypto_cases.inc",
     sdk = ":app_sdk",
-    suite = "//projects/e2e/libs/pal-crypto-mobile:run_mobile.py",
+    suite = "//projects/e2e/libs/pal-crypto-mobile:mobile_e2e",
 )
 
 mobile_app_sdk(

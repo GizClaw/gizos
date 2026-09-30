@@ -57,3 +57,5 @@ The six-platform physical/UI qualification snapshot is retained at `b6d6daa6`. S
 ## Shared mobile runner evidence
 
 `mobile_runner_refactor.json` records the separate iOS/Android Display runs made with the shared Python runner at `99867cb3`. It retains their original timestamps, device identities and App/SDK hashes, and binds the executed Python source, consumer BUILD and macro hashes. Its current host/audit source receipts and explicit removed-shell receipts replace only those host files in the source check. Every native provider, portable App, registry and board source receipt is still checked unchanged. The original `qualification.json` and all hardware receipts remain byte-for-byte intact, bound by the follow-up's historical-manifest hash; these simulator runs do not claim a new physical board execution or human observation.
+
+Display 的包名、报告、registry、期望字段、SDK 符号和 PNG 捕获在 `pal-display-mobile/BUILD.bazel` 的 `mobile_e2e_suite` 中声明；Python hook 仅解析原生行式报告。独立移动端证据同时绑定该 BUILD、公共宏和实际执行声明的 SHA-256，旧硬件资格记录保持不变。

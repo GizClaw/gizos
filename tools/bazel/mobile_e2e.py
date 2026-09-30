@@ -1,7 +1,7 @@
 """Shared host-side lifecycle for packaged iOS and Android E2E Apps.
 
-Suite runners own their fixtures, phase plans, and report oracles. This module
-owns only the device transaction and artifact identity that every suite needs.
+Bazel declares suite identity, report contracts and SDK probes. Optional Python
+hooks own only special fixtures, phase plans, parsers and business assertions.
 """
 
 import argparse
@@ -374,31 +374,70 @@ class MobileApp:
         return details
 
 
+def registry_ids(contract, registry):
+    matches = list(re.finditer(contract["registry_pattern"], registry.read_text()))
+    ids = [match.group(1) for match in matches]
+    assert ids and len(ids) == len(set(ids)), "invalid contract registry"
+    assert not contract["case_count"] or len(ids) == contract["case_count"], "unexpected contract registry"
+    return ids
+
+
+def verify_report(report, contract, ids, platform):
+    """A small fixed report contract: exact fields, ordered PASS ledger, balance."""
+    expected = dict(contract["expected"], platform=platform, passed=len(ids))
+    for key, value in expected.items():
+        assert report.get(key) == value, f"{key}: expected {value}, got {report.get(key)}"
+    assert [case["id"] for case in report["cases"]] == ids, "case ledger differs from registry"
+    assert all(case["status"] == "PASS" and case[contract["case_result"]] == 0 for case in report["cases"])
+    if contract["resource_balance"]:
+        assert report["before"] == report["after"], "resource leak"
+
+
 def main(argv=None):
-    """One entrypoint; the declared suite module owns execution and assertions."""
-    selector = argparse.ArgumentParser(add_help=False)
-    selector.add_argument("--suite", type=Path, required=True)
-    selected, _ = selector.parse_known_args(argv)
-    spec = importlib.util.spec_from_file_location("mobile_suite", selected.suite)
-    suite = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(suite)
-    prefix = getattr(suite, "PREFIX", Path(suite.REPORT).stem.removesuffix("-result"))
-    parser = argparse.ArgumentParser(description=suite.__doc__, parents=[selector])
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--suite", type=Path, required=True)
     parser.add_argument("platform", choices=["ios", "android"])
-    for name in ("app", "sdk", "registry"):
-        parser.add_argument(name, type=Path)
-    parser.add_argument("--output", type=Path, default=os.environ.get(
-        "TEST_UNDECLARED_OUTPUTS_DIR", getattr(suite, "OUTPUT_DEFAULT", f"/tmp/{prefix}-mobile-result")))
-    parser.add_argument("--timeout", type=int, default=getattr(suite, "TIMEOUT", 90))
-    if hasattr(suite, "add_arguments"):
-        suite.add_arguments(parser)
+    parser.add_argument("app", type=Path)
+    parser.add_argument("sdk", type=Path)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument("--timeout", type=int)
     args = parser.parse_args(argv)
-    args.report_platform = "ios-simulator" if args.platform == "ios" else "android-emulator"
-    with MobileApp(args.platform, args.app, args.sdk, suite.PACKAGE, suite.REPORT,
-                   args.output, timeout=args.timeout, prefix=prefix) as app:
-        report = suite.run_suite(app, args)
+    contract = args.contract = json.loads(args.suite.read_text())
+    args.registry = Path(contract["registry"])
+    ids = registry_ids(contract, args.registry)
+    args.fixtures = {name: Path(value) for name, value in contract["fixtures"].items()}
+    hook = None
+    if contract["hook"]:
+        spec = importlib.util.spec_from_file_location("mobile_hook", contract["hook"])
+        hook = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = hook
+        spec.loader.exec_module(hook)
+    prefix = contract["prefix"] or Path(contract["report"]).stem.removesuffix("-result")
+    args.output = args.output or Path(os.environ.get("TEST_UNDECLARED_OUTPUTS_DIR") or
+                                     contract["output_default"] or f"/tmp/{prefix}-mobile-result")
+    args.report_platform = args.platform if contract["plain_platform"] else (
+        "ios-simulator" if args.platform == "ios" else "android-emulator")
+    with MobileApp(args.platform, args.app, args.sdk, contract["package"], contract["report"],
+                   args.output, timeout=args.timeout if args.timeout is not None else contract["timeout"], prefix=prefix) as app:
+        app.environment()["suite_sha256"] = hashlib.sha256(args.suite.read_bytes()).hexdigest()
+        if contract[args.platform + "_sdk"]:
+            probe = app.verify_ios_symbols if args.platform == "ios" else app.verify_android_sdk
+            probe(**contract[args.platform + "_sdk"])
+        for permission in contract["permissions"][args.platform]:
+            if args.platform == "ios":
+                app.simctl("privacy", app.device, "grant", permission, app.package)
+            else:
+                app.adb_command("shell", "pm", "grant", app.package, permission)
+        if hasattr(hook, "run_suite"):
+            report = hook.run_suite(app, args)
+        else:
+            report = app.launch(parse=getattr(hook, "parse_report", json.loads),
+                                capture_png=contract["capture_png"], android_log=contract["android_log"])
+        verify_report(report, contract, ids, args.report_platform)
+        if hasattr(hook, "verify_report"):
+            hook.verify_report(report, args)
         save_evidence(args.output, report, app.environment(), args.app, args.sdk)
-    print(f"{prefix} {args.platform}: {report['passed']}/{len(report['cases'])} PASS")
+    print(f"{prefix} {args.platform}: {report['passed']}/{len(ids)} PASS")
 
 
 if __name__ == "__main__":

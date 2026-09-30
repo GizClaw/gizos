@@ -39,14 +39,10 @@ ios_application(
 mobile_e2e_test(
     name = "ios_pal_webrtc_simulator_test",
     app = ":pal_webrtc_e2e.ipa",
-    args = ["$(rootpath //projects/e2e/libs/pal-webrtc-fixture:server)"],
-    data = ["//projects/e2e/libs/pal-webrtc-fixture:server"],
     env_inherit = ["H2_WEBRTC_FIXTURE_IP"],
     platform = "ios",
-    registry = "//projects/e2e/apps/pal-webrtc/app:include/h2_pal_webrtc_cases.inc",
     sdk = ":app_sdk",
-    suite = "//projects/e2e/libs/pal-webrtc-mobile:run_mobile.py",
-    deps = ["//projects/e2e/libs/pal-webrtc-fixture:fixture"],
+    suite = "//projects/e2e/libs/pal-webrtc-mobile:mobile_e2e",
 )
 
 mobile_app_sdk(

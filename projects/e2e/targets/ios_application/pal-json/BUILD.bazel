@@ -40,9 +40,8 @@ mobile_e2e_test(
     name = "ios_pal_json_simulator_test",
     app = ":pal_json_e2e.ipa",
     platform = "ios",
-    registry = "//projects/e2e/apps/pal-json/app:include/h2_pal_json_cases.inc",
     sdk = ":app_sdk",
-    suite = "//projects/e2e/libs/pal-json-mobile:run_mobile.py",
+    suite = "//projects/e2e/libs/pal-json-mobile:mobile_e2e",
 )
 
 mobile_app_sdk(

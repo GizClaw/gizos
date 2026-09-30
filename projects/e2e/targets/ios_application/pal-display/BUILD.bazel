@@ -42,9 +42,8 @@ mobile_e2e_test(
     name = "ios_pal_display_simulator_test",
     app = ":pal_display_e2e.ipa",
     platform = "ios",
-    registry = "//projects/e2e/apps/pal-display/app:include/h2_pal_display_cases.inc",
     sdk = ":app_sdk",
-    suite = "//projects/e2e/libs/pal-display-mobile:run_mobile.py",
+    suite = "//projects/e2e/libs/pal-display-mobile:mobile_e2e",
 )
 
 mobile_app_sdk(

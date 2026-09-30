@@ -1,5 +1,6 @@
 """Failure and lifecycle contracts for the shared mobile E2E host runner."""
 
+import copy
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -11,7 +12,7 @@ from unittest.mock import patch
 import unittest
 import zipfile
 
-from tools.bazel.mobile_e2e import MobileApp, main, run_command, save_evidence, wait_report
+from tools.bazel.mobile_e2e import MobileApp, main, registry_ids, run_command, save_evidence, verify_report, wait_report
 
 
 def archive(path, entries):
@@ -277,36 +278,112 @@ class MobileRunnerTest(unittest.TestCase):
             with self.assertRaisesRegex(AssertionError, "not public"):
                 app.verify_android_sdk(required_header=header, public_symbols=("provider",))
 
-    def run_entrypoint(self, body):
-        suite = self.root / "suite.py"
-        suite.write_text("from pathlib import Path\nPACKAGE = 'com.test'\nREPORT = 'result.json'\nTIMEOUT = 19\n"
-                         "def add_arguments(parser): parser.add_argument('server', type=Path)\n"
-                         "def run_suite(app, args):\n"
-                         "    assert args.server == Path('fixture-server')\n"
-                         "    assert args.report_platform == 'ios-simulator' and app.timeout == 19\n"
-                         "    report = app.launch()\n" + body)
-        fake = FakeDevice(self.container, ['{"passed":1,"cases":[{"status":"PASS"}]}'])
+    def declaration(self):
+        registry = self.root / "registry.inc"
+        registry.write_text('CASE("ok")\n')
+        return dict(package="com.test", report="result.json", registry=str(registry),
+                    registry_pattern=r'CASE\("([^"]+)"\)', case_count=1, case_result="detail",
+                    expected={"failed": 0, "version": "2.0.0"}, resource_balance=False,
+                    timeout=19, ios_sdk={}, android_sdk={}, permissions={"ios": [], "android": []},
+                    capture_png=False, android_log=None, prefix=None, output_default=None,
+                    plain_platform=False, hook=None, fixtures={"server": "fixture-server"}, options={})
+
+    def report(self):
+        return dict(platform="ios-simulator", passed=1, failed=0, version="2.0.0",
+                    cases=[dict(id="ok", status="PASS", detail=0)])
+
+    def run_entrypoint(self, hook=None, report=None, **updates):
+        contract = self.declaration()
+        contract.update(updates)
+        if hook:
+            module = self.root / "hook.py"
+            module.write_text(hook)
+            contract["hook"] = str(module)
+        suite = self.root / "suite.json"
+        suite.write_text(json.dumps(contract))
+        fake = FakeDevice(self.container, [json.dumps(report or self.report())])
         def factory(*args, **kwargs):
             return MobileApp(*args, **kwargs, command=fake,
                              environ={"H2_IOS_SIMULATOR_UDID": "SIM-1"})
         with patch("tools.bazel.mobile_e2e.MobileApp", side_effect=factory):
             main(["--suite", str(suite), "ios", str(self.ipa), str(self.sdk),
-                  "registry.inc", "fixture-server", "--output", str(self.root / "out")])
+                  "--output", str(self.root / "out")])
         return fake
 
-    def test_shared_entrypoint_loads_suite_arguments_and_publishes(self):
-        self.run_entrypoint("    return report\n")
-        report = json.loads((self.root / "out/qualified.json").read_text())
-        self.assertEqual(report["passed"], 1)
-        environment = json.loads((self.root / "out/environment.json").read_text())
-        self.assertEqual(environment["runner_status"], "completed")
+    def test_declaration_runs_without_python_hook(self):
+        self.run_entrypoint()
+        self.assertEqual(json.loads((self.root / "out/qualified.json").read_text())["passed"], 1)
+        self.assertEqual(json.loads((self.root / "out/environment.json").read_text())["runner_status"], "completed")
 
-    def test_shared_entrypoint_rejects_suite_failure_and_keeps_raw_report(self):
+    def test_hook_gets_declared_fixtures_and_cannot_bypass_standard_failure(self):
+        hook = ("from pathlib import Path\ndef run_suite(app, args):\n"
+                "    assert args.fixtures['server'] == Path('fixture-server')\n"
+                "    assert args.report_platform == 'ios-simulator' and app.timeout == 19\n"
+                "    return app.launch()\n")
+        bad = self.report()
+        bad["cases"][0]["status"] = "FAIL"
+        with self.assertRaises(AssertionError):
+            self.run_entrypoint(hook, bad)
+        self.assertFalse((self.root / "out/qualified.json").exists())
+        self.assertTrue((self.root / "out/failure.json").exists())
+
+    def test_extra_hook_assertion_failure_keeps_raw_report(self):
         with self.assertRaisesRegex(AssertionError, "suite rejected"):
-            self.run_entrypoint("    raise AssertionError('suite rejected')\n")
+            self.run_entrypoint("def verify_report(report, args):\n    raise AssertionError('suite rejected')\n")
         self.assertFalse((self.root / "out/qualified.json").exists())
         self.assertTrue((self.root / "out/result.json").exists())
         self.assertIn("suite rejected", (self.root / "out/failure.json").read_text())
+
+    def test_declaration_rejects_missing_wrong_fields_and_resource_leaks(self):
+        contract = self.declaration()
+        contract["resource_balance"] = True
+        good = self.report()
+        good.update(before={"tasks": 0}, after={"tasks": 0})
+        for mutate in (lambda r: r.pop("version"), lambda r: r.update(version="old"),
+                       lambda r: r.update(passed=0), lambda r: r.update(platform="android-emulator"),
+                       lambda r: r.update(failed=1), lambda r: r.update(after={"tasks": 1})):
+            report = copy.deepcopy(good)
+            mutate(report)
+            with self.assertRaises(AssertionError):
+                verify_report(report, contract, ["ok"], "ios-simulator")
+
+    def test_declaration_requires_exact_order_and_zero_case_result(self):
+        contract = self.declaration()
+        good = self.report()
+        good["passed"] = 2
+        good["cases"].append(dict(id="second", status="PASS", detail=0))
+        for mutate in (lambda r: r["cases"].reverse(), lambda r: r["cases"].pop(),
+                       lambda r: r["cases"].append(r["cases"][0]),
+                       lambda r: r["cases"][0].update(detail=-1),
+                       lambda r: r["cases"][0].update(status="NOT_RUN"),
+                       lambda r: r["cases"][0].pop("detail")):
+            report = copy.deepcopy(good)
+            mutate(report)
+            with self.assertRaises((AssertionError, KeyError)):
+                verify_report(report, contract, ["ok", "second"], "ios-simulator")
+        contract["case_result"] = "rc"
+        for case in good["cases"]:
+            case["rc"] = case.pop("detail")
+        verify_report(good, contract, ["ok", "second"], "ios-simulator")
+        good["cases"][1]["rc"] = -1
+        with self.assertRaises(AssertionError):
+            verify_report(good, contract, ["ok", "second"], "ios-simulator")
+
+    def test_declaration_rejects_empty_duplicate_and_wrong_sized_registry(self):
+        contract = self.declaration()
+        registry = Path(contract["registry"])
+        for text in ('', 'CASE("ok")\nCASE("ok")', 'CASE("ok")\nCASE("second")'):
+            registry.write_text(text)
+            with self.assertRaises(AssertionError):
+                registry_ids(contract, registry)
+
+    def test_declaration_sdk_requirements_are_enforced_before_launch(self):
+        member = "H2PALCore.xcframework/ios-arm64-simulator/H2PALCore.framework/"
+        archive(self.sdk, {member + "H2PALCore": b"provider", member + "Headers/h2_ios_platform.h": b"header"})
+        with self.assertRaisesRegex(AssertionError, "provider symbols"):
+            self.run_entrypoint(ios_sdk=dict(executable="Test", provider_symbols=["_required"], portable_symbol="_portable"))
+        self.assertFalse((self.root / "out/qualified.json").exists())
+        self.assertEqual(json.loads((self.root / "out/environment.json").read_text())["launches"], 0)
 
     def test_missing_explicit_simulator_is_rejected(self):
         app = MobileApp("ios", self.ipa, self.sdk, "com.test", "result.json",

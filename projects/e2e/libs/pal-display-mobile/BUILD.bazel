@@ -1,7 +1,52 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:mobile_e2e.bzl", "mobile_e2e_suite")
+
 package(default_visibility = ["//projects/e2e:__subpackages__"])
+
 cc_library(
     name = "app",
     deps = ["//projects/e2e/apps/pal-display/app:pal_display_e2e"],
 )
+
 exports_files(["run_mobile.py"])
+
+mobile_e2e_suite(
+    name = "mobile_e2e",
+    android_log = "pal-display-result.log",
+    android_sdk = {
+        "required_header": "prefab/modules/h2_pal_core/include/h2_android_platform.h",
+        "public_symbols": [
+            "h2_android_platform_create",
+            "h2_android_platform_display_api",
+            "h2_android_platform_copy_frame",
+            "h2_android_platform_destroy",
+        ],
+    },
+    capture_png = True,
+    expected = {
+        "contract": 1,
+        "operations": 6,
+        "failed": 0,
+        "not_run": 0,
+        "observations": 23,
+        "complete": 1,
+        "qualified": 1,
+        "rc": 0,
+        "cleanup": 0,
+        "teardown": 0,
+    },
+    hook = "run_mobile.py",
+    ios_sdk = {
+        "executable": "GizOSPALDisplayE2E",
+        "provider_symbols": [
+            "_h2_ios_platform_create",
+            "_h2_ios_platform_display_api",
+            "_h2_ios_platform_destroy",
+        ],
+        "portable_symbol": "_h2_pal_display_e2e_run",
+    },
+    package = "com.haivivi.gizos.e2e.paldisplay",
+    registry = "//projects/e2e/apps/pal-display/app:include/h2_pal_display_cases.inc",
+    registry_pattern = "H2_PAL_DISPLAY_CASE\\(\"([^\"]+)\"",
+    report = "pal-display-result.log",
+)

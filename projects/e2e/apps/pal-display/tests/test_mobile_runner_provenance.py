@@ -41,6 +41,12 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
         with self.assertRaises(AssertionError):
             self.verify(changed)
 
+    def test_unexecuted_bazel_declaration_fails(self):
+        changed = copy.deepcopy(self.followup)
+        changed["mobile_runs"]["ios"]["environment"]["suite_sha256"] = "0" * 64
+        with self.assertRaises(AssertionError):
+            self.verify(changed)
+
     def test_unexecuted_python_or_unbound_historical_report_fails(self):
         for key in ("executed_runner_sha256", "removed_source_sha256"):
             changed = copy.deepcopy(self.followup)

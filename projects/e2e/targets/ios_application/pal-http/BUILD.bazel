@@ -40,10 +40,8 @@ mobile_e2e_test(
     name = "ios_pal_http_simulator_test",
     app = ":pal_http_e2e.ipa",
     platform = "ios",
-    registry = "//projects/e2e/apps/pal-http/app:include/h2_pal_http_cases.inc",
     sdk = ":app_sdk",
-    suite = "//projects/e2e/libs/pal-http-mobile:run_mobile.py",
-    deps = ["//projects/e2e/libs/pal-http-fixture:fixture"],
+    suite = "//projects/e2e/libs/pal-http-mobile:mobile_e2e",
 )
 
 mobile_app_sdk(

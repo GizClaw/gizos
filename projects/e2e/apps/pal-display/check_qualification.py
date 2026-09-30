@@ -91,6 +91,7 @@ RUNNER_SOURCES = {
     "projects/e2e/apps/pal-display/check_qualification.py",
     "projects/e2e/apps/pal-display/README.md",
     "projects/e2e/libs/pal-display-mobile/run_mobile.py",
+    "projects/e2e/libs/pal-display-mobile/BUILD.bazel",
     "projects/e2e/targets/android_binary/pal-display/BUILD.bazel",
     "projects/e2e/targets/ios_application/pal-display/BUILD.bazel",
     "tools/bazel/mobile_e2e.py",
@@ -122,6 +123,7 @@ def runner_refactor(historical):
     assert set(executed) == {
         "tools/bazel/mobile_e2e.py",
         "projects/e2e/libs/pal-display-mobile/run_mobile.py",
+        "projects/e2e/libs/pal-display-mobile/BUILD.bazel",
         "projects/e2e/targets/android_binary/pal-display/BUILD.bazel",
         "projects/e2e/targets/ios_application/pal-display/BUILD.bazel",
         "tools/bazel/mobile_e2e.bzl",
@@ -134,6 +136,8 @@ def runner_refactor(historical):
         assert result["platform"] == ("ios-simulator" if platform == "ios" else "android-emulator")
         mobile(platform, environment)
         assert environment["platform"] == platform and environment["runner_status"] == "completed"
+        declaration = Path("projects/e2e/libs/pal-display-mobile/mobile_e2e.json")
+        assert environment["suite_sha256"] == hashlib.sha256(declaration.read_bytes()).hexdigest()
 
 
 def main():
