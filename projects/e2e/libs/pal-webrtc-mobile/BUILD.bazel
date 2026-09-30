@@ -1,26 +1,59 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:mobile_e2e.bzl", "mobile_e2e_suite")
 
 package(default_visibility = ["//projects/e2e:__subpackages__"])
 
 cc_library(
     name = "runner",
-    target_compatible_with = select({
-        "@platforms//os:ios": [],
-        "@platforms//os:android": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
     srcs = ["mobile_runner.c"],
     hdrs = ["mobile_runner.h"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["."],
+    target_compatible_with = select({
+        "@platforms//os:ios": [],
+        "@platforms//os:android": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         "//libs/pal:unsupported",
         "//libs/runtime",
-        "//projects/e2e/libs/pal-webrtc-fixture:client",
         "//projects/e2e/apps/pal-webrtc/app:pal_webrtc_e2e",
+        "//projects/e2e/libs/pal-webrtc-fixture:client",
     ],
 )
 
 exports_files(["run_mobile.py"])
+
+mobile_e2e_suite(
+    name = "mobile_e2e",
+    case_result = "detail",
+    expected = {
+        "version": "2.0.0",
+        "contract": 1,
+        "operations": 13,
+        "failed": 0,
+        "blocked": 0,
+        "retained_allocations": 0,
+        "rc": 0,
+        "teardown": 0,
+    },
+    fixtures = {
+        "server": "//projects/e2e/libs/pal-webrtc-fixture:server",
+    },
+    hook = "run_mobile.py",
+    options = {
+        "ios_address": "127.0.0.1",
+        "address_env": "H2_WEBRTC_FIXTURE_IP",
+        "authentication_case": "fingerprint-rejected",
+        "authentication_error": -17,
+        "authentication_evidence": 1,
+    },
+    package = "com.haivivi.gizos.e2e.palwebrtc",
+    registry = "//projects/e2e/apps/pal-webrtc/app:include/h2_pal_webrtc_cases.inc",
+    registry_pattern = "H2_PAL_WEBRTC_CASE\\(\\w+, \"([^\"]+)\"\\)",
+    report = "pal-webrtc-result.json",
+    timeout_seconds = 180,
+    deps = ["//projects/e2e/libs/pal-webrtc-fixture:fixture"],
+)

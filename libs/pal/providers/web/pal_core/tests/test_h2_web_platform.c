@@ -224,6 +224,7 @@ static void h2_web_test_auto_pump_verify(void *user) {
 typedef struct h2_web_serial_test {
   h2_web_platform_t *platform;
   int result;
+  _Atomic int shutdown_checked;
 } h2_web_serial_test_t;
 
 /* Authorization IDs are invalidated by forget/re-authorize, not reused. */
@@ -607,11 +608,17 @@ static void h2_web_test_serial_shutdown(void *user) {
                          (const void *[]){&(int){4}});
   const h2_pal_result_t read_result = h2_pal_uart_io_stream_read(
       stream, &byte, sizeof(byte), &transferred, 10000u);
-  (void)h2_web_main_call(h2_web_test_set_serial_mode,
-                         (const void *[]){&(int){0}});
+  // shutdown wakes this reader before its main-thread force-close finishes.
+  // Keep the fake failure mode and session alive until the driver has checked
+  // that operation; cleanup must not race with the assertion under coverage.
+  const double shutdown_check_deadline = emscripten_get_now() + 3000.0;
+  while (!atomic_load(&test->shutdown_checked) &&
+         emscripten_get_now() < shutdown_check_deadline)
+    h2_web_worker_sleep(1u);
+  const int shutdown_checked = atomic_load(&test->shutdown_checked);
   const h2_pal_result_t close_result =
       h2_pal_serial_host_close(serial, &session);
-  if (read_result != H2_PAL_ERR_CLOSED || transferred != 0u ||
+  if (!shutdown_checked || read_result != H2_PAL_ERR_CLOSED || transferred != 0u ||
       close_result != H2_PAL_OK || session != NULL) {
     return;
   }
@@ -1607,27 +1614,38 @@ MAIN_THREAD_EM_ASM_INT({ return !!globalThis.h2FakePendingReadResolve; })
     return 45;
   (void)h2_web_main_call(h2_web_test_set_serial_mode,
                          (const void *[]){&(int){12}});
-  /* Separate codes keep a failure here diagnosable from the exit status. */
+  /* Separate codes keep a failure here diagnosable from the exit status. The
+   * worker waits for shutdown_checked before it cleans up, so set it once the
+   * checks are done, whatever their outcome. */
+  int shutdown_failure = 0;
   if (h2_web_platform_pump(platform, 8u, NULL) != H2_PAL_OK)
-    return 46;
-  if (h2_web_platform_serial_shutdown(platform) != H2_PAL_ERR_UNSUPPORTED)
-    return 146;
-  if (!((int)h2_web_main_call(h2_web_test_close_rejected_before_cancel_settled,
-                              NULL)
-            .i32))
-    return 246;
+    shutdown_failure = 46;
+  else if (h2_web_platform_serial_shutdown(platform) !=
+           H2_PAL_ERR_UNSUPPORTED)
+    shutdown_failure = 146;
+  else if (!((int)h2_web_main_call(
+                 h2_web_test_close_rejected_before_cancel_settled, NULL)
+                 .i32))
+    shutdown_failure = 246;
+  atomic_store(&shutdown_test.shutdown_checked, 1);
+  if (shutdown_failure != 0)
+    return shutdown_failure;
   joined = 0;
-  for (int iteration = 0; iteration < 8 && !joined; ++iteration) {
+  const double shutdown_join_deadline = emscripten_get_now() + 3000.0;
+  while (!joined && emscripten_get_now() < shutdown_join_deadline) {
     if (h2_web_platform_pump(platform, 8u, NULL) != H2_PAL_OK)
       return 47;
     joined =
         h2_pal_task_join(h2_web_platform_task_api(platform), task) == H2_PAL_OK;
+    if (!joined) h2_web_worker_sleep(1u);
   }
   if (!joined || shutdown_test.result != 0 ||
       h2_web_platform_serial_request_port(platform) !=
           H2_PAL_ERR_INVALID_STATE) {
     return 48;
   }
+  (void)h2_web_main_call(h2_web_test_set_serial_mode,
+                         (const void *[]){&(int){0}});
   h2_web_task_cancel_test_t task_cancel_test = {
       .platform = platform,
       .result = H2_PAL_ERR_INVALID_STATE,

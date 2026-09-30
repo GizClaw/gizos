@@ -1,20 +1,21 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:mobile_e2e.bzl", "mobile_e2e_suite")
 
 package(default_visibility = ["//projects/e2e:__subpackages__"])
 
 cc_library(
     name = "runner",
-    target_compatible_with = select({
-        "@platforms//os:ios": [],
-        "@platforms//os:android": [],
-        "//conditions:default": ["@platforms//:incompatible"],
-    }),
     srcs = ["mobile_runner.c"],
     hdrs = ["mobile_runner.h"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     includes = ["."],
+    target_compatible_with = select({
+        "@platforms//os:ios": [],
+        "@platforms//os:android": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
     deps = [
         "//libs/pal:unsupported",
         "//libs/runtime",
@@ -23,3 +24,32 @@ cc_library(
 )
 
 exports_files(["run_mobile.py"])
+
+mobile_e2e_suite(
+    name = "mobile_e2e",
+    case_count = 45,
+    case_result = "detail",
+    expected = {
+        "version": "2.0.0",
+        "contract": 1,
+        "operations": 2,
+        "failed": 0,
+        "blocked": 0,
+        "retained_allocations": 0,
+        "rc": 0,
+        "teardown": 0,
+    },
+    hook = "run_mobile.py",
+    options = {
+        "advertised": {
+            "ios": "127.0.0.1",
+            "android": "10.0.2.2",
+        },
+    },
+    package = "com.haivivi.gizos.e2e.palhttp",
+    registry = "//projects/e2e/apps/pal-http/app:include/h2_pal_http_cases.inc",
+    registry_pattern = "H2_PAL_HTTP_CASE\\(\\w+, \"([^\"]+)\"\\)",
+    report = "pal-http-result.json",
+    timeout_seconds = 180,
+    deps = ["//projects/e2e/libs/pal-http-fixture:fixture"],
+)
