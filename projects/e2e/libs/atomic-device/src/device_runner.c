@@ -19,14 +19,16 @@ int h2_atomic_device_run(h2_runtime_t *runtime, const char *version,
     int rc = h2_atomic_e2e_qualify(config, &results[placement]);
     if (rc)
       aggregate = rc;
-    h2_atomic_e2e_print("device", placement ? "psram-wrapper" : "internal",
-                        &results[placement]);
+    printf("H2_ATOMIC_PLACEMENT_RESULT placement=%s passed=%u failed=%u "
+           "workers=%u/%u rc=%d\n",
+           placement ? "psram-wrapper" : "internal", results[placement].passed,
+           results[placement].failed, results[placement].workers_joined,
+           results[placement].workers_started, rc);
     if (results[placement].teardown)
       break;
   }
   config->mem = internal;
   config->placement_user = NULL;
-  h2_atomic_device_replay();
   return aggregate;
 }
 void h2_atomic_device_replay(void) {

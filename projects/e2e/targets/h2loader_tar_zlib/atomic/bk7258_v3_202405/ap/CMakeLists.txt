@@ -42,6 +42,3 @@ target_compile_options(${COMPONENT_LIB} PRIVATE
     -Werror
     -Wno-unused-parameter
     -Wno-type-limits)
-
-file(STRINGS "$ENV{H2_FIRMWARE_VERSION_FILE}" H2_ATOMIC_IMAGE_VERSION LIMIT_COUNT 1)
-target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_ATOMIC_VERSION="${H2_ATOMIC_IMAGE_VERSION}")

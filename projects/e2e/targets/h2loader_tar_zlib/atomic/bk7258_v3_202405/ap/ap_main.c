@@ -52,7 +52,11 @@ static void run(void *unused) {
                                         .expected_core = {0, 1},
                                         .require_distinct_workers = true,
                                         .check_placement = placement};
-  rc = h2_atomic_device_run(runtime, H2_ATOMIC_VERSION, &c,
+  static h2_pal_firmware_info_t firmware;
+  rc = h2_pal_firmware_info_get_current(runtime->firmware_info, &firmware);
+  if (rc)
+    fail("firmware_info", rc);
+  rc = h2_atomic_device_run(runtime, firmware.version, &c,
                             h2_bk_platform_psram_allocator());
   int stats = h2_bk_platform_get_resource_stats(&after);
   int cleanup = stats ? stats
