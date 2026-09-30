@@ -1,21 +1,35 @@
-load("@rules_python//python:defs.bzl", "py_test")
-load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_OR_MOBILE_TOOL_COMPATIBILITY", "HOST_TOOL_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
+
+py_library(
+    name = "evidence_validator",
+    srcs = ["check_qualification.py"],
+    data = ["//libs/pal:pal_header_files"],
+    imports = ["."],
+    target_compatible_with = HOST_OR_MOBILE_TOOL_COMPATIBILITY,
+)
 
 py_test(
     name = "qualification_evidence_test",
     srcs = ["check_qualification.py"],
-    args = ["--allow-pending"],
     data = [
         "qualification.json",
         "//libs/pal:pal_header_files",
+        "//native_component_src/bk7258/ap/h2_pal_core:src/h2_bk_platform_net.c",
+        "//native_component_src/bk7258/ap/h2_pal_core:src/h2_bk_platform_wifi.c",
+        "//projects/e2e/apps/pal-net-tls/app:api_coverage.json",
         "//projects/e2e/apps/pal-net-tls/app:include/h2_pal_net_tls_cases.inc",
         "//projects/e2e/apps/pal-net-tls/app:src/h2_pal_net_tls_e2e.c",
         "//projects/e2e/libs/pal-net-tls-device:src/device.c",
         "//projects/e2e/libs/pal-net-tls-fixture:fixture.py",
-        "//native_component_src/bk7258/ap/h2_pal_core:src/h2_bk_platform_net.c",
-        "//native_component_src/bk7258/ap/h2_pal_core:src/h2_bk_platform_wifi.c",
+        "//projects/e2e/libs/pal-net-tls-mobile:run_mobile.py",
+        "//projects/e2e/libs/pal-net-tls-mobile:BUILD.bazel",
+        "//tools/bazel:mobile_e2e.py",
+        "//tools/bazel:mobile_e2e.bzl",
+        "//projects/e2e/targets/pkg_tar/pal-net-tls:main.c",
+        "//projects/e2e/targets/pkg_tar/pal-net-tls:run_browser.py",
     ] + glob(
         ["evidence/**/*"],
         allow_empty = True,
@@ -40,6 +54,7 @@ py_test(
         "evidence/macos/qualified.json",
         "evidence/wasm/boundary.json",
         "//libs/pal:pal_header_files",
+        "//projects/e2e/apps/pal-net-tls/app:api_coverage.json",
         "//projects/e2e/apps/pal-net-tls/app:include/h2_pal_net_tls_cases.inc",
     ],
     legacy_create_init = 0,

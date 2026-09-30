@@ -14,9 +14,9 @@ REGISTRY=re.findall(r'H2_NET_TLS_CASE\(\w+, "([^"]+)", ([01])\)',(APP/'app/inclu
 
 def receipt():
     rows=[dict(id=name,mandatory=bool(int(required)),status='PASS' if int(required) else 'UNSUPPORTED',
-        detail=0,provider_result=validation.TLS_VERIFY if name in ('tls-default-untrusted','tls-wrong-ca','tls-wrong-name','tls-expired') else 0,
+        detail=0 if int(required) else validation.UNSUPPORTED,provider_result=validation.TLS_VERIFY if name in ('tls-default-untrusted','tls-wrong-ca','tls-wrong-name','tls-expired') else 0,
         observed_ipv4=[150,5,151,236] if name=='dns-hostname' else [0,0,0,0],bytes_sent=4193 if name.startswith('tls-') else 0,bytes_received=4097 if name.startswith('tls-') else 0) for name,required in REGISTRY]
-    return dict(dns=dict(host='dns.test',operator_ipv4='150.5.151.236'),cases=rows,summary=dict(core_qualified=True,full_net_qualified=False,mandatory_passed=37,
+    return dict(dns=dict(host='dns.test',operator_ipv4='150.5.151.236'),cases=rows,summary=dict(core_qualified=True,full_net_qualified=False,mandatory_passed=37,passed=37,unsupported=2,not_assessed=0,
         failed=0,blocked=0,retained_sockets=0,retained_resolvers=0,retained_allocations=0,rc=0,teardown=0))
 
 
@@ -38,10 +38,29 @@ class Rejection(unittest.TestCase):
 
     def test_browser_unsupported_boundary_is_not_core_qualification(self):
         browser=json.loads((APP/'evidence/wasm/boundary.json').read_text())
+        slots=json.loads((APP/'app/api_coverage.json').read_text())['slots']
+        validation.check_browser(browser,slots)
         self.assertFalse(browser['core_qualified'])
         self.assertEqual(len(browser['capabilities']),21)
         with self.assertRaises((AssertionError, KeyError)):
             validation.check_cases(browser,REGISTRY)
+        for field,value in [('core_qualified',True),('worker',0),
+                            ('main_runtime_thread',1),('teardown',1),
+                            ('cross_origin_isolated',False),('unexpected_results',1)]:
+            bad=copy.deepcopy(browser);bad[field]=value
+            with self.assertRaises(AssertionError):validation.check_browser(bad,slots)
+        for mutate in [lambda rows:rows.pop(),lambda rows:rows.append(rows[0]),
+                       lambda rows:rows[0].update(slot='unknown'),
+                       lambda rows:rows[0].update(result=-1),
+                       lambda rows:rows[0].update(status='PASS'),
+                       lambda rows:next(row for row in rows if row['slot']=='close').update(owned_handle=True)]:
+            bad=copy.deepcopy(browser);mutate(bad['capabilities'])
+            with self.assertRaises(AssertionError):validation.check_browser(bad,slots)
+
+    def test_supported_optional_capability_cannot_remain_unassessed(self):
+        bad=receipt()
+        next(row for row in bad['cases'] if row['id']=='icmp-echo')['status']='NOT_ASSESSED'
+        with self.assertRaises(AssertionError):validation.check_cases(bad,REGISTRY)
 
     def test_peer_missing_certificate_or_payload_cannot_pass(self):
         receipt=json.loads((APP/'evidence/macos/qualified.json').read_text())

@@ -10,6 +10,7 @@ APP = Path(__file__).resolve().parent
 PLATFORMS = {'macos', 'wasm', 'ios', 'android', 'devkit', 'bk7258'}
 TLS_VERIFY = -int(re.search(r'H2_PAL_ERR_TLS_VERIFY\s*=\s*-(\d+)',
     (ROOT / 'libs/pal/include/h2/pal/core/h2_pal_errors.h').read_text()).group(1))
+UNSUPPORTED = -3
 
 
 def check_cases(receipt, registry):
@@ -20,13 +21,18 @@ def check_cases(receipt, registry):
     assert summary.get('core_qualified') is True
     assert summary.get('full_net_qualified') is False
     assert summary['mandatory_passed'] == sum(int(required) for _, required in registry)
+    assert summary.get('not_assessed', 0) == 0, 'supported capability was not assessed'
+    assert summary['passed'] == sum(row['status'] == 'PASS' for row in rows)
+    assert summary['unsupported'] == sum(row['status'] == 'UNSUPPORTED' for row in rows)
     assert not any(summary[key] for key in ('failed','blocked','retained_sockets','retained_resolvers','retained_allocations','rc','teardown'))
     for row, (_, mandatory) in zip(rows, registry):
         assert row['mandatory'] == bool(int(mandatory))
         if int(mandatory):
             assert row['status'] == 'PASS' and row['detail'] == 0, row
         else:
-            assert row['status'] in ('PASS','UNSUPPORTED','NOT_ASSESSED'), row
+            assert row['status'] in ('PASS','UNSUPPORTED'), row
+            if row['status'] == 'UNSUPPORTED':
+                assert row['detail'] == UNSUPPORTED, row
     by_id = {row['id']: row for row in rows}
     for case in ('tls-default-untrusted','tls-wrong-ca','tls-wrong-name','tls-expired'):
         assert by_id[case]['provider_result'] == TLS_VERIFY, case
@@ -77,10 +83,31 @@ def check_peer(peer, session, run_id):
     assert len(negotiated) == 1 and negotiated[0]['sni'] == 'pal-net-tls.test' and negotiated[0]['alpn'] == 'h2-pal-e2e'
 
 
-def check(root=ROOT, allow_pending=False):
+def check_browser(receipt, slots):
+    """Validate observed unsupported operations without declaring core PASS."""
+    assert receipt['platform'] == 'wasm'
+    assert receipt['worker'] == 1 and receipt['main_runtime_thread'] == 0
+    assert receipt['core_qualified'] is False and receipt['full_net_qualified'] is False
+    assert receipt['operations'] == len(slots) == 21
+    assert receipt['unexpected_results'] == receipt['teardown'] == 0
+    assert receipt['cross_origin_isolated'] is True
+    assert re.fullmatch('[0-9a-f]{64}', receipt['artifact_sha256'])
+    assert re.fullmatch('[0-9a-f]{64}', receipt['browser_sha256'])
+    rows = receipt['capabilities']
+    assert len(rows) == len(slots) and {row['slot'] for row in rows} == set(slots)
+    for row in rows:
+        if row['slot'] in ('close', 'resolve_close'):
+            assert row['status'] == 'UNSUPPORTED_NOOP'
+            assert row['result'] is None and row['owned_handle'] is False
+        else:
+            assert row['status'] == 'UNSUPPORTED' and row['result'] == UNSUPPORTED, row
+
+
+def check(root=ROOT, allow_pending=False, require_all_core=False):
     app = root / 'projects/e2e/apps/pal-net-tls'
     data = json.loads((app / 'qualification.json').read_text())
     assert set(data['platforms']) == PLATFORMS and data['full_net_qualified'] is False
+    assert data['acceptance_policy'] == 'supported-pass-unsupported-skip'
     pending = set(data['pending'])
     assert pending <= PLATFORMS and len(data['pending']) == len(pending)
     if not allow_pending:
@@ -95,12 +122,25 @@ def check(root=ROOT, allow_pending=False):
     registry = re.findall(r'H2_NET_TLS_CASE\(\w+, "([^"]+)", ([01])\)',
         (app / 'app/include/h2_pal_net_tls_cases.inc').read_text())
     assert len(registry) == 39 and sum(int(required) for _,required in registry) == 37
+    slots = json.loads((app / 'app/api_coverage.json').read_text())['slots']
+    header = (root / 'libs/pal/include/h2/pal/net/h2_pal_net.h').read_text()
+    vtable = header.split('typedef struct h2_pal_net_vtable {', 1)[1].split('} h2_pal_net_vtable_t;', 1)[0]
+    assert set(slots) == set(re.findall(r'\(\*(\w+)\)', vtable))
     for platform, entry in data['platforms'].items():
         receipt = json.loads((app / entry['evidence']).read_text())
-        assert (platform in pending) == (not entry['core_qualified'])
         if platform in pending:
-            assert platform == 'wasm' and entry['status'] == 'UNSUPPORTED'
-            assert receipt['core_qualified'] is False and len(receipt['capabilities']) == 21
+            assert entry['status'] == 'PENDING' and not entry['core_qualified']
+            continue
+        assert entry['assessment_complete'] is True
+        assert entry['receipt_sha256'] == hashlib.sha256((app / entry['evidence']).read_bytes()).hexdigest()
+        assert entry['artifact_sha256'] == receipt['artifact_sha256']
+        if platform == 'wasm':
+            assert not require_all_core, 'Browser raw Net/TLS is unsupported, not core qualified'
+            assert entry['status'] == 'SKIP' and entry['core_qualified'] is False
+            assert entry['skip_reason'] == 'PROVIDER_UNSUPPORTED'
+            assert entry['skipped_case_ids'] == [name for name, _ in registry]
+            assert entry['mandatory_passed'] == 0 and entry['mandatory_skipped'] == 37
+            check_browser(receipt, slots)
             continue
         assert entry['status'] == 'PASS' and entry['core_qualified']
         assert re.fullmatch('[0-9a-f]{64}', receipt['artifact_sha256'])
@@ -134,12 +174,22 @@ def check(root=ROOT, allow_pending=False):
             if platform in ('ios','android'):
                 assert re.fullmatch('[0-9a-f]{64}', receipt['sdk_sha256'])
                 assert receipt['packaged_sdk_symbols_verified']
+                environment_path = app / entry['environment']
+                assert entry['environment_sha256'] == hashlib.sha256(environment_path.read_bytes()).hexdigest()
+                environment = json.loads(environment_path.read_text())
+                assert environment['runner_status'] == 'completed' and environment['launches'] == 1
+                assert not environment.get('cleanup_errors')
+                assert environment['suite_sha256'] == entry['suite_sha256']
+                assert re.fullmatch('[0-9a-f]{64}', entry['suite_sha256'])
+                assert environment['app_sha256'] == receipt['artifact_sha256']
+                assert environment['sdk_sha256'] == receipt['sdk_sha256']
     return data
 
 
 if __name__ == '__main__':
     parser=argparse.ArgumentParser()
     parser.add_argument('--allow-pending',action='store_true')
+    parser.add_argument('--require-all-core',action='store_true')
     args=parser.parse_args()
-    result=check(allow_pending=args.allow_pending)
+    result=check(allow_pending=args.allow_pending, require_all_core=args.require_all_core)
     print('Net/TLS assessment complete:', result['assessment_complete'])

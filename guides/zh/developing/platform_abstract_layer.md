@@ -259,6 +259,8 @@ Net PAL 的 `tcp_connect` 是可跨 poll 继续的 bounded connect operation：`
 
 Net PAL 的 `tcp_listen` 与 `tcp_accept` 是 raw TCP 的 server-side contract：`tcp_listen` 绑定并监听（`port == 0` 选择 ephemeral port，`out_bind_addr` 报告实际绑定地址），`tcp_accept` 在 `timeout_ms` 内接受一个连接并返回新的 opaque socket；`H2_PAL_ERR_TIMEOUT` 与 `H2_PAL_ERR_WOULD_BLOCK` 保留 listener 可继续使用。这两项是可选能力，没有实现的 backend 由 checked wrapper 返回 `H2_PAL_ERR_UNSUPPORTED`；Desktop（POSIX）backend 提供实现，`libs/iperf` 的 server 依赖它。
 
+iOS 与 Android 提供独立 `h2_*_net_create/api/destroy` owner，通过真实 SDK package 导出；owner 持有完整 WolfSSL 生命周期引用，借出的 Net API 只在 owner 存活期有效。销毁前 caller 必须停止调用并释放所有 socket/resolver，AppHost 默认组装保持独立。独立 PAL Net/TLS E2E 使用实际 packaged provider 验证 raw socket 和 TLS，不通过 HTTP 推断 TLS 能力。六平台 assessment 对支持能力要求真实 PASS，对实际缺失能力明确 SKIP；浏览器仍保持本地语义，21 项 canonical unsupported Net 操作不构成 raw Net/TLS 功能通过。
+
 SCTP PAL 以 association 为 opaque handle，通过同步 `emit_packet` callback 交付完整
 SCTP packet，并由调用方把收到的完整 packet 送回 provider。所有 timer 都由调用方提供的
 absolute monotonic milliseconds 驱动；provider 不创建 socket、线程或 task。Consumer 可以用 `association_is_writable` 查询 association 是否同时具备发送缓存、peer receive window、congestion window 和 packet emit 能力；false 表示应先推进输入、ACK 或 timer，不能把它当成某个 stream 的 open 状态。`libs/pal/providers/h2sctp`

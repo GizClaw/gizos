@@ -48,7 +48,7 @@ _suite = rule(
     },
 )
 
-def mobile_e2e_suite(name, package, report, registry, registry_pattern, expected, case_result = "rc", case_count = 0, resource_balance = False, timeout_seconds = 90, ios_sdk = {}, android_sdk = {}, ios_permissions = [], android_permissions = [], capture_png = False, android_log = None, prefix = None, output_default = None, plain_platform = False, options = {}, hook = None, fixtures = {}, deps = []):
+def mobile_e2e_suite(name, package, report, registry, registry_pattern, expected, case_result = "rc", case_count = 0, optional_cases = [], resource_balance = False, timeout_seconds = 90, ios_sdk = {}, android_sdk = {}, ios_permissions = [], android_permissions = [], capture_png = False, android_log = None, prefix = None, output_default = None, plain_platform = False, options = {}, hook = None, fixtures = {}, deps = []):
     """Declare one suite's data contract and optional imperative hook once."""
     python = name + "_python"
     py_library(
@@ -59,27 +59,30 @@ def mobile_e2e_suite(name, package, report, registry, registry_pattern, expected
         target_compatible_with = HOST_OR_MOBILE_TOOL_COMPATIBILITY,
         visibility = ["//visibility:private"],
     )
+    config = {
+        "package": package,
+        "report": report,
+        "registry_pattern": registry_pattern,
+        "expected": expected,
+        "case_result": case_result,
+        "case_count": case_count,
+        "resource_balance": resource_balance,
+        "timeout": timeout_seconds,
+        "ios_sdk": ios_sdk,
+        "android_sdk": android_sdk,
+        "permissions": {"ios": ios_permissions, "android": android_permissions},
+        "capture_png": capture_png,
+        "android_log": android_log,
+        "prefix": prefix,
+        "output_default": output_default,
+        "plain_platform": plain_platform,
+        "options": options,
+    }
+    if optional_cases:
+        config["optional_cases"] = optional_cases
     _suite(
         name = name,
-        config = json.encode({
-            "package": package,
-            "report": report,
-            "registry_pattern": registry_pattern,
-            "expected": expected,
-            "case_result": case_result,
-            "case_count": case_count,
-            "resource_balance": resource_balance,
-            "timeout": timeout_seconds,
-            "ios_sdk": ios_sdk,
-            "android_sdk": android_sdk,
-            "permissions": {"ios": ios_permissions, "android": android_permissions},
-            "capture_png": capture_png,
-            "android_log": android_log,
-            "prefix": prefix,
-            "output_default": output_default,
-            "plain_platform": plain_platform,
-            "options": options,
-        }),
+        config = json.encode(config),
         registry = registry,
         hook = hook,
         fixtures = {label: key for key, label in fixtures.items()},

@@ -162,6 +162,8 @@ DevKit `libco-smoke` 从 `projects/e2e/apps/libco` 编译 portable App，并直�
 
 `h2_audio_mixer`、`h2_bleikcp`、`h2_iostreamikcp`、`h2_pixa`、`h2_mp4_decoder`、`h2_tinyh264`、`h2_utils`、`h2_yyjson`、libco、PAL 和 CoreHTTP 等 portable libraries，都由消费它们的 firmware entry 在同一个 `firmware_lib_component` 中列举；跨平台 library package 和 `h2_pal_core` 不定义 image composition target。PIXA Games 不创建逐游戏 native component wrapper；project-owned game library 仍由对应 firmware entry 完成 archive handoff。静态 archive 只按最终链接中的真实未解析符号抽取 object，不使用全库 retention。`lvgl_port`、`h2_esp_audio_decoder`、`opus_port` 和 `zlib` 是 SDK-dependent source component，由相同 firmware graph 声明 direct source、header 与 metadata，并继续由 IDF 使用最终 configuration 编译。ESP32 的 AEC 由 `esp-sr` managed component 提供，不创建 SpeexDSP archive adapter。GizOS 的跨平台 API 仍然属于对应 library owner。
 
+ESP Net 的 UDP source-address bind 使用真实 lwIP `bind` 和 `getsockname`；失败时释放新 socket 并保持输出无有效 handle。Raw TLS 在握手时对每个 peer-chain certificate 使用校准后的 PAL wall time 校验有效期，即使 SDK 未启用内置日期检查或不保留完成后的 chain，`REQUIRED`/`DEFAULT` 也不能接受 expired/future certificate；时钟不可用时 fail closed。显式 `INSECURE_TEST_ONLY` 保持测试专用行为，无效 verify enum 返回 `INVALID_ARG`。独立 Net/TLS E2E 对已有 ICMP callback 执行真实 echo，不能将支持项标成未评估。
+
 ## Build Validation
 
 ESP-IDF component 变更需要对每个 maintained target 执行 compile validation；尚不可构建的 planned target 必须明确记录 `SKIP` 和 residual risk。Validation 需要确认：

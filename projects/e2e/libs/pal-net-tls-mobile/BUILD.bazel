@@ -1,5 +1,6 @@
 load("@rules_cc//cc:defs.bzl", "cc_library")
 load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:mobile_e2e.bzl", "mobile_e2e_suite")
 
 package(default_visibility = ["//projects/e2e:__subpackages__"])
 
@@ -18,4 +19,67 @@ cc_library(
     deps = ["//projects/e2e/libs/pal-net-tls-runner:runner"],
 )
 
-exports_files(["run_mobile.py"])
+exports_files([
+    "BUILD.bazel",
+    "run_mobile.py",
+])
+
+mobile_e2e_suite(
+    name = "mobile_e2e",
+    android_sdk = {
+        "required_header": "prefab/modules/h2_pal_core/include/h2_android_net.h",
+        "public_symbols": [
+            "h2_android_net_create",
+            "h2_android_net_api",
+            "h2_android_net_destroy",
+        ],
+    },
+    case_count = 39,
+    case_result = "detail",
+    expected = {
+        "profile": "net-tls-core",
+        "operations": 21,
+        "core_qualified": True,
+        "full_net_qualified": False,
+        "mandatory_passed": 37,
+        "failed": 0,
+        "blocked": 0,
+        "not_assessed": 0,
+        "retained_allocations": 0,
+        "retained_sockets": 0,
+        "retained_resolvers": 0,
+        "rc": 0,
+        "teardown": 0,
+    },
+    hook = "run_mobile.py",
+    ios_sdk = {
+        "executable": "GizOSPALNetTLSE2E",
+        "provider_symbols": [
+            "_h2_ios_net_create",
+            "_h2_ios_net_api",
+            "_h2_ios_net_destroy",
+        ],
+        "portable_symbol": "_h2_pal_net_tls_e2e_run",
+        "header_member": "H2PALCore.xcframework/ios-arm64-simulator/H2PALCore.framework/Headers/h2_ios_net.h",
+    },
+    optional_cases = [
+        "multicast-membership",
+        "icmp-echo",
+    ],
+    options = {
+        "dns_host": "ap.e2e.gizclaw.com",
+        "advertised": {
+            "ios": "127.0.0.1",
+            "android": "10.0.2.2",
+        },
+    },
+    package = "com.haivivi.gizos.e2e.palnettls",
+    registry = "//projects/e2e/apps/pal-net-tls/app:include/h2_pal_net_tls_cases.inc",
+    registry_pattern = "H2_NET_TLS_CASE\\(\\w+, \"([^\"]+)\", [01]\\)",
+    report = "pal-net-tls-result.json",
+    timeout_seconds = 180,
+    deps = [
+        "//projects/e2e/apps/pal-net-tls:evidence_validator",
+        "//projects/e2e/libs/pal-net-tls-fixture:fixture",
+    ],
+)

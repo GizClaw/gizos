@@ -1,8 +1,8 @@
 load("@rules_apple//apple:ios.bzl", "ios_application")
 load("@rules_cc//cc:objc_library.bzl", "objc_library")
-load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//tools/bazel:cc_options.bzl", "H2_WARNING_COPTS")
 load("//tools/bazel:mobile_app_sdk.bzl", "mobile_app_sdk")
+load("//tools/bazel:mobile_e2e.bzl", "mobile_e2e_test")
 load("//tools/bazel/platforms:compatibility.bzl", "IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
@@ -36,31 +36,12 @@ ios_application(
     deps = [":launcher"],
 )
 
-sh_test(
+mobile_e2e_test(
     name = "ios_pal_net_tls_simulator_test",
-    timeout = "moderate",
-    srcs = ["run_simulator.sh"],
-    args = [
-        "ios",
-        "$(rootpath :pal_net_tls_e2e.ipa)",
-        "$(rootpath :app_sdk)",
-        "$(rootpath //projects/e2e/apps/pal-net-tls/app:include/h2_pal_net_tls_cases.inc)",
-    ],
-    data = [
-        ":app_sdk",
-        ":pal_net_tls_e2e.ipa",
-        "//projects/e2e/apps/pal-net-tls/app:include/h2_pal_net_tls_cases.inc",
-        "//projects/e2e/libs/pal-net-tls-fixture:fixture.py",
-        "//projects/e2e/libs/pal-net-tls-mobile:run_mobile.py",
-    ],
-    env_inherit = [
-        "H2_IOS_SIMULATOR_UDID",
-        "H2_ANDROID_SERIAL",
-        "ANDROID_HOME",
-        "DEVELOPER_DIR",
-    ],
-    tags = ["manual"],
-    target_compatible_with = IOS_SIM_ARM64_ARTIFACT_COMPATIBILITY,
+    app = ":pal_net_tls_e2e.ipa",
+    platform = "ios",
+    sdk = ":app_sdk",
+    suite = "//projects/e2e/libs/pal-net-tls-mobile:mobile_e2e",
 )
 
 mobile_app_sdk(

@@ -74,3 +74,5 @@ Core、Storage、Crypto、HTTP、WebRTC、JSON、Audio、Audio Decoder 和 Displ
 | Production lifecycle、signing、physical acceptance | Not completed | Not completed |
 
 生产 App 必须根据 required capability 补齐对应 platform component，并完成 permissions、foreground/background lifecycle、release signing 和 physical-device acceptance；不能把这个 example 的成功运行当作平台完成证据。
+
+Raw Net/TLS consumers may create a dedicated native `h2_ios_net` or `h2_android_net` owner exported by the packaged SDK. It holds a shared WolfSSL lifecycle reference; the API is borrowed until owner destroy, after the consumer closes all sockets/resolvers and quiesces callers. The Net/TLS suite uses the same declarative mobile runner with only live fixture/peer assertions in its hook. Optional ICMP/multicast cases are named in Bazel; only typed `UNSUPPORTED` can be skipped, while the 37 supported mandatory cases and cleanup must pass.
