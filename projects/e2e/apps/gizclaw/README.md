@@ -1,17 +1,17 @@
 # GizClaw E2E
 
-## 当前资格（2026-09-30）
+## 当前资格（2026-10-01）
 
-当前 SDK 为 `0.19.0`，合入 main 的 Session playback interrupt 后，公开接口与独立覆盖矩阵为 **227 项**。之前记录的 226 项版本证据保留原身份。完整目标是同一个 portable App 在 macOS、WASM、iOS、Android、ESP32-S3、BK7258 上执行；**目前没有平台取得完整 227 项资格**。平台产物构建、局部用例和累计成功调用均不能替代同一版本的一次完整通过。
+当前 SDK 固定 `0.19.0`，独立公开库存与审计为 **227 项**。当前主线SCTP #617合入后，source `3859e138` 的三个native host真实8/8及227/227再次通过；早期226/default profile记录保留原身份。六端整体资格仍未完成。
 
-| 平台 | 本轮实际结果 | 尚缺条件 |
+| 平台 | 当前实际结果 | 尚缺条件 |
 | --- | --- | --- |
-| macOS / H2Peer | 8 个顶层 case 中 7 个通过，cleanup=0、retained=0 | E2E `default` RuntimeProfile 没有 AppConfig key，无法验证 list/get 正例 |
-| iOS Simulator / 打包 XCFramework | 7/8，通过的调用链覆盖 220 项，PAL teardown=0 | 同一 AppConfig fixture 缺项；完整审计仍失败 |
-| Android Emulator / 打包 AAR | 修复 P-384/RSA-4096 公共证书链后 7/8，220 项调用链，cleanup=0、PAL teardown=0 | 同一 AppConfig fixture 缺项 |
-| WASM / Chromium Worker | 5/8；Voice、Service、Resource、Connectivity 及 32 批并发通过，cleanup=0、teardown=0 | AppConfig fixture；设备 PUT 被 CORS 预检拒绝，TOS firmware 缺少 Allow-Origin |
-| ESP32-S3（音频使用 AMOLED） | DevKit 与 AMOLED 包均构建通过，本轮尚未运行 | 等 Wi-Fi、TLS 完成并移交设备 |
-| BK7258 | 独立入口及原生包构建通过，本轮尚未运行 | 等 Wi-Fi/TLS 完成并移交设备；只在完整成功后确认 App |
+| macOS / H2Peer | source3859e138，8/8、227/227，cleanup=0、retained=0 | 受控E2E h106-tiga，显式key/value；已完成该source实际运行 |
+| iOS Simulator / XCFramework | source3859e138，8/8、227/227，cleanup/retained/teardown=0 | 仅模拟器资格；不代表iOS实机 |
+| Android Emulator / AAR | source3859e138，8/8、227/227，cleanup/retained/teardown=0 | 仅模拟器资格；不代表Android实机 |
+| WASM / Chromium Worker | source4596acba，7/8，cleanup=0、teardown=0 | 真实Edge preflight缺PUT；GizClaw/gizclaw#1422源码fix已CI绿，尚待经授权发布/部署后fresh Worker验证 |
+| ESP32-S3 / AMOLED | 实际R16/R17/R19已启动，未取得完整summary/confirmation；R19 NTP成功但真实player启动时回P1 | 软件/物理delegate隔离及完整双boot仍在执行；coredump空不能证明没有reset |
+| BK7258 | 包可构建，本轮尚未实际运行 | 等TLS/Atomic明确移交设备；只在全量成功后确认App |
 
 版本、逐 case 终态、未覆盖 API、清理及日志 SHA 保存在 `evidence/*-phase*.json`。macOS/iOS/Android 的上述音频结果验证真实服务上的录音 fixture、回复解码、历史重播及 PCM 消费；输入和扬声器使用确定性测试 delegate，**不构成麦克风或声学验收**。
 
