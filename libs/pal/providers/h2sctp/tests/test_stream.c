@@ -265,7 +265,105 @@ static void test_reset_retains_control_ownership(void) {
   h2_sctp_test_pair_deinit(&pair);
 }
 
+static void feed_data(h2_pal_sctp_association_t *association, uint32_t tsn,
+                      uint16_t stream_id, uint32_t sequence, uint8_t seed,
+                      uint64_t now_ms) {
+  uint8_t data[24] = {0};
+  const bool interleaved = association->peer_interleaving;
+  const size_t header = interleaved ? 16u : 12u;
+  h2_sctp_wire_write_u32(data, tsn);
+  h2_sctp_wire_write_u16(data + 4u, stream_id);
+  if (interleaved) {
+    h2_sctp_wire_write_u32(data + 8u, sequence);
+    h2_sctp_wire_write_u32(data + 12u, 53u);
+  } else {
+    h2_sctp_wire_write_u16(data + 6u, (uint16_t)sequence);
+    h2_sctp_wire_write_u32(data + 8u, 53u);
+  }
+  memset(data + header, seed, 4u);
+  const h2_sctp_chunk_view_t chunk = {
+      .type = interleaved ? H2_SCTP_CHUNK_I_DATA : H2_SCTP_CHUNK_DATA,
+      .flags = H2_SCTP_DATA_FLAG_BEGIN | H2_SCTP_DATA_FLAG_END,
+      .data = data,
+      .len = header + 4u,
+  };
+  assert(h2_sctp_stream_handle_data(association, &chunk, now_ms) ==
+         H2_PAL_OK);
+}
+
+static void feed_outgoing_reset(h2_pal_sctp_association_t *association,
+                                uint32_t sequence, uint32_t last_tsn,
+                                uint16_t stream_id, uint64_t now_ms) {
+  uint8_t param[20] = {0};
+  h2_sctp_wire_write_u16(param, H2_SCTP_PARAM_OUTGOING_RESET);
+  h2_sctp_wire_write_u16(param + 2u, 18u);
+  h2_sctp_wire_write_u32(param + 4u, sequence);
+  h2_sctp_wire_write_u32(param + 12u, last_tsn);
+  h2_sctp_wire_write_u16(param + 16u, stream_id);
+  const h2_sctp_chunk_view_t chunk = {
+      .type = H2_SCTP_CHUNK_RE_CONFIG,
+      .data = param,
+      .len = 18u,
+  };
+  assert(h2_sctp_stream_handle_reconfig(association, &chunk, now_ms) ==
+         H2_PAL_OK);
+}
+
+static bool has_rx_tsn(const h2_pal_sctp_association_t *association,
+                       uint32_t tsn) {
+  for (const h2_sctp_rx_fragment_t *fragment = association->rx_fragments;
+       fragment != NULL; fragment = fragment->next) {
+    if (fragment->tsn == tsn)
+      return true;
+  }
+  return false;
+}
+
+/* RFC 6525 5.2.2: a reset whose last assigned TSN is beyond the cumulative
+ * point is deferred. Performing it at once dropped the stream's fragments
+ * above a hole; the peer holds those TSNs as acknowledged and never sends
+ * them again, so the cumulative point could never pass them. */
+static void test_incoming_reset_waits_for_last_tsn(void) {
+  h2_sctp_test_pair_t pair;
+  assert(h2_sctp_test_pair_init(&pair, 256u, 4096u) == H2_PAL_OK);
+  assert(h2_sctp_test_connect(&pair));
+  h2_pal_sctp_association_t *association = pair.passive.association;
+  const uint32_t base = association->cumulative_received_tsn;
+  uint64_t now_ms = pair.now_ms;
+  feed_data(association, base + 1u, 1u, 0u, 0x11u, ++now_ms);
+  assert(association->cumulative_received_tsn == base + 1u);
+  /* base+2 (sequence 1) is lost; sequence 2 arrives and waits behind it. */
+  feed_data(association, base + 3u, 1u, 2u, 0x33u, ++now_ms);
+  assert(association->cumulative_received_tsn == base + 1u);
+  assert(has_rx_tsn(association, base + 3u));
+
+  const uint32_t reset_sequence = association->expected_reset_sequence != 0u
+                                      ? association->expected_reset_sequence
+                                      : 7u;
+  feed_outgoing_reset(association, reset_sequence, base + 3u, 1u, ++now_ms);
+  /* Deferred: nothing is reset or forgotten yet. */
+  assert(association->expected_reset_sequence == reset_sequence);
+  assert(has_rx_tsn(association, base + 3u));
+  assert(pair.passive.incoming_reset_events == 0u);
+
+  /* The retransmission fills the hole and the reset completes by itself. */
+  feed_data(association, base + 2u, 1u, 1u, 0x22u, ++now_ms);
+  assert(association->cumulative_received_tsn == base + 3u);
+  assert(association->expected_reset_sequence == reset_sequence + 1u);
+  assert(pair.passive.incoming_reset_events == 1u);
+  /* All three messages sent before the reset were delivered first. */
+  assert(pair.passive.message_count == 3u);
+
+  /* Later data moves the cumulative point on, and the stream starts over. */
+  feed_data(association, base + 4u, 2u, 0u, 0x44u, ++now_ms);
+  assert(association->cumulative_received_tsn == base + 4u);
+  feed_data(association, base + 5u, 1u, 0u, 0x55u, ++now_ms);
+  assert(association->cumulative_received_tsn == base + 5u);
+  h2_sctp_test_pair_deinit(&pair);
+}
+
 int main(void) {
+  test_incoming_reset_waits_for_last_tsn();
   test_reset_waits_for_pending_output();
   test_reset_retains_control_ownership();
   test_reset_in_progress(0u);

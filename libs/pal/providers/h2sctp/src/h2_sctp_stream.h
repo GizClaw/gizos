@@ -28,6 +28,11 @@ h2_pal_result_t h2_sctp_stream_handle_reconfig(
     uint64_t now_ms);
 h2_pal_result_t h2_sctp_stream_service(
     h2_pal_sctp_association_t *association);
+/* Performs a deferred incoming reset once the cumulative point has reached
+ * its last assigned TSN. */
+h2_pal_result_t h2_sctp_stream_service_deferred_reset(
+    h2_pal_sctp_association_t *association,
+    uint64_t now_ms);
 void h2_sctp_stream_release_all(h2_pal_sctp_association_t *association);
 
 #endif

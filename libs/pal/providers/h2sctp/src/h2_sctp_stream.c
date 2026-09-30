@@ -706,13 +706,12 @@ h2_pal_result_t h2_sctp_stream_handle_data(
                          H2_SCTP_DATA_FLAG_END)) != 0u;
     h2_pal_result_t result = h2_sctp_reliability_note_data(
         association, now_ms, immediate_sack);
-    if (result == H2_PAL_ERR_NO_MEMORY) {
-        return H2_PAL_OK;
-    }
-    if (result != H2_PAL_OK && result != H2_PAL_ERR_WOULD_BLOCK) {
+    if (result != H2_PAL_OK && result != H2_PAL_ERR_NO_MEMORY &&
+        result != H2_PAL_ERR_WOULD_BLOCK) {
         return result;
     }
-    return H2_PAL_OK;
+    /* This chunk may have been the last one a deferred reset waited for. */
+    return h2_sctp_stream_service_deferred_reset(association, now_ms);
 }
 
 static void h2_sctp_stream_discard_through(
@@ -855,15 +854,20 @@ h2_pal_result_t h2_sctp_stream_handle_forward_tsn(
         return result;
     }
     result = h2_sctp_reliability_send_sack(association, now_ms);
-    if (result == H2_PAL_ERR_NO_MEMORY) {
-        return H2_PAL_OK;
+    if (result != H2_PAL_OK && result != H2_PAL_ERR_NO_MEMORY &&
+        result != H2_PAL_ERR_WOULD_BLOCK) {
+        return result;
     }
-    return result == H2_PAL_ERR_WOULD_BLOCK ? H2_PAL_OK : result;
+    return h2_sctp_stream_service_deferred_reset(association, now_ms);
 }
 
+/* The reset covers what the peer sent up to `last_tsn`. Those TSNs are at or
+ * below the cumulative point by now, so forgetting their fragments loses no
+ * acknowledgement; later fragments belong to the stream's next life. */
 static void h2_sctp_stream_reset_incoming(
     h2_pal_sctp_association_t *association,
-    uint16_t stream_id) {
+    uint16_t stream_id,
+    uint32_t last_tsn) {
     h2_sctp_stream_t *stream = h2_sctp_stream_find(association, stream_id);
     if (stream != NULL) {
         stream->next_in_ssn = 0u;
@@ -874,7 +878,8 @@ static void h2_sctp_stream_reset_incoming(
     h2_sctp_rx_fragment_t **cursor = &association->rx_fragments;
     while (*cursor != NULL) {
         h2_sctp_rx_fragment_t *fragment = *cursor;
-        if (fragment->stream_id == stream_id) {
+        if (fragment->stream_id == stream_id &&
+            !h2_sctp_tsn_after(fragment->tsn, last_tsn)) {
             *cursor = fragment->next;
             association->receive_used -= fragment->data_len;
             abandoned |= fragment->assembled && !fragment->delivered;
@@ -915,6 +920,84 @@ static h2_pal_result_t h2_sctp_stream_send_reset_response(
         now_ms);
 }
 
+static void h2_sctp_stream_clear_deferred_reset(
+    h2_pal_sctp_association_t *association) {
+    h2_sctp_free(association->mem, association->deferred_reset_streams);
+    association->deferred_reset_streams = NULL;
+    association->deferred_reset_streams_len = 0u;
+}
+
+/* Remember the request so the reset completes as soon as its data is in.
+ * Without memory for the copy the peer's retransmitted request completes it
+ * instead, as RFC 6525 5.2.7 has the sender retry an In-progress response. */
+static void h2_sctp_stream_defer_reset(
+    h2_pal_sctp_association_t *association,
+    uint32_t sequence,
+    uint32_t last_tsn,
+    const uint8_t *streams,
+    size_t streams_len) {
+    if (association->deferred_reset_streams != NULL &&
+        association->deferred_reset_sequence == sequence) {
+        return;
+    }
+    h2_sctp_stream_clear_deferred_reset(association);
+    uint8_t *copy = h2_sctp_alloc(association->mem, streams_len);
+    if (copy == NULL) {
+        return;
+    }
+    memcpy(copy, streams, streams_len);
+    association->deferred_reset_streams = copy;
+    association->deferred_reset_streams_len = streams_len;
+    association->deferred_reset_sequence = sequence;
+    association->deferred_reset_last_tsn = last_tsn;
+}
+
+h2_pal_result_t h2_sctp_stream_service_deferred_reset(
+    h2_pal_sctp_association_t *association,
+    uint64_t now_ms) {
+    if (association->deferred_reset_streams == NULL ||
+        association->deferred_reset_sequence !=
+            association->expected_reset_sequence ||
+        h2_sctp_tsn_after(
+            association->deferred_reset_last_tsn,
+            association->cumulative_received_tsn)) {
+        return H2_PAL_OK;
+    }
+    /* Everything the peer sent before the reset is here; hand up what is
+     * ready before the streams start over. */
+    association->delivery_pending = true;
+    h2_pal_result_t result = h2_sctp_stream_service(association);
+    if (result == H2_PAL_ERR_NO_MEMORY || result == H2_PAL_ERR_WOULD_BLOCK) {
+        return H2_PAL_OK;
+    }
+    if (result != H2_PAL_OK) {
+        return result;
+    }
+    result = h2_sctp_stream_send_reset_response(
+        association, association->deferred_reset_sequence, 1u, now_ms);
+    if (result == H2_PAL_ERR_NO_MEMORY) {
+        return H2_PAL_OK;
+    }
+    if (result != H2_PAL_OK && result != H2_PAL_ERR_WOULD_BLOCK) {
+        return result;
+    }
+    uint8_t *streams = association->deferred_reset_streams;
+    const size_t streams_len = association->deferred_reset_streams_len;
+    const uint32_t last_tsn = association->deferred_reset_last_tsn;
+    association->deferred_reset_streams = NULL;
+    association->deferred_reset_streams_len = 0u;
+    association->expected_reset_sequence++;
+    for (size_t stream_offset = 0u; stream_offset + 2u <= streams_len;
+         stream_offset += 2u) {
+        h2_sctp_stream_reset_incoming(
+            association,
+            h2_sctp_wire_read_u16(streams + stream_offset),
+            last_tsn);
+    }
+    h2_sctp_free(association->mem, streams);
+    return H2_PAL_OK;
+}
+
 h2_pal_result_t h2_sctp_stream_handle_reconfig(
     h2_pal_sctp_association_t *association,
     const h2_sctp_chunk_view_t *chunk,
@@ -938,6 +1021,8 @@ h2_pal_result_t h2_sctp_stream_handle_reconfig(
             if (association->expected_reset_sequence == 0u) {
                 association->expected_reset_sequence = sequence;
             }
+            const uint32_t last_tsn = h2_sctp_wire_read_u32(
+                chunk->data + offset + 12u);
             uint32_t result_code = 1u;
             if (h2_sctp_tsn_before(
                     sequence, association->expected_reset_sequence)) {
@@ -955,6 +1040,20 @@ h2_pal_result_t h2_sctp_stream_handle_reconfig(
                         break;
                     }
                 }
+                /* RFC 6525 5.2.2 E2: data the peer sent on these streams is
+                 * still missing. Resetting now would forget fragments above
+                 * the hole that the peer already holds as acknowledged. */
+                if (result_code == 1u &&
+                    h2_sctp_tsn_after(
+                        last_tsn, association->cumulative_received_tsn)) {
+                    result_code = 6u;
+                    h2_sctp_stream_defer_reset(
+                        association,
+                        sequence,
+                        last_tsn,
+                        chunk->data + offset + 16u,
+                        length - 16u);
+                }
             }
             h2_pal_result_t emit_result = h2_sctp_stream_send_reset_response(
                 association, sequence, result_code, now_ms);
@@ -966,13 +1065,15 @@ h2_pal_result_t h2_sctp_stream_handle_reconfig(
                 return emit_result;
             }
             if (result_code == 1u) {
+                h2_sctp_stream_clear_deferred_reset(association);
                 for (size_t stream_offset = 16u;
                      stream_offset < length;
                      stream_offset += 2u) {
                     h2_sctp_stream_reset_incoming(
                         association,
                         h2_sctp_wire_read_u16(
-                            chunk->data + offset + stream_offset));
+                            chunk->data + offset + stream_offset),
+                        last_tsn);
                 }
                 association->expected_reset_sequence++;
             }
@@ -1049,6 +1150,9 @@ void h2_sctp_stream_release_all(h2_pal_sctp_association_t *association) {
     }
     association->rx_fragments = NULL;
     association->rx_fragments_tail = NULL;
+    h2_sctp_free(association->mem, association->deferred_reset_streams);
+    association->deferred_reset_streams = NULL;
+    association->deferred_reset_streams_len = 0u;
     association->receive_used = 0u;
     association->rx_assembly_len = 0u;
     association->rx_assembly_count = 0u;
