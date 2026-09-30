@@ -105,7 +105,7 @@ static int run_batch(h2_gizclaw_e2e_fixture_t *fixture, unsigned batch) {
                  ? h2_pal_time_sleep_ms(fixture->time, 1u)
                  : H2_PAL_ERR_TIMEOUT;
   }
-  printf("H2_GIZCLAW_E2E stage=concurrency services=1 batch=%u requested_requests=%u "
+  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=concurrency services=1 batch=%u requested_requests=%u "
          "started_requests=%zu completed_requests=%zu max_open_channels=%zu "
          "opened_channels=%zu open_channels=%zu observation_rc=%d "
          "requests_rc=%d recovery_rc=%d result=%s rc=%d\n",
@@ -124,7 +124,7 @@ int h2_gizclaw_e2e_run_concurrency(h2_gizclaw_e2e_fixture_t *fixture) {
     if (result != H2_PAL_OK)
       break;
   }
-  printf("H2_GIZCLAW_E2E stage=channel-soak batches=%u/%u requests=%u "
+  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=channel-soak batches=%u/%u requests=%u "
          "result=%s rc=%d\n", completed_batches,
          H2_GIZCLAW_E2E_CONCURRENT_BATCHES,
          completed_batches * H2_GIZCLAW_E2E_CONCURRENT_REQUESTS,

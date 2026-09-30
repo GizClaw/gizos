@@ -87,7 +87,7 @@ int h2_gizclaw_e2e_run_session_cancel(h2_gizclaw_e2e_fixture_t *f) {
         state->aborts != 1u || after.catalog != H2_GIZCLAW_SESSION_READY ||
         after.registration != H2_GIZCLAW_SESSION_READY)) rc = H2_PAL_ERR_INVALID_STATE;
   }
-  printf("H2_GIZCLAW_E2E stage=session-cancel begins=%u commits=%u aborts=%u "
+  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=session-cancel begins=%u commits=%u aborts=%u "
          "result=%s rc=%d\n", state->begins, state->commits, state->aborts,
          rc == H2_PAL_OK ? "PASS" : "FAIL", rc);
   const int cleanup = dispose(f);

@@ -98,6 +98,9 @@ static h2_gizclaw_e2e_config_t test_config(test_state_t *state, uint8_t *pcm,
   return (h2_gizclaw_e2e_config_t){
       .server_endpoint = {endpoint, sizeof(endpoint) - 1u},
       .registration_token = {token, sizeof(token) - 1u},
+      .app_config_key = "fixture.test",
+      .device_api_url = "https://api.example.invalid",
+      .device_audio_url = "http://audio.example.invalid/tone.ogg",
       .voice_pcm_s16le_16khz_mono = pcm,
       .voice_pcm_len = pcm_len,
       .suites = H2_GIZCLAW_E2E_SUITE_ALL,
@@ -202,6 +205,12 @@ int main(void) {
          H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
   assert(memcmp(&result, &empty, sizeof(result)) == 0);
   config.suites = H2_GIZCLAW_E2E_SUITE_ALL;
+
+  config.app_config_key = NULL;
+  assert(h2_gizclaw_e2e_run(&runtime, &config, &result) ==
+         H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
+  assert(memcmp(&result, &empty, sizeof(result)) == 0);
+  config.app_config_key = "fixture.test";
 
   assert(h2_gizclaw_e2e_case_count == 8u);
   assert((config.suites & H2_GIZCLAW_E2E_SUITE_DEVICE) != 0);

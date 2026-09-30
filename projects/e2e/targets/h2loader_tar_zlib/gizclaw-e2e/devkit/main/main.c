@@ -156,8 +156,8 @@ static void run_e2e(void *raw) {
       .voice_pcm_len = (size_t)(h2_gizclaw_e2e_voice_prompt_end -
                                h2_gizclaw_e2e_voice_prompt_start),
       .suites = H2_GIZCLAW_E2E_DEVKIT_SUITES,
-      .device_api_url = "https://ap.e2e.gizclaw.com",
-      .device_audio_url = "https://raw.githubusercontent.com/GizClaw/gizos/cf8dbdeba320984fc57ddba670dcf55237aa39cf/projects/e2e/apps/gizclaw/data/playback_tone_32s_v1.ogg",
+      .device_api_url = h2_gizclaw_e2e_fixture_device_api_url(),
+      .device_audio_url = h2_gizclaw_e2e_fixture_audio_url(),
       .case_timeout_ms = H2_GIZCLAW_E2E_DEFAULT_CASE_TIMEOUT_MS,
       .cleanup_timeout_ms = H2_GIZCLAW_E2E_DEFAULT_CLEANUP_TIMEOUT_MS,
       .progress_interval_ms = H2_GIZCLAW_E2E_DEFAULT_PROGRESS_INTERVAL_MS,
@@ -233,6 +233,14 @@ static void image_entry(void *user) {
   const h2_gizclaw_e2e_devkit_config_t *config =
       h2_gizclaw_e2e_devkit_config();
 
+  if (!h2_gizclaw_e2e_fixture_endpoint()[0] || !h2_gizclaw_e2e_fixture_token()[0] ||
+      !h2_gizclaw_e2e_fixture_profile()[0] || !h2_gizclaw_e2e_fixture_time_server()[0] ||
+      ((H2_GIZCLAW_E2E_DEVKIT_SUITES & H2_GIZCLAW_E2E_SUITE_DEVICE) != 0u &&
+       (!h2_gizclaw_e2e_fixture_device_api_url()[0] || !h2_gizclaw_e2e_fixture_audio_url()[0])) ||
+      ((H2_GIZCLAW_E2E_DEVKIT_SUITES & H2_GIZCLAW_E2E_SUITE_RPC) != 0u &&
+       (!h2_gizclaw_e2e_fixture_key()[0] || !h2_gizclaw_e2e_fixture_value()[0])))
+    fail_launcher("missing_service_fixture", H2_PAL_ERR_INVALID_ARG, false);
+
   int rc = h2_esp_board_runtime_config(&runtime_config);
   if (rc != H2_PAL_OK) {
     fail_launcher("runtime_config", rc, false);
@@ -251,11 +259,7 @@ static void image_entry(void *user) {
     fail_launcher("command_start", rc, false);
   }
 
-  if (!h2_gizclaw_e2e_fixture_endpoint()[0] || !h2_gizclaw_e2e_fixture_token()[0] ||
-      !h2_gizclaw_e2e_fixture_profile()[0] || !h2_gizclaw_e2e_fixture_time_server()[0] ||
-      ((H2_GIZCLAW_E2E_DEVKIT_SUITES & H2_GIZCLAW_E2E_SUITE_RPC) != 0u &&
-       (!h2_gizclaw_e2e_fixture_key()[0] || !h2_gizclaw_e2e_fixture_value()[0])))
-    fail_launcher("missing_service_fixture", H2_PAL_ERR_INVALID_ARG, true);
+
 
   rc = h2_pal_wifi_sta_set_power_save(runtime->wifi_sta,
                                       H2_PAL_WIFI_POWER_SAVE_NONE);

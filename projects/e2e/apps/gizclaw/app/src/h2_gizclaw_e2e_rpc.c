@@ -70,7 +70,7 @@ static int run_workspace_reconnect(h2_gizclaw_e2e_fixture_t *fixture,
         30000u, storage, &history);
   }
   storage->used = 0u;
-  printf("H2_GIZCLAW_E2E stage=workspace_reconnect result=%s\n",
+  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=workspace_reconnect result=%s\n",
          rc == H2_PAL_OK ? "PASS" : "FAIL");
   return rc;
 }
@@ -188,7 +188,7 @@ static int run_peer_name_isolation(h2_gizclaw_e2e_fixture_t *fixture,
   }
 
   /* Fixture cleanup owns all three obligations, also on timeout or failure. */
-  printf("H2_GIZCLAW_E2E stage=peer_name_isolation result=%s\n",
+  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=peer_name_isolation result=%s\n",
          result == H2_PAL_OK ? "PASS" : "FAIL");
   return result;
 }
@@ -428,7 +428,7 @@ int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t *fixture) {
   h2_gizclaw_resp_storage_t storage = {.data = scratch, .capacity = 65536u};
   int first_rc = H2_PAL_OK;
   for (size_t index = 0u; index < RPC_DOMAIN_COUNT; ++index) {
-    printf("H2_GIZCLAW_E2E stage=coverage-begin case=rpc/%s\n",
+    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=coverage-begin case=rpc/%s\n",
            domains[index].name);
     h2_gizclaw_e2e_case_status_t status = H2_GIZCLAW_E2E_CASE_PASS;
     const char *blocked_by = NULL;
@@ -464,11 +464,11 @@ int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t *fixture) {
       h2_pal_mem_free(fixture->allocator, scratch);
       return report_rc;
     }
-    printf("H2_GIZCLAW_E2E stage=rpc-domain case=%s status=%s rc=%d "
+    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=rpc-domain case=%s status=%s rc=%d "
            "blocked_by=%s\n",
            domains[index].name, h2_gizclaw_e2e_case_status_name(status),
            domain_rc, blocked_by == NULL ? "-" : blocked_by);
-    printf("H2_GIZCLAW_E2E stage=coverage-end case=rpc/%s status=%s rc=%d "
+    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=coverage-end case=rpc/%s status=%s rc=%d "
            "cleanup_rc=0\n",
            domains[index].name, h2_gizclaw_e2e_case_status_name(status),
            domain_rc);
@@ -479,7 +479,7 @@ int h2_gizclaw_e2e_run_rpc(h2_gizclaw_e2e_fixture_t *fixture) {
   h2_gizclaw_e2e_report_cleanup(&report, H2_PAL_OK);
   const h2_gizclaw_e2e_summary_t summary =
       h2_gizclaw_e2e_report_summarize(&report);
-  printf("H2_GIZCLAW_E2E stage=rpc-summary selected=%zu pass=%zu fail=%zu "
+  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=rpc-summary selected=%zu pass=%zu fail=%zu "
          "error=%zu blocked=%zu cancelled=%zu terminal=%zu complete=%s\n",
          summary.selected, summary.pass, summary.fail, summary.error,
          summary.blocked, summary.cancelled, summary.terminal,

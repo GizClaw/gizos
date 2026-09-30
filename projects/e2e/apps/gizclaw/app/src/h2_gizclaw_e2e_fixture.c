@@ -281,7 +281,7 @@ h2_gizclaw_str_t h2_gizclaw_e2e_str(const char *value) {
 
 void h2_gizclaw_e2e_evidence(const char *symbol, const char *stage,
                              int result) {
-  printf("H2_GIZCLAW_E2E symbol=%s stage=%s result=%s rc=%d\n",
+  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E symbol=%s stage=%s result=%s rc=%d\n",
          symbol == NULL ? "-" : symbol, stage == NULL ? "-" : stage,
          result == H2_PAL_OK ? "PASS" : "FAIL", result);
 }

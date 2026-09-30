@@ -141,7 +141,7 @@ int h2_gizclaw_e2e_run_app_config(h2_gizclaw_e2e_fixture_t *f,
       rc = H2_PAL_ERR_INVALID_STATE;
     evidence(req ? "h2_gizclaw_resp_parse_app_config_get" : "h2_gizclaw_rpc_app_config_get",
              "app_config_get-assert", rc);
-    printf("H2_GIZCLAW_E2E stage=app-config api=%s keys=%zu "
+    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=app-config api=%s keys=%zu "
            "value_bytes=%zu result=%s rc=%d\n", req ? "request" : "rpc", keys,
            rc == H2_PAL_OK ? value.value.len : 0u, rc == H2_PAL_OK ? "PASS" : "FAIL", rc);
   }

@@ -193,6 +193,12 @@ Workspace 覆盖包含 28 个函数。`h2_gizclaw_rpc_run_stop` 在独立 req/re
 
 实板没有宿主进程环境，因此还必须在同一macro声明中显式传入 `app_config_fixture_endpoint` 与 `app_config_fixture_token`（只使用受控E2E token，不提供源码默认值）。其生成C配置只作为本次私有构建输入；JSON/audit合同不保存token，运行日志也不打印token。宿主端继续只通过运行环境注入凭据。
 
+Device/all 实板还须显式传入 `app_config_fixture_device_api_url` 与 `app_config_fixture_audio_url`，不在源码固定GitHub输入地址。静态tone是版本化的无敏感输入；可用 `bazel run --config=macos_arm64 //projects/e2e/libs/gizclaw-device:tone_fixture -- --bind <fixture-interface> --port <port> --receipt <local-file>` 提供同一Ogg bytes、HEAD、Range与CORS。它只服务该音频输入，不模拟注册、RPC、Device API、Firmware metadata或语音业务；这些仍使用实际E2E服务。地址与asset SHA属于本次输入身份，不转移旧GitHub运行结果。
+
+Firmware 完整下载使用至多300秒且不超过剩余case预算的有界超时；取消/读取回调持续poll真实Service，避免慢HTTP传输期间Peer失活。任何poll错误、取消、截断、长度或SHA-256不匹配仍失败，不能只验证前30秒或部分bytes。
+
 ESP32-S3还要求显式 `app_config_fixture_time_server=<DNS-or-IPv4>`，由本次网络fixture提供真实NTP时间，不使用源码固定外网pool。SNTP失败保持pending、不启动业务套件；TLS校验仍使用同步后的真实UTC且不关闭验证。H2Loader CLI upgrade的短验证窗口可能先于长业务套件的最后confirmation结束，必须另接当前boot的日志并最终核对package/P1/Stage/coredump，不能提前确认来绕过该窗口。
 
 业务验收的board音频delegate由 `app_config_fixture_physical_audio` bool macro参数显式选择，默认software（确定性PCM输入和真实回复解码/Track消费）；true才借用实际BSP capture/speaker。software资格不是物理speaker/capture资格，任何physical-only故障单独保留，不伪装成physical PASS。
+
+AMOLED实板的可选evidence observer在App任务内同步复制非敏感的原始接口/断言记录。384KiB上限溢出或format失败阻止确认；任务join后才冻结单次boot账本。实际crypto随机execution nonce、版本、完整byte/record计数和CRC32校验绑定每次重播；CRC32只检测串口传输损失，host另存完整账本SHA-256，不声称密码学来源认证。只有完整用例与零cleanup/retained、完整capture和实际App confirmation成功才 `admitted=1`。命令服务在资格任务结束后启动；不会提前确认pending长测试来绕过CLI重连窗口。`gizclaw-device:verify_device`只校验一份完整账本及独立227接口矩阵，不调用Bazel或拼多轮日志；normal App boot必须提供上一boot的execution供拒绝旧重播。

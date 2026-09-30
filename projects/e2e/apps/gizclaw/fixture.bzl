@@ -11,6 +11,8 @@ def _fixture_impl(ctx):
     token = ctx.attr.token[BuildSettingInfo].value
     time_server = ctx.attr.time_server[BuildSettingInfo].value
     physical_audio = ctx.attr.physical_audio[BuildSettingInfo].value
+    device_api_url = ctx.attr.device_api_url[BuildSettingInfo].value
+    audio_url = ctx.attr.audio_url[BuildSettingInfo].value
     allowed = "abcdefghijklmnopqrstuvwxyz0123456789.-"
     if len(key) > 63 or any([c not in allowed for c in key.elems()]) or (key and key[0] not in "abcdefghijklmnopqrstuvwxyz"):
         fail("AppConfig fixture key must be a 1-63 byte lowercase alias, or empty when not configured")
@@ -20,6 +22,9 @@ def _fixture_impl(ctx):
         fail("AppConfig expected value exceeds the server fixture limit")
     if len(endpoint) >= 128 or len(token) > 4096:
         fail("board service input exceeds the portable configuration limit")
+    for uri in [device_api_url, audio_url]:
+        if len(uri) > 2047 or (uri and not (uri.startswith("http://") or uri.startswith("https://"))) or "@" in uri:
+            fail("board fixture URL must be an explicit HTTP(S) URL without userinfo")
     if len(time_server) > 253 or any([c not in allowed for c in time_server.elems()]):
         fail("Time fixture must be an explicit DNS hostname or IPv4 address")
     source = ctx.actions.declare_file(ctx.label.name + ".c")
@@ -32,6 +37,8 @@ def _fixture_impl(ctx):
         "const char *h2_gizclaw_e2e_fixture_token(void) { return %s; }" % json.encode(token),
         "const char *h2_gizclaw_e2e_fixture_time_server(void) { return %s; }" % json.encode(time_server),
         "int h2_gizclaw_e2e_fixture_physical_audio(void) { return %s; }" % ("1" if physical_audio else "0"),
+        "const char *h2_gizclaw_e2e_fixture_device_api_url(void) { return %s; }" % json.encode(device_api_url),
+        "const char *h2_gizclaw_e2e_fixture_audio_url(void) { return %s; }" % json.encode(audio_url),
     ]) + "\n")
     ctx.actions.write(contract, json.encode({"app_config_key": key, "runtime_profile": profile, "app_config_value": value, "time_server": time_server, "physical_audio": physical_audio}) + "\n")
     return [
@@ -49,10 +56,12 @@ _fixture = rule(
         "token": attr.label(mandatory = True, providers = [BuildSettingInfo]),
         "time_server": attr.label(mandatory = True, providers = [BuildSettingInfo]),
         "physical_audio": attr.label(mandatory = True, providers = [BuildSettingInfo]),
+        "device_api_url": attr.label(mandatory = True, providers = [BuildSettingInfo]),
+        "audio_url": attr.label(mandatory = True, providers = [BuildSettingInfo]),
     },
 )
 
-def gizclaw_e2e_fixture(name, app_config_key = "", runtime_profile = "", app_config_value = "", server_endpoint = "", registration_token = "", time_server = "", physical_audio = False):
+def gizclaw_e2e_fixture(name, app_config_key = "", runtime_profile = "", app_config_value = "", server_endpoint = "", registration_token = "", time_server = "", physical_audio = False, device_api_url = "", audio_url = ""):
     """Empty is buildable but RPC/all launchers reject it before networking.
 
     Supply the public profile key via the macro argument or the generated
@@ -67,7 +76,9 @@ def gizclaw_e2e_fixture(name, app_config_key = "", runtime_profile = "", app_con
     string_flag(name = name + "_token", build_setting_default = registration_token)
     string_flag(name = name + "_time_server", build_setting_default = time_server)
     bool_flag(name = name + "_physical_audio", build_setting_default = physical_audio)
-    _fixture(name = name + "_generated", key = ":" + name + "_key", profile = ":" + name + "_profile", value = ":" + name + "_value", endpoint = ":" + name + "_endpoint", token = ":" + name + "_token", time_server = ":" + name + "_time_server", physical_audio = ":" + name + "_physical_audio")
+    string_flag(name = name + "_device_api_url", build_setting_default = device_api_url)
+    string_flag(name = name + "_audio_url", build_setting_default = audio_url)
+    _fixture(name = name + "_generated", key = ":" + name + "_key", profile = ":" + name + "_profile", value = ":" + name + "_value", endpoint = ":" + name + "_endpoint", token = ":" + name + "_token", time_server = ":" + name + "_time_server", physical_audio = ":" + name + "_physical_audio", device_api_url = ":" + name + "_device_api_url", audio_url = ":" + name + "_audio_url")
     native.filegroup(name = name + "_contract", srcs = [":" + name + "_generated"], output_group = "contract")
     native.filegroup(name = name + "_source", srcs = [":" + name + "_generated"], output_group = "source")
     cc_library(

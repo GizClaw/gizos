@@ -12,6 +12,7 @@
 enum {
   H2_GIZCLAW_E2E_FIRMWARE_CHUNK_SIZE = 32 * 1024,
   H2_GIZCLAW_E2E_SHA256_HEX_LENGTH = 64,
+  H2_GIZCLAW_E2E_FIRMWARE_DOWNLOAD_TIMEOUT_MS = 300000,
 };
 
 typedef struct firmware_sha256 {
@@ -22,6 +23,8 @@ typedef struct firmware_sha256 {
 } firmware_sha256_t;
 
 typedef struct firmware_download {
+  h2_gizclaw_e2e_fixture_t *fixture;
+  int poll_rc;
   firmware_sha256_t sha256;
   uint64_t expected_size;
   uint64_t received_size;
@@ -190,16 +193,26 @@ static bool digest_equal(const char *left, const char *right) {
 }
 
 static int cancel_download(void *user) {
-  const h2_gizclaw_e2e_fixture_t *fixture = user;
+  firmware_download_t *download = user;
+  h2_gizclaw_e2e_fixture_t *fixture = download == NULL ? NULL : download->fixture;
   if (fixture == NULL || fixture->cancel_requested ||
       (fixture->config->should_stop != NULL &&
        fixture->config->should_stop(fixture->config->should_stop_user))) {
     return 1;
   }
+  if (download->poll_rc != H2_PAL_OK)
+    return 1;
   uint64_t now_ms = 0u;
-  return fixture->time == NULL ||
-         h2_pal_time_get_monotonic_ms(fixture->time, &now_ms) != H2_PAL_OK ||
-         now_ms >= fixture->deadline_ms;
+  if (fixture->time == NULL ||
+      h2_pal_time_get_monotonic_ms(fixture->time, &now_ms) != H2_PAL_OK ||
+      now_ms >= fixture->deadline_ms) {
+    return 1;
+  }
+  /* The HTTP transfer is synchronous, but the registered Peer still needs
+   * App-side Service dispatch throughout a slow, full-image download. */
+  download->poll_rc = h2_gizclaw_e2e_fixture_poll(
+      fixture, H2_GIZCLAW_E2E_OWNER, 0u);
+  return download->poll_rc != H2_PAL_OK;
 }
 
 static int receive_firmware(void *user, const h2_pal_http_request_t *request,
@@ -213,6 +226,9 @@ static int receive_firmware(void *user, const h2_pal_http_request_t *request,
       UINT64_MAX - download->received_size < chunk_len ||
       download->received_size + chunk_len > download->expected_size) {
     return H2_PAL_ERR_FORMAT;
+  }
+  if (cancel_download(download)) {
+    return download->poll_rc != H2_PAL_OK ? download->poll_rc : H2_PAL_ERR_CLOSED;
   }
   sha256_update(&download->sha256, chunk, chunk_len);
   download->received_size += chunk_len;
@@ -285,30 +301,43 @@ static int download_firmware(h2_gizclaw_e2e_fixture_t *fixture,
   if (validate_metadata(metadata) != H2_PAL_OK) {
     return H2_PAL_ERR_FORMAT;
   }
+  uint64_t now_ms = 0u;
+  if (h2_pal_time_get_monotonic_ms(fixture->time, &now_ms) != H2_PAL_OK ||
+      now_ms >= fixture->deadline_ms) {
+    return H2_PAL_ERR_TIMEOUT;
+  }
+  uint64_t remaining_ms = fixture->deadline_ms - now_ms;
+  uint32_t timeout_ms = remaining_ms < H2_GIZCLAW_E2E_FIRMWARE_DOWNLOAD_TIMEOUT_MS
+                            ? (uint32_t)remaining_ms
+                            : H2_GIZCLAW_E2E_FIRMWARE_DOWNLOAD_TIMEOUT_MS;
   uint8_t *chunk =
       h2_pal_mem_alloc(fixture->allocator, H2_GIZCLAW_E2E_FIRMWARE_CHUNK_SIZE);
   if (chunk == NULL)
     return H2_PAL_ERR_NO_MEMORY;
   firmware_download_t download = {
+      .fixture = fixture,
+      .poll_rc = H2_PAL_OK,
       .expected_size = (uint64_t)metadata->size,
   };
   sha256_init(&download.sha256);
   h2_pal_http_request_t request = {
       .method = H2_PAL_HTTP_GET,
       .url = {.data = metadata->url, .len = strlen(metadata->url)},
-      .timeout_ms = 30000,
+      .timeout_ms = timeout_ms,
       .retry_count = 0,
       .chunk_buf = chunk,
       .chunk_buf_cap = H2_GIZCLAW_E2E_FIRMWARE_CHUNK_SIZE,
       .read_cb = receive_firmware,
       .user = &download,
       .cancel_cb = cancel_download,
-      .cancel_user = fixture,
+      .cancel_user = &download,
       .allocator = fixture->allocator,
   };
   h2_pal_http_response_t response;
   h2_pal_http_response_reset(&response);
   int result = h2_pal_http_request(fixture->http, &request, &response);
+  if (download.poll_rc != H2_PAL_OK)
+    result = download.poll_rc;
   h2_gizclaw_e2e_evidence("h2_pal_http_request", "firmware", result);
   if (result == H2_PAL_OK &&
       (response.status_code < 200 || response.status_code >= 300)) {
@@ -346,7 +375,7 @@ int h2_gizclaw_e2e_run_firmware(h2_gizclaw_e2e_fixture_t *fixture) {
   if (result == H2_PAL_OK) {
     result = download_firmware(fixture, &metadata, &received_size);
   }
-  printf("H2_GIZCLAW_E2E stage=firmware result=%s bytes=%" PRIu64
+  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=firmware result=%s bytes=%" PRIu64
          " expected=%" PRId64 " digest_match=%s\n",
          result == H2_PAL_OK ? "PASS" : "FAIL", received_size, metadata.size,
          result == H2_PAL_OK ? "yes" : "no");

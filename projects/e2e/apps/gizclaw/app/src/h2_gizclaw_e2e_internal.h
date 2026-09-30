@@ -6,6 +6,7 @@
 #include "h2_app_test_audio.h"
 #include "h2_app_test_audio_fake.h"
 #include "h2_gizclaw_e2e.h"
+#include "h2_gizclaw_e2e_output.h"
 
 #include "h2_atomic.h"
 #include <stdbool.h>
@@ -18,6 +19,7 @@ extern "C" {
 
 #define H2_GIZCLAW_E2E_ACTOR_COUNT 3u
 #define H2_GIZCLAW_E2E_NAME_CAPACITY 256u
+
 
 typedef enum h2_gizclaw_e2e_actor_role {
   H2_GIZCLAW_E2E_OWNER = 0,

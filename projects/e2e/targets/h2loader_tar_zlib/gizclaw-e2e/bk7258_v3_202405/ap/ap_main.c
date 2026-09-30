@@ -53,7 +53,8 @@ static void run(void *user) {
   int rc;
   if ((!h2_gizclaw_e2e_fixture_key()[0] ||
        !h2_gizclaw_e2e_fixture_profile()[0] || !h2_gizclaw_e2e_fixture_value()[0] ||
-       !h2_gizclaw_e2e_fixture_endpoint()[0] || !h2_gizclaw_e2e_fixture_token()[0])) {
+       !h2_gizclaw_e2e_fixture_endpoint()[0] || !h2_gizclaw_e2e_fixture_token()[0] ||
+       !h2_gizclaw_e2e_fixture_device_api_url()[0] || !h2_gizclaw_e2e_fixture_audio_url()[0])) {
     printf("H2_GIZCLAW_SETUP_FAIL stage=missing_app_config_fixture rc=%d\n",
            H2_PAL_ERR_INVALID_ARG);
     fflush(stdout);
@@ -75,10 +76,8 @@ static void run(void *user) {
       .voice_audio = h2_gizclaw_e2e_fixture_physical_audio() ? runtime->audio : NULL,
       .voice_pcm_s16le_16khz_mono = h2_gizclaw_e2e_pcm,
       .voice_pcm_len = h2_gizclaw_e2e_pcm_size,
-      .device_api_url = "https://ap.e2e.gizclaw.com",
-      .device_audio_url = "https://raw.githubusercontent.com/GizClaw/gizos/"
-                          "cf8dbdeba320984fc57ddba670dcf55237aa39cf/projects/"
-                          "e2e/apps/gizclaw/data/playback_tone_32s_v1.ogg",
+      .device_api_url = h2_gizclaw_e2e_fixture_device_api_url(),
+      .device_audio_url = h2_gizclaw_e2e_fixture_audio_url(),
       .device_real_audio = h2_gizclaw_e2e_fixture_physical_audio() != 0,
       .suites = H2_GIZCLAW_E2E_SUITE_ALL};
   rc = h2_gizclaw_e2e_run(runtime, &app_config, &result);

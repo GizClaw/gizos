@@ -13,7 +13,7 @@ bazel build --config=esp32s3 \
   //projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/amoled:package
 ```
 
-未指定 `VOICE_ONLY` 时仍运行完整 `all` suite，其中 Voice 使用同一 Session 路径。Launcher 通过 `gizclaw_e2e_fixture` macro 显式注入E2E endpoint/RegistrationToken、期望RuntimeProfile和AppConfig key/value；没有源码凭据或key默认值，缺输入保持command-responsive并在Wi-Fi/业务变更前失败。设备只借用已保存的Wi-Fi；不把 Wi-Fi 凭据编入固件。Voice 使用确定性的 16 kHz mono PCM，经真实网络上传，并在库的 PCM Track 上核验下行非静音音频；Testing Audio wrapper 同时 drain 真实麦克风并记录采集健康，但上传的仍是 fixture PCM；该用例不验收麦克风音质或扬声器听感。
+未指定 `VOICE_ONLY` 时仍运行完整 `all` suite，其中 Voice 使用同一 Session 路径。Launcher 通过 `gizclaw_e2e_fixture` macro 显式注入E2E endpoint/RegistrationToken、期望RuntimeProfile、AppConfig key/value、NTP与Device API/tone输入URL；没有源码凭据或key默认值，缺输入在Runtime网络初始化和业务变更前失败，不确认该image。设备只借用已保存的Wi-Fi；不把 Wi-Fi 凭据编入固件。Voice 使用确定性的 16 kHz mono PCM，经真实网络上传，并在库的 PCM Track 上核验下行非静音音频；启用physical模式时Testing Audio wrapper同时drain真实麦克风，但上传的仍是fixture PCM；该用例不验收麦克风音质或扬声器听感。
 
 ## Session 验收
 
@@ -23,7 +23,9 @@ bazel build --config=esp32s3 \
 
 ## 设备运行
 
-先用 H2Loader `scan` 和 `status` 核验实时 `board=amoled`、`target=esp32s3`、设备 UID、空 Stage 和 coredump baseline。使用 managed `send --file <package>` 与 `reboot upgrade --monitor` 安装，保存剔除协议帧的 UART 日志。不要擦除设备 Wi-Fi 配置。
+只对已明确移交的独占端口使用H2Loader `status`，核验 `board=amoled`、`target=esp32s3`、UID、P1/Stage与实际coredump baseline；并行agent运行期间不使用scan。未知有效Stage不能覆盖；同任务已记录的失败pending App可以由下一版managed package替换，保留P1/Settings与失败记录。使用 `send --file <package>` 和 `reboot upgrade --monitor` 安装；CLI确认前短重连窗口可能结束，随后普通monitor接同一运行的周期重播，不提前确认。不要擦除Wi-Fi或coredump。
+
+普通资格先运行真实业务和cleanup，join后启动命令服务并确认；可选observer在384KiB有界账本内保留完整原始227接口记录，冻结后按真实boot crypto execution nonce重播。溢出/format错误禁止admission；host只接受一份完整、byte/record/CRC32一致、当前version、实际confirm=0的admitted账本，另保存SHA-256。独立normal App boot必须拒绝上次nonce，不能用旧重播代替新测试。静态tone可由明确的LAN fixture提供版本化Ogg，业务仍使用真实E2E server。
 
 要求安装后 status 的 APP/Partition 2 identity 与本次 package 一致、Stage 清空、`last_result=0`；日志包含 Session 逐操作业务断言、PTT 和 Realtime 结果、唯一 case terminal 及重复 final summary。只有 `selected=1 terminal=1 pass=1 cleanup_rc=0 retained_resources=0 complete=true exit_code=0` 且没有新 coredump 才能报告 Voice 硬件流程通过；它不是本轮全量227项API验收；全量还需要8/8独立case和当前版本227项审计。
 

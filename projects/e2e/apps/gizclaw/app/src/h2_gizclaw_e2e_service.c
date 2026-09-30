@@ -11,7 +11,7 @@
  * chain in the coverage auditor. */
 static int expect_result(const char *operation, int actual, int expected) {
   const int rc = actual == expected ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
-  printf("H2_GIZCLAW_E2E stage=service-contract-check operation=%s "
+  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=service-contract-check operation=%s "
          "actual_rc=%d expected_rc=%d result=%s rc=%d\n",
          operation, actual, expected, rc == H2_PAL_OK ? "PASS" : "FAIL", rc);
   return rc;
@@ -102,7 +102,7 @@ static int check_time_sync(h2_gizclaw_service_t *service) {
        (status.state == H2_GIZCLAW_TIME_SYNC_RETRY &&
         status.last_result == H2_PAL_OK)))
     rc = H2_PAL_ERR_INVALID_STATE;
-  printf("H2_GIZCLAW_E2E stage=time-sync-state state=%u attempts=%" PRIu32 " "
+  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=time-sync-state state=%u attempts=%" PRIu32 " "
          "last_rc=%d calibrated=%u result=%s rc=%d\n",
          (unsigned)status.state, status.attempts, status.last_result,
          rc == H2_PAL_OK && status.state == H2_GIZCLAW_TIME_SYNC_SUCCEEDED,

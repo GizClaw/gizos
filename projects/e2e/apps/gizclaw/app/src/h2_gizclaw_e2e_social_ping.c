@@ -60,7 +60,7 @@ int h2_gizclaw_e2e_check_social_ping(h2_gizclaw_e2e_fixture_t *f,
   } else if (rc == H2_PAL_OK) rc = H2_PAL_ERR_INVALID_STATE;
   snprintf(stage, sizeof(stage), "%s-assert", method);
   h2_gizclaw_e2e_evidence(symbol, stage, rc);
-  printf("H2_GIZCLAW_E2E stage=social-ping kind=%s api=%s outcome=%u "
+  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=social-ping kind=%s api=%s outcome=%u "
          "delivered=%" PRIu32 " received=%" PRIu32 " result=%s rc=%d\n", group ? "group" : "friend",
          req ? "request" : "rpc", (unsigned)result.result, result.delivered_count,
          after.count - before.count, rc == H2_PAL_OK ? "PASS" : "FAIL", rc);

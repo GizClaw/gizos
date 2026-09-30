@@ -100,7 +100,7 @@ static int api_call(api_test_t *test, int method, const char *path,
                                    .allocator = test->fixture->allocator};
   h2_pal_http_response_t response = {0};
   int rc = h2_pal_http_request(test->fixture->http, &request, &response);
-  printf("H2_GIZCLAW_E2E stage=device-api path=%s http=%d expected=%d rc=%d\n",
+  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=device-api path=%s http=%d expected=%d rc=%d\n",
          path, response.status_code, expected, rc);
   if (rc == H2_PAL_OK && response.status_code != expected)
     rc = H2_PAL_ERR_INVALID_STATE;
@@ -158,7 +158,7 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
     rc = h2_gizclaw_rpc_api_key_create(service,
                                        h2_gizclaw_e2e_str("gizos-device-e2e"),
                                        false, 15000, &test.key);
-  printf("H2_GIZCLAW_E2E stage=device-api-key-create rc=%d\n", rc);
+  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=device-api-key-create rc=%d\n", rc);
 #define CHECK(call)                                                            \
   do {                                                                         \
     if (rc == H2_PAL_OK)                                                       \
@@ -186,7 +186,7 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
     uint64_t now = 0;
     CHECK(h2_pal_time_get_monotonic_ms(fixture->time, &now));
     if (fixture->config->device_real_audio && i % 4u == 0)
-      printf("H2_GIZCLAW_E2E stage=player-status state=%s position_ms=%llu "
+      h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=player-status state=%s position_ms=%llu "
              "pcm_bytes=%llu peak=%u\n",
              local.state, (unsigned long long)local.position_ms,
              (unsigned long long)device_evidence(fixture).playback_bytes,
@@ -201,7 +201,7 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
       CHECK(api_call(&test, H2_PAL_HTTP_GET, "/device/status", NULL, 200));
       if (text_is(&test, "audioplayer.state", "playing")) {
         local_played = true;
-        printf("H2_GIZCLAW_E2E stage=player-cadence position_ms=%llu "
+        h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=player-cadence position_ms=%llu "
                "elapsed_ms=%llu\n",
                (unsigned long long)local.position_ms,
                (unsigned long long)(now - first_playing_at));
@@ -216,14 +216,14 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
       ASSERT(local_played && local.has_duration_ms &&
              local.duration_ms == local.position_ms && local.position_ms > 0 &&
              now - first_playing_at <= local.position_ms + 10000u);
-      printf("H2_GIZCLAW_E2E stage=player-ended position_ms=%llu "
+      h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=player-ended position_ms=%llu "
              "elapsed_ms=%llu\n",
              (unsigned long long)local.position_ms,
              (unsigned long long)(now - first_playing_at));
       break;
     }
     if (!strcmp(local.state, "error")) {
-      printf("H2_GIZCLAW_E2E stage=local-player-error code=%s\n",
+      h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=local-player-error code=%s\n",
              local.error_code);
       rc = H2_PAL_ERR_IO;
       break;
@@ -453,7 +453,7 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
   if (first_failure == H2_PAL_OK)
     first_failure = rc;
   rc = first_failure;
-  printf("H2_GIZCLAW_E2E stage=device-api-assert pcm_bytes=%llu "
+  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=device-api-assert pcm_bytes=%llu "
          "stage_bytes=%llu result=%s rc=%d\n",
          (unsigned long long)device_evidence(fixture).playback_bytes,
          (unsigned long long)h2_atomic_load(&stage_bytes),
@@ -462,7 +462,7 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
     (void)h2_gizclaw_player_stop(service);
     int cleanup = h2_gizclaw_rpc_api_key_revoke(
         service, h2_gizclaw_e2e_str(test.key.name), 15000);
-    printf("H2_GIZCLAW_E2E stage=device-api-key-revoke rc=%d\n", cleanup);
+    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=device-api-key-revoke rc=%d\n", cleanup);
     if (rc == H2_PAL_OK)
       rc = cleanup;
   }

@@ -176,7 +176,7 @@ static int call(h2_gizclaw_e2e_fixture_t *fixture, unsigned api,
         rc = H2_PAL_ERR_INVALID_STATE;
       evidence("h2_gizclaw_service_poll", "connectivity-chunks", rc);
       evidence("h2_gizclaw_service_poll", "speedtest-chunks-assert", rc);
-      printf("H2_GIZCLAW_E2E stage=speedtest-hooks request=%" PRIu64
+      h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=speedtest-hooks request=%" PRIu64
              " direction=%s bytes=%zu chunks=%zu "
              "result=%s rc=%d\n",
              identity, upload ? "upload" : "download", hooks->bytes,
