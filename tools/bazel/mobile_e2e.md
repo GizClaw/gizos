@@ -2,7 +2,7 @@
 
 `mobile_e2e_test` declares a direct `py_test`; every target uses the same `tools/bazel/mobile_e2e.py` main. The App and `app_sdk` stay in `ios_sim_arm64` / `android_arm64` configuration; `mobile_e2e_host_python` selects the repository's hermetic Python runtime in execution configuration. Python libraries use `HOST_OR_MOBILE_TOOL_COMPATIBILITY`: they accept matching host configurations and the supported iOS/Android configurations, while embedded/K4B graphs skip them because those targets have no Python runtime. No shell trampoline or undeclared system Python is involved.
 
-Use the existing Make targets, or invoke the same Bazel labels explicitly:
+Invoke the suite's exact Bazel label directly. `mobile_e2e_test` accepts optional `tags`; live qualification targets pass `["external"]` so execution is always fresh while artifact build caches remain enabled:
 
 ```sh
 bazel test --config=ios_sim_arm64 --cache_test_results=no \

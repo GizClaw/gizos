@@ -97,10 +97,25 @@ typedef struct h2_atomic_qualification_result {
   int teardown;
   bool complete, qualified;
 } h2_atomic_qualification_result_t;
-/* Non-copyable atomic storage is retired only after both tasks have joined.
- * A failed bounded join retains heap state and reports teardown failure. */
+/**
+ * @brief Run every mandatory Atomic operation and synchronization case.
+ *
+ * @param config Borrowed Mem/Task/Time APIs and observation callbacks. Calls
+ * are serialized because static backing storage has process lifetime.
+ * @param result Caller-owned ledger, reset on entry. Partial failure keeps
+ * NOT_RUN cases explicit and qualified false.
+ *
+ * This synchronous function crosses a two-worker startup barrier, waits up to
+ * ten seconds per progress deadline, then joins before retiring atomic values.
+ * A failed bounded join retains heap state and sets result->teardown; borrowed
+ * task/time dependencies must stay alive until all retained workers stop.
+ * @return H2_PAL_OK only for complete PASS and cleanup; otherwise an argument,
+ * allocation, task, timeout or invalid-state error. Unsupported init cannot
+ * qualify. No diagnostics callback owns or frees backing storage.
+ */
 int h2_atomic_e2e_qualify(const h2_atomic_qualification_config_t *config,
                          h2_atomic_qualification_result_t *result);
+/** @brief Emit the immutable caller-owned ledger to the launcher console. */
 void h2_atomic_e2e_print(const char *platform, const char *placement,
                          const h2_atomic_qualification_result_t *result);
 

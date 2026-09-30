@@ -77,7 +77,7 @@ int main(void) {
            result.compared, result.elapsed_us, rc);
     if (rc != 0) passed = 0;
   }
-  h2_web_platform_destroy(platform);
+  if (!qualification.teardown) h2_web_platform_destroy(platform);
   (void)h2_web_main_call(atomic_result, (const void *[]){&(int){passed}});
   return passed ? 0 : 1;
 }
