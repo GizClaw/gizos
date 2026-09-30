@@ -17,18 +17,17 @@ void h2_gizclaw_e2e_set_evidence_observer(h2_gizclaw_e2e_evidence_fn observer,
 int h2_gizclaw_e2e_emit(const char *format, ...) {
   va_list arguments;
   va_start(arguments, format);
-  if (s_observer == NULL) {
-    int result = vprintf(format, arguments);
-    va_end(arguments);
-    return result;
-  }
   char record[1024];
   int size = vsnprintf(record, sizeof(record), format, arguments);
   va_end(arguments);
   if (size < 0 || (size_t)size >= sizeof(record)) {
-    s_observer(s_user, NULL, 0u);
+    if (s_observer != NULL)
+      s_observer(s_user, NULL, 0u);
     return -1;
   }
-  s_observer(s_user, record, (size_t)size);
-  return fputs(record, stdout) < 0 ? -1 : size;
+  if (s_observer != NULL)
+    s_observer(s_user, record, (size_t)size);
+  /* Native images borrow their SDK's stdio owner; portable archives must not
+   * reference newlib's FILE/reentrancy layout through stdout or vprintf. */
+  return printf("%.*s", size, record);
 }
