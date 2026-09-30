@@ -14,6 +14,8 @@ import subprocess
 import sys
 import tarfile
 import tempfile
+import signal
+import time
 import zlib
 
 def fields(text):
@@ -57,21 +59,43 @@ def main():
     with tempfile.TemporaryDirectory(prefix='atomic-device-',dir='/tmp') as directory:
         local=Path(directory);image=local/'atomic.update.tar.zlib';image.write_bytes(original)
         index=0
-        def run(label,*args,timeout=180):
+        def run(label,*args,timeout=180,monitor=False):
             nonlocal index
             command=[cli,'--no-ble','--port',port,'--transport','iostreamikcp','--wait-timeout','150',*args]
-            try:
-                completed=subprocess.run(command,text=True,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,timeout=timeout)
-            except subprocess.TimeoutExpired as error:
-                partial=error.stdout or ''
-                if isinstance(partial,bytes):partial=partial.decode('utf-8',errors='replace')
-                (output/f'{index:02d}-{label}.log').write_text(partial)
-                raise
-            (output/f'{index:02d}-{label}.log').write_text(completed.stdout);index+=1
-            if completed.returncode:raise RuntimeError((label,completed.returncode,completed.stdout[-2500:]))
-            return completed.stdout
+            log_path=output/f'{index:02d}-{label}.log';index+=1
+            with log_path.open('w') as log:
+                process=subprocess.Popen(command,text=True,stdout=log,stderr=subprocess.STDOUT)
+                try:
+                    if monitor:
+                        deadline=time.monotonic()+timeout
+                        while time.monotonic()<deadline:
+                            text=log_path.read_text()
+                            marker='H2_ATOMIC_BOOT version='+version
+                            if marker in text and 'H2_ATOMIC_READY rc=0 confirm=0' in text.split(marker,1)[1]:
+                                process.send_signal(signal.SIGINT)
+                                break
+                            if process.poll() is not None:break
+                            time.sleep(0.1)
+                        else:
+                            raise TimeoutError('fresh Atomic BOOT/READY not observed')
+                    code=process.wait(timeout=timeout if not monitor else 10)
+                except BaseException:
+                    if process.poll() is None:
+                        process.send_signal(signal.SIGINT)
+                        try:process.wait(timeout=10)
+                        except subprocess.TimeoutExpired:process.kill();process.wait()
+                    raise
+            text=log_path.read_text()
+            if code:raise RuntimeError((label,code,text[-2500:]))
+            return text
         before=fields(run('before-status','status'))
-        assert before.get('device_uid')==uid and before.get('stage_valid')=='0', 'fixture UID/Stage mismatch'
+        assert before.get('device_uid')==uid, 'fixture UID mismatch'
+        resume=before.get('stage_valid')=='1'
+        if resume:
+            expected_stage=dict(stage_package_checksum=hashlib.sha256(original).hexdigest(),stage_version=version,
+                stage_image_checksum=manifest['image_sha256'],stage_role='app',stage_board=manifest['board'],stage_target=target)
+            assert all(before.get(k)==v for k,v in expected_stage.items()), 'nonempty Stage belongs to a different package'
+        else:assert before.get('stage_valid')=='0', 'invalid Stage state'
         p1={k:v for k,v in before.items() if k.startswith('partition_1_')}
         before_coredump=fields(run('before-coredump-status','coredump','status'))
         assert before_coredump.get('result')=='OK' and before_coredump.get('code')=='0'
@@ -84,10 +108,10 @@ def main():
         else:
             assert before_coredump.get('blank')=='1', 'inconsistent empty dump'
 
-        run('send','send','--file',str(image),timeout=300)
-        upgrade=run('upgrade','--ready','H2_ATOMIC_READY rc=0 confirm=0','reboot','upgrade','--monitor')
+        if not resume:run('send','send','--file',str(image),timeout=300)
+        upgrade=run('upgrade','reboot','upgrade','--monitor',monitor=True)
         first=boot_ledger(upgrade,ids,version)
-        normal=run('normal-boot','--ready','H2_ATOMIC_READY rc=0 confirm=0','reboot','app','--monitor')
+        normal=run('normal-boot','reboot','app','--monitor',monitor=True)
         second=boot_ledger(normal,ids,version)
         final=fields(run('after-status','status'))
         assert final.get('device_uid')==uid
