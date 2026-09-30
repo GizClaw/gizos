@@ -54,7 +54,7 @@ Atomic 是独立 library，不属于 PAL。`projects/e2e/apps/atomic/app` 的固
 
 DevKit 与 BK7258 分别在内部 RAM 和 PSRAM wrapper placement 运行整套资格，每次 boot 要求 56/56 与 20/20 joins。两平台的实际 atomic backing 都必须在内部 RAM，必须观察 CPU0/CPU1 与 live object/allocation 清理；不能从 task policy 名推断实际 core。DevKit 另检查两枚地址独立的 file-static flag、PSRAM 动态 wrapper/internal backing，以及 CPU0 上优先级 4/9 的两名 worker 在 ready/go barrier 后各执行 20,000 次操作。直接 C11 只在受支持的内部 RAM 做独立对照；Xtensa PSRAM backing 不受支持，不执行该实验，也不把它混入 H2Atomic 必测资格。
 
-旧 DevKit UID `9888e0115c52` 的记录中，六轮 H2Atomic counter 达到目标，但三轮 direct-C11 PSRAM 对照丢 count，App 仍无条件 confirm。这是历史实验，不能当完整接口验收。当前 launcher 只有全部必测与 cleanup 成功才确认 App；direct device test 必须核对显式 port/UID、原 P1 与空 Stage，捕获 fresh BOOT 下首份 ledger、升级与独立 App reboot，并回读最终 package/version/image 身份和实际 byte-identical coredump。Live target 声明 `manual`/`external`，artifact build cache 保持启用。完整运行命令和 source/artifact 证据身份见 `projects/e2e/apps/atomic/README.md` 与生成的资格收据。
+旧 DevKit UID `9888e0115c52` 的记录中，六轮 H2Atomic counter 达到目标，但三轮 direct-C11 PSRAM 对照丢 count，App 仍无条件 confirm。这是历史实验，不能当完整接口验收。当前 launcher 只有全部必测与 cleanup 成功才确认 App；direct device test 必须核对显式 port/UID、原 P1 与空 Stage（只允许继续完全相同的既有 package）；suite 与严格 PAL resource comparison 后才启动串口 command service。实际 cleanup 和 confirm 成功后，才重放包含每次真正 boot 独立 crypto execution identity 的不可变 ledger；升级与独立 App reboot 必须观察不同 identity 下完整的 56-case ledger。最终回读 package/version/image、原 P1 与空 Stage；已有 coredump 实际读取并逐字节比较，空 dump 只校验原 blank status，不伪造内容或 digest。Live target 声明 `manual`/`external`，artifact build cache 保持启用。完整运行命令和 source/artifact 证据身份见 `projects/e2e/apps/atomic/README.md` 与生成的资格收据。
 
 ## H106
 

@@ -73,7 +73,15 @@ H2_ATOMIC_DEVICE_PORT=<port> H2_ATOMIC_DEVICE_UID=<uid> \
 
 Use `--config=bk7258` and the `atomic/bk7258_v3_202405:device_test` label for BK.
 The test invokes H2Loader, never Bazel: it verifies the starting UID and empty
-Stage, saves P1/coredump identities, transfers the declared package, validates
-56/56 on upgrade and independent App reboot, and checks confirmation, package
-identity, cleanup, P1, Stage and unchanged actual coredump bytes. All live test
-labels use `external`; build caches remain enabled while test execution is fresh.
+Stage (or resumes only the exact declared package already in Stage), saves P1 and
+coredump identities, and transfers the declared package. Serial command services
+start after the suite and exact PAL resource comparison, so command polling cannot
+change its allocation baseline. Failure starts the recovery channel without
+confirming the App. Only actual successful cleanup and confirmation enable an
+immutable ledger carrying a cryptographic identity created once per real boot.
+The upgrade and independent App reboot must each provide a complete 56-case
+ledger with different execution identities. Final checks require the expected
+package/image/version, unchanged P1 and empty Stage. Stored coredumps are actually
+read and compared byte for byte; an empty dump is checked as unchanged blank
+status, with no invented dump or digest. All live test labels use `external`;
+build caches remain enabled while test execution is fresh.
