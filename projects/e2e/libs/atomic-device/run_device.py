@@ -109,6 +109,7 @@ def main():
             return text
         before=fields(run('before-status','status'))
         assert before.get('device_uid')==uid, 'fixture UID mismatch'
+        assert before.get('board')==manifest['board'] and before.get('target')==target, 'fixture board/target mismatch'
         assert before.get('active_version')!=version, 'use a unique firmware version for a fresh managed boot'
         resume=before.get('stage_valid')=='1'
         if resume:
