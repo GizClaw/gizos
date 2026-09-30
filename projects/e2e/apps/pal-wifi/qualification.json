@@ -1018,7 +1018,7 @@
     "native_component_src/esp-idf6.x/opus_port/CMakeLists.txt": "d4a02df75018669fb8e382a0ca6f3b8dc53ac1a0471b1528c0958d1995451d7d",
     "native_component_src/esp-idf6.x/zlib/BUILD.bazel": "4861580119a8a1475552045a95add6e50e682d2c9651e75dfcd01f176ea01108",
     "native_component_src/esp-idf6.x/zlib/CMakeLists.txt": "6db7b590e073071cc1f313fa21d35b38fe9966db6bd69fc218cca57762faf89f",
-    "projects/e2e/apps/pal-wifi/BUILD.bazel": "408ac9e3b74aceebe024bffc605d46ba8dbb5b02ed3304afeca9bfae4ffc1f0d",
+    "projects/e2e/apps/pal-wifi/BUILD.bazel": "63ca6d1a72d8a6cc07e002d9ee2fc716382a3122748a8bf75a0dce448fbf53ba",
     "projects/e2e/apps/pal-wifi/README.md": "a046e84fd34dddbcd912970144ccf60d28016cd2c3d5afb439fea47b61956db9",
     "projects/e2e/apps/pal-wifi/app/BUILD.bazel": "1037e6ee5ec58d097059fd55ecdd47410911050fb128ebbcb68220134e776cd0",
     "projects/e2e/apps/pal-wifi/app/api_coverage.json": "d50b012a4e804a28e107d7c99af47cf059cc4a2c79cab077fa287fbd17bc0e97",
