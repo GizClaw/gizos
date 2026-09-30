@@ -39,7 +39,21 @@ static void run(void *unused) {
   (void)unused;
   h2_pal_time_sleep_ms(runtime->time, 1500);
   h2_esp_platform_resource_stats_t before = {0}, after = {0};
+  /* SDK command/bootstrap resources retire after App startup. Establish an
+   * actually stable baseline before measuring this suite, retaining exact
+   * equality for its own before/after admission check. */
+  h2_pal_time_sleep_ms(runtime->time, 8000);
   int rc = h2_esp_platform_get_resource_stats(&before);
+  unsigned stable = 0;
+  for (unsigned sample = 0; !rc && sample < 30 && stable < 5; ++sample) {
+    h2_pal_time_sleep_ms(runtime->time, 500);
+    h2_esp_platform_resource_stats_t current = {0};
+    rc = h2_esp_platform_get_resource_stats(&current);
+    stable = !memcmp(&before, &current, sizeof(before)) ? stable + 1 : 0;
+    before = current;
+  }
+  if (!rc && stable < 5)
+    rc = H2_PAL_ERR_BUSY;
   if (rc)
     fail("stats_before", rc);
   h2_atomic_qualification_config_t c = {
