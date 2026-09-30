@@ -25,7 +25,7 @@ bazel build --config=esp32s3 \
 
 只对已明确移交的独占端口使用H2Loader `status`，核验 `board=amoled`、`target=esp32s3`、UID、P1/Stage与实际coredump baseline；并行agent运行期间不使用scan。未知有效Stage不能覆盖；同任务已记录的失败pending App可以由下一版managed package替换，保留P1/Settings与失败记录。使用 `send --file <package>` 和 `reboot upgrade --monitor` 安装；CLI确认前短重连窗口可能结束，随后普通monitor接同一运行的周期重播，不提前确认。不要擦除Wi-Fi或coredump。
 
-普通资格先运行真实业务和cleanup，join后启动命令服务并确认；可选observer在384KiB有界账本内保留完整原始227接口记录，冻结后按真实boot crypto execution nonce重播。溢出/format错误禁止admission；host只接受一份完整、byte/record/CRC32一致、当前version、实际confirm=0的admitted账本，另保存SHA-256。独立normal App boot必须拒绝上次nonce，不能用旧重播代替新测试。静态tone可由明确的LAN fixture提供版本化Ogg，业务仍使用真实E2E server。
+普通资格先运行真实业务和cleanup，join后启动命令服务并确认；可选observer在384KiB有界账本内保留完整原始227接口记录，冻结后按真实boot crypto execution nonce重播。溢出/format错误禁止admission；host只接受一份完整、byte/record/CRC32一致、当前version、实际confirm=0的admitted账本，另保存SHA-256。独立normal App boot必须拒绝上次nonce，不能用旧重播代替新测试。音频输入必须来自明确的HTTPS对象；本次可使用该受控E2E profile的已部署非敏感media资产，保留对象SHA/大小/版本身份，业务仍使用真实E2E server。
 
 要求安装后 status 的 APP/Partition 2 identity 与本次 package 一致、Stage 清空、`last_result=0`；日志包含 Session 逐操作业务断言、PTT 和 Realtime 结果、唯一 case terminal 及重复 final summary。只有 `selected=1 terminal=1 pass=1 cleanup_rc=0 retained_resources=0 complete=true exit_code=0` 且没有新 coredump 才能报告 Voice 硬件流程通过；它不是本轮全量227项API验收；全量还需要8/8独立case和当前版本227项审计。
 

@@ -23,8 +23,6 @@ typedef struct firmware_sha256 {
 } firmware_sha256_t;
 
 typedef struct firmware_download {
-  h2_gizclaw_e2e_fixture_t *fixture;
-  int poll_rc;
   firmware_sha256_t sha256;
   uint64_t expected_size;
   uint64_t received_size;
@@ -193,26 +191,16 @@ static bool digest_equal(const char *left, const char *right) {
 }
 
 static int cancel_download(void *user) {
-  firmware_download_t *download = user;
-  h2_gizclaw_e2e_fixture_t *fixture = download == NULL ? NULL : download->fixture;
+  const h2_gizclaw_e2e_fixture_t *fixture = user;
   if (fixture == NULL || fixture->cancel_requested ||
       (fixture->config->should_stop != NULL &&
        fixture->config->should_stop(fixture->config->should_stop_user))) {
     return 1;
   }
-  if (download->poll_rc != H2_PAL_OK)
-    return 1;
   uint64_t now_ms = 0u;
-  if (fixture->time == NULL ||
-      h2_pal_time_get_monotonic_ms(fixture->time, &now_ms) != H2_PAL_OK ||
-      now_ms >= fixture->deadline_ms) {
-    return 1;
-  }
-  /* The HTTP transfer is synchronous, but the registered Peer still needs
-   * App-side Service dispatch throughout a slow, full-image download. */
-  download->poll_rc = h2_gizclaw_e2e_fixture_poll(
-      fixture, H2_GIZCLAW_E2E_OWNER, 0u);
-  return download->poll_rc != H2_PAL_OK;
+  return fixture->time == NULL ||
+         h2_pal_time_get_monotonic_ms(fixture->time, &now_ms) != H2_PAL_OK ||
+         now_ms >= fixture->deadline_ms;
 }
 
 static int receive_firmware(void *user, const h2_pal_http_request_t *request,
@@ -227,9 +215,8 @@ static int receive_firmware(void *user, const h2_pal_http_request_t *request,
       download->received_size + chunk_len > download->expected_size) {
     return H2_PAL_ERR_FORMAT;
   }
-  if (cancel_download(download)) {
-    return download->poll_rc != H2_PAL_OK ? download->poll_rc : H2_PAL_ERR_CLOSED;
-  }
+  if (h2_pal_http_request_is_canceled(request))
+    return H2_PAL_ERR_CLOSED;
   sha256_update(&download->sha256, chunk, chunk_len);
   download->received_size += chunk_len;
   return H2_PAL_OK;
@@ -315,8 +302,6 @@ static int download_firmware(h2_gizclaw_e2e_fixture_t *fixture,
   if (chunk == NULL)
     return H2_PAL_ERR_NO_MEMORY;
   firmware_download_t download = {
-      .fixture = fixture,
-      .poll_rc = H2_PAL_OK,
       .expected_size = (uint64_t)metadata->size,
   };
   sha256_init(&download.sha256);
@@ -330,14 +315,12 @@ static int download_firmware(h2_gizclaw_e2e_fixture_t *fixture,
       .read_cb = receive_firmware,
       .user = &download,
       .cancel_cb = cancel_download,
-      .cancel_user = &download,
+      .cancel_user = fixture,
       .allocator = fixture->allocator,
   };
   h2_pal_http_response_t response;
   h2_pal_http_response_reset(&response);
   int result = h2_pal_http_request(fixture->http, &request, &response);
-  if (download.poll_rc != H2_PAL_OK)
-    result = download.poll_rc;
   h2_gizclaw_e2e_evidence("h2_pal_http_request", "firmware", result);
   if (result == H2_PAL_OK &&
       (response.status_code < 200 || response.status_code >= 300)) {
@@ -364,6 +347,17 @@ static int download_firmware(h2_gizclaw_e2e_fixture_t *fixture,
   return result;
 }
 
+typedef struct download_job {
+  h2_gizclaw_e2e_fixture_t *fixture;
+  const h2_gizclaw_firmware_t *metadata;
+  uint64_t received_size;
+} download_job_t;
+
+static int download_job_run(void *user) {
+  download_job_t *job = user;
+  return download_firmware(job->fixture, job->metadata, &job->received_size);
+}
+
 int h2_gizclaw_e2e_run_firmware(h2_gizclaw_e2e_fixture_t *fixture) {
   if (fixture == NULL || fixture->http == NULL ||
       fixture->actors[H2_GIZCLAW_E2E_OWNER].service == NULL) {
@@ -373,7 +367,13 @@ int h2_gizclaw_e2e_run_firmware(h2_gizclaw_e2e_fixture_t *fixture) {
   int result = get_firmware_metadata(fixture, &metadata);
   uint64_t received_size = 0u;
   if (result == H2_PAL_OK) {
-    result = download_firmware(fixture, &metadata, &received_size);
+    download_job_t job = {.fixture = fixture, .metadata = &metadata};
+    /* Service dispatch remains on the App task even while HTTP is blocked in
+     * DNS/handshake/receive. Never poll the same Service from its HTTP job. */
+    result = h2_gizclaw_e2e_fixture_call_sync(
+        fixture, fixture->actors[H2_GIZCLAW_E2E_OWNER].service,
+        download_job_run, &job);
+    received_size = job.received_size;
   }
   h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=firmware result=%s bytes=%" PRIu64
          " expected=%" PRId64 " digest_match=%s\n",

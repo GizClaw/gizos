@@ -38,25 +38,6 @@ py_binary(
     deps = ["//projects/e2e/apps/gizclaw:coverage_library"],
 )
 
-py_binary(
-    name = "tone_fixture",
-    srcs = ["tone_fixture.py"],
-    main = "tone_fixture.py",
-    args = ["--file", "$(rootpath //projects/e2e/apps/gizclaw:playback_tone)"],
-    data = ["//projects/e2e/apps/gizclaw:playback_tone"],
-    legacy_create_init = 0,
-    target_compatible_with = HOST_TOOL_COMPATIBILITY,
-)
-
-py_test(
-    name = "tone_fixture_test",
-    srcs = ["tone_fixture.py", "test_tone_fixture.py"],
-    main = "test_tone_fixture.py",
-    imports = ["."],
-    legacy_create_init = 0,
-    target_compatible_with = HOST_TOOL_COMPATIBILITY,
-)
-
 py_test(
     name = "verify_device_test",
     srcs = ["test_verify_device.py", "verify_device.py"],

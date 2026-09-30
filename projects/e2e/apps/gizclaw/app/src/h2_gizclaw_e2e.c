@@ -88,7 +88,9 @@ static bool config_valid(h2_runtime_t *runtime,
        (H2_GIZCLAW_E2E_SUITE_RPC | H2_GIZCLAW_E2E_SUITE_VOICE)) != 0u;
   if ((config->suites & H2_GIZCLAW_E2E_SUITE_DEVICE) != 0u &&
       (config->device_api_url == NULL || config->device_api_url[0] == '\0' ||
-       config->device_audio_url == NULL || config->device_audio_url[0] == '\0'))
+       config->device_audio_url == NULL || config->device_audio_url[0] == '\0' ||
+       strncmp(config->device_api_url, "https://", 8u) != 0 ||
+       strncmp(config->device_audio_url, "https://", 8u) != 0))
     return false;
   if ((config->suites & H2_GIZCLAW_E2E_SUITE_RPC) != 0u &&
       (config->app_config_key == NULL || config->app_config_key[0] == '\0' ||

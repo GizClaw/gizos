@@ -23,8 +23,8 @@ def _fixture_impl(ctx):
     if len(endpoint) >= 128 or len(token) > 4096:
         fail("board service input exceeds the portable configuration limit")
     for uri in [device_api_url, audio_url]:
-        if len(uri) > 2047 or (uri and not (uri.startswith("http://") or uri.startswith("https://"))) or "@" in uri:
-            fail("board fixture URL must be an explicit HTTP(S) URL without userinfo")
+        if len(uri) > 2047 or (uri and not uri.startswith("https://")) or "@" in uri:
+            fail("board fixture URL must be an explicit HTTPS URL without userinfo")
     if len(time_server) > 253 or any([c not in allowed for c in time_server.elems()]):
         fail("Time fixture must be an explicit DNS hostname or IPv4 address")
     source = ctx.actions.declare_file(ctx.label.name + ".c")

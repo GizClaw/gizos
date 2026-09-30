@@ -11,16 +11,20 @@
 /* Run the production firmware case with API/HTTP boundary doubles, not a
  * server. The real SHA-256 implementation must verify the downloaded bytes. */
 static unsigned mode, releases, cancels, http_calls, response_frees;
-static unsigned budgets, creates, rpcs, assertions, polls;
+static unsigned budgets, creates, rpcs, assertions, jobs;
+static bool in_job;
 static int request_token, service_token;
 static h2_app_test_mem_t allocator;
 static h2_app_test_time_t clock;
-int h2_gizclaw_e2e_fixture_poll(h2_gizclaw_e2e_fixture_t *f,
-                              h2_gizclaw_e2e_actor_role_t role,
-                              uint32_t duration_ms) {
-  assert(f != NULL && role == H2_GIZCLAW_E2E_OWNER && duration_ms == 0u);
-  ++polls;
-  return mode == 21 ? H2_PAL_ERR_IO : H2_PAL_OK;
+int h2_gizclaw_e2e_fixture_call_sync(h2_gizclaw_e2e_fixture_t *f,
+                                    h2_gizclaw_service_t *service,
+                                    int (*fn)(void *), void *ctx) {
+  assert(f != NULL && service == (h2_gizclaw_service_t *)&service_token && fn != NULL);
+  ++jobs;
+  in_job = true;
+  int rc = fn(ctx);
+  in_job = false;
+  return mode == 21 ? H2_PAL_ERR_IO : rc;
 }
 bool h2_gizclaw_e2e_fixture_has_time(const h2_gizclaw_e2e_fixture_t *f,
                                      uint32_t ms) {
@@ -103,6 +107,7 @@ static int http_request(void *user, const h2_pal_http_request_t *req,
                         h2_pal_http_response_t *response) {
   (void)user;
   ++http_calls;
+  assert(in_job);
   assert(req->method == H2_PAL_HTTP_GET && req->retry_count == 0);
   assert(req->timeout_ms == (mode == 24 ? 300000u : 99900u));
   assert(strcmp(req->url.data, "https://example.invalid/firmware") == 0);
@@ -135,7 +140,7 @@ int main(void) {
     allocator.fail_at = mode == 9 ? 1u : 0u;
     h2_app_test_time_init(&clock, 100u);
     allocator.live_blocks = releases = cancels = http_calls = response_frees = 0;
-    budgets = creates = rpcs = assertions = polls = 0;
+    budgets = creates = rpcs = assertions = jobs = 0;
     h2_gizclaw_e2e_config_t config = {0};
     h2_gizclaw_e2e_fixture_t fixture = {.config = &config,
                                         .allocator = &allocator.api,
@@ -153,14 +158,14 @@ int main(void) {
     assert(cancels == (mode >= 13 && mode <= 15 ? 1u : 0u));
     if (mode == 0 || mode == 20 || mode == 24) {
       assert(creates == 1 && rpcs == 1 && assertions == 2 && http_calls == 1);
-      assert(polls >= 3u);
+      assert(jobs == 1u);
     }
     if (mode == 21)
-      assert(rc == H2_PAL_ERR_IO && polls == 1u);
+      assert(rc == H2_PAL_ERR_IO && jobs == 1u);
     if (mode == 22)
-      assert(rc == H2_PAL_ERR_CLOSED && polls == 2u);
+      assert(rc == H2_PAL_ERR_CLOSED && jobs == 1u);
     if (mode == 23)
-      assert(rc == H2_PAL_ERR_TIMEOUT && http_calls == 0u && polls == 0u);
+      assert(rc == H2_PAL_ERR_TIMEOUT && http_calls == 0u && jobs == 1u);
     if (mode <= 3 && mode != 0)
       assert(http_calls == 0);
   }
