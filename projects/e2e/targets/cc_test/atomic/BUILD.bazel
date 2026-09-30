@@ -15,3 +15,14 @@ cc_test(
         "//projects/e2e/apps/atomic/app:c11_comparison",
     ],
 )
+
+cc_test(
+    name = "comparison_lifetime_test",
+    srcs = ["test_comparison_lifetime.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    deps = [
+        "//libs/atomic/providers/c11",
+        "//projects/e2e/apps/atomic/app:atomic_e2e",
+    ],
+)
