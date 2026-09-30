@@ -298,6 +298,11 @@ h2_pal_result_t h2_gizclaw_session_snapshot(h2_gizclaw_session_t *session,
   return H2_PAL_OK;
 }
 
+/* A NULL copy of a non-NULL string means the storage ran out. */
+static bool copied(const char *source, const char *copy) {
+  return source == NULL || copy != NULL;
+}
+
 static char *copy_string(const h2_pal_mem_api_t *mem, const char *text) {
   if (text == NULL)
     return NULL;
@@ -339,6 +344,12 @@ h2_gizclaw_session_catalog_copy(h2_gizclaw_session_t *session,
   page.runtime_profile_name = copy_string(mem, session->state.profile_name);
   page.runtime_profile_revision =
       copy_string(mem, session->state.profile_revision);
+  if (!copied(session->state.profile_name, page.runtime_profile_name) ||
+      !copied(session->state.profile_revision,
+              page.runtime_profile_revision)) {
+    unlock(session);
+    return h2_gizclaw_resp_arena_end(&arena, H2_PAL_ERR_NO_SPACE);
+  }
   if (page.safety_fence_count != 0u) {
     if (page.safety_fence_count > SIZE_MAX / sizeof(*page.safety_fences)) {
       unlock(session);
@@ -368,14 +379,25 @@ h2_gizclaw_session_catalog_copy(h2_gizclaw_session_t *session,
         .workspace_lang_pair = copy_string(mem, src->workspace_lang_pair),
         .i18n_count = src->i18n_count,
     };
+    if (!copied(src->name, dst->name) ||
+        !copied(src->workspace_lang_pair, dst->workspace_lang_pair)) {
+      rc = H2_PAL_ERR_NO_SPACE;
+      break;
+    }
     if (dst->tag_count) {
       dst->tags = h2_pal_mem_alloc(mem, dst->tag_count * sizeof(*dst->tags));
       if (!dst->tags) {
         rc = H2_PAL_ERR_NO_SPACE;
         break;
       }
-      for (size_t j = 0; j < dst->tag_count; ++j)
+      /* Never publish a tag_count that covers a missing tag. */
+      for (size_t j = 0; j < dst->tag_count && rc == H2_PAL_OK; ++j) {
         dst->tags[j] = copy_string(mem, src->tags[j]);
+        if (!copied(src->tags[j], dst->tags[j]))
+          rc = H2_PAL_ERR_NO_SPACE;
+      }
+      if (rc != H2_PAL_OK)
+        break;
     }
     if (dst->i18n_count == 0u)
       continue;
@@ -384,13 +406,19 @@ h2_gizclaw_session_catalog_copy(h2_gizclaw_session_t *session,
       rc = H2_PAL_ERR_NO_SPACE;
       break;
     }
-    for (size_t j = 0u; j < dst->i18n_count; ++j) {
+    for (size_t j = 0u; j < dst->i18n_count && rc == H2_PAL_OK; ++j) {
       dst->i18n[j] = (h2_gizclaw_workflow_i18n_t){
           .locale = copy_string(mem, src->i18n[j].locale),
           .display_name = copy_string(mem, src->i18n[j].display_name),
           .description = copy_string(mem, src->i18n[j].description),
       };
+      if (!copied(src->i18n[j].locale, dst->i18n[j].locale) ||
+          !copied(src->i18n[j].display_name, dst->i18n[j].display_name) ||
+          !copied(src->i18n[j].description, dst->i18n[j].description))
+        rc = H2_PAL_ERR_NO_SPACE;
     }
+    if (rc != H2_PAL_OK)
+      break;
   }
   unlock(session);
   rc = h2_gizclaw_resp_arena_end(&arena, rc);
