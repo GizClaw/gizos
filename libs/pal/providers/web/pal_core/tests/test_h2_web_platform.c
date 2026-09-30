@@ -611,11 +611,14 @@ static void h2_web_test_serial_shutdown(void *user) {
   // shutdown wakes this reader before its main-thread force-close finishes.
   // Keep the fake failure mode and session alive until the driver has checked
   // that operation; cleanup must not race with the assertion under coverage.
-  while (!atomic_load(&test->shutdown_checked))
+  const double shutdown_check_deadline = emscripten_get_now() + 3000.0;
+  while (!atomic_load(&test->shutdown_checked) &&
+         emscripten_get_now() < shutdown_check_deadline)
     h2_web_worker_sleep(1u);
+  const int shutdown_checked = atomic_load(&test->shutdown_checked);
   const h2_pal_result_t close_result =
       h2_pal_serial_host_close(serial, &session);
-  if (read_result != H2_PAL_ERR_CLOSED || transferred != 0u ||
+  if (!shutdown_checked || read_result != H2_PAL_ERR_CLOSED || transferred != 0u ||
       close_result != H2_PAL_OK || session != NULL) {
     return;
   }
@@ -1611,14 +1614,16 @@ MAIN_THREAD_EM_ASM_INT({ return !!globalThis.h2FakePendingReadResolve; })
     return 45;
   (void)h2_web_main_call(h2_web_test_set_serial_mode,
                          (const void *[]){&(int){12}});
-  if (h2_web_platform_pump(platform, 8u, NULL) != H2_PAL_OK ||
-      h2_web_platform_serial_shutdown(platform) != H2_PAL_ERR_UNSUPPORTED ||
-      !((int)h2_web_main_call(h2_web_test_close_rejected_before_cancel_settled,
-                              NULL)
-            .i32)) {
+  const int shutdown_ok =
+      h2_web_platform_pump(platform, 8u, NULL) == H2_PAL_OK &&
+      h2_web_platform_serial_shutdown(platform) == H2_PAL_ERR_UNSUPPORTED &&
+      (int)h2_web_main_call(h2_web_test_close_rejected_before_cancel_settled,
+                            NULL)
+          .i32;
+  atomic_store(&shutdown_test.shutdown_checked, 1);
+  if (!shutdown_ok) {
     return 46;
   }
-  atomic_store(&shutdown_test.shutdown_checked, 1);
   joined = 0;
   const double shutdown_join_deadline = emscripten_get_now() + 3000.0;
   while (!joined && emscripten_get_now() < shutdown_join_deadline) {
