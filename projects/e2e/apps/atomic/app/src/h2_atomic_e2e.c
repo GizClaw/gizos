@@ -129,8 +129,12 @@ int h2_atomic_e2e_run(const h2_pal_mem_api_t *mem,
       const int join_rc = join_worker(task, time, handles[i], pump, pump_user);
       if (rc == H2_PAL_OK)
         rc = join_rc;
-      if (join_rc != H2_PAL_OK)
-        return join_rc; /* Keep worker storage alive if a task remains. */
+      if (join_rc != H2_PAL_OK) {
+        /* The task can still call backend->work through its heap context.
+         * Return before every backend read/destroy, atomic destroy and free
+         * below. The caller must keep borrowed APIs alive until it stops. */
+        return join_rc;
+      }
     }
   }
   if (rc == H2_PAL_OK)
