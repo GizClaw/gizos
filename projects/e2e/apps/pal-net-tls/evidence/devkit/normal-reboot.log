@@ -1,32 +1,31 @@
-I (82573) pal-net-tls: H2_PAL_NET_TLS_RUN session=e062be9f6a394fa5afae6f0c6952e9c6 boot_id=bd3239f46d3cde7d version=pal-net-tls-esp-20260930-r8 version_rc=0 dns_host=ap.e2e.gizclaw.com dns_ipv4=150.5.151.236
-I (82574) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"wrapper-arguments","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-I (82615) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-sync","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-I (82655) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-async-copy","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
-I (82696) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-cancel","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":6}
-I (82737) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-capacity","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
-I (82778) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"host-address","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-I (82819) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-echo","status":"PASS","detail":0,"rc":0,"tx":609,"rx":513,"ms":175}
-I (82860) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-source-bind","status":"PASS","detail":0,"rc":0,"tx":609,"rx":513,"ms":325}
-I (82901) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-timeout","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":40}
-I (82942) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-nonblocking","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
-I (82983) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-truncation","status":"PASS","detail":0,"rc":0,"tx":609,"rx":17,"ms":380}
-I (83024) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"multicast-membership","status":"UNSUPPORTED","detail":-3,"rc":0,"tx":0,"rx":0,"ms":0}
-I (83065) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-echo","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":221}
-I (83106) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-source-bind","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":100}
-I (83147) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-connect-retry","status":"PASS","detail"H2_LOADER_REBOOT target=app result=accepted
-I (92892) wifi:state: run -> init (0x0)
-I (92893) wifi:pm stop, total sleep time: 70347349 us / 86771264 us
+I (624404) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-cancel","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":6}
+I (624445) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-capacity","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
+I (624486) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"host-address","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
+I (624527) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-echo","status":"FAIL","detail":-6,"rc":-6,"tx":0,"rx":0,"ms":5051}
+I (624568) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-source-bind","status":"FAIL","detail":-6,"rc":-6,"tx":0,"rx":0,"ms":5051}
+I (624609) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-timeout","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":40}
+I (624650) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-nonblocking","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
+I (624691) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-truncation","status":"PASS","detail":0,"rc":0,"tx":609,"rx":17,"ms":3075}
+I (624732) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"multicast-membership","status":"UNSUPPORTED","detail":-3,"rc":0,"tx":0,"rx":0,"ms":0}
+I (624773) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-echo","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":69}
+I (624814) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-source-bind","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":88}
+I (624855) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-connect-retry","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":61}
+I (624896) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-timeout","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":82}
+I (624937) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-nonblocking","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":51}
+I (624978) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-listen-accept","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":95}
+I (625019) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-accept-timeout","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":112}
+I (62506H2_LOADER_REBOOT target=app result=accepted
+I (666404) wifi:state: run -> init (0x0)
+I (666405) wifi:pm stop, total sleep time: 606271046 us / 660087885 us
 
-I (92893) wifi:<ba-del>idx:1, tid:0
-I (92894) wifi:<ba-del>idx:0, tid:6
-I (92894) wifi:new:<11,0>, old:<11,2>, ap:<255,255>, sta:<11,2>, prof:6, snd_ch_cfg:0x0
-W (92896) h2_esp_netif: H2_ESP_NETIF_DNS default=- netif_changed=1 servers_changed=0 dns0=192.168.4.1 dns1=0.0.0.0 cache=cleared
-I (92936) wifi:flush txq
-I (92936) wifi:stop sw txq
-I (92936) wifi:lmac stop hw txq
+I (666406) wifi:<ba-del>idx:0, tid:0
+W (666408) h2_esp_netif: H2_ESP_NETIF_DNS default=- netif_changed=1 servers_changed=0 dns0=192.168.31.1 dns1=0.0.0.0 cache=cleared
+I (666448) wifi:flush txq
+I (666448) wifi:stop sw txq
+I (666448) wifi:lmac stop hw txq
 ESP-ROM:esp32s3-20210327
 Build:Mar 27 2021
-rst:0xc (RTC_SW_CPU_RST),boot:0x8 (SPI_FAST_FLASH_BOOT)
+rst:0xc (RTC_SW_CPU_RST),boot:0x2b (SPI_FAST_FLASH_BOOT)
 Saved PC:0x403888d5
 SPIWP:0xee
 mode:DOUT, clock div:1
@@ -37,223 +36,222 @@ entry 0x403c8904
 I (24) boot: ESP-IDF v6.0 2nd stage bootloader
 I (24) boot: compile time Sep  5 2026 01:50:08
 I (24) boot: Multicore bootloader
-I (24) boot: chip revision: v0.2
+I (25) boot: chip revision: v0.2
 I (25) boot: efuse block revision: v1.3
 I (25) boot.esp32s3: Boot SPI Speed : 80MHz
 I (25) boot.esp32s3: SPI Mode       : DOUT
 I (25) boot.esp32s3: SPI Flash Size : 16MB
-I (26) boot: Enabling RNG early entropy source...
+I (25) boot: Enabling RNG early entropy source...
 I (26) boot: Partition Table:
 I (26) boot: ## Label            Usage          Type ST Offset   Length
 I (26) boot:  0 nvs              WiFi data        01 02 00009000 00006000
-I (27) boot:  1 otadata          OTA data         01 00 0000f000 00002000
+I (26) boot:  1 otadata          OTA data         01 00 0000f000 00002000
 I (27) boot:  2 phy_init         RF data          01 01 00011000 00001000
 I (27) boot:  3 h2loader         OTA app          00 10 00020000 00200000
 I (28) boot:  4 app              OTA app          00 11 00220000 00400000
 I (28) boot:  5 dl               Unknown data     01 83 00620000 00600000
-I (29) boot:  6 data             Unknown data     01 83 00c20000 00300000
+I (28) boot:  6 data             Unknown data     01 83 00c20000 00300000
 I (29) boot:  7 coredump         Unknown data     01 03 00f20000 00010000
 I (29) boot:  8 pref             Unknown data     01 83 00f30000 00040000
 I (30) boot: End of partition table
 I (30) esp_image: segment 0: paddr=00220020 vaddr=3c110020 size=4a720h (304928) map
 I (89) esp_image: segment 1: paddr=0026a748 vaddr=3fca6800 size=058d0h ( 22736) load
-I (95) esp_image: segment 2: paddr=00270020 vaddr=42000020 size=102c04h (1059844) map
-I (298) esp_image: segment 3: paddr=00372c2c vaddr=3fcac0d0 size=00fc4h (  4036) load
-I (300) esp_image: segment 4: paddr=00373bf8 vaddr=40374000 size=22728h (141096) load
-I (333) esp_image: segment 5: paddr=00396328 vaddr=50000000 size=00024h (    36) load
-I (333) esp_image: segment 6: paddr=00396354 vaddr=600fe000 size=0006ch (   108) load
-I (348) boot: Loaded app from partition at offset 0x220000
-I (348) boot: Disabling RNG early entropy source...
-I (349) flash HPM: with HPM-DC support
+I (94) esp_image: segment 2: paddr=00270020 vaddr=42000020 size=102c1ch (1059868) map
+I (298) esp_image: segment 3: paddr=00372c44 vaddr=3fcac0d0 size=00fc4h (  4036) load
+I (299) esp_image: segment 4: paddr=00373c10 vaddr=40374000 size=22728h (141096) load
+I (332) esp_image: segment 5: paddr=00396340 vaddr=50000000 size=00024h (    36) load
+I (333) esp_image: segment 6: paddr=0039636c vaddr=600fe000 size=0006ch (   108) load
+I (347) boot: Loaded app from partition at offset 0x220000
+I (347) boot: Disabling RNG early entropy source...
+I (348) flash HPM: with HPM-DC support
 W (349) flash HPM: High performance mode of this flash model hasn't been supported.
 I (349) MSPI Timing: Enter flash timing tuning
 I (350) octal_psram: vendor id    : 0x0d (AP)
 I (350) octal_psram: dev id       : 0x02 (generation 3)
 I (350) octal_psram: density      : 0x03 (64 Mbit)
-I (351) octal_psram: good-die     : 0x01 (Pass)
-I (351) octal_psram: Latency      : 0x01 (Fixed)
+I (350) octal_psram: good-die     : 0x01 (Pass)
+I (350) octal_psram: Latency      : 0x01 (Fixed)
 I (351) octal_psram: VCC          : 0x01 (3V)
 I (351) octal_psram: SRF          : 0x01 (Fast Refresh)
 I (351) octal_psram: BurstType    : 0x01 (Hybrid Wrap)
-I (352) octal_psram: BurstLen     : 0x01 (32 Byte)
-I (352) octal_psram: Readlatency  : 0x02 (10 cycles@Fixed)
+I (351) octal_psram: BurstLen     : 0x01 (32 Byte)
+I (351) octal_psram: Readlatency  : 0x02 (10 cycles@Fixed)
 I (352) octal_psram: DriveStrength: 0x00 (1/1)
 I (352) MSPI Timing: Enter psram timing tuning
 I (360) esp_psram: Found 8MB PSRAM device
-I (361) esp_psram: Speed: 120MHz
-I (386) mmu_psram: Read only data copied and mapped to SPIRAM
-I (476) mmu_psram: Instructions copied and mapped to SPIRAM
-I (476) cpu_start: Multicore app
-I (753) esp_psram: SPI SRAM memory test OK
-I (762) cpu_start: Pro cpu start user code
-I (762) cpu_start: cpu freq: 240000000 Hz
-I (762) app_init: Application information:
-I (762) app_init: Project name:     h2_pal_net_tls_e2e
-I (762) app_init: App version:      pal-net-tls-esp-20260930-r8
-I (763) app_init: Compile time:     Sep 29 2026 22:47:24
-I (763) app_init: ELF file SHA256:  02b396a1e...
-I (763) app_init: ESP-IDF:          76f5dedd
-I (763) efuse_init: Min chip rev:     v0.0
-I (763) efuse_init: Max chip rev:     v0.99
-I (763) efuse_init: Chip rev:         v0.2
-I (763) heap_init: Initializing. RAM available for dynamic allocation:
-I (764) heap_init: At 3FCB7C40 len 00031AD0 (198 KiB): RAM
-I (764) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
-I (764) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
-I (764) heap_init: At 600FE06C len 00001F7C (7 KiB): RTCRAM
-I (765) esp_psram: Adding pool of 6762K of PSRAM memory to heap allocator
-I (765) esp_psram: Adding pool of 22K of PSRAM memory gap generated due to end address alignment of drom to the heap allocator
-I (765) spi_flash: detected chip: generic
-I (765) spi_flash: flash io: dio
-I (766) sleep_gpio: Configure to isolate all GPIO pins in sleep state
-I (766) sleep_gpio: Enable automatic switching of GPIO sleep configuration
-I (767) esp_core_dump_flash: Init core dump to flash
-I (767) esp_core_dump_flash: Found partition 'coredump' @ f20000 65536 bytes
-D (767) esp_core_dump_flash: Blank core dump partition!
-I (768) main_task: Started on CPU0
-I (768) esp_psram: Reserving pool of 32K of internal memory for DMA/internal allocations
-I (769) main_task: Calling app_main()
+I (360) esp_psram: Speed: 120MHz
+I (385) mmu_psram: Read only data copied and mapped to SPIRAM
+I (475) mmu_psram: Instructions copied and mapped to SPIRAM
+I (475) cpu_start: Multicore app
+I (752) esp_psram: SPI SRAM memory test OK
+I (761) cpu_start: Pro cpu start user code
+I (761) cpu_start: cpu freq: 240000000 Hz
+I (761) app_init: Application information:
+I (761) app_init: Project name:     h2_pal_net_tls_e2e
+I (761) app_init: App version:      pal-net-tls-esp-20261001-r11
+I (762) app_init: Compile time:     Sep 30 2026 16:48:03
+I (762) app_init: ELF file SHA256:  c398c4d97...
+I (762) app_init: ESP-IDF:          76f5dedd
+I (762) efuse_init: Min chip rev:     v0.0
+I (762) efuse_init: Max chip rev:     v0.99
+I (762) efuse_init: Chip rev:         v0.2
+I (762) heap_init: Initializing. RAM available for dynamic allocation:
+I (763) heap_init: At 3FCB7C40 len 00031AD0 (198 KiB): RAM
+I (763) heap_init: At 3FCE9710 len 00005724 (21 KiB): RAM
+I (763) heap_init: At 3FCF0000 len 00008000 (32 KiB): DRAM
+I (763) heap_init: At 600FE06C len 00001F7C (7 KiB): RTCRAM
+I (763) esp_psram: Adding pool of 6762K of PSRAM memory to heap allocator
+I (764) esp_psram: Adding pool of 22K of PSRAM memory gap generated due to end address alignment of drom to the heap allocator
+I (764) spi_flash: detected chip: generic
+I (764) spi_flash: flash io: dio
+I (765) sleep_gpio: Configure to isolate all GPIO pins in sleep state
+I (765) sleep_gpio: Enable automatic switching of GPIO sleep configuration
+I (765) esp_core_dump_flash: Init core dump to flash
+I (765) esp_core_dump_flash: Found partition 'coredump' @ f20000 65536 bytes
+D (766) esp_core_dump_flash: Blank core dump partition!
+I (766) main_task: Started on CPU0
+I (766) esp_psram: Reserving pool of 32K of internal memory for DMA/internal allocations
+I (767) main_task: Calling app_main()
 H2_PAL_TASK_POLICY_READY unit=esp target=projects/e2e/targets/h2loader_tar_zlib/pal-net-tls/devkit
-W (775) h2_esp_audio: board devkit has no audio backend
+W (774) h2_esp_audio: board devkit has no audio backend
 H2_PAL_TASK_READY name=$h2loader/return priority=8 core=0 stack=psram size=32768
-H2_PAL_NET_TLS_BOOT board=devkit version=pal-net-tls-esp-20260930-r8
+H2_PAL_NET_TLS_BOOT board=devkit version=pal-net-tls-esp-20261001-r11
 H2_PAL_TASK_READY name=pal-net-tls/e2e/runner priority=4 core=0 stack=psram size=65536
-I (1001) main_task: Returned from app_main()
-I (6009) pp: pp rom version: e7ae62f
-I (6010) net80211: net80211 rom version: e7ae62f
-I (6012) wifi:wifi driver task: 3fce0b84, prio:23, stack:3584, core=0
-I (6019) wifi:wifi firmware version: da143fa
-I (6019) wifi:wifi certification version: v7.0
-I (6020) wifi:config NVS flash: enabled
-I (6020) wifi:config nano formatting: disabled
-I (6021) wifi:Init data frame dynamic rx buffer num: 64
-I (6022) wifi:Init static rx mgmt buffer num: 5
-I (6022) wifi:Init management short buffer num: 32
-I (6023) wifi:Init static tx buffer num: 8
-I (6023) wifi:Init tx cache buffer num: 16
-I (6024) wifi:Init static tx FG buffer num: 2
-I (6025) wifi:Init static rx buffer size: 1600
-I (6025) wifi:Init static rx buffer num: 6
-I (6026) wifi:Init dynamic rx buffer num: 64
-I (6027) wifi_init: rx ba win: 12
-I (6027) wifi_init: accept mbox: 6
-I (6027) wifi_init: tcpip mbox: 32
-I (6028) wifi_init: udp mbox: 32
-I (6028) wifi_init: tcp mbox: 32
-I (6028) wifi_init: tcp tx win: 65535
-I (6029) wifi_init: tcp rx win: 65535
-I (6029) wifi_init: tcp mss: 1440
-I (6029) wifi_init: WiFi/LWIP prefer SPIRAM
-I (6030) wifi_init: WiFi IRAM OP enabled
-I (6030) wifi_init: WiFi RX IRAM OP enabled
-I (6031) wifi_init: LWIP IRAM OP enabled
-I (6032) phy_init: phy_version 712,87e8c20e,Apr 13 2026,18:51:10
-I (6064) wifi:mode : sta (98:88:e0:11:5c:50)
-I (6064) wifi:enable tsf
-W (6066) wifi:Haven't to connect to a suitable AP now!
-W (6067) wifi:Haven't to connect to a suitable AP now!
-W (6068) wifi:Password length matches WPA2 standards, authmode threshold changes from OPEN to WPA2
-I (6076) wifi:new:<11,2>, old:<1,0>, ap:<255,255>, sta:<11,2>, prof:6, snd_ch_cfg:0x0
-I (6077) wifi:state: init -> auth (0xb0)
-I (6083) wifi:state: auth -> assoc (0x0)
-I (6092) wifi:state: assoc -> run (0x10)
-I (6116) wifi:connected with [REDACTED_WIFI_SSID], aid = 4, channel 11, 40D, bssid = 26:5a:4c:cc:d3:4e
-I (6117) wifi:security: WPA2-PSK, phy: bgn, rssi: -37, cipher(pairwise:0x3, group:0x3), pmf:0
-I (6118) wifi:pm start, type: 1
+I (996) main_task: Returned from app_main()
+I (6004) pp: pp rom version: e7ae62f
+I (6005) net80211: net80211 rom version: e7ae62f
+I (6006) wifi:wifi driver task: 3fce0b84, prio:23, stack:3584, core=0
+I (6013) wifi:wifi firmware version: da143fa
+I (6014) wifi:wifi certification version: v7.0
+I (6014) wifi:config NVS flash: enabled
+I (6015) wifi:config nano formatting: disabled
+I (6015) wifi:Init data frame dynamic rx buffer num: 64
+I (6016) wifi:Init static rx mgmt buffer num: 5
+I (6017) wifi:Init management short buffer num: 32
+I (6018) wifi:Init static tx buffer num: 8
+I (6018) wifi:Init tx cache buffer num: 16
+I (6019) wifi:Init static tx FG buffer num: 2
+I (6020) wifi:Init static rx buffer size: 1600
+I (6020) wifi:Init static rx buffer num: 6
+I (6021) wifi:Init dynamic rx buffer num: 64
+I (6022) wifi_init: rx ba win: 12
+I (6023) wifi_init: accept mbox: 6
+I (6023) wifi_init: tcpip mbox: 32
+I (6023) wifi_init: udp mbox: 32
+I (6024) wifi_init: tcp mbox: 32
+I (6024) wifi_init: tcp tx win: 65535
+I (6025) wifi_init: tcp rx win: 65535
+I (6025) wifi_init: tcp mss: 1440
+I (6026) wifi_init: WiFi/LWIP prefer SPIRAM
+I (6026) wifi_init: WiFi IRAM OP enabled
+I (6027) wifi_init: WiFi RX IRAM OP enabled
+I (6027) wifi_init: LWIP IRAM OP enabled
+I (6028) phy_init: phy_version 712,87e8c20e,Apr 13 2026,18:51:10
+I (6062) phy_init: Saving new calibration data due to checksum failure or outdated calibration data, mode(0)
+I (6072) wifi:mode : sta (98:88:e0:11:5c:50)
+I (6073) wifi:enable tsf
+W (6074) wifi:Haven't to connect to a suitable AP now!
+W (6076) wifi:Haven't to connect to a suitable AP now!
+W (6077) wifi:Password length matches WPA2 standards, authmode threshold changes from OPEN to WPA2
+I (6205) wifi:state: init -> auth (0xb0)
+I (6209) wifi:state: auth -> assoc (0x0)
+I (6218) wifi:state: assoc -> run (0x10)
+I (6230) wifi:connected with [REDACTED_SSID], aid = 5, channel 1, BW20, bssid = a4:ba:70:a6:b3:40
+I (6231) wifi:security: WPA2-PSK, phy: bgn, rssi: -26, cipher(pairwise:0x3, group:0x3), pmf:0
+I (6232) wifi:pm start, type: 1
 
-I (6118) wifi:dp: 1, bi: 102400, li: 3, scale listen interval from 307200 us to 307200 us
-I (6119) wifi:set rx beacon pti, rx_bcn_pti: 14, bcn_timeout: 25000, mt_pti: 14, mt_time: 10000
-I (6138) wifi:<ba-add>idx:0 (ifx:0, 26:5a:4c:cc:d3:4e), tid:6, ssn:1, winSize:64
-I (6213) wifi:AP's beacon interval = 102400 us, DTIM period = 1
-I (7146) esp_netif_handlers: sta ip: 192.168.4.115, mask: 255.255.255.0, gw: 192.168.4.1
-W (7147) h2_esp_netif: H2_ESP_NETIF_DNS default=WIFI_STA_DEF netif_changed=1 servers_changed=1 dns0=192.168.4.1 dns1=0.0.0.0 cache=cleared
-I (7222) pal-net-tls: H2_PAL_NET_TLS_EXECUTION session=e062be9f6a394fa5afae6f0c6952e9c6 boot_id=5aedcc86f385859f
-I (7224) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"wrapper-arguments","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-I (7265) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-sync","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
-I (7306) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-async-copy","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
-I (7352) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-cancel","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":6}
-I (7393) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-capacity","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
-I (7434) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"host-address","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-I (7482) wifi:<ba-add>idx:1 (ifx:0, 26:5a:4c:cc:d3:4e), tid:0, ssn:1, winSize:64
-I (7697) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-echo","status":"PASS","detail":0,"rc":0,"tx":609,"rx":513,"ms":223}
-I (7796) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-source-bind","status":"PASS","detail":0,"rc":0,"tx":609,"rx":513,"ms":59}
-I (7877) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-timeout","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":41}
-I (7918) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-nonblocking","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
-I (7992) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-truncation","status":"PASS","detail":0,"rc":0,"tx":609,"rx":17,"ms":34}
-I (8033) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"multicast-membership","status":"UNSUPPORTED","detail":-3,"rc":0,"tx":0,"rx":0,"ms":0}
-I (8140) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-echo","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":67}
-I (8242) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-source-bind","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":62}
-I (8345) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-connect-retry","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":63}
-I (8477) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-timeout","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":92}
-I (8711) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-nonblocking","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":194}
-I (8849) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-listen-accept","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":96}
-I (9049) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-accept-timeout","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":160}
-I (9194) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-peer-close","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":104}
-I (9312) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-partial-io","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":77}
-I (9730) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-required","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":378}
-I (10329) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-default","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":557}
-E (10404) h2_net: stage=tls_handshake mbedtls_rc=-9984
-I (10426) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-default-untrusted","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":57}
-E (10561) h2_net: stage=tls_handshake mbedtls_rc=-9984
-I (10574) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-wrong-ca","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":107}
-E (10664) h2_net: stage=tls_handshake mbedtls_rc=-9984
-I (10696) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-wrong-name","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":81}
-E (10782) h2_net: stage=tls_cert_time from=2020-01-01 to=2020-01-02 now=2026-09-29 flags=0x1
-E (10783) h2_net: stage=tls_handshake mbedtls_rc=-9984
-I (10798) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-expired","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":61}
-I (11142) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-insecure-test-only","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":303}
-I (11501) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-sni-alpn","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":319}
-I (11860) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-borrowed-config","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":318}
-I (12077) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-handshake-deadline","status":"PASS","detail":0,"rc":-6,"tx":0,"rx":0,"ms":177}
-E (12172) h2_net: stage=tls_handshake mbedtls_rc=-9984
-I (12505) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-failure-recovery","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":388}
-I (14305) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-repeat-wrap","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":1758}
-I (14362) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-config-arguments","status":"PASS","detail":0,"rc":-1,"tx":0,"rx":0,"ms":16}
-I (14424) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-invalid-ca","status":"PASS","detail":0,"rc":-15,"tx":0,"rx":0,"ms":22}
-I (18560) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-session-churn","status":"PASS","detail":0,"rc":0,"tx":50316,"rx":49164,"ms":4096}
-E (18657) h2_net: stage=dns getaddrinfo_rc=202
-I (18658) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-hostname","status":"PASS","detail":0,"rc":-8,"tx":0,"rx":0,"ms":58,"ip":[124,174,15,239]}
-I (18700) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"icmp-echo","status":"NOT_ASSESSED","detail":-3,"rc":0,"tx":0,"rx":0,"ms":0}
-I (18741) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"cleanup-ledger","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
-I (18971) pal-net-tls: H2_PAL_NET_TLS_RUN session=e062be9f6a394fa5afae6f0c6952e9c6 boot_id=5aedcc86f385859f version=pal-net-tls-esp-20260930-r8 version_rc=0 dns_host=ap.e2e.gizclaw.com dns_ipv4=150.5.151.236
-I (18973) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"wrapper-arguments","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-I (19014) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-sync","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
-I (19055) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-async-copy","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
-I (19096) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-cancel","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":6}
-I (19137) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-capacity","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
-I (19178) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"host-address","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
-I (19219) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-echo","status":"PASS","detail":0,"rc":0,"tx":609,"rx":513,"ms":223}
-I (19260) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-source-bind","status":"PASS","detail":0,"rc":0,"tx":609,"rx":513,"ms":59}
-I (19301) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-timeout","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":41}
-I (19342) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-nonblocking","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
-I (19383) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-truncation","status":"PASS","detail":0,"rc":0,"tx":609,"rx":17,"ms":34}
-I (19424) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"multicast-membership","status":"UNSUPPORTED","detail":-3,"rc":0,"tx":0,"rx":0,"ms":0}
-I (19465) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-echo","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":67}
-I (19506) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-source-bind","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":62}
-I (19547) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-connect-retry","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":63}
-I (19588) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-timeout","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":92}
-I (19629) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-nonblocking","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":194}
-I (19670) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-listen-accept","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":96}
-I (19711) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-accept-timeout","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":160}
-I (19752) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-peer-close","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":104}
-I (19793) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-partial-io","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":77}
-I (19834) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-required","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":378}
-I (19875) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-default","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":557}
-I (19916) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-default-untrusted","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":57}
-I (19957) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-wrong-ca","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":107}
-I (19998) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-wrong-name","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":81}
-I (20039) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-expired","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":61}
-I (20080) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-insecure-test-only","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":303}
-I (20121) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-sni-alpn","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":319}
-I (20162) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-borrowed-config","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":318}
-I (20203) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-handshake-deadline","status":"PASS","detail":0,"rc":-6,"tx":0,"rx":0,"ms":177}
-I (20244) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-failure-recovery","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":388}
-I (20285) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-repeat-wrap","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":1758}
-I (20326) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-config-arguments","status":"PASS","detail":0,"rc":-1,"tx":0,"rx":0,"ms":16}
-I (20367) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-invalid-ca","status":"PASS","detail":0,"rc":-15,"tx":0,"rx":0,"ms":22}
-I (20408) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-session-churn","status":"PASS","detail":0,"rc":0,"tx":50316,"rx":49164,"ms":4096}
-I (20449) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-hostname","status":"PASS","detail":0,"rc":-8,"tx":0,"rx":0,"ms":58,"ip":[124,174,15,239]}
-I (20490) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"icmp-echo","status":"NOT_ASSESSED","detail":-3,"rc":0,"tx":0,"rx":0,"ms":0}
-I (20531) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"cleanup-ledger","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
-I (20572) pal-net-tls: H2_PAL_NET_TLS_SUMMARY {"pass":37,"mandatory":37,"fail":0,"blocked":0,"unsupported":1,"not_assessed":1,"rs":0,"rr":0,"ra":0}
+I (6233) wifi:dp: 1, bi: 102400, li: 3, scale listen interval from 307200 us to 307200 us
+I (6234) wifi:set rx beacon pti, rx_bcn_pti: 14, bcn_timeout: 25000, mt_pti: 14, mt_time: 10000
+I (6239) wifi:AP's beacon interval = 102400 us, DTIM period = 1
+I (7258) esp_netif_handlers: sta ip: 192.168.31.176, mask: 255.255.255.0, gw: 192.168.31.1
+W (7259) h2_esp_netif: H2_ESP_NETIF_DNS default=WIFI_STA_DEF netif_changed=1 servers_changed=1 dns0=192.168.31.1 dns1=0.0.0.0 cache=cleared
+I (7336) pal-net-tls: H2_PAL_NET_TLS_EXECUTION session=8e08ffbea69f40c19eee052435bd8c6c boot_id=e7c17ffd7d519cc9
+I (7338) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"wrapper-arguments","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
+I (7380) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-sync","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
+I (7421) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-async-copy","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
+I (7467) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-cancel","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":6}
+I (7509) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-capacity","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
+I (7551) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"host-address","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
+I (7777) wifi:<ba-add>idx:0 (ifx:0, a4:ba:70:a6:b3:40), tid:0, ssn:0, winSize:64
+I (7851) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-echo","status":"PASS","detail":0,"rc":0,"tx":609,"rx":513,"ms":260}
+I (7951) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-source-bind","status":"PASS","detail":0,"rc":0,"tx":609,"rx":513,"ms":58}
+I (8032) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-timeout","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":40}
+I (8073) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-nonblocking","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
+I (8170) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-truncation","status":"PASS","detail":0,"rc":0,"tx":609,"rx":17,"ms":55}
+I (8211) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"multicast-membership","status":"UNSUPPORTED","detail":-3,"rc":0,"tx":0,"rx":0,"ms":0}
+I (8309) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-echo","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":58}
+I (8447) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-source-bind","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":96}
+I (8562) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-connect-retry","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":75}
+I (8723) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-timeout","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":119}
+I (8809) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-nonblocking","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":46}
+I (8926) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-listen-accept","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":75}
+I (9099) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-accept-timeout","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":133}
+I (9192) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-peer-close","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":52}
+I (9365) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-partial-io","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":131}
+I (9763) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-required","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":358}
+I (10153) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-default","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":349}
+E (10254) h2_net: stage=tls_handshake mbedtls_rc=-9984
+I (10269) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-default-untrusted","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":74}
+E (10384) h2_net: stage=tls_handshake mbedtls_rc=-9984
+I (10404) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-wrong-ca","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":94}
+E (10542) h2_net: stage=tls_handshake mbedtls_rc=-9984
+I (10563) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-wrong-name","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":119}
+E (10680) h2_net: stage=tls_cert_time from=2020-01-01 to=2020-01-02 now=2026-09-30 flags=0x1
+E (10681) h2_net: stage=tls_handshake mbedtls_rc=-9984
+I (10704) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-expired","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":99}
+I (11058) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-insecure-test-only","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":314}
+I (11503) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-sni-alpn","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":404}
+I (11904) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-borrowed-config","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":360}
+I (12091) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-handshake-deadline","status":"PASS","detail":0,"rc":-6,"tx":0,"rx":0,"ms":146}
+E (12171) h2_net: stage=tls_handshake mbedtls_rc=-9984
+I (12532) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-failure-recovery","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":400}
+I (12979) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-repeat-wrap","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":405}
+I (13039) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-config-arguments","status":"PASS","detail":0,"rc":-1,"tx":0,"rx":0,"ms":20}
+I (13104) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-invalid-ca","status":"PASS","detail":0,"rc":-15,"tx":0,"rx":0,"ms":23}
+I (17507) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-session-churn","status":"PASS","detail":0,"rc":0,"tx":50316,"rx":49164,"ms":4362}
+E (17561) h2_net: stage=dns getaddrinfo_rc=202
+I (17562) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-hostname","status":"PASS","detail":0,"rc":-8,"tx":0,"rx":0,"ms":14,"ip":[124,174,15,239]}
+I (17610) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"icmp-echo","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":7}
+I (17651) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"cleanup-ledger","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
+I (17875) pal-net-tls: H2_PAL_NET_TLS_RUN session=8e08ffbea69f40c19eee052435bd8c6c boot_id=e7c17ffd7d519cc9 version=pal-net-tls-esp-20261001-r11 version_rc=0 dns_host=ap.e2e.gizclaw.com dns_ipv4=150.5.151.236
+I (17877) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"wrapper-arguments","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
+I (17919) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-sync","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
+I (17960) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-async-copy","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
+I (18001) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-cancel","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":6}
+I (18042) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-capacity","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
+I (18083) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"host-address","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
+I (18124) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-echo","status":"PASS","detail":0,"rc":0,"tx":609,"rx":513,"ms":260}
+I (18165) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-source-bind","status":"PASS","detail":0,"rc":0,"tx":609,"rx":513,"ms":58}
+I (18206) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-timeout","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":40}
+I (18247) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-nonblocking","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":1}
+I (18288) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"udp-truncation","status":"PASS","detail":0,"rc":0,"tx":609,"rx":17,"ms":55}
+I (18329) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"multicast-membership","status":"UNSUPPORTED","detail":-3,"rc":0,"tx":0,"rx":0,"ms":0}
+I (18370) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-echo","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":58}
+I (18411) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-source-bind","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":96}
+I (18452) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-connect-retry","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":75}
+I (18493) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-timeout","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":119}
+I (18534) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-nonblocking","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":46}
+I (18575) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-listen-accept","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":75}
+I (18616) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-accept-timeout","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":133}
+I (18657) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-peer-close","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":52}
+I (18698) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tcp-partial-io","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":131}
+I (18739) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-required","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":358}
+I (18780) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-default","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":349}
+I (18821) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-default-untrusted","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":74}
+I (18862) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-wrong-ca","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":94}
+I (18903) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-wrong-name","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":119}
+I (18944) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-expired","status":"PASS","detail":0,"rc":-17,"tx":0,"rx":0,"ms":99}
+I (18985) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-insecure-test-only","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":314}
+I (19026) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-sni-alpn","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":404}
+I (19067) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-borrowed-config","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":360}
+I (19108) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-handshake-deadline","status":"PASS","detail":0,"rc":-6,"tx":0,"rx":0,"ms":146}
+I (19149) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-failure-recovery","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":400}
+I (19190) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-repeat-wrap","status":"PASS","detail":0,"rc":0,"tx":4193,"rx":4097,"ms":405}
+I (19231) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-config-arguments","status":"PASS","detail":0,"rc":-1,"tx":0,"rx":0,"ms":20}
+I (19272) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-invalid-ca","status":"PASS","detail":0,"rc":-15,"tx":0,"rx":0,"ms":23}
+I (19313) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"tls-session-churn","status":"PASS","detail":0,"rc":0,"tx":50316,"rx":49164,"ms":4362}
+I (19354) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"dns-hostname","status":"PASS","detail":0,"rc":-8,"tx":0,"rx":0,"ms":14,"ip":[124,174,15,239]}
+I (19395) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"icmp-echo","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":7}
+I (19436) pal-net-tls: H2_PAL_NET_TLS_CASE {"id":"cleanup-ledger","status":"PASS","detail":0,"rc":0,"tx":0,"rx":0,"ms":0}
+I (19477) pal-net-tls: H2_PAL_NET_TLS_SUMMARY {"pass":38,"mandatory":37,"fail":0,"blocked":0,"unsupported":1,"not_assessed":0,"rs":0,"rr":0,"ra":0}
 H2_PAL_NET_TLS_READY board=devkit rc=0 confirm=0

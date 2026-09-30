@@ -3,11 +3,9 @@
   "profile": "net-tls-core",
   "operations": 21,
   "mandatory_cases": 37,
-  "assessment_complete": false,
+  "assessment_complete": true,
   "full_net_qualified": false,
-  "pending": [
-    "devkit"
-  ],
+  "pending": [],
   "source_sha256": {
     "projects/e2e/apps/pal-net-tls/app/src/h2_pal_net_tls_e2e.c": "9ccbda3a1fc1322fb683f20f93303d41269071e82b30d707d3c2cdf49007175b",
     "projects/e2e/apps/pal-net-tls/app/include/h2_pal_net_tls_cases.inc": "5ddae599acbe170d91a6da78372dcf6ccfc48cb343228175cbd733741a434535",
@@ -107,13 +105,12 @@
       "suite_sha256": "a2b653b93566a770c74626f6fb1dd94301f1602306f1ef4808e1ddbda9e60802"
     },
     "devkit": {
-      "status": "PENDING",
-      "core_qualified": false,
+      "status": "PASS",
+      "core_qualified": true,
       "evidence": "evidence/devkit/qualified.json",
-      "artifact_sha256": "d9c613189de5ca328e80f2ee3436391c637374ad4d62543f0fafd3593797aff9",
-      "receipt_sha256": "be56a2e46b676cc5e83ed32e4d60266f123df01ad330d90451173e9eab1bae0a",
-      "assessment_complete": false,
-      "reason": "R8 core evidence is preserved; implemented ICMP requires a new live run after USB link recovery."
+      "artifact_sha256": "017acd5b9543f72cd3bacb56d7d95e1684e32771f348f13822267f57be9c1533",
+      "receipt_sha256": "178e448d8f48b1d03e370185ee072fd9eb989f12bb0dc3aa4bcbfab8238a56d2",
+      "assessment_complete": true
     },
     "bk7258": {
       "status": "PASS",
