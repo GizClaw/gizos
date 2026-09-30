@@ -69,18 +69,20 @@ def main():
             nonlocal index
             command=[cli,'--no-ble','--port',port,'--transport','iostreamikcp','--wait-timeout','150',*args]
             log_path=output/f'{index:02d}-{label}.log';index+=1
+            observed=False
             with log_path.open('w') as log:
                 process=subprocess.Popen(command,text=True,stdout=log,stderr=subprocess.STDOUT)
                 try:
                     if monitor:
                         deadline=time.monotonic()+timeout
                         while time.monotonic()<deadline:
-                            text=log_path.read_text()
+                            text=log_path.read_text(errors='replace')
                             try:
                                 boot_ledger(text,ids,version,previous)
                             except (AssertionError,ValueError):
                                 pass
                             else:
+                                observed=True
                                 process.send_signal(signal.SIGINT)
                                 break
                             if process.poll() is not None:break
@@ -94,8 +96,11 @@ def main():
                         try:process.wait(timeout=10)
                         except subprocess.TimeoutExpired:process.kill();process.wait()
                     raise
-            text=log_path.read_text()
-            if code:raise RuntimeError((label,code,text[-2500:]))
+            text=log_path.read_text(errors='replace')
+            # Native monitor can report either graceful exit or conventional
+            # SIGINT status. This is allowed only after the full oracle passed.
+            if code and not (observed and code in (130,-signal.SIGINT)):
+                raise RuntimeError((label,code,text[-2500:]))
             return text
         before=fields(run('before-status','status'))
         assert before.get('device_uid')==uid, 'fixture UID mismatch'
