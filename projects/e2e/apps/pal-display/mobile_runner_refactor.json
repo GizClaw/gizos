@@ -6,7 +6,7 @@
   "current_source_sha256": {
     "projects/e2e/apps/pal-display/BUILD.bazel": "8ff7bf62bbc9847688335c61ebcdd25205d384eebc6220fdad9b3f3e6fc876b6",
     "projects/e2e/apps/pal-display/check_qualification.py": "70e195f683f3ae5070efd8b2dcb75b330ae4181e67c4134cf0be7d19dfa7c112",
-    "projects/e2e/apps/pal-display/README.md": "7a12ef8da6ef2dd4a0346ced2f165f74f76d1120092cd711981a46090211c7c8",
+    "projects/e2e/apps/pal-display/README.md": "4db935f13ddc6ad5ad58075fe52905dfb48255adbb69b90b4ff9524314cbcf48",
     "projects/e2e/libs/pal-display-mobile/run_mobile.py": "5dde927dd5189de2ff2193ee9fecef6d7e8b2fc6e635aca4dd71fd912af36256",
     "projects/e2e/targets/android_binary/pal-display/BUILD.bazel": "1fbd8f323b400b6d07f8a87190351602b4b90c2a3f9cbbd1e206b33c2af45a6b",
     "projects/e2e/targets/ios_application/pal-display/BUILD.bazel": "132ae3feae3ab06c55e4a020bc702c00a83e6db1283c50ca41583b2fb545a449",
