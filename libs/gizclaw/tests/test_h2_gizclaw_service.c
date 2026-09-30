@@ -22,6 +22,8 @@
 #include "h2_gizclaw_workflow.h"
 #include "h2_gizclaw_workspace.h"
 #include "h2_runtime.h"
+#include "h2_runtime_test.h"
+#include "h2_app_test_periph.h"
 #include "payload/ai.pb.h"
 #include "payload/firmware.pb.h"
 #include "payload/mhs_v0.pb.h"
@@ -2627,9 +2629,9 @@ static void device_runtime_notify(h2_runtime_t *runtime) {
   (void)h2_runtime_notify(runtime);
   h2_atomic_fetch_add_explicit(&s_runtime_notify_count, 1u, H2_ATOMIC_RELEASE);
 }
-static h2_runtime_t *device_test_runtime(h2_gizclaw_service_t *service,
-                                            const h2_pal_audio_api_t *audio) {
-  const h2_runtime_config_t config = {
+static h2_runtime_config_t device_test_runtime_config(
+    h2_gizclaw_service_t *service, const h2_pal_audio_api_t *audio) {
+  return (h2_runtime_config_t){
     .board = "fixture", .target = "host", .chip = "host",
     .firmware_info = h2_pal_unsupported_firmware_info_api(),
     .mem = service->client_config.allocator,
@@ -2673,9 +2675,161 @@ static h2_runtime_t *device_test_runtime(h2_gizclaw_service_t *service,
     .system_event = h2_pal_unsupported_system_event_api(),
     .video_decoder = h2_pal_unsupported_video_decoder_api(),
   };
+}
+static h2_runtime_t *device_test_runtime(h2_gizclaw_service_t *service,
+                                            const h2_pal_audio_api_t *audio) {
+  const h2_runtime_config_t config = device_test_runtime_config(service, audio);
   h2_runtime_t *runtime = NULL;
   assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
   return runtime;
+}
+
+/* One battery: Runtime component 7 backed by peripheral 51. */
+static int device_battery_mapping(void *user, h2_runtime_component_t filter,
+                                  h2_runtime_component_mapping_cb_t cb,
+                                  void *cb_user) {
+  (void)user;
+  if (filter != H2_RUNTIME_COMPONENT_NONE &&
+      filter != H2_RUNTIME_COMPONENT_BATTERY)
+    return H2_PAL_OK;
+  const h2_runtime_component_mapping_entry_t entry = {7u, 51u};
+  return cb(cb_user, &entry);
+}
+static const h2_runtime_component_mapper_vtable_t device_battery_mapper_vtable =
+    {.list = device_battery_mapping};
+static const h2_runtime_component_mapper_t device_battery_mapper = {
+    .vtable = &device_battery_mapper_vtable};
+
+/* Reads one instance into a zeroed reply of `size` bytes. */
+static int device_hwd_read(h2_gizclaw_service_t *service, const char *id,
+                           gizclaw_rpc_v1_ClientHwd hwd,
+                           const pb_msgdesc_t *fields, void *reply,
+                           size_t size) {
+  memset(reply, 0, size);
+  return device_mhs(service, false, id, hwd, NULL, NULL, fields, reply);
+}
+
+/* modem.main and battery.main come from the Runtime's snapshots, never from
+ * the modem or the battery PAL on the RPC owner, and only when configured. */
+static void test_device_modem_and_battery_hwd(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  static h2_app_test_periph_t periph;
+  h2_app_test_periph_init(&periph);
+  const h2_pal_periph_info_t info = {
+      .id = 51u, .type = H2_PAL_PERIPH_TYPE_BATTERY, .name = "battery"};
+  h2_app_test_periph_entry_t *battery = NULL;
+  assert(h2_app_test_periph_add(&periph, &info, &battery) == H2_PAL_OK);
+  battery->battery = (h2_pal_battery_reading_t){
+      .flags = H2_PAL_BATTERY_PRESENT | H2_PAL_BATTERY_CHARGING |
+               H2_PAL_BATTERY_HAS_PERCENT_X100 | H2_PAL_BATTERY_HAS_VOLTAGE_MV,
+      .percent_x100 = 8250u,
+      .voltage_mv = 4012};
+  h2_runtime_config_t config =
+      device_test_runtime_config(service, h2_pal_unsupported_audio_api());
+  config.periph = &periph.api;
+  config.input = &periph.input;
+  config.component_mapper = &device_battery_mapper;
+  h2_runtime_t *runtime = NULL;
+  assert(h2_runtime_init(&config, &runtime) == H2_PAL_OK);
+  assert(h2_runtime_test_poll_sensors(runtime) == H2_PAL_OK);
+  service->config.runtime = runtime;
+  /* A modem PAL that answers nothing: the Service must not call it. */
+  service->client_config.modem = h2_pal_unsupported_modem_api();
+  service->client_config.battery_component = 7u;
+  assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
+  h2_gizclaw_test_set_telemetry_send(device_telemetry, NULL);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+
+  gizclaw_rpc_v1_BatteryHwdReadResponse power = {0};
+  assert(device_hwd_read(service, "battery.main",
+                         gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_BATTERY,
+                         gizclaw_rpc_v1_BatteryHwdReadResponse_fields,
+                         &power, sizeof(power)) == H2_PAL_OK);
+  assert(power.has_percent && power.percent == 82.5);
+  assert(power.has_charging && power.charging);
+  assert(power.has_voltage_mv && power.voltage_mv == 4012.0);
+
+  /* Nothing reported by the modem yet: there is no snapshot to show. */
+  gizclaw_rpc_v1_ModemHwdReadResponse modem = {0};
+  assert(device_hwd_read(service, "modem.main",
+                         gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_MODEM,
+                         gizclaw_rpc_v1_ModemHwdReadResponse_fields,
+                         &modem, sizeof(modem)) == H2_PAL_ERR_UNAVAILABLE);
+
+  h2_runtime_system_modem_state_t state = {
+      .sim = H2_RUNTIME_SYSTEM_MODEM_SIM_READY,
+      .registration = H2_RUNTIME_SYSTEM_MODEM_REGISTRATION_ROAMING,
+      .rat = H2_RUNTIME_SYSTEM_MODEM_RAT_LTE,
+      .signal_valid = 1u,
+      .rssi_dbm = -70,
+      .rssi_valid = 1u,
+      .rsrp_dbm = -96,
+      .rsrp_valid = 1u};
+  assert(h2_runtime_test_set_system_modem_state(runtime, &state) == H2_PAL_OK);
+  assert(device_hwd_read(service, "modem.main",
+                         gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_MODEM,
+                         gizclaw_rpc_v1_ModemHwdReadResponse_fields,
+                         &modem, sizeof(modem)) == H2_PAL_OK);
+  assert(modem.has_sim_present && modem.sim_present);
+  assert(modem.has_registered && modem.registered);
+  assert(modem.has_rat && !strcmp(modem.rat, "lte"));
+  assert(modem.has_rssi_dbm && modem.rssi_dbm == -70);
+  /* The serving-cell RSRP decides the bars when there is one. */
+  assert(modem.has_signal_level && modem.signal_level == 2u);
+
+  /* No SIM, still searching, no measurement: reported as exactly that. */
+  state = (h2_runtime_system_modem_state_t){
+      .sim = H2_RUNTIME_SYSTEM_MODEM_SIM_ABSENT,
+      .registration = H2_RUNTIME_SYSTEM_MODEM_REGISTRATION_SEARCHING};
+  assert(h2_runtime_test_set_system_modem_state(runtime, &state) == H2_PAL_OK);
+  assert(device_hwd_read(service, "modem.main",
+                         gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_MODEM,
+                         gizclaw_rpc_v1_ModemHwdReadResponse_fields,
+                         &modem, sizeof(modem)) == H2_PAL_OK);
+  assert(modem.has_sim_present && !modem.sim_present);
+  assert(modem.has_registered && !modem.registered);
+  assert(!modem.has_rat && !modem.has_rssi_dbm && !modem.has_signal_level);
+
+  /* RSSI alone still gives bars. */
+  state = (h2_runtime_system_modem_state_t){
+      .signal_valid = 1u, .rssi_dbm = -95, .rssi_valid = 1u};
+  assert(h2_runtime_test_set_system_modem_state(runtime, &state) == H2_PAL_OK);
+  assert(device_hwd_read(service, "modem.main",
+                         gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_MODEM,
+                         gizclaw_rpc_v1_ModemHwdReadResponse_fields,
+                         &modem, sizeof(modem)) == H2_PAL_OK);
+  assert(modem.has_signal_level && modem.signal_level == 2u);
+  assert(!modem.has_sim_present && !modem.has_registered);
+
+  /* A battery taken out, or a failed reading, is not reported as a value. */
+  battery->battery.flags = 0u;
+  assert(h2_runtime_test_poll_sensors(runtime) == H2_PAL_OK);
+  assert(device_hwd_read(service, "battery.main",
+                         gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_BATTERY,
+                         gizclaw_rpc_v1_BatteryHwdReadResponse_fields,
+                         &power, sizeof(power)) == H2_PAL_ERR_UNAVAILABLE);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+
+  /* Without the configuration there are no such instances at all. */
+  service = create_profile_service(&env);
+  service->config.runtime = runtime;
+  service->client_config.model = "fixture";
+  assert(h2_gizclaw_device_init_internal(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_start(service) == H2_PAL_OK);
+  assert(device_hwd_read(service, "modem.main",
+                         gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_MODEM,
+                         gizclaw_rpc_v1_ModemHwdReadResponse_fields,
+                         &modem, sizeof(modem)) == H2_PAL_ERR_NOT_FOUND);
+  assert(device_hwd_read(service, "battery.main",
+                         gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_BATTERY,
+                         gizclaw_rpc_v1_BatteryHwdReadResponse_fields,
+                         &power, sizeof(power)) == H2_PAL_ERR_NOT_FOUND);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  h2_gizclaw_test_set_telemetry_send(NULL, NULL);
+  h2_runtime_deinit(runtime);
 }
 /* The local playlist entries carry spans, so the tests need the same NUL
  * terminated literal to span conversion an application writes. */
@@ -14236,6 +14390,7 @@ int main(int argc, char **argv) {
   test_req_ping_execution_timing();
   test_req_unary_context_lifetime();
   test_device_provider_pal_and_player();
+  test_device_modem_and_battery_hwd();
   test_device_playback_speaker_hooks();
   test_device_player_timed_start();
   test_device_player_formats();

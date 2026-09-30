@@ -8,9 +8,14 @@ typedef struct h2_gizclaw_mhs_builtin {
   const h2_pal_audio_api_t *audio;
   const h2_pal_wifi_sta_api_t *wifi;
   h2_runtime_t *runtime;
+  const h2_pal_modem_api_t *modem;
+  h2_runtime_component_id_t battery;
 } h2_gizclaw_mhs_builtin_t;
 
-/* Two PAL-backed instances at most: speaker.main and wifi.main. */
+#define H2_GIZCLAW_MHS_BUILTIN_MAX 4u
+
+/* Up to H2_GIZCLAW_MHS_BUILTIN_MAX instances: speaker.main and wifi.main from
+ * their PAL, modem.main and battery.main from Runtime snapshots. */
 size_t h2_gizclaw_mhs_builtins_internal(h2_gizclaw_mhs_builtin_t *context,
                                         h2_gizclaw_mhs_device_t *devices);
 int h2_gizclaw_mhs_validate_internal(const h2_gizclaw_mhs_device_t *devices,

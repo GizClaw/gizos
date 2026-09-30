@@ -273,6 +273,7 @@ typedef struct h2_runtime_system_state_publication {
      */
     h2_pal_mutex_t *mutex;
     h2_runtime_system_wifi_sta_state_t wifi_sta;
+    h2_runtime_system_modem_state_t modem;
 } h2_runtime_system_state_publication_t;
 
 /* Creates and releases the system state lock; see h2_runtime_system_state.c. */
@@ -283,6 +284,18 @@ void h2_runtime_system_state_release(h2_runtime_t *runtime);
 void h2_runtime_system_state_publish_wifi_sta(
     h2_runtime_t *runtime,
     const h2_runtime_system_wifi_sta_state_t *state);
+
+/* Merges one modem event into the modem snapshot; see
+ * h2_runtime_system_state.c. `kind` selects the fields the event reports. */
+void h2_runtime_system_state_publish_modem(
+    h2_runtime_t *runtime,
+    h2_runtime_event_kind_t kind,
+    const h2_runtime_system_modem_state_t *reported);
+
+/* Replaces the whole modem snapshot; for the test control. */
+void h2_runtime_system_state_replace_modem(
+    h2_runtime_t *runtime,
+    const h2_runtime_system_modem_state_t *state);
 
 typedef struct h2_runtime_component_mapping {
     h2_runtime_component_t component;

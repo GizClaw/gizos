@@ -340,6 +340,14 @@ callback 栈上重复保留最大 payload storage。Public emit API 及 App 读�
 （dBm）。未知测量不能当作强信号；CSQ URC 没有 RSRP 测量。
 具体查询与范围见 [Modem 信号合同](modem_urc.md#信号有效性与-lte-rsrp)。
 
+Runtime 同时把 modem 事件合并成一份快照，`h2_runtime_system_state_modem()`
+在锁内复制给调用方，读取不碰 modem，可在不能等 AT 的 task（如 GizClaw RPC
+owner）上调用。SIM、注册、packet 事件只更新各自的状态；signal 事件整体替换
+测量值，其中无效的 RSSI 或 RSRP 清零并置无效位，不保留上一次的值；任何带
+接入制式的事件更新 `rat`。字段仍是 UNKNOWN 或 `*_valid=0` 表示还没有上报。
+Sync provider 不能创建 mutex 时快照不可用，读取返回 UNSUPPORTED，与 Wi-Fi
+station 快照一致。
+
 System component family 包括：
 
 ```text

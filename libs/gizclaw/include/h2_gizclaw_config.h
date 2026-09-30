@@ -4,6 +4,7 @@
 #include "h2/pal/application/h2_pal_http.h"
 #include "h2/pal/application/h2_pal_webrtc.h"
 #include "h2/pal/hal/h2_pal_audio.h"
+#include "h2/pal/hal/h2_pal_modem.h"
 #include "h2/pal/hal/h2_pal_power.h"
 #include "h2/pal/hal/h2_pal_wifi.h"
 #include "h2/pal/os/h2_pal_crypto.h"
@@ -13,6 +14,7 @@
 #include "h2_gizclaw_mhs.h"
 #include "h2_gizclaw_rpc.h"
 #include "h2_gizclaw_tool.h"
+#include "h2_runtime_component.h"
 #include "h2_gizclaw_vtable.h"
 
 #include <stdbool.h>
@@ -80,6 +82,14 @@ typedef struct h2_gizclaw_config {
      * Audio, and Wi-Fi user provisioning explicitly calls connect_and_save. */
     const h2_pal_audio_api_t *audio;
     const h2_pal_wifi_sta_api_t *wifi;
+    /** Modem behind the Service Runtime's modem snapshot. Setting it adds the
+     * read-only modem.main HWD, answered from h2_runtime_system_state_modem;
+     * the RPC owner never queries the modem itself. Needs the Runtime. */
+    const h2_pal_modem_api_t *modem;
+    /** Runtime battery component. Nonzero adds the read-only battery.main
+     * HWD, answered from that component's h2_runtime_component_state_battery
+     * snapshot. Needs the Runtime. */
+    h2_runtime_component_id_t battery_component;
     const h2_pal_wifi_settings_api_t *wifi_settings;
     const h2_pal_power_api_t *power;
     const h2_gizclaw_vtable_t *vtable;
@@ -108,8 +118,8 @@ typedef struct h2_gizclaw_config {
     const h2_gizclaw_tool_handler_t *tool_handlers;
     size_t tool_handler_count;
     /** Immutable typed HWD instance table borrowed until deinit. IDs must
-     * be unique. The Service adds speaker.main and wifi.main when the
-     * corresponding PAL capabilities are present. A separate RuntimeProfile
+     * be unique. The Service adds speaker.main, wifi.main, modem.main and
+     * battery.main when the corresponding capabilities are configured. A separate RuntimeProfile
      * manifest controls which instances the Server exposes remotely. */
     const h2_gizclaw_mhs_device_t *mhs_devices;
     size_t mhs_device_count;

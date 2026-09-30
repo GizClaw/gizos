@@ -140,6 +140,117 @@ static h2_pal_result_t wifi_read(void *user, h2_gizclaw_mhs_read_t *out) {
   return H2_PAL_OK;
 }
 
+/* The access technology as the Server's modem HWD names it. */
+static const char *modem_rat_name(h2_runtime_system_modem_rat_t rat) {
+  switch (rat) {
+  case H2_RUNTIME_SYSTEM_MODEM_RAT_GSM:
+    return "gsm";
+  case H2_RUNTIME_SYSTEM_MODEM_RAT_GPRS:
+    return "gprs";
+  case H2_RUNTIME_SYSTEM_MODEM_RAT_EDGE:
+    return "edge";
+  case H2_RUNTIME_SYSTEM_MODEM_RAT_WCDMA:
+    return "wcdma";
+  case H2_RUNTIME_SYSTEM_MODEM_RAT_HSPA:
+    return "hspa";
+  case H2_RUNTIME_SYSTEM_MODEM_RAT_LTE:
+    return "lte";
+  case H2_RUNTIME_SYSTEM_MODEM_RAT_LTE_M:
+    return "lte-m";
+  case H2_RUNTIME_SYSTEM_MODEM_RAT_NB_IOT:
+    return "nb-iot";
+  case H2_RUNTIME_SYSTEM_MODEM_RAT_NR5G:
+    return "nr5g";
+  default:
+    return NULL;
+  }
+}
+
+/* Signal bars 0..4 from a serving-cell RSRP, else from RSSI. */
+static uint32_t modem_signal_level(const h2_runtime_system_modem_state_t *s) {
+  if (s->rsrp_valid)
+    return s->rsrp_dbm >= -85    ? 4u
+           : s->rsrp_dbm >= -95  ? 3u
+           : s->rsrp_dbm >= -105 ? 2u
+           : s->rsrp_dbm >= -115 ? 1u
+                                 : 0u;
+  return s->rssi_dbm >= -75    ? 4u
+         : s->rssi_dbm >= -90  ? 3u
+         : s->rssi_dbm >= -105 ? 2u
+         : s->rssi_dbm >= -115 ? 1u
+                               : 0u;
+}
+
+/* Answered from the Runtime's modem snapshot: the RPC owner must not wait on
+ * AT traffic. Fields the modem has not reported stay absent. */
+static h2_pal_result_t modem_read(void *user, h2_gizclaw_mhs_read_t *out) {
+  h2_gizclaw_mhs_builtin_t *builtin = user;
+  h2_runtime_system_modem_state_t state = {0};
+  h2_pal_result_t rc = h2_runtime_system_state_modem(builtin->runtime, &state);
+  if (rc != H2_PAL_OK)
+    return rc;
+  gizclaw_rpc_v1_ModemHwdReadResponse *value = &out->modem;
+  if (state.sim != H2_RUNTIME_SYSTEM_MODEM_SIM_UNKNOWN) {
+    value->has_sim_present = true;
+    value->sim_present = state.sim != H2_RUNTIME_SYSTEM_MODEM_SIM_ABSENT;
+  }
+  if (state.registration != H2_RUNTIME_SYSTEM_MODEM_REGISTRATION_UNKNOWN) {
+    value->has_registered = true;
+    value->registered =
+        state.registration == H2_RUNTIME_SYSTEM_MODEM_REGISTRATION_HOME ||
+        state.registration == H2_RUNTIME_SYSTEM_MODEM_REGISTRATION_ROAMING;
+  }
+  const char *rat = modem_rat_name(state.rat);
+  if (rat != NULL) {
+    value->has_rat = true;
+    (void)snprintf(value->rat, sizeof(value->rat), "%s", rat);
+  }
+  if (state.signal_valid && (state.rssi_valid || state.rsrp_valid)) {
+    value->has_signal_level = true;
+    value->signal_level = modem_signal_level(&state);
+    if (state.rssi_valid) {
+      value->has_rssi_dbm = true;
+      value->rssi_dbm = state.rssi_dbm;
+    }
+  }
+  /* Nothing reported yet is not a snapshot the Server can show. */
+  return value->has_sim_present || value->has_registered || value->has_rat ||
+                 value->has_signal_level
+             ? H2_PAL_OK
+             : H2_PAL_ERR_UNAVAILABLE;
+}
+
+/* Answered from the Runtime's battery snapshot, which its input poller keeps
+ * current; a missing battery or a failed reading is reported as such. */
+static h2_pal_result_t battery_read(void *user, h2_gizclaw_mhs_read_t *out) {
+  h2_gizclaw_mhs_builtin_t *builtin = user;
+  h2_runtime_battery_state_t state = {0};
+  h2_pal_result_t rc = h2_runtime_component_state_battery(
+      builtin->runtime, builtin->battery, &state);
+  if (rc != H2_PAL_OK)
+    return rc;
+  if (state.result != H2_PAL_OK)
+    return state.result;
+  const h2_pal_battery_reading_t *reading = &state.reading;
+  if ((reading->flags & H2_PAL_BATTERY_PRESENT) == 0u)
+    return H2_PAL_ERR_UNAVAILABLE;
+  gizclaw_rpc_v1_BatteryHwdReadResponse *value = &out->battery;
+  value->has_charging = true;
+  value->charging = (reading->flags & H2_PAL_BATTERY_CHARGING) != 0u;
+  if ((reading->flags & H2_PAL_BATTERY_HAS_PERCENT_X100) != 0u) {
+    value->has_percent = true;
+    value->percent = reading->percent_x100 > 10000u
+                         ? 100.0
+                         : (double)reading->percent_x100 / 100.0;
+  }
+  if ((reading->flags & H2_PAL_BATTERY_HAS_VOLTAGE_MV) != 0u &&
+      reading->voltage_mv >= 0) {
+    value->has_voltage_mv = true;
+    value->voltage_mv = (double)reading->voltage_mv;
+  }
+  return H2_PAL_OK;
+}
+
 size_t h2_gizclaw_mhs_builtins_internal(h2_gizclaw_mhs_builtin_t *context,
                                         h2_gizclaw_mhs_device_t *devices) {
   size_t count = 0u;
@@ -160,6 +271,21 @@ size_t h2_gizclaw_mhs_builtins_internal(h2_gizclaw_mhs_builtin_t *context,
         .id = "wifi.main",
         .hwd = gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_WIFI,
         .read = wifi_read,
+        .user = context};
+  }
+  if (context->runtime != NULL && context->modem != NULL) {
+    devices[count++] = (h2_gizclaw_mhs_device_t){
+        .id = "modem.main",
+        .hwd = gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_MODEM,
+        .read = modem_read,
+        .user = context};
+  }
+  if (context->runtime != NULL &&
+      context->battery != H2_RUNTIME_COMPONENT_ID_NONE) {
+    devices[count++] = (h2_gizclaw_mhs_device_t){
+        .id = "battery.main",
+        .hwd = gizclaw_rpc_v1_ClientHwd_CLIENT_HWD_BATTERY,
+        .read = battery_read,
         .user = context};
   }
   return count;

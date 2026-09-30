@@ -514,6 +514,7 @@ cc_test(
     }),
     deps = [
         ":gizclaw_test_support",
+        "//libs/app_test:testing_pal",
         "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/runtime",

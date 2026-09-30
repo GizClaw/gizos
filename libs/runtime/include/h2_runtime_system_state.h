@@ -107,8 +107,27 @@ typedef struct h2_runtime_system_ble_state {
     int reserved;
 } h2_runtime_system_ble_state_t;
 
+/**
+ * Latest modem snapshot the Runtime built from the modem system events.
+ *
+ * Each field follows the event that reports it: SIM, registration and packet
+ * events update their state, a signal event replaces the measurement, and
+ * every one of them that names an access technology updates `rat`. A field
+ * still at its UNKNOWN value, or a measurement whose `*_valid` is zero, has
+ * not been reported. Reading it never talks to the modem, so it is safe on
+ * any task that must not block on AT traffic.
+ */
 typedef struct h2_runtime_system_modem_state {
-    int reserved;
+    h2_runtime_system_modem_sim_state_t sim;
+    h2_runtime_system_modem_registration_state_t registration;
+    h2_runtime_system_modem_packet_state_t packet;
+    h2_runtime_system_modem_rat_t rat;
+    /** 1 once a signal event arrived; the measurements below follow it. */
+    uint8_t signal_valid;
+    int32_t rssi_dbm;
+    uint8_t rssi_valid; /**< 1 for measured RSSI; otherwise ignore rssi_dbm. */
+    int32_t rsrp_dbm;
+    uint8_t rsrp_valid; /**< 1 only for a real serving LTE cell RSRP. */
 } h2_runtime_system_modem_state_t;
 
 typedef struct h2_runtime_system_mqtt_state {

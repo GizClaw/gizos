@@ -1888,8 +1888,9 @@ h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service) {
     return H2_PAL_ERR_INVALID_ARG;
   /* Without any device capability the Service installs no built-in tool and
    * serves the caller's table like a standalone Client. */
-  if (!config->audio && !config->wifi && !config->wifi_settings &&
-      !config->power && !config->vtable && !config->manufacturer &&
+  if (!config->audio && !config->wifi && !config->modem &&
+      config->battery_component == H2_RUNTIME_COMPONENT_ID_NONE &&
+      !config->wifi_settings && !config->power && !config->vtable && !config->manufacturer &&
       !config->model && !config->serial && !config->hardware_revision)
     return H2_PAL_OK;
   if (!speaker_hooks_paired(config->vtable))
@@ -1952,11 +1953,15 @@ h2_pal_result_t h2_gizclaw_device_init_internal(h2_gizclaw_service_t *service) {
           (h2_gizclaw_tool_t)tool, h2_gizclaw_device_tool_internal, d};
   for (size_t i = 0; i < config->tool_handler_count; ++i)
     d->tools[tool_count++] = config->tool_handlers[i];
-  d->mhs_builtin = (h2_gizclaw_mhs_builtin_t){config->audio, config->wifi,
-                                              service->config.runtime};
-  d->mhs_devices =
-      h2_pal_mem_alloc(config->allocator,
-                       (config->mhs_device_count + 2u) * sizeof(*d->mhs_devices));
+  d->mhs_builtin = (h2_gizclaw_mhs_builtin_t){
+      .audio = config->audio,
+      .wifi = config->wifi,
+      .runtime = service->config.runtime,
+      .modem = config->modem,
+      .battery = config->battery_component};
+  d->mhs_devices = h2_pal_mem_alloc(
+      config->allocator, (config->mhs_device_count + H2_GIZCLAW_MHS_BUILTIN_MAX) *
+                             sizeof(*d->mhs_devices));
   if (!d->mhs_devices) {
     h2_gizclaw_device_destroy_internal(d);
     return H2_PAL_ERR_NO_MEMORY;
