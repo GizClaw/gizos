@@ -16,6 +16,7 @@
 typedef struct worker {
   unsigned id, calls, output;
   size_t stack_bytes;
+  pthread_t thread;
 } worker_t;
 typedef struct app {
   h2_web_platform_t *platform;
@@ -176,6 +177,28 @@ static h2_pal_result_t parallel_probe(void) {
   return passed ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
 }
 static size_t heap_bytes(void) { return (size_t)mallinfo().uordblks; }
+/* A Worker-side pthread_join returns before Emscripten frees the joined
+ * thread's control block (struct pthread, TLS and TSD; PAL owns the stack).
+ * The joiner posts cleanupThread to the browser main thread, which removes the
+ * thread from PThread.pthreads and frees the block in one synchronous step.
+ * Nothing orders that message against later mailbox-proxied calls. */
+EM_JS_DEPS(pal_core_task_probe, "$PThread");
+/* clang-format off */
+EM_JS(void, runtime_retired,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["pointer"], "i32",
+    (thread) => { return PThread.pthreads[thread] === undefined ? 1 : 0; });
+});
+/* clang-format on */
+static h2_pal_result_t wait_retired(pthread_t thread) {
+  const double deadline = emscripten_get_now() + 5000.0;
+  while (!h2_web_main_call(runtime_retired, (const void *[]){&thread}).i32) {
+    if (emscripten_get_now() >= deadline)
+      return H2_PAL_ERR_TIMEOUT;
+    h2_web_worker_sleep(1);
+  }
+  return H2_PAL_OK;
+}
 static h2_pal_result_t join(unsigned index) {
   const double deadline =
       ((double)h2_web_main_call(browser_now, NULL).f64) + 5000.0;
@@ -201,6 +224,7 @@ static void worker_entry(void *user) {
   worker->stack_bytes =
       (size_t)(emscripten_stack_get_base() - emscripten_stack_get_end());
   worker->output = (worker->id + 1u) * 7919u;
+  worker->thread = pthread_self();
 }
 static h2_pal_result_t start_worker(unsigned index, size_t stack) {
   app.workers[index] = (worker_t){.id = index};
@@ -209,22 +233,82 @@ static h2_pal_result_t start_worker(unsigned index, size_t stack) {
   return h2_pal_task_start(app.runtime->task, &options, worker_entry,
                            &app.workers[index], &app.tasks[index]);
 }
+/* Heap snapshots count only memory the runtime has actually released. */
+static h2_pal_result_t join_retired(unsigned index) {
+  h2_pal_result_t rc = join(index);
+  return rc == H2_PAL_OK ? wait_retired(app.workers[index].thread) : rc;
+}
+static _Atomic int main_held, main_release;
+/* clang-format off */
+EM_JS(void, hold_main,
+      (void *context, h2_web_main_result_t *result, h2_web_main_completion_t *completion), {
+  h2WebMain(context, result, completion, ["pointer", "pointer"], null,
+    (held, release) => {
+  setTimeout(() => {
+    Atomics.store(HEAP32, held >> 2, 1);
+    const deadline = performance.now() + 5000;
+    while (Atomics.load(HEAP32, release >> 2) === 0 && performance.now() < deadline) {
+    }
+  });
+});
+});
+/* clang-format on */
+/* Hold the browser main thread across a Worker-side join, so the joined
+ * thread's control block is still allocated when the join returns. The drained
+ * snapshot must still match the baseline taken before the task existed. */
+static h2_pal_result_t retire_probe(void) {
+  const size_t baseline = heap_bytes();
+  h2_pal_result_t rc = start_worker(0, 0);
+  if (rc != H2_PAL_OK)
+    return rc;
+  atomic_store(&main_held, 0);
+  atomic_store(&main_release, 0);
+  (void)h2_web_main_call(hold_main, (const void *[]){&(void *){&main_held},
+                                                     &(void *){&main_release}});
+  const double deadline = emscripten_get_now() + 3000.0;
+  while (!atomic_load(&main_held) && emscripten_get_now() < deadline)
+    h2_web_worker_sleep(1);
+  int held = atomic_load(&main_held);
+  /* join() reads the browser clock; call the provider directly while the main
+   * thread is held. */
+  rc = held ? h2_pal_task_join(app.runtime->task, app.tasks[0])
+            : H2_PAL_ERR_TIMEOUT;
+  if (rc == H2_PAL_OK)
+    app.tasks[0] = NULL;
+  const size_t joined = heap_bytes();
+  atomic_store(&main_release, 1);
+  if (rc != H2_PAL_OK)
+    return rc;
+  rc = wait_retired(app.workers[0].thread);
+  if (rc != H2_PAL_OK)
+    return rc;
+  const size_t drained = heap_bytes();
+  printf("H2_WEB_CORE_TASK_RETIRE main_held=%d pending_bytes=%" PRId64
+         " retained_bytes=%" PRId64 "\n",
+         held, (int64_t)joined - (int64_t)baseline,
+         (int64_t)drained - (int64_t)baseline);
+  return joined > baseline && drained == baseline ? H2_PAL_OK
+                                                  : H2_PAL_ERR_INVALID_STATE;
+}
 static h2_pal_result_t task_probe(void) {
   /* Warm up the Worker pool and libc before repeated native Task cycles. */
   for (unsigned i = 0; i < 5u; ++i) {
     h2_pal_result_t rc = start_worker(0, 0);
     if (rc != H2_PAL_OK)
       return rc;
-    rc = join(0);
+    rc = join_retired(0);
     if (rc != H2_PAL_OK)
       return rc;
   }
+  h2_pal_result_t retire_rc = retire_probe();
+  if (retire_rc != H2_PAL_OK)
+    return retire_rc;
   const size_t before = heap_bytes();
   for (unsigned i = 0; i < 100u; ++i) {
     h2_pal_result_t rc = start_worker(0, 0);
     if (rc != H2_PAL_OK)
       return rc;
-    rc = join(0);
+    rc = join_retired(0);
     if (rc != H2_PAL_OK)
       return rc;
     if (app.workers[0].calls != 1u || app.workers[0].output != 7919u)
@@ -264,7 +348,7 @@ static h2_pal_result_t task_probe(void) {
          "execution=pthread heap_before=%zu heap_after=%zu "
          "retained_bytes=%" PRId64 "\n",
          before, after, (int64_t)after - (int64_t)before);
-  return after > before ? H2_PAL_ERR_INVALID_STATE : H2_PAL_OK;
+  return after != before ? H2_PAL_ERR_INVALID_STATE : H2_PAL_OK;
 }
 
 static int handler(void *user, const h2_pal_system_event_t *event) {
