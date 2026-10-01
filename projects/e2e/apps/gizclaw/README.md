@@ -2,16 +2,16 @@
 
 ## 当前资格（2026-10-01）
 
-当前 SDK 固定 `0.19.0`，独立公开库存与审计为 **227 项**。当前主线 SCTP #617 与 PAL Net/TLS #621 已合入。source `42a1f4a0` 的 macOS 真实 8/8 及 227/227 通过，cleanup=0、retained=0；source `d214ab96` 的 iOS/Android 真实 8/8、227/227、cleanup/retained/teardown=0 保留原身份。早期 226/default profile 记录保留原身份。六端整体资格仍未完成。
+当前 SDK 固定 `0.19.0`，独立公开库存与审计为 **227 项**。当前主线 SCTP #617 与 PAL Net/TLS #621 已合入。source `a6f6ecc7` 的 macOS、iOS Simulator、Android Emulator 均真实 8/8 及 227/227 通过，cleanup=0、retained=0，移动端 teardown=0；早期 source42a/75aad/d214 的独立记录保留原身份。早期 226/default profile 记录保留原身份。六端整体资格仍未完成。
 
 | 平台 | 当前实际结果 | 尚缺条件 |
 | --- | --- | --- |
-| macOS / H2Peer | source42a1f4a0，8/8、227/227，cleanup=0、retained=0 | 受控 E2E h106-tiga，显式 key/value；已完成该 source 实际运行 |
-| iOS Simulator / XCFramework | sourced214ab96，8/8、227/227，cleanup/retained/teardown=0 | 仅模拟器资格；不代表iOS实机 |
-| Android Emulator / AAR | sourced214ab96，8/8、227/227，cleanup/retained/teardown=0 | 仅模拟器资格；不代表Android实机 |
+| macOS / H2Peer | sourcea6f6ecc7，8/8、227/227，cleanup=0、retained=0 | 受控 E2E h106-tiga，显式 key/value；已完成该 source 实际运行 |
+| iOS Simulator / XCFramework | sourcea6f6ecc7，8/8、227/227，cleanup/retained/teardown=0 | 仅模拟器资格；不代表iOS实机 |
+| Android Emulator / AAR | sourcea6f6ecc7，8/8、227/227，cleanup/retained/teardown=0 | 仅模拟器资格；不代表Android实机 |
 | WASM / Chromium Worker | source4596acba，7/8，cleanup=0、teardown=0 | 真实Edge preflight缺PUT；GizClaw/gizclaw#1422源码fix已CI绿，尚待经授权发布/部署后fresh Worker验证 |
-| ESP32-S3 / AMOLED | source d214ab96 的 R24 完整执行 5/8、cleanup=-10、retained=2；未确认 | R25 的新 managed boot 和独立 normal boot 仍在执行；coredump 空不能证明没有 reset |
-| BK7258 | R24 已实际安装，Stage 有效；尚无完整可审计业务记录，未确认 | 接线补齐显式 CA 与完整 boot 账本后重新执行；只在全量成功后确认 App |
+| ESP32-S3 / AMOLED | source9326 的 R27 完整执行7/8、Firmware真实超时、cleanup=-10、retained=1；未确认 | 新 managed boot 和独立 normal boot 仍需完成；coredump 空不能证明没有 reset |
+| BK7258 | source9326 的 R27 实际执行8项均FAIL=-5，Stage 有效；未确认 | R28 修复 SDK 控制台账本输出后重新执行并定位实际失败；只在全量成功后确认 App |
 
 版本、逐 case 终态、未覆盖 API、清理及日志 SHA 保存在 `evidence/*-phase*.json`。macOS/iOS/Android 的上述音频结果验证真实服务上的录音 fixture、回复解码、历史重播及 PCM 消费；输入和扬声器使用确定性测试 delegate，**不构成麦克风或声学验收**。
 
