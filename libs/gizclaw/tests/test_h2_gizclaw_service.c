@@ -4692,6 +4692,36 @@ static void test_device_provider_methods_validation(void) {
   }
 }
 
+static void test_audio_free_social_methods_owner_initializes(void) {
+  test_env_t env;
+  h2_gizclaw_service_t *service = create_profile_service(&env);
+  h2_gizclaw_config_t client = service->client_config;
+  h2_gizclaw_service_config_t config = service->config;
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+  static const h2_gizclaw_rpc_method_t methods[] = {
+      H2_GIZCLAW_RPC_CLIENT_SOCIAL_PING};
+  static const h2_gizclaw_vtable_t protocol_only = {0};
+  static product_rpc_state_t product;
+  client.audio = NULL;
+  client.vtable = NULL;
+  client.rpc_provider = product_rpc;
+  client.rpc_provider_user = &product;
+  client.rpc_provider_methods = methods;
+  client.rpc_provider_method_count = 1u;
+  config.client_config = &client;
+  service = NULL;
+  /* Exercise the real Service/device initializer, not the E2E actor mock. */
+  assert(h2_gizclaw_service_init(&config, &service) == H2_PAL_ERR_INVALID_ARG);
+  assert(service == NULL);
+  client.vtable = &protocol_only;
+  assert(h2_gizclaw_service_init(&config, &service) == H2_PAL_OK);
+  assert(service != NULL && service->device != NULL);
+  assert(service->client_config.audio == NULL);
+  assert(h2_gizclaw_service_stop(service) == H2_PAL_OK);
+  assert(h2_gizclaw_service_deinit(service) == H2_PAL_OK);
+}
+
 /* An ACTIVITY observation is copied into the request, validated against the
  * server's grammar, and a rejection is logged without its value. */
 #define TELEMETRY_ACTIVITY_ID "audioplayer"
@@ -13798,6 +13828,7 @@ int main(int argc, char **argv) {
   test_device_forwards_find_and_social_ping();
   test_device_configuration_rpcs();
   test_device_provider_methods_validation();
+  test_audio_free_social_methods_owner_initializes();
   test_device_identifiers_imeis();
   test_device_ota_telemetry_copy();
   test_ota_status_before_stage_failure();
