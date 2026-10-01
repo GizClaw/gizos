@@ -6,6 +6,24 @@ Built-in numeric buffers, physics and geometry: [Lua numeric API](./lua-numeric.
 
 通用 C 像素核心见 [Raster2D API](./raster2d.md)。Lua Display 的 VM 数据、损伤与生命周期由本模块拥有。
 
+## Quad strip batches
+
+Compile the normalized layout once, then supply the current four corners and colors. Records draw in array order; a five-field record applies a transverse patch before the strip interpolation. See the generated contract above for limits, arithmetic and error behavior.
+
+```lua
+local display = require('display')
+local bands = display.compile_quad_batch({
+    {0, 0.5, 1},             -- direct strip, first half
+    {0.5, 1, 2},             -- direct strip, second half
+    {0, 0.1, 3, 0.25, 0.75} -- strip inside a transverse patch
+})
+local colors = display.compile_palette({'blue', 'red', 'white'})
+display.draw_quad_batch(bands, colors, 10,10, 200,30, 180,210, 40,190)
+display.present()
+```
+
+For changing RGB888 colors, pass a reused array of ordinary Display color tables instead of a compiled palette. Each slot is sampled during the call; retain distinct tables for colors that differ. This API only expands caller-specified geometry and reuses the existing polygon raster. It does not decide lighting, projection or scene order.
+
 ## Regions from strings
 
 `display.region_from_string(width, height, data[, encoding])` creates an opaque region for `display.draw_region(region, x, y, ...)` and, for a matching full-screen image, `display.restore_background(region)`. The constructor does not acquire or draw to the display and remains usable on an existing proxy after `deinit`. Initial `require('display')` still acquires Display and raises on failure; cached `require` does not reopen it after `deinit`, and drawing still requires a live acquisition. Width and height must be integers from 1 through 4096; `data` must be a Lua string. The default encoding is `"rgb565be"`.

@@ -789,7 +789,9 @@ int main(void) {
                      "local a=d.compile_palette({'red'});local b=d.compile_palette({'blue'});"
                      "d.blend_palette(b,a,b,0);"
                      "local r=d.compile_rects({{x=3,y=5,width=7,height=9,color_index=1}});"
-                     "d.draw_rects(r,b);d.present();"
+                     "d.draw_rects(r,b);"
+                     "local q=d.compile_quad_batch({{0,1,1}});"
+                     "d.draw_quad_batch(q,b,3,5,9,5,9,14,3,14);d.present();"
                      "local t=require('lcd_touch');t.poll()");
   wait_state(host, job, H2_LUA_JOB_SUCCEEDED);
   assert(display.draws == 2 && display.presents == 2);

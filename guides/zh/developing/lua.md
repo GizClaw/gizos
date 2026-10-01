@@ -142,6 +142,12 @@ job。
 
 C core 完整校验后绘制，adapter 再逐矩形标记已有 dirty/background damage。没有新缓存或损伤对象。构造和 palette blend 不自行打开 Display；`require('display')` 仍沿用既有 acquisition，关闭后的 proxy 不可绘制。参数 getter 自身可以有副作用；构造过程不写 framebuffer，后续 draw 必须重新检查 Display 状态。GC、取消、job release 与 Host teardown 继续走已有回收流程。
 
+### Display 四边形条带批次
+
+`display.compile_quad_batch` 保存调用方定义的归一化条带、可选横向 patch 和 painter order；`display.draw_quad_batch` 每次只接收四角与颜色，复用既有 polygon 光栅、dirty/background damage 和 retained present。接口与精确插值顺序见 [Display API](../../references/lua.md)。颜色可使用既有 `compile_palette`，或复用普通 Lua 颜色数组以逐帧更新 RGB888 配方；批次本身不生成渐变或光晕颜色，不选择视角、拓扑或可见性。
+
+拓扑上限为 256 项，初始化复制到 VM 计费 userdata，GC/VM teardown 回收；逐帧不创建 mesh、中间顶点 buffer 或光栅缓存。显式横向 patch 先插值，再沿其两边展开条带，保持与逐条 Lua `fill_polygon` 相同的浮点运算顺序和绘制顺序。成功 draw 自身不分配存储，所有颜色与角点在首次写像素前验证。空批次、退化条带、重叠及屏幕裁剪沿用 polygon 行为；颜色 getter 的 Lua 副作用不属于失败原子性保证。
+
 ### Display 笔画与有界缓存
 
 `display.stroke_path(points,widths,color,offset_x=0,top=0,bottom=height,cache=false,fast=false,smooth=false,scale=1,tolerance=0)` 接受 `2..256` 个有限 ±100000 的点对、恰好 `n-1` 个 `0..1000` 宽度，以及单色或 `n-1` 个颜色。cache/fast/smooth 必须为 boolean；scale 为 `0<scale<=16`，先作用于坐标和宽度；offset 有限且位于 ±100000。top/bottom 沿用屏内整数半开行裁剪。所有参数、颜色 getter 和分配在绘制前完成并重新检查 Display。返回 `(cache_hit,fast_segment_count)`，不是帧率。
