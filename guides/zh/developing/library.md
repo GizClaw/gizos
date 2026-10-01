@@ -8,6 +8,8 @@
 
 ## 标准结构
 
+`libs/display_viewport` 在真实 PAL Display 上提供固定、不缩放的逻辑窗口：调用方配置物理坐标与尺寸，窗口 API 返回逻辑尺寸并平移 draw 矩形，present 和亮度继续调用真实 backend。它不分配 framebuffer，也不伪造显示能力；调用方独占 backend 生命周期并串行调用，失败的 close 保留状态供重试。完整 ownership、边界和错误合同见公共 `h2_display_viewport.h`；`viewport_test` 验证实际像素位置、padding、格式转发、越界和初始化/关闭失败。
+
 ```text
 [libs | projects/<group>/libs]/<library>/
 ├── include/                              # Public API
