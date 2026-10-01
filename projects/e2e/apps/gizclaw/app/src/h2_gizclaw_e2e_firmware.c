@@ -409,10 +409,15 @@ static void observe_firmware_route(h2_gizclaw_e2e_fixture_t *fixture,
   while (*end && *end != '/' && *end != '?' && *end != ':' && *end != '#')
     ++end;
   size_t length = (size_t)(end - begin);
+  bool safe_host = length > 0u && length < sizeof(host);
+  for (size_t i = 0u; safe_host && i < length; ++i) {
+    char c = begin[i];
+    safe_host = (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+                (c >= '0' && c <= '9') || c == '.' || c == '-';
+  }
   h2_pal_net_addr_t address = {0};
   int rc = H2_PAL_ERR_INVALID_ARG;
-  if (length > 0u && length < sizeof(host) &&
-      memchr(begin, '@', length) == NULL) {
+  if (safe_host) {
     memcpy(host, begin, length);
     h2_pal_net_resolver_t *resolver = NULL;
     rc = h2_pal_net_resolve_start(fixture->runtime->net, host, &resolver);
@@ -430,9 +435,11 @@ static void observe_firmware_route(h2_gizclaw_e2e_fixture_t *fixture,
     }
   }
   char diagnostic[384];
+  const bool ipv4 = rc == H2_PAL_OK && address.family == H2_PAL_NET_FAMILY_IPV4;
   snprintf(diagnostic, sizeof(diagnostic), "firmware_route host=%s rc=%d family=%d ipv4=%u.%u.%u.%u uri_sha256=%s expected=%" PRId64,
-           host, rc, (int)address.family, address.ip[0], address.ip[1],
-           address.ip[2], address.ip[3], uri_hash, metadata->size);
+           host, rc, (int)address.family, ipv4 ? address.ip[0] : 0u,
+           ipv4 ? address.ip[1] : 0u, ipv4 ? address.ip[2] : 0u,
+           ipv4 ? address.ip[3] : 0u, uri_hash, metadata->size);
   (void)h2_pal_log_write(fixture->runtime->log, H2_PAL_LOG_INFO,
                          "gizclaw-e2e", diagnostic);
 }
