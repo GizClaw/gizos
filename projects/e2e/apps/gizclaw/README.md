@@ -2,13 +2,13 @@
 
 ## 当前资格（2026-10-01）
 
-当前 SDK 固定 `0.19.0`，独立公开库存与审计为 **227 项**。当前主线 SCTP #617 与 PAL Net/TLS #621 已合入。source `a6f6ecc7` 的 macOS、iOS Simulator、Android Emulator 均真实 8/8 及 227/227 通过，cleanup=0、retained=0，移动端 teardown=0；早期 source42a/75aad/d214 的独立记录保留原身份。早期 226/default profile 记录保留原身份。六端整体资格仍未完成。
+当前 SDK 固定 `0.19.0`，独立公开库存与审计为 **227 项**。当前主线 SCTP #617 与 PAL Net/TLS #621 已合入。source `e228d55b` 的 macOS、iOS Simulator、Android Emulator 均真实 8/8 及 227/227 通过，cleanup=0、retained=0，移动端 teardown=0；早期 source42a/75aad/d214 的独立记录保留原身份。早期 226/default profile 记录保留原身份。六端整体资格仍未完成。
 
 | 平台 | 当前实际结果 | 尚缺条件 |
 | --- | --- | --- |
-| macOS / H2Peer | sourcea6f6ecc7，8/8、227/227，cleanup=0、retained=0 | 受控 E2E h106-tiga，显式 key/value；已完成该 source 实际运行 |
-| iOS Simulator / XCFramework | sourcea6f6ecc7，8/8、227/227，cleanup/retained/teardown=0 | 仅模拟器资格；不代表iOS实机 |
-| Android Emulator / AAR | sourcea6f6ecc7，8/8、227/227，cleanup/retained/teardown=0 | 仅模拟器资格；不代表Android实机 |
+| macOS / H2Peer | sourcee228d55b，8/8、227/227，cleanup=0、retained=0 | 受控 E2E h106-tiga，显式 key/value；已完成该 source 实际运行 |
+| iOS Simulator / XCFramework | sourcee228d55b，8/8、227/227，cleanup/retained/teardown=0 | 仅模拟器资格；不代表iOS实机 |
+| Android Emulator / AAR | sourcee228d55b，8/8、227/227，cleanup/retained/teardown=0 | 仅模拟器资格；不代表Android实机 |
 | WASM / Chromium Worker | source4596acba，7/8，cleanup=0、teardown=0 | 真实Edge preflight缺PUT；GizClaw/gizclaw#1422源码fix已CI绿，尚待经授权发布/部署后fresh Worker验证 |
 | ESP32-S3 / AMOLED | source9326 的 R27 完整执行7/8、Firmware真实超时、cleanup=-10、retained=1；未确认 | 新 managed boot 和独立 normal boot 仍需完成；coredump 空不能证明没有 reset |
 | BK7258 | source9326 的 R27 实际执行8项均FAIL=-5，Stage 有效；未确认 | R28 修复 SDK 控制台账本输出后重新执行并定位实际失败；只在全量成功后确认 App |
@@ -204,3 +204,5 @@ ESP32-S3还要求显式 `app_config_fixture_time_server=<DNS-or-IPv4>`，由本�
 AMOLED实板的可选evidence observer在App任务内同步复制非敏感的原始接口/断言记录。384KiB上限溢出或format失败阻止确认；任务join后才冻结单次boot账本。实际crypto随机execution nonce、版本、完整byte/record计数和CRC32校验绑定每次重播；CRC32只检测串口传输损失，host另存完整账本SHA-256，不声称密码学来源认证。只有完整用例与零cleanup/retained、完整capture和实际App confirmation成功才 `admitted=1`。命令服务在资格任务结束后启动；不会提前确认pending长测试来绕过CLI重连窗口。`gizclaw-device:verify_device`只校验一份完整账本及独立227接口矩阵，不调用Bazel或拼多轮日志；normal App boot必须提供上一boot的execution供拒绝旧重播。
 
 BK7258 没有系统 CA bundle。该测试启动器必须通过 `app_config_fixture_root_ca_hex` 提供所选真实 HTTPS fixture 的公共 PEM 根证书十六进制字节（上限 16 KiB），并创建测试进程持有的 coreHTTP provider；TLS 保持 REQUIRED、真实 hostname/链/日期校验。缺少 CA 是配置失败，不能改成 SKIP 或关闭验证。BK 与 AMOLED 使用同一 384 KiB 有界证据账本、随机 execution nonce、完整 CRC32 帧及独立 227 项审计；旧 boot 的重播不能满足第二次 normal boot。
+
+BK 的 GizClaw target 选择已存在的 board-owned `media` RAM layout（AP heap4.25MiB，显示保留区1.8125MiB），并将本业务的 audio/data/Device/H2Peer worker stacks 放入 PSRAM；GPIO、AP/CP SRAM 与 managed partition 继续由 Board layout 持有。此前 display-oriented640KiB heap 的实际 OOM 记录保留原源码与未确认状态。Native launcher 明确启用真实 H2Peer PAL；误编译 canonical unsupported provider 是接线错误，不能授予能力 SKIP。
