@@ -161,7 +161,7 @@ libs/<library>/
 └── BUILD.bazel
 ```
 
-`libs/atomic/` 独立于 PAL，持有 typed atomic wrapper、操作符号与可复用 provider 模板；Runtime、H2Peer 和 App 直接依赖其 contract。最终 target 链入一个平台实现，不经过 PAL vtable 或 Memory PAL 注入。Desktop/Browser 使用 C11 provider，iOS/Android 使用 pthread provider；ESP provider 源码位于 `native_component_src/esp-idf6.x/h2_pal_core/`，其实际原子存储分配在内部 RAM。BK/JieLi 暂时只链接显式 unsupported provider。这里的 `h2_pal_core` 是现有 SDK component 名称，不改变 atomic contract 的 ownership。
+`libs/atomic/` 独立于 PAL，持有 typed atomic wrapper、操作符号与可复用 provider 模板；Runtime、H2Peer 和 App 直接依赖其 contract。最终 target 链入一个平台实现，不经过 PAL vtable 或 Memory PAL 注入。Desktop/Browser 使用 C11 provider，iOS/Android 使用 pthread provider；ESP provider 源码位于 `native_component_src/esp-idf6.x/h2_pal_core/`，其实际原子存储分配在内部 RAM。BK7258 AP 使用 `native_component_src/bk7258/ap/h2_pal_core` 中的 SRAM critical-section provider；wrapper 可位于 PSRAM，backing 保持 SRAM，其资格由独立 Atomic E2E 验证。JieLi 仍使用显式 unsupported provider。这里的 `h2_pal_core` 是现有 SDK component 名称，不改变 atomic contract 的 ownership。
 
 `libs/app_host/` 是上述"platform 无关"要求的唯一例外：它是 App 启动层，当前只有 Web 实现，其他平台以后在同一 library 中增加变体。它消费 PAL provider 组装 Runtime、运行调用方传入的 App entry 并负责 teardown，不实现 PAL capability、不选择 App。依赖边界：`libs/app_host` 只依赖 `libs/pal`、`libs/pal:unsupported`、`libs/pal/providers/web/pal_core`、`libs/lvgl:platform_web` 与 `libs/runtime`，不依赖任何 project、App 或 artifact entry；`targets/pkg_tar/<app>` 依赖它，反向不成立。`web_app.bzl` 的 `h2_web_app()` 在调用方 entry 的 package 内声明 wasm binary、archive、`:serve` 与 `:browser_test`，所以最终 archive、`main`、App entry 与配置、Button/key 映射和 preload 仍归该 entry；entry 也可以不经 `app_host` 自行组装。`libs/lua/web` 可以依赖 `libs/app_host`，同样不依赖 project。
 

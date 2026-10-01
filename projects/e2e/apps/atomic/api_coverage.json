@@ -1,0 +1,576 @@
+{
+  "contract": "libs/atomic/include/h2_atomic.h",
+  "typed_functions": 76,
+  "cases": 28,
+  "symbols": [
+    {
+      "symbol": "h2_atomic_int_init",
+      "cases": [
+        "dynamic.int",
+        "static.int"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_int_destroy",
+      "cases": [
+        "dynamic.int",
+        "static.int"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_int_load",
+      "cases": [
+        "dynamic.int",
+        "static.int"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_int_store",
+      "cases": [
+        "dynamic.int",
+        "static.int"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_int_exchange",
+      "cases": [
+        "dynamic.int",
+        "static.int"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_int_compare_exchange",
+      "cases": [
+        "dynamic.int",
+        "static.int"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_int_fetch_add",
+      "cases": [
+        "dynamic.int",
+        "static.int"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_int_fetch_sub",
+      "cases": [
+        "dynamic.int",
+        "static.int"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_int_fetch_or",
+      "cases": [
+        "dynamic.int",
+        "static.int"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_int_fetch_and",
+      "cases": [
+        "dynamic.int",
+        "static.int"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_uint_init",
+      "cases": [
+        "dynamic.uint",
+        "static.uint"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_uint_destroy",
+      "cases": [
+        "dynamic.uint",
+        "static.uint"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_uint_load",
+      "cases": [
+        "dynamic.uint",
+        "static.uint"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_uint_store",
+      "cases": [
+        "dynamic.uint",
+        "static.uint"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_uint_exchange",
+      "cases": [
+        "dynamic.uint",
+        "static.uint"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_uint_compare_exchange",
+      "cases": [
+        "dynamic.uint",
+        "static.uint"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_uint_fetch_add",
+      "cases": [
+        "dynamic.uint",
+        "static.uint"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_uint_fetch_sub",
+      "cases": [
+        "dynamic.uint",
+        "static.uint"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_uint_fetch_or",
+      "cases": [
+        "dynamic.uint",
+        "static.uint"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_uint_fetch_and",
+      "cases": [
+        "dynamic.uint",
+        "static.uint"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u8_init",
+      "cases": [
+        "dynamic.u8",
+        "static.u8"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u8_destroy",
+      "cases": [
+        "dynamic.u8",
+        "static.u8"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u8_load",
+      "cases": [
+        "dynamic.u8",
+        "static.u8"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u8_store",
+      "cases": [
+        "dynamic.u8",
+        "static.u8"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u8_exchange",
+      "cases": [
+        "dynamic.u8",
+        "static.u8"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u8_compare_exchange",
+      "cases": [
+        "dynamic.u8",
+        "static.u8"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u8_fetch_add",
+      "cases": [
+        "dynamic.u8",
+        "static.u8"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u8_fetch_sub",
+      "cases": [
+        "dynamic.u8",
+        "static.u8"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u8_fetch_or",
+      "cases": [
+        "dynamic.u8",
+        "static.u8"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u8_fetch_and",
+      "cases": [
+        "dynamic.u8",
+        "static.u8"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u16_init",
+      "cases": [
+        "dynamic.u16",
+        "static.u16"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u16_destroy",
+      "cases": [
+        "dynamic.u16",
+        "static.u16"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u16_load",
+      "cases": [
+        "dynamic.u16",
+        "static.u16"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u16_store",
+      "cases": [
+        "dynamic.u16",
+        "static.u16"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u16_exchange",
+      "cases": [
+        "dynamic.u16",
+        "static.u16"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u16_compare_exchange",
+      "cases": [
+        "dynamic.u16",
+        "static.u16"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u16_fetch_add",
+      "cases": [
+        "dynamic.u16",
+        "static.u16"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u16_fetch_sub",
+      "cases": [
+        "dynamic.u16",
+        "static.u16"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u16_fetch_or",
+      "cases": [
+        "dynamic.u16",
+        "static.u16"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u16_fetch_and",
+      "cases": [
+        "dynamic.u16",
+        "static.u16"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u32_init",
+      "cases": [
+        "dynamic.u32",
+        "static.u32"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u32_destroy",
+      "cases": [
+        "dynamic.u32",
+        "static.u32"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u32_load",
+      "cases": [
+        "dynamic.u32",
+        "static.u32"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u32_store",
+      "cases": [
+        "dynamic.u32",
+        "static.u32"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u32_exchange",
+      "cases": [
+        "dynamic.u32",
+        "static.u32"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u32_compare_exchange",
+      "cases": [
+        "dynamic.u32",
+        "static.u32"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u32_fetch_add",
+      "cases": [
+        "dynamic.u32",
+        "static.u32"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u32_fetch_sub",
+      "cases": [
+        "dynamic.u32",
+        "static.u32"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u32_fetch_or",
+      "cases": [
+        "dynamic.u32",
+        "static.u32"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_u32_fetch_and",
+      "cases": [
+        "dynamic.u32",
+        "static.u32"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_size_init",
+      "cases": [
+        "dynamic.size",
+        "static.size"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_size_destroy",
+      "cases": [
+        "dynamic.size",
+        "static.size"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_size_load",
+      "cases": [
+        "dynamic.size",
+        "static.size"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_size_store",
+      "cases": [
+        "dynamic.size",
+        "static.size"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_size_exchange",
+      "cases": [
+        "dynamic.size",
+        "static.size"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_size_compare_exchange",
+      "cases": [
+        "dynamic.size",
+        "static.size"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_size_fetch_add",
+      "cases": [
+        "dynamic.size",
+        "static.size"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_size_fetch_sub",
+      "cases": [
+        "dynamic.size",
+        "static.size"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_size_fetch_or",
+      "cases": [
+        "dynamic.size",
+        "static.size"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_size_fetch_and",
+      "cases": [
+        "dynamic.size",
+        "static.size"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_bool_init",
+      "cases": [
+        "dynamic.bool",
+        "static.bool"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_bool_destroy",
+      "cases": [
+        "dynamic.bool",
+        "static.bool"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_bool_load",
+      "cases": [
+        "dynamic.bool",
+        "static.bool"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_bool_store",
+      "cases": [
+        "dynamic.bool",
+        "static.bool"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_bool_exchange",
+      "cases": [
+        "dynamic.bool",
+        "static.bool"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_bool_compare_exchange",
+      "cases": [
+        "dynamic.bool",
+        "static.bool"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_ptr_init",
+      "cases": [
+        "dynamic.ptr",
+        "static.ptr"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_ptr_destroy",
+      "cases": [
+        "dynamic.ptr",
+        "static.ptr"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_ptr_load",
+      "cases": [
+        "dynamic.ptr",
+        "static.ptr"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_ptr_store",
+      "cases": [
+        "dynamic.ptr",
+        "static.ptr"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_ptr_exchange",
+      "cases": [
+        "dynamic.ptr",
+        "static.ptr"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_ptr_compare_exchange",
+      "cases": [
+        "dynamic.ptr",
+        "static.ptr"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_flag_init",
+      "cases": [
+        "dynamic.flag",
+        "static.flag"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_flag_destroy",
+      "cases": [
+        "dynamic.flag",
+        "static.flag"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_flag_test_and_set",
+      "cases": [
+        "dynamic.flag",
+        "static.flag"
+      ]
+    },
+    {
+      "symbol": "h2_atomic_flag_clear",
+      "cases": [
+        "dynamic.flag",
+        "static.flag"
+      ]
+    }
+  ],
+  "orders": {
+    "load": [
+      "RELAXED",
+      "ACQUIRE",
+      "SEQ_CST"
+    ],
+    "store": [
+      "RELAXED",
+      "RELEASE",
+      "SEQ_CST"
+    ],
+    "rmw": [
+      "RELAXED",
+      "ACQUIRE",
+      "RELEASE",
+      "ACQ_REL",
+      "SEQ_CST"
+    ],
+    "cas_failure": [
+      "RELAXED",
+      "ACQUIRE",
+      "SEQ_CST"
+    ]
+  },
+  "concurrent_cases": [
+    "contention.int",
+    "contention.uint",
+    "contention.u8",
+    "contention.u16",
+    "contention.u32",
+    "contention.size",
+    "flag.mutex",
+    "publication.bool",
+    "publication.ptr",
+    "flags.independent"
+  ],
+  "qualification": "All H2Atomic cases are mandatory. Direct C11 comparisons are separate; Xtensa PSRAM C11 backing is unsupported and is never executed."
+}
