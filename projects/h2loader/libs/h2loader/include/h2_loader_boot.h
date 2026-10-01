@@ -294,6 +294,22 @@ int h2_loader_read_pref_status(
     const h2_pal_pref_api_t *pref,
     const h2_pal_mem_api_t *allocator,
     h2_loader_status_t *out_status);
+/** Read the running Loader's decoded image and construct the complete identity
+ * required by h2_loader_init(). config borrows power, pref, package allocator,
+ * image_reader and digest callbacks; board/target/version are NUL-terminated.
+ * Call before init, serialized with other package/digest operations in task
+ * context. This blocks for the image read and never writes preferences.
+ * Matching running-slot metadata provides the image length and expected SHA;
+ * otherwise the primary Loader capacity supplies the length, including when
+ * the candidate is running from a larger App slot. Reader capacity and stored
+ * checksum are checked. A 4 KiB allocator buffer is freed on every path;
+ * digest failures abort. Missing callbacks/invalid arguments return INVALID_ARG,
+ * bad slot/size/checksum return INVALID_STATE or FORMAT; backend errors propagate.
+ * out_identity is zero on failure. No dependencies are retained.
+ */
+int h2_loader_read_current_loader_identity(
+    const h2_loader_config_t *config, const char *version,
+    h2_loader_image_identity_t *out_identity);
 int h2_loader_read_status(h2_loader_t *loader, h2_loader_status_t *out_status);
 
 #ifdef __cplusplus

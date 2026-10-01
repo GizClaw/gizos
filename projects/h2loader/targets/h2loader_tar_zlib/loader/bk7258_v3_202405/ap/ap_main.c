@@ -221,96 +221,6 @@ static void command_digest_abort(void *user) {
     mbedtls_sha256_free(&s_command_sha);
 }
 
-static void command_digest_hex(const uint8_t digest[32], char out[65]) {
-    static const char hex[] = "0123456789abcdef";
-    for (size_t i = 0u; i < 32u; ++i) {
-        out[i * 2u] = hex[digest[i] >> 4u];
-        out[i * 2u + 1u] = hex[digest[i] & 0x0fu];
-    }
-    out[64] = '\0';
-}
-
-static int current_loader_identity(
-    const h2_pal_pref_api_t *pref,
-    const h2_pal_mem_api_t *allocator,
-    const h2_pal_power_api_t *power,
-    const char *version,
-    h2_loader_image_identity_t *out_identity) {
-    const h2_loader_image_reader_api_t *reader = h2_bk_h2loader_image_reader();
-    h2_pal_power_boot_partition_t running;
-    h2_loader_status_t status;
-    const h2_loader_metadata_t *active = NULL;
-    uint8_t buffer[4096];
-    uint8_t digest[32];
-    char digest_hex[65];
-    uint64_t image_size = 0u;
-    uint64_t offset = 0u;
-    int rc;
-
-    if (pref == NULL || allocator == NULL || power == NULL ||
-        version == NULL || out_identity == NULL || reader == NULL ||
-        reader->vtable == NULL || reader->vtable->get_capacity == NULL ||
-        reader->vtable->read == NULL) {
-        return H2_PAL_ERR_INVALID_ARG;
-    }
-    rc = h2_pal_power_get_running_boot_partition(power, &running);
-    if (rc != H2_PAL_OK ||
-        (running.id != H2_BK_H2LOADER_PRIMARY_PARTITION_ID &&
-         running.id != H2_BK_H2LOADER_APP_PARTITION_ID)) {
-        return rc == H2_PAL_OK ? H2_PAL_ERR_INVALID_STATE : rc;
-    }
-    rc = h2_loader_read_pref_status(pref, allocator, &status);
-    active = rc == H2_PAL_OK
-        ? (running.id == H2_BK_H2LOADER_PRIMARY_PARTITION_ID
-            ? &status.partition_1 : &status.partition_2)
-        : NULL;
-    if (active != NULL && active->valid &&
-        active->role == H2_LOADER_IMAGE_ROLE_H2LOADER &&
-        active->image_size != 0u && strcmp(active->version, version) == 0 &&
-        strcmp(active->board, "bk7258_v3_202405") == 0 &&
-        strcmp(active->target, "bk7258") == 0) {
-        image_size = active->image_size;
-    } else {
-        active = NULL;
-    }
-    if (image_size == 0u) {
-        rc = reader->vtable->get_capacity(
-            reader->user, running.id, &image_size);
-        if (rc != H2_PAL_OK || image_size == 0u) return rc;
-    }
-    rc = command_digest_start(NULL);
-    while (rc == H2_PAL_OK && offset < image_size) {
-        size_t take = image_size - offset > sizeof(buffer)
-            ? sizeof(buffer) : (size_t)(image_size - offset);
-        rc = reader->vtable->read(reader->user, running.id,
-            offset, buffer, take);
-        if (rc == H2_PAL_OK) rc = command_digest_update(NULL, buffer, take);
-        offset += take;
-    }
-    if (rc == H2_PAL_OK) rc = command_digest_finish(NULL, digest);
-    if (rc != H2_PAL_OK) {
-        command_digest_abort(NULL);
-        return rc;
-    }
-    command_digest_hex(digest, digest_hex);
-    if (active != NULL && strcmp(digest_hex, active->image_checksum) != 0) {
-        return H2_PAL_ERR_FORMAT;
-    }
-    memset(out_identity, 0, sizeof(*out_identity));
-    out_identity->format = 1u;
-    out_identity->role = H2_LOADER_IMAGE_ROLE_H2LOADER;
-    out_identity->image_size = image_size;
-    (void)snprintf(out_identity->image_sha256,
-        sizeof(out_identity->image_sha256), "%s", digest_hex);
-    (void)snprintf(out_identity->board, sizeof(out_identity->board),
-        "%s", "bk7258_v3_202405");
-    (void)snprintf(out_identity->target, sizeof(out_identity->target),
-        "%s", "bk7258");
-    (void)snprintf(out_identity->version, sizeof(out_identity->version),
-        "%s", version);
-    return H2_PAL_OK;
-}
-
 static uint64_t command_now_ms(void *user) {
     (void)user;
     return (uint64_t)rtos_get_time();
@@ -419,7 +329,6 @@ static const h2_pal_disk_api_t s_coredump_disk = {
 static void h2loader_startup_worker(void *user) {
     h2_pal_firmware_info_t firmware_info;
     h2_loader_status_t probe_status;
-    uint8_t ble_mac[6];
     char device_uid[13];
     h2_loader_config_t config = {
         .package = {
@@ -476,16 +385,11 @@ static void h2loader_startup_worker(void *user) {
     (void)user;
 
     int rc;
-    rc = bk_get_mac(ble_mac, MAC_TYPE_BLUETOOTH);
-    if (rc != BK_OK) {
+    rc = h2_bk_h2loader_get_device_uid(device_uid, sizeof(device_uid));
+    if (rc != H2_PAL_OK) {
         record_startup_error("device_uid", rc);
         wait_forever();
     }
-    (void)snprintf(
-        device_uid,
-        sizeof(device_uid),
-        "%02x%02x%02x%02x%02x%02x",
-        ble_mac[0], ble_mac[1], ble_mac[2], ble_mac[3], ble_mac[4], ble_mac[5]);
     config.device_uid = device_uid;
     const h2_pal_mutex_config_t operation_mutex_config = {
         .name = "h2loader-operation",
@@ -519,9 +423,8 @@ static void h2loader_startup_worker(void *user) {
         record_startup_error("firmware_info", rc);
         wait_forever();
     }
-    rc = current_loader_identity(
-        config.pref, config.package.allocator, config.power,
-        firmware_info.version, &config.active_identity);
+    rc = h2_loader_read_current_loader_identity(
+        &config, firmware_info.version, &config.active_identity);
     if (rc != H2_PAL_OK) {
         (void)h2_pal_mutex_unlock(
             s_runtime->sync,
