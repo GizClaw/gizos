@@ -1,4 +1,32 @@
 load("@gizos//tools/bazel:esp_idf.bzl", "FirmwareInfo")
+load("@gizos//tools/bazel:native_component.bzl", "H2NativeComponentInfo")
+
+def _native_component_paths_impl(ctx):
+    for target, name in [(ctx.attr.explicit, "h2_esp_board"), (ctx.attr.inferred, "zlib")]:
+        components = [component for component in target[H2NativeComponentInfo].components if component.name == name]
+        if len(components) != 1:
+            fail("expected one native component named " + name)
+        component = components[0]
+        cmake = [file for file in component.files if file.basename == "CMakeLists.txt"]
+        if len(cmake) != 1 or component.directory != cmake[0].dirname:
+            fail("native directory must resolve to the declared CMake input: " + name)
+        if not component.directory.startswith("external/"):
+            fail("external native owner lost its repository directory")
+    local = [component for component in ctx.attr.local[H2NativeComponentInfo].components if component.name == "embedded_menu_font"]
+    if len(local) != 1 or local[0].directory != ".":
+        fail("main-repository explicit component directory changed")
+    output = ctx.actions.declare_file(ctx.label.name + ".txt")
+    ctx.actions.write(output, "external explicit, external inferred, and local directories passed\n")
+    return [DefaultInfo(files = depset([output]))]
+
+native_component_paths = rule(
+    implementation = _native_component_paths_impl,
+    attrs = {
+        "explicit": attr.label(mandatory = True, providers = [H2NativeComponentInfo]),
+        "inferred": attr.label(mandatory = True, providers = [H2NativeComponentInfo]),
+        "local": attr.label(mandatory = True, providers = [H2NativeComponentInfo]),
+    },
+)
 
 def _fake_firmware_impl(ctx):
     outputs = []
