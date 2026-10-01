@@ -143,16 +143,23 @@ static void run(void *user) {
   const h2_pal_mutex_config_t mutex_config = {
       .name = "gizclaw-e2e-evidence", .allocator = runtime->mem};
   uint8_t nonce[16];
-  if (evidence == NULL ||
-      h2_gizclaw_e2e_ledger_init(&ledger, evidence,
-                               H2_GIZCLAW_E2E_LEDGER_CAPACITY) != H2_PAL_OK ||
-      h2_atomic_init(&capture_failed, false) != H2_ATOMIC_OK ||
-      h2_pal_mutex_create(runtime->sync, &mutex_config, &evidence_mutex) !=
-          H2_PAL_OK ||
-      h2_pal_crypto_random(runtime->crypto, nonce, sizeof(nonce)) != H2_PAL_OK ||
-      h2_pal_firmware_info_get_current(runtime->firmware_info, &firmware_info) !=
-          H2_PAL_OK)
-    fail("evidence_init", H2_PAL_ERR_NO_MEMORY);
+  if (evidence == NULL)
+    fail("evidence_buffer", H2_PAL_ERR_NO_MEMORY);
+  rc = h2_gizclaw_e2e_ledger_init(&ledger, evidence,
+                                 H2_GIZCLAW_E2E_LEDGER_CAPACITY);
+  if (rc)
+    fail("evidence_ledger", rc);
+  if (h2_atomic_init(&capture_failed, false) != H2_ATOMIC_OK)
+    fail("evidence_atomic", H2_PAL_ERR_NO_MEMORY);
+  rc = h2_pal_mutex_create(runtime->sync, &mutex_config, &evidence_mutex);
+  if (rc)
+    fail("evidence_mutex", rc);
+  rc = h2_pal_crypto_random(runtime->crypto, nonce, sizeof(nonce));
+  if (rc)
+    fail("evidence_random", rc);
+  rc = h2_pal_firmware_info_get_current(runtime->firmware_info, &firmware_info);
+  if (rc)
+    fail("evidence_firmware", rc);
   static const char hex[] = "0123456789abcdef";
   for (size_t i = 0u; i < sizeof(nonce); ++i) {
     execution[i * 2u] = hex[nonce[i] >> 4u];
@@ -228,6 +235,9 @@ static void entry(void *user) {
   int rc = h2_bk7258_board_runtime_config(&config);
   if (rc)
     fail("board", rc);
+  /* Large business fixtures and the immutable ledger belong to this test
+   * Runtime's PSRAM allocator, leaving SDK networking SRAM available. */
+  config.mem = h2_bk7258_board_psram_allocator();
   /* BK has no system CA bundle. This launcher owns an explicit verified HTTP
    * provider for its full recovery lifetime; the BSP provider stays owned by
    * the BSP. No production trust policy or VERIFY_NONE fallback is changed. */

@@ -1,6 +1,7 @@
 #include "h2_gizclaw_e2e_firmware.h"
 
 #include "h2/pal/application/h2_pal_http.h"
+#include "h2/pal/os/h2_pal_log.h"
 
 #include "h2_gizclaw_firmware.h"
 
@@ -26,6 +27,10 @@ typedef struct firmware_download {
   firmware_sha256_t sha256;
   uint64_t expected_size;
   uint64_t received_size;
+  const h2_gizclaw_e2e_fixture_t *fixture;
+  uint64_t started_ms;
+  uint64_t hash_ms;
+  uint64_t next_progress;
 } firmware_download_t;
 
 static uint32_t rotate_right(uint32_t value, unsigned bits) {
@@ -217,8 +222,25 @@ static int receive_firmware(void *user, const h2_pal_http_request_t *request,
   }
   if (h2_pal_http_request_is_canceled(request))
     return H2_PAL_ERR_CLOSED;
+  uint64_t before_ms = 0u, after_ms = 0u;
+  (void)h2_pal_time_get_monotonic_ms(download->fixture->time, &before_ms);
   sha256_update(&download->sha256, chunk, chunk_len);
+  (void)h2_pal_time_get_monotonic_ms(download->fixture->time, &after_ms);
+  if (after_ms >= before_ms)
+    download->hash_ms += after_ms - before_ms;
   download->received_size += chunk_len;
+  if (download->received_size >= download->next_progress &&
+      download->fixture->runtime != NULL) {
+    char progress[192];
+    snprintf(progress, sizeof(progress), "firmware_download bytes=%" PRIu64
+             " expected=%" PRIu64 " elapsed_ms=%" PRIu64 " hash_ms=%" PRIu64,
+             download->received_size, download->expected_size,
+             after_ms >= download->started_ms ? after_ms - download->started_ms : 0u,
+             download->hash_ms);
+    (void)h2_pal_log_write(download->fixture->runtime->log, H2_PAL_LOG_INFO,
+                           "gizclaw-e2e", progress);
+    download->next_progress = download->received_size + 256u * 1024u;
+  }
   return H2_PAL_OK;
 }
 
@@ -303,6 +325,7 @@ static int download_firmware(h2_gizclaw_e2e_fixture_t *fixture,
     return H2_PAL_ERR_NO_MEMORY;
   firmware_download_t download = {
       .expected_size = (uint64_t)metadata->size,
+      .fixture = fixture, .started_ms = now_ms, .next_progress = 256u * 1024u,
   };
   sha256_init(&download.sha256);
   h2_pal_http_request_t request = {
@@ -321,6 +344,14 @@ static int download_firmware(h2_gizclaw_e2e_fixture_t *fixture,
   h2_pal_http_response_t response;
   h2_pal_http_response_reset(&response);
   int result = h2_pal_http_request(fixture->http, &request, &response);
+  if (fixture->runtime != NULL) {
+    char diagnostic[192];
+    snprintf(diagnostic, sizeof(diagnostic), "firmware_download_end rc=%d bytes=%"
+             PRIu64 " expected=%" PRIu64 " hash_ms=%" PRIu64,
+             result, download.received_size, download.expected_size, download.hash_ms);
+    (void)h2_pal_log_write(fixture->runtime->log, H2_PAL_LOG_INFO,
+                           "gizclaw-e2e", diagnostic);
+  }
   h2_gizclaw_e2e_evidence("h2_pal_http_request", "firmware", result);
   if (result == H2_PAL_OK &&
       (response.status_code < 200 || response.status_code >= 300)) {
