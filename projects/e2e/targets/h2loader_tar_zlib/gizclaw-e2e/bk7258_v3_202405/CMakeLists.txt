@@ -7,7 +7,7 @@ else()
 endif()
 
 set(H2_BK_TARGET "bk7258")
-set(H2_BK_PLATFORM_ENABLE_WEBRTC ON)
+set(H2_BK_PLATFORM_ENABLE_WEBRTC ON CACHE BOOL "Enable the real H2Peer provider under qualification" FORCE)
 include($ENV{ARMINO_TOOLS_PATH}/build_tools/cmake/project.cmake)
 include("$ENV{H2_BAZEL_COMPONENT_MANIFEST}")
 
