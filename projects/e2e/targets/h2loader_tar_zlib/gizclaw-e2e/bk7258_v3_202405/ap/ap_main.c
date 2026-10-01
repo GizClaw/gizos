@@ -53,7 +53,17 @@ static void replay_ledger(void) {
          firmware_info.version, execution, ledger.size, ledger.records,
          (unsigned)ledger.crc32, admitted ? 1 : 0, confirm_rc,
          h2_gizclaw_e2e_fixture_physical_audio());
-  fwrite(ledger.data, 1u, ledger.size, stdout);
+  /* SDK printf owns the board console. Its newlib FILE stdout is a separate
+   * stream, so fwrite/fputs cannot deliver this UART evidence. Each captured
+   * record is independently bounded by the portable formatter. */
+  for (size_t offset = 0u; offset < ledger.size;) {
+    const char *end = memchr(ledger.data + offset, '\n', ledger.size - offset);
+    if (end == NULL)
+      break;
+    size_t size = (size_t)(end - (ledger.data + offset)) + 1u;
+    printf("%.*s", (int)size, ledger.data + offset);
+    offset += size;
+  }
   printf("H2_GIZCLAW_LEDGER stage=end execution=%s crc32=%08x\n", execution,
          (unsigned)ledger.crc32);
   fflush(stdout);
@@ -220,7 +230,7 @@ static void run(void *user) {
     }
   }
   if (size > 0 && (size_t)size < sizeof(summary))
-    fputs(summary, stdout);
+    printf("%.*s", size, summary);
   printf("H2_GIZCLAW_READY board=bk7258 rc=%d confirm=%d admitted=%d\n", rc,
          confirm_rc, admitted ? 1 : 0);
   fflush(stdout);

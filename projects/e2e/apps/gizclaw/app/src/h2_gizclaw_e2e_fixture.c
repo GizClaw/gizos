@@ -492,6 +492,10 @@ static int actor_stop(h2_gizclaw_e2e_actor_t *actor) {
 
 static const h2_gizclaw_rpc_method_t e2e_reverse_methods[] = {
     H2_GIZCLAW_RPC_CLIENT_SOCIAL_PING};
+/* A methods.get owner is required when declaring custom reverse methods.
+ * Audio-free actors still own that protocol endpoint; no hardware hooks are
+ * supplied or claimed by this empty vtable. */
+static const h2_gizclaw_vtable_t e2e_social_vtable = {0};
 
 static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
                          h2_gizclaw_e2e_actor_t *actor, const char *stage) {
@@ -511,7 +515,8 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
       .time = fixture->time,
       .log = fixture->log,
       .audio = fixture->device_audio,
-      .vtable = fixture->device_vtable,
+      .vtable = fixture->device_vtable != NULL ? fixture->device_vtable
+                                               : &e2e_social_vtable,
       .audio_buffer_bytes = fixture->device_audio ? 65536u : 0,
       .firmware_channel = H2_GIZCLAW_FIRMWARE_CHANNEL_DEVELOP,
       .rpc_provider = provider_call,
