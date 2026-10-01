@@ -164,6 +164,17 @@ int main(int argc, char **argv) {
              H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
       assert(allocator.live_blocks == 0 && s_connected == 0 && s_ran == 0);
     }
+    config.app_config_key = "fixture";
+    config.expected_runtime_profile = "mock-runtime-profile";
+    config.app_config_expected_value = (h2_gizclaw_str_t){NULL, 0u};
+    assert(h2_gizclaw_e2e_run(&runtime, &config, &result) ==
+           H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
+    assert(allocator.live_blocks == 0 && s_connected == 0 && s_ran == 0);
+    config.expected_runtime_profile = NULL;
+    config.app_config_expected_value = (h2_gizclaw_str_t){"known", 5u};
+    assert(h2_gizclaw_e2e_run(&runtime, &config, &result) ==
+           H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR);
+    assert(allocator.live_blocks == 0 && s_connected == 0 && s_ran == 0);
     config.suites = original_suites;
     config.voice_pcm_s16le_16khz_mono = NULL;
     config.voice_pcm_len = 0u;

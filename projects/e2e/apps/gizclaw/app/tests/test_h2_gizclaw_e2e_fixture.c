@@ -72,6 +72,10 @@ h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
   assert(config->task != NULL && config->queue != NULL && config->sync != NULL);
   assert(config->client_poll_timeout_ms == 1);
   assert(config->operation_capacity >= 3u);
+  assert(config->client_config->rpc_provider_methods != NULL);
+  assert(config->client_config->rpc_provider_method_count == 1u);
+  assert(config->client_config->rpc_provider_methods[0] ==
+         H2_GIZCLAW_RPC_CLIENT_SOCIAL_PING);
   if (s_null_service) {
     *out_service = NULL;
     return H2_PAL_OK;

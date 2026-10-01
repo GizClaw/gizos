@@ -86,7 +86,8 @@ typedef struct h2_gizclaw_e2e_config {
   const char *app_config_key;
   /** Expected registration identity; fail on a token bound to another profile. */
   const char *expected_runtime_profile;
-  /** Optional known non-secret fixture bytes, compared by both AppConfig APIs. */
+  /** Required for RPC/all: known non-secret fixture bytes compared by both
+   * AppConfig APIs. A non-NULL zero-length view denotes a known empty value. */
   h2_gizclaw_str_t app_config_expected_value;
   /** Optional dedicated device-API acceptance lane endpoints. */
   const char *device_api_url;

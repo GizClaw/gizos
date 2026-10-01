@@ -10,7 +10,8 @@ enum { NORMAL, EMPTY, FOREIGN_KEYS, TOO_MANY, BAD_PROFILE, BAD_REVISION,
        DUPLICATE_KEY, BAD_CURSOR, EMPTY_CURSOR, FOREVER_PAGES, FOREIGN_VALUE,
        TOO_LONG_VALUE, CHANGED_VALUE, CHANGED_REVISION, EMPTY_VALUE,
        FOREIGN_ITEMS, BAD_PUBLIC_KEY, BAD_PUBLIC_NAME, BAD_PUBLIC_EMOJI,
-       PUBLIC_DUPLICATE, DEADLINE, CALL_ERROR, MISSING_FIXTURE, WRONG_FIXTURE, SAME_WRONG_VALUE };
+       PUBLIC_DUPLICATE, DEADLINE, CALL_ERROR, MISSING_FIXTURE, WRONG_FIXTURE,
+       SAME_WRONG_VALUE, MISSING_EXPECTED_VALUE };
 static unsigned mode, calls, fail_at, assertions, releases, list_calls, get_calls;
 static bool emit;
 struct h2_gizclaw_req { unsigned kind; bool started, completed; } request;
@@ -142,7 +143,8 @@ static int run(unsigned m, unsigned fail, bool profile) {
   mode = m; fail_at = fail; calls = assertions = releases = list_calls = get_calls = 0u; alive = false;
   h2_gizclaw_e2e_config_t config = {.app_config_key =
       m == MISSING_FIXTURE ? NULL : m == WRONG_FIXTURE ? "absent" : "fixture",
-      .app_config_expected_value = {m == EMPTY_VALUE ? "" : "value",
+      .app_config_expected_value = {m == MISSING_EXPECTED_VALUE ? NULL :
+                                       m == EMPTY_VALUE ? "" : "value",
                                    m == EMPTY_VALUE ? 0u : 5u}};
   h2_gizclaw_e2e_fixture_t f = {.runtime_profile_name="profile", .config=&config,
       .actors={{.service=(h2_gizclaw_service_t *)&service, .public_key="peer"}}};
@@ -170,6 +172,8 @@ int main(int argc, char **argv) {
   for (unsigned i=EMPTY; i<=CHANGED_REVISION; ++i) assert(run(i, 0u, false) != H2_PAL_OK);
   assert(run(EMPTY_VALUE, 0u, false) == H2_PAL_OK);
   assert(run(MISSING_FIXTURE, 0u, false) == H2_PAL_ERR_INVALID_ARG);
+  assert(calls == 0u && list_calls == 0u && get_calls == 0u);
+  assert(run(MISSING_EXPECTED_VALUE, 0u, false) == H2_PAL_ERR_INVALID_ARG);
   assert(calls == 0u && list_calls == 0u && get_calls == 0u);
   assert(run(WRONG_FIXTURE, 0u, false) == H2_PAL_ERR_NOT_FOUND);
   assert(list_calls == 1u && get_calls == 0u && assertions == 0u);

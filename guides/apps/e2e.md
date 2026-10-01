@@ -92,6 +92,8 @@ DevKit launcher（`projects/e2e/targets/h2loader_tar_zlib/lua-link/devkit`）运
 
 GizClaw live入口统一直接 `bazel test`；iOS/Android消费共享mobile runner，业务fixture/oracle在`gizclaw-mobile/suite.py`，不再使用Make或shell转发调Bazel。`gizclaw_e2e_fixture` macro生成显式profile/key/已知非敏感value合同，缺输入在注册与业务资源mutation前失败。AppConfig两套list必须包含所选key，两套get必须逐字节等于期望value；注册返回必须匹配所选E2E profile，不能把其他profile的配置算进default资格。旧default/226项记录保留身份，新主线公开inventory为227项。
 
+`Live E2E` workflow 的 GizClaw scope 显式接收 endpoint、RuntimeProfile、非敏感 AppConfig key/value；all suite 还需 Device API 和 audio HTTPS URL。RegistrationToken 只从独立 Secret 经环境变量注入；输入不插入可执行脚本。Workflow 直接请求 Bazel live labels，保留启用的 disk cache，并在 both backend 下保留首个失败结果且继续第二项。缺失受控输入在任何 live target 启动前失败。
+
 `h2_gizclaw_e2e_run()` 只消费调用方提供的 Runtime/PAL、endpoint、RegistrationToken、suite mask 与确定性 PCM。防止并发 suite 和 retained session 被重复使用的 `s_run_active` 是文件级 static flag，使用 `H2_ATOMIC_DEFINE_STATIC` 定义独立 backing，不需模块级初始化或分配；run 结束且资源全部清理时清除，retained 资源仍在时保持占用。App 不读 environment 或文件，不选择 AP/BJ，不创建 Wi-Fi task，也不拥有 H2Peer/Pion。一个 case 失败后继续执行独立 case，最后输出完整 bounded summary 并完成反向清理。
 
 Desktop C++ launcher 的进程级 run guard 由同 package 的 C 桥接文件定义普通 static backing，C++ 通过 typed accessor 借用 wrapper 后仍调用同一 `h2_atomic_flag_*` API；没有 launcher 专用 global init，也不假设 `std::atomic` 与 C11 `_Atomic` 的内存布局相同。

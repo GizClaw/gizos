@@ -69,7 +69,9 @@ int h2_gizclaw_e2e_run_app_config(h2_gizclaw_e2e_fixture_t *f,
                                  h2_gizclaw_resp_storage_t *s) {
   if (!f || !s || !s->data || !f->actors[0].service || !f->config ||
       !f->config->app_config_key || !f->config->app_config_key[0] ||
-      strlen(f->config->app_config_key) > H2_GIZCLAW_APP_CONFIG_KEY_MAX_BYTES)
+      strlen(f->config->app_config_key) > H2_GIZCLAW_APP_CONFIG_KEY_MAX_BYTES ||
+      !f->config->app_config_expected_value.data ||
+      f->config->app_config_expected_value.len > H2_GIZCLAW_APP_CONFIG_VALUE_MAX_BYTES)
     return H2_PAL_ERR_INVALID_ARG;
   const char *fixture_key = f->config->app_config_key;
   char profile_revision[256] = {0};
@@ -128,7 +130,7 @@ int h2_gizclaw_e2e_run_app_config(h2_gizclaw_e2e_fixture_t *f,
          !owns(s, value.value.data, value.value.len + 1u) ||
          value.value.data[value.value.len] != '\0'))
       rc = H2_PAL_ERR_FORMAT;
-    if (rc == H2_PAL_OK && f->config->app_config_expected_value.data &&
+    if (rc == H2_PAL_OK &&
         (value.value.len != f->config->app_config_expected_value.len ||
          memcmp(value.value.data, f->config->app_config_expected_value.data,
                 value.value.len) != 0))
