@@ -2175,9 +2175,16 @@ static int larger_app_capacity(void *user, uint32_t partition, uint64_t *out) {
 static void test_read_current_loader_identity(void) {
   test_fixture_t fixture;
   fixture_init(&fixture, 1u);
+  /* Corrupt legacy MFG data must not be read, migrated or rewritten by this
+   * identity-only operation. The regular Loader lifecycle owns that policy. */
+  fixture.records[3].present = 1;
+  fixture.records[3].len = 1u;
+  fixture.records[3].data[0] = 0xffu;
   h2_loader_image_identity_t actual = {0};
   assert(h2_loader_read_current_loader_identity(&fixture.config, "0.2.0", &actual) == H2_PAL_OK);
   assert(actual.image_size == 128u && fixture.digest_bytes == 128u);
+  assert(fixture.commits == 0u && fixture.records[3].len == 1u &&
+         fixture.records[3].data[0] == 0xffu);
   assert(strcmp(actual.image_sha256, SHA_A) == 0 && strcmp(actual.board, "devkit") == 0);
   h2_loader_metadata_t stored = metadata(H2_LOADER_IMAGE_ROLE_H2LOADER, SHA_A);
   write_metadata(&fixture, H2_LOADER_METADATA_SLOT_PARTITION_1, &stored);

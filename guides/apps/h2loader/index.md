@@ -191,6 +191,6 @@ BLE command service 的诊断由 composition root 显式借用 Log PAL，与 com
 
 H2Loader 的完成条件不是“传输成功”或“reboot accepted”。App 更新必须经过 package 校验、Partition 2 写入和新 App 启动；新 App 以自身固件 identity 提交 Partition 2 metadata，并清理匹配的 Stage。Loader self-update 必须经过 Partition 1 → Partition 2 → Partition 1 回写；最终验收重新连接设备，确认预期 role/version/board/target、active image checksum/size、running/next partition、`boot_intent`、Stage 与 Partition 1/2 metadata。App 终态要求运行 Partition 2 且 Stage invalid；Loader 终态要求运行 Partition 1、`boot_intent=AUTO`、Partition 1/2 valid 且 image checksum 相同、Stage invalid，随后再做 power-cycle 复查。
 
-普通 Loader 初始化前必须取得完整的 `active_identity`，仅填版本不能通过初始化。公共 `h2_loader_read_current_loader_identity` 在真实 Image Reader 上计算 decoded image 的 checksum：匹配的 running-slot metadata 提供长度和预期 checksum，没有匹配记录时使用 primary Loader capacity，避免候选借用较大的 App window 时把 App capacity 当作 Loader image size。它不写 preferences，也不代替升级后的最终状态核对。BK 的 Loader/App UART 与 BLE 使用同一个 `h2_bk_h2loader_get_device_uid` 读取 controller identity MAC；版本、board 名或 endpoint 不能代替 UID。
+普通 Loader 初始化前必须取得完整的 `active_identity`，仅填版本不能通过初始化。公共 `h2_loader_read_current_loader_identity` 在真实 Image Reader 上计算镜像字节的 checksum：匹配的 running-slot metadata 提供长度和预期 checksum，没有匹配记录时使用 primary Loader capacity，避免候选借用较大的 App window 时把 App capacity 当作 Loader image size。它不写 preferences，也不代替升级后的最终状态核对。BK 的 Loader/App UART 与 BLE 使用同一个 `h2_bk_h2loader_get_device_uid` 读取 controller identity MAC；版本、board 名或 endpoint 不能代替 UID。
 
 设备仍能通过 H2Loader command transport 通信时，安装、更新、回退和恢复必须继续使用 H2Loader。只有 H2Loader 已验证无法通信或无法自我恢复时，才能进入对应 board 使用文档定义的底层 recovery。

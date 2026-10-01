@@ -372,11 +372,14 @@ int h2_loader_read_current_loader_identity(
   if (rc != H2_PAL_OK) return rc;
   if (running.id != config->h2loader_partition_id && running.id != config->app_partition_id)
     return H2_PAL_ERR_INVALID_STATE;
-  h2_loader_status_t status = {0};
-  rc = h2_loader_read_pref_status(config->pref, config->package.allocator, &status);
+  h2_loader_metadata_t metadata = {0};
+  int present = 0;
+  const h2_loader_metadata_slot_t slot = running.id == config->h2loader_partition_id
+      ? H2_LOADER_METADATA_SLOT_PARTITION_1 : H2_LOADER_METADATA_SLOT_PARTITION_2;
+  rc = h2_loader_metadata_read(config->pref, config->package.allocator, slot,
+                               &metadata, &present);
   if (rc != H2_PAL_OK) return rc;
-  const h2_loader_metadata_t *active = running.id == config->h2loader_partition_id
-      ? &status.partition_1 : &status.partition_2;
+  const h2_loader_metadata_t *active = &metadata;
   if (!active->valid || active->role != H2_LOADER_IMAGE_ROLE_H2LOADER ||
       strcmp(active->version, version) != 0 || strcmp(active->board, config->board) != 0 ||
       strcmp(active->target, config->target) != 0)

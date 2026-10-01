@@ -294,7 +294,7 @@ int h2_loader_read_pref_status(
     const h2_pal_pref_api_t *pref,
     const h2_pal_mem_api_t *allocator,
     h2_loader_status_t *out_status);
-/** Read the running Loader's decoded image and construct the complete identity
+/** Read the running Loader's Image Reader bytes and construct the complete identity
  * required by h2_loader_init(). config borrows power, pref, package allocator,
  * image_reader and digest callbacks; board/target/version are NUL-terminated.
  * Call before init, serialized with other package/digest operations in task
