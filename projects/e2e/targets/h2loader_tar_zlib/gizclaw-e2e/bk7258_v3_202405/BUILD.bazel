@@ -118,6 +118,9 @@ h2loader_bk7258_firmware(
     graph = [
         ":gizclaw_e2e_launcher",
     ],
+    # Business actors and bounded evidence need the existing media/runtime heap,
+    # rather than the display-oriented layout's 640 KiB AP heap.
+    layout = "media",
     project = "CMakeLists.txt",
     project_name = "h2_bk_gizclaw_e2e",
     target = "bk7258",
