@@ -122,6 +122,8 @@ const char *h2_gizclaw_e2e_fixture_time_server(void);
 int h2_gizclaw_e2e_fixture_physical_audio(void);
 const char *h2_gizclaw_e2e_fixture_device_api_url(void);
 const char *h2_gizclaw_e2e_fixture_audio_url(void);
+/** Explicit public trust roots for launchers without a native CA bundle. */
+const char *h2_gizclaw_e2e_fixture_root_ca_hex(void);
 
 typedef struct h2_gizclaw_e2e_result {
   size_t selected;

@@ -56,6 +56,7 @@ firmware_lib_component(
         "//libs/runtime",
         "//libs/wifi_sta",
         "//projects/e2e/apps/gizclaw/app:gizclaw_e2e",
+        "//projects/e2e/libs/gizclaw-device:ledger",
     ],
 )
 
@@ -84,8 +85,10 @@ firmware_native_component(
         ":firmware_lib",
         "//boards/bk7258_v3_202405/bk7258",
         "//libs/pal",
+        "//libs/atomic",
         "//libs/pal/providers/libco",
         "//libs/runtime",
+        "//projects/e2e/libs/gizclaw-device:ledger",
         "//native_component_src/bk7258/ap/h2_pal_core",
         "//native_component_src/bk7258/ap/h2_gizclaw",
         "//native_component_src/bk7258/ap/opus_port",

@@ -27,9 +27,25 @@ REQUIRED_PROVIDER_SOURCES = {
 }
 
 
-def check_sources(root, sources):
+def check_sources(root, sources, followup=None):
     assert REQUIRED_PROVIDER_SOURCES <= set(sources), 'missing qualified provider/config source receipt'
-    for relative, expected in sources.items():
+    effective = dict(sources)
+    if followup is not None:
+        # Preserve the original device/isolated-CA receipts. Only the demonstrated
+        # ESP public-bundle callback fix and shared harness preflight may
+        # supersede their source hashes; this does
+        # not claim that the historical physical runs executed the new provider.
+        changed = 'native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net.c'
+        shared_runner = 'tools/bazel/mobile_e2e.py'
+        assert followup['schema'] == 1 and followup['new_physical_run_claimed'] is False
+        assert set(followup['current_source_sha256']) == {changed, shared_runner}
+        assert followup['previous_source_sha256'] == {
+            path: sources[path] for path in (changed, shared_runner)}
+        assert followup['validation']['certificate_bundle_callback_regression'] == 'PASS'
+        assert followup['validation']['untrusted_and_date_failures'] == 'PASS'
+        assert followup['validation']['shared_mobile_contract'] == 'PASS'
+        effective.update(followup['current_source_sha256'])
+    for relative, expected in effective.items():
         assert hashlib.sha256((root / relative).read_bytes()).hexdigest() == expected, relative
 
 
@@ -182,7 +198,10 @@ def check(root=ROOT, allow_pending=False, require_all_core=False):
     assert data['gate']['wifi_qualification_verified'] and data['gate']['hardware_released']
     assert data['gate']['tls_integration_started']
     assert data['source_sha256']
-    check_sources(root, data['source_sha256'])
+    followup = json.loads((app / 'gizclaw_public_https_provenance.json').read_text())
+    assert followup['historical_qualification_sha256'] == hashlib.sha256(
+        (app / 'qualification.json').read_bytes()).hexdigest()
+    check_sources(root, data['source_sha256'], followup)
     registry = re.findall(r'H2_NET_TLS_CASE\(\w+, "([^"]+)", ([01])\)',
         (app / 'app/include/h2_pal_net_tls_cases.inc').read_text())
     assert len(registry) == 39 and sum(int(required) for _,required in registry) == 37

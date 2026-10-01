@@ -1,0 +1,24 @@
+{
+  "schema": 1,
+  "new_physical_run_claimed": false,
+  "historical_runner_receipt_sha256": "f9c2939a75bba21527e4262b6af6f4826d752c74ef108c4153313ae89ea7352d",
+  "previous_source_sha256": {
+    "Makefile": "d0e62c140a9321a710145fe0a626df37d823bfd7e3b450b8c6118698d83160d7",
+    "guides/apps/e2e.md": "74074dc7412a137903ec523b9cdca2ed1b313891411f80e3ad6a461ee7c4a6e2",
+    "tools/bazel/mobile_e2e.py": "a00c485f3ef20445b3c60a927d2620d12fe27110bfbec5bbe89d2d9fa89f23c0",
+    "projects/e2e/apps/pal-display/check_qualification.py": "288cb3ddf34a16d890c1b698579ceea4ad22182abd08f72fb408b3e5c2c51e01",
+    "projects/e2e/apps/pal-display/BUILD.bazel": "8ff7bf62bbc9847688335c61ebcdd25205d384eebc6220fdad9b3f3e6fc876b6"
+  },
+  "current_source_sha256": {
+    "Makefile": "ee5b63698183857c518b1b5f04832a6ce9c0f5e62045577745c88b76c72cc5c9",
+    "guides/apps/e2e.md": "4094dcdadc7b9c475e0384742fc19c43d2253c28b6e4cb94f7274ec8f5de4703",
+    "tools/bazel/mobile_e2e.py": "0b87c9c683d707d69dfd22a96e4ed1762b3915fdaf812071664ddeebaac7d080",
+    "projects/e2e/apps/pal-display/check_qualification.py": "c3fe8defa194ee0691f1b7550fd8d71dca96d460d3a7c317bf403237ba0b2edf",
+    "projects/e2e/apps/pal-display/BUILD.bazel": "16da9aa4077fea942e7c2a098a74ef021e8546f640e63ac994b4f589485161b5"
+  },
+  "validation": {
+    "shared_mobile_contract": "PASS",
+    "label": "//tools/bazel:mobile_e2e_runtime_test"
+  },
+  "scope": "GizClaw removes forwarding targets, documents explicit live inputs and adds an optional suite preflight hook. Display provider, App, registry, executed mobile records and physical receipts retain their original identities."
+}

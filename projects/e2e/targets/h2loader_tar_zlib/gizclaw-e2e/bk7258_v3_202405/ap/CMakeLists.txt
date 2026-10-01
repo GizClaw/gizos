@@ -14,6 +14,8 @@ armino_component_register(
     "."
     "${REPO_ROOT}/projects/e2e/apps/gizclaw/app/include"
     "${REPO_ROOT}/libs/gizclaw/include"
+    "${REPO_ROOT}/libs/pal/providers/corehttp/include"
+    "${REPO_ROOT}/projects/e2e/libs/gizclaw-device"
     "${REPO_ROOT}/projects/h2loader/libs/h2loader/include"
     "${REPO_ROOT}/projects/h2loader/native_component_src/bk7258/ap/h2loader_bk/include"
     "${REPO_ROOT}/boards/bk7258_v3_202405/bk7258/ap/include"

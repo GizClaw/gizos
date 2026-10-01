@@ -359,6 +359,8 @@ int run_desktop(int argc, char **argv) {
       .should_stop_user = nullptr,
       .on_progress = emit_progress,
       .progress_user = nullptr,
+      .on_evidence = nullptr,
+      .evidence_user = nullptr,
   };
   h2_gizclaw_e2e_result_t result = {};
   const h2_gizclaw_e2e_exit_t exit_code =

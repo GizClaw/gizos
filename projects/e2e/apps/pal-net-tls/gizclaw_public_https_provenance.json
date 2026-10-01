@@ -1,0 +1,20 @@
+{
+  "schema": 1,
+  "new_physical_run_claimed": false,
+  "historical_qualification_sha256": "3957402ab13dfd56cdaaef19e5022d87cda10b3ac37c7bcf194ce71e036be446",
+  "previous_source_sha256": {
+    "native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net.c": "35b8f2ee35d014319de5d40a9e3650a8490c0ad338b0823b778776c8dbe588e4",
+    "tools/bazel/mobile_e2e.py": "a00c485f3ef20445b3c60a927d2620d12fe27110bfbec5bbe89d2d9fa89f23c0"
+  },
+  "current_source_sha256": {
+    "native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net.c": "7a48bbbebea80dd6925f83d8fe0e2fd389cbb5e8a8c54142c3f319bbecf1a1b0",
+    "tools/bazel/mobile_e2e.py": "0b87c9c683d707d69dfd22a96e4ed1762b3915fdaf812071664ddeebaac7d080"
+  },
+  "validation": {
+    "certificate_bundle_callback_regression": "PASS",
+    "untrusted_and_date_failures": "PASS",
+    "label": "//projects/e2e/libs/pal-net-tls-device:board_tls_certificate_time_test",
+    "shared_mobile_contract": "PASS"
+  },
+  "scope": "Preserve ESP-IDF bundle trust callback and enforce dates only on real DER certificates, retaining untrusted/error flags. Historical isolated-CA physical receipts remain source-bound; this record does not promote them to fresh public-CA or business qualification. Shared mobile preflight is optional and leaves the Net/TLS suite lifecycle unchanged."
+}

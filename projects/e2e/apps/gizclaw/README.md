@@ -2,16 +2,16 @@
 
 ## 当前资格（2026-10-01）
 
-当前 SDK 固定 `0.19.0`，独立公开库存与审计为 **227 项**。当前主线SCTP #617合入后，source `3859e138` 的三个native host真实8/8及227/227再次通过；早期226/default profile记录保留原身份。六端整体资格仍未完成。
+当前 SDK 固定 `0.19.0`，独立公开库存与审计为 **227 项**。当前主线 SCTP #617 与 PAL Net/TLS #621 已合入。source `42a1f4a0` 的 macOS 真实 8/8 及 227/227 通过，cleanup=0、retained=0；source `d214ab96` 的 iOS/Android 真实 8/8、227/227、cleanup/retained/teardown=0 保留原身份。早期 226/default profile 记录保留原身份。六端整体资格仍未完成。
 
 | 平台 | 当前实际结果 | 尚缺条件 |
 | --- | --- | --- |
-| macOS / H2Peer | source3859e138，8/8、227/227，cleanup=0、retained=0 | 受控E2E h106-tiga，显式key/value；已完成该source实际运行 |
-| iOS Simulator / XCFramework | source3859e138，8/8、227/227，cleanup/retained/teardown=0 | 仅模拟器资格；不代表iOS实机 |
-| Android Emulator / AAR | source3859e138，8/8、227/227，cleanup/retained/teardown=0 | 仅模拟器资格；不代表Android实机 |
+| macOS / H2Peer | source42a1f4a0，8/8、227/227，cleanup=0、retained=0 | 受控 E2E h106-tiga，显式 key/value；已完成该 source 实际运行 |
+| iOS Simulator / XCFramework | sourced214ab96，8/8、227/227，cleanup/retained/teardown=0 | 仅模拟器资格；不代表iOS实机 |
+| Android Emulator / AAR | sourced214ab96，8/8、227/227，cleanup/retained/teardown=0 | 仅模拟器资格；不代表Android实机 |
 | WASM / Chromium Worker | source4596acba，7/8，cleanup=0、teardown=0 | 真实Edge preflight缺PUT；GizClaw/gizclaw#1422源码fix已CI绿，尚待经授权发布/部署后fresh Worker验证 |
-| ESP32-S3 / AMOLED | 实际R16/R17/R19已启动，未取得完整summary/confirmation；R19 NTP成功但真实player启动时回P1 | 软件/物理delegate隔离及完整双boot仍在执行；coredump空不能证明没有reset |
-| BK7258 | 包可构建，本轮尚未实际运行 | 等TLS/Atomic明确移交设备；只在全量成功后确认App |
+| ESP32-S3 / AMOLED | source d214ab96 的 R24 完整执行 5/8、cleanup=-10、retained=2；未确认 | R25 的新 managed boot 和独立 normal boot 仍在执行；coredump 空不能证明没有 reset |
+| BK7258 | R24 已实际安装，Stage 有效；尚无完整可审计业务记录，未确认 | 接线补齐显式 CA 与完整 boot 账本后重新执行；只在全量成功后确认 App |
 
 版本、逐 case 终态、未覆盖 API、清理及日志 SHA 保存在 `evidence/*-phase*.json`。macOS/iOS/Android 的上述音频结果验证真实服务上的录音 fixture、回复解码、历史重播及 PCM 消费；输入和扬声器使用确定性测试 delegate，**不构成麦克风或声学验收**。
 
@@ -202,3 +202,5 @@ ESP32-S3还要求显式 `app_config_fixture_time_server=<DNS-or-IPv4>`，由本�
 业务验收的board音频delegate由 `app_config_fixture_physical_audio` bool macro参数显式选择，默认software（确定性PCM输入和真实回复解码/Track消费）；true才借用实际BSP capture/speaker。software资格不是物理speaker/capture资格，任何physical-only故障单独保留，不伪装成physical PASS。
 
 AMOLED实板的可选evidence observer在App任务内同步复制非敏感的原始接口/断言记录。384KiB上限溢出或format失败阻止确认；任务join后才冻结单次boot账本。实际crypto随机execution nonce、版本、完整byte/record计数和CRC32校验绑定每次重播；CRC32只检测串口传输损失，host另存完整账本SHA-256，不声称密码学来源认证。只有完整用例与零cleanup/retained、完整capture和实际App confirmation成功才 `admitted=1`。命令服务在资格任务结束后启动；不会提前确认pending长测试来绕过CLI重连窗口。`gizclaw-device:verify_device`只校验一份完整账本及独立227接口矩阵，不调用Bazel或拼多轮日志；normal App boot必须提供上一boot的execution供拒绝旧重播。
+
+BK7258 没有系统 CA bundle。该测试启动器必须通过 `app_config_fixture_root_ca_hex` 提供所选真实 HTTPS fixture 的公共 PEM 根证书十六进制字节（上限 16 KiB），并创建测试进程持有的 coreHTTP provider；TLS 保持 REQUIRED、真实 hostname/链/日期校验。缺少 CA 是配置失败，不能改成 SKIP 或关闭验证。BK 与 AMOLED 使用同一 384 KiB 有界证据账本、随机 execution nonce、完整 CRC32 帧及独立 227 项审计；旧 boot 的重播不能满足第二次 normal boot。
