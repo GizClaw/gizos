@@ -91,6 +91,77 @@ h2_pal_result_t h2_runtime_system_state_wifi_sta(
     return H2_PAL_OK;
 }
 
+/* Locks the publication for a writer; NULL when there is nothing to lock. */
+static h2_runtime_system_state_publication_t *lock_publication(
+    h2_runtime_t *runtime) {
+    if (!h2_runtime_ready(runtime)) {
+        return NULL;
+    }
+    h2_runtime_system_state_publication_t *pub =
+        &runtime->private_state->system_state;
+    if (pub->mutex == NULL ||
+        h2_pal_mutex_lock(runtime->sync, pub->mutex) != H2_PAL_OK) {
+        /* No synchronisation available: publish nothing rather than race. */
+        return NULL;
+    }
+    return pub;
+}
+
+void h2_runtime_system_state_publish_modem(
+    h2_runtime_t *runtime,
+    h2_runtime_event_kind_t kind,
+    const h2_runtime_system_modem_state_t *reported) {
+    if (reported == NULL) {
+        return;
+    }
+    h2_runtime_system_state_publication_t *pub = lock_publication(runtime);
+    if (pub == NULL) {
+        return;
+    }
+    h2_runtime_system_modem_state_t *modem = &pub->modem;
+    switch (kind) {
+    case H2_RUNTIME_SYSTEM_EVENT_MODEM_SIM_CHANGED:
+        modem->sim = reported->sim;
+        break;
+    case H2_RUNTIME_SYSTEM_EVENT_MODEM_REGISTRATION_CHANGED:
+        modem->registration = reported->registration;
+        break;
+    case H2_RUNTIME_SYSTEM_EVENT_MODEM_PACKET_CHANGED:
+        modem->packet = reported->packet;
+        break;
+    case H2_RUNTIME_SYSTEM_EVENT_MODEM_SIGNAL_CHANGED:
+        /* A signal event is a whole new measurement: an invalid RSSI or RSRP
+         * in it replaces the previous value rather than leaving it stale. */
+        modem->signal_valid = 1u;
+        modem->rssi_dbm = reported->rssi_valid ? reported->rssi_dbm : 0;
+        modem->rssi_valid = reported->rssi_valid ? 1u : 0u;
+        modem->rsrp_dbm = reported->rsrp_valid ? reported->rsrp_dbm : 0;
+        modem->rsrp_valid = reported->rsrp_valid ? 1u : 0u;
+        break;
+    default:
+        (void)h2_pal_mutex_unlock(runtime->sync, pub->mutex);
+        return;
+    }
+    if (reported->rat != H2_RUNTIME_SYSTEM_MODEM_RAT_UNKNOWN) {
+        modem->rat = reported->rat;
+    }
+    (void)h2_pal_mutex_unlock(runtime->sync, pub->mutex);
+}
+
+void h2_runtime_system_state_replace_modem(
+    h2_runtime_t *runtime,
+    const h2_runtime_system_modem_state_t *state) {
+    if (state == NULL) {
+        return;
+    }
+    h2_runtime_system_state_publication_t *pub = lock_publication(runtime);
+    if (pub == NULL) {
+        return;
+    }
+    pub->modem = *state;
+    (void)h2_pal_mutex_unlock(runtime->sync, pub->mutex);
+}
+
 h2_pal_result_t h2_runtime_system_state_wifi_ap(
     const h2_runtime_t *runtime,
     h2_runtime_system_wifi_ap_state_t *out_state) {
@@ -112,7 +183,22 @@ h2_pal_result_t h2_runtime_system_state_ble(
 h2_pal_result_t h2_runtime_system_state_modem(
     const h2_runtime_t *runtime,
     h2_runtime_system_modem_state_t *out_state) {
-    return unsupported_system_state(runtime, out_state, sizeof(*out_state));
+    if (!h2_runtime_ready(runtime) || out_state == NULL) {
+        return H2_PAL_ERR_INVALID_ARG;
+    }
+    h2_runtime_system_state_publication_t *pub =
+        &runtime->private_state->system_state;
+    if (pub->mutex == NULL) {
+        /* As for the station snapshot: no lock, no snapshot. */
+        return H2_PAL_ERR_UNSUPPORTED;
+    }
+    h2_pal_result_t rc = h2_pal_mutex_lock(runtime->sync, pub->mutex);
+    if (rc != H2_PAL_OK) {
+        return rc;
+    }
+    *out_state = pub->modem;
+    (void)h2_pal_mutex_unlock(runtime->sync, pub->mutex);
+    return H2_PAL_OK;
 }
 
 h2_pal_result_t h2_runtime_system_state_mqtt(

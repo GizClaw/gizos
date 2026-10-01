@@ -124,6 +124,8 @@ void h2_gizclaw_rpc_request_destroy(h2_gizclaw_rpc_request_t *request);
 typedef struct gzc_client gzc_client_t;
 typedef struct h2_gizclaw_conversation h2_gizclaw_conversation_t;
 
+int h2_gizclaw_tools_validate_internal(
+    const h2_gizclaw_tool_handler_t *handlers, size_t count);
 int h2_gizclaw_client_init(const h2_gizclaw_config_t *config,
                            h2_gizclaw_client_t **out_client);
 int h2_gizclaw_client_connect(h2_gizclaw_client_t *client);

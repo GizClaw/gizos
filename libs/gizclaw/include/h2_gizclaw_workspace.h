@@ -33,8 +33,6 @@ h2_pal_result_t h2_gizclaw_req_create_audio_play(
 
 typedef struct h2_gizclaw_workspace {
   char *name;
-  /** Owned collection when the source operation is collection-scoped. */
-  char *collection;
   char *workflow_name;
   bool system;
   bool available;
@@ -102,26 +100,33 @@ typedef struct h2_gizclaw_workspace_activation {
   h2_gizclaw_workspace_runtime_state_t runtime_state;
 } h2_gizclaw_workspace_activation_t;
 
+#define H2_GIZCLAW_SAFETY_FENCE_LEVEL_MAX_BYTES 64u
+
 typedef struct h2_gizclaw_workspace_get_result {
   h2_gizclaw_workspace_t workspace;
   char *runtime_profile_name;
   char *runtime_profile_revision;
+  /** Server-stored selection. This does not prove the Workflow injected its
+   * prompt; compare the Profile revision and reload result separately. */
+  bool has_safety_fence_level;
+  char safety_fence_level[H2_GIZCLAW_SAFETY_FENCE_LEVEL_MAX_BYTES + 1u];
 } h2_gizclaw_workspace_get_result_t;
 
-/* create */
+/** List owned Workspaces without a required filter. Cursor and output
+ * storage retain the usual request-copy and response-storage contracts. */
 h2_pal_result_t h2_gizclaw_req_create_workspace_list(
-    h2_gizclaw_service_t *service, uint64_t identity,
-    h2_gizclaw_str_t collection, h2_gizclaw_str_t cursor, size_t limit,
-    uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+    h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t cursor,
+    size_t limit, uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
 
 h2_pal_result_t h2_gizclaw_req_create_workspace_get(
     h2_gizclaw_service_t *service, uint64_t identity, h2_gizclaw_str_t name,
     uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
 
+/** Create by stable workflow name. Tags do not participate in identity. */
 h2_pal_result_t h2_gizclaw_req_create_workspace_create(
     h2_gizclaw_service_t *service, uint64_t identity,
-    h2_gizclaw_str_t collection, h2_gizclaw_str_t workflow_name,
-    h2_gizclaw_str_t name, uint32_t timeout_ms, h2_gizclaw_req_t **out_request);
+    h2_gizclaw_str_t workflow_name, h2_gizclaw_str_t name, uint32_t timeout_ms,
+    h2_gizclaw_req_t **out_request);
 
 typedef enum h2_gizclaw_conversation_initiative {
   H2_GIZCLAW_CONVERSATION_INITIATIVE_PEER = 1,
@@ -157,6 +162,17 @@ typedef struct h2_gizclaw_workspace_parameters_patch {
   h2_gizclaw_agent_initiative_policy_t agent_initiative_policy;
   bool has_tts_speech_rate_percent;
   int32_t tts_speech_rate_percent;
+  /** When false, preserve the stored fence and ignore safety_fence_level. */
+  bool has_safety_fence_level;
+  /** Profile-defined identifier, ^[a-z][a-z0-9_-]{0,63}$. It must appear in
+   * the bound RuntimeProfile's workflow-list safety_fences before selection.
+   * Syntax errors return H2_PAL_ERR_INVALID_ARG before I/O.
+   * The Server checks profile membership on reload.
+   * parameters.set only stores the selection. reload-with-options can store
+   * it even when reload fails (for example, a missing RuntimeProfile prompt);
+   * failure does not roll back server storage or confirm an applied fence.
+   * SFU accepts it as a no-op. ASTTranslate stores it without injection. */
+  char safety_fence_level[H2_GIZCLAW_SAFETY_FENCE_LEVEL_MAX_BYTES + 1u];
 } h2_gizclaw_workspace_parameters_patch_t;
 
 h2_pal_result_t h2_gizclaw_req_create_workspace_set_parameters(
@@ -236,9 +252,8 @@ h2_pal_result_t h2_gizclaw_resp_parse_workspace_history_list(
 
 /* sync */
 h2_pal_result_t h2_gizclaw_rpc_workspace_list(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t collection,
-    h2_gizclaw_str_t cursor, size_t limit, uint32_t timeout_ms,
-    h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t cursor, size_t limit,
+    uint32_t timeout_ms, h2_gizclaw_resp_storage_t *storage,
     h2_gizclaw_workspace_page_t *out_result);
 
 h2_pal_result_t
@@ -248,8 +263,8 @@ h2_gizclaw_rpc_workspace_get(h2_gizclaw_service_t *service,
                              h2_gizclaw_workspace_get_result_t *out_result);
 
 h2_pal_result_t h2_gizclaw_rpc_workspace_create(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t collection,
-    h2_gizclaw_str_t workflow_name, h2_gizclaw_str_t name, uint32_t timeout_ms,
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t workflow_name,
+    h2_gizclaw_str_t name, uint32_t timeout_ms,
     h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workspace_t *out_result);
 
 h2_pal_result_t h2_gizclaw_rpc_workspace_set_parameters(

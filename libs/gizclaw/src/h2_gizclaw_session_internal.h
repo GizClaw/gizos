@@ -66,7 +66,14 @@ h2_pal_result_t h2_gizclaw_session_workspace_begin_internal(
 h2_pal_result_t h2_gizclaw_session_workspace_finish_internal(
     h2_gizclaw_session_t *session, h2_pal_result_t result,
     const h2_gizclaw_workspace_activation_t *activation,
+    const h2_gizclaw_workspace_parameters_patch_t *parameters, bool reloaded);
+/* Serialize storage-only updates without stopping the current conversation.
+ * A possible fence write makes later omitted reload confirmation unknown. */
+h2_pal_result_t h2_gizclaw_session_parameters_begin_internal(
+    h2_gizclaw_session_t *session, h2_gizclaw_str_t name,
     const h2_gizclaw_workspace_parameters_patch_t *parameters);
+h2_pal_result_t h2_gizclaw_session_parameters_finish_internal(
+    h2_gizclaw_session_t *session, h2_pal_result_t result);
 /* Workspace delete participates only when name is the Session's current
  * Workspace: that path stops the conversation and owns the serialized
  * workspace RPC slot. Other names leave the Session untouched. A closed

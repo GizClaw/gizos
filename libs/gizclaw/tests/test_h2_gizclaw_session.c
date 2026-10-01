@@ -17,6 +17,7 @@ static h2_pal_result_t attach_result;
 static unsigned attaches;
 static bool check_catalog_during_workspace;
 static bool wrong_workflow_get_name;
+static char bound_workflow[64] = "alpha";
 static void assert_catalog(void);
 
 enum { CATALOG_TEST_BYTES = 16384u };
@@ -76,7 +77,7 @@ static const h2_pal_mem_vtable_t catalog_test_mem_vtable = {
 static h2_atomic_uint_t lists, gets, creates, reloads, conversations;
 static size_t list_limit;
 static bool list_failure, bad_revision, missing, close_during_list,
-    reload_failure;
+    reload_failure, divergent_fences;
 static bool paginated, empty_cycle, get_failure;
 static const char *server_revision;
 static unsigned closed_after_reload;
@@ -173,6 +174,13 @@ static char *copy(h2_gizclaw_resp_arena_t *a, const char *text) {
   strcpy(p, text);
   return p;
 }
+static char *copy_span(h2_gizclaw_resp_arena_t *arena, h2_gizclaw_str_t text) {
+  char *out = h2_pal_mem_alloc(&arena->allocator, text.len + 1u);
+  assert(out != NULL);
+  memcpy(out, text.data, text.len);
+  out[text.len] = 0;
+  return out;
+}
 h2_pal_result_t h2_gizclaw_rpc_register(h2_gizclaw_service_t *service,
                                         const char *token, uint32_t timeout,
                                         h2_gizclaw_registration_result_t *out) {
@@ -182,12 +190,10 @@ h2_pal_result_t h2_gizclaw_rpc_register(h2_gizclaw_service_t *service,
   strcpy(out->runtime_profile_name, "test-profile");
   return H2_PAL_OK;
 }
-h2_pal_result_t h2_gizclaw_rpc_workflow_list(h2_gizclaw_service_t *service,
-                                             h2_gizclaw_str_t collection,
-                                             h2_gizclaw_str_t cursor,
-                                             size_t limit, uint32_t timeout,
-                                             h2_gizclaw_resp_storage_t *storage,
-                                             h2_gizclaw_workflow_page_t *out) {
+h2_pal_result_t h2_gizclaw_rpc_workflow_list(
+    h2_gizclaw_service_t *service, const h2_gizclaw_str_t *tags,
+    size_t tag_count, h2_gizclaw_str_t cursor, size_t limit, uint32_t timeout,
+    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workflow_page_t *out) {
   (void)service;
   list_limit = limit;
   assert(timeout > 0u);
@@ -211,22 +217,41 @@ h2_pal_result_t h2_gizclaw_rpc_workflow_list(h2_gizclaw_service_t *service,
   *out = (h2_gizclaw_workflow_page_t){0};
   out->runtime_profile_name = copy(&arena, "test-profile");
   out->runtime_profile_revision =
-      copy(&arena, bad_revision && h2_atomic_load(&lists) % 2u == 0u
+      copy(&arena, bad_revision && cursor.len != 0u
                        ? "v2"
                        : server_revision);
+  out->safety_fences = h2_pal_mem_alloc(&arena.allocator,
+                                        sizeof(*out->safety_fences));
+  assert(out->safety_fences != NULL);
+  *out->safety_fences = (h2_gizclaw_safety_fence_option_t){
+      .name = "safe", .has_display_name = true, .display_name = "Safe"};
+  if (divergent_fences && cursor.len != 0u)
+    strcpy(out->safety_fences->display_name, "Changed");
+  out->safety_fence_count = 1u;
   if (empty_cycle) {
     out->has_next = true;
     out->next_cursor = copy(
         &arena, cursor.len == 0u || strcmp(cursor.data, "a") != 0 ? "a" : "b");
     return h2_gizclaw_resp_arena_end(&arena, H2_PAL_OK);
   }
-  out->items = h2_pal_mem_alloc(&arena.allocator, sizeof(*out->items));
+  out->count = paginated || tag_count < 2u ? 1u : 2u;
+  out->items =
+      h2_pal_mem_alloc(&arena.allocator, out->count * sizeof(*out->items));
   assert(out->items != NULL);
-  out->count = 1u;
-  *out->items = (h2_gizclaw_workflow_t){
-      .collection = copy(&arena, collection.data),
-      .name = copy(&arena, cursor.len != 0u ? "second" : collection.data),
-  };
+  for (size_t i = 0; i < out->count; ++i) {
+    out->items[i] =
+        (h2_gizclaw_workflow_t){.name = copy(&arena, cursor.len ? "second"
+                                                     : i        ? "beta"
+                                                                : "alpha"),
+                                .tag_count = tag_count};
+    if (tag_count) {
+      out->items[i].tags =
+          h2_pal_mem_alloc(&arena.allocator, tag_count * sizeof(char *));
+      assert(out->items[i].tags);
+      for (size_t j = 0; j < tag_count; ++j)
+        out->items[i].tags[j] = copy_span(&arena, tags[j]);
+    }
+  }
   out->has_next = paginated && cursor.len == 0u;
   if (out->has_next)
     out->next_cursor = copy(&arena, "next");
@@ -237,12 +262,13 @@ h2_pal_result_t h2_gizclaw_rpc_workflow_get(
     h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workflow_get_result_t *out) {
   (void)service;
   assert(timeout > 0u);
+  if (name.len == 7u && !memcmp(name.data, "missing", 7u))
+    return H2_PAL_ERR_NOT_FOUND;
   h2_gizclaw_resp_arena_t arena;
   assert(h2_gizclaw_resp_arena_begin(storage, &arena) == H2_PAL_OK);
   const char *returned_name = wrong_workflow_get_name ? "other" : name.data;
   *out = (h2_gizclaw_workflow_get_result_t){
-      .workflow = {.collection = copy(&arena, "alpha"),
-                   .name = copy(&arena, returned_name)},
+      .workflow = {.name = copy(&arena, returned_name)},
       .runtime_profile_name = copy(&arena, "test-profile"),
       .runtime_profile_revision = copy(&arena, server_revision),
   };
@@ -268,7 +294,7 @@ h2_gizclaw_rpc_workspace_get(h2_gizclaw_service_t *service,
     return H2_PAL_ERR_NOT_FOUND;
   *out = (h2_gizclaw_workspace_get_result_t){
       .workspace = {.name = (char *)name.data,
-                    .workflow_name = "alpha",
+                    .workflow_name = bound_workflow,
                     .available = true},
       .runtime_profile_name = "test-profile",
       .runtime_profile_revision = (char *)server_revision,
@@ -276,11 +302,10 @@ h2_gizclaw_rpc_workspace_get(h2_gizclaw_service_t *service,
   return H2_PAL_OK;
 }
 h2_pal_result_t h2_gizclaw_rpc_workspace_create(
-    h2_gizclaw_service_t *service, h2_gizclaw_str_t collection,
-    h2_gizclaw_str_t workflow, h2_gizclaw_str_t name, uint32_t timeout,
-    h2_gizclaw_resp_storage_t *storage, h2_gizclaw_workspace_t *out) {
+    h2_gizclaw_service_t *service, h2_gizclaw_str_t workflow,
+    h2_gizclaw_str_t name, uint32_t timeout, h2_gizclaw_resp_storage_t *storage,
+    h2_gizclaw_workspace_t *out) {
   (void)service;
-  (void)collection;
   (void)workflow;
   (void)name;
   (void)timeout;
@@ -317,18 +342,18 @@ h2_pal_result_t h2_gizclaw_rpc_workspace_reload_with_options(
     return rc;
   if (reload_failure) {
     h2_gizclaw_session_workspace_finish_internal(session, H2_PAL_ERR_IO, NULL,
-                                                 parameters);
+                                                 parameters, true);
     return H2_PAL_ERR_IO;
   }
   if (closed_after_reload)
     assert(h2_gizclaw_session_close(session) == H2_PAL_OK);
   *out = (h2_gizclaw_workspace_activation_t){
       .active_workspace_name = (char *)name.data,
-      .workflow_name = "alpha",
+      .workflow_name = bound_workflow,
       .runtime_state = H2_GIZCLAW_WORKSPACE_RUNTIME_RUNNING,
   };
   h2_gizclaw_session_workspace_finish_internal(session, H2_PAL_OK, out,
-                                               parameters);
+                                               parameters, true);
   return H2_PAL_OK;
 }
 h2_pal_result_t
@@ -380,12 +405,13 @@ static void completed(void *user, h2_gizclaw_conversation_t *conversation,
   ++terminal_count;
   h2_gizclaw_session_conversation_release(session, conversation);
 }
-static h2_gizclaw_session_config_t session_config(size_t collections) {
-  static const char *const names[] = {"alpha", "beta"};
+static h2_gizclaw_session_config_t session_config(size_t tag_count) {
+  static const h2_gizclaw_str_t tags[] = {{"alpha", 5u}, {"beta", 4u}};
   attach_result = H2_PAL_OK;
   attaches = 0u;
   check_catalog_during_workspace = false;
   wrong_workflow_get_name = false;
+  strcpy(bound_workflow, "alpha");
   h2_atomic_store(&lists, 0u);
   h2_atomic_store(&gets, 0u);
   h2_atomic_store(&creates, 0u);
@@ -405,7 +431,7 @@ static h2_gizclaw_session_config_t session_config(size_t collections) {
   rpc_trace[0] = '\0';
   h2_atomic_store(&cancel_entered, false);
   list_failure = bad_revision = missing = close_during_list = reload_failure =
-      false;
+      divergent_fences = false;
   paginated = empty_cycle = get_failure = false;
   server_revision = "v1";
   closed_after_reload = 0u;
@@ -425,15 +451,15 @@ static h2_gizclaw_session_config_t session_config(size_t collections) {
       .mem = h2_desktop_platform_default_allocator(),
       .sync = &sync_api,
       .time = &time_api,
-      .collections = names,
-      .collection_count = collections,
+      .tags = tags,
+      .tag_count = tag_count,
       .max_workflows = 4u,
       .catalog_bytes = CATALOG_TEST_BYTES,
   };
   return config;
 }
-static void setup(size_t collections) {
-  h2_gizclaw_session_config_t config = session_config(collections);
+static void setup(size_t tag_count) {
+  h2_gizclaw_session_config_t config = session_config(tag_count);
   assert(h2_gizclaw_session_create(&config, &session) == H2_PAL_OK);
 }
 static h2_gizclaw_session_state_t snapshot(void) {
@@ -442,13 +468,52 @@ static h2_gizclaw_session_state_t snapshot(void) {
   return state;
 }
 static const h2_gizclaw_session_selection_t selection = {
-    .collection = "alpha",
     .workflow_name = "alpha",
     .workspace_name = "my-chat",
 };
 static void teardown(void) {
   assert(h2_gizclaw_session_destroy(&session) == H2_PAL_OK);
   assert(session == NULL);
+}
+
+static void test_tag_catalog_selector(void) {
+  setup(0u);
+  assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+  assert(snapshot().workflow_count == 1u && h2_atomic_load(&lists) == 1u);
+  teardown();
+
+  setup(1u);
+  assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+  /* A valid binding outside the catalog filter is still addressable by name. */
+  strcpy(bound_workflow, "outside");
+  h2_gizclaw_session_selection_t outside = selection;
+  outside.workflow_name = "outside";
+  assert(h2_gizclaw_session_select(session, &outside, 1000u) == H2_PAL_OK);
+  assert(!strcmp(snapshot().workflow_name, "outside"));
+  assert(h2_atomic_load(&reloads) == 1u);
+  assert(h2_gizclaw_session_select(session, &outside, 1000u) == H2_PAL_OK);
+  assert(h2_atomic_load(&reloads) == 1u);
+  teardown();
+
+  char text[128];
+  memset(text, 'x', sizeof(text));
+  h2_gizclaw_str_t tag = {text, sizeof(text)};
+  h2_gizclaw_session_config_t config = session_config(1u);
+  config.tags = &tag;
+  assert(h2_gizclaw_session_create(&config, &session) == H2_PAL_OK);
+  assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+  teardown();
+
+  config = session_config(1u);
+  config.tags = NULL;
+  assert(h2_gizclaw_session_create(&config, &session) ==
+             H2_PAL_ERR_INVALID_ARG &&
+         !session);
+  config = session_config(1u);
+  config.tag_count = 33u;
+  assert(h2_gizclaw_session_create(&config, &session) ==
+             H2_PAL_ERR_INVALID_ARG &&
+         !session);
 }
 
 static void assert_catalog(void) {
@@ -460,9 +525,16 @@ static void assert_catalog(void) {
   assert(catalog.count == 2u);
   assert(strcmp(catalog.runtime_profile_name, "test-profile") == 0);
   assert(strcmp(catalog.runtime_profile_revision, server_revision) == 0);
-  assert(strcmp(catalog.items[0].collection, "alpha") == 0);
+  assert(catalog.safety_fence_count == 1u &&
+         strcmp(catalog.safety_fences[0].name, "safe") == 0 &&
+         strcmp(catalog.safety_fences[0].display_name, "Safe") == 0 &&
+         (const uint8_t *)catalog.safety_fences >= bytes &&
+         (const uint8_t *)(catalog.safety_fences + 1) <= bytes + sizeof(bytes));
+  assert(catalog.items[0].tag_count == 2u &&
+         strcmp(catalog.items[0].tags[0], "alpha") == 0);
   assert(strcmp(catalog.items[0].name, "alpha") == 0);
-  assert(strcmp(catalog.items[1].collection, "beta") == 0);
+  assert(catalog.items[1].tag_count == 2u &&
+         strcmp(catalog.items[1].tags[1], "beta") == 0);
   assert(strcmp(catalog.items[1].name, "beta") == 0);
 }
 
@@ -533,18 +605,29 @@ static void test_streaming_catalog(void) {
   assert(h2_atomic_load(&gets) == 0u && h2_atomic_load(&creates) == 0u &&
          h2_atomic_load(&reloads) == 0u);
   wrong_workflow_get_name = false;
+  strcpy(bound_workflow, "alpha");
   assert(h2_gizclaw_session_select(session, &selection, 1000u) == H2_PAL_OK);
   assert(h2_atomic_load(&gets) == 1u && snapshot().can_start);
   server_revision = "v2";
   assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_OK);
   assert(sink.commit == 2u && strcmp(sink.revision, "v2") == 0);
+  /* A later page with the same revision but other fence options is not the
+   * same catalog: nothing is committed. */
+  divergent_fences = true;
+  assert(h2_gizclaw_session_refresh(session, 1000u) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(sink.commit == 2u && sink.abort == 1u &&
+         snapshot().catalog == H2_GIZCLAW_SESSION_FAILED);
+  divergent_fences = false;
+  assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_OK);
+  assert(sink.commit == 3u);
   sink.fail_page = true;
   assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_ERR_IO);
-  assert(sink.abort == 1u && snapshot().catalog == H2_GIZCLAW_SESSION_FAILED);
+  assert(sink.abort == 2u && snapshot().catalog == H2_GIZCLAW_SESSION_FAILED);
   sink.fail_page = false;
   sink.fail_commit = true;
   assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_ERR_IO);
-  assert(sink.abort == 2u);
+  assert(sink.abort == 3u);
   teardown();
 
   sink = (streaming_sink_state_t){0};
@@ -596,6 +679,7 @@ static void test_catalog_buffer_lifetime(bool retain, bool separate) {
   assert(buffers->buffer_frees == (retain ? 0u : 8u));
 
   /* A failed refresh never publishes its partially written scratch. */
+  paginated = true;
   bad_revision = true;
   assert(h2_gizclaw_session_refresh(session, 1000u) ==
          H2_PAL_ERR_INVALID_STATE);
@@ -607,6 +691,12 @@ static void test_catalog_buffer_lifetime(bool retain, bool separate) {
          H2_PAL_ERR_UNAVAILABLE);
   assert(catalog.items == NULL && catalog.count == 0u);
   bad_revision = false;
+  divergent_fences = true;
+  assert(h2_gizclaw_session_refresh(session, 1000u) ==
+         H2_PAL_ERR_INVALID_STATE);
+  assert(snapshot().catalog == H2_GIZCLAW_SESSION_FAILED);
+  divergent_fences = false;
+  paginated = false;
   assert(h2_gizclaw_session_refresh(session, 1000u) == H2_PAL_OK);
   assert_catalog();
 
@@ -1345,6 +1435,103 @@ static void test_speech_rate_parameter(void) {
   teardown();
 }
 
+static void test_safety_fence_parameter(void) {
+  setup(1u);
+  assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
+  const h2_gizclaw_workspace_parameters_patch_t input = {
+      .has_input = true, .input = H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK};
+  h2_gizclaw_session_selection_t sel = selection;
+  sel.parameters = &input;
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(!snapshot().parameters.has_safety_fence_level);
+
+  const char *const levels[] = {"general", "child", "off"};
+  for (size_t i = 0u; i < sizeof(levels) / sizeof(levels[0]); ++i) {
+    h2_gizclaw_workspace_parameters_patch_t patch = {
+        .has_safety_fence_level = true};
+    strcpy(patch.safety_fence_level, levels[i]);
+    sel.parameters = &patch;
+    rpc_trace[0] = '\0';
+    assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+    assert(strchr(rpc_trace, 'r') != NULL);
+    assert(snapshot().parameters.has_safety_fence_level &&
+           strcmp(snapshot().parameters.safety_fence_level, levels[i]) == 0);
+    assert(snapshot().parameters.has_input &&
+           snapshot().parameters.input == input.input);
+
+    /* A confirmed identical fence does not reload. */
+    rpc_trace[0] = '\0';
+    assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+    assert(rpc_trace[0] == '\0');
+  }
+
+  /* A different field reloads without clearing the confirmed OFF value;
+   * an invalid fence is ignored when its presence flag is false. */
+  const h2_gizclaw_workspace_parameters_patch_t rate = {
+      .has_tts_speech_rate_percent = true,
+      .tts_speech_rate_percent = 70,
+      .safety_fence_level = "Invalid"};
+  sel.parameters = &rate;
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(strchr(rpc_trace, 'r') != NULL);
+  assert(snapshot().parameters.has_safety_fence_level &&
+         strcmp(snapshot().parameters.safety_fence_level, "off") == 0);
+  rpc_trace[0] = '\0';
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(rpc_trace[0] == '\0');
+
+  const char *const invalid[] = {"", "UPPER", "bad.dot", "-bad"};
+  for (size_t i = 0u; i < sizeof(invalid) / sizeof(invalid[0]); ++i) {
+    h2_gizclaw_workspace_parameters_patch_t patch = {
+        .has_safety_fence_level = true};
+    strcpy(patch.safety_fence_level, invalid[i]);
+    sel.parameters = &patch;
+    assert(h2_gizclaw_session_select(session, &sel, 1000u) ==
+           H2_PAL_ERR_INVALID_ARG);
+    assert(rpc_trace[0] == '\0');
+    assert(strcmp(snapshot().parameters.safety_fence_level, "off") == 0);
+  }
+  /* A failed reload cannot publish the requested fence as confirmed. */
+  const h2_gizclaw_workspace_parameters_patch_t child = {
+      .has_safety_fence_level = true,
+      .safety_fence_level = "child"};
+  sel.parameters = &child;
+  reload_failure = true;
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_ERR_IO);
+  assert(strchr(rpc_trace, 'r') != NULL);
+  assert(snapshot().parameters.has_safety_fence_level &&
+         strcmp(snapshot().parameters.safety_fence_level, "off") == 0);
+  assert(snapshot().workspace == H2_GIZCLAW_SESSION_FAILED);
+  reload_failure = false;
+  rpc_trace[0] = '\0';
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(strchr(rpc_trace, 'r') != NULL);
+  assert(strcmp(snapshot().parameters.safety_fence_level,
+                child.safety_fence_level) == 0);
+
+  /* Confirmation belongs to a Workspace, never to the whole connection. */
+  sel.workspace_name = "another-chat";
+  sel.parameters = &input;
+  rpc_trace[0] = '\0';
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(!snapshot().parameters.has_safety_fence_level);
+  sel.parameters = &child;
+  rpc_trace[0] = '\0';
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_OK);
+  assert(strchr(rpc_trace, 'r') != NULL);
+  assert(snapshot().parameters.has_safety_fence_level);
+
+  /* Closing during a response cannot publish the pending selection. */
+  sel.parameters = &(h2_gizclaw_workspace_parameters_patch_t){
+      .has_safety_fence_level = true,
+      .safety_fence_level = "general"};
+  closed_after_reload = 1u;
+  assert(h2_gizclaw_session_select(session, &sel, 1000u) == H2_PAL_ERR_CLOSED);
+  assert(strcmp(snapshot().parameters.safety_fence_level,
+                child.safety_fence_level) == 0);
+  teardown();
+}
+
 int main(void) {
   assert(h2_atomic_uint_init(&lists, 0u) == H2_ATOMIC_OK);
   assert(h2_atomic_uint_init(&gets, 0u) == H2_ATOMIC_OK);
@@ -1357,6 +1544,7 @@ int main(void) {
   assert(h2_atomic_bool_init(&gate_list, false) == H2_ATOMIC_OK);
   assert(h2_atomic_bool_init(&list_entered, false) == H2_ATOMIC_OK);
   assert(h2_atomic_bool_init(&waiter_entered, false) == H2_ATOMIC_OK);
+  test_tag_catalog_selector();
   test_streaming_catalog();
   test_catalog_buffer_lifetime(false, false);
   test_catalog_buffer_lifetime(true, false);
@@ -1364,6 +1552,7 @@ int main(void) {
   test_catalog_buffer_lifetime(true, true);
   test_catalog_buffer_create_failure();
   test_retained_allocator_create_failure();
+  test_safety_fence_parameter();
   test_speech_rate_parameter();
   test_send_text();
   test_control_boundaries();
@@ -1376,7 +1565,7 @@ int main(void) {
   setup(2u);
   assert(!snapshot().can_start);
   assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
-  assert(h2_atomic_load(&lists) == 2u && snapshot().workflow_count == 2u);
+  assert(h2_atomic_load(&lists) == 1u && snapshot().workflow_count == 2u);
   assert(snapshot().catalog == H2_GIZCLAW_SESSION_READY &&
          !snapshot().can_start);
   uint8_t bytes[4096];
@@ -1385,10 +1574,23 @@ int main(void) {
   assert(h2_gizclaw_session_catalog_copy(session, &storage, &catalog) ==
          H2_PAL_OK);
   catalog.items[0].name[0] = 'X';
+  catalog.items[0].tags[0][0] = 'X';
   storage.used = 0u;
   assert(h2_gizclaw_session_catalog_copy(session, &storage, &catalog) ==
          H2_PAL_OK);
   assert(strcmp(catalog.items[0].name, "alpha") == 0);
+  /* Storage that runs out anywhere, including in a later Workflow's tags,
+   * yields NO_SPACE and publishes nothing: no page with a NULL tag entry. */
+  const size_t needed = storage.used;
+  for (size_t capacity = 0u; capacity < needed; ++capacity) {
+    h2_gizclaw_resp_storage_t short_storage = {bytes, capacity, 0u};
+    h2_gizclaw_workflow_page_t failed = {.count = 99u};
+    assert(h2_gizclaw_session_catalog_copy(session, &short_storage, &failed) ==
+           H2_PAL_ERR_NO_SPACE);
+    /* The page is cleared on entry and stays empty on failure. */
+    assert(failed.count == 0u && failed.items == NULL);
+    assert(short_storage.used == 0u);
+  }
   missing = true;
   assert(h2_gizclaw_session_select(session, &selection, 1000u) == H2_PAL_OK);
   assert(h2_atomic_load(&creates) == 1u && h2_atomic_load(&gets) == 2u &&
@@ -1423,7 +1625,7 @@ int main(void) {
   assert(h2_gizclaw_session_register(session, "token", 1000u) == H2_PAL_OK);
   assert(h2_gizclaw_session_select(session, &selection, 1000u) == H2_PAL_OK);
   other = selection;
-  other.collection = "wrong";
+  other.workflow_name = "missing";
   assert(h2_gizclaw_session_select(session, &other, 1000u) ==
          H2_PAL_ERR_NOT_FOUND);
   assert(h2_atomic_load(&reloads) == 1u && !snapshot().can_start);
@@ -1479,6 +1681,7 @@ int main(void) {
   teardown();
 
   setup(2u);
+  paginated = true;
   bad_revision = true;
   assert(h2_gizclaw_session_register(session, "token", 1000u) ==
          H2_PAL_ERR_INVALID_STATE);

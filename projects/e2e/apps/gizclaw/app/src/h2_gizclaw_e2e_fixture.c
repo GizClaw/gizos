@@ -275,7 +275,7 @@ void h2_gizclaw_e2e_evidence(const char *symbol, const char *stage,
          result == H2_PAL_OK ? "PASS" : "FAIL", result);
 }
 
-static int provider_call(void *user, h2_gizclaw_rpc_method_t method,
+static int provider_call(void *user, h2_gizclaw_tool_t method,
                          h2_gizclaw_rpc_bytes_t request_payload,
                          h2_gizclaw_rpc_provider_response_t *out_response) {
   h2_gizclaw_e2e_actor_t *actor = user;
@@ -284,24 +284,24 @@ static int provider_call(void *user, h2_gizclaw_rpc_method_t method,
     return H2_PAL_ERR_INVALID_ARG;
   }
   memset(out_response, 0, sizeof(*out_response));
-  if (method == H2_GIZCLAW_RPC_CLIENT_INFO_GET) {
+  if (method == H2_GIZCLAW_TOOL_INFO_GET) {
     actor->client_info_requested = true;
     out_response->payload = (h2_gizclaw_rpc_bytes_t){
         .data = s_client_info_response,
         .len = sizeof(s_client_info_response),
     };
-    h2_gizclaw_e2e_evidence("H2_GIZCLAW_RPC_CLIENT_INFO_GET", "reverse-rpc",
+    h2_gizclaw_e2e_evidence("H2_GIZCLAW_TOOL_INFO_GET", "reverse-rpc",
                             H2_PAL_OK);
     return H2_PAL_OK;
   }
-  if (method == H2_GIZCLAW_RPC_CLIENT_IDENTIFIERS_GET) {
+  if (method == H2_GIZCLAW_TOOL_IDENTIFIERS_GET) {
     actor->client_identifiers_requested = true;
     out_response->payload = (h2_gizclaw_rpc_bytes_t){
         .data = s_client_identifiers_response,
         .len = sizeof(s_client_identifiers_response),
     };
-    h2_gizclaw_e2e_evidence("H2_GIZCLAW_RPC_CLIENT_IDENTIFIERS_GET",
-                            "reverse-rpc", H2_PAL_OK);
+    h2_gizclaw_e2e_evidence("H2_GIZCLAW_TOOL_IDENTIFIERS_GET", "reverse-rpc",
+                            H2_PAL_OK);
     return H2_PAL_OK;
   }
   out_response->has_error = true;
@@ -423,6 +423,11 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
                          h2_gizclaw_e2e_actor_t *actor, const char *stage) {
   if (actor->service != NULL)
     return H2_PAL_ERR_INVALID_STATE;
+  actor->tool_handlers[0] = (h2_gizclaw_tool_handler_t){
+      H2_GIZCLAW_TOOL_INFO_GET, provider_call, actor};
+  actor->tool_handlers[1] = (h2_gizclaw_tool_handler_t){
+      H2_GIZCLAW_TOOL_IDENTIFIERS_GET, provider_call, actor};
+  const bool device = fixture->device_audio || fixture->device_vtable;
   /* Service borrows this configuration until deinit, never a stack local. */
   actor->config = (h2_gizclaw_config_t){
       .server_endpoint = h2_gizclaw_e2e_str(fixture->endpoint),
@@ -440,8 +445,8 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
       .vtable = fixture->device_vtable,
       .audio_buffer_bytes = fixture->device_audio ? 65536u : 0,
       .firmware_channel = H2_GIZCLAW_FIRMWARE_CHANNEL_DEVELOP,
-      .rpc_provider = provider_call,
-      .rpc_provider_user = actor,
+      .tool_handlers = device ? NULL : actor->tool_handlers,
+      .tool_handler_count = device ? 0 : 2,
       .cancel_requested = cancel_requested,
       .cancel_user = fixture,
   };
@@ -471,12 +476,17 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
    * Retain the identity for cleanup rather than assuming no remote Peer. */
   h2_gizclaw_registration_result_t registration = {0};
   if (fixture->use_session) {
-    static const char *const collections[] = {"assistants"};
+    static const h2_gizclaw_str_t tags[] = {{"assistants", 10u}};
     const h2_gizclaw_session_config_t session_config = {
-        .service = actor->service, .mem = fixture->allocator,
-        .sync = fixture->runtime->sync, .time = fixture->time,
-        .runtime = fixture->runtime, .collections = collections,
-        .collection_count = 1u, .max_workflows = 128u, .catalog_bytes = 65536u};
+        .service = actor->service,
+        .mem = fixture->allocator,
+        .sync = fixture->runtime->sync,
+        .time = fixture->time,
+        .runtime = fixture->runtime,
+        .tags = tags,
+        .tag_count = 1u,
+        .max_workflows = 128u,
+        .catalog_bytes = 65536u};
     rc = h2_gizclaw_session_create(&session_config, &actor->session);
     h2_gizclaw_e2e_evidence("h2_gizclaw_session_create", "session-create", rc);
     if (rc == H2_PAL_OK) {
