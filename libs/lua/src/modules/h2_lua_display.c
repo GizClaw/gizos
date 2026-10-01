@@ -948,8 +948,9 @@ static int display_draw_quad_batch(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
   const display_quad_batch_t *batch =
       luaL_checkudata(state, 1, H2_LUA_QUAD_BATCH_META);
-  if (lua_gettop(state) != 10)
-    return luaL_error(state, "quad batch needs colors and eight coordinates");
+  if (lua_gettop(state) < 10 || lua_gettop(state) > 12)
+    return luaL_error(state,
+        "quad batch needs colors, eight coordinates and optional row clip");
   double corners[8];
   for (int i = 0; i < 8; ++i)
     corners[i] = check_geometry_number(state, i + 3);
@@ -975,8 +976,10 @@ static int display_draw_quad_batch(lua_State *state) {
   }
   /* Color getters can close/reopen Display or recursively draw. All scratch
    * is call-local; no Lua callback or allocation follows this acquisition check. */
-  if (!job->display_open)
-    return luaL_error(state, "closed display");
+  int top, bottom;
+  display_check_clip(state, job, 11, 12, &top, &bottom);
+  if (top == bottom)
+    return 0;
   double edges[8] = {0};
   const display_quad_strip_t *previous = NULL;
   for (size_t i = 0; i < batch->count; ++i) {
@@ -1010,7 +1013,7 @@ static int display_draw_quad_batch(lua_State *state) {
       xy[axis][3] = display_quad_lerp(edges[4 + axis], edges[6 + axis], strip->left);
     }
     display_raster_polygon(job, xy[0], xy[1], 4, colors[strip->color_index],
-                           0, 0, job->display_info.height);
+                           0, top, bottom);
     previous = strip;
   }
   return 0;

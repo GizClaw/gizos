@@ -47,8 +47,13 @@
  *   Fractions are finite, 0<=left<=right<=1 and 0<=top<=bottom<=1;
  *   color_index is an integer in 1..256. Equal endpoints remain valid and
  *   use the ordinary polygon raster, including inclusive horizontal spans.
- * - display.draw_quad_batch(batch,colors,ax,ay,bx,by,cx,cy,dx,dy) draws one
- *   quadrilateral's strips in record order. Corners are finite +/-100000.
+ * - display.draw_quad_batch(batch,colors,ax,ay,bx,by,cx,cy,dx,dy,
+ *   clip_top=0,clip_bottom=height) draws one quadrilateral's strips in record
+ *   order. Omitted/nil clip bounds use the defaults; bounds are integers with
+ *   0<=clip_top<=clip_bottom<=height, selecting half-open framebuffer rows.
+ *   Clipping only limits raster rows; it never translates corners or changes
+ *   interpolation/rounding. These row bounds are independent of the normalized
+ *   top/bottom in batch records. Corners are finite +/-100000.
  *   Without top/bottom, vertices are A+(B-A)*left, A+(B-A)*right,
  *   D+(C-D)*right, D+(C-D)*left. With top/bottom, first form a transverse
  *   patch A'=A+(D-A)*top, B'=B+(C-B)*top, C'=B+(C-B)*bottom,
@@ -61,9 +66,10 @@
  *   ones. A compiled palette uses its current RGB565 values without copying.
  *   Coordinate/index/color errors leave pixels untouched by this call;
  *   ordinary color getter side effects retain their Lua semantics. Display
- *   acquisition is checked after getters, including for an empty batch.
+ *   acquisition and clip are checked after getters, including for an empty
+ *   batch or clip. An empty clip validates every input before returning.
  * - Draw returns no values, allocates no storage itself, borrows no data beyond
- *   return, and uses the existing polygon raster with full-surface clipping,
+ *   return, and uses the existing polygon raster with full-width row clipping,
  *   dirty/background tracking and explicit present. Caller color getters can
  *   allocate/reenter; plain tables and palettes need no allocation. No mesh,
  *   expanded vertex buffer or span cache is created. Geometry, color recipes

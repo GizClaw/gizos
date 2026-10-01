@@ -2787,6 +2787,7 @@ int main(int argc, char **argv) {
   test_reserved_vm_heap();
   test_display_raster2d(0, "libs/lua/tests/raster2d.lua");
   test_display_raster2d(0, "libs/lua/tests/quad_batch.lua");
+  test_display_raster2d(1, "libs/lua/tests/quad_batch_clip.lua");
   test_display_raster2d(0, "libs/lua/tests/geometry_batches.lua");
   test_display_raster2d(0, "libs/lua/tests/stroke_buffer.lua");
   test_display_mesh_identity();

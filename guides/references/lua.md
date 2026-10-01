@@ -22,6 +22,8 @@ display.draw_quad_batch(bands, colors, 10,10, 200,30, 180,210, 40,190)
 display.present()
 ```
 
+For dirty-row repair, append `clip_top, clip_bottom` to the draw call, for example `display.draw_quad_batch(bands, colors, 10,10, 200,30, 180,210, 40,190, 16,32)` to touch only rows 16 through 31. Missing or `nil` bounds default to 0 and the display height. These integer framebuffer bounds only restrict raster rows; they do not alter the corners or the normalized patch intervals. Disjoint clips can reproduce a full draw when each row retains the same painter order. Empty clips still validate all inputs and require a live display.
+
 For changing RGB888 colors, pass a reused array of ordinary Display color tables instead of a compiled palette. Each slot is sampled during the call; retain distinct tables for colors that differ. This API only expands caller-specified geometry and reuses the existing polygon raster. It does not decide lighting, projection or scene order.
 
 ## Regions from strings

@@ -791,7 +791,8 @@ int main(void) {
                      "local r=d.compile_rects({{x=3,y=5,width=7,height=9,color_index=1}});"
                      "d.draw_rects(r,b);"
                      "local q=d.compile_quad_batch({{0,1,1}});"
-                     "d.draw_quad_batch(q,b,3,5,9,5,9,14,3,14);d.present();"
+                     "d.draw_quad_batch(q,b,3,5,9,5,9,14,3,14,nil,8);"
+                     "d.draw_quad_batch(q,b,3,5,9,5,9,14,3,14,8);d.present();"
                      "local t=require('lcd_touch');t.poll()");
   wait_state(host, job, H2_LUA_JOB_SUCCEEDED);
   assert(display.draws == 2 && display.presents == 2);

@@ -299,6 +299,7 @@ cc_test(
         "tests/mesh_source_paths.lua",
         "tests/mesh_staging.lua",
         "tests/quad_batch.lua",
+        "tests/quad_batch_clip.lua",
         "tests/raster2d.lua",
         "tests/stroke_buffer.lua",
     ],

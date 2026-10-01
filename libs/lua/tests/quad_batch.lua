@@ -144,7 +144,7 @@ if d.width==240 then
     -- The scalar baseline prepares each patch and its edge deltas once for
     -- six widths, matching applications that already hoist that arithmetic.
     local edge={}
-    local function reference(i)
+    local function reference(i,top_clip,bottom_clip)
         place(i)
         for band=1,9 do
             local top,bottom=(band-1)/9,band/9
@@ -162,7 +162,7 @@ if d.width==240 then
                     strip[3][axis]=edge[4+axis]+edge[6+axis]*r[2]
                     strip[4][axis]=edge[4+axis]+edge[6+axis]*r[1]
                 end
-                d.fill_polygon(strip,dynamic[r[3]])
+                d.fill_polygon(strip,dynamic[r[3]],0,top_clip,bottom_clip)
             end
         end
     end
@@ -171,6 +171,17 @@ if d.width==240 then
     p.measure('quad_scalar_54',reference,54)
     p.measure('quad_table_colors_54',tables,1)
     p.measure('quad_palette_54',native,1)
+    local function clipped(i,c,top,bottom)
+        place(i)
+        d.draw_quad_batch(prepared,c,moving[1],moving[2],moving[3],moving[4],
+                         moving[5],moving[6],moving[7],moving[8],top,bottom)
+    end
+    p.measure('quad_scalar_54_rows_112_128',function(i) reference(i,112,128) end,54)
+    p.measure('quad_table_54_rows_112_128',function(i) clipped(i,dynamic,112,128) end,1)
+    p.measure('quad_palette_54_rows_112_128',function(i) clipped(i,fixed,112,128) end,1)
+    p.measure('quad_palette_54_all_16row_clips',function(i)
+        for top=0,224,16 do clipped(i,fixed,top,top+16) end
+    end,15)
     for frame=1,40 do
         place(frame);compare(records,prepared,moving,dynamic,fixed)
         d.clear('black');reference(frame);assert(d.present()==0,'hoisted scalar pixels')
