@@ -2,6 +2,7 @@
 
 #include "h2/pal/application/h2_pal_http.h"
 #include "h2/pal/os/h2_pal_log.h"
+#include "h2/pal/net/h2_pal_net.h"
 
 #include "h2_gizclaw_firmware.h"
 
@@ -389,6 +390,53 @@ static int download_job_run(void *user) {
   return download_firmware(job->fixture, job->metadata, &job->received_size);
 }
 
+static void observe_firmware_route(h2_gizclaw_e2e_fixture_t *fixture,
+                                    const h2_gizclaw_firmware_t *metadata) {
+  if (fixture->runtime == NULL)
+    return;
+  firmware_sha256_t hash;
+  uint8_t digest[32];
+  char uri_hash[65];
+  sha256_init(&hash);
+  sha256_update(&hash, (const uint8_t *)metadata->url, strlen(metadata->url));
+  sha256_finish(&hash, digest);
+  sha256_hex(digest, uri_hash);
+  /* This diagnostic contains no path, query or authorization. It is separate
+   * from the mandatory HTTP transfer and never qualifies a failed download. */
+  char host[254] = {0};
+  const char *begin = metadata->url + 8u;
+  const char *end = begin;
+  while (*end && *end != '/' && *end != '?' && *end != ':' && *end != '#')
+    ++end;
+  size_t length = (size_t)(end - begin);
+  h2_pal_net_addr_t address = {0};
+  int rc = H2_PAL_ERR_INVALID_ARG;
+  if (length > 0u && length < sizeof(host) &&
+      memchr(begin, '@', length) == NULL) {
+    memcpy(host, begin, length);
+    h2_pal_net_resolver_t *resolver = NULL;
+    rc = h2_pal_net_resolve_start(fixture->runtime->net, host, &resolver);
+    if (rc == H2_PAL_OK) {
+      uint64_t now = 0u;
+      if (h2_pal_time_get_monotonic_ms(fixture->time, &now) == H2_PAL_OK &&
+          fixture->deadline_ms > now) {
+        uint64_t remaining = fixture->deadline_ms - now;
+        rc = h2_pal_net_resolve_poll(fixture->runtime->net, resolver, &address,
+                                     remaining > 2000u ? 2000u : (uint32_t)remaining);
+      } else {
+        rc = H2_PAL_ERR_TIMEOUT;
+      }
+      h2_pal_net_resolve_close(fixture->runtime->net, resolver);
+    }
+  }
+  char diagnostic[384];
+  snprintf(diagnostic, sizeof(diagnostic), "firmware_route host=%s rc=%d family=%d ipv4=%u.%u.%u.%u uri_sha256=%s expected=%" PRId64,
+           host, rc, (int)address.family, address.ip[0], address.ip[1],
+           address.ip[2], address.ip[3], uri_hash, metadata->size);
+  (void)h2_pal_log_write(fixture->runtime->log, H2_PAL_LOG_INFO,
+                         "gizclaw-e2e", diagnostic);
+}
+
 int h2_gizclaw_e2e_run_firmware(h2_gizclaw_e2e_fixture_t *fixture) {
   if (fixture == NULL || fixture->http == NULL ||
       fixture->actors[H2_GIZCLAW_E2E_OWNER].service == NULL) {
@@ -398,6 +446,7 @@ int h2_gizclaw_e2e_run_firmware(h2_gizclaw_e2e_fixture_t *fixture) {
   int result = get_firmware_metadata(fixture, &metadata);
   uint64_t received_size = 0u;
   if (result == H2_PAL_OK) {
+    observe_firmware_route(fixture, &metadata);
     download_job_t job = {.fixture = fixture, .metadata = &metadata};
     /* Service dispatch remains on the App task even while HTTP is blocked in
      * DNS/handshake/receive. Never poll the same Service from its HTTP job. */
