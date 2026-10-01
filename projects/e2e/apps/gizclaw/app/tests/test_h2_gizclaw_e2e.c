@@ -117,6 +117,26 @@ static h2_gizclaw_e2e_config_t test_config(test_state_t *state, uint8_t *pcm,
 }
 
 int main(void) {
+  /* Hardware admission uses this same gate. A successful diagnostic subset
+   * must never become permission to confirm the complete business image. */
+  h2_gizclaw_e2e_result_t admission = {
+      .selected = 8u, .terminal = 8u, .passed = 8u, .complete = true};
+  assert(h2_gizclaw_e2e_result_all_passed(&admission));
+  h2_gizclaw_e2e_result_t subset = admission;
+  subset.selected = subset.terminal = subset.passed = 1u;
+  assert(!h2_gizclaw_e2e_result_all_passed(&subset));
+  subset = admission;
+  subset.selected = subset.terminal = subset.passed = 7u;
+  assert(!h2_gizclaw_e2e_result_all_passed(&subset));
+  subset = admission;
+  subset.cleanup_rc = H2_PAL_ERR_IO;
+  assert(!h2_gizclaw_e2e_result_all_passed(&subset));
+  subset = admission;
+  subset.retained_resources = 1u;
+  assert(!h2_gizclaw_e2e_result_all_passed(&subset));
+  subset = admission;
+  subset.complete = false;
+  assert(!h2_gizclaw_e2e_result_all_passed(&subset));
   h2_gizclaw_workflow_t default_workflows[] = {
       {.name = "general-assistant"},
       {.name = "doubao-realtime"},

@@ -475,7 +475,7 @@ static void image_entry(void *user) {
         if (!h2_atomic_load_explicit(&s_runner.capture_failed, H2_ATOMIC_ACQUIRE) &&
             h2_gizclaw_e2e_ledger_freeze(&s_runner.ledger) == H2_PAL_OK &&
             s_runner.exit_code == H2_GIZCLAW_E2E_EXIT_PASS &&
-            s_runner.result.complete && s_runner.result.cleanup_rc == H2_PAL_OK) {
+            h2_gizclaw_e2e_result_all_passed(&s_runner.result)) {
           s_runner.confirm_rc = h2_esp_h2loader_app_confirm(runtime);
           s_runner.admitted = s_runner.confirm_rc == H2_PAL_OK;
         }

@@ -142,6 +142,16 @@ typedef struct h2_gizclaw_e2e_result {
   bool complete;
 } h2_gizclaw_e2e_result_t;
 
+/** Full business qualification only; diagnostic suite subsets cannot confirm
+ * an image. Transport framing and independent API auditing remain caller gates. */
+static inline bool h2_gizclaw_e2e_result_all_passed(
+    const h2_gizclaw_e2e_result_t *result) {
+  return result != NULL && result->complete && result->selected == 8u &&
+         result->terminal == 8u && result->passed == 8u && !result->failed &&
+         !result->errors && !result->blocked && !result->cancelled &&
+         result->cleanup_rc == 0 && result->retained_resources == 0u;
+}
+
 /**
  * Runs every selected independent case, performs bounded cleanup, and emits
  * one final summary. A normal return owns no live App resource. If a PAL

@@ -222,9 +222,7 @@ static void run(void *user) {
       h2_atomic_store_explicit(&capture_failed, true, H2_ATOMIC_RELEASE);
     if (!h2_atomic_load_explicit(&capture_failed, H2_ATOMIC_ACQUIRE) &&
         h2_gizclaw_e2e_ledger_freeze(&ledger) == H2_PAL_OK && rc == 0 &&
-        result.complete && result.selected == 8u && result.passed == 8u &&
-        !result.failed && !result.errors && !result.blocked &&
-        !result.cancelled && !result.cleanup_rc) {
+        h2_gizclaw_e2e_result_all_passed(&result)) {
       confirm_rc = h2_bk_h2loader_confirm_current_app(runtime);
       admitted = confirm_rc == H2_PAL_OK;
     }
