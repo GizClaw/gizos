@@ -434,7 +434,7 @@ static void observe_firmware_route(h2_gizclaw_e2e_fixture_t *fixture,
       h2_pal_net_resolve_close(fixture->runtime->net, resolver);
     }
   }
-  char diagnostic[384];
+  char diagnostic[512];
   const bool ipv4 = rc == H2_PAL_OK && address.family == H2_PAL_NET_FAMILY_IPV4;
   snprintf(diagnostic, sizeof(diagnostic), "firmware_route host=%s rc=%d family=%d ipv4=%u.%u.%u.%u uri_sha256=%s expected=%" PRId64,
            host, rc, (int)address.family, ipv4 ? address.ip[0] : 0u,
