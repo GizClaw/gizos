@@ -305,6 +305,8 @@ cc_test(
         "tests/mesh_source_paths.lua",
         "tests/mesh_staging.lua",
         "tests/mesh_cache_sizing.lua",
+        "tests/line_workload.lua",
+        "tests/line_workload.txt",
         "tests/quad_batch.lua",
         "tests/quad_batch_clip.lua",
         "tests/quad_material.lua",
