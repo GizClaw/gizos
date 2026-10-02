@@ -3907,20 +3907,6 @@ static h2_pal_result_t display_submit_rect(h2_lua_job_t *job, int x, int y,
   return result;
 }
 
-static int display_tile_changed(h2_lua_job_t *job, display_presented_t *frame,
-                                 int tx, int ty) {
-  int width = job->display_info.width, height = job->display_info.height;
-  int x = tx * 16, y = ty * 16;
-  int right = x + 16 < width ? x + 16 : width;
-  int bottom = y + 16 < height ? y + 16 : height;
-  for (; y < bottom; ++y) {
-    size_t at = (size_t)y * width + x;
-    if (memcmp(job->framebuffer + at, frame->pixels + at,
-               (size_t)(right - x) * sizeof(uint16_t)) != 0) return 1;
-  }
-  return 0;
-}
-
 static h2_pal_result_t display_submit_retained(h2_lua_job_t *job, int bounds,
                                                int gap, size_t *pixels,
                                                size_t *rects) {
@@ -3929,60 +3915,14 @@ static h2_pal_result_t display_submit_retained(h2_lua_job_t *job, int bounds,
   if (!job->dirty_valid) return H2_PAL_OK;
   h2_lua_display_plan_rect_t dirty = {job->dirty_min_x, job->dirty_min_y,
       job->dirty_max_x + 1, job->dirty_max_y + 1};
-  if (!bounds && h2_lua_display_plan_build(&frame->plan, job->framebuffer,
-                                         frame->pixels, width, dirty, gap)) {
-    for (int i = 0; i < frame->plan.count; ++i) {
-      h2_lua_display_plan_rect_t r = frame->plan.rects[i];
-      h2_pal_result_t result = display_submit_rect(job, r.left, r.top,
-          r.right - r.left, r.bottom - r.top, pixels, rects);
-      if (result != H2_PAL_OK) return result;
-    }
-    return H2_PAL_OK;
-  }
-  int columns = (width + 15) / 16, rows = (height + 15) / 16;
   uint8_t *changed = (uint8_t *)(frame->pixels + frame->pixel_count);
-  memset(changed, 0, (size_t)columns * rows);
-  int left = columns, top = rows, right = 0, bottom = 0;
-  /* Finish every comparison before touching the backend or baseline. */
-  if (job->dirty_valid) {
-    for (int ty = job->dirty_min_y / 16; ty <= job->dirty_max_y / 16; ++ty) {
-      for (int tx = job->dirty_min_x / 16; tx <= job->dirty_max_x / 16; ++tx) {
-        if (!display_tile_changed(job, frame, tx, ty)) continue;
-        changed[(size_t)ty * columns + tx] = 1;
-        if (tx < left) left = tx;
-        if (ty < top) top = ty;
-        if (tx + 1 > right) right = tx + 1;
-        if (ty + 1 > bottom) bottom = ty + 1;
-      }
-    }
-  }
-  if (right == 0) return H2_PAL_OK;
-  if (bounds) {
-    int r = right * 16 < width ? right * 16 : width;
-    int b = bottom * 16 < height ? bottom * 16 : height;
-    return display_submit_rect(job, left * 16, top * 16,
-                               r - left * 16, b - top * 16, pixels, rects);
-  }
-  for (int ty = top; ty < bottom; ++ty) {
-    for (int tx = left; tx < right; ++tx) {
-      if (!changed[(size_t)ty * columns + tx]) continue;
-      int end_x = tx + 1;
-      for (int x = end_x; x < right && x - end_x <= gap; ++x)
-        if (changed[(size_t)ty * columns + x]) end_x = x + 1;
-      int end_y = ty + 1;
-      for (int y = end_y; y < bottom && y - end_y <= gap; ++y) {
-        int any = 0;
-        for (int x = tx; x < end_x; ++x) any |= changed[(size_t)y * columns + x];
-        if (any) end_y = y + 1;
-      }
-      for (int y = ty; y < end_y; ++y)
-        memset(changed + (size_t)y * columns + tx, 0, (size_t)(end_x - tx));
-      int r = end_x * 16 < width ? end_x * 16 : width;
-      int b = end_y * 16 < height ? end_y * 16 : height;
-      h2_pal_result_t result = display_submit_rect(job, tx * 16, ty * 16,
-          r - tx * 16, b - ty * 16, pixels, rects);
-      if (result != H2_PAL_OK) return result;
-    }
+  h2_lua_display_plan_select(&frame->plan, job->framebuffer, frame->pixels,
+                             width, height, dirty, gap, changed, bounds);
+  for (int i = 0; i < frame->plan.count; ++i) {
+    h2_lua_display_plan_rect_t r = frame->plan.rects[i];
+    h2_pal_result_t result = display_submit_rect(job, r.left, r.top,
+        r.right - r.left, r.bottom - r.top, pixels, rects);
+    if (result != H2_PAL_OK) return result;
   }
   return H2_PAL_OK;
 }

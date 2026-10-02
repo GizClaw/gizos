@@ -26,4 +26,14 @@ int h2_lua_display_plan_build(h2_lua_display_plan_t *plan,
     const uint16_t *current, const uint16_t *previous, int width,
     h2_lua_display_plan_rect_t dirty, int gap);
 
+/* Compare complete span, tile, bounds and full-frame candidates before any
+ * submission. tiles is caller-owned scratch of ceil(width/16)*ceil(height/16)
+ * bytes; no additional storage or allocation is needed. bounds forces the
+ * legacy tile-aligned bounding rectangle. The result always covers damage,
+ * including when a bounded candidate cannot be built. Returns 1 only when
+ * spans win; the return value is diagnostic, not success/failure. */
+int h2_lua_display_plan_select(h2_lua_display_plan_t *plan,
+    const uint16_t *current, const uint16_t *previous, int width, int height,
+    h2_lua_display_plan_rect_t dirty, int gap, uint8_t *tiles, int bounds);
+
 #endif

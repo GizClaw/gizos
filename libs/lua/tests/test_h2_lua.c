@@ -1990,7 +1990,8 @@ static void test_display_regions(void) {
       "d.clear('black');p,n=d.present({merge_gap=1});assert(p==33 and n==1);"
       "d.fill_rect(0,0,1,1,'red');d.fill_rect(0,32,1,1,'red');"
       "p,n=d.present();assert(p==2 and n==2);"
-      "d.clear('black');p,n=d.present({merge_gap=1});assert(p==33 and n==1);"
+      /* A vertical join adds a third row block; allowed gaps do not force it. */
+      "d.clear('black');p,n=d.present({merge_gap=1});assert(p==2 and n==2);"
       "d.clear('black');assert(d.present()==0)";
   (void)run_display_script_size(host, "@retained-merge.lua", merge, sizeof(merge)-1, 48, 48);
   static const uint8_t present_spans[] =
