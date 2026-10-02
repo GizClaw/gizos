@@ -17,9 +17,11 @@ static_assert(sizeof(h2_pal_result_t) * CHAR_BIT == 32 &&
               INT_MIN == INT32_MIN && INT_MAX == INT32_MAX,
               "PAL results require a signed 32-bit C int ABI");
 #else
-_Static_assert(sizeof(h2_pal_result_t) * CHAR_BIT == 32 &&
-               INT_MIN == INT32_MIN && INT_MAX == INT32_MAX,
-               "PAL results require a signed 32-bit C int ABI");
+/* Some existing C consumers use MSVC's default C mode rather than C11. A
+ * negative array bound enforces the same width/range contract in that mode. */
+typedef char h2_pal_result_requires_signed_32_bit_int[
+    sizeof(h2_pal_result_t) * CHAR_BIT == 32 &&
+    INT_MIN == INT32_MIN && INT_MAX == INT32_MAX ? 1 : -1];
 #endif
 
 enum h2_pal_result {
