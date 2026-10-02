@@ -87,6 +87,8 @@ Audio decorator 默认输出 fixture。后台麦克风泵持续读取的产品�
 
 ### 失败和 cleanup
 
+Modem fake 的 lifecycle 默认 unsupported；scenario 显式启用 `lifecycle_supported` 后，open/close 只记录 timeout 与 opened 状态，失败保留原状态，关闭未打开对象也能成功。它不控制真实电源、不生成异步事件，capabilities 仍由 scenario 单独提供；无蜂窝 E2E 场景可以保持 capabilities 为零并验证关闭流程。调用和 evidence 读取必须由 consumer 串行组织。
+
 Fault 在有效调用到达对应操作时计数，零初始化默认成功；持续失败和有界失败均可配置。Preference commit filter 仅统计匹配 namespace/key 的调用。Wi-Fi connect 和 Modem call 不自动生成完成事件，Power transition 不重启 Host 或增加 boot count，Crypto fixture 不提供真实密码算法。
 
 Cleanup 先停止 App workers、关闭 Runtime test control 和 mic/speaker/track、销毁 Runtime，再销毁 decorator 和底层 fake。Audio track close、mic/speaker stop 和 FS close 失败时保留 ownership 供重试；不能因为某次失败就丢弃句柄。未成功 init 的动态 fake 可 deinit，重复 deinit 和 NULL deinit 成功；init 不允许覆盖活动对象。普通 fake 无动态资源，不能提前结束其调用方存储生命周期。
