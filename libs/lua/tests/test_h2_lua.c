@@ -1343,6 +1343,42 @@ static int test_raster_vm_used(lua_State *state) {
   return 1;
 }
 
+/* Identity draw has only its mesh userdata before cache allocation. Detect
+ * the additional, still-private userdata through public debug stack access;
+ * never inspect its not-yet-initialized cache fields. */
+static int test_mesh_cache_allocating(lua_State *state) {
+  lua_Debug frame;
+  for (int level = 1; lua_getstack(state, level, &frame); ++level) {
+    assert(lua_getinfo(state, "f", &frame));
+    int same = lua_rawequal(state, 1, -1);
+    lua_pop(state, 1);
+    if (!same) continue;
+    int userdata = 0;
+    for (int index = 1; lua_getlocal(state, &frame, index) != NULL; ++index) {
+      userdata += lua_isuserdata(state, -1);
+      lua_pop(state, 1);
+    }
+    lua_pushboolean(state, userdata >= 2);
+    return 1;
+  }
+  lua_pushboolean(state, 0);
+  return 1;
+}
+
+static int test_mesh_cache_stats(lua_State *state) {
+  assert(lua_getiuservalue(state, 1, 1) == LUA_TUSERDATA);
+  const display_span_cache_t *cache = lua_touserdata(state, -1);
+  lua_pushinteger(state, (lua_Integer)cache->capacity);
+  lua_pushinteger(state, (lua_Integer)cache->count);
+  lua_pushinteger(state, cache->valid);
+  lua_pushinteger(state, cache->overflow);
+  lua_pushinteger(state, cache->hits);
+  lua_pushinteger(state, cache->shrunk);
+  lua_pushinteger(state, cache->full);
+  lua_pushinteger(state, (lua_Integer)lua_rawlen(state, -8));
+  return 8;
+}
+
 static int test_raster_open(void *lua_state, void *user) {
   lua_State *state = lua_state;
   (void)user;
@@ -1353,6 +1389,10 @@ static int test_raster_open(void *lua_state, void *user) {
   lua_setfield(state, -2, "vm_used");
   lua_pushcfunction(state, test_polygon_reference);
   lua_setfield(state, -2, "polygon_reference");
+  lua_pushcfunction(state, test_mesh_cache_allocating);
+  lua_setfield(state, -2, "mesh_cache_allocating");
+  lua_pushcfunction(state, test_mesh_cache_stats);
+  lua_setfield(state, -2, "mesh_cache_stats");
   lua_pushcfunction(state, test_material_reference);
   lua_setfield(state, -2, "material_reference");
   lua_pushcfunction(state, test_material_workload);
@@ -2925,14 +2965,17 @@ int main(int argc, char **argv) {
                     strcmp(argv[1], "--projective-benchmark") == 0 ||
                     strcmp(argv[1], "--material-workload") == 0 ||
                     strcmp(argv[1], "--capture-benchmark") == 0 ||
-                    strcmp(argv[1], "--polygon-benchmark") == 0)) {
+                    strcmp(argv[1], "--polygon-benchmark") == 0 ||
+                    strcmp(argv[1], "--mesh-cache-benchmark") == 0)) {
     int material = strcmp(argv[1], "--material-benchmark") == 0;
     int smooth = strcmp(argv[1], "--smooth-benchmark") == 0;
+    int mesh_cache = strcmp(argv[1], "--mesh-cache-benchmark") == 0;
     int polygon = strcmp(argv[1], "--polygon-benchmark") == 0;
     int capture = strcmp(argv[1], "--capture-benchmark") == 0;
     int workload = strcmp(argv[1], "--material-workload") == 0;
     int projective = strcmp(argv[1], "--projective-benchmark") == 0;
-    test_display_raster2d(material || smooth || projective || workload || capture || polygon ? 2 : 1,
+    test_display_raster2d(material || smooth || projective || workload || capture || polygon || mesh_cache ? 2 : 1,
+        mesh_cache ? "libs/lua/tests/mesh_cache_sizing.lua" :
         polygon ? "libs/lua/tests/polygon_workload.lua" :
         capture ? "libs/lua/tests/masked_capture.lua" :
         workload ? "libs/lua/tests/material_workload.lua" :
@@ -2960,6 +3003,7 @@ int main(int argc, char **argv) {
   test_display_raster2d(2, "libs/lua/tests/material_workload.lua");
   test_display_raster2d(2, "libs/lua/tests/masked_capture.lua");
   test_display_raster2d(2, "libs/lua/tests/polygon_workload.lua");
+  test_display_raster2d(2, "libs/lua/tests/mesh_cache_sizing.lua");
   test_display_raster2d(2, "libs/lua/tests/quad_material_projective.lua");
   test_display_raster2d(2, "libs/lua/tests/smooth_cache.lua");
   test_display_raster2d(0, "libs/lua/tests/geometry_batches.lua");

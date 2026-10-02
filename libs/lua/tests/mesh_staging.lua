@@ -196,7 +196,9 @@ local big={{1,1},{200,1},{200,200},{1,200}}
 local function reentrant(prepare,points)
  reopen()
  small=d.compile_mesh(pts,faces,4,1)
- d.draw_mesh(small,cached);d.draw_mesh(small,cached)
+ -- A grid draw retains the 512-slot initial policy; integer vertices stay
+ -- identical, so these cases specifically trigger shrink/regrow allocation.
+ d.draw_mesh(small,{cache=true,grid=1});d.draw_mesh(small,cached)
  prepare()
  local native=d.draw_mesh
  during_allocation(function()
