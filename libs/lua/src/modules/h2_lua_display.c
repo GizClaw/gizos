@@ -3635,6 +3635,87 @@ static void display_check_capture(lua_State *state, h2_lua_job_t *job,
     luaL_error(state, "invalid capture region or closed display");
 }
 
+/* Scan current pixels without allocating or retaining a framebuffer pointer. */
+static void display_masked_counts(const uint16_t *pixels, int stride,
+    int width, int height, uint16_t key, size_t *packed, size_t *runs) {
+  *packed = *runs = 0;
+  for (int row = 0; row < height; ++row) {
+    const uint16_t *line = pixels + (size_t)row * stride;
+    int left = 0, right = width;
+    while (left < right && line[left] == key) ++left;
+    while (right > left && line[right - 1] == key) --right;
+    *packed += (size_t)(right - left);
+    for (int col = left; col < right; ++col)
+      if (line[col] != key && (col == left || line[col - 1] == key)) ++*runs;
+  }
+}
+
+/* No allocation/callback: validate each write against the counted capacity.
+ * A finalizer may have changed content during allocation, even with identical
+ * framebuffer address/dimensions. Return false for any changed total capacity;
+ * the caller discards the private partial result and takes a stable snapshot.
+ * Keep key pixels inside row bounds for opaque/different-key replay. */
+static int display_pack_masked(display_region_t *region,
+    const uint16_t *pixels, int stride) {
+  size_t offset = 0, run_index = 0;
+  uint16_t *packed = display_region_pixels(region);
+  display_region_run_t *runs = display_region_runs(region);
+  for (int row = 0; row < region->height; ++row) {
+    const uint16_t *line = pixels + (size_t)row * stride;
+    int left = 0, right = region->width;
+    while (left < right && line[left] == region->key) ++left;
+    while (right > left && line[right - 1] == region->key) --right;
+    size_t length = (size_t)(right - left);
+    if (length > region->pixel_count - offset) return 0;
+    display_region_row_t *r = &region->rows[row];
+    *r = (display_region_row_t){offset, run_index, left, right, 0};
+    memcpy(packed + offset, line + left, length * sizeof(uint16_t));
+    offset += length;
+    for (int col = left; col < right;) {
+      if (line[col] == region->key) { ++col; continue; }
+      int first = col++;
+      while (col < right && line[col] != region->key) ++col;
+      if (run_index == region->run_count) return 0;
+      runs[run_index++] = (display_region_run_t){(uint16_t)first, (uint16_t)col};
+      ++r->run_count;
+    }
+  }
+  return offset == region->pixel_count && run_index == region->run_count;
+}
+
+static int display_capture_masked(lua_State *state, h2_lua_job_t *job,
+    int x, int y, int width, int height, uint16_t key) {
+  size_t packed, runs;
+  display_masked_counts(job->framebuffer + (size_t)y * job->display_info.width + x,
+      job->display_info.width, width, height, key, &packed, &runs);
+  display_region_t *region = display_new_region(state, width, height,
+                                                packed, runs, 1, key);
+  /* Allocation may close, resize or reacquire Display. Always fetch the current
+   * framebuffer and stride after validation, including when its address was
+   * recycled; no pre-allocation pointer is used by the packing pass. */
+  display_check_capture(state, job, x, y, width, height);
+  if (display_pack_masked(region,
+      job->framebuffer + (size_t)y * job->display_info.width + x,
+      job->display_info.width)) return 1;
+  lua_pop(state, 1);
+
+  /* Bounded fallback: the previous snapshot path. Allocation can run more
+   * finalizers; revalidate before copying, then pack only immutable VM data.
+   * No retry loop, persistent cache, external allocation or GC suppression. */
+  uint16_t *captured = lua_newuserdatauv(state,
+      (size_t)width * height * sizeof(uint16_t), 0);
+  display_check_capture(state, job, x, y, width, height);
+  for (int row = 0; row < height; ++row)
+    memcpy(captured + (size_t)row * width,
+        job->framebuffer + (size_t)(row + y) * job->display_info.width + x,
+        (size_t)width * sizeof(uint16_t));
+  display_masked_counts(captured, width, width, height, key, &packed, &runs);
+  region = display_new_region(state, width, height, packed, runs, 1, key);
+  if (!display_pack_masked(region, captured, width))
+    return luaL_error(state, "inconsistent capture snapshot");
+  return 1;
+}
+
 static int display_capture_region(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
   int x = display_integer(state, 1, -1, 0, 100000);
@@ -3649,63 +3730,25 @@ static int display_capture_region(lua_State *state) {
                         reuse->height != height))
     return luaL_error(state, "region reuse requires matching opaque storage");
   display_check_capture(state, job, x, y, width, height);
+  if (masked) return display_capture_masked(state, job, x, y, width, height, key);
   size_t count = (size_t)width * height;
   display_region_t *region = reuse;
-  uint16_t *captured;
-  if (masked) {
-    captured = lua_newuserdatauv(state, count * sizeof(uint16_t), 0);
-  } else {
-    if (region == NULL)
-      region = display_new_region(state, width, height, count, 0, 0, 0);
-    else
-      lua_pushvalue(state, 6);
-    captured = display_region_pixels(region);
-  }
+  if (region == NULL)
+    region = display_new_region(state, width, height, count, 0, 0, 0);
+  else
+    lua_pushvalue(state, 6);
   /* Allocation may run arbitrary finalizers, including deinit/reacquire. */
   display_check_capture(state, job, x, y, width, height);
-  for (int row = 0; row < height; ++row)
+  uint16_t *captured = display_region_pixels(region);
+  for (int row = 0; row < height; ++row) {
     memcpy(captured + (size_t)row * width,
            job->framebuffer + (size_t)(row + y) * job->display_info.width + x,
            (size_t)width * sizeof(uint16_t));
-  if (masked) {
-    size_t packed = 0, runs = 0;
-    for (int row = 0; row < height; ++row) {
-      const uint16_t *line = captured + (size_t)row * width;
-      int left = 0, right = width;
-      while (left < right && line[left] == key) ++left;
-      while (right > left && line[right - 1] == key) --right;
-      packed += (size_t)(right - left);
-      for (int col = left; col < right; ++col)
-        if (line[col] != key && (col == left || line[col - 1] == key)) ++runs;
-    }
-    region = display_new_region(state, width, height, packed, runs, 1, key);
-    size_t offset = 0, run_index = 0;
-    for (int row = 0; row < height; ++row) {
-      const uint16_t *line = captured + (size_t)row * width;
-      int left = 0, right = width;
-      while (left < right && line[left] == key) ++left;
-      while (right > left && line[right - 1] == key) --right;
-      display_region_row_t *r = &region->rows[row];
-      *r = (display_region_row_t){offset, run_index, left, right, 0};
-      memcpy(display_region_pixels(region) + offset, line + left,
-             (size_t)(right - left) * sizeof(uint16_t));
-      offset += (size_t)(right - left);
-      for (int col = left; col < right;) {
-        if (line[col] == key) { ++col; continue; }
-        int first = col++;
-        while (col < right && line[col] != key) ++col;
-        display_region_runs(region)[run_index++] =
-            (display_region_run_t){(uint16_t)first, (uint16_t)col};
-        ++r->run_count;
-      }
-    }
-  } else {
-    for (int row = 0; row < height; ++row)
-      region->rows[row] = (display_region_row_t){(size_t)row * width, 0,
-                                                0, width, 0};
-    if (job->display_background == region)
-      job->display_background_valid = 0;
+    region->rows[row] = (display_region_row_t){(size_t)row * width, 0,
+                                              0, width, 0};
   }
+  if (job->display_background == region)
+    job->display_background_valid = 0;
   return 1;
 }
 

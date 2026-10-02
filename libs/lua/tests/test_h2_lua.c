@@ -1299,10 +1299,31 @@ static int test_material_workload(lua_State *state) {
   return 1;
 }
 
+/* Reserve charged userdata without string-builder temporary storage. */
+static int test_raster_reserve(lua_State *state) {
+  lua_Integer bytes = luaL_checkinteger(state, 1);
+  assert(bytes > 0 && bytes <= 2 * 1024 * 1024);
+  (void)lua_newuserdatauv(state, (size_t)bytes, 0);
+  return 1;
+}
+
+static int test_raster_vm_used(lua_State *state) {
+  assert(lua_getupvalue(state, 1, 1) != NULL);
+  h2_lua_job_t *job = lua_touserdata(state, -1);
+  assert(job != NULL);
+  lua_pop(state, 1);
+  lua_pushinteger(state, (lua_Integer)h2_lua_vm_memory_used(job->vm));
+  return 1;
+}
+
 static int test_raster_open(void *lua_state, void *user) {
   lua_State *state = lua_state;
   (void)user;
   lua_newtable(state);
+  lua_pushcfunction(state, test_raster_reserve);
+  lua_setfield(state, -2, "reserve");
+  lua_pushcfunction(state, test_raster_vm_used);
+  lua_setfield(state, -2, "vm_used");
   lua_pushcfunction(state, test_material_reference);
   lua_setfield(state, -2, "material_reference");
   lua_pushcfunction(state, test_material_workload);
@@ -2873,12 +2894,15 @@ int main(int argc, char **argv) {
                     strcmp(argv[1], "--material-benchmark") == 0 ||
                     strcmp(argv[1], "--smooth-benchmark") == 0 ||
                     strcmp(argv[1], "--projective-benchmark") == 0 ||
-                    strcmp(argv[1], "--material-workload") == 0)) {
+                    strcmp(argv[1], "--material-workload") == 0 ||
+                    strcmp(argv[1], "--capture-benchmark") == 0)) {
     int material = strcmp(argv[1], "--material-benchmark") == 0;
     int smooth = strcmp(argv[1], "--smooth-benchmark") == 0;
+    int capture = strcmp(argv[1], "--capture-benchmark") == 0;
     int workload = strcmp(argv[1], "--material-workload") == 0;
     int projective = strcmp(argv[1], "--projective-benchmark") == 0;
-    test_display_raster2d(material || smooth || projective || workload ? 2 : 1,
+    test_display_raster2d(material || smooth || projective || workload || capture ? 2 : 1,
+        capture ? "libs/lua/tests/masked_capture.lua" :
         workload ? "libs/lua/tests/material_workload.lua" :
         projective ? "libs/lua/tests/quad_material_projective.lua" :
         material ? "libs/lua/tests/quad_material.lua" :
@@ -2902,6 +2926,7 @@ int main(int argc, char **argv) {
   test_display_raster2d(1, "libs/lua/tests/quad_batch_clip.lua");
   test_display_raster2d(2, "libs/lua/tests/quad_material.lua");
   test_display_raster2d(2, "libs/lua/tests/material_workload.lua");
+  test_display_raster2d(2, "libs/lua/tests/masked_capture.lua");
   test_display_raster2d(2, "libs/lua/tests/quad_material_projective.lua");
   test_display_raster2d(2, "libs/lua/tests/smooth_cache.lua");
   test_display_raster2d(0, "libs/lua/tests/geometry_batches.lua");
