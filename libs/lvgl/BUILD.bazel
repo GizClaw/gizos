@@ -7,6 +7,26 @@ load("//tools/bazel:tasks.bzl", "h2_tasks")
 
 package(default_visibility = ["//visibility:public"])
 
+cc_test(
+    name = "bk7258_config_contract_test",
+    srcs = ["tests/test_embedded_config.c"],
+    deps = [
+        ":headers",
+        "@h2_vendor_lvgl//:bk7258_config",
+    ],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
+cc_test(
+    name = "esp_config_contract_test",
+    srcs = ["tests/test_embedded_config.c"],
+    deps = [
+        ":headers",
+        "@h2_vendor_lvgl//:esp_idf6_x_config",
+    ],
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+)
+
 _LVGL_COPTS = H2_WARNING_COPTS_NO_ERROR + h2_gnu_only_copts([
     "-Wno-unused-function",
     "-Wno-unused-parameter",
