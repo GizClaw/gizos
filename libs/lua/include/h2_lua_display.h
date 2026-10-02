@@ -122,6 +122,29 @@
  * Display acquisition is rechecked before writes. Warm cache use allocates
  * nothing; cold cache/smooth scratch may allocate bounded VM storage.
  *
+ * Smooth stroke coverage cache:
+ * - With cache=true, smooth=true, a single color and tolerance=0, widths owns
+ *   one immutable coverage entry separate from the hard-stroke span cache.
+ *   It stores only quantized alpha, never color or framebuffer pixels; cold
+ *   and hot draws preserve the uncached AA raster, blend order and damage.
+ *   Color/background changes reuse coverage and blend into current pixels.
+ * - The key includes point count, scaled coordinates/widths, scale, exact
+ *   offset, row clip and viewport dimensions. Point/buffer identity alone is
+ *   not a key. Changed values replace the entry; releasing widths permits GC.
+ *   fast has no effect in smooth mode and does not invalidate coverage.
+ * - Payload is sizeof(private header)+(3*n-1)*sizeof(double)+coverage_pixels,
+ *   capped at 16 KiB per owner, excluding Lua overhead and existing job scratch.
+ *   Both entry and scratch count toward VM quota. Multicolor, tolerance>0,
+ *   oversized or empty bounds use the uncached path, report no hit, and keep
+ *   any prior entry. Per-owner entries survive deinit while their owner lives;
+ *   drawing requires reacquisition and revalidates the viewport and full key.
+ * - Warm hits allocate nothing and return (true,0). Cold/fallback draws return
+ *   (false,0). Invalid input or allocation failure does not draw or replace a
+ *   complete entry. Allocation-driven Lua finalizers may reenter or close the
+ *   Display; coverage is staged privately, acquisition rechecked, and only a
+ *   complete entry is published before replay. Getter/finalizer side effects
+ *   retain their normal Lua semantics. No new opacity or cache API is needed.
+ *
  * Mesh draw extension (standard Host, owning VM worker only):
  * - display.draw_mesh(mesh,{transform={x=...,y=...,scale=...,angle=...},
  *   grid=...}) raw-reads named fields, exclusive with an explicit matrix. Require

@@ -304,6 +304,7 @@ cc_test(
         "tests/quad_batch_clip.lua",
         "tests/quad_material.lua",
         "tests/raster2d.lua",
+        "tests/smooth_cache.lua",
         "tests/stroke_buffer.lua",
     ],
     target_compatible_with = select({

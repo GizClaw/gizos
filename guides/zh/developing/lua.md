@@ -160,6 +160,8 @@ C core 完整校验后绘制，adapter 再逐矩形标记已有 dirty/background
 
 smooth 显式启用圆端点连续覆盖，每像素只混合最大 alpha 一次，相同 alpha 保留先前段颜色，零宽度跳过。像素中心为 `(x+.5,y+.5)`；覆盖为 `clamp(radius+.5-distance,0,1)`，取整到 `0..255` 后使用现有 RGB565 blend。端点范围不超过 4096 时保留 screen-local float 快速覆盖，极端坐标使用双精度回退；它不承诺与 hard 模式相同像素。颜色/覆盖 scratch 按裁剪区域分配、在同一 job 内复用，并在 Display/job/Host 关闭时释放引用。tolerance 是默认关闭的 `0..0.25` 屏幕像素弦误差，仅用于 smooth；保留样式边界、拒绝回折并检查所有省略点，不改变世界物理节点或时间步。
 
+smooth 的 `cache=true` 对单色且 `tolerance=0` 的笔画启用覆盖率缓存。稳定 widths 表持有一项最多 16 KiB payload 的 VM userdata，键包含点数、缩放后坐标/宽度、scale、精确 offset、行裁剪和 viewport；颜色与背景不在键中，命中时使用当前颜色在当前 framebuffer 上混合，保持逐笔画 glow/fill 顺序。只保存量化 alpha，不保存 RGB565 背景。多色、简化、空范围或超限输入保留原路径与已有缓存；热命中零分配并返回 `(true,0)`，冷绘制/回退返回 `(false,0)`。释放 widths 后可 GC 回收；冷建的 staging 与 job scratch 均计入 VM 配额，分配失败不发布不完整缓存或本次像素。详细生命周期、失效与内存合同见 [Lua Display API](../../references/lua.md)。
+
 通用多边形使用 float edge-slope/integer-boundary 检查，不能确定相同 floor/ceil 时回退原双精度交点表达式。参考像素测试覆盖边界与确定性随机输入，不把有限样本当作数学证明。笔画通过 Utils 公共 `h2_f32_math.h` 消费单份数值辅助；编译器和浮点环境约束见 [Utils](./utils.md)，不要对绘制或物理库启用 fast-math。
 
 ### Display 快照、背景恢复与 retained 提交
