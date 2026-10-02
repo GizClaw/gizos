@@ -2,11 +2,12 @@
 
 /* Deliberately consume generic headers alongside an embedded config. The
  * selected configuration must survive their conflicting lv_conf.h name. */
-_Static_assert(LV_COLOR_DEPTH == 16, "embedded native pixel depth");
-_Static_assert(LV_DEF_REFR_PERIOD == 33, "embedded refresh period");
-_Static_assert(LV_USE_OS == LV_OS_CUSTOM, "embedded PAL task backend");
-_Static_assert(LV_USE_OBJ_NAME == 0, "embedded object layout matches SDK config");
-_Static_assert(LV_DRAW_SW_DRAW_UNIT_CNT == 1, "embedded software draw units");
+/* Negative array bounds also reject mismatches in MSVC's default C mode. */
+typedef char h2_lvgl_config_pixel_depth[(LV_COLOR_DEPTH == 16) ? 1 : -1];
+typedef char h2_lvgl_config_refresh_period[(LV_DEF_REFR_PERIOD == 33) ? 1 : -1];
+typedef char h2_lvgl_config_task_backend[(LV_USE_OS == LV_OS_CUSTOM) ? 1 : -1];
+typedef char h2_lvgl_config_object_layout[(LV_USE_OBJ_NAME == 0) ? 1 : -1];
+typedef char h2_lvgl_config_draw_units[(LV_DRAW_SW_DRAW_UNIT_CNT == 1) ? 1 : -1];
 
 int main(void) {
     return 0;
