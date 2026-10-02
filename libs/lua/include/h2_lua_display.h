@@ -4,6 +4,43 @@
 /** @file h2_lua_display.h
  * @brief VM-owned procedural geometry shared by native producers and Display.
  *
+ * Submission prototype (owning VM worker only):
+ * - submit(options=nil) returns sequence, planned_pixels, planned_rectangles.
+ *   Supports retained (default true), bounds and merge_gap as present does.
+ *   The sequence is scoped to this acquisition/job generation. At most one
+ *   submission may be in flight, including active transport. A full mailbox
+ *   returns nil, display.BUSY without enqueueing or changing drawing state.
+ *   Runtime.sleep() may be used before retry; submit does not busy-spin.
+ * - flush() polls the latest accepted submission, returning nil, display.BUSY
+ *   while pending, nil, PAL_error on fault, or the same record as status().
+ *   status() never waits for transport. completed counts finished attempts;
+ *   successful counts successful attempts; changed_frames counts only actual
+ *   changed successful frames. submitted is not a displayed-frame counter.
+ *   started_us/completed_us are monotonic PAL timestamps for the latest
+ *   completed attempt, usable only when clock_valid is true. pixels/rects
+ *   count successful draw calls in that attempt. error latches the first
+ *   fault; busy and closing describe the acquisition. completion_kind is
+ *   transport for a qualified worker Host, pal_return for inline execution;
+ *   neither proves scanout. No-change submits do not increment changed_frames.
+ * - Without Host display_worker opt-in, submit executes inline with this same
+ *   contract (including on Web). present/end_frame remain synchronous and
+ *   return the current call's completed pixels/rectangles; they first drain
+ *   any preceding submit. Existing callers that never submit are unchanged.
+ * - Drawing can continue after successful submit; the worker uses one rooted
+ *   immutable pixel snapshot and its own bounded plan/tile scratch. The VM
+ *   commits the retained baseline only after the full transport succeeds.
+ *   Snapshot, baseline and mailbox use VM quota. OOM raises a Lua error before
+ *   publishing a new frame. Task/atomic/semaphore storage is platform-owned.
+ * - Faults stop further submissions; there is no automatic retry or backend
+ *   recovery. deinit returns nil, BUSY/error until close and task join succeed;
+ *   success keeps its existing no-values return. A faulted backend is not
+ *   closed speculatively: its Host/VM/device lease remains quarantined. Keep
+ *   dependencies alive and inspect host_destroy_checked rather than treating
+ *   void host_destroy returning as permission to resume an external writer.
+ *   The prototype has no recovery/unquarantine API. An unresponsive PAL can
+ *   prevent shutdown indefinitely; no task deletion or hardware cancellation
+ *   is attempted. The caller must retain the entire failed acquisition.
+ *
  * String region Lua API (owning VM worker only):
  * - display.region_from_string(width,height,data,encoding="rgb565be") creates
  *   opaque region userdata for draw_region and full-screen restore_background.
