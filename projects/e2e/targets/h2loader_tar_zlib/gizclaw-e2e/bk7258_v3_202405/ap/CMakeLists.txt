@@ -52,3 +52,11 @@ string(REGEX REPLACE "(..)" "0x\\1," H2_PCM_BYTES "${H2_PCM_HEX}")
 set(H2_PCM_SOURCE "${CMAKE_CURRENT_BINARY_DIR}/h2_gizclaw_e2e_pcm.c")
 file(WRITE "${H2_PCM_SOURCE}" "#include <stddef.h>\nconst unsigned char h2_gizclaw_e2e_pcm[] = {${H2_PCM_BYTES}};\nconst size_t h2_gizclaw_e2e_pcm_size = sizeof(h2_gizclaw_e2e_pcm);\n")
 target_sources(${COMPONENT_LIB} PRIVATE "${H2_PCM_SOURCE}")
+
+# The public Firmware CDN chain uses ECDSA/SHA-384 (ISRG Root X2).
+# BK's SDK minimal crypto profile enables secp384r1 but omits SHA-384/512.
+# Enable the required digest implementation only for this GizClaw target;
+# PUBLIC keeps every SDK consumer's conditional mbedTLS layout consistent.
+armino_component_get_property(H2_GIZCLAW_MBEDTLS_LIB psa_mbedtls COMPONENT_LIB)
+target_compile_definitions(${H2_GIZCLAW_MBEDTLS_LIB} PUBLIC
+    MBEDTLS_SHA384_C MBEDTLS_SHA512_C)

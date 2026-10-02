@@ -31,6 +31,11 @@ typedef struct firmware_download {
   const h2_gizclaw_e2e_fixture_t *fixture;
   uint64_t started_ms;
   uint64_t hash_ms;
+  uint64_t last_callback_ms;
+  uint64_t callback_gap_ms;
+  uint64_t max_callback_gap_ms;
+  uint64_t callback_count;
+  uint64_t gaps_over_one_second;
   uint64_t next_progress;
 } firmware_download_t;
 
@@ -225,19 +230,33 @@ static int receive_firmware(void *user, const h2_pal_http_request_t *request,
     return H2_PAL_ERR_CLOSED;
   uint64_t before_ms = 0u, after_ms = 0u;
   (void)h2_pal_time_get_monotonic_ms(download->fixture->time, &before_ms);
+  /* Callback gaps include network read/parse and task scheduling. They are
+   * diagnostic only; they never relax the deadline, EOS or size/SHA oracle. */
+  if (before_ms >= download->last_callback_ms) {
+    uint64_t gap = before_ms - download->last_callback_ms;
+    download->callback_gap_ms += gap;
+    if (gap > download->max_callback_gap_ms)
+      download->max_callback_gap_ms = gap;
+    if (gap >= 1000u) download->gaps_over_one_second++;
+  }
+  download->callback_count++;
   sha256_update(&download->sha256, chunk, chunk_len);
   (void)h2_pal_time_get_monotonic_ms(download->fixture->time, &after_ms);
   if (after_ms >= before_ms)
     download->hash_ms += after_ms - before_ms;
+  download->last_callback_ms = after_ms >= before_ms ? after_ms : before_ms;
   download->received_size += chunk_len;
   if (download->received_size >= download->next_progress &&
       download->fixture->runtime != NULL) {
-    char progress[192];
+    char progress[512];
     snprintf(progress, sizeof(progress), "firmware_download bytes=%" PRIu64
-             " expected=%" PRIu64 " elapsed_ms=%" PRIu64 " hash_ms=%" PRIu64,
+             " expected=%" PRIu64 " elapsed_ms=%" PRIu64 " hash_ms=%" PRIu64
+             " callbacks=%" PRIu64 " callback_gap_ms=%" PRIu64
+             " max_callback_gap_ms=%" PRIu64 " gaps_ge_1s=%" PRIu64,
              download->received_size, download->expected_size,
              after_ms >= download->started_ms ? after_ms - download->started_ms : 0u,
-             download->hash_ms);
+             download->hash_ms, download->callback_count, download->callback_gap_ms,
+             download->max_callback_gap_ms, download->gaps_over_one_second);
     (void)h2_pal_log_write(download->fixture->runtime->log, H2_PAL_LOG_INFO,
                            "gizclaw-e2e", progress);
     download->next_progress = download->received_size + 256u * 1024u;
@@ -326,7 +345,8 @@ static int download_firmware(h2_gizclaw_e2e_fixture_t *fixture,
     return H2_PAL_ERR_NO_MEMORY;
   firmware_download_t download = {
       .expected_size = (uint64_t)metadata->size,
-      .fixture = fixture, .started_ms = now_ms, .next_progress = 256u * 1024u,
+      .fixture = fixture, .started_ms = now_ms, .last_callback_ms = now_ms,
+      .next_progress = 256u * 1024u,
   };
   sha256_init(&download.sha256);
   h2_pal_http_request_t request = {
@@ -346,10 +366,14 @@ static int download_firmware(h2_gizclaw_e2e_fixture_t *fixture,
   h2_pal_http_response_reset(&response);
   int result = h2_pal_http_request(fixture->http, &request, &response);
   if (fixture->runtime != NULL) {
-    char diagnostic[192];
+    char diagnostic[512];
     snprintf(diagnostic, sizeof(diagnostic), "firmware_download_end rc=%d bytes=%"
-             PRIu64 " expected=%" PRIu64 " hash_ms=%" PRIu64,
-             result, download.received_size, download.expected_size, download.hash_ms);
+             PRIu64 " expected=%" PRIu64 " hash_ms=%" PRIu64
+             " callbacks=%" PRIu64 " callback_gap_ms=%" PRIu64
+             " max_callback_gap_ms=%" PRIu64 " gaps_ge_1s=%" PRIu64,
+             result, download.received_size, download.expected_size, download.hash_ms,
+             download.callback_count, download.callback_gap_ms,
+             download.max_callback_gap_ms, download.gaps_over_one_second);
     (void)h2_pal_log_write(fixture->runtime->log, H2_PAL_LOG_INFO,
                            "gizclaw-e2e", diagnostic);
   }

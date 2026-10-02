@@ -54,3 +54,5 @@ bazel run --config=<host> //projects/h2loader/targets/cc_binary/cli:h2loader -- 
 `wifi connect` 必须先返回 `H2_LOADER_WIFI result=connected`；缺少该步骤时 App 只能报告 `NO_SAVED_WIFI`，不能记为网络可用。最终 status 必须包含 `active_role=app`、匹配的 active/Partition 2 identity、`boot_intent=auto` 和空 Stage。UART evidence 必须包含 launcher `READY`、首次 `GOT_IP` 后唯一 `STARTED`、全部选中 case 的 terminal record、cleanup 和持续 summary replay；不得出现第二次 runner、watchdog、reset loop、新 coredump 或 credential。业务 case 可以报告 FAIL、ERROR 或 BLOCKED，但 report 不完整或 command transport 失联会阻塞验收。
 
 全量资格要求 managed 启动与独立 normal App boot 各自8/8、227项审计、cleanup/retained=0。第二次执行必须生成新的 nonce；相同 boot 的重播不能替代它。最终 status 必须匹配 package/image，Stage 空、running/next=App、原 P1 不变且实际 crash 基线不变。软件 PCM/speaker delegate 只验收业务路径，不构成麦克风或声学资格。
+
+公共 HTTPS 下载定位可用同一 target 的 `--define=H2_GIZCLAW_E2E_FIRMWARE_ONLY=1`，只执行真实 Firmware metadata、完整下载/size/SHA/EOS 和 cleanup；不得与 Voice/Concurrency selector 同时启用。该单项诊断不满足八项 admission，始终不能确认镜像或授予全量资格。输出 callback次数、累计/最大callback间隔和超过1秒的间隔数；这些间隔包含网络读取/解析及调度，不能当成单纯链路延迟。TLS、原300秒下载预算与完整size/SHA/EOS保持不变。
