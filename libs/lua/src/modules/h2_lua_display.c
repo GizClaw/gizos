@@ -3072,6 +3072,59 @@ static int display_fill_rect(lua_State *state) {
   return 0;
 }
 
+/* Keep the original integer Bresenham phase. Clipping/re-rounding endpoints
+ * and restarting the walk would select different tie pixels. */
+static void display_raster_line(h2_lua_job_t *job, int x0, int y0,
+                                int x1, int y1, uint16_t color) {
+  int min_x = x0 < x1 ? x0 : x1, max_x = x0 > x1 ? x0 : x1;
+  int min_y = y0 < y1 ? y0 : y1, max_y = y0 > y1 ? y0 : y1;
+  if (max_x < 0 || min_x >= job->display_info.width ||
+      max_y < 0 || min_y >= job->display_info.height) return;
+  int64_t dx = llabs((int64_t)x1 - x0), dy = -llabs((int64_t)y1 - y0);
+  int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  mark_dirty_rect(job, min_x, min_y, (int)dx + 1, (int)(-dy) + 1);
+  int64_t error = dx + dy;
+  int x_major = dx >= -dy;
+  uint32_t remaining = (uint32_t)(x_major ? dx : -dy);
+  /* Within this bound k*minor + major/2 fits uint32. Larger valid lines retain
+   * the original walk, avoiding a 64-bit division helper on small targets. */
+  if (remaining != 0 && remaining <= UINT16_MAX) {
+    int origin = x_major ? x0 : y0, target = x_major ? x1 : y1;
+    int limit = x_major ? job->display_info.width : job->display_info.height;
+    int direction = x_major ? sx : sy;
+    uint32_t first = 0, last = remaining;
+    if (direction > 0) {
+      if (origin < 0) first = (uint32_t)(-(int64_t)origin);
+      if (target >= limit) last = (uint32_t)((int64_t)limit - 1 - origin);
+    } else {
+      if (origin >= limit) first = (uint32_t)((int64_t)origin - limit + 1);
+      if (target < 0) last = (uint32_t)origin;
+    }
+    if (first != 0) {
+      uint32_t major = remaining, minor = (uint32_t)(x_major ? -dy : dx);
+      /* After k major steps, minor steps are floor((k*minor+major/2)/major).
+       * Recover error from the remainder, never from a clipped endpoint. */
+      uint32_t numerator = first * minor + major / 2;
+      uint32_t advance = minor == 0 ? 0 : minor == major ? first : numerator / major;
+      int64_t delta = (int64_t)(numerator - advance * major) - major / 2;
+      if (x_major) {
+        x0 += (int)first * sx; y0 += (int)advance * sy; error -= delta;
+      } else {
+        x0 += (int)advance * sx; y0 += (int)first * sy; error += delta;
+      }
+    }
+    remaining = last - first;
+  }
+  for (;;) {
+    write_pixel(job, x0, y0, color);
+    if (remaining == 0) break;
+    --remaining;
+    int64_t twice = 2 * error;
+    if (twice >= dy) { error += dy; x0 += sx; }
+    if (twice <= dx) { error += dx; y0 += sy; }
+  }
+}
+
 static int display_draw_line(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
   int x0 = check_pixel_number(state, 1);
@@ -3079,38 +3132,10 @@ static int display_draw_line(lua_State *state) {
   int x1 = check_pixel_number(state, 3);
   int y1 = check_pixel_number(state, 4);
   uint16_t color = check_color(state, 5);
-  int64_t dx;
-  int64_t dy;
-  int64_t error;
-  int sx;
-  int sy;
   if (!job->display_open || !point_is_bounded(job, x0, y0) ||
-      !point_is_bounded(job, x1, y1)) {
+      !point_is_bounded(job, x1, y1))
     return luaL_error(state, "invalid draw_line");
-  }
-  dx = llabs((int64_t)x1 - x0);
-  sx = x0 < x1 ? 1 : -1;
-  dy = -llabs((int64_t)y1 - y0);
-  sy = y0 < y1 ? 1 : -1;
-  mark_dirty_rect(job, x0 < x1 ? x0 : x1, y0 < y1 ? y0 : y1, (int)dx + 1,
-                  (int)(-dy) + 1);
-  error = dx + dy;
-  for (;;) {
-    int64_t twice;
-    write_pixel(job, x0, y0, color);
-    if (x0 == x1 && y0 == y1) {
-      break;
-    }
-    twice = 2 * error;
-    if (twice >= dy) {
-      error += dy;
-      x0 += sx;
-    }
-    if (twice <= dx) {
-      error += dx;
-      y0 += sy;
-    }
-  }
+  display_raster_line(job, x0, y0, x1, y1, color);
   return 0;
 }
 

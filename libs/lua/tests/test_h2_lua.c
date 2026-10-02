@@ -1305,10 +1305,125 @@ static int test_polygon_reference(lua_State *state) {
   return 0;
 }
 
+/* Original draw_line recurrence, independent of production write/clip helpers. */
+static void reference_line(uint16_t *pixels, int width, int height,
+    int x0, int y0, int x1, int y1) {
+  int64_t dx = llabs((int64_t)x1 - x0), dy = -llabs((int64_t)y1 - y0);
+  int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
+  int64_t error = dx + dy;
+  for (;;) {
+    if (x0 >= 0 && y0 >= 0 && x0 < width && y0 < height)
+      pixels[(size_t)y0 * width + x0] = 0xf800;
+    if (x0 == x1 && y0 == y1) break;
+    int64_t twice = 2 * error;
+    if (twice >= dy) { error += dy; x0 += sx; }
+    if (twice <= dx) { error += dx; y0 += sy; }
+  }
+}
+
+static int test_line_reference(lua_State *state) {
+  assert(lua_getupvalue(state, 1, 1) != NULL);
+  h2_lua_job_t *job = lua_touserdata(state, -1);
+  lua_pop(state, 1);
+  reference_line(job->framebuffer, job->display_info.width, job->display_info.height,
+      (int)luaL_checknumber(state, 2), (int)luaL_checknumber(state, 3),
+      (int)luaL_checknumber(state, 4), (int)luaL_checknumber(state, 5));
+  return 0;
+}
+
+static int test_line_exhaustive(lua_State *state) {
+  assert(lua_getupvalue(state, 1, 1) != NULL);
+  h2_lua_job_t *job = lua_touserdata(state, -1);
+  lua_pop(state, 1);
+  int width = job->display_info.width, height = job->display_info.height;
+  assert(width > 0 && width <= 8 && height > 0 && height <= 8);
+  uint16_t expected[64];
+  size_t bytes = (size_t)width * height * sizeof(uint16_t);
+  assert(lua_checkstack(state, 8));
+  lua_Integer checked = 0;
+  for (int y0 = -height; y0 <= height * 2; ++y0)
+    for (int x0 = -width; x0 <= width * 2; ++x0)
+      for (int y1 = -height; y1 <= height * 2; ++y1)
+        for (int x1 = -width; x1 <= width * 2; ++x1) {
+          memset(expected, 0, bytes); memset(job->framebuffer, 0, bytes);
+          reference_line(expected, width, height, x0, y0, x1, y1);
+          job->dirty_valid = 0;
+          lua_pushvalue(state, 1);
+          lua_pushinteger(state, x0); lua_pushinteger(state, y0);
+          lua_pushinteger(state, x1); lua_pushinteger(state, y1);
+          lua_pushvalue(state, 2); lua_call(state, 5, 0);
+          assert(memcmp(expected, job->framebuffer, bytes) == 0);
+          int left = x0 < x1 ? x0 : x1, right = x0 > x1 ? x0 : x1;
+          int top = y0 < y1 ? y0 : y1, bottom = y0 > y1 ? y0 : y1;
+          if (left < 0) left = 0;
+          if (right >= width) right = width - 1;
+          if (top < 0) top = 0;
+          if (bottom >= height) bottom = height - 1;
+          int dirty = left <= right && top <= bottom;
+          assert(job->dirty_valid == dirty);
+          if (dirty) assert(job->dirty_min_x == left && job->dirty_max_x == right &&
+                            job->dirty_min_y == top && job->dirty_max_y == bottom);
+          ++checked;
+        }
+  lua_pushinteger(state, checked);
+  return 1;
+}
+
+/* Exercise the uint32 seed cutoff without allocating a large square display.
+ * This private native closure borrows only the synthetic job for this call. */
+static int test_line_ranges(lua_State *state) {
+  h2_lua_job_t fixture = {0};
+  fixture.display_open = 1;
+  const int lengths[] = {65534, 65535, 65536, 72000};
+  const int minors[] = {-3, -1, 0, 1, 2, 3, 6};
+  size_t bytes = 24000u * 3u * sizeof(uint16_t);
+  uint16_t *expected = malloc(bytes);
+  fixture.framebuffer = malloc(bytes);
+  assert(expected != NULL && fixture.framebuffer != NULL);
+  assert(lua_checkstack(state, 8));
+  lua_pushlightuserdata(state, &fixture);
+  lua_pushcclosure(state, lua_tocfunction(state, 1), 1);
+  int closure = lua_gettop(state);
+  lua_Integer checked = 0;
+  for (int transpose = 0; transpose < 2; ++transpose) {
+    fixture.display_info.width = transpose ? 3 : 24000;
+    fixture.display_info.height = transpose ? 24000 : 3;
+    for (size_t n = 0; n < sizeof(lengths) / sizeof(lengths[0]); ++n)
+      for (size_t a = 0; a < sizeof(minors) / sizeof(minors[0]); ++a)
+        for (size_t b = 0; b < sizeof(minors) / sizeof(minors[0]); ++b)
+          for (int reverse = 0; reverse < 2; ++reverse) {
+            int start = -24000, end = start + lengths[n];
+            int x0 = transpose ? minors[a] : start;
+            int y0 = transpose ? start : minors[a];
+            int x1 = transpose ? minors[b] : end;
+            int y1 = transpose ? end : minors[b];
+            if (reverse) {
+              int x = x0, y = y0; x0 = x1; y0 = y1; x1 = x; y1 = y;
+            }
+            memset(expected, 0, bytes); memset(fixture.framebuffer, 0, bytes);
+            reference_line(expected, fixture.display_info.width,
+                fixture.display_info.height, x0, y0, x1, y1);
+            lua_pushvalue(state, closure);
+            lua_pushinteger(state, x0); lua_pushinteger(state, y0);
+            lua_pushinteger(state, x1); lua_pushinteger(state, y1);
+            lua_pushvalue(state, 2); lua_call(state, 5, 0);
+            assert(memcmp(expected, fixture.framebuffer, bytes) == 0);
+            ++checked;
+          }
+  }
+  lua_pop(state, 1);
+  free(fixture.framebuffer); free(expected);
+  lua_pushinteger(state, checked);
+  return 1;
+}
+
 static int test_material_workload(lua_State *state) {
-  int polygon = lua_toboolean(state, 1);
-  int columns = polygon ? 8 : 12;
-  FILE *file = fopen(polygon ? "libs/lua/tests/polygon_workload.txt" :
+  int mode = lua_isboolean(state, 1) ? lua_toboolean(state, 1) :
+      (int)luaL_optinteger(state, 1, 0);
+  assert(mode >= 0 && mode <= 2);
+  int columns = mode == 2 ? 4 : mode == 1 ? 8 : 12;
+  FILE *file = fopen(mode == 2 ? "libs/lua/tests/line_workload.txt" :
+      mode == 1 ? "libs/lua/tests/polygon_workload.txt" :
       "libs/lua/tests/material_workload.txt", "r");
   assert(file != NULL);
   lua_newtable(state);
@@ -1393,6 +1508,12 @@ static int test_raster_open(void *lua_state, void *user) {
   lua_setfield(state, -2, "mesh_cache_allocating");
   lua_pushcfunction(state, test_mesh_cache_stats);
   lua_setfield(state, -2, "mesh_cache_stats");
+  lua_pushcfunction(state, test_line_reference);
+  lua_setfield(state, -2, "line_reference");
+  lua_pushcfunction(state, test_line_exhaustive);
+  lua_setfield(state, -2, "line_exhaustive");
+  lua_pushcfunction(state, test_line_ranges);
+  lua_setfield(state, -2, "line_ranges");
   lua_pushcfunction(state, test_material_reference);
   lua_setfield(state, -2, "material_reference");
   lua_pushcfunction(state, test_material_workload);
@@ -2966,15 +3087,18 @@ int main(int argc, char **argv) {
                     strcmp(argv[1], "--material-workload") == 0 ||
                     strcmp(argv[1], "--capture-benchmark") == 0 ||
                     strcmp(argv[1], "--polygon-benchmark") == 0 ||
-                    strcmp(argv[1], "--mesh-cache-benchmark") == 0)) {
+                    strcmp(argv[1], "--mesh-cache-benchmark") == 0 ||
+                    strcmp(argv[1], "--line-benchmark") == 0)) {
     int material = strcmp(argv[1], "--material-benchmark") == 0;
     int smooth = strcmp(argv[1], "--smooth-benchmark") == 0;
+    int line = strcmp(argv[1], "--line-benchmark") == 0;
     int mesh_cache = strcmp(argv[1], "--mesh-cache-benchmark") == 0;
     int polygon = strcmp(argv[1], "--polygon-benchmark") == 0;
     int capture = strcmp(argv[1], "--capture-benchmark") == 0;
     int workload = strcmp(argv[1], "--material-workload") == 0;
     int projective = strcmp(argv[1], "--projective-benchmark") == 0;
-    test_display_raster2d(material || smooth || projective || workload || capture || polygon || mesh_cache ? 2 : 1,
+    test_display_raster2d(material || smooth || projective || workload || capture || polygon || mesh_cache || line ? 2 : 1,
+        line ? "libs/lua/tests/line_workload.lua" :
         mesh_cache ? "libs/lua/tests/mesh_cache_sizing.lua" :
         polygon ? "libs/lua/tests/polygon_workload.lua" :
         capture ? "libs/lua/tests/masked_capture.lua" :
@@ -3004,6 +3128,7 @@ int main(int argc, char **argv) {
   test_display_raster2d(2, "libs/lua/tests/masked_capture.lua");
   test_display_raster2d(2, "libs/lua/tests/polygon_workload.lua");
   test_display_raster2d(2, "libs/lua/tests/mesh_cache_sizing.lua");
+  test_display_raster2d(2, "libs/lua/tests/line_workload.lua");
   test_display_raster2d(2, "libs/lua/tests/quad_material_projective.lua");
   test_display_raster2d(2, "libs/lua/tests/smooth_cache.lua");
   test_display_raster2d(0, "libs/lua/tests/geometry_batches.lua");
