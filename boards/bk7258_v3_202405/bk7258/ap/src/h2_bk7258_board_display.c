@@ -28,6 +28,10 @@
 #define LCD_BACKLIGHT_PIN GPIO_7
 #define LCD_QSPI_RESET_PIN GPIO_40
 
+#ifndef H2_BK7258_DISPLAY_DIAGNOSTICS
+#define H2_BK7258_DISPLAY_DIAGNOSTICS 0
+#endif
+
 extern void bk_psram_frame_buffer_init(void);
 
 typedef enum h2_bk7258_display_bus {
@@ -53,6 +57,9 @@ typedef struct h2_bk7258_display_state {
     bool swap_rgb565_bytes;
     bool first_present_done;
     h2_bk7258_backlight_state_t backlight;
+#if H2_BK7258_DISPLAY_DIAGNOSTICS
+    uint32_t diagnostic_presents;
+#endif
     int initialized;
 } h2_bk7258_display_state_t;
 
@@ -62,6 +69,59 @@ static h2_bk7258_display_state_t s_display_state = {
     .bus = H2_BK7258_DISPLAY_BUS_DEFAULT,
 };
 
+#if H2_BK7258_DISPLAY_DIAGNOSTICS
+/* Sample without allocating another framebuffer or waiting for a refresh.
+ * The controller may still be scanning the preceding submitted frame. */
+static uint32_t display_sample(const uint16_t *pixels, size_t count,
+                                unsigned *nonzero) {
+    uint32_t hash = 2166136261u;
+    *nonzero = 0u;
+    if (pixels == NULL) return 0u;
+    for (size_t i = 0u; i < count; i += 257u) {
+        uint16_t pixel = pixels[i];
+        hash = (hash ^ pixel) * 16777619u;
+        if (pixel != 0u) ++*nonzero;
+    }
+    return hash;
+}
+
+static void display_diagnostic(const h2_bk7258_display_state_t *state,
+                                const char *phase, uint32_t brightness,
+                                int result) {
+    if (!state->initialized || state->bus != H2_BK7258_DISPLAY_BUS_RGB)
+        return;
+    gpio_hw_t *gpio = (gpio_hw_t *)GPIO_LL_REG_BASE;
+    uintptr_t source = lcd_disp_ll_get_mater_rd_base_addr();
+    const uint16_t *scanout = NULL;
+    /* Only inspect a complete frame inside this board's physical PSRAM. */
+    if (state->frame_size <= 0x800000u && source >= 0x60000000u &&
+        source <= 0x60800000u - state->frame_size && (source & 1u) == 0u)
+        scanout = (const uint16_t *)source;
+    unsigned shadow_nonzero = 0u, scanout_nonzero = 0u;
+    size_t count = state->frame_size / sizeof(uint16_t);
+    uint32_t shadow_hash = display_sample(
+        (const uint16_t *)state->shadow->frame, count, &shadow_nonzero);
+    uint32_t scanout_hash = display_sample(scanout, count, &scanout_nonzero);
+    printf("H2_BK_DISPLAY_STATE phase=%s time_ms=%u presents=%u rc=%d "
+        "brightness=%u pwm=%u gpio7=%08x mux7=%u gpio13=%08x "
+        "gpio15=%08x mux15=%u mux19=%u rgb=%08x refresh=%u "
+        "source=%08x shadow_hash=%08x shadow_nonzero=%u "
+        "scanout_hash=%08x scanout_nonzero=%u\n",
+        phase, (unsigned)rtos_get_time(),
+        (unsigned)state->diagnostic_presents, result, (unsigned)brightness,
+        (unsigned)state->backlight.running,
+        (unsigned)gpio_ll_get_value(gpio, LCD_BACKLIGHT_PIN),
+        (unsigned)gpio_ll_get_gpio_perial_mode(gpio, LCD_BACKLIGHT_PIN),
+        (unsigned)gpio_ll_get_value(gpio, LCD_LDO_PIN),
+        (unsigned)gpio_ll_get_value(gpio, GPIO_15),
+        (unsigned)gpio_ll_get_gpio_perial_mode(gpio, GPIO_15),
+        (unsigned)gpio_ll_get_gpio_perial_mode(gpio, GPIO_19),
+        (unsigned)lcd_disp_ll_get_rgb_cfg_value(),
+        (unsigned)lcd_disp_ll_get_disp_status_rgb_ver_cnt(),
+        (unsigned)source, (unsigned)shadow_hash, shadow_nonzero,
+        (unsigned)scanout_hash, scanout_nonzero);
+}
+#endif
 
 
 #if H2_BK7258_HAS_QSPI_ST77903
@@ -212,6 +272,9 @@ static int deinit_display(h2_bk7258_display_state_t *state) {
     if (state == NULL || !state->initialized) {
         return H2_DISPLAY_OK;
     }
+#if H2_BK7258_DISPLAY_DIAGNOSTICS
+    display_diagnostic(state, "close", 0u, H2_DISPLAY_OK);
+#endif
 
     int rc = h2_bk7258_backlight_release(&state->backlight);
     if (rc) return rc;
@@ -302,6 +365,10 @@ static int init_display(h2_bk7258_display_state_t *state) {
 
     state->first_present_done = false;
     state->initialized = 1;
+#if H2_BK7258_DISPLAY_DIAGNOSTICS
+    state->diagnostic_presents = 0u;
+    display_diagnostic(state, "open", 100u, H2_DISPLAY_OK);
+#endif
     return H2_DISPLAY_OK;
 }
 
@@ -453,6 +520,12 @@ static int bk_present(void *user) {
         }
     }
     state->first_present_done = true;
+#if H2_BK7258_DISPLAY_DIAGNOSTICS
+    ++state->diagnostic_presents;
+    if (state->diagnostic_presents <= 3u ||
+        state->diagnostic_presents % 128u == 0u)
+        display_diagnostic(state, "present", UINT32_MAX, rc);
+#endif
     return rc;
 }
 
@@ -468,8 +541,15 @@ static int bk_set_brightness_percent(void *user, uint32_t percent) {
         if (percent == 0u) lcd_backlight_close(LCD_BACKLIGHT_PIN);
         else lcd_backlight_open(LCD_BACKLIGHT_PIN);
     } else {
-        return h2_bk7258_backlight_pwm(&state->backlight, percent);
+        int rc = h2_bk7258_backlight_pwm(&state->backlight, percent);
+#if H2_BK7258_DISPLAY_DIAGNOSTICS
+        display_diagnostic(state, "brightness", percent, rc);
+#endif
+        return rc;
     }
+#if H2_BK7258_DISPLAY_DIAGNOSTICS
+    display_diagnostic(state, "brightness", percent, H2_DISPLAY_OK);
+#endif
     return H2_DISPLAY_OK;
 }
 
