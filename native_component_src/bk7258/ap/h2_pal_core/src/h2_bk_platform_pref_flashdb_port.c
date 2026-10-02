@@ -19,6 +19,15 @@ static uint8_t *s_flashdb_read_cache;
 static uint32_t s_flashdb_read_cache_offset;
 static size_t s_flashdb_read_cache_size;
 
+static void invalidate_mutated_range(uint32_t address, size_t size) {
+    const uint64_t end = (uint64_t)address + size;
+    const uint64_t cache_end = (uint64_t)s_flashdb_read_cache_offset +
+                               s_flashdb_read_cache_size;
+    if (size != 0u && s_flashdb_read_cache_size != 0u &&
+        address < cache_end && end > s_flashdb_read_cache_offset)
+        s_flashdb_read_cache_size = 0u;
+}
+
 static int bk_pref_flash_init(void) {
     const bk_logic_partition_t *partition =
         bk_flash_partition_get_info(BK_PARTITION_FLASHDB);
@@ -103,8 +112,9 @@ static int bk_pref_flash_write(long offset, const uint8_t *buffer, size_t size) 
     if (rtos_lock_mutex(&s_flashdb_flash_mutex) != kNoErr) {
         return -1;
     }
-    /* The SDK can fail after programming bytes; invalidate before the call. */
-    s_flashdb_read_cache_size = 0u;
+    /* Invalidate overlapping bytes before a possibly uncertain commit. GC
+     * destination writes must not evict an unchanged source cache line. */
+    invalidate_mutated_range((uint32_t)offset, size);
     rc = bk_flash_write_bytes((uint32_t)offset, buffer, (uint32_t)size);
     (void)rtos_unlock_mutex(&s_flashdb_flash_mutex);
     return rc == BK_OK ? (int)size : -1;
@@ -125,7 +135,7 @@ static int bk_pref_flash_erase(long offset, size_t size) {
         return -1;
     }
 
-    s_flashdb_read_cache_size = 0u;
+    invalidate_mutated_range((uint32_t)offset, size);
     protect_type = bk_flash_get_protect_type();
     if (protect_type != FLASH_PROTECT_NONE) {
         bk_flash_set_protect_type(FLASH_PROTECT_NONE);

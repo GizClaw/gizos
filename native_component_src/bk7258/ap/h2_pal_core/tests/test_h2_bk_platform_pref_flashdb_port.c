@@ -108,6 +108,20 @@ static void test_cross_line_reads_pass_through_without_readahead(void) {
   assert(last_offset == 500u && last_size == sizeof(data));
   assert(memcmp(data, storage + 500, sizeof(data)) == 0);
 }
+static void test_gc_destination_mutations_preserve_source_reads(void) {
+  reset(); uint8_t data[32];
+  /* FlashDB GC reads old records while copying them into another sector. */
+  for (uint32_t offset = 0u; offset < 256u; offset += sizeof(data)) {
+    assert(g_flashdb0.ops.read(offset, data, sizeof(data)) == 32);
+    assert(memcmp(data, storage + offset, sizeof(data)) == 0);
+    assert(g_flashdb0.ops.write(4096u + offset, data, sizeof(data)) == 32);
+  }
+  assert(reads == 1u);
+  fail_erase_after_commit = 1;
+  assert(g_flashdb0.ops.erase(4096u, 4096u) == -1);
+  assert(g_flashdb0.ops.read(256u, data, sizeof(data)) == 32);
+  assert(memcmp(data, storage + 256u, sizeof(data)) == 0 && reads == 1u);
+}
 static void test_write_invalidates_even_when_driver_reports_failure_after_commit(void) {
   for (unsigned fail = 0u; fail < 2u; ++fail) {
     reset();
@@ -154,6 +168,7 @@ int main(void) {
   test_adjacent_crc_reads_share_one_physical_read();
   test_readahead_stays_inside_partition_and_large_reads_pass_through();
   test_cross_line_reads_pass_through_without_readahead();
+  test_gc_destination_mutations_preserve_source_reads();
   test_write_invalidates_even_when_driver_reports_failure_after_commit();
   test_erase_invalidates_even_after_uncertain_commit_and_restores_protection();
   test_read_failure_does_not_publish_a_cache_line();
