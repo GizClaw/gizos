@@ -208,3 +208,5 @@ BK7258 没有系统 CA bundle。该测试启动器必须通过 `app_config_fixtu
 BK 的 GizClaw target 选择已存在的 board-owned `media` RAM layout（AP heap4.25MiB，显示保留区1.8125MiB），并将本业务的 audio/data/Device/H2Peer worker stacks 放入 PSRAM；GPIO、AP/CP SRAM 与 managed partition 继续由 Board layout 持有。此前 display-oriented640KiB heap 的实际 OOM 记录保留原源码与未确认状态。Native launcher 明确启用真实 H2Peer PAL；误编译 canonical unsupported provider 是接线错误，不能授予能力 SKIP。
 
 2026-10-02 main 同步保留新增独立 `workspace-fence` lane；它需要显式 Workflow 和两个不同 fence ID，不包含在八项 `all` admission 中。三类板卡共用的 admission 要求 complete、selected/terminal/passed 均为8、所有失败计数与 cleanup/retained 均为0；Voice-only、部分完成或清理残留不能确认镜像。SDK0.23.2 headless actors 注册 INFO_GET、IDENTIFIERS_GET、SOCIAL_PING 三个 tool handler；有 Device vtable 的 actor 只注册 SOCIAL_PING，避免和内置工具重复。真实 Service 初始化及44项 App/oracle/provenance/dispatch focused测试通过，当前SDK实际六端重测仍待完成。
+
+SDK0.23.2/source123565bf 的真实 macOS 全量执行为5/8，cleanup=-8、retained=4；live0.21.3对MHS/tool-v0返回404，Workspace create/Session select为-1000，social ping没有接收交付，属于支持协议失败而不是SKIP。Firmware本轮完整size/SHA通过。新iOS/Android包构建成功仅证明包集成；最新SDK全量实际重测仍需兼容服务。板端解析器扫描完整UART日志并只接受最新boot的完整账本；后续失败/未完成boot不得借用此前成功，同nonce/header/body的冻结账本重播不计为独立boot。

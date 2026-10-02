@@ -32,6 +32,33 @@ class LedgerAdmission(unittest.TestCase):
         _, receipt = extract(frame(body).replace(b"symbol=unit", b"symbol=evil") + frame(body), version="unit-r1")
         self.assertEqual(receipt["discarded_frames"], 1)
 
+    def test_latest_boot_cannot_borrow_earlier_success(self):
+        body = b"H2_GIZCLAW_E2E symbol=unit stage=unit result=PASS rc=0\n"
+        good = frame(body)
+        second = frame(body, "2" * 32)
+        boot = f"H2_GIZCLAW_BOOT board=devkit version=unit-r1 execution={'2' * 32}\n".encode()
+        for later in (frame(body, "2" * 32, admitted=0),
+                      frame(body, "2" * 32, confirm=-7), second[:-20],
+                      second.replace(b"symbol=unit", b"symbol=evil"),
+                      second.replace(b"version=unit-r1", b"version=unit-r2"),
+                      boot, boot + good,
+                      b"H2_GIZCLAW_E2E_AMOLED stage=launcher status=READY\n",
+                      b"H2_GIZCLAW_SETUP_FAIL stage=memory rc=-5\n"):
+            with self.subTest(later=later), self.assertRaises(ValueError):
+                extract(good + later, version="unit-r1")
+        _, receipt = extract(good + boot + second, version="unit-r1")
+        self.assertEqual(receipt["execution"], "2" * 32)
+
+    def test_latest_complete_frame_and_same_boot_replay(self):
+        body = b"H2_GIZCLAW_E2E symbol=unit stage=unit result=PASS rc=0\n"
+        # An identical partial replay is the same frozen execution, not a boot.
+        _, receipt = extract(frame(body) + frame(body)[:-20], version="unit-r1")
+        self.assertEqual(receipt["execution"], "1" * 32)
+        _, receipt = extract(frame(body) + frame(body, "2" * 32), version="unit-r1")
+        self.assertEqual(receipt["execution"], "2" * 32)
+        with self.assertRaises(ValueError):
+            extract(frame(body) + frame(body).replace(b"symbol=unit", b"symbol=evil"), version="unit-r1")
+
 
 if __name__ == "__main__":
     unittest.main()
