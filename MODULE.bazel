@@ -390,8 +390,8 @@ vendor_repositories.repository(
     name = "h2_vendor_lvgl",
     build_file = "//third_party:lvgl.BUILD.bazel",
     overlay_files = {
-        "//third_party/lvgl_patch:config/bk7258/lv_conf.h": "config/bk7258/lv_conf.h",
-        "//third_party/lvgl_patch:config/esp_idf6_x/lv_conf.h": "config/esp_idf6_x/lv_conf.h",
+        "//third_party/lvgl_patch:config/bk7258/lv_conf.h": "config/bk7258/h2_bk7258_lv_conf.h",
+        "//third_party/lvgl_patch:config/esp_idf6_x/lv_conf.h": "config/esp_idf6_x/h2_esp_idf6_x_lv_conf.h",
     },
     sha256 = "68abe1316ce8f9a9ede55d89ad9788292753373ad4218480480ae81052fb005d",
     strip_prefix = "lvgl-237d06943a3f33d9f8e41597aadcc3a80cd461eb",
