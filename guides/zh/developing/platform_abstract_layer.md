@@ -109,6 +109,8 @@ PAL 按能力职责分为以下几类。
 
 公共定义提供所有 PAL 共用的基础类型和错误码，本身不表示某项能力。
 
+`h2_pal_result_t` 使用 signed 32-bit scalar，公共错误常量保持原值。Library 可以定义自己的负错误码；这些值在 BK 的 small-enum ARM ABI 下也必须完整保留，例如 GizClaw 的 `-1000` remote error。有限状态仍可用 enum 表示，返回值不能依赖编译器的 enum 压缩规则。
+
 ```text
 h2/pal/core/h2_pal_types.h
 h2/pal/core/h2_pal_errors.h

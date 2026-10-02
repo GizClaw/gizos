@@ -1,11 +1,17 @@
 #ifndef H2_PAL_ERRORS_H
 #define H2_PAL_ERRORS_H
 
+#include <stdint.h>
+
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-typedef enum h2_pal_result {
+/* Error domains can extend the common codes. A small-enum ARM ABI must not
+ * narrow such values (for example, -1000) into a positive status. */
+typedef int32_t h2_pal_result_t;
+
+enum h2_pal_result {
     H2_PAL_OK = 0,
     H2_PAL_EXIT = 1,
     H2_PAL_ERR_INVALID_ARG = -1,
@@ -26,7 +32,7 @@ typedef enum h2_pal_result {
     H2_PAL_ERR_TRUNCATED = -16,
     H2_PAL_ERR_TLS_VERIFY = -17,
     H2_PAL_ERR_BUSY = -18,
-} h2_pal_result_t;
+};
 
 #define H2_AUDIO_OK H2_PAL_OK
 #define H2_AUDIO_ERR_INVALID_ARG H2_PAL_ERR_INVALID_ARG

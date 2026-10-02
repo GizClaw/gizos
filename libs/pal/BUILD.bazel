@@ -263,6 +263,20 @@ cc_test(
 )
 
 cc_test(
+    name = "pal_result_representation_test",
+    srcs = ["tests/test_pal_result_representation.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + ["-fshort-enums"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [":pal"],
+)
+
+cc_test(
     name = "pal_headers_cpp_test",
     srcs = [
         "tests/test_pal_headers.cpp",
