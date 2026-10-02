@@ -12,16 +12,13 @@
 /* Storage keys are "<namespace>.<key>"; FlashDB accepts names up to
  * FDB_KV_NAME_MAX, e.g. "h2loader.mfg_acceptance_revision" (32 chars). */
 #define H2_BK_PREF_KEY_MAX FDB_KV_NAME_MAX
-#define H2_BK_PREF_OPEN_MAX 4u
 
 typedef struct h2_bk_pref_namespace {
     h2_pal_pref_namespace_t base;
     char name_space[16];
     h2_pal_pref_open_mode_t mode;
-    int in_use;
 } h2_bk_pref_namespace_t;
 
-static h2_bk_pref_namespace_t s_pref_namespaces[H2_BK_PREF_OPEN_MAX];
 static struct fdb_kvdb s_pref_database;
 static beken_mutex_t s_pref_database_mutex;
 static beken_mutex_t s_pref_pool_mutex;
@@ -256,17 +253,11 @@ static int bk_pref_read_value(
 
 static int bk_pref_close(h2_pal_pref_namespace_t *ns) {
     h2_bk_pref_namespace_t *pref_ns = bk_pref_to_namespace(ns);
-    int rc;
 
     if (pref_ns == NULL) {
         return H2_PAL_ERR_INVALID_ARG;
     }
-    rc = bk_pref_lock_pool();
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    pref_ns->in_use = 0;
-    bk_pref_unlock_pool();
+    os_free(pref_ns);
     return H2_PAL_OK;
 }
 
@@ -961,21 +952,11 @@ static int bk_pref_open(
     if (rc != H2_PAL_OK) {
         return rc;
     }
-    rc = bk_pref_lock_pool();
-    if (rc != H2_PAL_OK) {
-        return rc;
-    }
-    for (size_t i = 0u; i < H2_BK_PREF_OPEN_MAX; ++i) {
-        if (!s_pref_namespaces[i].in_use) {
-            ns = &s_pref_namespaces[i];
-            ns->in_use = 1;
-            break;
-        }
-    }
-    bk_pref_unlock_pool();
+    /* Boot workers can hold more than four namespaces concurrently. Each
+     * handle owns its state until close; storage operations remain serialized
+     * by the database/transaction mutexes. */
+    ns = os_zalloc(sizeof(*ns));
     if (ns == NULL) {
-        printf("H2_BK_PREF_POOL exhausted capacity=%u namespace=%s\n",
-            H2_BK_PREF_OPEN_MAX, name_space);
         return H2_PAL_ERR_NO_MEMORY;
     }
     written = snprintf(ns->name_space, sizeof(ns->name_space), "%s", name_space);

@@ -388,6 +388,37 @@ static void failed_creation_cleanup(void) {
   assert(ns->close(ns) == 0);
 }
 
+static void simultaneous_handles(void) {
+  h2_pal_pref_namespace_t *handles[8] = {0};
+  for (size_t i = 0; i < 8; ++i) {
+    assert(h2_pal_pref_open(h2_bk_platform_pref_api(), "parallel",
+                            i % 2 ? H2_PAL_PREF_OPEN_READ_ONLY
+                                  : H2_PAL_PREF_OPEN_READ_WRITE,
+                            &handles[i]) == H2_PAL_OK);
+    assert(handles[i]);
+    for (size_t j = 0; j < i; ++j)
+      assert(handles[i] != handles[j]);
+  }
+  assert(handles[0]->set_u32(handles[0], "value", 42u) == H2_PAL_OK);
+  assert(handles[0]->commit(handles[0]) == H2_PAL_OK);
+  h2_pal_pref_namespace_t *failed = (void *)(uintptr_t)1;
+  fail_alloc = 1;
+  assert(h2_pal_pref_open(h2_bk_platform_pref_api(), "parallel",
+                          H2_PAL_PREF_OPEN_READ_ONLY, &failed) ==
+         H2_PAL_ERR_NO_MEMORY);
+  assert(!failed);
+  fail_alloc = 0;
+  for (size_t i = 0; i < 8; ++i) {
+    uint32_t value = 0;
+    assert(handles[i]->get_u32(handles[i], "value", &value) == H2_PAL_OK &&
+           value == 42u);
+    assert(handles[i]->close(handles[i]) == H2_PAL_OK);
+  }
+  h2_pal_pref_namespace_t *reopened = open_namespace("parallel");
+  assert(reopened->clear(reopened) == H2_PAL_OK);
+  assert(reopened->close(reopened) == H2_PAL_OK);
+}
+
 int main(void) {
   reserved_namespace();
   reset_faults();
@@ -404,6 +435,8 @@ int main(void) {
   v1_and_legacy_compatibility();
   reset_faults();
   failed_creation_cleanup();
+  reset_faults();
+  simultaneous_handles();
   for (unsigned i = 0; i < 64; ++i)
     free(entries[i].data);
   for (unsigned i = 0; i < mutex_count; ++i)
