@@ -4,6 +4,12 @@
 #include <cstdint>
 #include <type_traits>
 
+#ifndef _MSC_VER
+enum short_enum_control { SHORT_ENUM_NEGATIVE = -1, SHORT_ENUM_POSITIVE = 1 };
+static_assert(sizeof(short_enum_control) < sizeof(int),
+              "the GNU-style regression must exercise compressed enums");
+#endif
+
 static_assert(std::is_same<h2_pal_result_t, int>::value,
               "PAL results must preserve the C int callback ABI");
 static_assert(sizeof(h2_pal_result_t) * CHAR_BIT == 32,
