@@ -784,7 +784,7 @@ static h2_pal_result_t h2_peer_fail_stream_resets(h2_pal_webrtc_peer_t *peer,
   }
   peer->stream_reset_failure = result;
   char message[64];
-  (void)snprintf(message, sizeof(message), "stream reset failed rc=%d", result);
+  (void)snprintf(message, sizeof(message), "stream reset failed rc=%d", (int)result);
   (void)h2_pal_log_write(peer->owner->config.log, H2_PAL_LOG_ERROR, "h2peer",
                          message);
   h2_peer_terminal_all_channels(peer, H2_PAL_WEBRTC_CHANNEL_ERROR);
