@@ -27,7 +27,15 @@ bazel build --config=esp32s3 \
 
 普通资格先运行真实业务和cleanup，join后启动命令服务并确认；可选observer在384KiB有界账本内保留完整原始227接口记录，冻结后按真实boot crypto execution nonce重播。溢出/format错误禁止admission；host只接受一份完整、byte/record/CRC32一致、当前version、实际confirm=0的admitted账本，另保存SHA-256。独立normal App boot必须拒绝上次nonce，不能用旧重播代替新测试。音频输入必须来自明确的HTTPS对象；本次可使用该受控E2E profile的已部署非敏感media资产，保留对象SHA/大小/版本身份，业务仍使用真实E2E server。
 
-要求安装后 status 的 APP/Partition 2 identity 与本次 package 一致、Stage 清空、`last_result=0`；日志包含 Session 逐操作业务断言、PTT 和 Realtime 结果、唯一 case terminal 及重复 final summary。只有 `selected=1 terminal=1 pass=1 cleanup_rc=0 retained_resources=0 complete=true exit_code=0` 且没有新 coredump 才能报告 Voice 硬件流程通过；它不是本轮全量227项API验收；全量还需要8/8独立case和当前版本227项审计。
+要求安装后 status 的 APP/Partition 2 identity 与本次 package 一致、Stage 清空、`last_result=0`；日志包含 Session 逐操作业务断言、PTT 和 Realtime 结果、唯一 case terminal 及重复 final summary。只有完整 `selected=8 terminal=8 pass=8 cleanup_rc=0 retained_resources=0 complete=true exit_code=0` 才允许确认 App，并仍须保存当前版本227项审计及coredump记录。任何子集（包括 Voice）只提供诊断结果，不能确认镜像或代替全量资格。
+
+独立正常启动可使用 `reboot app`，让资格测试独立运行，完成后再通过 directed `monitor` 读取当前版本的冻结账本。每次必须排除上一轮 execution nonce；持续串口观察期间出现的超时保留为失败记录，不能拿较早的 PASS 代替。该流程减少观察者对运行的扰动，不改变任何业务超时、音频节奏或资源清理断言。
+
+AMOLED 的 H2Loader layout 将每个 TCP 连接的乱序 pbuf 上限设为4并启用 selective ACK，避免等待缺失包时长期占用 Wi-Fi RX 缓冲。ES8311 输出任务优先级为6，高于业务解码等优先级4任务，使 I2S 持续得到帧。连接丢失后的远端 Peer 清理只在原 cleanup deadline 内重连同一身份一次，仍以服务端删除确认作为回收证据。真实受控 Dev 或 E2E cluster 均可通过相同显式 macro 输入选择；receipt 必须保留实际 cluster、SDK、AppConfig、源码和产物身份。
+
+## 固件下载诊断
+
+`--define=H2_GIZCLAW_E2E_FIRMWARE_ONLY=1` 单独执行真实固件元数据和完整下载用例，仍受相同长度、SHA、EOS和300秒deadline约束；它不会确认 App。可同时指定 `--define=H2_GIZCLAW_E2E_NET_IO_TRACE=1`，仅对当前测试包编译有界TLS读取统计，每个socket最多每5秒记录调用数、字节、超时和I/O耗时。统计不含TLS内容、URI或凭据，不改变读写结果或证书验证。完整资格包应保留默认八项用例。
 
 ## Resource suite
 

@@ -105,7 +105,7 @@ static h2_pal_audio_t *resolve_audio(void *user) {
             .mic_task_priority = tskIDLE_PRIORITY + 5u,
             .mic_task_core_id = tskNO_AFFINITY,
             .speaker_task_stack_size = H2_AMOLED_AUDIO_SPEAKER_TASK_STACK,
-            .speaker_task_priority = tskIDLE_PRIORITY + 4u,
+            .speaker_task_priority = tskIDLE_PRIORITY + 6u,
             .speaker_task_core_id = tskNO_AFFINITY,
             .allocator = h2_esp_board_default_allocator(),
             .queue_api = h2_esp_board_queue_api(),

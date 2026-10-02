@@ -134,6 +134,8 @@ h2loader_esp_idf_firmware(
     ],
     board = "amoled",
     cmake_variables = [
+        "H2_GIZCLAW_E2E_FIRMWARE_ONLY",
+        "H2_GIZCLAW_E2E_NET_IO_TRACE",
         "H2_GIZCLAW_E2E_DEVICE_ONLY",
         "H2_GIZCLAW_E2E_RPC_ONLY",
         "H2_GIZCLAW_E2E_VOICE_ONLY",

@@ -1320,6 +1320,21 @@ int h2_gizclaw_e2e_fixture_cleanup(h2_gizclaw_e2e_fixture_t *fixture) {
                  ? h2_gizclaw_rpc_peer_delete(actor->service, 15000u)
                  : H2_PAL_ERR_TIMEOUT;
     h2_gizclaw_e2e_evidence("h2_gizclaw_rpc_peer_delete", "cleanup", rc);
+    if (rc == H2_PAL_ERR_CLOSED &&
+        h2_gizclaw_e2e_fixture_has_time(fixture, 1u)) {
+      /* Registration can outlive the transport. Reconnect the same retained
+       * identity once under the existing cleanup deadline, then require a
+       * real delete acknowledgement; CLOSED never clears the obligation. */
+      rc = actor_stop(actor);
+      if (rc == H2_PAL_OK)
+        rc = actor_connect(fixture, actor, "cleanup-reconnect-closed");
+      if (rc == H2_PAL_OK) {
+        rc = h2_gizclaw_e2e_fixture_has_time(fixture, 1u)
+                 ? h2_gizclaw_rpc_peer_delete(actor->service, 15000u)
+                 : H2_PAL_ERR_TIMEOUT;
+        h2_gizclaw_e2e_evidence("h2_gizclaw_rpc_peer_delete", "cleanup-retry", rc);
+      }
+    }
     keep_first_failure(rc, &result);
     if (rc == H2_PAL_OK)
       actor->peer_delete_requested = true;

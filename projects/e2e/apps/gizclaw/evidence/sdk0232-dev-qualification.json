@@ -1,0 +1,230 @@
+{
+  "schema": 1,
+  "sdk_version": "0.23.2",
+  "environment": "dev",
+  "runtime_profile": "gizos-e2e-626",
+  "endpoint": "edge-bj-01.dev.gizclaw.com:9821",
+  "server": {
+    "version": "0.23.6",
+    "source": "3a6529ef7225fdd2c4dffd852dd8a3887852ace5"
+  },
+  "edge": {
+    "version": "0.23.2",
+    "source": "9d5b84625806fe4fa4e902a9804e29105b5e1b66"
+  },
+  "source_identity": "Executions retain original base+patch identities; source input digests below match the committed functional inputs. Historical0.19 receipts remain unchanged. Documentation/receipt changes do not relabel executed binaries.",
+  "functional_input_sha256": {
+    "boards/amoled/esp32s3/layouts/h2loader/sdkconfig.h2loader.defaults": "a1cbfe41b2d17c57a5ad9400e8e7827a1c5eb4d58cd72d39f938d3581e43c00f",
+    "boards/amoled/esp32s3/src/h2_esp_board_audio_es8311.c": "ecdafa8be2a0f202b40dec164d1aa77d723528622d24757228bddde7be35c45e",
+    "native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net.c": "c4a859949d4c35019eb99c44728a76d11f2f597071c985e87e5e45d57b5ada10",
+    "projects/e2e/apps/gizclaw/app/src/h2_gizclaw_e2e_fixture.c": "774b679954e8e28992c4660c6afe7cb7171b8980d8161e4cb077adf4947c0bae",
+    "projects/e2e/apps/gizclaw/app/tests/test_h2_gizclaw_e2e_fixture.c": "4bdff157aba428260ebdbfe8c58a7548ba122ba2845fd5d0699b1be63de22a32",
+    "projects/e2e/libs/gizclaw-mobile/BUILD.bazel": "6af216cd1dda9613ff4cb730e2efc55fe912fd8d92b7d97ea9dbe7cae3400c7e",
+    "projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/amoled/BUILD.bazel": "199e9e3c8fa31dfd8cc8fe0fb403ddd9ea123ff39ad859dae4025d25a8b76ca2",
+    "projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/amoled/main/CMakeLists.txt": "6629f59da88ef86a7bf8bde369196c9a9468447993f9c64f9423914ac7cd3ec5",
+    "projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/amoled/main/main.c": "a4309afa20b6765b6ef5561da8c8c705bfd96c20f4062923c7985b557e1e428e"
+  },
+  "platforms": {
+    "macos": {
+      "qualified": true,
+      "sdk_version": "0.23.2",
+      "source_base": "adbbc722fb94311679b8b23029f54ddc19cb33f0",
+      "source_patch_sha256": "7853268ca10950cb941639625c21bfa3ca93f3593fbb6a61df542286d5e63fbf",
+      "selected": 8,
+      "passed": 8,
+      "cleanup_rc": 0,
+      "retained_resources": 0,
+      "local_receipt_sha256": "340b837a507ff36d4eae11217ad04ff327de456d5e71de97406fdd3e429d6700",
+      "api_coverage": {
+        "valid": true,
+        "required": 227,
+        "covered": 227,
+        "missing": 0
+      },
+      "log_sha256": "81f70691dfc8b3dd75731bc3ac098f03dcaaa3ce3ab168493a9c0dcaee3f87c3",
+      "artifact_sha256": "30685fe4f00a732e16d9ebb7ebf5b860e790e15ab67d3241c764eb5c865c1c98",
+      "process_exit_code": 0,
+      "audio_scope": "Software PCM/speaker delegates; real service traffic, no microphone/acoustic qualification"
+    },
+    "wasm-chromium": {
+      "qualified": true,
+      "sdk_version": "0.23.2",
+      "source_base": "adbbc722fb94311679b8b23029f54ddc19cb33f0",
+      "source_patch_sha256": "7853268ca10950cb941639625c21bfa3ca93f3593fbb6a61df542286d5e63fbf",
+      "selected": 8,
+      "passed": 8,
+      "cleanup_rc": 0,
+      "retained_resources": 0,
+      "local_receipt_sha256": "578cc925d31aeda09c20b3b7b5b5492496e1b8a85969102b4391b78630dc6693",
+      "api_coverage": {
+        "valid": true,
+        "required": 227,
+        "covered": 227,
+        "missing": 0
+      },
+      "log_sha256": "54a23405127a61727169b103548975eb7c9b41d8864f2f7ca9b6bce81a444a11",
+      "archive_sha256": "220dbff7ba4449e472c2d691b512cbf8c638a6fb4af08a2308431f2c25a0c7ce",
+      "pcm_sha256": "9451f89df86cc66d053801f38fbfa661b83a0174d222af976e55b94f34336f0b",
+      "fixture_contract_sha256": "bb2e39c6d9d4108f2f7df69c9cf3d9383ff05817abb72a430a1697c41cbad88f",
+      "process_exit_code": 0,
+      "platform_final": "H2_GIZCLAW_PLATFORM_FINAL rc=0 teardown=0 retained=0 worker=1",
+      "state": {
+        "isolated": true
+      }
+    },
+    "ios-simulator": {
+      "qualified": true,
+      "sdk_version": "0.23.2",
+      "source_base": "adbbc722fb94311679b8b23029f54ddc19cb33f0",
+      "source_patch_sha256": "7853268ca10950cb941639625c21bfa3ca93f3593fbb6a61df542286d5e63fbf",
+      "selected": 8,
+      "passed": 8,
+      "cleanup_rc": 0,
+      "retained_resources": 0,
+      "local_receipt_sha256": "ab00fad0dba0761bebf8c40b833af323e7bb13e9927eab099056bf3ce36c2a59",
+      "api_coverage": {
+        "valid": true,
+        "required": 227,
+        "covered": 227,
+        "missing": 0
+      },
+      "log_sha256": "f239c61c5bdeeb82dc956ce3fd5399d8f80d257484ae893671661b84192feb6a",
+      "artifact_sha256": "4dc86c59d47822b887e836741091f9374ef83b2a7ceead74b055fdc5bd9b3be1",
+      "sdk_sha256": "6b7b64b667fcde78462658f114be32df8add6befbae07de956d886487fee7867",
+      "report": {
+        "rc": 0,
+        "teardown": 0,
+        "selected": 8,
+        "passed": 8,
+        "cleanup_rc": 0,
+        "retained_resources": 0,
+        "complete": true
+      },
+      "execution_identity": {
+        "simulator_udid": "1E8A38C6-83C8-4D27-8BBE-1643A85B7114",
+        "serial": null,
+        "api": null,
+        "fingerprint": null,
+        "launches": 1,
+        "runner_status": "completed",
+        "observation_started_at_utc": "2026-10-02T19:25:00.005707+00:00",
+        "observation_finished_at_utc": "2026-10-02T19:27:03.322243+00:00",
+        "apk_aar_binary_identical": null,
+        "suite_sha256": "3942a47f19a8c835920ed4565ae2c2148c58854246c201273eb48e501b45a8d2",
+        "fixture_contract_sha256": "bb2e39c6d9d4108f2f7df69c9cf3d9383ff05817abb72a430a1697c41cbad88f",
+        "pcm_sha256": "9451f89df86cc66d053801f38fbfa661b83a0174d222af976e55b94f34336f0b"
+      }
+    },
+    "android-emulator": {
+      "qualified": true,
+      "sdk_version": "0.23.2",
+      "source_base": "adbbc722fb94311679b8b23029f54ddc19cb33f0",
+      "source_patch_sha256": "7853268ca10950cb941639625c21bfa3ca93f3593fbb6a61df542286d5e63fbf",
+      "selected": 8,
+      "passed": 8,
+      "cleanup_rc": 0,
+      "retained_resources": 0,
+      "local_receipt_sha256": "4df6fa5086696bf634ae3959b8844900f5d816d0f86af0e92dcb923d50ad2ced",
+      "api_coverage": {
+        "valid": true,
+        "required": 227,
+        "covered": 227,
+        "missing": 0
+      },
+      "log_sha256": "1f3812e4dbc29be3ca9f233e5c308879f9024030a64f443562901a0c24026319",
+      "artifact_sha256": "8d57358f5b182332c2a86d98012dcdc3cfd8bccb4d5044ef0b1e6d9b6d8c0f15",
+      "sdk_sha256": "fd3d6fcdfd00bd91eb866e308d84055a9816c1e52bb12045e096e9a0f3d2d827",
+      "report": {
+        "rc": 0,
+        "teardown": 0,
+        "selected": 8,
+        "passed": 8,
+        "cleanup_rc": 0,
+        "retained_resources": 0,
+        "complete": true
+      },
+      "execution_identity": {
+        "simulator_udid": null,
+        "serial": "emulator-5566",
+        "api": "36",
+        "fingerprint": "Android/sdk_slim_arm64/emu64a:16/BE2A.250530.027/13847098:userdebug/test-keys",
+        "launches": 1,
+        "runner_status": "completed",
+        "observation_started_at_utc": "2026-10-02T19:25:02.243083+00:00",
+        "observation_finished_at_utc": "2026-10-02T19:27:50.253803+00:00",
+        "apk_aar_binary_identical": true,
+        "suite_sha256": "3942a47f19a8c835920ed4565ae2c2148c58854246c201273eb48e501b45a8d2",
+        "fixture_contract_sha256": "bb2e39c6d9d4108f2f7df69c9cf3d9383ff05817abb72a430a1697c41cbad88f",
+        "pcm_sha256": "9451f89df86cc66d053801f38fbfa661b83a0174d222af976e55b94f34336f0b"
+      }
+    },
+    "amoled": {
+      "qualified": true,
+      "sdk_version": "0.23.2",
+      "source_base": "adbbc722fb94311679b8b23029f54ddc19cb33f0",
+      "source_patch_sha256": "7853268ca10950cb941639625c21bfa3ca93f3593fbb6a61df542286d5e63fbf",
+      "selected": 8,
+      "passed": 8,
+      "cleanup_rc": 0,
+      "retained_resources": 0,
+      "local_receipt_sha256": "a9c11ff8c2e5c350a3b8fa048debb8d150275c37c458463448f971398ce2472b",
+      "api_audits": {
+        "managed": {
+          "valid": true,
+          "required": 227,
+          "covered": 227,
+          "missing": 0
+        },
+        "normal": {
+          "valid": true,
+          "required": 227,
+          "covered": 227,
+          "missing": 0
+        }
+      },
+      "version": "gizclaw-dev-r44",
+      "package_sha256": "465296715b25b1d481fab7a89e58d84950452fd10e356ec480ac305809fcdbba",
+      "package_size": 1563599,
+      "image_sha256": "da4cb961c032689dd7047f6038788ff324ed1b4d4e9ac6e29e3b3ad8d4ab1f6d",
+      "image_size": 2292304,
+      "device_uid": "30eda0ae0f86",
+      "managed": {
+        "qualified": true,
+        "execution": "51ef2ccdc5f6fa9b17e7483ffa02b788",
+        "physical_audio": true,
+        "confirm_rc": 0,
+        "records": 2059,
+        "record_bytes": 188522,
+        "ledger_sha256": "3b1f8e1b6fd085652581abe679c9b53061a5819612b4e87f8f8ae80d9071766a"
+      },
+      "normal": {
+        "qualified": true,
+        "execution": "3bc4252c790563a6a5aa3588089a0c29",
+        "physical_audio": true,
+        "confirm_rc": 0,
+        "records": 2057,
+        "record_bytes": 188344,
+        "ledger_sha256": "050dd068f9d73f1794493a4e022f83f66de9b0fc6ba82f5b8bee497a9a2486f0"
+      },
+      "stage_final": 0,
+      "p1_preserved": true,
+      "coredump_status_unchanged": true,
+      "raw_logs": {
+        "managed-late-monitor.private.log": "fa66f043cd74740a5e8bc5bc39eb6332322f893bb46ff3176fa442e310bddb34",
+        "normal-unmonitored-capture.private.log": "04fbedf26ba4de38e52943477ced89e826b029fb1386e9bb81e2bc033e1bbd12",
+        "status-final.private.log": "ce5454eeb829176175f609eb6133d1e73f71825d01d5ab8640ca15d54ee9b48a",
+        "coredump-final.private.log": "5bdf63243c04b65d6759ad5a1cbd04f6b4cfdf8a5b1824698fd2ec92ac7d0cec"
+      },
+      "normal_observation": "Independent normal App boot ran without continuous UART observer; immutable fresh complete admitted ledger read after execution. Observer-related failures retained, observer causality not claimed proven.",
+      "audio_scope": "Real ES8311/I2S driver and PCM frame counters; no acoustic quality or microphone qualification claimed",
+      "failed_monitored_normal_log_sha256": "7e9f9743bc0dacf2b86197e5e4f19a0e30bcb7e42dee053620ada8fb48fbb7eb"
+    },
+    "bk7258": {
+      "qualified": false,
+      "status": "pending-hardware-reservation",
+      "reason": "User explicitly retains BK7258 for the h106 task; no current SDK0.23.2/Dev hardware run or capability SKIP is claimed."
+    }
+  },
+  "six_platforms_complete": false,
+  "original_logs": "Raw execution logs, failed experiments and complete receipts remain in the local ignored validation directories; public records contain only non-sensitive identity and acceptance fields."
+}

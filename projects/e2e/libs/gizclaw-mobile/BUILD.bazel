@@ -17,7 +17,8 @@ mobile_e2e_suite(
     package = "com.haivivi.gizos.e2e.gizclaw",
     report = "gizclaw-result.json",
     registry = "//projects/e2e/apps/gizclaw/app:src/h2_gizclaw_e2e_catalog_all.c",
-    registry_pattern = '[{]"([^"]+)", H2_GIZCLAW_E2E_SUITE_',
+    # FENCE is an opt-in suite outside SUITE_ALL, which this lane executes.
+    registry_pattern = '[{]"([^"]+)", H2_GIZCLAW_E2E_SUITE_(?!FENCE,)',
     case_count = 8,
     expected = {
         "rc": 0, "teardown": 0, "selected": 8, "failed": 0,

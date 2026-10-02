@@ -23,6 +23,7 @@
 
 #include <errno.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <string.h>
 #include <time.h>
@@ -51,6 +52,12 @@ typedef struct esp_net_tls_socket {
     void *verify_chain_user;
     char alpn_storage[H2_ESP_NET_TLS_ALPN_MAX][H2_ESP_NET_TLS_ALPN_LEN];
     const char *alpn[H2_ESP_NET_TLS_ALPN_MAX + 1u];
+#if defined(H2_ESP_NET_IO_TRACE)
+    uint64_t trace_read_calls, trace_read_bytes, trace_read_timeouts;
+    uint64_t trace_read_ms, trace_max_read_ms, trace_last_ms;
+    uint64_t trace_raw_calls, trace_raw_bytes, trace_raw_waits;
+    int trace_raw_result, trace_raw_errno, trace_ssl_result;
+#endif
 } esp_net_tls_socket_t;
 
 typedef struct esp_net_tls_sync {
@@ -217,6 +224,43 @@ static void esp_net_tls_release(size_t slot_index) {
     (void)xSemaphoreGive(s_esp_tls_sync->io_mutexes[slot_index]);
 }
 
+static int esp_net_tls_recv_finish(esp_net_tls_socket_t *socket,
+                                  size_t slot_index, uint64_t started_ms,
+                                  int result) {
+#if defined(H2_ESP_NET_IO_TRACE)
+    uint64_t now_ms = esp_net_now_ms();
+    uint64_t elapsed_ms = now_ms >= started_ms ? now_ms - started_ms : 0u;
+    ++socket->trace_read_calls;
+    if (result > 0) socket->trace_read_bytes += (uint64_t)result;
+    if (result == H2_PAL_ERR_TIMEOUT) ++socket->trace_read_timeouts;
+    socket->trace_read_ms += elapsed_ms;
+    if (elapsed_ms > socket->trace_max_read_ms)
+        socket->trace_max_read_ms = elapsed_ms;
+    /* The diagnostic contains only counters, never TLS bytes or credentials.
+     * Preserve the real result and cap UART traffic to one record per 5s. */
+    if (now_ms - socket->trace_last_ms >= 5000u) {
+        ESP_LOGI("h2_net", "stage=tls_read fd=%d rc=%d calls=%" PRIu64
+                 " bytes=%" PRIu64 " timeouts=%" PRIu64 " io_ms=%" PRIu64
+                 " max_io_ms=%" PRIu64 " raw_calls=%" PRIu64
+                 " raw_bytes=%" PRIu64 " raw_waits=%" PRIu64
+                 " raw_rc=%d raw_errno=%d ssl_rc=%d in_left=%zu",
+                 socket->fd, result, socket->trace_read_calls,
+                 socket->trace_read_bytes, socket->trace_read_timeouts,
+                 socket->trace_read_ms, socket->trace_max_read_ms,
+                 socket->trace_raw_calls, socket->trace_raw_bytes,
+                 socket->trace_raw_waits, socket->trace_raw_result,
+                 socket->trace_raw_errno, socket->trace_ssl_result,
+                 socket->ssl.MBEDTLS_PRIVATE(in_left));
+        socket->trace_last_ms = now_ms;
+    }
+#else
+    (void)socket;
+    (void)started_ms;
+#endif
+    esp_net_tls_release(slot_index);
+    return result;
+}
+
 #if MBEDTLS_VERSION_MAJOR < 4
 static int esp_net_tls_random(void *user, unsigned char *out, size_t len) {
     (void)user;
@@ -243,6 +287,14 @@ static int esp_net_tls_recv_raw(
     void *user, unsigned char *data, size_t len) {
     esp_net_tls_socket_t *socket = (esp_net_tls_socket_t *)user;
     int received = recv(socket->fd, data, len, MSG_DONTWAIT);
+#if defined(H2_ESP_NET_IO_TRACE)
+    ++socket->trace_raw_calls;
+    socket->trace_raw_result = received;
+    socket->trace_raw_errno = received < 0 ? errno : 0;
+    if (received > 0) socket->trace_raw_bytes += (uint64_t)received;
+    if (received < 0 && (errno == EAGAIN || errno == EWOULDBLOCK))
+        ++socket->trace_raw_waits;
+#endif
     if (received >= 0) {
         return received;
     }
@@ -1250,6 +1302,7 @@ static int esp_net_tcp_recv(
         return H2_PAL_ERR_INVALID_ARG;
     }
     uint64_t deadline_ms = esp_net_now_ms() + timeout_ms;
+    uint64_t started_ms = deadline_ms - timeout_ms;
     esp_net_tls_socket_t *tls_socket = NULL;
     size_t tls_slot = 0u;
     int tls_result = esp_net_tls_acquire(
@@ -1260,18 +1313,21 @@ static int esp_net_tcp_recv(
     if (tls_result > 0) {
         for (;;) {
             int result = mbedtls_ssl_read(&tls_socket->ssl, data, len);
+#if defined(H2_ESP_NET_IO_TRACE)
+            tls_socket->trace_ssl_result = result;
+#endif
             if (result > 0) {
-                esp_net_tls_release(tls_slot);
-                return result;
+                return esp_net_tls_recv_finish(
+                    tls_socket, tls_slot, started_ms, result);
             }
             if (result == 0 || result == MBEDTLS_ERR_SSL_PEER_CLOSE_NOTIFY) {
-                esp_net_tls_release(tls_slot);
-                return H2_PAL_ERR_CLOSED;
+                return esp_net_tls_recv_finish(
+                    tls_socket, tls_slot, started_ms, H2_PAL_ERR_CLOSED);
             }
             if (result != MBEDTLS_ERR_SSL_WANT_READ &&
                 result != MBEDTLS_ERR_SSL_WANT_WRITE) {
-                esp_net_tls_release(tls_slot);
-                return H2_PAL_ERR_IO;
+                return esp_net_tls_recv_finish(
+                    tls_socket, tls_slot, started_ms, H2_PAL_ERR_IO);
             }
             uint32_t remaining = timeout_ms == 0u
                 ? 0u
@@ -1283,12 +1339,12 @@ static int esp_net_tcp_recv(
             }
             if (wait_result != H2_PAL_OK &&
                 wait_result != H2_PAL_ERR_WOULD_BLOCK) {
-                esp_net_tls_release(tls_slot);
-                return wait_result;
+                return esp_net_tls_recv_finish(
+                    tls_socket, tls_slot, started_ms, wait_result);
             }
             if (wait_result == H2_PAL_ERR_WOULD_BLOCK && timeout_ms == 0u) {
-                esp_net_tls_release(tls_slot);
-                return H2_PAL_ERR_WOULD_BLOCK;
+                return esp_net_tls_recv_finish(
+                    tls_socket, tls_slot, started_ms, H2_PAL_ERR_WOULD_BLOCK);
             }
         }
     }
@@ -1421,6 +1477,14 @@ static h2_pal_result_t esp_net_tls_wrap(
         rc = H2_PAL_ERR_INVALID_ARG;
     }
     if (rc == H2_PAL_OK) {
+#if defined(H2_ESP_NET_IO_TRACE)
+        ESP_LOGI("h2_net", "stage=tcp_profile fd=%d window=%u mailbox=%u mss=%u ooseq_max=%u rx_buffers=%u sack=%u",
+                 socket_fd, (unsigned)TCP_WND,
+                 (unsigned)DEFAULT_TCP_RECVMBOX_SIZE, (unsigned)TCP_MSS,
+                 (unsigned)TCP_OOSEQ_MAX_PBUFS,
+                 (unsigned)CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM,
+                 (unsigned)LWIP_TCP_SACK_OUT);
+#endif
         mbedtls_ssl_set_bio(
             &slot->ssl, slot, esp_net_tls_send_raw, esp_net_tls_recv_raw, NULL);
         uint32_t remaining_ms = esp_net_timeout_remaining_ms(deadline_ms);

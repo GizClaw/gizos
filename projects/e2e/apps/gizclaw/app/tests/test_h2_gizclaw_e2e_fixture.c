@@ -17,6 +17,7 @@ static h2_app_test_time_t clock;
 static h2_app_test_mem_t allocator;
 static unsigned s_starts, s_stops, s_registers, s_deletes, s_polls;
 static int s_start_rc, s_register_rc, s_delete_rc, s_stop_rc, s_deinit_rc;
+static unsigned s_closed_deletes_remaining;
 static const char *s_profile = "runtime-profile-from-server";
 static bool s_unterminated_profile;
 static bool s_null_service;
@@ -152,6 +153,10 @@ h2_pal_result_t h2_gizclaw_rpc_peer_delete(h2_gizclaw_service_t *service,
   assert(!service->config.client_config->cancel_requested(
       service->config.client_config->cancel_user));
   ++s_deletes;
+  if (s_closed_deletes_remaining != 0u) {
+    --s_closed_deletes_remaining;
+    return H2_PAL_ERR_CLOSED;
+  }
   return s_delete_rc;
 }
 
@@ -940,6 +945,36 @@ int main(int argc, char **argv) {
   s_register_rc = H2_PAL_OK;
   assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
   assert(strcmp(identity, fixture.actors[0].private_key) == 0);
+  assert(!fixture.actors[0].peer_delete_required);
+  assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
+
+  /* A registered Peer can lose its transport. Restore the same identity
+   * without extending the deadline; only the retry's acknowledged deletion
+   * releases the remote obligation. */
+  assert(h2_gizclaw_e2e_fixture_init(&fixture, &runtime, &config, 1000u) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_e2e_fixture_connect_actors(&fixture, 1u) == H2_PAL_OK);
+  memcpy(identity, fixture.actors[0].private_key, sizeof(identity));
+  const uint64_t cleanup_deadline = fixture.deadline_ms;
+  const unsigned before_closed_delete = s_deletes;
+  const unsigned before_closed_register = s_registers;
+  s_closed_deletes_remaining = 1u;
+  assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
+  assert(s_deletes == before_closed_delete + 2u &&
+         s_registers == before_closed_register + 1u);
+  assert(strcmp(identity, fixture.actors[0].private_key) == 0 &&
+         fixture.deadline_ms == cleanup_deadline &&
+         !fixture.actors[0].peer_delete_required);
+  assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
+
+  assert(h2_gizclaw_e2e_fixture_init(&fixture, &runtime, &config, 1000u) ==
+         H2_PAL_OK);
+  assert(h2_gizclaw_e2e_fixture_connect_actors(&fixture, 1u) == H2_PAL_OK);
+  s_closed_deletes_remaining = 2u;
+  assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_ERR_CLOSED);
+  assert(fixture.actors[0].peer_delete_required &&
+         fixture.actors[0].registered);
+  assert(h2_gizclaw_e2e_fixture_cleanup(&fixture) == H2_PAL_OK);
   assert(!fixture.actors[0].peer_delete_required);
   assert(h2_gizclaw_e2e_fixture_deinit(&fixture) == H2_PAL_OK);
 
