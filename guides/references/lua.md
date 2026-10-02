@@ -26,6 +26,28 @@ For dirty-row repair, append `clip_top, clip_bottom` to the draw call, for examp
 
 For changing RGB888 colors, pass a reused array of ordinary Display color tables instead of a compiled palette. Each slot is sampled during the call; retain distinct tables for colors that differ. This API only expands caller-specified geometry and reuses the existing polygon raster. It does not decide lighting, projection or scene order.
 
+## Two-rail material strips (experimental)
+
+When adjacent faces share two caller-projected rails, `material_strip` retains their binary64 origins/deltas and compiled styles. One draw evaluates shared endpoints and preserves each face's material-then-line order. It uses the same material raster and fallback as scalar calls; it does not choose visibility, generate intervals or present the framebuffer. The generated Display contract above defines ownership, validation and rounding.
+
+```lua
+local display, vmath = require('display'), require('vmath')
+local first, last = vmath.buffer(6, 'f64'), vmath.buffer(6, 'f64')
+first:load({20,20, 20,100, 20,180})
+last:load({180,20, 180,100, 180,180})
+local material = display.compile_quad_material(
+    display.compile_quad_batch({{0,1,1}, {.4,.6,2}}))
+local red = display.compile_palette({'red', 'white'})
+local blue = display.compile_palette({'blue', 'white'})
+local strip = display.material_strip(2)
+strip:load(first, last, 3)
+strip:bind({material, material}, {red, blue}, {2, 2})
+-- Per frame: use caller-computed interval, source crop and depth ratio.
+local fast, fallback = display.draw_material_strip(strip, .1,.9, 0,1, 1, .5)
+```
+
+Keep the binding arrays and upload buffers when updating in a hot loop. Reload geometry only when the rails change; the same station count keeps styles. Rebind only when handles or line indices change. Blending an already bound palette updates subsequent draws without rebinding. Distinct per-face colors within one draw require independent mutable palettes; retaining one scratch palette for several different colors cannot reproduce scalar blend-then-draw calls. Nil line position disables lines, while an empty source crop alone still allows them. Consumer device timings determine whether this experimental API is worthwhile; geometry uploads and binding remain part of the integration cost.
+
 ## Precomposed quad materials
 
 For repeatedly drawing overlapping strips on a moving quad, compile the batch into a material once. The material resolves the last covering record's palette index in normalized coordinates, then maps that final field in one scan. Geometry, colors, cache keys and cache lifetime remain in Lua.

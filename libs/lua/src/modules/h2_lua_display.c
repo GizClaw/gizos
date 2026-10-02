@@ -1472,6 +1472,31 @@ static int display_raster_material(h2_lua_job_t *job,
   return 1;
 }
 
+/* Shared scalar/strip dispatch. A NULL batch lets scalar callers fetch their
+ * Lua fallback reference only when the material path actually declines. */
+static int display_render_material(h2_lua_job_t *job,
+    const display_material_t *m, const display_quad_batch_t *batch,
+    const uint16_t *colors, const double corners[8], int top, int bottom,
+    const display_quad_mapping_t *mapping, int empty_source) {
+  int clip_top = top, clip_bottom = bottom;
+  double min_y = corners[1], max_y = corners[1];
+  for (int i = 3; i < 8; i += 2) {
+    if (corners[i] < min_y) min_y = corners[i];
+    if (corners[i] > max_y) max_y = corners[i];
+  }
+  if (min_y > top) top = min_y < bottom ? (int)ceil(min_y) : bottom;
+  /* A reversed V axis can include a vertex on the maximum integer row.
+   * The half-plane rule decides ownership there, not the bounding box. */
+  if (max_y < bottom) bottom = max_y >= top ? (int)floor(max_y) + 1 : top;
+  int rendered = empty_source || clip_top == clip_bottom ||
+      display_raster_material(job, m, colors, corners, top, bottom, mapping);
+  if (!rendered && batch != NULL) {
+    display_replay_quad_batch(job, batch, colors, corners, clip_top, clip_bottom,
+                              mapping);
+  }
+  return rendered;
+}
+
 static int display_draw_quad_material_impl(lua_State *state, int projective) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
   const display_material_t *m = luaL_checkudata(state, 1, DISPLAY_MATERIAL_META);
@@ -1520,23 +1545,12 @@ static int display_draw_quad_material_impl(lua_State *state, int projective) {
   }
   int top, bottom;
   display_check_clip(state, job, required + 1, required + 2, &top, &bottom);
-  int clip_top = top, clip_bottom = bottom;
-  double min_y = corners[1], max_y = corners[1];
-  for (int i = 3; i < 8; i += 2) {
-    if (corners[i] < min_y) min_y = corners[i];
-    if (corners[i] > max_y) max_y = corners[i];
-  }
-  if (min_y > top) top = min_y < bottom ? (int)ceil(min_y) : bottom;
-  /* A reversed V axis can include a vertex on the maximum integer row.
-   * The half-plane rule decides ownership there, not the bounding box. */
-  if (max_y < bottom) bottom = max_y >= top ? (int)floor(max_y) + 1 : top;
-  int rendered = empty_source || clip_top == clip_bottom ||
-      display_raster_material(job, m, colors, corners, top, bottom, mapping);
+  int rendered = display_render_material(job, m, NULL, colors, corners,
+                                        top, bottom, mapping, empty_source);
   if (!rendered) {
     lua_getiuservalue(state, 1, 1);
     const display_quad_batch_t *batch = lua_touserdata(state, -1);
-    display_replay_quad_batch(job, batch, colors, corners, clip_top, clip_bottom,
-                              mapping);
+    display_replay_quad_batch(job, batch, colors, corners, top, bottom, mapping);
   }
   lua_pushboolean(state, rendered);
   return 1;
@@ -3105,15 +3119,17 @@ static int display_fill_rect(lua_State *state) {
 
 /* Keep the original integer Bresenham phase. Clipping/re-rounding endpoints
  * and restarting the walk would select different tie pixels. */
-static void display_raster_line(h2_lua_job_t *job, int x0, int y0,
-                                int x1, int y1, uint16_t color) {
+static void display_raster_line_rows(h2_lua_job_t *job, int x0, int y0,
+    int x1, int y1, uint16_t color, int top, int bottom) {
   int min_x = x0 < x1 ? x0 : x1, max_x = x0 > x1 ? x0 : x1;
   int min_y = y0 < y1 ? y0 : y1, max_y = y0 > y1 ? y0 : y1;
   if (max_x < 0 || min_x >= job->display_info.width ||
-      max_y < 0 || min_y >= job->display_info.height) return;
+      max_y < top || min_y >= bottom || top == bottom) return;
   int64_t dx = llabs((int64_t)x1 - x0), dy = -llabs((int64_t)y1 - y0);
   int sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1;
-  mark_dirty_rect(job, min_x, min_y, (int)dx + 1, (int)(-dy) + 1);
+  int dirty_top = min_y < top ? top : min_y;
+  int dirty_bottom = max_y >= bottom ? bottom : max_y + 1;
+  mark_dirty_rect(job, min_x, dirty_top, (int)dx + 1, dirty_bottom - dirty_top);
   int64_t error = dx + dy;
   int x_major = dx >= -dy;
   uint32_t remaining = (uint32_t)(x_major ? dx : -dy);
@@ -3147,13 +3163,203 @@ static void display_raster_line(h2_lua_job_t *job, int x0, int y0,
     remaining = last - first;
   }
   for (;;) {
-    write_pixel(job, x0, y0, color);
+    if (y0 >= top && y0 < bottom) write_pixel(job, x0, y0, color);
     if (remaining == 0) break;
     --remaining;
     int64_t twice = 2 * error;
     if (twice >= dy) { error += dy; x0 += sx; }
     if (twice <= dx) { error += dx; y0 += sy; }
   }
+}
+
+#define DISPLAY_MATERIAL_STRIP_META "h2.display.material_strip"
+
+typedef struct display_material_station {
+  double origin[2], delta[2], first[2], last[2];
+  int line[2];
+} display_material_station_t;
+
+typedef struct display_material_face {
+  const display_material_t *material;
+  const display_quad_batch_t *source;
+  const display_palette_t *palette;
+  unsigned line_index;
+} display_material_face_t;
+
+typedef struct display_material_strip {
+  size_t capacity, count;
+  int bound;
+  /* Stations followed by faces; references live in the userdata uservalues. */
+  display_material_station_t stations[];
+} display_material_strip_t;
+
+static display_material_face_t *display_strip_faces(display_material_strip_t *s) {
+  return (display_material_face_t *)(s->stations + s->capacity + 1);
+}
+
+_Static_assert(_Alignof(display_material_station_t) >=
+               _Alignof(display_material_face_t), "material strip alignment");
+
+static int display_material_strip_load(lua_State *state) {
+  /* A stack growth can run finalizers: do it before acquiring mutable state. */
+  luaL_checkstack(state, 8, "material strip load");
+  display_material_strip_t *s = luaL_checkudata(state, 1, DISPLAY_MATERIAL_STRIP_META);
+  lua_Integer count = luaL_checkinteger(state, 4);
+  if (count < 0 || count == 1 || (size_t)count > s->capacity + 1)
+    return luaL_error(state, "material strip station count out of range");
+  const double *first = display_f64(state, 2, 2 * (size_t)count);
+  const double *last = display_f64(state, 3, 2 * (size_t)count);
+  for (size_t i = 0; i < 2 * (size_t)count; ++i) {
+    if (!isfinite(first[i]) || fabs(first[i]) > 100000 ||
+        !isfinite(last[i]) || fabs(last[i]) > 100000)
+      return luaL_error(state, "material strip coordinate out of range");
+  }
+  size_t faces = count ? (size_t)count - 1 : 0;
+  if (faces != s->count) {
+    /* Invalidate styles on a topology change, releasing every old reference. */
+    for (size_t i = 0; i < 2 * s->count; ++i) {
+      lua_pushnil(state); lua_setiuservalue(state, 1, (int)i + 1);
+    }
+    memset(display_strip_faces(s), 0, s->capacity * sizeof(display_material_face_t));
+    s->bound = faces == 0;
+  }
+  for (size_t i = 0; i < (size_t)count; ++i) {
+    for (int axis = 0; axis < 2; ++axis) {
+      s->stations[i].origin[axis] = first[2*i + axis];
+      s->stations[i].delta[axis] = last[2*i + axis] - first[2*i + axis];
+    }
+  }
+  s->count = faces;
+  return 0;
+}
+
+static int display_material_strip_bind(lua_State *state) {
+  luaL_checkstack(state, 8, "material strip bind");
+  display_material_strip_t *s = luaL_checkudata(state, 1, DISPLAY_MATERIAL_STRIP_META);
+  luaL_checktype(state, 2, LUA_TTABLE); luaL_checktype(state, 3, LUA_TTABLE);
+  int lines = !lua_isnoneornil(state, 4);
+  if (lines) luaL_checktype(state, 4, LUA_TTABLE);
+  if (lua_rawlen(state, 2) != s->count || lua_rawlen(state, 3) != s->count ||
+      (lines && lua_rawlen(state, 4) != s->count))
+    return luaL_error(state, "material strip binding count mismatch");
+  /* Raw dense arrays and typed handles: no getters, allocations or callbacks
+   * in either pass. Complete validation precedes any reference replacement. */
+  for (size_t i = 0; i < s->count; ++i) {
+    lua_rawgeti(state, 2, (lua_Integer)i + 1);
+    const display_material_t *m = luaL_checkudata(state, -1, DISPLAY_MATERIAL_META);
+    lua_rawgeti(state, 3, (lua_Integer)i + 1);
+    const display_palette_t *p = luaL_checkudata(state, -1, H2_LUA_PALETTE_META);
+    if (p->count < m->color_count) return luaL_error(state, "material palette too short");
+    if (lines) {
+      lua_rawgeti(state, 4, (lua_Integer)i + 1);
+      lua_Integer index = luaL_checkinteger(state, -1);
+      if (index < 0 || (lua_Unsigned)index > p->count)
+        return luaL_error(state, "material strip line index out of range");
+      lua_pop(state, 1);
+    }
+    lua_pop(state, 2);
+  }
+  display_material_face_t *faces = display_strip_faces(s);
+  for (size_t i = 0; i < s->count; ++i) {
+    lua_rawgeti(state, 2, (lua_Integer)i + 1);
+    faces[i].material = lua_touserdata(state, -1);
+    lua_getiuservalue(state, -1, 1);
+    faces[i].source = lua_touserdata(state, -1); lua_pop(state, 1);
+    lua_setiuservalue(state, 1, 2 * (int)i + 1);
+    lua_rawgeti(state, 3, (lua_Integer)i + 1);
+    faces[i].palette = lua_touserdata(state, -1);
+    lua_setiuservalue(state, 1, 2 * (int)i + 2);
+    faces[i].line_index = 0;
+    if (lines) {
+      lua_rawgeti(state, 4, (lua_Integer)i + 1);
+      faces[i].line_index = (unsigned)lua_tointeger(state, -1); lua_pop(state, 1);
+    }
+  }
+  s->bound = 1;
+  return 0;
+}
+
+static int display_material_strip(lua_State *state) {
+  lua_Integer capacity = luaL_checkinteger(state, 1);
+  if (capacity < 0 || capacity > H2_LUA_QUAD_BATCH_LIMIT)
+    return luaL_error(state, "material strip capacity out of range");
+  /* Publish the metatable before allocating an object; partial/OOM creation
+   * has no raw allocation or registry root to reclaim. */
+  luaL_newmetatable(state, DISPLAY_MATERIAL_STRIP_META);
+  /* Also repair a metatable left by an earlier allocation failure. */
+  lua_pushcfunction(state, display_material_strip_load); lua_setfield(state, -2, "load");
+  lua_pushcfunction(state, display_material_strip_bind); lua_setfield(state, -2, "bind");
+  lua_pushvalue(state, -1); lua_setfield(state, -2, "__index");
+  size_t bytes = sizeof(display_material_strip_t) +
+      ((size_t)capacity + 1) * sizeof(display_material_station_t) +
+      (size_t)capacity * sizeof(display_material_face_t);
+  display_material_strip_t *s = lua_newuserdatauv(state, bytes, 2 * (int)capacity);
+  memset(s, 0, bytes); s->capacity = (size_t)capacity; s->bound = 1;
+  lua_pushvalue(state, -2); lua_setmetatable(state, -2);
+  return 1;
+}
+
+static int display_draw_material_strip(lua_State *state) {
+  luaL_checkstack(state, 8, "material strip draw");
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  display_material_strip_t *s = luaL_checkudata(state, 1, DISPLAY_MATERIAL_STRIP_META);
+  if (lua_gettop(state) < 6 || lua_gettop(state) > 9)
+    return luaL_error(state, "material strip needs a,b,source U bounds,ratio and optional line t,row clip");
+  double a = luaL_checknumber(state, 2), b = luaL_checknumber(state, 3);
+  display_quad_mapping_t parameters = {luaL_checknumber(state, 4),
+      luaL_checknumber(state, 5), luaL_checknumber(state, 6)};
+  int lines = !lua_isnoneornil(state, 7);
+  double t = lines ? luaL_checknumber(state, 7) : 0;
+  if (!isfinite(a) || !isfinite(b) || a < 0 || a > 1 || b < 0 || b > 1 ||
+      (lines && (!isfinite(t) || t < fmin(a, b) || t > fmax(a, b))))
+    return luaL_error(state, "material strip interval out of range");
+  if (!isfinite(parameters.first) || !isfinite(parameters.last) ||
+      parameters.first < 0 || parameters.last > 1 || parameters.first > parameters.last ||
+      !isfinite(parameters.ratio) || parameters.ratio <= 0)
+    return luaL_error(state, "material strip source mapping out of range");
+  int top, bottom;
+  display_check_clip(state, job, 8, 9, &top, &bottom);
+  if (!s->bound) return luaL_error(state, "material strip requires bind after station count change");
+  display_material_face_t *faces = display_strip_faces(s);
+  /* Stage every station before the first framebuffer write. No subsequent
+   * operation allocates or reenters Lua, so this scratch has one owner. */
+  for (size_t i = 0; s->count && i <= s->count; ++i) {
+    display_material_station_t *v = &s->stations[i];
+    int need_line = lines && ((i && faces[i-1].line_index) ||
+                               (i < s->count && faces[i].line_index));
+    for (int axis = 0; axis < 2; ++axis) {
+      v->first[axis] = display_quad_lerp(v->origin[axis], v->delta[axis], a);
+      v->last[axis] = display_quad_lerp(v->origin[axis], v->delta[axis], b);
+      if (!isfinite(v->first[axis]) || fabs(v->first[axis]) > 100000 ||
+          !isfinite(v->last[axis]) || fabs(v->last[axis]) > 100000)
+        return luaL_error(state, "material strip generated coordinate out of range");
+      if (need_line) {
+        double value = floor(display_quad_lerp(v->origin[axis], v->delta[axis], t));
+        if (!isfinite(value) || value < INT_MIN || value > INT_MAX)
+          return luaL_error(state, "material strip line endpoint out of range");
+        v->line[axis] = (int)value;
+      }
+    }
+    if (need_line && !point_is_bounded(job, v->line[0], v->line[1]))
+      return luaL_error(state, "material strip line endpoint out of range");
+  }
+  const display_quad_mapping_t *mapping = parameters.first == 0 &&
+      parameters.last == 1 && parameters.ratio == 1 ? NULL : &parameters;
+  int fast = 0, fallback = 0;
+  for (size_t i = 0; i < s->count; ++i) {
+    const display_material_station_t *v = &s->stations[i], *w = v + 1;
+    const display_material_face_t *f = &faces[i];
+    double corners[8] = {v->first[0],v->first[1],v->last[0],v->last[1],
+                        w->last[0],w->last[1],w->first[0],w->first[1]};
+    int rendered = display_render_material(job, f->material, f->source,
+        f->palette->colors, corners, top, bottom, mapping, parameters.first == parameters.last);
+    fast += rendered; fallback += !rendered;
+    if (lines && f->line_index)
+      display_raster_line_rows(job, v->line[0], v->line[1], w->line[0], w->line[1],
+                              f->palette->colors[f->line_index-1], top, bottom);
+  }
+  lua_pushinteger(state, fast); lua_pushinteger(state, fallback);
+  return 2;
 }
 
 static int display_draw_line(lua_State *state) {
@@ -3166,7 +3372,8 @@ static int display_draw_line(lua_State *state) {
   if (!job->display_open || !point_is_bounded(job, x0, y0) ||
       !point_is_bounded(job, x1, y1))
     return luaL_error(state, "invalid draw_line");
-  display_raster_line(job, x0, y0, x1, y1, color);
+  display_raster_line_rows(job, x0, y0, x1, y1, color,
+                           0, job->display_info.height);
   return 0;
 }
 
@@ -4379,6 +4586,8 @@ int h2_lua_push_display_proxy(lua_State *state, h2_lua_job_t *job) {
   set_function(state, "compile_mesh", display_compile_mesh, job);
   set_function(state, "compile_quad_batch", display_compile_quad_batch, job);
   set_function(state, "draw_quad_batch", display_draw_quad_batch, job);
+  set_function(state, "material_strip", display_material_strip, job);
+  set_function(state, "draw_material_strip", display_draw_material_strip, job);
   set_function(state, "compile_quad_material", display_compile_quad_material, job);
   set_function(state, "draw_quad_material", display_draw_quad_material, job);
   set_function(state, "draw_quad_material_projective",

@@ -150,6 +150,12 @@ C core 完整校验后绘制，adapter 再逐矩形标记已有 dirty/background
 
 拓扑上限为 256 项，初始化复制到 VM 计费 userdata，GC/VM teardown 回收；逐帧不创建 mesh、中间顶点 buffer 或光栅缓存。显式横向 patch 先插值，再沿其两边展开条带，保持与逐条 Lua `fill_polygon` 相同的浮点运算顺序和绘制顺序。成功 draw 自身不分配存储，所有颜色与角点在首次写像素前验证。空批次、退化条带、重叠及屏幕裁剪沿用 polygon 行为；颜色 getter 的 Lua 副作用不属于失败原子性保证。
 
+### Display 双轨材质实验批次
+
+`display.material_strip` 接收调用方提供的两条屏幕 XY 轨道，复用 f64 buffer、已编译 material 和 palette；公共合同见 [Display API](../../references/lua.md)。同一站点数的几何更新保留绑定，站点数变化释放旧绑定。逐面保持 material → iso-line 顺序，沿用原 Q24、完整 fallback 与整数线条相位。此候选不决定投影、拓扑、可见性、颜色配方或提交时机；接入前应对照 scalar 和 Lua 共享端点基线测量真实几何上传、绑定、调色板更新及冷/热绘制成本，并由消费端实机决定是否保留。
+
+同一批次中不同面的动态颜色必须使用独立 mutable palette；复用一个调色板后再批量绘制会让所有引用读取同一个最终颜色。成功 load/bind/draw 在预留 Lua stack 后无分配，不创建 mesh 或光栅缓存，存储和绑定引用均由 VM 计费和回收。构造、OOM、finalizer 重入与首个像素写入前的完整验证遵循 public header 合同。
+
 ### Display 笔画与有界缓存
 
 `display.stroke_path(points,widths,color,offset_x=0,top=0,bottom=height,cache=false,fast=false,smooth=false,scale=1,tolerance=0)` 接受 `2..256` 个有限 ±100000 的点对、恰好 `n-1` 个 `0..1000` 宽度，以及单色或 `n-1` 个颜色。cache/fast/smooth 必须为 boolean；scale 为 `0<scale<=16`，先作用于坐标和宽度；offset 有限且位于 ±100000。top/bottom 沿用屏内整数半开行裁剪。所有参数、颜色 getter 和分配在绘制前完成并重新检查 Display。返回 `(cache_hit,fast_segment_count)`，不是帧率。

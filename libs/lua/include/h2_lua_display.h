@@ -96,6 +96,58 @@
  *   supported ABIs, charged to VM memory, with ordinary GC/teardown cleanup
  *   including failed construction. There are no retained registry roots.
  *
+ * Two-rail material strips (experimental, owning VM worker only):
+ * - display.material_strip(face_capacity) constructs bounded VM userdata;
+ *   capacity is an integer 0..256. Initially empty and bound. No Display
+ *   acquisition is required by construction, load or bind on an existing proxy.
+ * - strip:load(first_xy_f64,last_xy_f64,station_count) copies two interleaved
+ *   screen-space XY rails from existing vmath f64 buffers (capacity >= 2*count).
+ *   Count is 0 or 2..face_capacity+1. Coordinates are finite +/-100000.
+ *   Count N defines N-1 consecutive faces; closure requires an explicit final
+ *   station. No topology, projection, interval or visibility policy is inferred.
+ *   Each stored delta is last-first, rounded to binary64. Same-count load keeps
+ *   bindings; a count change releases all bindings and requires bind for a
+ *   nonempty strip. Failed load preserves the previous geometry and bindings.
+ * - strip:bind(materials,palettes[,line_color_indices]) takes raw dense arrays
+ *   with exactly one entry per active face. Materials are compile_quad_material
+ *   handles; palettes are compile_palette handles covering every material index.
+ *   Optional line indices are integers 0 (disabled) or 1..that palette's length;
+ *   omission disables all lines. No color tables/getters are accepted. Complete
+ *   validation precedes replacement. Strong userdata references retain handles
+ *   and original fallback batches; the input arrays are not retained.
+ * - display.draw_material_strip(strip,a,b,u_first,u_last,ratio,
+ *   line_t=nil,clip_top=0,clip_bottom=height) returns (fast_faces,fallback_faces).
+ *   a,b are finite [0,1], including reversed/equal intervals. Source U bounds
+ *   satisfy 0<=first<=last<=1; ratio is finite and positive. Optional line_t is
+ *   finite and between min(a,b) and max(a,b). Clip selects integer half-open
+ *   rows inside the acquired framebuffer. Nil clip bounds use the defaults.
+ *   Empty geometry/source/clip still validates inputs, binding and acquisition.
+ * - Station evaluation is origin + delta*t, with each multiplication/addition
+ *   rounded separately to binary64, even at t=1. Face i uses station i at a,b,
+ *   then station i+1 at b,a. Each face draws its material followed immediately
+ *   by its optional line before the next face. Material coverage, projective
+ *   source cropping and complete original-batch fallback match the scalar
+ *   draw_quad_material_projective API. Empty source/clip counts as fast.
+ * - Lines use floor of the separately evaluated station coordinates, then the
+ *   existing draw_line integer Bresenham phase. Row clips suppress writes,
+ *   without restarting at clipped endpoints. Every enabled line endpoint must
+ *   lie in [-width,2*width] x [-height,2*height], even for empty clips/source.
+ *   nil line_t disables all lines. Empty source alone does not suppress a line.
+ * - Each palette is read synchronously at draw time. Aliased mutable handles
+ *   show the same current values in every referencing face: distinct colors in
+ *   one strip draw need distinct handles. A palette may be blended/reused after
+ *   the draw returns. No deferred commands, palette snapshots or registry roots.
+ * - Successful load, bind and draw have no heap allocation or Lua callbacks
+ *   after stack capacity is secured. Stack growth may run ordinary finalizers
+ *   before mutable state/acquisition is read. Every generated corner and enabled
+ *   line endpoint is validated before any framebuffer write; errors preserve
+ *   pixels except ordinary finalizer side effects. Scratch is instance-owned;
+ *   no allocation/reentry occurs during drawing. OOM construction publishes no
+ *   partial object and is retryable. Storage is VM-charged, fixed at construction
+ *   and reclaimed by GC/VM teardown, including bound handles when unreferenced.
+ *   Draw uses existing dirty/background tracking and does not present. This is
+ *   a CPU batching candidate, not an asynchronous submission or raster cache.
+ *
  * Quad materials (opt-in parameter-space coverage, owning VM worker only):
  * - display.compile_quad_material(batch) precomposes an immutable quad batch
  *   into last-record-wins palette cells. Each normalized interval is half-open;
