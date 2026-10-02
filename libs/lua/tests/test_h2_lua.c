@@ -2821,10 +2821,13 @@ int main(int argc, char **argv) {
   if (argc == 2 && (strcmp(argv[1], "--raster-benchmark") == 0 ||
                     strcmp(argv[1], "--quad-benchmark") == 0 ||
                     strcmp(argv[1], "--material-benchmark") == 0 ||
-                    strcmp(argv[1], "--smooth-benchmark") == 0)) {
+                    strcmp(argv[1], "--smooth-benchmark") == 0 ||
+                    strcmp(argv[1], "--projective-benchmark") == 0)) {
     int material = strcmp(argv[1], "--material-benchmark") == 0;
     int smooth = strcmp(argv[1], "--smooth-benchmark") == 0;
-    test_display_raster2d(material || smooth ? 2 : 1,
+    int projective = strcmp(argv[1], "--projective-benchmark") == 0;
+    test_display_raster2d(material || smooth || projective ? 2 : 1,
+        projective ? "libs/lua/tests/quad_material_projective.lua" :
         material ? "libs/lua/tests/quad_material.lua" :
         smooth ? "libs/lua/tests/smooth_cache.lua" :
         strcmp(argv[1], "--quad-benchmark") == 0
@@ -2845,6 +2848,7 @@ int main(int argc, char **argv) {
   test_display_raster2d(0, "libs/lua/tests/quad_batch.lua");
   test_display_raster2d(1, "libs/lua/tests/quad_batch_clip.lua");
   test_display_raster2d(2, "libs/lua/tests/quad_material.lua");
+  test_display_raster2d(2, "libs/lua/tests/quad_material_projective.lua");
   test_display_raster2d(2, "libs/lua/tests/smooth_cache.lua");
   test_display_raster2d(0, "libs/lua/tests/geometry_batches.lua");
   test_display_raster2d(0, "libs/lua/tests/stroke_buffer.lua");

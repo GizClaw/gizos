@@ -944,13 +944,42 @@ static double display_quad_lerp(double origin, double delta, double t) {
   return origin + step;
 }
 
+/* A source U crop mapped to an already projected target quadrilateral.
+ * Ratio is the endpoint homogeneous depth last/first, both with one sign. */
+typedef struct display_quad_mapping {
+  double first, last, ratio;
+} display_quad_mapping_t;
+
+static double display_quad_map_u(const display_quad_mapping_t *mapping,
+                                 double u) {
+  if (u <= mapping->first) return 0;
+  if (u >= mapping->last) return 1;
+  double s = (u - mapping->first) / (mapping->last - mapping->first);
+  if (mapping->ratio == 1) return s;
+  /* Equivalent to s*r/(1+(r-1)*s), without overflow or cancellation of
+   * the denominator for extreme positive ratios. Endpoints stay exact. */
+  if (mapping->ratio >= 1)
+    return s / (s + (1 - s) / mapping->ratio);
+  volatile double scaled = s * mapping->ratio;
+  return scaled / ((1 - s) + scaled);
+}
+
 static void display_replay_quad_batch(h2_lua_job_t *job,
     const display_quad_batch_t *batch, const uint16_t *colors,
-    const double corners[8], int top, int bottom) {
+    const double corners[8], int top, int bottom,
+    const display_quad_mapping_t *mapping) {
   double edges[8] = {0};
   const display_quad_strip_t *previous = NULL;
   for (size_t i = 0; i < batch->count; ++i) {
     const display_quad_strip_t *strip = &batch->strips[i];
+    double left = strip->left, right = strip->right;
+    if (mapping != NULL) {
+      if (left < mapping->first) left = mapping->first;
+      if (right > mapping->last) right = mapping->last;
+      if (left >= right) continue;
+      left = display_quad_map_u(mapping, left);
+      right = display_quad_map_u(mapping, right);
+    }
     if (previous == NULL || strip->patch != previous->patch ||
         strip->top != previous->top || strip->bottom != previous->bottom) {
       double patch[8];
@@ -974,10 +1003,10 @@ static void display_replay_quad_batch(h2_lua_job_t *job,
     }
     double xy[2][4];
     for (int axis = 0; axis < 2; ++axis) {
-      xy[axis][0] = display_quad_lerp(edges[axis], edges[2 + axis], strip->left);
-      xy[axis][1] = display_quad_lerp(edges[axis], edges[2 + axis], strip->right);
-      xy[axis][2] = display_quad_lerp(edges[4 + axis], edges[6 + axis], strip->right);
-      xy[axis][3] = display_quad_lerp(edges[4 + axis], edges[6 + axis], strip->left);
+      xy[axis][0] = display_quad_lerp(edges[axis], edges[2 + axis], left);
+      xy[axis][1] = display_quad_lerp(edges[axis], edges[2 + axis], right);
+      xy[axis][2] = display_quad_lerp(edges[4 + axis], edges[6 + axis], right);
+      xy[axis][3] = display_quad_lerp(edges[4 + axis], edges[6 + axis], left);
     }
     display_raster_polygon(job, xy[0], xy[1], 4, colors[strip->color_index],
                            0, top, bottom);
@@ -1021,7 +1050,7 @@ static int display_draw_quad_batch(lua_State *state) {
   display_check_clip(state, job, 11, 12, &top, &bottom);
   if (top == bottom)
     return 0;
-  display_replay_quad_batch(job, batch, colors, corners, top, bottom);
+  display_replay_quad_batch(job, batch, colors, corners, top, bottom, NULL);
   return 0;
 }
 
@@ -1117,7 +1146,8 @@ static double material_cross(double ax, double ay, double bx, double by) {
  * The bounded total magnitude prevents overflow including the final advance.
  */
 static int material_prepare(const display_material_t *m, const double *c,
-                            int first, int end, material_edge_t *edges) {
+                            int first, int end, material_edge_t *edges,
+                            const display_quad_mapping_t *mapping) {
   double orientation = 0;
   for (int i = 0; i < 4; ++i) {
     int j = (i + 1) % 4, k = (i + 2) % 4;
@@ -1131,6 +1161,8 @@ static int material_prepare(const display_material_t *m, const double *c,
     const double *knots = axis ? m->v : m->u;
     for (unsigned i = 0; i < count; ++i) {
       double t = knots[i];
+      if (axis == 0 && mapping != NULL)
+        t = display_quad_map_u(mapping, t);
       int a = 0, b = axis ? 6 : 2, d = axis ? 2 : 6, e = 4;
       double px = c[a] + t * (c[b] - c[a]);
       double py = c[a+1] + t * (c[b+1] - c[a+1]);
@@ -1201,10 +1233,11 @@ __attribute__((noinline))
 #endif
 static int display_raster_material(h2_lua_job_t *job,
     const display_material_t *m, const uint16_t *colors,
-    const double corners[8], int top, int bottom) {
+    const double corners[8], int top, int bottom,
+    const display_quad_mapping_t *mapping) {
   if (m->u_first >= m->u_end || m->v_first >= m->v_end) return 1;
   material_edge_t edges[2 * DISPLAY_MATERIAL_KNOTS];
-  if (!material_prepare(m, corners, top, bottom, edges)) return 0;
+  if (!material_prepare(m, corners, top, bottom, edges, mapping)) return 0;
   unsigned count = m->nu + m->nv;
   int width = job->display_info.width;
   for (int y = top; y < bottom; ++y) {
@@ -1262,13 +1295,33 @@ static int display_raster_material(h2_lua_job_t *job,
   return 1;
 }
 
-static int display_draw_quad_material(lua_State *state) {
+static int display_draw_quad_material_impl(lua_State *state, int projective) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
   const display_material_t *m = luaL_checkudata(state, 1, DISPLAY_MATERIAL_META);
-  if (lua_gettop(state) < 10 || lua_gettop(state) > 12)
-    return luaL_error(state, "material needs colors, eight coordinates and row clip");
+  int required = projective ? 13 : 10;
+  if (lua_gettop(state) < required || lua_gettop(state) > required + 2)
+    return luaL_error(state, projective
+        ? "projective material needs colors, eight coordinates, source U bounds, depth ratio and optional row clip"
+        : "material needs colors, eight coordinates and row clip");
   double corners[8];
   for (int i = 0; i < 8; ++i) corners[i] = check_geometry_number(state, i + 3);
+  display_quad_mapping_t parameters;
+  const display_quad_mapping_t *mapping = NULL;
+  int empty_source = 0;
+  if (projective) {
+    parameters.first = luaL_checknumber(state, 11);
+    parameters.last = luaL_checknumber(state, 12);
+    parameters.ratio = luaL_checknumber(state, 13);
+    if (!isfinite(parameters.first) || !isfinite(parameters.last) ||
+        parameters.first < 0 || parameters.last > 1 ||
+        parameters.first > parameters.last)
+      return luaL_error(state, "material source U bounds must satisfy 0 <= first <= last <= 1");
+    if (!isfinite(parameters.ratio) || parameters.ratio <= 0)
+      return luaL_error(state, "material depth ratio must be finite and positive");
+    empty_source = parameters.first == parameters.last;
+    if (parameters.first != 0 || parameters.last != 1 || parameters.ratio != 1)
+      mapping = &parameters;
+  }
   /* Palette decoding is identical to draw_quad_batch, including callbacks.
    * Do it before checking framebuffer lifetime or writing any pixels. */
   uint16_t decoded[H2_LUA_QUAD_BATCH_LIMIT];
@@ -1289,7 +1342,7 @@ static int display_draw_quad_material(lua_State *state) {
     colors = decoded;
   }
   int top, bottom;
-  display_check_clip(state, job, 11, 12, &top, &bottom);
+  display_check_clip(state, job, required + 1, required + 2, &top, &bottom);
   int clip_top = top, clip_bottom = bottom;
   double min_y = corners[1], max_y = corners[1];
   for (int i = 3; i < 8; i += 2) {
@@ -1300,15 +1353,24 @@ static int display_draw_quad_material(lua_State *state) {
   /* A reversed V axis can include a vertex on the maximum integer row.
    * The half-plane rule decides ownership there, not the bounding box. */
   if (max_y < bottom) bottom = max_y >= top ? (int)floor(max_y) + 1 : top;
-  int rendered = clip_top == clip_bottom ||
-      display_raster_material(job, m, colors, corners, top, bottom);
+  int rendered = empty_source || clip_top == clip_bottom ||
+      display_raster_material(job, m, colors, corners, top, bottom, mapping);
   if (!rendered) {
     lua_getiuservalue(state, 1, 1);
     const display_quad_batch_t *batch = lua_touserdata(state, -1);
-    display_replay_quad_batch(job, batch, colors, corners, clip_top, clip_bottom);
+    display_replay_quad_batch(job, batch, colors, corners, clip_top, clip_bottom,
+                              mapping);
   }
   lua_pushboolean(state, rendered);
   return 1;
+}
+
+static int display_draw_quad_material(lua_State *state) {
+  return display_draw_quad_material_impl(state, 0);
+}
+
+static int display_draw_quad_material_projective(lua_State *state) {
+  return display_draw_quad_material_impl(state, 1);
 }
 
 /* One representation for Lua tables and allocation-free native updates. */
@@ -4028,6 +4090,8 @@ int h2_lua_push_display_proxy(lua_State *state, h2_lua_job_t *job) {
   set_function(state, "draw_quad_batch", display_draw_quad_batch, job);
   set_function(state, "compile_quad_material", display_compile_quad_material, job);
   set_function(state, "draw_quad_material", display_draw_quad_material, job);
+  set_function(state, "draw_quad_material_projective",
+               display_draw_quad_material_projective, job);
   set_function(state, "update_mesh", display_update_mesh, job);
   set_function(state, "draw_mesh", display_draw_mesh, job);
   set_function(state, "draw_pose", display_draw_pose, job);
