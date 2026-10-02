@@ -1551,6 +1551,19 @@ static int test_region_failure(lua_State *state) {
   return 0;
 }
 
+static int test_present_pixels(lua_State *state) {
+  luaL_checktype(state, 1, LUA_TFUNCTION);
+  assert(lua_getupvalue(state, 1, 1) != NULL);
+  h2_lua_job_t *job = lua_touserdata(state, -1);
+  lua_pop(state, 1);
+  assert(job != NULL && job->display_open);
+  lua_pushvalue(state, 1);
+  lua_call(state, 0, 2);
+  assert(memcmp(job->framebuffer, s_test_display_fixture.pixels,
+      (size_t)job->display_info.width * job->display_info.height * 2) == 0);
+  return 2;
+}
+
 static int test_region_finalizer(lua_State *state) {
   assert(lua_toboolean(state, 1));
   assert(s_test_display_fixture.close_count == 1u);
@@ -1687,6 +1700,10 @@ static int test_region_open(void *lua_state, void *user) {
   lua_newtable(state);
   lua_pushcfunction(state, test_region_failure);
   lua_setfield(state, -2, "fail");
+  lua_pushcfunction(state, test_present_pixels);
+  lua_setfield(state, -2, "present");
+  lua_pushcfunction(state, test_raster_oom);
+  lua_setfield(state, -2, "oom");
   lua_pushcfunction(state, test_region_finalizer);
   lua_setfield(state, -2, "finalizer");
   lua_pushcfunction(state, test_region_draw);
@@ -1895,11 +1912,11 @@ static void test_display_regions(void) {
       "local a,b=d.present(opts);assert(a==px and b==nr, a..'/'..b..' expected '..px..'/'..nr) end;"
       "d.clear('blue');local bg=d.capture_region(0,0,w,h);"
       "d.restore_background(bg);p(w*h,1,{retained=true});p(0,0);"
-      "d.fill_rect(1,1,1,1,'red');p(256,1);"
-      "d.restore_background(bg);p(256,1);d.restore_background(bg);p(0,0);"
+      "d.fill_rect(1,1,1,1,'red');p(1,1);"
+      "d.restore_background(bg);p(1,1);d.restore_background(bg);p(0,0);"
       "d.fill_rect(1,1,1,1,'blue');p(0,0);"
-      "d.fill_rect(w-1,h-1,1,1,'red');p((w-16)*(h-32),1);"
-      "d.restore_background(bg);p((w-16)*(h-32),1);"
+      "d.fill_rect(w-1,h-1,1,1,'red');p(1,1);"
+      "d.restore_background(bg);p(1,1);"
       "d.clear('red');assert(d.capture_region(0,0,w,h,nil,bg)==bg);"
       "d.clear('black');d.restore_background(bg);p(w*h,1,{bounds=true});"
       "local weak=setmetatable({bg},{__mode='v'});bg=nil;collectgarbage('collect');"
@@ -1920,13 +1937,44 @@ static void test_display_regions(void) {
   static const uint8_t merge[] =
       "local d=require('display');d.present({retained=true});"
       "d.fill_rect(0,0,1,1,'red');d.fill_rect(32,0,1,1,'red');"
-      "local p,n=d.present();assert(p==512 and n==2);"
-      "d.clear('black');p,n=d.present({merge_gap=1});assert(p==768 and n==1);"
+      "local p,n=d.present();assert(p==2 and n==2);"
+      "d.clear('black');p,n=d.present({merge_gap=1});assert(p==33 and n==1);"
       "d.fill_rect(0,0,1,1,'red');d.fill_rect(0,32,1,1,'red');"
-      "p,n=d.present();assert(p==512 and n==2);"
-      "d.clear('black');p,n=d.present({merge_gap=1});assert(p==768 and n==1);"
+      "p,n=d.present();assert(p==2 and n==2);"
+      "d.clear('black');p,n=d.present({merge_gap=1});assert(p==33 and n==1);"
       "d.clear('black');assert(d.present()==0)";
   (void)run_display_script_size(host, "@retained-merge.lua", merge, sizeof(merge)-1, 48, 48);
+  static const uint8_t present_spans[] =
+      "local d=require('display');local n=require('region_test');"
+      "local w,h=d.width,d.height;d.clear('black');collectgarbage('collect');"
+      "local options={retained=true};n.oom(function() d.present(options) end);"
+      "collectgarbage('collect');"
+      "local before=collectgarbage('count');d.present({retained=true});"
+      "collectgarbage('collect');local bytes=(collectgarbage('count')-before)*1024;"
+      "assert(bytes>w*h*2+1024 and bytes<w*h*2+2048,'charged planner storage');"
+      "print('retained 120x120 charged VM bytes',bytes);"
+      "local function present() return n.present(d.present) end;"
+      "for frame=1,24 do d.clear('black');local radius=25+frame;"
+      "d.fill_polygon({{60-radius,60},{60,60-radius},{60+radius,60},{60,60+radius}},'red');"
+      "radius=radius-5;"
+      "d.fill_polygon({{60-radius,60},{60,60-radius},{60+radius,60},{60,60+radius}},'black');"
+      "present();assert(present()==0) end;"
+      "for _,failure in ipairs({1,2,0}) do "
+      "d.clear('black');present();d.fill_rect(0,0,1,1,'red');"
+      "d.fill_rect(w-1,h-1,1,1,'blue');n.fail(failure,failure==0);"
+      "assert(not pcall(d.present));local p,r=present();assert(p==w*h and r==1);"
+      "assert(present()==0) end;"
+      "n.fail(0,true);assert(not pcall(d.present));assert(present()==w*h);"
+      "d.clear('black');present();"
+      "for y=0,h-1 do for x=0,w-1 do if (x+y)%2==0 then "
+      "d.fill_rect(x,y,1,1,'green') end end end;present();assert(present()==0);"
+      "local flip=false;local function warm() flip=not flip;d.clear('black');"
+      "d.fill_rect(0,0,1,1,flip and 'red' or 'blue');assert(d.present()>0) end;"
+      "n.noalloc(warm);present();"
+      "d.present({retained=false});collectgarbage('collect');"
+      "assert(collectgarbage('count')<before+4,'retained storage released')";
+  (void)run_display_script_size(host, "@present-spans.lua", present_spans,
+                                sizeof(present_spans)-1, 120, 120);
   static const uint8_t memory[] =
       "local d=require('display');local w,h=d.width,d.height;"
       "local r=d.capture_region(0,0,w,h);local weak=setmetatable({r},{__mode='v'});"

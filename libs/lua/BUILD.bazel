@@ -131,6 +131,8 @@ cc_library(
         "src/core/h2_lua_internal.h",
         "src/modules/h2_lua_display.c",
         "src/modules/h2_lua_display_internal.h",
+        "src/modules/h2_lua_display_plan.c",
+        "src/modules/h2_lua_display_plan.h",
         "src/modules/h2_lua_geometry.c",
         "src/modules/h2_lua_geometry_batches_internal.h",
         "src/modules/h2_lua_geometry_kernels.h",
@@ -491,6 +493,23 @@ py_test(
     target_compatible_with = select({
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_test(
+    name = "display_plan_test",
+    srcs = [
+        "src/modules/h2_lua_display_plan.c",
+        "src/modules/h2_lua_display_plan.h",
+        "tests/test_display_plan.c",
+    ],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + h2_gnu_only_copts(["-O3"]),
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
         "//conditions:default": ["@platforms//:incompatible"],
     }),
 )

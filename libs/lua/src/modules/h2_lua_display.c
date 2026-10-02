@@ -6,6 +6,7 @@
 #include "h2_lua_geometry_batches_internal.h"
 #include "h2_f32_math.h"
 #include "h2_lua_display_internal.h"
+#include "h2_lua_display_plan.h"
 
 #include <float.h>
 #include <limits.h>
@@ -96,6 +97,7 @@ typedef struct display_region {
 
 typedef struct display_presented {
   size_t pixel_count;
+  h2_lua_display_plan_t plan;
   /* Full last-successful frame followed by one comparison byte per tile. */
   uint16_t pixels[];
 } display_presented_t;
@@ -3455,6 +3457,19 @@ static h2_pal_result_t display_submit_retained(h2_lua_job_t *job, int bounds,
                                                size_t *rects) {
   display_presented_t *frame = job->display_presented;
   int width = job->display_info.width, height = job->display_info.height;
+  if (!job->dirty_valid) return H2_PAL_OK;
+  h2_lua_display_plan_rect_t dirty = {job->dirty_min_x, job->dirty_min_y,
+      job->dirty_max_x + 1, job->dirty_max_y + 1};
+  if (!bounds && h2_lua_display_plan_build(&frame->plan, job->framebuffer,
+                                         frame->pixels, width, dirty, gap)) {
+    for (int i = 0; i < frame->plan.count; ++i) {
+      h2_lua_display_plan_rect_t r = frame->plan.rects[i];
+      h2_pal_result_t result = display_submit_rect(job, r.left, r.top,
+          r.right - r.left, r.bottom - r.top, pixels, rects);
+      if (result != H2_PAL_OK) return result;
+    }
+    return H2_PAL_OK;
+  }
   int columns = (width + 15) / 16, rows = (height + 15) / 16;
   uint8_t *changed = (uint8_t *)(frame->pixels + frame->pixel_count);
   memset(changed, 0, (size_t)columns * rows);
