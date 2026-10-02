@@ -974,6 +974,8 @@ static int bk_pref_open(
     }
     bk_pref_unlock_pool();
     if (ns == NULL) {
+        printf("H2_BK_PREF_POOL exhausted capacity=%u namespace=%s\n",
+            H2_BK_PREF_OPEN_MAX, name_space);
         return H2_PAL_ERR_NO_MEMORY;
     }
     written = snprintf(ns->name_space, sizeof(ns->name_space), "%s", name_space);

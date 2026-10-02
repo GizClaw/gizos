@@ -34,6 +34,8 @@ Loader 与 App 使用各自的分区表，分别链接到最终地址。上表�
 
 ## 平台配置
 
+公共 BK Preference provider 当前最多同时打开四个 namespace handle，关闭后复用槽位。并发容量耗尽返回 `H2_PAL_ERR_NO_MEMORY` 并输出 `H2_BK_PREF_POOL exhausted capacity=4 namespace=<name>`；该诊断只包含 namespace 名称，不包含设置值。它与内部堆或 PSRAM allocator 的内存耗尽需要分别判断。
+
 Loader 和 H2Loader APP layout 使用 AP 直驱的 UART1 承载 managed UART 与 AP 日志，固定为 460800 8N1。板级 AP defaults 选择 UART1，GPIO 表同时声明 P0=`UART1_TXD`、P1=`UART1_RXD`；SDK 会拒绝映射未出现在该表中的引脚，因此只修改串口号不足以启用 UART1。USB 转串口的 RXD 接 P0/TX，TXD 接 P1/RX，并与开发板共地。UART0 保留 ROM 下载与 CP 日志，UART0 转串口的 RTS 可以接 CEN 控制复位；两路串口可同时连接，均不启用硬件流控。
 
 AP 的 UART PAL 持有 IO Stream iKCP session 和 Loader/App command owner。Loader 只有在 firmware identity 与共享 Loader state 初始化成功后才确认 UART session；随后在 storage mount、publish recovery 和 startup retry 之前启动 UART command task。startup 与 UART/BLE lifecycle/package operation 继续由共享 mutex 串行化，因此 mount 或启动恢复失败时仍保留串口诊断与管理入口。
