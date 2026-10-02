@@ -268,6 +268,11 @@ h2_pal_result_t h2_lua_host_create(const h2_lua_host_config_t *config,
                                      ? 64u * 1024u
                                      : normalized.worker_stack_size;
   normalized.max_jobs = normalized.max_jobs == 0u ? 4u : normalized.max_jobs;
+  if (normalized.display_worker &&
+      (!normalized.display_exclusive || normalized.max_jobs != 1u))
+    return H2_PAL_ERR_INVALID_ARG;
+  if (normalized.display_worker_stack_size == 0u)
+    normalized.display_worker_stack_size = 8192u;
   normalized.event_delivery_capacity = normalized.event_delivery_capacity == 0u
                                            ? 8u
                                            : normalized.event_delivery_capacity;
@@ -663,21 +668,32 @@ h2_pal_result_t h2_lua_host_join(h2_lua_host_t *host) {
     }
   }
   if (result == H2_PAL_OK) {
+    /* VM workers are now stopped. Do not mark the Host joined while a
+     * Display task still owns VM-rooted storage or a device lease. */
+    for (size_t i = 0; i < host->config.max_jobs; ++i) {
+      if (host->jobs[i].display_submission != NULL) {
+        h2_pal_result_t close_result = h2_lua_job_close_display(&host->jobs[i]);
+        if (close_result != H2_PAL_OK) result = close_result;
+      }
+    }
+  }
+  if (result == H2_PAL_OK) {
     h2_atomic_store(&host->joined, 1);
   }
   return result;
 }
 
-void h2_lua_host_destroy(h2_lua_host_t *host) {
+h2_pal_result_t h2_lua_host_destroy_checked(h2_lua_host_t *host) {
   size_t i;
   const h2_pal_mem_api_t *mem;
   if (host == NULL) {
-    return;
+    return H2_PAL_OK;
   }
   mem = host->config.allocator;
   (void)h2_lua_host_stop(host);
-  if (h2_lua_host_join(host) != H2_PAL_OK) {
-    return;
+  h2_pal_result_t result = h2_lua_host_join(host);
+  if (result != H2_PAL_OK) {
+    return result;
   }
   for (i = 0u; i < host->config.max_jobs; ++i) {
     release_job(&host->jobs[i]);
@@ -713,6 +729,11 @@ void h2_lua_host_destroy(h2_lua_host_t *host) {
   h2_pal_mem_free(mem, host->capability_requests);
   destroy_host_atomics(host);
   h2_pal_mem_free(mem, host);
+  return H2_PAL_OK;
+}
+
+void h2_lua_host_destroy(h2_lua_host_t *host) {
+  (void)h2_lua_host_destroy_checked(host);
 }
 
 h2_pal_result_t h2_lua_register_module(h2_lua_host_t *host, const char *name,

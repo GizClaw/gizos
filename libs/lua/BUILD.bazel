@@ -9,12 +9,13 @@ load(":source_package.bzl", "lua_source_package")
 
 package(default_visibility = ["//visibility:public"])
 
-exports_files(["lua_resource.bzl"])
+exports_files(["lua_resource.bzl", "tests/display_submit.lua"])
 
 h2_tasks(
     name = "tasks",
     tasks = [
         "$lua/worker",
+        "$lua/display",
     ],
 )
 
@@ -133,6 +134,8 @@ cc_library(
         "src/modules/h2_lua_display_internal.h",
         "src/modules/h2_lua_display_plan.c",
         "src/modules/h2_lua_display_plan.h",
+        "src/modules/h2_lua_display_worker.c",
+        "src/modules/h2_lua_display_worker.h",
         "src/modules/h2_lua_geometry.c",
         "src/modules/h2_lua_geometry_batches_internal.h",
         "src/modules/h2_lua_geometry_kernels.h",
@@ -301,6 +304,7 @@ cc_test(
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
     data = [
+        "tests/display_submit.lua",
         "tests/geometry_batches.lua",
         "tests/mesh_source_paths.lua",
         "tests/mesh_staging.lua",

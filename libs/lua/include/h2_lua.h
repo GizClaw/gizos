@@ -121,6 +121,20 @@ typedef struct h2_lua_host_config {
    * per-block overhead; measure the workload rather than assuming the quota.
    * Destroy releases every block after all jobs and VMs are released. */
   size_t vm_heap_bytes;
+  /** Prototype opt-in: one exclusive Display worker. Zero keeps all existing
+   * present/end_frame calls synchronous on the VM worker. Nonzero requires
+   * max_jobs=1 and display_exclusive=1. The caller must suspend every other
+   * writer/closer of this underlying Display, including other Runtime/Host
+   * instances, until checked destruction succeeds. All PAL calls must permit
+   * serial transfer to one task; successful draw/present must finish transport.
+   * No hardware cancellation or bounded shutdown is implied. */
+  int display_worker;
+  /** Explicit caller assertion of the exclusive ownership above. */
+  int display_exclusive;
+  /** Minimum PAL worker stack bytes; zero selects 8192. Stack/TCB and PAL
+   * synchronization storage use platform budgets, not VM quota. Snapshot,
+   * frozen plan and mailbox are VM-accounted. */
+  size_t display_worker_stack_size;
 } h2_lua_host_config_t;
 
 /** Creates a stopped Host that borrows, but never consumes or destroys,
@@ -134,14 +148,27 @@ h2_pal_result_t h2_lua_host_start(h2_lua_host_t *host);
 /** Requests cancellation of live jobs. Safe to repeat. */
 h2_pal_result_t h2_lua_host_stop(h2_lua_host_t *host);
 
-/** Joins every Runtime worker after stop. Safe after a successful join. */
+/** Joins every Runtime worker after stop. Safe after a successful join.
+ * Opt-in Display shutdown may return BUSY while transport/close is pending,
+ * or a latched backend/join error. Retry BUSY; retain the Host, Runtime and
+ * Display lease on every failure. A faulted Display is quarantined and has
+ * no automatic recovery. Runtime worker join and synchronous PAL calls may
+ * block; this API does not promise a bounded timeout. */
 h2_pal_result_t h2_lua_host_join(h2_lua_host_t *host);
 
 /** Wakes Runtime workers so they can advance runnable VMs. */
 h2_pal_result_t h2_lua_host_step(h2_lua_host_t *host);
 
-/** Releases Host-owned jobs and storage; the borrowed Runtime remains alive. */
+/** Releases Host-owned jobs and storage; the borrowed Runtime remains alive.
+ * If shutdown fails, retains the Host and its borrowed dependencies. Call
+ * h2_lua_host_destroy_checked() when the caller needs to know whether it can
+ * release those dependencies. */
 void h2_lua_host_destroy(h2_lua_host_t *host);
+
+/** Stops, joins and destroys a Host. NULL succeeds. On failure the Host and
+ * borrowed dependencies must remain alive; retry with the same pointer.
+ * On success the pointer is invalid. Never call from a Host worker. */
+h2_pal_result_t h2_lua_host_destroy_checked(h2_lua_host_t *host);
 
 #ifdef __cplusplus
 }

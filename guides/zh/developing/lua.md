@@ -662,3 +662,15 @@ workspace 默认通过 `load` 复制状态；可分发 Lua app 也可以创建�
 这些对象及 scratch 均由 VM userdata 持有，成功暖调用不分配或逐元素回调 Lua；构造失败与 GC/VM teardown 回收所有引用。绘制在参数解析后重新检查 Display acquisition，完整验证最终坐标和样式后才写像素，并沿用 dirty/background bookkeeping；不会隐式 present。游戏状态、标量受力方程、材质转换、形状通道生成、相机 recipe、层语义和采样时钟仍属于可分发 Lua app。公共功能只做原始算法拆分；实机逐阶段帧率对齐属于下游成对验证，Host/Web 测试不能代替。
 
 Prepared workspace 的 `displacements` 将指定范围的 double 位置差在相减后转成 f32，写入可复用的 packed xyz 输出前缀。`displacement-f32` 积分的 before/gain0/gain1 可分别使用 f32 或 f64，mobility/after/bounds 保持 f64；环境分支及系数公式仍由 Lua 决定。显式 `vmath.length3_refined` 使用原版 float 开方种子与一次 double 修正，适用范围、误差与 fallback 见 numeric Public Header；不改变原有 `length3` 或 `normalize3`。
+
+## 单在途 Display 提交原型
+
+Host 的 `display_worker` 是显式 opt-in，默认关闭。启用时必须设置 `display_exclusive` 并将 `max_jobs` 设为 1：调用方持有整个底层 Display 的独占权，先排空已有访问，并暂停其他 Host、Runtime 和 UI writer。Host 私有同步不能保护绕过它的直接 PAL 调用。后端必须允许串行移交到一个任务，而且成功的 draw/present 必须完成传输；这项资格由调用方验证，不根据平台名猜测。全部 open/info/draw/present/close 在同一个提交任务执行；`borrow_display` 保留不调用 PAL open/close 的合同。
+
+Lua 的 `submit/flush/status` 合同以 `h2_lua_display.h` 为准。Web 和未启用 worker 的 Host 使用同一 Lua 源码 inline 执行；已有 `present/end_frame` 保持同步。提交最多有一个未完成帧，包含正在执行的帧；busy 由 Lua 调用方通过 `runtime.sleep()` 后重试处理，没有额外排队帧或覆盖在途快照。成功入队后可绘制下一帧，完成回执只更新上一帧 baseline，不清除下一帧 dirty 状态。冻结 tile fallback 包含完整位图，超过矩形容量也不截断提交。
+
+快照、baseline、mailbox 和计划使用 VM userdata，受 `vm_memory_limit_bytes` 与共享 VM 堆约束。240×240 RGB565 每份像素为 115200 字节；启用后保留 draw framebuffer、baseline 和一份快照。既有 draw framebuffer 属于 Host allocator，PAL Task/Atomic/Sync 的内部资源属于平台预算，不冒充 VM charge。`display_worker_stack_size` 默认请求 8192 字节，实际栈还受 target policy 下限影响。新增 `$lua/display` 任务必须在消费目标的 task policy 声明核、优先级、栈与内存区域，并实测总峰值及连续空闲块；库不修改驱动、SDK 或编译参数。
+
+`deinit`、job release 和 Host join 在提交或关闭未完成时返回 busy，保留 VM 引用和所有权，调用方稍后重试。`h2_lua_host_destroy_checked()` 只有成功才释放 Host；失败后不能销毁 Runtime 或恢复借用 Display 的 UI。兼容的 void destroy 也保留失败对象，但调用方必须使用 checked 入口判断释放是否完成。PAL 错误会锁存并停止新提交，提交任务退出后可 join，但不会在不确定设备状态下自动 close/open 或重试。该原型没有解除故障隔离的 API：fault 后保留 Host/VM/device lease，消费端须维持依赖并走其外部恢复或进程重启流程。PAL 的无限等待可能令同步调用或任务无法退出；软件 busy 不意味着已取消硬件，不能强删任务后 free。
+
+帧率只用成功且像素变化的完成记录计算；submitted、无变化 submit 和失败都不能计为变化帧 FPS。时间是 PAL monotonic transport 完成时间，不是面板 scanout；Web inline 的 PAL 返回也不证明浏览器已合成到屏幕。观察者不能并发读取 worker 正在更新的普通 64 位字段，应消费 `status/flush` 发布的完成记录。已提交的同源消费例位于 `libs/lua/tests/display_submit.lua`，由 native inline/worker 和 `projects/example/targets/pkg_tar/lua-script-submit` 的浏览器测试共同运行。
