@@ -279,7 +279,7 @@ def _install_log(flavor, target_directory, stage):
             "    printf(\"H2_PAL_TASK_POLICY_FAIL unit=%s \"" % flavor.unit,
             "           \"target=%s \"" % target_directory,
             "           \"stage=%s reason=%%d\\n\"," % stage,
-            "           (int)rc);",
+            "           rc);",
         ]
     return [
         "    printf(\"H2_PAL_TASK_POLICY_READY unit=%s \"" % flavor.unit,

@@ -106,7 +106,7 @@ static h2_pal_result_t player_fail(
     const char *stage,
     h2_pal_result_t result) {
     char message[H2_PAL_LOG_MESSAGE_MAX];
-    (void)snprintf(message, sizeof(message), "H2_MP4_PLAYER_FAIL stage=%s rc=%d", stage, (int)result);
+    (void)snprintf(message, sizeof(message), "H2_MP4_PLAYER_FAIL stage=%s rc=%d", stage, result);
     player_log(runtime, H2_PAL_LOG_ERROR, message);
     return result;
 }

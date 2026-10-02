@@ -1,30 +1,11 @@
 #ifndef H2_PAL_ERRORS_H
 #define H2_PAL_ERRORS_H
 
-#include <stdint.h>
-#include <limits.h>
-
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Preserve the C int call ABI used by providers and legacy callbacks, while
- * rejecting a target whose int cannot hold every signed 32-bit error. This
- * scalar also prevents small-enum ABIs from narrowing extensions like -1000. */
-typedef signed int h2_pal_result_t;
-#ifdef __cplusplus
-static_assert(sizeof(h2_pal_result_t) * CHAR_BIT == 32 &&
-              INT_MIN == INT32_MIN && INT_MAX == INT32_MAX,
-              "PAL results require a signed 32-bit C int ABI");
-#else
-/* Some existing C consumers use MSVC's default C mode rather than C11. A
- * negative array bound enforces the same width/range contract in that mode. */
-typedef char h2_pal_result_requires_signed_32_bit_int[
-    sizeof(h2_pal_result_t) * CHAR_BIT == 32 &&
-    INT_MIN == INT32_MIN && INT_MAX == INT32_MAX ? 1 : -1];
-#endif
-
-enum h2_pal_result {
+typedef enum h2_pal_result {
     H2_PAL_OK = 0,
     H2_PAL_EXIT = 1,
     H2_PAL_ERR_INVALID_ARG = -1,
@@ -45,7 +26,7 @@ enum h2_pal_result {
     H2_PAL_ERR_TRUNCATED = -16,
     H2_PAL_ERR_TLS_VERIFY = -17,
     H2_PAL_ERR_BUSY = -18,
-};
+} h2_pal_result_t;
 
 #define H2_AUDIO_OK H2_PAL_OK
 #define H2_AUDIO_ERR_INVALID_ARG H2_PAL_ERR_INVALID_ARG

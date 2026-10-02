@@ -507,7 +507,7 @@ static h2_pal_result_t perform_attempt(
          * logs the safe request identity; no URL or body is exposed here. */
         (void)snprintf(message, sizeof(message),
             "stage=%s pal_rc=%d exchange_rc=%d status=%d body_len=%zu",
-            exchange.stage, (int)rc, (int)exchange.result, response->status_code,
+            exchange.stage, rc, exchange.result, response->status_code,
             response->body_len);
         (void)h2_pal_log_write(provider->config.log, H2_PAL_LOG_ERROR,
                                "corehttp", message);
