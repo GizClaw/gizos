@@ -292,6 +292,7 @@ cc_test(
     name = "lua_test",
     srcs = [
         "tests/material_reference.h",
+        "tests/polygon_reference.h",
         "tests/test_h2_lua.c",
     ],
     conlyopts = H2_C11_OPTS,
@@ -307,6 +308,8 @@ cc_test(
         "tests/material_workload.lua",
         "tests/material_workload.txt",
         "tests/masked_capture.lua",
+        "tests/polygon_workload.lua",
+        "tests/polygon_workload.txt",
         "tests/quad_material_projective.lua",
         "tests/raster2d.lua",
         "tests/smooth_cache.lua",

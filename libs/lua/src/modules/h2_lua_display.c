@@ -405,7 +405,12 @@ static void display_cache_record(display_span_cache_t *cache, int left,
       (display_cached_span_t){left, right, y, end_y, color};
 }
 
-static void display_raster_polygon_rect_capture(h2_lua_job_t *job, const double *x,
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+static void display_raster_polygon_rect_legacy(h2_lua_job_t *job, const double *x,
                                      const double *y, size_t count,
                                      uint16_t color, double offset,
                                      int top, int bottom, int clip_left,
@@ -471,6 +476,116 @@ static void display_raster_polygon_rect_capture(h2_lua_job_t *job, const double 
       }
     }
   }
+}
+
+typedef struct display_quad_scan_edge {
+  int first, end, vertical, floor_x, ceil_x;
+  float x, y, slope, error;
+} display_quad_scan_edge_t;
+
+/* Zero-offset quads with at most two crossings on every clipped integer row.
+ * This includes convex quads. Four-crossing rows keep the legacy even-odd
+ * path. Preserve its guarded float expression and exact double fallback;
+ * only the rounded span endpoints stay integer instead of becoming double
+ * intersections that are sorted and rounded again on every scanline. */
+static int display_raster_quad_capture(h2_lua_job_t *job, const double *x,
+    const double *y, uint16_t color, int top, int bottom, int clip_left,
+    int clip_right, display_span_cache_t *cache) {
+  int vertex_row[4], first = bottom, end = top;
+  display_quad_scan_edge_t edges[4];
+  for (int i = 0; i < 4; ++i) {
+    /* Bound integer conversion and span arithmetic; larger valid geometry
+     * still uses the original general polygon path. */
+    if (fabs(x[i]) > 1000000 || fabs(y[i]) > 1000000) return 0;
+    vertex_row[i] = (int)ceil(y[i]);
+    if (vertex_row[i] < first) first = vertex_row[i];
+    if (vertex_row[i] > end) end = vertex_row[i];
+  }
+  if (first < top) first = top;
+  if (end > bottom) end = bottom;
+  if (first >= end) return 1;
+  int four_first = first, four_end = end;
+  for (int i = 0; i < 4; ++i) {
+    int next = (i + 1) % 4;
+    display_quad_scan_edge_t *e = &edges[i];
+    e->first = vertex_row[i] < vertex_row[next] ? vertex_row[i] : vertex_row[next];
+    e->end = vertex_row[i] > vertex_row[next] ? vertex_row[i] : vertex_row[next];
+    if (e->first > four_first) four_first = e->first;
+    if (e->end < four_end) four_end = e->end;
+  }
+  /* Half-open edge incidence in a closed polygon is even. Excluding a row
+   * where all four edges meet therefore leaves only zero or two crossings. */
+  if (four_first < four_end) return 0;
+  for (int i = 0; i < 4; ++i) {
+    display_quad_scan_edge_t *e = &edges[i];
+    if (e->first >= e->end || e->first >= end || e->end <= first) continue;
+    int next = (i + 1) % 4;
+    e->vertical = x[i] == x[next];
+    if (e->vertical) {
+      e->floor_x = (int)floor(x[i]); e->ceil_x = (int)ceil(x[i]);
+    } else {
+      e->x = (float)x[i]; e->y = (float)y[i];
+      float dx = (float)x[next] - e->x, dy = (float)y[next] - e->y;
+      e->slope = fabsf(dy) < 1e-5f ? 0 : dx / dy;
+      e->error = fabsf(dy) < 1e-5f ? 1 :
+          32 * FLT_EPSILON * (fabsf(e->x) + fabsf(dx) *
+          (1 + (fabsf(e->y) + job->display_info.height) / fabsf(dy))) + 1e-7f;
+    }
+  }
+  for (int row = first; row < end; ++row) {
+    int used = 0, left = INT_MAX, right = INT_MIN;
+    for (int i = 0; i < 4; ++i) {
+      const display_quad_scan_edge_t *e = &edges[i];
+      if (row < e->first || row >= e->end) continue;
+      int floor_x, ceil_x;
+      if (e->vertical) {
+        floor_x = e->floor_x; ceil_x = e->ceil_x;
+      } else {
+        int accepted = 0;
+        if (e->error < .25f) {
+          float fast = e->x + ((float)row - e->y) * e->slope;
+          if (fast >= -2000000 && fast <= 2000000) {
+            /* Within this range every integer is exactly representable in
+             * float. Truncation plus sign correction equals floorf without
+             * a library call; the original fractional-error guard is intact. */
+            int whole = (int)fast;
+            floor_x = whole - (fast < (float)whole);
+            float fraction = fast - (float)floor_x;
+            if (fraction > e->error && fraction < 1 - e->error) {
+              ceil_x = floor_x + 1;
+              accepted = 1;
+            }
+          }
+        }
+        if (!accepted) {
+          int next = (i + 1) % 4;
+          double cross = x[i] + (row - y[i]) * (x[next] - x[i]) / (y[next] - y[i]);
+          floor_x = (int)floor(cross); ceil_x = (int)ceil(cross);
+        }
+      }
+      if (ceil_x < left) left = ceil_x;
+      if (floor_x > right) right = floor_x;
+      ++used;
+    }
+    if (used != 2) continue;
+    if (left < clip_left) left = clip_left;
+    if (right >= clip_right) right = clip_right - 1;
+    if (left <= right) {
+      fill_span(job, row, left, right, color);
+      mark_dirty_rect(job, left, row, right - left + 1, 1);
+      display_cache_record(cache, left, right, row, -1, color);
+    }
+  }
+  return 1;
+}
+
+static void display_raster_polygon_rect_capture(h2_lua_job_t *job, const double *x,
+    const double *y, size_t count, uint16_t color, double offset,
+    int top, int bottom, int clip_left, int clip_right, display_span_cache_t *cache) {
+  if (count == 4 && offset == 0 && display_raster_quad_capture(job, x, y,
+      color, top, bottom, clip_left, clip_right, cache)) return;
+  display_raster_polygon_rect_legacy(job, x, y, count, color, offset,
+                                    top, bottom, clip_left, clip_right, cache);
 }
 
 static void display_raster_polygon_rect(h2_lua_job_t *job, const double *x,

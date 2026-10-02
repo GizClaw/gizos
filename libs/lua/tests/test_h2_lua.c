@@ -1281,16 +1281,43 @@ static int test_material_reference(lua_State *state) {
   return 1;
 }
 
+#include "polygon_reference.h"
+
+static int test_polygon_reference(lua_State *state) {
+  assert(lua_getupvalue(state, 1, 1) != NULL);
+  h2_lua_job_t *job = lua_touserdata(state, -1);
+  lua_pop(state, 1);
+  size_t count = lua_rawlen(state, 2);
+  assert(count >= 3 && count <= 128);
+  double x[128], y[128];
+  double offset = luaL_optnumber(state, 3, 0);
+  int top = (int)luaL_optinteger(state, 4, 0);
+  int bottom = (int)luaL_optinteger(state, 5, job->display_info.height);
+  double scale = luaL_optnumber(state, 6, 1);
+  for (size_t i = 0; i < count; ++i) {
+    lua_rawgeti(state, 2, (lua_Integer)i + 1);
+    lua_rawgeti(state, -1, 1); x[i] = lua_tonumber(state, -1) * scale; lua_pop(state, 1);
+    lua_rawgeti(state, -1, 2); y[i] = lua_tonumber(state, -1) * scale; lua_pop(state, 2);
+  }
+  int left = (int)luaL_optinteger(state, 7, 0);
+  int right = (int)luaL_optinteger(state, 8, job->display_info.width);
+  reference_polygon(job, x, y, count, 0xf800, offset, top, bottom, left, right);
+  return 0;
+}
+
 static int test_material_workload(lua_State *state) {
-  FILE *file = fopen("libs/lua/tests/material_workload.txt", "r");
+  int polygon = lua_toboolean(state, 1);
+  int columns = polygon ? 8 : 12;
+  FILE *file = fopen(polygon ? "libs/lua/tests/polygon_workload.txt" :
+      "libs/lua/tests/material_workload.txt", "r");
   assert(file != NULL);
   lua_newtable(state);
   double values[12];
   int row = 0;
   while (fscanf(file, "%lf", &values[0]) == 1) {
-    for (int i = 1; i < 12; ++i) assert(fscanf(file, "%lf", &values[i]) == 1);
-    lua_createtable(state, 12, 0);
-    for (int i = 0; i < 12; ++i) {
+    for (int i = 1; i < columns; ++i) assert(fscanf(file, "%lf", &values[i]) == 1);
+    lua_createtable(state, columns, 0);
+    for (int i = 0; i < columns; ++i) {
       lua_pushnumber(state, values[i]); lua_rawseti(state, -2, i + 1);
     }
     lua_rawseti(state, -2, ++row);
@@ -1324,6 +1351,8 @@ static int test_raster_open(void *lua_state, void *user) {
   lua_setfield(state, -2, "reserve");
   lua_pushcfunction(state, test_raster_vm_used);
   lua_setfield(state, -2, "vm_used");
+  lua_pushcfunction(state, test_polygon_reference);
+  lua_setfield(state, -2, "polygon_reference");
   lua_pushcfunction(state, test_material_reference);
   lua_setfield(state, -2, "material_reference");
   lua_pushcfunction(state, test_material_workload);
@@ -2895,13 +2924,16 @@ int main(int argc, char **argv) {
                     strcmp(argv[1], "--smooth-benchmark") == 0 ||
                     strcmp(argv[1], "--projective-benchmark") == 0 ||
                     strcmp(argv[1], "--material-workload") == 0 ||
-                    strcmp(argv[1], "--capture-benchmark") == 0)) {
+                    strcmp(argv[1], "--capture-benchmark") == 0 ||
+                    strcmp(argv[1], "--polygon-benchmark") == 0)) {
     int material = strcmp(argv[1], "--material-benchmark") == 0;
     int smooth = strcmp(argv[1], "--smooth-benchmark") == 0;
+    int polygon = strcmp(argv[1], "--polygon-benchmark") == 0;
     int capture = strcmp(argv[1], "--capture-benchmark") == 0;
     int workload = strcmp(argv[1], "--material-workload") == 0;
     int projective = strcmp(argv[1], "--projective-benchmark") == 0;
-    test_display_raster2d(material || smooth || projective || workload || capture ? 2 : 1,
+    test_display_raster2d(material || smooth || projective || workload || capture || polygon ? 2 : 1,
+        polygon ? "libs/lua/tests/polygon_workload.lua" :
         capture ? "libs/lua/tests/masked_capture.lua" :
         workload ? "libs/lua/tests/material_workload.lua" :
         projective ? "libs/lua/tests/quad_material_projective.lua" :
@@ -2927,6 +2959,7 @@ int main(int argc, char **argv) {
   test_display_raster2d(2, "libs/lua/tests/quad_material.lua");
   test_display_raster2d(2, "libs/lua/tests/material_workload.lua");
   test_display_raster2d(2, "libs/lua/tests/masked_capture.lua");
+  test_display_raster2d(2, "libs/lua/tests/polygon_workload.lua");
   test_display_raster2d(2, "libs/lua/tests/quad_material_projective.lua");
   test_display_raster2d(2, "libs/lua/tests/smooth_cache.lua");
   test_display_raster2d(0, "libs/lua/tests/geometry_batches.lua");
