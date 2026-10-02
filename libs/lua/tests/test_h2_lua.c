@@ -172,7 +172,7 @@ static const h2_pal_fs_api_t s_test_fs = {
 };
 
 typedef struct test_display_fixture {
-  uint16_t pixels[240u * 240u];
+  uint16_t pixels[4096u * 33u];
   h2_display_rect_t draw_rects[4096u];
   int width, height;
   size_t draw_count;
@@ -809,6 +809,8 @@ static h2_lua_job_status_t run_display_script_size(h2_lua_host_t *host,
   h2_lua_job_id_t job_id;
   h2_lua_job_status_t job_status;
   test_display_reset();
+  assert(width > 0 && height > 0 && (size_t)width * height <=
+         sizeof(s_test_display_fixture.pixels) / sizeof(s_test_display_fixture.pixels[0]));
   s_test_display_fixture.width = width;
   s_test_display_fixture.height = height;
   assert(h2_lua_job_submit_text(host, NULL, name, script, script_size, NULL, 0u,
@@ -2036,14 +2038,24 @@ static void test_display_regions(void) {
   static const uint8_t merge[] =
       "local d=require('display');d.present({retained=true});"
       "d.fill_rect(0,0,1,1,'red');d.fill_rect(32,0,1,1,'red');"
-      "local p,n=d.present();assert(p==2 and n==2);"
+      /* The post-plan guard can bridge beyond the local merge_gap. */
+      "local p,n=d.present();assert(p==33 and n==1);"
       "d.clear('black');p,n=d.present({merge_gap=1});assert(p==33 and n==1);"
       "d.fill_rect(0,0,1,1,'red');d.fill_rect(0,32,1,1,'red');"
       "p,n=d.present();assert(p==2 and n==2);"
-      /* A vertical join adds a third row block; allowed gaps do not force it. */
-      "d.clear('black');p,n=d.present({merge_gap=1});assert(p==2 and n==2);"
+      "d.clear('black');p,n=d.present({merge_gap=1});assert(p==33 and n==1);"
       "d.clear('black');assert(d.present()==0)";
   (void)run_display_script_size(host, "@retained-merge.lua", merge, sizeof(merge)-1, 48, 48);
+  static const uint8_t guarded[] =
+      "local d=require('display');local n=require('region_test');"
+      "d.clear('black');d.present({retained=true});"
+      "local function dots(c) d.fill_rect(0,0,1,1,c);d.fill_rect(48,0,1,1,c) end;"
+      "dots('red');local p,r=d.present();assert(p==49 and r==1);"
+      "for _,fail_present in ipairs({false,true}) do "
+      "dots('black');d.present();dots('red');n.fail(fail_present and 0 or 1,fail_present);"
+      "assert(not pcall(d.present));p,r=d.present();assert(p==65*33 and r==1);"
+      "assert(d.present()==0) end";
+  (void)run_display_script_size(host, "@retained-guard.lua", guarded, sizeof(guarded)-1, 65, 33);
   static const uint8_t present_spans[] =
       "local d=require('display');local n=require('region_test');"
       "local w,h=d.width,d.height;d.clear('black');collectgarbage('collect');"
@@ -2212,6 +2224,23 @@ static void test_display_regions(void) {
       assert(s_test_display_fixture.pixels[p] == 0x001fu);
     assert(s_test_display_fixture.close_count == 1);
   }
+  static const uint8_t streamed[] =
+      "local d=require('display');local n=require('region_test');"
+      "d.clear('black');d.present({retained=true});"
+      "local function dots(c) for y=0,32,32 do for x=0,4095,32 do "
+      "d.fill_rect(x,y,1,1,c) end end end;"
+      "local flip=true;n.noalloc(function() flip=not flip;dots(flip and 'red' or 'blue');"
+      "local p,r=d.present();assert(p==34816 and r==256) end);"
+      "dots('blue');n.fail(130,false);assert(not pcall(d.present));"
+      "local p,r=d.present();assert(p==4096*33 and r==1);assert(d.present()==0);"
+      "dots('red');n.fail(0,true);assert(not pcall(d.present));"
+      "p,r=d.present();assert(p==4096*33 and r==1);assert(d.present()==0)";
+  (void)run_display_script_size(restore_host, "@retained-streamed.lua", streamed,
+                                sizeof(streamed)-1, 4096, 33);
+  for (int y = 0; y < 33; ++y)
+    for (int x = 0; x < 4096; ++x)
+      assert(s_test_display_fixture.pixels[y*4096+x] ==
+             ((y == 0 || y == 32) && x%32 == 0 ? 0xf800u : 0));
   h2_lua_host_destroy(restore_host);
   static const uint8_t close[] =
       "local d=require('display');local n=require('region_test');"

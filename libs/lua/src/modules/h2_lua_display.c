@@ -3947,8 +3947,17 @@ static h2_pal_result_t display_submit_retained(h2_lua_job_t *job, int bounds,
   h2_lua_display_plan_rect_t dirty = {job->dirty_min_x, job->dirty_min_y,
       job->dirty_max_x + 1, job->dirty_max_y + 1};
   uint8_t *changed = (uint8_t *)(frame->pixels + frame->pixel_count);
-  h2_lua_display_plan_select(&frame->plan, job->framebuffer, frame->pixels,
-                             width, height, dirty, gap, changed, bounds);
+  if (!h2_lua_display_plan_select(&frame->plan, job->framebuffer, frame->pixels,
+                                  width, height, dirty, gap, changed, bounds)) {
+    int cursor = 0;
+    h2_lua_display_plan_rect_t r;
+    while (h2_lua_display_plan_next_tile(changed, width, height, gap, &cursor, &r)) {
+      h2_pal_result_t result = display_submit_rect(job, r.left, r.top,
+          r.right - r.left, r.bottom - r.top, pixels, rects);
+      if (result != H2_PAL_OK) return result;
+    }
+    return H2_PAL_OK;
+  }
   for (int i = 0; i < frame->plan.count; ++i) {
     h2_lua_display_plan_rect_t r = frame->plan.rects[i];
     h2_pal_result_t result = display_submit_rect(job, r.left, r.top,
@@ -4115,4 +4124,3 @@ int h2_lua_push_display_proxy(lua_State *state, h2_lua_job_t *job) {
   lua_setfield(state, -2, "height");
   return 1;
 }
-

@@ -182,19 +182,21 @@ smooth 的 `cache=true` 对单色且 `tolerance=0` 的笔画启用覆盖率缓�
 
 快照、背景损伤标记、retained 比较图、矩形规划暂存区和基线像素都计入 VM 内存，原工作 framebuffer 保留 PAL ownership。Lua deinit、job release 和 Host teardown 在释放 framebuffer 或执行 VM finalizer 前断开全部显示缓存引用。teardown 期间不能重新打开 Display；正常 deinit 后旧 proxy 的绘制调用失败。OOM 不返回部分快照，释放其他 VM 数据后可重试；已有快照不因另一次捕获失败而失效。
 
-默认 retained 规划先比较 dirty 范围内的 16×16 tiles，建立 tile、包围矩形与整屏候选，再尝试每行连续变化 span。所有完整候选统一使用 `面积 + 64 × 矩形数 + 256 × sum(ceil(矩形高度 / 16))` 的像素等价成本，选择成本最小者；同成本优先已有粗粒度候选。每个 PAL rectangle 不一定对应一个物理地址窗口，16 行分块只是内部估算，不改变 PAL contract 或要求驱动按此分块。当前权重是待真机验证的候选，不能当成跨设备耗时模型。最终计划的估算成本不高于整屏，也不高于能够在容量内完整构造的 tile 候选；这不保证包含规划和复制后的实际总时间更短。
+默认 retained 规划先提取每行连续变化 span，按至多 16 个额外像素的增长限制连接相邻行，每 16 行对已有矩形做一次有界合并。span 生成沿用 `面积 + 256 × 矩形数 + 32 × sum(ceil(矩形高度 / 16))` 的内部启发式：最多 128 个矩形、4096 个原始 span、65536 次矩形合并检查；纵向连接逐 span 检查至多 128 个已有矩形。达到上限或 8×8 采样至少 56 点变化时，完整回退原有 tile 比较与合并。采样不能省略需要提交的变化像素。
 
-span 按至多 16 个额外像素的增长限制连接相邻行，每 16 行再对已有矩形做一次有界合并。先形成纵向区域再计算固定成本，可避免每个扫描行反复吞掉空心轮廓内部的未变化像素。每份计划最多 128 个矩形，span 候选最多处理 4096 个原始 span、16384 次纵向连接或矩形合并检查；达到上限就丢弃整个 span 候选，仍从完整的粗粒度候选中选择。tile 超过矩形容量时也丢弃该候选，保留完整包围矩形。8×8 采样中至少 56 个像素变化时跳过 span 候选；采样只决定是否尝试精细规划，不参与判断某个像素是否需要提交。
+完成原计划后，仅遍历其矩形一次累计提交面积、估算分块数和包围框。自动 guard 使用每分块 `222..286` 像素等价的经验成本范围：令 `ΔP` 为包围框面积减原计划累计面积，`ΔB` 为包围框的 `ceil(height/16)` 减原计划累计分块数，仅当 `ΔP + k × ΔB < 0` 对整个范围成立时，才替换为包围框；同成本保留原计划。实现只检查最坏端点，不用浮点，也不把减少 PAL 调用数计作收益。该范围由约 `160..200 µs/块` 与 `0.70..0.72 µs/像素` 的经验区间比值向外取整，属于候选敏感性范围，不能当作统计置信区间或 PAL 保证。不同后端的像素转换、窗口设置、分块高度和等待策略可能超出此范围；保守比较不保证所有后端更快，也不保证实际总 present 时间下降。
 
-矩形存储和计数占 1028 字节，随 retained userdata 一次分配；包含结构体尾部对齐后，64 位 host 相比原实现增加 1032 字节。原有每 tile 一个比较字节保留 damage 位与遍历位；span 覆盖暂存区后，可从该字节图重建胜出的 tile 计划，无需再次比较 framebuffer。热 present 不分配，不在 native heap 保存额外缓存；释放 retained 或 Display 时沿用既有 GC 生命周期。规划完成后才调用 PAL；逐矩形成功时复制的 baseline 仍是 tentative，只有整次 PAL present 成功才有效，失败后下次强制全屏重试。
+保留原 span 或完整 tile 计划作为基准，不因为另一个候选耗尽工作预算而丢弃它。guard 不再次比较 framebuffer、不改变原计划的像素覆盖或失败语义。tile fallback 没有 128 个矩形的提交上限：若超出暂存容量且 guard 拒绝包围框，则从已有 tile 字节图重放完整原计划，不提交部分前缀、不强制扩大面积。只有原 span 规划失败才进行原有 tile 像素比较；容量溢出后的重放只遍历标记，额外成本仍应在目标设备测量。`bounds=true` 直接沿用原 tile 对齐包围框。
+
+矩形存储和计数占 1028 字节，随 retained userdata 一次分配；包含结构体尾部对齐后，64 位 host 相比无 span 规划的实现增加 1032 字节。原有每 tile 一个比较字节保留 damage 位与遍历位；guard 的面积、分块和包围框汇总只使用固定大小栈变量，不增加常驻缓存或每帧分配。热 present 不分配，不在 native heap 保存额外缓存；释放 retained 或 Display 时沿用既有 GC 生命周期。规划完成后才调用 PAL；逐矩形成功时复制的 baseline 仍是 tentative，只有整次 PAL present 成功才有效，失败后下次强制全屏重试。
 
 #### 提交规划的验证
 
-从仓库根目录运行 `bazel test --config=macos_arm64 //libs/lua:all`（Linux 使用对应 config）。`display_plan_test` 对照 PR627 的原始 tile 合并规则，生成空心菱形移动、平移矩形、稀疏噪点、稠密帧、无变化和交替棋盘格，并从旧 framebuffer 按提交矩形回放，逐像素检查最终结果；另覆盖随机 dirty box、奇数尺寸、4096 轴边界、双候选容量耗尽和显式 bounds，并检查所选成本不高于整屏及可完整构造的原始 tile 计划。`lua_test` 通过真实 Lua present/PAL fake 检查首帧、清除旧位置、部分 draw 失败、present 失败、静止帧失败、完整重试、热路径无分配和 VM 计费/释放。源包测试验证该规划器随 portable runtime 导出。
+从仓库根目录运行 `bazel test --config=macos_arm64 //libs/lua:all`（Linux 使用对应 config）。`display_plan_test` 对照 PR627 的原始 tile 合并规则，生成空心菱形移动、平移矩形、稀疏噪点、稠密帧、无变化和交替棋盘格，并从旧 framebuffer 按提交矩形回放，逐像素检查最终结果；另覆盖随机 dirty box、奇数尺寸、4096 轴边界、容量耗尽、256 矩形完整 fallback、显式 bounds、guard 拒绝/同成本原样保留及 64 位面积累计，并检查经验成本范围的两个端点均不劣于同帧完整原计划。`lua_test` 通过真实 Lua present/PAL fake 检查首帧、清除旧位置、部分 draw 失败、present 失败、静止帧失败、完整重试、guard 成功与超过容量的 fallback 中途 draw/present 失败、热路径无分配和 VM 计费/释放。源包测试验证该规划器随 portable runtime 导出。
 
 可直接运行 `bazel-bin/libs/lua/display_plan_test` 输出通用合成对比；可选 `--frames <path> [first last]` 读取本地 240×240、无 header、RGB565 big-endian 连续全帧，帧号从 1 开始，前序帧仍用于建立 baseline。该入口只用于离线验证，不是 Lua/PAL API；私有轨迹不得提交到公共仓库。时间以同一帧规划 10 次的均值采样，再统计 p50/p95/max，仅包括差分和规划（含回退），不包括绘制、baseline copy、PAL 提交或真实总线等待。对比统一采用全屏 dirty 候选和 `merge_gap=1`，与消费端每次实际传入的 dirty/options 可能不同。静止合成场景仍比较全屏；实际没有 dirty 的 present 会直接跳过规划。
 
-合成输出将原始 tile 与最终 `selected` 计划对比，`nonspan` 统计选择粗粒度候选或无变化的帧数。性能取舍应结合提交像素、矩形数、分块估算和 planner 时间；例如横向连接两个稀疏像素可能减少一个分块，而纵向连接跨越多个分块的像素可能增加分块。`merge_gap` 允许连接并不意味着连接更便宜。
+合成输出将原始 tile 与最终 `selected` 计划对比，`fallback` 统计原 span 规划失败后走完整 tile 路径的帧数。像素回放和成本约束则对照同帧、同 dirty/options 下 guard 前的完整 span/tile 基准。后处理 guard 可以跨过局部 `merge_gap`，但必须通过整个经验范围的严格获益判断；保留的原计划仍可能不是模型中的全局最优解。
 
 像素减少可能伴随更多窗口和较高规划成本，不能把 host 时间或提交面积直接换算成 MCU FPS。消费端应测量目标设备的 planner、每窗口/分块固定成本、baseline copy 和实际传输时间，再判断是否值得保留当前成本权重；未经设备验证不承诺帧率。算法参考 [fbcp-ili9341 的 exact scanline diff 与 span merge](https://github.com/juj/fbcp-ili9341/blob/master/diff.cpp) 及 [LVGL 的 lv_refr_join_area](https://github.com/lvgl/lvgl/blob/v9.2.2/src/core/lv_refr.c)，两者均声明 MIT 许可（[fbcp](https://github.com/juj/fbcp-ili9341/blob/master/LICENSE.txt)、[LVGL](https://github.com/lvgl/lvgl/blob/v9.2.2/LICENCE.txt)）；此处独立实现有界规划，没有引入它们的平台代码或依赖。
 

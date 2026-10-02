@@ -17,19 +17,16 @@ static h2_lua_display_plan_rect_t join(h2_lua_display_plan_rect_t a,
 }
 
 static int cost(h2_lua_display_plan_rect_t r) {
-  /* Candidate pixel-equivalent weights: per-PAL-call and per-row-block cost.
-   * A call need not correspond to one physical address window. The 16-row
-   * estimate is a heuristic, never a transfer constraint or timing guarantee;
-   * these weights still require device validation. */
-  return area(r) + 64 + 256 * ((r.bottom - r.top + 15) / 16);
+  /* Include both window and row-block overhead without changing PAL. The
+   * 16-row estimate is a planning heuristic, never a transfer constraint. */
+  return area(r) + 256 + 32 * ((r.bottom - r.top + 15) / 16);
 }
 
 static int append_span(h2_lua_display_plan_t *plan,
-                       h2_lua_display_plan_rect_t span, int *work) {
+                       h2_lua_display_plan_rect_t span) {
   int best = -1, waste = 17;
   h2_lua_display_plan_rect_t merged = span;
   for (int i = plan->count - 1; i >= 0; --i) {
-    if (++*work > 16384) return 0;
     h2_lua_display_plan_rect_t r = plan->rects[i];
     if (r.bottom != span.top || r.left > span.right || r.right < span.left)
       continue;
@@ -57,7 +54,7 @@ static int coalesce(h2_lua_display_plan_t *plan, int gap, int *work) {
    * complete rectangle costs no more than the two separate submissions. */
   for (int i = 0; i < plan->count; ++i) {
     for (int j = i + 1; j < plan->count; ++j) {
-      if (++*work > 16384) return 0;
+      if (++*work > 65536) return 0;
       h2_lua_display_plan_rect_t a = plan->rects[i], b = plan->rects[j];
       if (b.left / 16 - (a.right - 1) / 16 - 1 > gap ||
           a.left / 16 - (b.right - 1) / 16 - 1 > gap ||
@@ -108,7 +105,7 @@ int h2_lua_display_plan_build(h2_lua_display_plan_t *plan,
       int left = x++;
       while (x < dirty.right && a[x] != b[x]) ++x;
       if (++spans > 4096 || !append_span(plan,
-          (h2_lua_display_plan_rect_t){left, y, x, y + 1}, &work)) {
+          (h2_lua_display_plan_rect_t){left, y, x, y + 1})) {
         plan->count = 0;
         return 0;
       }
@@ -118,10 +115,39 @@ int h2_lua_display_plan_build(h2_lua_display_plan_t *plan,
   return 1;
 }
 
-static uint64_t plan_cost(const h2_lua_display_plan_t *plan) {
-  uint64_t total = 0;
-  for (int i = 0; i < plan->count; ++i) total += cost(plan->rects[i]);
-  return total;
+typedef struct plan_summary {
+  h2_lua_display_plan_rect_t box;
+  int64_t pixels, blocks;
+  int count;
+} plan_summary_t;
+
+static void summarize(plan_summary_t *summary, h2_lua_display_plan_rect_t r) {
+  summary->box = summary->count ? join(summary->box, r) : r;
+  summary->pixels += area(r);
+  summary->blocks += (r.bottom - r.top + 15) / 16;
+  ++summary->count;
+}
+
+static int guard(const plan_summary_t *summary) {
+  if (summary->count < 2) return 0;
+  int64_t pixels = area(summary->box) - summary->pixels;
+  int64_t blocks = (summary->box.bottom - summary->box.top + 15) / 16 -
+                   summary->blocks;
+  /* Conservative empirical band, in pixel equivalents per estimated block.
+   * 160..200 us/block divided by .70...72 us/pixel, rounded outward. Require
+   * savings at the worst endpoint and give no credit for fewer PAL calls.
+   * This is not a PAL timing contract: different backends can lie outside the
+   * band or use another block height. Preserve the baseline on ties. */
+  return pixels + (blocks > 0 ? 286 : 222) * blocks < 0;
+}
+
+int h2_lua_display_plan_guard(h2_lua_display_plan_t *plan) {
+  plan_summary_t summary = {0};
+  for (int i = 0; i < plan->count; ++i) summarize(&summary, plan->rects[i]);
+  if (!guard(&summary)) return 0;
+  plan->rects[0] = summary.box;
+  plan->count = 1;
+  return 1;
 }
 
 static h2_lua_display_plan_rect_t tile_rect(int left, int top, int right,
@@ -131,46 +157,49 @@ static h2_lua_display_plan_rect_t tile_rect(int left, int top, int right,
       bottom * 16 < height ? bottom * 16 : height};
 }
 
-/* Preserve the legacy any-changed vertical extension. Bit 0 is immutable
- * damage and bit 1 is the consumed mark, so a winning tile candidate can be
- * rebuilt after evaluating spans without another framebuffer comparison. */
-static int build_tiles(h2_lua_display_plan_t *plan, uint8_t *tiles,
-                       int width, int height, int gap,
-                       h2_lua_display_plan_rect_t bounds) {
+static void reset_tiles(uint8_t *tiles, int width, int height) {
+  int count = ((width + 15) / 16) * ((height + 15) / 16);
+  for (int i = 0; i < count; ++i) tiles[i] &= 1;
+}
+
+/* Bit 0 is immutable damage; bit 1 marks consumed tiles. Enumerating the
+ * complete legacy fallback has no rectangle capacity limit. */
+int h2_lua_display_plan_next_tile(uint8_t *tiles, int width, int height,
+    int gap, int *cursor, h2_lua_display_plan_rect_t *rect) {
   int columns = (width + 15) / 16, rows = (height + 15) / 16;
-  for (int i = 0; i < columns * rows; ++i) tiles[i] &= 1;
-  int left = bounds.left / 16, top = bounds.top / 16;
-  int right = (bounds.right + 15) / 16, bottom = (bounds.bottom + 15) / 16;
-  plan->count = 0;
-  for (int ty = top; ty < bottom; ++ty) {
-    for (int tx = left; tx < right; ++tx) {
-      if (tiles[ty * columns + tx] != 1) continue;
-      int end_x = tx + 1;
-      for (int x = end_x; x < right && x - end_x <= gap; ++x)
-        if (tiles[ty * columns + x] == 1) end_x = x + 1;
-      int end_y = ty + 1;
-      for (int y = end_y; y < bottom && y - end_y <= gap; ++y) {
-        int any = 0;
-        for (int x = tx; x < end_x; ++x) any |= tiles[y * columns + x] == 1;
-        if (any) end_y = y + 1;
-      }
-      if (plan->count == H2_LUA_DISPLAY_PLAN_CAPACITY) return 0;
-      plan->rects[plan->count++] = tile_rect(tx, ty, end_x, end_y, width, height);
-      for (int y = ty; y < end_y; ++y)
-        for (int x = tx; x < end_x; ++x) tiles[y * columns + x] |= 2;
-    }
+  while (*cursor < columns * rows && tiles[*cursor] != 1) ++*cursor;
+  if (*cursor == columns * rows) return 0;
+  int tx = *cursor % columns, ty = *cursor / columns;
+  ++*cursor;
+  int end_x = tx + 1;
+  for (int x = end_x; x < columns && x - end_x <= gap; ++x)
+    if (tiles[ty * columns + x] == 1) end_x = x + 1;
+  int end_y = ty + 1;
+  for (int y = end_y; y < rows && y - end_y <= gap; ++y) {
+    int any = 0;
+    for (int x = tx; x < end_x; ++x) any |= tiles[y * columns + x] == 1;
+    if (any) end_y = y + 1;
   }
+  *rect = tile_rect(tx, ty, end_x, end_y, width, height);
+  for (int y = ty; y < end_y; ++y)
+    for (int x = tx; x < end_x; ++x) tiles[y * columns + x] |= 2;
   return 1;
 }
 
 int h2_lua_display_plan_select(h2_lua_display_plan_t *plan,
     const uint16_t *current, const uint16_t *previous, int width, int height,
     h2_lua_display_plan_rect_t dirty, int gap, uint8_t *tiles, int bounds) {
+  plan->count = 0;
+  if (dirty.left >= dirty.right || dirty.top >= dirty.bottom) return 1;
+  /* Preserve the complete baseline span plan and its original work limits.
+   * The guard reads rectangles only; a successful span path never scans tiles. */
+  if (!bounds && h2_lua_display_plan_build(plan, current, previous, width, dirty, gap)) {
+    h2_lua_display_plan_guard(plan);
+    return 1;
+  }
   int columns = (width + 15) / 16, rows = (height + 15) / 16;
   int left = columns, top = rows, right = 0, bottom = 0;
   memset(tiles, 0, (size_t)columns * rows);
-  plan->count = 0;
-  if (dirty.left >= dirty.right || dirty.top >= dirty.bottom) return 0;
   for (int ty = dirty.top / 16; ty <= (dirty.bottom - 1) / 16; ++ty) {
     for (int tx = dirty.left / 16; tx <= (dirty.right - 1) / 16; ++tx) {
       h2_lua_display_plan_rect_t r = tile_rect(tx, ty, tx + 1, ty + 1, width, height);
@@ -191,27 +220,28 @@ int h2_lua_display_plan_select(h2_lua_display_plan_t *plan,
       if (ty + 1 > bottom) bottom = ty + 1;
     }
   }
-  if (right == 0) return 0;
-  h2_lua_display_plan_rect_t box = tile_rect(left, top, right, bottom, width, height);
-  h2_lua_display_plan_rect_t single = {0, 0, width, height};
-  if (bounds || cost(box) <= cost(single)) single = box;
-  uint64_t best_cost = (uint64_t)cost(single);
-  int use_tiles = 0;
-  if (!bounds) {
-    if (build_tiles(plan, tiles, width, height, gap, box)) {
-      uint64_t candidate_cost = plan_cost(plan);
-      if (candidate_cost < best_cost) { best_cost = candidate_cost; use_tiles = 1; }
-    }
-    if (h2_lua_display_plan_build(plan, current, previous, width, dirty, gap)) {
-      if (plan_cost(plan) < best_cost) return 1;
-    }
-    if (use_tiles) {
-      /* Same immutable damage and gap: the previously bounded plan fits. */
-      build_tiles(plan, tiles, width, height, gap, box);
-      return 0;
-    }
+  if (right == 0) return 1;
+  if (bounds) {
+    plan->count = 1;
+    plan->rects[0] = tile_rect(left, top, right, bottom, width, height);
+    return 1;
   }
-  plan->count = 1;
-  plan->rects[0] = single;
-  return 0;
+  plan_summary_t summary = {0};
+  int cursor = 0;
+  h2_lua_display_plan_rect_t r;
+  while (h2_lua_display_plan_next_tile(tiles, width, height, gap, &cursor, &r)) {
+    if (plan->count < H2_LUA_DISPLAY_PLAN_CAPACITY) plan->rects[plan->count++] = r;
+    summarize(&summary, r);
+  }
+  if (guard(&summary)) {
+    plan->count = 1;
+    plan->rects[0] = summary.box;
+  } else if (summary.count > H2_LUA_DISPLAY_PLAN_CAPACITY) {
+    /* Never replace an oversized complete fallback with a costlier box or
+     * publish its stored prefix. Replay its byte map, not the framebuffer. */
+    plan->count = 0;
+    reset_tiles(tiles, width, height);
+    return 0;
+  }
+  return 1;
 }

@@ -26,14 +26,26 @@ int h2_lua_display_plan_build(h2_lua_display_plan_t *plan,
     const uint16_t *current, const uint16_t *previous, int width,
     h2_lua_display_plan_rect_t dirty, int gap);
 
-/* Compare complete span, tile, bounds and full-frame candidates before any
- * submission. tiles is caller-owned scratch of ceil(width/16)*ceil(height/16)
- * bytes; no additional storage or allocation is needed. bounds forces the
- * legacy tile-aligned bounding rectangle. The result always covers damage,
- * including when a bounded candidate cannot be built. Returns 1 only when
- * spans win; the return value is diagnostic, not success/failure. */
+/* Optionally replace a complete plan by its union box. A single rectangle
+ * pass requires savings for every block cost in the empirical 222..286 pixel
+ * equivalent range, giving no credit for reducing PAL calls. Returns whether
+ * the plan changed; a rejected guard leaves it byte-for-byte unchanged. */
+int h2_lua_display_plan_guard(h2_lua_display_plan_t *plan);
+
+/* Build the original span plan or complete legacy tile fallback, then apply
+ * the guard. tiles is caller-owned scratch of ceil(width/16)*ceil(height/16)
+ * bytes. bounds forces the legacy tile-aligned box. Returns 1 for a complete
+ * plan (including empty); 0 means a rejected guard and >128 fallback rects:
+ * plan is empty and tiles is ready for next_tile with cursor=0. No partial
+ * plan may be submitted. Only the original span failure triggers tile pixel
+ * comparison; the guard never compares framebuffers or allocates storage. */
 int h2_lua_display_plan_select(h2_lua_display_plan_t *plan,
     const uint16_t *current, const uint16_t *previous, int width, int height,
     h2_lua_display_plan_rect_t dirty, int gap, uint8_t *tiles, int bounds);
+
+/* Iterate the complete tile fallback after select returns 0. The scratch map
+ * is consumed; width/height/gap must match select. Returns 0 at exhaustion. */
+int h2_lua_display_plan_next_tile(uint8_t *tiles, int width, int height,
+    int gap, int *cursor, h2_lua_display_plan_rect_t *rect);
 
 #endif
