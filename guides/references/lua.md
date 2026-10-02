@@ -38,6 +38,18 @@ local used_material = display.draw_quad_material(material, colors,
 
 This is an explicit raster choice: half-open parameter cells and Q24 grid boundaries can differ at edge pixels from the existing polygon batch. Non-convex, degenerate or unsafe numeric quads replay the original batch and return `false`; successful material draws return `true`. Disjoint row clips reproduce a full material draw. See the generated contract for precise bounds, rounding, memory and error semantics. Existing palettes and `capture_region` / `draw_region` provide color reuse and optional pixel caching without another cache API. Both Web and embedded builds use this portable implementation.
 
+### Source cropping and projective depth
+
+A fixed source profile can move through projected slices without recompiling its boundaries. Pass the source U interval covered by the slice and its endpoint depth ratio to the projective draw. The quad corners must describe that cropped interval's projected endpoints, with A/D at the first endpoint and B/C at the last. Lua computes those corners, source units, depth values and colors.
+
+```lua
+-- Source U .2 through .8; last endpoint depth is twice the first.
+display.draw_quad_material_projective(material, colors,
+    10,10, 200,30, 180,210, 40,190, .2,.8,2, 16,32)
+```
+
+For local source fraction `s`, the target fraction is `s*r/(1+(r-1)*s)`, where `r=Z_last/Z_first`. This matches reciprocal-depth projection of a linearly parameterized source interval. V remains bilinear, and the existing half-open/Q24 material pixel rules still apply. Whole-source mapping with ratio 1 reproduces the original material draw. Empty source crops draw nothing after validation; unsupported geometry replays clipped, projected polygon records. Each draw reuses the compiled material and fixed scan scratch without allocating. See the generated contract for limits and fallback semantics.
+
 ## Regions from strings
 
 `display.region_from_string(width, height, data[, encoding])` creates an opaque region for `display.draw_region(region, x, y, ...)` and, for a matching full-screen image, `display.restore_background(region)`. The constructor does not acquire or draw to the display and remains usable on an existing proxy after `deinit`. Initial `require('display')` still acquires Display and raises on failure; cached `require` does not reopen it after `deinit`, and drawing still requires a live acquisition. Width and height must be integers from 1 through 4096; `data` must be a Lua string. The default encoding is `"rgb565be"`.

@@ -109,6 +109,35 @@
  *   Constructors do not acquire Display; errors use ordinary Lua validation
  *   or quota/OOM errors. Geometry, palettes and cache policy stay with Lua.
  *
+ * Cropped one-dimensional projective material mapping:
+ * - display.draw_quad_material_projective(material,colors,
+ *   ax,ay,bx,by,cx,cy,dx,dy,u_first,u_last,depth_ratio,
+ *   clip_top=0,clip_bottom=height) uses an existing material and palette.
+ *   All three mapping parameters are required. Source U bounds are finite
+ *   0<=u_first<=u_last<=1; depth_ratio is finite and strictly positive.
+ *   Equal U bounds draw nothing, but still validate all arguments, colors,
+ *   row clip and live Display. V parameters are unchanged.
+ * - The caller supplies corners of the projected cropped interval: A/D at
+ *   u_first, B/C at u_last. For each source U boundary, clamp
+ *   s=(u-u_first)/(u_last-u_first) to [0,1], then map it to target parameter
+ *   t=s*r/(1+(r-1)*s), r=depth_ratio. For perspective depth use
+ *   r=Z_last/Z_first, with same-sign endpoint depths and no horizon crossing.
+ *   Stable equivalent arithmetic avoids intermediate overflow/cancellation;
+ *   endpoints are exact. Lua owns projection, source/world units and palettes.
+ * - Uses the same half-open cells, transparent holes, Q24 grid scan, row clip,
+ *   dirty tracking and explicit present as draw_quad_material. Original cell
+ *   ownership survives repeated/clipped grid boundaries. Ratio 1 is affine;
+ *   (u_first,u_last,ratio)=(0,1,1) preserves the original draw exactly.
+ * - Returns true on the material path (including empty crops/clips), false on
+ *   fallback. Fallback intersects each original record with the U crop, skips
+ *   empty U intervals, projects its endpoints and replays polygon records in
+ *   order using the caller's original row clip. Exact identity delegates to
+ *   the unchanged original fallback, including degenerate records.
+ * - No new material, cache, atlas or allocation is created by a draw. Storage
+ *   adds only three doubles of call-local mapping parameters to the existing
+ *   bounded scan scratch; setup maps at most 32 U boundaries. Validation and
+ *   color-getter lifecycle behavior are the same as draw_quad_material.
+ *
  * Existing stroke_path(points,widths,color,offset_x=0,top=0,bottom=height,
  * cache=false,fast=false,smooth=false,scale=1,tolerance=0) also accepts
  * points={buffer=xy,count=n}: xy is an f64 packed xy buffer, capacity>=2n,
