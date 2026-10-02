@@ -63,6 +63,7 @@ typedef struct h2_pal_example_api {
 - Public struct field 只在调用方确实需要构造或读取该数据时暴露；implementation state 使用 opaque handle 或 private pointer。
 - Wire format 不直接序列化 C struct，必须逐字段编码并明确 byte order、长度和范围。
 - Enum 用于有限且稳定的状态集合；接收外部数据后先校验再转换为 enum 语义。
+- 公共错误返回 `h2_pal_result_t` 使用经过编译期宽度与范围检查的 signed 32-bit C int scalar，保持 provider 和旧回调的 C int 类型兼容。公共错误常量保留原值，library 的负错误码必须完整穿透，不能依赖 target 的 enum 压缩规则；例如 `-1000` 不能截成正数。
 
 ## 参数和返回值
 
