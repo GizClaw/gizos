@@ -2,6 +2,7 @@
 #include "driver/flash_partition.h"
 #include "flashdb.h"
 #include "os/os.h"
+#include "os/mem.h"
 
 #include <assert.h>
 #include <limits.h>
@@ -12,12 +13,20 @@ static uint8_t storage[STORAGE_SIZE];
 static unsigned reads;
 static uint32_t last_offset, last_size;
 static int fail_read, fail_write_after_commit, fail_erase_after_commit;
-static int fail_lock;
+static int fail_lock, fail_alloc;
+static unsigned allocations;
+static _Alignas(4) uint8_t cache_storage[1024];
 static unsigned lock_depth;
 static flash_protect_type_t protect = FLASH_PROTECT_ALL;
 static const bk_logic_partition_t partition = {
     CONFIG_FLASHDB_KVDB_START_ADDR, CONFIG_FLASHDB_KVDB_SIZE};
 static int mutex_token;
+
+void *psram_malloc(size_t size) {
+  assert(lock_depth == 1u && size <= sizeof(cache_storage));
+  ++allocations;
+  return fail_alloc ? NULL : cache_storage;
+}
 
 const bk_logic_partition_t *bk_flash_partition_get_info(int id) {
   assert(id == BK_PARTITION_FLASHDB);
@@ -62,6 +71,16 @@ static void reset(void) {
   fail_read = fail_write_after_commit = fail_erase_after_commit = fail_lock = 0;
   reads = 0u;
   assert(g_flashdb0.ops.init() == 0 && lock_depth == 0u);
+}
+static void test_allocation_failure_keeps_real_uncached_reads_available(void) {
+  fail_alloc = 1;
+  assert(g_flashdb0.ops.init() == 0);
+  uint8_t data[32];
+  for (unsigned i = 0; i < STORAGE_SIZE; ++i) storage[i] = (uint8_t)i;
+  assert(g_flashdb0.ops.read(32, data, sizeof(data)) == 32);
+  assert(g_flashdb0.ops.read(64, data, sizeof(data)) == 32);
+  assert(memcmp(data, storage + 64, sizeof(data)) == 0 && reads == 2u);
+  fail_alloc = 0;
 }
 static void test_adjacent_crc_reads_share_one_physical_read(void) {
   reset();
@@ -131,6 +150,7 @@ static void test_lock_failure_does_not_read_or_mutate_storage(void) {
   assert(g_flashdb0.ops.read(16, data, 4u) == 4);
 }
 int main(void) {
+  test_allocation_failure_keeps_real_uncached_reads_available();
   test_adjacent_crc_reads_share_one_physical_read();
   test_readahead_stays_inside_partition_and_large_reads_pass_through();
   test_cross_line_reads_pass_through_without_readahead();
@@ -138,6 +158,6 @@ int main(void) {
   test_erase_invalidates_even_after_uncertain_commit_and_restores_protection();
   test_read_failure_does_not_publish_a_cache_line();
   test_lock_failure_does_not_read_or_mutate_storage();
-  assert(lock_depth == 0u);
+  assert(lock_depth == 0u && allocations == 2u);
   return 0;
 }

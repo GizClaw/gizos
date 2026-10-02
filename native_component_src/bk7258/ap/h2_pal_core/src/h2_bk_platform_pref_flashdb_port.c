@@ -2,6 +2,7 @@
 #include "driver/flash_partition.h"
 #include "flashdb.h"
 #include "os/os.h"
+#include "os/mem.h"
 
 #include <stdint.h>
 #include <string.h>
@@ -12,7 +13,9 @@
 static beken_mutex_t s_flashdb_flash_mutex;
 /* FlashDB scans headers and CRC payloads in small adjacent reads. Cache only
  * bytes actually read from this partition; never populate it from writes. */
-static _Alignas(4) uint8_t s_flashdb_read_cache[H2_BK_FLASHDB_READ_CACHE_SIZE];
+/* FAL has process lifetime and no deinit API. Keep the optional cache in
+ * PSRAM so Loader/App retain the existing internal-heap budget. */
+static uint8_t *s_flashdb_read_cache;
 static uint32_t s_flashdb_read_cache_offset;
 static size_t s_flashdb_read_cache_size;
 
@@ -38,6 +41,8 @@ static int bk_pref_flash_init(void) {
     g_flashdb0.len =
         partition->partition_start_addr + partition->partition_length;
     s_flashdb_read_cache_size = 0u;
+    if (s_flashdb_read_cache == NULL)
+        s_flashdb_read_cache = psram_malloc(H2_BK_FLASHDB_READ_CACHE_SIZE);
     (void)rtos_unlock_mutex(&s_flashdb_flash_mutex);
     return 0;
 }
@@ -61,7 +66,7 @@ static int bk_pref_flash_read(long offset, uint8_t *buffer, size_t size) {
         ? (size_t)(partition_end - cache_offset < H2_BK_FLASHDB_READ_CACHE_SIZE
             ? partition_end - cache_offset : H2_BK_FLASHDB_READ_CACHE_SIZE)
         : 0u;
-    if (size != 0u && address >= cache_offset &&
+    if (s_flashdb_read_cache != NULL && size != 0u && address >= cache_offset &&
         (uint64_t)address < partition_end &&
         address - cache_offset < cache_size &&
         size <= cache_size - (address - cache_offset)) {
