@@ -12,6 +12,8 @@ H050IWV 800×480 RGB；LCD 活跃 DMA source/refresh 观测证明 controller sca
 
 PWM 只有成功 start 后才记为 running。通道初始化或启动失败时释放已取得资源；释放失败保留待清理状态，后续重试必须先完成清理再重新初始化和启动，不能仅修改 duty 后报成功。close 同样传播背光释放错误并保留 Display 供重试。故障注入验证与实际板上图案/启动记录分别保留。
 
+Display 每 32 次 frame submission，以及关闭前剩余的 submission，输出 `H2_BK_DISPLAY_PERF`：时间窗口、分配/整帧复制平均耗时、SDK submit 平均耗时和单次最大耗时。它区分 CPU copy 与提交阻塞，不把队列接受次数写成 LCD 实际显示 FPS；播放流畅度仍需结合视频帧时间戳和真实 scanout 观测。
+
 ## managed 安装与验收
 
 先检查 UID、当前 port occupancy、P1/P2、Stage 和 coredump 基线。构建 managed package 后 `send --file`，核对 staged identity，再 `reboot upgrade --monitor`。必须看到新 BOOT、run ledger 和 `H2_DISPLAY_READY rc=0 confirm=0`；失败不 confirm。随后独立 `reboot app --monitor` 重跑，不能把 replay ledger 当成新执行。最终 P1 不变、Stage empty、running/next=App、coredump 保持基线。
