@@ -59,6 +59,7 @@ typedef struct h2_bk7258_display_state {
     h2_bk7258_backlight_state_t backlight;
 #if H2_BK7258_DISPLAY_DIAGNOSTICS
     uint32_t diagnostic_presents;
+    bool diagnostic_next_present;
 #endif
     int initialized;
 } h2_bk7258_display_state_t;
@@ -367,6 +368,7 @@ static int init_display(h2_bk7258_display_state_t *state) {
     state->initialized = 1;
 #if H2_BK7258_DISPLAY_DIAGNOSTICS
     state->diagnostic_presents = 0u;
+    state->diagnostic_next_present = true;
     display_diagnostic(state, "open", 100u, H2_DISPLAY_OK);
 #endif
     return H2_DISPLAY_OK;
@@ -522,9 +524,10 @@ static int bk_present(void *user) {
     state->first_present_done = true;
 #if H2_BK7258_DISPLAY_DIAGNOSTICS
     ++state->diagnostic_presents;
-    if (state->diagnostic_presents <= 3u ||
+    if (state->diagnostic_next_present || state->diagnostic_presents <= 3u ||
         state->diagnostic_presents % 128u == 0u)
         display_diagnostic(state, "present", UINT32_MAX, rc);
+    state->diagnostic_next_present = false;
 #endif
     return rc;
 }
@@ -535,6 +538,9 @@ static int bk_set_brightness_percent(void *user, uint32_t percent) {
         return H2_DISPLAY_ERR_INVALID_STATE;
     }
     if (percent > 100u) return H2_DISPLAY_ERR_INVALID_ARG;
+#if H2_BK7258_DISPLAY_DIAGNOSTICS
+    state->diagnostic_next_present = true;
+#endif
     if (percent == 0u || percent == 100u) {
         int rc = h2_bk7258_backlight_release(&state->backlight);
         if (rc) return rc;
