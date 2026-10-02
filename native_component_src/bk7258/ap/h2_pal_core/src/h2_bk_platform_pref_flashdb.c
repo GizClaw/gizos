@@ -13,6 +13,12 @@
  * FDB_KV_NAME_MAX, e.g. "h2loader.mfg_acceptance_revision" (32 chars). */
 #define H2_BK_PREF_KEY_MAX FDB_KV_NAME_MAX
 
+/* Final diagnostic consumers may opt in; production images keep their
+ * existing code budget and do not acquire clocks solely for tracing. */
+#ifndef H2_BK_PLATFORM_PREF_TIMING_DIAGNOSTICS
+#define H2_BK_PLATFORM_PREF_TIMING_DIAGNOSTICS 0
+#endif
+
 typedef struct h2_bk_pref_namespace {
     h2_pal_pref_namespace_t base;
     char name_space[16];
@@ -485,10 +491,14 @@ static uint64_t type_hash(const void *bytes, size_t size) {
   return h;
 }
 static uint32_t pref_now_ms(void) {
+#if H2_BK_PLATFORM_PREF_TIMING_DIAGNOSTICS
   uint64_t now = 0u;
   if (h2_pal_time_get_monotonic_ms(h2_bk_platform_time_api(), &now) != H2_PAL_OK)
     return 0u;
   return (uint32_t)now;
+#else
+  return 0u;
+#endif
 }
 
 /* Report only slow calls, after releasing the storage mutex. Hash the key;
