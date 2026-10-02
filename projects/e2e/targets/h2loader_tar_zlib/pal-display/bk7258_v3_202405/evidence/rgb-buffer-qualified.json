@@ -1,0 +1,492 @@
+{
+  "schema": 1,
+  "board": "bk7258_v3_202405",
+  "version": "bazel-native-artifacts",
+  "new_physical_run_claimed": true,
+  "source_snapshot_commit": "75d83ca4a9c9297cc7018ce3d2d0cdb0be87fe84",
+  "driver_qualified": true,
+  "panel_qualified": true,
+  "optical_verified": false,
+  "physical_observation": {
+    "status": "PASS",
+    "source": "user",
+    "question": "新的 Display 真机回归已完成 24/24，板上现在应稳定显示白色边框的四象限图：左上红、右上绿、左下蓝、右下白。图案和颜色是否正确，且没有持续闪烁或变黑？",
+    "response": "图案正确且稳定",
+    "pattern_observed": true,
+    "stable_image_observed": true,
+    "brightness_cycle_observed": false,
+    "image_sha256": "57c7bddde0dea9de4c237069580959e0551e8af73eb8afe77326862859706a4a",
+    "device_uid": "c8478ca2a87c",
+    "image_version": "bazel-native-artifacts",
+    "limits": "Human confirmation of RGBW pattern and stability; no optical luminance measurement."
+  },
+  "install_boot": {
+    "fresh_boot": true,
+    "confirmed": true,
+    "version": "bazel-native-artifacts",
+    "qualified": {
+      "platform": "board-driver",
+      "contract": 1,
+      "operations": 6,
+      "passed": 24,
+      "failed": 0,
+      "not_run": 0,
+      "observations": 23,
+      "complete": 1,
+      "qualified": 1,
+      "rc": 0,
+      "cleanup": 0,
+      "teardown": 0
+    },
+    "cases": [
+      {
+        "id": "interface_inventory",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "null_arguments",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "closed_state",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "open_idempotent",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "native_info",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "full_frame_borrowed",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "partial_rgb565",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "padded_unaligned_stride",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "rgb888",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "rgb444",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "unknown_format",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "empty_rectangles",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "short_stride",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "outside_rectangles",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "partial_bounds",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "coordinate_overflow",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "span_overflow",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "repeated_present",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_zero",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_half",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_full",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_invalid",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "close_idempotent",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "reopen",
+        "status": "PASS",
+        "rc": 0
+      }
+    ],
+    "log_sha256": "c0018f6ad317cfaa72bd937a0a4a0566c4e4866f241bbc00352eff10dc399056",
+    "real_driver_observations_received": [
+      "case=full_frame_borrowed source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=partial_rgb565 source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=unknown_format source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=empty_rectangles source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=coordinate_overflow source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=span_overflow source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=repeated_present source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=repeated_present source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=brightness_invalid source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=reopen source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0"
+    ],
+    "physical_observation": {
+      "status": "PASS",
+      "source": "user",
+      "question": "新的 Display 真机回归已完成 24/24，板上现在应稳定显示白色边框的四象限图：左上红、右上绿、左下蓝、右下白。图案和颜色是否正确，且没有持续闪烁或变黑？",
+      "response": "图案正确且稳定",
+      "pattern_observed": true,
+      "stable_image_observed": true,
+      "brightness_cycle_observed": false,
+      "image_sha256": "57c7bddde0dea9de4c237069580959e0551e8af73eb8afe77326862859706a4a",
+      "device_uid": "c8478ca2a87c",
+      "image_version": "bazel-native-artifacts",
+      "limits": "Human confirmation of RGBW pattern and stability; no optical luminance measurement."
+    },
+    "after_status": {
+      "board": "bk7258_v3_202405",
+      "target": "bk7258",
+      "chip": "bk7258",
+      "device_uid": "c8478ca2a87c",
+      "capabilities": "0x00000001",
+      "command_availability": "0x00081f1f",
+      "active_role": "app",
+      "active_version": "bazel-native-artifacts",
+      "active_checksum": "57c7bddde0dea9de4c237069580959e0551e8af73eb8afe77326862859706a4a",
+      "active_image_size": "5222400",
+      "running_partition": "2",
+      "next_partition": "2",
+      "boot_intent": "auto",
+      "stage_valid": "0",
+      "stage_package_checksum": "-",
+      "stage_package_size": "0",
+      "stage_image_checksum": "-",
+      "stage_image_size": "0",
+      "stage_role": "unknown",
+      "stage_version": "-",
+      "stage_board": "-",
+      "stage_target": "-",
+      "partition_1_valid": "1",
+      "partition_1_package_checksum": "041769c71398254bf2103e873c2c5b28490cd7f02f402349919db6b704bf1731",
+      "partition_1_package_size": "1578984",
+      "partition_1_image_checksum": "31a3c6780e1b2918ff3af9e3d323826c154a9cb9cd0b60740888efc368f9cb86",
+      "partition_1_image_size": "2437120",
+      "partition_1_role": "loader",
+      "partition_1_version": "0.7.0",
+      "partition_1_board": "bk7258_v3_202405",
+      "partition_1_target": "bk7258",
+      "partition_2_valid": "1",
+      "partition_2_package_checksum": "cea07a2335307856c6143673d286f2160e12ad17c8d94ad9102fd67671881984",
+      "partition_2_package_size": "1727863",
+      "partition_2_image_checksum": "57c7bddde0dea9de4c237069580959e0551e8af73eb8afe77326862859706a4a",
+      "partition_2_image_size": "5222400",
+      "partition_2_role": "app",
+      "partition_2_version": "bazel-native-artifacts",
+      "partition_2_board": "bk7258_v3_202405",
+      "partition_2_target": "bk7258",
+      "last_result": "0",
+      "mfg_mode": "1",
+      "mfg_steps": "0000000000000000000000"
+    },
+    "received_observations": 10,
+    "transport_limitation": "Managed UART did not retain every per-operation observation; the complete 24-case result and active-DMA checks were retained."
+  },
+  "independent_normal_reboot": {
+    "fresh_boot": true,
+    "confirmed": true,
+    "version": "bazel-native-artifacts",
+    "qualified": {
+      "platform": "board-driver",
+      "contract": 1,
+      "operations": 6,
+      "passed": 24,
+      "failed": 0,
+      "not_run": 0,
+      "observations": 23,
+      "complete": 1,
+      "qualified": 1,
+      "rc": 0,
+      "cleanup": 0,
+      "teardown": 0
+    },
+    "cases": [
+      {
+        "id": "interface_inventory",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "null_arguments",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "closed_state",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "open_idempotent",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "native_info",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "full_frame_borrowed",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "partial_rgb565",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "padded_unaligned_stride",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "rgb888",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "rgb444",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "unknown_format",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "empty_rectangles",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "short_stride",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "outside_rectangles",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "partial_bounds",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "coordinate_overflow",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "span_overflow",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "repeated_present",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_zero",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_half",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_full",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "brightness_invalid",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "close_idempotent",
+        "status": "PASS",
+        "rc": 0
+      },
+      {
+        "id": "reopen",
+        "status": "PASS",
+        "rc": 0
+      }
+    ],
+    "log_sha256": "38b8c6119479b58774da98f0330ccde43776184995da0b64f2fb5db0f9d2e4b4",
+    "real_driver_observations_received": [
+      "case=partial_rgb565 source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=padded_unaligned_stride source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=empty_rectangles source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=short_stride source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=span_overflow source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=repeated_present source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=repeated_present source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=brightness_zero source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=0 rc=0",
+      "case=brightness_invalid source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0",
+      "case=reopen source=LCD-active-DMA refresh=observed optical_verified=0 brightness_command=100 rc=0"
+    ],
+    "old_replay_before_boot_excluded": true,
+    "received_observations": 10,
+    "transport_limitation": "Managed UART did not retain every per-operation observation; the complete 24-case result and active-DMA checks were retained."
+  },
+  "before_status": {
+    "board": "bk7258_v3_202405",
+    "target": "bk7258",
+    "chip": "bk7258",
+    "device_uid": "c8478ca2a87c",
+    "capabilities": "0x00000005",
+    "command_availability": "0x00081f1f",
+    "active_role": "loader",
+    "active_version": "0.7.0",
+    "active_checksum": "31a3c6780e1b2918ff3af9e3d323826c154a9cb9cd0b60740888efc368f9cb86",
+    "active_image_size": "2437120",
+    "running_partition": "1",
+    "next_partition": "1",
+    "boot_intent": "loader",
+    "stage_valid": "0",
+    "stage_package_checksum": "-",
+    "stage_package_size": "0",
+    "stage_image_checksum": "-",
+    "stage_image_size": "0",
+    "stage_role": "unknown",
+    "stage_version": "-",
+    "stage_board": "-",
+    "stage_target": "-",
+    "partition_1_valid": "1",
+    "partition_1_package_checksum": "041769c71398254bf2103e873c2c5b28490cd7f02f402349919db6b704bf1731",
+    "partition_1_package_size": "1578984",
+    "partition_1_image_checksum": "31a3c6780e1b2918ff3af9e3d323826c154a9cb9cd0b60740888efc368f9cb86",
+    "partition_1_image_size": "2437120",
+    "partition_1_role": "loader",
+    "partition_1_version": "0.7.0",
+    "partition_1_board": "bk7258_v3_202405",
+    "partition_1_target": "bk7258",
+    "partition_2_valid": "1",
+    "partition_2_package_checksum": "0d31c11bb5df8109f81b7d63d48b64c11a2ce882742ca0a5633b9358c787562a",
+    "partition_2_package_size": "6641910",
+    "partition_2_image_checksum": "5d100b47212b33c8d5da0ed9e1076e7b814ab191933b5138a079fdacd1b13833",
+    "partition_2_image_size": "5222400",
+    "partition_2_role": "app",
+    "partition_2_version": "0.1.0",
+    "partition_2_board": "bk7258_v3_202405",
+    "partition_2_target": "bk7258",
+    "last_result": "0",
+    "mfg_mode": "1",
+    "mfg_steps": "0000000000000000000000"
+  },
+  "final_status": {
+    "board": "bk7258_v3_202405",
+    "target": "bk7258",
+    "chip": "bk7258",
+    "device_uid": "c8478ca2a87c",
+    "capabilities": "0x00000001",
+    "command_availability": "0x00081f1f",
+    "active_role": "app",
+    "active_version": "bazel-native-artifacts",
+    "active_checksum": "57c7bddde0dea9de4c237069580959e0551e8af73eb8afe77326862859706a4a",
+    "active_image_size": "5222400",
+    "running_partition": "2",
+    "next_partition": "2",
+    "boot_intent": "auto",
+    "stage_valid": "0",
+    "stage_package_checksum": "-",
+    "stage_package_size": "0",
+    "stage_image_checksum": "-",
+    "stage_image_size": "0",
+    "stage_role": "unknown",
+    "stage_version": "-",
+    "stage_board": "-",
+    "stage_target": "-",
+    "partition_1_valid": "1",
+    "partition_1_package_checksum": "041769c71398254bf2103e873c2c5b28490cd7f02f402349919db6b704bf1731",
+    "partition_1_package_size": "1578984",
+    "partition_1_image_checksum": "31a3c6780e1b2918ff3af9e3d323826c154a9cb9cd0b60740888efc368f9cb86",
+    "partition_1_image_size": "2437120",
+    "partition_1_role": "loader",
+    "partition_1_version": "0.7.0",
+    "partition_1_board": "bk7258_v3_202405",
+    "partition_1_target": "bk7258",
+    "partition_2_valid": "1",
+    "partition_2_package_checksum": "cea07a2335307856c6143673d286f2160e12ad17c8d94ad9102fd67671881984",
+    "partition_2_package_size": "1727863",
+    "partition_2_image_checksum": "57c7bddde0dea9de4c237069580959e0551e8af73eb8afe77326862859706a4a",
+    "partition_2_image_size": "5222400",
+    "partition_2_role": "app",
+    "partition_2_version": "bazel-native-artifacts",
+    "partition_2_board": "bk7258_v3_202405",
+    "partition_2_target": "bk7258",
+    "last_result": "0",
+    "mfg_mode": "1",
+    "mfg_steps": "0000000000000000000000"
+  },
+  "package_sha256": "cea07a2335307856c6143673d286f2160e12ad17c8d94ad9102fd67671881984",
+  "p1_preserved": true,
+  "stage_empty": true,
+  "running_and_next_app": true,
+  "brightness_validation": {
+    "mandatory_cases": "PASS",
+    "optical_measurement": "NOT_MEASURED"
+  }
+}

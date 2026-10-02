@@ -1,0 +1,77 @@
+{
+  "assets": [
+    {
+      "name": "bk7258_v3_202405-pal-display-bk7258.update.tar.zlib",
+      "operation": "managed-install",
+      "release_suffix": ".update.tar.zlib",
+      "sha256": "cea07a2335307856c6143673d286f2160e12ad17c8d94ad9102fd67671881984",
+      "size": 1727863
+    }
+  ],
+  "board": "bk7258_v3_202405",
+  "entry": "projects/e2e/targets/h2loader_tar_zlib/pal-display/bk7258_v3_202405",
+  "image": "pal-display",
+  "native_artifacts": [
+    {
+      "name": "ap/firmware.elf",
+      "operation": "native-debug-or-flash",
+      "sha256": "21ceac5a68a2c492ea8def9ba6212c429c2a67642c0611b1e5783f76786141fa",
+      "size": 13289356
+    },
+    {
+      "name": "ap/firmware.map",
+      "operation": "native-debug-or-flash",
+      "sha256": "48096e5807c1018f2f7602641cc3bf8d6a776eaa708c11be0a2fcc0c1bd53bee",
+      "size": 8025455
+    },
+    {
+      "name": "ap/app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "78748ca803e11adb0d93edfba2127c6052cd62a96b469e488186f88400930d38",
+      "size": 1314504
+    },
+    {
+      "name": "cp/firmware.elf",
+      "operation": "native-debug-or-flash",
+      "sha256": "d23e1b5bb6aa0bfc28d536df76497fc7def761df42f43fba786f535b99ab1b43",
+      "size": 14387000
+    },
+    {
+      "name": "cp/firmware.map",
+      "operation": "native-debug-or-flash",
+      "sha256": "d9063955dd0bf9538b99dc5890dfab87354c6dbc67acd4648a1b1a72bf5d37a9",
+      "size": 6822970
+    },
+    {
+      "name": "cp/app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "b41702f9a93bef0f82cb05f14ade3e9a51b7e4d2bcadd96d276961aedd4d7b99",
+      "size": 1058724
+    },
+    {
+      "name": "app_ab_crc.rbl",
+      "operation": "native-debug-or-flash",
+      "sha256": "57c7bddde0dea9de4c237069580959e0551e8af73eb8afe77326862859706a4a",
+      "size": 5222400
+    },
+    {
+      "name": "all-app.bin",
+      "operation": "native-debug-or-flash",
+      "sha256": "f796bf770e3e759266f9d4c1ca490dfd22c20dc7222283357242cad83df3485a",
+      "size": 5292032
+    }
+  ],
+  "package_manifest": {
+    "board": "bk7258_v3_202405",
+    "format": 1,
+    "image_sha256": "57c7bddde0dea9de4c237069580959e0551e8af73eb8afe77326862859706a4a",
+    "image_size": 5222400,
+    "role": "app",
+    "target": "bk7258",
+    "version": "bazel-native-artifacts"
+  },
+  "platform": "bk7258",
+  "role": "app",
+  "target": "bk7258",
+  "version": "bazel-native-artifacts"
+}

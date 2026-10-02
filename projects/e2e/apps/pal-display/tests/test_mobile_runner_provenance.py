@@ -10,8 +10,31 @@ import check_qualification as qualification
 class MobileRunnerProvenanceTest(unittest.TestCase):
     def setUp(self):
         old = json.loads((qualification.ROOT / "qualification.json").read_text(encoding="utf-8"))
-        self.historical = {**old["source_sha256"], **old["review_fix_source_sha256"]}
+        self.original = {**old["source_sha256"], **old["review_fix_source_sha256"]}
+        self.historical = qualification.bk_rgb_buffer_requalification(self.original)
         self.followup = json.loads((qualification.ROOT / "mobile_runner_refactor.json").read_text(encoding="utf-8"))
+
+    def test_new_bk_receipt_cannot_hide_an_unqualified_source_or_failed_case(self):
+        followup = json.loads((qualification.ROOT / "bk_rgb_buffer_requalification.json").read_text())
+        receipt = json.loads(qualification.Path(followup["board_evidence"]).read_text())
+        build = json.loads(qualification.Path(followup["build_evidence"]).read_text())
+        qualification.verify_bk_rgb_buffers(followup, self.original, receipt, build)
+        wrong = copy.deepcopy(followup)
+        wrong["current_source_sha256"]["libs/pal/providers/sdl3/src/h2_sdl3_display.cpp"] = "0" * 64
+        with self.assertRaises(AssertionError):
+            qualification.verify_bk_rgb_buffers(wrong, self.original, receipt, build)
+        wrong = copy.deepcopy(receipt)
+        wrong["independent_normal_reboot"]["cases"][0]["status"] = "FAIL"
+        with self.assertRaises(AssertionError):
+            qualification.verify_bk_rgb_buffers(followup, self.original, wrong, build)
+        wrong = copy.deepcopy(receipt)
+        wrong["independent_normal_reboot"]["log_sha256"] = wrong["install_boot"]["log_sha256"]
+        with self.assertRaises(AssertionError):
+            qualification.verify_bk_rgb_buffers(followup, self.original, wrong, build)
+        wrong = copy.deepcopy(receipt)
+        wrong["physical_observation"]["stable_image_observed"] = False
+        with self.assertRaises(AssertionError):
+            qualification.verify_bk_rgb_buffers(followup, self.original, wrong, build)
 
     def verify(self, followup):
         with patch.object(qualification.json, "loads", return_value=followup):
