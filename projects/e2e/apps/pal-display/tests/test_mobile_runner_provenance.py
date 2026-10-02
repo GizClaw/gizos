@@ -15,9 +15,9 @@ class MobileRunnerProvenanceTest(unittest.TestCase):
         self.followup = json.loads((qualification.ROOT / "mobile_runner_refactor.json").read_text(encoding="utf-8"))
 
     def test_new_bk_receipt_cannot_hide_an_unqualified_source_or_failed_case(self):
-        followup = json.loads((qualification.ROOT / "bk_rgb_buffer_requalification.json").read_text())
-        receipt = json.loads(qualification.Path(followup["board_evidence"]).read_text())
-        build = json.loads(qualification.Path(followup["build_evidence"]).read_text())
+        followup = json.loads((qualification.ROOT / "bk_rgb_buffer_requalification.json").read_text(encoding="utf-8"))
+        receipt = json.loads(qualification.Path(followup["board_evidence"]).read_text(encoding="utf-8"))
+        build = json.loads(qualification.Path(followup["build_evidence"]).read_text(encoding="utf-8"))
         qualification.verify_bk_rgb_buffers(followup, self.original, receipt, build)
         wrong = copy.deepcopy(followup)
         wrong["current_source_sha256"]["libs/pal/providers/sdl3/src/h2_sdl3_display.cpp"] = "0" * 64
