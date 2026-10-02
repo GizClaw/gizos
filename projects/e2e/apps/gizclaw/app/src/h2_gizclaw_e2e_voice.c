@@ -554,8 +554,9 @@ static int configure_mode(voice_state_t *state, bool realtime) {
         .has_input = true, .input = realtime ? H2_GIZCLAW_WORKSPACE_INPUT_REALTIME
                                            : H2_GIZCLAW_WORKSPACE_INPUT_PUSH_TO_TALK};
     const h2_gizclaw_session_selection_t selection = {
-        .collection = "assistants", .workflow_name = state->fixture->workflow_name,
-        .workspace_name = state->workspace_name, .parameters = &parameters};
+        .workflow_name = state->fixture->workflow_name,
+        .workspace_name = state->workspace_name,
+        .parameters = &parameters};
     state->generation = 0u; /* A new route starts its own generation sequence. */
     return evidence("h2_gizclaw_session_conversation_create", "voice",
                     h2_gizclaw_session_conversation_create(session, &selection, 30000u,

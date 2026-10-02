@@ -1,17 +1,17 @@
 # GizClaw E2E
 
-## 当前资格（2026-10-01）
+## 当前资格（2026-10-02）
 
-当前 SDK 固定 `0.19.0`，独立公开库存与审计为 **227 项**。当前主线 SCTP #617 与 PAL Net/TLS #621 已合入。source `e228d55b` 的 macOS、iOS Simulator、Android Emulator 均真实 8/8 及 227/227 通过，cleanup=0、retained=0，移动端 teardown=0；早期 source42a/75aad/d214 的独立记录保留原身份。早期 226/default profile 记录保留原身份。六端整体资格仍未完成。
+当前跟随 main 使用 GizClaw C SDK `0.23.2`，保留 MHS/HWD、tool-v0、catalog tags 和 safety-fence 协议。独立公开函数库存重新核对后仍为 **227 项**；类型和协议语义的更新须重新执行实际业务。下面 source-bound `0.19.0` 记录仅是历史结果，不资格化当前 SDK。当前主线 SCTP #617 与 PAL Net/TLS #621 已合入。source `e228d55b` 的 macOS、iOS Simulator、Android Emulator 均真实 8/8 及 227/227 通过，cleanup=0、retained=0，移动端 teardown=0；早期 source42a/75aad/d214 的独立记录保留原身份。早期 226/default profile 记录保留原身份。六端整体资格仍未完成。
 
 | 平台 | 当前实际结果 | 尚缺条件 |
 | --- | --- | --- |
 | macOS / H2Peer | sourcee228d55b，8/8、227/227，cleanup=0、retained=0 | 受控 E2E h106-tiga，显式 key/value；已完成该 source 实际运行 |
 | iOS Simulator / XCFramework | sourcee228d55b，8/8、227/227，cleanup/retained/teardown=0 | 仅模拟器资格；不代表iOS实机 |
 | Android Emulator / AAR | sourcee228d55b，8/8、227/227，cleanup/retained/teardown=0 | 仅模拟器资格；不代表Android实机 |
-| WASM / Chromium Worker | source4596acba，7/8，cleanup=0、teardown=0 | 真实Edge preflight缺PUT；GizClaw/gizclaw#1422源码fix已CI绿，尚待经授权发布/部署后fresh Worker验证 |
-| ESP32-S3 / AMOLED | source9326 的 R27 完整执行7/8、Firmware真实超时、cleanup=-10、retained=1；未确认 | 新 managed boot 和独立 normal boot 仍需完成；coredump 空不能证明没有 reset |
-| BK7258 | source9326 的 R27 实际执行8项均FAIL=-5，Stage 有效；未确认 | R28 修复 SDK 控制台账本输出后重新执行并定位实际失败；只在全量成功后确认 App |
+| WASM / Chromium Worker | source4596acba，7/8，cleanup=0、teardown=0 | 真实Edge preflight缺PUT；GizClaw/gizclaw#1422 已合并并进入 v0.23.6；live E2E 仍为0.21.3，尚待经授权部署后fresh Worker验证 |
+| ESP32-S3 / AMOLED | sourcecdd 的 R31 完整执行7/8、Firmware真实超时、cleanup=-10、retained=1；DevKit R30同样7/8；均未确认 | 新 managed boot 和独立 normal boot 仍需完成；coredump 空不能证明没有 reset |
+| BK7258 | sourcee0 的 R33 已使用真实H2Peer owner，运行到Firmware TLS FORMAT失败；无完整通过/确认 | 已定位并修复旧heap/worker栈/WebRTC owner装配问题；重取板卡归属及新Loader/P1/Stage/crash基线后继续完整双boot |
 
 版本、逐 case 终态、未覆盖 API、清理及日志 SHA 保存在 `evidence/*-phase*.json`。macOS/iOS/Android 的上述音频结果验证真实服务上的录音 fixture、回复解码、历史重播及 PCM 消费；输入和扬声器使用确定性测试 delegate，**不构成麦克风或声学验收**。
 
@@ -49,7 +49,7 @@ Fixture 仅在注册 profile 非空、完整终止且与已有 actor 一致后�
 
 Workspace 清理分别记录主/隔离 actor 的有效删除确认。case 删除后若列表验证失败，Fixture 保留确认并在重试时 get 检查目标缺失；确认存在且 get 返回 NOT_FOUND 才退还义务。未确认删除的 NOT_FOUND、错误对象或查询失败不能算完成；仍查到目标时允许下一次重试删除。清理预算耗尽后不再发送 Peer delete，保留身份用于重试。两个 actor 的 36 组边界场景覆盖此状态交接；不能据此声称超时创建永远不会迟到。
 
-当前固定 GizClaw C SDK 0.19.0，公开 API 共 227 个：包括独立的 Workspace reload 和 reload-with-options、统一的 Service audio_start/audio_end 和库内 PCM Track；已删除 req_finish_input 及 Conversation 的旧 begin/end。Firmware case 已接入新的 req/resp/rpc，完整网络验收仍需逐用例记录，不以编译通过代替。Connectivity 在同一注册连接上用 req/resp 和同步 RPC 各做三轮上传、下载，每轮 1 MiB；输出传输耗时和请求总耗时，建连不计入传输。上传计时截止服务器 EOS 确认，不以本地发送完成代替。独立本地测试使用模拟传输，不能作为真实 Mbps 或业务 E2E 结果。
+当前 GizClaw C SDK 0.23.2 的公开函数库存仍为 227 个：包括独立的 Workspace reload 和 reload-with-options、统一的 Service audio_start/audio_end 和库内 PCM Track；已删除 req_finish_input 及 Conversation 的旧 begin/end。Firmware case 已接入新的 req/resp/rpc，完整网络验收仍需逐用例记录，不以编译通过代替。Connectivity 在同一注册连接上用 req/resp 和同步 RPC 各做三轮上传、下载，每轮 1 MiB；输出传输耗时和请求总耗时，建连不计入传输。上传计时截止服务器 EOS 确认，不以本地发送完成代替。独立本地测试使用模拟传输，不能作为真实 Mbps 或业务 E2E 结果。
 
 Connectivity 使用两个隔离 Peer，以便分别验证 req/resp 和同步 RPC 的 peer_delete；注册复验、ping 与全部测速始终使用同一个主 Service，不在测量间重连。全部测速成功后才删除两个 Peer，有效删除响应清除对应义务，任何失败仍交给 Fixture 收尾。`gizclaw_e2e_connectivity_test` 的本地场景覆盖调用阶段失败、错误响应、取消失败、预算耗尽、时钟读取失败、上传读取、下载写入、块顺序/内容和 poll 失败；`connectivity_coverage_test` 检查 12 个业务函数、12 条测量记录及六条数据搬运记录，缺少实际 dispatch 记录不能认证 req/resp 下载测速。正常场景仍为 `valid=false`，不是实际网络速度或远端清理验收。
 
@@ -82,7 +82,7 @@ bazel test --config=macos_arm64 \
 
 
 
-手动 Live E2E workflow 同样要求显式 `endpoint` 输入，不再接收 `entry` 区域别名。H2Peer 支持全部 suite（含 `service`）；Pion 及 `both` 仅接受 `rpc`、`firmware`、`voice`、`firmware-voice`。`both` 会运行两个后端，但任一失败都会使整个步骤失败。`//tools/bazel:gizclaw_live_command_test` 用假 Bazel 检查真实 workflow shell → Make → 包装器的参数和退出状态，不连接任何服务，不能用它证明 live E2E 已通过。
+手动 Live E2E workflow 同样要求显式 `endpoint` 输入，不再接收 `entry` 区域别名。H2Peer 支持全部 suite（含 `service`）；Pion 及 `both` 仅接受 `rpc`、`firmware`、`voice`、`firmware-voice`。`both` 会运行两个后端，但任一失败都会使整个步骤失败。`//tools/bazel:gizclaw_live_command_test` 用假 Bazel 检查真实 workflow shell → direct Bazel 的参数和退出状态，不连接任何服务，不能用它证明 live E2E 已通过。
 
 ## 逐函数覆盖验收
 
@@ -206,3 +206,5 @@ AMOLED实板的可选evidence observer在App任务内同步复制非敏感的原
 BK7258 没有系统 CA bundle。该测试启动器必须通过 `app_config_fixture_root_ca_hex` 提供所选真实 HTTPS fixture 的公共 PEM 根证书十六进制字节（上限 16 KiB），并创建测试进程持有的 coreHTTP provider；TLS 保持 REQUIRED、真实 hostname/链/日期校验。缺少 CA 是配置失败，不能改成 SKIP 或关闭验证。BK 与 AMOLED 使用同一 384 KiB 有界证据账本、随机 execution nonce、完整 CRC32 帧及独立 227 项审计；旧 boot 的重播不能满足第二次 normal boot。
 
 BK 的 GizClaw target 选择已存在的 board-owned `media` RAM layout（AP heap4.25MiB，显示保留区1.8125MiB），并将本业务的 audio/data/Device/H2Peer worker stacks 放入 PSRAM；GPIO、AP/CP SRAM 与 managed partition 继续由 Board layout 持有。此前 display-oriented640KiB heap 的实际 OOM 记录保留原源码与未确认状态。Native launcher 明确启用真实 H2Peer PAL；误编译 canonical unsupported provider 是接线错误，不能授予能力 SKIP。
+
+2026-10-02 main 同步保留新增独立 `workspace-fence` lane；它需要显式 Workflow 和两个不同 fence ID，不包含在八项 `all` admission 中。三类板卡共用的 admission 要求 complete、selected/terminal/passed 均为8、所有失败计数与 cleanup/retained 均为0；Voice-only、部分完成或清理残留不能确认镜像。SDK0.23.2 headless actors 注册 INFO_GET、IDENTIFIERS_GET、SOCIAL_PING 三个 tool handler；有 Device vtable 的 actor 只注册 SOCIAL_PING，避免和内置工具重复。真实 Service 初始化及44项 App/oracle/provenance/dispatch focused测试通过，当前SDK实际六端重测仍待完成。

@@ -124,6 +124,8 @@ make bazel-test BAZEL_CONFIG=linux_x86_64
 
 每个 CI execution class 直接请求 `//...`。Build task 构建完整 compatible graph，并在普通 CI 中使用 `--remote_download_outputs=minimal`，不为没有后续 artifact consumer 的 cache hit 物化全部 top-level output；需要读取产物的 validation 必须用 focused target 显式物化。Test task 统一使用 `--build_tests_only --remote_download_outputs=minimal`，只构建自动测试及其 Bazel 依赖闭包，并只物化本地执行实际需要的 remote output。Platform compatibility 跳过其他平台，Bazel repository/disk cache 根据完整 action key 复用未变化的下载、生成、编译、链接和测试输出。CI 不再计算 base-to-head affected target，也不传递 exact target list。
 
+Native component 的显式 `component_directory` 以声明它的 repository 为根。在下游 consumer graph 中，外部 component 的目录必须保留 Bazel execroot repository 前缀，与声明的 CMake input 路径一致；推导出的外部目录和 `bazel-out/` generated 目录保留原路径，不能重复加前缀。主 repository 的显式目录保持原值。Downstream consumer 检查同时验证公共 BSP、推导出的外部 component 和本地 component，防止把公共 board 解析到 consumer 的本地 `boards/`。
+
 Native firmware action 向 Bazel 声明每个 action 预留的 CPU 与 memory，并把底层 ESP-IDF/BK build 的并发限制为 4。BK7258、BK3633 与杰理固定预留 4 CPU、4 GiB。ESP 的预留由 `--define=h2_native_build_jobs` 选择，取值 1/2/4，默认 4（分别对应 2/3/4 GiB），其它取值直接 fail。Bazel 根据 runner 的可用资源自动决定同时运行多少个独立 firmware action；升级单台 runner 会自然提高 launcher 并行数，不需要为每个 launcher 创建 GitHub matrix job。
 
 该 define 只作用于 `resource_set`，不进入 action key：Bazel 的 action key 由 argv、environment、输入与输出决定，`resource_set` 不在其中，因此调低预留的 job 仍与其它 job 及本地构建共享全部 cache entry。传给底层 native build 的 4-way parallelism 相应地必须保持为 runner 源码中的固定常量，不可配置——它通过 action input 进入 key，一旦可配置就会让调过它的 job 拥有独立 key 空间。预留刻意允许小于该并发数：launcher 的大量时间阻塞在 remote ccache 与 remote action cache 读取上，CPU 并非稀缺资源，并发的 launcher 互相填补对方的停顿。只有 launcher 数量大、吞吐受限的 execution class 才应调低预留；全局调低会让 launcher 很少的 class 空转核心。

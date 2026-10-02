@@ -328,7 +328,7 @@ int h2_gizclaw_e2e_fixture_social_observation(
   return h2_pal_mutex_unlock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
 }
 
-static int provider_call(void *user, h2_gizclaw_rpc_method_t method,
+static int provider_call(void *user, h2_gizclaw_tool_t method,
                          h2_gizclaw_rpc_bytes_t request_payload,
                          h2_gizclaw_rpc_provider_response_t *out_response) {
   h2_gizclaw_e2e_actor_t *actor = user;
@@ -337,27 +337,27 @@ static int provider_call(void *user, h2_gizclaw_rpc_method_t method,
     return H2_PAL_ERR_INVALID_ARG;
   }
   memset(out_response, 0, sizeof(*out_response));
-  if (method == H2_GIZCLAW_RPC_CLIENT_INFO_GET) {
+  if (method == H2_GIZCLAW_TOOL_INFO_GET) {
     actor->client_info_requested = true;
     out_response->payload = (h2_gizclaw_rpc_bytes_t){
         .data = s_client_info_response,
         .len = sizeof(s_client_info_response),
     };
-    h2_gizclaw_e2e_evidence("H2_GIZCLAW_RPC_CLIENT_INFO_GET", "reverse-rpc",
+    h2_gizclaw_e2e_evidence("H2_GIZCLAW_TOOL_INFO_GET", "reverse-rpc",
                             H2_PAL_OK);
     return H2_PAL_OK;
   }
-  if (method == H2_GIZCLAW_RPC_CLIENT_IDENTIFIERS_GET) {
+  if (method == H2_GIZCLAW_TOOL_IDENTIFIERS_GET) {
     actor->client_identifiers_requested = true;
     out_response->payload = (h2_gizclaw_rpc_bytes_t){
         .data = s_client_identifiers_response,
         .len = sizeof(s_client_identifiers_response),
     };
-    h2_gizclaw_e2e_evidence("H2_GIZCLAW_RPC_CLIENT_IDENTIFIERS_GET",
-                            "reverse-rpc", H2_PAL_OK);
+    h2_gizclaw_e2e_evidence("H2_GIZCLAW_TOOL_IDENTIFIERS_GET", "reverse-rpc",
+                            H2_PAL_OK);
     return H2_PAL_OK;
   }
-  if (method == H2_GIZCLAW_RPC_CLIENT_SOCIAL_PING) {
+  if (method == H2_GIZCLAW_TOOL_SOCIAL_PING) {
     h2_gizclaw_e2e_social_observation_t observed = {0};
     const int parsed = h2_gizclaw_e2e_decode_social_ping(request_payload, &observed);
     int rc = h2_pal_mutex_lock(s_webrtc_observer.sync, s_webrtc_observer.mutex);
@@ -490,17 +490,18 @@ static int actor_stop(h2_gizclaw_e2e_actor_t *actor) {
   return H2_PAL_ERR_INVALID_STATE;
 }
 
-static const h2_gizclaw_rpc_method_t e2e_reverse_methods[] = {
-    H2_GIZCLAW_RPC_CLIENT_SOCIAL_PING};
-/* A methods.get owner is required when declaring custom reverse methods.
- * Audio-free actors still own that protocol endpoint; no hardware hooks are
- * supplied or claimed by this empty vtable. */
-static const h2_gizclaw_vtable_t e2e_social_vtable = {0};
 
 static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
                          h2_gizclaw_e2e_actor_t *actor, const char *stage) {
   if (actor->service != NULL)
     return H2_PAL_ERR_INVALID_STATE;
+  actor->tool_handlers[0] = (h2_gizclaw_tool_handler_t){
+      H2_GIZCLAW_TOOL_INFO_GET, provider_call, actor};
+  actor->tool_handlers[1] = (h2_gizclaw_tool_handler_t){
+      H2_GIZCLAW_TOOL_IDENTIFIERS_GET, provider_call, actor};
+  actor->tool_handlers[2] = (h2_gizclaw_tool_handler_t){
+      H2_GIZCLAW_TOOL_SOCIAL_PING, provider_call, actor};
+  const bool device = fixture->device_audio || fixture->device_vtable;
   /* Service borrows this configuration until deinit, never a stack local. */
   actor->config = (h2_gizclaw_config_t){
       .server_endpoint = h2_gizclaw_e2e_str(fixture->endpoint),
@@ -515,15 +516,11 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
       .time = fixture->time,
       .log = fixture->log,
       .audio = fixture->device_audio,
-      .vtable = fixture->device_vtable != NULL ? fixture->device_vtable
-                                               : &e2e_social_vtable,
+      .vtable = fixture->device_vtable,
       .audio_buffer_bytes = fixture->device_audio ? 65536u : 0,
       .firmware_channel = H2_GIZCLAW_FIRMWARE_CHANNEL_DEVELOP,
-      .rpc_provider = provider_call,
-      .rpc_provider_user = actor,
-      .rpc_provider_methods = e2e_reverse_methods,
-      .rpc_provider_method_count = sizeof(e2e_reverse_methods) /
-                                   sizeof(e2e_reverse_methods[0]),
+      .tool_handlers = device ? &actor->tool_handlers[2] : actor->tool_handlers,
+      .tool_handler_count = device ? 1u : 3u,
       .cancel_requested = cancel_requested,
       .cancel_user = fixture,
   };
@@ -553,12 +550,17 @@ static int actor_connect(h2_gizclaw_e2e_fixture_t *fixture,
    * Retain the identity for cleanup rather than assuming no remote Peer. */
   h2_gizclaw_registration_result_t registration = {0};
   if (fixture->use_session) {
-    static const char *const collections[] = {"assistants"};
+    static const h2_gizclaw_str_t tags[] = {{"assistants", 10u}};
     const h2_gizclaw_session_config_t session_config = {
-        .service = actor->service, .mem = fixture->allocator,
-        .sync = fixture->runtime->sync, .time = fixture->time,
-        .runtime = fixture->runtime, .collections = collections,
-        .collection_count = 1u, .max_workflows = 128u, .catalog_bytes = 65536u};
+        .service = actor->service,
+        .mem = fixture->allocator,
+        .sync = fixture->runtime->sync,
+        .time = fixture->time,
+        .runtime = fixture->runtime,
+        .tags = tags,
+        .tag_count = 1u,
+        .max_workflows = 128u,
+        .catalog_bytes = 65536u};
     rc = h2_gizclaw_session_create(&session_config, &actor->session);
     h2_gizclaw_e2e_evidence("h2_gizclaw_session_create", "session-create", rc);
     if (rc == H2_PAL_OK) {

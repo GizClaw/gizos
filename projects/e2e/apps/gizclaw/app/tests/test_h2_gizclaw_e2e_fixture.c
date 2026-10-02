@@ -72,11 +72,16 @@ h2_gizclaw_service_init(const h2_gizclaw_service_config_t *config,
   assert(config->task != NULL && config->queue != NULL && config->sync != NULL);
   assert(config->client_poll_timeout_ms == 1);
   assert(config->operation_capacity >= 3u);
-  assert(config->client_config->rpc_provider_methods != NULL);
-  assert(config->client_config->vtable != NULL);
-  assert(config->client_config->rpc_provider_method_count == 1u);
-  assert(config->client_config->rpc_provider_methods[0] ==
-         H2_GIZCLAW_RPC_CLIENT_SOCIAL_PING);
+  assert(config->client_config->tool_handlers != NULL);
+  bool social_registered = false;
+  for (size_t i = 0u; i < config->client_config->tool_handler_count; ++i) {
+    const h2_gizclaw_tool_handler_t *handler = &config->client_config->tool_handlers[i];
+    assert(handler->invoke != NULL);
+    social_registered = social_registered || handler->tool == H2_GIZCLAW_TOOL_SOCIAL_PING;
+  }
+  assert(social_registered);
+  assert(config->client_config->tool_handler_count ==
+         ((config->client_config->audio || config->client_config->vtable) ? 1u : 3u));
   if (s_null_service) {
     *out_service = NULL;
     return H2_PAL_OK;

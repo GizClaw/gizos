@@ -10,7 +10,7 @@ load("@gizos//tools/bazel:tasks.bzl", "h2_tasks")
 load("@gizos//tools/lvgl/font_conv:font_conv.bzl", "lvgl_font")
 load("@gizos//tools/lvgl/ttf_subset:ttf_subset.bzl", "ttf_subset_c")
 load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
-load(":consumer.bzl", "fake_firmware")
+load(":consumer.bzl", "fake_firmware", "native_component_paths")
 
 alias(
     name = "runtime",
@@ -40,8 +40,8 @@ ttf_subset_c(
 cc_test(
     name = "embedded_menu_font_test",
     srcs = [
-        ":embedded_menu_font",
         "embedded_ttf_consumer.cc",
+        ":embedded_menu_font",
     ],
 )
 
@@ -62,14 +62,21 @@ cc_test(
 
 firmware_native_component(
     name = "font_native_component",
+    srcs = ["font_consumer.c"],
     component_directory = ".",
     component_name = "embedded_menu_font",
-    srcs = ["font_consumer.c"],
     native_srcs = [
         ":downstream_font_16",
         ":embedded_menu_font",
     ],
     deps = ["@gizos//libs/lvgl:headers"],
+)
+
+native_component_paths(
+    name = "native_component_paths",
+    explicit = "@gizos//boards/devkit/esp32s3",
+    inferred = "@gizos//native_component_src/esp-idf6.x/zlib",
+    local = ":font_native_component",
 )
 
 firmware_version(

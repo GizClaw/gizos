@@ -35,6 +35,10 @@ typedef struct h2_atomic_e2e_result {
   uintptr_t storage_address;
 } h2_atomic_e2e_result_t;
 
+typedef int (*h2_atomic_e2e_placement_check_t)(uintptr_t wrapper,
+                                             uintptr_t storage,
+                                             bool static_value, void *user);
+
 typedef struct h2_atomic_flag_e2e_result {
   uintptr_t static_wrapper[2];
   uintptr_t static_storage[2];
@@ -43,6 +47,8 @@ typedef struct h2_atomic_flag_e2e_result {
   unsigned operations[2];
   unsigned busy_observations[2];
   int worker_core[2];
+  unsigned workers_started, workers_joined;
+  int teardown;
 } h2_atomic_flag_e2e_result_t;
 
 /**
@@ -50,10 +56,13 @@ typedef struct h2_atomic_flag_e2e_result {
  *
  * The allocator, task and time APIs are borrowed for this call. The dynamic
  * wrapper uses @p mem; its backing is owned by the linked atomic provider.
- * Calls are serialized because the two static flags live for the process.
+ * Both workers cross a startup barrier before flag operations. Calls are
+ * serialized because the two static flags live for the process.
  * @p out_result is cleared first and may contain partial observations on
  * error. A task join failure deliberately retains heap worker state so a
- * still-running task cannot use freed memory.
+ * still-running task cannot use freed memory. Optional placement observation
+ * runs while every backing is live and must not retain or dereference addresses
+ * after this call returns.
  *
  * @return H2_PAL_OK when both workers finish every operation without an
  * unexpected claim; otherwise a PAL argument, allocation, task or state error.
@@ -63,7 +72,60 @@ int h2_atomic_flag_e2e_run(const h2_pal_mem_api_t *mem,
                            const h2_pal_time_api_t *time,
                            unsigned iterations, int (*current_core)(void *),
                            void *core_user,
+                           h2_atomic_e2e_placement_check_t check_placement,
+                           void *placement_user,
                            h2_atomic_flag_e2e_result_t *out_result);
+
+enum { H2_ATOMIC_QUALIFICATION_CASE_COUNT = 28 };
+typedef struct h2_atomic_qualification_config {
+  const h2_pal_mem_api_t *mem;
+  const h2_pal_task_api_t *task;
+  const h2_pal_time_api_t *time;
+  void (*pump)(void *);
+  void *pump_user;
+  int (*current_core)(void *);
+  void *core_user;
+  /* -1 means no CPU pinning requirement. The callback still records identity. */
+  int expected_core[2];
+  bool require_distinct_workers;
+  /* Board qualification checks every backing while it is still live. */
+  h2_atomic_e2e_placement_check_t check_placement;
+  void *placement_user;
+} h2_atomic_qualification_config_t;
+typedef struct h2_atomic_qualification_case {
+  const char *id;
+  int rc;
+  unsigned status; /* 0 NOT_RUN, 1 PASS, 2 FAIL */
+} h2_atomic_qualification_case_t;
+typedef struct h2_atomic_qualification_result {
+  h2_atomic_qualification_case_t cases[H2_ATOMIC_QUALIFICATION_CASE_COUNT];
+  unsigned passed, failed, not_run;
+  unsigned workers_started, workers_joined;
+  int worker_core[2];
+  int teardown;
+  bool complete, qualified;
+} h2_atomic_qualification_result_t;
+/**
+ * @brief Run every mandatory Atomic operation and synchronization case.
+ *
+ * @param config Borrowed Mem/Task/Time APIs and observation callbacks. Calls
+ * are serialized because static backing storage has process lifetime.
+ * @param result Caller-owned ledger, reset on entry. Partial failure keeps
+ * NOT_RUN cases explicit and qualified false.
+ *
+ * This synchronous function crosses a two-worker startup barrier, waits up to
+ * ten seconds per progress deadline, then joins before retiring atomic values.
+ * A failed bounded join retains heap state and sets result->teardown; borrowed
+ * task/time dependencies must stay alive until all retained workers stop.
+ * @return H2_PAL_OK only for complete PASS and cleanup; otherwise an argument,
+ * allocation, task, timeout or invalid-state error. Unsupported init cannot
+ * qualify. No diagnostics callback owns or frees backing storage.
+ */
+int h2_atomic_e2e_qualify(const h2_atomic_qualification_config_t *config,
+                         h2_atomic_qualification_result_t *result);
+/** @brief Emit the immutable caller-owned ledger to the launcher console. */
+void h2_atomic_e2e_print(const char *platform, const char *placement,
+                         const h2_atomic_qualification_result_t *result);
 
 const h2_atomic_e2e_backend_t *h2_atomic_e2e_h2_backend(void);
 /* Deliberate test-only direct C11 comparison, linked separately. */

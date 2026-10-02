@@ -407,6 +407,23 @@ def parse_lcov(path: Path, root: Path) -> tuple[dict[str, dict[str, object]], st
             raise ReportError(
                 f"LCOV branch summary does not match BRDA records for {source}"
             )
+        # LLVM can map an included macro registry's closing expansion to the
+        # position just past EOF. It is not a source line and genhtml cannot
+        # render it. Preserve every real line, function and branch record.
+        if source.endswith(".inc") and not function_hits and not branch_hits:
+            eof = len((root / source).read_text(encoding="utf-8").splitlines())
+            if eof + 1 in line_hits and max(line_hits) == eof + 1:
+                hit_count = line_hits.pop(eof + 1)
+                values["LF"] -= 1
+                values["LH"] -= int(hit_count > 0)
+                lines = [
+                    line for line in lines
+                    if not line.startswith(f"DA:{eof + 1},")
+                ]
+                lines = [
+                    f"{key}:{values[key]}" if (key := line.split(":", 1)[0]) in {"LF", "LH"}
+                    else line for line in lines
+                ]
         metrics = {
             "lines": _metric(values["LH"], values["LF"]),
             "functions": _metric(values["FNH"], values["FNF"]),

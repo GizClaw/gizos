@@ -4,6 +4,7 @@
 #include <emscripten.h>
 #include <inttypes.h>
 #include <stdio.h>
+#include <pthread.h>
 
 /* clang-format off */
 EM_JS(void, atomic_result,
@@ -36,6 +37,13 @@ static void pump(void *user) {
   (void)h2_web_platform_pump(user, 16u, NULL);
 }
 
+EM_JS(int, worker_valid, (), {
+  return typeof document === 'undefined' && HEAPU8.buffer instanceof SharedArrayBuffer ? 1 : 0;
+});
+static int current_worker(void *unused) {
+  (void)unused;
+  return worker_valid() ? (int)(uintptr_t)pthread_self() : -1;
+}
 int main(void) {
   const h2_web_platform_config_t config = {.display_width = 1,
                                             .display_height = 1};
@@ -46,20 +54,30 @@ int main(void) {
   }
   const h2_atomic_e2e_backend_t *backends[] = {
       h2_atomic_e2e_h2_backend(), h2_atomic_e2e_c11_backend()};
-  int passed = 1;
-  for (unsigned i = 0; i < 2u; ++i) {
+  const h2_atomic_qualification_config_t qualification_config = {
+      .mem = h2_web_platform_mem_api(), .task = h2_web_platform_task_api(platform),
+      .time = &time_api, .pump = pump, .pump_user = platform,
+      .current_core = current_worker, .expected_core = {-1,-1},
+      .require_distinct_workers = true};
+  h2_atomic_qualification_result_t qualification;
+  int qualification_rc = h2_atomic_e2e_qualify(&qualification_config, &qualification);
+  h2_atomic_e2e_print("wasm", "shared-memory", &qualification);
+  int passed = !qualification_rc && qualification.worker_core[0] != -1 && qualification.worker_core[1] != -1;
+  printf("ATOMIC_WEB_WORKERS shared_memory=1 identities=%d,%d verdict=%s\n",
+      qualification.worker_core[0], qualification.worker_core[1], passed ? "PASS" : "FAIL");
+  for (unsigned i = 0; passed && i < 2u; ++i) {
     h2_atomic_e2e_result_t result;
     const int rc = h2_atomic_e2e_run(
         h2_web_platform_mem_api(), h2_web_platform_task_api(platform),
         &time_api, backends[i], 10000u, true, false,
         NULL, NULL, pump, platform, &result);
-    printf("ATOMIC_E2E backend=%s concurrent=PASS expected=%u incremented=%u "
+    printf("ATOMIC_E2E backend=%s concurrent=%s expected=%u incremented=%u "
            "compared=%u elapsed_us=%" PRIu64 " rc=%d\n",
-           backends[i]->name, result.expected, result.incremented,
+           backends[i]->name, rc ? "FAIL" : "PASS", result.expected, result.incremented,
            result.compared, result.elapsed_us, rc);
     if (rc != 0) passed = 0;
   }
-  h2_web_platform_destroy(platform);
+  if (passed && !qualification.teardown) h2_web_platform_destroy(platform);
   (void)h2_web_main_call(atomic_result, (const void *[]){&(int){passed}});
   return passed ? 0 : 1;
 }

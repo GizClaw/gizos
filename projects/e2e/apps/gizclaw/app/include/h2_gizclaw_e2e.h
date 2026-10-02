@@ -29,6 +29,7 @@ typedef enum h2_gizclaw_e2e_suite {
   H2_GIZCLAW_E2E_SUITE_SERVICE = 1u << 5,
   H2_GIZCLAW_E2E_SUITE_DEVICE = 1u << 6,
   H2_GIZCLAW_E2E_SUITE_RESOURCE = 1u << 7,
+  H2_GIZCLAW_E2E_SUITE_FENCE = 1u << 8,
   H2_GIZCLAW_E2E_SUITE_ALL = (1u << 8) - 1u,
 } h2_gizclaw_e2e_suite_t;
 
@@ -92,6 +93,10 @@ typedef struct h2_gizclaw_e2e_config {
   /** Optional dedicated device-API acceptance lane endpoints. */
   const char *device_api_url;
   const char *device_audio_url;
+  /** Test Profile selectors for the dedicated safety-fence lane. */
+  const char *fence_workflow_name;
+  const char *fence_first_id;
+  const char *fence_second_id;
   /** Forward the device case PCM sink to runtime.audio for audible testing. */
   bool device_real_audio;
   /** Borrowed Audio PAL for Voice capture health. NULL selects the public

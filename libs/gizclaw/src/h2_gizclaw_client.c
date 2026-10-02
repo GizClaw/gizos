@@ -1,6 +1,7 @@
 #include "h2_gizclaw_client.h"
-#include "h2_gizclaw_internal.h"
 #include "h2_atomic.h"
+#include "h2_gizclaw_internal.h"
+#include "h2_gizclaw_mhs_internal.h"
 
 #include "gzc.h"
 #include "gzc_rpc_frame.h"
@@ -20,10 +21,8 @@
   H2_GIZCLAW_ASSERT_RPC_METHOD(H2_GIZCLAW_RPC_##name,                          \
                                gizclaw_rpc_v1_RpcMethod_RPC_METHOD_##name)
 
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_INFO_GET);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(ALL_PING);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(ALL_SPEED_TEST_RUN);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_IDENTIFIERS_GET);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_INFO_GET);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_INFO_PUT);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_RUNTIME_GET);
@@ -69,43 +68,51 @@ H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_FRIEND_GROUP_MEMBERS_LIST);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_FRIEND_GROUP_MEMBERS_ADD);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_FRIEND_GROUP_MEMBERS_PUT);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_FRIEND_GROUP_MEMBERS_DELETE);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_TOOL_INVOKE);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_FRIEND_INFO_GET);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_REGISTER);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_SPEECH_TRANSCRIBE);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_SPEECH_SYNTHESIZE);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_PEER_DELETE);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_SPEECH_EXTRACT);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_DEVICE_STATUS_GET);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_DEVICE_VOLUME_SET);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_DEVICE_SOUND_PLAY);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_DEVICE_REBOOT);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_WIFI_STATUS_GET);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_WIFI_SAVED_LIST);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_WIFI_SAVED_FORGET);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_WIFI_SCAN);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_WIFI_CONNECT);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_FIRMWARE_UPDATE);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_WORKSPACE_PARAMETERS_SET);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_DEVICE_AUDIOPLAYER_GET);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_GET);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_SET);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_DEVICE_AUDIOPLAYER_PLAYLIST_APPEND);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_DEVICE_AUDIOPLAYER_PLAY);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_DEVICE_AUDIOPLAYER_STOP);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_DEVICE_AUDIOPLAYER_MODE_SET);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_APP_CONFIG_LIST);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_APP_CONFIG_GET);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_FRIEND_PING);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_FRIEND_GROUP_PING);
 H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(SERVER_PROFILE_GET);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_DEVICE_FIND);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_SOCIAL_PING);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_DEVICE_SETTINGS_GET);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_DEVICE_SETTINGS_SET);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_DEVICE_FACTORY_RESET);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_RPC_METHODS_GET);
-H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_RUN_WORKSPACE_SET);
+
+H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_MHS_V0_READ);
+H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_MHS_V0_WRITE);
+H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_TOOL_V0_INVOKE);
+H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_TOOL_V0_LIST);
+H2_GIZCLAW_ASSERT_RPC_METHOD_SAME(CLIENT_RPC_METHODS_LIST);
+
+#define H2_GIZCLAW_ASSERT_TOOL(name)                                           \
+  _Static_assert((int)H2_GIZCLAW_TOOL_##name ==                                \
+                     (int)gizclaw_rpc_v1_ClientTool_CLIENT_TOOL_##name,        \
+                 "ClientTool registry drift")
+H2_GIZCLAW_ASSERT_TOOL(INFO_GET);
+H2_GIZCLAW_ASSERT_TOOL(IDENTIFIERS_GET);
+H2_GIZCLAW_ASSERT_TOOL(DEVICE_STATUS_GET);
+H2_GIZCLAW_ASSERT_TOOL(DEVICE_REBOOT);
+H2_GIZCLAW_ASSERT_TOOL(DEVICE_FACTORY_RESET);
+H2_GIZCLAW_ASSERT_TOOL(DEVICE_FIND);
+H2_GIZCLAW_ASSERT_TOOL(SOUND_PLAY);
+H2_GIZCLAW_ASSERT_TOOL(WIFI_SCAN);
+H2_GIZCLAW_ASSERT_TOOL(WIFI_CONNECT);
+H2_GIZCLAW_ASSERT_TOOL(WIFI_SAVED_LIST);
+H2_GIZCLAW_ASSERT_TOOL(WIFI_SAVED_FORGET);
+H2_GIZCLAW_ASSERT_TOOL(FIRMWARE_UPDATE);
+H2_GIZCLAW_ASSERT_TOOL(AUDIOPLAYER_GET);
+H2_GIZCLAW_ASSERT_TOOL(AUDIOPLAYER_PLAY);
+H2_GIZCLAW_ASSERT_TOOL(AUDIOPLAYER_STOP);
+H2_GIZCLAW_ASSERT_TOOL(AUDIOPLAYER_MODE_SET);
+H2_GIZCLAW_ASSERT_TOOL(AUDIOPLAYER_PLAYLIST_GET);
+H2_GIZCLAW_ASSERT_TOOL(AUDIOPLAYER_PLAYLIST_SET);
+H2_GIZCLAW_ASSERT_TOOL(AUDIOPLAYER_PLAYLIST_APPEND);
+H2_GIZCLAW_ASSERT_TOOL(RUN_WORKSPACE_SET);
+H2_GIZCLAW_ASSERT_TOOL(SOCIAL_PING);
+#undef H2_GIZCLAW_ASSERT_TOOL
 
 #define H2_GIZCLAW_ASSERT_RPC_STATUS_SAME(name)                                \
   _Static_assert((int)(H2_GIZCLAW_RPC_ERROR_##name) ==                         \
@@ -167,9 +174,16 @@ typedef struct h2_gizclaw_local_channel {
   bool close_requested;
 } h2_gizclaw_local_channel_t;
 
+typedef struct h2_gizclaw_tool_binding {
+  h2_gizclaw_client_t *client;
+  const h2_gizclaw_tool_handler_t *handler;
+} h2_gizclaw_tool_binding_t;
+
 struct h2_gizclaw_client {
   struct h2_gizclaw_client *next_client;
   h2_gizclaw_config_t config;
+  gzc_tool_handler_t tools[H2_GIZCLAW_TOOL_SOCIAL_PING];
+  h2_gizclaw_tool_binding_t tool_bindings[H2_GIZCLAW_TOOL_SOCIAL_PING];
   gzc_platform_t platform;
   gzc_platform_crypto_t crypto;
   gzc_http_vtable_t http;
@@ -655,27 +669,22 @@ static void dispatch_provider_completions(h2_gizclaw_client_t *client, int resul
   }
 }
 
-static int h2_gizclaw_rpc_provider_bridge(void *userdata, int method,
-                                          gzc_str_t request_payload,
-                                          gzc_rpc_provider_respond_fn respond,
-                                          void *respond_userdata) {
-  h2_gizclaw_client_t *client = userdata;
-  if (client == NULL || client->config.rpc_provider == NULL ||
-      respond == NULL) {
-    return GZC_ERR_UNSUPPORTED;
-  }
-  h2_gizclaw_rpc_provider_response_t response;
-  memset(&response, 0, sizeof(response));
-  int rc = client->config.rpc_provider(
-      client->config.rpc_provider_user, (h2_gizclaw_rpc_method_t)method,
-      (h2_gizclaw_rpc_bytes_t){
-          .data = (const uint8_t *)request_payload.data,
-          .len = request_payload.len,
-      },
+static int h2_gizclaw_tool_bridge(void *userdata, gzc_str_t request_payload,
+                                  gzc_rpc_provider_respond_fn respond,
+                                  void *respond_userdata) {
+  h2_gizclaw_tool_binding_t *binding = userdata;
+  h2_gizclaw_client_t *client = binding->client;
+  const h2_gizclaw_tool_handler_t *handler = binding->handler;
+  if (!respond)
+    return GZC_ERR_INVALID_ARGUMENT;
+  h2_gizclaw_rpc_provider_response_t response = {0};
+  int rc = handler->invoke(
+      handler->user, handler->tool,
+      (h2_gizclaw_rpc_bytes_t){(const uint8_t *)request_payload.data,
+                               request_payload.len},
       &response);
-  if (rc != H2_PAL_OK) {
+  if (rc != H2_PAL_OK)
     return h2_gizclaw_provider_result_to_gzc(rc);
-  }
   const gzc_rpc_provider_response_t gzc_response = {
       .payload = response.payload.data,
       .payload_len = response.payload.len,
@@ -705,6 +714,32 @@ static int h2_gizclaw_rpc_provider_bridge(void *userdata, int method,
   if (completion != NULL && rc != GZC_OK)
     completion->failed = true;
   return rc;
+}
+
+static int h2_gizclaw_mhs_bridge(void *userdata, int method, gzc_str_t payload,
+                                 gzc_rpc_provider_respond_fn respond,
+                                 void *respond_userdata) {
+  h2_gizclaw_client_t *client = userdata;
+  h2_gizclaw_rpc_provider_response_t response = {0};
+  uint8_t *storage = NULL;
+  int rc = h2_gizclaw_is_canceled(client)
+               ? H2_PAL_ERR_CLOSED
+               : h2_gizclaw_mhs_request_internal(
+                     client->config.mhs_devices, client->config.mhs_device_count,
+                     method == H2_GIZCLAW_RPC_CLIENT_MHS_V0_WRITE,
+                     client->config.allocator,
+                     (h2_gizclaw_rpc_bytes_t){(const uint8_t *)payload.data,
+                                              payload.len},
+                     &response, &storage);
+  gzc_rpc_provider_response_t result = {.payload = response.payload.data,
+                                        .payload_len = response.payload.len};
+  if (rc != H2_PAL_OK) {
+    result.has_error = true;
+    result.error_code = h2_gizclaw_mhs_error_internal(rc);
+  }
+  int result_rc = respond(respond_userdata, &result);
+  h2_pal_mem_free(client->config.allocator, storage);
+  return result_rc;
 }
 
 static bool h2_gizclaw_gzc_str_has_prefix_cstr(gzc_str_t value,
@@ -1909,9 +1944,16 @@ int h2_gizclaw_test_provider_response(h2_gizclaw_client_t *client,
     h2_pal_webrtc_channel_t *channel, int respond_result) {
   h2_gizclaw_mark_remote_service(client, (gzc_rtc_channel_t *)channel);
   client->provider_channel = (gzc_rtc_channel_t *)channel;
-  int rc = h2_gizclaw_rpc_provider_bridge(client,
-      H2_GIZCLAW_RPC_CLIENT_DEVICE_REBOOT, (gzc_str_t){0},
-      test_provider_respond, &respond_result);
+  size_t index = 0;
+  while (index < client->config.tool_handler_count &&
+         client->tools[index].tool !=
+             gizclaw_rpc_v1_ClientTool_CLIENT_TOOL_DEVICE_REBOOT)
+    ++index;
+  int rc = index == client->config.tool_handler_count
+               ? GZC_ERR_UNSUPPORTED
+               : h2_gizclaw_tool_bridge(&client->tool_bindings[index],
+                                        (gzc_str_t){0}, test_provider_respond,
+                                        &respond_result);
   client->provider_channel = NULL;
   return rc;
 }
@@ -1954,6 +1996,21 @@ static void h2_gzc_peer_close(gzc_rtc_peer_t *peer) {
   }
 }
 
+int h2_gizclaw_tools_validate_internal(
+    const h2_gizclaw_tool_handler_t *handlers, size_t count) {
+  if ((count && !handlers) || count > H2_GIZCLAW_TOOL_SOCIAL_PING)
+    return H2_PAL_ERR_INVALID_ARG;
+  for (size_t i = 0; i < count; ++i) {
+    if (handlers[i].tool < H2_GIZCLAW_TOOL_INFO_GET ||
+        handlers[i].tool > H2_GIZCLAW_TOOL_SOCIAL_PING || !handlers[i].invoke)
+      return H2_PAL_ERR_INVALID_ARG;
+    for (size_t j = 0; j < i; ++j)
+      if (handlers[i].tool == handlers[j].tool)
+        return H2_PAL_ERR_INVALID_ARG;
+  }
+  return H2_PAL_OK;
+}
+
 static int h2_gizclaw_config_valid(const h2_gizclaw_config_t *config) {
   return config != NULL && config->connect_timeout_ms > 0 &&
          config->write_timeout_ms >= 0 && config->allocator != NULL &&
@@ -1967,7 +2024,11 @@ static int h2_gizclaw_config_valid(const h2_gizclaw_config_t *config) {
 
 int h2_gizclaw_client_init(const h2_gizclaw_config_t *config,
                            h2_gizclaw_client_t **out_client) {
-  if (!h2_gizclaw_config_valid(config) || out_client == NULL) {
+  if (!h2_gizclaw_config_valid(config) || out_client == NULL ||
+      h2_gizclaw_tools_validate_internal(
+          config->tool_handlers, config->tool_handler_count) != H2_PAL_OK ||
+      h2_gizclaw_mhs_validate_internal(config->mhs_devices,
+                                       config->mhs_device_count) != H2_PAL_OK) {
     return H2_PAL_ERR_INVALID_ARG;
   }
   *out_client = NULL;
@@ -2030,10 +2091,18 @@ int h2_gizclaw_client_init(const h2_gizclaw_config_t *config,
   gzc_config.write_timeout_ms = config->write_timeout_ms == 0
                                     ? config->connect_timeout_ms
                                     : config->write_timeout_ms;
-  if (config->rpc_provider != NULL) {
-    gzc_config.rpc_provider = h2_gizclaw_rpc_provider_bridge;
-    gzc_config.rpc_provider_userdata = client;
+  gzc_config.mhs_read = h2_gizclaw_mhs_bridge;
+  gzc_config.mhs_write = h2_gizclaw_mhs_bridge;
+  gzc_config.mhs_userdata = client;
+  for (size_t i = 0; i < config->tool_handler_count; ++i) {
+    client->tool_bindings[i] =
+        (h2_gizclaw_tool_binding_t){client, &config->tool_handlers[i]};
+    client->tools[i] = (gzc_tool_handler_t){
+        (gizclaw_rpc_v1_ClientTool)config->tool_handlers[i].tool,
+        h2_gizclaw_tool_bridge, &client->tool_bindings[i]};
   }
+  gzc_config.tool_handlers = config->tool_handler_count ? client->tools : NULL;
+  gzc_config.tool_handler_count = config->tool_handler_count;
   int rc = gzc_client_create(&gzc_config, &client->gzc);
   if (rc != GZC_OK) {
     h2_pal_mem_free(config->allocator, client);

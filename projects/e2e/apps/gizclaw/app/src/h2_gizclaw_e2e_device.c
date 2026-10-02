@@ -131,6 +131,16 @@ static int api_call(api_test_t *test, int method, const char *path,
   memset(authorization, 0, sizeof(authorization));
   return rc;
 }
+static int tool_call(api_test_t *test, const char *tool, const char *args,
+                     int expected) {
+  char body[2048];
+  int n = snprintf(body, sizeof(body), "{\"tool\":\"%s\",\"args\":%s}", tool,
+                   args ? args : "{}");
+  if (n < 0 || (size_t)n >= sizeof(body))
+    return H2_PAL_ERR_INVALID_ARG;
+  return api_call(test, H2_PAL_HTTP_POST, "/device/tool/v0/invoke", body,
+                  expected);
+}
 static h2_pal_json_value_t *field(api_test_t *test, const char *path) {
   h2_pal_json_value_t *value = test->root;
   while (value && *path) {
@@ -408,8 +418,17 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
    * keep the first failure so partial success cannot make this lane green. */
   if (test.key.name[0])
     rc = H2_PAL_OK;
-  CHECK(api_call(&test, H2_PAL_HTTP_PUT, "/device/volume",
-                 "{\"level\":37,\"muted\":false}", 200));
+  CHECK(api_call(
+      &test, H2_PAL_HTTP_POST, "/device/mhs/v0/write",
+      "{\"id\":\"speaker.main\",\"hwd\":\"speaker\","
+      "\"value\":{\"volume_percent\":37,\"muted\":false}}",
+      200));
+  ASSERT(text_is(&test, "id", "speaker.main") &&
+         text_is(&test, "hwd", "speaker") &&
+         number_is(&test, "value.volume_percent", 37));
+  CHECK(api_call(&test, H2_PAL_HTTP_POST, "/device/mhs/v0/read",
+                 "{\"id\":\"speaker.main\",\"hwd\":\"speaker\"}", 200));
+  ASSERT(number_is(&test, "value.volume_percent", 37));
   uint32_t volume = 0u;
   CHECK(h2_pal_audio_get_speaker_volume_percent(fixture->device_audio, &volume));
   ASSERT(volume == 37u);
@@ -417,21 +436,18 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
     first_failure = rc;
   if (test.key.name[0])
     rc = H2_PAL_OK;
-  CHECK(api_call(&test, H2_PAL_HTTP_PUT, "/device/audioplayer/playlist",
-                 "{\"items\":[{\"url\":\"http://invalid.test/music.ogg\"}]}",
-                 400));
+  CHECK(tool_call(&test, "audioplayer.playlist.set",
+                  "{\"items\":[{\"url\":\"http://invalid.test/music.ogg\"}]}",
+                  400));
   char playlist[1400];
   int n = snprintf(playlist, sizeof(playlist), "{\"items\":[{\"url\":\"%s\"}]}",
                    fixture->config->device_audio_url);
   ASSERT(n > 0 && (size_t)n < sizeof(playlist) &&
          !strchr(fixture->config->device_audio_url, '"'));
-  CHECK(api_call(&test, H2_PAL_HTTP_PUT, "/device/audioplayer/playlist",
-                 playlist, 200));
-  ASSERT(number_is(&test, "status.playlist_length", 1));
-  CHECK(api_call(&test, H2_PAL_HTTP_PUT, "/device/audioplayer/mode",
-                 "{\"repeat\":\"one\"}", 200));
-  CHECK(api_call(&test, H2_PAL_HTTP_POST, "/device/audioplayer/actions/play",
-                 "{\"index\":0}", 200));
+  CHECK(tool_call(&test, "audioplayer.playlist.set", playlist, 200));
+  ASSERT(number_is(&test, "result.playlist_length", 1));
+  CHECK(tool_call(&test, "audioplayer.mode.set", "{\"repeat\":\"one\"}", 200));
+  CHECK(tool_call(&test, "audioplayer.play", "{\"index\":0}", 200));
   bool played = false;
   for (unsigned i = 0; rc == H2_PAL_OK && i < 30; ++i) {
     CHECK(h2_pal_time_sleep_ms(fixture->time, 500));
@@ -447,15 +463,13 @@ int h2_gizclaw_e2e_run_device(h2_gizclaw_e2e_fixture_t *fixture) {
     }
   }
   ASSERT(played);
-  CHECK(api_call(&test, H2_PAL_HTTP_POST, "/device/audioplayer/actions/stop",
-                 NULL, 200));
-  ASSERT(text_is(&test, "status.state", "stopped"));
+  CHECK(tool_call(&test, "audioplayer.stop", NULL, 200));
+  ASSERT(text_is(&test, "result.state", "stopped"));
   if (first_failure == H2_PAL_OK)
     first_failure = rc;
   if (test.key.name[0])
     rc = H2_PAL_OK;
-  CHECK(api_call(&test, H2_PAL_HTTP_POST, "/device/actions/firmware-update",
-                 "{\"channel\":\"develop\"}", 204));
+  CHECK(tool_call(&test, "firmware.update", "{\"channel\":\"develop\"}", 200));
   bool failed = false;
   for (unsigned i = 0; rc == H2_PAL_OK && i < 60; ++i) {
     CHECK(h2_pal_time_sleep_ms(fixture->time, 500));

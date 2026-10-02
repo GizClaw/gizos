@@ -11,6 +11,7 @@ idf_component_register(
   SRCS ${H2_MAIN_SOURCES}
   INCLUDE_DIRS
     "${H2_REPO_ROOT}/projects/e2e/apps/atomic/app/include"
+    "${H2_REPO_ROOT}/projects/e2e/libs/atomic-device/include"
     "${H2_REPO_ROOT}/libs/atomic/include"
     "${H2_REPO_ROOT}/libs/pal/include"
     "${H2_REPO_ROOT}/libs/runtime/include"

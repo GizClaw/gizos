@@ -114,6 +114,12 @@ def _firmware_native_component_impl(ctx):
         component_directory = cmake_directories.keys()[0]
     if component_name:
         component_directory = component_directory or ctx.label.package
+
+        # Explicit paths belong to the declaring repository. In a downstream
+        # graph, retain that execroot prefix just as File.dirname already does
+        # for inferred/generated component metadata.
+        if ctx.label.workspace_root and not component_directory.startswith("external/") and not component_directory.startswith("bazel-out/"):
+            component_directory = ctx.label.workspace_root + "/" + component_directory
         components.append(struct(
             directory = component_directory,
             execution_unit = ctx.attr.execution_unit,

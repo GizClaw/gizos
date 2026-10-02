@@ -57,10 +57,10 @@ int h2_gizclaw_e2e_run_session_cancel(h2_gizclaw_e2e_fixture_t *f) {
   *state = (cancel_state_t){.fixture=f};
   f->case_state = state;
   f->case_cleanup = dispose;
-  static const char *const collections[] = {"assistants"};
+  static const h2_gizclaw_str_t tags[] = {{"assistants", 10u}};
   const h2_gizclaw_session_config_t config = {
       .service=f->actors[0].service, .mem=f->allocator, .sync=f->runtime->sync,
-      .time=f->time, .collections=collections, .collection_count=1u,
+      .time=f->time, .tags=tags, .tag_count=1u,
       .catalog_bytes=65536u, .catalog_sink=catalog, .catalog_sink_user=state};
   rc = h2_gizclaw_session_create(&config, &f->actors[0].session);
   if (rc == H2_PAL_OK) rc = h2_gizclaw_session_register(f->actors[0].session, f->registration_token, 30000u);

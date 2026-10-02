@@ -30,6 +30,11 @@ void check(std::vector<std::string> values, const char *reason,
                                            ? override
                                            : argv[2]) == 0);
     assert(out.suites == expected_suites);
+    if (expected_suites == H2_GIZCLAW_E2E_SUITE_FENCE) {
+      assert(std::strcmp(out.fence_workflow_name, "safety-fence-flowcraft") == 0);
+      assert(std::strcmp(out.fence_first_id, "safe") == 0);
+      assert(std::strcmp(out.fence_second_id, "strict") == 0);
+    }
   }
 }
 } // namespace
@@ -38,6 +43,30 @@ int main() {
   const std::string endpoint = "--endpoint=edge-bj-01.e2e.gizclaw.com:9821";
   const std::vector<std::string> valid = {"e2e", "voice.pcm", "all", endpoint};
   check(valid, nullptr);
+  const std::vector<std::string> fence = {
+      "e2e", "voice.pcm", "fence", endpoint,
+      "--fence-workflow=safety-fence-flowcraft",
+      "--fence-first=safe", "--fence-second=strict"};
+  check(fence, nullptr, "token", nullptr, false,
+        H2_GIZCLAW_E2E_SUITE_FENCE);
+  check(fence, "unsupported-pion-suite", "token", nullptr, true);
+  check({"e2e", "voice.pcm", "fence", endpoint},
+        "invalid-fence-fixture");
+  auto invalid_fence = fence;
+  invalid_fence.back() = "--fence-second=Invalid";
+  check(invalid_fence, "invalid-fence-fixture");
+  invalid_fence = fence;
+  invalid_fence.back() = "--fence-second=safe";
+  check(invalid_fence, "invalid-fence-fixture");
+  invalid_fence = fence;
+  invalid_fence[4] = "--fence-workflow=bad..name";
+  check(invalid_fence, "invalid-fence-fixture");
+  invalid_fence = fence;
+  invalid_fence.push_back("--fence-first=other");
+  check(invalid_fence, "duplicate-fence-first");
+  check({"e2e", "voice.pcm", "all", endpoint,
+         "--fence-first=safe"},
+        "unexpected-fence-fixture");
   struct Suite {
     const char *name;
     uint32_t mask;

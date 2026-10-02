@@ -1,6 +1,7 @@
 #include "h2_gizclaw_e2e_catalog.h"
 #include "h2_gizclaw_e2e_concurrency.h"
 #include "h2_gizclaw_e2e_firmware.h"
+#include "h2_gizclaw_e2e_fence.h"
 #include "h2_gizclaw_e2e_rpc.h"
 #include "h2_gizclaw_e2e_service.h"
 #include "h2_gizclaw_e2e_voice.h"
@@ -34,6 +35,8 @@ const e2e_case_t h2_gizclaw_e2e_cases[] = {
      h2_gizclaw_e2e_run_resource, NULL},
     {"device-api", H2_GIZCLAW_E2E_SUITE_DEVICE, 1u, false,
      h2_gizclaw_e2e_run_device, h2_gizclaw_e2e_prepare_device},
+    {"workspace-fence", H2_GIZCLAW_E2E_SUITE_FENCE, 1u, false,
+     h2_gizclaw_e2e_run_fence, NULL},
     {"connectivity", H2_GIZCLAW_E2E_SUITE_CONNECTIVITY, 2u, false,
      h2_gizclaw_e2e_run_connectivity, NULL},
     {"rpc", H2_GIZCLAW_E2E_SUITE_RPC, H2_GIZCLAW_E2E_ACTOR_COUNT, true,

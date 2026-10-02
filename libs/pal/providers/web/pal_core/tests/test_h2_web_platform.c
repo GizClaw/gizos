@@ -1614,16 +1614,22 @@ MAIN_THREAD_EM_ASM_INT({ return !!globalThis.h2FakePendingReadResolve; })
     return 45;
   (void)h2_web_main_call(h2_web_test_set_serial_mode,
                          (const void *[]){&(int){12}});
-  const int shutdown_ok =
-      h2_web_platform_pump(platform, 8u, NULL) == H2_PAL_OK &&
-      h2_web_platform_serial_shutdown(platform) == H2_PAL_ERR_UNSUPPORTED &&
-      (int)h2_web_main_call(h2_web_test_close_rejected_before_cancel_settled,
-                            NULL)
-          .i32;
+  /* Separate codes keep a failure here diagnosable from the exit status. The
+   * worker waits for shutdown_checked before it cleans up, so set it once the
+   * checks are done, whatever their outcome. */
+  int shutdown_failure = 0;
+  if (h2_web_platform_pump(platform, 8u, NULL) != H2_PAL_OK)
+    shutdown_failure = 46;
+  else if (h2_web_platform_serial_shutdown(platform) !=
+           H2_PAL_ERR_UNSUPPORTED)
+    shutdown_failure = 146;
+  else if (!((int)h2_web_main_call(
+                 h2_web_test_close_rejected_before_cancel_settled, NULL)
+                 .i32))
+    shutdown_failure = 246;
   atomic_store(&shutdown_test.shutdown_checked, 1);
-  if (!shutdown_ok) {
-    return 46;
-  }
+  if (shutdown_failure != 0)
+    return shutdown_failure;
   joined = 0;
   const double shutdown_join_deadline = emscripten_get_now() + 3000.0;
   while (!joined && emscripten_get_now() < shutdown_join_deadline) {

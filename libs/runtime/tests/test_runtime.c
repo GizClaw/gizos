@@ -1803,6 +1803,86 @@ static void test_system_event_modem_call_number_is_terminated(void) {
     h2_runtime_deinit(runtime);
 }
 
+/*
+ * The modem snapshot follows the events: each one updates only the field it
+ * reports, a new signal measurement replaces the previous one, and the
+ * snapshot is readable without touching the modem.
+ */
+static void test_system_event_modem_state_follows_events(void) {
+    test_runtime_env_t env;
+    test_env_init(&env);
+    h2_runtime_t *runtime = test_runtime_create_with_system_events(&env);
+    uint8_t payload[H2_RUNTIME_EVENT_PAYLOAD_MAX];
+    h2_runtime_event_t event = event_with_payload(payload);
+
+    h2_runtime_system_modem_state_t state;
+    memset(&state, 0xa5, sizeof(state));
+    assert(h2_runtime_system_state_modem(runtime, &state) == H2_PAL_OK);
+    assert(state.sim == H2_RUNTIME_SYSTEM_MODEM_SIM_UNKNOWN);
+    assert(state.registration == H2_RUNTIME_SYSTEM_MODEM_REGISTRATION_UNKNOWN);
+    assert(state.rat == H2_RUNTIME_SYSTEM_MODEM_RAT_UNKNOWN);
+    assert(state.signal_valid == 0u);
+
+    h2_pal_modem_status_t status = test_modem_status();
+    status.sim = H2_PAL_MODEM_SIM_STATE_READY;
+    status.registration = H2_PAL_MODEM_REGISTRATION_SEARCHING;
+    status.rat = H2_PAL_MODEM_RAT_UNKNOWN;
+    assert(test_system_event_dispatch(&env, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIM_CHANGED,
+                                      &status, sizeof(status)) == H2_PAL_OK);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(h2_runtime_system_state_modem(runtime, &state) == H2_PAL_OK);
+    assert(state.sim == H2_RUNTIME_SYSTEM_MODEM_SIM_READY);
+    /* A SIM event says nothing about registration. */
+    assert(state.registration == H2_RUNTIME_SYSTEM_MODEM_REGISTRATION_UNKNOWN);
+
+    status.registration = H2_PAL_MODEM_REGISTRATION_HOME;
+    status.rat = H2_PAL_MODEM_RAT_LTE;
+    assert(test_system_event_dispatch(&env, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_REGISTRATION_CHANGED,
+                                      &status, sizeof(status)) == H2_PAL_OK);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    status.packet = H2_PAL_MODEM_PACKET_CONNECTED;
+    status.rat = H2_PAL_MODEM_RAT_UNKNOWN;
+    assert(test_system_event_dispatch(&env, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_PACKET_CHANGED,
+                                      &status, sizeof(status)) == H2_PAL_OK);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(h2_runtime_system_state_modem(runtime, &state) == H2_PAL_OK);
+    assert(state.sim == H2_RUNTIME_SYSTEM_MODEM_SIM_READY);
+    assert(state.registration == H2_RUNTIME_SYSTEM_MODEM_REGISTRATION_HOME);
+    assert(state.packet == H2_RUNTIME_SYSTEM_MODEM_PACKET_CONNECTED);
+    /* An event without an access technology keeps the last one reported. */
+    assert(state.rat == H2_RUNTIME_SYSTEM_MODEM_RAT_LTE);
+    assert(state.signal_valid == 0u);
+
+    h2_pal_modem_signal_t signal = {
+        .rssi_dbm = -70,
+        .rssi_valid = 1u,
+        .rsrp_dbm = -96,
+        .rsrp_valid = 1u,
+        .rat = H2_PAL_MODEM_RAT_LTE,
+    };
+    assert(test_system_event_dispatch(&env, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIGNAL_CHANGED,
+                                      &signal, sizeof(signal)) == H2_PAL_OK);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(h2_runtime_system_state_modem(runtime, &state) == H2_PAL_OK);
+    assert(state.signal_valid == 1u);
+    assert(state.rssi_valid == 1u && state.rssi_dbm == -70);
+    assert(state.rsrp_valid == 1u && state.rsrp_dbm == -96);
+
+    /* A later measurement without RSRP clears it instead of keeping -96. */
+    signal.rssi_dbm = -85;
+    signal.rsrp_dbm = 0;
+    signal.rsrp_valid = 0u;
+    assert(test_system_event_dispatch(&env, H2_PAL_SYSTEM_EVENT_TYPE_MODEM_SIGNAL_CHANGED,
+                                      &signal, sizeof(signal)) == H2_PAL_OK);
+    assert(h2_runtime_poll_event(runtime, &event) == H2_PAL_OK);
+    assert(h2_runtime_system_state_modem(runtime, &state) == H2_PAL_OK);
+    assert(state.rssi_dbm == -85);
+    assert(state.rsrp_valid == 0u && state.rsrp_dbm == 0);
+    assert(state.registration == H2_RUNTIME_SYSTEM_MODEM_REGISTRATION_HOME);
+
+    h2_runtime_deinit(runtime);
+}
+
 static h2_pal_netif_ref_t test_netif_name_ref(
     const char *name,
     h2_pal_netif_kind_t kind) {
@@ -3664,6 +3744,13 @@ static void test_station_snapshot_unavailable_without_mutex(void) {
     assert(h2_runtime_system_state_wifi_sta(runtime, &state) ==
            H2_PAL_ERR_UNSUPPORTED);
 
+    h2_runtime_system_modem_state_t modem;
+    memset(&modem, 0, sizeof(modem));
+    modem.sim = H2_RUNTIME_SYSTEM_MODEM_SIM_READY;
+    assert(h2_runtime_test_set_system_modem_state(runtime, &modem) == H2_PAL_OK);
+    assert(h2_runtime_system_state_modem(runtime, &modem) ==
+           H2_PAL_ERR_UNSUPPORTED);
+
     h2_runtime_deinit(runtime);
     assert(env.sync_state.destroys == 0u);
     assert(env.allocator_state.alloc_calls == env.allocator_state.free_calls);
@@ -5036,6 +5123,7 @@ int main(void) {
     test_system_event_partial_subscribe_cleans_up();
     test_system_event_projects_all_scope_events();
     test_system_event_modem_call_number_is_terminated();
+    test_system_event_modem_state_follows_events();
     test_system_event_rejects_invalid_payloads();
     test_system_event_advertising_set_correlation_and_copy();
     test_system_event_advertising_queue_failure();

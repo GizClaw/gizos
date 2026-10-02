@@ -60,6 +60,12 @@ h2_pal_result_t h2_runtime_test_set_system_wifi_sta_state(
     h2_runtime_t *runtime,
     const h2_runtime_system_wifi_sta_state_t *state);
 
+/** Replaces the modem snapshot, which a Runtime otherwise builds from modem
+ * system events; for tests of its readers. */
+h2_pal_result_t h2_runtime_test_set_system_modem_state(
+    h2_runtime_t *runtime,
+    const h2_runtime_system_modem_state_t *state);
+
 h2_pal_result_t h2_runtime_test_set_component_state(
     h2_runtime_test_control_t *control,
     h2_runtime_component_id_t component_id,

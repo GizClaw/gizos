@@ -7,19 +7,19 @@
 | Session 持有 | 产品持有 |
 | --- | --- |
 | 注册结果、Profile name/revision | Credential 来源、连接重建策略 |
-| 完整 Workflow catalog、加载和失败状态 | 要查询的 collection、必需 Workflow、默认模式 |
+| 完整 Workflow catalog、加载和失败状态 | 要查询的 tags、必需 Workflow、默认模式 |
 | 当前已确认 Workspace、正在准备的目标 | Workspace 命名、用户选择、页面焦点 |
 | 对话准备、输入开启、活动和终态 | 按键语义、麦克风与扬声器 pump、错误页面 |
 
-Session 不内置产品 collection、默认 Workflow、命名规则或文件路径。Catalog 保存在 库拥有的有界内存中；产品可保存显示投影，但磁盘上的旧投影不是当前连接的有效凭据。 未注册、加载失败、Workspace 未确认或已有对话时，`can_start` 为 false。 `blocking_reason` 区分阻塞阶段；`error_stage` 和 `last_error` 描述最近操作失败。 它们不声称设备麦克风、网络之外的产品使用限制或 UI 已就绪。
+Session 不内置产品 tags、默认 Workflow、命名规则或文件路径。Catalog 保存在 库拥有的有界内存中；产品可保存显示投影，但磁盘上的旧投影不是当前连接的有效凭据。 未注册、加载失败、Workspace 未确认或已有对话时，`can_start` 为 false。 `blocking_reason` 区分阻塞阶段；`error_stage` 和 `last_error` 描述最近操作失败。 它们不声称设备麦克风、网络之外的产品使用限制或 UI 已就绪。
 
 ## 准备流程
 
-注册成功立即加载配置要求的 collection，不依赖产品打开页面。分页必须符合容量上限、 有界页数、collection 和唯一 Workflow name 要求，所有页面必须具有同一个 Profile name/revision。只有完整成功才替换 catalog；失败保留已分配的旧数据，但公开读取拒绝 把它当作有效数据。注册成功而 catalog 失败分别记录，不把聊天配置错误误报成连接失败。
+注册成功立即按配置的 tags 做精确 AND 查询，不依赖产品打开页面；零 tag 加载全部 Workflow。分页必须符合容量上限、有界页数、所有请求的 tags 和唯一 Workflow name 要求，所有页面必须具有同一个 Profile name/revision。只有完整成功才替换 catalog；失败保留已分配的旧数据，但公开读取拒绝 把它当作有效数据。注册成功而 catalog 失败分别记录，不把聊天配置错误误报成连接失败。
 
-产品选择 collection、Workflow 和 Workspace 后，Session 在必要时刷新 catalog，精确 get Workspace，只有 Not Found 才创建同一个名字。创建结果不确定时仍精确 get 同一名字 进行确认。校验 Profile 版本及 Workflow 归属后，通过 reload-with-options 准备目标； 只有返回 RUNNING 且 active name 匹配才发布新的 current Workspace。版本不一致允许 刷新 catalog 后再尝试一次，所有步骤共享同一个单调时间总期限。
+产品选择 Workflow name 和 Workspace name 后，Session 在必要时刷新 catalog，精确 get Workspace，只有 Not Found 才创建同一个名字。创建结果不确定时仍精确 get 同一名字 进行确认。校验 Profile 版本及稳定 Workflow name 后，通过 reload-with-options 准备目标； 只有返回 RUNNING 且 active name 匹配才发布新的 current Workspace。版本不一致允许 刷新 catalog 后再尝试一次，所有步骤共享同一个单调时间总期限。
 
-`target_workspace` 在准备开始时更新；`current_workspace` 只在服务端确认后更新。 切换失败保留旧名字用于展示，但 workspace phase 为 FAILED，不能假定旧目标仍可对话。 相同有效 Workspace 和参数可复用就绪结果；复用前仍校验所选 Workflow 的 collection 归属，不在每轮对话重复 reload。
+`target_workspace` 在准备开始时更新；`current_workspace` 只在服务端确认后更新。 切换失败保留旧名字用于展示，但 workspace phase 为 FAILED，不能假定旧目标仍可对话。 完整 catalog 模式下，相同有效 Workspace、Workflow name 和参数可复用已确认的就绪结果，不在每轮对话重复 reload。Tags 只影响 catalog 过滤；catalog 未命中的 Workflow name 通过 get 验证，不能把缺少某个 tag 当成 Workspace 身份失效。
 
 Conversation 创建在同一个准备操作中完成 Workspace 校验，然后绑定当前 Workspace。后续切换成功时，核心在旧 generation 结束后更新保留 route 的目标，下一次输入使用新 Workspace。 产品显式调用 Session audio start/end 开启或结束输入；回复、取消和完成沿用现有 Conversation callback。Session 先更新自身状态，再转发 callback。产品必须使用 Session 对应的 release 释放该 route，不能在活动对话结束前释放。等待或回复期间调用 audio start 由核心取消旧 generation，等待取消分发后在同一路由开始新输入；不要求产品先判断 UI 状态。重复 start（输入已开）与重复 end（输入已关）幂等，空闲 end 不会复活旧轮次。
 
@@ -49,7 +49,7 @@ Conversation 的远端 ERROR 只表示服务端拒绝了本轮输入，在事件
 
 ## 并发与生命周期
 
-Session 借用 Service、PAL 和配置中的 collection 字符串。准备操作在调用方的后台任务 执行，不能从 `service_poll` callback 或 Service 网络任务调用。一个准备操作拥有网络 编排；select/conversation 在总期限内等待先前准备，register/refresh 遇忙返回 BUSY。 读取只短暂锁定状态或有界 catalog，不执行网络 I/O，也不暴露可变内部指针。
+Session 借用 Service、PAL 和配置中的 tag spans 及其字符串。准备操作在调用方的后台任务 执行，不能从 `service_poll` callback 或 Service 网络任务调用。一个准备操作拥有网络 编排；select/conversation 在总期限内等待先前准备，register/refresh 遇忙返回 BUSY。 读取只短暂锁定状态或有界 catalog，不执行网络 I/O，也不暴露可变内部指针。
 
 同步 Workspace RPC 在 Service mutex 下取得 Session 引用，并在 RPC 完成后释放。destroy 遇到尚未进入或尚未退出的 RPC 返回 BUSY；引用清空后先 detach，再销毁 Session 同步对象，避免 RPC 与销毁竞争访问已释放状态。
 

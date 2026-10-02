@@ -75,7 +75,6 @@ static bool config_valid(h2_runtime_t *runtime,
       config->registration_token.len == 0u ||
       config->registration_token.len > H2_GIZCLAW_E2E_REGISTRATION_TOKEN_MAX ||
       config->suites == 0u ||
-      (config->suites & ~H2_GIZCLAW_E2E_SUITE_ALL) != 0u ||
       (config->suites & ~supported_suites) != 0u ||
       memchr(config->server_endpoint.data, '\0', config->server_endpoint.len) !=
           NULL ||

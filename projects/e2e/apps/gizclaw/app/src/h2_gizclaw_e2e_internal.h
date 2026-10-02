@@ -39,6 +39,7 @@ typedef struct h2_gizclaw_e2e_actor {
   h2_gizclaw_api_key_state_t *api_key_state;
   h2_gizclaw_session_t *session;
   h2_gizclaw_config_t config;
+  h2_gizclaw_tool_handler_t tool_handlers[3];
   char private_key[H2_PAL_CRYPTO_X25519_KEY_SIZE * 2u + 1u];
   char public_key[H2_PAL_CRYPTO_X25519_KEY_SIZE * 2u + 1u];
   bool registered;
@@ -80,6 +81,8 @@ typedef struct h2_gizclaw_e2e_fixture {
   char runtime_profile_name[H2_GIZCLAW_REGISTRATION_NAME_CAPACITY];
   char run_prefix[H2_GIZCLAW_E2E_NAME_CAPACITY];
   char workflow_name[H2_GIZCLAW_E2E_NAME_CAPACITY];
+  /** First Profile-advertised option, empty when the Profile has no fences. */
+  char safety_fence_level[H2_GIZCLAW_SAFETY_FENCE_NAME_MAX_BYTES + 1u];
   char workspace_name[H2_GIZCLAW_E2E_NAME_CAPACITY];
   char contact_name[H2_GIZCLAW_E2E_NAME_CAPACITY];
   char friend_id[H2_GIZCLAW_E2E_NAME_CAPACITY];

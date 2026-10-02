@@ -1,0 +1,69 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:mobile_e2e.bzl", "mobile_e2e_suite")
+
+package(default_visibility = ["//projects/e2e:__subpackages__"])
+
+cc_library(
+    name = "runner",
+    srcs = ["mobile_runner.c"],
+    hdrs = ["atomic_mobile_runner.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    includes = ["."],
+    target_compatible_with = select({
+        "@platforms//os:ios": [],
+        "@platforms//os:android": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        "//libs/runtime",
+        "//projects/e2e/apps/atomic/app:atomic_e2e",
+    ] + select({
+        "@platforms//os:ios": ["//libs/pal/providers/ios/pal_core:packaged"],
+        "@platforms//os:android": ["//libs/pal/providers/android/pal_core:packaged"],
+        "//conditions:default": [],
+    }),
+)
+
+mobile_e2e_suite(
+    name = "mobile_e2e",
+    android_sdk = {
+        "required_header": "prefab/modules/h2_pal_core/include/h2_android_platform.h",
+        "public_symbols": [
+            "h2_atomic_int_init",
+            "h2_atomic_uint_fetch_add",
+            "h2_atomic_flag_test_and_set",
+            "h2_atomic_ptr_compare_exchange",
+        ],
+    },
+    case_count = 28,
+    expected = {
+        "version": "2.0.0",
+        "contract": 1,
+        "failed": 0,
+        "not_run": 0,
+        "complete": 1,
+        "qualified": 1,
+        "workers_started": 10,
+        "workers_joined": 10,
+        "rc": 0,
+        "teardown": 0,
+    },
+    ios_sdk = {
+        "executable": "GizOSAtomicE2E",
+        "provider_symbols": [
+            "_h2_atomic_int_init",
+            "_h2_atomic_uint_fetch_add",
+            "_h2_atomic_flag_test_and_set",
+            "_h2_atomic_ptr_compare_exchange",
+        ],
+        "portable_symbol": "_h2_atomic_e2e_qualify",
+        "header_member": "H2PALCore.xcframework/ios-arm64-simulator/H2PALCore.framework/Headers/h2_ios_platform.h",
+    },
+    package = "com.haivivi.gizos.e2e.atomic",
+    registry = "//projects/e2e/apps/atomic/app:include/h2_atomic_cases.inc",
+    registry_pattern = "H2_ATOMIC_CASE\\(\"([^\"]+)\"",
+    report = "atomic-result.json",
+    resource_balance = True,
+)

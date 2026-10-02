@@ -106,8 +106,7 @@ static int run_peer_name_isolation(h2_gizclaw_e2e_fixture_t *fixture,
   fixture->isolation_workspace_pending = true;
   fixture->isolation_workspace_delete_acknowledged = false;
   rc = h2_gizclaw_rpc_workspace_create(
-      service, h2_gizclaw_e2e_str("assistants"),
-      h2_gizclaw_e2e_str(fixture->workflow_name),
+      service, h2_gizclaw_e2e_str(fixture->workflow_name),
       h2_gizclaw_e2e_str(fixture->workspace_name), 30000u, storage, &workspace);
   if (rc == H2_PAL_OK &&
       (workspace.name == NULL ||
@@ -522,7 +521,7 @@ int h2_gizclaw_e2e_prepare_voice(h2_gizclaw_e2e_fixture_t *fixture) {
     h2_gizclaw_e2e_evidence("h2_gizclaw_session_catalog_copy", "session_catalog_copy-assert", rc);
     if (rc == H2_PAL_OK) {
       const h2_gizclaw_session_selection_t selection = {
-          .collection = "assistants", .workflow_name = fixture->workflow_name,
+          .workflow_name = fixture->workflow_name,
           .workspace_name = fixture->workspace_name};
       fixture->workspace_created = true; /* Retain uncertain creates for cleanup. */
       fixture->workspace_actor_role = H2_GIZCLAW_E2E_OWNER;

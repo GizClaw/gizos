@@ -264,6 +264,42 @@ static void publish_system_state(
         h2_runtime_system_state_publish_wifi_sta(runtime, &state);
         break;
     }
+    case H2_RUNTIME_SYSTEM_EVENT_MODEM_SIM_CHANGED: {
+        const h2_runtime_system_modem_state_t reported = {
+            .sim = payload->modem_sim.state,
+            .rat = payload->modem_sim.rat,
+        };
+        h2_runtime_system_state_publish_modem(runtime, kind, &reported);
+        break;
+    }
+    case H2_RUNTIME_SYSTEM_EVENT_MODEM_REGISTRATION_CHANGED: {
+        const h2_runtime_system_modem_state_t reported = {
+            .registration = payload->modem_registration.state,
+            .rat = payload->modem_registration.rat,
+        };
+        h2_runtime_system_state_publish_modem(runtime, kind, &reported);
+        break;
+    }
+    case H2_RUNTIME_SYSTEM_EVENT_MODEM_PACKET_CHANGED: {
+        const h2_runtime_system_modem_state_t reported = {
+            .packet = payload->modem_packet.state,
+            .rat = payload->modem_packet.rat,
+        };
+        h2_runtime_system_state_publish_modem(runtime, kind, &reported);
+        break;
+    }
+    case H2_RUNTIME_SYSTEM_EVENT_MODEM_SIGNAL_CHANGED: {
+        const h2_runtime_system_event_modem_signal_t *e = &payload->modem_signal;
+        const h2_runtime_system_modem_state_t reported = {
+            .rat = e->rat,
+            .rssi_dbm = e->rssi_dbm,
+            .rssi_valid = e->rssi_valid,
+            .rsrp_dbm = e->rsrp_dbm,
+            .rsrp_valid = e->rsrp_valid,
+        };
+        h2_runtime_system_state_publish_modem(runtime, kind, &reported);
+        break;
+    }
     default:
         break;
     }

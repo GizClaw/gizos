@@ -234,7 +234,7 @@ int main(void) {
   assert(memcmp(&result, &empty, sizeof(result)) == 0);
   config.app_config_key = "fixture.test";
 
-  assert(h2_gizclaw_e2e_case_count == 8u);
+  assert(h2_gizclaw_e2e_case_count == 9u);
   assert((config.suites & H2_GIZCLAW_E2E_SUITE_DEVICE) != 0);
   state.task.join.remaining = 1u;
   assert(h2_gizclaw_e2e_run(&runtime, &config, &result) ==
