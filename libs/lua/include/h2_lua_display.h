@@ -207,9 +207,16 @@
  *   Different source/transform values may produce equal final coordinates.
  *   Failed operations preserve prior candidates; all final values validate
  *   before publishing derived results or pixels. Warm drawing allocates nothing.
- *   Cold retained drawing allocates 8192 span records plus one vertex/primitive
- *   snapshot at the mesh's declared capacities, alignment and fixed metadata.
- *   Cache overflow still draws completely and never replays a partial cache.
+ *   Cold retained identity drawing estimates 16..512 span records from clipped
+ *   polygon row bounds and edge counts (one record per line), inspecting at
+ *   most 128 polygon vertices. Larger/complex or transformed draws start at
+ *   512. Each cache also owns one vertex/primitive snapshot at the declared
+ *   mesh capacities, alignment and fixed metadata. Overflow draws completely
+ *   without publishing partial spans; subsequent draws grow fourfold up to
+ *   8192. A replayed cache with >=256 spare records shrinks to actual count;
+ *   overflow after shrinking returns to 8192 and disables further shrinking.
+ *   Initial estimation is only a hint: allocation finalizers may update mesh
+ *   geometry or acquisition; normal revalidation and overflow rules remain.
  * - Nonidentity transforms of at most 1024 active vertices may stage once in
  *   independent VM-accounted storage shared by Display meshes. Reserve up to
  *   min(vertex_capacity,1024)*16 payload bytes plus userdata metadata, growing

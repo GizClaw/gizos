@@ -1789,8 +1789,50 @@ static h2_lua_display_vertex_t mesh_transform(
  * the maximum. Once a static mesh replays, the cache is reallocated to the
  * spans it actually produced. */
 #define MESH_SPAN_INITIAL_CAPACITY 512u
+#define MESH_SPAN_MIN_INITIAL_CAPACITY 16u
+#define MESH_SPAN_ESTIMATE_VERTICES 128u
 #define MESH_SPAN_CAPACITY 8192u
 #define MESH_SPAN_COMPACT_SLACK 256u
+
+/* Conservative record bound for an identity draw. A polygon emits at most
+ * floor(edges/2) spans per clipped integer row; a line records one command.
+ * Stop at the existing initial capacity and bound geometry inspection so
+ * large/complex meshes keep their old cold allocation and growth policy.
+ * This is only an allocation hint: finalizers may change the mesh/viewport
+ * afterward, and the existing overflow path still renders every primitive. */
+static size_t mesh_span_initial_capacity(h2_lua_display_mesh_t *mesh,
+                                          int top, int bottom) {
+  size_t records = 0, inspected = 0;
+  const h2_lua_display_vertex_t *vertices = mesh_vertices(mesh);
+  const h2_lua_display_primitive_t *primitives = mesh_primitives(mesh);
+  if (top == bottom) return MESH_SPAN_MIN_INITIAL_CAPACITY;
+  for (size_t i = 0; i < mesh->primitive_count; ++i) {
+    const h2_lua_display_primitive_t *p = &primitives[i];
+    if (p->kind == H2_LUA_DISPLAY_LINE) {
+      if (++records >= MESH_SPAN_INITIAL_CAPACITY) return MESH_SPAN_INITIAL_CAPACITY;
+      continue;
+    }
+    if (p->count > MESH_SPAN_ESTIMATE_VERTICES - inspected)
+      return MESH_SPAN_INITIAL_CAPACITY;
+    inspected += p->count;
+    double low = vertices[p->first].y, high = low;
+    for (size_t j = 1; j < p->count; ++j) {
+      double y = vertices[p->first + j].y;
+      if (y < low) low = y;
+      if (y > high) high = y;
+    }
+    double first = ceil(low), end = ceil(high);
+    if (first < top) first = top;
+    if (end > bottom) end = bottom;
+    if (first >= end) continue;
+    size_t rows = (size_t)(end - first), per_row = p->count / 2;
+    if (rows >= (MESH_SPAN_INITIAL_CAPACITY - records + per_row - 1) / per_row)
+      return MESH_SPAN_INITIAL_CAPACITY;
+    records += rows * per_row;
+  }
+  return records < MESH_SPAN_MIN_INITIAL_CAPACITY
+      ? MESH_SPAN_MIN_INITIAL_CAPACITY : records;
+}
 
 /* Mesh span snapshots follow the span array. Their lifetime is the cache
  * userdata's, independently of source updates or non-retained draws. */
@@ -1956,10 +1998,14 @@ static int display_draw_mesh(lua_State *state) {
     lua_getiuservalue(state, 1, 1);
     if (lua_isnil(state, -1)) {
       lua_pop(state, 1);
-      cache = lua_newuserdatauv(state, mesh_span_snapshot_offset(MESH_SPAN_INITIAL_CAPACITY) +
+      size_t initial_capacity = MESH_SPAN_INITIAL_CAPACITY;
+      if (identity && job->display_open && top >= 0 && top <= bottom &&
+          bottom <= job->display_info.height)
+        initial_capacity = mesh_span_initial_capacity(mesh, (int)top, (int)bottom);
+      cache = lua_newuserdatauv(state, mesh_span_snapshot_offset(initial_capacity) +
           mesh_span_snapshot_bytes(mesh), 0);
       memset(cache, 0, sizeof(*cache));
-      cache->capacity = MESH_SPAN_INITIAL_CAPACITY;
+      cache->capacity = initial_capacity;
       cache_at = lua_gettop(state);
       /* A finalizer may have installed a complete candidate during allocation.
        * Reuse it; do not overwrite it with the outer call's empty cache. */
