@@ -2297,9 +2297,20 @@ typedef struct display_smooth_scratch {
   uint16_t pixels[];
 } display_smooth_scratch_t;
 
+typedef struct display_smooth_cache {
+  size_t count;
+  double offset, scale;
+  int top, bottom, width, height;
+  /* x[count], y[count], widths[count-1], then one coverage byte per pixel. */
+  double data[];
+} display_smooth_cache_t;
+
 static const char s_stroke_cache_key = 0, s_stroke_normals_key = 0;
+static const char s_smooth_cache_key = 0;
 #define H2_LUA_STROKE_META "h2.display.stroke"
 #define H2_LUA_NORMALS_META "h2.display.normals"
+#define H2_LUA_SMOOTH_META "h2.display.smooth"
+#define H2_LUA_SMOOTH_CACHE_LIMIT (16u * 1024u)
 
 static int display_optional_boolean(lua_State *state, int index) {
   if (!lua_isnoneornil(state, index)) luaL_checktype(state, index, LUA_TBOOLEAN);
@@ -2408,9 +2419,10 @@ static void display_stroke_simplify(display_stroke_data_t *path, double toleranc
   path->count = write + 1;
 }
 
-static void display_stroke_smooth(lua_State *state, h2_lua_job_t *job,
+static void display_smooth_bounds(h2_lua_job_t *job,
                                    const display_stroke_data_t *path,
-                                   double offset, int top, int bottom) {
+                                   double offset, int top, int bottom,
+                                   int *left, int *right, int *first, int *end) {
   double min_x = job->display_info.width, max_x = 0, min_y = bottom, max_y = top;
   for (size_t i = 0; i + 1 < path->count; ++i) {
     double radius = path->width[i] * .5 + 1;
@@ -2419,11 +2431,20 @@ static void display_stroke_smooth(lua_State *state, h2_lua_job_t *job,
     min_y = fmin(min_y, fmin(path->y[i], path->y[i+1]) - radius);
     max_y = fmax(max_y, fmax(path->y[i], path->y[i+1]) + radius);
   }
+  int width = job->display_info.width;
+  *left = (int)fmax(0, fmin(width, floor(min_x)));
+  *right = (int)fmax(0, fmin(width, ceil(max_x)));
+  *first = (int)fmax(top, fmin(bottom, floor(min_y)));
+  *end = (int)fmax(top, fmin(bottom, ceil(max_y)));
+}
+
+static void display_stroke_smooth(lua_State *state, h2_lua_job_t *job,
+                                   const display_stroke_data_t *path,
+                                   double offset, int top, int bottom,
+                                   uint8_t *capture) {
   int width = job->display_info.width, height = job->display_info.height;
-  int left = (int)fmax(0, fmin(width, floor(min_x)));
-  int right = (int)fmax(0, fmin(width, ceil(max_x)));
-  int first = (int)fmax(top, fmin(bottom, floor(min_y)));
-  int end = (int)fmax(top, fmin(bottom, ceil(max_y)));
+  int left, right, first, end;
+  display_smooth_bounds(job, path, offset, top, bottom, &left, &right, &first, &end);
   if (right <= left || end <= first) return;
   size_t stride = (size_t)(right - left);
   if ((size_t)(end - first) > SIZE_MAX / stride)
@@ -2488,11 +2509,100 @@ static void display_stroke_smooth(lua_State *state, h2_lua_job_t *job,
       if (alpha > coverage[at]) { coverage[at] = (uint8_t)alpha; ink[at] = path->color[i]; }
     }
   }
+  if (capture != NULL) {
+    memcpy(capture, coverage, count);
+    return;
+  }
   for (int y = first; y < end; ++y) for (int x = left; x < right; ++x) {
     size_t at = (size_t)(y-first)*stride + (size_t)(x-left);
     if (coverage[at]) blend_pixel(job, x, y, ink[at], coverage[at]);
   }
   mark_dirty_rect(job, left, first, right-left, end-first);
+}
+
+static void display_smooth_replay(h2_lua_job_t *job, const uint8_t *coverage,
+                                   int left, int right, int first, int end,
+                                   uint16_t color) {
+  size_t stride = (size_t)(right - left);
+  for (int y = first; y < end; ++y) for (int x = left; x < right; ++x) {
+    unsigned alpha = coverage[(size_t)(y - first) * stride + (size_t)(x - left)];
+    if (alpha) blend_pixel(job, x, y, color, alpha);
+  }
+  mark_dirty_rect(job, left, first, right - left, end - first);
+}
+
+/* Only single-color, unsimplified strokes enter this path. Keep the uncached
+ * raster as the cold/reference path; retain its quantized alpha, never ink or
+ * framebuffer pixels. Every allocation precedes that raster's first write. */
+static int display_stroke_smooth_cached(lua_State *state, h2_lua_job_t *job,
+                                        const display_stroke_data_t *path,
+                                        double offset, int top, int bottom,
+                                        double scale, uint16_t color) {
+  int width = job->display_info.width, height = job->display_info.height;
+  int left, right, first, end;
+  display_smooth_bounds(job, path, offset, top, bottom, &left, &right, &first, &end);
+  if (right <= left || end <= first) return 0;
+  size_t stride = (size_t)(right - left);
+  size_t key_bytes = (3u * path->count - 1u) * sizeof(double);
+  size_t header = sizeof(display_smooth_cache_t) + key_bytes;
+  /* Check before multiplying, including on 32-bit Hosts. The cap covers the
+   * complete userdata payload, not Lua/allocator bookkeeping or job scratch. */
+  if (header > H2_LUA_SMOOTH_CACHE_LIMIT ||
+      (size_t)(end - first) > (H2_LUA_SMOOTH_CACHE_LIMIT - header) / stride) {
+    display_stroke_smooth(state, job, path, offset, top, bottom, NULL);
+    return 0;
+  }
+  size_t count = stride * (size_t)(end - first);
+  lua_rawgetp(state, 2, &s_smooth_cache_key);
+  const display_smooth_cache_t *old =
+      luaL_testudata(state, -1, H2_LUA_SMOOTH_META);
+  size_t n = path->count;
+  if (old != NULL && old->count == n &&
+      !memcmp(&old->offset, &offset, sizeof(offset)) && old->scale == scale &&
+      old->top == top && old->bottom == bottom &&
+      old->width == width && old->height == height &&
+      !memcmp(old->data, path->x, n * sizeof(double)) &&
+      !memcmp(old->data + n, path->y, n * sizeof(double)) &&
+      !memcmp(old->data + 2u * n, path->width, (n - 1u) * sizeof(double))) {
+    const uint8_t *coverage = (const uint8_t *)old->data + key_bytes;
+    display_smooth_replay(job, coverage, left, right, first, end, color);
+    lua_pop(state, 1);
+    return 1;
+  }
+  lua_pop(state, 1);
+  display_smooth_cache_t *cache = lua_newuserdatauv(state, header + count, 0);
+  if (luaL_newmetatable(state, H2_LUA_SMOOTH_META)) {
+    lua_pushliteral(state, "display smooth coverage cache");
+    lua_setfield(state, -2, "__metatable");
+  }
+  lua_setmetatable(state, -2);
+  int staged = lua_gettop(state);
+  /* GC/finalizers can reenter, replace this owner's slot or close Display.
+   * Staging stays rooted and unpublished until coverage is complete. */
+  if (!job->display_open || job->display_info.width != width ||
+      job->display_info.height != height)
+    return luaL_error(state, "display changed during smooth cache allocation");
+  uint8_t *coverage = (uint8_t *)cache->data + key_bytes;
+  display_stroke_smooth(state, job, path, offset, top, bottom, coverage);
+  cache->count = n;
+  cache->offset = offset;
+  cache->scale = scale;
+  cache->top = top; cache->bottom = bottom;
+  cache->width = width; cache->height = height;
+  memcpy(cache->data, path->x, n * sizeof(double));
+  memcpy(cache->data + n, path->y, n * sizeof(double));
+  memcpy(cache->data + 2u * n, path->width, (n - 1u) * sizeof(double));
+  lua_pushvalue(state, staged);
+  /* First insertion may allocate, and finalizers may even remove a prior
+   * slot. Publish only complete data, before any writes; replay our rooted
+   * staging buffer, never the shared job scratch after this allocation. */
+  lua_rawsetp(state, 2, &s_smooth_cache_key);
+  if (!job->display_open || job->display_info.width != width ||
+      job->display_info.height != height)
+    return luaL_error(state, "display changed during smooth cache publication");
+  display_smooth_replay(job, coverage, left, right, first, end, color);
+  lua_pop(state, 1);
+  return 0;
 }
 
 static int display_stroke_path(lua_State *state) {
@@ -2569,9 +2679,14 @@ static int display_stroke_path(lua_State *state) {
   int top, bottom;
   display_check_clip(state, job, 5, 6, &top, &bottom);
   if (smooth) {
+    int hit = 0;
     if (tolerance > 0) display_stroke_simplify(&path, tolerance);
-    display_stroke_smooth(state, job, &path, offset, top, bottom);
-    lua_pushboolean(state, 0); lua_pushinteger(state, 0);
+    if (retain && !colors && tolerance == 0)
+      hit = display_stroke_smooth_cached(state, job, &path, offset, top, bottom,
+                                         scale, single);
+    else
+      display_stroke_smooth(state, job, &path, offset, top, bottom, NULL);
+    lua_pushboolean(state, hit); lua_pushinteger(state, 0);
     return 2;
   }
   display_stroke_cache_t *retained = NULL;

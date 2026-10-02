@@ -1012,23 +1012,33 @@ static int test_raster_noalloc(lua_State *state) {
   return 0;
 }
 
+typedef struct raster_fail_probe {
+  mesh_allocator_probe_t allocator;
+  size_t remaining;
+} raster_fail_probe_t;
+
 static void *test_raster_fail_allocate(void *user, void *ptr, size_t old_size,
                                        size_t new_size) {
-  mesh_allocator_probe_t *probe = user;
-  if (new_size != 0u && (ptr == NULL || new_size > old_size))
-    return NULL;
+  raster_fail_probe_t *failure = user;
+  mesh_allocator_probe_t *probe = &failure->allocator;
+  if (new_size != 0u && (ptr == NULL || new_size > old_size)) {
+    if (failure->remaining == 0) return NULL;
+    --failure->remaining;
+  }
   return probe->allocate(probe->user, ptr, old_size, new_size);
 }
 
 static int test_raster_oom(lua_State *state) {
   luaL_checktype(state, 1, LUA_TFUNCTION);
   assert(lua_checkstack(state, 128));
-  mesh_allocator_probe_t probe = {0};
-  probe.allocate = lua_getallocf(state, &probe.user);
+  lua_Integer allowed = luaL_optinteger(state, 2, 0);
+  assert(allowed >= 0);
+  raster_fail_probe_t probe = {.remaining = (size_t)allowed};
+  probe.allocator.allocate = lua_getallocf(state, &probe.allocator.user);
   lua_pushvalue(state, 1);
   lua_setallocf(state, test_raster_fail_allocate, &probe);
   int result = lua_pcall(state, 0, 1, 0);
-  lua_setallocf(state, probe.allocate, probe.user);
+  lua_setallocf(state, probe.allocator.allocate, probe.allocator.user);
   assert(result == LUA_ERRMEM);
   lua_pop(state, 1);
   return 0;
@@ -1209,6 +1219,40 @@ static int test_in_call(lua_State *s) {
   return 1;
 }
 
+/* Inspect the production output without invoking its raster/damage helpers.
+ * Display closure and captured full-screen region are test-owned roots. */
+static int test_display_snapshot(lua_State *state) {
+  assert(lua_getupvalue(state, 1, 1) != NULL);
+  h2_lua_job_t *job = lua_touserdata(state, -1);
+  assert(job != NULL && job->display_open);
+  lua_pop(state, 1);
+  size_t bytes = (size_t)job->display_info.width * job->display_info.height * 2;
+  size_t tiles = (size_t)((job->display_info.width + 15) / 16) *
+                ((job->display_info.height + 15) / 16);
+  assert(lua_isuserdata(state, 2) && lua_rawlen(state, 2) >= tiles);
+  const char *region = lua_touserdata(state, 2);
+  int dirty[5] = {0};
+  if (job->dirty_valid) {
+    dirty[0] = 1; dirty[1] = job->dirty_min_x; dirty[2] = job->dirty_min_y;
+    dirty[3] = job->dirty_max_x; dirty[4] = job->dirty_max_y;
+  }
+  lua_pushlstring(state, (const char *)job->framebuffer, bytes);
+  lua_pushlstring(state, region + lua_rawlen(state, 2) - tiles, tiles);
+  lua_pushlstring(state, (const char *)dirty, sizeof(dirty));
+  return 3;
+}
+
+/* Change only the test Display provider while no acquisition is live. */
+static int test_display_fixture_size(lua_State *state) {
+  int width = (int)luaL_checkinteger(state, 1);
+  int height = (int)luaL_checkinteger(state, 2);
+  assert(width > 0 && width <= 240 && height > 0 && height <= 240);
+  assert(s_test_display_fixture.open_count == s_test_display_fixture.close_count);
+  s_test_display_fixture.width = width;
+  s_test_display_fixture.height = height;
+  return 0;
+}
+
 static int test_raster_open(void *lua_state, void *user) {
   lua_State *state = lua_state;
   (void)user;
@@ -1217,6 +1261,10 @@ static int test_raster_open(void *lua_state, void *user) {
   lua_setfield(state, -2, "mesh_capacity");
   lua_pushcfunction(state, test_mesh_shifted);
   lua_setfield(state, -2, "mesh_shifted");
+  lua_pushcfunction(state, test_display_fixture_size);
+  lua_setfield(state, -2, "display_fixture_size");
+  lua_pushcfunction(state, test_display_snapshot);
+  lua_setfield(state, -2, "display_snapshot");
   lua_pushcfunction(state, test_mesh_snapshot);
   lua_setfield(state, -2, "mesh_snapshot");
   lua_pushcfunction(state, test_in_call);
@@ -2772,10 +2820,14 @@ int main(int argc, char **argv) {
   }
   if (argc == 2 && (strcmp(argv[1], "--raster-benchmark") == 0 ||
                     strcmp(argv[1], "--quad-benchmark") == 0 ||
-                    strcmp(argv[1], "--material-benchmark") == 0)) {
-    test_display_raster2d(strcmp(argv[1], "--material-benchmark") == 0 ? 2 : 1,
-        strcmp(argv[1], "--material-benchmark") == 0
-        ? "libs/lua/tests/quad_material.lua" : strcmp(argv[1], "--quad-benchmark") == 0
+                    strcmp(argv[1], "--material-benchmark") == 0 ||
+                    strcmp(argv[1], "--smooth-benchmark") == 0)) {
+    int material = strcmp(argv[1], "--material-benchmark") == 0;
+    int smooth = strcmp(argv[1], "--smooth-benchmark") == 0;
+    test_display_raster2d(material || smooth ? 2 : 1,
+        material ? "libs/lua/tests/quad_material.lua" :
+        smooth ? "libs/lua/tests/smooth_cache.lua" :
+        strcmp(argv[1], "--quad-benchmark") == 0
         ? "libs/lua/tests/quad_batch.lua" : "libs/lua/tests/raster2d.lua");
   h2_atomic_int_destroy(&s_source_effect_count);
   h2_atomic_int_destroy(&s_test_audio_close_count);
@@ -2793,6 +2845,7 @@ int main(int argc, char **argv) {
   test_display_raster2d(0, "libs/lua/tests/quad_batch.lua");
   test_display_raster2d(1, "libs/lua/tests/quad_batch_clip.lua");
   test_display_raster2d(2, "libs/lua/tests/quad_material.lua");
+  test_display_raster2d(2, "libs/lua/tests/smooth_cache.lua");
   test_display_raster2d(0, "libs/lua/tests/geometry_batches.lua");
   test_display_raster2d(0, "libs/lua/tests/stroke_buffer.lua");
   test_display_mesh_identity();
