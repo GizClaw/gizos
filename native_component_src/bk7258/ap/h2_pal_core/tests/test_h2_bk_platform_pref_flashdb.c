@@ -136,6 +136,7 @@ int ef_del_env(const char *key) {
     legacy_size = 0;
   return EF_NO_ERR;
 }
+const h2_pal_time_api_t *h2_bk_platform_time_api(void) { return NULL; }
 int rtos_init_mutex(beken_mutex_t *mutex) {
   assert(mutex_count < 4);
   *mutex = &mutexes[mutex_count++];
