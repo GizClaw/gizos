@@ -2,14 +2,25 @@
 #define H2_PAL_ERRORS_H
 
 #include <stdint.h>
+#include <limits.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
-/* Error domains can extend the common codes. A small-enum ARM ABI must not
- * narrow such values (for example, -1000) into a positive status. */
-typedef int32_t h2_pal_result_t;
+/* Preserve the C int call ABI used by providers and legacy callbacks, while
+ * rejecting a target whose int cannot hold every signed 32-bit error. This
+ * scalar also prevents small-enum ABIs from narrowing extensions like -1000. */
+typedef signed int h2_pal_result_t;
+#ifdef __cplusplus
+static_assert(sizeof(h2_pal_result_t) * CHAR_BIT == 32 &&
+              INT_MIN == INT32_MIN && INT_MAX == INT32_MAX,
+              "PAL results require a signed 32-bit C int ABI");
+#else
+_Static_assert(sizeof(h2_pal_result_t) * CHAR_BIT == 32 &&
+               INT_MIN == INT32_MIN && INT_MAX == INT32_MAX,
+               "PAL results require a signed 32-bit C int ABI");
+#endif
 
 enum h2_pal_result {
     H2_PAL_OK = 0,
