@@ -30,7 +30,10 @@
  *   immutable pixel snapshot and its own bounded plan/tile scratch. The VM
  *   commits the retained baseline only after the full transport succeeds.
  *   Snapshot, baseline and mailbox use VM quota. OOM raises a Lua error before
- *   publishing a new frame. Task/atomic/semaphore storage is platform-owned.
+ *   publishing a new frame. First-use finalizer reentry can complete a nested
+ *   submission; the outer preparation then returns BUSY without replacing its
+ *   pending snapshot/plan. Closed or replaced acquisitions return an error.
+ *   Task/atomic/semaphore storage is platform-owned.
  * - Faults stop further submissions; there is no automatic retry or backend
  *   recovery. deinit returns nil, BUSY/error until close and task join succeed;
  *   success keeps its existing no-values return. A faulted backend is not

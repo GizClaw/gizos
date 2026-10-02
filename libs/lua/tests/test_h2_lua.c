@@ -182,6 +182,7 @@ typedef struct test_display_fixture {
   int fail_info;
   size_t fail_draw;
   int fail_present;
+  int fail_close;
   size_t finalizer_count;
 } test_display_fixture_t;
 
@@ -280,6 +281,12 @@ static int test_display_close(void *user) {
   test_display_owner(0);
   ++s_test_display_fixture.close_count;
   assert(user == &s_test_display_fixture);
+  if (s_test_display_fixture.fail_close) return H2_PAL_ERR_IO;
+  if (s_display_gate != NULL) {
+    assert(pthread_mutex_lock(&s_display_gate->mutex) == 0);
+    s_display_gate->has_owner = 0;
+    assert(pthread_mutex_unlock(&s_display_gate->mutex) == 0);
+  }
   return H2_DISPLAY_OK;
 }
 
@@ -710,19 +717,26 @@ typedef struct test_join_failure {
   const h2_pal_task_api_t *next;
   int fail;
   unsigned attempts;
+  int display_only, fail_result;
+  h2_pal_task_t *selected;
 } test_join_failure_t;
 
 static int test_join_start(void *user, const h2_pal_task_options_t *options,
                            h2_pal_task_entry_t entry, void *context,
                            h2_pal_task_t **out_task) {
   test_join_failure_t *test = user;
-  return h2_pal_task_start(test->next, options, entry, context, out_task);
+  int result = h2_pal_task_start(test->next, options, entry, context, out_task);
+  if (result == H2_PAL_OK && strcmp(options->name, "$lua/display") == 0)
+    test->selected = *out_task;
+  return result;
 }
 
 static int test_join_fail(void *user, h2_pal_task_t *task) {
   test_join_failure_t *test = user;
   ++test->attempts;
-  return test->fail ? H2_PAL_ERR_BUSY : h2_pal_task_join(test->next, task);
+  if (test->fail && (!test->display_only || task == test->selected))
+    return test->fail_result ? test->fail_result : H2_PAL_ERR_BUSY;
+  return h2_pal_task_join(test->next, task);
 }
 
 static void test_checked_destroy(void) {
@@ -943,6 +957,18 @@ static int test_submission_pixel(lua_State *state) {
   return 1;
 }
 
+static int test_submission_pattern(lua_State *state) {
+  int mode = (int)luaL_checkinteger(state, 1);
+  assert(s_test_display_fixture.width == 4096 && s_test_display_fixture.height == 33);
+  for (int y=0; y<33; ++y) for (int x=0; x<4096; ++x) {
+    uint16_t expected = mode == 2 ? 31 : ((y%32 == 0 && x%32 == 0) ? 65535 : 0);
+    assert(s_test_display_fixture.pixels[y*4096+x] == expected);
+  }
+  return 0;
+}
+
+static int test_in_call(lua_State *s);
+
 static int test_submission_module(void *raw, void *user) {
   lua_State *state = raw;
   (void)user;
@@ -951,6 +977,10 @@ static int test_submission_module(void *raw, void *user) {
   lua_setfield(state, -2, "stage");
   lua_pushcfunction(state, test_submission_pixel);
   lua_setfield(state, -2, "pixel");
+  lua_pushcfunction(state, test_in_call);
+  lua_setfield(state, -2, "in_call");
+  lua_pushcfunction(state, test_submission_pattern);
+  lua_setfield(state, -2, "pattern");
   return 1;
 }
 
@@ -1009,15 +1039,18 @@ static void test_display_submission(int threaded) {
   assert(result == H2_PAL_OK);
   assert(s_test_display_fixture.open_count == 1 && s_test_display_fixture.close_count == 1);
   /* Reuse the Host/job slot with the exact committed Web consumer source. */
+  const char *scripts[] = {"libs/lua/tests/display_submit.lua",
+                            "libs/lua/tests/display_submit_reentry.lua"};
+  for (size_t script_index = 0; script_index < 2; ++script_index) {
   gate.has_owner = 0;
-  FILE *file = fopen("libs/lua/tests/display_submit.lua", "rb");
+  FILE *file = fopen(scripts[script_index], "rb");
   assert(file != NULL);
   uint8_t common[4096];
   size_t length = fread(common, 1, sizeof(common), file);
   assert(!ferror(file) && feof(file));
   assert(fclose(file) == 0);
   assert(h2_lua_job_submit_text(host, NULL, "@common-submit.lua", common,
-      length, NULL, 0, &job) == H2_PAL_OK);
+      length, args, 1, &job) == H2_PAL_OK);
   run_until_terminal(host, job, 6000);
   final = status(host, job);
   if (final.state != H2_LUA_JOB_SUCCEEDED) fprintf(stderr, "common: %s\n", final.message);
@@ -1029,6 +1062,7 @@ static void test_display_submission(int threaded) {
   }
   assert(result==H2_PAL_OK);
   assert(s_test_display_fixture.pixels[0]==31 && s_test_display_fixture.pixels[40]==63488);
+  }
   assert(h2_lua_host_destroy_checked(host) == H2_PAL_OK);
   h2_runtime_deinit(runtime);
   s_display_gate = NULL;
@@ -1130,6 +1164,135 @@ static void test_display_submission_oom(void) {
   assert(result==H2_PAL_OK);
   assert(s_test_display_fixture.close_count==1);
   assert(h2_lua_host_destroy_checked(host)==H2_PAL_OK);
+  h2_runtime_deinit(runtime);
+}
+
+/* Each fault case runs in a child process: the contract intentionally retains
+ * the entire failed Host/VM/Runtime until process teardown, without a test-only
+ * recovery API or freeing an object that still owns the Display lease. */
+static void test_display_submission_fault(int mode) {
+  test_display_reset();
+  s_test_display_fixture.width = s_test_display_fixture.height = 240;
+  s_test_display_fixture.fail_draw = mode == 1 ? 1u : 0u;
+  s_test_display_fixture.fail_present = mode == 2;
+  s_test_display_fixture.fail_close = mode == 3;
+  s_test_display_fixture.fail_info = mode == 4;
+  h2_runtime_t *runtime = create_runtime();
+  h2_lua_host_t *host = NULL;
+  h2_lua_host_config_t config = {.runtime = runtime, .max_jobs = 1,
+      .display_worker = 1, .display_exclusive = 1,
+      .vm_memory_limit_bytes = 2u * 1024u * 1024u};
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  const char script[] =
+      "local d,r=require('display'),require('runtime');d.clear('red');"
+      "assert(d.submit()==1);local s,e=d.flush();"
+      "while not s and e==d.BUSY do r.sleep(1);s,e=d.flush() end;"
+      "if args.close=='yes' then assert(s);local _;_,e=d.deinit();"
+      "while e==d.BUSY do r.sleep(1);_,e=d.deinit() end end;"
+      "assert(e and e<0 and e~=d.BUSY);"
+      "local n,again=d.submit();assert(n==nil and again==e);"
+      "local record=d.status();assert(record.error==e);"
+      "assert(not pcall(d.present));";
+  h2_lua_arg_t args[] = {{"close", mode == 3 ? "yes" : "no"}};
+  h2_lua_job_id_t job;
+  assert(h2_lua_job_submit_text(host, NULL, "@submission-fault.lua",
+      (const uint8_t *)script, sizeof(script)-1, args, 1, &job) == H2_PAL_OK);
+  run_until_terminal(host, job, 6000);
+  h2_lua_job_status_t state = status(host, job);
+  if (mode != 4 && state.state != H2_LUA_JOB_SUCCEEDED)
+    fprintf(stderr, "fault mode=%d: %s\n", mode, state.message);
+  assert(state.state == (mode == 4 ? H2_LUA_JOB_FAILED : H2_LUA_JOB_SUCCEEDED));
+  h2_pal_result_t expected = mode == 4 ? H2_DISPLAY_ERR_INVALID_ARG : H2_PAL_ERR_IO;
+  h2_pal_result_t result = H2_PAL_ERR_BUSY;
+  for (unsigned i = 0; i < 3000 && result == H2_PAL_ERR_BUSY; ++i) {
+    result = h2_lua_host_destroy_checked(host);
+    if (result == H2_PAL_ERR_BUSY) assert(h2_pal_time_sleep_ms(runtime->time, 1) == H2_PAL_OK);
+  }
+  assert(result == expected);
+  assert(status(host, job).memory_used == state.memory_used);
+  size_t close_count = s_test_display_fixture.close_count;
+  assert(h2_lua_host_destroy_checked(host) == expected);
+  assert(h2_lua_job_release(host, job) == expected);
+  assert(s_test_display_fixture.close_count == close_count);
+  assert(close_count == (mode == 3 ? 1u : 0u));
+  h2_lua_job_id_t rejected;
+  assert(h2_lua_job_submit_text(host, NULL, "@rejected.lua",
+      (const uint8_t *)"return 1", 8, NULL, 0, &rejected) != H2_PAL_OK);
+  printf("display_fault mode=%d retained_vm=%zu error=%d PASS\n",
+      mode, state.memory_used, result);
+}
+
+static void test_display_submission_large(void) {
+  test_display_reset();
+  s_test_display_fixture.width = 4096;
+  s_test_display_fixture.height = 33;
+  h2_runtime_t *runtime = create_runtime();
+  h2_lua_host_t *host = NULL;
+  h2_lua_host_config_t config = {.runtime = runtime, .max_jobs = 1,
+      .display_worker = 1, .display_exclusive = 1,
+      .vm_memory_limit_bytes = 2u * 1024u * 1024u};
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(h2_lua_register_module(host, "submit_test", test_submission_module, NULL) == H2_PAL_OK);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  const char script[] =
+      "local d,r,p=require('display'),require('runtime'),require('submit_test');"
+      "local function flush() local s,e=d.flush();while not s do assert(e==d.BUSY);"
+      "r.sleep(1);s,e=d.flush() end;return s end;"
+      "d.clear('black');assert(d.submit()==1);flush();"
+      "for y=0,32,32 do for x=0,4095,32 do d.fill_rect(x,y,1,1,'white') end end;"
+      "local seq,pixels,rects=d.submit();assert(seq==2 and rects==256 and pixels==34816);"
+      "d.clear('blue');local s=flush();assert(s.rects==256 and s.pixels==34816);p.pattern(1);"
+      "assert(d.submit()==3);flush();p.pattern(2)";
+  h2_lua_job_id_t job;
+  assert(h2_lua_job_submit_text(host, NULL, "@large-submit.lua",
+      (const uint8_t *)script, sizeof(script)-1, NULL, 0, &job) == H2_PAL_OK);
+  run_until_terminal(host, job, 6000);
+  h2_lua_job_status_t state = status(host, job);
+  if (state.state != H2_LUA_JOB_SUCCEEDED) fprintf(stderr, "large submit: %s\n", state.message);
+  assert(state.state == H2_LUA_JOB_SUCCEEDED);
+  h2_pal_result_t result = H2_PAL_ERR_BUSY;
+  for (unsigned i=0; i<3000 && result==H2_PAL_ERR_BUSY; ++i) {
+    result = h2_lua_host_destroy_checked(host);
+    if (result == H2_PAL_ERR_BUSY) assert(h2_pal_time_sleep_ms(runtime->time, 1) == H2_PAL_OK);
+  }
+  assert(result == H2_PAL_OK);
+  h2_runtime_deinit(runtime);
+}
+
+static void test_display_worker_join_failure(void) {
+  test_display_reset();
+  h2_runtime_t *runtime = create_runtime();
+  h2_runtime_t borrowed = *runtime;
+  test_join_failure_t test = {.next = runtime->task, .fail = 1,
+      .display_only = 1, .fail_result = H2_PAL_ERR_TASK};
+  const h2_pal_task_vtable_t vtable = {.start = test_join_start, .join = test_join_fail};
+  const h2_pal_task_api_t task = {.user = &test, .vtable = &vtable};
+  borrowed.task = &task;
+  h2_lua_host_t *host = NULL;
+  h2_lua_host_config_t config = {.runtime = &borrowed, .max_jobs = 1,
+      .display_worker = 1, .display_exclusive = 1,
+      .vm_memory_limit_bytes = 2u * 1024u * 1024u};
+  assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(h2_lua_host_start(host) == H2_PAL_OK);
+  const char script[] = "local d=require('display');d.clear('red');d.submit()";
+  h2_lua_job_id_t job;
+  assert(h2_lua_job_submit_text(host, NULL, "@display-join.lua",
+      (const uint8_t *)script, sizeof(script)-1, NULL, 0, &job) == H2_PAL_OK);
+  run_until_terminal(host, job, 6000);
+  assert(status(host, job).state == H2_LUA_JOB_SUCCEEDED);
+  size_t held = status(host, job).memory_used;
+  h2_pal_result_t result = H2_PAL_ERR_BUSY;
+  for (unsigned i=0; i<3000 && result==H2_PAL_ERR_BUSY; ++i) {
+    result = h2_lua_host_destroy_checked(host);
+    if (result == H2_PAL_ERR_BUSY) assert(h2_pal_time_sleep_ms(runtime->time, 1) == H2_PAL_OK);
+  }
+  assert(result == H2_PAL_ERR_TASK && test.selected != NULL);
+  assert(status(host, job).memory_used == held);
+  assert(s_test_display_fixture.close_count == 1);
+  test.fail = 0;
+  assert(h2_lua_host_destroy_checked(host) == H2_PAL_OK);
+  assert(s_test_display_fixture.close_count == 1);
   h2_runtime_deinit(runtime);
 }
 
@@ -3481,6 +3644,10 @@ int main(int argc, char **argv) {
   assert(h2_atomic_int_init(&s_test_audio_mic_start_count, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_int_init(&s_test_audio_mic_stop_count, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_int_init(&s_test_audio_mic_block, 0) == H2_ATOMIC_OK);
+  if (argc == 3 && strcmp(argv[1], "--display-fault") == 0) {
+    test_display_submission_fault(atoi(argv[2]));
+    return 0;
+  }
   if (argc == 2 && strcmp(argv[1], "--prepared-benchmark") == 0) {
     test_display_raster2d(1, "libs/lua/tests/geometry_batches.lua");
   h2_atomic_int_destroy(&s_source_effect_count);
@@ -3565,6 +3732,8 @@ int main(int argc, char **argv) {
   test_display_submission_stop(0);
   test_display_submission_stop(1);
   test_display_submission_oom();
+  test_display_submission_large();
+  test_display_worker_join_failure();
   test_borrowed_display();
   static const char *const esp_claw_ids[] = {
       "adc",

@@ -4457,7 +4457,18 @@ static h2_pal_result_t display_submit_retained(h2_lua_job_t *job, int bounds,
   return H2_PAL_OK;
 }
 
+static h2_pal_result_t display_submission_fault(h2_lua_job_t *job,
+                                                 h2_pal_result_t error) {
+  display_submission_t *submission = job->display_submission;
+  if (!submission->fault) submission->fault = error;
+  job->display_presented_valid = job->display_background_valid = 0;
+  if (job->display_open) display_dirty_full(job);
+  return (h2_pal_result_t)submission->fault;
+}
+
 static h2_pal_result_t display_submission_wait(display_submission_t *submission) {
+  if (!submission->worker.initialized)
+    return submission->fault ? submission->fault : H2_PAL_ERR_INVALID_STATE;
   while (h2_lua_display_worker_phase(&submission->worker) == H2_LUA_DISPLAY_PENDING) {
     h2_pal_result_t result = h2_pal_time_sleep_ms(submission->worker.runtime->time, 1);
     if (result != H2_PAL_OK) return result;
@@ -4505,7 +4516,7 @@ static h2_pal_result_t display_submission_open(lua_State *state,
   if (result == H2_PAL_OK) result = submission->worker.result;
   if (h2_lua_display_worker_phase(&submission->worker) == H2_LUA_DISPLAY_DONE)
     h2_lua_display_worker_ack(&submission->worker);
-  if (result != H2_PAL_OK) submission->fault = result;
+  if (result != H2_PAL_OK) return display_submission_fault(job, result);
   return result;
 }
 
@@ -4517,14 +4528,12 @@ static h2_pal_result_t display_submission_collect(h2_lua_job_t *job) {
   h2_lua_display_worker_t *worker = &submission->worker;
   if (!worker->initialized) return submission->fault ? submission->fault : H2_PAL_OK;
   int phase = h2_lua_display_worker_phase(worker);
-  if (phase < 0) {
-    submission->fault = phase;
-    return (h2_pal_result_t)phase;
-  }
-  if (phase == H2_LUA_DISPLAY_PENDING) return H2_PAL_ERR_BUSY;
+  if (phase < 0) return display_submission_fault(job, (h2_pal_result_t)phase);
+  if (phase == H2_LUA_DISPLAY_PENDING)
+    return submission->fault ? submission->fault : H2_PAL_ERR_BUSY;
   if (phase == H2_LUA_DISPLAY_EXITED && submission->inflight) {
-    submission->fault = worker->fault ? worker->fault : H2_PAL_ERR_IO;
-    return submission->fault;
+    return display_submission_fault(job,
+        worker->fault ? worker->fault : H2_PAL_ERR_IO);
   }
   if (phase == H2_LUA_DISPLAY_DONE && submission->inflight) {
     submission->inflight = 0;
@@ -4535,9 +4544,8 @@ static h2_pal_result_t display_submission_collect(h2_lua_job_t *job) {
     submission->completed_us = worker->completed_us;
     submission->clock_valid = worker->clock_valid;
     if (worker->result != H2_PAL_OK || submission->fault) {
-      if (worker->result != H2_PAL_OK) submission->fault = worker->result;
-      job->display_presented_valid = job->display_background_valid = 0;
-      display_dirty_full(job);
+      (void)display_submission_fault(job,
+          worker->result != H2_PAL_OK ? worker->result : submission->fault);
     } else {
       ++submission->successful;
       if (submission->changed) ++submission->changed_frames;
@@ -4574,22 +4582,35 @@ static h2_pal_result_t display_submission_prepare(lua_State *state,
   }
   display_submission_t *submission = job->display_submission;
   if (submission->closing || submission->fault) return H2_PAL_ERR_INVALID_STATE;
-  /* Keep the context alive even if allocation invokes a deinit finalizer. */
+  /* Finalizers can submit/close/reopen while first-use storage is allocated.
+   * Root the old context and verify its sequence before publishing any plan. */
   lua_rawgeti(state, LUA_REGISTRYINDEX, job->display_submission_ref);
+  uint64_t sequence = submission->submitted;
   if (submission->submitted == (uint64_t)LUA_MAXINTEGER) return H2_PAL_ERR_NO_SPACE;
   if (job->display_presented == NULL) display_enable_retained(state, job);
-  if (job->display_submission != submission || !job->display_open)
+  if (job->display_submission != submission || !job->display_open ||
+      submission->closing || job->display_shutting_down)
     return H2_PAL_ERR_INVALID_STATE;
+  result = display_submission_collect(job);
+  if (result != H2_PAL_OK) return result;
+  if (submission->submitted != sequence) return H2_PAL_ERR_BUSY;
   display_presented_t *frame = job->display_presented;
+  lua_rawgeti(state, LUA_REGISTRYINDEX, job->display_presented_ref);
   size_t size = frame->pixel_count * sizeof(uint16_t);
   if (submission->snapshot == NULL) {
     uint16_t *snapshot = lua_newuserdatauv(state,
         size + display_tile_count(job->display_info.width, job->display_info.height), 0);
     int ref = luaL_ref(state, LUA_REGISTRYINDEX);
     if (job->display_submission != submission || !job->display_open ||
-        job->display_presented != frame) {
+        job->display_presented != frame || submission->closing ||
+        job->display_shutting_down) {
       luaL_unref(state, LUA_REGISTRYINDEX, ref);
       return H2_PAL_ERR_INVALID_STATE;
+    }
+    result = display_submission_collect(job);
+    if (result != H2_PAL_OK || submission->submitted != sequence) {
+      luaL_unref(state, LUA_REGISTRYINDEX, ref);
+      return result != H2_PAL_OK ? result : H2_PAL_ERR_BUSY;
     }
     submission->snapshot = snapshot;
     submission->snapshot_ref = ref;
@@ -4642,10 +4663,7 @@ static h2_pal_result_t display_submission_prepare(lua_State *state,
   submission->inflight = 1;
   submission->retained = retained;
   result = h2_lua_display_worker_post(worker, H2_LUA_DISPLAY_FRAME);
-  if (result != H2_PAL_OK) {
-    submission->fault = result;
-    return result;
-  }
+  if (result != H2_PAL_OK) return display_submission_fault(job, result);
   job->dirty_valid = 0;
   return H2_PAL_OK;
 }
@@ -4657,6 +4675,7 @@ static int display_submission_error(lua_State *state, h2_pal_result_t result) {
 }
 
 static int display_submit(lua_State *state) {
+  luaL_checkstack(state, 12, "display submit");
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
   size_t pixels, rects;
   h2_pal_result_t result = display_submission_prepare(state, job, 1, &pixels, &rects);
@@ -4677,8 +4696,9 @@ static int display_status(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
   h2_pal_result_t result = display_submission_collect(job);
   display_submission_t value = {0};
+  int busy = 0;
   if (job->display_submission != NULL) {
-    const display_submission_t *source = job->display_submission;
+    display_submission_t *source = job->display_submission;
     value.submitted = source->submitted;
     value.completed = source->completed;
     value.successful = source->successful;
@@ -4691,6 +4711,8 @@ static int display_status(lua_State *state) {
     value.fault = source->fault;
     value.closing = source->closing;
     value.worker.threaded = source->worker.threaded;
+    busy = source->worker.initialized &&
+        h2_lua_display_worker_phase(&source->worker) == H2_LUA_DISPLAY_PENDING;
   }
   /* Copy completed scalar fields before table allocation can run finalizers. */
   lua_createtable(state, 0, 12);
@@ -4706,7 +4728,7 @@ static int display_status(lua_State *state) {
   STATUS_INT("rects", value.rects);
   STATUS_INT("error", value.fault ? value.fault : (result == H2_PAL_ERR_BUSY ? 0 : result));
 #undef STATUS_INT
-  lua_pushboolean(state, result == H2_PAL_ERR_BUSY);
+  lua_pushboolean(state, busy);
   lua_setfield(state, -2, "busy");
   lua_pushboolean(state, value.clock_valid);
   lua_setfield(state, -2, "clock_valid");
@@ -4730,12 +4752,15 @@ static h2_pal_result_t display_submission_release(lua_State *state,
   if (submission == NULL) return H2_PAL_OK;
   submission->closing = 1;
   h2_pal_result_t result = display_submission_collect(job);
-  if (result == H2_PAL_ERR_BUSY) return result;
+  if (submission->worker.initialized &&
+      h2_lua_display_worker_phase(&submission->worker) == H2_LUA_DISPLAY_PENDING)
+    return submission->fault ? submission->fault : H2_PAL_ERR_BUSY;
   h2_lua_display_worker_t *worker = &submission->worker;
   if (worker->initialized) {
     int phase = h2_lua_display_worker_phase(worker);
     if (phase == H2_LUA_DISPLAY_DONE) {
-      if (worker->result != H2_PAL_OK) submission->fault = worker->result;
+      if (worker->result != H2_PAL_OK)
+        (void)display_submission_fault(job, worker->result);
       h2_lua_display_worker_ack(worker);
       phase = H2_LUA_DISPLAY_IDLE;
     }
@@ -4745,7 +4770,7 @@ static h2_pal_result_t display_submission_release(lua_State *state,
       int operation = !submission->fault && worker->opened
           ? H2_LUA_DISPLAY_CLOSE : H2_LUA_DISPLAY_EXIT;
       result = h2_lua_display_worker_post(worker, operation);
-      if (result != H2_PAL_OK) { submission->fault = result; return result; }
+      if (result != H2_PAL_OK) return display_submission_fault(job, result);
       if (!worker->threaded) return display_submission_release(state, job);
       return H2_PAL_ERR_BUSY;
     }

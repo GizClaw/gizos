@@ -305,6 +305,7 @@ cc_test(
     cxxopts = H2_CXX17_OPTS,
     data = [
         "tests/display_submit.lua",
+        "tests/display_submit_reentry.lua",
         "tests/geometry_batches.lua",
         "tests/mesh_source_paths.lua",
         "tests/mesh_staging.lua",
@@ -343,6 +344,20 @@ cc_test(
 
 # Test-only two-device BLE air shared by the link tests and the Lua link E2E
 # App test.
+py_test(
+    name = "display_fault_test",
+    srcs = ["tests/test_display_fault.py"],
+    main = "tests/test_display_fault.py",
+    args = ["$(location :lua_test)"],
+    data = [":lua_test"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
 cc_library(
     name = "link_fake_ble",
     testonly = True,
