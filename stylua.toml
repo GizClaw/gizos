@@ -1,0 +1,4 @@
+# StyLua 2.5.2; 2-space indent and 80 columns to match the C/C++ Google style.
+column_width = 80
+indent_type = "Spaces"
+indent_width = 2
