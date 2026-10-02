@@ -1253,10 +1253,60 @@ static int test_display_fixture_size(lua_State *state) {
   return 0;
 }
 
+#include "material_reference.h"
+
+static int test_material_reference(lua_State *state) {
+  assert(lua_getupvalue(state, 1, 1) != NULL);
+  h2_lua_job_t *job = lua_touserdata(state, -1);
+  lua_pop(state, 1);
+  const reference_material_t *m = lua_touserdata(state, 2);
+  /* Compiled palette layout is a size_t followed by RGB565 entries. */
+  const size_t *palette = lua_touserdata(state, 3);
+  assert(job && m && palette && *palette >= m->color_count);
+  double c[8];
+  for (int i = 0; i < 8; ++i) c[i] = luaL_checknumber(state, i + 4);
+  reference_quad_mapping_t map = {luaL_checknumber(state, 12),
+      luaL_checknumber(state, 13), luaL_checknumber(state, 14)};
+  int top = (int)luaL_optinteger(state, 15, 0);
+  int bottom = (int)luaL_optinteger(state, 16, job->display_info.height);
+  double low = c[1], high = c[1];
+  for (int i = 3; i < 8; i += 2) {
+    if (c[i] < low) low = c[i];
+    if (c[i] > high) high = c[i];
+  }
+  if (low > top) top = low < bottom ? (int)ceil(low) : bottom;
+  if (high < bottom) bottom = high >= top ? (int)floor(high) + 1 : top;
+  lua_pushboolean(state, reference_raster_material(job, m,
+      (const uint16_t *)(palette + 1), c, top, bottom, &map));
+  return 1;
+}
+
+static int test_material_workload(lua_State *state) {
+  FILE *file = fopen("libs/lua/tests/material_workload.txt", "r");
+  assert(file != NULL);
+  lua_newtable(state);
+  double values[12];
+  int row = 0;
+  while (fscanf(file, "%lf", &values[0]) == 1) {
+    for (int i = 1; i < 12; ++i) assert(fscanf(file, "%lf", &values[i]) == 1);
+    lua_createtable(state, 12, 0);
+    for (int i = 0; i < 12; ++i) {
+      lua_pushnumber(state, values[i]); lua_rawseti(state, -2, i + 1);
+    }
+    lua_rawseti(state, -2, ++row);
+  }
+  assert(feof(file)); fclose(file);
+  return 1;
+}
+
 static int test_raster_open(void *lua_state, void *user) {
   lua_State *state = lua_state;
   (void)user;
   lua_newtable(state);
+  lua_pushcfunction(state, test_material_reference);
+  lua_setfield(state, -2, "material_reference");
+  lua_pushcfunction(state, test_material_workload);
+  lua_setfield(state, -2, "material_workload");
   lua_pushcfunction(state, test_mesh_capacity);
   lua_setfield(state, -2, "mesh_capacity");
   lua_pushcfunction(state, test_mesh_shifted);
@@ -2871,11 +2921,14 @@ int main(int argc, char **argv) {
                     strcmp(argv[1], "--quad-benchmark") == 0 ||
                     strcmp(argv[1], "--material-benchmark") == 0 ||
                     strcmp(argv[1], "--smooth-benchmark") == 0 ||
-                    strcmp(argv[1], "--projective-benchmark") == 0)) {
+                    strcmp(argv[1], "--projective-benchmark") == 0 ||
+                    strcmp(argv[1], "--material-workload") == 0)) {
     int material = strcmp(argv[1], "--material-benchmark") == 0;
     int smooth = strcmp(argv[1], "--smooth-benchmark") == 0;
+    int workload = strcmp(argv[1], "--material-workload") == 0;
     int projective = strcmp(argv[1], "--projective-benchmark") == 0;
-    test_display_raster2d(material || smooth || projective ? 2 : 1,
+    test_display_raster2d(material || smooth || projective || workload ? 2 : 1,
+        workload ? "libs/lua/tests/material_workload.lua" :
         projective ? "libs/lua/tests/quad_material_projective.lua" :
         material ? "libs/lua/tests/quad_material.lua" :
         smooth ? "libs/lua/tests/smooth_cache.lua" :
@@ -2897,6 +2950,7 @@ int main(int argc, char **argv) {
   test_display_raster2d(0, "libs/lua/tests/quad_batch.lua");
   test_display_raster2d(1, "libs/lua/tests/quad_batch_clip.lua");
   test_display_raster2d(2, "libs/lua/tests/quad_material.lua");
+  test_display_raster2d(2, "libs/lua/tests/material_workload.lua");
   test_display_raster2d(2, "libs/lua/tests/quad_material_projective.lua");
   test_display_raster2d(2, "libs/lua/tests/smooth_cache.lua");
   test_display_raster2d(0, "libs/lua/tests/geometry_batches.lua");

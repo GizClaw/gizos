@@ -292,7 +292,10 @@ cc_test(
 
 cc_test(
     name = "lua_test",
-    srcs = ["tests/test_h2_lua.c"],
+    srcs = [
+        "tests/material_reference.h",
+        "tests/test_h2_lua.c",
+    ],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
     cxxopts = H2_CXX17_OPTS,
@@ -303,6 +306,8 @@ cc_test(
         "tests/quad_batch.lua",
         "tests/quad_batch_clip.lua",
         "tests/quad_material.lua",
+        "tests/material_workload.lua",
+        "tests/material_workload.txt",
         "tests/quad_material_projective.lua",
         "tests/raster2d.lua",
         "tests/smooth_cache.lua",

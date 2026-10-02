@@ -1133,7 +1133,8 @@ static int display_compile_quad_material(lua_State *state) {
 }
 
 typedef struct material_edge {
-  int64_t x, step;
+  int32_t x, step;
+  uint32_t fraction, step_fraction;
   int axis, direction, horizontal, row_switch;
   unsigned boundary;
 } material_edge_t;
@@ -1143,9 +1144,26 @@ static double material_cross(double ax, double ay, double bx, double by) {
   return ax * by - ay * bx;
 }
 
+/* Split a signed Q24 value into floor(value) and an unsigned fraction.
+ * Division stays in setup. Row advances below are exact 32-bit additions. */
+static void material_split(int64_t value, int32_t *whole, uint32_t *fraction) {
+  int64_t integer = value / DISPLAY_MATERIAL_UNIT;
+  int64_t remainder = value % DISPLAY_MATERIAL_UNIT;
+  if (remainder < 0) { --integer; remainder += DISPLAY_MATERIAL_UNIT; }
+  *whole = (int32_t)integer;
+  *fraction = (uint32_t)remainder;
+}
+
+static void material_advance(material_edge_t *edge) {
+  uint32_t sum = edge->fraction + edge->step_fraction;
+  edge->x += edge->step + (int32_t)(sum >> 24);
+  edge->fraction = sum & UINT32_C(0xffffff);
+}
+
 /* Setup only: double coordinates, followed by Q24 additions per scanline.
  * No per-pixel division, UV inversion, geometry expansion or allocation.
- * The bounded total magnitude prevents overflow including the final advance.
+ * The 1e9 envelope bounds whole coordinates/slopes (plus subpixel rounding),
+ * so signed 32-bit advances cannot overflow; two fractions sum below 2^25.
  */
 static int material_prepare(const display_material_t *m, const double *c,
                             int first, int end, material_edge_t *edges,
@@ -1161,35 +1179,51 @@ static int material_prepare(const display_material_t *m, const double *c,
   for (int axis = 0; axis < 2; ++axis) {
     unsigned count = axis ? m->nv : m->nu;
     const double *knots = axis ? m->v : m->u;
+    int a = 0, b = axis ? 6 : 2, d = axis ? 2 : 6, e = 4;
+    double px_delta = c[b] - c[a], py_delta = c[b+1] - c[a+1];
+    double qx_delta = c[e] - c[d], qy_delta = c[e+1] - c[d+1];
+    int reverse = (orientation > 0) != (axis != 0);
+    double previous_t = -1;
     for (unsigned i = 0; i < count; ++i) {
       double t = knots[i];
       if (axis == 0 && mapping != NULL)
         t = display_quad_map_u(mapping, t);
-      int a = 0, b = axis ? 6 : 2, d = axis ? 2 : 6, e = 4;
-      double px = c[a] + t * (c[b] - c[a]);
-      double py = c[a+1] + t * (c[b+1] - c[a+1]);
-      double qx = c[d] + t * (c[e] - c[d]);
-      double qy = c[d+1] + t * (c[e+1] - c[d+1]);
-      double sign = (orientation > 0 ? 1 : -1) * (axis ? 1 : -1);
-      double nx = -(qy - py) * sign, ny = (qx - px) * sign;
       material_edge_t *edge = &edges[(axis ? m->nu : 0) + i];
+      unsigned boundary = i == 0 ? (axis ? 4u : 1u) :
+                          i == count - 1 ? (axis ? 8u : 2u) : 0;
+      /* Cropping often maps several distinct source knots to one endpoint.
+       * Keep every event/cell index, but prepare identical geometry once. */
+      if (i && t == previous_t) {
+        *edge = edge[-1];
+        edge->boundary = boundary;
+        continue;
+      }
+      previous_t = t;
+      double px = c[a] + t * px_delta;
+      double py = c[a+1] + t * py_delta;
+      double qx = c[d] + t * qx_delta;
+      double qy = c[d+1] + t * qy_delta;
+      double nx = -(qy - py), ny = qx - px;
+      if (reverse) { nx = -nx; ny = -ny; }
       edge->axis = axis;
-      edge->boundary = i == 0 ? (axis ? 4u : 1u) :
-                       i == count - 1 ? (axis ? 8u : 2u) : 0;
+      edge->boundary = boundary;
+      edge->row_switch = 0;
       edge->horizontal = nx == 0;
       if (edge->horizontal) {
         edge->direction = ny > 0 ? 1 : -1;
         edge->row_switch = ny > 0 ? (int)ceil(py) : (int)floor(py) + 1;
         edge->x = edge->step = 0;
+        edge->fraction = edge->step_fraction = 0;
       } else {
         double step = -ny / nx;
         double x = px - py * step;
         if (!isfinite(x) || !isfinite(step) ||
             fabs(x) + fabs(step) * (end + 1.0) > 1e9) return 0;
         edge->direction = nx > 0 ? 1 : -1;
-        edge->x = (int64_t)llround(x * DISPLAY_MATERIAL_SCALE);
-        edge->step = (int64_t)llround(step * DISPLAY_MATERIAL_SCALE);
-        edge->x += edge->step * first;
+        int64_t fixed_x = (int64_t)llround(x * DISPLAY_MATERIAL_SCALE);
+        int64_t fixed_step = (int64_t)llround(step * DISPLAY_MATERIAL_SCALE);
+        material_split(fixed_x + fixed_step * first, &edge->x, &edge->fraction);
+        material_split(fixed_step, &edge->step, &edge->step_fraction);
       }
     }
   }
@@ -1199,10 +1233,7 @@ static int material_prepare(const display_material_t *m, const double *c,
 /* First integer X after a sign transition. Match the original Q24 sweep,
  * including negative coordinates and equality on decreasing boundaries. */
 static int material_threshold(const material_edge_t *edge) {
-  int64_t floor_x = edge->x / DISPLAY_MATERIAL_UNIT;
-  int64_t remainder = edge->x % DISPLAY_MATERIAL_UNIT;
-  if (remainder < 0) --floor_x;
-  return (int)(floor_x + (edge->direction < 0 || remainder != 0));
+  return edge->x + (edge->direction < 0 || edge->fraction != 0);
 }
 
 static int material_clip_row(const display_material_t *m,
@@ -1245,7 +1276,7 @@ static int display_raster_material(h2_lua_job_t *job,
   for (int y = top; y < bottom; ++y) {
     int row_left = 0, row_right = width;
     if (!material_clip_row(m, edges, y, &row_left, &row_right)) {
-      for (unsigned i = 0; i < count; ++i) edges[i].x += edges[i].step;
+      for (unsigned i = 0; i < count; ++i) material_advance(&edges[i]);
       continue;
     }
     /* Inside a convex bilinear patch, positive-side boundary counts give
@@ -1270,7 +1301,7 @@ static int display_raster_material(h2_lua_job_t *job,
           }
           events[at] = (material_event_t){(int)crossing, (int)i};
         }
-        e->x += e->step;
+        material_advance(e);
       }
       cell[e->axis] += positive;
       if (positive) mask |= e->boundary;
