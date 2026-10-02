@@ -944,42 +944,9 @@ static double display_quad_lerp(double origin, double delta, double t) {
   return origin + step;
 }
 
-static int display_draw_quad_batch(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  const display_quad_batch_t *batch =
-      luaL_checkudata(state, 1, H2_LUA_QUAD_BATCH_META);
-  if (lua_gettop(state) < 10 || lua_gettop(state) > 12)
-    return luaL_error(state,
-        "quad batch needs colors, eight coordinates and optional row clip");
-  double corners[8];
-  for (int i = 0; i < 8; ++i)
-    corners[i] = check_geometry_number(state, i + 3);
-  uint16_t decoded[H2_LUA_QUAD_BATCH_LIMIT];
-  const uint16_t *colors;
-  const display_palette_t *palette =
-      luaL_testudata(state, 2, H2_LUA_PALETTE_META);
-  if (palette != NULL) {
-    if (palette->count < batch->color_count)
-      return luaL_error(state, "quad batch palette too short");
-    colors = palette->colors;
-  } else {
-    luaL_checktype(state, 2, LUA_TTABLE);
-    size_t count = lua_rawlen(state, 2);
-    if (count < batch->color_count || count > H2_LUA_QUAD_BATCH_LIMIT)
-      return luaL_error(state, "quad batch color count out of range");
-    for (size_t i = 0; i < count; ++i) {
-      lua_rawgeti(state, 2, (lua_Integer)i + 1);
-      decoded[i] = check_color(state, -1);
-      lua_pop(state, 1);
-    }
-    colors = decoded;
-  }
-  /* Color getters can close/reopen Display or recursively draw. All scratch
-   * is call-local; no Lua callback or allocation follows this acquisition check. */
-  int top, bottom;
-  display_check_clip(state, job, 11, 12, &top, &bottom);
-  if (top == bottom)
-    return 0;
+static void display_replay_quad_batch(h2_lua_job_t *job,
+    const display_quad_batch_t *batch, const uint16_t *colors,
+    const double corners[8], int top, int bottom) {
   double edges[8] = {0};
   const display_quad_strip_t *previous = NULL;
   for (size_t i = 0; i < batch->count; ++i) {
@@ -1016,7 +983,332 @@ static int display_draw_quad_batch(lua_State *state) {
                            0, top, bottom);
     previous = strip;
   }
+}
+
+static int display_draw_quad_batch(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  const display_quad_batch_t *batch =
+      luaL_checkudata(state, 1, H2_LUA_QUAD_BATCH_META);
+  if (lua_gettop(state) < 10 || lua_gettop(state) > 12)
+    return luaL_error(state,
+        "quad batch needs colors, eight coordinates and optional row clip");
+  double corners[8];
+  for (int i = 0; i < 8; ++i)
+    corners[i] = check_geometry_number(state, i + 3);
+  uint16_t decoded[H2_LUA_QUAD_BATCH_LIMIT];
+  const uint16_t *colors;
+  const display_palette_t *palette =
+      luaL_testudata(state, 2, H2_LUA_PALETTE_META);
+  if (palette != NULL) {
+    if (palette->count < batch->color_count)
+      return luaL_error(state, "quad batch palette too short");
+    colors = palette->colors;
+  } else {
+    luaL_checktype(state, 2, LUA_TTABLE);
+    size_t count = lua_rawlen(state, 2);
+    if (count < batch->color_count || count > H2_LUA_QUAD_BATCH_LIMIT)
+      return luaL_error(state, "quad batch color count out of range");
+    for (size_t i = 0; i < count; ++i) {
+      lua_rawgeti(state, 2, (lua_Integer)i + 1);
+      decoded[i] = check_color(state, -1);
+      lua_pop(state, 1);
+    }
+    colors = decoded;
+  }
+  /* Color getters can close/reopen Display or recursively draw. All scratch
+   * is call-local; no Lua callback or allocation follows this acquisition check. */
+  int top, bottom;
+  display_check_clip(state, job, 11, 12, &top, &bottom);
+  if (top == bottom)
+    return 0;
+  display_replay_quad_batch(job, batch, colors, corners, top, bottom);
   return 0;
+}
+
+/* Opt-in material: final painter-owned cells in parameter space.
+ * Old quad batches keep their original raster semantics. */
+#define DISPLAY_MATERIAL_META "h2.display.quad_material"
+#define DISPLAY_MATERIAL_KNOTS 32
+#define DISPLAY_MATERIAL_CELLS 256
+#define DISPLAY_MATERIAL_SCALE 16777216.0
+#define DISPLAY_MATERIAL_UNIT INT64_C(16777216)
+typedef struct display_material {
+  unsigned nu, nv;
+  /* Smallest rectangle containing all nontransparent parameter cells. */
+  unsigned u_first, u_end, v_first, v_end;
+  size_t color_count;
+  double u[DISPLAY_MATERIAL_KNOTS], v[DISPLAY_MATERIAL_KNOTS];
+  uint16_t owner[]; /* zero is transparent; other values are palette index + 1 */
+} display_material_t;
+
+static unsigned material_knot(lua_State *state, double *knots,
+                              unsigned count, double value) {
+  unsigned at = 0;
+  while (at < count && knots[at] < value) ++at;
+  if (at < count && knots[at] == value) return count;
+  if (count == DISPLAY_MATERIAL_KNOTS)
+    luaL_error(state, "material has too many parameter boundaries");
+  memmove(knots + at + 1, knots + at, (count - at) * sizeof(double));
+  knots[at] = value;
+  return count + 1;
+}
+
+static int display_compile_quad_material(lua_State *state) {
+  const display_quad_batch_t *batch =
+      luaL_checkudata(state, 1, H2_LUA_QUAD_BATCH_META);
+  double u[DISPLAY_MATERIAL_KNOTS] = {0, 1};
+  double v[DISPLAY_MATERIAL_KNOTS] = {0, 1};
+  unsigned nu = 2, nv = 2;
+  for (size_t i = 0; i < batch->count; ++i) {
+    const display_quad_strip_t *s = &batch->strips[i];
+    nu = material_knot(state, u, nu, s->left);
+    nu = material_knot(state, u, nu, s->right);
+    nv = material_knot(state, v, nv, s->top);
+    nv = material_knot(state, v, nv, s->bottom);
+  }
+  unsigned cells = (nu - 1) * (nv - 1);
+  if (cells > DISPLAY_MATERIAL_CELLS)
+    return luaL_error(state, "material has too many cells");
+  display_material_t *m = lua_newuserdatauv(state,
+      sizeof(*m) + cells * sizeof(*m->owner), 1);
+  m->nu = nu; m->nv = nv; m->color_count = batch->color_count;
+  m->u_first = nu - 1; m->v_first = nv - 1;
+  m->u_end = m->v_end = 0;
+  memcpy(m->u, u, nu * sizeof(double));
+  memcpy(m->v, v, nv * sizeof(double));
+  for (unsigned y = 0; y + 1 < nv; ++y) {
+    for (unsigned x = 0; x + 1 < nu; ++x) {
+      uint16_t owner = 0;
+      for (size_t i = 0; i < batch->count; ++i) {
+        const display_quad_strip_t *s = &batch->strips[i];
+        if (u[x] >= s->left && u[x + 1] <= s->right &&
+            v[y] >= s->top && v[y + 1] <= s->bottom)
+          owner = (uint16_t)(s->color_index + 1);
+      }
+      m->owner[y * (nu - 1) + x] = owner;
+      if (owner) {
+        if (x < m->u_first) m->u_first = x;
+        if (y < m->v_first) m->v_first = y;
+        if (x + 1 > m->u_end) m->u_end = x + 1;
+        if (y + 1 > m->v_end) m->v_end = y + 1;
+      }
+    }
+  }
+  lua_pushvalue(state, 1);
+  lua_setiuservalue(state, -2, 1); /* Original immutable batch for fallback. */
+  luaL_newmetatable(state, DISPLAY_MATERIAL_META);
+  lua_setmetatable(state, -2);
+  return 1;
+}
+
+typedef struct material_edge {
+  int64_t x, step;
+  int axis, direction, horizontal, row_switch;
+  unsigned boundary;
+} material_edge_t;
+typedef struct material_event { int x, edge; } material_event_t;
+
+static double material_cross(double ax, double ay, double bx, double by) {
+  return ax * by - ay * bx;
+}
+
+/* Setup only: double coordinates, followed by Q24 additions per scanline.
+ * No per-pixel division, UV inversion, geometry expansion or allocation.
+ * The bounded total magnitude prevents overflow including the final advance.
+ */
+static int material_prepare(const display_material_t *m, const double *c,
+                            int first, int end, material_edge_t *edges) {
+  double orientation = 0;
+  for (int i = 0; i < 4; ++i) {
+    int j = (i + 1) % 4, k = (i + 2) % 4;
+    double area = material_cross(c[2*j]-c[2*i], c[2*j+1]-c[2*i+1],
+                                c[2*k]-c[2*j], c[2*k+1]-c[2*j+1]);
+    if (fabs(area) < 1e-8 || (i && area * orientation <= 0)) return 0;
+    orientation = area;
+  }
+  for (int axis = 0; axis < 2; ++axis) {
+    unsigned count = axis ? m->nv : m->nu;
+    const double *knots = axis ? m->v : m->u;
+    for (unsigned i = 0; i < count; ++i) {
+      double t = knots[i];
+      int a = 0, b = axis ? 6 : 2, d = axis ? 2 : 6, e = 4;
+      double px = c[a] + t * (c[b] - c[a]);
+      double py = c[a+1] + t * (c[b+1] - c[a+1]);
+      double qx = c[d] + t * (c[e] - c[d]);
+      double qy = c[d+1] + t * (c[e+1] - c[d+1]);
+      double sign = (orientation > 0 ? 1 : -1) * (axis ? 1 : -1);
+      double nx = -(qy - py) * sign, ny = (qx - px) * sign;
+      material_edge_t *edge = &edges[(axis ? m->nu : 0) + i];
+      edge->axis = axis;
+      edge->boundary = i == 0 ? (axis ? 4u : 1u) :
+                       i == count - 1 ? (axis ? 8u : 2u) : 0;
+      edge->horizontal = nx == 0;
+      if (edge->horizontal) {
+        edge->direction = ny > 0 ? 1 : -1;
+        edge->row_switch = ny > 0 ? (int)ceil(py) : (int)floor(py) + 1;
+        edge->x = edge->step = 0;
+      } else {
+        double step = -ny / nx;
+        double x = px - py * step;
+        if (!isfinite(x) || !isfinite(step) ||
+            fabs(x) + fabs(step) * (end + 1.0) > 1e9) return 0;
+        edge->direction = nx > 0 ? 1 : -1;
+        edge->x = (int64_t)llround(x * DISPLAY_MATERIAL_SCALE);
+        edge->step = (int64_t)llround(step * DISPLAY_MATERIAL_SCALE);
+        edge->x += edge->step * first;
+      }
+    }
+  }
+  return 1;
+}
+
+/* First integer X after a sign transition. Match the original Q24 sweep,
+ * including negative coordinates and equality on decreasing boundaries. */
+static int material_threshold(const material_edge_t *edge) {
+  int64_t floor_x = edge->x / DISPLAY_MATERIAL_UNIT;
+  int64_t remainder = edge->x % DISPLAY_MATERIAL_UNIT;
+  if (remainder < 0) --floor_x;
+  return (int)(floor_x + (edge->direction < 0 || remainder != 0));
+}
+
+static int material_clip_row(const display_material_t *m,
+    const material_edge_t *edges, int y, int *left, int *right) {
+  const unsigned boundaries[8] = {0, m->nu - 1, m->nu, m->nu + m->nv - 1,
+      m->u_first, m->u_end, m->nu + m->v_first, m->nu + m->v_end};
+  for (unsigned i = 0; i < 8; ++i) {
+    if (i >= 4 && boundaries[i] == boundaries[i - 4]) continue;
+    const material_edge_t *edge = &edges[boundaries[i]];
+    int positive = !(i & 1u);
+    if (edge->horizontal) {
+      int sign = edge->direction > 0 ? y >= edge->row_switch : y < edge->row_switch;
+      if (sign != positive) return 0;
+    } else {
+      int crossing = material_threshold(edge);
+      if ((edge->direction > 0) == positive) {
+        if (crossing > *left) *left = crossing;
+      } else if (crossing < *right) *right = crossing;
+      if (*left >= *right) return 0;
+    }
+  }
+  return 1;
+}
+
+/* Keep scan scratch out of the legacy fallback's call stack. */
+#if defined(_MSC_VER)
+__declspec(noinline)
+#elif defined(__GNUC__)
+__attribute__((noinline))
+#endif
+static int display_raster_material(h2_lua_job_t *job,
+    const display_material_t *m, const uint16_t *colors,
+    const double corners[8], int top, int bottom) {
+  if (m->u_first >= m->u_end || m->v_first >= m->v_end) return 1;
+  material_edge_t edges[2 * DISPLAY_MATERIAL_KNOTS];
+  if (!material_prepare(m, corners, top, bottom, edges)) return 0;
+  unsigned count = m->nu + m->nv;
+  int width = job->display_info.width;
+  for (int y = top; y < bottom; ++y) {
+    int row_left = 0, row_right = width;
+    if (!material_clip_row(m, edges, y, &row_left, &row_right)) {
+      for (unsigned i = 0; i < count; ++i) edges[i].x += edges[i].step;
+      continue;
+    }
+    /* Inside a convex bilinear patch, positive-side boundary counts give
+     * the cell indices without inverting its rational parameter mapping.
+     * Infinite grid lines can meet outside the patch, so also track the four
+     * outer half-planes: u>=0, u<1, v>=0, v<1 is the bit pattern 0101. */
+    int cell[2] = {-1, -1};
+    unsigned mask = 0, used = 0;
+    material_event_t events[2 * DISPLAY_MATERIAL_KNOTS];
+    for (unsigned i = 0; i < count; ++i) {
+      material_edge_t *e = &edges[i];
+      int positive;
+      if (e->horizontal) {
+        positive = e->direction > 0 ? y >= e->row_switch : y < e->row_switch;
+      } else {
+        int crossing = material_threshold(e);
+        positive = e->direction > 0 ? crossing <= row_left : crossing > row_left;
+        if (crossing > row_left && crossing < row_right) {
+          unsigned at = used++;
+          while (at && events[at-1].x > crossing) {
+            events[at] = events[at-1]; --at;
+          }
+          events[at] = (material_event_t){(int)crossing, (int)i};
+        }
+        e->x += e->step;
+      }
+      cell[e->axis] += positive;
+      if (positive) mask |= e->boundary;
+    }
+    int left = row_left;
+    for (unsigned i = 0; i <= used; ++i) {
+      int right = i < used ? events[i].x : row_right;
+      if (left < right && mask == 5u && cell[0] >= 0 && cell[1] >= 0 &&
+          cell[0] < (int)m->nu-1 && cell[1] < (int)m->nv-1) {
+        unsigned owner = m->owner[cell[1] * (m->nu - 1) + cell[0]];
+        if (owner) {
+          fill_span(job, y, left, right-1, colors[owner-1]);
+          mark_dirty_rect(job, left, y, right-left, 1);
+        }
+      }
+      if (i < used) {
+        material_edge_t *e = &edges[events[i].edge];
+        cell[e->axis] += e->direction;
+        mask ^= e->boundary;
+      }
+      left = right;
+    }
+  }
+  return 1;
+}
+
+static int display_draw_quad_material(lua_State *state) {
+  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
+  const display_material_t *m = luaL_checkudata(state, 1, DISPLAY_MATERIAL_META);
+  if (lua_gettop(state) < 10 || lua_gettop(state) > 12)
+    return luaL_error(state, "material needs colors, eight coordinates and row clip");
+  double corners[8];
+  for (int i = 0; i < 8; ++i) corners[i] = check_geometry_number(state, i + 3);
+  /* Palette decoding is identical to draw_quad_batch, including callbacks.
+   * Do it before checking framebuffer lifetime or writing any pixels. */
+  uint16_t decoded[H2_LUA_QUAD_BATCH_LIMIT];
+  const uint16_t *colors;
+  const display_palette_t *palette = luaL_testudata(state, 2, H2_LUA_PALETTE_META);
+  if (palette) {
+    if (palette->count < m->color_count) return luaL_error(state, "material palette too short");
+    colors = palette->colors;
+  } else {
+    luaL_checktype(state, 2, LUA_TTABLE);
+    size_t count = lua_rawlen(state, 2);
+    if (count < m->color_count || count > H2_LUA_QUAD_BATCH_LIMIT)
+      return luaL_error(state, "material color count out of range");
+    for (size_t i = 0; i < count; ++i) {
+      lua_rawgeti(state, 2, (lua_Integer)i + 1);
+      decoded[i] = check_color(state, -1); lua_pop(state, 1);
+    }
+    colors = decoded;
+  }
+  int top, bottom;
+  display_check_clip(state, job, 11, 12, &top, &bottom);
+  int clip_top = top, clip_bottom = bottom;
+  double min_y = corners[1], max_y = corners[1];
+  for (int i = 3; i < 8; i += 2) {
+    if (corners[i] < min_y) min_y = corners[i];
+    if (corners[i] > max_y) max_y = corners[i];
+  }
+  if (min_y > top) top = min_y < bottom ? (int)ceil(min_y) : bottom;
+  /* A reversed V axis can include a vertex on the maximum integer row.
+   * The half-plane rule decides ownership there, not the bounding box. */
+  if (max_y < bottom) bottom = max_y >= top ? (int)floor(max_y) + 1 : top;
+  int rendered = clip_top == clip_bottom ||
+      display_raster_material(job, m, colors, corners, top, bottom);
+  if (!rendered) {
+    lua_getiuservalue(state, 1, 1);
+    const display_quad_batch_t *batch = lua_touserdata(state, -1);
+    display_replay_quad_batch(job, batch, colors, corners, clip_top, clip_bottom);
+  }
+  lua_pushboolean(state, rendered);
+  return 1;
 }
 
 /* One representation for Lua tables and allocation-free native updates. */
@@ -3619,6 +3911,8 @@ int h2_lua_push_display_proxy(lua_State *state, h2_lua_job_t *job) {
   set_function(state, "compile_mesh", display_compile_mesh, job);
   set_function(state, "compile_quad_batch", display_compile_quad_batch, job);
   set_function(state, "draw_quad_batch", display_draw_quad_batch, job);
+  set_function(state, "compile_quad_material", display_compile_quad_material, job);
+  set_function(state, "draw_quad_material", display_draw_quad_material, job);
   set_function(state, "update_mesh", display_update_mesh, job);
   set_function(state, "draw_mesh", display_draw_mesh, job);
   set_function(state, "draw_pose", display_draw_pose, job);
