@@ -4,7 +4,6 @@
 #include "components/bk_display.h"
 #include "components/media_types.h"
 #include "driver/gpio.h"
-#include "driver/aon_rtc.h"
 #include "driver/lcd_types.h"
 #include "driver/lcd.h"
 #include "lcd_disp_ll_macro_def.h"
@@ -53,11 +52,6 @@ typedef struct h2_bk7258_display_state {
     h2_bk7258_display_bus_t bus;
     bool swap_rgb565_bytes;
     bool first_present_done;
-    uint32_t perf_frames;
-    uint64_t perf_started_us;
-    uint64_t perf_copy_us;
-    uint64_t perf_submit_us;
-    uint64_t perf_max_us;
     h2_bk7258_backlight_state_t backlight;
     int initialized;
 } h2_bk7258_display_state_t;
@@ -214,27 +208,11 @@ static void lcd_backlight_close(uint8_t bl_io) {
     bk_gpio_set_output_low(bl_io);
 }
 
-static void report_present_perf(h2_bk7258_display_state_t *state,
-                                uint64_t ended_us, int rc) {
-    if (state->perf_frames == 0u) return;
-    printf("H2_BK_DISPLAY_PERF frames=%u window_ms=%lu copy_avg_us=%lu "
-           "submit_avg_us=%lu flush_max_us=%lu rc=%d\n",
-           (unsigned)state->perf_frames,
-           (unsigned long)((ended_us - state->perf_started_us) / 1000u),
-           (unsigned long)(state->perf_copy_us / state->perf_frames),
-           (unsigned long)(state->perf_submit_us / state->perf_frames),
-           (unsigned long)state->perf_max_us, rc);
-    state->perf_frames = 0u;
-    state->perf_started_us = 0u;
-    state->perf_copy_us = state->perf_submit_us = state->perf_max_us = 0u;
-}
-
 static int deinit_display(h2_bk7258_display_state_t *state) {
     if (state == NULL || !state->initialized) {
         return H2_DISPLAY_OK;
     }
 
-    report_present_perf(state, bk_aon_rtc_get_us(), H2_DISPLAY_OK);
     int rc = h2_bk7258_backlight_release(&state->backlight);
     if (rc) return rc;
     if (state->handle != NULL) {
@@ -442,7 +420,6 @@ static int bk_draw_bitmap(
 }
 
 static int flush_shadow_once(h2_bk7258_display_state_t *state) {
-    const uint64_t started_us = bk_aon_rtc_get_us();
     frame_buffer_t *display_frame = frame_buffer_display_malloc(state->frame_size);
     if (display_frame == NULL) {
         BK_LOGE(TAG, "display frame malloc failed\r\n");
@@ -451,20 +428,10 @@ static int flush_shadow_once(h2_bk7258_display_state_t *state) {
     os_memcpy(display_frame->frame, state->shadow->frame, state->frame_size);
     fill_frame_meta(display_frame, state->width, state->height, state->frame_size);
 
-    const uint64_t copied_us = bk_aon_rtc_get_us();
     avdk_err_t ret = bk_display_flush(state->handle, display_frame, display_frame_done);
-    const uint64_t ended_us = bk_aon_rtc_get_us();
     if (ret != AVDK_ERR_OK) {
         frame_buffer_display_free(display_frame);
     }
-    if (state->perf_frames == 0u) state->perf_started_us = started_us;
-    ++state->perf_frames;
-    state->perf_copy_us += copied_us - started_us;
-    state->perf_submit_us += ended_us - copied_us;
-    if (ended_us - started_us > state->perf_max_us)
-        state->perf_max_us = ended_us - started_us;
-    if (state->perf_frames >= 32u || ret != AVDK_ERR_OK)
-        report_present_perf(state, ended_us, avdk_result(ret));
     return avdk_result(ret);
 }
 
