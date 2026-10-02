@@ -298,6 +298,27 @@ cc_test(
 )
 
 cc_test(
+    name = "pref_flashdb_port_test",
+    srcs = [
+        "src/h2_bk_platform_pref_flashdb_port.c",
+        "tests/test_h2_bk_platform_pref_flashdb_port.c",
+        "tests/pref_sdk/os/os.h",
+    ] + glob(["tests/pref_port_sdk/**/*.h"]),
+    conlyopts = H2_C11_OPTS + [
+        "-DCONFIG_FLASHDB_KVDB_START_ADDR=0",
+        "-DCONFIG_FLASHDB_KVDB_SIZE=4096",
+    ],
+    copts = H2_WARNING_COPTS,
+    includes = ["tests/pref_port_sdk", "tests/pref_sdk"],
+    target_compatible_with = select({
+        "//tools/bazel/platforms:host_linux_target_linux": [],
+        "//tools/bazel/platforms:host_macos_target_macos": [],
+        "//tools/bazel/platforms:host_windows_target_windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+)
+
+cc_test(
     name = "net_result_test",
     srcs = ["src/h2_bk_net_result.h", "tests/test_h2_bk_net_result.c"],
     conlyopts = H2_C11_OPTS,
