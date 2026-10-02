@@ -21,6 +21,8 @@ def extract(data, *, version, previous_execution=None):
     latest_boot = None
     explicit_boot = False
     accepted = None
+    frozen = {}
+    changed_boots = set()
     for line in data.replace(b"\r\n", b"\n").split(b"\n"):
         boot = BOOT.fullmatch(line)
         if boot or LAUNCHER.fullmatch(line) or line.startswith(b"H2_GIZCLAW_SETUP_FAIL "):
@@ -39,7 +41,10 @@ def extract(data, *, version, previous_execution=None):
             if latest_boot is None or (not explicit_boot and identity != latest_boot):
                 latest_boot = identity
                 accepted = None
-            elif identity != latest_boot or (accepted and candidate != accepted[2]):
+            elif identity != latest_boot:
+                accepted = None
+            if identity in frozen and candidate != frozen[identity][1]:
+                changed_boots.add(identity)
                 accepted = None
             continue
         if line.startswith(b"H2_GIZCLAW_LEDGER stage=begin"):
@@ -59,7 +64,7 @@ def extract(data, *, version, previous_execution=None):
         frame_header = candidate
         candidate = None
         crc = int(checksum, 16)
-        if (frame_header[:2] != latest_boot or actual_version.decode() != version
+        if (frame_header[:2] in changed_boots or frame_header[:2] != latest_boot or actual_version.decode() != version
                 or execution.decode() == previous_execution
                 or end.group(1) != execution or end.group(2) != checksum
                 or not 0 < len(body) <= 384 * 1024 or len(body) != int(size)
@@ -68,6 +73,13 @@ def extract(data, *, version, previous_execution=None):
             discarded += 1
             accepted = None
             continue
+        identity = frame_header[:2]
+        if identity in frozen and body != frozen[identity][0]:
+            changed_boots.add(identity)
+            accepted = None
+            discarded += 1
+            continue
+        frozen[identity] = (body, frame_header)
         receipt = {"version": version, "execution": execution.decode(),
                    "physical_audio": physical == b"1", "confirm_rc": 0,
                    "records": len(records), "record_bytes": len(body),

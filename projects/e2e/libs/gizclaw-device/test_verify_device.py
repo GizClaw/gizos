@@ -59,6 +59,18 @@ class LedgerAdmission(unittest.TestCase):
         with self.assertRaises(ValueError):
             extract(frame(body) + frame(body).replace(b"symbol=unit", b"symbol=evil"), version="unit-r1")
 
+    def test_changed_valid_replay_poisoning_is_permanent_for_that_boot(self):
+        body = b"H2_GIZCLAW_E2E symbol=unit stage=unit result=PASS rc=0\n"
+        changed = b"H2_GIZCLAW_E2E symbol=changed stage=unit result=PASS rc=0\n"
+        # Both frames are independently valid and admitted, but a frozen boot
+        # cannot change either its content or header and later recover itself.
+        for log in (frame(body) + frame(changed),
+                    frame(body) + frame(changed) + frame(body)):
+            with self.assertRaises(ValueError):
+                extract(log, version="unit-r1")
+        _, receipt = extract(frame(body) + frame(changed) + frame(body, "2" * 32), version="unit-r1")
+        self.assertEqual(receipt["execution"], "2" * 32)
+
 
 if __name__ == "__main__":
     unittest.main()
