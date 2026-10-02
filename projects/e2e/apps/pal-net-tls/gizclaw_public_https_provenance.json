@@ -7,14 +7,20 @@
     "tools/bazel/mobile_e2e.py": "a00c485f3ef20445b3c60a927d2620d12fe27110bfbec5bbe89d2d9fa89f23c0"
   },
   "current_source_sha256": {
-    "native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net.c": "7a48bbbebea80dd6925f83d8fe0e2fd389cbb5e8a8c54142c3f319bbecf1a1b0",
+    "native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net.c": "c4a859949d4c35019eb99c44728a76d11f2f597071c985e87e5e45d57b5ada10",
     "tools/bazel/mobile_e2e.py": "0b87c9c683d707d69dfd22a96e4ed1762b3915fdaf812071664ddeebaac7d080"
   },
   "validation": {
     "certificate_bundle_callback_regression": "PASS",
     "untrusted_and_date_failures": "PASS",
     "label": "//projects/e2e/libs/pal-net-tls-device:board_tls_certificate_time_test",
-    "shared_mobile_contract": "PASS"
+    "shared_mobile_contract": "PASS",
+    "diagnostic_native_compilation": "PASS",
+    "diagnostic_native_compilation_version": "gizclaw-dev-r44",
+    "default_certificate_date_regressions": "PASS"
   },
-  "scope": "Preserve ESP-IDF bundle trust callback and enforce dates only on real DER certificates, retaining untrusted/error flags. Historical isolated-CA physical receipts remain source-bound; this record does not promote them to fresh public-CA or business qualification. Shared mobile preflight is optional and leaves the Net/TLS suite lifecycle unchanged."
+  "scope": "Preserve ESP-IDF bundle trust callback and enforce dates only on real DER certificates, retaining untrusted/error flags. Historical isolated-CA physical receipts remain source-bound; this record does not promote them to fresh public-CA or business qualification. Shared mobile preflight is optional and leaves the Net/TLS suite lifecycle unchanged. Optional target-only TLS/BIO counters were subsequently compiled and exercised by GizClaw qualification. They record no payload, URI or credentials and preserve return codes and certificate policy; default certificate/date and shared mobile regressions were rerun on the current source. This maintenance record does not claim a new physical Net/TLS-suite run and does not rewrite any historical hardware receipt.",
+  "maintenance_previous_source_sha256": {
+    "native_component_src/esp-idf6.x/h2_pal_core/src/h2_esp_platform_net.c": "7a48bbbebea80dd6925f83d8fe0e2fd389cbb5e8a8c54142c3f319bbecf1a1b0"
+  }
 }
