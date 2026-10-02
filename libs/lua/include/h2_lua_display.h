@@ -41,6 +41,44 @@
  *   before writing. Later rectangles overwrite earlier ones. Successful calls
  *   allocate nothing, mark existing dirty/background damage and do not present.
  *
+ * Quad strip batches (owning VM worker only):
+ * - display.compile_quad_batch(entries) copies 0..256 dense records
+ *   {left,right,color_index[,top,bottom]} into immutable VM userdata.
+ *   Fractions are finite, 0<=left<=right<=1 and 0<=top<=bottom<=1;
+ *   color_index is an integer in 1..256. Equal endpoints remain valid and
+ *   use the ordinary polygon raster, including inclusive horizontal spans.
+ * - display.draw_quad_batch(batch,colors,ax,ay,bx,by,cx,cy,dx,dy,
+ *   clip_top=0,clip_bottom=height) draws one quadrilateral's strips in record
+ *   order. Omitted/nil clip bounds use the defaults; bounds are integers with
+ *   0<=clip_top<=clip_bottom<=height, selecting half-open framebuffer rows.
+ *   Clipping only limits raster rows; it never translates corners or changes
+ *   interpolation/rounding. These row bounds are independent of the normalized
+ *   top/bottom in batch records. Corners are finite +/-100000.
+ *   Without top/bottom, vertices are A+(B-A)*left, A+(B-A)*right,
+ *   D+(C-D)*right, D+(C-D)*left. With top/bottom, first form a transverse
+ *   patch A'=A+(D-A)*top, B'=B+(C-B)*top, C'=B+(C-B)*bottom,
+ *   D'=A+(D-A)*bottom, then apply the same strip formula to that patch.
+ *   Each subtraction, multiplication and addition rounds separately as in
+ *   Lua; explicit [0,1] patches are not simplified to direct strips.
+ * - colors is an existing compile_palette handle covering all referenced
+ *   indices, or an array of 0..256 existing Display colors. Array length must
+ *   cover every index; all array colors decode before writes, even unused
+ *   ones. A compiled palette uses its current RGB565 values without copying.
+ *   Coordinate/index/color errors leave pixels untouched by this call;
+ *   ordinary color getter side effects retain their Lua semantics. Display
+ *   acquisition and clip are checked after getters, including for an empty
+ *   batch or clip. An empty clip validates every input before returning.
+ * - Draw returns no values, allocates no storage itself, borrows no data beyond
+ *   return, and uses the existing polygon raster with full-width row clipping,
+ *   dirty/background tracking and explicit present. Caller color getters can
+ *   allocate/reenter; plain tables and palettes need no allocation. No mesh,
+ *   expanded vertex buffer or span cache is created. Geometry, color recipes
+ *   and topology selection remain the caller's responsibility.
+ * - Constructors do not acquire Display; existing proxies can compile after
+ *   deinit. Batch payload is two size_t fields plus 40 bytes per record on
+ *   supported ABIs, charged to VM memory, with ordinary GC/teardown cleanup
+ *   including failed construction. There are no retained registry roots.
+ *
  * Existing stroke_path(points,widths,color,offset_x=0,top=0,bottom=height,
  * cache=false,fast=false,smooth=false,scale=1,tolerance=0) also accepts
  * points={buffer=xy,count=n}: xy is an f64 packed xy buffer, capacity>=2n,
