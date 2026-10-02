@@ -48,7 +48,9 @@ ESP-IDF、BK7258 和 Desktop build adapter 都编译同一份 `h2_lvgl_osal.c` �
 
 ## 构建与测试
 
-BK7258 与 ESP-IDF 6.x 的 Bazel archive 和 SDK component 必须使用对应的同一份配置。Vendor config target 通过 `LV_CONF_PATH` 选择具有独立文件名的配置头，避免通用 public headers 的 Desktop `lv_conf.h` 先被 include search 命中。回归同时依赖 generic headers 与各自的 BK、ESP config，并检查 pixel depth、refresh period、OS 和 object layout feature，不能只验证目标声明或目录中存在配置文件。
+BK7258 与 ESP-IDF 6.x 的 Bazel archive 和 SDK component 必须使用对应的同一份配置。Vendor config target 通过 `LV_CONF_PATH` 选择具有独立文件名的配置头，避免通用 public headers 的 Desktop `lv_conf.h` 先被 include search 命中。SDK 的 `lvgl_port` adapter 通过相同的 `LV_CONF_PATH` 明确选择 `third_party/lvgl_patch/config/<platform>/lv_conf.h` canonical source，并在自己的 BUILD `hdrs` 中声明该 native action input；导入 Bazel public include root 后也不能依赖普通 `lv_conf.h` 的搜索顺序。
+
+Host 回归同时依赖 generic headers 与各自的 BK、ESP config，并检查 pixel depth、refresh period、OS、object layout 和 draw-unit feature。Native 集成验证从 archive compiler action 与 SDK `compile_commands.json` 分别取得真实编译参数，使用 `-E -dM -H` 确认选中的配置头及宏一致；只验证目标声明、配置文件存在或 package 能构建，不能证明 archive 和 native consumer 的 LVGL ABI 相同。
 
 ```sh
 bazel test //libs/lvgl/... --test_output=errors
