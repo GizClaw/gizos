@@ -20,6 +20,23 @@
  *   dimensions, and standard LZ4 final-sequence conditions apply. Malformed
  *   data raises a Lua error. Decoding uses the output userdata directly.
  *
+ * Framebuffer capture Lua API (owning VM worker only):
+ * - display.capture_region(x,y,width,height,key=nil,reuse=nil) captures an
+ *   in-bounds RGB565 rectangle. Integer dimensions are 1..4096; x/y >= 0.
+ *   A key trims only each row's outer margins and compiles non-key runs;
+ *   interior key pixels remain available for opaque/different-key replay.
+ * - Masked capture counts then allocates final VM storage directly. After
+ *   allocation-triggered finalizers it revalidates the current acquisition,
+ *   bounds and stride, and checks every pixel/run write against capacity.
+ *   Changed totals use one stable VM snapshot fallback, never an unbounded
+ *   retry or a framebuffer pointer retained across allocation. Finalizer
+ *   effects remain ordinary Lua behavior; capture itself does not draw.
+ * - Closed/out-of-bounds acquisition at validation raises an error. A copied
+ *   fallback snapshot survives later Display closure. OOM publishes no partial
+ *   result. All temporary/final userdata are VM-charged and GC-owned. Reuse
+ *   accepts only same-size opaque storage, with key omitted, and returns the
+ *   same userdata without pixel allocation; masked reuse remains unsupported.
+ *
  * Indexed rectangle Lua API (owning VM worker only):
  * - display.compile_rects(records) returns immutable userdata copied from a
  *   dense list of {x,y,width,height,color_index} named-field records. Integer

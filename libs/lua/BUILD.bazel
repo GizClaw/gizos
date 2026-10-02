@@ -308,6 +308,7 @@ cc_test(
         "tests/quad_material.lua",
         "tests/material_workload.lua",
         "tests/material_workload.txt",
+        "tests/masked_capture.lua",
         "tests/quad_material_projective.lua",
         "tests/raster2d.lua",
         "tests/smooth_cache.lua",
