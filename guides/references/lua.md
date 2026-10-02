@@ -26,6 +26,18 @@ For dirty-row repair, append `clip_top, clip_bottom` to the draw call, for examp
 
 For changing RGB888 colors, pass a reused array of ordinary Display color tables instead of a compiled palette. Each slot is sampled during the call; retain distinct tables for colors that differ. This API only expands caller-specified geometry and reuses the existing polygon raster. It does not decide lighting, projection or scene order.
 
+## Precomposed quad materials
+
+For repeatedly drawing overlapping strips on a moving quad, compile the batch into a material once. The material resolves the last covering record's palette index in normalized coordinates, then maps that final field in one scan. Geometry, colors, cache keys and cache lifetime remain in Lua.
+
+```lua
+local material = display.compile_quad_material(bands)
+local used_material = display.draw_quad_material(material, colors,
+    10,10, 200,30, 180,210, 40,190, 16,32)
+```
+
+This is an explicit raster choice: half-open parameter cells and Q24 grid boundaries can differ at edge pixels from the existing polygon batch. Non-convex, degenerate or unsafe numeric quads replay the original batch and return `false`; successful material draws return `true`. Disjoint row clips reproduce a full material draw. See the generated contract for precise bounds, rounding, memory and error semantics. Existing palettes and `capture_region` / `draw_region` provide color reuse and optional pixel caching without another cache API. Both Web and embedded builds use this portable implementation.
+
 ## Regions from strings
 
 `display.region_from_string(width, height, data[, encoding])` creates an opaque region for `display.draw_region(region, x, y, ...)` and, for a matching full-screen image, `display.restore_background(region)`. The constructor does not acquire or draw to the display and remains usable on an existing proxy after `deinit`. Initial `require('display')` still acquires Display and raises on failure; cached `require` does not reopen it after `deinit`, and drawing still requires a live acquisition. Width and height must be integers from 1 through 4096; `data` must be a Lua string. The default encoding is `"rgb565be"`.

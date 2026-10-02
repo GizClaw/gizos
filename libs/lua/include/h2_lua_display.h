@@ -79,6 +79,36 @@
  *   supported ABIs, charged to VM memory, with ordinary GC/teardown cleanup
  *   including failed construction. There are no retained registry roots.
  *
+ * Quad materials (opt-in parameter-space coverage, owning VM worker only):
+ * - display.compile_quad_material(batch) precomposes an immutable quad batch
+ *   into last-record-wins palette cells. Each normalized interval is half-open;
+ *   zero-width/height records have no coverage. Unowned cells are transparent.
+ *   At most 32 unique boundaries per axis (including 0 and 1) and 256 cells
+ *   are accepted; excess complexity raises a Lua error before allocation.
+ *   The material retains its source batch for fallback. Both are VM-charged
+ *   userdata reclaimed by GC; there is no registry root or external allocator.
+ * - display.draw_quad_material(material,colors,ax,ay,bx,by,cx,cy,dx,dy,
+ *   clip_top=0,clip_bottom=height) has the same input validation, palette,
+ *   callback, acquisition, row clip, damage and present rules as quad batches.
+ *   Convex quads map the final cells bilinearly with integer-pixel samples.
+ *   Grid-line X intercepts and row slopes are rounded to signed Q24 once at
+ *   setup (nearest, ties away from zero); each row advances by that slope.
+ *   Half-open parameter boundaries select the owner at shared edges. This
+ *   differs from drawing separately rounded, inclusive polygon spans: callers
+ *   explicitly opt in, and existing batch output is unchanged.
+ * - Returns true when the material path handles the draw (including an empty
+ *   clip/support), false when non-convex/degenerate or unsafe numeric geometry
+ *   replays the original batch with its original raster rules and row clip.
+ *   Setup rejects corner turn magnitudes below 1e-8, inconsistent turns, or
+ *   X-intercept/slope envelopes above 1e9. Valid coordinates remain +/-100000.
+ * - Drawing allocates no storage itself. Fixed call-local scratch is bounded
+ *   by 64 grid edges and events. Compile work is O(records*cells); draw work
+ *   is O(clipped_rows*boundaries^2 + written_pixels), independent of overdraw.
+ *   Material payload is sizeof(private header) + 2*cells, at most 1056 bytes
+ *   on the supported 32/64-bit ABIs, plus source batch and Lua object overhead.
+ *   Constructors do not acquire Display; errors use ordinary Lua validation
+ *   or quota/OOM errors. Geometry, palettes and cache policy stay with Lua.
+ *
  * Existing stroke_path(points,widths,color,offset_x=0,top=0,bottom=height,
  * cache=false,fast=false,smooth=false,scale=1,tolerance=0) also accepts
  * points={buffer=xy,count=n}: xy is an f64 packed xy buffer, capacity>=2n,
