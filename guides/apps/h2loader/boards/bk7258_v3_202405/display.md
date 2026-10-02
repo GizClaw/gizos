@@ -4,6 +4,13 @@
 
 launcher 选择独立的 Display GPIO profile，保留已知可工作的 board RGB clock/control/data 共 29 个引脚，GPIO0/1 保留为 H2Loader UART1。SDK 没有启用 RGB GPIO 初始化，且 runtime GPIO mapper 不接受 profile 中缺失的引脚；因此不能使用仅有 UART/SDIO 的普通 H2Loader GPIO profile。board Display 每次 open 检查真实 RGB mux，仅恢复不正确的映射；H050IWV 没有 SPI 初始化回调，禁用可选 SPI control bus，避免占用 UART1。
 
+RGB Display 在 open 时保留一个 canonical shadow 和两个完整 scanout buffer，
+共三个 native framebuffer。每个 scanout buffer 独立累计自上次更新以来的 dirty
+矩形；只有 SDK release callback 返回其写入权后，才从 shadow 复制该区域并重新
+提交。首次提交覆盖整屏，后续 240×240 区域更新只复制对应像素，未变化的边缘保留。
+扫描中的像素与 metadata 不被修改；无空闲 buffer 时有界等待，close 先关闭并 drain
+controller，再释放三个 buffer。QSPI 路径继续使用原来的提交方式。
+
 ## 预期表现
 
 H050IWV 800×480 RGB；LCD 活跃 DMA source/refresh 观测证明 controller scanout source，不能替代物理屏幕和亮度观察。共享 App 的 24 个 mandatory case 验证 open/info/draw/present/brightness/close，native RGB565、RGB888/RGB444、padding、局部更新、无效输入、borrowed source 释放、重复 present 和两次 reopen。
