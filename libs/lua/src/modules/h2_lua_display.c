@@ -38,7 +38,7 @@ static unsigned check_color_component(lua_State *state, int table_index,
   return (unsigned)value;
 }
 
-static uint16_t check_color(lua_State *state, int index) {
+uint16_t h2_lua_display_check_color(lua_State *state, int index) {
   index = lua_absindex(state, index);
   if (lua_istable(state, index)) {
     unsigned r = check_color_component(state, index, "r");
@@ -360,7 +360,7 @@ static void display_clear_pixels(h2_lua_job_t *job, uint16_t color) {
 
 static int display_clear(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  uint16_t color = check_color(state, 1);
+  uint16_t color = h2_lua_display_check_color(state, 1);
   if (!job->display_open) {
     return luaL_error(state, "display is not open");
   }
@@ -374,17 +374,17 @@ static double check_geometry_value(lua_State *state, int index, double value) {
   return value;
 }
 
-static double check_geometry_number(lua_State *state, int index) {
+double h2_lua_display_check_geometry_number(lua_State *state, int index) {
   return check_geometry_value(state, index, luaL_checknumber(state, index));
 }
 
 static double optional_geometry_number(lua_State *state, int index,
                                          double fallback) {
   return lua_isnoneornil(state, index) ? fallback
-                                      : check_geometry_number(state, index);
+                                      : h2_lua_display_check_geometry_number(state, index);
 }
 
-static void display_check_clip(lua_State *state, h2_lua_job_t *job,
+void h2_lua_display_check_clip(lua_State *state, h2_lua_job_t *job,
                                  int top_index, int bottom_index,
                                  int *top, int *bottom) {
   lua_Integer first = luaL_optinteger(state, top_index, 0);
@@ -488,26 +488,39 @@ static void display_raster_polygon(h2_lua_job_t *job, const double *x,
                              0, job->display_info.width);
 }
 
+/* Keep the constant raster arguments in this translation unit. Force the
+ * shared raster to specialize here even though the batch loop is now in a
+ * separate object; no second raster implementation is maintained. */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((flatten))
+#endif
+void h2_lua_display_raster_quad(h2_lua_job_t *job, const double *x,
+                                const double *y, uint16_t color,
+                                int top, int bottom) {
+  display_raster_polygon_rect_capture(job, x, y, 4, color, 0, top, bottom,
+                                       0, job->display_info.width, NULL);
+}
+
 static int display_fill_polygon(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
   double x[128], y[128];
   luaL_checktype(state, 1, LUA_TTABLE);
   size_t count = lua_rawlen(state, 1);
-  uint16_t color = check_color(state, 2);
+  uint16_t color = h2_lua_display_check_color(state, 2);
   double offset = optional_geometry_number(state, 3, 0);
   double scale = optional_geometry_number(state, 6, 1);
   int top, bottom;
-  display_check_clip(state, job, 4, 5, &top, &bottom);
+  h2_lua_display_check_clip(state, job, 4, 5, &top, &bottom);
   if (count < 3u || count > 128u || scale <= 0 || scale > 16)
     return luaL_error(state, "invalid polygon count or scale");
   for (size_t i = 0u; i < count; ++i) {
     lua_rawgeti(state, 1, (lua_Integer)i + 1);
     luaL_checktype(state, -1, LUA_TTABLE);
     lua_rawgeti(state, -1, 1);
-    x[i] = check_geometry_number(state, -1) * scale;
+    x[i] = h2_lua_display_check_geometry_number(state, -1) * scale;
     lua_pop(state, 1);
     lua_rawgeti(state, -1, 2);
-    y[i] = check_geometry_number(state, -1) * scale;
+    y[i] = h2_lua_display_check_geometry_number(state, -1) * scale;
     lua_pop(state, 2);
   }
   display_raster_polygon(job, x, y, count, color, offset, top, bottom);
@@ -516,14 +529,14 @@ static int display_fill_polygon(lua_State *state) {
 
 static int display_fill_ellipse(lua_State *state) {
   h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  double x = check_geometry_number(state, 1);
-  double y = check_geometry_number(state, 2);
-  double rx = check_geometry_number(state, 3);
-  double ry = check_geometry_number(state, 4);
-  uint16_t color = check_color(state, 5);
+  double x = h2_lua_display_check_geometry_number(state, 1);
+  double y = h2_lua_display_check_geometry_number(state, 2);
+  double rx = h2_lua_display_check_geometry_number(state, 3);
+  double ry = h2_lua_display_check_geometry_number(state, 4);
+  uint16_t color = h2_lua_display_check_color(state, 5);
   double offset = optional_geometry_number(state, 6, 0);
   int top, bottom;
-  display_check_clip(state, job, 7, 8, &top, &bottom);
+  h2_lua_display_check_clip(state, job, 7, 8, &top, &bottom);
   if (rx < 0 || ry <= 0 || ry > 2048)
     return luaL_error(state, "invalid ellipse radii");
   for (double local_y = -ry; local_y <= ry; local_y += 1) {
@@ -652,14 +665,14 @@ static int display_compile_commands(lua_State *state) {
     int values[4];
     for (int j = 0; j < 4; ++j) {
       lua_rawgeti(state, -1, j + 2);
-      double value = check_geometry_number(state, -1);
+      double value = h2_lua_display_check_geometry_number(state, -1);
       if (kind == 0 && j >= 2 && value < 0)
         return luaL_error(state, "negative command rectangle size");
       values[j] = (int)value;
       lua_pop(state, 1);
     }
     lua_rawgeti(state, -1, 6);
-    uint16_t color = check_color(state, -1);
+    uint16_t color = h2_lua_display_check_color(state, -1);
     lua_pop(state, 2);
     list->commands[i] = (h2_lua_pixel_command_t){
         (int)kind, values[0], values[1], values[2], values[3], color};
@@ -679,10 +692,10 @@ static int display_draw_commands(lua_State *state) {
   double sx = optional_geometry_number(state, 6, 1);
   double sy = optional_geometry_number(state, 7, sx);
   int recolor = !lua_isnoneornil(state, 8);
-  uint16_t ink = recolor ? check_color(state, 8) : 0;
+  uint16_t ink = recolor ? h2_lua_display_check_color(state, 8) : 0;
   /* RGB table getters may call Lua, including Display deinit. Validate the
    * acquisition after decoding every argument that can invoke user code. */
-  display_check_clip(state, job, 2, 3, &top, &bottom);
+  h2_lua_display_check_clip(state, job, 2, 3, &top, &bottom);
   if (sx <= 0 || sy <= 0 || sx > 1000 || sy > 1000)
     return luaL_error(state, "invalid command scale");
   if (top == bottom)
@@ -731,19 +744,13 @@ static int display_draw_commands(lua_State *state) {
 }
 
 #define H2_LUA_RECTS_META "h2.display.rects"
-#define H2_LUA_PALETTE_META "h2.display.palette"
 
 typedef struct display_rect_batch {
   size_t count;
   h2_raster2d_rect_t rects[];
 } display_rect_batch_t;
 
-typedef struct display_palette {
-  size_t count;
-  uint16_t colors[];
-} display_palette_t;
-
-static size_t display_dense_count(lua_State *state, size_t limit) {
+size_t h2_lua_display_dense_count(lua_State *state, size_t limit) {
   luaL_checktype(state, 1, LUA_TTABLE);
   size_t count = lua_rawlen(state, 1);
   if (count > limit)
@@ -770,7 +777,7 @@ static lua_Integer display_integer_field(lua_State *state, const char *name,
 }
 
 static int display_compile_rects(lua_State *state) {
-  size_t count = display_dense_count(state, H2_RASTER2D_RECT_LIMIT);
+  size_t count = h2_lua_display_dense_count(state, H2_RASTER2D_RECT_LIMIT);
   display_rect_batch_t *batch = lua_newuserdatauv(
       state, sizeof(*batch) + count * sizeof(*batch->rects), 0);
   batch->count = count;
@@ -796,13 +803,13 @@ static int display_compile_rects(lua_State *state) {
 }
 
 static int display_compile_palette(lua_State *state) {
-  size_t count = display_dense_count(state, H2_RASTER2D_PALETTE_LIMIT);
+  size_t count = h2_lua_display_dense_count(state, H2_RASTER2D_PALETTE_LIMIT);
   display_palette_t *palette = lua_newuserdatauv(
       state, sizeof(*palette) + count * sizeof(*palette->colors), 0);
   palette->count = count;
   for (size_t i = 0; i < count; ++i) {
     lua_rawgeti(state, 1, (lua_Integer)i + 1);
-    palette->colors[i] = check_color(state, -1);
+    palette->colors[i] = h2_lua_display_check_color(state, -1);
     lua_pop(state, 1);
   }
   luaL_newmetatable(state, H2_LUA_PALETTE_META);
@@ -876,145 +883,6 @@ static int display_draw_rects(lua_State *state) {
     if (left < right && top < bottom)
       mark_dirty_rect(job, (int)left, (int)top, (int)(right - left),
                       (int)(bottom - top));
-  }
-  return 0;
-}
-
-#define H2_LUA_QUAD_BATCH_META "h2.display.quad_batch"
-#define H2_LUA_QUAD_BATCH_LIMIT 256u
-
-typedef struct display_quad_strip {
-  double left, right, top, bottom;
-  unsigned color_index;
-  int patch;
-} display_quad_strip_t;
-
-typedef struct display_quad_batch {
-  size_t count, color_count;
-  display_quad_strip_t strips[];
-} display_quad_batch_t;
-
-static double display_quad_fraction(lua_State *state, int index) {
-  lua_rawgeti(state, -1, index);
-  double value = luaL_checknumber(state, -1);
-  lua_pop(state, 1);
-  if (!isfinite(value) || value < 0 || value > 1)
-    luaL_error(state, "quad batch fraction must be in [0, 1]");
-  return value;
-}
-
-static int display_compile_quad_batch(lua_State *state) {
-  size_t count = display_dense_count(state, H2_LUA_QUAD_BATCH_LIMIT);
-  display_quad_batch_t *batch = lua_newuserdatauv(
-      state, sizeof(*batch) + count * sizeof(*batch->strips), 0);
-  batch->count = count;
-  batch->color_count = 0;
-  for (size_t i = 0; i < count; ++i) {
-    lua_rawgeti(state, 1, (lua_Integer)i + 1);
-    luaL_checktype(state, -1, LUA_TTABLE);
-    size_t fields = lua_rawlen(state, -1);
-    if (fields != 3 && fields != 5)
-      return luaL_error(state, "quad batch record needs 3 or 5 fields");
-    display_quad_strip_t *strip = &batch->strips[i];
-    strip->left = display_quad_fraction(state, 1);
-    strip->right = display_quad_fraction(state, 2);
-    lua_rawgeti(state, -1, 3);
-    lua_Integer color = luaL_checkinteger(state, -1);
-    lua_pop(state, 1);
-    if (color < 1 || color > H2_LUA_QUAD_BATCH_LIMIT)
-      return luaL_error(state, "quad batch color index out of range");
-    strip->color_index = (unsigned)color - 1u;
-    if ((size_t)color > batch->color_count) batch->color_count = (size_t)color;
-    strip->patch = fields == 5;
-    strip->top = strip->patch ? display_quad_fraction(state, 4) : 0;
-    strip->bottom = strip->patch ? display_quad_fraction(state, 5) : 1;
-    if (strip->left > strip->right || strip->top > strip->bottom)
-      return luaL_error(state, "reversed quad batch interval");
-    lua_pop(state, 1);
-  }
-  luaL_newmetatable(state, H2_LUA_QUAD_BATCH_META);
-  lua_setmetatable(state, -2);
-  return 1;
-}
-
-/* Lua performs separate multiply/add instructions. Force that rounding even
- * on hosts whose compiler otherwise contracts across C statements to FMA. */
-static double display_quad_lerp(double origin, double delta, double t) {
-  volatile double step = delta * t;
-  return origin + step;
-}
-
-static int display_draw_quad_batch(lua_State *state) {
-  h2_lua_job_t *job = lua_touserdata(state, lua_upvalueindex(1));
-  const display_quad_batch_t *batch =
-      luaL_checkudata(state, 1, H2_LUA_QUAD_BATCH_META);
-  if (lua_gettop(state) < 10 || lua_gettop(state) > 12)
-    return luaL_error(state,
-        "quad batch needs colors, eight coordinates and optional row clip");
-  double corners[8];
-  for (int i = 0; i < 8; ++i)
-    corners[i] = check_geometry_number(state, i + 3);
-  uint16_t decoded[H2_LUA_QUAD_BATCH_LIMIT];
-  const uint16_t *colors;
-  const display_palette_t *palette =
-      luaL_testudata(state, 2, H2_LUA_PALETTE_META);
-  if (palette != NULL) {
-    if (palette->count < batch->color_count)
-      return luaL_error(state, "quad batch palette too short");
-    colors = palette->colors;
-  } else {
-    luaL_checktype(state, 2, LUA_TTABLE);
-    size_t count = lua_rawlen(state, 2);
-    if (count < batch->color_count || count > H2_LUA_QUAD_BATCH_LIMIT)
-      return luaL_error(state, "quad batch color count out of range");
-    for (size_t i = 0; i < count; ++i) {
-      lua_rawgeti(state, 2, (lua_Integer)i + 1);
-      decoded[i] = check_color(state, -1);
-      lua_pop(state, 1);
-    }
-    colors = decoded;
-  }
-  /* Color getters can close/reopen Display or recursively draw. All scratch
-   * is call-local; no Lua callback or allocation follows this acquisition check. */
-  int top, bottom;
-  display_check_clip(state, job, 11, 12, &top, &bottom);
-  if (top == bottom)
-    return 0;
-  double edges[8] = {0};
-  const display_quad_strip_t *previous = NULL;
-  for (size_t i = 0; i < batch->count; ++i) {
-    const display_quad_strip_t *strip = &batch->strips[i];
-    if (previous == NULL || strip->patch != previous->patch ||
-        strip->top != previous->top || strip->bottom != previous->bottom) {
-      double patch[8];
-      memcpy(patch, corners, sizeof(patch));
-      if (strip->patch) {
-        for (int axis = 0; axis < 2; ++axis) {
-          double ad = corners[6 + axis] - corners[axis];
-          double bc = corners[4 + axis] - corners[2 + axis];
-          patch[axis] = display_quad_lerp(corners[axis], ad, strip->top);
-          patch[2 + axis] = display_quad_lerp(corners[2 + axis], bc, strip->top);
-          patch[4 + axis] = display_quad_lerp(corners[2 + axis], bc, strip->bottom);
-          patch[6 + axis] = display_quad_lerp(corners[axis], ad, strip->bottom);
-        }
-      }
-      for (int axis = 0; axis < 2; ++axis) {
-        edges[axis] = patch[axis];
-        edges[2 + axis] = patch[2 + axis] - patch[axis];
-        edges[4 + axis] = patch[6 + axis];
-        edges[6 + axis] = patch[4 + axis] - patch[6 + axis];
-      }
-    }
-    double xy[2][4];
-    for (int axis = 0; axis < 2; ++axis) {
-      xy[axis][0] = display_quad_lerp(edges[axis], edges[2 + axis], strip->left);
-      xy[axis][1] = display_quad_lerp(edges[axis], edges[2 + axis], strip->right);
-      xy[axis][2] = display_quad_lerp(edges[4 + axis], edges[6 + axis], strip->right);
-      xy[axis][3] = display_quad_lerp(edges[4 + axis], edges[6 + axis], strip->left);
-    }
-    display_raster_polygon(job, xy[0], xy[1], 4, colors[strip->color_index],
-                           0, top, bottom);
-    previous = strip;
   }
   return 0;
 }
@@ -1214,7 +1082,7 @@ static void mesh_decode(lua_State *state, h2_lua_display_mesh_t *mesh,
         (lua_Unsigned)fields[1] > nv || fields[2] < 2 || fields[2] > 128)
       luaL_error(state, "invalid mesh primitive");
     lua_rawgeti(state, -1, 4);
-    uint16_t color = check_color(state, -1);
+    uint16_t color = h2_lua_display_check_color(state, -1);
     lua_pop(state, 2);
     p[i] = (h2_lua_display_primitive_t){
         (h2_lua_display_primitive_kind_t)fields[0], (size_t)fields[1] - 1u,
@@ -1417,7 +1285,7 @@ static int display_draw_mesh(lua_State *state) {
     for (int i = 0; i < 4; ++i) {
       lua_pushstring(state, names[i]);
       lua_rawget(state, -2);
-      transform[i] = check_geometry_number(state, -1);
+      transform[i] = h2_lua_display_check_geometry_number(state, -1);
       lua_pop(state, 1);
     }
     if (transform[2] <= 0 || transform[2] > 100)
@@ -1436,7 +1304,7 @@ static int display_draw_mesh(lua_State *state) {
   lua_pop(state, 1);
   mesh_option(state, "color");
   int recolor = !lua_isnil(state, -1);
-  uint16_t ink = recolor ? check_color(state, -1) : 0;
+  uint16_t ink = recolor ? h2_lua_display_check_color(state, -1) : 0;
   lua_pop(state, 1);
   mesh_option(state, "cache");
   if (!lua_isnil(state, -1)) luaL_checktype(state, -1, LUA_TBOOLEAN);
@@ -1929,7 +1797,7 @@ static int display_draw_pose(lua_State *s) {
   lua_Integer right = luaL_checkinteger(s, 11),
               bottom = luaL_checkinteger(s, 12);
   int tinted = !lua_isnoneornil(s, 13);
-  uint16_t tint = tinted ? check_color(s, 13) : 0;
+  uint16_t tint = tinted ? h2_lua_display_check_color(s, 13) : 0;
   /* Color getters may close/reopen Display or evaluate the pose. Validate all
    * borrowed values and acquisition after the last reentrant argument decode.
    */
@@ -2245,7 +2113,7 @@ static int display_stroke_path(lua_State *state) {
   if (scale <= 0 || scale > 16 || tolerance < 0 || tolerance > .25)
     return luaL_error(state, "invalid stroke scale/tolerance");
   int colors = lua_istable(state, 3) && lua_rawlen(state, 3) > 0;
-  uint16_t single = colors ? 0 : check_color(state, 3);
+  uint16_t single = colors ? 0 : h2_lua_display_check_color(state, 3);
   if (colors && lua_rawlen(state, 3) != path.count-1)
     return luaL_error(state, "invalid stroke color count");
   for (size_t i = 0; i < path.count; ++i) {
@@ -2255,18 +2123,18 @@ static int display_stroke_path(lua_State *state) {
     } else {
       lua_rawgeti(state, 1, (lua_Integer)i+1);
       luaL_checktype(state, -1, LUA_TTABLE);
-      lua_rawgeti(state, -1, 1); path.x[i] = check_geometry_number(state, -1); lua_pop(state, 1);
-      lua_rawgeti(state, -1, 2); path.y[i] = check_geometry_number(state, -1); lua_pop(state, 2);
+      lua_rawgeti(state, -1, 1); path.x[i] = h2_lua_display_check_geometry_number(state, -1); lua_pop(state, 1);
+      lua_rawgeti(state, -1, 2); path.y[i] = h2_lua_display_check_geometry_number(state, -1); lua_pop(state, 2);
     }
     if (i + 1 < path.count) {
       lua_rawgeti(state, 2, (lua_Integer)i+1);
-      path.width[i] = check_geometry_number(state, -1);
+      path.width[i] = h2_lua_display_check_geometry_number(state, -1);
       lua_pop(state, 1);
       if (path.width[i] < 0 || path.width[i] > 1000)
         return luaL_error(state, "invalid stroke width");
       if (colors) {
         lua_rawgeti(state, 3, (lua_Integer)i+1);
-        path.color[i] = check_color(state, -1);
+        path.color[i] = h2_lua_display_check_color(state, -1);
         lua_pop(state, 1);
       } else path.color[i] = single;
       path.width[i] *= scale;
@@ -2275,7 +2143,7 @@ static int display_stroke_path(lua_State *state) {
     path.y[i] *= scale;
   }
   int top, bottom;
-  display_check_clip(state, job, 5, 6, &top, &bottom);
+  h2_lua_display_check_clip(state, job, 5, 6, &top, &bottom);
   if (smooth) {
     if (tolerance > 0) display_stroke_simplify(&path, tolerance);
     display_stroke_smooth(state, job, &path, offset, top, bottom);
@@ -2318,7 +2186,7 @@ static int display_stroke_path(lua_State *state) {
     }
   }
   /* All allocation/getters finished; recheck acquisition before cache or draw. */
-  display_check_clip(state, job, 5, 6, &top, &bottom);
+  h2_lua_display_check_clip(state, job, 5, 6, &top, &bottom);
   if (cache != NULL) {
     const display_stroke_data_t *old = &retained->data;
     if (cache->valid && old->count == path.count && retained->offset == offset &&
@@ -2400,7 +2268,7 @@ static int display_fill_rect(lua_State *state) {
   int y = check_pixel_number(state, 2);
   int width = check_pixel_number(state, 3);
   int height = check_pixel_number(state, 4);
-  uint16_t color = check_color(state, 5);
+  uint16_t color = h2_lua_display_check_color(state, 5);
   int py;
   if (!job->display_open || !rect_is_bounded(job, x, y, width, height)) {
     return luaL_error(state, "invalid fill_rect");
@@ -2417,7 +2285,7 @@ static int display_draw_line(lua_State *state) {
   int y0 = check_pixel_number(state, 2);
   int x1 = check_pixel_number(state, 3);
   int y1 = check_pixel_number(state, 4);
-  uint16_t color = check_color(state, 5);
+  uint16_t color = h2_lua_display_check_color(state, 5);
   int64_t dx;
   int64_t dy;
   int64_t error;
@@ -2458,7 +2326,7 @@ static int display_fill_circle(lua_State *state) {
   int cx = check_pixel_number(state, 1);
   int cy = check_pixel_number(state, 2);
   int radius = check_pixel_number(state, 3);
-  uint16_t color = check_color(state, 4);
+  uint16_t color = h2_lua_display_check_color(state, 4);
   int extent = 0;
   int y;
   int64_t radius_squared;
@@ -2487,7 +2355,7 @@ static int display_draw_circle(lua_State *state) {
   int cx = check_pixel_number(state, 1);
   int cy = check_pixel_number(state, 2);
   int radius = check_pixel_number(state, 3);
-  uint16_t color = check_color(state, 4);
+  uint16_t color = h2_lua_display_check_color(state, 4);
   int x;
   int y;
   int error;
@@ -2554,7 +2422,7 @@ static int display_fill_circle_aa(lua_State *state) {
   int cx = check_pixel_number(state, 1);
   int cy = check_pixel_number(state, 2);
   int radius = check_pixel_number(state, 3);
-  uint16_t color = check_color(state, 4);
+  uint16_t color = h2_lua_display_check_color(state, 4);
   if (!job->display_open || radius < 0 || radius > 64 ||
       !point_is_bounded(job, cx, cy)) {
     return luaL_error(state, "invalid fill_circle_aa");
@@ -2699,7 +2567,7 @@ static int display_fill_round_rect(lua_State *state) {
   int width = check_pixel_number(state, 3);
   int height = check_pixel_number(state, 4);
   int radius = check_pixel_number(state, 5);
-  uint16_t color = check_color(state, 6);
+  uint16_t color = h2_lua_display_check_color(state, 6);
   int py;
   if (!job->display_open || !rect_is_bounded(job, x, y, width, height) ||
       radius < 0 || radius > width / 2 || radius > height / 2) {
@@ -2720,7 +2588,7 @@ static int display_draw_round_rect(lua_State *state) {
   int width = check_pixel_number(state, 3);
   int height = check_pixel_number(state, 4);
   int radius = check_pixel_number(state, 5);
-  uint16_t color = check_color(state, 6);
+  uint16_t color = h2_lua_display_check_color(state, 6);
   int py;
   if (!job->display_open || width <= 0 || height <= 0 ||
       !rect_is_bounded(job, x, y, width, height) || radius < 0 ||
@@ -2764,7 +2632,7 @@ static int display_fill_triangle(lua_State *state) {
   int y1 = check_pixel_number(state, 4);
   int x2 = check_pixel_number(state, 5);
   int y2 = check_pixel_number(state, 6);
-  uint16_t color = check_color(state, 7);
+  uint16_t color = h2_lua_display_check_color(state, 7);
   int min_x = x0 < x1 ? (x0 < x2 ? x0 : x2) : (x1 < x2 ? x1 : x2);
   int max_x = x0 > x1 ? (x0 > x2 ? x0 : x2) : (x1 > x2 ? x1 : x2);
   int min_y = y0 < y1 ? (y0 < y2 ? y0 : y2) : (y1 < y2 ? y1 : y2);
@@ -2873,7 +2741,7 @@ static int display_draw_text(lua_State *state) {
     luaL_checktype(state, 4, LUA_TTABLE);
     lua_getfield(state, 4, "color");
     if (!lua_isnil(state, -1))
-      color = check_color(state, -1);
+      color = h2_lua_display_check_color(state, -1);
     lua_pop(state, 1);
     lua_getfield(state, 4, "font_size");
     if (!lua_isnil(state, -1))
@@ -2908,7 +2776,7 @@ static int display_draw_text_aligned(lua_State *state) {
     luaL_checktype(state, 6, LUA_TTABLE);
     lua_getfield(state, 6, "color");
     if (!lua_isnil(state, -1))
-      color = check_color(state, -1);
+      color = h2_lua_display_check_color(state, -1);
     lua_pop(state, 1);
     lua_getfield(state, 6, "font_size");
     if (!lua_isnil(state, -1))
@@ -3142,7 +3010,7 @@ static int display_capture_region(lua_State *state) {
   int width = display_integer(state, 3, 0, 1, 4096);
   int height = display_integer(state, 4, 0, 1, 4096);
   int masked = !lua_isnoneornil(state, 5);
-  uint16_t key = masked ? check_color(state, 5) : 0;
+  uint16_t key = masked ? h2_lua_display_check_color(state, 5) : 0;
   display_region_t *reuse = lua_isnoneornil(state, 6) ? NULL :
       luaL_checkudata(state, 6, H2_LUA_DISPLAY_REGION_META);
   if (reuse != NULL && (masked || reuse->masked || reuse->width != width ||
@@ -3226,7 +3094,7 @@ static int display_draw_region(lua_State *state) {
   int bottom = display_integer(state, 5, job->display_info.height, top,
                                job->display_info.height);
   int keyed = !lua_isnoneornil(state, 6);
-  uint16_t key = keyed ? check_color(state, 6) : 0;
+  uint16_t key = keyed ? h2_lua_display_check_color(state, 6) : 0;
   int left = display_integer(state, 7, 0, 0, job->display_info.width);
   int right = display_integer(state, 8, job->display_info.width, left,
                               job->display_info.width);
@@ -3351,7 +3219,7 @@ static int display_begin_frame(lua_State *state) {
     if (clear) {
       lua_getfield(state, 1, "color");
       if (!lua_isnil(state, -1))
-        color = check_color(state, -1);
+        color = h2_lua_display_check_color(state, -1);
       lua_pop(state, 1);
     }
   }
@@ -3617,8 +3485,8 @@ int h2_lua_push_display_proxy(lua_State *state, h2_lua_job_t *job) {
   set_function(state, "restore_background", display_restore_background, job);
   set_function(state, "release_background", display_release_background_lua, job);
   set_function(state, "compile_mesh", display_compile_mesh, job);
-  set_function(state, "compile_quad_batch", display_compile_quad_batch, job);
-  set_function(state, "draw_quad_batch", display_draw_quad_batch, job);
+  if (job->host->display_quad_batch_open != NULL)
+    job->host->display_quad_batch_open(state, job);
   set_function(state, "update_mesh", display_update_mesh, job);
   set_function(state, "draw_mesh", display_draw_mesh, job);
   set_function(state, "draw_pose", display_draw_pose, job);
@@ -3656,4 +3524,3 @@ int h2_lua_push_display_proxy(lua_State *state, h2_lua_job_t *job) {
   lua_setfield(state, -2, "height");
   return 1;
 }
-

@@ -248,6 +248,9 @@ struct h2_lua_host {
   char storage_root[H2_LUA_STORAGE_ROOT_MAX + 1u];
   h2_pal_mutex_t *storage_mutex;
   struct h2_lua_storage_scratch *storage_scratch;
+  /* Installed before start; adds closures to the Display table on the stack.
+   * Static code only, with no owned context or teardown work. */
+  void (*display_quad_batch_open)(lua_State *state, h2_lua_job_t *job);
   const h2_lua_link_hooks_t *link_hooks;
   void *link_user;
   /* Slot i is locked through job_mutexes[i]. Kept outside h2_lua_job_t so

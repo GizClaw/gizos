@@ -227,6 +227,25 @@ cc_library(
     }),
 )
 
+# Opt-in Display bindings; core has no dependency on this implementation.
+cc_library(
+    name = "lua_display_quad_batch",
+    srcs = [
+        "src/core/h2_lua_internal.h",
+        "src/modules/h2_lua_display_internal.h",
+        "src/modules/h2_lua_display_quad_batch.c",
+        "src/runtime/h2_lua_internal.h",
+    ],
+    hdrs = ["include/h2_lua_display_quad_batch.h"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS + h2_gnu_only_copts([
+        "-O3",
+        "-fno-fast-math",
+    ]),
+    includes = ["include"],
+    deps = [":lua_runtime"],
+)
+
 h2_tasks(
     name = "link_tasks",
     tasks = [
@@ -310,7 +329,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
-        ":lua_runtime",
+        ":lua_display_quad_batch",
         "//libs/atomic/providers/c11",
         "//libs/pal:unsupported",
         "//libs/pal/providers/desktop/pal_core",
@@ -401,6 +420,34 @@ cc_test(
         "//libs/pal/providers/desktop/pal_core",
     ],
 )
+
+# The same embedder uses core, links the unused component, or enables it.
+# POSIX services are provided by the harness, not a GizOS platform provider.
+[
+    cc_test(
+        name = name,
+        srcs = ["tests/test_embedder.c"],
+        conlyopts = H2_C11_OPTS,
+        copts = H2_WARNING_COPTS,
+        local_defines = defines,
+        linkopts = ["-pthread"],
+        target_compatible_with = select({
+            "//tools/bazel/platforms:host_linux_target_linux": [],
+            "//tools/bazel/platforms:host_macos_target_macos": [],
+            "//conditions:default": ["@platforms//:incompatible"],
+        }),
+        deps = [
+            runtime,
+            "//libs/atomic/providers/c11",
+            "//libs/pal:unsupported",
+        ],
+    )
+    for name, runtime, defines in [
+        ("lua_display_core_test", ":lua_runtime", []),
+        ("lua_display_unenabled_test", ":lua_display_quad_batch", []),
+        ("lua_display_quad_batch_test", ":lua_display_quad_batch", ["H2_LUA_TEST_QUAD_BATCH=1"]),
+    ]
+]
 
 py_binary(
     name = "source_content_id",

@@ -144,6 +144,8 @@ C core 完整校验后绘制，adapter 再逐矩形标记已有 dirty/background
 
 ### Display 四边形条带批次
 
+四边形批绘制属于可选公共组件 `//libs/lua:lua_display_quad_batch`，默认 `lua`/`lua_runtime` 不依赖其实现。需要批绘制的 consumer 链接该 target、包含 `h2_lua_display_quad_batch.h`，并在 Host create 成功后、start 前检查 `h2_lua_display_quad_batch_enable(host)` 返回成功；公共头定义完整 lifecycle 和错误合同。每个 Host 独立启用，未启用时两个 Lua 字段均为 `nil`，即使同一进程已链接扩展或另一个 Host 已启用也不例外。启用只安装静态注册 hook，不分配、不获取 Display；构造代理时直接注册原有 Lua closure，draw 不增加逐帧间接 dispatch。扩展复用 Display 私有校验、palette 和 polygon raster，保持原有优化编译参数与插值算法。
+
 `display.compile_quad_batch` 保存调用方定义的归一化条带、可选横向 patch 和 painter order；`display.draw_quad_batch` 每次接收四角、颜色及可选行裁剪，复用既有 polygon 光栅、dirty/background damage 和 retained present。接口与精确插值顺序见 [Display API](../../references/lua.md)。颜色可使用既有 `compile_palette`，或复用普通 Lua 颜色数组以逐帧更新 RGB888 配方；批次本身不生成渐变或光晕颜色，不选择视角、拓扑或可见性。
 
 绘制参数末尾可选 `clip_top/clip_bottom` 指定 framebuffer 的半开整数行区间，省略或 `nil` 分别使用 `0/height`，要求 `0<=clip_top<=clip_bottom<=height`。它们只限制光栅扫描行，不移动四角、不重新插值，与批次记录内的归一化 patch `top/bottom` 无关。空裁剪仍完整验证颜色、角点、区间及 Display acquisition；多个不相交区间按每行相同的 painter order 绘制，可合成全幅结果。每次调用仍解码颜色并展开几何，应用自行选择脏行区间；此接口不新增扫描跨度缓存。
@@ -534,7 +536,7 @@ MP4 播放器配置也支持同名选项。启动动画可以借用同一个 Dis
 
 ## 嵌入分层与源码包
 
-`//libs/lua:lua_runtime` 是 portable 下层：包含 Lua Core、Host、modules、`//libs/trie`、`//libs/runtime` 和 PAL headers/inline wrappers，以及 Bazel 固定版本的 Lua 5.5、yyjson。下层的平台访问只依赖 PAL interfaces，不能依赖具体 provider、board、SDK 或 `bleikcp`。`//libs/lua:lua_core` 继续只依赖 upstream Lua。`//libs/lua:lua` 保留现有入口；平台组装由现有 firmware、Desktop、Web launcher 或外部 embedder 完成。可选 `//libs/lua:lua_link` 在上层接入 `bleikcp`，不进入 portable 源码包；未启用时仍遵守既有 `link: unavailable` 合同。
+`//libs/lua:lua_runtime` 是 portable 下层：包含 Lua Core、Host、modules、`//libs/trie`、`//libs/runtime` 和 PAL headers/inline wrappers，以及 Bazel 固定版本的 Lua 5.5、yyjson。下层的平台访问只依赖 PAL interfaces，不能依赖具体 provider、board、SDK 或 `bleikcp`。`//libs/lua:lua_core` 继续只依赖 upstream Lua。`//libs/lua:lua` 保留现有入口；平台组装由现有 firmware、Desktop、Web launcher 或外部 embedder 完成。可选 `//libs/lua:lua_link` 在上层接入 `bleikcp`，不进入 portable 源码包；未启用时仍遵守既有 `link: unavailable` 合同。可选 `lua_display_quad_batch` 同样由上层显式组装，默认 `runtime_sources` 不包含其 source/header，源码包 consumer 不应调用两个 batch API；需要扩展时使用 Bazel 公共 target。
 
 **PAL vtables 就是 embedding hooks。** Embedder 构造既有 `h2_pal_*_api_t` 的 `user + vtable`，填入 Runtime config；不需要另一套 callback ABI。Runtime 初始化要求完整 API surface，不支持的能力使用 canonical unsupported API object。源码包因此同时带上 `//libs/pal:unsupported` 的 portable 实现，供 embedder 填充默认值；这不会为 `lua_runtime` 增加 provider 依赖。Display、Button、Touch、Audio 可以来自宿主 UI，Memory、Task、Queue、Sync、Time、Timer、Filesystem 可以来自已有 provider 或宿主自己的 C 实现。
 

@@ -10,6 +10,7 @@ assert(output:get(1) == 30 and output:get(2) == 10 and mask:get(1) == 1)
 -- Button callback, and animates until the exit Button or Stop ends the job.
 local runtime = require("runtime")
 local display = require("display")
+assert(display.compile_quad_batch == nil and display.draw_quad_batch == nil)
 
 assert(tonumber(args.left) == 1 and tonumber(args.ok) == 2)
 assert(tonumber(args.back) == 3)

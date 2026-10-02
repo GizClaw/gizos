@@ -1,4 +1,5 @@
 #include "h2_lua_capability.h"
+#include "h2_lua_display_quad_batch.h"
 #include "h2_web_lua_app.h"
 
 #include <stdio.h>
@@ -18,7 +19,9 @@ static h2_pal_result_t echo(void *user, h2_lua_capability_request_id_t request,
 }
 
 static h2_pal_result_t register_host(h2_lua_host_t *host) {
-  return h2_lua_register_capability(host, "smoke.echo", echo, NULL, NULL);
+  h2_pal_result_t rc = h2_lua_display_quad_batch_enable(host);
+  return rc == H2_PAL_OK
+      ? h2_lua_register_capability(host, "smoke.echo", echo, NULL, NULL) : rc;
 }
 
 /* Rejects the first exit-Button release and accepts the second, so the

@@ -4,6 +4,24 @@
 #include "../runtime/h2_lua_internal.h"
 #include "h2_lua_display.h"
 
+/* Shared by core Display and optional adapters; never a public extension ABI. */
+#define H2_LUA_PALETTE_META "h2.display.palette"
+
+typedef struct display_palette {
+  size_t count;
+  uint16_t colors[];
+} display_palette_t;
+
+uint16_t h2_lua_display_check_color(lua_State *state, int index);
+double h2_lua_display_check_geometry_number(lua_State *state, int index);
+size_t h2_lua_display_dense_count(lua_State *state, size_t limit);
+void h2_lua_display_check_clip(lua_State *state, h2_lua_job_t *job,
+                               int top_index, int bottom_index,
+                               int *top, int *bottom);
+void h2_lua_display_raster_quad(h2_lua_job_t *job, const double *x,
+                                const double *y, uint16_t color,
+                                int top, int bottom);
+
 typedef struct display_cached_span {
   int32_t left, right, y, end_y; /* Negative end_y: span; otherwise a line. */
   uint16_t color;

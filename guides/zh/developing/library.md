@@ -51,7 +51,7 @@ Library 不能直接依赖：
 
 明确命名的 library compiled variant（例如 `//libs/lvgl:lvgl_desktop`）可以直接依赖 `third_party` overlay 暴露的稳定 upstream target，以取得对应工具链产出的 header 和 link input。该 target 必须是无需 first-party source、config 或 platform adapter 的纯 upstream contract；平台选择留在 overlay 内部，consumer 不依赖带 `_macos`、`_linux` 等后缀的 label。Library 即使是 platform variant 也不能反向依赖 `components/`，更不能取得 PAL backend、launcher policy 或 board 类型。
 
-`//libs/lua:lua_runtime` 的下层只通过 PAL interfaces 访问平台；具体 provider 与可选 `lua_link` 由上层组装。非 Bazel consumer 使用从同一依赖图导出的 C 源码包，仍填写既有 PAL vtables，见 [Lua 嵌入分层与源码包](./lua.md#嵌入分层与源码包)。
+`//libs/lua:lua_runtime` 的下层只通过 PAL interfaces 访问平台；具体 provider 与可选 `lua_link`、`lua_display_quad_batch` 由上层组装。Quad batch 组件只安装每 Host 的 Display 注册 hook，核心保留共享校验和 polygon raster；默认 Lua 不链接 batch 算法。非 Bazel consumer 使用从同一依赖图导出的 C 源码包，仍填写既有 PAL vtables，见 [Lua 嵌入分层与源码包](./lua.md#嵌入分层与源码包)。
 
 ## Third-party 兼容层
 

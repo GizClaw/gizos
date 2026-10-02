@@ -211,6 +211,8 @@ release 规则，例如只接受长按。`run_ms` 非零时在该时长后发出
 
 #### Lua 脚本配置与预算
 
+需要四边形批绘制时，给 `extension` 的 `cc_library.deps` 添加 `//libs/lua:lua_display_quad_batch`，包含 `h2_lua_display_quad_batch.h`，在已有 `register_host(host)` 回调中调用并检查 `h2_lua_display_quad_batch_enable(host)`，成功后再进行其它注册。通用入口在 create 后、start 前调用该回调，并沿用注册失败时的清理路径。默认 WebRuntime 不链接或启用此组件，两个 Lua 字段均为 `nil`；启用仅影响当前 Host。可运行的接线见 `projects/example/targets/pkg_tar/lua-script-extension`，对应 browser test 验证批次及两段行裁切；`lua-script` 的 browser test 验证默认缺席行为。
+
 `h2_lua_web_app()` 的 `vm_memory_limit_bytes` 默认 524288（512 KiB），允许 65536..16777216；`source_limit_bytes` 默认 131072（128 KiB），允许 1..1048576。两者必须是整数，不能传入 bool 或字符串。默认调用的预算不变，较大的程序由自己的 artifact entry 显式选择预算；可接受的配置不保证任意程序都能在该预算内运行。超限源码仍按 Host resource 校验失败，VM 分配耗尽仍报告 job failure，不自动扩容。
 
 可选 `script_args` 是最多 16 项的 string-to-string 字典。名字为 1..32 个 ASCII `[a-z0-9_]` 字符，值为最多 256 个可打印 ASCII 字符，允许空值、引号和反斜线；控制字符和非 ASCII 内容会被拒绝。宏按名字排序并转义为固定 C 字符串，参数在提交时复制为 Lua `args` 字符串，不执行 Lua 表达式。任何名字与所选 board 的 Button（包括 `exit_button`）冲突都会在 analysis 阶段失败，不能覆盖 board 的输入 ID。参数属于 App 配置，不改变 board/skin 或共享入口的 lifecycle。

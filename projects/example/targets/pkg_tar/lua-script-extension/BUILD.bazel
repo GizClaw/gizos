@@ -9,7 +9,10 @@ cc_library(
     srcs = ["smoke_extension.c"],
     conlyopts = H2_C11_OPTS,
     copts = H2_WARNING_COPTS,
-    deps = ["//libs/lua/web:lua_app_extension"],
+    deps = [
+        "//libs/lua:lua_display_quad_batch",
+        "//libs/lua/web:lua_app_extension",
+    ],
 )
 
 # Extension hooks: the script needs the smoke.echo capability registered by
@@ -23,6 +26,7 @@ h2_lua_web_app(
     extension = ":smoke_extension",
     passes = [
         "H2_WEB_APP name=lua-script-extension stage=ready",
+        "H2_WEB_LUA_APP_SMOKE quad=pixels",
         "H2_WEB_LUA_APP_SMOKE exit=rejected",
         "H2_WEB_LUA_APP_SMOKE exit=accepted",
         "H2_WEB_APP name=lua-script-extension result=PASS rc=0 fs=0 destroy=0",

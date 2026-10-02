@@ -42,6 +42,9 @@
  *   allocate nothing, mark existing dirty/background damage and do not present.
  *
  * Quad strip batches (owning VM worker only):
+ * - Link //libs/lua:lua_display_quad_batch and call
+ *   h2_lua_display_quad_batch_enable() after Host create, before start
+ *   (see h2_lua_display_quad_batch.h). Without opt-in, both fields are nil.
  * - display.compile_quad_batch(entries) copies 0..256 dense records
  *   {left,right,color_index[,top,bottom]} into immutable VM userdata.
  *   Fractions are finite, 0<=left<=right<=1 and 0<=top<=bottom<=1;

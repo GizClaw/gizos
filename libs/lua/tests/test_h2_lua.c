@@ -3,6 +3,7 @@
 #include "h2_lua.h"
 #include "h2_lua_capability.h"
 #include "h2_lua_display.h"
+#include "h2_lua_display_quad_batch.h"
 #include "h2_lua_module.h"
 #include "h2_lua_esp_claw.h"
 #include "h2_lua_event.h"
@@ -1236,6 +1237,37 @@ static int test_raster_open(void *lua_state, void *user) {
   return 1;
 }
 
+static void test_display_quad_batch_enable(void) {
+  h2_runtime_t *runtime = create_runtime();
+  h2_lua_host_t *enabled = create_unstarted_host(runtime);
+  h2_lua_host_t *disabled = create_unstarted_host(runtime);
+  assert(h2_lua_display_quad_batch_enable(NULL) == H2_PAL_ERR_INVALID_ARG);
+  assert(h2_lua_display_quad_batch_enable(enabled) == H2_PAL_OK);
+  assert(h2_lua_display_quad_batch_enable(enabled) == H2_PAL_ERR_INVALID_STATE);
+  assert(h2_lua_host_start(enabled) == H2_PAL_OK);
+  assert(h2_lua_host_start(disabled) == H2_PAL_OK);
+  assert(h2_lua_display_quad_batch_enable(disabled) == H2_PAL_ERR_INVALID_STATE);
+  static const uint8_t present[] =
+      "local d=require('display');"
+      "assert(type(d.compile_quad_batch)=='function');"
+      "assert(type(d.draw_quad_batch)=='function');d.deinit();";
+  static const uint8_t absent[] =
+      "local d=require('display');"
+      "assert(d.compile_quad_batch==nil and d.draw_quad_batch==nil);d.deinit();";
+  /* Separate VMs/jobs and both live Hosts: no global opt-in or retained state. */
+  for (int i = 0; i < 2; ++i) {
+    (void)run_display_script(enabled, "@quad-enabled", present, sizeof(present)-1);
+    (void)run_display_script(disabled, "@quad-disabled", absent, sizeof(absent)-1);
+  }
+  h2_lua_host_destroy(enabled);
+  h2_lua_host_destroy(disabled);
+  h2_lua_host_t *stopped = create_unstarted_host(runtime);
+  h2_lua_host_stop(stopped);
+  assert(h2_lua_display_quad_batch_enable(stopped) == H2_PAL_ERR_INVALID_STATE);
+  h2_lua_host_destroy(stopped);
+  h2_runtime_deinit(runtime);
+}
+
 static void test_display_raster2d(int benchmark, const char *path) {
   h2_runtime_t *runtime = create_runtime();
   h2_lua_host_t *host = NULL;
@@ -1248,6 +1280,7 @@ static void test_display_raster2d(int benchmark, const char *path) {
       .source_limit_bytes = 16384,
       .vm_memory_limit_bytes = benchmark ? 8u * 1024u * 1024u : 256u * 1024u};
   assert(h2_lua_host_create(&config, &host) == H2_PAL_OK);
+  assert(h2_lua_display_quad_batch_enable(host) == H2_PAL_OK);
   assert(h2_lua_register_module(host, "raster_test", test_raster_open, NULL) ==
          H2_PAL_OK);
   assert(h2_lua_host_start(host) == H2_PAL_OK);
@@ -2782,6 +2815,7 @@ int main(int argc, char **argv) {
   h2_atomic_int_destroy(&s_test_audio_mic_block);
     return 0;
   }
+  test_display_quad_batch_enable();
   test_streamed_close_failure();
   test_host_allocator();
   test_reserved_vm_heap();

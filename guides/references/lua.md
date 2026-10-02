@@ -8,6 +8,8 @@ Built-in numeric buffers, physics and geometry: [Lua numeric API](./lua-numeric.
 
 ## Quad strip batches
 
+Quad batches require explicit Host opt-in: link `//libs/lua:lua_display_quad_batch`, include `h2_lua_display_quad_batch.h`, then check `h2_lua_display_quad_batch_enable(host)` succeeds after Host create and before start. Without this call, `display.compile_quad_batch` and `display.draw_quad_batch` are `nil`, even when another Host is enabled. Default core and its portable source package exclude the implementation. Web consumers enable it in their `extension.register_host` callback; see [Web Lua Apps](../apps/web.md).
+
 Compile the normalized layout once, then supply the current four corners and colors. Records draw in array order; a five-field record applies a transverse patch before the strip interpolation. See the generated contract above for limits, arithmetic and error behavior.
 
 ```lua
