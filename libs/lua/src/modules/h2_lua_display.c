@@ -1174,7 +1174,6 @@ static int display_draw_quad_batch(lua_State *state) {
 #define DISPLAY_MATERIAL_META "h2.display.quad_material"
 #define DISPLAY_MATERIAL_KNOTS 32
 #define DISPLAY_MATERIAL_CELLS 256
-#define DISPLAY_MATERIAL_SCALE 16777216.0
 #define DISPLAY_MATERIAL_UNIT INT64_C(16777216)
 typedef struct display_material {
   unsigned nu, nv;
@@ -1280,15 +1279,17 @@ static void material_advance(material_edge_t *edge) {
  */
 static int material_prepare(const display_material_t *m, const double *c,
                             int first, int end, material_edge_t *edges,
+                            unsigned char indices[2 * DISPLAY_MATERIAL_KNOTS],
                             const display_quad_mapping_t *mapping) {
   double orientation = 0;
   for (int i = 0; i < 4; ++i) {
     int j = (i + 1) % 4, k = (i + 2) % 4;
     double area = material_cross(c[2*j]-c[2*i], c[2*j+1]-c[2*i+1],
                                 c[2*k]-c[2*j], c[2*k+1]-c[2*j+1]);
-    if (fabs(area) < 1e-8 || (i && area * orientation <= 0)) return 0;
+    if (fabs(area) < 1e-8 || (i && ((area > 0) != (orientation > 0)))) return 0;
     orientation = area;
   }
+  unsigned used = 0;
   for (int axis = 0; axis < 2; ++axis) {
     unsigned count = axis ? m->nv : m->nu;
     const double *knots = axis ? m->v : m->u;
@@ -1301,21 +1302,28 @@ static int material_prepare(const display_material_t *m, const double *c,
       double t = knots[i];
       if (axis == 0 && mapping != NULL)
         t = display_quad_map_u(mapping, t);
-      material_edge_t *edge = &edges[(axis ? m->nu : 0) + i];
+      material_edge_t *edge = &edges[used];
       unsigned boundary = i == 0 ? (axis ? 4u : 1u) :
                           i == count - 1 ? (axis ? 8u : 2u) : 0;
-      /* Cropping often maps several distinct source knots to one endpoint.
-       * Keep every event/cell index, but prepare identical geometry once. */
+      /* Equal mapped knots are one geometric event with multiplicity. The
+       * signed direction retains their original cell-count change; coincident
+       * transitions have no intervening pixels, including reverse edges. */
       if (i && t == previous_t) {
-        *edge = edge[-1];
-        edge->boundary = boundary;
+        edge = &edges[used - 1];
+        edge->direction += edge->direction > 0 ? 1 : -1;
+        edge->boundary |= boundary;
+        indices[(axis ? m->nu : 0) + i] = (unsigned char)(used - 1);
         continue;
       }
+      indices[(axis ? m->nu : 0) + i] = (unsigned char)used++;
       previous_t = t;
-      double px = c[a] + t * px_delta;
-      double py = c[a+1] + t * py_delta;
-      double qx = c[d] + t * qx_delta;
-      double qy = c[d+1] + t * qy_delta;
+      double px = c[a], py = c[a+1], qx = c[d], qy = c[d+1];
+      /* t=0 adds only signed zero; no later sign test distinguishes it.
+       * Do not shortcut t=1: subtraction/addition rounding can differ. */
+      if (t != 0) {
+        px += t * px_delta; py += t * py_delta;
+        qx += t * qx_delta; qy += t * qy_delta;
+      }
       double nx = -(qy - py), ny = qx - px;
       if (reverse) { nx = -nx; ny = -ny; }
       edge->axis = axis;
@@ -1333,14 +1341,14 @@ static int material_prepare(const display_material_t *m, const double *c,
         if (!isfinite(x) || !isfinite(step) ||
             fabs(x) + fabs(step) * (end + 1.0) > 1e9) return 0;
         edge->direction = nx > 0 ? 1 : -1;
-        int64_t fixed_x = (int64_t)llround(x * DISPLAY_MATERIAL_SCALE);
-        int64_t fixed_step = (int64_t)llround(step * DISPLAY_MATERIAL_SCALE);
+        int64_t fixed_x = h2_lua_display_q24(x);
+        int64_t fixed_step = h2_lua_display_q24(step);
         material_split(fixed_x + fixed_step * first, &edge->x, &edge->fraction);
         material_split(fixed_step, &edge->step, &edge->step_fraction);
       }
     }
   }
-  return 1;
+  return (int)used;
 }
 
 /* First integer X after a sign transition. Match the original Q24 sweep,
@@ -1349,14 +1357,33 @@ static int material_threshold(const material_edge_t *edge) {
   return edge->x + (edge->direction < 0 || edge->fraction != 0);
 }
 
-static int material_clip_row(const display_material_t *m,
-    const material_edge_t *edges, int y, int *left, int *right) {
+typedef struct material_clip {
+  unsigned char edge, positive;
+} material_clip_t;
+
+/* The support rectangle and outer half-planes do not change between rows.
+ * Cropped boundaries can coincide; retain opposite constraints, deduplicate
+ * only identical edge/sign pairs. */
+static unsigned material_prepare_clip(const display_material_t *m,
+    const unsigned char *indices, material_clip_t clip[8]) {
   const unsigned boundaries[8] = {0, m->nu - 1, m->nu, m->nu + m->nv - 1,
       m->u_first, m->u_end, m->nu + m->v_first, m->nu + m->v_end};
+  unsigned used = 0;
   for (unsigned i = 0; i < 8; ++i) {
-    if (i >= 4 && boundaries[i] == boundaries[i - 4]) continue;
-    const material_edge_t *edge = &edges[boundaries[i]];
-    int positive = !(i & 1u);
+    material_clip_t next = {indices[boundaries[i]], !(i & 1u)};
+    unsigned j = 0;
+    while (j < used && (clip[j].edge != next.edge ||
+                       clip[j].positive != next.positive)) ++j;
+    if (j == used) clip[used++] = next;
+  }
+  return used;
+}
+
+static int material_clip_row(const material_edge_t *edges,
+    const material_clip_t *clip, unsigned count, int y, int *left, int *right) {
+  for (unsigned i = 0; i < count; ++i) {
+    const material_edge_t *edge = &edges[clip[i].edge];
+    int positive = clip[i].positive;
     if (edge->horizontal) {
       int sign = edge->direction > 0 ? y >= edge->row_switch : y < edge->row_switch;
       if (sign != positive) return 0;
@@ -1383,12 +1410,16 @@ static int display_raster_material(h2_lua_job_t *job,
     const display_quad_mapping_t *mapping) {
   if (m->u_first >= m->u_end || m->v_first >= m->v_end) return 1;
   material_edge_t edges[2 * DISPLAY_MATERIAL_KNOTS];
-  if (!material_prepare(m, corners, top, bottom, edges, mapping)) return 0;
-  unsigned count = m->nu + m->nv;
+  unsigned char indices[2 * DISPLAY_MATERIAL_KNOTS];
+  unsigned count = (unsigned)material_prepare(m, corners, top, bottom, edges,
+                                             indices, mapping);
+  if (count == 0) return 0;
+  material_clip_t clip[8];
+  unsigned clip_count = material_prepare_clip(m, indices, clip);
   int width = job->display_info.width;
   for (int y = top; y < bottom; ++y) {
     int row_left = 0, row_right = width;
-    if (!material_clip_row(m, edges, y, &row_left, &row_right)) {
+    if (!material_clip_row(edges, clip, clip_count, y, &row_left, &row_right)) {
       for (unsigned i = 0; i < count; ++i) material_advance(&edges[i]);
       continue;
     }
@@ -1416,7 +1447,7 @@ static int display_raster_material(h2_lua_job_t *job,
         }
         material_advance(e);
       }
-      cell[e->axis] += positive;
+      if (positive) cell[e->axis] += e->direction > 0 ? e->direction : -e->direction;
       if (positive) mask |= e->boundary;
     }
     int left = row_left;

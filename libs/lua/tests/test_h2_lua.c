@@ -1305,6 +1305,43 @@ static int test_polygon_reference(lua_State *state) {
   return 0;
 }
 
+static void test_display_q24_round(void) {
+  const double limit = 1e9;
+  assert(h2_lua_display_q24(0.0) == 0 && h2_lua_display_q24(-0.0) == 0);
+  assert(h2_lua_display_q24(limit) == llround(limit * 16777216.0));
+  assert(h2_lua_display_q24(-limit) == llround(-limit * 16777216.0));
+  /* Every binary exponent in range, including subnormals and all shifts at
+   * the rounding boundary; an independent libm expression is the oracle. */
+  uint64_t seed = UINT64_C(0x7104bc345712789f);
+  for (int exponent = -1074; exponent <= 29; ++exponent)
+    for (unsigned sample = 0; sample < 128; ++sample) {
+      seed = seed * UINT64_C(6364136223846793005) + 1;
+      double value = ldexp(1.0 + (double)(seed >> 12) / 4503599627370496.0,
+                           exponent);
+      if (value > limit) continue;
+      assert(h2_lua_display_q24(value) == llround(value * 16777216.0));
+      assert(h2_lua_display_q24(-value) == llround(-value * 16777216.0));
+    }
+  for (int power = -1; power <= 52; ++power) {
+    double tie = (power < 0 ? 0.5 : ldexp(1.0, power) + 0.5) / 16777216.0;
+    for (int side = -1; side <= 1; ++side) {
+      double value = side == 0 ? tie : nextafter(tie, side < 0 ? 0.0 : limit);
+      assert(h2_lua_display_q24(value) == llround(value * 16777216.0));
+      assert(h2_lua_display_q24(-value) == llround(-value * 16777216.0));
+    }
+  }
+  for (unsigned sample = 0; sample < 100000; ++sample) {
+    seed = seed * UINT64_C(6364136223846793005) + 1;
+    double tie = ((double)(seed % UINT64_C(16777216000000000)) + 0.5) /
+                 16777216.0;
+    for (int side = -1; side <= 1; ++side) {
+      double value = side == 0 ? tie : nextafter(tie, side < 0 ? 0.0 : limit);
+      assert(h2_lua_display_q24(value) == llround(value * 16777216.0));
+      assert(h2_lua_display_q24(-value) == llround(-value * 16777216.0));
+    }
+  }
+}
+
 /* Original draw_line recurrence, independent of production write/clip helpers. */
 static void reference_line(uint16_t *pixels, int width, int height,
     int x0, int y0, int x1, int y1) {
@@ -3061,6 +3098,7 @@ static void test_streamed_close_failure(void) {
 }
 
 int main(int argc, char **argv) {
+  test_display_q24_round();
   assert(h2_atomic_int_init(&s_source_effect_count, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_int_init(&s_test_audio_close_count, 0) == H2_ATOMIC_OK);
   assert(h2_atomic_int_init(&s_test_audio_start_count, 0) == H2_ATOMIC_OK);
