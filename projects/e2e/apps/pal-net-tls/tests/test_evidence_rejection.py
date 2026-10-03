@@ -22,6 +22,19 @@ def receipt():
 
 
 class Rejection(unittest.TestCase):
+    def test_followup_cannot_replace_other_provider_or_claim_fresh_hardware(self):
+        followup=json.loads((APP/'gizclaw_public_https_provenance_main_tls.json').read_text())
+        historical=json.loads((APP/'qualification.json').read_text())['source_sha256']
+        validation.check_sources(validation.ROOT,historical,followup)
+        for mutate in [
+            lambda value:value.update(new_physical_run_claimed=True),
+            lambda value:value['current_source_sha256'].update({'libs/pal/providers/ios/pal_core/src/h2_ios_net.c':'0'*64}),
+            lambda value:value['previous_source_sha256'].update({'tools/bazel/mobile_e2e.py':'0'*64}),
+            lambda value:value['current_source_sha256'].update({'tools/bazel/mobile_e2e.py':'0'*64}),
+        ]:
+            bad=copy.deepcopy(followup);mutate(bad)
+            with self.assertRaises(AssertionError):validation.check_sources(validation.ROOT,historical,bad)
+
     def test_every_native_provider_source_is_mandatory(self):
         with tempfile.TemporaryDirectory() as directory:
             root=Path(directory)

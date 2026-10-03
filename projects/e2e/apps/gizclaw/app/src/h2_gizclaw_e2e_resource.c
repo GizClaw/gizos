@@ -214,7 +214,7 @@ int h2_gizclaw_e2e_run_resource(h2_gizclaw_e2e_fixture_t *f) {
   int rc = s->scratch == NULL ? H2_PAL_ERR_NO_MEMORY : H2_PAL_OK;
   for (int kind = H2_GIZCLAW_RESOURCE_CONTACTS;
        kind <= H2_GIZCLAW_RESOURCE_GROUPS && rc == H2_PAL_OK; ++kind) {
-    printf("H2_GIZCLAW_E2E stage=resource-kind kind=%d\n", kind);
+    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=resource-kind kind=%d\n", kind);
     rc = run_kind(f, s, (h2_gizclaw_resource_kind_t)kind);
   }
   if (rc == H2_PAL_OK)

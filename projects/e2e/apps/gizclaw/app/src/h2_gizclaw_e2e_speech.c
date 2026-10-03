@@ -133,6 +133,8 @@ static int speech_wait(h2_gizclaw_e2e_fixture_t *fixture,
       finished = true;
     }
     rc = h2_gizclaw_req_wait(request, 10u);
+    if (rc != H2_PAL_ERR_TIMEOUT)
+      h2_gizclaw_e2e_evidence("h2_gizclaw_req_wait", "speech", rc);
     if (rc == H2_PAL_OK)
       return finished ? H2_PAL_OK : H2_PAL_ERR_INVALID_STATE;
     if (rc != H2_PAL_ERR_TIMEOUT)
@@ -208,8 +210,10 @@ int h2_gizclaw_e2e_run_speech(h2_gizclaw_e2e_fixture_t *fixture,
                     : h2_gizclaw_req_create_speech_extract(
                           service, 21u, &extract_options, 30000u, &request);
     h2_gizclaw_e2e_evidence(create_symbol, "speech", rc);
-    if (rc == H2_PAL_OK)
+    if (rc == H2_PAL_OK) {
       rc = h2_gizclaw_req_do(request, NULL, NULL, NULL, NULL);
+      h2_gizclaw_e2e_evidence("h2_gizclaw_req_do", "speech", rc);
+    }
     if (rc == H2_PAL_OK)
       rc = h2_gizclaw_service_audio_start(service);
     if (rc == H2_PAL_OK) {
@@ -235,6 +239,8 @@ int h2_gizclaw_e2e_run_speech(h2_gizclaw_e2e_fixture_t *fixture,
                                                   response.result_json);
       }
       h2_gizclaw_e2e_evidence(parse_symbol, "speech", rc);
+      h2_gizclaw_e2e_evidence(parse_symbol, kind == 0u
+          ? "speech_transcribe-assert" : "speech_extract-assert", rc);
     }
     if (rc != H2_PAL_OK && request != NULL)
       (void)h2_gizclaw_req_cancel(request);

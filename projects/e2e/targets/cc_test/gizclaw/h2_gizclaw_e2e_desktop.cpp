@@ -233,6 +233,11 @@ int run_desktop(int argc, char **argv) {
       false,
 #endif
       &options);
+  if (reason == nullptr && (options.suites & H2_GIZCLAW_E2E_SUITE_RPC) != 0u &&
+      (h2_gizclaw_e2e_fixture_key()[0] == '\0' ||
+       h2_gizclaw_e2e_fixture_profile()[0] == '\0' ||
+       h2_gizclaw_e2e_fixture_value()[0] == '\0'))
+    reason = "missing-app-config-fixture";
   if (reason != nullptr) {
     std::fprintf(stderr,
                  "H2_GIZCLAW_E2E stage=preflight status=ERROR reason=%s\n",
@@ -343,6 +348,11 @@ int run_desktop(int argc, char **argv) {
   session->app_config = {
       .server_endpoint = {session->endpoint.data(), session->endpoint.size()},
       .registration_token = {session->token.data(), session->token.size()},
+      .app_config_key = h2_gizclaw_e2e_fixture_key(),
+      .expected_runtime_profile = h2_gizclaw_e2e_fixture_profile()[0] ?
+          h2_gizclaw_e2e_fixture_profile() : nullptr,
+      .app_config_expected_value = {h2_gizclaw_e2e_fixture_value(),
+                                   strlen(h2_gizclaw_e2e_fixture_value())},
       .device_api_url = std::getenv("H2_GIZCLAW_E2E_DEVICE_API_URL"),
       .device_audio_url = std::getenv("H2_GIZCLAW_E2E_AUDIO_URL"),
       .fence_workflow_name = session->fence_workflow_name.c_str(),
@@ -360,6 +370,8 @@ int run_desktop(int argc, char **argv) {
       .should_stop_user = nullptr,
       .on_progress = emit_progress,
       .progress_user = nullptr,
+      .on_evidence = nullptr,
+      .evidence_user = nullptr,
   };
   h2_gizclaw_e2e_result_t result = {};
   const h2_gizclaw_e2e_exit_t exit_code =

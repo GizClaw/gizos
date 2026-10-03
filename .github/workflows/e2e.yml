@@ -13,6 +13,26 @@ on:
         description: Required for GizClaw/all; hostname:port (BJ uses edge-bj-01.e2e.gizclaw.com:9821)
         required: false
         type: string
+      runtime_profile:
+        description: Controlled GizClaw E2E RuntimeProfile identity
+        required: false
+        type: string
+      app_config_key:
+        description: Known non-sensitive AppConfig key in that profile
+        required: false
+        type: string
+      app_config_value:
+        description: Known non-sensitive exact AppConfig value bytes
+        required: false
+        type: string
+      device_api_url:
+        description: Verified HTTPS Device API fixture URL for the all suite
+        required: false
+        type: string
+      audio_url:
+        description: Verified HTTPS non-sensitive audio fixture URL for the all suite
+        required: false
+        type: string
       suite:
         description: GizClaw suite
         required: true
@@ -151,7 +171,7 @@ jobs:
           {
             printf 'BAZEL_REMOTE_CACHE_URL=%s\n' '${{ vars.BAZEL_REMOTE_CACHE_URL }}'
             printf 'BAZEL_REMOTE_CACHE_MODE=write\n'
-            printf 'BAZEL_DISK_CACHE_MODE=off\n'
+            printf 'BAZEL_DISK_CACHE_MODE=\n'
           } >> "$GITHUB_ENV"
 
       - name: Run selected live E2E
@@ -162,33 +182,59 @@ jobs:
           E2E_BACKEND: ${{ inputs.backend }}
           H2_GIZCLAW_E2E_REGISTRATION_TOKEN: ${{ secrets.H2_GIZCLAW_E2E_REGISTRATION_TOKEN }}
           H2_GIZCLAW_E2E_SUITE: ${{ inputs.suite }}
+          GIZCLAW_FIXTURE_PROFILE: ${{ inputs.runtime_profile }}
+          GIZCLAW_FIXTURE_KEY: ${{ inputs.app_config_key }}
+          GIZCLAW_FIXTURE_VALUE: ${{ inputs.app_config_value }}
+          H2_GIZCLAW_E2E_DEVICE_API_URL: ${{ inputs.device_api_url }}
+          H2_GIZCLAW_E2E_AUDIO_URL: ${{ inputs.audio_url }}
         shell: bash
         run: |
           set -euo pipefail
           case "$E2E_SCOPE" in
-            all|gizclaw) : "${H2_GIZCLAW_E2E_ENDPOINT:?set an explicit GizClaw endpoint}" ;;
+            all|gizclaw)
+              : "${H2_GIZCLAW_E2E_ENDPOINT:?set an explicit GizClaw endpoint}"
+              : "${H2_GIZCLAW_E2E_REGISTRATION_TOKEN:?set the controlled E2E registration token}"
+              : "${GIZCLAW_FIXTURE_PROFILE:?set the controlled E2E RuntimeProfile}"
+              : "${GIZCLAW_FIXTURE_KEY:?set a known non-sensitive AppConfig key}"
+              : "${GIZCLAW_FIXTURE_VALUE:?set its known non-sensitive AppConfig value}"
+              if [ "$H2_GIZCLAW_E2E_SUITE" = all ]; then
+                : "${H2_GIZCLAW_E2E_DEVICE_API_URL:?set an explicit HTTPS Device API fixture}"
+                : "${H2_GIZCLAW_E2E_AUDIO_URL:?set an explicit HTTPS audio fixture}"
+              fi
+              ;;
             pal) ;;
             *) echo 'unsupported live E2E scope' >&2; exit 2 ;;
           esac
+          cache_args=("--disk_cache=$RUNNER_TEMP/bazel-disk-cache")
+          if [ -n "${BAZEL_REMOTE_CACHE_URL:-}" ]; then
+            cache_args+=("--remote_cache=$BAZEL_REMOTE_CACHE_URL" --google_default_credentials --remote_upload_local_results=true)
+          fi
           run_gizclaw_target() {
-            make "$1" \
-              BAZEL_BIN="$RUNNER_TEMP/bazel" \
-              BAZEL_CONFIG="$H2_BAZEL_CONFIG"
+            "$RUNNER_TEMP/bazel" test "--config=$H2_BAZEL_CONFIG" \
+              "${cache_args[@]}" --cache_test_results=no \
+              "--//projects/e2e/apps/gizclaw:app_config_fixture_profile=$GIZCLAW_FIXTURE_PROFILE" \
+              "--//projects/e2e/apps/gizclaw:app_config_fixture_key=$GIZCLAW_FIXTURE_KEY" \
+              "--//projects/e2e/apps/gizclaw:app_config_fixture_value=$GIZCLAW_FIXTURE_VALUE" \
+              "--test_arg=--endpoint=$H2_GIZCLAW_E2E_ENDPOINT" \
+              "//projects/e2e/targets/cc_test/gizclaw:gizclaw_${1}_live_test"
           }
           run_gizclaw() {
             case "$E2E_BACKEND" in
               h2peer)
-                run_gizclaw_target bazel-test-gizclaw_h2peer_live_test
+                run_gizclaw_target h2peer
                 ;;
               pion)
                 case "$H2_GIZCLAW_E2E_SUITE" in rpc|firmware|voice|firmware-voice) ;; *) return 2 ;; esac
-                run_gizclaw_target bazel-test-gizclaw_pion_live_test
+                run_gizclaw_target pion
                 ;;
               both)
                 case "$H2_GIZCLAW_E2E_SUITE" in rpc|firmware|voice|firmware-voice) ;; *) return 2 ;; esac
                 final_rc=0
-                run_gizclaw_target bazel-test-gizclaw_h2peer_live_test || final_rc=$?
-                run_gizclaw_target bazel-test-gizclaw_pion_live_test || final_rc=$?
+                run_gizclaw_target h2peer || final_rc=$?
+                run_gizclaw_target pion || {
+                  gizclaw_rc=$?
+                  if [ "$final_rc" -eq 0 ]; then final_rc=$gizclaw_rc; fi
+                }
                 return "$final_rc"
                 ;;
               *) return 2 ;;

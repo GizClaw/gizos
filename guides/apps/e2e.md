@@ -27,7 +27,7 @@ Platform artifact entry 持有 Runtime assembly、具体 provider、endpoint 与
 | App | Portable target | Current launcher matrix |
 | --- | --- | --- |
 | Atomic | `//projects/e2e/apps/atomic/app:atomic_e2e` | macOS、真实 Browser/WASM pthread Workers、iOS/Android 模拟器、DevKit ESP32-S3 与 BK7258 的完整 typed 接口资格 |
-| GizClaw | `//projects/e2e/apps/gizclaw/app:gizclaw_e2e` | Desktop H2Peer；Desktop Pion 只比较 Firmware 与 Voice；DevKit ESP32-S3 H2Peer |
+| GizClaw | `//projects/e2e/apps/gizclaw/app:gizclaw_e2e` | Desktop H2Peer/Pion；Chromium Worker；iOS XCFramework / Android AAR 消费 App；DevKit、AMOLED、BK7258 入口，实际资格见 App README |
 | H106 | `//projects/e2e/apps/h106/app:h106_e2e` | Desktop Tiga/Zero、Tiga V4.2 与 Zero BK 1.0；完整 production Main App、Runtime Test Control 与公开 observation |
 | Libco | `//projects/e2e/apps/libco/app:libco_smoke` | Desktop、Browser、DevKit ESP32-S3、BK7258、TapDoki BK3633 |
 | Lua Runtime | `//projects/e2e/apps/lua-runtime/app:lua_runtime_e2e` | Desktop、Browser、AMOLED；九个固定 VM/coroutine/component/event/worker/shutdown case |
@@ -92,6 +92,10 @@ DevKit launcher（`projects/e2e/targets/h2loader_tar_zlib/lua-link/devkit`）运
 
 ## GizClaw
 
+GizClaw live入口统一直接 `bazel test`；iOS/Android消费共享mobile runner，业务fixture/oracle在`gizclaw-mobile/suite.py`，不再使用Make或shell转发调Bazel。`gizclaw_e2e_fixture` macro生成显式profile/key/已知非敏感value合同，缺输入在注册与业务资源mutation前失败。AppConfig两套list必须包含所选key，两套get必须逐字节等于期望value；注册返回必须匹配所选E2E profile，不能把其他profile的配置算进default资格。旧default/226项记录保留身份，新主线公开inventory为227项。
+
+`Live E2E` workflow 的 GizClaw scope 显式接收 endpoint、RuntimeProfile、非敏感 AppConfig key/value；all suite 还需 Device API 和 audio HTTPS URL。RegistrationToken 只从独立 Secret 经环境变量注入；输入不插入可执行脚本。Workflow 直接请求 Bazel live labels，保留启用的 disk cache，并在 both backend 下保留首个失败结果且继续第二项。缺失受控输入在任何 live target 启动前失败。
+
 `h2_gizclaw_e2e_run()` 只消费调用方提供的 Runtime/PAL、endpoint、RegistrationToken、suite mask 与确定性 PCM。防止并发 suite 和 retained session 被重复使用的 `s_run_active` 是文件级 static flag，使用 `H2_ATOMIC_DEFINE_STATIC` 定义独立 backing，不需模块级初始化或分配；run 结束且资源全部清理时清除，retained 资源仍在时保持占用。App 不读 environment 或文件，不选择 AP/BJ，不创建 Wi-Fi task，也不拥有 H2Peer/Pion。一个 case 失败后继续执行独立 case，最后输出完整 bounded summary 并完成反向清理。
 
 Desktop C++ launcher 的进程级 run guard 由同 package 的 C 桥接文件定义普通 static backing，C++ 通过 typed accessor 借用 wrapper 后仍调用同一 `h2_atomic_flag_*` API；没有 launcher 专用 global init，也不假设 `std::atomic` 与 C11 `_Atomic` 的内存布局相同。
@@ -101,11 +105,11 @@ Desktop C++ launcher 的进程级 run guard 由同 package 的 C 桥接文件定
 Desktop live E2E 位于 `projects/e2e/targets/cc_test/gizclaw`，以两个独立的 `manual` test target 运行：`gizclaw_h2peer_live_test` 默认执行 H2Peer 的完整 suite，`gizclaw_pion_live_test` 默认执行 Pion 的 Firmware 与 Voice suite。它们默认使用自然入口 `ap`，workflow 可以通过 test environment 选择 `ap`/`bj` 和受 backend 支持的 suite；两个 target 从 test environment 继承真实 RegistrationToken。两个 Make 入口都直接运行对应 Bazel test：
 
 ```sh
-make bazel-test-gizclaw_h2peer_live_test
-make bazel-test-gizclaw_pion_live_test
+bazel test --config=macos_arm64 //projects/e2e/targets/cc_test/gizclaw:gizclaw_h2peer_live_test --test_arg=--endpoint=<e2e-host:port>
+bazel test --config=macos_arm64 //projects/e2e/targets/cc_test/gizclaw:gizclaw_pion_live_test --test_arg=--endpoint=<e2e-host:port>
 ```
 
-DevKit launcher 位于 `projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/devkit`，固定使用 H2Peer、北京入口和 RuntimeProfile `default` 自己的 `deploy-default` RegistrationToken。通用 RPC/Voice 测试从该 profile 返回的 `assistants` catalog 选择真实 Workflow，不假设 H106 的 `chat` alias。它在首次 Wi-Fi `GOT_IP` 后每次 boot 只运行一次 `all`；构建时设置 `--define=H2_GIZCLAW_E2E_VOICE_ONLY=1` 可只运行 `voice`，用于隔离跨 case 的资源状态。断线重连不创建第二个 runner。portable App 继续 non-fail-fast 执行选中的独立 case，launcher 在完成后每 10 秒重放 bounded summary。Image confirmation 只证明 Runtime、H2Loader command service、Wi-Fi supervisor 和报告基础设施可用，不以业务 case 全部通过为条件。
+DevKit launcher 位于 `projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/devkit`，使用 H2Peer 与明确注入的受控 E2E endpoint、RuntimeProfile、key/value、token 和 HTTPS fixtures；旧 default/deploy-default 运行记录保留原身份。通用 RPC/Voice 测试从该 profile 返回的 `assistants` catalog 选择真实 Workflow，不假设 H106 的 `chat` alias。它在首次 Wi-Fi `GOT_IP` 后每次 boot 只运行一次 `all`；构建时设置 `--define=H2_GIZCLAW_E2E_VOICE_ONLY=1` 可只运行 `voice`，用于隔离跨 case 的资源状态。断线重连不创建第二个 runner。portable App 继续 non-fail-fast 执行选中的独立 case，launcher 在完成后每 10 秒重放 bounded summary。普通 GizClaw E2E 仅在本轮选定用例全部通过、结果完整且没有清理失败/保留资源时确认 App。失败镜像保持未确认；AMOLED 显式 OTA-only 的源镜像准备仍遵循独立硬件升级流程。
 
 DevKit 的 E2E runner、launcher 和 job task 显式使用 PSRAM stack；runner 入口以实际栈局部地址检查 PSRAM，失败时报告 harness error。`$gizclaw/net` 也使用 PSRAM，DevKit E2E policy 为它保留 64 KiB：在同一块 DevKit（UID `9888e0115c52`）上，原 32 KiB 实际栈曾在 Voice 的 `session_audio_start` 后溢出并重启。64 KiB 复测越过了该溢出点，`all` 的两轮实机测试分别为 8 项中 4 项通过、4 项失败：第一轮 `cleanup_rc=0`、`retained_resources=0`，第二轮出现 `peer_create_data_channel rc=-13`，`cleanup_rc=-4`、`retained_resources=8`。独立的 `voice` 实机测试中，PTT、文本、实时 VAD、service 重连和清理均通过，`selected=1`、`pass=1`、`cleanup_rc=0`、`retained_resources=0`。DevKit 无音频后端，其测试不作为真实麦克风和扬声器验收。测试没有取得 `$gizclaw/net` 的 stack high-water 数据，因此 64 KiB 不能作为其他固件 target 的容量结论。
 

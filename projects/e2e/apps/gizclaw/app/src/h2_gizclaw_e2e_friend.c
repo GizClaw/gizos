@@ -1,4 +1,5 @@
 #include "h2_gizclaw_e2e_friend.h"
+#include "h2_gizclaw_e2e_social_ping.h"
 
 #include <string.h>
 
@@ -402,6 +403,8 @@ int h2_gizclaw_e2e_run_friend(h2_gizclaw_e2e_fixture_t *fixture,
     if (rc == H2_PAL_OK)
       rc = verify_list(fixture, storage, req_api, &identity, true);
     proof(req_api, ADD, rc);
+    if (rc == H2_PAL_OK)
+      rc = h2_gizclaw_e2e_check_social_ping(fixture, false, req_api);
     if (rc == H2_PAL_OK)
       rc = token_clear_and_read(fixture, storage, req_api, &identity);
     if (rc == H2_PAL_OK)

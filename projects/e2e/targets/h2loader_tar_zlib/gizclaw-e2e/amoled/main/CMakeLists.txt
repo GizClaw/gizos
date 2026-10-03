@@ -71,3 +71,12 @@ endif()
 if(H2_GIZCLAW_E2E_RESOURCE_ONLY)
   target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_GIZCLAW_E2E_RESOURCE_ONLY=1)
 endif()
+
+if(H2_GIZCLAW_E2E_FIRMWARE_ONLY)
+  target_compile_definitions(${COMPONENT_LIB} PRIVATE H2_GIZCLAW_E2E_FIRMWARE_ONLY=1)
+endif()
+
+if(H2_GIZCLAW_E2E_NET_IO_TRACE)
+  idf_component_get_property(H2_E2E_PAL_CORE_LIB h2_pal_core COMPONENT_LIB)
+  target_compile_definitions(${H2_E2E_PAL_CORE_LIB} PRIVATE H2_ESP_NET_IO_TRACE=1)
+endif()

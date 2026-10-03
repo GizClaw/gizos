@@ -70,6 +70,8 @@ GizOS owns this provider assessment and the default-bundle HTTPS regression. Com
 
 The default `check_qualification.py` and Bazel evidence target require the entire six-platform assessment to be complete and no supported case to remain unassessed. `--allow-pending` is diagnostic only while a live run is unavailable; it still verifies every claimed pass and skip. `--require-all-core` additionally rejects the browser capability skip, so assessment completion never implies six raw Net/TLS implementations. The mobile declarations use the shared Python runner; only named optional cases may skip on typed `UNSUPPORTED`, and cleanup failures remain fatal.
 
+`gizclaw_public_https_provenance_main_tls.json` binds the optional ESP I/O diagnostics and shared mobile preflight to the current certificate-verifier assessment index. Its predecessor `gizclaw_public_https_provenance.json` retains its original bytes and index/source hashes. The checker allows only those two source paths to be superseded, still verifies all other provider/helper hashes, and rejects a maintenance record that claims fresh physical Net/TLS execution. Each hardware receipt remains tied to its own actual provider and fixture inputs.
+
 Receipt verification compares the ordered registry, source and artifact hashes, typed errors, complete peer payloads, and the exact current-peer run. Board markers replay an immutable boot ledger and do not execute again. Replaying a previous boot does not satisfy independent boot qualification. `projects/e2e/libs/pal-net-tls-device/assemble_board.py` performs the full source-log/status/metadata/coredump assembly and rejects missing or stale fields.
 
 ### Browser raw Net/TLS capability boundary

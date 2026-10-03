@@ -8,6 +8,10 @@
 #include "h2_esp_platform_core.h"
 #include "h2_gizclaw_e2e.h"
 #include "h2_gizclaw_e2e_task_names.h"
+#include "ledger.h"
+#include "h2/pal/os/h2_pal_crypto.h"
+#include "h2/pal/os/h2_pal_mem.h"
+#include "h2/pal/os/h2_pal_sync.h"
 #include "h2/pal/hal/h2_pal_wifi.h"
 #include "h2/pal/hal/h2_pal_wifi_settings.h"
 #include "h2/pal/os/h2_pal_task.h"
@@ -15,6 +19,7 @@
 #include "h2_runtime_event.h"
 
 #include "esp_system.h"
+#include "esp_app_desc.h"
 #include "esp_memory_utils.h"
 #include "esp_netif_sntp.h"
 #include "freertos/FreeRTOS.h"
@@ -26,14 +31,19 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
+#include <sys/time.h>
 
 #define H2_GIZCLAW_E2E_DEVKIT_RUNNER_STACK_SIZE 65536u
 #define H2_GIZCLAW_E2E_DEVKIT_WIFI_STACK_SIZE 8192u
 #define H2_GIZCLAW_E2E_DEVKIT_EVENT_WAIT_MS 1000u
 #define H2_GIZCLAW_E2E_DEVKIT_TIME_RETRY_LOG_INTERVAL 10u
-#define H2_GIZCLAW_E2E_DEVKIT_TIME_SERVER "pool.ntp.org"
+#define H2_GIZCLAW_E2E_LEDGER_CAPACITY (384u * 1024u)
 
-#if defined(H2_GIZCLAW_E2E_VOICE_ONLY)
+#if defined(H2_GIZCLAW_E2E_FIRMWARE_ONLY)
+#define H2_GIZCLAW_E2E_DEVKIT_SUITES H2_GIZCLAW_E2E_SUITE_FIRMWARE
+#define H2_GIZCLAW_E2E_DEVKIT_SUITE_NAME "firmware"
+#elif defined(H2_GIZCLAW_E2E_VOICE_ONLY)
 #define H2_GIZCLAW_E2E_DEVKIT_SUITES H2_GIZCLAW_E2E_SUITE_VOICE
 #define H2_GIZCLAW_E2E_DEVKIT_SUITE_NAME "voice"
 #elif defined(H2_GIZCLAW_E2E_CONCURRENCY_ONLY)
@@ -51,9 +61,16 @@ extern const uint8_t h2_gizclaw_e2e_voice_prompt_end[]
 
 typedef struct h2_gizclaw_e2e_devkit_runner {
   h2_runtime_t *runtime;
+  h2_gizclaw_e2e_config_t app_config;
   h2_gizclaw_e2e_result_t result;
   h2_gizclaw_e2e_exit_t exit_code;
   h2_atomic_bool_t exited;
+  h2_atomic_bool_t capture_failed;
+  h2_pal_mutex_t *evidence_mutex;
+  h2_gizclaw_e2e_ledger_t ledger;
+  char execution[33];
+  int confirm_rc;
+  bool admitted;
 } h2_gizclaw_e2e_devkit_runner_t;
 
 typedef struct h2_gizclaw_e2e_devkit_wifi_supervisor {
@@ -68,6 +85,19 @@ typedef union h2_gizclaw_e2e_devkit_event_payload {
 
 static h2_gizclaw_e2e_devkit_runner_t s_runner;
 static h2_gizclaw_e2e_devkit_wifi_supervisor_t s_wifi_supervisor;
+
+static void capture_evidence(void *user, const char *record, size_t size) {
+  h2_gizclaw_e2e_devkit_runner_t *runner = user;
+  if (h2_pal_mutex_lock(runner->runtime->sync, runner->evidence_mutex) != H2_PAL_OK) {
+    h2_atomic_store_explicit(&runner->capture_failed, true, H2_ATOMIC_RELEASE);
+    return;
+  }
+  h2_gizclaw_e2e_ledger_append(&runner->ledger, record, size);
+  if (runner->ledger.error != H2_PAL_OK)
+    h2_atomic_store_explicit(&runner->capture_failed, true, H2_ATOMIC_RELEASE);
+  if (h2_pal_mutex_unlock(runner->runtime->sync, runner->evidence_mutex) != H2_PAL_OK)
+    h2_atomic_store_explicit(&runner->capture_failed, true, H2_ATOMIC_RELEASE);
+}
 
 static void hold_for_recovery(void) {
   for (;;) {
@@ -104,14 +134,17 @@ static void emit_progress(void *user,
   fflush(stdout);
 }
 
-static void emit_summary(const h2_gizclaw_e2e_devkit_runner_t *runner,
-                         bool replay) {
+static int format_summary(const h2_gizclaw_e2e_devkit_runner_t *runner,
+                           bool replay, char *buffer, size_t capacity) {
   const h2_gizclaw_e2e_result_t *result = &runner->result;
-  printf("H2_GIZCLAW_E2E stage=summary entry=bj backend=h2peer suite=%s "
+  const h2_gizclaw_e2e_devkit_config_t *settings = h2_gizclaw_e2e_devkit_config();
+  return snprintf(buffer, capacity, "H2_GIZCLAW_E2E stage=%s platform=devkit endpoint=%.*s backend=h2peer suite=%s "
          "profile=%s selected=%zu terminal=%zu pass=%zu fail=%zu error=%zu "
          "blocked=%zu cancelled=%zu first_failure_case=%s "
          "first_failure_rc=%d cleanup_rc=%d retained_resources=%zu "
          "complete=%s exit_code=%d replay=%s\n",
+         replay ? "summary-replay" : "summary",
+         (int)settings->server_endpoint.len, settings->server_endpoint.data,
          H2_GIZCLAW_E2E_DEVKIT_SUITE_NAME,
          result->runtime_profile_name[0] == '\0'
              ? "-"
@@ -123,6 +156,26 @@ static void emit_summary(const h2_gizclaw_e2e_devkit_runner_t *runner,
          result->first_failure_rc, result->cleanup_rc,
          result->retained_resources, result->complete ? "true" : "false",
          (int)runner->exit_code, replay ? "true" : "false");
+}
+
+static void emit_summary(const h2_gizclaw_e2e_devkit_runner_t *runner, bool replay) {
+  char summary[1024];
+  int size = format_summary(runner, replay, summary, sizeof(summary));
+  if (size > 0 && (size_t)size < sizeof(summary))
+    printf("%.*s", size, summary);
+  fflush(stdout);
+}
+
+static void replay_ledger(const h2_gizclaw_e2e_devkit_runner_t *runner) {
+  if (!runner->ledger.frozen)
+    return;
+  printf("H2_GIZCLAW_LEDGER stage=begin version=%s execution=%s bytes=%zu records=%zu crc32=%08x admitted=%d confirm_rc=%d physical_audio=0\n",
+         esp_app_get_description()->version, runner->execution, runner->ledger.size,
+         runner->ledger.records, (unsigned)runner->ledger.crc32,
+         runner->admitted ? 1 : 0, runner->confirm_rc);
+  fwrite(runner->ledger.data, 1u, runner->ledger.size, stdout);
+  printf("H2_GIZCLAW_LEDGER stage=end execution=%s crc32=%08x\n",
+         runner->execution, (unsigned)runner->ledger.crc32);
   fflush(stdout);
 }
 
@@ -142,20 +195,28 @@ static void run_e2e(void *raw) {
   }
   const h2_gizclaw_e2e_devkit_config_t *launcher_config =
       h2_gizclaw_e2e_devkit_config();
-  const h2_gizclaw_e2e_config_t app_config = {
+  runner->app_config = (h2_gizclaw_e2e_config_t){
       .server_endpoint = launcher_config->server_endpoint,
       .registration_token = launcher_config->registration_token,
+      .app_config_key = h2_gizclaw_e2e_fixture_key(),
+      .expected_runtime_profile = h2_gizclaw_e2e_fixture_profile(),
+      .app_config_expected_value = {h2_gizclaw_e2e_fixture_value(),
+                                   strlen(h2_gizclaw_e2e_fixture_value())},
       .voice_pcm_s16le_16khz_mono = h2_gizclaw_e2e_voice_prompt_start,
       .voice_pcm_len = (size_t)(h2_gizclaw_e2e_voice_prompt_end -
                                h2_gizclaw_e2e_voice_prompt_start),
       .suites = H2_GIZCLAW_E2E_DEVKIT_SUITES,
+      .device_api_url = h2_gizclaw_e2e_fixture_device_api_url(),
+      .device_audio_url = h2_gizclaw_e2e_fixture_audio_url(),
       .case_timeout_ms = H2_GIZCLAW_E2E_DEFAULT_CASE_TIMEOUT_MS,
       .cleanup_timeout_ms = H2_GIZCLAW_E2E_DEFAULT_CLEANUP_TIMEOUT_MS,
       .progress_interval_ms = H2_GIZCLAW_E2E_DEFAULT_PROGRESS_INTERVAL_MS,
       .on_progress = emit_progress,
+      .on_evidence = capture_evidence,
+      .evidence_user = runner,
   };
   runner->exit_code =
-      h2_gizclaw_e2e_run(runner->runtime, &app_config, &runner->result);
+      h2_gizclaw_e2e_run(runner->runtime, &runner->app_config, &runner->result);
   h2_atomic_store_explicit(&runner->exited, true, H2_ATOMIC_RELEASE);
 }
 
@@ -216,6 +277,14 @@ static void image_entry(void *user) {
   const h2_gizclaw_e2e_devkit_config_t *config =
       h2_gizclaw_e2e_devkit_config();
 
+  if (!h2_gizclaw_e2e_fixture_endpoint()[0] || !h2_gizclaw_e2e_fixture_token()[0] ||
+      !h2_gizclaw_e2e_fixture_profile()[0] || !h2_gizclaw_e2e_fixture_time_server()[0] ||
+      ((H2_GIZCLAW_E2E_DEVKIT_SUITES & H2_GIZCLAW_E2E_SUITE_DEVICE) != 0u &&
+       (!h2_gizclaw_e2e_fixture_device_api_url()[0] || !h2_gizclaw_e2e_fixture_audio_url()[0])) ||
+      ((H2_GIZCLAW_E2E_DEVKIT_SUITES & H2_GIZCLAW_E2E_SUITE_RPC) != 0u &&
+       (!h2_gizclaw_e2e_fixture_key()[0] || !h2_gizclaw_e2e_fixture_value()[0])))
+    fail_launcher("missing_service_fixture", H2_PAL_ERR_INVALID_ARG, false);
+
   int rc = h2_esp_board_runtime_config(&runtime_config);
   if (rc != H2_PAL_OK) {
     fail_launcher("runtime_config", rc, false);
@@ -229,17 +298,20 @@ static void image_entry(void *user) {
   if (rc != H2_PAL_OK) {
     fail_launcher("runtime_init", rc, false);
   }
+  rc = h2_esp_h2loader_app_commands_start(runtime, "gizclaw-e2e", 1u, 3u);
+  if (rc != H2_PAL_OK) {
+    fail_launcher("command_start", rc, false);
+  }
+
+
+
   rc = h2_pal_wifi_sta_set_power_save(runtime->wifi_sta,
                                       H2_PAL_WIFI_POWER_SAVE_NONE);
   printf("H2_GIZCLAW_E2E_DEVKIT stage=power_save mode=%d rc=%d\n",
          (int)H2_PAL_WIFI_POWER_SAVE_NONE, rc);
   fflush(stdout);
   if (rc != H2_PAL_OK) {
-    fail_launcher("power_save", rc, false);
-  }
-  rc = h2_esp_h2loader_app_commands_start(runtime, "gizclaw-e2e", 1u, 3u);
-  if (rc != H2_PAL_OK) {
-    fail_launcher("command_start", rc, false);
+    fail_launcher("power_save", rc, true);
   }
 
   s_wifi_supervisor = (h2_gizclaw_e2e_devkit_wifi_supervisor_t){
@@ -254,10 +326,6 @@ static void image_entry(void *user) {
                          &s_wifi_supervisor, &wifi_task);
   if (rc != H2_PAL_OK) {
     fail_launcher("wifi_supervisor", rc, true);
-  }
-  rc = h2_esp_h2loader_app_confirm(runtime);
-  if (rc != H2_PAL_OK) {
-    fail_launcher("confirm", rc, true);
   }
   printf("H2_GIZCLAW_E2E_DEVKIT stage=launcher status=READY\n");
   fflush(stdout);
@@ -318,7 +386,7 @@ static void image_entry(void *user) {
     if (wifi_has_ip && !state.clock_ready) {
       if (!sntp_initialized) {
         const esp_sntp_config_t sntp_config =
-            ESP_NETIF_SNTP_DEFAULT_CONFIG(H2_GIZCLAW_E2E_DEVKIT_TIME_SERVER);
+            ESP_NETIF_SNTP_DEFAULT_CONFIG(h2_gizclaw_e2e_fixture_time_server());
         const esp_err_t time_init_rc = esp_netif_sntp_init(&sntp_config);
         if (time_init_rc != ESP_OK) {
           fail_launcher("time_init", (int)time_init_rc, true);
@@ -328,6 +396,13 @@ static void image_entry(void *user) {
       const esp_err_t time_rc = esp_netif_sntp_sync_wait(
           pdMS_TO_TICKS(H2_GIZCLAW_E2E_DEVKIT_EVENT_WAIT_MS));
       if (time_rc == ESP_OK) {
+        struct timeval wall;
+        if (gettimeofday(&wall, NULL) != 0 || wall.tv_sec <= 0)
+          fail_launcher("time_read", H2_PAL_ERR_IO, true);
+        rc = h2_pal_time_set_wall_ms(runtime->time,
+            (uint64_t)wall.tv_sec * 1000u + (uint64_t)wall.tv_usec / 1000u);
+        if (rc != H2_PAL_OK)
+          fail_launcher("time_publish", rc, true);
         state.clock_ready = true;
         printf("H2_GIZCLAW_E2E_DEVKIT stage=time status=READY\n");
         fflush(stdout);
@@ -349,6 +424,25 @@ static void image_entry(void *user) {
       s_runner.runtime = runtime;
       s_runner.result = (h2_gizclaw_e2e_result_t){0};
       s_runner.exit_code = H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
+      s_runner.confirm_rc = H2_PAL_ERR_INVALID_STATE;
+      char *evidence = h2_pal_mem_alloc(runtime->mem, H2_GIZCLAW_E2E_LEDGER_CAPACITY);
+      const h2_pal_mutex_config_t mutex = {
+          .name = "gizclaw-e2e-evidence", .allocator = runtime->mem};
+      uint8_t nonce[16];
+      if (evidence == NULL ||
+          h2_gizclaw_e2e_ledger_init(&s_runner.ledger, evidence, H2_GIZCLAW_E2E_LEDGER_CAPACITY) != H2_PAL_OK ||
+          h2_atomic_init(&s_runner.capture_failed, false) != H2_ATOMIC_OK ||
+          h2_pal_mutex_create(runtime->sync, &mutex, &s_runner.evidence_mutex) != H2_PAL_OK ||
+          h2_pal_crypto_random(runtime->crypto, nonce, sizeof(nonce)) != H2_PAL_OK)
+        fail_launcher("evidence_init", H2_PAL_ERR_NO_MEMORY, true);
+      static const char hex[] = "0123456789abcdef";
+      for (size_t i = 0u; i < sizeof(nonce); ++i) {
+        s_runner.execution[i * 2u] = hex[nonce[i] >> 4u];
+        s_runner.execution[i * 2u + 1u] = hex[nonce[i] & 15u];
+      }
+      s_runner.execution[32] = '\0';
+      printf("H2_GIZCLAW_BOOT board=devkit version=%s execution=%s\n",
+             esp_app_get_description()->version, s_runner.execution);
       if (h2_atomic_init(&s_runner.exited, false) != H2_ATOMIC_OK)
         fail_launcher("runner_atomic_init", H2_PAL_ERR_NO_MEMORY, true);
       const h2_pal_task_options_t runner_options = {
@@ -373,18 +467,38 @@ static void image_entry(void *user) {
       }
       runner_task = NULL;
       h2_atomic_destroy(&s_runner.exited);
+      if (s_runner.result.retained_resources == 0u &&
+          !h2_atomic_load_explicit(&s_runner.capture_failed, H2_ATOMIC_ACQUIRE)) {
+        char summary[1024];
+        int size = format_summary(&s_runner, false, summary, sizeof(summary));
+        if (size > 0 && (size_t)size < sizeof(summary))
+          capture_evidence(&s_runner, summary, (size_t)size);
+        else
+          h2_atomic_store_explicit(&s_runner.capture_failed, true, H2_ATOMIC_RELEASE);
+        if (!h2_atomic_load_explicit(&s_runner.capture_failed, H2_ATOMIC_ACQUIRE) &&
+            h2_gizclaw_e2e_ledger_freeze(&s_runner.ledger) == H2_PAL_OK &&
+            s_runner.exit_code == H2_GIZCLAW_E2E_EXIT_PASS &&
+            h2_gizclaw_e2e_result_all_passed(&s_runner.result)) {
+          s_runner.confirm_rc = h2_esp_h2loader_app_confirm(runtime);
+          s_runner.admitted = s_runner.confirm_rc == H2_PAL_OK;
+        }
+      }
+      if (!s_runner.admitted && s_runner.exit_code == H2_GIZCLAW_E2E_EXIT_PASS)
+        s_runner.exit_code = H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
       if (h2_pal_time_get_monotonic_ms(runtime->time, &now_ms) != H2_PAL_OK) {
         fail_launcher("summary_clock", H2_PAL_ERR_UNAVAILABLE, true);
       }
       h2_gizclaw_e2e_devkit_state_complete(
           &state, now_ms, config->summary_replay_interval_ms);
       emit_summary(&s_runner, false);
+      replay_ledger(&s_runner);
     }
     if (state.runner_complete &&
         h2_pal_time_get_monotonic_ms(runtime->time, &now_ms) == H2_PAL_OK &&
         h2_gizclaw_e2e_devkit_state_take_summary_replay(
             &state, now_ms, config->summary_replay_interval_ms)) {
       emit_summary(&s_runner, true);
+      replay_ledger(&s_runner);
     }
   }
 }

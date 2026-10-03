@@ -8,6 +8,7 @@ py_test(
     srcs = ["check_qualification.py"],
     data = [
         "mobile_runner_refactor.json",
+        "gizclaw_harness_provenance.json",
         "//:Makefile",
         "//:scripts/bazel/bazel-test-android_pal_display_simulator_test.sh",
         "//:scripts/bazel/bazel-test-ios_pal_display_simulator_test.sh",

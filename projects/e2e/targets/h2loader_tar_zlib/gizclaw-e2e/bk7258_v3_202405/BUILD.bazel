@@ -1,0 +1,136 @@
+load("//projects/h2loader/tools/bazel:h2loader_firmware.bzl", "h2loader_bk7258_firmware")
+load("//projects/h2loader/tools/bazel:h2loader_tar_zlib.bzl", "h2loader_tar_zlib")
+load("//tools/bazel:firmware_components.bzl", "firmware_lib_component")
+load("//tools/bazel:native_component.bzl", "firmware_native_component")
+load("//tools/bazel:target_task_policy.bzl", "bk7258_target_task_policy")
+
+package(default_visibility = ["//visibility:public"])
+
+bk7258_target_task_policy(
+    ap_allocator = "psram",
+    ap_default_policy = "7 0 4096 default",
+    ap_policies = [
+        "gizclaw/e2e/runner   7 0 65536 psram",
+        "gizclaw/e2e/launcher 7 0 65536 psram",
+        "gizclaw/e2e/wifi     default",
+        "gizclaw/e2e/job      7 0 32768 psram",
+        "$gizclaw/net         7 0 65536 psram",
+        "$gizclaw/audio/download 7 0 32768 psram",
+        "$gizclaw/device       7 0 131072 psram",
+        "$gizclaw/data-up      7 0 16384 psram",
+        "$gizclaw/data-down    7 0 16384 psram",
+        "$gizclaw/audio/uplink 7 0 65536 psram",
+        "$gizclaw/audio/downlink 7 0 16384 psram",
+        "h2loader/appcmd    5        0  8192  psram",
+        "$h2loader/uartcmd  5        0  8192  psram",
+        "$bleikcp/kcp       default",
+        "$bleikcp/server    default",
+        "$h2peer/net        7 0 16384 psram",
+        "$h2peer/udp        7 0 16384 psram",
+        "$runtime/input     default",
+        "$runtime/nfc       default",
+        "$h2loader/return   default",
+        "$h2loader/blelink  default",
+    ],
+    cp_default_policy = "6 4096 default",
+    graph = [":gizclaw_e2e_launcher"],
+)
+
+firmware_lib_component(
+    name = "firmware_lib",
+    deps = [
+        "//libs/audio_mixer",
+        "//libs/bleikcp",
+        "//libs/bundle",
+        "//libs/gizclaw",
+        "//libs/command",
+        "//libs/iostreamikcp",
+        "//libs/pal:unsupported",
+        "//libs/pal/providers/corehttp",
+        "//libs/pal/providers/coremqtt",
+        "//libs/pal/providers/h2peer",
+        "//libs/pal/providers/h2sctp",
+        "//libs/pal/providers/libco",
+        "//libs/pal/providers/yyjson",
+        "//libs/pixa",
+        "//libs/runtime",
+        "//libs/wifi_sta",
+        "//projects/e2e/apps/gizclaw/app:gizclaw_e2e",
+        "//projects/e2e/libs/gizclaw-device:ledger",
+    ],
+)
+
+firmware_native_component(
+    name = "ap_launcher_component",
+    srcs = [
+        "ap/ap_main.c",
+        "ap/h2_gizclaw_e2e_bk_config.c",
+    ],
+    hdrs = ["ap/h2_gizclaw_e2e_bk_config.h"],
+    component_directory = "projects/e2e/targets/h2loader_tar_zlib/gizclaw-e2e/bk7258_v3_202405/ap",
+    component_name = "ap",
+    data = ["ap/CMakeLists.txt", "//projects/e2e/apps/gizclaw:voice_prompt"],
+    execution_unit = "ap",
+)
+
+firmware_native_component(
+    name = "gizclaw_e2e_launcher",
+    srcs = [],
+    hdrs = [],
+    data = [
+    ],
+    tags = ["manual"],
+    deps = [
+        ":ap_launcher_component",
+        ":firmware_lib",
+        "//boards/bk7258_v3_202405/bk7258",
+        "//libs/pal",
+        "//libs/atomic",
+        "//libs/pal/providers/libco",
+        "//libs/runtime",
+        "//projects/e2e/libs/gizclaw-device:ledger",
+        "//native_component_src/bk7258/ap/h2_pal_core",
+        "//native_component_src/bk7258/ap/h2_gizclaw",
+        "//native_component_src/bk7258/ap/opus_port",
+        "//native_component_src/bk7258/ap/zlib",
+        "//native_component_src/bk7258/cp/h2_pal_core",
+        "//projects/e2e/apps/gizclaw/app:gizclaw_e2e",
+        "//projects/h2loader/apps/loader/app:tasks",
+        "//projects/h2loader/libs/h2loader",
+        "//projects/h2loader/native_component_src/bk7258/ap/h2loader_bk",
+        "//projects/h2loader/native_component_src/bk7258/cp/h2loader_cp_launcher",
+    ],
+)
+
+h2loader_bk7258_firmware(
+    name = "firmware",
+    srcs = [
+        "CMakeLists.txt",
+        "ap/CMakeLists.txt",
+        "ap/ap_main.c",
+        "ap/h2_gizclaw_e2e_bk_config.c",
+        "ap/h2_gizclaw_e2e_bk_config.h",
+        "//projects/e2e/apps/gizclaw:voice_prompt",
+    ],
+    ap_task_policy = ":ap_task_policy",
+    board = "bk7258_v3_202405",
+    cp_task_policy = ":cp_task_policy",
+    graph = [
+        ":gizclaw_e2e_launcher",
+    ],
+    # Business actors and bounded evidence need the existing media/runtime heap,
+    # rather than the display-oriented layout's 640 KiB AP heap.
+    layout = "media",
+    project = "CMakeLists.txt",
+    project_name = "h2_bk_gizclaw_e2e",
+    target = "bk7258",
+)
+
+h2loader_tar_zlib(
+    name = "package",
+    board = "bk7258_v3_202405",
+    firmware = ":firmware",
+    image = "gizclaw-e2e",
+    role = "app",
+    target = "bk7258",
+)

@@ -16,6 +16,8 @@ py_test(
     srcs = ["check_qualification.py"],
     data = [
         "qualification.json",
+        "gizclaw_public_https_provenance.json",
+        "gizclaw_public_https_provenance_main_tls.json",
         "//libs/pal:pal_header_files",
         "//libs/pal/providers/android/pal_core:BUILD.bazel",
         "//libs/pal/providers/android/pal_core:include/h2_android_net.h",
@@ -65,6 +67,7 @@ py_test(
         "tests/test_evidence_rejection.py",
     ],
     data = [
+        ":qualification_evidence_test",
         "evidence/bk7258/qualified.json",
         "evidence/macos/qualified.json",
         "evidence/wasm/boundary.json",
