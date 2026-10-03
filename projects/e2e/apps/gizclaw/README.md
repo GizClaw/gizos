@@ -1,6 +1,14 @@
 # GizClaw E2E
 
-## 当前资格（2026-10-03，PAL signed32）
+AMOLED 当前TCP配置与Tiga/Zero ESP一致：收发窗口11520字节、接收邮箱12项，TCP/IP优先级22且固定CPU0；乱序上限和selective ACK使用SDK默认值（0/关闭）。
+
+R50在speaker优先级6、不固定核时出现连续播放延迟，Device API失败（全量7/8），用户报告声音断续。R51仅把speaker改为17/CPU1后，播放计数恢复每秒约1秒，但并发Device API状态查询超时（全量7/8）。R52再将本E2E launcher的GizClaw/H2Peer网络任务优先级对齐Tiga/Zero的20/20/21、固定CPU0；managed和独立normal启动均8/8及227/227通过，cleanup/retained均为0、confirm=0且nonce不同。两轮约20秒播放均用时约20秒，并观测到完整EOS；最终App分区2/2、Stage为空、原P1与空crash基线保留。用户另确认R52这一版听起来连续。各轮身份、播放计数和失败记录见[playback comparison](evidence/amoled-tiga-tcp-playback-comparison.json)。
+
+此前小接收配置的R49发送缓冲为65535、TCP/IP默认优先级18、speaker优先级6。R49在Dev 0.24.1的managed与独立normal启动各自8/8、227/227通过，cleanup/retained均为0、confirm=0、nonce不同。完整来源、包/配置/账本SHA和物理状态见[small RX qualification](evidence/amoled-small-rx-qualification.json)。
+
+此前R47大接收窗口撤回TCP覆盖值的失败及原R45对照仍保留在[TCP defaults comparison](evidence/amoled-tcp-defaults-comparison.json)；R48首轮注册CLOSED失败也保留原身份，未作为通过记录。下述六平台原始资格不改标为R49或新Server版本的执行。
+
+## 六平台原始资格（2026-10-03，PAL signed32）
 
 GizClaw C SDK `0.23.2` 的完整 portable registry 已在六个平台通过：每个平台
 **8/8 业务用例、独立 227/227 API 审计、cleanup=0、retained=0**；hosted

@@ -1,0 +1,312 @@
+{
+  "schema": 1,
+  "qualified": true,
+  "sdk_version": "0.23.2",
+  "server_version": "0.24.1",
+  "environment": "controlled Dev",
+  "runtime_profile": "gizos-e2e-626",
+  "endpoint": "edge-bj-01.dev.gizclaw.com:9821",
+  "device_uid": "30eda0ae0f86",
+  "r49_baseline": {
+    "evidence": "amoled-small-rx-qualification.json",
+    "send_buffer": 65535,
+    "tcpip_priority": 18,
+    "speaker_priority": 6,
+    "speaker_core": -1,
+    "managed_cadence": {
+      "position_ms": 20128,
+      "elapsed_ms": 20004
+    },
+    "normal_cadence": {
+      "position_ms": 20096,
+      "elapsed_ms": 20001
+    }
+  },
+  "r50": {
+    "version": "gizclaw-amp-r50-tiga-tcp",
+    "source_base": "c29d6958658b89ab7af7ce4fcaac755383bc4d44",
+    "source_patch_sha256": "a841dc7731ed848839afc02e55690777bcbf108ad4b571b184bbafd441d3667d",
+    "package_sha256": "8554857648b74f3e78e3fbc3b0397d4d95a0fdc916de73cdc74d79f9ada509f1",
+    "image_sha256": "835afd61f71db71de9c5d84ad8aa731f9b542650ecd11c68f065d558437826a3",
+    "config": {
+      "send_buffer": 11520,
+      "receive_window": 11520,
+      "receive_mailbox": 12,
+      "tcpip_priority": 22,
+      "tcpip_core": 0,
+      "tcpip_mailbox": 32,
+      "mss": 1440,
+      "maximum_active_tcp": 2,
+      "maximum_listening_tcp": 1,
+      "maximum_sockets": 8,
+      "ooseq_max_pbufs": 0,
+      "sack_out": false,
+      "psram_wifi_lwip": true,
+      "speaker_priority": 6,
+      "speaker_core": -1
+    },
+    "runtime_tcp_windows_mailbox_psram_verified": true,
+    "generated_header_captured": false,
+    "selected": 8,
+    "passed": 7,
+    "failed": 1,
+    "first_failure_case": "device-api",
+    "first_failure_rc": -7,
+    "cleanup_rc": 0,
+    "retained_resources": 0,
+    "player": {
+      "cadence_position_ms": 20096,
+      "cadence_elapsed_ms": 25750,
+      "probe_seconds": 150,
+      "final_position_ms": 130048,
+      "ended": false
+    },
+    "firmware": {
+      "received": 5337909,
+      "expected": 5337909,
+      "digest_match": true,
+      "passed": true
+    },
+    "user_observation": "Audible interruptions and playback stalls",
+    "ledger": {
+      "version": "gizclaw-amp-r50-tiga-tcp",
+      "execution": "bff12da4da28a352131bad2f3c6a1dc4",
+      "record_bytes": 192875,
+      "records": 2108,
+      "crc32": "afb99efe",
+      "admitted": false,
+      "confirm_rc": -7,
+      "physical_audio": true,
+      "ledger_sha256": "9b9cb5d5ca61ce468da5e3dcaadca3e9fb43974bf1cf4078f3bf4fe4a566676a"
+    },
+    "raw_capture_sha256": "efa856bd1f02b73961cb713422b2948c0ce231bc5a6c0b22b0c2a0509cca71d8"
+  },
+  "r51": {
+    "version": "gizclaw-amp-r51-speaker17",
+    "status": "Completed: steady local playback counters but concurrent Device API status timed out; not admitted",
+    "changes_from_r50": {
+      "speaker_priority": 17,
+      "speaker_core": 1
+    },
+    "source_base": "c29d6958658b89ab7af7ce4fcaac755383bc4d44",
+    "source_patch_sha256": "c7f6a104d186edbd65b5a80dd82bfc70644f3aad7bacf68ab3508ead8c26e6ae",
+    "package_sha256": "8c4a3b1c082052f634fa805fc8ed595403c1197b41ab5aae803e9de81b067c9a",
+    "image_sha256": "5ec4ab6655bf1f2728d6a27da22c842bfa05789fa4429c662c5d66f6188441b4",
+    "config": {
+      "send_buffer": 11520,
+      "receive_window": 11520,
+      "receive_mailbox": 12,
+      "tcpip_priority": 22,
+      "tcpip_core": 0,
+      "tcpip_mailbox": 32,
+      "mss": 1440,
+      "maximum_active_tcp": 2,
+      "maximum_listening_tcp": 1,
+      "maximum_sockets": 8,
+      "ooseq_max_pbufs": 0,
+      "sack_out": false,
+      "psram_wifi_lwip": true,
+      "speaker_priority": 17,
+      "speaker_core": 1
+    },
+    "sdkconfig_sha256": "14373eff78487fa9de7e9096e36c406ed4ca27b5bc00770200bcd8ee469ad85f",
+    "generated_header_captured": true,
+    "runtime_speaker_priority_core_verified": true,
+    "qualified": false,
+    "selected": 8,
+    "passed": 7,
+    "failed": 1,
+    "cleanup_rc": 0,
+    "retained_resources": 0,
+    "first_failure": {
+      "case": "device-api",
+      "stage": "/device/status during continuous playback",
+      "http_status": 0,
+      "rc": -6
+    },
+    "player": {
+      "observed_positions_ms": [
+        0,
+        0,
+        992,
+        1984,
+        3008,
+        3968,
+        4992,
+        5984,
+        6976,
+        8000,
+        8992,
+        9984,
+        10976,
+        12000,
+        12992,
+        13984,
+        15008,
+        16000,
+        16992,
+        17984,
+        19008,
+        20000
+      ],
+      "steady_position_delta_min_ms": 960,
+      "steady_position_delta_max_ms": 1024,
+      "cadence_assert_complete": false,
+      "ended": false
+    },
+    "firmware": {
+      "passed": true,
+      "received": 5337909,
+      "expected": 5337909,
+      "digest_match": true
+    },
+    "ledger": {
+      "version": "gizclaw-amp-r51-speaker17",
+      "execution": "270858a2d1c7eab55eedd7f1633fb881",
+      "records": 1467,
+      "record_bytes": 135912,
+      "crc32": "f5e0c2ba",
+      "admitted": false,
+      "confirm_rc": -7,
+      "physical_audio": true,
+      "ledger_sha256": "c37b3f0a575747bb73a623685540905f32ad57dcdf9880d99cae1a8ec20015c3"
+    },
+    "raw_capture_sha256": "c27984a4e387b0b901c8df33ab6994d98a06e28fb23e1a09701035aa459f5653"
+  },
+  "conclusion_scope": "R52 combined speaker and E2E network scheduling changes passed full functional qualification in two independent boots with matched Tiga/Zero TCP defaults on this board/environment. The user reported continuous R52 playback. R50 and R51 failures are preserved. The experiments do not isolate one scheduling parameter or qualify microphone/general acoustic quality.",
+  "r52": {
+    "version": "gizclaw-amp-r52-net20",
+    "source_base": "c29d6958658b89ab7af7ce4fcaac755383bc4d44",
+    "source_patch_sha256": "15f661b4e5b18fdf1224a37e114f16c457910ba4c192bc02c24a51e4b59a2ece",
+    "config": {
+      "send_buffer": 11520,
+      "receive_window": 11520,
+      "receive_mailbox": 12,
+      "tcpip_priority": 22,
+      "tcpip_core": 0,
+      "tcpip_mailbox": 32,
+      "mss": 1440,
+      "maximum_active_tcp": 2,
+      "maximum_listening_tcp": 1,
+      "maximum_sockets": 8,
+      "ooseq_max_pbufs": 0,
+      "sack_out": false,
+      "psram_wifi_lwip": true,
+      "speaker_priority": 17,
+      "speaker_core": 1,
+      "gizclaw_net_priority": 20,
+      "h2peer_net_priority": 20,
+      "h2peer_udp_priority": 21,
+      "network_core": 0
+    },
+    "status": "Managed and independent normal passed 8/8 and 227/227 each; user reported continuous R52 playback",
+    "changes_from_r51": {
+      "gizclaw_net_priority": 20,
+      "h2peer_net_priority": 20,
+      "h2peer_udp_priority": 21,
+      "network_core": 0
+    },
+    "package_sha256": "f4010368da8a94eab43fd24d3326883aeb5f03ee8314eefcf6f7c4d756f69bcc",
+    "image_sha256": "09e5437bfaa3f89d33c33b92533eafbe113f32befbbb7eb70cfc2d6d03aab097",
+    "sdkconfig_sha256": "14373eff78487fa9de7e9096e36c406ed4ca27b5bc00770200bcd8ee469ad85f",
+    "generated_header_captured": true,
+    "runtime_speaker_priority_core_verified": true,
+    "runtime_gizclaw_h2peer_net_priority_core_verified": true,
+    "runtime_tcp_windows_mailbox_psram_verified": true,
+    "managed": {
+      "version": "gizclaw-amp-r52-net20",
+      "execution": "7bc1aae51f9bf8fc5f232843862b5d87",
+      "physical_audio": true,
+      "confirm_rc": 0,
+      "records": 2062,
+      "record_bytes": 188743,
+      "transport_crc32": "e04ea366",
+      "ledger_sha256": "ce691c5e9c0f7530847bd743cca125ea0fc0b4641aff44c86b947bb3f67394f4",
+      "discarded_frames": 0,
+      "qualified": true,
+      "api_coverage": {
+        "valid": true,
+        "required": 227,
+        "covered": 227,
+        "missing": 0
+      }
+    },
+    "managed_player": {
+      "cadence_position_ms": 20128,
+      "cadence_elapsed_ms": 20008,
+      "ended_position_ms": 138656,
+      "ended_elapsed_ms": 141019
+    },
+    "p1_preserved": true,
+    "coredump_status_unchanged": true,
+    "stage_final": 0,
+    "raw_capture_sha256": {
+      "control-complete-snapshot.private.log": "f30061a2fa8b26a85cda68f15ebd74d78f9dbb9c91f3a9378a641f1419bd41da",
+      "normal-complete-snapshot.private.log": "bb070071692072c3976db5c2ff9fc26afd075b6fb5dde2e68a3e31682a2af297"
+    },
+    "listener_observation": {
+      "version": "gizclaw-amp-r52-net20",
+      "reported_by": "user",
+      "result": "continuous",
+      "user_text": "\u8fd9\u4e00\u7248\u542c\u8d77\u6765\u8fde\u7eed",
+      "received_utc": "2026-10-03T19:22:13.763189+00:00",
+      "scope": "Listening observation on the current AMOLED; no microphone or general acoustic-quality qualification"
+    },
+    "qualified": true,
+    "normal": {
+      "version": "gizclaw-amp-r52-net20",
+      "execution": "6a7cb01d3ae916f9ede9f22c58b7919c",
+      "physical_audio": true,
+      "confirm_rc": 0,
+      "records": 2063,
+      "record_bytes": 188874,
+      "transport_crc32": "7da5b8e6",
+      "ledger_sha256": "6487dfba3fb0aa138b54ce8df1f9d15edfbb77940792f5be6220d6d237e255d4",
+      "discarded_frames": 0,
+      "qualified": true,
+      "api_coverage": {
+        "valid": true,
+        "required": 227,
+        "covered": 227,
+        "missing": 0
+      }
+    },
+    "normal_boot_independent": true,
+    "selected": 8,
+    "passed": 8,
+    "cleanup_rc": 0,
+    "retained_resources": 0,
+    "final_state": {
+      "device_uid": "30eda0ae0f86",
+      "active_role": "app",
+      "active_version": "gizclaw-amp-r52-net20",
+      "active_checksum": "09e5437bfaa3f89d33c33b92533eafbe113f32befbbb7eb70cfc2d6d03aab097",
+      "running_partition": "2",
+      "next_partition": "2",
+      "stage_valid": "0",
+      "last_result": "0",
+      "p1_preserved": true,
+      "coredump_status_unchanged": true
+    },
+    "normal_player": {
+      "cadence_position_ms": 20160,
+      "cadence_elapsed_ms": 20003,
+      "ended_position_ms": 138656,
+      "ended_elapsed_ms": 140928
+    }
+  },
+  "host_device_control": {
+    "platform": "macos",
+    "suite": "device",
+    "selected": 1,
+    "passed": 1,
+    "cleanup_rc": 0,
+    "retained_resources": 0,
+    "exit_code": 0,
+    "elapsed_seconds": 16.0,
+    "device_status_get_passed": 5,
+    "log_sha256": "4469f70af71171e38b566ab3e9bb77ee0f404cce9e6def9b5f2cc9489825029f",
+    "audio_scope": "Software audio delegate; Device API control only",
+    "preflight_attempts": "Two setup attempts missing endpoint were rejected before business; preserved privately and not counted as device failures"
+  }
+}

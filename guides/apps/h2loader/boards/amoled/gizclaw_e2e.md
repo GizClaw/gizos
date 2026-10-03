@@ -31,7 +31,15 @@ bazel build --config=esp32s3 \
 
 独立正常启动可使用 `reboot app`，让资格测试独立运行，完成后再通过 directed `monitor` 读取当前版本的冻结账本。每次必须排除上一轮 execution nonce；持续串口观察期间出现的超时保留为失败记录，不能拿较早的 PASS 代替。该流程减少观察者对运行的扰动，不改变任何业务超时、音频节奏或资源清理断言。
 
-AMOLED 的 H2Loader layout 将每个 TCP 连接的乱序 pbuf 上限设为4并启用 selective ACK，避免等待缺失包时长期占用 Wi-Fi RX 缓冲。ES8311 输出任务优先级为6，高于业务解码等优先级4任务，使 I2S 持续得到帧。连接丢失后的远端 Peer 清理只在原 cleanup deadline 内重连同一身份一次，仍以服务端删除确认作为回收证据。真实受控 Dev 或 E2E cluster 均可通过相同显式 macro 输入选择；receipt 必须保留实际 cluster、SDK、AppConfig、源码和产物身份。
+AMOLED 的 H2Loader layout 保留 Wi-Fi/lwIP PSRAM 配置；TCP收发窗口与接收邮箱按Tiga/Zero ESP配置设为11520字节和12项，TCP/IP任务优先级22且固定CPU0。TCP乱序队列上限和selective ACK使用ESP-IDF默认值。ES8311 输出任务现按Tiga/Zero speaker配置设为优先级17、固定CPU1；麦克风配置保持原值。连接丢失后的远端 Peer 清理只在原 cleanup deadline 内重连同一身份一次，仍以服务端删除确认作为回收证据。真实受控 Dev 或 E2E cluster 均可通过相同显式 macro 输入选择；receipt 必须保留实际 cluster、SDK、AppConfig、源码和产物身份。此前 R45 资格对应显式乱序上限4和 selective ACK 开启的原始镜像，不能作为撤回这两项配置后的设备验收。
+
+撤回两项 TCP 覆盖值的实板对照见 [AMOLED TCP defaults comparison](../../../../../projects/e2e/apps/gizclaw/evidence/amoled-tcp-defaults-comparison.json)。同一恢复后的 Dev 0.24.1 环境中，R47 实际生成配置为乱序上限0、selective ACK关闭、speaker优先级6，完整业务结果为6/8，cleanup/retained均为0；Device API在注册阶段返回CLOSED，尚未运行播放器，Firmware下载在300秒deadline内只收到228056/5337909字节。主机同一Firmware用例2.6秒通过。保留原源码和包身份的R45对照（乱序上限4、selective ACK开启、speaker优先级6）实际8/8及227/227通过、confirm=0；最终App分区2/2、Stage为空、原P1和空crash baseline保留。这是一轮每配置的功能对照，未单独隔离两项TCP设置，撤回配置不具备R45的全量资格。
+
+此前小接收配置的实板资格见 [AMOLED small RX qualification](../../../../../projects/e2e/apps/gizclaw/evidence/amoled-small-rx-qualification.json)：R49在相同Dev 0.24.1及SDK0.23.2下，managed和独立normal启动各8/8及227/227通过，cleanup/retained均为0、confirm=0且nonce不同。当时发送缓冲仍为65535、TCP/IP任务使用默认优先级18、speaker优先级6且不固定核。两轮Firmware完整5337909字节、SHA匹配，Device API播放器流程通过；实际App分区2/2、Stage为空、原P1与空crash基线保留。此前相同小接收配置R48首轮为7/8，Resource注册返回CLOSED，未确认镜像，原失败账本保留。这些结果支持当时接收配置的功能就绪，不证明长队列本身制造网络乱序。
+
+R50进一步将发送缓冲11520和TCP/IP优先级22与Tiga/Zero一致，speaker仍为6且不固定核；全量结果7/8，Device API连续播放失败。播放到20096ms用了25750ms，150秒探针结束时仅到130048ms、未观测到EOS，用户同时报告声音断续和播放停顿；cleanup/retained均为0，未确认镜像。
+
+R51只将speaker改为17/CPU1，保持上述TCP配置；前20秒播放计数在每秒采样间前进960–1024ms，但并发`/device/status`查询返回TIMEOUT、HTTP状态0，全量7/8，cleanup/retained均为0，未确认镜像。R52再将本E2E launcher的`$gizclaw/net`、`$h2peer/net`和`$h2peer/udp`分别设为20、20、21，均固定CPU0，与Tiga/Zero的产品网络任务相同；managed与独立normal启动各8/8及227/227通过、confirm=0、cleanup/retained均为0，实际nonce不同。两轮分别播放到20128ms/20160ms，用时20008ms/20003ms；完整EOS位置均138656ms、耗时141019ms/140928ms。最终App分区2/2、Stage为空、原P1和空crash基线保留。主机同一Device API suite在16秒内1/1通过、5次设备状态查询均200；主机使用software音频delegate，只提供控制链路对照。各轮完整身份与诊断见 [AMOLED playback comparison](../../../../../projects/e2e/apps/gizclaw/evidence/amoled-tiga-tcp-playback-comparison.json)。用户另确认R52这一版听起来连续；功能审计与该听感观察分别记录，不能据这轮同时改变的调度参数认定单项因果。
 
 ## 固件下载诊断
 
