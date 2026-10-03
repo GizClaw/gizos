@@ -209,6 +209,10 @@ release 规则，例如只接受长按。`run_ms` 非零时在该时长后发出
 `@gizos//libs/app_host:web_app.bzl` 与
 `@gizos//libs/lua/web:lua_web_app.bzl`。
 
+Lua 通用入口执行 checked shutdown，并启用 `managed_shutdown`：Stop 请求取消 Lua job，等待依赖完成清理；不会在 2 秒后强制取消拥有传输 worker 的 App task。后端一直不返回时，清理可能无限等待。后端或 join 失败时，入口通过 App Host 的 quarantine 通知保留 Lua Host、Runtime、FS、platform 和仍存活的 task；shell 报告 `result=FAIL ... retained=1`，重复启动和输入被拒绝。已 join 的 worker 不等于传输状态已知安全；没有 reset、discard 或自动恢复 API，最终释放边界是页面／Wasm module 销毁。普通 Lua 错误在 checked shutdown 成功后仍完整释放，不进入永久隔离。
+
+App Host 把配置、Button/hardware descriptor、名字和路径复制到一个拥有的 allocation；`owner_bytes` 报告它的大小。opaque callback/provider/allocator user context 仍由调用方拥有，必须使用能覆盖隔离期的 static 或 owned heap 存储，不能借用已返回的栈。公共 ownership 与返回值合同见 `h2_web_app_host.h`。`//libs/lua/web/tests/lifecycle:all` 在真实浏览器中验证共享 Lua 入口的正常释放、普通错误、慢传输 Stop、传输故障、Display/App join 失败及 FS 忙时的依赖保留。
+
 #### Lua 脚本配置与预算
 
 `h2_lua_web_app()` 的 `vm_memory_limit_bytes` 默认 524288（512 KiB），允许 65536..16777216；`source_limit_bytes` 默认 131072（128 KiB），允许 1..1048576。两者必须是整数，不能传入 bool 或字符串。默认调用的预算不变，较大的程序由自己的 artifact entry 显式选择预算；可接受的配置不保证任意程序都能在该预算内运行。超限源码仍按 Host resource 校验失败，VM 分配耗尽仍报告 job failure，不自动扩容。

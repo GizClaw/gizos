@@ -111,6 +111,12 @@ typedef struct h2_web_app_host_config {
    * returns EXIT, which then counts as a clean stop.
    */
   uint32_t run_ms;
+  /** Entry owns dependent workers and performs checked shutdown. Stop remains
+   * cooperative: the 2-second task cancellation is disabled, since an EXIT
+   * cannot prove its workers/resources safe to release. A stuck PAL may keep
+   * shutdown pending indefinitely while the page event loop stays responsive.
+   * Set only for entries that honor should_stop and check dependent cleanup. */
+  int managed_shutdown;
   /** Nonzero initializes the LVGL platform for LVGL-based Apps. */
   int lvgl;
   /**
@@ -128,9 +134,35 @@ typedef struct h2_web_app_host_config {
   const h2_web_app_host_hardware_t *hardware;
 } h2_web_app_host_config_t;
 
-/** Run the App to completion; returns 0 for PASS and 1 otherwise. */
+/** run result: the entire dependency graph is still retained in this module.
+ * No restart/recovery API is provided; page/module teardown is the boundary. */
+#define H2_WEB_APP_HOST_RETAINED 2
+
+/** Run one App; returns 0 for complete successful teardown, 1 for an ordinary
+ * failure with teardown, or RETAINED when cleanup could not prove safety.
+ * Copies config, button/hardware descriptors and their strings/root lists into
+ * one owned allocation. Opaque entry user, hardware user, callback/provider and
+ * allocator contexts remain borrowed: they must be persistent (static/owned
+ * heap), and their owner must keep them alive on RETAINED. Automatic/stack
+ * callback contexts are not valid for resources that can outlive this call.
+ * A retained Host owns Runtime, Filesystem, LVGL/platform and its descriptors;
+ * new runs and UI input are rejected. Ordinary entry errors still tear down.
+ * A retained result never claims transport cancellation or successful join. */
 int h2_web_app_host_run(const h2_web_app_host_config_t *config,
                         h2_web_app_host_entry_fn entry, void *user);
+
+/** Report a dependent cleanup failure from the App task before returning.
+ * owner is the persistent failed acquisition root (e.g. a Lua Host), or NULL
+ * for an outer task join failure. Repeating the same root/error is safe; a
+ * different non-NULL root is rejected. Latches the first negative reason;
+ * a positive non-OK status (EXIT) is normalized to ERR_TASK.
+ * Does not stop/join workers, recover hardware or take ownership of arbitrary
+ * callback contexts; those remain subject to run's retention precondition.
+ * Use only when cleanup really cannot release resources, not for an ordinary
+ * script/application error. The outer Host skips dependent teardown, reports
+ * FAIL with retained=1 to the shell and keeps this root and its own full graph. */
+h2_pal_result_t h2_web_app_host_quarantine(h2_web_app_host_t *host,
+    void *owner, h2_pal_result_t reason);
 
 /**
  * should_stop callback for Apps: nonzero once run_ms elapsed or the page
