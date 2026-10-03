@@ -44,6 +44,8 @@ typedef struct test_fixture {
   int commit_result;
   unsigned commit_fail_at;
   unsigned commits;
+  int pref_open_result;
+  int pref_close_result;
 
   uint32_t running_partition;
   uint32_t next_partition;
@@ -108,8 +110,8 @@ static pref_record_t *find_record(test_fixture_t *fixture, const char *key) {
 }
 
 static int pref_close(h2_pal_pref_namespace_t *ns) {
-  (void)ns;
-  return H2_PAL_OK;
+  test_fixture_t *fixture = ns->user;
+  return fixture->pref_close_result;
 }
 
 static int pref_get_blob(h2_pal_pref_namespace_t *ns,
@@ -267,6 +269,7 @@ static int pref_open(void *user, const char *name_space,
   test_fixture_t *fixture = user;
   (void)mode;
   assert(strcmp(name_space, H2_LOADER_PREF_NAMESPACE) == 0);
+  if (fixture->pref_open_result != H2_PAL_OK) return fixture->pref_open_result;
   fixture->ns = (h2_pal_pref_namespace_t){
       .user = fixture,
       .close = pref_close,
@@ -2217,7 +2220,48 @@ static void test_read_current_loader_identity(void) {
   assert(h2_loader_read_current_loader_identity(&fixture.config, "0.2.0", &actual) == H2_PAL_ERR_INVALID_ARG);
 }
 
+static void test_current_loader_identity_ignores_corrupt_metadata(void) {
+  for (uint32_t partition = 1u; partition <= 2u; ++partition) {
+    test_fixture_t fixture;
+    fixture_init(&fixture, partition);
+    pref_record_t *record = &fixture.records[partition];
+    record->present = 1;
+    record->len = 1u;
+    record->data[0] = 0xffu;
+    h2_loader_image_identity_t actual = {0};
+    assert(h2_loader_read_current_loader_identity(
+               &fixture.config, "0.2.0", &actual) == H2_PAL_OK);
+    assert(actual.image_size == 128u && fixture.digest_bytes == 128u);
+    assert(strcmp(actual.image_sha256, SHA_A) == 0);
+    assert(fixture.commits == 0u && record->len == 1u && record->data[0] == 0xffu);
+
+    /* A decoded but invalid identity must not supply a partially decoded size. */
+    h2_loader_metadata_t stored = metadata(H2_LOADER_IMAGE_ROLE_H2LOADER, SHA_A);
+    const h2_loader_metadata_slot_t slot = partition == 1u
+        ? H2_LOADER_METADATA_SLOT_PARTITION_1 : H2_LOADER_METADATA_SLOT_PARTITION_2;
+    write_metadata(&fixture, slot, &stored);
+    record->data[16] = 0xffu;
+    unsigned commits = fixture.commits;
+    assert(h2_loader_read_current_loader_identity(
+               &fixture.config, "0.2.0", &actual) == H2_PAL_OK);
+    assert(actual.image_size == 128u && fixture.digest_bytes == 128u);
+    assert(fixture.commits == commits && record->data[16] == 0xffu);
+
+    /* Genuine backend failures must not become a successful fallback. */
+    fixture.pref_close_result = H2_PAL_ERR_IO;
+    assert(h2_loader_read_current_loader_identity(
+               &fixture.config, "0.2.0", &actual) == H2_PAL_ERR_IO);
+    assert(actual.format == 0u && actual.image_size == 0u);
+    fixture.pref_close_result = H2_PAL_OK;
+    fixture.pref_open_result = H2_PAL_ERR_IO;
+    assert(h2_loader_read_current_loader_identity(
+               &fixture.config, "0.2.0", &actual) == H2_PAL_ERR_IO);
+    assert(actual.format == 0u && actual.image_size == 0u);
+  }
+}
+
 int main(void) {
+  test_current_loader_identity_ignores_corrupt_metadata();
   test_read_current_loader_identity();
   test_plan_missing_destination();
   test_install_verified_destination_does_not_abort();

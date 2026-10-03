@@ -378,9 +378,11 @@ int h2_loader_read_current_loader_identity(
       ? H2_LOADER_METADATA_SLOT_PARTITION_1 : H2_LOADER_METADATA_SLOT_PARTITION_2;
   rc = h2_loader_metadata_read(config->pref, config->package.allocator, slot,
                                &metadata, &present);
-  if (rc != H2_PAL_OK) return rc;
+  if (rc != H2_PAL_OK && rc != H2_PAL_ERR_FORMAT) return rc;
+  /* Malformed persistent identity is not evidence about the running image. */
   const h2_loader_metadata_t *active = &metadata;
-  if (!active->valid || active->role != H2_LOADER_IMAGE_ROLE_H2LOADER ||
+  if (rc != H2_PAL_OK || !present || !active->valid ||
+      active->role != H2_LOADER_IMAGE_ROLE_H2LOADER ||
       strcmp(active->version, version) != 0 || strcmp(active->board, config->board) != 0 ||
       strcmp(active->target, config->target) != 0)
     active = NULL;

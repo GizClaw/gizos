@@ -87,7 +87,7 @@ Audio decorator 默认输出 fixture。后台麦克风泵持续读取的产品�
 
 ### 失败和 cleanup
 
-Modem fake 的 lifecycle 默认 unsupported；scenario 显式启用 `lifecycle_supported` 后，open/close 只记录 timeout 与 opened 状态，失败保留原状态，关闭未打开对象也能成功。它不控制真实电源、不生成异步事件，capabilities 仍由 scenario 单独提供；无蜂窝 E2E 场景可以保持 capabilities 为零并验证关闭流程。调用和 evidence 读取必须由 consumer 串行组织。
+Modem fake 初始化后 `lifecycle_supported=false`、`opened=false`。Scenario 在无在途调用时把 `lifecycle_supported` 设为 true，只有原本 unsupported 的 open/close 改为脚本化 lifecycle。未启用时二者返回 UNSUPPORTED，不改状态、不记录 timeout、不消耗 fault。启用后 open 记录 timeout：已打开时直接成功且不消耗 open fault，否则应用 open fault，成功才设置 opened=true。close 每次记录 timeout 并应用 close fault，即使已经关闭；成功才设置 opened=false。零初始化 fault 默认成功，因此重复 close 默认成功；注入失败保留原 opened 状态和配置的错误码。它不控制真实电源、不生成异步事件，dial/answer/hangup/status 的行为不变。Capabilities 不随 lifecycle 启用而增加：init 默认 CALL，scenario 必须为无蜂窝 E2E 单独设为零，调用操作仍按 capability gate 返回 unsupported。配置、调用和 evidence 读取必须由 consumer 串行组织。
 
 Fault 在有效调用到达对应操作时计数，零初始化默认成功；持续失败和有界失败均可配置。Preference commit filter 仅统计匹配 namespace/key 的调用。Wi-Fi connect 和 Modem call 不自动生成完成事件，Power transition 不重启 Host 或增加 boot count，Crypto fixture 不提供真实密码算法。
 
