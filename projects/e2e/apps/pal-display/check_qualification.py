@@ -106,6 +106,11 @@ AUDIT_SOURCES = {
     "guides/apps/e2e.md",
     "guides/zh/developing/platform_abstract_layer.md",
 }
+GIZCLAW_HARNESS_SOURCES = AUDIT_SOURCES | {
+    "tools/bazel/mobile_e2e.py",
+    "projects/e2e/apps/pal-display/check_qualification.py",
+    "projects/e2e/apps/pal-display/BUILD.bazel",
+}
 
 
 def runner_refactor(historical):
@@ -120,9 +125,25 @@ def runner_refactor(historical):
     audit = followup["audit_source_sha256"]
     assert set(audit) == AUDIT_SOURCES
     assert set(followup["removed_source_sha256"]) == REMOVED_RUNNERS
+    # Later harness changes keep the executed mobile and physical receipts
+    # unchanged. This separate record may supersede only host harness/audit
+    # source hashes, and binds both the old and new byte identities.
+    maintenance = json.JSONDecoder().decode(
+        (ROOT / "gizclaw_harness_provenance.json").read_text(encoding="utf-8"))
+    assert maintenance["schema"] == 1
+    assert maintenance["new_physical_run_claimed"] is False
+    assert maintenance["historical_runner_receipt_sha256"] == hashlib.sha256(
+        (ROOT / "mobile_runner_refactor.json").read_bytes()).hexdigest()
+    previous = {**historical, **current, **audit}
+    replacements = maintenance["current_source_sha256"]
+    assert set(replacements) == set(maintenance["previous_source_sha256"])
+    assert set(replacements) <= GIZCLAW_HARNESS_SOURCES
+    assert all(previous[path] == sha for path, sha in
+               maintenance["previous_source_sha256"].items())
+    assert maintenance["validation"]["shared_mobile_contract"] == "PASS"
     for path, expected in followup["removed_source_sha256"].items():
         assert historical[path] == expected and not Path(path).exists(), path
-    for path, expected in {**historical, **current, **audit}.items():
+    for path, expected in {**previous, **replacements}.items():
         if path not in REMOVED_RUNNERS:
             assert hashlib.sha256(Path(path).read_bytes()).hexdigest() == expected, path
     # These exact Python sources and consumer declarations executed the stored runs.

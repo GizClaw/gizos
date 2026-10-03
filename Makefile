@@ -1,6 +1,6 @@
 .DEFAULT_GOAL := help
 
-.PHONY: help cfg-doctor bazel-build bazel-test bazel-test-downstream-consumer bazel-test-mqtt_public_broker_smoke bazel-test-gizclaw_h2peer_live_test bazel-test-gizclaw_pion_live_test bazel-coverage-report bazel-release h2loader-bin test-web guides-build guides-watch guides-preview
+.PHONY: help cfg-doctor bazel-build bazel-test bazel-test-downstream-consumer bazel-test-mqtt_public_broker_smoke bazel-coverage-report bazel-release h2loader-bin test-web guides-build guides-watch guides-preview
 
 BAZEL_BIN ?= bazel
 GUIDES_WATCH_HOST ?= 127.0.0.1
@@ -32,12 +32,6 @@ bazel-test-downstream-consumer:
 
 bazel-test-mqtt_public_broker_smoke:
 	@scripts/bazel/bazel-test-mqtt_public_broker_smoke.sh
-
-bazel-test-gizclaw_h2peer_live_test:
-	@scripts/bazel/bazel-test-gizclaw_h2peer_live_test.sh
-
-bazel-test-gizclaw_pion_live_test:
-	@scripts/bazel/bazel-test-gizclaw_pion_live_test.sh
 
 bazel-coverage-report:
 	@scripts/bazel/bazel-coverage-report.py

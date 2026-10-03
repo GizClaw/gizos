@@ -1,0 +1,55 @@
+load("//tools/bazel:mobile_e2e.bzl", "mobile_e2e_test")
+load("@rules_android//rules:rules.bzl", "android_binary", "android_library")
+load("@rules_cc//cc:defs.bzl", "cc_library")
+load("//tools/bazel:cc_options.bzl", "H2_C11_OPTS", "H2_WARNING_COPTS")
+load("//tools/bazel:mobile_app_sdk.bzl", "mobile_app_sdk")
+load("//tools/bazel/platforms:compatibility.bzl", "ANDROID_ARM64_ARTIFACT_COMPATIBILITY", "ANDROID_ARM64_PACKAGE_ARTIFACT_COMPATIBILITY")
+
+package(default_visibility = ["//visibility:public"])
+
+cc_library(
+    name = "launcher",
+    srcs = ["main.c"],
+    conlyopts = H2_C11_OPTS,
+    copts = H2_WARNING_COPTS,
+    target_compatible_with = ANDROID_ARM64_ARTIFACT_COMPATIBILITY,
+    deps = [
+        "//libs/app_host:android_packaged",
+        "//projects/e2e/libs/gizclaw-mobile:runner",
+    ],
+)
+
+android_library(
+    name = "app",
+    srcs = ["src/com/haivivi/gizos/e2e/gizclaw/MainActivity.java"],
+    custom_package = "com.haivivi.gizos.e2e.gizclaw",
+    target_compatible_with = ANDROID_ARM64_PACKAGE_ARTIFACT_COMPATIBILITY,
+    deps = [":launcher"],
+)
+
+android_binary(
+    name = "gizclaw_e2e",
+    custom_package = "com.haivivi.gizos.e2e.gizclaw",
+    manifest = "AndroidManifest.xml",
+    target_compatible_with = ANDROID_ARM64_PACKAGE_ARTIFACT_COMPATIBILITY,
+    deps = [":app"],
+)
+
+mobile_app_sdk(
+    name = "app_sdk",
+    app = ":gizclaw_e2e",
+)
+
+mobile_e2e_test(
+    name = "android_gizclaw_simulator_test",
+    platform = "android",
+    suite = "//projects/e2e/libs/gizclaw-mobile:mobile_e2e",
+    app = ":gizclaw_e2e.apk",
+    sdk = ":app_sdk",
+    env_inherit = [
+        "H2_GIZCLAW_E2E_ENDPOINT", "H2_GIZCLAW_E2E_REGISTRATION_TOKEN",
+        "H2_GIZCLAW_E2E_DEVICE_API_URL", "H2_GIZCLAW_E2E_AUDIO_URL",
+    ],
+    timeout = "eternal",
+    external = True,
+)

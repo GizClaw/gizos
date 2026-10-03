@@ -8,7 +8,7 @@ enum { H2_GIZCLAW_E2E_CONCURRENT_REQUESTS = 6,
 int h2_gizclaw_e2e_concurrency_classify(
     int requests_result, int recovery_result, int observation_result,
     size_t started_requests, size_t completed_requests,
-    size_t max_open_channels, size_t unique_stream_ids, size_t open_channels) {
+    size_t max_open_channels, size_t opened_channels, size_t open_channels) {
   if (requests_result != H2_PAL_OK)
     return requests_result;
   if (recovery_result != H2_PAL_OK)
@@ -19,7 +19,7 @@ int h2_gizclaw_e2e_concurrency_classify(
       completed_requests != H2_GIZCLAW_E2E_CONCURRENT_REQUESTS ||
       max_open_channels == 0u ||
       max_open_channels > H2_GIZCLAW_E2E_CONCURRENT_REQUESTS ||
-      unique_stream_ids != H2_GIZCLAW_E2E_CONCURRENT_REQUESTS ||
+      opened_channels != H2_GIZCLAW_E2E_CONCURRENT_REQUESTS ||
       open_channels != 0u) {
     return H2_PAL_ERR_INVALID_STATE;
   }
@@ -105,9 +105,9 @@ static int run_batch(h2_gizclaw_e2e_fixture_t *fixture, unsigned batch) {
                  ? h2_pal_time_sleep_ms(fixture->time, 1u)
                  : H2_PAL_ERR_TIMEOUT;
   }
-  printf("H2_GIZCLAW_E2E stage=concurrency services=1 batch=%u requested_requests=%u "
+  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=concurrency services=1 batch=%u requested_requests=%u "
          "started_requests=%zu completed_requests=%zu max_open_channels=%zu "
-         "unique_stream_ids=%zu open_channels=%zu observation_rc=%d "
+         "opened_channels=%zu open_channels=%zu observation_rc=%d "
          "requests_rc=%d recovery_rc=%d result=%s rc=%d\n",
          batch + 1u, H2_GIZCLAW_E2E_CONCURRENT_REQUESTS, started, completed, maximum,
          unique, open, observation_result, requests_result, recovery_result,
@@ -124,7 +124,7 @@ int h2_gizclaw_e2e_run_concurrency(h2_gizclaw_e2e_fixture_t *fixture) {
     if (result != H2_PAL_OK)
       break;
   }
-  printf("H2_GIZCLAW_E2E stage=channel-soak batches=%u/%u requests=%u "
+  h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=channel-soak batches=%u/%u requests=%u "
          "result=%s rc=%d\n", completed_batches,
          H2_GIZCLAW_E2E_CONCURRENT_BATCHES,
          completed_batches * H2_GIZCLAW_E2E_CONCURRENT_REQUESTS,

@@ -85,6 +85,25 @@ static bool config_valid(h2_runtime_t *runtime,
   const bool needs_voice =
       (config->suites &
        (H2_GIZCLAW_E2E_SUITE_RPC | H2_GIZCLAW_E2E_SUITE_VOICE)) != 0u;
+  if ((config->suites & H2_GIZCLAW_E2E_SUITE_DEVICE) != 0u &&
+      (config->device_api_url == NULL || config->device_api_url[0] == '\0' ||
+       config->device_audio_url == NULL || config->device_audio_url[0] == '\0' ||
+       strncmp(config->device_api_url, "https://", 8u) != 0 ||
+       strncmp(config->device_audio_url, "https://", 8u) != 0))
+    return false;
+  if ((config->suites & H2_GIZCLAW_E2E_SUITE_RPC) != 0u &&
+      (config->app_config_key == NULL || config->app_config_key[0] == '\0' ||
+       strlen(config->app_config_key) > H2_GIZCLAW_APP_CONFIG_KEY_MAX_BYTES ||
+       config->app_config_expected_value.data == NULL ||
+       config->expected_runtime_profile == NULL)) {
+    return false;
+  }
+  if ((config->expected_runtime_profile &&
+       (!config->expected_runtime_profile[0] ||
+        strlen(config->expected_runtime_profile) >= H2_GIZCLAW_REGISTRATION_NAME_CAPACITY)) ||
+      config->app_config_expected_value.len > H2_GIZCLAW_APP_CONFIG_VALUE_MAX_BYTES ||
+      (!config->app_config_expected_value.data && config->app_config_expected_value.len))
+    return false;
   if (needs_voice &&
       (config->voice_pcm_s16le_16khz_mono == NULL ||
        config->voice_pcm_len == 0u || config->voice_pcm_len > 1024u * 1024u ||
@@ -264,7 +283,7 @@ static void run_cases_task(void *user) {
     (void)h2_pal_mutex_lock(runtime->sync, progress->mutex);
     progress->active_case = test_case->id;
     (void)h2_pal_mutex_unlock(runtime->sync, progress->mutex);
-    printf("H2_GIZCLAW_E2E stage=coverage-begin case=%s\n", test_case->id);
+    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=coverage-begin case=%s\n", test_case->id);
 
     h2_gizclaw_e2e_fixture_t *fixture = NULL;
     bool fixture_initialized = false;
@@ -342,7 +361,7 @@ static void run_cases_task(void *user) {
     }
     (void)h2_gizclaw_e2e_report_terminal(report, test_case->id, status, case_rc,
                                          NULL);
-    printf("H2_GIZCLAW_E2E stage=coverage-end case=%s status=%s rc=%d "
+    h2_gizclaw_e2e_emit("H2_GIZCLAW_E2E stage=coverage-end case=%s status=%s rc=%d "
            "cleanup_rc=%d\n",
            test_case->id, h2_gizclaw_e2e_case_status_name(status), case_rc,
            cleanup_rc);
@@ -406,11 +425,13 @@ h2_gizclaw_e2e_exit_t h2_gizclaw_e2e_run(h2_runtime_t *runtime,
       h2_atomic_flag_test_and_set(&s_run_active, H2_ATOMIC_ACQUIRE)) {
     return H2_GIZCLAW_E2E_EXIT_HARNESS_ERROR;
   }
+  h2_gizclaw_e2e_set_evidence_observer(config->on_evidence, config->evidence_user);
 
   run_control_t *control = h2_pal_mem_alloc(runtime->mem, sizeof(*control));
   if (control == NULL) {
     const h2_gizclaw_e2e_exit_t exit = report_start_failure(
         runtime, config, out_result, H2_PAL_ERR_NO_MEMORY, 0u);
+    h2_gizclaw_e2e_set_evidence_observer(NULL, NULL);
     h2_atomic_flag_clear(&s_run_active, H2_ATOMIC_RELEASE);
     return exit;
   }
@@ -419,6 +440,7 @@ h2_gizclaw_e2e_exit_t h2_gizclaw_e2e_run(h2_runtime_t *runtime,
   control->config = config;
   if (h2_atomic_init(&control->exited, false) != H2_ATOMIC_OK) {
     h2_pal_mem_free(runtime->mem, control);
+    h2_gizclaw_e2e_set_evidence_observer(NULL, NULL);
     h2_atomic_flag_clear(&s_run_active, H2_ATOMIC_RELEASE);
     return report_start_failure(runtime, config, out_result,
                                 H2_PAL_ERR_NO_MEMORY, 0u);
@@ -458,6 +480,7 @@ h2_gizclaw_e2e_exit_t h2_gizclaw_e2e_run(h2_runtime_t *runtime,
     if (retained_resources == 0u) {
       h2_atomic_destroy(&control->exited);
       h2_pal_mem_free(runtime->mem, control);
+      h2_gizclaw_e2e_set_evidence_observer(NULL, NULL);
       h2_atomic_flag_clear(&s_run_active, H2_ATOMIC_RELEASE);
     } else {
       control->runtime = NULL;
@@ -540,6 +563,7 @@ h2_gizclaw_e2e_exit_t h2_gizclaw_e2e_run(h2_runtime_t *runtime,
   if (runner_retained == 0u && control->retained_fixture == NULL) {
     h2_atomic_destroy(&control->exited);
     h2_pal_mem_free(runtime->mem, control);
+    h2_gizclaw_e2e_set_evidence_observer(NULL, NULL);
     h2_atomic_flag_clear(&s_run_active, H2_ATOMIC_RELEASE);
   } else {
     control->runtime = NULL;

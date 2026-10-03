@@ -529,6 +529,8 @@ cc_library(
     tags = ["manual"],
     target_compatible_with = select({
         "@platforms//cpu:wasm32": [],
+        "@platforms//os:ios": [],
+        "@platforms//os:android": [],
         "//tools/bazel/platforms:host_linux_target_linux": [],
         "//tools/bazel/platforms:host_macos_target_macos": [],
         "//conditions:default": ["@platforms//:incompatible"],

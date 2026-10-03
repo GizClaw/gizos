@@ -76,11 +76,11 @@ class ServiceCoverageTest(unittest.TestCase):
                                    profile="default", platform="macos", process_exit_code=run.returncode)
         expected = {"h2_gizclaw_req_" + method for method in
                     ("do", "wait", "cancel", "release")}
-        expected.add("h2_gizclaw_service_poll")
+        expected.update(("h2_gizclaw_service_poll", "h2_gizclaw_service_get_time_sync_status"))
         observed = {row["symbol"] for row in result["functions"] if row["status"] == "covered"}
         self.assertEqual(observed, expected)
         self.assertFalse(result["valid"])
-        self.assertEqual(result["missing"], 227 - 5)
+        self.assertEqual(result["missing"], 227 - 6)
 
 
 if __name__ == "__main__":

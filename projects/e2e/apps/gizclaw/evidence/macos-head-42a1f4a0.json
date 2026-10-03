@@ -1,0 +1,178 @@
+{
+  "schema": 1,
+  "qualified": true,
+  "platform": "macos",
+  "source_head": "42a1f4a0ff286d07fab738fcca169160839fb86b",
+  "sdk_version": "0.19.0",
+  "api_count": 227,
+  "summary": {
+    "stage": "summary",
+    "platform": "macos",
+    "endpoint": "edge-bj-01.e2e.gizclaw.com:9821",
+    "backend": "h2peer",
+    "suite": "all",
+    "profile": "h106-tiga",
+    "selected": "8",
+    "terminal": "8",
+    "pass": "8",
+    "fail": "0",
+    "error": "0",
+    "blocked": "0",
+    "cancelled": "0",
+    "first_failure_case": "-",
+    "first_failure_rc": "0",
+    "cleanup_rc": "0",
+    "retained_resources": "0",
+    "complete": "true",
+    "exit_code": "0"
+  },
+  "cases": [
+    {
+      "stage": "coverage-end",
+      "case": "resource",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "device-api",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "connectivity",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc/profile",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc/catalog-workspace",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc/speech",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc/workspace-reconnect",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc/contact",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc/friend",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc/group",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc/peer-name-isolation",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc/telemetry",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc/api-key",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc/app-config",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "rpc",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "firmware",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "voice",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "concurrency",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    },
+    {
+      "stage": "coverage-end",
+      "case": "service",
+      "status": "PASS",
+      "rc": "0",
+      "cleanup_rc": "0"
+    }
+  ],
+  "process_exit_code": 0,
+  "binary_sha256": "c0b2e0952a4ffc39dc818c6c82dff4b64807f64627b9b27fa9e76717a5a8b347",
+  "log_sha256": "afcaf111e5814e50c117127133035730c01903c74aa7e5a174479797fc3e2948",
+  "api_audit": {
+    "valid": true,
+    "required": 227,
+    "covered": 227,
+    "missing": 0
+  },
+  "fixture_profile": "h106-tiga",
+  "fixture_key": "media.songs.en-us",
+  "fixture_value_sha256": "d74740796f20765bd12d5ae41401da6b142ac5268f788c05dd0cc700dde35603",
+  "audio_scope": "Real service traffic and decoded PCM through deterministic capture and software speaker delegate; no microphone or acoustic qualification.",
+  "raw_log_local": "build/validation/gizclaw-227/macos-42a-r25/test.log"
+}

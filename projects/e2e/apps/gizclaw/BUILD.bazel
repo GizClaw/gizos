@@ -1,5 +1,6 @@
-load("@rules_python//python:defs.bzl", "py_binary", "py_test")
-load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY")
+load(":fixture.bzl", "gizclaw_e2e_fixture")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
+load("//tools/bazel/platforms:compatibility.bzl", "HOST_TOOL_COMPATIBILITY", "HOST_OR_MOBILE_TOOL_COMPATIBILITY")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -125,4 +126,31 @@ filegroup(
         ":voice_prompt",
         "//projects/e2e/apps/gizclaw/app:gizclaw_e2e",
     ],
+)
+
+py_test(
+    name = "metadata_coverage_test",
+    target_compatible_with = HOST_TOOL_COMPATIBILITY,
+    srcs = ["api_coverage.py", "test_metadata_coverage.py"],
+    main = "test_metadata_coverage.py",
+    imports = ["."],
+    data = [
+        "//libs/gizclaw:public_api_inventory",
+        "//projects/e2e/apps/gizclaw/app:gizclaw_e2e_metadata_test",
+        "//projects/e2e/apps/gizclaw/app:gizclaw_e2e_social_ping_test",
+    ],
+    legacy_create_init = False,
+)
+
+exports_files(["api_coverage.py"])
+
+# No default profile key is invented: live RPC/all requires an explicit flag.
+gizclaw_e2e_fixture(name = "app_config_fixture")
+
+py_library(
+    name = "coverage_library",
+    srcs = ["api_coverage.py"],
+    imports = ["."],
+    data = ["//libs/gizclaw:public_api_inventory"],
+    target_compatible_with = HOST_OR_MOBILE_TOOL_COMPATIBILITY,
 )

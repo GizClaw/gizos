@@ -14,7 +14,20 @@ static int prepare_session(h2_gizclaw_e2e_fixture_t *fixture) {
 
 static int run_voice(h2_gizclaw_e2e_fixture_t *fixture) {
   int rc = h2_gizclaw_e2e_prepare_voice(fixture);
-  return rc == H2_PAL_OK ? h2_gizclaw_e2e_run_voice(fixture) : rc;
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_e2e_run_voice(fixture);
+  if (rc == H2_PAL_OK)
+    rc = h2_gizclaw_e2e_run_session_cancel(fixture);
+  /* Session owns its route; raw Conversation and Service audio APIs require
+   * their own run after Session teardown. Its internal calls are not evidence
+   * that an application can use those public APIs directly. */
+  if (rc == H2_PAL_OK) {
+    fixture->use_session = false;
+    rc = h2_gizclaw_e2e_fixture_reconnect_actor(fixture, H2_GIZCLAW_E2E_OWNER);
+    if (rc == H2_PAL_OK)
+      rc = h2_gizclaw_e2e_run_voice(fixture);
+  }
+  return rc;
 }
 
 const e2e_case_t h2_gizclaw_e2e_cases[] = {

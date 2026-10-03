@@ -3,6 +3,7 @@ load("//tools/bazel:cc_options.bzl", "H2_CXX17_OPTS", "H2_WARNING_COPTS")
 
 def gizclaw_e2e_desktop_deps(backend = "h2peer", app = "//projects/e2e/apps/gizclaw/app:gizclaw_e2e"):
     deps = [
+        "//projects/e2e/apps/gizclaw:app_config_fixture",
         "//libs/atomic",
         "//libs/atomic/providers/c11",
         "//libs/pal/providers/desktop/pal_core",
@@ -45,7 +46,7 @@ def gizclaw_e2e_desktop_live_test(name, suite, backend = "h2peer", app = "//proj
         ],
         local_defines = ["H2_GIZCLAW_E2E_USE_PION=1"] if backend == "pion" else [],
         size = "enormous",
-        tags = ["manual"],
+        tags = ["manual", "external"],
         target_compatible_with = select({
             "//tools/bazel/platforms:host_linux_target_linux": [],
             "//tools/bazel/platforms:host_macos_target_macos": [],
