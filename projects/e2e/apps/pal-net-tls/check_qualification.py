@@ -61,17 +61,20 @@ def check_board_observation(receipt):
         assert dump['result'] == base_dump['result'] == 'OK'
         assert dump['code'] == base_dump['code'] == '0'
         assert dump['blank'] == base_dump['blank'] and dump['stored_bytes'] == base_dump['stored_bytes']
+        assert dump['partition'] == base_dump['partition'] == 'coredump'
+        assert dump['bytes'] == base_dump['bytes']
         marker = boot['observed_boot']
         assert marker == dict(board=execution_board,version=receipt['version'],
             session=boot['session'],boot_id=boot['boot_id'])
         assert set(boot['local_source_sha256']) == {'serial','status','coredump_status'}
         for value in boot['local_source_sha256'].values():
             assert re.fullmatch('[0-9a-f]{64}', value)
-    if receipt['platform'] == 'bk7258':
+    if base_dump['blank'] == '0':
         snapshots = receipt['observed_coredump_bytes']
         assert set(snapshots) == {'baseline','install','normal-reboot'}
         values = [bytes.fromhex(value) for value in snapshots.values()]
-        assert values[0] and all(value == values[0] for value in values)
+        assert len(values[0]) == int(base_dump['stored_bytes']) > 0
+        assert all(value == values[0] for value in values)
         assert hashlib.sha256(values[0]).hexdigest() == receipt['baseline_coredump_sha256']
     else:
         assert base_dump['blank'] == '1' and base_dump['stored_bytes'] == '0'

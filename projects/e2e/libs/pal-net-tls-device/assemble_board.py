@@ -40,7 +40,7 @@ def dump(path):
 def assemble(args):
     board_name = 'bk7258_v3_202405' if args.board == 'bk7258' else args.board
     execution_board = 'bk7258' if args.board == 'bk7258' else board_name
-    platform = 'esp32s3' if args.board in ('tiga_esp_v4_2', 'zero_esp_v3_0') else args.board
+    platform = 'bk7258' if args.board == 'bk7258' else 'esp32s3'
     version = args.version
     metadata = json.loads(args.firmware_metadata.read_text())
     image = metadata['package_manifest']
@@ -67,6 +67,8 @@ def assemble(args):
         assert current['boot_intent'] == 'auto' and current['last_result'] == '0'
         assert dump_status['blank'] == base_dump['blank']
         assert dump_status['stored_bytes'] == base_dump['stored_bytes']
+        assert dump_status['partition'] == base_dump['partition'] == 'coredump'
+        assert dump_status['bytes'] == base_dump['bytes']
         entry = parse(log.read_text(errors='replace'), version,
             execution_board)
         assert entry['session'] == peer['session']
@@ -88,11 +90,12 @@ def assemble(args):
         check_peer(peer, entry['session'], entry['boot_id'])
         boots.append(entry)
     assert len({entry['boot_id'] for entry in boots}) == 2, 'stale replay cannot be a normal reboot'
-    if args.board == 'bk7258':
+    if base_dump['blank'] == '0':
         paths = [args.baseline_dump_bytes,args.install_dump_bytes,args.normal_reboot_dump_bytes]
         assert all(path is not None for path in paths)
         baseline = paths[0].read_bytes()
-        assert baseline and all(path.read_bytes() == baseline for path in paths[1:])
+        assert len(baseline) == int(base_dump['stored_bytes']) > 0
+        assert all(path.read_bytes() == baseline for path in paths[1:])
         coredump_sha = hashlib.sha256(baseline).hexdigest()
         coredump_bytes = dict(zip(('baseline','install','normal-reboot'),
             [path.read_bytes().hex() for path in paths]))
