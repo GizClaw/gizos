@@ -1,6 +1,41 @@
 # GizClaw E2E
 
-## 当前资格（2026-10-02）
+## 当前资格（2026-10-03，PAL signed32）
+
+GizClaw C SDK `0.23.2` 的完整 portable registry 已在六个平台通过：每个平台
+**8/8 业务用例、独立 227/227 API 审计、cleanup=0、retained=0**；hosted
+平台 teardown=0。Provider、archive 与 consumer 一起重建，使用 main 的
+signed32-bit C int PAL result 合同。受控 Dev profile 为 `gizos-e2e-626`。
+完整来源、包/日志 SHA、实际执行身份与两轮硬件账本见
+[`sdk0232-pal32-qualification.json`](evidence/sdk0232-pal32-qualification.json)。
+
+| 平台 | 实际执行身份与结果 |
+| --- | --- |
+| macOS / H2Peer | source `f0245f78`，8/8、227/227，实际进程退出 0 |
+| WASM / Chromium Worker | source `a8e67dfb`，8/8、227/227，worker=1、cross-origin isolated |
+| iOS Simulator / XCFramework | source `a8e67dfb`，8/8、227/227，SDK/App 包 SHA 与单次启动身份已记录 |
+| Android Emulator / AAR | source `a8e67dfb`，8/8、227/227，APK/AAR binary 相同，实际 Emulator 身份已记录 |
+| ESP32-S3 / AMOLED | source `a8e67dfb`、R45，managed 与独立 normal 各 8/8、227/227、confirm=0，nonce 不同 |
+| BK7258 | R58，实际 base+patch 输入与 `8fa618c8` 一致；managed 与独立 normal 各 8/8、227/227、confirm=0，nonce 不同 |
+
+两块硬件均已核对实际 App 分区 2/2、空 Stage、原 P1 和未改变的 crash
+基线（AMOLED 空；BK 原有 32 字节 dump SHA 不变）。BSP 音频路径和确定性
+PCM 输入验证业务功能；移动端为 Simulator/Emulator，结果不宣称手机实机、
+麦克风或声学质量验收。较早的执行保留原 source、SDK 与 artifact 身份，
+随后只修改 BK runtime 或文档不会把它们改标为新 head 的 binary。
+
+BK AP media TLS 使用 SDK PSRAM allocator；C emulated TLS 和两个 errno
+来源使用 task-local 存储，SDK lwIP 写入与 PAL Net 读取经实际 ELF 核对。
+任务结束后的 TCB cleanup 释放这些对象并保留原 port cleanup。故障实验、
+被严格账本审计拒收的截断/坏帧和原始日志均留在忽略的 validation 目录。
+证书、总 deadline、完整 payload size/SHA/EOS、全部 mandatory case 与
+零清理残留的确认门槛保持原合同。
+
+下面的快照及“尚未插桩/尚待验收”问题记录对应较早的实现阶段；当前业务
+调用/断言的完成范围以本节和上述版本绑定的 227 项审计为准。分页快照、
+声学质量等明确超出测试合同的限制继续有效。
+
+## 历史资格快照（2026-10-02，保留原 source/SDK 身份）
 
 当前跟随 main 使用 GizClaw C SDK `0.23.2`，保留 MHS/HWD、tool-v0、catalog tags 和 safety-fence 协议。独立公开函数库存重新核对后仍为 **227 项**；类型和协议语义的更新须重新执行实际业务。下面 source-bound `0.19.0` 记录仅是历史结果，不资格化当前 SDK。当前主线 SCTP #617 与 PAL Net/TLS #621 已合入。source `e228d55b` 的 macOS、iOS Simulator、Android Emulator 均真实 8/8 及 227/227 通过，cleanup=0、retained=0，移动端 teardown=0；早期 source42a/75aad/d214 的独立记录保留原身份。早期 226/default profile 记录保留原身份。六端整体资格仍未完成。
 
