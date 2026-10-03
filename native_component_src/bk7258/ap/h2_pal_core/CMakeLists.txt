@@ -106,6 +106,7 @@ set(H2_BK_PLATFORM_CORE_SRCS
   "src/h2_bk_platform_time.c"
   "src/h2_bk_platform_uart_io_stream.c"
   "src/h2_bk_platform_crypto.c"
+  "src/h2_bk_psa_serialized.c"
   "src/h2_bk_platform_dtls.c"
   "src/h2_bk_platform_pref_flashdb.c"
   "src/h2_bk_platform_pref_flashdb_port.c"
@@ -166,6 +167,24 @@ target_compile_definitions(${COMPONENT_LIB} PRIVATE
 # requires an explicit http/1.1 offer. Enable the existing public Mbed TLS
 # implementation for both the SDK library and its consumers.
 target_compile_definitions(__armino_psa_mbedtls PUBLIC MBEDTLS_SSL_ALPN)
+
+# PSA's SDK key-slot registry is shared by PAL crypto and SDK TLS/DTLS.
+# Keep the implementation outside LTO so every external public call reaches
+# the same blocking recursive mutex; internal PSA calls keep the outer guard.
+set_property(SOURCE "${BK_ARMINO_PATH}/components/psa_mbedtls/mbedtls/library/psa_crypto.c"
+  TARGET_DIRECTORY __armino_psa_mbedtls
+  APPEND PROPERTY COMPILE_OPTIONS "-fno-lto")
+set_property(SOURCE "src/h2_bk_psa_serialized.c"
+  TARGET_DIRECTORY ${COMPONENT_LIB}
+  APPEND PROPERTY COMPILE_OPTIONS "-fno-lto")
+file(STRINGS "${CMAKE_CURRENT_LIST_DIR}/src/h2_bk_psa_calls.h"
+  H2_BK_PSA_CALLS REGEX "^H2_BK_PSA_CALL\\(")
+foreach(H2_BK_PSA_CALL IN LISTS H2_BK_PSA_CALLS)
+  string(REGEX REPLACE "^H2_BK_PSA_CALL\\(([^,]+),.*" "\\1"
+    H2_BK_PSA_SYMBOL "${H2_BK_PSA_CALL}")
+  armino_build_set_property(
+    LINK_OPTIONS "-Wl,--wrap=${H2_BK_PSA_SYMBOL}" APPEND)
+endforeach()
 
 if(H2_BK_PLATFORM_ENABLE_WEBRTC)
   # Keep the SDK's wrapped libc entry points and its mismatched timer ABI out

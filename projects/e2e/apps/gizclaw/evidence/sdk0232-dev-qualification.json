@@ -221,8 +221,51 @@
     },
     "bk7258": {
       "qualified": false,
-      "status": "pending-hardware-reservation",
-      "reason": "User explicitly retains BK7258 for the h106 task; no current SDK0.23.2/Dev hardware run or capability SKIP is claimed."
+      "status": "pending-board-qualification",
+      "reason": "Board handoff completed. R46 crashed in the SDK PSA key-slot table; R47 shared-entry guard built and passed host concurrency tests, but the initial hardware run remained unconfirmed without a complete ledger. Managed retry and independent normal-boot acceptance remain required.",
+      "sdk_version": "0.23.2",
+      "environment": "dev",
+      "server_version": "0.24.1",
+      "source_base": "df25f473791797af85cfcbb3aed4f0fc9da62f8c",
+      "package_version": "gizclaw-dev-r47",
+      "package_sha256": "0ea91dbbaeb6f1be641a7ea5d62034f8af1d3f25d3cedf1ca33cdd1e2b58912e",
+      "image_sha256": "e1b0510dd326aa0cb70521c6184ae86976a5ffba6fb29c10754a632de072a11f",
+      "device_uid": "c8478ca2a87c",
+      "failed_or_incomplete_executions": {
+        "r46": "c94872ad48d86424e82e246c06017417",
+        "r47": "1648acc5f0620b24dc3f78b1576dee1f"
+      },
+      "p1_preserved_after_recovery": true,
+      "stored_coredump_sha256": "f59f522edd1cc5bd0aab008b938dc7cdfac8a4333c34fdf763404923210a3829",
+      "stored_coredump_note": "Byte-identical stored dump does not prove no crash; observed R46 fault remains failure evidence.",
+      "managed_qualified": false,
+      "normal_qualified": false,
+      "executed_source_context": {
+        "base": "df25f473791797af85cfcbb3aed4f0fc9da62f8c",
+        "tracked_patch_sha256": "5cf94c53d3049e3068960675f6c1343460a1be36b2ce573b14970ddd48bf6808",
+        "new_source_sha256": {
+          "native_component_src/bk7258/ap/h2_pal_core/tests/test_h2_bk_psa_serialized.cpp": "53e92f1489417d0ee217fb0f884f977d09d34a64070c97f47793d217f69feeb7",
+          "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_psa_serialized.c": "60bfc9129ab226ac4c9c3cdc6988e2356af098329daea5c26a44bb7d62865b68",
+          "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_psa_calls.h": "593f1c3eb8b4f055b715f5931947b9a21e96bbc3c57fb921e0f3189d4868983c",
+          "native_component_src/bk7258/ap/h2_pal_core/tests/psa_sdk/semphr.h": "7dfa8508109d31eceea0f031810a04362d54c89aa89ae292bc33674a1c3461eb",
+          "native_component_src/bk7258/ap/h2_pal_core/tests/psa_sdk/FreeRTOS.h": "276c356d979d150def104efdca27cbe7686b8cd5a27a27f11896eccdf9338411",
+          "native_component_src/bk7258/ap/h2_pal_core/tests/psa_sdk/os/os.h": "781a27b2b367a9683678b041ca16fa37225c63ac5cea0145753b38f48c0c8306",
+          "native_component_src/bk7258/ap/h2_pal_core/tests/psa_sdk/psa/crypto.h": "a2eed44ea8d6e1cb57fd7efb3c49aa7b3d1b4f977ab3e1d61bb78acbfdbb02af"
+        },
+        "functional_input_sha256": {
+          "native_component_src/bk7258/ap/h2_pal_core/BUILD.bazel": "463536015d1750c844337e363f666ecbd456a1fecc2b222832f723b41ec4399f",
+          "native_component_src/bk7258/ap/h2_pal_core/CMakeLists.txt": "f7cd264e7c652a5053d659c85d6d8eb8b607af12df87bb42bbb6ad7bd2637894",
+          "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_psa_calls.h": "593f1c3eb8b4f055b715f5931947b9a21e96bbc3c57fb921e0f3189d4868983c",
+          "native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_psa_serialized.c": "60bfc9129ab226ac4c9c3cdc6988e2356af098329daea5c26a44bb7d62865b68",
+          "native_component_src/bk7258/ap/h2_pal_core/tests/psa_sdk/FreeRTOS.h": "276c356d979d150def104efdca27cbe7686b8cd5a27a27f11896eccdf9338411",
+          "native_component_src/bk7258/ap/h2_pal_core/tests/psa_sdk/os/os.h": "781a27b2b367a9683678b041ca16fa37225c63ac5cea0145753b38f48c0c8306",
+          "native_component_src/bk7258/ap/h2_pal_core/tests/psa_sdk/psa/crypto.h": "a2eed44ea8d6e1cb57fd7efb3c49aa7b3d1b4f977ab3e1d61bb78acbfdbb02af",
+          "native_component_src/bk7258/ap/h2_pal_core/tests/psa_sdk/semphr.h": "7dfa8508109d31eceea0f031810a04362d54c89aa89ae292bc33674a1c3461eb",
+          "native_component_src/bk7258/ap/h2_pal_core/tests/test_h2_bk_psa_serialized.cpp": "53e92f1489417d0ee217fb0f884f977d09d34a64070c97f47793d217f69feeb7"
+        },
+        "native_sdk_commit": "aa5df964b0f64924ee6d0d2ffd6c3ca6ed59f9ca",
+        "server_source": "ac0065cafac3175e2aee28bdd38de35ea6141849"
+      }
     }
   },
   "six_platforms_complete": false,
