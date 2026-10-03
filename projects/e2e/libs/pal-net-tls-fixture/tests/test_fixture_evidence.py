@@ -80,6 +80,20 @@ class Evidence(unittest.TestCase):
             with self.assertRaises(RuntimeError):
                 fixture.proof(case, 0, timeout=.1)
 
+    def test_silent_peer_does_not_close_inside_pal_deadline_allowance(self):
+        with Fixture() as fixture:
+            case = 'tls-handshake-deadline'
+            port = fixture.arm(case, 4, 0, fixture.bind)
+            with socket.create_connection((fixture.bind, port)) as connection:
+                connection.sendall(b'\x16\x03\x03\x00\x04\x01\x00\x00\x00')
+                connection.settimeout(.7)
+                with self.assertRaises(socket.timeout):
+                    connection.recv(1)
+            proof = fixture.proof(case, 3, timeout=2)
+            self.assertTrue(proof['client_hello'])
+            self.assertFalse(proof['handshake_succeeded'])
+            self.assertEqual(proof['payload_sent'], 0)
+
 
 if __name__ == '__main__':
     unittest.main()

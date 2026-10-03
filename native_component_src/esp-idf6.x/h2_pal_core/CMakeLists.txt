@@ -14,6 +14,7 @@ set(H2_ESP_PLATFORM_CORE_SRCS
   "src/h2_esp_platform_partition.c"
   "src/h2_esp_platform_sync.c"
   "src/h2_esp_platform_net.c"
+  "src/h2_esp_platform_net_tls_verify.c"
   "src/h2_esp_platform_netif.c"
   "src/h2_esp_platform_task.c"
   "src/h2_esp_platform_queue.c"

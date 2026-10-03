@@ -59,6 +59,25 @@ class Rejection(unittest.TestCase):
         bad=copy.deepcopy(board);bad['observed_coredump_bytes']['install']='00'*32
         with self.assertRaises(AssertionError):validation.check_board_observation(bad)
 
+    def test_esp_family_retains_exact_execution_board_and_dump_bytes(self):
+        board = json.loads((APP/'evidence/bk7258/qualified.json').read_text())
+        board['platform'] = 'esp32s3'
+        board['execution_board'] = 'zero_esp_v3_0'
+        states = [board['observed_baseline']['status']] + [boot['observed_status'] for boot in board['boots']]
+        for status in states:
+            status.update(board='zero_esp_v3_0', target='esp32s3')
+        for boot in board['boots']:
+            boot['observed_boot']['board'] = 'zero_esp_v3_0'
+        validation.check_board_observation(board)
+        bad = copy.deepcopy(board)
+        bad['boots'][0]['observed_boot']['board'] = 'devkit'
+        with self.assertRaises(AssertionError):
+            validation.check_board_observation(bad)
+        bad = copy.deepcopy(board)
+        bad['observed_coredump_bytes']['install'] = '00' * 32
+        with self.assertRaises(AssertionError):
+            validation.check_board_observation(bad)
+
     def test_typed_evidence_required(self):
         valid=receipt()
         validation.check_cases(valid,REGISTRY)

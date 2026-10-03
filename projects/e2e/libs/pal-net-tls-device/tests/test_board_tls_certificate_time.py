@@ -13,34 +13,18 @@ PRELUDE = r'''
 #include <stddef.h>
 #include <stdio.h>
 #include <time.h>
-#define MBEDTLS_PRIVATE(name) name
 #define H2_PAL_OK 0
 #define H2_PAL_ERR_UNAVAILABLE -2
 #define H2_PAL_LOG_ERROR 3
 #define MBEDTLS_X509_BADCERT_EXPIRED 0x01u
 #define MBEDTLS_X509_BADCERT_OTHER 0x0100u
 #define MBEDTLS_X509_BADCERT_FUTURE 0x0200u
-#define MBEDTLS_X509_BADCERT_NOT_TRUSTED 0x08u
 #define ESP_LOGE(...) ((void)0)
 typedef struct mbedtls_x509_time { int year,mon,day,hour,min,sec; } mbedtls_x509_time;
 typedef struct mbedtls_x509_crt {
     int version;
-    struct { unsigned char *p; size_t len; } raw;
     mbedtls_x509_time valid_from,valid_to;
 } mbedtls_x509_crt;
-typedef struct mbedtls_ssl_config {
-    int (*f_vrfy)(void *, mbedtls_x509_crt *, int, uint32_t *);
-    void *p_vrfy;
-} mbedtls_ssl_config;
-typedef struct esp_net_tls_socket {
-    mbedtls_ssl_config config;
-    int (*verify_chain)(void *, mbedtls_x509_crt *, int, uint32_t *);
-    void *verify_chain_user;
-} esp_net_tls_socket_t;
-static void mbedtls_ssl_conf_verify(mbedtls_ssl_config *config,
-    int (*callback)(void *,mbedtls_x509_crt *,int,uint32_t *), void *user){
- config->f_vrfy=callback;config->p_vrfy=user;
-}
 static uint64_t clock_ms;
 static int clock_valid=1;
 static const void *TIME_API(void){return &clock_ms;}
@@ -73,54 +57,6 @@ int main(void){
  return 0;
 }
 '''
-ESP_MAIN = r'''
-static int verifier_calls, verifier_result;
-static uint32_t verifier_flags;
-static int trust_context;
-static int verify_bundle(void *user,mbedtls_x509_crt *cert,int depth,uint32_t *flags){
- assert(user==&trust_context);(void)cert;(void)depth;
- ++verifier_calls;*flags=verifier_flags;return verifier_result;
-}
-int main(void){
- unsigned char der=1;
- mbedtls_x509_crt leaf={.version=3,.raw={&der,1}};uint32_t flags=0;
- clock_ms=1790776800000ull; /* 2026-09-30 UTC */
- leaf.valid_from=(mbedtls_x509_time){2026,9,29,0,0,0};
- leaf.valid_to=(mbedtls_x509_time){2026,10,1,0,0,0};
- esp_net_tls_socket_t socket={0};
- socket.config.f_vrfy=verify_bundle;socket.config.p_vrfy=&trust_context;
- esp_net_tls_install_verify_dates(&socket);
- assert(socket.config.f_vrfy==esp_net_tls_verify_dates&&socket.config.p_vrfy==&socket);
- assert(socket.config.f_vrfy(socket.config.p_vrfy,&leaf,0,&flags)==0&&flags==0);
- assert(verifier_calls==1);
- /* Real dates remain enforced even if the underlying verifier clears flags. */
- leaf.valid_to.year=2020;flags=0;
- assert(esp_net_tls_verify_dates(&socket,&leaf,0,&flags)==0&&(flags&MBEDTLS_X509_BADCERT_EXPIRED));
- leaf.valid_to.year=2026;leaf.valid_from.year=2030;flags=0;
- assert(esp_net_tls_verify_dates(&socket,&leaf,1,&flags)==0&&(flags&MBEDTLS_X509_BADCERT_FUTURE));
- leaf.valid_from.year=2026;clock_valid=0;flags=0;
- assert(esp_net_tls_verify_dates(&socket,&leaf,0,&flags)==0&&(flags&MBEDTLS_X509_BADCERT_OTHER));
- clock_valid=1;verifier_flags=MBEDTLS_X509_BADCERT_NOT_TRUSTED;flags=0;
- assert(esp_net_tls_verify_dates(&socket,&leaf,0,&flags)==0&&(flags&MBEDTLS_X509_BADCERT_NOT_TRUSTED));
- verifier_result=-9;
- assert(esp_net_tls_verify_dates(&socket,&leaf,0,&flags)==-9);
- verifier_result=0;verifier_flags=0;
- /* Bundle synthetic roots have no DER or date window. */
- mbedtls_x509_crt root={0};flags=0;
- assert(esp_net_tls_verify_dates(&socket,&root,2,&flags)==0&&flags==0);
- verifier_flags=MBEDTLS_X509_BADCERT_NOT_TRUSTED;flags=0;
- assert(esp_net_tls_verify_dates(&socket,&root,2,&flags)==0&&(flags&MBEDTLS_X509_BADCERT_NOT_TRUSTED));
- verifier_flags=0;flags=0;
- assert(esp_net_tls_verify_dates(&socket,&root,0,&flags)==0&&(flags&MBEDTLS_X509_BADCERT_EXPIRED));
- root.raw=leaf.raw;flags=0;
- assert(esp_net_tls_verify_dates(&socket,&root,2,&flags)==0&&(flags&MBEDTLS_X509_BADCERT_EXPIRED));
- /* An explicit CA config has no bundle callback and never takes that exception. */
- root.raw.p=NULL;root.raw.len=0;esp_net_tls_socket_t explicit_ca={0};
- esp_net_tls_install_verify_dates(&explicit_ca);flags=0;
- assert(esp_net_tls_verify_dates(&explicit_ca,&root,2,&flags)==0&&(flags&MBEDTLS_X509_BADCERT_EXPIRED));
- return 0;
-}
-'''
 
 
 class CertificateTime(unittest.TestCase):
@@ -132,27 +68,34 @@ class CertificateTime(unittest.TestCase):
             ('bk', 'native_component_src/bk7258/ap/h2_pal_core/src/h2_bk_platform_net.c'),
         ]:
             source = (ROOT / relative).read_text()
-            if backend == 'esp':
-                self.assertIn('esp_net_tls_install_verify_dates(slot);', source)
-            else:
-                self.assertIn('mbedtls_ssl_conf_verify(&slot->config,', source)
-                self.assertIn(backend+'_net_tls_verify_dates, NULL', source)
+            self.assertIn('mbedtls_ssl_conf_verify(&slot->config,', source)
+            self.assertIn(backend+'_net_tls_verify_dates, '+('slot' if backend == 'esp' else 'NULL'), source)
             start = source.index('static int '+backend+'_net_tls_verify_dates(')
             end = source.index('static h2_pal_result_t '+backend+'_net_tls_handshake(', start)
             prelude = PRELUDE.replace('TIME_API', 'h2_'+backend+'_platform_time_api')
             if backend == 'esp':
                 prelude = prelude[:prelude.index('static const void *h2_bk_platform_log_api')]
-            else:
-                first = prelude.index('typedef struct mbedtls_ssl_config')
-                last = prelude.index('static uint64_t clock_ms;')
-                prelude = prelude[:first] + prelude[last:]
-            main = ESP_MAIN if backend == 'esp' else MAIN.replace('CHECK', backend+'_net_tls_verify_dates')
+                a = prelude.index('typedef struct mbedtls_x509_time')
+                b = prelude.index('static uint64_t clock_ms;', a)
+                prelude = prelude[:a] + '#include "h2_esp_platform_net_tls_verify.h"\n' + prelude[b:]
+                prelude = prelude.replace('static int mbedtls_x509_time_cmp', 'int mbedtls_x509_time_cmp')
+                prelude += 'typedef struct esp_net_tls_socket { h2_esp_net_tls_verify_t verify; } esp_net_tls_socket_t;\n'
+                self.assertIn('.delegate = slot->config.MBEDTLS_PRIVATE(f_vrfy)', source)
+                self.assertIn('.delegate_user = slot->config.MBEDTLS_PRIVATE(p_vrfy)', source)
+            main = MAIN.replace('CHECK', backend+'_net_tls_verify_dates')
+            extra_args = []
+            if backend == 'esp':
+                main = main.replace('leaf.version=3;', 'esp_net_tls_socket_t socket = {0};')
+                main = main.replace('CHECK', backend+'_net_tls_verify_dates').replace('verify_dates(NULL,', 'verify_dates(&socket,')
+                core = ROOT / 'native_component_src/esp-idf6.x/h2_pal_core'
+                extra_args = ['-I'+str(core/'src'), '-I'+str(core/'tests/tls_sdk'),
+                              str(core/'src/h2_esp_platform_net_tls_verify.c')]
             with tempfile.TemporaryDirectory(prefix='h2-net-tls-cert-time-') as temporary:
                 source_file = Path(temporary) / 'test.c'
                 executable = Path(temporary) / 'test'
                 source_file.write_text(prelude+source[start:end]+main)
                 subprocess.run([compiler, '-std=c11', '-Wall', '-Wextra', '-Werror',
-                    str(source_file), '-o', str(executable)], check=True, timeout=30)
+                    *extra_args, str(source_file), '-o', str(executable)], check=True, timeout=30)
                 subprocess.run([str(executable)], check=True, timeout=15)
 
 
