@@ -63,7 +63,8 @@ typedef struct h2_lua_host_config {
   /** Optional allocator for everything the Host allocates: Host and job
    * state, queues, buffers, the VM heap reservation and, without one, each
    * VM block. NULL uses Runtime mem. Borrowed, not copied: the api and its
-   * user context must stay valid until h2_lua_host_destroy() returns. */
+   * user context must stay valid until checked destruction succeeds; a failed
+   * shutdown retains this borrowed dependency even after void destroy returns. */
   const h2_pal_mem_api_t *allocator;
   size_t worker_count;
   size_t worker_stack_size;

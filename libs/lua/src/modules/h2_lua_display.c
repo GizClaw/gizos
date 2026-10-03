@@ -4467,6 +4467,9 @@ static h2_pal_result_t display_submission_fault(h2_lua_job_t *job,
 }
 
 static h2_pal_result_t display_submission_wait(display_submission_t *submission) {
+  /* A failed wake can leave PENDING forever. The fault already proves that
+   * synchronous reuse must fail without waiting for an unobservable worker. */
+  if (submission->fault) return (h2_pal_result_t)submission->fault;
   if (!submission->worker.initialized)
     return submission->fault ? submission->fault : H2_PAL_ERR_INVALID_STATE;
   while (h2_lua_display_worker_phase(&submission->worker) == H2_LUA_DISPLAY_PENDING) {
@@ -4493,6 +4496,11 @@ static h2_pal_result_t display_submission_create(lua_State *state,
       job->host->config.display_worker, job->host->config.borrow_display,
       job->host->config.display_worker_stack_size);
   if (result != H2_PAL_OK) {
+    if (submission->worker.initialized) {
+      job->display_submission = submission;
+      job->display_submission_ref = ref;
+      return display_submission_fault(job, result);
+    }
     luaL_unref(state, LUA_REGISTRYINDEX, ref);
     return result;
   }
@@ -4775,7 +4783,8 @@ static h2_pal_result_t display_submission_release(lua_State *state,
       return H2_PAL_ERR_BUSY;
     }
     result = h2_lua_display_worker_join(worker);
-    if (result != H2_PAL_OK) return result;
+    if (result != H2_PAL_OK)
+      return submission->fault ? (h2_pal_result_t)submission->fault : result;
   }
   if (submission->fault) return submission->fault;
   int snapshot_ref = submission->snapshot_ref;

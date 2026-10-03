@@ -1167,6 +1167,42 @@ static void test_display_submission_oom(void) {
   h2_runtime_deinit(runtime);
 }
 
+/* Persistent wrappers deliberately outlive the child test stack. Other Sync
+ * methods keep the original user/vtable entries. Only Display wake #2 fails. */
+static const h2_pal_sync_api_t *s_wake_base;
+static h2_pal_sync_api_t s_wake_api;
+static h2_pal_sync_vtable_t s_wake_vtable;
+static h2_pal_semaphore_t *s_display_wake;
+static unsigned s_display_wakes;
+static int s_wake_init_fault;
+static const h2_pal_task_api_t *s_wake_tasks_base;
+static h2_pal_task_api_t s_wake_tasks;
+static h2_pal_task_vtable_t s_wake_tasks_vtable;
+static int test_wake_task_start(void *user, const h2_pal_task_options_t *options,
+    h2_pal_task_entry_t entry, void *context, h2_pal_task_t **out) {
+  if (strcmp(options->name, "$lua/display") == 0) {
+    *out = NULL;
+    return H2_PAL_ERR_TASK;
+  }
+  return s_wake_tasks_base->vtable->start(user, options, entry, context, out);
+}
+static h2_pal_result_t test_wake_destroy(void *user, h2_pal_semaphore_t *semaphore) {
+  if (semaphore == s_display_wake) return H2_PAL_ERR_IO;
+  return s_wake_base->vtable->destroy_semaphore(user, semaphore);
+}
+static h2_pal_result_t test_wake_create(void *user,
+    const h2_pal_semaphore_config_t *config, h2_pal_semaphore_t **out) {
+  h2_pal_result_t rc = s_wake_base->vtable->create_semaphore(user, config, out);
+  if (rc == H2_PAL_OK && config->name != NULL &&
+      strcmp(config->name, "$lua/display/wake") == 0) s_display_wake = *out;
+  return rc;
+}
+static h2_pal_result_t test_wake_give(void *user, h2_pal_semaphore_t *semaphore) {
+  if (!s_wake_init_fault && semaphore == s_display_wake && ++s_display_wakes == 2u)
+    return H2_PAL_ERR_IO;
+  return s_wake_base->vtable->give_semaphore(user, semaphore);
+}
+
 /* Each fault case runs in a child process: the contract intentionally retains
  * the entire failed Host/VM/Runtime until process teardown, without a test-only
  * recovery API or freeing an object that still owns the Display lease. */
@@ -1178,6 +1214,25 @@ static void test_display_submission_fault(int mode) {
   s_test_display_fixture.fail_close = mode == 3;
   s_test_display_fixture.fail_info = mode == 4;
   h2_runtime_t *runtime = create_runtime();
+  if (mode == 5 || mode == 6) {
+    s_wake_init_fault = mode == 6;
+    s_wake_base = runtime->sync;
+    s_wake_vtable = *runtime->sync->vtable;
+    s_wake_vtable.create_semaphore = test_wake_create;
+    s_wake_vtable.give_semaphore = test_wake_give;
+    s_wake_api = *runtime->sync;
+    s_wake_api.vtable = &s_wake_vtable;
+    runtime->sync = &s_wake_api;
+    if (mode == 6) {
+      s_wake_vtable.destroy_semaphore = test_wake_destroy;
+      s_wake_tasks_base = runtime->task;
+      s_wake_tasks_vtable = *runtime->task->vtable;
+      s_wake_tasks_vtable.start = test_wake_task_start;
+      s_wake_tasks = *runtime->task;
+      s_wake_tasks.vtable = &s_wake_tasks_vtable;
+      runtime->task = &s_wake_tasks;
+    }
+  }
   h2_lua_host_t *host = NULL;
   h2_lua_host_config_t config = {.runtime = runtime, .max_jobs = 1,
       .display_worker = 1, .display_exclusive = 1,
@@ -1186,7 +1241,11 @@ static void test_display_submission_fault(int mode) {
   assert(h2_lua_host_start(host) == H2_PAL_OK);
   const char script[] =
       "local d,r=require('display'),require('runtime');d.clear('red');"
-      "assert(d.submit()==1);local s,e=d.flush();"
+      "local n,e=d.submit();if args.wake=='yes' then "
+      "assert(n==nil and e<0 and e~=d.BUSY);"
+      "local n2,e2=d.submit();assert(n2==nil and e2==e);"
+      "assert(d.status().error==e);assert(not pcall(d.present));return end;"
+      "assert(n==1);local s,e=d.flush();"
       "while not s and e==d.BUSY do r.sleep(1);s,e=d.flush() end;"
       "if args.close=='yes' then assert(s);local _;_,e=d.deinit();"
       "while e==d.BUSY do r.sleep(1);_,e=d.deinit() end end;"
@@ -1194,16 +1253,18 @@ static void test_display_submission_fault(int mode) {
       "local n,again=d.submit();assert(n==nil and again==e);"
       "local record=d.status();assert(record.error==e);"
       "assert(not pcall(d.present));";
-  h2_lua_arg_t args[] = {{"close", mode == 3 ? "yes" : "no"}};
+  h2_lua_arg_t args[] = {{"close", mode == 3 ? "yes" : "no"},
+                        {"wake", mode == 5 ? "yes" : "no"}};
   h2_lua_job_id_t job;
   assert(h2_lua_job_submit_text(host, NULL, "@submission-fault.lua",
-      (const uint8_t *)script, sizeof(script)-1, args, 1, &job) == H2_PAL_OK);
+      (const uint8_t *)script, sizeof(script)-1, args, 2, &job) == H2_PAL_OK);
   run_until_terminal(host, job, 6000);
   h2_lua_job_status_t state = status(host, job);
-  if (mode != 4 && state.state != H2_LUA_JOB_SUCCEEDED)
+  if (mode != 4 && mode != 6 && state.state != H2_LUA_JOB_SUCCEEDED)
     fprintf(stderr, "fault mode=%d: %s\n", mode, state.message);
-  assert(state.state == (mode == 4 ? H2_LUA_JOB_FAILED : H2_LUA_JOB_SUCCEEDED));
-  h2_pal_result_t expected = mode == 4 ? H2_DISPLAY_ERR_INVALID_ARG : H2_PAL_ERR_IO;
+  assert(state.state == (mode == 4 || mode == 6 ? H2_LUA_JOB_FAILED : H2_LUA_JOB_SUCCEEDED));
+  h2_pal_result_t expected = mode == 4 ? H2_DISPLAY_ERR_INVALID_ARG
+      : mode == 6 ? H2_PAL_ERR_TASK : H2_PAL_ERR_IO;
   h2_pal_result_t result = H2_PAL_ERR_BUSY;
   for (unsigned i = 0; i < 3000 && result == H2_PAL_ERR_BUSY; ++i) {
     result = h2_lua_host_destroy_checked(host);

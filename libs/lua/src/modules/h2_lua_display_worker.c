@@ -101,8 +101,16 @@ h2_pal_result_t h2_lua_display_worker_init(h2_lua_display_worker_t *worker,
                                  .min_stack_size = stack_size},
         worker_entry, worker, &worker->task);
   if (result != H2_PAL_OK) {
-    if (worker->wake != NULL)
-      (void)h2_pal_semaphore_destroy(runtime->sync, worker->wake);
+    if (worker->wake != NULL) {
+      h2_pal_result_t cleanup = h2_pal_semaphore_destroy(runtime->sync, worker->wake);
+      if (cleanup != H2_PAL_OK) {
+        /* No task started, but the semaphore still owns allocator/context
+         * dependencies. Keep initialized storage rooted for checked cleanup. */
+        h2_atomic_store(&worker->phase, H2_LUA_DISPLAY_EXITED);
+        return result;
+      }
+      worker->wake = NULL;
+    }
     h2_atomic_int_destroy(&worker->phase);
     worker->initialized = 0;
   }
