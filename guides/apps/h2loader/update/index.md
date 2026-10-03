@@ -16,14 +16,14 @@ Host CLI 对应 `send`、`send-url` 和 `stage abort`。传输成功只表示 St
 
 Managed package 支持两种格式，按实际字节识别，不依赖文件后缀：
 
-- Format 1：整个 USTAR 由一条 zlib 流压缩，外部文件后缀为 `.update.tar.zlib`。解压后的顺序是 `manifest`、`checksum`、`data/` 文件、`app/` 镜像；现有 package 保持此格式。
+- Format 1：整个 USTAR 由一条 zlib 流压缩，外部文件后缀为 `.update.tar.zlib`。解压后的顺序是 `manifest`、`checksum`、`data/` 文件、`app/` 镜像；仅保留历史包读取兼容，当前生成端不再产出此格式。
 - Format 2：外层是未压缩 USTAR，外部文件后缀为 `.update.tar`，顺序严格为 `manifest`、`data.tar.zlib`、`app.bin.zlib`。两个 payload 各自使用独立 zlib 流；data 内层是排序后的 `data/` 文件 USTAR，app 内层直接是 raw image。
 
 两种 manifest 都包含 role、board、target、version、raw image size 和 raw image SHA-256。Format 2 另包含 `data_sha256`、`data_tar_size`、`data_bytes`、`pixa_bytes`、`app_zlib_size`、`app_zlib_sha256`、`data_zlib_size` 和 `data_zlib_sha256`。`data_bytes` 与 `pixa_bytes` 分别统计普通文件与 `.pixa` 文件在内层 tar 中的 payload bytes，提供不依赖解压的安装进度总量，安装时核对实际计数。Data checksum 继续按排序后的每个文件 `path + NUL + bytes + NUL` 计算；与 format 1 的 `checksum`、安装后的 `/data/.checksum` 使用同一 identity。完整 package SHA-256、compressed member SHA-256 与 raw image SHA-256 不能互换。
 
 Format-2 inspection 校验外层 tar、manifest、每段 compressed size/SHA-256、终止和 padding，不解压 payload。安装时分别比较目标 App 分区的实际 SHA-256 和 `/data/.checksum`，只对变化的段执行解压及写入；跳过段直接按 offset 定位，无需解码前面的压缩流。变化 App 校验解压长度、raw SHA-256 及目标分区回读；变化 data 校验解压长度、tar 路径和 canonical SHA-256，成功后才写入 `.checksum`。Data 替换开始前移除旧 `.checksum`，因此失败留下的 partial tree 不会被当作旧 tree 跳过。两部分都未变时不调用安装解压器。Format 1 仍保持原有验证和流式处理方式。
 
-Writer、CLI 和 Bazel 默认仍生成 format 1；format 2 需要显式选择。旧 Loader 不接受 format 2，必须先用 format-1 Loader package 升级普通 Loader 或 MFG Loader，再使用 format 2。两类 image 共用此公共安装实现。内部 Stage 文件仍固定为 `/dl/update.tar.zlib`，它是存储路径，不代表文件格式；Preference metadata 和传输命令不变。
+Writer、CLI 和 Bazel 统一且仅生成 format 2，不提供旧格式生成选项。旧 Loader 不接受 format 2；仍可管理的旧设备先使用已经存在、包含双格式 reader 的 format-1 过渡 Loader package 更新，再接收新 tar。过渡包需要保留构建 revision、package/image checksum 和完整 metadata；它不是当前生成端的输出。Factory/recovery 继续遵守各 board 的既有授权与进入条件，不能因格式不匹配绕过可用的 H2Loader。两类 image 共用此公共安装实现。内部 Stage 文件仍固定为 `/dl/update.tar.zlib`，它是存储路径，不代表文件格式；Preference metadata 和传输命令不变。
 
 运行时 identity 不读取 Stage 或 Preference：role、version、board 和 target 由构建事实随固件链接；image size 和 SHA-256 由平台直接读取当前运行分区并计算。把 whole-image SHA-256 原样写回同一镜像会形成自引用，因此 checksum/size 采用运行分区的权威计算值，并必须与 package manifest 精确一致；无法读取或计算时启动失败关闭。
 

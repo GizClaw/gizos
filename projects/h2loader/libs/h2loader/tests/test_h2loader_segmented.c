@@ -178,7 +178,7 @@ static void run_case(int same_app, int same_data, int broken_member) {
         .role = "app", .board = "fixture", .target = "host", .version = "1",
         .app = {.name = "app/esp/app.bin", .size = sizeof(new_app) - 1u,
             .read = source_read, .user = (void *)new_app}, .data_entries = &data,
-        .data_entry_count = 1u, .write = package_write, .write_user = &f, .package_format = 2u};
+        .data_entry_count = 1u, .write = package_write, .write_user = &f};
     h2_h2loader_host_package_writer_result_t produced;
     assert(h2_h2loader_host_package_write(&output, &produced) == H2_PAL_OK);
     memcpy(f.app, new_app, sizeof(new_app) - 1u);

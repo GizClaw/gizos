@@ -125,7 +125,7 @@ int main(void) {
 
     assert(h2_h2loader_cli_package_command(&context, 2, argv, 1) ==
         H2_H2LOADER_CLI_EXIT_OK);
-    assert(fs_state.published.len == 358u);
+    assert(fs_state.published.len == 10240u);
     h2_h2loader_host_catalog_entry_t asset;
     const h2_h2loader_host_package_inspect_config_t inspect = {
         .allocator = &mem,
@@ -136,16 +136,11 @@ int main(void) {
     assert(h2_h2loader_host_package_inspect(&inspect, &asset) == H2_PAL_OK);
     assert(strcmp(asset.board, "fixture") == 0);
     assert(strcmp(asset.target, "host") == 0);
+    assert(asset.package_format == 2u);
 
     {
-        const char *segmented[] = {"--out", "/tmp/golden", "--format", "2"};
-        assert(h2_h2loader_cli_package_command(&context, 4, segmented, 1) == H2_H2LOADER_CLI_EXIT_OK);
-        h2_h2loader_host_package_inspect_config_t v2 = inspect;
-        v2.payload_bytes = fs_state.published.len;
-        assert(h2_h2loader_host_package_inspect(&v2, &asset) == H2_PAL_OK);
-        assert(asset.package_format == 2u);
-        const char *invalid[] = {"--format", "3"};
-        assert(h2_h2loader_cli_package_command(&context, 2, invalid, 1) == H2_H2LOADER_CLI_EXIT_USAGE);
+        const char *legacy[] = {"--format", "1"};
+        assert(h2_h2loader_cli_package_command(&context, 2, legacy, 1) == H2_H2LOADER_CLI_EXIT_USAGE);
     }
 
     {

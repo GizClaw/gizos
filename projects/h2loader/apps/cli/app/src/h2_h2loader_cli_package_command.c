@@ -67,7 +67,7 @@ static const char *option_value(
 int h2_h2loader_cli_package_command(
     h2_h2loader_cli_context_t *context, int argc, const char *const *argv,
     int golden) {
-    const char *out = "/tmp/update.tar.zlib";
+    const char *out = "/tmp/update.tar";
     const char *app_bin = NULL;
     const char *app_path = "app/esp/app.bin";
     const char *data_dir = NULL;
@@ -75,7 +75,6 @@ int h2_h2loader_cli_package_command(
     const char *board = golden ? "fixture" : NULL;
     const char *target = golden ? "host" : NULL;
     const char *version = golden ? "0" : NULL;
-    uint32_t package_format = 1u;
     static const uint8_t golden_app[] = {0xe9u, 1u, 2u, 3u, 4u, 5u};
     static const uint8_t golden_alpha[] = "alpha";
     static const uint8_t golden_zed[] = {0u, 1u, 2u};
@@ -122,11 +121,6 @@ int h2_h2loader_cli_package_command(
         else if (!golden && (value = option_value(argc, argv, &i, "--board")) != NULL) board = value;
         else if (!golden && (value = option_value(argc, argv, &i, "--target")) != NULL) target = value;
         else if (!golden && (value = option_value(argc, argv, &i, "--version")) != NULL) version = value;
-        else if ((value = option_value(argc, argv, &i, "--format")) != NULL) {
-            if (strcmp(value, "1") != 0 && strcmp(value, "2") != 0)
-                return H2_H2LOADER_CLI_EXIT_USAGE;
-            package_format = (uint32_t)(value[0] - '0');
-        }
         else {
             h2_h2loader_cli_output(context, H2_H2LOADER_CLI_STREAM_STDERR,
                 "h2loader: invalid package option: %s\n", argv[i]);
@@ -176,7 +170,6 @@ int h2_h2loader_cli_package_command(
     writer.board = board;
     writer.target = target;
     writer.version = version;
-    writer.package_format = package_format;
     writer.write = package_write;
     writer.write_user = &output;
     rc = h2_h2loader_host_package_write(&writer, &result);

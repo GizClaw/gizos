@@ -246,8 +246,7 @@ static h2_pal_result_t validate_config(const h2_h2loader_host_package_writer_con
         !h2_h2loader_host_is_safe_identity(config->target) || !safe_version(config->version) ||
         (config->data_entry_count != 0u && config->data_entries == NULL) ||
         config->data_entry_count > SIZE_MAX / sizeof(void *) ||
-        (strcmp(config->role, "h2loader") == 0 && config->data_entry_count != 0u) ||
-        config->package_format > 2u) {
+        (strcmp(config->role, "h2loader") == 0 && config->data_entry_count != 0u)) {
         return H2_PAL_ERR_INVALID_ARG;
     }
     for (size_t i = 0u; i < config->data_entry_count; ++i) {
@@ -394,10 +393,6 @@ h2_pal_result_t h2_h2loader_host_package_write(
     uint8_t digest[32];
     char image_hex[65];
     char data_hex[65];
-    char manifest[512];
-    char checksum[66];
-    h2_h2loader_host_package_source_t generated;
-    package_stream_t stream;
     h2_pal_result_t rc = validate_config(config);
 
     if (rc != H2_PAL_OK || out_result == NULL) {
@@ -440,68 +435,7 @@ h2_pal_result_t h2_h2loader_host_package_write(
     }
     h2_h2loader_host_sha256_finish(&data_sha, digest);
     h2_h2loader_host_sha256_hex(digest, data_hex);
-    if (config->package_format == 2u) {
-        rc = write_segmented(config, sorted, image_hex, data_hex, out_result);
-        goto cleanup;
-    }
-    if (snprintf(manifest, sizeof(manifest),
-            "format=1\nrole=%s\nboard=%s\ntarget=%s\nversion=%s\nimage_size=%llu\nimage_sha256=%s\n",
-            config->role, config->board, config->target, config->version,
-            (unsigned long long)config->app.size, image_hex) >= (int)sizeof(manifest)) {
-        rc = H2_PAL_ERR_INVALID_ARG;
-        goto cleanup;
-    }
-    (void)snprintf(checksum, sizeof(checksum), "%s\n", data_hex);
-    memset(&stream, 0, sizeof(stream));
-    stream.config = config;
-    stream.zlib.zalloc = package_zalloc;
-    stream.zlib.zfree = package_zfree;
-    stream.zlib.opaque = (voidpf)config->allocator;
-    stream.zlib.next_out = stream.output;
-    stream.zlib.avail_out = sizeof(stream.output);
-    if (deflateInit(&stream.zlib, 6) != Z_OK) {
-        rc = H2_PAL_ERR_NO_MEMORY;
-        goto cleanup;
-    }
-    generated = (h2_h2loader_host_package_source_t){
-        .name = "manifest", .size = strlen(manifest),
-    };
-    rc = tar_header(&stream, generated.name, generated.size);
-    if (rc == H2_PAL_OK) rc = stream_write(&stream, (const uint8_t *)manifest, generated.size);
-    if (rc == H2_PAL_OK) rc = tar_padding(&stream, generated.size);
-    generated.name = "checksum";
-    generated.size = strlen(checksum);
-    if (rc == H2_PAL_OK) rc = tar_header(&stream, generated.name, generated.size);
-    if (rc == H2_PAL_OK) rc = stream_write(&stream, (const uint8_t *)checksum, generated.size);
-    if (rc == H2_PAL_OK) rc = tar_padding(&stream, generated.size);
-    for (size_t i = 0u; rc == H2_PAL_OK && i < config->data_entry_count; ++i) {
-        rc = tar_source(&stream, sorted[i]);
-    }
-    if (rc == H2_PAL_OK) rc = tar_source(&stream, &config->app);
-    if (rc == H2_PAL_OK) {
-        static const uint8_t zeros[TAR_RECORD_SIZE] = {0};
-        size_t padding;
-        rc = stream_write(&stream, zeros, TAR_BLOCK_SIZE * 2u);
-        padding = (size_t)((TAR_RECORD_SIZE - (stream.tar_bytes % TAR_RECORD_SIZE)) % TAR_RECORD_SIZE);
-        if (rc == H2_PAL_OK && padding != 0u) rc = stream_write(&stream, zeros, padding);
-    }
-    if (rc == H2_PAL_OK) {
-        int zrc;
-        do {
-            zrc = deflate(&stream.zlib, Z_FINISH);
-            if (zrc != Z_OK && zrc != Z_STREAM_END) {
-                rc = H2_PAL_ERR_IO;
-                break;
-            }
-            rc = stream_flush_output(&stream);
-        } while (rc == H2_PAL_OK && zrc != Z_STREAM_END);
-    }
-    (void)deflateEnd(&stream.zlib);
-    if (rc == H2_PAL_OK) {
-        out_result->package_bytes = stream.package_bytes;
-        memcpy(out_result->image_sha256, image_hex, sizeof(image_hex));
-        memcpy(out_result->data_sha256, data_hex, sizeof(data_hex));
-    }
+    rc = write_segmented(config, sorted, image_hex, data_hex, out_result);
 cleanup:
     h2_pal_mem_free(config->allocator, sorted);
     return rc;

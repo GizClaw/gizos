@@ -4,7 +4,7 @@ GizOS 使用 Bazel 9.2.0 作为 stable host C/C++ package 以及 ESP-IDF/BK7258/
 
 `BUILD.bazel`、`.bzl`、target 命名和 platform variant 同时遵守 [Bazel 代码规范](/zh/coding-styles/bazel)。
 
-H2Loader 的 `h2loader_tar_zlib` artifact rule 默认 `package_format = 1`，保留 `.update.tar.zlib` 输出。显式 `package_format = 2` 输出 `.update.tar`，外层 USTAR 不压缩，app/data 是独立 zlib member。`FirmwareReleaseInfo.package_format`、`firmware_catalog.cquery` 和 `.firmware.json` 的 `package_format` 必须一致，metadata 的 `package_manifest.format` 与 managed asset `release_suffix` 同步。已有 Loader/MFG bootstrap target 继续使用 format 1；下游在固定新版 GizOS 并更新设备 Loader 后才选择 format 2。
+H2Loader 的 `h2loader_tar_zlib` artifact rule 统一且仅输出 format 2 `.update.tar`，外层 USTAR 不压缩，app/data 是独立 zlib member；不存在 `package_format` 生成选项。Rule 名称及既有 target label 保留兼容。`FirmwareReleaseInfo.package_format`、`firmware_catalog.cquery` 和 `.firmware.json` 的 `package_format` 固定为 2，metadata 的 `package_manifest.format` 与 managed asset `release_suffix` 同步。Device/Host reader 继续兼容历史 format 1；发布 assembler 保留历史 archive 的读取校验。旧设备由已有双格式 reader 过渡包先更新 Loader，当前 build 不再生成旧包。
 
 ## Mobile E2E Python runtime
 

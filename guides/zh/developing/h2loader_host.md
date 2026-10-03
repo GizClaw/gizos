@@ -48,9 +48,9 @@ Managed payload stage 在发送任何 package bytes 前检查连接后 live stat
 
 ## Catalog 与 operation
 
-`firmware-index.json` 及其全部资源由 CI 聚合，随同一个 Release 原样嵌入 Desktop。Catalog parser 在暴露 entry 前校验 schema、枚举值、safe relative path、唯一性、bytes 和 SHA-256。Managed package 使用现有 `.update.tar.zlib`，recovery 使用 `.recovery.h2fb`。ESP Loader 的 `factory-flash` asset（从 offset `0` 直接烧录的 `.combined_factory.bin`）与 diagnostic asset 一样可以被 catalog 读取和查询，但不可安装，也不能提交给 scheduler。
+`firmware-index.json` 及其全部资源由 CI 聚合，随同一个 Release 原样嵌入 Desktop。Catalog parser 在暴露 entry 前校验 schema、枚举值、safe relative path、唯一性、bytes 和 SHA-256。Managed package 当前统一生成 format-2 `.update.tar`，仍可读取历史 `.update.tar.zlib`，recovery 使用 `.recovery.h2fb`。ESP Loader 的 `factory-flash` asset（从 offset `0` 直接烧录的 `.combined_factory.bin`）与 diagnostic asset 一样可以被 catalog 读取和查询，但不可安装，也不能提交给 scheduler。
 
-浏览器从本地选择 standalone format-1 `.update.tar.zlib` 时没有 Release catalog。Host Core 的 package inspector 通过 caller 提供的 offset reader 按 bounded chunk 读取，计算 archive SHA-256，流式解压 zlib，并复用 Bundle USTAR path contract 校验 manifest、checksum、data 与唯一 App image。它输出 `identity_source=PACKAGE_MANIFEST` 的 immutable managed asset；format 1 不携带 App image name，因此 `image` 为空。只有这个显式 identity source 可以省略 name，既有 `RELEASE_CATALOG=0` caller 仍必须严格匹配 catalog image name，不能从文件名或 chooser label 推断 identity。
+浏览器从本地选择 standalone format-2 `.update.tar` 或历史 format-1 `.update.tar.zlib` 时没有 Release catalog。Host Core 的 package inspector 通过 caller 提供的 offset reader 按 bounded chunk 读取，计算 archive SHA-256。Format 2 检查未压缩 tar 的 manifest、各独立压缩段的长度/SHA-256；format 1 流式解压整包，并复用 Bundle USTAR path contract 校验 manifest、checksum、data 与唯一 App image。它输出 `identity_source=PACKAGE_MANIFEST` 的 immutable managed asset；两种格式都不携带 App image name，因此 `image` 为空。只有这个显式 identity source 可以省略 name，既有 `RELEASE_CATALOG=0` caller 仍必须严格匹配 catalog image name，不能从文件名或 chooser label 推断 identity。
 
 Standalone package 的最终校验要求 board、target、role、version、image size/checksum 与对应 Partition metadata 完全匹配，并且 Stage 已按角色流程收尾。APP 必须运行在 Partition 2；Loader 自升级必须完成 P2-to-P1 回写、运行在 Partition 1，且 Partition 1/2 identity 一致。预操作 already-target 与重连后的成功判定调用同一个 verification contract，只有版本相同不能跳过。
 

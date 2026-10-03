@@ -37,8 +37,6 @@ typedef struct h2_h2loader_host_package_writer_config {
     size_t data_entry_count;
     h2_h2loader_host_package_write_fn write;
     void *write_user;
-    /** 0 or 1 preserves format-1 tar.zlib; 2 selects independent tar members. */
-    uint32_t package_format;
 } h2_h2loader_host_package_writer_config_t;
 
 typedef struct h2_h2loader_host_package_writer_result {
@@ -47,7 +45,8 @@ typedef struct h2_h2loader_host_package_writer_result {
     char data_sha256[H2_H2LOADER_HOST_SHA256_HEX_LEN + 1u];
 } h2_h2loader_host_package_writer_result_t;
 
-/** Write a canonical package through callbacks, with bounded compression buffers.
+/** Write a canonical format-2 tar package with independent compressed members.
+ * No legacy format-1 generation is available. Compression uses bounded buffers.
  * Sources are borrowed and must return immutable bytes across repeated reads.
  * Output can be partial on failure and must not be published in that case. */
 h2_pal_result_t h2_h2loader_host_package_write(

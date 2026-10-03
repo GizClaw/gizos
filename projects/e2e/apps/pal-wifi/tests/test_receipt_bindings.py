@@ -27,7 +27,7 @@ class ReceiptBindingFailures(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.root = Path(self.tmp.name)
-        self.package = self.root / 'package.update.tar.zlib'
+        self.package = self.root / 'package.update.tar'
         self.image = bytes(range(256)) * 2
         self.identity = dict(role='app', board='bk7258_v3_202405', target='bk7258', version='unit-v1')
         self.app_path = 'app/bk/app_ab_crc.rbl'
@@ -87,16 +87,18 @@ class ReceiptBindingFailures(unittest.TestCase):
 
     def replace_member(self, member, data):
         stream = io.BytesIO()
-        with tarfile.open(fileobj=io.BytesIO(zlib.decompress(self.package.read_bytes()))) as old:
+        with tarfile.open(self.package, mode='r:') as old:
             entries = [(m.name, old.extractfile(m).read()) for m in old.getmembers()]
         with tarfile.open(fileobj=stream, mode='w', format=tarfile.USTAR_FORMAT) as new:
             for name, payload in entries:
                 if name == member:
                     payload = data(payload)
+                elif member == self.app_path and name == 'app.bin.zlib':
+                    payload = zlib.compress(data(zlib.decompress(payload)))
                 info = tarfile.TarInfo(name)
                 info.size = len(payload)
                 new.addfile(info, io.BytesIO(payload))
-        self.package.write_bytes(zlib.compress(stream.getvalue()))
+        self.package.write_bytes(stream.getvalue())
         sha, size = digest(self.package), self.package.stat().st_size
         self.report['package'] = self.ref(self.package)
         self.report['package_sha256'] = sha

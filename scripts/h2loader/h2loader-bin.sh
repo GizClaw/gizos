@@ -2,7 +2,7 @@
 # Build the native h2loader CLI for this host and print its absolute path on
 # stdout (everything else goes to stderr), so it can be used inline:
 #
-#   $(make h2loader-bin) --port <serial-port> send --file bazel-bin/.../x.update.tar.zlib
+#   $(make h2loader-bin) --port <serial-port> send --file bazel-bin/.../x.update.tar
 #
 # Running the binary from the caller's shell keeps the caller's cwd, so
 # relative package paths and bazel-bin symlinks resolve as typed.

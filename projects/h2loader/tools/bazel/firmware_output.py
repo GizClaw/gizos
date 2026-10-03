@@ -96,7 +96,6 @@ def publish_managed_package(
     role: str,
     target: str,
     version: str,
-    package_format: int = 1,
 ) -> None:
     entries = package_entries(source_root, data_root, data_files, data_sources)
     write_package(
@@ -108,7 +107,6 @@ def publish_managed_package(
         board=board,
         target=target,
         version=version,
-        package_format=package_format,
     )
 
 
@@ -186,7 +184,6 @@ def publish_metadata(
     factory: Path | None,
     recovery: Path | None,
     native: list[tuple[str, Path]],
-    package_format: int = 1,
 ) -> None:
     def asset(
         path: Path,
@@ -211,10 +208,7 @@ def publish_metadata(
             result["flash_offset"] = flash_offset
         return result
 
-    if type(package_format) is not int or package_format not in (1, 2):
-        raise ValueError(f"unsupported package format: {package_format}")
-    suffix = ".update.tar" if package_format == 2 else ".update.tar.zlib"
-    release_assets = [asset(package, "managed-install", suffix)]
+    release_assets = [asset(package, "managed-install", ".update.tar")]
     if recovery is not None:
         release_assets.append(asset(recovery, "recovery", ".recovery.h2fb"))
     if factory is not None:
@@ -234,14 +228,13 @@ def publish_metadata(
         "role": role,
         "target": target,
         "version": version,
-        "package_format": package_format,
+        "package_format": 2,
         "package_manifest": package_manifest(
             app_image.read_bytes(),
             role=role,
             board=board,
             target=target,
             version=version,
-            package_format=package_format,
         ),
         "assets": release_assets,
         "native_artifacts": [

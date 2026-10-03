@@ -116,7 +116,7 @@ GitHub Release 包含以下资产：
 
 ZIP 内只有 `firmware-release-v<batch>/` 前缀下的文件：
 
-- `loader-<board>.update.tar.zlib`：三个 Loader 的 managed install 包。
+- `loader-<board>.update.tar`：三个 Loader 的 managed install 包。
 - `loader-<board>.recovery.h2fb`：两个 ESP Loader 和 BK7258 Loader 的 recovery bundle。
 - `loader-<board>.combined_factory.bin`：两个 ESP Loader 从 offset `0` 直接烧录的 combined image。
 - `firmware-index.json`：顶层 `batch` 是 UTC 批次，各 firmware 的 `version` 是独立 SemVer；`release_name` 必须等于 `<image>-<board>`，每个 asset name 必须等于 `release_name + release_suffix`。

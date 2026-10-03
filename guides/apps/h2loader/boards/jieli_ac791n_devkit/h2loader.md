@@ -88,8 +88,8 @@ bazel run //projects/h2loader/targets/cc_binary/e2e-runner:e2e-runner -- \
   --ble-id <ble-endpoint> \
   --expected-board jieli_ac791n_devkit \
   --expected-target wl82 \
-  --app-firmware <jieli_ac791n_devkit-color-bar-wl82.update.tar.zlib> \
-  --loader-firmware <jieli_ac791n_devkit-loader-wl82.update.tar.zlib> \
+  --app-firmware <jieli_ac791n_devkit-color-bar-wl82.update.tar> \
+  --loader-firmware <jieli_ac791n_devkit-loader-wl82.update.tar> \
   --crash-firmware <jieli_ac791n_devkit-crash-before-confirm-wl82.update.tar.zlib> \
   --monitor-ms 3000 \
   --report <report.json>
